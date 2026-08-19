@@ -11,8 +11,8 @@ rustc_library("mapping") {
   with_unit_tests = true
 
   sources = [
-    "src/blob.rs",
     "src/extents.rs",
+    "src/file.rs",
     "src/lib.rs",
     "src/page_request.rs",
     "src/pager.rs",

@@ -567,7 +567,7 @@ mod tests {
         verifier.set_pager(pager.clone());
 
         let verifier_clone = verifier.clone();
-        let blobs = Arc::new(mapping::Blobs::new(service, move |key, range| {
+        let files = Arc::new(mapping::Files::new(service, move |key, range| {
             verifier_clone.get_page_request(key, range)
         }));
 
@@ -594,14 +594,14 @@ mod tests {
                 );
             }
         }
-        mapping::process_mapping_command(&msg, &blobs).expect("process_mapping_command failed");
+        mapping::process_mapping_command(&msg, &files).expect("process_mapping_command failed");
         msg.pop().expect("pop failed");
 
         let key = blob_key as u64;
         let paged_vmo = pager.create_vmo(zx::VmoOptions::empty(), &port, key, blob_size).unwrap();
         verifier.register_vmo(key, paged_vmo.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap());
 
-        let _pager_thread = mapping::PagerThread::spawn(port, blobs.clone());
+        let _pager_thread = mapping::PagerThread::spawn(port, files.clone());
 
         let (tx, rx) = oneshot::channel();
         let len = uncompressed_data.len();
@@ -616,7 +616,7 @@ mod tests {
 
         session_proxy.close(blob_key).await.expect("close failed").expect("close error");
         let msg = receiver.peek().expect("Failed to peek close message");
-        mapping::process_mapping_command(&msg, &blobs).expect("process_mapping_command failed");
+        mapping::process_mapping_command(&msg, &files).expect("process_mapping_command failed");
         msg.pop().expect("pop failed");
     }
 

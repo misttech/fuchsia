@@ -201,20 +201,20 @@ impl<I: Interface + ?Sized> super::SessionManager for SessionManager<I> {
         let verifier =
             sm.interface.on_open_mapper_session(&mapping_vmo, &offset_map, delivery_queue)?;
 
-        let blobs = Arc::new(mapping::Blobs::new(service, move |key, range| {
+        let files = Arc::new(mapping::Files::new(service, move |key, range| {
             verifier.get_page_request(key, range)
         }));
 
-        let _pager_thread = mapping::PagerThread::spawn(port, blobs.clone());
+        let _pager_thread = mapping::PagerThread::spawn(port, files.clone());
 
-        let blobs_for_vmo = blobs.clone();
+        let files_for_vmo = files.clone();
         let mapper_vmo_thread = std::thread::spawn(move || {
             if let Ok(mapping_vmo_dup) = mapping_vmo.duplicate_handle(zx::Rights::SAME_RIGHTS) {
                 if let Ok(mut receiver) =
                     vmo_fifo::Receiver::<mapping::RawMappingCommand>::new(mapping_vmo_dup, 256)
                 {
                     while let Ok(msg) = receiver.peek() {
-                        let _ = mapping::process_mapping_command(&msg, &blobs_for_vmo);
+                        let _ = mapping::process_mapping_command(&msg, &files_for_vmo);
                         let _ = msg.pop();
                     }
                 }

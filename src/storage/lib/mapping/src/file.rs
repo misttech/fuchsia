@@ -29,20 +29,20 @@ pub fn read_ahead_size_for_chunk_size(chunk_size: u64, suggested_read_ahead_size
     }
 }
 
-/// A mapped blob containing extents and decompression metadata.
-pub struct Blob {
+/// A mapped file containing extents and optional decompression metadata.
+pub struct File {
     extents: Extents,
     uncompressed_size: u64,
-    compression_info: Option<Arc<CompressionInfo>>,
+    compression_info: Option<CompressionInfo>,
 }
 
-impl Blob {
+impl File {
     pub fn new(
         extents: Extents,
         uncompressed_size: u64,
         compression_info: Option<CompressionInfo>,
     ) -> Self {
-        Self { extents, uncompressed_size, compression_info: compression_info.map(Arc::new) }
+        Self { extents, uncompressed_size, compression_info }
     }
 
     /// Returns the extents mapping logical offsets to device offsets.
@@ -50,14 +50,14 @@ impl Blob {
         &self.extents
     }
 
-    /// Returns the uncompressed size of the blob in bytes.
+    /// Returns the uncompressed size of the file in bytes.
     pub fn uncompressed_size(&self) -> u64 {
         self.uncompressed_size
     }
 
-    /// Returns decompression metadata if the blob is compressed.
+    /// Returns decompression metadata if the file is compressed.
     pub fn compression_info(&self) -> Option<&CompressionInfo> {
-        self.compression_info.as_deref()
+        self.compression_info.as_ref()
     }
 
     /// Streams and decodes the uncompressed range requested by `page_request`, applying readahead.
@@ -115,9 +115,8 @@ impl Blob {
                 });
             }
             Some(info) => {
-                let info = Arc::clone(info);
                 let Ok((mut decompressor, aligned_range)) =
-                    StreamingDecompressor::new(info, self.uncompressed_size, page_request)
+                    StreamingDecompressor::new(info.clone(), self.uncompressed_size, page_request)
                 else {
                     // The range must be out of range. This should be handled when `page_request`
                     // is dropped.
@@ -142,22 +141,22 @@ struct LoadingSlot<R> {
     requests: Mutex<Vec<R>>,
 }
 
-enum BlobEntry<R> {
+enum FileEntry<R> {
     Loading(Arc<LoadingSlot<R>>),
-    Loaded(Arc<Blob>),
+    Loaded(Arc<File>),
 }
 
-/// A thread-safe registry of active [`Blob`] instances indexed by their Zircon pager port key.
-pub struct Blobs<S: ?Sized, F, R> {
+/// A thread-safe registry of active [`File`] instances indexed by their Zircon pager port key.
+pub struct Files<S: ?Sized, F, R> {
     service: Arc<S>,
     request_factory: F,
-    map: Mutex<HashMap<u64, BlobEntry<R>>>,
+    map: Mutex<HashMap<u64, FileEntry<R>>>,
 }
 
 impl<S: BlockService + ?Sized, R: PageRequest, F: Fn(u64, Range<u64>) -> R + Send + Sync + 'static>
-    Blobs<S, F, R>
+    Files<S, F, R>
 {
-    /// Creates a new blob registry with the provided block service and request factory.
+    /// Creates a new file registry with the provided block service and request factory.
     pub fn new(service: Arc<S>, request_factory: F) -> Self {
         Self { service, request_factory, map: Mutex::new(HashMap::new()) }
     }
@@ -169,20 +168,20 @@ impl<S: BlockService + ?Sized, R: PageRequest, F: Fn(u64, Range<u64>) -> R + Sen
 
     /// Handles a page request from `PagerThread`.
     ///
-    /// If the blob is loaded, reads the range into a newly allocated buffer immediately.
-    /// If the blob is currently loading or unmapped, queues the request to be fulfilled
+    /// If the file is loaded, reads the range into a newly allocated buffer immediately.
+    /// If the file is currently loading or unmapped, queues the request to be fulfilled
     /// when loaded.
     pub fn handle_page_request(&self, key: u64, range: Range<u64>) {
         let req = (self.request_factory)(key, range);
         let mut map = self.map.lock();
         match map.entry(key) {
             Entry::Occupied(entry) => match entry.get() {
-                BlobEntry::Loaded(blob) => {
-                    let blob = Arc::clone(blob);
+                FileEntry::Loaded(file) => {
+                    let file = Arc::clone(file);
                     drop(map);
-                    blob.read_range(self.service.as_ref(), req);
+                    file.read_range(self.service.as_ref(), req);
                 }
-                BlobEntry::Loading(slot) => {
+                FileEntry::Loading(slot) => {
                     slot.requests.lock().push(req);
                 }
             },
@@ -195,7 +194,7 @@ impl<S: BlockService + ?Sized, R: PageRequest, F: Fn(u64, Range<u64>) -> R + Sen
                 // request arrives for a key that is never mapped, this entry will remain in
                 // memory until the session is dropped.
                 let slot = Arc::new(LoadingSlot { requests: Mutex::new(vec![req]) });
-                entry.insert(BlobEntry::Loading(slot));
+                entry.insert(FileEntry::Loading(slot));
             }
         }
     }
@@ -205,28 +204,37 @@ impl<S: BlockService + ?Sized, R: PageRequest, F: Fn(u64, Range<u64>) -> R + Sen
     pub fn begin_loading(&self, key: u64) {
         let mut map = self.map.lock();
         map.entry(key).or_insert_with(|| {
-            BlobEntry::Loading(Arc::new(LoadingSlot { requests: Mutex::new(Vec::new()) }))
+            FileEntry::Loading(Arc::new(LoadingSlot { requests: Mutex::new(Vec::new()) }))
         });
     }
 
-    /// Inserts a blob into the registry under `key`, immediately draining and servicing any
+    /// Inserts a file into the registry under `key`, immediately draining and servicing any
     /// page requests that arrived while metadata was loading.
-    fn insert(&self, key: u64, blob: Arc<Blob>) {
+    fn insert(&self, key: u64, file: Arc<File>) {
         let reqs = {
             let mut map = self.map.lock();
-            let prev = map.insert(key, BlobEntry::Loaded(blob.clone()));
+            let prev = map.insert(key, FileEntry::Loaded(file.clone()));
             match prev {
-                Some(BlobEntry::Loading(slot)) => std::mem::take(&mut *slot.requests.lock()),
+                Some(FileEntry::Loading(slot)) => std::mem::take(&mut *slot.requests.lock()),
                 _ => Vec::new(),
             }
         };
 
         for req in reqs {
-            blob.read_range(self.service.as_ref(), req);
+            file.read_range(self.service.as_ref(), req);
         }
     }
 
-    /// Removes the blob registered under `key`.
+    /// Returns the loaded [`File`] registered under `key`, if present.
+    pub fn get_file(&self, key: u64) -> Option<Arc<File>> {
+        let map = self.map.lock();
+        match map.get(&key) {
+            Some(FileEntry::Loaded(file)) => Some(file.clone()),
+            _ => None,
+        }
+    }
+
+    /// Removes the file registered under `key`.
     pub fn remove(&self, key: u64) {
         self.map.lock().remove(&key);
     }
@@ -234,13 +242,13 @@ impl<S: BlockService + ?Sized, R: PageRequest, F: Fn(u64, Range<u64>) -> R + Sen
     /// Returns `true` if `key` is currently in the loading state.
     #[cfg(test)]
     pub fn is_loading(&self, key: u64) -> bool {
-        matches!(self.map.lock().get(&key), Some(BlobEntry::Loading(_)))
+        matches!(self.map.lock().get(&key), Some(FileEntry::Loading(_)))
     }
 
     /// Returns `true` if `key` is currently in the loaded state.
     #[cfg(test)]
     pub fn is_loaded(&self, key: u64) -> bool {
-        matches!(self.map.lock().get(&key), Some(BlobEntry::Loaded(_)))
+        matches!(self.map.lock().get(&key), Some(FileEntry::Loaded(_)))
     }
 }
 
@@ -343,23 +351,23 @@ pub fn read_blob_metadata(
     });
 }
 
-/// RAII guard that manages the lifecycle of a blob transitioning from loading metadata to loaded.
+/// RAII guard that manages the lifecycle of a file transitioning from loading metadata to loaded.
 ///
-/// When metadata is being fetched asynchronously from storage, the blob entry in [`Blobs`]
-/// remains in the [`BlobEntry::Loading`] state, accumulating incoming page requests in its queue.
+/// When metadata is being fetched asynchronously from storage, the file entry in [`Files`]
+/// remains in the [`FileEntry::Loading`] state, accumulating incoming page requests in its queue.
 ///
-/// - On success: [`LoadingBlobGuard::commit`] consumes the guard, stores the fully initialized
-///   [`Blob`], and immediately drains and fulfills all queued page requests.
+/// - On success: [`LoadingFileGuard::commit`] consumes the guard, stores the fully initialized
+///   [`File`], and immediately drains and fulfills all queued page requests.
 /// - On failure or cancellation: If dropped before `commit` is called (e.g. due to storage I/O
 ///   error, corrupted metadata, or session teardown), the `Drop` implementation cleans up the
-///   entry by removing `key` from [`Blobs`]. Dropping the loading slot drops all queued
+///   entry by removing `key` from [`Files`]. Dropping the loading slot drops all queued
 ///   [`PageRequest`] objects, which fails the pending page requests in the kernel pager.
-struct LoadingBlobGuard<
+struct LoadingFileGuard<
     S: BlockService + ?Sized + 'static,
     R: PageRequest,
     F: Fn(u64, Range<u64>) -> R + Send + Sync + 'static,
 > {
-    blobs: Option<Arc<Blobs<S, F, R>>>,
+    files: Option<Arc<Files<S, F, R>>>,
     key: u64,
 }
 
@@ -367,12 +375,12 @@ impl<
     S: BlockService + ?Sized + 'static,
     R: PageRequest,
     F: Fn(u64, Range<u64>) -> R + Send + Sync + 'static,
-> LoadingBlobGuard<S, R, F>
+> LoadingFileGuard<S, R, F>
 {
-    /// Commits the loaded blob to the registry, transferring ownership and draining all queued
+    /// Commits the loaded file to the registry, transferring ownership and draining all queued
     /// page requests.
-    fn commit(mut self, blob: Arc<Blob>) {
-        self.blobs.take().unwrap().insert(self.key, blob);
+    fn commit(mut self, file: Arc<File>) {
+        self.files.take().unwrap().insert(self.key, file);
     }
 }
 
@@ -380,24 +388,24 @@ impl<
     S: BlockService + ?Sized + 'static,
     R: PageRequest,
     F: Fn(u64, Range<u64>) -> R + Send + Sync + 'static,
-> Drop for LoadingBlobGuard<S, R, F>
+> Drop for LoadingFileGuard<S, R, F>
 {
     fn drop(&mut self) {
-        if let Some(blobs) = self.blobs.take() {
-            blobs.remove(self.key);
+        if let Some(files) = self.files.take() {
+            files.remove(self.key);
         }
     }
 }
 
 /// Processes a raw mapping command (`RawMappingCommand`), decoding extent descriptors,
-/// reading blob metadata from storage, and inserting/removing the blob from `blobs`.
+/// reading blob metadata from storage, and inserting/removing the file from `files`.
 pub fn process_mapping_command<
     S: BlockService + ?Sized + 'static,
     R: PageRequest,
     F: Fn(u64, Range<u64>) -> R + Send + Sync + 'static,
 >(
     msg: &Message<'_, RawMappingCommand>,
-    blobs: &Arc<Blobs<S, F, R>>,
+    files: &Arc<Files<S, F, R>>,
 ) -> Result<(), Error> {
     let cmd = **msg;
     match MappingCommand::try_from(cmd)? {
@@ -423,23 +431,23 @@ pub fn process_mapping_command<
             let metadata_extents = Extents::from_encoded(metadata_bytes.iter_as::<u64>())
                 .ok_or_else(|| anyhow!("Failed to decode metadata extents"))?;
 
-            blobs.begin_loading(key);
-            let service = blobs.service().clone();
-            let guard = LoadingBlobGuard { blobs: Some(blobs.clone()), key };
+            files.begin_loading(key);
+            let service = files.service().clone();
+            let guard = LoadingFileGuard { files: Some(files.clone()), key };
             read_blob_metadata(
                 service.as_ref(),
                 &metadata_extents,
                 stored_size,
                 move |(uncompressed_size, compression_info)| {
-                    let blob =
-                        Arc::new(Blob::new(data_extents, uncompressed_size, compression_info));
-                    guard.commit(blob);
+                    let file =
+                        Arc::new(File::new(data_extents, uncompressed_size, compression_info));
+                    guard.commit(file);
                 },
             );
             Ok(())
         }
         MappingCommand::CloseBlob { key } => {
-            blobs.remove(key);
+            files.remove(key);
             Ok(())
         }
     }
@@ -479,10 +487,10 @@ mod tests {
 
         let extents = Extents::encode_extents(&[Extent::new(0..(8 * BLOCK_SIZE), Some(0))]);
         let extents = Extents::from_encoded(extents).unwrap();
-        let blob = Arc::new(Blob::new(extents, 8 * BLOCK_SIZE, None));
+        let file = Arc::new(File::new(extents, 8 * BLOCK_SIZE, None));
 
         let (page_request, rx) = TestVecBuffer::new_with_range(0..(8 * BLOCK_SIZE));
-        blob.read_range(&service, page_request);
+        file.read_range(&service, page_request);
 
         assert_eq!(rx.commits(), vec![(0, (8 * BLOCK_SIZE) as usize)]);
         assert_eq!(rx.output(), expected_data);
@@ -526,12 +534,12 @@ mod tests {
             CompressionAlgorithm::Zstd,
         )
         .unwrap();
-        let blob = Arc::new(Blob::new(extents, uncompressed_size as u64, Some(compression_info)));
+        let file = Arc::new(File::new(extents, uncompressed_size as u64, Some(compression_info)));
 
         let dest_alloc_size = uncompressed_size.next_multiple_of(chunk_size);
         let (mut page_request, rx) = TestVecBuffer::new_with_range(0..(uncompressed_size as u64));
         page_request.data.resize(dest_alloc_size, 0);
-        blob.read_range(&service, page_request);
+        file.read_range(&service, page_request);
 
         assert_eq!(
             rx.commits(),
@@ -585,10 +593,10 @@ mod tests {
             CompressionAlgorithm::Lz4,
         )
         .unwrap();
-        let blob = Arc::new(Blob::new(extents, uncompressed_size as u64, Some(compression_info)));
+        let file = Arc::new(File::new(extents, uncompressed_size as u64, Some(compression_info)));
 
         let (page_request, rx) = TestVecBuffer::new_with_range(0..(uncompressed_size as u64));
-        blob.read_range(&service, page_request);
+        file.read_range(&service, page_request);
 
         assert_eq!(rx.commits(), vec![(0, chunk_size), (chunk_size as u64, chunk_size)]);
         assert_eq!(rx.output(), uncompressed_data);
@@ -599,32 +607,32 @@ mod tests {
         let service = FakeBlockService::new(vec![0u8; 8192]);
         let extents = Extents::encode_extents(&[Extent::new(0..8192, Some(0))]);
         let extents = Extents::from_encoded(extents).unwrap();
-        let blob = Arc::new(Blob::new(extents, 8192, None));
+        let file = Arc::new(File::new(extents, 8192, None));
 
         let (page_request, rx) = TestVecBuffer::new_with_range(4096..4096);
         // start >= end should be a no-op returning Ok(())
-        blob.read_range(&service, page_request);
+        file.read_range(&service, page_request);
         assert_eq!(rx.commits().len(), 0);
     }
 
     #[test]
-    fn test_blob_getters() {
+    fn test_file_getters() {
         let extents_raw = Extents::encode_extents(&[Extent::new(0..8192, Some(0))]);
         let extents = Extents::from_encoded(extents_raw.clone()).unwrap();
         let uncompressed_size = 8192u64;
 
-        let blob_uncompressed = Blob::new(extents, uncompressed_size, None);
-        assert_eq!(blob_uncompressed.uncompressed_size(), 8192);
-        assert!(blob_uncompressed.compression_info().is_none());
+        let file_uncompressed = File::new(extents, uncompressed_size, None);
+        assert_eq!(file_uncompressed.uncompressed_size(), 8192);
+        assert!(file_uncompressed.compression_info().is_none());
 
         let compression_info =
             CompressionInfo::new(32768, 4096, &[0], CompressionAlgorithm::Zstd).unwrap();
-        let blob_compressed = Blob::new(
+        let file_compressed = File::new(
             Extents::from_encoded(extents_raw).unwrap(),
             uncompressed_size,
             Some(compression_info),
         );
-        assert!(blob_compressed.compression_info().is_some());
+        assert!(file_compressed.compression_info().is_some());
     }
 
     #[test]
@@ -648,11 +656,11 @@ mod tests {
 
         let extents = Extents::encode_extents(&[Extent::new(0..8192, Some(0))]);
         let extents = Extents::from_encoded(extents).unwrap();
-        let blob = Blob::new(extents, 8192, None);
+        let file = File::new(extents, 8192, None);
 
         let (page_request, rx) = TestVecBuffer::new_with_range(0..8192);
 
-        blob.read_range(&FailingBlockService, page_request);
+        file.read_range(&FailingBlockService, page_request);
         assert_eq!(rx.commits().len(), 0);
     }
 
@@ -670,10 +678,10 @@ mod tests {
         let extents =
             Extents::encode_extents(&[Extent::new(0..(block_count * BLOCK_SIZE), Some(0))]);
         let extents = Extents::from_encoded(extents).unwrap();
-        let blob = Blob::new(extents, block_count * BLOCK_SIZE, None);
+        let file = File::new(extents, block_count * BLOCK_SIZE, None);
 
         let (page_request, rx) = TestVecBuffer::new_with_range(0..(block_count * BLOCK_SIZE));
-        blob.read_range(&service, page_request);
+        file.read_range(&service, page_request);
 
         assert_eq!(rx.commits().len(), 4);
         assert_eq!(rx.output(), expected_data);
@@ -690,10 +698,10 @@ mod tests {
 
         let extents = Extents::encode_extents(&[Extent::new(0..8192, Some(0))]);
         let extents = Extents::from_encoded(extents).unwrap();
-        let blob = Blob::new(extents, uncompressed_size, None);
+        let file = File::new(extents, uncompressed_size, None);
 
         let (page_request, rx) = TestVecBuffer::new_with_range(0..8192);
-        blob.read_range(&service, page_request);
+        file.read_range(&service, page_request);
 
         assert_eq!(rx.commits(), vec![(0, 8192)]);
         assert_eq!(&rx.output()[..5000], &expected_data[..5000]);
@@ -711,11 +719,11 @@ mod tests {
         let extents =
             Extents::encode_extents(&[Extent::new(0..(total_blocks * BLOCK_SIZE), Some(0))]);
         let extents = Extents::from_encoded(extents).unwrap();
-        let blob = Blob::new(extents, total_blocks * BLOCK_SIZE, None);
+        let file = File::new(extents, total_blocks * BLOCK_SIZE, None);
 
         // Request 1 block at offset 4096. Readahead should expand to 0..128 KiB.
         let (page_request, rx) = TestVecBuffer::new_with_range(4096..8192);
-        blob.read_range(&service, page_request);
+        file.read_range(&service, page_request);
 
         assert_eq!(rx.commits(), vec![(0, READ_AHEAD_SIZE as usize)]);
         assert_eq!(
@@ -736,12 +744,12 @@ mod tests {
         let extents =
             Extents::encode_extents(&[Extent::new(0..(total_blocks * BLOCK_SIZE), Some(0))]);
         let extents = Extents::from_encoded(extents).unwrap();
-        let blob = Blob::new(extents, total_blocks * BLOCK_SIZE, None);
+        let file = File::new(extents, total_blocks * BLOCK_SIZE, None);
 
         // Request 1 block at offset 132 KiB (135168..139264).
         // Readahead should expand to 128 KiB..256 KiB (131072..262144).
         let (page_request, rx) = TestVecBuffer::new_with_range(135168..139264);
-        blob.read_range(&service, page_request);
+        file.read_range(&service, page_request);
 
         assert_eq!(rx.commits(), vec![(READ_AHEAD_SIZE, READ_AHEAD_SIZE as usize)]);
         assert_eq!(
@@ -763,13 +771,13 @@ mod tests {
         let extents =
             Extents::encode_extents(&[Extent::new(0..(total_blocks * BLOCK_SIZE), Some(0))]);
         let extents = Extents::from_encoded(extents).unwrap();
-        let blob = Blob::new(extents, uncompressed_size, None);
+        let file = File::new(extents, uncompressed_size, None);
 
         // Request 1 block at offset 132 KiB (135168..139264).
         // Readahead window starts at 128 KiB (131072) and would normally extend to 256 KiB
         // (262144), but should be capped at page_aligned_size (143360).
         let (page_request, rx) = TestVecBuffer::new_with_range(135168..139264);
-        blob.read_range(&service, page_request);
+        file.read_range(&service, page_request);
 
         let expected_start = READ_AHEAD_SIZE;
         let page_aligned_size = uncompressed_size.next_multiple_of(BLOCK_SIZE);
@@ -824,12 +832,12 @@ mod tests {
             CompressionAlgorithm::Zstd,
         )
         .unwrap();
-        let blob = Blob::new(extents, uncompressed_size as u64, Some(compression_info));
+        let file = File::new(extents, uncompressed_size as u64, Some(compression_info));
 
         // Request 1 block in the second 128 KiB readahead window (e.g. 135168..139264).
         // Readahead should expand to 131072..262144 (chunks 4, 5, 6, 7).
         let (page_request, rx) = TestVecBuffer::new_with_range(135168..139264);
-        blob.read_range(&service, page_request);
+        file.read_range(&service, page_request);
 
         assert_eq!(
             rx.commits(),
@@ -881,13 +889,13 @@ mod tests {
             CompressionAlgorithm::Zstd,
         )
         .unwrap();
-        let blob = Blob::new(extents, uncompressed_size as u64, Some(compression_info));
+        let file = File::new(extents, uncompressed_size as u64, Some(compression_info));
 
         // Pre-fill destination buffer with 0xFF bytes to verify tail zeroing
         let (mut page_request, rx) = TestVecBuffer::new_with_range(0..(uncompressed_size as u64));
         page_request.data.resize(65536, 0);
         page_request.data.fill(0xFF);
-        blob.read_range(&service, page_request);
+        file.read_range(&service, page_request);
 
         assert_eq!(rx.commits(), vec![(0, chunk_size), (chunk_size as u64, chunk_size)]);
         assert_eq!(&rx.output()[..uncompressed_size], &uncompressed_data[..]);
@@ -895,21 +903,21 @@ mod tests {
     }
 
     #[test]
-    fn test_blobs_registry() {
+    fn test_files_registry() {
         let extents = Extents::encode_extents(&[Extent::new(0..4096, Some(0))]);
         let extents = Extents::from_encoded(extents).unwrap();
-        let blob = Arc::new(Blob::new(extents, 4096, None));
+        let file = Arc::new(File::new(extents, 4096, None));
         let service = Arc::new(FakeBlockService::new(vec![0u8; 4096]));
-        let blobs = Blobs::new(service, |_key, _range| TestVecBuffer::new(4096).0);
+        let files = Files::new(service, |_key, _range| TestVecBuffer::new(4096).0);
 
-        assert!(!blobs.is_loading(100));
-        blobs.begin_loading(100);
-        assert!(blobs.is_loading(100));
+        assert!(!files.is_loading(100));
+        files.begin_loading(100);
+        assert!(files.is_loading(100));
 
-        blobs.insert(100, blob.clone());
-        assert!(!blobs.is_loading(100));
-        blobs.remove(100);
-        assert!(!blobs.is_loading(100));
+        files.insert(100, file.clone());
+        assert!(!files.is_loading(100));
+        files.remove(100);
+        assert!(!files.is_loading(100));
     }
 
     struct DelayedBlockService {
@@ -1062,7 +1070,7 @@ mod tests {
             .copy_from_slice(&encoded_metadata);
 
         let service = DelayedBlockService::new(device_data);
-        let blobs = Arc::new(Blobs::new(service.clone(), |_k, _r| TestVecBuffer::new(4096).0));
+        let files = Arc::new(Files::new(service.clone(), |_k, _r| TestVecBuffer::new(4096).0));
 
         let data_extent_words = Extents::encode_extents(&[Extent::new(0..BLOCK_SIZE, Some(0))]);
         let meta_extent_words =
@@ -1093,16 +1101,16 @@ mod tests {
         let mut receiver = vmo_fifo::Receiver::<crate::RawMappingCommand>::new(vmo, 16).unwrap();
 
         let msg = receiver.peek().unwrap();
-        process_mapping_command(&msg, &blobs).unwrap();
+        process_mapping_command(&msg, &files).unwrap();
 
-        // Blob is initially in Loading state.
-        assert!(blobs.is_loading(99));
+        // File is initially in Loading state.
+        assert!(files.is_loading(99));
 
         // Complete metadata read (which will fail due to corrupt CompressionInfo).
         service.wait_and_trigger_sync();
 
-        // Blobs map should have cleaned up the failed entry on drop.
-        assert!(!blobs.is_loading(99));
+        // Files map should have cleaned up the failed entry on drop.
+        assert!(!files.is_loading(99));
     }
 
     #[fuchsia::test]
@@ -1154,7 +1162,7 @@ mod tests {
         let service = DelayedBlockService::new(device_data);
         let dropped = Arc::new(AtomicBool::new(false));
         let dropped_clone = dropped.clone();
-        let blobs = Arc::new(Blobs::new(service.clone(), move |_k, r| DroppingBuffer {
+        let files = Arc::new(Files::new(service.clone(), move |_k, r| DroppingBuffer {
             data: vec![0u8; 4096],
             range: r,
             dropped: dropped_clone.clone(),
@@ -1189,12 +1197,12 @@ mod tests {
         let mut receiver = vmo_fifo::Receiver::<crate::RawMappingCommand>::new(vmo, 16).unwrap();
 
         let msg = receiver.peek().unwrap();
-        process_mapping_command(&msg, &blobs).unwrap();
+        process_mapping_command(&msg, &files).unwrap();
 
-        assert!(blobs.is_loading(99));
+        assert!(files.is_loading(99));
 
         // Pager request arrives while loading. Buffer should be created and held.
-        blobs.handle_page_request(99, 0..4096);
+        files.handle_page_request(99, 0..4096);
         assert!(!dropped.load(Ordering::Relaxed));
 
         // Complete metadata read (which will fail due to corrupt CompressionInfo).
@@ -1202,7 +1210,7 @@ mod tests {
 
         // Dropping guard cleans up LoadingSlot, which drops the queued buffer.
         assert!(dropped.load(Ordering::Relaxed));
-        assert!(!blobs.is_loading(99));
+        assert!(!files.is_loading(99));
     }
 
     #[fuchsia::test]
@@ -1226,13 +1234,13 @@ mod tests {
         let page_request_holder = Arc::new(Mutex::new(Some(page_request)));
         let page_request_clone = page_request_holder.clone();
 
-        let blobs = Arc::new(Blobs::new(service.clone(), move |_key, _range| {
+        let files = Arc::new(Files::new(service.clone(), move |_key, _range| {
             page_request_clone.lock().take().unwrap()
         }));
 
         let _pager_thread = crate::PagerThread::spawn(
             port.duplicate_handle(Rights::SAME_RIGHTS).unwrap(),
-            blobs.clone(),
+            files.clone(),
         );
 
         let pager = Pager::create(PagerOptions::empty()).unwrap();
@@ -1271,24 +1279,24 @@ mod tests {
 
         std::thread::scope(|s| {
             let msg = receiver.peek().unwrap();
-            let blobs_for_process = blobs.clone();
+            let files_for_process = files.clone();
             s.spawn(move || {
-                process_mapping_command(&msg, &blobs_for_process).unwrap();
+                process_mapping_command(&msg, &files_for_process).unwrap();
             });
 
             // Wait until metadata block read has been submitted to service
-            // (blob is in Loading state).
+            // (file is in Loading state).
             while service.pending.lock().is_empty() {
                 std::thread::sleep(std::time::Duration::from_millis(5));
             }
 
-            // Trigger page fault from a detached background thread while blob is loading metadata.
+            // Trigger page fault from a detached background thread while file is loading metadata.
             std::thread::spawn(move || {
                 let mut b = [0u8; 1];
                 let _ = vmo_blob_clone.read(&mut b, 0);
             });
 
-            // Complete metadata block read; this will insert the blob and immediately
+            // Complete metadata block read; this will insert the file and immediately
             // drain queued page requests.
             service.wait_and_trigger_sync();
         });
@@ -1321,13 +1329,13 @@ mod tests {
         let page_request_holder = Arc::new(Mutex::new(Some(page_request)));
         let page_request_clone = page_request_holder.clone();
 
-        let blobs = Arc::new(Blobs::new(service.clone(), move |_key, _range| {
+        let files = Arc::new(Files::new(service.clone(), move |_key, _range| {
             page_request_clone.lock().take().unwrap()
         }));
 
         let _pager_thread = crate::PagerThread::spawn(
             port.duplicate_handle(Rights::SAME_RIGHTS).unwrap(),
-            blobs.clone(),
+            files.clone(),
         );
 
         let pager = Pager::create(PagerOptions::empty()).unwrap();
@@ -1370,14 +1378,14 @@ mod tests {
             let _ = vmo_blob_clone.read(&mut b, 0);
         });
 
-        // Wait briefly to ensure page request arrives and is queued as pending mapping in `blobs`.
+        // Wait briefly to ensure page request arrives and is queued as pending mapping in `files`.
         std::thread::sleep(std::time::Duration::from_millis(50));
 
         std::thread::scope(|s| {
             let msg = receiver.peek().unwrap();
-            let blobs_for_process = blobs.clone();
+            let files_for_process = files.clone();
             s.spawn(move || {
-                process_mapping_command(&msg, &blobs_for_process).unwrap();
+                process_mapping_command(&msg, &files_for_process).unwrap();
             });
 
             // Trigger metadata read completion.
@@ -1394,7 +1402,7 @@ mod tests {
     #[fuchsia::test]
     fn test_process_mapping_command_close_blob() {
         let service = Arc::new(FakeBlockService::new(vec![0u8; 8192]));
-        let blobs = Arc::new(Blobs::new(service, |_k, _r| TestVecBuffer::new(4096).0));
+        let files = Arc::new(Files::new(service, |_k, _r| TestVecBuffer::new(4096).0));
 
         let vmo = zx::Vmo::create(65536).unwrap();
         let mut sender = vmo_fifo::SyncSender::<crate::RawMappingCommand>::new(
@@ -1404,7 +1412,7 @@ mod tests {
         )
         .unwrap();
 
-        // 1. Send Mappings command with 0 metadata extents (uncompressed blob, loads immediately).
+        // 1. Send Mappings command with 0 metadata extents (uncompressed file, loads immediately).
         let data_extent_words = Extents::encode_extents(&[Extent::new(0..BLOCK_SIZE, Some(0))]);
         let mut payload_bytes = Vec::new();
         for w in &data_extent_words {
@@ -1424,10 +1432,10 @@ mod tests {
 
         let mut receiver = vmo_fifo::Receiver::<crate::RawMappingCommand>::new(vmo, 16).unwrap();
         let msg = receiver.peek().unwrap();
-        process_mapping_command(&msg, &blobs).unwrap();
+        process_mapping_command(&msg, &files).unwrap();
         msg.pop().unwrap();
 
-        assert!(blobs.is_loaded(123));
+        assert!(files.is_loaded(123));
 
         // 2. Send CloseBlob command.
         sender
@@ -1442,10 +1450,10 @@ mod tests {
             .unwrap();
 
         let msg = receiver.peek().unwrap();
-        process_mapping_command(&msg, &blobs).unwrap();
+        process_mapping_command(&msg, &files).unwrap();
         msg.pop().unwrap();
 
-        assert!(!blobs.is_loaded(123));
+        assert!(!files.is_loaded(123));
     }
 
     #[test]

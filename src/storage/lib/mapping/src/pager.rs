@@ -3,21 +3,21 @@
 // found in the LICENSE file.
 
 use crate::reader::BlockService;
-use crate::{Blobs, PageRequest};
+use crate::{Files, PageRequest};
 use std::ops::Range;
 use std::sync::Arc;
 use zx::sys::zx_page_request_command_t::ZX_PAGER_VMO_READ;
 use zx::{Packet, PacketContents, Port, Rights, UserPacket};
 
 /// Runs a synchronous event loop that listens on `port` for pager page requests
-/// and dispatches them to `blobs.handle_page_request`.
+/// and dispatches them to `files.handle_page_request`.
 pub fn run_pager_loop<
     S: BlockService + ?Sized,
     R: PageRequest,
     F: Fn(u64, Range<u64>) -> R + Send + Sync + 'static,
 >(
     port: &Port,
-    blobs: &Blobs<S, F, R>,
+    files: &Files<S, F, R>,
 ) {
     loop {
         match port.wait(zx::MonotonicInstant::INFINITE) {
@@ -27,7 +27,7 @@ pub fn run_pager_loop<
                     if pager_packet.command() == ZX_PAGER_VMO_READ {
                         let offset = pager_packet.range().start;
                         let length = pager_packet.range().end - offset;
-                        blobs.handle_page_request(packet.key(), offset..offset + length);
+                        files.handle_page_request(packet.key(), offset..offset + length);
                     }
                 }
                 _ => {}
@@ -52,11 +52,11 @@ impl PagerThread {
         F: Fn(u64, Range<u64>) -> R + Send + Sync + 'static,
     >(
         port: Port,
-        blobs: Arc<Blobs<S, F, R>>,
+        files: Arc<Files<S, F, R>>,
     ) -> Self {
         let thread_port = port.duplicate_handle(Rights::SAME_RIGHTS).expect("duplicate port");
         let thread = std::thread::spawn(move || {
-            run_pager_loop(&thread_port, &blobs);
+            run_pager_loop(&thread_port, &files);
         });
         Self { port, thread: Some(thread) }
     }
@@ -82,8 +82,8 @@ mod tests {
     fn test_pager_thread_lifecycle() {
         let port = Port::create();
         let service = Arc::new(FakeBlockService::new(vec![0u8; 4096]));
-        let blobs = Arc::new(Blobs::new(service, |_key, _range| TestVecBuffer::new(4096).0));
-        let thread = PagerThread::spawn(port, blobs);
+        let files = Arc::new(Files::new(service, |_key, _range| TestVecBuffer::new(4096).0));
+        let thread = PagerThread::spawn(port, files);
         drop(thread);
     }
 
