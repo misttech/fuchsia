@@ -386,12 +386,9 @@ void App::InitializeGraphics(std::shared_ptr<display::Display> display) {
             return;
           }
 
-#if !defined(NDEBUG)
-          FX_CHECK(false)  // debug builds should crash for early detection
-#else
-          FX_LOGS(WARNING)  // release builds should log to Cobalt, see below.
-#endif
-              << "Unexpected lazy creation of Vulkan pipeline.";
+          // Debug builds should crash for early detection; release builds should log to Cobalt.
+          FX_DCHECK(false) << "Unexpected lazy creation of Vulkan pipeline.";
+          FX_LOGS(WARNING) << "Unexpected lazy creation of Vulkan pipeline.";
 
           metrics_logger->LogRareEvent(
               cobalt_registry::ScenicRareEventMigratedMetricDimensionEvent::LazyPipelineCreation);
@@ -479,7 +476,7 @@ void App::InitializeGraphics(std::shared_ptr<display::Display> display) {
                                    std::move(mouse_source), view_ref_koid);
         },
         /*use_flatland2_uberstruct_schema*/
-        config_values_.use_flatland2_uberstruct_schema());
+        true);
 
     // TODO(https://fxbug.dev/42146099): these should be moved into FlatlandManager.
     {
@@ -544,7 +541,7 @@ void App::InitializeGraphics(std::shared_ptr<display::Display> display) {
                          : std::nullopt;
         },
         /*use_flatland2_uberstruct_schema*/
-        config_values_.use_flatland2_uberstruct_schema());
+        true);
     display_manager_->SetDisplayAddedCallback(
         [weak_engine = std::weak_ptr{flatland_engine_}](display::Display& display) {
           if (auto engine = weak_engine.lock()) {
