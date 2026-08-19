@@ -9,7 +9,6 @@ use starnix_core::mm::{MemoryAccessor, MemoryAccessorExt};
 
 use starnix_core::task::{EventHandler, Kernel, SimpleWaiter, WaitCanceler, WaitQueue, Waiter};
 
-use crate::trace::{CATEGORY_STARNIX_BINDER, NAME_BINDER_FLOW};
 use starnix_logging::{log_trace, log_warn};
 use starnix_sync::{
     BinderThreadRequeueEventLock, BinderThreadStateLock, InterruptibleEvent, LockDepGuard,
@@ -46,7 +45,7 @@ use zerocopy::{Immutable, IntoBytes};
 
 #[derive(Default, Debug)]
 pub struct CommandQueueWithWaitQueue {
-    pub commands: VecDeque<(Command, CommandTraceGuard)>,
+    pub commands: VecDeque<(Command, fuchsia_trace::Id)>,
     pub waiters: WaitQueue,
 }
 
@@ -55,14 +54,15 @@ impl CommandQueueWithWaitQueue {
         self.commands.is_empty()
     }
 
-    pub fn pop_front(&mut self) -> Option<Command> {
-        // Dropping the guard will terminate the trace flow.
-        self.commands.pop_front().map(|(command, _guard)| command)
+    pub fn pop_front(&mut self) -> Option<(Command, fuchsia_trace::Id)> {
+        let (command, trace_id) = self.commands.pop_front()?;
+        crate::trace::on_command_dequeued(&command, trace_id);
+        Some((command, trace_id))
     }
 
-    pub fn push_back(&mut self, command: Command) {
-        let guard = command.begin_trace_flow();
-        self.commands.push_back((command, guard));
+    pub fn push_back(&mut self, command: Command, trace_id: fuchsia_trace::Id) {
+        crate::trace::on_command_enqueued(&command, trace_id);
+        self.commands.push_back((command, trace_id));
         self.waiters.notify_fd_events_count(FdEvents::POLLIN, 1);
     }
 
@@ -86,13 +86,13 @@ impl CommandQueueWithWaitQueue {
 
 /// transaction's `sender_thread`.
 pub(crate) fn generate_dead_replies(
-    commands: VecDeque<Command>,
+    commands: VecDeque<(Command, fuchsia_trace::Id)>,
     target_proc: u64,
     target_thread: Option<i32>,
 ) {
     // Notify all callers that had transactions scheduled for this process that the recipient is
     // dead.
-    for command in commands {
+    for (command, _) in commands {
         if let Command::Transaction { sender, .. } = command {
             if let Some(sender_thread) = sender.thread.upgrade() {
                 let sender_thread = &mut sender_thread.lock();
@@ -135,8 +135,9 @@ pub(crate) fn generate_dead_replies_for_transactions(
         // If the top transaction is targeting this process, then pop the
         // transaction and enqueue the `DeadReply`.
         if top_transaction_was_marked_dead {
-            let _ = sender_thread.transactions.pop();
-            sender_thread.enqueue_command(Command::DeadReply);
+            if let Some(TransactionRole::Sender(sender)) = sender_thread.transactions.pop() {
+                sender_thread.enqueue_command(Command::DeadReply, sender.trace_id);
+            }
         }
     }
 }
@@ -348,27 +349,29 @@ impl BinderThreadState {
     }
 
     /// Enqueues `command` for the thread and wakes it up if necessary.
-    pub fn enqueue_command(&mut self, command: Command) {
+    pub fn enqueue_command(&mut self, command: Command, trace_id: fuchsia_trace::Id) {
         log_trace!("BinderThreadState id={} enqueuing command {:?}", self.tid, command);
-        self.command_queue.push_back(command);
+        self.command_queue.push_back(command, trace_id);
     }
 
     /// Get the binder process and thread to reply to, or fail if there is no ongoing transaction or
     /// the calling process/thread are dead.
     pub fn pop_transaction_caller(
         &mut self,
-    ) -> Result<(TempRef<'static, BinderProcess>, TempRef<'static, BinderThread>), TransactionError>
-    {
+    ) -> Result<
+        (TempRef<'static, BinderProcess>, TempRef<'static, BinderThread>, fuchsia_trace::Id),
+        TransactionError,
+    > {
         let transaction = self.transactions.pop().ok_or_else(|| errno!(EINVAL))?;
         match transaction {
-            TransactionRole::Receiver(peer) => {
+            TransactionRole::Receiver { peer, trace_id } => {
                 log_trace!(
                     "binder transaction popped from thread {} for peer {:?}",
                     self.tid,
                     peer
                 );
                 let (process, thread) = peer.upgrade().ok_or(TransactionError::Dead)?;
-                Ok((process, thread))
+                Ok((process, thread, trace_id))
             }
             TransactionRole::Sender(_) => {
                 log_warn!("caller got confused, nothing to reply to!");
@@ -389,14 +392,13 @@ impl Releasable for BinderThreadState {
         log_trace!("Dropping BinderThreadState id={}", self.tid);
         // If there are any transactions queued, we need to tell the caller that this thread is now
         // dead.
-        let command_queue: VecDeque<Command> =
-            self.command_queue.commands.into_iter().map(|(c, _)| c).collect();
+        let command_queue = self.command_queue.commands;
         generate_dead_replies(command_queue, self.process_identifier, Some(self.tid));
 
         // If there are any transactions that this thread was processing, we need to tell the caller
         // that this thread is now dead and to not expect a reply.
         for transaction in self.transactions {
-            if let TransactionRole::Receiver(peer) = transaction {
+            if let TransactionRole::Receiver { peer, .. } = transaction {
                 if let Some(peer_thread) = peer.thread.upgrade() {
                     let sender_thread = &mut peer_thread.lock();
                     generate_dead_replies_for_transactions(
@@ -525,12 +527,6 @@ pub enum Command {
 }
 
 impl Command {
-    /// Initiates a trace flow for the command and returns a guard that will terminate the flow
-    /// when dropped
-    pub fn begin_trace_flow(&self) -> CommandTraceGuard {
-        CommandTraceGuard::begin(&self)
-    }
-
     /// Returns the command's BR_* code for serialization.
     pub fn driver_return_code(&self) -> binder_driver_return_protocol {
         match self {
@@ -701,65 +697,6 @@ impl Command {
     }
 }
 
-#[derive(Debug)]
-pub struct CommandTraceGuard(Option<CommandTraceGuardInner>);
-
-#[derive(Debug)]
-struct CommandTraceGuardInner {
-    id: fuchsia_trace::Id,
-    kind: &'static str,
-}
-
-impl CommandTraceGuard {
-    fn begin(command: &Command) -> Self {
-        static CACHE: fuchsia_trace::trace_site_t = fuchsia_trace::trace_site_t::new(0);
-        if fuchsia_trace::TraceCategoryContext::acquire_cached(CATEGORY_STARNIX_BINDER, &CACHE)
-            .is_none()
-        {
-            return Self(None);
-        }
-        let kind = match command {
-            Command::AcquireRef(_) => "AcquireRef",
-            Command::ReleaseRef(_) => "ReleaseRef",
-            Command::IncRef(_) => "IncRef",
-            Command::DecRef(_) => "DecRef",
-            Command::Error(_) => "Error",
-            Command::OnewayTransaction(_) => "OnewayTransaction",
-            Command::Transaction { .. } => "Transaction",
-            Command::Reply(_) => "Reply",
-            Command::TransactionComplete => "TransactionComplete",
-            Command::OnewayTransactionComplete => "OnewayTransactionComplete",
-            Command::FailedReply => "FailedReply",
-            Command::DeadReply { .. } => "DeadReply",
-            Command::DeadBinder(_) => "DeadBinder",
-            Command::ClearDeathNotificationDone(_) => "ClearDeathNotificationDone",
-            Command::SpawnLooper => "SpawnLooper",
-            Command::FrozenReply => "FrozenReply",
-            Command::PendingFrozen => "PendingFrozen",
-            Command::FrozenBinder(_) => "FrozenBinder",
-            Command::ClearFreezeNotificationDone(_) => "ClearFreezeNotificationDone",
-        };
-        let id = fuchsia_trace::Id::new();
-        let f = format!("{:?}", command);
-        fuchsia_trace::instaflow_begin!(
-            CATEGORY_STARNIX_BINDER,
-            NAME_BINDER_FLOW,
-            kind,
-            id,
-            "cmd" => &*f
-        );
-        Self(Some(CommandTraceGuardInner { id, kind }))
-    }
-}
-
-impl Drop for CommandTraceGuard {
-    fn drop(&mut self) {
-        if let Some(CommandTraceGuardInner { id, kind }) = self.0.take() {
-            fuchsia_trace::instaflow_end!(CATEGORY_STARNIX_BINDER, NAME_BINDER_FLOW, kind, id);
-        }
-    }
-}
-
 /// A binder thread's role (sender or receiver) in a synchronous transaction. Oneway transactions
 /// do not record roles, since they end as soon as they begin.
 #[derive(Debug)]
@@ -769,7 +706,7 @@ pub enum TransactionRole {
 
     /// The binder thread is receiving a transaction and is expected to reply to the peer binder
     /// process and thread.
-    Receiver(WeakBinderPeer),
+    Receiver { peer: WeakBinderPeer, trace_id: fuchsia_trace::Id },
 }
 
 #[derive(Debug)]
@@ -791,6 +728,9 @@ pub struct TransactionSender {
     // The underlying zircon thread for the target. Used to arrange futex priority inheritance if
     // available.
     pub target_thread_handle: Option<Arc<zx::Thread>>,
+
+    /// The trace ID associated with this transaction flow.
+    pub trace_id: fuchsia_trace::Id,
 }
 
 impl TransactionRole {
@@ -827,55 +767,56 @@ impl TransactionRole {
                 true
             }
             // The transaction specifies a `target_thread` that does not match `thread`, or the
-            // transaction's `target_proc` does not match `process`.
+            // transaction is targeting a different `target_proc`.
             _ => false,
         }
     }
 }
 
-/// An error processing a binder transaction/reply.
-///
-/// Some errors, like a malformed transaction request, should be propagated as the return value of
-/// an ioctl. Other errors, like a dead recipient or invalid binder handle, should be propagated
-/// through a command read by the binder thread.
-///
-/// This type differentiates between these strategies.
-#[derive(Debug, Eq, PartialEq)]
+/// An error that occurred while processing a transaction that should be communicated back to the
+/// calling thread.
+#[derive(Debug, PartialEq, Eq)]
 pub enum TransactionError {
-    /// The transaction payload was malformed. Send a [`Command::Error`] command to the issuing
-    /// thread.
+    /// The transaction had malformed data or commands.
     Malformed(Errno),
-    /// The transaction payload was correctly formed, but either the recipient, or a handle embedded
-    /// in the transaction, is invalid. Send a [`Command::FailedReply`] command to the issuing
-    /// thread.
+
+    /// A general failure, e.g. the transaction could not be allocated, or was rejected by SELinux.
     Failure,
-    /// The transaction payload was correctly formed, but either the recipient, or a handle embedded
-    /// in the transaction, is dead. Send a [`Command::DeadReply`] command to the issuing thread.
+
+    /// The target process is dead.
     Dead,
-    /// The binder thread is frozen. Send a [`Command::FrozenReply`] command to the issuing thread.
+
+    /// The target process is frozen.
     Frozen,
 }
 
 impl TransactionError {
     /// Dispatches the error, by potentially queueing a command to `binder_thread` and/or returning
     /// an error.
-    pub fn dispatch(&self, binder_thread: &BinderThread) -> Result<(), Errno> {
+    pub fn dispatch(
+        &self,
+        binder_thread: &BinderThread,
+        trace_id: fuchsia_trace::Id,
+    ) -> Result<(), Errno> {
         log_trace!("Dispatching transaction error {:?} for thread {}", self, binder_thread.tid);
-        binder_thread.lock().enqueue_command(match self {
-            TransactionError::Malformed(err) => {
-                log_warn!(
-                    "binder thread {} sent a malformed transaction: {:?}",
-                    binder_thread.tid,
-                    &err
-                );
-                // Negate the value, as the binder runtime assumes error values are already
-                // negative.
-                Command::Error(err.return_value() as i32)
-            }
-            TransactionError::Failure => Command::FailedReply,
-            TransactionError::Dead => Command::DeadReply,
-            TransactionError::Frozen => Command::FrozenReply,
-        });
+        binder_thread.lock().enqueue_command(
+            match self {
+                TransactionError::Malformed(err) => {
+                    log_warn!(
+                        "binder thread {} sent a malformed transaction: {:?}",
+                        binder_thread.tid,
+                        &err
+                    );
+                    // Negate the value, as the binder runtime assumes error values are already
+                    // negative.
+                    Command::Error(err.return_value() as i32)
+                }
+                TransactionError::Failure => Command::FailedReply,
+                TransactionError::Dead => Command::DeadReply,
+                TransactionError::Frozen => Command::FrozenReply,
+            },
+            trace_id,
+        );
         Ok(())
     }
 }

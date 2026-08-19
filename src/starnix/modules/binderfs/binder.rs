@@ -29,7 +29,10 @@ use starnix_core::mm::{
     DesiredAddress, MappingName, MappingOptions, MemoryAccessor, MemoryAccessorExt, ProtectionFlags,
 };
 
-use crate::trace::{CATEGORY_STARNIX_BINDER, NAME_BINDER_IOCTL, NAME_HANDLE_THREAD_WRITE};
+use crate::trace::{
+    CATEGORY_STARNIX_BINDER, NAME_BINDER_IOCTL, NAME_HANDLE_REPLY, NAME_HANDLE_THREAD_READ,
+    NAME_HANDLE_THREAD_WRITE, NAME_HANDLE_TRANSACTION, on_command_dequeued,
+};
 use starnix_core::security;
 use starnix_core::task::{
     CurrentTask, EventHandler, Kernel, SimpleWaiter, Task, ThreadGroupKey, WaitCanceler, Waiter,
@@ -646,7 +649,7 @@ impl BinderDriver {
 
                 if res.is_ok() {
                     for (proc, cmd) in pending_notifications {
-                        proc.enqueue_command(cmd);
+                        proc.enqueue_command(cmd, fuchsia_trace::Id::new());
                         proc.release(current_task.kernel());
                     }
                 } else {
@@ -914,7 +917,7 @@ impl BinderDriver {
                     files,
                     binder_transaction_data_sg { transaction_data: data, buffers_size: 0 },
                 )
-                .or_else(|err| err.dispatch(context.binder_thread))
+                .or_else(|err| err.dispatch(context.binder_thread, fuchsia_trace::Id::new()))
             }
             binder_driver_command_protocol_BC_REPLY => {
                 let data = cursor.read_object::<binder_transaction_data>()?;
@@ -923,17 +926,17 @@ impl BinderDriver {
                     files,
                     binder_transaction_data_sg { transaction_data: data, buffers_size: 0 },
                 )
-                .or_else(|err| err.dispatch(context.binder_thread))
+                .or_else(|err| err.dispatch(context.binder_thread, fuchsia_trace::Id::new()))
             }
             binder_driver_command_protocol_BC_TRANSACTION_SG => {
                 let data = cursor.read_object::<binder_transaction_data_sg>()?;
                 self.handle_transaction(context, files, data)
-                    .or_else(|err| err.dispatch(context.binder_thread))
+                    .or_else(|err| err.dispatch(context.binder_thread, fuchsia_trace::Id::new()))
             }
             binder_driver_command_protocol_BC_REPLY_SG => {
                 let data = cursor.read_object::<binder_transaction_data_sg>()?;
                 self.handle_reply(context, files, data)
-                    .or_else(|err| err.dispatch(context.binder_thread))
+                    .or_else(|err| err.dispatch(context.binder_thread, fuchsia_trace::Id::new()))
             }
             binder_driver_command_protocol_BC_REQUEST_FREEZE_NOTIFICATION => {
                 let handle = cursor.read_object::<u32>()?.into();
@@ -971,6 +974,13 @@ impl BinderDriver {
         files: &mut Vec<fbinder::FileHandle>,
         data: binder_transaction_data_sg,
     ) -> Result<(), TransactionError> {
+        fuchsia_trace::duration!(
+            CATEGORY_STARNIX_BINDER,
+            NAME_HANDLE_TRANSACTION,
+            "code" => data.transaction_data.code,
+            "data_size" => data.transaction_data.data_size as u64,
+            "offsets_size" => data.transaction_data.offsets_size as u64
+        );
         // SAFETY: Transactions can only refer to handles.
         let handle = unsafe { data.transaction_data.target.handle }.into();
 
@@ -1063,13 +1073,18 @@ impl BinderDriver {
                     transaction_state.push_guard(guard);
                 }
 
+                let trace_id = fuchsia_trace::Id::new();
+
                 if oneway {
                     // The caller is not expecting a reply.
-                    context.binder_thread.lock().enqueue_command(if is_target_frozen {
-                        Command::PendingFrozen
-                    } else {
-                        Command::OnewayTransactionComplete
-                    });
+                    context.binder_thread.lock().enqueue_command(
+                        if is_target_frozen {
+                            Command::PendingFrozen
+                        } else {
+                            Command::OnewayTransactionComplete
+                        },
+                        fuchsia_trace::Id::new(),
+                    );
 
                     // Register the transaction buffer.
                     target_proc.lock().active_transactions.insert(
@@ -1088,7 +1103,7 @@ impl BinderDriver {
                     if object_state.handling_oneway_transaction {
                         // Currently, a oneway transaction is being handled. Queue this one so that it is
                         // scheduled when the buffer from the in-progress transaction is freed.
-                        object_state.oneway_transactions.push_back(transaction);
+                        object_state.oneway_transactions.push_back((transaction, trace_id));
                         return Ok(());
                     }
 
@@ -1098,11 +1113,11 @@ impl BinderDriver {
                     object_state.handling_oneway_transaction = true;
 
                     drop(object_state);
-                    target_proc.enqueue_command(Command::OnewayTransaction(transaction));
+                    target_proc.enqueue_command(Command::OnewayTransaction(transaction), trace_id);
                 } else {
                     let target_thread = match match context.binder_thread.lock().transactions.last()
                     {
-                        Some(TransactionRole::Receiver(rx)) => rx.upgrade(),
+                        Some(TransactionRole::Receiver { peer, .. }) => peer.upgrade(),
                         _ => None,
                     } {
                         Some((proc, thread)) if proc.key == target_proc.key => Some(thread),
@@ -1114,6 +1129,7 @@ impl BinderDriver {
                         target_thread: target_thread.as_ref().map(|t| t.tid),
                         is_alive: true,
                         target_thread_handle: target_thread.as_ref().map(|t| t.thread.clone()),
+                        trace_id,
                     };
 
                     // Make the sender thread part of the transaction so it doesn't get scheduled to handle
@@ -1140,11 +1156,11 @@ impl BinderDriver {
                     };
 
                     if let Some(target_thread) = target_thread {
-                        target_thread.lock().enqueue_command(command);
+                        target_thread.lock().enqueue_command(command, trace_id);
                     } else {
                         // If we don't have an already known target thread, select one if
                         // available.
-                        if let Some(thread) = target_proc.enqueue_command(command) {
+                        if let Some(thread) = target_proc.enqueue_command(command, trace_id) {
                             // If we were able to schedule on a thread's queue (rather than on a
                             // process' queue), we can update the sender record with that
                             // information.
@@ -1179,8 +1195,16 @@ impl BinderDriver {
         files: &mut Vec<fbinder::FileHandle>,
         data: binder_transaction_data_sg,
     ) -> Result<(), TransactionError> {
+        fuchsia_trace::duration!(
+            CATEGORY_STARNIX_BINDER,
+            NAME_HANDLE_REPLY,
+            "code" => data.transaction_data.code,
+            "data_size" => data.transaction_data.data_size as u64,
+            "offsets_size" => data.transaction_data.offsets_size as u64
+        );
         // Find the process and thread that initiated the transaction. This reply is for them.
-        let (target_proc, target_thread) = context.binder_thread.lock().pop_transaction_caller()?;
+        let (target_proc, target_thread, trace_id) =
+            context.binder_thread.lock().pop_transaction_caller()?;
         let mut send_reply = || -> Result<(), TransactionError> {
             let target_task = target_proc.get_task().ok_or(TransactionError::Dead)?;
 
@@ -1210,26 +1234,30 @@ impl BinderDriver {
             {
                 let (mut target_thread, mut binder_thread) =
                     BinderThread::ordered_lock(&target_thread, context.binder_thread);
-                target_thread.enqueue_command(Command::Reply(TransactionData {
-                    peer_pid: context.binder_proc.key.pid(),
-                    peer_tid: context.binder_thread.tid,
-                    peer_euid: context.current_task.current_creds().euid,
+                target_thread.enqueue_command(
+                    Command::Reply(TransactionData {
+                        peer_pid: context.binder_proc.key.pid(),
+                        peer_tid: context.binder_thread.tid,
+                        peer_euid: context.current_task.current_creds().euid,
 
-                    object: FlatBinderObject::Remote { handle: Handle::ContextManager },
-                    code: data.transaction_data.code,
-                    flags: data.transaction_data.flags,
+                        object: FlatBinderObject::Remote { handle: Handle::ContextManager },
+                        code: data.transaction_data.code,
+                        flags: data.transaction_data.flags,
 
-                    buffers,
-                }));
+                        buffers,
+                    }),
+                    trace_id,
+                );
 
-                binder_thread.enqueue_command(Command::TransactionComplete);
+                binder_thread
+                    .enqueue_command(Command::TransactionComplete, fuchsia_trace::Id::new());
             }
 
             Ok(())
         };
         if let Err(e) = send_reply() {
             // Sending to the target process failed, notify of the transaction failure.
-            let _ = e.dispatch(&target_thread);
+            let _ = e.dispatch(&target_thread, trace_id);
             return Err(e);
         }
         Ok(())
@@ -1241,19 +1269,22 @@ impl BinderDriver {
         thread_state: &mut BinderThreadState,
         proc_state: &mut crate::process::BinderProcessState,
         worker_thread: &zx::Thread,
-    ) -> Option<Command> {
+    ) -> Option<(Command, fuchsia_trace::Id)> {
         if !thread_state.command_queue.is_empty() || !thread_state.transactions.is_empty() {
             thread_state.command_queue.pop_front()
         } else {
-            let command = proc_state.command_queue.pop_front();
-            if let Some(Command::Transaction { sender, .. }) = &command {
-                if let Some((_proc, sender_thread)) = sender.upgrade() {
-                    if let Some(event) = &*sender_thread.requeue_event.lock() {
-                        let _ = event.assign_new_owner(worker_thread);
+            let item = proc_state.command_queue.pop_front();
+            if let Some((command, trace_id)) = &item {
+                on_command_dequeued(command, *trace_id);
+                if let Command::Transaction { sender, .. } = command {
+                    if let Some((_proc, sender_thread)) = sender.upgrade() {
+                        if let Some(event) = &*sender_thread.requeue_event.lock() {
+                            let _ = event.assign_new_owner(worker_thread);
+                        }
                     }
                 }
             }
-            command
+            item
         }
     }
 
@@ -1263,6 +1294,7 @@ impl BinderDriver {
         context: &OperationContext<'_>,
         read_buffer: &UserBuffer,
     ) -> Result<usize, Errno> {
+        fuchsia_trace::duration!(CATEGORY_STARNIX_BINDER, NAME_HANDLE_THREAD_READ);
         loop {
             {
                 let mut binder_proc_state = context.binder_proc.lock();
@@ -1282,7 +1314,7 @@ impl BinderDriver {
                 return Ok(0);
             }
 
-            let command = Self::get_active_command(
+            let command_with_trace = Self::get_active_command(
                 &mut thread_state,
                 &mut proc_state,
                 &context.binder_thread.thread,
@@ -1294,8 +1326,14 @@ impl BinderDriver {
                     Some(TransactionRole::Sender(TransactionSender {
                         is_alive: false, ..
                     })) => {
-                        thread_state.transactions.pop();
-                        Some(Command::DeadReply)
+                        if let Some(TransactionRole::Sender(sender)) =
+                            thread_state.transactions.pop()
+                        {
+                            on_command_dequeued(&Command::DeadReply, sender.trace_id);
+                            Some((Command::DeadReply, sender.trace_id))
+                        } else {
+                            None
+                        }
                     }
                     _ => None,
                 }
@@ -1316,7 +1354,7 @@ impl BinderDriver {
                 })
                 .and_then(|s| s.target_thread_handle.clone());
 
-            if let Some(command) = command {
+            if let Some((command, trace_id)) = command_with_trace {
                 // Attempt to write the command to the thread's buffer.
                 let bytes_written =
                     command.write_to_memory(context.memory_accessor, read_buffer)?;
@@ -1324,7 +1362,7 @@ impl BinderDriver {
                     Command::Transaction { sender, .. } => {
                         // The transaction is synchronous and we're expected to give a reply, so
                         // push the transaction onto the transaction stack.
-                        let tx = TransactionRole::Receiver(sender);
+                        let tx = TransactionRole::Receiver { peer: sender, trace_id };
                         thread_state.transactions.push(tx);
                         false
                     }

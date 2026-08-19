@@ -364,7 +364,7 @@ pub struct BinderObjectMutableState {
     /// Command queue for oneway transactions on this binder object. Oneway transactions are
     /// guaranteed to be dispatched in the order they are submitted to the driver, and one at a
     /// time.
-    pub oneway_transactions: VecDeque<TransactionData>,
+    pub oneway_transactions: VecDeque<(TransactionData, fuchsia_trace::Id)>,
     /// Whether a binder thread is currently handling a oneway transaction. This will get cleared
     /// when there are no more transactions in the `oneway_transactions` and a binder thread freed
     /// the buffer associated with the last oneway transaction.
@@ -571,7 +571,9 @@ impl BinderObject {
     pub fn inc_strong_unchecked(self: &Arc<Self>, binder_thread: &BinderThread) -> StrongRefGuard {
         let mut state = self.lock();
         if state.strong_count.inc_immediate() {
-            binder_thread.lock().enqueue_command(Command::AcquireRef(self.local));
+            binder_thread
+                .lock()
+                .enqueue_command(Command::AcquireRef(self.local), fuchsia_trace::Id::new());
         }
         StrongRefGuard::new(Arc::clone(self))
     }
@@ -636,7 +638,6 @@ impl BinderObject {
             if object_state.weak_count.apply_deferred_inc() {
                 commands.push(Command::IncRef(self.local));
             }
-
             // No decrease actions are enqueued while waiting for any acknowledgement.
             let mut did_decrease = false;
             if !object_state.strong_count.is_waiting_ack()
@@ -667,7 +668,7 @@ impl BinderObject {
         }
 
         for command in commands {
-            process.enqueue_command(command);
+            process.enqueue_command(command, fuchsia_trace::Id::new());
         }
     }
 }
