@@ -8,19 +8,17 @@ use crate::state_machine::rcu_drop;
 use std::mem::ManuallyDrop;
 use std::sync::{Arc, Weak};
 
-use crate::rcu_droppable::RcuDroppable;
-
 /// An RCU (Read-Copy-Update) wrapper around a [`Weak`] pointer.
 ///
 /// The weak pointer can be read and upgraded from multiple threads concurrently without blocking.
 /// When the weak pointer is replaced, reads may continue to see the old weak pointer for some
 /// period of time.
 #[derive(Debug)]
-pub struct RcuWeak<T: RcuDroppable + Sync> {
+pub struct RcuWeak<T: Send + Sync + 'static> {
     ptr: RcuPtr<T>,
 }
 
-impl<T: RcuDroppable + Sync> RcuWeak<T> {
+impl<T: Send + Sync + 'static> RcuWeak<T> {
     /// Create a new RCU wrapper around a [`Weak`] pointer.
     pub fn new(data: Weak<T>) -> Self {
         Self { ptr: RcuPtr::new(Self::into_ptr(data)) }
@@ -31,7 +29,11 @@ impl<T: RcuDroppable + Sync> RcuWeak<T> {
     /// Returns [`None`] if the weak pointer has expired and the referenced object was destroyed or
     /// if the [`RcuWeak`] is in a transient state during drop.
     pub fn upgrade(&self) -> Option<Arc<T>> {
-        self.to_weak().upgrade()
+        let scope = RcuReadScope::new();
+        let ptr = self.ptr.read(&scope);
+        // SAFETY: We can pass `ptr` to `rcu_ptr_upgrade` because it was obtained from
+        // `Weak::into_raw`.
+        unsafe { crate::rcu_arc::rcu_ptr_upgrade(ptr) }
     }
 
     /// Create a new [`Weak`] pointer to the object referenced by the wrapped Weak pointer.
@@ -92,26 +94,26 @@ impl<T: RcuDroppable + Sync> RcuWeak<T> {
     }
 }
 
-impl<T: RcuDroppable + Sync> Drop for RcuWeak<T> {
+impl<T: Send + Sync + 'static> Drop for RcuWeak<T> {
     fn drop(&mut self) {
         // SAFETY: We can pass `std::ptr::null_mut`.
         unsafe { self.replace(std::ptr::null_mut()) };
     }
 }
 
-impl<T: RcuDroppable + Sync> Clone for RcuWeak<T> {
+impl<T: Send + Sync + 'static> Clone for RcuWeak<T> {
     fn clone(&self) -> Self {
         Self::new(self.to_weak())
     }
 }
 
-impl<T: RcuDroppable + Sync> From<Weak<T>> for RcuWeak<T> {
+impl<T: Send + Sync + 'static> From<Weak<T>> for RcuWeak<T> {
     fn from(weak: Weak<T>) -> Self {
         Self::new(weak)
     }
 }
 
-impl<T: RcuDroppable + Sync> Default for RcuWeak<T> {
+impl<T: Send + Sync + 'static> Default for RcuWeak<T> {
     fn default() -> Self {
         Self::new(Weak::new())
     }
@@ -126,9 +128,6 @@ mod tests {
     struct DropCounter {
         drops: Arc<AtomicUsize>,
     }
-
-    // SAFETY: DropCounter only increments an atomic counter on drop.
-    unsafe impl RcuDroppable for DropCounter {}
 
     impl DropCounter {
         pub fn new() -> Arc<Self> {

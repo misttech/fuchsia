@@ -137,13 +137,39 @@ impl<T: Default + RcuDroppable + Sync> Default for RcuArc<T> {
 ///
 /// # Safety
 ///
-/// The caller must guarantee that the pointer was obtained from `Arc::into_raw()`.
+/// The caller must guarantee that the pointer was obtained from `Arc::into_raw()` and that the
+/// Arc's strong count is non zero.
+///
+/// If the underlying Arc<T> strong count may drop to zero, such as by having outstanding Weak
+/// pointers, use [rcu_ptr_upgrade] to first check that the pointer is valid to reconstruct.
 pub unsafe fn rcu_ptr_to_arc<'a, T>(ptr: RcuPtrRef<'a, T>) -> Arc<T> {
     let raw_ptr = ptr.as_ptr();
     unsafe {
         Arc::increment_strong_count(raw_ptr);
         Arc::from_raw(raw_ptr)
     }
+}
+
+/// Reconstruct an `Arc` from an `RcuPtrRef` by upgrading its strong count if it's safe to do so.
+///
+/// Returns `None` if the strong count of the underlying `Arc` has dropped to zero or if the
+/// pointer is null.
+///
+/// # Safety
+///
+/// The caller must guarantee that the pointer was obtained from `Arc::into_raw()` or
+/// `Weak::into_raw()`.
+pub unsafe fn rcu_ptr_upgrade<'a, T>(ptr: RcuPtrRef<'a, T>) -> Option<Arc<T>> {
+    let raw_ptr = ptr.as_ptr();
+    if raw_ptr.is_null() {
+        return None;
+    }
+    // SAFETY: The caller guarantees `raw_ptr` comes from `Arc::into_raw` or `Weak::into_raw`
+    //
+    // The allocation is valid for the duration of the RcuReadScope. We pass the pointer through a
+    // std::sync::Weak to safely increase the Strong count only if it's valid to do so.
+    // ManuallyDrop ensures we don't actually inc/dec the weak count on the Arc.
+    unsafe { std::mem::ManuallyDrop::new(std::sync::Weak::from_raw(raw_ptr)).upgrade() }
 }
 
 #[cfg(test)]
@@ -204,5 +230,30 @@ mod tests {
 
         rcu_synchronize();
         assert_eq!(drops.load(Ordering::Relaxed), 1);
+    }
+
+    #[test]
+    fn test_rcu_ptr_upgrade() {
+        let scope = RcuReadScope::new();
+        let null_ptr: RcuPtrRef<'_, DropCounter> = RcuPtrRef::null();
+        assert!(unsafe { rcu_ptr_upgrade(null_ptr) }.is_none());
+
+        let object = DropCounter::new(42);
+        let _weak = Arc::downgrade(&object);
+        let raw = Arc::into_raw(object);
+        let ptr_ref = unsafe { RcuPtrRef::new(&scope, raw) };
+
+        {
+            let upgraded = unsafe { rcu_ptr_upgrade(ptr_ref) };
+            assert!(upgraded.is_some());
+            assert_eq!(upgraded.unwrap().value, 42);
+        }
+
+        // Drop the strong Arc while holding a Weak.
+        let arc = unsafe { Arc::from_raw(raw) };
+        drop(arc);
+
+        // The strong count is 0.
+        assert!(unsafe { rcu_ptr_upgrade(ptr_ref) }.is_none());
     }
 }

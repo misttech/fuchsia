@@ -26,6 +26,6 @@ pub use rcu_weak::RcuWeak;
 pub use state_machine::{rcu_drop, rcu_run_callbacks, rcu_synchronize, with_thread_block_counters};
 
 pub mod subtle {
-    pub use super::rcu_arc::rcu_ptr_to_arc;
+    pub use super::rcu_arc::{rcu_ptr_to_arc, rcu_ptr_upgrade};
     pub use super::rcu_ptr::{RcuPtr, RcuPtrRef};
 }
