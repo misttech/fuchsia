@@ -426,6 +426,70 @@ macro_rules! assert_nonnull {
     };
 }
 
+#[doc(hidden)]
+pub fn status_name_and_raw(res: Result<(), __Status>) -> (&'static str, core::ffi::c_int) {
+    match res {
+        Ok(()) => ("OK", __sys::ZX_OK),
+        Err(err) => (err.as_str(), err.into_raw()),
+    }
+}
+
+#[doc(hidden)]
+pub fn print_status_comparison_failure(
+    file: &str,
+    line: u32,
+    expected: &str,
+    expected_status: Result<(), __Status>,
+    actual: &str,
+    actual_status: Result<(), __Status>,
+    msg: &str,
+) {
+    let (expected_name, expected_raw) = status_name_and_raw(expected_status);
+    let (actual_name, actual_raw) = status_name_and_raw(actual_status);
+    kprintln!(
+        "\n    [FAILED]\n    {:s}:{}:\n    expected {:s} ({:s}, {}) == {:s} ({:s}, {})\n    {:s}",
+        file,
+        line,
+        expected,
+        expected_name,
+        expected_raw,
+        actual,
+        actual_name,
+        actual_raw,
+        msg,
+    );
+}
+
+#[macro_export]
+#[doc(hidden)]
+macro_rules! check_status_comparison {
+    (
+        $cond:expr,
+        $early_return:expr,
+        $expected_expr:expr,
+        $expected_status:expr,
+        $actual_expr:expr,
+        $actual_status:expr,
+        $msg:expr
+    ) => {
+        if !$cond {
+            record_failure!();
+            $crate::print_status_comparison_failure(
+                file!(),
+                line!(),
+                stringify!($expected_expr),
+                $expected_status,
+                stringify!($actual_expr),
+                $actual_status,
+                $msg,
+            );
+            if $early_return {
+                return false;
+            }
+        }
+    };
+}
+
 /// Asserts that the expression evaluates to OK, but does not short-circuit on failure.
 #[macro_export]
 macro_rules! expect_ok {
@@ -434,17 +498,7 @@ macro_rules! expect_ok {
     };
     ($actual:expr, $msg:expr) => {
         let a: Result<(), ::unittest::__Status> = $actual.into();
-        let raw = ::unittest::__Status::result_into_raw(a);
-        $crate::check_comparison!(
-            a.is_ok(),
-            false,
-            "==",
-            "Ok(())",
-            ::unittest::__sys::ZX_OK,
-            a,
-            raw,
-            $msg
-        );
+        $crate::check_status_comparison!(a.is_ok(), false, "Ok(())", Ok(()), $actual, a, $msg);
     };
 }
 
@@ -456,15 +510,49 @@ macro_rules! assert_ok {
     };
     ($actual:expr, $msg:expr) => {
         let a: Result<(), ::unittest::__Status> = $actual.into();
-        let raw = ::unittest::__Status::result_into_raw(a);
-        $crate::check_comparison!(
-            a.is_ok(),
-            true,
-            "==",
-            "Ok(())",
-            ::unittest::__sys::ZX_OK,
+        $crate::check_status_comparison!(a.is_ok(), true, "Ok(())", Ok(()), $actual, a, $msg);
+    };
+}
+
+/// Asserts that the expression evaluates to the specified error status, but does not short-circuit
+/// on failure.
+#[macro_export]
+macro_rules! expect_err {
+    ($actual:expr, $expected_err:expr) => {
+        $crate::expect_err!($actual, $expected_err, "")
+    };
+    ($actual:expr, $expected_err:expr, $msg:expr) => {
+        let a: Result<(), ::unittest::__Status> = $actual.into();
+        let e: ::unittest::__Status = $expected_err.into();
+        $crate::check_status_comparison!(
+            a == Err(e),
+            false,
+            $expected_err,
+            Err(e),
+            $actual,
             a,
-            raw,
+            $msg
+        );
+    };
+}
+
+/// Asserts that the expression evaluates to the specified error status and short-circuits on
+/// failure.
+#[macro_export]
+macro_rules! assert_err {
+    ($actual:expr, $expected_err:expr) => {
+        $crate::assert_err!($actual, $expected_err, "")
+    };
+    ($actual:expr, $expected_err:expr, $msg:expr) => {
+        let a: Result<(), ::unittest::__Status> = $actual.into();
+        let e: ::unittest::__Status = $expected_err.into();
+        $crate::check_status_comparison!(
+            a == Err(e),
+            true,
+            $expected_err,
+            Err(e),
+            $actual,
+            a,
             $msg
         );
     };
@@ -482,14 +570,13 @@ macro_rules! unwrap_ok {
             Ok(r) => r,
             Err(err) => {
                 let err: ::unittest::__Status = err.into();
-                $crate::check_comparison!(
+                $crate::check_status_comparison!(
                     false,
                     true,
-                    "==",
                     "Ok(())",
-                    ::unittest::__sys::ZX_OK,
-                    err,
-                    err.into_raw(),
+                    Ok(()),
+                    $actual,
+                    Err(err),
                     $msg
                 );
                 return false;
@@ -625,6 +712,11 @@ mod tests {
             assert_nonnull!(nonnull_ptr);
 
             assert_ok!(Ok::<(), zx_status::Status>(()));
+            assert_err!(
+                Err::<(), _>(zx_status::Status::INVALID_ARGS),
+                zx_status::Status::INVALID_ARGS
+            );
+            assert_err!(zx_status::Status::INVALID_ARGS, zx_status::Status::INVALID_ARGS);
 
             let _ = unwrap_ok!(Ok::<(), zx_status::Status>(()));
 
@@ -708,6 +800,13 @@ mod tests {
             mark_end_as_reached();
         }
 
+        /// Test that assert_err fails when error does not match.
+        #[test]
+        fn fail_assert_err() {
+            assert_err!(Ok::<(), _>(()), zx_status::Status::INTERNAL);
+            mark_end_as_reached();
+        }
+
         /// Test that unwrap_ok fails when value is an error.
         #[test]
         fn test_unwrap_ok() {
@@ -747,6 +846,15 @@ mod tests {
 
             expect_ok!(Ok::<(), zx_status::Status>(()));
             expect_ok!(Ok::<(), zx_status::Status>(()), "should be OK");
+            expect_err!(
+                Err::<(), _>(zx_status::Status::INVALID_ARGS),
+                zx_status::Status::INVALID_ARGS
+            );
+            expect_err!(
+                zx_status::Status::INVALID_ARGS,
+                zx_status::Status::INVALID_ARGS,
+                "should be INVALID_ARGS"
+            );
 
             mark_end_as_reached();
         }
@@ -827,6 +935,13 @@ mod tests {
             expect_ok!(zx_status::Status::INTERNAL);
             mark_end_as_reached();
         }
+
+        /// Test that expect_err fails when error does not match.
+        #[test]
+        fn fail_expect_err() {
+            expect_err!(Ok::<(), _>(()), zx_status::Status::INTERNAL);
+            mark_end_as_reached();
+        }
     }
 
     #[test]
@@ -842,7 +957,7 @@ mod tests {
         let suite = &suites[0];
 
         std::assert_eq!(unsafe { CStr::from_ptr(suite.name) }.to_bytes(), b"assertions");
-        std::assert_eq!(suite.test_cnt, 13);
+        std::assert_eq!(suite.test_cnt, 14);
 
         let cases_rodata = unsafe { slice::from_raw_parts(suite.tests, suite.test_cnt) };
         for case in cases_rodata {
@@ -866,7 +981,7 @@ mod tests {
         let suite = &suites[1];
 
         std::assert_eq!(unsafe { CStr::from_ptr(suite.name) }.to_bytes(), b"expectations");
-        std::assert_eq!(suite.test_cnt, 12);
+        std::assert_eq!(suite.test_cnt, 13);
 
         let cases = unsafe { slice::from_raw_parts(suite.tests, suite.test_cnt) };
         for case in cases {

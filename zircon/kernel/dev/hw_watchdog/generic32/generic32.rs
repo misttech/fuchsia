@@ -39,10 +39,9 @@ unsafe extern "C" {
 
 /// Inner state of the generic 32-bit watchdog driver, protected by a spinlock.
 pub struct GenericWatchdog32Inner {
-    /// Driver configuration received during early boot.
     pub cfg: DcfgGeneric32Watchdog,
-    /// Result code (`zx_status_t`) of the early initialization phase.
-    pub early_init_result: Status,
+    /// Result code of the early initialization phase.
+    pub early_init_result: Result<(), Status>,
     /// Timestamp (`zx_instant_boot_t`) when the watchdog was last pet.
     pub last_pet_time: InstantBoot,
     /// Zircon kernel timer used for scheduling periodic pet callbacks.
@@ -65,7 +64,7 @@ impl GenericWatchdog32Inner {
                 flags: KernelDriverGeneric32WatchdogFlags::empty(),
                 reserved: 0,
             },
-            early_init_result: Status::INTERNAL,
+            early_init_result: Err(Status::INTERNAL),
             last_pet_time: InstantBoot(0),
             pet_timer: core::mem::MaybeUninit::uninit(),
             pet_timer_initialized: false,
@@ -139,18 +138,18 @@ impl GenericWatchdog32Inner {
         }
 
         if config.pet_action.addr == 0 {
-            self.early_init_result = Status::INVALID_ARGS;
+            self.early_init_result = Err(Status::INVALID_ARGS);
             return;
         }
         if config.watchdog_period_nsec < KERNEL_DRIVER_GENERIC32_WATCHDOG_MIN_PERIOD {
-            self.early_init_result = Status::INVALID_ARGS;
+            self.early_init_result = Err(Status::INVALID_ARGS);
             return;
         }
 
         self.cfg = *config;
         // SAFETY: `self.cfg.pet_action.addr` is a pointer to the address field in our local config copy, valid for modification by the C++ translation shim.
         if !unsafe { cpp_watchdog_translate_paddr(&mut self.cfg.pet_action.addr) } {
-            self.early_init_result = Status::IO;
+            self.early_init_result = Err(Status::IO);
             return;
         }
         // SAFETY: `enable_action.addr` and `disable_action.addr` point to valid `u64` address fields in `self.cfg`.
@@ -172,15 +171,15 @@ impl GenericWatchdog32Inner {
             self.is_enabled = false;
         }
 
-        self.early_init_result = Status::OK;
+        self.early_init_result = Ok(());
     }
 
     fn init(&mut self) {
-        if self.early_init_result != Status::OK {
+        if let Err(res) = self.early_init_result {
             dprintf!(
                 INFO,
-                "WDT: Generic watchdog driver attempted to load, but failed during early init (res {}).\n",
-                self.early_init_result
+                "WDT: Generic watchdog driver attempted to load, but failed during early init \
+                 (res {res}).\n",
             );
             return;
         }
@@ -363,7 +362,7 @@ pub unsafe extern "C" fn generic_32bit_watchdog_early_init(config: *const DcfgGe
         // SAFETY: `config` is checked to be non-null and guaranteed by caller to point to a valid `DcfgGeneric32Watchdog`.
         let inner = guard.as_mut().fields_mut().inner;
         inner.init_early(unsafe { &*config });
-        inner.early_init_result == Status::OK
+        inner.early_init_result.is_ok()
     };
     if is_ok {
         crate::pdev_watchdog::register_watchdog(&*G_WATCHDOG);
@@ -393,7 +392,7 @@ pub extern "C" fn generic_32bit_watchdog_late_init() {
 #[cfg(ktest)]
 #[unittest::suite(name = "generic32_watchdog")]
 mod tests {
-    use unittest::{assert_eq, assert_false, assert_true};
+    use unittest::{assert_eq, assert_err, assert_false, assert_ok, assert_true};
 
     /// Tests `take_action` MMIO read-modify-write on a mock register buffer and no-op on zero address.
     #[test]
@@ -434,17 +433,17 @@ mod tests {
             reserved: 0,
         };
         inner.init_early(&bad_config);
-        assert_eq!(inner.early_init_result.into_raw(), Status::INVALID_ARGS.into_raw());
+        assert_err!(inner.early_init_result, Status::INVALID_ARGS);
 
         let mut mock_mmio: u32 = 0;
         bad_config.pet_action.addr = core::ptr::addr_of_mut!(mock_mmio) as u64;
         bad_config.watchdog_period_nsec = KERNEL_DRIVER_GENERIC32_WATCHDOG_MIN_PERIOD - 1;
         inner.init_early(&bad_config);
-        assert_eq!(inner.early_init_result.into_raw(), Status::INVALID_ARGS.into_raw());
+        assert_err!(inner.early_init_result, Status::INVALID_ARGS);
 
         bad_config.watchdog_period_nsec = KERNEL_DRIVER_GENERIC32_WATCHDOG_MIN_PERIOD;
         inner.init_early(&bad_config);
-        assert_eq!(inner.early_init_result.into_raw(), Status::OK.into_raw());
+        assert_ok!(inner.early_init_result);
     }
 
     /// Tests watchdog state transitions when enabling, disabling, and suppressing petting.
@@ -477,7 +476,7 @@ mod tests {
 
         let mut inner = GenericWatchdog32Inner::new();
         inner.init_early(&config);
-        assert_eq!(inner.early_init_result.into_raw(), Status::OK.into_raw());
+        assert_ok!(inner.early_init_result);
         assert_false!(inner.is_enabled);
 
         assert_true!(inner.set_enabled(true).is_ok());

@@ -494,7 +494,7 @@ pub extern "C" fn apic_io_fetch_irq_config(
                     *polarity = pol;
                 }
             }
-            Status::OK.into_raw()
+            zx_status::sys::ZX_OK
         }
         Err(e) => e.into_raw(),
     }
@@ -737,7 +737,7 @@ pub extern "C" fn apic_io_debug() {
 #[cfg(console_enabled)]
 unsafe extern "C" fn cmd_ioapic(_argc: c_int, _argv: *const CmdArgs, _flags: u32) -> c_int {
     apic_io_debug();
-    Status::OK.into_raw()
+    zx_status::sys::ZX_OK
 }
 
 #[cfg(console_enabled)]

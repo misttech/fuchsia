@@ -372,7 +372,7 @@ pub fn save_restricted_exception_state(state: &mut zx_restricted_state_t) {
     let mut regs = zx_thread_state_general_regs_t::default();
     // SAFETY: Gets general registers of the current thread.
     let status = unsafe { cpp_x86_get_general_regs(&mut regs) };
-    assert_eq!(status, Status::OK.into_raw());
+    assert_eq!(Status::ok(status), Ok(()));
 
     state.rdi = regs.rdi;
     state.rsi = regs.rsi;
@@ -429,7 +429,7 @@ pub fn redirect_restricted_exception_to_normal(
     };
     // SAFETY: Sets general registers on current thread.
     let status = unsafe { cpp_x86_set_general_regs(&regs) };
-    assert_eq!(status, Status::OK.into_raw());
+    assert_eq!(Status::ok(status), Ok(()));
 }
 
 pub fn enter_full(
@@ -482,10 +482,7 @@ pub unsafe extern "C" fn rust_arch_validate_state_pre_restricted_entry(
 ) -> zx_status_t {
     // SAFETY: Caller guarantees `state` is a valid pointer.
     let state = unsafe { &*state };
-    match validate_state_pre_restricted_entry(state) {
-        Ok(()) => Status::OK.into_raw(),
-        Err(s) => s.into_raw(),
-    }
+    Status::result_into_raw(validate_state_pre_restricted_entry(state))
 }
 
 /// # Safety

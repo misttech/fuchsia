@@ -302,5 +302,5 @@ pub unsafe extern "C" fn set_suspend_registers(
         }
     }
 
-    Status::OK.into_raw()
+    zx_status::sys::ZX_OK
 }

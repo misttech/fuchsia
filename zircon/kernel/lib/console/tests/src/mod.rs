@@ -152,7 +152,7 @@ mod console_tests {
         _flags: u32,
     ) -> c_int {
         MOCK_CALL_COUNT.fetch_add(1, Ordering::Relaxed);
-        zx_status!(Status::OK)
+        zx_status::sys::ZX_OK
     }
 
     unsafe extern "C" fn mock_failure_callback(
@@ -195,12 +195,12 @@ mod console_tests {
 
         // Set echo setting to false.
         let res = unsafe { console_run_script_locked(c"echo false".as_ptr()) };
-        expect_eq!(res, zx_status!(Status::OK));
+        expect_eq!(res, zx_status::sys::ZX_OK);
         expect_false!(unsafe { rust_console_get_echo() });
 
         // Set echo setting to true.
         let res = unsafe { console_run_script_locked(c"echo true".as_ptr()) };
-        expect_eq!(res, zx_status!(Status::OK));
+        expect_eq!(res, zx_status::sys::ZX_OK);
         expect_true!(unsafe { rust_console_get_echo() });
 
         // Restore original.
@@ -219,7 +219,7 @@ mod console_tests {
             rust_console_set_exit(false);
         }
         let res = unsafe { console_run_script_locked(c"exit".as_ptr()) };
-        expect_eq!(res, zx_status!(Status::OK));
+        expect_eq!(res, zx_status::sys::ZX_OK);
         expect_false!(unsafe { rust_console_get_exit() });
 
         // Restore.
@@ -236,7 +236,7 @@ mod console_tests {
             console_run_script_locked(c"mock_success".as_ptr());
         }
         let res = unsafe { console_run_script_locked(c"boot-test-success".as_ptr()) };
-        expect_eq!(res, zx_status!(Status::OK));
+        expect_eq!(res, zx_status::sys::ZX_OK);
 
         // Test failure.
         let some_failure = unsafe { console_run_script_locked(c"mock_failure".as_ptr()) };
@@ -252,17 +252,17 @@ mod console_tests {
     /// Test and command callback in Rust
     #[test]
     fn command_and_test() {
-        // If lastresult != zx_status!(Status::OK), it should return lastresult immediately.
+        // If lastresult != zx_status::sys::ZX_OK, it should return lastresult immediately.
         let some_failure = unsafe { console_run_script_locked(c"mock_failure".as_ptr()) };
         let res = unsafe { console_run_script_locked(c"and mock_success".as_ptr()) };
         expect_eq!(res, some_failure);
 
-        // If lastresult == zx_status!(Status::OK), it should execute the command.
+        // If lastresult == zx_status::sys::ZX_OK, it should execute the command.
         unsafe {
             console_run_script_locked(c"mock_success".as_ptr());
         }
         let res = unsafe { console_run_script_locked(c"and mock_success".as_ptr()) };
-        expect_eq!(res, zx_status!(Status::OK));
+        expect_eq!(res, zx_status::sys::ZX_OK);
     }
 
     /// Test repeat command callback in Rust
@@ -272,14 +272,14 @@ mod console_tests {
 
         // Repeat mock_success.
         let res = unsafe { console_run_script_locked(c"repeat 3 mock_success".as_ptr()) };
-        expect_eq!(res, zx_status!(Status::OK));
+        expect_eq!(res, zx_status::sys::ZX_OK);
         expect_eq!(MOCK_CALL_COUNT.load(Ordering::Relaxed), 3);
 
         MOCK_CALL_COUNT.store(0, Ordering::Relaxed);
 
         // Repeat with early failure.
         let res = unsafe { console_run_script_locked(c"repeat 3 mock_failure".as_ptr()) };
-        expect_ne!(res, zx_status!(Status::OK));
+        expect_ne!(res, zx_status::sys::ZX_OK);
         expect_eq!(MOCK_CALL_COUNT.load(Ordering::Relaxed), 1);
     }
 
@@ -306,7 +306,7 @@ mod console_tests {
             test_capture_stdout_stop();
         }
 
-        expect_eq!(res, zx_status!(Status::OK));
+        expect_eq!(res, zx_status::sys::ZX_OK);
 
         // Slice the buffer up to the null terminator.
         let output = unsafe { core::slice::from_raw_parts(buf_ptr, 4096) };
@@ -357,7 +357,7 @@ mod console_tests {
             test_capture_stdout_stop();
         }
 
-        expect_eq!(res, zx_status!(Status::OK));
+        expect_eq!(res, zx_status::sys::ZX_OK);
 
         // Slice the buffer up to the null terminator.
         let output = unsafe { core::slice::from_raw_parts(buf_ptr, 4096) };

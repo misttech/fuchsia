@@ -789,7 +789,7 @@ pub unsafe extern "C" fn rust_ktrace_init(num_buffers: u32, state_ptr: *mut ffi:
         ptr::write(slot.cast::<KTrace>(), ktrace);
     }
 
-    Status::OK.into_raw()
+    zx_status::sys::ZX_OK
 }
 
 /// Initializes the KTraceBuffer for a specific CPU using a pointer to the C++ SpscBuffer.
@@ -841,7 +841,7 @@ pub unsafe extern "C" fn rust_ktrace_init_cpu_buffer(
         }
     }
 
-    Status::OK.into_raw()
+    zx_status::sys::ZX_OK
 }
 
 /// KTrace tests

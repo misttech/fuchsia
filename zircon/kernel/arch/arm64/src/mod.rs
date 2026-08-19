@@ -273,7 +273,7 @@ pub fn save_restricted_exception_state(state: &mut zx_restricted_state_t) {
     let mut regs = zx_thread_state_general_regs_t::default();
     // SAFETY: cpp_arm64_get_general_regs retrieves saved register state for current thread.
     let status = unsafe { cpp_arm64_get_general_regs(&mut regs) };
-    debug_assert_eq!(status, Status::OK.into_raw());
+    debug_assert_eq!(Status::ok(status), Ok(()));
 
     // Save the registers from restricted mode.
     if (regs.cpsr as u32 & ARM32_BIT_MODE) != 0 {
@@ -317,7 +317,7 @@ pub fn redirect_restricted_exception_to_normal(
 
     // SAFETY: Overwrites current thread general registers to jump to vector_table in normal mode.
     let status = unsafe { cpp_arm64_set_general_regs(&regs) };
-    debug_assert_eq!(status, Status::OK.into_raw());
+    debug_assert_eq!(Status::ok(status), Ok(()));
 
     // Restore TPIDR_EL0 and TPIDRRO_EL0 registers from saved normal state and update thread state.
     unsafe {
@@ -378,10 +378,7 @@ pub unsafe extern "C" fn rust_arch_validate_state_pre_restricted_entry(
     debug_assert!(!state.is_null(), "state pointer passed across FFI must not be null");
     // SAFETY: Caller guarantees `state` is a valid pointer.
     let state = unsafe { &*state };
-    match validate_state_pre_restricted_entry(state) {
-        Ok(()) => Status::OK.into_raw(),
-        Err(s) => s.into_raw(),
-    }
+    Status::result_into_raw(validate_state_pre_restricted_entry(state))
 }
 
 /// # Safety

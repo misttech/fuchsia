@@ -77,7 +77,7 @@ impl IrqInfo {
     }
 }
 
-fn usage(ret: Status) -> c_int {
+fn usage(ret: Result<(), Status>) -> c_int {
     dprintf!(ALWAYS, "Usage: irq <cmd>\n");
     dprintf!(ALWAYS, "Valid commands are:\n");
     dprintf!(ALWAYS, "  help : show this message\n");
@@ -98,7 +98,7 @@ fn usage(ret: Status) -> c_int {
         "      pendenb : Show the status of all IRQs which are currently pending OR enabled.\n"
     );
     dprintf!(ALWAYS, "      <N>     : Show the status IRQ #<N>.\n");
-    ret.into_raw()
+    Status::result_into_raw(ret)
 }
 
 unsafe fn arg_cstr(arg: &CmdArgs) -> Option<&CStr> {
@@ -113,7 +113,7 @@ unsafe fn arg_cstr(arg: &CmdArgs) -> Option<&CStr> {
 pub unsafe extern "C" fn irq_console_cmd(argc: c_int, argv: *const CmdArgs, _flags: u32) -> c_int {
     if argc < 2 || argv.is_null() {
         dprintf!(ALWAYS, "No command specified!\n");
-        return usage(Status::INVALID_ARGS);
+        return usage(Err(Status::INVALID_ARGS));
     }
 
     let slice = unsafe { core::slice::from_raw_parts(argv, argc as usize) };
@@ -121,30 +121,30 @@ pub unsafe extern "C" fn irq_console_cmd(argc: c_int, argv: *const CmdArgs, _fla
         Some(cstr) => cstr,
         None => {
             dprintf!(ALWAYS, "No command specified!\n");
-            return usage(Status::INVALID_ARGS);
+            return usage(Err(Status::INVALID_ARGS));
         }
     };
 
     if subcmd == c"help" {
-        return usage(Status::OK);
+        return usage(Ok(()));
     }
 
     if subcmd != c"show" {
         let subcmd_str = subcmd.to_str().unwrap_or("?");
         dprintf!(ALWAYS, "Unrecognized command \"{}\"\n", subcmd_str);
-        return usage(Status::INVALID_ARGS);
+        return usage(Err(Status::INVALID_ARGS));
     }
 
     if argc < 3 {
         dprintf!(ALWAYS, "No target specified for \"show\"\n");
-        return usage(Status::INVALID_ARGS);
+        return usage(Err(Status::INVALID_ARGS));
     }
 
     let target_arg = match unsafe { arg_cstr(&slice[2]) } {
         Some(cstr) => cstr,
         None => {
             dprintf!(ALWAYS, "No target specified for \"show\"\n");
-            return usage(Status::INVALID_ARGS);
+            return usage(Err(Status::INVALID_ARGS));
         }
     };
 
@@ -188,13 +188,13 @@ pub unsafe extern "C" fn irq_console_cmd(argc: c_int, argv: *const CmdArgs, _fla
                 );
             }
         }
-        Status::OK.into_raw()
+        zx_status::sys::ZX_OK
     } else {
         let target_num = slice[2].arg_uint as u32;
         if !IrqInfo::valid_irq_num(target_num) {
             let target_str = target_arg.to_str().unwrap_or("?");
             dprintf!(ALWAYS, "Invalid IRQ target (\"{}\") for \"show\".\n", target_str);
-            return usage(Status::INVALID_ARGS);
+            return usage(Err(Status::INVALID_ARGS));
         }
         let info = IrqInfo::get(target_num);
         dprintf!(ALWAYS, "IRQ          : {}\n", target_num);
@@ -207,7 +207,7 @@ pub unsafe extern "C" fn irq_console_cmd(argc: c_int, argv: *const CmdArgs, _fla
         dprintf!(ALWAYS, "Polarity     : {}\n", info.polarity_str());
         dprintf!(ALWAYS, "Pending      : {}\n", info.pending_str());
         dprintf!(ALWAYS, "Enabled      : {}\n", info.enabled_str());
-        Status::OK.into_raw()
+        zx_status::sys::ZX_OK
     }
 }
 

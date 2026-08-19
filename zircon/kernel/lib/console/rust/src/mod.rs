@@ -150,12 +150,12 @@ pub mod console {
             let args = unsafe { core::slice::from_raw_parts(argv, argc as usize) };
             ECHO.store(args[1].arg_bool, Ordering::Relaxed);
         }
-        zx_status!(Status::OK)
+        zx_status::sys::ZX_OK
     }
 
     unsafe extern "C" fn cmd_exit(_argc: c_int, _argv: *const CmdArgs, _flags: u32) -> c_int {
         rust_console_set_exit(true);
-        zx_status!(Status::OK)
+        zx_status::sys::ZX_OK
     }
 
     unsafe extern "C" fn cmd_test(argc: c_int, argv: *const CmdArgs, _flags: u32) -> c_int {
@@ -172,7 +172,7 @@ pub mod console {
                 arg.arg_bool,
             );
         }
-        zx_status!(Status::OK)
+        zx_status::sys::ZX_OK
     }
 
     unsafe extern "C" fn cmd_graceful_shutdown(
@@ -287,13 +287,13 @@ pub mod console {
             kprintln!("");
 
             let err = unsafe { (cmd.cmd_callback)(argc - 2, argv.add(2), flags) };
-            if err != zx_status!(Status::OK) {
-                kprintln!("stopping repeat due to nonzero status {}", err);
+            if err != zx_status::sys::ZX_OK {
+                kprintln!("stopping repeat due to nonzero status {err}");
                 return err;
             }
         }
 
-        zx_status!(Status::OK)
+        zx_status::sys::ZX_OK
     }
 
     unsafe extern "C" fn cmd_help(_argc: c_int, _argv: *const CmdArgs, flags: u32) -> c_int {
@@ -337,7 +337,7 @@ pub mod console {
             }
         }
 
-        zx_status!(Status::OK)
+        zx_status::sys::ZX_OK
     }
 
     // FFI exports.

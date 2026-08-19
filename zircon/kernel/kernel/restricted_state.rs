@@ -237,7 +237,7 @@ pub unsafe extern "C" fn rust_restricted_state_create(
             unsafe {
                 *out_ptr = Box::into_raw(box_state);
             }
-            Status::OK.into_raw()
+            zx_status::sys::ZX_OK
         }
         Err(status) => status.into_raw(),
     }

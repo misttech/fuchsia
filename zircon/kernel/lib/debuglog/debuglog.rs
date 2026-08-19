@@ -104,8 +104,8 @@ impl DlogReaderStorage {
 
     /// Reads one record from debuglog.
     ///
-    /// Upon success, returns `Status::OK` and sets `actual` to the record's size.
-    /// Returns `Status::SHOULD_WAIT` if there are no records available to read.
+    /// Upon success, returns `Ok(())` and sets `actual` to the record's size.
+    /// Returns `Err(Status::SHOULD_WAIT)` if there are no records available to read.
     pub fn read(
         self: core::pin::Pin<&mut Self>,
         flags: u32,

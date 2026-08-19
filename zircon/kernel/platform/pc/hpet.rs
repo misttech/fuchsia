@@ -306,7 +306,7 @@ pub extern "C" fn hpet_set_value(v: u64) -> zx_types::zx_status_t {
         }
         core::ptr::write_volatile(core::ptr::addr_of_mut!((*regs).main_counter_value), v);
     }
-    Status::OK.into_raw()
+    zx_status::sys::ZX_OK
 }
 
 /// Returns true if the HPET is present and initialized.
