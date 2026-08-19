@@ -14,6 +14,7 @@ struct MutexField {
     class_type: proc_macro2::TokenStream,
     mutex_type: proc_macro2::TokenStream,
     custom_class: Option<Type>,
+    custom_flags: Option<syn::Expr>,
     is_phantom: bool,
 }
 
@@ -32,6 +33,57 @@ struct FieldAttrAnalysis {
     is_pinned: bool,
     is_unpinned: bool,
     custom_class: Option<Type>,
+    custom_flags: Option<syn::Expr>,
+}
+
+fn parse_mutex_or_brwlock_args(
+    meta_list: &syn::MetaList,
+    custom_class: &mut Option<Type>,
+    custom_flags: &mut Option<syn::Expr>,
+    errors: &mut Vec<syn::Error>,
+    attr_name: &str,
+) {
+    let nested = match meta_list
+        .parse_args_with(Punctuated::<syn::Meta, syn::Token![,]>::parse_terminated)
+    {
+        Ok(nested) => nested,
+        Err(_) => match meta_list.parse_args::<Type>() {
+            Ok(ty) => {
+                *custom_class = Some(ty);
+                return;
+            }
+            Err(e) => {
+                errors.push(e);
+                return;
+            }
+        },
+    };
+
+    for meta in nested {
+        match meta {
+            syn::Meta::NameValue(nv) if nv.path.is_ident("flags") => {
+                *custom_flags = Some(nv.value);
+            }
+            syn::Meta::Path(path) => {
+                *custom_class = Some(Type::Path(TypePath { qself: None, path }));
+            }
+            syn::Meta::List(list) => {
+                let tokens = quote! { #list };
+                match syn::parse2::<Type>(tokens) {
+                    Ok(ty) => *custom_class = Some(ty),
+                    Err(e) => errors.push(e),
+                }
+            }
+            other => {
+                errors.push(syn::Error::new(
+                    other.span(),
+                    format!(
+                        "#[{attr_name}] attribute accepts `LockClass`, `flags = <expr>`, or both"
+                    ),
+                ));
+            }
+        }
+    }
 }
 
 fn parse_field_attributes(
@@ -45,28 +97,43 @@ fn parse_field_attributes(
         is_pinned: false,
         is_unpinned: false,
         custom_class: None,
+        custom_flags: None,
     };
 
     field.attrs.retain(|attr| {
         if attr.path().is_ident("mutex") {
             analysis.is_mutex = true;
             if let syn::Meta::List(meta_list) = &attr.meta {
-                match meta_list.parse_args::<Type>() {
-                    Ok(ty) => analysis.custom_class = Some(ty),
-                    Err(_) => errors.push(syn::Error::new(
-                        meta_list.span(),
-                        "#[mutex(LockClass)] accepts a type representing the lock class.",
-                    )),
-                }
+                parse_mutex_or_brwlock_args(
+                    meta_list,
+                    &mut analysis.custom_class,
+                    &mut analysis.custom_flags,
+                    errors,
+                    "mutex",
+                );
             } else if !matches!(attr.meta, syn::Meta::Path(_)) {
                 errors.push(syn::Error::new(
                     attr.meta.span(),
-                    "#[mutex] attribute must be either #[mutex] or #[mutex(LockClass)].",
+                    "#[mutex] attribute must be either #[mutex], #[mutex(LockClass)], #[mutex(flags = ...)], or #[mutex(LockClass, flags = ...)].",
                 ));
             }
             false
         } else if attr.path().is_ident("brwlock") {
             analysis.is_brwlock = true;
+            if let syn::Meta::List(meta_list) = &attr.meta {
+                parse_mutex_or_brwlock_args(
+                    meta_list,
+                    &mut analysis.custom_class,
+                    &mut analysis.custom_flags,
+                    errors,
+                    "brwlock",
+                );
+            } else if !matches!(attr.meta, syn::Meta::Path(_)) {
+                errors.push(syn::Error::new(
+                    attr.meta.span(),
+                    "#[brwlock] attribute must be either #[brwlock], #[brwlock(LockClass)], #[brwlock(flags = ...)], or #[brwlock(LockClass, flags = ...)].",
+                ));
+            }
             false
         } else if attr.path().is_ident("guarded_by") {
             if let syn::Meta::List(meta_list) = &attr.meta {
@@ -533,7 +600,12 @@ pub fn guarded(_args: TokenStream, input: TokenStream) -> TokenStream {
                     Err(e) => errors.push(e),
                 }
                 field.attrs.push(syn::parse_quote!(#[pin]));
-                mutex_fields.push((field.clone(), mutex_type, analysis.custom_class));
+                mutex_fields.push((
+                    field.clone(),
+                    mutex_type,
+                    analysis.custom_class,
+                    analysis.custom_flags,
+                ));
             } else if analysis.is_brwlock {
                 if !is_brwlock_type(&field.ty) {
                     errors.push(syn::Error::new(
@@ -542,7 +614,7 @@ pub fn guarded(_args: TokenStream, input: TokenStream) -> TokenStream {
                     ));
                 }
                 field.attrs.push(syn::parse_quote!(#[pin]));
-                brwlock_fields.push(field.clone());
+                brwlock_fields.push((field.clone(), analysis.custom_flags));
             } else if let Some(mutex_ident) = analysis.guarded_by {
                 guarded_fields.push(GuardedField {
                     ident: field.ident.clone().unwrap(),
@@ -578,7 +650,7 @@ pub fn guarded(_args: TokenStream, input: TokenStream) -> TokenStream {
     let mut brwlock_fields_processed = Vec::new();
     let mut generated_names = std::collections::HashSet::new();
 
-    for (field, mutex_type, custom_class) in mutex_fields {
+    for (field, mutex_type, custom_class, custom_flags) in mutex_fields {
         let field_ident = field.ident.clone().unwrap();
         let mu_camel = to_camel_case(&field_ident.to_string());
         let guard_name = format!("{struct_ident}{mu_camel}Guard");
@@ -633,11 +705,12 @@ pub fn guarded(_args: TokenStream, input: TokenStream) -> TokenStream {
             class_type,
             mutex_type,
             custom_class,
+            custom_flags,
             is_phantom,
         });
     }
 
-    for field in brwlock_fields {
+    for (field, custom_flags) in brwlock_fields {
         let field_ident = field.ident.clone().unwrap();
         let mu_camel = to_camel_case(&field_ident.to_string());
 
@@ -684,6 +757,7 @@ pub fn guarded(_args: TokenStream, input: TokenStream) -> TokenStream {
             class_type,
             mutex_type: quote! { ::ksync::RawBrwLockPi },
             custom_class: None,
+            custom_flags,
             is_phantom: false,
         });
     }
@@ -857,7 +931,12 @@ pub fn guarded(_args: TokenStream, input: TokenStream) -> TokenStream {
         );
 
         let class_registration_code = if mutex.custom_class.is_none() {
-            let flags_expr = quote! { <#mutex_type as ::ksync::RawLock>::LOCK_FLAGS };
+            let flags_expr = match mutex.custom_flags.as_ref() {
+                Some(flags) => {
+                    quote! { (<#mutex_type as ::ksync::RawLock>::LOCK_FLAGS | (#flags)) }
+                }
+                None => quote! { <#mutex_type as ::ksync::RawLock>::LOCK_FLAGS },
+            };
             let string_reg_ident = format_ident!(
                 "{}_{}_STRING_REG",
                 struct_ident.to_string().to_ascii_uppercase(),
@@ -910,6 +989,11 @@ pub fn guarded(_args: TokenStream, input: TokenStream) -> TokenStream {
             quote! { ::ksync::KMutexGuard<'a, #class_type, #mutex_type, P> }
         };
 
+        let lock_aliased_method_ident =
+            format_ident!("lock_{mu_ident}_aliased", span = mu_ident.span());
+        let lock_aliased_policy_method_ident =
+            format_ident!("lock_{mu_ident}_aliased_policy", span = mu_ident.span());
+
         let lock_method_def = if mutex.is_phantom {
             quote! {
                 #[inline]
@@ -943,6 +1027,35 @@ pub fn guarded(_args: TokenStream, input: TokenStream) -> TokenStream {
                         parent: self,
                         inner <- ::ksync::KMutexGuard::new(&self.#mu_ident),
                     })
+                }
+                #[inline]
+                #struct_vis fn #lock_aliased_method_ident<
+                    'a,
+                    AliasClass: ::ksync::LockClass,
+                    M2: ::ksync::RawLock,
+                >(
+                    &'a self,
+                    alias: &'a ::ksync::KMutex<AliasClass, M2>,
+                ) -> impl pin_init::PinInit<
+                    ::ksync::KMutexAliasedGuard<'a, #class_type, AliasClass, #mutex_type, M2>,
+                    ::core::convert::Infallible,
+                > {
+                    ::ksync::KMutexAliasedGuard::new(&self.#mu_ident, alias)
+                }
+                #[inline]
+                #struct_vis fn #lock_aliased_policy_method_ident<
+                    'a,
+                    AliasClass: ::ksync::LockClass,
+                    M2: ::ksync::RawLock,
+                    P: ::ksync::LockPolicy<#mutex_type>,
+                >(
+                    &'a self,
+                    alias: &'a ::ksync::KMutex<AliasClass, M2>,
+                ) -> impl pin_init::PinInit<
+                    ::ksync::KMutexAliasedGuard<'a, #class_type, AliasClass, #mutex_type, M2, P>,
+                    ::core::convert::Infallible,
+                > {
+                    ::ksync::KMutexAliasedGuard::new(&self.#mu_ident, alias)
                 }
             }
         };
@@ -1037,6 +1150,16 @@ pub fn guarded(_args: TokenStream, input: TokenStream) -> TokenStream {
                 }
 
                 #[inline]
+                #struct_vis fn call_unlocked<R, F: FnOnce() -> R>(
+                    self: ::core::pin::Pin<&mut Self>,
+                    f: F,
+                ) -> R {
+                    let me = unsafe { self.get_unchecked_mut() };
+                    let inner_pin = unsafe { ::core::pin::Pin::new_unchecked(&mut me.inner) };
+                    inner_pin.call_unlocked(f)
+                }
+
+                #[inline]
                 #struct_vis fn call_untracked<R, F: FnOnce(&mut ::ksync::LockToken<'a, #class_type>) -> R>(
                     self: ::core::pin::Pin<&mut Self>,
                     f: F,
@@ -1122,21 +1245,29 @@ pub fn guarded(_args: TokenStream, input: TokenStream) -> TokenStream {
             phantom_ty_params,
         );
 
-        let string_reg_ident = format_ident!(
-            "{}_{}_STRING_REG",
-            struct_ident.to_string().to_ascii_uppercase(),
-            mu_camel.to_ascii_uppercase()
-        );
-        let class_registration_code = generate_lock_class_registration(
-            struct_ident,
-            lock_ident,
-            &mu_camel,
-            class_ident,
-            &class_impl_generics,
-            &class_ty_generics,
-            where_clause,
-            quote! { ::ksync::LockClassRegistration::new(&#string_reg_ident) },
-        );
+        let class_registration_code = if brwlock.custom_class.is_none() {
+            let string_reg_ident = format_ident!(
+                "{}_{}_STRING_REG",
+                struct_ident.to_string().to_ascii_uppercase(),
+                mu_camel.to_ascii_uppercase()
+            );
+            let flags_expr = match brwlock.custom_flags.as_ref() {
+                Some(flags) => quote! { (::ksync::RawBrwLockPi::LOCK_FLAGS | (#flags)) },
+                None => quote! { ::ksync::RawBrwLockPi::LOCK_FLAGS },
+            };
+            generate_lock_class_registration(
+                struct_ident,
+                lock_ident,
+                &mu_camel,
+                class_ident,
+                &class_impl_generics,
+                &class_ty_generics,
+                where_clause,
+                quote! { ::ksync::LockClassRegistration::with_flags(#string_reg_ident, #flags_expr) },
+            )
+        } else {
+            quote! {}
+        };
 
         let read_guard_accessors = &field_code.read_guard_accessors;
         let write_guard_accessors = &field_code.write_guard_accessors;
@@ -1217,6 +1348,16 @@ pub fn guarded(_args: TokenStream, input: TokenStream) -> TokenStream {
                 #read_guard_accessors
 
                 #[inline]
+                #struct_vis fn call_unlocked<R, F: FnOnce() -> R>(
+                    self: ::core::pin::Pin<&mut Self>,
+                    f: F,
+                ) -> R {
+                    let me = unsafe { self.get_unchecked_mut() };
+                    let inner_pin = unsafe { ::core::pin::Pin::new_unchecked(&mut me.inner) };
+                    inner_pin.call_unlocked(f)
+                }
+
+                #[inline]
                 #struct_vis fn fields<'b>(&'b self) -> #read_fields_ident #fields_ty_generics {
                     let me = self;
                     let token = me.inner.token();
@@ -1231,6 +1372,16 @@ pub fn guarded(_args: TokenStream, input: TokenStream) -> TokenStream {
 
             impl #guard_decl_generics #write_guard_ident #guard_ty_generics #where_clause {
                 #write_guard_accessors
+
+                #[inline]
+                #struct_vis fn call_unlocked<R, F: FnOnce() -> R>(
+                    self: ::core::pin::Pin<&mut Self>,
+                    f: F,
+                ) -> R {
+                    let me = unsafe { self.get_unchecked_mut() };
+                    let inner_pin = unsafe { ::core::pin::Pin::new_unchecked(&mut me.inner) };
+                    inner_pin.call_unlocked(f)
+                }
 
                 #[inline]
                 #struct_vis fn fields<'b>(&'b self) -> #read_fields_ident #fields_ty_generics {

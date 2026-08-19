@@ -262,3 +262,56 @@ fn main() {
     guard.as_mut().send_packet(1024);
 }
 ```
+
+## Advanced Locking Features
+
+### Temporarily Releasing Locks: `call_unlocked`
+
+Guards provide `call_unlocked` to temporarily drop the held lock while running
+a blocking operation or callback, and automatically reacquire the lock upon
+completion:
+
+```rust
+lock!(let mut guard = my_struct.lock_mu());
+
+// Temporarily drop lock to wait on an event or perform blocking I/O:
+let result = guard.as_mut().call_unlocked(|| {
+    ready_event.wait();
+    compute_something()
+});
+
+// The lock is automatically re-acquired when call_unlocked returns.
+*guard.as_mut().data_mut() = result;
+```
+
+### Aliased Locks: `AliasedLock` / `aliased_lock`
+
+When two references point to the same physical lock instance (e.g. an operation
+object borrowing its parent's lock), `ksync::aliased_lock` acquires the physical
+mutex once while returning a `KMutexAliasedGuard` that provides proof tokens for
+both lock classes:
+
+```rust
+// Acquires the lock once and verifies at runtime in debug mode that both alias pointers match:
+lock!(let mut guard = ksync::aliased_lock(&parent.mu, &op.mu));
+
+// Access parent and child fields simultaneously with disjoint mutable tokens:
+let (parent_token, op_token) = guard.as_mut().tokens_mut();
+*parent.guard_mu_mut(parent_token).data_mut() = 1;
+*op.guard_mu_mut(op_token).value_mut() = 2;
+```
+
+### Lock Flags Configuration
+
+You can configure lock validation flags directly in `#[mutex]` and `#[brwlock]`:
+
+```rust
+#[guarded]
+struct StreamDispatcherState {
+    #[mutex(flags = lockdep::LOCK_FLAGS_ACTIVE_LIST_DISABLED)]
+    seek_lock: KMutex,
+
+    #[guarded_by(seek_lock)]
+    seek: u64,
+}
+```

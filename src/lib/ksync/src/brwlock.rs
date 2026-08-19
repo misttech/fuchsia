@@ -98,6 +98,21 @@ impl<'a, Class: LockClass> BrwLockPiReadGuard<'a, Class> {
         let me = unsafe { self.get_unchecked_mut() };
         &mut me.token
     }
+
+    /// Temporarily releases the read lock before executing the given callable `f` and then
+    /// re-acquires the read lock.
+    #[inline]
+    pub fn call_unlocked<R, F: FnOnce() -> R>(self: Pin<&mut Self>, f: F) -> R {
+        // SAFETY: `lock_entry` is pinned on the stack and valid.
+        unsafe {
+            let me = self.get_unchecked_mut();
+            let entry_addr = &mut me.lock_entry as *mut _;
+            me.lock.lock.release_read(entry_addr as *mut core::ffi::c_void);
+            let result = f();
+            me.lock.lock.acquire_read(entry_addr as *mut core::ffi::c_void);
+            result
+        }
+    }
 }
 
 #[pinned_drop]
@@ -162,6 +177,21 @@ impl<'a, Class: LockClass> BrwLockPiWriteGuard<'a, Class> {
         // pinning invariants to be maintained.
         let me = unsafe { self.get_unchecked_mut() };
         &mut me.token
+    }
+
+    /// Temporarily releases the write lock before executing the given callable `f` and then
+    /// re-acquires the write lock.
+    #[inline]
+    pub fn call_unlocked<R, F: FnOnce() -> R>(self: Pin<&mut Self>, f: F) -> R {
+        // SAFETY: `lock_entry` is pinned on the stack and valid.
+        unsafe {
+            let me = self.get_unchecked_mut();
+            let entry_addr = &mut me.lock_entry as *mut _;
+            me.lock.lock.release_write(entry_addr as *mut core::ffi::c_void);
+            let result = f();
+            me.lock.lock.acquire_write(entry_addr as *mut core::ffi::c_void);
+            result
+        }
     }
 }
 
@@ -328,5 +358,30 @@ mod tests {
     #[test]
     fn test_readers_and_writers() {
         run_test(4, 2);
+    }
+
+    #[allow(dead_code)]
+    struct CustomBrwLockClass;
+    impl lockdep::LockClass for CustomBrwLockClass {
+        const ID: *mut core::ffi::c_void = core::ptr::null_mut();
+    }
+
+    #[guarded]
+    struct CustomBrwLockStruct {
+        #[brwlock(CustomBrwLockClass)]
+        lock: BrwLockPi<CustomBrwLockClass>,
+        #[guarded_by(lock)]
+        value: u32,
+    }
+
+    #[test]
+    fn test_custom_brwlock_class() {
+        stack_pin_init!(let s = pin_init!(CustomBrwLockStruct {
+            lock <- BrwLockPi::init(),
+            value: 42.into(),
+        }));
+
+        lock!(let guard = s.read_lock());
+        assert_eq!(*guard.value(), 42);
     }
 }

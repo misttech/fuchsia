@@ -45,6 +45,6 @@ impl RawLock for fuchsia_sync::RawMutex {
 
     #[inline]
     fn as_mut_ptr(&self) -> *mut core::ffi::c_void {
-        core::ptr::null_mut()
+        self as *const Self as *mut core::ffi::c_void
     }
 }

@@ -323,4 +323,80 @@ mod ksync_tests {
             expect_true!(*guard.value() == 20);
         }
     }
+
+    /// test call_unlocked on KMutex and macro-generated guards
+    #[test]
+    fn call_unlocked() {
+        let obj = fbl::pin_make_ref_counted!(GuardedMutexObj {
+            mu <- ksync::KMutex::init(),
+            value: 10.into(),
+        })
+        .unwrap();
+
+        ksync::lock!(let mut guard = obj.lock_mu());
+        expect_true!(*guard.value() == 10);
+
+        let res = guard.as_mut().call_unlocked(|| 42);
+        expect_true!(res == 42);
+
+        *guard.as_mut().value_mut() = 25;
+        expect_true!(*guard.value() == 25);
+    }
+
+    /// test AliasedLock in kernel
+    #[test]
+    fn aliased_lock() {
+        let real_obj = fbl::pin_make_ref_counted!(GuardedMutexObj {
+            mu <- ksync::KMutex::init(),
+            value: 10.into(),
+        })
+        .unwrap();
+
+        let target = real_obj.clone();
+        stack_pin_init!(let phantom_obj = pin_init!(GuardedPhantomObj {
+            mu: ksync::KMutex::new(ksync::PhantomMutex),
+            target: target.into(),
+        }));
+
+        {
+            ksync::lock!(let mut guard = ksync::aliased_lock(&real_obj.mu, &phantom_obj.mu));
+
+            let (t1, _t2) = guard.tokens();
+            expect_true!(*real_obj.guard_mu(t1).value() == 10);
+
+            let (t1_mut, _t2_mut) = guard.as_mut().tokens_mut();
+            *real_obj.guard_mu_mut(t1_mut).value_mut() = 55;
+
+            let res = guard.as_mut().call_unlocked(|| 99);
+            expect_true!(res == 99);
+
+            let (t1, _t2) = guard.tokens();
+            expect_true!(*real_obj.guard_mu(t1).value() == 55);
+        }
+
+        ksync::lock!(let guard = real_obj.lock_mu());
+        expect_true!(*guard.value() == 55);
+    }
+
+    #[ksync::guarded]
+    struct GuardedFlaggedMutexObj {
+        #[mutex(flags = lockdep::LOCK_FLAGS_ACTIVE_LIST_DISABLED)]
+        seek_lock: ksync::KMutex,
+        #[guarded_by(seek_lock)]
+        seek: u64,
+    }
+
+    /// test Mutex with custom flags (e.g. LOCK_FLAGS_ACTIVE_LIST_DISABLED)
+    #[test]
+    fn flagged_mutex() {
+        stack_pin_init!(let obj = pin_init!(GuardedFlaggedMutexObj {
+            seek_lock <- ksync::KMutex::init(),
+            seek: 0.into(),
+        }));
+
+        ksync::lock!(let mut guard = obj.lock_seek_lock());
+        expect_true!(*guard.seek() == 0);
+        *guard.as_mut().seek_mut() = 4096;
+        expect_true!(*guard.seek() == 4096);
+    }
 }

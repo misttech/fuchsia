@@ -54,6 +54,27 @@ impl<Class: LockClass, M: RawLock> KMutex<Class, M> {
         KMutexGuard::new(self)
     }
 
+    /// Acquires this lock and aliases it with `alias`, returning a guard that proves ownership
+    /// of both `Class` and `AliasClass`.
+    #[inline]
+    pub fn aliased_lock<'a, AliasClass: LockClass, M2: RawLock>(
+        &'a self,
+        alias: &'a KMutex<AliasClass, M2>,
+    ) -> impl PinInit<KMutexAliasedGuard<'a, Class, AliasClass, M, M2>, core::convert::Infallible>
+    {
+        KMutexAliasedGuard::new(self, alias)
+    }
+
+    /// Acquires this lock with policy `P` and aliases it with `alias`.
+    #[inline]
+    pub fn aliased_lock_policy<'a, AliasClass: LockClass, M2: RawLock, P: LockPolicy<M>>(
+        &'a self,
+        alias: &'a KMutex<AliasClass, M2>,
+    ) -> impl PinInit<KMutexAliasedGuard<'a, Class, AliasClass, M, M2, P>, core::convert::Infallible>
+    {
+        KMutexAliasedGuard::new(self, alias)
+    }
+
     const fn class_id() -> *const core::ffi::c_void {
         if cfg!(feature = "lock_dep") { Class::ID } else { core::ptr::null() }
     }
@@ -131,6 +152,21 @@ impl<'a, Class: LockClass, M: RawLock, P: LockPolicy<M>> KMutexGuard<'a, Class, 
         &mut me.token
     }
 
+    /// Temporarily releases the lock before executing the given callable `f` and then
+    /// re-acquires the lock.
+    #[inline]
+    pub fn call_unlocked<R, F: FnOnce() -> R>(self: Pin<&mut Self>, f: F) -> R {
+        // SAFETY: `lock_entry` is pinned on the stack and valid.
+        unsafe {
+            let me = self.get_unchecked_mut();
+            let entry_addr = &mut me.lock_entry as *mut _;
+            P::release(&me.mutex.mutex, entry_addr, me.state);
+            let result = f();
+            me.state = P::acquire(&me.mutex.mutex, entry_addr);
+            result
+        }
+    }
+
     /// Calls a closure while temporarily disabling lockdep tracking for the lock held by this guard.
     #[inline]
     pub fn call_untracked<R, F: FnOnce(&mut LockToken<'a, Class>) -> R>(
@@ -168,6 +204,123 @@ impl<'a, Class: LockClass, M: RawLock, P: LockPolicy<M>> PinnedDrop
             let entry_addr = &mut me.lock_entry as *mut _;
             P::release(&me.mutex.mutex, entry_addr, me.state);
         }
+    }
+}
+
+/// Type tag to indicate aliased lock acquisition.
+pub struct AliasedLock;
+
+/// Acquires an aliased lock on two `KMutex` instances that reference the same underlying lock.
+///
+/// Only `lock1` is physically acquired, but the resulting guard holds proof tokens for both
+/// `Class1` and `Class2`.
+#[inline]
+pub fn aliased_lock<'a, Class1: LockClass, Class2: LockClass, M1: RawLock, M2: RawLock>(
+    lock1: &'a KMutex<Class1, M1>,
+    lock2: &'a KMutex<Class2, M2>,
+) -> impl PinInit<KMutexAliasedGuard<'a, Class1, Class2, M1, M2>, core::convert::Infallible> {
+    KMutexAliasedGuard::new(lock1, lock2)
+}
+
+/// Acquires an aliased lock with a specific policy on two `KMutex` instances that reference the same
+/// underlying lock.
+#[inline]
+pub fn aliased_lock_policy<
+    'a,
+    Class1: LockClass,
+    Class2: LockClass,
+    M1: RawLock,
+    M2: RawLock,
+    P: LockPolicy<M1>,
+>(
+    lock1: &'a KMutex<Class1, M1>,
+    lock2: &'a KMutex<Class2, M2>,
+) -> impl PinInit<KMutexAliasedGuard<'a, Class1, Class2, M1, M2, P>, core::convert::Infallible> {
+    KMutexAliasedGuard::new(lock1, lock2)
+}
+
+/// A validation guard representing ownership of two aliased locks simultaneously.
+///
+/// Only the first lock is physically acquired, but proof tokens for both lock classes (`Class1` and
+/// `Class2`) are provided.
+#[pin_data]
+pub struct KMutexAliasedGuard<
+    'a,
+    Class1: LockClass,
+    Class2: LockClass,
+    M1: RawLock = RawMutex,
+    M2: RawLock = M1,
+    P: LockPolicy<M1> = <M1 as RawLock>::DefaultPolicy,
+> {
+    #[pin]
+    inner: KMutexGuard<'a, Class1, M1, P>,
+
+    token2: LockToken<'a, Class2>,
+
+    _phantom: PhantomData<&'a KMutex<Class2, M2>>,
+}
+
+impl<'a, Class1: LockClass, Class2: LockClass, M1: RawLock, M2: RawLock, P: LockPolicy<M1>>
+    KMutexAliasedGuard<'a, Class1, Class2, M1, M2, P>
+{
+    /// Creates a new stack-pinned aliased validation guard initialization block.
+    pub fn new(
+        lock1: &'a KMutex<Class1, M1>,
+        _lock2: &'a KMutex<Class2, M2>,
+    ) -> impl PinInit<Self, core::convert::Infallible> {
+        if core::mem::size_of::<M2>() > 0 {
+            debug_assert_eq!(
+                lock1.mutex.as_mut_ptr(),
+                _lock2.mutex.as_mut_ptr(),
+                "AliasedLock requires lock1 and lock2 to point to the same physical lock"
+            );
+        }
+        pin_init!(Self {
+            inner <- KMutexGuard::new(lock1),
+            // SAFETY: `inner` holds the underlying mutex, which is aliased to represent `Class2`.
+            token2: unsafe { LockToken::new() },
+            _phantom: PhantomData,
+        })
+    }
+
+    /// Returns shared references to both lock proof tokens `(Class1, Class2)`.
+    #[inline]
+    pub fn tokens(&self) -> (&LockToken<'a, Class1>, &LockToken<'a, Class2>) {
+        (self.inner.token(), &self.token2)
+    }
+
+    /// Returns simultaneous mutable references to both proof tokens `(Class1, Class2)`.
+    #[inline]
+    pub fn tokens_mut(
+        self: Pin<&mut Self>,
+    ) -> (&mut LockToken<'a, Class1>, &mut LockToken<'a, Class2>) {
+        let me = unsafe { self.get_unchecked_mut() };
+        let inner_pin = unsafe { Pin::new_unchecked(&mut me.inner) };
+        (inner_pin.token_mut(), &mut me.token2)
+    }
+
+    /// Temporarily releases the lock before executing the given callable `f` and then
+    /// re-acquires the lock.
+    #[inline]
+    pub fn call_unlocked<R, F: FnOnce() -> R>(self: Pin<&mut Self>, f: F) -> R {
+        let me = unsafe { self.get_unchecked_mut() };
+        let inner_pin = unsafe { Pin::new_unchecked(&mut me.inner) };
+        inner_pin.call_unlocked(f)
+    }
+
+    /// Calls a closure while temporarily disabling lockdep tracking for the lock held by this guard.
+    #[inline]
+    pub fn call_untracked<
+        R,
+        F: FnOnce(&mut LockToken<'a, Class1>, &mut LockToken<'a, Class2>) -> R,
+    >(
+        self: Pin<&mut Self>,
+        f: F,
+    ) -> R {
+        let me = unsafe { self.get_unchecked_mut() };
+        let token2 = &mut me.token2;
+        let inner_pin = unsafe { Pin::new_unchecked(&mut me.inner) };
+        inner_pin.call_untracked(|token1| f(token1, token2))
     }
 }
 
@@ -389,5 +542,123 @@ mod tests {
 
         lock!(let guard = s.lock_mu());
         assert_eq!(*guard.data(), 100);
+    }
+
+    #[test]
+    fn test_call_unlocked() {
+        stack_pin_init!(let s = pin_init!(MyGuardedStruct {
+            mu <- KMutex::init(),
+            data1: 10.into(),
+            data2: 20.into(),
+        }));
+
+        lock!(let mut guard = s.lock_mu());
+        assert_eq!(*guard.data1(), 10);
+
+        let unlocked_result = guard.as_mut().call_unlocked(|| {
+            // During call_unlocked, the lock is temporarily released.
+            42
+        });
+        assert_eq!(unlocked_result, 42);
+
+        // After call_unlocked returns, the lock is held again and fields can be accessed/modified.
+        *guard.as_mut().data1_mut() = 99;
+        assert_eq!(*guard.data1(), 99);
+    }
+
+    #[guarded]
+    struct AliasedTargetStruct {
+        #[mutex(MyGuardedStructMuClass)]
+        mu: KMutex<crate::PhantomMutex>,
+        #[guarded_by(mu)]
+        value: u32,
+    }
+
+    #[test]
+    fn test_aliased_lock_basic() {
+        stack_pin_init!(let s = pin_init!(MyGuardedStruct {
+            mu <- KMutex::init(),
+            data1: 100.into(),
+            data2: 200.into(),
+        }));
+
+        stack_pin_init!(let target = pin_init!(AliasedTargetStruct {
+            mu: KMutex::new(crate::PhantomMutex),
+            value: 300.into(),
+        }));
+
+        {
+            lock!(let mut guard = aliased_lock(&s.mu, &target.mu));
+
+            // Access fields of s and target using tokens() pair
+            let (t1, t2) = guard.tokens();
+            assert_eq!(*s.guard_mu(t1).data1(), 100);
+            assert_eq!(*s.guard_mu(t1).data2(), 200);
+            assert_eq!(*target.guard_mu(t2).value(), 300);
+
+            // Disjoint simultaneous mutable access to both structs
+            let (t1_mut, t2_mut) = guard.as_mut().tokens_mut();
+            *s.guard_mu_mut(t1_mut).data1_mut() = 101;
+            *target.guard_mu_mut(t2_mut).value_mut() = 301;
+
+            // Call unlocked on aliased guard
+            let res = guard.as_mut().call_unlocked(|| 1234);
+            assert_eq!(res, 1234);
+
+            // Verify mutations persist
+            let (t1, t2) = guard.tokens();
+            assert_eq!(*s.guard_mu(t1).data1(), 101);
+            assert_eq!(*target.guard_mu(t2).value(), 301);
+        }
+
+        // Verify state with regular lock
+        lock!(let guard = s.lock_mu());
+        assert_eq!(*guard.data1(), 101);
+    }
+
+    #[test]
+    fn test_aliased_lock_macro_method() {
+        stack_pin_init!(let s = pin_init!(MyGuardedStruct {
+            mu <- KMutex::init(),
+            data1: 10.into(),
+            data2: 20.into(),
+        }));
+
+        stack_pin_init!(let target = pin_init!(AliasedTargetStruct {
+            mu: KMutex::new(crate::PhantomMutex),
+            value: 30.into(),
+        }));
+
+        {
+            lock!(let mut guard = s.lock_mu_aliased(&target.mu));
+            let (_t1, t2) = guard.tokens();
+            assert_eq!(*target.guard_mu(t2).value(), 30);
+            let (_t1_mut, t2_mut) = guard.as_mut().tokens_mut();
+            *target.guard_mu_mut(t2_mut).value_mut() = 35;
+        }
+
+        lock!(let guard = s.lock_mu());
+        assert_eq!(*target.guard_mu(guard.token()).value(), 35);
+    }
+
+    #[guarded]
+    struct FlaggedMutexStruct {
+        #[mutex(flags = lockdep::LOCK_FLAGS_ACTIVE_LIST_DISABLED)]
+        seek_lock: KMutex,
+        #[guarded_by(seek_lock)]
+        seek: u64,
+    }
+
+    #[test]
+    fn test_flagged_mutex_struct() {
+        stack_pin_init!(let s = pin_init!(FlaggedMutexStruct {
+            seek_lock <- KMutex::init(),
+            seek: 0.into(),
+        }));
+
+        lock!(let mut guard = s.lock_seek_lock());
+        assert_eq!(*guard.seek(), 0);
+        *guard.as_mut().seek_mut() = 1024;
+        assert_eq!(*guard.seek(), 1024);
     }
 }

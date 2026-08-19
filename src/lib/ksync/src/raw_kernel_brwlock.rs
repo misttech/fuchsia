@@ -61,6 +61,8 @@ impl PinnedDrop for RawBrwLockPi {
 }
 
 impl RawBrwLockPi {
+    pub const LOCK_FLAGS: lockdep::LockFlags = lockdep::LOCK_FLAGS_NONE;
+
     /// Initializes a new `RawBrwLockPi` in-place.
     ///
     /// # Safety

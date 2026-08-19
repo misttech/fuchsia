@@ -64,7 +64,9 @@ mod raw_kernel_brwlock;
 #[cfg(all(not(feature = "kernel"), test))]
 mod raw_userspace_brwlock;
 
-pub use kmutex::{KMutex, KMutexGuard};
+pub use kmutex::{
+    AliasedLock, KMutex, KMutexAliasedGuard, KMutexGuard, aliased_lock, aliased_lock_policy,
+};
 pub use lock_token::LockToken;
 pub use lockdep::{LockClass, LockClassRegistration};
 pub use phantom_mutex::PhantomMutex;
