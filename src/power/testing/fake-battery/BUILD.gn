@@ -103,5 +103,6 @@ group("tests") {
   deps = [
     ":fake_battery_driver_tests",
     ":integration_tests",
+    "tool:tests",
   ]
 }
