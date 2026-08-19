@@ -5,10 +5,12 @@
 #ifndef SRC_CAMERA_BIN_CAMERA_GYM_BUFFER_COLLAGE_FLATLAND_H_
 #define SRC_CAMERA_BIN_CAMERA_GYM_BUFFER_COLLAGE_FLATLAND_H_
 
-#include <fuchsia/element/cpp/fidl.h>
+#include <fidl/fuchsia.element/cpp/fidl.h>
+#include <fidl/fuchsia.ui.composition/cpp/fidl.h>
+#include <fidl/fuchsia.ui.views/cpp/fidl.h>
 #include <fuchsia/math/cpp/fidl.h>
 #include <fuchsia/sysmem/cpp/fidl.h>
-#include <fuchsia/ui/composition/cpp/fidl.h>
+#include <fuchsia/sysmem2/cpp/fidl.h>
 #include <lib/async-loop/cpp/loop.h>
 #include <lib/async/cpp/wait.h>
 #include <lib/fidl/cpp/binding.h>
@@ -22,12 +24,12 @@
 #include <map>
 
 #include "fuchsia/camera/gym/cpp/fidl.h"
-#include "src/lib/ui/flatland-frame-scheduling/src/simple_present_hlcpp.h"
+#include "src/lib/ui/flatland-frame-scheduling/src/simple_present.h"
 
 namespace camera_flatland {
-using fuchsia::ui::composition::ContentId;
-using fuchsia::ui::composition::LayoutInfo;
-using fuchsia::ui::composition::TransformId;
+using fuchsia_ui_composition::ContentId;
+using fuchsia_ui_composition::LayoutInfo;
+using fuchsia_ui_composition::TransformId;
 
 // Returns an event such that when the event is signaled and the dispatcher executed, the provided
 // eventpair is closed. This can be used to bridge event- and eventpair-based fence semantics. If
@@ -71,7 +73,7 @@ struct CollectionView {
   bool muted = false;
   bool view_created = false;
   TransformId transform_id{0};  // transform_id stays constant throughout view lifecycle.
-  allocation::BufferCollectionImportExportTokens ref_pair;
+  allocation::cpp::BufferCollectionImportExportTokens ref_pair;
 };
 
 // This class takes ownership of the display and presents the contents of buffer collections in a
@@ -88,9 +90,9 @@ class BufferCollageFlatland {
   // the instance stops running, either due to an error or explicit action, |stop_callback| is
   // invoked exactly once if non-null.
   static fpromise::result<std::unique_ptr<BufferCollageFlatland>, zx_status_t> Create(
-      std::unique_ptr<simple_present::FlatlandConnection> flatland_connection,
-      fuchsia::ui::composition::AllocatorHandle flatland_allocator,
-      fuchsia::element::GraphicalPresenterHandle graphical_presenter,
+      fidl::ClientEnd<fuchsia_ui_composition::Flatland> flatland,
+      fidl::ClientEnd<fuchsia_ui_composition::Allocator> flatland_allocator,
+      fidl::ClientEnd<fuchsia_element::GraphicalPresenter> graphical_presenter,
       fuchsia::sysmem2::AllocatorHandle sysmem_allocator, fit::closure stop_callback = nullptr);
 
   // Registers a new buffer collection and adds it to the views, updating the layout of existing
@@ -115,6 +117,10 @@ class BufferCollageFlatland {
 
  private:
   BufferCollageFlatland();
+
+  fidl::Client<fuchsia_ui_composition::Flatland>& flatland() {
+    return flatland_connection_->FlatlandClient();
+  }
 
   // Disconnects all channels, quits the loop, and calls the stop callback.
   void Stop();
@@ -141,18 +147,17 @@ class BufferCollageFlatland {
   // Thread used for processing camera stream buffers and calling Flatland API.
   async::Loop loop_;
   fuchsia::sysmem2::AllocatorPtr sysmem_allocator_;
-  fuchsia::element::GraphicalPresenterPtr graphical_presenter_;
+  fidl::Client<fuchsia_element::GraphicalPresenter> graphical_presenter_;
   fit::closure stop_callback_;
   std::unique_ptr<simple_present::FlatlandConnection> flatland_connection_;
-  fuchsia::ui::composition::Flatland* flatland_;
-  fuchsia::ui::composition::ParentViewportWatcherPtr parent_watcher_;
-  fuchsia::ui::composition::AllocatorPtr flatland_allocator_;
+  fidl::Client<fuchsia_ui_composition::ParentViewportWatcher> parent_watcher_;
+  fidl::Client<fuchsia_ui_composition::Allocator> flatland_allocator_;
   std::map<uint32_t, CollectionView> collection_views_;
 
   uint32_t width_ = 0;
   uint32_t height_ = 0;
 
-  const TransformId kRootTransformId{.value = 1};
+  const TransformId kRootTransformId{1};
   int32_t next_collection_id_ = 1;
   unsigned int next_transform_id = 3;
   unsigned int next_content_id = 2;

@@ -2,12 +2,14 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <fidl/fuchsia.element/cpp/fidl.h>
+#include <fidl/fuchsia.ui.composition/cpp/fidl.h>
 #include <fuchsia/camera3/cpp/fidl.h>
-#include <fuchsia/element/cpp/fidl.h>
 #include <fuchsia/sysmem/cpp/fidl.h>
 #include <lib/async-loop/cpp/loop.h>
 #include <lib/async-loop/default.h>
 #include <lib/async/cpp/task.h>
+#include <lib/component/incoming/cpp/protocol.h>
 #include <lib/fpromise/bridge.h>
 #include <lib/fpromise/single_threaded_executor.h>
 #include <lib/fzl/vmo-mapper.h>
@@ -39,27 +41,31 @@ int Setup(std::optional<zx::duration> auto_cycle_interval, async::Loop* buffer_c
     return EXIT_FAILURE;
   }
 
-  std::unique_ptr<simple_present::FlatlandConnection> flatland_connection =
-      simple_present::FlatlandConnection::Create(context.get(), "camera-gym");
-
-  fuchsia::ui::composition::AllocatorHandle flatland_allocator;
-  status = context->svc()->Connect(flatland_allocator.NewRequest());
-  if (status != ZX_OK) {
-    FX_PLOGS(ERROR, status) << "Failed to request flatland allocator service.";
+  auto flatland_connect = component::Connect<fuchsia_ui_composition::Flatland>();
+  if (flatland_connect.is_error()) {
+    FX_PLOGS(ERROR, flatland_connect.error_value()) << "Failed to request Flatland service.";
     return EXIT_FAILURE;
   }
 
-  fuchsia::element::GraphicalPresenterHandle graphical_presenter;
-  status = context->svc()->Connect(graphical_presenter.NewRequest());
-  if (status != ZX_OK) {
-    FX_PLOGS(ERROR, status) << "Failed to request GraphicalPresenter service.";
+  auto flatland_allocator_connect = component::Connect<fuchsia_ui_composition::Allocator>();
+  if (flatland_allocator_connect.is_error()) {
+    FX_PLOGS(ERROR, flatland_allocator_connect.error_value())
+        << "Failed to request flatland allocator service.";
+    return EXIT_FAILURE;
+  }
+
+  auto graphical_presenter_connect = component::Connect<fuchsia_element::GraphicalPresenter>();
+  if (graphical_presenter_connect.is_error()) {
+    FX_PLOGS(ERROR, graphical_presenter_connect.error_value())
+        << "Failed to request GraphicalPresenter service.";
     return EXIT_FAILURE;
   }
 
   // Create the collage.
   auto collage_result = camera_flatland::BufferCollageFlatland::Create(
-      std::move(flatland_connection), std::move(flatland_allocator), std::move(graphical_presenter),
-      std::move(buffer_collage_allocator), [&buffer_collage_loop] { buffer_collage_loop->Quit(); });
+      std::move(flatland_connect.value()), std::move(flatland_allocator_connect.value()),
+      std::move(graphical_presenter_connect.value()), std::move(buffer_collage_allocator),
+      [&buffer_collage_loop] { buffer_collage_loop->Quit(); });
   if (collage_result.is_error()) {
     FX_PLOGS(ERROR, collage_result.error()) << "Failed to create BufferCollageFlatland.";
     return EXIT_FAILURE;
@@ -170,7 +176,6 @@ int main(int argc, char* argv[]) {
 
   trace::TraceProviderWithFdio trace_provider(buffer_collage_loop.dispatcher());
   auto context = sys::ComponentContext::CreateAndServeOutgoingDirectory();
-  zx_status_t status;
 
   return Setup(auto_cycle_interval, &buffer_collage_loop, &cycler_loop, std::move(context));
 }
