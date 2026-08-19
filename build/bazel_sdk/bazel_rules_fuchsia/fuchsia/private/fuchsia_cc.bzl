@@ -167,7 +167,7 @@ fuchsia_cc = rule(
         ),
         "clang_debug_symbols": attr.label(
             doc = "Clang debug symbols.",
-            default = "@fuchsia_clang//:debug_symbols",
+            default = "@fuchsia_sdk//clang:debug_symbols",
             providers = [FuchsiaDebugSymbolInfo],
         ),
         "deps": attr.label_list(

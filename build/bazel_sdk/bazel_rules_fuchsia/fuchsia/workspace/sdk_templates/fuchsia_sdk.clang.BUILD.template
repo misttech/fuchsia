@@ -1,0 +1,26 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+"""Definitions related to the @fuchsia_clang repository.
+
+These cannot go into the top-level @fuchsia_sdk//:BUILD.bazel file because
+the latter is used in OOT workspaces that do not have the @fuchsia_clang
+repository (e.g. they only perform Bazel assembly, and never build any
+C++ code). A reference to @fuchsia_clang in that file would break these
+projects.
+
+Instead, these definitions go under @fuchsia_sdk//clang:BUILD.bazel
+and are only referenced from C++ related rules such as fuchsia_cc().
+"""
+
+load("@rules_fuchsia//fuchsia:defs.bzl", "fuchsia_debug_symbols")
+
+fuchsia_debug_symbols(
+    name = "debug_symbols",
+    source_search_root = "//:BUILD.bazel",
+    build_id_dirs = ["@fuchsia_clang//:lib/debug/.build-id"],
+
+    # This must be visibile to any OOT use of fuchsia_cc_binary()
+    visibility = ["//visibility:public"],
+)

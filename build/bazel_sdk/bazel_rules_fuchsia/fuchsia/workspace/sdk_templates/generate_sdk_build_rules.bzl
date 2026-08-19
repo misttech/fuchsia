@@ -142,6 +142,11 @@ _REPOSITORY_BUILD_TEMPLATE = (
     "//fuchsia/workspace/sdk_templates:fuchsia_sdk.BUILD.bazel"
 )
 
+# Location of templte for @fuchsia_sdk//clang:BUILD.bazel
+_REPOSITORY_CLANG_BUILD_TEMPLATE = (
+    "//fuchsia/workspace/sdk_templates:fuchsia_sdk.clang.BUILD.template"
+)
+
 # The following keys are used to add additional visibility restrictions that the
 # caller can define. They are defined here for reference purposes.
 HLCPP_VISIBILITY_KEY = "hlcpp"  # Used to restrict access to hlcpp targets.
@@ -156,6 +161,7 @@ def resolve_repository_labels(runtime):
        runtime: A runtime value.
     """
     runtime.label_to_path(_REPOSITORY_BUILD_TEMPLATE)
+    runtime.label_to_path(_REPOSITORY_CLANG_BUILD_TEMPLATE)
     for template in _SDK_TEMPLATES.values():
         runtime.label_to_path(template)
 
@@ -1871,6 +1877,12 @@ def generate_sdk_repository(runtime, manifests):
             "{{HOST_CPU}}": constants.host_cpus[0],
             "{{SDK_ID}}": _sdk_id_from_manifests(runtime, manifests),
         },
+        executable = False,
+    )
+    ctx.template(
+        "clang/BUILD.bazel",
+        runtime.label_to_path(_REPOSITORY_CLANG_BUILD_TEMPLATE),
+        substitutions = {},
         executable = False,
     )
 

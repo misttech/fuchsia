@@ -9,7 +9,6 @@ load(
     "@rules_fuchsia//fuchsia:defs.bzl",
     "COMPATIBILITY",
     "fuchsia_cpu_filter_dict",
-    "fuchsia_debug_symbols",
     "fuchsia_package_resource_group",
 )
 load("//:generated_constants.bzl", clang_constants = "constants")
@@ -78,6 +77,9 @@ exports_files([
     "bin/clang-format",
     "bin/clang-tidy",
     "bin/llvm-readelf",
+
+    # Referenced from @fuchsia_sdk//clang:BUILD.bazel
+    "lib/debug/.build-id",
 ])
 
 [
@@ -104,12 +106,6 @@ cc_library(
     name = "sources",
     srcs = glob(["src/**"], allow_empty = True),
     visibility = ["//visibility:public"],
-)
-
-fuchsia_debug_symbols(
-    name = "debug_symbols",
-    source_search_root = "//:BUILD.bazel",
-    build_id_dirs = ["//:lib/debug/.build-id"],
 )
 
 # Define clang runtime libraries as fuchsia_package_resource_group()
