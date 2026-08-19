@@ -60,8 +60,15 @@ class TargetSshAddress:
 
 
 class FfxClient:
-    def __init__(self, ffx_path: str):
+    def __init__(
+        self,
+        ffx_path: str,
+        ssh_auth_sock: str | None = None,
+        identities_only: bool | None = None,
+    ):
         self._ffx_path = ffx_path
+        self._ssh_auth_sock = ssh_auth_sock
+        self._identities_only = identities_only
 
     def target_list(self, isolate_dir: str | None) -> TargetListResult:
         """Returns detected Fuchsia targets.
@@ -81,6 +88,15 @@ class FfxClient:
 
         if isolate_dir is not None:
             cmd += ["--isolate-dir", isolate_dir]
+
+        if self._ssh_auth_sock is not None:
+            cmd += ["-c", f"ssh.auth-sock={self._ssh_auth_sock}"]
+
+        if self._identities_only is not None:
+            cmd += [
+                "-c",
+                f"ssh.identities-only={str(self._identities_only).lower()}",
+            ]
 
         cmd += [
             "--machine",
@@ -132,6 +148,15 @@ class FfxClient:
         if isolate_dir is not None:
             cmd += ["--isolate-dir", isolate_dir]
 
+        if self._ssh_auth_sock is not None:
+            cmd += ["-c", f"ssh.auth-sock={self._ssh_auth_sock}"]
+
+        if self._identities_only is not None:
+            cmd += [
+                "-c",
+                f"ssh.identities-only={str(self._identities_only).lower()}",
+            ]
+
         cmd += [
             "-t",
             target_name,
@@ -175,6 +200,15 @@ class FfxClient:
 
         if isolate_dir is not None:
             cmd += ["--isolate-dir", isolate_dir]
+
+        if self._ssh_auth_sock is not None:
+            cmd += ["-c", f"ssh.auth-sock={self._ssh_auth_sock}"]
+
+        if self._identities_only is not None:
+            cmd += [
+                "-c",
+                f"ssh.identities-only={str(self._identities_only).lower()}",
+            ]
 
         cmd += [
             "target",

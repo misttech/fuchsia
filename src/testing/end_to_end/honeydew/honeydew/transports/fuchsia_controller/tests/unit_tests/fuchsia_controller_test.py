@@ -104,6 +104,98 @@ class FuchsiaControllerTests(unittest.TestCase):
     @mock.patch.object(
         fuchsia_controller,
         "Context",
+        autospec=True,
+    )
+    def test_create_context_with_ssh_auth_sock(
+        self, mock_fc_context: mock.Mock
+    ) -> None:
+        """Test case for fuchsia_controller_transport.create_context() with ssh_auth_sock."""
+        ssh_auth_sock = "/tmp/ssh_auth_sock"
+        ffx_config_data = ffx_config.FfxConfigData(
+            isolate_dir=fuchsia_controller.IsolateDir("/tmp/isolate"),
+            logs_dir="/tmp/logs",
+            binary_path="/bin/ffx",
+            logs_level="debug",
+            enable_usb=False,
+            usb_socket_path=None,
+            usb_driver_autostart=False,
+            subtools_search_path=None,
+            proxy_timeout_secs=None,
+            ssh_keepalive_timeout=None,
+            emu_instance_dir=None,
+            ssh_private_keys=None,
+            ssh_public_keys=None,
+            ssh_auth_sock=ssh_auth_sock,
+        )
+        fc_transport.FuchsiaController(
+            target_name=_INPUT_ARGS["target_name"],
+            ffx_config_data=ffx_config_data,
+        )
+
+        mock_fc_context.assert_called_with(
+            config={
+                "log.level": "debug",
+                "log.dir": "/tmp/logs",
+                "connectivity.enable_usb": "false",
+                "connectivity.usb_driver_autostart": "false",
+                "ssh.auth-sock": ssh_auth_sock,
+            },
+            isolate_dir=ffx_config_data.isolate_dir,
+            target=_INPUT_ARGS["target_name"],
+        )
+
+    @mock.patch.object(
+        fuchsia_controller.Context,
+        "target_wait",
+        autospec=True,
+    )
+    @mock.patch.object(
+        fuchsia_controller,
+        "Context",
+        autospec=True,
+    )
+    def test_create_context_with_identities_only(
+        self,
+        mock_fc_context: mock.Mock,
+        mock_target_wait: mock.Mock,
+    ) -> None:
+        """Verify create_context() with identities_only passed in ffx_config_data."""
+        ffx_config_data = ffx_config.FfxConfigData(
+            isolate_dir=fuchsia_controller.IsolateDir("/tmp/isolate"),
+            logs_dir="/tmp/logs",
+            binary_path="/bin/ffx",
+            logs_level="debug",
+            enable_usb=False,
+            usb_socket_path=None,
+            usb_driver_autostart=False,
+            subtools_search_path=None,
+            proxy_timeout_secs=None,
+            ssh_keepalive_timeout=None,
+            emu_instance_dir=None,
+            ssh_private_keys=None,
+            ssh_public_keys=None,
+            identities_only=True,
+        )
+        fc_transport.FuchsiaController(
+            target_name=_INPUT_ARGS["target_name"],
+            ffx_config_data=ffx_config_data,
+        )
+
+        mock_fc_context.assert_called_with(
+            config={
+                "log.level": "debug",
+                "log.dir": "/tmp/logs",
+                "connectivity.enable_usb": "false",
+                "connectivity.usb_driver_autostart": "false",
+                "ssh.identities-only": "true",
+            },
+            isolate_dir=ffx_config_data.isolate_dir,
+            target=_INPUT_ARGS["target_name"],
+        )
+
+    @mock.patch.object(
+        fuchsia_controller,
+        "Context",
         side_effect=fuchsia_controller.FcTransportStatus(
             fuchsia_controller.FcTransportStatus.FC_ERR_INVALID_ARGS
         ),

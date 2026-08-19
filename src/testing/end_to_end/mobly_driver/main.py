@@ -84,6 +84,17 @@ parser.add_argument(
     help="Path to the SSH key for the fuchsia device.",
 )
 parser.add_argument(
+    "--ssh-auth-sock",
+    default=None,
+    help="Path to the SSH authentication socket (SSH_AUTH_SOCK) to use for FFX/SSH.",
+)
+parser.add_argument(
+    "--ssh-identities-only",
+    action="store_true",
+    default=None,
+    help="When set, tells OpenSSH to only offer explicit identity keys (-i) and ignore other ssh-agent identities.",
+)
+parser.add_argument(
     "--ap-ip",
     default=None,
     help="IP address of the access point.",
@@ -226,6 +237,10 @@ def generate_honeydew_config() -> dict[str, Any]:
         ffx_config["subtools_search_path"] = os.path.abspath(
             args.ffx_subtools_path
         )
+    if args.ssh_auth_sock:
+        ffx_config["ssh_auth_sock"] = os.path.abspath(args.ssh_auth_sock)
+    if args.ssh_identities_only is not None:
+        ffx_config["identities_only"] = args.ssh_identities_only
 
     honeydew_config: dict[str, Any] = {}
     if args.honeydew_config_json_path:

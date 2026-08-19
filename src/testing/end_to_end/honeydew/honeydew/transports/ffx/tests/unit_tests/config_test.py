@@ -3,6 +3,8 @@
 # found in the LICENSE file.
 """Unit tests for ffx.config.py."""
 
+import json
+import os
 import unittest
 from typing import Any
 from unittest import mock
@@ -48,6 +50,8 @@ _INPUT_ARGS: dict[str, Any] = {
         emu_instance_dir=None,
         ssh_private_keys=[],
         ssh_public_keys=[],
+        ssh_auth_sock=None,
+        identities_only=None,
     ),
 }
 
@@ -209,4 +213,107 @@ class FfxConfigTests(unittest.TestCase):
         self.assertEqual(config.ssh_private_keys, ["/path/to/key1"])
         self.assertEqual(
             config.ssh_public_keys, ["/path/to/pub1", "/path/to/pub2"]
+        )
+
+    def test_setup_with_explicit_ssh_auth_sock(self) -> None:
+        """Test case for FfxConfig.setup() with explicit ssh_auth_sock"""
+        ffx_config_obj: ffx_config.FfxConfig = ffx_config.FfxConfig()
+        ffx_config_obj.setup(
+            binary_path=_BINARY_PATH,
+            isolate_dir=_ISOLATE_DIR,
+            logs_dir=_LOGS_DIR,
+            logs_level=_LOGS_LEVEL,
+            enable_mdns=_MDNS_ENABLED,
+            enable_usb=_ENABLE_USB,
+            ssh_auth_sock="/tmp/custom_auth_sock",
+        )
+        config = ffx_config_obj.get_config()
+        self.assertEqual(config.ssh_auth_sock, "/tmp/custom_auth_sock")
+
+    @mock.patch.dict(
+        "honeydew.transports.ffx.config.os.environ",
+        {"SSH_AUTH_SOCK": "/tmp/env_auth_sock"},
+    )
+    def test_setup_with_env_ssh_auth_sock(self) -> None:
+        """Test case for FfxConfig.setup() with SSH_AUTH_SOCK from environment"""
+        ffx_config_obj: ffx_config.FfxConfig = ffx_config.FfxConfig()
+        ffx_config_obj.setup(
+            binary_path=_BINARY_PATH,
+            isolate_dir=_ISOLATE_DIR,
+            logs_dir=_LOGS_DIR,
+            logs_level=_LOGS_LEVEL,
+            enable_mdns=_MDNS_ENABLED,
+            enable_usb=_ENABLE_USB,
+        )
+        config = ffx_config_obj.get_config()
+        self.assertEqual(config.ssh_auth_sock, "/tmp/env_auth_sock")
+
+    def test_setup_with_identities_only(self) -> None:
+        """Test case for FfxConfig.setup(identities_only=True)"""
+        ffx_config_obj: ffx_config.FfxConfig = ffx_config.FfxConfig()
+        ffx_config_obj.setup(
+            binary_path=_BINARY_PATH,
+            isolate_dir=_ISOLATE_DIR,
+            logs_dir=_LOGS_DIR,
+            logs_level=_LOGS_LEVEL,
+            enable_mdns=_MDNS_ENABLED,
+            enable_usb=_ENABLE_USB,
+            identities_only=True,
+        )
+        config = ffx_config_obj.get_config()
+        self.assertTrue(config.identities_only)
+
+    @mock.patch.dict(os.environ, {"IDENTITIES_ONLY": "yes"}, clear=True)
+    def test_setup_with_identities_only_from_env(self) -> None:
+        """Test case for FfxConfig.setup() reading IDENTITIES_ONLY from env"""
+        ffx_config_obj: ffx_config.FfxConfig = ffx_config.FfxConfig()
+        ffx_config_obj.setup(
+            binary_path=_BINARY_PATH,
+            isolate_dir=_ISOLATE_DIR,
+            logs_dir=_LOGS_DIR,
+            logs_level=_LOGS_LEVEL,
+            enable_mdns=_MDNS_ENABLED,
+            enable_usb=_ENABLE_USB,
+        )
+        config = ffx_config_obj.get_config()
+        self.assertTrue(config.identities_only)
+
+    def test_get_config_args(self) -> None:
+        """Test case for FfxConfigData.get_config_args()"""
+        ffx_config_data = ffx_config.FfxConfigData(
+            isolate_dir=fuchsia_controller.IsolateDir(_ISOLATE_DIR),
+            logs_dir=_LOGS_DIR,
+            binary_path=_BINARY_PATH,
+            logs_level=_LOGS_LEVEL,
+            enable_usb=_ENABLE_USB,
+            usb_socket_path=_USB_SOCKET_PATH,
+            usb_driver_autostart=_USB_DRIVER_AUTOSTART,
+            subtools_search_path=_SUBTOOLS_SEARCH_PATH,
+            proxy_timeout_secs=_PROXY_TIMEOUT_SECS,
+            ssh_keepalive_timeout=_SSH_KEEPALIVE_TIMEOUT,
+            emu_instance_dir=None,
+            ssh_private_keys=[],
+            ssh_public_keys=[],
+            ssh_auth_sock="/tmp/ssh_auth_sock",
+            identities_only=True,
+        )
+        expected_config_dict = {
+            "log": {"dir": _LOGS_DIR, "level": _LOGS_LEVEL},
+            "ffx": {"subtool-search-paths": [_SUBTOOLS_SEARCH_PATH]},
+            "proxy": {"timeout_secs": _PROXY_TIMEOUT_SECS},
+            "ssh": {
+                "keepalive_timeout": _SSH_KEEPALIVE_TIMEOUT,
+                "priv": [],
+                "pub": [],
+                "auth-sock": "/tmp/ssh_auth_sock",
+                "identities-only": True,
+            },
+            "connectivity": {
+                "enable_usb": _ENABLE_USB,
+                "usb_driver_autostart": _USB_DRIVER_AUTOSTART,
+            },
+        }
+        self.assertEqual(
+            ffx_config_data.get_config_args(),
+            ["-c", json.dumps(expected_config_dict)],
         )

@@ -117,6 +117,18 @@ fn apply_auth_sock(cmd: &mut Command, context: &EnvironmentContext) {
     }
 }
 
+fn apply_identities_only(
+    config: &mut SshConfig,
+    context: &EnvironmentContext,
+) -> Result<(), SshCommandError> {
+    const SSH_IDENTITIES_ONLY: &str = "ssh.identities-only";
+    if let Ok(identities_only) = context.get::<bool, _>(SSH_IDENTITIES_ONLY) {
+        log::debug!("ssh.identities-only retrieved via config: {}", identities_only);
+        config.set("IdentitiesOnly", if identities_only { "yes" } else { "no" })?;
+    }
+    Ok(())
+}
+
 async fn build_ssh_command_with_ssh_path(
     ssh_path: &str,
     addr: ScopedSocketAddr,
@@ -374,6 +386,7 @@ async fn build_ssh_command_with_ssh_config_and_env(
     // setup in use.
     c.env_remove("SSH_AUTH_SOCK");
     apply_auth_sock(&mut c, env);
+    apply_identities_only(config, env)?;
     c.args(["-F", "none"]);
     c.args(config.to_args());
 

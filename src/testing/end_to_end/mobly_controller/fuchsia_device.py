@@ -103,6 +103,8 @@ async def create(
         or False,
         emu_instance_dir=ffx_config_dict.get("emu_instance_dir"),
         ssh_private_keys=ssh_private_keys if ssh_private_keys else None,
+        ssh_auth_sock=ffx_config_dict.get("ssh_auth_sock"),
+        identities_only=ffx_config_dict.get("identities_only"),
     )
 
     fuchsia_devices = []
@@ -329,4 +331,13 @@ def _get_ffx_config(configs: list[dict[str, Any]]) -> dict[str, Any]:
                     f"Invalid value sent in '{ffx_config_key}'. Please pass a int value"
                 ) from err
     ffx_config_dict["enable_usb"] = True
+
+    ssh_auth_sock = ffx_config_dict.get("ssh_auth_sock") or ffx_config_dict.get(
+        "ssh.auth-sock"
+    )
+    if not ssh_auth_sock:
+        ssh_auth_sock = os.environ.get("SSH_AUTH_SOCK")
+    if ssh_auth_sock:
+        ffx_config_dict["ssh_auth_sock"] = ssh_auth_sock
+
     return ffx_config_dict

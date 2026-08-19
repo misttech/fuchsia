@@ -49,6 +49,8 @@ class FfxConfigData:
         emu_instance_dir: Directory where emulators are stored.
         ssh_private_keys: List of SSH private keys for connection.
         ssh_public_keys: List of SSH public keys for connection.
+        ssh_auth_sock: Path to SSH authentication socket for connection.
+        identities_only: Whether to strictly use explicit identity files.
     """
 
     binary_path: str
@@ -64,6 +66,8 @@ class FfxConfigData:
     emu_instance_dir: str | None
     ssh_private_keys: list[str] | None
     ssh_public_keys: list[str] | None
+    ssh_auth_sock: str | None = None
+    identities_only: bool | None = None
 
     def __str__(self) -> str:
         return (
@@ -80,6 +84,8 @@ class FfxConfigData:
             f"emu_instance_dir={self.emu_instance_dir}, "
             f"ssh_private_keys={self.ssh_private_keys}, "
             f"ssh_public_keys={self.ssh_public_keys}, "
+            f"ssh_auth_sock={self.ssh_auth_sock}, "
+            f"identities_only={self.identities_only}, "
         )
 
     def get_config_args(self) -> list[str]:
@@ -117,6 +123,8 @@ class FfxConfigData:
             "emu.instance_dir": self.emu_instance_dir,
             "ssh.priv": self.ssh_private_keys,
             "ssh.pub": self.ssh_public_keys,
+            "ssh.auth-sock": self.ssh_auth_sock,
+            "ssh.identities-only": self.identities_only,
         }
 
         for key_path, value in configs_to_set.items():
@@ -148,6 +156,8 @@ class FfxConfig:
         emu_instance_dir: str | None = None,
         ssh_private_keys: list[str] | None = None,
         ssh_public_keys: list[str] | None = None,
+        ssh_auth_sock: str | None = None,
+        identities_only: bool | None = None,
     ) -> None:
         """Sets up configuration need to be used while running FFX command.
 
@@ -180,6 +190,9 @@ class FfxConfig:
                 keys instead of relying on the strict-mode suppressed default ffx configurations.
             ssh_public_keys: Explicit list of SSH public keys. If left empty, setup will
                 fallback to .pub extension of private keys if they exist.
+            ssh_auth_sock: Path to SSH authentication socket for connection.
+            identities_only: Whether to strictly use explicit identity files.
+                If None, checks IDENTITIES_ONLY or SSH_IDENTITIES_ONLY environment variable.
 
         Raises:
             FfxConfigError: If setup has already been called once.
@@ -203,6 +216,25 @@ class FfxConfig:
         self._usb_socket_path: str | None = usb_socket_path
         self._usb_driver_autostart: bool = usb_driver_autostart
         self._emu_instance_dir: str | None = emu_instance_dir
+        self._ssh_auth_sock: str | None = (
+            ssh_auth_sock
+            if ssh_auth_sock is not None
+            else os.environ.get("SSH_AUTH_SOCK")
+        )
+        if identities_only is None:
+            env_val = (
+                os.environ.get("IDENTITIES_ONLY")
+                or os.environ.get("SSH_IDENTITIES_ONLY")
+                or os.environ.get("FUCHSIA_SSH_IDENTITIES_ONLY")
+            )
+            if env_val is not None:
+                identities_only = env_val.lower() in (
+                    "1",
+                    "true",
+                    "yes",
+                    "y",
+                )
+        self._identities_only: bool | None = identities_only
 
         # Use explicitly provided keys or fallback to os.environ keys
         priv_keys: list[str] = (
@@ -289,6 +321,8 @@ class FfxConfig:
             emu_instance_dir=self._emu_instance_dir,
             ssh_private_keys=self._ssh_private_keys,
             ssh_public_keys=self._ssh_public_keys,
+            ssh_auth_sock=self._ssh_auth_sock,
+            identities_only=self._identities_only,
         )
 
     def _atexit_callback(self) -> None:

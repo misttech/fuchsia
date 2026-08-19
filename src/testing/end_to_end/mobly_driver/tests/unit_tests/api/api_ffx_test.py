@@ -85,6 +85,36 @@ class FfxClientTest(unittest.TestCase):
         check_output_args = mock_check_output.call_args.args[0]
         self.assertIn("some_isolate_dir_path", check_output_args)
 
+    @patch(
+        "subprocess.check_output",
+        autospec=True,
+        return_value=b'[{"nodename": "dut", "is_default": false}]',
+    )
+    def test_target_list_with_ssh_auth_sock(
+        self, mock_check_output: Any
+    ) -> None:
+        """Test case for ssh_auth_sock being included in ffx command"""
+        client = api_ffx.FfxClient("some_ffx_path", ssh_auth_sock="/tmp/sock")
+        client.target_list(isolate_dir="some_isolate_dir_path")
+        check_output_args = mock_check_output.call_args.args[0]
+        self.assertIn("-c", check_output_args)
+        self.assertIn("ssh.auth-sock=/tmp/sock", check_output_args)
+
+    @patch(
+        "subprocess.check_output",
+        autospec=True,
+        return_value=b'[{"nodename": "dut", "is_default": false}]',
+    )
+    def test_target_list_with_identities_only(
+        self, mock_check_output: Any
+    ) -> None:
+        """Test case for identities_only being included in ffx command"""
+        client = api_ffx.FfxClient("some_ffx_path", identities_only=True)
+        client.target_list(isolate_dir="some_isolate_dir_path")
+        check_output_args = mock_check_output.call_args.args[0]
+        self.assertIn("-c", check_output_args)
+        self.assertIn("ssh.identities-only=true", check_output_args)
+
     @parameterized.expand(
         [
             ("Invalid JSON str", b""),

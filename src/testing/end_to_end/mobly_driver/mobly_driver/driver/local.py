@@ -65,8 +65,15 @@ class LocalDriver(base.BaseDriver):
         )
         self._multi_device = multi_device
         self._config_path = config_path
+
+        ffx_config = honeydew_config.get("transports", {}).get("ffx", {})
+        ssh_auth_sock = ffx_config.get("ssh_auth_sock") or ffx_config.get(
+            "ssh.auth-sock"
+        )
         self._ffx_client = api_ffx.FfxClient(
-            ffx_path=honeydew_config["transports"]["ffx"]["path"]
+            ffx_path=ffx_config.get("path", ""),
+            ssh_auth_sock=ssh_auth_sock,
+            identities_only=ffx_config.get("identities_only"),
         )
         self._ap_ip = ap_ip
         self._ap_ssh_port = ap_ssh_port

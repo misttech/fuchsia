@@ -680,6 +680,87 @@ class FfxTests(unittest.TestCase):
             timeout=None,
         )
 
+    @mock.patch.object(
+        host_shell,
+        "run",
+        return_value=_MOCK_ARGS["ffx_target_show_output"],
+        autospec=True,
+    )
+    def test_ffx_run_with_ssh_auth_sock_and_identities_only(
+        self, mock_host_shell_run: mock.Mock
+    ) -> None:
+        """Test case for ffx.run() with ssh_auth_sock and identities_only."""
+        config_data = ffx_config.FfxConfigData(
+            isolate_dir=fuchsia_controller.IsolateDir(_ISOLATE_DIR),
+            logs_dir=_LOGS_DIR,
+            binary_path=_BINARY_PATH,
+            logs_level=_LOGS_LEVEL,
+            enable_usb=_ENABLE_USB,
+            usb_socket_path=_USB_SOCKET_PATH,
+            usb_driver_autostart=_USB_DRIVER_AUTOSTART,
+            subtools_search_path=_SUBTOOLS_SEARCH_PATH,
+            proxy_timeout_secs=_PROXY_TIMEOUT_SECS,
+            ssh_keepalive_timeout=_SSH_KEEPALIVE_TIMEOUT,
+            emu_instance_dir=None,
+            ssh_private_keys=None,
+            ssh_public_keys=None,
+            ssh_auth_sock="/tmp/custom_sock",
+            identities_only=True,
+        )
+        with mock.patch.object(
+            ffx.FFX,
+            "check_connection",
+            autospec=True,
+        ):
+            ffx_obj = ffx.FFX(
+                query=str(_INPUT_ARGS["target_addr"]),
+                name=_INPUT_ARGS["target_query"],
+                config_data=config_data,
+                device_ip_change=self.device_ip_change,
+            )
+
+        expected_config = {
+            "log": {"dir": _LOGS_DIR, "level": _LOGS_LEVEL},
+            "ffx": {"subtool-search-paths": [_SUBTOOLS_SEARCH_PATH]},
+            "proxy": {"timeout_secs": _PROXY_TIMEOUT_SECS},
+            "ssh": {
+                "keepalive_timeout": _SSH_KEEPALIVE_TIMEOUT,
+                "auth-sock": "/tmp/custom_sock",
+                "identities-only": True,
+            },
+            "connectivity": {
+                "enable_usb": _ENABLE_USB,
+                "usb_driver_autostart": _USB_DRIVER_AUTOSTART,
+            },
+        }
+
+        self.assertEqual(
+            ffx_obj.run(cmd=_INPUT_ARGS["run_cmd"]),
+            _EXPECTED_VALUES["ffx_target_show_output"],
+        )
+
+        mock_host_shell_run.assert_called_with(
+            [
+                _BINARY_PATH,
+                "--strict",
+                "-t",
+                str(_TARGET_SSH_ADDRESS),
+                "--machine",
+                "json",
+                "-o",
+                str(Path(_LOGS_DIR) / "ffx.log"),
+                "--direct",
+                "-c",
+                json.dumps(expected_config),
+                "-c",
+                json.dumps({"shared_data": _LOGS_DIR}),
+            ]
+            + ffx._FFX_CMDS["TARGET_SHOW"],
+            capture_output=True,
+            log_output=True,
+            timeout=None,
+        )
+
     @parameterized.expand(
         [
             (

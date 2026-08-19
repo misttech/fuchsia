@@ -117,6 +117,20 @@ class FuchsiaController:
                 config["connectivity.usb_socket_path"] = usb_socket_path
             else:
                 _LOGGER.debug("connectivity.usb_socket_path not set.")
+            if self._ffx_config_data.ssh_auth_sock:
+                ssh_auth_sock = self._ffx_config_data.ssh_auth_sock
+                _LOGGER.debug("ssh.auth-sock set to %s", ssh_auth_sock)
+                config["ssh.auth-sock"] = ssh_auth_sock
+            else:
+                _LOGGER.debug("ssh auth sock not set.")
+            if self._ffx_config_data.identities_only is not None:
+                identities_only = (
+                    "true" if self._ffx_config_data.identities_only else "false"
+                )
+                _LOGGER.debug("ssh.identities-only set to %s", identities_only)
+                config["ssh.identities-only"] = identities_only
+            else:
+                _LOGGER.debug("ssh identities only not set.")
             msg: str = (
                 f"Creating Fuchsia-Controller Context with "
                 f"target='{self._target}', config='{config}'"
