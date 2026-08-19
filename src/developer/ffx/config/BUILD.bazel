@@ -80,6 +80,7 @@ rustc_library(
         "//third_party/rust_crates/vendor:camino",
         "//third_party/rust_crates/vendor:futures",
         "//third_party/rust_crates/vendor:home",
+        "//third_party/rust_crates/vendor:libc",
         "//third_party/rust_crates/vendor:log",
         "//third_party/rust_crates/vendor:rand",
         "//third_party/rust_crates/vendor:regex",

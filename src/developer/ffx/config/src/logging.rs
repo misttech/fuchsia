@@ -6,6 +6,8 @@ use log::LevelFilter;
 use logging::{FfxLog, FfxLogSink, Filter, FormatOpts, LogSinkTrait, TargetsFilter, TestWriter};
 use std::fs::{File, OpenOptions, create_dir_all, remove_file, rename};
 use std::io::{ErrorKind, Read, Seek, SeekFrom, Write};
+#[cfg(unix)]
+use std::os::unix::fs::OpenOptionsExt;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -215,6 +217,13 @@ impl Write for ResettableWriter {
     }
 }
 
+fn open_options() -> OpenOptions {
+    let mut options = OpenOptions::new();
+    #[cfg(unix)]
+    options.custom_flags(libc::O_NOFOLLOW);
+    options
+}
+
 fn rotate_file(
     log_rotate_size: Option<u64>,
     log_rotations: u64,
@@ -225,7 +234,7 @@ fn rotate_file(
     if let Some(log_rotate_size) = log_rotate_size {
         // log.rotate_size was set. We only rotate if the current file is bigger than that size,
         // so open the current file and, if it's smaller than that size, return it.
-        match OpenOptions::new().write(true).append(true).create(false).open(log_path) {
+        match open_options().write(true).append(true).create(false).open(log_path) {
             Ok(mut f) => {
                 if f.seek(SeekFrom::End(0)).map_err(LoggingError::CheckSize)? < log_rotate_size {
                     return Ok(Some(f));
@@ -256,15 +265,15 @@ fn rotate_file(
     if let Some(log_rotate_size) = log_rotate_size {
         // When we move the most recent log into rotation, truncate it if it is larger than the
         // rotation length.
-        match OpenOptions::new().read(true).create(false).open(log_path) {
+        match open_options().read(true).create(false).open(log_path) {
             Ok(mut f) => {
                 let size = f.seek(SeekFrom::End(0)).map_err(LoggingError::CheckSize)?;
                 let log_rotate_size = std::cmp::min(size, log_rotate_size);
                 f.seek(SeekFrom::End(-(log_rotate_size as i64))).map_err(LoggingError::SeekLog)?;
-                let mut new = OpenOptions::new()
+                let mut new = open_options()
                     .write(true)
                     .create(true)
-                    .open(rot_path)
+                    .open(&rot_path)
                     .map_err(LoggingError::OpenLog)?;
                 new.write_all(b"<truncated for length>").map_err(LoggingError::TruncateNotice)?;
                 let mut buf = [0; 4096];
@@ -343,12 +352,7 @@ pub fn log_file(
 }
 
 fn open_log_file(path: &Path) -> std::result::Result<std::fs::File, LoggingError> {
-    OpenOptions::new()
-        .write(true)
-        .append(true)
-        .create(true)
-        .open(path)
-        .map_err(LoggingError::OpenLog)
+    open_options().write(true).append(true).create(true).open(path).map_err(LoggingError::OpenLog)
 }
 
 pub fn is_enabled(ctx: &EnvironmentContext) -> bool {
@@ -532,5 +536,96 @@ pub fn build_logger_with_destinations(
 impl Filter for DisableableFilter {
     fn should_emit(&self, _record: &log::Metadata<'_>) -> bool {
         LOG_ENABLED_FLAG.load(Ordering::Relaxed)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::tempdir;
+
+    #[test]
+    fn test_open_log_file_creates_and_appends() {
+        let dir = tempdir().unwrap();
+        let log_path = dir.path().join("test.log");
+
+        {
+            let mut f =
+                open_log_file(&log_path).expect("open_log_file should succeed for regular path");
+            f.write_all(b"hello ").unwrap();
+        }
+
+        {
+            let mut f =
+                open_log_file(&log_path).expect("open_log_file should succeed when appending");
+            f.write_all(b"world").unwrap();
+        }
+
+        let content = std::fs::read_to_string(&log_path).unwrap();
+        assert_eq!(content, "hello world");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_open_log_file_rejects_symlink() {
+        let dir = tempdir().unwrap();
+        let target_path = dir.path().join("sensitive.txt");
+        std::fs::write(&target_path, "sensitive data\n").unwrap();
+
+        let symlink_path = dir.path().join("symlink.log");
+        std::os::unix::fs::symlink(&target_path, &symlink_path).unwrap();
+
+        let res = open_log_file(&symlink_path);
+        assert!(res.is_err(), "open_log_file must reject symlinks");
+
+        // Verify target file content was not modified
+        let target_content = std::fs::read_to_string(&target_path).unwrap();
+        assert_eq!(target_content, "sensitive data\n");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_rotate_file_rejects_symlink() {
+        let dir = tempdir().unwrap();
+        let target_path = dir.path().join("sensitive_rotate.txt");
+        std::fs::write(&target_path, "sensitive rotate data\n").unwrap();
+
+        let symlink_path = dir.path().join("symlink_rotate.log");
+        std::os::unix::fs::symlink(&target_path, &symlink_path).unwrap();
+
+        let res = rotate_file(Some(100), 2, &symlink_path);
+        assert!(res.is_err(), "rotate_file must reject symlinks when checking size");
+
+        // Verify target file content was not modified
+        let target_content = std::fs::read_to_string(&target_path).unwrap();
+        assert_eq!(target_content, "sensitive rotate data\n");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_log_file_with_info_rejects_symlink() {
+        let dir = tempdir().unwrap();
+        let target_path = dir.path().join("sensitive_target.txt");
+        std::fs::write(&target_path, "sensitive info\n").unwrap();
+
+        let log_dir = dir.path().join("logs");
+        std::fs::create_dir(&log_dir).unwrap();
+        let symlink_path = log_dir.join(LOG_FILENAME);
+        std::os::unix::fs::symlink(&target_path, &symlink_path).unwrap();
+
+        let test_env = crate::test_env()
+            .user_config(LOG_DIR, log_dir.to_str().unwrap())
+            .build()
+            .expect("create test config");
+
+        let res = log_file_with_info(
+            &test_env.context,
+            &PathBuf::from(LOG_FILENAME),
+            LogDirHandling::WithDirWithoutRotate,
+        );
+        assert!(res.is_err(), "log_file_with_info must reject opening symlinks");
+
+        let target_content = std::fs::read_to_string(&target_path).unwrap();
+        assert_eq!(target_content, "sensitive info\n");
     }
 }
