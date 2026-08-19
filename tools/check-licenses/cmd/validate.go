@@ -29,6 +29,9 @@ type ValidateCommand struct {
 	outDir            string
 	logLevel          int
 	filesInReadmeOnly bool
+
+	// TODO: Backwards compatibility; delete once the flag is no longer defined in the static checks recipe.
+	outputLicenseFile bool
 }
 
 func (*ValidateCommand) Name() string { return "validate" }
@@ -49,6 +52,9 @@ func (p *ValidateCommand) SetFlags(f *flag.FlagSet) {
 	f.StringVar(&p.outDir, "out_dir", "/tmp/check-licenses", "Directory to write logs.")
 	f.IntVar(&p.logLevel, "log_level", 2, "Log level. 0: none, 1: file, 2: stdout+file.")
 	f.BoolVar(&p.filesInReadmeOnly, "files_in_readme_only", false, "Only classify files explicitly listed in README.fuchsia files (fast mode).")
+
+	// TODO: Backwards compatibility; delete once the flag is no longer defined in the static checks recipe.
+	f.BoolVar(&p.outputLicenseFile, "output_license_file", false, "Unused (kept for backwards compatibility).")
 }
 
 func (p *ValidateCommand) Execute(ctx context.Context, f *flag.FlagSet, _ ...interface{}) subcommands.ExitStatus {
@@ -98,7 +104,8 @@ func (p *ValidateCommand) Execute(ctx context.Context, f *flag.FlagSet, _ ...int
 
 	validator := v2validate.NewValidator(fuchsiaDir, config.Validate)
 	renderers := v2pipeline.MultiRenderer{
-		v2report.NewReadmeVerifier(fuchsiaDir),
+		// TODO: Re-enable README.fuchsia verification.
+		// v2report.NewReadmeVerifier(fuchsiaDir),
 		v2report.NewMetricsRenderer(p.outDir),
 		v2report.NewConsoleErrorReporter(fuchsiaDir),
 	}

@@ -67,6 +67,7 @@ host_go_test(
         "policy_test.go",
         "project_test.go",
         "readme_test.go",
+        "validate_test.go",
     ],
     embed = [":main"],
     target_compatible_with = HOST_CONSTRAINTS,

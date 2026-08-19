@@ -36,7 +36,7 @@ func main() {
 	commander.Register(&AllowlistCommand{}, "Policy Management")
 
 	// Fallback routing for backward compatibility
-	// If no valid subcommand is provided, we insert "generate" into os.Args.
+	// If no valid subcommand is provided, we insert "validate" into os.Args.
 	knownCommands := map[string]bool{
 		"generate":  true,
 		"validate":  true,
@@ -50,18 +50,18 @@ func main() {
 		"help":      true,
 	}
 
-	insertGenerate := true
+	insertValidate := true
 	for _, arg := range os.Args[1:] {
 		if !strings.HasPrefix(arg, "-") {
 			if knownCommands[arg] {
-				insertGenerate = false
+				insertValidate = false
 			}
 			break
 		}
 	}
 
-	if insertGenerate {
-		os.Args = append([]string{os.Args[0], "generate"}, os.Args[1:]...)
+	if insertValidate {
+		os.Args = append([]string{os.Args[0], "validate"}, os.Args[1:]...)
 	}
 
 	flag.Parse()
