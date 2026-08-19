@@ -10,14 +10,14 @@
 
 namespace dwc3 {
 
-class TrbFifoTest : public testing::Test {
+class TrbFifoTest : public testing::TestWithParam<bool> {
  public:
   void SetUp() override {
     zx::result bti = fake_bti::CreateFakeBti();
     ASSERT_TRUE(bti.is_ok());
     bti_ = std::move(*bti);
 
-    ASSERT_TRUE(fifo_.Init(bti_, /*cached=*/true).is_ok());
+    ASSERT_TRUE(fifo_.Init(bti_, GetParam()).is_ok());
   }
 
   void TearDown() override {
@@ -30,7 +30,7 @@ class TrbFifoTest : public testing::Test {
     EXPECT_EQ(fifo_.last_->ptr_low, (uint32_t)first_phys);
     EXPECT_EQ(fifo_.last_->ptr_high, (uint32_t)(first_phys >> 32));
     EXPECT_EQ(fifo_.last_->status, 0u);
-    EXPECT_EQ(fifo_.last_->control, static_cast<uint32_t>(TRB_TRBCTL_LINK | TRB_HWO));
+    EXPECT_EQ(static_cast<uint32_t>(TRB_TRBCTL_LINK | TRB_HWO), fifo_.last_->control);
   }
 
  protected:
@@ -47,9 +47,11 @@ class TrbFifoTest : public testing::Test {
   TTrbFifo fifo_;
 };
 
-TEST_F(TrbFifoTest, Init) { CheckLinkTRB(); }
+INSTANTIATE_TEST_SUITE_P(TrbFifoTestCases, TrbFifoTest, testing::Bool());
 
-TEST_F(TrbFifoTest, WriteAndRead) {
+TEST_P(TrbFifoTest, Init) { CheckLinkTRB(); }
+
+TEST_P(TrbFifoTest, WriteAndRead) {
   dwc3_trb_t* trb = fifo_.write_;
   trb->ptr_low = 0x1234;
   trb->ptr_high = 0x5678;
@@ -69,7 +71,7 @@ TEST_F(TrbFifoTest, WriteAndRead) {
   EXPECT_EQ(fifo_.read_, fifo_.write_);
 }
 
-TEST_F(TrbFifoTest, Wrap) {
+TEST_P(TrbFifoTest, Wrap) {
   const size_t size = kBufferSize / sizeof(dwc3_trb_t);
   for (size_t i = 0; i < size - 1; i++) {
     fifo_.AdvanceWrite();
@@ -77,7 +79,7 @@ TEST_F(TrbFifoTest, Wrap) {
   EXPECT_EQ(fifo_.write_, fifo_.first_);
 }
 
-TEST_F(TrbFifoTest, AvailableSlots) {
+TEST_P(TrbFifoTest, AvailableSlots) {
   const size_t size = kBufferSize / sizeof(dwc3_trb_t);
   EXPECT_EQ(fifo_.AvailableSlots(), size - 2);
 
@@ -93,12 +95,12 @@ TEST_F(TrbFifoTest, AvailableSlots) {
   EXPECT_EQ(fifo_.AvailableSlots(), 1u);
 }
 
-TEST_F(TrbFifoTest, ReInitTest) {
+TEST_P(TrbFifoTest, ReInitTest) {
   fifo_.AdvanceWrite();
   ASSERT_NE(fifo_.write_, fifo_.first_);
 
   fifo_.Release();
-  ASSERT_TRUE(fifo_.Init(bti_, /*cached=*/true).is_ok());
+  ASSERT_TRUE(fifo_.Init(bti_, GetParam()).is_ok());
 
   ASSERT_EQ(fifo_.write_, fifo_.first_);
   ASSERT_EQ(fifo_.read_, fifo_.first_);

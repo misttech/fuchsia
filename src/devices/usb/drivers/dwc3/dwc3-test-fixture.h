@@ -97,11 +97,11 @@ class Dwc3TestHelper {
     drv.CmdStartNewConfig(ep, rsrc_id_base);
   }
   static void CmdEpTransferConfig(Dwc3& drv, Dwc3::Endpoint& ep) { drv.CmdEpTransferConfig(ep); }
-  static zx::result<> InitFifo(Dwc3& drv, uint8_t ep_num) {
+  static zx::result<> InitFifo(Dwc3& drv, uint8_t ep_num, bool cached = true) {
     auto* uep = drv.get_user_endpoint(ep_num);
     if (!uep)
       return zx::error(ZX_ERR_NOT_FOUND);
-    return uep->fifo.Init(drv.bti_, true);
+    return uep->fifo.Init(drv.bti_, cached);
   }
   static void HandleEpTransferCompleteEvent(Dwc3& drv, uint8_t ep_num) {
     drv.HandleEpTransferCompleteEvent(ep_num);

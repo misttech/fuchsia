@@ -11,14 +11,14 @@
 namespace dwc3 {
 
 template <typename T>
-class FifoTest : public testing::Test {
+class FifoTest : public testing::TestWithParam<bool> {
  public:
   void SetUp() override {
     zx::result bti = fake_bti::CreateFakeBti();
     ASSERT_TRUE(bti.is_ok());
     bti_ = std::move(*bti);
 
-    ASSERT_TRUE(fifo_.Init(bti_, true).is_ok());
+    ASSERT_TRUE(fifo_.Init(bti_, GetParam()).is_ok());
   }
 
   void TearDown() override {
@@ -39,8 +39,9 @@ class FifoTest : public testing::Test {
 };
 
 using FifoTestU32 = FifoTest<uint32_t>;
+INSTANTIATE_TEST_SUITE_P(FifoTestU32Cases, FifoTestU32, testing::Bool());
 
-TEST_F(FifoTestU32, WriteAndRead) {
+TEST_P(FifoTestU32, WriteAndRead) {
   fifo_.Write(fifo_.write_);
   fifo_.Advance(fifo_.write_);
 
@@ -51,7 +52,7 @@ TEST_F(FifoTestU32, WriteAndRead) {
   ASSERT_EQ(fifo_.write_, fifo_.read_);
 }
 
-TEST_F(FifoTestU32, Wrap) {
+TEST_P(FifoTestU32, Wrap) {
   const size_t size = kBufferSize / sizeof(uint32_t);
   for (size_t i = 0; i < size; i++) {
     fifo_.Advance(fifo_.write_);
@@ -59,7 +60,7 @@ TEST_F(FifoTestU32, Wrap) {
   ASSERT_EQ(fifo_.write_, fifo_.first_);
 }
 
-TEST_F(FifoTestU32, MultiElementWriteAndRead) {
+TEST_P(FifoTestU32, MultiElementWriteAndRead) {
   constexpr size_t kCount = 5;
   fifo_.Write(fifo_.write_, kCount);
   fifo_.Advance(fifo_.write_, kCount);
@@ -71,7 +72,7 @@ TEST_F(FifoTestU32, MultiElementWriteAndRead) {
   ASSERT_EQ(fifo_.write_, fifo_.read_);
 }
 
-TEST_F(FifoTestU32, WrappingWriteAndRead) {
+TEST_P(FifoTestU32, WrappingWriteAndRead) {
   const size_t size = kBufferSize / sizeof(uint32_t);
   // Advance to near the end of the buffer.
   fifo_.Advance(fifo_.write_, size - 2);
@@ -88,21 +89,22 @@ TEST_F(FifoTestU32, WrappingWriteAndRead) {
   ASSERT_EQ(fifo_.write_, fifo_.read_);
 }
 
-TEST_F(FifoTestU32, ReInitTest) {
+TEST_P(FifoTestU32, ReInitTest) {
   fifo_.Write(fifo_.write_);
   fifo_.Advance(fifo_.write_);
   ASSERT_NE(fifo_.write_, fifo_.first_);
 
   fifo_.Release();
-  ASSERT_TRUE(fifo_.Init(bti_, true).is_ok());
+  ASSERT_TRUE(fifo_.Init(bti_, GetParam()).is_ok());
 
   ASSERT_EQ(fifo_.write_, fifo_.first_);
   ASSERT_EQ(fifo_.read_, fifo_.first_);
 }
 
 using FifoTestU8 = FifoTest<uint8_t>;
+INSTANTIATE_TEST_SUITE_P(FifoTestU8Cases, FifoTestU8, testing::Bool());
 
-TEST_F(FifoTestU8, WriteAndRead) {
+TEST_P(FifoTestU8, WriteAndRead) {
   fifo_.Write(fifo_.write_);
   fifo_.Advance(fifo_.write_);
 
