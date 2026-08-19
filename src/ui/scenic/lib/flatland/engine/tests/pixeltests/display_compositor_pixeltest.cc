@@ -1314,8 +1314,7 @@ VK_TEST_P(DisplayCompositorFallbackParameterizedPixelTest, SoftwareRenderingTest
                           .identifier = allocation::GenerateUniqueImageId(),
                           .vmo_index = i,
                           .width = kTextureWidth,
-                          .height = kTextureHeight,
-                          .blend_mode = BlendMode::kReplace()};
+                          .height = kTextureHeight};
   }
 
   // Use the VK renderer here so we can make use of software rendering.
@@ -1518,13 +1517,11 @@ VK_TEST_P(DisplayCompositorTransparencyPixelTest, OverlappingTransparencyTest) {
   // Create the image metadatas.
   ImageMetadata image_metadatas[2];
   for (uint32_t i = 0; i < 2; i++) {
-    auto blend_mode = (i == 0) ? BlendMode::kReplace() : blend_mode_param;
     image_metadatas[i] = {.collection_id = kTextureCollectionId,
                           .identifier = allocation::GenerateUniqueImageId(),
                           .vmo_index = i,
                           .width = kTextureWidth,
-                          .height = kTextureHeight,
-                          .blend_mode = blend_mode};
+                          .height = kTextureHeight};
   }
 
   // Use the VK renderer here so we can make use of software rendering.
@@ -1759,8 +1756,7 @@ VK_TEST_P(DisplayCompositorParameterizedTest, MultipleParentPixelTest) {
                                   .identifier = allocation::GenerateUniqueImageId(),
                                   .vmo_index = 0,
                                   .width = kTextureWidth,
-                                  .height = kTextureHeight,
-                                  .blend_mode = BlendMode::kReplace()};
+                                  .height = kTextureHeight};
 
   auto texture_collection =
       SetupClientTextures(display_compositor.get(), kTextureCollectionId, GetParam(), 60, 40,
@@ -2204,8 +2200,7 @@ VK_TEST_F(DisplayCompositorPixelTest, SwitchDisplayMode) {
                           .identifier = allocation::GenerateUniqueImageId(),
                           .vmo_index = i,
                           .width = kTextureWidth,
-                          .height = kTextureHeight,
-                          .blend_mode = BlendMode::kReplace()};
+                          .height = kTextureHeight};
   }
 
   auto& blue_image_metadata = image_metadatas[0];

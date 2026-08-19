@@ -218,8 +218,7 @@ VK_TEST_P(DisplayCompositorParameterizedSmokeTest, FullscreenRectangleTest) {
                                       .identifier = allocation::GenerateUniqueImageId(),
                                       .vmo_index = 0,
                                       .width = kTextureWidth,
-                                      .height = kTextureHeight,
-                                      .blend_mode = BlendMode::kReplace()};
+                                      .height = kTextureHeight};
   EXPECT_TRUE(RunPromise(
       display_compositor->ImportBufferImage(image_metadata, BufferCollectionUsage::kClientImage)));
 

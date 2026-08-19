@@ -26,23 +26,28 @@ using ::testing::IsEmpty;
 constexpr int kDisplayWidth = 100;
 constexpr int kDisplayHeight = 100;
 
-ImageMetadata OpaqueImage(uint64_t id) {
-  return {.identifier = display::ImageId(id), .blend_mode = BlendMode::kReplace()};
+// Test-local bundle of the per-layer visual params that ImageMetadata used to carry,
+// which keeps matrix-math test bodies in their historical shape while producing ResolvedLayers.
+struct TestLayerInfo {
+  allocation::ImageMetadata metadata;
+  BlendMode blend_mode = BlendMode::kReplace();
+  fuchsia_ui_composition::ImageFlip flip = fuchsia_ui_composition::ImageFlip::kNone;
+  std::array<float, 4> multiply_color = {1.f, 1.f, 1.f, 1.f};
+};
+
+TestLayerInfo OpaqueImage(uint64_t id) {
+  return {.metadata = {.identifier = display::ImageId(id)}, .blend_mode = BlendMode::kReplace()};
 }
 
-ImageMetadata TransparentImage(uint64_t id) {
-  return {.identifier = display::ImageId(id), .blend_mode = BlendMode::kPremultipliedAlpha()};
+TestLayerInfo TransparentImage(uint64_t id) {
+  return {.metadata = {.identifier = display::ImageId(id)},
+          .blend_mode = BlendMode::kPremultipliedAlpha()};
 }
 
-// Builds ResolvedLayers from ImageMetadata so the test bodies below keep their shape
-// while the legacy UberStruct schema is deleted.  The helpers OpaqueImage() and
-// TransparentImage() lean on `blend_mode` and `flip`, per-layer properties that
-// ImageMetadata should not be carrying; when those are removed from ImageMetadata,
-// this helper takes the replacement instead and the test bodies still do not change.
 using GlobalRectangleVector = std::vector<ImageRect>;
-using GlobalImageVector = std::vector<allocation::ImageMetadata>;
-std::vector<ResolvedLayer> ComputeGlobalResolvedLayers(
-    const std::vector<ImageRect>& rects, const std::vector<allocation::ImageMetadata>& images) {
+using GlobalImageVector = std::vector<TestLayerInfo>;
+std::vector<ResolvedLayer> ComputeGlobalResolvedLayers(const std::vector<ImageRect>& rects,
+                                                       const std::vector<TestLayerInfo>& images) {
   std::vector<ResolvedLayer> output;
   output.reserve(rects.size());
   for (size_t i = 0; i < rects.size(); ++i) {
@@ -54,15 +59,15 @@ std::vector<ResolvedLayer> ComputeGlobalResolvedLayers(
     layer.flip = meta.flip;
     layer.topology_index = ResolvedLayer::kInvalidTopologyIndex;
 
-    if (meta.identifier == allocation::kInvalidImageId) {
+    if (meta.metadata.identifier == allocation::kInvalidImageId) {
       layer.multiply_color = {1.f, 1.f, 1.f, 1.f};
       layer.content = ResolvedLayer::SolidColorContent{.color = meta.multiply_color};
     } else {
       layer.multiply_color = meta.multiply_color;
       layer.content = ResolvedLayer::ImageContent{
-          .image_id = meta.identifier,
-          .width = meta.width,
-          .height = meta.height,
+          .image_id = meta.metadata.identifier,
+          .width = meta.metadata.width,
+          .height = meta.metadata.height,
       };
     }
     output.push_back(layer);
@@ -184,9 +189,10 @@ TEST(CullLayersInPlaceTest, SolidColorFullScreenReplaceOccludes) {
   GlobalRectangleVector rects = {ImageRect({10, 10}, {20, 20}),
                                  ImageRect({0, 0}, {kDisplayWidth, kDisplayHeight}),
                                  ImageRect({50, 50}, {10, 10})};
-  GlobalImageVector images = {OpaqueImage(1),
-                              {.identifier = kInvalidImageId, .blend_mode = BlendMode::kReplace()},
-                              OpaqueImage(3)};
+  GlobalImageVector images = {
+      OpaqueImage(1),
+      {.metadata = {.identifier = kInvalidImageId}, .blend_mode = BlendMode::kReplace()},
+      OpaqueImage(3)};
 
   auto layers = ComputeGlobalResolvedLayers(rects, images);
 
@@ -194,7 +200,8 @@ TEST(CullLayersInPlaceTest, SolidColorFullScreenReplaceOccludes) {
 
   auto expected_layers = ComputeGlobalResolvedLayers(
       {ImageRect({0, 0}, {kDisplayWidth, kDisplayHeight}), ImageRect({50, 50}, {10, 10})},
-      {{.identifier = kInvalidImageId, .blend_mode = BlendMode::kReplace()}, OpaqueImage(3)});
+      {{.metadata = {.identifier = kInvalidImageId}, .blend_mode = BlendMode::kReplace()},
+       OpaqueImage(3)});
   EXPECT_EQ(layers, expected_layers);
 }
 

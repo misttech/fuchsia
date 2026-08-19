@@ -808,7 +808,7 @@ bool DisplayCompositor::PerformGpuComposition(
 
     ResolvedLayer gpu_layer = {
         .rect = {glm::vec2(0), glm::vec2(render_target.width, render_target.height)},
-        .multiply_color = render_target.multiply_color,
+        .multiply_color = {1.f, 1.f, 1.f, 1.f},
         .content =
             ResolvedLayer::ImageContent{
                 .image_id = render_target.identifier,

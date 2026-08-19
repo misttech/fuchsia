@@ -168,39 +168,53 @@ allocation::GlobalBufferCollectionId SetupBufferCollection(
   return collection_id;
 }
 
-// Builds ResolvedLayers from ImageMetadata so the test bodies below keep their shape.
-// It reads `blend_mode` and `flip`, which are per-layer properties that ImageMetadata
-// should not be carrying; when these properties are (soon) removed from ImageMetadata,
-// this helper takes their replacement instead and the test bodies still do not change.
+// Test-local bundle of the per-layer visual params that ImageMetadata used to carry,
+// which MakeLayers() maps onto ResolvedLayer.
+struct TestLayerInfo {
+  allocation::ImageMetadata metadata;
+  BlendMode blend_mode = BlendMode::kReplace();
+  fuchsia_ui_composition::ImageFlip flip = fuchsia_ui_composition::ImageFlip::kNone;
+  std::array<float, 4> multiply_color = {1.f, 1.f, 1.f, 1.f};
+};
+
 std::vector<ResolvedLayer> MakeLayers(const std::vector<ImageRect>& rects,
-                                      const std::vector<ImageMetadata>& images = {}) {
+                                      const std::vector<TestLayerInfo>& images = {}) {
+  FX_CHECK(rects.size() == images.size() || images.empty());
   std::vector<ResolvedLayer> output;
   output.reserve(rects.size());
   for (size_t i = 0; i < rects.size(); ++i) {
     const auto& rect = rects[i];
-    const auto& meta = images.empty()
-                           ? allocation::ImageMetadata{.identifier = allocation::kInvalidImageId}
-                           : images[i];
+    const auto& meta = images.empty() ? TestLayerInfo{} : images[i];
     ResolvedLayer layer;
     layer.rect = rect;
     layer.blend_mode = meta.blend_mode;
     layer.flip = meta.flip;
     layer.topology_index = ResolvedLayer::kInvalidTopologyIndex;
 
-    if (meta.identifier == allocation::kInvalidImageId) {
+    if (meta.metadata.identifier == allocation::kInvalidImageId) {
       layer.multiply_color = {1.f, 1.f, 1.f, 1.f};
       layer.content = ResolvedLayer::SolidColorContent{.color = meta.multiply_color};
     } else {
       layer.multiply_color = meta.multiply_color;
       layer.content = ResolvedLayer::ImageContent{
-          .image_id = meta.identifier,
-          .width = meta.width,
-          .height = meta.height,
+          .image_id = meta.metadata.identifier,
+          .width = meta.metadata.width,
+          .height = meta.metadata.height,
       };
     }
     output.push_back(layer);
   }
   return output;
+}
+
+std::vector<ResolvedLayer> MakeLayers(const std::vector<ImageRect>& rects,
+                                      const std::vector<allocation::ImageMetadata>& images) {
+  std::vector<TestLayerInfo> info_list;
+  info_list.reserve(images.size());
+  for (const auto& img : images) {
+    info_list.push_back(TestLayerInfo{.metadata = img});
+  }
+  return MakeLayers(rects, info_list);
 }
 
 }  // anonymous namespace
@@ -1455,12 +1469,14 @@ VK_TEST_F(VulkanRendererTest, FlipLeftRightAndRotate90RenderTest) {
   const uint32_t kTextureHeight = 2;
 
   // Create the image meta data for the renderable.
-  ImageMetadata renderable_texture = {.collection_id = collection_id,
-                                      .identifier = allocation::GenerateUniqueImageId(),
-                                      .vmo_index = 0,
-                                      .width = static_cast<uint32_t>(kTextureWidth),
-                                      .height = static_cast<uint32_t>(kTextureHeight),
-                                      .flip = ImageFlip::kLeftRight};
+  TestLayerInfo renderable_texture = {
+      .metadata = {.collection_id = collection_id,
+                   .identifier = allocation::GenerateUniqueImageId(),
+                   .vmo_index = 0,
+                   .width = static_cast<uint32_t>(kTextureWidth),
+                   .height = static_cast<uint32_t>(kTextureHeight)},
+      .flip = ImageFlip::kLeftRight,
+  };
 
   auto promise1 = renderer.ImportBufferImage(render_target, BufferCollectionUsage::kRenderTarget);
   EXPECT_TRUE(RunPromise(loop, std::move(promise1)));
@@ -1468,7 +1484,7 @@ VK_TEST_F(VulkanRendererTest, FlipLeftRightAndRotate90RenderTest) {
       renderer.ImportBufferImage(render_target_flipped, BufferCollectionUsage::kRenderTarget);
   EXPECT_TRUE(RunPromise(loop, std::move(promise2)));
   auto promise3 =
-      renderer.ImportBufferImage(renderable_texture, BufferCollectionUsage::kClientImage);
+      renderer.ImportBufferImage(renderable_texture.metadata, BufferCollectionUsage::kClientImage);
   EXPECT_TRUE(RunPromise(loop, std::move(promise3)));
 
   // Create a renderable where the upper-left hand corner should be at position (5,3)
@@ -1480,8 +1496,8 @@ VK_TEST_F(VulkanRendererTest, FlipLeftRightAndRotate90RenderTest) {
 
   // Have the client write pixel values to the renderable's texture.
   MapHostPointer(
-      client_collection_info, renderable_texture.vmo_index, HostPointerAccessMode::kWriteOnly,
-      [&](uint8_t* vmo_host, uint32_t num_bytes) mutable {
+      client_collection_info, renderable_texture.metadata.vmo_index,
+      HostPointerAccessMode::kWriteOnly, [&](uint8_t* vmo_host, uint32_t num_bytes) mutable {
         EXPECT_EQ(kBytesPerRGBAPixel, utils::GetBytesPerPixel(client_collection_info.settings()));
         const uint32_t pixels_per_row =
             utils::GetPixelsPerRow(client_collection_info.settings(), kTextureWidth);
@@ -1635,12 +1651,14 @@ VK_TEST_F(VulkanRendererTest, FlipUpDownAndRotate90RenderTest) {
   const float h = 2;
 
   // Create the image meta data for the renderable.
-  ImageMetadata renderable_texture = {.collection_id = collection_id,
-                                      .identifier = allocation::GenerateUniqueImageId(),
-                                      .vmo_index = 0,
-                                      .width = static_cast<uint32_t>(w),
-                                      .height = static_cast<uint32_t>(h),
-                                      .flip = ImageFlip::kUpDown};
+  TestLayerInfo renderable_texture = {
+      .metadata = {.collection_id = collection_id,
+                   .identifier = allocation::GenerateUniqueImageId(),
+                   .vmo_index = 0,
+                   .width = static_cast<uint32_t>(w),
+                   .height = static_cast<uint32_t>(h)},
+      .flip = ImageFlip::kUpDown,
+  };
 
   auto promise1 = renderer.ImportBufferImage(render_target, BufferCollectionUsage::kRenderTarget);
   EXPECT_TRUE(RunPromise(loop, std::move(promise1)));
@@ -1648,7 +1666,7 @@ VK_TEST_F(VulkanRendererTest, FlipUpDownAndRotate90RenderTest) {
       renderer.ImportBufferImage(render_target_flipped, BufferCollectionUsage::kRenderTarget);
   EXPECT_TRUE(RunPromise(loop, std::move(promise2)));
   auto promise3 =
-      renderer.ImportBufferImage(renderable_texture, BufferCollectionUsage::kClientImage);
+      renderer.ImportBufferImage(renderable_texture.metadata, BufferCollectionUsage::kClientImage);
   EXPECT_TRUE(RunPromise(loop, std::move(promise3)));
 
   // Create a renderable where the upper-left hand corner should be at position (0, 0)
@@ -1661,8 +1679,8 @@ VK_TEST_F(VulkanRendererTest, FlipUpDownAndRotate90RenderTest) {
 
   // Have the client write pixel values to the renderable's texture.
   MapHostPointer(
-      client_collection_info, renderable_texture.vmo_index, HostPointerAccessMode::kWriteOnly,
-      [&](uint8_t* vmo_host, uint32_t num_bytes) mutable {
+      client_collection_info, renderable_texture.metadata.vmo_index,
+      HostPointerAccessMode::kWriteOnly, [&](uint8_t* vmo_host, uint32_t num_bytes) mutable {
         EXPECT_EQ(4u, utils::GetBytesPerPixel(client_collection_info.settings()));
         uint32_t pixels_per_row = utils::GetPixelsPerRow(client_collection_info.settings(), 1U);
 
@@ -1752,10 +1770,11 @@ VK_TEST_F(VulkanRendererColorTest, SolidColorTest) {
                                  .width = kTargetWidth,
                                  .height = kTargetHeight};
 
-  // Create the image meta data for the solid color renderable.
-  ImageMetadata renderable_image_data = {.identifier = allocation::kInvalidImageId,
-                                         .multiply_color = {1.f, 0.4f, 0.f, 1.f},
-                                         .blend_mode = BlendMode::kPremultipliedAlpha()};
+  TestLayerInfo renderable_image_data = {
+      .metadata = {.identifier = allocation::kInvalidImageId},
+      .blend_mode = BlendMode::kPremultipliedAlpha(),
+      .multiply_color = {1.f, 0.4f, 0.f, 1.f},
+  };
 
   auto promise = renderer->ImportBufferImage(render_target, BufferCollectionUsage::kRenderTarget);
   ASSERT_TRUE(RunPromise(loop, std::move(promise)));
@@ -1825,10 +1844,11 @@ VK_TEST_F(VulkanRendererColorTest, ColorCorrectionTest) {
                                  .width = kTargetWidth,
                                  .height = kTargetHeight};
 
-  // Create the image meta data for the solid color renderable.
-  ImageMetadata renderable_image_data = {.identifier = allocation::kInvalidImageId,
-                                         .multiply_color = {1, 0, 0, 1},
-                                         .blend_mode = BlendMode::kPremultipliedAlpha()};
+  TestLayerInfo renderable_image_data = {
+      .metadata = {.identifier = allocation::kInvalidImageId},
+      .blend_mode = BlendMode::kPremultipliedAlpha(),
+      .multiply_color = {1, 0, 0, 1},
+  };
 
   auto promise = renderer->ImportBufferImage(render_target, BufferCollectionUsage::kRenderTarget);
   ASSERT_TRUE(RunPromise(loop, std::move(promise)));
@@ -1911,14 +1931,18 @@ VK_TEST_F(VulkanRendererColorTest, MultipleSolidColorTest) {
                                  .height = kTargetHeight};
 
   // Create the image meta data for the solid color renderable - red.
-  ImageMetadata renderable_image_data = {.identifier = allocation::kInvalidImageId,
-                                         .multiply_color = {1, 0, 0, 1},
-                                         .blend_mode = BlendMode::kPremultipliedAlpha()};
+  TestLayerInfo renderable_image_data = {
+      .metadata = {.identifier = allocation::kInvalidImageId},
+      .blend_mode = BlendMode::kPremultipliedAlpha(),
+      .multiply_color = {1, 0, 0, 1},
+  };
 
   // Create the image meta data for the other solid color renderable - blue.
-  ImageMetadata renderable_image_data_2 = {.identifier = allocation::kInvalidImageId,
-                                           .multiply_color = {0, 0, 1, 1},
-                                           .blend_mode = BlendMode::kPremultipliedAlpha()};
+  TestLayerInfo renderable_image_data_2 = {
+      .metadata = {.identifier = allocation::kInvalidImageId},
+      .blend_mode = BlendMode::kPremultipliedAlpha(),
+      .multiply_color = {0, 0, 1, 1},
+  };
 
   auto promise = renderer->ImportBufferImage(render_target, BufferCollectionUsage::kRenderTarget);
   ASSERT_TRUE(RunPromise(loop, std::move(promise)));
@@ -1998,19 +2022,23 @@ VK_TEST_F(VulkanRendererColorTest, MixSolidColorAndImageTest) {
                                  .height = kTargetHeight};
 
   // Create the image meta data for the solid color renderable - green.
-  ImageMetadata renderable_image_data = {.identifier = allocation::kInvalidImageId,
-                                         .multiply_color = {0, 1, 0, 1},
-                                         .blend_mode = BlendMode::kPremultipliedAlpha()};
+  TestLayerInfo renderable_image_data = {
+      .metadata = {.identifier = allocation::kInvalidImageId},
+      .blend_mode = BlendMode::kPremultipliedAlpha(),
+      .multiply_color = {0, 1, 0, 1},
+  };
 
   // Create the image meta data for the image backed renderable - red.
-  ImageMetadata renderable_image_data_2 = {.collection_id = collection_id,
-                                           .identifier = allocation::GenerateUniqueImageId(),
-                                           .vmo_index = 0,
-                                           .width = kRenderableWidth,
-                                           .height = kRenderableHeight};
+  TestLayerInfo renderable_image_data_2 = {
+      .metadata = {.collection_id = collection_id,
+                   .identifier = allocation::GenerateUniqueImageId(),
+                   .vmo_index = 0,
+                   .width = kRenderableWidth,
+                   .height = kRenderableHeight},
+  };
 
   // Have the client write pixel values to the renderable's texture. They should all be red.
-  MapHostPointer(client_collection_info, renderable_image_data_2.vmo_index,
+  MapHostPointer(client_collection_info, renderable_image_data_2.metadata.vmo_index,
                  HostPointerAccessMode::kWriteOnly,
                  [&](uint8_t* vmo_host, uint32_t num_bytes) mutable {
                    uint8_t writeValues[num_bytes];
@@ -2024,8 +2052,8 @@ VK_TEST_F(VulkanRendererColorTest, MixSolidColorAndImageTest) {
                    memcpy(vmo_host, writeValues, sizeof(writeValues));
                  });
 
-  auto promise1 =
-      renderer->ImportBufferImage(renderable_image_data_2, BufferCollectionUsage::kClientImage);
+  auto promise1 = renderer->ImportBufferImage(renderable_image_data_2.metadata,
+                                              BufferCollectionUsage::kClientImage);
   ASSERT_TRUE(RunPromise(loop, std::move(promise1)));
   auto promise2 = renderer->ImportBufferImage(render_target, BufferCollectionUsage::kRenderTarget);
   ASSERT_TRUE(RunPromise(loop, std::move(promise2)));
@@ -2110,28 +2138,32 @@ VK_TEST_F(VulkanRendererColorTest, TransparencyTest) {
                                  .height = kTargetHeight};
 
   // Create the image meta data for the renderable.
-  ImageMetadata renderable_texture = {.collection_id = collection_id,
-                                      .identifier = allocation::GenerateUniqueImageId(),
-                                      .vmo_index = 0,
-                                      .width = 1,
-                                      .height = 1};
+  TestLayerInfo renderable_texture = {
+      .metadata = {.collection_id = collection_id,
+                   .identifier = allocation::GenerateUniqueImageId(),
+                   .vmo_index = 0,
+                   .width = 1,
+                   .height = 1},
+  };
 
   // Create the texture that will go on the transparent renderable.
-  ImageMetadata transparent_texture = {.collection_id = collection_id,
-                                       .identifier = allocation::GenerateUniqueImageId(),
-                                       .vmo_index = 1,
-                                       .width = 1,
-                                       .height = 1,
-                                       .blend_mode = BlendMode::kPremultipliedAlpha()};
+  TestLayerInfo transparent_texture = {
+      .metadata = {.collection_id = collection_id,
+                   .identifier = allocation::GenerateUniqueImageId(),
+                   .vmo_index = 1,
+                   .width = 1,
+                   .height = 1},
+      .blend_mode = BlendMode::kPremultipliedAlpha(),
+  };
 
   // Import all the images.
   auto promise1 = renderer->ImportBufferImage(render_target, BufferCollectionUsage::kRenderTarget);
   ASSERT_TRUE(RunPromise(loop, std::move(promise1)));
   auto promise2 =
-      renderer->ImportBufferImage(renderable_texture, BufferCollectionUsage::kClientImage);
+      renderer->ImportBufferImage(renderable_texture.metadata, BufferCollectionUsage::kClientImage);
   ASSERT_TRUE(RunPromise(loop, std::move(promise2)));
-  auto promise3 =
-      renderer->ImportBufferImage(transparent_texture, BufferCollectionUsage::kClientImage);
+  auto promise3 = renderer->ImportBufferImage(transparent_texture.metadata,
+                                              BufferCollectionUsage::kClientImage);
   ASSERT_TRUE(RunPromise(loop, std::move(promise3)));
 
   // Create the two renderables.
@@ -2141,7 +2173,7 @@ VK_TEST_F(VulkanRendererColorTest, TransparencyTest) {
   ImageRect transparent_renderable(glm::vec2(7, 3), glm::vec2(kRenderableWidth, kRenderableHeight));
 
   // Have the client write pixel values to the renderable's texture.
-  MapHostPointer(client_collection_info, renderable_texture.vmo_index,
+  MapHostPointer(client_collection_info, renderable_texture.metadata.vmo_index,
                  HostPointerAccessMode::kWriteOnly,
                  [&](uint8_t* vmo_host, uint32_t num_bytes) mutable {
                    // Create a red opaque pixel.
@@ -2150,7 +2182,7 @@ VK_TEST_F(VulkanRendererColorTest, TransparencyTest) {
                    memcpy(vmo_host, kWriteValues, sizeof(kWriteValues));
                  });
 
-  MapHostPointer(client_collection_info, transparent_texture.vmo_index,
+  MapHostPointer(client_collection_info, transparent_texture.metadata.vmo_index,
                  HostPointerAccessMode::kWriteOnly,
                  [&](uint8_t* vmo_host, uint32_t num_bytes) mutable {
                    // Create a green pixel with an alpha of 0.5.
@@ -2249,13 +2281,15 @@ VK_TEST_P(VulkanRendererParameterizedMultiplyColorTest, MultiplyColorTest) {
                                  .height = kTargetHeight};
 
   // Create the image meta data for the renderable.
-  ImageMetadata renderable_texture = {.collection_id = collection_id,
-                                      .identifier = allocation::GenerateUniqueImageId(),
-                                      .vmo_index = 0,
-                                      .width = 1,
-                                      .height = 1,
-                                      .multiply_color = {1, 0, 0, 1},
-                                      .blend_mode = blend_mode};
+  TestLayerInfo renderable_texture = {
+      .metadata = {.collection_id = collection_id,
+                   .identifier = allocation::GenerateUniqueImageId(),
+                   .vmo_index = 0,
+                   .width = 1,
+                   .height = 1},
+      .blend_mode = blend_mode,
+      .multiply_color = {1, 0, 0, 1},
+  };
 
   // Create the texture that will go on the transparent renderable.
   std::array<float, 4> transparent_color;
@@ -2270,22 +2304,24 @@ VK_TEST_P(VulkanRendererParameterizedMultiplyColorTest, MultiplyColorTest) {
       GTEST_FAIL() << "Unsupported blend mode";
       break;
   }
-  ImageMetadata transparent_texture = {.collection_id = collection_id,
-                                       .identifier = allocation::GenerateUniqueImageId(),
-                                       .vmo_index = 0,
-                                       .width = 1,
-                                       .height = 1,
-                                       .multiply_color = transparent_color,
-                                       .blend_mode = blend_mode};
+  TestLayerInfo transparent_texture = {
+      .metadata = {.collection_id = collection_id,
+                   .identifier = allocation::GenerateUniqueImageId(),
+                   .vmo_index = 0,
+                   .width = 1,
+                   .height = 1},
+      .blend_mode = blend_mode,
+      .multiply_color = transparent_color,
+  };
 
   // Import all the images.
   auto promise1 = renderer->ImportBufferImage(render_target, BufferCollectionUsage::kRenderTarget);
   ASSERT_TRUE(RunPromise(loop, std::move(promise1)));
   auto promise2 =
-      renderer->ImportBufferImage(renderable_texture, BufferCollectionUsage::kClientImage);
+      renderer->ImportBufferImage(renderable_texture.metadata, BufferCollectionUsage::kClientImage);
   ASSERT_TRUE(RunPromise(loop, std::move(promise2)));
-  auto promise3 =
-      renderer->ImportBufferImage(transparent_texture, BufferCollectionUsage::kClientImage);
+  auto promise3 = renderer->ImportBufferImage(transparent_texture.metadata,
+                                              BufferCollectionUsage::kClientImage);
   ASSERT_TRUE(RunPromise(loop, std::move(promise3)));
 
   // Create the two renderables.
@@ -2295,7 +2331,7 @@ VK_TEST_P(VulkanRendererParameterizedMultiplyColorTest, MultiplyColorTest) {
   ImageRect transparent_renderable(glm::vec2(7, 3), glm::vec2(kRenderableWidth, kRenderableHeight));
 
   // Have the client write white pixel values to image backing the above two renderables.
-  MapHostPointer(client_collection_info, renderable_texture.vmo_index,
+  MapHostPointer(client_collection_info, renderable_texture.metadata.vmo_index,
                  HostPointerAccessMode::kWriteOnly,
                  [&](uint8_t* vmo_host, uint32_t num_bytes) mutable {
                    // Create a red opaque pixel.
@@ -2708,17 +2744,16 @@ VK_TEST_F(VulkanRendererTest, ReadbackTest) {
   ASSERT_TRUE(RunPromise(loop, std::move(promise3)));
 
   // Create the image metadata for the solid color renderable.
-  ImageMetadata renderable_image_data = {.identifier = allocation::kInvalidImageId,
-                                         .multiply_color = {1.f, 0.4f, 0.f, 1.f},
-                                         .blend_mode = BlendMode::kPremultipliedAlpha()};
+  const auto blend_mode = BlendMode::kPremultipliedAlpha();
+  const std::array<float, 4> multiply_color = {1.f, 0.4f, 0.f, 1.f};
   ImageRect renderable(glm::vec2(0, 0), glm::vec2(kTargetWidth, kTargetHeight));
 
   // Render the renderable to the render target.
   ResolvedLayer layer = {
       .rect = renderable,
       .multiply_color = {1.f, 1.f, 1.f, 1.f},
-      .blend_mode = renderable_image_data.blend_mode,
-      .content = ResolvedLayer::SolidColorContent{.color = renderable_image_data.multiply_color},
+      .blend_mode = BlendMode::kPremultipliedAlpha(),
+      .content = ResolvedLayer::SolidColorContent{.color = {1.f, 0.4f, 0.f, 1.f}},
   };
   renderer->Render(render_target, std::span<const ResolvedLayer>(&layer, 1), {});
   renderer->WaitIdle();

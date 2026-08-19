@@ -739,7 +739,6 @@ TEST_F(DisplayCompositorTest, ImageIsValidAfterReleaseBufferCollection) {
       .vmo_index = 0,
       .width = 128,
       .height = 256,
-      .blend_mode = BlendMode::kReplace(),
   };
   EXPECT_CALL(*mock_display_coordinator_,
               ImportImage(testing::AllOf(MatchRequestField(ImportImage, buffer_collection_id,
@@ -829,7 +828,6 @@ TEST_F(DisplayCompositorTest, ImportImageErrorCases) {
       .vmo_index = kVmoIdx,
       .width = 20,
       .height = 30,
-      .blend_mode = BlendMode::kReplace(),
   };
 
   // Make sure that the engine returns true if the display coordinator returns true.
@@ -976,7 +974,6 @@ TEST_F(DisplayCompositorTest, HardwareFrameCorrectnessTest) {
       .vmo_index = 0,
       .width = 128,
       .height = 256,
-      .blend_mode = BlendMode::kReplace(),
   };
 
   // Add an image.
@@ -986,7 +983,6 @@ TEST_F(DisplayCompositorTest, HardwareFrameCorrectnessTest) {
       .vmo_index = 1,
       .width = 512,
       .height = 1024,
-      .blend_mode = BlendMode::kReplace(),
   };
 
   const display::DisplayId kDisplayId(1);
@@ -1227,8 +1223,6 @@ void DisplayCompositorTest::HardwareFrameCorrectnessWithRotationTester(
       .vmo_index = 0,
       .width = 128,
       .height = 256,
-      .blend_mode = BlendMode::kReplace(),
-      .flip = image_flip,
   };
 
   const display::DisplayId kDisplayId(1);
@@ -1795,7 +1789,6 @@ TEST_F(DisplayCompositorTest, ImageContentTakesImageLayerPath) {
       .vmo_index = 0,
       .width = 128,
       .height = 256,
-      .blend_mode = BlendMode::kReplace(),
   };
 
   const display::WireImageId fidl_image_id = image_metadata.identifier.ToFidl();

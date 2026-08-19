@@ -9,7 +9,6 @@
 #include <lib/stdcompat/utility.h>
 
 #include "src/ui/scenic/lib/allocation/id.h"
-#include "src/ui/scenic/lib/types/blend_mode.h"
 
 namespace allocation {
 
@@ -35,28 +34,14 @@ struct ImageMetadata {
   uint32_t width = 0;
   uint32_t height = 0;
 
-  // Linear-space RGBA values to multiply with the pixel values of the image.
-  std::array<float, 4> multiply_color = {1.f, 1.f, 1.f, 1.f};
-
-  // The blend mode to use when compositing this image.
-  types::BlendMode blend_mode = types::BlendMode::kReplace();
-
-  // The flip/reflection mode to use for this particular image.
-  fuchsia_ui_composition::ImageFlip flip = fuchsia_ui_composition::ImageFlip::kNone;
-
   bool operator==(const ImageMetadata& other) const {
     return (collection_id == other.collection_id && vmo_index == other.vmo_index &&
-            width == other.width && height == other.height && blend_mode == other.blend_mode &&
-            flip == other.flip && multiply_color == other.multiply_color);
+            width == other.width && height == other.height);
   }
 };
 
 inline std::ostream& operator<<(std::ostream& str, const ImageMetadata& m) {
-  str << "size=" << (m.collection_id == kInvalidId ? 1 : m.width) << "x"
-      << (m.collection_id == kInvalidId ? 1 : m.height) << "  flip=" << cpp23::to_underlying(m.flip)
-      << "  multiply_color=(" << m.multiply_color[0] << "," << m.multiply_color[1] << ","
-      << m.multiply_color[2] << "," << m.multiply_color[3] << ")"
-      << (m.collection_id == kInvalidId ? " (Solid Color)" : "") << "  blend_mode=" << m.blend_mode;
+  str << "size=" << m.width << "x" << m.height;
   return str;
 }
 

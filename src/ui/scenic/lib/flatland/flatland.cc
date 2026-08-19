@@ -1467,7 +1467,6 @@ void Flatland::CreateImage(ContentId image_id,
   metadata.vmo_index = vmo_index;
   metadata.width = properties.size()->width();
   metadata.height = properties.size()->height();
-  metadata.blend_mode = BlendMode::kReplace();
 
   TransformHandle handle;  // Lifted from if/else branches to be used in FLATLAND_VERBOSE_LOG below.
 
@@ -1723,7 +1722,6 @@ void Flatland::CreateFilledRect(ContentId rect_id) {
   // allocation::kInvalidImageId is overloaded in the renderer to signal that a
   // default 1x1 white texture should be applied to this rectangle.
   metadata.identifier = allocation::kInvalidImageId;
-  metadata.blend_mode = BlendMode::kReplace();
 
   TransformHandle handle;  // Lifted from if/else for FLATLAND_VERBOSE_LOG below.
 

@@ -534,8 +534,6 @@ TEST(SceneDumperTest, ImageRectangleMetadata) {
   image2.width = 300;
   image2.height = 400;
   image2.identifier = display::ImageId(2);
-  image2.multiply_color = {.2f, .4f, .8f, 1.f};
-
   std::vector<ImageRect> image_rectangles;
   image_rectangles.push_back(ImageRect({50, 60}, {200, 300}));
   image_rectangles.push_back(ImageRect({90, 100}, {400, 500}));
@@ -543,9 +541,9 @@ TEST(SceneDumperTest, ImageRectangleMetadata) {
   std::vector<ResolvedLayer> resolved_layers;
   resolved_layers.push_back(ResolvedLayer{
       .rect = image_rectangles[0],
-      .multiply_color = image1.multiply_color,
-      .blend_mode = image1.blend_mode,
-      .flip = image1.flip,
+      .multiply_color = {1.f, 1.f, 1.f, 1.f},
+      .blend_mode = BlendMode::kReplace(),
+      .flip = fuchsia_ui_composition::ImageFlip::kNone,
       .content =
           ResolvedLayer::ImageContent{
               .image_id = image1.identifier,
@@ -556,9 +554,9 @@ TEST(SceneDumperTest, ImageRectangleMetadata) {
   });
   resolved_layers.push_back(ResolvedLayer{
       .rect = image_rectangles[1],
-      .multiply_color = image2.multiply_color,
-      .blend_mode = image2.blend_mode,
-      .flip = image2.flip,
+      .multiply_color = {.2f, .4f, .8f, 1.f},
+      .blend_mode = BlendMode::kReplace(),
+      .flip = fuchsia_ui_composition::ImageFlip::kNone,
       .content =
           ResolvedLayer::ImageContent{
               .image_id = image2.identifier,
