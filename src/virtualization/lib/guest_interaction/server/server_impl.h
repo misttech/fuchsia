@@ -40,7 +40,7 @@ class ServerImpl {
     void* tag;
     bool ok;
     constexpr gpr_timespec deadline = {
-        .tv_nsec = 100 * 1000,  // 100ms.
+        .tv_nsec = 100 * 1000 * 1000,  // 100ms.
         .clock_type = GPR_TIMESPAN,
     };
 
