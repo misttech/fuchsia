@@ -126,10 +126,24 @@ uint64_t Checkpoint(zx_thread_state_general_regs_t& exit_regs) {
 
 #elifdef __x86_64__
 
+// The checkpoint saves all the registers when it's called, and later the
+// controlling thread writes them all back faithfully while this thread is
+// stopped.  However, when this thread resumes, the kernel doesn't always
+// restore quite all the registers.  If the thread stops in exception, then the
+// register values passed to zx_thread_write_state will indeed all be restored.
+// However, if the thread is stopped for suspension while inside a system call,
+// rather than either by exception or by a suspension that interrupts the
+// thread running user code, then the kernel returns to user mode--putatively
+// with the register values passed to zx_thread_write_state--using SYSRET
+// rather than IRET.  This instruction unavoidably always clobbers %rcx (with
+// the user PC where it resumes) and %r11 (with the %rflags value).  So when
+// this thread picks up running at the restored checkpoint location, those two
+// register values might not be the ones saved on entry.
+
 [[gnu::naked, clang::no_sanitize("all")]]
 uint64_t Checkpoint(zx_thread_state_general_regs_t& exit_regs) {
-  // Clobber %r11 with the unsafe SP so it's restored like a register.
-  __asm__("mov %%fs:%cc0, %%r11" : : "i"(ZX_TLS_UNSAFE_SP_OFFSET));
+  // Clobber %rdx with the unsafe SP so it's restored like a register.
+  __asm__("mov %%fs:%cc0, %%rdx" : : "i"(ZX_TLS_UNSAFE_SP_OFFSET));
 
   // Clobber %rax with the address of the label below, and store that as the PC
   // to restore.
@@ -145,7 +159,7 @@ uint64_t Checkpoint(zx_thread_state_general_regs_t& exit_regs) {
 
   SAVE_REG(rax);
   SAVE_REG(rbx);
-  SAVE_REG(rcx);
+  SAVE_REG(rcx);  // Might be clobbered.
   SAVE_REG(rdx);
   SAVE_REG(rsi);
   SAVE_REG(rdi);
@@ -154,7 +168,7 @@ uint64_t Checkpoint(zx_thread_state_general_regs_t& exit_regs) {
   SAVE_REG(r8);
   SAVE_REG(r9);
   SAVE_REG(r10);
-  SAVE_REG(r11);
+  SAVE_REG(r11);  // Might be clobbered.
   SAVE_REG(r12);
   SAVE_REG(r13);
   SAVE_REG(r14);
@@ -177,8 +191,8 @@ uint64_t Checkpoint(zx_thread_state_general_regs_t& exit_regs) {
   // Restore the return address onto the stack.
   __asm__("0: mov %rax, (%rsp)");
 
-  // Restore the unsafe SP value saved / restored in %r11.
-  __asm__("mov %%r11, %%fs:%cc0" : : "i"(ZX_TLS_UNSAFE_SP_OFFSET));
+  // Restore the unsafe SP value saved / restored in %rdx.
+  __asm__("mov %%rdx, %%fs:%cc0" : : "i"(ZX_TLS_UNSAFE_SP_OFFSET));
 
   __asm__("ret");
 }
