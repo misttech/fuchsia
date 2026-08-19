@@ -10,10 +10,30 @@ if (zircon_toolchain == false) {
   headers_dep = ":headers"
 }
 
+# This target exists to expose the <lib/zbitl/decompress.h>
+# header to internal.decompress-zstd below only, without the
+# rest of the zbitl headers, in order to remove GN include
+# check errors.
+library_headers("headers.decompress") {
+  visibility = [ ":*" ]
+  headers = [
+    "lib/zbitl/decompress.h",
+    "lib/zbitl/storage-traits.h",
+  ]
+  public_deps = [
+    # Both headers include <lib/fit/result.h>.
+    "//sdk/lib/fit",
+
+    # <lib/zbitl/storage-traits.h> includes <zircon/assert.h>
+    # and <lib/zbi-format/zbi.h>
+    "//sdk/lib/zbi-format",
+    "//sdk/lib/zircon-assert",
+  ]
+}
+
 library_headers("headers") {
   headers = [
     "lib/zbitl/checking.h",
-    "lib/zbitl/decompress.h",
     "lib/zbitl/efi.h",
     "lib/zbitl/error-stdio.h",
     "lib/zbitl/error-string.h",
@@ -27,7 +47,6 @@ library_headers("headers") {
     "lib/zbitl/json.h",
     "lib/zbitl/memory.h",
     "lib/zbitl/stdio.h",
-    "lib/zbitl/storage-traits.h",
     "lib/zbitl/view.h",
     "lib/zbitl/vmo.h",
   ]
@@ -41,15 +60,15 @@ library_headers("headers") {
     # <lib/zbitl/items/bootfs.h> has #include <fbl/alloc_checker.h>.
     "//zircon/system/ulib/fbl$headers_dep",
 
-    # <lib/zbitl/view.h> has #include <lib/fit/result.h>.
-    "//zircon/system/ulib/zx$headers_dep",
-
     # <lib/zbitl/efi.h> has #include <efi/protocol/file.h>.
     "//zircon/kernel/lib/efi$headers_dep",
 
     # <lib/zbitl/item.h> has #include
     # <lib/zbi-format/internal/deprecated-cpu.h>.
     "//sdk/lib/zbi-format:internal",
+
+    # Decompress headers were moved to separate target. See comment above.
+    ":headers.decompress",
   ]
 }
 
@@ -112,13 +131,11 @@ source_set("internal.decompress-zstd") {
     "//third_party/zstd:zstd-decompress-standalone",
   ]
   public_deps = [
-    "//sdk/lib/stdcompat",
+    # Sources include <lib/zbitl/decompress.h>
+    ":headers.decompress",
 
-    # Many files have #include <lib/zbi-format/zbi.h>.
-    "//sdk/lib/zbi-format",
-
-    # <lib/zbitl/decompress.h> has #include <lib/fit/result.h>.
-    "//zircon/system/ulib/zx",
+    # zstd-streaming.cc includes <zircon/assert.h>
+    "//sdk/lib/zircon-assert",
   ]
   include_dirs = [ "include" ]
 
