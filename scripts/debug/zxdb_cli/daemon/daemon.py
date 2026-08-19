@@ -186,7 +186,7 @@ class Daemon:
         self.shutdown_complete_event = asyncio.Event()
         self.dap_ready_event = asyncio.Event()
         self.dap_initialized_event = asyncio.Event()
-        self._start_lock = asyncio.Lock()
+        self._command_lock = asyncio.Lock()
         # We use a regular dict to store events, keyed by sequence number which
         # preserves insertion order. This is relevant because it allows us to
         # efficiently prune old events by iterating from the beginning of the
@@ -519,7 +519,15 @@ class Daemon:
                     else:
                         break
 
-            resp = await self.registry.handle(req.command, req)
+            if req.command not in (
+                wait_for_event.COMMAND_NAME,
+                hello.COMMAND_NAME,
+                stop.COMMAND_NAME,
+            ):
+                async with self._command_lock:
+                    resp = await self.registry.handle(req.command, req)
+            else:
+                resp = await self.registry.handle(req.command, req)
 
             # Add events that have transpired since |last_seen_seq|.
             if req.last_seen_seq is not None:

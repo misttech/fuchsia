@@ -108,6 +108,97 @@ class TestCommandHandlerRegistry(unittest.IsolatedAsyncioTestCase):
         self.assertIn("Not connected", resp.message or "")
 
     @patch("daemon.daemon.ZxdbDapClient")
+    async def test_request_waits_for_startup_lock_instead_of_failing(
+        self, mock_dap_client_class: Mock
+    ) -> None:
+        """Verifies requests arriving while start is executing wait on _command_lock.
+
+        Otherwise, it would show "Not connected to zxdb DAP server" because of an uninitialized zxdb_writer.
+        """
+        daemon = Daemon(port=15678)
+        daemon.zxdb_writer = None  # DAP server not yet connected
+
+        mock_dap_client = mock_dap_client_class.return_value
+        mock_dap_client.attach = AsyncMock(
+            return_value=Mock(dump_dap=lambda: {"success": True})
+        )
+
+        # 1. Simulate 'start' acquiring the command lock during initialization
+        await daemon._command_lock.acquire()
+
+        # 2. Background task simulates 'start' completing DAP connection after 50ms
+        async def complete_dap_startup_after_delay() -> None:
+            await asyncio.sleep(0.05)
+            daemon.zxdb_writer = Mock()
+            daemon._command_lock.release()
+
+        startup_task = asyncio.create_task(complete_dap_startup_after_delay())
+
+        # 3. Dispatch an operational command while startup is still locked.
+        # It should block for 50ms, acquire the lock after startup completes, and succeed.
+        req = AttachRequest(filter="my_process")
+        async with daemon._command_lock:
+            resp = await daemon.registry.handle("attach", req)
+
+        self.assertTrue(resp.success)
+        mock_dap_client.attach.assert_called_once()
+        await startup_task
+
+    @patch("daemon.daemon.ZxdbDapClient")
+    async def test_commands_execute_in_strict_fifo_order(
+        self, mock_dap_client_class: Mock
+    ) -> None:
+        """Verifies multiple commands arriving concurrently execute in FIFO order without interleaving."""
+        execution_log: list[str] = []
+
+        async def delayed_attach_side_effect(*args: Any, **kwargs: Any) -> Mock:
+            execution_log.append("attach_start")
+            await asyncio.sleep(0.05)
+            execution_log.append("attach_end")
+            return Mock(dump_dap=lambda: {"success": True})
+
+        async def continue_side_effect(*args: Any, **kwargs: Any) -> Mock:
+            execution_log.append("continue_start")
+            await asyncio.sleep(0.01)
+            execution_log.append("continue_end")
+            return Mock(dump_dap=lambda: {"success": True})
+
+        mock_dap_client = mock_dap_client_class.return_value
+        mock_dap_client.attach = AsyncMock(
+            side_effect=delayed_attach_side_effect
+        )
+        mock_dap_client.continue_thread = AsyncMock(
+            side_effect=continue_side_effect
+        )
+
+        daemon = Daemon(port=15678)
+        daemon.zxdb_writer = Mock()
+
+        async def dispatch(cmd: str, req: Any) -> Response:
+            async with daemon._command_lock:
+                return await daemon.registry.handle(cmd, req)
+
+        # Launch attach first (takes 50ms)
+        task1 = asyncio.create_task(
+            dispatch("attach", AttachRequest(filter="proc1"))
+        )
+        # Ensure task1 acquires the lock first
+        await asyncio.sleep(0.005)
+        # Launch continue second (takes 10ms); should wait for attach to finish
+        task2 = asyncio.create_task(
+            dispatch("continue", ContinueRequest(thread_id=1))
+        )
+
+        resp1, resp2 = await asyncio.gather(task1, task2)
+
+        self.assertTrue(resp1.success)
+        self.assertTrue(resp2.success)
+        self.assertEqual(
+            execution_log,
+            ["attach_start", "attach_end", "continue_start", "continue_end"],
+        )
+
+    @patch("daemon.daemon.ZxdbDapClient")
     async def test_handle_continue(self, mock_dap_client_class: Mock) -> None:
         mock_dap_client = mock_dap_client_class.return_value
 
