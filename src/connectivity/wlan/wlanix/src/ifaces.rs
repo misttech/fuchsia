@@ -1193,7 +1193,7 @@ pub mod test_utils {
         TriggerScan,
         AbortScan,
         GetLastScanResults,
-        #[allow(dead_code)]
+        #[expect(dead_code)]
         UpdateLastScanResults(Vec<fidl_sme::ScanResult>),
         ConnectToNetwork {
             ssid: Vec<u8>,
@@ -1439,7 +1439,7 @@ pub mod test_utils {
     }
 
     // Iface IDs are not currently read out of this struct anywhere, but keep them for future tests.
-    #[allow(dead_code)]
+    #[expect(dead_code)]
     #[derive(Debug, Clone)]
     pub enum IfaceManagerCall {
         ListPhys,
