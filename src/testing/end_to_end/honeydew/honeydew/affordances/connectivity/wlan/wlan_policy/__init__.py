@@ -639,7 +639,7 @@ class WlanPolicy(AsyncLazyReady):
     async def wait_for_client_state(
         self,
         expected_state: f_wlan_policy.WlanClientState,
-        timeout: float | None = _DEFAULT_WLAN_POLICY_OPERATION_TIMEOUT_SEC,
+        timeout: timedelta | None = _DEFAULT_WLAN_POLICY_OPERATION_TIMEOUT,
     ) -> None:
         """Waits until the client converges to expected state."""
         await self.set_new_update_listener()
@@ -647,10 +647,7 @@ class WlanPolicy(AsyncLazyReady):
         def check_client(update: ClientStateSummary) -> bool:
             return update.state == expected_state
 
-        await self._wait_on_update(
-            check_client,
-            timeout=None if timeout is None else timedelta(seconds=timeout),
-        )
+        await self._wait_on_update(check_client, timeout=timeout)
 
     @ensure_ready
     async def remove_all_networks(
@@ -993,7 +990,9 @@ class WlanPolicy(AsyncLazyReady):
             if wait_for_confirmation:
                 await self.wait_for_client_state(
                     f_wlan_policy.WlanClientState.CONNECTIONS_DISABLED,
-                    timeout=timeout,
+                    timeout=None
+                    if timeout is None
+                    else timedelta(seconds=timeout),
                 )
         except FcTransportStatus as status:
             raise wlan_errors.HoneydewWlanError(

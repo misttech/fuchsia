@@ -482,7 +482,7 @@ class WlanPolicyTests(unittest.IsolatedAsyncioTestCase):
 
         await self.wlan_policy_obj.wait_for_client_state(
             expected_state=f_wlan_policy.WlanClientState.CONNECTIONS_ENABLED,
-            timeout=5,
+            timeout=timedelta(seconds=5),
         )
         await push_task
 

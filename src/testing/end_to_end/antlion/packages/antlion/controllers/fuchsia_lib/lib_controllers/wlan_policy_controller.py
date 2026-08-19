@@ -7,6 +7,7 @@
 import logging
 import time
 from dataclasses import dataclass
+from datetime import timedelta
 
 import fidl_fuchsia_wlan_policy as f_wlan_policy
 import fuchsia_async_extension
@@ -23,7 +24,7 @@ from mobly import logger, signals
 SESSION_MANAGER_TIMEOUT_SEC = 10
 FUCHSIA_DEFAULT_WLAN_CONFIGURE_RETRIES = 3
 DEFAULT_GET_UPDATE_TIMEOUT = 60
-DEFAULT_TIME_WAIT_FOR_CLIENT_CONNECTIONS_STATE = 5  # seconds
+_DEFAULT_TIME_WAIT_FOR_CLIENT_CONNECTIONS_STATE = timedelta(seconds=5)
 TIME_WAIT_BETWEEN_STOP_START_CONNECTIONS = 0.15  # 150 ms in seconds for "sleep"
 
 
@@ -141,14 +142,16 @@ class WlanPolicyController:
 
     def stop_client_connections_and_wait(
         self,
-        wait_time: int = DEFAULT_TIME_WAIT_FOR_CLIENT_CONNECTIONS_STATE,
+        wait_time: timedelta = _DEFAULT_TIME_WAIT_FOR_CLIENT_CONNECTIONS_STATE,
     ) -> None:
         """This function stops client connections if client connections are currently enabled,
         and waits for an update showing that the state has changed.
         """
         try:
             client = fuchsia_async_extension.get_loop().run_until_complete(
-                self.honeydew.wlan_policy.get_status(timeout=wait_time)
+                self.honeydew.wlan_policy.get_status(
+                    timeout=wait_time.total_seconds()
+                )
             )
             if (
                 client.state
