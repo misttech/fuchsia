@@ -192,6 +192,22 @@ Prng* GetInstance() {
 }  // namespace global_prng
 }  // namespace crypto
 
+extern "C" {
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE void cpp_global_prng_draw(uint8_t* buffer, size_t len) {
+  auto prng = crypto::global_prng::GetInstance();
+  ASSERT(prng->is_thread_safe());
+  prng->Draw(buffer, len);
+}
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE void cpp_global_prng_add_entropy(const uint8_t* buffer, size_t len) {
+  auto prng = crypto::global_prng::GetInstance();
+  ASSERT(prng->is_thread_safe());
+  prng->AddEntropy(buffer, len);
+}
+}
+
 // intel hw_rng init hook is at PLATFORM_EARLY+1
 // make sure we start after that so we can use it for the early seed.
 LK_INIT_HOOK(global_prng_seed, crypto::global_prng::EarlyBootSeed, LK_INIT_LEVEL_PLATFORM_EARLY + 2)

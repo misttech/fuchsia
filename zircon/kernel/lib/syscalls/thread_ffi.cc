@@ -8,14 +8,27 @@
 #include <zircon/syscalls/rseq.h>
 #include <zircon/types.h>
 
+#include <kernel/deadline.h>
 #include <kernel/ffi.h>
 #include <kernel/thread.h>
+#include <object/process_dispatcher.h>
+#include <object/thread_dispatcher.h>
 #include <object/vm_object_dispatcher.h>
 #include <vm/vm_object_paged.h>
 
 #include "thread_priv.h"
 
 extern "C" {
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE zx_status_t cpp_thread_current_sleep_nanosleep(zx_instant_mono_t deadline,
+                                                                 zx_instant_mono_t now,
+                                                                 zx_duration_mono_t slack_amount) {
+  const auto up = ProcessDispatcher::GetCurrent();
+  const Deadline slackDeadline(deadline, up->GetTimerSlackPolicy());
+  ThreadDispatcher::AutoBlocked by(ThreadDispatcher::Blocked::SLEEPING);
+  return Thread::Current::SleepEtc(slackDeadline, Interruptible::Yes, now);
+}
 
 // TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
 FFI_ALWAYS_INLINE void cpp_thread_reset_rseq() { Thread::Current::Get()->set_rseq_accessor({}); }

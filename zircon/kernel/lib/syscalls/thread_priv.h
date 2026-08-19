@@ -10,10 +10,17 @@
 #include <stdint.h>
 #include <zircon/types.h>
 
+#include <kernel/ffi.h>
+
 class VmObjectDispatcher;
 
 extern "C" {
-void cpp_thread_reset_rseq();
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE zx_status_t cpp_thread_current_sleep_nanosleep(zx_instant_mono_t deadline,
+                                                                 zx_instant_mono_t now,
+                                                                 zx_duration_mono_t slack_amount);
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE void cpp_thread_reset_rseq();
 zx_status_t cpp_thread_set_rseq(const VmObjectDispatcher* vmo_dispatcher, uint64_t offset);
 }
 

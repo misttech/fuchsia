@@ -60,7 +60,6 @@ source_set("impl") {
     "thread_ffi.cc",
     "vmar.cc",
     "vmo.cc",
-    "zircon.cc",
   ]
   deps = [
     ":dispatch",
@@ -131,7 +130,9 @@ kernel_rust_mod("syscalls-rs") {
   output_name = "syscalls_rs"
   source_root = "mod.rs"
   sources = [
+    "clock.rs",
     "counter.rs",
+    "cprng.rs",
     "debug.rs",
     "debuglog.rs",
     "event.rs",
@@ -141,6 +142,7 @@ kernel_rust_mod("syscalls-rs") {
     "lib.rs",
     "membarrier.rs",
     "msi.rs",
+    "nanosleep.rs",
     "object_wait.rs",
     "profile.rs",
     "restricted.rs",
@@ -150,6 +152,7 @@ kernel_rust_mod("syscalls-rs") {
     "task.rs",
     "test.rs",
     "thread.rs",
+    "ticks.rs",
     "timer.rs",
   ]
   deps = [

@@ -9,6 +9,8 @@
 
 #include <lib/crypto/prng.h>
 
+#include <kernel/ffi.h>
+
 namespace crypto {
 
 namespace global_prng {
@@ -20,5 +22,12 @@ Prng* GetInstance();
 }  // namespace global_prng
 
 }  // namespace crypto
+
+extern "C" {
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE void cpp_global_prng_draw(uint8_t* buffer, size_t len);
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE void cpp_global_prng_add_entropy(const uint8_t* buffer, size_t len);
+}
 
 #endif  // ZIRCON_KERNEL_LIB_CRYPTO_INCLUDE_LIB_CRYPTO_GLOBAL_PRNG_H_

@@ -4,7 +4,9 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
+mod clock;
 mod counter;
+mod cprng;
 mod debug;
 mod debuglog;
 mod event;
@@ -13,6 +15,7 @@ mod iommu;
 mod job;
 mod membarrier;
 mod msi;
+mod nanosleep;
 mod object_wait;
 mod profile;
 mod restricted;
@@ -22,4 +25,5 @@ mod system;
 mod task;
 mod test;
 mod thread;
+mod ticks;
 mod timer;
