@@ -79,15 +79,15 @@
                 // Fails due to: "No supported filesystems"
                 "getxattr03",
 
-                // Does not run on tmpfs.
+                // TODO(https://fxbug.dev/547878640): Does not run on tmpfs.
                 "fcntl24",
                 "fcntl24_64",
 
-                // Does not run on tmpfs.
+                // TODO(https://fxbug.dev/547878640): Does not run on tmpfs.
                 "fcntl25",
                 "fcntl25_64",
 
-                // Does not run on tmpfs.
+                // TODO(https://fxbug.dev/547878640): Does not run on tmpfs.
                 "fcntl26",
                 "fcntl26_64",
 
@@ -95,7 +95,7 @@
                 "fcntl31",
                 "fcntl31_64",
 
-                // Does not run on tmpfs.
+                // TODO(https://fxbug.dev/547878640): Does not run on tmpfs.
                 "fcntl32",
                 "fcntl32_64",
 
@@ -103,7 +103,7 @@
                 "fcntl33",
                 "fcntl33_64",
 
-                // Skipped with tmpfs.
+                // TODO(https://fxbug.dev/547878640): Skipped with tmpfs.
                 "fdatasync03",
                 "fsetxattr02",
                 "futimesat01",
@@ -113,7 +113,7 @@
                 "getpriority01", // https://fxbug.dev/287118373
                 "getpriority02", // https://fxbug.dev/287118373
 
-                // Skipped with tmpfs.
+                // TODO(https://fxbug.dev/547878640): Skipped with tmpfs.
                 "ioctl_loop05",
                 "ioprio_get01",
                 "ioprio_set01",
@@ -142,6 +142,8 @@
                 "mprotect01",
                 "mprotect05",
                 "msync03",
+
+                // TODO(https://fxbug.dev/547878640): Requires O_DIRECT support.
                 "msync04",
                 "munlockall01",
 
@@ -153,6 +155,8 @@
                 "prctl08",
                 "prctl10",
                 "ptrace10",
+
+                // TODO(https://fxbug.dev/547878640): Requires O_DIRECT support.
                 "pwritev03",
                 "pwritev03_64",
                 "quotactl04",
@@ -198,8 +202,7 @@
                 "statx06",
                 "statx11",
 
-                // This test fails because we do not limit the amount of swap files according to the
-                // size mount flag.
+                // TODO(https://fxbug.dev/547878640): Requires block device write accounting.
                 "sync01",
                 "time-schedule01",
 
