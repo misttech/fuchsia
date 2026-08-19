@@ -199,19 +199,16 @@ void print_performance_domain_ids(const char* domain_name) {
   printf("Domain ID = %lu | Domain Path = %s\n", domain_id, path);
 }
 
-void describe(const char* domain_name) {
-  char path[PATH_MAX];
-  snprintf(path, PATH_MAX, kCpuDeviceFormat, domain_name);
-
-  zx::result domain = CpuPerformanceDomain::CreateFromPath(path);
+void describe(const char* argument) {
+  zx::result domain = PerformanceDomainFromArgument(argument);
   if (domain.is_error()) {
-    std::cerr << "Failed to connect to performance domain device '" << domain_name << "'"
+    std::cerr << "Failed to connect to performance domain device '" << argument << "'"
               << " st = " << domain.status_string() << std::endl;
     return;
   }
 
   CpuPerformanceDomain& client = domain.value();
-  std::cout << "Domain " << domain_name << std::endl;
+  std::cout << "Domain " << argument << std::endl;
 
   const auto [core_count_status, core_count] = client.GetNumLogicalCores();
   if (core_count_status == ZX_OK) {
