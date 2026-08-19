@@ -2200,11 +2200,11 @@ group("slab-0.4.11") {
 }
 
 group("smallvec") {
-  public_deps = [ ":smallvec-v1_15_1" ]
+  public_deps = [ ":smallvec-v1_15_2" ]
 }
 
-group("smallvec-1.15.1") {
-  public_deps = [ ":smallvec-v1_15_1" ]
+group("smallvec-1.15.2") {
+  public_deps = [ ":smallvec-v1_15_2" ]
 }
 
 group("socket2") {
@@ -11405,7 +11405,7 @@ rustc_library("hyper-v1_11_0") {
   deps += [ ":httpdate-v1_0_3" ]
   deps += [ ":itoa-v1_0_18" ]
   deps += [ ":pin-project-lite-v0_2_17" ]
-  deps += [ ":smallvec-v1_15_1" ]
+  deps += [ ":smallvec-v1_15_2" ]
   deps += [ ":want-v0_3_1" ]
 
   rustenv = []
@@ -13477,7 +13477,7 @@ rustc_library("nibble_vec-v0_1_0") {
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":smallvec-v1_15_1" ]
+  deps += [ ":smallvec-v1_15_2" ]
 
   rustenv = []
 
@@ -13988,7 +13988,7 @@ rustc_library("num-bigint-dig-v0_8_6") {
   deps += [ ":num-iter-v0_1_45" ]
   deps += [ ":num-traits-v0_2_19" ]
   deps += [ ":rand-v0_8_4" ]
-  deps += [ ":smallvec-v1_15_1" ]
+  deps += [ ":smallvec-v1_15_2" ]
 
   rustenv = []
 
@@ -14959,7 +14959,7 @@ rustc_library("parking_lot_core-v0_8_3") {
   deps = []
   deps += [ ":cfg-if-v1_0_4" ]
   deps += [ ":instant-v0_1_13" ]
-  deps += [ ":smallvec-v1_15_1" ]
+  deps += [ ":smallvec-v1_15_2" ]
   if (false) {
     deps += [ ":redox_syscall-v0_2_13" ]
   }
@@ -15006,7 +15006,7 @@ rustc_library("parking_lot_core-v0_9_12") {
 
   deps = []
   deps += [ ":cfg-if-v1_0_4" ]
-  deps += [ ":smallvec-v1_15_1" ]
+  deps += [ ":smallvec-v1_15_2" ]
   if (false) {
     deps += [ ":redox_syscall-v0_5_17" ]
   }
@@ -21071,18 +21071,18 @@ rustc_library("slab-v0_4_11") {
   applicable_licenses = [ ":slab-v0_4_11.license" ]
 }
 
-license("smallvec-v1_15_1.license") {
+license("smallvec-v1_15_2.license") {
   public_package_name = "smallvec"
   license_files = [
-    "//third_party/rust_crates/vendor/smallvec-1.15.1/LICENSE-APACHE",
-    "//third_party/rust_crates/vendor/smallvec-1.15.1/LICENSE-MIT",
+    "//third_party/rust_crates/vendor/smallvec-1.15.2/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/smallvec-1.15.2/LICENSE-MIT",
   ]
 }
 
-rustc_library("smallvec-v1_15_1") {
+rustc_library("smallvec-v1_15_2") {
   crate_name = "smallvec"
-  source_root = "//third_party/rust_crates/vendor/smallvec-1.15.1/src/lib.rs"
-  output_name = "smallvec-4f3eb1e8acd358f0"
+  source_root = "//third_party/rust_crates/vendor/smallvec-1.15.2/src/lib.rs"
+  output_name = "smallvec-6004cbdd1195b3db"
   edition = "2018"
   disable_clippy = true
   enforce_source_listing = false
@@ -21094,8 +21094,8 @@ rustc_library("smallvec-v1_15_1") {
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=4f3eb1e8acd358f0",
-    "-Cextra-filename=-4f3eb1e8acd358f0",
+    "-Cmetadata=6004cbdd1195b3db",
+    "-Cextra-filename=-6004cbdd1195b3db",
     "--cfg=feature=\"const_generics\"",
     "--cfg=feature=\"const_new\"",
     "--cfg=feature=\"union\"",
@@ -21103,7 +21103,7 @@ rustc_library("smallvec-v1_15_1") {
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":smallvec-v1_15_1.license" ]
+  applicable_licenses = [ ":smallvec-v1_15_2.license" ]
 }
 
 license("socket2-v0_6_4.license") {
@@ -23128,7 +23128,7 @@ rustc_library("tracing-subscriber-v0_3_23") {
   deps += [ ":once_cell-v1_21_3" ]
   deps += [ ":regex-automata-v0_4_14" ]
   deps += [ ":sharded-slab-v0_1_7" ]
-  deps += [ ":smallvec-v1_15_1" ]
+  deps += [ ":smallvec-v1_15_2" ]
   deps += [ ":thread_local-v1_1_9" ]
   deps += [ ":tracing-log-v0_2_0" ]
   deps += [ ":tracing-v0_1_44" ]
@@ -23226,7 +23226,7 @@ rustc_library("trust-dns-proto-v0_22_0") {
   deps += [ ":ipnet-v2_11_0" ]
   deps += [ ":lazy_static-v1_5_0" ]
   deps += [ ":rand-v0_8_4" ]
-  deps += [ ":smallvec-v1_15_1" ]
+  deps += [ ":smallvec-v1_15_2" ]
   deps += [ ":thiserror-v1_0_69" ]
   deps += [ ":tinyvec-v1_11_0" ]
   deps += [ ":tracing-v0_1_44" ]
@@ -23271,7 +23271,7 @@ rustc_library("trust-dns-resolver-v0_22_0") {
   deps += [ ":lazy_static-v1_5_0" ]
   deps += [ ":lru-cache-v0_1_2" ]
   deps += [ ":parking_lot-v0_12_5" ]
-  deps += [ ":smallvec-v1_15_1" ]
+  deps += [ ":smallvec-v1_15_2" ]
   deps += [ ":thiserror-v1_0_69" ]
   deps += [ ":tracing-v0_1_44" ]
 
