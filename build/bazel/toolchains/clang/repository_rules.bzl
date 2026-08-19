@@ -92,7 +92,7 @@ def _generate_prebuilt_llvm_repository_impl(repo_ctx):
 
     # Symlink the BUILD.bazel file.
     repo_ctx.symlink(
-        repo_ctx.path("@//build/bazel/toolchains/clang:prebuilt_llvm.BUILD.bazel"),
+        repo_ctx.path(Label("@//build/bazel/toolchains/clang:prebuilt_llvm.BUILD.bazel")),
         "BUILD.bazel",
     )
 
