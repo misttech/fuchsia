@@ -51,6 +51,11 @@ _LOGGER: logging.Logger = logging.getLogger(__name__)
 
 _DEVICE_NOT_CONNECTED: str = "Timeout attempting to reach target"
 
+# Timeout for `ffx target status` when collecting diagnostic logs after a command failure.
+# 30 seconds provides sufficient headroom for FFX discovery and SSH connection attempts
+# when the target is reachable, while preventing unbounded hangs when the target is offline.
+_TARGET_STATUS_TIMEOUT_SECS: float = 30.0
+
 
 class FFX:
     """Provides methods for Host-(Fuchsia)Target interactions via FFX.
@@ -399,7 +404,7 @@ class FFX:
                     cmd=ffx_cmd,
                     capture_output=True,
                     log_output=False,
-                    timeout=None,
+                    timeout=_TARGET_STATUS_TIMEOUT_SECS,
                 )
                 or ""
             )
@@ -408,6 +413,9 @@ class FFX:
 
     def notify_intentional_disconnect(self) -> None:
         """Notifies the FFX monitor of an upcoming intentional disconnect."""
+        if not self._use_monitor:
+            return
+
         nodename = self._name if self._name else self._query
         cmd = _FFX_CMDS["MONITOR_INTENTIONAL_DISCONNECT"][:]
         cmd.extend(["--nodename", nodename])
@@ -416,6 +424,7 @@ class FFX:
             self.run(
                 cmd=cmd,
                 include_target=False,
+                log_status_on_failure=False,
             )
         except ffx_errors.FfxCommandError as err:
             _LOGGER.warning(
