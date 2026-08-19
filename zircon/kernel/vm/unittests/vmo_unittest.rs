@@ -16,6 +16,7 @@ mod vmo_rs {
     use crate::vm::page::VmPagePtr;
     use crate::vm::page_source::MultiPageRequest;
     use crate::vm::physical_page_borrowing_config::ScopedLoaningEnabled;
+    use crate::vm::physmap::paddr_to_physmap;
     use crate::vm::pinned_vm_object::PinnedVmObject;
     use crate::vm::pmm::{self, ALLOC_FLAG_ANY, PmmOptDelayReuse, paddr_to_vm_page};
     use crate::vm::scanner::AutoVmScannerDisable;
@@ -33,7 +34,7 @@ mod vmo_rs {
     use core::mem::MaybeUninit;
     use core::slice;
     use debug::dprintf;
-    use fbl::Vector;
+    use fbl::{RefPtr, Vector};
     use page::SIZE as PAGE_SIZE_USIZE;
     use pin_init::stack_pin_init;
     use unittest::{
@@ -511,6 +512,45 @@ mod vmo_rs {
         }
     }
 
+    /// Creates a vm object, maps it, drops ref before unmapping.
+    #[test]
+    fn vmo_dropped_ref_test() {
+        let alloc_size = 16 * PAGE_SIZE_USIZE;
+        let vmo = unwrap_ok!(
+            VmObjectPaged::create(pmm::ALLOC_FLAG_ANY, 0, alloc_size as u64),
+            "vmobject creation\n"
+        );
+
+        let ka = VmAspace::kernel_aspace();
+        // SAFETY: The flags and range are appropriate for creating this mapping.
+        let ptr = unsafe {
+            unwrap_ok!(
+                ka.map_object_internal(
+                    VmObjectPaged::into_vm_object(vmo),
+                    c"test",
+                    0,
+                    alloc_size,
+                    0,
+                    vmm_flag::COMMIT,
+                    ARCH_RW_FLAGS,
+                ),
+                "mapping object"
+            )
+        };
+        let ptr: *mut MaybeUninit<u8> = ptr.cast();
+        // SAFETY: `ptr` points to `alloc_size` bytes of memory mapped into `ka`.
+        let ptr = unsafe { slice::from_raw_parts_mut(ptr, alloc_size) };
+
+        // fill with known pattern and test
+        let (ptr, result) = fill_and_test(ptr);
+        expect_true!(result);
+
+        // SAFETY: `ptr.as_ptr() as usize` is a valid virtual address previously returned by
+        // `map_object_internal` in `ka` that has not yet been freed.
+        let err = unsafe { ka.free_region(ptr.as_ptr() as usize) };
+        expect_ok!(err, "unmapping object");
+    }
+
     /// Creates a vm object, maps it, fills it with data, unmaps, maps again somewhere else.
     #[test]
     fn vmo_remap_test() {
@@ -582,6 +622,111 @@ mod vmo_rs {
         // `map_object_internal` in `ka` that has not yet been freed.
         let err = unsafe { ka.free_region(ptr.as_ptr() as usize) };
         expect_ok!(err, "unmapping object");
+    }
+
+    /// Tests mapping a VMO multiple times simultaneously.
+    #[test]
+    fn vmo_double_remap_test() {
+        // Creates a vm object, maps it, fills it with data, maps it a second time and
+        // third time somwehere else.
+        let alloc_size = 16 * PAGE_SIZE_USIZE;
+        let vmo = unwrap_ok!(
+            VmObjectPaged::create(pmm::ALLOC_FLAG_ANY, 0, alloc_size as u64),
+            "vmobject creation\n"
+        );
+
+        let ka = VmAspace::kernel_aspace();
+        // SAFETY: The flags and range are appropriate for creating this mapping.
+        let ptr = unsafe {
+            unwrap_ok!(
+                ka.map_object_internal(
+                    VmObjectPaged::into_vm_object(vmo.clone()),
+                    c"test0",
+                    0,
+                    alloc_size,
+                    0,
+                    vmm_flag::COMMIT,
+                    ARCH_RW_FLAGS,
+                ),
+                "mapping object"
+            )
+        };
+        let ptr: *mut MaybeUninit<u8> = ptr.cast();
+        // SAFETY: `ptr` points to `alloc_size` bytes of memory mapped into `ka`.
+        let ptr = unsafe { slice::from_raw_parts_mut(ptr, alloc_size) };
+
+        // fill with known pattern and test
+        let (ptr, result) = fill_and_test(ptr);
+        expect_true!(result);
+
+        // map it again
+        // SAFETY: The flags and range are appropriate for creating this mapping.
+        let ptr2 = unsafe {
+            unwrap_ok!(
+                ka.map_object_internal(
+                    VmObjectPaged::into_vm_object(vmo.clone()),
+                    c"test1",
+                    0,
+                    alloc_size,
+                    0,
+                    vmm_flag::COMMIT,
+                    ARCH_RW_FLAGS,
+                ),
+                "mapping object second time"
+            )
+        };
+        let ptr2: *mut u8 = ptr2.cast();
+        // SAFETY: `ptr2` points to `alloc_size` bytes of memory mapped into `ka`.
+        let ptr2 = unsafe { slice::from_raw_parts(ptr2, alloc_size) };
+        expect_ne!(ptr.as_ptr(), ptr2.as_ptr(), "second mapping is different");
+
+        // test that the pattern is still valid
+        let result = test_region(ptr.as_ptr().addr(), ptr2);
+        expect_true!(result, "testing region for corruption");
+
+        // map it a third time with an offset
+        let alloc_offset = PAGE_SIZE_USIZE;
+        // SAFETY: The flags and range are appropriate for creating this mapping.
+        let ptr3 = unsafe {
+            unwrap_ok!(
+                ka.map_object_internal(
+                    VmObjectPaged::into_vm_object(vmo),
+                    c"test2",
+                    alloc_offset as u64,
+                    alloc_size - alloc_offset,
+                    0,
+                    vmm_flag::COMMIT,
+                    ARCH_RW_FLAGS,
+                ),
+                "mapping object third time"
+            )
+        };
+        let ptr3: *mut u8 = ptr3.cast();
+        // SAFETY: `ptr3` points to `alloc_size - alloc_offset` bytes of memory mapped into `ka`.
+        let ptr3 = unsafe { slice::from_raw_parts(ptr3, alloc_size - alloc_offset) };
+        expect_ne!(ptr3.as_ptr(), ptr2.as_ptr(), "third mapping is different");
+        expect_ne!(ptr3.as_ptr(), ptr.as_ptr(), "third mapping is different");
+
+        // test that the pattern is still valid
+        expect_true!(
+            ptr[alloc_offset..alloc_size] == ptr3[..alloc_size - alloc_offset],
+            "testing region for corruption"
+        );
+
+        // SAFETY: `ptr3.as_ptr() as usize` is a valid virtual address previously returned by
+        // `map_object_internal` in `ka` that has not yet been freed.
+        let ret = unsafe { ka.free_region(ptr3.as_ptr() as usize) };
+        expect_ok!(ret, "unmapping object third time");
+
+        // SAFETY: `ptr2.as_ptr() as usize` is a valid virtual address previously returned by
+        // `map_object_internal` in `ka` that has not yet been freed.
+        let ret = unsafe { ka.free_region(ptr2.as_ptr() as usize) };
+        expect_ok!(ret, "unmapping object second time");
+
+        // SAFETY: `ptr.as_ptr() as usize` is a valid virtual address previously returned by
+        // `map_object_internal` in `ka` that has not yet been freed.
+        let ret = unsafe { ka.free_region(ptr.as_ptr() as usize) };
+        expect_ok!(ret, "unmapping object");
     }
 
     /// Tests basic read, write, and kernel mapping operations on a paged VMO.
@@ -908,6 +1053,45 @@ mod vmo_rs {
                 expect_true!(clone_lookup[i] != 0);
             }
         }
+    }
+
+    /// Creates a vm object, maps it, precommitted.
+    #[test]
+    fn vmo_precommitted_map_test() {
+        let alloc_size = 16 * PAGE_SIZE_USIZE;
+        let vmo = unwrap_ok!(
+            VmObjectPaged::create(pmm::ALLOC_FLAG_ANY, 0, alloc_size as u64),
+            "vmobject creation\n"
+        );
+
+        let ka = VmAspace::kernel_aspace();
+        // SAFETY: The flags and range are appropriate for creating this mapping.
+        let ptr = unsafe {
+            unwrap_ok!(
+                ka.map_object_internal(
+                    VmObjectPaged::into_vm_object(vmo),
+                    c"test",
+                    0,
+                    alloc_size,
+                    0,
+                    vmm_flag::COMMIT,
+                    ARCH_RW_FLAGS,
+                ),
+                "mapping object"
+            )
+        };
+        let ptr: *mut MaybeUninit<u8> = ptr.cast();
+        // SAFETY: `ptr` points to `alloc_size` bytes of memory mapped into `ka`.
+        let ptr = unsafe { slice::from_raw_parts_mut(ptr, alloc_size) };
+
+        // fill with known pattern and test
+        let (ptr, result) = fill_and_test(ptr);
+        expect_true!(result);
+
+        // SAFETY: `ptr.as_ptr() as usize` is a valid virtual address previously returned by
+        // `map_object_internal` in `ka` that has not yet been freed.
+        let err = unsafe { ka.free_region(ptr.as_ptr() as usize) };
+        expect_ok!(err, "unmapping object");
     }
 
     /// Verifies that accessing a page in a pager-backed VMO promotes its LRU position.
@@ -1592,6 +1776,96 @@ mod vmo_rs {
         }
     }
 
+    /// # Safety
+    ///
+    /// Must be able to get the paddr for `page`.
+    unsafe fn is_page_zero(page: VmPagePtr) -> bool {
+        // SAFETY: We can obtain the paddr for `page`.
+        let base: *const u64 = paddr_to_physmap(unsafe { page.paddr() }).0 as *const u64;
+        let len = PAGE_SIZE_USIZE / core::mem::size_of::<u64>();
+        // SAFETY: `base` is page-aligned (which satisfies u64 alignment) and contains
+        // `len * size_of::<u64>() == PAGE_SIZE_USIZE` bytes.
+        let page_slice: &[u64] = unsafe { slice::from_raw_parts(base, len) };
+        for &word in page_slice {
+            if word != 0 {
+                return false;
+            }
+        }
+        true
+    }
+
+    /// Tests that ZeroRange does not remove pinned pages.
+    #[test]
+    fn vmo_zero_pinned_test() {
+        // Tests that ZeroRange does not remove pinned pages. Regression test for
+        // https://fxbug.dev/42052452.
+
+        // Create a non pager-backed VMO.
+        let vmo = unwrap_ok!(VmObjectPaged::create(pmm::ALLOC_FLAG_ANY, 0, PAGE_SIZE));
+
+        // Pin the page for write.
+        assert_ok!(vmo.commit_range_pinned(0, PAGE_SIZE, true));
+
+        // Write non-zero content to the page.
+        let page = vmo.debug_get_page(0).expect("page must exist");
+        let ptr: *mut u8 = paddr_to_physmap(unsafe { page.paddr() }).0 as *mut u8;
+        // SAFETY: `ptr` points to the kernel physmap for a valid committed page.
+        unsafe { *ptr = 0xff };
+
+        // Zero the page and check that it is not removed.
+        assert_ok!(vmo.zero_range(0, PAGE_SIZE));
+        expect_true!(Some(page) == vmo.debug_get_page(0));
+
+        // The page should be zero.
+        // SAFETY: We can obtain the paddr for `page`.
+        expect_true!(unsafe { is_page_zero(page) });
+
+        vmo.unpin(0, PAGE_SIZE);
+
+        // Create a pager-backed VMO.
+        let (pager_vmo, [_old_page]) = unwrap_ok!(make_committed_pager_vmo(
+            /*trap_dirty=*/ false, /*resizable=*/ true,
+        ));
+
+        // Pin the page for write.
+        assert_ok!(pager_vmo.commit_range_pinned(0, PAGE_SIZE, true));
+
+        // Write non-zero content to the page. Lookup the page again, as pinning might have switched
+        // out the page if it was originally loaned.
+        let old_page = pager_vmo.debug_get_page(0).expect("page must exist");
+        let ptr: *mut u8 = paddr_to_physmap(unsafe { old_page.paddr() }).0 as *mut u8;
+        // SAFETY: `ptr` points to the kernel physmap for a valid committed page.
+        unsafe { *ptr = 0xff };
+
+        // Zero the page and check that it is not removed.
+        assert_ok!(pager_vmo.zero_range(0, PAGE_SIZE));
+        expect_true!(Some(old_page) == pager_vmo.debug_get_page(0));
+
+        // The page should be zero.
+        // SAFETY: We can obtain the paddr for `old_page`.
+        expect_true!(unsafe { is_page_zero(old_page) });
+
+        // Resize the VMO up, and pin a page in the newly extended range.
+        assert_ok!(pager_vmo.resize(2 * PAGE_SIZE));
+        assert_ok!(pager_vmo.commit_range_pinned(PAGE_SIZE, PAGE_SIZE, true));
+
+        // Write non-zero content to the page.
+        let new_page = pager_vmo.debug_get_page(PAGE_SIZE).expect("page must exist");
+        let ptr: *mut u8 = paddr_to_physmap(unsafe { new_page.paddr() }).0 as *mut u8;
+        // SAFETY: `ptr` points to the kernel physmap for a valid committed page.
+        unsafe { *ptr = 0xff };
+
+        // Zero the new page, and ensure that it is not removed.
+        assert_ok!(pager_vmo.zero_range(PAGE_SIZE, PAGE_SIZE));
+        expect_true!(Some(new_page) == pager_vmo.debug_get_page(PAGE_SIZE));
+
+        // The page should be zero.
+        // SAFETY: We can obtain the paddr for `new_page`.
+        expect_true!(unsafe { is_page_zero(new_page) });
+
+        pager_vmo.unpin(0, 2 * PAGE_SIZE);
+    }
+
     /// Tests PinnedVmObject creation, move semantics, and RAII unpinning.
     #[test]
     fn vmo_pinned_wrapper_test() {
@@ -1637,6 +1911,113 @@ mod vmo_rs {
             let pinned2 = unwrap_ok!(PinnedVmObject::create(vmo, 0, PAGE_SIZE, true));
             pinned1 = pinned2;
             drop(pinned1);
+        }
+    }
+
+    /// Tests zeroing a range that has pages mapped in the kernel after committed pages.
+    #[test]
+    fn vmo_zero_partially_pinned_range_test() {
+        // Regression test for https://fxbug.dev/504708573. Attempt to zero a range that has pages
+        // mapped in the kernel after committed pages.
+
+        // Ensure that we do not compress pages before ZeroRange acquires the VmCowPage lock, as
+        // this would prevent the unmap round-up optimization from being triggered.
+        let _scanner_disable = AutoVmScannerDisable::new();
+
+        // TODO(https://fxbug.dev/547981705): Improve the ergonomics of `test_vmo` when we have a
+        // convenient way of creating subtests with //zircon/kernel/lib/unittest.
+        let test_vmo = |vmo: RefPtr<VmObject>| -> bool {
+            // Commit a page to force an unmap when the range is zeroed.
+            if vmo.commit_range(0, PAGE_SIZE).is_err() {
+                return false;
+            }
+
+            let ka = VmAspace::kernel_aspace();
+            // SAFETY: The flags and range are appropriate for creating this mapping.
+            let ptr = match unsafe {
+                ka.map_object_internal(
+                    vmo.clone(),
+                    c"test",
+                    /*offset=*/ PAGE_SIZE,
+                    /*size=*/ PAGE_SIZE_USIZE,
+                    0,
+                    vmm_flag::COMMIT,
+                    ARCH_RW_FLAGS,
+                )
+            } {
+                Ok(ptr) => ptr,
+                Err(_) => return false,
+            };
+            struct DeferCleanupMapping(*mut c_void);
+            impl Drop for DeferCleanupMapping {
+                fn drop(&mut self) {
+                    // SAFETY: self.0 was allocated via map_object_internal and is not yet freed.
+                    let res = unsafe { VmAspace::kernel_aspace().free_region(self.0 as usize) };
+                    assert!(res.is_ok());
+                }
+            }
+            let _cleanup_mapping = DeferCleanupMapping(ptr);
+
+            if vmo.zero_range(0, 2 * PAGE_SIZE).is_err() {
+                return false;
+            }
+
+            true
+        };
+
+        {
+            let vmo = unwrap_ok!(VmObjectPaged::create(pmm::ALLOC_FLAG_ANY, 0, 2 * PAGE_SIZE));
+            expect_true!(test_vmo(VmObjectPaged::into_vm_object(vmo)));
+        }
+
+        {
+            let (vmo, _) = unwrap_ok!(make_committed_pager_vmo::<2>(
+                /*trap_dirty=*/ false, /*resizable=*/ false,
+            ));
+            expect_true!(test_vmo(VmObjectPaged::into_vm_object(vmo)));
+        }
+
+        {
+            let (vmo, _) = unwrap_ok!(make_committed_pager_vmo::<2>(
+                /*trap_dirty=*/ false, /*resizable=*/ false,
+            ));
+            let unidirectional_clone = unwrap_ok!(vmo.create_clone(
+                Resizability::NonResizable,
+                SnapshotType::OnWrite,
+                0,
+                2 * PAGE_SIZE,
+                false,
+            ));
+            expect_true!(test_vmo(unidirectional_clone));
+        }
+
+        {
+            // Same as above; use the parent instead of the child though.
+            let (vmo, _) = unwrap_ok!(make_committed_pager_vmo::<2>(
+                /*trap_dirty=*/ false, /*resizable=*/ false,
+            ));
+            let _unidirectional_clone = unwrap_ok!(vmo.create_clone(
+                Resizability::NonResizable,
+                SnapshotType::OnWrite,
+                0,
+                2 * PAGE_SIZE,
+                false,
+            ));
+            expect_true!(test_vmo(VmObjectPaged::into_vm_object(vmo)));
+        }
+
+        {
+            let vmo = unwrap_ok!(VmObjectPaged::create(pmm::ALLOC_FLAG_ANY, 0, 2 * PAGE_SIZE));
+            assert_ok!(vmo.commit_range(0, 2 * PAGE_SIZE));
+
+            let bidirectional_clone = unwrap_ok!(vmo.create_clone(
+                Resizability::NonResizable,
+                SnapshotType::Full,
+                0,
+                2 * PAGE_SIZE,
+                false,
+            ));
+            expect_true!(test_vmo(bidirectional_clone));
         }
     }
 

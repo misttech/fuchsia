@@ -877,7 +877,7 @@ bool vmo_contiguous_decommit_enabled_test() {
   END_TEST;
 }
 
-// Creats a vm object, maps it, precommitted.
+// Creates a vm object, maps it, precommitted.
 bool vmo_precommitted_map_test() {
   BEGIN_TEST;
   constexpr size_t alloc_size = kPageSize * 16;
