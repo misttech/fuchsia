@@ -26,11 +26,9 @@ use super::common_configuration::ConfiguredQueueNotificationOffset;
 /// The driver is responsible for issuing a driver notification when it submits
 /// buffers to a virtqueue. The buffers generally convey work that must be done
 /// by the device.
-///
-/// virtio14 2.3 "Notifications" describes the concept. virtio14 2.9 "Driver
-/// Notifications" describe driver-issued notification at a high level.
-///
-/// virtio14 4.1.5.2 "Available Buffer Notifications"
+// @cite(virtio): sec="2.3" title="Notifications"
+// @cite(virtio): sec="2.9" title="Driver Notifications"
+// @cite(virtio): sec="4.1.5.2" title="Available Buffer Notifications"
 pub struct VirtioPciNotificationData {
     /// Points to the notification structure's first byte.
     ///
@@ -54,9 +52,9 @@ pub struct VirtioPciNotifications {
     /// structures. The size of each notification structure (the array's array
     /// stride) is decided at runtime by the virtio device implementation.
     ///
-    /// The start of the notification structures is standardized in virtio14
-    /// 4.1.5.2 "Available Buffer Notifications". The remainder of the
-    /// structures is an internal detail specific to virtio implementations.
+    /// The remainder of the structures is an internal detail specific to virtio
+    /// implementations.
+    // @cite(virtio): sec="4.1.5.2" title="Available Buffer Notifications"
     stride: u32,
 }
 
@@ -71,7 +69,7 @@ impl VirtioPciNotifications {
         virtio_queue_id: u16,
         notification_offset: ConfiguredQueueNotificationOffset,
     ) -> VirtioPciNotificationData {
-        // virtio14 4.1.4.4 "Notification structure layout"
+        // @cite(virtio): sec="4.1.4.4" title="Notification structure layout"
         let mmio_offset = (self.stride as usize) * (notification_offset.value() as usize);
 
         debug_assert!(

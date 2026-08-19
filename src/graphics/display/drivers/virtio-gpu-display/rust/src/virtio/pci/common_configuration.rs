@@ -22,8 +22,8 @@ register! {
     /// Selects the feature bits accessed by [`DeviceFeaturesWord`].
     ///
     /// Index 0 selects feature bits 0-31. Index 1 selects bits 32-63, etc.
-    ///
-    /// virtio14 name: device_feature_select
+    // @cite(virtio): sec="4.1.4.3" title="Common configuration structure layout"
+    // @alias(virtio): theirs="device_feature_select"
     pub struct DeviceFeaturesWordIndex(u32);
 
     #[register(offset = 4, mode = RO)]
@@ -32,16 +32,16 @@ register! {
     /// The accessed feature bits depend on [`DeviceFeaturesWordIndex`].
     ///
     /// Read-only. The driver communicates feature support via [`DriverFeaturesWord`].
-    ///
-    /// virtio14 name: device_feature
+    // @cite(virtio): sec="4.1.4.3" title="Common configuration structure layout"
+    // @alias(virtio): theirs="device_feature"
     pub struct DeviceFeaturesWord(u32);
 
     #[register(offset = 8, mode = RW)]
     /// Selects the feature bits accessed by [`DriverFeaturesWord`].
     ///
     /// Index 0 selects feature bits 0-31. Index 1 selects bits 32-63, etc.
-    ///
-    /// virtio14 name: driver_feature_select
+    // @cite(virtio): sec="4.1.4.3" title="Common configuration structure layout"
+    // @alias(virtio): theirs="driver_feature_select"
     pub struct DriverFeaturesWordIndex(u32);
 
     #[register(offset = 12, mode = RW)]
@@ -53,19 +53,16 @@ register! {
     /// the feature bits reported as supported by the device. Said differently,
     /// the driver must not report support for a feature that is not supported
     /// by the device.
-    ///
-    /// virtio14 name: driver_feature
+    // @cite(virtio): sec="4.1.4.3" title="Common configuration structure layout"
+    // @alias(virtio): theirs="driver_feature"
     pub struct DriverFeaturesWord(u32);
 
     #[register(offset = 16, mode = RW)]
     /// The MSI-X vector issued for a configuration change notification.
     ///
     /// Only valid if the MSI-X PCI capability is enabled.
-    ///
-    /// virtio14 4.1.5.1.2 "MSI-X Vector Configuration" describes the use of PCI
-    /// MSI-X.
-    ///
-    /// virtio14 name: config_msix_vector
+    // @cite(virtio): sec="4.1.5.1.2" title="MSI-X Vector Configuration"
+    // @alias(virtio): theirs="config_msix_vector"
     pub struct ConfigurationChangeMsixVector(u16);
 
     #[register(offset = 18, mode = RO)]
@@ -74,8 +71,8 @@ register! {
     /// The number excludes administration virtqueues.
     ///
     /// Some devices allow drivers to decide which queues get enabled.
-    ///
-    /// virtio14 name: num_queues
+    // @cite(virtio): sec="4.1.4.3" title="Common configuration structure layout"
+    // @alias(virtio): theirs="num_queues"
     pub struct QueueCount(u16);
 
     // TODO(https://fxbug.dev/522840090): Figure out `mmio::register!` support
@@ -88,8 +85,8 @@ register! {
     ///
     /// Clearing all the status bits (writing 0) initiates a device reset. The
     /// device reset is complete when reading the field returns 0.
-    ///
-    /// virtio14 name: device_status
+    // @cite(virtio): sec="4.1.4.3" title="Common configuration structure layout"
+    // @alias(virtio): theirs="device_status"
     pub struct DeviceStatusReg(u8);
 
     #[register(offset = 21, mode = RO)]
@@ -101,13 +98,12 @@ register! {
     /// expected to read this version value before and after reading any data,
     /// and retry the data read if the two version values are different.
     ///
-    /// virtio14 4.1.4.3.1 "Device Requirements: Common configuration structure
-    /// layout" recommends changing the value on demand, to avoid false
+    /// Recommends changing the value on demand, to avoid false
     /// negatives due to wrap-around. So, devices may present an unchanged
     /// version number if there are configuration changes that wouldn't be
     /// observed given the configuration field reads issued by the driver.
-    ///
-    /// virtio14 name: config_generation
+    // @cite(virtio): sec="4.1.4.3.1" title="Device Requirements: Common configuration structure layout"
+    // @alias(virtio): theirs="config_generation"
     pub struct DeviceConfigurationVersion(u8);
 
     #[register(offset = 22, mode = RW)]
@@ -120,8 +116,8 @@ register! {
     /// [`ConfiguredQueueDescriptorTableAddress`],
     /// [`ConfiguredQueueDriverAreaAddress`],
     /// [`ConfiguredQueueDeviceAreaAddress`].
-    ///
-    /// virtio14 name: queue_select
+    // @cite(virtio): sec="4.1.4.3" title="Common configuration structure layout"
+    // @alias(virtio): theirs="queue_select"
     pub struct ConfiguredQueueIndex(u16);
 
     #[register(offset = 24, mode = RW)]
@@ -133,8 +129,8 @@ register! {
     /// Setting the value to 0 makes the queue unavailable.
     ///
     /// The configured virtqueue depends on [`ConfiguredQueueIndex`].
-    ///
-    /// virtio14 name: queue_size
+    // @cite(virtio): sec="4.1.4.3" title="Common configuration structure layout"
+    // @alias(virtio): theirs="queue_size"
     pub struct ConfiguredQueueCapacity(u16);
 
     #[register(offset = 26, mode = RW)]
@@ -142,12 +138,9 @@ register! {
     ///
     /// Only valid if the MSI-X PCI capability is enabled.
     ///
-    /// virtio14 4.1.5.1.2 "MSI-X Vector Configuration" describes the use of PCI
-    /// MSI-X.
-    ///
     /// The configured virtqueue depends on [`ConfiguredQueueIndex`].
-    ///
-    /// virtio14 name: queue_msix_vector
+    // @cite(virtio): sec="4.1.5.1.2" title="MSI-X Vector Configuration"
+    // @alias(virtio): theirs="queue_msix_vector"
     pub struct ConfiguredQueueMsixVector(u16);
 
     #[register(offset = 28, mode = RW)]
@@ -156,8 +149,8 @@ register! {
     /// Valid values are true (1) and false (0).
     ///
     /// The configured virtqueue depends on [`ConfiguredQueueIndex`].
-    ///
-    /// virtio14 name: queue_enable
+    // @cite(virtio): sec="4.1.4.3" title="Common configuration structure layout"
+    // @alias(virtio): theirs="queue_enable"
     pub struct ConfiguredQueueEnabled(u16);
 
     #[register(offset = 30, mode = RO)]
@@ -167,32 +160,32 @@ register! {
     /// the notifications capability.
     ///
     /// The configured virtqueue depends on [`ConfiguredQueueIndex`].
-    ///
-    /// virtio14 name: queue_notify_off
+    // @cite(virtio): sec="4.1.4.3" title="Common configuration structure layout"
+    // @alias(virtio): theirs="queue_notify_off"
     pub struct ConfiguredQueueNotificationOffset(u16);
 
     #[register(offset = 32, mode = RW)]
     /// Physical address of the first byte in the virtqueue's Descriptor Area.
     ///
     /// The configured virtqueue depends on [`ConfiguredQueueIndex`].
-    ///
-    /// virtio14 name: queue_desc
+    // @cite(virtio): sec="4.1.4.3" title="Common configuration structure layout"
+    // @alias(virtio): theirs="queue_desc"
     pub struct ConfiguredQueueDescriptorTableAddress(u64);
 
     #[register(offset = 40, mode = RW)]
     /// Physical address of the first byte in the virtqueue's Driver Area.
     ///
     /// The configured virtqueue depends on [`ConfiguredQueueIndex`].
-    ///
-    /// virtio14 name: queue_driver
+    // @cite(virtio): sec="4.1.4.3" title="Common configuration structure layout"
+    // @alias(virtio): theirs="queue_driver"
     pub struct ConfiguredQueueDriverAreaAddress(u64);
 
     #[register(offset = 48, mode = RW)]
     /// Physical address of the first byte in the virtqueue's Device Area.
     ///
     /// The configured virtqueue depends on [`ConfiguredQueueIndex`].
-    ///
-    /// virtio14 name: queue_device
+    // @cite(virtio): sec="4.1.4.3" title="Common configuration structure layout"
+    // @alias(virtio): theirs="queue_device"
     pub struct ConfiguredQueueDeviceAreaAddress(u64);
 
     #[register(offset = 56, mode = RO)]
@@ -204,8 +197,8 @@ register! {
     /// issued notification targeting the configured virtqueue.
     ///
     /// The configured virtqueue depends on [`ConfiguredQueueIndex`].
-    ///
-    /// virtio14 name: queue_notif_config_data
+    // @cite(virtio): sec="4.1.4.3" title="Common configuration structure layout"
+    // @alias(virtio): theirs="queue_notif_config_data"
     pub struct ConfiguredQueueNotificationConfigData(u16);
 
     #[register(offset = 58, mode = RW)]
@@ -218,8 +211,8 @@ register! {
     /// negotiated.
     ///
     /// The configured virtqueue depends on [`ConfiguredQueueIndex`].
-    ///
-    /// virtio14 name: queue_reset
+    // @cite(virtio): sec="4.1.4.3" title="Common configuration structure layout"
+    // @alias(virtio): theirs="queue_reset"
     pub struct ConfiguredQueueReset(u16);
 
     #[register(offset = 60, mode = RO)]
@@ -230,8 +223,8 @@ register! {
     ///
     /// Only valid if [`VirtioFeatureBits::uses_admin_virtqueues`] was
     /// negotiated.
-    ///
-    /// virtio14 name: admin_queue_index
+    // @cite(virtio): sec="4.1.4.3" title="Common configuration structure layout"
+    // @alias(virtio): theirs="admin_queue_index"
     pub struct FirstAdminQueueIndex(u16);
 
     #[register(offset = 62, mode = RO)]
@@ -242,8 +235,8 @@ register! {
     ///
     /// Only valid if [`VirtioFeatureBits::uses_admin_virtqueues`] was
     /// negotiated.
-    ///
-    /// virtio14 name: admin_queue_num
+    // @cite(virtio): sec="4.1.4.3" title="Common configuration structure layout"
+    // @alias(virtio): theirs="admin_queue_num"
     pub struct AdminQueueCount(u16);
 }
 
@@ -255,11 +248,10 @@ register_block! {
 
     /// Device configuration common to all virtio devices.
     ///
-    /// virtio14 4.1.4.3 "Common configuration structure layout" struct
-    /// virtio_pci_common_cfg
-    ///
     /// Covers the memory region identified by
     /// [`PciCapabilityType::COMMON_CONFIGURATION`].
+    // @cite(virtio): sec="4.1.4.3" title="Common configuration structure layout"
+    // @alias(virtio): theirs="virtio_pci_common_cfg"
     pub struct VirtioPciCommonConfiguration<M> {
         pub device_features_word_index: DeviceFeaturesWordIndex,
         pub device_features_word: DeviceFeaturesWord,

@@ -18,18 +18,15 @@ use zx::Status;
 
 /// Data region information stored by virtio in a PCI capability.
 ///
-/// pci3 6.7 "Capabilities list" defines the concept of PCI capabilities. This
-/// struct omits the PCI capability "header" and only contains additional data
-/// defined in:
-/// * virtio14 4.1.4 "Virtio Structure PCI Capabilities" > struct virtio_pci_cap
-///   and struct virtio_pci_cap64
-/// * virtio14 4.1.4.4 "Notification structure layout" > struct
-///   virtio_pci_notify_cap
+/// Defines PCI capabilities omitting the header and containing additional data.
+// @cite(pci): sec="6.7" title="Capabilities list"
+// @cite(virtio): sec="4.1.4" title="Virtio Structure PCI Capabilities"
+// @cite(virtio): sec="4.1.4.4" title="Notification structure layout"
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct PciCapabilityData {
     /// The type of virtio data declared by this capability.
-    ///
-    /// virtio14 name: cfg_type
+    // @cite(virtio): sec="4.1.4" title="Virtio Structure PCI Capabilities"
+    // @alias(virtio): theirs="cfg_type"
     type_: PciCapabilityType,
 
     /// The index of the BAR region that contains the data.
@@ -40,16 +37,16 @@ struct PciCapabilityData {
     ///
     /// See `BaseAddressRegion` for accessing the memory area pointed by a Base
     /// Address Register (BAR).
-    ///
-    /// virtio14 name: bar
+    // @cite(virtio): sec="4.1.4" title="Virtio Structure PCI Capabilities"
+    // @alias(virtio): theirs="bar"
     bar_index: u8,
 
     /// Distinguishes between multiple instances of the same virtio data type.
     ///
     /// Used by some device types to uniquely identify multiple capabilities of a
     /// certain type.
-    ///
-    /// virtio14 name: id
+    // @cite(virtio): sec="4.1.4" title="Virtio Structure PCI Capabilities"
+    // @alias(virtio): theirs="id"
     capability_index: u8,
 
     /// The offset of the virtio data in the BAR region.
@@ -59,8 +56,10 @@ struct PciCapabilityData {
     ///
     /// See `BaseAddressRegion` for accessing the memory area pointed by a Base
     /// Address Register (BAR).
-    ///
-    /// virtio14 names: offset, offset_hi (in virtio_pci_cap64)
+    // @cite(virtio): sec="4.1.4" title="Virtio Structure PCI Capabilities"
+    // @alias(virtio): theirs="offset"
+    // @cite(virtio): sec="4.1.4" title="Virtio Structure PCI Capabilities"
+    // @alias(virtio): theirs="offset_hi"
     data_offset: u64,
 
     /// The length of the virtio data in the BAR region.
@@ -68,8 +67,10 @@ struct PciCapabilityData {
     /// The reported length may exceed the length of the corresponding structure
     /// in the virtio specification, because it may include padding and
     /// non-standard data.
-    ///
-    /// virtio14 names: length, length_hi (in virtio_pci_cap64)
+    // @cite(virtio): sec="4.1.4" title="Virtio Structure PCI Capabilities"
+    // @alias(virtio): theirs="length"
+    // @cite(virtio): sec="4.1.4" title="Virtio Structure PCI Capabilities"
+    // @alias(virtio): theirs="length_hi"
     data_length: u64,
 
     /// The number of bytes between two notification structures.
@@ -77,20 +78,18 @@ struct PciCapabilityData {
     /// Set (not [`None`]) iff the capability type is
     /// [`PciCapabilityType::NOTIFICATIONS`].
     ///
-    /// virtio14 4.1.4.4 "Notification structure layout" explicitly states that
-    /// the multiplier can be zero, meaning that all the virtqueues use the same
-    /// multiplier.
-    ///
-    /// virtio14 4.1.4.4 "Notification structure layout" >
-    /// struct virtio_pci_notify_cap > notify_off_multiplier
+    /// The specification explicitly states that the multiplier can be zero,
+    /// meaning that all the virtqueues use the same multiplier.
+    // @cite(virtio): sec="4.1.4.4" title="Notification structure layout"
+    // @alias(virtio): theirs="notify_off_multiplier"
     notification_stride: Option<u32>,
 }
 
 /// Memory layout for a 32-bit PCI capability parsed by [`PciCapabilityData`].
 ///
 /// Used for computing field offsets in the PCI configuration space.
-///
-/// virtio14 4.1.4 "Virtio Structure PCI Capabilities" > struct virtio_pci_cap
+// @cite(virtio): sec="4.1.4" title="Virtio Structure PCI Capabilities"
+// @alias(virtio): theirs="virtio_pci_cap"
 #[repr(C)]
 struct VirtioPciCapability32 {
     cap_vndr: u8,
@@ -107,8 +106,8 @@ struct VirtioPciCapability32 {
 /// Memory layout for a 64-bit PCI capability parsed by [`PciCapabilityData`].
 ///
 /// Used for computing field offsets in the PCI configuration space.
-///
-/// virtio14 4.1.4 "Virtio Structure PCI Capabilities" > struct virtio_pci_cap64
+// @cite(virtio): sec="4.1.4" title="Virtio Structure PCI Capabilities"
+// @alias(virtio): theirs="virtio_pci_cap64"
 #[repr(C)]
 struct VirtioPciCapability64 {
     cap: VirtioPciCapability32,
@@ -120,9 +119,8 @@ struct VirtioPciCapability64 {
 /// [`PciCapabilityData`].
 ///
 /// Used for computing field offsets in the PCI configuration space.
-///
-/// virtio14 4.1.4.4 "Notification structure layout" > struct
-/// virtio_pci_notify_cap
+// @cite(virtio): sec="4.1.4.4" title="Notification structure layout"
+// @alias(virtio): theirs="virtio_pci_notify_cap"
 #[repr(C)]
 struct VirtioPciNotifyCapability {
     cap: VirtioPciCapability32,
@@ -182,11 +180,9 @@ impl PciCapabilityData {
             return Ok(None);
         }
 
-        // virtio14 4.1.4.2 "Device Requirements: Virtio Structure PCI Capabilities"
-        // states that the capability length must include all the data fields.
-        //
-        // virtio14 4.1.4.1 "Driver Requirements: Virtio Structure PCI Capabilities"
-        // states that drives may check that the length is large enough.
+        // Capability length must include all data fields and drivers may check that the length is large enough.
+        // @cite(virtio): sec="4.1.4.2" title="Device Requirements: Virtio Structure PCI Capabilities"
+        // @cite(virtio): sec="4.1.4.1" title="Driver Requirements: Virtio Structure PCI Capabilities"
         if capability_length < size_of::<VirtioPciCapability32>() as u8 {
             warn!(
                 "virtio PCI capability {:?} has length {:?}, too small to encode a BAR pointer",
@@ -202,10 +198,8 @@ impl PciCapabilityData {
             .map_err(|_| Status::INTERNAL)?
             .value;
 
-        // virtio14 4.1.4.1 "Driver Requirements: Virtio Structure PCI
-        // Capabilities" designates invalid BAR indices as "reserved", and
-        // states that drivers must ignore PCI capabilities that use reserved
-        // values.
+        // Invalid BAR indices are designated as "reserved", and drivers must ignore PCI capabilities that use reserved values.
+        // @cite(virtio): sec="4.1.4.1" title="Driver Requirements: Virtio Structure PCI Capabilities"
         if !PciDeviceBarMap::is_valid_bar_index(bar_index) {
             warn!("Ignoring capability with reserved BAR index: {}", bar_index);
             return Ok(None);
@@ -233,8 +227,8 @@ impl PciCapabilityData {
 
         let notification_stride;
         if virtio_capability_type == PciCapabilityType::NOTIFICATIONS {
-            // Special case covered by virtio14 4.1.4.4 "Notification structure
-            // layout".
+            // Special case for notification structure layout.
+            // @cite(virtio): sec="4.1.4.4" title="Notification structure layout"
 
             if capability_length < size_of::<VirtioPciNotifyCapability>() as u8 {
                 warn!(
@@ -265,9 +259,9 @@ impl PciCapabilityData {
             // capability header, as opposed to storing a 32-bit capability
             // header followed by non-standard data.
             //
-            // virtio14 4.1.4.7 "Shared memory capability" mandates that shared
-            // memory capabilities use the 64-bit header. The specification is
+            // Shared memory capabilities use the 64-bit header. The specification is
             // silent about the other capability types.
+            // @cite(virtio): sec="4.1.4.7" title="Shared memory capability"
             if capability_length >= size_of::<VirtioPciCapability64>() as u8 {
                 let offset_bits63_32 = pci
                     .read_config32(
@@ -315,7 +309,8 @@ impl PciCapabilityData {
     }
 }
 
-/// virtio14 4.1.4 "Virtio Structure PCI Capabilities"
+/// PCI capabilities parsed for a virtio device.
+// @cite(virtio): sec="4.1.4" title="Virtio Structure PCI Capabilities"
 pub struct VirtioPciCapabilities {
     pub common_configuration: VirtioPciCommonConfiguration<MmioRegion<VmoMemory>>,
 
@@ -324,8 +319,7 @@ pub struct VirtioPciCapabilities {
     /// Configuration data specific to the virtio device type.
     ///
     /// [`None`] if the device does not have a device configuration capability.
-    ///
-    /// virtio14 2.5 "Device Configuration Space" describes the general concept.
+    // @cite(virtio): sec="2.5" title="Device Configuration Space"
     pub device_configuration: Option<MmioRegion<VmoMemory>>,
 }
 
@@ -365,16 +359,15 @@ impl VirtioPciCapabilities {
         }
         let bar_map = bar_map_builder.build();
 
-        // virtio14 4.1.4.3.1 "Device Requirements: Common configuration
-        // structure layout" states that the device must present at least one common
-        // configuration capability.
+        // The device must present at least one common configuration capability.
+        // @cite(virtio): sec="4.1.4.3.1" title="Device Requirements: Common configuration structure layout"
         let common_configuration = common_configuration.ok_or_else(|| {
             warn!("virtio device missing required PCI capability: common configuration");
             Status::IO_DATA_LOSS
         })?;
 
-        // virtio14 4.1.4.4.1 "Device Requirements: Notification capability"
-        // states that the device must present at least one notification capability.
+        // The device must present at least one notification capability.
+        // @cite(virtio): sec="4.1.4.4.1" title="Device Requirements: Notification capability"
         let notifications = notifications.ok_or_else(|| {
             warn!("virtio device missing required PCI capability: notification");
             Status::IO_DATA_LOSS

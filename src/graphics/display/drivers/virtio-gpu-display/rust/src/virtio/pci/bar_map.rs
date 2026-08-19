@@ -13,10 +13,8 @@ use zx::Status;
 /// each BAR's memory region is mapped to a VMO.
 ///
 /// Instances are obtained from [`PciDeviceBarMapBuilder`].
-///
-/// pci3 6.1 "Configuration Space Organization" describes the location of
-/// Base Address Registers (BARs) in the PCI configuration space. pci3 6.2.5
-/// "Base Addresses" describes the semantics.
+// @cite(pci): sec="6.1" title="Configuration Space Organization"
+// @cite(pci): sec="6.2.5" title="Base Addresses"
 pub struct PciDeviceBarMap {
     /// [`zx::Vmo`] is not wrapped in [`Option<>`] because it is nullable.
     ///
@@ -26,8 +24,7 @@ pub struct PciDeviceBarMap {
 
 impl PciDeviceBarMap {
     /// The number of BARs in a PCI device's configuration space.
-    ///
-    /// Limit stated in pci3 6.1 "Configuration Space Organization".
+    // @cite(pci): sec="6.1" title="Configuration Space Organization"
     pub const BAR_COUNT: u8 = 6;
 
     /// True iff the input is valid for [`get_vmo()`].

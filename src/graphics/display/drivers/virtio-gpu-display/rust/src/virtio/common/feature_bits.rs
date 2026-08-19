@@ -15,10 +15,8 @@ bitfield! {
     ///
     /// Each bit represents an optional feature or an alternative mode for an
     /// aspect of the virtio device's operation.
-    ///
-    /// virtio14 2.2 "Feature Bits" describes the general concept.
-    /// virtio14 6 "Reserved Feature Bits" describes the feature bits applicable
-    /// to all virtio devices.
+    // @cite(virtio): sec="2.2" title="Feature Bits"
+    // @cite(virtio): sec="6" title="Reserved Feature Bits"
     #[derive(Default, Copy, Clone, PartialEq, Eq)]
     pub struct VirtioFeatureBits(u128);
     impl Debug;
@@ -28,8 +26,8 @@ bitfield! {
     /// If this feature is negotiated, the device issues a virtqueue
     /// notification when it has completed all the commands submitted on the
     /// virtqueue.
-    ///
-    /// virtio14 name: VIRTIO_F_NOTIFY_ON_EMPTY
+    // @cite(virtio): sec="6" title="Reserved Feature Bits" bits=24
+    // @alias(virtio): theirs="VIRTIO_F_NOTIFY_ON_EMPTY"
     pub bool, notify_on_empty_queue, set_notify_on_empty_queue: 24;
 
     /// Remove virtio queue memory layout constraints in legacy mode.
@@ -48,47 +46,44 @@ bitfield! {
     ///
     /// This driver only supports virtio 1.0+ devices, and does not attempt to
     /// negotiate this feature.
-    ///
-    /// virtio14 name: VIRTIO_F_ANY_LAYOUT
+    // @cite(virtio): sec="6" title="Reserved Feature Bits" bits=27
+    // @alias(virtio): theirs="VIRTIO_F_ANY_LAYOUT"
     pub bool, supports_flexible_memory_layout, set_supports_flexible_memory_layout: 27;
 
     /// Indirect descriptors are supported.
     ///
     /// [`VirtioMemoryRangeFlags::is_indirect`] may be set to true iff
     /// this feature is negotiated.
-    ///
-    /// Indirect descriptors are described in virtio14 2.7.5.3 "Indirect
-    /// descriptors" and virtio14 2.8.7 "Indirect Flag: Scatter-Gather Support".
-    ///
-    /// virtio14 name: VIRTIO_F_INDIRECT_DESC
+    // @cite(virtio): sec="2.7.5.3" title="Indirect descriptors"
+    // @cite(virtio): sec="2.8.7" title="Indirect Flag: Scatter-Gather Support"
+    // @cite(virtio): sec="6" title="Reserved Feature Bits" bits=28
+    // @alias(virtio): theirs="VIRTIO_F_INDIRECT_DESC"
     pub bool, supports_indirect_descriptors, set_supports_indirect_descriptors: 28;
 
     /// Use selective virtqueue notifications.
-    ///
-    /// Selective notifications are described in virtio14 2.7.7 "Used Buffer
-    /// Notification Suppression" and virtio14 2.7.10 "Available Buffer
-    /// Notification Suppression".
-    ///
-    /// virtio14 name: VIRTIO_F_EVENT_IDX
+    // @cite(virtio): sec="2.7.7" title="Used Buffer Notification Suppression"
+    // @cite(virtio): sec="2.7.10" title="Available Buffer Notification Suppression"
+    // @cite(virtio): sec="6" title="Reserved Feature Bits" bits=29
+    // @alias(virtio): theirs="VIRTIO_F_EVENT_IDX"
     pub bool, uses_virtqueue_notification_index, set_uses_virtqueue_notification_index: 29;
 
     /// Workaround for bug in early QEMU implementations.
     ///
     /// This driver does not attempt to negotiate this feature.
-    ///
-    /// virtio14 name: UNUSED
+    // @cite(virtio): sec="6" title="Reserved Feature Bits" bits=30
+    // @alias(virtio): theirs="UNUSED"
     pub bool, unused_qemu_experimental, set_unused_qemu_experimental: 30;
 
     /// Use the virtio 1.0+ standard.
     ///
     /// Failing to negotiate this feature enables behaviors called "legacy" in
-    /// virtio14.
+    /// the specification.
     ///
     /// This driver only supports virtio 1.0+ devices, and fails to initialize
-    /// if the device does not offer this feature. This behavior is explicitly
-    /// allowed by virtio14 6.1 "Driver Requirements: Reserved Feature Bits".
-    ///
-    /// virtio14 name: VIRTIO_F_VERSION_1
+    /// if the device does not offer this feature.
+    // @cite(virtio): sec="6" title="Reserved Feature Bits" bits=32
+    // @cite(virtio): sec="6.1" title="Driver Requirements: Reserved Feature Bits"
+    // @alias(virtio): theirs="VIRTIO_F_VERSION_1"
     pub bool, uses_virtio1_standard, set_uses_virtio1_standard: 32;
 
     /// Signals that the device's memory accesses are limited or translated.
@@ -98,28 +93,25 @@ bitfield! {
     /// feature is negotiated, the device's memory accesses may be gated by an
     /// IOMMU.
     ///
-    /// virtio14 6.1 "Driver Requirements: Reserved Feature Bits" recommends
-    /// accepting this feature if it is offered. virtio14 6.2 "Device
-    /// Requirements: Reserved Feature Bits" states that a device may fail to
-    /// operate if this feature is not accepted when it is offered.
-    ///
     /// This driver does not currently support this feature.
-    ///
-    /// virtio14 name: VIRTIO_F_ACCESS_PLATFORM
+    // @cite(virtio): sec="6" title="Reserved Feature Bits" bits=33
+    // @cite(virtio): sec="6.1" title="Driver Requirements: Reserved Feature Bits"
+    // @cite(virtio): sec="6.2" title="Device Requirements: Reserved Feature Bits"
+    // @alias(virtio): theirs="VIRTIO_F_ACCESS_PLATFORM"
     pub bool, has_limited_memory_access, set_has_limited_memory_access: 33;
 
     /// Use packed virtqueues, as opposed to split virtqueues.
     ///
-    /// By default, virtqueues use the format described in virtio14 2.7 "Split
-    /// Virtqueues". If this feature is negotiated, virtqueues use the format
-    /// described in virtio14 2.8 "Packed Virtqueues".
+    /// By default, virtqueues use split virtqueues. If this feature is negotiated,
+    /// virtqueues use packed virtqueues.
     ///
-    /// virtio14 6.1 "Driver Requirements: Reserved Feature Bits" recommends
-    /// accepting this feature if it is offered. This driver currently only
-    /// supports split virtqueues, and does not attempt to negotiate this
-    /// feature.
-    ///
-    /// virtio14 name: VIRTIO_F_RING_PACKED
+    /// This driver currently only supports split virtqueues, and does not attempt
+    /// to negotiate this feature.
+    // @cite(virtio): sec="2.7" title="Split Virtqueues"
+    // @cite(virtio): sec="2.8" title="Packed Virtqueues"
+    // @cite(virtio): sec="6" title="Reserved Feature Bits" bits=34
+    // @cite(virtio): sec="6.1" title="Driver Requirements: Reserved Feature Bits"
+    // @alias(virtio): theirs="VIRTIO_F_RING_PACKED"
     pub bool, uses_packed_virtqueues, set_uses_packed_virtqueues: 34;
 
     /// The device always returns virtqueue buffers in submission order.
@@ -132,8 +124,8 @@ bitfield! {
     ///
     /// Only some devices offer this feature. For example, the virtio-gpu
     /// implementation in QEMU and crosvm does not offer this feature.
-    ///
-    /// virtio14 name: VIRTIO_F_IN_ORDER
+    // @cite(virtio): sec="6" title="Reserved Feature Bits" bits=35
+    // @alias(virtio): theirs="VIRTIO_F_IN_ORDER"
     pub bool, returns_buffers_in_submission_order, set_returns_buffers_in_submission_order: 35;
 
     /// Use the memory access ordering rules for device memory accesses.
@@ -146,15 +138,12 @@ bitfield! {
     /// optimizations that assume the driver issues the memory access barriers
     /// needed for external hardware devices.
     ///
-    /// virtio14 6.1 "Driver Requirements: Reserved Feature Bits" recommends
-    /// accepting this feature if it is offered. virtio14 6.2 "Device
-    /// Requirements: Reserved Feature Bits" states that a device may operate in
-    /// a slower mode if this feature is not accepted when it is offered.
-    ///
     /// This driver always issues the memory barriers required by the platform,
     /// even if the feature is not negotiated.
-    ///
-    /// virtio14 name: VIRTIO_F_ORDER_PLATFORM
+    // @cite(virtio): sec="6" title="Reserved Feature Bits" bits=36
+    // @cite(virtio): sec="6.1" title="Driver Requirements: Reserved Feature Bits"
+    // @cite(virtio): sec="6.2" title="Device Requirements: Reserved Feature Bits"
+    // @alias(virtio): theirs="VIRTIO_F_ORDER_PLATFORM"
     pub bool, assumes_hardware_memory_barriers, set_assumes_hardware_memory_barriers: 36;
 
     /// Enables device support for PCI Single Root I/O Virtualization (SR-IOV).
@@ -163,8 +152,8 @@ bitfield! {
     /// structure to enable virtual functions.
     ///
     /// This driver does not use SR-IOV.
-    ///
-    /// virtio14 name: VIRTIO_F_SR_IOV
+    // @cite(virtio): sec="6" title="Reserved Feature Bits" bits=37
+    // @alias(virtio): theirs="VIRTIO_F_SR_IOV"
     pub bool, supports_io_virtualization, set_supports_io_virtualization: 37;
 
     /// Enables extra data in the driver's device notifications.
@@ -173,16 +162,13 @@ bitfield! {
     /// target virtqueue. If this feature is negotiated, the notifications include
     /// more data.
     ///
-    /// virtio14 2.9 "Driver Notifications" describes driver-issued
-    /// notifications at a high level. virtio14 4.1.5.2 "Available Buffer
-    /// Notifications" describes the impact of this feature on notifications
-    /// used by the PCI transport.
-    ///
     /// This driver does not attempt to negotiate this feature. None of the
     /// virtio implementations targeted by this driver take advantage of this
     /// feature.
-    ///
-    /// virtio14 name: VIRTIO_F_NOTIFICATION_DATA
+    // @cite(virtio): sec="2.9" title="Driver Notifications"
+    // @cite(virtio): sec="4.1.5.2" title="Available Buffer Notifications"
+    // @cite(virtio): sec="6" title="Reserved Feature Bits" bits=38
+    // @alias(virtio): theirs="VIRTIO_F_NOTIFICATION_DATA"
     pub bool, uses_extended_notification_data, set_uses_extended_notification_data: 38;
 
     /// Enables custom virtqueue IDs in driver-issued notifications.
@@ -191,24 +177,21 @@ bitfield! {
     /// feature is negotiated, the notifications include a custom virtqueue ID
     /// provided by the device.
     ///
-    /// virtio14 2.9 "Driver Notifications" describes driver-issued
-    /// notifications at a high level. virtio14 4.1.5.2 "Available Buffer
-    /// Notifications" describes the impact of this feature on notifications
-    /// used by the PCI transport.
-    ///
     /// This driver does not attempt to negotiate this feature. The feature is
     /// not implemented in any of the virtio implementations targeted by this
     /// driver.
-    ///
-    /// virtio14 name: VIRTIO_F_NOTIF_CONFIG_DATA
+    // @cite(virtio): sec="2.9" title="Driver Notifications"
+    // @cite(virtio): sec="4.1.5.2" title="Available Buffer Notifications"
+    // @cite(virtio): sec="6" title="Reserved Feature Bits" bits=39
+    // @alias(virtio): theirs="VIRTIO_F_NOTIF_CONFIG_DATA"
     pub bool, uses_custom_virtqueue_ids, set_uses_custom_virtqueue_ids: 39;
 
     /// Enables virtqueue-level reset.
     ///
     /// If this feature is not negotiated, the driver only has a device-level
     /// reset mechanism.
-    ///
-    /// virtio14 name: VIRTIO_F_RING_RESET
+    // @cite(virtio): sec="6" title="Reserved Feature Bits" bits=40
+    // @alias(virtio): theirs="VIRTIO_F_RING_RESET"
     pub bool, supports_queue_reset, set_supports_queue_reset: 40;
 
     /// Enables driver usage of the device's administration virtqueues.
@@ -216,18 +199,16 @@ bitfield! {
     /// If this feature is negotiated, the driver must configure the device's
     /// administration virtqueues during device initialization.
     ///
-    /// virtio14 2.13 "Administration Virtqueues" describes the administration
-    /// virtqueue concept.
-    ///
     /// This driver does not support administration virtqueues.
-    ///
-    /// virtio14 name: VIRTIO_F_ADMIN_VQ
+    // @cite(virtio): sec="2.13" title="Administration Virtqueues"
+    // @cite(virtio): sec="6" title="Reserved Feature Bits" bits=41
+    // @alias(virtio): theirs="VIRTIO_F_ADMIN_VQ"
     pub bool, uses_admin_virtqueues, set_uses_admin_virtqueues: 41;
 
     /// Enables the device's suspend functionality.
     ///
     /// If this feature is enabled [`DeviceStatus::suspended`] may be set.
-    ///
-    /// virtio14 name: VIRTIO_F_SUSPEND
+    // @cite(virtio): sec="6" title="Reserved Feature Bits" bits=43
+    // @alias(virtio): theirs="VIRTIO_F_SUSPEND"
     pub bool, suspend_enabled, set_suspend_enabled: 43;
 }

@@ -11,15 +11,11 @@ bitfield! {
     /// lifecycle. After a device is reset, the value is guaranteed to be
     /// [`DeviceStatus::RESET`].
     ///
-    /// With the exception of resetting the device (as described in virtio14 2.4
-    /// "Device Reset"), the driver must not clear (write 0 to) a bit that is
-    /// set (to 1).
-    ///
-    /// virtio14 2.4 "Device Reset" describes the field's behavior during a
-    /// reset operation. virtio14 3 "General Initialization And Device
-    /// Operation" describes the field's behavior during other operations.
-    ///
-    /// virtio14 2.1 "Device Status Field"
+    /// With the exception of resetting the device, the driver must not clear
+    /// (write 0 to) a bit that is set (to 1).
+    // @cite(virtio): sec="2.1" title="Device Status Field"
+    // @cite(virtio): sec="2.4" title="Device Reset"
+    // @cite(virtio): sec="3" title="General Initialization And Device Operation"
     #[derive(Default, Copy, Clone, PartialEq, Eq)]
     #[repr(transparent)]
     pub struct DeviceStatus(u8);
@@ -27,51 +23,52 @@ bitfield! {
 
     /// True iff the driver recognized the hardware as a virtio device.
     ///
-    /// Set to true (1) by the driver in step 2 of the process in virtio14 3.1.1
-    /// "Driver Requirements: Device Initialization".
+    /// Set to true (1) by the driver in step 2 of device initialization.
     ///
-    /// virtio14 recommends that the virtualized operating system sets this bit.
-    /// Fuchsia does not special-case virtio devices, so this bit is set by
-    /// Fuchsia drivers.
-    ///
-    /// virtio14 name: ACKNOWLEDGE
+    /// The specification recommends that the virtualized operating system sets
+    /// this bit. Fuchsia does not special-case virtio devices, so this bit is
+    /// set by Fuchsia drivers.
+    // @cite(virtio): sec="2.1" title="Device Status Field" bits=0
+    // @cite(virtio): sec="3.1.1" title="Driver Requirements: Device Initialization"
+    // @alias(virtio): theirs="ACKNOWLEDGE"
     pub bool, virtio_device_detected, set_virtio_device_detected: 0;
 
     /// True iff the guest OS has found a driver for the device.
     ///
-    /// Set to true (1) by the driver in step 3 of the process in virtio14 3.1.1
-    /// "Driver Requirements: Device Initialization". Fuchsia does not
-    /// special-case virtio devices, so the driver must perform this step.
+    /// Set to true (1) by the driver in step 3 of device initialization. Fuchsia
+    /// does not special-case virtio devices, so the driver must perform this
+    /// step.
     ///
     /// The driver may only read the feature bits offered by the device after
     /// setting this bit to true.
-    ///
-    /// virtio14 name: DRIVER
+    // @cite(virtio): sec="2.1" title="Device Status Field" bits=1
+    // @cite(virtio): sec="3.1.1" title="Driver Requirements: Device Initialization"
+    // @alias(virtio): theirs="DRIVER"
     pub bool, driver_found, set_driver_found: 1;
 
     /// True iff the driver is sufficiently initialized to drive the device.
     ///
-    /// Set to true (1) by the driver in step 8 of the process in virtio14 3.1.1
-    /// "Driver Requirements: Device Initialization".
+    /// Set to true (1) by the driver in step 8 of device initialization.
     ///
     /// The driver must only set this bit to true after it has completed the
     /// device-specific initialization process.
     ///
     /// The driver may only operate the device's virtqueues while this bit is
     /// set to true (1).
-    ///
-    /// virtio14 name: DRIVER_OK
+    // @cite(virtio): sec="2.1" title="Device Status Field" bits=2
+    // @cite(virtio): sec="3.1.1" title="Driver Requirements: Device Initialization"
+    // @alias(virtio): theirs="DRIVER_OK"
     pub bool, driver_initialized, set_driver_initialized: 2;
 
     /// True iff the feature negotiation is complete.
     ///
-    /// Set to true (1) by the driver in step 5 of the process in virtio14 3.1.1
-    /// "Driver Requirements: Device Initialization".
+    /// Set to true (1) by the driver in step 5 of device initialization.
     ///
     /// The driver must only set this bit to true after it has acknowledged all
     /// the features it understands.
-    ///
-    /// virtio14 name: FEATURES_OK
+    // @cite(virtio): sec="2.1" title="Device Status Field" bits=3
+    // @cite(virtio): sec="3.1.1" title="Driver Requirements: Device Initialization"
+    // @alias(virtio): theirs="FEATURES_OK"
     pub bool, feature_negotiation_complete, set_feature_negotiation_complete: 3;
 
     /// True iff the device has been suspended by the driver.
@@ -86,10 +83,9 @@ bitfield! {
     ///
     /// The driver is only allowed to set this bit if
     /// [`VirtioFeatureBits::suspend_enabled`] is negotiated.
-    ///
-    /// Suspension is described in virtio14 3.4 "Device Suspend".
-    ///
-    /// virtio14 name: SUSPEND
+    // @cite(virtio): sec="2.1" title="Device Status Field" bits=4
+    // @cite(virtio): sec="3.4" title="Device Suspend"
+    // @alias(virtio): theirs="SUSPEND"
     pub bool, suspended, set_suspended: 4;
 
     /// True iff the device has experienced an unrecoverable error.
@@ -98,22 +94,21 @@ bitfield! {
     /// bit to true (1). The driver cannot assume that virtqueue operations will
     /// complete (or, conversely, that the operations will be dropped) while
     /// this bit is set.
-    ///
-    /// virtio14 name: DEVICE_NEEDS_RESET
+    // @cite(virtio): sec="2.1" title="Device Status Field" bits=6
+    // @alias(virtio): theirs="DEVICE_NEEDS_RESET"
     pub bool, device_needs_reset, set_device_needs_reset: 6;
 
     /// True iff the driver has experienced an unrecoverable error.
     ///
     /// The driver sets this bit when it gives up on driving the device.
-    ///
-    /// virtio14 name: FAILED
+    // @cite(virtio): sec="2.1" title="Device Status Field" bits=7
+    // @alias(virtio): theirs="FAILED"
     pub bool, driver_terminated, set_driver_terminated: 7;
 }
 
 impl DeviceStatus {
     /// The status value that indicates the device has been reset.
-    ///
-    /// virtio14 2.4 "Device Reset"
+    // @cite(virtio): sec="2.4" title="Device Reset"
     pub const RESET: DeviceStatus = DeviceStatus(0);
 }
 

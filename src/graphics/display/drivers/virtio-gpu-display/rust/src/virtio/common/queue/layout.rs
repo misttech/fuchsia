@@ -46,19 +46,17 @@ fn align_to(offset: usize, alignment: usize) -> usize {
 impl VirtioQueueMemoryLayout {
     /// The maximum number of descriptors in a queue.
     ///
-    /// The value is explicitly stated in virtio14 2.7 "Split Virtqueues". This
-    /// value is the same for packed virtqueues, but virtio14 2.8 "Packed
-    /// Virtqueues" expresses the bound as 2^15 instead of 32768.
-    ///
-    /// The value is also a consequence of the constraints that the queue
-    /// capacity must be a power of 2 (also stated in virtio14 2.7 "Split
-    /// Virtqueues") and must be representable in a `u16`.
+    /// The value is a consequence of the constraints that the queue
+    /// capacity must be a power of 2 and must be representable in a `u16`.
+    // @cite(virtio): sec="2.7" title="Split Virtqueues"
+    // @cite(virtio): sec="2.8" title="Packed Virtqueues"
     pub const MAX_CAPACITY: u16 = 32768;
 
     /// Computes the memory layout given a queue capacity.
     ///
     /// `queue_capacity` must be a non-zero power of two, and must not exceed
     /// [`MAX_CAPACITY`]. `page_size` must be a non-zero power of two.
+    // @cite(virtio): sec="2.7" title="Split Virtqueues"
     pub fn new(queue_capacity: NonZero<u16>, page_size: NonZero<usize>) -> VirtioQueueMemoryLayout {
         debug_assert!(
             queue_capacity.is_power_of_two(),
@@ -71,8 +69,6 @@ impl VirtioQueueMemoryLayout {
             queue_capacity
         );
         debug_assert!(page_size.is_power_of_two(), "Page size not a power of two: {}", page_size);
-
-        // The layout is specified in virtio14 2.7 "Split Virtqueues".
 
         let descriptor_table_size = VirtioQueueDescriptorTable::size_bytes(queue_capacity);
         let submitted_ring_size = VirtioQueueSubmittedRing::size_bytes(queue_capacity);
@@ -153,31 +149,24 @@ impl VirtioQueueMemoryLayout {
 ///
 /// The information is sufficient for registering the virtqueue with a virtio
 /// device.
-///
-/// virtio14 2.7 "Split Virtqueues"
+// @cite(virtio): sec="2.7" title="Split Virtqueues"
 pub struct VirtioQueuePhysicalMemoryLayout {
     /// Physical address of the first byte in the buffer descriptor table.
-    ///
-    /// virtio14 2.6 "Virtqueues" uses the term "Descriptor Area" for the memory
-    /// region pointed by this address.
-    ///
-    /// virtio14 2.7.5 "The Virtqueue Descriptor Table"
+    // @cite(virtio): sec="2.6" title="Virtqueues"
+    // @cite(virtio): sec="2.7.5" title="The Virtqueue Descriptor Table"
+    // @alias(virtio): theirs="Descriptor Area"
     pub descriptor_table_physical_address: u64,
 
     /// Physical address of the first byte in the submitted buffer ring.
-    ///
-    /// virtio14 2.6 "Virtqueues" uses the term "Driver Area" for the memory
-    /// region pointed by this address.
-    ///
-    /// virtio14 2.7.6 "The Virtqueue Available Ring"
+    // @cite(virtio): sec="2.6" title="Virtqueues"
+    // @cite(virtio): sec="2.7.6" title="The Virtqueue Available Ring"
+    // @alias(virtio): theirs="Driver Area"
     pub submitted_ring_physical_address: u64,
 
     /// Physical address of the first byte in the returned buffer ring.
-    ///
-    /// virtio14 2.6 "Virtqueues" uses the term "Device Area" for the memory
-    /// region pointed by this address.
-    ///
-    /// virtio14 2.7.8 "The Virtqueue Used Ring"
+    // @cite(virtio): sec="2.6" title="Virtqueues"
+    // @cite(virtio): sec="2.7.8" title="The Virtqueue Used Ring"
+    // @alias(virtio): theirs="Device Area"
     pub returned_ring_physical_address: u64,
 }
 

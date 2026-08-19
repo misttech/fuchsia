@@ -28,70 +28,68 @@ use zx::Status;
 
 bitfield! {
     /// Documented feature bits for virtio-gpu devices.
-    ///
-    /// virtio14 5.7.3 "Feature bits"
+    // @cite(virtio): sec="5.7.3" title="Feature bits"
     #[derive(Copy, Clone, FromBytes, IntoBytes, Immutable, KnownLayout)]
     #[repr(transparent)]
     pub struct FeatureBits(u32);
     impl Debug;
 
     /// True iff the device supports the virgl 3D mode.
-    ///
-    /// virtio14 name: VIRTIO_GPU_F_VIRGL
+    // @cite(virtio): sec="5.7.6.8" title="Device Operation: controlq"
+    // @alias(virtio): theirs="VIRTIO_GPU_F_VIRGL"
     pub bool, supports_virgl_3d, set_supports_virgl_3d: 0;
 
     /// True iff the device supports EDID.
-    ///
-    /// virtio14 name: VIRTIO_GPU_F_EDID
+    // @cite(virtio): sec="5.7.6.8" title="Device Operation: controlq"
+    // @alias(virtio): theirs="VIRTIO_GPU_F_EDID"
     pub bool, supports_edid, set_supports_edid: 1;
 
     /// True iff the device supports assigning resources UUIDs for export to other virtio devices.
-    ///
-    /// virtio14 name: VIRTIO_GPU_F_RESOURCE_UUID
+    // @cite(virtio): sec="5.7.6.8" title="Device Operation: controlq"
+    // @alias(virtio): theirs="VIRTIO_GPU_F_RESOURCE_UUID"
     pub bool, supports_resource_uuids, set_supports_resource_uuids: 2;
 
     /// True iff the device supports creating and using size-based blob resources.
-    ///
-    /// virtio14 name: VIRTIO_GPU_F_RESOURCE_BLOB
+    // @cite(virtio): sec="5.7.6.8" title="Device Operation: controlq"
+    // @alias(virtio): theirs="VIRTIO_GPU_F_RESOURCE_BLOB"
     pub bool, supports_resource_blobs, set_supports_resource_blobs: 3;
 
     /// True iff the device supports multiple context types and synchronization timelines.
-    ///
-    /// virtio14 name: VIRTIO_GPU_F_CONTEXT_INIT
+    // @cite(virtio): sec="5.7.6.8" title="Device Operation: controlq"
+    // @alias(virtio): theirs="VIRTIO_GPU_F_CONTEXT_INIT"
     pub bool, supports_contexts_and_timelines, set_supports_contexts_and_timelines: 4;
 
     /// True iff [`DeviceConfiguration::blob_alignment`] is valid.
-    ///
-    /// virtio14 name: VIRTIO_GPU_F_BLOB_ALIGNMENT
+    // @cite(virtio): sec="5.7.6.8" title="Device Operation: controlq"
+    // @alias(virtio): theirs="VIRTIO_GPU_F_BLOB_ALIGNMENT"
     pub bool, blob_alignment_is_valid, set_blob_alignment_is_valid: 5;
 }
 
 bitfield! {
     /// Events signaled by the virtio-gpu device.
-    ///
-    /// virtio14 5.7.4.2 "Events"
+    // @cite(virtio): sec="5.7.4.2" title="Events"
     #[derive(Copy, Clone, PartialEq, Eq, FromBytes, IntoBytes, Immutable, KnownLayout)]
     #[repr(transparent)]
     pub struct Events(u32);
     impl Debug;
 
     /// The display configuration has changed.
-    ///
-    /// virtio14 name: VIRTIO_GPU_EVENT_DISPLAY
+    // @cite(virtio): sec="5.7.6.8" title="Device Operation: controlq"
+    // @alias(virtio): theirs="VIRTIO_GPU_EVENT_DISPLAY"
     pub bool, display_changed, set_display_changed: 0;
 }
 
 /// The virtio-gpu device-specific configuration structure.
-///
-/// virtio14 5.7.4 "Device configuration layout" > struct virtio_gpu_config
+// @cite(virtio): sec="5.7.4" title="Device configuration layout"
+// @alias(virtio): theirs="virtio_gpu_config"
 #[derive(Clone, Copy, PartialEq, Eq, FromBytes, IntoBytes, Immutable, KnownLayout)]
 #[repr(C)]
 pub struct DeviceConfiguration {
     /// Signals pending events to the driver.
     ///
-    /// Read-only for the guest driver.
-    ///
-    /// virtio14 name: events_read
+    /// Read-only for the driver.
+    // @cite(virtio): sec="5.7.4.1" title="Device configuration fields"
+    // @alias(virtio): theirs="events_read"
     pub pending_events: Events,
 
     /// Clears pending events in `pending_events`.
@@ -100,172 +98,184 @@ pub struct DeviceConfiguration {
     ///
     /// The bits have W1/C (Write 1 to Clear) semantics. Writing true (1) into a
     /// bit will clear the corresponding bit in `pending_events`.
-    ///
-    /// virtio14 name: events_clear
+    // @cite(virtio): sec="5.7.4.1" title="Device configuration fields"
+    // @alias(virtio): theirs="events_clear"
     pub pending_events_to_be_cleared: Events,
 
     /// The maximum number of scanouts supported by the device.
     ///
     /// Minimum value is 1, maximum value is 16.
     ///
-    /// Read-only for the guest driver.
-    ///
-    /// virtio14 name: num_scanouts
+    /// Read-only for the driver.
+    // @cite(virtio): sec="5.7.4.1" title="Device configuration fields"
+    // @alias(virtio): theirs="num_scanouts"
     pub scanout_count: u32,
 
     /// The maximum number of capability sets supported by the device.
     ///
     /// The minimum value is zero.
     ///
-    /// Read-only for the guest driver.
-    ///
-    /// virtio14 name: num_capsets
+    /// Read-only for the driver.
+    // @cite(virtio): sec="5.7.4.1" title="Device configuration fields"
+    // @alias(virtio): theirs="num_capsets"
     pub max_capability_set_count: u32,
 
     /// The minimum alignment, in bytes, required for resource blobs.
     ///
     /// The value must be a power of two.
     ///
-    /// TODO(costan): Check the field's encoding. virtio14 5.7.4.1 "Device
-    /// configuration fields" states that the field's minimum value is 1, and
-    /// the the maximum value is 4294967296. The stated maximum is 1 more than
+    /// TODO(costan): Check the field's encoding. The specification
+    /// states that the field's minimum value is 1, and
+    /// the maximum value is 4294967296. The stated maximum is 1 more than
     /// the maximum value that fits in an u32. Either the specification is
     /// wrong, or it fails to document an unusual field encoding. (minus-one?
     /// 0 for 4294967296?)
     ///
-    /// Read-only for the guest driver. Valid if
-    /// [`FeatureBits::blob_alignment_is_valid`] was negotiated.
-    ///
-    /// virtio14 name: blob_alignment
+    /// Read-only for the driver. Valid if
+    /// [`GpuFeatureBits::blob_alignment_is_valid`] was negotiated.
+    // @cite(virtio): sec="5.7.4.1" title="Device configuration fields"
+    // @alias(virtio): theirs="blob_alignment"
     pub blob_alignment: u32,
 }
 
 /// Discriminant for the information in a virtqueue buffer used by virtio-gpu.
-///
-/// virtio14 5.7.6.7 "Device Operation: Request header" >
-/// enum virtio_gpu_ctrl_type
+// @cite(virtio): sec="5.7.6.7" title="Device Operation: Request header"
+// @alias(virtio): theirs="virtio_gpu_ctrl_type"
 #[repr(transparent)]
 #[derive(Clone, Copy, PartialEq, Eq, FromBytes, IntoBytes, Immutable, KnownLayout)]
 pub struct BufferType(pub u32);
 
 impl BufferType {
     /// Command encoded by [`GetDisplayInfoCommand`].
-    ///
-    /// virtio14 name: VIRTIO_GPU_CMD_GET_DISPLAY_INFO
+    // @cite(virtio): sec="5.7.6.7" title="Device Operation: Request header"
+    // @alias(virtio): theirs="VIRTIO_GPU_CMD_GET_DISPLAY_INFO"
     pub const GET_DISPLAY_INFO_COMMAND: Self = BufferType(0x0100);
 
     /// Command encoded by [`Create2DResourceCommand`].
-    ///
-    /// virtio14 name: VIRTIO_GPU_CMD_RESOURCE_CREATE_2D
+    // @cite(virtio): sec="5.7.6.7" title="Device Operation: Request header"
+    // @alias(virtio): theirs="VIRTIO_GPU_CMD_RESOURCE_CREATE_2D"
     pub const CREATE_2D_RESOURCE_COMMAND: Self = BufferType(0x0101);
 
-    /// virtio14 name: VIRTIO_GPU_CMD_RESOURCE_UNREF
+    // @cite(virtio): sec="5.7.6.7" title="Device Operation: Request header"
+    // @alias(virtio): theirs="VIRTIO_GPU_CMD_RESOURCE_UNREF"
     pub const DESTROY_RESOURCE_COMMAND: Self = BufferType(0x0102);
 
     /// Command encoded by [`SetScanoutCommand`].
-    ///
-    /// virtio14 name: VIRTIO_GPU_CMD_SET_SCANOUT
+    // @cite(virtio): sec="5.7.6.7" title="Device Operation: Request header"
+    // @alias(virtio): theirs="VIRTIO_GPU_CMD_SET_SCANOUT"
     pub const SET_SCANOUT_COMMAND: Self = BufferType(0x0103);
 
     /// Command encoded by [`FlushResourceCommand`].
-    ///
-    /// virtio14 name: VIRTIO_GPU_CMD_RESOURCE_FLUSH
+    // @cite(virtio): sec="5.7.6.7" title="Device Operation: Request header"
+    // @alias(virtio): theirs="VIRTIO_GPU_CMD_RESOURCE_FLUSH"
     pub const FLUSH_RESOURCE_COMMAND: Self = BufferType(0x0104);
 
     /// Command encoded by [`Transfer2DResourceToHostCommand`].
-    ///
-    /// virtio14 name: VIRTIO_GPU_CMD_TRANSFER_TO_HOST_2D
+    // @cite(virtio): sec="5.7.6.7" title="Device Operation: Request header"
+    // @alias(virtio): theirs="VIRTIO_GPU_CMD_TRANSFER_TO_HOST_2D"
     pub const TRANSFER_2D_RESOURCE_TO_HOST_COMMAND: Self = BufferType(0x0105);
 
     /// Command encoded by [`AttachResourceBackingCommandHeader`].
-    ///
-    /// virtio14 name: VIRTIO_GPU_CMD_RESOURCE_ATTACH_BACKING
+    // @cite(virtio): sec="5.7.6.7" title="Device Operation: Request header"
+    // @alias(virtio): theirs="VIRTIO_GPU_CMD_RESOURCE_ATTACH_BACKING"
     pub const ATTACH_RESOURCE_BACKING_COMMAND: Self = BufferType(0x0106);
 
-    /// virtio14 name: VIRTIO_GPU_CMD_RESOURCE_DETACH_BACKING
+    // @cite(virtio): sec="5.7.6.7" title="Device Operation: Request header"
+    // @alias(virtio): theirs="VIRTIO_GPU_CMD_RESOURCE_DETACH_BACKING"
     pub const DETACH_RESOURCE_BACKING_COMMAND: Self = BufferType(0x0107);
 
     /// Command encoded by [`GetCapabilitySetInfoCommand`].
-    ///
-    /// virtio14 name: VIRTIO_GPU_CMD_GET_CAPSET_INFO
+    // @cite(virtio): sec="5.7.6.7" title="Device Operation: Request header"
+    // @alias(virtio): theirs="VIRTIO_GPU_CMD_GET_CAPSET_INFO"
     pub const GET_CAPABILITY_SET_INFO_COMMAND: Self = BufferType(0x0108);
 
     /// Command encoded by [`GetCapabilitySetCommand`].
-    ///
-    /// virtio14 name: VIRTIO_GPU_CMD_GET_CAPSET
+    // @cite(virtio): sec="5.7.6.7" title="Device Operation: Request header"
+    // @alias(virtio): theirs="VIRTIO_GPU_CMD_GET_CAPSET"
     pub const GET_CAPABILITY_SET_COMMAND: Self = BufferType(0x0109);
 
     /// Command encoded by [`GetExtendedDisplayIdCommand`].
-    ///
-    /// virtio14 name: VIRTIO_GPU_CMD_GET_EDID
+    // @cite(virtio): sec="5.7.6.7" title="Device Operation: Request header"
+    // @alias(virtio): theirs="VIRTIO_GPU_CMD_GET_EDID"
     pub const GET_EXTENDED_DISPLAY_ID_COMMAND: Self = BufferType(0x010a);
 
-    /// virtio14 name: VIRTIO_GPU_CMD_RESOURCE_ASSIGN_UUID
+    // @cite(virtio): sec="5.7.6.7" title="Device Operation: Request header"
+    // @alias(virtio): theirs="VIRTIO_GPU_CMD_RESOURCE_ASSIGN_UUID"
     pub const ASSIGN_RESOURCE_UUID_COMMAND: Self = BufferType(0x010b);
 
     /// Command encoded by [`CreateBlobResourceCommandHeader`].
-    ///
-    /// virtio14 name: VIRTIO_GPU_CMD_RESOURCE_CREATE_BLOB
+    // @cite(virtio): sec="5.7.6.7" title="Device Operation: Request header"
+    // @alias(virtio): theirs="VIRTIO_GPU_CMD_RESOURCE_CREATE_BLOB"
     pub const CREATE_BLOB_COMMAND: Self = BufferType(0x010c);
 
     /// Command encoded by [`SetScanoutBlobCommand`].
-    ///
-    /// virtio14 name: VIRTIO_GPU_CMD_SET_SCANOUT_BLOB
+    // @cite(virtio): sec="5.7.6.7" title="Device Operation: Request header"
+    // @alias(virtio): theirs="VIRTIO_GPU_CMD_SET_SCANOUT_BLOB"
     pub const SET_SCANOUT_BLOB_COMMAND: Self = BufferType(0x010d);
 
     /// Command encoded by [`UpdateCursorCommand`].
-    ///
-    /// virtio14 name: VIRTIO_GPU_CMD_UPDATE_CURSOR
+    // @cite(virtio): sec="5.7.6.7" title="Device Operation: Request header"
+    // @alias(virtio): theirs="VIRTIO_GPU_CMD_UPDATE_CURSOR"
     pub const UPDATE_CURSOR_COMMAND: Self = BufferType(0x0300);
 
     /// Command encoding reuses [`UpdateCursorCommand`].
-    ///
-    /// virtio14 name: VIRTIO_GPU_CMD_MOVE_CURSOR
+    // @cite(virtio): sec="5.7.6.7" title="Device Operation: Request header"
+    // @alias(virtio): theirs="VIRTIO_GPU_CMD_MOVE_CURSOR"
     pub const MOVE_CURSOR_COMMAND: Self = BufferType(0x0301);
 
     /// Response encoded by [`EmptyResponse`].
-    ///
-    /// virtio14 name: VIRTIO_GPU_RESP_OK_NODATA
+    // @cite(virtio): sec="5.7.6.7" title="Device Operation: Request header"
+    // @alias(virtio): theirs="VIRTIO_GPU_RESP_OK_NODATA"
     pub const EMPTY_RESPONSE: Self = BufferType(0x1100);
 
     /// Response encoded by [`DisplayInfoResponse`].
-    ///
-    /// virtio14 name: VIRTIO_GPU_RESP_OK_DISPLAY_INFO
+    // @cite(virtio): sec="5.7.6.7" title="Device Operation: Request header"
+    // @alias(virtio): theirs="VIRTIO_GPU_RESP_OK_DISPLAY_INFO"
     pub const DISPLAY_INFO_RESPONSE: Self = BufferType(0x1101);
 
-    /// virtio14 name: VIRTIO_GPU_RESP_OK_CAPSET_INFO
+    // @cite(virtio): sec="5.7.6.7" title="Device Operation: Request header"
+    // @alias(virtio): theirs="VIRTIO_GPU_RESP_OK_CAPSET_INFO"
     pub const CAPABILITY_SET_INFO_RESPONSE: Self = BufferType(0x1102);
 
-    /// virtio14 name: VIRTIO_GPU_RESP_OK_CAPSET
+    // @cite(virtio): sec="5.7.6.7" title="Device Operation: Request header"
+    // @alias(virtio): theirs="VIRTIO_GPU_RESP_OK_CAPSET"
     pub const CAPABILITY_SET_RESPONSE: Self = BufferType(0x1103);
 
     /// Response encoded by [`ExtendedDisplayIdResponse`].
-    ///
-    /// virtio14 name: VIRTIO_GPU_RESP_OK_EDID
+    // @cite(virtio): sec="5.7.6.7" title="Device Operation: Request header"
+    // @alias(virtio): theirs="VIRTIO_GPU_RESP_OK_EDID"
     pub const EXTENDED_DISPLAY_ID_RESPONSE: Self = BufferType(0x1104);
 
-    /// virtio14 name: VIRTIO_GPU_RESP_OK_RESOURCE_UUID
+    // @cite(virtio): sec="5.7.6.7" title="Device Operation: Request header"
+    // @alias(virtio): theirs="VIRTIO_GPU_RESP_OK_RESOURCE_UUID"
     pub const RESOURCE_UUID_RESPONSE: Self = BufferType(0x1105);
 
-    /// virtio14 name: VIRTIO_GPU_RESP_OK_MAP_INFO
+    // @cite(virtio): sec="5.7.6.7" title="Device Operation: Request header"
+    // @alias(virtio): theirs="VIRTIO_GPU_RESP_OK_MAP_INFO"
     pub const MAP_INFO_RESPONSE: Self = BufferType(0x1106);
 
-    /// virtio14 name: VIRTIO_GPU_RESP_ERR_UNSPEC
+    // @cite(virtio): sec="5.7.6.7" title="Device Operation: Request header"
+    // @alias(virtio): theirs="VIRTIO_GPU_RESP_ERR_UNSPEC"
     pub const UNSPECIFIED_ERROR: Self = BufferType(0x1200);
 
-    /// virtio14 name: VIRTIO_GPU_RESP_ERR_OUT_OF_MEMORY
+    // @cite(virtio): sec="5.7.6.7" title="Device Operation: Request header"
+    // @alias(virtio): theirs="VIRTIO_GPU_RESP_ERR_OUT_OF_MEMORY"
     pub const OUT_OF_MEMORY_ERROR: Self = BufferType(0x1201);
 
-    /// virtio14 name: VIRTIO_GPU_RESP_ERR_INVALID_SCANOUT_ID
+    // @cite(virtio): sec="5.7.6.7" title="Device Operation: Request header"
+    // @alias(virtio): theirs="VIRTIO_GPU_RESP_ERR_INVALID_SCANOUT_ID"
     pub const INVALID_SCANOUT_ID_ERROR: Self = BufferType(0x1202);
 
-    /// virtio14 name: VIRTIO_GPU_RESP_ERR_INVALID_RESOURCE_ID
+    // @cite(virtio): sec="5.7.6.7" title="Device Operation: Request header"
+    // @alias(virtio): theirs="VIRTIO_GPU_RESP_ERR_INVALID_RESOURCE_ID"
     pub const INVALID_RESOURCE_ID_ERROR: Self = BufferType(0x1203);
 
-    /// virtio14 name: VIRTIO_GPU_RESP_ERR_INVALID_CONTEXT_ID
+    // @cite(virtio): sec="5.7.6.7" title="Device Operation: Request header"
+    // @alias(virtio): theirs="VIRTIO_GPU_RESP_ERR_INVALID_CONTEXT_ID"
     pub const INVALID_CONTEXT_ID_ERROR: Self = BufferType(0x1204);
 
-    /// virtio14 name: VIRTIO_GPU_RESP_ERR_INVALID_PARAMETER
+    // @cite(virtio): sec="5.7.6.7" title="Device Operation: Request header"
+    // @alias(virtio): theirs="VIRTIO_GPU_RESP_ERR_INVALID_PARAMETER"
     pub const INVALID_PARAMETER_ERROR: Self = BufferType(0x1205);
 
     pub fn is_known(&self) -> bool {
@@ -345,8 +355,7 @@ impl std::fmt::Debug for BufferType {
 
 bitfield! {
     /// Documented header flags for all buffers in a virtio-gpu queue.
-    ///
-    /// virtio14 5.7.6.7 "Device Operation: Request header"
+    // @cite(virtio): sec="5.7.6.7" title="Device Operation: Request header"
     #[derive(Copy, Clone, FromBytes, IntoBytes, Immutable, KnownLayout)]
     #[repr(transparent)]
     pub struct BufferHeaderFlags(u32);
@@ -357,8 +366,8 @@ bitfield! {
     /// If true, the device must complete the command before sending a response.
     /// The response buffer's header must have the flag set to true, and must
     /// have the same [`BufferHeader::fence_id`] value.
-    ///
-    /// virtio14 name: VIRTIO_GPU_FLAG_FENCE
+    // @cite(virtio): sec="5.7.6.7" title="Device Operation: Request header"
+    // @alias(virtio): theirs="VIRTIO_GPU_FLAG_FENCE"
     pub bool, has_fence_id, set_has_fence_id: 0;
 
     /// Marks a command as belonging to a rendering context timeline.
@@ -372,15 +381,14 @@ bitfield! {
     /// If true and `has_fence_id` is also true, the device must also complete
     /// all the commands that belong to the same rendering context timeline and
     /// were issued before this command.
-    ///
-    /// virtio14 name: VIRTIO_GPU_FLAG_INFO_RING_IDX
+    // @cite(virtio): sec="5.7.6.7" title="Device Operation: Request header"
+    // @alias(virtio): theirs="VIRTIO_GPU_FLAG_INFO_RING_IDX"
     pub bool, has_ring_index, set_has_ring_index: 1;
 }
 
 /// Header shared by all buffers in virtio-gpu queues.
-///
-/// virtio14 5.7.6.7 "Device Operation: Request header" >
-/// struct virtio_gpu_ctrl_hdr
+// @cite(virtio): sec="5.7.6.7" title="Device Operation: Request header"
+// @alias(virtio): theirs="virtio_gpu_ctrl_hdr"
 #[repr(C)]
 #[derive(Debug, Copy, Clone, FromBytes, IntoBytes, Immutable, KnownLayout)]
 pub struct BufferHeader {
@@ -396,16 +404,16 @@ pub struct BufferHeader {
     pub fence_id: u64,
 
     /// Rendering context ID. Only used in 3D mode.
-    ///
-    /// virtio14 name: ctx_id
+    // @cite(virtio): sec="5.7.6.7" title="Device Operation: Request header"
+    // @alias(virtio): theirs="ctx_id"
     pub context_id: u32,
 
     /// Points to a rendering context-specific timeline for fences.
     ///
     /// Only valid if the [`BufferHeaderFlags::has_ring_index`] bit is set to
     /// true. Values must be in the range [0, 63].
-    ///
-    /// virtio14 name: ring_idx
+    // @cite(virtio): sec="5.7.6.7" title="Device Operation: Request header"
+    // @alias(virtio): theirs="ring_idx"
     pub ring_index: u8,
 
     pub _padding: [u8; 3],
@@ -417,10 +425,8 @@ pub struct BufferHeader {
 /// virtio-gpu uses the same coordinate space as Vulkan. The origin is at the
 /// image's top-left corner. The X axis points to the right, and the Y axis
 /// points downwards.
-///
-/// virtio14 5.7.6.8 "Device Operation: controlq" >
-/// VIRTIO_GPU_CMD_GET_DISPLAY_INFO command description >
-/// struct virtio_gpu_rect
+// @cite(virtio): sec="5.7.6.8" title="Device Operation: controlq"
+// @alias(virtio): theirs="virtio_gpu_rect"
 #[repr(C)]
 #[derive(Debug, Copy, Clone, FromBytes, IntoBytes, Immutable, KnownLayout)]
 pub struct Rectangle {
@@ -438,41 +444,45 @@ pub struct Rectangle {
 }
 
 /// virtio-gpu representation of [`fuchsia.images2/PixelFormat`] values.
-///
-/// virtio14 5.7.6.8 "Device Operation: controlq" >
-/// VIRTIO_GPU_CMD_RESOURCE_CREATE_2D command description >
-/// enum virtio_gpu_formats
+// @cite(virtio): sec="5.7.6.8" title="Device Operation: controlq"
+// @alias(virtio): theirs="virtio_gpu_formats"
 #[repr(transparent)]
 #[derive(Clone, Copy, PartialEq, Eq, FromBytes, IntoBytes, Immutable, KnownLayout)]
 pub struct ResourceFormat(pub u32);
 
 impl ResourceFormat {
     /// Equivalent to [`fuchsia.images2/PixelFormat.B8G8R8A8`]
-    ///
-    /// virtio14 name: VIRTIO_GPU_FORMAT_B8G8R8A8_UNORM
+    // @cite(virtio): sec="5.7.6.8" title="Device Operation: controlq"
+    // @alias(virtio): theirs="VIRTIO_GPU_FORMAT_B8G8R8A8_UNORM"
     pub const B8G8R8A8: Self = ResourceFormat(1);
 
-    /// virtio14 name: VIRTIO_GPU_FORMAT_B8G8R8X8_UNORM
+    // @cite(virtio): sec="5.7.6.8" title="Device Operation: controlq"
+    // @alias(virtio): theirs="VIRTIO_GPU_FORMAT_B8G8R8X8_UNORM"
     pub const B8G8R8X8: Self = ResourceFormat(2);
 
-    /// virtio14 name: VIRTIO_GPU_FORMAT_A8R8G8B8_UNORM
+    // @cite(virtio): sec="5.7.6.8" title="Device Operation: controlq"
+    // @alias(virtio): theirs="VIRTIO_GPU_FORMAT_A8R8G8B8_UNORM"
     pub const A8R8G8B8: Self = ResourceFormat(3);
 
-    /// virtio14 name: VIRTIO_GPU_FORMAT_X8R8G8B8_UNORM
+    // @cite(virtio): sec="5.7.6.8" title="Device Operation: controlq"
+    // @alias(virtio): theirs="VIRTIO_GPU_FORMAT_X8R8G8B8_UNORM"
     pub const X8R8G8B8: Self = ResourceFormat(4);
 
     /// Equivalent to [`fuchsia.images2/PixelFormat.R8G8B8A8`].
-    ///
-    /// virtio14 name: VIRTIO_GPU_FORMAT_R8G8B8A8_UNORM
+    // @cite(virtio): sec="5.7.6.8" title="Device Operation: controlq"
+    // @alias(virtio): theirs="VIRTIO_GPU_FORMAT_R8G8B8A8_UNORM"
     pub const R8G8B8A8: Self = ResourceFormat(67);
 
-    /// virtio14 name: VIRTIO_GPU_FORMAT_X8B8G8R8_UNORM
+    // @cite(virtio): sec="5.7.6.8" title="Device Operation: controlq"
+    // @alias(virtio): theirs="VIRTIO_GPU_FORMAT_X8B8G8R8_UNORM"
     pub const X8B8G8R8: Self = ResourceFormat(68);
 
-    /// virtio14 name: VIRTIO_GPU_FORMAT_A8B8G8R8_UNORM
+    // @cite(virtio): sec="5.7.6.8" title="Device Operation: controlq"
+    // @alias(virtio): theirs="VIRTIO_GPU_FORMAT_A8B8G8R8_UNORM"
     pub const A8B8G8R8: Self = ResourceFormat(121);
 
-    /// virtio14 name: VIRTIO_GPU_FORMAT_R8G8B8X8_UNORM
+    // @cite(virtio): sec="5.7.6.8" title="Device Operation: controlq"
+    // @alias(virtio): theirs="VIRTIO_GPU_FORMAT_R8G8B8X8_UNORM"
     pub const R8G8B8X8: Self = ResourceFormat(134);
 
     pub fn is_known(&self) -> bool {
@@ -519,12 +529,13 @@ impl TryFrom<fidl_images2::PixelFormat> for ResourceFormat {
 }
 
 /// Populates a [`DisplayInfoResponse`] with the current output configuration.
+// @cite(virtio): sec="5.7.6.8" title="Device Operation: controlq"
 #[repr(C)]
 #[derive(Debug, Copy, Clone, IntoBytes, Immutable, KnownLayout)]
 pub struct GetDisplayInfoCommand {
     /// `header.type_` must be [`BufferType::GET_DISPLAY_INFO_COMMAND`].
-    ///
-    /// virtio14 name: hdr
+    // @cite(virtio): sec="5.7.6.8" title="Device Operation: controlq"
+    // @alias(virtio): theirs="hdr"
     pub header: BufferHeader,
 }
 
@@ -534,28 +545,25 @@ pub struct GetDisplayInfoCommand {
 /// resource ID. [`BufferType::DESTROY_RESOURCE_COMMAND`] (not yet implemented)
 /// frees a previously assigned resource ID.
 ///
-///
-/// The command VIRTIO_GPU_CMD_SET_SCANOUT (specified in virtio14 5.7.6.8
-/// "Device Operation: controlq") uses a zero `resource_id` to disable a
-/// scanout. So, within the scope of VIRTIO_GPU_CMD_SET_SCANOUT, zero is
-/// effectively an invalid resource ID. For simplicity, we never use zero as a
-/// valid resource ID.
+/// The virtio protocol for the command [`SetScanoutCommand`] uses a zero
+/// `resource_id` to disable a scanout. So, within the scope of
+/// [`SetScanoutCommand`], zero is effectively an invalid resource ID. For
+/// simplicity, we never use zero as a valid resource ID.
+// @cite(virtio): sec="5.7.6.8" title="Device Operation: controlq"
 pub type ResourceId = Option<NonZeroU32>;
 
 /// Creates a 2D resource on the host.
 ///
 /// This allocates a resource on the host with the specified dimensions and format.
 /// The driver must attach backing storage before it can be used.
-///
-/// virtio14 5.7.6.8 "Device Operation: controlq" >
-/// VIRTIO_GPU_CMD_RESOURCE_CREATE_2D command description >
-/// struct virtio_gpu_resource_create_2d
+// @cite(virtio): sec="5.7.6.8" title="Device Operation: controlq"
+// @alias(virtio): theirs="virtio_gpu_resource_create_2d"
 #[repr(C)]
 #[derive(Debug, Copy, Clone, IntoBytes, Immutable, KnownLayout)]
 pub struct Create2DResourceCommand {
     /// `header.type_` must be [`BufferType::CREATE_2D_RESOURCE_COMMAND`].
-    ///
-    /// virtio14 name: hdr
+    // @cite(virtio): sec="5.7.6.8" title="Device Operation: controlq"
+    // @alias(virtio): theirs="hdr"
     pub header: BufferHeader,
 
     /// Must not already be assigned to a resource.
@@ -572,16 +580,14 @@ pub struct Create2DResourceCommand {
 }
 
 /// A contiguous list of memory pages assigned to a 2D resource.
-///
-/// virtio14 5.7.6.8 "Device Operation: controlq" >
-/// VIRTIO_GPU_CMD_RESOURCE_ATTACH_BACKING command description >
-/// struct virtio_gpu_mem_entry
+// @cite(virtio): sec="5.7.6.8" title="Device Operation: controlq"
+// @alias(virtio): theirs="virtio_gpu_mem_entry"
 #[repr(C)]
 #[derive(Debug, Copy, Clone, FromBytes, IntoBytes, Immutable, KnownLayout)]
 pub struct MemoryEntry {
     /// Guest physical address of the first page in the memory region.
-    ///
-    /// virtio14 name: addr
+    // @cite(virtio): sec="5.7.6.8" title="Device Operation: controlq"
+    // @alias(virtio): theirs="addr"
     pub address: u64,
 
     /// Length of the memory region in bytes.
@@ -593,18 +599,16 @@ pub struct MemoryEntry {
 /// Assigns backing pages to a resource.
 ///
 /// The response does not have any data.
-///
-/// virtio14 5.7.6.8 "Device Operation: controlq" >
-/// VIRTIO_GPU_CMD_RESOURCE_ATTACH_BACKING command description >
-/// struct virtio_gpu_resource_attach_backing
 macro_rules! define_attach_resource_backing_command {
     ($name:ident, $n:expr) => {
+        // @cite(virtio): sec="5.7.6.8" title="Device Operation: controlq"
+        // @alias(virtio): theirs="virtio_gpu_resource_attach_backing"
         #[repr(C)]
         #[derive(Debug, Copy, Clone, IntoBytes, Immutable, KnownLayout)]
         pub struct $name {
             /// `header.type_` must be [`BufferType::ATTACH_RESOURCE_BACKING_COMMAND`].
-            ///
-            /// virtio14 name: hdr
+            // @cite(virtio): sec="5.7.6.8" title="Device Operation: controlq"
+            // @alias(virtio): theirs="hdr"
             pub header: BufferHeader,
 
             /// Must be assigned via a successful [`Create2DResourceCommand`].
@@ -613,8 +617,8 @@ macro_rules! define_attach_resource_backing_command {
             /// Number of populated entries in `entries`.
             ///
             /// Must not exceed the size of `entries`.
-            ///
-            /// virtio14 name: nr_entries
+            // @cite(virtio): sec="5.7.6.8" title="Device Operation: controlq"
+            // @alias(virtio): theirs="nr_entries"
             pub entry_count: u32,
 
             /// The memory entries.
@@ -646,23 +650,21 @@ impl ScanoutId {
 /// Sets scanout parameters for a single output.
 ///
 /// The response does not have any data.
-///
-/// virtio14 5.7.6.8 "Device Operation: controlq" >
-/// VIRTIO_GPU_CMD_SET_SCANOUT command description >
-/// struct virtio_gpu_set_scanout
+// @cite(virtio): sec="5.7.6.8" title="Device Operation: controlq"
+// @alias(virtio): theirs="virtio_gpu_set_scanout"
 #[repr(C)]
 #[derive(Debug, Copy, Clone, IntoBytes, Immutable, KnownLayout)]
 pub struct SetScanoutCommand {
     /// `header.type_` must be [`BufferType::SET_SCANOUT_COMMAND`].
-    ///
-    /// virtio14 name: hdr
+    // @cite(virtio): sec="5.7.6.8" title="Device Operation: controlq"
+    // @alias(virtio): theirs="hdr"
     pub header: BufferHeader,
 
     /// The area of the [`resource_id`] image used by the scanout.
     ///
     /// The area must be entirely contained within the resource's dimensions.
-    ///
-    /// virtio14 name: r
+    // @cite(virtio): sec="5.7.6.8" title="Device Operation: controlq"
+    // @alias(virtio): theirs="r"
     pub image_source: Rectangle,
 
     /// The scanout whose pixel data is being displayed.
@@ -675,16 +677,14 @@ pub struct SetScanoutCommand {
 /// Flushes a scanout resource to the screen.
 ///
 /// The response does not have any data.
-///
-/// virtio14 5.7.6.8 "Device Operation: controlq" >
-/// VIRTIO_GPU_CMD_RESOURCE_FLUSH command description >
-/// struct virtio_gpu_resource_flush
+// @cite(virtio): sec="5.7.6.8" title="Device Operation: controlq"
+// @alias(virtio): theirs="virtio_gpu_resource_flush"
 #[repr(C)]
 #[derive(Debug, Copy, Clone, IntoBytes, Immutable, KnownLayout)]
 pub struct FlushResourceCommand {
     /// `header.type_` must be [`BufferType::FLUSH_RESOURCE_COMMAND`].
-    ///
-    /// virtio14 name: hdr
+    // @cite(virtio): sec="5.7.6.8" title="Device Operation: controlq"
+    // @alias(virtio): theirs="hdr"
     pub header: BufferHeader,
 
     /// The area of the [`resource_id`] image to be flushed.
@@ -692,8 +692,8 @@ pub struct FlushResourceCommand {
     /// The area must be entirely contained within the resource's dimensions.
     ///
     /// All scanouts that use this area of [`resource_id`] will be updated.
-    ///
-    /// virtio14 name: r
+    // @cite(virtio): sec="5.7.6.8" title="Device Operation: controlq"
+    // @alias(virtio): theirs="r"
     pub image_source: Rectangle,
 
     /// Any scanouts that use this resource will be flushed.
@@ -705,26 +705,24 @@ pub struct FlushResourceCommand {
 /// Transfers data from guest memory to host resource.
 ///
 /// The response does not have any data.
-///
-/// virtio14 5.7.6.8 "Device Operation: controlq" >
-/// VIRTIO_GPU_CMD_TRANSFER_TO_HOST_2D command description > struct
-/// virtio_gpu_transfer_to_host_2d
+// @cite(virtio): sec="5.7.6.8" title="Device Operation: controlq"
+// @alias(virtio): theirs="virtio_gpu_transfer_to_host_2d"
 #[repr(C)]
 #[derive(Debug, Copy, Clone, IntoBytes, Immutable, KnownLayout)]
 pub struct Transfer2DResourceToHostCommand {
     /// `header.type_` must be [`BufferType::TRANSFER_2D_RESOURCE_TO_HOST_COMMAND`].
-    ///
-    /// virtio14 name: hdr
+    // @cite(virtio): sec="5.7.6.8" title="Device Operation: controlq"
+    // @alias(virtio): theirs="hdr"
     pub header: BufferHeader,
 
     /// The area of the [`resource_id`] image to be transferred to the host.
-    ///
-    /// virtio14 name: r
+    // @cite(virtio): sec="5.7.6.8" title="Device Operation: controlq"
+    // @alias(virtio): theirs="r"
     pub image_source: Rectangle,
 
     /// The first byte in the host memory that receives pixel data.
-    ///
-    /// virtio14 name: offset
+    // @cite(virtio): sec="5.7.6.8" title="Device Operation: controlq"
+    // @alias(virtio): theirs="offset"
     pub destination_offset: u64,
 
     /// Must have backing memory via a successful [`AttachResourceBackingCommandHeader`].
@@ -738,43 +736,41 @@ pub struct Transfer2DResourceToHostCommand {
 #[derive(Debug, Copy, Clone, FromBytes, IntoBytes, Immutable, KnownLayout)]
 pub struct EmptyResponse {
     /// `header.type_` must be [`BufferType::EMPTY_RESPONSE`].
-    ///
-    /// virtio14 name: hdr
+    // @cite(virtio): sec="5.7.6.8" title="Device Operation: controlq"
+    // @alias(virtio): theirs="hdr"
     pub header: BufferHeader,
 }
 
 /// Identifies a capability set (rendering protocol).
-///
-/// virtio14 5.7.6.8 "Device Operation: controlq" >
-/// VIRTIO_GPU_CMD_GET_CAPSET_INFO command description
+// @cite(virtio): sec="5.7.6.8" title="Device Operation: controlq"
 #[repr(transparent)]
 #[derive(Clone, Copy, PartialEq, Eq, FromBytes, IntoBytes, Immutable, KnownLayout)]
 pub struct CapabilitySetId(pub u32);
 
 impl CapabilitySetId {
     /// Gallium OpenGL protocol, first edition.
-    ///
-    /// virtio14 name: VIRTIO_GPU_CAPSET_VIRGL
+    // @cite(virtio): sec="5.7.6.8" title="Device Operation: controlq"
+    // @alias(virtio): theirs="VIRTIO_GPU_CAPSET_VIRGL"
     pub const VIRGL: Self = CapabilitySetId(1);
 
     /// Gallium OpenGL protocol, second edition.
-    ///
-    /// virtio14 name: VIRTIO_GPU_CAPSET_VIRGL2
+    // @cite(virtio): sec="5.7.6.8" title="Device Operation: controlq"
+    // @alias(virtio): theirs="VIRTIO_GPU_CAPSET_VIRGL2"
     pub const VIRGL2: Self = CapabilitySetId(2);
 
     /// GLES and Vulkan streaming protocols.
-    ///
-    /// virtio14 name: VIRTIO_GPU_CAPSET_GFXSTREAM
+    // @cite(virtio): sec="5.7.6.8" title="Device Operation: controlq"
+    // @alias(virtio): theirs="VIRTIO_GPU_CAPSET_GFXSTREAM"
     pub const GFXSTREAM: Self = CapabilitySetId(3);
 
     /// Mesa's Vulkan protocol.
-    ///
-    /// virtio14 name: VIRTIO_GPU_CAPSET_VENUS
+    // @cite(virtio): sec="5.7.6.8" title="Device Operation: controlq"
+    // @alias(virtio): theirs="VIRTIO_GPU_CAPSET_VENUS"
     pub const VENUS: Self = CapabilitySetId(4);
 
     /// Protocol for display initialization via Wayland proxying.
-    ///
-    /// virtio14 name: VIRTIO_GPU_CAPSET_CROSS_DOMAIN
+    // @cite(virtio): sec="5.7.6.8" title="Device Operation: controlq"
+    // @alias(virtio): theirs="VIRTIO_GPU_CAPSET_CROSS_DOMAIN"
     pub const CROSS_DOMAIN: Self = CapabilitySetId(5);
 }
 
@@ -792,9 +788,7 @@ impl std::fmt::Debug for CapabilitySetId {
 }
 
 /// Identifies the blob resource's backing memory pool.
-///
-/// virtio14 5.7.6.8 "Device Operation: controlq" >
-/// VIRTIO_GPU_CMD_RESOURCE_CREATE_BLOB command description
+// @cite(virtio): sec="5.7.6.8" title="Device Operation: controlq"
 #[repr(transparent)]
 #[derive(Clone, Copy, PartialEq, Eq, FromBytes, IntoBytes, Immutable, KnownLayout)]
 pub struct BlobMemoryPool(pub u32);
@@ -823,9 +817,7 @@ impl std::fmt::Debug for BlobMemoryPool {
 
 bitfield! {
     /// Information about a blob's planned usage.
-    ///
-    /// virtio14 5.7.6.8 "Device Operation: controlq" >
-    /// VIRTIO_GPU_CMD_RESOURCE_CREATE_BLOB command description
+    // @cite(virtio): sec="5.7.6.8" title="Device Operation: controlq"
     #[derive(Copy, Clone, FromBytes, IntoBytes, Immutable, KnownLayout)]
     #[repr(transparent)]
     pub struct BlobUsageFlags(u32);
@@ -842,15 +834,13 @@ bitfield! {
 }
 
 /// Maximum number of supported scanouts.
-///
-/// virtio14 5.7.4.1 "Device configuration fields" > num_scanouts
+// @cite(virtio): sec="5.7.4.1" title="Device configuration fields"
+// @alias(virtio): theirs="num_scanouts"
 pub const MAX_SCANOUT_COUNT: usize = 16;
 
 /// Information about a single scanout (head).
-///
-/// virtio14 5.7.6.8 "Device Operation: controlq" >
-/// VIRTIO_GPU_CMD_GET_DISPLAY_INFO command description >
-/// struct virtio_gpu_display_one
+// @cite(virtio): sec="5.7.6.8" title="Device Operation: controlq"
+// @alias(virtio): theirs="virtio_gpu_display_one"
 #[repr(C)]
 #[derive(Debug, Copy, Clone, FromBytes, IntoBytes, Immutable, KnownLayout)]
 pub struct ScanoutInfo {
@@ -861,8 +851,8 @@ pub struct ScanoutInfo {
     ///
     /// The position can be used to reason about the scanout's position, in
     /// relation to other scanouts.
-    ///
-    /// virtio14 name: r
+    // @cite(virtio): sec="5.7.6.8" title="Device Operation: controlq"
+    // @alias(virtio): theirs="r"
     pub geometry: Rectangle,
 
     /// True as long as the display is "connected" (enabled by the user).
@@ -877,86 +867,81 @@ pub struct ScanoutInfo {
     pub flags: u32,
 }
 
-/// Response to a VIRTIO_GPU_CMD_GET_DISPLAY_INFO command.
+/// Response to a [`GetDisplayInfoCommand`].
 ///
 /// Contains information about all supported scanouts.
-///
-/// virtio14 5.7.6.8 "Device Operation: controlq" >
-/// VIRTIO_GPU_CMD_GET_DISPLAY_INFO command description >
-/// struct virtio_gpu_resp_display_info
+// @cite(virtio): sec="5.7.6.8" title="Device Operation: controlq"
+// @alias(virtio): theirs="virtio_gpu_resp_display_info"
 #[repr(C)]
 #[derive(Debug, Copy, Clone, FromBytes, IntoBytes, Immutable, KnownLayout)]
 pub struct DisplayInfoResponse {
     /// `header.type_` must be [`BufferType::DISPLAY_INFO_RESPONSE`].
-    ///
-    /// virtio14 name: hdr
+    // @cite(virtio): sec="5.7.6.8" title="Device Operation: controlq"
+    // @alias(virtio): theirs="hdr"
     pub header: BufferHeader,
 
     /// Identifies the device's (virtual) scanouts (heads / displays).
     ///
     /// [`DeviceCapabilities::scanout_count`] identifies the number of populated
     /// entries.
-    ///
-    /// virtio14 name: pmodes
+    // @cite(virtio): sec="5.7.6.8" title="Device Operation: controlq"
+    // @alias(virtio): theirs="pmodes"
     pub scanouts: [ScanoutInfo; MAX_SCANOUT_COUNT],
 }
 
 /// Retrieves the EDID data for a given scanout.
-///
-/// virtio14 5.7.6.8 "Device Operation: controlq" >
-/// VIRTIO_GPU_CMD_GET_EDID command description >
-/// struct virtio_gpu_get_edid
+// @cite(virtio): sec="5.7.6.8" title="Device Operation: controlq"
+// @alias(virtio): theirs="virtio_gpu_get_edid"
 #[repr(C)]
 #[derive(Debug, Copy, Clone, IntoBytes, Immutable, KnownLayout)]
 pub struct GetExtendedDisplayIdCommand {
     /// `header.type_` must be [`BufferType::GET_EXTENDED_DISPLAY_ID_COMMAND`].
-    ///
-    /// virtio14 name: hdr
+    // @cite(virtio): sec="5.7.6.8" title="Device Operation: controlq"
+    // @alias(virtio): theirs="hdr"
     pub header: BufferHeader,
 
     /// The ID of the scanout to query.
-    ///
-    /// virtio14 name: scanout
+    // @cite(virtio): sec="5.7.6.8" title="Device Operation: controlq"
+    // @alias(virtio): theirs="scanout"
     pub scanout_id: ScanoutId,
 
     pub _padding: u32,
 }
 
-/// Hardcoded size in struct virtio_gpu_resp_edid::edid in virtio14.
+/// Hardcoded size of EDID payload array.
+// @cite(virtio): sec="5.7.6.8" title="Device Operation: controlq"
 pub const MAX_EDID_SIZE: usize = 1024;
 
-/// Response to a VIRTIO_GPU_CMD_GET_EDID command.
+/// Response to a [`GetExtendedDisplayIdCommand`].
 ///
 /// Contains the EDID blob for the requested scanout.
-///
-/// virtio14 5.7.6.8 "Device Operation: controlq" >
-/// VIRTIO_GPU_CMD_GET_EDID command description >
-/// struct virtio_gpu_resp_edid
+// @cite(virtio): sec="5.7.6.8" title="Device Operation: controlq"
+// @alias(virtio): theirs="virtio_gpu_resp_edid"
 #[repr(C)]
 #[derive(Debug, Copy, Clone, FromBytes, IntoBytes, Immutable, KnownLayout)]
 pub struct ExtendedDisplayIdResponse {
     /// `header.type_` must be [`BufferType::EXTENDED_DISPLAY_ID_RESPONSE`].
-    ///
-    /// virtio14 name: hdr
+    // @cite(virtio): sec="5.7.6.8" title="Device Operation: controlq"
+    // @alias(virtio): theirs="hdr"
     pub header: BufferHeader,
 
     /// Number of meaningful bytes in [`edid_bytes`].
     ///
     /// Must be at most [`MAX_EDID_SIZE`].
-    ///
-    /// virtio14 name: size
+    // @cite(virtio): sec="5.7.6.8" title="Device Operation: controlq"
+    // @alias(virtio): theirs="size"
     pub edid_size: u32,
 
     pub _padding: u32,
 
-    /// virtio14 name: edid
+    // @cite(virtio): sec="5.7.6.8" title="Device Operation: controlq"
+    // @alias(virtio): theirs="edid"
     pub edid_bytes: [u8; MAX_EDID_SIZE],
 }
 
 /// Position of the cursor on a specific scanout.
-///
-/// virtio14 5.7.6.10 "Device Operation: cursorq" >
-/// struct virtio_gpu_cursor_pos
+// @cite(virtio): sec="5.7.6.10" title="Device Operation: cursorq"
+// @alias(virtio): theirs="virtio_gpu_cursor_pos"
 #[repr(C)]
 #[derive(Debug, Copy, Clone, FromBytes, IntoBytes, Immutable, KnownLayout)]
 pub struct CursorPosition {
@@ -974,35 +959,34 @@ pub struct CursorPosition {
 
 /// Updates the cursor shape and/or position.
 ///
-/// Used for both VIRTIO_GPU_CMD_UPDATE_CURSOR and VIRTIO_GPU_CMD_MOVE_CURSOR.
-///
-/// virtio14 5.7.6.10 "Device Operation: cursorq" >
-/// struct virtio_gpu_update_cursor
+/// Used for both [`BufferType::UPDATE_CURSOR_COMMAND`] and [`BufferType::MOVE_CURSOR_COMMAND`].
+// @cite(virtio): sec="5.7.6.10" title="Device Operation: cursorq"
+// @alias(virtio): theirs="virtio_gpu_update_cursor"
 #[repr(C)]
 #[derive(Debug, Copy, Clone, IntoBytes, Immutable, KnownLayout)]
 pub struct UpdateCursorCommand {
     /// `header.type_` must be [`BufferType::UPDATE_CURSOR_COMMAND`] or
     /// [`BufferType::MOVE_CURSOR_COMMAND`].
-    ///
-    /// virtio14 name: hdr
+    // @cite(virtio): sec="5.7.6.10" title="Device Operation: cursorq"
+    // @alias(virtio): theirs="hdr"
     pub header: BufferHeader,
 
     /// New cursor position.
-    ///
-    /// virtio14 name: pos
+    // @cite(virtio): sec="5.7.6.10" title="Device Operation: cursorq"
+    // @alias(virtio): theirs="pos"
     pub position: CursorPosition,
 
     /// Ignored when `type` is [`BufferType::MOVE_CURSOR_COMMAND`].
     pub resource_id: ResourceId,
 
     /// X coordinate of the cursor hotspot, in cursor image coordinates.
-    ///
-    /// virtio14 name: hot_x
+    // @cite(virtio): sec="5.7.6.10" title="Device Operation: cursorq"
+    // @alias(virtio): theirs="hot_x"
     pub hotspot_x: u32,
 
     /// Y coordinate of the cursor hotspot, in cursor image coordinates.
-    ///
-    /// virtio14 name: hot_y
+    // @cite(virtio): sec="5.7.6.10" title="Device Operation: cursorq"
+    // @alias(virtio): theirs="hot_y"
     pub hotspot_y: u32,
 
     pub _padding: u32,
@@ -1011,19 +995,18 @@ pub struct UpdateCursorCommand {
 /// Sets scanout parameters for a blob resource.
 ///
 /// Similar to [`SetScanoutCommand`] but for blob resources, supporting multiple planes.
-///
-/// virtio14 5.7.6.8 "Device Operation: controlq" >
-/// VIRTIO_GPU_CMD_SET_SCANOUT_BLOB command description >
-/// struct virtio_gpu_set_scanout_blob
+// @cite(virtio): sec="5.7.6.8" title="Device Operation: controlq"
+// @alias(virtio): theirs="virtio_gpu_set_scanout_blob"
 #[repr(C)]
 #[derive(Debug, Copy, Clone, IntoBytes, Immutable, KnownLayout)]
 pub struct SetScanoutBlobCommand {
     /// `header.type_` must be [`BufferType::SET_SCANOUT_BLOB_COMMAND`].
-    ///
-    /// virtio14 name: hdr
+    // @cite(virtio): sec="5.7.6.8" title="Device Operation: controlq"
+    // @alias(virtio): theirs="hdr"
     pub header: BufferHeader,
 
-    /// virtio14 name: r
+    // @cite(virtio): sec="5.7.6.8" title="Device Operation: controlq"
+    // @alias(virtio): theirs="r"
     pub image_source: Rectangle,
 
     pub scanout_id: ScanoutId,
@@ -1032,7 +1015,8 @@ pub struct SetScanoutBlobCommand {
     pub height: u32,
     pub format: u32,
 
-    /// virtio14 name: padding
+    // @cite(virtio): sec="5.7.6.8" title="Device Operation: controlq"
+    // @alias(virtio): theirs="padding"
     pub _padding: u32,
 
     /// Strides for up to 4 planes.
@@ -1048,16 +1032,14 @@ pub struct SetScanoutBlobCommand {
 ///
 /// The header is followed by zero or more [`MemoryEntry`] structs
 /// in the buffer.
-///
-/// virtio14 5.7.6.8 "Device Operation: controlq" >
-/// VIRTIO_GPU_CMD_RESOURCE_CREATE_BLOB command description >
-/// struct virtio_gpu_resource_create_blob
+// @cite(virtio): sec="5.7.6.8" title="Device Operation: controlq"
+// @alias(virtio): theirs="virtio_gpu_resource_create_blob"
 #[repr(C)]
 #[derive(Debug, Copy, Clone, IntoBytes, Immutable, KnownLayout)]
 pub struct CreateBlobResourceCommandHeader {
     /// `header.type_` must be [`BufferType::CREATE_BLOB_COMMAND`].
-    ///
-    /// virtio14 name: hdr
+    // @cite(virtio): sec="5.7.6.8" title="Device Operation: controlq"
+    // @alias(virtio): theirs="hdr"
     pub header: BufferHeader,
 
     pub resource_id: ResourceId,
@@ -1069,8 +1051,8 @@ pub struct CreateBlobResourceCommandHeader {
     pub usage_flags: BlobUsageFlags,
 
     /// Number of entries in the MemoryEntry array that follows this header.
-    ///
-    /// virtio14 name: nr_entries
+    // @cite(virtio): sec="5.7.6.8" title="Device Operation: controlq"
+    // @alias(virtio): theirs="nr_entries"
     pub entry_count: u32,
 
     /// Context-local object ID used to create the blob (if applicable).
@@ -1084,96 +1066,90 @@ pub struct CreateBlobResourceCommandHeader {
 }
 
 /// Retrieves information about a supported capability set by index.
-///
-/// virtio14 5.7.6.8 "Device Operation: controlq" >
-/// VIRTIO_GPU_CMD_GET_CAPSET_INFO command description >
-/// struct virtio_gpu_get_capset_info
+// @cite(virtio): sec="5.7.6.8" title="Device Operation: controlq"
+// @alias(virtio): theirs="virtio_gpu_get_capset_info"
 #[repr(C)]
 #[derive(Debug, Copy, Clone, IntoBytes, Immutable, KnownLayout)]
 pub struct GetCapabilitySetInfoCommand {
     /// `header.type_` must be [`BufferType::GET_CAPABILITY_SET_INFO_COMMAND`].
-    ///
-    /// virtio14 name: hdr
+    // @cite(virtio): sec="5.7.6.8" title="Device Operation: controlq"
+    // @alias(virtio): theirs="hdr"
     pub header: BufferHeader,
 
     /// Index of the capability set to query, must be less than num_capsets.
-    ///
-    /// virtio14 name: capset_index
+    // @cite(virtio): sec="5.7.6.8" title="Device Operation: controlq"
+    // @alias(virtio): theirs="capset_index"
     pub capability_set_index: u32,
 
-    /// virtio14 name: padding
+    // @cite(virtio): sec="5.7.6.8" title="Device Operation: controlq"
+    // @alias(virtio): theirs="padding"
     pub _padding: u32,
 }
 
 /// Response containing information about a capability set.
-///
-/// virtio14 5.7.6.8 "Device Operation: controlq" >
-/// VIRTIO_GPU_CMD_GET_CAPSET_INFO command description >
-/// struct virtio_gpu_resp_capset_info
+// @cite(virtio): sec="5.7.6.8" title="Device Operation: controlq"
+// @alias(virtio): theirs="virtio_gpu_resp_capset_info"
 #[repr(C)]
 #[derive(Debug, Copy, Clone, FromBytes, IntoBytes, Immutable, KnownLayout)]
 pub struct GetCapabilitySetInfoResponse {
     /// `header.type_` must be [`BufferType::CAPABILITY_SET_INFO_RESPONSE`].
-    ///
-    /// virtio14 name: hdr
+    // @cite(virtio): sec="5.7.6.8" title="Device Operation: controlq"
+    // @alias(virtio): theirs="hdr"
     pub header: BufferHeader,
 
     /// ID of the capability set (e.g., VIRGL, VENUS).
-    ///
-    /// virtio14 name: capset_id
+    // @cite(virtio): sec="5.7.6.8" title="Device Operation: controlq"
+    // @alias(virtio): theirs="capset_id"
     pub capability_set_id: CapabilitySetId,
 
     /// Maximum supported version of the capability set.
-    ///
-    /// virtio14 name: capset_max_version
+    // @cite(virtio): sec="5.7.6.8" title="Device Operation: controlq"
+    // @alias(virtio): theirs="capset_max_version"
     pub capability_set_max_version: u32,
 
     /// Maximum size of the capability set data.
-    ///
-    /// virtio14 name: capset_max_size
+    // @cite(virtio): sec="5.7.6.8" title="Device Operation: controlq"
+    // @alias(virtio): theirs="capset_max_size"
     pub capability_set_max_size: u32,
 
-    /// virtio14 name: padding
+    // @cite(virtio): sec="5.7.6.8" title="Device Operation: controlq"
+    // @alias(virtio): theirs="padding"
     pub _padding: u32,
 }
 
 /// Retrieves the actual capability set data.
-///
-/// virtio14 5.7.6.8 "Device Operation: controlq" >
-/// VIRTIO_GPU_CMD_GET_CAPSET command description >
-/// struct virtio_gpu_get_capset
+// @cite(virtio): sec="5.7.6.8" title="Device Operation: controlq"
+// @alias(virtio): theirs="virtio_gpu_get_capset"
 #[repr(C)]
 #[derive(Debug, Copy, Clone, IntoBytes, Immutable, KnownLayout)]
 pub struct GetCapabilitySetCommand {
     /// `header.type_` must be [`BufferType::GET_CAPABILITY_SET_COMMAND`].
-    ///
-    /// virtio14 name: hdr
+    // @cite(virtio): sec="5.7.6.8" title="Device Operation: controlq"
+    // @alias(virtio): theirs="hdr"
     pub header: BufferHeader,
 
     /// ID of the capability set to retrieve.
-    ///
-    /// virtio14 name: capset_id
+    // @cite(virtio): sec="5.7.6.8" title="Device Operation: controlq"
+    // @alias(virtio): theirs="capset_id"
     pub capability_set_id: CapabilitySetId,
 
     /// Requested version of the capability set.
-    ///
-    /// virtio14 name: capset_version
+    // @cite(virtio): sec="5.7.6.8" title="Device Operation: controlq"
+    // @alias(virtio): theirs="capset_version"
     pub capability_set_version: u32,
 }
 
 /// Response containing the capability set data.
 ///
 /// The actual data follows this header in the response buffer.
-///
-/// virtio14 5.7.6.8 "Device Operation: controlq" >
-/// VIRTIO_GPU_CMD_GET_CAPSET command description >
-/// struct virtio_gpu_resp_capset
+// @cite(virtio): sec="5.7.6.8" title="Device Operation: controlq"
+// @alias(virtio): theirs="virtio_gpu_resp_capset"
 #[repr(C)]
 #[derive(Debug, Copy, Clone, FromBytes, IntoBytes, Immutable, KnownLayout)]
 pub struct GetCapabilitySetResponseHeader {
     /// `header.type_` must be [`BufferType::CAPABILITY_SET_RESPONSE`].
-    ///
-    /// virtio14 name: hdr
+    // @cite(virtio): sec="5.7.6.8" title="Device Operation: controlq"
+    // @alias(virtio): theirs="hdr"
     pub header: BufferHeader,
 }
 

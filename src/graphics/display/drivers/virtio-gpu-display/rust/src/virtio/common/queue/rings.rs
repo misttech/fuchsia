@@ -27,8 +27,7 @@ use std::sync::atomic::{self, Ordering};
 /// The instance's owner is the exclusive manager of the memory backing all the
 /// ring's parts (header, array of ring entries, and trailer). So, at most one
 /// instance may exist for a virtqueue.
-///
-/// virtio14 2.7.6 "The Virtqueue Available Ring"
+// @cite(virtio): sec="2.7.6" title="The Virtqueue Available Ring"
 pub struct VirtioQueueSubmittedRing {
     /// Points to the ring's header.
     ///
@@ -62,15 +61,17 @@ pub struct VirtioQueueSubmittedRing {
 unsafe impl Send for VirtioQueueSubmittedRing {}
 
 impl VirtioQueueSubmittedRing {
-    /// `ring_header` must point to zeroed memory, as stated in virtio14
-    /// 4.1.5.1.3 "Virtqueue Configuration".
+    /// `ring_header` must point to zeroed memory.
     ///
-    /// `capacity` is named "Queue Size" in virtio14. The value must be a power
-    /// of two, as stated in virtio14 2.7 "Split Virtqueues".
+    /// `capacity` is named "Queue Size" in the specification. The value must be a
+    /// power of two.
     ///
     /// SAFETY: `ring_header` must point to [`size_bytes()`] bytes that belong
     /// to the same memory allocation. The rest of the driver must not access
     /// the memory range after handing it to this method.
+    // @cite(virtio): sec="2.7" title="Split Virtqueues"
+    // @cite(virtio): sec="4.1.5.1.3" title="Virtqueue Configuration"
+    // @alias(virtio): theirs="Queue Size"
     pub unsafe fn new(
         ring_header: NonNull<abi::SubmittedRingHeader>,
         capacity: NonZero<u16>,
@@ -114,12 +115,14 @@ impl VirtioQueueSubmittedRing {
     /// entries from the ring at any time.
     ///
     /// The caller is responsible for issuing a memory barrier and notifying the
-    /// device that the virtqueue was modified. virtio14 2.7.13 "Supplying
-    /// Buffers to The Device" and virtio14 2.8.21.1 "Placing Available Buffers
-    /// Into The Descriptor Ring" encourage using a single notification for
-    /// multiple modifications (virtio14 term: "batching") when possible.
+    /// device that the virtqueue was modified. The specification encourages
+    /// using a single notification for multiple modifications (batching) when
+    /// possible.
+    // @cite(virtio): sec="2.7.13" title="Supplying Buffers to The Device"
+    // @cite(virtio): sec="2.8.21.1" title="Placing Available Buffers Into The Descriptor Ring"
+    // @alias(virtio): theirs="batching"
     pub fn push_back(&mut self, descriptor_list_head: VirtioQueueDescriptorListHead) {
-        // virtio14 2.7.13 "Supplying Buffers to The Device" steps 1-4.
+        // @cite(virtio): sec="2.7.13" title="Supplying Buffers to The Device"
         let entry = abi::SubmittedRingEntry {
             first_descriptor_index: descriptor_list_head.first_index().value(),
         };
@@ -144,8 +147,8 @@ impl VirtioQueueSubmittedRing {
     }
 
     /// The number of bytes needed by a ring's data structures.
+    // @cite(virtio): sec="2.7" title="Split Virtqueues"
     pub fn size_bytes(capacity: NonZero<u16>) -> NonZero<usize> {
-        // Size computation from virtio14 2.7 "Split Virtqueues".
         NonZero::<usize>::new(
             size_of::<abi::SubmittedRingHeader>()
                 + size_of::<abi::SubmittedRingEntry>() * (capacity.get() as usize)
@@ -234,8 +237,7 @@ impl From<&VirtioQueueReturnedBuffer> for VirtioReturnedBufferInfo {
 /// The instance's owner is the exclusive manager of the memory backing all the
 /// ring's parts (header, array of ring entries, and trailer). So, at most one
 /// instance may exist for a virtqueue.
-///
-/// virtio14 2.7.8 "The Virtqueue Used Ring"
+// @cite(virtio): sec="2.7.8" title="The Virtqueue Used Ring"
 pub struct VirtioQueueReturnedRing {
     /// Points to the returned ring's header.
     ///
@@ -274,15 +276,17 @@ pub struct VirtioQueueReturnedRing {
 unsafe impl Send for VirtioQueueReturnedRing {}
 
 impl VirtioQueueReturnedRing {
-    /// `ring_header` must point to zeroed memory, as stated in virtio14
-    /// 4.1.5.1.3 "Virtqueue Configuration".
+    /// `ring_header` must point to zeroed memory.
     ///
-    /// `capacity` is named "Queue Size" in virtio14. The value must be a power
-    /// of two, as stated in virtio14 2.7 "Split Virtqueues".
+    /// `capacity` is named "Queue Size" in the specification. The value must be a
+    /// power of two.
     ///
     /// SAFETY: `ring_header` must point to [`size_bytes()`] bytes that belong
     /// to the same memory allocation. The rest of the driver must not access
     /// the memory range after handing it to this method.
+    // @cite(virtio): sec="2.7" title="Split Virtqueues"
+    // @cite(virtio): sec="4.1.5.1.3" title="Virtqueue Configuration"
+    // @alias(virtio): theirs="Queue Size" ours="capacity"
     pub unsafe fn new(
         ring_header: NonNull<abi::ReturnedRingHeader>,
         capacity: NonZero<u16>,
@@ -319,12 +323,13 @@ impl VirtioQueueReturnedRing {
     ///
     /// Uses a memory barrier that ensures all previous writes posted to RAM are
     /// seen by the driver.
+    // @cite(virtio): sec="2.7.14" title="Receiving Used Buffers From The Device"
     pub fn pop_front(&mut self) -> Option<VirtioQueueReturnedBuffer> {
-        // Our implementation is significantly simpler than the reference code in
-        // virtio14 2.7.14 "Receiving Used Buffers From The Device" because we
-        // don't disable notifications while reading from the ring. Disabling
-        // notification is a performance improvement, not a requirement for
-        // correctness.
+        // Our implementation is significantly simpler than the reference code for
+        // receiving used buffers from the device because we don't disable
+        // notifications while reading from the ring. Disabling notification is
+        // a performance improvement, not a requirement for correctness.
+        // @cite(virtio): sec="2.7.14" title="Receiving Used Buffers From The Device"
 
         let device_insertion_counter = self.read_insertion_counter();
         if self.extraction_counter == device_insertion_counter {
@@ -356,8 +361,8 @@ impl VirtioQueueReturnedRing {
     }
 
     /// The number of bytes needed by a ring's data structures.
+    // @cite(virtio): sec="2.7" title="Split Virtqueues"
     pub fn size_bytes(capacity: NonZero<u16>) -> NonZero<usize> {
-        // Size computation from virtio14 2.7 "Split Virtqueues".
         NonZero::<usize>::new(
             size_of::<abi::ReturnedRingHeader>()
                 + size_of::<abi::ReturnedRingEntry>() * (capacity.get() as usize)

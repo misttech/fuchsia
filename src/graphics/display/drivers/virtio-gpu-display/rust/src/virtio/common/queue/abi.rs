@@ -16,8 +16,8 @@ use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
 
 bitfield! {
     /// [`VirtioMemoryRangeDescriptor`] properties.
-    ///
-    /// virtio14 2.7.5 "The Virtqueue Descriptor Table" > struct virtq_desc > flags
+    // @cite(virtio): sec="2.7.5" title="The Virtqueue Descriptor Table"
+    // @alias(virtio): theirs="flags"
     #[repr(transparent)]
     #[derive(Copy, Clone, Default, FromBytes, IntoBytes, Immutable, KnownLayout)]
     pub struct VirtioMemoryRangeFlags(u16);
@@ -26,16 +26,16 @@ bitfield! {
     /// True iff the buffer has at least one more range.
     ///
     /// Mutually exclusive with [`is_indirect`].
-    ///
-    /// virtio14 name: VIRTQ_DESC_F_NEXT
+    // @cite(virtio): sec="2.7.5" title="The Virtqueue Descriptor Table" bits=0
+    // @alias(virtio): theirs="VIRTQ_DESC_F_NEXT"
     pub bool, next_descriptor_index_is_valid, set_next_descriptor_index_is_valid: 0;
 
     /// Specifies device accesses to the range while its buffer is submitted.
     ///
     /// True (1) means [`VirtioMemoryRangeAccess::Output`]. False (0) means
     /// [`VirtioMemoryRangeAccess::Input`].
-    ///
-    /// virtio14 name: VIRTQ_DESC_F_WRITE
+    // @cite(virtio): sec="2.7.5" title="The Virtqueue Descriptor Table" bits=1
+    // @alias(virtio): theirs="VIRTQ_DESC_F_WRITE"
     pub bool, written_by_hardware, set_written_by_hardware: 1;
 
     /// True iff the descriptor is indirect.
@@ -44,13 +44,13 @@ bitfield! {
     /// set to true if [`VirtioFeatureBits::indirect_descriptors`] was
     /// negotiated.
     ///
-    /// virtio14 2.7.5.3 "Indirect Descriptors" covers indirect descriptors. The
-    /// memory area pointed by the indirect descriptor is a list of buffer
+    /// The memory area pointed by the indirect descriptor is a list of buffer
     /// descriptors, which cover the described buffer.
     ///
     /// This driver does not support indirect descriptors.
-    ///
-    /// virtio14 name: VIRTQ_DESC_F_INDIRECT
+    // @cite(virtio): sec="2.7.5" title="The Virtqueue Descriptor Table" bits=2
+    // @cite(virtio): sec="2.7.5.3" title="Indirect Descriptors"
+    // @alias(virtio): theirs="VIRTQ_DESC_F_INDIRECT"
     pub bool, is_indirect, set_is_indirect: 2;
 }
 
@@ -60,26 +60,25 @@ bitfield! {
 /// encodes a [`VirtioMemoryRange`]. Descriptors for memory regions belonging to
 /// the same buffer are linked via
 /// [`VirtioMemoryRangeDescriptor::next_descriptor_index`].
-///
-/// virtio14 2.7 "Split Virtqueues" documents the 16-byte alignment requirement.
-///
-/// virtio14 2.7.5 "The Virtqueue Descriptor Table" > struct virtq_desc
+// @cite(virtio): sec="2.7" title="Split Virtqueues"
+// @cite(virtio): sec="2.7.5" title="The Virtqueue Descriptor Table"
+// @alias(virtio): theirs="virtq_desc"
 #[repr(C)]
 #[derive(Copy, Clone, Debug, FromBytes, IntoBytes, Immutable, KnownLayout)]
 pub struct VirtioMemoryRangeDescriptor {
     /// Physical address of the memory region that contains buffer data.
-    ///
-    /// virtio14 name: addr
+    // @cite(virtio): sec="2.7.5" title="The Virtqueue Descriptor Table"
+    // @alias(virtio): theirs="addr"
     pub physical_address: u64,
 
     /// The number of bytes in the memory region that contains buffer data.
-    ///
-    /// virtio14 name: len
+    // @cite(virtio): sec="2.7.5" title="The Virtqueue Descriptor Table"
+    // @alias(virtio): theirs="len"
     pub size_bytes: u32,
 
     /// Attributes that dictate the memory region's format and usage.
-    ///
-    /// virtio14 name: flags
+    // @cite(virtio): sec="2.7.5" title="The Virtqueue Descriptor Table"
+    // @alias(virtio): theirs="flags"
     pub flags: VirtioMemoryRangeFlags,
 
     /// Points to the descriptor for the next memory region covering the buffer.
@@ -88,16 +87,16 @@ pub struct VirtioMemoryRangeDescriptor {
     ///
     /// Only valid if [`VirtioMemoryRangeFlags::next_descriptor_index_is_valid`]
     /// is true (1).
-    ///
-    /// virtio14 name: next
+    // @cite(virtio): sec="2.7.5" title="The Virtqueue Descriptor Table"
+    // @alias(virtio): theirs="next"
     pub next_descriptor_index: u16,
 }
 
 /// The header of a split virtqueue's submitted ring.
 ///
 /// Owned by the driver. The device will not modify the submitted ring.
-///
-/// virtio14 2.7.6 "The Virtqueue Available Ring" > struct virtq_avail
+// @cite(virtio): sec="2.7.6" title="The Virtqueue Available Ring"
+// @alias(virtio): theirs="virtq_avail"
 #[repr(C)]
 #[derive(Copy, Clone, Debug, FromBytes, IntoBytes, Immutable, KnownLayout)]
 pub struct SubmittedRingHeader {
@@ -113,25 +112,25 @@ pub struct SubmittedRingHeader {
     /// This field is an optimization hint. The device is allowed to issue
     /// notifications for all virtqueue updates, and the driver must accept (and
     /// ignore) any spurious notifications.
-    ///
-    /// virtio14 2.7.7 "Used Buffer Notification Suppression" specifies the use
-    /// of this field.
+    // @cite(virtio): sec="2.7.6" title="The Virtqueue Available Ring"
+    // @cite(virtio): sec="2.7.7" title="Used Buffer Notification Suppression"
+    // @alias(virtio): theirs="flags"
     pub flags: u16,
 
     /// Incremented every time the driver inserts an entry into the ring.
     ///
     /// The value modulo the ring capacity equals the index of the next ring
     /// entry to be populated by the driver.
-    ///
-    /// virtio14 name: idx
+    // @cite(virtio): sec="2.7.6" title="The Virtqueue Available Ring"
+    // @alias(virtio): theirs="idx"
     pub insertion_counter: Wrapping<u16>,
 }
 
 /// An entry in a split virtqueue's submitted ring.
 ///
 /// Owned by the driver. The device will not modify the submitted ring.
-///
-/// virtio14 2.7.6 "The Virtqueue Available Ring" > struct virtq_avail > ring
+// @cite(virtio): sec="2.7.6" title="The Virtqueue Available Ring"
+// @alias(virtio): theirs="ring"
 #[repr(C)]
 #[derive(Copy, Clone, Debug, Default, FromBytes, IntoBytes, Immutable, KnownLayout)]
 pub struct SubmittedRingEntry {
@@ -144,30 +143,30 @@ pub struct SubmittedRingEntry {
 /// The trailer of a split virtqueue's submitted ring.
 ///
 /// Owned by the driver. The device will not modify the submitted ring.
-///
-/// virtio14 2.7.6 "The Virtqueue Available Ring" > struct virtq_avail
+// @cite(virtio): sec="2.7.6" title="The Virtqueue Available Ring"
+// @alias(virtio): theirs="virtq_avail"
 #[repr(C)]
 #[derive(Copy, Clone, Debug, FromBytes, IntoBytes, Immutable, KnownLayout)]
 pub struct SubmittedRingTrailer {
     /// Points to the next [`ReturnedRingEntry`] that triggers a notification.
     ///
-    /// virtio14 2.7.7.2 "Device Requirements: Used Buffer Notification
-    /// Suppression" explains that this field is an optimization hint. The
+    /// The specification explains that this field is an optimization hint. The
     /// device is allowed to issue notifications for all virtqueue updates, and
     /// the driver must accept (and ignore) any spurious notifications.
     ///
     /// Valid iff [`VirtioFeatureBits::uses_virtqueue_notification_index`] was
     /// negotiated.
-    ///
-    /// virtio14 name: used_event
+    // @cite(virtio): sec="2.7.6" title="The Virtqueue Available Ring"
+    // @cite(virtio): sec="2.7.7.2" title="Device Requirements: Used Buffer Notification Suppression"
+    // @alias(virtio): theirs="used_event"
     pub next_notification_index: u16,
 }
 
 /// The header of a split virtqueue's returned ring.
 ///
 /// Read-only. Only the device modifies the returned ring.
-///
-/// virtio14 2.7.8 "The Virtqueue Used Ring" > struct virtq_used
+// @cite(virtio): sec="2.7.8" title="The Virtqueue Used Ring"
+// @alias(virtio): theirs="virtq_used"
 #[repr(C)]
 #[derive(Copy, Clone, Debug, FromBytes, IntoBytes, Immutable, KnownLayout)]
 pub struct ReturnedRingHeader {
@@ -183,25 +182,25 @@ pub struct ReturnedRingHeader {
     /// This field is an optimization hint. The driver is allowed to issue
     /// notifications for all virtqueue updates, and the device must accept (and
     /// ignore) any spurious notifications.
-    ///
-    /// virtio14 2.7.10 "Available Buffer Notification Suppression" specifies
-    /// the use of this field.
+    // @cite(virtio): sec="2.7.8" title="The Virtqueue Used Ring"
+    // @cite(virtio): sec="2.7.10" title="Available Buffer Notification Suppression"
+    // @alias(virtio): theirs="flags"
     pub flags: u16,
 
     /// Incremented every time the device inserts an entry into the ring.
     ///
     /// The value modulo the ring capacity equals the index of the next ring
     /// entry to be populated by the device.
-    ///
-    /// virtio14 name: idx
+    // @cite(virtio): sec="2.7.8" title="The Virtqueue Used Ring"
+    // @alias(virtio): theirs="idx"
     pub insertion_counter: Wrapping<u16>,
 }
 
 /// An entry in a split virtqueue's returned ring.
 ///
 /// Read-only. Only the device modifies the returned ring.
-///
-/// virtio14 2.7.8 "The Virtqueue Used Ring" > struct virtq_used_elem
+// @cite(virtio): sec="2.7.8" title="The Virtqueue Used Ring"
+// @alias(virtio): theirs="virtq_used_elem"
 #[repr(C)]
 #[derive(Copy, Clone, Debug, Default, FromBytes, IntoBytes, Immutable, KnownLayout)]
 pub struct ReturnedRingEntry {
@@ -210,25 +209,25 @@ pub struct ReturnedRingEntry {
     /// Must equal [`SubmittedRingEntry::first_descriptor_index`] for a
     /// submitted ring entry previously produced by the driver.
     ///
-    /// The maximum valid value fits in a [`u16`]. virtio14 states that the
-    /// struct uses a [`u32`] for padding purposes.
-    ///
-    /// virtio14 name: id
+    /// The maximum valid value fits in a [`u16`]. The specification states that
+    /// the struct uses a [`u32`] for padding purposes.
+    // @cite(virtio): sec="2.7.8" title="The Virtqueue Used Ring"
+    // @alias(virtio): theirs="id"
     pub first_descriptor_index: u32,
 
     /// The number of bytes written by the device to the buffer.
     ///
     /// See [`VirtioReturnedBufferInfo::written_bytes`] for detailed semantics.
-    ///
-    /// virtio14 name: len
+    // @cite(virtio): sec="2.7.8" title="The Virtqueue Used Ring"
+    // @alias(virtio): theirs="len"
     pub written_bytes: u32,
 }
 
 /// The trailer of a split virtqueue's returned ring.
 ///
 /// Read-only. Only the device modifies the returned ring.
-///
-/// virtio14 2.7.8 "The Virtqueue Used Ring" > struct virtq_used
+// @cite(virtio): sec="2.7.8" title="The Virtqueue Used Ring"
+// @alias(virtio): theirs="virtq_used"
 #[repr(C)]
 #[derive(Copy, Clone, Debug, FromBytes, IntoBytes, Immutable, KnownLayout)]
 pub struct ReturnedRingTrailer {
@@ -236,8 +235,8 @@ pub struct ReturnedRingTrailer {
     ///
     /// Valid iff [`VirtioFeatureBits::uses_virtqueue_notification_index`] was
     /// negotiated.
-    ///
-    /// virtio14 name: avail_event
+    // @cite(virtio): sec="2.7.8" title="The Virtqueue Used Ring"
+    // @alias(virtio): theirs="avail_event"
     pub next_notification_index: u16,
 }
 
@@ -248,8 +247,7 @@ mod tests {
 
     #[fuchsia::test]
     fn test_virtio_submitted_ring_abi() {
-        // virtio14 2.7 "Split Virtqueues" > table summarizing memory alignment
-        // and size requirements.
+        // @cite(virtio): sec="2.7" title="Split Virtqueues"
         assert_eq!(align_of::<SubmittedRingHeader>(), 2);
         assert_eq!(align_of::<SubmittedRingEntry>(), 2);
         assert_eq!(align_of::<SubmittedRingTrailer>(), 2);
@@ -262,8 +260,7 @@ mod tests {
 
     #[fuchsia::test]
     fn test_virtio_returned_ring_abi() {
-        // virtio14 2.7 "Split Virtqueues" > table summarizing memory alignment
-        // and size requirements.
+        // @cite(virtio): sec="2.7" title="Split Virtqueues"
         assert_eq!(align_of::<ReturnedRingHeader>(), 2);
         assert_eq!(align_of::<ReturnedRingEntry>(), 4);
         assert_eq!(align_of::<ReturnedRingTrailer>(), 2);
@@ -282,8 +279,7 @@ mod tests {
 
     #[fuchsia::test]
     fn test_virtio_buffer_region_descriptor_abi() {
-        // virtio14 2.7 "Split Virtqueues" > table summarizing memory alignment
-        // and size requirements.
+        // @cite(virtio): sec="2.7" title="Split Virtqueues"
         assert_eq!(size_of::<VirtioMemoryRangeDescriptor>(), 16);
         assert_eq!(align_of::<VirtioMemoryRangeDescriptor>(), 8);
 

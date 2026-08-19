@@ -126,8 +126,9 @@ impl VirtioPciDeviceBuilder {
     pub async fn new(
         pci: fidl_next::ClientEnd<fidl_pci::Device>,
     ) -> Result<VirtioPciDeviceBuilder, Status> {
-        // The implementation follows virtio14 3.1 "Device Initialization" steps
-        // 1-3 and the part of step 4 that covers reading offered feature bits.
+        // Our implementation follows steps 1-3 and the part of step 4 that
+        // covers reading offered feature bits.
+        // @cite(virtio): sec="3.1" title="Device Initialization"
 
         let pci = pci.spawn();
         let bti = Self::get_pci_bti(&pci).await?;
@@ -179,10 +180,10 @@ impl VirtioPciDeviceBuilder {
         &mut self,
         mut accepted_features: VirtioFeatureBits,
     ) -> Result<(), Status> {
-        // The implementation follows virtio14 3.1 "Device Initialization" steps
-        // 5-6, the part of step 4 that covers writing accepted feature bits,
-        // and the part of step 7 that does per-bus setup and virtqueue
-        // discovery and configuration.
+        // Our implementation follows steps 5-6, the part of step 4 that covers
+        // writing accepted feature bits, and the part of step 7 that does
+        // per-bus setup and virtqueue discovery and configuration.
+        // @cite(virtio): sec="3.1" title="Device Initialization"
 
         // `unwrap()` will not panic because [`new()`] calls
         // [`read_offered_features()`].
@@ -210,14 +211,14 @@ impl VirtioPciDeviceBuilder {
 
     /// Returns the memory area that holds device-specific configuration.
     ///
-    /// The general concept is described in virtio14 2.5 "Device Configuration
-    /// Space". virtio14 4.1.4.6 "Device-specific configuration" states that the
-    /// device must present at least one
+    /// The device must present at least one
     /// [`PciCapabilityType::DEVICE_CONFIGURATION`] capability for any device
     /// type that has a device type-specific configuration.
     ///
     /// Returns [`None`] if the device does not expose any device-specific
     /// configuration, or if the method is called more than once.
+    // @cite(virtio): sec="2.5" title="Device Configuration Space"
+    // @cite(virtio): sec="4.1.4.6" title="Device-specific configuration"
     pub fn take_device_configuration(&mut self) -> Option<MmioRegion<VmoMemory>> {
         self.device_configuration.take()
     }
@@ -230,7 +231,8 @@ impl VirtioPciDeviceBuilder {
     /// On failure, sets [`DeviceStatus::driver_terminated`] to true, signaling
     /// that the driver will abandon this device.
     pub fn build(mut self) -> Result<VirtioPciDevice, Status> {
-        // virtio14 3.1 "Device Initialization" step 8.
+        // Step 8 in the specification.
+        // @cite(virtio): sec="3.1" title="Device Initialization"
         self.finish_virtio_initialization()?;
 
         Ok(VirtioPciDevice {
@@ -285,18 +287,21 @@ impl VirtioPciDeviceBuilder {
             "Reset not currently supported after feature negotiation"
         );
 
-        // virtio14 3.1 "Device Initialization" step 1.
+        // Step 1 in the specification.
+        // @cite(virtio): sec="3.1" title="Device Initialization"
         let mut device_status_register = self.configuration.device_status_mut();
         device_status_register.write(DeviceStatusReg(DeviceStatus::RESET.0));
 
         while device_status_register.read().value() != DeviceStatus::RESET.0 {}
 
-        // virtio14 3.1 "Device Initialization" step 2.
+        // Step 2 in the specification.
+        // @cite(virtio): sec="3.1" title="Device Initialization"
         let mut device_status = DeviceStatus::RESET;
         device_status.set_virtio_device_detected(true);
         device_status_register.write(DeviceStatusReg(device_status.0));
 
-        // virtio14 3.1 "Device Initialization" step 3.
+        // Step 3 in the specification.
+        // @cite(virtio): sec="3.1" title="Device Initialization"
         device_status.set_driver_found(true);
         device_status_register.write(DeviceStatusReg(device_status.0));
     }
@@ -305,7 +310,8 @@ impl VirtioPciDeviceBuilder {
     fn read_offered_features(&mut self) {
         debug_assert!(self.offered_features.is_none(), "Offered features already read");
 
-        // The read part of virtio14 3.1 "Device Initialization" step 4.
+        // The read part of step 4 in the specification.
+        // @cite(virtio): sec="3.1" title="Device Initialization"
         let mut raw_feature_bits: u128 = 0;
         for word_index in 0..4 {
             self.configuration
@@ -358,7 +364,8 @@ impl VirtioPciDeviceBuilder {
             return Err(Status::IO);
         }
 
-        // The write part of virtio14 3.1 "Device Initialization" step 4.
+        // The write part of step 4 in the specification.
+        // @cite(virtio): sec="3.1" title="Device Initialization"
         let mut raw_feature_bits: u128 = feature_bits.0;
         for word_index in 0..4 {
             let raw_feature_word: u32 = raw_feature_bits as u32;
@@ -380,11 +387,13 @@ impl VirtioPciDeviceBuilder {
                 .write(DriverFeaturesWord(raw_feature_word));
         }
 
-        // virtio14 3.1 "Device Initialization" step 5.
+        // Step 5 in the specification.
+        // @cite(virtio): sec="3.1" title="Device Initialization"
         device_status.set_feature_negotiation_complete(true);
         self.configuration.device_status_mut().write(DeviceStatusReg(device_status.0));
 
-        // virtio14 3.1 "Device Initialization" step 6.
+        // Step 6 in the specification.
+        // @cite(virtio): sec="3.1" title="Device Initialization"
         device_status = DeviceStatus(self.configuration.device_status().read().value());
         if !device_status.feature_negotiation_complete() {
             warn!(
@@ -413,7 +422,7 @@ impl VirtioPciDeviceBuilder {
         let queue_count = self.configuration.queue_count().read().value();
 
         for queue_index in 0..queue_count {
-            // virtio14 4.1.4.3 "Common configuration structure layout"
+            // @cite(virtio): sec="4.1.4.3" title="Common configuration structure layout"
             self.configuration
                 .configured_queue_index_mut()
                 .write(ConfiguredQueueIndex(queue_index));
@@ -438,7 +447,7 @@ impl VirtioPciDeviceBuilder {
             let (pci_queue, queue_memory_layout) =
                 VirtioPciQueue::new(&self.bti, queue_capacity, notification_data)?;
 
-            // virtio14 4.1.4.3 "Common configuration structure layout"
+            // @cite(virtio): sec="4.1.4.3" title="Common configuration structure layout"
             self.configuration.configured_queue_descriptor_table_address_mut().write(
                 ConfiguredQueueDescriptorTableAddress(
                     queue_memory_layout.descriptor_table_physical_address,
@@ -487,7 +496,8 @@ impl VirtioPciDeviceBuilder {
             return Err(Status::IO);
         }
 
-        // virtio14 3.1 "Device Initialization" step 8.
+        // Step 8 in the specification.
+        // @cite(virtio): sec="3.1" title="Device Initialization"
         device_status.set_driver_initialized(true);
         self.configuration.device_status_mut().write(DeviceStatusReg(device_status.0));
 

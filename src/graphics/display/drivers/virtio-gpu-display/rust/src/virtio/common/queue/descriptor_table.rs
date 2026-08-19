@@ -68,8 +68,7 @@ impl From<&VirtioQueueDescriptorListHead> for VirtioSubmittedBufferId {
 /// Owning an instance is conceptually equivalent to owning the managed array of
 /// descriptor table entries. So, at most one instance may exist for a
 /// virtqueue.
-///
-/// virtio14 2.7.5 "The Virtqueue Descriptor Table"
+// @cite(virtio): sec="2.7.5" title="The Virtqueue Descriptor Table"
 pub struct VirtioQueueDescriptorTable {
     /// Points to the start of the managed descriptor table.
     descriptors: NonNull<abi::VirtioMemoryRangeDescriptor>,
@@ -102,13 +101,13 @@ pub struct VirtioQueueDescriptorTable {
 unsafe impl Send for VirtioQueueDescriptorTable {}
 
 impl VirtioQueueDescriptorTable {
-    /// `descriptors` must meet the virtio14 4.1.5.1.3 "Virtqueue Configuration"
-    /// requirement that the memory used by the queue's descriptor table must be
-    /// zeroed.
+    /// `descriptors` must meet the requirement that the memory used by the
+    /// queue's descriptor table must be zeroed.
     ///
     /// SAFETY: `descriptors` must point to [`size_bytes()`] bytes that belong
     /// to the same memory allocation. The rest of the driver must not access
     /// the memory range after handing it to this method.
+    // @cite(virtio): sec="4.1.5.1.3" title="Virtqueue Configuration"
     pub unsafe fn new(
         descriptors: NonNull<abi::VirtioMemoryRangeDescriptor>,
         capacity: NonZero<u16>,
@@ -235,12 +234,13 @@ impl VirtioQueueDescriptorTable {
 
     /// Sets up the entire descriptor table as a freelist.
     ///
-    /// virtio14 4.1.5.1.3 "Virtqueue Configuration" specifies that the memory
-    /// used by the queue's descriptor table must be zeroed. We deviate from
-    /// this recommendation, because we implement a free list in the descriptor
-    /// table memory's memory. This deviation is not observable by any device
-    /// that only reads the table entries referenced in the submitted ring. This
-    /// deviation is known to work on the emulators targeted by this driver.
+    /// The specification mandates that the memory used by the queue's descriptor
+    /// table must be zeroed. We deviate from this recommendation, because we
+    /// implement a free list in the descriptor table memory's memory. This
+    /// deviation is not observable by any device that only reads the table
+    /// entries referenced in the submitted ring. This deviation is known to work
+    /// on the emulators targeted by this driver.
+    // @cite(virtio): sec="4.1.5.1.3" title="Virtqueue Configuration"
     fn initialize_free_list(&mut self, capacity: NonZero<u16>) {
         let capacity_u16 = capacity.get();
         for index in 0..capacity_u16 {
@@ -326,8 +326,7 @@ impl VirtioQueueDescriptorTable {
         debug_assert!(count < self.capacity);
 
         // To facilitate simpler internal interfaces, we deviate from the
-        // reference code in virtio14 2.7.13.1 "Placing Buffers Into The
-        // Descriptor Table".
+        // reference code for placing buffers into the descriptor table.
         //
         // The reference code fills out each descriptor as it gets removed from
         // the free list. We first remove all the descriptors from the free
@@ -336,6 +335,7 @@ impl VirtioQueueDescriptorTable {
         // The deviation is not visible to a device that only reads descriptor
         // entries offered via the submitted ring, because we populate all the
         // descriptors before adding an entry to the submitted ring.
+        // @cite(virtio): sec="2.7.13.1" title="Placing Buffers Into The Descriptor Table"
 
         // The head of the allocated list of descriptors will be returned.
         let first_allocated_index = self.next_free_index;
@@ -414,8 +414,8 @@ impl VirtioQueueDescriptorTable {
     }
 
     /// The number of bytes needed by the table.
+    // @cite(virtio): sec="2.7" title="Split Virtqueues"
     pub fn size_bytes(capacity: NonZero<u16>) -> NonZero<usize> {
-        // Size computation from virtio14 2.7 "Split Virtqueues".
         NonZero::<usize>::new(
             size_of::<abi::VirtioMemoryRangeDescriptor>() * (capacity.get() as usize),
         )

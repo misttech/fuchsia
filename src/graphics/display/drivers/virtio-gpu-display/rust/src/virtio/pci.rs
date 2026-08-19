@@ -3,8 +3,8 @@
 // found in the LICENSE file.
 
 //! Implements the virtio PCI transport.
-//!
-//! virtio14 4.1 "Virtio Over PCI Bus"
+
+// @cite(virtio): sec="4.1" title="Virtio Over PCI Bus"
 
 pub mod bar_map;
 pub mod capabilities;

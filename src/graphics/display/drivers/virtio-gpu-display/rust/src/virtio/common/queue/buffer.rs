@@ -29,16 +29,13 @@ use std::num::NonZero;
 ///
 /// The list of memory regions must first contain the regions storing the task's
 /// input (using [`VirtioMemoryRangeAccess::Input`]), followed by the regions
-/// storing the task's output (using [`VirtioMemoryRangeAccess::Output`]). This
-/// requirement is stated in virtio14 2.7.4.2 "Driver Requirements: Message
-/// Framing".
-///
-/// virtio14 2.8 "Packed Virtqueues" uses the term "buffer" consistently, and we
-/// align with that usage. virtio14 2.7 "Split Virtqueue" uses the term "buffer"
-/// inconsistently, and we align with the usage in virtio14 2.7.13.1 "Placing
-/// Buffers Into The Descriptor Table" and virtio14 2.7.4 "Message Framing",
-/// which matches the usage in virtio14 2.8 "Packed Virtqueues". This conflicts
-/// with the usage in virtio14 2.7.5 "The Virtqueue Descriptor Table".
+/// storing the task's output (using [`VirtioMemoryRangeAccess::Output`]).
+// @cite(virtio): sec="2.7" title="Split Virtqueues"
+// @cite(virtio): sec="2.7.4" title="Message Framing"
+// @cite(virtio): sec="2.7.4.2" title="Driver Requirements: Message Framing"
+// @cite(virtio): sec="2.7.5" title="The Virtqueue Descriptor Table"
+// @cite(virtio): sec="2.7.13.1" title="Placing Buffers Into The Descriptor Table"
+// @cite(virtio): sec="2.8" title="Packed Virtqueues"
 pub struct VirtioBufferRef<'a> {
     range_list: &'a [VirtioMemoryRange],
 }
@@ -54,12 +51,9 @@ impl<'a> VirtioBufferRef<'a> {
     ///
     /// The upper bound is based on the fact that a buffer's memory regions must
     /// fit in a virtqueue's descriptor table, so the number of memory regions
-    /// is capped by the virtque descriptor table size.
-    ///
-    /// The descriptor table size limit is explicitly stated in virtio14 2.7
-    /// "Split Virtqueues". This value is the same for packed virtqueues, but
-    /// virtio14 2.8 "Packed Virtqueues" expresses the bound as 2^15 instead of
-    /// 32768.
+    /// is capped by the virtqueue descriptor table size.
+    // @cite(virtio): sec="2.7" title="Split Virtqueues"
+    // @cite(virtio): sec="2.8" title="Packed Virtqueues"
     pub const MAX_LENGTH: usize = 32768;
 
     /// Panics if the list of ranges is empty, or if a range with
@@ -128,10 +122,7 @@ pub struct VirtioReturnedBufferInfo {
     /// [`VirtioMemoryRangeFlags::written_by_hardware`] set to true. The device
     /// uses the writable regions in the order in which they appear in the
     /// submitted buffer region list.
-    ///
-    /// virtio14 2.7.8.2 "Device Requirements: The Virtqueue Used Ring" states
-    /// that the value is a lower bound on the number of bytes written to the
-    /// buffer.
+    // @cite(virtio): sec="2.7.8.2" title="Device Requirements: The Virtqueue Used Ring"
     pub written_bytes: u32,
 }
 
@@ -148,16 +139,8 @@ pub struct VirtioReturnedBufferInfo {
 ///
 /// 1. No Rust references may point into a range described by an instance.
 /// 2. The memory ranges described by any two instances must not overlap.
-///
-/// We use the term "memory range" (or just "range" where the shorter form is
-/// not ambiguous) to refer to this concept, instead of deferring to virtio14,
-/// because virtio14 does not consistently use a single term to reference the
-/// concept. virtio14 2.7.5 "The Virtqueue Descriptor Table" references this
-/// concept using the term "buffer". However, virtio14 2.7.13.1 "Placing Buffers
-/// Into The Descriptor Table" references this concept using the term "buffer
-/// element".
-///
-/// virtio14 2.7.5 "The Virtqueue Descriptor Table".
+// @cite(virtio): sec="2.7.5" title="The Virtqueue Descriptor Table"
+// @cite(virtio): sec="2.7.13.1" title="Placing Buffers Into The Descriptor Table"
 #[derive(Debug)]
 pub struct VirtioMemoryRange {
     start_physical_address: u64,
@@ -200,9 +183,8 @@ impl VirtioMemoryRange {
 ///
 /// The virtio device may only access a range's memory while the range belongs
 /// to a buffer that is submitted (owned by the device).
-///
-/// virtio14 2.7.5 "The Virtqueue Descriptor Table" > struct virtq_desc >
-/// VIRTQ_DESC_F_WRITE
+// @cite(virtio): sec="2.7.5" title="The Virtqueue Descriptor Table"
+// @alias(virtio): theirs="VIRTQ_DESC_F_WRITE"
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum VirtioMemoryRangeAccess {
     /// The device may read from the memory range while owning its buffer.
@@ -217,8 +199,8 @@ pub enum VirtioMemoryRangeAccess {
     /// references to the buffer's memory while the buffer is submitted.
     /// However, for simplicity, we use the stronger constraint in [`Output`]
     /// for all ranges owned by the device.
-    ///
-    /// virtio14 term: device-readable
+    // @cite(virtio): sec="2.7.5" title="The Virtqueue Descriptor Table"
+    // @alias(virtio): theirs="device-readable"
     Input,
 
     /// The device may write to the memory range while owning its buffer.
@@ -231,7 +213,7 @@ pub enum VirtioMemoryRangeAccess {
     /// device returns it. The Rust memory model dictates that the driver must
     /// not have any reference to the range's memory while the range's buffer is
     /// owned by the device.
-    ///
-    /// virtio14 term: device-writable
+    // @cite(virtio): sec="2.7.5" title="The Virtqueue Descriptor Table"
+    // @alias(virtio): theirs="device-writable"
     Output,
 }

@@ -24,10 +24,8 @@ use zx::{Status, Vmo};
 use zx_sys::zx_paddr_t;
 
 /// Represents a single split virtqueue.
-///
-/// Conceptual description in virtio14 2.6 "Virtqueues".
-///
-/// Memory layout in virtio14 2.7 "Split Virtqueues".
+// @cite(virtio): sec="2.6" title="Virtqueues"
+// @cite(virtio): sec="2.7" title="Split Virtqueues"
 pub struct VirtioQueue {
     /// The contiguous memory region backing the virtqueue's metadata.
     #[expect(dead_code)]
@@ -119,10 +117,9 @@ impl VirtioQueue {
     /// Submits a buffer containing request/response memory ranges.
     ///
     /// The caller is responsible for issuing a memory barrier and notifying the
-    /// device that the virtqueue was modified. virtio14 2.7.13 "Supplying
-    /// Buffers to The Device" and virtio14 2.8.21.1 "Placing Available Buffers
-    /// Into The Descriptor Ring" encourage using a single notification for
-    /// multiple modifications (virtio14 term: "batching") when possible.
+    /// device that the virtqueue was modified. The specification encourages
+    /// using a single notification for multiple modifications (batching) when
+    /// possible.
     ///
     /// The caller is responsible for ensuring that the queue's descriptor table
     /// has at least [`VirtioBufferRef::len`] free entries. This precondition
@@ -131,11 +128,14 @@ impl VirtioQueue {
     /// SAFETY: The [`VirtioMemoryBufferRange`] instances referenced by `buffer`
     /// must remain alive until a call to [`take_returned_buffer()`] returns the
     /// same [`VirtioSubmittedBufferId`].
+    // @cite(virtio): sec="2.7.13" title="Supplying Buffers to The Device"
+    // @cite(virtio): sec="2.8.21.1" title="Placing Available Buffers Into The Descriptor Ring"
+    // @alias(virtio): theirs="batching"
     pub unsafe fn submit_buffer(
         &mut self,
         buffer: VirtioBufferRef<'_>,
     ) -> Result<VirtioSubmittedBufferId, Status> {
-        // virtio14 2.7.13 "Supplying Buffers to The Device"
+        // @cite(virtio): sec="2.7.13" title="Supplying Buffers to The Device"
 
         let descriptor_list_head = self
             .descriptor_table

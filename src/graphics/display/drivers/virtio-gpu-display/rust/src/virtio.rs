@@ -40,9 +40,9 @@
 //!
 //! * [OASIS Virtual I/O Device (VIRTIO)][virtio-spec] specification - version
 //!   1.4, Committee Specification 01, dated 8 April 2026, referenced as
-//!   `virtio14`
+//!   `virtio`.
 //! * [PCI Local Bus Specification][pci-local-spec] - Revision 3.0, dated
-//!   February 3 2004, referenced as `pci3`.
+//!   February 3 2004, referenced as `pci`.
 //!
 //! [pci-local-spec]: https://pcisig.com/PCIConventional/Specs/Base/LocalBus_3.0
 //! [virtio-spec]: https://docs.oasis-open.org/virtio/virtio/v1.4/virtio-v1.4.html
