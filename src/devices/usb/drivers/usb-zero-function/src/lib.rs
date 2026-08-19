@@ -398,10 +398,11 @@ impl UsbZeroFunctionDevice {
             self.vmos_registered = false;
         }
         self.is_configured.store(false, Ordering::Relaxed);
-        let _ = self.function_client.disable_endpoint(self.ep_in_addr).await;
-        let _ = self.function_client.disable_endpoint(self.ep_out_addr).await;
-        let _ = self.function_client.disable_endpoint(self.ep_intr_in_addr).await;
-        let _ = self.function_client.disable_endpoint(self.ep_intr_out_addr).await;
+        for ep_addr in
+            [self.ep_in_addr, self.ep_out_addr, self.ep_intr_in_addr, self.ep_intr_out_addr]
+        {
+            let _ = self.function_client.disable_endpoint(ep_addr).await;
+        }
         self.stalled_endpoints.clear();
     }
 
@@ -472,16 +473,21 @@ impl UsbZeroFunctionDevice {
                 w_max_packet_size,
                 b_interval: 0,
             }),
-            super_speed_companion,
+            super_speed_companion: super_speed_companion.clone(),
             ..Default::default()
         };
-        let ep_intr_config = fusb_function::EndpointConfiguration {
+        let int_super_speed_companion = super_speed_companion.as_ref().map(|c| {
+            let mut c = c.clone();
+            c.w_bytes_per_interval = w_max_packet_size;
+            c
+        });
+        let int_ep_config = fusb_function::EndpointConfiguration {
             descriptor: Some(fusb_function::EndpointDescriptor {
                 bm_attributes: fusb_descriptor::EndpointType::Interrupt.into_primitive(),
                 w_max_packet_size,
                 b_interval: 1,
             }),
-            super_speed_companion,
+            super_speed_companion: int_super_speed_companion,
             ..Default::default()
         };
 
@@ -491,18 +497,18 @@ impl UsbZeroFunctionDevice {
             return Err(e);
         }
         if let Err(e) =
-            configure_ep(&self.function_client, self.ep_intr_in_addr, &ep_intr_config).await
+            configure_ep(&self.function_client, self.ep_intr_in_addr, &int_ep_config).await
         {
-            let _ = self.function_client.disable_endpoint(self.ep_out_addr).await;
             let _ = self.function_client.disable_endpoint(self.ep_in_addr).await;
+            let _ = self.function_client.disable_endpoint(self.ep_out_addr).await;
             return Err(e);
         }
         if let Err(e) =
-            configure_ep(&self.function_client, self.ep_intr_out_addr, &ep_intr_config).await
+            configure_ep(&self.function_client, self.ep_intr_out_addr, &int_ep_config).await
         {
-            let _ = self.function_client.disable_endpoint(self.ep_intr_in_addr).await;
-            let _ = self.function_client.disable_endpoint(self.ep_out_addr).await;
             let _ = self.function_client.disable_endpoint(self.ep_in_addr).await;
+            let _ = self.function_client.disable_endpoint(self.ep_out_addr).await;
+            let _ = self.function_client.disable_endpoint(self.ep_intr_in_addr).await;
             return Err(e);
         }
         Ok(())
