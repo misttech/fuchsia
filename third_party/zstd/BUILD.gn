@@ -2,6 +2,9 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+# NOTE: The definitions in this file are too complex to be handled by
+# bazel2gn, so keep this file and BUILD.bazel in sync manually.
+
 import("//build/host.gni")
 import("//build/zircon/migrated_targets.gni")
 
@@ -75,6 +78,7 @@ if (verify_rust_zstd_sys_crate_binding_version) {
           ]))
 }
 
+# LINT.IfChange
 zstd_common_sources = [
   "src/lib/common/allocations.h",
   "src/lib/common/bits.h",
@@ -184,6 +188,8 @@ static_library("zstd") {
   configs -= [ "//build/config:default_optimize" ]
   configs += [ "//build/config:optimize_speed" ]
 }
+
+# LINT.ThenChange(BUILD.bazel)
 
 config("public.config") {
   visibility = [ ":*" ]
