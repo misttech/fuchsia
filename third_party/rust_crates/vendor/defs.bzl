@@ -327,7 +327,7 @@ _NORMAL_DEPENDENCIES = {
             "bumpalo": Label("//third_party/rust_crates/vendor/bumpalo-3.20.2:bumpalo"),
             "byteorder": Label("//third_party/rust_crates/vendor/byteorder-1.5.0:byteorder"),
             "bytes": Label("//third_party/rust_crates/vendor/bytes-1.12.1:bytes"),
-            "camino": Label("//third_party/rust_crates/vendor/camino-1.2.2:camino"),
+            "camino": Label("//third_party/rust_crates/vendor/camino-1.2.5:camino"),
             "cbc": Label("//third_party/rust_crates/vendor/cbc-0.2.1:cbc"),
             "cfg-if": Label("//third_party/rust_crates/vendor/cfg-if-1.0.4:cfg_if"),
             "chacha20": Label("//third_party/rust_crates/vendor/chacha20-0.10.0:chacha20"),
