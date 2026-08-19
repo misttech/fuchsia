@@ -8,7 +8,6 @@ group("e2e_tests") {
   testonly = true
   public_deps = [
     "wlan:e2e_tests",
-    "wlan_policy:e2e_tests",
 
     # As tests are migrated out of the antlion directory, add them to this
     # group to ensure they are still included in the e2e test suite for
@@ -42,8 +41,5 @@ group("e2e_tests") {
 
 group("e2e_tests_quick") {
   testonly = true
-  public_deps = [
-    "wlan:e2e_tests_quick",
-    "wlan_policy:e2e_tests_quick",
-  ]
+  public_deps = [ "wlan:e2e_tests_quick" ]
 }
