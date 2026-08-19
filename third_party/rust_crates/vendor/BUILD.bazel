@@ -1897,14 +1897,14 @@ alias(
 )
 
 alias(
-    name = "pest-2.8.6",
-    actual = "//third_party/rust_crates/vendor/pest-2.8.6:pest",
+    name = "pest-2.9.0",
+    actual = "//third_party/rust_crates/vendor/pest-2.9.0:pest",
     tags = ["manual"],
 )
 
 alias(
     name = "pest",
-    actual = "//third_party/rust_crates/vendor/pest-2.8.6:pest",
+    actual = "//third_party/rust_crates/vendor/pest-2.9.0:pest",
     tags = ["manual"],
 )
 

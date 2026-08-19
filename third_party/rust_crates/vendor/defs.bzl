@@ -418,7 +418,7 @@ _NORMAL_DEPENDENCIES = {
             "pathdiff": Label("//third_party/rust_crates/vendor/pathdiff-0.2.3:pathdiff"),
             "pem": Label("//third_party/rust_crates/vendor/pem-3.0.6:pem"),
             "percent-encoding": Label("//third_party/rust_crates/vendor/percent-encoding-2.3.2:percent_encoding"),
-            "pest": Label("//third_party/rust_crates/vendor/pest-2.8.6:pest"),
+            "pest": Label("//third_party/rust_crates/vendor/pest-2.9.0:pest"),
             "phf": Label("//third_party/rust_crates/vendor/phf-0.14.0:phf"),
             "pin-init": Label("//third_party/rust_crates/vendor/pin-init-0.3.0:pin_init"),
             "pin-project": Label("//third_party/rust_crates/vendor/pin-project-1.1.11:pin_project"),

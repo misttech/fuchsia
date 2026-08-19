@@ -22,7 +22,7 @@ package_info(
     name = "package_info",
     package_name = "pest",
     package_url = "https://github.com/pest-parser/pest",
-    package_version = "2.8.6",
+    package_version = "2.9.0",
 )
 
 license(
@@ -76,7 +76,7 @@ rust_library(
         "@rules_rust//rust/platform:x86_64-unknown-linux-gnu": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
-    version = "2.8.6",
+    version = "2.9.0",
     deps = [
         "//third_party/rust_crates/ask2patch/memchr",
         "//third_party/rust_crates/vendor/ucd-trie-0.1.7:ucd_trie",

@@ -13,7 +13,7 @@
 edition = "2021"
 rust-version = "1.83"
 name = "pest"
-version = "2.8.6"
+version = "2.9.0"
 authors = ["Dragoș Tiselice <dragostiselice@gmail.com>"]
 build = false
 autolib = false
@@ -67,6 +67,11 @@ path = "tests/calculator.rs"
 [[test]]
 name = "json"
 path = "tests/json.rs"
+
+[[bench]]
+name = "pratt"
+path = "benches/pratt.rs"
+harness = false
 
 [[bench]]
 name = "stack"

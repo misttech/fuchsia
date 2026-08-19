@@ -816,6 +816,9 @@ impl<'i, R: RuleType> ParserState<'i, R> {
     /// ```
     #[inline]
     pub fn tag_node(mut self: Box<Self>, tag: &'i str) -> ParseResult<Box<Self>> {
+        if self.lookahead != Lookahead::None {
+            return Ok(self);
+        }
         if let Some(QueueableToken::End { tag: old, .. }) = self.queue.last_mut() {
             *old = Some(tag)
         }
@@ -914,15 +917,15 @@ impl<'i, R: RuleType> ParserState<'i, R> {
         let token_index = self.queue.len();
         let initial_pos = self.position;
 
-        let result = f(self);
+        let result = f(self.checkpoint());
 
         match result {
-            Ok(new_state) => Ok(new_state),
+            Ok(new_state) => Ok(new_state.checkpoint_ok()),
             Err(mut new_state) => {
                 // Restore the initial position and truncate the token queue.
                 new_state.position = initial_pos;
                 new_state.queue.truncate(token_index);
-                Err(new_state)
+                Err(new_state.restore())
             }
         }
     }
@@ -1513,6 +1516,10 @@ impl<'i, R: RuleType> ParserState<'i, R> {
     /// Peeks the top of the stack and attempts to match the string. Returns `Ok(Box<ParserState>)`
     /// if the string is matched successfully, or `Err(Box<ParserState>)` otherwise.
     ///
+    /// # Panics
+    ///
+    /// Panics if the stack is empty.
+    ///
     /// # Examples
     ///
     /// ```
@@ -1541,6 +1548,10 @@ impl<'i, R: RuleType> ParserState<'i, R> {
 
     /// Pops the top of the stack and attempts to match the string. Returns `Ok(Box<ParserState>)`
     /// if the string is matched successfully, or `Err(Box<ParserState>)` otherwise.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the stack is empty.
     ///
     /// # Examples
     ///

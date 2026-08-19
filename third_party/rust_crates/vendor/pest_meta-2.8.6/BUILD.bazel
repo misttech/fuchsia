@@ -76,6 +76,6 @@ rust_library(
     }),
     version = "2.8.6",
     deps = [
-        "//third_party/rust_crates/vendor/pest-2.8.6:pest",
+        "//third_party/rust_crates/vendor/pest-2.9.0:pest",
     ],
 )

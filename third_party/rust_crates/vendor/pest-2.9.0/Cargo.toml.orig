@@ -1,7 +1,7 @@
 [package]
 name = "pest"
 description = "The Elegant Parser"
-version = "2.8.6"
+version = "2.9.0"
 edition = "2021"
 authors = ["Dragoș Tiselice <dragostiselice@gmail.com>"]
 homepage = "https://pest.rs/"
@@ -37,4 +37,8 @@ miette = { version = "7.2.0", features = ["fancy"] }
 
 [[bench]]
 name = "stack"
+harness = false
+
+[[bench]]
+name = "pratt"
 harness = false
