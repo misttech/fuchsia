@@ -7,6 +7,7 @@ import asyncio
 import subprocess
 import types
 import unittest
+from datetime import timedelta
 from ipaddress import IPv4Address, IPv6Address
 from typing import TypeVar
 from unittest import mock
@@ -514,6 +515,35 @@ class NetstackFCTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(res.rtt_min_ms, 19.075)
         self.assertEqual(res.rtt_max_ms, 42.994)
         self.assertEqual(res.rtt_avg_ms, 28.149)
+
+    async def test_ping_custom_interval_timeout(self) -> None:
+        """Test ping with custom interval and timeout."""
+        ping_output = (
+            "Count: 2, Interval: 500 ms, Timeout: 2000 ms, Message: This is an echo message!, Message size: 24 bytes, Source interface: (null), Destination: 8.8.8.8\n"
+            "PING4 8.8.8.8 (8.8.8.8)\n"
+            "33 bytes from 8.8.8.8 : icmp_seq=1 rtt=42.994 ms\n"
+            "33 bytes from 8.8.8.8 : icmp_seq=2 rtt=22.378 ms\n"
+            "--- 8.8.8.8 ping statistics ---\n"
+            "2 packets transmitted, 2 received, 0% packet loss, time 1008 ms\n"
+            "RTT Min/Max/Avg = [ 22.378 / 42.994 / 32.686 ] ms\n"
+        )
+        self.ffx_transport_obj.run_ssh_cmd.return_value = ping_output
+
+        res = await self.netstack_obj.ping(
+            "8.8.8.8",
+            count=2,
+            interval=timedelta(milliseconds=500),
+            timeout=timedelta(seconds=2),
+        )
+        self.ffx_transport_obj.run_ssh_cmd.assert_called_once_with(
+            "ping -c 2 -i 500 -t 2000 -s 25 8.8.8.8", capture_output=True
+        )
+        self.assertEqual(res.raw_output, ping_output)
+        self.assertEqual(res.requested, 2)
+        self.assertTrue(res.all_pings_received)
+        self.assertTrue(res.any_pings_received)
+        self.assertEqual(res.transmitted, 2)
+        self.assertEqual(res.received, 2)
 
     async def test_ping_partial_loss(self) -> None:
         """Test ping parsing when some packets are lost but exit status is 0."""

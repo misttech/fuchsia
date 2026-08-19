@@ -4,6 +4,7 @@
 """Mobly test for netstack affordance."""
 
 import logging
+from datetime import timedelta
 
 import fuchsia_base_test
 from honeydew.affordances.connectivity.netstack.errors import (
@@ -38,7 +39,9 @@ class NetstackTests(fuchsia_base_test.FuchsiaBaseTest):
     async def test_ping_timeout(self) -> None:
         """Verify pinging non-existent IP raises error."""
         with asserts.assert_raises(HoneydewNetstackError):
-            await self.dut.netstack.ping("192.0.2.1", count=1, timeout=1000)
+            await self.dut.netstack.ping(
+                "192.0.2.1", count=1, timeout=timedelta(seconds=1)
+            )
 
     async def test_ping_invalid_host(self) -> None:
         """Verify pinging invalid host raises error."""

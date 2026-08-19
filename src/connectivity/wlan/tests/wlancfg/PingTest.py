@@ -12,6 +12,7 @@ communication past the first-hop is not the responsibility of the DUT.
 
 import asyncio
 import logging
+from datetime import timedelta
 from typing import Callable, NamedTuple
 
 import fidl_fuchsia_wlan_policy as f_wlan_policy
@@ -37,8 +38,6 @@ from openwrt_access_point.lib.access_point_config_mapper import (
     AccessPointConfigMapper as ConfigMapper,
 )
 
-PING_RESULT_TIMEOUT_SEC = 60 * 5
-
 
 class Addrs(NamedTuple):
     gateway_ipv4: str
@@ -49,8 +48,8 @@ class PingParams(NamedTuple):
     name: str
     dest_ip: str | Callable[[Addrs], str]
     packet_count: int = 3
-    interval: int = 1000
-    timeout: int = 1000
+    interval: timedelta = timedelta(seconds=1)
+    timeout: timedelta = timedelta(seconds=1)
     size: int = 25
     min_success: int | None = None
 
@@ -74,7 +73,7 @@ class PingTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
                 "gateway_ipv4_medium_packets",
                 lambda addrs: addrs.gateway_ipv4,
                 packet_count=50,
-                timeout=1500,
+                timeout=timedelta(milliseconds=1500),
                 size=64,
                 min_success=49,
             ),
@@ -82,7 +81,7 @@ class PingTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
                 "gateway_ipv6_medium_packets",
                 lambda addrs: addrs.gateway_ipv6,
                 packet_count=50,
-                timeout=1500,
+                timeout=timedelta(milliseconds=1500),
                 size=64,
                 min_success=49,
             ),
@@ -90,7 +89,7 @@ class PingTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
                 "gateway_ipv4_large_packets",
                 lambda addrs: addrs.gateway_ipv4,
                 packet_count=50,
-                timeout=5000,
+                timeout=timedelta(seconds=5),
                 size=500,
                 min_success=49,
             ),
@@ -98,7 +97,7 @@ class PingTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
                 "gateway_ipv6_large_packets",
                 lambda addrs: addrs.gateway_ipv6,
                 packet_count=50,
-                timeout=5000,
+                timeout=timedelta(seconds=5),
                 size=500,
                 min_success=49,
             ),

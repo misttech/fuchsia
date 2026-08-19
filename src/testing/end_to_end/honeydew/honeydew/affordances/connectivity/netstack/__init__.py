@@ -11,6 +11,7 @@ import logging
 import re
 import subprocess
 import time
+from datetime import timedelta
 
 import fidl_fuchsia_net_interfaces as f_net_interfaces
 import fidl_fuchsia_net_root as f_net_root
@@ -211,8 +212,8 @@ class Netstack:
         dest_ip: str,
         *,
         count: int = 3,
-        interval: int = 1000,
-        timeout: int = 1000,
+        interval: timedelta = timedelta(seconds=1),
+        timeout: timedelta = timedelta(seconds=1),
         size: int = 25,
         additional_ping_params: str | None = None,
     ) -> PingResult:
@@ -221,8 +222,8 @@ class Netstack:
         Args:
             dest_ip: Destination IP address or hostname.
             count: Number of packets to send.
-            interval: Interval between packets in milliseconds.
-            timeout: Timeout for each packet in milliseconds.
+            interval: Interval between packets.
+            timeout: Timeout for each packet.
             size: Packet size in bytes.
             additional_ping_params: Additional parameters to pass to the ping command.
 
@@ -232,7 +233,10 @@ class Netstack:
         Raises:
             HoneydewNetstackError: Error executing ping.
         """
-        cmd_str = f"ping -c {count} -i {interval} -t {timeout} -s {size}"
+        cmd_str = (
+            f"ping -c {count} -i {int(interval.total_seconds() * 1000)} "
+            f"-t {int(timeout.total_seconds() * 1000)} -s {size}"
+        )
         if additional_ping_params:
             cmd_str += f" {additional_ping_params}"
         cmd_str += f" {dest_ip}"

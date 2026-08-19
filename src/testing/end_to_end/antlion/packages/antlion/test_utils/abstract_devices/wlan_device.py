@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+from datetime import timedelta
 from typing import Any
 
 import fuchsia_async_extension
@@ -119,8 +120,8 @@ class FuchsiaWlanDevice:
         self,
         dest_ip: str,
         count: int = 3,
-        interval: int = 1000,
-        timeout: int = 1000,
+        interval: timedelta = timedelta(seconds=1),
+        timeout: timedelta = timedelta(seconds=1),
         size: int = 25,
         additional_ping_params: str | None = None,
     ) -> PingResult:
