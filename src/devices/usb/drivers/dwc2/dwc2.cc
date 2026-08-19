@@ -88,24 +88,6 @@ void Dwc2::dump_regs() {
   }
 }
 
-zx_status_t CacheFlushCommon(dma_buffer::ContiguousBuffer& buffer, zx_off_t offset, size_t length,
-                             uint32_t flush_options) {
-  if (offset + length < offset || offset + length > buffer.size()) {
-    return ZX_ERR_OUT_OF_RANGE;
-  }
-  auto virt{reinterpret_cast<uintptr_t>(buffer.virt()) + offset};
-  return zx_cache_flush(reinterpret_cast<void*>(virt), length, flush_options);
-}
-
-zx_status_t CacheFlush(dma_buffer::ContiguousBuffer& buffer, zx_off_t offset, size_t length) {
-  return CacheFlushCommon(buffer, offset, length, ZX_CACHE_FLUSH_DATA);
-}
-
-zx_status_t CacheFlushInvalidate(dma_buffer::ContiguousBuffer& buffer, zx_off_t offset,
-                                 size_t length) {
-  return CacheFlushCommon(buffer, offset, length, ZX_CACHE_FLUSH_DATA | ZX_CACHE_FLUSH_INVALIDATE);
-}
-
 zx::result<> Dwc2::Start(fdf::DriverContext context) {
   config_ = context.take_config<dwc2_config::Config>();
 
@@ -434,7 +416,13 @@ void Dwc2::HandleOutEpInterrupt() {
         // received SETUP packet.
         DOEPINT::Get(ep_num).ReadFrom(mmio).set_setup(1).WriteTo(mmio);
 
-        memcpy(&cur_setup_, ep0_buffer_->virt(), sizeof(cur_setup_));
+        if (auto setup = ep0_buffer_->ReadStruct<decltype(cur_setup_)>(); setup.is_ok()) {
+          cur_setup_ = *setup;
+        } else {
+          fdf::error("ReadStruct failed: {}", setup.status_string());
+          StallEp0();
+          return;
+        }
         fdf::debug(
             "SETUP bm_request_type: 0x{:02x} b_request: {} w_value: {} w_index: {} "
             "w_length: %u\n",
@@ -473,7 +461,6 @@ void Dwc2::HandleOutEpInterrupt() {
 zx_status_t Dwc2::HandleSetupRequest(size_t* out_actual) {
   zx_status_t status;
 
-  auto* buffer = ep0_buffer_->virt();
   zx::duration elapsed;
   zx::time_boot now;
   if (cur_setup_.bm_request_type == (USB_DIR_OUT | USB_TYPE_STANDARD | USB_RECIP_DEVICE)) {
@@ -498,7 +485,7 @@ zx_status_t Dwc2::HandleSetupRequest(size_t* out_actual) {
         fdf::info("SET_CONFIGURATION {}", cur_setup_.w_value);
         configured_ = true;
         if (dci_intf_.is_valid()) {
-          status = DoControl(cur_setup_, nullptr, 0, nullptr, 0, out_actual);
+          status = DoControlRead(0, out_actual);
         } else {
           status = ZX_ERR_NOT_SUPPORTED;
         }
@@ -519,10 +506,9 @@ zx_status_t Dwc2::HandleSetupRequest(size_t* out_actual) {
 
   if (dci_intf_.is_valid()) {
     if (length == 0) {
-      status = DoControl(cur_setup_, nullptr, 0, nullptr, 0, out_actual);
+      status = DoControlRead(0, out_actual);
     } else if (is_in) {
-      status =
-          DoControl(cur_setup_, nullptr, 0, reinterpret_cast<uint8_t*>(buffer), length, out_actual);
+      status = DoControlRead(length, out_actual);
     } else {
       status = ZX_ERR_NOT_SUPPORTED;
     }
@@ -559,7 +545,10 @@ void Dwc2::StartEp0() {
   ep->req_offset = 0;
   ep->req_xfersize = 3 * sizeof(usb_setup_info_t);
 
-  CacheFlushInvalidate(*ep0_buffer_, 0, sizeof(cur_setup_));
+  if (auto status = ep0_buffer_->CacheFlushInvalidate(0, sizeof(cur_setup_)); status.is_error()) {
+    fdf::error("CacheFlushInvalidate failed: {}", status.status_string());
+    return;
+  }
 
   DEPDMA::Get(DWC_EP0_OUT)
       .FromValue(0)
@@ -610,11 +599,18 @@ void Dwc2::StartTransfer(Endpoint* ep, uint32_t length) {
   if (length > 0 && !ep->current_req) {
     if (is_in) {
       if (ep_num == DWC_EP0_IN) {
-        CacheFlush(*ep0_buffer_, ep->req_offset, length);
+        if (auto status = ep0_buffer_->CacheFlush(ep->req_offset, length); status.is_error()) {
+          fdf::error("CacheFlush failed: {}", status.status_string());
+          return;
+        }
       }
     } else {
       if (ep_num == DWC_EP0_OUT) {
-        CacheFlushInvalidate(*ep0_buffer_, ep->req_offset, length);
+        if (auto status = ep0_buffer_->CacheFlushInvalidate(ep->req_offset, length);
+            status.is_error()) {
+          fdf::error("CacheFlushInvalidate failed: {}", status.status_string());
+          return;
+        }
       }
     }
   }
@@ -824,9 +820,7 @@ void Dwc2::HandleEp0TransferComplete(bool is_in) {
             StallEp0();
             return;
           }
-          size_t actual;
-          zx_status_t status = DoControl(cur_setup_, (uint8_t*)ep0_buffer_->virt(), ep->req_length,
-                                         nullptr, 0, &actual);
+          zx_status_t status = DoControlWrite(ep->req_length);
           if (status != ZX_OK) {
             StallEp0();
             return;
@@ -1326,17 +1320,37 @@ int Dwc2::IrqThread() {
   return 0;
 }
 
-zx_status_t Dwc2::DoControl(const fdescriptor::wire::UsbSetup& setup, const uint8_t* write_buffer,
-                            size_t write_size, uint8_t* out_read_buffer, size_t read_size,
-                            size_t* out_read_actual) {
+zx_status_t Dwc2::DoControl(size_t write_size, size_t read_size, size_t* out_read_actual) {
   ZX_ASSERT(dci_intf_.is_valid());
+
+  // Ensure the provided buffers are large enough for the requested sizes.
+  if (write_size > ep0_buffer_->buffer().size()) {
+    fdf::error("DoControl: write_size ({}) exceeds ep0_buffer_ size ({})", write_size,
+               ep0_buffer_->buffer().size());
+    return ZX_ERR_BUFFER_TOO_SMALL;
+  }
+  if (read_size > ep0_buffer_->buffer().size()) {
+    fdf::error("DoControl: read_size ({}) exceeds ep0_buffer_ size ({})", read_size,
+               ep0_buffer_->buffer().size());
+    return ZX_ERR_BUFFER_TOO_SMALL;
+  }
+
   fidl::Arena arena;
+  fidl::VectorView<uint8_t> fwrite;
 
-  auto fwrite =
-      fidl::VectorView<uint8_t>::FromExternal(const_cast<uint8_t*>(write_buffer), write_size);
+  if (write_size > 0) {
+    uint8_t* copy_buf = arena.AllocateVector<uint8_t>(write_size);
+    // Copy the data from the DMA buffer to a temporary FIDL arena buffer.
+    if (auto status = ep0_buffer_->buffer().Read(0, write_size, copy_buf); status.is_error()) {
+      fdf::error("DoControl: failed to read from ep0_buffer_: {}", status.status_string());
+      return status.error_value();
+    }
+    fwrite = fidl::VectorView<uint8_t>::FromExternal(copy_buf, write_size);
+  }
 
-  auto result = dci_intf_.buffer(arena)->Control(setup, fwrite);
+  auto result = dci_intf_.buffer(arena)->Control(cur_setup_, fwrite);
   if (!result.ok()) {
+    fdf::error("DoControl: Control FIDL call failed: {}", result.status_string());
     return ZX_ERR_INTERNAL;  // framework error.
   }
   if (result->is_error()) {
@@ -1346,8 +1360,26 @@ zx_status_t Dwc2::DoControl(const fdescriptor::wire::UsbSetup& setup, const uint
   std::span<uint8_t> read_data = result.value()->read.get();
 
   if (!read_data.empty()) {
-    std::memcpy(out_read_buffer, read_data.data(), read_data.size_bytes());
-    *out_read_actual = read_data.size_bytes();
+    // Ensure we don't overflow the destination buffer.
+    if (read_data.size_bytes() > ep0_buffer_->buffer().size()) {
+      fdf::error("DoControl: received read data size ({}) exceeds ep0_buffer_ size ({})",
+                 read_data.size_bytes(), ep0_buffer_->buffer().size());
+      return ZX_ERR_BUFFER_TOO_SMALL;
+    }
+    // Also check against the requested read_size if it was set.
+    if (read_size > 0 && read_data.size_bytes() > read_size) {
+      fdf::error("DoControl: received read data size ({}) exceeds requested read_size ({})",
+                 read_data.size_bytes(), read_size);
+      return ZX_ERR_BUFFER_TOO_SMALL;
+    }
+    if (auto status = ep0_buffer_->buffer().Write(read_data.data(), 0, read_data.size_bytes());
+        status.is_error()) {
+      fdf::error("DoControl: failed to write to ep0_buffer_: {}", status.status_string());
+      return status.error_value();
+    }
+    if (out_read_actual) {
+      *out_read_actual = read_data.size_bytes();
+    }
   }
 
   return ZX_OK;

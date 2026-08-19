@@ -99,9 +99,13 @@ class Dwc2 : public fdf::DriverBase2, public fidl::Server<fuchsia_hardware_usb_d
  private:
   static inline const uint32_t kEp0BufferSize = UINT16_MAX + 1;
 
-  zx_status_t DoControl(const fuchsia_hardware_usb_descriptor::wire::UsbSetup& setup,
-                        const uint8_t* write_buffer, size_t write_size, uint8_t* out_read_buffer,
-                        size_t read_size, size_t* out_read_actual);
+  zx_status_t DoControl(size_t write_size, size_t read_size, size_t* out_read_actual);
+
+  zx_status_t DoControlRead(size_t read_size, size_t* out_read_actual) {
+    return DoControl(0, read_size, out_read_actual);
+  }
+
+  zx_status_t DoControlWrite(size_t write_size) { return DoControl(write_size, 0, nullptr); }
 
   enum class Ep0State {
     DISCONNECTED,
