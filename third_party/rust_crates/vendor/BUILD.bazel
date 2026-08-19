@@ -3457,14 +3457,14 @@ alias(
 )
 
 alias(
-    name = "winnow-0.7.13",
-    actual = "//third_party/rust_crates/vendor/winnow-0.7.13:winnow",
+    name = "winnow-1.0.4",
+    actual = "//third_party/rust_crates/vendor/winnow-1.0.4:winnow",
     tags = ["manual"],
 )
 
 alias(
     name = "winnow",
-    actual = "//third_party/rust_crates/vendor/winnow-0.7.13:winnow",
+    actual = "//third_party/rust_crates/vendor/winnow-1.0.4:winnow",
     tags = ["manual"],
 )
 

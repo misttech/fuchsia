@@ -22,7 +22,7 @@ package_info(
     name = "package_info",
     package_name = "winnow",
     package_url = "https://github.com/winnow-rs/winnow",
-    package_version = "1.0.1",
+    package_version = "1.0.4",
 )
 
 license(
@@ -49,24 +49,19 @@ rust_library(
             "WORKSPACE.bazel",
         ],
     ),
-    crate_features = select({
+    crate_features = [
+        "alloc",
+        "ascii",
+        "binary",
+        "default",
+        "parser",
+        "std",
+    ] + select({
         "@rules_rust//rust/platform:aarch64-unknown-linux-gnu": [
-            "alloc",  # aarch64-unknown-linux-gnu
-            "ascii",  # aarch64-unknown-linux-gnu
-            "binary",  # aarch64-unknown-linux-gnu
-            "default",  # aarch64-unknown-linux-gnu
-            "parser",  # aarch64-unknown-linux-gnu
             "simd",  # aarch64-unknown-linux-gnu
-            "std",  # aarch64-unknown-linux-gnu
         ],
         "@rules_rust//rust/platform:x86_64-unknown-linux-gnu": [
-            "alloc",  # x86_64-unknown-linux-gnu
-            "ascii",  # x86_64-unknown-linux-gnu
-            "binary",  # x86_64-unknown-linux-gnu
-            "default",  # x86_64-unknown-linux-gnu
-            "parser",  # x86_64-unknown-linux-gnu
             "simd",  # x86_64-unknown-linux-gnu
-            "std",  # x86_64-unknown-linux-gnu
         ],
         "//conditions:default": [],
     }),
@@ -89,7 +84,7 @@ rust_library(
         "@rules_rust//rust/platform:x86_64-unknown-linux-gnu": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
-    version = "1.0.1",
+    version = "1.0.4",
     deps = select({
         "@rules_rust//rust/platform:aarch64-unknown-linux-gnu": [
             "//third_party/rust_crates/ask2patch/memchr",  # aarch64-unknown-linux-gnu

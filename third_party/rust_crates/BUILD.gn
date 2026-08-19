@@ -2653,11 +2653,11 @@ group("which-8.0.4") {
 }
 
 group("winnow") {
-  public_deps = [ ":winnow-v0_7_13" ]
+  public_deps = [ ":winnow-v1_0_4" ]
 }
 
-group("winnow-0.7.13") {
-  public_deps = [ ":winnow-v0_7_13" ]
+group("winnow-1.0.4") {
+  public_deps = [ ":winnow-v1_0_4" ]
 }
 
 if (current_os == "fuchsia") {
@@ -3744,7 +3744,7 @@ rustc_library("askama_parser-v0_15_6") {
   deps += [ ":serde-v1_0_229" ]
   deps += [ ":serde_derive-v1_0_229($host_toolchain)" ]
   deps += [ ":unicode-ident-v1_0_19" ]
-  deps += [ ":winnow-v1_0_1" ]
+  deps += [ ":winnow-v1_0_4" ]
 
   rustenv = []
 
@@ -22684,7 +22684,7 @@ rustc_library("toml-v1_1_2+spec-1_1_0") {
   deps += [ ":toml_datetime-v1_1_1+spec-1_1_0" ]
   deps += [ ":toml_parser-v1_1_2+spec-1_1_0" ]
   deps += [ ":toml_writer-v1_1_1+spec-1_1_0" ]
-  deps += [ ":winnow-v1_0_1" ]
+  deps += [ ":winnow-v1_0_4" ]
 
   rustenv = []
 
@@ -22836,7 +22836,7 @@ rustc_library("toml_parser-v1_1_2+spec-1_1_0") {
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
-  deps += [ ":winnow-v1_0_1" ]
+  deps += [ ":winnow-v1_0_4" ]
 
   rustenv = []
 
@@ -25141,16 +25141,16 @@ rustc_library("winnow-v0_7_13") {
   applicable_licenses = [ ":winnow-v0_7_13.license" ]
 }
 
-license("winnow-v1_0_1.license") {
+license("winnow-v1_0_4.license") {
   public_package_name = "winnow"
   license_files =
-      [ "//third_party/rust_crates/vendor/winnow-1.0.1/LICENSE-MIT" ]
+      [ "//third_party/rust_crates/vendor/winnow-1.0.4/LICENSE-MIT" ]
 }
 
-rustc_library("winnow-v1_0_1") {
+rustc_library("winnow-v1_0_4") {
   crate_name = "winnow"
-  source_root = "//third_party/rust_crates/vendor/winnow-1.0.1/src/lib.rs"
-  output_name = "winnow-6ba3ddc0e2a0ec57"
+  source_root = "//third_party/rust_crates/vendor/winnow-1.0.4/src/lib.rs"
+  output_name = "winnow-2c0e269a3d893dda"
   edition = "2021"
   disable_clippy = true
   enforce_source_listing = false
@@ -25163,8 +25163,8 @@ rustc_library("winnow-v1_0_1") {
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=6ba3ddc0e2a0ec57",
-    "-Cextra-filename=-6ba3ddc0e2a0ec57",
+    "-Cmetadata=2c0e269a3d893dda",
+    "-Cextra-filename=-2c0e269a3d893dda",
     "--cfg=feature=\"alloc\"",
     "--cfg=feature=\"ascii\"",
     "--cfg=feature=\"binary\"",
@@ -25176,7 +25176,7 @@ rustc_library("winnow-v1_0_1") {
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":winnow-v1_0_1.license" ]
+  applicable_licenses = [ ":winnow-v1_0_4.license" ]
 }
 
 license("wnaf-v0_14_0.license") {
