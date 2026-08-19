@@ -517,6 +517,8 @@ pub async fn main() -> Result<(), anyhow::Error> {
     escrow_operation.watch_for_stop().expect("Failed to prep escrow operation");
 
     let config = Config::take_from_startup_handle();
+    let tcp_receive_buffer_size = (config.tcp_receive_buffer_size_bytes > 0)
+        .then_some(config.tcp_receive_buffer_size_bytes.try_into().unwrap());
     let idle_timeout = if config.stop_on_idle_timeout_millis >= 0 {
         fasync::MonotonicDuration::from_millis(config.stop_on_idle_timeout_millis)
     } else {
@@ -541,6 +543,7 @@ pub async fn main() -> Result<(), anyhow::Error> {
                         HttpServices::PkgClient(stream) => pkg::serve_client_request_stream(
                             stream,
                             idle_timeout,
+                            tcp_receive_buffer_size,
                             pkg_http_connections_node.create_child(
                                 pkg_http_connection_count
                                     .fetch_add(1, std::sync::atomic::Ordering::Relaxed)

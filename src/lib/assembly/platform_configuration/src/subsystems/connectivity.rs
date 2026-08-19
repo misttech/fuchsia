@@ -157,6 +157,25 @@ impl DefineSubsystemConfiguration<PlatformConnectivityConfig> for ConnectivitySu
                 )?;
             }
 
+            if let Some(receive_buffer_size) =
+                connectivity_config.network.http_client_tcp_receive_buffer_size
+            {
+                if context.build_type == &BuildType::User {
+                    bail!(
+                        "'http_client_tcp_receive_buffer_size' cannot be overridden on User builds"
+                    );
+                }
+                builder.set_config_capability(
+                    "fuchsia.http-client.TcpReceiveBufferSizeBytes",
+                    Config::new(ConfigValueType::Uint64, receive_buffer_size.get().into()),
+                )?;
+            } else {
+                builder.set_config_capability(
+                    "fuchsia.http-client.TcpReceiveBufferSizeBytes",
+                    Config::new_void(),
+                )?;
+            }
+
             // The use of netstack3 can be forcibly required by the board,
             // otherwise it's selectable by the product.
             match (
@@ -432,5 +451,40 @@ impl DefineSubsystemConfiguration<PlatformConnectivityConfig> for ConnectivitySu
         }
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::subsystems::{ConfigurationBuilderImpl, ConfigurationContext, FeatureSetLevel};
+    use assembly_config_schema::BuildType;
+    use assembly_config_schema::platform_settings::connectivity_config::PlatformNetworkConfig;
+    use std::num::NonZeroU64;
+
+    #[test]
+    fn test_http_client_tcp_receive_buffer_size_rejected_on_user() {
+        let context = ConfigurationContext {
+            feature_set_level: &FeatureSetLevel::Standard,
+            build_type: &BuildType::User,
+            ..ConfigurationContext::default_for_tests()
+        };
+        let config = PlatformConnectivityConfig {
+            network: PlatformNetworkConfig {
+                http_client_tcp_receive_buffer_size: NonZeroU64::new(2097152),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let mut builder = ConfigurationBuilderImpl::default();
+        let result =
+            ConnectivitySubsystemConfig::define_configuration(&context, &config, &mut builder);
+        assert!(result.is_err());
+        let error_message = result.unwrap_err().to_string();
+        assert!(
+            error_message.contains(
+                "'http_client_tcp_receive_buffer_size' cannot be overridden on User builds"
+            )
+        );
     }
 }

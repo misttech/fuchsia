@@ -18,15 +18,16 @@ const TCP_KEEPALIVE_TIMEOUT: std::time::Duration = std::time::Duration::from_sec
 pub async fn serve_client_request_stream(
     stream: fpkg_http::ClientRequestStream,
     idle_timeout: fasync::MonotonicDuration,
+    tcp_receive_buffer_size: Option<usize>,
     inspect: finspect::Node,
 ) -> Result<(), anyhow::Error> {
     let inspect = inspect.create_child("downloads");
     let request_count = std::sync::atomic::AtomicU64::new(0);
     // Reuse client with every request to take advantage of connection pooling.
     // Note that if the connection is escrowed subsequent requests will use a new client.
-    let client = fhyper::new_https_client_from_tcp_options(fhyper::TcpOptions::keepalive_timeout(
-        TCP_KEEPALIVE_TIMEOUT,
-    ));
+    let mut tcp_options = fhyper::TcpOptions::keepalive_timeout(TCP_KEEPALIVE_TIMEOUT);
+    tcp_options.tcp_receive_buffer_size = tcp_receive_buffer_size;
+    let client = fhyper::new_https_client_from_tcp_options(tcp_options);
 
     let (stream, unbind_if_stalled) = detect_stall::until_stalled(stream, idle_timeout);
 

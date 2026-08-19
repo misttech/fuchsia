@@ -310,13 +310,14 @@ mod test {
         let idle = std::time::Duration::from_secs(36);
         let interval = std::time::Duration::from_secs(47);
         let count = 58;
+        let rcvbuf = 1 << 20;
         let uri = format!("https://{}", addr).parse::<hyper::Uri>().unwrap();
         let (io, _server) = future::try_join(
             HyperConnector::from_tcp_options(TcpOptions {
                 keepalive_idle: Some(idle),
                 keepalive_interval: Some(interval),
                 keepalive_count: Some(count),
-                ..Default::default()
+                tcp_receive_buffer_size: Some(rcvbuf),
             })
             .call(uri),
             listener.accept_stream().try_next(),
@@ -331,6 +332,7 @@ mod test {
         assert_matches!(stream.tcp_keepalive_time(), Ok(v) if v == idle);
         assert_matches!(stream.tcp_keepalive_interval(), Ok(v) if v == interval);
         assert_matches!(stream.tcp_keepalive_retries(), Ok(v) if v == count);
+        assert_matches!(stream.recv_buffer_size(), Ok(v) if v == rcvbuf);
     }
 
     #[fasync::run_singlethreaded(test)]

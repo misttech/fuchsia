@@ -131,6 +131,8 @@ pub struct TcpOptions {
     pub keepalive_interval: Option<std::time::Duration>,
     /// This sets TCP_KEEPCNT and SO_KEEPALIVE.
     pub keepalive_count: Option<u32>,
+    /// This sets SO_RCVBUF on the TCP socket.
+    pub tcp_receive_buffer_size: Option<usize>,
 }
 
 impl TcpOptions {
@@ -150,6 +152,7 @@ impl TcpOptions {
             keepalive_idle: dur.checked_div(2),
             keepalive_interval: dur.checked_div(6),
             keepalive_count: Some(3),
+            tcp_receive_buffer_size: None,
         }
     }
 
@@ -169,7 +172,13 @@ impl TcpOptions {
             any = true;
             keepalive = keepalive.with_retries(count);
         }
-        if any { stream.set_tcp_keepalive(&keepalive) } else { Ok(()) }
+        if any {
+            stream.set_tcp_keepalive(&keepalive)?;
+        }
+        if let Some(size) = self.tcp_receive_buffer_size {
+            stream.set_recv_buffer_size(size)?;
+        }
+        Ok(())
     }
 }
 

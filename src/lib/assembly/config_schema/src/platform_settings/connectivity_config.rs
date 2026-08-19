@@ -8,6 +8,7 @@ use assembly_container::WalkPaths;
 use camino::Utf8PathBuf;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
+use std::num::NonZeroU64;
 
 /// Platform configuration options for the connectivity area.
 #[derive(Debug, Default, Deserialize, Serialize, PartialEq, JsonSchema, WalkPaths)]
@@ -79,6 +80,10 @@ pub struct PlatformNetworkConfig {
     /// stop after it idles.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub http_client_stop_on_idle_timeout_millis: Option<i64>,
+
+    /// Controls the TCP receive buffer size (SO_RCVBUF) in bytes for HTTP client sockets.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub http_client_tcp_receive_buffer_size: Option<NonZeroU64>,
 
     /// Controls whether the unified binary for networking should be used.
     ///

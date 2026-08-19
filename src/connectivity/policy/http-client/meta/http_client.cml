@@ -41,6 +41,17 @@
             default: -1,
         },
         {
+            // TODO(https://fxbug.dev/539512910): Remove this field once dynamic TCP buffer
+            // sizing is implemented.
+            // Size in bytes for the TCP receive buffer (SO_RCVBUF) on client sockets.
+            // If set to 0, the default Netstack receive buffer size is used.
+            config: "fuchsia.http-client.TcpReceiveBufferSizeBytes",
+            key: "tcp_receive_buffer_size_bytes",
+            type: "uint64",
+            availability: "optional",
+            default: 0,
+        },
+        {
             directory: "root-ssl-certificates",
             rights: [ "r*" ],
             path: "/config/ssl",

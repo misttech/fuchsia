@@ -58,7 +58,17 @@
             to: "#never_idle",
         },
         {
+            config: "fuchsia.http-client.TcpReceiveBufferSizeBytes",
+            from: "#http-client-config-never-idle",
+            to: "#never_idle",
+        },
+        {
             config: "fuchsia.http-client.StopOnIdleTimeoutMillis",
+            from: "#http-client-config-idle-1ms",
+            to: "#idle_1ms",
+        },
+        {
+            config: "fuchsia.http-client.TcpReceiveBufferSizeBytes",
             from: "#http-client-config-idle-1ms",
             to: "#idle_1ms",
         },

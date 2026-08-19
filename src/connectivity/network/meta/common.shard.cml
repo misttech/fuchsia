@@ -199,6 +199,17 @@
             availability: "same_as_target",
         },
         {
+            // TODO(https://fxbug.dev/539512910): Remove this field once dynamic TCP buffer
+            // sizing is implemented.
+            config: "fuchsia.http-client.TcpReceiveBufferSizeBytes",
+            from: "parent",
+            to: [
+                "#google-http-client",
+                "#http-client",
+            ],
+            availability: "same_as_target",
+        },
+        {
             protocol: [
                 "fuchsia.power.broker.Topology",
                 "fuchsia.power.system.ActivityGovernor",

@@ -143,6 +143,9 @@ impl TestExecutor<TestResult> for IsolatedOtaTestExecutor {
                     .capability(Capability::configuration(
                         "fuchsia.http-client.StopOnIdleTimeoutMillis",
                     ))
+                    .capability(Capability::configuration(
+                        "fuchsia.http-client.TcpReceiveBufferSizeBytes",
+                    ))
                     .from(Ref::void())
                     .to(&http_client_child),
             )

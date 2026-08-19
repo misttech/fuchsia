@@ -141,7 +141,10 @@
             dependency: "weak",
         },
         {
-            config: "fuchsia.http-client.StopOnIdleTimeoutMillis",
+            config: [
+                "fuchsia.http-client.StopOnIdleTimeoutMillis",
+                "fuchsia.http-client.TcpReceiveBufferSizeBytes",
+            ],
             from: "parent",
             to: "#network",
             availability: "same_as_target",
