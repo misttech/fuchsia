@@ -1,26 +1,19 @@
 // Copyright 2022 The Fuchsia Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
-use addr::TargetIpAddr;
-use anyhow::{Context as _, Result};
+use anyhow::Result;
 use compat_info::CompatibilityInfo;
 use discovery::{DiscoverySources, TargetHandle};
 use ffx_config::keys::TARGET_DEFAULT_KEY;
 
 use ffx_config::{ConfigLevel, EnvironmentContext};
 use fidl::endpoints::create_proxy;
-use fidl::prelude::*;
-use fidl_fuchsia_developer_ffx::{
-    self as ffx, DaemonError, DaemonProxy, TargetCollectionMarker, TargetCollectionProxy,
-    TargetMarker, TargetQuery,
-};
-use fidl_fuchsia_developer_remotecontrol::{RemoteControlMarker, RemoteControlProxy};
-use fidl_fuchsia_net as net;
+use fidl_fuchsia_developer_ffx::{self as ffx, DaemonError};
+use fidl_fuchsia_developer_remotecontrol::RemoteControlMarker;
 use fuchsia_async::Timer;
+use futures::Future;
 use futures::future::{Either, pending};
-use futures::{Future, FutureExt, TryStreamExt, select};
 use log::{debug, info};
-use std::net::IpAddr;
 use std::time::Duration;
 use target_errors::FfxTargetError;
 use thiserror::Error;
@@ -77,200 +70,6 @@ pub async fn emit_daemon_rcs_proxy_event(ty: &str) {
 /// Attempt to connect to RemoteControl on a target device using a connection to a daemon.
 ///
 /// The optional |target| is a string matcher as defined in fuchsia.developer.ffx.TargetQuery
-/// fidl table.
-pub async fn get_remote_proxy(
-    target_spec: &TargetInfoQuery,
-    daemon_proxy: DaemonProxy,
-    proxy_timeout: Duration,
-    mut target_info: Option<&mut Option<ffx::TargetInfo>>,
-    context: &EnvironmentContext,
-) -> std::result::Result<RemoteControlProxy, FfxTargetError> {
-    let mut target_info_out = None;
-    // Target connection retries utilize exponential backoff (starting at 100ms up to 5s) to
-    // prevent high-frequency, CPU-intensive retry spinning during target reboots or prolonged
-    // offline states. This backoff is only active/necessary for daemon-based connections;
-    // direct mode connections utilize a separate flow that immediately bubbles up failures
-    // without retry looping.
-    let mut retry_delay = Duration::from_millis(100);
-    const MAX_RETRY_DELAY: Duration = Duration::from_secs(5);
-    // Track the last encountered non-fatal connection error to prevent spamming logs with
-    // duplicate retry messages on every attempt.
-    let mut last_error: Option<ffx::TargetConnectionError> = None;
-    let res = loop {
-        match get_remote_proxy_impl(
-            &target_spec,
-            &daemon_proxy,
-            &proxy_timeout,
-            &mut target_info_out,
-            &context,
-        )
-        .await
-        {
-            Ok(p) => break Ok(p),
-            Err(e) => match &e {
-                FfxTargetError::TargetConnectionError { err, .. } => match err {
-                    ffx::TargetConnectionError::KeyVerificationFailure
-                    | ffx::TargetConnectionError::InvalidArgument
-                    | ffx::TargetConnectionError::PermissionDenied => {
-                        break Err(e.clone());
-                    }
-                    _ => {
-                        let current_error = *err;
-                        if last_error != Some(current_error) {
-                            log::info!(
-                                "Retrying connection after non-fatal error encountered: {e}"
-                            );
-                            last_error = Some(current_error);
-                        }
-                        fuchsia_async::Timer::new(retry_delay).await;
-                        retry_delay = std::cmp::min(retry_delay * 2, MAX_RETRY_DELAY);
-                        continue;
-                    }
-                },
-                _ => {
-                    break Err(e.clone());
-                }
-            },
-        }
-    };
-    if let Some(ref mut info_out) = target_info {
-        **info_out = target_info_out.into();
-    }
-    res
-}
-
-async fn get_remote_proxy_impl(
-    target_spec: &TargetInfoQuery,
-    daemon_proxy: &DaemonProxy,
-    proxy_timeout: &Duration,
-    target_info: &mut Option<ffx::TargetInfo>,
-    context: &EnvironmentContext,
-) -> std::result::Result<RemoteControlProxy, FfxTargetError> {
-    // See if we need to do local resolution. (Do it here not in
-    // open_target_with_fut because o_t_w_f is not async)
-    let target_spec = resolve::maybe_locally_resolve_target_spec(target_spec, context)
-        .await
-        .map_err(|_| FfxTargetError::OpenTargetError {
-            err: ffx::OpenTargetError::FailedDiscovery,
-            target: target_spec.clone().into(),
-            targets: vec![],
-        })?;
-    let tsc = target_spec.clone();
-    let (target_proxy, target_proxy_fut) =
-        open_target_with_fut(&tsc, daemon_proxy.clone(), *proxy_timeout)?;
-    let mut target_proxy_fut = target_proxy_fut.boxed_local().fuse();
-    let (remote_proxy, remote_server_end) = create_proxy::<RemoteControlMarker>();
-    let mut open_remote_control_fut =
-        target_proxy.open_remote_control(remote_server_end).boxed_local().fuse();
-    let res = loop {
-        select! {
-            res = open_remote_control_fut => {
-                match res {
-                    Err(_) => {
-                        // Getting here is most likely the result of a PEER_CLOSED error, which
-                        // may be because the target_proxy closure has propagated faster than
-                        // the error (which can happen occasionally). To counter this, wait for
-                        // the target proxy to complete, as it will likely only need to be
-                        // polled once more (open_remote_control_fut partially depends on it).
-                        let _ = target_proxy_fut.await;
-                        return Err(FfxTargetError::DaemonError {
-                            err: DaemonError::ProtocolOpenError,
-                            target: target_spec.clone().into(),
-                        });
-                    }
-                    Ok(r) => break r,
-                }
-            }
-            res = target_proxy_fut => res?,
-        }
-    };
-    let info =
-        target_proxy.identity().await.map_err(|e| FfxTargetError::DaemonCommunicationError {
-            target: target_spec.clone().into(),
-            error: std::sync::Arc::new(e),
-        })?;
-    *target_info = Some(info.into());
-    match res {
-        Ok(_) => Ok(remote_proxy),
-        Err(err) => Err(FfxTargetError::TargetConnectionError {
-            err,
-            target: target_spec.into(),
-            logs: Some(
-                target_proxy
-                    .get_ssh_logs()
-                    .await
-                    .unwrap_or_else(|_| "failed to get logs".to_string()),
-            ),
-        }),
-    }
-}
-
-/// Attempt to connect to a target given a connection to a daemon.
-///
-/// The returned future must be polled to completion. It is returned separately
-/// from the TargetProxy to enable immediately pushing requests onto the TargetProxy
-/// before connecting to the target completes.
-///
-/// The optional |target| is a string matcher as defined in fuchsia.developer.ffx.TargetQuery
-/// fidl table.
-pub fn open_target_with_fut<'a, 'b: 'a>(
-    target: &'a TargetInfoQuery,
-    daemon_proxy: DaemonProxy,
-    target_timeout: Duration,
-) -> std::result::Result<
-    (TargetProxy, impl Future<Output = std::result::Result<(), FfxTargetError>> + 'a),
-    FfxTargetError,
-> {
-    let (tc_proxy, tc_server_end) = create_proxy::<TargetCollectionMarker>();
-    let (target_proxy, target_server_end) = create_proxy::<TargetMarker>();
-    let target_collection_fut = async move {
-        daemon_proxy
-            .connect_to_protocol(
-                TargetCollectionMarker::PROTOCOL_NAME,
-                tc_server_end.into_channel(),
-            )
-            .await
-            .map_err(|_| FfxTargetError::DaemonError {
-                err: DaemonError::ProtocolOpenError,
-                target: target.clone().into(),
-            })?
-            .map_err(|err| FfxTargetError::DaemonError {
-                err: err.into(),
-                target: target.clone().into(),
-            })?;
-        Ok(())
-    };
-    let target_handle_fut = async move {
-        timeout(
-            target_timeout,
-            tc_proxy.open_target(
-                &TargetQuery { string_matcher: target.clone().into(), ..Default::default() },
-                target_server_end,
-            ),
-        )
-        .await
-        .map_err(|_| FfxTargetError::DaemonError {
-            err: DaemonError::Timeout,
-            target: target.clone().into(),
-        })?
-        .map_err(|_| FfxTargetError::DaemonError {
-            err: DaemonError::ProtocolOpenError,
-            target: target.clone().into(),
-        })?
-        .map_err(|err| FfxTargetError::OpenTargetError {
-            err,
-            target: target.clone().into(),
-            targets: vec![],
-        })?;
-        Ok(())
-    };
-    let fut = async move {
-        let ((), ()) = futures::try_join!(target_collection_fut, target_handle_fut)?;
-        Ok(())
-    };
-
-    Ok((target_proxy, fut))
-}
 
 pub fn is_discovery_enabled(ctx: &EnvironmentContext) -> bool {
     // TODO (b/355292969): put back the discovery check after we've addressed the flakes associated
@@ -562,46 +361,6 @@ async fn knock_target_with_timeout(
     }
 }
 
-/// Same as `knock_target_with_timeout` but takes a `TargetCollection` and an
-/// optional target name and finds the target to knock. Uses the configured
-/// default target if `target_name` is `None`.
-pub async fn knock_target_by_name(
-    target_name: &Option<String>,
-    target_collection_proxy: &TargetCollectionProxy,
-    open_timeout: Duration,
-    rcs_timeout: Duration,
-) -> Result<(), KnockError> {
-    let (target_proxy, target_remote) = create_proxy::<TargetMarker>();
-
-    let open_result = timeout::timeout(
-        open_timeout,
-        target_collection_proxy.open_target(
-            &TargetQuery { string_matcher: target_name.clone(), ..Default::default() },
-            target_remote,
-        ),
-    )
-    .await;
-
-    match open_result {
-        Err(_) => {
-            return Err(KnockError::NonCritical(KnockNonCriticalError::Timeout {
-                detail: "Timeout opening target.".to_string(),
-            }));
-        }
-        Ok(Err(e)) => {
-            return Err(KnockError::Critical(KnockCriticalError::LostDaemonConnection {
-                detail: format!("Full context:\n{}", e),
-            }));
-        }
-        Ok(Ok(Err(e))) => {
-            return Err(KnockError::Critical(KnockCriticalError::TargetError(format!("{:?}", e))));
-        }
-        Ok(Ok(Ok(()))) => {}
-    }
-
-    knock_target_with_timeout(&target_proxy, rcs_timeout).await
-}
-
 /// Identical to the above "knock_target" but does not use the daemon.
 ///
 /// Keep in mind because there is no daemon being used, the connection process must be bootstrapped
@@ -739,68 +498,6 @@ pub fn get_target_specifier(context: &EnvironmentContext) -> Result<Option<Strin
         None => debug!("No target specified"),
     }
     Ok(target_spec)
-}
-
-pub async fn add_manual_target(
-    target_collection_proxy: &TargetCollectionProxy,
-    addr: IpAddr,
-    scope_id: u32,
-    port: u16,
-    wait: bool,
-) -> Result<()> {
-    let ip = match addr {
-        IpAddr::V6(i) => net::IpAddress::Ipv6(net::Ipv6Address { addr: i.octets().into() }),
-        IpAddr::V4(i) => net::IpAddress::Ipv4(net::Ipv4Address { addr: i.octets().into() }),
-    };
-    let addr = if port > 0 {
-        ffx::TargetIpAddrInfo::IpPort(ffx::TargetIpPort { ip, port, scope_id })
-    } else {
-        ffx::TargetIpAddrInfo::Ip(ffx::TargetIp { ip, scope_id })
-    };
-
-    let taddr = TargetIpAddr::from(&addr);
-    const DEFAULT_SSH_PORT: u16 = 22;
-    let taddr_str = match taddr.ip() {
-        IpAddr::V4(_) => format!("{}", taddr),
-        IpAddr::V6(_) => format!("[{}]", taddr),
-    };
-    let port = taddr.port();
-    let target = Some(format!("{}:{}", taddr_str, if port == 0 { DEFAULT_SSH_PORT } else { port }));
-
-    let (client, mut stream) =
-        fidl::endpoints::create_request_stream::<ffx::AddTargetResponder_Marker>();
-    target_collection_proxy
-        .add_target(
-            &taddr.into(),
-            &ffx::AddTargetConfig { verify_connection: Some(wait), ..Default::default() },
-            client,
-        )
-        .context("calling AddTarget")?;
-    let res = match stream.try_next().await {
-        Ok(Some(ffx::AddTargetResponder_Request::Success { .. })) => Ok(()),
-        Ok(Some(ffx::AddTargetResponder_Request::Error { err, .. })) => Err(err),
-        Err(e) => {
-            return Err(FfxTargetError::DaemonCommunicationError {
-                target: target.clone(),
-                error: std::sync::Arc::new(e),
-            }
-            .into());
-        }
-        Ok(None) => {
-            return Err(FfxTargetError::DaemonError {
-                err: DaemonError::Timeout,
-                target: target.clone(),
-            }
-            .into());
-        }
-    };
-
-    // Pass formatted ip and port to target connection error, so it is more user friendly
-    res.map_err(|e| {
-        let err = e.connection_error.unwrap();
-        let logs = e.connection_error_logs.map(|v| v.join("\n"));
-        FfxTargetError::TargetConnectionError { err, target, logs }.into()
-    })
 }
 
 /// Discover fastboot targets only. Useful for fastboot-related plugins (flash/bootloader/fastboot).
@@ -1258,121 +955,5 @@ mod test {
         )
         .await;
         assert!(res.is_err(), "{:?}", res);
-    }
-
-    // We implement the fake daemon and target mock handlers locally rather than using
-    // `FakeDaemon` from the protocols crate to prevent circular dependencies (as the
-    // protocols crate depends on `ffx_target`).
-    async fn run_fake_daemon(
-        mut stream: ffx::DaemonRequestStream,
-        connection_counter: std::sync::Arc<std::sync::atomic::AtomicUsize>,
-    ) {
-        while let Ok(Some(req)) = stream.try_next().await {
-            match req {
-                ffx::DaemonRequest::ConnectToProtocol { name, server_end, responder } => {
-                    if name == ffx::TargetCollectionMarker::PROTOCOL_NAME {
-                        let stream =
-                            fidl::endpoints::ServerEnd::<ffx::TargetCollectionMarker>::new(
-                                server_end,
-                            )
-                            .into_stream();
-                        let connection_counter = connection_counter.clone();
-                        fuchsia_async::Task::local(async move {
-                            run_fake_target_collection(stream, connection_counter).await;
-                        })
-                        .detach();
-                        responder.send(Ok(())).unwrap();
-                    } else {
-                        responder.send(Err(ffx::DaemonError::ProtocolOpenError)).unwrap();
-                    }
-                }
-                _ => {}
-            }
-        }
-    }
-
-    async fn run_fake_target_collection(
-        mut stream: ffx::TargetCollectionRequestStream,
-        connection_counter: std::sync::Arc<std::sync::atomic::AtomicUsize>,
-    ) {
-        while let Ok(Some(req)) = stream.try_next().await {
-            match req {
-                ffx::TargetCollectionRequest::OpenTarget { query: _, target_handle, responder } => {
-                    let stream = target_handle.into_stream();
-                    let connection_counter = connection_counter.clone();
-                    fuchsia_async::Task::local(async move {
-                        run_fake_target(stream, connection_counter).await;
-                    })
-                    .detach();
-                    responder.send(Ok(())).unwrap();
-                }
-                _ => {}
-            }
-        }
-    }
-
-    async fn run_fake_target(
-        mut stream: ffx::TargetRequestStream,
-        connection_counter: std::sync::Arc<std::sync::atomic::AtomicUsize>,
-    ) {
-        while let Ok(Some(req)) = stream.try_next().await {
-            match req {
-                ffx::TargetRequest::OpenRemoteControl { remote_control: _, responder } => {
-                    let attempt =
-                        connection_counter.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-                    if attempt < 2 {
-                        responder.send(Err(ffx::TargetConnectionError::ConnectionRefused)).unwrap();
-                    } else {
-                        responder.send(Ok(())).unwrap();
-                    }
-                }
-                ffx::TargetRequest::Identity { responder } => {
-                    responder.send(&ffx::TargetInfo::default()).unwrap();
-                }
-                ffx::TargetRequest::GetSshLogs { responder } => {
-                    responder.send("mock ssh logs").unwrap();
-                }
-                _ => {}
-            }
-        }
-    }
-
-    // Verify that daemon-based target connection retries utilize the exponential backoff delay,
-    // avoiding high-frequency retry loops when encountering non-fatal connection errors.
-    #[fuchsia::test]
-    async fn test_daemon_remote_proxy_retry_rate() {
-        let env = test_init().unwrap();
-        let (daemon_proxy, daemon_stream) =
-            fidl::endpoints::create_proxy_and_stream::<ffx::DaemonMarker>();
-        let connection_counter = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
-        let counter_clone = connection_counter.clone();
-
-        fuchsia_async::Task::local(async move {
-            run_fake_daemon(daemon_stream, counter_clone).await;
-        })
-        .detach();
-
-        let target_spec = TargetInfoQuery::NodenameOrId("fake-device".to_string());
-
-        let proxy_timeout = Duration::from_millis(50);
-        let start = std::time::Instant::now();
-
-        let res =
-            get_remote_proxy(&target_spec, daemon_proxy, proxy_timeout, None, &env.context).await;
-        let elapsed = start.elapsed();
-
-        assert!(res.is_ok(), "Expected connection to succeed, got {:?}", res);
-
-        let retries = connection_counter.load(std::sync::atomic::Ordering::SeqCst);
-        assert_eq!(
-            retries, 3,
-            "Expected exactly 3 attempts (2 retries and 1 success), got {}",
-            retries
-        );
-        assert!(
-            elapsed >= Duration::from_millis(250),
-            "Expected elapsed time to be at least 250ms due to backoff, got {:?}",
-            elapsed
-        );
     }
 }

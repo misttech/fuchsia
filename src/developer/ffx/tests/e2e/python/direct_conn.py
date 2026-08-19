@@ -147,7 +147,7 @@ class FfxDirectTest(ffxtestcase.FfxTestCase):
             _LOGGER.info(f"Got bad JSON from ffx-log: {repr(out[:100])}")
 
     def test_ffx_doctor(self) -> None:
-        """Test `ffx --direct doctor` does not query the daemon."""
+        """Test `ffx --direct doctor` works."""
         # Can't run with _run_ffx_direct() because `ffx doctor` does
         # not support JSON output.
         out = self.run_ffx(
@@ -161,9 +161,7 @@ class FfxDirectTest(ffxtestcase.FfxTestCase):
         # Remove colors from doctor output
         out = remove_ansi_escape_sequences(out)
 
-        # Make sure we are running without a daemon
-        asserts.assert_in("No running daemons found", out)
-        # Make sure we actually find a target anyway
+        # Make sure we actually find a target
         asserts.assert_regex(out, r"\[✓\] \d+ targets found")
 
 

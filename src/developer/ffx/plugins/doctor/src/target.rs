@@ -8,95 +8,13 @@ use crate::single_target_diagnostics::run_single_target_diagnostics;
 use anyhow::Result;
 use ffx_config::EnvironmentContext;
 use ffx_target::TargetInfoQuery;
-use fidl::endpoints::create_proxy;
-use fidl::prelude::*;
-use fidl_fuchsia_developer_ffx::{
-    DaemonProxy, TargetCollectionMarker, TargetCollectionProxy, TargetCollectionReaderMarker,
-    TargetCollectionReaderRequest, TargetInfo, TargetMarker, TargetQuery, TargetState,
-};
-use fidl_fuchsia_developer_remotecontrol::{RemoteControlMarker, RemoteControlProxy};
-use futures::TryStreamExt;
+use fidl_fuchsia_developer_ffx::{TargetInfo, TargetState};
 use std::io::Write;
 use std::time::Duration;
 use timeout::timeout;
 
-pub async fn list_targets(
-    query: Option<&str>,
-    tc: &TargetCollectionProxy,
-) -> Result<Vec<TargetInfo>> {
-    let (reader, server) = fidl::endpoints::create_endpoints::<TargetCollectionReaderMarker>();
-
-    tc.list_targets(
-        &TargetQuery { string_matcher: query.map(|s| s.to_owned()), ..Default::default() },
-        reader,
-    )?;
-    let mut res = Vec::new();
-    let mut stream = server.into_stream();
-    while let Ok(Some(TargetCollectionReaderRequest::Next { entry, responder })) =
-        stream.try_next().await
-    {
-        responder.send()?;
-        if !entry.is_empty() {
-            res.extend(entry);
-        } else {
-            break;
-        }
-    }
-    Ok(res)
-}
-
 pub fn target_name(target: &TargetInfo) -> String {
     target.nodename.clone().unwrap_or_else(|| ffx_target::UNKNOWN_TARGET_NAME.to_string())
-}
-
-pub fn make_ssh_fix_suggestion(ssh_log: &str) -> Option<&'static str> {
-    if ssh_log.contains("Connection refused") {
-        Some("SSH connection was refused. You may need to (re-)establish a tunnel connection.")
-    } else if ssh_log.contains("Permission denied") {
-        Some(
-            "SSH connection could not authenticate. You may need to re-provision (pave or flash) your target to ensure SSH keys are appropriately setup.",
-        )
-    } else {
-        None
-    }
-}
-
-pub async fn check_single_target_via_daemon<W: Write>(
-    ledger: &mut LedgerNodeGuard<'_, W>,
-    target: &TargetInfo,
-    tc_proxy: &TargetCollectionProxy,
-    show_tool: Option<&mut ShowToolWrapper>,
-    retry_delay: Duration,
-) -> Result<()> {
-    let target_name = target_name(target);
-
-    let done = check_product_state(ledger, target);
-    if done {
-        return Ok(());
-    }
-    let mut target_node = ledger.add_node(&format!("Target: {}", target_name), LedgerMode::Normal);
-
-    check_compatibility(&mut target_node, target);
-
-    let (target_proxy, done) =
-        get_target_proxy(&mut target_node, target, tc_proxy, retry_delay).await?;
-    if done {
-        return Ok(());
-    }
-
-    let (remote_proxy, done) =
-        get_remote_proxy_via_daemon(&mut target_node, retry_delay, target_proxy).await?;
-    if done {
-        return Ok(());
-    }
-
-    let done = check_identify_host(&mut target_node, retry_delay, remote_proxy).await;
-    if done {
-        return Ok(());
-    }
-
-    show_target(&mut target_node, target, show_tool).await;
-    Ok(())
 }
 
 pub async fn check_single_target_locally<W: Write>(
@@ -107,6 +25,13 @@ pub async fn check_single_target_locally<W: Write>(
     retry_delay: Duration,
 ) -> Result<()> {
     let done = check_product_state(ledger, target);
+    if done {
+        return Ok(());
+    }
+
+    check_compatibility(ledger, target);
+
+    let done = check_identify_host(ledger, target, env_context, retry_delay).await;
     if done {
         return Ok(());
     }
@@ -123,6 +48,87 @@ pub async fn check_single_target_locally<W: Write>(
     Ok(())
 }
 
+pub async fn check_identify_host<W: Write>(
+    ledger: &mut LedgerNodeGuard<'_, W>,
+    target: &TargetInfo,
+    env_context: &EnvironmentContext,
+    retry_delay: Duration,
+) -> bool {
+    let handle = match discovery::TargetHandle::try_from(target.clone()) {
+        Ok(h) => h,
+        Err(e) => {
+            ledger
+                .add_node(&format!("Error while communicating with RCS: {e}"), LedgerMode::Verbose)
+                .set_outcome(LedgerOutcome::Failure);
+            return true;
+        }
+    };
+    let resolution = match ffx_target::Resolution::from_target_handle(handle) {
+        Ok(r) => r,
+        Err(e) => {
+            ledger
+                .add_node(&format!("Error while communicating with RCS: {e}"), LedgerMode::Verbose)
+                .set_outcome(LedgerOutcome::Failure);
+            return true;
+        }
+    };
+
+    match timeout(retry_delay, resolution.identify(env_context)).await {
+        Ok(Ok(_)) => {
+            ledger
+                .add(LedgerNode::new("Communicating with RCS".to_string(), LedgerMode::Verbose))
+                .set_outcome(LedgerOutcome::Success);
+            false
+        }
+        Ok(Err(e)) => {
+            ledger
+                .add_node(&format!("Error while communicating with RCS: {e}"), LedgerMode::Verbose)
+                .set_outcome(LedgerOutcome::Failure);
+            true
+        }
+        Err(_) => {
+            ledger
+                .add_node("Timeout while communicating with RCS", LedgerMode::Verbose)
+                .set_outcome(LedgerOutcome::Failure);
+            true
+        }
+    }
+}
+
+pub fn check_compatibility<W: Write>(ledger: &mut LedgerNodeGuard<'_, W>, target: &TargetInfo) {
+    let (compatibility_state, compatibility_message) = match &target.compatibility {
+        Some(info) => (info.state.into(), info.message.clone()),
+        None => (
+            compat_info::CompatibilityState::Absent,
+            "Compatibility information is not available".to_string(),
+        ),
+    };
+    let outcome = match compatibility_state {
+        compat_info::CompatibilityState::Supported => LedgerOutcome::Success,
+        compat_info::CompatibilityState::Error => LedgerOutcome::Failure,
+        compat_info::CompatibilityState::Absent => LedgerOutcome::SoftWarning,
+        compat_info::CompatibilityState::Unsupported => LedgerOutcome::Warning,
+        compat_info::CompatibilityState::Unknown => LedgerOutcome::SoftWarning,
+    };
+    let mut state_node = ledger
+        .add_node(&format!("Compatibility state: {compatibility_state}"), LedgerMode::Verbose);
+    state_node.add_node(&compatibility_message, LedgerMode::Verbose).set_outcome(outcome);
+    state_node.set_outcome(outcome);
+}
+
+pub fn make_ssh_fix_suggestion(ssh_log: &str) -> Option<&'static str> {
+    let lower = ssh_log.to_ascii_lowercase();
+    if lower.contains("connection refused") {
+        Some("SSH connection was refused. You may need to (re-)establish a tunnel connection.")
+    } else if lower.contains("permission denied") {
+        Some(
+            "SSH connection could not authenticate. You may need to re-provision (pave or flash) your target to ensure SSH keys are appropriately setup.",
+        )
+    } else {
+        None
+    }
+}
+
 pub async fn run_target_diagnostics<W: Write>(
     ledger: &mut LedgerNodeGuard<'_, W>,
     target: &TargetInfo,
@@ -132,9 +138,16 @@ pub async fn run_target_diagnostics<W: Write>(
     match run_single_target_diagnostics(env_context, target.clone(), ledger, retry_delay).await {
         Ok(()) => {}
         Err(e) => {
+            let error_msg = format!("{e:#}");
             ledger
-                .add_node(&format!("Error encountered in diagnostics: {e}"), LedgerMode::Automatic)
+                .add_node(
+                    &format!("Error encountered in diagnostics: {error_msg}"),
+                    LedgerMode::Automatic,
+                )
                 .set_outcome(LedgerOutcome::Failure);
+            if let Some(suggestion) = make_ssh_fix_suggestion(&error_msg) {
+                ledger.add_node(suggestion, LedgerMode::Automatic).set_outcome(LedgerOutcome::Info);
+            }
         }
     }
 }
@@ -195,36 +208,6 @@ pub async fn show_target<W: Write>(
     }
 }
 
-pub async fn check_identify_host<W: Write>(
-    ledger: &mut LedgerNodeGuard<'_, W>,
-    retry_delay: Duration,
-    remote_proxy: RemoteControlProxy,
-) -> bool {
-    match timeout(retry_delay, remote_proxy.identify_host()).await {
-        Ok(Ok(_)) => {
-            ledger
-                .add(LedgerNode::new("Communicating with RCS".to_string(), LedgerMode::Verbose))
-                .set_outcome(LedgerOutcome::Success);
-            false
-        }
-        Ok(Err(e)) => {
-            ledger
-                .add_node(
-                    &format!("Error while communicating with RCS: {}", e),
-                    LedgerMode::Verbose,
-                )
-                .set_outcome(LedgerOutcome::Failure);
-            true
-        }
-        Err(_) => {
-            ledger
-                .add_node("Timeout while communicating with RCS", LedgerMode::Verbose)
-                .set_outcome(LedgerOutcome::Failure);
-            true
-        }
-    }
-}
-
 pub fn check_product_state<W: Write>(
     ledger: &mut LedgerNodeGuard<'_, W>,
     target: &TargetInfo,
@@ -254,115 +237,6 @@ pub fn check_product_state<W: Write>(
             true
         }
     }
-}
-
-pub async fn get_remote_proxy_via_daemon<W: Write>(
-    ledger: &mut LedgerNodeGuard<'_, W>,
-    retry_delay: Duration,
-    target_proxy: ffx_target::TargetProxy,
-) -> Result<(RemoteControlProxy, bool), anyhow::Error> {
-    let (remote_proxy, remote_server_end) = create_proxy::<RemoteControlMarker>();
-    let done = match timeout(retry_delay, target_proxy.open_remote_control(remote_server_end)).await
-    {
-        Ok(Ok(res)) => {
-            ledger
-                .add_node("Connecting to RCS", LedgerMode::Verbose)
-                .set_outcome(LedgerOutcome::Success);
-            match res {
-                Ok(_) => false,
-                Err(_) => {
-                    let logs = match target_proxy.get_ssh_logs().await {
-                        Ok(l) => l,
-                        Err(e) => {
-                            return Err(e.into());
-                        }
-                    };
-                    ledger.add_node(
-                        &format!("Error while connecting to RCS: could not establish SSH connection to the target: {}", logs),
-                        LedgerMode::Verbose,
-                    ).set_outcome(LedgerOutcome::Failure);
-                    if let Some(suggestion) = make_ssh_fix_suggestion(&logs) {
-                        ledger
-                            .add_node(suggestion, LedgerMode::Automatic)
-                            .set_outcome(LedgerOutcome::Info);
-                    }
-                    true
-                }
-            }
-        }
-        Ok(Err(e)) => {
-            ledger
-                .add_node(&format!("Error while connecting to RCS: {}", e), LedgerMode::Verbose)
-                .set_outcome(LedgerOutcome::Failure);
-            true
-        }
-        Err(_) => {
-            ledger
-                .add_node("Timeout while connecting to RCS", LedgerMode::Verbose)
-                .set_outcome(LedgerOutcome::Failure);
-            true
-        }
-    };
-    Ok((remote_proxy, done))
-}
-
-pub async fn get_target_proxy<W: Write>(
-    ledger: &mut LedgerNodeGuard<'_, W>,
-    target: &TargetInfo,
-    tc_proxy: &TargetCollectionProxy,
-    retry_delay: Duration,
-) -> Result<(ffx_target::TargetProxy, bool), anyhow::Error> {
-    let (target_proxy, target_server) = fidl::endpoints::create_proxy::<TargetMarker>();
-    let done = match timeout(
-        retry_delay,
-        tc_proxy.open_target(
-            &TargetQuery { string_matcher: target.nodename.clone(), ..Default::default() },
-            target_server,
-        ),
-    )
-    .await
-    {
-        Ok(Ok(_)) => {
-            ledger
-                .add_node("Opened target handle", LedgerMode::Verbose)
-                .set_outcome(LedgerOutcome::Success);
-            false
-        }
-        Ok(Err(e)) => {
-            ledger
-                .add_node(&format!("Error while opening target handle: {}", e), LedgerMode::Verbose)
-                .set_outcome(LedgerOutcome::Failure);
-            true
-        }
-        Err(_) => {
-            ledger
-                .add_node("Timeout while opening target handle", LedgerMode::Verbose)
-                .set_outcome(LedgerOutcome::Failure);
-            true
-        }
-    };
-    Ok((target_proxy, done))
-}
-
-pub fn check_compatibility<W: Write>(ledger: &mut LedgerNodeGuard<'_, W>, target: &TargetInfo) {
-    let (compatibility_state, compatibility_message) = match &target.compatibility {
-        Some(info) => (info.state.into(), info.message.clone()),
-        None => (
-            compat_info::CompatibilityState::Absent,
-            "Compatibility information is not available".to_string(),
-        ),
-    };
-    let outcome = match compatibility_state {
-        compat_info::CompatibilityState::Supported => LedgerOutcome::Success,
-        compat_info::CompatibilityState::Error => LedgerOutcome::Failure,
-        compat_info::CompatibilityState::Absent => LedgerOutcome::SoftWarning,
-        compat_info::CompatibilityState::Unsupported => LedgerOutcome::Warning,
-        compat_info::CompatibilityState::Unknown => LedgerOutcome::SoftWarning,
-    };
-    let mut state_node = ledger
-        .add_node(&format!("Compatibility state: {compatibility_state}"), LedgerMode::Verbose);
-    state_node.add_node(&compatibility_message, LedgerMode::Verbose).set_outcome(outcome);
-    state_node.set_outcome(outcome);
 }
 
 pub async fn check_targets_locally<W: Write>(
@@ -431,87 +305,32 @@ pub async fn find_targets_locally(
     Ok(targets.into_iter().map(|t| TargetInfo::from(t)).collect::<Vec<TargetInfo>>())
 }
 
-pub async fn check_targets_via_daemon<W: Write>(
-    ledger: &mut LedgerNodeGuard<'_, W>,
-    target_str: &str,
-    retry_delay: Duration,
-    env_context: &EnvironmentContext,
-    mut show_tool: Option<ShowToolWrapper>,
-    run_additional_diagnostics: bool,
-    daemon_proxy: &DaemonProxy,
-) -> Result<(), anyhow::Error> {
-    let (tc_proxy, tc_server) = fidl::endpoints::create_proxy::<TargetCollectionMarker>();
-    let targets = {
-        let mut discovery_node = ledger.add_node("Searching for targets", LedgerMode::Automatic);
-        match timeout(
-            retry_delay,
-            daemon_proxy.connect_to_protocol(
-                TargetCollectionMarker::PROTOCOL_NAME,
-                tc_server.into_channel(),
-            ),
-        )
-        .await
-        {
-            Ok(Err(e)) => {
-                discovery_node
-                    .add_node(
-                        &format!("Error connecting to target service: {}", e),
-                        LedgerMode::Verbose,
-                    )
-                    .set_outcome(LedgerOutcome::Failure);
-                return Ok(());
-            }
-            Ok(_) => {}
-            Err(_) => {
-                discovery_node
-                    .add_node("Timeout while connecting to target service", LedgerMode::Verbose)
-                    .set_outcome(LedgerOutcome::Failure);
-                return Ok(());
-            }
-        }
-        let targets_res = timeout(retry_delay, list_targets(Some(target_str), &tc_proxy)).await;
-        match targets_res {
-            Ok(targets_result) => {
-                let targets = check_target_discovery(&mut discovery_node, targets_result);
-                if targets.is_empty() {
-                    return Ok(());
-                }
-                targets
-            }
-            Err(_) => {
-                discovery_node
-                    .add_node("Timeout while getting target list", LedgerMode::Automatic)
-                    .set_outcome(LedgerOutcome::Failure);
-                return Ok(());
-            }
-        }
-    };
-    for target in targets.iter() {
-        match check_single_target_via_daemon(
-            ledger,
-            target,
-            &tc_proxy,
-            show_tool.as_mut(),
-            retry_delay,
-        )
-        .await
-        {
-            Ok(_) => {}
-            Err(e) => {
-                ledger
-                    .add_node(format!("Error checking target: {e}").as_str(), LedgerMode::Automatic)
-                    .set_outcome(LedgerOutcome::Failure);
-            }
-        }
+#[cfg(test)]
+mod tests {
+    use super::*;
 
-        if run_additional_diagnostics {
-            let target_name = target_name(target);
-            let mut node = ledger.add_node(
-                &format!("Running additional diagnostics against {target_name}"),
-                LedgerMode::Automatic,
-            );
-            run_target_diagnostics(&mut node, target, env_context, retry_delay).await;
-        }
+    #[test]
+    fn test_make_ssh_fix_suggestion() {
+        assert_eq!(
+            make_ssh_fix_suggestion("ssh: Connection refused"),
+            Some("SSH connection was refused. You may need to (re-)establish a tunnel connection.")
+        );
+        assert_eq!(
+            make_ssh_fix_suggestion("connection refused"),
+            Some("SSH connection was refused. You may need to (re-)establish a tunnel connection.")
+        );
+        assert_eq!(
+            make_ssh_fix_suggestion("Permission denied (publickey)"),
+            Some(
+                "SSH connection could not authenticate. You may need to re-provision (pave or flash) your target to ensure SSH keys are appropriately setup."
+            )
+        );
+        assert_eq!(
+            make_ssh_fix_suggestion("permission denied"),
+            Some(
+                "SSH connection could not authenticate. You may need to re-provision (pave or flash) your target to ensure SSH keys are appropriately setup."
+            )
+        );
+        assert_eq!(make_ssh_fix_suggestion("some other error"), None);
     }
-    Ok(())
 }

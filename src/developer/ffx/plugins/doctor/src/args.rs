@@ -28,9 +28,7 @@ To override output dir:
     note = "The `doctor` subcommand automatically attempts to repair common target
 interaction issues and provides useful diagnostic information to the user.
 
-By default, running `ffx doctor` attempts to establish a connection with
-the daemon, and restarts the daemon if there is no connection. The default
-`retry_count` is '3' and the default 'retry_delay` is '2000' milliseconds."
+The default `retry_delay` is '2000' milliseconds."
 )]
 pub struct DoctorCommand {
     #[argh(switch, description = "generates an output zip file with logs")]
@@ -41,19 +39,23 @@ pub struct DoctorCommand {
 
     #[argh(
         option,
-        default = "3",
-        description = "number of times to retry failed connection attempts"
-    )]
-    pub retry_count: usize,
-
-    #[argh(
-        option,
         default = "2000",
         description = "timeout delay in ms during connection attempt"
     )]
     pub retry_delay: u64,
 
-    #[argh(switch, description = "force restart the daemon, even if the connection is working")]
+    #[argh(
+        option,
+        description = "deprecated: number of times to retry failed connection attempts",
+        hidden_help
+    )]
+    pub retry_count: Option<usize>,
+
+    #[argh(
+        switch,
+        description = "deprecated: force restart the daemon, even if the connection is working",
+        hidden_help
+    )]
     pub restart_daemon: bool,
 
     #[argh(switch, short = 'v', description = "verbose, display all steps")]
@@ -67,4 +69,18 @@ pub struct DoctorCommand {
         description = "checks SSH key consistency and repairs them if needed. This may cause any devices to be reflashed."
     )]
     pub repair_keys: bool,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_deprecated_args_parse() {
+        let cmd =
+            DoctorCommand::from_args(&["doctor"], &["--restart-daemon", "--retry-count", "5"])
+                .unwrap();
+        assert!(cmd.restart_daemon);
+        assert_eq!(cmd.retry_count, Some(5));
+    }
 }
