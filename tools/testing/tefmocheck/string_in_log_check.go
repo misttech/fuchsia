@@ -667,19 +667,22 @@ func fuchsiaLogChecks() []FailureModeCheck {
 		// For https://fxbug.dev/500045713
 		// This is for driver manager removal and bootup hangs.
 		&stringInLogCheck{
-			String:      "Full node removal hanging",
-			Type:        serialLogType,
-			AlwaysFlake: true,
+			String:        "Full node removal hanging",
+			Type:          serialLogType,
+			AlwaysFlake:   true,
+			ExceptStrings: []string{"hang-on-stop"},
 		},
 		&stringInLogCheck{
-			String:      "Package node removal hanging",
-			Type:        serialLogType,
-			AlwaysFlake: true,
+			String:        "Package node removal hanging",
+			Type:          serialLogType,
+			AlwaysFlake:   true,
+			ExceptStrings: []string{"hang-on-stop"},
 		},
 		&stringInLogCheck{
-			String:      "waiting for driver's Stop() function and destructor finish running",
-			Type:        serialLogType,
-			AlwaysFlake: true,
+			String:        "waiting for driver's Stop() function and destructor finish running",
+			Type:          serialLogType,
+			AlwaysFlake:   true,
+			ExceptStrings: []string{"hang-on-stop"},
 		},
 		&stringInLogCheck{
 			String:      "Deadline exceeded in the bootup tracker with:",
