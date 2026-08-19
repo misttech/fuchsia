@@ -41,10 +41,6 @@ KCOUNTER(pmm_alloc_delayed, "vm.pmm.alloc.delayed")
 
 namespace {
 
-// Indicates whether a PMM alloc call has ever failed with ZX_ERR_NO_MEMORY.  Used to trigger an
-// OOM response.  See |MemoryWatchdog::WorkerThread|.
-ktl::atomic<bool> alloc_failed_no_mem;
-
 // Poison a page |p| with value |value|. Accesses to a poisoned page via the physmap are not
 // allowed and may cause faults or kASAN checks.
 void AsanPoisonPage(vm_page_t* p, uint8_t value) {
@@ -1049,10 +1045,6 @@ void PmmNode::StopReturningShouldWait() {
 
 int64_t PmmNode::get_alloc_failed_count() { return pmm_alloc_failed.SumAcrossAllCpus(); }
 
-bool PmmNode::has_alloc_failed_no_mem() {
-  return alloc_failed_no_mem.load(ktl::memory_order_relaxed);
-}
-
 void PmmNode::BeginLoan(VmPageDoublyLinkedList* page_list, PmmOptDelayReuse delay_reuse) {
   DEBUG_ASSERT(page_list);
   AutoPreemptDisabler preempt_disable;
@@ -1149,10 +1141,10 @@ void PmmNode::ReportAllocFailureLocked(AllocFailure failure) {
 
   // Update before signaling the MemoryWatchdog to ensure it observes the update.
   //
-  // |alloc_failed_no_mem| latches so only need to invoke the callback once.  We could call it on
+  // |alloc_failed_no_mem_| latches so only need to invoke the callback once.  We could call it on
   // every failure, but that's wasteful and we don't want to spam any underlying Event (or the
   // thread lock or the MemoryWatchdog).
-  const bool first_time = !alloc_failed_no_mem.exchange(true, ktl::memory_order_relaxed);
+  const bool first_time = !alloc_failed_no_mem_.exchange(true, ktl::memory_order_relaxed);
   if (first_time) {
     first_alloc_failure_ = failure;
     // Record the free_count_ only for non-Pmm types. For PMM alloc failures, we know exactly what

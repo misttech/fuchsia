@@ -274,8 +274,10 @@ class PmmNode {
 
   static int64_t get_alloc_failed_count();
 
-  // See |pmm_has_alloc_failed_no_mem|.
-  static bool has_alloc_failed_no_mem();
+  // See |alloc_failed_no_mem_|.
+  bool has_alloc_failed_no_mem() const {
+    return alloc_failed_no_mem_.load(ktl::memory_order_relaxed);
+  }
 
   Evictor* GetEvictor() { return &evictor_; }
 
@@ -441,6 +443,10 @@ class PmmNode {
   // The event acts a gate keeper for waking up threads waiting for allocations one at time.
   // The event gets signalled when there MAY be pages available.
   AutounsignalEvent may_allocate_evt_{true};
+
+  // Indicates whether a PMM alloc call has ever failed with ZX_ERR_NO_MEMORY.  Used to trigger an
+  // OOM response.  See |MemoryWatchdog::WorkerThread|.
+  ktl::atomic<bool> alloc_failed_no_mem_{false};
 
   // A record of the first time an allocation failure is reported to aid in diagnostics.
   AllocFailure first_alloc_failure_ TA_GUARDED(lock_);

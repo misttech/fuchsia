@@ -265,7 +265,7 @@ void MemoryWatchdog::WorkerThread() {
     // because it was out of memory, then escalate the pressure level to trigger an OOM response
     // immediately.  The idea here is that usermode processes may not be able to handle allocation
     // failure and therefore could have become wedged in some way.
-    if (BootOptions::Get()->oom_trigger_on_alloc_failure && PmmNode::has_alloc_failed_no_mem()) {
+    if (BootOptions::Get()->oom_trigger_on_alloc_failure && Pmm::Node().has_alloc_failed_no_mem()) {
       PmmNode::AllocFailure first_failure = Pmm::Node().GetFirstAllocFailure();
       // This log message is load-bearing server-side as it's used to identify the culprit of the
       // OOM.
@@ -401,7 +401,8 @@ void MemoryWatchdog::WaitForMemChange(const Deadline& deadline) {
       // ensure that if an allocation failure happened while we did not have an event set that it is
       // not missed.
       set_free_memory_failed_iterations = 0;
-      if (BootOptions::Get()->oom_trigger_on_alloc_failure && PmmNode::has_alloc_failed_no_mem()) {
+      if (BootOptions::Get()->oom_trigger_on_alloc_failure &&
+          Pmm::Node().has_alloc_failed_no_mem()) {
         return;
       }
       status = mem_state_signal_.Wait(deadline);

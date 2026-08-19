@@ -138,7 +138,7 @@ vm_page_t* paddr_to_vm_page(paddr_t addr);
 // caller should recalculate a correct bounds and try again.
 //
 // In addition to exiting the provided memory bounds, the event will also get signaled on the first
-// time an allocation fails (i.e. the first time at which pmm_has_alloc_failed_no_mem would return
+// time an allocation fails (i.e. the first time at which has_alloc_failed_no_mem would return
 // true).
 //
 // |delay_allocations_level| is the number of PMM free pages below which the PMM will transition to

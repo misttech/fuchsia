@@ -1118,6 +1118,50 @@ static bool pmm_page_to_from_index_test() {
   END_TEST;
 }
 
+// Test reporting allocation failures and latching the first failure.
+static bool pmm_node_alloc_failure_reporting_test() {
+  BEGIN_TEST;
+
+  ManagedPmmNode node;
+
+  // Initially, no allocation failure should be recorded.
+  EXPECT_FALSE(node.node().has_alloc_failed_no_mem());
+  PmmNode::AllocFailure initial_failure = node.node().GetFirstAllocFailure();
+  EXPECT_EQ(PmmNode::AllocFailure::Type::None, initial_failure.type);
+  EXPECT_EQ(0u, initial_failure.size);
+
+  // Report a first allocation failure.
+  PmmNode::AllocFailure failure1 = {
+      .type = PmmNode::AllocFailure::Type::Heap,
+      .size = 1024,
+      .free_count = 10,
+  };
+  node.node().ReportAllocFailure(failure1);
+
+  EXPECT_TRUE(node.node().has_alloc_failed_no_mem());
+  PmmNode::AllocFailure recorded_failure = node.node().GetFirstAllocFailure();
+  EXPECT_EQ(PmmNode::AllocFailure::Type::Heap, recorded_failure.type);
+  EXPECT_EQ(1024u, recorded_failure.size);
+  // For non-PMM types, free_count is overwritten with the current node's free_count_.
+  EXPECT_EQ(ManagedPmmNode::kNumPages, recorded_failure.free_count);
+
+  // Report a second allocation failure with different parameters.
+  PmmNode::AllocFailure failure2 = {
+      .type = PmmNode::AllocFailure::Type::Pmm,
+      .size = 4096,
+      .free_count = 5,
+  };
+  node.node().ReportAllocFailure(failure2);
+
+  // The node should still retain the first recorded failure.
+  PmmNode::AllocFailure latched_failure = node.node().GetFirstAllocFailure();
+  EXPECT_EQ(PmmNode::AllocFailure::Type::Heap, latched_failure.type);
+  EXPECT_EQ(1024u, latched_failure.size);
+  EXPECT_EQ(ManagedPmmNode::kNumPages, latched_failure.free_count);
+
+  END_TEST;
+}
+
 UNITTEST_START_TESTCASE(pmm_tests)
 VM_UNITTEST(pmm_smoke_test)
 VM_UNITTEST(pmm_alloc_contiguous_one_test)
@@ -1127,6 +1171,7 @@ VM_UNITTEST(pmm_node_loan_borrow_cancel_reclaim_end)
 VM_UNITTEST(pmm_node_oversized_alloc_test)
 VM_UNITTEST(pmm_node_free_mem_event_test)
 VM_UNITTEST(pmm_node_low_mem_alloc_failure_test)
+VM_UNITTEST(pmm_node_alloc_failure_reporting_test)
 VM_UNITTEST(pmm_node_explicit_should_wait_test)
 VM_UNITTEST(pmm_node_stop_returning_should_wait_test)
 VM_UNITTEST(pmm_node_stop_returning_should_wait_concurrent_test)
