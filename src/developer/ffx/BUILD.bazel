@@ -11,7 +11,6 @@ package(
 
 exports_files([
     "data/config.json",
-    "daemon/data/config.json",
     "lib/pbms/data/config.json",
 ])
 
@@ -20,7 +19,6 @@ exports_files([
 json_merge(
     name = "ffx-defaults.json",
     srcs = [
-        "daemon/data/config.json",
         "data/config.json",
         "lib/pbms/data/config.json",
     ],

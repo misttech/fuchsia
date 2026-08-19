@@ -15,7 +15,6 @@ rustc_library("lib") {
   visibility = [
     ":*",
     "////src/developer/ffx/lib/discovery:*",
-    "//src/developer/ffx/daemon/protocols/mdns:*",
   ]
 
   deps = [

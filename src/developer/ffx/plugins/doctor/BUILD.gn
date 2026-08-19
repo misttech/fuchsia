@@ -60,7 +60,6 @@ ffx_plugin("ffx_doctor") {
   ]
 
   sources = [
-    "src/daemon.rs",
     "src/doctor_ledger.rs",
     "src/environment.rs",
     "src/gcheck.rs",

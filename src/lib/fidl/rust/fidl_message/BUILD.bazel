@@ -11,7 +11,6 @@ rustc_library(
     srcs = ["src/lib.rs"],
     edition = "2024",
     visibility = [
-        "//src/developer/ffx/daemon:__subpackages__",
         "//src/developer/ffx/lib/discovery:__subpackages__",
         "//src/developer/ffx/lib/usb_driver_api:__subpackages__",
         "//src/developer/ffx/tools/usb_driver:__subpackages__",

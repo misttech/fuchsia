@@ -11,7 +11,6 @@ pub mod include_target {
 
     pub(crate) async fn test_target_show(context: EnvironmentContext) -> Result<()> {
         let isolate = new_isolate(&context, "target-show").await?;
-        isolate.start_daemon().await?;
 
         let target_nodeaddr = get_target_addr();
 

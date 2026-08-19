@@ -10,7 +10,6 @@ use serde_json::Value;
 use std::borrow::Cow;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::process::Child;
 use std::time::SystemTime;
 use tempfile::TempDir;
 use thiserror::Error;
@@ -155,20 +154,11 @@ pub enum IsolateError {
     #[error("Failed to canonicalize path {0}: {1}")]
     Canonicalize(std::path::PathBuf, #[source] std::io::Error),
 
-    #[error("Failed to start daemon: {0}")]
-    StartDaemon(#[source] Box<ffx_daemon::DaemonError>),
-
     #[error("Failed to execute ffx: {0}")]
     ExecuteFfx(#[from] ffx_executor::ExecutionError),
 
     #[error("IO error: {0}")]
     Io(#[from] std::io::Error),
-}
-
-impl From<ffx_daemon::DaemonError> for IsolateError {
-    fn from(err: ffx_daemon::DaemonError) -> Self {
-        Self::StartDaemon(Box::new(err))
-    }
 }
 
 impl FfxExecutor for Isolate {
@@ -351,17 +341,6 @@ impl Isolate {
 
     pub fn env_context(&self) -> &EnvironmentContext {
         &self.env_ctx
-    }
-
-    // Manually spawning the daemon allow it to remain under our process group instead of
-    // daemonizing. These daemons will be sent signals directed towards this process group.
-    pub async fn start_daemon(&self) -> std::result::Result<Child, IsolateError> {
-        let daemon = ffx_daemon::run_daemon(self.env_context()).await?;
-        const DAEMON_WAIT_TIME: u64 = 2000;
-        // Wait a bit to make sure the daemon has had a chance to start up.
-        fuchsia_async::Timer::new(fuchsia_async::MonotonicDuration::from_millis(DAEMON_WAIT_TIME))
-            .await;
-        Ok(daemon)
     }
 
     // TODO(396006570): Remove these functions once migrations have been done in external

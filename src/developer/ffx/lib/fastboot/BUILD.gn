@@ -13,8 +13,6 @@ rustc_library("lib") {
   with_unit_tests = true
   visibility = [
     ":*",
-    "//src/developer/ffx/daemon/protocols/target_collection:*",
-    "//src/developer/ffx/daemon/target:*",
     "//src/developer/ffx/lib/diagnostics/checks:*",
     "//src/developer/ffx/plugins/target/bootloader:*",
     "//src/developer/ffx/plugins/target/fastboot:*",

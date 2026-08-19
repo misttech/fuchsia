@@ -19,7 +19,6 @@ use std::time::Duration;
 #[ignore] // TODO(https://fxbug.dev/387543611): Re-enable
 async fn test_target_flash_gigaboot(ctx: TestContext) {
     let isolate = ctx.isolate();
-    isolate.start_daemon().await.unwrap();
 
     let mut emu = Emu::start(&ctx);
 
@@ -69,7 +68,6 @@ async fn test_target_flash_gigaboot(ctx: TestContext) {
 #[ignore] // TODO(https://fxbug.dev/387543611, https://fxbug.dev/42083467): Re-enable
 async fn test_target_flash_from_product(ctx: TestContext) {
     let isolate = ctx.isolate();
-    isolate.start_daemon().await.unwrap();
 
     let mut emu = Emu::start(&ctx);
 
@@ -135,7 +133,6 @@ async fn test_target_flash_from_product(ctx: TestContext) {
 #[ignore] // TODO(https://fxbug.dev/387543611): Re-enable
 async fn test_target_reboot_to_bootloader_gigaboot(ctx: TestContext) {
     let isolate = ctx.isolate();
-    isolate.start_daemon().await.unwrap();
 
     let mut emu = Emu::start(&ctx);
 
@@ -177,7 +174,6 @@ async fn test_target_reboot_to_bootloader_gigaboot(ctx: TestContext) {
 #[ignore] // TODO(https://fxbug.dev/387543611): Re-enable
 async fn test_target_bootloader_info(ctx: TestContext) {
     let isolate = ctx.isolate();
-    isolate.start_daemon().await.unwrap();
 
     let mut emu = Emu::start(&ctx);
 
@@ -208,7 +204,6 @@ async fn test_target_bootloader_info(ctx: TestContext) {
 #[ignore] // TODO(https://fxbug.dev/387543611, https://fxbug.dev/42083467): Re-enable
 async fn test_target_bootloader_info_from_product(ctx: TestContext) {
     let isolate = ctx.isolate();
-    isolate.start_daemon().await.unwrap();
 
     let mut emu = Emu::start(&ctx);
 

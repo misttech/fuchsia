@@ -197,8 +197,6 @@ impl IsolatedEmulator {
                 source: Box::new(e),
             })?;
 
-        this.ffx_isolate.start_daemon().await.map_err(IsolatedEmulatorError::IsolateCreate)?;
-
         info!("starting emulator {}", this.emu_name);
         let emulator_log = this.ffx_isolate.log_dir().join("emulator.log").display().to_string();
         let product_bundle_path = std::env::var("PRODUCT_BUNDLE_PATH")

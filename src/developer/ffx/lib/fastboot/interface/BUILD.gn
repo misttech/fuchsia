@@ -16,7 +16,6 @@ rustc_library("lib") {
 
   visibility = [
     ":*",
-    "//src/developer/ffx/daemon/protocols/target_collection:*",
     "//src/developer/ffx/lib/diagnostics/checks:*",
     "//src/developer/ffx/lib/fastboot:*",
     "//src/developer/ffx/lib/fastboot/connection_factory:*",
