@@ -31,6 +31,7 @@
                 "fuchsia.hardware.power.statecontrol.ShutdownWatcherRegister",
                 "fuchsia.hwinfo.Board",
                 "fuchsia.hwinfo.Product",
+                "fuchsia.kernel.RootJobForInspect",
                 "fuchsia.metrics.MetricEventLoggerFactory",
                 "fuchsia.net.http.Loader",
                 "fuchsia.process.Launcher",

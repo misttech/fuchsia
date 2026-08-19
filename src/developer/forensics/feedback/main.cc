@@ -2,8 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <fidl/fuchsia.kernel/cpp/fidl.h>
 #include <fuchsia/feedback/cpp/fidl.h>
 #include <fuchsia/process/lifecycle/cpp/fidl.h>
+#include <lib/component/incoming/cpp/protocol.h>
 #include <lib/fidl/cpp/interface_request.h>
 #include <lib/syslog/cpp/log_settings.h>
 #include <lib/syslog/cpp/macros.h>
@@ -32,6 +34,29 @@
 #include "src/lib/uuid/uuid.h"
 
 namespace forensics::feedback {
+
+namespace {
+
+zx::job GetRootJobForInspect() {
+  zx::result client_end = ::component::Connect<fuchsia_kernel::RootJobForInspect>();
+  if (!client_end.is_ok()) {
+    FX_PLOGS(ERROR, client_end.status_value())
+        << "Failed to connect to fuchsia.kernel.RootJobForInspect";
+    return zx::job();
+  }
+
+  fidl::SyncClient client(std::move(*client_end));
+  auto result = client->Get();
+  if (!result.is_ok()) {
+    FX_LOGS(ERROR) << "Failed to get root job from fuchsia.kernel.RootJobForInspect: "
+                   << result.error_value().FormatDescription();
+    return zx::job();
+  }
+
+  return std::move(result->job());
+}
+
+}  // namespace
 
 int main() {
   forensics::component::Component component;
@@ -163,6 +188,7 @@ int main() {
               .is_first_instance = component.IsFirstInstance(),
               .limit_inspect_data = feedback_config->build_type_config.enable_limit_inspect_data,
               .delete_previous_boot_logs_time = delete_previous_boot_logs_time,
+              .root_job = GetRootJobForInspect(),
           }});
 
   component.AddPublicService(main_service->GetHandler<fuchsia::feedback::LastRebootInfoProvider>());

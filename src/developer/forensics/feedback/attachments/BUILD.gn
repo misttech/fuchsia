@@ -176,3 +176,22 @@ source_set("system_log") {
     "//src/lib/diagnostics/accessor2logger",
   ]
 }
+
+source_set("process_tree") {
+  sources = [
+    "process_tree.cc",
+    "process_tree.h",
+  ]
+
+  public_deps = [
+    ":attachments",
+    "//sdk/lib/fit-promise",
+    "//zircon/system/ulib/zx",
+  ]
+
+  deps = [
+    "//sdk/lib/syslog/cpp",
+    "//src/developer/forensics/utils:errors",
+    "//zircon/system/ulib/task-utils",
+  ]
+}

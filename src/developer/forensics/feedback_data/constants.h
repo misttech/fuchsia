@@ -27,6 +27,7 @@ constexpr char kAttachmentLogKernelPrevious[] = "log.kernel.previous_boot.txt";
 constexpr char kAttachmentLogSystem[] = "log.system.txt";
 constexpr char kAttachmentLogSystemPrevious[] = "log.system.previous_boot.txt";
 constexpr char kAttachmentMetadata[] = "metadata.json";
+constexpr char kAttachmentProcessTree[] = "process_tree.txt";
 
 // Snapshot key.
 constexpr char kSnapshotFilename[] = "snapshot.zip";

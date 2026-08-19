@@ -14,7 +14,8 @@ AttachmentProviders::AttachmentProviders(async_dispatcher_t* dispatcher,
                                          std::optional<zx::duration> delete_previous_boot_log_at,
                                          timekeeper::Clock* clock, RedactorBase* redactor,
                                          feedback_data::InspectDataBudget* inspect_data_budget,
-                                         std::set<std::string> allowlist, cobalt::Logger* cobalt)
+                                         std::set<std::string> allowlist, cobalt::Logger* cobalt,
+                                         zx::job root_job)
     : log_buffer_(feedback_data::kCurrentLogBufferSize, redactor),
       kernel_log_(dispatcher, services, AttachmentProviderBackoff(), redactor),
       system_log_(dispatcher, services, clock, redactor, feedback_data::kActiveLoggingPeriod,
@@ -25,6 +26,7 @@ AttachmentProviders::AttachmentProviders(async_dispatcher_t* dispatcher,
       previous_boot_kernel_log_(forensics::feedback::kPreviousBootKernelLogPath,
                                 /*warn_if_unavailable=*/false),
       kernel_boot_options_(kKernelBootOptionsPath),
+      process_tree_(std::move(root_job)),
       attachment_manager_(
           dispatcher, clock, allowlist,
           {
@@ -35,6 +37,7 @@ AttachmentProviders::AttachmentProviders(async_dispatcher_t* dispatcher,
               {feedback_data::kAttachmentInspect, &inspect_},
               {feedback_data::kAttachmentInspectPreviousBoot, &previous_boot_inspect_},
               {feedback_data::kAttachmentKernelBootOptions, &kernel_boot_options_},
+              {feedback_data::kAttachmentProcessTree, &process_tree_},
           }) {
   if (allowlist.empty()) {
     FX_LOGS(WARNING)

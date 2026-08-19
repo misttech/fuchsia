@@ -79,7 +79,7 @@ MainService::MainService(
           MakeDeviceIdProvider(options.local_device_id_path, dispatcher_, services_)),
       network_watcher_(dispatcher, *services),
       feedback_data_(dispatcher_, services_, clock_, inspect_root_, cobalt_, redactor_.get(),
-                     annotations_.GetAnnotationManager(), options.feedback_data_options),
+                     annotations_.GetAnnotationManager(), std::move(options.feedback_data_options)),
       crash_reports_(dispatcher_, services_, clock_, inspect_root_,
                      annotations_.GetAnnotationManager(), feedback_data_.DataProvider(),
                      options.crash_reports_options),

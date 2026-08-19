@@ -12,6 +12,7 @@
 #include <lib/fit/defer.h>
 #include <lib/fit/function.h>
 #include <lib/sys/cpp/service_directory.h>
+#include <lib/zx/job.h>
 #include <lib/zx/time.h>
 
 #include <memory>
@@ -36,6 +37,7 @@ class FeedbackData {
     bool is_first_instance;
     bool limit_inspect_data;
     std::optional<zx::duration> delete_previous_boot_logs_time;
+    zx::job root_job;
   };
 
   FeedbackData(async_dispatcher_t* dispatcher, std::shared_ptr<sys::ServiceDirectory> services,

@@ -83,6 +83,7 @@ TEST_F(ProdConfigTest, DefaultSnapshot) {
                                                 "log.kernel.txt",
                                                 "log.system.previous_boot.txt",
                                                 "log.system.txt",
+                                                "process_tree.txt",
                                             }));
 }
 
