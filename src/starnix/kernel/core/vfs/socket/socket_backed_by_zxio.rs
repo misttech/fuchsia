@@ -823,6 +823,12 @@ impl SocketOps for ZxioBackedSocket {
             (SOL_SOCKET, SO_COOKIE) => {
                 self.get_socket_cookie().map(|cookie| cookie.as_bytes().to_owned())
             }
+            (SOL_IP, IP_MULTICAST_ALL) => {
+                track_stub!(TODO("https://fxbug.dev/404596095"), "SOL_IP.IP_MULTICAST_ALL");
+                let mut result = vec![0; 4];
+                byteorder::NativeEndian::write_u32(&mut result, 0);
+                Ok(result)
+            }
             _ => self
                 .zxio
                 .getsockopt(level, optname, optlen)
