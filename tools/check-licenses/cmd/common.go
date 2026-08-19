@@ -12,8 +12,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	v2config "go.fuchsia.dev/fuchsia/tools/check-licenses/v2/config"
-	v2readme "go.fuchsia.dev/fuchsia/tools/check-licenses/v2/readme"
+	v2config "go.fuchsia.dev/fuchsia/tools/check-licenses/config"
+	v2readme "go.fuchsia.dev/fuchsia/tools/check-licenses/readme"
 )
 
 // ReconstructCommand scans raw args to find -bug and -desc flags and their values,
@@ -63,7 +63,7 @@ func ReconstructCommand(commandPath string, args []string, placeholders []string
 	if bugVal != "" {
 		cmdBuilder.WriteString(fmt.Sprintf(" -bug %s", bugVal))
 	} else {
-		cmdBuilder.WriteString(" -bug <BugID>")
+		cmdBuilder.WriteString(" -bug BUG_ID")
 	}
 	if descVal != "" && descVal != "Auto-generated exception" && descVal != "Auto-generated allowlist entry" {
 		cmdBuilder.WriteString(fmt.Sprintf(" -desc %q", descVal))

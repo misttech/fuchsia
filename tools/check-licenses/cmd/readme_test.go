@@ -183,8 +183,8 @@ func TestReadmeCommand_Stdout(t *testing.T) {
 func TestReadmeCommand_AllowlistedProject(t *testing.T) {
 	tempDir := t.TempDir()
 
-	// Setup v2 config with policy exception
-	configDir := filepath.Join(tempDir, "tools", "check-licenses", "v2")
+	// Setup config with policy exception
+	configDir := filepath.Join(tempDir, "tools", "check-licenses")
 	if err := os.MkdirAll(configDir, 0755); err != nil {
 		t.Fatal(err)
 	}

@@ -25,12 +25,12 @@ install_host_tools(
 )
 
 go_library(
-    name = "v2_pipeline",
+    name = "pipeline",
     srcs = [
-        "v2/pipeline/interfaces.go",
-        "v2/pipeline/orchestrator.go",
+        "pipeline/interfaces.go",
+        "pipeline/orchestrator.go",
     ],
-    importpath = "go.fuchsia.dev/fuchsia/tools/check-licenses/v2/pipeline",
+    importpath = "go.fuchsia.dev/fuchsia/tools/check-licenses/pipeline",
     target_compatible_with = HOST_CONSTRAINTS,
     visibility = ["//tools/check-licenses:__subpackages__"],
     deps = [
@@ -40,95 +40,95 @@ go_library(
 )
 
 go_library(
-    name = "v2_stages_discover",
+    name = "stages_discover",
     srcs = [
-        "v2/stages/discover/config.go",
-        "v2/stages/discover/discover.go",
+        "stages/discover/config.go",
+        "stages/discover/discover.go",
     ],
-    importpath = "go.fuchsia.dev/fuchsia/tools/check-licenses/v2/stages/discover",
+    importpath = "go.fuchsia.dev/fuchsia/tools/check-licenses/stages/discover",
     target_compatible_with = HOST_CONSTRAINTS,
     visibility = ["//tools/check-licenses:__subpackages__"],
     deps = [
-        ":v2_pipeline",
+        ":pipeline",
         "//tools/check-licenses/metrics",
     ],
 )
 
 go_library(
-    name = "v2_stages_prune",
+    name = "stages_prune",
     srcs = [
-        "v2/stages/prune/prune.go",
+        "stages/prune/prune.go",
     ],
-    importpath = "go.fuchsia.dev/fuchsia/tools/check-licenses/v2/stages/prune",
+    importpath = "go.fuchsia.dev/fuchsia/tools/check-licenses/stages/prune",
     target_compatible_with = HOST_CONSTRAINTS,
     visibility = ["//tools/check-licenses:__subpackages__"],
     deps = [
-        ":v2_pipeline",
+        ":pipeline",
         "//tools/check-licenses/metrics",
     ],
 )
 
 go_library(
-    name = "v2_stages_report",
+    name = "stages_report",
     srcs = [
-        "v2/stages/report/allowlist_renderer.go",
-        "v2/stages/report/console_errors.go",
-        "v2/stages/report/fixer.go",
-        "v2/stages/report/metrics_printer.go",
-        "v2/stages/report/notice.go",
-        "v2/stages/report/policy_renderer.go",
-        "v2/stages/report/readme_verifier.go",
-        "v2/stages/report/readme_writer.go",
-        "v2/stages/report/spdx.go",
-        "v2/stages/report/target_verifier.go",
+        "stages/report/allowlist_renderer.go",
+        "stages/report/console_errors.go",
+        "stages/report/fixer.go",
+        "stages/report/metrics_printer.go",
+        "stages/report/notice.go",
+        "stages/report/policy_renderer.go",
+        "stages/report/readme_verifier.go",
+        "stages/report/readme_writer.go",
+        "stages/report/spdx.go",
+        "stages/report/target_verifier.go",
     ],
-    importpath = "go.fuchsia.dev/fuchsia/tools/check-licenses/v2/stages/report",
+    importpath = "go.fuchsia.dev/fuchsia/tools/check-licenses/stages/report",
     target_compatible_with = HOST_CONSTRAINTS,
     visibility = ["//tools/check-licenses:__subpackages__"],
     deps = [
-        ":v2_config",
-        ":v2_pipeline",
-        ":v2_readme",
-        ":v2_stages_validate",
+        ":config",
+        ":pipeline",
+        ":readme",
+        ":stages_validate",
         "//tools/check-licenses/metrics",
     ],
 )
 
 go_library(
-    name = "v2_stages_validate",
+    name = "stages_validate",
     srcs = [
-        "v2/stages/validate/config.go",
-        "v2/stages/validate/copyright.go",
-        "v2/stages/validate/validate.go",
+        "stages/validate/config.go",
+        "stages/validate/copyright.go",
+        "stages/validate/validate.go",
     ],
-    importpath = "go.fuchsia.dev/fuchsia/tools/check-licenses/v2/stages/validate",
+    importpath = "go.fuchsia.dev/fuchsia/tools/check-licenses/stages/validate",
     target_compatible_with = HOST_CONSTRAINTS,
     visibility = ["//tools/check-licenses:__subpackages__"],
     deps = [
-        ":v2_pipeline",
+        ":pipeline",
         "//tools/check-licenses/metrics",
     ],
 )
 
 go_library(
-    name = "v2_readme",
+    name = "readme",
     srcs = [
-        "v2/readme/dart.go",
-        "v2/readme/finder.go",
-        "v2/readme/formatter.go",
-        "v2/readme/golib.go",
-        "v2/readme/locator.go",
-        "v2/readme/parser.go",
-        "v2/readme/rust.go",
-        "v2/readme/types.go",
-        "v2/readme/update.go",
-        "v2/readme/validate.go",
+        "readme/dart.go",
+        "readme/finder.go",
+        "readme/formatter.go",
+        "readme/golib.go",
+        "readme/locator.go",
+        "readme/parser.go",
+        "readme/rust.go",
+        "readme/types.go",
+        "readme/update.go",
+        "readme/validate.go",
     ],
-    importpath = "go.fuchsia.dev/fuchsia/tools/check-licenses/v2/readme",
+    importpath = "go.fuchsia.dev/fuchsia/tools/check-licenses/readme",
     target_compatible_with = HOST_CONSTRAINTS,
     visibility = ["//tools/check-licenses:__subpackages__"],
     deps = [
-        ":v2_pipeline",
+        ":pipeline",
         "//third_party/golibs:github.com/BurntSushi/toml",
         "//third_party/golibs:gopkg.in/yaml.v2",
         "//tools/readme_fuchsia:readme_fuchsia_lib",
@@ -136,186 +136,186 @@ go_library(
 )
 
 go_library(
-    name = "v2_config",
+    name = "config",
     srcs = [
-        "v2/config/allowlist.go",
-        "v2/config/builder.go",
-        "v2/config/policy.go",
-        "v2/config/types.go",
+        "config/allowlist.go",
+        "config/builder.go",
+        "config/policy.go",
+        "config/types.go",
     ],
-    importpath = "go.fuchsia.dev/fuchsia/tools/check-licenses/v2/config",
+    importpath = "go.fuchsia.dev/fuchsia/tools/check-licenses/config",
     target_compatible_with = HOST_CONSTRAINTS,
     visibility = ["//tools/check-licenses:__subpackages__"],
     deps = [
-        ":v2_readme",
-        ":v2_stages_boundary",
-        ":v2_stages_classify",
-        ":v2_stages_discover",
-        ":v2_stages_validate",
+        ":readme",
+        ":stages_boundary",
+        ":stages_classify",
+        ":stages_discover",
+        ":stages_validate",
     ],
 )
 
 go_library(
-    name = "v2_stages_boundary",
+    name = "stages_boundary",
     srcs = [
-        "v2/stages/boundary/boundary.go",
-        "v2/stages/boundary/config.go",
+        "stages/boundary/boundary.go",
+        "stages/boundary/config.go",
     ],
-    importpath = "go.fuchsia.dev/fuchsia/tools/check-licenses/v2/stages/boundary",
+    importpath = "go.fuchsia.dev/fuchsia/tools/check-licenses/stages/boundary",
     target_compatible_with = HOST_CONSTRAINTS,
     visibility = ["//tools/check-licenses:__subpackages__"],
     deps = [
-        ":v2_pipeline",
-        ":v2_readme",
+        ":pipeline",
+        ":readme",
     ],
 )
 
 go_library(
-    name = "v2_stages_classify",
+    name = "stages_classify",
     srcs = [
-        "v2/stages/classify/classify.go",
-        "v2/stages/classify/config.go",
-        "v2/stages/classify/notice.go",
+        "stages/classify/classify.go",
+        "stages/classify/config.go",
+        "stages/classify/notice.go",
     ],
-    importpath = "go.fuchsia.dev/fuchsia/tools/check-licenses/v2/stages/classify",
+    importpath = "go.fuchsia.dev/fuchsia/tools/check-licenses/stages/classify",
     target_compatible_with = HOST_CONSTRAINTS,
     visibility = ["//tools/check-licenses:__subpackages__"],
     deps = [
-        ":v2_pipeline",
+        ":pipeline",
         "//third_party/golibs:github.com/google/licenseclassifier/v2",
         "//tools/check-licenses/metrics",
     ],
 )
 
 host_go_test(
-    name = "v2_config_test",
+    name = "config_test",
     size = "small",
     srcs = [
-        "v2/config/builder_test.go",
+        "config/builder_test.go",
     ],
-    embed = [":v2_config"],
+    embed = [":config"],
     target_compatible_with = HOST_CONSTRAINTS,
 )
 
 host_go_test(
-    name = "v2_pipeline_test",
+    name = "pipeline_test",
     size = "small",
     srcs = [
-        "v2/pipeline/golden_tree_test.go",
-        "v2/pipeline/orchestrator_test.go",
+        "pipeline/golden_tree_test.go",
+        "pipeline/orchestrator_test.go",
     ],
-    embed = [":v2_pipeline"],
+    embed = [":pipeline"],
     target_compatible_with = HOST_CONSTRAINTS,
     deps = [
-        ":v2_config",
-        ":v2_stages_boundary",
-        ":v2_stages_classify",
-        ":v2_stages_discover",
-        ":v2_stages_prune",
-        ":v2_stages_validate",
+        ":config",
+        ":stages_boundary",
+        ":stages_classify",
+        ":stages_discover",
+        ":stages_prune",
+        ":stages_validate",
     ],
 )
 
 host_go_test(
-    name = "v2_stages_report_test",
+    name = "stages_report_test",
     size = "small",
     srcs = [
-        "v2/stages/report/allowlist_renderer_test.go",
-        "v2/stages/report/console_errors_test.go",
-        "v2/stages/report/fixer_test.go",
-        "v2/stages/report/metrics_printer_test.go",
-        "v2/stages/report/notice_test.go",
-        "v2/stages/report/policy_renderer_test.go",
-        "v2/stages/report/readme_verifier_test.go",
-        "v2/stages/report/readme_writer_test.go",
-        "v2/stages/report/report_test.go",
-        "v2/stages/report/spdx_test.go",
-        "v2/stages/report/target_verifier_test.go",
+        "stages/report/allowlist_renderer_test.go",
+        "stages/report/console_errors_test.go",
+        "stages/report/fixer_test.go",
+        "stages/report/metrics_printer_test.go",
+        "stages/report/notice_test.go",
+        "stages/report/policy_renderer_test.go",
+        "stages/report/readme_verifier_test.go",
+        "stages/report/readme_writer_test.go",
+        "stages/report/report_test.go",
+        "stages/report/spdx_test.go",
+        "stages/report/target_verifier_test.go",
     ],
-    embed = [":v2_stages_report"],
+    embed = [":stages_report"],
     target_compatible_with = HOST_CONSTRAINTS,
     deps = [
-        ":v2_pipeline",
+        ":pipeline",
         "//tools/readme_fuchsia:readme_fuchsia_lib",
     ],
 )
 
 host_go_test(
-    name = "v2_readme_test",
+    name = "readme_test",
     size = "small",
     srcs = [
-        "v2/readme/dart_test.go",
-        "v2/readme/formatter_test.go",
-        "v2/readme/golib_test.go",
-        "v2/readme/parser_test.go",
-        "v2/readme/rust_test.go",
+        "readme/dart_test.go",
+        "readme/formatter_test.go",
+        "readme/golib_test.go",
+        "readme/parser_test.go",
+        "readme/rust_test.go",
     ],
-    embed = [":v2_readme"],
+    embed = [":readme"],
     target_compatible_with = HOST_CONSTRAINTS,
 )
 
 host_go_test(
-    name = "v2_stages_validate_test",
+    name = "stages_validate_test",
     size = "small",
     srcs = [
-        "v2/stages/validate/validate_test.go",
+        "stages/validate/validate_test.go",
     ],
-    embed = [":v2_stages_validate"],
+    embed = [":stages_validate"],
     target_compatible_with = HOST_CONSTRAINTS,
     deps = [
-        ":v2_config",
-        ":v2_pipeline",
+        ":config",
+        ":pipeline",
     ],
 )
 
 host_go_test(
-    name = "v2_stages_prune_test",
+    name = "stages_prune_test",
     size = "small",
     srcs = [
-        "v2/stages/prune/prune_test.go",
+        "stages/prune/prune_test.go",
     ],
-    embed = [":v2_stages_prune"],
+    embed = [":stages_prune"],
     target_compatible_with = HOST_CONSTRAINTS,
     deps = [
-        ":v2_pipeline",
+        ":pipeline",
         "//tools/check-licenses/metrics",
     ],
 )
 
 host_go_test(
-    name = "v2_stages_boundary_test",
+    name = "stages_boundary_test",
     size = "small",
     srcs = [
-        "v2/stages/boundary/boundary_test.go",
+        "stages/boundary/boundary_test.go",
     ],
-    embed = [":v2_stages_boundary"],
+    embed = [":stages_boundary"],
     target_compatible_with = HOST_CONSTRAINTS,
     deps = [
-        ":v2_pipeline",
+        ":pipeline",
     ],
 )
 
 host_go_test(
-    name = "v2_stages_classify_test",
+    name = "stages_classify_test",
     size = "small",
     srcs = [
-        "v2/stages/classify/classify_test.go",
-        "v2/stages/classify/notice_test.go",
+        "stages/classify/classify_test.go",
+        "stages/classify/notice_test.go",
     ],
-    embed = [":v2_stages_classify"],
+    embed = [":stages_classify"],
     target_compatible_with = HOST_CONSTRAINTS,
     deps = [
-        ":v2_pipeline",
+        ":pipeline",
     ],
 )
 
 host_go_test(
-    name = "v2_stages_discover_test",
+    name = "stages_discover_test",
     size = "small",
     srcs = [
-        "v2/stages/discover/discover_test.go",
+        "stages/discover/discover_test.go",
     ],
-    embed = [":v2_stages_discover"],
+    embed = [":stages_discover"],
     target_compatible_with = HOST_CONSTRAINTS,
     deps = [
         "//tools/check-licenses/metrics",
@@ -327,15 +327,15 @@ test_suite(
     name = "tests",
     target_compatible_with = HOST_CONSTRAINTS,
     tests = [
-        ":v2_config_test",
-        ":v2_pipeline_test",
-        ":v2_readme_test",
-        ":v2_stages_boundary_test",
-        ":v2_stages_classify_test",
-        ":v2_stages_discover_test",
-        ":v2_stages_prune_test",
-        ":v2_stages_report_test",
-        ":v2_stages_validate_test",
+        ":config_test",
+        ":pipeline_test",
+        ":readme_test",
+        ":stages_boundary_test",
+        ":stages_classify_test",
+        ":stages_discover_test",
+        ":stages_prune_test",
+        ":stages_report_test",
+        ":stages_validate_test",
         "//tools/check-licenses/cmd:cmd_test",
         "//tools/check-licenses/metrics:metrics_test",
         "//tools/check-licenses/util:util_test",

@@ -15,7 +15,7 @@ import (
 
 	"github.com/google/subcommands"
 
-	v2boundary "go.fuchsia.dev/fuchsia/tools/check-licenses/v2/stages/boundary"
+	v2boundary "go.fuchsia.dev/fuchsia/tools/check-licenses/stages/boundary"
 )
 
 const mockMITLicenseText = `Permission is hereby granted, free of charge, to any person obtaining a copy`
@@ -28,7 +28,7 @@ const mockBSDLicenseText = `Redistribution and use in source and binary forms, w
 
 func scaffoldV2Config(t *testing.T, tempDir string) {
 	t.Helper()
-	seedConfig := filepath.Join(tempDir, "tools", "check-licenses", "v2", "config.json")
+	seedConfig := filepath.Join(tempDir, "tools", "check-licenses", "config.json")
 	if err := os.MkdirAll(filepath.Dir(seedConfig), 0755); err != nil {
 		t.Fatal(err)
 	}

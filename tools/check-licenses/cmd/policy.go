@@ -15,7 +15,7 @@ import (
 
 	"github.com/google/subcommands"
 
-	"go.fuchsia.dev/fuchsia/tools/check-licenses/v2/config"
+	"go.fuchsia.dev/fuchsia/tools/check-licenses/config"
 )
 
 type PolicyCommand struct {

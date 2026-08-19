@@ -21,7 +21,7 @@ func TestFixCommand_Execute(t *testing.T) {
 	allowlistPath := filepath.Join(tempDir, "vendor", "google", "tools", "check-licenses", "assets", "configs", "allowed_licenses", "Restricted", "GPL-2.0", "testproj.json")
 
 	// 1. Scaffold the recursive config system
-	seedConfig := filepath.Join(tempDir, "tools", "check-licenses", "v2", "config.json")
+	seedConfig := filepath.Join(tempDir, "tools", "check-licenses", "config.json")
 	os.MkdirAll(filepath.Dir(seedConfig), 0755)
 	os.WriteFile(seedConfig, []byte(`{"includes": ["tools/check-licenses/assets"]}`), 0644)
 
@@ -144,7 +144,7 @@ func TestFixCommand_Failure(t *testing.T) {
 	os.WriteFile(filepath.Join(copyrightPatternDir, "fuchsia.txt"), []byte("Copyright 2026 The Fuchsia Authors. All rights reserved."), 0644)
 
 	os.MkdirAll(filepath.Join(tempDir, "tools", "check-licenses", "assets", "configs"), 0755)
-	seedConfig := filepath.Join(tempDir, "tools", "check-licenses", "v2", "config.json")
+	seedConfig := filepath.Join(tempDir, "tools", "check-licenses", "config.json")
 	os.MkdirAll(filepath.Dir(seedConfig), 0755)
 	os.WriteFile(seedConfig, []byte(`{"includes": ["tools/check-licenses/assets"]}`), 0644)
 

@@ -13,7 +13,7 @@ import (
 
 	"github.com/google/subcommands"
 
-	"go.fuchsia.dev/fuchsia/tools/check-licenses/v2/readme"
+	"go.fuchsia.dev/fuchsia/tools/check-licenses/readme"
 )
 
 type ProjectListCommand struct {

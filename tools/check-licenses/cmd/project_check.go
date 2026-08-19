@@ -12,13 +12,13 @@ import (
 
 	"github.com/google/subcommands"
 
-	"go.fuchsia.dev/fuchsia/tools/check-licenses/v2/pipeline"
-	"go.fuchsia.dev/fuchsia/tools/check-licenses/v2/stages/boundary"
-	"go.fuchsia.dev/fuchsia/tools/check-licenses/v2/stages/classify"
-	"go.fuchsia.dev/fuchsia/tools/check-licenses/v2/stages/discover"
-	"go.fuchsia.dev/fuchsia/tools/check-licenses/v2/stages/prune"
-	"go.fuchsia.dev/fuchsia/tools/check-licenses/v2/stages/report"
-	"go.fuchsia.dev/fuchsia/tools/check-licenses/v2/stages/validate"
+	"go.fuchsia.dev/fuchsia/tools/check-licenses/pipeline"
+	"go.fuchsia.dev/fuchsia/tools/check-licenses/stages/boundary"
+	"go.fuchsia.dev/fuchsia/tools/check-licenses/stages/classify"
+	"go.fuchsia.dev/fuchsia/tools/check-licenses/stages/discover"
+	"go.fuchsia.dev/fuchsia/tools/check-licenses/stages/prune"
+	"go.fuchsia.dev/fuchsia/tools/check-licenses/stages/report"
+	"go.fuchsia.dev/fuchsia/tools/check-licenses/stages/validate"
 )
 
 type ProjectCheckCommand struct {

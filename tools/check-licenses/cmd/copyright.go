@@ -16,7 +16,7 @@ import (
 
 	"github.com/google/subcommands"
 
-	"go.fuchsia.dev/fuchsia/tools/check-licenses/v2/stages/validate"
+	"go.fuchsia.dev/fuchsia/tools/check-licenses/stages/validate"
 )
 
 type CopyrightCommand struct {

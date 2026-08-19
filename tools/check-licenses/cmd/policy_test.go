@@ -31,7 +31,7 @@ func TestPolicyCommand_Execute(t *testing.T) {
 	}
 
 	// Scaffold the recursive config system
-	seedConfig := filepath.Join(tempDir, "tools", "check-licenses", "v2", "config.json")
+	seedConfig := filepath.Join(tempDir, "tools", "check-licenses", "config.json")
 	os.MkdirAll(filepath.Dir(seedConfig), 0755)
 	os.WriteFile(seedConfig, []byte(`{"includes": ["tools/check-licenses/assets"]}`), 0644)
 
@@ -142,7 +142,7 @@ func TestPolicyCommand_Execute_AssemblyFailure(t *testing.T) {
 	}
 
 	// Scaffold a corrupt config file
-	seedConfig := filepath.Join(tempDir, "tools", "check-licenses", "v2", "config.json")
+	seedConfig := filepath.Join(tempDir, "tools", "check-licenses", "config.json")
 	os.MkdirAll(filepath.Dir(seedConfig), 0755)
 	os.WriteFile(seedConfig, []byte(`{corrupt json}`), 0644)
 
@@ -168,7 +168,7 @@ func TestPolicyCommand_Execute_RelativePathFromSubdir(t *testing.T) {
 	defer os.Setenv("FUCHSIA_DIR", origEnv)
 
 	// Scaffold the recursive config system
-	seedConfig := filepath.Join(tempDir, "tools", "check-licenses", "v2", "config.json")
+	seedConfig := filepath.Join(tempDir, "tools", "check-licenses", "config.json")
 	os.MkdirAll(filepath.Dir(seedConfig), 0755)
 	os.WriteFile(seedConfig, []byte(`{"includes": ["tools/check-licenses/assets"]}`), 0644)
 

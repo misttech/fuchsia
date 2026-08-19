@@ -13,8 +13,8 @@ import (
 
 	"github.com/google/subcommands"
 
-	"go.fuchsia.dev/fuchsia/tools/check-licenses/v2/pipeline"
-	"go.fuchsia.dev/fuchsia/tools/check-licenses/v2/stages/classify"
+	"go.fuchsia.dev/fuchsia/tools/check-licenses/pipeline"
+	"go.fuchsia.dev/fuchsia/tools/check-licenses/stages/classify"
 )
 
 type ClassifyCommand struct {

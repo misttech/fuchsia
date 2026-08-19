@@ -15,9 +15,9 @@ import (
 
 	"github.com/google/subcommands"
 
-	"go.fuchsia.dev/fuchsia/tools/check-licenses/v2/config"
-	"go.fuchsia.dev/fuchsia/tools/check-licenses/v2/readme"
-	"go.fuchsia.dev/fuchsia/tools/check-licenses/v2/stages/boundary"
+	"go.fuchsia.dev/fuchsia/tools/check-licenses/config"
+	"go.fuchsia.dev/fuchsia/tools/check-licenses/readme"
+	"go.fuchsia.dev/fuchsia/tools/check-licenses/stages/boundary"
 )
 
 type ProjectInfoCommand struct {

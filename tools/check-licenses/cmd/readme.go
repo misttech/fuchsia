@@ -15,9 +15,9 @@ import (
 
 	"github.com/google/subcommands"
 
-	v2config "go.fuchsia.dev/fuchsia/tools/check-licenses/v2/config"
-	"go.fuchsia.dev/fuchsia/tools/check-licenses/v2/readme"
-	v2discover "go.fuchsia.dev/fuchsia/tools/check-licenses/v2/stages/discover"
+	v2config "go.fuchsia.dev/fuchsia/tools/check-licenses/config"
+	"go.fuchsia.dev/fuchsia/tools/check-licenses/readme"
+	v2discover "go.fuchsia.dev/fuchsia/tools/check-licenses/stages/discover"
 )
 
 type ReadmeCommand struct {

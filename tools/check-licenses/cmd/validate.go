@@ -14,14 +14,14 @@ import (
 
 	"github.com/google/subcommands"
 
-	v2config "go.fuchsia.dev/fuchsia/tools/check-licenses/v2/config"
-	v2pipeline "go.fuchsia.dev/fuchsia/tools/check-licenses/v2/pipeline"
-	v2boundary "go.fuchsia.dev/fuchsia/tools/check-licenses/v2/stages/boundary"
-	v2classify "go.fuchsia.dev/fuchsia/tools/check-licenses/v2/stages/classify"
-	v2discover "go.fuchsia.dev/fuchsia/tools/check-licenses/v2/stages/discover"
-	v2prune "go.fuchsia.dev/fuchsia/tools/check-licenses/v2/stages/prune"
-	v2report "go.fuchsia.dev/fuchsia/tools/check-licenses/v2/stages/report"
-	v2validate "go.fuchsia.dev/fuchsia/tools/check-licenses/v2/stages/validate"
+	v2config "go.fuchsia.dev/fuchsia/tools/check-licenses/config"
+	v2pipeline "go.fuchsia.dev/fuchsia/tools/check-licenses/pipeline"
+	v2boundary "go.fuchsia.dev/fuchsia/tools/check-licenses/stages/boundary"
+	v2classify "go.fuchsia.dev/fuchsia/tools/check-licenses/stages/classify"
+	v2discover "go.fuchsia.dev/fuchsia/tools/check-licenses/stages/discover"
+	v2prune "go.fuchsia.dev/fuchsia/tools/check-licenses/stages/prune"
+	v2report "go.fuchsia.dev/fuchsia/tools/check-licenses/stages/report"
+	v2validate "go.fuchsia.dev/fuchsia/tools/check-licenses/stages/validate"
 )
 
 type ValidateCommand struct {
