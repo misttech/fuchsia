@@ -158,9 +158,7 @@ PECOFF_SECTION_RW(.lprfc, Counters, char)
 
 PECOFF_SECTION_RW(.lprfb, Bitmap, char)
 
-#if INSTR_PROF_RAW_VERSION >= 11
 PECOFF_SECTION_RW(.lprfuc, UniformCounters, char)
-#endif
 
 #elif defined(__APPLE__)
 
@@ -196,12 +194,10 @@ extern "C" {
 [[gnu::visibility("hidden")]] extern char BitmapEnd[] __asm__(
     "section$end$__DATA$" INSTR_PROF_BITS_SECT_NAME);
 
-#if INSTR_PROF_RAW_VERSION >= 11
 [[gnu::visibility("hidden")]] extern char UniformCountersBegin[] __asm__(
     "section$start$__DATA$" INSTR_PROF_QUOTE(INSTR_PROF_UCNTS_COMMON));
 [[gnu::visibility("hidden")]] extern char UniformCountersEnd[] __asm__(
     "section$end$__DATA$" INSTR_PROF_QUOTE(INSTR_PROF_UCNTS_COMMON));
-#endif
 
 }  // extern "C"
 
@@ -248,22 +244,14 @@ PROFDATA_SECTION(char, CountersBegin, CountersEnd, INSTR_PROF_CNTS_COMMON, "w");
 
 PROFDATA_SECTION(char, BitmapBegin, BitmapEnd, INSTR_PROF_BITS_COMMON, "w");
 
-#if INSTR_PROF_RAW_VERSION >= 11
 PROFDATA_SECTION(char, UniformCountersBegin, UniformCountersEnd, INSTR_PROF_UCNTS_COMMON, "w");
-#endif
 
 }  // extern "C"
 
 #endif  // Not __PE_COFF__ or __APPLE__.
 
 struct ProfRawHeader {
-  size_t binary_ids_size() const {
-    if constexpr (INSTR_PROF_RAW_VERSION < 6) {
-      return 0;
-    } else {
-      return static_cast<size_t>(BinaryIdsSize);
-    }
-  }
+  size_t binary_ids_size() const { return static_cast<size_t>(BinaryIdsSize); }
 
 #define INSTR_PROF_RAW_HEADER(Type, Name, Initializer) Type Name;
 #include <profile/InstrProfData.inc>
@@ -308,11 +296,9 @@ template <typename T>
   return std::span<char>(&BitmapBegin[0], BitmapEnd - BitmapBegin);
 }
 
-#if INSTR_PROF_RAW_VERSION >= 11
 [[gnu::const]] std::span<char> ProfUniformCountersData() {
   return std::span<char>(&UniformCountersBegin[0], UniformCountersEnd - UniformCountersBegin);
 }
-#endif
 
 [[gnu::const]] size_t CountersSize() {
   if (LlvmProfdata::UsingSingleByteCounters())
@@ -332,11 +318,9 @@ template <typename T>
   const uint64_t NamesSize = NamesEnd - NamesBegin;
   const uint64_t NumVTables = VTableDataArray().size();
   const uint64_t VNamesSize = VNamesEnd - VNamesBegin;
-#if INSTR_PROF_RAW_VERSION >= 11
   const uint64_t NumUniformCounters = ProfUniformCountersData().size() / sizeof(uint64_t);
   const uint64_t PaddingBytesAfterUniformCounters =
       static_cast<uint64_t>(PaddingSize(ProfUniformCountersData().size()));
-#endif
   auto __llvm_profile_get_magic = []() -> uint64_t { return kMagic; };
   auto __llvm_profile_get_version = []() -> uint64_t { return INSTR_PROF_RAW_VERSION_VAR; };
   auto __llvm_write_binary_ids = [build_id](void* ignored) -> uint64_t {
@@ -353,6 +337,8 @@ template <typename T>
   if (NumData == 0 && NamesSize == 0) {
     Header.CountersDelta = 0;
     Header.NamesDelta = 0;
+    Header.BitmapDelta = 0;
+    Header.UniformCountersDelta = 0;
   }
 
   return Header;
@@ -360,11 +346,8 @@ template <typename T>
 
 // Don't publish anything if no functions were actually instrumented.
 [[gnu::const]] bool NoData() {
-  return ProfCountersData().empty() && ProfBitmapData().empty()
-#if INSTR_PROF_RAW_VERSION >= 11
-         && ProfUniformCountersData().empty()
-#endif
-      ;
+  return ProfCountersData().empty() && ProfBitmapData().empty() &&
+         ProfUniformCountersData().empty();
 }
 
 template <typename T, template <typename> class Op>
@@ -444,13 +427,11 @@ void LlvmProfdata::Init(std::span<const std::byte> build_id) {
   next_offset = bitmap_offset_ + bitmap_size_bytes_ +
                 static_cast<size_t>(header.PaddingBytesAfterBitmapBytes);
 
-#if INSTR_PROF_RAW_VERSION >= 11
   uniform_counters_offset_ = next_offset;
   uniform_counters_size_bytes_ = static_cast<size_t>(header.NumUniformCounters) * sizeof(uint64_t);
   ZX_ASSERT(uniform_counters_size_bytes_ == ProfUniformCountersData().size_bytes());
   next_offset = uniform_counters_offset_ + uniform_counters_size_bytes_ +
                 static_cast<size_t>(header.PaddingBytesAfterUniformCounters);
-#endif
 
   size_bytes_ = next_offset;
 
@@ -550,7 +531,6 @@ LlvmProfdata::LiveData LlvmProfdata::DoFixedData(std::span<std::byte> data, bool
               kPaddingDoc);
 
   std::span<std::byte> uniform_counters_data;
-#if INSTR_PROF_RAW_VERSION >= 11
   // Skip over the space in the data blob for the uniform counters.
   ZX_ASSERT(uniform_counters_size_bytes_ == ProfUniformCountersData().size_bytes());
   ZX_ASSERT_MSG(data.size_bytes() >= uniform_counters_size_bytes_,
@@ -560,7 +540,6 @@ LlvmProfdata::LiveData LlvmProfdata::DoFixedData(std::span<std::byte> data, bool
   data = data.subspan(uniform_counters_size_bytes_);
   write_bytes(kPadding.subspan(0, static_cast<size_t>(header.PaddingBytesAfterUniformCounters)),
               kPaddingDoc);
-#endif
 
   auto prof_names = std::span(NamesBegin, NamesEnd - NamesBegin);
   const size_t PaddingBytesAfterNames = PaddingSize(static_cast<size_t>(header.NamesSize));
@@ -622,7 +601,6 @@ void LlvmProfdata::CopyLiveData(LiveData data) {
     memcpy(data.bitmap.data(), prof_bitmap.data(), prof_bitmap.size_bytes());
   }
 
-#if INSTR_PROF_RAW_VERSION >= 11
   auto prof_uniform_counters = ProfUniformCountersData();
   ZX_ASSERT_MSG(data.uniform_counters.size_bytes() >= prof_uniform_counters.size_bytes(),
                 "writing %zu bytes of uniform counters with only %zu bytes left!",
@@ -631,7 +609,6 @@ void LlvmProfdata::CopyLiveData(LiveData data) {
     memcpy(data.uniform_counters.data(), prof_uniform_counters.data(),
            prof_uniform_counters.size_bytes());
   }
-#endif
 }
 
 // Instead of copying, merge the old counters with our values by summation and
@@ -644,7 +621,6 @@ void LlvmProfdata::MergeLiveData(LiveData data) {
                 prof_counters.size_bytes(), data_counters.size_bytes());
   MergeCounters(data_counters, std::as_bytes(ProfCountersData()));
   MergeSelfData<char, std::bit_or>(data.bitmap, ProfBitmapData(), "bitmap");
-#if INSTR_PROF_RAW_VERSION >= 11
   auto prof_uniform_counters = ProfUniformCountersData();
   std::span<const uint64_t> prof_uniform_counters_u64{
       reinterpret_cast<const uint64_t*>(prof_uniform_counters.data()),
@@ -652,15 +628,12 @@ void LlvmProfdata::MergeLiveData(LiveData data) {
   };
   MergeSelfData<uint64_t, std::plus>(data.uniform_counters, prof_uniform_counters_u64,
                                      "uniform counters");
-#endif
 }
 
 void LlvmProfdata::MergeLiveData(LiveData to, LiveData from) {
   MergeCounters(to.counters, from.counters);
   MergeData<char, std::bit_or>(to.bitmap, from.bitmap);
-#if INSTR_PROF_RAW_VERSION >= 11
   MergeData<uint64_t, std::plus>(to.uniform_counters, from.uniform_counters);
-#endif
 }
 
 void LlvmProfdata::UseLiveData(LiveData data) {
