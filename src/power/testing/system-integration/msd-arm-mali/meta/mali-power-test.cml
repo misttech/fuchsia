@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 {
     include: [
-        "//src/power/testing/system-integration/meta/client.shard.cml",
+        "//src/power/testing/system-integration/meta/client_wait_for_token.shard.cml",
         "//src/sys/test_runners/gtest/default.shard.cml",
     ],
     program: {
@@ -11,6 +11,7 @@
     },
     use: [
         { protocol: "fuchsia.driver.development.Manager" },
+        { protocol: "fuchsia.driver.registrar.DriverRegistrar" },
         {
             protocol: "fuchsia.component.sandbox.CapabilityStore",
             from: "framework",

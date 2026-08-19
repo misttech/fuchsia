@@ -11,7 +11,6 @@
 
 #include <gtest/gtest.h>
 
-#include "src/graphics/drivers/msd-arm-mali/config.h"
 #include "src/graphics/drivers/msd-arm-mali/src/gpu_features.h"
 #include "src/graphics/drivers/msd-arm-mali/src/registers.h"
 
@@ -139,12 +138,7 @@ TEST(MsdArmDFv2, LoadDriver) {
     mmio_buffer->Write<uint32_t>(kCoresEnabled, GpuFeatures::kShaderPresentLowOffset);
   }
 
-  zx::result<> start_result =
-      driver_test.StartDriverWithCustomStartArgs([](fdf::DriverStartArgs& start_args) {
-        config::Config fake_config;
-        fake_config.enable_suspend() = false;
-        start_args.config(fake_config.ToVmo());
-      });
+  zx::result<> start_result = driver_test.StartDriver();
   ASSERT_EQ(ZX_OK, start_result.status_value());
 
   // Hook ownership should have been taken by the driver.

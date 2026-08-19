@@ -4,9 +4,7 @@
 
 {
   name: "msd_arm",
-  include: [
-    "//src/graphics/drivers/msd-arm-mali/meta/msd_arm.shard.cml"
-  ],
+  include: [ "//src/graphics/drivers/msd-arm-mali/meta/msd_arm.shard.cml" ],
   program: {
     binary: "driver/msd_arm.so",
     allowed_scheduler_roles: [

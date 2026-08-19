@@ -52,7 +52,9 @@
       availability: "optional"
     },
     { service: "fuchsia.driver.compat.Service" },
-    { protocol: "fuchsia.kernel.MmioResource" }
+    { protocol: "fuchsia.kernel.MmioResource" },
+    // Required for integration tests in src/power/testing/system-integration/msd-arm-mali
+    { protocol: "fuchsia.power.broker.Topology" }
   ],
   expose: [
     {

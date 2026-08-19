@@ -74,7 +74,7 @@ class FakePlatformInterrupt : public magma::PlatformInterrupt {
 
 class FakeParentDevice : public ParentDevice {
  public:
-  FakeParentDevice() : ParentDevice() {}
+  explicit FakeParentDevice(bool suspend_enabled = false) : suspend_enabled_(suspend_enabled) {}
 
   bool SetThreadRole(const char* role_name) override { return true; }
   zx::bti GetBusTransactionInitiator() override { return zx::bti(); }
@@ -96,12 +96,14 @@ class FakeParentDevice : public ParentDevice {
       override {
     return zx::error(ZX_ERR_INTERNAL);
   }
-  bool suspend_enabled() override { return false; }
+  bool suspend_enabled() override { return suspend_enabled_; }
+  void set_suspend_enabled(bool enabled) { suspend_enabled_ = enabled; }
   std::shared_ptr<fdf::Namespace> incoming() override { return nullptr; }
   magma::PlatformDevice* GetPlatformDevice() override { return nullptr; }
 
  private:
   fidl::WireSyncClient<fuchsia_hardware_platform_device::Device> pdev_;
+  bool suspend_enabled_ = false;
 };
 
 class ArmMaliServer : public fdf::WireServer<fuchsia_hardware_gpu_mali::ArmMali> {

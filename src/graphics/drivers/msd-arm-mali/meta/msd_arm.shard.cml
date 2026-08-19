@@ -6,6 +6,9 @@
     program: {
         colocate: "true",
         default_dispatcher_opts: [ "allow_sync_calls" ],
+
+        // Required to enable DF power framework integration (fdf_power::Suspendable).
+        suspend_enabled: "true",
     },
     capabilities: [
         {
@@ -25,17 +28,17 @@
                 "fuchsia.scheduler.RoleManager",
             ],
         },
+
+        // Power Broker and System Activity Governor protocols required for driver suspend/resume.
         {
-            protocol: [ "fuchsia.power.system.ActivityGovernor" ],
+            protocol: [
+                "fuchsia.power.broker.Topology",
+                "fuchsia.power.system.ActivityGovernor",
+            ],
             availability: "optional",
         },
         {
             service: [ "fuchsia.hardware.gpu.mali.Service" ],
-        },
-        {
-            config: "fuchsia.power.SuspendEnabled",
-            key: "enable_suspend",
-            type: "bool",
         },
     ],
     expose: [

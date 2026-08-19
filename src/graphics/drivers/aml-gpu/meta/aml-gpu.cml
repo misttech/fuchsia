@@ -20,6 +20,7 @@
     ],
     use: [
         { protocol: "fuchsia.kernel.MmioResource" },
+        { protocol: "fuchsia.power.broker.Topology" },
         { service: "fuchsia.driver.compat.Service" },
         {
             service: "fuchsia.hardware.clock.Service",

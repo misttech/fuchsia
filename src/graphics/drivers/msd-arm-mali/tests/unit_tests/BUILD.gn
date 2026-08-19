@@ -50,7 +50,6 @@ cc_test_executable("msd_arm_mali_lifecycle_tests_bin") {
     "//sdk/lib/driver/testing/cpp",
     "//sdk/lib/driver/testing/cpp:scoped_global_logger",
     "//sdk/lib/inspect/testing/cpp",
-    "//src/graphics/drivers/msd-arm-mali:config",
     "//src/graphics/drivers/msd-arm-mali:msd_arm_entry",
     "//src/graphics/drivers/msd-arm-mali/src",
     "//src/graphics/drivers/msd-arm-mali/src:parent_device_dfv2",

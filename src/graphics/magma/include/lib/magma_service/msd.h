@@ -84,6 +84,18 @@ class Device {
     completer(MAGMA_STATUS_UNIMPLEMENTED);
   }
 
+  // Triggers device power suspension (e.g. during DFv2 driver suspend transitions).
+  // The provided |completer| MUST be invoked asynchronously once suspension processing complete.
+  virtual void MsdSuspend(fit::callback<void(magma_status_t)> completer) {
+    completer(MAGMA_STATUS_UNIMPLEMENTED);
+  }
+
+  // Resumes device operation after power suspension.
+  // The provided |completer| MUST be invoked asynchronously once resume processing complete.
+  virtual void MsdResume(fit::callback<void(magma_status_t)> completer) {
+    completer(MAGMA_STATUS_UNIMPLEMENTED);
+  }
+
   virtual void MsdDumpStatus(uint32_t dump_flags) {}
 
   // Opens a device for the given client. Returns nullptr on failure

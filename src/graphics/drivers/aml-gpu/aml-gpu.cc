@@ -288,6 +288,7 @@ void AmlGpu::FinishExitProtectedMode(fdf::Arena& arena,
     completer.buffer(arena).ReplyError(status);
   }
 }
+
 zx::result<> AmlGpu::Start(fdf::DriverContext context) {
   zx::result loop_dispatcher = fdf::SynchronizedDispatcher::Create(
       fdf::SynchronizedDispatcher::Options{}, "aml-gpu-thread", [](fdf_dispatcher_t* dispatcher) {},

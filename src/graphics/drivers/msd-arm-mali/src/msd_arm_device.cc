@@ -210,7 +210,7 @@ bool MsdArmDevice::Init(ParentDevice* platform_device,
   DLOG("Init platform_device");
   zx_status_t status = loop_.StartThread("device-loop-thread");
   if (status != ZX_OK)
-    return DRETF(false, "FAiled to create device loop thread");
+    return DRETF(false, "Failed to create device loop thread");
 
   status = watchdog_loop_.StartThread("watchdog-loop-thread");
   if (status != ZX_OK)
@@ -296,20 +296,12 @@ bool MsdArmDevice::Init(ParentDevice* platform_device,
 
   // Always try to configure power manager since it will be available during the non-hermetic
   // testing. But only error on failure if the system-wide config was enabled.
-  fuchsia_power_manager_ = std::make_unique<FuchsiaPowerManager>(this);
-  bool power_init_success =
-      fuchsia_power_manager_->Initialize(parent_device_->incoming().get(), inspect_);
-  if (!power_init_success) {
-    if (parent_device_->suspend_enabled()) {
-      MAGMA_LOG(ERROR, "Failed to initialize fuchsia power manager.");
-      return false;
-    }
-
-    // Reset it if it did not initialize but we want to continue without it.
-    MAGMA_LOG(INFO, "Continuing without power framework.");
-    fuchsia_power_manager_.reset();
-  } else {
+  if (parent_device_->suspend_enabled()) {
+    fuchsia_power_manager_ = std::make_unique<FuchsiaPowerManager>(this);
+    fuchsia_power_manager_->Initialize(inspect_);
     timeout_sources_.push_back(fuchsia_power_manager_.get());
+  } else {
+    MAGMA_LOG(INFO, "Skipped power initialization, system lacks support?");
   }
 
   return ResetDevice();
@@ -438,6 +430,24 @@ std::shared_ptr<MsdArmConnection> MsdArmDevice::NdtOpenArmConnection(
 
 std::unique_ptr<msd::Connection> MsdArmDevice::MsdOpen(msd::msd_client_id_t client_id) {
   return std::make_unique<MsdArmAbiConnection>(NdtOpenArmConnection(client_id));
+}
+
+void MsdArmDevice::MsdSuspend(fit::callback<void(magma_status_t)> completer) {
+  if (fuchsia_power_manager_) {
+    fuchsia_power_manager_->Suspend(
+        [completer = std::move(completer)]() mutable { completer(MAGMA_STATUS_OK); });
+  } else {
+    completer(MAGMA_STATUS_OK);
+  }
+}
+
+void MsdArmDevice::MsdResume(fit::callback<void(magma_status_t)> completer) {
+  if (fuchsia_power_manager_) {
+    fuchsia_power_manager_->Resume(
+        [completer = std::move(completer)]() mutable { completer(MAGMA_STATUS_OK); });
+  } else {
+    completer(MAGMA_STATUS_OK);
+  }
 }
 
 void MsdArmDevice::NdtDeregisterConnection() {

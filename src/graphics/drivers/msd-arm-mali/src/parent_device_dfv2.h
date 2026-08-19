@@ -19,13 +19,12 @@
 #include <memory>
 
 #include "parent_device.h"
-#include "src/graphics/drivers/msd-arm-mali/config.h"
 
 class ParentDeviceDFv2 : public ParentDevice {
  public:
   explicit ParentDeviceDFv2(std::shared_ptr<fdf::Namespace> incoming,
                             fidl::WireSyncClient<fuchsia_hardware_platform_device::Device> pdev,
-                            config::Config config);
+                            bool df_power_enabled);
 
   ~ParentDeviceDFv2() override { DLOG("ParentDevice dtor"); }
 
@@ -41,19 +40,19 @@ class ParentDeviceDFv2 : public ParentDevice {
   zx::result<fdf::ClientEnd<fuchsia_hardware_gpu_mali::ArmMali>> ConnectToMaliRuntimeProtocol()
       override;
 
-  bool suspend_enabled() override { return config_.enable_suspend(); }
+  bool suspend_enabled() override { return df_power_enabled_; }
 
   std::shared_ptr<fdf::Namespace> incoming() override { return incoming_; }
 
   static std::unique_ptr<ParentDeviceDFv2> Create(std::shared_ptr<fdf::Namespace> incoming,
-                                                  config::Config config);
+                                                  bool df_power_enabled);
 
   magma::PlatformDevice* GetPlatformDevice() override { return &pdev_; }
 
  private:
   std::shared_ptr<fdf::Namespace> incoming_;
   magma::ZirconPlatformDeviceDfv2 pdev_;
-  config::Config config_;
+  bool df_power_enabled_ = false;
 };
 
 #endif  // SRC_GRAPHICS_DRIVERS_MSD_ARM_MALI_SRC_PARENT_DEVICE_DFV2_H_

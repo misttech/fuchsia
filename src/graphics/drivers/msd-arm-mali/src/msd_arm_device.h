@@ -67,6 +67,10 @@ class MsdArmDevice : public msd::Device,
     };
     PostPowerStateChange(power_state != 0, std::move(power_state_callback));
   }
+  // msd::Device suspend implementation: delegates to FuchsiaPowerManager::Suspend.
+  void MsdSuspend(fit::callback<void(magma_status_t)> completer) override;
+  // msd::Device resume implementation: delegates to FuchsiaPowerManager::Resume.
+  void MsdResume(fit::callback<void(magma_status_t)> completer) override;
 
   void set_inspect(inspect::Node node) { inspect_ = std::move(node); }
 

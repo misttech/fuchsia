@@ -5,7 +5,6 @@
 #include "parent_device_dfv2.h"
 
 #include <fidl/fuchsia.hardware.gpu.mali/cpp/driver/wire.h>
-#include <fidl/fuchsia.hardware.power/cpp/fidl.h>
 #include <lib/magma/platform/zircon/zircon_platform_interrupt.h>
 #include <lib/magma/platform/zircon/zircon_platform_mmio.h>
 #include <lib/scheduler/role.h>
@@ -14,8 +13,8 @@
 
 ParentDeviceDFv2::ParentDeviceDFv2(
     std::shared_ptr<fdf::Namespace> incoming,
-    fidl::WireSyncClient<fuchsia_hardware_platform_device::Device> pdev, config::Config config)
-    : incoming_(std::move(incoming)), pdev_(std::move(pdev)), config_(std::move(config)) {}
+    fidl::WireSyncClient<fuchsia_hardware_platform_device::Device> pdev, bool df_power_enabled)
+    : incoming_(std::move(incoming)), pdev_(std::move(pdev)), df_power_enabled_(df_power_enabled) {}
 
 bool ParentDeviceDFv2::SetThreadRole(const char* role_name) {
   zx_status_t status = fuchsia_scheduler::SetRoleForThisThread(role_name);
@@ -48,7 +47,7 @@ ParentDeviceDFv2::ConnectToMaliRuntimeProtocol() {
 
 // static
 std::unique_ptr<ParentDeviceDFv2> ParentDeviceDFv2::Create(std::shared_ptr<fdf::Namespace> incoming,
-                                                           config::Config config) {
+                                                           bool df_power_enabled) {
   auto platform_device =
       incoming->Connect<fuchsia_hardware_platform_device::Service::Device>("pdev");
   if (!platform_device.is_ok()) {
@@ -56,5 +55,5 @@ std::unique_ptr<ParentDeviceDFv2> ParentDeviceDFv2::Create(std::shared_ptr<fdf::
                  platform_device.status_string());
   }
   return std::make_unique<ParentDeviceDFv2>(
-      std::move(incoming), fidl::WireSyncClient(std::move(*platform_device)), std::move(config));
+      std::move(incoming), fidl::WireSyncClient(std::move(*platform_device)), df_power_enabled);
 }

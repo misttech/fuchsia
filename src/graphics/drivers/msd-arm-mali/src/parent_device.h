@@ -8,7 +8,6 @@
 #include <fidl/fuchsia.hardware.gpu.mali/cpp/driver/wire.h>
 #include <fidl/fuchsia.hardware.platform.device/cpp/wire.h>
 #include <lib/driver/incoming/cpp/namespace.h>
-#include <lib/driver/power/cpp/types.h>
 #include <lib/magma/platform/platform_device.h>
 #include <lib/magma/platform/platform_interrupt.h>
 #include <lib/magma/platform/platform_mmio.h>
