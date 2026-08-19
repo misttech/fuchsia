@@ -9,6 +9,7 @@
 //!
 //! We expose a simple character-by-charcter iterator interface for NFD.
 use crate::lookup::{self, ccc};
+use smallvec::SmallVec;
 use std::ops::Range;
 
 /// Hangul and CJK have assigned ranges but no per-character data within those ranges but
@@ -16,7 +17,7 @@ use std::ops::Range;
 const HANGUL_RANGE: Range<char> = '\u{ac00}'..'\u{d7a4}';
 
 /// Decomposition of Hangul syllables as according to the unicode 15.0 standard.
-fn hangul_decomposition(s: char, out: &mut Vec<char>) {
+fn hangul_decomposition(s: char, out: &mut SmallVec<[char; 16]>) {
     const SBASE: u32 = 0xac00;
     const LBASE: u32 = 0x1100;
     const VBASE: u32 = 0x1161;
@@ -41,7 +42,7 @@ fn hangul_decomposition(s: char, out: &mut Vec<char>) {
 }
 
 /// Perform decomposition (Hangul, then lookup), appending result to 'out'
-fn decompose(ch: char, out: &mut Vec<char>) {
+fn decompose(ch: char, out: &mut SmallVec<[char; 16]>) {
     if HANGUL_RANGE.contains(&ch) {
         hangul_decomposition(ch, out);
     } else {
@@ -58,7 +59,7 @@ pub struct NfdIterator<I: Iterator<Item = char>> {
     /// The not-yet-normalized input sequence.
     input: std::iter::Peekable<I>,
     /// A working area used to normalize characters prior to emitting them.
-    buf: Vec<char>,
+    buf: SmallVec<[char; 16]>,
     /// Tracks the cursor position in 'buf'.
     pos: usize,
 }
@@ -86,7 +87,7 @@ impl<I: Iterator<Item = char>> Iterator for NfdIterator<I> {
             decompose(ch, &mut self.buf);
         }
         // Rust's sort is stable so we can rely on it not to reorder the ccc=0 elements.
-        self.buf[0..].sort_by(|a, b| ccc(*a).cmp(&ccc(*b)));
+        self.buf.sort_by(|a, b| ccc(*a).cmp(&ccc(*b)));
 
         if self.pos < self.buf.len() {
             let ch = self.buf[self.pos];
@@ -99,7 +100,7 @@ impl<I: Iterator<Item = char>> Iterator for NfdIterator<I> {
 }
 
 pub fn nfd<I: Iterator<Item = char>>(input: I) -> NfdIterator<I> {
-    NfdIterator { input: input.peekable(), buf: Vec::new(), pos: 0 }
+    NfdIterator { input: input.peekable(), buf: SmallVec::new(), pos: 0 }
 }
 
 #[cfg(test)]

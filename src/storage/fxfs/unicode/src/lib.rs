@@ -3,7 +3,6 @@
 // found in the LICENSE file.
 use fprint::TypeFingerprint;
 use serde::{Deserialize, Serialize};
-use std::collections::VecDeque;
 use std::hash::{Hash, Hasher};
 
 mod lookup;
@@ -14,21 +13,31 @@ use unicode_gen;
 pub(crate) struct CaseFoldIterator<I: Iterator<Item = char>> {
     /// The not-yet-normalized input sequence.
     input: I,
-    buf: VecDeque<char>,
+    buf: [char; 4],
+    buf_len: usize,
+    buf_pos: usize,
 }
 
 impl<I: Iterator<Item = char>> Iterator for CaseFoldIterator<I> {
     type Item = char;
 
     fn next(&mut self) -> Option<char> {
-        if let Some(ch) = self.buf.pop_front() {
+        if self.buf_pos < self.buf_len {
+            let ch = self.buf[self.buf_pos];
+            self.buf_pos += 1;
             return Some(ch);
         }
+        self.buf_len = 0;
+        self.buf_pos = 0;
+
         self.input.next().map(|ch| {
             if let Some(mapping) = crate::lookup::casefold(ch) {
                 let mut chars = mapping.chars();
                 let first = chars.next().unwrap();
-                self.buf.extend(chars);
+                for c in chars {
+                    self.buf[self.buf_len] = c;
+                    self.buf_len += 1;
+                }
                 first
             } else {
                 ch
@@ -38,7 +47,7 @@ impl<I: Iterator<Item = char>> Iterator for CaseFoldIterator<I> {
 }
 
 pub(crate) fn casefold<I: Iterator<Item = char>>(input: I) -> CaseFoldIterator<I> {
-    CaseFoldIterator { input, buf: VecDeque::new() }
+    CaseFoldIterator { input, buf: ['\0'; 4], buf_len: 0, buf_pos: 0 }
 }
 
 /// Helper function to convert a `char` to an iterator over its UTF-8 bytes

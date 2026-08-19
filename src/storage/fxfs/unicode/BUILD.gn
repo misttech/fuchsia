@@ -20,6 +20,7 @@ rustc_library("unicode") {
     "//src/storage/type-fprint:fprint",
     "//third_party/rust_crates:arbitrary",
     "//third_party/rust_crates:serde",
+    "//third_party/rust_crates:smallvec",
   ]
   visibility = [
     "//src/starnix/*",
@@ -62,6 +63,7 @@ if (is_host) {
       "//third_party/rust_crates:arbitrary",
       "//third_party/rust_crates:regex",
       "//third_party/rust_crates:serde",
+      "//third_party/rust_crates:smallvec",
       "//third_party/rust_crates:zip",
     ]
     data_deps = [ ":ucd_zip" ]
