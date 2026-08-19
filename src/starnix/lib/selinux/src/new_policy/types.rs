@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 use std::num::NonZeroU16;
+use std::ops::Index;
 
 use hashbrown::HashTable;
 use hashbrown::hash_table::Entry;
@@ -119,6 +120,7 @@ pub struct Types {
 impl Parse for Types {
     fn parse(cursor: &mut PolicyCursor<'_>) -> Result<Self, ParseError> {
         let primary_names_count = u32::parse(cursor)?;
+        cursor.set_types_count(primary_names_count);
         let ordered = Array::<Type>::parse(cursor)?;
 
         // Build indices
@@ -193,6 +195,38 @@ impl Types {
 
     pub fn iter(&self) -> impl Iterator<Item = &Type> {
         self.ordered.iter()
+    }
+}
+
+/// Type-to-attribute mappings for each primary type in the policy.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Validate)]
+pub struct TypeAttributeMaps {
+    maps: Box<[TypeSet]>,
+}
+
+impl TypeAttributeMaps {
+    /// Returns the attribute [`TypeSet`] for the specified `type_id`.
+    pub fn get(&self, type_id: TypeId) -> Option<&TypeSet> {
+        self.maps.get((type_id.as_u32() - 1) as usize)
+    }
+}
+
+impl Index<TypeId> for TypeAttributeMaps {
+    type Output = TypeSet;
+
+    fn index(&self, id: TypeId) -> &Self::Output {
+        &self.maps[(id.as_u32() - 1) as usize]
+    }
+}
+
+impl Parse for TypeAttributeMaps {
+    fn parse(cursor: &mut PolicyCursor<'_>) -> Result<Self, ParseError> {
+        let count = cursor.types_count() as usize;
+        let mut maps = Vec::with_capacity(count);
+        for _ in 0..count {
+            maps.push(TypeSet::parse(cursor)?);
+        }
+        Ok(Self { maps: maps.into_boxed_slice() })
     }
 }
 

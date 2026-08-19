@@ -20,12 +20,13 @@ pub struct PolicyCursor<'a> {
     data: &'a [u8],
     offset: usize,
     policy_version: PolicyVersion,
+    types_count: u32,
 }
 
 impl<'a> PolicyCursor<'a> {
     /// Creates a new [`PolicyCursor`] wrapping the supplied `data`.
     pub fn new(data: &'a [u8]) -> Self {
-        Self { data, offset: 0, policy_version: PolicyVersion::V30 }
+        Self { data, offset: 0, policy_version: PolicyVersion::V30, types_count: 0 }
     }
 
     /// Sets the SELinux policy database version on this cursor.
@@ -36,6 +37,16 @@ impl<'a> PolicyCursor<'a> {
     /// Returns the SELinux policy database version recorded on this cursor.
     pub fn policy_version(&self) -> PolicyVersion {
         self.policy_version
+    }
+
+    /// Sets the number of types recorded on this cursor.
+    pub fn set_types_count(&mut self, count: u32) {
+        self.types_count = count;
+    }
+
+    /// Returns the number of types recorded on this cursor.
+    pub fn types_count(&self) -> u32 {
+        self.types_count
     }
 
     /// Returns the current offset of the cursor.
@@ -211,36 +222,6 @@ impl Serialize for ByteArray {
     }
 }
 
-/// Remaining unparsed bytes of the policy. NewPolicy parses only the first few
-/// elements of the binary policy, retaining the trailing bytes both to allow
-/// byte-for-byte re-serialization of the whole policy, and for the old policy
-/// framework to use to parse the fields that have not yet been migrated. This
-/// field will be removed once the migration is complete.
-#[derive(Debug)]
-pub(super) struct RemainingBytes {
-    pub(super) bytes: std::sync::Arc<[u8]>,
-}
-
-impl Parse for RemainingBytes {
-    fn parse(cursor: &mut PolicyCursor<'_>) -> Result<Self, ParseError> {
-        let rest = std::sync::Arc::from(&cursor.data[cursor.offset..]);
-        cursor.offset = cursor.data.len();
-        Ok(Self { bytes: rest })
-    }
-}
-
-impl Serialize for RemainingBytes {
-    fn serialize(&self, writer: &mut PolicyWriter<'_>) -> Result<(), SerializeError> {
-        writer.write_bytes(&self.bytes);
-        Ok(())
-    }
-}
-
-impl Validate for RemainingBytes {
-    fn validate(&self, _policy: &NewPolicy) -> Result<(), ValidateError> {
-        Ok(())
-    }
-}
 impl Parse for u64 {
     fn parse(cursor: &mut PolicyCursor<'_>) -> Result<Self, ParseError> {
         let val: le::U64 = cursor.read::<le::U64>()?;
@@ -504,26 +485,6 @@ mod tests {
         let mut policy_writer = PolicyWriter::new(PolicyVersion::V33, &mut writer);
         array.serialize(&mut policy_writer).unwrap();
         assert_eq!(writer, [4, 0, 0, 0, 5, 6, 7, 8]);
-    }
-
-    #[test]
-    fn test_remaining_bytes_parse_and_serialize() {
-        let data = [1, 0, 0, 0, 9, 9, 9];
-        let mut cursor = PolicyCursor::new(&data);
-
-        // Parse first u32
-        let val = cursor.parse::<u32>().unwrap();
-        assert_eq!(val, 1);
-
-        // Parse remaining bytes
-        let remaining = cursor.parse::<RemainingBytes>().unwrap();
-        assert_eq!(remaining.bytes.as_ref(), &[9, 9, 9]);
-
-        // Serialize remaining bytes
-        let mut writer = Vec::new();
-        let mut policy_writer = PolicyWriter::new(PolicyVersion::V33, &mut writer);
-        remaining.serialize(&mut policy_writer).unwrap();
-        assert_eq!(writer, [9, 9, 9]);
     }
 
     #[test]

@@ -4,19 +4,19 @@
 
 use super::constraints::evaluate_constraint;
 use super::error::{ParseError, ValidateError};
-use super::parser::{PolicyCursor, PolicyData};
+use super::parser::PolicyData;
 use super::security_context::SecurityContext;
 use super::{
-    AccessDecision, AccessVector, ClassId, Parse, PolicyValidationContext,
-    SELINUX_AVD_FLAGS_PERMISSIVE, TypeId, Validate, XpermsAccessDecision, XpermsKind,
+    AccessDecision, AccessVector, ClassId, SELINUX_AVD_FLAGS_PERMISSIVE, TypeId,
+    XpermsAccessDecision, XpermsKind,
 };
 use crate::PolicyCap;
 use crate::new_policy::rules::{
     ExtendedPermissions, HasRuleKey, RuleKind, XPERMS_TYPE_IOCTL_PREFIX_AND_POSTFIXES,
     XPERMS_TYPE_IOCTL_PREFIXES, XPERMS_TYPE_NLMSG, XpermsBitmap,
 };
-use crate::new_policy::traits::{HasPolicyId, PolicyId};
-use crate::new_policy::{Class, GenfsConPath, NewPolicy, TypeSet};
+use crate::new_policy::traits::HasPolicyId;
+use crate::new_policy::{Class, GenfsConPath, NewPolicy};
 use std::ops::Deref;
 use std::sync::Arc;
 
@@ -29,11 +29,8 @@ const MAXIMUM_POLICY_SIZE: usize = 1 << 24;
 /// Parsed binary policy.
 #[derive(Debug)]
 pub struct ParsedPolicy {
-    /// [`NewPolicy`] that handles the header and base tables.
+    /// [`NewPolicy`] that handles the policy tables and verification.
     new_policy: Arc<NewPolicy>,
-
-    /// Extensible bitmaps that encode associations between types and attributes.
-    attribute_maps: Vec<TypeSet>,
 }
 
 impl Deref for ParsedPolicy {
@@ -92,10 +89,8 @@ impl ParsedPolicy {
         let mut computed_audit_allow = AccessVector::NONE;
         let mut computed_audit_deny = AccessVector::ALL;
 
-        let source_attribute_set: &TypeSet =
-            &self.attribute_maps[(source_type.as_u32() - 1) as usize];
-        let target_attribute_set: &TypeSet =
-            &self.attribute_maps[(target_type.as_u32() - 1) as usize];
+        let source_attribute_set = &self.type_attribute_maps()[source_type];
+        let target_attribute_set = &self.type_attribute_maps()[target_type];
 
         for source_id in source_attribute_set.iter() {
             for target_id in target_attribute_set.iter() {
@@ -197,10 +192,8 @@ impl ParsedPolicy {
                 },
             };
 
-        let source_attribute_set: &TypeSet =
-            &self.attribute_maps[(source_context.type_().as_u32() - 1) as usize];
-        let target_attribute_set: &TypeSet =
-            &self.attribute_maps[(target_context.type_().as_u32() - 1) as usize];
+        let source_attribute_set = &self.type_attribute_maps()[source_context.type_()];
+        let target_attribute_set = &self.type_attribute_maps()[target_context.type_()];
 
         for source_id in source_attribute_set.iter() {
             for target_id in target_attribute_set.iter() {
@@ -286,51 +279,12 @@ impl ParsedPolicy {
             NewPolicy::parse(&data).map_err(|e| anyhow::anyhow!("new parser failed: {:?}", e))?;
         new_policy.validate().context("validating new policy structure")?;
 
-        let rest_data = new_policy.rest_bytes();
-        let (policy, excess_bytes) = parse_policy_remaining(new_policy, rest_data)?;
-        if excess_bytes > 0 {
-            return Err(anyhow::Error::from(ParseError::TrailingBytes { num_bytes: excess_bytes }));
-        }
-        Ok(policy)
+        Ok(ParsedPolicy { new_policy: Arc::new(new_policy) })
     }
-}
-
-/// Parses the remaining parts of the policy from `rest_data` to construct a [`ParsedPolicy`].
-fn parse_policy_remaining(
-    new_policy: NewPolicy,
-    rest_data: PolicyData,
-) -> Result<(ParsedPolicy, usize), anyhow::Error> {
-    let tail = PolicyCursor::new(&rest_data);
-
-    let primary_names_count = new_policy.types().primary_names_count();
-    let mut attribute_maps = Vec::with_capacity(primary_names_count as usize);
-    let mut tail = tail;
-
-    for i in 0..primary_names_count {
-        let (item, next_tail) = TypeSet::parse(tail)
-            .map_err(Into::<anyhow::Error>::into)
-            .with_context(|| format!("parsing {}th attribute map", i))?;
-        attribute_maps.push(item);
-        tail = next_tail;
-    }
-    let tail = tail;
-    let attribute_maps = attribute_maps;
-
-    let excess_bytes = rest_data.len() - tail.offset() as usize;
-
-    Ok((ParsedPolicy { new_policy: Arc::new(new_policy), attribute_maps }, excess_bytes))
 }
 
 impl ParsedPolicy {
     pub fn validate(&self) -> Result<(), anyhow::Error> {
-        let context = PolicyValidationContext { new_policy: self.new_policy.clone() };
-
-        for map in &self.attribute_maps {
-            map.validate(&context)
-                .map_err(Into::<anyhow::Error>::into)
-                .context("validating attribute_maps")?;
-        }
-
         // Validate that all kernel-required initial SIDs are present in the policy.
         let need_init_sid = self.has_policycap(PolicyCap::UserspaceInitialContext);
         for initial_sid in crate::InitialSid::all_variants() {
@@ -353,6 +307,10 @@ impl ParsedPolicy {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::new_policy::TypeSet;
+    use crate::new_policy::traits::PolicyId;
+    use crate::policy::Parse;
+    use crate::policy::parser::PolicyCursor;
     use std::sync::Arc;
 
     #[test]

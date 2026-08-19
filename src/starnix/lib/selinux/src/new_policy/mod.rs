@@ -47,7 +47,7 @@ use metadata::{Config, Counts, Magic, Signature};
 pub use metadata::{HandleUnknown, POLICYDB_VERSION_MAX, PolicyVersion};
 pub use mls::{Category, RangeTransition, Sensitivity};
 pub use object_contexts::{FsUseType, GenfsCon, GenfsConPath, ObjectContexts};
-use parser::{Array, PolicyCursor, RemainingBytes};
+use parser::{Array, PolicyCursor};
 pub use parser::{PolicyWriter, SymbolArray};
 pub use permissions::PermissionId;
 pub use policy_cap::{PolicyCap, PolicyCapSet};
@@ -88,8 +88,7 @@ pub type CategorySet = bitmap::IdSet<CategoryId>;
 /// Builder for constructing [`CategorySet`]s dynamically.
 pub type CategorySetBuilder = bitmap::IdSetBuilder<CategoryId>;
 
-/// Top-level [`NewPolicy`] structure that parses the first few fields
-/// and stores the rest in [`Self::rest`] to allow round-trip testing.
+/// Top-level [`NewPolicy`] structure representing a parsed SELinux binary policy.
 #[derive(Debug, Parse, Serialize, Validate)]
 pub struct NewPolicy {
     magic: Magic,
@@ -116,14 +115,18 @@ pub struct NewPolicy {
     object_contexts: ObjectContexts,
     generic_fs_contexts: Array<GenfsCon>,
     range_transitions: Array<RangeTransition>,
-    rest: RemainingBytes,
+    type_attribute_maps: TypeAttributeMaps,
 }
 
 impl NewPolicy {
     /// Parses a [`NewPolicy`] from the raw binary data.
     pub fn parse(data: &[u8]) -> Result<Self, ParseError> {
         let mut cursor = PolicyCursor::new(data);
-        cursor.parse()
+        let policy = cursor.parse()?;
+        if cursor.offset() < data.len() {
+            return Err(ParseError::TrailingBytes { num_bytes: data.len() - cursor.offset() });
+        }
+        Ok(policy)
     }
 
     /// Validates the parsed policy.
@@ -243,9 +246,9 @@ impl NewPolicy {
         &self.range_transitions
     }
 
-    /// Returns a shared reference to the remaining unparsed bytes.
-    pub fn rest_bytes(&self) -> std::sync::Arc<[u8]> {
-        self.rest.bytes.clone()
+    /// Returns the type attribute maps table.
+    pub fn type_attribute_maps(&self) -> &TypeAttributeMaps {
+        &self.type_attribute_maps
     }
 }
 

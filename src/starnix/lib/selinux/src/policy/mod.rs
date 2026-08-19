@@ -366,22 +366,6 @@ pub trait Parse: Sized {
     fn parse<'a>(bytes: PolicyCursor<'a>) -> Result<(Self, PolicyCursor<'a>), Self::Error>;
 }
 
-/// Context for validating a parsed policy.
-pub(super) struct PolicyValidationContext {
-    /// New policy parser representation.
-    pub(super) new_policy: Arc<new::NewPolicy>,
-}
-
-/// Validate a parsed data structure.
-pub(super) trait Validate {
-    /// The type of error that may be returned from `validate()`, usually [`ParseError`] or
-    /// [`anyhow::Error`].
-    type Error: Into<anyhow::Error>;
-
-    /// Validates a `Self`, returning a `Self::Error` if `self` is internally inconsistent.
-    fn validate(&self, context: &PolicyValidationContext) -> Result<(), Self::Error>;
-}
-
 /// Treat a type as metadata that contains a count of subsequent data.
 impl Parse for le::U32 {
     type Error = anyhow::Error;
@@ -402,14 +386,6 @@ impl<T: crate::new_policy::traits::Parse> Parse for T {
             .map_err(|e| anyhow::anyhow!("Parse error: {:?}", e))?;
         let new_offset = bytes.offset() + new_cursor.offset() as u32;
         Ok((item, PolicyCursor::new_at(bytes.data(), new_offset)))
-    }
-}
-
-impl<T: crate::new_policy::traits::Validate> Validate for T {
-    type Error = anyhow::Error;
-
-    fn validate(&self, context: &PolicyValidationContext) -> Result<(), Self::Error> {
-        crate::new_policy::traits::Validate::validate(self, &context.new_policy).map_err(Into::into)
     }
 }
 
