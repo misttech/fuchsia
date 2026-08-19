@@ -14,8 +14,11 @@ rustc_library("blob_pager_and_verifier") {
     "//sdk/rust/zx",
     "//src/lib/fidl/rust/fidl",
     "//src/lib/fuchsia",
+    "//src/lib/fuchsia-async",
+    "//src/lib/fuchsia-sync",
     "//src/storage/fidl/fuchsia.storage.mapping:fuchsia.storage.mapping_rust",
     "//third_party/rust_crates:anyhow",
+    "//third_party/rust_crates:event-listener",
   ]
   test_deps = [
     "//src/lib/fuchsia-async",
