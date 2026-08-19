@@ -4,8 +4,6 @@
 
 import("//build/rust/rustc_library.gni")
 
-assert(is_host, "safe_string is for use with the host toolchain only")
-
 rustc_library("lib") {
   name = "safe_string"
   version = "0.1.0"
