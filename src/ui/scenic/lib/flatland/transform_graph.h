@@ -7,7 +7,9 @@
 
 #include <map>
 #include <memory_resource>
+#include <optional>
 #include <span>
+#include <unordered_map>
 #include <unordered_set>
 #include <vector>
 
@@ -63,9 +65,6 @@ class TransformGraph {
   // Returns false if the transform was not created by CreateTransform(), or if the transform has
   // already been released.
   bool ReleaseTransform(TransformHandle handle);
-
-  // Checks to see if the current transform has and child transform handles.
-  bool HasChildren(TransformHandle parent) const;
 
   // Creates a directed edge from the parent to the child transform. Children are kept alive by
   // unreleased parents. The parent transform should be an unreleased transform created by calling
@@ -139,20 +138,26 @@ class TransformGraph {
       std::pmr::memory_resource* resource = std::pmr::get_default_resource());
 
  private:
-  // Store each transform with a priority to allow callers to specify a single child edge to be
-  // traversed first.
-  enum ChildPriority {
-    PRIORITY = 0,
-    NORMAL = 1,
+  // Structure holding children for a single transform.
+  struct NodeChildren {
+    std::optional<TransformHandle> priority_child;
+    std::vector<TransformHandle> normal_children;
   };
 
-  using PriorityChildMap =
-      std::multimap<std::pair<TransformHandle, ChildPriority>, TransformHandle>;
+  using PriorityChildMap = std::unordered_map<TransformHandle, NodeChildren>;
 
-  using IteratorPair =
-      std::pair<PriorityChildMap::const_iterator, PriorityChildMap::const_iterator>;
+  struct ChildIterator {
+    const NodeChildren* node = nullptr;
+    size_t index = 0;
 
-  static IteratorPair EqualRangeAllPriorities(const PriorityChildMap& map, TransformHandle handle);
+    static ChildIterator ForParent(const PriorityChildMap& children, TransformHandle parent);
+
+    bool HasNext() const { return index < ChildCount(); }
+
+    TransformHandle GetAndAdvance();
+
+    uint64_t ChildCount() const;
+  };
 
   // A static helper function, returns the TopologyVector rooted at the "start" transform,
   // following edges defined in the "children" map. Cycles are returned through the out parameter
@@ -160,9 +165,9 @@ class TransformGraph {
   //
   // Computation is halted once the return vector has grown to max_length in size. We use
   // `resource` to allocate the returned TopologyVector.
-  static TopologyVector Traverse(TransformHandle start, const PriorityChildMap& children,
-                                 ChildMap* cycles, uint64_t max_length,
-                                 std::pmr::memory_resource* resource);
+  void Traverse(TransformHandle start, const PriorityChildMap& children,
+                const std::pmr::unordered_set<TransformHandle>* prev_visited, ChildMap* cycles,
+                uint64_t max_length, TopologyVector& out_topology_vector);
 
   const TransformHandle::InstanceId instance_id_ = 0;
 
@@ -175,8 +180,7 @@ class TransformGraph {
   // The set of all alive transforms.
   TransformSet live_set_;
 
-  // A multimap. Each key is a global handle, and a priority for ordering. The set of values are the
-  // children for that handle.
+  // Map from transform handle to its priority and normal children.
   PriorityChildMap children_;
 
   // This variable is only used for DCHECKs. If ComputeAndCleanup() reaches its iteration limit,

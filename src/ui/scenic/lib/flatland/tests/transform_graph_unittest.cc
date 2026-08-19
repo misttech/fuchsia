@@ -306,9 +306,9 @@ TEST(TransformGraphTest, IterationTestTooManyHandles) {
 
   good_data = graph.ComputeAndCleanup(transforms[0], kShortIterationLength);
   // This is an indirect way to confirm that there is only a single transform in the working set.
-  // One iteration to traverse transforms[0], one iteration because transforms[0] is in the working
-  // set.
-  EXPECT_EQ(good_data.iterations, 1u + 1u);
+  // One iteration to traverse transforms[0]; transforms[0] is in the working set but skipped since
+  // it is already visited.
+  EXPECT_EQ(good_data.iterations, 1u);
   EXPECT_EQ(good_data.sorted_transforms.size(), 1u);
 
   // This is an indirect way to confirm that transforms[0] and the new_transform are in the
@@ -332,11 +332,16 @@ TEST(TransformGraphTest, IterationTestTooManyPathsToChildren) {
   }
 
   auto good_data = graph.ComputeAndCleanup(transforms[0], kLongIterationLength);
-  // Transform graph should iterate over every transform in the working set (i.e., kNumTransforms),
-  // as well as all of the children in the chain (i.e., kChainDepth).
-  EXPECT_EQ(good_data.iterations, kNumTransforms + kChainDepth);
+  // Since visited nodes are skipped during the working set traversal, the total iterations are
+  // exactly the number of unique transforms visited (kNumTransforms).
+  EXPECT_EQ(good_data.iterations, kNumTransforms);
   EXPECT_EQ(good_data.sorted_transforms.size(), kChainDepth);
   EXPECT_EQ(good_data.dead_transforms.size(), 0u);
+
+  for (uint64_t i = 0; i < kChainDepth; ++i) {
+    EXPECT_EQ(good_data.sorted_transforms[i].handle, transforms[i]);
+    EXPECT_EQ(good_data.sorted_transforms[i].child_count, (i == kChainDepth - 1) ? 0u : 1u);
+  }
 
   // Connect all ten nodes together in three cascading diamonds.
   //
@@ -369,10 +374,52 @@ TEST(TransformGraphTest, IterationTestTooManyPathsToChildren) {
   }
 
   good_data = graph.ComputeAndCleanup(transforms[0], kLongIterationLength);
-  // Transform graph should iterate over the diamond, plus one node in the working set (the root).
-  EXPECT_EQ(good_data.iterations, kDiamondSize + 1u);
+  // Since visited nodes are skipped during the working set traversal, the total iterations are
+  // exactly the diamond size (kDiamondSize).
+  EXPECT_EQ(good_data.iterations, kDiamondSize);
   EXPECT_EQ(good_data.sorted_transforms.size(), kDiamondSize);
   EXPECT_EQ(good_data.dead_transforms.size(), 0u);
+
+  static constexpr std::pair<size_t, uint64_t> kExpectedEntries[] = {
+      // Subtree under 0's left child 1
+      {0, 2},
+      {1, 1},
+      {2, 2},
+      {3, 1},
+      {4, 2},
+      {5, 1},
+      {6, 0},
+      {9, 1},
+      {6, 0},
+      {8, 1},
+      {4, 2},
+      {5, 1},
+      {6, 0},
+      {9, 1},
+      {6, 0},
+      // Subtree under 0's right child 7
+      {7, 1},
+      {2, 2},
+      {3, 1},
+      {4, 2},
+      {5, 1},
+      {6, 0},
+      {9, 1},
+      {6, 0},
+      {8, 1},
+      {4, 2},
+      {5, 1},
+      {6, 0},
+      {9, 1},
+      {6, 0},
+  };
+  static_assert(std::size(kExpectedEntries) == kDiamondSize);
+
+  for (size_t i = 0; i < kDiamondSize; ++i) {
+    const auto& [index, child_count] = kExpectedEntries[i];
+    EXPECT_EQ(good_data.sorted_transforms[i].handle, transforms[index]) << "at index " << i;
+    EXPECT_EQ(good_data.sorted_transforms[i].child_count, child_count) << "at index " << i;
+  }
 }
 
 TEST(TransformGraphTest, PriorityChildOrdering) {
