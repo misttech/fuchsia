@@ -89,9 +89,23 @@ if (is_host) {
     timeout_secs = 600
   }
 
+  python_mobly_test("adb_fastboot_stress_test") {
+    main_source = "test_adb_fastboot_stress.py"
+    libraries = [
+      "//src/testing/end_to_end/honeydew",
+      "//src/testing/end_to_end/mobly_base_tests/fuchsia_base_test",
+    ]
+    params = {
+      num_iterations = 10
+    }
+    environments = [ sorrel_env ]
+    timeout_secs = 1200
+  }
+
   group("tests") {
     testonly = true
     public_deps = [
+      ":adb_fastboot_stress_test($host_toolchain)",
       ":adb_root_unroot_stress_test($host_toolchain)",
       ":cdc_stress_test($host_toolchain)",
       ":usb_disconnect_test($host_toolchain)",
@@ -125,9 +139,14 @@ if (is_host) {
     public_deps = [ ":adb_root_unroot_stress_test($host_toolchain)" ]
   }
 
+  group("adb_fastboot_stress_test") {
+    testonly = true
+    public_deps = [ ":adb_fastboot_stress_test($host_toolchain)" ]
+  }
   group("tests") {
     testonly = true
     public_deps = [
+      ":adb_fastboot_stress_test($host_toolchain)",
       ":adb_root_unroot_stress_test($host_toolchain)",
       ":cdc_stress_test($host_toolchain)",
       ":usb_disconnect_test($host_toolchain)",
