@@ -199,6 +199,93 @@ Known bugs / caveats, that will be worked out:
   issue for the upstream Ninja team, since Fuchsia development does not
   happen on Windows.
 
+## Feature: Delayed commands for Bazel actions
+
+This feature lets Ninja defer ("delay") ready Bazel build actions to
+batch them together into a single `bazel build` invocation. More Bazel
+targets are built in parallel, reducing the number of Ninja/Bazel transitions
+during the build. In practice, this shaves off up to 10 minutes of build
+time on infra builders, depending on build configuration.
+
+### Impact on action scheduling
+
+Consider a build plan with a mix of native GN actions and Bazel actions:
+
+```none  {:.devsite-disable-click-to-copy}
+   bazel1   gn1
+     |       |
+     +-------+
+         |
+      [mixed]   bazel2     gn2
+         |         |        |
+         +---------+--------+
+                |
+             [test1]
+```
+
+In this graph:
+
+- `gn1` and `gn2` are native Ninja / GN actions (such as C++ compilation).
+
+- `bazel1` and `bazel2` are Bazel actions.
+
+- `[mixed]` and `[test1]` are phony targets.
+
+Without delayed commands, Ninja launches Bazel commands as soon as each
+individual action's dependencies are satisfied, assuming Ninja is only
+using two parallel job slots (-j2) for simplicity, this looks like:
+
+```none  {:.devsite-disable-click-to-copy}
+Time -------------------------------------------------------------------->
+Ninja: [gn1      ] [gn2      ]
+Bazel: [bazel1        ]        [bazel2        ]
+       (startup overhead)      (startup overhead)
+```
+
+Because each Bazel action runs as an independent subprocess:
+
+- Ninja launches 2 separate `bazel build` commands.
+
+- Each invocation pays the fixed cost of Bazel startup and analysis.
+
+- `bazel1` and `bazel2` cannot build in parallel within Bazel.
+
+With delayed commands enabled, Ninja prioritizes non-delayed actions (GN/C++
+tasks) while collecting ready Bazel actions into a batch. When no other
+non-delayed work can make progress, Ninja builds all accumulated Bazel actions
+in a single invocation:
+
+```none  {:.devsite-disable-click-to-copy}
+Time -------------------------------------------------------------------->
+Ninja: [gn1    ]
+       [gn2     ]
+Bazel:           [bazel1 + bazel2]
+```
+
+- Ninja first executes `gn1` and `gn2` in parallel. As `bazel1` and
+  `bazel2` become ready, Ninja intercepts and queues them instead of launching
+  immediate subprocesses.
+
+- Once all running GN tasks complete, Ninja invokes Bazel once to build
+  `{bazel1, bazel2}` together. Bazel can now build both targets concurrently
+  using its own internal dependency graph and worker pools.
+
+- Finally, the last GN action for `test1` is launched.
+
+### Impact on correctness
+
+This feature only changes when Ninja schedules build actions, not what Ninja
+builds. All outputs are identical and dependencies between task types are
+still respected. For example, if a GN target depends on a host tool built by
+Bazel, Ninja only builds it after the host tool is available.
+
+The only visible difference to developers is that:
+
+- More GN tasks are built upfront in a full build, before the Bazel
+  ones are invoked.
+
+- Bazel's progress output reflects that multiple targets are built at once.
+
 [rfc-0153]: /docs/contribute/governance/rfcs/0153_ninja_customization.md
 [rfc-strategy]: /docs/contribute/governance/rfcs/0153_ninja_customization.md#branch-strategy
 [fuchsia-mirror]: https://fuchsia.googlesource.com/third_party/github.com/ninja-build/ninja/
@@ -206,4 +293,3 @@ Known bugs / caveats, that will be worked out:
 [perfetto-dev]: https://ui.perfetto.dev
 [chrome-trace-json]: https://docs.google.com/document/d/1CvAClvFfyA5R-PhYUmn5OOQtYMH4h6I0nSsKchNAySU
 [ninja-errors-json-schema]: https://fuchsia.googlesource.com/third_party/github.com/ninja-build/ninja/+/refs/heads/main/src/status_to_error_log.h
-
