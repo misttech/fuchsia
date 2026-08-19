@@ -50,7 +50,7 @@
                 "name": "Match",
                 "expected": "match",
                 "device": {
-                    "fuchsia.hardware.amlogiccanvas.Service": "fuchsia.hardware.amlogiccanvas.Service.ZirconTransport"
+                    "fuchsia.Service": "\"fuchsia.hardware.amlogiccanvas.Service\""
                 }
             }
         ]
@@ -62,7 +62,7 @@
                 "name": "Match",
                 "expected": "match",
                 "device": {
-                    "fuchsia.hardware.clock.Service": "fuchsia.hardware.clock.Service.ZirconTransport",
+                    "fuchsia.Service": "\"fuchsia.hardware.clock.Service\"",
                     "fuchsia.NAME": "\"clock-dos-vdec\""
                 }
             }
@@ -75,7 +75,7 @@
                 "name": "Match",
                 "expected": "match",
                 "device": {
-                    "fuchsia.hardware.clock.Service": "fuchsia.hardware.clock.Service.ZirconTransport",
+                    "fuchsia.Service": "\"fuchsia.hardware.clock.Service\"",
                     "fuchsia.NAME": "\"clock-dos\""
                 }
             }
@@ -88,7 +88,7 @@
                 "name": "Match",
                 "expected": "match",
                 "device": {
-                    "fuchsia.hardware.tee.Service": "fuchsia.hardware.tee.Service.ZirconTransport"
+                    "fuchsia.Service": "\"fuchsia.hardware.tee.Service\""
                 }
             }
         ]

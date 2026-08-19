@@ -10,12 +10,8 @@
 #include <lib/driver/component/cpp/composite_node_spec.h>
 #include <lib/driver/component/cpp/node_add_args.h>
 
-#include <bind/fuchsia/amlogic/platform/cpp/bind.h>
 #include <bind/fuchsia/amlogic/platform/t931/cpp/bind.h>
 #include <bind/fuchsia/cpp/bind.h>
-#include <bind/fuchsia/gpio/cpp/bind.h>
-#include <bind/fuchsia/hardware/amlogiccanvas/cpp/bind.h>
-#include <bind/fuchsia/hardware/gpio/cpp/bind.h>
 #include <ddk/metadata/display.h>
 #include <soc/aml-t931/t931-gpio.h>
 #include <soc/aml-t931/t931-hw.h>
@@ -126,26 +122,22 @@ zx::result<> PostInit::InitDisplay() {
   }();
 
   std::vector<fuchsia_driver_framework::BindRule2> gpio_bind_rules{
-      fdf::MakeAcceptBindRule(bind_fuchsia_hardware_gpio::SERVICE,
-                              bind_fuchsia_hardware_gpio::SERVICE_ZIRCONTRANSPORT),
+      fdf::MakeAcceptBindRule(bind_fuchsia::SERVICE, "fuchsia.hardware.gpio.Service"),
       fdf::MakeAcceptBindRule(bind_fuchsia::GPIO_PIN,
                               bind_fuchsia_amlogic_platform_t931::GPIOH_PIN_ID_PIN_6),
   };
 
   std::vector<fuchsia_driver_framework::NodeProperty2> gpio_properties{
-      fdf::MakeProperty2(bind_fuchsia_hardware_gpio::SERVICE,
-                         bind_fuchsia_hardware_gpio::SERVICE_ZIRCONTRANSPORT),
+      fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.gpio.Service"),
       fdf::MakeProperty2(bind_fuchsia::NAME, "gpio-lcd-reset"),
   };
 
   std::vector<fuchsia_driver_framework::BindRule2> canvas_bind_rules{
-      fdf::MakeAcceptBindRule(bind_fuchsia_hardware_amlogiccanvas::SERVICE,
-                              bind_fuchsia_hardware_amlogiccanvas::SERVICE_ZIRCONTRANSPORT),
+      fdf::MakeAcceptBindRule(bind_fuchsia::SERVICE, "fuchsia.hardware.amlogiccanvas.Service"),
   };
 
   std::vector<fuchsia_driver_framework::NodeProperty2> canvas_properties{
-      fdf::MakeProperty2(bind_fuchsia_hardware_amlogiccanvas::SERVICE,
-                         bind_fuchsia_hardware_amlogiccanvas::SERVICE_ZIRCONTRANSPORT),
+      fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.amlogiccanvas.Service"),
   };
 
   std::vector<fuchsia_driver_framework::ParentSpec2> parents = {

@@ -13,8 +13,6 @@
 
 #include <bind/fuchsia/amlogic/platform/cpp/bind.h>
 #include <bind/fuchsia/cpp/bind.h>
-#include <bind/fuchsia/hardware/amlogiccanvas/cpp/bind.h>
-#include <bind/fuchsia/hardware/clock/cpp/bind.h>
 #include <soc/aml-meson/g12b-clk.h>
 #include <soc/aml-t931/t931-hw.h>
 
@@ -61,33 +59,33 @@ static const std::vector<fpbus::Irq> sherlock_video_enc_irqs{
 };
 
 const std::vector<fdf::BindRule2> kCanvasRules = std::vector{
-    fdf::MakeAcceptBindRule(bind_fuchsia_hardware_amlogiccanvas::SERVICE,
-                            bind_fuchsia_hardware_amlogiccanvas::SERVICE_ZIRCONTRANSPORT)};
+    fdf::MakeAcceptBindRule(bind_fuchsia::SERVICE, "fuchsia.hardware.amlogiccanvas.Service")};
 
 const std::vector<fdf::NodeProperty2> kCanvasProperties = std::vector{
-    fdf::MakeProperty2(bind_fuchsia_hardware_amlogiccanvas::SERVICE,
-                       bind_fuchsia_hardware_amlogiccanvas::SERVICE_ZIRCONTRANSPORT),
+    fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.amlogiccanvas.Service"),
+    fdf::MakeProperty2("fuchsia.hardware.amlogiccanvas.Service",
+                       "fuchsia.hardware.amlogiccanvas.Service.ZirconTransport"),
 };
 
 const std::vector<fdf::BindRule2> kClkDosHCodecRules = std::vector{
-    fdf::MakeAcceptBindRule(bind_fuchsia_hardware_clock::SERVICE,
-                            bind_fuchsia_hardware_clock::SERVICE_ZIRCONTRANSPORT),
+    fdf::MakeAcceptBindRule(bind_fuchsia::SERVICE, "fuchsia.hardware.clock.Service"),
     fdf::MakeAcceptBindRule(bind_fuchsia::CLOCK_ID, g12b_clk::G12B_CLK_DOS_GCLK_HCODEC),
 };
 const std::vector<fdf::NodeProperty2> kClkDosHCodecProperties = std::vector{
-    fdf::MakeProperty2(bind_fuchsia_hardware_clock::SERVICE,
-                       bind_fuchsia_hardware_clock::SERVICE_ZIRCONTRANSPORT),
+    fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.clock.Service"),
+    fdf::MakeProperty2("fuchsia.hardware.clock.Service",
+                       "fuchsia.hardware.clock.Service.ZirconTransport"),
     fdf::MakeProperty2(bind_fuchsia::NAME, "DOS_GCLK_HCODEC"),
 };
 
 const std::vector<fdf::BindRule2> kClkDosRules = std::vector{
-    fdf::MakeAcceptBindRule(bind_fuchsia_hardware_clock::SERVICE,
-                            bind_fuchsia_hardware_clock::SERVICE_ZIRCONTRANSPORT),
+    fdf::MakeAcceptBindRule(bind_fuchsia::SERVICE, "fuchsia.hardware.clock.Service"),
     fdf::MakeAcceptBindRule(bind_fuchsia::CLOCK_ID, g12b_clk::G12B_CLK_DOS),
 };
 const std::vector<fdf::NodeProperty2> kClkDosProperties = std::vector{
-    fdf::MakeProperty2(bind_fuchsia_hardware_clock::SERVICE,
-                       bind_fuchsia_hardware_clock::SERVICE_ZIRCONTRANSPORT),
+    fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.clock.Service"),
+    fdf::MakeProperty2("fuchsia.hardware.clock.Service",
+                       "fuchsia.hardware.clock.Service.ZirconTransport"),
     fdf::MakeProperty2(bind_fuchsia::NAME, "DOS"),
 };
 
@@ -97,21 +95,6 @@ static const fpbus::Node video_enc_dev = []() {
   dev.vid() = bind_fuchsia_amlogic_platform::BIND_PLATFORM_DEV_VID_AMLOGIC;
   dev.pid() = bind_fuchsia_amlogic_platform::BIND_PLATFORM_DEV_PID_T931;
   dev.did() = bind_fuchsia_amlogic_platform::BIND_PLATFORM_DEV_DID_VIDEO_ENC;
-  dev.mmio() = sherlock_video_enc_mmios;
-  dev.bti() = sherlock_video_enc_btis;
-  dev.irq() = sherlock_video_enc_irqs;
-  return dev;
-}();
-
-// TODO(b/42072838): Remove this duplicate pbus node once we finished migrating
-// to composite node specs.
-static const fpbus::Node video_enc_dev_old = []() {
-  fpbus::Node dev = {};
-  dev.name() = "aml-video-enc-old";
-  dev.vid() = bind_fuchsia_amlogic_platform::BIND_PLATFORM_DEV_VID_AMLOGIC;
-  dev.pid() = bind_fuchsia_amlogic_platform::BIND_PLATFORM_DEV_PID_T931;
-  dev.did() = bind_fuchsia_amlogic_platform::BIND_PLATFORM_DEV_DID_VIDEO_ENC;
-  dev.instance_id() = 1;
   dev.mmio() = sherlock_video_enc_mmios;
   dev.bti() = sherlock_video_enc_btis;
   dev.irq() = sherlock_video_enc_irqs;

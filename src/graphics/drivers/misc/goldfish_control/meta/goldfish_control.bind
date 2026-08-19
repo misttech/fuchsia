@@ -6,16 +6,16 @@ composite goldfish_control_2;
 
 
 primary parent "goldfish-pipe" {
-    fuchsia.hardware.goldfish.pipe.Service == fuchsia.hardware.goldfish.pipe.Service.ZirconTransport;
+    fuchsia.Service == "fuchsia.hardware.goldfish.pipe.Service";
     fuchsia.BIND_PLATFORM_DEV_VID == fuchsia.google.platform.BIND_PLATFORM_DEV_VID.GOOGLE;
     fuchsia.BIND_PLATFORM_DEV_PID == fuchsia.google.platform.BIND_PLATFORM_DEV_PID.GOLDFISH;
     fuchsia.BIND_PLATFORM_DEV_DID == fuchsia.google.platform.BIND_PLATFORM_DEV_DID.GOLDFISH_PIPE_CONTROL;
 }
 
 parent "goldfish-address-space" {
-    fuchsia.hardware.goldfish.AddressSpaceService == fuchsia.hardware.goldfish.AddressSpaceService.ZirconTransport;
+    fuchsia.Service == "fuchsia.hardware.goldfish.AddressSpaceService";
 }
 
 parent "goldfish-sync" {
-    fuchsia.hardware.goldfish.SyncService == fuchsia.hardware.goldfish.SyncService.ZirconTransport;
+    fuchsia.Service == "fuchsia.hardware.goldfish.SyncService";
 }

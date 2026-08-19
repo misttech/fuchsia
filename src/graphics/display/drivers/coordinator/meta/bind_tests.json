@@ -1,17 +1,10 @@
 [
     {
         "device": {
-            "fuchsia.hardware.display.engine.Service": "fuchsia.hardware.display.engine.Service.DriverTransport"
+            "fuchsia.Service": "\"fuchsia.hardware.display.engine.Service\""
         },
         "expected": "match",
         "name": "Correct FIDL service name and transport"
-    },
-    {
-        "device": {
-            "fuchsia.hardware.display.engine.Service": "fuchsia.hardware.display.engine.Service.ZirconTransport"
-        },
-        "expected": "abort",
-        "name": "Incorrect transport"
     },
     {
         "device": {

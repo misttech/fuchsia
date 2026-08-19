@@ -111,7 +111,7 @@
                 "name": "Match",
                 "expected": "match",
                 "device": {
-                    "fuchsia.hardware.clock.Service": "fuchsia.hardware.clock.Service.ZirconTransport",
+                    "fuchsia.Service": "\"fuchsia.hardware.clock.Service\"",
                     "fuchsia.NAME": "\"clock-gate\""
                 }
             }
@@ -124,7 +124,7 @@
                 "name": "Match",
                 "expected": "match",
                 "device": {
-                    "fuchsia.hardware.clock.Service": "fuchsia.hardware.clock.Service.ZirconTransport",
+                    "fuchsia.Service": "\"fuchsia.hardware.clock.Service\"",
                     "fuchsia.NAME": "\"clock-pll\""
                 }
             }

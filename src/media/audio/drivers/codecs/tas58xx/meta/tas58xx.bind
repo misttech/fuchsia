@@ -13,13 +13,13 @@ using fuchsia.ti.platform;
 using fuchsia.platform;
 
 primary parent "i2c" {
-  fuchsia.hardware.i2c.Service == fuchsia.hardware.i2c.Service.ZirconTransport;
+  fuchsia.Service == "fuchsia.hardware.i2c.Service";
   fuchsia.BIND_PLATFORM_DEV_VID == fuchsia.ti.platform.BIND_PLATFORM_DEV_VID.TI;
   fuchsia.BIND_PLATFORM_DEV_DID == fuchsia.ti.platform.BIND_PLATFORM_DEV_DID.TAS58xx;
 }
 
 parent "gpio-fault" {
-  fuchsia.hardware.gpio.Service == fuchsia.hardware.gpio.Service.ZirconTransport;
+  fuchsia.Service == "fuchsia.hardware.gpio.Service";
   fuchsia.NAME == "gpio-fault";
 }
 
@@ -34,5 +34,5 @@ parent "pdev" {
 }
 
 optional parent "pin-states-0" {
-  fuchsia.hardware.pin.PinStatesService == fuchsia.hardware.pin.PinStatesService.ZirconTransport;
+  fuchsia.Service == "fuchsia.hardware.pin.PinStatesService";
 }

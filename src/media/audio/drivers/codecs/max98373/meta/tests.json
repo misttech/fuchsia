@@ -29,7 +29,7 @@
                 "name": "Match",
                 "expected": "match",
                 "device": {
-                    "fuchsia.hardware.interrupt.Service": "fuchsia.hardware.interrupt.Service.ZirconTransport"
+                    "fuchsia.Service": "\"fuchsia.hardware.interrupt.Service\""
                 }
             }
         ]

@@ -106,7 +106,6 @@ acpi::status<> DeviceBuilder::GatherResources(acpi::Acpi* acpi, acpi::Manager* m
           }
           entry = result.value();
           bus_id_prop = bind_fuchsia::I2C_BUS_ID;
-          ;
           str_props_.emplace_back(
               OwnedStringProp(bind_fuchsia::I2C_ADDRESS, result.value().address().value()));
         } else if (resource_is_irq(res)) {
@@ -334,12 +333,12 @@ zx::result<> DeviceBuilder::BuildComposite(acpi::Manager* manager,
             ddk::MakeAcceptBindRule(bind_fuchsia::ACPI_ID, device_id_),
             ddk::MakeAcceptBindRule(bind_fuchsia::PLATFORM_DEV_INTERRUPT_ID,
                                     bind_platform_dev_interrupt_id),
-            ddk::MakeAcceptBindRule(bind_fuchsia_hardware_interrupt::SERVICE,
-                                    bind_fuchsia_hardware_interrupt::SERVICE_ZIRCONTRANSPORT)},
+            ddk::MakeAcceptBindRule(bind_fuchsia::SERVICE, "fuchsia.hardware.interrupt.Service")},
         std::vector<device_bind_prop_t>{
             ddk::MakeProperty(bind_fuchsia::ACPI_ID, device_id_),
             ddk::MakeProperty(bind_fuchsia::PLATFORM_DEV_INTERRUPT_ID,
                               bind_platform_dev_interrupt_id),
+            ddk::MakeProperty(bind_fuchsia::SERVICE, "fuchsia.hardware.interrupt.Service"),
             ddk::MakeProperty(bind_fuchsia_hardware_interrupt::SERVICE,
                               bind_fuchsia_hardware_interrupt::SERVICE_ZIRCONTRANSPORT)});
   }
@@ -390,8 +389,10 @@ DeviceBuilder::GetFragmentBindRulesAndPropertiesForChild(size_t child_index) {
       // No Banjo protocol needed for I2C.
       break;
     case BusType::kSpi:
-      bind_rules.emplace_back(ddk::MakeAcceptBindRule(
-          bind_fuchsia_hardware_spi::SERVICE, bind_fuchsia_hardware_spi::SERVICE_ZIRCONTRANSPORT));
+      bind_rules.emplace_back(
+          ddk::MakeAcceptBindRule(bind_fuchsia::SERVICE, "fuchsia.hardware.spi.Service"));
+      properties.emplace_back(
+          ddk::MakeProperty(bind_fuchsia::SERVICE, "fuchsia.hardware.spi.Service"));
       properties.emplace_back(ddk::MakeProperty(
           bind_fuchsia_hardware_spi::SERVICE, bind_fuchsia_hardware_spi::SERVICE_ZIRCONTRANSPORT));
       break;
@@ -420,10 +421,11 @@ DeviceBuilder::GetFragmentBindRulesAndPropertiesForChild(size_t child_index) {
           bind_rules.emplace_back(ddk::MakeAcceptBindRule(bind_fuchsia::I2C_BUS_ID, bus_id));
           bind_rules.emplace_back(ddk::MakeAcceptBindRule(bind_fuchsia::I2C_ADDRESS, chan_addr));
           bind_rules.emplace_back(
-              ddk::MakeAcceptBindRule(bind_fuchsia_hardware_i2c::SERVICE,
-                                      bind_fuchsia_hardware_i2c::SERVICE_ZIRCONTRANSPORT));
+              ddk::MakeAcceptBindRule(bind_fuchsia::SERVICE, "fuchsia.hardware.i2c.Service"));
           properties.emplace_back(ddk::MakeProperty(bind_fuchsia::I2C_BUS_ID, bus_id));
           properties.emplace_back(ddk::MakeProperty(bind_fuchsia::I2C_ADDRESS, chan_addr));
+          properties.emplace_back(
+              ddk::MakeProperty(bind_fuchsia::SERVICE, "fuchsia.hardware.i2c.Service"));
           properties.emplace_back(
               ddk::MakeProperty(bind_fuchsia_hardware_i2c::SERVICE,
                                 bind_fuchsia_hardware_i2c::SERVICE_ZIRCONTRANSPORT));

@@ -11,7 +11,10 @@ driver_bind_rules("coordinator_bind") {
   rules = "meta/coordinator.bind"
   bind_output = "display-coordinator.bindbc"
   tests = "meta/bind_tests.json"
-  deps = [ "//sdk/fidl/fuchsia.hardware.display.engine:fuchsia.hardware.display.engine_bindlib" ]
+  deps = [
+    "//sdk/fidl/fuchsia.hardware.display.engine:fuchsia.hardware.display.engine_bindlib",
+    "//src/devices/bind/fuchsia",
+  ]
 }
 
 fuchsia_component_manifest("coordinator-manifest") {

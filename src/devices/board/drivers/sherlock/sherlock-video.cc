@@ -12,12 +12,8 @@
 #include <lib/driver/component/cpp/node_add_args.h>
 #include <zircon/syscalls/smc.h>
 
-#include <bind/fuchsia/amlogic/platform/cpp/bind.h>
 #include <bind/fuchsia/amlogic/platform/meson/cpp/bind.h>
 #include <bind/fuchsia/cpp/bind.h>
-#include <bind/fuchsia/hardware/amlogiccanvas/cpp/bind.h>
-#include <bind/fuchsia/hardware/clock/cpp/bind.h>
-#include <bind/fuchsia/hardware/tee/cpp/bind.h>
 #include <soc/aml-meson/g12b-clk.h>
 #include <soc/aml-t931/t931-hw.h>
 
@@ -102,29 +98,26 @@ zx_status_t Sherlock::VideoInit() {
   auto video_canvas = fuchsia_driver_framework::ParentSpec2{{
       .bind_rules =
           {
-              fdf::MakeAcceptBindRule(bind_fuchsia_hardware_amlogiccanvas::SERVICE,
-                                      bind_fuchsia_hardware_amlogiccanvas::SERVICE_ZIRCONTRANSPORT),
+              fdf::MakeAcceptBindRule(bind_fuchsia::SERVICE,
+                                      "fuchsia.hardware.amlogiccanvas.Service"),
           },
       .properties =
           {
-              fdf::MakeProperty2(bind_fuchsia_hardware_amlogiccanvas::SERVICE,
-                                 bind_fuchsia_hardware_amlogiccanvas::SERVICE_ZIRCONTRANSPORT),
+              fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.amlogiccanvas.Service"),
           },
   }};
 
   auto video_clock_dos_vdec = fuchsia_driver_framework::ParentSpec2{{
       .bind_rules =
           {
-              fdf::MakeAcceptBindRule(bind_fuchsia_hardware_clock::SERVICE,
-                                      bind_fuchsia_hardware_clock::SERVICE_ZIRCONTRANSPORT),
+              fdf::MakeAcceptBindRule(bind_fuchsia::SERVICE, "fuchsia.hardware.clock.Service"),
               fdf::MakeAcceptBindRule(
                   bind_fuchsia::CLOCK_ID,
                   bind_fuchsia_amlogic_platform_meson::G12B_CLK_ID_CLK_DOS_GCLK_VDEC),
           },
       .properties =
           {
-              fdf::MakeProperty2(bind_fuchsia_hardware_clock::SERVICE,
-                                 bind_fuchsia_hardware_clock::SERVICE_ZIRCONTRANSPORT),
+              fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.clock.Service"),
               fdf::MakeProperty2(bind_fuchsia::NAME, "clock-dos-vdec"),
           },
   }};
@@ -132,15 +125,13 @@ zx_status_t Sherlock::VideoInit() {
   auto video_clock_dos = fuchsia_driver_framework::ParentSpec2{{
       .bind_rules =
           {
-              fdf::MakeAcceptBindRule(bind_fuchsia_hardware_clock::SERVICE,
-                                      bind_fuchsia_hardware_clock::SERVICE_ZIRCONTRANSPORT),
+              fdf::MakeAcceptBindRule(bind_fuchsia::SERVICE, "fuchsia.hardware.clock.Service"),
               fdf::MakeAcceptBindRule(bind_fuchsia::CLOCK_ID,
                                       bind_fuchsia_amlogic_platform_meson::G12B_CLK_ID_CLK_DOS),
           },
       .properties =
           {
-              fdf::MakeProperty2(bind_fuchsia_hardware_clock::SERVICE,
-                                 bind_fuchsia_hardware_clock::SERVICE_ZIRCONTRANSPORT),
+              fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.clock.Service"),
               fdf::MakeProperty2(bind_fuchsia::NAME, "clock-dos"),
           },
   }};
@@ -148,13 +139,11 @@ zx_status_t Sherlock::VideoInit() {
   auto video_tee = fuchsia_driver_framework::ParentSpec2{{
       .bind_rules =
           {
-              fdf::MakeAcceptBindRule(bind_fuchsia_hardware_tee::SERVICE,
-                                      bind_fuchsia_hardware_tee::SERVICE_ZIRCONTRANSPORT),
+              fdf::MakeAcceptBindRule(bind_fuchsia::SERVICE, "fuchsia.hardware.tee.Service"),
           },
       .properties =
           {
-              fdf::MakeProperty2(bind_fuchsia_hardware_tee::SERVICE,
-                                 bind_fuchsia_hardware_tee::SERVICE_ZIRCONTRANSPORT),
+              fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.tee.Service"),
           },
   }};
 

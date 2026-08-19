@@ -6,7 +6,7 @@
                 "name": "Intel HDA",
                 "expected": "match",
                 "device": {
-                    "fuchsia.hardware.pci.Service": "fuchsia.hardware.pci.Service.ZirconTransport",
+                    "fuchsia.Service": "\"fuchsia.hardware.pci.Service\"",
                     "fuchsia.BIND_PCI_VID": "0x8086",
                     "fuchsia.BIND_PCI_DID": "0x2668"
                 }
@@ -15,7 +15,7 @@
                 "name": "Intel HDA",
                 "expected": "abort",
                 "device": {
-                    "fuchsia.hardware.pci.Service": "fuchsia.hardware.pci.Service.ZirconTransport",
+                    "fuchsia.Service": "\"fuchsia.hardware.pci.Service\"",
                     "fuchsia.BIND_PCI_VID": "0xffff",
                     "fuchsia.BIND_PCI_DID": "0xffff"
                 }

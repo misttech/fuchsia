@@ -13,7 +13,7 @@ primary parent "camera-sensor" {
 }
 
 parent "canvas" {
-  fuchsia.hardware.amlogiccanvas.Service == fuchsia.hardware.amlogiccanvas.Service.ZirconTransport;
+  fuchsia.Service == "fuchsia.hardware.amlogiccanvas.Service";
 }
 
 parent "pdev" {

@@ -17,9 +17,6 @@
 #include <bind/fuchsia/clock/cpp/bind.h>
 #include <bind/fuchsia/cpp/bind.h>
 #include <bind/fuchsia/gpio/cpp/bind.h>
-#include <bind/fuchsia/hardware/audio/cpp/bind.h>
-#include <bind/fuchsia/hardware/gpio/cpp/bind.h>
-#include <bind/fuchsia/hardware/i2c/cpp/bind.h>
 #include <bind/fuchsia/ti/platform/cpp/bind.h>
 #include <soc/aml-common/aml-audio.h>
 #include <soc/aml-meson/sm1-clk.h>
@@ -59,27 +56,21 @@ const std::vector<fdf::NodeProperty2> kClockInitProps = std::vector{
 };
 
 const std::vector<fdf::BindRule2> kAudioEnableGpioRules = std::vector{
-    fdf::MakeAcceptBindRule(bind_fuchsia_hardware_gpio::SERVICE,
-                            bind_fuchsia_hardware_gpio::SERVICE_ZIRCONTRANSPORT),
+    fdf::MakeAcceptBindRule(bind_fuchsia::SERVICE, "fuchsia.hardware.gpio.Service"),
     fdf::MakeAcceptBindRule(bind_fuchsia::GPIO_PIN, static_cast<uint32_t>(GPIO_SOC_AUDIO_EN)),
 };
 const std::vector<fdf::NodeProperty2> kAudioEnableGpioProps = std::vector{
-    fdf::MakeProperty2(bind_fuchsia_hardware_gpio::SERVICE,
-                       bind_fuchsia_hardware_gpio::SERVICE_ZIRCONTRANSPORT),
+    fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.gpio.Service"),
     fdf::MakeProperty2(bind_fuchsia::NAME, "gpio-enable"),
 };
 
 const std::vector<fdf::BindRule2> kOutCodecRules = std::vector{
-    fdf::MakeAcceptBindRule(bind_fuchsia_hardware_audio::CODECSERVICE,
-                            bind_fuchsia_hardware_audio::CODECSERVICE_ZIRCONTRANSPORT),
-    fdf::MakeAcceptBindRule(bind_fuchsia::PLATFORM_DEV_VID,
-                            bind_fuchsia_ti_platform::BIND_PLATFORM_DEV_VID_TI),
-    fdf::MakeAcceptBindRule(bind_fuchsia::PLATFORM_DEV_DID,
-                            bind_fuchsia_ti_platform::BIND_PLATFORM_DEV_DID_TAS58XX),
+    fdf::MakeAcceptBindRule(bind_fuchsia::SERVICE, "fuchsia.hardware.audio.CodecService"),
 };
 const std::vector<fdf::NodeProperty2> kOutCodecProps = std::vector{
-    fdf::MakeProperty2(bind_fuchsia_hardware_audio::CODECSERVICE,
-                       bind_fuchsia_hardware_audio::CODECSERVICE_ZIRCONTRANSPORT),
+    fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.audio.CodecService"),
+    fdf::MakeProperty2("fuchsia.hardware.audio.CodecService",
+                       "fuchsia.hardware.audio.CodecService.ZirconTransport"),
     fdf::MakeProperty2(bind_fuchsia::CODEC_INSTANCE, static_cast<uint32_t>(1)),
 };
 
@@ -97,14 +88,12 @@ const std::vector<fdf::ParentSpec2> kParentSpecInit = std::vector{
 
 // Codec composite node specifications.
 const std::vector<fdf::BindRule2> kOutI2cRules = std::vector{
-    fdf::MakeAcceptBindRule(bind_fuchsia_hardware_i2c::SERVICE,
-                            bind_fuchsia_hardware_i2c::SERVICE_ZIRCONTRANSPORT),
+    fdf::MakeAcceptBindRule(bind_fuchsia::SERVICE, "fuchsia.hardware.i2c.Service"),
     fdf::MakeAcceptBindRule(bind_fuchsia::I2C_BUS_ID, static_cast<uint32_t>(NELSON_I2C_3)),
     fdf::MakeAcceptBindRule(bind_fuchsia::I2C_ADDRESS, static_cast<uint32_t>(I2C_AUDIO_CODEC_ADDR)),
 };
 const std::vector<fdf::NodeProperty2> kOutI2cProps = std::vector{
-    fdf::MakeProperty2(bind_fuchsia_hardware_i2c::SERVICE,
-                       bind_fuchsia_hardware_i2c::SERVICE_ZIRCONTRANSPORT),
+    fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.i2c.Service"),
     fdf::MakeProperty2(bind_fuchsia::PLATFORM_DEV_VID,
                        bind_fuchsia_ti_platform::BIND_PLATFORM_DEV_VID_TI),
     fdf::MakeProperty2(bind_fuchsia::PLATFORM_DEV_DID,
@@ -112,13 +101,11 @@ const std::vector<fdf::NodeProperty2> kOutI2cProps = std::vector{
 };
 
 const std::vector<fdf::BindRule2> kFaultGpioRules = std::vector{
-    fdf::MakeAcceptBindRule(bind_fuchsia_hardware_gpio::SERVICE,
-                            bind_fuchsia_hardware_gpio::SERVICE_ZIRCONTRANSPORT),
+    fdf::MakeAcceptBindRule(bind_fuchsia::SERVICE, "fuchsia.hardware.gpio.Service"),
     fdf::MakeAcceptBindRule(bind_fuchsia::GPIO_PIN, static_cast<uint32_t>(GPIO_AUDIO_SOC_FAULT_L)),
 };
 const std::vector<fdf::NodeProperty2> kFaultGpioProps = std::vector{
-    fdf::MakeProperty2(bind_fuchsia_hardware_gpio::SERVICE,
-                       bind_fuchsia_hardware_gpio::SERVICE_ZIRCONTRANSPORT),
+    fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.gpio.Service"),
     fdf::MakeProperty2(bind_fuchsia::NAME, "gpio-fault"),
 };
 

@@ -34,12 +34,12 @@ primary parent "pdev" {
 
 
 parent "clock-gate" {
-  fuchsia.hardware.clock.Service == fuchsia.hardware.clock.Service.ZirconTransport;
+  fuchsia.Service == "fuchsia.hardware.clock.Service";
   fuchsia.NAME == "clock-gate";
 }
 
 parent "clock-pll" {
-  fuchsia.hardware.clock.Service == fuchsia.hardware.clock.Service.ZirconTransport;
+  fuchsia.Service == "fuchsia.hardware.clock.Service";
   fuchsia.NAME == "clock-pll";
 }
 
@@ -64,21 +64,21 @@ optional parent "gpio-tdm-c-sclk" {
 }
 
 optional parent "pin-states-0" {
-  fuchsia.hardware.pin.PinStatesService == fuchsia.hardware.pin.PinStatesService.ZirconTransport;
+  fuchsia.Service == "fuchsia.hardware.pin.PinStatesService";
 }
 
 optional parent "codec-01" {
-  fuchsia.hardware.audio.CodecService == fuchsia.hardware.audio.CodecService.ZirconTransport;
+  fuchsia.Service == "fuchsia.hardware.audio.CodecService";
   fuchsia.BIND_CODEC_INSTANCE == 1;
 }
 
 optional parent "codec-02" {
-  fuchsia.hardware.audio.CodecService == fuchsia.hardware.audio.CodecService.ZirconTransport;
+  fuchsia.Service == "fuchsia.hardware.audio.CodecService";
   fuchsia.BIND_CODEC_INSTANCE == 2;
 }
 
 optional parent "codec-03" {
-  fuchsia.hardware.audio.CodecService == fuchsia.hardware.audio.CodecService.ZirconTransport;
+  fuchsia.Service == "fuchsia.hardware.audio.CodecService";
   fuchsia.BIND_CODEC_INSTANCE == 3;
 }
 

@@ -29,17 +29,17 @@ primary parent "pdev" {
 }
 
 parent "gpio-lcd-reset" {
-  fuchsia.hardware.gpio.Service == fuchsia.hardware.gpio.Service.ZirconTransport;
+  fuchsia.Service == "fuchsia.hardware.gpio.Service";
   fuchsia.NAME == "gpio-lcd-reset";
 }
 
 optional parent "gpio-hdmi-hotplug-detect" {
-  fuchsia.hardware.gpio.Service == fuchsia.hardware.gpio.Service.ZirconTransport;
+  fuchsia.Service == "fuchsia.hardware.gpio.Service";
   fuchsia.NAME == "gpio-hdmi-hotplug-detect";
 }
 
 parent "canvas" {
-  fuchsia.hardware.amlogiccanvas.Service == fuchsia.hardware.amlogiccanvas.Service.ZirconTransport;
+  fuchsia.Service == "fuchsia.hardware.amlogiccanvas.Service";
 }
 
 optional parent "gpio-init" {
@@ -47,5 +47,5 @@ optional parent "gpio-init" {
 }
 
 optional parent "pin-states-0" {
-  fuchsia.hardware.pin.PinStatesService == fuchsia.hardware.pin.PinStatesService.ZirconTransport;
+  fuchsia.Service == "fuchsia.hardware.pin.PinStatesService";
 }

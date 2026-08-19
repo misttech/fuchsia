@@ -12,6 +12,7 @@ driver_bind_rules("goldfish-sync-bind") {
   tests = "meta/tests.json"
   deps = [
     "//sdk/fidl/fuchsia.hardware.interrupt:fuchsia.hardware.interrupt_bindlib",
+    "//src/devices/bind/fuchsia",
     "//src/devices/bind/fuchsia.acpi",
   ]
 }

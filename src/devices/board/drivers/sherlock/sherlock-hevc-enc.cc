@@ -13,7 +13,6 @@
 
 #include <bind/fuchsia/amlogic/platform/cpp/bind.h>
 #include <bind/fuchsia/cpp/bind.h>
-#include <bind/fuchsia/hardware/clock/cpp/bind.h>
 #include <soc/aml-meson/g12b-clk.h>
 #include <soc/aml-t931/t931-hw.h>
 
@@ -64,13 +63,13 @@ static const std::vector<fpbus::Irq> sherlock_hevc_enc_irqs{
 };
 
 const std::vector<fdf::BindRule2> kClkDosRules = std::vector{
-    fdf::MakeAcceptBindRule(bind_fuchsia_hardware_clock::SERVICE,
-                            bind_fuchsia_hardware_clock::SERVICE_ZIRCONTRANSPORT),
+    fdf::MakeAcceptBindRule(bind_fuchsia::SERVICE, "fuchsia.hardware.clock.Service"),
     fdf::MakeAcceptBindRule(bind_fuchsia::CLOCK_ID, g12b_clk::G12B_CLK_DOS),
 };
 const std::vector<fdf::NodeProperty2> kClkDosProperties = std::vector{
-    fdf::MakeProperty2(bind_fuchsia_hardware_clock::SERVICE,
-                       bind_fuchsia_hardware_clock::SERVICE_ZIRCONTRANSPORT),
+    fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.clock.Service"),
+    fdf::MakeProperty2("fuchsia.hardware.clock.Service",
+                       "fuchsia.hardware.clock.Service.ZirconTransport"),
     fdf::MakeProperty2(bind_fuchsia::NAME, "DOS"),
 };
 

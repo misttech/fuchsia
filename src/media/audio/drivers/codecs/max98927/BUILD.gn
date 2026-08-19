@@ -10,6 +10,7 @@ driver_bind_rules("max98927_bind") {
   tests = "meta/tests.json"
   deps = [
     "//sdk/fidl/fuchsia.hardware.interrupt:fuchsia.hardware.interrupt_bindlib",
+    "//src/devices/bind/fuchsia",
     "//src/devices/bind/fuchsia.acpi",
   ]
 }

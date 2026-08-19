@@ -3,4 +3,4 @@
 // found in the LICENSE file.
 
 
-fuchsia.gpu.virtio.Service == fuchsia.gpu.virtio.Service.ZirconTransport;
+fuchsia.Service == "fuchsia.gpu.virtio.Service";

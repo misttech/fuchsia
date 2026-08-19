@@ -6,7 +6,7 @@
                 "name": "Match",
                 "expected": "match",
                 "device": {
-                    "fuchsia.hardware.i2c.Service": "fuchsia.hardware.i2c.Service.ZirconTransport",
+                    "fuchsia.Service": "\"fuchsia.hardware.i2c.Service\"",
                     "fuchsia.BIND_I2C_ADDRESS": "fuchsia.i2c.BIND_I2C_ADDRESS.AUDIO_CODEC",
                     "fuchsia.BIND_PLATFORM_DEV_DID": "fuchsia.ti.platform.BIND_PLATFORM_DEV_DID.TAS2770",
                     "fuchsia.BIND_PLATFORM_DEV_VID": "fuchsia.ti.platform.BIND_PLATFORM_DEV_VID.TI"
@@ -21,7 +21,7 @@
                 "name": "Match",
                 "expected": "match",
                 "device": {
-                    "fuchsia.hardware.gpio.Service": "fuchsia.hardware.gpio.Service.ZirconTransport",
+                    "fuchsia.Service": "\"fuchsia.hardware.gpio.Service\"",
                     "fuchsia.NAME": "\"gpio-fault\""
                 }
             }

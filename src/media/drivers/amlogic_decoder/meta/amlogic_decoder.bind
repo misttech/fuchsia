@@ -27,19 +27,19 @@ primary parent "pdev" {
 }
 
 parent "canvas" {
-  fuchsia.hardware.amlogiccanvas.Service == fuchsia.hardware.amlogiccanvas.Service.ZirconTransport;
+  fuchsia.Service == "fuchsia.hardware.amlogiccanvas.Service";
 }
 
 parent "clock-dos-vdec" {
-  fuchsia.hardware.clock.Service == fuchsia.hardware.clock.Service.ZirconTransport;
+  fuchsia.Service == "fuchsia.hardware.clock.Service";
   fuchsia.NAME == "clock-dos-vdec";
 }
 
 parent "clock-dos" {
-  fuchsia.hardware.clock.Service == fuchsia.hardware.clock.Service.ZirconTransport;
+  fuchsia.Service == "fuchsia.hardware.clock.Service";
   fuchsia.NAME == "clock-dos";
 }
 
 optional parent "tee" {
-  fuchsia.hardware.tee.Service == fuchsia.hardware.tee.Service.ZirconTransport;
+  fuchsia.Service == "fuchsia.hardware.tee.Service";
 }

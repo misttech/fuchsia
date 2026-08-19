@@ -18,7 +18,10 @@ fuchsia_driver_component("msd-virtio-driver-component") {
 
 driver_bind_rules("msd-virtio-bind") {
   rules = "meta/msd-virtio-gpu.bind"
-  deps = [ "//sdk/fidl/fuchsia.gpu.virtio:fuchsia.gpu.virtio_bindlib" ]
+  deps = [
+    "//sdk/fidl/fuchsia.gpu.virtio:fuchsia.gpu.virtio_bindlib",
+    "//src/devices/bind/fuchsia",
+  ]
 }
 
 fuchsia_cc_driver("msd-virtio-gpu-driver") {

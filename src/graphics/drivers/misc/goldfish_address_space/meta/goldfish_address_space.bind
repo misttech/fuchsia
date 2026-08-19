@@ -6,7 +6,7 @@ composite goldfish_address_space;
 
 
 primary parent "pci" {
-  fuchsia.hardware.pci.Service == fuchsia.hardware.pci.Service.ZirconTransport;
+  fuchsia.Service == "fuchsia.hardware.pci.Service";
   fuchsia.BIND_PCI_VID == 0x607D; // GOLDFISH_ADDRESS_SPACE_PCI_VID
   accept fuchsia.BIND_PCI_DID {
     0xF153, // GOLDFISH_ADDRESS_SPACE_PCI_DID

@@ -44,13 +44,6 @@
                 },
                 "expected": "match",
                 "name": "Match"
-            },
-            {
-                "device": {
-                    "fuchsia.Service": "\"fuchsia.hardware.gpu.mali.Service.ZirconTransport\""
-                },
-                "expected": "abort",
-                "name": "Match"
             }
         ]
     }

@@ -21,7 +21,7 @@
                 "name": "Match",
                 "expected": "match",
                 "device": {
-                    "fuchsia.hardware.gpio.Service": "fuchsia.hardware.gpio.Service.ZirconTransport",
+                    "fuchsia.Service": "\"fuchsia.hardware.gpio.Service\"",
                     "fuchsia.NAME": "\"gpio-enable\""
                 }
             }
@@ -34,7 +34,7 @@
                 "name": "Match",
                 "expected": "match",
                 "device": {
-                    "fuchsia.hardware.clock.Service": "fuchsia.hardware.clock.Service.ZirconTransport",
+                    "fuchsia.Service": "\"fuchsia.hardware.clock.Service\"",
                     "fuchsia.NAME": "\"clock-gate\""
                 }
             }
@@ -47,7 +47,7 @@
                 "name": "Match",
                 "expected": "match",
                 "device": {
-                    "fuchsia.hardware.clock.Service": "fuchsia.hardware.clock.Service.ZirconTransport",
+                    "fuchsia.Service": "\"fuchsia.hardware.clock.Service\"",
                     "fuchsia.NAME": "\"clock-pll\""
                 }
             }
@@ -60,7 +60,7 @@
                 "name": "Match",
                 "expected": "match",
                 "device": {
-                    "fuchsia.hardware.audio.CodecService": "fuchsia.hardware.audio.CodecService.ZirconTransport",
+                    "fuchsia.Service": "\"fuchsia.hardware.audio.CodecService\"",
                     "fuchsia.BIND_CODEC_INSTANCE": "1"
                 }
             }
@@ -73,7 +73,7 @@
                 "name": "Match",
                 "expected": "match",
                 "device": {
-                    "fuchsia.hardware.audio.CodecService": "fuchsia.hardware.audio.CodecService.ZirconTransport",
+                    "fuchsia.Service": "\"fuchsia.hardware.audio.CodecService\"",
                     "fuchsia.BIND_CODEC_INSTANCE": "2"
                 }
             }
@@ -86,7 +86,7 @@
                 "name": "Match",
                 "expected": "match",
                 "device": {
-                    "fuchsia.hardware.audio.CodecService": "fuchsia.hardware.audio.CodecService.ZirconTransport",
+                    "fuchsia.Service": "\"fuchsia.hardware.audio.CodecService\"",
                     "fuchsia.BIND_CODEC_INSTANCE": "3"
                 }
             }
