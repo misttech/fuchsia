@@ -7,7 +7,7 @@ use crate::security;
 use crate::task::{CurrentTask, register_delayed_release};
 use crate::vfs::{FdNumber, FileHandle, FileReleaser};
 use bitflags::bitflags;
-use fuchsia_rcu::subtle::{RcuPtrRef, rcu_ptr_to_arc};
+use fuchsia_rcu::subtle::{RcuPtrRef, rcu_ptr_upgrade};
 use fuchsia_rcu::{RcuDroppable, RcuReadScope, rcu_drop};
 use fuchsia_rcu_collections::rcu_array::RcuArray;
 use linux_uapi::{FD_CLOEXEC, FIOCLEX, FIONCLEX};
@@ -60,7 +60,11 @@ const FLAGS_MASK: usize = 0x1;
 /// An encoded entry in an `FdTable`.
 ///
 /// Encodes both the `FileHandle` and the CLOEXEC bit. Can either hold an entry or be empty.
-#[derive(Debug, Default)]
+///
+/// NOTE: EncodedEntries hold a raw pointer to a FileHandle, but do not control the lifetime of the
+/// FileHandle. It is on the FdTable to release the FileHandles as appropriate. As such,
+/// `EncodedEntries` may be dropped on rcu as dropping them requires no cleanup.
+#[derive(Debug, Default, RcuDroppable)]
 struct EncodedEntry {
     /// Rather than using a separate "flags" field, we encode the table entry into a single usize.
     ///
@@ -71,12 +75,6 @@ struct EncodedEntry {
     /// The remaining bits of `value` are a `FileHandle` converted to a raw pointer.
     value: AtomicUsize,
 }
-
-// TODO(b/525158773): Temporary impl to allow incremental RCU safety refactoring.
-// SAFETY: Encoded entry is has drop side effects as it may drop a FileHandle if it's the last
-// reference. However, we run Rcu callbacks before returning from syscalls so side effects are
-// guaranteed to be visible.
-unsafe impl RcuDroppable for EncodedEntry {}
 
 // An assert to ensure that the lowest bit of the `FileHandle` is available to store the CLOEXEC
 // bit.
@@ -103,12 +101,14 @@ impl EncodedEntry {
         if !ptr.is_null() {
             // SAFETY: The pointer is valid because it was encoded in `self.value`.
             let file = unsafe { Arc::from_raw(ptr) };
-            // Concurrent readers expect the `FileHandle` to be retained for the entire RCU grace
-            // period. `FlushedFile` delayed release may be processed before the grace period
-            // expires. We must defer a reference to RCU to ensure delayed release does not drop the
-            // last reference and free the file before RCU readers are done with it.
-            register_delayed_release(FlushedFile(file.clone(), id));
-            rcu_drop(file)
+            // Defer a weak reference to RCU so that the allocation remains valid (but
+            // un-upgradable) during the RCU grace period for concurrent readers.
+            // The remaining strong reference is held by the FlushedFile for the DelayedRelease
+            // queue which ensures we drop the FileHandle in a place where it will execute before
+            // returning from any syscall.
+            let weak = Arc::downgrade(&file);
+            rcu_drop(weak);
+            register_delayed_release(FlushedFile(file, id));
         }
     }
 
@@ -220,22 +220,7 @@ impl EncodedEntry {
 
 impl Clone for EncodedEntry {
     fn clone(&self) -> Self {
-        if let Some(guard) = self.read(&RcuReadScope::new()) {
-            Self::new(guard.to_entry())
-        } else {
-            Self::default()
-        }
-    }
-}
-
-impl Drop for EncodedEntry {
-    fn drop(&mut self) {
-        let value = self.value.load(Ordering::Acquire);
-        let ptr = Self::decode_ptr(value);
-        if !ptr.is_null() {
-            // SAFETY: The pointer is valid because it was encoded in `self.value`.
-            let _file = unsafe { Arc::from_raw(ptr) };
-        }
+        Self { value: AtomicUsize::new(self.value.load(Ordering::Relaxed)) }
     }
 }
 
@@ -265,16 +250,16 @@ impl<'a> FdTableEntryGuard<'a> {
         self.flags
     }
 
-    /// Acquire a strong reference to the file handle.
-    fn to_handle(&self) -> FileHandle {
-        // SAFETY: We can pass `self.file` to `rcu_ptr_to_arc` because it was obtained from
+    /// Acquire a strong reference to the file handle if it is still alive.
+    fn to_handle(&self) -> Option<FileHandle> {
+        // SAFETY: We can pass `self.file` to `rcu_ptr_upgrade` because it was obtained from
         // `Arc::into_raw` via `EncodedEntry::encode` and `EncodedEntry::decode_ptr`.
-        unsafe { rcu_ptr_to_arc(self.file) }
+        unsafe { rcu_ptr_upgrade(self.file) }
     }
 
     /// Upgrade this guard to a full `FdTableEntry` independent of the guard lifetime.
-    fn to_entry(&self) -> FdTableEntry {
-        FdTableEntry { file: self.to_handle(), flags: self.flags }
+    fn to_entry(&self) -> Option<FdTableEntry> {
+        self.to_handle().map(|file| FdTableEntry { file, flags: self.flags })
     }
 }
 
@@ -323,7 +308,7 @@ impl<'a> FdTableView<'a> {
         self.slice
             .get(fd.raw() as usize)
             .and_then(|entry| entry.read(scope))
-            .map(|guard| guard.to_handle())
+            .and_then(|guard| guard.to_handle())
     }
 
     /// Returns the `FdTableEntry` for a given `FdNumber`, if any.
@@ -331,7 +316,7 @@ impl<'a> FdTableView<'a> {
         self.slice
             .get(fd.raw() as usize)
             .and_then(|entry| entry.read(scope))
-            .map(|guard| guard.to_entry())
+            .and_then(|guard| guard.to_entry())
     }
 }
 
@@ -367,8 +352,20 @@ impl FdTableMutableState<Base = FdTable> {
 
     /// Creates a snapshot of the table with the same files but a separate share count.
     fn fork(&self) -> FdTable {
+        let scope = RcuReadScope::new();
+        let view = self.base.read_entries(&scope);
+        let mut new_entries = Vec::with_capacity(view.len());
+        for entry in view.slice.iter() {
+            if let Some(guard) = entry.read(&scope) {
+                if let Some(fd_entry) = guard.to_entry() {
+                    new_entries.push(EncodedEntry::new(fd_entry));
+                    continue;
+                }
+            }
+            new_entries.push(EncodedEntry::default());
+        }
         FdTable {
-            entries: self.base.entries.clone(),
+            entries: RcuArray::from(new_entries),
             mutable_state: LockDepRwLock::new(FdTableMutableState {
                 share_count: 1,
                 next_fd: self.next_fd,
@@ -515,9 +512,10 @@ impl FdTableMutableState<Base = FdTable> {
         let view = self.base.read_entries(scope);
         for encoded_entry in view.slice.iter() {
             if let Some(guard) = encoded_entry.read(scope) {
-                let file = guard.to_handle();
-                if let Some(replacement_file) = predicate(&file) {
-                    encoded_entry.set_file(id, replacement_file);
+                if let Some(file) = guard.to_handle() {
+                    if let Some(replacement_file) = predicate(&file) {
+                        encoded_entry.set_file(id, replacement_file);
+                    }
                 }
             }
         }
@@ -557,14 +555,7 @@ impl Default for FdTable {
 
 impl Clone for FdTable {
     fn clone(&self) -> Self {
-        let state = self.read();
-        Self {
-            entries: self.entries.clone(),
-            mutable_state: LockDepRwLock::new(FdTableMutableState {
-                share_count: 1,
-                next_fd: state.next_fd,
-            }),
-        }
+        self.read().fork()
     }
 }
 
