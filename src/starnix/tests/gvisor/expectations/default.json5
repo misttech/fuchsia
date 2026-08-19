@@ -1028,6 +1028,15 @@
                 "NetlinkRouteTest.RemoveLoopbackByName",
                 "NetlinkRouteTest.RemoveLoopbackByIndex",
 
+                // TODO(https://fxbug.dev/548056197): These tests hang because
+                // "NLM_F_ROOT" and point-to-point "RTM_GETROUTE"/"RTM_GETADDR"
+                // queries are not supported, and Netlink drops them without
+                // responding.
+                "NetlinkRouteTest.GetAddrRoot",
+                "NetlinkRouteTest.GetRouteRoot",
+                "NetlinkRouteTest.GetRoutePrefSrc",
+                "NetlinkRouteTest.GetRouteUnreachable",
+
                 // TODO(https://fxbug.dev/534455279): The MaxMounts test succeeds, but something in
                 // the unmounting process doesn't clean up properly. This causes most subsequent
                 // mount tests to fail with ENOSPC or PosixError(errno=28 No space left on device).
