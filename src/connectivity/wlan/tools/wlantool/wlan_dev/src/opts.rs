@@ -333,7 +333,7 @@ pub struct ClientConnectCmd {
     pub iface_id: u16,
     #[arg(short = 'p', long = "password", help = "Password")]
     pub password: Option<String>,
-    #[arg(short = 'h', long = "hash", help = "WPA2 PSK as hex string")]
+    #[arg(long = "hash", help = "WPA2 PSK as hex string")]
     pub psk: Option<String>,
     #[arg(
         short = 's',
