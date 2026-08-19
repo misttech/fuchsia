@@ -514,11 +514,12 @@ def _prebuilt_clang_cc_toolchain_config_impl(ctx):
             fail('`fuchsia_api_level` is only supported when `target_os` is "fuchsia".')
         fuchsia_api_level = ctx.attr.fuchsia_api_level[FuchsiaApiLevelInfo].level
     else:
-        if ctx.attr.target_os == "fuchsia":
-            fail('`fuchsia_api_level` is required when `target_os` is "fuchsia".')
+        # This branch handles both non-Fuchsia platforms (e.g. Linux) and the
+        # Fuchsia SDK one where the API level is not provided via a single
+        # build_setting() flag, but instead relies on a transition modifying
+        # `copts` directly. See https://fxbug.dev/548409875.
         fuchsia_api_level = None
 
-    # TODO(digit): Change features list based on build variants
     features = compute_clang_features(
         clang_info,
         ctx.attr.toolchain_repo_name,

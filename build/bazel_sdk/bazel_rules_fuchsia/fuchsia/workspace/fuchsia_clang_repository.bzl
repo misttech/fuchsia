@@ -99,15 +99,12 @@ def _fuchsia_clang_repository_impl(ctx):
     # Pre-evaluate paths of templated output files so that the repository does
     # not need to be re-fetched after potentially talking to the network
     ctx.path("BUILD.bazel")
-    ctx.path("cc_toolchain_config.bzl")
 
     # Claim dependency on the templates.
     crosstool_template = Label("//fuchsia/workspace/clang_templates:crosstool.BUILD.template")
-    toolchain_config_template = Label("//fuchsia/workspace/clang_templates:cc_toolchain_config_template.bzl")
     defs_template_file = Label("//fuchsia/workspace/clang_templates:defs.bzl")
 
     ctx.path(crosstool_template)
-    ctx.path(toolchain_config_template)
     ctx.path(defs_template_file)
 
     # Symlink in common toolchain helpers.
@@ -163,23 +160,6 @@ def _fuchsia_clang_repository_impl(ctx):
         if v.split(".")[0].isdigit() and v > clang_version:
             clang_version = v
 
-    # Set up the BUILD file from the Fuchsia SDK.
-    ctx.template(
-        "BUILD.bazel",
-        crosstool_template,
-        substitutions = {
-            "%{CLANG_VERSION}": clang_version,
-            "%{SYSROOT_HEADERS_AARCH64}": ctx.attr.sysroot_headers.get("aarch64", "NOT_SET"),
-            "%{SYSROOT_HEADERS_RISCV64}": ctx.attr.sysroot_headers.get("riscv64", "NOT_SET"),
-            "%{SYSROOT_HEADERS_X86_64}": ctx.attr.sysroot_headers.get("x86_64", "NOT_SET"),
-            "%{SYSROOT_LIBS_AARCH64}": ctx.attr.sysroot_libs.get("aarch64", "NOT_SET"),
-            "%{SYSROOT_LIBS_RISCV64}": ctx.attr.sysroot_libs.get("riscv64", "NOT_SET"),
-            "%{SYSROOT_LIBS_X86_64}": ctx.attr.sysroot_libs.get("x86_64", "NOT_SET"),
-            "%{EXTRA_TARGET_COMPATIBLE_WITH}": repr([str(label) for label in ctx.attr.extra_target_compatible_with]),
-        },
-        executable = False,
-    )
-
     # To properly use a custom Bazel C++ sysroot, the following are necessary:
     #
     # - The cc_toolchain() `compiler_files` argument must list
@@ -226,18 +206,25 @@ def _fuchsia_clang_repository_impl(ctx):
     #   expressions!
     #
 
-    # Set up the toolchain config file from the template.
+    # Set up the BUILD file from the Fuchsia SDK.
+    # TODO(https://fxbug.dev/514679143): Move these to @fuchsia_sdk.
     ctx.template(
-        "cc_toolchain_config.bzl",
-        toolchain_config_template,
+        "BUILD.bazel",
+        crosstool_template,
         substitutions = {
+            "%{CLANG_VERSION}": clang_version,
+            "%{SYSROOT_HEADERS_AARCH64}": ctx.attr.sysroot_headers.get("aarch64", "NOT_SET"),
+            "%{SYSROOT_HEADERS_RISCV64}": ctx.attr.sysroot_headers.get("riscv64", "NOT_SET"),
+            "%{SYSROOT_HEADERS_X86_64}": ctx.attr.sysroot_headers.get("x86_64", "NOT_SET"),
+            "%{SYSROOT_LIBS_AARCH64}": ctx.attr.sysroot_libs.get("aarch64", "NOT_SET"),
+            "%{SYSROOT_LIBS_RISCV64}": ctx.attr.sysroot_libs.get("riscv64", "NOT_SET"),
+            "%{SYSROOT_LIBS_X86_64}": ctx.attr.sysroot_libs.get("x86_64", "NOT_SET"),
             "%{SYSROOT_PATH_AARCH64}": ctx.attr.sysroot_paths.get("aarch64", "NOT_SET"),
             "%{SYSROOT_PATH_RISCV64}": ctx.attr.sysroot_paths.get("riscv64", "NOT_SET"),
             "%{SYSROOT_PATH_X86_64}": ctx.attr.sysroot_paths.get("x86_64", "NOT_SET"),
-            "%{CLANG_VERSION}": clang_version,
-            "%{HOST_OS}": normalized_os,
-            "%{HOST_CPU}": normalized_arch,
+            "%{EXTRA_TARGET_COMPATIBLE_WITH}": repr([str(label) for label in ctx.attr.extra_target_compatible_with]),
         },
+        executable = False,
     )
 
 fuchsia_clang_repository = repository_rule(
