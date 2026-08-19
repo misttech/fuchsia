@@ -1,13 +1,13 @@
 ---
 name: devicetree-debugging
 description: >
-  Debug Fuchsia devicetree problems: golden file mismatches, DTB/DTS compilation
-  errors, stale checked-in .dtb overlays, and drivers that fail to bind to a
-  devicetree node. Covers decompiling with dtc, ffx driver node/composite
-  list/show, ffx driver doctor, and `ffx log --filter devicetree`. Use when a
-  build fails with 'Golden file mismatch', a .dts edit has no effect, or a
-  node's properties don't match expected bind rules. Don't use for writing a new
-  visitor (see devicetree-visitor).
+  Debug Fuchsia devicetree problems: golden file mismatches, DTB/DTS
+  compilation errors, stale checked-in .dtb overlays, and drivers that fail to
+  bind to a devicetree node. Covers decompiling with dtc, ffx driver
+  node/composite list/show, ffx driver doctor, and `ffx log --filter
+  devicetree`. Use when a build fails with 'Golden file mismatch', a .dts edit
+  has no effect, or a node's properties don't match expected bind rules. Don't
+  use for writing a new visitor (see devicetree-visitor).
 ---
 
 # Devicetree Debugging
@@ -81,7 +81,7 @@ isolated environment.
 
 ## Common Pitfalls
 
-- **Missing `FIRST_COMPATIBLE`**: Ensure your visitor correctly sets the bind
+- **Missing `fuchsia.COMPATIBLE`**: Ensure your visitor correctly sets the bind
   property, or that the driver's bind rules match the compatible string.
 - **Composite Binding Failure**:
   - Detailed debugging of composite binding can be found in the

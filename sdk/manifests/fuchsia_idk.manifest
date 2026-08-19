@@ -12,7 +12,6 @@ bind_library://bind/fuchsia.broadcom.platform
 bind_library://bind/fuchsia.broadcom.platform.sdio
 bind_library://bind/fuchsia.clock
 bind_library://bind/fuchsia.designware.platform
-bind_library://bind/fuchsia.devicetree
 bind_library://bind/fuchsia.ethernet
 bind_library://bind/fuchsia.focaltech.platform
 bind_library://bind/fuchsia.google.platform

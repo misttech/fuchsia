@@ -345,16 +345,10 @@ pub async fn publish_dml_devices(
         };
 
         if let Some(compatible) = &dev.compatible {
-            node.properties = Some(vec![
-                fdf_framework::NodeProperty2 {
-                    key: "fuchsia.COMPATIBLE".to_string(),
-                    value: fdf_framework::NodePropertyValue::StringValue(compatible.clone()),
-                },
-                fdf_framework::NodeProperty2 {
-                    key: "fuchsia.devicetree.FIRST_COMPATIBLE".to_string(),
-                    value: fdf_framework::NodePropertyValue::StringValue(compatible.clone()),
-                },
-            ]);
+            node.properties = Some(vec![fdf_framework::NodeProperty2 {
+                key: "fuchsia.COMPATIBLE".to_string(),
+                value: fdf_framework::NodePropertyValue::StringValue(compatible.clone()),
+            }]);
             node.did = Some(BIND_PLATFORM_DEV_DID_DEVICETREE);
             node.vid = Some(BIND_PLATFORM_DEV_VID_GENERIC);
         }
@@ -527,10 +521,6 @@ pub async fn publish_dml_devices(
                         property_int(instance_id),
                     ),
                     make_property2("fuchsia.COMPATIBLE", property_string(compatible)),
-                    make_property2(
-                        "fuchsia.devicetree.FIRST_COMPATIBLE",
-                        property_string(compatible),
-                    ),
                     make_property2(
                         "fuchsia.Service",
                         property_string("fuchsia.hardware.platform.device.Service"),

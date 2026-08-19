@@ -76,8 +76,7 @@ Check if bind rules specify `fuchsia.BIND_PROTOCOL`.
 ##### 3. Platform Device (Platform Bus)
 Added by platform bus driver.
 
-* Check PID/VID/DID, or `fuchsia.devicetree.FIRST_COMPATIBLE` for devicetree
-  devices.
+* Check PID/VID/DID, or `fuchsia.COMPATIBLE` for devicetree devices.
 * For devicetree, find the visitor (inheritor of `fdf_devicetree::Visitor`).
 
 ### No Criteria Matches

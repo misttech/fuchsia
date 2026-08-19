@@ -20,7 +20,6 @@
 #include <vector>
 
 #include <bind/fuchsia/cpp/bind.h>
-#include <bind/fuchsia/devicetree/cpp/bind.h>
 #include <bind/fuchsia/platform/cpp/bind.h>
 #include <gtest/gtest.h>
 
@@ -111,7 +110,6 @@ TEST_F(ManagerTest, TestPublishesSimpleNode) {
   ASSERT_TRUE(testing::CheckHasProperties(
       {
           fdf::MakeProperty2(bind_fuchsia::COMPATIBLE, "fuchsia,sample-dt"),
-          fdf::MakeProperty2(bind_fuchsia_devicetree::FIRST_COMPATIBLE, "fuchsia,sample-dt"),
       },
       board_child_node_0.properties, false));
 
@@ -123,7 +121,6 @@ TEST_F(ManagerTest, TestPublishesSimpleNode) {
   ASSERT_TRUE(testing::CheckHasProperties(
       {
           fdf::MakeProperty2(bind_fuchsia::COMPATIBLE, "fuchsia,sample-device"),
-          fdf::MakeProperty2(bind_fuchsia_devicetree::FIRST_COMPATIBLE, "fuchsia,sample-device"),
       },
       board_child_node_1.properties, false));
 }
@@ -474,21 +471,9 @@ TEST_F(ManagerTest, TestBoardChildCompositeSpec) {
           fdf::MakeProperty2(bind_fuchsia::COMPATIBLE, SAMPLE_DEVICE_COMPATIBILITY),
       }},
       (*mgr_request.parents2())[0].properties(), true));
-  EXPECT_TRUE(
-      testing::CheckHasProperties({{
-                                      fdf::MakeProperty2(bind_fuchsia_devicetree::FIRST_COMPATIBLE,
-                                                         SAMPLE_DEVICE_COMPATIBILITY),
-                                  }},
-                                  (*mgr_request.parents2())[0].properties(), true));
   EXPECT_TRUE(testing::CheckHasBindRules(
       {
           fdf::MakeAcceptBindRule(bind_fuchsia::COMPATIBLE, SAMPLE_DEVICE_COMPATIBILITY),
-      },
-      (*mgr_request.parents2())[0].bind_rules(), true));
-  EXPECT_TRUE(testing::CheckHasBindRules(
-      {
-          fdf::MakeAcceptBindRule(bind_fuchsia_devicetree::FIRST_COMPATIBLE,
-                                  SAMPLE_DEVICE_COMPATIBILITY),
       },
       (*mgr_request.parents2())[0].bind_rules(), true));
 

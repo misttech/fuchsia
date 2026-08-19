@@ -25,7 +25,7 @@ $ fx serve
 
 Add a test node on which the bt_hci_virtual driver can bind:
 ```
-$ ffx driver test-node add bt-hci-emulator fuchsia.devicetree.FIRST_COMPATIBLE=bt
+$ ffx driver test-node add bt-hci-emulator fuchsia.COMPATIBLE=bt
 ```
 
 Navigate to the root of your Pigweed checkout and activate the Pigweed environment.

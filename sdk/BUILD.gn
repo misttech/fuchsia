@@ -604,7 +604,6 @@ sdk_molecule("core_bindlib") {
     "//src/devices/bind/fuchsia.broadcom.platform.sdio:fuchsia.broadcom.platform.sdio_sdk",
     "//src/devices/bind/fuchsia.clock:fuchsia.clock_sdk",
     "//src/devices/bind/fuchsia.designware.platform:fuchsia.designware.platform_sdk",
-    "//src/devices/bind/fuchsia.devicetree:fuchsia.devicetree_sdk",
     "//src/devices/bind/fuchsia.ethernet:fuchsia.ethernet_sdk",
     "//src/devices/bind/fuchsia.focaltech.platform:fuchsia.focaltech.platform_sdk",
     "//src/devices/bind/fuchsia.google.platform:fuchsia.google.platform_sdk",
