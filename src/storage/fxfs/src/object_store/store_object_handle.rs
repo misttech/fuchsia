@@ -509,7 +509,7 @@ impl<S: HandleOwner> StoreObjectHandle<S> {
         let store = self.store();
         store.device_write_ops.fetch_add(1, Ordering::Relaxed);
         let _watchdog = Watchdog::new(10, |count| {
-            warn!("Write has been stalled for {} seconds", count * 10);
+            warn!("Write I/O request blocked for {} seconds", count * 10);
         });
 
         let (opts, compute_checksums) = match crypt_ctx {
@@ -746,7 +746,7 @@ impl<S: HandleOwner> StoreObjectHandle<S> {
         store.device_read_ops.fetch_add(1, Ordering::Relaxed);
 
         let _watchdog = Watchdog::new(10, |count| {
-            warn!("Read has been stalled for {} seconds", count * 10);
+            warn!("Read I/O request blocked for {} seconds", count * 10);
         });
 
         let (_key_id, key) = self.get_key(Some(key_id)).await?;
