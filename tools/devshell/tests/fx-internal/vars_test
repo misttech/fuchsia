@@ -512,4 +512,18 @@ INPUT
   done
 }
 
+TEST_ffx-default-repository-name() {
+  FUCHSIA_BUILD_DIR="${FUCHSIA_DIR}/out/default"
+  BT_EXPECT_EQ "$(ffx-default-repository-name)" "default"
+
+  FUCHSIA_BUILD_DIR="${FUCHSIA_DIR}/out/core.x64"
+  BT_EXPECT_EQ "$(ffx-default-repository-name)" "core-x64"
+
+  FUCHSIA_BUILD_DIR="${FUCHSIA_DIR}/out/fuchsia_internal.arm64-balanced.2"
+  BT_EXPECT_EQ "$(ffx-default-repository-name)" "fuchsia-internal-arm64-balanced-2"
+
+  FUCHSIA_BUILD_DIR="${FUCHSIA_DIR}/out/Custom_Build.ARM64.1"
+  BT_EXPECT_EQ "$(ffx-default-repository-name)" "custom-build-arm64-1"
+}
+
 BT_RUN_TESTS "$@"

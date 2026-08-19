@@ -558,8 +558,9 @@ function fx-change-build-dir {
 
 function ffx-default-repository-name {
     # Use the build directory's name by default. Note that package URLs are not
-    # allowed to have underscores, so replace them with hyphens.
-    basename "${FUCHSIA_BUILD_DIR}" | tr '_' '-'
+    # allowed to have uppercase letters, underscores, or dots (which cause invalid
+    # IPv4 parsing if ending in digits), so sanitize them to lowercase hyphens.
+    basename "${FUCHSIA_BUILD_DIR}" | tr '[:upper:]_.' '[:lower:]--'
 }
 
 # Runs a jq command against an existing file that will edit it, taking care

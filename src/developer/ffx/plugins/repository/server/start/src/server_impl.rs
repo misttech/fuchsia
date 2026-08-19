@@ -599,9 +599,13 @@ pub async fn serve_impl(
     for (repo_name, repo_client) in repo_manager.repositories() {
         let repo_url = fuchsia_url::RepositoryUrl::parse_host(repo_name.clone())
             .map_err(|e| anyhow!("{e}"))?;
-        let mirror_url = format!("http://{server_addr}/{repo_name}")
+        let url = format!("http://{server_addr}/{repo_name}");
+        let mirror_url = url.clone()
             .parse()
-            .map_err(|e: http::uri::InvalidUri| anyhow!("{e}"))?;
+            .map_err(|e: http::uri::InvalidUri| anyhow!("{e}"))
+            // Lower layers do not print the URL, so expose it here to clarify
+            // what failed parsing, if something failed parsing.
+            .with_context(|| format!("while parsing {url}"))?;
         let repo_config = repo_client
             .read()
             .await
