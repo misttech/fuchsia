@@ -1086,8 +1086,9 @@ pub type zx_rrec_t = [u8; 64];
 
 // Ports V2
 #[repr(u32)]
-#[derive(Debug, Copy, Clone, Eq, PartialEq)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Default)]
 pub enum zx_packet_type_t {
+    #[default]
     ZX_PKT_TYPE_USER = 0,
     ZX_PKT_TYPE_SIGNAL_ONE = 1,
     ZX_PKT_TYPE_GUEST_BELL = 3,
@@ -1099,12 +1100,6 @@ pub enum zx_packet_type_t {
     ZX_PKT_TYPE_PROCESSOR_POWER_LEVEL_TRANSITION_REQUEST = 10,
     #[doc(hidden)]
     __Nonexhaustive,
-}
-
-impl Default for zx_packet_type_t {
-    fn default() -> Self {
-        zx_packet_type_t::ZX_PKT_TYPE_USER
-    }
 }
 
 #[repr(u32)]
