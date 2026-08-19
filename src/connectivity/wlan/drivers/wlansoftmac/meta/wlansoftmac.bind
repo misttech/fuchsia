@@ -3,8 +3,4 @@
 // found in the LICENSE file.
 
 
-if fuchsia.wlan.softmac.WlanSoftmac == fuchsia.wlan.softmac.WlanSoftmac.DriverTransport {
-    true;
-} else {
-    fuchsia.wlan.softmac.Service == fuchsia.wlan.softmac.Service.DriverTransport;
-}
+fuchsia.Service == "fuchsia.wlan.softmac.Service";

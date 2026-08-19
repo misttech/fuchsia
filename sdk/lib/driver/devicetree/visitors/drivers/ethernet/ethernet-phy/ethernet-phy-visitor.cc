@@ -57,11 +57,11 @@ zx::result<> EthPhyVisitor::AddChildNodeSpec(fdf_devicetree::Node& child) {
   auto phy_node = fuchsia_driver_framework::ParentSpec2{
       {.bind_rules =
            {
-               fdf::MakeAcceptBindRule(
-                   bind_fuchsia_hardware_ethernet_board::SERVICE,
-                   bind_fuchsia_hardware_ethernet_board::SERVICE_ZIRCONTRANSPORT),
+               fdf::MakeAcceptBindRule(bind_fuchsia::SERVICE,
+                                       "fuchsia.hardware.ethernet.board.Service"),
            },
        .properties = {
+           fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.ethernet.board.Service"),
            fdf::MakeProperty2(bind_fuchsia_hardware_ethernet_board::SERVICE,
                               bind_fuchsia_hardware_ethernet_board::SERVICE_ZIRCONTRANSPORT),
        }}};

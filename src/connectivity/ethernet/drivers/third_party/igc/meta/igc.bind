@@ -6,7 +6,7 @@ composite igc;
 
 
 primary parent "pci" {
-  fuchsia.hardware.pci.Service == fuchsia.hardware.pci.Service.ZirconTransport;
+  fuchsia.Service == "fuchsia.hardware.pci.Service";
   fuchsia.BIND_PCI_VID == fuchsia.pci.BIND_PCI_VID.INTEL;
   fuchsia.BIND_PCI_DID == 0x15F2; // I225-LM
 }

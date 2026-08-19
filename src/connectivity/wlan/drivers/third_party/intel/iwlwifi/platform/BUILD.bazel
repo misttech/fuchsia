@@ -25,6 +25,7 @@ fuchsia_driver_bind_bytecode(
     output = "iwlwifi.bindbc",
     rules = "iwlwifi.bind",
     deps = [
+        "@fuchsia_sdk//bind/fuchsia",
         "@fuchsia_sdk//bind/fuchsia.acpi",
         "@fuchsia_sdk//bind/fuchsia.pci",
         "@fuchsia_sdk//fidl/fuchsia.hardware.pci:fuchsia.hardware.pci_bindlib",

@@ -8,7 +8,7 @@
     },
     {
         "device": {
-            "fuchsia.hardware.bluetooth.HciService": "fuchsia.hardware.bluetooth.HciService.ZirconTransport"
+            "fuchsia.Service": "\"fuchsia.hardware.bluetooth.HciService\""
         },
         "expected": "match",
         "name": "Correct_Protocol"

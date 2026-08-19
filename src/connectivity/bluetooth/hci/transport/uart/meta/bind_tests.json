@@ -1,14 +1,14 @@
 [
     {
         "device": {
-            "fuchsia.hardware.serialimpl.Service": "fuchsia.hardware.serialimpl.Service.ZirconTransport"
+            "fuchsia.Service": "\"fuchsia.hardware.serialimpl.Service\""
         },
         "expected": "abort",
         "name": "Incorrect_transport"
     },
     {
         "device": {
-            "fuchsia.hardware.serial.Service": "fuchsia.hardware.serial.Service.ZirconTransport",
+            "fuchsia.Service": "\"fuchsia.hardware.serial.Service\"",
             "fuchsia.BIND_SERIAL_CLASS": "fuchsia.serial.BIND_SERIAL_CLASS.BLUETOOTH_HCI"
         },
         "expected": "match",

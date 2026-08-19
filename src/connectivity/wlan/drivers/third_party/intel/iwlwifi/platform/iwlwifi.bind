@@ -13,12 +13,7 @@ primary parent "pci" {
     0x2526,
     0xa0f0,
   }
-  if fuchsia.hardware.pci.Service == fuchsia.hardware.pci.Service.ZirconTransport {
-    true;
-  } else {
-    // 0x04 = fuchsia.pci.BIND_FIDL_PROTOCOL.DEVICE
-    fuchsia.BIND_FIDL_PROTOCOL == 0x04;
-  }
+  fuchsia.Service == "fuchsia.hardware.pci.Service";
 }
 
 optional parent "acpi" {

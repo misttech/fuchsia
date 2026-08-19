@@ -3,5 +3,5 @@
 // found in the LICENSE file.
 
 
-fuchsia.hardware.serial.Service == fuchsia.hardware.serial.Service.ZirconTransport;
+fuchsia.Service == "fuchsia.hardware.serial.Service";
 fuchsia.BIND_SERIAL_CLASS == fuchsia.serial.BIND_SERIAL_CLASS.BLUETOOTH_HCI;

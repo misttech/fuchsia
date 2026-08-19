@@ -5,7 +5,7 @@
 
 if fuchsia.BIND_PROTOCOL == fuchsia.network.BIND_PROTOCOL.IMPL {
     true;
-} else if fuchsia.hardware.network.driver.Service == fuchsia.hardware.network.driver.Service.DriverTransport {
+} else if fuchsia.Service == "fuchsia.hardware.network.driver.Service" {
     true;
 } else {
     false;

@@ -13,6 +13,7 @@ driver_bind_rules("network-device_bind") {
   tests = "meta/bind-tests.json"
   deps = [
     "//sdk/fidl/fuchsia.hardware.network.driver:fuchsia.hardware.network.driver_bindlib",
+    "//src/devices/bind/fuchsia",
     "//src/devices/bind/fuchsia.network",
   ]
 }

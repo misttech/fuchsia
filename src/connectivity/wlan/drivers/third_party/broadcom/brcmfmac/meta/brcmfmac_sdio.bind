@@ -15,17 +15,17 @@ using fuchsia.hardware.sdio;
 using fuchsia.platform;
 
 primary parent "sdio-function-1" {
-  fuchsia.hardware.sdio.Service == fuchsia.hardware.sdio.Service.ZirconTransport;
+  fuchsia.Service == "fuchsia.hardware.sdio.Service";
   fuchsia.BIND_SDIO_FUNCTION == 1;
 }
 
 parent "sdio-function-2" {
-  fuchsia.hardware.sdio.Service == fuchsia.hardware.sdio.Service.ZirconTransport;
+  fuchsia.Service == "fuchsia.hardware.sdio.Service";
   fuchsia.BIND_SDIO_FUNCTION == 2;
 }
 
 parent "gpio-oob" {
-  fuchsia.hardware.gpio.Service == fuchsia.hardware.gpio.Service.ZirconTransport;
+  fuchsia.Service == "fuchsia.hardware.gpio.Service";
 }
 
 parent "pdev" {
@@ -48,5 +48,5 @@ optional parent "gpio-init" {
 }
 
 optional parent "pin-states-0" {
-  fuchsia.hardware.pin.PinStatesService == fuchsia.hardware.pin.PinStatesService.ZirconTransport;
+  fuchsia.Service == "fuchsia.hardware.pin.PinStatesService";
 }

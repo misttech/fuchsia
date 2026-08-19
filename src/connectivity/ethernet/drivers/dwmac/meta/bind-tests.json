@@ -28,7 +28,7 @@
                 "name": "Match",
                 "expected": "match",
                 "device": {
-                    "fuchsia.hardware.ethernet.board.Service": "fuchsia.hardware.ethernet.board.Service.ZirconTransport"
+                    "fuchsia.Service": "\"fuchsia.hardware.ethernet.board.Service\""
                 }
             }
         ]

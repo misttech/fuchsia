@@ -6,7 +6,7 @@
                 "name": "Match accept 0x4345",
                 "expected": "match",
                 "device": {
-                    "fuchsia.hardware.sdio.Service": "fuchsia.hardware.sdio.Service.ZirconTransport",
+                    "fuchsia.Service": "\"fuchsia.hardware.sdio.Service\"",
                     "fuchsia.BIND_SDIO_FUNCTION": "1"
                 }
             }
@@ -19,7 +19,7 @@
                 "name": "Match accept 0x4345",
                 "expected": "match",
                 "device": {
-                    "fuchsia.hardware.sdio.Service": "fuchsia.hardware.sdio.Service.ZirconTransport",
+                    "fuchsia.Service": "\"fuchsia.hardware.sdio.Service\"",
                     "fuchsia.BIND_SDIO_FUNCTION": "2"
                 }
             }
@@ -32,7 +32,7 @@
                 "name": "Match",
                 "expected": "match",
                 "device": {
-                    "fuchsia.hardware.gpio.Service": "fuchsia.hardware.gpio.Service.ZirconTransport"
+                    "fuchsia.Service": "\"fuchsia.hardware.gpio.Service\""
                 }
             }
         ]

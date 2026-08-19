@@ -6,7 +6,7 @@
                 "name": "Match",
                 "expected": "match",
                 "device": {
-                    "fuchsia.hardware.pci.Service": "fuchsia.hardware.pci.Service.ZirconTransport",
+                    "fuchsia.Service": "\"fuchsia.hardware.pci.Service\"",
                     "fuchsia.BIND_PCI_VID": "fuchsia.pci.BIND_PCI_VID.INTEL",
                     "fuchsia.BIND_PCI_DID": "0x095A"
                 }
@@ -15,7 +15,7 @@
                 "name": "Abort",
                 "expected": "abort",
                 "device": {
-                    "fuchsia.hardware.pci.Service": "fuchsia.hardware.pci.Service.ZirconTransport",
+                    "fuchsia.Service": "\"fuchsia.hardware.pci.Service\"",
                     "fuchsia.BIND_PCI_VID": "fuchsia.pci.BIND_PCI_VID.INTEL",
                     "fuchsia.BIND_PCI_DID": "0"
                 }
@@ -29,7 +29,7 @@
                 "name": "Match",
                 "expected": "match",
                 "device": {
-                    "fuchsia.hardware.sysmem.Service": "fuchsia.hardware.sysmem.Service.ZirconTransport"
+                    "fuchsia.Service": "\"fuchsia.hardware.sysmem.Service\""
                 }
             }
         ]

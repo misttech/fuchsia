@@ -7,7 +7,7 @@ composite ot_radio;
 using fuchsia;
 
 primary parent "spi" {
-  fuchsia.hardware.spi.Service == fuchsia.hardware.spi.Service.ZirconTransport;
+  fuchsia.Service == "fuchsia.hardware.spi.Service";
 }
 
 parent "pdev" {
@@ -23,17 +23,17 @@ parent "pdev" {
 }
 
 parent "gpio-int" {
-  fuchsia.hardware.gpio.Service == fuchsia.hardware.gpio.Service.ZirconTransport;
+  fuchsia.Service == "fuchsia.hardware.gpio.Service";
   fuchsia.NAME == "gpio-int";
 }
 
 parent "gpio-reset" {
-  fuchsia.hardware.gpio.Service == fuchsia.hardware.gpio.Service.ZirconTransport;
+  fuchsia.Service == "fuchsia.hardware.gpio.Service";
   fuchsia.NAME == "gpio-reset";
 }
 
 parent "gpio-bootloader" {
-  fuchsia.hardware.gpio.Service == fuchsia.hardware.gpio.Service.ZirconTransport;
+  fuchsia.Service == "fuchsia.hardware.gpio.Service";
   fuchsia.NAME == "gpio-bootloader";
 }
 
@@ -42,5 +42,5 @@ optional parent "gpio-init" {
 }
 
 optional parent "pin-states-0" {
-  fuchsia.hardware.pin.PinStatesService == fuchsia.hardware.pin.PinStatesService.ZirconTransport;
+  fuchsia.Service == "fuchsia.hardware.pin.PinStatesService";
 }

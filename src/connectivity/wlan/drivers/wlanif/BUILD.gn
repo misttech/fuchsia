@@ -9,7 +9,10 @@ import("//build/drivers.gni")
 driver_bind_rules("wlanif_bind") {
   rules = "meta/wlanif.bind"
   bind_output = "wlanif.bindbc"
-  deps = [ "//sdk/fidl/fuchsia.wlan.fullmac:fuchsia.wlan.fullmac_bindlib" ]
+  deps = [
+    "//sdk/fidl/fuchsia.wlan.fullmac:fuchsia.wlan.fullmac_bindlib",
+    "//src/devices/bind/fuchsia",
+  ]
 }
 
 fuchsia_rust_driver("wlanif_driver-driver") {

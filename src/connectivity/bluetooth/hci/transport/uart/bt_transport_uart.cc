@@ -17,6 +17,8 @@
 #include <zircon/assert.h>
 #include <zircon/status.h>
 
+#include <format>
+
 #include <bind/fuchsia/cpp/bind.h>
 #include <bind/fuchsia/hardware/serial/cpp/bind.h>
 

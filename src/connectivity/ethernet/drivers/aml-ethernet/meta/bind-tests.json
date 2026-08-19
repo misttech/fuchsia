@@ -41,7 +41,7 @@
                 "name": "Match",
                 "expected": "match",
                 "device": {
-                    "fuchsia.hardware.gpio.Service": "fuchsia.hardware.gpio.Service.ZirconTransport"
+                    "fuchsia.Service": "\"fuchsia.hardware.gpio.Service\""
                 }
             }
         ]

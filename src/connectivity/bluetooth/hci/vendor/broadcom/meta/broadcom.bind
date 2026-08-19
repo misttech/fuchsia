@@ -3,4 +3,4 @@
 // found in the LICENSE file.
 
 
-fuchsia.hardware.bluetooth.HciService == fuchsia.hardware.bluetooth.HciService.ZirconTransport;
+fuchsia.Service == "fuchsia.hardware.bluetooth.HciService";

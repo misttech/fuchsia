@@ -6,7 +6,7 @@ composite dwmac;
 
 
 primary parent "eth-board" {
-  fuchsia.hardware.ethernet.board.Service == fuchsia.hardware.ethernet.board.Service.ZirconTransport;
+  fuchsia.Service == "fuchsia.hardware.ethernet.board.Service";
 }
 
 parent "pdev" {

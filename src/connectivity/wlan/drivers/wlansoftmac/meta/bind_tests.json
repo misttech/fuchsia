@@ -10,7 +10,7 @@
         "name": "Correct_Rule",
         "expected": "match",
         "device": {
-            "fuchsia.wlan.softmac.WlanSoftmac": "fuchsia.wlan.softmac.WlanSoftmac.DriverTransport"
+            "fuchsia.Service": "\"fuchsia.wlan.softmac.Service\""
         }
     }
 ]

@@ -280,6 +280,7 @@ zx::result<> AddWifiNode(fdf::WireSyncClient<fpbus::PlatformBus>& pbus) {
     };
 
     auto sdio_properties = {
+        fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.sdio.Service"),
         fdf::MakeProperty2(bind_fuchsia_hardware_sdio::SERVICE,
                            bind_fuchsia_hardware_sdio::SERVICE_ZIRCONTRANSPORT),
         fdf::MakeProperty2(bind_fuchsia::SDIO_FUNCTION, i),

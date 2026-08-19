@@ -6,7 +6,7 @@
                 "name": "Match Modern",
                 "expected": "match",
                 "device": {
-                    "fuchsia.hardware.pci.Service": "fuchsia.hardware.pci.Service.ZirconTransport",
+                    "fuchsia.Service": "\"fuchsia.hardware.pci.Service\"",
                     "fuchsia.BIND_PCI_VID": "fuchsia.pci.BIND_PCI_VID.VIRTIO",
                     "fuchsia.BIND_PCI_DID": "4189"
                 }
@@ -15,7 +15,7 @@
                 "name": "Abort Legacy",
                 "expected": "abort",
                 "device": {
-                    "fuchsia.hardware.pci.Service": "fuchsia.hardware.pci.Service.ZirconTransport",
+                    "fuchsia.Service": "\"fuchsia.hardware.pci.Service\"",
                     "fuchsia.BIND_PCI_VID": "fuchsia.pci.BIND_PCI_VID.VIRTIO",
                     "fuchsia.BIND_PCI_DID": "4125"
                 }
@@ -24,7 +24,7 @@
                 "name": "Abort Wrong Device ID",
                 "expected": "abort",
                 "device": {
-                    "fuchsia.hardware.pci.Service": "fuchsia.hardware.pci.Service.ZirconTransport",
+                    "fuchsia.Service": "\"fuchsia.hardware.pci.Service\"",
                     "fuchsia.BIND_PCI_VID": "fuchsia.pci.BIND_PCI_VID.VIRTIO",
                     "fuchsia.BIND_PCI_DID": "4660"
                 }
