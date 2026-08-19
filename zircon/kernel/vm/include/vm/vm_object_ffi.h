@@ -17,58 +17,66 @@
 #include "vm/page_source.h"
 #include "vm/vm_object.h"
 
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
 __BEGIN_CDECLS
 
 typedef zx_status_t (*cpp_vm_object_lookup_fn)(void* ctx, uint64_t offset, uint64_t paddr);
 
-void* cpp_vm_object_get_ref_counted(const VmObject* vmo);
-void cpp_vm_object_free(VmObject* vmo);
-zx_status_t cpp_vm_object_decommit_range(VmObject* vmo, uint64_t offset, uint64_t len);
-zx_status_t cpp_vm_object_commit_range(VmObject* vmo, uint64_t offset, uint64_t len);
-zx_status_t cpp_vm_object_hint_range(VmObject* vmo, uint64_t offset, uint64_t len,
-                                     VmObject::EvictionHint hint);
-
-// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE void* cpp_vm_object_get_ref_counted(const VmObject* vmo);
+FFI_ALWAYS_INLINE void cpp_vm_object_free(VmObject* vmo);
+FFI_ALWAYS_INLINE zx_status_t cpp_vm_object_decommit_range(VmObject* vmo, uint64_t offset,
+                                                           uint64_t len);
+FFI_ALWAYS_INLINE zx_status_t cpp_vm_object_commit_range(VmObject* vmo, uint64_t offset,
+                                                         uint64_t len);
+FFI_ALWAYS_INLINE zx_status_t cpp_vm_object_hint_range(VmObject* vmo, uint64_t offset, uint64_t len,
+                                                       VmObject::EvictionHint hint);
 FFI_ALWAYS_INLINE uint64_t cpp_vm_object_size(const VmObject* vmo);
-// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
 FFI_ALWAYS_INLINE bool cpp_vm_object_is_resizable(const VmObject* vmo);
-// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
 FFI_ALWAYS_INLINE bool cpp_vm_object_is_contiguous(const VmObject* vmo);
-// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
 FFI_ALWAYS_INLINE zx_status_t cpp_vm_object_resize(VmObject* vmo, uint64_t size);
-// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
 FFI_ALWAYS_INLINE zx_status_t cpp_vm_object_write(VmObject* vmo, const void* ptr, uint64_t offset,
                                                   size_t len);
-// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
 FFI_ALWAYS_INLINE zx_status_t cpp_vm_object_set_name(VmObject* vmo, const char* name, size_t len);
-zx_status_t cpp_vm_object_commit_range_pinned(VmObject* vmo, uint64_t offset, uint64_t len,
-                                              bool write);
-void cpp_vm_object_unpin(VmObject* vmo, uint64_t offset, uint64_t len);
-arch_mmu_flags_t cpp_vm_object_get_mapping_cache_policy(const VmObject* vmo);
-zx_status_t cpp_vm_object_set_mapping_cache_policy(VmObject* vmo, arch_mmu_flags_t cache_policy);
-VmObject* cpp_vm_object_create_clone(VmObject* vmo, Resizability resizable,
-                                     SnapshotType snapshot_type, uint64_t offset, uint64_t size,
-                                     bool copy_name, zx_status_t* out_status);
-zx_status_t cpp_vm_object_get_page_blocking(VmObject* vmo, uint64_t offset, uint32_t pf_flags,
-                                            vm_page_t** out_page, paddr_t* out_pa);
-VmObject* cpp_vm_object_create_child_slice(VmObject* vmo, uint64_t offset, uint64_t size,
-                                           bool copy_name, zx_status_t* out_status);
-VmObject* cpp_vm_object_create_child_reference(VmObject* vmo, Resizability resizable,
-                                               uint64_t offset, uint64_t size, bool copy_name,
-                                               bool* out_first_child, zx_status_t* out_status);
-void cpp_vm_object_set_user_id(VmObject* vmo, uint64_t user_id);
-uint64_t cpp_vm_object_user_id(const VmObject* vmo);
-uint64_t cpp_vm_object_parent_user_id(const VmObject* vmo);
-zx_status_t cpp_vm_object_lookup(VmObject* vmo, uint64_t offset, uint64_t len, void* ctx,
-                                 cpp_vm_object_lookup_fn callback);
-zx_status_t cpp_vm_object_get_page(VmObject* vmo, uint64_t offset, uint32_t pf_flags,
-                                   MultiPageRequest* page_request, vm_page_t** out_page,
-                                   paddr_t* out_pa);
-void cpp_vm_object_get_attributed_memory(const VmObject* vmo, vm::AttributionCounts* out_counts);
-void cpp_vm_object_get_attributed_memory_in_reference_owner(const VmObject* vmo,
-                                                            vm::AttributionCounts* out_counts);
-zx_status_t cpp_vm_object_read(VmObject* vmo, void* ptr, uint64_t offset, size_t len);
-zx_status_t cpp_vm_object_zero_range(VmObject* vmo, uint64_t offset, uint64_t len);
+FFI_ALWAYS_INLINE void cpp_vm_object_get_name(const VmObject* vmo, char* out_name, size_t len);
+FFI_ALWAYS_INLINE void cpp_vm_object_set_child_observer(VmObject* vmo,
+                                                        VmObjectChildObserver* child_observer);
+FFI_ALWAYS_INLINE zx_status_t cpp_vm_object_commit_range_pinned(VmObject* vmo, uint64_t offset,
+                                                                uint64_t len, bool write);
+FFI_ALWAYS_INLINE void cpp_vm_object_unpin(VmObject* vmo, uint64_t offset, uint64_t len);
+FFI_ALWAYS_INLINE arch_mmu_flags_t cpp_vm_object_get_mapping_cache_policy(const VmObject* vmo);
+FFI_ALWAYS_INLINE zx_status_t cpp_vm_object_set_mapping_cache_policy(VmObject* vmo,
+                                                                     arch_mmu_flags_t cache_policy);
+FFI_ALWAYS_INLINE VmObject* cpp_vm_object_create_clone(VmObject* vmo, Resizability resizable,
+                                                       SnapshotType snapshot_type, uint64_t offset,
+                                                       uint64_t size, bool copy_name,
+                                                       zx_status_t* out_status);
+FFI_ALWAYS_INLINE zx_status_t cpp_vm_object_get_page_blocking(VmObject* vmo, uint64_t offset,
+                                                              uint32_t pf_flags,
+                                                              vm_page_t** out_page,
+                                                              paddr_t* out_pa);
+FFI_ALWAYS_INLINE VmObject* cpp_vm_object_create_child_slice(VmObject* vmo, uint64_t offset,
+                                                             uint64_t size, bool copy_name,
+                                                             zx_status_t* out_status);
+FFI_ALWAYS_INLINE VmObject* cpp_vm_object_create_child_reference(
+    VmObject* vmo, Resizability resizable, uint64_t offset, uint64_t size, bool copy_name,
+    bool* out_first_child, zx_status_t* out_status);
+FFI_ALWAYS_INLINE void cpp_vm_object_set_user_id(VmObject* vmo, uint64_t user_id);
+FFI_ALWAYS_INLINE uint64_t cpp_vm_object_user_id(const VmObject* vmo);
+FFI_ALWAYS_INLINE uint64_t cpp_vm_object_parent_user_id(const VmObject* vmo);
+FFI_ALWAYS_INLINE zx_status_t cpp_vm_object_lookup(VmObject* vmo, uint64_t offset, uint64_t len,
+                                                   void* ctx, cpp_vm_object_lookup_fn callback);
+FFI_ALWAYS_INLINE zx_status_t cpp_vm_object_get_page(VmObject* vmo, uint64_t offset,
+                                                     uint32_t pf_flags,
+                                                     MultiPageRequest* page_request,
+                                                     vm_page_t** out_page, paddr_t* out_pa);
+FFI_ALWAYS_INLINE void cpp_vm_object_get_attributed_memory(const VmObject* vmo,
+                                                           vm::AttributionCounts* out_counts);
+FFI_ALWAYS_INLINE void cpp_vm_object_get_attributed_memory_in_reference_owner(
+    const VmObject* vmo, vm::AttributionCounts* out_counts);
+FFI_ALWAYS_INLINE zx_status_t cpp_vm_object_read(VmObject* vmo, void* ptr, uint64_t offset,
+                                                 size_t len);
+FFI_ALWAYS_INLINE zx_status_t cpp_vm_object_zero_range(VmObject* vmo, uint64_t offset,
+                                                       uint64_t len);
 
 __END_CDECLS
 

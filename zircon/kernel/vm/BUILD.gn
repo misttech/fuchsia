@@ -583,6 +583,8 @@ kernel_bindgen_crate("vm-object-bindings") {
     "cpp_vm_object_is_contiguous",
     "cpp_vm_object_resize",
     "cpp_vm_object_set_name",
+    "cpp_vm_object_get_name",
+    "cpp_vm_object_set_child_observer",
     "cpp_vm_object_size",
     "cpp_vm_object_unpin",
     "cpp_vm_object_write",
@@ -609,6 +611,7 @@ kernel_bindgen_crate("vm-object-bindings") {
     "SnapshotType",
     "SupplyOptions",
     "VmObject",
+    "VmObjectChildObserver",
     "VmObjectReadWriteOptions",
     "arch_mmu_flags_t",
     "cpp_vm_object_lookup_fn",
@@ -631,7 +634,10 @@ kernel_bindgen_crate("vm-object-bindings") {
     "VmObject_OnWriteBytesTransferredCallback",
     "VmObject_RangeChangeOp",
   ]
-  opaque_types = [ "VmObject" ]
+  opaque_types = [
+    "VmObject",
+    "VmObjectChildObserver",
+  ]
   rustified_enum = [
     "Resizability",
     "SnapshotType",

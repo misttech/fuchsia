@@ -47,6 +47,15 @@ FFI_ALWAYS_INLINE zx_status_t cpp_vm_object_set_name(VmObject* vmo, const char* 
   return vmo->set_name(name, len);
 }
 
+FFI_ALWAYS_INLINE void cpp_vm_object_get_name(const VmObject* vmo, char* out_name, size_t len) {
+  vmo->get_name(out_name, len);
+}
+
+FFI_ALWAYS_INLINE void cpp_vm_object_set_child_observer(VmObject* vmo,
+                                                        VmObjectChildObserver* child_observer) {
+  vmo->SetChildObserver(child_observer);
+}
+
 FFI_ALWAYS_INLINE zx_status_t cpp_vm_object_decommit_range(VmObject* vmo, uint64_t offset,
                                                            uint64_t len) {
   return vmo->DecommitRange(offset, len);

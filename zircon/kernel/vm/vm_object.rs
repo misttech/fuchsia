@@ -22,7 +22,9 @@ use zr::Opaque;
 use zx_status::Status;
 use zx_types::zx_status_t;
 
-pub use bindings::{Resizability, SnapshotType, VmObject_EvictionHint as EvictionHint};
+pub use bindings::{
+    Resizability, SnapshotType, VmObject_EvictionHint as EvictionHint, VmObjectChildObserver,
+};
 
 /// Argument that specifies the context in which we are supplying pages.
 pub type SupplyOptions = bindings::SupplyOptions;
@@ -114,6 +116,31 @@ impl VmObject {
             bindings::cpp_vm_object_set_name(self.as_raw(), name.as_ptr().cast(), name.len())
         };
         Status::ok(status)
+    }
+
+    /// Gets the name of the VMO.
+    pub fn get_name(&self, out_name: &mut [u8]) {
+        // SAFETY: `self.as_raw()` returns a valid `VmObject` pointer and `out_name` points to
+        // `out_name.len()` bytes of valid memory.
+        unsafe {
+            bindings::cpp_vm_object_get_name(
+                self.as_raw(),
+                out_name.as_mut_ptr().cast(),
+                out_name.len(),
+            );
+        }
+    }
+
+    /// Sets the child observer for the VMO.
+    ///
+    /// # Safety
+    ///
+    /// `child_observer` must point to a valid `VmObjectChildObserver` or be null.
+    pub unsafe fn set_child_observer(&self, child_observer: *mut VmObjectChildObserver) {
+        // SAFETY: `self.as_raw()` returns a valid `VmObject` pointer.
+        unsafe {
+            bindings::cpp_vm_object_set_child_observer(self.as_raw(), child_observer);
+        }
     }
 
     /// Decommit a range of pages from the VMO.
