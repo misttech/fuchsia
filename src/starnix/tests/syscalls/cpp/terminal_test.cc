@@ -1039,21 +1039,27 @@ TEST_F(Pty, FlushOutputPollEvents) {
 
     struct pollfd pfd_replica = {replica_terminal, POLLIN | POLLOUT | POLLHUP | POLLERR, 0};
 
-    // Fill up the replica's output queue by writing in a loop until write returns EAGAIN
-    // or poll indicates the terminal is no longer writable (not POLLOUT).
+    // Fill up the replica's output queue by writing in a loop until write returns EAGAIN.
+    // First, 1024 bytes at a time, then 1 byte at a time to top it off.
     char buf[1024];
     memset(buf, 'x', sizeof(buf));
     while (true) {
       ssize_t written = write(replica_terminal, buf, sizeof(buf));
-      if (written < 0 && (errno == EAGAIN || errno == EWOULDBLOCK)) {
-        break;
-      }
       if (written < 0) {
+        if (errno == EAGAIN || errno == EWOULDBLOCK) {
+          break;
+        }
         FAIL() << "Unexpected error during write: " << strerror(errno);
       }
-      poll(&pfd_replica, 1, 0);
-      if (!(pfd_replica.revents & POLLOUT)) {
-        break;
+    }
+    char c = 'x';
+    while (true) {
+      ssize_t written = write(replica_terminal, &c, 1);
+      if (written < 0) {
+        if (errno == EAGAIN || errno == EWOULDBLOCK) {
+          break;
+        }
+        FAIL() << "Unexpected error during 1-byte write: " << strerror(errno);
       }
     }
 
