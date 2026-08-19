@@ -14,8 +14,8 @@
 #define VIRTMAGMA_IOW(nr, type) _IOW(VIRTMAGMA_IOCTL_BASE, nr, type)
 #define VIRTMAGMA_IOWR(nr, type) _IOWR(VIRTMAGMA_IOCTL_BASE, nr, type)
 #define VIRTMAGMA_MAKE_VERSION(major, minor, patch) (((major) << 24) | ((minor) << 12) | (patch))
-#define VIRTMAGMA_GET_VERSION(version, major, minor, patch)                                     \
-  ((major = ((version) >> 24)), (minor = ((version) >> 12) & 0x3FF), (patch = (version)&0x3FF), \
+#define VIRTMAGMA_GET_VERSION(version, major, minor, patch)                                       \
+  ((major = ((version) >> 24)), (minor = ((version) >> 12) & 0x3FF), (patch = (version) & 0x3FF), \
    (version))
 
 #define VIRTMAGMA_HANDSHAKE_SEND 0x46434853
@@ -42,16 +42,6 @@ struct virtmagma_command_descriptor {
   __u64 command_buffers;
   __u64 semaphore_size;
   __u64 semaphores;
-};
-
-struct virtmagma_create_image_wrapper {
-  __u64 create_info;
-  __u64 create_info_size;
-};
-
-struct virtmagma_get_image_info_wrapper {
-  __u64 image_info_out;
-  __u64 image_info_size;
 };
 
 struct virtmagma_buffer_set_name_wrapper {

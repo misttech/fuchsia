@@ -589,33 +589,6 @@ MAGMA_EXPORT magma_status_t magma_connection_read_performance_counter_completion
     uint32_t* result_flags_out);
 
 ///
-/// \brief Creates an image buffer backed by a buffer collection given a DRM format and optional
-///        modifier, as specified in the create info.
-/// \param connection An open connection.
-/// \param create_info Input parameters describing the image.
-/// \param size_out The size of the image buffer in bytes
-/// \param image_out The image buffer.
-/// \param buffer_id_out The ID of the image buffer.
-///
-MAGMA_EXPORT magma_status_t magma_virt_connection_create_image(
-    magma_connection_t connection,
-    magma_image_create_info_t* create_info,
-    uint64_t* size_out,
-    magma_buffer_t* image_out,
-    magma_buffer_id_t* buffer_id_out);
-
-///
-/// \brief Returns parameters for an image created with virtmagma_create_image.
-/// \param connection An open connection.
-/// \param image The image buffer.
-/// \param image_info_out Output parameters describing the image.
-///
-MAGMA_EXPORT magma_status_t magma_virt_connection_get_image_info(
-    magma_connection_t connection,
-    magma_buffer_t image,
-    magma_image_info_t* image_info_out);
-
-///
 /// \brief Creates a context on the given connection.
 /// \param connection An open connection.
 /// \param priority The priority of the connection. Higher numbers are higher priorities.

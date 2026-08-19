@@ -346,9 +346,3 @@ magma_status_t magma_buffer_get_handle(magma_buffer_t buffer, magma_handle_t* ha
     return DRET(MAGMA_STATUS_INVALID_ARGS);
   return MAGMA_STATUS_OK;
 }
-
-magma_status_t magma_virt_connection_get_image_info(magma_connection_t connection,
-                                                    magma_buffer_t image,
-                                                    magma_image_info_t* image_info_out) {
-  return MAGMA_STATUS_UNIMPLEMENTED;
-}

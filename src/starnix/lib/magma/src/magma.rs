@@ -506,24 +506,6 @@ unsafe extern "C" {
     ) -> magma_status_t;
 }
 unsafe extern "C" {
-    #[doc = "\n \\brief Creates an image buffer backed by a buffer collection given a DRM format and optional\n        modifier, as specified in the create info.\n \\param connection An open connection.\n \\param create_info Input parameters describing the image.\n \\param size_out The size of the image buffer in bytes\n \\param image_out The image buffer.\n \\param buffer_id_out The ID of the image buffer.\n"]
-    pub fn magma_virt_connection_create_image(
-        connection: magma_connection_t,
-        create_info: *mut magma_image_create_info_t,
-        size_out: *mut u64,
-        image_out: *mut magma_buffer_t,
-        buffer_id_out: *mut magma_buffer_id_t,
-    ) -> magma_status_t;
-}
-unsafe extern "C" {
-    #[doc = "\n \\brief Returns parameters for an image created with virtmagma_create_image.\n \\param connection An open connection.\n \\param image The image buffer.\n \\param image_info_out Output parameters describing the image.\n"]
-    pub fn magma_virt_connection_get_image_info(
-        connection: magma_connection_t,
-        image: magma_buffer_t,
-        image_info_out: *mut magma_image_info_t,
-    ) -> magma_status_t;
-}
-unsafe extern "C" {
     #[doc = "\n \\brief Creates a context on the given connection.\n \\param connection An open connection.\n \\param priority The priority of the connection. Higher numbers are higher priorities.\n \\param context_id_out The returned context id.\n"]
     pub fn magma_connection_create_context2(
         connection: magma_connection_t,
@@ -558,18 +540,6 @@ pub struct virtmagma_command_descriptor {
     pub command_buffers: __u64,
     pub semaphore_size: __u64,
     pub semaphores: __u64,
-}
-#[repr(C)]
-#[derive(Debug, Default, Copy, Clone, IntoBytes, FromBytes, Immutable)]
-pub struct virtmagma_create_image_wrapper {
-    pub create_info: __u64,
-    pub create_info_size: __u64,
-}
-#[repr(C)]
-#[derive(Debug, Default, Copy, Clone, IntoBytes, FromBytes, Immutable)]
-pub struct virtmagma_get_image_info_wrapper {
-    pub image_info_out: __u64,
-    pub image_info_size: __u64,
 }
 #[repr(C)]
 #[derive(Debug, Default, Copy, Clone, IntoBytes, FromBytes, Immutable)]
@@ -755,10 +725,6 @@ pub const virtio_magma_ctrl_type_VIRTIO_MAGMA_CMD_CONNECTION_CLEAR_PERFORMANCE_C
     virtio_magma_ctrl_type = 4158;
 pub const virtio_magma_ctrl_type_VIRTIO_MAGMA_CMD_CONNECTION_READ_PERFORMANCE_COUNTER_COMPLETION:
     virtio_magma_ctrl_type = 4159;
-pub const virtio_magma_ctrl_type_VIRTIO_MAGMA_CMD_VIRT_CONNECTION_CREATE_IMAGE:
-    virtio_magma_ctrl_type = 4182;
-pub const virtio_magma_ctrl_type_VIRTIO_MAGMA_CMD_VIRT_CONNECTION_GET_IMAGE_INFO:
-    virtio_magma_ctrl_type = 4168;
 pub const virtio_magma_ctrl_type_VIRTIO_MAGMA_CMD_CONNECTION_CREATE_CONTEXT2:
     virtio_magma_ctrl_type = 4188;
 pub const virtio_magma_ctrl_type_VIRTIO_MAGMA_RESP_DEVICE_IMPORT: virtio_magma_ctrl_type = 8238;
@@ -833,10 +799,6 @@ pub const virtio_magma_ctrl_type_VIRTIO_MAGMA_RESP_CONNECTION_DUMP_PERFORMANCE_C
 pub const virtio_magma_ctrl_type_VIRTIO_MAGMA_RESP_CONNECTION_CLEAR_PERFORMANCE_COUNTERS:
     virtio_magma_ctrl_type = 8254;
 pub const virtio_magma_ctrl_type_VIRTIO_MAGMA_RESP_CONNECTION_READ_PERFORMANCE_COUNTER_COMPLETION : virtio_magma_ctrl_type = 8255 ;
-pub const virtio_magma_ctrl_type_VIRTIO_MAGMA_RESP_VIRT_CONNECTION_CREATE_IMAGE:
-    virtio_magma_ctrl_type = 8278;
-pub const virtio_magma_ctrl_type_VIRTIO_MAGMA_RESP_VIRT_CONNECTION_GET_IMAGE_INFO:
-    virtio_magma_ctrl_type = 8264;
 pub const virtio_magma_ctrl_type_VIRTIO_MAGMA_RESP_CONNECTION_CREATE_CONTEXT2:
     virtio_magma_ctrl_type = 8284;
 pub const virtio_magma_ctrl_type_VIRTIO_MAGMA_RESP_ERR_UNIMPLEMENTED: virtio_magma_ctrl_type =
@@ -1600,44 +1562,6 @@ pub struct virtio_magma_connection_read_performance_counter_completion_resp {
 }
 pub type virtio_magma_connection_read_performance_counter_completion_resp_t =
     virtio_magma_connection_read_performance_counter_completion_resp;
-#[repr(C, packed)]
-#[derive(Debug, Default, Copy, Clone, IntoBytes, FromBytes, Immutable)]
-pub struct virtio_magma_virt_connection_create_image_ctrl {
-    pub hdr: virtio_magma_ctrl_hdr_t,
-    pub connection: u64,
-    pub create_info: u64,
-}
-pub type virtio_magma_virt_connection_create_image_ctrl_t =
-    virtio_magma_virt_connection_create_image_ctrl;
-#[repr(C, packed)]
-#[derive(Debug, Default, Copy, Clone, IntoBytes, FromBytes, Immutable)]
-pub struct virtio_magma_virt_connection_create_image_resp {
-    pub hdr: virtio_magma_ctrl_hdr_t,
-    pub size_out: u64,
-    pub image_out: u64,
-    pub buffer_id_out: u64,
-    pub result_return: u64,
-}
-pub type virtio_magma_virt_connection_create_image_resp_t =
-    virtio_magma_virt_connection_create_image_resp;
-#[repr(C, packed)]
-#[derive(Debug, Default, Copy, Clone, IntoBytes, FromBytes, Immutable)]
-pub struct virtio_magma_virt_connection_get_image_info_ctrl {
-    pub hdr: virtio_magma_ctrl_hdr_t,
-    pub connection: u64,
-    pub image: u64,
-    pub image_info_out: u64,
-}
-pub type virtio_magma_virt_connection_get_image_info_ctrl_t =
-    virtio_magma_virt_connection_get_image_info_ctrl;
-#[repr(C, packed)]
-#[derive(Debug, Default, Copy, Clone, IntoBytes, FromBytes, Immutable)]
-pub struct virtio_magma_virt_connection_get_image_info_resp {
-    pub hdr: virtio_magma_ctrl_hdr_t,
-    pub result_return: u64,
-}
-pub type virtio_magma_virt_connection_get_image_info_resp_t =
-    virtio_magma_virt_connection_get_image_info_resp;
 #[repr(C, packed)]
 #[derive(Debug, Default, Copy, Clone, IntoBytes, FromBytes, Immutable)]
 pub struct virtio_magma_connection_create_context2_ctrl {

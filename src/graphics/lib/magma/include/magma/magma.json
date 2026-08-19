@@ -990,62 +990,6 @@
                 ]
             },
             {
-                "ordinal": 86,
-                "name": "magma_virt_connection_create_image",
-                "type": "magma_status_t",
-                "description": "Creates an image buffer backed by a buffer collection given a DRM format and optional modifier, as specified in the create info.",
-                "arguments": [
-                    {
-                        "name": "connection",
-                        "type": "magma_connection_t",
-                        "description": "An open connection."
-                    },
-                    {
-                        "name": "create_info",
-                        "type": "magma_image_create_info_t*",
-                        "description": "Input parameters describing the image."
-                    },
-                    {
-                        "name": "size_out",
-                        "type": "uint64_t*",
-                        "description": "The size of the image buffer in bytes"
-                    },
-                    {
-                        "name": "image_out",
-                        "type": "magma_buffer_t*",
-                        "description": "The image buffer."
-                    },
-                    {
-                        "name": "buffer_id_out",
-                        "type": "magma_buffer_id_t*",
-                        "description": "The ID of the image buffer."
-                    }
-                ]
-            },
-            {
-                "ordinal": 72,
-                "name": "magma_virt_connection_get_image_info",
-                "type": "magma_status_t",
-                "description": "Returns parameters for an image created with virtmagma_create_image.",
-                "arguments": [
-                    {
-                        "name": "connection",
-                        "type": "magma_connection_t",
-                        "description": "An open connection."
-                    },
-                    {
-                        "name": "image",
-                        "type": "magma_buffer_t",
-                        "description": "The image buffer."
-                    },
-                    {
-                        "name": "image_info_out",
-                        "type": "magma_image_info_t*",
-                        "description": "Output parameters describing the image."
-                    }
-                ]
-            },
-            {
                 "ordinal": 92,
                 "name": "magma_connection_create_context2",
                 "type": "magma_status_t",
