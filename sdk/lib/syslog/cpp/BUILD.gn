@@ -180,7 +180,10 @@ sdk_source_set("cpp") {
     ]
   }
   if (!is_fuchsia) {
-    public_deps += [ "//sdk/lib/syslog/structured_backend:host_cpp" ]
+    public_deps += [
+      "//sdk/lib/syslog/structured_backend:host_cpp",
+      "//zircon/system/public",
+    ]
   }
   deps = []
   if (is_fuchsia) {

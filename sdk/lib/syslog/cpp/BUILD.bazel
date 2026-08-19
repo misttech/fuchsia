@@ -50,6 +50,7 @@ idk_cc_source_library(
     ],
     non_fuchsia_deps = [
         "//sdk/lib/syslog/structured_backend:host_cpp",
+        "//zircon/system/public",
     ],
     implementation_deps = [],  # For bazel2gn, fuchsia_implementation_deps appends to this in GN.
     fuchsia_implementation_deps = [
