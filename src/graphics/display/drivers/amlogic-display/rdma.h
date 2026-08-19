@@ -184,6 +184,7 @@ class RdmaEngine {
   // `node` must outlive the RdmaEngine.
   RdmaEngine(fdf::MmioBuffer vpu_mmio, zx::bti dma_bti, zx::interrupt rdma_done_interrupt,
              fdf::SynchronizedDispatcher irq_handler_dispatcher, inspect::Node* node);
+  ~RdmaEngine();
 
   // This must be called before any other methods.
   zx_status_t SetupRdma();
@@ -265,6 +266,8 @@ class RdmaEngine {
   inspect::UintProperty last_rdma_pending_in_vsync_timestamp_ns_prop_;
 
   zx::time_monotonic last_rdma_pending_in_vsync_timestamp_;
+
+  bool released_ = false;
 };
 
 }  // namespace amlogic_display

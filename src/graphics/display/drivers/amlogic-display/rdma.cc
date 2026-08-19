@@ -525,9 +525,21 @@ void RdmaEngine::InterruptHandler(async_dispatcher_t* dispatcher, async::IrqBase
   zx::unowned_interrupt(irq->object())->ack();
 }
 
+RdmaEngine::~RdmaEngine() { Release(); }
+
 void RdmaEngine::Release() {
+  if (released_) {
+    return;
+  }
+  released_ = true;
+  StopRdma();
   rdma_irq_.destroy();
-  rdma_pmt_.unpin();
+  if (rdma_pmt_.is_valid()) {
+    rdma_pmt_.unpin();
+  }
+  if (afbc_rdma_pmt_.is_valid()) {
+    afbc_rdma_pmt_.unpin();
+  }
   rdma_irq_handler_dispatcher_.reset();
 }
 

@@ -579,13 +579,20 @@ void DisplayEngine::SubmitConfiguration(display::DisplayId display_id, display::
 }
 
 void DisplayEngine::Deinitialize() {
+  if (!fully_initialized()) {
+    return;
+  }
+  full_init_done_.store(false, std::memory_order_release);
+
   vsync_receiver_.reset();
 
   // TODO(https://fxbug.dev/42082206): Power off should occur after all threads are
   // destroyed. Otherwise other threads may still write to the VPU MMIO which
   // can cause the system to hang.
-  if (fully_initialized()) {
+  if (video_input_unit_) {
     video_input_unit_->Release();
+  }
+  if (vpu_) {
     vpu_->PowerOff();
   }
 
@@ -1255,7 +1262,7 @@ DisplayEngine::DisplayEngine(std::shared_ptr<fdf::Namespace> incoming,
   ZX_DEBUG_ASSERT(incoming_ != nullptr);
   ZX_DEBUG_ASSERT(engine_events != nullptr);
 }
-DisplayEngine::~DisplayEngine() {}
+DisplayEngine::~DisplayEngine() { Deinitialize(); }
 
 // static
 zx::result<std::unique_ptr<DisplayEngine>> DisplayEngine::Create(

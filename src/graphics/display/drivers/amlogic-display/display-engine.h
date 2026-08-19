@@ -89,11 +89,8 @@ class DisplayEngine final : public display::DisplayEngineInterface {
 
   // Tears down display submodules and turns off the hardware.
   //
-  // Must be called exactly once before the DisplayEngine instance is
-  // destroyed in production code.
-  //
-  // TODO(https://fxbug.dev/42082357): Move the Deinitialize behavior to the
-  // destructor.
+  // Must be called before the DisplayEngine instance is destroyed in production code,
+  // or called automatically by the destructor.
   void Deinitialize();
 
   // `display::DisplayEngineInterface`:
