@@ -6,6 +6,7 @@ use errors::{FfxError, IntoExitCode};
 use fidl_fuchsia_developer_ffx::{
     DaemonError, OpenTargetError, TargetConnectionError, TunnelError,
 };
+use traceable_error::TraceableError;
 
 /// The default target name if no target spec is given (for debugging, reporting to the user, etc).
 pub const UNSPECIFIED_TARGET_NAME: &str = "[unspecified]";
@@ -189,6 +190,23 @@ impl Into<FfxError> for FfxTargetError {
     }
 }
 
+impl TraceableError for FfxTargetError {
+    fn layer_code(&self) -> String {
+        let variant_str = match self {
+            Self::DaemonError { err, .. } => format!("DaemonError({:?})", err),
+            Self::OpenTargetError { err, .. } => format!("OpenTargetError({:?})", err),
+            Self::TunnelError { err, .. } => format!("TunnelError({:?})", err),
+            Self::TargetConnectionError { err, .. } => format!("TargetConnectionError({:?})", err),
+            Self::DaemonCommunicationError { .. } => "DaemonCommunicationError".to_string(),
+        };
+        format!("target_errors::FfxTargetError::{}", variant_str)
+    }
+
+    fn chain_codes(&self) -> Vec<String> {
+        vec![self.layer_code()]
+    }
+}
+
 #[cfg(cw)]
 mod cw {
     #[cfg(not(target_os = "fuchsia"))]
@@ -308,5 +326,34 @@ mod tests {
         assert_eq!(target_string(&None), UNSPECIFIED_TARGET_NAME);
         assert_eq!(target_string(&Some("".to_string())), UNSPECIFIED_TARGET_NAME);
         assert_eq!(target_string(&Some("kittens".to_string())), "\"kittens\"");
+    }
+
+    #[test]
+    fn test_traceable_error() {
+        let err = FfxTargetError::DaemonError {
+            err: DaemonError::Timeout,
+            target: Some("test".to_string()),
+        };
+        assert_eq!(err.chain_codes().len(), 1);
+        assert_eq!(err.layer_code(), "target_errors::FfxTargetError::DaemonError(Timeout)");
+
+        let open_err = FfxTargetError::OpenTargetError {
+            err: OpenTargetError::TargetNotFound,
+            target: None,
+            targets: vec![],
+        };
+        assert_eq!(
+            open_err.layer_code(),
+            "target_errors::FfxTargetError::OpenTargetError(TargetNotFound)"
+        );
+
+        let comm_err = FfxTargetError::DaemonCommunicationError {
+            error: std::sync::Arc::new(fidl::Error::ExtraBytes),
+            target: None,
+        };
+        assert_eq!(
+            comm_err.layer_code(),
+            "target_errors::FfxTargetError::DaemonCommunicationError"
+        );
     }
 }

@@ -229,6 +229,7 @@ mod tests {
 
         let boxed_err = consume_box().unwrap_err();
         assert_eq!(boxed_err.chain_codes().len(), 1);
+        assert_eq!(boxed_err.chain_codes()[0], "anyhow");
         assert_eq!(boxed_err.to_string(), "root failure");
     }
 
