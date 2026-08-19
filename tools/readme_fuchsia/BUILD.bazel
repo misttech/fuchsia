@@ -20,7 +20,9 @@ go_library(
     ],
     importpath = "go.fuchsia.dev/fuchsia/tools/readme_fuchsia",
     target_compatible_with = HOST_CONSTRAINTS,
-    visibility = ["//visibility:public"],
+    visibility = [
+        "//tools/check-licenses:__pkg__",
+    ],
 )
 
 go_library(
@@ -33,7 +35,6 @@ go_library(
     ],
 )
 
-# @bazel2gn:skip
 go_binary_host_tool(
     name = "readme_fuchsia_bin",
     embed = [":main"],
@@ -50,7 +51,9 @@ host_go_test(
     ],
     embed = [":readme_fuchsia_lib"],
     target_compatible_with = HOST_CONSTRAINTS,
-    visibility = ["//visibility:public"],
+    visibility = [
+        "//tools/check-licenses:__pkg__",
+    ],
 )
 
 host_go_test(
@@ -58,7 +61,6 @@ host_go_test(
     srcs = ["cmd/main_test.go"],
     embed = [":main"],
     target_compatible_with = HOST_CONSTRAINTS,
-    visibility = ["//visibility:public"],
 )
 
 test_suite(
@@ -67,5 +69,5 @@ test_suite(
         ":main_test",
         ":readme_fuchsia_test",
     ],
-    visibility = ["//visibility:public"],
+    visibility = ["//tools:__pkg__"],
 )

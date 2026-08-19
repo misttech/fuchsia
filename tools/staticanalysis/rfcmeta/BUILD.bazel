@@ -5,6 +5,7 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_library")
 load("@platforms//host:constraints.bzl", "HOST_CONSTRAINTS")
 load("//build/bazel/rules/host:defs.bzl", "go_binary_host_tool")
+load("//build/bazel/rules/host_tests:host_go_test.bzl", "host_go_test")
 
 package(default_applicable_licenses = ["//:license"])
 
@@ -21,9 +22,23 @@ go_library(
     ],
 )
 
-# @bazel2gn:skip
 go_binary_host_tool(
     name = "rfcmeta",
     embed = [":rfcmeta_lib"],
     target_compatible_with = HOST_CONSTRAINTS,
+)
+
+host_go_test(
+    name = "rfcmeta_tests",
+    srcs = [
+        "rfcmeta_test.go",
+    ],
+    embed = [":rfcmeta_lib"],
+    target_compatible_with = HOST_CONSTRAINTS,
+    visibility = ["//tools:__pkg__"],
+    deps = [
+        "//third_party/golibs:github.com/google/go-cmp/cmp",
+        "//third_party/golibs:github.com/google/go-cmp/cmp/cmpopts",
+        "//tools/staticanalysis",
+    ],
 )
