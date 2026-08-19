@@ -34,8 +34,10 @@ wlancfg_tests_for_wlan_presubmit = [
 ]
 
 # These tests run in blocking CI (~once per hour).
-wlancfg_tests_for_postsubmit =
-    [ "//src/connectivity/wlan/tests/wlancfg:regulatory_recovery_test" ]
+wlancfg_tests_for_postsubmit = [
+  "//src/connectivity/wlan/tests/wlancfg:policy_scan_test",
+  "//src/connectivity/wlan/tests/wlancfg:regulatory_recovery_test",
+]
 
 # If you're writing a new test, add it to FYI first until it has a sufficient
 # number of passing runs (either here in FYI or via `fx test-remote`). Tests in
@@ -50,7 +52,6 @@ wlancfg_tests_for_fyi = [
   "//src/connectivity/wlan/tests/wlancfg:dhcpv4_interop_combinatorial_options_test",
   "//src/connectivity/wlan/tests/wlancfg:dhcpv4_interop_fixture_test",
   "//src/connectivity/wlan/tests/wlancfg:ping_test",
-  "//src/connectivity/wlan/tests/wlancfg:policy_scan_test",
   "//src/connectivity/wlan/tests/wlancfg:saved_networks_test",
   "//src/connectivity/wlan/tests/wlancfg:vape_interop_test",
   "//src/connectivity/wlan/tests/wlancfg:wlan_bss_transition_management_test",
