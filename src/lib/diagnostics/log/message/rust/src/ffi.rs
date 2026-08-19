@@ -7,13 +7,13 @@ use crate::{ExtendedMetadata, MessageFormatter};
 use bumpalo::Bump;
 use bumpalo::collections::{String as BumpaloString, Vec as BumpaloVec};
 use diagnostics_data::{ExtendedMoniker, Severity};
+use diagnostics_log_encoding::zx::BootInstant;
 use diagnostics_log_encoding::{Argument, Record, Value};
 use flyweights::FlyStr;
 use static_assertions::const_assert;
 use std::marker::PhantomData;
 use std::ops::Deref;
 use std::str;
-use zx::BootInstant;
 
 pub use crate::constants::*;
 
@@ -443,9 +443,9 @@ mod test {
     use crate::MessageParser;
     use bumpalo::Bump;
     use diagnostics_log_encoding::encode::{Encoder, EncoderOpts};
+    use diagnostics_log_encoding::zx::BootInstant;
     use diagnostics_log_encoding::{Argument, Header, LOG_CONTROL_BIT, Record};
     use std::io::Cursor;
-    use zx::BootInstant;
 
     fn overwrite_header_tag(bytes: &mut [u8], tag: u32) {
         if bytes.len() >= 8 {

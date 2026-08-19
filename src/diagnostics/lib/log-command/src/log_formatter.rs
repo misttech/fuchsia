@@ -164,7 +164,6 @@ where
     Ok(LogProcessingResult::Continue)
 }
 
-#[cfg(not(feature = "fdomain"))]
 /// Reads FXT logs from a socket and formats them using the given formatter and symbolizer.
 pub async fn dump_fxt_logs_from_socket<F, S>(
     socket: flex_client::AsyncSocket,

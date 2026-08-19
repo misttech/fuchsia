@@ -25,7 +25,6 @@ use std::string::FromUtf8Error;
 use std::time::Duration;
 use thiserror::Error;
 mod filter;
-#[cfg(not(feature = "fdomain"))]
 pub mod fxt_streamer;
 mod log_formatter;
 mod log_socket_stream;
@@ -35,7 +34,6 @@ pub use log_formatter::{
 };
 pub use log_socket_stream::{JsonDeserializeError, LogsDataStream};
 
-#[cfg(not(feature = "fdomain"))]
 pub use log_formatter::dump_fxt_logs_from_socket;
 
 // Subcommand for ffx log (either watch or dump).

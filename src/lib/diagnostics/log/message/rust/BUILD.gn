@@ -25,7 +25,6 @@ rustc_library("lib") {
 
   deps = [
     "//sdk/fidl/fuchsia.logger:fuchsia.logger_rust",
-    "//sdk/rust/zx",
     "//src/lib/diagnostics/data/rust",
     "//src/lib/diagnostics/log/encoding/rust",
     "//src/sys/lib/moniker",

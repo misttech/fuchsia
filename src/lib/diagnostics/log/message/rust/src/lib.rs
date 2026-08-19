@@ -6,10 +6,10 @@ use crate::error::MessageError;
 use byteorder::{ByteOrder, LittleEndian};
 use diagnostics_data::{
     BuilderArgs, Data, ExtendedMoniker, Logs, LogsData, LogsDataBuilder, LogsField, LogsProperty,
-    Severity,
+    Severity, Timestamp,
 };
 use diagnostics_log_encoding::{
-    ARCHIVIST_URL, Argument, Header, LOG_CONTROL_BIT, MONIKER, ROLLED_OUT, Record, URL, Value,
+    ARCHIVIST_URL, Argument, Header, LOG_CONTROL_BIT, MONIKER, ROLLED_OUT, Record, URL, Value, zx,
 };
 use flyweights::FlyStr;
 use libc::{c_char, c_int};
@@ -39,7 +39,7 @@ pub struct MonikerWithUrl {
 pub fn from_logger(source: MonikerWithUrl, msg: LoggerMessage) -> LogsData {
     let (raw_severity, severity) = Severity::parse_exact(msg.raw_severity);
     let mut builder = LogsDataBuilder::new(BuilderArgs {
-        timestamp: msg.timestamp,
+        timestamp: Timestamp::from_nanos(msg.timestamp.into_nanos()),
         component_url: Some(source.url),
         moniker: source.moniker,
         severity,
@@ -126,7 +126,7 @@ pub fn parse_logs_data<'a>(
             Moniker::parse_str("placeholder").unwrap(),
         )),
         severity,
-        timestamp: input.timestamp,
+        timestamp: Timestamp::from_nanos(input.timestamp.into_nanos()),
     });
 
     if rolled_out > 0 {

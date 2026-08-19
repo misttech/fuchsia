@@ -14,6 +14,100 @@ mod constants;
 pub mod encode;
 pub mod parse;
 
+#[cfg(target_os = "fuchsia")]
+pub use zx;
+
+#[cfg(not(target_os = "fuchsia"))]
+/// Implementation of the `zx` crate for host platforms.
+pub mod zx {
+    use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
+
+    /// Mock `sys` types for host platforms.
+    pub mod sys {
+        #[allow(non_camel_case_types)]
+        /// Raw koid type.
+        pub type zx_koid_t = u64;
+
+        #[allow(non_camel_case_types)]
+        /// Raw time type.
+        pub type zx_time_t = i64;
+    }
+
+    /// A timestamp from the boot clock.
+    #[derive(
+        Clone,
+        Copy,
+        Debug,
+        Default,
+        Eq,
+        Hash,
+        Ord,
+        PartialEq,
+        PartialOrd,
+        FromBytes,
+        IntoBytes,
+        Immutable,
+        KnownLayout,
+    )]
+    #[repr(transparent)]
+    pub struct BootInstant(i64);
+
+    impl BootInstant {
+        /// A `BootInstant` representing timestamp 0.
+        pub const ZERO: Self = Self(0);
+
+        /// Return a strongly-typed `BootInstant` from a raw number of nanoseconds.
+        pub const fn from_nanos(nanos: i64) -> Self {
+            Self(nanos)
+        }
+
+        /// Returns the number of nanoseconds contained by this `BootInstant`.
+        pub const fn into_nanos(self) -> i64 {
+            self.0
+        }
+
+        /// Get the current boot time.
+        pub fn get() -> Self {
+            let nanos = match std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH) {
+                Ok(d) => d.as_nanos() as i64,
+                Err(e) => -(e.duration().as_nanos() as i64),
+            };
+            Self::from_nanos(nanos)
+        }
+    }
+
+    /// The unique id assigned by kernel to the object referenced by a handle.
+    #[derive(
+        Clone,
+        Copy,
+        Debug,
+        Default,
+        Eq,
+        Hash,
+        Ord,
+        PartialEq,
+        PartialOrd,
+        FromBytes,
+        IntoBytes,
+        Immutable,
+        KnownLayout,
+    )]
+    #[repr(transparent)]
+    pub struct Koid(u64);
+
+    impl Koid {
+        /// Creates a `Koid` from a raw u64.
+        pub const fn from_raw(raw: u64) -> Self {
+            Self(raw)
+        }
+
+        /// Returns the raw u64 koid value.
+        pub const fn raw_koid(&self) -> u64 {
+            self.0
+        }
+    }
+}
+
 pub use constants::*;
 
 /// A raw severity.

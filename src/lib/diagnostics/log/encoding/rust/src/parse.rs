@@ -5,7 +5,7 @@
 //! Parse diagnostic records from streams, returning FIDL-generated structs that match expected
 //! diagnostic service APIs.
 
-use crate::{ArgType, Argument, Header, RawSeverity, Record, Value, constants};
+use crate::{ArgType, Argument, Header, RawSeverity, Record, Value, constants, zx};
 use std::borrow::Cow;
 use thiserror::Error;
 use zerocopy::FromBytes;

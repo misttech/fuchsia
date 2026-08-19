@@ -24,7 +24,6 @@ rustc_library("rust") {
   edition = "2024"
 
   deps = [
-    "//sdk/rust/zx",
     "//src/lib/diagnostics/log/types",
     "//third_party/rust_crates:bitfield",
     "//third_party/rust_crates:log",
@@ -38,6 +37,10 @@ rustc_library("rust") {
     deps += [
       "//sdk/fidl/fuchsia.diagnostics.types:fuchsia.diagnostics.types_rust",
     ]
+  }
+
+  if (!is_host) {
+    deps += [ "//sdk/rust/zx" ]
   }
 
   visibility = [
