@@ -11,12 +11,17 @@
 #include <lib/zx/vmo.h>
 #include <stdint.h>
 #include <sys/uio.h>
+#include <zircon/assert.h>
 #include <zircon/status.h>
 #include <zircon/types.h>
 
+#include <array>
 #include <optional>
+#include <span>
 
 #include <hwreg/bitfields.h>
+
+#include "src/storage/lib/block_server/block_server.h"
 
 namespace scsi {
 
@@ -964,6 +969,58 @@ class BlockDevice;
 using LuCallback =
     fit::function<zx::result<>(uint16_t lun, size_t block_size, uint64_t block_count)>;
 
+// A single SCSI command to execute.
+class ScsiRequest {
+ public:
+  ScsiRequest() = default;
+  ~ScsiRequest() {
+    if (parent_) {
+      ZX_ASSERT(completed_);
+    }
+  }
+
+  ScsiRequest(ScsiRequest&& other);
+  ScsiRequest& operator=(ScsiRequest&& other);
+  ScsiRequest(const ScsiRequest&) = delete;
+  ScsiRequest& operator=(const ScsiRequest&) = delete;
+
+  // Completes the SCSI command. This *must* be called before the destructor runs.
+  void Complete(zx_status_t status);
+
+  block_server::RequestId request_id() const { return request_id_; }
+  zx::unowned_vmo data_vmo() const { return data_vmo_->borrow(); }
+  uint64_t vmo_offset() const { return vmo_offset_; }
+  uint64_t device_offset() const { return device_offset_; }
+  uint64_t transfer_length() const { return transfer_length_; }
+  std::span<const uint8_t> cdb() const { return {cdb_.data(), cdb_length_}; }
+  std::span<const uint8_t> immediate_data() const {
+    return {immediate_data_.data(), immediate_data_length_};
+  }
+  bool is_write() const { return is_write_; }
+
+ private:
+  friend class BlockDevice;
+
+  block_server::RequestId request_id_;
+  zx::unowned_vmo data_vmo_;
+  uint64_t vmo_offset_;
+  uint64_t device_offset_;
+  uint64_t transfer_length_;
+
+  static constexpr size_t kMaxCdbLength = 16;
+  std::array<uint8_t, kMaxCdbLength> cdb_;
+  uint8_t cdb_length_;
+
+  static constexpr size_t kMaxImmediateDataLength = 24;
+  std::array<uint8_t, kMaxImmediateDataLength> immediate_data_;
+  uint8_t immediate_data_length_;
+
+  bool is_write_;
+  bool completed_ = false;
+
+  BlockDevice* parent_ = nullptr;
+};
+
 class Controller {
  public:
   virtual ~Controller() = default;
@@ -976,6 +1033,7 @@ class Controller {
   virtual std::shared_ptr<fdf::OutgoingDirectory>& driver_outgoing() = 0;
   virtual const std::optional<std::string>& driver_node_name() const = 0;
   virtual fdf::Logger& driver_logger() = 0;
+  virtual zx::event node_token() const { return {}; }
 
   // Size of metadata struct required for each command transaction by this controller. This metadata
   // struct must include scsi::DeviceOp as its first (and possibly only) member.
@@ -999,9 +1057,34 @@ class Controller {
   // like TRIM(block_trim_t) does not have a data vmo, but the SCSI UNMAP command requires a data
   // vmo to record the address and length of the block to be trimmed. In this case, the additional
   // buffer is passed through |data| and the device driver creates and manages the data vmo.
+  // TODO(https://fxbug.dev/505774108): Remove when all clients are migrated to
+  // [`ExecuteCommandsAsync`].
   virtual void ExecuteCommandAsync(uint8_t target, uint16_t lun, iovec cdb, bool is_write,
                                    uint32_t block_size_bytes, DeviceOp* device_op,
                                    iovec data = {nullptr, 0}) = 0;
+
+  // Asynchronously execute a batch of SCSI commands on the device at target:lun.
+  // Each request must be completed with [`ScsiRequest::Complete(status)`], whether it was
+  // successful or not (even if it was not submitted to hardware).
+  //
+  // NOTE: `batch` is a view into a temporary array.
+  // Callers are expected to move the elements out of the span and take ownership of them, retaining
+  // them until the request completes.  This is done rather than passing an owned data structure
+  // (like a vector) to avoid a temporary heap allocation if the driver wishes to store them in some
+  // other data structure.
+  //
+  // Thread safety: `ExecuteCommandsAsync` is called on the `BlockServer` session worker thread.
+  // Multiple sessions (or requests across multiple targets/LUNs) may invoke this method
+  // concurrently, so implementations must be thread-safe. `ScsiRequest::Complete` may be called
+  // from any thread (synchronously during `ExecuteCommandsAsync` or asynchronously from an
+  // interrupt/dispatcher thread).
+  virtual void ExecuteCommandsAsync(uint8_t target, uint16_t lun, std::span<ScsiRequest> batch) {}
+
+  // Exists to facilitate a soft migration. If true, all external requests will be sent via
+  // [`ExecuteCommandsAsync()`] rather than [`ExecuteCommandAsync`].
+  // TODO(https://fxbug.dev/505774108): Remove when all clients are migrated to
+  // [`ExecuteCommandsAsync`].
+  virtual bool UseNewInterface() const { return false; }
 
   // Test whether the target-lun is ready.
   zx_status_t TestUnitReady(uint8_t target, uint16_t lun);

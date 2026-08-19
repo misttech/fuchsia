@@ -29,6 +29,7 @@ test("block-device-test-bin") {
     "//src/devices/block/lib/scsi",
     "//src/lib/fxl/test:gtest_main",
     "//src/lib/testing/predicates",
+    "//src/storage/lib/block_client/cpp",
     "//zircon/system/ulib/fbl",
   ]
 }

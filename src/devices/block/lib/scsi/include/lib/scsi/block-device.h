@@ -5,14 +5,22 @@
 #ifndef SRC_DEVICES_BLOCK_LIB_SCSI_INCLUDE_LIB_SCSI_BLOCK_DEVICE_H_
 #define SRC_DEVICES_BLOCK_LIB_SCSI_INCLUDE_LIB_SCSI_BLOCK_DEVICE_H_
 
+#include <fidl/fuchsia.driver.token/cpp/fidl.h>
+#include <fidl/fuchsia.hardware.block.volume/cpp/wire.h>
 #include <fuchsia/hardware/block/driver/c/banjo.h>
 #include <fuchsia/hardware/block/driver/cpp/banjo.h>
 #include <lib/driver/compat/cpp/compat.h>
 #include <lib/driver/component/cpp/driver_base.h>
+#include <lib/fit/function.h>
 #include <lib/scsi/controller.h>
+#include <lib/sync/cpp/completion.h>
 #include <stdint.h>
 
+#include <optional>
+
 #include <fbl/string_printf.h>
+
+#include "src/storage/lib/block_server/block_server.h"
 
 namespace scsi {
 
@@ -47,7 +55,9 @@ struct DeviceOptions {
 
 // |BlockDevice| represents a single SCSI direct access block device.
 // |BlockDevice| bridges between the Zircon block protocol and SCSI commands/responses.
-class BlockDevice : public ddk::BlockImplProtocol<BlockDevice> {
+class BlockDevice : public ddk::BlockImplProtocol<BlockDevice>,
+                    public block_server::DriverInterface,
+                    public fidl::Server<fuchsia_driver_token::NodeToken> {
  public:
   // Public so that we can use make_unique.
   // Clients should use BlockDevice::Bind().
@@ -67,6 +77,10 @@ class BlockDevice : public ddk::BlockImplProtocol<BlockDevice> {
 
   virtual ~BlockDevice();
 
+  // Asynchronously shut down the block server, invoking `callback` upon completion.
+  // This must be called before the `BlockDevice` is deleted.
+  void ShutdownAsync(fit::callback<void()> callback);
+
   // Remove this block device.
   void RemoveDevice() {
     if (node_controller_.is_valid()) {
@@ -80,6 +94,13 @@ class BlockDevice : public ddk::BlockImplProtocol<BlockDevice> {
   fbl::String DeviceName() const {
     return fbl::StringPrintf("scsi-block-device-%u-%u", target_, lun_);
   }
+
+  // block_server::DriverInterface implementation
+  void OnRequests(std::span<block_server::Request> requests) override;
+  fdf::Logger& logger() const override;
+
+  // fuchsia_driver_token::NodeToken implementation
+  void Get(GetCompleter::Sync& completer) override;
 
   // ddk::BlockImplProtocol functions.
   void BlockImplQuery(block_info_t* info_out, size_t* block_op_size_out);
@@ -102,10 +123,11 @@ class BlockDevice : public ddk::BlockImplProtocol<BlockDevice> {
   // for test
   DeviceOptions& GetDeviceOptions() { return device_options_; }
 
+  // Exposed for testing
+  std::optional<block_server::BlockServer>& block_server() { return block_server_; }
+
  private:
   zx_status_t AddDevice(uint32_t max_transfer_bytes);
-
-  fdf::Logger& logger();
 
   Controller* const controller_;
   const uint8_t target_;
@@ -126,6 +148,8 @@ class BlockDevice : public ddk::BlockImplProtocol<BlockDevice> {
   DeviceOptions device_options_;
 
   fidl::WireSyncClient<fuchsia_driver_framework::NodeController> node_controller_;
+
+  std::optional<block_server::BlockServer> block_server_;
 
   compat::BanjoServer block_impl_server_{ZX_PROTOCOL_BLOCK_IMPL, this, &block_impl_protocol_ops_};
   compat::SyncInitializedDeviceServer compat_server_;
