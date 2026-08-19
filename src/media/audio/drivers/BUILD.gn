@@ -44,6 +44,7 @@ group("tests") {
     "tests",
     "usb-audio:tests",
     "virtual-audio:tests",
+    "virtual-audio-legacy:tests",
   ]
   if (target_cpu == "arm64") {
     deps += [

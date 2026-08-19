@@ -5,6 +5,7 @@
 import("//build/bind/bind.gni")
 import("//build/components.gni")
 import("//build/drivers.gni")
+import("//build/test.gni")
 import("//build/zbi/kernel_cmdline.gni")
 
 fuchsia_driver_package("virtual-audio-legacy") {
@@ -19,12 +20,13 @@ driver_bind_rules("virtual-audio-legacy-bind") {
 
 group("tests") {
   testonly = true
-  deps = [ ":virtual-audio-legacy-bind_test" ]
+  deps = [
+    ":virtual-audio-legacy-bind_test",
+    ":virtual-audio-legacy-test",
+  ]
 }
 
-fuchsia_cc_driver("virtual-audio-legacy-driver") {
-  legacy = true
-
+source_set("common") {
   sources = [
     "virtual-audio-codec.cc",
     "virtual-audio-codec.h",
@@ -38,8 +40,7 @@ fuchsia_cc_driver("virtual-audio-legacy-driver") {
     "virtual-audio-stream.h",
   ]
 
-  deps = [
-    ":virtual-audio-legacy-bind",
+  public_deps = [
     "//sdk/fidl/fuchsia.hardware.audio:fuchsia.hardware.audio_cpp",
     "//sdk/fidl/fuchsia.virtualaudio:fuchsia.virtualaudio_cpp",
     "//sdk/lib/async:async-cpp",
@@ -57,11 +58,40 @@ fuchsia_cc_driver("virtual-audio-legacy-driver") {
   ]
 }
 
+fuchsia_cc_driver("virtual-audio-legacy-driver") {
+  legacy = true
+
+  deps = [
+    ":common",
+    ":virtual-audio-legacy-bind",
+  ]
+}
+
 fuchsia_driver_component("virtual-audio-legacy-driver-component") {
   component_name = "virtual-audio-legacy-driver"
   deps = [ ":virtual-audio-legacy-driver" ]
   info = "meta/virtual-audio-legacy-info.json"
   manifest = "meta/virtual-audio-legacy.cml"
+}
+
+test("virtual-audio-legacy-test-bin") {
+  sources = [ "virtual-audio-dai-test.cc" ]
+  deps = [
+    ":common",
+    "//sdk/lib/driver/testing/cpp",
+    "//src/devices/testing/mock-ddk",
+    "//zircon/system/ulib/zxtest",
+  ]
+}
+
+fuchsia_unittest_package("virtual-audio-legacy-test") {
+  deps = [ ":virtual-audio-legacy-test-bin" ]
+  test_specs = {
+    environments = basic_envs
+    log_settings = {
+      max_severity = "INFO"
+    }
+  }
 }
 
 kernel_cmdline("kernel-logging") {

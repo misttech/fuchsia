@@ -151,9 +151,7 @@ VirtualAudioDai::~VirtualAudioDai() {
   if (ring_buffer_binding_.has_value()) {
     ring_buffer_binding_->Unbind();
   }
-  if (dai_binding_.has_value()) {
-    dai_binding_->Unbind();
-  }
+  dai_bindings_.RemoveAll();
 }
 
 void VirtualAudioDai::GetProperties(
@@ -484,9 +482,7 @@ void VirtualAudioDai::ShutdownAsync() {
   if (ring_buffer_binding_.has_value()) {
     ring_buffer_binding_->Unbind();
   }
-  if (dai_binding_.has_value()) {
-    dai_binding_->Unbind();
-  }
+  dai_bindings_.RemoveAll();
   DdkAsyncRemove();
 }
 
@@ -494,9 +490,7 @@ void VirtualAudioDai::DdkRelease() {
   if (ring_buffer_binding_.has_value()) {
     ring_buffer_binding_->Unbind();
   }
-  if (dai_binding_.has_value()) {
-    dai_binding_->Unbind();
-  }
+  dai_bindings_.RemoveAll();
   OnShutdown();
 }
 

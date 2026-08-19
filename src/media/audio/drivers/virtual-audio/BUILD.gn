@@ -16,7 +16,10 @@ driver_bind_rules("virtual-audio-bind") {
 
 group("tests") {
   testonly = true
-  deps = [ ":virtual-audio-test" ]
+  deps = [
+    ":virtual-audio-bind_test",
+    ":virtual-audio-test",
+  ]
 }
 
 source_set("common") {
