@@ -4,12 +4,13 @@
 
 use std::num::NonZeroU8;
 
+use selinux_policy_derive::{HasName, HasPolicyId, Validate};
+
 use super::NewPolicy;
 use super::error::{ParseError, SerializeError, ValidateError};
 use super::id_type::IdType;
 use super::parser::{PolicyCursor, PolicyWriter};
 use super::traits::{Parse, PolicyId, Serialize, Validate};
-use selinux_policy_derive::{HasName, HasPolicyId};
 
 /// Tag type for type safety of policy permission identifiers.
 #[derive(Copy, Clone, Debug, Hash, Eq, PartialEq)]
@@ -19,7 +20,7 @@ pub struct PermissionTag;
 pub type PermissionId = IdType<NonZeroU8, PermissionTag>;
 
 /// Parsed SELinux permission, containing a type-safe ID and a name.
-#[derive(Debug, HasName, HasPolicyId)]
+#[derive(Debug, Validate, HasName, HasPolicyId)]
 pub struct Permission {
     id: PermissionId,
     name: Box<[u8]>,
@@ -48,13 +49,6 @@ impl Serialize for Permission {
         length.serialize(writer)?;
         self.id.as_u32().serialize(writer)?;
         writer.write_bytes(&self.name);
-        Ok(())
-    }
-}
-
-impl Validate for Permission {
-    fn validate(&self, _policy: &NewPolicy) -> Result<(), ValidateError> {
-        // Validation is complete structurally during parsing (ID is non-zero and <= 32).
         Ok(())
     }
 }

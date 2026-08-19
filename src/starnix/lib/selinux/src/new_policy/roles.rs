@@ -2,6 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use std::num::NonZeroU16;
+
+use selinux_policy_derive::{HasName, HasPolicyId, Parse, Serialize, Validate};
+
 use super::bitmap::IdSet;
 use super::error::{ParseError, SerializeError, ValidateError};
 use super::id_type::IdType;
@@ -9,14 +13,12 @@ use super::parser::{PolicyCursor, PolicyWriter};
 use super::traits::{Parse, PolicyId, Serialize, Validate};
 use super::{ClassId, NewPolicy, TypeId, TypeSet};
 
-use selinux_policy_derive::{HasName, HasPolicyId, Parse, Serialize, Validate};
-
 /// Tag type for type safety of policy role identifiers.
 #[derive(Copy, Clone, Debug, Hash, Eq, PartialEq)]
 pub struct RoleTag;
 
 /// Identifies a role within a policy.
-pub type RoleId = IdType<std::num::NonZeroU16, RoleTag>;
+pub type RoleId = IdType<NonZeroU16, RoleTag>;
 
 /// Set of [`RoleId`]s.
 pub type RoleSet = IdSet<RoleId>;

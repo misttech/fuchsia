@@ -12,7 +12,7 @@ use super::traits::{Parse, PolicyId, Serialize, Validate};
 use super::{CategoryId, SensitivityId, TypeId};
 
 /// MLS sensitivity level definition in an SELinux policy.
-#[derive(Debug, HasName, HasPolicyId)]
+#[derive(Debug, Validate, HasName, HasPolicyId)]
 pub struct Sensitivity {
     id: SensitivityId,
     name: Box<[u8]>,
@@ -62,13 +62,6 @@ impl Serialize for Sensitivity {
     }
 }
 
-impl Validate for Sensitivity {
-    fn validate(&self, policy: &super::NewPolicy) -> Result<(), ValidateError> {
-        self.level.validate(policy)?;
-        Ok(())
-    }
-}
-
 impl Validate for SensitivityId {
     fn validate(&self, policy: &super::NewPolicy) -> Result<(), ValidateError> {
         policy
@@ -80,7 +73,7 @@ impl Validate for SensitivityId {
 }
 
 /// MLS category definition in an SELinux policy.
-#[derive(Debug, HasName, HasPolicyId)]
+#[derive(Debug, Validate, HasName, HasPolicyId)]
 pub struct Category {
     id: CategoryId,
     name: Box<[u8]>,
@@ -121,12 +114,6 @@ impl Serialize for Category {
         };
         metadata.serialize(writer)?;
         writer.write_bytes(&self.name);
-        Ok(())
-    }
-}
-
-impl Validate for Category {
-    fn validate(&self, _policy: &super::NewPolicy) -> Result<(), ValidateError> {
         Ok(())
     }
 }

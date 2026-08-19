@@ -122,16 +122,9 @@ impl<C: Serialize> Serialize for IdAndNameIndexed<C> {
     }
 }
 
-impl<C, T> Validate for IdAndNameIndexed<C>
-where
-    C: Deref<Target = [T]>,
-    T: Validate,
-{
+impl<C: Validate> Validate for IdAndNameIndexed<C> {
     fn validate(&self, policy: &NewPolicy) -> Result<(), ValidateError> {
-        for item in self.container.iter() {
-            item.validate(policy)?;
-        }
-        Ok(())
+        self.container.validate(policy)
     }
 }
 

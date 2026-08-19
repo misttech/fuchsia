@@ -2,11 +2,12 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use strum::VariantArray as _;
+use strum_macros::VariantArray;
+
 use super::error::ValidateError;
 use super::traits::{PolicyId, Validate};
 use super::{NewPolicy, bitmap};
-use strum::VariantArray as _;
-use strum_macros::VariantArray;
 
 /// Reference policy capability Ids.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, VariantArray)]

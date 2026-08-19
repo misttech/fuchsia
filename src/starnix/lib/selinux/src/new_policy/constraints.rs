@@ -2,13 +2,15 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use std::ops::Deref;
+
+pub use selinux_policy_derive::{Parse, Serialize, Validate};
+
 use super::bitmap::IdSet;
 use super::error::{ParseError, SerializeError, ValidateError};
 use super::parser::{Array, PolicyCursor, PolicyWriter};
 use super::traits::{Parse, PolicyId, Serialize, Validate};
 use super::{AccessVector, NewPolicy, RoleId, TypeId, UserId};
-
-pub use selinux_policy_derive::{Parse, Serialize, Validate};
 
 /// Set of identifiers (Users, Roles, or Types) with negative matching and flags used in constraints.
 /// Note that in practice this structure's fields are always empty for User and Role expressions,
@@ -372,7 +374,7 @@ pub struct ConstraintNode {
     terms: Array<ConstraintTerm>,
 }
 
-impl std::ops::Deref for ConstraintNode {
+impl Deref for ConstraintNode {
     type Target = [ConstraintTerm];
 
     fn deref(&self) -> &Self::Target {

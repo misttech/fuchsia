@@ -2,14 +2,15 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use bstr::BString;
+use thiserror::Error;
+
 use super::bitmap::MAP_NODE_BITS;
 use super::metadata::{
     CONFIG_MLS_FLAG, POLICYDB_SIGNATURE, POLICYDB_STRING_MAX_LENGTH, POLICYDB_VERSION_MAX,
     POLICYDB_VERSION_MIN, SELINUX_MAGIC,
 };
 use super::rules::{RuleKey, RuleKind};
-use bstr::BString;
-use thiserror::Error;
 
 /// Errors that may be encountered parsing a binary policy.
 #[derive(Clone, Debug, Error, PartialEq)]

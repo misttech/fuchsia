@@ -4,13 +4,14 @@
 
 //! System object context labeling rules parsed from SELinux binary policy.
 
+use selinux_policy_derive::{Parse, Serialize, Validate};
+
 use super::classes::ClassId;
 use super::context::Context;
 use super::error::{ParseError, SerializeError};
 use super::metadata::PolicyVersion;
 use super::parser::{Array, ByteArray, PolicyCursor, PolicyWriter};
 use super::traits::{Parse, Serialize};
-use selinux_policy_derive::{Parse, Serialize, Validate};
 
 /// Named context pair mapping a filesystem type string to mount and root security [`Context`]s.
 ///

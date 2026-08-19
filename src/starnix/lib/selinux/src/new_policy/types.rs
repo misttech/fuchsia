@@ -49,7 +49,7 @@ pub enum TypeKind {
 }
 
 /// Parsed SELinux type, containing an ID, a name, properties, and optional bounds.
-#[derive(Debug, HasPolicyId)]
+#[derive(Debug, Validate, HasPolicyId)]
 pub struct Type {
     id: TypeId,
     name: Box<[u8]>,
@@ -96,13 +96,6 @@ impl Serialize for Type {
         };
         metadata.serialize(writer)?;
         writer.write_bytes(&self.name);
-        Ok(())
-    }
-}
-
-impl Validate for Type {
-    fn validate(&self, _policy: &NewPolicy) -> Result<(), ValidateError> {
-        // Structural validation is done during parsing.
         Ok(())
     }
 }
@@ -174,10 +167,7 @@ impl Serialize for Types {
 
 impl Validate for Types {
     fn validate(&self, policy: &NewPolicy) -> Result<(), ValidateError> {
-        for t in self.ordered.iter() {
-            t.validate(policy)?;
-        }
-        Ok(())
+        self.ordered.validate(policy)
     }
 }
 

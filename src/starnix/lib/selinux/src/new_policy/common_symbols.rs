@@ -2,6 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use std::num::NonZeroU16;
+
+use selinux_policy_derive::{HasName, HasPolicyId, Parse, Serialize};
+
 use super::NewPolicy;
 use super::error::{ParseError, SerializeError, ValidateError};
 use super::id_type::IdType;
@@ -9,14 +13,13 @@ use super::indexed::IdAndNameIndexed;
 use super::parser::{PolicyCursor, PolicyWriter};
 use super::permissions::Permission;
 use super::traits::{Parse, PolicyId, Serialize, Validate};
-use selinux_policy_derive::{HasName, HasPolicyId, Parse, Serialize};
 
 /// Tag type for type safety of policy common symbol identifiers.
 #[derive(Copy, Clone, Debug, Hash, Eq, Ord, PartialEq, PartialOrd)]
 pub struct CommonSymbolTag;
 
 /// Identifies a common symbol within a policy.
-pub type CommonSymbolId = IdType<std::num::NonZeroU16, CommonSymbolTag>;
+pub type CommonSymbolId = IdType<NonZeroU16, CommonSymbolTag>;
 
 /// Parsed SELinux common symbol table entry (e.g. `common file { ... }`).
 #[derive(Debug, HasName, HasPolicyId)]
@@ -74,9 +77,7 @@ impl Serialize for CommonSymbol {
         header.serialize(writer)?;
 
         writer.write_bytes(&self.name);
-        for permission in self.permissions.iter() {
-            permission.serialize(writer)?;
-        }
+        self.permissions.serialize(writer)?;
         Ok(())
     }
 }

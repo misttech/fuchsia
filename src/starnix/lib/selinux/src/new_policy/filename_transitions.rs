@@ -2,16 +2,18 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use std::hash::{BuildHasher, Hash, Hasher};
+
+use hashbrown::HashTable;
+use rapidhash::RapidBuildHasher;
+use selinux_policy_derive::{Parse, Serialize, Validate};
+
+use super::bitmap::IdSet;
 use super::error::{ParseError, SerializeError, ValidateError};
 use super::metadata::PolicyVersion;
 use super::parser::{Array, ByteArray, PolicyCursor, PolicyWriter};
 use super::traits::{Parse, Serialize, Validate};
 use super::{ClassId, NewPolicy, TypeId, U24Index};
-use crate::new_policy::bitmap::IdSet;
-use hashbrown::HashTable;
-use rapidhash::RapidBuildHasher;
-use selinux_policy_derive::{Parse, Serialize, Validate};
-use std::hash::{BuildHasher, Hash, Hasher};
 
 /// Output type mapping for a set of source types in a filename transition (policy version >= 33).
 #[derive(Debug, PartialEq, Eq, Parse, Serialize, Validate)]
@@ -116,12 +118,7 @@ impl FilenameTransitions {
             }
         }
 
-        Ok(Self {
-            transitions,
-            index,
-            target_types: IdSet::from_ids(target_types),
-            hasher,
-        })
+        Ok(Self { transitions, index, target_types: IdSet::from_ids(target_types), hasher })
     }
 
     /// Returns `true` if any filename transitions are defined for `target_type`.

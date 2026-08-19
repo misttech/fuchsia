@@ -3,15 +3,16 @@
 // found in the LICENSE file.
 
 use std::fmt::Debug;
+use std::marker::PhantomData;
 use std::ops::Deref;
 
+use selinux_policy_derive::{Parse, Serialize, Validate};
 use zerocopy::{FromBytes, Immutable, KnownLayout, Unaligned, little_endian as le};
 
 use super::NewPolicy;
 use super::error::{ParseError, SerializeError, ValidateError};
 use super::metadata::PolicyVersion;
 use super::traits::{Parse, Serialize, Validate};
-use selinux_policy_derive::{Parse, Serialize};
 
 /// Cursor used to parse elements from the binary policy data.
 #[derive(Debug)]
@@ -175,7 +176,7 @@ impl Validate for u32 {
 }
 
 /// Container representing a `u32` count followed by that many raw bytes.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Validate)]
 pub struct ByteArray {
     data: Box<[u8]>,
 }
@@ -210,12 +211,6 @@ impl Serialize for ByteArray {
     }
 }
 
-impl Validate for ByteArray {
-    fn validate(&self, _policy: &NewPolicy) -> Result<(), ValidateError> {
-        Ok(())
-    }
-}
-
 /// Remaining unparsed bytes of the policy. NewPolicy parses only the first few
 /// elements of the binary policy, retaining the trailing bytes both to allow
 /// byte-for-byte re-serialization of the whole policy, and for the old policy
@@ -246,7 +241,6 @@ impl Validate for RemainingBytes {
         Ok(())
     }
 }
-
 impl Parse for u64 {
     fn parse(cursor: &mut PolicyCursor<'_>) -> Result<Self, ParseError> {
         let val: le::U64 = cursor.read::<le::U64>()?;
@@ -296,19 +290,37 @@ impl<T: Validate, const N: usize> Validate for [T; N] {
     }
 }
 
-impl<T> Parse for std::marker::PhantomData<T> {
+impl<T: Serialize> Serialize for Box<[T]> {
+    fn serialize(&self, writer: &mut PolicyWriter<'_>) -> Result<(), SerializeError> {
+        for item in self.iter() {
+            item.serialize(writer)?;
+        }
+        Ok(())
+    }
+}
+
+impl<T: Validate> Validate for Box<[T]> {
+    fn validate(&self, policy: &NewPolicy) -> Result<(), ValidateError> {
+        for item in self.iter() {
+            item.validate(policy)?;
+        }
+        Ok(())
+    }
+}
+
+impl<T> Parse for PhantomData<T> {
     fn parse(_cursor: &mut PolicyCursor<'_>) -> Result<Self, ParseError> {
         Ok(Self)
     }
 }
 
-impl<T> Serialize for std::marker::PhantomData<T> {
+impl<T> Serialize for PhantomData<T> {
     fn serialize(&self, _writer: &mut PolicyWriter<'_>) -> Result<(), SerializeError> {
         Ok(())
     }
 }
 
-impl<T> Validate for std::marker::PhantomData<T> {
+impl<T> Validate for PhantomData<T> {
     fn validate(&self, _policy: &NewPolicy) -> Result<(), ValidateError> {
         Ok(())
     }
@@ -316,7 +328,7 @@ impl<T> Validate for std::marker::PhantomData<T> {
 
 /// Standard policy array container, storing elements in a heap-allocated slice.
 /// Prefixed by a 32-bit count field in the binary policy format.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Validate)]
 pub struct Array<T> {
     elements: Box<[T]>,
 }
@@ -358,19 +370,7 @@ impl<T: Serialize> Serialize for Array<T> {
     fn serialize(&self, writer: &mut PolicyWriter<'_>) -> Result<(), SerializeError> {
         let count = self.elements.len() as u32;
         count.serialize(writer)?;
-        for element in self.elements.iter() {
-            element.serialize(writer)?;
-        }
-        Ok(())
-    }
-}
-
-impl<T: Validate> Validate for Array<T> {
-    fn validate(&self, policy: &NewPolicy) -> Result<(), ValidateError> {
-        for element in self.elements.iter() {
-            element.validate(policy)?;
-        }
-        Ok(())
+        self.elements.serialize(writer)
     }
 }
 
@@ -381,7 +381,7 @@ impl<T: Validate> Validate for Array<T> {
 /// is prefixed by an `items_count` field).
 #[derive(Debug, Parse, Serialize)]
 pub struct SymbolArray<T> {
-    /// The number of primary names in this array (excluding aliases).
+    /// Number of primary names in this array (excluding aliases).
     /// Included in the policy to allow allocation of index structures to be optimized.
     primary_names_count: u32,
     items: Array<T>,

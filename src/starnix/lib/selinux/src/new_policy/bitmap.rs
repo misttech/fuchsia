@@ -4,12 +4,12 @@
 
 use std::marker::PhantomData;
 
+use selinux_policy_derive::{Parse, Serialize};
+
 use super::NewPolicy;
 use super::error::{ParseError, SerializeError, ValidateError};
 use super::parser::{Array, PolicyCursor, PolicyWriter};
 use super::traits::{Parse, PolicyId, Serialize, Validate};
-
-use selinux_policy_derive::{Parse, Serialize};
 
 type MapNode = u64;
 

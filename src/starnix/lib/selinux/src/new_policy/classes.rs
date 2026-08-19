@@ -4,6 +4,8 @@
 
 use std::num::NonZeroU16;
 
+use selinux_policy_derive::{HasName, HasPolicyId, Parse, Serialize, Validate};
+
 use super::NewPolicy;
 use super::constraints::{Constraint, ConstraintTerm};
 use super::error::{ParseError, SerializeError, ValidateError};
@@ -12,8 +14,6 @@ use super::indexed::IdAndNameIndexed;
 use super::parser::{Array, PolicyCursor, PolicyWriter};
 use super::permissions::Permission;
 use super::traits::{Parse, PolicyId, Serialize, Validate};
-
-use selinux_policy_derive::{HasName, HasPolicyId, Parse, Serialize, Validate};
 
 /// Tag type for type safety of policy class identifiers.
 #[derive(Copy, Clone, Debug, Hash, Eq, PartialEq)]
@@ -183,14 +183,8 @@ impl Serialize for Class {
         writer.write_bytes(&self.name);
         writer.write_bytes(&self.common_name);
 
-        for permission in self.permissions.iter() {
-            permission.serialize(writer)?;
-        }
-
-        for constraint in self.constraints.iter() {
-            constraint.serialize(writer)?;
-        }
-
+        self.permissions.serialize(writer)?;
+        self.constraints.serialize(writer)?;
         self.validate_transitions.serialize(writer)?;
         self.defaults.serialize(writer)?;
         Ok(())
@@ -200,9 +194,7 @@ impl Serialize for Class {
 impl Validate for Class {
     fn validate(&self, policy: &NewPolicy) -> Result<(), ValidateError> {
         self.permissions.validate(policy)?;
-        for constraint in self.constraints.iter() {
-            constraint.validate(policy)?;
-        }
+        self.constraints.validate(policy)?;
         self.validate_transitions.validate(policy)?;
         self.defaults.validate(policy)?;
 

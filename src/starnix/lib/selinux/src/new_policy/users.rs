@@ -2,13 +2,13 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use selinux_policy_derive::{HasName, HasPolicyId, Parse, Serialize, Validate};
+
 use super::context::{MlsLevel, MlsRange};
 use super::error::{ParseError, SerializeError, ValidateError};
 use super::parser::{PolicyCursor, PolicyWriter};
 use super::traits::{Parse, PolicyId, Serialize, Validate};
 use super::{NewPolicy, RoleSet, UserId};
-
-use selinux_policy_derive::{HasName, HasPolicyId, Parse, Serialize, Validate};
 
 /// Parsed SELinux user definition.
 #[derive(Debug, Validate, HasName, HasPolicyId)]

@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use std::fmt;
 use std::marker::PhantomData;
 use std::num::{NonZeroU8, NonZeroU16, NonZeroU32};
 
@@ -116,8 +117,8 @@ where
     }
 }
 
-impl<T: std::fmt::Display, Tag> std::fmt::Display for IdType<T, Tag> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        std::fmt::Display::fmt(&self.value, f)
+impl<T: fmt::Display, Tag> fmt::Display for IdType<T, Tag> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fmt::Display::fmt(&self.value, f)
     }
 }

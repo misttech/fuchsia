@@ -2,9 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use selinux_policy_derive::{Parse, Serialize, Validate};
+
 use super::context::Context;
 use super::parser::Array;
-use selinux_policy_derive::{Parse, Serialize, Validate};
 
 /// Policy entry defining an initial security context for a well-known security ID.
 #[derive(Debug, Clone, PartialEq, Eq, Parse, Serialize, Validate)]

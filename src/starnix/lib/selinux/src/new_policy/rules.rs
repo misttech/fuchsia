@@ -3,18 +3,18 @@
 // found in the LICENSE file.
 
 use std::num::NonZeroU32;
+use std::ops::{BitAnd, BitAndAssign, BitOr, BitOrAssign, Not, Sub, SubAssign};
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use hashbrown::HashTable;
 use hashbrown::hash_table::Entry;
 use rapidhash::RapidBuildHasher;
+pub use selinux_policy_derive::{Parse, Serialize, Validate};
 
 use super::error::{ParseError, SerializeError, ValidateError};
 use super::parser::{Array, PolicyCursor, PolicyWriter};
 use super::traits::{Parse, PolicyId, Serialize, Validate};
 use super::{AccessVector, ClassId, ConditionalBooleanId, NewPolicy, TypeId, U24Index};
-
-pub use selinux_policy_derive::{Parse, Serialize};
 
 /// Flag bit for standard `allow` rules.
 pub const AV_ALLOW_RULE_FLAG: u16 = 0x1;
@@ -115,14 +115,14 @@ impl XpermsBitmap {
     }
 }
 
-impl std::ops::BitAnd for XpermsBitmap {
+impl BitAnd for XpermsBitmap {
     type Output = Self;
     fn bitand(self, rhs: Self) -> Self::Output {
         Self(std::array::from_fn(|i| self.0[i] & rhs.0[i]))
     }
 }
 
-impl std::ops::BitAndAssign for XpermsBitmap {
+impl BitAndAssign for XpermsBitmap {
     fn bitand_assign(&mut self, rhs: Self) {
         for i in 0..4 {
             self.0[i] &= rhs.0[i];
@@ -130,14 +130,14 @@ impl std::ops::BitAndAssign for XpermsBitmap {
     }
 }
 
-impl std::ops::BitOr for XpermsBitmap {
+impl BitOr for XpermsBitmap {
     type Output = Self;
     fn bitor(self, rhs: Self) -> Self::Output {
         Self(std::array::from_fn(|i| self.0[i] | rhs.0[i]))
     }
 }
 
-impl std::ops::BitOrAssign for XpermsBitmap {
+impl BitOrAssign for XpermsBitmap {
     fn bitor_assign(&mut self, rhs: Self) {
         for i in 0..4 {
             self.0[i] |= rhs.0[i];
@@ -145,14 +145,14 @@ impl std::ops::BitOrAssign for XpermsBitmap {
     }
 }
 
-impl std::ops::Sub for XpermsBitmap {
+impl Sub for XpermsBitmap {
     type Output = Self;
     fn sub(self, rhs: Self) -> Self {
         Self(std::array::from_fn(|i| self.0[i] & !rhs.0[i]))
     }
 }
 
-impl std::ops::SubAssign for XpermsBitmap {
+impl SubAssign for XpermsBitmap {
     fn sub_assign(&mut self, rhs: Self) {
         for i in 0..4 {
             self.0[i] &= !rhs.0[i];
@@ -160,7 +160,7 @@ impl std::ops::SubAssign for XpermsBitmap {
     }
 }
 
-impl std::ops::Not for XpermsBitmap {
+impl Not for XpermsBitmap {
     type Output = Self;
     fn not(self) -> Self::Output {
         Self(self.0.map(|word| !word))
@@ -294,8 +294,14 @@ impl From<RuleKind> for u16 {
     }
 }
 
+impl Validate for RuleKind {
+    fn validate(&self, _policy: &NewPolicy) -> Result<(), ValidateError> {
+        Ok(())
+    }
+}
+
 /// Standard access vector rule (allow, auditallow, dontaudit).
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, Validate)]
 pub struct AccessRule {
     key: RuleKey,
     kind: RuleKind,
@@ -317,7 +323,7 @@ impl AccessRule {
 }
 
 /// Type transition, change, or member rule.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, Validate)]
 pub struct TypeRule {
     key: RuleKey,
     kind: RuleKind,
@@ -339,7 +345,7 @@ impl TypeRule {
 }
 
 /// Extended permissions rule (allowxperm, auditallowxperm, dontauditxperm).
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, Validate)]
 pub struct XpermRule {
     key: RuleKey,
     kind: RuleKind,
@@ -361,7 +367,7 @@ impl XpermRule {
 }
 
 /// Lookup key for indexing and matching access vector rules by source domain, target domain, and class.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Validate)]
 pub struct RuleKey {
     source_type: TypeId,
     target_type: TypeId,
@@ -394,15 +400,6 @@ impl RuleKey {
             class: self.class.as_u16(),
             rule_flags,
         }
-    }
-}
-
-impl Validate for RuleKey {
-    fn validate(&self, policy: &NewPolicy) -> Result<(), ValidateError> {
-        self.source_type.validate(policy)?;
-        self.target_type.validate(policy)?;
-        self.class.validate(policy)?;
-        Ok(())
     }
 }
 
@@ -490,7 +487,7 @@ impl AccessDecision {
 /// Lookups return an iterator that starts at that index and yields rules until the
 /// key changes. This works because binary policies guarantee rules for the same key
 /// are contiguous.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone)]
 pub struct AccessVectorRules {
     av_rules: Box<[AccessRule]>,
     type_rules: Box<[TypeRule]>,
@@ -599,17 +596,9 @@ impl Serialize for AccessVectorRules {
 
 impl Validate for AccessVectorRules {
     fn validate(&self, policy: &NewPolicy) -> Result<(), ValidateError> {
-        for rule in self.av_rules.iter() {
-            rule.key.validate(policy)?;
-        }
-        for rule in self.type_rules.iter() {
-            rule.key.validate(policy)?;
-            rule.new_type.validate(policy)?;
-        }
-        for rule in self.xperm_rules.iter() {
-            rule.key.validate(policy)?;
-            rule.extended_permissions.validate(policy)?;
-        }
+        self.av_rules.validate(policy)?;
+        self.type_rules.validate(policy)?;
+        self.xperm_rules.validate(policy)?;
         Ok(())
     }
 }
@@ -837,21 +826,12 @@ impl Validate for ConditionalExpressionElement {
 }
 
 /// Parsed SELinux conditional node containing expression AST and true/false branch rule sets.
-#[derive(Clone, Debug, Eq, PartialEq, Parse, Serialize)]
+#[derive(Clone, Debug, Parse, Serialize, Validate)]
 pub struct ConditionalNode {
     state: u32,
     expression_elements: Array<ConditionalExpressionElement>,
     true_rules: AccessVectorRules,
     false_rules: AccessVectorRules,
-}
-
-impl Validate for ConditionalNode {
-    fn validate(&self, policy: &NewPolicy) -> Result<(), ValidateError> {
-        self.expression_elements.validate(policy)?;
-        self.true_rules.validate(policy)?;
-        self.false_rules.validate(policy)?;
-        Ok(())
-    }
 }
 
 /// On-wire header identifying the source, target, class, and rule flags of an access vector rule.

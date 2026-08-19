@@ -2,20 +2,22 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use std::num::NonZeroU32;
+
+use selinux_policy_derive::{HasName, HasPolicyId, Parse, Serialize, Validate};
+
 use super::NewPolicy;
 use super::error::{ParseError, SerializeError, ValidateError};
 use super::id_type::IdType;
 use super::parser::{PolicyCursor, PolicyWriter};
 use super::traits::{Parse, PolicyId, Serialize, Validate};
 
-use selinux_policy_derive::{HasName, HasPolicyId, Parse, Serialize, Validate};
-
 /// Tag type for type safety of policy conditional boolean identifiers.
 #[derive(Copy, Clone, Debug, Hash, Eq, PartialEq)]
 pub struct ConditionalBooleanTag;
 
 /// Identifies a conditional boolean within a policy.
-pub type ConditionalBooleanId = IdType<std::num::NonZeroU32, ConditionalBooleanTag>;
+pub type ConditionalBooleanId = IdType<NonZeroU32, ConditionalBooleanTag>;
 
 /// Parsed SELinux conditional boolean definition.
 #[derive(Debug, Validate, HasName, HasPolicyId)]

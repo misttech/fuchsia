@@ -2,6 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use std::fmt::Debug;
+use std::hash::Hash;
+
 use super::NewPolicy;
 use super::error::{ParseError, SerializeError, ValidateError};
 use super::parser::{PolicyCursor, PolicyWriter};
@@ -26,7 +29,7 @@ pub trait Validate {
 /// Types implementing [`PolicyId`] can be parsed from and serialized to `u32` values
 /// in the binary policy database, but are represented as strongly-typed integers
 /// (often wrapping `NonZeroU16` or `NonZeroU32`) in the logical domain model.
-pub trait PolicyId: Copy + Clone + std::fmt::Debug + Eq + std::hash::Hash + PartialEq {
+pub trait PolicyId: Copy + Clone + Debug + Eq + Hash + PartialEq {
     /// Returns the raw `u32` value of the ID.
     fn as_u32(&self) -> u32;
 
@@ -78,12 +81,6 @@ pub trait HasName {
 pub trait HasPolicyId {
     type Id: PolicyId;
     fn id(&self) -> Self::Id;
-}
-
-impl Validate for Box<[u8]> {
-    fn validate(&self, _policy: &NewPolicy) -> Result<(), ValidateError> {
-        Ok(())
-    }
 }
 
 impl<T: Validate> Validate for Box<T> {

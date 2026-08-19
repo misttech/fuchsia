@@ -2,8 +2,11 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use super::error::ParseError;
+use std::ops::{Index, IndexMut};
+
 use thiserror::Error;
+
+use super::error::ParseError;
 
 /// Compact 24-bit (3-byte) index into a policy array.
 ///
@@ -35,7 +38,7 @@ impl TryFrom<usize> for U24Index {
     }
 }
 
-impl<T> std::ops::Index<U24Index> for [T] {
+impl<T> Index<U24Index> for [T] {
     type Output = T;
 
     fn index(&self, index: U24Index) -> &Self::Output {
@@ -43,7 +46,7 @@ impl<T> std::ops::Index<U24Index> for [T] {
     }
 }
 
-impl<T> std::ops::IndexMut<U24Index> for [T] {
+impl<T> IndexMut<U24Index> for [T] {
     fn index_mut(&mut self, index: U24Index) -> &mut Self::Output {
         &mut self[usize::from(index)]
     }
