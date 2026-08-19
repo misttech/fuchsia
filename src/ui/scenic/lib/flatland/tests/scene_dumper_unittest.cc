@@ -22,14 +22,11 @@
 #include "src/ui/lib/escher/geometry/types.h"
 #include "src/ui/scenic/lib/allocation/id.h"
 #include "src/ui/scenic/lib/allocation/image_metadata.h"
-#include "src/ui/scenic/lib/flatland/global_image_data.h"
 #include "src/ui/scenic/lib/flatland/global_matrix_data.h"
-#include "src/ui/scenic/lib/flatland/global_resolved_layers.h"
 #include "src/ui/scenic/lib/flatland/transform_handle.h"
 #include "src/ui/scenic/lib/flatland/uber_struct_system.h"
 
 using allocation::ImageMetadata;
-using allocation::kInvalidImageId;
 using flatland::ImageRect;
 
 namespace {
@@ -348,7 +345,7 @@ TEST(SceneDumperTest, TopologyTree) {
   auto topology_data =
       GlobalTopologyData::ComputeGlobalTopologyData(uber_structs, links, 0, {1, 0});
 
-  DumpScene(uber_structs, topology_data, ComputeGlobalResolvedLayers({}, {}, {}), output);
+  DumpScene(uber_structs, topology_data, {}, output);
   auto lines = GetLines(output);
 
   // {1, 0} is the root with {2, 0} on the next line as child.
@@ -401,7 +398,7 @@ TEST(SceneDumperTest, TopologyTreeDeep) {
   auto topology_data =
       GlobalTopologyData::ComputeGlobalTopologyData(uber_structs, links, 0, {1, 0});
 
-  DumpScene(uber_structs, topology_data, ComputeGlobalResolvedLayers({}, {}, {}), output);
+  DumpScene(uber_structs, topology_data, {}, output);
   auto lines = GetLines(output);
 
   ExpectTopologyNodeHasLessDepthLevel({1, 0}, 0, {2, 0}, 1, lines);
@@ -460,7 +457,7 @@ TEST(SceneDumperTest, TopologyTreeWithNames) {
   auto topology_data =
       GlobalTopologyData::ComputeGlobalTopologyData(uber_structs, links, 0, {1, 0});
 
-  DumpScene(uber_structs, topology_data, ComputeGlobalResolvedLayers({}, {}, {}), output);
+  DumpScene(uber_structs, topology_data, {}, output);
   auto lines = GetLines(output);
 
   // {1, 0} is the root with {2, 1} as a child node.
@@ -509,25 +506,12 @@ TEST(SceneDumperTest, ImageRectangleMetadata) {
     auto& v = vectors[1];
     auto uber_struct = std::make_unique<UberStruct>();
     uber_struct->local_topology.assign(v.begin(), v.end());
-    ImageMetadata image;
-    image.collection_id = 1;
-    image.width = 800;
-    image.height = 600;
-    image.identifier = display::ImageId(1);
-    uber_struct->images.insert(std::make_pair(v[0].handle, image));
     uber_structs[v[0].handle.GetInstanceId()] = std::move(uber_struct);
   }
   {
     auto& v = vectors[2];
     auto uber_struct = std::make_unique<UberStruct>();
     uber_struct->local_topology.assign(v.begin(), v.end());
-    ImageMetadata image;
-    image.collection_id = 1;
-    image.width = 300;
-    image.height = 400;
-    image.identifier = display::ImageId(2);
-    image.multiply_color = {.2f, .4f, .8f, 1.f};
-    uber_struct->images.insert(std::make_pair(v[0].handle, image));
     uber_structs[v[0].handle.GetInstanceId()] = std::move(uber_struct);
   }
 
@@ -538,15 +522,53 @@ TEST(SceneDumperTest, ImageRectangleMetadata) {
 
   auto topology_data =
       GlobalTopologyData::ComputeGlobalTopologyData(uber_structs, links, 0, {1, 0});
-  auto [image_indices, images] = ComputeGlobalImageData(topology_data.topology_vector,
-                                                        topology_data.parent_indices, uber_structs);
 
-  GlobalRectangleVector image_rectangles;
+  ImageMetadata image1;
+  image1.collection_id = 1;
+  image1.width = 800;
+  image1.height = 600;
+  image1.identifier = display::ImageId(1);
+
+  ImageMetadata image2;
+  image2.collection_id = 1;
+  image2.width = 300;
+  image2.height = 400;
+  image2.identifier = display::ImageId(2);
+  image2.multiply_color = {.2f, .4f, .8f, 1.f};
+
+  std::vector<ImageRect> image_rectangles;
   image_rectangles.push_back(ImageRect({50, 60}, {200, 300}));
   image_rectangles.push_back(ImageRect({90, 100}, {400, 500}));
 
-  DumpScene(uber_structs, topology_data,
-            ComputeGlobalResolvedLayers(image_rectangles, images, image_indices), output);
+  std::vector<ResolvedLayer> resolved_layers;
+  resolved_layers.push_back(ResolvedLayer{
+      .rect = image_rectangles[0],
+      .multiply_color = image1.multiply_color,
+      .blend_mode = image1.blend_mode,
+      .flip = image1.flip,
+      .content =
+          ResolvedLayer::ImageContent{
+              .image_id = image1.identifier,
+              .width = image1.width,
+              .height = image1.height,
+          },
+      .topology_index = 1,
+  });
+  resolved_layers.push_back(ResolvedLayer{
+      .rect = image_rectangles[1],
+      .multiply_color = image2.multiply_color,
+      .blend_mode = image2.blend_mode,
+      .flip = image2.flip,
+      .content =
+          ResolvedLayer::ImageContent{
+              .image_id = image2.identifier,
+              .width = image2.width,
+              .height = image2.height,
+          },
+      .topology_index = 2,
+  });
+
+  DumpScene(uber_structs, topology_data, resolved_layers, output);
   auto lines = GetLines(output);
 
   // {1, 0} is the root with two child transforms {2, 0} and {3, 0}.
@@ -562,15 +584,11 @@ TEST(SceneDumperTest, ImageRectangleMetadata) {
   ExpectImageDumpCount(lines, 2);
   // First image dump.
   const auto& node = vectors[1][0].handle;
-  const auto& uber_struct = uber_structs[node.GetInstanceId()];
-  const auto& image = uber_struct->images.find(node)->second;
-  size_t next_image_dump_line_number = ExpectImageDump(image, node, image_rectangles[0], lines);
+  size_t next_image_dump_line_number = ExpectImageDump(image1, node, image_rectangles[0], lines);
   // Second image dump.
   const auto& second_node = vectors[2][0].handle;
-  const auto& second_uber_struct = uber_structs[second_node.GetInstanceId()];
-  const auto& second_image = second_uber_struct->images.find(second_node)->second;
-  next_image_dump_line_number = ExpectImageDump(second_image, second_node, image_rectangles[1],
-                                                lines, next_image_dump_line_number);
+  next_image_dump_line_number =
+      ExpectImageDump(image2, second_node, image_rectangles[1], lines, next_image_dump_line_number);
   EXPECT_EQ(FindImageDumpLineNumber(lines, next_image_dump_line_number), (size_t)-1);
 }
 
@@ -593,12 +611,6 @@ TEST(SceneDumperTest, DumpsSolidColorLayer) {
     auto& v = vectors[1];
     auto uber_struct = std::make_unique<UberStruct>();
     uber_struct->local_topology.assign(v.begin(), v.end());
-    ImageMetadata image;
-    image.width = 1;
-    image.height = 1;
-    image.identifier = kInvalidImageId;
-    image.multiply_color = {.2f, .4f, .8f, 1.f};
-    uber_struct->images.insert(std::make_pair(v[0].handle, image));
     uber_structs[v[0].handle.GetInstanceId()] = std::move(uber_struct);
   }
 
@@ -608,14 +620,15 @@ TEST(SceneDumperTest, DumpsSolidColorLayer) {
 
   auto topology_data =
       GlobalTopologyData::ComputeGlobalTopologyData(uber_structs, links, 0, {1, 0});
-  auto [image_indices, images] = ComputeGlobalImageData(topology_data.topology_vector,
-                                                        topology_data.parent_indices, uber_structs);
 
-  GlobalRectangleVector image_rectangles;
-  image_rectangles.push_back(ImageRect({50, 60}, {200, 300}));
+  std::vector<ResolvedLayer> resolved_layers;
+  resolved_layers.push_back(ResolvedLayer{
+      .rect = ImageRect({50, 60}, {200, 300}),
+      .content = ResolvedLayer::SolidColorContent{.color = {.2f, .4f, .8f, 1.f}},
+      .topology_index = 1,
+  });
 
-  DumpScene(uber_structs, topology_data,
-            ComputeGlobalResolvedLayers(image_rectangles, images, image_indices), output);
+  DumpScene(uber_structs, topology_data, resolved_layers, output);
   auto lines = GetLines(output);
 
   // Expected output contains the solid color details.

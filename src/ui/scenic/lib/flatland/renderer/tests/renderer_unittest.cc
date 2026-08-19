@@ -168,14 +168,39 @@ allocation::GlobalBufferCollectionId SetupBufferCollection(
   return collection_id;
 }
 
+// Builds ResolvedLayers from ImageMetadata so the test bodies below keep their shape.
+// It reads `blend_mode` and `flip`, which are per-layer properties that ImageMetadata
+// should not be carrying; when these properties are (soon) removed from ImageMetadata,
+// this helper takes their replacement instead and the test bodies still do not change.
 std::vector<ResolvedLayer> MakeLayers(const std::vector<ImageRect>& rects,
                                       const std::vector<ImageMetadata>& images = {}) {
-  if (images.empty()) {
-    std::vector<allocation::ImageMetadata> dummy_images(
-        rects.size(), allocation::ImageMetadata{.identifier = allocation::kInvalidImageId});
-    return ComputeGlobalResolvedLayers(rects, dummy_images);
+  std::vector<ResolvedLayer> output;
+  output.reserve(rects.size());
+  for (size_t i = 0; i < rects.size(); ++i) {
+    const auto& rect = rects[i];
+    const auto& meta = images.empty()
+                           ? allocation::ImageMetadata{.identifier = allocation::kInvalidImageId}
+                           : images[i];
+    ResolvedLayer layer;
+    layer.rect = rect;
+    layer.blend_mode = meta.blend_mode;
+    layer.flip = meta.flip;
+    layer.topology_index = ResolvedLayer::kInvalidTopologyIndex;
+
+    if (meta.identifier == allocation::kInvalidImageId) {
+      layer.multiply_color = {1.f, 1.f, 1.f, 1.f};
+      layer.content = ResolvedLayer::SolidColorContent{.color = meta.multiply_color};
+    } else {
+      layer.multiply_color = meta.multiply_color;
+      layer.content = ResolvedLayer::ImageContent{
+          .image_id = meta.identifier,
+          .width = meta.width,
+          .height = meta.height,
+      };
+    }
+    output.push_back(layer);
   }
-  return ComputeGlobalResolvedLayers(rects, images);
+  return output;
 }
 
 }  // anonymous namespace

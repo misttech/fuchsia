@@ -5718,7 +5718,7 @@ class Flatland1FacadeTest : public FlatlandTest {};
 
 // Flatland1FacadeTest.CreateImagePopulatesLayerStackSchema
 TEST_F(Flatland1FacadeTest, CreateImagePopulatesLayerStackSchema) {
-  FlatlandConfig config{.use_flatland2_uberstruct_schema = true};
+  FlatlandConfig config;
   auto flatland = CreateFlatland(config);
   auto allocator = CreateAllocator();
 
@@ -5742,8 +5742,6 @@ TEST_F(Flatland1FacadeTest, CreateImagePopulatesLayerStackSchema) {
   auto snapshot = uber_struct_system_->Snapshot();
   ASSERT_TRUE(snapshot.map.contains(flatland->GetSessionId()));
   auto uber_struct = snapshot.map.find(flatland->GetSessionId())->second;
-
-  EXPECT_TRUE(uber_struct->images.empty());
 
   const auto maybe_handle = flatland->GetContentHandle(kImageId);
   ASSERT_TRUE(maybe_handle.has_value());
@@ -5779,7 +5777,7 @@ TEST_F(Flatland1FacadeTest, CreateImagePopulatesLayerStackSchema) {
 
 // Flatland1FacadeTest.SampleRegionResolvesIntoSnapshot
 TEST_F(Flatland1FacadeTest, SampleRegionResolvesIntoSnapshot) {
-  FlatlandConfig config{.use_flatland2_uberstruct_schema = true};
+  FlatlandConfig config;
   auto flatland = CreateFlatland(config);
   auto allocator = CreateAllocator();
 
@@ -5813,7 +5811,7 @@ TEST_F(Flatland1FacadeTest, SampleRegionResolvesIntoSnapshot) {
 
 // Flatland1FacadeTest.DestinationSizeResolvesIntoSnapshot
 TEST_F(Flatland1FacadeTest, DestinationSizeResolvesIntoSnapshot) {
-  FlatlandConfig config{.use_flatland2_uberstruct_schema = true};
+  FlatlandConfig config;
   auto flatland = CreateFlatland(config);
   auto allocator = CreateAllocator();
 
@@ -5847,7 +5845,7 @@ TEST_F(Flatland1FacadeTest, DestinationSizeResolvesIntoSnapshot) {
 
 // Flatland1FacadeTest.OpacityBlendFlipResolveIntoSnapshot
 TEST_F(Flatland1FacadeTest, OpacityBlendFlipResolveIntoSnapshot) {
-  FlatlandConfig config{.use_flatland2_uberstruct_schema = true};
+  FlatlandConfig config;
   auto flatland = CreateFlatland(config);
   auto allocator = CreateAllocator();
 
@@ -5883,7 +5881,7 @@ TEST_F(Flatland1FacadeTest, OpacityBlendFlipResolveIntoSnapshot) {
 
 // Flatland1FacadeTest.ClampIfNearMatchesLegacy
 TEST_F(Flatland1FacadeTest, ClampIfNearMatchesLegacy) {
-  FlatlandConfig config{.use_flatland2_uberstruct_schema = true};
+  FlatlandConfig config;
   auto flatland = CreateFlatland(config);
   auto allocator = CreateAllocator();
 
@@ -5921,7 +5919,7 @@ TEST_F(Flatland1FacadeTest, ClampIfNearMatchesLegacy) {
 
 // Flatland1FacadeTest.ReleaseImageKeepsDisplayingWhileAttached
 TEST_F(Flatland1FacadeTest, ReleaseImageKeepsDisplayingWhileAttached) {
-  FlatlandConfig config{.use_flatland2_uberstruct_schema = true};
+  FlatlandConfig config;
   auto flatland = CreateFlatland(config);
   auto allocator = CreateAllocator();
 
@@ -5965,7 +5963,7 @@ TEST_F(Flatland1FacadeTest, ReleaseImageKeepsDisplayingWhileAttached) {
 
 // Flatland1FacadeTest.SetContentSwapsStacks
 TEST_F(Flatland1FacadeTest, SetContentSwapsStacks) {
-  FlatlandConfig config{.use_flatland2_uberstruct_schema = true};
+  FlatlandConfig config;
   auto flatland = CreateFlatland(config);
   auto allocator = CreateAllocator();
 
@@ -6011,7 +6009,7 @@ TEST_F(Flatland1FacadeTest, SetContentSwapsStacks) {
 
 // Flatland1FacadeTest.MultiAttachSameContentId
 TEST_F(Flatland1FacadeTest, MultiAttachSameContentId) {
-  FlatlandConfig config{.use_flatland2_uberstruct_schema = true};
+  FlatlandConfig config;
   auto flatland = CreateFlatland(config);
   auto allocator = CreateAllocator();
 
@@ -6053,7 +6051,7 @@ TEST_F(Flatland1FacadeTest, MultiAttachSameContentId) {
 
 // Flatland1FacadeTest.FilledRectPopulatesSolidColorSnapshot
 TEST_F(Flatland1FacadeTest, FilledRectPopulatesSolidColorSnapshot) {
-  FlatlandConfig config{.use_flatland2_uberstruct_schema = true};
+  FlatlandConfig config;
   auto flatland = CreateFlatland(config);
 
   const TransformId kRootId{1};
@@ -6097,7 +6095,7 @@ TEST_F(Flatland1FacadeTest, FilledRectPopulatesSolidColorSnapshot) {
 
 // Flatland1FacadeTest.FilledRectBeforeSetSolidFill
 TEST_F(Flatland1FacadeTest, FilledRectBeforeSetSolidFill) {
-  FlatlandConfig config{.use_flatland2_uberstruct_schema = true};
+  FlatlandConfig config;
   auto flatland = CreateFlatland(config);
 
   const TransformId kRootId{1};
@@ -6138,7 +6136,7 @@ TEST_F(Flatland1FacadeTest, FilledRectBeforeSetSolidFill) {
 
 // Flatland1FacadeTest.FilledRectInterleavesWithImagesInZOrder
 TEST_F(Flatland1FacadeTest, FilledRectInterleavesWithImagesInZOrder) {
-  FlatlandConfig config{.use_flatland2_uberstruct_schema = true};
+  FlatlandConfig config;
   auto flatland = CreateFlatland(config);
   auto allocator = CreateAllocator();
 
@@ -6294,7 +6292,7 @@ TEST_F(Flatland1FacadeTest, FilledRectInterleavesWithImagesInZOrder) {
 
 // Flatland1FacadeTest.ReleaseFilledRectKeepAlive
 TEST_F(Flatland1FacadeTest, ReleaseFilledRectKeepAlive) {
-  FlatlandConfig config{.use_flatland2_uberstruct_schema = true};
+  FlatlandConfig config;
   auto flatland = CreateFlatland(config);
 
   const TransformId kRootId{1};
@@ -6344,7 +6342,7 @@ TEST_F(Flatland1FacadeTest, ReleaseFilledRectKeepAlive) {
 
 // Flatland1FacadeTest.TranslucentFillResultsInPremultiplied
 TEST_F(Flatland1FacadeTest, TranslucentFillResultsInPremultiplied) {
-  FlatlandConfig config{.use_flatland2_uberstruct_schema = true};
+  FlatlandConfig config;
   auto flatland = CreateFlatland(config);
 
   const TransformId kRootId{1};
@@ -6513,6 +6511,7 @@ TEST_F(FlatlandTest, SetSolidFillOnImageRejected) {
 
   flatland->SetSolidFill(kImageId, fuchsia_ui_composition::ColorRgba{0.1f, 0.2f, 0.3f, 0.5f},
                          SizeU{100, 200});
+
   PRESENT(flatland, false);
 }
 

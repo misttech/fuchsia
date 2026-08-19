@@ -13,7 +13,6 @@
 #include "src/ui/scenic/lib/allocation/image_metadata.h"
 #include "src/ui/scenic/lib/display/fidl_id_types.h"
 #include "src/ui/scenic/lib/flatland/flatland_types.h"
-#include "src/ui/scenic/lib/flatland/global_image_data.h"
 #include "src/ui/scenic/lib/flatland/global_resolved_layers.h"
 
 namespace flatland::test {
@@ -33,6 +32,42 @@ ImageMetadata OpaqueImage(uint64_t id) {
 
 ImageMetadata TransparentImage(uint64_t id) {
   return {.identifier = display::ImageId(id), .blend_mode = BlendMode::kPremultipliedAlpha()};
+}
+
+// Builds ResolvedLayers from ImageMetadata so the test bodies below keep their shape
+// while the legacy UberStruct schema is deleted.  The helpers OpaqueImage() and
+// TransparentImage() lean on `blend_mode` and `flip`, per-layer properties that
+// ImageMetadata should not be carrying; when those are removed from ImageMetadata,
+// this helper takes the replacement instead and the test bodies still do not change.
+using GlobalRectangleVector = std::vector<ImageRect>;
+using GlobalImageVector = std::vector<allocation::ImageMetadata>;
+std::vector<ResolvedLayer> ComputeGlobalResolvedLayers(
+    const std::vector<ImageRect>& rects, const std::vector<allocation::ImageMetadata>& images) {
+  std::vector<ResolvedLayer> output;
+  output.reserve(rects.size());
+  for (size_t i = 0; i < rects.size(); ++i) {
+    const auto& rect = rects[i];
+    const auto& meta = images[i];
+    ResolvedLayer layer;
+    layer.rect = rect;
+    layer.blend_mode = meta.blend_mode;
+    layer.flip = meta.flip;
+    layer.topology_index = ResolvedLayer::kInvalidTopologyIndex;
+
+    if (meta.identifier == allocation::kInvalidImageId) {
+      layer.multiply_color = {1.f, 1.f, 1.f, 1.f};
+      layer.content = ResolvedLayer::SolidColorContent{.color = meta.multiply_color};
+    } else {
+      layer.multiply_color = meta.multiply_color;
+      layer.content = ResolvedLayer::ImageContent{
+          .image_id = meta.identifier,
+          .width = meta.width,
+          .height = meta.height,
+      };
+    }
+    output.push_back(layer);
+  }
+  return output;
 }
 
 TEST(CullLayersInPlaceTest, EmptyInput) {

@@ -11,7 +11,6 @@
 #include <sstream>
 #include <string>
 
-#include "src/ui/scenic/lib/flatland/global_image_data.h"
 #include "src/ui/scenic/lib/flatland/global_matrix_data.h"
 #include "src/ui/scenic/lib/flatland/global_resolved_layers.h"
 #include "src/ui/scenic/lib/flatland/global_topology_data.h"
@@ -19,7 +18,6 @@
 #include "src/ui/scenic/lib/scheduling/frame_scheduler.h"
 #include "src/ui/scenic/lib/utils/check_is_on_thread.h"
 #include "src/ui/scenic/lib/utils/helpers.h"
-#include "src/ui/scenic/lib/utils/logging.h"
 
 // Hardcoded double buffering.
 // TODO(https://fxbug.dev/42156567): make this configurable.  Even fancier: is it worth considering
@@ -33,7 +31,7 @@ Engine::Engine(std::shared_ptr<DisplayCompositor> flatland_compositor,
                std::shared_ptr<FlatlandPresenterImpl> flatland_presenter,
                std::shared_ptr<UberStructSystem> uber_struct_system,
                std::shared_ptr<LinkSystem> link_system, inspect::Node inspect_node,
-               GetRootTransformFunc get_root_transform, bool use_flatland2_uberstruct_schema)
+               GetRootTransformFunc get_root_transform)
     : flatland_compositor_(std::move(flatland_compositor)),
       flatland_presenter_(std::move(flatland_presenter)),
       uber_struct_system_(std::move(uber_struct_system)),
@@ -41,7 +39,6 @@ Engine::Engine(std::shared_ptr<DisplayCompositor> flatland_compositor,
       cleared_scene_state_(std::make_unique<SceneState>()),
       inspect_node_(std::move(inspect_node)),
       get_root_transform_(std::move(get_root_transform)),
-      use_flatland2_uberstruct_schema_(use_flatland2_uberstruct_schema),
       executor_(async_get_default_dispatcher()) {
   utils::CheckIsOnMainThread();
   FX_DCHECK(flatland_compositor_);
@@ -63,11 +60,7 @@ void Engine::InitializeInspectObjects() {
     }
 
     SceneState scene_state;
-    if (use_flatland2_uberstruct_schema_) {
-      scene_state.InitializeFlatland2(*this, *root_transform);
-    } else {
-      scene_state.InitializeFlatland1(*this, *root_transform);
-    }
+    scene_state.Initialize(*this, *root_transform);
     std::ostringstream output;
     DumpScene(scene_state.snapshot.map, scene_state.topology_data, scene_state.resolved_layers,
               output);
@@ -105,11 +98,7 @@ void Engine::RenderScheduledFrame(uint64_t frame_number, zx::time presentation_t
   FX_DCHECK(cleared_scene_state_);
   current_scene_state_ = std::move(cleared_scene_state_);
   SceneState& scene_state = *current_scene_state_;
-  if (use_flatland2_uberstruct_schema_) {
-    scene_state.InitializeFlatland2(*this, display.root_transform());
-  } else {
-    scene_state.InitializeFlatland1(*this, display.root_transform());
-  }
+  scene_state.Initialize(*this, display.root_transform());
 
   display::Display* const hw_display = display.display();
 
@@ -122,16 +111,10 @@ void Engine::RenderScheduledFrame(uint64_t frame_number, zx::time presentation_t
     str << "\n        " << scene_state.topology_data.topology_vector[i] << " -> "
         << scene_state.topology_data.topology_vector[scene_state.topology_data.parent_indices[i]];
   }
-  str << "\nFrame display-list contains " << scene_state.image_rectangles.size()
-      << " image-rectangles and " << scene_state.images.size()
-      << " images (in increasing Z-order):";
-  for (auto& r : scene_state.image_rectangles) {
-    str << "\n        rect: " << r;
-  }
-  for (size_t i = 0; i < scene_state.image_indices.size(); ++i) {
-    str << "\n        image: "
-        << scene_state.topology_data.topology_vector[scene_state.image_indices[i]] << " "
-        << scene_state.images[i];
+  str << "\nFrame display-list contains " << scene_state.resolved_layers.size()
+      << " resolved layers (in increasing Z-order):";
+  for (const auto& layer : scene_state.resolved_layers) {
+    str << "\n        layer: " << layer;
   }
   FLATLAND_VERBOSE_LOG << str.str();
 #endif
@@ -250,11 +233,7 @@ Renderables Engine::GetRenderables(const FlatlandDisplay& display) {
   TransformHandle root = display.root_transform();
 
   SceneState scene_state;
-  if (use_flatland2_uberstruct_schema_) {
-    scene_state.InitializeFlatland2(*this, root);
-  } else {
-    scene_state.InitializeFlatland1(*this, root);
-  }
+  scene_state.Initialize(*this, root);
   const auto hw_display = display.display();
 
   auto resolved_layers = std::move(scene_state.resolved_layers);
@@ -264,61 +243,9 @@ Renderables Engine::GetRenderables(const FlatlandDisplay& display) {
   return resolved_layers;
 }
 
-void Engine::SceneState::InitializeFlatland1(Engine& engine, TransformHandle root_transform) {
-  TRACE_DURATION("gfx", "flatland::Engine::SceneState::InitializeFlatland1");
+void Engine::SceneState::Initialize(Engine& engine, TransformHandle root_transform) {
+  TRACE_DURATION("gfx", "flatland::Engine::SceneState::Initialize");
   snapshot = engine.uber_struct_system_->Snapshot();
-
-#ifndef NDEBUG
-  // FlatlandEngine and FlatlandManager work together to ensure that, globally, either everyone
-  // (i.e. all Flatland sessions, the engine, etc.) is using the legacy image-based UberStruct
-  // schema, or everyone is using the layer-based "Flatland2" UberStruct schema.
-  // Also see `FlatlandManager::use_flatland2_uberstruct_schema_`.
-  FX_DCHECK(!engine.use_flatland2_uberstruct_schema_);
-  for (const auto& [id, us] : snapshot.map) {
-    FX_DCHECK(us->flatland_version == 1);
-    FX_DCHECK(us->layer_stacks.empty() && us->layers.empty());
-  }
-#endif
-
-  const auto links = engine.link_system_->GetResolvedTopologyLinks();
-  const auto link_system_id = engine.link_system_->GetInstanceId();
-
-  GlobalTopologyData::ComputeGlobalTopologyData(/*output=*/topology_data, snapshot.map, links,
-                                                link_system_id, root_transform);
-
-  ComputeGlobalMatrices(/*output=*/global_matrices, topology_data.topology_vector,
-                        topology_data.parent_indices, snapshot.map);
-
-  ComputeGlobalImageData(/*output_indices=*/image_indices, /*output_images=*/images,
-                         topology_data.topology_vector, topology_data.parent_indices, snapshot.map);
-
-  ComputeGlobalImageSampleRegions(/*output=*/image_sample_regions, topology_data.topology_vector,
-                                  topology_data.parent_indices, snapshot.map);
-
-  ComputeGlobalTransformClipRegions(/*output=*/clip_regions, topology_data.topology_vector,
-                                    topology_data.parent_indices, global_matrices, snapshot.map);
-
-  ComputeGlobalRectangles(/*output=*/image_rectangles, global_matrices, image_sample_regions,
-                          clip_regions, image_indices, images);
-
-  ComputeGlobalResolvedLayers(resolved_layers, image_rectangles, images, image_indices);
-}
-
-void Engine::SceneState::InitializeFlatland2(Engine& engine, TransformHandle root_transform) {
-  TRACE_DURATION("gfx", "flatland::Engine::SceneState::InitializeFlatland2");
-  snapshot = engine.uber_struct_system_->Snapshot();
-
-#ifndef NDEBUG
-  // FlatlandEngine and FlatlandManager work together to ensure that, globally, either everyone
-  // (i.e. all Flatland sessions, the engine, etc.) is using the legacy image-based UberStruct
-  // schema, or everyone is using the layer-based "Flatland2" UberStruct schema.
-  // Also see `FlatlandManager::use_flatland2_uberstruct_schema_`.
-  FX_DCHECK(engine.use_flatland2_uberstruct_schema_);
-  for (const auto& [id, us] : snapshot.map) {
-    FX_DCHECK(us->flatland_version == 1 || us->flatland_version == 2);
-    FX_DCHECK(us->images.empty());
-  }
-#endif
 
   const auto links = engine.link_system_->GetResolvedTopologyLinks();
   const auto link_system_id = engine.link_system_->GetInstanceId();
@@ -357,22 +284,6 @@ void Engine::SceneState::Clear() {
   {
     TRACE_DURATION("gfx", "flatland::Engine::SceneState::Clear[resolved_layers]");
     resolved_layers.clear();
-  }
-  {
-    TRACE_DURATION("gfx", "flatland::Engine::SceneState::Clear[images]");
-    images.clear();
-  }
-  {
-    TRACE_DURATION("gfx", "flatland::Engine::SceneState::Clear[image_indices]");
-    image_indices.clear();
-  }
-  {
-    TRACE_DURATION("gfx", "flatland::Engine::SceneState::Clear[image_rectangles]");
-    image_rectangles.clear();
-  }
-  {
-    TRACE_DURATION("gfx", "flatland::Engine::SceneState::Clear[image_sample_regions]");
-    image_sample_regions.clear();
   }
 }
 

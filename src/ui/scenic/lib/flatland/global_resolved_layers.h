@@ -16,31 +16,7 @@
 
 namespace flatland {
 
-// [Deprecated: Migrating to Flatland2 schema overload below]
-// Zips the legacy pipeline's parallel outputs into ResolvedLayers.
-// |rectangles| and |images| must be the same length (the existing RenderData
-// invariant).  An entry whose metadata.identifier == kInvalidImageId becomes
-// SolidColorContent{multiply_color}; all others become ImageContent.
-//
-// |image_indices| maps each layer back to its corresponding transform node in the global
-// topology tree. If empty (only allowed for unit tests), the topology_index of the resulting
-// layers will be set to ResolvedLayer::kInvalidTopologyIndex.  Otherwise the length must match
-// |rectangles| and |images|.
-void ComputeGlobalResolvedLayers(std::vector<ResolvedLayer>& output,
-                                 const std::vector<ImageRect>& rectangles,
-                                 const std::vector<allocation::ImageMetadata>& images,
-                                 const std::vector<size_t>& image_indices = {});
-
-// [Deprecated: Migrating to Flatland2 schema overload below]
-inline std::vector<ResolvedLayer> ComputeGlobalResolvedLayers(
-    const std::vector<ImageRect>& rectangles, const std::vector<allocation::ImageMetadata>& images,
-    const std::vector<size_t>& image_indices = {}) {
-  std::vector<ResolvedLayer> output;
-  ComputeGlobalResolvedLayers(output, rectangles, images, image_indices);
-  return output;
-}
-
-// Computes the global resolved layers list for the Flatland2 schema.
+// Computes the resolved layers list for the global topology.
 // Walks |topology| in DFS order; for each node whose UberStruct has a
 // layer_stacks entry, emits one ResolvedLayer per visible stack layer.
 void ComputeGlobalResolvedLayers(std::vector<ResolvedLayer>& output,
@@ -97,6 +73,18 @@ struct ResolvedBlend {
 // decision must match the behavior implemented here.
 ResolvedBlend ResolveBlendAndOpacity(types::BlendMode stored_blend, float effective_opacity,
                                      bool pin_replace);
+
+// Exposed for testing; returned by `ComputeGlobalOpacityValues()`.  The list of global opacity
+// values for a particular global topology.  Each entry is the global opacity value (i.e. relative
+// to the root TransformHandle) of the transform in the corresponding position of the
+// `topology_vector` supplied to `ComputeGlobalOpacityValues()`.
+using GlobalOpacityVector = std::vector<float>;
+
+// Exposed for testing.  Computes a list of global opacity values for the global topology.
+GlobalOpacityVector ComputeGlobalOpacityValues(
+    const GlobalTopologyData::TopologyVector& global_topology,
+    const GlobalTopologyData::ParentIndexVector& parent_indices,
+    const UberStruct::InstanceMap& uber_structs);
 
 }  // namespace flatland
 

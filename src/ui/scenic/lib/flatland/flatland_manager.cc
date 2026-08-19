@@ -34,8 +34,7 @@ FlatlandManager::FlatlandManager(
     std::function<void(fidl::ServerEnd<fuchsia_ui_pointer::TouchSource>, zx_koid_t)>
         register_touch_source,
     std::function<void(fidl::ServerEnd<fuchsia_ui_pointer::MouseSource>, zx_koid_t)>
-        register_mouse_source,
-    bool use_flatland2_uberstruct_schema)
+        register_mouse_source)
     : flatland_presenter_(flatland_presenter),
       uber_struct_system_(uber_struct_system),
       link_system_(link_system),
@@ -45,7 +44,6 @@ FlatlandManager::FlatlandManager(
       register_view_ref_focused_(std::move(register_view_ref_focused)),
       register_touch_source_(std::move(register_touch_source)),
       register_mouse_source_(std::move(register_mouse_source)),
-      use_flatland2_uberstruct_schema_(use_flatland2_uberstruct_schema),
       cleanup_loop_(&kAsyncLoopConfigNoAttachToCurrentThread),
       executor_(dispatcher) {
   FX_DCHECK(dispatcher);
@@ -85,13 +83,10 @@ scheduling::SessionId FlatlandManager::CreateFlatland(
     const FlatlandConfig& config) {
   utils::CheckIsOnMainThread();
 
-  FlatlandConfig stamped_config = config;
-  stamped_config.use_flatland2_uberstruct_schema = use_flatland2_uberstruct_schema_;
-
-  if (stamped_config.use_trusted_flatland_api) {
-    return CreateTrustedFlatland(std::move(request), stamped_config);
+  if (config.use_trusted_flatland_api) {
+    return CreateTrustedFlatland(std::move(request), config);
   } else {
-    return CreateUntrustedFlatland(std::move(request), stamped_config);
+    return CreateUntrustedFlatland(std::move(request), config);
   }
 }
 

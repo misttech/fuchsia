@@ -116,8 +116,6 @@ struct UberStructLayer {
 };
 
 // TODO(https://fxbug.dev/42122511): find the appropriate name for this struct.
-//
-// A collection of data local to a particular Flatland instance representing the most recent commit
 // of that instance's presented state. Because the UberStruct represents a snapshot of the local
 // state of a Flatland instance, it must be stateless. It should contain only data and no
 // references to external resources.
@@ -135,9 +133,7 @@ struct UberStruct {
       : local_topology(&resource_),
         local_matrices(&resource_),
         local_opacity_values(&resource_),
-        local_image_sample_regions(&resource_),
         local_clip_regions(&resource_),
-        images(&resource_),
         local_hit_regions_map(&resource_),
         layer_stacks(&resource_),
         layers(&resource_),
@@ -157,14 +153,8 @@ struct UberStruct {
   // with no entry indicate an opacity value of 1.0.
   std::pmr::unordered_map<TransformHandle, float> local_opacity_values;
 
-  // Map of the regions of images used to texture renderables. These are set per-image.
-  std::pmr::unordered_map<TransformHandle, ImageSampleRegion> local_image_sample_regions;
-
   // Map of the regions of transforms that clip child content.
   std::pmr::unordered_map<TransformHandle, TransformClipRegion> local_clip_regions;
-
-  // The images associated with each TransformHandle.
-  std::pmr::unordered_map<TransformHandle, allocation::ImageMetadata> images;
 
   // Map of local hit regions.
   std::pmr::unordered_map<TransformHandle, std::pmr::vector<flatland::HitRegion>>
@@ -195,14 +185,15 @@ struct UberStruct {
 
   // Test-only helper which abstracts over legacy image content, and Flatland2 layer content.
   bool HasLayerContentForTest(TransformHandle handle) const {
-    return images.contains(handle) || layer_stacks.contains(handle);
+    return layer_stacks.contains(handle);
   }
 };
 
-}  // namespace flatland
+std::ostream& operator<<(std::ostream& out, const UberStructLayer::ImageModeProperties& image);
+std::ostream& operator<<(std::ostream& out, const UberStructLayer::SolidColorModeProperties& solid);
+std::ostream& operator<<(std::ostream& out, const UberStructLayer& layer);
+std::ostream& operator<<(std::ostream& out, const UberStruct& us);
 
-namespace std {
-ostream& operator<<(ostream& out, const flatland::UberStruct& us);
-}  // namespace std
+}  // namespace flatland
 
 #endif  // SRC_UI_SCENIC_LIB_FLATLAND_UBER_STRUCT_H_

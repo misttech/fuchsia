@@ -10,48 +10,12 @@
 #include <algorithm>
 #include <cmath>
 
-#include "src/ui/scenic/lib/flatland/global_image_data.h"
 #include "src/ui/scenic/lib/flatland/global_matrix_data.h"
 
 #include <glm/gtc/constants.hpp>
 #include <glm/gtc/type_ptr.hpp>
 
 namespace flatland {
-
-void ComputeGlobalResolvedLayers(std::vector<ResolvedLayer>& output,
-                                 const std::vector<ImageRect>& rectangles,
-                                 const std::vector<allocation::ImageMetadata>& images,
-                                 const std::vector<size_t>& image_indices) {
-  FX_DCHECK(rectangles.size() == images.size());
-  FX_DCHECK(image_indices.empty() || image_indices.size() == rectangles.size());
-  output.clear();
-  output.reserve(rectangles.size());
-  for (size_t i = 0; i < rectangles.size(); ++i) {
-    const auto& rect = rectangles[i];
-    const auto& meta = images[i];
-    ResolvedLayer layer;
-    layer.rect = rect;
-    layer.blend_mode = meta.blend_mode;
-    layer.flip = meta.flip;
-    layer.topology_index = image_indices.empty() ? ResolvedLayer::kInvalidTopologyIndex
-                                                 : static_cast<int32_t>(image_indices[i]);
-
-    if (meta.identifier == allocation::kInvalidImageId) {
-      // In this legacy/soon-deleted code path, opacity has already been baked into the content
-      // color by `ComputeGlobalImageData()`.
-      layer.multiply_color = {1.f, 1.f, 1.f, 1.f};
-      layer.content = ResolvedLayer::SolidColorContent{.color = meta.multiply_color};
-    } else {
-      layer.multiply_color = meta.multiply_color;
-      layer.content = ResolvedLayer::ImageContent{
-          .image_id = meta.identifier,
-          .width = meta.width,
-          .height = meta.height,
-      };
-    }
-    output.push_back(layer);
-  }
-}
 
 void CullLayersInPlace(std::vector<flatland::ResolvedLayer>* layers_in_out, uint64_t display_width,
                        uint64_t display_height) {
@@ -401,6 +365,50 @@ void ComputeGlobalResolvedLayers(std::vector<ResolvedLayer>& output,
                     "Must handle all UberStructLayer content types");
     }
   }
+}
+
+GlobalOpacityVector ComputeGlobalOpacityValues(
+    const GlobalTopologyData::TopologyVector& global_topology,
+    const GlobalTopologyData::ParentIndexVector& parent_indices,
+    const UberStruct::InstanceMap& uber_structs) {
+  TRACE_DURATION("gfx", "ComputeGlobalOpacityValues");
+
+  if (global_topology.empty()) {
+    return {};
+  }
+
+  GlobalOpacityVector opacity_values;
+  opacity_values.reserve(global_topology.size());
+
+  // The root entry's parent pointer points to itself, so special case it.
+  const auto& root_handle = global_topology.front();
+  const auto root_uber_struct_kv = uber_structs.find(root_handle.GetInstanceId());
+  FX_DCHECK(root_uber_struct_kv != uber_structs.end());
+
+  const auto root_opacity_kv = root_uber_struct_kv->second->local_opacity_values.find(root_handle);
+  if (root_opacity_kv == root_uber_struct_kv->second->local_opacity_values.end()) {
+    opacity_values.emplace_back(1.f);
+  } else {
+    opacity_values.emplace_back(root_opacity_kv->second);
+  }
+
+  for (size_t i = 1; i < global_topology.size(); ++i) {
+    const TransformHandle& handle = global_topology[i];
+    const size_t parent_index = parent_indices[i];
+
+    // Every entry in the global topology comes from an UberStruct.
+    const auto uber_stuct_kv = uber_structs.find(handle.GetInstanceId());
+    FX_DCHECK(uber_stuct_kv != uber_structs.end());
+
+    const auto opacity_kv = uber_stuct_kv->second->local_opacity_values.find(handle);
+    if (opacity_kv == uber_stuct_kv->second->local_opacity_values.end()) {
+      opacity_values.emplace_back(opacity_values[parent_index]);
+    } else {
+      opacity_values.emplace_back(opacity_values[parent_index] * opacity_kv->second);
+    }
+  }
+
+  return opacity_values;
 }
 
 }  // namespace flatland

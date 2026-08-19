@@ -10,8 +10,8 @@
 #include <gtest/gtest.h>
 
 #include "src/ui/scenic/lib/flatland/flatland_types.h"
-#include "src/ui/scenic/lib/flatland/global_image_data.h"
 #include "src/ui/scenic/lib/flatland/global_matrix_data.h"
+#include "src/ui/scenic/lib/flatland/global_resolved_layers.h"
 #include "src/ui/scenic/lib/flatland/global_topology_data.h"
 
 #include <glm/glm.hpp>
@@ -33,28 +33,20 @@ constexpr int kImageHeight = 500;
 // Helper function to generate an ImageRect from a glm::mat3 for tests that are strictly testing the
 // conversion math.
 ImageRect GetImageRectForMatrix(const glm::mat3& matrix, ImageFlip image_flip = ImageFlip::kNone) {
-  // Compute the global rectangle vector and return the first entry.
-  allocation::ImageMetadata image = {
-      .width = kImageWidth, .height = kImageHeight, .flip = image_flip};
-  const auto rectangles = ComputeGlobalRectangles(
-      {matrix}, {ImageSampleRegion({.x = 0, .y = 0, .width = kImageWidth, .height = kImageHeight})},
-      {kUnclippedRegion}, /*image_indices=*/{0}, {image});
-  EXPECT_EQ(rectangles.size(), 1ul);
-  return rectangles[0];
+  const std::array<glm::ivec2, 4> unclipped_texel_uvs = {
+      glm::ivec2(0, 0), glm::ivec2(kImageWidth, 0), glm::ivec2(kImageWidth, kImageHeight),
+      glm::ivec2(0, kImageHeight)};
+  return CreateImageRect(matrix, kUnclippedRegion, unclipped_texel_uvs, image_flip);
 }
 
 // Helper function to generate an ImageRect from a glm::mat3 for tests that are strictly testing the
 // conversion math.
 ImageRect GetImageRectForMatrixAndClip(const glm::mat3& matrix, const TransformClipRegion& clip,
                                        ImageFlip image_flip = ImageFlip::kNone) {
-  // Compute the global rectangle vector and return the first entry.
-  allocation::ImageMetadata image = {
-      .width = kImageWidth, .height = kImageHeight, .flip = image_flip};
-  const auto rectangles = ComputeGlobalRectangles(
-      {matrix}, {ImageSampleRegion({.x = 0, .y = 0, .width = kImageWidth, .height = kImageHeight})},
-      {clip}, /*image_indices=*/{0}, {image});
-  EXPECT_EQ(rectangles.size(), 1ul);
-  return rectangles[0];
+  const std::array<glm::ivec2, 4> unclipped_texel_uvs = {
+      glm::ivec2(0, 0), glm::ivec2(kImageWidth, 0), glm::ivec2(kImageWidth, kImageHeight),
+      glm::ivec2(0, kImageHeight)};
+  return CreateImageRect(matrix, clip, unclipped_texel_uvs, image_flip);
 }
 
 // Helper function for getting the correct rotation angle. Matrices are specified in view-space
@@ -850,10 +842,8 @@ TEST(ImageRectTest, MultipleParentTest) {
   const flatland::HitRegion kHitRegion({.x = 1, .y = 2, .width = 10, .height = 20});
   const float kScale = 2.0f;
 
-  const display::ImageId kImageId(7);
   uber_struct->local_topology = {{{1, 0}, 2}, {{1, 1}, 1}, {{1, 4}, 0}, {{1, 3}, 1}, {{1, 4}, 0}};
   uber_struct->local_matrices[{1, 3}] = glm::mat3(kScale);
-  uber_struct->images[{1, 4}].identifier = kImageId;
   uber_struct->local_hit_regions_map[{1, 4}] = {kHitRegion};
   uber_struct->local_clip_regions[{1, 4}] = kClipRegion;
   uber_structs[1] = std::move(uber_struct);
@@ -880,14 +870,6 @@ TEST(ImageRectTest, MultipleParentTest) {
   EXPECT_EQ(matrix_vector.size(), 5U);
   EXPECT_EQ(matrix_vector[2], glm::mat3(1.0));
   EXPECT_EQ(matrix_vector[4], glm::mat3(2.0));
-
-  // The image data for both entries should have the same values.
-  auto [indices, images] = ComputeGlobalImageData(topology_vector, parent_indices, uber_structs);
-  EXPECT_EQ(images.size(), 2U);
-  EXPECT_EQ(indices[0], 2U);
-  EXPECT_EQ(indices[1], 4U);
-  EXPECT_EQ(images[0].identifier, kImageId);
-  EXPECT_EQ(images[1].identifier, kImageId);
 
   // Each entry for the doubly parented node should have different clip regions.
   {
@@ -924,123 +906,6 @@ TEST(ImageRectTest, MultipleParentTest) {
 
     // The second one should be magnified by the scale factor.
     EXPECT_EQ(second.region(), kHitRegion.region().ScaledBy(kScale));
-  }
-}
-
-// Check that we can set image color values besides white.
-TEST(GlobalImageDataTest, ImageMetadataColorTest) {
-  UberStruct::InstanceMap uber_structs;
-
-  // Make a global topology representing the following graph:
-  //
-  // 1:0 - 1:1
-  GlobalTopologyData::TopologyVector topology_vector = {{1, 0}, {1, 1}};
-  GlobalTopologyData::ParentIndexVector parent_indices = {0, 0};
-
-  // Set the uberstruct image color values.
-  auto uber_struct = std::make_unique<UberStruct>();
-  std::array<float, 4> color_a = {0.5f, 0.2f, 0.75f, 0.8f};
-  std::array<float, 4> color_b = {0.9f, 0.6f, 0.4f, 0.3f};
-
-  uber_struct->images[{1, 0}] = allocation::ImageMetadata{
-      .identifier = display::ImageId(1),
-      .multiply_color = color_a,
-      .blend_mode = BlendMode::kStraightAlpha(),
-  };
-  uber_struct->images[{1, 1}] = allocation::ImageMetadata{
-      .identifier = display::ImageId(2),
-      .multiply_color = color_b,
-      .blend_mode = BlendMode::kStraightAlpha(),
-  };
-  uber_structs[1] = std::move(uber_struct);
-
-  // These are the color values we expect to get back from |ComputeGlobalImageData|.
-  std::vector<std::array<float, 4>> expected_colors = {color_a, color_b};
-
-  auto global_images = ComputeGlobalImageData(topology_vector, parent_indices, uber_structs).images;
-  for (uint32_t i = 0; i < global_images.size(); i++) {
-    const auto& global_col = global_images[i].multiply_color;
-    for (uint32_t j = 0; j < 4; j++) {
-      EXPECT_EQ(expected_colors[i][j], global_col[j]);
-    }
-  }
-}
-
-// The following tests test for image sample regions.
-
-// Test that an empty uber struct returns empty sample regions.
-TEST(GlobalImageDataTest, EmptyTopologyReturnsEmptyImageSampleRegions) {
-  UberStruct::InstanceMap uber_structs;
-  GlobalTopologyData::TopologyVector topology_vector;
-  GlobalTopologyData::ParentIndexVector parent_indices;
-
-  auto global_sample_regions =
-      ComputeGlobalImageSampleRegions(topology_vector, parent_indices, uber_structs);
-  EXPECT_TRUE(global_sample_regions.empty());
-}
-
-// Check that if there are no sample regions provided, they default to
-// empty ImageSampleRegion structs.
-TEST(GlobalImageDataTest, EmptySampleRegionsAreInvalid) {
-  UberStruct::InstanceMap uber_structs;
-
-  // Make a global topology representing the following graph:
-  //
-  // 1:0 - 1:1
-  GlobalTopologyData::TopologyVector topology_vector = {{1, 0}, {1, 1}};
-  GlobalTopologyData::ParentIndexVector parent_indices = {0, 0};
-
-  // The UberStruct for instance ID 1 must exist, but it contains no local opacity values.
-  auto uber_struct = std::make_unique<UberStruct>();
-  uber_structs[1] = std::move(uber_struct);
-
-  GlobalImageSampleRegionVector expected_sample_regions = {kInvalidSampleRegion,
-                                                           kInvalidSampleRegion};
-
-  auto global_sample_regions =
-      ComputeGlobalImageSampleRegions(topology_vector, parent_indices, uber_structs);
-  EXPECT_EQ(expected_sample_regions.size(), global_sample_regions.size());
-  for (uint32_t i = 0; i < global_sample_regions.size(); i++) {
-    EXPECT_EQ(expected_sample_regions[i], global_sample_regions[i]);
-  }
-}
-
-// Test a more complicated scenario with multiple transforms, each with its own
-// set of image sample regions, and make sure that they all get calculated correctly.
-TEST(GlobalImageDataTest, ComplicatedGraphImageSampleRegions) {
-  UberStruct::InstanceMap uber_structs;
-
-  // Make a global topology representing the following graph:
-  //
-  // 1:0 - 1:1 - 1:2
-  //     \
-  //       1:3 - 1:4
-  GlobalTopologyData::TopologyVector topology_vector = {{1, 0}, {1, 1}, {1, 2}, {1, 3}, {1, 4}};
-  GlobalTopologyData::ParentIndexVector parent_indices = {0, 0, 1, 0, 3};
-
-  auto uber_struct = std::make_unique<UberStruct>();
-
-  GlobalImageSampleRegionVector expected_sample_regions = {
-      ImageSampleRegion({0, 0, 81, 15}),     ImageSampleRegion({5, 18, 100, 145}),
-      ImageSampleRegion({10, 4, 10, 667}),   ImageSampleRegion({33, 99, 910, 783}),
-      ImageSampleRegion({90, 76, 392, 991}),
-  };
-
-  uber_struct->local_image_sample_regions[{1, 0}] = expected_sample_regions[0];
-
-  uber_struct->local_image_sample_regions[{1, 1}] = expected_sample_regions[1];
-  uber_struct->local_image_sample_regions[{1, 2}] = expected_sample_regions[2];
-
-  uber_struct->local_image_sample_regions[{1, 3}] = expected_sample_regions[3];
-  uber_struct->local_image_sample_regions[{1, 4}] = expected_sample_regions[4];
-
-  uber_structs[1] = std::move(uber_struct);
-
-  auto global_sample_regions =
-      ComputeGlobalImageSampleRegions(topology_vector, parent_indices, uber_structs);
-  EXPECT_EQ(expected_sample_regions.size(), global_sample_regions.size());
-  for (uint32_t i = 0; i < global_sample_regions.size(); i++) {
-    EXPECT_EQ(expected_sample_regions[i], global_sample_regions[i]);
   }
 }
 

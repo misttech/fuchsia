@@ -16,8 +16,6 @@
 
 namespace flatland {
 
-const ImageSampleRegion kInvalidSampleRegion({.x = 0.f, .y = 0.f, .width = 0.f, .height = 0.f});
-
 constexpr TransformClipRegion kUnclippedRegion({.x = -(std::numeric_limits<int32_t>::max() / 2),
                                                 .y = -(std::numeric_limits<int32_t>::max() / 2),
                                                 .width = std::numeric_limits<int32_t>::max(),
@@ -341,38 +339,6 @@ void ComputeGlobalMatrices(GlobalMatrixVector& output,
   }
 }
 
-GlobalImageSampleRegionVector ComputeGlobalImageSampleRegions(
-    const GlobalTopologyData::TopologyVector& global_topology,
-    const GlobalTopologyData::ParentIndexVector& parent_indices,
-    const UberStruct::InstanceMap& uber_structs) {
-  GlobalImageSampleRegionVector output;
-  ComputeGlobalImageSampleRegions(output, global_topology, parent_indices, uber_structs);
-  return output;
-}
-
-void ComputeGlobalImageSampleRegions(GlobalImageSampleRegionVector& output,
-                                     const GlobalTopologyData::TopologyVector& global_topology,
-                                     const GlobalTopologyData::ParentIndexVector& parent_indices,
-                                     const UberStruct::InstanceMap& uber_structs) {
-  TRACE_DURATION("gfx", "ComputeGlobalImageSampleRegions");
-  output.reserve(global_topology.size());
-  for (size_t i = 0; i < global_topology.size(); ++i) {
-    // Every entry in the global topology comes from an UberStruct.
-    const TransformHandle& handle = global_topology[i];
-    const auto uber_stuct_kv = uber_structs.find(handle.GetInstanceId());
-    FX_DCHECK(uber_stuct_kv != uber_structs.end());
-    const auto regions_kv = uber_stuct_kv->second->local_image_sample_regions.find(handle);
-
-    if (regions_kv == uber_stuct_kv->second->local_image_sample_regions.end()) {
-      // Only non-image nodes should get here. This gets pruned out when we select for
-      // content images.
-      output.emplace_back(kInvalidSampleRegion);
-    } else {
-      output.emplace_back(regions_kv->second);
-    }
-  }
-}
-
 GlobalTransformClipRegionVector ComputeGlobalTransformClipRegions(
     const GlobalTopologyData::TopologyVector& global_topology,
     const GlobalTopologyData::ParentIndexVector& parent_indices,
@@ -483,59 +449,6 @@ GlobalHitRegionsMap ComputeGlobalHitRegions(
   }
 
   return global_hit_regions;
-}
-
-GlobalRectangleVector ComputeGlobalRectangles(
-    const GlobalMatrixVector& matrices, const GlobalImageSampleRegionVector& sample_regions,
-    const GlobalTransformClipRegionVector& clip_regions, const GlobalIndexVector& image_indices,
-    const std::vector<allocation::ImageMetadata>& images) {
-  GlobalRectangleVector output;
-  ComputeGlobalRectangles(output, matrices, sample_regions, clip_regions, image_indices, images);
-  return output;
-}
-
-void ComputeGlobalRectangles(GlobalRectangleVector& output, const GlobalMatrixVector& matrices,
-                             const GlobalImageSampleRegionVector& sample_regions,
-                             const GlobalTransformClipRegionVector& clip_regions,
-                             const GlobalIndexVector& image_indices,
-                             const std::vector<allocation::ImageMetadata>& images) {
-  TRACE_DURATION("gfx", "ComputeGlobalRectangles");
-
-  if (matrices.empty() || sample_regions.empty()) {
-    return;
-  }
-
-  FX_DCHECK(matrices.size() == sample_regions.size());
-  FX_DCHECK(matrices.size() == clip_regions.size());
-  FX_DCHECK(image_indices.size() == images.size());
-
-  output.reserve(image_indices.size());
-
-  for (uint32_t i = 0; i < image_indices.size(); i++) {
-    const size_t ii = image_indices[i];
-    FX_DCHECK(ii < matrices.size());
-    const auto& matrix = matrices[ii];
-    const auto& clip = clip_regions[ii];
-    const auto& sample = sample_regions[ii];
-    const auto& image = images[i];
-
-    {
-      const auto w = static_cast<float>(image.width);
-      const auto h = static_cast<float>(image.height);
-
-      if (w > 0 && h > 0) {
-        FX_DCHECK(sample.x() >= 0 && (sample.x() + sample.width()) <= w);
-        FX_DCHECK(sample.y() >= 0 && (sample.y() + sample.height()) <= h);
-      }
-    }
-
-    const std::array<glm::ivec2, 4> unclipped_texel_uvs = {
-        glm::ivec2(sample.x(), sample.y()), glm::ivec2(sample.x() + sample.width(), sample.y()),
-        glm::ivec2(sample.x() + sample.width(), sample.y() + sample.height()),
-        glm::ivec2(sample.x(), sample.y() + sample.height())};
-
-    output.emplace_back(CreateImageRect(matrix, clip, unclipped_texel_uvs, image.flip));
-  }
 }
 
 }  // namespace flatland

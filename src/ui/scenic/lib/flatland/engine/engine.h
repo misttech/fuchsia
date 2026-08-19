@@ -38,7 +38,7 @@ class Engine {
          std::shared_ptr<flatland::FlatlandPresenterImpl> flatland_presenter,
          std::shared_ptr<flatland::UberStructSystem> uber_struct_system,
          std::shared_ptr<flatland::LinkSystem> link_system, inspect::Node inspect_node,
-         GetRootTransformFunc get_root_transform, bool use_flatland2_uberstruct_schema = false);
+         GetRootTransformFunc get_root_transform);
   ~Engine() = default;
 
   // Orchestrates the generation and submission of a frame to the `DisplayCompositor`.
@@ -86,8 +86,7 @@ class Engine {
   // Holds the per-frame scene state that is generated from the latest UberStructs from each
   // Flatland session, linked together by the LinkSystem.
   struct SceneState {
-    void InitializeFlatland1(Engine& engine, TransformHandle root_transform);
-    void InitializeFlatland2(Engine& engine, TransformHandle root_transform);
+    void Initialize(Engine& engine, TransformHandle root_transform);
 
     // Clear all fields without deallocating memory.
     void Clear();
@@ -97,15 +96,6 @@ class Engine {
     flatland::GlobalMatrixVector global_matrices;
     flatland::GlobalTransformClipRegionVector clip_regions;
     std::vector<ResolvedLayer> resolved_layers;
-
-   private:
-    // Internal scratch buffers stashed to avoid heap allocations in the hot path.
-    // Most (all?) of these will be deleted when moving Flatland1 to use the Flatland2
-    // UberStruct schema.
-    flatland::GlobalImageVector images;
-    flatland::GlobalIndexVector image_indices;
-    flatland::GlobalRectangleVector image_rectangles;
-    flatland::GlobalImageSampleRegionVector image_sample_regions;
   };
 
   // Initialize all inspect::Nodes, so that the Engine state can be observed.
@@ -138,9 +128,6 @@ class Engine {
   inspect::UintProperty inspect_gpu_composition_frame_count_;
   inspect::UintProperty inspect_failed_frame_count_;
   GetRootTransformFunc get_root_transform_;
-
-  // Temporary flag.  Must match `FlatlandManager::use_flatland2_uberstruct_schema_`.
-  const bool use_flatland2_uberstruct_schema_;
 
   async::Executor executor_;
 };

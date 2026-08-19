@@ -146,19 +146,13 @@ std::optional<UberStructSystem::PendingUberStruct> UberStructSystem::UberStructQ
   return pending_structs_.Pop();
 }
 
-}  // namespace flatland
-
 namespace {
 
 struct Indenter {
   size_t depth;
 };
 
-}  // namespace
-
-namespace std {
-
-ostream& operator<<(ostream& out, const Indenter& indenter) {
+std::ostream& operator<<(std::ostream& out, const Indenter& indenter) {
   size_t depth = indenter.depth;
   while (depth-- > 0) {
     out << " ";
@@ -166,7 +160,35 @@ ostream& operator<<(ostream& out, const Indenter& indenter) {
   return out;
 }
 
-ostream& operator<<(ostream& out, const flatland::UberStruct& us) {
+}  // namespace
+
+std::ostream& operator<<(std::ostream& out, const UberStructLayer::ImageModeProperties& image) {
+  return out << "image: id=" << image.image_id << " sample_rect=" << image.sample_rect
+             << " transform=" << image.transform;
+}
+
+std::ostream& operator<<(std::ostream& out,
+                         const UberStructLayer::SolidColorModeProperties& solid) {
+  return out << "color: color=" << solid.color[0] << "," << solid.color[1] << "," << solid.color[2]
+             << "," << solid.color[3];
+}
+
+std::ostream& operator<<(std::ostream& out, const UberStructLayer& layer) {
+  out << "display_rect=" << layer.common.display_rect << " opacity=" << layer.common.opacity
+      << " blend_mode=" << layer.common.blend_mode;
+  if (std::holds_alternative<UberStructLayer::ImageModeProperties>(layer.content)) {
+    out << " " << std::get<UberStructLayer::ImageModeProperties>(layer.content);
+  } else if (std::holds_alternative<UberStructLayer::SolidColorModeProperties>(layer.content)) {
+    out << " " << std::get<UberStructLayer::SolidColorModeProperties>(layer.content);
+  } else {
+    static_assert(3 == std::variant_size_v<decltype(UberStructLayer::content)>,
+                  "Must handle all UberStructLayer content types");
+    __UNREACHABLE;
+  }
+  return out;
+}
+
+std::ostream& operator<<(std::ostream& out, const UberStruct& us) {
   if (us.view_ref) {
     out << *us.view_ref << "\n";
   }
@@ -183,21 +205,6 @@ ostream& operator<<(ostream& out, const flatland::UberStruct& us) {
     out << Indenter{children_remaining.size()} << handle;
 
     {
-      auto it = us.images.find(handle);
-      if (it != us.images.end()) {
-        out << "  image(" << it->second.width << "x" << it->second.height << ")";
-        out << " blend_mode=" << it->second.blend_mode;
-      }
-    }
-
-    {
-      auto it = us.local_image_sample_regions.find(handle);
-      if (it != us.local_image_sample_regions.end()) {
-        out << "  sample_region=" << it->second;
-      }
-    }
-
-    {
       auto it = us.local_opacity_values.find(handle);
       if (it != us.local_opacity_values.end()) {
         out << "  opacity=" << it->second;
@@ -208,6 +215,27 @@ ostream& operator<<(ostream& out, const flatland::UberStruct& us) {
       auto it = us.local_clip_regions.find(handle);
       if (it != us.local_clip_regions.end()) {
         out << "  clip_region=" << it->second;
+      }
+    }
+
+    {
+      auto it = us.layer_stacks.find(handle);
+      if (it != us.layer_stacks.end()) {
+        out << "  layer_stack=[";
+        bool first = true;
+        for (const auto& layer_handle : it->second) {
+          if (!first) {
+            out << ", ";
+          }
+          first = false;
+          out << layer_handle;
+
+          auto layer_it = us.layers.find(layer_handle);
+          if (layer_it != us.layers.end()) {
+            out << "(" << layer_it->second << ")";
+          }
+        }
+        out << "]";
       }
     }
 
@@ -230,4 +258,4 @@ ostream& operator<<(ostream& out, const flatland::UberStruct& us) {
   return out;
 }
 
-}  // namespace std
+}  // namespace flatland
