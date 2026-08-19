@@ -112,3 +112,148 @@ fn test_rpc_macro_immutable_and_assoc_fn() {
         });
     });
 }
+
+struct GenericService<T> {
+    item: T,
+}
+
+#[rpc]
+impl<T: Clone + 'static> GenericService<T> {
+    async fn get_item(&self) -> T {
+        self.item.clone()
+    }
+
+    async fn set_item(&mut self, new_item: T) -> T {
+        core::mem::replace(&mut self.item, new_item)
+    }
+}
+
+#[test]
+fn test_rpc_macro_generics() {
+    let mut channel = RpcChannel::<GenericServiceRpc<i32>, TestCfg>::new();
+    let (client_handle, server_handle) = channel.split();
+    let client = GenericServiceClient::new(client_handle);
+
+    let mut server = GenericService { item: 100 };
+
+    BoundedExecutor::new(TestExecutor::new(), |s| {
+        s.spawn(async {
+            while let Ok((req, responder)) = server_handle.recv().await {
+                server.route_request(req, responder).await;
+            }
+        });
+
+        s.block_on(async {
+            assert_eq!(client.get_item().await.unwrap(), 100);
+            assert_eq!(client.set_item(200).await.unwrap(), 100);
+            assert_eq!(client.get_item().await.unwrap(), 200);
+        });
+    });
+}
+
+struct LifetimeConstService<'a, const N: usize> {
+    prefix: &'a str,
+}
+
+#[rpc]
+impl<'a, const N: usize> LifetimeConstService<'a, N> {
+    async fn format_data(&self, suffix: &'a str) -> String {
+        format!("{}_{}_{}", self.prefix, suffix, N)
+    }
+
+    async fn get_size(&self) -> usize {
+        N
+    }
+}
+
+#[test]
+fn test_rpc_macro_lifetimes_and_const_generics() {
+    let prefix = "test_prefix";
+    let mut channel = RpcChannel::<LifetimeConstServiceRpc<'_, 8>, TestCfg>::new();
+    let (client_handle, server_handle) = channel.split();
+    let client = LifetimeConstServiceClient::new(client_handle);
+
+    let server = LifetimeConstService::<8> { prefix };
+
+    BoundedExecutor::new(TestExecutor::new(), |s| {
+        s.spawn(async {
+            while let Ok((req, responder)) = server_handle.recv().await {
+                server.route_request(req, responder).await;
+            }
+        });
+
+        s.block_on(async {
+            assert_eq!(client.format_data("suffix").await.unwrap(), "test_prefix_suffix_8");
+            assert_eq!(client.get_size().await.unwrap(), 8);
+        });
+    });
+}
+
+struct ComplexService<'a, T, const N: usize> {
+    data: &'a [T; N],
+}
+
+#[rpc]
+impl<'a, T, const N: usize> ComplexService<'a, T, N>
+where
+    T: Clone + 'static,
+{
+    async fn get_at(&self, idx: usize) -> Option<T> {
+        self.data.get(idx).cloned()
+    }
+}
+
+#[test]
+fn test_rpc_macro_complex_generics_and_where_clause() {
+    let array = [10, 20, 30, 40];
+    let mut channel = RpcChannel::<ComplexServiceRpc<'_, i32, 4>, TestCfg>::new();
+    let (client_handle, server_handle) = channel.split();
+    let client = ComplexServiceClient::new(client_handle);
+    let client2 = client.clone();
+
+    let server = ComplexService { data: &array };
+
+    BoundedExecutor::new(TestExecutor::new(), |s| {
+        s.spawn(async {
+            while let Ok((req, responder)) = server_handle.recv().await {
+                server.route_request(req, responder).await;
+            }
+        });
+
+        s.block_on(async {
+            assert_eq!(client.get_at(0).await.unwrap(), Some(10));
+            assert_eq!(client2.get_at(2).await.unwrap(), Some(30));
+            assert_eq!(client.get_at(10).await.unwrap(), None);
+        });
+    });
+}
+
+struct PureConstService<const N: usize>;
+
+#[rpc]
+impl<const N: usize> PureConstService<N> {
+    async fn get_capacity(&self) -> usize {
+        N
+    }
+}
+
+#[test]
+fn test_rpc_macro_pure_const_generic() {
+    let mut channel = RpcChannel::<PureConstServiceRpc<64>, TestCfg>::new();
+    let (client_handle, server_handle) = channel.split();
+    let client = PureConstServiceClient::new(client_handle);
+
+    let server = PureConstService::<64>;
+
+    BoundedExecutor::new(TestExecutor::new(), |s| {
+        s.spawn(async {
+            while let Ok((req, responder)) = server_handle.recv().await {
+                server.route_request(req, responder).await;
+            }
+        });
+
+        s.block_on(async {
+            assert_eq!(client.get_capacity().await.unwrap(), 64);
+        });
+    });
+}

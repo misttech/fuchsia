@@ -43,7 +43,55 @@ pub fn rpc(_attr: TokenStream, item: TokenStream) -> TokenStream {
     let rpc_ident = format_ident!("{}Rpc", server_ident);
     let client_ident = format_ident!("{}Client", server_ident);
 
+    let (impl_generics, ty_generics, where_clause) = item_impl.generics.split_for_impl();
+    let where_predicates = where_clause.map(|w| &w.predicates);
+
+    let mut lifetime_defs = Vec::new();
+    let mut lifetime_names = Vec::new();
+    let mut type_const_defs = Vec::new();
+    let mut type_const_names = Vec::new();
+
+    for p in &item_impl.generics.params {
+        match p {
+            syn::GenericParam::Lifetime(l) => {
+                lifetime_defs.push(quote! { #l });
+                let lt = &l.lifetime;
+                lifetime_names.push(quote! { #lt });
+            }
+            syn::GenericParam::Type(t) => {
+                type_const_defs.push(quote! { #t });
+                let id = &t.ident;
+                type_const_names.push(quote! { #id });
+            }
+            syn::GenericParam::Const(c) => {
+                type_const_defs.push(quote! { #c });
+                let id = &c.ident;
+                type_const_names.push(quote! { #id });
+            }
+        }
+    }
+
+    let phantom_types: Vec<_> = item_impl
+        .generics
+        .params
+        .iter()
+        .filter_map(|p| match p {
+            syn::GenericParam::Type(t) => {
+                let id = &t.ident;
+                Some(quote! { #id })
+            }
+            syn::GenericParam::Lifetime(l) => {
+                let lt = &l.lifetime;
+                Some(quote! { &#lt () })
+            }
+            syn::GenericParam::Const(_) => None,
+        })
+        .collect();
+
+    let has_phantom = !phantom_types.is_empty();
+
     let mut methods = Vec::new();
+
     for item in &item_impl.items {
         if let syn::ImplItem::Fn(method) = item {
             let Some(FnArg::Receiver(receiver)) = method.sig.inputs.first() else {
@@ -169,15 +217,35 @@ pub fn rpc(_attr: TokenStream, item: TokenStream) -> TokenStream {
         }
     });
 
+    let (
+        req_phantom,
+        res_phantom,
+        rpc_tuple_field,
+        client_phantom_field,
+        client_phantom_init,
+        wildcard_arm,
+    ) = if has_phantom {
+        (
+            quote! { #[doc(hidden)] _Phantom(::core::marker::PhantomData<(#(#phantom_types),*)>) },
+            quote! { #[doc(hidden)] _Phantom(::core::marker::PhantomData<(#(#phantom_types),*)>) },
+            quote! { (pub ::core::marker::PhantomData<(#(#phantom_types),*)>) },
+            quote! { _phantom: ::core::marker::PhantomData<(#(#phantom_types),*)>, },
+            quote! { _phantom: ::core::marker::PhantomData, },
+            quote! { _ => ::core::unreachable!("Phantom variant should not be constructed"), },
+        )
+    } else {
+        (quote! {}, quote! {}, quote! {}, quote! {}, quote! {}, quote! {})
+    };
+
     let route_method: syn::ImplItem = if methods.is_empty() {
         syn::parse_quote! {
             async fn route_request<Cfg, C>(
                 #route_self_arg,
-                request: #request_ident,
-                _responder: ::sapphire_async::rpc::Responder<#rpc_ident, Cfg, C>,
+                request: #request_ident #ty_generics,
+                _responder: ::sapphire_async::rpc::Responder<#rpc_ident #ty_generics, Cfg, C>,
             ) where
                 Cfg: ::sapphire_async::rpc::RpcCfg,
-                C: ::core::ops::Deref<Target = ::sapphire_async::rpc::RpcChannel<#rpc_ident, Cfg>>,
+                C: ::core::ops::Deref<Target = ::sapphire_async::rpc::RpcChannel<#rpc_ident #ty_generics, Cfg>>,
             {
                 match request {
                     _ => ::core::unreachable!("No RPC endpoints defined"),
@@ -188,77 +256,79 @@ pub fn rpc(_attr: TokenStream, item: TokenStream) -> TokenStream {
         syn::parse_quote! {
             async fn route_request<Cfg, C>(
                 #route_self_arg,
-                request: #request_ident,
-                responder: ::sapphire_async::rpc::Responder<#rpc_ident, Cfg, C>,
+                request: #request_ident #ty_generics,
+                responder: ::sapphire_async::rpc::Responder<#rpc_ident #ty_generics, Cfg, C>,
             ) where
                 Cfg: ::sapphire_async::rpc::RpcCfg,
-                C: ::core::ops::Deref<Target = ::sapphire_async::rpc::RpcChannel<#rpc_ident, Cfg>>,
+                C: ::core::ops::Deref<Target = ::sapphire_async::rpc::RpcChannel<#rpc_ident #ty_generics, Cfg>>,
             {
                 match request {
                     #(#route_arms)*
+                    #wildcard_arm
                 }
             }
         }
     };
 
-    let (impl_generics, _, where_clause) = item_impl.generics.split_for_impl();
     let self_ty = &item_impl.self_ty;
 
     let output = quote! {
-        #[derive(::core::fmt::Debug)]
         #[allow(non_camel_case_types, non_snake_case, dead_code)]
-        pub enum #request_ident {
-            #(#req_variants),*
+        pub enum #request_ident #impl_generics #where_clause {
+            #(#req_variants,)*
+            #req_phantom
         }
 
-        #[derive(::core::fmt::Debug)]
         #[allow(non_camel_case_types, non_snake_case, dead_code)]
-        pub enum #response_ident {
-            #(#res_variants),*
+        pub enum #response_ident #impl_generics #where_clause {
+            #(#res_variants,)*
+            #res_phantom
         }
 
         #[derive(::core::fmt::Debug, ::core::clone::Clone, ::core::marker::Copy)]
-        pub struct #rpc_ident;
+        pub struct #rpc_ident #impl_generics #rpc_tuple_field #where_clause;
 
-        impl ::sapphire_async::rpc::Rpc for #rpc_ident {
-            type Request = #request_ident;
-            type Response = #response_ident;
+        impl #impl_generics ::sapphire_async::rpc::Rpc for #rpc_ident #ty_generics #where_clause {
+            type Request = #request_ident #ty_generics;
+            type Response = #response_ident #ty_generics;
         }
 
         #[derive(::core::fmt::Debug)]
-        pub struct #client_ident<C: ::sapphire_async::rpc::RpcHandles> {
+        pub struct #client_ident<#(#lifetime_defs,)* C: ::sapphire_async::rpc::RpcHandles, #(#type_const_defs),*> #where_clause {
             client: ::sapphire_async::rpc::Client<C>,
+            #client_phantom_field
         }
 
-        impl<C: ::sapphire_async::rpc::RpcHandles> #client_ident<C> {
+        impl<#(#lifetime_defs,)* C: ::sapphire_async::rpc::RpcHandles, #(#type_const_defs),*> #client_ident<#(#lifetime_names,)* C, #(#type_const_names),*> #where_clause {
             pub const fn new(client: ::sapphire_async::rpc::Client<C>) -> Self {
-                Self { client }
+                Self { client, #client_phantom_init }
             }
         }
 
-        impl<C: ::sapphire_async::rpc::RpcHandles> ::core::convert::From<::sapphire_async::rpc::Client<C>> for #client_ident<C> {
+        impl<#(#lifetime_defs,)* C: ::sapphire_async::rpc::RpcHandles, #(#type_const_defs),*> ::core::convert::From<::sapphire_async::rpc::Client<C>> for #client_ident<#(#lifetime_names,)* C, #(#type_const_names),*> #where_clause {
             fn from(client: ::sapphire_async::rpc::Client<C>) -> Self {
                 Self::new(client)
             }
         }
 
-        impl<C: ::sapphire_async::rpc::RpcHandles + ::core::clone::Clone> ::core::clone::Clone for #client_ident<C> {
+        impl<#(#lifetime_defs,)* C: ::sapphire_async::rpc::RpcHandles + ::core::clone::Clone, #(#type_const_defs),*> ::core::clone::Clone for #client_ident<#(#lifetime_names,)* C, #(#type_const_names),*> #where_clause {
             fn clone(&self) -> Self {
-                Self { client: self.client.clone() }
+                Self { client: self.client.clone(), #client_phantom_init }
             }
         }
 
-        impl<C: ::sapphire_async::rpc::RpcHandles> ::core::ops::Deref for #client_ident<C> {
+        impl<#(#lifetime_defs,)* C: ::sapphire_async::rpc::RpcHandles, #(#type_const_defs),*> ::core::ops::Deref for #client_ident<#(#lifetime_names,)* C, #(#type_const_names),*> #where_clause {
             type Target = ::sapphire_async::rpc::Client<C>;
             fn deref(&self) -> &Self::Target {
                 &self.client
             }
         }
 
-        impl<C, Cfg> #client_ident<C>
+        impl<#(#lifetime_defs,)* C, Cfg, #(#type_const_defs),*> #client_ident<#(#lifetime_names,)* C, #(#type_const_names),*>
         where
-            C: ::sapphire_async::rpc::RpcHandles + ::core::ops::Deref<Target = ::sapphire_async::rpc::RpcChannel<#rpc_ident, Cfg>>,
+            C: ::sapphire_async::rpc::RpcHandles + ::core::ops::Deref<Target = ::sapphire_async::rpc::RpcChannel<#rpc_ident #ty_generics, Cfg>>,
             Cfg: ::sapphire_async::rpc::RpcCfg,
+            #where_predicates
         {
             #(#client_methods)*
         }
