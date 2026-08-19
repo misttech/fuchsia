@@ -866,7 +866,7 @@ impl CurrentTaskCredentialsWriteGuard {
 
         // The /proc/pid directory's ownership is updated when the task's euid
         // or egid changes. See proc(5).
-        let maybe_node = current_task.running_state().proc_pid_directory_cache.cloned();
+        let maybe_node = current_task.running_state().proc_pid_directory_cache.get();
         if let Some(node) = maybe_node {
             let creds = current_task.real_creds().euid_as_fscred();
             // SAFETY: The /proc/pid directory held by `proc_pid_directory_cache` represents the

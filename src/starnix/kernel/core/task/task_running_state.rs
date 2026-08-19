@@ -5,7 +5,7 @@
 use crate::mm::MemoryManager;
 use crate::task::{AbstractUnixSocketNamespace, AbstractVsockSocketNamespace, CurrentTask};
 use crate::vfs::{FdTable, FsContext, FsNodeHandle, SharedFdTable};
-use fuchsia_rcu::{RcuArc, RcuDroppable, RcuOptionArc, RcuOptionBox};
+use fuchsia_rcu::{RcuArc, RcuDroppable, RcuOptionArc};
 use starnix_sync::{LockDepMutex, TaskFilesLock};
 use starnix_uapi::errno;
 use starnix_uapi::errors::Errno;
@@ -44,7 +44,7 @@ pub struct TaskRunningState {
 
     /// The pid directory, so it doesn't have to be generated and thrown away on every access.
     /// See https://fxbug.dev/291962828 for details.
-    pub proc_pid_directory_cache: RcuOptionBox<FsNodeHandle>,
+    pub proc_pid_directory_cache: OnceLock<FsNodeHandle>,
 }
 
 // TODO(b/525158773): Temporary impl to allow incremental RCU safety refactoring.

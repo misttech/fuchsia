@@ -189,19 +189,11 @@ impl FsNodeOps for ProcDirectoryNode {
                 let pid_string = std::str::from_utf8(name).map_err(|_| errno!(ENOENT))?;
                 let pid = pid_string.parse::<pid_t>().map_err(|_| errno!(ENOENT))?;
                 let task = current_task.get_task(pid)?;
-                // RCU scoping rules create a race condition such that multiple threads
-                // simultaneously reading proc_pid_directory_cache for the first time will result in
-                // duplicate caches being created. However, this is both unlikely and safe. In that
-                // event, the last cached to be installed wins the race and the only cost is the
-                // wasted work of creating multiple caches.
                 let running_state = task.running_state()?;
-                if let Some(pd) = running_state.proc_pid_directory_cache.cloned() {
-                    Ok(pd)
-                } else {
-                    let pd = pid_directory(current_task, &node.fs(), &task);
-                    running_state.proc_pid_directory_cache.update(Some(pd.clone()));
-                    Ok(pd)
-                }
+                let pd = running_state
+                    .proc_pid_directory_cache
+                    .get_or_init(|| pid_directory(current_task, &node.fs(), &task));
+                Ok(pd.clone())
             }
         }
     }
