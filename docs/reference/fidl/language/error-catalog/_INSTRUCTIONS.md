@@ -20,11 +20,15 @@ Follow these steps if the script doesn't work:
 
 - Add the new error to the end of `//docs/reference/fidl/language/_files.txt`:
 
-      _fi-NNNN.md
+  ```none
+  _fi-NNNN.md
+  ```
 
 - Add the new error to the end of `//docs/reference/fidl/language/errcat.md`:
 
-      <<error-catalog/_fi-NNNN.md>>
+  ```none
+  <<error-catalog/_fi-NNNN.md>>
+  ```
 
 - Add a new entry to the end of `//docs/error/_redirects.yaml`:
 
@@ -63,3 +67,5 @@ Follow these steps if the script doesn't work:
 
       -constexpr ErrorDef<10, std::string_view> ErrInvalidIdentifier("invalid identifier '{}'");
       +constexpr RetiredDef<10> ErrInvalidIdentifier;
+
+<!-- doc-checker: ignore-unused -->
