@@ -15,6 +15,12 @@ const USB_RECIP_DEVICE: u8 = 0x00;
 const USB_TYPE_VENDOR_OUT: u8 = USB_DIR_OUT | USB_TYPE_VENDOR | USB_RECIP_DEVICE;
 const USB_TYPE_VENDOR_IN: u8 = USB_DIR_IN | USB_TYPE_VENDOR | USB_RECIP_DEVICE;
 
+const USB_REQ_STANDARD_DEVICE_OUT: u8 = USB_DIR_OUT | USB_TYPE_STANDARD | USB_RECIP_DEVICE;
+const USB_REQ_STANDARD_DEVICE_IN: u8 = USB_DIR_IN | USB_TYPE_STANDARD | USB_RECIP_DEVICE;
+const USB_REQ_STANDARD_INTERFACE_IN: u8 = USB_DIR_IN | USB_TYPE_STANDARD | USB_RECIP_INTERFACE;
+const USB_REQ_STANDARD_ENDPOINT_IN: u8 = USB_DIR_IN | USB_TYPE_STANDARD | USB_RECIP_ENDPOINT;
+const USB_REQ_STANDARD_ENDPOINT_OUT: u8 = USB_DIR_OUT | USB_TYPE_STANDARD | USB_RECIP_ENDPOINT;
+
 use futures::channel::mpsc;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -758,4 +764,100 @@ async fn test_standard_chapter_9_halt_requests() {
         w_length: 2,
     };
     assert_eq!(device.handle_control_request(&setup, &[]).await.unwrap(), vec![0x00, 0x00]);
+}
+
+#[fuchsia::test]
+async fn test_standard_endpoint_halt() {
+    let in_ep = TEST_EP_IN_ADDR as u16;
+    let (iface_c, iface_s) = create_endpoints::<fusb_function::UsbFunctionInterfaceMarker>();
+    let (func_c, func_s) = create_endpoints::<fusb_function::UsbFunctionMarker>();
+    let (ep_in_c, _) = create_endpoints::<fusb_endpoint::EndpointMarker>();
+    let (ep_out_c, _) = create_endpoints::<fusb_endpoint::EndpointMarker>();
+
+    let scope = Arc::new(fasync::Scope::new_with_name("test_halt"));
+    scope.spawn_local(run_mock_function(func_s.into_stream()));
+    let mut dev = UsbZeroFunctionDevice::new(
+        func_c.into_proxy(),
+        ep_in_c.into_proxy(),
+        TEST_EP_IN_ADDR,
+        ep_out_c.into_proxy(),
+        TEST_EP_OUT_ADDR,
+        0,
+    );
+
+    // EP0 (Control Endpoint) stall management is handled by hardware / driver stack
+    // and cannot be stalled via this vendor request. Return INVALID_ARGS for EP0.
+    assert_eq!(dev.set_endpoint_stall(0).await, Err(Status::INVALID_ARGS));
+    // Clearing stall on EP0 is a no-op because EP0 stall status automatically resets upon the next setup packet.
+    assert_eq!(dev.clear_endpoint_stall(0).await, Ok(()));
+
+    scope.spawn_local(async move {
+        dev.handle_requests(iface_s.into_stream()).await;
+    });
+
+    let proxy = iface_c.into_proxy();
+    macro_rules! control {
+        ($setup:expr) => {
+            proxy.control(&$setup, &[]).await.unwrap()
+        };
+    }
+
+    let get_status = |bm, idx| fusb_descriptor::UsbSetup {
+        bm_request_type: bm,
+        b_request: USB_SETUP_REQ_GET_STATUS,
+        w_value: 0,
+        w_index: idx,
+        w_length: 2,
+    };
+    let set_halt = |bm, val, idx| fusb_descriptor::UsbSetup {
+        bm_request_type: bm,
+        b_request: USB_SETUP_REQ_SET_FEATURE,
+        w_value: val,
+        w_index: idx,
+        w_length: 0,
+    };
+    let clear_halt = |bm, val, idx| fusb_descriptor::UsbSetup {
+        bm_request_type: bm,
+        b_request: USB_SETUP_REQ_CLEAR_FEATURE,
+        w_value: val,
+        w_index: idx,
+        w_length: 0,
+    };
+
+    // GET_STATUS on device (0), interface (0), and unhalted endpoint (0)
+    assert_eq!(control!(get_status(USB_REQ_STANDARD_DEVICE_IN, 0)), Ok(vec![0, 0]));
+    assert_eq!(control!(get_status(USB_REQ_STANDARD_INTERFACE_IN, 0)), Ok(vec![0, 0]));
+    assert_eq!(control!(get_status(USB_REQ_STANDARD_ENDPOINT_IN, in_ep)), Ok(vec![0, 0]));
+
+    // SET_FEATURE(ENDPOINT_HALT) -> GET_STATUS (1)
+    assert_eq!(
+        control!(set_halt(USB_REQ_STANDARD_ENDPOINT_OUT, USB_FEATURE_ENDPOINT_HALT, in_ep)),
+        Ok(vec![])
+    );
+    assert_eq!(control!(get_status(USB_REQ_STANDARD_ENDPOINT_IN, in_ep)), Ok(vec![1, 0]));
+
+    // CLEAR_FEATURE(ENDPOINT_HALT) -> GET_STATUS (0)
+    assert_eq!(
+        control!(clear_halt(USB_REQ_STANDARD_ENDPOINT_OUT, USB_FEATURE_ENDPOINT_HALT, in_ep)),
+        Ok(vec![])
+    );
+    assert_eq!(control!(get_status(USB_REQ_STANDARD_ENDPOINT_IN, in_ep)), Ok(vec![0, 0]));
+
+    // Negative validations: invalid feature, recipient, endpoint address, direction
+    assert_eq!(
+        control!(set_halt(USB_REQ_STANDARD_ENDPOINT_OUT, 1, in_ep)),
+        Err(Status::NOT_SUPPORTED.into_raw())
+    );
+    assert_eq!(
+        control!(set_halt(USB_REQ_STANDARD_DEVICE_OUT, USB_FEATURE_ENDPOINT_HALT, in_ep)),
+        Err(Status::NOT_SUPPORTED.into_raw())
+    );
+    assert_eq!(
+        control!(set_halt(USB_REQ_STANDARD_ENDPOINT_OUT, USB_FEATURE_ENDPOINT_HALT, 99)),
+        Err(Status::NOT_SUPPORTED.into_raw())
+    );
+    assert_eq!(
+        control!(set_halt(USB_REQ_STANDARD_ENDPOINT_IN, USB_FEATURE_ENDPOINT_HALT, in_ep)),
+        Err(Status::NOT_SUPPORTED.into_raw())
+    );
 }
