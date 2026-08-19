@@ -229,6 +229,13 @@ pub fn sys_bind(
     let socket = Socket::get_from_file(&file)?;
     let address = parse_socket_address(current_task, user_socket_address, user_address_length)?;
     if !address.valid_for_domain(socket.domain) {
+        if socket.domain == SocketDomain::Inet && address == SocketAddress::Unspecified {
+            if let Ok(local_addr) = socket.getsockname() {
+                if local_addr.maybe_inet_port().unwrap_or(0) != 0 {
+                    return Ok(());
+                }
+            }
+        }
         return match socket.domain {
             SocketDomain::Unix
             | SocketDomain::Vsock
@@ -372,7 +379,7 @@ pub fn sys_connect(
     let client = SocketFile::get_from_file(&client)?;
     let address = parse_socket_address(current_task, user_socket_address, user_address_length)?;
     let peer = match address {
-        SocketAddress::Unspecified => return error!(EAFNOSUPPORT),
+        SocketAddress::Unspecified => SocketPeer::Address(address),
         SocketAddress::Unix(ref name) => {
             log_trace!("connect to unix socket named \"{name}\"");
             if name.is_empty() {

@@ -210,6 +210,38 @@ TEST(UnixSocket, UnconnectedShutdownDgram) {
   close(fd);
 }
 
+TEST(UnixSocket, DatagramDisconnectAfUnspec) {
+  fbl::unique_fd sock1;
+  ASSERT_TRUE(sock1 = fbl::unique_fd(socket(AF_UNIX, SOCK_DGRAM, 0))) << strerror(errno);
+
+  fbl::unique_fd sock2;
+  ASSERT_TRUE(sock2 = fbl::unique_fd(socket(AF_UNIX, SOCK_DGRAM, 0))) << strerror(errno);
+
+  struct sockaddr_un addr2 = {.sun_family = AF_UNIX};
+  const char name[] = "\0test_unix_dgram_unspec";
+  memcpy(addr2.sun_path, name, sizeof(name));
+  ASSERT_THAT(bind(sock2.get(), reinterpret_cast<struct sockaddr*>(&addr2), sizeof(addr2)),
+              SyscallSucceeds());
+
+  // Connect sock1 to sock2.
+  ASSERT_THAT(connect(sock1.get(), reinterpret_cast<struct sockaddr*>(&addr2), sizeof(addr2)),
+              SyscallSucceeds());
+
+  // getpeername should succeed while connected.
+  struct sockaddr_un peer_addr = {};
+  socklen_t addrlen = sizeof(peer_addr);
+  ASSERT_THAT(getpeername(sock1.get(), reinterpret_cast<struct sockaddr*>(&peer_addr), &addrlen),
+              SyscallSucceeds());
+
+  // Disconnect sock1 using AF_UNSPEC.
+  struct sockaddr unspec_addr = {.sa_family = AF_UNSPEC};
+  ASSERT_THAT(connect(sock1.get(), &unspec_addr, sizeof(unspec_addr)), SyscallSucceeds());
+
+  // getpeername should now fail with ENOTCONN.
+  ASSERT_THAT(getpeername(sock1.get(), reinterpret_cast<struct sockaddr*>(&peer_addr), &addrlen),
+              SyscallFailsWithErrno(ENOTCONN));
+}
+
 TEST(UnixSocket, HupEvent) {
   int fds[2];
 

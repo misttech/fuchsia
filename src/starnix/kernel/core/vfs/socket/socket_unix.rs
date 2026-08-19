@@ -491,6 +491,14 @@ impl SocketOps for UnixSocket {
     ) -> Result<(), Errno> {
         let peer = match peer {
             SocketPeer::Handle(handle) => handle,
+            SocketPeer::Address(SocketAddress::Unspecified) => {
+                if socket.socket_type == SocketType::Datagram {
+                    let unix_socket = socket.downcast_socket::<UnixSocket>().unwrap();
+                    unix_socket.lock().state = UnixSocketState::Disconnected;
+                    return Ok(());
+                }
+                return error!(EINVAL);
+            }
             SocketPeer::Address(_) => return error!(EINVAL),
         };
         match socket.socket_type {
@@ -1252,6 +1260,48 @@ mod tests {
             let retrieved_capacity = socklen_t::from_ne_bytes(opt_bytes.try_into().unwrap());
             // Setting SO_SNDBUF actually sets it to double the size
             assert_eq!(2 * send_capacity, retrieved_capacity);
+        })
+        .await;
+    }
+
+    #[::fuchsia::test]
+    async fn test_datagram_socket_disconnect_af_unspec() {
+        spawn_kernel_and_run(async |current_task| {
+            let socket1 = Socket::new(
+                &current_task,
+                SocketDomain::Unix,
+                SocketType::Datagram,
+                SocketProtocol::default(),
+                /* kernel_private = */ false,
+            )
+            .expect("Failed to create socket 1.");
+            socket1
+                .bind(&current_task, SocketAddress::Unix(b"\0sock1".into()))
+                .expect("Failed to bind socket 1.");
+
+            let socket2 = Socket::new(
+                &current_task,
+                SocketDomain::Unix,
+                SocketType::Datagram,
+                SocketProtocol::default(),
+                /* kernel_private = */ false,
+            )
+            .expect("Failed to create socket 2.");
+            socket2
+                .bind(&current_task, SocketAddress::Unix(b"\0sock2".into()))
+                .expect("Failed to bind socket 2.");
+
+            // Connect socket1 to socket2.
+            socket1
+                .ops
+                .connect(&socket1, &current_task, SocketPeer::Handle(socket2.clone()))
+                .expect("Failed to connect socket1 to socket2.");
+
+            // Disconnect socket1 using AF_UNSPEC.
+            socket1
+                .ops
+                .connect(&socket1, &current_task, SocketPeer::Address(SocketAddress::Unspecified))
+                .expect("Failed to disconnect socket1 with AF_UNSPEC.");
         })
         .await;
     }

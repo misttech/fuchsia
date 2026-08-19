@@ -490,6 +490,29 @@ impl SocketOps for ZxioBackedSocket {
                 .connect(addr)
                 .map_err(|status| from_status_like_fdio!(status))?
                 .map_err(|out_code| errno_from_zxio_code!(out_code)),
+            SocketPeer::Address(SocketAddress::Unspecified) => {
+                if socket.socket_type == SocketType::Datagram {
+                    let unspec = uapi::sockaddr::default().as_bytes().to_vec();
+                    let res = self
+                        .zxio
+                        .connect(&unspec)
+                        .map_err(|status| from_status_like_fdio!(status))?
+                        .map_err(|out_code| errno_from_zxio_code!(out_code));
+                    match res {
+                        Ok(()) => Ok(()),
+                        Err(err)
+                            if err == errno!(EINVAL)
+                                || err == errno!(ENOTCONN)
+                                || err == errno!(EAFNOSUPPORT) =>
+                        {
+                            Ok(())
+                        }
+                        Err(err) => Err(err),
+                    }
+                } else {
+                    error!(EAFNOSUPPORT)
+                }
+            }
             _ => error!(EINVAL),
         };
 
