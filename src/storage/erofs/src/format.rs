@@ -54,7 +54,9 @@ pub struct SuperBlock {
     pub volume_name: [u8; 16],
     /// Feature flags. If any flags here are not recognized, the filesystem can _not_ be mounted.
     pub feature_incompat: LEU32,
-    /// Info about compression algorithms. Set to zero if image is not compressed.
+    /// Info about compression algorithms. Set to zero if image is not compressed. Otherwise it is
+    /// either an indication of what the available compression algorithms are in a bitmap (if
+    /// COMPR_CFGS is set in the incompat flags), or the lz4_max_distance.
     pub available_compr_algs: LEU16,
     /// External device support, ignored in core format.
     pub extra_devices: LEU32,
@@ -89,6 +91,9 @@ pub struct InodeCompact {
     /// Reserved section.
     pub reserved_1: [u8; 4],
     /// Inode data union - the exact meaning of this field is dependent on the inode format field.
+    /// For uncompressed data layouts (FlatPlain, FlatInline), this is the raw block address. For
+    /// compressed data layouts (CompressedFull, CompressedCompact), this is the compressed block
+    /// count.
     pub i_u: [u8; 4],
     /// Inode number for stat compatibility.
     pub ino: LEU32,
@@ -120,6 +125,9 @@ pub struct InodeExtended {
     /// File size in bytes.
     pub size: LEU64,
     /// Inode data union - the exact meaning of this field is dependent on the inode format field.
+    /// For uncompressed data layouts (FlatPlain, FlatInline), this is the raw block address. For
+    /// compressed data layouts (CompressedFull, CompressedCompact), this is the compressed block
+    /// count.
     pub i_u: [u8; 4],
     /// Inode number for stat compatibility.
     pub ino: LEU32,
@@ -194,3 +202,53 @@ pub struct XattrEntry {
     pub value_size: LEU16,
 }
 assert_eq_size!(XattrEntry, [u8; 4]);
+
+/// Size of the compression map header area for legacy compressed inodes (8-byte header + 8-byte
+/// reserved gap). This is for historical reasons.
+pub const LEGACY_MAP_HEADER_SIZE: u64 = 16;
+
+/// Compression metadata header. For inodes with compressed data layouts, this header is written
+/// after the core metadata and extended attributes, padded to the next 8-byte boundary. It
+/// contains the compression info for this particular inode.
+#[derive(Debug, Clone, Copy, KnownLayout, FromBytes, IntoBytes, Immutable, Unaligned)]
+#[repr(C)]
+pub struct CompressionMapHeader {
+    /// Reserved 2 byte section. There are incompat features that change the interpretation of the
+    /// first four bytes of this header but we don't implement them, so this is always ignored
+    /// today.
+    pub reserved_1: [u8; 2],
+    /// If the advisory flags indicate there is an inline pcluster, this indicates the size of the
+    /// inline data in bytes. This is gated behind an incompat flag that we don't implement so it
+    /// is not used in practice.
+    pub inline_data_size: LEU16,
+    /// Advisory flags for decompression.
+    pub advisory_flags: LEU16,
+    /// Compression algorithm types for logical clusters. We only support lz4 today so this should
+    /// always be zero.
+    pub algorithm_type: u8,
+    /// The first 4 bits of this are a modifier to the block size bits in the superblock. This
+    /// allows files to have logical cluster sizes that are larger than the block size. The default
+    /// is to match block size. We ignore this value right now and only default to block size.
+    pub lcluster_bits: u8,
+}
+assert_eq_size!(CompressionMapHeader, [u8; 8]);
+
+/// Logical cluster index entry, for the legacy CompressedFull data layout. One of these exists per
+/// logical cluster in the inode data.
+#[derive(Debug, Clone, Copy, KnownLayout, FromBytes, IntoBytes, Immutable, Unaligned)]
+#[repr(C)]
+pub struct LClusterIndex {
+    /// Advisory bits (including cluster type).
+    pub advisory_flags: LEU16,
+    /// If this logical cluster is a HEAD cluster, this holds the offset into the cluster where the
+    /// data actually starts. The variable-length extents that map to physical clusters are not
+    /// aligned in any meaningful way and can start in the middle of a logical cluster.
+    pub extent_start_offset: LEU16,
+    /// Depending on if this logical cluster is a HEAD/PLAIN or NONHEAD type, this has two
+    /// different interpretations -
+    ///  - For HEAD and PLAIN types, this is the 4-byte block address for the physical cluster.
+    ///  - For NONHEAD, this is two 2-byte values. [0] is the distance back to its HEAD lcluster,
+    ///    and [1] is the distance forward to the next HEAD lcluster.
+    pub data_union: [u8; 4],
+}
+assert_eq_size!(LClusterIndex, [u8; 8]);

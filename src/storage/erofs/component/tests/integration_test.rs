@@ -42,10 +42,13 @@ async fn setup_realm() -> (ErofsProxy, fuchsia_component_test::RealmInstance) {
     (erofs_server, realm)
 }
 
-async fn setup_erofs() -> (fio::DirectoryProxy, fuchsia_component_test::RealmInstance) {
+async fn setup_erofs_from_image(
+    filename: &str,
+) -> (fio::DirectoryProxy, fuchsia_component_test::RealmInstance) {
     let (erofs_server, realm) = setup_realm().await;
 
-    let erofs_image = fs::read("/pkg/data/simple.erofs").expect("Failed to read simple.erofs");
+    let erofs_image =
+        fs::read(format!("/pkg/data/{filename}")).expect("Failed to read erofs image");
     let vmo = zx::Vmo::create(erofs_image.len() as u64).expect("Failed to create VMO");
     vmo.write(&erofs_image, 0).expect("Failed to write VMO");
 
@@ -63,9 +66,16 @@ async fn setup_erofs() -> (fio::DirectoryProxy, fuchsia_component_test::RealmIns
     (root_client, realm)
 }
 
+async fn setup_erofs() -> (fio::DirectoryProxy, fuchsia_component_test::RealmInstance) {
+    setup_erofs_from_image("simple.erofs").await
+}
+
+#[test_case("simple.erofs" ; "uncompressed")]
+#[test_case("simple_lz4.erofs" ; "lz4 compressed")]
+#[test_case("simple_lz4_legacy.erofs" ; "lz4 legacy compressed")]
 #[fuchsia::test]
-async fn test_erofs_directory_traversal() {
-    let (root_client, _realm) = setup_erofs().await;
+async fn test_erofs_directory_traversal(filename: &str) {
+    let (root_client, _realm) = setup_erofs_from_image(filename).await;
 
     let entries = readdir_inclusive(&root_client).await.expect("Failed to readdir root");
 
@@ -73,6 +83,7 @@ async fn test_erofs_directory_traversal() {
         DirEntry { name: ".".to_string(), kind: DirentKind::Directory },
         DirEntry { name: "file1".to_string(), kind: DirentKind::File },
         DirEntry { name: "large_dir".to_string(), kind: DirentKind::Directory },
+        DirEntry { name: "mixed_compression".to_string(), kind: DirentKind::File },
         DirEntry { name: "photosynthesis".to_string(), kind: DirentKind::File },
         DirEntry { name: "quantum".to_string(), kind: DirentKind::File },
         DirEntry { name: "symlink_to_file1".to_string(), kind: DirentKind::Symlink },
@@ -102,9 +113,12 @@ async fn test_erofs_directory_traversal() {
     }
 }
 
+#[test_case("simple.erofs" ; "uncompressed")]
+#[test_case("simple_lz4.erofs" ; "lz4 compressed")]
+#[test_case("simple_lz4_legacy.erofs" ; "lz4 legacy compressed")]
 #[fuchsia::test]
-async fn test_erofs_file_get_backing_memory() {
-    let (root_client, _realm) = setup_erofs().await;
+async fn test_erofs_file_get_backing_memory(filename: &str) {
+    let (root_client, _realm) = setup_erofs_from_image(filename).await;
 
     let file = fuchsia_fs::directory::open_file(&root_client, "file1", fio::PERM_READABLE)
         .await
@@ -142,12 +156,21 @@ async fn test_erofs_file_get_backing_memory() {
     assert_eq!(buf, expected);
 }
 
-#[test_case("file1")]
-#[test_case("photosynthesis")]
-#[test_case("quantum")]
+#[test_case("simple.erofs", "file1")]
+#[test_case("simple_lz4.erofs", "file1")]
+#[test_case("simple_lz4_legacy.erofs", "file1")]
+#[test_case("simple.erofs", "photosynthesis")]
+#[test_case("simple_lz4.erofs", "photosynthesis")]
+#[test_case("simple_lz4_legacy.erofs", "photosynthesis")]
+#[test_case("simple.erofs", "quantum")]
+#[test_case("simple_lz4.erofs", "quantum")]
+#[test_case("simple_lz4_legacy.erofs", "quantum")]
+#[test_case("simple.erofs", "mixed_compression")]
+#[test_case("simple_lz4.erofs", "mixed_compression")]
+#[test_case("simple_lz4_legacy.erofs", "mixed_compression")]
 #[fuchsia::test]
-async fn test_erofs_file_read(filename: &str) {
-    let (root_client, _realm) = setup_erofs().await;
+async fn test_erofs_file_read(image_name: &str, filename: &str) {
+    let (root_client, _realm) = setup_erofs_from_image(image_name).await;
 
     let file = fuchsia_fs::directory::open_file(&root_client, filename, fio::PERM_READABLE)
         .await
@@ -321,11 +344,18 @@ async fn test_erofs_directory_watcher() {
         }
     }
 
-    let expected_files: std::collections::HashSet<_> =
-        [".", "file1", "large_dir", "photosynthesis", "quantum", "symlink_to_file1"]
-            .iter()
-            .map(std::path::PathBuf::from)
-            .collect();
+    let expected_files: std::collections::HashSet<_> = [
+        ".",
+        "file1",
+        "large_dir",
+        "mixed_compression",
+        "photosynthesis",
+        "quantum",
+        "symlink_to_file1",
+    ]
+    .iter()
+    .map(std::path::PathBuf::from)
+    .collect();
 
     assert_eq!(existing_files, expected_files);
 }

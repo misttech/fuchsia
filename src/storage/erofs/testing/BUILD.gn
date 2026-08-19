@@ -9,6 +9,8 @@ resource("simple_erofs_image") {
   sources = [
     "data/simple.erofs",
     "data/simple_512.erofs",
+    "data/simple_lz4.erofs",
+    "data/simple_lz4_legacy.erofs",
   ]
   outputs = [ "data/{{source_file_part}}" ]
 }
@@ -17,6 +19,7 @@ resource("simple_erofs_image") {
 resource("simple_raw_files") {
   sources = [
     "data/simple/file1",
+    "data/simple/mixed_compression",
     "data/simple/photosynthesis",
     "data/simple/quantum",
   ]

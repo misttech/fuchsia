@@ -26,6 +26,8 @@ trap cleanup EXIT
 # Recreate the golden files even if they exists
 rm -f data/simple.erofs
 rm -f data/simple_512.erofs
+rm -f data/simple_lz4.erofs
+rm -f data/simple_lz4_legacy.erofs
 
 mkdir -p data/simple/large_dir
 for i in $(seq 1 50); do
@@ -44,5 +46,7 @@ setfattr -n user.shared -v "same_value" data/simple/photosynthesis
 
 mkfs.erofs --file-contexts=data/file_contexts -b 4096 data/simple.erofs data/simple
 mkfs.erofs --file-contexts=data/file_contexts -b 512 data/simple_512.erofs data/simple
+mkfs.erofs --file-contexts=data/file_contexts -b 4096 -z lz4 data/simple_lz4.erofs data/simple
+mkfs.erofs --file-contexts=data/file_contexts -b 4096 -z lz4 -E legacy-compress data/simple_lz4_legacy.erofs data/simple
 
 echo "All golden EROFS images generated successfully."

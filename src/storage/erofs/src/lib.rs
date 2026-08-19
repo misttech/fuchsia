@@ -25,11 +25,34 @@ bitflags! {
     }
 }
 
+bitflags! {
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    pub struct FeatureIncompat: u32 {
+        /// If this feature is set, compressed data is right-aligned and the beginning is padded
+        /// with zeros, which the decompression logic needs to trim to find the real data. This is
+        /// done to support a memory optimization when decompressing in linux.
+        const ZERO_PADDING = 0x00000001;
+    }
+}
+
+bitflags! {
+    /// Flags for various compression behaviors, stored per-inode in the compression header when
+    /// the CompressedFull or CompressedCompact data layout are used.
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    pub struct CompressionAdvise: u16 {
+        /// There are two possible entry table layouts when using the CompressedCompact data
+        /// layout. This indicates that we should expect the even more compact one.
+        const COMPACTED_2B = 0x0001;
+    }
+}
+
+/// The bit width of the low value field in compact cluster index entries (clusterofs / delta0).
+/// This is fixed at 12 bits for supported block sizes (512B to 4KB).
+pub const COMPACT_ENTRY_LOBITS: u32 = 12;
+
 /// Errors that can occur while interacting with an EROFS image.
 #[derive(Debug, Error, Clone, PartialEq)]
 pub enum ErofsError {
-    #[error("Unsupported compression algorithms: 0x{:X}", _0)]
-    UnsupportedCompressionAlgs(u16),
     #[error("Unsupported feature incompat flags: 0x{:X}. Only 0x{:X} is supported", _0, _1)]
     UnsupportedFeatureIncompat(u32, u32),
 
@@ -43,7 +66,6 @@ pub enum ErofsError {
 impl ErofsError {
     pub fn to_status(self) -> zx::Status {
         match self {
-            Self::UnsupportedCompressionAlgs(_) => zx::Status::NOT_SUPPORTED,
             Self::UnsupportedFeatureIncompat(_, _) => zx::Status::NOT_SUPPORTED,
             Self::Parse(_) => zx::Status::IO_DATA_INTEGRITY,
             Self::ReadError(_) => zx::Status::IO,
@@ -63,11 +85,17 @@ pub enum ParsingError {
 
     #[error("Invalid inode data layout: 0x{:X}", _0)]
     InvalidInodeDataLayout(u16),
+    #[error("Expected compressed inode layout, found {:?}", _0)]
+    UnexpectedInodeDataLayout(InodeDataLayout),
+    #[error("Missing compression map header on compressed inode")]
+    MissingCompressionHeader,
+    #[error("Unexpected compression algorithm type: {}", _0)]
+    UnexpectedCompressionAlgorithm(u8),
     #[error("Invalid directory entry")]
     InvalidDirectoryEntry,
     #[error("Invalid file type: {}", _0)]
     InvalidFileType(u8),
-    #[error("Directory entry name was not valid utf8")]
+    #[error("Directory entry name was not valid utf8: {}", _0)]
     InvalidDirectoryEntryName(#[source] std::str::Utf8Error),
     #[error("Inline data layout missing inline data")]
     InlineDataLayoutMissingInlineData,
@@ -80,18 +108,45 @@ pub enum ParsingError {
     InvalidNid(u64),
     #[error("Integer overflow during calculation")]
     Overflow,
+    #[error("Decompression failed: {}", _0)]
+    DecompressionFailed(#[from] lz4::Error),
     #[error("Missing shared xattr area but inode has shared xattrs")]
     MissingSharedXattrArea,
     #[error("Xattr entry extends past the end of the inline xattr region")]
     XattrEntryOutOfBounds,
     #[error("Invalid xattr namespace index: {}", _0)]
     InvalidXattrNamespace(u8),
+
+    #[error("Invalid logical cluster type {}", _0)]
+    InvalidLClusterType(u16),
+    #[error("Expected HEAD logical cluster at lcn {}", _0)]
+    ExpectedHeadLCluster(u64),
+    #[error(
+        "Logical cluster number {} out of bounds (total clusters: {})",
+        cluster_index,
+        total_lclusters
+    )]
+    LClusterOutOfBounds { cluster_index: u64, total_lclusters: u64 },
+    #[error("Invalid NonHead delta0 {} at cluster index {}", delta0, cluster_index)]
+    InvalidLClusterDelta { cluster_index: u64, delta0: u16 },
+    #[error("Corrupted compact cluster index pack: {}", _0)]
+    CorruptedCompactClusterPack(&'static str),
+    #[error(
+        "Compact cluster pack offset {}..{} out of bounds (pack size: {})",
+        byte_offset,
+        byte_offset + 4,
+        pack_size
+    )]
+    CompactPackOutOfBounds { byte_offset: usize, pack_size: usize },
+    #[error("Logical offset {} is before start of initial cluster {}", offset, cluster_start)]
+    InvalidClusterOffset { offset: u64, cluster_start: u64 },
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum InodeDataUnion {
     DataBlkAddrPlain(u32),
     DataBlkAddrInline(u32),
+    CompressedBlocks(u32),
 }
 
 impl InodeDataUnion {
@@ -103,6 +158,9 @@ impl InodeDataUnion {
             // Technically this is only valid for inline data where the size is more than a block.
             InodeDataLayout::FlatInline => {
                 InodeDataUnion::DataBlkAddrInline(u32::from_le_bytes(data))
+            }
+            InodeDataLayout::CompressedFull | InodeDataLayout::CompressedCompact => {
+                InodeDataUnion::CompressedBlocks(u32::from_le_bytes(data))
             }
         }
     }
@@ -122,6 +180,7 @@ pub struct NodeInner {
     gid: u32,
     mtime_ns: u64,
     xattr_icount: u16,
+    compression_header: Option<CompressionHeader>,
 }
 
 impl NodeInner {
@@ -138,15 +197,15 @@ impl NodeInner {
     }
 
     /// Interpret the u field as a block address. This is only a valid interpretation on FlatPlain,
-    /// or on FlatInline if the size is larger than a block. This debug_asserts that the size is
-    /// larger than a block for the inline case to catch programming errors.
-    fn blkaddr(&self, block_size: u64) -> u64 {
+    /// or on FlatInline if the size is larger than a block.
+    fn blkaddr(&self, block_size: u64) -> Option<u64> {
         match self.data_union {
-            InodeDataUnion::DataBlkAddrPlain(addr) => addr.into(),
+            InodeDataUnion::DataBlkAddrPlain(addr) => Some(addr.into()),
             InodeDataUnion::DataBlkAddrInline(addr) => {
                 debug_assert!(self.size / block_size > 0);
-                addr.into()
+                Some(addr.into())
             }
+            InodeDataUnion::CompressedBlocks(_) => None,
         }
     }
 
@@ -154,6 +213,7 @@ impl NodeInner {
     /// of bounds errors.
     fn blkaddr_offset(&self, block_size: u64, offset: u64) -> Result<u64, ParsingError> {
         self.blkaddr(block_size)
+            .ok_or(ParsingError::InvalidUValue)?
             .checked_mul(block_size)
             .ok_or(ParsingError::Overflow)?
             .checked_add(offset)
@@ -169,6 +229,115 @@ impl NodeInner {
 
     fn inline_xattr_size(&self) -> u64 {
         if self.xattr_icount == 0 { 0 } else { ((self.xattr_icount as u64 - 1) * 4) + 12 }
+    }
+
+    /// Offset immediately following this node's metadata and inline xattrs.
+    fn metadata_end_offset(&self) -> Result<u64, ParsingError> {
+        self.inode_offset()
+            .checked_add(self.metadata_size())
+            .ok_or(ParsingError::Overflow)?
+            .checked_add(self.inline_xattr_size())
+            .ok_or(ParsingError::Overflow)
+    }
+
+    /// Offset of the compression MapHeader (8-byte aligned after metadata and inline xattrs).
+    fn map_header_offset(&self) -> Result<u64, ParsingError> {
+        let metadata_end = self.metadata_end_offset()?;
+        Ok(metadata_end.next_multiple_of(8))
+    }
+
+    /// Offset of the start of the logical cluster index table.
+    fn index_table_offset(&self) -> Result<u64, ParsingError> {
+        let map_header_offset = self.map_header_offset()?;
+        match self.format.data_layout {
+            InodeDataLayout::CompressedFull => {
+                Ok(map_header_offset + format::LEGACY_MAP_HEADER_SIZE)
+            }
+            InodeDataLayout::CompressedCompact => {
+                Ok(map_header_offset + std::mem::size_of::<format::CompressionMapHeader>() as u64)
+            }
+            _ => Err(ParsingError::UnexpectedInodeDataLayout(self.format.data_layout)),
+        }
+    }
+
+    /// Returns the compression header for this node, if it has a compressed data layout.
+    pub fn compression_header(&self) -> Option<&CompressionHeader> {
+        self.compression_header.as_ref()
+    }
+
+    /// Returns the position and layout of a compact logical cluster index entry.
+    pub fn compact_entry_pos(
+        &self,
+        block_size: u64,
+        cluster_index: u64,
+    ) -> Result<CompactEntry, ParsingError> {
+        if self.format.data_layout != InodeDataLayout::CompressedCompact {
+            return Err(ParsingError::UnexpectedInodeDataLayout(self.format.data_layout));
+        }
+        let total_clusters = self.total_lclusters(block_size);
+        if cluster_index >= total_clusters {
+            return Err(ParsingError::LClusterOutOfBounds {
+                cluster_index,
+                total_lclusters: total_clusters,
+            });
+        }
+
+        let table_offset = self.index_table_offset()?;
+        let header =
+            self.compression_header.as_ref().ok_or(ParsingError::MissingCompressionHeader)?;
+        let is_compact_2b = header.advise.contains(CompressionAdvise::COMPACTED_2B);
+
+        // Number of 4B entries needed to align to a 32-byte boundary (for 2B packs)
+        let initial_4b_count = ((32 - (table_offset % 32)) / 4) & 7;
+        let middle_2b_count = if is_compact_2b && initial_4b_count < total_clusters {
+            (total_clusters - initial_4b_count) & !15
+        } else {
+            0
+        };
+
+        let (pack_pos, layout, entry_index) = if cluster_index < initial_4b_count {
+            let pack_idx = cluster_index / 2;
+            (table_offset + pack_idx * 8, CompactPackLayout::Pack4B, (cluster_index % 2) as usize)
+        } else if cluster_index < initial_4b_count + middle_2b_count {
+            let rel_lcn = cluster_index - initial_4b_count;
+            let base_2b_offset = table_offset + initial_4b_count * 4;
+            let pack_idx = rel_lcn / 16;
+            (base_2b_offset + pack_idx * 32, CompactPackLayout::Pack2B, (rel_lcn % 16) as usize)
+        } else {
+            let rel_lcn = cluster_index - initial_4b_count - middle_2b_count;
+            let base_trailing_offset = table_offset + initial_4b_count * 4 + middle_2b_count * 2;
+            let pack_idx = rel_lcn / 2;
+            (base_trailing_offset + pack_idx * 8, CompactPackLayout::Pack4B, (rel_lcn % 2) as usize)
+        };
+
+        Ok(CompactEntry { pack_offset_bytes: pack_pos, layout, entry_index })
+    }
+
+    /// Offset immediately following the logical cluster index table. For files with inline data,
+    /// this is where the inline data is stored.
+    pub fn index_end_offset(&self, block_size: u64) -> Result<u64, ParsingError> {
+        let max_lcn = self.total_lclusters(block_size);
+        match self.format.data_layout {
+            InodeDataLayout::CompressedFull => {
+                let index_table_offset = self.index_table_offset()?;
+                index_table_offset
+                    .checked_add(max_lcn.checked_mul(8).ok_or(ParsingError::Overflow)?)
+                    .ok_or(ParsingError::Overflow)
+            }
+            InodeDataLayout::CompressedCompact => {
+                if max_lcn == 0 {
+                    return self.index_table_offset();
+                }
+                let pos = self.compact_entry_pos(block_size, max_lcn - 1)?;
+                pos.pack_offset_bytes.checked_add(pos.pack_size()).ok_or(ParsingError::Overflow)
+            }
+            _ => Err(ParsingError::UnexpectedInodeDataLayout(self.format.data_layout)),
+        }
+    }
+
+    /// Returns the total number of logical clusters for this node.
+    pub fn total_lclusters(&self, lcluster_size: u64) -> u64 {
+        self.size.div_ceil(lcluster_size)
     }
 
     pub fn size(&self) -> u64 {
@@ -194,6 +363,14 @@ impl NodeInner {
     }
     pub fn mode(&self) -> u16 {
         self.mode
+    }
+
+    /// Returns the storage size in bytes taken up by this node on disk.
+    pub fn storage_size(&self, block_size: u64) -> u64 {
+        match self.data_union {
+            InodeDataUnion::CompressedBlocks(blocks) => (blocks as u64) * block_size,
+            _ => self.size,
+        }
     }
 }
 
@@ -295,9 +472,10 @@ impl Node {
         format: InodeFormat,
         inode: format::InodeCompact,
         build_time_ns: u64,
-    ) -> Result<Self, ParsingError> {
+        reader: &dyn Reader,
+    ) -> Result<Self, ErofsError> {
         let data_union = InodeDataUnion::parse(inode.i_u, format);
-        Ok(Self::new(NodeInner {
+        let mut inner = NodeInner {
             inode_offset,
             format,
             mode: inode.mode.get(),
@@ -310,7 +488,16 @@ impl Node {
             gid: inode.gid.get().into(),
             mtime_ns: build_time_ns,
             xattr_icount: inode.xattr_icount.get(),
-        }))
+            compression_header: None,
+        };
+        if matches!(
+            format.data_layout,
+            InodeDataLayout::CompressedFull | InodeDataLayout::CompressedCompact
+        ) {
+            let map_header_offset = inner.map_header_offset()?;
+            inner.compression_header = Some(CompressionHeader::read(reader, map_header_offset)?);
+        }
+        Ok(Self::new(inner))
     }
 
     fn parse_extended(
@@ -318,7 +505,8 @@ impl Node {
         inode_offset: u64,
         format: InodeFormat,
         inode: format::InodeExtended,
-    ) -> Result<Self, ParsingError> {
+        reader: &dyn Reader,
+    ) -> Result<Self, ErofsError> {
         let data_union = InodeDataUnion::parse(inode.i_u, format);
         let mtime_ns = inode
             .mtime
@@ -326,7 +514,7 @@ impl Node {
             .checked_mul(1_000_000_000)
             .and_then(|t| t.checked_add(inode.mtime_ns.get().into()))
             .ok_or(ParsingError::Overflow)?;
-        Ok(Self::new(NodeInner {
+        let mut inner = NodeInner {
             inode_offset,
             format,
             mode: inode.mode.get(),
@@ -339,7 +527,16 @@ impl Node {
             gid: inode.gid.get(),
             mtime_ns,
             xattr_icount: inode.xattr_icount.get(),
-        }))
+            compression_header: None,
+        };
+        if matches!(
+            format.data_layout,
+            InodeDataLayout::CompressedFull | InodeDataLayout::CompressedCompact
+        ) {
+            let map_header_offset = inner.map_header_offset()?;
+            inner.compression_header = Some(CompressionHeader::read(reader, map_header_offset)?);
+        }
+        Ok(Self::new(inner))
     }
 
     fn from_nid(
@@ -363,10 +560,15 @@ impl Node {
                 format,
                 reader.read_object(inode_offset)?,
                 build_time_ns,
+                reader,
             )?,
-            InodeVersion::Extended => {
-                Self::parse_extended(nid, inode_offset, format, reader.read_object(inode_offset)?)?
-            }
+            InodeVersion::Extended => Self::parse_extended(
+                nid,
+                inode_offset,
+                format,
+                reader.read_object(inode_offset)?,
+                reader,
+            )?,
         };
         Ok(node)
     }
@@ -383,9 +585,30 @@ impl std::ops::Deref for Node {
     }
 }
 
+/// The representation of an extent's backing content.
+#[derive(Debug, Clone, Copy)]
+enum ExtentKind {
+    /// Sparse extents are regions of zeros without physical backing.
+    Sparse,
+    /// Plain extents are uncompressed data stored at a fixed on-disk offset.
+    Plain { byte_offset: u64 },
+    /// Compressed extents are compressed data that require decompression to read.
+    Compressed { block_addr: u32 },
+}
+
+/// A compression extent is a logical, unaligned region of a file that maps to a single physical
+/// cluster.
+#[derive(Debug, Clone, Copy)]
+struct CompressionExtent {
+    logical_start: u64,
+    logical_len: u32,
+    kind: ExtentKind,
+}
+
 /// The filesystem implementation for an EROFS image.
 pub struct ErofsFilesystem {
     reader: Arc<dyn Reader>,
+    feature_incompat: FeatureIncompat,
     block_size: u64,
     meta_addr: u64,
     xattr_addr: u64,
@@ -398,7 +621,7 @@ pub struct ErofsFilesystem {
 impl ErofsFilesystem {
     /// Creates a new filesystem instance for an EROFS image from a reader.
     pub fn new(reader: Arc<dyn Reader>) -> Result<Self, ErofsError> {
-        let super_block = Self::parse_superblock(&reader)?;
+        let (super_block, feature_incompat) = Self::parse_superblock(&reader)?;
         let block_size = 1u64 << super_block.block_size_bits;
         let meta_block_addr = super_block.meta_block_addr.get().into();
         let meta_addr = block_size.checked_mul(meta_block_addr).ok_or(ParsingError::Overflow)?;
@@ -419,6 +642,7 @@ impl ErofsFilesystem {
         };
         Ok(Self {
             reader,
+            feature_incompat,
             block_size,
             meta_addr,
             xattr_addr,
@@ -429,7 +653,14 @@ impl ErofsFilesystem {
         })
     }
 
-    fn parse_superblock(reader: &dyn Reader) -> Result<format::SuperBlock, ErofsError> {
+    /// Returns the feature incompat flags of the EROFS image.
+    pub fn feature_incompat(&self) -> FeatureIncompat {
+        self.feature_incompat
+    }
+
+    fn parse_superblock(
+        reader: &dyn Reader,
+    ) -> Result<(format::SuperBlock, FeatureIncompat), ErofsError> {
         let sb: format::SuperBlock = reader.read_object(format::SUPERBLOCK_OFFSET)?;
         if sb.magic.get() != format::EROFS_MAGIC {
             return Err(ParsingError::InvalidSuperBlockMagic(sb.magic.get()).into());
@@ -444,16 +675,11 @@ impl ErofsFilesystem {
         if feature_compat.contains(FeatureCompat::SB_CHKSUM) {
             Self::check_superblock_checksum(reader, &sb)?;
         }
-        // TODO(https://fxbug.dev/479841115): Handle feature_incompat flags.
-        if sb.feature_incompat.get() != 0 {
-            return Err(ErofsError::UnsupportedFeatureIncompat(sb.feature_incompat.get(), 0));
-        }
-        // TODO(https://fxbug.dev/479841115): Support compression. Validate we support all the
-        // listed compression algorithms when we do.
-        if sb.available_compr_algs.get() != 0 {
-            return Err(ErofsError::UnsupportedCompressionAlgs(sb.available_compr_algs.get()));
-        }
-        Ok(sb)
+        let incompat_raw = sb.feature_incompat.get();
+        let incompat = FeatureIncompat::from_bits(incompat_raw).ok_or(
+            ErofsError::UnsupportedFeatureIncompat(incompat_raw, FeatureIncompat::all().bits()),
+        )?;
+        Ok((sb, incompat))
     }
 
     fn check_superblock_checksum(
@@ -567,13 +793,7 @@ impl ErofsFilesystem {
                 if bytes_read < read_len {
                     let remaining_len = read_len - bytes_read;
                     let current_offset = offset + bytes_read as u64;
-                    let inline_xattr_size = node.inline_xattr_size();
-                    let inline_data_offset = node
-                        .inode_offset()
-                        .checked_add(node.metadata_size())
-                        .ok_or(ParsingError::Overflow)?
-                        .checked_add(inline_xattr_size)
-                        .ok_or(ParsingError::Overflow)?;
+                    let inline_data_offset = node.metadata_end_offset()?;
                     let tail_offset = current_offset - full_blocks_len;
                     let tail_read_offset = inline_data_offset
                         .checked_add(tail_offset)
@@ -584,7 +804,242 @@ impl ErofsFilesystem {
 
                 Ok(bytes_read)
             }
+            InodeDataLayout::CompressedFull | InodeDataLayout::CompressedCompact => {
+                self.read_compressed_range(node, offset, buf)
+            }
         }
+    }
+
+    fn read_lcluster_entry(
+        &self,
+        node: &NodeInner,
+        cluster_index: u64,
+    ) -> Result<LClusterEntry, ErofsError> {
+        match node.format.data_layout {
+            InodeDataLayout::CompressedFull => {
+                let index_table_offset = node.index_table_offset()?;
+                let entry_offset = index_table_offset + cluster_index * 8;
+                LClusterEntry::read_full_entry(self.reader.as_ref(), entry_offset)
+            }
+            InodeDataLayout::CompressedCompact => {
+                self.read_compact_lcluster_entry(node, cluster_index)
+            }
+            _ => Err(ParsingError::UnexpectedInodeDataLayout(node.format.data_layout).into()),
+        }
+    }
+
+    fn read_compact_lcluster_entry(
+        &self,
+        node: &NodeInner,
+        cluster_index: u64,
+    ) -> Result<LClusterEntry, ErofsError> {
+        let pos = node.compact_entry_pos(self.block_size(), cluster_index)?;
+        let pack = CompactPack::read(self.reader.as_ref(), &pos)?;
+        let entry = pack.entry(pos.entry_index)?;
+
+        if entry.cluster_type() == LClusterType::NonHead {
+            let delta0 = if pos.entry_index + 1 != pos.entry_count() {
+                entry.delta0()
+            } else {
+                if pos.entry_index == 0 {
+                    return Err(ParsingError::CorruptedCompactClusterPack(
+                        "missing preceding entry for delta0 inference",
+                    )
+                    .into());
+                }
+                let prev_entry = pack.entry(pos.entry_index - 1)?;
+                if prev_entry.cluster_type() != LClusterType::NonHead {
+                    1
+                } else {
+                    prev_entry.delta0() + 1
+                }
+            };
+
+            Ok(LClusterEntry::NonHead { delta0 })
+        } else {
+            let base_pblk = pack.base_pblk()?;
+
+            let mut entry_i = pos.entry_index;
+            let mut nblk = 1u32;
+
+            while entry_i > 0 {
+                entry_i -= 1;
+                let prev_entry = pack.entry(entry_i)?;
+                if prev_entry.cluster_type() == LClusterType::NonHead {
+                    let step = prev_entry.delta0() as usize;
+                    if entry_i >= step {
+                        entry_i -= step;
+                        nblk += 1;
+                    } else {
+                        break;
+                    }
+                } else {
+                    nblk += 1;
+                }
+            }
+
+            let extent_start_offset = entry.extent_start_offset();
+            let block_addr = if base_pblk == u32::MAX { 0 } else { base_pblk + nblk };
+            Ok(LClusterEntry::Head(LClusterHead {
+                cluster_type: entry.cluster_type(),
+                block_addr,
+                extent_start_offset,
+            }))
+        }
+    }
+
+    /// Resolves the HEAD logical cluster for the extent that contains the given logical cluster
+    /// and returns its logical cluster index and head entry.
+    fn resolve_head_lcluster(
+        &self,
+        node: &NodeInner,
+        cluster_index: u64,
+    ) -> Result<(u64, LClusterHead), ErofsError> {
+        let entry = self.read_lcluster_entry(node, cluster_index)?;
+        match entry {
+            LClusterEntry::Head(head) => Ok((cluster_index, head)),
+            LClusterEntry::NonHead { delta0 } => {
+                let head_cluster_index = cluster_index
+                    .checked_sub(delta0 as u64)
+                    .ok_or(ParsingError::InvalidLClusterDelta { cluster_index, delta0 })?;
+                let head_entry = self.read_lcluster_entry(node, head_cluster_index)?;
+                match head_entry {
+                    LClusterEntry::Head(head) => Ok((head_cluster_index, head)),
+                    LClusterEntry::NonHead { .. } => {
+                        Err(ParsingError::ExpectedHeadLCluster(head_cluster_index).into())
+                    }
+                }
+            }
+        }
+    }
+
+    /// Finds the HEAD logical cluster containing the given `logical_offset`, stepping back by one
+    /// cluster if `logical_offset` is before the cluster's offset. Returns the head cluster index,
+    /// the head entry, and its logical start byte offset.
+    fn find_head_cluster(
+        &self,
+        node: &NodeInner,
+        logical_offset: u64,
+    ) -> Result<(u64, LClusterHead, u64), ErofsError> {
+        let lcluster_size = self.block_size();
+        let cluster_index = logical_offset / lcluster_size;
+
+        let (mut head_cluster_index, mut head) = self.resolve_head_lcluster(node, cluster_index)?;
+        let mut logical_start =
+            head.logical_start(head_cluster_index, lcluster_size).ok_or(ParsingError::Overflow)?;
+
+        if logical_offset < logical_start {
+            let prev_cluster_index =
+                head_cluster_index.checked_sub(1).ok_or(ParsingError::InvalidClusterOffset {
+                    offset: logical_offset,
+                    cluster_start: logical_start,
+                })?;
+            (head_cluster_index, head) = self.resolve_head_lcluster(node, prev_cluster_index)?;
+            logical_start = head
+                .logical_start(head_cluster_index, lcluster_size)
+                .ok_or(ParsingError::Overflow)?;
+        }
+
+        Ok((head_cluster_index, head, logical_start))
+    }
+
+    /// Maps a logical offset in a compressed file to the logical compression extent that contains
+    /// it. This extent contains the metadata for this section of compressed data, and how to
+    /// decompress it.
+    fn get_extent_at(
+        &self,
+        node: &NodeInner,
+        logical_offset: u64,
+    ) -> Result<CompressionExtent, ErofsError> {
+        let block_size = self.block_size();
+        let lcluster_size = block_size;
+
+        let (head_cluster_index, head, logical_start) =
+            self.find_head_cluster(node, logical_offset)?;
+
+        let mut logical_end = node.size;
+        let max_cluster_index = node.total_lclusters(lcluster_size);
+        for next_cluster_index in (head_cluster_index + 1)..max_cluster_index {
+            let next_entry = self.read_lcluster_entry(node, next_cluster_index)?;
+            if let LClusterEntry::Head(next_head) = next_entry {
+                if let Some(next_start) = next_head.logical_start(next_cluster_index, lcluster_size)
+                {
+                    logical_end = next_start;
+                    break;
+                }
+            }
+        }
+
+        let logical_len =
+            logical_end.checked_sub(logical_start).ok_or(ParsingError::Overflow)? as u32;
+
+        let kind = if head.block_addr == 0 {
+            ExtentKind::Sparse
+        } else if head.is_plain() {
+            ExtentKind::Plain { byte_offset: head.block_addr as u64 * block_size }
+        } else {
+            ExtentKind::Compressed { block_addr: head.block_addr }
+        };
+
+        Ok(CompressionExtent { logical_start, logical_len, kind })
+    }
+
+    /// Reads a range of bytes from a compressed file node, decompressing as needed. This method is
+    /// intended to be called by read_node_range. Use that for general reading to handle all
+    /// possible data layouts.
+    fn read_compressed_range(
+        &self,
+        node: &NodeInner,
+        mut offset: u64,
+        mut buf: &mut [u8],
+    ) -> Result<usize, ErofsError> {
+        // This value is checked and tweaked as needed by read_node_range.
+        let read_len = buf.len();
+        let block_size = self.block_size();
+
+        while !buf.is_empty() {
+            let extent = self.get_extent_at(node, offset)?;
+            let offset_in_cluster = (offset - extent.logical_start) as usize;
+            let available = extent.logical_len as usize - offset_in_cluster;
+            let copy_len = std::cmp::min(buf.len(), available);
+            let (head, tail) = buf.split_at_mut(copy_len);
+
+            match &extent.kind {
+                ExtentKind::Sparse => {
+                    head.fill(0);
+                }
+                ExtentKind::Plain { byte_offset: disk_offset } => {
+                    self.reader.read(*disk_offset + offset_in_cluster as u64, head)?;
+                }
+                ExtentKind::Compressed { block_addr } => {
+                    let mut compressed_buf = vec![0u8; block_size as usize];
+                    self.reader.read(*block_addr as u64 * block_size, &mut compressed_buf)?;
+                    let margin = if self.feature_incompat.contains(FeatureIncompat::ZERO_PADDING) {
+                        compressed_buf.iter().position(|&b| b != 0).unwrap_or(0)
+                    } else {
+                        0
+                    };
+                    let compressed_data = &compressed_buf[margin..];
+
+                    if offset_in_cluster == 0 && copy_len == extent.logical_len as usize {
+                        lz4::decompress_into(compressed_data, head)
+                            .map_err(|e| ParsingError::DecompressionFailed(e))?;
+                    } else {
+                        let mut decompressed_buf = vec![0u8; extent.logical_len as usize];
+                        lz4::decompress_into(compressed_data, &mut decompressed_buf)
+                            .map_err(|e| ParsingError::DecompressionFailed(e))?;
+                        head.copy_from_slice(
+                            &decompressed_buf[offset_in_cluster..offset_in_cluster + copy_len],
+                        );
+                    }
+                }
+            }
+
+            buf = tail;
+            offset += copy_len as u64;
+        }
+
+        Ok(read_len)
     }
 
     /// Read a number of entries from a directory, starting at entry_offset. Will retrieve up to
@@ -941,12 +1396,17 @@ pub enum InodeDataLayout {
     /// The data union is interpreted as a block address. The data for this inode is stored in
     /// consecutive blocks starting from that block address.
     FlatPlain,
+    /// Compressed inode with non-compact indexes. This is a legacy metadata layout, by default
+    /// erofs images use CompressedCompact for compressed nodes.
+    CompressedFull,
     /// The data union is interpreted as a block address. The data for this inode is stored in
     /// consecutive blocks starting from that block address, except for the tail of the data which
     /// is stored immediately following this metadata. If the whole tail is inlined, the data union
     /// is unused and doesn't matter. For this to be used, the data _must_ have a tail section that
     /// fits within the current metadata block.
     FlatInline,
+    /// Compressed inode with compact indexes.
+    CompressedCompact,
 }
 
 /// The format of the inode, containing the version and data layout.
@@ -964,10 +1424,263 @@ impl InodeFormat {
         let data_layout_raw = (format >> 1) & 0x7;
         let data_layout = match data_layout_raw {
             0 => InodeDataLayout::FlatPlain,
+            1 => InodeDataLayout::CompressedFull,
             2 => InodeDataLayout::FlatInline,
+            3 => InodeDataLayout::CompressedCompact,
             _ => return Err(ParsingError::InvalidInodeDataLayout(data_layout_raw)),
         };
         Ok(Self { version, data_layout })
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LClusterType {
+    Plain,
+    Head1,
+    NonHead,
+    Head2,
+}
+
+impl LClusterType {
+    pub fn is_head(&self) -> bool {
+        matches!(self, Self::Head1 | Self::Head2 | Self::Plain)
+    }
+}
+
+impl TryFrom<u16> for LClusterType {
+    type Error = ParsingError;
+
+    fn try_from(advise: u16) -> Result<Self, Self::Error> {
+        match advise & 3 {
+            0 => Ok(Self::Plain),
+            1 => Ok(Self::Head1),
+            2 => Ok(Self::NonHead),
+            3 => Ok(Self::Head2),
+            other => Err(ParsingError::InvalidLClusterType(other)),
+        }
+    }
+}
+
+/// A head lcluster is one where the data for a particular extent starts. The logical data
+/// potentially starts at an unaligned address within this lcluster, described by
+/// [`extent_start_offset`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct LClusterHead {
+    /// The type of this cluster. Will be Head1, Head2, or Plain for this struct.
+    pub cluster_type: LClusterType,
+    /// The physical block address where the data lives for the extent described by this set of
+    /// entries.
+    pub block_addr: u32,
+    /// The offset into this lcluster where the data it is describing actually starts. Anything
+    /// before this offset is actually from the previous extent, so when looking at these entries,
+    /// if the requested read offset is before this start offset, the read logic needs to walk back
+    /// one extent to find the relevant data.
+    pub extent_start_offset: u16,
+}
+
+impl LClusterHead {
+    pub fn is_plain(&self) -> bool {
+        self.cluster_type == LClusterType::Plain
+    }
+
+    pub fn logical_start(&self, cluster_index: u64, lcluster_size: u64) -> Option<u64> {
+        cluster_index.checked_mul(lcluster_size)?.checked_add(self.extent_start_offset as u64)
+    }
+}
+
+/// An entry describing a single logical cluster, which most often corresponds with a single
+/// logical, uncompressed block. These entries build a map for where to find the data in the
+/// compressed physical blocks.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LClusterEntry {
+    /// A head cluster. See LClusterHead.
+    Head(LClusterHead),
+    /// A nonhead cluster. These are blocks of data contained within the extent described by the
+    /// most recent head lcluster.
+    NonHead {
+        /// The distance back to the most recent head lcluster.
+        delta0: u16,
+    },
+}
+
+impl LClusterEntry {
+    /// Parse a single lcluster entry. This is for the CompressedFull data layout, for the
+    /// CompressedCompact data layout, see [`read_compact_lcluster_entry`].
+    pub fn read_full_entry(reader: &dyn Reader, offset: u64) -> Result<Self, ErofsError> {
+        let raw: format::LClusterIndex = reader.read_object(offset)?;
+        let advise = raw.advisory_flags.get();
+        let cluster_type = LClusterType::try_from(advise)?;
+        let extent_start_offset = raw.extent_start_offset.get();
+
+        if cluster_type.is_head() {
+            let block_addr = u32::from_le_bytes(raw.data_union);
+            Ok(Self::Head(LClusterHead { cluster_type, block_addr, extent_start_offset }))
+        } else {
+            let delta0 = u16::from_le_bytes([raw.data_union[0], raw.data_union[1]]);
+            Ok(Self::NonHead { delta0 })
+        }
+    }
+}
+
+/// The layout and geometry of a compact logical cluster index pack.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CompactPackLayout {
+    /// 8-byte pack: 2 entries (16 bits each) followed by 4-byte base_pblk. Used for 4B entries.
+    Pack4B,
+    /// 32-byte pack: 16 entries (14 bits each) followed by 4-byte base_pblk. Used for 2B entries.
+    Pack2B,
+}
+
+impl CompactPackLayout {
+    pub const fn pack_size(&self) -> u64 {
+        match self {
+            Self::Pack4B => 8,
+            Self::Pack2B => 32,
+        }
+    }
+
+    pub const fn entry_count(&self) -> usize {
+        match self {
+            Self::Pack4B => 2,
+            Self::Pack2B => 16,
+        }
+    }
+
+    pub const fn encode_bits(&self) -> usize {
+        match self {
+            Self::Pack4B => 16,
+            Self::Pack2B => 14,
+        }
+    }
+}
+
+/// Position and layout information for a compact logical cluster index entry on disk.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CompactEntry {
+    /// On-disk start offset of the pack containing this entry.
+    pub pack_offset_bytes: u64,
+    /// Layout of the pack (Pack4B or Pack2B).
+    pub layout: CompactPackLayout,
+    /// Index of this entry within the pack.
+    pub entry_index: usize,
+}
+
+impl CompactEntry {
+    pub fn pack_size(&self) -> u64 {
+        self.layout.pack_size()
+    }
+
+    pub fn entry_count(&self) -> usize {
+        self.layout.entry_count()
+    }
+
+    pub fn encode_bits(&self) -> usize {
+        self.layout.encode_bits()
+    }
+}
+
+/// An on-disk compact logical cluster index pack.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CompactPack {
+    layout: CompactPackLayout,
+    data: [u8; 32],
+}
+
+impl CompactPack {
+    pub fn read(reader: &dyn Reader, pos: &CompactEntry) -> Result<Self, ErofsError> {
+        let mut data = [0u8; 32];
+        let pack_size = pos.pack_size() as usize;
+        reader.read(pos.pack_offset_bytes, &mut data[..pack_size])?;
+        Ok(Self { layout: pos.layout, data })
+    }
+
+    pub fn from_bytes(layout: CompactPackLayout, buf: &[u8]) -> Result<Self, ParsingError> {
+        let min_size = layout.pack_size() as usize;
+        if buf.len() < min_size {
+            return Err(ParsingError::CompactPackOutOfBounds {
+                byte_offset: 0,
+                pack_size: buf.len(),
+            });
+        }
+        let mut data = [0u8; 32];
+        data[..min_size].copy_from_slice(&buf[..min_size]);
+        Ok(Self { layout, data })
+    }
+
+    pub fn base_pblk(&self) -> Result<u32, ParsingError> {
+        let size = self.layout.pack_size() as usize;
+        let bytes: [u8; 4] = self
+            .data
+            .get(size - 4..size)
+            .ok_or(ParsingError::CompactPackOutOfBounds { byte_offset: size - 4, pack_size: size })?
+            .try_into()
+            .map_err(|_| ParsingError::CompactPackOutOfBounds {
+                byte_offset: size - 4,
+                pack_size: size,
+            })?;
+        Ok(u32::from_le_bytes(bytes))
+    }
+
+    pub fn entry(&self, entry_index: usize) -> Result<CompactPackEntry, ParsingError> {
+        let pack_size = self.layout.pack_size() as usize;
+        let bit_offset = self.layout.encode_bits() * entry_index;
+        let byte_offset = bit_offset / 8;
+        let bit_shift = bit_offset & 7;
+        let bytes: [u8; 4] = self
+            .data
+            .get(byte_offset..byte_offset + 4)
+            .ok_or(ParsingError::CompactPackOutOfBounds { byte_offset, pack_size })?
+            .try_into()
+            .map_err(|_| ParsingError::CompactPackOutOfBounds { byte_offset, pack_size })?;
+        let v = u32::from_le_bytes(bytes) >> bit_shift;
+        let mask = (1u32 << COMPACT_ENTRY_LOBITS) - 1;
+        let data = (v & mask) as u16;
+        let type_raw = ((v >> COMPACT_ENTRY_LOBITS) & 3) as u16;
+        let cluster_type = LClusterType::try_from(type_raw)?;
+        Ok(CompactPackEntry { data, cluster_type })
+    }
+}
+
+/// An individual entry decoded from a compact logical cluster index pack.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CompactPackEntry {
+    /// The entry bytes store either the extent start offset, for HEAD type clusters, or the
+    /// distance back to the previous head for nonhead clusters.
+    data: u16,
+    /// The type of this cluster.
+    cluster_type: LClusterType,
+}
+
+impl CompactPackEntry {
+    pub fn cluster_type(&self) -> LClusterType {
+        self.cluster_type
+    }
+
+    /// For HEAD or PLAIN entries, interpret the data as the start offset of the extent within in
+    /// the logical cluster.
+    pub fn extent_start_offset(&self) -> u16 {
+        self.data
+    }
+
+    /// For NONHEAD entries, returns the raw delta0 distance value.
+    pub fn delta0(&self) -> u16 {
+        self.data
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CompressionHeader {
+    pub advise: CompressionAdvise,
+}
+
+impl CompressionHeader {
+    pub fn read(reader: &dyn Reader, offset: u64) -> Result<Self, ErofsError> {
+        let raw: format::CompressionMapHeader = reader.read_object(offset)?;
+        if raw.algorithm_type != 0 {
+            return Err(ParsingError::UnexpectedCompressionAlgorithm(raw.algorithm_type).into());
+        }
+        let advise = CompressionAdvise::from_bits_truncate(raw.advisory_flags.get());
+        Ok(Self { advise })
     }
 }
 
@@ -979,11 +1692,385 @@ mod tests {
     use test_case::test_case;
     use zerocopy::byteorder::little_endian::{U16 as LEU16, U32 as LEU32, U64 as LEU64};
 
-    #[test_case("/pkg/data/simple.erofs" ; "4096 block size")]
-    #[test_case("/pkg/data/simple_512.erofs" ; "512 block size")]
+    #[test]
+    fn test_lcluster_type_and_parsing() {
+        assert_eq!(LClusterType::try_from(0).unwrap(), LClusterType::Plain);
+        assert_eq!(LClusterType::try_from(1).unwrap(), LClusterType::Head1);
+        assert_eq!(LClusterType::try_from(2).unwrap(), LClusterType::NonHead);
+        assert_eq!(LClusterType::try_from(3).unwrap(), LClusterType::Head2);
+        assert!(LClusterType::Head1.is_head());
+        assert!(LClusterType::Plain.is_head());
+        assert!(!LClusterType::NonHead.is_head());
+
+        // Parse Head entry
+        let raw_head = format::LClusterIndex {
+            advisory_flags: LEU16::new(1),
+            extent_start_offset: LEU16::new(128),
+            data_union: 0x1000u32.to_le_bytes(),
+        };
+        let reader = VecReader::new(raw_head.as_bytes().to_vec());
+        let parsed_head = LClusterEntry::read_full_entry(&reader, 0).unwrap();
+        assert_eq!(
+            parsed_head,
+            LClusterEntry::Head(LClusterHead {
+                cluster_type: LClusterType::Head1,
+                block_addr: 0x1000,
+                extent_start_offset: 128,
+            })
+        );
+
+        // Parse NonHead entry
+        let raw_nonhead = format::LClusterIndex {
+            advisory_flags: LEU16::new(2),
+            extent_start_offset: LEU16::new(0),
+            data_union: [4, 0, 0, 0],
+        };
+        let reader_nonhead = VecReader::new(raw_nonhead.as_bytes().to_vec());
+        let parsed_nonhead = LClusterEntry::read_full_entry(&reader_nonhead, 0).unwrap();
+        assert_eq!(parsed_nonhead, LClusterEntry::NonHead { delta0: 4 });
+    }
+
+    #[test]
+    fn test_compact_entry_pos_and_index_end_offset() {
+        let block_size = 4096u64;
+        let num_lclusters = 10u64;
+        let node = NodeInner {
+            inode_offset: 4096,
+            format: InodeFormat {
+                version: InodeVersion::Compact,
+                data_layout: InodeDataLayout::CompressedCompact,
+            },
+            mode: 0o100644,
+            size: num_lclusters * block_size,
+            data_union: InodeDataUnion::CompressedBlocks(0),
+            ino: 1,
+            nid: 1,
+            link_count: 1,
+            uid: 0,
+            gid: 0,
+            mtime_ns: 0,
+            xattr_icount: 0,
+            compression_header: Some(CompressionHeader { advise: CompressionAdvise::empty() }),
+        };
+
+        // map_header_offset = (4096 + 32).next_multiple_of(8) = 4128
+        assert_eq!(node.map_header_offset().unwrap(), 4128);
+        // index_table_offset = 4128 + 8 = 4136
+        assert_eq!(node.index_table_offset().unwrap(), 4136);
+
+        // Test compact_entry_pos for 4B entries (8-byte packs)
+        let pos0 = node.compact_entry_pos(block_size, 0).unwrap();
+        assert_eq!(pos0.pack_offset_bytes, 4136);
+        assert_eq!(pos0.layout, CompactPackLayout::Pack4B);
+        assert_eq!(pos0.pack_size(), 8);
+        assert_eq!(pos0.entry_index, 0);
+        assert_eq!(pos0.encode_bits(), 16);
+        assert_eq!(pos0.entry_count(), 2);
+
+        let pos1 = node.compact_entry_pos(block_size, 1).unwrap();
+        assert_eq!(pos1.pack_offset_bytes, 4136);
+        assert_eq!(pos1.layout, CompactPackLayout::Pack4B);
+        assert_eq!(pos1.entry_index, 1);
+
+        let pos2 = node.compact_entry_pos(block_size, 2).unwrap();
+        assert_eq!(pos2.pack_offset_bytes, 4144);
+        assert_eq!(pos2.layout, CompactPackLayout::Pack4B);
+        assert_eq!(pos2.entry_index, 0);
+
+        // Out of bounds lcn
+        assert_eq!(
+            node.compact_entry_pos(block_size, num_lclusters),
+            Err(ParsingError::LClusterOutOfBounds { cluster_index: 10, total_lclusters: 10 })
+        );
+
+        // Missing compression header
+        let mut no_header_node = node.clone();
+        no_header_node.compression_header = None;
+        assert_eq!(
+            no_header_node.compact_entry_pos(block_size, 0),
+            Err(ParsingError::MissingCompressionHeader)
+        );
+
+        // Unexpected layout (FlatPlain)
+        let mut plain_node = node.clone();
+        plain_node.format.data_layout = InodeDataLayout::FlatPlain;
+        assert_eq!(
+            plain_node.compact_entry_pos(block_size, 0),
+            Err(ParsingError::UnexpectedInodeDataLayout(InodeDataLayout::FlatPlain))
+        );
+        assert_eq!(
+            plain_node.index_end_offset(block_size),
+            Err(ParsingError::UnexpectedInodeDataLayout(InodeDataLayout::FlatPlain))
+        );
+
+        // index_end_offset for 10 clusters (last cluster 9 is in pack 4168..4176)
+        assert_eq!(node.index_end_offset(block_size).unwrap(), 4176);
+
+        // Empty file with CompressedCompact layout
+        let mut empty_compact_node = node.clone();
+        empty_compact_node.size = 0;
+        assert_eq!(empty_compact_node.index_end_offset(block_size).unwrap(), 4136);
+
+        // CompressedFull layout
+        let mut full_node = node.clone();
+        full_node.format.data_layout = InodeDataLayout::CompressedFull;
+        // index_table_offset = 4128 + 16 = 4144
+        assert_eq!(full_node.index_table_offset().unwrap(), 4144);
+        // index_end_offset = 4144 + 10 * 8 = 4224
+        assert_eq!(full_node.index_end_offset(block_size).unwrap(), 4224);
+    }
+
+    #[test]
+    fn test_unexpected_compression_algorithm() {
+        let raw = format::CompressionMapHeader {
+            reserved_1: [0; 2],
+            inline_data_size: LEU16::new(0),
+            advisory_flags: LEU16::new(0),
+            algorithm_type: 2, // Non-zero (e.g. LZMA)
+            lcluster_bits: 0,
+        };
+        let reader = VecReader::new(raw.as_bytes().to_vec());
+        let result = CompressionHeader::read(&reader, 0);
+        assert_eq!(result, Err(ErofsError::Parse(ParsingError::UnexpectedCompressionAlgorithm(2))));
+    }
+
+    #[test]
+    fn test_compact_entry_decode() {
+        // Pack buffer with 2 entries of 16 bits each (4 bytes total + 4 bytes base_pblk)
+        // Entry 0: lo = 128 (0x0080), type = Head1 (1) -> raw = (1 << 12) | 128 = 0x1080
+        // Entry 1: lo = 3, type = NonHead (2) -> raw = (2 << 12) | 3 = 0x2003
+        // base_pblk: 0x00000020
+        let entry1_raw = (2u16 << 12) | 3;
+        let mut pack_buf = [0u8; 8];
+        pack_buf[0..2].copy_from_slice(&0x1080u16.to_le_bytes());
+        pack_buf[2..4].copy_from_slice(&entry1_raw.to_le_bytes());
+        pack_buf[4..8].copy_from_slice(&0x00000020u32.to_le_bytes());
+
+        let pack = CompactPack::from_bytes(CompactPackLayout::Pack4B, &pack_buf).unwrap();
+        assert_eq!(pack.base_pblk().unwrap(), 0x20);
+
+        let entry0 = pack.entry(0).unwrap();
+        assert_eq!(entry0.extent_start_offset(), 128);
+        assert_eq!(entry0.cluster_type(), LClusterType::Head1);
+
+        let entry1 = pack.entry(1).unwrap();
+        assert_eq!(entry1.cluster_type(), LClusterType::NonHead);
+        assert_eq!(entry1.delta0(), 3);
+    }
+
+    fn create_synthetic_sparse_filesystem() -> (ErofsFilesystem, FileNode) {
+        let block_size = 4096usize;
+        let num_blocks = 8;
+        let mut image = vec![0u8; num_blocks * block_size];
+
+        // 1. Superblock at offset 1024
+        let sb = format::SuperBlock {
+            magic: LEU32::new(format::EROFS_MAGIC),
+            checksum: LEU32::new(0),
+            feature_compat: LEU32::new(0),
+            block_size_bits: 12,
+            sb_ext_slots: 0,
+            root_nid: LEU16::new(0),
+            inode_count: LEU64::new(2),
+            epoch: LEU64::new(0),
+            fixed_nsec: LEU32::new(0),
+            blocks: LEU32::new(num_blocks as u32),
+            meta_block_addr: LEU32::new(1),
+            xattr_block_addr: LEU32::new(0),
+            uuid: [0; 16],
+            volume_name: [0; 16],
+            feature_incompat: LEU32::new(0),
+            available_compr_algs: LEU16::new(0),
+            extra_devices: LEU32::new(0),
+            dirblkbits: 0,
+            reserved: [0; 37],
+        };
+        image[format::SUPERBLOCK_OFFSET as usize
+            ..format::SUPERBLOCK_OFFSET as usize + std::mem::size_of::<format::SuperBlock>()]
+            .copy_from_slice(sb.as_bytes());
+
+        // 2. Root directory inode at nid 0 (offset 4096)
+        let root_inode = format::InodeCompact {
+            format: LEU16::new(0),
+            xattr_icount: LEU16::new(0),
+            mode: LEU16::new(0o040755),
+            link_count: LEU16::new(2),
+            size: LEU32::new(0),
+            reserved_1: [0; 4],
+            i_u: [0; 4],
+            ino: LEU32::new(1),
+            uid: LEU16::new(0),
+            gid: LEU16::new(0),
+            reserved_2: [0; 4],
+        };
+        image[4096..4096 + 32].copy_from_slice(root_inode.as_bytes());
+
+        // 3. Compressed file inode at nid 1 (offset 4128)
+        let file_size = 16384u32; // 4 clusters of 4096
+        let file_inode = format::InodeCompact {
+            format: LEU16::new((InodeDataLayout::CompressedFull as u16) << 1),
+            xattr_icount: LEU16::new(0),
+            mode: LEU16::new(0o100644),
+            link_count: LEU16::new(1),
+            size: LEU32::new(file_size),
+            reserved_1: [0; 4],
+            i_u: [0; 4],
+            ino: LEU32::new(2),
+            uid: LEU16::new(0),
+            gid: LEU16::new(0),
+            reserved_2: [0; 4],
+        };
+        image[4128..4128 + 32].copy_from_slice(file_inode.as_bytes());
+
+        // 4. CompressionMapHeader at map_header_offset = 4160
+        let map_header = format::CompressionMapHeader {
+            reserved_1: [0; 2],
+            inline_data_size: LEU16::new(0),
+            advisory_flags: LEU16::new(0),
+            algorithm_type: 0,
+            lcluster_bits: 0,
+        };
+        image[4160..4160 + 8].copy_from_slice(map_header.as_bytes());
+
+        // 5. LClusterIndex table at index_table_offset = 4160 + 16 = 4176
+        // Cluster 0 (0..4096): Plain data pointing to Block 4
+        let cluster0 = format::LClusterIndex {
+            advisory_flags: LEU16::new(0),
+            extent_start_offset: LEU16::new(0),
+            data_union: 4u32.to_le_bytes(),
+        };
+        // Cluster 1 (4096..8192): Sparse hole (blkaddr = 0)
+        let cluster1 = format::LClusterIndex {
+            advisory_flags: LEU16::new(0),
+            extent_start_offset: LEU16::new(0),
+            data_union: 0u32.to_le_bytes(),
+        };
+        // Cluster 2 (8192..12288): Sparse hole (blkaddr = 0)
+        let cluster2 = format::LClusterIndex {
+            advisory_flags: LEU16::new(0),
+            extent_start_offset: LEU16::new(0),
+            data_union: 0u32.to_le_bytes(),
+        };
+        // Cluster 3 (12288..16384): Plain data pointing to Block 5
+        let cluster3 = format::LClusterIndex {
+            advisory_flags: LEU16::new(0),
+            extent_start_offset: LEU16::new(0),
+            data_union: 5u32.to_le_bytes(),
+        };
+        image[4176..4176 + 8].copy_from_slice(cluster0.as_bytes());
+        image[4184..4184 + 8].copy_from_slice(cluster1.as_bytes());
+        image[4192..4192 + 8].copy_from_slice(cluster2.as_bytes());
+        image[4200..4200 + 8].copy_from_slice(cluster3.as_bytes());
+
+        // 6. Data in Block 4 (offset 16384) and Block 5 (offset 20480)
+        image[16384..16384 + 4096].fill(0xAA);
+        image[20480..20480 + 4096].fill(0xBB);
+
+        let reader = Arc::new(VecReader::new(image));
+        let fs = ErofsFilesystem::new(reader).expect("failed to parse synthetic fs");
+        let node = fs.node(1).expect("failed to get node 1");
+        let Node::File(file_node) = node else { panic!("expected file node") };
+
+        (fs, file_node)
+    }
+
+    #[test]
+    fn test_synthetic_sparse_extents() {
+        let (fs, file_node) = create_synthetic_sparse_filesystem();
+
+        // Cluster 0: Block extent (0..4096)
+        let extent0 = fs.get_extent_at(&file_node.0, 0).unwrap();
+        assert_eq!(extent0.logical_start, 0);
+        assert_eq!(extent0.logical_len, 4096);
+        match extent0.kind {
+            ExtentKind::Plain { byte_offset: disk_offset } => {
+                assert_eq!(disk_offset, 4 * 4096);
+            }
+            other => panic!("expected Plain extent at 0, got {:?}", other),
+        }
+
+        // Cluster 1: Sparse extent (4096..8192)
+        let extent1 = fs.get_extent_at(&file_node.0, 4096).unwrap();
+        assert_eq!(extent1.logical_start, 4096);
+        assert_eq!(extent1.logical_len, 4096);
+        assert!(matches!(extent1.kind, ExtentKind::Sparse));
+
+        // Inside Cluster 1: Sparse extent at offset 5000
+        let extent_mid = fs.get_extent_at(&file_node.0, 5000).unwrap();
+        assert_eq!(extent_mid.logical_start, 4096);
+        assert_eq!(extent_mid.logical_len, 4096);
+        assert!(matches!(extent_mid.kind, ExtentKind::Sparse));
+
+        // Cluster 2: Sparse extent (8192..12288)
+        let extent2 = fs.get_extent_at(&file_node.0, 8192).unwrap();
+        assert_eq!(extent2.logical_start, 8192);
+        assert_eq!(extent2.logical_len, 4096);
+        assert!(matches!(extent2.kind, ExtentKind::Sparse));
+
+        // Cluster 3: Block extent (12288..16384)
+        let extent3 = fs.get_extent_at(&file_node.0, 12288).unwrap();
+        assert_eq!(extent3.logical_start, 12288);
+        assert_eq!(extent3.logical_len, 4096);
+        match extent3.kind {
+            ExtentKind::Plain { byte_offset: disk_offset } => {
+                assert_eq!(disk_offset, 5 * 4096);
+            }
+            other => panic!("expected Plain extent at 12288, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_synthetic_sparse_reads() {
+        let (fs, file_node) = create_synthetic_sparse_filesystem();
+
+        // 1. Full read across all extents (Plain -> Sparse -> Sparse -> Plain)
+        let mut full_buf = vec![0u8; 16384];
+        let bytes_read = fs.read_file_range(&file_node, 0, &mut full_buf).unwrap();
+        assert_eq!(bytes_read, 16384);
+        assert_eq!(&full_buf[0..4096], &[0xAA; 4096]);
+        assert_eq!(&full_buf[4096..12288], &[0x00; 8192]);
+        assert_eq!(&full_buf[12288..16384], &[0xBB; 4096]);
+
+        // 2. Read entirely within a sparse extent
+        let mut sparse_buf = vec![0xFFu8; 2000];
+        let bytes_read = fs.read_file_range(&file_node, 5000, &mut sparse_buf).unwrap();
+        assert_eq!(bytes_read, 2000);
+        assert_eq!(&sparse_buf, &[0x00; 2000]);
+
+        // 3. Read spanning Plain -> Sparse boundary
+        let mut span_start_buf = vec![0xFFu8; 200];
+        let bytes_read = fs.read_file_range(&file_node, 4000, &mut span_start_buf).unwrap();
+        assert_eq!(bytes_read, 200);
+        assert_eq!(&span_start_buf[..96], &[0xAA; 96]); // 4000..4096
+        assert_eq!(&span_start_buf[96..], &[0x00; 104]); // 4096..4200
+
+        // 4. Read spanning Sparse -> Plain boundary
+        let mut span_end_buf = vec![0xFFu8; 200];
+        let bytes_read = fs.read_file_range(&file_node, 12200, &mut span_end_buf).unwrap();
+        assert_eq!(bytes_read, 200);
+        assert_eq!(&span_end_buf[..88], &[0x00; 88]); // 12200..12288
+        assert_eq!(&span_end_buf[88..], &[0xBB; 112]); // 12288..12400
+
+        // 5. Read spanning multiple sparse clusters (Plain -> Sparse 1 -> Sparse 2 -> Plain)
+        let mut multi_sparse_buf = vec![0xFFu8; 9000];
+        let bytes_read = fs.read_file_range(&file_node, 4000, &mut multi_sparse_buf).unwrap();
+        assert_eq!(bytes_read, 9000);
+        assert_eq!(&multi_sparse_buf[..96], &[0xAA; 96]); // 4000..4096
+        assert_eq!(&multi_sparse_buf[96..8288], &[0x00; 8192]); // 4096..12288
+        assert_eq!(&multi_sparse_buf[8288..9000], &[0xBB; 712]); // 12288..13000
+    }
+
+    fn load_image(file: &str) -> Vec<u8> {
+        fs::read(format!("/pkg/data/{file}")).expect("failed to read test file")
+    }
+
+    #[test_case("simple.erofs" ; "4096 block size")]
+    #[test_case("simple_512.erofs" ; "512 block size")]
+    #[test_case("simple_lz4.erofs" ; "4096 block size lz4 compressed")]
+    #[test_case("simple_lz4_legacy.erofs" ; "4096 block size lz4 legacy compressed")]
     #[fuchsia::test]
-    fn test_parse_superblock(path: &str) {
-        let runfiles = fs::read(path).expect("failed to read test file");
+    fn test_parse_superblock(file: &str) {
+        let runfiles = load_image(file);
         let reader = Arc::new(VecReader::new(runfiles.clone()));
         // The fs validates the superblock during construction.
         let _fs = ErofsFilesystem::new(reader).expect("failed to parse superblock");
@@ -1002,11 +2089,13 @@ mod tests {
         }
     }
 
-    #[test_case("/pkg/data/simple.erofs" ; "4096 block size")]
-    #[test_case("/pkg/data/simple_512.erofs" ; "512 block size")]
+    #[test_case("simple.erofs" ; "4096 block size")]
+    #[test_case("simple_512.erofs" ; "512 block size")]
+    #[test_case("simple_lz4.erofs" ; "4096 block size lz4 compressed")]
+    #[test_case("simple_lz4_legacy.erofs" ; "4096 block size lz4 legacy compressed")]
     #[fuchsia::test]
-    fn test_list_dir(path: &str) {
-        let runfiles = fs::read(path).expect("failed to read test file");
+    fn test_list_dir(file: &str) {
+        let runfiles = load_image(file);
         let reader = Arc::new(VecReader::new(runfiles));
         let fs = ErofsFilesystem::new(reader).expect("failed to parse superblock");
         let root_node = fs.root_node();
@@ -1017,15 +2106,26 @@ mod tests {
         let names: Vec<String> = buf[..filled].iter().map(|e| e.name.clone()).collect();
         assert_eq!(
             names,
-            vec![".", "..", "file1", "large_dir", "photosynthesis", "quantum", "symlink_to_file1",]
+            vec![
+                ".",
+                "..",
+                "file1",
+                "large_dir",
+                "mixed_compression",
+                "photosynthesis",
+                "quantum",
+                "symlink_to_file1",
+            ]
         );
     }
 
-    #[test_case("/pkg/data/simple.erofs" ; "4096 block size")]
-    #[test_case("/pkg/data/simple_512.erofs" ; "512 block size")]
+    #[test_case("simple.erofs" ; "4096 block size")]
+    #[test_case("simple_512.erofs" ; "512 block size")]
+    #[test_case("simple_lz4.erofs" ; "4096 block size lz4 compressed")]
+    #[test_case("simple_lz4_legacy.erofs" ; "4096 block size lz4 legacy compressed")]
     #[fuchsia::test]
-    fn test_overflow_nid(path: &str) {
-        let runfiles = fs::read(path).expect("failed to read test file");
+    fn test_overflow_nid(file: &str) {
+        let runfiles = load_image(file);
         let reader = Arc::new(VecReader::new(runfiles));
         let fs = ErofsFilesystem::new(reader).expect("failed to parse superblock");
         let result = fs.node(u64::MAX);
@@ -1033,13 +2133,23 @@ mod tests {
         assert_eq!(result.unwrap_err(), ErofsError::Parse(ParsingError::InvalidNid(u64::MAX)));
     }
 
-    #[test_case("/pkg/data/simple.erofs", "file1" ; "4096 block size file1")]
-    #[test_case("/pkg/data/simple_512.erofs", "file1" ; "512 block size file1")]
-    #[test_case("/pkg/data/simple.erofs", "photosynthesis" ; "4096 block size photosynthesis")]
-    #[test_case("/pkg/data/simple_512.erofs", "photosynthesis" ; "512 block size photosynthesis")]
+    #[test_case("simple.erofs", "file1" ; "4096 block size file1")]
+    #[test_case("simple_512.erofs", "file1" ; "512 block size file1")]
+    #[test_case("simple_lz4.erofs", "file1" ; "4096 block size lz4 file1")]
+    #[test_case("simple_lz4_legacy.erofs", "file1" ; "4096 block size lz4 legacy file1")]
+    #[test_case("simple.erofs", "photosynthesis" ; "4096 block size photosynthesis")]
+    #[test_case("simple_512.erofs", "photosynthesis" ; "512 block size photosynthesis")]
+    #[test_case("simple_lz4.erofs", "photosynthesis" ; "4096 block size lz4 photosynthesis")]
+    #[test_case("simple_lz4_legacy.erofs", "photosynthesis" ; "4096 block size lz4 legacy photosynthesis")]
+    #[test_case("simple_lz4.erofs", "quantum" ; "4096 block size lz4 quantum")]
+    #[test_case("simple_lz4_legacy.erofs", "quantum" ; "4096 block size lz4 legacy quantum")]
+    #[test_case("simple.erofs", "mixed_compression" ; "4096 block size mixed_compression")]
+    #[test_case("simple_512.erofs", "mixed_compression" ; "512 block size mixed_compression")]
+    #[test_case("simple_lz4.erofs", "mixed_compression" ; "4096 block size lz4 mixed_compression")]
+    #[test_case("simple_lz4_legacy.erofs", "mixed_compression" ; "4096 block size lz4 legacy mixed_compression")]
     #[fuchsia::test]
-    fn test_read_file_range(path: &str, name: &str) {
-        let runfiles = fs::read(path).expect("failed to read test file");
+    fn test_read_file_range(file: &str, name: &str) {
+        let runfiles = load_image(file);
         let reader = Arc::new(VecReader::new(runfiles));
         let fs = ErofsFilesystem::new(reader).expect("failed to parse superblock");
         let root_node = fs.root_node();
@@ -1054,22 +2164,38 @@ mod tests {
         let mut buf = vec![0u8; size];
         let bytes_read = fs.read_file_range(&file_node, 0, &mut buf).expect("failed to read");
         assert_eq!(bytes_read, size);
-        if name == "file1" {
-            assert_eq!(&buf[..14], b"this is a file");
-        }
+        let expected =
+            fs::read(format!("/pkg/data/simple/{}", name)).expect("failed to read source file");
+        assert_eq!(buf, expected);
 
         // Test partial read within file
         let mut buf = vec![0u8; 5];
-        let bytes_read = fs.read_file_range(&file_node, 5, &mut buf).expect("failed to read");
+        let bytes_read =
+            fs.read_file_range(&file_node, 5, &mut buf).expect("failed to read partial");
         assert_eq!(bytes_read, 5);
-        if name == "file1" {
-            assert_eq!(&buf, b"is a ");
+        assert_eq!(&buf, &expected[5..10]);
+
+        // Test non-extent-aligned seek reads into multi-cluster extents
+        if size > 5000 {
+            let mut buf = vec![0u8; 100];
+            let bytes_read =
+                fs.read_file_range(&file_node, 5000, &mut buf).expect("failed to read at 5000");
+            assert_eq!(bytes_read, 100);
+            assert_eq!(&buf, &expected[5000..5100]);
+        }
+        if size > 15000 {
+            let mut buf = vec![0u8; 200];
+            let bytes_read =
+                fs.read_file_range(&file_node, 15000, &mut buf).expect("failed to read at 15000");
+            assert_eq!(bytes_read, 200);
+            assert_eq!(&buf, &expected[15000..15200]);
         }
 
         // Test read spanning across EOF (buffer larger than remaining data)
         let mut buf = vec![0u8; 100];
-        let bytes_read =
-            fs.read_file_range(&file_node, (size - 5) as u64, &mut buf).expect("failed to read");
+        let bytes_read = fs
+            .read_file_range(&file_node, (size - 5) as u64, &mut buf)
+            .expect("failed to read past eof");
         assert_eq!(bytes_read, 5);
         if name == "file1" {
             assert_eq!(&buf[..5], b"file\n");
@@ -1082,11 +2208,52 @@ mod tests {
         assert_eq!(bytes_read, 0);
     }
 
-    #[test_case("/pkg/data/simple.erofs" ; "4096 block size")]
-    #[test_case("/pkg/data/simple_512.erofs" ; "512 block size")]
+    #[test_case("simple_lz4.erofs" ; "4096 block size lz4 compressed")]
+    #[test_case("simple_lz4_legacy.erofs" ; "4096 block size lz4 legacy compressed")]
     #[fuchsia::test]
-    fn test_read_symlink(path: &str) {
-        let runfiles = fs::read(path).expect("failed to read test file");
+    fn test_mixed_compression(file: &str) {
+        let runfiles = load_image(file);
+        let fs = ErofsFilesystem::new(Arc::new(VecReader::new(runfiles))).unwrap();
+        let root = fs.root_node();
+        let node = fs.lookup(&root, "mixed_compression").unwrap().unwrap();
+        let Node::File(file_node) = node else { panic!() };
+
+        let lcluster_size = fs.block_size();
+        let totalidx = file_node.total_lclusters(lcluster_size);
+        let mut has_compressed_head = false;
+        let mut has_plain_cluster = false;
+        for lcn in 0..totalidx {
+            if let Ok(LClusterEntry::Head(head)) = fs.read_lcluster_entry(&file_node.0, lcn) {
+                if head.cluster_type.is_head() && head.cluster_type != LClusterType::Plain {
+                    has_compressed_head = true;
+                }
+                if head.cluster_type == LClusterType::Plain {
+                    has_plain_cluster = true;
+                }
+            }
+        }
+        assert!(
+            has_compressed_head && has_plain_cluster,
+            "mixed_compression should contain some plain clusters"
+        );
+
+        let size = file_node.size() as usize;
+        let mut buf = vec![0u8; size];
+        let bytes_read = fs.read_file_range(&file_node, 0, &mut buf).expect("failed to read");
+        assert_eq!(bytes_read, size);
+
+        let expected =
+            fs::read("/pkg/data/simple/mixed_compression").expect("failed to read source file");
+        assert_eq!(buf, expected);
+    }
+
+    #[test_case("simple.erofs" ; "4096 block size")]
+    #[test_case("simple_512.erofs" ; "512 block size")]
+    #[test_case("simple_lz4.erofs" ; "4096 block size lz4 compressed")]
+    #[test_case("simple_lz4_legacy.erofs" ; "4096 block size lz4 legacy compressed")]
+    #[fuchsia::test]
+    fn test_read_symlink(file: &str) {
+        let runfiles = load_image(file);
         let reader = Arc::new(VecReader::new(runfiles));
         let fs = ErofsFilesystem::new(reader).expect("failed to parse superblock");
         let root_node = fs.root_node();
@@ -1107,17 +2274,25 @@ mod tests {
         assert_eq!(selinux_val, b"u:object_r:symlink_t:s0");
     }
 
-    #[test_case("/pkg/data/simple.erofs" ; "4096 block size")]
-    #[test_case("/pkg/data/simple_512.erofs" ; "512 block size")]
+    #[test_case("simple.erofs" ; "4096 block size")]
+    #[test_case("simple_512.erofs" ; "512 block size")]
     #[fuchsia::test]
-    fn test_read_directory_pagination(path: &str) {
-        let runfiles = fs::read(path).expect("failed to read test file");
+    fn test_read_directory_pagination(file: &str) {
+        let runfiles = load_image(file);
         let reader = Arc::new(VecReader::new(runfiles));
         let fs = ErofsFilesystem::new(reader).expect("failed to parse superblock");
         let root_node = fs.root_node();
 
-        let expected_names =
-            vec![".", "..", "file1", "large_dir", "photosynthesis", "quantum", "symlink_to_file1"];
+        let expected_names = vec![
+            ".",
+            "..",
+            "file1",
+            "large_dir",
+            "mixed_compression",
+            "photosynthesis",
+            "quantum",
+            "symlink_to_file1",
+        ];
 
         // Test reading with buffer size 2 (pagination)
         let mut buf = vec![DirectoryEntry::default(); 2];
@@ -1142,11 +2317,12 @@ mod tests {
 
         // Page 4 (offset 6)
         let filled = fs.read_directory(&root_node, 6, &mut buf).expect("failed to read dir");
-        assert_eq!(filled, 1);
+        assert_eq!(filled, 2);
         assert_eq!(buf[0].name, expected_names[6]);
+        assert_eq!(buf[1].name, expected_names[7]);
 
-        // Page 5 (offset 7 - EOF)
-        let filled = fs.read_directory(&root_node, 7, &mut buf).expect("failed to read dir");
+        // Page 5 (offset 8 - EOF)
+        let filled = fs.read_directory(&root_node, 8, &mut buf).expect("failed to read dir");
         assert_eq!(filled, 0);
 
         // Test reading with buffer size 1 (extreme pagination)
@@ -1162,13 +2338,15 @@ mod tests {
         assert_eq!(filled, 0);
     }
 
-    #[test_case("/pkg/data/simple.erofs" ; "4096 block size")]
-    #[test_case("/pkg/data/simple_512.erofs" ; "512 block size")]
+    #[test_case("simple.erofs" ; "4096 block size")]
+    #[test_case("simple_512.erofs" ; "512 block size")]
+    #[test_case("simple_lz4.erofs" ; "4096 block size lz4 compressed")]
+    #[test_case("simple_lz4_legacy.erofs" ; "4096 block size lz4 legacy compressed")]
     #[fuchsia::test]
-    fn test_read_directory_large_dir(path: &str) {
+    fn test_read_directory_large_dir(file: &str) {
         // Note: the large directory in the golden image is only large enough to split the entries
         // into multiple blocks on the 512 block size golden.
-        let runfiles = fs::read(path).expect("failed to read test file");
+        let runfiles = load_image(file);
         let reader = Arc::new(VecReader::new(runfiles));
         let fs = ErofsFilesystem::new(reader).expect("failed to parse superblock");
         let root_node = fs.root_node();
@@ -1212,11 +2390,13 @@ mod tests {
         }
     }
 
-    #[test_case("/pkg/data/simple.erofs" ; "4096 block size")]
-    #[test_case("/pkg/data/simple_512.erofs" ; "512 block size")]
+    #[test_case("simple.erofs" ; "4096 block size")]
+    #[test_case("simple_512.erofs" ; "512 block size")]
+    #[test_case("simple_lz4.erofs" ; "4096 block size lz4 compressed")]
+    #[test_case("simple_lz4_legacy.erofs" ; "4096 block size lz4 legacy compressed")]
     #[fuchsia::test]
-    fn test_filesystem_metadata(path: &str) {
-        let runfiles = fs::read(path).expect("failed to read test file");
+    fn test_filesystem_metadata(file: &str) {
+        let runfiles = load_image(file);
         let reader = Arc::new(VecReader::new(runfiles));
         let fs = ErofsFilesystem::new(reader).expect("failed to parse superblock");
 
@@ -1224,11 +2404,11 @@ mod tests {
         assert!(fs.total_inodes() > 0);
     }
 
-    #[test_case("/pkg/data/simple.erofs" ; "4096 block size")]
-    #[test_case("/pkg/data/simple_512.erofs" ; "512 block size")]
+    #[test_case("simple.erofs" ; "4096 block size")]
+    #[test_case("simple_512.erofs" ; "512 block size")]
     #[fuchsia::test]
-    fn test_node_metadata(path: &str) {
-        let runfiles = fs::read(path).expect("failed to read test file");
+    fn test_node_metadata(file: &str) {
+        let runfiles = load_image(file);
         let reader = Arc::new(VecReader::new(runfiles));
         let fs = ErofsFilesystem::new(reader).expect("failed to parse superblock");
         let root_node = fs.root_node();
@@ -1241,11 +2421,11 @@ mod tests {
         assert!(file1_node.mtime_ns() > 0);
     }
 
-    #[test_case("/pkg/data/simple.erofs" ; "4096 block size")]
-    #[test_case("/pkg/data/simple_512.erofs" ; "512 block size")]
+    #[test_case("simple.erofs" ; "4096 block size")]
+    #[test_case("simple_512.erofs" ; "512 block size")]
     #[fuchsia::test]
-    fn test_xattrs(path: &str) {
-        let runfiles = fs::read(path).expect("failed to read test file");
+    fn test_xattrs(file: &str) {
+        let runfiles = load_image(file);
         let reader = Arc::new(VecReader::new(runfiles));
         let fs = ErofsFilesystem::new(reader).expect("failed to parse superblock");
         let root_node = fs.root_node();

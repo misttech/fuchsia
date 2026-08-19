@@ -28,7 +28,7 @@ unsafe extern "C" {
     ) -> c_int;
 }
 
-#[derive(thiserror::Error, Debug)]
+#[derive(thiserror::Error, Debug, Clone, PartialEq)]
 pub enum Error {
     #[error("LZ4 only supports compressing up to 2016MiB")]
     InputTooLarge,

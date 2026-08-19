@@ -101,6 +101,7 @@ impl Node for ErofsFile {
     ) -> Result<fio::NodeAttributes2, zx::Status> {
         let mtime = self.node.mtime_ns();
         let content_size = self.node.size();
+        let storage_size = self.node.storage_size(self.volume.fs().block_size());
         let selinux_context = self
             .volume
             .fs()
@@ -129,7 +130,7 @@ impl Node for ErofsFile {
                 protocols: fio::NodeProtocolKinds::FILE,
                 abilities: fio::Operations::GET_ATTRIBUTES | fio::Operations::READ_BYTES,
                 content_size: content_size,
-                storage_size: content_size,
+                storage_size: storage_size,
                 id: self.node.nid(),
                 link_count: self.node.link_count() as u64,
                 change_time: mtime,

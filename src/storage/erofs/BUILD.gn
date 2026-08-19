@@ -22,6 +22,7 @@ rustc_library("erofs") {
 
   deps = [
     "//sdk/rust/zx",
+    "//third_party/lz4/rust:lz4",
     "//third_party/rust_crates:bitflags",
     "//third_party/rust_crates:crc",
     "//third_party/rust_crates:static_assertions",
@@ -45,5 +46,6 @@ fuchsia_unittest_package("erofs-tests") {
   deps = [
     ":erofs_test",
     "testing:simple_erofs_image",
+    "testing:simple_raw_files",
   ]
 }
