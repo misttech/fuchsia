@@ -544,6 +544,7 @@ zx_status_t FutexContext::FutexWait(user_in_ptr<const zx_futex_t> value_ptr,
 
   FutexState::PendingOpRef futex_ref = FindActiveFutex(current_thread->blocking_futex_id_);
   current_thread->blocking_futex_id_ = FutexId::Null();
+  LOCK_TRACE_FLOW_END("contend_futex", current_core_thread->lock_flow_id());
   DEBUG_ASSERT(futex_ref != nullptr);
 
   // Record the fact that we are holding an extra reference.  The first

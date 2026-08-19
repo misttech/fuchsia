@@ -127,6 +127,9 @@ class PagerProxy : public PageProvider,
   // used to prevent multiple overtime requests on the same PagerProxy from all redundantly
   // triggering the same informational dump and spamming the debuglog.
   zx_instant_mono_t last_overtime_dump_ TA_GUARDED(mtx_) = ZX_TIME_INFINITE_PAST;
+
+  // Monotonically generated flow ID for page request tracing to avoid duplicate flow ID errors.
+  uint64_t flow_id_ TA_GUARDED(mtx_) = 0;
 };
 
 #endif  // ZIRCON_KERNEL_OBJECT_INCLUDE_OBJECT_PAGER_PROXY_H_

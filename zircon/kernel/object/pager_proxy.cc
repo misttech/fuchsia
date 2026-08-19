@@ -7,6 +7,7 @@
 #include <lib/boot-options/boot-options.h>
 #include <lib/counters.h>
 #include <lib/dump/depth_printer.h>
+#include <lib/flow_id.h>
 #include <trace.h>
 #include <zircon/syscalls-next.h>
 
@@ -95,10 +96,14 @@ void PagerProxy::QueuePacketLocked(PageRequest* request) {
     DEBUG_ASSERT(!add_overflow(offset, length, &unused));
 
     // Trace flow events require an enclosing duration.
+    // We cannot use the PortPacket pointer address (&packet_) as the flow ID because packet_
+    // is a member field reused across consecutive page requests. If a previous flow end event
+    // is lost or cancelled, reusing the same pointer address causes flow_duplicate_id collisions.
+    flow_id_ = flow_id_generate();
     VM_KTRACE_DURATION(1, "page_request_queue", ("vmo_id", GetRequestVmoId(request)),
                        ("offset", offset), ("length", length),
                        ("type", GetRequestType(request) == ZX_PAGER_VMO_READ ? "Read" : "Dirty"));
-    VM_KTRACE_FLOW_BEGIN(1, "page_request_queue", reinterpret_cast<uintptr_t>(&packet_));
+    VM_KTRACE_FLOW_BEGIN(1, "page_request_queue", flow_id_);
   } else {
     offset = length = 0;
     cmd = ZX_PAGER_VMO_COMPLETE;
@@ -134,7 +139,7 @@ void PagerProxy::ClearAsyncRequest(PageRequest* request) {
           ("type", KTRACE_ANNOTATED_VALUE(
                        AssertHeld(mtx_),
                        GetRequestType(active_request_) == ZX_PAGER_VMO_READ ? "Read" : "Dirty")));
-      VM_KTRACE_FLOW_END(1, "page_request_queue", reinterpret_cast<uintptr_t>(&packet_));
+      VM_KTRACE_FLOW_END(1, "page_request_queue", flow_id_);
     }
     // This request is being taken back by the PageSource, so we can't hold a reference to it
     // anymore. This will remain null until OnPacketFreedLocked is called (and a new packet gets
@@ -265,7 +270,7 @@ void PagerProxy::Free(PortPacket* packet) {
           ("type", KTRACE_ANNOTATED_VALUE(
                        AssertHeld(mtx_),
                        GetRequestType(active_request_) == ZX_PAGER_VMO_READ ? "Read" : "Dirty")));
-      VM_KTRACE_FLOW_END(1, "page_request_queue", reinterpret_cast<uintptr_t>(packet));
+      VM_KTRACE_FLOW_END(1, "page_request_queue", flow_id_);
       active_request_ = nullptr;
     }
     OnPacketFreedLocked();

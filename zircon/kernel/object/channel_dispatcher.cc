@@ -103,7 +103,7 @@ uint64_t ChannelMessageFlowId(const MessagePacket& msg, const ChannelDispatcher*
   // uniqueness of the message id.
   const uint32_t is_txid_mask = 1u << 31;
   const uint32_t message_id =
-      msg.fidl_header().txid == 0
+      !IsKernelGeneratedTxid(msg.fidl_header().txid)
           ? HashB(reinterpret_cast<uint64_t>(&msg)) & ~is_txid_mask
           : HashB(msg.fidl_header().txid, static_cast<uint32_t>(min_koid)) | is_txid_mask;
 
