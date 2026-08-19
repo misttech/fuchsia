@@ -6,12 +6,13 @@
 #### CATEGORY=Software delivery
 ### perform a system OTA on a connected device
 
-## usage: fx ota [--help] [--build|--no-build] [--serve] [--packageless]
+## usage: fx ota [--help] [--build|--no-build] [--serve] [--packageless|--no-packageless]
 ##
-##   --build | --no-build   Build (or not) the 'updates' target before initiating OTA.
-##   --serve                Spawn 'fx serve' for the duration of the OTA if not already running.
-##   --packageless          Use a packageless update (direct blob fetching).
-##   --help                 Print out this message.
+##   --build | --no-build               Build (or not) the 'updates' target before initiating OTA.
+##   --serve                            Spawn 'fx serve' for the duration of the OTA if not already running.
+##   --packageless | --no-packageless   Use (or not) a packageless update (direct blob fetching).
+##                                      Defaults to '--packageless'.
+##   --help                             Print out this message.
 ##
 ## Ask the connected Fuchsia device to do an OTA.
 ## Depending on the flags, this command will attempt to build the necessary
@@ -60,7 +61,7 @@ function needs-update {
 function main {
   local build=false
   local serve=false
-  local packageless=false
+  local packageless=true
   local build_targets=("//build/images/updates")
   if is_feature_enabled "incremental"; then
     # In incremental workflows, these defaults have changed.
@@ -84,6 +85,9 @@ function main {
         ;;
       --packageless)
         packageless=true
+        ;;
+      --no-packageless)
+        packageless=false
         ;;
       *)
        fx-error 'Invalid syntax'
