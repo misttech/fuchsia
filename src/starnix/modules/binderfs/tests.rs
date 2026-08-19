@@ -4750,13 +4750,24 @@ pub mod tests {
             let (tx, rx) = std::sync::mpsc::channel();
             let event_clone = event.clone();
             let blocked_thread = std::thread::spawn(move || {
+                let (thread_handle, _) = fuchsia_runtime::with_thread_self(|thread| {
+                    (
+                        thread.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap(),
+                        thread.koid().unwrap(),
+                    )
+                });
+                tx.send(thread_handle).unwrap();
                 let guard = event_clone.begin_wait();
-                tx.send(()).unwrap();
                 let _ = guard.block_until(None, zx::MonotonicInstant::INFINITE);
             });
 
-            // Wait until blocked_thread has called begin_wait().
-            rx.recv().unwrap();
+            // Wait until blocked_thread is actively sleeping in the kernel on zx_futex_wait.
+            let blocked_thread_handle = rx.recv().unwrap();
+            while blocked_thread_handle.info().unwrap().state
+                != zx::ThreadState::Blocked(zx::ThreadBlockType::Futex)
+            {
+                std::thread::sleep(std::time::Duration::from_millis(10));
+            }
 
             // Verify before requeue that the event has no owner.
             assert_eq!(event.get_owner(), None);

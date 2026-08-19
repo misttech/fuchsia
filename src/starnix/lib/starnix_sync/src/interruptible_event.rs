@@ -411,15 +411,23 @@ mod test {
 
         let event_for_blocked_thread = event.clone();
 
+        let (tx, rx) = std::sync::mpsc::channel();
         let blocked_thread = std::thread::spawn(move || {
+            let (thread_handle, _) = fuchsia_runtime::with_thread_self(|thread| {
+                (thread.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap(), thread.koid().unwrap())
+            });
+            tx.send(thread_handle).unwrap();
             let event = event_for_blocked_thread;
             let guard = event.begin_wait();
             guard.block_until(None, zx::MonotonicInstant::INFINITE).unwrap();
         });
 
-        // Wait until the thread starts sleeping on the primary futex.
-        while event.futex.load(Ordering::Relaxed) != 1 {
-            std::thread::sleep(std::time::Duration::from_millis(50));
+        // Wait until the thread starts sleeping on the primary futex in the kernel.
+        let blocked_thread_handle = rx.recv().unwrap();
+        while blocked_thread_handle.info().unwrap().state
+            != zx::ThreadState::Blocked(zx::ThreadBlockType::Futex)
+        {
+            std::thread::sleep(std::time::Duration::from_millis(10));
         }
 
         // Dynamically assign PI ownership to root_thread_handle.
