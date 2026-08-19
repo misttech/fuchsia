@@ -21,7 +21,8 @@ bazel_content_hash_definitions = [
       # changes to the following files should trigger repository rules.
       "//build/bazel_sdk/bazel_rules_fuchsia/common/toolchains/clang",
       "//build/bazel_sdk/bazel_rules_fuchsia/fuchsia/workspace/clang_templates/defs.bzl",
-      "//build/bazel_sdk/bazel_rules_fuchsia/fuchsia/workspace/clang_templates/crosstool.BUILD.template",
+      "//build/bazel_sdk/bazel_rules_fuchsia/fuchsia/workspace/clang_templates/fuchsia_clang.BUILD.bazel",
+      "//build/bazel_sdk/bazel_rules_fuchsia/fuchsia/workspace/clang_templates/sysroot_defs.bzl.template",
     ]
     cipd_name = "clang"
   },

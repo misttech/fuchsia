@@ -100,20 +100,17 @@ def _fuchsia_clang_repository_impl(ctx):
     # not need to be re-fetched after potentially talking to the network
     ctx.path("BUILD.bazel")
 
-    # Claim dependency on the templates.
-    crosstool_template = Label("//fuchsia/workspace/clang_templates:crosstool.BUILD.template")
-    defs_template_file = Label("//fuchsia/workspace/clang_templates:defs.bzl")
-
-    ctx.path(crosstool_template)
-    ctx.path(defs_template_file)
+    ctx.file("WORKSPACE.bazel", content = "", executable = False)
 
     # Symlink in common toolchain helpers.
     ctx.symlink(Label("//:common"), "common")
 
-    ctx.file("WORKSPACE.bazel", content = "", executable = False)
-
     ctx.symlink(
-        defs_template_file,
+        Label("//fuchsia/workspace/clang_templates:fuchsia_clang.BUILD.bazel"),
+        "BUILD.bazel",
+    )
+    ctx.symlink(
+        Label("//fuchsia/workspace/clang_templates:defs.bzl"),
         "defs.bzl",
     )
 
@@ -153,13 +150,8 @@ def _fuchsia_clang_repository_impl(ctx):
     else:
         fail("Please provide a local path or way to fetch the contents")
 
-    # find the clang version as the largest number
-    clang_version = "0"
-    for v in ctx.path("lib/clang").readdir():
-        v = str(v.basename)
-        if v.split(".")[0].isdigit() and v > clang_version:
-            clang_version = v
-
+    # Set up the BUILD file from the Fuchsia SDK.
+    # TODO(https://fxbug.dev/514679143): Move these to @fuchsia_sdk.
     # To properly use a custom Bazel C++ sysroot, the following are necessary:
     #
     # - The cc_toolchain() `compiler_files` argument must list
@@ -205,14 +197,10 @@ def _fuchsia_clang_repository_impl(ctx):
     #   and there is no way to debug the expansions performed for these path
     #   expressions!
     #
-
-    # Set up the BUILD file from the Fuchsia SDK.
-    # TODO(https://fxbug.dev/514679143): Move these to @fuchsia_sdk.
     ctx.template(
-        "BUILD.bazel",
-        crosstool_template,
+        "sysroot_defs.bzl",
+        Label("//fuchsia/workspace/clang_templates:sysroot_defs.bzl.template"),
         substitutions = {
-            "%{CLANG_VERSION}": clang_version,
             "%{SYSROOT_HEADERS_AARCH64}": ctx.attr.sysroot_headers.get("aarch64", "NOT_SET"),
             "%{SYSROOT_HEADERS_RISCV64}": ctx.attr.sysroot_headers.get("riscv64", "NOT_SET"),
             "%{SYSROOT_HEADERS_X86_64}": ctx.attr.sysroot_headers.get("x86_64", "NOT_SET"),

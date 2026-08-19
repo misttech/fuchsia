@@ -3,7 +3,8 @@
 # found in the LICENSE file.
 
 load("@bazel_skylib//lib:selects.bzl", "selects")
-load("@rules_cc//cc:defs.bzl", "cc_library", "cc_toolchain", "cc_toolchain_suite")
+load("@fuchsia_sdk//:generated_constants.bzl", sdk_constants = "constants")
+load("@rules_cc//cc:defs.bzl", "cc_library", "cc_toolchain_suite")
 load(
     "@rules_fuchsia//fuchsia:defs.bzl",
     "COMPATIBILITY",
@@ -17,6 +18,10 @@ load(
     "feature_flag",
 )
 load(
+    "//common:toolchains/clang/package_resources.bzl",
+    "get_clang_package_resources",
+)
+load(
     "//common:toolchains/clang/repository_utils.bzl",
     "setup_clang_repository",
 )
@@ -25,10 +30,12 @@ load(
     "generate_clang_cc_toolchain",
 )
 load(
-    "//common:toolchains/clang/package_resources.bzl",
-    "get_clang_package_resources",
+    ":sysroot_defs.bzl",
+    "EXTRA_TARGET_COMPATIBLE_WITH",
+    "FUCHSIA_SYSROOT_HEADERS_FILEGROUPS",
+    "FUCHSIA_SYSROOT_LIBS_FILEGROUPS",
+    "FUCHSIA_SYSROOT_PATHS",
 )
-load("@fuchsia_sdk//:generated_constants.bzl", sdk_constants = "constants")
 
 licenses(["notice"])
 
@@ -38,24 +45,6 @@ setup_clang_repository(clang_constants)
 
 # This is the set of CPUs that the Fuchsia SDK provides sysroots for.
 _SDK_SUPPORTED_TARGET_CPUS = sdk_constants.target_cpus
-
-_FUCHSIA_SYSROOT_HEADERS_FILEGROUPS = {
-    "aarch64": "%{SYSROOT_HEADERS_AARCH64}",
-    "riscv64": "%{SYSROOT_HEADERS_RISCV64}",
-    "x86_64": "%{SYSROOT_HEADERS_X86_64}",
-}
-
-_FUCHSIA_SYSROOT_LIBS_FILEGROUPS = {
-    "aarch64": "%{SYSROOT_LIBS_AARCH64}",
-    "riscv64": "%{SYSROOT_LIBS_RISCV64}",
-    "x86_64": "%{SYSROOT_LIBS_X86_64}",
-}
-
-_FUCHSIA_SYSROOT_PATHS = {
-    "aarch64": "%{SYSROOT_PATH_AARCH64}",
-    "riscv64": "%{SYSROOT_PATH_RISCV64}",
-    "x86_64": "%{SYSROOT_PATH_X86_64}",
-}
 
 cc_toolchain_suite(
     name = "toolchain",
@@ -98,10 +87,10 @@ exports_files([
         host_arch = "x86_64",
         target_os = "fuchsia",
         target_arch = cpu,
-        sysroot_header_files = [ _FUCHSIA_SYSROOT_HEADERS_FILEGROUPS[cpu] ],
-        sysroot_library_files = [ _FUCHSIA_SYSROOT_LIBS_FILEGROUPS[cpu] ],
-        sysroot_path = _FUCHSIA_SYSROOT_PATHS[cpu],
-        extra_target_compatible_with = %{EXTRA_TARGET_COMPATIBLE_WITH},
+        sysroot_header_files = [FUCHSIA_SYSROOT_HEADERS_FILEGROUPS[cpu]],
+        sysroot_library_files = [FUCHSIA_SYSROOT_LIBS_FILEGROUPS[cpu]],
+        sysroot_path = FUCHSIA_SYSROOT_PATHS[cpu],
+        extra_target_compatible_with = EXTRA_TARGET_COMPATIBLE_WITH,
 
         # The Fuchsia SDK handles the API level with a custom scheme that
         # relies on transitions and does not provide a configured target
