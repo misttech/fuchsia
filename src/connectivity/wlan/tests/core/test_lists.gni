@@ -40,6 +40,7 @@ core_tests_for_postsubmit = [
   "//src/connectivity/wlan/tests/core:connect_to_ap_test",
   "//src/connectivity/wlan/tests/core:firmware_power_modes_test",
   "//src/connectivity/wlan/tests/core:sar_setting_test",
+  "//src/connectivity/wlan/tests/core:wlan_scan_test",
 ]
 
 # If you're writing a new test, add it to FYI first until it has a sufficient
@@ -50,7 +51,6 @@ core_tests_for_postsubmit = [
 core_tests_for_fyi = [
   "//src/connectivity/wlan/tests/core:roam_request_test_should_succeed",
   "//src/connectivity/wlan/tests/core:wlan_driver_restart_test",
-  "//src/connectivity/wlan/tests/core:wlan_scan_test",
 ]
 
 # Tests longer than ~20 minutes consume significant resources and significantly
