@@ -32,7 +32,7 @@ namespace fdescriptor = fuchsia_hardware_usb_descriptor;
 
 constexpr uint32_t kBulkTxCount = 16;
 constexpr uint32_t kBulkRxCount = 16;
-constexpr size_t kVmoDataSize = 2048;
+constexpr size_t kVmoDataSize = 4096;
 
 constexpr uint16_t kBulkMaxPacket = 512;
 

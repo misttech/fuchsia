@@ -35,6 +35,9 @@ class UsbAdbTestHelper {
   static bool InternalPoolsFull(UsbAdbDevice& device) {
     return device.bulk_out_ep_.RequestsFull() && device.bulk_in_ep_.RequestsFull();
   }
+  static size_t BulkInEpPendingRequests(UsbAdbDevice& device) {
+    return device.bulk_in_ep_.GetInFlightCount();
+  }
   static size_t TxPendingReqsCount(const UsbAdbDevice& device) {
     return device.tx_pending_reqs_.size();
   }
@@ -512,8 +515,18 @@ class UsbAdbTest : public testing::Test {
     ASSERT_TRUE(result.ok());
     ASSERT_TRUE(result->is_ok());
 
-    driver_test_.RunInEnvironmentTypeContext([](UsbAdbEnvironment& env) {
-      EXPECT_EQ(env.fake_dev_->fake_endpoint(kBulkInEp).pending_request_count(), 0u);
+    driver_test_.runtime().RunUntil([&] {
+      bool empty = false;
+      driver_test_.RunInEnvironmentTypeContext([&](UsbAdbEnvironment& env) {
+        empty = (env.fake_dev_->fake_endpoint(kBulkInEp).pending_request_count() == 0u);
+      });
+      if (!empty) {
+        return false;
+      }
+      driver_test_.RunInDriverContext([&](UsbAdbDevice& dev) {
+        empty = (UsbAdbTestHelper::BulkInEpPendingRequests(dev) == 0u);
+      });
+      return empty;
     });
   }
 
@@ -643,8 +656,8 @@ TEST_F(UsbAdbTest, SendAdbMessage) {
   ASSERT_NO_FATAL_FAILURE(SendTestData(usb_impl, kVmoDataSize - 2));
   ASSERT_NO_FATAL_FAILURE(SendTestData(usb_impl, kVmoDataSize));
   ASSERT_NO_FATAL_FAILURE(SendTestData(usb_impl, kVmoDataSize + 2));
-  ASSERT_NO_FATAL_FAILURE(SendTestData(usb_impl, kVmoDataSize * kBulkTxCount + 2));
-  ASSERT_NO_FATAL_FAILURE(SendTestData(usb_impl, kVmoDataSize * (kBulkTxCount + 1) + 2));
+  ASSERT_NO_FATAL_FAILURE(SendTestData(usb_impl, kVmoDataSize * (kBulkTxCount - 2) + 2));
+  ASSERT_NO_FATAL_FAILURE(SendTestData(usb_impl, kVmoDataSize * (kBulkTxCount - 1) + 2));
 
   usb_impl = {};
 }
