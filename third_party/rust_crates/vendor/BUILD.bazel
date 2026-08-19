@@ -463,14 +463,14 @@ alias(
 )
 
 alias(
-    name = "bytes-1.11.1",
-    actual = "//third_party/rust_crates/vendor/bytes-1.11.1:bytes",
+    name = "bytes-1.12.1",
+    actual = "//third_party/rust_crates/vendor/bytes-1.12.1:bytes",
     tags = ["manual"],
 )
 
 alias(
     name = "bytes",
-    actual = "//third_party/rust_crates/vendor/bytes-1.11.1:bytes",
+    actual = "//third_party/rust_crates/vendor/bytes-1.12.1:bytes",
     tags = ["manual"],
 )
 

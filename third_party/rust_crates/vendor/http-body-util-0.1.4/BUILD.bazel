@@ -73,7 +73,7 @@ rust_library(
     }),
     version = "0.1.4",
     deps = [
-        "//third_party/rust_crates/vendor/bytes-1.11.1:bytes",
+        "//third_party/rust_crates/vendor/bytes-1.12.1:bytes",
         "//third_party/rust_crates/vendor/futures-core-0.3.32:futures_core",
         "//third_party/rust_crates/vendor/http-1.4.2:http",
         "//third_party/rust_crates/vendor/http-body-1.1.0:http_body",

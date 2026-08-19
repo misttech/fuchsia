@@ -78,7 +78,7 @@ rust_library(
     deps = [
         "//third_party/rust_crates/forks/tokio-1.53.1:tokio",
         "//third_party/rust_crates/vendor/atomic-waker-1.1.2:atomic_waker",
-        "//third_party/rust_crates/vendor/bytes-1.11.1:bytes",
+        "//third_party/rust_crates/vendor/bytes-1.12.1:bytes",
         "//third_party/rust_crates/vendor/futures-channel-0.3.31:futures_channel",
         "//third_party/rust_crates/vendor/futures-core-0.3.32:futures_core",
         "//third_party/rust_crates/vendor/http-1.4.2:http",
