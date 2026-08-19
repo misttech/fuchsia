@@ -152,8 +152,8 @@ pub struct PersistenceConfig {
     ///
     /// This is privacy and security sensitive, rarely used, and always set to false on
     /// user builds.
-    #[serde(skip_serializing_if = "crate::common::is_default")]
-    pub skip_update_check: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub skip_update_check: Option<bool>,
 
     /// Controls how long persistence will wait when it is idle before it
     /// escrows its FIDL connections back to the component framework and exits.
@@ -506,5 +506,37 @@ mod tests {
         let deserialized: ComponentInitialInterest =
             serde_json::from_str(&serialized).expect("deserialize interest");
         assert_eq!(deserialized, original);
+    }
+
+    #[test]
+    fn serialize_deserialize_persistence_config() {
+        let json5 = r#"{}"#;
+        let mut cursor = std::io::Cursor::new(json5);
+        let config: PersistenceConfig = util::from_reader(&mut cursor).unwrap();
+        assert_eq!(config, PersistenceConfig::default());
+        assert_eq!(config.skip_update_check, None);
+        assert_eq!(config.stop_on_idle_timeout_millis, None);
+        assert_eq!(config.persistence_period_seconds, None);
+        assert_eq!(serde_json::to_string(&config).unwrap(), "{}");
+
+        let json5 = r#"{
+            skip_update_check: false,
+            stop_on_idle_timeout_millis: 5000,
+            persistence_period_seconds: 60,
+        }"#;
+        let mut cursor = std::io::Cursor::new(json5);
+        let config: PersistenceConfig = util::from_reader(&mut cursor).unwrap();
+        assert_eq!(
+            config,
+            PersistenceConfig {
+                skip_update_check: Some(false),
+                stop_on_idle_timeout_millis: Some(5000),
+                persistence_period_seconds: Some(60),
+            }
+        );
+        assert_eq!(
+            serde_json::to_string(&config).unwrap(),
+            r#"{"skip_update_check":false,"stop_on_idle_timeout_millis":5000,"persistence_period_seconds":60}"#
+        );
     }
 }

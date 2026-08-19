@@ -338,7 +338,7 @@ impl<'a> DefineSubsystemConfiguration<DiagnosticsSubsystemConfig<'a>> for Diagno
                 ConfigValueType::Bool,
                 match context.build_type {
                     BuildType::User => {
-                        if *skip_update_check {
+                        if skip_update_check.unwrap_or_default() {
                             return Err(anyhow!(
                                 "Persistence may not skip update check when build type is user"
                             ));
@@ -346,7 +346,9 @@ impl<'a> DefineSubsystemConfiguration<DiagnosticsSubsystemConfig<'a>> for Diagno
                             false.into()
                         }
                     }
-                    BuildType::UserDebug | BuildType::Eng => (*skip_update_check).into(),
+                    BuildType::UserDebug | BuildType::Eng => {
+                        skip_update_check.unwrap_or(true).into()
+                    }
                 },
             ),
         )?;
@@ -630,7 +632,7 @@ mod tests {
         assert_eq!(
             config.configuration_capabilities["fuchsia.diagnostics.persist.SkipUpdateCheck"]
                 .value(),
-            Value::Bool(false)
+            Value::Bool(true)
         );
         assert_eq!(
             config.configuration_capabilities["fuchsia.diagnostics.persist.StopOnIdleTimeoutMillis"]
@@ -690,7 +692,7 @@ mod tests {
         };
         let diagnostics = DiagnosticsConfig {
             persistence: PersistenceConfig {
-                skip_update_check: true,
+                skip_update_check: Some(true),
                 stop_on_idle_timeout_millis: Some(5),
                 persistence_period_seconds: Some(10),
             },
@@ -724,10 +726,32 @@ mod tests {
                 .value(),
             Value::Number(10.into())
         );
+
+        // Test explicit false override on UserDebug
+        let diagnostics_false = DiagnosticsConfig {
+            persistence: PersistenceConfig { skip_update_check: Some(false), ..Default::default() },
+            ..Default::default()
+        };
+        let mut builder_false = ConfigurationBuilderImpl::default();
+        DiagnosticsSubsystem::define_configuration(
+            &context,
+            &DiagnosticsSubsystemConfig {
+                diagnostics: &diagnostics_false,
+                storage: &StorageConfig::default(),
+            },
+            &mut builder_false,
+        )
+        .unwrap();
+        let config_false = builder_false.build();
+        assert_eq!(
+            config_false.configuration_capabilities["fuchsia.diagnostics.persist.SkipUpdateCheck"]
+                .value(),
+            Value::Bool(false),
+        );
     }
 
     #[test]
-    fn test_define_configuration_skip_update_check_override_on_user() {
+    fn test_define_configuration_skip_update_check_on_user() {
         let resource_dir = ResourceDir::new();
         let context = ConfigurationContext {
             feature_set_level: &FeatureSetLevel::Standard,
@@ -735,19 +759,61 @@ mod tests {
             resource_dir: resource_dir.path(),
             ..ConfigurationContext::default_for_tests()
         };
-        let diagnostics = DiagnosticsConfig {
-            persistence: PersistenceConfig { skip_update_check: true, ..Default::default() },
+
+        // User build with default persistence (None) should succeed and yield false
+        let diagnostics_default = DiagnosticsConfig::default();
+        let mut builder_default = ConfigurationBuilderImpl::default();
+        DiagnosticsSubsystem::define_configuration(
+            &context,
+            &DiagnosticsSubsystemConfig {
+                diagnostics: &diagnostics_default,
+                storage: &StorageConfig::default(),
+            },
+            &mut builder_default,
+        )
+        .unwrap();
+        let config_default = builder_default.build();
+        assert_eq!(
+            config_default.configuration_capabilities["fuchsia.diagnostics.persist.SkipUpdateCheck"]
+                .value(),
+            Value::Bool(false),
+        );
+
+        // User build with explicit false should succeed and yield false
+        let diagnostics_false = DiagnosticsConfig {
+            persistence: PersistenceConfig { skip_update_check: Some(false), ..Default::default() },
             ..Default::default()
         };
-        let mut builder = ConfigurationBuilderImpl::default();
+        let mut builder_false = ConfigurationBuilderImpl::default();
+        DiagnosticsSubsystem::define_configuration(
+            &context,
+            &DiagnosticsSubsystemConfig {
+                diagnostics: &diagnostics_false,
+                storage: &StorageConfig::default(),
+            },
+            &mut builder_false,
+        )
+        .unwrap();
+        let config_false = builder_false.build();
+        assert_eq!(
+            config_false.configuration_capabilities["fuchsia.diagnostics.persist.SkipUpdateCheck"]
+                .value(),
+            Value::Bool(false),
+        );
 
+        // User build with skip_update_check = Some(true) must fail
+        let diagnostics_true = DiagnosticsConfig {
+            persistence: PersistenceConfig { skip_update_check: Some(true), ..Default::default() },
+            ..Default::default()
+        };
+        let mut builder_true = ConfigurationBuilderImpl::default();
         let e = DiagnosticsSubsystem::define_configuration(
             &context,
             &DiagnosticsSubsystemConfig {
-                diagnostics: &diagnostics,
+                diagnostics: &diagnostics_true,
                 storage: &StorageConfig::default(),
             },
-            &mut builder,
+            &mut builder_true,
         );
 
         assert!(e.is_err());
