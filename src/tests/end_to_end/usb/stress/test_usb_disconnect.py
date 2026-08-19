@@ -11,7 +11,7 @@ import fuchsia_base_test
 from honeydew import errors
 from honeydew.auxiliary_devices.usb_power_hub import usb_power_hub
 from honeydew.typing import custom_types as honeydew_types
-from mobly import test_runner
+from mobly import expects, test_runner
 
 _LOGGER: logging.Logger = logging.getLogger(__name__)
 
@@ -66,6 +66,14 @@ class UsbDisconnectTest(fuchsia_base_test.FuchsiaBaseTest):
         (self._usb_power_hub, self._usb_port) = self._lookup_usb_power_hub(
             self.dut
         )
+        self._usb_power_hub.power_on(port=self._usb_port)
+
+        # Pre-cache PersistentProperty values (board, product) while the device is online
+        # in Fuchsia OS. Because they are lazily evaluated, if left un-evaluated and the test
+        # later fails while in Fastboot mode or offline, Mobly's post-test metadata collection
+        # (test_summary.yaml) would trigger an FFX query against the offline device.
+        _ = self.dut.board
+        _ = self.dut.product
 
     async def _test_logic(self, iteration: int) -> None:
         """Test case logic that disconnects the USB from a fuchsia device."""
@@ -114,22 +122,13 @@ class UsbDisconnectTest(fuchsia_base_test.FuchsiaBaseTest):
     def _fastboot_loop_name_func(self) -> str:
         return "test_usb_fastboot_loop"
 
-    async def _test_fastboot_loop_logic(self) -> None:
-        """Test logic that loops disconnects entirely within Fastboot mode."""
-        _LOGGER.info("Starting the Fastboot USB Disconnect Loop test")
+    async def _reboot_to_fastboot_mode(
+        self, fuchsia_reboot_timeout: int
+    ) -> None:
+        """Reboots the DUT to bootloader/fastboot mode (once)."""
+        # Ensure USB power is turned ON before rebooting so bootloader sees VBUS
+        self._usb_power_hub.power_on(port=self._usb_port)
 
-        num_iterations = int(self.user_params.get("num_iterations", 10))
-        disconnect_duration = int(
-            self.user_params.get("disconnect_duration_sec", 3)
-        )
-        fastboot_reconnect_timeout = int(
-            self.user_params.get("fastboot_reconnect_timeout_sec", 60)
-        )
-        fuchsia_reboot_timeout = int(
-            self.user_params.get("fuchsia_reboot_timeout_sec", 30)
-        )
-
-        # 1. Setup: Reboot to Fastboot (once)
         _LOGGER.info("Rebooting device to bootloader via FIDL (once)...")
 
         power_admin_endpoint = honeydew_types.FidlEndpoint(
@@ -165,9 +164,37 @@ class UsbDisconnectTest(fuchsia_base_test.FuchsiaBaseTest):
             )
 
         _LOGGER.info("Waiting for device to enter fastboot mode...")
-        await self.dut.fastboot.wait_for_fastboot_mode()
+        try:
+            await asyncio.wait_for(
+                self.dut.fastboot.wait_for_fastboot_mode(),
+                timeout=fuchsia_reboot_timeout,
+            )
+        except asyncio.TimeoutError:
+            _LOGGER.warning(
+                "Device did not enter fastboot mode after FIDL shutdown. Attempting fallback via FFX reboot..."
+            )
+            try:
+                self.dut.ffx.notify_intentional_disconnect()
+                self.dut.ffx.run(
+                    cmd=["target", "reboot", "--bootloader"],
+                    include_target_name=True,
+                    log_status_on_failure=False,
+                    timeout=15,
+                )
+            except Exception as e:
+                _LOGGER.debug("FFX reboot to bootloader exception: %s", e)
+            await asyncio.wait_for(
+                self.dut.fastboot.wait_for_fastboot_mode(),
+                timeout=fuchsia_reboot_timeout,
+            )
 
-        # 2. Loop: Disconnect/Reconnect in Fastboot
+    async def _run_fastboot_disconnect_loop(
+        self,
+        num_iterations: int,
+        disconnect_duration: int,
+        fastboot_reconnect_timeout: int,
+    ) -> None:
+        """Executes repetitive USB disconnect and reconnect cycles in Fastboot mode."""
         for iteration in range(1, num_iterations + 1):
             _LOGGER.info(
                 "Starting Fastboot disconnect iteration# %d/%d",
@@ -191,10 +218,10 @@ class UsbDisconnectTest(fuchsia_base_test.FuchsiaBaseTest):
                         attempt + 1,
                     )
                     await asyncio.sleep(1)
-                if await self.dut.fastboot.is_in_fastboot_mode():
-                    # TODO(b/540096605): Make this a failing condition again once the
-                    # underlying failure to disconnect is fixed.
-                    _LOGGER.warning("Fastboot device is still visible")
+                expects.expect_false(
+                    await self.dut.fastboot.is_in_fastboot_mode(),
+                    "Fastboot device is still visible",
+                )
             finally:
                 self._usb_power_hub.power_on(port=self._usb_port)
                 _LOGGER.info("Waiting for device to re-enter fastboot...")
@@ -211,34 +238,62 @@ class UsbDisconnectTest(fuchsia_base_test.FuchsiaBaseTest):
                         "Fastboot loop aborted."
                     ) from e
 
-        # 3. Teardown: Boot back to Fuchsia (once)
+    async def _teardown_recover_fuchsia(
+        self, fuchsia_reboot_timeout: int
+    ) -> None:
+        """Ensures DUT is rebooted out of Fastboot and restored back to Fuchsia."""
         _LOGGER.info(
-            "Fastboot loop completed successfully. Booting back to Fuchsia..."
+            "Fastboot loop finished. Ensuring device is booted back to Fuchsia..."
         )
+        # Ensure USB power is ON in case a test failed while USB was powered off
+        self._usb_power_hub.power_on(port=self._usb_port)
+
+        try:
+            if await self.dut.fastboot.is_in_fastboot_mode():
+                _LOGGER.info(
+                    "Device is in Fastboot mode; issuing fastboot reboot to Fuchsia..."
+                )
+                await asyncio.wait_for(
+                    self.dut.fastboot.boot_to_fuchsia_mode(),
+                    timeout=fuchsia_reboot_timeout,
+                )
+        except Exception as e:
+            _LOGGER.warning("fastboot reboot to Fuchsia command error (%s).", e)
+
+        _LOGGER.info("Waiting for device to come back online in Fuchsia...")
         try:
             await asyncio.wait_for(
-                self.dut.fastboot.boot_to_fuchsia_mode(),
-                timeout=fuchsia_reboot_timeout,
+                self.dut.wait_for_online(), timeout=fuchsia_reboot_timeout
             )
-        except (asyncio.TimeoutError, errors.HoneydewError) as e:
-            _LOGGER.warning(
-                "fastboot reboot command timed out/failed (%s). Waiting for online...",
-                e,
-            )
-            for attempt in range(30):
-                try:
-                    await self.dut.wait_for_online()
-                    break
-                except Exception as err:
-                    if attempt == 29:
-                        raise
-                    _LOGGER.warning(
-                        "Waiting for DUT to return online (%s)...", err
-                    )
-                    await asyncio.sleep(2)
-
-            await self.dut.on_device_boot()
+        except asyncio.TimeoutError as e:
+            raise errors.FuchsiaDeviceError(
+                f"Timed out waiting for device to come online in Fuchsia after {fuchsia_reboot_timeout}s"
+            ) from e
+        await self.dut.on_device_boot()
         _LOGGER.info("Device is successfully back online in Fuchsia.")
+
+    async def _test_fastboot_loop_logic(self) -> None:
+        """Test logic that loops disconnects entirely within Fastboot mode."""
+        _LOGGER.info("Starting the Fastboot USB Disconnect Loop test")
+
+        num_iterations = int(self.user_params.get("num_iterations", 10))
+        disconnect_duration = int(
+            self.user_params.get("disconnect_duration_sec", 3)
+        )
+        fastboot_reconnect_timeout = int(
+            self.user_params.get("fastboot_reconnect_timeout_sec", 60)
+        )
+        fuchsia_reboot_timeout = int(
+            self.user_params.get("fuchsia_reboot_timeout_sec", 30)
+        )
+
+        try:
+            await self._reboot_to_fastboot_mode(fuchsia_reboot_timeout)
+            await self._run_fastboot_disconnect_loop(
+                num_iterations, disconnect_duration, fastboot_reconnect_timeout
+            )
+        finally:
+            await self._teardown_recover_fuchsia(fuchsia_reboot_timeout)
 
 
 if __name__ == "__main__":
