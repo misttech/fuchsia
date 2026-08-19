@@ -33,15 +33,10 @@ bool ChannelGetObjectTest(perftest::RepeatState* state) {
   auto channels = fdf::ChannelPair::Create(0);
   ZX_ASSERT(channels.status_value() == ZX_OK);
 
-  state->DeclareStep("map_value_to_handle");
-  state->DeclareStep("get_object");
-
   while (state->KeepRunning()) {
     fbl::RefPtr<driver_runtime::Channel> channel;
-    driver_runtime::Handle* handle = driver_runtime::Handle::MapValueToHandle(channels->end0.get());
-    ZX_ASSERT(handle);
-    state->NextStep();
-    zx_status_t status = handle->GetObject<driver_runtime::Channel>(&channel);
+    zx_status_t status =
+        driver_runtime::Handle::GetObject<driver_runtime::Channel>(channels->end0.get(), &channel);
     ZX_ASSERT(status == ZX_OK);
   }
 

@@ -25,7 +25,7 @@ class HandleTest : public zxtest::Test {
   void TearDown() override { ASSERT_EQ(0, driver_runtime::gHandleTableArena.num_allocated()); }
 };
 
-TEST_F(HandleTest, MapValueToHandle) {
+TEST_F(HandleTest, HandleExists) {
   auto object = fbl::AdoptRef(new FakeObject());
   auto handle_owner = Handle::Create(std::move(object));
   ASSERT_NOT_NULL(handle_owner);
@@ -33,8 +33,7 @@ TEST_F(HandleTest, MapValueToHandle) {
   fdf_handle_t handle_value = handle_owner->handle_value();
   EXPECT_NE(handle_value, ZX_HANDLE_INVALID);
 
-  Handle* handle = Handle::MapValueToHandle(handle_value);
-  EXPECT_EQ(handle, handle_owner.get());
+  EXPECT_TRUE(Handle::HandleExists(handle_value));
 }
 
 TEST_F(HandleTest, GetObject) {
@@ -47,11 +46,8 @@ TEST_F(HandleTest, GetObject) {
   fdf_handle_t handle_value = handle_owner->handle_value();
   EXPECT_NE(handle_value, ZX_HANDLE_INVALID);
 
-  Handle* handle = Handle::MapValueToHandle(handle_value);
-  ASSERT_NOT_NULL(handle);
-
   fbl::RefPtr<FakeObject> downcasted_object;
-  EXPECT_OK(handle->GetObject<FakeObject>(&downcasted_object));
+  EXPECT_OK(Handle::GetObject<FakeObject>(handle_value, &downcasted_object));
   EXPECT_EQ(downcasted_object.get(), object_ptr);
 }
 
@@ -68,15 +64,15 @@ TEST_F(HandleTest, GetObjectTakeHandleOwnership) {
   // Drop ownership of the handle without deleting it.
   handle_owner.release();
 
-  Handle* handle = Handle::MapValueToHandle(handle_value);
-  ASSERT_NOT_NULL(handle);
-
   fbl::RefPtr<FakeObject> downcasted_object;
-  EXPECT_OK(handle->GetObject<FakeObject>(&downcasted_object));
+  EXPECT_OK(Handle::GetObject<FakeObject>(handle_value, &downcasted_object));
   EXPECT_EQ(downcasted_object.get(), object_ptr);
 
   // Re-take ownership of the handle.
-  handle_owner = handle->TakeOwnership();
+  auto [taken_handle_owner, taken_object] = gHandleTableArena.TakeOwnership(handle_value);
+  EXPECT_NOT_NULL(taken_handle_owner);
+  EXPECT_EQ(taken_object.get(), object_ptr);
+  handle_owner = std::move(taken_handle_owner);
 }
 
 TEST_F(HandleTest, GetDeletedHandle) {
@@ -103,9 +99,9 @@ TEST_F(HandleTest, GetDeletedHandle) {
   EXPECT_NE(handle_value2, handle_value);
 
   // The handle should be deleted.
-  EXPECT_NULL(Handle::MapValueToHandle(handle_value));
+  EXPECT_FALSE(Handle::HandleExists(handle_value));
   // Check we can correctly get the newly created handle.
-  EXPECT_NOT_NULL(Handle::MapValueToHandle(handle_value2));
+  EXPECT_TRUE(Handle::HandleExists(handle_value2));
 }
 
 TEST_F(HandleTest, IsFdfHandle) {

@@ -39,43 +39,31 @@ class Handle : public fbl::SinglyLinkedListable<Handle*> {
   // Takes ownership of |object|.
   static HandleOwner Create(fbl::RefPtr<Object> object);
 
-  // This needs to be public for |HandleTableArena|.
-  explicit Handle(fbl::RefPtr<Object> object = nullptr, fdf_handle_t value = FDF_HANDLE_INVALID)
-      : object_(std::move(object)), value_(value) {}
-
-  // Clears handle state specific to this lifetime.
-  // The handle |value| is preserved, as it is used to generate a new handle value
-  // referring to the same handle object.
-  void Reset() { object_ = nullptr; }
-
   // Returns whether the handle exists in the handle table.
-  static bool HandleExists(fdf_handle_t value) { return MapValueToHandle(value); }
-
-  // Maps |value| to the runtime's Handle object.
-  // The Handle must have previously been created with |Create|.
-  // This does not provide ownership to the Handle. To destroy the Handle,
-  // the caller should use |TakeOwnership|.
-  static Handle* MapValueToHandle(fdf_handle_t value);
+  static bool HandleExists(fdf_handle_t value);
 
   // Returns whether |handle_value| is of type fdf_handle_t.
   // Does not do any validation on whether it is a valid fdf handle.
   static bool IsFdfHandle(zx_handle_t handle_value);
 
-  // Returns the object corresponding to |value_|.
-  template <typename T>
-  zx_status_t GetObject(fbl::RefPtr<T>* out_object) {
-    // TODO(https://fxbug.dev/42167564): we should add some type checking once we support more
-    // object types.
-    *out_object = fbl::RefPtr<T>::Downcast(object());
-    if (!*out_object) {
-      return ZX_ERR_WRONG_TYPE;
-    }
-    return ZX_OK;
-  }
-
   // Returns the object corresponding to |handle_value|.
   template <typename T>
   static zx_status_t GetObject(fdf_handle_t handle_value, fbl::RefPtr<T>* out_object);
+
+  // Returns the handle value which refers to this object.
+  fdf_handle_t handle_value() const { return value_; }
+
+  // This needs to be public for |HandleTableArena|'s std::array usage.
+  explicit Handle(fbl::RefPtr<Object> object = nullptr, fdf_handle_t value = FDF_HANDLE_INVALID)
+      : object_(std::move(object)), value_(value) {}
+
+ private:
+  friend class HandleTableArena;
+
+  // Clears handle state specific to this lifetime.
+  // The handle |value| is preserved, as it is used to generate a new handle value
+  // referring to the same handle object.
+  void Reset() { object_ = nullptr; }
 
   HandleOwner TakeOwnership() { return HandleOwner(this); }
 
@@ -83,10 +71,6 @@ class Handle : public fbl::SinglyLinkedListable<Handle*> {
   fbl::RefPtr<Object> object() { return object_; }
   bool has_object() const { return object_ != nullptr; }
 
-  // Returns the handle value which refers to this object.
-  fdf_handle_t handle_value() const { return value_; }
-
- private:
   fbl::RefPtr<Object> object_;
   fdf_handle_t value_;
 };
@@ -143,9 +127,8 @@ class HandleTableArena {
   // object. Returns nullptr HandleOwner if the handle is invalid or has no object.
   std::pair<HandleOwner, fbl::RefPtr<Object>> TakeOwnership(fdf_handle_t handle_value);
 
-  // Returns the handle located in the handle table pointed to by |table|, at |index|.
-  // Returns nullptr if the indexes are invalid, or do not point to an allocated handle.
-  fit::nullable<Handle*> GetExistingHandle(uint32_t table, uint32_t index);
+  // Returns whether the handle exists in the handle table.
+  bool Contains(fdf_handle_t handle_value);
 
   // Returns the number of handles currently allocated (does not include freed handles).
   uint32_t num_allocated() {

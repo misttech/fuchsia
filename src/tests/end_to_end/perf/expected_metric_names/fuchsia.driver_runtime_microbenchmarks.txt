@@ -80,8 +80,7 @@ fuchsia.driver_runtime: Dispatcher/Runtime/Wait/Threads
 fuchsia.driver_runtime: FidlInlineEmptyCall
 fuchsia.driver_runtime: HandleCreate_Channel.close
 fuchsia.driver_runtime: HandleCreate_Channel.create
-fuchsia.driver_runtime: HandleGetObject_Channel.get_object
-fuchsia.driver_runtime: HandleGetObject_Channel.map_value_to_handle
+fuchsia.driver_runtime: HandleGetObject_Channel
 fuchsia.driver_runtime: IpcThroughput_BasicChannel_1024_4bytes
 fuchsia.driver_runtime: IpcThroughput_BasicChannel_1024_64kbytes
 fuchsia.driver_runtime: IpcThroughput_BasicChannel_1_64kbytes

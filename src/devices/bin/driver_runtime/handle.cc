@@ -98,19 +98,9 @@ namespace driver_runtime {
 
 HandleTableArena gHandleTableArena;
 
-fit::nullable<Handle*> HandleTableArena::GetExistingHandle(uint32_t dir_index, uint32_t index) {
+bool HandleTableArena::Contains(fdf_handle_t handle_value) {
   fbl::AutoLock lock(&lock_);
-  if (dir_index >= kNumTables) {
-    return fit::nullable<Handle*>{};
-  }
-  if (index >= kHandlesPerTable) {
-    return fit::nullable<Handle*>{};
-  }
-  if (!handle_table_dir_[dir_index]) {
-    return fit::nullable<Handle*>{};
-  }
-  Handle* handle = &(handle_table_dir_[dir_index]->data()[index]);
-  return fit::nullable<Handle*>(handle->has_object() ? handle : nullptr);
+  return GetHandleLocked(handle_value) != nullptr;
 }
 
 Handle* HandleTableArena::AllocHandleMemoryLocked(uint32_t* out_dir_index, uint32_t* out_index) {
@@ -216,20 +206,7 @@ HandleOwner Handle::Create(fbl::RefPtr<Object> object) {
 }
 
 // static
-Handle* Handle::MapValueToHandle(fdf_handle_t handle_value) {
-  if (!IsFdfHandle(handle_value)) {
-    return nullptr;
-  }
-  uint32_t dir_index = handle_value_to_dir_index(handle_value);
-  uint32_t index = handle_value_to_index(handle_value);
-  fit::nullable<Handle*> handle = gHandleTableArena.GetExistingHandle(dir_index, index);
-  if (!handle) {
-    return nullptr;
-  }
-  // Check that the handle value matches the stored value.
-  // If it is different it likely means an already deleted handle is being accessed.
-  return handle_value == (*handle)->handle_value() ? *handle : nullptr;
-}
+bool Handle::HandleExists(fdf_handle_t value) { return gHandleTableArena.Contains(value); }
 
 // static
 bool Handle::IsFdfHandle(zx_handle_t handle_value) {
