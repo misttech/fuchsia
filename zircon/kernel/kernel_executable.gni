@@ -31,6 +31,11 @@ _kernel_executable_cpu_deps = {
 #
 # Parameters
 #
+#   * configs
+#     - Required: Preset via set_defaults() and modifiable as usual.
+#     - Type: list(label_no_toolchain)
+#     - Default: via set_defaults()
+#
 #   * deps
 #    - Optional: Additional sources to link into the kernel.
 #    - Type: list(label)
@@ -69,16 +74,13 @@ template("kernel_executable") {
 
   _clippy_output = "$target_gen_dir/$clippy_target"
   action(clippy_target) {
-    forward_variables_from(invoker, [ "testonly" ])
+    forward_variables_from(invoker,
+                           [
+                             "configs",
+                             "testonly",
+                           ])
     check_for_output_dir_leaks = false
     mnemonic = "CLIPPY"
-
-    configs = []
-    if (defined(invoker.configs)) {
-      configs += invoker.configs
-    }
-    configs += [ "//zircon/kernel/switch:kernel_executable.config" ]
-    configs += toolchain_variant.configs
 
     _crate_root_outputs = get_target_outputs(":$crate_root_target")
     _crate_root = _crate_root_outputs[0]
@@ -141,9 +143,11 @@ template("kernel_executable") {
       visibility += [ ":*" ]
     }
 
+    configs = []  # Reset from kernel_elf_binary()'s set_defaults().
+    configs = invoker.configs  # Every invoker sets it via set_defaults().
+
     install_name = "vmzircon"
 
-    configs += [ "//zircon/kernel/switch:kernel_executable.config" ]
     deps = [
       ":$crate_root_target",
       "//zircon/kernel/phys:physboot.kernel",
@@ -192,4 +196,9 @@ template("kernel_executable") {
     depfile = "$target_gen_dir/$target_name.d"
     args = rebase_path(sources + outputs + [ depfile ], root_build_dir)
   }
+}
+
+set_defaults("kernel_executable") {
+  configs = default_executable_configs +
+            [ "//zircon/kernel/switch:kernel_executable.config" ]
 }
