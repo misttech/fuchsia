@@ -438,7 +438,7 @@ _NORMAL_DEPENDENCIES = {
             "range-alloc": Label("//third_party/rust_crates/vendor/range-alloc-0.1.5:range_alloc"),
             "rapidhash": Label("//third_party/rust_crates/vendor/rapidhash-1.4.0:rapidhash"),
             "rayon": Label("//third_party/rust_crates/vendor/rayon-1.10.0:rayon"),
-            "ref-cast": Label("//third_party/rust_crates/vendor/ref-cast-1.0.25:ref_cast"),
+            "ref-cast": Label("//third_party/rust_crates/vendor/ref-cast-1.0.26:ref_cast"),
             "regex": Label("//third_party/rust_crates/vendor/regex-1.12.3:regex"),
             "regex-lite": Label("//third_party/rust_crates/vendor/regex-lite-0.1.9:regex_lite"),
             "ring": Label("//third_party/rust_crates/vendor/ring-0.17.14:ring"),

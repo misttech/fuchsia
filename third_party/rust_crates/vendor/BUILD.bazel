@@ -2245,14 +2245,14 @@ alias(
 )
 
 alias(
-    name = "ref-cast-1.0.25",
-    actual = "//third_party/rust_crates/vendor/ref-cast-1.0.25:ref_cast",
+    name = "ref-cast-1.0.26",
+    actual = "//third_party/rust_crates/vendor/ref-cast-1.0.26:ref_cast",
     tags = ["manual"],
 )
 
 alias(
     name = "ref-cast",
-    actual = "//third_party/rust_crates/vendor/ref-cast-1.0.25:ref_cast",
+    actual = "//third_party/rust_crates/vendor/ref-cast-1.0.26:ref_cast",
     tags = ["manual"],
 )
 
