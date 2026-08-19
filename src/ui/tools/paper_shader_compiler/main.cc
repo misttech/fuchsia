@@ -4,15 +4,12 @@
 
 #include <lib/syslog/cpp/macros.h>
 
-#include "src/ui/lib/escher/defaults/default_shader_program_factory.h"
-#include "src/ui/lib/escher/escher.h"
-#include "src/ui/lib/escher/escher_process_init.h"
 #include "src/ui/lib/escher/flatland/flatland_static_config.h"
-#include "src/ui/lib/escher/forward_declarations.h"
 #include "src/ui/lib/escher/fs/hack_filesystem.h"
 #include "src/ui/lib/escher/paper/paper_renderer_static_config.h"
 #include "src/ui/lib/escher/shaders/util/spirv_file_util.h"
-#include "src/ui/lib/escher/vk/shader_program.h"
+#include "src/ui/lib/escher/vk/shader_stage.h"
+#include "src/ui/lib/escher/vk/shader_variant_args.h"
 
 #include <shaderc/shaderc.hpp>  // nogncheck
 
@@ -24,6 +21,7 @@ bool CompileAndWriteShader(HackFilesystemPtr filesystem, ShaderProgramData progr
   std::string abs_root = *filesystem->base_path() + "/shaders/spirv/";
 
   static auto compiler = std::make_unique<shaderc::Compiler>();
+  auto watcher = filesystem->RegisterWatcher([](HackFilePath) {});
 
   // Loop over all the shader stages.
   for (const auto& iter : program_data.source_files) {
@@ -34,11 +32,9 @@ bool CompileAndWriteShader(HackFilesystemPtr filesystem, ShaderProgramData progr
 
     FX_LOGS(INFO) << "Processing shader " << iter.second;
 
-    auto shader = fxl::MakeRefCounted<ShaderModuleTemplate>(vk::Device(), compiler.get(),
-                                                            iter.first, iter.second, filesystem);
-
     std::vector<uint32_t> spirv;
-    if (!shader->CompileVariantToSpirv(program_data.args, &spirv)) {
+    if (!shader_util::CompileGlslToSpirv(compiler.get(), iter.first, iter.second, program_data.args,
+                                         watcher.get(), &spirv)) {
       FX_LOGS(ERROR) << "could not compile shader " << iter.second;
       return false;
     }

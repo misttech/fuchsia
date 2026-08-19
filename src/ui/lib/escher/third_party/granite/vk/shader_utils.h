@@ -61,6 +61,26 @@ std::vector<vk::PushConstantRange> ConsolidatePushConstantRanges(
     const std::vector<vk::PushConstantRange>& ranges);
 
 }  // namespace impl
+
+inline vk::ShaderStageFlagBits ShaderStageToFlags(ShaderStage stage) {
+  switch (stage) {
+    case ShaderStage::kVertex:
+      return vk::ShaderStageFlagBits::eVertex;
+    case ShaderStage::kTessellationControl:
+      return vk::ShaderStageFlagBits::eTessellationControl;
+    case ShaderStage::kTessellationEvaluation:
+      return vk::ShaderStageFlagBits::eTessellationEvaluation;
+    case ShaderStage::kGeometry:
+      return vk::ShaderStageFlagBits::eGeometry;
+    case ShaderStage::kFragment:
+      return vk::ShaderStageFlagBits::eFragment;
+    case ShaderStage::kCompute:
+      return vk::ShaderStageFlagBits::eCompute;
+    case ShaderStage::kEnumCount:
+      return vk::ShaderStageFlagBits();
+  }
+}
+
 }  // namespace escher
 
 #endif  // SRC_UI_LIB_ESCHER_THIRD_PARTY_GRANITE_VK_SHADER_UTILS_H_

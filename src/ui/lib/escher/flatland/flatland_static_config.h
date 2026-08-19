@@ -5,8 +5,10 @@
 #ifndef SRC_UI_LIB_ESCHER_FLATLAND_FLATLAND_STATIC_CONFIG_H_
 #define SRC_UI_LIB_ESCHER_FLATLAND_FLATLAND_STATIC_CONFIG_H_
 
-#include "src/ui/lib/escher/geometry/types.h"
 #include "src/ui/lib/escher/vk/shader_variant_args.h"
+
+#include <glm/mat4x4.hpp>
+#include <glm/vec4.hpp>
 
 namespace escher {
 

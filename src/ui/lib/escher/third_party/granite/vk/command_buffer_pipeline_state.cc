@@ -28,6 +28,7 @@
 #include "src/ui/lib/escher/impl/vulkan_utils.h"
 #include "src/ui/lib/escher/third_party/granite/vk/pipeline_layout.h"
 #include "src/ui/lib/escher/third_party/granite/vk/render_pass.h"
+#include "src/ui/lib/escher/third_party/granite/vk/shader_utils.h"
 #include "src/ui/lib/escher/util/bit_ops.h"
 #include "src/ui/lib/escher/util/block_allocator.h"
 #include "src/ui/lib/escher/util/enum_utils.h"

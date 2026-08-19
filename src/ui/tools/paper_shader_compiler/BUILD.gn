@@ -7,9 +7,9 @@ if (is_host) {
     sources = [ "main.cc" ]
 
     deps = [
-      # Shader precompiler should always be built with glslang.
       "//sdk/lib/syslog/cpp",
-      "//src/ui/lib/escher:escher_with_glslang",
+      "//src/ui/lib/escher:hack_filesystem",
+      "//src/ui/lib/escher:static_config",
       "//src/ui/lib/escher/shaders/util:shader_utils",
       "//third_party/glm",
       "//third_party/shaderc/src:libshaderc",

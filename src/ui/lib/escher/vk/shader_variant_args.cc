@@ -32,4 +32,38 @@ Hash ShaderVariantArgs::GenerateHash() const {
   return h.value();
 }
 
+std::ostream& operator<<(std::ostream& str, const ShaderStage& stage) {
+  switch (stage) {
+    case ShaderStage::kVertex:
+      return str << "ShaderStage::kVertex";
+    case ShaderStage::kTessellationControl:
+      return str << "ShaderStage::kTessellationControl";
+    case ShaderStage::kTessellationEvaluation:
+      return str << "ShaderStage::kTessellationEvaluation";
+    case ShaderStage::kGeometry:
+      return str << "ShaderStage::kGeometry";
+    case ShaderStage::kFragment:
+      return str << "ShaderStage::kFragment";
+    case ShaderStage::kCompute:
+      return str << "ShaderStage::kCompute";
+    case ShaderStage::kEnumCount:
+      return str << "ShaderStage::kEnumCount(INVALID)";
+  }
+}
+
+std::ostream& operator<<(std::ostream& str, const ShaderVariantArgs& args) {
+  bool first = true;
+  for (auto& pair : args.definitions()) {
+    if (first) {
+      first = false;
+      str << "[";
+    } else {
+      str << ", ";
+    }
+    str << pair.first << "=" << pair.second;
+  }
+  str << "]";
+  return str;
+}
+
 }  // namespace escher

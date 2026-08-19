@@ -122,25 +122,6 @@ config("vk_mem_alloc_error_suppression") {
   ]
 }
 
-source_set("vk_mem_alloc") {
-  public_deps = [
-    "//src/lib/fxl",
-    "//src/lib/vulkan",
-  ]
-
-  sources = [
-    "third_party/VulkanMemoryAllocator/vk_mem_alloc.h",
-    "vk/vk_mem_alloc.cc",
-  ]
-
-  public_deps += [ "//zircon/system/public" ]
-
-  public_configs = [
-    ":vk_mem_alloc_error_suppression",
-    ":vk_mem_alloc_small_heap_max_size",
-  ]
-}
-
 # TODO(https://fxbug.dev/379153784): Remove this when the migration is done.
 config("allow_deprecated_vulkan_hpp_constructors") {
   cflags = [ "-Wno-deprecated-declarations" ]
@@ -162,15 +143,10 @@ template("escher_library") {
       "//third_party/spirv-tools/src:spvtools_opt",
     ]
 
-    if (use_runtime_glsl) {
-      deps += [
-        "//third_party/glslang/src:glslang_default_resource_limits_sources",
-        "//third_party/glslang/src:glslang_sources",
-        "//third_party/shaderc/src:libshaderc",
-      ]
-    }
-
     public_deps = [
+      ":hack_filesystem",
+      ":shader_variant_args",
+      ":static_config",
       ":vk_mem_alloc",
       "//src/lib/fxl",
       "//src/lib/vulkan",
@@ -178,6 +154,20 @@ template("escher_library") {
       "//src/ui/lib/escher/geometry:escher_geometry",
       "//src/ui/lib/escher/types:escher_types",
     ]
+
+    if (use_runtime_glsl) {
+      deps += [
+        "//third_party/glslang/src:glslang_default_resource_limits_sources",
+        "//third_party/glslang/src:glslang_sources",
+        "//third_party/shaderc/src:libshaderc",
+      ]
+
+      public_deps +=
+          [ "//src/ui/lib/escher/shaders/util:shader_utils_with_glslang" ]
+    } else {
+      public_deps +=
+          [ "//src/ui/lib/escher/shaders/util:shader_utils_no_glslang" ]
+    }
 
     sources = [
       "debug/debug_font.cc",
@@ -188,13 +178,9 @@ template("escher_library") {
       "escher.h",
       "escher_process_init.cc",
       "escher_process_init.h",
-      "flatland/flatland_static_config.cc",
-      "flatland/flatland_static_config.h",
       "flatland/rectangle_compositor.cc",
       "flatland/rectangle_compositor.h",
       "forward_declarations.h",
-      "fs/hack_filesystem.cc",
-      "fs/hack_filesystem.h",
       "impl/command_buffer.cc",
       "impl/command_buffer.h",
       "impl/command_buffer_pool.cc",
@@ -220,8 +206,6 @@ template("escher_library") {
       "impl/uniform_buffer_pool.h",
       "impl/vulkan_utils.cc",
       "impl/vulkan_utils.h",
-      "paper/paper_renderer_static_config.cc",
-      "paper/paper_renderer_static_config.h",
       "renderer/batch_gpu_downloader.cc",
       "renderer/batch_gpu_downloader.h",
       "renderer/batch_gpu_uploader.cc",
@@ -246,8 +230,6 @@ template("escher_library") {
       "resources/resource_recycler.cc",
       "resources/resource_recycler.h",
       "resources/resource_type_info.h",
-      "shaders/util/spirv_file_util.cc",
-      "shaders/util/spirv_file_util.h",
       "shape/mesh_spec.cc",
       "shape/mesh_spec.h",
       "third_party/granite/vk/command_buffer.cc",
@@ -339,8 +321,6 @@ template("escher_library") {
       "vk/shader_program.h",
       "vk/shader_program_factory.cc",
       "vk/shader_program_factory.h",
-      "vk/shader_variant_args.cc",
-      "vk/shader_variant_args.h",
       "vk/texture.cc",
       "vk/texture.h",
       "vk/vma_gpu_allocator.cc",
@@ -399,6 +379,68 @@ template("escher_library") {
       public_configs += [ ":use_runtime_glsl_config" ]
     }
   }
+}
+
+source_set("vk_mem_alloc") {
+  public_deps = [
+    "//src/lib/fxl",
+    "//src/lib/vulkan",
+  ]
+
+  sources = [
+    "third_party/VulkanMemoryAllocator/vk_mem_alloc.h",
+    "vk/vk_mem_alloc.cc",
+  ]
+
+  public_deps += [ "//zircon/system/public" ]
+
+  public_configs = [
+    ":vk_mem_alloc_error_suppression",
+    ":vk_mem_alloc_small_heap_max_size",
+  ]
+}
+
+source_set("hack_filesystem") {
+  sources = [
+    "fs/hack_filesystem.cc",
+    "fs/hack_filesystem.h",
+  ]
+  public_deps = [
+    "//sdk/lib/fit",
+    "//sdk/lib/syslog/cpp",
+    "//src/lib/files",
+    "//src/lib/fxl",
+  ]
+  if (is_fuchsia) {
+    public_deps += [ "//sdk/fidl/fuchsia.io:fuchsia.io_cpp" ]
+  }
+}
+
+source_set("shader_variant_args") {
+  sources = [
+    "util/debug_print.h",
+    "util/hash.h",
+    "util/hash_fnv_1a.h",
+    "util/hashable.h",
+    "util/hasher.h",
+    "vk/shader_stage.h",
+    "vk/shader_variant_args.cc",
+    "vk/shader_variant_args.h",
+  ]
+  public_deps = [ "//sdk/lib/syslog/cpp" ]
+}
+
+source_set("static_config") {
+  sources = [
+    "flatland/flatland_static_config.cc",
+    "flatland/flatland_static_config.h",
+    "paper/paper_renderer_static_config.cc",
+    "paper/paper_renderer_static_config.h",
+  ]
+  public_deps = [
+    ":shader_variant_args",
+    "//third_party/glm",
+  ]
 }
 
 set_defaults("escher_library") {

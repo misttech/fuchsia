@@ -5,7 +5,7 @@
 #ifndef SRC_UI_LIB_ESCHER_VK_SHADER_STAGE_H_
 #define SRC_UI_LIB_ESCHER_VK_SHADER_STAGE_H_
 
-#include <vulkan/vulkan.hpp>
+#include <cstdint>
 
 #include "src/ui/lib/escher/util/debug_print.h"
 
@@ -21,25 +21,6 @@ enum class ShaderStage : uint8_t {
   kEnumCount
 };
 ESCHER_DEBUG_PRINTABLE(ShaderStage);
-
-inline vk::ShaderStageFlagBits ShaderStageToFlags(ShaderStage stage) {
-  switch (stage) {
-    case ShaderStage::kVertex:
-      return vk::ShaderStageFlagBits::eVertex;
-    case ShaderStage::kTessellationControl:
-      return vk::ShaderStageFlagBits::eTessellationControl;
-    case ShaderStage::kTessellationEvaluation:
-      return vk::ShaderStageFlagBits::eTessellationEvaluation;
-    case ShaderStage::kGeometry:
-      return vk::ShaderStageFlagBits::eGeometry;
-    case ShaderStage::kFragment:
-      return vk::ShaderStageFlagBits::eFragment;
-    case ShaderStage::kCompute:
-      return vk::ShaderStageFlagBits::eCompute;
-    case ShaderStage::kEnumCount:
-      return vk::ShaderStageFlagBits();
-  }
-}
 
 }  // namespace escher
 

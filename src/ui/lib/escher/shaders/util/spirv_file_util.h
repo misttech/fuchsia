@@ -7,13 +7,34 @@
 
 #include <vector>
 
+#include "src/ui/lib/escher/fs/hack_filesystem.h"
+#include "src/ui/lib/escher/vk/shader_stage.h"
 #include "src/ui/lib/escher/vk/shader_variant_args.h"
 
 #ifdef __Fuchsia__
 #include <fidl/fuchsia.io/cpp/fidl.h>
 #endif
+
+#if ESCHER_USE_RUNTIME_GLSL
+#include <shaderc/shaderc.hpp>
+#endif
+
 namespace escher {
 namespace shader_util {
+
+#if ESCHER_USE_RUNTIME_GLSL
+// Compiles a GLSL shader to SPIR-V bytecode using shaderc.
+// |compiler| is the shaderc compiler instance.
+// |stage| is the shader stage (vertex, fragment, etc.).
+// |path| is the file path within the filesystem.
+// |args| are preprocessor definitions.
+// |filesystem_watcher| is used to read the main shader file and any included files.
+// |output| receives the compiled SPIR-V bytecode.
+// Returns true on success, false on compilation failure.
+bool CompileGlslToSpirv(shaderc::Compiler* compiler, ShaderStage stage, const HackFilePath& path,
+                        const ShaderVariantArgs& args, HackFilesystemWatcher* filesystem_watcher,
+                        std::vector<uint32_t>* output);
+#endif  // ESCHER_USE_RUNTIME_GLSL
 
 // Writes the given spirv to a file on disk, whose name is generated based on the original shader
 // name plus a hash value based on the provided ShaderVariantArgs.

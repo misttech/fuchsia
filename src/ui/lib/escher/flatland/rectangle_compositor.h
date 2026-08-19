@@ -11,6 +11,7 @@
 
 #include "src/ui/lib/escher/flatland/flatland_static_config.h"
 #include "src/ui/lib/escher/forward_declarations.h"
+#include "src/ui/lib/escher/geometry/types.h"
 #include "src/ui/lib/escher/util/hash_map.h"
 #include "src/ui/lib/escher/vk/shader_program.h"
 #include "src/ui/lib/escher/vk/texture.h"

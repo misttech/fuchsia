@@ -2,17 +2,92 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "src/ui/lib/escher/shaders/util/spirv_file_util.h"
+
 #include <lib/fit/defer.h>
+#include <lib/syslog/cpp/macros.h>
 #include <string.h>
+
+#include <algorithm>
+#include <memory>
+#include <unordered_map>
 
 #ifdef __Fuchsia__
 #include <fidl/fuchsia.io/cpp/fidl.h>
 #endif
 
-#include "src/ui/lib/escher/shaders/util/spirv_file_util.h"
-
 namespace escher {
 namespace {
+
+#if ESCHER_USE_RUNTIME_GLSL
+shaderc_shader_kind ShaderStageToKind(ShaderStage stage) {
+  switch (stage) {
+    case ShaderStage::kVertex:
+      return shaderc_glsl_vertex_shader;
+    case ShaderStage::kTessellationControl:
+      return shaderc_tess_control_shader;
+    case ShaderStage::kTessellationEvaluation:
+      return shaderc_tess_evaluation_shader;
+    case ShaderStage::kGeometry:
+      return shaderc_geometry_shader;
+    case ShaderStage::kFragment:
+      return shaderc_fragment_shader;
+    case ShaderStage::kCompute:
+      return shaderc_compute_shader;
+    case ShaderStage::kEnumCount:
+      FX_CHECK(false) << "Invalid ShaderStage: kEnumCount.";
+      return shaderc_glsl_infer_from_source;
+  }
+}
+
+class Includer : public shaderc::CompileOptions::IncluderInterface {
+ public:
+  explicit Includer(HackFilesystemWatcher* filesystem_watcher)
+      : filesystem_watcher_(filesystem_watcher) {}
+
+  ~Includer() override {
+    FX_DCHECK(result_map_.empty())
+        << "Includer destroyed before all ResultRecords have been released.";
+  }
+
+  struct ResultRecord {
+    shaderc_include_result result;
+    HackFilePath file_path;
+    HackFileContents file_contents;
+    std::string error_msg;
+  };
+
+  shaderc_include_result* GetInclude(const char* requested_source, shaderc_include_type type,
+                                     const char* requesting_source, size_t include_depth) override {
+    ResultRecord* record = nullptr;
+    {
+      auto record_ptr = std::make_unique<ResultRecord>();
+      record = record_ptr.get();
+      result_map_[&record->result] = std::move(record_ptr);
+    }
+    shaderc_include_result* const result = &record->result;
+    *result = {};
+
+    record->file_path = requested_source;
+    record->file_contents = filesystem_watcher_->ReadFile(record->file_path);
+
+    if (record->file_contents.empty()) {
+      record->error_msg = "CompileGlslToSpirv: file not found.";
+      *result = {"", 0, record->error_msg.data(), record->error_msg.length(), nullptr};
+    } else {
+      *result = {record->file_path.data(), record->file_path.length(), record->file_contents.data(),
+                 record->file_contents.length(), nullptr};
+    }
+    return result;
+  }
+
+  void ReleaseInclude(shaderc_include_result* data) override { result_map_.erase(data); }
+
+ private:
+  HackFilesystemWatcher* const filesystem_watcher_;
+  std::unordered_map<shaderc_include_result*, std::unique_ptr<ResultRecord>> result_map_;
+};
+#endif  // ESCHER_USE_RUNTIME_GLSL
 
 // Given a path name for a variant shader and its args, generate a new hashed name for that
 // shader's spirv code to be saved on disk.
@@ -28,6 +103,44 @@ std::string GenerateHashedSpirvName(const std::string& path, const ShaderVariant
 }  // namespace
 
 namespace shader_util {
+
+#if ESCHER_USE_RUNTIME_GLSL
+bool CompileGlslToSpirv(shaderc::Compiler* compiler, ShaderStage stage, const HackFilePath& path,
+                        const ShaderVariantArgs& args, HackFilesystemWatcher* filesystem_watcher,
+                        std::vector<uint32_t>* output) {
+  FX_DCHECK(compiler);
+  FX_DCHECK(filesystem_watcher);
+  FX_DCHECK(output);
+
+  // Clear watcher paths; we'll gather new ones during compilation.
+  filesystem_watcher->ClearPaths();
+
+  shaderc::CompileOptions options;
+  for (const auto& define : args.definitions()) {
+    options.AddMacroDefinition(define.first, define.second);
+  }
+  options.SetOptimizationLevel(shaderc_optimization_level_performance);
+  options.SetIncluder(std::make_unique<Includer>(filesystem_watcher));
+  // TODO(https://fxbug.dev/42098025): update this once we can rely upon Vulkan 1.1.
+  options.SetTargetEnvironment(shaderc_target_env_vulkan, shaderc_env_version_vulkan_1_0);
+  options.SetWarningsAsErrors();
+
+  // Compile GLSL to SPIR-V, keeping track of paths as we go.
+  auto main_file = filesystem_watcher->ReadFile(path);
+  auto result = compiler->CompileGlslToSpv(main_file.data(), main_file.size(),
+                                           ShaderStageToKind(stage), path.c_str(), "main", options);
+
+  auto status = result.GetCompilationStatus();
+  if (status != shaderc_compilation_status_success) {
+    FX_LOGS(ERROR) << "Shader compilation failed with status: " << status << ". "
+                   << " Error message: " << result.GetErrorMessage();
+    return false;
+  }
+
+  *output = {result.cbegin(), result.cend()};
+  return true;
+}
+#endif  // ESCHER_USE_RUNTIME_GLSL
 bool WriteSpirvToDisk(const std::vector<uint32_t>& spirv, const ShaderVariantArgs& args,
                       const std::string& base_path, const std::string& shader_name) {
   auto hash_name = GenerateHashedSpirvName(shader_name, args);
