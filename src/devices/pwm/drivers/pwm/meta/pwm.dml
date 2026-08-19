@@ -6,7 +6,8 @@
   name: "pwm",
   program: {
     bind: {
-      protocol: "fuchsia.pwm.BIND_PROTOCOL.PWM_IMPL"
+      service: "fuchsia.hardware.pwmimpl.Service",
+      transport: "Driver"
     },
     colocate: "true",
     default_dispatcher_opts: [ "allow_sync_calls" ]
@@ -66,6 +67,9 @@
     },
     {
       service: "fuchsia.hardware.pwm.PwmChannelsMetadata"
+    },
+    {
+      service: "fuchsia.hardware.pwmimpl.Service"
     }
   ],
   expose: [

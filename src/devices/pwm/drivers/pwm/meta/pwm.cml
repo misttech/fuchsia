@@ -21,6 +21,7 @@
     use: [
         { service: "fuchsia.driver.compat.Service" },
         { service: "fuchsia.hardware.pwm.PwmChannelsMetadata" },
+        { service: "fuchsia.hardware.pwmimpl.Service" },
     ],
     expose: [
         {

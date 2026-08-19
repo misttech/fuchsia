@@ -18,6 +18,7 @@
 #include "src/lib/testing/predicates/status.h"
 
 namespace pwm {
+
 namespace {
 
 class AmlPwmDriverTestEnvironment : public fdf_testing::Environment {
@@ -25,8 +26,6 @@ class AmlPwmDriverTestEnvironment : public fdf_testing::Environment {
   void SetupCommon() {
     static constexpr size_t kRegSize = 0x00001000 / sizeof(uint32_t);
     static constexpr size_t kMmioCount = 5;
-
-    device_server_.Initialize(component::kDefaultInstance);
 
     std::map<uint32_t, fdf_fake::Mmio> mmios;
     for (size_t i = 0; i < kMmioCount; ++i) {
@@ -44,32 +43,33 @@ class AmlPwmDriverTestEnvironment : public fdf_testing::Environment {
   void Init() {
     SetupCommon();
     // Protect channel 3 for protect tests
-    static const fuchsia_hardware_pwm::PwmChannelsMetadata kMetadata{
-        {{{{{.id = 0}},
-           {{.id = 1}},
-           {{.id = 2}},
-           {{.id = 3, .skip_init = true}},
-           {{.id = 4}},
-           {{.id = 5}},
-           {{.id = 6}},
-           {{.id = 7}},
-           {{.id = 8}},
-           {{.id = 9}}}}}};
+    static const fuchsia_hardware_pwm::PwmChannelsMetadata kMetadata({
+        .channels{
+            {
+                {{.id = 0}},
+                {{.id = 1}},
+                {{.id = 2}},
+                {{.id = 3, .skip_init = true}},
+                {{.id = 4}},
+                {{.id = 5}},
+                {{.id = 6}},
+                {{.id = 7}},
+                {{.id = 8}},
+                {{.id = 9}},
+            },
+        },
+    });
+
     pdev_.AddFidlMetadata(fuchsia_hardware_pwm::PwmChannelsMetadata::kSerializableName, kMetadata);
   }
 
-  void InitGeneric(fuchsia_driver_metadata::Dictionary metadata) {
+  void InitGeneric(fuchsia_driver_metadata::Dictionary& metadata) {
     SetupCommon();
-    pdev_.AddFidlMetadata("fuchsia.hardware.pwm.PwmChannelsMetadata", std::move(metadata));
+    pdev_.AddFidlMetadata("fuchsia.hardware.pwm.PwmChannelsMetadata", metadata);
   }
 
   zx::result<> Serve(fdf::OutgoingDirectory& to_driver_vfs) override {
     auto* dispatcher = fdf::Dispatcher::GetCurrent()->async_dispatcher();
-
-    zx_status_t status = device_server_.Serve(dispatcher, &to_driver_vfs);
-    if (status != ZX_OK) {
-      return zx::error(status);
-    }
 
     {
       zx::result result = to_driver_vfs.AddService<fuchsia_hardware_platform_device::Service>(
@@ -86,7 +86,6 @@ class AmlPwmDriverTestEnvironment : public fdf_testing::Environment {
 
  private:
   std::vector<std::unique_ptr<ddk_mock::MockMmioRegRegion>> mmios_;
-  compat::DeviceServer device_server_;
   fdf_fake::FakePDev pdev_;
 };
 
@@ -97,10 +96,13 @@ class FixtureConfig final {
 };
 
 class AmlPwmDriverTest : public ::testing::Test {
- public:
+ protected:
   void SetUp() override {
     driver_test_.RunInEnvironmentTypeContext([](auto& env) { env.Init(); });
     ASSERT_OK(driver_test_.StartDriver());
+    zx::result client_end = driver_test_.Connect<fuchsia_hardware_pwmimpl::Service::Device>();
+    ASSERT_TRUE(client_end.is_ok());
+    pwm_impl_.Bind(std::move(*client_end));
   }
 
   void TearDown() override {
@@ -112,199 +114,189 @@ class AmlPwmDriverTest : public ::testing::Test {
     });
   }
 
- protected:
+  static fuchsia_hardware_pwm::wire::PwmConfig CreatePwmConfig(
+      bool polarity, uint32_t period_ns, float duty_cycle, mode_config* mode_config,
+      size_t mode_config_size_bytes = sizeof(struct mode_config)) {
+    auto mode_config_bytes =
+        mode_config ? fidl::VectorView<uint8_t>::FromExternal(
+                          reinterpret_cast<uint8_t*>(mode_config), mode_config_size_bytes)
+                    : fidl::VectorView<uint8_t>{};
+    return fuchsia_hardware_pwm::wire::PwmConfig{
+        .polarity = polarity,
+        .period_ns = period_ns,
+        .duty_cycle = duty_cycle,
+        .mode_config = mode_config_bytes,
+    };
+  }
+
   void WithMmios(
       fit::callback<void(std::span<std::unique_ptr<ddk_mock::MockMmioRegRegion>>)> callback) {
     driver_test_.RunInEnvironmentTypeContext(
         [callback = std::move(callback)](auto& env) mutable { callback(env.mmios()); });
   }
 
-  AmlPwmDriver& driver() { return *driver_test_.driver(); }
+  zx::result<fuchsia_hardware_pwm::PwmConfig> GetPwmConfig(uint32_t idx) {
+    fdf::Arena arena('TEST');
+    fdf::WireUnownedResult<fuchsia_hardware_pwmimpl::PwmImpl::GetConfig> result =
+        pwm_impl_.buffer(arena)->GetConfig(idx);
+    if (!result.ok()) {
+      return zx::error(result.status());
+    }
+    if (result->is_error()) {
+      return zx::error(result->error_value());
+    }
+    return zx::ok(fidl::ToNatural(result->value()->config));
+  }
+
+  zx_status_t SetPwmConfig(uint32_t idx, const fuchsia_hardware_pwm::wire::PwmConfig* config) {
+    if (config == nullptr) {
+      return ZX_ERR_INVALID_ARGS;
+    }
+    fdf::Arena arena('TEST');
+    fdf::WireUnownedResult<fuchsia_hardware_pwmimpl::PwmImpl::SetConfig> result =
+        pwm_impl_.buffer(arena)->SetConfig(idx, *config);
+    if (!result.ok()) {
+      return result.status();
+    }
+    if (result->is_error()) {
+      return result->error_value();
+    }
+    return ZX_OK;
+  }
+
+  zx_status_t EnablePwm(uint32_t idx) {
+    fdf::Arena arena('TEST');
+    fdf::WireUnownedResult<fuchsia_hardware_pwmimpl::PwmImpl::Enable> result =
+        pwm_impl_.buffer(arena)->Enable(idx);
+    if (!result.ok()) {
+      return result.status();
+    }
+    if (result->is_error()) {
+      return result->error_value();
+    }
+    return ZX_OK;
+  }
+
+  zx_status_t DisablePwm(uint32_t idx) {
+    fdf::Arena arena('TEST');
+    fdf::WireUnownedResult<fuchsia_hardware_pwmimpl::PwmImpl::Disable> result =
+        pwm_impl_.buffer(arena)->Disable(idx);
+    if (!result.ok()) {
+      return result.status();
+    }
+    if (result->is_error()) {
+      return result->error_value();
+    }
+    return ZX_OK;
+  }
 
  private:
-  fdf_testing::ForegroundDriverTest<FixtureConfig> driver_test_;
+  fdf_testing::BackgroundDriverTest<FixtureConfig> driver_test_;
+  fdf::WireSyncClient<fuchsia_hardware_pwmimpl::PwmImpl> pwm_impl_;
 };
 
-TEST_F(AmlPwmDriverTest, ProtectTest) {
+TEST_F(AmlPwmDriverTest, ProtectPwmTest) {
   mode_config mode_cfg{
       .mode = static_cast<Mode>(100),
       .regular = {},
   };
-  pwm_config cfg{
-      .polarity = false,
-      .period_ns = 1250,
-      .duty_cycle = 100.0,
-      .mode_config_buffer = reinterpret_cast<uint8_t*>(&mode_cfg),
-      .mode_config_size = sizeof(mode_cfg),
-  };
-  EXPECT_NE(driver().PwmImplSetConfig(3, &cfg), ZX_OK);
+  auto cfg = CreatePwmConfig(false, 1250, 100.0, &mode_cfg);
+  EXPECT_NE(SetPwmConfig(3, &cfg), ZX_OK);
 }
 
-TEST_F(AmlPwmDriverTest, GetConfigTest) {
-  mode_config mode_cfg{
-      .mode = static_cast<Mode>(100),
-      .regular = {},
-  };
-  pwm_config cfg{
-      .polarity = false,
-      .period_ns = 1250,
-      .duty_cycle = 100.0,
-      .mode_config_buffer = reinterpret_cast<uint8_t*>(&mode_cfg),
-      .mode_config_size = sizeof(mode_cfg),
-  };
-  EXPECT_OK(driver().PwmImplGetConfig(0, &cfg));
-
-  cfg.mode_config_buffer = nullptr;
-  EXPECT_NE(driver().PwmImplGetConfig(0, &cfg), ZX_OK);
+TEST_F(AmlPwmDriverTest, GetPwmConfigTest) {
+  auto result = GetPwmConfig(0);
+  ASSERT_OK(result.status_value());
+  EXPECT_EQ(result->polarity(), false);
+  EXPECT_EQ(result->period_ns(), 0u);
+  EXPECT_EQ(result->duty_cycle(), 0.0f);
+  ASSERT_EQ(result->mode_config().size(), sizeof(mode_config));
+  auto mode_cfg = reinterpret_cast<const mode_config*>(result->mode_config().data());
+  EXPECT_EQ(mode_cfg->mode, Mode::kOff);
 }
 
-TEST_F(AmlPwmDriverTest, GetConfigZeroInitializedTest) {
-  mode_config mode_cfg;
-  memset(&mode_cfg, 0xAA, sizeof(mode_cfg));
-  pwm_config cfg{
-      .polarity = false,
-      .period_ns = 1250,
-      .duty_cycle = 100.0,
-      .mode_config_buffer = reinterpret_cast<uint8_t*>(&mode_cfg),
-      .mode_config_size = sizeof(mode_cfg),
-  };
-  EXPECT_OK(driver().PwmImplGetConfig(0, &cfg));
+TEST_F(AmlPwmDriverTest, GetPwmConfigZeroInitializedTest) {
+  auto result = GetPwmConfig(0);
+  ASSERT_OK(result.status_value());
 
   // Verify all bytes after the mode field (the union bytes) are zero-initialized.
-  const auto* bytes = reinterpret_cast<const uint8_t*>(&mode_cfg);
+  ASSERT_EQ(result->mode_config().size(), sizeof(mode_config));
+  const auto* bytes = result->mode_config().data();
   for (size_t i = sizeof(Mode); i < sizeof(mode_config); ++i) {
     EXPECT_EQ(bytes[i], 0u) << "Byte at offset " << i << " was not zero-initialized.";
   }
 }
 
-TEST_F(AmlPwmDriverTest, SetConfigInvalidNullConfig) {
+TEST_F(AmlPwmDriverTest, SetPwmConfigInvalidNullConfig) {
   // config is null
-  EXPECT_NE(driver().PwmImplSetConfig(0, nullptr), ZX_OK);
+  EXPECT_NE(SetPwmConfig(0, nullptr), ZX_OK);
 }
 
-TEST_F(AmlPwmDriverTest, SetConfigInvalidNoModeBuffer) {
-  pwm_config fail_cfg{
-      .polarity = false,
-      .period_ns = 1250,
-      .duty_cycle = 100.0,
-      // config has no mode buffer
-      .mode_config_buffer = nullptr,
-      .mode_config_size = 0,
-  };
-  EXPECT_NE(driver().PwmImplSetConfig(0, &fail_cfg), ZX_OK);
+TEST_F(AmlPwmDriverTest, SetPwmConfigInvalidNoModeBuffer) {
+  auto fail_cfg = CreatePwmConfig(false, 1250, 100.0, nullptr);
+  EXPECT_NE(SetPwmConfig(0, &fail_cfg), ZX_OK);
 }
 
-TEST_F(AmlPwmDriverTest, SetConfigInvalidModeConfigSizeIncorrect) {
+TEST_F(AmlPwmDriverTest, SetPwmConfigInvalidModeConfigSizeIncorrect) {
   mode_config fail_mode{
       .mode = Mode::kOn,
       .regular = {},
   };
-  pwm_config fail_cfg{
-      .polarity = false,
-      .period_ns = 1250,
-      .duty_cycle = 100.0,
-      .mode_config_buffer = reinterpret_cast<uint8_t*>(&fail_mode),
-      // mode_config_size incorrect
-      .mode_config_size = 10,
-  };
-
-  EXPECT_NE(driver().PwmImplSetConfig(0, &fail_cfg), ZX_OK);
+  auto fail_cfg = CreatePwmConfig(false, 1250, 100.0, &fail_mode, 10);
+  EXPECT_NE(SetPwmConfig(0, &fail_cfg), ZX_OK);
 }
 
-TEST_F(AmlPwmDriverTest, SetConfigInvalidTwoTimerTimer2InvalidDutyCycle) {
-  mode_config fail_mode{
-      .mode = Mode::kTwoTimer,
-      .two_timer = {},
-  };
-  pwm_config fail_cfg{
-      .polarity = false,
-      .period_ns = 1250,
-      .duty_cycle = 100.0,
-      .mode_config_buffer = reinterpret_cast<uint8_t*>(&fail_mode),
-      .mode_config_size = sizeof(fail_mode),
-  };
-
+TEST_F(AmlPwmDriverTest, SetPwmConfigInvalidTwoTimerTimer2InvalidDutyCycle) {
+  mode_config fail_mode{.mode = Mode::kTwoTimer, .two_timer = {}};
   // Invalid duty cycle for timer 2.
   fail_mode.two_timer.duty_cycle2 = -10.0;
-  EXPECT_NE(driver().PwmImplSetConfig(0, &fail_cfg), ZX_OK);
+  auto fail_cfg = CreatePwmConfig(false, 1250, 100.0, &fail_mode);
+  EXPECT_NE(SetPwmConfig(0, &fail_cfg), ZX_OK);
 
   fail_mode.two_timer.duty_cycle2 = 120.0;
-  EXPECT_NE(driver().PwmImplSetConfig(0, &fail_cfg), ZX_OK);
+  fail_cfg = CreatePwmConfig(false, 1250, 100.0, &fail_mode);
+  EXPECT_NE(SetPwmConfig(0, &fail_cfg), ZX_OK);
 }
 
-TEST_F(AmlPwmDriverTest, SetConfigInvalidTimer1InvalidDutyCycle) {
-  mode_config fail_mode{
-      .mode = Mode::kOn,
-      .regular = {},
-  };
-  pwm_config fail_cfg{
-      .polarity = false,
-      .period_ns = 1250,
-      .duty_cycle = 100.0,
-      .mode_config_buffer = reinterpret_cast<uint8_t*>(&fail_mode),
-      .mode_config_size = sizeof(fail_mode),
-  };
-
+TEST_F(AmlPwmDriverTest, SetPwmConfigInvalidTimer1InvalidDutyCycle) {
+  mode_config fail_mode{.mode = Mode::kOn, .regular = {}};
   // Invalid duty cycle for timer 1.
-  fail_cfg.duty_cycle = -10.0;
-  EXPECT_NE(driver().PwmImplSetConfig(0, &fail_cfg), ZX_OK);
+  auto fail_cfg = CreatePwmConfig(false, 1250, -10.0, &fail_mode);
+  EXPECT_NE(SetPwmConfig(0, &fail_cfg), ZX_OK);
 
-  fail_cfg.duty_cycle = 120.0;
-  EXPECT_NE(driver().PwmImplSetConfig(0, &fail_cfg), ZX_OK);
+  fail_cfg = CreatePwmConfig(false, 1250, 120.0, &fail_mode);
+  EXPECT_NE(SetPwmConfig(0, &fail_cfg), ZX_OK);
 }
 
-TEST_F(AmlPwmDriverTest, SetConfigInvalidTimer1InvalidMode) {
+TEST_F(AmlPwmDriverTest, SetPwmConfigInvalidTimer1InvalidMode) {
   mode_config fail_mode{
       // Invalid mode
       .mode = static_cast<Mode>(100),
       .regular = {},
   };
-  pwm_config fail_cfg{
-      .polarity = false,
-      .period_ns = 1250,
-      .duty_cycle = 100.0,
-      .mode_config_buffer = reinterpret_cast<uint8_t*>(&fail_mode),
-      .mode_config_size = sizeof(fail_mode),
-  };
-
-  EXPECT_NE(driver().PwmImplSetConfig(0, &fail_cfg), ZX_OK);
+  auto fail_cfg = CreatePwmConfig(false, 1250, 100.0, &fail_mode);
+  EXPECT_NE(SetPwmConfig(0, &fail_cfg), ZX_OK);
 }
 
-TEST_F(AmlPwmDriverTest, SetConfigInvalidPwmId) {
+TEST_F(AmlPwmDriverTest, SetPwmConfigInvalidPwmId) {
   for (Mode mode : {Mode::kOn, Mode::kOff, Mode::kTwoTimer, Mode::kDeltaSigma}) {
     mode_config fail{
         .mode = mode,
     };
-    pwm_config fail_cfg{
-        .polarity = false,
-        .period_ns = 1250,
-        .duty_cycle = 100.0,
-        .mode_config_buffer = reinterpret_cast<uint8_t*>(&fail),
-        .mode_config_size = sizeof(fail),
-    };
+    auto fail_cfg = CreatePwmConfig(false, 1250, 100.0, &fail);
     // Incorrect pwm ID.
-    EXPECT_NE(driver().PwmImplSetConfig(10, &fail_cfg), ZX_OK);
+    EXPECT_NE(SetPwmConfig(10, &fail_cfg), ZX_OK);
   }
 }
 
-TEST_F(AmlPwmDriverTest, SetConfigInvalidTimer1PeriodExceedsLimit) {
-  mode_config fail_mode{
-      .mode = aml_pwm::Mode::kOn,
-      .regular = {},
-  };
-  pwm_config fail_cfg{
-      .polarity = false,
-      // period = 1 second, exceeds the maximum allowed period (343'927'680 ns).
-      .period_ns = 1'000'000'000,
-      .duty_cycle = 100.0,
-      .mode_config_buffer = reinterpret_cast<uint8_t*>(&fail_mode),
-      .mode_config_size = sizeof(fail_mode),
-  };
-
-  EXPECT_NE(driver().PwmImplSetConfig(0, &fail_cfg), ZX_OK);
+TEST_F(AmlPwmDriverTest, SetPwmConfigInvalidTimer1PeriodExceedsLimit) {
+  mode_config fail_mode{.mode = aml_pwm::Mode::kOn, .regular = {}};
+  fuchsia_hardware_pwm::wire::PwmConfig fail_cfg =
+      CreatePwmConfig(false, 1'000'000'000, 100.0, &fail_mode);
+  EXPECT_NE(SetPwmConfig(0, &fail_cfg), ZX_OK);
 }
 
-TEST_F(AmlPwmDriverTest, SetConfigInvalidTwoTimerModeTimer2PeriodExceedsLimit) {
+TEST_F(AmlPwmDriverTest, SetPwmConfigInvalidTwoTimerModeTimer2PeriodExceedsLimit) {
   mode_config fail_mode{
       .mode = aml_pwm::Mode::kTwoTimer,
       .two_timer =
@@ -313,31 +305,15 @@ TEST_F(AmlPwmDriverTest, SetConfigInvalidTwoTimerModeTimer2PeriodExceedsLimit) {
               .period_ns2 = 1'000'000'000,
           },
   };
-  pwm_config fail_cfg{
-      .polarity = false,
-      .period_ns = 1000,
-      .duty_cycle = 100.0,
-      .mode_config_buffer = reinterpret_cast<uint8_t*>(&fail_mode),
-      .mode_config_size = sizeof(fail_mode),
-  };
-
-  EXPECT_NE(driver().PwmImplSetConfig(0, &fail_cfg), ZX_OK);
+  auto fail_cfg = CreatePwmConfig(false, 1000, 100.0, &fail_mode);
+  EXPECT_NE(SetPwmConfig(0, &fail_cfg), ZX_OK);
 }
 
-TEST_F(AmlPwmDriverTest, SetConfigTest) {
+TEST_F(AmlPwmDriverTest, SetPwmConfigTest) {
   // Mode::kOff
-  mode_config off{
-      .mode = Mode::kOff,
-      .regular = {},
-  };
-  pwm_config off_cfg{
-      .polarity = false,
-      .period_ns = 1250,
-      .duty_cycle = 100.0,
-      .mode_config_buffer = reinterpret_cast<uint8_t*>(&off),
-      .mode_config_size = sizeof(off),
-  };
-  EXPECT_OK(driver().PwmImplSetConfig(0, &off_cfg));
+  mode_config off{.mode = Mode::kOff, .regular = {}};
+  auto off_cfg = CreatePwmConfig(false, 1250, 100.0, &off);
+  EXPECT_OK(SetPwmConfig(0, &off_cfg));
 
   WithMmios([](auto mmios) {
     (*mmios[0])[2 * 4].ExpectRead(0x01000000).ExpectWrite(0x01000001);  // SetMode
@@ -346,24 +322,15 @@ TEST_F(AmlPwmDriverTest, SetConfigTest) {
     (*mmios[0])[2 * 4].ExpectRead(0x00000000).ExpectWrite(0x10000000);  // EnableConst
     (*mmios[0])[0 * 4].ExpectRead(0xA39D9259).ExpectWrite(0x001E0000);  // SetDutyCycle
   });
-  mode_config on{
-      .mode = Mode::kOn,
-      .regular = {},
-  };
-  pwm_config on_cfg{
-      .polarity = false,
-      .period_ns = 1250,
-      .duty_cycle = 100.0,
-      .mode_config_buffer = reinterpret_cast<uint8_t*>(&on),
-      .mode_config_size = sizeof(on),
-  };
-  EXPECT_OK(driver().PwmImplSetConfig(0, &on_cfg));  // turn on
+  mode_config on{.mode = Mode::kOn, .regular = {}};
+  auto on_cfg = CreatePwmConfig(false, 1250, 100.0, &on);
+  EXPECT_OK(SetPwmConfig(0, &on_cfg));  // turn on
 
   WithMmios([](auto mmios) {
     (*mmios[0])[2 * 4].ExpectRead(0xFFFFFFFF).ExpectWrite(0xFDFFFFFA);  // SetMode
   });
-  EXPECT_OK(driver().PwmImplSetConfig(0, &off_cfg));
-  EXPECT_OK(driver().PwmImplSetConfig(0, &off_cfg));  // same configs
+  EXPECT_OK(SetPwmConfig(0, &off_cfg));
+  EXPECT_OK(SetPwmConfig(0, &off_cfg));  // same configs
 
   // Mode::kOn
   WithMmios([](auto mmios) {
@@ -373,22 +340,20 @@ TEST_F(AmlPwmDriverTest, SetConfigTest) {
     (*mmios[0])[2 * 4].ExpectRead(0x00000000).ExpectWrite(0x20000000);  // EnableConst
     (*mmios[0])[1 * 4].ExpectRead(0xA39D9259).ExpectWrite(0x001E0000);  // SetDutyCycle
   });
-  EXPECT_OK(driver().PwmImplSetConfig(1, &on_cfg));
+  EXPECT_OK(SetPwmConfig(1, &on_cfg));
 
   WithMmios([](auto mmios) {
     (*mmios[0])[2 * 4].ExpectRead(0x00000000).ExpectWrite(0x08000000);  // Invert
     (*mmios[0])[2 * 4].ExpectRead(0xFFFFFFFF).ExpectWrite(0xDFFFFFFF);  // EnableConst
     (*mmios[0])[1 * 4].ExpectRead(0xA39D9259).ExpectWrite(0x00060010);  // SetDutyCycle
   });
-  on_cfg.polarity = true;
-  on_cfg.period_ns = 1000;
-  on_cfg.duty_cycle = 30.0;
-  EXPECT_OK(driver().PwmImplSetConfig(1, &on_cfg));  // Change Duty Cycle
+  on_cfg = CreatePwmConfig(true, 1000, 30.0, &on);
+  EXPECT_OK(SetPwmConfig(1, &on_cfg));  // Change Duty Cycle
 
   WithMmios([](auto mmios) {
     (*mmios[0])[2 * 4].ExpectRead(0xFFFFFFFF).ExpectWrite(0xFEFFFFF5);  // SetMode
   });
-  EXPECT_OK(driver().PwmImplSetConfig(1, &off_cfg));  // Change Mode
+  EXPECT_OK(SetPwmConfig(1, &off_cfg));  // Change Mode
 
   // Mode::kDeltaSigma
   WithMmios([](auto mmios) {
@@ -406,14 +371,8 @@ TEST_F(AmlPwmDriverTest, SetConfigTest) {
               .delta = 100,
           },
   };
-  pwm_config ds_cfg{
-      .polarity = false,
-      .period_ns = 1000,
-      .duty_cycle = 30.0,
-      .mode_config_buffer = reinterpret_cast<uint8_t*>(&ds),
-      .mode_config_size = sizeof(ds),
-  };
-  EXPECT_OK(driver().PwmImplSetConfig(2, &ds_cfg));
+  auto ds_cfg = CreatePwmConfig(false, 1000, 30.0, &ds);
+  EXPECT_OK(SetPwmConfig(2, &ds_cfg));
 
   // Mode::kTwoTimer
   WithMmios([](auto mmios) {
@@ -435,17 +394,11 @@ TEST_F(AmlPwmDriverTest, SetConfigTest) {
               .timer2 = 2,
           },
   };
-  pwm_config timer2_cfg{
-      .polarity = false,
-      .period_ns = 1000,
-      .duty_cycle = 30.0,
-      .mode_config_buffer = reinterpret_cast<uint8_t*>(&timer2),
-      .mode_config_size = sizeof(timer2),
-  };
-  EXPECT_OK(driver().PwmImplSetConfig(7, &timer2_cfg));
+  auto timer2_cfg = CreatePwmConfig(false, 1000, 30.0, &timer2);
+  EXPECT_OK(SetPwmConfig(7, &timer2_cfg));
 }
 
-TEST_F(AmlPwmDriverTest, SingleTimerModeClockDividerChange) {
+TEST_F(AmlPwmDriverTest, SingleTimerModeClockDividerChangePwmTest) {
   WithMmios([](auto mmios) {
     (*mmios[0])[2 * 4].ExpectRead(0x01000000).ExpectWrite(0x01000001);  // SetMode
     // Expected clock divider value = 1, raw value of divider register field = 0
@@ -454,39 +407,30 @@ TEST_F(AmlPwmDriverTest, SingleTimerModeClockDividerChange) {
     (*mmios[0])[2 * 4].ExpectRead(0x00000000).ExpectWrite(0x10000000);  // EnableConst
     (*mmios[0])[0 * 4].ExpectRead(0xA39D9259).ExpectWrite(0x001E0000);  // SetDutyCycle
   });
-  mode_config on{
-      .mode = Mode::kOn,
-      .regular = {},
-  };
-  pwm_config on_cfg{
-      .polarity = false,
-      .period_ns = 1250,
-      .duty_cycle = 100.0,
-      .mode_config_buffer = reinterpret_cast<uint8_t*>(&on),
-      .mode_config_size = sizeof(on),
-  };
-  EXPECT_OK(driver().PwmImplSetConfig(0, &on_cfg));  // Success
+  mode_config on{.mode = Mode::kOn, .regular = {}};
+  auto on_cfg = CreatePwmConfig(false, 1250, 100.0, &on);
+  EXPECT_OK(SetPwmConfig(0, &on_cfg));  // Success
 
   WithMmios([](auto mmios) {
     (*mmios[0])[2 * 4].ExpectRead(0x00000000).ExpectWrite(0x10000000);  // EnableConst
     (*mmios[0])[0 * 4].ExpectRead(0xA39D9259).ExpectWrite(0x5F460000);  // SetDutyCycle
   });
-  on_cfg.period_ns = 1'000'000;                      // Doesn't trigger the divider change.
-  EXPECT_OK(driver().PwmImplSetConfig(0, &on_cfg));  // Success
+  on_cfg = CreatePwmConfig(false, 1'000'000, 100.0, &on);
+  EXPECT_OK(SetPwmConfig(0, &on_cfg));  // Success
 
   WithMmios([](auto mmios) {
     (*mmios[0])[2 * 4].ExpectRead(0xFFFFFFFF).ExpectWrite(0xFFFF81FF);  // SetClockDivider
     (*mmios[0])[2 * 4].ExpectRead(0x00000000).ExpectWrite(0x10000000);  // EnableConst
     (*mmios[0])[0 * 4].ExpectRead(0xA39D9259).ExpectWrite(0x8EE90000);  // SetDutyCycle
   });
-  on_cfg.period_ns = 3'000'000;
-  EXPECT_OK(driver().PwmImplSetConfig(0, &on_cfg));  // Success
+  on_cfg = CreatePwmConfig(false, 3'000'000, 100.0, &on);
+  EXPECT_OK(SetPwmConfig(0, &on_cfg));  // Success
 
-  on_cfg.period_ns = 1'000'000'000;                         // 1 Hz, exceeds the maximum period
-  EXPECT_NE(driver().PwmImplSetConfig(0, &on_cfg), ZX_OK);  // Failure
+  on_cfg = CreatePwmConfig(false, 1'000'000'000, 100.0, &on);
+  EXPECT_NE(SetPwmConfig(0, &on_cfg), ZX_OK);  // Failure
 }
 
-TEST_F(AmlPwmDriverTest, TwoTimerModeClockDividerChange) {
+TEST_F(AmlPwmDriverTest, TwoTimerModeClockDividerChangePwmTest) {
   WithMmios([](auto mmios) {
     (*mmios[0])[2 * 4].ExpectRead(0x00000000).ExpectWrite(0x01000002);  // SetMode
     (*mmios[0])[2 * 4].ExpectRead(0xFFFFFFFF).ExpectWrite(0xFF80FFFF);  // SetClockDivider
@@ -508,14 +452,8 @@ TEST_F(AmlPwmDriverTest, TwoTimerModeClockDividerChange) {
               .timer2 = 2,
           },
   };
-  pwm_config timer2_cfg{
-      .polarity = false,
-      .period_ns = 1000,
-      .duty_cycle = 30.0,
-      .mode_config_buffer = reinterpret_cast<uint8_t*>(&timer2),
-      .mode_config_size = sizeof(timer2),
-  };
-  EXPECT_OK(driver().PwmImplSetConfig(1, &timer2_cfg));
+  auto timer2_cfg = CreatePwmConfig(false, 1000, 30.0, &timer2);
+  EXPECT_OK(SetPwmConfig(1, &timer2_cfg));
 
   WithMmios([](auto mmios) {
     // timer1 needs divider = 2, timer2 needs divider = 1,
@@ -525,8 +463,8 @@ TEST_F(AmlPwmDriverTest, TwoTimerModeClockDividerChange) {
     (*mmios[0])[2 * 4].ExpectRead(0xFFFFFFFF).ExpectWrite(0xDFFFFFFF);  // EnableConst
     (*mmios[0])[1 * 4].ExpectRead(0xA39D9259).ExpectWrite(0x2ADF6408);  // SetDutyCycle
   });
-  timer2_cfg.period_ns = 3'000'000;
-  EXPECT_OK(driver().PwmImplSetConfig(1, &timer2_cfg));  // Success
+  timer2_cfg = CreatePwmConfig(false, 3'000'000, 30.0, &timer2);
+  EXPECT_OK(SetPwmConfig(1, &timer2_cfg));  // Success
 
   WithMmios([](auto mmios) {
     // timer1 needs divider = 2, timer2 needs divider = 3,
@@ -537,10 +475,11 @@ TEST_F(AmlPwmDriverTest, TwoTimerModeClockDividerChange) {
     (*mmios[0])[1 * 4].ExpectRead(0xA39D9259).ExpectWrite(0x1C9442B0);  // SetDutyCycle
   });
   timer2.two_timer.period_ns2 = 6'000'000;
-  EXPECT_OK(driver().PwmImplSetConfig(1, &timer2_cfg));  // Success
+  timer2_cfg = CreatePwmConfig(false, 3'000'000, 30.0, &timer2);
+  EXPECT_OK(SetPwmConfig(1, &timer2_cfg));  // Success
 }
 
-TEST_F(AmlPwmDriverTest, SetConfigFailTest) {
+TEST_F(AmlPwmDriverTest, SetPwmConfigFailTest) {
   WithMmios([](auto mmios) {
     (*mmios[0])[2 * 4].ExpectRead(0x01000000).ExpectWrite(0x01000001);  // SetMode
     (*mmios[0])[2 * 4].ExpectRead(0xFFFFFFFF).ExpectWrite(0xFFFF80FF);  // SetClockDivider
@@ -548,60 +487,50 @@ TEST_F(AmlPwmDriverTest, SetConfigFailTest) {
     (*mmios[0])[2 * 4].ExpectRead(0x00000000).ExpectWrite(0x10000000);  // EnableConst
     (*mmios[0])[0 * 4].ExpectRead(0xA39D9259).ExpectWrite(0x001E0000);  // SetDutyCycle
   });
-  mode_config on{
-      .mode = Mode::kOn,
-      .regular = {},
-  };
-  pwm_config on_cfg{
-      .polarity = false,
-      .period_ns = 1250,
-      .duty_cycle = 100.0,
-      .mode_config_buffer = reinterpret_cast<uint8_t*>(&on),
-      .mode_config_size = sizeof(on),
-  };
-  EXPECT_OK(driver().PwmImplSetConfig(0, &on_cfg));  // Success
+  mode_config on{.mode = Mode::kOn, .regular = {}};
+  auto on_cfg = CreatePwmConfig(false, 1250, 100.0, &on);
+  EXPECT_OK(SetPwmConfig(0, &on_cfg));  // Success
 
   WithMmios([](auto mmios) {
     // Nothing should happen on the register if the input is incorrect.
     (*mmios[0])[2 * 4].VerifyAndClear();
     (*mmios[0])[0 * 4].VerifyAndClear();
   });
-  on_cfg.polarity = true;
-  on_cfg.duty_cycle = 120.0;
-  EXPECT_NE(driver().PwmImplSetConfig(0, &on_cfg), ZX_OK);  // Fail
+  on_cfg = CreatePwmConfig(true, 1250, 120.0, &on);
+  EXPECT_NE(SetPwmConfig(0, &on_cfg), ZX_OK);  // Fail
 }
 
-TEST_F(AmlPwmDriverTest, EnableTest) {
-  EXPECT_NE(driver().PwmImplEnable(10), ZX_OK);  // Fail
+TEST_F(AmlPwmDriverTest, EnablePwmTest) {
+  EXPECT_NE(EnablePwm(10), ZX_OK);  // Fail
 
   WithMmios([](auto mmios) { (*mmios[1])[2 * 4].ExpectRead(0x00000000).ExpectWrite(0x00008000); });
-  EXPECT_OK(driver().PwmImplEnable(2));
-  EXPECT_OK(driver().PwmImplEnable(2));  // Enable twice
+  EXPECT_OK(EnablePwm(2));
+  EXPECT_OK(EnablePwm(2));  // Enable twice
 
   WithMmios([](auto mmios) { (*mmios[2])[2 * 4].ExpectRead(0x00008000).ExpectWrite(0x00808000); });
-  EXPECT_OK(driver().PwmImplEnable(5));  // Enable other PWMs
+  EXPECT_OK(EnablePwm(5));  // Enable other PWMs
 }
 
-TEST_F(AmlPwmDriverTest, DisableTest) {
-  EXPECT_NE(driver().PwmImplDisable(10), ZX_OK);  // Fail
+TEST_F(AmlPwmDriverTest, DisablePwmTest) {
+  EXPECT_NE(DisablePwm(10), ZX_OK);  // Fail
 
-  EXPECT_OK(driver().PwmImplDisable(0));  // Disable first
+  EXPECT_OK(DisablePwm(0));  // Disable first
 
   WithMmios([](auto mmios) { (*mmios[0])[2 * 4].ExpectRead(0x00000000).ExpectWrite(0x00008000); });
-  EXPECT_OK(driver().PwmImplEnable(0));
+  EXPECT_OK(EnablePwm(0));
 
   WithMmios([](auto mmios) { (*mmios[0])[2 * 4].ExpectRead(0x00008000).ExpectWrite(0x00000000); });
-  EXPECT_OK(driver().PwmImplDisable(0));
-  EXPECT_OK(driver().PwmImplDisable(0));  // Disable twice
+  EXPECT_OK(DisablePwm(0));
+  EXPECT_OK(DisablePwm(0));  // Disable twice
 
   WithMmios([](auto mmios) { (*mmios[2])[2 * 4].ExpectRead(0x00008000).ExpectWrite(0x00808000); });
-  EXPECT_OK(driver().PwmImplEnable(5));  // Enable other PWMs
+  EXPECT_OK(EnablePwm(5));  // Enable other PWMs
 
   WithMmios([](auto mmios) { (*mmios[2])[2 * 4].ExpectRead(0x00808000).ExpectWrite(0x00008000); });
-  EXPECT_OK(driver().PwmImplDisable(5));  // Disable other PWMs
+  EXPECT_OK(DisablePwm(5));  // Disable other PWMs
 }
 
-TEST_F(AmlPwmDriverTest, SetConfigPeriodNotDivisibleBy100Test) {
+TEST_F(AmlPwmDriverTest, SetPwmConfigPeriodNotDivisibleBy100Test) {
   WithMmios([](auto mmios) {
     (*mmios[0])[2 * 4].ExpectRead(0x01000000).ExpectWrite(0x01000001);  // SetMode
     (*mmios[0])[2 * 4].ExpectRead(0xFFFFFFFF).ExpectWrite(0xFFFF80FF);  // SetClockDivider
@@ -609,21 +538,12 @@ TEST_F(AmlPwmDriverTest, SetConfigPeriodNotDivisibleBy100Test) {
     (*mmios[0])[2 * 4].ExpectRead(0x00000000).ExpectWrite(0x10000000);  // EnableConst
     (*mmios[0])[0 * 4].ExpectRead(0xA39D9259).ExpectWrite(0x10420000);  // SetDutyCycle
   });
-  mode_config on{
-      .mode = Mode::kOn,
-      .regular = {},
-  };
-  pwm_config on_cfg{
-      .polarity = false,
-      .period_ns = 170625,
-      .duty_cycle = 100.0,
-      .mode_config_buffer = reinterpret_cast<uint8_t*>(&on),
-      .mode_config_size = sizeof(on),
-  };
-  EXPECT_OK(driver().PwmImplSetConfig(0, &on_cfg));  // Success
+  mode_config on{.mode = Mode::kOn, .regular = {}};
+  auto on_cfg = CreatePwmConfig(false, 170625, 100.0, &on);
+  EXPECT_OK(SetPwmConfig(0, &on_cfg));  // Success
 }
 
-TEST_F(AmlPwmDriverTest, TwoTimerChannelSeparationTest) {
+TEST_F(AmlPwmDriverTest, TwoTimerChannelSeparationPwmTest) {
   mode_config timer2{
       .mode = Mode::kTwoTimer,
       .two_timer =
@@ -634,13 +554,7 @@ TEST_F(AmlPwmDriverTest, TwoTimerChannelSeparationTest) {
               .timer2 = 2,
           },
   };
-  pwm_config timer2_cfg{
-      .polarity = false,
-      .period_ns = 1000,
-      .duty_cycle = 30.0,
-      .mode_config_buffer = reinterpret_cast<uint8_t*>(&timer2),
-      .mode_config_size = sizeof(timer2),
-  };
+  const auto timer2_cfg = CreatePwmConfig(false, 1000, 30.0, &timer2);
 
   WithMmios([](auto mmios) {
     (*mmios[0])[2 * 4]
@@ -655,12 +569,16 @@ TEST_F(AmlPwmDriverTest, TwoTimerChannelSeparationTest) {
     (*mmios[0])[2 * 4].ExpectRead(0xFFFFFFFF).ExpectWrite(0xEFFFFFFF);  // EnableConst
     (*mmios[0])[0 * 4].ExpectRead(0xA39D9259).ExpectWrite(0x00060010);  // SetDutyCycle
   });
-  EXPECT_OK(driver().PwmImplSetConfig(0, &timer2_cfg));
+  EXPECT_OK(SetPwmConfig(0, &timer2_cfg));
 }
 
 class AmlPwmDriverGenericMetadataTest : public ::testing::Test {
  protected:
   void TearDown() override { ASSERT_OK(driver_test_.StopDriver()); }
+
+  fdf_testing::ForegroundDriverTest<FixtureConfig>& driver_test() { return driver_test_; }
+
+ private:
   fdf_testing::ForegroundDriverTest<FixtureConfig> driver_test_;
 };
 
@@ -675,10 +593,11 @@ TEST_F(AmlPwmDriverGenericMetadataTest, GenericMetadataTest) {
 
   fuchsia_driver_metadata::Dictionary dict{{.entries = std::move(entries)}};
 
-  driver_test_.RunInEnvironmentTypeContext(
-      [dict = std::move(dict)](auto& env) mutable { env.InitGeneric(std::move(dict)); });
-  ASSERT_OK(driver_test_.StartDriver());
+  driver_test().RunInEnvironmentTypeContext(
+      [dict = std::move(dict)](auto& env) mutable { env.InitGeneric(dict); });
+  ASSERT_OK(driver_test().StartDriver());
 }
+
 }  // namespace
 
 }  // namespace pwm

@@ -25,7 +25,10 @@ fuchsia_cc_driver("aml-pwm-driver") {
     "//build/config:all_source",
     "//build/config/fuchsia:enable_zircon_asserts",
   ]
-  deps = [ ":common" ]
+  deps = [
+    ":common",
+    "//src/devices/lib/driver:driver_runtime",
+  ]
 
   # TODO(https://fxbug.dev/42136089): delete the below and fix compiler warnings
   configs += [ "//build/config:Wno-conversion" ]
@@ -72,12 +75,12 @@ source_set("common") {
   ]
   deps = [
     "//sdk/lib/driver/platform-device/cpp",
+    "//src/devices/bind/fuchsia:fuchsia_cpp",
     "//src/devices/pwm/drivers/pwm:pwm-metadata",
   ]
   public_deps = [
-    "//sdk/banjo/fuchsia.hardware.pwm:fuchsia.hardware.pwm_banjo_cpp",
     "//sdk/fidl/fuchsia.hardware.pwm:fuchsia.hardware.pwm_cpp",
-    "//sdk/lib/driver/compat/cpp",
+    "//sdk/fidl/fuchsia.hardware.pwmimpl:fuchsia.hardware.pwmimpl_cpp",
     "//sdk/lib/driver/component/cpp",
     "//sdk/lib/driver/metadata/cpp",
     "//sdk/lib/driver/mmio/cpp",

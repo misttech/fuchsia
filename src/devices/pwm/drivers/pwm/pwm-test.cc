@@ -5,6 +5,7 @@
 #include "pwm.h"
 
 #include <fidl/fuchsia.driver.metadata/cpp/fidl.h>
+#include <fidl/fuchsia.hardware.pwmimpl/cpp/driver/wire_test_base.h>
 #include <lib/driver/metadata/cpp/metadata_server.h>
 #include <lib/driver/testing/cpp/driver_test.h>
 
@@ -15,7 +16,6 @@
 namespace pwm {
 
 namespace {
-constexpr size_t kMaxConfigBufferSize = 256;
 
 class GenericMetadataServer final : public fidl::WireServer<fuchsia_driver_metadata::Metadata> {
  public:
@@ -47,59 +47,47 @@ class GenericMetadataServer final : public fidl::WireServer<fuchsia_driver_metad
   std::optional<std::vector<uint8_t>> persisted_metadata_;
 };
 
-struct fake_mode_config {
+struct FakeModeConfig {
   uint32_t mode;
 };
 
-class FakePwmImpl : public ddk::PwmImplProtocol<FakePwmImpl> {
+class FakePwmImpl : public fidl::testing::WireTestBase<fuchsia_hardware_pwmimpl::PwmImpl> {
  public:
-  FakePwmImpl()
-      : proto_({&pwm_impl_protocol_ops_, this}),
-        buffer_(std::make_unique<uint8_t[]>(kMaxConfigBufferSize)) {
-    config_.mode_config_buffer = buffer_.get();
-    config_.mode_config_size = 0;
-  }
-  const pwm_impl_protocol_t* proto() const { return &proto_; }
+  FakePwmImpl() = default;
 
-  zx_status_t PwmImplGetConfig(uint32_t idx, pwm_config_t* out_config) {
+  void NotImplemented_(const std::string& name, fidl::CompleterBase& completer) override {
+    completer.Close(ZX_ERR_NOT_SUPPORTED);
+  }
+
+  // fdf::WireServer<fuchsia_hardware_pwmimpl::PwmImpl> implementation.
+  void GetConfig(GetConfigRequestView request, fdf::Arena& arena,
+                 GetConfigCompleter::Sync& completer) override {
     get_config_count_++;
-
-    ZX_ASSERT(out_config->mode_config_size >= config_.mode_config_size);
-
-    out_config->polarity = config_.polarity;
-    out_config->period_ns = config_.period_ns;
-    out_config->duty_cycle = config_.duty_cycle;
-
-    memcpy(out_config->mode_config_buffer, config_.mode_config_buffer, config_.mode_config_size);
-    out_config->mode_config_size = config_.mode_config_size;
-    return ZX_OK;
+    completer.buffer(arena).ReplySuccess(fidl::ToWire(arena, config_));
   }
-  zx_status_t PwmImplSetConfig(uint32_t idx, const pwm_config_t* config) {
+
+  void SetConfig(SetConfigRequestView request, fdf::Arena& arena,
+                 SetConfigCompleter::Sync& completer) override {
     set_config_count_++;
-
-    ZX_ASSERT(config->mode_config_size <= kMaxConfigBufferSize);
-
-    config_.polarity = config->polarity;
-    config_.period_ns = config->period_ns;
-    config_.duty_cycle = config->duty_cycle;
-    memcpy(config_.mode_config_buffer, config->mode_config_buffer, config->mode_config_size);
-    config_.mode_config_size = config->mode_config_size;
-    return ZX_OK;
+    config_ = fidl::ToNatural(request->config);
+    completer.buffer(arena).ReplySuccess();
   }
-  zx_status_t PwmImplEnable(uint32_t idx) {
+
+  void Enable(EnableRequestView request, fdf::Arena& arena,
+              EnableCompleter::Sync& completer) override {
     enable_count_++;
-    return ZX_OK;
-  }
-  zx_status_t PwmImplDisable(uint32_t idx) {
-    disable_count_++;
-    return ZX_OK;
+    completer.buffer(arena).ReplySuccess();
   }
 
-  compat::DeviceServer::BanjoConfig GetBanjoConfig() {
-    compat::DeviceServer::BanjoConfig config{ZX_PROTOCOL_PWM_IMPL};
-    config.callbacks[ZX_PROTOCOL_PWM_IMPL] = banjo_server_.callback();
-    return config;
+  void Disable(DisableRequestView request, fdf::Arena& arena,
+               DisableCompleter::Sync& completer) override {
+    disable_count_++;
+    completer.buffer(arena).ReplySuccess();
   }
+
+  void handle_unknown_method(
+      fidl::UnknownMethodMetadata<fuchsia_hardware_pwmimpl::PwmImpl> metadata,
+      fidl::UnknownMethodCompleter::Sync& completer) override {}
 
   // Accessors
   unsigned int GetConfigCount() const { return get_config_count_; }
@@ -113,22 +101,19 @@ class FakePwmImpl : public ddk::PwmImplProtocol<FakePwmImpl> {
   unsigned int enable_count_ = 0;
   unsigned int disable_count_ = 0;
 
-  pwm_impl_protocol_t proto_;
-  pwm_config_t config_;
-  std::unique_ptr<uint8_t[]> buffer_;
-  compat::BanjoServer banjo_server_{ZX_PROTOCOL_PWM_IMPL, this, &pwm_impl_protocol_ops_};
+  fuchsia_hardware_pwm::PwmConfig config_{{
+      .polarity = false,
+      .period_ns = 0,
+      .duty_cycle = 0.0,
+      .mode_config = std::vector<uint8_t>{0},
+  }};
 };
 
 class PwmTestEnvironment : public fdf_testing::Environment {
  public:
-  void Init(fuchsia_hardware_pwm::PwmChannelsMetadata metadata) {
-    device_server_.Initialize("default", std::nullopt, pwm_impl_.GetBanjoConfig());
-    metadata_ = std::move(metadata);
-  }
+  void Init(fuchsia_hardware_pwm::PwmChannelsMetadata metadata) { metadata_ = std::move(metadata); }
 
   void InitGeneric(fuchsia_hardware_pwm::PwmChannelsMetadata metadata) {
-    device_server_.Initialize("default", std::nullopt, pwm_impl_.GetBanjoConfig());
-
     std::vector<fuchsia_driver_metadata::DictionaryEntry> entries;
     if (metadata.channels().has_value()) {
       const auto& channels = metadata.channels().value();
@@ -152,10 +137,16 @@ class PwmTestEnvironment : public fdf_testing::Environment {
   }
 
   zx::result<> Serve(fdf::OutgoingDirectory& to_driver_vfs) override {
-    auto* dispatcher = fdf::Dispatcher::GetCurrent()->async_dispatcher();
+    async_dispatcher_t* dispatcher = fdf::Dispatcher::GetCurrent()->async_dispatcher();
+    fdf_dispatcher_t* driver_dispatcher = fdf::Dispatcher::GetCurrent()->get();
 
-    if (zx_status_t status = device_server_.Serve(dispatcher, &to_driver_vfs); status != ZX_OK) {
-      return zx::error(status);
+    zx::result<> result = to_driver_vfs.AddService<fuchsia_hardware_pwmimpl::Service>(
+        fuchsia_hardware_pwmimpl::Service::InstanceHandler({
+            .device =
+                bindings_.CreateHandler(&pwm_impl_, driver_dispatcher, fidl::kIgnoreBindingClosure),
+        }));
+    if (result.is_error()) {
+      return result.take_error();
     }
 
     if (metadata_.has_value()) {
@@ -181,7 +172,7 @@ class PwmTestEnvironment : public fdf_testing::Environment {
 
  private:
   FakePwmImpl pwm_impl_;
-  compat::DeviceServer device_server_;
+  fdf::ServerBindingGroup<fuchsia_hardware_pwmimpl::PwmImpl> bindings_;
   fdf_metadata::MetadataServer<fuchsia_hardware_pwm::PwmChannelsMetadata> metadata_server_;
   std::optional<fuchsia_hardware_pwm::PwmChannelsMetadata> metadata_;
   GenericMetadataServer generic_metadata_server_;
@@ -195,7 +186,7 @@ class FixtureConfig final {
 };
 
 class PwmTest : public ::testing::Test {
- public:
+ protected:
   void SetUp() override {
     static const fuchsia_hardware_pwm::PwmChannelsMetadata kTestMetadataChannels{
         {.channels{{{{.id = 0}}}}}};
@@ -210,7 +201,6 @@ class PwmTest : public ::testing::Test {
 
   void TearDown() override { ASSERT_OK(driver_test_.StopDriver()); }
 
- protected:
   void WithPwmImpl(fit::callback<void(FakePwmImpl& pwm_impl)> callback) {
     driver_test_.RunInEnvironmentTypeContext(
         [callback = std::move(callback)](auto& env) mutable { callback(env.pwm_impl()); });
@@ -229,22 +219,22 @@ TEST_F(PwmTest, GetConfigTest) {
 }
 
 TEST_F(PwmTest, SetConfigTest) {
-  fake_mode_config fake_mode{
+  FakeModeConfig fake_mode{
       .mode = 0,
   };
   const auto* fake_mode_bytes = reinterpret_cast<uint8_t*>(&fake_mode);
-  fuchsia_hardware_pwm::PwmConfig fake_config{
-      {.polarity = false,
-       .period_ns = 1000,
-       .duty_cycle = 45.0,
-       .mode_config =
-           std::vector<uint8_t>{&fake_mode_bytes[0], &fake_mode_bytes[sizeof(fake_mode) - 1]}}};
+  fuchsia_hardware_pwm::PwmConfig fake_config{{
+      .polarity = false,
+      .period_ns = 1000,
+      .duty_cycle = 45.0,
+      .mode_config = std::vector<uint8_t>{&fake_mode_bytes[0], &fake_mode_bytes[sizeof(fake_mode)]},
+  }};
   EXPECT_OK(pwm()->SetConfig(fake_config));
 
   fake_mode.mode = 3;
   fake_mode_bytes = reinterpret_cast<uint8_t*>(&fake_mode);
   fake_config.mode_config() =
-      std::vector<uint8_t>{&fake_mode_bytes[0], &fake_mode_bytes[sizeof(fake_mode) - 1]};
+      std::vector<uint8_t>{&fake_mode_bytes[0], &fake_mode_bytes[sizeof(fake_mode)]};
   fake_config.polarity() = true;
   fake_config.duty_cycle() = 68.0;
   EXPECT_OK(pwm()->SetConfig(fake_config));
@@ -263,9 +253,9 @@ TEST_F(PwmTest, DisableTest) {
 }
 
 TEST_F(PwmTest, GetConfigFidlTest) {
-  // Set a config via the Banjo interface and validate that the same config is
-  // returned via the FIDL interface.
-  fake_mode_config fake_mode{
+  // Set a config via the FIDL Pwm interface and validate that the same config is
+  // returned via the FIDL PwmImpl interface.
+  FakeModeConfig fake_mode{
       .mode = 0xdeadbeef,
   };
   const auto* fake_mode_bytes = reinterpret_cast<uint8_t*>(&fake_mode);
@@ -273,8 +263,7 @@ TEST_F(PwmTest, GetConfigFidlTest) {
       .polarity = false,
       .period_ns = 1000,
       .duty_cycle = 45.0,
-      .mode_config =
-          std::vector<uint8_t>{&fake_mode_bytes[0], &fake_mode_bytes[sizeof(fake_mode) - 1]},
+      .mode_config = std::vector<uint8_t>{&fake_mode_bytes[0], &fake_mode_bytes[sizeof(fake_mode)]},
   }};
   EXPECT_OK(pwm()->SetConfig(fake_config));
 
@@ -297,9 +286,9 @@ TEST_F(PwmTest, GetConfigFidlTest) {
 }
 
 TEST_F(PwmTest, SetConfigFidlTest) {
-  // Set a config via the FIDL interface and validate that the same config is
-  // returned via the Banjo interface.
-  fake_mode_config fake_mode{
+  // Set a config via the FIDL Pwm interface and validate that the same config is
+  // returned via the FIDL PwmImpl interface.
+  FakeModeConfig fake_mode{
       .mode = 0xdeadbeef,
   };
   const auto* fake_mode_bytes = reinterpret_cast<uint8_t*>(&fake_mode);
@@ -307,8 +296,7 @@ TEST_F(PwmTest, SetConfigFidlTest) {
       .polarity = true,
       .period_ns = 1235,
       .duty_cycle = 45.0,
-      .mode_config =
-          std::vector<uint8_t>{&fake_mode_bytes[0], &fake_mode_bytes[sizeof(fake_mode) - 1]},
+      .mode_config = std::vector<uint8_t>{&fake_mode_bytes[0], &fake_mode_bytes[sizeof(fake_mode)]},
   }};
 
   EXPECT_OK(pwm()->SetConfig(config));

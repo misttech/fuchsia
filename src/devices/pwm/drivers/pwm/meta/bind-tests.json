@@ -1,7 +1,7 @@
 [
     {
         "device": {
-            "fuchsia.BIND_PROTOCOL": "fuchsia.pwm.BIND_PROTOCOL.PWM_IMPL"
+            "fuchsia.Service": "\"fuchsia.hardware.pwmimpl.Service\""
         },
         "expected": "match",
         "name": "Success"

@@ -5,7 +5,10 @@
 #include "pwm.h"
 
 #include <lib/driver/component/cpp/driver_export2.h>
+#include <lib/driver/component/cpp/node_add_args.h>
 #include <lib/driver/metadata/cpp/metadata.h>
+
+#include <span>
 
 #include <bind/fuchsia/cpp/bind.h>
 
@@ -13,12 +16,12 @@
 
 namespace pwm {
 
-constexpr size_t kMaxConfigBufferSize = 256;
-
 namespace {
-fuchsia_hardware_pwm::PwmChannelsMetadata ConvertMetadata(pwm_metadata::PwmMetadata generic) {
+
+fuchsia_hardware_pwm::PwmChannelsMetadata ConvertMetadata(
+    const pwm_metadata::PwmMetadata& generic) {
   std::vector<fuchsia_hardware_pwm::PwmChannelInfo> channels;
-  for (const auto& c : generic.channels) {
+  for (const pwm_metadata::PwmChannelInfo& c : generic.channels) {
     fuchsia_hardware_pwm::PwmChannelInfo info;
     info.id(c.channel);
     if (c.id) {
@@ -32,26 +35,20 @@ fuchsia_hardware_pwm::PwmChannelsMetadata ConvertMetadata(pwm_metadata::PwmMetad
   }
   return {{.channels = std::move(channels)}};
 }
+
 }  // namespace
 
 zx::result<> Pwm::Start(fdf::DriverContext context) {
-  auto incoming = std::shared_ptr<fdf::Namespace>(context.take_incoming());
-  zx::result pwm_impl = compat::ConnectBanjo<ddk::PwmImplProtocolClient>(incoming);
-  if (pwm_impl.is_error()) {
-    fdf::error("Failed to connect to pwm-impl: {}", pwm_impl);
-    return pwm_impl.take_error();
-  }
-
   std::optional<fuchsia_hardware_pwm::PwmChannelsMetadata> metadata;
   {
     // Try to get generic metadata first
     zx::result generic_res =
         fdf_metadata::GetMetadataFromFidlServiceIfExists<fuchsia_driver_metadata::Dictionary>(
-            incoming->svc_dir(), "fuchsia.hardware.pwm.PwmChannelsMetadata");
+            context.incoming().svc_dir(), "fuchsia.hardware.pwm.PwmChannelsMetadata");
     if (generic_res.is_ok() && generic_res.value().has_value()) {
-      auto parsed = pwm_metadata::PwmMetadata::Parse(*generic_res.value());
+      const std::optional parsed = pwm_metadata::PwmMetadata::Parse(*generic_res.value());
       if (parsed) {
-        metadata = ConvertMetadata(std::move(*parsed));
+        metadata = ConvertMetadata(*parsed);
       } else {
         fdf::error("Failed to parse generic PWM metadata");
       }
@@ -60,7 +57,7 @@ zx::result<> Pwm::Start(fdf::DriverContext context) {
     if (!metadata.has_value()) {
       // Fall back to old metadata
       zx::result metadata_res =
-          fdf_metadata::GetMetadata<fuchsia_hardware_pwm::PwmChannelsMetadata>(*incoming);
+          fdf_metadata::GetMetadata<fuchsia_hardware_pwm::PwmChannelsMetadata>(context.incoming());
       if (metadata_res.is_error()) {
         fdf::error("Failed to get metadata: {}", metadata_res);
         return metadata_res.take_error();
@@ -73,19 +70,26 @@ zx::result<> Pwm::Start(fdf::DriverContext context) {
     fdf::error("Metadata missing `channels` field");
     return zx::error(ZX_ERR_INTERNAL);
   }
-  const auto& pwm_channels = metadata.value().channels().value();
+  const std::span<const fuchsia_hardware_pwm::PwmChannelInfo> pwm_channels =
+      metadata.value().channels().value();
 
   for (size_t i = 0; i < pwm_channels.size(); ++i) {
-    const auto& pwm_channel_info = pwm_channels[i];
+    const fuchsia_hardware_pwm::PwmChannelInfo& pwm_channel_info = pwm_channels[i];
     if (!pwm_channel_info.id().has_value()) {
       fdf::error("PWM channel info {} missing `id` field", i);
       return zx::error(ZX_ERR_INTERNAL);
     }
-    auto pwm_channel_id = pwm_channel_info.id().value();
+    const uint32_t pwm_channel_id = pwm_channel_info.id().value();
 
-    auto& pwm_channel = *pwm_channels_.emplace_back(
-        std::make_unique<PwmChannel>(pwm_channel_id, pwm_channel_info.global_id(),
-                                     pwm_channel_info.name(), dispatcher(), pwm_impl.value()));
+    zx::result pwm_impl = context.incoming().Connect<fuchsia_hardware_pwmimpl::Service::Device>();
+    if (pwm_impl.is_error()) {
+      fdf::error("Failed to connect to pwm-impl: {}", pwm_impl.status_string());
+      return pwm_impl.take_error();
+    }
+
+    auto& pwm_channel = *pwm_channels_.emplace_back(std::make_unique<PwmChannel>(
+        pwm_channel_id, pwm_channel_info.global_id(), pwm_channel_info.name(), dispatcher(),
+        std::move(pwm_impl.value())));
     zx::result result = pwm_channel.Init(outgoing(), node());
     if (result.is_error()) {
       fdf::error("Failed to initialize pwm channel {}: {}", i, result);
@@ -98,7 +102,7 @@ zx::result<> Pwm::Start(fdf::DriverContext context) {
 
 zx::result<> PwmChannel::Init(std::shared_ptr<fdf::OutgoingDirectory>& outgoing,
                               fidl::UnownedClientEnd<fuchsia_driver_framework::Node> parent) {
-  std::string child_node_name = std::format("pwm-{}", id_);
+  const std::string child_node_name = std::format("pwm-{}", id_);
 
   {
     zx::result result = outgoing->AddService<fuchsia_hardware_pwm::Service>(
@@ -117,16 +121,17 @@ zx::result<> PwmChannel::Init(std::shared_ptr<fdf::OutgoingDirectory>& outgoing,
     return connector.take_error();
   }
 
-  fuchsia_driver_framework::DevfsAddArgs devfs_args{
-      {.connector = std::move(connector.value()),
-       .class_name{kClassName},
-       .connector_supports{fuchsia_device_fs::ConnectionType::kController}}};
+  fuchsia_driver_framework::DevfsAddArgs devfs_args({
+      .connector = std::move(connector.value()),
+      .class_name{kClassName},
+      .connector_supports{fuchsia_device_fs::ConnectionType::kController},
+  });
 
-  auto offers = std::vector{
+  const std::vector<fuchsia_driver_framework::Offer> offers = {
       fdf::MakeOffer2<fuchsia_hardware_pwm::Service>(child_node_name),
   };
 
-  std::vector properties = {
+  std::vector<fuchsia_driver_framework::NodeProperty2> properties = {
       fdf::MakeProperty2(bind_fuchsia::PWM_ID, id_),
       fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.pwm.Service"),
       fdf::MakeProperty2("fuchsia.hardware.pwm.Service",
@@ -151,41 +156,35 @@ zx::result<> PwmChannel::Init(std::shared_ptr<fdf::OutgoingDirectory>& outgoing,
 }
 
 void PwmChannel::GetConfig(GetConfigCompleter::Sync& completer) {
-  std::unique_ptr<uint8_t[]> buffer = std::make_unique<uint8_t[]>(kMaxConfigBufferSize);
-  pwm_config_t config;
-  config.mode_config_buffer = buffer.get();
-  config.mode_config_size = kMaxConfigBufferSize;
-
-  zx_status_t status = pwm_impl_.GetConfig(id_, &config);
-  if (status != ZX_OK) {
-    fdf::error("Failed to get config for pwm {}: {}", id_, zx_status_get_string(status));
-    completer.ReplyError(status);
+  fdf::Arena arena('PWMG');
+  fdf::WireUnownedResult<fuchsia_hardware_pwmimpl::PwmImpl::GetConfig> result =
+      pwm_impl_.buffer(arena)->GetConfig(id_);
+  if (!result.ok()) {
+    fdf::error("Failed to send GetConfig request: {}", result.status_string());
+    completer.ReplyError(result.status());
+    return;
+  }
+  if (result->is_error()) {
+    fdf::error("Failed to get config: {}", result->error_value());
+    completer.ReplyError(result->error_value());
     return;
   }
 
-  fuchsia_hardware_pwm::wire::PwmConfig result;
-  result.polarity = config.polarity;
-  result.period_ns = config.period_ns;
-  result.duty_cycle = config.duty_cycle;
-  result.mode_config =
-      fidl::VectorView<uint8_t>::FromExternal(config.mode_config_buffer, config.mode_config_size);
-
-  completer.ReplySuccess(result);
+  completer.ReplySuccess(result->value()->config);
 }
 
 void PwmChannel::SetConfig(SetConfigRequestView request, SetConfigCompleter::Sync& completer) {
-  pwm_config_t new_config;
-
-  new_config.polarity = request->config.polarity;
-  new_config.period_ns = request->config.period_ns;
-  new_config.duty_cycle = request->config.duty_cycle;
-  new_config.mode_config_buffer = request->config.mode_config.data();
-  new_config.mode_config_size = request->config.mode_config.size();
-
-  zx_status_t status = pwm_impl_.SetConfig(id_, &new_config);
-  if (status != ZX_OK) {
-    fdf::error("Failed to set config for pwm {}: {}", id_, zx_status_get_string(status));
-    completer.ReplyError(status);
+  fdf::Arena arena('PWMS');
+  fdf::WireUnownedResult<fuchsia_hardware_pwmimpl::PwmImpl::SetConfig> result =
+      pwm_impl_.buffer(arena)->SetConfig(id_, request->config);
+  if (!result.ok()) {
+    fdf::error("Failed to send SetConfig request: {}", result.status_string());
+    completer.ReplyError(result.status());
+    return;
+  }
+  if (result->is_error()) {
+    fdf::error("Failed to set config: {}", result->error_value());
+    completer.ReplyError(result->error_value());
     return;
   }
 
@@ -193,10 +192,17 @@ void PwmChannel::SetConfig(SetConfigRequestView request, SetConfigCompleter::Syn
 }
 
 void PwmChannel::Enable(EnableCompleter::Sync& completer) {
-  zx_status_t status = pwm_impl_.Enable(id_);
-  if (status != ZX_OK) {
-    fdf::error("Failed to enable pwm {}: {}", id_, zx_status_get_string(status));
-    completer.ReplyError(status);
+  fdf::Arena arena('PWME');
+  fdf::WireUnownedResult<fuchsia_hardware_pwmimpl::PwmImpl::Enable> result =
+      pwm_impl_.buffer(arena)->Enable(id_);
+  if (!result.ok()) {
+    fdf::error("Failed to send Enable request to pwm {}: {}", id_, result.status_string());
+    completer.ReplyError(result.status());
+    return;
+  }
+  if (result->is_error()) {
+    fdf::error("Failed to enable pwm {}: {}", id_, zx_status_get_string(result->error_value()));
+    completer.ReplyError(result->error_value());
     return;
   }
 
@@ -204,10 +210,17 @@ void PwmChannel::Enable(EnableCompleter::Sync& completer) {
 }
 
 void PwmChannel::Disable(DisableCompleter::Sync& completer) {
-  zx_status_t status = pwm_impl_.Disable(id_);
-  if (status != ZX_OK) {
-    fdf::error("Failed to disable pwm {}: {}", id_, zx_status_get_string(status));
-    completer.ReplyError(status);
+  fdf::Arena arena('PWMD');
+  fdf::WireUnownedResult<fuchsia_hardware_pwmimpl::PwmImpl::Disable> result =
+      pwm_impl_.buffer(arena)->Disable(id_);
+  if (!result.ok()) {
+    fdf::error("Failed to send Disable request to pwm {}: {}", id_, result.status_string());
+    completer.ReplyError(result.status());
+    return;
+  }
+  if (result->is_error()) {
+    fdf::error("Failed to disable pwm {}: {}", id_, zx_status_get_string(result->error_value()));
+    completer.ReplyError(result->error_value());
     return;
   }
 

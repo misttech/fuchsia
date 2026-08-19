@@ -7,8 +7,7 @@
 
 #include <fidl/fuchsia.hardware.pwm/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.pwm/cpp/wire.h>
-#include <fuchsia/hardware/pwm/cpp/banjo.h>
-#include <lib/driver/compat/cpp/compat.h>
+#include <fidl/fuchsia.hardware.pwmimpl/cpp/driver/wire.h>
 #include <lib/driver/component/cpp/driver_base2.h>
 #include <lib/driver/component/cpp/driver_export2.h>
 #include <lib/driver/devfs/cpp/connector.h>
@@ -16,7 +15,6 @@
 #include <mutex>
 #include <optional>
 #include <string>
-
 namespace pwm {
 
 class PwmChannel : public fidl::WireServer<fuchsia_hardware_pwm::Pwm> {
@@ -25,11 +23,11 @@ class PwmChannel : public fidl::WireServer<fuchsia_hardware_pwm::Pwm> {
 
   explicit PwmChannel(uint32_t id, std::optional<uint32_t> global_id,
                       std::optional<std::string> name, async_dispatcher_t* dispatcher,
-                      ddk::PwmImplProtocolClient pwm_impl)
+                      fdf::ClientEnd<fuchsia_hardware_pwmimpl::PwmImpl> pwm_impl)
       : id_(id),
         global_id_(global_id),
         name_(std::move(name)),
-        pwm_impl_(pwm_impl),
+        pwm_impl_(std::move(pwm_impl)),
         dispatcher_(dispatcher) {}
 
   zx::result<> Init(std::shared_ptr<fdf::OutgoingDirectory>& outgoing,
@@ -49,7 +47,7 @@ class PwmChannel : public fidl::WireServer<fuchsia_hardware_pwm::Pwm> {
   const std::optional<uint32_t> global_id_;
   const std::optional<std::string> name_;
 
-  ddk::PwmImplProtocolClient pwm_impl_;
+  fdf::WireSyncClient<fuchsia_hardware_pwmimpl::PwmImpl> pwm_impl_;
 
   async_dispatcher_t* dispatcher_;
   fidl::ServerBindingGroup<fuchsia_hardware_pwm::Pwm> bindings_;

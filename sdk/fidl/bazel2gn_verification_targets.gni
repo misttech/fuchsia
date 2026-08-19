@@ -193,6 +193,7 @@ fidl_bazel2gn_verification_targets = [
   "//sdk/fidl/fuchsia.hardware.powersource:verify_bazel2gn",
   "//sdk/fidl/fuchsia.hardware.pty:verify_bazel2gn",
   "//sdk/fidl/fuchsia.hardware.pwm:verify_bazel2gn",
+  "//sdk/fidl/fuchsia.hardware.pwmimpl:verify_bazel2gn",
   "//sdk/fidl/fuchsia.hardware.qualcomm.fastrpc:verify_bazel2gn",
   "//sdk/fidl/fuchsia.hardware.qualcomm.router:verify_bazel2gn",
   "//sdk/fidl/fuchsia.hardware.radar:verify_bazel2gn",

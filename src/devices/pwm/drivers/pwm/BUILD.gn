@@ -20,7 +20,10 @@ driver_bind_rules("pwm-bind") {
   dml_label = ":pwm-dml"
   bind_output = "pwm.bindbc"
   tests = "meta/bind-tests.json"
-  deps = [ "//src/devices/bind/fuchsia.pwm" ]
+  deps = [
+    "//sdk/fidl/fuchsia.hardware.pwmimpl:fuchsia.hardware.pwmimpl_bindlib",
+    "//src/devices/bind/fuchsia",
+  ]
 }
 
 fuchsia_cc_driver("pwm-driver") {
@@ -73,11 +76,10 @@ source_set("common") {
     "//src/devices/bind/fuchsia:fuchsia_cpp",
   ]
   public_deps = [
-    "//sdk/banjo/fuchsia.hardware.pwm:fuchsia.hardware.pwm_banjo_cpp",
     "//sdk/fidl/fuchsia.driver.metadata:fuchsia.driver.metadata_cpp",
     "//sdk/fidl/fuchsia.hardware.pwm:fuchsia.hardware.pwm_cpp",
+    "//sdk/fidl/fuchsia.hardware.pwmimpl:fuchsia.hardware.pwmimpl_cpp",
     "//sdk/fidl/fuchsia.hardware.vreg:fuchsia.hardware.vreg_cpp",
-    "//sdk/lib/driver/compat/cpp",
     "//sdk/lib/driver/component/cpp",
     "//sdk/lib/driver/devfs/cpp",
     "//src/devices/lib/amlogic",
