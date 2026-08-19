@@ -74,6 +74,10 @@ _BAZEL_DEBUG_SYMBOLS_MANIFEST_PATH_PREFIX = b"DEBUG_SYMBOLS_MANIFEST_PATH="
 _BAZEL_SOURCE_FILES_MANIFEST_PATH_PREFIX = b"FUCHSIA_SOURCES_MANIFEST_PATH="
 # LINT.ThenChange(//build/bazel/aspects/source_files.bzl:source_files_list_path_prefix)
 
+# LINT.IfChange(buildfiles_genquery_prefix)
+_BAZEL_GENQUERY_OUTPUT_FILE_PREFIX = b"BUILDFILES_GENQUERY_OUTPUT_FILE="
+# LINT.ThenChange(//build/bazel/aspects/genquery_output_file.bzl)
+
 # Directory where to find Starlark input files.
 _STARLARK_DIR = os.path.join(os.path.dirname(_SCRIPT_DIR), "starlark")
 
@@ -115,7 +119,7 @@ class _InputFileGenQueryInfo(object):
     """Class for holding info about the genqueries generated for each target."""
 
     genquery_target_label: str
-    genquery_output_path: Path
+    genquery_output_filename: str
 
 
 @dataclasses.dataclass
@@ -338,6 +342,11 @@ class BazelActionRunner(object):
             "--aspects=//build/bazel/aspects:source_files.bzl%generate_source_files_manifest",
         ]
 
+        cmd_args += [
+            # Print output paths for genquery targets.
+            "--aspects=//build/bazel/aspects:genquery_output_file.bzl%genquery_output_file",
+        ]
+
         # Add --sandbox_debug if enabled in the build environment.
         if self.global_args.sandbox_debug:
             cmd_args += ["--sandbox_debug"]
@@ -395,16 +404,32 @@ class BazelActionRunner(object):
             # Remove all files in buildfiles_genquery/ after the action completes, to make sure
             # that ninja doesn't see them as files that can cause consistency or non-convergence
             # issues.
-            on_exit.callback(
-                shutil.rmtree,
-                self.paths.workspace / "bazel-bin/buildfiles_genquery",
-                ignore_errors=True,
-            )
+            genquery_files_to_cleanup = []
+
+            def _cleanup_genqueries():
+                # First, the genquery BUILD.bazel file itself.
+                try:
+                    genquery_build_file.unlink()
+                except Exception:
+                    pass
+                # Then the genquery output files.
+                for path in genquery_files_to_cleanup:
+                    try:
+                        path.unlink()
+                    except Exception:
+                        pass
+                try:
+                    (self.paths.workspace / "buildfiles_genquery").rmdir()
+                except Exception:
+                    pass
+
+            on_exit.callback(_cleanup_genqueries)
 
             aspect_prefix_map = {
                 "debug_symbol_manifest_paths": _BAZEL_DEBUG_SYMBOLS_MANIFEST_PATH_PREFIX,
                 "rust_analyzer_manifest_paths": bazel_rust_analyzer_utils.FUCHSIA_RUST_ANALYZER_MANIFEST_PATH_PREFIX,
                 "source_files_manifest_paths": _BAZEL_SOURCE_FILES_MANIFEST_PATH_PREFIX,
+                "genquery_output_files": _BAZEL_GENQUERY_OUTPUT_FILE_PREFIX,
             }
 
             aspect_recorded_map = self._invoke_bazel_and_return_aspect_outputs(
@@ -413,6 +438,21 @@ class BazelActionRunner(object):
                 aspect_prefix_map,
                 time_profile,
             )
+
+            # Parse genquery output files from aspect
+            genquery_output_files_recorded = aspect_recorded_map[
+                "genquery_output_files"
+            ]
+            genquery_output_map = {}
+            for entry in genquery_output_files_recorded:
+                # Expected entry format <label>,<file_path>, e.g.
+                # @@//buildfiles_genquery:src_foo_bar.buildfiles.txt,bazel-out/k8-fastbuild/bin/buildfiles_genquery/src_foo_bar.buildfiles.txt
+                label, comma, path_str = entry.partition(",")
+                if comma == ",":
+                    path = self.paths.execroot / path_str
+                    genquery_output_map[label] = path
+
+            genquery_files_to_cleanup.extend(genquery_output_map.values())
 
             def get_recorded_aspect_paths(key_name: str) -> list[str]:
                 """Return the recorded manifest paths recorded by aspects, filtering the genquery ones.
@@ -453,6 +493,7 @@ class BazelActionRunner(object):
 
                 input_files = self._parse_buildfiles_genquery_results_and_source_files_manifests(
                     input_files_genqueries,
+                    genquery_output_map,
                     source_files_manifest_paths,
                     time_profile,
                 )
@@ -599,8 +640,6 @@ class BazelActionRunner(object):
             "",
         ]
 
-        genquery_dir = self.paths.workspace / "bazel-bin/buildfiles_genquery"
-
         generated_targets = {}
         for target in targets:
             input_files_target_name = filename_from_target_label(
@@ -619,12 +658,11 @@ class BazelActionRunner(object):
                 "",
             ]
 
-            label = f"//buildfiles_genquery:{input_files_target_name}"
-            output_path = genquery_dir / input_files_target_name
+            label = f"@@//buildfiles_genquery:{input_files_target_name}"
 
             generated_targets[target] = _InputFileGenQueryInfo(
                 label,
-                output_path,
+                input_files_target_name,
             )
 
         genquery_build_content = "\n".join(query_buildfile_lines)
@@ -645,6 +683,7 @@ class BazelActionRunner(object):
     def _parse_buildfiles_genquery_results_and_source_files_manifests(
         self,
         genqueries: dict[str, _InputFileGenQueryInfo],
+        genquery_output_map: dict[str, Path],
         source_files_manifest_paths: list[str],
         time_profile: build_utils.TimeProfile,
     ) -> dict[str, list[str]]:
@@ -652,6 +691,7 @@ class BazelActionRunner(object):
 
         Args:
             genqueries: A dictionary mapping target labels to their genquery info.
+            genquery_output_map: A dictionary mapping genquery target labels to their output file paths.
             source_files_manifest_paths: A list of paths to the source files manifests.
             time_profile: Time profile to use for timing.
 
@@ -670,9 +710,15 @@ class BazelActionRunner(object):
 
             This reads the output of one query, and maps the labels into file paths.
             """
+            label = info.genquery_target_label
+            path = genquery_output_map.get(label)
+            if not path:
+                raise BazelActionScriptError(
+                    f"Missing genquery output path for {info.genquery_target_label} in aspect outputs"
+                )
             return (
                 target,
-                info.genquery_output_path.read_text().splitlines(),
+                path.read_text().splitlines(),
             )
 
         # Use a thread pool for this to to read and parse all the files in parallel
