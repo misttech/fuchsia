@@ -74,6 +74,9 @@ void FlatlandConnection::Present(fuchsia_ui_composition::PresentArgs present_arg
   // In Flatland, release fences apply to the content of the previous present.
   // Keeping track of the previous frame's release fences and swapping ensure we
   // set the correct ones.
+  if (!present_args.release_fences().has_value()) {
+    present_args.release_fences(std::vector<zx::event>{});
+  }
   present_args.release_fences()->swap(previous_present_release_fences_);
 
   auto res = flatland_->Present({std::move(present_args)});
