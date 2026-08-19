@@ -108,6 +108,7 @@ template("emboss_cc_library") {
     args = [
       "--generate",
       "cc",
+      "--no-experimental-warning",
       "--output-path",
       rebase_path(output_path, root_build_dir),
       relative_source,
@@ -287,6 +288,7 @@ template("emboss_rust_library") {
       args = [
         "--generate",
         "rust",
+        "--no-experimental-warning",
         "--output-path",
         rebase_path(output_path, root_build_dir),
         "--output-file",
@@ -494,6 +496,7 @@ template("emboss_rust_sources") {
       args = [
         "--generate",
         "rust",
+        "--no-experimental-warning",
         "--output-path",
         rebase_path(output_path, root_build_dir),
         "--output-file",
