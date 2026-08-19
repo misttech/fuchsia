@@ -64,6 +64,10 @@ pub struct BoardFilesystemConfig {
     /// original partitions still exist.
     #[serde(default)]
     pub merge_super_and_userdata: bool,
+
+    /// If set, use keymint for encrypting data. Requires the `fuchsia::keymint` board capability.
+    #[serde(default)]
+    pub keymint_enabled: bool,
 }
 
 /// How GPT-formatted block devices ought to be handled.

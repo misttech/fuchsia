@@ -84,7 +84,13 @@ impl DefineSubsystemConfiguration<(&StorageConfig, &StorageToolsConfig, &Recover
         // The filename "zxcrypt" is used for legacy reasons.
         let data_encryption_config_path = gendir.join("zxcrypt");
 
-        if storage_config.keymint_enabled {
+        // Fall back to product config if the board config does not set `keymint_enabled`.
+        // TODO(https://fxbug.dev/547900908): Remove product config fallback once all products have
+        // stopped referencing it.
+        let keymint_enabled =
+            context.board_config.filesystems.keymint_enabled || storage_config.keymint_enabled;
+
+        if keymint_enabled {
             ensure!(
                 context.board_config.provides_feature(BoardFeature::Keymint),
                 "fuchsia::keymint is not provided by the board, can't use keymint."
@@ -333,5 +339,124 @@ impl DefineSubsystemConfiguration<(&StorageConfig, &StorageToolsConfig, &Recover
         }
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::subsystems::ConfigurationBuilderImpl;
+    use assembly_config_schema::board_config::BoardConfig;
+    use assembly_images_config::BoardFilesystemConfig;
+    use camino::Utf8Path;
+    use tempfile::tempdir;
+
+    fn setup_test_context<'a>(
+        board_config: &'a BoardConfig,
+        gendir_path: &'a Utf8Path,
+    ) -> ConfigurationContext<'a> {
+        ConfigurationContext {
+            feature_set_level: &FeatureSetLevel::Standard,
+            build_type: &BuildType::Eng,
+            board_config,
+            gendir: gendir_path.to_path_buf(),
+            resource_dir: Default::default(),
+            developer_only_options: Default::default(),
+        }
+    }
+
+    #[test]
+    fn test_keymint_enabled_from_board_config() {
+        let board_config = BoardConfig {
+            provided_features: vec![BoardFeature::Keymint.as_ref().to_string()],
+            filesystems: BoardFilesystemConfig { keymint_enabled: true, ..Default::default() },
+            ..Default::default()
+        };
+        let gendir = tempdir().unwrap();
+        let gendir_path = Utf8Path::from_path(gendir.path()).unwrap();
+        let context = setup_test_context(&board_config, gendir_path);
+        let storage_config = StorageConfig { keymint_enabled: false, ..Default::default() };
+        let mut builder: ConfigurationBuilderImpl = Default::default();
+
+        let result = StorageSubsystemConfig::define_configuration(
+            &context,
+            &(&storage_config, &StorageToolsConfig::default(), &RecoveryConfig::default()),
+            &mut builder,
+        );
+        assert!(result.is_ok());
+        let zxcrypt_content = std::fs::read_to_string(gendir_path.join("zxcrypt")).unwrap();
+        assert_eq!(zxcrypt_content, "keymint");
+    }
+
+    #[test]
+    fn test_keymint_enabled_from_product_config() {
+        let board_config = BoardConfig {
+            provided_features: vec![BoardFeature::Keymint.as_ref().to_string()],
+            filesystems: BoardFilesystemConfig { keymint_enabled: false, ..Default::default() },
+            ..Default::default()
+        };
+        let gendir = tempdir().unwrap();
+        let gendir_path = Utf8Path::from_path(gendir.path()).unwrap();
+        let context = setup_test_context(&board_config, gendir_path);
+        let storage_config = StorageConfig { keymint_enabled: true, ..Default::default() };
+        let mut builder: ConfigurationBuilderImpl = Default::default();
+
+        let result = StorageSubsystemConfig::define_configuration(
+            &context,
+            &(&storage_config, &StorageToolsConfig::default(), &RecoveryConfig::default()),
+            &mut builder,
+        );
+        assert!(result.is_ok());
+        let zxcrypt_content = std::fs::read_to_string(gendir_path.join("zxcrypt")).unwrap();
+        assert_eq!(zxcrypt_content, "keymint");
+    }
+
+    #[test]
+    fn test_keymint_disabled_when_both_false() {
+        let board_config = BoardConfig {
+            provided_features: vec![BoardFeature::Keymint.as_ref().to_string()],
+            filesystems: BoardFilesystemConfig { keymint_enabled: false, ..Default::default() },
+            ..Default::default()
+        };
+        let gendir = tempdir().unwrap();
+        let gendir_path = Utf8Path::from_path(gendir.path()).unwrap();
+        let context = setup_test_context(&board_config, gendir_path);
+        let storage_config = StorageConfig { keymint_enabled: false, ..Default::default() };
+        let mut builder: ConfigurationBuilderImpl = Default::default();
+
+        let result = StorageSubsystemConfig::define_configuration(
+            &context,
+            &(&storage_config, &StorageToolsConfig::default(), &RecoveryConfig::default()),
+            &mut builder,
+        );
+        assert!(result.is_ok());
+        let zxcrypt_content = std::fs::read_to_string(gendir_path.join("zxcrypt")).unwrap();
+        assert_eq!(zxcrypt_content, "null");
+    }
+
+    #[test]
+    fn test_keymint_enabled_missing_board_feature_fails() {
+        let board_config = BoardConfig {
+            filesystems: BoardFilesystemConfig { keymint_enabled: true, ..Default::default() },
+            ..Default::default()
+        };
+        let gendir = tempdir().unwrap();
+        let gendir_path = Utf8Path::from_path(gendir.path()).unwrap();
+        let context = setup_test_context(&board_config, gendir_path);
+        let storage_config = StorageConfig { keymint_enabled: false, ..Default::default() };
+        let mut builder: ConfigurationBuilderImpl = Default::default();
+
+        let result = StorageSubsystemConfig::define_configuration(
+            &context,
+            &(&storage_config, &StorageToolsConfig::default(), &RecoveryConfig::default()),
+            &mut builder,
+        );
+        assert!(result.is_err());
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("fuchsia::keymint is not provided by the board")
+        );
     }
 }

@@ -561,11 +561,7 @@ mod tests {
                     truncate_to_length: Some(3456),
                 }),
             },
-            gpt: bfc::GptMode::Enabled,
-            block_devices: vec![],
-            watch_deprecated_v1_drivers: false,
-            gpt_all: false,
-            merge_super_and_userdata: false,
+            ..Default::default()
         }
     }
 
@@ -618,10 +614,7 @@ mod tests {
                 fastboot_output: None,
             },
             gpt: bfc::GptMode::Disabled,
-            block_devices: vec![],
-            watch_deprecated_v1_drivers: false,
-            gpt_all: false,
-            merge_super_and_userdata: false,
+            ..Default::default()
         }
     }
 
