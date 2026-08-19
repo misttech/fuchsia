@@ -6,9 +6,17 @@ package main
 
 import (
 	"context"
+	"flag"
 	"fmt"
+	"io"
 	"log"
+	"os"
+	"path/filepath"
+	"runtime"
+	"strings"
 	"time"
+
+	"github.com/google/subcommands"
 
 	"go.fuchsia.dev/fuchsia/tools/check-licenses/metrics"
 	"go.fuchsia.dev/fuchsia/tools/check-licenses/util"
@@ -22,6 +30,177 @@ import (
 	"go.fuchsia.dev/fuchsia/tools/check-licenses/v2/stages/report"
 	"go.fuchsia.dev/fuchsia/tools/check-licenses/v2/stages/validate"
 )
+
+type GenerateCommand struct {
+	configFile           string
+	fuchsiaDir           string
+	buildDir             string
+	outDir               string
+	licensesOutDir       string
+	gnPath               string
+	genProjectFile       string
+	genIntermediateFile  string
+	checkURLs            bool
+	overwriteReadmeFiles bool
+	outputLicenseFile    bool
+	runAnalysis          bool
+	logLevel             int
+	runV2                bool
+	verifyReadmes        bool
+}
+
+func (*GenerateCommand) Name() string { return "generate" }
+func (*GenerateCommand) Synopsis() string {
+	return "Run the full compliance pipeline and generate reports."
+}
+func (*GenerateCommand) Usage() string {
+	return `generate [options] [<gn_target>]:
+	Traverses the repository, executes the Google License Classifier, and generates SPDX/NOTICE files.
+`
+}
+
+func (p *GenerateCommand) SetFlags(f *flag.FlagSet) {
+	f.StringVar(&p.configFile, "config_file", "", "Root config file path (unused in v2).")
+	f.StringVar(&p.fuchsiaDir, "fuchsia_dir", os.Getenv("FUCHSIA_DIR"), "Location of the fuchsia root directory (//).")
+	f.StringVar(&p.buildDir, "build_dir", os.Getenv("FUCHSIA_BUILD_DIR"), "Location of GN build directory.")
+	f.StringVar(&p.outDir, "out_dir", "/tmp/check-licenses", "Directory to write outputs to.")
+	f.StringVar(&p.licensesOutDir, "licenses_out_dir", "", "Directory to write license text segments.")
+
+	f.StringVar(&p.gnPath, "gn_path", "{FUCHSIA_DIR}/prebuilt/third_party/gn/{PLATFORM}/gn", "Path to GN executable. Required when gen_filter_target is specified.")
+	f.StringVar(&p.genProjectFile, "gen_project_file", "{BUILD_DIR}/project.json", "Path to 'project.json' output file.")
+	f.StringVar(&p.genIntermediateFile, "gen_intermediate_file", "", "Path to intermediate serialized gen struct.")
+
+	f.BoolVar(&p.checkURLs, "check_urls", false, "Flag for enabling checks for license URLs.")
+	f.BoolVar(&p.overwriteReadmeFiles, "overwrite_readme_files", false, "Flag for enabling README.fuchsia file overwrites.")
+
+	f.BoolVar(&p.outputLicenseFile, "output_license_file", true, "Flag for enabling template expansions.")
+	f.BoolVar(&p.runAnalysis, "run_analysis", true, "Flag for enabling license analysis and 'result' package tests.")
+
+	f.IntVar(&p.logLevel, "log_level", 2, "Log level. Set to 0 for no logs, 1 to log to a file, 2 to log to stdout.")
+
+	f.BoolVar(&p.runV2, "v2", true, "Run the experimental v2 pipeline architecture.")
+	f.BoolVar(&p.verifyReadmes, "verify_readmes", false, "Flag for verifying if README.fuchsia files accurately reflect project licenses in v2 pipeline.")
+}
+
+func (p *GenerateCommand) Execute(ctx context.Context, f *flag.FlagSet, _ ...interface{}) subcommands.ExitStatus {
+	if err := p.executeImpl(ctx, f); err != nil {
+		fmt.Fprintf(os.Stderr, "check-licenses generate: %s\nSee go/fuchsia-licenses-playbook for information on resolving common errors.\n", err)
+		return subcommands.ExitFailure
+	}
+	return subcommands.ExitSuccess
+}
+
+func (p *GenerateCommand) executeImpl(ctx context.Context, f *flag.FlagSet) error {
+	if err := p.setupLogging(); err != nil {
+		return fmt.Errorf("failed to setup logging: %w", err)
+	}
+
+	defer metrics.PhaseDuration.Track()()
+
+	fuchsiaDir, _, err := ResolveAndValidatePath(p.fuchsiaDir, ".")
+	if err != nil {
+		return err
+	}
+	p.fuchsiaDir = fuchsiaDir
+
+	resolvePath := func(path string, mkdir bool) (string, error) {
+		if path == "" {
+			return "", nil
+		}
+		absPath := path
+		if !filepath.IsAbs(path) {
+			absPath = filepath.Join(fuchsiaDir, path)
+		}
+		absPath, err = filepath.Abs(absPath)
+		if err != nil {
+			return "", err
+		}
+		if mkdir {
+			if _, err := os.Stat(absPath); os.IsNotExist(err) {
+				if err := os.MkdirAll(absPath, 0755); err != nil {
+					return "", err
+				}
+			}
+		}
+		return absPath, nil
+	}
+
+	p.buildDir, err = resolvePath(p.buildDir, false)
+	if err != nil {
+		return fmt.Errorf("failed to resolve buildDir: %w", err)
+	}
+
+	p.outDir, err = resolvePath(p.outDir, true)
+	if err != nil {
+		return fmt.Errorf("failed to resolve outDir: %w", err)
+	}
+
+	target := "//:default"
+	if f.NArg() > 1 {
+		return fmt.Errorf("check-licenses takes a maximum of 1 positional argument (filepath or gn target), got %v", f.NArg())
+	}
+	if f.NArg() == 1 {
+		target = f.Arg(0)
+	}
+
+	if err := os.Chdir(p.fuchsiaDir); err != nil {
+		return err
+	}
+
+	if p.outputLicenseFile {
+		platform := "linux-x64"
+		if runtime.GOOS == "darwin" {
+			platform = "mac-x64"
+		}
+		if len(p.gnPath) > 0 {
+			p.gnPath = strings.ReplaceAll(p.gnPath, "{FUCHSIA_DIR}", p.fuchsiaDir)
+			p.gnPath = strings.ReplaceAll(p.gnPath, "{PLATFORM}", platform)
+			p.gnPath, err = resolvePath(p.gnPath, false)
+			if err != nil {
+				return fmt.Errorf("failed to resolve gnPath: %w", err)
+			}
+		}
+		p.genProjectFile = strings.ReplaceAll(p.genProjectFile, "{BUILD_DIR}", p.buildDir)
+		p.genProjectFile, err = resolvePath(p.genProjectFile, false)
+		if err != nil {
+			return fmt.Errorf("failed to resolve genProjectFile: %w", err)
+		}
+	}
+
+	return p.executeV2Pipeline(ctx, target)
+}
+
+func (p *GenerateCommand) setupLogging() error {
+	logTargets := []io.Writer{}
+
+	if p.logLevel == 1 || p.logLevel == 2 {
+		if p.outDir != "" {
+			if _, err := os.Stat(p.outDir); os.IsNotExist(err) {
+				if err := os.MkdirAll(p.outDir, 0755); err != nil {
+					return fmt.Errorf("failed to create out directory [%v]: %w", p.outDir, err)
+				}
+			}
+			logfilePath := filepath.Join(p.outDir, "logs")
+			f, err := os.OpenFile(logfilePath, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0666)
+			if err != nil {
+				return fmt.Errorf("failed to create log file [%v]: %w", logfilePath, err)
+			}
+			logTargets = append(logTargets, f)
+		}
+	}
+
+	switch p.logLevel {
+	case 0:
+		logTargets = append(logTargets, io.Discard)
+	case 2:
+		logTargets = append(logTargets, os.Stdout)
+	}
+
+	w := io.MultiWriter(logTargets...)
+	log.SetOutput(w)
+	log.SetFlags(0)
+	return nil
+}
 
 // executeV2Pipeline runs the experimental v2 compliance engine.
 func (p *GenerateCommand) executeV2Pipeline(ctx context.Context, target string) error {

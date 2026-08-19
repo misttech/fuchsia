@@ -7,6 +7,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -273,4 +274,39 @@ func LoadTargets(fileList, fuchsiaDir string, args []string) ([]string, error) {
 		return nil, fmt.Errorf("at least one target path must be provided via positional arguments or -file-list")
 	}
 	return targets, nil
+}
+
+// getLogWriters configures destination io.Writers for logging based on the specified level and output directory.
+// Log == 0: discard all output
+// Log == 1: save logs to the outDir folder
+// Log == 2: save logs to the outDir folder AND print to stdout
+func getLogWriters(logLevel int, outDir string) (io.Writer, error) {
+	logTargets := []io.Writer{}
+
+	if logLevel == 1 || logLevel == 2 {
+		if outDir != "" {
+			if _, err := os.Stat(outDir); os.IsNotExist(err) {
+				err := os.MkdirAll(outDir, 0755)
+				if err != nil {
+					return nil, fmt.Errorf("failed to create out directory [%v]: %w", outDir, err)
+				}
+			}
+			logfilePath := filepath.Join(outDir, "logs")
+			f, err := os.OpenFile(logfilePath, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0666)
+			if err != nil {
+				return nil, fmt.Errorf("failed to create log file [%v]: %w", logfilePath, err)
+			}
+			logTargets = append(logTargets, f)
+		}
+	}
+
+	switch logLevel {
+	case 0:
+		logTargets = append(logTargets, io.Discard)
+	case 2:
+		logTargets = append(logTargets, os.Stdout)
+	}
+
+	w := io.MultiWriter(logTargets...)
+	return w, nil
 }
