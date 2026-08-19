@@ -114,12 +114,18 @@ template("kernel_assembly_input_bundle") {
 
     binary_label = "//build/assembly/scripts:kernel_aib_tool"
 
-    outputs = [ files.assembly_input_bundle_config ]
+    outputs = [
+      files.assembly_input_bundle_config,
+      "${files.assembly_input_bundle_dir}/kernel/kernel.zbi",
+    ]
+    depfile = "${target_out_dir}/${target_name}.d"
     args = [
       "--kernel-aib-input-metadata",
       rebase_path(files.kernel_aib_input_metadata, root_build_dir),
       "--outdir",
       rebase_path(files.assembly_input_bundle_dir, root_build_dir),
+      "--depfile",
+      rebase_path(depfile, root_build_dir),
     ]
 
     inputs = [ files.kernel_aib_input_metadata ]

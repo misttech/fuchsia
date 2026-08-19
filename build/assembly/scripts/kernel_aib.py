@@ -17,6 +17,7 @@ from assembly import (
     AssemblyInputBundleCreationException,
     KernelInfo,
 )
+from depfile import DepFile
 
 logger = logging.getLogger()
 
@@ -35,6 +36,9 @@ def main() -> None:
     parser.add_argument(
         "--export-manifest",
         help="Path to write a FINI manifest of the contents of the AIB",
+    )
+    parser.add_argument(
+        "--depfile", help="Path to write a depfile of the AIB inputs to"
     )
     args = parser.parse_args()
 
@@ -69,6 +73,12 @@ def main() -> None:
         with open(args.export_manifest, "w") as export_manifest:
             assembly_input_bundle.write_fini_manifest(
                 export_manifest, base_dir=args.outdir
+            )
+
+    if args.depfile:
+        with open(args.depfile, "w") as depfile:
+            DepFile.from_deps(assembly_config_manifest_path, deps).write_to(
+                depfile
             )
 
 
