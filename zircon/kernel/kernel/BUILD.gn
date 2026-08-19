@@ -17,6 +17,7 @@ source_set("kernel") {
     "event.cc",
     "idle_power_thread.cc",
     "init.cc",
+    "koid_ffi.cc",
     "lazy_owned_wait_queue.cc",
     "mp.cc",
     "mp_ffi.cc",
@@ -114,6 +115,7 @@ kernel_rust_mod("kernel-rs") {
   source_root = "mod.rs"
   sources = [
     "bits.rs",
+    "koid.rs",
     "mod.rs",
     "mp.rs",
     "relaxed_atomic.rs",
