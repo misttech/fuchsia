@@ -541,7 +541,7 @@ _NORMAL_DEPENDENCIES = {
             "tar": Label("//third_party/rust_crates/vendor/tar-0.4.46:tar"),
             "term_grid": Label("//third_party/rust_crates/vendor/term_grid-0.2.0:term_grid"),
             "tokio": Label("//third_party/rust_crates/vendor/tokio-1.53.1:tokio"),
-            "tokio-stream": Label("//third_party/rust_crates/vendor/tokio-stream-0.1.18:tokio_stream"),
+            "tokio-stream": Label("//third_party/rust_crates/vendor/tokio-stream-0.1.19:tokio_stream"),
             "xattr": Label("//third_party/rust_crates/vendor/xattr-1.6.1:xattr"),
             "zip": Label("//third_party/rust_crates/vendor/zip-8.6.0:zip"),
         },

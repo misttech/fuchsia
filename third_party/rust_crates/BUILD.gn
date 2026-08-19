@@ -2401,13 +2401,13 @@ group("tokio-rustls-0.26.4") {
 
 if (!(current_os == "fuchsia")) {
   group("tokio-stream") {
-    public_deps = [ ":tokio-stream-v0_1_18" ]
+    public_deps = [ ":tokio-stream-v0_1_19" ]
   }
 }
 
 if (!(current_os == "fuchsia")) {
-  group("tokio-stream-0.1.18") {
-    public_deps = [ ":tokio-stream-v0_1_18" ]
+  group("tokio-stream-0.1.19") {
+    public_deps = [ ":tokio-stream-v0_1_19" ]
   }
 }
 
@@ -22623,17 +22623,17 @@ rustc_library("tokio-rustls-v0_26_4") {
   applicable_licenses = [ ":tokio-rustls-v0_26_4.license" ]
 }
 
-license("tokio-stream-v0_1_18.license") {
+license("tokio-stream-v0_1_19.license") {
   public_package_name = "tokio_stream"
   license_files =
-      [ "//third_party/rust_crates/vendor/tokio-stream-0.1.18/LICENSE" ]
+      [ "//third_party/rust_crates/vendor/tokio-stream-0.1.19/LICENSE" ]
 }
 
-rustc_library("tokio-stream-v0_1_18") {
+rustc_library("tokio-stream-v0_1_19") {
   crate_name = "tokio_stream"
   source_root =
-      "//third_party/rust_crates/vendor/tokio-stream-0.1.18/src/lib.rs"
-  output_name = "tokio_stream-10c35ec96bf1c62c"
+      "//third_party/rust_crates/vendor/tokio-stream-0.1.19/src/lib.rs"
+  output_name = "tokio_stream-eefd80fe44a62f9c"
   edition = "2021"
   disable_clippy = true
   enforce_source_listing = false
@@ -22648,15 +22648,15 @@ rustc_library("tokio-stream-v0_1_18") {
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=10c35ec96bf1c62c",
-    "-Cextra-filename=-10c35ec96bf1c62c",
+    "-Cmetadata=eefd80fe44a62f9c",
+    "-Cextra-filename=-eefd80fe44a62f9c",
     "--cfg=feature=\"default\"",
     "--cfg=feature=\"time\"",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":tokio-stream-v0_1_18.license" ]
+  applicable_licenses = [ ":tokio-stream-v0_1_19.license" ]
 }
 
 license("toml-v1_1_2+spec-1_1_0.license") {
