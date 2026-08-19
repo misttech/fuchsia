@@ -4,7 +4,9 @@
 
 use anyhow::{Context, Result};
 use fidl::endpoints::ServiceMarker;
+use fidl_fuchsia_hardware_sharedmemory as fsharedmemory;
 use fidl_fuchsia_hardware_spi as fspi;
+use fidl_fuchsia_mem as fmem;
 use fuchsia_component::client::{connect_to_service_instance, open_service_at};
 use fuchsia_fs::directory::{WatchEvent, Watcher};
 use futures::StreamExt;
@@ -174,5 +176,251 @@ spi_test!(test_exchange_vector_multiple, device, {
         assert_eq!(Status::from_raw(status), Status::OK);
         assert_eq!(txdata, rxdata);
     }
+    Ok(())
+});
+
+spi_test!(test_transmit_vmo, device, {
+    const BUFFER_SIZE: usize = 512;
+    const VMO_ID: u32 = 1;
+
+    let mut txdata = vec![0u8; BUFFER_SIZE];
+    rand::rng().fill(&mut txdata[..]);
+
+    let vmo = zx::Vmo::create(BUFFER_SIZE as u64).context("Failed to create VMO")?;
+    vmo.write(&txdata, 0).context("Failed to write to VMO")?;
+
+    let vmo_dup =
+        vmo.duplicate_handle(zx::Rights::SAME_RIGHTS).context("Failed to duplicate VMO")?;
+
+    device
+        .register_vmo(
+            VMO_ID,
+            fmem::Range { vmo: vmo_dup, offset: 0, size: BUFFER_SIZE as u64 },
+            fsharedmemory::SharedVmoRight::READ,
+        )
+        .await
+        .context("RegisterVmo FIDL call failed")?
+        .map_err(|status| anyhow::anyhow!("RegisterVmo failed: {:?}", Status::from_raw(status)))?;
+
+    device
+        .transmit(&fsharedmemory::SharedVmoBuffer {
+            vmo_id: VMO_ID,
+            offset: 0,
+            size: BUFFER_SIZE as u64,
+        })
+        .await
+        .context("Transmit FIDL call failed")?
+        .map_err(|status| anyhow::anyhow!("Transmit failed: {:?}", Status::from_raw(status)))?;
+
+    let _unregistered_vmo =
+        device.unregister_vmo(VMO_ID).await.context("UnregisterVmo FIDL call failed")?.map_err(
+            |status| anyhow::anyhow!("UnregisterVmo failed: {:?}", Status::from_raw(status)),
+        )?;
+
+    Ok(())
+});
+
+spi_test!(test_receive_vmo, device, {
+    const BUFFER_SIZE: usize = 512;
+    const VMO_ID: u32 = 1;
+
+    let vmo = zx::Vmo::create(BUFFER_SIZE as u64).context("Failed to create VMO")?;
+    let vmo_dup =
+        vmo.duplicate_handle(zx::Rights::SAME_RIGHTS).context("Failed to duplicate VMO")?;
+
+    device
+        .register_vmo(
+            VMO_ID,
+            fmem::Range { vmo: vmo_dup, offset: 0, size: BUFFER_SIZE as u64 },
+            fsharedmemory::SharedVmoRight::WRITE,
+        )
+        .await
+        .context("RegisterVmo FIDL call failed")?
+        .map_err(|status| anyhow::anyhow!("RegisterVmo failed: {:?}", Status::from_raw(status)))?;
+
+    device
+        .receive(&fsharedmemory::SharedVmoBuffer {
+            vmo_id: VMO_ID,
+            offset: 0,
+            size: BUFFER_SIZE as u64,
+        })
+        .await
+        .context("Receive FIDL call failed")?
+        .map_err(|status| anyhow::anyhow!("Receive failed: {:?}", Status::from_raw(status)))?;
+
+    let _unregistered_vmo =
+        device.unregister_vmo(VMO_ID).await.context("UnregisterVmo FIDL call failed")?.map_err(
+            |status| anyhow::anyhow!("UnregisterVmo failed: {:?}", Status::from_raw(status)),
+        )?;
+
+    Ok(())
+});
+
+spi_test!(test_exchange_vmo, device, {
+    const BUFFER_SIZE: usize = 512;
+    const TX_VMO_ID: u32 = 1;
+    const RX_VMO_ID: u32 = 2;
+
+    let mut txdata = vec![0u8; BUFFER_SIZE];
+    rand::rng().fill(&mut txdata[..]);
+
+    let tx_vmo = zx::Vmo::create(BUFFER_SIZE as u64).context("Failed to create TX VMO")?;
+    tx_vmo.write(&txdata, 0).context("Failed to write to TX VMO")?;
+    let tx_vmo_dup =
+        tx_vmo.duplicate_handle(zx::Rights::SAME_RIGHTS).context("Failed to duplicate TX VMO")?;
+
+    let rx_vmo = zx::Vmo::create(BUFFER_SIZE as u64).context("Failed to create RX VMO")?;
+    let rx_vmo_dup =
+        rx_vmo.duplicate_handle(zx::Rights::SAME_RIGHTS).context("Failed to duplicate RX VMO")?;
+
+    device
+        .register_vmo(
+            TX_VMO_ID,
+            fmem::Range { vmo: tx_vmo_dup, offset: 0, size: BUFFER_SIZE as u64 },
+            fsharedmemory::SharedVmoRight::READ,
+        )
+        .await
+        .context("RegisterVmo TX FIDL call failed")?
+        .map_err(|status| {
+            anyhow::anyhow!("RegisterVmo TX failed: {:?}", Status::from_raw(status))
+        })?;
+
+    device
+        .register_vmo(
+            RX_VMO_ID,
+            fmem::Range { vmo: rx_vmo_dup, offset: 0, size: BUFFER_SIZE as u64 },
+            fsharedmemory::SharedVmoRight::WRITE,
+        )
+        .await
+        .context("RegisterVmo RX FIDL call failed")?
+        .map_err(|status| {
+            anyhow::anyhow!("RegisterVmo RX failed: {:?}", Status::from_raw(status))
+        })?;
+
+    device
+        .exchange(
+            &fsharedmemory::SharedVmoBuffer {
+                vmo_id: TX_VMO_ID,
+                offset: 0,
+                size: BUFFER_SIZE as u64,
+            },
+            &fsharedmemory::SharedVmoBuffer {
+                vmo_id: RX_VMO_ID,
+                offset: 0,
+                size: BUFFER_SIZE as u64,
+            },
+        )
+        .await
+        .context("Exchange FIDL call failed")?
+        .map_err(|status| anyhow::anyhow!("Exchange failed: {:?}", Status::from_raw(status)))?;
+
+    let mut rxdata = vec![0u8; BUFFER_SIZE];
+    rx_vmo.read(&mut rxdata, 0).context("Failed to read from RX VMO")?;
+    assert_eq!(txdata, rxdata);
+
+    let _unregistered_tx_vmo = device
+        .unregister_vmo(TX_VMO_ID)
+        .await
+        .context("UnregisterVmo TX FIDL call failed")?
+        .map_err(|status| {
+            anyhow::anyhow!("UnregisterVmo TX failed: {:?}", Status::from_raw(status))
+        })?;
+
+    let _unregistered_rx_vmo = device
+        .unregister_vmo(RX_VMO_ID)
+        .await
+        .context("UnregisterVmo RX FIDL call failed")?
+        .map_err(|status| {
+            anyhow::anyhow!("UnregisterVmo RX failed: {:?}", Status::from_raw(status))
+        })?;
+
+    Ok(())
+});
+
+spi_test!(test_exchange_vmo_multiple, device, {
+    const BUFFER_SIZE: usize = 512;
+    const CONCURRENT_REQUESTS: usize = 10;
+    const TX_VMO_ID: u32 = 1;
+    const RX_VMO_ID: u32 = 2;
+    const TOTAL_SIZE: usize = BUFFER_SIZE * CONCURRENT_REQUESTS;
+
+    let tx_vmo = zx::Vmo::create(TOTAL_SIZE as u64).context("Failed to create TX VMO")?;
+    let rx_vmo = zx::Vmo::create(TOTAL_SIZE as u64).context("Failed to create RX VMO")?;
+
+    let mut txdata_all = vec![0u8; TOTAL_SIZE];
+    rand::rng().fill(&mut txdata_all[..]);
+    tx_vmo.write(&txdata_all, 0).context("Failed to write to TX VMO")?;
+
+    let tx_vmo_dup =
+        tx_vmo.duplicate_handle(zx::Rights::SAME_RIGHTS).context("Failed to duplicate TX VMO")?;
+    let rx_vmo_dup =
+        rx_vmo.duplicate_handle(zx::Rights::SAME_RIGHTS).context("Failed to duplicate RX VMO")?;
+
+    device
+        .register_vmo(
+            TX_VMO_ID,
+            fmem::Range { vmo: tx_vmo_dup, offset: 0, size: TOTAL_SIZE as u64 },
+            fsharedmemory::SharedVmoRight::READ,
+        )
+        .await
+        .context("RegisterVmo TX FIDL call failed")?
+        .map_err(|status| {
+            anyhow::anyhow!("RegisterVmo TX failed: {:?}", Status::from_raw(status))
+        })?;
+
+    device
+        .register_vmo(
+            RX_VMO_ID,
+            fmem::Range { vmo: rx_vmo_dup, offset: 0, size: TOTAL_SIZE as u64 },
+            fsharedmemory::SharedVmoRight::WRITE,
+        )
+        .await
+        .context("RegisterVmo RX FIDL call failed")?
+        .map_err(|status| {
+            anyhow::anyhow!("RegisterVmo RX failed: {:?}", Status::from_raw(status))
+        })?;
+
+    let mut futures = Vec::new();
+    for i in 0..CONCURRENT_REQUESTS {
+        let offset = (i * BUFFER_SIZE) as u64;
+        let device_clone = device.clone();
+
+        futures.push(async move {
+            device_clone
+                .exchange(
+                    &fsharedmemory::SharedVmoBuffer {
+                        vmo_id: TX_VMO_ID,
+                        offset,
+                        size: BUFFER_SIZE as u64,
+                    },
+                    &fsharedmemory::SharedVmoBuffer {
+                        vmo_id: RX_VMO_ID,
+                        offset,
+                        size: BUFFER_SIZE as u64,
+                    },
+                )
+                .await
+                .context("Exchange FIDL call failed")?
+                .map_err(|status| {
+                    anyhow::anyhow!("Exchange failed: {:?}", Status::from_raw(status))
+                })?;
+            Ok::<_, anyhow::Error>(())
+        });
+    }
+
+    futures::future::try_join_all(futures).await?;
+
+    let mut rxdata_all = vec![0u8; TOTAL_SIZE];
+    rx_vmo.read(&mut rxdata_all, 0).context("Failed to read from RX VMO")?;
+    assert_eq!(txdata_all, rxdata_all);
+
+    device.unregister_vmo(TX_VMO_ID).await.context("UnregisterVmo TX FIDL call failed")?.map_err(
+        |status| anyhow::anyhow!("UnregisterVmo TX failed: {:?}", Status::from_raw(status)),
+    )?;
+
+    device.unregister_vmo(RX_VMO_ID).await.context("UnregisterVmo RX FIDL call failed")?.map_err(
+        |status| anyhow::anyhow!("UnregisterVmo RX failed: {:?}", Status::from_raw(status)),
+    )?;
+
     Ok(())
 });

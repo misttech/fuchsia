@@ -45,7 +45,9 @@ template("spi_system_test") {
     sources = [ "//src/devices/spi/tests/spi-system-test/src/lib.rs" ]
     deps = [
       ":$_config_lib_target",
+      "//sdk/fidl/fuchsia.hardware.sharedmemory:fuchsia.hardware.sharedmemory_rust",
       "//sdk/fidl/fuchsia.hardware.spi:fuchsia.hardware.spi_rust",
+      "//sdk/fidl/fuchsia.mem:fuchsia.mem_rust",
       "//sdk/rust/zx",
       "//src/lib/fidl/rust/fidl",
       "//src/lib/fuchsia",
