@@ -217,6 +217,8 @@ fn process_segment(
 // that dynamically generates and yields StreamCommands from a sparse image, never
 // allocating a buffer larger than the max download size at once.
 pub struct SparseStreamIterator<R> {
+    // The size of the image written to the target partition.
+    expanded_size: u64,
     reader: R,
     chunks: std::vec::IntoIter<(Chunk, Option<u64>)>,
     // Used for splitting sparse raw chunks.
@@ -228,7 +230,7 @@ pub struct SparseStreamIterator<R> {
 
 impl<R: Read + Seek> SparseStreamIterator<R> {
     pub fn new(max_download_bytes: u64, sparse_reader: SparseReader<R>) -> Self {
-        let (reader, _, _, chunks, _) = sparse_reader.destruct();
+        let (reader, _, expanded_size, chunks, _) = sparse_reader.destruct();
         let chunks = chunks
             .into_iter()
             .filter_map(|(chunk, idx): (sparse::Chunk, Option<u64>)| {
@@ -236,7 +238,11 @@ impl<R: Read + Seek> SparseStreamIterator<R> {
             })
             .collect::<Vec<_>>()
             .into_iter();
-        Self { reader, chunks, remaining_bytes_and_offset: None, max_download_bytes }
+        Self { expanded_size, reader, chunks, remaining_bytes_and_offset: None, max_download_bytes }
+    }
+
+    pub fn get_expanded_size(&self) -> u64 {
+        self.expanded_size
     }
 
     // Generate a stream flash command to handle a max_download_bytes sized chunk of
@@ -247,19 +253,12 @@ impl<R: Read + Seek> SparseStreamIterator<R> {
     // new Flash command. The reader cursor is preserved across calls,
     // so handling consecutive subchunks works out fine.
     fn handle_subchunk(&mut self, bytes_remaining: u64, offset: u64) -> StreamCommand {
-        let mut buf = vec![0u8; min(self.max_download_bytes, bytes_remaining).try_into().unwrap()];
-        let chunk_len = self
-            .reader
-            .read(&mut buf)
-            .ok()
-            .and_then(|size| {
-                buf.truncate(size);
-                u64::try_from(size).ok()
-            })
-            .unwrap();
+        let buf_len = min(self.max_download_bytes, bytes_remaining);
+        let mut buf = vec![0u8; buf_len.try_into().unwrap()];
+        self.reader.read_exact(&mut buf).unwrap();
 
         self.remaining_bytes_and_offset =
-            NonZeroU64::new(bytes_remaining - chunk_len).map(|s| (s, offset + chunk_len));
+            NonZeroU64::new(bytes_remaining - buf_len).map(|s| (s, offset + buf_len));
 
         StreamCommand::from_data(Bytes::from_owner(buf.into_boxed_slice()), offset)
     }

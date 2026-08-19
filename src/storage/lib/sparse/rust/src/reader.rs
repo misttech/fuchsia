@@ -24,11 +24,29 @@ pub struct SparseReader<R> {
     block_size: u32,
 }
 
+/// Helper utility class that rewinds a seekable reader on drop.
+///
+/// This is useful if, for example, a factory function reads a file that may or may not
+/// have a particular header and corresponding file structure. It is convenient for
+/// fallback code paths if the factory rewinds the file to the start.
+struct Rewinder<'a, R: Read + Seek> {
+    pub reader: &'a mut R,
+}
+
+impl<'a, R: Read + Seek> Drop for Rewinder<'a, R> {
+    fn drop(&mut self) {
+        if let Err(e) = self.reader.seek(SeekFrom::Start(0)) {
+            log::error!("File seek error: {e}");
+        }
+    }
+}
+
 impl<R: Read + Seek> SparseReader<R> {
     /// Attempts to create a SparseReader from the given image.  Returns failure if the image is
     /// malformed.
     pub fn new(mut reader: R) -> std::result::Result<Self, SparseError> {
-        let header: SparseHeader = deserialize_from(&mut reader)
+        let rewinder = Rewinder { reader: &mut reader };
+        let header: SparseHeader = deserialize_from(rewinder.reader)
             .map_err(|e| SparseError::Deserialize { ty: SparseDataType::Header, source: e })?;
         if !header.valid() {
             return Err(SparseError::InvalidHeader);
@@ -38,11 +56,11 @@ impl<R: Read + Seek> SparseReader<R> {
         let mut chunks = vec![];
         let mut offset = 0;
         for _ in 0..num_chunks {
-            let chunk = Chunk::read_metadata(&mut reader, offset, header.blk_sz)?;
+            let chunk = Chunk::read_metadata(rewinder.reader, offset, header.blk_sz)?;
             let data_offset = if chunk.chunk_type() == crate::format::CHUNK_TYPE_RAW {
-                let data_offset = reader.stream_position()?;
+                let data_offset = rewinder.reader.stream_position()?;
                 // Skip past the data payload
-                reader.seek(SeekFrom::Current(chunk.output_size() as i64))?;
+                rewinder.reader.seek(SeekFrom::Current(chunk.output_size() as i64))?;
                 Some(data_offset)
             } else {
                 None
@@ -51,7 +69,7 @@ impl<R: Read + Seek> SparseReader<R> {
             chunks.push((chunk, data_offset));
         }
 
-        reader.seek(SeekFrom::Start(0)).map_err(|e| SparseError::Io(e))?;
+        drop(rewinder);
         Ok(Self { reader, offset: 0, size: offset, chunks, block_size: header.blk_sz })
     }
 

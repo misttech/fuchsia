@@ -19,7 +19,7 @@ use async_trait::async_trait;
 use chrono::{Duration, Utc};
 use ffx_config::EnvironmentContext;
 use ffx_fastboot_interface::fastboot_interface::{FastbootInterface, RebootEvent, UploadProgress};
-use ffx_fastboot_interface::stream::generate_command_list;
+use ffx_fastboot_interface::stream::{SparseStreamIterator, StreamCommand, generate_command_list};
 use ffx_fastboot_interface::util::{U32_SIZE, convert_log_err};
 use ffx_flash_manifest::{ManifestParams, OemFile, SSH_OEM_COMMAND};
 use futures::prelude::*;
@@ -363,11 +363,7 @@ async fn streaming_flash_impl<T: FastbootInterface>(
         return Err(streaming_err_helper(format!("Bad max download size: {max_download_bytes}")));
     }
 
-    let segment_size_bytes: u64 = NonZeroU64::new(segment_size_bytes)
-        .ok_or_else(|| streaming_err_helper(format!("Bad segment size: {segment_size_bytes}")))?
-        .into();
-
-    if segment_size_bytes % U32_SIZE != 0 {
+    if segment_size_bytes == 0 || segment_size_bytes % U32_SIZE != 0 {
         return Err(streaming_err_helper(format!(
             "Bad streaming segment size: {segment_size_bytes}"
         )));
@@ -385,51 +381,58 @@ async fn streaming_flash_impl<T: FastbootInterface>(
 
     let mut file_handle = File::open(&filepath)
         .map_err(|e| FfxFastbootError::FileOpen { path: PathBuf::from(&filepath), source: e })?;
-    let expected = file_handle
-        .metadata()
-        .map_err(|e| FfxFastbootError::FileMetadata { path: PathBuf::from(&filepath), source: e })?
-        .len();
+    let (commands, expanded_size): (Box<dyn Iterator<Item = StreamCommand> + Send>, u64) =
+        if let Ok(sparse_reader) = SparseReader::new(file_handle.try_clone()?) {
+            let iter = SparseStreamIterator::new(max_download_bytes, sparse_reader);
+            let expanded_size = iter.get_expanded_size();
+
+            (Box::new(iter), expanded_size)
+        } else {
+            let expected = file_handle
+                .metadata()
+                .map_err(|e| FfxFastbootError::FileMetadata {
+                    path: PathBuf::from(&filepath),
+                    source: e,
+                })?
+                .len();
+
+            if expected % U32_SIZE != 0 {
+                // Possibly an error, but basic flash should handle it correctly anyway.
+                log::debug!("Un-streamable file size: {expected}");
+                return Ok(false);
+            }
+            // The file contents is a Vec<u32> because 'fill' value checks compare u32 values,
+            // and it's easier to start with a stricter alignment and loosen it when required.
+            let mut file_contents = vec![0u32; convert_log_err(expected / U32_SIZE)?];
+            let bytes_read = file_handle
+                .read(file_contents.as_mut_slice().as_mut_bytes())
+                .inspect_err(|e| log::error!("{e}"))?;
+
+            if bytes_read != usize::try_from(expected)? {
+                let err = FfxFastbootError::FileRead { actual: bytes_read.try_into()?, expected };
+                log::error!("{err}");
+                return Err(err);
+            }
+
+            let commands = generate_command_list(
+                file_contents.into_boxed_slice(),
+                max_download_bytes.into(),
+                segment_size_bytes.into(),
+                partition_start_byte.into(),
+            );
+
+            (Box::new(commands.into_iter()), expected)
+        };
 
     // Must complete check host side because device never knows the full image size.
-    if partition_size_bytes < expected {
+    if partition_size_bytes < expanded_size {
         return Err(streaming_err_helper(format!(
-            "Tried to stream a {expected} byte image to a {partition_size_bytes} byte partition"
+            "Tried to stream a {expanded_size} byte image to a {partition_size_bytes} byte partition"
         )));
-    }
-    if expected % U32_SIZE != 0 {
-        // Possibly an error, but basic flash should handle it correctly anyway.
-        log::debug!("Un-streamable file size: {expected}");
-        return Ok(false);
-    }
-    if let Ok(true) = SparseReader::is_sparse_file(&mut file_handle) {
-        // TODO(b/529455096): sparse files could be
-        // converted to a streaming flash representation.
-        log::debug!("Streaming flash is incompatible with sparse images");
-        return Ok(false);
-    }
-
-    // The file contents is a Vec<u32> because 'fill' value checks compare u32 values,
-    // and it's easier to start with a stricter alignment and loosen it when required.
-    let mut file_contents = vec![0u32; convert_log_err(expected / U32_SIZE)?];
-    // TODO(b/529455096): async I/O for file read
-    let bytes_read = file_handle
-        .read(file_contents.as_mut_slice().as_mut_bytes())
-        .inspect_err(|e| log::error!("{e}"))?;
-    if bytes_read != usize::try_from(expected)? {
-        let err = FfxFastbootError::FileRead { actual: bytes_read.try_into()?, expected };
-        log::error!("{err}");
-        return Err(err);
     }
 
     let start_time = Utc::now();
-    let commands = generate_command_list(
-        file_contents.into_boxed_slice(),
-        max_download_bytes.into(),
-        segment_size_bytes.into(),
-        partition_start_byte.into(),
-    );
-
-    let (prog_client, prog_server) = mpsc::channel(commands.len());
+    let (prog_client, prog_server) = mpsc::channel(5);
 
     let server_task = async |mut prog_server: Receiver<UploadProgress>| -> Result<()> {
         while let Some(upload) = prog_server.recv().await {
@@ -440,7 +443,7 @@ async fn streaming_flash_impl<T: FastbootInterface>(
 
     let stream_task = async |prog_client: Sender<UploadProgress>| -> Result<()> {
         // TODO: map the damn error
-        let _ = prog_client.send(UploadProgress::OnStarted { size: expected }).await;
+        let _ = prog_client.send(UploadProgress::OnStarted { size: expanded_size }).await;
         for command in commands {
             fastboot_interface.stream(name, command, &prog_client, timeout).await?;
         }
@@ -480,7 +483,7 @@ pub async fn flash_partition_impl<T: FastbootInterface>(
     }
 
     let mut try_flash_stream = async || {
-        if let Ok(segment_size) = get_hex_int::<u64>(STREAM_SEGMENT_SIZE, fb_intf).await
+        if let Ok(segment_size) = get_hex_int::<u32>(STREAM_SEGMENT_SIZE, fb_intf).await
             && let Ok(partition_start) =
                 get_hex_int::<u64>(parameterized_var(PARTITION_START, name).as_str(), fb_intf).await
             && let Ok(partition_size) =
@@ -491,7 +494,7 @@ pub async fn flash_partition_impl<T: FastbootInterface>(
                 name,
                 file_to_upload,
                 fb_intf,
-                segment_size,
+                segment_size.into(),
                 partition_start,
                 partition_size,
                 Duration::seconds(min_timeout_secs.try_into().unwrap()),
@@ -960,6 +963,7 @@ mod test {
     use ffx_flash_manifest::v2::FlashManifest;
     use ffx_flash_manifest::{BootParams, Command};
     use serde_json::{from_str, json};
+    use sparse::builder::{DataSource, SparseImageBuilder};
     use std::io::{Seek, SeekFrom, Write};
     use tempfile::NamedTempFile;
     use tokio::sync::mpsc;
@@ -1228,7 +1232,7 @@ mod test {
         let buf = multi_chain!(fill_data.clone(), fill_zero.clone(), fill_data.clone())
             .collect::<Vec<_>>();
 
-        let (mut file, temp_path) = NamedTempFile::new().unwrap().into_parts();
+        let (mut file, tmp_path) = NamedTempFile::new().unwrap().into_parts();
         file.write_all(buf.as_slice()).unwrap();
         file.seek(SeekFrom::Start(0)).unwrap();
         file.flush().unwrap();
@@ -1238,12 +1242,18 @@ mod test {
             Reply::Okay("0x1000".to_owned()),    // Stream segment size
             Reply::Okay("0x2000".to_owned()),    // Partition zircon_a start
             Reply::Okay("0x1000000".to_owned()), // Partition zircon_a size
-            Reply::Okay("0x4000".to_owned()),    // Max download size
-            Reply::Data(0x4000),                 // Download request
+            Reply::Okay("0x2000".to_owned()),    // Max download size
+            Reply::Data(0x2000),                 // Download request
+            Reply::Okay("".to_owned()),          // Download
+            Reply::Okay("".to_owned()),          // Stream flash
+            Reply::Data(0x2000),                 // Download request
             Reply::Okay("".to_owned()),          // Download
             Reply::Okay("".to_owned()),          // Stream flash
             Reply::Okay("".to_owned()),          // Stream fill
-            Reply::Data(0x4000),                 // Download request
+            Reply::Data(0x2000),                 // Download request
+            Reply::Okay("".to_owned()),          // Download
+            Reply::Okay("".to_owned()),          // Stream flash
+            Reply::Data(0x2000),                 // Download request
             Reply::Okay("".to_owned()),          // Download
             Reply::Okay("".to_owned()),          // Stream flash
         ]);
@@ -1278,7 +1288,7 @@ mod test {
             var_client,
             &mut resolver,
             "zircon_a",
-            temp_path.to_str().unwrap(),
+            tmp_path.to_str().unwrap(),
             &mut fastboot_client,
             360,
             1000.0,
@@ -1289,8 +1299,104 @@ mod test {
         let server_expected = &[
             Upload(OnReady { partition: "zircon_a".to_owned(), files: 1 }),
             Upload(OnStarted { size: 0xc000 }),
+            Upload(OnProgress { bytes_written: 0x2000 }),
             Upload(OnProgress { bytes_written: 0x4000 }),
             Upload(OnProgress { bytes_written: 0x8000 }),
+            Upload(OnProgress { bytes_written: 0xA000 }),
+            Upload(OnProgress { bytes_written: 0xC000 }),
+            Upload(OnFinished),
+            FlashPartitionFinished {
+                partition_name: "zircon_a".to_owned(),
+                duration: Duration::seconds(0),
+            },
+        ];
+
+        assert_eq!(&server_actual, server_expected);
+        Ok(())
+    }
+
+    #[fuchsia::test]
+    async fn test_stream_flash_sparse_image() -> Result<()> {
+        let raw = (0u8..=255).cycle().take(4096);
+        let data = multi_chain!(raw.clone(), raw.clone(), raw.clone(), raw.clone())
+            .collect::<Vec<_>>()
+            .into_boxed_slice();
+
+        let (mut sparse_file, tmp_path) = NamedTempFile::new().unwrap().into_parts();
+        SparseImageBuilder::new()
+            .add_source(DataSource::Buffer(data.clone()))
+            .add_source(DataSource::Fill(0, 4096))
+            .add_source(DataSource::Buffer(data.clone()))
+            .build(&mut sparse_file)
+            .expect("Sparse image build failed");
+        sparse_file.seek(SeekFrom::Start(0)).unwrap();
+
+        let mut test_transport = TestTransport::new();
+        test_transport.extend([
+            Reply::Okay("0x1000".to_owned()),    // Stream segment size
+            Reply::Okay("0x2000".to_owned()),    // Partition zircon_a start
+            Reply::Okay("0x1000000".to_owned()), // Partition zircon_a size
+            Reply::Okay("0x2000".to_owned()),    // Max download size
+            Reply::Data(0x2000),                 // Download request
+            Reply::Okay("".to_owned()),          // Download
+            Reply::Okay("".to_owned()),          // Stream flash
+            Reply::Data(0x2000),                 // Download request
+            Reply::Okay("".to_owned()),          // Download
+            Reply::Okay("".to_owned()),          // Stream flash
+            Reply::Okay("".to_owned()),          // Stream fill
+            Reply::Data(0x2000),                 // Download request
+            Reply::Okay("".to_owned()),          // Download
+            Reply::Okay("".to_owned()),          // Stream flash
+            Reply::Data(0x2000),                 // Download request
+            Reply::Okay("".to_owned()),          // Download
+            Reply::Okay("".to_owned()),          // Stream flash
+        ]);
+
+        let mut fastboot_client = FastbootProxy::<TestTransport>::new(
+            "stream".to_string(),
+            test_transport,
+            TestTransportFactory {},
+        );
+
+        let (var_client, mut var_server): (Sender<Event>, Receiver<Event>) = mpsc::channel(3);
+        use Event::*;
+        use UploadProgress::*;
+
+        let mut server_actual = vec![];
+        let mut server_task = async || {
+            while let Some(m) = var_server.recv().await {
+                let m = if let FlashPartitionFinished { partition_name, duration: _ } = m {
+                    // Cheat to avoid massive refactor around passing a test clock
+                    FlashPartitionFinished { partition_name, duration: Duration::seconds(0) }
+                } else {
+                    m
+                };
+
+                server_actual.push(m);
+            }
+            Ok(())
+        };
+
+        let mut resolver = TestResolver::new();
+        let flash_partition_task = flash_partition(
+            var_client,
+            &mut resolver,
+            "zircon_a",
+            tmp_path.to_str().unwrap(),
+            &mut fastboot_client,
+            360,
+            1000.0,
+        );
+
+        try_join!(flash_partition_task, server_task())?;
+
+        let server_expected = &[
+            Upload(OnReady { partition: "zircon_a".to_owned(), files: 1 }),
+            Upload(OnStarted { size: 0xc000 }),
+            Upload(OnProgress { bytes_written: 0x2000 }),
+            Upload(OnProgress { bytes_written: 0x4000 }),
+            Upload(OnProgress { bytes_written: 0x8000 }),
+            Upload(OnProgress { bytes_written: 0xA000 }),
             Upload(OnProgress { bytes_written: 0xC000 }),
             Upload(OnFinished),
             FlashPartitionFinished {
