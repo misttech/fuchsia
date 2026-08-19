@@ -1244,7 +1244,7 @@
     },
     {
         "kind": "enum/member",
-        "name": "fuchsia.bluetooth.le/CreateCigError.INVALID_CIS_PARAMETERS",
+        "name": "fuchsia.bluetooth.le/CreateCigError.INVALID_PARAMETERS",
         "value": "3"
     },
     {
