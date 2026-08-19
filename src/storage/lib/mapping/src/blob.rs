@@ -15,6 +15,20 @@ use std::ops::{ControlFlow, Range};
 use std::sync::Arc;
 use vmo_fifo::Message;
 
+/// Default readahead size used for streaming reads and decompression (128 KiB).
+pub const READ_AHEAD_SIZE: u64 = 128 * 1024;
+
+/// Calculates the readahead size for a given chunk size, rounding down `suggested_read_ahead_size`
+/// to a multiple of `chunk_size`, or returning `chunk_size` if it is larger than
+/// `suggested_read_ahead_size`.
+pub fn read_ahead_size_for_chunk_size(chunk_size: u64, suggested_read_ahead_size: u64) -> u64 {
+    if chunk_size >= suggested_read_ahead_size {
+        chunk_size
+    } else {
+        (suggested_read_ahead_size / chunk_size) * chunk_size
+    }
+}
+
 /// A mapped blob containing extents and decompression metadata.
 pub struct Blob {
     extents: Extents,
@@ -46,32 +60,43 @@ impl Blob {
         self.compression_info.as_deref()
     }
 
-    /// Streams and decodes the uncompressed range requested by `page_request`.
-    ///
-    /// For uncompressed blobs, both `range.start` and `range.end` must be multiples of
-    /// `BLOCK_SIZE`. For compressed blobs, `range.start` must be a multiple of the compression
-    /// chunk size, and `range.end` must either be a multiple of the chunk size or equal to
-    /// `uncompressed_size`.
+    /// Streams and decodes the uncompressed range requested by `page_request`, applying readahead.
     pub fn read_range(
         &self,
         service: &(impl BlockService + ?Sized),
         mut page_request: impl PageRequest,
     ) {
-        let range = page_request.range();
-        if range.is_empty() {
+        let page_size = zx::system_get_page_size() as u64;
+        let original_range = page_request.range();
+        if original_range.is_empty() {
             return;
         }
 
-        if page_request.prepare(range.clone()).is_err() {
+        let page_aligned_size = self.uncompressed_size.next_multiple_of(page_size);
+        if original_range.start >= page_aligned_size {
+            return;
+        }
+
+        let read_ahead_size = match &self.compression_info {
+            Some(info) => read_ahead_size_for_chunk_size(info.chunk_size(), READ_AHEAD_SIZE),
+            None => READ_AHEAD_SIZE,
+        };
+
+        let read_range = (original_range.start / read_ahead_size) * read_ahead_size
+            ..std::cmp::min(
+                original_range.end.next_multiple_of(read_ahead_size),
+                page_aligned_size,
+            );
+        if page_request.prepare(read_range.clone()).is_err() {
             return;
         }
 
         match &self.compression_info {
             None => {
-                let mut current_offset = range.start;
+                let mut current_offset = read_range.start;
                 let uncompressed_size = self.uncompressed_size;
 
-                read_aligned_range(&self.extents, range, service, move |res| {
+                read_aligned_range(&self.extents, read_range, service, move |res| {
                     let Ok(buffer) = res else {
                         return ControlFlow::Break(());
                     };
@@ -644,8 +669,96 @@ mod tests {
     }
 
     #[test]
-    fn test_read_range_compressed_tail_chunk_only() {
-        let uncompressed_size = 32768 * 2 + 1024;
+    fn test_read_range_uncompressed_readahead() {
+        let total_blocks = 64; // 256 KiB
+        let mut expected_data = vec![0u8; (total_blocks * BLOCK_SIZE) as usize];
+        for (i, byte) in expected_data.iter_mut().enumerate() {
+            *byte = ((i * 17) % 251) as u8;
+        }
+        let service = FakeBlockService::new(expected_data.clone());
+
+        let extents =
+            Extents::encode_extents(&[Extent::new(0..(total_blocks * BLOCK_SIZE), Some(0))]);
+        let extents = Extents::from_encoded(extents).unwrap();
+        let blob = Blob::new(extents, total_blocks * BLOCK_SIZE, None);
+
+        // Request 1 block at offset 4096. Readahead should expand to 0..128 KiB.
+        let (page_request, rx) = TestVecBuffer::new_with_range(4096..8192);
+        blob.read_range(&service, page_request);
+
+        assert_eq!(rx.commits(), vec![(0, READ_AHEAD_SIZE as usize)]);
+        assert_eq!(
+            &rx.output()[..READ_AHEAD_SIZE as usize],
+            &expected_data[..READ_AHEAD_SIZE as usize]
+        );
+    }
+
+    #[test]
+    fn test_read_range_uncompressed_readahead_second_window() {
+        let total_blocks = 64; // 256 KiB
+        let mut expected_data = vec![0u8; (total_blocks * BLOCK_SIZE) as usize];
+        for (i, byte) in expected_data.iter_mut().enumerate() {
+            *byte = ((i * 19) % 251) as u8;
+        }
+        let service = FakeBlockService::new(expected_data.clone());
+
+        let extents =
+            Extents::encode_extents(&[Extent::new(0..(total_blocks * BLOCK_SIZE), Some(0))]);
+        let extents = Extents::from_encoded(extents).unwrap();
+        let blob = Blob::new(extents, total_blocks * BLOCK_SIZE, None);
+
+        // Request 1 block at offset 132 KiB (135168..139264).
+        // Readahead should expand to 128 KiB..256 KiB (131072..262144).
+        let (page_request, rx) = TestVecBuffer::new_with_range(135168..139264);
+        blob.read_range(&service, page_request);
+
+        assert_eq!(rx.commits(), vec![(READ_AHEAD_SIZE, READ_AHEAD_SIZE as usize)]);
+        assert_eq!(
+            &rx.output()[..READ_AHEAD_SIZE as usize],
+            &expected_data[READ_AHEAD_SIZE as usize..2 * READ_AHEAD_SIZE as usize]
+        );
+    }
+
+    #[test]
+    fn test_read_range_uncompressed_readahead_tail_capped() {
+        let uncompressed_size = 140_000u64;
+        let total_blocks = (uncompressed_size.next_multiple_of(BLOCK_SIZE) / BLOCK_SIZE) as u64;
+        let mut expected_data = vec![0u8; (total_blocks * BLOCK_SIZE) as usize];
+        for i in 0..uncompressed_size as usize {
+            expected_data[i] = ((i * 23) % 251) as u8;
+        }
+        let service = FakeBlockService::new(expected_data.clone());
+
+        let extents =
+            Extents::encode_extents(&[Extent::new(0..(total_blocks * BLOCK_SIZE), Some(0))]);
+        let extents = Extents::from_encoded(extents).unwrap();
+        let blob = Blob::new(extents, uncompressed_size, None);
+
+        // Request 1 block at offset 132 KiB (135168..139264).
+        // Readahead window starts at 128 KiB (131072) and would normally extend to 256 KiB
+        // (262144), but should be capped at page_aligned_size (143360).
+        let (page_request, rx) = TestVecBuffer::new_with_range(135168..139264);
+        blob.read_range(&service, page_request);
+
+        let expected_start = READ_AHEAD_SIZE;
+        let page_aligned_size = uncompressed_size.next_multiple_of(BLOCK_SIZE);
+        let expected_len = (page_aligned_size - expected_start) as usize;
+        assert_eq!(rx.commits(), vec![(expected_start, expected_len)]);
+
+        let valid_len = (uncompressed_size - expected_start) as usize;
+        assert_eq!(
+            &rx.output()[..valid_len],
+            &expected_data[expected_start as usize..uncompressed_size as usize]
+        );
+        // The remaining tail bytes within the last page must be zero-filled.
+        assert!(rx.output()[valid_len..expected_len].iter().all(|&b| b == 0));
+    }
+
+    #[test]
+    fn test_read_range_compressed_second_readahead_window() {
+        let chunk_count = 8;
+        let chunk_size = 32768usize;
+        let uncompressed_size = chunk_count * chunk_size;
         let mut uncompressed_data = vec![0u8; uncompressed_size];
         for (i, byte) in uncompressed_data.iter_mut().enumerate() {
             *byte = ((i * 7) % 251) as u8;
@@ -664,7 +777,6 @@ mod tests {
         }
         compressed_offsets.pop();
 
-        let chunk_size = archive.chunk_size();
         let stored_size = compressed_data.len() as u64;
         let stored_blocks = stored_size.div_ceil(BLOCK_SIZE);
         let mut device_data = vec![0u8; (stored_blocks * BLOCK_SIZE) as usize];
@@ -683,14 +795,21 @@ mod tests {
         .unwrap();
         let blob = Blob::new(extents, uncompressed_size as u64, Some(compression_info));
 
-        let tail_start = chunk_size as u64 * 2;
-        let (mut page_request, rx) =
-            TestVecBuffer::new_with_range(tail_start..(uncompressed_size as u64));
-        page_request.data.resize(32768, 0);
+        // Request 1 block in the second 128 KiB readahead window (e.g. 135168..139264).
+        // Readahead should expand to 131072..262144 (chunks 4, 5, 6, 7).
+        let (page_request, rx) = TestVecBuffer::new_with_range(135168..139264);
         blob.read_range(&service, page_request);
 
-        assert_eq!(rx.commits(), vec![(tail_start, chunk_size)]);
-        assert_eq!(&rx.output()[..1024], &uncompressed_data[65536..]);
+        assert_eq!(
+            rx.commits(),
+            vec![
+                (131072, chunk_size),
+                (163840, chunk_size),
+                (196608, chunk_size),
+                (229376, chunk_size),
+            ]
+        );
+        assert_eq!(&rx.output()[..131072], &uncompressed_data[131072..262144]);
     }
 
     #[test]
@@ -1290,5 +1409,22 @@ mod tests {
         msg.pop().unwrap();
 
         assert!(!blobs.is_loaded(123));
+    }
+
+    #[test]
+    fn test_read_ahead_size_for_chunk_size() {
+        assert_eq!(read_ahead_size_for_chunk_size(32 * 1024, 32 * 1024), 32 * 1024);
+        assert_eq!(read_ahead_size_for_chunk_size(48 * 1024, 32 * 1024), 48 * 1024);
+        assert_eq!(read_ahead_size_for_chunk_size(64 * 1024, 32 * 1024), 64 * 1024);
+
+        assert_eq!(read_ahead_size_for_chunk_size(32 * 1024, 64 * 1024), 64 * 1024);
+        assert_eq!(read_ahead_size_for_chunk_size(48 * 1024, 64 * 1024), 48 * 1024);
+        assert_eq!(read_ahead_size_for_chunk_size(64 * 1024, 64 * 1024), 64 * 1024);
+        assert_eq!(read_ahead_size_for_chunk_size(96 * 1024, 64 * 1024), 96 * 1024);
+
+        assert_eq!(read_ahead_size_for_chunk_size(32 * 1024, 128 * 1024), 128 * 1024);
+        assert_eq!(read_ahead_size_for_chunk_size(48 * 1024, 128 * 1024), 96 * 1024);
+        assert_eq!(read_ahead_size_for_chunk_size(64 * 1024, 128 * 1024), 128 * 1024);
+        assert_eq!(read_ahead_size_for_chunk_size(96 * 1024, 128 * 1024), 96 * 1024);
     }
 }
