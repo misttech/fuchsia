@@ -951,9 +951,8 @@ multiconst!(u32, [
 ]);
 
 #[repr(C)]
-#[derive(
-    Default, Debug, Copy, Clone, Eq, PartialEq, KnownLayout, FromBytes, Immutable, IntoBytes,
-)]
+#[derive(Default, Debug, Copy, Clone, Eq, PartialEq)]
+#[cfg_attr(feature = "zerocopy", derive(KnownLayout, FromBytes, Immutable, IntoBytes))]
 pub struct zx_wait_item_t {
     pub handle: zx_handle_t,
     pub waitfor: zx_signals_t,
@@ -1299,7 +1298,8 @@ pub struct zx_exception_info_t {
 }
 
 #[repr(C)]
-#[derive(Default, Copy, Clone, Eq, PartialEq, KnownLayout, FromBytes, Immutable)]
+#[derive(Default, Copy, Clone, Eq, PartialEq)]
+#[cfg_attr(feature = "zerocopy", derive(KnownLayout, FromBytes, Immutable))]
 pub struct zx_x86_64_exc_data_t {
     pub vector: u64,
     pub err_code: u64,
@@ -1313,7 +1313,8 @@ impl Debug for zx_x86_64_exc_data_t {
 }
 
 #[repr(C)]
-#[derive(Default, Copy, Clone, Eq, PartialEq, FromBytes, Immutable)]
+#[derive(Default, Copy, Clone, Eq, PartialEq)]
+#[cfg_attr(feature = "zerocopy", derive(FromBytes, Immutable))]
 pub struct zx_arm64_exc_data_t {
     pub esr: u32,
     padding1: [PadByte; 4],
@@ -1328,7 +1329,8 @@ impl Debug for zx_arm64_exc_data_t {
 }
 
 #[repr(C)]
-#[derive(Default, Copy, Clone, Eq, PartialEq, FromBytes, Immutable)]
+#[derive(Default, Copy, Clone, Eq, PartialEq)]
+#[cfg_attr(feature = "zerocopy", derive(FromBytes, Immutable))]
 pub struct zx_riscv64_exc_data_t {
     pub cause: u64,
     pub tval: u64,
@@ -1342,7 +1344,8 @@ impl Debug for zx_riscv64_exc_data_t {
 }
 
 #[repr(C)]
-#[derive(Copy, Clone, KnownLayout, FromBytes, Immutable)]
+#[derive(Copy, Clone)]
+#[cfg_attr(feature = "zerocopy", derive(KnownLayout, FromBytes, Immutable))]
 pub union zx_exception_header_arch_t {
     pub x86_64: zx_x86_64_exc_data_t,
     pub arm_64: zx_arm64_exc_data_t,
@@ -1383,7 +1386,8 @@ impl Debug for zx_exception_header_arch_t {
 }
 
 #[repr(C)]
-#[derive(Debug, Copy, Clone, Eq, PartialEq, KnownLayout, FromBytes, Immutable)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq)]
+#[cfg_attr(feature = "zerocopy", derive(KnownLayout, FromBytes, Immutable))]
 pub struct zx_exception_header_t {
     pub size: u32,
     pub type_: zx_excp_type_t,
@@ -1417,7 +1421,8 @@ multiconst!(zx_excp_policy_code_t, [
 ]);
 
 #[repr(C)]
-#[derive(Debug, Copy, Clone, KnownLayout, FromBytes, Immutable)]
+#[derive(Debug, Copy, Clone)]
+#[cfg_attr(feature = "zerocopy", derive(KnownLayout, FromBytes, Immutable))]
 pub struct zx_exception_context_t {
     pub arch: zx_exception_header_arch_t,
     pub synth_code: zx_excp_policy_code_t,
@@ -1425,7 +1430,8 @@ pub struct zx_exception_context_t {
 }
 
 #[repr(C)]
-#[derive(Debug, Copy, Clone, KnownLayout, FromBytes, Immutable)]
+#[derive(Debug, Copy, Clone)]
+#[cfg_attr(feature = "zerocopy", derive(KnownLayout, FromBytes, Immutable))]
 pub struct zx_exception_report_t {
     pub header: zx_exception_header_t,
     pub context: zx_exception_context_t,
@@ -1448,7 +1454,8 @@ multiconst!(zx_exception_state_t, [
 
 #[cfg(target_arch = "x86_64")]
 #[repr(C)]
-#[derive(Default, Copy, Clone, Eq, PartialEq, KnownLayout, FromBytes, Immutable)]
+#[derive(Default, Copy, Clone, Eq, PartialEq)]
+#[cfg_attr(feature = "zerocopy", derive(KnownLayout, FromBytes, Immutable))]
 pub struct zx_thread_state_general_regs_t {
     pub rax: u64,
     pub rbx: u64,
@@ -2038,7 +2045,8 @@ macro_rules! struct_decl_macro {
 
 // Don't need struct_decl_macro for this, the wrapper is different.
 #[repr(C)]
-#[derive(Default, Debug, Copy, Clone, Eq, KnownLayout, FromBytes, Immutable, PartialEq)]
+#[derive(Default, Debug, Copy, Clone, Eq, PartialEq)]
+#[cfg_attr(feature = "zerocopy", derive(FromBytes, Immutable, KnownLayout))]
 pub struct zx_info_handle_basic_t {
     pub koid: zx_koid_t,
     pub rights: zx_rights_t,
@@ -2049,7 +2057,8 @@ pub struct zx_info_handle_basic_t {
 
 // Don't need struct_decl_macro for this, the wrapper is different.
 #[repr(C)]
-#[derive(Default, Debug, Copy, Clone, Eq, KnownLayout, FromBytes, Immutable, PartialEq)]
+#[derive(Default, Debug, Copy, Clone, Eq, PartialEq)]
+#[cfg_attr(feature = "zerocopy", derive(FromBytes, Immutable, KnownLayout))]
 pub struct zx_info_handle_extended_t {
     pub type_: zx_obj_type_t,
     pub handle_value: zx_handle_t,
@@ -2073,7 +2082,8 @@ zx_info_handle_count_t!(zx_info_handle_count_t);
 
 // Don't need struct_decl_macro for this, the wrapper is different.
 #[repr(C)]
-#[derive(Default, Debug, Copy, Clone, Eq, PartialEq, KnownLayout, FromBytes, Immutable)]
+#[derive(Default, Debug, Copy, Clone, Eq, PartialEq)]
+#[cfg_attr(feature = "zerocopy", derive(FromBytes, Immutable, KnownLayout))]
 pub struct zx_info_socket_t {
     pub options: u32,
     pub rx_buf_max: usize,
@@ -2215,9 +2225,8 @@ multiconst!(u32, [
 
 // Don't use struct_decl_macro, wrapper is different.
 #[repr(C)]
-#[derive(
-    Default, Debug, Copy, Clone, Eq, PartialEq, KnownLayout, FromBytes, Immutable, IntoBytes,
-)]
+#[derive(Default, Debug, Copy, Clone, Eq, PartialEq)]
+#[cfg_attr(feature = "zerocopy", derive(KnownLayout, FromBytes, Immutable, IntoBytes))]
 pub struct zx_info_vmo_t {
     pub koid: zx_koid_t,
     pub name: [u8; ZX_MAX_NAME_LEN],
@@ -2412,7 +2421,8 @@ multiconst!(zx_thread_state_t, [
 ]);
 
 #[repr(C)]
-#[derive(Default, Debug, Copy, Clone, Eq, PartialEq, zerocopy::FromBytes, zerocopy::Immutable)]
+#[derive(Default, Debug, Copy, Clone, Eq, PartialEq)]
+#[cfg_attr(feature = "zerocopy", derive(FromBytes, Immutable))]
 pub struct zx_info_thread_t {
     pub state: zx_thread_state_t,
     pub wait_exception_channel_type: u32,
@@ -2504,7 +2514,8 @@ struct_decl_macro! {
 zx_info_maps_mapping_t!(zx_info_maps_mapping_t);
 
 #[repr(C)]
-#[derive(Copy, Clone, KnownLayout, FromBytes, Immutable)]
+#[derive(Copy, Clone)]
+#[cfg_attr(feature = "zerocopy", derive(FromBytes, Immutable, KnownLayout))]
 pub union InfoMapsTypeUnion {
     pub mapping: zx_info_maps_mapping_t,
 }
@@ -2572,17 +2583,8 @@ pub const DEBUGLOG_ERROR: u8 = 0x50;
 pub const DEBUGLOG_FATAL: u8 = 0x60;
 
 #[repr(C)]
-#[derive(
-    Debug,
-    Default,
-    Copy,
-    Clone,
-    Eq,
-    PartialEq,
-    zerocopy::FromBytes,
-    zerocopy::IntoBytes,
-    zerocopy::Immutable,
-)]
+#[derive(Debug, Default, Copy, Clone, Eq, PartialEq)]
+#[cfg_attr(feature = "zerocopy", derive(FromBytes, IntoBytes, Immutable))]
 pub struct zx_log_record_header_t {
     pub sequence: u64,
     padding1: [PadByte; 4],
@@ -2595,9 +2597,8 @@ pub struct zx_log_record_header_t {
 }
 
 #[repr(C)]
-#[derive(
-    Debug, Copy, Clone, Eq, PartialEq, zerocopy::FromBytes, zerocopy::IntoBytes, zerocopy::Immutable,
-)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq)]
+#[cfg_attr(feature = "zerocopy", derive(FromBytes, IntoBytes, Immutable))]
 pub struct zx_log_record_t {
     pub header: zx_log_record_header_t,
     pub data: [u8; ZX_LOG_RECORD_DATA_MAX],
@@ -2924,6 +2925,8 @@ multiconst!(u32, [
 ]);
 
 #[repr(C)]
+#[derive(Copy, Clone)]
+#[cfg_attr(feature = "zerocopy", derive(FromBytes, Immutable))]
 pub struct zx_iob_region_t {
     pub r#type: zx_iob_region_type_t,
     pub access: zx_iob_access_t,
@@ -2950,6 +2953,7 @@ multiconst!(zx_iob_access_t, [
 
 #[repr(C)]
 #[derive(Copy, Clone)]
+#[cfg_attr(feature = "zerocopy", derive(FromBytes, Immutable))]
 pub struct zx_iob_discipline_t {
     pub r#type: zx_iob_discipline_type_t,
     pub extension: zx_iob_discipline_extension_t,
@@ -2957,6 +2961,7 @@ pub struct zx_iob_discipline_t {
 
 #[repr(C)]
 #[derive(Copy, Clone)]
+#[cfg_attr(feature = "zerocopy", derive(FromBytes, Immutable))]
 pub union zx_iob_discipline_extension_t {
     // This is in vdso-next.
     pub ring_buffer: zx_iob_discipline_mediated_write_ring_buffer_t,
@@ -2965,6 +2970,7 @@ pub union zx_iob_discipline_extension_t {
 
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
+#[cfg_attr(feature = "zerocopy", derive(FromBytes, Immutable))]
 pub struct zx_iob_discipline_mediated_write_ring_buffer_t {
     pub tag: u64,
     pub padding: [PadByte; 56],
@@ -2977,13 +2983,15 @@ multiconst!(zx_iob_discipline_type_t, [
 
 #[repr(C)]
 #[derive(Clone, Copy, Default)]
+#[cfg_attr(feature = "zerocopy", derive(FromBytes, Immutable))]
 pub struct zx_iob_region_private_t {
-    options: u32,
-    padding: [PadByte; 28],
+    pub options: u32,
+    pub padding: [PadByte; 28],
 }
 
 #[repr(C)]
 #[derive(Clone, Copy)]
+#[cfg_attr(feature = "zerocopy", derive(FromBytes, Immutable))]
 pub struct zx_iob_region_shared_t {
     pub options: u32,
     pub shared_region: zx_handle_t,
@@ -2991,6 +2999,8 @@ pub struct zx_iob_region_shared_t {
 }
 
 #[repr(C)]
+#[derive(Copy, Clone)]
+#[cfg_attr(feature = "zerocopy", derive(FromBytes, Immutable))]
 pub union zx_iob_region_extension_t {
     pub private_region: zx_iob_region_private_t,
     pub shared_region: zx_iob_region_shared_t,
