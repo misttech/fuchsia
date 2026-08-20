@@ -133,6 +133,28 @@ variant("asan") {
     "-asan-use-private-alias=1",
   ]
 
+  # Instrumented C++ and Rust code shares the same LLVM instrumentation ->
+  # runtime ABI so it can interoperate fully using the same runtime. The
+  # prebuilt runtime comes from the clang installation rather than the rustc
+  # installation.
+  #
+  # We pass -Zexternal-clangrt to prevent rustc from automatically linking its
+  # own bundled runtime, allowing GN to manually link Clang's runtime (via
+  # asan.rustflags) for both host and target.
+  #
+  # TODO(https://fxbug.dev/521921032): Eventually enable this for userspace.
+  # Instrumenting everying makes the binary too large to pave at the moment.
+  #
+  # TODO(https://fxbug.dev/543031813): Eventually enable this for host code
+  # as well. It's currently disabled for host because ASan found some bugs
+  # we should fix.
+  if (is_kernel) {
+    rustflags = [
+      "-Zsanitizer=address",
+      "-Zexternal-clangrt",
+    ]
+  }
+
   configs = [
     ":variant-libprefix",
     ":asan.rustflags",

@@ -120,6 +120,12 @@ compiler_config("kasan") {
     "-asan-globals-live-support=false",
   ]
 
+  # TODO(https://fxbug.dev/542709218): ASan instrumentation on globals are temporarily disabled
+  # for rust because we don't have an easy way of suppressing instrumentation on
+  # globals inside macros. Once we sort that out, we'll come back and turn this
+  # on.
+  rust_llvm_flags = [ "-asan-globals=0" ]
+
   if (current_cpu == "arm64") {
     llvm_flags += [
       # TODO(https://fxbug.dev/42104852): Disable inline instrumentation on arm64 until we
