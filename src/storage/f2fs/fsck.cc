@@ -1673,6 +1673,9 @@ void FsckWorker::CheckBlockCount(uint32_t segno, const SitEntry &raw_sit) {
   // check segment usage
   ZX_ASSERT(GetSitVblocks(raw_sit) <= superblock_info_->GetBlocksPerSeg());
 
+  // check segment type
+  ZX_ASSERT(SegmentManager::IsValidSegmentType(GetSitType(raw_sit)));
+
   // check boundary of a given segment number
   ZX_ASSERT(segment_manager_->IsValidSegmentNumber(segno));
 

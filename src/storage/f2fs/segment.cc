@@ -369,6 +369,9 @@ void SegmentManager::CheckBlockCount(uint32_t segno, SitEntry &raw_sit) {
   // check segment usage
   ZX_ASSERT(!(GetSitVblocks(raw_sit) > superblock_info_.GetBlocksPerSeg()));
 
+  // check segment type
+  ZX_ASSERT(IsValidSegmentType(GetSitType(raw_sit)));
+
   // check boundary of a given segment number
   ZX_ASSERT(IsValidSegmentNumber(segno));
 
@@ -520,7 +523,8 @@ void SegmentManager::LocateDirtySegment(uint32_t segno, DirtyType dirty_type) {
   }
 
   if (dirty_type == DirtyType::kDirty) {
-    int entry_type = sit_info_->sentries[segno].type;
+    uint8_t entry_type = sit_info_->sentries[segno].type;
+    ZX_ASSERT(IsValidSegmentType(entry_type));
     if (!dirty_info_->dirty_segmap[entry_type].GetOne(segno)) {
       dirty_info_->dirty_segmap[entry_type].SetOne(segno);
       ++dirty_info_->nr_dirty[entry_type];
@@ -541,7 +545,8 @@ void SegmentManager::RemoveDirtySegment(uint32_t segno, DirtyType dirty_type) {
   }
 
   if (dirty_type == DirtyType::kDirty) {
-    int entry_type = sit_info_->sentries[segno].type;
+    uint8_t entry_type = sit_info_->sentries[segno].type;
+    ZX_ASSERT(IsValidSegmentType(entry_type));
     if (dirty_info_->dirty_segmap[entry_type].GetOne(segno)) {
       dirty_info_->dirty_segmap[entry_type].ClearOne(segno);
       --dirty_info_->nr_dirty[entry_type];
@@ -655,6 +660,7 @@ void SegmentManager::MarkSitEntryDirty(uint32_t segno) {
 
 void SegmentManager::SetSitEntryType(CursegType type, uint32_t segno, bool modified) {
   ZX_ASSERT(IsValidSegmentNumber(segno));
+  ZX_ASSERT(IsValidSegmentType(type));
   SegmentEntry &segment_entry = sit_info_->sentries[segno];
   segment_entry.type = static_cast<uint8_t>(type);
   if (modified)

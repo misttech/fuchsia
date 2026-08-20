@@ -709,5 +709,32 @@ TEST(SegmentManagerExceptionTest, InvalidCheckpointSegno) TA_NO_THREAD_SAFETY_AN
   fs->Reset();
 }
 
+TEST(SegmentManagerStaticTest, IsValidSegmentType) {
+  EXPECT_TRUE(SegmentManager::IsValidSegmentType(CursegType::kCursegHotData));
+  EXPECT_TRUE(SegmentManager::IsValidSegmentType(CursegType::kCursegWarmData));
+  EXPECT_TRUE(SegmentManager::IsValidSegmentType(CursegType::kCursegColdData));
+  EXPECT_TRUE(SegmentManager::IsValidSegmentType(CursegType::kCursegHotNode));
+  EXPECT_TRUE(SegmentManager::IsValidSegmentType(CursegType::kCursegWarmNode));
+  EXPECT_TRUE(SegmentManager::IsValidSegmentType(CursegType::kCursegColdNode));
+
+  EXPECT_FALSE(SegmentManager::IsValidSegmentType(CursegType::kNoCheckType));
+  EXPECT_FALSE(SegmentManager::IsValidSegmentType(static_cast<CursegType>(256)));
+  EXPECT_FALSE(SegmentManager::IsValidSegmentType(static_cast<CursegType>(512)));
+  EXPECT_FALSE(SegmentManager::IsValidSegmentType(static_cast<CursegType>(-1)));
+  EXPECT_FALSE(SegmentManager::IsValidSegmentType(static_cast<uint8_t>(kNrCursegType)));
+  EXPECT_FALSE(SegmentManager::IsValidSegmentType(static_cast<uint8_t>(kCurSegNull)));
+  EXPECT_FALSE(SegmentManager::IsValidSegmentType(uint8_t{255}));
+}
+
+TEST_F(SegmentManagerTest, CheckBlockCountInvalidType) {
+  SitEntry sit{};
+  sit.vblocks = CpuToLe(static_cast<uint16_t>(kNrCursegType << kSitVblocksShift));
+  ASSERT_DEATH(fs_->GetSegmentManager().CheckBlockCount(0, sit), "");
+
+  SitEntry sit_null{};
+  sit_null.vblocks = CpuToLe(static_cast<uint16_t>(kCurSegNull << kSitVblocksShift));
+  ASSERT_DEATH(fs_->GetSegmentManager().CheckBlockCount(0, sit_null), "");
+}
+
 }  // namespace
 }  // namespace f2fs

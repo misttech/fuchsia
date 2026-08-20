@@ -167,6 +167,10 @@ class SegmentManager {
   bool IsValidSegmentNumber(uint32_t segment_number) const {
     return segment_number < main_segments_;
   }
+  static constexpr bool IsValidSegmentType(uint8_t type) { return type < kNrCursegType; }
+  static constexpr bool IsValidSegmentType(CursegType type) {
+    return static_cast<uint32_t>(type) < kNrCursegType;
+  }
   void CheckBlockCount(uint32_t segno, SitEntry &raw_sit);
   pgoff_t CurrentSitAddr(uint32_t start) __TA_REQUIRES_SHARED(sentry_lock_);
   pgoff_t NextSitAddr(pgoff_t block_addr) __TA_REQUIRES_SHARED(sentry_lock_);
@@ -241,8 +245,12 @@ class SegmentManager {
   zx_status_t FlushSitEntries() __TA_EXCLUDES(sentry_lock_);
 
   block_t GetMainAreaStartBlock() const { return main_blkaddr_; }
-  CursegInfo *CURSEG_I(CursegType type) { return &curseg_array_[static_cast<int>(type)]; }
+  CursegInfo *CURSEG_I(CursegType type) {
+    ZX_ASSERT(IsValidSegmentType(type));
+    return &curseg_array_[static_cast<int>(type)];
+  }
   const CursegInfo *CURSEG_I(CursegType type) const {
+    ZX_ASSERT(IsValidSegmentType(type));
     return &curseg_array_[static_cast<int>(type)];
   }
   size_t GetAvailableBlockCountOnCurseg(CursegType type) const __TA_REQUIRES_SHARED(sentry_lock_) {
@@ -345,6 +353,7 @@ class SegmentManager {
   }
   void SetSegmentEntryType(uint32_t target_segno, CursegType type) TA_NO_THREAD_SAFETY_ANALYSIS {
     ZX_ASSERT(IsValidSegmentNumber(target_segno));
+    ZX_ASSERT(IsValidSegmentType(type));
     sit_info_->sentries[target_segno].type = static_cast<uint8_t>(type);
   }
   uint32_t GetLastVictim(int mode) TA_NO_THREAD_SAFETY_ANALYSIS { return last_victim_[mode]; }
