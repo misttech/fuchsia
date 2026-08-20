@@ -212,6 +212,10 @@ group("usb_cdc_function_base") {
   deps = [ "//bundles/assembly/bazel_inputs/src/connectivity/ethernet/drivers/usb-cdc-function:package" ]
 }
 
+group("usb_zero_function_base") {
+  deps = [ "//bundles/assembly/bazel_inputs/src/devices/usb/drivers/usb-zero-function:package" ]
+}
+
 group("usb_policy") {
   deps = [
     "//bundles/assembly/bazel_inputs/src/devices/usb/bin/usb-cli",

@@ -85,11 +85,11 @@ impl DefineSubsystemConfiguration<(&UsbConfig, &PlatformStarnixConfig)> for UsbS
                     (UsbPeripheralFunction::Rndis, _, _) => {
                         builder.platform_bundle("usb_rndis_function")?
                     }
-                    (UsbPeripheralFunction::Test, _, _) => {
-                        anyhow::bail!(
-                            "Product requested the \"test\" USB peripheral function which has no associated AIB"
-                        )
-                    }
+                    (
+                        UsbPeripheralFunction::Test,
+                        FeatureSetLevel::Utility | FeatureSetLevel::Standard,
+                        BuildType::Eng,
+                    ) => builder.platform_bundle("usb_zero_function_base")?,
                     (UsbPeripheralFunction::Ums, _, _) => {
                         builder.platform_bundle("usb_ums_function")?
                     }

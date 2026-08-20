@@ -325,6 +325,7 @@ platform_aib_names = bringup_platform_aib_names + [
     "usb_peripheral_drivers_base",
     "usb_policy",
     "usb_policy_starnix",
+    "usb_zero_function_base",
 
     # Recovery
     "factory_reset",

@@ -9,6 +9,16 @@
     {
         "device": {
             "fuchsia.BIND_PROTOCOL": "fuchsia.usb.BIND_PROTOCOL.FUNCTION",
+            "fuchsia.BIND_USB_CLASS": "fuchsia.usb.BIND_USB_CLASS.COMM",
+            "fuchsia.BIND_USB_SUBCLASS": "0",
+            "fuchsia.BIND_USB_PROTOCOL": "0"
+        },
+        "expected": "abort",
+        "name": "Wrong_Class"
+    },
+    {
+        "device": {
+            "fuchsia.BIND_PROTOCOL": "fuchsia.usb.BIND_PROTOCOL.FUNCTION",
             "fuchsia.BIND_USB_CLASS": "fuchsia.usb.BIND_USB_CLASS.VENDOR_SPECIFIC",
             "fuchsia.BIND_USB_SUBCLASS": "0",
             "fuchsia.BIND_USB_PROTOCOL": "0"

@@ -363,6 +363,22 @@ assembly_input_bundle(
 
 # buildifier: leave-alone
 assembly_input_bundle(
+    name = "usb_zero_function_base",
+    allowed_in = [
+        "standard::eng",
+        "utility::eng",
+    ],
+    drivers = [
+        {
+            "set": "base",
+            "package_target": "//bundles/assembly/bazel_inputs/src/devices/usb/drivers/usb-zero-function:package",
+            "driver_components": ["meta/usb-zero-function.cm"],
+        },
+    ],
+)
+
+# buildifier: leave-alone
+assembly_input_bundle(
     name = "usb_policy",
     experimental = True,
     allowed_in = [
