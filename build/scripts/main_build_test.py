@@ -8,6 +8,7 @@ import io
 import os
 import pathlib
 import signal
+import subprocess
 import unittest
 from contextlib import contextmanager
 from typing import Any, Generator
@@ -47,8 +48,10 @@ class MainBuildTestBase(unittest.TestCase):
                 new_callable=mock.PropertyMock,
                 return_value=timestamp,
             ):
-                with mock.patch("main_build.mkdir") as mock_mkdir:
-                    with mock.patch("main_build.write_text") as mock_write:
+                with mock.patch.object(main_build, "mkdir") as mock_mkdir:
+                    with mock.patch.object(
+                        main_build, "write_text"
+                    ) as mock_write:
                         yield mock_mkdir, mock_write
 
     def create_context(
@@ -340,8 +343,9 @@ class BuildInvocationTest(MainBuildTestBase):
 
 
 class BuildCommandExecutionTest(unittest.TestCase):
-    @mock.patch("main_build.BuildLock")
-    @mock.patch("main_build.subprocess.Popen")
+    @mock.patch.object(main_build, "BuildLock")
+    @mock.patch.object(subprocess, "Popen")
+    @mock.patch.dict(os.environ, {"FX_BUILD_QUIET": "0"})
     def test_run(self, mock_popen: mock.Mock, mock_lock: mock.Mock) -> None:
         # We still need context and invocation for the execution object
         # Create them manually to avoid TestBase dependency
@@ -372,8 +376,8 @@ class BuildCommandExecutionTest(unittest.TestCase):
                 new_callable=mock.PropertyMock,
                 return_value="ts",
             ):
-                with mock.patch("main_build.mkdir"):
-                    with mock.patch("main_build.write_text"):
+                with mock.patch.object(main_build, "mkdir"):
+                    with mock.patch.object(main_build, "write_text"):
                         invocation = main_build.BuildInvocation(context)
 
         exec_info = main_build.BuildCommandExecution(
@@ -388,7 +392,7 @@ class BuildCommandExecutionTest(unittest.TestCase):
         mock_process.wait.return_value = 0
         mock_popen.return_value = mock_process
 
-        with mock.patch("main_build.exists", return_value=True):
+        with mock.patch.object(main_build, "exists", return_value=True):
             with mock.patch("pathlib.Path.unlink") as mock_unlink:
                 result = exec_info.run()
                 self.assertEqual(result.return_code, 0)
@@ -398,8 +402,9 @@ class BuildCommandExecutionTest(unittest.TestCase):
                     invocation.context.build_dir, print_message=False
                 )
 
-    @mock.patch("main_build.BuildLock")
-    @mock.patch("main_build.subprocess.Popen")
+    @mock.patch.object(main_build, "BuildLock")
+    @mock.patch.object(subprocess, "Popen")
+    @mock.patch.dict(os.environ, {"FX_BUILD_QUIET": "0"})
     def test_run_dry_run(
         self, mock_popen: mock.Mock, mock_lock: mock.Mock
     ) -> None:
@@ -430,8 +435,8 @@ class BuildCommandExecutionTest(unittest.TestCase):
                 new_callable=mock.PropertyMock,
                 return_value="ts",
             ):
-                with mock.patch("main_build.mkdir"):
-                    with mock.patch("main_build.write_text"):
+                with mock.patch.object(main_build, "mkdir"):
+                    with mock.patch.object(main_build, "write_text"):
                         invocation = main_build.BuildInvocation(context)
 
         exec_info = main_build.BuildCommandExecution(
