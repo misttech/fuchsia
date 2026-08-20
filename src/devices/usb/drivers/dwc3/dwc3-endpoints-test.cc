@@ -605,9 +605,7 @@ TEST_P(Dwc3EndpointsTest, CancelAllRequestsWhenIdle) {
   ASSERT_TRUE(cancel_result->is_ok());
 }
 
-// TODO(b/509735595): Re-enable in next CL once ZLP unchaining production fix in
-// UserEpQueueNextOngoing lands.
-TEST_P(Dwc3EndpointsTest, DISABLED_InputEndpointZlpComplete) {
+TEST_P(Dwc3EndpointsTest, InputEndpointZlpComplete) {
   TriggerConnection();
 
   // 0x82 is an INPUT (IN) endpoint.
@@ -691,9 +689,7 @@ TEST_P(Dwc3EndpointsTest, DISABLED_InputEndpointZlpComplete) {
   EXPECT_EQ(512UL, completions[0].transfer_size);
 }
 
-// TODO(b/509735595): Re-enable in next CL once TRB double-flush and release fence production fix in
-// UserEpQueueNextOngoing lands.
-TEST_P(Dwc3EndpointsTest, DISABLED_RingBufferWraparoundZlp) {
+TEST_P(Dwc3EndpointsTest, RingBufferWraparoundZlp) {
   if (!GetParam()) {
     return;
   }
@@ -745,7 +741,7 @@ TEST_P(Dwc3EndpointsTest, DISABLED_RingBufferWraparoundZlp) {
   // Enqueue the primary request that requires two TRBs and will trigger a ring buffer wraparound.
   dut_.RunInDriverContext([&](Dwc3& drv) { TriggerEpTransferNotReady(drv, ep_num, 0); });
   QueueRequest(1, 512, 512, fdescriptor::EndpointType::kBulk, true);
-  dut_.runtime().RunUntilIdle();
+  WaitForActiveCount(ep_num, 1);
 
   dut_.RunInDriverContext([&](Dwc3& drv) {
     auto& uep = GetUserEndpoint(drv, ep_num);
@@ -765,9 +761,7 @@ TEST_P(Dwc3EndpointsTest, DISABLED_RingBufferWraparoundZlp) {
   });
 }
 
-// TODO(b/509735595): Re-enable in next CL once ZLP unchaining production fix in
-// UserEpQueueNextOngoing lands.
-TEST_P(Dwc3EndpointsTest, DISABLED_InputEndpointMultiPacketZlpComplete) {
+TEST_P(Dwc3EndpointsTest, InputEndpointMultiPacketZlpComplete) {
   TriggerConnection();
 
   const uint8_t ep_address = 0x82;  // IN endpoint
@@ -843,9 +837,7 @@ TEST_P(Dwc3EndpointsTest, DISABLED_InputEndpointMultiPacketZlpComplete) {
   EXPECT_EQ(4096UL, completions[0].transfer_size);
 }
 
-// TODO(b/509735595): Re-enable in next CL once TRB double-flush and release fence production fix in
-// UserEpQueueNextOngoing lands.
-TEST_P(Dwc3EndpointsTest, DISABLED_OutEndpointRingBufferWraparound) {
+TEST_P(Dwc3EndpointsTest, OutEndpointRingBufferWraparound) {
   if (!GetParam()) {
     return;
   }
@@ -888,7 +880,7 @@ TEST_P(Dwc3EndpointsTest, DISABLED_OutEndpointRingBufferWraparound) {
   // Enqueue OUT request sitting on wraparound boundary.
   dut_.RunInDriverContext([&](Dwc3& drv) { TriggerEpTransferNotReady(drv, ep_num, 0); });
   QueueRequest(1, 512, 1024, fdescriptor::EndpointType::kBulk, false);
-  dut_.runtime().RunUntilIdle();
+  WaitForActiveCount(ep_num, 1);
 
   dut_.RunInDriverContext([&](Dwc3& drv) {
     auto& uep = GetUserEndpoint(drv, ep_num);

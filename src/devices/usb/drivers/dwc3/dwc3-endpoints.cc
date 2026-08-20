@@ -69,16 +69,29 @@ void Dwc3::EpStartTransfer(Endpoint& ep, TrbFifo& fifo, uint32_t type, zx_paddr_
     // transfer type that should be able to handle this. Alas, it doesn't
     // actually seem to work, so we just enqueue an actual zero length transfer
     // as a second TRB.
-    trb->control = type | TRB_HWO;
+    // Because the data TRB and ZLP TRB are submitted as separate, unchained Transfer Descriptors
+    // (TDs), both must have TRB_IOC set so the driver receives completion events to finish the
+    // request.
+    trb->control = type | TRB_IOC;
 
     dwc3_trb_t* trb2 = fifo.AdvanceWrite();
     trb2->ptr_low = 0;
     trb2->ptr_high = 0;
     trb2->status = TRB_BUFSIZ(0);
     trb2->control = type | TRB_LST | TRB_IOC | TRB_HWO;
+    fifo.Write(trb2, 1);
 
-    trb_phys = fifo.Write(trb, 2);
+    // memory_order_release enforces compiler memory ordering for uncached memory, preventing
+    // TRB_HWO from being committed to RAM before the payload.
+    std::atomic_thread_fence(std::memory_order_release);
+
+    trb->control = type | TRB_IOC | TRB_HWO;
+
+    trb_phys = fifo.Write(trb, 1);
   } else {
+    // memory_order_release enforces compiler memory ordering for uncached memory, preventing
+    // TRB_HWO from being committed to RAM before the payload.
+    std::atomic_thread_fence(std::memory_order_release);
     trb->control = type | TRB_LST | TRB_IOC | TRB_HWO;
     trb_phys = fifo.Write(trb, 1);
   }
@@ -289,37 +302,35 @@ void Dwc3::UserEpQueueNextOngoing(UserEndpoint& uep, bool start_transfer) {
     trb->ptr_high = static_cast<uint32_t>(phys >> 32);
     trb->status = TRB_BUFSIZ(static_cast<uint32_t>(size));
 
-    uint32_t control = TRB_TRBCTL_NORMAL | TRB_HWO;
+    uint32_t control = TRB_TRBCTL_NORMAL;
     if (uep.ep.IsOutput()) {
-      control |= TRB_CSP | TRB_IOC;
-    } else {
-      if (need_zlp) {
-        // ZLP TRB is chained with this one.
-        control |= TRB_CHN;
-      } else {
-        // We only need the IOC bit in the last TRB.
-        control |= TRB_IOC;
-      }
+      control |= TRB_CSP;
     }
 
-    // Ensure the TRB is written before we release it to the controller.
-    std::atomic_thread_fence(std::memory_order_release);
+    // We must set the IOC bit on all unchained TRBs, otherwise the hardware halts without
+    // interrupting.
+    control |= TRB_IOC;
+
+    // 1. Commit all fields without the HWO bit to prevent hardware tearing on active endpoints.
     trb->control = control;
-
-    zx_paddr_t trb_phys = uep.fifo.Write(trb);
-    if (first_trb_phys == 0) {
-      first_trb_phys = trb_phys;
-    }
 
     if (need_zlp) {
       dwc3_trb_t* zlp_trb = uep.fifo.AdvanceWrite();
       zlp_trb->ptr_low = 0;
       zlp_trb->ptr_high = 0;
       zlp_trb->status = TRB_BUFSIZ(0);
-      // Ensure the TRB is written before we release it to the controller.
-      std::atomic_thread_fence(std::memory_order_release);
       zlp_trb->control = TRB_TRBCTL_NORMAL | TRB_IOC | TRB_HWO;
       uep.fifo.Write(zlp_trb);
+    }
+
+    // We intentionally leave the ZLP unchained to prevent the hardware from merging the payloads.
+    // 2. Safely grant hardware ownership to the primary TRB spanning the release fence.
+    std::atomic_thread_fence(std::memory_order_release);
+    trb->control = control | TRB_HWO;
+    zx_paddr_t trb_phys = uep.fifo.Write(trb);
+
+    if (first_trb_phys == 0) {
+      first_trb_phys = trb_phys;
     }
 
     uep.server->active_reqs.push(EpServer::RequestState{
@@ -479,9 +490,10 @@ void Dwc3::HandleEpTransferEndedEvent(uint8_t ep_num) {
     while (!uep->server->active_reqs.empty()) {
       auto& request_state = uep->server->active_reqs.front();
       pending_trbs += request_state.total_trbs - request_state.completed_trbs;
-      uep->server->RequestComplete(reason, 0, std::move(request_state.request));
+      uep->server->RequestComplete(reason, 0, std::move(request_state.request), /*send_now=*/false);
       uep->server->active_reqs.pop();
     }
+    uep->server->SendCompletions();
     size_t active_count = uep->fifo.GetActiveCount();
     ZX_ASSERT_MSG(active_count == pending_trbs, "%ld == %ld", active_count, pending_trbs);
 

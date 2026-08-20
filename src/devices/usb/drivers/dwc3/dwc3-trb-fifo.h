@@ -25,15 +25,15 @@ class TrbFifo : public Fifo<dwc3_trb_t> {
       zx_paddr_t trb_phys = Fifo::GetPhys(first_);
       last_--;
       const zx_off_t offset = (last_ - first_) * sizeof(dwc3_trb_t);
-      if (auto status = buffer_->ExecuteWriteOps(offset, sizeof(dwc3_trb_t),
-                                                 [&](uint8_t* ptr) {
-                                                   auto link_trb =
-                                                       reinterpret_cast<dwc3_trb_t*>(ptr);
-                                                   link_trb->ptr_low = (uint32_t)trb_phys;
-                                                   link_trb->ptr_high = (uint32_t)(trb_phys >> 32);
-                                                   link_trb->status = 0;
-                                                   link_trb->control = TRB_TRBCTL_LINK | TRB_HWO;
-                                                 });
+      if (auto status =
+              buffer_->ExecuteWriteOps(offset, sizeof(dwc3_trb_t),
+                                       [&](uint8_t* ptr) {
+                                         auto link_trb = reinterpret_cast<dwc3_trb_t*>(ptr);
+                                         link_trb->ptr_low = (uint32_t)trb_phys;
+                                         link_trb->ptr_high = (uint32_t)(trb_phys >> 32);
+                                         link_trb->status = 0;
+                                         link_trb->control = TRB_TRBCTL_LINK | TRB_HWO | TRB_CHN;
+                                       });
           status.is_error()) {
         fdf::error("ExecuteWriteOps failed: {}", status);
         return status.take_error();

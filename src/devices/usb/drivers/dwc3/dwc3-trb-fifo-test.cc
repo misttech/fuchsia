@@ -30,7 +30,7 @@ class TrbFifoTest : public testing::TestWithParam<bool> {
     EXPECT_EQ(fifo_.last_->ptr_low, (uint32_t)first_phys);
     EXPECT_EQ(fifo_.last_->ptr_high, (uint32_t)(first_phys >> 32));
     EXPECT_EQ(fifo_.last_->status, 0u);
-    EXPECT_EQ(static_cast<uint32_t>(TRB_TRBCTL_LINK | TRB_HWO), fifo_.last_->control);
+    EXPECT_EQ(static_cast<uint32_t>(TRB_TRBCTL_LINK | TRB_HWO | TRB_CHN), fifo_.last_->control);
   }
 
  protected:
