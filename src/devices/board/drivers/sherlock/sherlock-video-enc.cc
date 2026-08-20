@@ -69,7 +69,7 @@ const std::vector<fdf::NodeProperty2> kCanvasProperties = std::vector{
 
 const std::vector<fdf::BindRule2> kClkDosHCodecRules = std::vector{
     fdf::MakeAcceptBindRule(bind_fuchsia::SERVICE, "fuchsia.hardware.clock.Service"),
-    fdf::MakeAcceptBindRule(bind_fuchsia::CLOCK_ID, g12b_clk::G12B_CLK_DOS_GCLK_HCODEC),
+    fdf::MakeAcceptBindRule(bind_fuchsia::ID, g12b_clk::G12B_CLK_DOS_GCLK_HCODEC),
 };
 const std::vector<fdf::NodeProperty2> kClkDosHCodecProperties = std::vector{
     fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.clock.Service"),
@@ -80,7 +80,7 @@ const std::vector<fdf::NodeProperty2> kClkDosHCodecProperties = std::vector{
 
 const std::vector<fdf::BindRule2> kClkDosRules = std::vector{
     fdf::MakeAcceptBindRule(bind_fuchsia::SERVICE, "fuchsia.hardware.clock.Service"),
-    fdf::MakeAcceptBindRule(bind_fuchsia::CLOCK_ID, g12b_clk::G12B_CLK_DOS),
+    fdf::MakeAcceptBindRule(bind_fuchsia::ID, g12b_clk::G12B_CLK_DOS),
 };
 const std::vector<fdf::NodeProperty2> kClkDosProperties = std::vector{
     fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.clock.Service"),

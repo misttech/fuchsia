@@ -383,9 +383,6 @@ fn deprecated_keys() -> Vec<(String, u32)> {
     keys.push(("BIND_POWER_DOMAIN".to_string(), 0x0A20));
     keys.push(("BIND_POWER_DOMAIN_COMPOSITE".to_string(), 0x0A21));
 
-    // POWER binding variables at 0x0A3X
-    keys.push(("BIND_CLOCK_ID".to_string(), 0x0A30));
-
     // SPI binding variables at 0x0A4X
     keys.push(("BIND_SPI_BUS_ID".to_string(), 0x0A41));
     keys.push(("BIND_SPI_CHIP_SELECT".to_string(), 0x0A42));
@@ -496,9 +493,6 @@ pub fn get_deprecated_key_identifier(key: u32) -> Option<String> {
         0x0A20 => Some("fuchsia.BIND_POWER_DOMAIN".to_string()),
         0x0A21 => Some("fuchsia.BIND_POWER_DOMAIN_COMPOSITE".to_string()),
 
-        // POWER (clock) binding variables at 0x0A3X.
-        0x0A30 => Some("fuchsia.BIND_CLOCK_ID".to_string()),
-
         // SPI binding variables at 0x0A4X.
         0x0A41 => Some("fuchsia.BIND_SPI_BUS_ID".to_string()),
         0x0A42 => Some("fuchsia.BIND_SPI_CHIP_SELECT".to_string()),
@@ -593,9 +587,6 @@ pub fn get_deprecated_key_value(key: &str) -> Option<u32> {
         // POWER binding variables at 0x0A2X
         "fuchsia.BIND_POWER_DOMAIN" => Some(0x0A20),
         "fuchsia.BIND_POWER_DOMAIN_COMPOSITE" => Some(0x0A21),
-
-        // POWER binding variables at 0x0A3X
-        "fuchsia.BIND_CLOCK_ID" => Some(0x0A30),
 
         // SPI binding variables at 0x0A4X
         "fuchsia.BIND_SPI_BUS_ID" => Some(0x0A41),

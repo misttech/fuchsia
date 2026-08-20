@@ -55,7 +55,7 @@ class ClockImplVisitor : public fdf_devicetree::Visitor {
                               std::optional<uint32_t> clock_rate,
                               std::optional<fdf_devicetree::Reference> clock_parent);
 
-  zx::result<> AddChildNodeSpec(fdf_devicetree::Node& child, uint32_t clock_id, uint32_t node_id,
+  zx::result<> AddChildNodeSpec(fdf_devicetree::Node& child, uint32_t node_id,
                                 std::optional<std::string_view> clock_name);
 
   zx::result<> AddInitChildNodeSpec(fdf_devicetree::Node& child);

@@ -309,7 +309,6 @@ zx_status_t ClockDevice::Init(const std::shared_ptr<fdf::Namespace>& incoming,
   };
 
   std::vector<fuchsia_driver_framework::NodeProperty2> node_properties{
-      fdf::MakeProperty2(bind_fuchsia::CLOCK_ID, id_),
       fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.clock.Service"),
       fdf::MakeProperty2("fuchsia.hardware.clock.Service",
                          "fuchsia.hardware.clock.Service.ZirconTransport"),
@@ -317,9 +316,9 @@ zx_status_t ClockDevice::Init(const std::shared_ptr<fdf::Namespace>& incoming,
 
   if (node_id.has_value()) {
     node_properties.push_back(
-        fdf::MakeProperty2(bind_fuchsia::CLOCK_NODE_ID, static_cast<uint32_t>(node_id.value())));
-    node_properties.push_back(
         fdf::MakeProperty2(bind_fuchsia::ID, static_cast<uint32_t>(node_id.value())));
+  } else {
+    node_properties.push_back(fdf::MakeProperty2(bind_fuchsia::ID, id_));
   }
 
   fuchsia_hardware_clock::Service::InstanceHandler instance_handler{

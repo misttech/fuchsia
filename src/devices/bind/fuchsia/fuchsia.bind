@@ -93,10 +93,6 @@ uint BIND_GPIO_CONTROLLER;
 uint BIND_POWER_DOMAIN;
 uint BIND_POWER_DOMAIN_COMPOSITE;
 
-// POWER bind properties.
-uint BIND_CLOCK_ID;
-uint BIND_CLOCK_NODE_ID;
-
 // SPI bind properties.
 uint BIND_SPI_BUS_ID;
 uint BIND_SPI_CHIP_SELECT;

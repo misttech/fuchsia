@@ -154,15 +154,13 @@ zx::result<> ClockImplVisitor::Visit(fdf_devicetree::Node& node,
   return zx::ok();
 }
 
-zx::result<> ClockImplVisitor::AddChildNodeSpec(fdf_devicetree::Node& child, uint32_t clock_id,
-                                                uint32_t node_id,
+zx::result<> ClockImplVisitor::AddChildNodeSpec(fdf_devicetree::Node& child, uint32_t node_id,
                                                 std::optional<std::string_view> clock_name) {
   auto clock_node = fuchsia_driver_framework::ParentSpec2{{
       .bind_rules =
           {
               fdf::MakeAcceptBindRule(bind_fuchsia::SERVICE, "fuchsia.hardware.clock.Service"),
-              fdf::MakeAcceptBindRule(bind_fuchsia::CLOCK_ID, clock_id),
-              fdf::MakeAcceptBindRule(bind_fuchsia::CLOCK_NODE_ID, node_id),
+              fdf::MakeAcceptBindRule(bind_fuchsia::ID, node_id),
           },
       .properties =
           {
@@ -234,7 +232,7 @@ zx::result<> ClockImplVisitor::ParseReferenceChild(fdf_devicetree::Node& child,
   }});
 #endif
 
-  return AddChildNodeSpec(child, clock_id, node_id, clock_name);
+  return AddChildNodeSpec(child, node_id, clock_name);
 }
 
 zx::result<> ClockImplVisitor::ParseInitChild(

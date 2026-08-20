@@ -118,8 +118,7 @@ zx_status_t Astro::MaliInit() {
                 fdf::MakeAcceptBindRule(bind_fuchsia_hardware_clock::SERVICE,
                                         bind_fuchsia_hardware_clock::SERVICE_ZIRCONTRANSPORT),
                 fdf::MakeAcceptBindRule(
-                    bind_fuchsia::CLOCK_ID,
-                    bind_fuchsia_amlogic_platform_meson::G12A_CLK_ID_CLK_GP0_PLL),
+                    bind_fuchsia::ID, bind_fuchsia_amlogic_platform_meson::G12A_CLK_ID_CLK_GP0_PLL),
             },
         .properties =
             {

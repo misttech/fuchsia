@@ -148,8 +148,7 @@ TEST(ClockImplVisitorTest, TestClocksProperty) {
   EXPECT_TRUE(fdf_devicetree::testing::CheckHasBindRules(
       {{fdf::MakeAcceptBindRule(bind_fuchsia::SERVICE, "fuchsia.hardware.clock.Service"),
         // Clock Node IDs are monotonically increasing integers.
-        fdf::MakeAcceptBindRule(bind_fuchsia::CLOCK_NODE_ID, 0u),
-        fdf::MakeAcceptBindRule(bind_fuchsia::CLOCK_ID, static_cast<uint32_t>(CLK_ID1))}},
+        fdf::MakeAcceptBindRule(bind_fuchsia::ID, 0u)}},
       (*mgr_request_video.parents2())[1].bind_rules(), false));
 
   EXPECT_TRUE(fdf_devicetree::testing::CheckHasProperties(
@@ -161,8 +160,7 @@ TEST(ClockImplVisitorTest, TestClocksProperty) {
   EXPECT_TRUE(fdf_devicetree::testing::CheckHasBindRules(
       {{fdf::MakeAcceptBindRule(bind_fuchsia::SERVICE, "fuchsia.hardware.clock.Service"),
         // Clock Node IDs are monotonically increasing integers.
-        fdf::MakeAcceptBindRule(bind_fuchsia::CLOCK_NODE_ID, 1u),
-        fdf::MakeAcceptBindRule(bind_fuchsia::CLOCK_ID, static_cast<uint32_t>(CLK_ID2))}},
+        fdf::MakeAcceptBindRule(bind_fuchsia::ID, 1u)}},
       (*mgr_request_video.parents2())[2].bind_rules(), false));
 
   auto audio_specs = clock_tester->GetCompositeNodeSpecs("audio");
@@ -183,8 +181,7 @@ TEST(ClockImplVisitorTest, TestClocksProperty) {
   EXPECT_TRUE(fdf_devicetree::testing::CheckHasBindRules(
       {{fdf::MakeAcceptBindRule(bind_fuchsia::SERVICE, "fuchsia.hardware.clock.Service"),
         // Clock Node IDs are monotonically increasing integers.
-        fdf::MakeAcceptBindRule(bind_fuchsia::CLOCK_NODE_ID, 2u),
-        fdf::MakeAcceptBindRule(bind_fuchsia::CLOCK_ID, static_cast<uint32_t>(CLK_ID6))}},
+        fdf::MakeAcceptBindRule(bind_fuchsia::ID, 2u)}},
       (*mgr_request_audio.parents2())[1].bind_rules(), false));
 
   // The rest are init step clock parents2.

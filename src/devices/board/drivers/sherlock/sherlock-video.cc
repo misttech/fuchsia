@@ -112,7 +112,7 @@ zx_status_t Sherlock::VideoInit() {
           {
               fdf::MakeAcceptBindRule(bind_fuchsia::SERVICE, "fuchsia.hardware.clock.Service"),
               fdf::MakeAcceptBindRule(
-                  bind_fuchsia::CLOCK_ID,
+                  bind_fuchsia::ID,
                   bind_fuchsia_amlogic_platform_meson::G12B_CLK_ID_CLK_DOS_GCLK_VDEC),
           },
       .properties =
@@ -126,7 +126,7 @@ zx_status_t Sherlock::VideoInit() {
       .bind_rules =
           {
               fdf::MakeAcceptBindRule(bind_fuchsia::SERVICE, "fuchsia.hardware.clock.Service"),
-              fdf::MakeAcceptBindRule(bind_fuchsia::CLOCK_ID,
+              fdf::MakeAcceptBindRule(bind_fuchsia::ID,
                                       bind_fuchsia_amlogic_platform_meson::G12B_CLK_ID_CLK_DOS),
           },
       .properties =

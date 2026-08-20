@@ -323,7 +323,7 @@ zx_status_t Sherlock::CameraInit() {
           {
               fdf::MakeAcceptBindRule(bind_fuchsia::SERVICE, "fuchsia.hardware.clock.Service"),
               fdf::MakeAcceptBindRule(
-                  bind_fuchsia::CLOCK_ID,
+                  bind_fuchsia::ID,
                   bind_fuchsia_amlogic_platform_meson::G12B_CLK_ID_CLK_CAM_INCK_24M),
           },
       .properties =

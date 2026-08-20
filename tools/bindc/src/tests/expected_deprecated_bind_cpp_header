@@ -112,10 +112,6 @@ static const char POWER_DOMAIN[] = "fuchsia.BIND_POWER_DOMAIN";
 
 static const char POWER_DOMAIN_COMPOSITE[] = "fuchsia.BIND_POWER_DOMAIN_COMPOSITE";
 
-static const char CLOCK_ID[] = "fuchsia.BIND_CLOCK_ID";
-
-static const char CLOCK_NODE_ID[] = "fuchsia.BIND_CLOCK_NODE_ID";
-
 static const char SPI_BUS_ID[] = "fuchsia.BIND_SPI_BUS_ID";
 
 static const char SPI_CHIP_SELECT[] = "fuchsia.BIND_SPI_CHIP_SELECT";
