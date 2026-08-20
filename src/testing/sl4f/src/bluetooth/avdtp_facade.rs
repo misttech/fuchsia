@@ -13,8 +13,8 @@ use fuchsia_component::client;
 use fuchsia_sync::RwLock;
 use futures::stream::StreamExt;
 use log::*;
-use std::collections::hash_map::Entry;
 use std::collections::HashMap;
+use std::collections::hash_map::Entry;
 use std::sync::Arc;
 
 use crate::bluetooth::types::PeerFactoryMap;
@@ -108,7 +108,8 @@ impl AvdtpFacade {
     /// Gets the currently connected peers.
     pub async fn get_connected_peers(&self) -> Result<Vec<u64>, Error> {
         let tag = "AvdtpFacade::get_connected_peers";
-        let peer_ids = match &self.inner.read().avdtp_service_proxy {
+        let proxy_opt = self.inner.read().avdtp_service_proxy.clone();
+        let peer_ids = match proxy_opt {
             Some(p) => {
                 let connected_peers = p.connected_peers().await?;
                 let mut peer_id_list = Vec::new();

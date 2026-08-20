@@ -8,7 +8,6 @@ use fidl_fuchsia_bluetooth_a2dp::{AudioModeMarker, AudioModeProxy, Role};
 use fuchsia_component::client;
 use fuchsia_sync::Mutex;
 use log::info;
-use std::ops::DerefMut;
 
 #[derive(Debug)]
 pub struct A2dpFacade {
@@ -52,8 +51,9 @@ impl A2dpFacade {
     /// * `role` - The new role to assume. If this role is already set, this is a no-op.
     pub async fn set_role(&self, role: Role) -> Result<(), Error> {
         let tag = "A2dpFacade::set_role";
-        let mut proxy_locked = self.audio_mode_proxy.lock();
-        match proxy_locked.deref_mut() {
+        let proxy_opt = self.audio_mode_proxy.lock().clone();
+
+        match proxy_opt {
             Some(proxy) => {
                 proxy.set_role(role).await?;
                 info!("new A2DP audio mode set: {:?}", role);

@@ -86,7 +86,8 @@ impl AvrcpFacade {
     /// Returns the media attributes from the controller.
     pub async fn get_media_attributes(&self) -> Result<String, Error> {
         let tag = "AvrcpFacade::get_media_attributes";
-        match self.inner.read().controller_proxy.clone() {
+        let proxy_opt = self.inner.read().controller_proxy.clone();
+        match proxy_opt {
             Some(proxy) => match proxy.get_media_attributes().await? {
                 Ok(media_attribs) => Ok(format!("Media attributes: {:#?}", media_attribs)),
                 Err(e) => fx_err_and_bail!(
@@ -101,7 +102,8 @@ impl AvrcpFacade {
     /// Returns the play status from the controller.
     pub async fn get_play_status(&self) -> Result<CustomPlayStatus, Error> {
         let tag = "AvrcpFacade::get_play_status";
-        match self.inner.read().controller_proxy.clone() {
+        let proxy_opt = self.inner.read().controller_proxy.clone();
+        match proxy_opt {
             Some(proxy) => match proxy.get_play_status().await? {
                 Ok(play_status) => Ok(CustomPlayStatus::new(&play_status)),
                 Err(e) => fx_err_and_bail!(
@@ -119,7 +121,8 @@ impl AvrcpFacade {
     /// * `command` - an enum representing the AVCPanelCommand.
     pub async fn send_command(&self, command: CustomAvcPanelCommand) -> Result<(), Error> {
         let tag = "AvrcpFacade::send_command";
-        let result = match self.inner.read().controller_proxy.clone() {
+        let proxy_opt = self.inner.read().controller_proxy.clone();
+        let result = match proxy_opt {
             Some(proxy) => proxy.send_command(command.into()).await?,
             None => fx_err_and_bail!(&with_line!(tag), "No AVRCP service proxy available"),
         };
@@ -137,7 +140,9 @@ impl AvrcpFacade {
     /// * `absolute_volume` - the value to which the volume is set.
     pub async fn set_absolute_volume(&self, absolute_volume: u8) -> Result<u8, Error> {
         let tag = "AvrcpFacade::set_absolute_volume";
-        let result = match self.inner.read().controller_proxy.clone() {
+        let proxy_opt = self.inner.read().controller_proxy.clone();
+
+        let result = match proxy_opt {
             Some(proxy) => proxy.set_absolute_volume(absolute_volume).await?,
             None => fx_err_and_bail!(&with_line!(tag), "No AVRCP service proxy available"),
         };
@@ -158,7 +163,8 @@ impl AvrcpFacade {
         attribute_ids: CustomPlayerApplicationSettingsAttributeIds,
     ) -> Result<CustomPlayerApplicationSettings, Error> {
         let tag = "AvrcpFacade::get_player_application_settings";
-        match self.inner.read().controller_proxy.clone() {
+        let proxy_opt = self.inner.read().controller_proxy.clone();
+        match proxy_opt {
             Some(proxy) => {
                 match proxy.get_player_application_settings(&attribute_ids.to_vec()).await? {
                     Ok(player_application_settings) => Ok(player_application_settings.into()),
@@ -181,7 +187,8 @@ impl AvrcpFacade {
         settings: CustomPlayerApplicationSettings,
     ) -> Result<CustomPlayerApplicationSettings, Error> {
         let tag = "AvrcpFacade::set_player_application_settings";
-        match self.inner.read().controller_proxy.clone() {
+        let proxy_opt = self.inner.read().controller_proxy.clone();
+        match proxy_opt {
             Some(proxy) => match proxy.set_player_application_settings(&settings.into()).await? {
                 Ok(player_application_settings) => Ok(player_application_settings.into()),
                 Err(e) => fx_err_and_bail!(
@@ -202,7 +209,8 @@ impl AvrcpFacade {
         battery_status: CustomBatteryStatus,
     ) -> Result<(), Error> {
         let tag = "AvrcpFacade::inform_battery_status";
-        match self.inner.read().controller_proxy.clone() {
+        let proxy_opt = self.inner.read().controller_proxy.clone();
+        match proxy_opt {
             Some(proxy) => match proxy.inform_battery_status(battery_status.into()).await? {
                 Ok(()) => Ok(()),
                 Err(e) => fx_err_and_bail!(
@@ -220,7 +228,8 @@ impl AvrcpFacade {
     /// * `player_id` - the player id to set as the addressed player.
     pub async fn set_addressed_player(&self, player_id: u16) -> Result<(), Error> {
         let tag = "AvrcpFacade::set_addressed_player";
-        match self.inner.read().controller_proxy.clone() {
+        let proxy_opt = self.inner.read().controller_proxy.clone();
+        match proxy_opt {
             Some(proxy) => match proxy.set_addressed_player(player_id).await? {
                 Ok(()) => Ok(()),
                 Err(e) => fx_err_and_bail!(
@@ -254,7 +263,9 @@ impl AvrcpFacade {
                 )
             ),
         };
-        match self.inner.read().controller_proxy.clone() {
+
+        let proxy_opt = self.inner.read().controller_proxy.clone();
+        match proxy_opt {
             Some(proxy) => {
                 match proxy.set_notification_filter(notifications, position_change_interval) {
                     Ok(()) => Ok(()),
@@ -271,7 +282,8 @@ impl AvrcpFacade {
     /// Notifies that the OnNotification event was handled.
     pub async fn notify_notification_handled(&self) -> Result<(), Error> {
         let tag = "AvrcpFacade::notify_notification_handled";
-        match self.inner.read().controller_proxy.clone() {
+        let proxy_opt = self.inner.read().controller_proxy.clone();
+        match proxy_opt {
             Some(proxy) => match proxy.notify_notification_handled() {
                 Ok(()) => Ok(()),
                 Err(e) => fx_err_and_bail!(

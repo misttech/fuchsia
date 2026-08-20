@@ -13,7 +13,9 @@ use fidl_fuchsia_bluetooth_bredr::{
     ProtocolDescriptor, ProtocolIdentifier, SearchResultsRequest, SearchResultsRequestStream,
     ServiceClassProfileIdentifier, ServiceDefinition,
 };
+use fuchsia_async as fasync;
 use fuchsia_bluetooth::types::{PeerId, Uuid};
+use fuchsia_component as component;
 use fuchsia_sync::RwLock;
 use futures::channel::oneshot;
 use futures::stream::StreamExt;
@@ -21,7 +23,6 @@ use futures::{FutureExt, select};
 use log::*;
 use serde_json::value::Value;
 use std::collections::HashMap;
-use {fuchsia_async as fasync, fuchsia_component as component};
 
 #[derive(Debug)]
 struct ProfileServerFacadeInner {
@@ -729,7 +730,9 @@ impl ProfileServerFacade {
             _ => fx_err_and_bail!(&with_line!(tag), format!("Invalid mode: {:?}.", mode)),
         };
 
-        let connection_result = match &self.inner.read().profile_server_proxy {
+        let proxy_opt = self.inner.read().profile_server_proxy.clone();
+
+        let connection_result = match proxy_opt {
             Some(server) => {
                 let l2cap_params = L2capParameters {
                     psm: Some(psm),

@@ -384,7 +384,8 @@ impl BluetoothSysFacade {
         if !discoverable {
             self.inner.write().discoverable_token = None;
         } else {
-            let token = match &self.inner.read().access_proxy {
+            let proxy_opt = self.inner.read().access_proxy.clone();
+            let token = match proxy_opt {
                 Some(proxy) => {
                     let (token, token_server) = fidl::endpoints::create_proxy();
                     let resp = proxy.make_discoverable(token_server).await?;
@@ -436,7 +437,8 @@ impl BluetoothSysFacade {
             self.inner.write().discovery_token = None;
             Ok(())
         } else {
-            let token = match &self.inner.read().access_proxy {
+            let proxy_opt = self.inner.read().access_proxy.clone();
+            let token = match proxy_opt {
                 Some(proxy) => {
                     let (token, token_server) = fidl::endpoints::create_proxy();
                     let resp = proxy.start_discovery(token_server).await?;
@@ -461,44 +463,44 @@ impl BluetoothSysFacade {
         let tag = "BluetoothSysFacade::get_known_remote_devices";
 
         loop {
-            let (discovered_devices, removed_peers) = match &mut self
-                .inner
-                .write()
-                .peer_watcher_stream
-            {
-                Some(stream) => {
-                    match stream
-                        .next()
-                        .on_timeout(zx::MonotonicDuration::from_millis(100).after_now(), || None)
-                        .await
-                    {
-                        Some(Ok(d)) => d,
-                        Some(Err(e)) => fx_err_and_bail!(
-                            &with_line!(tag),
-                            format!("{:?}", format!("Peer Watcher Stream failed with: {:?}", e))
-                        ),
-                        None => break,
-                    }
-                }
+            let mut stream = match self.inner.write().peer_watcher_stream.take() {
+                Some(stream) => stream,
                 None => fx_err_and_bail!(
                     &with_line!(tag),
                     format!("{:?}", "Peer Watcher Stream not available")
                 ),
             };
 
+            let stream_result = stream
+                .next()
+                .on_timeout(zx::MonotonicDuration::from_millis(100).after_now(), || None)
+                .await;
+
+            self.inner.write().peer_watcher_stream = Some(stream);
+
+            let (discovered_devices, removed_peers) = match stream_result {
+                Some(Ok(d)) => d,
+                Some(Err(e)) => fx_err_and_bail!(
+                    &with_line!(tag),
+                    format!("{:?}", format!("Peer Watcher Stream failed with: {:?}", e))
+                ),
+                None => break,
+            };
+
             let serialized_peers_map: HashMap<u64, SerializablePeer> =
                 discovered_devices.iter().map(|d| (d.id.unwrap().value, d.into())).collect();
 
-            self.inner.write().discovered_device_list.extend(serialized_peers_map);
+            {
+                let mut inner_guard = self.inner.write();
 
-            let mut known_devices = self.inner.write().discovered_device_list.clone();
-            for peer_id in removed_peers {
-                if known_devices.contains_key(&peer_id.value) {
-                    info!(tag; "Peer {:?} removed.", peer_id);
-                    known_devices.remove(&peer_id.value);
+                inner_guard.discovered_device_list.extend(serialized_peers_map);
+
+                for peer_id in removed_peers {
+                    if inner_guard.discovered_device_list.remove(&peer_id.value).is_some() {
+                        info!(tag; "Peer {:?} removed.", peer_id);
+                    }
                 }
             }
-            self.inner.write().discovered_device_list = known_devices;
         }
 
         Ok(self.inner.read().discovered_device_list.clone())
@@ -510,7 +512,8 @@ impl BluetoothSysFacade {
     /// * `id` - A u64 representing the device ID.
     pub async fn forget(&self, id: u64) -> Result<(), Error> {
         let tag = "BluetoothSysFacade::forget";
-        match &self.inner.read().access_proxy {
+        let proxy_opt = self.inner.read().access_proxy.clone();
+        match proxy_opt {
             Some(proxy) => {
                 let resp = proxy.forget(&PeerId { value: id }).await?;
                 if let Err(err) = resp {
@@ -532,7 +535,8 @@ impl BluetoothSysFacade {
     /// * `id` - A u64 representing the device ID.
     pub async fn connect(&self, id: u64) -> Result<(), Error> {
         let tag = "BluetoothSysFacade::connect";
-        match &self.inner.read().access_proxy {
+        let proxy_opt = self.inner.read().access_proxy.clone();
+        match proxy_opt {
             Some(proxy) => {
                 let resp = proxy.connect(&PeerId { value: id }).await?;
                 if let Err(err) = resp {
@@ -635,7 +639,8 @@ impl BluetoothSysFacade {
     /// * `id` - A u64 representing the device ID.
     pub async fn disconnect(&self, id: u64) -> Result<(), Error> {
         let tag = "BluetoothSysFacade::disconnect";
-        match &self.inner.read().access_proxy {
+        let proxy_opt = self.inner.read().access_proxy.clone();
+        match proxy_opt {
             Some(proxy) => {
                 let resp = proxy.disconnect(&PeerId { value: id }).await?;
                 if let Err(err) = resp {
@@ -657,7 +662,8 @@ impl BluetoothSysFacade {
     /// * `settings` - The table of settings. Any settings that are not present will not be changed.
     pub async fn update_settings(&self, settings: Settings) -> Result<(), Error> {
         let tag = "BluetoothSysFacade::update_settings";
-        match &self.inner.read().config_proxy {
+        let proxy_opt = self.inner.read().config_proxy.clone();
+        match proxy_opt {
             Some(proxy) => {
                 let new_settings = proxy.update(&settings).await?;
                 info!("new core stack settings: {:?}", new_settings);
@@ -673,38 +679,37 @@ impl BluetoothSysFacade {
     pub async fn get_active_adapter_address(&self) -> Result<String, Error> {
         let tag = "BluetoothSysFacade::get_active_adapter_address";
 
-        let host_info_list = match &mut self.inner.write().host_watcher_stream {
-            Some(stream) => {
-                match stream
-                    .next()
-                    .on_timeout(zx::MonotonicDuration::from_seconds(1).after_now(), || None)
-                    .await
-                {
-                    Some(r) => match r {
-                        Ok(d) => d,
-                        Err(e) => fx_err_and_bail!(
-                            &with_line!(tag),
-                            format!("{:?}", format!("Host Watcher Stream failed with: {:?}", e))
-                        ),
-                    },
-                    None => {
-                        match &self.inner.read().active_bt_address {
-                            Some(addr) => return Ok(addr.to_string()),
-                            None => fx_err_and_bail!(
-                                &with_line!(tag),
-                                format!(
-                                    "{:?}",
-                                    "No active adapter - Timed out waiting for host_watcher_stream update."
-                                )
-                            ),
-                        };
-                    }
-                }
-            }
+        let mut stream = match self.inner.write().host_watcher_stream.take() {
+            Some(stream) => stream,
             None => fx_err_and_bail!(
                 &with_line!(tag),
                 format!("{:?}", "Host Watcher Stream not available")
             ),
+        };
+
+        let stream_result = stream
+            .next()
+            .on_timeout(zx::MonotonicDuration::from_seconds(1).after_now(), || None)
+            .await;
+
+        self.inner.write().host_watcher_stream = Some(stream);
+
+        let host_info_list = match stream_result {
+            Some(Ok(d)) => d,
+            Some(Err(e)) => fx_err_and_bail!(
+                &with_line!(tag),
+                format!("{:?}", format!("Host Watcher Stream failed with: {:?}", e))
+            ),
+            None => match &self.inner.read().active_bt_address {
+                Some(addr) => return Ok(addr.to_string()),
+                None => fx_err_and_bail!(
+                    &with_line!(tag),
+                    format!(
+                        "{:?}",
+                        "No active adapter - Timed out waiting for host_watcher_stream update."
+                    )
+                ),
+            },
         };
 
         for host in host_info_list {
