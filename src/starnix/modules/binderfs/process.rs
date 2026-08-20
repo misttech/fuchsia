@@ -27,6 +27,7 @@ use starnix_sync::{
 use starnix_types::ownership::{
     DropGuard, OwnedRef, Releasable, ReleaseGuard, Share, TempRef, WeakRef, release_after,
 };
+use starnix_uapi::arc_key::ArcKey;
 use starnix_uapi::errors::Errno;
 use starnix_uapi::user_address::UserAddress;
 use starnix_uapi::{
@@ -1019,9 +1020,14 @@ impl ThreadPool {
 }
 
 /// Table containing handles to remote binder objects.
+///
+/// Maintains a bidirectional mapping between handle indices and remote [`BinderObject`]s.
 #[derive(Debug, Default)]
 pub struct HandleTable {
+    /// Slab containing the references indexed by handle index.
     table: slab::Slab<BinderObjectRef>,
+    /// Reverse index for O(log N) lookup from a BinderObject to its handle index in `table`.
+    objects: BTreeMap<ArcKey<BinderObject>, usize>,
 }
 
 /// The HandleTable is released at the time the BinderProcess is released. At this moment, any
@@ -1050,25 +1056,21 @@ impl HandleTable {
         guard: StrongRefGuard,
         actions: &mut RefCountActions,
     ) -> Handle {
-        let index = if let Some((existing_idx, object_ref)) =
-            self.find_ref_for_object(&guard.binder_object)
-        {
+        let key = ArcKey(guard.binder_object.clone());
+        let index = if let Some(&existing_idx) = self.objects.get(&key) {
+            let object_ref =
+                self.table.get_mut(existing_idx).expect("Handle table index invariant violated");
             // Increment the number of reference to the handle as expected by the caller.
             object_ref.inc_strong_with_guard(guard, actions);
             existing_idx
         } else {
             // The new handle will be created with a strong reference as expected by the
             // caller.
-            self.table.insert(BinderObjectRef::new(guard))
+            let idx = self.table.insert(BinderObjectRef::new(guard));
+            self.objects.insert(key, idx);
+            idx
         };
         Handle::Object { index }
-    }
-
-    fn find_ref_for_object(
-        &mut self,
-        object: &Arc<BinderObject>,
-    ) -> Option<(usize, &mut BinderObjectRef)> {
-        self.table.iter_mut().filter(|(_, object_ref)| object_ref.is_ref_to_object(object)).next()
     }
 
     /// Retrieves a reference to a binder object at index `idx`. Returns None if the index doesn't
@@ -1112,6 +1114,8 @@ impl HandleTable {
         let object_ref = self.table.get_mut(idx).ok_or_else(|| errno!(ENOENT))?;
         object_ref.dec_strong(actions)?;
         if !object_ref.has_ref() {
+            let key = ArcKey(object_ref.binder_object.clone());
+            self.objects.remove(&key);
             self.table.remove(idx);
         }
         Ok(())
@@ -1125,6 +1129,8 @@ impl HandleTable {
         let object_ref = self.table.get_mut(idx).ok_or_else(|| errno!(ENOENT))?;
         object_ref.dec_weak(actions)?;
         if !object_ref.has_ref() {
+            let key = ArcKey(object_ref.binder_object.clone());
+            self.objects.remove(&key);
             self.table.remove(idx);
         }
         Ok(())

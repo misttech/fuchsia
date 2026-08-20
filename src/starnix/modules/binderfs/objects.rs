@@ -165,22 +165,6 @@ impl BinderObjectRef {
         self.weak_count -= 1;
         Ok(())
     }
-
-    pub fn is_ref_to_object(&self, object: &Arc<BinderObject>) -> bool {
-        if Arc::as_ptr(&self.binder_object) == Arc::as_ptr(object) {
-            return true;
-        }
-
-        let deep_equal = self.binder_object.local.weak_ref_addr == object.local.weak_ref_addr
-            && self.binder_object.owner.as_ptr() == object.owner.as_ptr();
-        // This shouldn't be possible. We have it here as a debugging check.
-        assert!(
-            !deep_equal,
-            "Two different BinderObjects were found referring to the same underlying object: {object:?} and {self:?}"
-        );
-
-        false
-    }
 }
 
 /// A set of `BinderObject` whose reference counts may have changed. Releasing it will enqueue all
