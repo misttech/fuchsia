@@ -22,7 +22,6 @@ go_library(
     ],
 )
 
-# @bazel2gn:skip
 go_binary_host_tool(
     name = "fidl_api_diff",
     embed = [":gopkg"],

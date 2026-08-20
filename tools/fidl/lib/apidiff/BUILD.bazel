@@ -34,6 +34,7 @@ fidlgentest_go_test(
     ],
     embed = [":gopkg"],
     target_compatible_with = HOST_CONSTRAINTS,
+    visibility = ["//tools:__pkg__"],
     deps = [
         "//third_party/golibs:github.com/google/go-cmp/cmp/cmpopts",
     ],

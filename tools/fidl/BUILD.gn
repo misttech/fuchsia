@@ -47,7 +47,6 @@ group("tests") {
   deps = [
     "abi-compat:tests",
     "example-tester:tests",
-    "fidl_api_diff:tests",
     "fidl_ir:tests",
     "fidlc:tests",
     "fidldoc:tests",

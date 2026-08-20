@@ -4,7 +4,6 @@
 
 group("lib") {
   deps = [
-    "apidiff",
     "fidlgen",
     "fidlgen_cpp",
     "fidlgentest",
@@ -16,7 +15,6 @@ group("tests") {
   testonly = true
 
   deps = [
-    "apidiff:tests",
     "fidlgen:tests",
     "fidlgen_cpp:tests",
     "fidlgentest:tests",
