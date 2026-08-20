@@ -37,7 +37,7 @@ group("linux_x64_tools") {
     "//src/diagnostics/triage:triage_bin",
     "//build/bazel/host:bazel_root_host_tools.covargs.host_tool",
     "//tools/testing/resultdb",
-    "//tools/testing/tefmocheck",
+    "//build/bazel/host:bazel_root_host_tools.tefmocheck.host_tool",
     "//tools/testing/test_filterer",
   ]
 

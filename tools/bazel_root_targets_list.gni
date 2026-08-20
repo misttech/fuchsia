@@ -305,6 +305,16 @@ tools_bazel_root_targets = [
     install_host_tool = true
   },
   {
+    bazel_label = "//tools/testing/tefmocheck:tefmocheck"
+    copy_outputs = [
+      {
+        bazel = "{{BAZEL_TARGET_OUT_DIR}}/tefmocheck_/tefmocheck"
+        ninja = "tefmocheck"
+      },
+    ]
+    install_host_tool = true
+  },
+  {
     bazel_label = "//tools/testing/testparser:testparser_cmd"
     ninja_name = "testparser"
     copy_outputs = [
