@@ -6,6 +6,7 @@
 
 #include <lib/media/codec_impl/codec_buffer.h>
 
+#include <cstring>
 #include <limits>
 #include <map>
 #include <string>
@@ -55,11 +56,13 @@ std::optional<std::unique_ptr<AvCodecContext>> AvCodecContext::CreateDecoder(
   if (format_details.has_oob_bytes() && !format_details.oob_bytes().empty()) {
     // Freed in AVCodecContext deleter in avcodec_free.
     const std::vector<uint8_t>& oob = format_details.oob_bytes();
+    ZX_ASSERT(oob.size() <=
+              static_cast<size_t>(std::numeric_limits<int>::max()) - AV_INPUT_BUFFER_PADDING_SIZE);
     auto* extradata =
         reinterpret_cast<uint8_t*>(av_malloc(oob.size() + AV_INPUT_BUFFER_PADDING_SIZE));
     ZX_ASSERT(extradata);
-    ZX_ASSERT(oob.size() <= std::numeric_limits<int>::max());
     std::memcpy(extradata, oob.data(), oob.size());
+    std::memset(extradata + oob.size(), 0, AV_INPUT_BUFFER_PADDING_SIZE);
     decoder->avcodec_context_->extradata = extradata;
     decoder->avcodec_context_->extradata_size = static_cast<int>(oob.size());
   }
