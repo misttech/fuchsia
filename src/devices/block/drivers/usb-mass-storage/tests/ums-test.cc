@@ -122,8 +122,9 @@ class UmsTest : public zxtest::Test {
 
   fbl::String GetTestdevPath() {
     fdio_cpp::UnownedFdioCaller caller(bus_->GetRootFd());
-    zx::result directory = component::OpenDirectoryAt(caller.directory(), "class/block",
-                                                      fuchsia_io::wire::Flags::kProtocolDirectory);
+    zx::result directory = component::OpenDirectoryAt(
+        caller.directory(), "class/block",
+        fuchsia_io::wire::Flags::kProtocolDirectory | fuchsia_io::wire::kPermReadable);
     if (directory.is_error()) {
       return fbl::String("");
     }
@@ -150,8 +151,9 @@ class UmsTest : public zxtest::Test {
     }
     fdio_cpp::UnownedFdioCaller caller(bus_->GetRootFd());
 
-    zx::result directory = component::OpenDirectoryAt(caller.directory(), "class/block",
-                                                      fuchsia_io::wire::Flags::kProtocolDirectory);
+    zx::result directory = component::OpenDirectoryAt(
+        caller.directory(), "class/block",
+        fuchsia_io::wire::Flags::kProtocolDirectory | fuchsia_io::wire::kPermReadable);
     ASSERT_OK(directory);
 
     zx::result<device_watcher::DirWatcher> watcher =
