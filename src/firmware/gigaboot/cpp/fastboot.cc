@@ -10,6 +10,7 @@
 #include <lib/storage/gpt_utils.h>
 #include <lib/storage/sparse.h>
 #include <lib/storage/storage.h>
+#include <lib/zbi/zbi.h>
 #include <lib/zircon_boot/zircon_boot.h>
 #include <stdarg.h>
 #include <stdio.h>
@@ -91,6 +92,7 @@ std::span<Fastboot::CommandCallbackEntry> Fastboot::GetCommandCallbackTable() {
   static CommandCallbackEntry cmd_entries[] = {
       {"getvar", &Fastboot::GetVar},
       {"flash", &Fastboot::Flash},
+      {"boot", &Fastboot::BootRam},
       {"continue", &Fastboot::Continue},
       {"reboot", &Fastboot::Reboot},
       {"reboot-bootloader", &Fastboot::RebootBootloader},
@@ -748,6 +750,66 @@ zx::result<> Fastboot::EfiDumpVars(std::string_view cmd, fastboot::Transport *tr
   printer_("\n");
 
   return SendResponse(ResponseType::kOkay, "", transport);
+}
+
+zx::result<> Fastboot::BootRam(std::string_view cmd, fastboot::Transport *transport) {
+  // `fastboot boot <zbi>`: boot the image sitting in the download buffer without
+  // writing anything to storage. This is the iteration loop Android developers
+  // expect, and it is the one path that needs no provisioned disk at all.
+  //
+  // Unverified images must not be booted on a locked device.
+  bool is_locked = true;
+  if (zb_ops_.verified_boot_read_is_device_locked == nullptr ||
+      !zb_ops_.verified_boot_read_is_device_locked(&zb_ops_, &is_locked) || is_locked) {
+    return SendResponse(ResponseType::kFail, "Device is locked - fastboot boot not allowed",
+                        transport);
+  }
+
+  if (total_download_size() == 0) {
+    return SendResponse(ResponseType::kFail, "No image downloaded", transport);
+  }
+  if (total_download_size() < sizeof(zbi_header_t)) {
+    return SendResponse(ResponseType::kFail, "Download too small to be a ZBI", transport);
+  }
+
+  zbi_header_t *image = reinterpret_cast<zbi_header_t *>(download_buffer_.data());
+  if (image->type != ZBI_TYPE_CONTAINER || image->magic != ZBI_ITEM_MAGIC ||
+      image->extra != ZBI_CONTAINER_MAGIC) {
+    return SendResponse(ResponseType::kFail, "Downloaded image is not a ZBI container", transport);
+  }
+  if (image->length > total_download_size() - sizeof(zbi_header_t)) {
+    return SendResponse(ResponseType::kFail,
+                        "Downloaded ZBI container length exceeds download size", transport);
+  }
+  if (zbi_result_t res = zbi_check(image, nullptr); res != ZBI_RESULT_OK) {
+    return SendResponse(ResponseType::kFail, "Malformed ZBI image", transport);
+  }
+
+  // Append the items gigaboot normally injects on a disk boot (ACPI RSDP,
+  // framebuffer, cmdline, ...). Spare room is the unused tail of the download
+  // buffer, which is sized for the largest flashable partition. A null slot is
+  // correct here: a RAM boot belongs to no A/B slot, and AddGigabootZbiItems
+  // skips the slot item when it is null.
+  size_t capacity = download_buffer_.size();
+  if (zb_ops_.add_zbi_items == nullptr ||
+      !zb_ops_.add_zbi_items(&zb_ops_, image, capacity, nullptr)) {
+    return SendResponse(ResponseType::kFail, "Failed to add ZBI items", transport,
+                        zx::error(ZX_ERR_INTERNAL));
+  }
+
+  // Answer before booting. Boot() exits boot services and never returns on
+  // success, so a host waiting for OKAY would otherwise just see the connection
+  // drop and report a transport error on a successful boot.
+  if (auto res = SendResponse(ResponseType::kOkay, "", transport); res.is_error()) {
+    return res;
+  }
+
+  printf("fastboot: booting downloaded ZBI (%zu bytes) from RAM\n", total_download_size());
+  zb_ops_.boot(&zb_ops_, image, capacity);
+
+  // Only reached if the image was not bootable.
+  return SendResponse(ResponseType::kFail, "Failed to boot downloaded image", transport,
+                      zx::error(ZX_ERR_INTERNAL));
 }
 
 zx::result<> Fastboot::Continue(std::string_view cmd, fastboot::Transport *transport) {

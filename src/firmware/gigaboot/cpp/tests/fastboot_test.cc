@@ -1116,6 +1116,212 @@ TEST_F(FastbootFlashTest, RebootResetSystemFail) {
   ASSERT_NO_FATAL_FAILURE(CheckPacketsEqual(transport.GetOutPackets(), expected_packets));
 }
 
+TEST_F(FastbootFlashTest, BootDeviceLocked) {
+  mock_zb_ops().SetDeviceLockStatus(MockZirconBootOps::LockStatus::kLocked);
+  Fastboot fastboot(download_buffer, mock_zb_ops().GetZirconBootOpsWithAvb());
+  std::vector<uint8_t> download_content(sizeof(zbi_header_t));
+  ASSERT_EQ(zbi_init(download_content.data(), download_content.size()), ZBI_RESULT_OK);
+  ASSERT_NO_FATAL_FAILURE(DownloadData(fastboot, download_content));
+
+  fastboot::TestTransport transport;
+  transport.AddInPacket(std::string("boot"));
+  zx::result ret = fastboot.ProcessPacket(&transport);
+  ASSERT_TRUE(ret.is_ok());
+
+  std::vector<std::string> expected_packets = {"FAILDevice is locked - fastboot boot not allowed"};
+  ASSERT_NO_FATAL_FAILURE(CheckPacketsEqual(transport.GetOutPackets(), expected_packets));
+}
+
+TEST_F(FastbootFlashTest, BootDeviceLockCheckFailed) {
+  ZirconBootOps zb_ops = mock_zb_ops().GetZirconBootOps();
+  zb_ops.verified_boot_read_is_device_locked = nullptr;
+  Fastboot fastboot(download_buffer, zb_ops);
+  std::vector<uint8_t> download_content(sizeof(zbi_header_t));
+  ASSERT_EQ(zbi_init(download_content.data(), download_content.size()), ZBI_RESULT_OK);
+  ASSERT_NO_FATAL_FAILURE(DownloadData(fastboot, download_content));
+
+  fastboot::TestTransport transport;
+  transport.AddInPacket(std::string("boot"));
+  zx::result ret = fastboot.ProcessPacket(&transport);
+  ASSERT_TRUE(ret.is_ok());
+
+  std::vector<std::string> expected_packets = {"FAILDevice is locked - fastboot boot not allowed"};
+  ASSERT_NO_FATAL_FAILURE(CheckPacketsEqual(transport.GetOutPackets(), expected_packets));
+}
+
+TEST_F(FastbootFlashTest, BootNoImageDownloaded) {
+  mock_zb_ops().SetDeviceLockStatus(MockZirconBootOps::LockStatus::kUnlocked);
+  Fastboot fastboot(download_buffer, mock_zb_ops().GetZirconBootOpsWithAvb());
+  fastboot::TestTransport transport;
+
+  transport.AddInPacket(std::string("boot"));
+  zx::result ret = fastboot.ProcessPacket(&transport);
+  ASSERT_TRUE(ret.is_ok());
+
+  std::vector<std::string> expected_packets = {"FAILNo image downloaded"};
+  ASSERT_NO_FATAL_FAILURE(CheckPacketsEqual(transport.GetOutPackets(), expected_packets));
+}
+
+TEST_F(FastbootFlashTest, BootImageTooSmall) {
+  mock_zb_ops().SetDeviceLockStatus(MockZirconBootOps::LockStatus::kUnlocked);
+  Fastboot fastboot(download_buffer, mock_zb_ops().GetZirconBootOpsWithAvb());
+  std::vector<uint8_t> download_content = {0x01, 0x02, 0x03, 0x04};
+  ASSERT_NO_FATAL_FAILURE(DownloadData(fastboot, download_content));
+
+  fastboot::TestTransport transport;
+  transport.AddInPacket(std::string("boot"));
+  zx::result ret = fastboot.ProcessPacket(&transport);
+  ASSERT_TRUE(ret.is_ok());
+
+  std::vector<std::string> expected_packets = {"FAILDownload too small to be a ZBI"};
+  ASSERT_NO_FATAL_FAILURE(CheckPacketsEqual(transport.GetOutPackets(), expected_packets));
+}
+
+TEST_F(FastbootFlashTest, BootNotZbiContainer) {
+  mock_zb_ops().SetDeviceLockStatus(MockZirconBootOps::LockStatus::kUnlocked);
+  Fastboot fastboot(download_buffer, mock_zb_ops().GetZirconBootOpsWithAvb());
+  std::vector<uint8_t> download_content(sizeof(zbi_header_t), 0xaa);
+  ASSERT_NO_FATAL_FAILURE(DownloadData(fastboot, download_content));
+
+  fastboot::TestTransport transport;
+  transport.AddInPacket(std::string("boot"));
+  zx::result ret = fastboot.ProcessPacket(&transport);
+  ASSERT_TRUE(ret.is_ok());
+
+  std::vector<std::string> expected_packets = {"FAILDownloaded image is not a ZBI container"};
+  ASSERT_NO_FATAL_FAILURE(CheckPacketsEqual(transport.GetOutPackets(), expected_packets));
+}
+
+TEST_F(FastbootFlashTest, BootLengthExceedsDownloadSize) {
+  mock_zb_ops().SetDeviceLockStatus(MockZirconBootOps::LockStatus::kUnlocked);
+  Fastboot fastboot(download_buffer, mock_zb_ops().GetZirconBootOpsWithAvb());
+  std::vector<uint8_t> download_content(sizeof(zbi_header_t));
+  ASSERT_EQ(zbi_init(download_content.data(), download_content.size()), ZBI_RESULT_OK);
+  zbi_header_t* header = reinterpret_cast<zbi_header_t*>(download_content.data());
+  header->length = 1024;  // Claims more payload than was downloaded.
+  ASSERT_NO_FATAL_FAILURE(DownloadData(fastboot, download_content));
+
+  fastboot::TestTransport transport;
+  transport.AddInPacket(std::string("boot"));
+  zx::result ret = fastboot.ProcessPacket(&transport);
+  ASSERT_TRUE(ret.is_ok());
+
+  std::vector<std::string> expected_packets = {
+      "FAILDownloaded ZBI container length exceeds download size"};
+  ASSERT_NO_FATAL_FAILURE(CheckPacketsEqual(transport.GetOutPackets(), expected_packets));
+}
+
+TEST_F(FastbootFlashTest, BootMalformedZbiEntries) {
+  mock_zb_ops().SetDeviceLockStatus(MockZirconBootOps::LockStatus::kUnlocked);
+  Fastboot fastboot(download_buffer, mock_zb_ops().GetZirconBootOpsWithAvb());
+  std::vector<uint8_t> download_content(sizeof(zbi_header_t) * 2, 0);
+  ASSERT_EQ(zbi_init(download_content.data(), download_content.size()), ZBI_RESULT_OK);
+  zbi_header_t* container = reinterpret_cast<zbi_header_t*>(download_content.data());
+  container->length = sizeof(zbi_header_t);
+  zbi_header_t* item =
+      reinterpret_cast<zbi_header_t*>(download_content.data() + sizeof(zbi_header_t));
+  item->type = ZBI_TYPE_CMDLINE;
+  item->length = 0;
+  item->magic = 0xdeadbeef;  // Invalid item magic.
+  item->flags = ZBI_FLAGS_VERSION;
+  ASSERT_NO_FATAL_FAILURE(DownloadData(fastboot, download_content));
+
+  fastboot::TestTransport transport;
+  transport.AddInPacket(std::string("boot"));
+  zx::result ret = fastboot.ProcessPacket(&transport);
+  ASSERT_TRUE(ret.is_ok());
+
+  std::vector<std::string> expected_packets = {"FAILMalformed ZBI image"};
+  ASSERT_NO_FATAL_FAILURE(CheckPacketsEqual(transport.GetOutPackets(), expected_packets));
+}
+
+TEST_F(FastbootFlashTest, BootAddZbiItemsNullptr) {
+  mock_zb_ops().SetDeviceLockStatus(MockZirconBootOps::LockStatus::kUnlocked);
+  ZirconBootOps zb_ops = mock_zb_ops().GetZirconBootOpsWithAvb();
+  zb_ops.add_zbi_items = nullptr;
+  Fastboot fastboot(download_buffer, zb_ops);
+
+  std::vector<uint8_t> download_content(sizeof(zbi_header_t));
+  ASSERT_EQ(zbi_init(download_content.data(), download_content.size()), ZBI_RESULT_OK);
+  ASSERT_NO_FATAL_FAILURE(DownloadData(fastboot, download_content));
+
+  fastboot::TestTransport transport;
+  transport.AddInPacket(std::string("boot"));
+  zx::result ret = fastboot.ProcessPacket(&transport);
+  ASSERT_TRUE(ret.is_error());
+
+  std::vector<std::string> expected_packets = {"FAILFailed to add ZBI items(-1)"};
+  ASSERT_NO_FATAL_FAILURE(CheckPacketsEqual(transport.GetOutPackets(), expected_packets));
+}
+
+TEST_F(FastbootFlashTest, BootAddZbiItemsFailure) {
+  mock_zb_ops().SetDeviceLockStatus(MockZirconBootOps::LockStatus::kUnlocked);
+  mock_zb_ops().SetAddDeviceZbiItemsMethod(
+      [](zbi_header_t*, size_t, const AbrSlotIndex*) { return false; });
+  Fastboot fastboot(download_buffer, mock_zb_ops().GetZirconBootOpsWithAvb());
+
+  std::vector<uint8_t> download_content(sizeof(zbi_header_t));
+  ASSERT_EQ(zbi_init(download_content.data(), download_content.size()), ZBI_RESULT_OK);
+  ASSERT_NO_FATAL_FAILURE(DownloadData(fastboot, download_content));
+
+  fastboot::TestTransport transport;
+  transport.AddInPacket(std::string("boot"));
+  zx::result ret = fastboot.ProcessPacket(&transport);
+  ASSERT_TRUE(ret.is_error());
+
+  std::vector<std::string> expected_packets = {"FAILFailed to add ZBI items(-1)"};
+  ASSERT_NO_FATAL_FAILURE(CheckPacketsEqual(transport.GetOutPackets(), expected_packets));
+}
+
+TEST_F(FastbootFlashTest, BootSuccess) {
+  mock_zb_ops().SetDeviceLockStatus(MockZirconBootOps::LockStatus::kUnlocked);
+  bool add_zbi_items_called = false;
+  bool slot_is_null = false;
+  mock_zb_ops().SetAddDeviceZbiItemsMethod(
+      [&](zbi_header_t* image, size_t capacity, const AbrSlotIndex* slot) {
+        add_zbi_items_called = true;
+        slot_is_null = (slot == nullptr);
+        return true;
+      });
+
+  static bool boot_called = false;
+  static const zbi_header_t* booted_image = nullptr;
+  static size_t booted_capacity = 0;
+  boot_called = false;
+  booted_image = nullptr;
+  booted_capacity = 0;
+
+  ZirconBootOps zb_ops = mock_zb_ops().GetZirconBootOpsWithAvb();
+  zb_ops.boot = [](ZirconBootOps* ops, zbi_header_t* image, size_t capacity) {
+    boot_called = true;
+    booted_image = image;
+    booted_capacity = capacity;
+  };
+
+  Fastboot fastboot(download_buffer, zb_ops);
+
+  std::vector<uint8_t> download_content(sizeof(zbi_header_t));
+  ASSERT_EQ(zbi_init(download_content.data(), download_content.size()), ZBI_RESULT_OK);
+  ASSERT_NO_FATAL_FAILURE(DownloadData(fastboot, download_content));
+
+  fastboot::TestTransport transport;
+  transport.AddInPacket(std::string("boot"));
+  zx::result ret = fastboot.ProcessPacket(&transport);
+  // Boot() never returns on success on a real device. In this test environment,
+  // the mock boot callback returns, so ProcessPacket finishes with an error response.
+  ASSERT_TRUE(ret.is_error());
+
+  ASSERT_TRUE(add_zbi_items_called);
+  ASSERT_TRUE(slot_is_null);
+  ASSERT_TRUE(boot_called);
+  ASSERT_EQ(reinterpret_cast<const uint8_t*>(booted_image), download_buffer);
+  ASSERT_EQ(booted_capacity, sizeof(download_buffer));
+
+  const auto& out_packets = transport.GetOutPackets();
+  ASSERT_GE(out_packets.size(), 1ULL);
+  EXPECT_EQ(out_packets[0], "OKAY");
+}
+
 TEST_F(FastbootFlashTest, GptReinitialize) {
   PartitionMap::PartitionEntry custom_partitions[] = {
       {GPT_DURABLE_BOOT_NAME, 0x1000, GPT_DURABLE_BOOT_TYPE_GUID},
@@ -1538,7 +1744,7 @@ const std::array<efi::VariableId, kVariableIdSize>& VariableIds() {
           efi::VariableId{efi::String("var_0"), kGuid[0]},
           efi::VariableId{efi::String("var_1"), kGuid[1]},
           efi::VariableId{efi::String("var_2"), kGuid[2]},
-      };
+  };
   return *variable_id;
 }
 
@@ -1550,7 +1756,7 @@ const std::array<std::vector<uint8_t>, kVariableIdSize>& VariableValues() {
           std::vector<uint8_t>{0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a,
                                0x0b, 0x0c, 0x0d, 0x0e, 0x0f, 0x10, 0x11, 0x12, 0x13, 0x14, 0x15,
                                0x16, 0x17, 0x18, 0x19, 0x1a, 0x1b, 0x1c, 0x1d, 0x1e, 0x1f},
-      };
+  };
   return *values;
 }
 

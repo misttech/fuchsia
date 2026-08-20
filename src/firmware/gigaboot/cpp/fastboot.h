@@ -98,6 +98,9 @@ class Fastboot : public fastboot::FastbootBase {
 
   zx::result<> GetVar(std::string_view cmd, fastboot::Transport *transport);
   zx::result<> Flash(std::string_view cmd, fastboot::Transport *transport);
+  // `fastboot boot`: boot the downloaded ZBI directly out of RAM, writing
+  // nothing to storage. This is the standard Android development loop.
+  zx::result<> BootRam(std::string_view cmd, fastboot::Transport *transport);
   zx::result<> Continue(std::string_view cmd, fastboot::Transport *transport);
   zx::result<> DoReboot(RebootMode reboot_mode, std::string_view cmd,
                         fastboot::Transport *transport);
