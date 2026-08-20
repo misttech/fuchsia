@@ -7,7 +7,7 @@ versions of the cpp toolchain. """
 
 load("@fuchsia_sdk//:generated_constants.bzl", "ALL_CC_SOURCE_TARGETS")
 load(
-    "@rules_fuchsia//fuchsia:private_defs.bzl",
+    "@rules_fuchsia//fuchsia/private:fuchsia_api_level.bzl",
     "FUCHSIA_API_LEVEL_TARGET",
 )
 
