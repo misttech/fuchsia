@@ -2007,6 +2007,7 @@ dependencies = [
  "rustyline",
  "rutabaga_gfx",
  "sapphire-async",
+ "sapphire-buffer",
  "sapphire-collections",
  "sapphire-common",
  "sapphire-emboss",
@@ -4822,6 +4823,13 @@ dependencies = [
  "sapphire-collections",
  "sapphire-sync",
  "thiserror 2.0.20",
+]
+
+[[package]]
+name = "sapphire-buffer"
+version = "0.1.0"
+dependencies = [
+ "sapphire-collections",
 ]
 
 [[package]]

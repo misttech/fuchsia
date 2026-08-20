@@ -213,6 +213,7 @@ rustls-webpki = "0.102"
 rustyline = "18.0.1"
 rutabaga_gfx = { version = "0.1.75", features = ["gfxstream"] }
 sapphire-async = { version = "0.1.0", features = ["std", "testing"] }
+sapphire-buffer = { version = "0.1.0", features = ["std"] }
 sapphire-collections = { version = "0.1.0", features = ["std"] }
 sapphire-common = "0.1.0"
 sapphire-emboss = "0.1.0"
@@ -385,6 +386,7 @@ zip = { version = "8.6.0", default-features = false, features = ["deflate-flate2
 bssl-sys = { path = "intree/bssl-sys" }
 fuchsia-cprng = { path = "intree/fuchsia-cprng" }
 sapphire-async = { path = "intree/sunstone/sapphire-async" }
+sapphire-buffer = { path = "intree/sunstone/sapphire-buffer" }
 sapphire-collections = { path = "intree/sunstone/sapphire-collections" }
 sapphire-common = { path = "intree/sunstone/sapphire-common" }
 sapphire-emboss = { path = "intree/sunstone/sapphire-emboss" }
@@ -646,6 +648,9 @@ groups = [
 license_files = ["LICENSE-APACHE"]
 
 [gn.package.sapphire-async."0.1.0"]
+uses_fuchsia_license = true
+
+[gn.package.sapphire-buffer."0.1.0"]
 uses_fuchsia_license = true
 
 [gn.package.sapphire-collections."0.1.0"]

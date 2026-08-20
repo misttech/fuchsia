@@ -5,6 +5,26 @@
 import("//build/rust/rustc_test.gni")
 
 if (is_host) {
+  rustc_test("sapphire_buffer_test") {
+    edition = "2024"
+    source_root = "sapphire-buffer/src/lib.rs"
+    sources = [
+      "sapphire-buffer/src/allocated.rs",
+      "sapphire-buffer/src/buffer.rs",
+      "sapphire-buffer/src/lib.rs",
+      "sapphire-buffer/src/multibuf.rs",
+      "sapphire-buffer/src/storage.rs",
+    ]
+    features = [
+      "alloc",
+      "std",
+    ]
+    deps = [
+      "//third_party/rust_crates:proptest",
+      "//third_party/rust_crates:sapphire-collections",
+    ]
+  }
+
   rustc_test("sapphire_collections_test") {
     edition = "2024"
     source_root = "sapphire-collections/src/lib.rs"
@@ -161,6 +181,7 @@ group("tests") {
   testonly = true
   deps = [
     ":sapphire_async_test($host_toolchain)",
+    ":sapphire_buffer_test($host_toolchain)",
     ":sapphire_collections_test($host_toolchain)",
     ":sapphire_common_test($host_toolchain)",
     ":sapphire_emboss_test($host_toolchain)",

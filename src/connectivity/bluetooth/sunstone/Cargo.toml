@@ -4,6 +4,7 @@
 [workspace]
 members = [
   "sapphire-async",
+  "sapphire-buffer",
   "sapphire-collections",
   "sapphire-common",
   "sapphire-emboss",

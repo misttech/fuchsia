@@ -451,6 +451,7 @@ _NORMAL_DEPENDENCIES = {
             "rustyline": Label("//third_party/rust_crates/vendor/rustyline-18.0.1:rustyline"),
             "rutabaga_gfx": Label("//third_party/rust_crates/vendor/rutabaga_gfx-0.1.75:rutabaga_gfx"),
             "sapphire-async": Label("//third_party/rust_crates/vendor/sapphire-async-0.1.0:sapphire_async"),
+            "sapphire-buffer": Label("//third_party/rust_crates/vendor/sapphire-buffer-0.1.0:sapphire_buffer"),
             "sapphire-collections": Label("//third_party/rust_crates/vendor/sapphire-collections-0.1.0:sapphire_collections"),
             "sapphire-common": Label("//third_party/rust_crates/vendor/sapphire-common-0.1.0:sapphire_common"),
             "sapphire-emboss": Label("//third_party/rust_crates/vendor/sapphire-emboss-0.1.0:sapphire_emboss"),

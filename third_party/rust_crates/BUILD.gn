@@ -1903,6 +1903,14 @@ group("sapphire-async-0.1.0") {
   public_deps = [ ":sapphire-async-v0_1_0" ]
 }
 
+group("sapphire-buffer") {
+  public_deps = [ ":sapphire-buffer-v0_1_0" ]
+}
+
+group("sapphire-buffer-0.1.0") {
+  public_deps = [ ":sapphire-buffer-v0_1_0" ]
+}
+
 group("sapphire-collections") {
   public_deps = [ ":sapphire-collections-v0_1_0" ]
 }
@@ -19643,6 +19651,35 @@ rustc_library("sapphire-async-v0_1_0") {
     "--cfg=feature=\"default\"",
     "--cfg=feature=\"std\"",
     "--cfg=feature=\"testing\"",
+  ]
+
+  visibility = [ ":*" ]
+
+  applicable_licenses = [ "//build/licenses:fuchsia_license" ]
+}
+
+rustc_library("sapphire-buffer-v0_1_0") {
+  crate_name = "sapphire_buffer"
+  source_root =
+      "//src/connectivity/bluetooth/sunstone/sapphire-buffer/src/lib.rs"
+  output_name = "sapphire_buffer-d1c678db79e67a8"
+  edition = "2024"
+  disable_clippy = true
+  enforce_source_listing = false
+  configs -= [ "//build/config/rust:2018_idioms" ]
+
+  deps = []
+  deps += [ ":sapphire-collections-v0_1_0" ]
+
+  rustenv = []
+
+  rustflags = [
+    "--cap-lints=allow",
+    "-Cmetadata=d1c678db79e67a8",
+    "-Cextra-filename=-d1c678db79e67a8",
+    "--cfg=feature=\"alloc\"",
+    "--cfg=feature=\"default\"",
+    "--cfg=feature=\"std\"",
   ]
 
   visibility = [ ":*" ]
