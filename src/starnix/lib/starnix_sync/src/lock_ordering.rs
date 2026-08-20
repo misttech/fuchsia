@@ -132,7 +132,6 @@ lock_ordering! {
     SyslogSubscriptionLock => WaitQueueImplLock,
     TaskCredsLock => DirEntryChildrenRecursiveLevel,
     TaskCredsLock => FsNodeInfoRecursiveLevel,
-    TaskCredsLock => OverlayFsStateLock,
     TaskCredsLock => TaskFilesLock,
     TaskFilesLock => FdTableMutableStateLock,
     TaskMutableStateLock => EpollWaitableStateLock,

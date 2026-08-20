@@ -8,9 +8,7 @@ use crate::mm::{DumpPolicy, MemoryAccessor, MemoryAccessorExt, MemoryManager, Ta
 use crate::ptrace::{PtraceCoreState, PtraceEvent, PtraceEventData, PtraceOptions, StopState};
 use crate::security;
 use crate::signals::{SignalDetail, SignalInfo, send_signal_first, send_standard_signal};
-use crate::task::loader::{
-    ResolvedElf, load_executable, resolve_elf_interpreter, resolve_executable,
-};
+use crate::task::loader::{ResolvedElf, load_executable, resolve_executable};
 use crate::task::waiter::WaiterOptions;
 use crate::task::{
     CurrentTaskCredentialsWriteGuard, ExitStatus, PageFaultExceptionReport, RobustListHeadPtr,
@@ -1030,9 +1028,6 @@ impl CurrentTask {
 
         // LSM hook: Perform access checks and allow LSM to update credentials.
         security::bprm_creds_for_exec(self, &executable.name, &mut resolved_elf)?;
-
-        // Resolve the ELF interpreter using the post-transition target credentials.
-        resolve_elf_interpreter(self, &mut resolved_elf)?;
 
         if self.thread_group().read().tasks_count() > 1 {
             track_stub!(TODO("https://fxbug.dev/297434895"), "exec on multithread process");

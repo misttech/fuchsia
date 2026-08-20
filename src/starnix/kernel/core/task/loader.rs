@@ -486,54 +486,31 @@ fn resolve_elf(
     } else {
         elf_parse::Elf64Headers::from_vmo(vmo).map_err(elf_parse_error_to_errno)?
     };
+    let interp = if let Some(interp_hdr) = elf_headers
+        .program_header_with_type(elf_parse::SegmentType::Interp)
+        .map_err(|_| errno!(EINVAL))?
+    {
+        // The ELF header specified an ELF interpreter.
+        // Read the path and load this ELF as well.
+        let interp = memory
+            .read_to_vec(interp_hdr.offset as u64, interp_hdr.filesz)
+            .map_err(|status| from_status_like_fdio!(status))?;
+        let interp = CStr::from_bytes_until_nul(&interp).map_err(|_| errno!(EINVAL))?;
+        let interp_file = current_task.open_file(interp.to_bytes().into(), OpenFlags::RDONLY)?;
+        let interp_memory = interp_file
+            .get_memory(current_task, None, ProtectionFlags::READ | ProtectionFlags::EXEC)
+            .map_err(|e| if e.code.error_code() == ENODEV { errno!(ENOEXEC) } else { e })?;
+        let interp_file =
+            interp_file.name.clone().into_mapping(Some(FileWriteGuardMode::ExecMapping))?;
+        Some(ResolvedInterpElf { file: interp_file, memory: interp_memory })
+    } else {
+        None
+    };
     let file = file.name.clone().into_mapping(Some(FileWriteGuardMode::ExecMapping))?;
     let arch_width = get_arch_width(&elf_headers);
     let creds = Credentials::clone(&current_task.current_creds());
     let secure_exec = false;
-    Ok(ResolvedElf { file, memory, interp: None, argv, environ, creds, secure_exec, arch_width })
-}
-
-/// Resolves and loads the ELF dynamic linker (PT_INTERP) for a `ResolvedElf`, if present,
-/// using the post-transition target credentials in `resolved_elf.creds`.
-pub fn resolve_elf_interpreter(
-    current_task: &CurrentTask,
-    resolved_elf: &mut ResolvedElf,
-) -> Result<(), Errno> {
-    let vmo = resolved_elf.memory.as_vmo().ok_or_else(|| errno!(EINVAL))?;
-    let elf_headers = if cfg!(target_arch = "aarch64") {
-        elf_parse::Elf64Headers::from_vmo_with_arch32(vmo).map_err(elf_parse_error_to_errno)?
-    } else {
-        elf_parse::Elf64Headers::from_vmo(vmo).map_err(elf_parse_error_to_errno)?
-    };
-
-    if let Some(interp_hdr) = elf_headers
-        .program_header_with_type(elf_parse::SegmentType::Interp)
-        .map_err(|_| errno!(EINVAL))?
-    {
-        let interp = resolved_elf
-            .memory
-            .read_to_vec(interp_hdr.offset as u64, interp_hdr.filesz)
-            .map_err(|status| from_status_like_fdio!(status))?;
-        let interp = CStr::from_bytes_until_nul(&interp).map_err(|_| errno!(EINVAL))?;
-
-        let interp_resolved = current_task.override_creds(
-            Arc::new(resolved_elf.creds.clone()),
-            || -> Result<ResolvedInterpElf, Errno> {
-                let interp_file =
-                    current_task.open_file(interp.to_bytes().into(), OpenFlags::RDONLY)?;
-                let interp_memory = interp_file
-                    .get_memory(current_task, None, ProtectionFlags::READ | ProtectionFlags::EXEC)
-                    .map_err(|e| if e.code.error_code() == ENODEV { errno!(ENOEXEC) } else { e })?;
-                let interp_file =
-                    interp_file.name.clone().into_mapping(Some(FileWriteGuardMode::ExecMapping))?;
-                Ok(ResolvedInterpElf { file: interp_file, memory: interp_memory })
-            },
-        )?;
-
-        resolved_elf.interp = Some(interp_resolved);
-    }
-
-    Ok(())
+    Ok(ResolvedElf { file, memory, interp, argv, environ, creds, secure_exec, arch_width })
 }
 
 /// Loads a resolved ELF into memory, along with an interpreter if one is defined, and initializes

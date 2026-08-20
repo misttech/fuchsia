@@ -45,19 +45,22 @@ TEST(InheritTest, ExecutableFdRemappedToNull) {
 
   auto enforce = ScopedEnforcement::SetEnforcing();
 
-  test_helper::ForkHelper fork_helper;
-  fork_helper.ExpectSignal(SIGSEGV);
-
-  RunInForkedProcessWithLabel(fork_helper, kParentSecurityContext, [&] {
+  pid_t pid;
+  ASSERT_TRUE((pid = fork()) >= 0);
+  if (pid == 0) {
+    ASSERT_TRUE(WriteTaskAttr("current", kParentSecurityContext).is_ok());
     ASSERT_TRUE(WriteTaskAttr("exec", kChildSecurityContext).is_ok());
 
     std::string binary_name = "true_bin";
     std::string path_for_exec = PathForExec(binary_name);
     char* const args[] = {binary_name.data(), nullptr};
     SAFE_SYSCALL(execv(path_for_exec.data(), args));
-  });
-
-  ASSERT_TRUE(fork_helper.WaitForChildren());
+  } else {
+    int wstatus;
+    ASSERT_TRUE(waitpid(pid, &wstatus, 0));
+    EXPECT_TRUE(WIFSIGNALED(wstatus));
+    EXPECT_EQ(WTERMSIG(wstatus), SIGSEGV);
+  }
 }
 
 // Execute a binary in a situation where the post-exec domain has the `use`
@@ -673,84 +676,6 @@ TEST(InheritTest, ExecveScriptTransition) {
 
     SAFE_SYSCALL(execve(script_path.c_str(), argv, envp));
   }));
-}
-
-/// Verifies that executing a script when the target domain is denied `file { execute }`
-/// on the interpreter causes execution to fail with SIGSEGV.
-TEST(InheritTest, ExecveScriptInterpreterExecuteDenied) {
-  constexpr char kInitialTaskContext[] = "test_u:test_r:test_inherit_parent_t:s0";
-  constexpr char kChildSecurityContext[] = "test_u:test_r:test_inherit_script_no_interp_exec_t:s0";
-  constexpr char kInterpreterFileLabel[] = "test_u:object_r:test_inherit_interp_file_t:s0";
-  constexpr char kScriptLabel[] = "test_u:object_r:test_inherit_script_file_t:s0";
-
-  auto enforce = ScopedEnforcement::SetEnforcing();
-  test_helper::ScopedTempDir temp_dir;
-
-  const std::string is_current_domain_bin_path = PathForExec("is_current_domain_bin");
-  const std::string interpreter_path = temp_dir.path() + "/interpreter";
-  std::string interpreter_content;
-  ASSERT_TRUE(files::ReadFileToString(is_current_domain_bin_path, &interpreter_content));
-  ASSERT_TRUE(files::WriteFile(interpreter_path, interpreter_content));
-  ASSERT_THAT(chmod(interpreter_path.c_str(), 0755), SyscallSucceeds());
-  ASSERT_TRUE(SetLabel(interpreter_path, kInterpreterFileLabel).is_ok());
-
-  std::string script_path = temp_dir.path() + "/script.sh";
-  std::string script_context = "#!" + interpreter_path + "\n";
-  ASSERT_TRUE(files::WriteFile(script_path, script_context));
-  ASSERT_THAT(chmod(script_path.c_str(), 0755), SyscallSucceeds());
-  ASSERT_TRUE(SetLabel(script_path, kScriptLabel).is_ok());
-
-  test_helper::ForkHelper fork_helper;
-  fork_helper.ExpectSignal(SIGSEGV);
-
-  RunInForkedProcessWithLabel(fork_helper, kInitialTaskContext, [&] {
-    ASSERT_TRUE(WriteTaskAttr("exec", kChildSecurityContext).is_ok());
-    char* const argv[] = {const_cast<char*>(script_path.c_str()), nullptr};
-    char* const envp[] = {nullptr};
-
-    SAFE_SYSCALL(execve(script_path.c_str(), argv, envp));
-  });
-
-  ASSERT_TRUE(fork_helper.WaitForChildren());
-}
-
-/// Verifies that executing a script when the target domain is denied `file { read }`
-/// on the interpreter causes execution to fail with SIGSEGV.
-TEST(InheritTest, ExecveScriptInterpreterReadDenied) {
-  constexpr char kInitialTaskContext[] = "test_u:test_r:test_inherit_parent_t:s0";
-  constexpr char kChildSecurityContext[] = "test_u:test_r:test_inherit_script_no_interp_read_t:s0";
-  constexpr char kInterpreterFileLabel[] = "test_u:object_r:test_inherit_interp_file_t:s0";
-  constexpr char kScriptLabel[] = "test_u:object_r:test_inherit_script_file_t:s0";
-
-  auto enforce = ScopedEnforcement::SetEnforcing();
-  test_helper::ScopedTempDir temp_dir;
-
-  const std::string is_current_domain_bin_path = PathForExec("is_current_domain_bin");
-  const std::string interpreter_path = temp_dir.path() + "/interpreter";
-  std::string interpreter_content;
-  ASSERT_TRUE(files::ReadFileToString(is_current_domain_bin_path, &interpreter_content));
-  ASSERT_TRUE(files::WriteFile(interpreter_path, interpreter_content));
-  ASSERT_THAT(chmod(interpreter_path.c_str(), 0755), SyscallSucceeds());
-  ASSERT_TRUE(SetLabel(interpreter_path, kInterpreterFileLabel).is_ok());
-
-  std::string script_path = temp_dir.path() + "/script.sh";
-  std::string script_context = "#!" + interpreter_path + "\n";
-  ASSERT_TRUE(files::WriteFile(script_path, script_context));
-  ASSERT_THAT(chmod(script_path.c_str(), 0755), SyscallSucceeds());
-  ASSERT_TRUE(SetLabel(script_path, kScriptLabel).is_ok());
-
-  test_helper::ForkHelper fork_helper;
-  fork_helper.ExpectSignal(SIGSEGV);
-
-  RunInForkedProcessWithLabel(fork_helper, kInitialTaskContext, [&] {
-    ASSERT_TRUE(WriteTaskAttr("exec", kChildSecurityContext).is_ok());
-    char* const argv[] = {const_cast<char*>(script_path.c_str()), nullptr};
-    char* const envp[] = {nullptr};
-
-    SAFE_SYSCALL(execve(script_path.c_str(), argv, envp));
-  });
-
-  ASSERT_TRUE(fork_helper.WaitForChildren());
 }
 
 }  // namespace

@@ -477,24 +477,6 @@
             ]
         },
         {
-            "name": "InheritTest.ExecveScriptInterpreterExecuteDenied",
-            "audit_expectations": [
-                "avc:  denied  { noatsecure } for scontext=test_u:test_r:test_inherit_parent_t:s0 tcontext=test_u:test_r:test_inherit_script_no_interp_exec_t:s0 tclass=process permissive=0",
-                "avc:  denied  { rlimitinh } for scontext=test_u:test_r:test_inherit_parent_t:s0 tcontext=test_u:test_r:test_inherit_script_no_interp_exec_t:s0 tclass=process permissive=0",
-                "avc:  denied  { siginh } for scontext=test_u:test_r:test_inherit_parent_t:s0 tcontext=test_u:test_r:test_inherit_script_no_interp_exec_t:s0 tclass=process permissive=0",
-                "avc:  denied  { execute } for scontext=test_u:test_r:test_inherit_script_no_interp_exec_t:s0 tcontext=test_u:object_r:test_inherit_interp_file_t:s0 tclass=file permissive=0"
-            ]
-        },
-        {
-            "name": "InheritTest.ExecveScriptInterpreterReadDenied",
-            "audit_expectations": [
-                "avc:  denied  { noatsecure } for scontext=test_u:test_r:test_inherit_parent_t:s0 tcontext=test_u:test_r:test_inherit_script_no_interp_read_t:s0 tclass=process permissive=0",
-                "avc:  denied  { rlimitinh } for scontext=test_u:test_r:test_inherit_parent_t:s0 tcontext=test_u:test_r:test_inherit_script_no_interp_read_t:s0 tclass=process permissive=0",
-                "avc:  denied  { siginh } for scontext=test_u:test_r:test_inherit_parent_t:s0 tcontext=test_u:test_r:test_inherit_script_no_interp_read_t:s0 tclass=process permissive=0",
-                "avc:  denied  { read } for scontext=test_u:test_r:test_inherit_script_no_interp_read_t:s0 tcontext=test_u:object_r:test_inherit_interp_file_t:s0 tclass=file permissive=0"
-            ]
-        },
-        {
             "name": "InheritTest.ExecveScriptTransition",
             "audit_expectations": [
                 "avc:  denied  { noatsecure } for scontext=test_u:test_r:test_inherit_parent_t:s0 tcontext=test_u:test_r:test_inherit_script_target_t:s0 tclass=process permissive=0",
