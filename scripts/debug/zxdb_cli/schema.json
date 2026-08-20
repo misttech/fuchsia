@@ -2,7 +2,7 @@
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "title": "zxdb-cli Protocol Schema",
     "description": "JSON schema for requests and responses in the zxdb-cli UDS protocol",
-    "version": 12,
+    "version": 13,
     "requests": {
         "$defs": {
             "AttachRequest": {
@@ -1229,8 +1229,8 @@
             "ThreadStackTraceResponse": {
                 "description": "Stack trace for a single thread in a process.",
                 "properties": {
-                    "id": {
-                        "title": "Id",
+                    "thread_id": {
+                        "title": "Thread Id",
                         "type": "integer"
                     },
                     "stackFrames": {
@@ -1246,7 +1246,7 @@
                     }
                 },
                 "required": [
-                    "id",
+                    "thread_id",
                     "stackFrames",
                     "totalFrames"
                 ],

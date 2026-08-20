@@ -80,7 +80,7 @@ async def _fetch_thread_stack_trace(
     if not raw:
         frames = collapse_elided_frames(frames)
     return ThreadStackTraceResponse(
-        id=thread_id,
+        thread_id=thread_id,
         stack_frames=frames,
         total_frames=total_frames,
     )
@@ -126,7 +126,7 @@ async def handle(daemon: Daemon, req: StackTraceRequest) -> Response:
             except Exception:
                 threads_traces.append(
                     ThreadStackTraceResponse(
-                        id=t.id,
+                        thread_id=t.id,
                         stack_frames=[],
                         total_frames=0,
                     )

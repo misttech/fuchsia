@@ -14,7 +14,7 @@ class ThreadStackTraceResponse(BaseModel):
 
     model_config = ConfigDict(populate_by_name=True)
 
-    id: int
+    thread_id: int
     # NOTE: It is a deliberate choice to depend on the DAP StackFrame definition here
     # to avoid duplicating identical definitions, despite coupling the protocols.
     stack_frames: list[StackFrame] = Field(alias="stackFrames")

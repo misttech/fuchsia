@@ -1093,7 +1093,7 @@ class TestCommandHandlerRegistry(unittest.IsolatedAsyncioTestCase):
             self.assertTrue(resp.success)
             self.assertIsNotNone(resp.body)
             assert isinstance(resp.body, ThreadStackTraceResponse)
-            self.assertEqual(resp.body.id, 1)
+            self.assertEqual(resp.body.thread_id, 1)
             frames = resp.body.stack_frames
             self.assertEqual(len(frames), 1)
             self.assertIn("0…1 «Rust panic»", frames[0].name)
@@ -1336,10 +1336,10 @@ class TestCommandHandlerRegistry(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(resp.body.process_id, 12345)
         threads = resp.body.stacks
         self.assertEqual(len(threads), 2)
-        self.assertEqual(threads[0].id, 101)
+        self.assertEqual(threads[0].thread_id, 101)
         self.assertEqual(len(threads[0].stack_frames), 1)
         self.assertIn("0…1 «Rust panic»", threads[0].stack_frames[0].name)
-        self.assertEqual(threads[1].id, 102)
+        self.assertEqual(threads[1].thread_id, 102)
         self.assertEqual(len(threads[1].stack_frames), 1)
         self.assertEqual(threads[1].stack_frames[0].name, "worker_func")
 
@@ -1423,9 +1423,9 @@ class TestCommandHandlerRegistry(unittest.IsolatedAsyncioTestCase):
 
         assert isinstance(resp.body, ProcessStackTraceResponse)
         self.assertEqual(len(resp.body.stacks), 2)
-        self.assertEqual(resp.body.stacks[0].id, 101)
+        self.assertEqual(resp.body.stacks[0].thread_id, 101)
         self.assertEqual(len(resp.body.stacks[0].stack_frames), 1)
-        self.assertEqual(resp.body.stacks[1].id, 102)
+        self.assertEqual(resp.body.stacks[1].thread_id, 102)
         self.assertEqual(len(resp.body.stacks[1].stack_frames), 0)
         self.assertEqual(resp.body.stacks[1].total_frames, 0)
 
