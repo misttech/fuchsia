@@ -49,15 +49,6 @@ static VIM3_PARSER_CONFIG: DmlParserConfig = DmlParserConfig {
             ],
             ..DEFAULT_SERVICE_BIND_CONFIG
         },
-        "fuchsia.hardware.pwm.Service" => ServiceBindConfig {
-            rules: &[PropertyRule {
-                bind_key: "fuchsia.BIND_PWM_ID",
-                sources: &[ValueSource::ConstraintKey("channel")],
-                value_type: RuleValueType::Integer,
-                destination: Destination::BindRules,
-            }],
-            ..DEFAULT_SERVICE_BIND_CONFIG
-        },
         "fuchsia.hardware.power.Service" => ServiceBindConfig {
             rules: &[PropertyRule {
                 bind_key: "fuchsia.power.POWER_DOMAIN",
