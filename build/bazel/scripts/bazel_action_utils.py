@@ -75,7 +75,6 @@ class BazelTargetInfo(object):
     bazel_platform_label: str
     bazel_platform_config: str
     ninja_depfile: str
-    gn_targets_dir: str
     gn_targets_manifest: str
     stamp_path: str
     update_rust_project: bool = False
@@ -108,7 +107,6 @@ class BazelTargetInfosMap(object):
             bazel_platform_label = entry["bazel_platform_label"]
             bazel_platform_config = entry["bazel_platform_config"]
             ninja_depfile = entry["ninja_depfile"]
-            gn_targets_dir = entry["gn_targets_dir"]
             gn_targets_manifest = entry["gn_targets_manifest"]
             stamp_path = entry["stamp_path"]
             update_rust_project = entry["update_rust_project"]
@@ -119,7 +117,6 @@ class BazelTargetInfosMap(object):
                     bazel_platform_label=bazel_platform_label,
                     bazel_platform_config=bazel_platform_config,
                     ninja_depfile=ninja_depfile,
-                    gn_targets_dir=gn_targets_dir,
                     gn_targets_manifest=gn_targets_manifest,
                     stamp_path=stamp_path,
                     update_rust_project=update_rust_project,

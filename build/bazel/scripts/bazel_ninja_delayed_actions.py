@@ -14,6 +14,7 @@ import sys
 import typing as T
 from pathlib import Path
 
+# LINT.IfChange(imports)
 _SCRIPT_DIR = os.path.dirname(__file__)
 sys.path.insert(0, _SCRIPT_DIR)
 import bazel_action_impl
@@ -38,6 +39,8 @@ from workspace_utils import (
 _MODULES_DIR = os.path.join(_SCRIPT_DIR, "../../python/modules")
 sys.path.insert(0, _MODULES_DIR)
 from depfile import DepFile
+
+# LINT.ThenChange(//build/bazel/bazel_action.gni:delayed_action_imports)
 
 # Set this to True to debug operations locally in this script.
 # IMPORTANT: Setting this to True will result in Ninja timeouts in CQ
@@ -233,7 +236,6 @@ def main() -> int:
                     for target_info in bazel_target_infos
                 ],
                 outputs=outputs,
-                extra_outputs=bazel_action_impl.BazelExtraOutputs(),
                 time_profile=time_profile,
             )
 

@@ -9,7 +9,6 @@ import contextlib
 import dataclasses
 import json
 import os
-import shlex
 import shutil
 import sys
 import typing as T
@@ -141,30 +140,6 @@ class BazelActionOutputs(object):
 
 
 @dataclasses.dataclass
-class BazelExtraOutputs(object):
-    """A collection of optional outputs to write as debugging aids, and the paths to write them at.
-
-    Fields:
-
-        build_event_json_file: A build event json file from Bazel
-
-        command_file: The Bazel command itself
-
-        command_profile: A command profile tgz file
-
-        debug_symbols_manifest: A manifest of debug symbols
-
-        explain_file: A file which explains why Bazel re-ran each action
-    """
-
-    build_event_json_file: Path | None = None
-    command_file: Path | None = None
-    command_profile: Path | None = None
-    debug_symbols_manifest: Path | None = None
-    explain_file: Path | None = None
-
-
-@dataclasses.dataclass
 class BazelActionResult(object):
     """Wrapper for results of executing a bazel action.
 
@@ -231,7 +206,6 @@ class BazelActionRunner(object):
         platform_label: str,
         targets: list[str],
         outputs: BazelActionOutputs,
-        extra_outputs: BazelExtraOutputs,
         time_profile: build_utils.TimeProfile,
     ) -> BazelActionResult:
         """Run a bazel command.
@@ -263,32 +237,6 @@ class BazelActionRunner(object):
         # These are the args that are listed after the command, targets, and configured
         # args.
         cmd_args = []
-
-        # If a build event json file is requested, tell Bazel to create one.
-        if extra_outputs.build_event_json_file:
-            # Create parent directory to avoid Bazel complaining it cannot
-            # write the events log file.
-            extra_outputs.build_event_json_file.parent.mkdir(
-                parents=True, exist_ok=True
-            )
-            cmd_args += [
-                "--build_event_json_file",
-                str(extra_outputs.build_event_json_file.resolve()),
-            ]
-
-        # If an explain file is requested, tell Bazel to create one.
-        if extra_outputs.explain_file:
-            cmd_args += [
-                "--explain",
-                self.paths.ninja_build_dir / extra_outputs.explain_file,
-            ]
-
-        # If a command profile is requested, tell Bazel to create one.
-        if extra_outputs.command_profile:
-            cmd_args += [
-                "--profile",
-                self.paths.ninja_build_dir / extra_outputs.command_profile,
-            ]
 
         # if build-event uploading is enabled in global args, then append the config for that
         if self.global_args.upload_build_events:
@@ -389,15 +337,6 @@ class BazelActionRunner(object):
             debug(
                 "BUILD_CMD: "
                 + build_utils.cmd_args_to_string([self.paths.launcher] + cmd)
-            )
-        if extra_outputs.command_file:
-            # This file is one argument per line.
-            write_file_if_changed(
-                extra_outputs.command_file,
-                " \\\n  ".join(
-                    shlex.quote(str(c)) for c in [self.paths.launcher] + cmd
-                )
-                + "\n",
             )
 
         with contextlib.ExitStack() as on_exit:
@@ -526,7 +465,6 @@ class BazelActionRunner(object):
         self._handle_debug_symbols(
             debug_symbol_manifest_paths,
             need_to_copy_debug_symbols,
-            extra_outputs.debug_symbols_manifest,
             time_profile,
         )
 
@@ -907,7 +845,6 @@ class BazelActionRunner(object):
         self,
         bazel_manifest_paths: list[str],
         perform_copy: bool,
-        manifest_path: Path | None,
         time_profile: build_utils.TimeProfile,
     ) -> None:
         """Perform any post-build operations that need to happen with the debug symbols.
@@ -917,12 +854,11 @@ class BazelActionRunner(object):
         If they need to be written to an output file, then do so.
         """
 
-        if perform_copy or manifest_path:
+        if perform_copy:
             debug_symbols_manifest = merge_debug_symbol_manifests(
                 bazel_manifest_paths,
                 bazel_execroot=self.paths.execroot,
                 build_dir=self.paths.ninja_build_dir,
-                manifest_output_path=manifest_path,
                 time_profile=time_profile,
             )
 
@@ -934,13 +870,6 @@ class BazelActionRunner(object):
                 copy_debug_symbols_to_build_dir(
                     self.paths.ninja_build_dir, debug_symbols_manifest
                 )
-
-            if manifest_path:
-                # Write the debug symbols manifest. This is referenced by {BUILD_DIR}/debug_symbols.json
-                # which will be used by artifactory to upload the symbols to cloud storage on infra
-                # builds.
-                with open(manifest_path, "wt") as f:
-                    json.dump(debug_symbols_manifest, f, indent=2)
 
 
 def calculate_platform_config_args(
@@ -1458,7 +1387,6 @@ def merge_debug_symbol_manifests(
     debug_symbol_manifest_paths: list[str],
     bazel_execroot: Path,
     build_dir: Path,
-    manifest_output_path: Path | None,
     time_profile: build_utils.TimeProfile,
 ) -> list[DebugSymbolEntryType]:
     """Generate final debug symbol manifest.
@@ -1469,9 +1397,6 @@ def merge_debug_symbol_manifests(
             the Bazel stderr's DEBUG lines.
         bazel_execroot: Path to Bazel execroot.
         build_dir: Path to Ninja build direvtory.
-        manifest_output_path: Path where the manifest will be written.
-            only used in error messages, this function does not write
-            the file itself.
         time_profile: A TimeProfile instance.
     Returns:
         a list of dictionaries describing debug symbols according to the
@@ -1518,7 +1443,7 @@ def merge_debug_symbol_manifests(
     )
     parser = DebugSymbolsManifestParser()
     parser.enable_build_id_resolution()
-    parser.parse_manifest_json(output_manifest, manifest_output_path)
+    parser.parse_manifest_json(output_manifest)
 
     if _DEBUG_SYMBOL_EXPORT:
         print("DEBUG SYMBOLS:\n%s" % output_manifest)

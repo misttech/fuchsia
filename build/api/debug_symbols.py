@@ -264,7 +264,7 @@ class DebugSymbolsManifestParser(object):
         self._visited_stack = self._visited_stack[:-1]
 
     def parse_manifest_json(
-        self, manifest_json: T.Any, manifest_path: Path | str | None
+        self, manifest_json: T.Any, manifest_path: Path | str | None = None
     ) -> None:
         """Parse a given debug_symbols manifest JSON value.
 

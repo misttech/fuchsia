@@ -22,10 +22,6 @@ import("//build/toolchain/zircon/clang.gni")
 import("//build/zbi/zbi.gni")
 import("//sdk/config.gni")
 
-# Included solely to allow this arg to be read by regenerator.py
-# This will be removed when this feature is always enabled.
-import("//build/config/enable_delayed_bazel_actions.gni")
-
 # Standard GN args.
 declare_args() {
   # If you add package labels to this variable, the packages will be included
@@ -145,13 +141,18 @@ declare_args() {
 ###
 
 declare_args() {
-  # DEPRECATED, left to trigger warnings
   test_package_labels = []
+  enable_delayed_bazel_actions = ""
 }
 
 assert(
     test_package_labels == [],
     "'test_package_labels' is not supported, use 'developer_test_labels' instead.")
+
+if (enable_delayed_bazel_actions != "") {
+  print(
+      "WARNING: The 'enable_delayed_bazel_actions' GN arg is now deprecated, please remove from your 'args.gn' file.")
+}
 
 ### END DEPRECATED GN build args and warnings/errors
 
@@ -2171,10 +2172,6 @@ build_api_module("nuc11_fastboot_images_location") {
 #
 #   ninja_depfile:
 #     - Required: the ninja depfile path (rebased) for the action
-#     - Type: string
-#
-#   gn_targets_dir
-#     - Required: Path to @gn_targets directory for gn_label, relative to Ninja build directory.
 #     - Type: string
 #
 #   gn_targets_manifest
