@@ -164,7 +164,9 @@ class Dwc3 : public fdf::DriverBase2,
   class EpServer : public usb::EndpointServer {
    public:
     EpServer(const zx::bti& bti, Dwc3* dwc3, UserEndpoint* uep)
-        : usb::EndpointServer{bti, uep->ep.ep_num}, dwc3_{dwc3}, uep_{uep} {}
+        : usb::EndpointServer{bti, uep->ep.ep_num, usb::ScatterGatherSupport::kUnsupported},
+          dwc3_{dwc3},
+          uep_{uep} {}
 
     void CancelAll(zx_status_t reason);
 

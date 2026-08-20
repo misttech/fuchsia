@@ -769,6 +769,7 @@ fpromise::promise<void, zx_status_t> UsbXhci::UsbHciEnableEndpoint(
 
     // See section 4.3.6
     fdescriptor::EndpointType ep_type = usb_ep_type(ep_desc);
+    state->GetEndpoint(index - 1).set_ep_type(ep_type);
     if (ep_type == fdescriptor::EndpointType::kIsochronous) {
       state->GetEndpoint(index - 1).transfer_ring().SetIsochronous();
     }

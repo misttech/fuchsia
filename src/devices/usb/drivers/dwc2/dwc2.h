@@ -131,7 +131,9 @@ class Dwc2 : public fdf::DriverBase2, public fidl::Server<fuchsia_hardware_usb_d
 
   class Endpoint : public usb::EndpointServer {
    public:
-    Endpoint(uint8_t ep_num, Dwc2* dwc2) : usb::EndpointServer(dwc2->bti_, ep_num), dwc2_(dwc2) {}
+    Endpoint(uint8_t ep_num, Dwc2* dwc2)
+        : usb::EndpointServer(dwc2->bti_, ep_num, usb::ScatterGatherSupport::kUnsupported),
+          dwc2_(dwc2) {}
 
     // fuchsia_hardware_usb_endpoint::Endpoint protocol implementation.
     void GetInfo(GetInfoCompleter::Sync& completer) override {

@@ -578,10 +578,22 @@ void Dwc2::QueueNextRequest(Endpoint* ep) {
       std::visit([this](auto&& req) -> zx_status_t { return req.PhysMap(bti_); }, *ep->current_req);
   ZX_ASSERT_MSG(status == ZX_OK, "PhysMap failed");
   auto iters = ep->get_iter(*ep->current_req, zx_system_get_page_size());
-  ZX_DEBUG_ASSERT(iters.is_ok());
-  // Dwc2 currently does not support scatter gather as it is using Buffer DMA mode (Chapter 9 of
-  // dwc2 specs). To use scatter gather, we need to use Scatter/Gather DMA mode (Chapter 10).
-  ZX_ASSERT_MSG(iters->size() == 1, "Currently do not support scatter gather");
+  if (iters.is_error()) {
+    fdf::error("get_iter failed: {}", iters.status_string());
+    auto req = std::move(*ep->current_req);
+    ep->current_req.reset();
+    std::visit([ep, status = iters.status_value()](
+                   auto&& r) { ep->RequestComplete(status, 0, std::move(r)); },
+               req);
+    return;
+  }
+  if (iters->size() != 1) {
+    fdf::error("dwc2 only supports single segment requests (segments: {})", iters->size());
+    auto req = std::move(*ep->current_req);
+    ep->current_req.reset();
+    std::visit([ep](auto&& r) { ep->RequestComplete(ZX_ERR_NOT_SUPPORTED, 0, std::move(r)); }, req);
+    return;
+  }
   auto iter = iters->at(0).begin();
 
   ep->phys = static_cast<uint32_t>((*iter).first);

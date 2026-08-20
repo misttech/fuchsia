@@ -30,6 +30,9 @@ zx::result<std::vector<dma_buffer::PhysIter>> EndpointServer::get_iter(RequestVa
   if (!fidl_request->data().has_value()) {
     return zx::ok(std::move(iters));
   }
+  if (sg_support_ == ScatterGatherSupport::kUnsupported && fidl_request->data()->size() > 1) {
+    return zx::error(ZX_ERR_NOT_SUPPORTED);
+  }
   size_t i = 0;
   std::lock_guard<std::mutex> lock(lock_);
   for (const auto& d : *fidl_request->data()) {
@@ -54,13 +57,32 @@ zx::result<std::vector<dma_buffer::PhysIter>> EndpointServer::get_iter(RequestVa
         const size_t page_idx = vmo_offset / kPageSize;
         const size_t remaining_count = registered_vmo.phys_count - page_idx;
         const zx_off_t sub_offset = vmo_offset & (kPageSize - 1);
-        iters.push_back(dma_buffer::PhysIter{registered_vmo.phys_list + page_idx, remaining_count,
-                                             kPageSize, sub_offset, req_size, max_length});
+        auto iter = dma_buffer::PhysIter{registered_vmo.phys_list + page_idx,
+                                         remaining_count,
+                                         kPageSize,
+                                         sub_offset,
+                                         req_size,
+                                         max_length};
+        if (sg_support_ == ScatterGatherSupport::kUnsupported && req_size > 0) {
+          auto it_p = iter.begin();
+          if (it_p == iter.end() || (*it_p).second < req_size) {
+            return zx::error(ZX_ERR_NOT_SUPPORTED);
+          }
+        }
+        iters.push_back(iter);
         break;
       }
-      case fuchsia_hardware_usb_request::Buffer::Tag::kData:
-        iters.push_back(fidl_request.phys_iter(i, max_length));
+      case fuchsia_hardware_usb_request::Buffer::Tag::kData: {
+        auto iter = fidl_request.phys_iter(i, max_length);
+        if (sg_support_ == ScatterGatherSupport::kUnsupported && *d.size() > 0) {
+          auto it_p = iter.begin();
+          if (it_p == iter.end() || (*it_p).second < *d.size()) {
+            return zx::error(ZX_ERR_NOT_SUPPORTED);
+          }
+        }
+        iters.push_back(iter);
         break;
+      }
       default:
         fdf::error("Not supported buffer type");
         return zx::error(ZX_ERR_NOT_SUPPORTED);

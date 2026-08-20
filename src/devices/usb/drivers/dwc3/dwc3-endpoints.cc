@@ -179,7 +179,13 @@ void Dwc3::UserEpQueueNextSingle(UserEndpoint& uep) {
   auto& pending_req = uep.server->queued_reqs.front();
 
   zx::result result = uep.server->get_iter(pending_req, zx_system_get_page_size());
-  ZX_ASSERT_MSG(result.is_ok(), "[BUG] server->phys_iter(): %s", result.status_string());
+  if (result.is_error()) {
+    fdf::error("get_iter failed: {}", result.status_string());
+    auto req = std::move(pending_req);
+    uep.server->queued_reqs.pop();
+    uep.server->RequestComplete(result.status_value(), 0, std::move(req));
+    return;
+  }
 
   // TODO(voydanoff) scatter/gather support
   zx_paddr_t phys;
@@ -249,7 +255,13 @@ void Dwc3::UserEpQueueNextOngoing(UserEndpoint& uep, bool start_transfer) {
     auto& pending_req = uep.server->queued_reqs.front();
 
     zx::result result = uep.server->get_iter(pending_req, zx_system_get_page_size());
-    ZX_ASSERT_MSG(result.is_ok(), "[BUG] server->phys_iter(): %s", result.status_string());
+    if (result.is_error()) {
+      fdf::error("get_iter failed: {}", result.status_string());
+      auto req = std::move(pending_req);
+      uep.server->queued_reqs.pop();
+      uep.server->RequestComplete(result.status_value(), 0, std::move(req));
+      continue;
+    }
 
     zx_paddr_t phys;
     size_t size;

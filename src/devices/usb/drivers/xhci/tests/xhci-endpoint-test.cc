@@ -37,9 +37,13 @@ class EndpointHarness : public ::testing::Test {
     ASSERT_OK(driver_test().driver()->TestInit(this));
   }
 
-  void Init(uint8_t ep_addr) {
+  void Init(uint8_t ep_addr, std::optional<fuchsia_hardware_usb_descriptor::EndpointType> ep_type =
+                                 fuchsia_hardware_usb_descriptor::EndpointType::kBulk) {
     loop_.StartThread("ep-thread");
     ep_ = std::make_unique<Endpoint>(driver_test().driver(), kDeviceId, ep_addr);
+    if (ep_type.has_value()) {
+      ep_->set_ep_type(*ep_type);
+    }
     EXPECT_OK(ep_->Init(nullptr, nullptr));
 
     // Connect client
@@ -236,9 +240,9 @@ TEST_F(EndpointHarness, GetInfo) {
   Init(1);
 
   auto result = client_->GetInfo();
-  EXPECT_TRUE(result.is_error());
-  EXPECT_TRUE(result.error_value().is_domain_error());
-  EXPECT_EQ(result.error_value().domain_error(), ZX_ERR_NOT_SUPPORTED);
+  ASSERT_TRUE(result.is_ok());
+  ASSERT_TRUE(result->info().bulk().has_value());
+  EXPECT_TRUE(result->info().bulk()->supports_scatter_gather().value());
 }
 
 TEST_F(EndpointHarness, QueueControlRequest) {

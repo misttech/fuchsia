@@ -1482,14 +1482,15 @@ void Dwc3::EpServer::GetInfo(GetInfoCompleter::Sync& completer) {
     case fdescriptor::EndpointType::kIsochronous: {
       fendpoint::IsochronousEndpointInfo isoc;
       isoc.lead_time(1);
+      isoc.supports_scatter_gather(false);
       info.isochronous(std::move(isoc));
       break;
     }
     case fdescriptor::EndpointType::kBulk:
-      info.bulk(fendpoint::BulkEndpointInfo{});
+      info.bulk(fendpoint::BulkEndpointInfo().supports_scatter_gather(false));
       break;
     case fdescriptor::EndpointType::kInterrupt:
-      info.interrupt(fendpoint::InterruptEndpointInfo{});
+      info.interrupt(fendpoint::InterruptEndpointInfo().supports_scatter_gather(false));
       break;
     default:
       // In theory, this should never happen unless a new EP type is added to the spec.
@@ -1523,7 +1524,7 @@ void Dwc3::EpServer::QueueRequests(QueueRequestsRequest& request,
 
     if (freq->data()->size() != 1) {
       fdf::error("scatter-gather not implemented");
-      RequestComplete(ZX_ERR_INVALID_ARGS, 0, std::move(freq));
+      RequestComplete(ZX_ERR_NOT_SUPPORTED, 0, std::move(freq));
       continue;
     }
 

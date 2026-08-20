@@ -8,7 +8,13 @@ using zx;
 using fuchsia.hardware.usb.request;
 
 /// Bulk Endpoint Information
-type BulkEndpointInfo = table {};
+type BulkEndpointInfo = table {
+    /// True if the endpoint controller supports multi-page / multi-TRB scatter-gather chaining.
+    /// If false, each request must consist of a single VMO that resides entirely within a single
+    /// physically contiguous range of memory (i.e. cannot span non-contiguous physical pages or
+    /// multiple buffer regions).
+    1: supports_scatter_gather bool;
+};
 
 /// Control Endpoint Information
 type ControlEndpointInfo = table {};
@@ -17,10 +23,21 @@ type ControlEndpointInfo = table {};
 type IsochronousEndpointInfo = table {
     /// Lead time described in number of transfers.
     1: lead_time uint64;
+    /// True if the endpoint controller supports multi-page / multi-TRB scatter-gather chaining.
+    /// If false, each request must consist of a single VMO that resides entirely within a single
+    /// physically contiguous range of memory (i.e. cannot span non-contiguous physical pages or
+    /// multiple buffer regions).
+    2: supports_scatter_gather bool;
 };
 
 /// Interrupt Endpoint Information
-type InterruptEndpointInfo = table {};
+type InterruptEndpointInfo = table {
+    /// True if the endpoint controller supports multi-page / multi-TRB scatter-gather chaining.
+    /// If false, each request must consist of a single VMO that resides entirely within a single
+    /// physically contiguous range of memory (i.e. cannot span non-contiguous physical pages or
+    /// multiple buffer regions).
+    1: supports_scatter_gather bool;
+};
 
 /// Endpoint Information
 type EndpointInfo = flexible union {
@@ -61,7 +78,20 @@ type VmoHandle = resource table {
 type Completion = resource table {
     /// Request completed.
     1: request fuchsia.hardware.usb.request.Request;
-    /// Completion status.
+    /// Completion status. Common return status codes include:
+    /// - `ZX_OK`: Success.
+    /// - `ZX_ERR_NOT_SUPPORTED`: The requested operation or feature is unsupported (e.g. the
+    ///   request requires scatter-gather on an endpoint where `supports_scatter_gather` is
+    ///   false, such as spanning non-contiguous physical pages or multiple buffer regions).
+    /// - `ZX_ERR_IO_NOT_PRESENT`: The device is no longer present.
+    /// - `ZX_ERR_INVALID_ARGS`: Invalid request parameters.
+    /// - `ZX_ERR_BAD_STATE`: Driver is in an invalid state.
+    /// - `ZX_ERR_IO_REFUSED`: The device refused the transfer.
+    /// - `ZX_ERR_NO_MEMORY`: Memory allocation failed.
+    /// - `ZX_ERR_INTERNAL`: Internal driver error.
+    /// - `ZX_ERR_IO_MISSED_DEADLINE`: The transfer missed its deadline.
+    /// - `ZX_ERR_IO`: General I/O error.
+    /// - `ZX_ERR_IO_INVALID`: Invalid I/O operation.
     2: status zx.Status;
     /// Bytes successfully transferred.
     3: transfer_size uint64;
@@ -99,7 +129,10 @@ closed protocol Endpoint {
     });
 
     /// Submit Requests to queue. Processed starting with the 0th Request. Submitting a vector of
-    /// Requests allows for pre-buffering.
+    /// Requests allows for pre-buffering. On endpoints where `supports_scatter_gather` is false,
+    /// each request must consist of a single VMO that resides entirely within a single physically
+    /// contiguous range of memory (i.e. cannot span non-contiguous physical pages or multiple
+    /// buffer regions).
     ///
     /// Clients are responsible for cache management and ensuring cache coherency. The explanation
     /// to follow concerns VMOs that have been previously registered via RegisterVmos. The following

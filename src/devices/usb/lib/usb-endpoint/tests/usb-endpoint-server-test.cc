@@ -17,8 +17,9 @@ namespace {
 class FakeEndpoint : public usb::EndpointServer {
  public:
   FakeEndpoint(const zx::bti& bti, uint8_t ep_addr,
-               fidl::ServerEnd<fuchsia_hardware_usb_endpoint::Endpoint> server)
-      : usb::EndpointServer(bti, ep_addr) {
+               fidl::ServerEnd<fuchsia_hardware_usb_endpoint::Endpoint> server,
+               usb::ScatterGatherSupport sg_support = usb::ScatterGatherSupport::kSupported)
+      : usb::EndpointServer(bti, ep_addr, sg_support) {
     loop_.StartThread("fake-endpoint-loop");
     Connect(loop_.dispatcher(), std::move(server));
   }
@@ -516,6 +517,124 @@ TEST_F(UsbEndpointServerTest, ConcurrentRequestCompleteAndUnbind) {
 
   stop.store(true);
   complete_thread.join();
+}
+
+TEST_F(UsbEndpointServerTest, GetIterUnsupportedScatterGatherTest) {
+  const size_t page_size = zx_system_get_page_size();
+  auto endpoints = fidl::Endpoints<fuchsia_hardware_usb_endpoint::Endpoint>::Create();
+  auto unsupported_ep = std::make_unique<FakeEndpoint>(fake_bti_, 1, std::move(endpoints.server),
+                                                       usb::ScatterGatherSupport::kUnsupported);
+  fidl::SharedClient<fuchsia_hardware_usb_endpoint::Endpoint> client{std::move(endpoints.client),
+                                                                     client_loop_.dispatcher()};
+
+  std::vector<fuchsia_hardware_usb_endpoint::VmoInfo> vmo_info;
+  vmo_info.emplace_back(
+      std::move(fuchsia_hardware_usb_endpoint::VmoInfo().id(8).size(page_size * 2)));
+  sync_completion_t wait;
+  client->RegisterVmos({std::move(vmo_info)})
+      .Then([&](const fidl::Result<fuchsia_hardware_usb_endpoint::Endpoint::RegisterVmos>& result) {
+        ASSERT_TRUE(result.is_ok());
+        sync_completion_signal(&wait);
+      });
+  sync_completion_wait(&wait, zx::time::infinite().get());
+
+  // Single-page request should succeed
+  auto req_single = fuchsia_hardware_usb_request::Request();
+  req_single.data()
+      .emplace()
+      .emplace_back()
+      .buffer(fuchsia_hardware_usb_request::Buffer::WithVmoId(8))
+      .offset(0)
+      .size(page_size);
+  auto req_single_var = usb::RequestVariant(usb::FidlRequest(std::move(req_single)));
+  auto iters_single = unsupported_ep->get_iter(req_single_var, page_size);
+  ASSERT_TRUE(iters_single.is_ok());
+
+  // Multi-page request should return ZX_ERR_NOT_SUPPORTED
+  auto req_multi = fuchsia_hardware_usb_request::Request();
+  req_multi.data()
+      .emplace()
+      .emplace_back()
+      .buffer(fuchsia_hardware_usb_request::Buffer::WithVmoId(8))
+      .offset(0)
+      .size(page_size * 2);
+  auto req_multi_var = usb::RequestVariant(usb::FidlRequest(std::move(req_multi)));
+  auto iters_multi = unsupported_ep->get_iter(req_multi_var, page_size);
+  ASSERT_TRUE(iters_multi.is_error());
+  EXPECT_EQ(iters_multi.status_value(), ZX_ERR_NOT_SUPPORTED);
+
+  // Multi-buffer request should return ZX_ERR_NOT_SUPPORTED
+  auto req_multi_buf = fuchsia_hardware_usb_request::Request();
+  req_multi_buf.data()
+      .emplace()
+      .emplace_back()
+      .buffer(fuchsia_hardware_usb_request::Buffer::WithVmoId(8))
+      .offset(0)
+      .size(page_size);
+  req_multi_buf.data()
+      ->emplace_back()
+      .buffer(fuchsia_hardware_usb_request::Buffer::WithVmoId(8))
+      .offset(page_size)
+      .size(page_size);
+  auto req_multi_buf_var = usb::RequestVariant(usb::FidlRequest(std::move(req_multi_buf)));
+  auto iters_multi_buf = unsupported_ep->get_iter(req_multi_buf_var, page_size);
+  ASSERT_TRUE(iters_multi_buf.is_error());
+  EXPECT_EQ(iters_multi_buf.status_value(), ZX_ERR_NOT_SUPPORTED);
+
+  // Supported endpoint should succeed with multi-page requests
+  auto endpoints_supp = fidl::Endpoints<fuchsia_hardware_usb_endpoint::Endpoint>::Create();
+  auto supported_ep = std::make_unique<FakeEndpoint>(fake_bti_, 1, std::move(endpoints_supp.server),
+                                                     usb::ScatterGatherSupport::kSupported);
+  fidl::SharedClient<fuchsia_hardware_usb_endpoint::Endpoint> client_supp{
+      std::move(endpoints_supp.client), client_loop_.dispatcher()};
+  std::vector<fuchsia_hardware_usb_endpoint::VmoInfo> vmo_info_supp;
+  vmo_info_supp.emplace_back(
+      std::move(fuchsia_hardware_usb_endpoint::VmoInfo().id(8).size(page_size * 2)));
+  sync_completion_t wait_supp;
+  client_supp->RegisterVmos({std::move(vmo_info_supp)})
+      .Then([&](const fidl::Result<fuchsia_hardware_usb_endpoint::Endpoint::RegisterVmos>& result) {
+        ASSERT_TRUE(result.is_ok());
+        sync_completion_signal(&wait_supp);
+      });
+  sync_completion_wait(&wait_supp, zx::time::infinite().get());
+
+  auto req_supp_multi = fuchsia_hardware_usb_request::Request();
+  req_supp_multi.data()
+      .emplace()
+      .emplace_back()
+      .buffer(fuchsia_hardware_usb_request::Buffer::WithVmoId(8))
+      .offset(0)
+      .size(page_size * 2);
+  auto req_supp_var = usb::RequestVariant(usb::FidlRequest(std::move(req_supp_multi)));
+  auto iters_supp = supported_ep->get_iter(req_supp_var, page_size);
+  ASSERT_TRUE(iters_supp.is_ok());
+  EXPECT_EQ(iters_supp->size(), 1);
+
+  // Supported endpoint should also succeed with multi-buffer requests
+  auto req_supp_multi_buf = fuchsia_hardware_usb_request::Request();
+  req_supp_multi_buf.data()
+      .emplace()
+      .emplace_back()
+      .buffer(fuchsia_hardware_usb_request::Buffer::WithVmoId(8))
+      .offset(0)
+      .size(page_size);
+  req_supp_multi_buf.data()
+      ->emplace_back()
+      .buffer(fuchsia_hardware_usb_request::Buffer::WithVmoId(8))
+      .offset(page_size)
+      .size(page_size);
+  auto req_supp_multi_buf_var =
+      usb::RequestVariant(usb::FidlRequest(std::move(req_supp_multi_buf)));
+  auto iters_supp_multi_buf = supported_ep->get_iter(req_supp_multi_buf_var, page_size);
+  ASSERT_TRUE(iters_supp_multi_buf.is_ok());
+  EXPECT_EQ(iters_supp_multi_buf->size(), 2);
+
+  // Zero-length request on unsupported endpoint should succeed
+  auto req_zero = fuchsia_hardware_usb_request::Request();
+  auto req_zero_var = usb::RequestVariant(usb::FidlRequest(std::move(req_zero)));
+  auto iters_zero = unsupported_ep->get_iter(req_zero_var, page_size);
+  ASSERT_TRUE(iters_zero.is_ok());
+  EXPECT_EQ(iters_zero->size(), 0);
 }
 
 }  // namespace

@@ -11,7 +11,9 @@
 namespace usb_xhci {
 
 Endpoint::Endpoint(UsbXhci* hci, uint32_t device_id, uint8_t address)
-    : usb::EndpointServer(hci->bti(), address), hci_(hci), device_id_(device_id) {}
+    : usb::EndpointServer(hci->bti(), address, usb::ScatterGatherSupport::kSupported),
+      hci_(hci),
+      device_id_(device_id) {}
 
 namespace {
 

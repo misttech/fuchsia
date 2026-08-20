@@ -45,8 +45,39 @@ class Endpoint : public usb::EndpointServer {
 
   // fuchsia_hardware_usb_new.Endpoint protocol implementation. RegisterVmos/UnregisterVmos are
   // defined by usb::EndpointServer.
+  void set_ep_type(fuchsia_hardware_usb_descriptor::EndpointType ep_type) { ep_type_ = ep_type; }
+
   void GetInfo(GetInfoCompleter::Sync& completer) override {
-    completer.Reply(fit::as_error(ZX_ERR_NOT_SUPPORTED));
+    if (!ep_type_.has_value()) {
+      if (ep_addr() == 0) {
+        completer.Reply(fit::ok(fuchsia_hardware_usb_endpoint::EndpointInfo::WithControl({})));
+        return;
+      }
+      completer.Reply(fit::as_error(ZX_ERR_NOT_SUPPORTED));
+      return;
+    }
+    switch (*ep_type_) {
+      case fuchsia_hardware_usb_descriptor::EndpointType::kControl:
+        completer.Reply(fit::ok(fuchsia_hardware_usb_endpoint::EndpointInfo::WithControl({})));
+        break;
+      case fuchsia_hardware_usb_descriptor::EndpointType::kBulk:
+        completer.Reply(fit::ok(fuchsia_hardware_usb_endpoint::EndpointInfo::WithBulk(
+            fuchsia_hardware_usb_endpoint::BulkEndpointInfo().supports_scatter_gather(true))));
+        break;
+      case fuchsia_hardware_usb_descriptor::EndpointType::kInterrupt:
+        completer.Reply(fit::ok(fuchsia_hardware_usb_endpoint::EndpointInfo::WithInterrupt(
+            fuchsia_hardware_usb_endpoint::InterruptEndpointInfo().supports_scatter_gather(true))));
+        break;
+      case fuchsia_hardware_usb_descriptor::EndpointType::kIsochronous:
+        completer.Reply(fit::ok(fuchsia_hardware_usb_endpoint::EndpointInfo::WithIsochronous(
+            fuchsia_hardware_usb_endpoint::IsochronousEndpointInfo()
+                .lead_time(0)
+                .supports_scatter_gather(true))));
+        break;
+      default:
+        completer.Reply(fit::as_error(ZX_ERR_NOT_SUPPORTED));
+        break;
+    }
   }
   void QueueRequests(QueueRequestsRequest& request,
                      QueueRequestsCompleter::Sync& completer) override;
@@ -125,6 +156,7 @@ class Endpoint : public usb::EndpointServer {
   UsbXhci* hci_;
   uint32_t device_id_;
   TransferRing transfer_ring_;
+  std::optional<fuchsia_hardware_usb_descriptor::EndpointType> ep_type_;
 };
 
 }  // namespace usb_xhci

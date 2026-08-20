@@ -20,12 +20,18 @@ namespace usb {
 
 using RequestVariant = std::variant<usb::BorrowedRequest<void>, usb::FidlRequest>;
 
+enum class ScatterGatherSupport {
+  kSupported,
+  kUnsupported,
+};
+
 // EndpointServer is a wrapper around fidl::Server<fuchsia_hardware_usb_endpoint::Endpoint> that
 // implements common functionality surrounding registering and unregistering VMOs, completing
 // requests, etc.
 class EndpointServer : public fidl::Server<fuchsia_hardware_usb_endpoint::Endpoint> {
  public:
-  EndpointServer(const zx::bti& bti, uint8_t ep_addr) : bti_(bti), ep_addr_(ep_addr) {}
+  EndpointServer(const zx::bti& bti, uint8_t ep_addr, ScatterGatherSupport sg_support)
+      : bti_(bti), ep_addr_(ep_addr), sg_support_(sg_support) {}
   virtual ~EndpointServer();
 
   // Connects to the EndpointServer.
@@ -47,6 +53,7 @@ class EndpointServer : public fidl::Server<fuchsia_hardware_usb_endpoint::Endpoi
 
   const zx::bti& bti() { return bti_; }
   uint8_t ep_addr() const { return ep_addr_; }
+  ScatterGatherSupport scatter_gather_support() const { return sg_support_; }
 
   struct VmoInfo {
     uint64_t id;
@@ -73,6 +80,7 @@ class EndpointServer : public fidl::Server<fuchsia_hardware_usb_endpoint::Endpoi
       __TA_GUARDED(lock_);
   const zx::bti& bti_;
   uint8_t ep_addr_;
+  ScatterGatherSupport sg_support_;
 
   // completions_: Holds on to request completions that are completed, but have not been replied to
   // due to  defer_completion == true.

@@ -43,11 +43,23 @@ zx::result<std::vector<io_buffer::PhysIter>> EndpointServer::get_iter(RequestVar
                                                                       size_t max_length) const {
   std::vector<io_buffer::PhysIter> iters;
   if (std::holds_alternative<usb::BorrowedRequest<void>>(req)) {
-    iters.push_back(std::get<usb::BorrowedRequest<void>>(req).phys_iter(max_length));
+    auto& borrowed = std::get<usb::BorrowedRequest<void>>(req);
+    auto iter = borrowed.phys_iter(max_length);
+    if (sg_support_ == ScatterGatherSupport::kUnsupported &&
+        borrowed.request()->header.length > 0) {
+      auto it = iter.begin();
+      if (it == iter.end() || (*it).second < borrowed.request()->header.length) {
+        return zx::error(ZX_ERR_NOT_SUPPORTED);
+      }
+    }
+    iters.push_back(iter);
   } else {
     const auto& fidl_request = std::get<usb::FidlRequest>(req);
     if (!fidl_request->data().has_value()) {
       return zx::ok(std::move(iters));
+    }
+    if (sg_support_ == ScatterGatherSupport::kUnsupported && fidl_request->data()->size() > 1) {
+      return zx::error(ZX_ERR_NOT_SUPPORTED);
     }
     size_t i = 0;
     std::lock_guard<std::mutex> lock(lock_);
@@ -70,13 +82,28 @@ zx::result<std::vector<io_buffer::PhysIter>> EndpointServer::get_iter(RequestVar
           if (vmo_offset >= registered_vmo.size || req_size > registered_vmo.size - vmo_offset) {
             return zx::error(ZX_ERR_OUT_OF_RANGE);
           }
-          iters.push_back(phys_iter(registered_vmo.phys_list, registered_vmo.phys_count, req_size,
-                                    vmo_offset, max_length));
+          auto iter = phys_iter(registered_vmo.phys_list, registered_vmo.phys_count, req_size,
+                                vmo_offset, max_length);
+          if (sg_support_ == ScatterGatherSupport::kUnsupported && req_size > 0) {
+            auto it_p = iter.begin();
+            if (it_p == iter.end() || (*it_p).second < req_size) {
+              return zx::error(ZX_ERR_NOT_SUPPORTED);
+            }
+          }
+          iters.push_back(iter);
           break;
         }
-        case fuchsia_hardware_usb_request::Buffer::Tag::kData:
-          iters.push_back(fidl_request.phys_iter(i, max_length));
+        case fuchsia_hardware_usb_request::Buffer::Tag::kData: {
+          auto iter = fidl_request.phys_iter(i, max_length);
+          if (sg_support_ == ScatterGatherSupport::kUnsupported && *d.size() > 0) {
+            auto it_p = iter.begin();
+            if (it_p == iter.end() || (*it_p).second < *d.size()) {
+              return zx::error(ZX_ERR_NOT_SUPPORTED);
+            }
+          }
+          iters.push_back(iter);
           break;
+        }
         default:
           zxlogf(ERROR, "Not supported buffer type");
           return zx::error(ZX_ERR_NOT_SUPPORTED);
