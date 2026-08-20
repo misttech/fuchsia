@@ -61,7 +61,7 @@ async fn list_accessors(
     exposed_dir
         .open(
             ACCESSORS_DICTIONARY,
-            fio::Flags::PROTOCOL_DIRECTORY,
+            fio::Flags::PROTOCOL_DIRECTORY | fio::PERM_READABLE,
             &Default::default(),
             server_end.into_channel(),
         )
