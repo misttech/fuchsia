@@ -11,6 +11,7 @@ fidl_library(
     srcs = [
         "allocator.fidl",
         "flatland.fidl",
+        "flatland_factory.fidl",
         "overview.fidl",
         "screen_capture.fidl",
         "screenshot.fidl",
