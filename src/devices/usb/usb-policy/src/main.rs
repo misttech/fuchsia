@@ -10,6 +10,7 @@
 #![warn(clippy::unreachable)]
 #![warn(clippy::unimplemented)]
 
+use fidl_fuchsia_hardware_usb_peripheral as peripheral;
 use fidl_fuchsia_hardware_usb_policy as fpolicy;
 use fidl_fuchsia_usb_policy as usb_policy;
 use fuchsia_component::client::Service;
@@ -82,6 +83,91 @@ impl UsbPolicySharedState {
 enum IncomingRequest {
     Health(usb_policy::HealthRequestStream),
     Provider(usb_policy::PolicyProviderRequestStream),
+    Configuration(usb_policy::ConfigurationRequestStream),
+}
+
+async fn get_peripheral_device() -> Result<peripheral::DeviceProxy, anyhow::Error> {
+    let service = Service::open(peripheral::ServiceMarker)?;
+    let instance = service.watch_for_any().await?;
+    let device = instance.connect_to_device()?;
+    Ok(device)
+}
+
+async fn handle_get_configuration() -> Result<
+    (peripheral::DeviceDescriptor, Vec<Vec<peripheral::FunctionDescriptor>>),
+    zx::Status,
+> {
+    let device = get_peripheral_device().await.map_err(|_| zx::Status::UNAVAILABLE)?;
+    let (device_desc, config_descriptors) = device
+        .get_configuration()
+        .await
+        .map_err(|_| zx::Status::INTERNAL)?
+        .map_err(zx::Status::from_raw)?;
+    Ok((device_desc, config_descriptors))
+}
+
+async fn handle_set_configuration(
+    mut device_desc: peripheral::DeviceDescriptor,
+    config_descriptors: Vec<Vec<peripheral::FunctionDescriptor>>,
+) -> Result<(), zx::Status> {
+    let device = get_peripheral_device().await.map_err(|_| zx::Status::UNAVAILABLE)?;
+    if device_desc.serial.is_empty() {
+        device_desc.serial = "12345678".to_string();
+    }
+    device.clear_functions().await.map_err(|_| zx::Status::INTERNAL)?;
+    device
+        .set_configuration(&device_desc, &config_descriptors)
+        .await
+        .map_err(|_| zx::Status::INTERNAL)?
+        .map_err(zx::Status::from_raw)?;
+    Ok(())
+}
+
+async fn run_configuration_server(mut stream: usb_policy::ConfigurationRequestStream) {
+    while let Some(request_result) = stream.next().await {
+        match request_result {
+            Ok(request) => match request {
+                usb_policy::ConfigurationRequest::GetConfiguration { responder } => {
+                    match handle_get_configuration().await {
+                        Ok((device_desc, config_descriptors)) => {
+                            if let Err(e) = responder.send(Ok((&device_desc, &config_descriptors)))
+                            {
+                                warn!("Failed to send GetConfiguration response: {:?}", e);
+                            }
+                        }
+                        Err(status) => {
+                            if let Err(e) = responder.send(Err(status.into_raw())) {
+                                warn!("Failed to send GetConfiguration error: {:?}", e);
+                            }
+                        }
+                    }
+                }
+                usb_policy::ConfigurationRequest::SetConfiguration {
+                    device_desc,
+                    config_descriptors,
+                    responder,
+                } => match handle_set_configuration(device_desc, config_descriptors).await {
+                    Ok(()) => {
+                        if let Err(e) = responder.send(Ok(())) {
+                            warn!("Failed to send SetConfiguration response: {:?}", e);
+                        }
+                    }
+                    Err(status) => {
+                        if let Err(e) = responder.send(Err(status.into_raw())) {
+                            warn!("Failed to send SetConfiguration error: {:?}", e);
+                        }
+                    }
+                },
+                usb_policy::ConfigurationRequest::_UnknownMethod { .. } => {
+                    warn!("Unknown Configuration request");
+                }
+            },
+            Err(e) => {
+                warn!("ConfigurationRequestStream error: {:?}", e);
+                break;
+            }
+        }
+    }
 }
 
 async fn run_provider_server(
@@ -95,39 +181,45 @@ async fn run_provider_server(
     // should get `current_state`.
     let mut state_changed = true;
 
-    while let Some(Ok(request)) = stream.next().await {
-        match request {
-            usb_policy::PolicyProviderRequest::WatchDeviceState { responder } => {
-                if !state_changed {
-                    // Wait until we get an update from rx
-                    if let Some(new_state) = rx.next().await {
-                        current_state = new_state;
-                        state_changed = true;
+    while let Some(request_result) = stream.next().await {
+        match request_result {
+            Ok(request) => match request {
+                usb_policy::PolicyProviderRequest::WatchDeviceState { responder } => {
+                    if !state_changed {
+                        // Wait until we get an update from rx
+                        if let Some(new_state) = rx.next().await {
+                            current_state = new_state;
+                            state_changed = true;
 
-                        // Drain any additional buffered states
-                        while let Some(Some(latest_state)) = rx.next().now_or_never() {
-                            current_state = latest_state;
+                            // Drain any additional buffered states
+                            while let Some(Some(latest_state)) = rx.next().now_or_never() {
+                                current_state = latest_state;
+                            }
+                        } else {
+                            // The sender was dropped, meaning the controller is gone.
+                            break;
                         }
-                    } else {
-                        // The sender was dropped, meaning the controller is gone.
-                        break;
                     }
-                }
 
-                if state_changed {
-                    let update = fpolicy::DeviceStateUpdate {
-                        state: Some(current_state.device_state),
-                        address: Some(current_state.address),
-                        ..Default::default()
-                    };
-                    if let Err(e) = responder.send(Ok(&update)) {
-                        warn!("Failed to send PolicyProvider response: {:?}", e);
+                    if state_changed {
+                        let update = fpolicy::DeviceStateUpdate {
+                            state: Some(current_state.device_state),
+                            address: Some(current_state.address),
+                            ..Default::default()
+                        };
+                        if let Err(e) = responder.send(Ok(&update)) {
+                            warn!("Failed to send PolicyProvider response: {:?}", e);
+                        }
+                        state_changed = false;
                     }
-                    state_changed = false;
                 }
-            }
-            usb_policy::PolicyProviderRequest::_UnknownMethod { .. } => {
-                warn!("Unknown PolicyProvider request");
+                usb_policy::PolicyProviderRequest::_UnknownMethod { .. } => {
+                    warn!("Unknown PolicyProvider request");
+                }
+            },
+            Err(e) => {
+                warn!("PolicyProviderRequestStream error: {:?}", e);
+                break;
             }
         }
     }
@@ -137,26 +229,36 @@ async fn run_health_server(
     mut stream: usb_policy::HealthRequestStream,
     shared_state: Arc<UsbPolicySharedState>,
 ) {
-    while let Some(Ok(request)) = stream.next().await {
-        match request {
-            usb_policy::HealthRequest::GetReport { responder } => {
-                let controller = shared_state.get_controller();
-                let report = if let Some(state) = controller {
-                    let current_state = state.get_state();
-                    usb_policy::HealthReport {
-                        state: Some(current_state.device_state),
-                        address: Some(current_state.address),
-                        ..Default::default()
+    while let Some(request_result) = stream.next().await {
+        match request_result {
+            Ok(request) => match request {
+                usb_policy::HealthRequest::GetReport { responder } => {
+                    let controller = shared_state.get_controller();
+                    let report = if let Some(state) = controller {
+                        let current_state = state.get_state();
+                        usb_policy::HealthReport {
+                            state: Some(current_state.device_state),
+                            address: Some(current_state.address),
+                            ..Default::default()
+                        }
+                    } else {
+                        usb_policy::HealthReport {
+                            state: None,
+                            address: None,
+                            ..Default::default()
+                        }
+                    };
+                    if let Err(e) = responder.send(Ok(&report)) {
+                        warn!("Failed to send Health report: {:?}", e);
                     }
-                } else {
-                    usb_policy::HealthReport { state: None, address: None, ..Default::default() }
-                };
-                if let Err(e) = responder.send(Ok(&report)) {
-                    warn!("Failed to send Health report: {:?}", e);
                 }
-            }
-            usb_policy::HealthRequest::_UnknownMethod { .. } => {
-                warn!("Unknown Health request");
+                usb_policy::HealthRequest::_UnknownMethod { .. } => {
+                    warn!("Unknown Health request");
+                }
+            },
+            Err(e) => {
+                warn!("HealthRequestStream error: {:?}", e);
+                break;
             }
         }
     }
@@ -191,10 +293,16 @@ async fn run_usb_policy_service() -> Result<(), Error> {
     });
 
     let mut fs = ServiceFs::new_local();
-    fs.dir("svc").add_fidl_service(IncomingRequest::Health).add_service_at(
-        "fuchsia.usb.policy.PolicyProvider",
-        fuchsia_component::server::FidlService::from(IncomingRequest::Provider),
-    );
+    fs.dir("svc")
+        .add_fidl_service(IncomingRequest::Health)
+        .add_service_at(
+            "fuchsia.usb.policy.PolicyProvider",
+            fuchsia_component::server::FidlService::from(IncomingRequest::Provider),
+        )
+        .add_service_at(
+            "fuchsia.usb.policy.Configuration",
+            fuchsia_component::server::FidlService::from(IncomingRequest::Configuration),
+        );
     fs.take_and_serve_directory_handle()?;
 
     let health_server_fut = fs.for_each_concurrent(None, |req| {
@@ -203,6 +311,7 @@ async fn run_usb_policy_service() -> Result<(), Error> {
             match req {
                 IncomingRequest::Health(stream) => run_health_server(stream, state).await,
                 IncomingRequest::Provider(stream) => run_provider_server(stream, state).await,
+                IncomingRequest::Configuration(stream) => run_configuration_server(stream).await,
             }
         }
     });
@@ -325,6 +434,33 @@ mod tests {
         };
         assert_eq!(update.state, Some(DeviceState::Configured));
         assert_eq!(update.address, Some(10));
+        Ok(())
+    }
+    #[fuchsia::test]
+    async fn test_configuration_server_unavailable() -> Result<(), anyhow::Error> {
+        let (config_proxy, stream) = create_proxy_and_stream::<usb_policy::ConfigurationMarker>();
+
+        fasync::Task::local(run_configuration_server(stream)).detach();
+
+        let get_res = config_proxy.get_configuration().await?;
+        assert_eq!(get_res.err(), Some(zx::Status::UNAVAILABLE.into_raw()));
+
+        let dev_desc = peripheral::DeviceDescriptor {
+            bcd_usb: 0x0200,
+            b_device_class: 0,
+            b_device_sub_class: 0,
+            b_device_protocol: 0,
+            b_max_packet_size0: 64,
+            id_vendor: 0x18d1,
+            id_product: 0xa022,
+            bcd_device: 0x0100,
+            manufacturer: "Test".to_string(),
+            product: "Test".to_string(),
+            serial: "123".to_string(),
+            b_num_configurations: 1,
+        };
+        let set_res = config_proxy.set_configuration(&dev_desc, &[]).await?;
+        assert_eq!(set_res.err(), Some(zx::Status::UNAVAILABLE.into_raw()));
         Ok(())
     }
 }

@@ -13,6 +13,7 @@
     capabilities: [
         {
             protocol: [
+                "fuchsia.usb.policy.Configuration",
                 "fuchsia.usb.policy.Health",
                 "fuchsia.usb.policy.PolicyProvider",
             ],
@@ -20,7 +21,10 @@
     ],
     use: [
         {
-            service: [ "fuchsia.hardware.usb.policy.Service" ],
+            service: [
+                "fuchsia.hardware.usb.peripheral.Service",
+                "fuchsia.hardware.usb.policy.Service",
+            ],
         },
         {
             protocol: [ "fuchsia.diagnostics.ArchiveAccessor" ],
@@ -29,6 +33,7 @@
     expose: [
         {
             protocol: [
+                "fuchsia.usb.policy.Configuration",
                 "fuchsia.usb.policy.Health",
                 "fuchsia.usb.policy.PolicyProvider",
             ],

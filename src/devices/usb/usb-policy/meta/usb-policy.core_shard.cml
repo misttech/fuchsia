@@ -11,7 +11,10 @@
     ],
     offer: [
         {
-            service: "fuchsia.hardware.usb.policy.Service",
+            service: [
+                "fuchsia.hardware.usb.peripheral.Service",
+                "fuchsia.hardware.usb.policy.Service",
+            ],
             from: "parent",
             to: "#usb-policy",
         },
@@ -23,7 +26,10 @@
     ],
     expose: [
         {
-            protocol: "fuchsia.usb.policy.PolicyProvider",
+            protocol: [
+                "fuchsia.usb.policy.Configuration",
+                "fuchsia.usb.policy.PolicyProvider",
+            ],
             from: "#usb-policy",
         },
     ],
