@@ -242,9 +242,9 @@ class BazelActionRunner(object):
         if self.global_args.upload_build_events:
             cmd_args += [f"--config={self.global_args.upload_build_events}"]
 
-        jobs = calculate_jobs_param(self.rbe_settings)
-        if jobs:
-            cmd_args += [jobs]
+        # This returns an empty list of there's nothing for it to set, otherwise it sets all the
+        # params appropriately based on the number of cores and the ENV vars.
+        cmd_args += calculate_jobs_params(self.rbe_settings)
 
         if self.global_args.quiet:
             cmd_args += ["--config=quiet"]
@@ -913,28 +913,32 @@ def calculate_platform_config_args(
     return platform_config_args
 
 
-def calculate_jobs_param(
+def calculate_jobs_params(
     rbe_settings: bazel_action_utils.BazelRbeSettings,
-) -> str | None:
-    """Given the RBE settings and the environment vars, determine what --jobs param to use, if any."""
-    jobs = None
+) -> list[str]:
+    """Given the RBE settings and the environment vars, determine what --jobs related params to use, if any."""
     # When running jobs remotely, increase the number of allowed jobs to 10x
     # when running jobs locally.  This is different from the reclient config
     # because this controls the _running_ of jobs, not the checking of the
     # cache for jobs.
-    if rbe_settings.enabled and rbe_settings.exec_strategy == "remote":
+    if rbe_settings.enabled:
         cpus = os.cpu_count()
         if cpus:
-            jobs = 10 * cpus
+            return [
+                # Total number of jobs (remote + local) at once
+                f"--jobs={10 * cpus}",
+                # The limit on the number of locally-running jobs.
+                "--local_resources=cpu=HOST_CPUS",
+            ]
 
-    if jobs is None:
-        # If an explicit job count was passed to `fx build`, tell Bazel to respect it.
-        # See https://fxbug.dev/351623259
-        job_count = os.environ.get("FUCHSIA_BAZEL_JOB_COUNT")
-        if job_count:
-            jobs = int(job_count)
+    # If an explicit job count was passed to `fx build`, tell Bazel to respect it.
+    # See https://fxbug.dev/351623259
+    job_count = os.environ.get("FUCHSIA_BAZEL_JOB_COUNT")
+    if job_count:
+        jobs = int(job_count)
+        return [f"--jobs={jobs}"]
 
-    return f"--jobs={jobs}" if jobs else None
+    return []
 
 
 def verify_unknown_gn_targets(
