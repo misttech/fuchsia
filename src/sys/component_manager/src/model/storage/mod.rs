@@ -7,19 +7,21 @@ use crate::model::component::{ComponentInstance, StartReason, WeakComponentInsta
 use crate::model::start::Start;
 use crate::model::storage::admin_protocol::StorageAdmin;
 use crate::sandbox_util::LaunchTaskOnReceive;
-use ::routing::bedrock::dict_ext::DictExt;
 use ::routing::component_instance::ComponentInstanceInterface;
-use ::routing::error::RoutingError;
+use ::routing::error::{RouteVerb, RoutingError};
+use ::routing::intermediate_router::IntermediateRouter;
 use capability_source::{
     CapabilitySource, CapabilityToCapabilitySource, ComponentCapability, ComponentSource,
     NamespaceSource, StorageBackingDirectorySource,
 };
-use cm_rust::StorageDirectorySource;
+use cm_rust::{CapabilityTypeName, NativeIntoFidl, StorageDirectorySource};
 use cm_types::RelativePath;
 use component_id_index::InstanceId;
 use derivative::Derivative;
 use errors::{ModelError, StorageError};
 use fidl::endpoints::{ServerEnd, create_proxy};
+use fidl_fuchsia_component_decl as fdecl;
+use fidl_fuchsia_component_runtime::RouteRequest;
 use fidl_fuchsia_io as fio;
 use fidl_fuchsia_sys2 as fsys;
 use futures::FutureExt;
@@ -195,13 +197,24 @@ pub async fn route_backing_directory(
             child_sandbox.component_output.capabilities().clone()
         }
     };
-    let backing_dir_router: Arc<Router<DirConnector>> = source_dictionary.get_router_or_not_found(
-        &storage_decl.backing_dir,
-        RoutingError::BedrockNotPresentInDictionary {
-            moniker: storage_component.moniker().clone().into(),
-            name: storage_decl.backing_dir.to_string(),
+    let backing_dir_router: Arc<Router<DirConnector>> = IntermediateRouter::new(
+        Arc::downgrade(&source_dictionary).into(),
+        vec![storage_decl.backing_dir.clone()].into(),
+        RouteRequest {
+            build_type_name: Some(CapabilityTypeName::Directory.to_string()),
+            availability: Some(fdecl::Availability::Required),
+            directory_rights: Some(fio::PERM_READABLE | fio::PERM_WRITABLE),
+            sub_directory_path: Some(RelativePath::dot().native_into_fidl()),
+            inherit_rights: Some(false),
+            ..Default::default()
         },
-    );
+        target.as_weak().into(),
+        target.moniker().clone(),
+        RouteVerb::Declare,
+        storage_decl.source.clone().native_into_fidl(),
+    )
+    .try_into()
+    .expect("wrong type from intermediate router");
     let source = backing_dir_router
         .route_debug(
             routing::bedrock::request_metadata::directory_metadata(

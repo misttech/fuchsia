@@ -26,7 +26,7 @@ use {
     ::routing::{
         DictExt,
         bedrock::request_metadata::protocol_metadata,
-        error::{ComponentInstanceError, RoutingError},
+        error::{ComponentInstanceError, PrettyPrintRef, RouteVerb, RoutingError},
         resolving::ResolverError,
     },
     assert_matches::assert_matches,
@@ -1553,13 +1553,12 @@ async fn use_runner_from_environment_not_found() {
         RouterError::NotFound(err)
         if matches!(
             err.as_any().downcast_ref::<RoutingError>(),
-            Some(RoutingError::UseFromEnvironmentNotFound {
-                moniker,
-                capability_type,
-                capability_name,
-            }) if moniker == &Moniker::try_from(["b"]).unwrap() &&
-                  capability_type == &"runner" &&
-                  capability_name == &"hobbit"
+            Some(RoutingError::RouteSourceNotFound { moniker, verb, source, capability_type, capability_name, .. })
+                if &format!("{capability_name}") == "hobbit"
+                    && moniker == &Moniker::try_from(["b"]).unwrap()
+                    && capability_type == &CapabilityTypeName::Runner
+                    && verb == &RouteVerb::Use
+                    && source == &PrettyPrintRef::Environment
         )
     );
 }

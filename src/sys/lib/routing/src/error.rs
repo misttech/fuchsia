@@ -8,8 +8,9 @@ use async_trait::async_trait;
 use clonable_error::ClonableError;
 use cm_rust::offer::OfferDeclCommon;
 use cm_rust::{CapabilityTypeName, ExposeDeclCommon, SourceName, UseDeclCommon};
-use cm_types::{Availability, Name};
+use cm_types::{Availability, LongName, Name, RelativePath};
 use fidl_fuchsia_component as fcomponent;
+use fidl_fuchsia_component_decl as fdecl;
 use itertools::Itertools;
 use moniker::{ChildName, ExtendedMoniker, Moniker};
 use router_error::{Explain, RouterError};
@@ -136,51 +137,173 @@ impl PartialEq for ComponentInstanceError {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq)]
+#[cfg_attr(feature = "serde", derive(Deserialize, Serialize), serde(rename_all = "snake_case"))]
+pub enum RouteVerb {
+    Use,
+    Offer,
+    Expose,
+    Declare,
+    Contain,
+    Register,
+    IncludeInAggregate,
+}
+
+impl std::fmt::Display for RouteVerb {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            RouteVerb::Use => write!(f, "use"),
+            RouteVerb::Offer => write!(f, "offer"),
+            RouteVerb::Expose => write!(f, "expose"),
+            RouteVerb::Declare => write!(f, "declare"),
+            RouteVerb::Contain => write!(f, "contain"),
+            RouteVerb::Register => write!(f, "register in environment"),
+            RouteVerb::IncludeInAggregate => write!(f, "include in aggregate"),
+        }
+    }
+}
+
+impl From<&cm_rust::ExposeDecl> for RouteVerb {
+    fn from(_decl: &cm_rust::ExposeDecl) -> Self {
+        Self::Expose
+    }
+}
+
+impl From<&cm_rust::OfferDecl> for RouteVerb {
+    fn from(_decl: &cm_rust::OfferDecl) -> Self {
+        Self::Offer
+    }
+}
+
+impl From<&cm_rust::UseDecl> for RouteVerb {
+    fn from(_decl: &cm_rust::UseDecl) -> Self {
+        Self::Use
+    }
+}
+
+impl From<&cm_rust::DebugRegistration> for RouteVerb {
+    fn from(_decl: &cm_rust::DebugRegistration) -> Self {
+        Self::Register
+    }
+}
+
+impl From<&cm_rust::RunnerRegistration> for RouteVerb {
+    fn from(_decl: &cm_rust::RunnerRegistration) -> Self {
+        Self::Register
+    }
+}
+
+impl From<&cm_rust::ResolverRegistration> for RouteVerb {
+    fn from(_decl: &cm_rust::ResolverRegistration) -> Self {
+        Self::Register
+    }
+}
+
+#[derive(Clone, PartialEq, Debug, Error)]
+#[cfg_attr(feature = "serde", derive(Deserialize, Serialize), serde(rename_all = "snake_case"))]
+pub enum PrettyPrintRef {
+    Parent,
+    Self_,
+    Child(Name),
+    ChildInCollection(LongName, Name),
+    Collection(Name),
+    Framework,
+    Capability(Name),
+    Debug,
+    Void,
+    Environment,
+}
+
+impl std::fmt::Display for PrettyPrintRef {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            PrettyPrintRef::Parent => write!(f, "parent"),
+            PrettyPrintRef::Self_ => write!(f, "self"),
+            PrettyPrintRef::Child(name) => write!(f, "child {name}"),
+            PrettyPrintRef::ChildInCollection(name, collection) => {
+                write!(f, "child {name} in collection {collection}")
+            }
+            PrettyPrintRef::Collection(name) => write!(f, "collection {name}"),
+            PrettyPrintRef::Framework => write!(f, "framework"),
+            PrettyPrintRef::Capability(name) => write!(f, "capability {name}"),
+            PrettyPrintRef::Debug => write!(f, "debug"),
+            PrettyPrintRef::Void => write!(f, "void"),
+            PrettyPrintRef::Environment => write!(f, "environment"),
+        }
+    }
+}
+
+impl From<fdecl::Ref> for PrettyPrintRef {
+    fn from(ref_: fdecl::Ref) -> Self {
+        match ref_ {
+            fdecl::Ref::Parent(_) => PrettyPrintRef::Parent,
+            fdecl::Ref::Self_(_) => PrettyPrintRef::Self_,
+            fdecl::Ref::Child(child_ref) if child_ref.collection.is_none() => {
+                PrettyPrintRef::Child(Name::new(child_ref.name).unwrap())
+            }
+            fdecl::Ref::Child(child_ref) => PrettyPrintRef::ChildInCollection(
+                LongName::new(child_ref.name).unwrap(),
+                Name::new(child_ref.collection.unwrap()).unwrap(),
+            ),
+            fdecl::Ref::Collection(collection) => {
+                PrettyPrintRef::Collection(Name::new(collection.name).unwrap())
+            }
+            fdecl::Ref::Framework(_) => PrettyPrintRef::Framework,
+            fdecl::Ref::Capability(capability) => {
+                PrettyPrintRef::Capability(Name::new(capability.name).unwrap())
+            }
+            fdecl::Ref::Debug(_) => PrettyPrintRef::Debug,
+            fdecl::Ref::VoidType(_) => PrettyPrintRef::Void,
+            fdecl::Ref::Environment(_) => PrettyPrintRef::Environment,
+            _ => panic!("unexpected fdecl::Ref variant found"),
+        }
+    }
+}
+
+impl From<ChildName> for PrettyPrintRef {
+    fn from(child_name: ChildName) -> Self {
+        if let Some(collection_name) = child_name.collection() {
+            Self::ChildInCollection(child_name.name().to_owned(), collection_name.to_owned())
+        } else {
+            Self::Child(Name::new(child_name.name()).unwrap())
+        }
+    }
+}
+
 /// Errors produced during routing.
 #[cfg_attr(feature = "serde", derive(Deserialize, Serialize), serde(rename_all = "snake_case"))]
 #[derive(Debug, Error, Clone, PartialEq)]
 pub enum RoutingError {
     #[error(
-        "backing directory `{capability_id}` was not exposed to `{moniker}` from `#{child_moniker}`"
+        "cannot {verb} {capability_type} {capability_name} from {source} at {moniker} because {source} does not {counter_verb} the capability"
     )]
-    StorageFromChildExposeNotFound {
-        child_moniker: ChildName,
+    RouteSourceNotFound {
         moniker: Moniker,
-        capability_id: String,
+        verb: RouteVerb,
+        counter_verb: RouteVerb,
+        source: PrettyPrintRef,
+        capability_type: CapabilityTypeName,
+        capability_name: RelativePath,
     },
+
+    #[error("route request received by `{moniker}` is unexpectedly unset")]
+    RouteRequestUnset { moniker: ExtendedMoniker },
+
+    #[error(
+        "route request received by `{moniker}` has been rejected because the following field is unset: `{missing_field}`"
+    )]
+    RouteRequestMissingField { moniker: ExtendedMoniker, missing_field: String },
+
+    #[error(
+        "failed to parse field `{field}` in route request received by `{moniker}`: {parse_error}"
+    )]
+    RouteRequestFailedToParseField { moniker: ExtendedMoniker, field: String, parse_error: String },
 
     #[error(
         "`{target_name:?}` tried to use a storage capability from `{source_moniker}` but it is \
         not in the component id index. https://fuchsia.dev/go/components/instance-id"
     )]
     ComponentNotInIdIndex { source_moniker: Moniker, target_name: Option<ChildName> },
-
-    #[error("`{capability_id}` is not a built-in capability")]
-    UseFromComponentManagerNotFound { capability_id: String },
-
-    #[error("`{capability_id}` is not a built-in capability")]
-    RegisterFromComponentManagerNotFound { capability_id: String },
-
-    #[error("`{capability_id}` is not a built-in capability")]
-    OfferFromComponentManagerNotFound { capability_id: String },
-
-    #[error("`{capability_id}` was not offered to `{moniker}` by parent")]
-    UseFromParentNotFound { moniker: Moniker, capability_id: String },
-
-    #[error("`{capability_id}` was not declared as a capability by `{moniker}`")]
-    UseFromSelfNotFound { moniker: Moniker, capability_id: String },
-
-    #[error("`{moniker}` does not have child `#{child_moniker}`")]
-    UseFromChildInstanceNotFound {
-        child_moniker: ChildName,
-        moniker: Moniker,
-        capability_id: String,
-    },
-
-    #[error(
-        "{capability_type} `{capability_name}` was not registered in environment of `{moniker}`"
-    )]
-    UseFromEnvironmentNotFound { moniker: Moniker, capability_type: String, capability_name: Name },
 
     #[error(
         "`{moniker}` tried to use {capability_type} `{capability_name}` from the root environment"
@@ -191,99 +314,10 @@ pub enum RoutingError {
         capability_name: Name,
     },
 
-    #[error("{capability_type} `{capability_name}` was not offered to `{moniker}` by parent")]
-    EnvironmentFromParentNotFound {
-        moniker: Moniker,
-        capability_type: String,
-        capability_name: Name,
-    },
-
-    #[error("`{capability_name}` was not exposed to `{moniker}` from `#{child_moniker}`")]
-    EnvironmentFromChildExposeNotFound {
-        child_moniker: ChildName,
-        moniker: Moniker,
-        capability_type: String,
-        capability_name: Name,
-    },
-
-    #[error("`{moniker}` does not have child `#{child_moniker}`")]
-    EnvironmentFromChildInstanceNotFound {
-        child_moniker: ChildName,
-        moniker: Moniker,
-        capability_name: Name,
-        capability_type: String,
-    },
-
-    #[error("`{capability_id}` was not offered to `{moniker}` by parent")]
-    OfferFromParentNotFound { moniker: Moniker, capability_id: String },
-
-    #[error(
-        "cannot offer `{capability_id}` because was not declared as a capability by `{moniker}`"
-    )]
-    OfferFromSelfNotFound { moniker: Moniker, capability_id: String },
-
-    #[error("`{capability_id}` was not offered to `{moniker}` by parent")]
-    StorageFromParentNotFound { moniker: Moniker, capability_id: String },
-
-    #[error("`{moniker}` does not have child `#{child_moniker}`")]
-    OfferFromChildInstanceNotFound {
-        child_moniker: ChildName,
-        moniker: Moniker,
-        capability_id: String,
-    },
-
-    #[error("`{moniker}` does not have collection `#{collection}`")]
-    OfferFromCollectionNotFound { collection: String, moniker: Moniker, capability: Name },
-
-    #[error("`{capability_id}` was not exposed to `{moniker}` from `#{child_moniker}`")]
-    OfferFromChildExposeNotFound {
-        child_moniker: ChildName,
-        moniker: Moniker,
-        capability_id: String,
-    },
-
-    // TODO: Could this be distinguished by use/offer/expose?
-    #[error("`{capability_id}` is not a framework capability (at component `{moniker}`)")]
-    CapabilityFromFrameworkNotFound { moniker: Moniker, capability_id: String },
-
-    #[error(
-        "A capability was sourced to a base capability `{capability_id}` from `{moniker}`, but this is unsupported"
-    )]
-    CapabilityFromCapabilityNotFound { moniker: Moniker, capability_id: String },
-
-    // TODO: Could this be distinguished by use/offer/expose?
-    #[error("`{capability_id}` is not a framework capability")]
-    CapabilityFromComponentManagerNotFound { capability_id: String },
-
-    #[error(
-        "unable to expose `{capability_id}` because it was not declared as a capability by `{moniker}`"
-    )]
-    ExposeFromSelfNotFound { moniker: Moniker, capability_id: String },
-
-    #[error("`{moniker}` does not have child `#{child_moniker}`")]
-    ExposeFromChildInstanceNotFound {
-        child_moniker: ChildName,
-        moniker: Moniker,
-        capability_id: String,
-    },
-
-    #[error("`{moniker}` does not have collection `#{collection}`")]
-    ExposeFromCollectionNotFound { collection: String, moniker: Moniker, capability: Name },
-
-    #[error("`{capability_id}` was not exposed to `{moniker}` from `#{child_moniker}`")]
-    ExposeFromChildExposeNotFound {
-        child_moniker: ChildName,
-        moniker: Moniker,
-        capability_id: String,
-    },
-
     #[error(
         "`{moniker}` tried to expose `{capability_id}` from the framework, but no such framework capability was found"
     )]
     ExposeFromFrameworkNotFound { moniker: Moniker, capability_id: String },
-
-    #[error("`{capability_id}` was not exposed to `{moniker}` from `#{child_moniker}`")]
-    UseFromChildExposeNotFound { child_moniker: ChildName, moniker: Moniker, capability_id: String },
 
     #[error("`{capability_id}` was not exposed from `/`")]
     UseFromRootExposeNotFound { capability_id: String },
@@ -294,16 +328,8 @@ pub enum RoutingError {
     #[error("routing a capability of an unsupported type `{type_name}` at `{moniker}`")]
     UnsupportedCapabilityType { type_name: CapabilityTypeName, moniker: ExtendedMoniker },
 
-    #[error(
-        "dictionaries are not yet supported for {cap_type} capabilities at component `{moniker}`"
-    )]
-    DictionariesNotSupported { moniker: Moniker, cap_type: CapabilityTypeName },
-
     #[error("dynamic dictionaries are not allowed at component `{moniker}`")]
     DynamicDictionariesNotAllowed { moniker: Moniker },
-
-    #[error("the capability does not support member access at `{moniker}`")]
-    BedrockMemberAccessUnsupported { moniker: ExtendedMoniker },
 
     #[error("item `{name}` is not present in dictionary at component `{moniker}`")]
     BedrockNotPresentInDictionary { name: String, moniker: ExtendedMoniker },
@@ -313,28 +339,13 @@ pub enum RoutingError {
     )]
     BedrockWrongCapabilityType { actual: String, expected: String, moniker: ExtendedMoniker },
 
-    #[error(
-        "expected type {type_name} for routed capability at component `{moniker}`, but type was missing"
-    )]
-    BedrockMissingCapabilityType { type_name: String, moniker: ExtendedMoniker },
-
-    #[error("there was an error remoting a capability at component `{moniker}`")]
-    BedrockRemoteCapability { moniker: Moniker },
-
-    #[error("source dictionary was not found in child's exposes at component `{moniker}`")]
-    BedrockSourceDictionaryExposeNotFound { moniker: Moniker },
-
-    #[error("Some capability in the routing chain could not be cloned at `{moniker}`.")]
-    BedrockNotCloneable { moniker: ExtendedMoniker },
-
-    #[error(
-        "a capability in a dictionary extended from a source dictionary collides with \
-        a capability in the source dictionary that has the same key at `{moniker}`"
-    )]
-    BedrockSourceDictionaryCollision { moniker: ExtendedMoniker },
-
     #[error("failed to send message for capability `{capability_id}` from component `{moniker}`")]
     BedrockFailedToSend { moniker: ExtendedMoniker, capability_id: String },
+
+    #[error(
+        "the source of capability `{capability_id}` at component `{moniker}` is unknown because we did not perform any routing tasks to find it"
+    )]
+    SourceUnknown { moniker: ExtendedMoniker, capability_id: String },
 
     #[error(
         "failed to route capability because the route source has been shutdown and possibly destroyed"
@@ -361,7 +372,7 @@ pub enum RoutingError {
         If the offer/expose declaration has `source_availability` set to `unknown`, \
         the source component instance likely isn't defined in the component declaration"
     )]
-    SourceCapabilityIsVoid { moniker: Moniker },
+    SourceCapabilityIsVoid { moniker: ExtendedMoniker },
 
     #[error(
         "routes that do not set the `debug` flag are unsupported in the current configuration (at `{moniker}`)."
@@ -371,14 +382,8 @@ pub enum RoutingError {
     #[error("debug routes are unsupported for external routers (at `{moniker}`).")]
     DebugRoutesUnsupported { moniker: ExtendedMoniker },
 
-    #[error("{type_name} router unexpectedly returned debug info for target {moniker}")]
-    RouteUnexpectedDebug { type_name: CapabilityTypeName, moniker: ExtendedMoniker },
-
     #[error("{type_name} router unexpectedly returned unavailable for target {moniker}")]
     RouteUnexpectedUnavailable { type_name: CapabilityTypeName, moniker: ExtendedMoniker },
-
-    #[error("{name} at {moniker} is missing porcelain type metadata.")]
-    MissingPorcelainType { name: Name, moniker: Moniker },
 
     #[error("path at `{moniker}` was too long for `{keyword}`: {path}")]
     PathTooLong { moniker: ExtendedMoniker, path: String, keyword: String },
@@ -395,9 +400,6 @@ pub enum RoutingError {
     // We store the raw value of a zx::Status here because zx::Status does not implement Serialize
     #[error("error returned by a router implemented by component {moniker}")]
     RemoteRouterError { moniker: Moniker, error_code: i32 },
-
-    #[error("unexpected error received")]
-    UnexpectedError,
 }
 
 impl Explain for RoutingError {
@@ -406,61 +408,31 @@ impl Explain for RoutingError {
         match self {
             RoutingError::UseFromRootEnvironmentNotAllowed { .. }
             | RoutingError::DynamicDictionariesNotAllowed { .. } => zx::Status::ACCESS_DENIED,
-            RoutingError::StorageFromChildExposeNotFound { .. }
+            RoutingError::RouteRequestMissingField { .. }
+            | RoutingError::RouteRequestFailedToParseField { .. }
+            | RoutingError::RouteRequestUnset { .. }
             | RoutingError::ComponentNotInIdIndex { .. }
-            | RoutingError::UseFromComponentManagerNotFound { .. }
-            | RoutingError::RegisterFromComponentManagerNotFound { .. }
-            | RoutingError::OfferFromComponentManagerNotFound { .. }
-            | RoutingError::UseFromParentNotFound { .. }
-            | RoutingError::UseFromSelfNotFound { .. }
-            | RoutingError::UseFromChildInstanceNotFound { .. }
-            | RoutingError::UseFromEnvironmentNotFound { .. }
-            | RoutingError::EnvironmentFromParentNotFound { .. }
-            | RoutingError::EnvironmentFromChildExposeNotFound { .. }
-            | RoutingError::EnvironmentFromChildInstanceNotFound { .. }
-            | RoutingError::OfferFromParentNotFound { .. }
-            | RoutingError::OfferFromSelfNotFound { .. }
-            | RoutingError::StorageFromParentNotFound { .. }
-            | RoutingError::OfferFromChildInstanceNotFound { .. }
-            | RoutingError::OfferFromCollectionNotFound { .. }
-            | RoutingError::OfferFromChildExposeNotFound { .. }
-            | RoutingError::CapabilityFromFrameworkNotFound { .. }
-            | RoutingError::CapabilityFromCapabilityNotFound { .. }
-            | RoutingError::CapabilityFromComponentManagerNotFound { .. }
             | RoutingError::ConflictingDictionaryEntries { .. }
-            | RoutingError::ExposeFromSelfNotFound { .. }
-            | RoutingError::ExposeFromChildInstanceNotFound { .. }
-            | RoutingError::ExposeFromCollectionNotFound { .. }
-            | RoutingError::ExposeFromChildExposeNotFound { .. }
             | RoutingError::ExposeFromFrameworkNotFound { .. }
-            | RoutingError::UseFromChildExposeNotFound { .. }
             | RoutingError::UseFromRootExposeNotFound { .. }
             | RoutingError::UnsupportedRouteSource { .. }
             | RoutingError::UnsupportedCapabilityType { .. }
             | RoutingError::EventsRoutingError(_)
             | RoutingError::BedrockNotPresentInDictionary { .. }
-            | RoutingError::BedrockSourceDictionaryExposeNotFound { .. }
-            | RoutingError::BedrockSourceDictionaryCollision { .. }
             | RoutingError::BedrockFailedToSend { .. }
+            | RoutingError::SourceUnknown { .. }
             | RoutingError::RouteSourceShutdown { .. }
-            | RoutingError::BedrockMissingCapabilityType { .. }
             | RoutingError::BedrockWrongCapabilityType { .. }
-            | RoutingError::BedrockRemoteCapability { .. }
-            | RoutingError::BedrockNotCloneable { .. }
+            | RoutingError::SourceCapabilityIsVoid { .. }
             | RoutingError::AvailabilityRoutingError(_)
+            | RoutingError::RouteSourceNotFound { .. }
             | RoutingError::PathTooLong { .. } => zx::Status::NOT_FOUND,
-            RoutingError::BedrockMemberAccessUnsupported { .. }
-            | RoutingError::NonDebugRoutesUnsupported { .. }
-            | RoutingError::DebugRoutesUnsupported { .. }
-            | RoutingError::DictionariesNotSupported { .. } => zx::Status::NOT_SUPPORTED,
+            RoutingError::NonDebugRoutesUnsupported { .. }
+            | RoutingError::DebugRoutesUnsupported { .. } => zx::Status::NOT_SUPPORTED,
             RoutingError::ComponentInstanceError(err) => err.as_zx_status(),
             RoutingError::RightsRoutingError(err) => err.as_zx_status(),
             RoutingError::PolicyError(err) => err.as_zx_status(),
-            RoutingError::SourceCapabilityIsVoid { .. } => zx::Status::NOT_FOUND,
-            RoutingError::RouteUnexpectedDebug { .. }
-            | RoutingError::RouteUnexpectedUnavailable { .. }
-            | RoutingError::MissingPorcelainType { .. }
-            | RoutingError::UnexpectedError => zx::Status::INTERNAL,
+            RoutingError::RouteUnexpectedUnavailable { .. } => zx::Status::INTERNAL,
             RoutingError::RemoteFIDLError { .. } => zx::Status::PEER_CLOSED,
             RoutingError::RemoteRouterError { error_code, .. } => {
                 zx::Status::err_from_raw(*error_code)
@@ -472,52 +444,27 @@ impl Explain for RoutingError {
 impl From<RoutingError> for ExtendedMoniker {
     fn from(err: RoutingError) -> ExtendedMoniker {
         match err {
-            RoutingError::BedrockRemoteCapability { moniker, .. }
-            | RoutingError::BedrockSourceDictionaryExposeNotFound { moniker, .. }
-            | RoutingError::CapabilityFromCapabilityNotFound { moniker, .. }
-            | RoutingError::CapabilityFromFrameworkNotFound { moniker, .. }
-            | RoutingError::ComponentNotInIdIndex { source_moniker: moniker, .. }
-            | RoutingError::DictionariesNotSupported { moniker, .. }
-            | RoutingError::EnvironmentFromChildExposeNotFound { moniker, .. }
-            | RoutingError::EnvironmentFromChildInstanceNotFound { moniker, .. }
-            | RoutingError::EnvironmentFromParentNotFound { moniker, .. }
-            | RoutingError::ExposeFromChildExposeNotFound { moniker, .. }
-            | RoutingError::ExposeFromChildInstanceNotFound { moniker, .. }
-            | RoutingError::ExposeFromCollectionNotFound { moniker, .. }
+            RoutingError::ComponentNotInIdIndex { source_moniker: moniker, .. }
             | RoutingError::ExposeFromFrameworkNotFound { moniker, .. }
-            | RoutingError::ExposeFromSelfNotFound { moniker, .. }
-            | RoutingError::OfferFromChildExposeNotFound { moniker, .. }
-            | RoutingError::OfferFromChildInstanceNotFound { moniker, .. }
-            | RoutingError::OfferFromCollectionNotFound { moniker, .. }
-            | RoutingError::OfferFromParentNotFound { moniker, .. }
-            | RoutingError::OfferFromSelfNotFound { moniker, .. }
-            | RoutingError::SourceCapabilityIsVoid { moniker, .. }
-            | RoutingError::StorageFromChildExposeNotFound { moniker, .. }
-            | RoutingError::StorageFromParentNotFound { moniker, .. }
-            | RoutingError::UseFromChildExposeNotFound { moniker, .. }
-            | RoutingError::UseFromChildInstanceNotFound { moniker, .. }
-            | RoutingError::UseFromEnvironmentNotFound { moniker, .. }
-            | RoutingError::UseFromParentNotFound { moniker, .. }
             | RoutingError::UseFromRootEnvironmentNotAllowed { moniker, .. }
             | RoutingError::DynamicDictionariesNotAllowed { moniker, .. }
             | RoutingError::RouteSourceShutdown { moniker }
-            | RoutingError::UseFromSelfNotFound { moniker, .. }
-            | RoutingError::MissingPorcelainType { moniker, .. }
             | RoutingError::RemoteFIDLError { moniker }
+            | RoutingError::RouteSourceNotFound { moniker, .. }
             | RoutingError::RemoteRouterError { moniker, .. } => moniker.into(),
             RoutingError::PathTooLong { moniker, .. } => moniker,
 
-            RoutingError::BedrockMemberAccessUnsupported { moniker }
-            | RoutingError::BedrockNotPresentInDictionary { moniker, .. }
-            | RoutingError::BedrockNotCloneable { moniker }
-            | RoutingError::BedrockSourceDictionaryCollision { moniker }
+            RoutingError::BedrockNotPresentInDictionary { moniker, .. }
             | RoutingError::BedrockFailedToSend { moniker, .. }
-            | RoutingError::BedrockMissingCapabilityType { moniker, .. }
+            | RoutingError::SourceUnknown { moniker, .. }
             | RoutingError::BedrockWrongCapabilityType { moniker, .. }
+            | RoutingError::RouteRequestMissingField { moniker, .. }
+            | RoutingError::RouteRequestFailedToParseField { moniker, .. }
+            | RoutingError::RouteRequestUnset { moniker, .. }
+            | RoutingError::SourceCapabilityIsVoid { moniker, .. }
             | RoutingError::ConflictingDictionaryEntries { moniker, .. }
             | RoutingError::NonDebugRoutesUnsupported { moniker }
             | RoutingError::DebugRoutesUnsupported { moniker }
-            | RoutingError::RouteUnexpectedDebug { moniker, .. }
             | RoutingError::RouteUnexpectedUnavailable { moniker, .. }
             | RoutingError::UnsupportedCapabilityType { moniker, .. }
             | RoutingError::UnsupportedRouteSource { moniker, .. } => moniker,
@@ -527,12 +474,7 @@ impl From<RoutingError> for ExtendedMoniker {
             RoutingError::PolicyError(err) => err.into(),
             RoutingError::RightsRoutingError(err) => err.into(),
 
-            RoutingError::CapabilityFromComponentManagerNotFound { .. }
-            | RoutingError::OfferFromComponentManagerNotFound { .. }
-            | RoutingError::RegisterFromComponentManagerNotFound { .. }
-            | RoutingError::UseFromComponentManagerNotFound { .. }
-            | RoutingError::UseFromRootExposeNotFound { .. }
-            | RoutingError::UnexpectedError => ExtendedMoniker::ComponentManager,
+            RoutingError::UseFromRootExposeNotFound { .. } => ExtendedMoniker::ComponentManager,
         }
     }
 }
@@ -563,183 +505,6 @@ impl RoutingError {
     /// Convert this error into its approximate `fuchsia.component.Error` equivalent.
     pub fn as_fidl_error(&self) -> fcomponent::Error {
         fcomponent::Error::ResourceUnavailable
-    }
-
-    pub fn storage_from_child_expose_not_found(
-        child_moniker: &ChildName,
-        moniker: &Moniker,
-        capability_id: impl Into<String>,
-    ) -> Self {
-        Self::StorageFromChildExposeNotFound {
-            child_moniker: child_moniker.clone(),
-            moniker: moniker.clone(),
-            capability_id: capability_id.into(),
-        }
-    }
-
-    pub fn use_from_component_manager_not_found(capability_id: impl Into<String>) -> Self {
-        Self::UseFromComponentManagerNotFound { capability_id: capability_id.into() }
-    }
-
-    pub fn register_from_component_manager_not_found(capability_id: impl Into<String>) -> Self {
-        Self::RegisterFromComponentManagerNotFound { capability_id: capability_id.into() }
-    }
-
-    pub fn offer_from_component_manager_not_found(capability_id: impl Into<String>) -> Self {
-        Self::OfferFromComponentManagerNotFound { capability_id: capability_id.into() }
-    }
-
-    pub fn use_from_parent_not_found(moniker: &Moniker, capability_id: impl Into<String>) -> Self {
-        Self::UseFromParentNotFound {
-            moniker: moniker.clone(),
-            capability_id: capability_id.into(),
-        }
-    }
-
-    pub fn use_from_self_not_found(moniker: &Moniker, capability_id: impl Into<String>) -> Self {
-        Self::UseFromSelfNotFound { moniker: moniker.clone(), capability_id: capability_id.into() }
-    }
-
-    pub fn use_from_child_instance_not_found(
-        child_moniker: &ChildName,
-        moniker: &Moniker,
-        capability_id: impl Into<String>,
-    ) -> Self {
-        Self::UseFromChildInstanceNotFound {
-            child_moniker: child_moniker.clone(),
-            moniker: moniker.clone(),
-            capability_id: capability_id.into(),
-        }
-    }
-
-    pub fn use_from_environment_not_found(
-        moniker: &Moniker,
-        capability_type: impl Into<String>,
-        capability_name: &Name,
-    ) -> Self {
-        Self::UseFromEnvironmentNotFound {
-            moniker: moniker.clone(),
-            capability_type: capability_type.into(),
-            capability_name: capability_name.clone(),
-        }
-    }
-
-    pub fn offer_from_parent_not_found(
-        moniker: &Moniker,
-        capability_id: impl Into<String>,
-    ) -> Self {
-        Self::OfferFromParentNotFound {
-            moniker: moniker.clone(),
-            capability_id: capability_id.into(),
-        }
-    }
-
-    pub fn offer_from_self_not_found(moniker: &Moniker, capability_id: impl Into<String>) -> Self {
-        Self::OfferFromSelfNotFound {
-            moniker: moniker.clone(),
-            capability_id: capability_id.into(),
-        }
-    }
-
-    pub fn storage_from_parent_not_found(
-        moniker: &Moniker,
-        capability_id: impl Into<String>,
-    ) -> Self {
-        Self::StorageFromParentNotFound {
-            moniker: moniker.clone(),
-            capability_id: capability_id.into(),
-        }
-    }
-
-    pub fn offer_from_child_instance_not_found(
-        child_moniker: &ChildName,
-        moniker: &Moniker,
-        capability_id: impl Into<String>,
-    ) -> Self {
-        Self::OfferFromChildInstanceNotFound {
-            child_moniker: child_moniker.clone(),
-            moniker: moniker.clone(),
-            capability_id: capability_id.into(),
-        }
-    }
-
-    pub fn offer_from_child_expose_not_found(
-        child_moniker: &ChildName,
-        moniker: &Moniker,
-        capability_id: impl Into<String>,
-    ) -> Self {
-        Self::OfferFromChildExposeNotFound {
-            child_moniker: child_moniker.clone(),
-            moniker: moniker.clone(),
-            capability_id: capability_id.into(),
-        }
-    }
-
-    pub fn use_from_child_expose_not_found(
-        child_moniker: &ChildName,
-        moniker: &Moniker,
-        capability_id: impl Into<String>,
-    ) -> Self {
-        Self::UseFromChildExposeNotFound {
-            child_moniker: child_moniker.clone(),
-            moniker: moniker.clone(),
-            capability_id: capability_id.into(),
-        }
-    }
-
-    pub fn expose_from_self_not_found(moniker: &Moniker, capability_id: impl Into<String>) -> Self {
-        Self::ExposeFromSelfNotFound {
-            moniker: moniker.clone(),
-            capability_id: capability_id.into(),
-        }
-    }
-
-    pub fn expose_from_child_instance_not_found(
-        child_moniker: &ChildName,
-        moniker: &Moniker,
-        capability_id: impl Into<String>,
-    ) -> Self {
-        Self::ExposeFromChildInstanceNotFound {
-            child_moniker: child_moniker.clone(),
-            moniker: moniker.clone(),
-            capability_id: capability_id.into(),
-        }
-    }
-
-    pub fn expose_from_child_expose_not_found(
-        child_moniker: &ChildName,
-        moniker: &Moniker,
-        capability_id: impl Into<String>,
-    ) -> Self {
-        Self::ExposeFromChildExposeNotFound {
-            child_moniker: child_moniker.clone(),
-            moniker: moniker.clone(),
-            capability_id: capability_id.into(),
-        }
-    }
-
-    pub fn capability_from_framework_not_found(
-        moniker: &Moniker,
-        capability_id: impl Into<String>,
-    ) -> Self {
-        Self::CapabilityFromFrameworkNotFound {
-            moniker: moniker.clone(),
-            capability_id: capability_id.into(),
-        }
-    }
-
-    pub fn capability_from_capability_not_found(
-        moniker: &Moniker,
-        capability_id: impl Into<String>,
-    ) -> Self {
-        Self::CapabilityFromCapabilityNotFound {
-            moniker: moniker.clone(),
-            capability_id: capability_id.into(),
-        }
-    }
-
-    pub fn capability_from_component_manager_not_found(capability_id: impl Into<String>) -> Self {
-        Self::CapabilityFromComponentManagerNotFound { capability_id: capability_id.into() }
     }
 
     pub fn expose_from_framework_not_found(

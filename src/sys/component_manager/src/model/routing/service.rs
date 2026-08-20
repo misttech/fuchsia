@@ -26,7 +26,7 @@ use routing::component_instance::ComponentInstanceInterface;
 use routing::error::RoutingError;
 use runtime_capabilities::{DirConnector, Router};
 use std::borrow::Cow;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fmt;
 use std::fmt::Write;
 use std::path::Path;
@@ -312,7 +312,7 @@ impl AnonymizedAggregateServiceDir {
                             WatcherEntry::WaitingForIdle(Some(_)) => {
                                 // This should be impossible as there is no concurrent entry into
                                 // this code for the same instance.
-                                unreachable!()
+                                unreachable!();
                             }
                         }
                     } else {
@@ -731,7 +731,10 @@ impl AnonymizedAggregateServiceDir {
         // which creates a recursive loop when initializing the capability provider for collection sourced
         // services.
         Box::pin(async move {
-            join_all(self.aggregate_capability_provider.list_instances().await?.iter().map(
+            let instances = self.aggregate_capability_provider.list_instances().await?;
+            // Remove duplicates
+            let instances: HashSet<_> = instances.into_iter().collect();
+            join_all(instances.iter().map(
                 |instance| async move {
                     self.add_entries_from_instance(&instance).await.map_err(|e| {
                         error!(error:% = e, instance:% = instance; "error adding entries from instance");
@@ -949,14 +952,15 @@ mod tests {
     use crate::model::start::Start;
     use crate::model::testing::out_dir::OutDir;
     use crate::model::testing::routing_test_helpers::{RoutingTest, RoutingTestBuilder};
-    use ::routing::bedrock::dict_ext::DictExt;
     use ::routing::bedrock::request_metadata::service_metadata;
     use ::routing::component_instance::ComponentInstanceInterface;
-    use ::routing::error::RoutingError;
+    use ::routing::error::{PrettyPrintRef, RouteVerb, RoutingError};
+    use ::routing::intermediate_router::IntermediateRouter;
     use capability_source::ComponentCapability;
     use cm_rust::offer::*;
     use cm_rust::*;
     use cm_rust_testing::*;
+    use fidl_fuchsia_component_decl as fdecl;
     use maplit::hashmap;
     use proptest::prelude::*;
     use rand::SeedableRng;
@@ -981,17 +985,22 @@ mod tests {
             let instances_guard = self.instances.lock();
             let Some(component_instance) = instances_guard.get(instance) else {
                 let err = match instance {
-                    AggregateInstance::Parent => RoutingError::OfferFromParentNotFound {
-                        capability_id: "my.service.Service".to_string(),
+                    AggregateInstance::Parent => RoutingError::RouteSourceNotFound {
                         moniker: Moniker::root(),
+                        verb: RouteVerb::Offer,
+                        counter_verb: RouteVerb::Offer,
+                        source: PrettyPrintRef::Parent,
+                        capability_type: CapabilityTypeName::Service,
+                        capability_name: RelativePath::new("my.service.Service").unwrap(),
                     },
-                    AggregateInstance::Child(instance) => {
-                        RoutingError::OfferFromChildInstanceNotFound {
-                            capability_id: "my.service.Service".to_string(),
-                            child_moniker: instance.clone(),
-                            moniker: Moniker::root(),
-                        }
-                    }
+                    AggregateInstance::Child(instance) => RoutingError::RouteSourceNotFound {
+                        moniker: Moniker::root(),
+                        verb: RouteVerb::Offer,
+                        counter_verb: RouteVerb::Expose,
+                        source: instance.clone().into(),
+                        capability_type: CapabilityTypeName::Service,
+                        capability_name: RelativePath::new("my.service.Service").unwrap(),
+                    },
                     AggregateInstance::Self_ => {
                         panic!("not expected");
                     }
@@ -1020,17 +1029,20 @@ mod tests {
                         .sandbox
                         .program_output_dict
                         .clone();
-                    Ok(program_output_dict.get_router_or_not_found::<DirConnector>(
-                        &cm_types::Name::new("my.service.Service").unwrap(),
-                        // We might not be exposing the capability, but the core issue is sameish
-                        // (the component did not declare the capability), and this is test code,
-                        // so hopefully using an only mostly-right error code here doesn't trip
-                        // someone up later.
-                        RoutingError::expose_from_self_not_found(
-                            &component.moniker(),
-                            "my.service.Service",
-                        ),
-                    ))
+                    Ok(IntermediateRouter::new(
+                        Arc::downgrade(&program_output_dict).into(),
+                        RelativePath::new("my.service.Service").unwrap(),
+                        RouteRequest {
+                            build_type_name: Some(CapabilityTypeName::Service.to_string()),
+                            ..Default::default()
+                        },
+                        self.weak_component.clone().into(),
+                        self.weak_component.moniker.clone(),
+                        RouteVerb::Declare,
+                        fdecl::Ref::Self_(fdecl::SelfRef {}),
+                    )
+                    .try_into()
+                    .expect("wrong type from intermediate router"))
                 }
             }
             #[async_trait]

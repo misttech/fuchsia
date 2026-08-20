@@ -968,6 +968,26 @@ impl From<&ExposeDecl> for CapabilityTypeName {
     }
 }
 
+impl From<&DebugRegistration> for CapabilityTypeName {
+    fn from(debug: &DebugRegistration) -> Self {
+        match debug {
+            DebugRegistration::Protocol(_) => Self::Protocol,
+        }
+    }
+}
+
+impl From<&RunnerRegistration> for CapabilityTypeName {
+    fn from(_: &RunnerRegistration) -> Self {
+        Self::Runner
+    }
+}
+
+impl From<&ResolverRegistration> for CapabilityTypeName {
+    fn from(_: &ResolverRegistration) -> Self {
+        Self::Resolver
+    }
+}
+
 impl From<CapabilityTypeName> for fio::DirentType {
     fn from(value: CapabilityTypeName) -> Self {
         match value {

@@ -11,19 +11,18 @@
 //! with isolated storage without needing to understand component_manager's storage layout.
 
 use crate::model::component::{ComponentInstance, WeakComponentInstance};
-use crate::model::routing::RoutingFailureErrorReporter;
 use crate::model::storage;
 use ::routing::component_instance::ComponentInstanceInterface;
-use ::routing::error::RouteRequestErrorInfo;
 use anyhow::{Context, Error, format_err};
 use capability_source::{
     CapabilitySource, ComponentCapability, ComponentSource, StorageBackingDirectorySource,
 };
-use cm_rust::{CapabilityDecl, CapabilityTypeName, StorageDecl, StorageDirectorySource};
+use cm_rust::{CapabilityTypeName, NativeIntoFidl, StorageDecl, StorageDirectorySource};
 use cm_types::RelativePath;
 use component_id_index::InstanceId;
 use fidl::endpoints::{ServerEnd, create_proxy};
 use fidl_fuchsia_component as fcomponent;
+use fidl_fuchsia_component_decl as fdecl;
 use fidl_fuchsia_component_runtime::RouteRequest;
 use fidl_fuchsia_io::{self as fio, DirectoryProxy, DirentType};
 use fidl_fuchsia_sys2 as fsys;
@@ -33,7 +32,7 @@ use futures::stream::{FuturesUnordered, StreamExt};
 use futures::{Future, TryFutureExt, TryStreamExt};
 use log::{debug, error, warn};
 use moniker::{ChildName, Moniker};
-use routing::{DictExt, WithPorcelain};
+use routing::DictExt;
 use runtime_capabilities::{Capability, DirConnector, Router};
 use std::sync::Arc;
 
@@ -165,27 +164,23 @@ impl StorageAdmin {
         Ok(Arc::new(Self { storage_decl, weak_component, storage_router, backing_dir_router }))
     }
 
-    fn get_storage_router(&self, target: &Arc<ComponentInstance>) -> Arc<Router<DirConnector>> {
-        let capability_decl = CapabilityDecl::Storage(self.storage_decl.clone());
-        self.storage_router
-            .clone()
-            .with_porcelain_with_default(CapabilityTypeName::Storage)
-            .error_info(RouteRequestErrorInfo::from(&capability_decl))
-            .error_reporter(RoutingFailureErrorReporter::new())
-            .availability(cm_rust::Availability::Transitional)
-            .target(&target)
-            .rights(Some(fidl_fuchsia_io::RW_STAR_DIR.into()))
-            .subdir(cm_types::RelativePath::dot().into())
-            .inherit_rights(false)
-            .build()
+    fn route_request(&self) -> RouteRequest {
+        RouteRequest {
+            build_type_name: Some(CapabilityTypeName::Storage.to_string()),
+            availability: Some(fdecl::Availability::Transitional),
+            directory_rights: Some(fio::PERM_READABLE | fio::PERM_WRITABLE),
+            sub_directory_path: Some(RelativePath::dot().native_into_fidl()),
+            inherit_rights: Some(false),
+            ..Default::default()
+        }
     }
 
     async fn debug_route_storage_as(
         &self,
         target: &Arc<ComponentInstance>,
     ) -> Result<CapabilitySource, fcomponent::Error> {
-        self.get_storage_router(target)
-            .route_debug(RouteRequest::default(), target.as_weak().into())
+        self.storage_router
+            .route_debug(self.route_request(), target.as_weak().into())
             .await
             .map_err(|e| {
                 log::error!("failed to route storage: {e:?}");
@@ -198,8 +193,8 @@ impl StorageAdmin {
         target: &Arc<ComponentInstance>,
     ) -> Result<Arc<DirConnector>, fcomponent::Error> {
         let router_res = self
-            .get_storage_router(target)
-            .route(RouteRequest::default(), target.as_weak().into())
+            .storage_router
+            .route(self.route_request(), target.as_weak().into())
             .await
             .map_err(|e| {
                 log::error!("failed to route storage: {e:?}");
@@ -211,35 +206,34 @@ impl StorageAdmin {
         }
     }
 
-    async fn connect_to_backing_directory(
-        &self,
-        target: &Arc<ComponentInstance>,
-    ) -> Result<fio::DirectoryProxy, fcomponent::Error> {
-        let capability_decl = CapabilityDecl::Storage(self.storage_decl.clone());
-        let backing_dir_router: Arc<Router<DirConnector>> = self
+    async fn connect_to_backing_directory(&self) -> Result<fio::DirectoryProxy, fcomponent::Error> {
+        let router_res = self
             .backing_dir_router
-            .clone()
-            .with_porcelain_with_default(CapabilityTypeName::Directory)
-            .error_info(RouteRequestErrorInfo::from(&capability_decl))
-            .error_reporter(RoutingFailureErrorReporter::new())
-            .availability(cm_rust::Availability::Transitional)
-            .target(&target)
-            .rights(Some(fidl_fuchsia_io::RW_STAR_DIR.into()))
-            .subdir(self.storage_decl.subdir.clone().into())
-            .inherit_rights(false)
-            .build();
-        let router_res = backing_dir_router
-            .route(RouteRequest::default(), self.weak_component.clone().into())
+            .route(
+                RouteRequest {
+                    build_type_name: Some(CapabilityTypeName::Directory.to_string()),
+                    availability: Some(fdecl::Availability::Transitional),
+                    directory_rights: Some(fio::PERM_READABLE | fio::PERM_WRITABLE),
+                    sub_directory_path: Some(self.storage_decl.subdir.clone().native_into_fidl()),
+                    inherit_rights: Some(false),
+                    ..Default::default()
+                },
+                self.weak_component.clone().into(),
+            )
             .await;
         let dir_connector = match router_res {
             Ok(Some(dir_connector)) => dir_connector,
-            Ok(None) => return Err(fcomponent::Error::Internal),
-            Err(_e) => return Err(fcomponent::Error::Internal),
+            Ok(None) => {
+                return Err(fcomponent::Error::Internal);
+            }
+            Err(_e) => {
+                return Err(fcomponent::Error::Internal);
+            }
         };
         let (dir_proxy, server_end) = create_proxy::<fio::DirectoryMarker>();
         dir_connector
             .send(server_end, RelativePath::dot(), Some(fio::PERM_READABLE | fio::PERM_WRITABLE))
-            .map_err(|_| fcomponent::Error::Internal)?;
+            .map_err(|_e| fcomponent::Error::Internal)?;
         Ok(dir_proxy)
     }
 
@@ -398,7 +392,7 @@ impl StorageAdmin {
                 fsys::StorageAdminRequest::GetStatus { responder } => {
                     let fut = async {
                         let backing_dir_proxy = self
-                            .connect_to_backing_directory(&component)
+                            .connect_to_backing_directory()
                             .await
                             .map_err(|_| StorageStatusError::QueryError)?;
                         Self::get_storage_status(&backing_dir_proxy).await
@@ -408,9 +402,9 @@ impl StorageAdmin {
                 fsys::StorageAdminRequest::DeleteAllStorageContents { responder } => {
                     let fut = async {
                         let backing_dir_proxy = self
-                            .connect_to_backing_directory(&component)
+                            .connect_to_backing_directory()
                             .await
-                            .map_err(|_| fsys::DeletionError::Connection)?;
+                            .map_err(|_e| fsys::DeletionError::Connection)?;
                         if let Err(e) =
                             Self::delete_all_storage(&backing_dir_proxy, Self::delete_dir_contents)
                                 .await

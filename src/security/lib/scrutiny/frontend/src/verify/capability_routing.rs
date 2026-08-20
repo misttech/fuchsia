@@ -14,7 +14,7 @@ use cm_fidl_analyzer::route::VerifyRouteResult;
 use cm_fidl_analyzer::{BreadthFirstModelWalker, ComponentInstanceVisitor, ComponentModelWalker};
 use cm_rust::CapabilityTypeName;
 use futures::FutureExt;
-use routing::error::{ComponentInstanceError, RoutingError};
+use routing::error::{ComponentInstanceError, PrettyPrintRef, RoutingError};
 use scrutiny_collection::model::DataModel;
 use scrutiny_collection::v2_component_model::V2ComponentModel;
 use serde::{Deserialize, Serialize};
@@ -47,22 +47,8 @@ impl From<VerifyRouteResult> for ResultBySeverity {
                     AnalyzerModelError::ComponentInstanceError(
                         ComponentInstanceError::InstanceNotFound { .. },
                     )
-                    | AnalyzerModelError::RoutingError(
-                        RoutingError::EnvironmentFromChildInstanceNotFound { .. },
-                    )
-                    | AnalyzerModelError::RoutingError(
-                        RoutingError::ExposeFromChildInstanceNotFound { .. },
-                    )
-                    | AnalyzerModelError::RoutingError(
-                        RoutingError::OfferFromChildInstanceNotFound { .. },
-                    )
-                    | AnalyzerModelError::RoutingError(
-                        RoutingError::UseFromChildInstanceNotFound { .. },
-                    )
-                    | AnalyzerModelError::RoutingError(RoutingError::DictionariesNotSupported {
-                        // TODO(https://fxbug.dev/314347639): support bedrock in
-                        // scrutiny and remove this dictionaries error
-                        // suppression.
+                    | AnalyzerModelError::RoutingError(RoutingError::RouteSourceNotFound {
+                        source: PrettyPrintRef::Child(_),
                         ..
                     }) => WarningResult {
                         using_node: verify_route_result.using_node,
@@ -131,7 +117,10 @@ impl FromArgValue for ResponseLevel {
             "all" => Ok(Self::All),
             "warn" => Ok(Self::Warn),
             "error" => Ok(Self::Error),
-            _ => Err(format!("Unsupported response level \"{}\"; possible values are: \"verbose\", \"all\", \"warn\", \"error\".", value)),
+            _ => Err(format!(
+                "Unsupported response level \"{}\"; possible values are: \"verbose\", \"all\", \"warn\", \"error\".",
+                value
+            )),
         }
     }
 }

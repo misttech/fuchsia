@@ -105,6 +105,7 @@ impl<T: RoutingTestModelBuilder> CommonRightsTest<T> {
             (
                 "c",
                 ComponentDeclBuilder::new()
+                    // Default rights on `UseBuilder::directory` are `fio::R_STAR_DIR`
                     .use_(UseBuilder::directory().name("baz_data").path("/data/hippo"))
                     .build(),
             ),

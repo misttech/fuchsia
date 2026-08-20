@@ -11,6 +11,7 @@ use capability_source::{
     AggregateInstance, AnonymizedAggregateSource, CapabilitySource,
     FilteredAggregateProviderSource, ServiceInstance,
 };
+use cm_rust::CapabilityTypeName;
 use cm_types::{Name, RelativePath};
 use fidl::endpoints::create_proxy;
 use fidl_fuchsia_component_runtime::RouteRequest;
@@ -23,9 +24,10 @@ use futures::stream::FuturesUnordered;
 use router_error::RouterError;
 use routing::bedrock::aggregate_router::AggregateSource;
 use routing::component_instance::ComponentInstanceInterface;
-use routing::error::{ComponentInstanceError, RoutingError};
+use routing::error::{ComponentInstanceError, RouteVerb, RoutingError};
 use runtime_capabilities::{
-    Capability, CapabilityBound, Dictionary, DirConnector, Routable, Router, WeakInstanceToken,
+    Capability, CapabilityBound, Dictionary, DirConnector, Routable, Router, RouterErrorInfo,
+    WeakInstanceToken,
 };
 use std::cmp::Ordering;
 use std::sync::Arc;
@@ -47,6 +49,16 @@ impl From<AnonymizedOrFiltered> for CapabilitySource {
                 CapabilitySource::FilteredAggregateProvider(source)
             }
         }
+    }
+}
+
+impl AnonymizedOrFiltered {
+    fn name(&self) -> Name {
+        let source = CapabilitySource::from(self.clone());
+        source
+            .source_name()
+            .expect("aggregate service sources will always have source names")
+            .clone()
     }
 }
 
@@ -81,6 +93,14 @@ impl Routable<DirConnector> for AggregateRouter {
     ) -> Result<CapabilitySource, RouterError> {
         let _aggregate_dir = self.get_aggregate_dir(request).await?;
         Ok(self.get_capability_source_with_instances())
+    }
+
+    fn error_info(&self) -> Option<RouterErrorInfo> {
+        Some(RouterErrorInfo {
+            capability_type: CapabilityTypeName::Service,
+            name: self.capability_source.name(),
+            availability: cm_rust::Availability::Required,
+        })
     }
 }
 
@@ -202,7 +222,7 @@ impl AggregateRouter {
     ) -> Result<Arc<DirConnector>, RouterError> {
         let source_dir_routers = self.sources.iter().filter_map(|source| match source {
             AggregateSource::DirectoryRouter { source_instance: _, router } => Some(router),
-            AggregateSource::Collection { collection_name: _ } => panic!("collections can't contribute to filtered aggregates, manifest validation should stop this"),
+            AggregateSource::Collection { collection_name: _ } => None,
         });
 
         let mut routing_futures = FuturesUnordered::new();
@@ -384,43 +404,40 @@ impl AnonymizedAggregateCapabilityProvider for AnonymizedAggregateServiceProvide
                 }
                 let child_instance = {
                     let component = self.component.upgrade()?;
-                    let resolved_state = component.lock_resolved_state().await.map_err(|_| {
-                        RoutingError::offer_from_child_instance_not_found(
-                            child_name,
-                            &self.component.moniker,
-                            self.service_name.as_str(),
-                        )
+                    let resolved_state = component.lock_resolved_state().await.map_err(|err| {
+                        RoutingError::from(ComponentInstanceError::ResolveFailed {
+                            moniker: self.component.moniker.clone(),
+                            err: anyhow::format_err!("{:?}", err).into(),
+                        })
                     })?;
                     resolved_state
                         .get_child(child_name)
                         .ok_or_else(|| {
-                            RoutingError::offer_from_child_instance_not_found(
-                                child_name,
-                                &self.component.moniker,
-                                self.service_name.as_str(),
-                            )
+                            RoutingError::from(ComponentInstanceError::InstanceNotFound {
+                                moniker: self.component.moniker.child(child_name.clone()),
+                            })
                         })?
                         .clone()
                 };
                 let child_resolved_state =
-                    child_instance.lock_resolved_state().await.map_err(|_| {
-                        RoutingError::offer_from_child_instance_not_found(
-                            child_name,
-                            &self.component.moniker,
-                            self.service_name.as_str(),
-                        )
+                    child_instance.lock_resolved_state().await.map_err(|err| {
+                        RoutingError::from(ComponentInstanceError::ResolveFailed {
+                            moniker: self.component.moniker.child(child_name.clone()),
+                            err: anyhow::format_err!("{:?}", err).into(),
+                        })
                     })?;
                 let capability = child_resolved_state
                     .sandbox
                     .component_output
                     .capabilities()
                     .get(&self.service_name)
-                    .ok_or_else(|| {
-                        RoutingError::expose_from_child_expose_not_found(
-                            child_name,
-                            &self.component.moniker,
-                            self.service_name.as_str(),
-                        )
+                    .ok_or_else(|| RoutingError::RouteSourceNotFound {
+                        moniker: self.component.moniker.clone(),
+                        verb: RouteVerb::IncludeInAggregate,
+                        counter_verb: RouteVerb::Expose,
+                        source: child_name.clone().into(),
+                        capability_type: CapabilityTypeName::Service,
+                        capability_name: vec![self.service_name.clone()].into(),
                     })?;
                 match capability {
                     Capability::DirConnectorRouter(r) => r,
@@ -437,7 +454,9 @@ impl AnonymizedAggregateCapabilityProvider for AnonymizedAggregateServiceProvide
         let source = router
             .route_debug(RouteRequest::default(), self.component.clone().into())
             .await
-            .map_err(|e| RoutingError::try_from(e).unwrap_or(RoutingError::UnexpectedError))?;
+            .map_err(|e| {
+                RoutingError::try_from(e).expect("failed to convert RouterError to RoutingError")
+            })?;
         Ok((router, source))
     }
 }

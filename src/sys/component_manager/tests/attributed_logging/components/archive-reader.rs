@@ -4,6 +4,7 @@
 
 use diagnostics_data::ExtendedMoniker;
 use diagnostics_reader::ArchiveReader;
+use fuchsia_async::TimeoutExt;
 use futures::stream::StreamExt;
 use log::info;
 use std::collections::HashMap;
@@ -22,8 +23,7 @@ async fn main() {
         vec![vec![
             "protocol `fidl.test.components.Trigger`",
             "not available for target `child-for-offer-from-parent`",
-            "`fidl.test.components.Trigger` was not offered to",
-            "`root/routing-tests/offers-to-children-unavailable` by parent",
+            "cannot offer protocol fidl.test.components.Trigger from parent at root/routing-tests/offers-to-children-unavailable because parent does not offer the capability",
         ]],
     );
     treasure.insert(
@@ -34,8 +34,7 @@ async fn main() {
             "Optional",
             "protocol `fidl.test.components.Trigger`",
             "not available for target `child-for-offer-from-parent`",
-            "`fidl.test.components.Trigger` was not offered to",
-            "`root/routing-tests/offers-to-children-unavailable-but-optional` by parent",
+            "cannot offer protocol fidl.test.components.Trigger from parent at root/routing-tests/offers-to-children-unavailable-but-optional because parent does not offer the capability",
         ]],
     );
     treasure.insert(
@@ -43,8 +42,7 @@ async fn main() {
         vec![vec![
             "protocol `fidl.test.components.Trigger`",
             "not available for target `child`",
-            "`fidl.test.components.Trigger` was not offered to",
-            "`root/routing-tests/child` by parent",
+            "cannot use protocol fidl.test.components.Trigger from parent at root/routing-tests/child because parent does not offer the capability",
         ]],
     );
     treasure.insert(
@@ -53,8 +51,7 @@ async fn main() {
             "Optional",
             "protocol `fidl.test.components.Trigger`",
             "not available for target `child-with-optional-use`",
-            "`fidl.test.components.Trigger` was not offered to",
-            "`root/routing-tests/child-with-optional-use` by parent",
+            "cannot use protocol fidl.test.components.Trigger from parent at root/routing-tests/child-with-optional-use because parent does not offer the capability",
         ]],
     );
     treasure.insert(
@@ -62,8 +59,7 @@ async fn main() {
         vec![vec![
             "protocol `fidl.test.components.Trigger`",
             "not available for target `child-for-offer-from-sibling`",
-            "`fidl.test.components.Trigger` was not exposed to `root/routing-tests/offers-to-children-unavailable`",
-            "from `#child-that-doesnt-expose`"
+            "cannot offer protocol fidl.test.components.Trigger from child child-that-doesnt-expose at root/routing-tests/offers-to-children-unavailable because child child-that-doesnt-expose does not expose the capability",
         ]],
     );
     treasure.insert(
@@ -72,8 +68,7 @@ async fn main() {
             "Optional",
             "protocol `fidl.test.components.Trigger`",
             "not available for target `child-for-offer-from-sibling`",
-            "`fidl.test.components.Trigger` was not exposed to `root/routing-tests/offers-to-children-unavailable-but-optional`",
-            "from `#child-that-doesnt-expose`"
+            "cannot offer protocol fidl.test.components.Trigger from child child-that-doesnt-expose at root/routing-tests/offers-to-children-unavailable-but-optional because child child-that-doesnt-expose does not expose the capability",
         ]],
     );
     treasure.insert(
@@ -98,9 +93,10 @@ async fn main() {
     );
 
     if let Ok(mut results) = reader.snapshot_then_subscribe() {
-        while let Some(Ok(log_record)) = results.next().await {
+        while let Some(Ok(log_record)) =
+            results.next().on_timeout(std::time::Duration::from_millis(5000), || None).await
+        {
             if let Some(log_str) = log_record.msg() {
-                info!("Log from {}: {}", log_record.moniker, log_str);
                 match treasure.get_mut(&log_record.moniker) {
                     None => non_matching_logs.push(log_record),
                     Some(log_fingerprints) => {
@@ -143,9 +139,20 @@ async fn main() {
         }
     }
 
-    panic!(
-        "One or more logs were not found, remaining fingerprints: {:?}\n\n
-        These log records were read, but did not match any fingerprints: {:?}",
-        treasure, non_matching_logs
-    );
+    if !treasure.is_empty() {
+        info!("One or more logs that we expected were not found. These were missing:");
+        for (moniker, fingerprint) in treasure {
+            info!("- from {moniker}: {fingerprint:?}");
+        }
+        info!("\n");
+    }
+
+    if !non_matching_logs.is_empty() {
+        info!("One or more logs were read that were unexpected. These were found:");
+        for log in non_matching_logs {
+            info!("- from {}: {:?}", log.moniker, log.msg());
+        }
+    }
+
+    panic!("observed logs did not match expectations");
 }

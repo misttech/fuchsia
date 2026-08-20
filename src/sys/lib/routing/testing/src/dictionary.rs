@@ -312,7 +312,6 @@ impl<T: RoutingTestModelBuilder> CommonDictionaryTest<T> {
     }
 
     pub async fn test_use_directory_from_dictionary(&self) {
-        // Routing a directory into a dictionary isn't supported yet, it should fail.
         let components = vec![
             (
                 "root",
@@ -1856,6 +1855,7 @@ impl<T: RoutingTestModelBuilder> CommonDictionaryTest<T> {
                     .dictionary_default("required_dict")
                     .dictionary_default("optional_dict")
                     .dictionary_default("nested")
+                    .dictionary_default("dict")
                     .dictionary_default("dict_with_optional_nested")
                     .offer(
                         OfferBuilder::protocol()

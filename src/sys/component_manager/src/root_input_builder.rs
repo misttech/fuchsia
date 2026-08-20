@@ -3,17 +3,16 @@
 // found in the LICENSE file.
 
 use crate::builtin::runner::BuiltinRunner;
+use crate::model::component::WeakComponentInstance;
 use crate::model::component::manager::ComponentManagerInstance;
-use crate::model::component::{ComponentInstance, WeakComponentInstance};
 use crate::model::resolver::Resolver;
-use crate::model::routing::RoutingFailureErrorReporter;
 use crate::sandbox_util::{LaunchTaskOnReceive, take_handle_as_stream};
 use ::routing::bedrock::dict_ext::DictExt;
 use ::routing::bedrock::structured_dict::ComponentInput;
-use ::routing::bedrock::with_porcelain::WithPorcelain;
-use ::routing::error::{ErrorReporter, RouteRequestErrorInfo};
+use ::routing::error::RoutingError;
 use ::routing::policy::{GlobalPolicyChecker, ScopedPolicyChecker};
 use ::routing::resolving::ComponentAddress;
+use ::routing::rights::validate_rights;
 use anyhow::format_err;
 use async_trait::async_trait;
 use capability_source::{
@@ -21,7 +20,7 @@ use capability_source::{
     InternalEventStreamCapability, NamespaceSource,
 };
 use cm_config::{RuntimeConfig, SecurityPolicy};
-use cm_rust::{Availability, CapabilityTypeName, FidlIntoNative};
+use cm_rust::FidlIntoNative;
 use cm_types::{Name, RelativePath, Url};
 use fidl::endpoints::{DiscoverableProtocolMarker, ProtocolMarker, ServerEnd};
 use fidl_fuchsia_component_internal as finternal;
@@ -32,6 +31,7 @@ use futures::future::BoxFuture;
 use futures::{FutureExt, TryStreamExt, future};
 use hooks::EventType;
 use log::warn;
+use moniker::ExtendedMoniker;
 use router_error::RouterError;
 use runtime_capabilities::{
     Capability, Data, Dictionary, DirConnector, Routable, Router, WeakInstanceToken,
@@ -47,7 +47,6 @@ pub struct RootInputBuilder {
     security_policy: Arc<SecurityPolicy>,
     policy_checker: GlobalPolicyChecker,
     builtin_capabilities: Vec<cm_rust::CapabilityDecl>,
-    top_instance: Arc<ComponentManagerInstance>,
 }
 
 impl RootInputBuilder {
@@ -57,7 +56,6 @@ impl RootInputBuilder {
     ) -> Self {
         Self {
             input: ComponentInput::default(),
-            top_instance: top_instance.clone(),
             scope: top_instance.execution_scope().as_weak(),
             security_policy: runtime_config.security_policy.clone(),
             policy_checker: GlobalPolicyChecker::new(runtime_config.security_policy.clone()),
@@ -121,15 +119,6 @@ impl RootInputBuilder {
         );
 
         let router = launch.into_router();
-        let router = WithPorcelain::<_, _, ComponentInstance>::with_porcelain_no_default(
-            router,
-            CapabilityTypeName::Protocol,
-        )
-        .availability(Availability::Required)
-        .target_above_root(&self.top_instance)
-        .error_info(RouteRequestErrorInfo::for_builtin(CapabilityTypeName::Protocol, &name))
-        .error_reporter(NullErrorReporter {})
-        .build();
         let prev = self.input.insert_capability(&name, router.into());
         if prev.is_some() {
             warn!(
@@ -168,18 +157,6 @@ impl RootInputBuilder {
             }),
         );
         let router = launch.into_router();
-        let router = WithPorcelain::<_, _, ComponentInstance>::with_porcelain_no_default(
-            router,
-            CapabilityTypeName::Protocol,
-        )
-        .availability(Availability::Required)
-        .target_above_root(&self.top_instance)
-        .error_info(RouteRequestErrorInfo::for_builtin(
-            CapabilityTypeName::Protocol,
-            &protocol.name,
-        ))
-        .error_reporter(NullErrorReporter {})
-        .build();
         let prev = self.input.insert_capability(&protocol.name, router.into());
         if prev.is_some() {
             warn!(
@@ -193,16 +170,27 @@ impl RootInputBuilder {
         struct NamespaceDirectoryRouter {
             path: cm_types::Path,
             capability_source: CapabilitySource,
+            rights: fio::Operations,
         }
         #[async_trait]
         impl Routable<DirConnector> for NamespaceDirectoryRouter {
             async fn route(
                 &self,
-                request: RouteRequest,
+                mut request: RouteRequest,
                 _target: Arc<WeakInstanceToken>,
             ) -> Result<Option<Arc<DirConnector>>, RouterError> {
-                let rights: ::routing::rights::Rights =
-                    request.directory_rights.ok_or(RouterError::InvalidArgs)?.into();
+                validate_rights(
+                    self.capability_source.source_moniker(),
+                    self.rights,
+                    &mut request,
+                )?;
+                let rights: ::routing::rights::Rights = request
+                    .directory_rights
+                    .ok_or_else(|| RoutingError::RouteRequestMissingField {
+                        moniker: ExtendedMoniker::ComponentManager,
+                        missing_field: "directory_rights".to_string(),
+                    })?
+                    .into();
                 let subdir: ::routing::subdir::SubDir = request
                     .sub_directory_path
                     .map(|s| ::routing::subdir::SubDir::new(s).expect("invalid path"))
@@ -260,19 +248,11 @@ impl RootInputBuilder {
         let capability_source = CapabilitySource::Namespace(NamespaceSource {
             capability: ComponentCapability::Directory(directory.clone()),
         });
-        let router = Router::new(NamespaceDirectoryRouter { path, capability_source });
-        let router = WithPorcelain::<_, _, ComponentInstance>::with_porcelain_no_default(
-            router,
-            CapabilityTypeName::Directory,
-        )
-        .availability(Availability::Required)
-        .rights(Some(directory.rights.into()))
-        .target_above_root(&self.top_instance)
-        .error_info(RouteRequestErrorInfo::from(&cm_rust::CapabilityDecl::Directory(
-            directory.clone(),
-        )))
-        .error_reporter(RoutingFailureErrorReporter::new())
-        .build();
+        let router = Router::new(NamespaceDirectoryRouter {
+            path,
+            capability_source,
+            rights: directory.rights,
+        });
         let prev = self.input.insert_capability(&directory.name, router.into());
         assert!(prev.is_none(), "failed to add directory {} to root input", directory.name);
     }
@@ -364,18 +344,6 @@ impl RootInputBuilder {
             .expect("invalid resolver name, this should be prevented by manifest_validation");
 
         let r = launch.into_router();
-        let r = WithPorcelain::<_, _, ComponentInstance>::with_porcelain_no_default(
-            r,
-            CapabilityTypeName::Resolver,
-        )
-        .availability(Availability::Required)
-        .target_above_root(&self.top_instance)
-        .error_info(RouteRequestErrorInfo::for_builtin(
-            CapabilityTypeName::Resolver,
-            &resolver_name,
-        ))
-        .error_reporter(NullErrorReporter {})
-        .build();
         let prev = self.input.capabilities().insert_capability(&resolver_name, r.clone().into());
         assert!(prev.is_none(), "failed to add resolver {} to root input", resolver_name);
         let prev =
@@ -426,15 +394,6 @@ impl RootInputBuilder {
         );
 
         let r = launch.into_router();
-        let r = WithPorcelain::<_, _, ComponentInstance>::with_porcelain_no_default(
-            r,
-            CapabilityTypeName::Runner,
-        )
-        .availability(Availability::Required)
-        .target_above_root(&self.top_instance)
-        .error_info(RouteRequestErrorInfo::for_builtin(CapabilityTypeName::Runner, &name))
-        .error_reporter(NullErrorReporter {})
-        .build();
         let prev = self.input.capabilities().insert_capability(&name, r.clone().into());
         assert!(prev.is_none(), "failed to add runner {name} to root input");
         if add_to_env {
@@ -498,18 +457,5 @@ impl RootInputBuilder {
 
     pub fn build(self) -> ComponentInput {
         self.input
-    }
-}
-
-#[derive(Clone)]
-struct NullErrorReporter {}
-#[async_trait]
-impl ErrorReporter for NullErrorReporter {
-    async fn report(
-        &self,
-        _: &RouteRequestErrorInfo,
-        _: &RouterError,
-        _: Arc<runtime_capabilities::WeakInstanceToken>,
-    ) {
     }
 }

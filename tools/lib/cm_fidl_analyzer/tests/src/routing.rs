@@ -21,7 +21,7 @@ use cm_fidl_analyzer::component_model::{
 use cm_fidl_analyzer::route::{TargetDecl, VerifyRouteResult};
 use cm_rust::*;
 use cm_rust_testing::*;
-use cm_types::{IterablePath, Url};
+use cm_types::{IterablePath, RelativePath, Url};
 use fidl::prelude::*;
 use fidl_fuchsia_component as fcomponent;
 use fidl_fuchsia_component_decl as fdecl;
@@ -34,7 +34,7 @@ use moniker::Moniker;
 use router_error::Explain;
 use routing::component_instance::ComponentInstanceInterface;
 use routing::debug_route_sandbox_path;
-use routing::error::RoutingError;
+use routing::error::{PrettyPrintRef, RouteVerb, RoutingError};
 use routing_test_helpers::{
     CheckUse, ComponentEventRoute, ExpectedResult, RoutingTestModel, RoutingTestModelBuilder,
     ServiceInstance,
@@ -1086,14 +1086,20 @@ mod tests {
         assert_matches!(
             check_result.error,
             Some(AnalyzerModelError::RoutingError(
-                    RoutingError::UseFromEnvironmentNotFound {
+                RoutingError::RouteSourceNotFound {
                     moniker,
+                    verb,
+                    source,
                     capability_type,
                     capability_name,
-            }))
-                if moniker == *b_component.moniker() &&
-                capability_type == "runner" &&
-                capability_name == "hobbit"
+                    ..
+                }
+            ))
+                if &format!("{capability_name}") == "hobbit"
+                    && moniker == *b_component.moniker()
+                    && capability_type == CapabilityTypeName::Runner
+                    && verb == RouteVerb::Use
+                    && source == PrettyPrintRef::Environment
         );
     }
 
@@ -2040,13 +2046,14 @@ mod tests {
                 using_node: Moniker::parse_str("b").unwrap(),
                 target_decl: TargetDecl::Expose(expose_protocol_decl.clone()),
                 capability: Some("bad_protocol".parse().unwrap()),
-                error: Some(AnalyzerModelError::RoutingError(
-                    RoutingError::ExposeFromChildExposeNotFound {
-                        capability_id: "bad_protocol".to_string(),
-                        child_moniker: "c".try_into().unwrap(),
-                        moniker: b_component.moniker().clone(),
-                    },
-                )),
+                error: Some(AnalyzerModelError::RoutingError(RoutingError::RouteSourceNotFound {
+                    moniker: "b".parse().unwrap(),
+                    verb: RouteVerb::Expose,
+                    counter_verb: RouteVerb::Expose,
+                    source: PrettyPrintRef::Child("c".parse().unwrap()),
+                    capability_type: CapabilityTypeName::Protocol,
+                    capability_name: RelativePath::new("bad_protocol").unwrap(),
+                })),
                 source: None,
             }],
         );
@@ -2181,9 +2188,13 @@ mod tests {
                     target_decl: TargetDecl::Offer(offer_protocol_decl3.clone()),
                     capability: Some("protocol_not_exists".parse().unwrap()),
                     error: Some(AnalyzerModelError::RoutingError(
-                        RoutingError::OfferFromParentNotFound {
+                        RoutingError::RouteSourceNotFound {
                             moniker: "b".parse().unwrap(),
-                            capability_id: "protocol_not_exists".to_string(),
+                            verb: RouteVerb::Offer,
+                            counter_verb: RouteVerb::Offer,
+                            source: PrettyPrintRef::Parent,
+                            capability_type: CapabilityTypeName::Protocol,
+                            capability_name: RelativePath::new("protocol_not_exists").unwrap(),
                         }
                     )),
                     source: None,
@@ -2265,9 +2276,13 @@ mod tests {
                     target_decl: TargetDecl::Offer(offer_dictionary_decl3.clone()),
                     capability: Some("dict_not_exists".parse().unwrap()),
                     error: Some(AnalyzerModelError::RoutingError(
-                        RoutingError::OfferFromParentNotFound {
+                        RoutingError::RouteSourceNotFound {
                             moniker: "b".parse().unwrap(),
-                            capability_id: "dict_not_exists".to_string(),
+                            verb: RouteVerb::Offer,
+                            counter_verb: RouteVerb::Offer,
+                            source: PrettyPrintRef::Parent,
+                            capability_type: CapabilityTypeName::Dictionary,
+                            capability_name: RelativePath::new("dict_not_exists").unwrap(),
                         }
                     )),
                     source: None,

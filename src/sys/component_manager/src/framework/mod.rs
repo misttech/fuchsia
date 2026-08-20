@@ -66,15 +66,27 @@ impl Routable<Dictionary> for FrameworkRouter {
             .downcast_ref::<WeakExtendedInstance>()
             .ok_or(RouterError::Unknown)?;
         let component = match target {
-            WeakExtendedInstance::Component(c) => c,
-            WeakExtendedInstance::AboveRoot(_) => {
-                return Err(RouterError::InvalidArgs);
+            WeakExtendedInstance::Component(c) if c.moniker == self.scope => c,
+            WeakExtendedInstance::AboveRoot(_) | WeakExtendedInstance::Component(_) => {
+                // Note that framework dictionaries are currently _always_ routed with the `target`
+                // set to the component whose sandbox owns this dictionary, and thus two invariants
+                // will always hold:
+                //
+                // - `target` will always be a `WeakExtendedInstance::Component`
+                // - the moniker for `target` will match `self.scope`
+                //
+                // If either of the above two invariants are broken, then there's been changes to
+                // the logic where framework dictionaries are routed. We use a panic here to try to
+                // make the bugs that change would cause louder and more immediately obvious to
+                // whoever is making those changes, so that they can either put back the previous
+                // logic or rewrite the logic here to match the new behavior.
+                panic!(
+                    "framework dictionary target is unexpected for scope {}: {target:?}",
+                    self.scope
+                );
             }
         };
         let component = component.upgrade().map_err(RoutingError::from)?;
-        if component.moniker != self.scope {
-            return Err(RouterError::InvalidArgs);
-        }
 
         let framework_dictionary = Dictionary::new();
         add_protocol::<fcomponent::BinderMarker>(&component, &framework_dictionary, binder::serve);

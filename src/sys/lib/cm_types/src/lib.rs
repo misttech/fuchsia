@@ -6,6 +6,8 @@
 //! (`.cml` files and binary `.cm` files). These types come with `serde` serialization
 //! and deserialization implementations that perform the required validation.
 
+use fidl_fuchsia_component_decl as fdecl;
+use fidl_fuchsia_io as fio;
 use flyweights::FlyStr;
 use serde::{Deserialize, Serialize, de, ser};
 use std::borrow::Borrow;
@@ -18,7 +20,6 @@ use std::str::FromStr;
 use std::sync::LazyLock;
 use std::{cmp, iter};
 use thiserror::Error;
-use {fidl_fuchsia_component_decl as fdecl, fidl_fuchsia_io as fio};
 
 /// A default base URL from which to parse relative component URL
 /// components.
@@ -900,6 +901,10 @@ impl RelativePath {
         } else {
             self.rep.split('/').map(|s| BorrowedName::new_unchecked(s)).collect()
         }
+    }
+
+    pub fn len(&self) -> usize {
+        if self.is_dot() { 0 } else { self.rep.split('/').count() }
     }
 
     pub fn basename(&self) -> Option<&BorrowedName> {

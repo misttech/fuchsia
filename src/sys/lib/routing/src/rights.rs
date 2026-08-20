@@ -2,9 +2,11 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::error::RightsRoutingError;
+use crate::error::{RightsRoutingError, RoutingError};
+use fidl_fuchsia_component_runtime::RouteRequest;
 use fidl_fuchsia_io as fio;
 use moniker::ExtendedMoniker;
+use router_error::RouterError;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize, de::Deserializer, ser::Serializer};
 use std::fmt;
@@ -101,6 +103,39 @@ impl<'de> Deserialize<'de> for Rights {
             .ok_or_else(|| serde::de::Error::custom("invalid value for fuchsia.io/Operations"))?;
         Ok(Self(rights))
     }
+}
+
+pub fn validate_rights(
+    moniker: ExtendedMoniker,
+    allowed_rights: fio::Operations,
+    request: &mut RouteRequest,
+) -> Result<(), RouterError> {
+    let allowed_rights = Rights::from(allowed_rights);
+    let inherit = request.inherit_rights.ok_or_else(|| RoutingError::RouteRequestMissingField {
+        moniker: moniker.clone(),
+        missing_field: "inherit_rights".to_string(),
+    })?;
+    let request_rights: Rights = match request.directory_rights {
+        Some(request_rights) => request_rights.into(),
+        None => {
+            if inherit {
+                request.directory_rights = Some(fio::Flags::from(allowed_rights));
+                allowed_rights
+            } else {
+                Err(RoutingError::RouteRequestMissingField {
+                    moniker: moniker.clone(),
+                    missing_field: "directory_rights".to_string(),
+                })?
+            }
+        }
+    };
+    request_rights.validate_next(&allowed_rights, moniker.clone()).map_err(RoutingError::from)?;
+    if let Some(intermediate_rights) = request.directory_intermediate_rights {
+        Rights::from(intermediate_rights)
+            .validate_next(&allowed_rights, moniker)
+            .map_err(|e| router_error::RouterError::from(RoutingError::from(e)))?;
+    };
+    Ok(())
 }
 
 #[cfg(test)]

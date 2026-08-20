@@ -15,7 +15,7 @@ use cm_rust::offer::OfferDecl;
 use cm_rust::{CapabilityDecl, CollectionDecl, ComponentDecl, ExposeDecl, UseDecl};
 use cm_types::{Name, Url};
 use config_encoder::ConfigFields;
-use fuchsia_sync::RwLock;
+use fuchsia_sync::{Mutex, RwLock};
 use moniker::{BorrowedChildName, ChildName, Moniker};
 use router_error::RouterError;
 use routing::bedrock::program_output_dict::build_program_output_dictionary;
@@ -42,7 +42,9 @@ pub struct ComponentInstanceForAnalyzer {
     pub(crate) children: RwLock<HashMap<ChildName, Arc<Self>>>,
     policy_checker: GlobalPolicyChecker,
     component_id_index: Arc<component_id_index::Index>,
-    pub(crate) sandbox: ComponentSandbox,
+    // A mutex is used here so that we can initialize a `ComponentSandbox::default()` value and
+    // then overwrite that value once `build_component_sandbox` has been called.
+    pub(crate) sandbox: Mutex<ComponentSandbox>,
 }
 
 impl ComponentInstanceForAnalyzer {
@@ -63,8 +65,7 @@ impl ComponentInstanceForAnalyzer {
         dynamic_dictionaries: Arc<DynamicDictionaryConfig>,
     ) -> Arc<Self> {
         let moniker = Moniker::root();
-        let root_component_input =
-            build_root_component_input(&runtime_config, &top_instance, &policy);
+        let root_component_input = build_root_component_input(&runtime_config, &policy);
         let parent = WeakExtendedInstanceInterface::from(&ExtendedInstanceInterface::AboveRoot(
             top_instance,
         ));
@@ -100,6 +101,7 @@ impl ComponentInstanceForAnalyzer {
         let input = if let Some(collection_name) = child.child_moniker.collection() {
             let input = parent
                 .sandbox
+                .lock()
                 .collection_inputs
                 .get(collection_name)
                 .expect("missing collection input");
@@ -107,6 +109,7 @@ impl ComponentInstanceForAnalyzer {
         } else {
             parent
                 .sandbox
+                .lock()
                 .child_inputs
                 .get(
                     &cm_types::Name::new(child.child_moniker.name().as_str())
@@ -150,7 +153,7 @@ impl ComponentInstanceForAnalyzer {
             children: RwLock::new(HashMap::new()),
             policy_checker,
             component_id_index,
-            sandbox: Default::default(),
+            sandbox: Mutex::new(Default::default()),
         });
         let children_component_output_dictionary_routers =
             static_children_component_output_dictionary_routers(&self_, &decl);
@@ -189,7 +192,7 @@ impl ComponentInstanceForAnalyzer {
             &new_aggregate_router,
             &new_event_stream_multiplexing_router,
         );
-        self_.sandbox.append(&sandbox);
+        *self_.sandbox.lock() = sandbox;
         self_
     }
 
@@ -275,7 +278,7 @@ impl ComponentInstanceInterface for ComponentInstanceForAnalyzer {
     async fn component_sandbox(
         self: &Arc<Self>,
     ) -> Result<ComponentSandbox, ComponentInstanceError> {
-        Ok(self.sandbox.clone())
+        Ok(self.sandbox.lock().clone())
     }
 }
 

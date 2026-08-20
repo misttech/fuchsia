@@ -34,11 +34,12 @@ use ::routing::component_instance::{
     ComponentInstanceInterface, ResolvedInstanceInterface, ResolvedInstanceInterfaceExt,
     WeakComponentInstanceInterface,
 };
-use ::routing::error::{ComponentInstanceError, RouteRequestErrorInfo, RoutingError};
+use ::routing::error::{ComponentInstanceError, RoutingError};
 use ::routing::error_logging_router::ErrorLoggingRouter;
 use ::routing::resolving::{ComponentAddress, ComponentResolutionContext, ResolverError};
+use ::routing::rights::validate_rights;
 use ::routing::subdir::SubDir;
-use ::routing::{DictExt, WeakInstanceTokenExt, WithPorcelain};
+use ::routing::{DictExt, WeakInstanceTokenExt};
 use async_trait::async_trait;
 use async_utils::async_once::Once;
 use capability_source::{
@@ -49,8 +50,8 @@ use cm_fidl_validator::error::{DeclType, Error as ValidatorError};
 use cm_graph::DependencyNode;
 use cm_rust::offer::{OfferDecl, OfferDeclCommon};
 use cm_rust::{
-    Availability, CapabilityDecl, CapabilityTypeName, ChildDecl, CollectionDecl, ComponentDecl,
-    DeliveryType, FidlIntoNative, NativeIntoFidl, UseDecl, UseProtocolDecl,
+    CapabilityDecl, CapabilityTypeName, ChildDecl, CollectionDecl, ComponentDecl, DeliveryType,
+    FidlIntoNative, NativeIntoFidl, UseDecl, UseProtocolDecl,
 };
 use cm_types::{AllowedOffers, Name, Path, RelativePath};
 use config_encoder::ConfigFields;
@@ -766,22 +767,12 @@ impl ResolvedInstanceState {
             }),
             _ => panic!("unsupported capability type for DirConnector"),
         };
-        let router = Router::new(DirConnectorOutgoingRouter {
+        Router::new(DirConnectorOutgoingRouter {
             source_component: component.as_weak(),
             capability_source,
             path,
-        });
-        WithPorcelain::<_, _, ComponentInstance>::with_porcelain_no_default(
-            router,
-            capability_decl.into(),
-        )
-        .availability(Availability::Required)
-        .rights(Some(rights.into()))
-        .inherit_rights(false)
-        .target(component)
-        .error_info(RouteRequestErrorInfo::from(capability_decl))
-        .error_reporter(RoutingFailureErrorReporter::new())
-        .build()
+            rights,
+        })
     }
 
     /// Returns a reference to the component's validated declaration.
@@ -920,10 +911,26 @@ impl ResolvedInstanceState {
         let create_exposed_dict = async || {
             let dict = Dictionary::new();
             for (key, value) in self.sandbox.component_output.capabilities().enumerate() {
-                let error_info = value.error_info().expect("router missing error info");
+                let error_info_res = value.error_info();
+                if error_info_res.is_none() {
+                    log::error!(
+                        "missing error info for {value:?} that has capability source {:?}",
+                        match &value {
+                            Capability::ConnectorRouter(r) =>
+                                r.route_debug(Default::default(), self_target.clone()).await,
+                            Capability::DirConnectorRouter(r) =>
+                                r.route_debug(Default::default(), self_target.clone()).await,
+                            Capability::DictionaryRouter(r) =>
+                                r.route_debug(Default::default(), self_target.clone()).await,
+                            Capability::DataRouter(r) =>
+                                r.route_debug(Default::default(), self_target.clone()).await,
+                            _ => panic!("not a router??"),
+                        }
+                    );
+                }
                 let error_logging_router = ErrorLoggingRouter::new(
                     value,
-                    error_info,
+                    error_info_res.expect("missing error info"),
                     RoutingFailureErrorReporter::new(),
                     self_target.clone(),
                 );
@@ -983,7 +990,8 @@ impl ResolvedInstanceState {
 
         // Delete any dynamic offers whose source or target matches the component we're deleting.
         Arc::make_mut(&mut self.resolved_component.dependencies)
-            .retain(|a, b| !matches(a, moniker) && !matches(b, moniker))
+            .retain(|a, b| !matches(a, moniker) && !matches(b, moniker));
+        self.sandbox.child_outputs.lock().remove(moniker);
     }
 
     /// Adds a new child component instance.
@@ -1026,20 +1034,13 @@ impl ResolvedInstanceState {
         let child_name =
             ChildName::try_new(child.name.as_str(), collection.map(|c| c.name.as_str()))?;
 
-        let child_component_output_dictionary_routers =
-            self.get_child_component_output_dictionary_routers();
         if !dynamic_offers.is_empty() {
             extend_dict_with_offers(
                 &component,
+                &self.sandbox,
                 &self.offer_decls,
-                &child_component_output_dictionary_routers,
-                &self.sandbox.component_input,
                 &dynamic_offers,
-                &self.sandbox.program_output_dict,
-                &self.sandbox.framework_router(),
-                &self.sandbox.capability_sourced_capabilities_dict,
                 &child_input,
-                RoutingFailureErrorReporter::new(),
                 &AggregateRouter::new,
             );
         }
@@ -1072,7 +1073,8 @@ impl ResolvedInstanceState {
             component.persistent_storage_for_child(collection),
         )
         .await;
-        self.children.insert(child_name, child.clone());
+        self.children.insert(child_name.clone(), child.clone());
+        self.sandbox.child_outputs.lock().insert(child_name, child.component_output());
 
         Arc::make_mut(&mut self.resolved_component.dependencies).extend(
             dynamic_offers.into_iter().map(NativeIntoFidl::native_into_fidl).filter_map(|o| {
@@ -1527,23 +1529,39 @@ struct DirConnectorOutgoingRouter {
     source_component: WeakComponentInstance,
     capability_source: CapabilitySource,
     path: vfs::path::Path,
+    rights: fio::Operations,
 }
 
 #[async_trait]
 impl Routable<DirConnector> for DirConnectorOutgoingRouter {
     async fn route(
         &self,
-        request: RouteRequest,
+        mut request: RouteRequest,
         _target: Arc<WeakInstanceToken>,
     ) -> Result<Option<Arc<DirConnector>>, RouterError> {
+        validate_rights(self.source_component.moniker.clone().into(), self.rights, &mut request)
+            .map_err(|e| {
+                log::warn!("validate_rights failed on request {request:?}");
+                e
+            })?;
+
         let subdir = request
             .sub_directory_path
             .map(|s| RelativePath::new(s).expect("invalid path"))
             .unwrap_or_else(|| RelativePath::dot());
-        let subdir = vfs::path::Path::validate_and_split(subdir.to_string())
-            .map_err(|_| RouterError::InvalidArgs)?;
+        let subdir = vfs::path::Path::validate_and_split(format!("{}", subdir)).map_err(|e| {
+            RoutingError::RouteRequestFailedToParseField {
+                moniker: self.source_component.moniker.clone().into(),
+                field: "sub_directory_path".to_string(),
+                parse_error: format!("{e:?}"),
+            }
+        })?;
         let path = subdir.with_prefix(&self.path);
-        let flags = request.directory_rights.ok_or(RouterError::InvalidArgs)?;
+        let flags =
+            request.directory_rights.ok_or_else(|| RoutingError::RouteRequestMissingField {
+                moniker: self.source_component.moniker.clone().into(),
+                missing_field: "directory_rights".to_string(),
+            })?;
         let source_component = self.source_component.upgrade().map_err(RoutingError::from)?;
         let path = if let Some(isolated_storage_path) = request.isolated_storage_path {
             let isolated_storage_path =
