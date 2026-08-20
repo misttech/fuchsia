@@ -18,6 +18,9 @@ pub type AgeReason = bindings::PageQueues_AgeReason;
 /// otherwise have to be moved from the old LRU queue into the isolate queue.
 pub type LruAction = bindings::PageQueues_LruAction;
 
+/// Helper struct to group queue length counts returned by [`PageQueues::queue_counts`].
+pub use bindings::PageQueues_Counts as Counts;
+
 #[derive(Debug)]
 pub struct QueueAge(pub usize);
 
@@ -121,6 +124,19 @@ impl PageQueues {
         }
     }
 
+    /// Returns whether `page` is in the reclaim isolate queue.
+    ///
+    /// # Safety
+    ///
+    /// The caller must guarantee `page` is attached to a VM object.
+    pub unsafe fn debug_page_is_reclaim_isolate(&self, page: VmPagePtr) -> bool {
+        // SAFETY: `self` is valid for required accesses, and the caller guarantees `page` is
+        // attached to a VM object per function safety preconditions.
+        unsafe {
+            bindings::cpp_page_queues_debug_page_is_reclaim_isolate(self.as_raw(), page.as_raw())
+        }
+    }
+
     /// Returns `Some(QueueAge)` if `page` is currently in a reclaim queue, or `None` if it is not.
     ///
     /// # Safety
@@ -140,5 +156,36 @@ impl PageQueues {
     pub fn rotate_reclaim_queues(&self) {
         // SAFETY: `self.as_raw()` returns a valid `PageQueues` pointer.
         unsafe { bindings::cpp_page_queues_rotate_reclaim_queues(self.as_raw()) }
+    }
+
+    /// Returns the counts of pages in the various queues.
+    pub fn queue_counts(&self) -> Counts {
+        let mut counts = core::mem::MaybeUninit::uninit();
+        // SAFETY: `self.as_raw()` returns a valid `PageQueues` pointer, and `counts` is valid for
+        // writing.
+        unsafe {
+            bindings::cpp_page_queues_queue_counts(self.as_raw(), counts.as_mut_ptr());
+        }
+        // SAFETY: `cpp_page_queues_queue_counts` certainly wrote out `counts`.
+        unsafe { counts.assume_init() }
+    }
+
+    /// Returns true if `page` is in an isolate queue.
+    ///
+    /// # Safety
+    ///
+    /// The caller must guarantee `page` is attached to a VM object.
+    pub unsafe fn is_page_reclaimable(page: VmPagePtr) -> bool {
+        // SAFETY: The caller guarantees `page` is attached to a VM object.
+        unsafe { bindings::cpp_page_queues_is_page_reclaimable(page.as_raw()) }
+    }
+
+    /// # Safety
+    ///
+    /// The caller must guarantee `page` is attached to a VM object.
+    pub unsafe fn move_to_reclaim_dont_need(&self, page: VmPagePtr) {
+        // SAFETY: `self` is valid for required accesses, and the caller guarantees `page` is
+        // attached to a VM object per function safety preconditions.
+        unsafe { bindings::cpp_page_queues_move_to_reclaim_dont_need(self.as_raw(), page.as_raw()) }
     }
 }

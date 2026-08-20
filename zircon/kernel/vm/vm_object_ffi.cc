@@ -172,4 +172,28 @@ FFI_ALWAYS_INLINE zx_status_t cpp_vm_object_zero_range(VmObject* vmo, uint64_t o
   return vmo->ZeroRange(offset, len);
 }
 
+FFI_ALWAYS_INLINE zx_status_t cpp_vm_object_dirty_pages(VmObject* vmo, uint64_t offset,
+                                                        uint64_t len) {
+  return vmo->DirtyPages(offset, len);
+}
+
+FFI_ALWAYS_INLINE zx_status_t cpp_vm_object_writeback_begin(VmObject* vmo, uint64_t offset,
+                                                            uint64_t len, bool is_zero_range) {
+  return vmo->WritebackBegin(offset, len, is_zero_range);
+}
+
+FFI_ALWAYS_INLINE zx_status_t cpp_vm_object_writeback_end(VmObject* vmo, uint64_t offset,
+                                                          uint64_t len) {
+  return vmo->WritebackEnd(offset, len);
+}
+
+FFI_ALWAYS_INLINE uint64_t cpp_vm_object_reclamation_event_count(const VmObject* vmo) {
+  return vmo->ReclamationEventCount();
+}
+
+FFI_ALWAYS_INLINE void cpp_vm_object_get_attributed_memory_in_range(
+    const VmObject* vmo, uint64_t offset, uint64_t len, vm::AttributionCounts* out_counts) {
+  *out_counts = vmo->GetAttributedMemoryInRange(offset, len);
+}
+
 }  // extern "C"

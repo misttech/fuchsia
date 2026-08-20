@@ -487,6 +487,24 @@ impl VmObject {
         unsafe { counts.assume_init() }
     }
 
+    /// Returns the number of physical bytes currently attributed to a range of this VMO.
+    /// The range is `[offset, offset + len)`.
+    pub fn get_attributed_memory_in_range(&self, offset: u64, len: u64) -> AttributionCounts {
+        let mut counts = core::mem::MaybeUninit::uninit();
+        // SAFETY: `self.as_raw()` points to a live `VmObject`, and `counts` is valid for writing.
+        unsafe {
+            bindings::cpp_vm_object_get_attributed_memory_in_range(
+                self.as_raw(),
+                offset,
+                len,
+                counts.as_mut_ptr(),
+            );
+        }
+        // SAFETY: `cpp_vm_object_get_attributed_memory_in_range` certainly wrote out the
+        // attribution counts.
+        unsafe { counts.assume_init() }
+    }
+
     /// Read/write operators against kernel pointers only.
     /// May block on user pager requests and must be called without locks held.
     ///
@@ -517,6 +535,48 @@ impl VmObject {
         // SAFETY: `self.as_raw()` points to a live `VmObject`.
         let status = unsafe { bindings::cpp_vm_object_zero_range(self.as_raw(), offset, len) };
         Status::ok(status)
+    }
+
+    /// Dirties pages in the vmo in the range [offset, offset + len).
+    pub fn dirty_pages(&self, offset: u64, len: u64) -> Result<(), Status> {
+        // SAFETY: `self.as_raw()` points to a live `VmObject`.
+        let status = unsafe { bindings::cpp_vm_object_dirty_pages(self.as_raw(), offset, len) };
+        Status::ok(status)
+    }
+
+    /// Indicates start of writeback for the range [offset, offset + len). Any [`Dirty`] pages in
+    /// the range are transitioned to [`AwaitingClean`], in preparation for transition to [`Clean`]
+    /// when the writeback is done (See [`VmCowPages::DirtyState`] for details of these states).
+    /// `offset` and `len` must be page aligned. `is_zero_range` specifies whether the caller
+    /// intends to write back the specified range as zeros.
+    pub fn writeback_begin(
+        &self,
+        offset: u64,
+        len: u64,
+        is_zero_range: bool,
+    ) -> Result<(), Status> {
+        // SAFETY: `self.as_raw()` points to a live `VmObject`.
+        let status = unsafe {
+            bindings::cpp_vm_object_writeback_begin(self.as_raw(), offset, len, is_zero_range)
+        };
+        Status::ok(status)
+    }
+
+    /// Indicates end of writeback for the range [offset, offset + len). Any [`AwaitingClean`] pages
+    /// in the range are transitioned to [`Clean`] (See [`VmCowPages::DirtyState`] for details of
+    /// these states). `offset` and `len` must be page aligned.
+    pub fn writeback_end(&self, offset: u64, len: u64) -> Result<(), Status> {
+        // SAFETY: `self.as_raw()` points to a live `VmObject`.
+        let status = unsafe { bindings::cpp_vm_object_writeback_end(self.as_raw(), offset, len) };
+        Status::ok(status)
+    }
+
+    /// Number of times pages have been evicted over the lifetime of this VMO. Evicted counts for
+    /// any decommit style event such as user pager eviction or zero page merging. One eviction
+    /// event could count for multiple pages being evicted, if those pages were evicted as a group.
+    pub fn reclamation_event_count(&self) -> u64 {
+        // SAFETY: `self.as_raw()` points to a live `VmObject`.
+        unsafe { bindings::cpp_vm_object_reclamation_event_count(self.as_raw()) }
     }
 }
 

@@ -13,7 +13,9 @@ mod vmo_rs {
         ARCH_MMU_FLAG_CACHE_MASK, ARCH_MMU_FLAG_PERM_READ, ARCH_MMU_FLAG_PERM_WRITE,
         ARCH_MMU_FLAG_UNCACHED, ARCH_MMU_FLAG_UNCACHED_DEVICE,
     };
+    use crate::vm::compressor::VmCompressor;
     use crate::vm::page::VmPagePtr;
+    use crate::vm::page_queues::PageQueues;
     use crate::vm::page_source::MultiPageRequest;
     use crate::vm::physical_page_borrowing_config::ScopedLoaningEnabled;
     use crate::vm::physmap::paddr_to_physmap;
@@ -21,6 +23,7 @@ mod vmo_rs {
     use crate::vm::pmm::{self, ALLOC_FLAG_ANY, PmmOptDelayReuse, paddr_to_vm_page};
     use crate::vm::scanner::AutoVmScannerDisable;
     use crate::vm::vm_aspace::{VmAspace, vmm_flag};
+    use crate::vm::vm_cow_pages::{EvictionAction, VmCowPages, VmCowReclaimFailure};
     use crate::vm::vm_object::{EvictionHint, Resizability, SnapshotType, VmObject};
     use crate::vm::vm_object_paged::VmObjectPaged;
     use crate::vm::vm_object_physical::VmObjectPhysical;
@@ -38,8 +41,8 @@ mod vmo_rs {
     use page::SIZE as PAGE_SIZE_USIZE;
     use pin_init::stack_pin_init;
     use unittest::{
-        assert_eq, assert_false, assert_ok, assert_true, expect_eq, expect_false, expect_ne,
-        expect_ok, expect_true, unwrap_ok,
+        assert_eq, assert_false, assert_le, assert_ok, assert_true, expect_eq, expect_false,
+        expect_gt, expect_ne, expect_ok, expect_true, unwrap_ok,
     };
     use zx_status::Status;
     use zx_types::ZX_KOID_KERNEL;
@@ -107,6 +110,48 @@ mod vmo_rs {
                 .evict_loaned_page(page, offset)
         };
         status.is_ok()
+    }
+
+    /// Helper wrapper around reclaiming a page that returns the pages to the pmm.
+    ///
+    /// # Safety
+    ///
+    /// The caller must know that it is sound to reclaim `page` at `offset`.
+    unsafe fn reclaim_cow_pages(
+        cow_pages: &VmCowPages,
+        page: VmPagePtr,
+        offset: u64,
+        hint_action: EvictionAction,
+        compressor: Option<&VmCompressor>,
+    ) -> u64 {
+        // SAFETY: Caller knows it is sound to reclaim `page` at `offset`.
+        let reclaimed = unsafe { cow_pages.reclaim_page(page, offset, hint_action, compressor) };
+        if let Ok(success) = reclaimed { success.num_pages } else { 0 }
+    }
+
+    /// Simulates the reclamation thread.
+    ///
+    /// # Safety
+    ///
+    /// The caller must know that it is sound to reclaim `page` at `offset`.
+    unsafe fn reclaim(
+        vmo: &VmObjectPaged,
+        page: VmPagePtr,
+        offset: u64,
+        hint_action: EvictionAction,
+    ) -> u64 {
+        // Move to 'DontNeed' unless the page is dirty, as dirty pages should never be in the
+        // isolate queue.
+        // SAFETY: `page` is attached to `vmo`.
+        if !unsafe { pmm::page_queues().debug_page_is_pager_backed_dirty(page) } {
+            // SAFETY: `page` is attached to `vmo`.
+            unsafe {
+                pmm::page_queues().move_to_reclaim_dont_need(page);
+            }
+        }
+        let cow_pages = vmo.debug_get_cow_pages().expect("paged VMO has backing cow pages");
+        // SAFETY: Caller knows it is sound to reclaim `page` at `offset`.
+        unsafe { reclaim_cow_pages(&cow_pages, page, offset, hint_action, None) }
     }
 
     /// Creates a vm object.
@@ -1668,6 +1713,125 @@ mod vmo_rs {
         expect_eq!(child3.parent_user_id(), 42);
     }
 
+    /// Tests dirty pages with eviction hints.
+    #[test]
+    fn vmo_dirty_pages_with_hints_test() {
+        let _scanner_disable = AutoVmScannerDisable::new();
+
+        // Create a pager-backed VMO with a single page.
+        let (vmo, [page]) = unwrap_ok!(make_committed_pager_vmo(
+            /*trap_dirty=*/ true, /*resizable=*/ false
+        ));
+
+        // Newly created page should be in the first pager backed page queue.
+        // SAFETY: `page` is attached to `vmo`.
+        let queue = unsafe { pmm::page_queues().debug_page_is_reclaim(page) };
+        expect_true!(queue.is_some());
+        expect_eq!(0, queue.unwrap().0);
+
+        // Now simulate a write to the page. This should move the page to the dirty queue.
+        assert_ok!(vmo.dirty_pages(0, PAGE_SIZE));
+        // SAFETY: `page` is attached to `vmo`.
+        expect_false!(unsafe { pmm::page_queues().debug_page_is_reclaim(page) }.is_some());
+        // SAFETY: `page` is attached to `vmo`.
+        expect_true!(unsafe { pmm::page_queues().debug_page_is_pager_backed_dirty(page) });
+
+        // Hint DontNeed on the page. It should remain in the dirty queue.
+        assert_ok!(vmo.hint_range(0, PAGE_SIZE, EvictionHint::DontNeed));
+        // SAFETY: `page` is attached to `vmo`.
+        expect_false!(unsafe { pmm::page_queues().debug_page_is_reclaim_isolate(page) });
+        // SAFETY: `page` is attached to `vmo`.
+        expect_false!(unsafe { pmm::page_queues().debug_page_is_reclaim(page) }.is_some());
+        // SAFETY: `page` is attached to `vmo`.
+        expect_true!(unsafe { pmm::page_queues().debug_page_is_pager_backed_dirty(page) });
+
+        // Should not be able to evict a dirty page.
+        // SAFETY: It is sound to attempt to reclaim `page` at offset 0.
+        assert_eq!(unsafe { reclaim(&vmo, page, 0, EvictionAction::FollowHint) }, 0);
+        expect_true!(
+            make_private_attribution_counts(PAGE_SIZE, 0)
+                == vmo.get_attributed_memory_in_range(0, PAGE_SIZE)
+        );
+
+        // Hint AlwaysNeed on the page. It should remain in the dirty queue.
+        assert_ok!(vmo.hint_range(0, PAGE_SIZE, EvictionHint::AlwaysNeed));
+        // SAFETY: `page` is attached to `vmo`.
+        expect_false!(unsafe { pmm::page_queues().debug_page_is_reclaim(page) }.is_some());
+        // SAFETY: `page` is attached to `vmo`.
+        expect_false!(unsafe { pmm::page_queues().debug_page_is_reclaim_isolate(page) });
+        // SAFETY: `page` is attached to `vmo`.
+        expect_true!(unsafe { pmm::page_queues().debug_page_is_pager_backed_dirty(page) });
+
+        // Clean the page.
+        assert_ok!(vmo.writeback_begin(0, PAGE_SIZE, false));
+        assert_ok!(vmo.writeback_end(0, PAGE_SIZE));
+        // SAFETY: `page` is attached to `vmo`.
+        expect_false!(unsafe { pmm::page_queues().debug_page_is_pager_backed_dirty(page) });
+        // SAFETY: `page` is attached to `vmo`.
+        let queue = unsafe { pmm::page_queues().debug_page_is_reclaim(page) };
+        expect_true!(queue.is_some());
+        expect_eq!(0, queue.unwrap().0);
+
+        // Eviction should fail still because we hinted AlwaysNeed previously.
+        // SAFETY: It is sound to attempt to reclaim `page` at offset 0.
+        assert_eq!(unsafe { reclaim(&vmo, page, 0, EvictionAction::FollowHint) }, 0);
+        expect_true!(
+            make_private_attribution_counts(PAGE_SIZE, 0)
+                == vmo.get_attributed_memory_in_range(0, PAGE_SIZE)
+        );
+        // SAFETY: `page` is attached to `vmo`.
+        expect_false!(unsafe { pmm::page_queues().debug_page_is_pager_backed_dirty(page) });
+        // SAFETY: `page` is attached to `vmo`.
+        let queue = unsafe { pmm::page_queues().debug_page_is_reclaim(page) };
+        expect_true!(queue.is_some());
+        expect_eq!(0, queue.unwrap().0);
+
+        // Eviction should succeed if we ignore the hint.
+        // SAFETY: It is sound to reclaim `page` at offset 0.
+        assert_eq!(unsafe { reclaim(&vmo, page, 0, EvictionAction::IgnoreHint) }, 1);
+        expect_true!(attribution::zero() == vmo.get_attributed_memory_in_range(0, PAGE_SIZE));
+
+        // Reset the vmo and retry some of the same actions as before, this time dirtying
+        // the page *after* hinting.
+        drop(vmo);
+
+        let (vmo, [page]) = unwrap_ok!(make_committed_pager_vmo(
+            /*trap_dirty=*/ true, /*resizable=*/ false
+        ));
+
+        // Newly created page should be in the first pager backed page queue.
+        // SAFETY: `page` is attached to `vmo`.
+        let queue = unsafe { pmm::page_queues().debug_page_is_reclaim(page) };
+        expect_true!(queue.is_some());
+        expect_eq!(0, queue.unwrap().0);
+
+        // Hint DontNeed on the page. This should move the page to the Isolate queue.
+        assert_ok!(vmo.hint_range(0, PAGE_SIZE, EvictionHint::DontNeed));
+        // SAFETY: `page` is attached to `vmo`.
+        expect_false!(unsafe { pmm::page_queues().debug_page_is_reclaim(page) }.is_some());
+        // SAFETY: `page` is attached to `vmo`.
+        expect_false!(unsafe { pmm::page_queues().debug_page_is_pager_backed_dirty(page) });
+        // SAFETY: `page` is attached to `vmo`.
+        expect_true!(unsafe { pmm::page_queues().debug_page_is_reclaim_isolate(page) });
+
+        // Write to the page now. This should move it to the dirty queue.
+        assert_ok!(vmo.dirty_pages(0, PAGE_SIZE));
+        // SAFETY: `page` is attached to `vmo`.
+        expect_false!(unsafe { pmm::page_queues().debug_page_is_reclaim(page) }.is_some());
+        // SAFETY: `page` is attached to `vmo`.
+        expect_false!(unsafe { pmm::page_queues().debug_page_is_reclaim_isolate(page) });
+        // SAFETY: `page` is attached to `vmo`.
+        expect_true!(unsafe { pmm::page_queues().debug_page_is_pager_backed_dirty(page) });
+
+        // Should not be able to evict a dirty page.
+        // SAFETY: It is sound to attempt to reclaim `page` at offset 0.
+        assert_eq!(unsafe { reclaim(&vmo, page, 0, EvictionAction::FollowHint) }, 0);
+        expect_true!(
+            make_private_attribution_counts(PAGE_SIZE, 0)
+                == vmo.get_attributed_memory_in_range(0, PAGE_SIZE)
+        );
+    }
+
     /// Tests that pinning pager-backed pages retains backlink information.
     #[test]
     fn vmo_pinning_backlink_test() {
@@ -1730,6 +1894,82 @@ mod vmo_rs {
         expect_eq!(unsafe { page1.get_page_offset() }, PAGE_SIZE);
     }
 
+    /// Tests updating dirty state of pages while they are pinned.
+    #[test]
+    fn vmo_pinning_dirty_state_test() {
+        // Disable the page scanner as this test would be flaky if our pages get
+        // evicted by someone else.
+        let _scanner_disable = AutoVmScannerDisable::new();
+
+        // Create a pager-backed VMO with a single page.
+        let (vmo, [page]) = unwrap_ok!(make_committed_pager_vmo(true, false));
+
+        // Page should be in the pager queue.
+        // SAFETY: `page` is attached to `vmo`.
+        expect_true!(unsafe { pmm::page_queues().debug_page_is_reclaim(page) }.is_some());
+
+        // Pin the page.
+        let status = vmo.commit_range_pinned(0, PAGE_SIZE, false);
+        expect_ok!(status);
+
+        // Pages might get swapped out on pinning if they were loaned. Look up again.
+        let page = vmo.debug_get_page(0).expect("page 0 must exist");
+
+        // Page should be in the wired queue.
+        // SAFETY: `page` is attached to `vmo`.
+        expect_true!(unsafe { pmm::page_queues().debug_page_is_wired(page) });
+        // SAFETY: `page` is attached to `vmo`.
+        expect_false!(unsafe { pmm::page_queues().debug_page_is_reclaim(page) }.is_some());
+
+        // Dirty the page while pinned. So this tests a transition to Dirty with pin count > 0. This
+        // should retain the page in the wired queue.
+        let status = vmo.dirty_pages(0, PAGE_SIZE);
+        expect_ok!(status);
+        // SAFETY: `page` is attached to `vmo`.
+        expect_true!(unsafe { pmm::page_queues().debug_page_is_wired(page) });
+
+        // Unpin the page.
+        vmo.unpin(0, PAGE_SIZE);
+
+        // Page should be back in the pager dirty queue.
+        // SAFETY: `page` is attached to `vmo`.
+        expect_true!(unsafe { pmm::page_queues().debug_page_is_pager_backed_dirty(page) });
+
+        // Start writeback on the page so that its state changes to AwaitingClean. It should still
+        // be in the dirty queue.
+        let status = vmo.writeback_begin(0, PAGE_SIZE, false);
+        expect_ok!(status);
+        // SAFETY: `page` is attached to `vmo`.
+        expect_true!(unsafe { pmm::page_queues().debug_page_is_pager_backed_dirty(page) });
+
+        // Pin for read, so that the dirty state is not changed. But since it is pinned, it should
+        // move to the wired queue.
+        let status = vmo.commit_range_pinned(0, PAGE_SIZE, false);
+        expect_ok!(status);
+        // SAFETY: `page` is attached to `vmo`.
+        expect_true!(unsafe { pmm::page_queues().debug_page_is_wired(page) });
+
+        // Now end the writeback so that the page is cleaned. So this tests a transition to Clean
+        // with pin count > 0.
+        let status = vmo.writeback_end(0, PAGE_SIZE);
+        expect_ok!(status);
+
+        // Page should still be in the wired queue.
+        // SAFETY: `page` is attached to `vmo`.
+        expect_true!(unsafe { pmm::page_queues().debug_page_is_wired(page) });
+
+        // Unpin the page.
+        vmo.unpin(0, PAGE_SIZE);
+
+        // Pages should be back in the pager reclaim queue.
+        // SAFETY: `page` is attached to `vmo`.
+        expect_false!(unsafe { pmm::page_queues().debug_page_is_wired(page) });
+
+        // The only remaining transition is to AwaitingClean with pin count > 0. This cannot happen
+        // because we can only move to AwaitingClean from Dirty, but if a page is Dirty with pin
+        // count > 0, it will never leave the Dirty state.
+    }
+
     /// Tests that writing to a VMO does not commit pages in its clone.
     #[test]
     fn vmo_write_does_not_commit_test() {
@@ -1762,6 +2002,160 @@ mod vmo_rs {
 
         // Adding a fault flag should cause the lookup to succeed.
         unwrap_ok!(clone.get_page_blocking(0, fault::flag::WRITE | fault::flag::SW_FAULT));
+    }
+
+    /// Tests dirty page tracking and queue transitions in pager-backed VMOs.
+    #[test]
+    fn vmo_dirty_pages_test() {
+        let _scanner_disable = AutoVmScannerDisable::new();
+
+        // Create a pager-backed VMO with a single page.
+        let (vmo, [page]) = unwrap_ok!(make_committed_pager_vmo(
+            /*trap_dirty=*/ true, /*resizable=*/ false
+        ));
+
+        // Newly created page should be in the first pager backed page queue.
+        // SAFETY: `page` is attached to `vmo`.
+        let queue = unsafe { pmm::page_queues().debug_page_is_reclaim(page) };
+        expect_true!(queue.is_some());
+        expect_eq!(0, queue.unwrap().0);
+
+        // Rotate the queues and check the page moves.
+        pmm::page_queues().rotate_reclaim_queues();
+        // SAFETY: `page` is attached to `vmo`.
+        let queue = unsafe { pmm::page_queues().debug_page_is_reclaim(page) };
+        expect_true!(queue.is_some());
+        expect_eq!(1, queue.unwrap().0);
+
+        // Accessing the page should move it back to the first queue.
+        unwrap_ok!(vmo.get_page_blocking(0, fault::flag::SW_FAULT));
+        // SAFETY: `page` is attached to `vmo`.
+        let queue = unsafe { pmm::page_queues().debug_page_is_reclaim(page) };
+        expect_true!(queue.is_some());
+        expect_eq!(0, queue.unwrap().0);
+
+        // Now simulate a write to the page. This should move the page to the dirty queue.
+        unwrap_ok!(vmo.dirty_pages(0, PAGE_SIZE));
+        // SAFETY: `page` is attached to `vmo`.
+        expect_false!(unsafe { pmm::page_queues().debug_page_is_reclaim(page) }.is_some());
+        // SAFETY: `page` is attached to `vmo`.
+        expect_true!(unsafe { pmm::page_queues().debug_page_is_pager_backed_dirty(page) });
+        expect_gt!(pmm::page_queues().queue_counts().pager_backed_dirty, 0);
+
+        // Should not be able to evict a dirty page.
+        // SAFETY: It is sound to reclaim `page` at offset 0.
+        assert_eq!(unsafe { reclaim(&vmo, page, 0, EvictionAction::FollowHint) }, 0);
+        expect_true!(
+            make_private_attribution_counts(PAGE_SIZE, 0)
+                == vmo.get_attributed_memory_in_range(0, PAGE_SIZE)
+        );
+
+        // Accessing the page again should not move the page out of the dirty queue.
+        unwrap_ok!(vmo.get_page_blocking(0, fault::flag::SW_FAULT));
+        // SAFETY: `page` is attached to `vmo`.
+        expect_false!(unsafe { pmm::page_queues().debug_page_is_reclaim(page) }.is_some());
+        // SAFETY: `page` is attached to `vmo`.
+        expect_true!(unsafe { pmm::page_queues().debug_page_is_pager_backed_dirty(page) });
+    }
+
+    /// Tests dirty pages writeback behavior.
+    #[test]
+    fn vmo_dirty_pages_writeback_test() {
+        let _scanner_disable = AutoVmScannerDisable::new();
+
+        // Create a pager-backed VMO with a single page.
+        let (vmo, [page]) = unwrap_ok!(make_committed_pager_vmo(
+            /*trap_dirty=*/ true, /*resizable=*/ false
+        ));
+
+        // Newly created page should be in the first pager backed page queue.
+        // SAFETY: `page` is attached to `vmo`.
+        let queue = unsafe { pmm::page_queues().debug_page_is_reclaim(page) }
+            .expect("page is in reclaim queue");
+        expect_eq!(0, queue.0);
+
+        // Now simulate a write to the page. This should move the page to the dirty queue.
+        assert_ok!(vmo.dirty_pages(0, PAGE_SIZE));
+        // SAFETY: `page` is attached to `vmo`.
+        expect_false!(unsafe { pmm::page_queues().debug_page_is_reclaim(page) }.is_some());
+        // SAFETY: `page` is attached to `vmo`.
+        expect_true!(unsafe { pmm::page_queues().debug_page_is_pager_backed_dirty(page) });
+
+        // Should not be able to evict a dirty page.
+        // SAFETY: It is sound to reclaim `page` at offset 0.
+        assert_eq!(unsafe { reclaim(&vmo, page, 0, EvictionAction::FollowHint) }, 0);
+        expect_true!(
+            make_private_attribution_counts(PAGE_SIZE, 0)
+                == vmo.get_attributed_memory_in_range(0, PAGE_SIZE)
+        );
+
+        // Begin writeback on the page. This should still keep the page in the dirty queue.
+        assert_ok!(vmo.writeback_begin(0, PAGE_SIZE, false));
+        // SAFETY: `page` is attached to `vmo`.
+        expect_false!(unsafe { pmm::page_queues().debug_page_is_reclaim(page) }.is_some());
+        // SAFETY: `page` is attached to `vmo`.
+        expect_true!(unsafe { pmm::page_queues().debug_page_is_pager_backed_dirty(page) });
+
+        // Should not be able to evict a dirty page.
+        // SAFETY: It is sound to attempt to reclaim `page` at offset 0.
+        assert_eq!(unsafe { reclaim(&vmo, page, 0, EvictionAction::FollowHint) }, 0);
+        expect_true!(
+            make_private_attribution_counts(PAGE_SIZE, 0)
+                == vmo.get_attributed_memory_in_range(0, PAGE_SIZE)
+        );
+
+        // Accessing the page should not move the page out of the dirty queue either.
+        unwrap_ok!(vmo.get_page_blocking(0, fault::flag::SW_FAULT));
+        // SAFETY: `page` is attached to `vmo`.
+        expect_false!(unsafe { pmm::page_queues().debug_page_is_reclaim(page) }.is_some());
+        // SAFETY: `page` is attached to `vmo`.
+        expect_true!(unsafe { pmm::page_queues().debug_page_is_pager_backed_dirty(page) });
+
+        // Should not be able to evict a dirty page.
+        // SAFETY: It is sound to attempt to reclaim `page` at offset 0.
+        assert_eq!(unsafe { reclaim(&vmo, page, 0, EvictionAction::FollowHint) }, 0);
+        expect_true!(
+            make_private_attribution_counts(PAGE_SIZE, 0)
+                == vmo.get_attributed_memory_in_range(0, PAGE_SIZE)
+        );
+
+        // End writeback on the page. This should finally move the page out of the dirty queue.
+        assert_ok!(vmo.writeback_end(0, PAGE_SIZE));
+        // SAFETY: `page` is attached to `vmo`.
+        expect_false!(unsafe { pmm::page_queues().debug_page_is_pager_backed_dirty(page) });
+        // SAFETY: `page` is attached to `vmo`.
+        let queue = unsafe { pmm::page_queues().debug_page_is_reclaim(page) }
+            .expect("page is in reclaim queue");
+        expect_eq!(0, queue.0);
+
+        // We should be able to rotate the page as usual.
+        pmm::page_queues().rotate_reclaim_queues();
+        // SAFETY: `page` is attached to `vmo`.
+        let queue = unsafe { pmm::page_queues().debug_page_is_reclaim(page) }
+            .expect("page is in reclaim queue");
+        expect_eq!(1, queue.0);
+
+        // Another write moves the page back to the Dirty queue.
+        assert_ok!(vmo.dirty_pages(0, PAGE_SIZE));
+        // SAFETY: `page` is attached to `vmo`.
+        expect_false!(unsafe { pmm::page_queues().debug_page_is_reclaim(page) }.is_some());
+        // SAFETY: `page` is attached to `vmo`.
+        expect_true!(unsafe { pmm::page_queues().debug_page_is_pager_backed_dirty(page) });
+
+        // Clean the page again, and try to evict it.
+        assert_ok!(vmo.writeback_begin(0, PAGE_SIZE, false));
+        assert_ok!(vmo.writeback_end(0, PAGE_SIZE));
+        // SAFETY: `page` is attached to `vmo`.
+        expect_false!(unsafe { pmm::page_queues().debug_page_is_pager_backed_dirty(page) });
+        // SAFETY: `page` is attached to `vmo`.
+        let queue = unsafe { pmm::page_queues().debug_page_is_reclaim(page) }
+            .expect("page is in reclaim queue");
+        expect_eq!(0, queue.0);
+
+        // We should now be able to evict the page.
+        // SAFETY: It is sound to reclaim `page` at offset 0.
+        assert_eq!(unsafe { reclaim(&vmo, page, 0, EvictionAction::FollowHint) }, 1);
+        expect_true!(attribution::zero() == vmo.get_attributed_memory_in_range(0, PAGE_SIZE));
     }
 
     /// Tests that decommitting from a contiguous VMO fails when loaning is disabled.
@@ -2056,6 +2450,62 @@ mod vmo_rs {
         pager_vmo.unpin(0, 2 * PAGE_SIZE);
     }
 
+    /// Tests VMO page reclamation.
+    #[test]
+    fn vmo_reclamation_test() {
+        let _scanner_disable = AutoVmScannerDisable::new();
+
+        const NUM_PAGES: usize = 2;
+        let alloc_size = (NUM_PAGES as u64) * PAGE_SIZE;
+
+        let (vmo, [page]) = unwrap_ok!(make_committed_pager_vmo(
+            /*trap_dirty=*/ false, /*resizable=*/ false
+        ));
+
+        // Reclamation should drop the number of committed pages.
+        expect_true!(make_private_attribution_counts(PAGE_SIZE, 0) == vmo.get_attributed_memory());
+        expect_true!(verify_continuous_attribution_bytes(&vmo, alloc_size));
+        // SAFETY: It is sound to reclaim `page` at offset 0.
+        assert_eq!(unsafe { reclaim(&vmo, page, 0, EvictionAction::FollowHint) }, 1);
+        expect_true!(attribution::zero() == vmo.get_attributed_memory());
+        expect_true!(verify_continuous_attribution_bytes(&vmo, 0));
+        expect_gt!(vmo.reclamation_event_count(), 0);
+
+        // Pinned pages should not be reclaimable.
+        let (vmo, pages) = unwrap_ok!(make_committed_pager_vmo::<NUM_PAGES>(
+            /*trap_dirty=*/ false, /*resizable=*/ false
+        ));
+
+        expect_ok!(vmo.commit_range_pinned(0, alloc_size / 2, false));
+        // SAFETY: It is sound to reclaim `pages[0]` at offset 0.
+        assert_le!(unsafe { reclaim(&vmo, pages[0], 0, EvictionAction::FollowHint) }, 2);
+        vmo.unpin(0, alloc_size / 2);
+
+        // Trying to reclaim from a VMO with no pages in isolate is considered an 'evict accesed'
+        // failure.
+        let (vmo, pages) = unwrap_ok!(make_committed_pager_vmo::<NUM_PAGES>(
+            /*trap_dirty=*/ false, /*resizable=*/ false
+        ));
+
+        for &page in &pages {
+            // SAFETY: `page` is attached to `vmo`.
+            expect_false!(unsafe { PageQueues::is_page_reclaimable(page) });
+        }
+
+        // SAFETY: It is sound to reclaim `pages[0]` at offset 0.
+        let reclaimed = unsafe {
+            vmo.debug_get_cow_pages().expect("paged VMO has backing cow pages").reclaim_page(
+                pages[0],
+                0,
+                EvictionAction::FollowHint,
+                None,
+            )
+        };
+
+        expect_true!(reclaimed.is_err());
+        expect_eq!(reclaimed.unwrap_err(), VmCowReclaimFailure::EvictAccessed);
+    }
+
     /// Tests PinnedVmObject creation, move semantics, and RAII unpinning.
     #[test]
     fn vmo_pinned_wrapper_test() {
@@ -2242,6 +2692,77 @@ mod vmo_rs {
         expect_false!(vmo.debug_get_cow_pages().unwrap().dedup_zero_page(page, 0));
         expect_true!(make_private_attribution_counts(PAGE_SIZE, 0) == vmo.get_attributed_memory());
         expect_true!(verify_continuous_attribution_bytes(&vmo, PAGE_SIZE));
+    }
+
+    /// Test that unmaps propagated to copy-on-write children are not applied to kernel mappings.
+    #[test]
+    fn vmo_apply_unmap_to_child_with_kernel_mapping_test() {
+        let _scanner_disable = AutoVmScannerDisable::new();
+
+        let (vmo, _) = unwrap_ok!(make_committed_pager_vmo::<4>(
+            /*trap_dirty=*/ false, /*resizable=*/ false
+        ));
+
+        let unidirectional_clone_no_paged = unwrap_ok!(vmo.create_clone(
+            Resizability::NonResizable,
+            SnapshotType::OnWrite,
+            PAGE_SIZE,
+            3 * PAGE_SIZE,
+            false,
+        ));
+        let unidirectional_clone = VmObject::downcast_paged(unidirectional_clone_no_paged);
+        assert_true!(unidirectional_clone.is_some());
+        let unidirectional_clone = unidirectional_clone.unwrap();
+
+        let ka = VmAspace::kernel_aspace();
+        // SAFETY: The flags and range are appropriate for creating this mapping.
+        let ptr = unwrap_ok!(unsafe {
+            ka.map_object_internal(
+                VmObjectPaged::into_vm_object(unidirectional_clone.clone()),
+                c"test",
+                /*offset=*/ PAGE_SIZE,
+                /*size=*/ PAGE_SIZE as usize,
+                0,
+                vmm_flag::COMMIT,
+                ARCH_RW_FLAGS,
+            )
+        });
+        struct DeferCleanupMapping(usize);
+        impl Drop for DeferCleanupMapping {
+            fn drop(&mut self) {
+                // SAFETY: self.0 was allocated via map_object_internal and is not yet freed.
+                let status = unsafe { VmAspace::kernel_aspace().free_region(self.0) };
+                assert!(status.is_ok());
+            }
+        }
+        let _cleanup_mapping = DeferCleanupMapping(ptr as usize);
+
+        // Show that this is indeed a unidirectional clone, and that the kernel mapping will be
+        // subject to the attempted unmap.
+        let page = unidirectional_clone
+            .debug_get_cow_pages()
+            .expect("clone has cow pages")
+            .debug_get_page(PAGE_SIZE);
+        assert_true!(page.is_some());
+        let page = page.unwrap();
+        // SAFETY: page is attached to unidirectional_clone.
+        expect_gt!(unsafe { page.get_pin_count() }, 0);
+        expect_true!(unidirectional_clone.debug_get_cow_pages().unwrap().debug_is_empty(0));
+        expect_true!(
+            unidirectional_clone.debug_get_cow_pages().unwrap().debug_is_empty(2 * PAGE_SIZE)
+        );
+        expect_eq!(
+            unidirectional_clone
+                .debug_get_cow_pages()
+                .unwrap()
+                .debug_get_parent()
+                .unwrap()
+                .as_raw(),
+            vmo.debug_get_cow_pages().unwrap().as_raw()
+        );
+
+        // This does not crash.
+        expect_ok!(vmo.zero_range(0, 4 * PAGE_SIZE));
     }
 
     /// Tests creating a zero-sized always-pinned VMO fails gracefully.

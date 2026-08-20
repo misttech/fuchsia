@@ -193,6 +193,16 @@ impl VmPagePtr {
         unsafe { bindings::cpp_vm_page_object_get_page_offset(self.as_raw()) }
     }
 
+    /// Returns the pin count of the page when attached to a VM object.
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure that the page is attached to a VM object.
+    pub unsafe fn get_pin_count(self) -> u8 {
+        // SAFETY: Safety deferred to caller per function safety preconditions.
+        unsafe { bindings::cpp_vm_page_object_get_pin_count(self.as_raw()) }
+    }
+
     /// Return the current VmPageState of this page.
     ///
     /// # Safety

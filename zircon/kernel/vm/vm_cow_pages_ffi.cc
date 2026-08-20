@@ -52,4 +52,25 @@ FFI_ALWAYS_INLINE zx_status_t cpp_vm_cow_pages_evict_loaned_page(VmCowPages* cow
   return cow->EvictLoanedPage(page, offset);
 }
 
+FFI_ALWAYS_INLINE vm_page_t* cpp_vm_cow_pages_debug_get_page(const VmCowPages* cow,
+                                                             uint64_t offset) {
+  return cow->DebugGetPage(offset);
+}
+
+FFI_ALWAYS_INLINE bool cpp_vm_cow_pages_debug_is_empty(const VmCowPages* cow, uint64_t offset) {
+  return cow->DebugIsEmpty(offset);
+}
+
+FFI_ALWAYS_INLINE bool cpp_vm_cow_pages_reclaim_page(
+    VmCowPages* cow, vm_page_t* page, uint64_t offset, VmCowPages::EvictionAction eviction_action,
+    VmCompressor* compressor, VmCowReclaimSuccess* out_success, VmCowReclaimFailure* out_failure) {
+  auto result = cow->ReclaimPage(page, offset, eviction_action, compressor);
+  if (result.is_ok()) {
+    *out_success = result.value();
+    return true;
+  }
+  *out_failure = result.error_value();
+  return false;
+}
+
 }  // extern "C"

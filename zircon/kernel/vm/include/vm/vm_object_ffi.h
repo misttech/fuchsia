@@ -79,6 +79,15 @@ FFI_ALWAYS_INLINE zx_status_t cpp_vm_object_read(VmObject* vmo, void* ptr, uint6
                                                  size_t len);
 FFI_ALWAYS_INLINE zx_status_t cpp_vm_object_zero_range(VmObject* vmo, uint64_t offset,
                                                        uint64_t len);
+FFI_ALWAYS_INLINE zx_status_t cpp_vm_object_dirty_pages(VmObject* vmo, uint64_t offset,
+                                                        uint64_t len);
+FFI_ALWAYS_INLINE zx_status_t cpp_vm_object_writeback_begin(VmObject* vmo, uint64_t offset,
+                                                            uint64_t len, bool is_zero_range);
+FFI_ALWAYS_INLINE zx_status_t cpp_vm_object_writeback_end(VmObject* vmo, uint64_t offset,
+                                                          uint64_t len);
+FFI_ALWAYS_INLINE uint64_t cpp_vm_object_reclamation_event_count(const VmObject* vmo);
+FFI_ALWAYS_INLINE void cpp_vm_object_get_attributed_memory_in_range(
+    const VmObject* vmo, uint64_t offset, uint64_t len, vm::AttributionCounts* out_counts);
 
 __END_CDECLS
 

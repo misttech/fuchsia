@@ -6,6 +6,7 @@
 
 pub mod arch_vm_aspace;
 pub mod attribution;
+pub mod compressor;
 pub mod fault;
 pub mod page;
 pub mod page_queues;

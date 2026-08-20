@@ -323,12 +323,18 @@ kernel_bindgen_crate("page-queues-bindings") {
     "cpp_page_queues_debug_page_is_any_anonymous",
     "cpp_page_queues_debug_page_is_reclaim",
     "cpp_page_queues_debug_page_is_pager_backed_dirty",
+    "cpp_page_queues_debug_page_is_reclaim_isolate",
     "cpp_page_queues_rotate_reclaim_queues",
+    "cpp_page_queues_is_page_reclaimable",
+    "cpp_page_queues_move_to_reclaim_dont_need",
+    "cpp_page_queues_queue_counts",
   ]
   type_allowlist = [
     "AgeReason",
+    "Counts",
     "LruAction",
     "PageQueues",
+    "PageQueues_Counts",
   ]
   type_blocklist = [
     "fbl_RefPtr",
@@ -337,7 +343,6 @@ kernel_bindgen_crate("page-queues-bindings") {
     "zx_status_t",
     "PageQueues_VmoBacklink",
     "PageQueues_ReclaimCounts",
-    "PageQueues_Counts",
     "PageQueues_ActiveInactiveCounts",
   ]
   var_allowlist = [ "PageQueues_k.*" ]
@@ -395,6 +400,7 @@ kernel_bindgen_crate("page-bindings") {
     "cpp_vm_page_set_state",
     "cpp_vm_page_object_get_object",
     "cpp_vm_page_object_get_page_offset",
+    "cpp_vm_page_object_get_pin_count",
   ]
   type_allowlist = [
     "vm_page_t",
@@ -604,8 +610,13 @@ kernel_bindgen_crate("vm-object-bindings") {
     "cpp_vm_object_get_page",
     "cpp_vm_object_get_attributed_memory",
     "cpp_vm_object_get_attributed_memory_in_reference_owner",
+    "cpp_vm_object_get_attributed_memory_in_range",
     "cpp_vm_object_read",
     "cpp_vm_object_zero_range",
+    "cpp_vm_object_dirty_pages",
+    "cpp_vm_object_writeback_begin",
+    "cpp_vm_object_writeback_end",
+    "cpp_vm_object_reclamation_event_count",
   ]
   type_allowlist = [
     "EvictionHint",
@@ -726,6 +737,30 @@ kernel_bindgen_crate("vm-object-paged-bindings") {
   ]
 }
 
+kernel_bindgen_crate("compressor-bindings") {
+  visibility = [ ":*" ]
+  headers = [ "include/vm/compressor_ffi.h" ]
+  non_rust_deps = [ ":bindgen_common_deps" ]
+  output_name = "compressor_bindings.rs"
+  cpp = true
+
+  edition = "2024"
+  notice_year = 2026
+
+  type_allowlist = [ "VmCompressor" ]
+  opaque_types = [ "VmCompressor" ]
+  function_blocklist = [ "VmCompressor_.*" ]
+  type_blocklist = [
+    "VmCompressor_.*",
+    "vm_page_t",
+    "zx_status_t",
+  ]
+  additional_bindgen_flags = [ "--no-recursive-allowlist" ]
+
+  raw_lines = [ "#![no_std]" ]
+  expect_lints = []
+}
+
 kernel_bindgen_crate("vm-cow-pages-bindings") {
   visibility = [ ":*" ]
   headers = [ "include/vm/vm_cow_pages_ffi.h" ]
@@ -743,6 +778,9 @@ kernel_bindgen_crate("vm-cow-pages-bindings") {
     "cpp_vm_cow_pages_debug_get_parent",
     "cpp_vm_cow_pages_dedup_zero_page",
     "cpp_vm_cow_pages_evict_loaned_page",
+    "cpp_vm_cow_pages_debug_get_page",
+    "cpp_vm_cow_pages_debug_is_empty",
+    "cpp_vm_cow_pages_reclaim_page",
   ]
   type_allowlist = [
     "DirtyState",
@@ -751,9 +789,12 @@ kernel_bindgen_crate("vm-cow-pages-bindings") {
     "VmCowPages",
     "VmCowPagesOptions",
     "VmCowReclaimFailure",
+    "VmCowReclaimSuccess",
+    "VmCowReclaimSuccess_Type",
   ]
   type_blocklist = [
     "PmmOptDelayReuse",
+    "VmCompressor",
     "vm_page_t",
     "zx_status_t",
     "VmCowPages_AddPageTransaction",
@@ -775,6 +816,7 @@ kernel_bindgen_crate("vm-cow-pages-bindings") {
     "VmCowPages_DirtyState",
     "VmCowPages_EvictionAction",
     "VmCowReclaimFailure",
+    "VmCowReclaimSuccess_Type",
   ]
   function_blocklist = [ "VmCowPages_.*" ]
   additional_bindgen_flags = [ "--no-recursive-allowlist" ]
@@ -786,6 +828,7 @@ kernel_bindgen_crate("vm-cow-pages-bindings") {
   edition = "2024"
 
   deps = [
+    ":compressor-bindings",
     ":page-bindings",
     ":pmm-bindings",
     "//sdk/rust/zx-types",
@@ -793,6 +836,7 @@ kernel_bindgen_crate("vm-cow-pages-bindings") {
 
   raw_lines = [
     "#![no_std]",
+    "pub use compressor_bindings::VmCompressor;",
     "use page_bindings::vm_page_t;",
     "use pmm_bindings::PmmOptDelayReuse;",
     "use zx_types::zx_status_t;",
@@ -805,6 +849,7 @@ kernel_rust_mod("vm-rs") {
   sources = [
     "arch_vm_aspace.rs",
     "attribution.rs",
+    "compressor.rs",
     "fault.rs",
     "mod.rs",
     "page.rs",
@@ -828,6 +873,7 @@ kernel_rust_mod("vm-rs") {
 
   deps = [
     ":attribution-bindings",
+    ":compressor-bindings",
     ":page-bindings",
     ":page-queues-bindings",
     ":page-source-bindings",

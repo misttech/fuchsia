@@ -28,6 +28,7 @@ vm_page_state cpp_vm_page_state(vm_page_t* page);
 void cpp_vm_page_set_state(vm_page_t* page, vm_page_state new_state);
 void* cpp_vm_page_object_get_object(const vm_page_t* page);
 uint64_t cpp_vm_page_object_get_page_offset(const vm_page_t* page);
+uint8_t cpp_vm_page_object_get_pin_count(const vm_page_t* page);
 
 __END_CDECLS
 

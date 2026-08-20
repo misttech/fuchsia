@@ -5,9 +5,11 @@
 // https://opensource.org/licenses/MIT
 
 use super::page::VmPagePtr;
+use crate::vm::compressor::VmCompressor;
 use crate::vm::pmm::PmmOptDelayReuse;
 use core::marker::PhantomPinned;
-use core::ptr::NonNull;
+use core::mem::MaybeUninit;
+use core::ptr::{self, NonNull};
 use fbl::{HasRefCount, Recyclable, RefCounted, RefPtr};
 use kalloc::AllocError;
 use vm_cow_pages_bindings as bindings;
@@ -15,6 +17,8 @@ use zr::Opaque;
 use zx_status::Status;
 
 pub type VmCowReclaimFailure = bindings::VmCowReclaimFailure;
+pub type VmCowReclaimSuccess = bindings::VmCowReclaimSuccess;
+pub type VmCowReclaimType = bindings::VmCowReclaimSuccess_Type;
 pub type PageSourceType = bindings::PageSourceType;
 
 /// Used to track dirty_state in the vm_page_t.
@@ -131,6 +135,20 @@ impl VmCowPages {
         unsafe { bindings::cpp_vm_cow_pages_dedup_zero_page(self.as_raw(), page.as_raw(), offset) }
     }
 
+    /// Returns the page at `offset`, if present in this node.
+    pub fn debug_get_page(&self, offset: u64) -> Option<VmPagePtr> {
+        // SAFETY: `self.as_raw()` returns a valid `VmCowPages` pointer.
+        let raw = unsafe { bindings::cpp_vm_cow_pages_debug_get_page(self.as_raw(), offset) };
+        // SAFETY: `raw` is either null or points to a valid `vm_page_t`.
+        unsafe { VmPagePtr::from_raw(raw) }
+    }
+
+    /// Returns whether this node has no page at `offset`.
+    pub fn debug_is_empty(&self, offset: u64) -> bool {
+        // SAFETY: `self.as_raw()` returns a valid `VmCowPages` pointer.
+        unsafe { bindings::cpp_vm_cow_pages_debug_is_empty(self.as_raw(), offset) }
+    }
+
     /// Evict a specific loaned page for the use case of reclaiming loaned pages by the physical
     /// page provider. Unlike ReclaimPage this function can assume it just needs to evict, and
     /// has no requirements on updating any reclamation lists.
@@ -145,6 +163,66 @@ impl VmCowPages {
             bindings::cpp_vm_cow_pages_evict_loaned_page(self.as_raw(), page.as_raw(), offset)
         };
         Status::ok(status)
+    }
+
+    /// Asks the VMO to attempt to reclaim the specified page. There are a few possible outcomes:
+    /// 1. Exactly this page is reclaimed.
+    /// 2. This page and other pages are reclaimed.
+    /// 3. Just other pages are reclaimed.
+    /// 4. No pages are reclaimed.
+    ///
+    /// Pages other than the one requested may get reclaimed due to any internal relationships
+    /// between pages that make it meaningless or difficult to reclaim just the single page in
+    /// question. In the cases of (3) and (4) there are some guarantees provided:
+    /// 1. If the `page` was not from this VMO (or not at the specified offset) then nothing about
+    ///    the `page` or this VMO will be modified.
+    /// 2. If the `page` is from this VMO and offset (and was not reclaimed) then the page will have
+    ///    been removed from any candidate reclamation lists (such as the DontNeed pager backed
+    ///    list).
+    ///
+    /// The effect of (2) is that the caller can assume in the case of reclamation failure it will
+    /// not keep finding this page as a reclamation candidate and infinitely retry it.
+    /// `eviction_action` indicates whether the `always_need` eviction hint should be respected or
+    /// ignored. Require will force eviction.
+    ///
+    /// The actual number of pages reclaimed is returned if successful, or a failure reason if not.
+    ///
+    /// # Safety
+    ///
+    /// The caller must know that it is sound to reclaim `page` at `offset`.
+    pub unsafe fn reclaim_page(
+        &self,
+        page: VmPagePtr,
+        offset: u64,
+        eviction_action: EvictionAction,
+        compressor: Option<&VmCompressor>,
+    ) -> Result<VmCowReclaimSuccess, VmCowReclaimFailure> {
+        let compressor_ptr = match compressor {
+            Some(c) => c.as_raw(),
+            None => ptr::null_mut(),
+        };
+        let mut success = MaybeUninit::uninit();
+        let mut failure = MaybeUninit::uninit();
+        // SAFETY: `self.as_raw()` returns a valid `VmCowPages` pointer, `page.as_raw()` is a
+        // valid `vm_page_t` pointer, and out-pointers are valid for writes.
+        let ok = unsafe {
+            bindings::cpp_vm_cow_pages_reclaim_page(
+                self.as_raw(),
+                page.as_raw(),
+                offset,
+                eviction_action,
+                compressor_ptr,
+                success.as_mut_ptr(),
+                failure.as_mut_ptr(),
+            )
+        };
+        if ok {
+            // SAFETY: `cpp_vm_cow_pages_reclaim_page` initialized `success` when returning true.
+            Ok(unsafe { success.assume_init() })
+        } else {
+            // SAFETY: `cpp_vm_cow_pages_reclaim_page` initialized `failure` when returning false.
+            Err(unsafe { failure.assume_init() })
+        }
     }
 }
 

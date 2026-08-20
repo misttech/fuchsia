@@ -60,4 +60,8 @@ FFI_ALWAYS_INLINE uint64_t cpp_vm_page_object_get_page_offset(const vm_page_t* p
   return page->object.get_page_offset();
 }
 
+FFI_ALWAYS_INLINE uint8_t cpp_vm_page_object_get_pin_count(const vm_page_t* page) {
+  return page->object.pin_count;
+}
+
 }  // extern "C"
