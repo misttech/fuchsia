@@ -16,11 +16,14 @@
 
 #include <bind/fuchsia/adc/cpp/bind.h>
 #include <bind/fuchsia/cpp/bind.h>
-#include <bind/fuchsia/hardware/adc/cpp/bind.h>
 #include <soc/aml-t931/t931-hw.h>
 
 #include "sherlock.h"
 #include "src/devices/board/drivers/sherlock/sherlock-adc.h"
+
+namespace fdf {
+using namespace fuchsia_driver_framework;
+}  // namespace fdf
 
 namespace sherlock {
 namespace fpbus = fuchsia_hardware_platform_bus;
@@ -108,39 +111,30 @@ zx_status_t Sherlock::ThermistorInit() {
   fdf::Arena arena('THER');
 
   const std::vector<fuchsia_driver_framework::BindRule2> kBaseThermistorCompositeRules = {
-      fdf::MakeAcceptBindRule(bind_fuchsia_hardware_adc::SERVICE,
-                              bind_fuchsia_hardware_adc::SERVICE_ZIRCONTRANSPORT),
+      fdf::MakeAcceptBindRule(bind_fuchsia::SERVICE, "fuchsia.hardware.adc.Service"),
       fdf::MakeAcceptBindRule(bind_fuchsia_adc::CHANNEL, SHERLOCK_THERMISTOR_BASE),
   };
   const std::vector<fuchsia_driver_framework::NodeProperty2> kBaseThermistorCompositeProperties = {
       fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.adc.Service"),
-      fdf::MakeProperty2(bind_fuchsia_hardware_adc::SERVICE,
-                         bind_fuchsia_hardware_adc::SERVICE_ZIRCONTRANSPORT),
       fdf::MakeProperty2(bind_fuchsia_adc::FUNCTION, bind_fuchsia_adc::FUNCTION_THERMISTOR),
       fdf::MakeProperty2(bind_fuchsia_adc::CHANNEL, SHERLOCK_THERMISTOR_BASE),
   };
   const std::vector<fuchsia_driver_framework::BindRule2> kAudioThermistorCompositeRules = {
-      fdf::MakeAcceptBindRule(bind_fuchsia_hardware_adc::SERVICE,
-                              bind_fuchsia_hardware_adc::SERVICE_ZIRCONTRANSPORT),
+      fdf::MakeAcceptBindRule(bind_fuchsia::SERVICE, "fuchsia.hardware.adc.Service"),
       fdf::MakeAcceptBindRule(bind_fuchsia_adc::CHANNEL, SHERLOCK_THERMISTOR_AUDIO),
   };
   const std::vector<fuchsia_driver_framework::NodeProperty2> kAudioThermistorCompositeProperties = {
       fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.adc.Service"),
-      fdf::MakeProperty2(bind_fuchsia_hardware_adc::SERVICE,
-                         bind_fuchsia_hardware_adc::SERVICE_ZIRCONTRANSPORT),
       fdf::MakeProperty2(bind_fuchsia_adc::FUNCTION, bind_fuchsia_adc::FUNCTION_THERMISTOR),
       fdf::MakeProperty2(bind_fuchsia_adc::CHANNEL, SHERLOCK_THERMISTOR_AUDIO),
   };
   const std::vector<fuchsia_driver_framework::BindRule2> kAmbientThermistorCompositeRules = {
-      fdf::MakeAcceptBindRule(bind_fuchsia_hardware_adc::SERVICE,
-                              bind_fuchsia_hardware_adc::SERVICE_ZIRCONTRANSPORT),
+      fdf::MakeAcceptBindRule(bind_fuchsia::SERVICE, "fuchsia.hardware.adc.Service"),
       fdf::MakeAcceptBindRule(bind_fuchsia_adc::CHANNEL, SHERLOCK_THERMISTOR_AMBIENT),
   };
   const std::vector<fuchsia_driver_framework::NodeProperty2> kAmbientThermistorCompositeProperties =
       {
           fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.adc.Service"),
-          fdf::MakeProperty2(bind_fuchsia_hardware_adc::SERVICE,
-                             bind_fuchsia_hardware_adc::SERVICE_ZIRCONTRANSPORT),
           fdf::MakeProperty2(bind_fuchsia_adc::FUNCTION, bind_fuchsia_adc::FUNCTION_THERMISTOR),
           fdf::MakeProperty2(bind_fuchsia_adc::CHANNEL, SHERLOCK_THERMISTOR_AMBIENT),
   };

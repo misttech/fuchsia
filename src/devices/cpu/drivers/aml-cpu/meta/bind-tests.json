@@ -7,7 +7,7 @@
                 "expected": "match",
                 "device": {
                     "fuchsia.power.POWER_DOMAIN": "fuchsia.amlogic.platform.POWER_DOMAIN.ARM_CORE_BIG",
-                    "fuchsia.hardware.power.Service": "fuchsia.hardware.power.Service.ZirconTransport"
+                    "fuchsia.Service": "\"fuchsia.hardware.power.Service\""
                 }
             }
         ]
@@ -42,7 +42,7 @@
                 "expected": "match",
                 "device": {
                     "fuchsia.NAME": "\"sys-pll-div16\"",
-                    "fuchsia.hardware.clock.Service": "fuchsia.hardware.clock.Service.ZirconTransport"
+                    "fuchsia.Service": "\"fuchsia.hardware.clock.Service\""
                 }
             }
         ]
@@ -54,7 +54,7 @@
                 "name": "Match",
                 "expected": "match",
                 "device": {
-                    "fuchsia.hardware.clock.Service": "fuchsia.hardware.clock.Service.ZirconTransport",
+                    "fuchsia.Service": "\"fuchsia.hardware.clock.Service\"",
                     "fuchsia.NAME": "\"sys-cpu-div16\""
                 }
             }
@@ -67,7 +67,7 @@
                 "name": "Match",
                 "expected": "match",
                 "device": {
-                    "fuchsia.hardware.clock.Service": "fuchsia.hardware.clock.Service.ZirconTransport",
+                    "fuchsia.Service": "\"fuchsia.hardware.clock.Service\"",
                     "fuchsia.NAME": "\"sys-cpu-big-clk\""
                 }
             }
@@ -81,7 +81,7 @@
                 "expected": "match",
                 "device": {
                     "fuchsia.power.POWER_DOMAIN": "fuchsia.amlogic.platform.POWER_DOMAIN.ARM_CORE_LITTLE",
-                    "fuchsia.hardware.power.Service": "fuchsia.hardware.power.Service.ZirconTransport"
+                    "fuchsia.Service": "\"fuchsia.hardware.power.Service\""
                 }
             }
         ]
@@ -94,7 +94,7 @@
                 "expected": "match",
                 "device": {
                     "fuchsia.NAME": "\"sys-pllb-div16\"",
-                    "fuchsia.hardware.clock.Service": "fuchsia.hardware.clock.Service.ZirconTransport"
+                    "fuchsia.Service": "\"fuchsia.hardware.clock.Service\""
                 }
             }
         ]
@@ -106,7 +106,7 @@
                 "name": "Match",
                 "expected": "match",
                 "device": {
-                    "fuchsia.hardware.clock.Service": "fuchsia.hardware.clock.Service.ZirconTransport",
+                    "fuchsia.Service": "\"fuchsia.hardware.clock.Service\"",
                     "fuchsia.NAME": "\"sys-cpub-div16\""
                 }
             }
@@ -119,7 +119,7 @@
                 "name": "Match",
                 "expected": "match",
                 "device": {
-                    "fuchsia.hardware.clock.Service": "fuchsia.hardware.clock.Service.ZirconTransport",
+                    "fuchsia.Service": "\"fuchsia.hardware.clock.Service\"",
                     "fuchsia.NAME": "\"sys-cpu-little-clk\""
                 }
             }

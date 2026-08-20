@@ -137,7 +137,7 @@ zx_status_t Sherlock::AudioInit() {
   const char* product_name = "sherlock";
   constexpr size_t device_name_max_length = 32;
 
-  std::vector<fdf::ParentSpec2> sherlock_tdm_i2s_parents;
+  std::vector<fuchsia_driver_framework::ParentSpec2> sherlock_tdm_i2s_parents;
   sherlock_tdm_i2s_parents.reserve(6);
 
   const auto gpio_init_rules = std::vector{
@@ -155,8 +155,8 @@ zx_status_t Sherlock::AudioInit() {
   };
 
   const auto init_parents = std::vector{
-      fdf::ParentSpec2{{gpio_init_rules, gpio_init_props}},
-      fdf::ParentSpec2{{clock_init_rules, clock_init_props}},
+      fuchsia_driver_framework::ParentSpec2{{gpio_init_rules, gpio_init_props}},
+      fuchsia_driver_framework::ParentSpec2{{clock_init_rules, clock_init_props}},
   };
 
   sherlock_tdm_i2s_parents.insert(sherlock_tdm_i2s_parents.end(), init_parents.begin(),
@@ -171,7 +171,7 @@ zx_status_t Sherlock::AudioInit() {
       fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.gpio.Service"),
       fdf::MakeProperty2(bind_fuchsia::NAME, "gpio-enable"),
   };
-  sherlock_tdm_i2s_parents.push_back(fdf::ParentSpec2{{
+  sherlock_tdm_i2s_parents.push_back(fuchsia_driver_framework::ParentSpec2{{
       .bind_rules = enable_audio_gpio_rules,
       .properties = enable_audio_gpio_props,
   }});
@@ -191,7 +191,7 @@ zx_status_t Sherlock::AudioInit() {
                            "fuchsia.hardware.audio.CodecService.ZirconTransport"),
         fdf::MakeProperty2(bind_fuchsia::CODEC_INSTANCE, static_cast<uint32_t>(i + 1)),
     };
-    sherlock_tdm_i2s_parents.push_back(fdf::ParentSpec2{{
+    sherlock_tdm_i2s_parents.push_back(fuchsia_driver_framework::ParentSpec2{{
         .bind_rules = codec_rules,
         .properties = codec_props,
     }});
@@ -338,7 +338,7 @@ zx_status_t Sherlock::AudioInit() {
   {
     fidl::Arena<> fidl_arena;
     fdf::Arena arena('AUDI');
-    auto sherlock_tdm_i2s_spec = fdf::CompositeNodeSpec{{
+    auto sherlock_tdm_i2s_spec = fuchsia_driver_framework::CompositeNodeSpec{{
         .name = "aml_tdm",
         .parents2 = sherlock_tdm_i2s_parents,
     }};
@@ -407,7 +407,7 @@ zx_status_t Sherlock::AudioInit() {
     tdm_dev.metadata() = tdm_metadata;
 
     {
-      auto tdm_spec = fdf::CompositeNodeSpec{{
+      auto tdm_spec = fuchsia_driver_framework::CompositeNodeSpec{{
           .name = "aml_tdm_dai_out",
           .parents2 = init_parents,
       }};
@@ -476,7 +476,7 @@ zx_status_t Sherlock::AudioInit() {
     dev_in.metadata() = pdm_metadata;
 
     {
-      auto pdm_spec = fdf::CompositeNodeSpec{{
+      auto pdm_spec = fuchsia_driver_framework::CompositeNodeSpec{{
           .name = "aml_pdm",
           .parents2 = init_parents,
       }};
@@ -546,7 +546,7 @@ zx_status_t Sherlock::AudioInit() {
     tdm_dev.metadata() = tdm_metadata;
 
     {
-      auto tdm_spec = fdf::CompositeNodeSpec{{
+      auto tdm_spec = fuchsia_driver_framework::CompositeNodeSpec{{
           .name = "aml_tdm_dai_in",
           .parents2 = init_parents,
       }};

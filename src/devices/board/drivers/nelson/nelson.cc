@@ -25,8 +25,6 @@
 #include <bind/fuchsia/cpp/bind.h>
 #include <bind/fuchsia/google/platform/cpp/bind.h>
 #include <bind/fuchsia/gpio/cpp/bind.h>
-#include <bind/fuchsia/hardware/gpio/cpp/bind.h>
-#include <bind/fuchsia/hardware/platform/bus/cpp/bind.h>
 #include <fbl/algorithm.h>
 #include <fbl/alloc_checker.h>
 
@@ -256,8 +254,7 @@ zx_status_t Nelson::AddPostInitDevice() {
   };
 
   const ddk::BindRule post_init_rules[] = {
-      ddk::MakeAcceptBindRule(bind_fuchsia_hardware_platform_bus::SERVICE,
-                              bind_fuchsia_hardware_platform_bus::SERVICE_DRIVERTRANSPORT),
+      ddk::MakeAcceptBindRule(bind_fuchsia::SERVICE, "fuchsia.hardware.platform.bus.Service"),
       ddk::MakeAcceptBindRule(bind_fuchsia::PLATFORM_DEV_VID,
                               bind_fuchsia_google_platform::BIND_PLATFORM_DEV_VID_GOOGLE),
       ddk::MakeAcceptBindRule(bind_fuchsia::PLATFORM_DEV_PID,
@@ -265,8 +262,7 @@ zx_status_t Nelson::AddPostInitDevice() {
       ddk::MakeAcceptBindRule(bind_fuchsia::PLATFORM_DEV_INSTANCE_ID, 1u),
   };
   const device_bind_prop_t post_init_properties[] = {
-      ddk::MakeProperty(bind_fuchsia_hardware_platform_bus::SERVICE,
-                        bind_fuchsia_hardware_platform_bus::SERVICE_DRIVERTRANSPORT),
+      ddk::MakeProperty(bind_fuchsia::SERVICE, "fuchsia.hardware.platform.bus.Service"),
       ddk::MakeProperty(bind_fuchsia::PLATFORM_DEV_VID,
                         bind_fuchsia_google_platform::BIND_PLATFORM_DEV_VID_GOOGLE),
       ddk::MakeProperty(bind_fuchsia::PLATFORM_DEV_PID,
@@ -286,13 +282,11 @@ zx_status_t Nelson::AddPostInitDevice() {
 
   for (const uint32_t pin : kPostInitGpios) {
     const ddk::BindRule gpio_rules[] = {
-        ddk::MakeAcceptBindRule(bind_fuchsia_hardware_gpio::SERVICE,
-                                bind_fuchsia_hardware_gpio::SERVICE_ZIRCONTRANSPORT),
+        ddk::MakeAcceptBindRule(bind_fuchsia::SERVICE, "fuchsia.hardware.gpio.Service"),
         ddk::MakeAcceptBindRule(bind_fuchsia::GPIO_PIN, pin),
     };
     const device_bind_prop_t gpio_properties[] = {
-        ddk::MakeProperty(bind_fuchsia_hardware_gpio::SERVICE,
-                          bind_fuchsia_hardware_gpio::SERVICE_ZIRCONTRANSPORT),
+        ddk::MakeProperty(bind_fuchsia::SERVICE, "fuchsia.hardware.gpio.Service"),
         ddk::MakeProperty(bind_fuchsia::GPIO_PIN, pin),
     };
     spec.AddParentSpec(gpio_rules, gpio_properties);

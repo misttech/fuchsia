@@ -63,19 +63,19 @@ static const std::vector<fpbus::BootMetadata> raw_nand_boot_metadata{
     }},
 };
 
-static const std::vector<fdf::BindRule2> kGpioInitRules = std::vector{
+static const std::vector<fuchsia_driver_framework::BindRule2> kGpioInitRules = std::vector{
     fdf::MakeAcceptBindRule(bind_fuchsia::INIT_STEP, bind_fuchsia_gpio::BIND_INIT_STEP_GPIO),
 };
-static const std::vector<fdf::NodeProperty2> kGpioInitProps = std::vector{
+static const std::vector<fuchsia_driver_framework::NodeProperty2> kGpioInitProps = std::vector{
     fdf::MakeProperty2(bind_fuchsia::INIT_STEP, bind_fuchsia_gpio::BIND_INIT_STEP_GPIO),
 };
 
-static const std::vector<fdf::ParentSpec2> kRawNandParents = std::vector{
-    fdf::ParentSpec2{{kGpioInitRules, kGpioInitProps}},
+static const std::vector<fuchsia_driver_framework::ParentSpec2> kRawNandParents = std::vector{
+    fuchsia_driver_framework::ParentSpec2{{kGpioInitRules, kGpioInitProps}},
 };
 
-static const auto kCompositeNodeSpec =
-    fdf::CompositeNodeSpec{{.name = "nand-ffe07800", .parents2 = kRawNandParents}};
+static const auto kCompositeNodeSpec = fuchsia_driver_framework::CompositeNodeSpec{
+    {.name = "nand-ffe07800", .parents2 = kRawNandParents}};
 
 zx_status_t Astro::RawNandInit() {
   // Set alternate functions to enable raw_nand.

@@ -14,8 +14,6 @@
 #include <bind/fuchsia/cpp/bind.h>
 #include <bind/fuchsia/google/platform/cpp/bind.h>
 #include <bind/fuchsia/gpio/cpp/bind.h>
-#include <bind/fuchsia/hardware/gpio/cpp/bind.h>
-#include <bind/fuchsia/hardware/spi/cpp/bind.h>
 #include <bind/fuchsia/nordic/platform/cpp/bind.h>
 #include <bind/fuchsia/platform/cpp/bind.h>
 
@@ -40,9 +38,8 @@ static const std::vector<fpbus::Metadata> kNrf52811RadioMetadata{
     }},
 };
 
-const std::vector<fdf::BindRule2> kSpiRules = std::vector{
-    fdf::MakeAcceptBindRule(bind_fuchsia_hardware_spi::SERVICE,
-                            bind_fuchsia_hardware_spi::SERVICE_ZIRCONTRANSPORT),
+const std::vector<fuchsia_driver_framework::BindRule2> kSpiRules = std::vector{
+    fdf::MakeAcceptBindRule(bind_fuchsia::SERVICE, "fuchsia.hardware.spi.Service"),
     fdf::MakeAcceptBindRule(bind_fuchsia::PLATFORM_DEV_VID,
                             bind_fuchsia_nordic_platform::BIND_PLATFORM_DEV_VID_NORDIC),
     fdf::MakeAcceptBindRule(bind_fuchsia::PLATFORM_DEV_PID,
@@ -52,19 +49,18 @@ const std::vector<fdf::BindRule2> kSpiRules = std::vector{
 
 };
 
-const std::vector<fdf::NodeProperty2> kSpiProperties = std::vector{
-    fdf::MakeProperty2(bind_fuchsia_hardware_spi::SERVICE,
-                       bind_fuchsia_hardware_spi::SERVICE_ZIRCONTRANSPORT),
+const std::vector<fuchsia_driver_framework::NodeProperty2> kSpiProperties = std::vector{
+    fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.spi.Service"),
     fdf::MakeProperty2(bind_fuchsia::PLATFORM_DEV_VID,
                        bind_fuchsia_nordic_platform::BIND_PLATFORM_DEV_VID_NORDIC),
     fdf::MakeProperty2(bind_fuchsia::PLATFORM_DEV_DID,
                        bind_fuchsia_nordic_platform::BIND_PLATFORM_DEV_DID_THREAD),
 };
 
-const std::vector<fdf::BindRule2> kGpioInitRules = std::vector{
+const std::vector<fuchsia_driver_framework::BindRule2> kGpioInitRules = std::vector{
     fdf::MakeAcceptBindRule(bind_fuchsia::INIT_STEP, bind_fuchsia_gpio::BIND_INIT_STEP_GPIO),
 };
-const std::vector<fdf::NodeProperty2> kGpioInitProperties = std::vector{
+const std::vector<fuchsia_driver_framework::NodeProperty2> kGpioInitProperties = std::vector{
     fdf::MakeProperty2(bind_fuchsia::INIT_STEP, bind_fuchsia_gpio::BIND_INIT_STEP_GPIO),
 };
 
@@ -99,24 +95,22 @@ zx_status_t Nelson::OtRadioInit() {
   dev.did() = bind_fuchsia_platform::BIND_PLATFORM_DEV_DID_OT_RADIO;
   dev.metadata() = kNrf52811RadioMetadata;
 
-  std::vector<fdf::ParentSpec2> parents = {
-      fdf::ParentSpec2{{kSpiRules, kSpiProperties}},
-      fdf::ParentSpec2{{kGpioInitRules, kGpioInitProperties}},
+  std::vector<fuchsia_driver_framework::ParentSpec2> parents = {
+      fuchsia_driver_framework::ParentSpec2{{kSpiRules, kSpiProperties}},
+      fuchsia_driver_framework::ParentSpec2{{kGpioInitRules, kGpioInitProperties}},
   };
   parents.reserve(parents.size() + kGpioPinFunctionMap.size());
 
   for (auto& [gpio_pin, function] : kGpioPinFunctionMap) {
     auto rules = std::vector{
-        fdf::MakeAcceptBindRule(bind_fuchsia_hardware_gpio::SERVICE,
-                                bind_fuchsia_hardware_gpio::SERVICE_ZIRCONTRANSPORT),
+        fdf::MakeAcceptBindRule(bind_fuchsia::SERVICE, "fuchsia.hardware.gpio.Service"),
         fdf::MakeAcceptBindRule(bind_fuchsia::GPIO_PIN, gpio_pin),
     };
     auto properties = std::vector{
-        fdf::MakeProperty2(bind_fuchsia_hardware_gpio::SERVICE,
-                           bind_fuchsia_hardware_gpio::SERVICE_ZIRCONTRANSPORT),
+        fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.gpio.Service"),
         fdf::MakeProperty2(bind_fuchsia::NAME, function),
     };
-    parents.push_back(fdf::ParentSpec2{{rules, properties}});
+    parents.push_back(fuchsia_driver_framework::ParentSpec2{{rules, properties}});
   }
 
   fidl::Arena<> fidl_arena;

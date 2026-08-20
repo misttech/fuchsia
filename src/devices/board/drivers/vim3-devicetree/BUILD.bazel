@@ -79,6 +79,7 @@ fuchsia_cc_driver(
         "//src/lib/ddk:ddk_metadata",
         "@fuchsia_sdk//bind/fuchsia.adc:fuchsia.adc_cc",
         "@fuchsia_sdk//bind/fuchsia.broadcom.platform.sdio:fuchsia.broadcom.platform.sdio_cc",
+        "@fuchsia_sdk//bind/fuchsia:fuchsia_cc",
         "@fuchsia_sdk//bind/fuchsia.sdio:fuchsia.sdio_cc",
         "@fuchsia_sdk//fidl/fuchsia.buttons:fuchsia.buttons_cpp",
         "@fuchsia_sdk//fidl/fuchsia.driver.framework:fuchsia.driver.framework_cpp",

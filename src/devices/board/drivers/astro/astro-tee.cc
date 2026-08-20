@@ -103,7 +103,8 @@ zx_status_t Astro::TeeInit() {
   fdf::Arena arena('TEE_');
   auto result = pbus_.buffer(arena)->AddCompositeNodeSpec(
       fidl::ToWire(fidl_arena, node),
-      fidl::ToWire(fidl_arena, fdf::CompositeNodeSpec{{.name = "tee-5300000", .parents2 = {}}}));
+      fidl::ToWire(fidl_arena, fuchsia_driver_framework::CompositeNodeSpec{
+                                   {.name = "tee-5300000", .parents2 = {}}}));
   if (!result.ok()) {
     zxlogf(ERROR, "AddCompositeNodeSpec Tee(tee_dev) request failed: %s",
            result.FormatDescription().data());

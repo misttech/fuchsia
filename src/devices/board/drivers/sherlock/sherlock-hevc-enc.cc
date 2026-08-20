@@ -62,11 +62,11 @@ static const std::vector<fpbus::Irq> sherlock_hevc_enc_irqs{
     }},
 };
 
-const std::vector<fdf::BindRule2> kClkDosRules = std::vector{
+const std::vector<fuchsia_driver_framework::BindRule2> kClkDosRules = std::vector{
     fdf::MakeAcceptBindRule(bind_fuchsia::SERVICE, "fuchsia.hardware.clock.Service"),
     fdf::MakeAcceptBindRule(bind_fuchsia::ID, g12b_clk::G12B_CLK_DOS),
 };
-const std::vector<fdf::NodeProperty2> kClkDosProperties = std::vector{
+const std::vector<fuchsia_driver_framework::NodeProperty2> kClkDosProperties = std::vector{
     fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.clock.Service"),
     fdf::MakeProperty2("fuchsia.hardware.clock.Service",
                        "fuchsia.hardware.clock.Service.ZirconTransport"),
@@ -89,8 +89,8 @@ static const fpbus::Node hevc_enc_dev = []() {
 zx_status_t Sherlock::HevcEncInit() {
   fidl::Arena<> fidl_arena;
 
-  std::vector<fdf::ParentSpec2> kHevcEncParents = {
-      fdf::ParentSpec2{{kClkDosRules, kClkDosProperties}}};
+  std::vector<fuchsia_driver_framework::ParentSpec2> kHevcEncParents = {
+      fuchsia_driver_framework::ParentSpec2{{kClkDosRules, kClkDosProperties}}};
   fdf::Arena arena('HEVC');
   auto composite_result = pbus_.buffer(arena)->AddCompositeNodeSpec(
       fidl::ToWire(fidl_arena, hevc_enc_dev),

@@ -14,8 +14,6 @@
 #include <bind/fuchsia/amlogic/platform/cpp/bind.h>
 #include <bind/fuchsia/arm/platform/cpp/bind.h>
 #include <bind/fuchsia/cpp/bind.h>
-#include <bind/fuchsia/hardware/gpu/mali/cpp/bind.h>
-#include <bind/fuchsia/hardware/registers/cpp/bind.h>
 #include <soc/aml-common/aml-registers.h>
 #include <soc/aml-t931/t931-hw.h>
 
@@ -98,15 +96,14 @@ zx_status_t Sherlock::MaliInit() {
     auto aml_gpu_register_reset_node = fuchsia_driver_framework::ParentSpec2{{
         .bind_rules =
             {
-                fdf::MakeAcceptBindRule(bind_fuchsia_hardware_registers::SERVICE,
-                                        bind_fuchsia_hardware_registers::SERVICE_ZIRCONTRANSPORT),
+                fdf::MakeAcceptBindRule(bind_fuchsia::SERVICE,
+                                        "fuchsia.hardware.registers.Service"),
                 fdf::MakeAcceptBindRule(bind_fuchsia::NAME,
                                         bind_fuchsia_amlogic_platform::NAME_REGISTER_MALI_RESET),
             },
         .properties =
             {
-                fdf::MakeProperty2(bind_fuchsia_hardware_registers::SERVICE,
-                                   bind_fuchsia_hardware_registers::SERVICE_ZIRCONTRANSPORT),
+                fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.registers.Service"),
                 fdf::MakeProperty2(bind_fuchsia::NAME,
                                    bind_fuchsia_amlogic_platform::NAME_REGISTER_MALI_RESET),
             },
@@ -145,12 +142,10 @@ zx_status_t Sherlock::MaliInit() {
     fdf::Arena arena('MALI');
 
     auto aml_gpu_bind_rules = std::vector{
-        fdf::MakeAcceptBindRule(bind_fuchsia_hardware_gpu_mali::SERVICE,
-                                bind_fuchsia_hardware_gpu_mali::SERVICE_DRIVERTRANSPORT)};
+        fdf::MakeAcceptBindRule(bind_fuchsia::SERVICE, "fuchsia.hardware.gpu.mali.Service")};
 
     auto aml_gpu_properties =
-        std::vector{fdf::MakeProperty2(bind_fuchsia_hardware_gpu_mali::SERVICE,
-                                       bind_fuchsia_hardware_gpu_mali::SERVICE_DRIVERTRANSPORT)};
+        std::vector{fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.gpu.mali.Service")};
 
     auto parents =
         std::vector{fuchsia_driver_framework::ParentSpec2(aml_gpu_bind_rules, aml_gpu_properties)};

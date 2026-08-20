@@ -17,8 +17,6 @@
 #include <bind/fuchsia/amlogic/platform/cpp/bind.h>
 #include <bind/fuchsia/cpp/bind.h>
 #include <bind/fuchsia/gpio/cpp/bind.h>
-#include <bind/fuchsia/hardware/clock/cpp/bind.h>
-#include <bind/fuchsia/hardware/pwm/cpp/bind.h>
 #include <bind/fuchsia/pwm/cpp/bind.h>
 #include <soc/aml-common/aml-thermal.h>
 #include <soc/aml-meson/sm1-clk.h>
@@ -194,24 +192,21 @@ static const aml_thermal_info_t aml_thermal_info = {
         },
 };
 
-const std::vector<fdf::BindRule2> kPwmRules = std::vector{
-    fdf::MakeAcceptBindRule(bind_fuchsia_hardware_pwm::SERVICE,
-                            bind_fuchsia_hardware_pwm::SERVICE_ZIRCONTRANSPORT),
+const std::vector<fuchsia_driver_framework::BindRule2> kPwmRules = std::vector{
+    fdf::MakeAcceptBindRule(bind_fuchsia::SERVICE, "fuchsia.hardware.pwm.Service"),
     fdf::MakeAcceptBindRule(bind_fuchsia::PWM_ID, static_cast<uint32_t>(S905D3_PWM_AO_D)),
 };
 
-const std::vector<fdf::NodeProperty2> kPwmProperties = std::vector{
+const std::vector<fuchsia_driver_framework::NodeProperty2> kPwmProperties = std::vector{
     fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.pwm.Service"),
-    fdf::MakeProperty2(bind_fuchsia_hardware_pwm::SERVICE,
-                       bind_fuchsia_hardware_pwm::SERVICE_ZIRCONTRANSPORT),
     fdf::MakeProperty2(bind_fuchsia::NAME, "pwm-big-cluster"),
 };
 
-const std::vector<fdf::BindRule2> kGpioInitRules = std::vector{
+const std::vector<fuchsia_driver_framework::BindRule2> kGpioInitRules = std::vector{
     fdf::MakeAcceptBindRule(bind_fuchsia::INIT_STEP, bind_fuchsia_gpio::BIND_INIT_STEP_GPIO),
 };
 
-const std::vector<fdf::NodeProperty2> kGpioInitProperties = std::vector{
+const std::vector<fuchsia_driver_framework::NodeProperty2> kGpioInitProperties = std::vector{
     fdf::MakeProperty2(bind_fuchsia::INIT_STEP, bind_fuchsia_gpio::BIND_INIT_STEP_GPIO),
 };
 
@@ -294,22 +289,20 @@ zx_status_t Nelson::ThermalInit() {
   fidl::Arena<> fidl_arena;
   fdf::Arena arena('THER');
 
-  std::vector<fdf::ParentSpec2> parents = {fdf::ParentSpec2{{kPwmRules, kPwmProperties}},
-                                           fdf::ParentSpec2{{kGpioInitRules, kGpioInitProperties}}};
+  std::vector<fuchsia_driver_framework::ParentSpec2> parents = {
+      fuchsia_driver_framework::ParentSpec2{{kPwmRules, kPwmProperties}},
+      fuchsia_driver_framework::ParentSpec2{{kGpioInitRules, kGpioInitProperties}}};
   parents.reserve(parents.size() + kClockFunctionMap.size());
   for (auto& [clock_id, function] : kClockFunctionMap) {
     auto rules = std::vector{
-        fdf::MakeAcceptBindRule(bind_fuchsia_hardware_clock::SERVICE,
-                                bind_fuchsia_hardware_clock::SERVICE_ZIRCONTRANSPORT),
+        fdf::MakeAcceptBindRule(bind_fuchsia::SERVICE, "fuchsia.hardware.clock.Service"),
         fdf::MakeAcceptBindRule(bind_fuchsia::ID, clock_id),
     };
     auto properties = std::vector{
         fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.clock.Service"),
-        fdf::MakeProperty2(bind_fuchsia_hardware_clock::SERVICE,
-                           bind_fuchsia_hardware_clock::SERVICE_ZIRCONTRANSPORT),
         fdf::MakeProperty2(bind_fuchsia::NAME, function),
     };
-    parents.push_back(fdf::ParentSpec2{{rules, properties}});
+    parents.push_back(fuchsia_driver_framework::ParentSpec2{{rules, properties}});
   }
 
   auto result = pbus_.buffer(arena)->AddCompositeNodeSpec(

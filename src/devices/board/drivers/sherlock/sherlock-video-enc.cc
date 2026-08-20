@@ -58,31 +58,31 @@ static const std::vector<fpbus::Irq> sherlock_video_enc_irqs{
     }},
 };
 
-const std::vector<fdf::BindRule2> kCanvasRules = std::vector{
+const std::vector<fuchsia_driver_framework::BindRule2> kCanvasRules = std::vector{
     fdf::MakeAcceptBindRule(bind_fuchsia::SERVICE, "fuchsia.hardware.amlogiccanvas.Service")};
 
-const std::vector<fdf::NodeProperty2> kCanvasProperties = std::vector{
+const std::vector<fuchsia_driver_framework::NodeProperty2> kCanvasProperties = std::vector{
     fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.amlogiccanvas.Service"),
     fdf::MakeProperty2("fuchsia.hardware.amlogiccanvas.Service",
                        "fuchsia.hardware.amlogiccanvas.Service.ZirconTransport"),
 };
 
-const std::vector<fdf::BindRule2> kClkDosHCodecRules = std::vector{
+const std::vector<fuchsia_driver_framework::BindRule2> kClkDosHCodecRules = std::vector{
     fdf::MakeAcceptBindRule(bind_fuchsia::SERVICE, "fuchsia.hardware.clock.Service"),
     fdf::MakeAcceptBindRule(bind_fuchsia::ID, g12b_clk::G12B_CLK_DOS_GCLK_HCODEC),
 };
-const std::vector<fdf::NodeProperty2> kClkDosHCodecProperties = std::vector{
+const std::vector<fuchsia_driver_framework::NodeProperty2> kClkDosHCodecProperties = std::vector{
     fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.clock.Service"),
     fdf::MakeProperty2("fuchsia.hardware.clock.Service",
                        "fuchsia.hardware.clock.Service.ZirconTransport"),
     fdf::MakeProperty2(bind_fuchsia::NAME, "DOS_GCLK_HCODEC"),
 };
 
-const std::vector<fdf::BindRule2> kClkDosRules = std::vector{
+const std::vector<fuchsia_driver_framework::BindRule2> kClkDosRules = std::vector{
     fdf::MakeAcceptBindRule(bind_fuchsia::SERVICE, "fuchsia.hardware.clock.Service"),
     fdf::MakeAcceptBindRule(bind_fuchsia::ID, g12b_clk::G12B_CLK_DOS),
 };
-const std::vector<fdf::NodeProperty2> kClkDosProperties = std::vector{
+const std::vector<fuchsia_driver_framework::NodeProperty2> kClkDosProperties = std::vector{
     fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.clock.Service"),
     fdf::MakeProperty2("fuchsia.hardware.clock.Service",
                        "fuchsia.hardware.clock.Service.ZirconTransport"),
@@ -106,10 +106,10 @@ zx_status_t Sherlock::VideoEncInit() {
 
   fidl::Arena<> fidl_arena;
 
-  std::vector<fdf::ParentSpec2> kVideoEncParents = {
-      fdf::ParentSpec2{{kCanvasRules, kCanvasProperties}},
-      fdf::ParentSpec2{{kClkDosHCodecRules, kClkDosHCodecProperties}},
-      fdf::ParentSpec2{{kClkDosRules, kClkDosProperties}}};
+  std::vector<fuchsia_driver_framework::ParentSpec2> kVideoEncParents = {
+      fuchsia_driver_framework::ParentSpec2{{kCanvasRules, kCanvasProperties}},
+      fuchsia_driver_framework::ParentSpec2{{kClkDosHCodecRules, kClkDosHCodecProperties}},
+      fuchsia_driver_framework::ParentSpec2{{kClkDosRules, kClkDosProperties}}};
   fdf::Arena arena('VIDE');
   auto composite_result = pbus_.buffer(arena)->AddCompositeNodeSpec(
       fidl::ToWire(fidl_arena, video_enc_dev),

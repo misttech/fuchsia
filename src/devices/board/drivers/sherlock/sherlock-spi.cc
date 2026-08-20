@@ -17,8 +17,6 @@
 #include <bind/fuchsia/amlogic/platform/cpp/bind.h>
 #include <bind/fuchsia/cpp/bind.h>
 #include <bind/fuchsia/gpio/cpp/bind.h>
-#include <bind/fuchsia/hardware/gpio/cpp/bind.h>
-#include <bind/fuchsia/hardware/registers/cpp/bind.h>
 #include <bind/fuchsia/platform/cpp/bind.h>
 #include <fbl/algorithm.h>
 #include <soc/aml-common/aml-registers.h>
@@ -66,36 +64,32 @@ static const spi_channel_t spi_channels[] = {
 };
 
 const std::vector kGpioSpiRules = {
-    fdf::MakeAcceptBindRule(bind_fuchsia_hardware_gpio::SERVICE,
-                            bind_fuchsia_hardware_gpio::SERVICE_ZIRCONTRANSPORT),
+    fdf::MakeAcceptBindRule(bind_fuchsia::SERVICE, "fuchsia.hardware.gpio.Service"),
     fdf::MakeAcceptBindRule(bind_fuchsia::GPIO_PIN, static_cast<uint32_t>(GPIO_SPICC0_SS0)),
 };
 
 const std::vector kGpioSpiProperties = {
-    fdf::MakeProperty2(bind_fuchsia_hardware_gpio::SERVICE,
-                       bind_fuchsia_hardware_gpio::SERVICE_ZIRCONTRANSPORT),
+    fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.gpio.Service"),
     fdf::MakeProperty2(bind_fuchsia::NAME, "gpio-cs-0"),
 };
 
 const std::vector kResetRegisterRules = {
-    fdf::MakeAcceptBindRule(bind_fuchsia_hardware_registers::SERVICE,
-                            bind_fuchsia_hardware_registers::SERVICE_ZIRCONTRANSPORT),
+    fdf::MakeAcceptBindRule(bind_fuchsia::SERVICE, "fuchsia.hardware.registers.Service"),
     fdf::MakeAcceptBindRule(bind_fuchsia::NAME,
                             bind_fuchsia_amlogic_platform::NAME_REGISTER_SPICC0_RESET),
 };
 
 const std::vector kResetRegisterProperties = {
-    fdf::MakeProperty2(bind_fuchsia_hardware_registers::SERVICE,
-                       bind_fuchsia_hardware_registers::SERVICE_ZIRCONTRANSPORT),
+    fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.registers.Service"),
     fdf::MakeProperty2(bind_fuchsia::NAME,
                        bind_fuchsia_amlogic_platform::NAME_REGISTER_SPICC0_RESET),
 };
 
-const std::vector<fdf::BindRule2> kGpioInitRules = std::vector{
+const std::vector<fuchsia_driver_framework::BindRule2> kGpioInitRules = std::vector{
     fdf::MakeAcceptBindRule(bind_fuchsia::INIT_STEP, bind_fuchsia_gpio::BIND_INIT_STEP_GPIO),
 };
 
-const std::vector<fdf::NodeProperty2> kGpioInitProperties = std::vector{
+const std::vector<fuchsia_driver_framework::NodeProperty2> kGpioInitProperties = std::vector{
     fdf::MakeProperty2(bind_fuchsia::INIT_STEP, bind_fuchsia_gpio::BIND_INIT_STEP_GPIO),
 };
 
@@ -178,7 +172,7 @@ zx_status_t Sherlock::SpiInit() {
                  HHI_SPICC_CLK_CNTL);
   }
 
-  auto parents = std::vector<fdf::ParentSpec2>{
+  auto parents = std::vector<fuchsia_driver_framework::ParentSpec2>{
       {kGpioSpiRules, kGpioSpiProperties},
       {kResetRegisterRules, kResetRegisterProperties},
       {kGpioInitRules, kGpioInitProperties},
@@ -188,7 +182,8 @@ zx_status_t Sherlock::SpiInit() {
   fdf::Arena arena('SPI_');
   auto result = pbus_.buffer(arena)->AddCompositeNodeSpec(
       fidl::ToWire(fidl_arena, spi_dev),
-      fidl::ToWire(fidl_arena, fdf::CompositeNodeSpec{{.name = "spi-13000", .parents2 = parents}}));
+      fidl::ToWire(fidl_arena, fuchsia_driver_framework::CompositeNodeSpec{
+                                   {.name = "spi-13000", .parents2 = parents}}));
   if (!result.ok()) {
     zxlogf(ERROR, "AddCompositeNodeSpec Spi(spi_dev) request failed: %s",
            result.FormatDescription().data());

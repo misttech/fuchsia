@@ -13,7 +13,6 @@
 #include <lib/driver/component/cpp/composite_node_spec.h>
 #include <lib/driver/component/cpp/node_add_args.h>
 
-#include <bind/fuchsia/amlogic/platform/cpp/bind.h>
 #include <bind/fuchsia/clock/cpp/bind.h>
 #include <bind/fuchsia/cpp/bind.h>
 #include <bind/fuchsia/gpio/cpp/bind.h>
@@ -41,58 +40,62 @@ namespace nelson {
 namespace fpbus = fuchsia_hardware_platform_bus;
 
 // Audio out controller composite node specifications.
-const std::vector<fdf::BindRule2> kGpioInitRules = std::vector{
+const std::vector<fuchsia_driver_framework::BindRule2> kGpioInitRules = std::vector{
     fdf::MakeAcceptBindRule(bind_fuchsia::INIT_STEP, bind_fuchsia_gpio::BIND_INIT_STEP_GPIO),
 };
-const std::vector<fdf::NodeProperty2> kGpioInitProps = std::vector{
+const std::vector<fuchsia_driver_framework::NodeProperty2> kGpioInitProps = std::vector{
     fdf::MakeProperty2(bind_fuchsia::INIT_STEP, bind_fuchsia_gpio::BIND_INIT_STEP_GPIO),
 };
 
-const std::vector<fdf::BindRule2> kClockInitRules = std::vector{
+const std::vector<fuchsia_driver_framework::BindRule2> kClockInitRules = std::vector{
     fdf::MakeAcceptBindRule(bind_fuchsia::INIT_STEP, bind_fuchsia_clock::BIND_INIT_STEP_CLOCK),
 };
-const std::vector<fdf::NodeProperty2> kClockInitProps = std::vector{
+const std::vector<fuchsia_driver_framework::NodeProperty2> kClockInitProps = std::vector{
     fdf::MakeProperty2(bind_fuchsia::INIT_STEP, bind_fuchsia_clock::BIND_INIT_STEP_CLOCK),
 };
 
-const std::vector<fdf::BindRule2> kAudioEnableGpioRules = std::vector{
+const std::vector<fuchsia_driver_framework::BindRule2> kAudioEnableGpioRules = std::vector{
     fdf::MakeAcceptBindRule(bind_fuchsia::SERVICE, "fuchsia.hardware.gpio.Service"),
     fdf::MakeAcceptBindRule(bind_fuchsia::GPIO_PIN, static_cast<uint32_t>(GPIO_SOC_AUDIO_EN)),
 };
-const std::vector<fdf::NodeProperty2> kAudioEnableGpioProps = std::vector{
+const std::vector<fuchsia_driver_framework::NodeProperty2> kAudioEnableGpioProps = std::vector{
     fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.gpio.Service"),
     fdf::MakeProperty2(bind_fuchsia::NAME, "gpio-enable"),
 };
 
-const std::vector<fdf::BindRule2> kOutCodecRules = std::vector{
+const std::vector<fuchsia_driver_framework::BindRule2> kOutCodecRules = std::vector{
     fdf::MakeAcceptBindRule(bind_fuchsia::SERVICE, "fuchsia.hardware.audio.CodecService"),
+    fdf::MakeAcceptBindRule(bind_fuchsia::PLATFORM_DEV_VID,
+                            bind_fuchsia_ti_platform::BIND_PLATFORM_DEV_VID_TI),
+    fdf::MakeAcceptBindRule(bind_fuchsia::PLATFORM_DEV_DID,
+                            bind_fuchsia_ti_platform::BIND_PLATFORM_DEV_DID_TAS58XX),
 };
-const std::vector<fdf::NodeProperty2> kOutCodecProps = std::vector{
+const std::vector<fuchsia_driver_framework::NodeProperty2> kOutCodecProps = std::vector{
     fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.audio.CodecService"),
     fdf::MakeProperty2("fuchsia.hardware.audio.CodecService",
                        "fuchsia.hardware.audio.CodecService.ZirconTransport"),
     fdf::MakeProperty2(bind_fuchsia::CODEC_INSTANCE, static_cast<uint32_t>(1)),
 };
 
-const std::vector<fdf::ParentSpec2> kOutControllerParents = std::vector{
-    fdf::ParentSpec2{{kGpioInitRules, kGpioInitProps}},
-    fdf::ParentSpec2{{kClockInitRules, kClockInitProps}},
-    fdf::ParentSpec2{{kAudioEnableGpioRules, kAudioEnableGpioProps}},
-    fdf::ParentSpec2{{kOutCodecRules, kOutCodecProps}},
+const std::vector<fuchsia_driver_framework::ParentSpec2> kOutControllerParents = std::vector{
+    fuchsia_driver_framework::ParentSpec2{{kGpioInitRules, kGpioInitProps}},
+    fuchsia_driver_framework::ParentSpec2{{kClockInitRules, kClockInitProps}},
+    fuchsia_driver_framework::ParentSpec2{{kAudioEnableGpioRules, kAudioEnableGpioProps}},
+    fuchsia_driver_framework::ParentSpec2{{kOutCodecRules, kOutCodecProps}},
 };
 
-const std::vector<fdf::ParentSpec2> kParentSpecInit = std::vector{
-    fdf::ParentSpec2{{kGpioInitRules, kGpioInitProps}},
-    fdf::ParentSpec2{{kClockInitRules, kClockInitProps}},
+const std::vector<fuchsia_driver_framework::ParentSpec2> kParentSpecInit = std::vector{
+    fuchsia_driver_framework::ParentSpec2{{kGpioInitRules, kGpioInitProps}},
+    fuchsia_driver_framework::ParentSpec2{{kClockInitRules, kClockInitProps}},
 };
 
 // Codec composite node specifications.
-const std::vector<fdf::BindRule2> kOutI2cRules = std::vector{
+const std::vector<fuchsia_driver_framework::BindRule2> kOutI2cRules = std::vector{
     fdf::MakeAcceptBindRule(bind_fuchsia::SERVICE, "fuchsia.hardware.i2c.Service"),
     fdf::MakeAcceptBindRule(bind_fuchsia::I2C_BUS_ID, static_cast<uint32_t>(NELSON_I2C_3)),
     fdf::MakeAcceptBindRule(bind_fuchsia::I2C_ADDRESS, static_cast<uint32_t>(I2C_AUDIO_CODEC_ADDR)),
 };
-const std::vector<fdf::NodeProperty2> kOutI2cProps = std::vector{
+const std::vector<fuchsia_driver_framework::NodeProperty2> kOutI2cProps = std::vector{
     fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.i2c.Service"),
     fdf::MakeProperty2(bind_fuchsia::PLATFORM_DEV_VID,
                        bind_fuchsia_ti_platform::BIND_PLATFORM_DEV_VID_TI),
@@ -100,11 +103,11 @@ const std::vector<fdf::NodeProperty2> kOutI2cProps = std::vector{
                        bind_fuchsia_ti_platform::BIND_PLATFORM_DEV_DID_TAS58XX),
 };
 
-const std::vector<fdf::BindRule2> kFaultGpioRules = std::vector{
+const std::vector<fuchsia_driver_framework::BindRule2> kFaultGpioRules = std::vector{
     fdf::MakeAcceptBindRule(bind_fuchsia::SERVICE, "fuchsia.hardware.gpio.Service"),
     fdf::MakeAcceptBindRule(bind_fuchsia::GPIO_PIN, static_cast<uint32_t>(GPIO_AUDIO_SOC_FAULT_L)),
 };
-const std::vector<fdf::NodeProperty2> kFaultGpioProps = std::vector{
+const std::vector<fuchsia_driver_framework::NodeProperty2> kFaultGpioProps = std::vector{
     fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.gpio.Service"),
     fdf::MakeProperty2(bind_fuchsia::NAME, "gpio-fault"),
 };
@@ -306,12 +309,13 @@ zx_status_t Nelson::AudioInit() {
       }},
   };
   auto parents = std::vector{
-      fdf::ParentSpec2{{kOutI2cRules, kOutI2cProps}},
-      fdf::ParentSpec2{{kFaultGpioRules, kFaultGpioProps}},
-      fdf::ParentSpec2{{kGpioInitRules, kGpioInitProps}},
+      fuchsia_driver_framework::ParentSpec2{{kOutI2cRules, kOutI2cProps}},
+      fuchsia_driver_framework::ParentSpec2{{kFaultGpioRules, kFaultGpioProps}},
+      fuchsia_driver_framework::ParentSpec2{{kGpioInitRules, kGpioInitProps}},
   };
   {
-    auto composite_node_spec = fdf::CompositeNodeSpec{{.name = "tas58xx", .parents2 = parents}};
+    auto composite_node_spec =
+        fuchsia_driver_framework::CompositeNodeSpec{{.name = "tas58xx", .parents2 = parents}};
     fdf::WireUnownedResult result = pbus_.buffer(arena)->AddCompositeNodeSpec(
         fidl::ToWire(fidl_arena, dev), fidl::ToWire(fidl_arena, composite_node_spec));
     if (!result.ok()) {
@@ -325,7 +329,7 @@ zx_status_t Nelson::AudioInit() {
     }
   }
   {
-    auto controller_out_spec = fdf::CompositeNodeSpec{{
+    auto controller_out_spec = fuchsia_driver_framework::CompositeNodeSpec{{
         .name = "aml_tdm",
         .parents2 = kOutControllerParents,
     }};
@@ -390,7 +394,7 @@ zx_status_t Nelson::AudioInit() {
     tdm_dev.bti() = pcm_out_btis;
     tdm_dev.metadata() = tdm_metadata;
 
-    auto tdm_spec = fdf::CompositeNodeSpec{{
+    auto tdm_spec = fuchsia_driver_framework::CompositeNodeSpec{{
         .name = "aml_tdm_dai_out",
         .parents2 = kParentSpecInit,
     }};
@@ -456,7 +460,7 @@ zx_status_t Nelson::AudioInit() {
     tdm_dev.bti() = pcm_in_btis;
     tdm_dev.metadata() = tdm_metadata;
 
-    auto tdm_spec = fdf::CompositeNodeSpec{{
+    auto tdm_spec = fuchsia_driver_framework::CompositeNodeSpec{{
         .name = "aml_tdm_dai_in",
         .parents2 = kParentSpecInit,
     }};
@@ -503,7 +507,7 @@ zx_status_t Nelson::AudioInit() {
     dev_in.irq() = toddr_b_irqs;
     dev_in.metadata() = pdm_metadata;
 
-    auto pdm_spec = fdf::CompositeNodeSpec{{
+    auto pdm_spec = fuchsia_driver_framework::CompositeNodeSpec{{
         .name = "aml_pdm",
         .parents2 = kParentSpecInit,
     }};

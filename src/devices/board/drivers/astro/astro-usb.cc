@@ -18,8 +18,6 @@
 #include <string.h>
 
 #include <bind/fuchsia/cpp/bind.h>
-#include <bind/fuchsia/hardware/registers/cpp/bind.h>
-#include <bind/fuchsia/hardware/usb/phy/cpp/bind.h>
 #include <soc/aml-common/aml-registers.h>
 #include <soc/aml-s905d2/s905d2-hw.h>
 #include <usb/cdc.h>
@@ -136,21 +134,20 @@ zx_status_t AddUsbPhyComposite(fdf::WireSyncClient<fpbus::PlatformBus>& pbus,
       .metadata = usb_phy_metadata,
   }};
 
-  const std::vector<fdf::BindRule2> kResetRegisterRules = std::vector{
-      fdf::MakeAcceptBindRule(bind_fuchsia_hardware_registers::SERVICE,
-                              bind_fuchsia_hardware_registers::SERVICE_ZIRCONTRANSPORT),
+  const std::vector<fuchsia_driver_framework::BindRule2> kResetRegisterRules = std::vector{
+      fdf::MakeAcceptBindRule(bind_fuchsia::SERVICE, "fuchsia.hardware.registers.Service"),
       fdf::MakeAcceptBindRule(bind_fuchsia::NAME,
                               bind_fuchsia_amlogic_platform::NAME_REGISTER_USB_PHY_V2_RESET),
   };
 
-  const std::vector<fdf::NodeProperty2> kResetRegisterProperties = std::vector{
-      fdf::MakeProperty2(bind_fuchsia_hardware_registers::SERVICE,
-                         bind_fuchsia_hardware_registers::SERVICE_ZIRCONTRANSPORT),
+  const std::vector<fuchsia_driver_framework::NodeProperty2> kResetRegisterProperties = std::vector{
+      fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.registers.Service"),
       fdf::MakeProperty2(bind_fuchsia::NAME,
                          bind_fuchsia_amlogic_platform::NAME_REGISTER_USB_PHY_V2_RESET),
   };
 
-  std::vector<fdf::ParentSpec2> parents{{kResetRegisterRules, kResetRegisterProperties}};
+  std::vector<fuchsia_driver_framework::ParentSpec2> parents{
+      {kResetRegisterRules, kResetRegisterProperties}};
   auto result = pbus.buffer(arena)->AddCompositeNodeSpec(
       fidl::ToWire(fidl_arena, usb_phy_dev),
       fidl::ToWire(fidl_arena, fuchsia_driver_framework::CompositeNodeSpec{
@@ -203,9 +200,8 @@ zx_status_t AddDwc2Composite(fdf::WireSyncClient<fpbus::PlatformBus>& pbus,
       .boot_metadata = usb_boot_metadata,
   });
 
-  const std::vector<fdf::BindRule2> kDwc2PhyRules = std::vector{
-      fdf::MakeAcceptBindRule(bind_fuchsia_hardware_usb_phy::SERVICE,
-                              bind_fuchsia_hardware_usb_phy::SERVICE_ZIRCONTRANSPORT),
+  const std::vector<fuchsia_driver_framework::BindRule2> kDwc2PhyRules = std::vector{
+      fdf::MakeAcceptBindRule(bind_fuchsia::SERVICE, "fuchsia.hardware.usb.phy.Service"),
       fdf::MakeAcceptBindRule(bind_fuchsia::PLATFORM_DEV_VID,
                               bind_fuchsia_platform::BIND_PLATFORM_DEV_PID_GENERIC),
       fdf::MakeAcceptBindRule(bind_fuchsia::PLATFORM_DEV_PID,
@@ -214,9 +210,8 @@ zx_status_t AddDwc2Composite(fdf::WireSyncClient<fpbus::PlatformBus>& pbus,
                               bind_fuchsia_platform::BIND_PLATFORM_DEV_DID_USB_DWC2),
   };
 
-  const std::vector<fdf::NodeProperty2> kDwc2PhyProperties = std::vector{
-      fdf::MakeProperty2(bind_fuchsia_hardware_usb_phy::SERVICE,
-                         bind_fuchsia_hardware_usb_phy::SERVICE_ZIRCONTRANSPORT),
+  const std::vector<fuchsia_driver_framework::NodeProperty2> kDwc2PhyProperties = std::vector{
+      fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.usb.phy.Service"),
       fdf::MakeProperty2(bind_fuchsia::PLATFORM_DEV_VID,
                          bind_fuchsia_platform::BIND_PLATFORM_DEV_PID_GENERIC),
       fdf::MakeProperty2(bind_fuchsia::PLATFORM_DEV_PID,
@@ -225,7 +220,8 @@ zx_status_t AddDwc2Composite(fdf::WireSyncClient<fpbus::PlatformBus>& pbus,
                          bind_fuchsia_platform::BIND_PLATFORM_DEV_DID_USB_DWC2),
   };
 
-  const std::vector<fdf::ParentSpec2> kDwc2Parents{{kDwc2PhyRules, kDwc2PhyProperties}};
+  const std::vector<fuchsia_driver_framework::ParentSpec2> kDwc2Parents{
+      {kDwc2PhyRules, kDwc2PhyProperties}};
   auto result = pbus.buffer(arena)->AddCompositeNodeSpec(
       fidl::ToWire(fidl_arena, dwc2_node),
       fidl::ToWire(fidl_arena, fuchsia_driver_framework::CompositeNodeSpec{

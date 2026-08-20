@@ -4,9 +4,13 @@
 
 composite spi_0;
 using fuchsia;
+using fuchsia.amlogic.platform;
+using fuchsia.gpio;
+using fuchsia.hardware.pin;
+using fuchsia.platform;
 
 primary parent "gpio-cs-0" {
-  fuchsia.hardware.gpio.Service == fuchsia.hardware.gpio.Service.ZirconTransport;
+  fuchsia.Service == "fuchsia.hardware.gpio.Service";
   fuchsia.NAME == "gpio-cs-0";
 }
 
@@ -22,7 +26,7 @@ parent "pdev" {
 }
 
 parent "reset" {
-  fuchsia.hardware.registers.Service == fuchsia.hardware.registers.Service.ZirconTransport;
+  fuchsia.Service == "fuchsia.hardware.registers.Service";
 }
 
 optional parent "gpio-init" {

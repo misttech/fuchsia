@@ -3,6 +3,6 @@
 // found in the LICENSE file.
 
 
-fuchsia.hardware.platform.bus.Service == fuchsia.hardware.platform.bus.Service.DriverTransport;
+fuchsia.Service == "fuchsia.hardware.platform.bus.Service";
 fuchsia.BIND_PLATFORM_DEV_VID == fuchsia.test.platform.BIND_PLATFORM_DEV_VID.TEST;
 fuchsia.BIND_PLATFORM_DEV_PID == fuchsia.test.platform.BIND_PLATFORM_DEV_PID.PBUS_TEST;

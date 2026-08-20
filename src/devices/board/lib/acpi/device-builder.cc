@@ -8,6 +8,7 @@
 #include <zircon/compiler.h>
 
 #include <bind/fuchsia/acpi/cpp/bind.h>
+#include <bind/fuchsia/cpp/bind.h>
 #include <bind/fuchsia/hardware/i2c/cpp/bind.h>
 #include <bind/fuchsia/hardware/interrupt/cpp/bind.h>
 #include <bind/fuchsia/hardware/spi/cpp/bind.h>

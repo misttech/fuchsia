@@ -14,7 +14,6 @@
 #include <zircon/compiler.h>
 
 #include <bind/fuchsia/cpp/bind.h>
-#include <bind/fuchsia/hardware/i2c/cpp/bind.h>
 #include <bind/fuchsia/i2c/cpp/bind.h>
 #include <soc/aml-t931/t931-hw.h>
 
@@ -105,8 +104,7 @@ zx::result<> PostInit::InitBacklight() {
   fdf::Arena arena('BACK');
 
   auto bind_rules = std::vector{
-      fdf::MakeAcceptBindRule(bind_fuchsia_hardware_i2c::SERVICE,
-                              bind_fuchsia_hardware_i2c::SERVICE_ZIRCONTRANSPORT),
+      fdf::MakeAcceptBindRule(bind_fuchsia::SERVICE, "fuchsia.hardware.i2c.Service"),
       fdf::MakeAcceptBindRule(bind_fuchsia::I2C_BUS_ID, bind_fuchsia_i2c::BIND_I2C_BUS_ID_I2C_3),
       fdf::MakeAcceptBindRule(bind_fuchsia::I2C_ADDRESS,
                               bind_fuchsia_i2c::BIND_I2C_ADDRESS_BACKLIGHT),
@@ -114,8 +112,6 @@ zx::result<> PostInit::InitBacklight() {
 
   auto properties = std::vector{
       fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.i2c.Service"),
-      fdf::MakeProperty2(bind_fuchsia_hardware_i2c::SERVICE,
-                         bind_fuchsia_hardware_i2c::SERVICE_ZIRCONTRANSPORT),
   };
 
   auto parents = std::vector{

@@ -13,7 +13,6 @@
 #include <cstdint>
 
 #include <bind/fuchsia/cpp/bind.h>
-#include <bind/fuchsia/hardware/tee/cpp/bind.h>
 
 #include "astro.h"
 
@@ -45,16 +44,14 @@ zx_status_t Astro::SecureMemInit() {
   fidl::Arena<> fidl_arena;
   fdf::Arena arena('SECU');
 
-  std::vector<fdf::ParentSpec2> parents = {
+  std::vector<fuchsia_driver_framework::ParentSpec2> parents = {
       {
           {
               {
-                  fdf::MakeAcceptBindRule(bind_fuchsia_hardware_tee::SERVICE,
-                                          bind_fuchsia_hardware_tee::SERVICE_ZIRCONTRANSPORT),
+                  fdf::MakeAcceptBindRule(bind_fuchsia::SERVICE, "fuchsia.hardware.tee.Service"),
               },
               {
-                  fdf::MakeProperty2(bind_fuchsia_hardware_tee::SERVICE,
-                                     bind_fuchsia_hardware_tee::SERVICE_ZIRCONTRANSPORT),
+                  fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.tee.Service"),
               },
           },
       },

@@ -16,8 +16,6 @@
 #include <bind/fuchsia/amlogic/platform/cpp/bind.h>
 #include <bind/fuchsia/cpp/bind.h>
 #include <bind/fuchsia/gpio/cpp/bind.h>
-#include <bind/fuchsia/hardware/clock/cpp/bind.h>
-#include <bind/fuchsia/hardware/pwm/cpp/bind.h>
 #include <bind/fuchsia/pwm/cpp/bind.h>
 #include <ddk/metadata/camera.h>
 #include <soc/aml-common/aml-thermal.h>
@@ -274,7 +272,7 @@ zx::result<> CreateThermalPllNode(
   fidl::Arena<> fidl_arena;
   fdf::Arena arena('SHER');
 
-  std::vector<fdf::ParentSpec2> parents;
+  std::vector<fuchsia_driver_framework::ParentSpec2> parents;
   parents.reserve(kClockFunctionMap.size() + kPwmIdMap.size() + 1);
   parents.push_back(fuchsia_driver_framework::ParentSpec2{{
       .bind_rules =
@@ -290,32 +288,26 @@ zx::result<> CreateThermalPllNode(
 
   for (auto& [pwm_id, function] : kPwmIdMap) {
     auto rules = std::vector{
-        fdf::MakeAcceptBindRule(bind_fuchsia_hardware_pwm::SERVICE,
-                                bind_fuchsia_hardware_pwm::SERVICE_ZIRCONTRANSPORT),
+        fdf::MakeAcceptBindRule(bind_fuchsia::SERVICE, "fuchsia.hardware.pwm.Service"),
         fdf::MakeAcceptBindRule(bind_fuchsia::PWM_ID, pwm_id),
     };
     auto properties = std::vector{
         fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.pwm.Service"),
-        fdf::MakeProperty2(bind_fuchsia_hardware_pwm::SERVICE,
-                           bind_fuchsia_hardware_pwm::SERVICE_ZIRCONTRANSPORT),
         fdf::MakeProperty2(bind_fuchsia::NAME, function),
     };
-    parents.push_back(fdf::ParentSpec2{{rules, properties}});
+    parents.push_back(fuchsia_driver_framework::ParentSpec2{{rules, properties}});
   }
 
   for (auto& [clock_id, function] : kClockFunctionMap) {
     auto rules = std::vector{
-        fdf::MakeAcceptBindRule(bind_fuchsia_hardware_clock::SERVICE,
-                                bind_fuchsia_hardware_clock::SERVICE_ZIRCONTRANSPORT),
+        fdf::MakeAcceptBindRule(bind_fuchsia::SERVICE, "fuchsia.hardware.clock.Service"),
         fdf::MakeAcceptBindRule(bind_fuchsia::ID, clock_id),
     };
     auto properties = std::vector{
         fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.clock.Service"),
-        fdf::MakeProperty2(bind_fuchsia_hardware_clock::SERVICE,
-                           bind_fuchsia_hardware_clock::SERVICE_ZIRCONTRANSPORT),
         fdf::MakeProperty2(bind_fuchsia::NAME, function),
     };
-    parents.push_back(fdf::ParentSpec2{{rules, properties}});
+    parents.push_back(fuchsia_driver_framework::ParentSpec2{{rules, properties}});
   }
 
   auto result = pbus.buffer(arena)->AddCompositeNodeSpec(
@@ -376,7 +368,7 @@ zx::result<> CreateThermalDdrNode(
   // The DDR sensor is controlled by a non-legacy thermal device, which only reads temperature.
   auto result = pbus.buffer(arena)->AddCompositeNodeSpec(
       fidl::ToWire(fidl_arena, node),
-      fidl::ToWire(fidl_arena, fdf::CompositeNodeSpec{
+      fidl::ToWire(fidl_arena, fuchsia_driver_framework::CompositeNodeSpec{
                                    {.name = "temperature-sensor-ff634c00", .parents2 = {}}}));
   if (!result.ok()) {
     zxlogf(ERROR, "Failed to send AddCompositeNodeSpec request: %s",

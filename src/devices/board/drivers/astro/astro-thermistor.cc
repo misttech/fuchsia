@@ -16,7 +16,6 @@
 #include <bind/fuchsia/adc/cpp/bind.h>
 #include <bind/fuchsia/cpp/bind.h>
 #include <bind/fuchsia/google/platform/cpp/bind.h>
-#include <bind/fuchsia/hardware/adc/cpp/bind.h>
 #include <soc/aml-s905d2/s905d2-hw.h>
 
 #include "astro.h"
@@ -112,51 +111,39 @@ zx_status_t Astro::ThermistorInit() {
   fdf::Arena arena('THER');
 
   const std::vector<fuchsia_driver_framework::BindRule2> kSocThermistorCompositeRules = {
-      fdf::MakeAcceptBindRule(bind_fuchsia_hardware_adc::SERVICE,
-                              bind_fuchsia_hardware_adc::SERVICE_ZIRCONTRANSPORT),
+      fdf::MakeAcceptBindRule(bind_fuchsia::SERVICE, "fuchsia.hardware.adc.Service"),
       fdf::MakeAcceptBindRule(bind_fuchsia_adc::CHANNEL, ASTRO_THERMISTOR_SOC),
   };
   const std::vector<fuchsia_driver_framework::NodeProperty2> kSocThermistorCompositeProperties = {
       fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.adc.Service"),
-      fdf::MakeProperty2(bind_fuchsia_hardware_adc::SERVICE,
-                         bind_fuchsia_hardware_adc::SERVICE_ZIRCONTRANSPORT),
       fdf::MakeProperty2(bind_fuchsia_adc::FUNCTION, bind_fuchsia_adc::FUNCTION_THERMISTOR),
       fdf::MakeProperty2(bind_fuchsia_adc::CHANNEL, ASTRO_THERMISTOR_SOC),
   };
   const std::vector<fuchsia_driver_framework::BindRule2> kWifiThermistorCompositeRules = {
-      fdf::MakeAcceptBindRule(bind_fuchsia_hardware_adc::SERVICE,
-                              bind_fuchsia_hardware_adc::SERVICE_ZIRCONTRANSPORT),
+      fdf::MakeAcceptBindRule(bind_fuchsia::SERVICE, "fuchsia.hardware.adc.Service"),
       fdf::MakeAcceptBindRule(bind_fuchsia_adc::CHANNEL, ASTRO_THERMISTOR_WIFI),
   };
   const std::vector<fuchsia_driver_framework::NodeProperty2> kWifiThermistorCompositeProperties = {
       fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.adc.Service"),
-      fdf::MakeProperty2(bind_fuchsia_hardware_adc::SERVICE,
-                         bind_fuchsia_hardware_adc::SERVICE_ZIRCONTRANSPORT),
       fdf::MakeProperty2(bind_fuchsia_adc::FUNCTION, bind_fuchsia_adc::FUNCTION_THERMISTOR),
       fdf::MakeProperty2(bind_fuchsia_adc::CHANNEL, ASTRO_THERMISTOR_WIFI),
   };
   const std::vector<fuchsia_driver_framework::BindRule2> kDspThermistorCompositeRules = {
-      fdf::MakeAcceptBindRule(bind_fuchsia_hardware_adc::SERVICE,
-                              bind_fuchsia_hardware_adc::SERVICE_ZIRCONTRANSPORT),
+      fdf::MakeAcceptBindRule(bind_fuchsia::SERVICE, "fuchsia.hardware.adc.Service"),
       fdf::MakeAcceptBindRule(bind_fuchsia_adc::CHANNEL, ASTRO_THERMISTOR_DSP),
   };
   const std::vector<fuchsia_driver_framework::NodeProperty2> kDspThermistorCompositeProperties = {
       fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.adc.Service"),
-      fdf::MakeProperty2(bind_fuchsia_hardware_adc::SERVICE,
-                         bind_fuchsia_hardware_adc::SERVICE_ZIRCONTRANSPORT),
       fdf::MakeProperty2(bind_fuchsia_adc::FUNCTION, bind_fuchsia_adc::FUNCTION_THERMISTOR),
       fdf::MakeProperty2(bind_fuchsia_adc::CHANNEL, ASTRO_THERMISTOR_DSP),
   };
   const std::vector<fuchsia_driver_framework::BindRule2> kAmbientThermistorCompositeRules = {
-      fdf::MakeAcceptBindRule(bind_fuchsia_hardware_adc::SERVICE,
-                              bind_fuchsia_hardware_adc::SERVICE_ZIRCONTRANSPORT),
+      fdf::MakeAcceptBindRule(bind_fuchsia::SERVICE, "fuchsia.hardware.adc.Service"),
       fdf::MakeAcceptBindRule(bind_fuchsia_adc::CHANNEL, ASTRO_THERMISTOR_AMBIENT),
   };
   const std::vector<fuchsia_driver_framework::NodeProperty2> kAmbientThermistorCompositeProperties =
       {
           fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.adc.Service"),
-          fdf::MakeProperty2(bind_fuchsia_hardware_adc::SERVICE,
-                             bind_fuchsia_hardware_adc::SERVICE_ZIRCONTRANSPORT),
           fdf::MakeProperty2(bind_fuchsia_adc::FUNCTION, bind_fuchsia_adc::FUNCTION_THERMISTOR),
           fdf::MakeProperty2(bind_fuchsia_adc::CHANNEL, ASTRO_THERMISTOR_AMBIENT),
   };

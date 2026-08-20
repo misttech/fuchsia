@@ -5,13 +5,16 @@
 composite tcs3400_light;
 
 using fuchsia;
+using fuchsia.gpio;
+using fuchsia.hardware.pin;
+using fuchsia.platform;
 
 primary parent "i2c" {
-  fuchsia.hardware.i2c.Service == fuchsia.hardware.i2c.Service.ZirconTransport;
+  fuchsia.Service == "fuchsia.hardware.i2c.Service";
 }
 
 parent "gpio-int" {
-  fuchsia.hardware.gpio.Service == fuchsia.hardware.gpio.Service.ZirconTransport;
+  fuchsia.Service == "fuchsia.hardware.gpio.Service";
   fuchsia.NAME == "gpio-int";
 }
 

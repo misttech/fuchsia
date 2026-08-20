@@ -79,8 +79,7 @@ TEST(RegulatorVisitorTest, TestMetadataAndBindProperty) {
       },
       (*mgr_request.parents2())[1].properties(), false));
   EXPECT_TRUE(fdf_devicetree::testing::CheckHasBindRules(
-      {{fdf::MakeAcceptBindRule(bind_fuchsia_hardware_vreg::SERVICE,
-                                bind_fuchsia_hardware_vreg::SERVICE_ZIRCONTRANSPORT),
+      {{fdf::MakeAcceptBindRule(bind_fuchsia::SERVICE, "fuchsia.hardware.vreg.Service"),
         fdf::MakeAcceptBindRule(bind_fuchsia::NAME, REGULATOR_NAME)}},
       (*mgr_request.parents2())[1].bind_rules(), false));
 
@@ -126,8 +125,7 @@ TEST(RegulatorVisitorTest, TestSharedRegulatorInstanceIds) {
           },
           (*mgr_request.parents2())[1].properties(), true));
       EXPECT_TRUE(fdf_devicetree::testing::CheckHasBindRules(
-          {{fdf::MakeAcceptBindRule(bind_fuchsia_hardware_vreg::SERVICE,
-                                    bind_fuchsia_hardware_vreg::SERVICE_ZIRCONTRANSPORT),
+          {{fdf::MakeAcceptBindRule(bind_fuchsia::SERVICE, "fuchsia.hardware.vreg.Service"),
             fdf::MakeAcceptBindRule(bind_fuchsia::NAME, REGULATOR_NAME)}},
           (*mgr_request.parents2())[1].bind_rules(), false));
     }

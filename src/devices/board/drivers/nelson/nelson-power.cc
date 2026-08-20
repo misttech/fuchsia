@@ -16,10 +16,6 @@
 #include <bind/fuchsia/cpp/bind.h>
 #include <bind/fuchsia/google/platform/cpp/bind.h>
 #include <bind/fuchsia/gpio/cpp/bind.h>
-#include <bind/fuchsia/hardware/audio/cpp/bind.h>
-#include <bind/fuchsia/hardware/gpio/cpp/bind.h>
-#include <bind/fuchsia/hardware/i2c/cpp/bind.h>
-#include <bind/fuchsia/hardware/power/sensor/cpp/bind.h>
 #include <bind/fuchsia/i2c/cpp/bind.h>
 #include <bind/fuchsia/platform/cpp/bind.h>
 #include <bind/fuchsia/power/cpp/bind.h>
@@ -79,21 +75,18 @@ zx_status_t AddMlbComposite(fdf::WireSyncClient<fpbus::PlatformBus>& pbus,
   });
 
   const auto kI2cRules = std::vector{
-      fdf::MakeAcceptBindRule(bind_fuchsia_hardware_i2c::SERVICE,
-                              bind_fuchsia_hardware_i2c::SERVICE_ZIRCONTRANSPORT),
+      fdf::MakeAcceptBindRule(bind_fuchsia::SERVICE, "fuchsia.hardware.i2c.Service"),
       fdf::MakeAcceptBindRule(bind_fuchsia::I2C_BUS_ID, bind_fuchsia_i2c::BIND_I2C_BUS_ID_I2C_3),
       fdf::MakeAcceptBindRule(bind_fuchsia::I2C_ADDRESS,
                               bind_fuchsia_ti_platform::BIND_I2C_ADDRESS_INA231_MLB),
   };
   const auto kI2cProperties = std::vector{
       fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.i2c.Service"),
-      fdf::MakeProperty2(bind_fuchsia_hardware_i2c::SERVICE,
-                         bind_fuchsia_hardware_i2c::SERVICE_ZIRCONTRANSPORT),
       fdf::MakeProperty2(bind_fuchsia::I2C_ADDRESS,
                          bind_fuchsia_ti_platform::BIND_I2C_ADDRESS_INA231_MLB),
   };
 
-  const std::vector<fdf::ParentSpec2> kParents{{kI2cRules, kI2cProperties}};
+  const std::vector<fuchsia_driver_framework::ParentSpec2> kParents{{kI2cRules, kI2cProperties}};
   auto result = pbus.buffer(arena)->AddCompositeNodeSpec(
       fidl::ToWire(fidl_arena, node),
       fidl::ToWire(fidl_arena, fuchsia_driver_framework::CompositeNodeSpec{
@@ -148,21 +141,18 @@ zx_status_t AddSpeakerComposite(fdf::WireSyncClient<fpbus::PlatformBus>& pbus,
   });
 
   const auto kI2cRules = std::vector{
-      fdf::MakeAcceptBindRule(bind_fuchsia_hardware_i2c::SERVICE,
-                              bind_fuchsia_hardware_i2c::SERVICE_ZIRCONTRANSPORT),
+      fdf::MakeAcceptBindRule(bind_fuchsia::SERVICE, "fuchsia.hardware.i2c.Service"),
       fdf::MakeAcceptBindRule(bind_fuchsia::I2C_BUS_ID, bind_fuchsia_i2c::BIND_I2C_BUS_ID_I2C_3),
       fdf::MakeAcceptBindRule(bind_fuchsia::I2C_ADDRESS,
                               bind_fuchsia_ti_platform::BIND_I2C_ADDRESS_INA231_SPEAKERS),
   };
   const auto kI2cProperties = std::vector{
       fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.i2c.Service"),
-      fdf::MakeProperty2(bind_fuchsia_hardware_i2c::SERVICE,
-                         bind_fuchsia_hardware_i2c::SERVICE_ZIRCONTRANSPORT),
       fdf::MakeProperty2(bind_fuchsia::I2C_ADDRESS,
                          bind_fuchsia_ti_platform::BIND_I2C_ADDRESS_INA231_SPEAKERS),
   };
 
-  const std::vector<fdf::ParentSpec2> kParents{{kI2cRules, kI2cProperties}};
+  const std::vector<fuchsia_driver_framework::ParentSpec2> kParents{{kI2cRules, kI2cProperties}};
   auto result = pbus.buffer(arena)->AddCompositeNodeSpec(
       fidl::ToWire(fidl_arena, node),
       fidl::ToWire(fidl_arena, fuchsia_driver_framework::CompositeNodeSpec{
@@ -202,15 +192,13 @@ zx_status_t Nelson::BrownoutProtectionInit() {
   gpio_init_steps_.push_back(GpioPull(GPIO_ALERT_PWR_L, fuchsia_hardware_pin::Pull::kNone));
 
   const ddk::BindRule kGpioRules[] = {
-      ddk::MakeAcceptBindRule(bind_fuchsia_hardware_gpio::SERVICE,
-                              bind_fuchsia_hardware_gpio::SERVICE_ZIRCONTRANSPORT),
+      ddk::MakeAcceptBindRule(bind_fuchsia::SERVICE, "fuchsia.hardware.gpio.Service"),
       ddk::MakeAcceptBindRule(bind_fuchsia::GPIO_PIN,
                               bind_fuchsia_amlogic_platform_s905d3::GPIOZ_PIN_ID_PIN_10),
   };
 
   const ddk::BindRule kCodecRules[] = {
-      ddk::MakeAcceptBindRule(bind_fuchsia_hardware_audio::CODECSERVICE,
-                              bind_fuchsia_hardware_audio::CODECSERVICE_ZIRCONTRANSPORT),
+      ddk::MakeAcceptBindRule(bind_fuchsia::SERVICE, "fuchsia.hardware.audio.CodecService"),
       ddk::MakeAcceptBindRule(bind_fuchsia::PLATFORM_DEV_VID,
                               bind_fuchsia_ti_platform::BIND_PLATFORM_DEV_VID_TI),
       ddk::MakeAcceptBindRule(bind_fuchsia::PLATFORM_DEV_DID,
@@ -218,8 +206,7 @@ zx_status_t Nelson::BrownoutProtectionInit() {
   };
 
   const ddk::BindRule kPowerSensorRules[] = {
-      ddk::MakeAcceptBindRule(bind_fuchsia_hardware_power_sensor::SERVICE,
-                              bind_fuchsia_hardware_power_sensor::SERVICE_ZIRCONTRANSPORT),
+      ddk::MakeAcceptBindRule(bind_fuchsia::SERVICE, "fuchsia.hardware.power.sensor.Service"),
   };
 
   const ddk::BindRule kGpioInitRules[] = {
@@ -228,21 +215,15 @@ zx_status_t Nelson::BrownoutProtectionInit() {
 
   const device_bind_prop_t kGpioProperties[] = {
       ddk::MakeProperty(bind_fuchsia::SERVICE, "fuchsia.hardware.gpio.Service"),
-      ddk::MakeProperty(bind_fuchsia_hardware_gpio::SERVICE,
-                        bind_fuchsia_hardware_gpio::SERVICE_ZIRCONTRANSPORT),
       ddk::MakeProperty(bind_fuchsia::NAME, "alert-gpio"),
   };
 
   const device_bind_prop_t kCodecProperties[] = {
       ddk::MakeProperty(bind_fuchsia::SERVICE, "fuchsia.hardware.audio.CodecService"),
-      ddk::MakeProperty(bind_fuchsia_hardware_audio::CODECSERVICE,
-                        bind_fuchsia_hardware_audio::CODECSERVICE_ZIRCONTRANSPORT),
   };
 
   const device_bind_prop_t kPowerSensorProperties[] = {
       ddk::MakeProperty(bind_fuchsia::SERVICE, "fuchsia.hardware.power.sensor.Service"),
-      ddk::MakeProperty(bind_fuchsia_hardware_power_sensor::SERVICE,
-                        bind_fuchsia_hardware_power_sensor::SERVICE_ZIRCONTRANSPORT),
       ddk::MakeProperty(bind_fuchsia::POWER_SENSOR_DOMAIN,
                         bind_fuchsia_amlogic_platform_s905d3::BIND_POWER_SENSOR_DOMAIN_AUDIO),
   };

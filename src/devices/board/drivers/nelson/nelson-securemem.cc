@@ -15,7 +15,6 @@
 
 #include <bind/fuchsia/amlogic/platform/cpp/bind.h>
 #include <bind/fuchsia/cpp/bind.h>
-#include <bind/fuchsia/hardware/tee/cpp/bind.h>
 #include <bind/fuchsia/platform/cpp/bind.h>
 
 #include "nelson.h"
@@ -47,16 +46,14 @@ static const fpbus::Node secure_mem_dev = []() {
 zx_status_t Nelson::SecureMemInit() {
   fidl::Arena<> fidl_arena;
   fdf::Arena arena('SECU');
-  std::vector<fdf::ParentSpec2> parents = {
+  std::vector<fuchsia_driver_framework::ParentSpec2> parents = {
       {
           {
               {
-                  fdf::MakeAcceptBindRule(bind_fuchsia_hardware_tee::SERVICE,
-                                          bind_fuchsia_hardware_tee::SERVICE_ZIRCONTRANSPORT),
+                  fdf::MakeAcceptBindRule(bind_fuchsia::SERVICE, "fuchsia.hardware.tee.Service"),
               },
               {
-                  fdf::MakeProperty2(bind_fuchsia_hardware_tee::SERVICE,
-                                     bind_fuchsia_hardware_tee::SERVICE_ZIRCONTRANSPORT),
+                  fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.tee.Service"),
               },
           },
       },

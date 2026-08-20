@@ -6,7 +6,7 @@
                 "expected": "match",
                 "name": "Match pbus",
                 "device": {
-                    "fuchsia.hardware.platform.bus.Service": "fuchsia.hardware.platform.bus.Service.DriverTransport",
+                    "fuchsia.Service": "\"fuchsia.hardware.platform.bus.Service\"",
                     "fuchsia.BIND_PLATFORM_DEV_VID": "fuchsia.google.platform.BIND_PLATFORM_DEV_VID.GOOGLE",
                     "fuchsia.BIND_PLATFORM_DEV_DID": "fuchsia.google.platform.BIND_PLATFORM_DEV_DID.POST_INIT"
                 }
@@ -20,7 +20,7 @@
                 "expected": "match",
                 "name": "Match touch interrupt",
                 "device": {
-                    "fuchsia.hardware.gpio.Service": "fuchsia.hardware.gpio.Service.ZirconTransport",
+                    "fuchsia.Service": "\"fuchsia.hardware.gpio.Service\"",
                     "fuchsia.BIND_GPIO_PIN": "fuchsia.amlogic.platform.s905d2.GPIOZ_PIN_ID.PIN_4"
                 }
             }
@@ -33,7 +33,7 @@
                 "expected": "match",
                 "name": "Match touch reset",
                 "device": {
-                    "fuchsia.hardware.gpio.Service": "fuchsia.hardware.gpio.Service.ZirconTransport",
+                    "fuchsia.Service": "\"fuchsia.hardware.gpio.Service\"",
                     "fuchsia.BIND_GPIO_PIN": "fuchsia.amlogic.platform.s905d2.GPIOZ_PIN_ID.PIN_9"
                 }
             }

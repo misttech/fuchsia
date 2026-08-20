@@ -20,7 +20,6 @@
 #include <bind/fuchsia/amlogic/platform/cpp/bind.h>
 #include <bind/fuchsia/cpp/bind.h>
 #include <bind/fuchsia/gpio/cpp/bind.h>
-#include <bind/fuchsia/hardware/gpio/cpp/bind.h>
 #include <bind/fuchsia/platform/cpp/bind.h>
 #include <soc/aml-common/aml-sdmmc.h>
 #include <soc/aml-s905d3/s905d3-gpio.h>
@@ -66,23 +65,21 @@ static const std::vector<fpbus::BootMetadata> emmc_boot_metadata{
     }},
 };
 
-const std::vector<fdf::BindRule2> kGpioResetRules = std::vector{
-    fdf::MakeAcceptBindRule(bind_fuchsia_hardware_gpio::SERVICE,
-                            bind_fuchsia_hardware_gpio::SERVICE_ZIRCONTRANSPORT),
+const std::vector<fuchsia_driver_framework::BindRule2> kGpioResetRules = std::vector{
+    fdf::MakeAcceptBindRule(bind_fuchsia::SERVICE, "fuchsia.hardware.gpio.Service"),
     fdf::MakeAcceptBindRule(bind_fuchsia::GPIO_PIN, static_cast<uint32_t>(SOC_EMMC_RST_L)),
 };
 
-const std::vector<fdf::NodeProperty2> kGpioResetProperties = std::vector{
-    fdf::MakeProperty2(bind_fuchsia_hardware_gpio::SERVICE,
-                       bind_fuchsia_hardware_gpio::SERVICE_ZIRCONTRANSPORT),
+const std::vector<fuchsia_driver_framework::NodeProperty2> kGpioResetProperties = std::vector{
+    fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.gpio.Service"),
     fdf::MakeProperty2(bind_fuchsia::NAME, "gpio-reset"),
 };
 
-const std::vector<fdf::BindRule2> kGpioInitRules = std::vector{
+const std::vector<fuchsia_driver_framework::BindRule2> kGpioInitRules = std::vector{
     fdf::MakeAcceptBindRule(bind_fuchsia::INIT_STEP, bind_fuchsia_gpio::BIND_INIT_STEP_GPIO),
 };
 
-const std::vector<fdf::NodeProperty2> kGpioInitProperties = std::vector{
+const std::vector<fuchsia_driver_framework::NodeProperty2> kGpioInitProperties = std::vector{
     fdf::MakeProperty2(bind_fuchsia::INIT_STEP, bind_fuchsia_gpio::BIND_INIT_STEP_GPIO),
 };
 
@@ -144,9 +141,9 @@ zx_status_t Nelson::EmmcInit() {
     return dev;
   }();
 
-  std::vector<fdf::ParentSpec2> kEmmcParents = {
-      fdf::ParentSpec2{{kGpioResetRules, kGpioResetProperties}},
-      fdf::ParentSpec2{{kGpioInitRules, kGpioInitProperties}}};
+  std::vector<fuchsia_driver_framework::ParentSpec2> kEmmcParents = {
+      fuchsia_driver_framework::ParentSpec2{{kGpioResetRules, kGpioResetProperties}},
+      fuchsia_driver_framework::ParentSpec2{{kGpioInitRules, kGpioInitProperties}}};
 
   fdf::Arena arena('EMMC');
   auto result = pbus_.buffer(arena)->AddCompositeNodeSpec(

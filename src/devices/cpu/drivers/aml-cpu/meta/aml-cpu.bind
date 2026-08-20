@@ -9,8 +9,6 @@ using fuchsia.hardware.pin;
 using fuchsia.google.platform;
 using fuchsia.amlogic.platform;
 using fuchsia.gpio;
-using fuchsia.hardware.clock;
-using fuchsia.hardware.power;
 using fuchsia.platform;
 using fuchsia.power;
 
@@ -35,42 +33,42 @@ parent "pdev" {
 }
 
 primary parent "power-01" {
-  fuchsia.hardware.power.Service == fuchsia.hardware.power.Service.ZirconTransport;
+  fuchsia.Service == "fuchsia.hardware.power.Service";
   fuchsia.power.POWER_DOMAIN == fuchsia.amlogic.platform.POWER_DOMAIN.ARM_CORE_BIG;
 }
 
 parent "sys-pll-div16" {
-  fuchsia.hardware.clock.Service == fuchsia.hardware.clock.Service.ZirconTransport;
+  fuchsia.Service == "fuchsia.hardware.clock.Service";
   fuchsia.NAME == "sys-pll-div16";
 }
 
 parent "sys-cpu-div16" {
-  fuchsia.hardware.clock.Service == fuchsia.hardware.clock.Service.ZirconTransport;
+  fuchsia.Service == "fuchsia.hardware.clock.Service";
   fuchsia.NAME == "sys-cpu-div16";
 }
 
 parent "sys-cpu-big-clk" {
-  fuchsia.hardware.clock.Service == fuchsia.hardware.clock.Service.ZirconTransport;
+  fuchsia.Service == "fuchsia.hardware.clock.Service";
   fuchsia.NAME == "sys-cpu-big-clk";
 }
 
 optional parent "power-02" {
-  fuchsia.hardware.power.Service == fuchsia.hardware.power.Service.ZirconTransport;
+  fuchsia.Service == "fuchsia.hardware.power.Service";
   fuchsia.power.POWER_DOMAIN == fuchsia.amlogic.platform.POWER_DOMAIN.ARM_CORE_LITTLE;
 }
 
 optional parent "sys-pllb-div16" {
-  fuchsia.hardware.clock.Service == fuchsia.hardware.clock.Service.ZirconTransport;
+  fuchsia.Service == "fuchsia.hardware.clock.Service";
   fuchsia.NAME == "sys-pllb-div16";
 }
 
 optional parent "sys-cpub-div16" {
-  fuchsia.hardware.clock.Service == fuchsia.hardware.clock.Service.ZirconTransport;
+  fuchsia.Service == "fuchsia.hardware.clock.Service";
   fuchsia.NAME == "sys-cpub-div16";
 }
 
 optional parent "sys-cpu-little-clk" {
-  fuchsia.hardware.clock.Service == fuchsia.hardware.clock.Service.ZirconTransport;
+  fuchsia.Service == "fuchsia.hardware.clock.Service";
   fuchsia.NAME == "sys-cpu-little-clk";
 }
 

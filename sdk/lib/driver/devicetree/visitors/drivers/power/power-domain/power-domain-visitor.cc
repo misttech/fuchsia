@@ -4,7 +4,6 @@
 
 #include "power-domain-visitor.h"
 
-#include <lib/ddk/metadata.h>
 #include <lib/driver/component/cpp/composite_node_spec.h>
 #include <lib/driver/component/cpp/node_properties.h>
 #include <lib/driver/devicetree/visitors/registration.h>
@@ -13,8 +12,6 @@
 #include <vector>
 
 #include <bind/fuchsia/cpp/bind.h>
-#include <bind/fuchsia/hardware/power/cpp/bind.h>
-#include <bind/fuchsia/hardware/powerdomain/cpp/bind.h>
 #include <bind/fuchsia/power/cpp/bind.h>
 
 namespace power_domain_visitor_dt {
@@ -82,22 +79,24 @@ zx::result<> PowerDomainVisitor::AddChildNodeSpec(fdf_devicetree::Node& child, u
 
   if (is_full_power) {
     bind_rules.push_back(
-        fdf::MakeAcceptBindRule(bind_fuchsia_hardware_power::SERVICE,
-                                bind_fuchsia_hardware_power::SERVICE_ZIRCONTRANSPORT));
+        fdf::MakeAcceptBindRule(bind_fuchsia::SERVICE, "fuchsia.hardware.power.Service"));
     bind_rules.push_back(fdf::MakeAcceptBindRule(bind_fuchsia_power::POWER_DOMAIN, domain_id));
-    properties.push_back(fdf::MakeProperty2(bind_fuchsia_hardware_power::SERVICE,
-                                            bind_fuchsia_hardware_power::SERVICE_ZIRCONTRANSPORT));
+    properties.push_back(
+        fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.power.Service"));
+    properties.push_back(fdf::MakeProperty2("fuchsia.hardware.power.Service",
+                                            "fuchsia.hardware.power.Service.ZirconTransport"));
     properties.push_back(fdf::MakeProperty2(bind_fuchsia_power::POWER_DOMAIN, domain_id));
   } else {
     bind_rules.push_back(
-        fdf::MakeAcceptBindRule(bind_fuchsia_hardware_powerdomain::SERVICE,
-                                bind_fuchsia_hardware_powerdomain::SERVICE_ZIRCONTRANSPORT));
+        fdf::MakeAcceptBindRule(bind_fuchsia::SERVICE, "fuchsia.hardware.powerdomain.Service"));
     bind_rules.push_back(fdf::MakeAcceptBindRule(bind_fuchsia_power::POWER_DOMAIN, domain_id));
     bind_rules.push_back(
         fdf::MakeAcceptBindRule(bind_fuchsia_power::POWER_DOMAIN_NODE_ID, node_id));
     properties.push_back(
-        fdf::MakeProperty2(bind_fuchsia_hardware_powerdomain::SERVICE,
-                           bind_fuchsia_hardware_powerdomain::SERVICE_ZIRCONTRANSPORT));
+        fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.powerdomain.Service"));
+    properties.push_back(
+        fdf::MakeProperty2("fuchsia.hardware.powerdomain.Service",
+                           "fuchsia.hardware.powerdomain.Service.ZirconTransport"));
     properties.push_back(fdf::MakeProperty2(bind_fuchsia_power::POWER_DOMAIN, domain_id));
   }
 

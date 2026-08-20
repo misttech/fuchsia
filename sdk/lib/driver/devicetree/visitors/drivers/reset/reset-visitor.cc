@@ -126,8 +126,7 @@ zx::result<> ResetVisitor::ParseReferenceChild(fdf_devicetree::Node& child,
 zx::result<> ResetVisitor::AddChildNodeSpec(fdf_devicetree::Node& child, uint32_t controller_id,
                                             uint32_t reset_id, const std::string& reset_name) {
   std::vector bind_rules = {{
-      fdf::MakeAcceptBindRule(bind_fuchsia_hardware_reset::SERVICE,
-                              bind_fuchsia_hardware_reset::SERVICE_ZIRCONTRANSPORT),
+      fdf::MakeAcceptBindRule(bind_fuchsia::SERVICE, "fuchsia.hardware.reset.Service"),
       fdf::MakeAcceptBindRule(bind_fuchsia_reset::CONTROLLER_ID, controller_id),
       fdf::MakeAcceptBindRule(bind_fuchsia_reset::RESET_ID, reset_id),
   }};
@@ -135,6 +134,7 @@ zx::result<> ResetVisitor::AddChildNodeSpec(fdf_devicetree::Node& child, uint32_
   std::vector bind_properties = {{
       fdf::MakeProperty2(bind_fuchsia_hardware_reset::SERVICE,
                          bind_fuchsia_hardware_reset::SERVICE_ZIRCONTRANSPORT),
+      fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.reset.Service"),
       fdf::MakeProperty2(bind_fuchsia::NAME, reset_name),
   }};
 

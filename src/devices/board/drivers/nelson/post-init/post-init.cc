@@ -16,8 +16,6 @@
 #include <bind/fuchsia/amlogic/platform/s905d3/cpp/bind.h>
 #include <bind/fuchsia/cpp/bind.h>
 #include <bind/fuchsia/gpio/cpp/bind.h>
-#include <bind/fuchsia/hardware/gpio/cpp/bind.h>
-#include <bind/fuchsia/hardware/spi/cpp/bind.h>
 #include <bind/fuchsia/infineon/platform/cpp/bind.h>
 
 #include "sdk/lib/driver/component/cpp/composite_node_spec.h"
@@ -342,8 +340,7 @@ zx::result<> PostInit::AddSelinaCompositeNode(const fdf::Namespace& incoming) {
   }
 
   const std::vector<fuchsia_driver_framework::BindRule2> spi_rules{
-      fdf::MakeAcceptBindRule(bind_fuchsia_hardware_spi::SERVICE,
-                              bind_fuchsia_hardware_spi::SERVICE_ZIRCONTRANSPORT),
+      fdf::MakeAcceptBindRule(bind_fuchsia::SERVICE, "fuchsia.hardware.spi.Service"),
       fdf::MakeAcceptBindRule(bind_fuchsia::PLATFORM_DEV_VID,
                               bind_fuchsia_infineon_platform::BIND_PLATFORM_DEV_VID_INFINEON),
       fdf::MakeAcceptBindRule(bind_fuchsia::PLATFORM_DEV_PID,
@@ -353,8 +350,9 @@ zx::result<> PostInit::AddSelinaCompositeNode(const fdf::Namespace& incoming) {
   };
 
   const std::vector<fuchsia_driver_framework::NodeProperty2> spi_properties{
-      fdf::MakeProperty2(bind_fuchsia_hardware_spi::SERVICE,
-                         bind_fuchsia_hardware_spi::SERVICE_ZIRCONTRANSPORT),
+      fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.spi.Service"),
+      fdf::MakeProperty2("fuchsia.hardware.spi.Service",
+                         "fuchsia.hardware.spi.Service.ZirconTransport"),
       fdf::MakeProperty2(bind_fuchsia::PLATFORM_DEV_VID,
                          bind_fuchsia_infineon_platform::BIND_PLATFORM_DEV_VID_INFINEON),
       fdf::MakeProperty2(bind_fuchsia::PLATFORM_DEV_PID,
@@ -364,44 +362,35 @@ zx::result<> PostInit::AddSelinaCompositeNode(const fdf::Namespace& incoming) {
   };
 
   const std::vector<fuchsia_driver_framework::BindRule2> irq_gpio_rules{
-      fdf::MakeAcceptBindRule(bind_fuchsia_hardware_gpio::SERVICE,
-                              bind_fuchsia_hardware_gpio::SERVICE_ZIRCONTRANSPORT),
+      fdf::MakeAcceptBindRule(bind_fuchsia::SERVICE, "fuchsia.hardware.gpio.Service"),
       fdf::MakeAcceptBindRule(bind_fuchsia::GPIO_PIN,
                               bind_fuchsia_amlogic_platform_s905d3::GPIOH_PIN_ID_PIN_3),
   };
 
   const std::vector<fuchsia_driver_framework::NodeProperty2> irq_gpio_properties{
       fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.gpio.Service"),
-      fdf::MakeProperty2(bind_fuchsia_hardware_gpio::SERVICE,
-                         bind_fuchsia_hardware_gpio::SERVICE_ZIRCONTRANSPORT),
       fdf::MakeProperty2(bind_fuchsia::NAME, "irq-gpio"),
   };
 
   const std::vector<fuchsia_driver_framework::BindRule2> reset_gpio_rules{
-      fdf::MakeAcceptBindRule(bind_fuchsia_hardware_gpio::SERVICE,
-                              bind_fuchsia_hardware_gpio::SERVICE_ZIRCONTRANSPORT),
+      fdf::MakeAcceptBindRule(bind_fuchsia::SERVICE, "fuchsia.hardware.gpio.Service"),
       fdf::MakeAcceptBindRule(bind_fuchsia::GPIO_PIN,
                               bind_fuchsia_amlogic_platform_s905d3::GPIOH_PIN_ID_PIN_2),
   };
 
   const std::vector<fuchsia_driver_framework::NodeProperty2> reset_gpio_properties{
       fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.gpio.Service"),
-      fdf::MakeProperty2(bind_fuchsia_hardware_gpio::SERVICE,
-                         bind_fuchsia_hardware_gpio::SERVICE_ZIRCONTRANSPORT),
       fdf::MakeProperty2(bind_fuchsia::NAME, "reset-gpio"),
   };
 
   const std::vector<fuchsia_driver_framework::BindRule2> cs_gpio_rules{
-      fdf::MakeAcceptBindRule(bind_fuchsia_hardware_gpio::SERVICE,
-                              bind_fuchsia_hardware_gpio::SERVICE_ZIRCONTRANSPORT),
+      fdf::MakeAcceptBindRule(bind_fuchsia::SERVICE, "fuchsia.hardware.gpio.Service"),
       fdf::MakeAcceptBindRule(bind_fuchsia::GPIO_PIN,
                               bind_fuchsia_amlogic_platform_s905d3::GPIOH_PIN_ID_PIN_6),
   };
 
   const std::vector<fuchsia_driver_framework::NodeProperty2> cs_gpio_properties{
       fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.gpio.Service"),
-      fdf::MakeProperty2(bind_fuchsia_hardware_gpio::SERVICE,
-                         bind_fuchsia_hardware_gpio::SERVICE_ZIRCONTRANSPORT),
       fdf::MakeProperty2(bind_fuchsia::NAME, "spi-cs-gpio"),
   };
 

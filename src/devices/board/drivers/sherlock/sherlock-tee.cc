@@ -16,7 +16,6 @@
 #include <zircon/syscalls/smc.h>
 
 #include <bind/fuchsia/cpp/bind.h>
-#include <bind/fuchsia/hardware/rpmb/cpp/bind.h>
 #include <bind/fuchsia/platform/cpp/bind.h>
 #include <fbl/algorithm.h>
 
@@ -72,13 +71,14 @@ static tee_thread_config_t tee_thread_cfg[] = {
          {0xe043cde0, 0x61d0, 0x11e5, {0x9c, 0x26, 0x00, 0x02, 0xa5, 0xd5, 0xc5, 0x1b}}  // widevine
      }}};
 
-const std::vector<fdf::BindRule2> kRpmbRules = std::vector{fdf::MakeAcceptBindRule(
-    bind_fuchsia_hardware_rpmb::SERVICE, bind_fuchsia_hardware_rpmb::SERVICE_ZIRCONTRANSPORT)};
+const std::vector<fuchsia_driver_framework::BindRule2> kRpmbRules =
+    std::vector{fdf::MakeAcceptBindRule(bind_fuchsia::SERVICE, "fuchsia.hardware.rpmb.Service")};
 
-const std::vector<fdf::NodeProperty2> kRpmbProperties = std::vector{fdf::MakeProperty2(
-    bind_fuchsia_hardware_rpmb::SERVICE, bind_fuchsia_hardware_rpmb::SERVICE_ZIRCONTRANSPORT)};
+const std::vector<fuchsia_driver_framework::NodeProperty2> kRpmbProperties =
+    std::vector{fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.rpmb.Service")};
 
-const std::vector<fdf::ParentSpec2> kTeeCompositeParents = {{kRpmbRules, kRpmbProperties}};
+const std::vector<fuchsia_driver_framework::ParentSpec2> kTeeCompositeParents = {
+    {kRpmbRules, kRpmbProperties}};
 
 zx_status_t Sherlock::TeeInit() {
   zx::result tee_metadata = fidl_metadata::tee::TeeMetadataToFidl(

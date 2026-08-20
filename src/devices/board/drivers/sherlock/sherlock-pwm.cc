@@ -14,8 +14,6 @@
 #include <bind/fuchsia/amlogic/platform/cpp/bind.h>
 #include <bind/fuchsia/cpp/bind.h>
 #include <bind/fuchsia/gpio/cpp/bind.h>
-#include <bind/fuchsia/hardware/gpio/cpp/bind.h>
-#include <bind/fuchsia/hardware/pwm/cpp/bind.h>
 #include <sdk/lib/driver/component/cpp/composite_node_spec.h>
 #include <sdk/lib/driver/component/cpp/node_add_args.h>
 #include <soc/aml-t931/t931-pwm.h>
@@ -60,14 +58,12 @@ static fpbus::Node pwm_dev = []() {
 }();
 
 const ddk::BindRule kPwmRules[] = {
-    ddk::MakeAcceptBindRule(bind_fuchsia_hardware_pwm::SERVICE,
-                            bind_fuchsia_hardware_pwm::SERVICE_ZIRCONTRANSPORT),
+    ddk::MakeAcceptBindRule(bind_fuchsia::SERVICE, "fuchsia.hardware.pwm.Service"),
     ddk::MakeAcceptBindRule(bind_fuchsia::PWM_ID, static_cast<uint32_t>(T931_PWM_E)),
 };
 
 const device_bind_prop_t kPwmProperties[] = {
-    ddk::MakeProperty(bind_fuchsia_hardware_pwm::SERVICE,
-                      bind_fuchsia_hardware_pwm::SERVICE_ZIRCONTRANSPORT),
+    ddk::MakeProperty(bind_fuchsia::SERVICE, "fuchsia.hardware.pwm.Service"),
 };
 
 const ddk::BindRule kGpioInitRules[] = {
@@ -79,14 +75,12 @@ const device_bind_prop_t kGpioInitProperties[] = {
 };
 
 const ddk::BindRule kGpioBtRules[] = {
-    ddk::MakeAcceptBindRule(bind_fuchsia_hardware_gpio::SERVICE,
-                            bind_fuchsia_hardware_gpio::SERVICE_ZIRCONTRANSPORT),
+    ddk::MakeAcceptBindRule(bind_fuchsia::SERVICE, "fuchsia.hardware.gpio.Service"),
     ddk::MakeAcceptBindRule(bind_fuchsia::GPIO_PIN, static_cast<uint32_t>(GPIO_SOC_BT_REG_ON)),
 };
 
 const device_bind_prop_t kGpioBtProperties[] = {
-    ddk::MakeProperty(bind_fuchsia_hardware_gpio::SERVICE,
-                      bind_fuchsia_hardware_gpio::SERVICE_ZIRCONTRANSPORT),
+    ddk::MakeProperty(bind_fuchsia::SERVICE, "fuchsia.hardware.gpio.Service"),
     ddk::MakeProperty(bind_fuchsia::NAME, "gpio-bt"),
 };
 

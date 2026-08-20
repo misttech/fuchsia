@@ -6,19 +6,20 @@ import("//build/bind/bind.gni")
 import("//build/devicetree/devicetree.gni")
 import("//build/drivers.gni")
 
-driver_bind_rules("bind") {
+driver_bind_rules("crosvm-bind") {
   bind_output = "crosvm.bindbc"
   rules = "meta/crosvm.bind"
   tests = "meta/bind_tests.json"
   deps = [
     "//sdk/fidl/fuchsia.hardware.platform.bus:fuchsia.hardware.platform.bus_bindlib",
+    "//src/devices/bind/fuchsia",
     "//src/devices/bind/fuchsia.platform",
   ]
 }
 
 group("tests") {
   testonly = true
-  deps = [ ":bind_test" ]
+  deps = [ ":crosvm-bind_test" ]
 }
 
 fuchsia_cc_driver("driver") {
@@ -54,7 +55,7 @@ fuchsia_cc_driver("driver") {
 fuchsia_driver_component("component") {
   component_name = "crosvm"
   deps = [
-    ":bind",
+    ":crosvm-bind",
     ":driver",
   ]
   info = "meta/crosvm-info.json"
