@@ -505,13 +505,7 @@ for more detail on the progress of update-related downloads.\n"
                 fidl_fuchsia_update_installer_ext::State::WaitToReboot(info) => {
                     // if waiting for reboot, wait for a while to get a head start, hopefully returning after
                     // the shutdown.
-                    write_progress(
-                        &format!(
-                            "{:6.2}% Waiting to Reboot",
-                            info.progress().fraction_completed() * 100.0,
-                        ),
-                        writer,
-                    )?;
+                    write_progress_kb(&info, "Waiting to Reboot", writer)?;
                     write!(writer, "\n")?;
                     if reboot {
                         return Ok(());
@@ -520,10 +514,7 @@ for more detail on the progress of update-related downloads.\n"
                 fidl_fuchsia_update_installer_ext::State::Reboot(info)
                 | fidl_fuchsia_update_installer_ext::State::DeferReboot(info)
                 | fidl_fuchsia_update_installer_ext::State::Complete(info) => {
-                    write_progress(
-                        &format!("{:6.2}% Complete", info.progress().fraction_completed() * 100.0),
-                        writer,
-                    )?;
+                    write_progress_kb(&info, "Complete", writer)?;
                     return Ok(());
                 }
 
@@ -563,22 +554,18 @@ for more detail on the progress of update-related downloads.\n"
                 fidl_fuchsia_update_installer_ext::State::Prepare => {
                     write_progress(&format!("{:6.2}% Preparing", 0.0), writer)?
                 }
-                fidl_fuchsia_update_installer_ext::State::Stage(info) => write_progress(
-                    &format!("{:6.2}% Staging", info.progress().fraction_completed() * 100.0),
-                    writer,
-                )?,
-                fidl_fuchsia_update_installer_ext::State::Fetch(info) => write_progress(
-                    &format!("{:6.2}% Fetching", info.progress().fraction_completed() * 100.0),
-                    writer,
-                )?,
-                fidl_fuchsia_update_installer_ext::State::Commit(info) => write_progress(
-                    &format!("{:6.2}% Commit", info.progress().fraction_completed() * 100.0),
-                    writer,
-                )?,
-                fidl_fuchsia_update_installer_ext::State::FailCommit(info) => write_progress(
-                    &format!("{:6.2}% Failed commit", info.progress().fraction_completed() * 100.0),
-                    writer,
-                )?,
+                fidl_fuchsia_update_installer_ext::State::Stage(info) => {
+                    write_progress_kb(&info, "Staging", writer)?
+                }
+                fidl_fuchsia_update_installer_ext::State::Fetch(info) => {
+                    write_progress_kb(&info, "Fetching", writer)?
+                }
+                fidl_fuchsia_update_installer_ext::State::Commit(info) => {
+                    write_progress_kb(&info, "Commit", writer)?
+                }
+                fidl_fuchsia_update_installer_ext::State::FailCommit(info) => {
+                    write_progress_kb(&info, "Failed commit", writer)?
+                }
             }
         }
 
@@ -616,6 +603,36 @@ fn write_progress<W: std::io::Write>(s: &str, writer: &mut W) -> Result<(), Upda
         writeln!(writer, "{s}").map_err(UpdateError::Io)?;
     }
     writer.flush().map_err(UpdateError::Io)
+}
+
+fn format_bytes(bytes: u64) -> String {
+    const KIB: u64 = 1024;
+    const MIB: u64 = 1024 * KIB;
+    const GIB: u64 = 1024 * MIB;
+
+    if bytes >= GIB {
+        format!("{:.2} GiB", bytes as f64 / GIB as f64)
+    } else if bytes >= MIB {
+        format!("{:.2} MiB", bytes as f64 / MIB as f64)
+    } else {
+        format!("{:.2} KiB", bytes as f64 / KIB as f64)
+    }
+}
+
+fn write_progress_kb<W: std::io::Write>(
+    info: &fidl_fuchsia_update_installer_ext::UpdateInfoAndProgress,
+    status: &str,
+    writer: &mut W,
+) -> Result<(), UpdateError> {
+    write_progress(
+        &format!(
+            "{:6.2}% ({}) {}",
+            info.progress().fraction_completed() * 100.0,
+            format_bytes(info.progress().bytes_downloaded()),
+            status
+        ),
+        writer,
+    )
 }
 
 /// Handle subcommands for `update channel`.
@@ -1125,9 +1142,9 @@ mod tests {
             for more detail on the progress of update-related downloads.\n\n\n\
             Starting install\
             \n  0.00% Preparing\
-            \n  0.00% Fetching\
-            \n 50.00% Staging\
-            \n100.00% Waiting to Reboot\n\n"
+            \n  0.00% (0.00 KiB) Fetching\
+            \n 50.00% (0.49 KiB) Staging\
+            \n100.00% (0.98 KiB) Waiting to Reboot\n\n"
         );
     }
 
@@ -1227,9 +1244,9 @@ mod tests {
             Installing an update.\n\n\
             Starting install\
             \n  0.00% Preparing\
-            \n  0.00% Fetching\
-            \n 50.00% Staging\
-            \n100.00% Waiting to Reboot\n\n"
+            \n  0.00% (0.00 KiB) Fetching\
+            \n 50.00% (0.49 KiB) Staging\
+            \n100.00% (0.98 KiB) Waiting to Reboot\n\n"
         );
     }
 
@@ -1356,9 +1373,9 @@ mod tests {
                 "Installing an update.\n\n\
                 Starting install\
                 \n  0.00% Preparing\
-                \n  0.00% Fetching\
-                \n 50.00% Staging\
-                \n100.00% Waiting to Reboot\n\n"
+                \n  0.00% (0.00 KiB) Fetching\
+                \n 50.00% (0.49 KiB) Staging\
+                \n100.00% (0.98 KiB) Waiting to Reboot\n\n"
             ),
             "stdout: {stdout}",
         );
@@ -1528,5 +1545,17 @@ mod tests {
 
         assert!(result.is_err());
         assert!(matches!(result.unwrap_err(), UpdateError::UpdateCheckingFailed));
+    }
+
+    #[test]
+    fn test_format_bytes() {
+        assert_eq!(format_bytes(0), "0.00 KiB");
+        assert_eq!(format_bytes(500), "0.49 KiB");
+        assert_eq!(format_bytes(1024), "1.00 KiB");
+        assert_eq!(format_bytes(1024 * 500), "500.00 KiB");
+        assert_eq!(format_bytes(1024 * 1024), "1.00 MiB");
+        assert_eq!(format_bytes(1024 * 1024 * 50), "50.00 MiB");
+        assert_eq!(format_bytes(1024 * 1024 * 1024), "1.00 GiB");
+        assert_eq!(format_bytes((1024 * 1024 * 1024 * 3) + (1024 * 1024 * 512)), "3.50 GiB");
     }
 }
