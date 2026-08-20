@@ -75,14 +75,22 @@
   {{- range .Structs }}
     {{- IfdefFuchsiaIf .IsResourceType }}
     std::ostream& fidl::ostream::Formatter<{{ . }}>::Format(std::ostream& os, const {{ . }}& value) {
+      {{- if .HasAttribute "sensitive" }}
+      return os << "<REDACTED>";
+      {{- else }}
       os << "{{ .NoLeading }}";
       os << "{ ";
       {{- range .Members }}
         os << "{{ .Name }}";
+        {{- if .HasAttribute "sensitive" }}
+        os << " = <REDACTED>, ";
+        {{- else }}
         os << " = " << fidl::ostream::Formatted<{{ .Type }}>(value.{{ .Name }}()) << ", ";
+        {{- end }}
       {{- end }}
       os << "}";
       return os;
+      {{- end }}
     }
     {{- EndifFuchsiaIf .IsResourceType -}}
   {{- end }}
@@ -90,16 +98,24 @@
   {{- range .Tables }}
     {{- IfdefFuchsiaIf .IsResourceType }}
     std::ostream& fidl::ostream::Formatter<{{ . }}>::Format(std::ostream& os, const {{ . }}& value) {
+      {{- if .HasAttribute "sensitive" }}
+      return os << "<REDACTED>";
+      {{- else }}
       os << "{{ .NoLeading }}";
       os << "{ ";
       {{- range .Members }}
         if (value.{{ .Name }}().has_value()) {
           os << "{{ .Name }}";
+          {{- if .HasAttribute "sensitive" }}
+          os << " = <REDACTED>, ";
+          {{- else }}
           os << " = " << fidl::ostream::Formatted<{{ .Type }}>(value.{{ .Name }}().value()) << ", ";
+          {{- end }}
         }
       {{- end }}
       os << "}";
       return os;
+      {{- end }}
     }
     {{- EndifFuchsiaIf .IsResourceType -}}
   {{- end }}
@@ -107,17 +123,25 @@
   {{- range .Unions }}
     {{- IfdefFuchsiaIf .IsResourceType }}
     std::ostream& fidl::ostream::Formatter<{{ . }}>::Format(std::ostream& os, const {{ . }}& value) {
+      {{- if .HasAttribute "sensitive" }}
+      return os << "<REDACTED>";
+      {{- else }}
       os << "{{ .NoLeading }}::";
       switch (value.Which()) {
         {{- range .Members }}
           case {{ .TagName }}:
+            {{- if .HasAttribute "sensitive" }}
+            os << "{{ .Name }}(<REDACTED>)";
+            {{- else }}
             os << "{{ .Name }}(" << fidl::ostream::Formatted<{{ .Type }}>(value.{{ .Name }}().value()) << ")";
+            {{- end }}
             break;
         {{- end }}
         default:
           os << "Unknown";
       }
       return os;
+      {{- end }}
     }
     {{- EndifFuchsiaIf .IsResourceType -}}
   {{- end }}
