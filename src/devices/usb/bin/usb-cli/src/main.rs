@@ -2,28 +2,64 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::Error;
+use anyhow::{Context, Error};
 use argh::FromArgs;
-use fidl_fuchsia_diagnostics as _;
 use fidl_fuchsia_usb_policy as usb_policy;
 
+mod config;
 mod health;
 mod inspect;
 
-#[derive(FromArgs)]
-/// USB diagnostics tool.
+#[derive(FromArgs, PartialEq, Debug)]
+/// USB diagnostics and configuration CLI tool.
 struct UsbCliArgs {
-    /// prints the usb policy health report
-    #[argh(switch, short = 'H')]
-    health: bool,
+    #[argh(subcommand)]
+    subcommand: SubCommand,
+}
 
-    /// prints the device-side usb inspect diagnostics
-    #[argh(switch, short = 'i')]
-    inspect: bool,
+#[derive(FromArgs, PartialEq, Debug)]
+#[argh(subcommand)]
+enum SubCommand {
+    Health(HealthArgs),
+    Inspect(InspectArgs),
+    Diagnostics(DiagnosticsArgs),
+    Diag(DiagArgs),
+    GetConfig(GetConfigArgs),
+    SetConfig(SetConfigArgs),
+}
 
-    /// prints both health report and inspect diagnostics
-    #[argh(switch, short = 'a')]
-    all: bool,
+#[derive(FromArgs, PartialEq, Debug)]
+/// Prints the USB policy health report.
+#[argh(subcommand, name = "health")]
+struct HealthArgs {}
+
+#[derive(FromArgs, PartialEq, Debug)]
+/// Prints the device-side USB Inspect diagnostics.
+#[argh(subcommand, name = "inspect")]
+struct InspectArgs {}
+
+#[derive(FromArgs, PartialEq, Debug)]
+/// Prints both USB health report and Inspect diagnostics.
+#[argh(subcommand, name = "diagnostics")]
+struct DiagnosticsArgs {}
+
+#[derive(FromArgs, PartialEq, Debug)]
+/// Prints both USB health report and Inspect diagnostics (alias for 'diagnostics').
+#[argh(subcommand, name = "diag")]
+struct DiagArgs {}
+
+#[derive(FromArgs, PartialEq, Debug)]
+/// Prints the current USB peripheral configuration in JSON format.
+#[argh(subcommand, name = "get-config")]
+struct GetConfigArgs {}
+
+#[derive(FromArgs, PartialEq, Debug)]
+/// Sets the USB peripheral configuration from JSON string, JSON file path, or comma-separated functions (e.g. "cdc,test").
+#[argh(subcommand, name = "set-config")]
+struct SetConfigArgs {
+    /// JSON configuration string, JSON file path, or comma-separated functions.
+    #[argh(positional)]
+    config: String,
 }
 
 #[fuchsia::main(logging_tags = ["usb-cli"])]
@@ -32,6 +68,72 @@ async fn main() {
         eprintln!("usb-cli error: {:?}", e);
         std::process::exit(1);
     }
+    println!("[usb-cli:DONE]");
+}
+
+async fn get_configuration_client() -> Result<usb_policy::ConfigurationProxy, Error> {
+    if std::path::Path::new("/exposed/fuchsia.usb.policy.Configuration").exists() {
+        return fuchsia_component::client::connect_to_protocol_at_path::<
+            usb_policy::ConfigurationMarker,
+        >("/exposed/fuchsia.usb.policy.Configuration")
+        .context("Failed to connect to /exposed/fuchsia.usb.policy.Configuration");
+    }
+
+    fuchsia_component::client::connect_to_protocol::<usb_policy::ConfigurationMarker>()
+        .context("Failed to connect to fuchsia.usb.policy.Configuration protocol")
+}
+
+async fn run_get_config(_args: GetConfigArgs) -> Result<(), Error> {
+    let config_client = get_configuration_client().await?;
+    let (_device_desc, config_descriptors) = config_client
+        .get_configuration()
+        .await
+        .context("Failed FIDL call get_configuration")?
+        .map_err(zx::Status::from_raw)
+        .context("GetConfiguration returned an error status")?;
+
+    let functions: Vec<String> = config_descriptors
+        .into_iter()
+        .flatten()
+        .map(|func| config::descriptor_to_function_name(&func))
+        .collect();
+
+    let json_output = config::UsbConfigJson { functions };
+
+    let serialized = serde_json::to_string_pretty(&json_output).context("Failed to format JSON")?;
+    println!("{}", serialized);
+    Ok(())
+}
+
+async fn run_set_config(args: SetConfigArgs) -> Result<(), Error> {
+    let parsed_config = config::load_config_input(&args.config)?;
+    let config_client = get_configuration_client().await?;
+
+    let func_descriptors = parsed_config
+        .functions
+        .iter()
+        .map(|name| config::function_name_to_descriptor(name))
+        .collect::<Result<Vec<_>, _>>()?;
+
+    let (mut device_desc, _) = config_client
+        .get_configuration()
+        .await
+        .context("Failed FIDL call get_configuration")?
+        .map_err(zx::Status::from_raw)
+        .context("GetConfiguration returned an error status")?;
+
+    device_desc.b_num_configurations = 1;
+
+    println!("Applying new configuration via Policy (functions: {:?})...", parsed_config.functions);
+    config_client
+        .set_configuration(&device_desc, &[func_descriptors])
+        .await
+        .context("Failed set_configuration FIDL call")?
+        .map_err(zx::Status::from_raw)
+        .context("SetConfiguration returned an error status")?;
+
+    println!("Successfully applied USB peripheral configuration.");
+    Ok(())
 }
 
 async fn get_health_report() -> Result<usb_policy::HealthReport, Error> {
@@ -55,40 +157,95 @@ async fn get_health_report() -> Result<usb_policy::HealthReport, Error> {
         })
 }
 
-async fn run_cli() -> Result<(), Error> {
-    let args: UsbCliArgs = argh::from_env();
-
-    // Default mode (no flags) runs health.
-    let default_mode = !args.inspect && !args.health && !args.all;
-    let run_health = args.health || args.all || default_mode;
-    let run_inspect = args.inspect || args.all;
-
-    let mut report_res = Ok(None);
-
-    if run_health {
-        report_res = get_health_report().await.map(Some);
-    }
-
-    match report_res {
-        Ok(Some(report)) => println!("{}", health::format_report(&report)),
-        Ok(None) => {}
+async fn run_health() -> Result<(), Error> {
+    match get_health_report().await {
+        Ok(report) => {
+            println!("{}", health::format_report(&report));
+            Ok(())
+        }
         Err(e) => {
-            if args.health {
-                println!(
-                    "USB Policy Health service not available: fuchsia.usb.policy.Health not found."
-                );
-                return Err(e);
-            } else {
-                println!("USB Policy Health service not available (skipping).");
-            }
+            println!(
+                "USB Policy Health service not available: fuchsia.usb.policy.Health not found."
+            );
+            Err(e)
+        }
+    }
+}
+
+async fn run_diagnostics() -> Result<(), Error> {
+    match get_health_report().await {
+        Ok(report) => println!("{}", health::format_report(&report)),
+        Err(_) => {
+            println!("USB Policy Health service not available (skipping).");
         }
     }
 
-    if run_inspect {
-        if let Err(e) = inspect::print_usb_inspect_diagnostics().await {
-            println!("Failed to print USB inspect diagnostics: {:?}", e);
-        }
+    if let Err(e) = inspect::print_usb_inspect_diagnostics().await {
+        println!("Failed to print USB inspect diagnostics: {:?}", e);
     }
 
     Ok(())
+}
+
+async fn run_cli() -> Result<(), Error> {
+    let args: UsbCliArgs = argh::from_env();
+
+    match args.subcommand {
+        SubCommand::Health(_) => run_health().await,
+        SubCommand::Inspect(_) => inspect::print_usb_inspect_diagnostics().await,
+        SubCommand::Diagnostics(_) | SubCommand::Diag(_) => run_diagnostics().await,
+        SubCommand::GetConfig(sc_args) => run_get_config(sc_args).await,
+        SubCommand::SetConfig(sc_args) => run_set_config(sc_args).await,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_missing_subcommand() {
+        assert!(UsbCliArgs::from_args(&["usb-cli"], &[]).is_err());
+    }
+
+    #[test]
+    fn test_parse_health() {
+        let args = UsbCliArgs::from_args(&["usb-cli"], &["health"]).unwrap();
+        assert_eq!(args, UsbCliArgs { subcommand: SubCommand::Health(HealthArgs {}) });
+    }
+
+    #[test]
+    fn test_parse_inspect() {
+        let args = UsbCliArgs::from_args(&["usb-cli"], &["inspect"]).unwrap();
+        assert_eq!(args, UsbCliArgs { subcommand: SubCommand::Inspect(InspectArgs {}) });
+    }
+
+    #[test]
+    fn test_parse_diagnostics() {
+        let args = UsbCliArgs::from_args(&["usb-cli"], &["diagnostics"]).unwrap();
+        assert_eq!(args, UsbCliArgs { subcommand: SubCommand::Diagnostics(DiagnosticsArgs {}) });
+    }
+
+    #[test]
+    fn test_parse_diag_alias() {
+        let args = UsbCliArgs::from_args(&["usb-cli"], &["diag"]).unwrap();
+        assert_eq!(args, UsbCliArgs { subcommand: SubCommand::Diag(DiagArgs {}) });
+    }
+
+    #[test]
+    fn test_parse_get_config() {
+        let args = UsbCliArgs::from_args(&["usb-cli"], &["get-config"]).unwrap();
+        assert_eq!(args, UsbCliArgs { subcommand: SubCommand::GetConfig(GetConfigArgs {}) });
+    }
+
+    #[test]
+    fn test_parse_set_config() {
+        let args = UsbCliArgs::from_args(&["usb-cli"], &["set-config", "cdc,test"]).unwrap();
+        assert_eq!(
+            args,
+            UsbCliArgs {
+                subcommand: SubCommand::SetConfig(SetConfigArgs { config: "cdc,test".to_string() }),
+            }
+        );
+    }
 }

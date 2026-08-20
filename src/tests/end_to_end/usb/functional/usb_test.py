@@ -72,10 +72,10 @@ class UsbTest(fuchsia_base_test.FuchsiaBaseTest):
         self._verify_driver_loaded(_USB_HOST_API_NAME, _USB_HOST_NAME)
 
     def test_usb_cli_diagnostics(self) -> None:
-        """Verifies 'usb-cli -a' runs successfully and returns diagnostics."""
-        _LOGGER.info("Executing 'usb-cli -a' command on target...")
-        output = self.dut.ffx.run_ssh_cmd("usb-cli -a")
-        _LOGGER.info(f"usb-cli -a output:\n{output}")
+        """Verifies 'usb-cli diagnostics' runs successfully and returns diagnostics."""
+        _LOGGER.info("Executing 'usb-cli diagnostics' command on target...")
+        output = self.dut.ffx.run_ssh_cmd("usb-cli diagnostics")
+        _LOGGER.info(f"usb-cli diagnostics output:\n{output}")
 
         asserts.assert_in(
             "=== Inspect:",
