@@ -485,35 +485,39 @@ class GnTargetsDirTest(unittest.TestCase):
         build_dir = self._root / "build"
         build_dir.mkdir()
 
-        manifest_path = self._root / "manifest"
-        manifest_path.write_text(
-            json.dumps(
-                [
+        entries = workspace_utils.BazelPackageAndTargetToGnInputsEntriesMap(
+            {
+                "src/drivers/virtio": workspace_utils.BazelTargetGnInputsEntriesMap(
                     {
-                        "bazel_name": "package",
-                        "bazel_package": "src/drivers/virtio",
-                        "generator_label": "//src/drivers/virtio:package-archive(//build/toolchain/fuchsia:x64)",
-                        "output_files": ["obj/src/drivers/virtio/package.far"],
-                        "license_spdx_file": "obj/src/drivers/virtio/package-archive.licenses.spdx.json",
-                    },
+                        "package": workspace_utils.GnTargetsDirectoryManifestEntry(
+                            bazel_name="package",
+                            bazel_package="src/drivers/virtio",
+                            generator_label="//src/drivers/virtio:package-archive(//build/toolchain/fuchsia:x64)",
+                            output_files=["obj/src/drivers/virtio/package.far"],
+                            license_spdx_file="obj/src/drivers/virtio/package-archive.licenses.spdx.json",
+                        ),
+                    }
+                ),
+                "bundles/assembly": workspace_utils.BazelTargetGnInputsEntriesMap(
                     {
-                        "bazel_name": "eng.bazel_inputs",
-                        "bazel_package": "bundles/assembly",
-                        "generator_label": "//bundles/assembly:eng.platform_artifacts(//build/toolchain/fuchsia:x64)",
-                        "output_directory": "obj/bundles/assembly/eng/platform_artifacts",
-                        "license_spdx_file": "obj/bundles/assembly/eng/platform_artifacts/eng.platform_artifacts.licenses.spdx.json",
-                    },
-                ],
-                indent=2,
-            )
+                        "eng.bazel_inputs": workspace_utils.GnTargetsDirectoryManifestEntry(
+                            bazel_name="eng.bazel_inputs",
+                            bazel_package="bundles/assembly",
+                            generator_label="//bundles/assembly:eng.platform_artifacts(//build/toolchain/fuchsia:x64)",
+                            output_directory="obj/bundles/assembly/eng/platform_artifacts",
+                            license_spdx_file="obj/bundles/assembly/eng/platform_artifacts/eng.platform_artifacts.licenses.spdx.json",
+                        ),
+                    }
+                ),
+            }
         )
 
         all_licenses_path = self._root / "all_licenses.spdx.json"
         all_licenses_path.write_text("")
 
         generated = workspace_utils.GeneratedWorkspaceFiles()
-        workspace_utils.record_gn_targets_dir(
-            generated, build_dir, manifest_path, all_licenses_path
+        workspace_utils.record_gn_targets_dir_from_entries(
+            generated, build_dir, entries, all_licenses_path
         )
 
         generated_json = json.loads(generated.to_json())

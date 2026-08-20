@@ -934,51 +934,6 @@ class BazelPackageAndTargetToGnInputsEntriesMap(
     """Maps Bazel package names to a BazelTargetGnInputsEntriesMap instance."""
 
 
-def record_gn_targets_dir(
-    generated: GeneratedWorkspaceFiles,
-    build_dir: Path,
-    inputs_manifest_path: Path,
-    all_licenses_spdx_path: Path,
-) -> None:
-    """Record the content of a @gn_targets directory in a GeneratedWorkspaceFiles instance.
-
-    Args:
-        generated: A GeneratedWorkspaceFiles instance.
-        build_dir: Path to the Ninja build directory.
-        inputs_manifest_path: Path to an inputs manifest file generated
-            by the generate_gn_targets_repository_manifest() GN template.
-            See //build/bazel/bazel_inputs.gni comments for file format.
-        all_licenses_spdx_path: Path to an SPDX file listing all licensing
-            requirements for the inputs covered by the manifest.
-    Raises:
-        ValueError in case of missing or malformed input.
-    """
-    if not inputs_manifest_path.exists():
-        raise ValueError(
-            f"Missing inputs manifest file: {inputs_manifest_path}"
-        )
-
-    # Build a { bazel_package -> { bazel_name -> entry } } map.
-    manifest_entries_package_map = BazelPackageAndTargetToGnInputsEntriesMap()
-    gn_targets_directory_manifest = GnTargetsDirectoryManifest.from_json_value(
-        json.loads(generated.read_text_file(inputs_manifest_path))
-    )
-    for entry in gn_targets_directory_manifest.entries:
-        bazel_package = entry.bazel_package
-        bazel_name = entry.bazel_name
-        name_map = manifest_entries_package_map.setdefault(
-            bazel_package, BazelTargetGnInputsEntriesMap()
-        )
-        name_map[bazel_name] = entry
-
-    record_gn_targets_dir_from_entries(
-        generated,
-        build_dir,
-        manifest_entries_package_map,
-        all_licenses_spdx_path,
-    )
-
-
 def record_gn_targets_dir_from_entries(
     generated: GeneratedWorkspaceFiles,
     build_dir: Path,
@@ -1308,51 +1263,6 @@ class BazelrcFromGnConfigGenerator(object):
             output += f"common:{platform} --config={config_args_name} --platforms=//build/bazel/platforms:{platform_name}\n"
 
         return output
-
-
-def generate_all_gn_targets_dirs(
-    bazel_build_action_targets: list[dict[str, T.Any]],
-    build_dir: Path,
-) -> None:
-    """Generate all @gn_targets directories before the build.
-
-    Args:
-        bazel_build_action_targets: The content of the //:bazel_build_action_targets
-            generated_file(), listing all possible bazel_action() targets in the
-            current GN build graph. See //:BUILD.gn for actual schema.
-
-        build_dir: Path to the Ninja build directory.
-    """
-
-    for entry in bazel_build_action_targets:
-        # LINT.IfChange(bazel_build_actions)
-
-        # The manifest is always generated at `gn gen` time and thus always exists.
-        manifest_path = build_dir / entry["gn_targets_manifest"]
-        assert (
-            manifest_path.exists()
-        ), f"Missing @gn_targets manifest at: {manifest_path}"
-
-        licenses_file = build_dir / entry["gn_targets_licenses_spdx"]
-        if not licenses_file.exists():
-            # This file is created by a Ninja build rule, but to be able to perform
-            # Bazel queries (not builds) before an actual build invocation, an empty
-            # placeholder file must be generated here. It will get replaced in the
-            # next build invocation.
-            licenses_file.write_text(
-                "This is a placeholder file - It should always be overwritten by Ninja during a build"
-            )
-            # Set a timestamp in the past to be sure that Ninja will overwrite it
-            os.utime(licenses_file, times=(0, 0))
-
-        gn_targets_dir = build_dir / entry["gn_targets_dir"]
-        # LINT.ThenChange(//BUILD.gn:bazel_build_actions)
-
-        generated = GeneratedWorkspaceFiles()
-        record_gn_targets_dir(
-            generated, build_dir, manifest_path, licenses_file
-        )
-        generated.write(gn_targets_dir)
 
 
 def check_regenerator_inputs_updates(

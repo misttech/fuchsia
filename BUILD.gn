@@ -2137,115 +2137,15 @@ build_api_module("nuc11_fastboot_images_location") {
   }
 }
 
-# LINT.IfChange(bazel_build_actions)
-#
-# The bazel_build_actions_targets.json file maps GN bazel_action() targets
-# reachable from //:default and those listed in extra_bazel_build_action_labels,
-# to the list of top-level bazel target labels they build. This is used to
-# implement several tools over the Bazel graph, for example `fx bazel-tool
-# set_gn_targets <bazel_label>` as well as `fx build @<bazel_target>`.
-#
-# Type: list(scope)
-#
-#   gn_target
-#     - Required: GN label of bazel_action() target.
-#     - Type: string
-#
-#   bazel_targets
-#     - Required: List of Bazel target labels built by gn_label. Labels begin with @ or //.
-#     - Type: string list
-#
-#   no_sdk
-#     - Required: flag indicating whether the IDK/SDK is required to build the target.
-#     - Type: boolean
-#
-#   is_host
-#     - Required: flag indicating whether the target is built for the host.
-#     - Type: boolean
-#
-#   gn_targets_dir
-#     - Required: Path to @gn_targets directory for gn_label, relative to Ninja build directory.
-#     - Type: string
-#
-#   gn_targets_manifest
-#     - Required: Path to manifest file describing the content of @gn_targets, relative
-#         to the Ninja build directory. Rebuilding this artifact with Ninja should ensure
-#         that all files exposed by the repository are up-to-date.
-#     - Type: string
-#
-#   gn_targets_licenses_spdx
-#     - Required: Path to an SPDX JSON file describing the licenses of all @gn_targets
-#       artifacts, relative to the Ninja build directory.
-#     - Type: string
-#
-#   debug_symbols_manifest
-#     - Required: Path to a debug_symbols.json manifest (see //:debug_symbols for schema)
-#         describing the debug binaries for the Bazel targets.
-#     - Type: string
-#
-#   bazel_command_file
-#     - Optional: Path to a file containing the shell command used to invoke Bazel.
-#         This is only used for debugging.
-#     - Type: string
-#
-#   bazel_explain_file
-#     - Optional: Path to a file containing the explain output of the Bazel build command.
-#         This is only used for debugging.
-#     - Type: string
-#
-#   bazel_compdb_file
-#     - Optional: Path to a file including JSON compilation database for the
-#         Bazel targets built by this bazel_action().
-#     - Type: string
-#
-#   bazel_rust_project_json
-#     - Optional: Path to a file including JSON rust project information for the
-#         Rust targets built by this bazel_action().
-#     - Type: string
-#
-#   timings_file
-#     - Optional: Path to a file used to describe timings of different steps of the
-#         bazel_gn_target_action.py script call for this target. Only used for debugging.
-#     - Type: string
-#
-#   build_events_log_json:
-#     - Optional: Path to a file that will contain the Bazel event log for the latest
-#        invocation of this action, as a JSON file. Used for debugging.
-#     - Type: string
-#
-generated_file("bazel_build_action_targets") {
-  testonly = true
-  deps = [
-           ":default",
-
-           # //:root_targets has bazel_action() dependencies that are always
-           # defined in the GN graph, so depend on it.
-           "//:root_targets",
-         ] + extra_bazel_build_action_labels
-
-  data_keys = [ "bazel_build_actions" ]
-  walk_keys = [ "bazel_build_actions_barrier" ]
-  outputs = [ "$root_build_dir/$target_name.json" ]
-  output_conversion = "json"
-}
-
-# LINT.ThenChange(
-#   //build/bazel/bazel_action.gni:bazel_build_actions,
-#   //build/bazel/scripts/workspace_utils.py:bazel_build_actions)
-
 # LINT.IfChange(bazel_target_infos)
 #
 # The bazel_target_infos.json file maps provides the information necessary for
-# Ninja to run a bazel action, by telling the bazel_gn_target_action.py script
-# how to find all the inputs that need to be symlinked into the workspace for a
-# given action and all the outputs to copy out of that action.
-#
-# This will eventually replace the above 'bazel_build_action_targets.json' file,
-# which is oriented around the bazel action build groups, and isn't per-bazel
-# target.
+# Ninja to run a bazel action, by telling the bazeL_ninja_delayed_actions.py
+# script how to find all the inputs from Ninja for each Bazel target, and all
+# the outputs to copy out.
 #
 # This data is structured for ease of generation, and is flattened into a more
-# manageable format by the parsing code used by bazel_gn_target_action.py.
+# manageable format by the parsing code used by bazeL_ninja_delayed_actions.py.
 #
 # Type: list(scope)
 #

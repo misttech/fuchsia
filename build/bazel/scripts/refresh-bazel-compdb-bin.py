@@ -143,12 +143,11 @@ def main(argv: Sequence[str]) -> None:
         are not compatible with bazel queries and will fail.""",
     )
     parser.add_argument(
-        "--bazel-build-action-targets",
+        "--bazel-target-infos",
         required=False,
-        help="""A build API module of all Bazel build actions in this build.
+        help="""A build API module of all Bazel target infos in this build.
         When specified, this argument takes precedence over --label and --dir.
-        All Fuchsia Bazel targets (i.e. non-host) from the build API module
-        file are refreshed.""",
+        All Fuchsia Bazel targets from the build API module file are refreshed.""",
         type=Path,
     )
     parser.add_argument(
@@ -182,15 +181,22 @@ def main(argv: Sequence[str]) -> None:
 
     labels: list[str] = []
 
-    if args.bazel_build_action_targets:
-        with open(args.bazel_build_action_targets, "r") as f:
-            bazel_build_action_targets = json.load(f)
-            for t in bazel_build_action_targets:
-                labels += [] if t["no_sdk"] else t["bazel_targets"]
+    if args.bazel_target_infos:
+        with open(args.bazel_target_infos, "r") as f:
+            bazel_target_infos = json.load(f)
+            labels = sorted(
+                list(
+                    {
+                        t["bazel_target"]
+                        for t in bazel_target_infos
+                        if "bazel_target" in t
+                    }
+                )
+            )
         if not labels:
             info(
                 "No Bazel labels to refresh from {}".format(
-                    args.bazel_build_action_targets
+                    args.bazel_target_infos
                 )
             )
             return

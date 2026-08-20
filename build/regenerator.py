@@ -626,16 +626,6 @@ def main() -> int:
             # LINT.ThenChange(//zircon/public/sysroot_sdk/BUILD.gn:sysroot_for_fuchsia_platform_json)
         )
 
-        time_profile.start("@gn_targets", "Generating @gn_targets directories")
-        input_file = build_dir / "bazel_build_action_targets.json"
-        assert input_file.exists(), f"Missing GN-generated file: {input_file}"
-        with input_file.open() as f:
-            bazel_build_action_targets = json.load(f)
-        extra_ninja_build_inputs.add(input_file)
-        workspace_utils.generate_all_gn_targets_dirs(
-            bazel_build_action_targets, build_dir
-        )
-
         # Bazel warm-up: perform a minimalistic query that ensures that the Bazel
         # daemon is started for the current build directory and that
         # toplevel.MODULE.bazel is processed
