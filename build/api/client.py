@@ -15,6 +15,7 @@ See https://fxbug.dev/42084664 for context.
 # of this script as low a possible. You can always perform an import lazily
 # only when you need it (e.g. see how json and difflib are imported below).
 import argparse
+import functools
 import os
 import sys
 import typing as T
@@ -25,6 +26,10 @@ _SCRIPT_FILE = Path(__file__)
 _SCRIPT_DIR = _SCRIPT_FILE.parent
 sys.path.insert(0, str(_SCRIPT_DIR))
 from script_commands import ScriptCommandBase, ScriptCommandList
+
+if T.TYPE_CHECKING:
+    import gn_labels
+    import gn_ninja_outputs
 
 _FUCHSIA_DIR = (_SCRIPT_DIR / ".." / "..").resolve()
 
@@ -706,17 +711,69 @@ class NinjaPathToGnLabelCommand(ScriptCommandBase):
 #####
 
 
+@functools.lru_cache
+def _load_json_list(file_path: Path) -> list[dict[str, T.Any]]:
+    """Safely load a list JSON file, returning [] on missing/corrupt."""
+    import json
+
+    try:
+        data = json.loads(file_path.read_text())
+        return data if isinstance(data, list) else []
+    except (json.JSONDecodeError, OSError):
+        return []
+
+
+def _normalize_label(label: str) -> str:
+    """Normalize a GN or Bazel label for comparison (strip @, toolchain, qualify)."""
+    from gn_labels import qualify_gn_target_name
+
+    target = label.split("(", 1)[0].removeprefix("@")
+    return qualify_gn_target_name(target) if target.startswith("//") else target
+
+
+def _find_bazel_wrapper_target(
+    label: str,
+    build_dir: Path,
+    outputs: "gn_ninja_outputs.NinjaOutputsBase",
+    qualifier: "gn_labels.GnLabelQualifier",
+) -> tuple[list[str], str | None] | None:
+    """Find the GN wrapper target or direct Bazel command for a Bazel target."""
+    target_label = _normalize_label(label)
+
+    # 1. Check bazel_root_targets.json (host tools)
+    for item in _load_json_list(build_dir / "bazel_root_targets.json"):
+        if _normalize_label(item.get("bazel_label", "")) == target_label:
+            gn_target = item.get("host_bin_label") or item.get(
+                "gn_subtarget_label"
+            )
+            if gn_target:
+                bazel_arg = f"@{target_label}"
+                return (
+                    qualifier.label_to_build_args(gn_target),
+                    f"fx build --host {bazel_arg}",
+                )
+
+    # 2. Check bazel_target_infos.json (platform & general bazel actions)
+    for item in _load_json_list(build_dir / "bazel_target_infos.json"):
+        if _normalize_label(item.get("bazel_target", "")) == target_label:
+            stamp = item.get("stamp_path")
+            if stamp and (gn_target := outputs.path_to_gn_label(stamp)):
+                return (qualifier.label_to_build_args(gn_target), None)
+
+    return None
+
+
 def resolve_gn_labels_to_ninja_paths(
     labels: list[str],
     build_dir: Path,
     host_tag: str,
     allow_unknown: bool = False,
 ) -> tuple[str, list[str]]:
-    """Resolve a list of GN labels to their Ninja path if possible.
+    """Convert a list of GN labels to the corresponding Ninja output paths.
 
     Args:
-        labels: A list of input GN labels.
-        build_dir: Path to the Ninja build directory.
+        labels: List of input GN labels.
+        build_dir: Path to Ninja build directory.
         host_tag: Host tag value (e.g. "linux-x64").
         allow_unknown: Optional flag, set it to True to allow non-GN labels to
             be passed as input, and returned as-is in the output.
@@ -749,6 +806,20 @@ def resolve_gn_labels_to_ninja_paths(
             if paths:
                 all_paths.extend(paths)
                 continue
+            bazel_hint = _find_bazel_wrapper_target(
+                qualified_label, build_dir, outputs, qualifier
+            )
+            if bazel_hint:
+                gn_args, direct_bazel = bazel_hint
+                gn_cmd = f"fx build {' '.join(gn_args)}"
+                msg = (
+                    f"Unknown GN label (not in the configured graph): {label}\n"
+                )
+                msg += f"NOTE: '{label}' is a Bazel target wrapped by GN.\n"
+                msg += f"      Did you mean: {gn_cmd}"
+                if direct_bazel:
+                    msg += f"\n      Or for direct Bazel: {direct_bazel}"
+                return (msg, [])
             return (
                 f"Unknown GN label (not in the configured graph): {label}",
                 [],
