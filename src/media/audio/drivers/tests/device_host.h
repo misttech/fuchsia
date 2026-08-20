@@ -37,6 +37,9 @@ class DeviceHost {
   // Optionally called during DetectDevices. Create virtual_audio instances for each device type
   // using the default configurations settings (which should always pass all tests).
   void AddVirtualDevices();
+  void RegisterVirtualAudioDrivers();
+  void UnregisterVirtualAudioDrivers();
+  void WaitForDeviceNode(const std::string& directory_path, const std::string& expected_filename);
   void AddVirtualDevice(fuchsia::virtualaudio::ControlSyncPtr& controller,
                         fuchsia::virtualaudio::DeviceType device_type,
                         std::optional<bool> is_input = std::nullopt);
@@ -55,6 +58,9 @@ class DeviceHost {
   std::vector<fuchsia::virtualaudio::DevicePtr> virtual_audio_devices_;
 
   bool shutting_down_ = false;
+  bool no_virtual_audio_ = false;
+  std::vector<std::string> registered_driver_urls_;
+  std::vector<std::string> added_test_nodes_;
   std::atomic_bool device_enumeration_complete_ = false;
 };
 

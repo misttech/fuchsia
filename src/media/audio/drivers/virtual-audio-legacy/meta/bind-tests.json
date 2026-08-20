@@ -1,12 +1,26 @@
 [
     {
         "device": {
+            "fuchsia.COMPATIBLE": "\"fuchsia,virtual-audio-legacy\""
+        },
+        "expected": "match",
+        "name": "CompatibleMatch"
+    },
+    {
+        "device": {
+            "fuchsia.COMPATIBLE": "\"fuchsia,virtual-audio\""
+        },
+        "expected": "abort",
+        "name": "WrongCompatible"
+    },
+    {
+        "device": {
             "fuchsia.BIND_PLATFORM_DEV_DID": "fuchsia.platform.BIND_PLATFORM_DEV_DID.VIRTUAL_AUDIO_LEGACY",
             "fuchsia.BIND_PLATFORM_DEV_PID": "fuchsia.platform.BIND_PLATFORM_DEV_PID.GENERIC",
             "fuchsia.BIND_PLATFORM_DEV_VID": "fuchsia.platform.BIND_PLATFORM_DEV_VID.GENERIC"
         },
         "expected": "match",
-        "name": "Success"
+        "name": "LegacyMatch"
     },
     {
         "device": {

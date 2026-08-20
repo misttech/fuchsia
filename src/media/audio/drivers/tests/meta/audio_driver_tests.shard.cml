@@ -12,6 +12,8 @@
     use: [
         {
             protocol: [
+                "fuchsia.driver.development.Manager",
+                "fuchsia.driver.registrar.DriverRegistrar",
                 "fuchsia.virtualaudio.Control",
                 "fuchsia.virtualaudio.Device",
             ],
@@ -71,6 +73,11 @@
             directory: "sys",
             rights: [ "r*" ],
             path: "/dev/sys",
+        },
+        {
+            directory: "dev-topological",
+            rights: [ "r*" ],
+            path: "/dev/topological",
         },
     ],
 }

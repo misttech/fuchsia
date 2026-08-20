@@ -15,7 +15,10 @@ fuchsia_driver_package("virtual-audio-legacy") {
 driver_bind_rules("virtual-audio-legacy-bind") {
   rules = "meta/virtual-audio-legacy.bind"
   tests = "meta/bind-tests.json"
-  deps = [ "//src/devices/bind/fuchsia.platform" ]
+  deps = [
+    "//src/devices/bind/fuchsia",
+    "//src/devices/bind/fuchsia.platform",
+  ]
 }
 
 group("tests") {

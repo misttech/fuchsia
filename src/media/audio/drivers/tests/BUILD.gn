@@ -36,6 +36,8 @@ fuchsia_unittest_package("basic") {
   deps = [
     ":audio_driver_tests_bin",
     "//src/connectivity/bluetooth/tests/audio-device-output-harness",
+    "//src/media/audio/drivers/virtual-audio:virtual-audio-driver-component",
+    "//src/media/audio/drivers/virtual-audio-legacy:virtual-audio-legacy-driver-component",
   ]
 
   # This test can run on any board and product build: release, debug, asan, etc.
@@ -55,6 +57,8 @@ fuchsia_unittest_package("admin") {
   deps = [
     ":audio_driver_tests_bin",
     "//src/connectivity/bluetooth/tests/audio-device-output-harness",
+    "//src/media/audio/drivers/virtual-audio:virtual-audio-driver-component",
+    "//src/media/audio/drivers/virtual-audio-legacy:virtual-audio-legacy-driver-component",
   ]
 
   # This test runs on real hardware (debug) or emulators, WITHOUT
@@ -75,6 +79,8 @@ fuchsia_unittest_package("realtime") {
   deps = [
     ":audio_driver_tests_bin",
     "//src/connectivity/bluetooth/tests/audio-device-output-harness",
+    "//src/media/audio/drivers/virtual-audio:virtual-audio-driver-component",
+    "//src/media/audio/drivers/virtual-audio-legacy:virtual-audio-legacy-driver-component",
   ]
 
   # This test runs on real hardware, release-only, WITHOUT audio_core or
@@ -113,12 +119,17 @@ cc_test_executable("audio_driver_tests_bin") {
   # TODO(https://fxbug.dev/483395274): Move fidl dependencies from HLCPP to Natural bindings.
   deps = [
     "//sdk/fidl/fuchsia.component:fuchsia.component_hlcpp",
+    "//sdk/fidl/fuchsia.driver.development:fuchsia.driver.development_cpp",
+    "//sdk/fidl/fuchsia.driver.framework:fuchsia.driver.framework_cpp",
+    "//sdk/fidl/fuchsia.driver.registrar:fuchsia.driver.registrar_cpp",
     "//sdk/fidl/fuchsia.hardware.audio:fuchsia.hardware.audio_hlcpp",
     "//sdk/fidl/fuchsia.logger:fuchsia.logger_hlcpp",
     "//sdk/fidl/fuchsia.media:fuchsia.media_hlcpp",
     "//sdk/fidl/fuchsia.virtualaudio:fuchsia.virtualaudio_hlcpp",
+    "//sdk/lib/component/incoming/cpp",
     "//sdk/lib/sys/component/cpp/testing:cpp_library",
     "//sdk/lib/sys/cpp",
+    "//src/devices/bind/fuchsia:fuchsia_cpp",
     "//src/lib/fsl",
     "//src/lib/fuchsia-component-test/realm_builder_server:realm_builder_server_component",
     "//src/lib/fxl:fxl_cli",

@@ -4,10 +4,14 @@
 
 #include "src/media/audio/drivers/tests/device_host.h"
 
+#include <fidl/fuchsia.driver.development/cpp/fidl.h>
+#include <fidl/fuchsia.driver.framework/cpp/fidl.h>
+#include <fidl/fuchsia.driver.registrar/cpp/fidl.h>
 #include <fuchsia/virtualaudio/cpp/fidl.h>
 #include <lib/async-loop/loop.h>
 #include <lib/async/cpp/task.h>
 #include <lib/async/default.h>
+#include <lib/component/incoming/cpp/protocol.h>
 #include <lib/fdio/directory.h>
 #include <lib/sync/cpp/completion.h>
 #include <lib/syslog/cpp/macros.h>
@@ -15,12 +19,14 @@
 #include <lib/zx/time.h>
 #include <zircon/system/public/zircon/compiler.h>
 
+#include <filesystem>
+#include <format>
 #include <string>
 
+#include <bind/fuchsia/cpp/bind.h>
 #include <gtest/gtest.h>
 
 #include "src/lib/fsl/io/device_watcher.h"
-#include "src/lib/fxl/strings/concatenate.h"
 #include "src/media/audio/drivers/tests/test_base.h"
 
 namespace media::audio::drivers::test {
@@ -38,11 +44,26 @@ static const struct {
   const char* path;
   DriverType driver_type;
 } kAudioDevNodes[] = {
-    {.path = "/dev/class/audio-composite", .driver_type = DriverType::Composite},
-    {.path = "/dev/class/audio-input", .driver_type = DriverType::StreamConfigInput},
-    {.path = "/dev/class/audio-output", .driver_type = DriverType::StreamConfigOutput},
-    {.path = "/dev/class/codec", .driver_type = DriverType::Codec},
-    {.path = "/dev/class/dai", .driver_type = DriverType::Dai},
+    {
+        .path = "/dev/class/audio-composite",
+        .driver_type = DriverType::Composite,
+    },
+    {
+        .path = "/dev/class/audio-input",
+        .driver_type = DriverType::StreamConfigInput,
+    },
+    {
+        .path = "/dev/class/audio-output",
+        .driver_type = DriverType::StreamConfigOutput,
+    },
+    {
+        .path = "/dev/class/codec",
+        .driver_type = DriverType::Codec,
+    },
+    {
+        .path = "/dev/class/dai",
+        .driver_type = DriverType::Dai,
+    },
 };
 
 // Our thread and dispatcher must exist during the entirety of test execution; create it now.
@@ -78,6 +99,7 @@ void DeviceHost::AddDevices(bool no_bluetooth, bool no_virtual_audio) {
 // that these subsequent device-detection callbacks should trigger immediate failures instead of
 // treating this like another device to be tested.
 void DeviceHost::DetectDevices(bool no_bluetooth, bool no_virtual_audio) {
+  no_virtual_audio_ = no_virtual_audio;
   // This is guarded by `device_enumeration_complete_` which we set before we exit, but we give this
   // variable static scope to avoid future issues.
   static DeviceType dev_type = DeviceType::BuiltIn;
@@ -100,10 +122,12 @@ void DeviceHost::DetectDevices(bool no_bluetooth, bool no_virtual_audio) {
 
           FX_LOGS(TRACE) << "dir handle " << dir.channel().get() << " for '" << filename << "' ("
                          << dev_type << " " << driver_type << ")";
-          device_entries().insert({.dir = dir,
-                                   .filename = filename,
-                                   .driver_type = driver_type,
-                                   .device_type = dev_type});
+          device_entries().insert({
+              .dir = dir,
+              .filename = filename,
+              .driver_type = driver_type,
+              .device_type = dev_type,
+          });
         },
         []() { initial_enumeration_done = true; }, device_loop_.dispatcher());
 
@@ -146,20 +170,27 @@ void DeviceHost::DetectDevices(bool no_bluetooth, bool no_virtual_audio) {
   // And finally, unless expressly excluded, manually add a device entry for the Bluetooth audio
   // library, to validate admin functions even if AudioCore has connected to "real" audio drivers.
   if (!no_bluetooth) {
-    device_entries().insert({.dir = {},
-                             .filename = "A2DP",
-                             .driver_type = DriverType::StreamConfigOutput,
-                             .device_type = DeviceType::A2DP});
+    device_entries().insert({
+        .dir = {},
+        .filename = "A2DP",
+        .driver_type = DriverType::StreamConfigOutput,
+        .device_type = DeviceType::A2DP,
+    });
   }
 }
 
 // Optionally called during DetectDevices. Create virtual_audio instances (all four types) using the
 // default configuration settings (which should pass all tests).
 void DeviceHost::AddVirtualDevices() {
+  RegisterVirtualAudioDrivers();
+
   // Add virtual audio devices using non-legacy controller.
   {
-    const std::string kControlNodePath =
-        fxl::Concatenate({"/dev/", fuchsia::virtualaudio::CONTROL_NODE_NAME});
+    std::string parent_dir = std::filesystem::exists("/dev/sys/platform/virtual-audio")
+                                 ? "/dev/sys/platform/virtual-audio"
+                                 : "/dev/topological/virtual-audio";
+    WaitForDeviceNode(parent_dir, "virtual-audio");
+    const std::string kControlNodePath = parent_dir + "/virtual-audio";
     zx_status_t status = fdio_service_connect(kControlNodePath.c_str(),
                                               controller_.NewRequest().TakeChannel().release());
     ASSERT_EQ(status, ZX_OK) << "fdio_service_connect(" << kControlNodePath
@@ -184,35 +215,30 @@ void DeviceHost::AddVirtualDevices() {
 
   // Add virtual audio devices using legacy controller.
   {
-    const std::string kLegacyControlNodePath =
-        fxl::Concatenate({"/dev/", fuchsia::virtualaudio::LEGACY_CONTROL_NODE_NAME});
+    std::string legacy_parent_dir =
+        std::filesystem::exists("/dev/sys/platform/virtual-audio-legacy")
+            ? "/dev/sys/platform/virtual-audio-legacy"
+            : "/dev/topological/virtual-audio-legacy";
+    WaitForDeviceNode(legacy_parent_dir, "virtual-audio-legacy");
+    const std::string kLegacyControlNodePath = legacy_parent_dir + "/virtual-audio-legacy";
     zx_status_t status = fdio_service_connect(
         kLegacyControlNodePath.c_str(), legacy_controller_.NewRequest().TakeChannel().release());
-    if (status != ZX_OK) {
-      legacy_controller_.Unbind();
-      FAIL() << "fdio_service_connect(" << kLegacyControlNodePath << ") failed: " << status;
-    }
+    ASSERT_EQ(status, ZX_OK) << "fdio_service_connect(" << kLegacyControlNodePath
+                             << ") failed: " << status;
 
     uint32_t num_inputs = -1, num_outputs = -1, num_unspecified_direction = -1;
     status =
         legacy_controller_->GetNumDevices(&num_inputs, &num_outputs, &num_unspecified_direction);
-    if (status != ZX_OK) {
-      legacy_controller_.Unbind();
-      FAIL() << "GetNumDevices(legacy) failed: " << status;
-    }
+    ASSERT_EQ(status, ZX_OK) << "GetNumDevices(legacy) failed: " << status;
     ASSERT_TRUE(legacy_controller_.is_bound())
         << "virtualaudio::Control(legacy) did not stay bound";
-
-    if (num_inputs || num_outputs || num_unspecified_direction) {
-      legacy_controller_.Unbind();
-      ASSERT_EQ(num_inputs, 0u)
-          << num_inputs << " virtual-audio-legacy 'input' devices already exist (should be 0)";
-      ASSERT_EQ(num_outputs, 0u)
-          << num_outputs << " virtual-audio-legacy 'output' devices already exist (should be 0)";
-      ASSERT_EQ(num_unspecified_direction, 0u)
-          << num_unspecified_direction
-          << " virtual-audio-legacy 'unspecified direction' devices already exist (should be 0)";
-    }
+    ASSERT_EQ(num_inputs, 0u)
+        << num_inputs << " virtual-audio-legacy 'input' devices already exist (should be 0)";
+    ASSERT_EQ(num_outputs, 0u)
+        << num_outputs << " virtual-audio-legacy 'output' devices already exist (should be 0)";
+    ASSERT_EQ(num_unspecified_direction, 0u)
+        << num_unspecified_direction
+        << " virtual-audio-legacy 'unspecified direction' devices already exist (should be 0)";
 
     // For Codec drivers, directionality is not applicable.
     ASSERT_NO_FAILURE_OR_SKIP(
@@ -227,6 +253,281 @@ void DeviceHost::AddVirtualDevices() {
     ASSERT_NO_FAILURE_OR_SKIP(AddVirtualDevice(
         legacy_controller_, fuchsia::virtualaudio::DeviceType::STREAM_CONFIG, false));
   }
+}
+
+// If the base OS already provides virtual-audio platform nodes (e.g. workbench, smart_display),
+// reuse them directly. Else (e.g. minimal, legacy products without the modern virtual-audio),
+// dynamically create topological test nodes and register ephemeral drivers packaged with the test.
+void DeviceHost::RegisterVirtualAudioDrivers() {
+  if (no_virtual_audio_) {
+    return;
+  }
+
+  auto dev_mgr = component::Connect<fuchsia_driver_development::Manager>();
+  std::optional<fidl::SyncClient<fuchsia_driver_development::Manager>> mgr_client;
+  if (dev_mgr.is_ok()) {
+    mgr_client.emplace(std::move(*dev_mgr));
+  } else {
+    FX_LOGS(WARNING) << "Could not connect to fuchsia.driver.development.Manager: "
+                     << dev_mgr.status_string();
+  }
+
+  bool has_modern_driver = false;
+  bool has_legacy_driver = false;
+
+  if (mgr_client.has_value()) {
+    auto& mgr = mgr_client.value();
+    auto [client_end, server_end] =
+        fidl::Endpoints<fuchsia_driver_development::DriverInfoIterator>::Create();
+    if (auto res = mgr->GetDriverInfo({{
+            .driver_filter = {},
+            .iterator = std::move(server_end),
+        }});
+        res.is_ok()) {
+      fidl::SyncClient iterator(std::move(client_end));
+      while (true) {
+        auto next = iterator->GetNext();
+        if (next.is_error() || next->drivers().empty()) {
+          break;
+        }
+        for (const auto& driver : next->drivers()) {
+          if (driver.url().has_value() && driver.package_type().has_value()) {
+            bool is_base_or_boot =
+                (*driver.package_type() == fuchsia_driver_framework::DriverPackageType::kBoot ||
+                 *driver.package_type() == fuchsia_driver_framework::DriverPackageType::kBase);
+            if (is_base_or_boot) {
+              const std::string& url = *driver.url();
+              if (url.starts_with("fuchsia-pkg://fuchsia.com/virtual-audio#") ||
+                  url.starts_with("fuchsia-boot:///virtual-audio#")) {
+                has_modern_driver = true;
+              }
+              if (url.starts_with("fuchsia-pkg://fuchsia.com/virtual-audio-legacy#") ||
+                  url.starts_with("fuchsia-boot:///virtual-audio-legacy#")) {
+                has_legacy_driver = true;
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+
+  bool need_modern_driver = !has_modern_driver;
+  bool need_legacy_driver = !has_legacy_driver;
+  if (!need_modern_driver && !need_legacy_driver) {
+    FX_LOGS(INFO) << "Base virtual audio drivers already present; skipping ephemeral registration.";
+    return;
+  }
+
+  auto registrar = component::Connect<fuchsia_driver_registrar::DriverRegistrar>();
+  if (registrar.is_error()) {
+    FX_LOGS(WARNING) << "Could not connect to fuchsia.driver.registrar.DriverRegistrar: "
+                     << registrar.status_string();
+    return;
+  }
+  fidl::SyncClient client(std::move(*registrar));
+
+  std::string current_pkg_name;
+  std::vector<std::string> package_names = {
+      "audio_driver_basic_tests",
+      "audio_driver_admin_tests",
+      "audio_driver_realtime_tests",
+  };
+  for (const auto& pkg_name : package_names) {
+    if (std::filesystem::exists("/pkg/meta/" + pkg_name + ".cm")) {
+      current_pkg_name = pkg_name;
+      break;
+    }
+  }
+  if (current_pkg_name.empty()) {
+    FX_LOGS(WARNING)
+        << "Could not determine pkg from /pkg/meta/, falling back to audio_driver_basic_tests";
+    current_pkg_name = "audio_driver_basic_tests";
+  }
+
+  // Disable ephemeral drivers left behind by other test packages (e.g. other ADT suites: admin,
+  // basic, realtime) so driver_index does not encounter conflicting matches for the same node.
+  auto restart_flags = fuchsia_driver_development::RestartRematchFlags::kRequested |
+                       fuchsia_driver_development::RestartRematchFlags::kCompositeSpec;
+
+  if (mgr_client.has_value()) {
+    auto& mgr = mgr_client.value();
+    for (const auto& pkg_name : package_names) {
+      if (pkg_name == current_pkg_name) {
+        continue;
+      }
+      for (const auto& driver_cm : {"virtual-audio-driver.cm", "virtual-audio-legacy-driver.cm"}) {
+        std::string url = std::format("fuchsia-pkg://fuchsia.com/{}#meta/{}", pkg_name, driver_cm);
+        if (auto disable_res = mgr->DisableDriver({{.driver_url = url}}); disable_res.is_error()) {
+          FX_LOGS(WARNING) << "DisableDriver(" << url
+                           << ") returned: " << disable_res.error_value().FormatDescription();
+        }
+        if (auto restart_res = mgr->RestartDriverHosts({{
+                .driver_url = url,
+                .rematch_flags = restart_flags,
+            }});
+            restart_res.is_error()) {
+          FX_LOGS(WARNING) << "RestartDriverHosts(" << url
+                           << ") returned: " << restart_res.error_value().FormatDescription();
+        }
+      }
+    }
+
+    struct TestNodeSpec {
+      std::string name;
+      std::string compatible;
+    };
+    std::vector<TestNodeSpec> specs_to_add;
+
+    if (need_modern_driver) {
+      specs_to_add.push_back(TestNodeSpec{
+          .name = "virtual-audio",
+          .compatible = "fuchsia,virtual-audio",
+      });
+    }
+    if (need_legacy_driver) {
+      specs_to_add.push_back(TestNodeSpec{
+          .name = "virtual-audio-legacy",
+          .compatible = "fuchsia,virtual-audio-legacy",
+      });
+    }
+
+    for (const auto& spec : specs_to_add) {
+      fuchsia_driver_development::TestNodeAddArgs args;
+      args.name(spec.name);
+      args.properties(std::vector<fuchsia_driver_framework::NodeProperty>{
+          fuchsia_driver_framework::NodeProperty{{
+              fuchsia_driver_framework::NodePropertyKey::WithStringValue(bind_fuchsia::COMPATIBLE),
+              fuchsia_driver_framework::NodePropertyValue::WithStringValue(spec.compatible),
+          }},
+      });
+      auto add_res = mgr->AddTestNode({{.args = std::move(args)}});
+      if (add_res.is_ok() || (add_res.is_error() && add_res.error_value().is_domain_error() &&
+                              add_res.error_value().domain_error() ==
+                                  fuchsia_driver_framework::NodeError::kNameAlreadyExists)) {
+        FX_LOGS(INFO) << "Added or verified existing test node " << spec.name;
+        added_test_nodes_.push_back(spec.name);
+      } else {
+        FX_LOGS(INFO) << "AddTestNode(" << spec.name
+                      << ") returned error: " << add_res.error_value().FormatDescription();
+      }
+    }
+  }
+
+  // Now register and enable the needed driver manifests from the current package.
+  std::vector<const char*> drivers_to_register;
+  if (need_modern_driver) {
+    drivers_to_register.push_back("virtual-audio-driver.cm");
+  }
+  if (need_legacy_driver) {
+    drivers_to_register.push_back("virtual-audio-legacy-driver.cm");
+  }
+  for (const auto& driver_cm : drivers_to_register) {
+    std::string url =
+        std::format("fuchsia-pkg://fuchsia.com/{}#meta/{}", current_pkg_name, driver_cm);
+    if (mgr_client.has_value()) {
+      auto& mgr = mgr_client.value();
+      if (auto enable_res = mgr->EnableDriver({{.driver_url = url}}); enable_res.is_error()) {
+        FX_LOGS(WARNING) << "EnableDriver(" << url
+                         << ") returned: " << enable_res.error_value().FormatDescription();
+      }
+    }
+    auto result = client->Register({url});
+    if (result.is_error()) {
+      FX_LOGS(WARNING) << "Registering " << url
+                       << " returned error: " << result.error_value().FormatDescription();
+    } else {
+      FX_LOGS(INFO) << "Registered ephemeral driver " << url;
+      registered_driver_urls_.push_back(url);
+    }
+  }
+
+  if (mgr_client.has_value()) {
+    auto& mgr = mgr_client.value();
+    auto bind_result = mgr->BindAllUnboundNodes2();
+    if (bind_result.is_ok()) {
+      FX_LOGS(INFO) << "BindAllUnboundNodes2 succeeded, bound "
+                    << bind_result->binding_result().size() << " nodes.";
+    } else {
+      FX_LOGS(WARNING) << "BindAllUnboundNodes2 error: "
+                       << bind_result.error_value().FormatDescription();
+    }
+  }
+}
+
+// Teardown any ephemeral test nodes and ephemeral drivers registered by this test run.
+// Base system drivers are left untouched.
+void DeviceHost::UnregisterVirtualAudioDrivers() {
+  if (no_virtual_audio_ || (added_test_nodes_.empty() && registered_driver_urls_.empty())) {
+    return;
+  }
+  auto dev_mgr = component::Connect<fuchsia_driver_development::Manager>();
+  if (dev_mgr.is_error()) {
+    FX_LOGS(WARNING)
+        << "Could not connect to fuchsia.driver.development.Manager for unregistering: "
+        << dev_mgr.status_string();
+    return;
+  }
+  fidl::SyncClient mgr_client(std::move(*dev_mgr));
+
+  auto restart_flags = fuchsia_driver_development::RestartRematchFlags::kRequested |
+                       fuchsia_driver_development::RestartRematchFlags::kCompositeSpec;
+
+  for (const auto& url : registered_driver_urls_) {
+    auto result = mgr_client->DisableDriver({{.driver_url = url}});
+    auto restart_result = mgr_client->RestartDriverHosts({{
+        .driver_url = url,
+        .rematch_flags = restart_flags,
+    }});
+    if (result.is_error()) {
+      FX_LOGS(WARNING) << "Unregistering (DisableDriver) " << url
+                       << " returned error: " << result.error_value().FormatDescription();
+    } else {
+      FX_LOGS(INFO) << "Unregistered ephemeral driver " << url;
+    }
+    if (restart_result.is_error()) {
+      FX_LOGS(WARNING) << "Restarting driver host for " << url
+                       << " returned error: " << restart_result.error_value().FormatDescription();
+    }
+  }
+  registered_driver_urls_.clear();
+
+  for (const auto& node_name : added_test_nodes_) {
+    auto remove_res = mgr_client->RemoveTestNode({{.name = node_name}});
+    if (remove_res.is_ok()) {
+      FX_LOGS(INFO) << "Removed test node " << node_name;
+    } else {
+      FX_LOGS(WARNING) << "RemoveTestNode(" << node_name
+                       << ") returned error: " << remove_res.error_value().FormatDescription();
+    }
+  }
+  added_test_nodes_.clear();
+}
+
+void DeviceHost::WaitForDeviceNode(const std::string& directory_path,
+                                   const std::string& expected_filename) {
+  volatile bool found = false;
+  std::unique_ptr<fsl::DeviceWatcher> watcher;
+  auto deadline = zx::clock::get_monotonic() + zx::sec(20);
+  while (!found && zx::clock::get_monotonic() < deadline) {
+    if (!watcher) {
+      watcher = fsl::DeviceWatcher::Create(
+          directory_path,
+          [&found, &expected_filename](const fidl::ClientEnd<fuchsia_io::Directory>& dir,
+                                       const std::string& filename) {
+            if (filename == expected_filename) {
+              found = true;
+            }
+          },
+          device_loop_.dispatcher());
+    }
+    device_loop_.RunUntilIdle();
+    if (!found) {
+      zx::nanosleep(zx::deadline_after(zx::msec(20)));
+    }
+  }
+  ASSERT_NE(watcher, nullptr) << "Failed to open and watch directory " << directory_path;
+  ASSERT_TRUE(found) << "Timed out waiting for " << expected_filename << " in " << directory_path;
 }
 
 void DeviceHost::AddVirtualDevice(fuchsia::virtualaudio::ControlSyncPtr& controller,
@@ -316,37 +617,57 @@ zx_status_t DeviceHost::QuitDeviceLoop() {
   async::PostTask(device_loop_.dispatcher(), [this, &done]() {
     for (auto& device : virtual_audio_devices_) {
       device.set_error_handler(nullptr);
+      if (device.is_bound()) {
+        device.Unbind();
+      }
     }
+    virtual_audio_devices_.clear();
+    device_watchers_.clear();
+    device_entries_.clear();
 
-    if (controller_.is_bound()) {
-      zx_status_t status = controller_->RemoveAll();
-      ASSERT_EQ(status, ZX_OK) << "Final RemoveAll failed";
+    async::PostDelayedTask(
+        device_loop_.dispatcher(),
+        [this, &done]() {
+          if (controller_.is_bound()) {
+            zx_status_t status = controller_->RemoveAll();
+            EXPECT_EQ(status, ZX_OK) << "Final RemoveAll failed";
 
-      uint32_t input_count = -1, output_count = -1, unspecified_direction_count = -1;
-      do {
-        status =
-            controller_->GetNumDevices(&input_count, &output_count, &unspecified_direction_count);
-        ASSERT_EQ(status, ZX_OK) << "After final RemoveAll, GetNumDevices (non-legacy) failed";
-      } while (input_count != 0 || output_count != 0 || unspecified_direction_count != 0);
-    }
+            if (status == ZX_OK) {
+              uint32_t input_count = -1, output_count = -1, unspecified_direction_count = -1;
+              do {
+                status = controller_->GetNumDevices(&input_count, &output_count,
+                                                    &unspecified_direction_count);
+                EXPECT_EQ(status, ZX_OK)
+                    << "After final RemoveAll, GetNumDevices (non-legacy) failed";
+              } while (status == ZX_OK &&
+                       (input_count != 0 || output_count != 0 || unspecified_direction_count != 0));
+            }
+          }
 
-    if (legacy_controller_.is_bound()) {
-      zx_status_t status = legacy_controller_->RemoveAll();
-      ASSERT_EQ(status, ZX_OK) << "Final RemoveAll failed";
+          if (legacy_controller_.is_bound()) {
+            zx_status_t status = legacy_controller_->RemoveAll();
+            EXPECT_EQ(status, ZX_OK) << "Final RemoveAll failed";
 
-      uint32_t input_count = -1, output_count = -1, unspecified_direction_count = -1;
-      do {
-        status = legacy_controller_->GetNumDevices(&input_count, &output_count,
-                                                   &unspecified_direction_count);
-        ASSERT_EQ(status, ZX_OK) << "After final RemoveAll, GetNumDevices (legacy) failed";
-      } while (input_count != 0 || output_count != 0 || unspecified_direction_count != 0);
-    }
+            if (status == ZX_OK) {
+              uint32_t input_count = -1, output_count = -1, unspecified_direction_count = -1;
+              do {
+                status = legacy_controller_->GetNumDevices(&input_count, &output_count,
+                                                           &unspecified_direction_count);
+                EXPECT_EQ(status, ZX_OK) << "After final RemoveAll, GetNumDevices (legacy) failed";
+              } while (status == ZX_OK &&
+                       (input_count != 0 || output_count != 0 || unspecified_direction_count != 0));
+            }
+          }
 
-    device_loop_.RunUntilIdle();
-    done.Signal();
+          UnregisterVirtualAudioDrivers();
+
+          device_loop_.RunUntilIdle();
+          done.Signal();
+        },
+        zx::msec(100));
   });
 
-  zx_status_t status = done.Wait(zx::sec(10));
+  zx_status_t status = done.Wait(zx::sec(20));
   device_loop_.Shutdown();
 
   return status;
