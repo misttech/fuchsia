@@ -457,7 +457,6 @@ _NORMAL_DEPENDENCIES = {
             "sapphire-gatt": Label("//third_party/rust_crates/vendor/sapphire-gatt-0.1.0:sapphire_gatt"),
             "sapphire-hci": Label("//third_party/rust_crates/vendor/sapphire-hci-0.1.0:sapphire_hci"),
             "sapphire-host": Label("//third_party/rust_crates/vendor/sapphire-host-0.1.0:sapphire_host"),
-            "sapphire-peer-cache": Label("//third_party/rust_crates/vendor/sapphire-peer-cache-0.1.0:sapphire_peer_cache"),
             "sapphire-sync": Label("//third_party/rust_crates/vendor/sapphire-sync-0.1.0:sapphire_sync"),
             "schemars": Label("//third_party/rust_crates/vendor/schemars-0.8.22:schemars"),
             "scopeguard": Label("//third_party/rust_crates/vendor/scopeguard-1.2.0:scopeguard"),

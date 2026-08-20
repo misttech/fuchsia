@@ -10,7 +10,6 @@ members = [
   "sapphire-gatt",
   "sapphire-hci",
   "sapphire-host",
-  "sapphire-peer-cache",
   "sapphire-rpc-macro",
   "sapphire-sync",
 ]

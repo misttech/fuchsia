@@ -1951,14 +1951,6 @@ group("sapphire-host-0.1.0") {
   public_deps = [ ":sapphire-host-v0_1_0" ]
 }
 
-group("sapphire-peer-cache") {
-  public_deps = [ ":sapphire-peer-cache-v0_1_0" ]
-}
-
-group("sapphire-peer-cache-0.1.0") {
-  public_deps = [ ":sapphire-peer-cache-v0_1_0" ]
-}
-
 group("sapphire-rpc-macro") {
   public_deps = [ ":sapphire-rpc-macro-v0_1_0($host_toolchain)" ]
 }
@@ -19728,7 +19720,6 @@ rustc_library("sapphire-gatt-v0_1_0") {
   deps += [ ":sapphire-collections-v0_1_0" ]
   deps += [ ":sapphire-common-v0_1_0" ]
   deps += [ ":sapphire-emboss-v0_1_0" ]
-  deps += [ ":sapphire-peer-cache-v0_1_0" ]
   deps += [ ":sapphire-sync-v0_1_0" ]
   deps += [ ":futures-v0_3_31" ]
   deps += [ ":thiserror-v2_0_20" ]
@@ -19794,31 +19785,6 @@ rustc_library("sapphire-host-v0_1_0") {
     "--cap-lints=allow",
     "-Cmetadata=5c6a150bb14ae2db",
     "-Cextra-filename=-5c6a150bb14ae2db",
-  ]
-
-  visibility = [ ":*" ]
-
-  applicable_licenses = [ "//build/licenses:fuchsia_license" ]
-}
-
-rustc_library("sapphire-peer-cache-v0_1_0") {
-  crate_name = "sapphire_peer_cache"
-  source_root =
-      "//src/connectivity/bluetooth/sunstone/sapphire-peer-cache/src/lib.rs"
-  output_name = "sapphire_peer_cache-5475bf84cb7e6377"
-  edition = "2024"
-  disable_clippy = true
-  enforce_source_listing = false
-  configs -= [ "//build/config/rust:2018_idioms" ]
-
-  deps = []
-
-  rustenv = []
-
-  rustflags = [
-    "--cap-lints=allow",
-    "-Cmetadata=5475bf84cb7e6377",
-    "-Cextra-filename=-5475bf84cb7e6377",
   ]
 
   visibility = [ ":*" ]

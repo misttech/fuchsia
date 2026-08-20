@@ -30,7 +30,7 @@ use core::mem::{MaybeUninit, size_of};
 use core::ptr::NonNull;
 use sapphire_collections::storage::StorageFamily;
 use sapphire_collections::vec::Vec;
-use sapphire_common::Uuid;
+use sapphire_common::{PeerId, Uuid};
 use sapphire_emboss::att::{
     AttErrorRspMut, AttExchangeMtuReq, AttExchangeMtuRspMut, AttExecuteWriteReq,
     AttFindByTypeValueReqHeader, AttFindInformationReq, AttFindInformationRspHeaderMut,
@@ -39,7 +39,6 @@ use sapphire_emboss::att::{
     AttReadBlobReq, AttReadByGroupTypeReqHeader, AttReadByGroupTypeRspEntryHeaderMut,
     AttReadByTypeReqHeader, AttReadReq, AttWriteCmd,
 };
-use sapphire_peer_cache::PeerId;
 use sapphire_sync::mutex::raw::{RawMutex, SingleThreadMutex};
 use thiserror::Error;
 use zerocopy::{IntoBytes, TryFromBytes};

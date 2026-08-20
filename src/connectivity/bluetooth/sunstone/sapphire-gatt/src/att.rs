@@ -71,11 +71,10 @@ mod tests {
     use sapphire_async::executor::BoundedExecutor;
     use sapphire_async::testing::TestExecutor;
     use sapphire_collections::storage::ArrayStorage;
-    use sapphire_common::Uuid;
+    use sapphire_common::{PeerId, Uuid};
     use sapphire_emboss::att::{
         AttHandlesInformation, AttInformationData16, AttInformationData128,
     };
-    use sapphire_peer_cache::PeerId;
 
     const CLIENT_PREFERRED_MTU: u16 = 512;
     const SERVER_MTU: u16 = 256;
@@ -988,12 +987,11 @@ mod tests {
         };
         use core::mem::MaybeUninit;
         use proptest::prelude::*;
-        use sapphire_common::Uuid;
+        use sapphire_common::{PeerId, Uuid};
         use sapphire_emboss::att::{
             AttErrorRsp, AttFindInformationReqMut, AttHandlesInformation, AttInformationData16,
             AttInformationData128,
         };
-        use sapphire_peer_cache::PeerId;
         use zerocopy::{IntoBytes, TryFromBytes};
 
         fn setup_db() -> MockDb {

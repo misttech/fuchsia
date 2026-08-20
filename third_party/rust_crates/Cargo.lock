@@ -2013,7 +2013,6 @@ dependencies = [
  "sapphire-gatt",
  "sapphire-hci",
  "sapphire-host",
- "sapphire-peer-cache",
  "sapphire-rpc-macro",
  "sapphire-sync",
  "schemars",
@@ -4846,7 +4845,6 @@ dependencies = [
  "sapphire-collections",
  "sapphire-common",
  "sapphire-emboss",
- "sapphire-peer-cache",
  "sapphire-sync",
  "thiserror 2.0.20",
  "zerocopy",
@@ -4866,10 +4864,6 @@ dependencies = [
 
 [[package]]
 name = "sapphire-host"
-version = "0.1.0"
-
-[[package]]
-name = "sapphire-peer-cache"
 version = "0.1.0"
 
 [[package]]

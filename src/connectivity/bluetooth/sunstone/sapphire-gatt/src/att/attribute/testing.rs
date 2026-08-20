@@ -7,8 +7,7 @@ use crate::att::bearer::MAX_ATTRIBUTE_SIZE;
 use crate::att::pdu::ErrorCode;
 use core::{cmp, fmt};
 use sapphire_collections::vec::StdVec;
-use sapphire_common::Uuid;
-use sapphire_peer_cache::PeerId;
+use sapphire_common::{PeerId, Uuid};
 use sapphire_sync::mutex::Mutex;
 use sapphire_sync::mutex::raw::SingleThreadMutex;
 

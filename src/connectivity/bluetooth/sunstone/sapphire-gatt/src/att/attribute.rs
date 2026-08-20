@@ -6,8 +6,7 @@
 pub mod testing;
 
 use crate::att::pdu::ErrorCode;
-use sapphire_common::Uuid;
-use sapphire_peer_cache::PeerId;
+use sapphire_common::{PeerId, Uuid};
 
 /// Bluetooth Attribute Protocol (ATT) Attribute.
 ///

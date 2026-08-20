@@ -5,7 +5,9 @@
 #![no_std]
 
 pub mod address;
+pub mod peer_id;
 pub mod uuid;
 
 pub use address::*;
+pub use peer_id::*;
 pub use uuid::*;

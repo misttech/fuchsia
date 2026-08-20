@@ -2581,18 +2581,6 @@ alias(
 )
 
 alias(
-    name = "sapphire-peer-cache-0.1.0",
-    actual = "//third_party/rust_crates/intree/sunstone/sapphire-peer-cache:sapphire_peer_cache",
-    tags = ["manual"],
-)
-
-alias(
-    name = "sapphire-peer-cache",
-    actual = "//third_party/rust_crates/intree/sunstone/sapphire-peer-cache:sapphire_peer_cache",
-    tags = ["manual"],
-)
-
-alias(
     name = "sapphire-rpc-macro-0.1.0",
     actual = "//third_party/rust_crates/intree/sunstone/sapphire-rpc-macro:sapphire_rpc_macro",
     tags = ["manual"],

@@ -11,7 +11,6 @@ sapphire-async = { path = "../sapphire-async" }
 sapphire-sync = { path = "../sapphire-sync" }
 sapphire-collections = { path = "../sapphire-collections" }
 sapphire-common = { path = "../sapphire-common" }
-sapphire-peer-cache = { path = "../sapphire-peer-cache" }
 sapphire-emboss = { path = "../sapphire-emboss" }
 
 [dev-dependencies]

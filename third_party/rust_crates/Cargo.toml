@@ -219,7 +219,6 @@ sapphire-emboss = "0.1.0"
 sapphire-gatt = "0.1.0"
 sapphire-hci = "0.1.0"
 sapphire-host = "0.1.0"
-sapphire-peer-cache = "0.1.0"
 sapphire-rpc-macro = "0.1.0"
 sapphire-sync = { version = "0.1.0", features = ["std"] }
 schemars = { version = "0.8.22", features = ["chrono", "preserve_order"] }
@@ -392,7 +391,6 @@ sapphire-emboss = { path = "intree/sunstone/sapphire-emboss" }
 sapphire-gatt = { path = "intree/sunstone/sapphire-gatt" }
 sapphire-hci = { path = "intree/sunstone/sapphire-hci" }
 sapphire-host = { path = "intree/sunstone/sapphire-host" }
-sapphire-peer-cache = { path = "intree/sunstone/sapphire-peer-cache" }
 sapphire-rpc-macro = { path = "intree/sunstone/sapphire-rpc-macro" }
 sapphire-sync = { path = "intree/sunstone/sapphire-sync" }
 # keep-sorted end
@@ -666,9 +664,6 @@ uses_fuchsia_license = true
 uses_fuchsia_license = true
 
 [gn.package.sapphire-host."0.1.0"]
-uses_fuchsia_license = true
-
-[gn.package.sapphire-peer-cache."0.1.0"]
 uses_fuchsia_license = true
 
 [gn.package.sapphire-rpc-macro."0.1.0"]
