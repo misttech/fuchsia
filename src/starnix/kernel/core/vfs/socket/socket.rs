@@ -3,9 +3,9 @@
 // found in the LICENSE file.
 
 use super::{
-    NetlinkFamily, QipcrtrSocket, SocketAddress, SocketDomain, SocketFile, SocketMessageFlags,
-    SocketProtocol, SocketShutdownFlags, SocketType, UnixSocket, VsockSocket, ZxioBackedSocket,
-    new_netlink_socket,
+    NetlinkFamily, QipcrtrSocket, SocketAddress, SocketBpfState, SocketDomain, SocketFile,
+    SocketMessageFlags, SocketProtocol, SocketShutdownFlags, SocketType, UnixSocket, VsockSocket,
+    ZxioBackedSocket, new_netlink_socket,
 };
 use crate::mm::MemoryAccessorExt;
 use crate::security;
@@ -242,6 +242,11 @@ struct SocketState {
     /// `None` until the `Socket` is wrapped into a [`crate::vfs::FileObject`] (e.g. while it is
     /// still held in a listen queue).
     fs_node: Option<FsNodeHandle>,
+
+    /// Socket state passed to eBPF programs in `bpf_sock.state` field.
+    /// TODO(https://fxbug.dev/549754529): State tracking logic is incomplete
+    /// for TCP sockets. It tracks only some states correctly.
+    bpf_state: SocketBpfState,
 }
 
 pub type SocketHandle = Arc<Socket>;
@@ -579,11 +584,15 @@ impl Socket {
             current_task.kernel().system_limits.socket.max_connections.load(Ordering::Relaxed);
         let backlog = std::cmp::min(backlog, max_connections);
         let credentials = current_task.current_ucred();
-        self.ops.listen(self, backlog, credentials)
+        self.ops.listen(self, backlog, credentials)?;
+        self.state.lock().bpf_state = SocketBpfState::Listen;
+        Ok(())
     }
 
     pub fn accept(&self, current_task: &CurrentTask) -> Result<SocketHandle, Errno> {
-        self.ops.accept(self, current_task)
+        let new_socket = self.ops.accept(self, current_task)?;
+        new_socket.state.lock().bpf_state = SocketBpfState::Established;
+        Ok(new_socket)
     }
 
     pub fn read(
@@ -631,6 +640,7 @@ impl Socket {
     }
 
     pub fn close(&self, current_task: &CurrentTask) {
+        self.state.lock().bpf_state = SocketBpfState::Close;
         self.ops.close(current_task, self)
     }
 
@@ -648,12 +658,20 @@ impl Socket {
     pub fn fs_node(&self) -> Option<FsNodeHandle> {
         self.state.lock().fs_node.clone()
     }
+
+    pub fn bpf_state(&self) -> SocketBpfState {
+        self.state.lock().bpf_state
+    }
 }
 
 impl DowncastedFile<'_, SocketFile> {
     pub fn connect(self, current_task: &CurrentTask, peer: SocketPeer) -> Result<(), Errno> {
         security::check_socket_connect_access(current_task, self, &peer)?;
-        self.socket.ops.connect(&self.socket, current_task, peer)
+        let res = self.socket.ops.connect(&self.socket, current_task, peer);
+        if res.is_ok() || res == error!(EINPROGRESS) {
+            self.socket.state.lock().bpf_state = SocketBpfState::SynSent;
+        }
+        res
     }
 }
 

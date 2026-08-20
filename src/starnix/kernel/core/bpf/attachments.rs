@@ -13,7 +13,8 @@ use crate::security;
 use crate::task::CurrentTask;
 use crate::vfs::FdNumber;
 use crate::vfs::socket::{
-    SockOptValue, Socket, SocketDomain, SocketProtocol, SocketType, ZxioBackedSocket,
+    SockOptValue, Socket, SocketBpfState, SocketDomain, SocketProtocol, SocketType,
+    ZxioBackedSocket,
 };
 use ebpf::{BpfValue, EbpfProgram, EbpfProgramContext, EbpfPtr, ProgramArgument, Type};
 use ebpf_api::{
@@ -229,6 +230,7 @@ impl<'a> BpfSock<'a> {
                 family: socket.domain.as_raw().into(),
                 type_: socket.socket_type.as_raw(),
                 protocol: socket.protocol.as_raw(),
+                state: socket.bpf_state().into(),
                 ..Default::default()
             },
             socket: socket.downcast_socket(),
@@ -649,6 +651,7 @@ impl CgroupEbpfProgramSet {
                 family: domain.as_raw().into(),
                 type_: socket_type.as_raw(),
                 protocol: protocol.as_raw(),
+                state: SocketBpfState::Close.into(),
                 ..Default::default()
             },
             socket: Some(socket),

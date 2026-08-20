@@ -56,7 +56,7 @@ struct test_result {
   __u32 sk_type;
   __u32 sk_protocol;
   __u32 sk_family;
-  __u32 _padding;
+  __u32 sk_state;
 };
 
 // Global variable that will be stored in a .data section (which is a BPF map).
@@ -133,6 +133,7 @@ int sock_create_prog(struct bpf_sock* sock) {
       .sk_type = sock->type,
       .sk_protocol = sock->protocol,
       .sk_family = sock->family,
+      .sk_state = sock->state,
   };
   bpf_map_update_elem(&test_result, &zero, &result, 0);
 
@@ -161,6 +162,7 @@ int sock_release_prog(struct bpf_sock* sock) {
       .sk_type = sock->type,
       .sk_protocol = sock->protocol,
       .sk_family = sock->family,
+      .sk_state = sock->state,
   };
   bpf_map_update_elem(&test_result, &zero, &result, 0);
 
@@ -179,6 +181,7 @@ int setsockopt_prog(struct bpf_sockopt* sockopt) {
       result.sk_type = sockopt->sk->type;
       result.sk_protocol = sockopt->sk->protocol;
       result.sk_family = sockopt->sk->family;
+      result.sk_state = sockopt->sk->state;
     }
     int zero = 0;
     bpf_map_update_elem(&test_result, &zero, &result, 0);
@@ -240,6 +243,7 @@ int getsockopt_prog(struct bpf_sockopt* sockopt) {
     result.sk_type = sockopt->sk->type;
     result.sk_protocol = sockopt->sk->protocol;
     result.sk_family = sockopt->sk->family;
+    result.sk_state = sockopt->sk->state;
   }
   int zero = 0;
   bpf_map_update_elem(&test_result, &zero, &result, 0);
@@ -344,6 +348,7 @@ int udprecv6_prog(struct bpf_sock_addr* sockaddr) {
     result.sk_type = sockaddr->sk->type;
     result.sk_protocol = sockaddr->sk->protocol;
     result.sk_family = sockaddr->sk->family;
+    result.sk_state = sockaddr->sk->state;
   }
 
   bpf_map_update_elem(&test_result, &zero, &result, 0);
@@ -376,6 +381,7 @@ int udpsend4_prog(struct bpf_sock_addr* sockaddr) {
     result.sk_type = sockaddr->sk->type;
     result.sk_protocol = sockaddr->sk->protocol;
     result.sk_family = sockaddr->sk->family;
+    result.sk_state = sockaddr->sk->state;
   }
   bpf_map_update_elem(&test_result, &zero, &result, 0);
 

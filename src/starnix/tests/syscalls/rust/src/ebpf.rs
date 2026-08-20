@@ -315,7 +315,7 @@ mod tests {
         sk_type: u32,
         sk_protocol: u32,
         sk_family: u32,
-        _padding: u32,
+        sk_state: u32,
     }
 
     #[repr(C)]
@@ -628,6 +628,7 @@ mod tests {
         assert_eq!(test_result.sk_type, libc::SOCK_DGRAM as u32);
         assert_eq!(test_result.sk_protocol, libc::IPPROTO_UDP as u32);
         assert_eq!(test_result.sk_family, libc::AF_INET as u32);
+        assert_eq!(test_result.sk_state, linux_uapi::BPF_TCP_CLOSE);
         assert!(end_variable.global_counter1 - initial_variable.global_counter1 >= 1);
         assert!(end_variable.global_counter2 - initial_variable.global_counter2 >= 2);
         assert!(initial_variable.global_counter2 >= 2 * initial_variable.global_counter1);
@@ -667,6 +668,7 @@ mod tests {
         assert_eq!(test_result.sk_type, libc::SOCK_DGRAM as u32);
         assert_eq!(test_result.sk_protocol, libc::IPPROTO_UDP as u32);
         assert_eq!(test_result.sk_family, libc::AF_INET as u32);
+        assert_eq!(test_result.sk_state, linux_uapi::BPF_TCP_CLOSE);
 
         // SAFETY: These libc functions are safe to call.
         let (uid, gid) = unsafe { (libc::getuid(), libc::getgid()) };
@@ -708,6 +710,38 @@ mod tests {
         assert_eq!(test_result.sk_type, libc::SOCK_STREAM as u32);
         assert_eq!(test_result.sk_protocol, 0);
         assert_eq!(test_result.sk_family, libc::AF_UNIX as u32);
+        assert_eq!(test_result.sk_state, linux_uapi::BPF_TCP_CLOSE);
+
+        // Verify setsockopt on a listening TCP socket.
+        let listener =
+            std::net::TcpListener::bind("127.0.0.1:0").expect("Failed to bind TCP listener");
+        assert!(setsockopt(listener.as_fd(), libc::SOL_SOCKET, TEST_SOCK_OPT, &optval).is_ok());
+        let test_result = maps.get_test_result();
+        assert_eq!(test_result.sk_type, libc::SOCK_STREAM as u32);
+        assert_eq!(test_result.sk_protocol, libc::IPPROTO_TCP as u32);
+        assert_eq!(test_result.sk_family, libc::AF_INET as u32);
+        assert_eq!(test_result.sk_state, linux_uapi::BPF_TCP_LISTEN);
+
+        // Verify setsockopt on a connected TCP socket.
+        let stream = std::net::TcpStream::connect(listener.local_addr().unwrap())
+            .expect("Failed to connect TCP stream");
+        assert!(setsockopt(stream.as_fd(), libc::SOL_SOCKET, TEST_SOCK_OPT, &optval).is_ok());
+        let test_result = maps.get_test_result();
+        assert_eq!(test_result.sk_type, libc::SOCK_STREAM as u32);
+        assert_eq!(test_result.sk_protocol, libc::IPPROTO_TCP as u32);
+        assert_eq!(test_result.sk_family, libc::AF_INET as u32);
+        assert_eq!(test_result.sk_state, linux_uapi::BPF_TCP_SYN_SENT);
+
+        // Verify setsockopt on an accepted TCP socket.
+        let (accepted_stream, _peer_addr) = listener.accept().expect("Failed to accept TCP stream");
+        assert!(
+            setsockopt(accepted_stream.as_fd(), libc::SOL_SOCKET, TEST_SOCK_OPT, &optval).is_ok()
+        );
+        let test_result = maps.get_test_result();
+        assert_eq!(test_result.sk_type, libc::SOCK_STREAM as u32);
+        assert_eq!(test_result.sk_protocol, libc::IPPROTO_TCP as u32);
+        assert_eq!(test_result.sk_family, libc::AF_INET as u32);
+        assert_eq!(test_result.sk_state, linux_uapi::BPF_TCP_ESTABLISHED);
 
         // Try again with the `optval[0]=1`. The program will set `optlen`
         // above buffer size, which should result in `EFAULT`.
@@ -778,6 +812,7 @@ mod tests {
         assert_eq!(test_result.sk_type, libc::SOCK_STREAM as u32);
         assert_eq!(test_result.sk_protocol, 0);
         assert_eq!(test_result.sk_family, libc::AF_UNIX as u32);
+        assert_eq!(test_result.sk_state, linux_uapi::BPF_TCP_CLOSE);
 
         // The original error is still returned if the program returns 0.
         let err = get_test_sock_opt(3).expect_err("getsockopt expected to fail");
@@ -871,6 +906,7 @@ mod tests {
         assert_eq!(test_result.sk_type, libc::SOCK_DGRAM as u32);
         assert_eq!(test_result.sk_protocol, libc::IPPROTO_UDP as u32);
         assert_eq!(test_result.sk_family, linux_uapi::AF_INET6);
+        assert_eq!(test_result.sk_state, linux_uapi::BPF_TCP_CLOSE);
     }
 
     // The following tests both attach eBPF programs to
@@ -917,6 +953,7 @@ mod tests {
         assert_eq!(test_result.sk_type, libc::SOCK_DGRAM as u32);
         assert_eq!(test_result.sk_protocol, libc::IPPROTO_UDP as u32);
         assert_eq!(test_result.sk_family, libc::AF_INET as u32);
+        assert_eq!(test_result.sk_state, linux_uapi::BPF_TCP_CLOSE);
     }
 
     #[test]

@@ -401,3 +401,63 @@ impl SocketAddress {
         }
     }
 }
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Default)]
+pub enum SocketBpfState {
+    Established,
+    SynSent,
+    SynRecv,
+    FinWait1,
+    FinWait2,
+    TimeWait,
+    #[default]
+    Close,
+    CloseWait,
+    LastAck,
+    Listen,
+    Closing,
+    NewSynRecv,
+}
+
+impl SocketBpfState {
+    pub fn from_raw(raw: u32) -> Option<Self> {
+        match raw {
+            linux_uapi::BPF_TCP_ESTABLISHED => Some(Self::Established),
+            linux_uapi::BPF_TCP_SYN_SENT => Some(Self::SynSent),
+            linux_uapi::BPF_TCP_SYN_RECV => Some(Self::SynRecv),
+            linux_uapi::BPF_TCP_FIN_WAIT1 => Some(Self::FinWait1),
+            linux_uapi::BPF_TCP_FIN_WAIT2 => Some(Self::FinWait2),
+            linux_uapi::BPF_TCP_TIME_WAIT => Some(Self::TimeWait),
+            linux_uapi::BPF_TCP_CLOSE => Some(Self::Close),
+            linux_uapi::BPF_TCP_CLOSE_WAIT => Some(Self::CloseWait),
+            linux_uapi::BPF_TCP_LAST_ACK => Some(Self::LastAck),
+            linux_uapi::BPF_TCP_LISTEN => Some(Self::Listen),
+            linux_uapi::BPF_TCP_CLOSING => Some(Self::Closing),
+            linux_uapi::BPF_TCP_NEW_SYN_RECV => Some(Self::NewSynRecv),
+            _ => None,
+        }
+    }
+
+    pub fn as_raw(&self) -> u32 {
+        match self {
+            Self::Established => linux_uapi::BPF_TCP_ESTABLISHED,
+            Self::SynSent => linux_uapi::BPF_TCP_SYN_SENT,
+            Self::SynRecv => linux_uapi::BPF_TCP_SYN_RECV,
+            Self::FinWait1 => linux_uapi::BPF_TCP_FIN_WAIT1,
+            Self::FinWait2 => linux_uapi::BPF_TCP_FIN_WAIT2,
+            Self::TimeWait => linux_uapi::BPF_TCP_TIME_WAIT,
+            Self::Close => linux_uapi::BPF_TCP_CLOSE,
+            Self::CloseWait => linux_uapi::BPF_TCP_CLOSE_WAIT,
+            Self::LastAck => linux_uapi::BPF_TCP_LAST_ACK,
+            Self::Listen => linux_uapi::BPF_TCP_LISTEN,
+            Self::Closing => linux_uapi::BPF_TCP_CLOSING,
+            Self::NewSynRecv => linux_uapi::BPF_TCP_NEW_SYN_RECV,
+        }
+    }
+}
+
+impl From<SocketBpfState> for u32 {
+    fn from(state: SocketBpfState) -> Self {
+        state.as_raw()
+    }
+}
