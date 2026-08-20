@@ -129,6 +129,14 @@ class ClientIface:
                 raise HoneydewWlanError(
                     f'Connected to wrong network. Expected "{ssid}", got "{got_ssid}".'
                 )
+            if (
+                client_status.connected.primary.number
+                != bss_desc.primary.number
+            ):
+                raise HoneydewWlanError(
+                    f"Connected to wrong channel. Expected channel {bss_desc.primary.number}, "
+                    f"got {client_status.connected.primary.number}."
+                )
         else:
             raise HoneydewWlanError(
                 f"Expected ClientStatusResponse.connected, got {client_status}"
