@@ -1087,6 +1087,7 @@ pub type zx_rrec_t = [u8; 64];
 // Ports V2
 #[repr(u32)]
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Default)]
+#[non_exhaustive]
 pub enum zx_packet_type_t {
     #[default]
     ZX_PKT_TYPE_USER = 0,
@@ -1098,18 +1099,15 @@ pub enum zx_packet_type_t {
     ZX_PKT_TYPE_INTERRUPT = 7,
     ZX_PKT_TYPE_PAGE_REQUEST = 9,
     ZX_PKT_TYPE_PROCESSOR_POWER_LEVEL_TRANSITION_REQUEST = 10,
-    #[doc(hidden)]
-    __Nonexhaustive,
 }
 
 #[repr(u32)]
 #[derive(Debug, Copy, Clone, Default, Eq, PartialEq)]
+#[non_exhaustive]
 pub enum zx_packet_guest_vcpu_type_t {
     #[default]
     ZX_PKT_GUEST_VCPU_INTERRUPT = 0,
     ZX_PKT_GUEST_VCPU_STARTUP = 1,
-    #[doc(hidden)]
-    __Nonexhaustive,
 }
 
 #[repr(C)]
@@ -1205,8 +1203,6 @@ impl PartialEq for zx_packet_guest_vcpu_t {
             zx_packet_guest_vcpu_type_t::ZX_PKT_GUEST_VCPU_STARTUP => unsafe {
                 self.union.startup == other.union.startup
             },
-            // No equality relationship is defined for invalid types.
-            _ => false,
         }
     }
 }
@@ -1222,7 +1218,6 @@ impl Debug for zx_packet_guest_vcpu_t {
             zx_packet_guest_vcpu_type_t::ZX_PKT_GUEST_VCPU_STARTUP => {
                 write!(f, "type: {:?} union: {:?}", self.r#type, unsafe { self.union.startup })
             }
-            _ => panic!("unexpected VCPU packet type"),
         }
     }
 }
@@ -1240,13 +1235,12 @@ pub struct zx_packet_page_request_t {
 
 #[repr(u16)]
 #[derive(Debug, Copy, Clone, Default, Eq, PartialEq)]
+#[non_exhaustive]
 pub enum zx_page_request_command_t {
     #[default]
     ZX_PAGER_VMO_READ = 0x0000,
     ZX_PAGER_VMO_COMPLETE = 0x0001,
     ZX_PAGER_VMO_DIRTY = 0x0002,
-    #[doc(hidden)]
-    __Nonexhaustive,
 }
 
 multiconst!(u32, [
