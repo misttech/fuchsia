@@ -44,7 +44,8 @@ void UsbAdbDevice::StartAdb(StartAdbRequestView request, StartAdbCompleter::Sync
   }
 
   switch (state_) {
-    case State::kStoppingUsb:
+    case State::kStoppingForUnbind:
+    case State::kStoppingForReconnect:
       zxlogf(WARNING, "ADB connected while stopping");
       completer.ReplyError(ZX_ERR_BAD_STATE);
       return;
@@ -69,7 +70,7 @@ void UsbAdbDevice::StartAdb(StartAdbRequestView request, StartAdbCompleter::Sync
                          zxlogf(INFO, "Device closed with reason '%s'",
                                 info.FormatDescription().c_str());
                          adb_binding_.reset();
-                         ResetOrStopUsb();
+                         ResetOrStopUsb(State::kStoppingForReconnect);
                        });
   completer.ReplySuccess();
 }
@@ -77,13 +78,35 @@ void UsbAdbDevice::StartAdb(StartAdbRequestView request, StartAdbCompleter::Sync
 void UsbAdbDevice::StopAdb(StopAdbCompleter::Sync& completer) {
   zxlogf(INFO, "ADB client requested disconnect.");
   stop_completers_.push_back(completer.ToAsync());
-  ResetOrStopUsb();
+  ResetOrStopUsb(State::kStoppingForReconnect);
 }
 
-void UsbAdbDevice::ResetOrStopUsb() {
+void UsbAdbDevice::SetState(State new_state) {
+  zxlogf(INFO, "state_ = State::%s", StateToString(new_state).c_str());
+  state_ = new_state;
+  if (state_property_) {
+    state_property_.Set(StateToString(state_));
+    RecordEvent(std::string("state_changed: ") + StateToString(state_));
+    UpdateQueueStats();
+  }
+}
+
+void UsbAdbDevice::ResetOrStopUsb(State stop_state) {
   switch (state_) {
-    case State::kStoppingUsb:
-      zxlogf(INFO, "Stop requested, but already stopping");
+    case State::kStoppingForUnbind:
+      zxlogf(INFO, "Stop requested, but already stopping for unbind");
+      return;
+    case State::kStoppingForReconnect:
+      if (stop_state == State::kStoppingForUnbind) {
+        zxlogf(INFO, "Stop for unbind requested while already stopping for reconnect");
+        // Update state to kStoppingForUnbind so CheckUsbStopComplete will perform unbind
+        // teardown once in-flight requests complete, then return immediately to avoid
+        // re-issuing duplicate CancelAll or Deconfigure FIDL calls.
+        SetState(stop_state);
+        CheckUsbStopComplete();
+        return;
+      }
+      zxlogf(INFO, "Stop requested, but already stopping for reconnect");
       return;
     case State::kOnline:
       zxlogf(INFO, "Stopping USB");
@@ -126,13 +149,7 @@ void UsbAdbDevice::ResetOrStopUsb() {
     usb_function_binding_.reset();
   }
 
-  zxlogf(INFO, "state_ = State::kStoppingUsb");
-  state_ = State::kStoppingUsb;
-  if (state_property_) {
-    state_property_.Set(StateToString(state_));
-    RecordEvent("state_changed: kStoppingUsb");
-    UpdateQueueStats();
-  }
+  SetState(stop_state);
 
   CheckUsbStopComplete();
 }
@@ -272,7 +289,8 @@ void UsbAdbDevice::QueueTx(QueueTxRequest& request, QueueTxCompleter::Sync& comp
   }
 
   switch (state_) {
-    case State::kStoppingUsb:
+    case State::kStoppingForUnbind:
+    case State::kStoppingForReconnect:
       // Return early during shutdown.
       completer.Reply(fit::error(ZX_ERR_BAD_STATE));
       return;
@@ -287,7 +305,8 @@ void UsbAdbDevice::QueueTx(QueueTxRequest& request, QueueTxCompleter::Sync& comp
 
 void UsbAdbDevice::Receive(ReceiveCompleter::Sync& completer) {
   switch (state_) {
-    case State::kStoppingUsb:
+    case State::kStoppingForUnbind:
+    case State::kStoppingForReconnect:
       // Return early during shutdown.
       completer.Reply(fit::error(ZX_ERR_BAD_STATE));
       return;
@@ -312,7 +331,8 @@ void UsbAdbDevice::RxComplete(std::vector<fendpoint::Completion> completions) {
     switch (state_) {
       case State::kAwaitingUsbConnection:
         ZX_PANIC("Completion arrived before we sent any requests?");
-      case State::kStoppingUsb:
+      case State::kStoppingForUnbind:
+      case State::kStoppingForReconnect:
         bulk_out_ep_.PutRequest(usb::FidlRequest(std::move(completion.request().value())));
         CheckUsbStopComplete();
         break;
@@ -330,7 +350,8 @@ void UsbAdbDevice::TxComplete(std::vector<fendpoint::Completion> completions) {
     switch (state_) {
       case State::kAwaitingUsbConnection:
         ZX_PANIC("Completion arrived before we sent any requests?");
-      case State::kStoppingUsb:
+      case State::kStoppingForUnbind:
+      case State::kStoppingForReconnect:
         bulk_in_ep_.PutRequest(usb::FidlRequest(std::move(completion.request().value())));
         CheckUsbStopComplete();
         break;
@@ -366,7 +387,8 @@ void UsbAdbDevice::EnableEndpoints() {
     case State::kOnline:
       zxlogf(INFO, "USB endpoints already enabled");
       return;
-    case State::kStoppingUsb:
+    case State::kStoppingForUnbind:
+    case State::kStoppingForReconnect:
       zxlogf(ERROR, "This is unexpected: UsbFunctionInterface is disconnected while stopping");
       return;
     case State::kAwaitingUsbConnection:
@@ -433,12 +455,7 @@ void UsbAdbDevice::EnableEndpoints() {
     }
   }
 
-  zxlogf(INFO, "state_ = State::kOnline");
-  state_ = State::kOnline;
-  if (state_property_) {
-    state_property_.Set(StateToString(state_));
-    RecordEvent("state_changed: kOnline");
-  }
+  SetState(State::kOnline);
 
   SendQueued();
   ReceiveQueued();
@@ -456,9 +473,10 @@ void UsbAdbDevice::SetConfigured(SetConfiguredRequest& request,
         // starting up - ignore it.
         break;
       case State::kOnline:
-        ResetOrStopUsb();
+        ResetOrStopUsb(State::kStoppingForReconnect);
         break;
-      case State::kStoppingUsb:
+      case State::kStoppingForUnbind:
+      case State::kStoppingForReconnect:
         zxlogf(
             WARNING,
             "Received SetConfigured(false) while stopping. This is unexpected, but probably fine.");
@@ -488,8 +506,8 @@ void UsbAdbDevice::handle_unknown_method(
 }
 
 void UsbAdbDevice::CheckUsbStopComplete() {
-  if (state_ != State::kStoppingUsb) {
-    ZX_PANIC("Unexpected state: %d", state_);
+  if (state_ != State::kStoppingForUnbind && state_ != State::kStoppingForReconnect) {
+    ZX_PANIC("Unexpected state: %d", static_cast<int>(state_));
   }
 
   if (!bulk_in_ep_.RequestsFull() || !bulk_out_ep_.RequestsFull()) {
@@ -519,12 +537,14 @@ void UsbAdbDevice::CheckUsbStopComplete() {
   }
 
   // Is this a proper shutdown, or a restart of USB?
-  if (shutdown_callback_.has_value()) {
+  if (state_ == State::kStoppingForUnbind) {
     bulk_out_ep_.Close();
     bulk_in_ep_.Close();
     zxlogf(INFO, "Shutting down driver.");
-    shutdown_callback_.value()(zx::ok());
-    shutdown_callback_.reset();
+    if (shutdown_callback_.has_value()) {
+      shutdown_callback_.value()(zx::ok());
+      shutdown_callback_.reset();
+    }
   } else {
     zxlogf(INFO, "Restarting USB connection.");
     StartUsb();
@@ -536,7 +556,7 @@ void UsbAdbDevice::Stop(fdf::StopCompleter completer) {
     throughput_tracker_->Stop();
   }
   shutdown_callback_.emplace(std::move(completer));
-  ResetOrStopUsb();
+  ResetOrStopUsb(State::kStoppingForUnbind);
 }
 
 zx_status_t UsbAdbDevice::InitEndpoint(
@@ -670,12 +690,7 @@ void UsbAdbDevice::StartUsb() {
     ZX_PANIC("Configure failed: %s", config_res.error_value().FormatDescription().c_str());
   }
 
-  zxlogf(INFO, "state_ = State::kAwaitingUsbConnection");
-  state_ = State::kAwaitingUsbConnection;
-  if (state_property_) {
-    state_property_.Set(StateToString(state_));
-    RecordEvent("state_changed: kAwaitingUsbConnection");
-  }
+  SetState(State::kAwaitingUsbConnection);
 }
 
 }  // namespace usb_adb_function

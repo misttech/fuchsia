@@ -53,8 +53,8 @@ enum class State : uint8_t {
   // - Move to kOnline.
   //
   // If a fadb::Device client requests shutdown by calling StopAdb() or closing
-  // a UsbAdbImpl connection, we call function_.SetInterface(nullptr), and move
-  // to kStoppingUsb. Likewise if PrepareStop is called.
+  // a UsbAdbImpl connection, we call function_.Deconfigure(), and move
+  // to kStoppingForReconnect. If Stop is called, we move to kStoppingForUnbind.
   kAwaitingUsbConnection,
 
   // In kOnline, the USB connection is live, and we respond to any
@@ -64,25 +64,33 @@ enum class State : uint8_t {
   // - A fadb::Device client calls StopAdb().
   // - A UsbAdbImpl client closes their channel.
   // - The USB function driver calls SetConfigured(false)
-  // - PrepareStop get called.
+  // - Stop gets called.
   //
-  // ... we call function_.SetInterface(nullptr) and move to kStoppingUsb. (We
-  // hold onto the responder for any calls to StopAdb()).
+  // ... we call function_.Deconfigure() and move to kStoppingForReconnect or
+  // kStoppingForUnbind. (We hold onto the responder for any calls to StopAdb()).
   kOnline,
 
-  // In kStoppingUsb, we wait for all outstanding USB requests to be completed.
+  // In kStoppingForUnbind, we wait for all outstanding USB requests to be completed.
   // Once they have been, we:
-  // - Return OK to any StopAdb() calls that triggered the stoppage (or
-  //   happened while in kStoppingUsb).
-  // - Tell any connected UsbAdbImpl clients that the device is
-  //   offline,
+  // - Return OK to any pending StopAdb() calls (e.g. if Stop() was called while
+  //   a reconnect was pending),
+  // - Tell any connected UsbAdbImpl clients that the device is offline,
   // - Close all UsbAdbImpl connections.
   //
-  // At that point, if the stoppage was caused by a call to PrepareStop (or
-  // PrepareStop we called while shutting down), we respond that the driver has
-  // shutdown successfully. Otherwise, we restart the USB connection by calling
-  // function_.SetInterface(this), and move back to kAwaitingUsbConnection.
-  kStoppingUsb,
+  // At that point, since the stoppage was caused by a call to Stop (or
+  // Stop called while shutting down), we respond that the driver has
+  // shutdown successfully.
+  kStoppingForUnbind,
+
+  // In kStoppingForReconnect, we wait for all outstanding USB requests to be completed.
+  // Once they have been, we:
+  // - Return OK to any StopAdb() calls that triggered the stoppage,
+  // - Tell any connected UsbAdbImpl clients that the device is offline,
+  // - Close all UsbAdbImpl connections.
+  //
+  // At that point, we restart the USB connection by calling
+  // function_.Configure(), and move back to kAwaitingUsbConnection.
+  kStoppingForReconnect,
 };
 
 // Implements the USB ADB function driver.
@@ -129,9 +137,10 @@ class UsbAdbDevice : public fdf::DriverBase2,
   State state_ = State::kAwaitingUsbConnection;
 
   // State transition helpers.
+  void SetState(State new_state);
   void StartUsb();
   void EnableEndpoints();
-  void ResetOrStopUsb();
+  void ResetOrStopUsb(State stop_state);
   void CheckUsbStopComplete();
 
   fidl::ServerBindingGroup<fadb::Device> device_bindings_;
@@ -249,8 +258,10 @@ class UsbAdbDevice : public fdf::DriverBase2,
         return "kAwaitingUsbConnection";
       case State::kOnline:
         return "kOnline";
-      case State::kStoppingUsb:
-        return "kStoppingUsb";
+      case State::kStoppingForUnbind:
+        return "kStoppingForUnbind";
+      case State::kStoppingForReconnect:
+        return "kStoppingForReconnect";
     }
     return "unknown";
   }

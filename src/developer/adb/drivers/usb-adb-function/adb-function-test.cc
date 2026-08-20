@@ -558,6 +558,9 @@ TEST_F(UsbAdbTest, StopBeforeUsbStartsUp) {
     });
     return awaiting;
   });
+  driver_test_.RunInDriverContext([&](UsbAdbDevice& dev) {
+    EXPECT_EQ(UsbAdbTestHelper::state(dev), State::kAwaitingUsbConnection);
+  });
   SafeStopDriver();
 }
 
@@ -659,7 +662,7 @@ TEST_F(UsbAdbTest, SendAdbMessage) {
   ASSERT_NO_FATAL_FAILURE(SendTestData(usb_impl, kVmoDataSize * (kBulkTxCount - 2) + 2));
   ASSERT_NO_FATAL_FAILURE(SendTestData(usb_impl, kVmoDataSize * (kBulkTxCount - 1) + 2));
 
-  usb_impl = {};
+  SafeStopDriver();
 }
 
 TEST_F(UsbAdbTest, RecvAdbMessage) {
@@ -689,7 +692,7 @@ TEST_F(UsbAdbTest, RecvAdbMessage) {
   EXPECT_EQ(response_status, ZX_OK);
   EXPECT_EQ(actual_size, kReceiveSize);
 
-  async_usb = {};
+  SafeStopDriver();
 }
 
 TEST_F(UsbAdbTest, VerifyShutdownBypassesRequestWaitOnDeadSilicon) {
@@ -991,5 +994,116 @@ TEST_F(UsbAdbTest, UsbFunctionBindingReconfigure) {
       .speed = fuchsia_hardware_usb_descriptor::UsbSpeed::kHigh,
   }});
   EXPECT_TRUE(ping_result.is_ok());
+  ASSERT_NO_FATAL_FAILURE(SafeStopDriver());
+}
+
+TEST_F(UsbAdbTest, DisconnectTransitionsToStoppingState) {
+  auto usb_impl = NormalStartAdb();
+  EventHandler handler;
+  handler.expected_statuses_.emplace(fadb::StatusFlags::kOnline);
+  ExpectHandleOneEventSafe(usb_impl, handler);
+
+  // Deconfiguring USB transitions driver state to kStoppingForReconnect.
+  auto deconfig_result = iface_client_->SetConfigured({{
+      .configured = false,
+      .speed = fuchsia_hardware_usb_descriptor::UsbSpeed::kHigh,
+  }});
+  ASSERT_TRUE(deconfig_result.is_ok());
+
+  driver_test_.RunInDriverContext([&](UsbAdbDevice& dev) {
+    EXPECT_EQ(UsbAdbTestHelper::state(dev), State::kStoppingForReconnect);
+  });
+  ASSERT_NO_FATAL_FAILURE(SafeStopDriver());
+}
+
+TEST_F(UsbAdbTest, InspectStateTransitions) {
+  inspect::Inspector inspector;
+  driver_test_.RunInDriverContext(
+      [&](UsbAdbDevice& dev) { inspector = UsbAdbTestHelper::GetInspector(dev); });
+  ASSERT_NO_FATAL_FAILURE(ReadInspect(inspector));
+  auto* root_node = this->hierarchy().GetByPath({"usb-adb-function"});
+  ASSERT_NE(nullptr, root_node);
+  const auto* state_prop = root_node->node().get_property<inspect::StringPropertyValue>("state");
+  ASSERT_NE(nullptr, state_prop);
+  EXPECT_EQ("kAwaitingUsbConnection", state_prop->value());
+
+  auto usb_impl = NormalStartAdb();
+  driver_test_.RunInDriverContext(
+      [&](UsbAdbDevice& dev) { inspector = UsbAdbTestHelper::GetInspector(dev); });
+  ASSERT_NO_FATAL_FAILURE(ReadInspect(inspector));
+  root_node = this->hierarchy().GetByPath({"usb-adb-function"});
+  ASSERT_NE(nullptr, root_node);
+  state_prop = root_node->node().get_property<inspect::StringPropertyValue>("state");
+  ASSERT_NE(nullptr, state_prop);
+  EXPECT_EQ("kOnline", state_prop->value());
+
+  ASSERT_NO_FATAL_FAILURE(SafeStopDriver());
+}
+
+TEST_F(UsbAdbTest, StartAdbFailsWhileStopping) {
+  driver_test_.RunInDriverContext(
+      [](UsbAdbDevice& dev) { UsbAdbTestHelper::set_state(dev, State::kStoppingForUnbind); });
+
+  auto [client_end, server_end] = fidl::Endpoints<fadb::UsbAdbImpl>::Create();
+  auto result = client_->StartAdb(std::move(server_end));
+  EXPECT_TRUE(result.ok());
+  EXPECT_TRUE(result->is_error());
+  EXPECT_EQ(result->error_value(), ZX_ERR_BAD_STATE);
+
+  driver_test_.RunInDriverContext(
+      [](UsbAdbDevice& dev) { UsbAdbTestHelper::set_state(dev, State::kAwaitingUsbConnection); });
+  ASSERT_NO_FATAL_FAILURE(SafeStopDriver());
+}
+
+TEST_F(UsbAdbTest, OperationsFailWhileStopping) {
+  auto [client_end, server_end] = fidl::Endpoints<fadb::UsbAdbImpl>::Create();
+  auto result = client_->StartAdb(std::move(server_end));
+  EXPECT_TRUE(result.ok());
+
+  fidl::WireSyncClient<fadb::UsbAdbImpl> adb_client{std::move(client_end)};
+
+  driver_test_.RunInDriverContext(
+      [](UsbAdbDevice& dev) { UsbAdbTestHelper::set_state(dev, State::kStoppingForUnbind); });
+
+  std::vector<uint8_t> data(1);
+  auto tx_result =
+      adb_client->QueueTx(fidl::VectorView<uint8_t>::FromExternal(data.data(), data.size()));
+  EXPECT_TRUE(tx_result.ok());
+  EXPECT_TRUE(tx_result->is_error());
+  EXPECT_EQ(tx_result->error_value(), ZX_ERR_BAD_STATE);
+
+  auto rx_result = adb_client->Receive();
+  EXPECT_TRUE(rx_result.ok());
+  EXPECT_TRUE(rx_result->is_error());
+  EXPECT_EQ(rx_result->error_value(), ZX_ERR_BAD_STATE);
+
+  driver_test_.RunInDriverContext(
+      [](UsbAdbDevice& dev) { UsbAdbTestHelper::set_state(dev, State::kAwaitingUsbConnection); });
+  ASSERT_NO_FATAL_FAILURE(SafeStopDriver());
+}
+
+TEST_F(UsbAdbTest, EarlyConnectRace) {
+  auto [client_end, server_end] = fidl::Endpoints<fadb::UsbAdbImpl>::Create();
+  EXPECT_TRUE(client_->StartAdb(std::move(server_end)).ok());
+
+  uint8_t test_data[] = {0x01, 0x02, 0x03};
+
+  fidl::WireClient async_usb(std::move(client_end),
+                             fdf::Dispatcher::GetCurrent()->async_dispatcher());
+
+  bool completed = false;
+  async_usb->QueueTx(fidl::VectorView<uint8_t>::FromExternal(test_data, sizeof(test_data)))
+      .ThenExactlyOnce([&](auto& response) { completed = true; });
+
+  ASSERT_TRUE(driver_test_.runtime().RunWithTimeoutOrUntil(
+      [&]() {
+        size_t count = 0;
+        driver_test_.RunInDriverContext(
+            [&](UsbAdbDevice& dev) { count = UsbAdbTestHelper::TxPendingReqsCount(dev); });
+        return count == 1;
+      },
+      zx::sec(5)));
+
+  SafeStopDriver();
 }
 }  // namespace usb_adb_function
