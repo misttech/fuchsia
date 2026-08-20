@@ -283,13 +283,18 @@ impl EnvContext {
         if matches!(self.target_spec, TargetInfoQuery::First) {
             return Err(unspecified_target());
         }
-        let cmd = ffx_wait_args::WaitOptions { timeout, down: offline };
+        let state = if offline {
+            ffx_wait_args::TargetStateOption::Down
+        } else {
+            ffx_wait_args::TargetStateOption::Up
+        };
+        let cmd = ffx_wait_args::WaitOptions { timeout, down: offline, state: None };
         let tool = ffx_wait::WaitOperation {
             cmd,
             env: self.context.clone(),
             waiter: ffx_wait::DeviceWaiterImpl,
         };
-        tool.wait_impl().await.map_err(Into::into)
+        tool.wait_impl(state).await.map_err(Into::into)
     }
 }
 

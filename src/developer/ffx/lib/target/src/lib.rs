@@ -143,6 +143,8 @@ pub async fn knock_target(target: &TargetProxy) -> Result<(), KnockError> {
 pub enum WaitFor {
     DeviceOnline,
     DeviceOffline,
+    Fastboot,
+    Product,
 }
 
 const DOWN_REPOLL_DELAY_MS: u64 = 500;
@@ -153,10 +155,114 @@ pub async fn wait_for_device(
     target_spec: &Option<String>,
     behavior: WaitFor,
 ) -> Result<(), ffx_command_error::Error> {
-    let ever_found = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
-    let use_cache = behavior == WaitFor::DeviceOffline;
-    let knocker = LocalRcsKnockerImpl { ever_found: ever_found.clone(), use_cache };
-    wait_for_device_inner(knocker, wait_timeout, env, target_spec, behavior, ever_found).await
+    match behavior {
+        WaitFor::DeviceOnline | WaitFor::DeviceOffline => {
+            let ever_found = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+            let use_cache = behavior == WaitFor::DeviceOffline;
+            let knocker = LocalRcsKnockerImpl { ever_found: ever_found.clone(), use_cache };
+            wait_for_device_inner(knocker, wait_timeout, env, target_spec, behavior, ever_found)
+                .await
+        }
+        WaitFor::Fastboot | WaitFor::Product => {
+            wait_for_discovered_state(
+                DefaultTargetStateDiscoverer,
+                wait_timeout,
+                env,
+                target_spec,
+                behavior,
+            )
+            .await
+        }
+    }
+}
+
+#[cfg_attr(test, mockall::automock)]
+pub trait TargetStateDiscoverer {
+    fn discover(
+        &self,
+        query: TargetInfoQuery,
+        env: &EnvironmentContext,
+    ) -> impl Future<Output = std::result::Result<Vec<TargetHandle>, crate::FfxTargetCrateError>>;
+}
+
+pub struct DefaultTargetStateDiscoverer;
+
+impl TargetStateDiscoverer for DefaultTargetStateDiscoverer {
+    async fn discover(
+        &self,
+        query: TargetInfoQuery,
+        env: &EnvironmentContext,
+    ) -> std::result::Result<Vec<TargetHandle>, crate::FfxTargetCrateError> {
+        get_discovered_targets(query, true, true, env).await
+    }
+}
+
+async fn wait_for_discovered_state(
+    discoverer: impl TargetStateDiscoverer,
+    wait_timeout: Option<Duration>,
+    env: &EnvironmentContext,
+    target_spec: &Option<String>,
+    behavior: WaitFor,
+) -> Result<(), ffx_command_error::Error> {
+    let query = TargetInfoQuery::try_from(target_spec.clone())
+        .map_err(|e| ffx_command_error::Error::User(e.into()))?;
+    let discover_fut = async {
+        loop {
+            futures_lite::future::yield_now().await;
+
+            match discoverer.discover(query.clone(), env).await {
+                Ok(handles) => match resolve::expect_single_target(&query, handles) {
+                    Ok(handle) => {
+                        let matches_state = match (behavior, &handle.state) {
+                            (WaitFor::Fastboot, discovery::TargetState::Fastboot(_)) => true,
+                            (WaitFor::Product, discovery::TargetState::Product { .. }) => true,
+                            _ => false,
+                        };
+                        if matches_state {
+                            return Ok(());
+                        }
+                        log::debug!(
+                            "Target discovered with state {:?}, waiting for {:?}",
+                            handle.state,
+                            behavior
+                        );
+                    }
+                    Err(FfxTargetError::OpenTargetError {
+                        err: ffx::OpenTargetError::TargetNotFound,
+                        ..
+                    }) => {
+                        log::debug!("Target not found yet, continuing to wait...");
+                    }
+                    Err(e) => {
+                        return Err(ffx_command_error::Error::User(e.into()));
+                    }
+                },
+                Err(e) => {
+                    log::debug!("Discovery error while waiting for target state: {e:?}");
+                }
+            }
+
+            Timer::new(Duration::from_millis(DOWN_REPOLL_DELAY_MS)).await;
+        }
+    };
+
+    let timer = if wait_timeout.is_some() {
+        Either::Left(fuchsia_async::Timer::new(wait_timeout.unwrap()))
+    } else {
+        Either::Right(pending())
+    };
+
+    futures_lite::FutureExt::or(discover_fut, async move {
+        timer.await;
+        Err(ffx_command_error::Error::User(
+            FfxTargetError::DaemonError {
+                err: DaemonError::Timeout,
+                target: target_spec.clone().into(),
+            }
+            .into(),
+        ))
+    })
+    .await
 }
 
 async fn wait_for_device_inner(
@@ -167,7 +273,8 @@ async fn wait_for_device_inner(
     behavior: WaitFor,
     ever_found: std::sync::Arc<std::sync::atomic::AtomicBool>,
 ) -> Result<(), ffx_command_error::Error> {
-    let ever_knocked = std::sync::atomic::AtomicBool::new(false);
+    let ever_knocked = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let ever_knocked_clone = ever_knocked.clone();
     let target_spec_clone = target_spec.clone();
     let knock_fut = async {
         loop {
@@ -219,15 +326,17 @@ async fn wait_for_device_inner(
     } else {
         Either::Right(pending())
     };
-    futures_lite::FutureExt::or(knock_fut, async {
+    futures_lite::FutureExt::or(knock_fut, async move {
         timer.await;
-        let was_knocked = ever_knocked.load(std::sync::atomic::Ordering::Relaxed);
+        let was_knocked = ever_knocked_clone.load(std::sync::atomic::Ordering::Relaxed);
         Err(ffx_command_error::Error::User(match behavior {
-            WaitFor::DeviceOnline => FfxTargetError::DaemonError {
-                err: DaemonError::Timeout,
-                target: target_spec.clone().into(),
+            WaitFor::DeviceOnline | WaitFor::Fastboot | WaitFor::Product => {
+                FfxTargetError::DaemonError {
+                    err: DaemonError::Timeout,
+                    target: target_spec.clone().into(),
+                }
+                .into()
             }
-            .into(),
             WaitFor::DeviceOffline => {
                 if was_knocked {
                     FfxTargetError::DaemonError {
@@ -952,6 +1061,209 @@ mod test {
             &Some("foo".to_string()),
             WaitFor::DeviceOffline,
             std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
+        )
+        .await;
+        assert!(res.is_err(), "{:?}", res);
+    }
+
+    #[fuchsia::test]
+    async fn test_wait_for_fastboot_success() {
+        let mut mock = MockTargetStateDiscoverer::new();
+        mock.expect_discover().times(1).returning(|_, _| {
+            Box::pin(ready(Ok(vec![discovery::TargetHandle {
+                node_name: Some("foo".to_string()),
+                state: discovery::TargetState::Fastboot(discovery::FastbootTargetState {
+                    serial_number: "12345".to_string(),
+                    connection_state: discovery::FastbootConnectionState::Usb,
+                }),
+                manual: false,
+            }])))
+        });
+        let env = ffx_config::test_init().unwrap();
+        let res = wait_for_discovered_state(
+            mock,
+            Some(Duration::from_secs(5)),
+            &env.context,
+            &Some("foo".to_string()),
+            WaitFor::Fastboot,
+        )
+        .await;
+        assert!(res.is_ok(), "{:?}", res);
+    }
+
+    #[fuchsia::test]
+    async fn test_wait_for_product_success() {
+        let mut mock = MockTargetStateDiscoverer::new();
+        mock.expect_discover().times(1).returning(|_, _| {
+            Box::pin(ready(Ok(vec![discovery::TargetHandle {
+                node_name: Some("foo".to_string()),
+                state: discovery::TargetState::Product {
+                    addrs: vec![],
+                    serial: Some("12345".to_string()),
+                },
+                manual: false,
+            }])))
+        });
+        let env = ffx_config::test_init().unwrap();
+        let res = wait_for_discovered_state(
+            mock,
+            Some(Duration::from_secs(5)),
+            &env.context,
+            &Some("foo".to_string()),
+            WaitFor::Product,
+        )
+        .await;
+        assert!(res.is_ok(), "{:?}", res);
+    }
+
+    #[fuchsia::test]
+    async fn test_wait_for_fastboot_timeout() {
+        let mut mock = MockTargetStateDiscoverer::new();
+        mock.expect_discover().returning(|_, _| {
+            Box::pin(ready(Ok(vec![discovery::TargetHandle {
+                node_name: Some("foo".to_string()),
+                state: discovery::TargetState::Product {
+                    addrs: vec![],
+                    serial: Some("12345".to_string()),
+                },
+                manual: false,
+            }])))
+        });
+        let env = ffx_config::test_init().unwrap();
+        let res = wait_for_discovered_state(
+            mock,
+            Some(Duration::from_millis(50)),
+            &env.context,
+            &Some("foo".to_string()),
+            WaitFor::Fastboot,
+        )
+        .await;
+        assert!(res.is_err(), "{:?}", res);
+    }
+
+    #[fuchsia::test]
+    async fn test_wait_for_product_timeout() {
+        let mut mock = MockTargetStateDiscoverer::new();
+        mock.expect_discover().returning(|_, _| {
+            Box::pin(ready(Ok(vec![discovery::TargetHandle {
+                node_name: Some("foo".to_string()),
+                state: discovery::TargetState::Fastboot(discovery::FastbootTargetState {
+                    serial_number: "12345".to_string(),
+                    connection_state: discovery::FastbootConnectionState::Usb,
+                }),
+                manual: false,
+            }])))
+        });
+        let env = ffx_config::test_init().unwrap();
+        let res = wait_for_discovered_state(
+            mock,
+            Some(Duration::from_millis(50)),
+            &env.context,
+            &Some("foo".to_string()),
+            WaitFor::Product,
+        )
+        .await;
+        assert!(res.is_err(), "{:?}", res);
+    }
+
+    #[fuchsia::test]
+    async fn test_wait_for_discovered_state_retry_then_success() {
+        let mut mock = MockTargetStateDiscoverer::new();
+        let call_count = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let count_clone = call_count.clone();
+        mock.expect_discover().returning(move |_, _| {
+            let attempt = count_clone.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            if attempt == 0 {
+                Box::pin(ready(Ok(vec![])))
+            } else {
+                Box::pin(ready(Ok(vec![discovery::TargetHandle {
+                    node_name: Some("foo".to_string()),
+                    state: discovery::TargetState::Fastboot(discovery::FastbootTargetState {
+                        serial_number: "12345".to_string(),
+                        connection_state: discovery::FastbootConnectionState::Usb,
+                    }),
+                    manual: false,
+                }])))
+            }
+        });
+        let env = ffx_config::test_init().unwrap();
+        let res = wait_for_discovered_state(
+            mock,
+            Some(Duration::from_secs(5)),
+            &env.context,
+            &Some("foo".to_string()),
+            WaitFor::Fastboot,
+        )
+        .await;
+        assert!(res.is_ok(), "{:?}", res);
+        assert!(call_count.load(std::sync::atomic::Ordering::SeqCst) >= 2);
+    }
+
+    #[fuchsia::test]
+    async fn test_wait_for_discovered_state_discovery_error_then_success() {
+        let mut mock = MockTargetStateDiscoverer::new();
+        let call_count = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let count_clone = call_count.clone();
+        mock.expect_discover().returning(move |_, _| {
+            let attempt = count_clone.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            if attempt == 0 {
+                Box::pin(ready(Err(crate::FfxTargetCrateError::Resolution(
+                    crate::error::TargetResolutionError::NonNetworkTarget,
+                ))))
+            } else {
+                Box::pin(ready(Ok(vec![discovery::TargetHandle {
+                    node_name: Some("foo".to_string()),
+                    state: discovery::TargetState::Product {
+                        addrs: vec![],
+                        serial: Some("12345".to_string()),
+                    },
+                    manual: false,
+                }])))
+            }
+        });
+        let env = ffx_config::test_init().unwrap();
+        let res = wait_for_discovered_state(
+            mock,
+            Some(Duration::from_secs(5)),
+            &env.context,
+            &Some("foo".to_string()),
+            WaitFor::Product,
+        )
+        .await;
+        assert!(res.is_ok(), "{:?}", res);
+        assert!(call_count.load(std::sync::atomic::Ordering::SeqCst) >= 2);
+    }
+
+    #[fuchsia::test]
+    async fn test_wait_for_discovered_state_ambiguous_error() {
+        let mut mock = MockTargetStateDiscoverer::new();
+        mock.expect_discover().times(1).returning(|_, _| {
+            Box::pin(ready(Ok(vec![
+                discovery::TargetHandle {
+                    node_name: Some("foo1".to_string()),
+                    state: discovery::TargetState::Fastboot(discovery::FastbootTargetState {
+                        serial_number: "12345".to_string(),
+                        connection_state: discovery::FastbootConnectionState::Usb,
+                    }),
+                    manual: false,
+                },
+                discovery::TargetHandle {
+                    node_name: Some("foo2".to_string()),
+                    state: discovery::TargetState::Fastboot(discovery::FastbootTargetState {
+                        serial_number: "67890".to_string(),
+                        connection_state: discovery::FastbootConnectionState::Usb,
+                    }),
+                    manual: false,
+                },
+            ])))
+        });
+        let env = ffx_config::test_init().unwrap();
+        let res = wait_for_discovered_state(
+            mock,
+            Some(Duration::from_secs(5)),
+            &env.context,
+            &None,
+            WaitFor::Fastboot,
         )
         .await;
         assert!(res.is_err(), "{:?}", res);

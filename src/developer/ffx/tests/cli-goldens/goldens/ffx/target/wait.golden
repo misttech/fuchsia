@@ -1,6 +1,6 @@
 {
   "name": "wait",
-  "description": "Wait until able to establish a remote control connection to the target.",
+  "description": "Wait for a target to reach a specific state.",
   "examples": [],
   "flags": [
     {
@@ -30,6 +30,18 @@
       "short": "d",
       "description": "wait for target to go down",
       "hidden": false
+    },
+    {
+      "kind": {
+        "Option": {
+          "arg_name": "state"
+        }
+      },
+      "optionality": "optional",
+      "long": "--state",
+      "short": null,
+      "description": "wait for the target to reach a specific state ('down', 'up', 'fastboot', 'product')",
+      "hidden": false
     }
   ],
   "notes": [],
@@ -38,7 +50,7 @@
   "error_codes": [
     {
       "code": 1,
-      "description": "Timeout while getting ssh address"
+      "description": "Timeout while waiting for target"
     }
   ]
 }
