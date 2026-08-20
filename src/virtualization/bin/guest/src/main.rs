@@ -36,7 +36,6 @@ async fn main() -> Result<(), anyhow::Error> {
             Ok(())
         }
         SubCommands::VsockPerf(vsockperf_args) => {
-            #[allow(clippy::large_futures)]
             let output = guest_cli::vsockperf::handle_vsockperf(&services, &vsockperf_args).await?;
             println!("{}", output);
             Ok(())

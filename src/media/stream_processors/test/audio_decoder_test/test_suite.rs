@@ -2,8 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#![allow(clippy::large_futures)]
-
 use fidl_fuchsia_media::*;
 use fidl_fuchsia_sysmem2::{BufferCollectionConstraints, BufferMemoryConstraints};
 use std::rc::Rc;

@@ -182,7 +182,6 @@ mod tests {
         let (unblocker, block_until) = std::sync::mpsc::channel();
 
         let socket_remote = fuchsia_async::Socket::from_socket(socket_remote);
-        #[allow(clippy::large_futures)]
         let () = connect_socket_to_stdio_impl(
             socket_remote,
             move || {

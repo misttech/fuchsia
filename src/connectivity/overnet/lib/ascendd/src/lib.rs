@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{bail, format_err, Context as ErrorContext, Error};
+use anyhow::{Context as ErrorContext, Error, bail, format_err};
 use argh::FromArgs;
 use fuchsia_async::{Task, TimeoutExt};
 use futures::channel::mpsc::unbounded;
@@ -82,8 +82,9 @@ pub fn short_socket_path(real_path: &Path) -> std::io::Result<ShortPathLink> {
         if short_path.as_os_str().len() > ShortPathLink::MAX_SUN_LEN {
             let error_str = format!(
                 "Even tmpdir path was too long to create a short enough socket path for {real_path} (tried: {short_path})",
-                real_path=real_path.display(),
-                short_path=short_path.display());
+                real_path = real_path.display(),
+                short_path = short_path.display()
+            );
             return Err(std::io::Error::new(ErrorKind::InvalidInput, error_str));
         }
         symlink(socket_dir, &symlink_path)?;
@@ -274,7 +275,10 @@ async fn bind_listener(
                         std::fs::remove_file(&sockpath)?;
                     }
                     Err(e) => {
-                        log::info!("An unexpected error occurred while trying to connect to the existing ascendd socket at: {}: {e:?}", sockpath.display());
+                        log::info!(
+                            "An unexpected error occurred while trying to connect to the existing ascendd socket at: {}: {e:?}",
+                            sockpath.display()
+                        );
                         bail!(
                             "unexpected error while trying to connect to the existing ascendd socket at: {}: {e}",
                             sockpath.display()
@@ -283,7 +287,10 @@ async fn bind_listener(
                 }
             }
             Err(e) => {
-                log::info!("An unexpected error occurred while trying to bind to the ascendd socket at {}: {e:?}", sockpath.display());
+                log::info!(
+                    "An unexpected error occurred while trying to bind to the ascendd socket at {}: {e:?}",
+                    sockpath.display()
+                );
                 bail!(
                     "unexpected error while trying to bind to ascendd socket at {}: {e}",
                     sockpath.display()
@@ -320,7 +327,6 @@ async fn run_ascendd(
 
     log::debug!("ascendd listening to socket {}", sockpath.display());
 
-    #[allow(clippy::large_futures)]
     futures::future::try_join(
         futures::stream::iter(link.into_iter().map(Ok)).try_for_each_concurrent(None, |path| {
             let node = Arc::clone(&node);

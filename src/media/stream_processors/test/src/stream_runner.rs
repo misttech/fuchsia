@@ -2,12 +2,12 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use crate::Result;
 use crate::buffer_set::*;
 use crate::elementary_stream::*;
 use crate::input_packet_stream::*;
 use crate::output_validator::*;
 use crate::stream::*;
-use crate::Result;
 use fidl_fuchsia_media::*;
 use futures::TryStreamExt;
 use log::debug;
@@ -72,7 +72,6 @@ impl StreamRunner {
                 let Some(event) = events.try_next().await? else {
                     break true;
                 };
-                #[allow(clippy::large_futures)]
                 let control_flow = stream.handle_event(event).await?;
                 match control_flow {
                     StreamControlFlow::Continue => {}

@@ -2,8 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#![allow(clippy::large_futures)]
-
 use audio_encoder_test_lib::pcm_audio::*;
 use fidl_fuchsia_media::*;
 use log::info;
@@ -71,7 +69,9 @@ impl RoundTripTestSuite {
             decoded_golden.as_slice(),
             encoder_stream.frames_per_second,
         )?;
-        info!("Target RMSE calculated from input PCM and golden transcoded PCM is: {target_rmse}. RMSE difference tolerance is: {rmse_diff_tolerance}");
+        info!(
+            "Target RMSE calculated from input PCM and golden transcoded PCM is: {target_rmse}. RMSE difference tolerance is: {rmse_diff_tolerance}"
+        );
         Ok(Self {
             encoder_settings,
             encoder_stream,

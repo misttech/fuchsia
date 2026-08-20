@@ -2,11 +2,11 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#![allow(clippy::large_futures)]
-
 use anyhow::format_err;
 use async_trait::async_trait;
+use fidl_fuchsia_images2 as images2;
 use fidl_fuchsia_media::*;
+use fidl_fuchsia_sysmem2 as sysmem2;
 use h264_stream::*;
 use std::io::Write;
 use std::rc::Rc;
@@ -14,7 +14,6 @@ use stream_processor_decoder_factory::*;
 use stream_processor_encoder_factory::*;
 use stream_processor_test::*;
 use video_frame_stream::*;
-use {fidl_fuchsia_images2 as images2, fidl_fuchsia_sysmem2 as sysmem2};
 
 pub struct H264NalValidator {
     pub expected_nals: Option<Vec<H264NalKind>>,

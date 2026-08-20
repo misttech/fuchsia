@@ -2,8 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#![allow(clippy::large_futures)]
-
 use crate::buffer_set::*;
 use crate::elementary_stream::*;
 use crate::input_packet_stream::*;
@@ -86,13 +84,13 @@ impl<'a: 'b, 'b> Stream<'a> {
                 debug!("Received input constraints.");
                 debug!("Input constraints are: {:#?}", input_constraints);
 
-                let buffer_set = BufferSetFactory::buffer_set(
+                let buffer_set = Box::pin(BufferSetFactory::buffer_set(
                     get_ordinal(self.input_buffer_ordinals),
                     ValidStreamBufferConstraints::try_from(input_constraints)?,
                     self.stream_processor,
                     BufferSetType::Input,
                     self.options.input_buffer_collection_constraints.clone(),
-                )
+                ))
                 .await?;
 
                 debug!("Sending input format details in response to input constraints.");
@@ -116,13 +114,13 @@ impl<'a: 'b, 'b> Stream<'a> {
                 let constraints = ValidStreamOutputConstraints::try_from(output_config)?;
                 if constraints.buffer_constraints_action_required {
                     self.output_buffer_set = Some(
-                        BufferSetFactory::buffer_set(
+                        Box::pin(BufferSetFactory::buffer_set(
                             get_ordinal(self.output_buffer_ordinals),
                             constraints.buffer_constraints,
                             self.stream_processor,
                             BufferSetType::Output,
                             self.options.output_buffer_collection_constraints.clone(),
-                        )
+                        ))
                         .await?,
                     );
                 }

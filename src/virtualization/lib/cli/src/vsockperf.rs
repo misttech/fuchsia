@@ -192,7 +192,6 @@ pub async fn handle_vsockperf<P: PlatformServices>(
     }
 
     let guest_manager = services.connect_to_manager(args.guest_type).await?;
-    #[allow(clippy::large_futures)]
     Ok(match run_micro_benchmark(guest_manager).await {
         Err(err) => VsockPerfResult::Internal(format!("{}", err)),
         Ok(result) => VsockPerfResult::BenchmarkComplete(Box::new(result)),
@@ -304,7 +303,7 @@ async fn read_single_stream(
     socket: &mut fasync::Socket,
 ) -> Result<fasync::MonotonicInstant, Error> {
     let timeout = fasync::MonotonicInstant::now() + std::time::Duration::from_secs(10).into();
-    let mut buffer = [0u8; LATENCY_CHECK_SIZE_BYTES]; // 4 KiB
+    let mut buffer = vec![0u8; LATENCY_CHECK_SIZE_BYTES]; // 4 KiB
     let segments = total_size / buffer.len();
 
     for _ in 0..segments {
@@ -326,7 +325,7 @@ async fn write_single_stream(
     socket: &mut fasync::Socket,
 ) -> Result<fasync::MonotonicInstant, Error> {
     let timeout = fasync::MonotonicInstant::now() + std::time::Duration::from_secs(10).into();
-    let buffer = [0u8; LATENCY_CHECK_SIZE_BYTES]; // 4 KiB
+    let buffer = vec![0u8; LATENCY_CHECK_SIZE_BYTES]; // 4 KiB
     let segments = total_size / buffer.len();
 
     for _ in 0..segments {
@@ -683,7 +682,6 @@ async fn run_micro_benchmark(guest_manager: GuestManagerProxy) -> Result<Measure
     )
     .await?;
 
-    #[allow(clippy::large_futures)]
     run_multi_stream_unidirectional_round_trip_test(
         active_connections.remove(&MULTI_STREAM_THROUGHPUT1).expect("socket should exist"),
         active_connections.remove(&MULTI_STREAM_THROUGHPUT2).expect("socket should exist"),
