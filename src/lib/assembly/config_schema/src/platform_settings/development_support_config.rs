@@ -170,6 +170,24 @@ pub struct VirtualAudioConfig {
     pub tools: bool,
 }
 
+impl AudioToolsConfig {
+    /// Returns whether the modern virtual audio driver (`virtual-audio`) is enabled.
+    pub fn is_virtual_audio_modern_enabled(&self) -> bool {
+        self.virtual_audio.as_ref().is_some_and(|v| v.is_modern_enabled())
+    }
+
+    /// Returns whether the legacy virtual audio driver (`virtual-audio-legacy`) is enabled.
+    pub fn is_virtual_audio_legacy_enabled(&self) -> bool {
+        self.virtual_audio.as_ref().is_some_and(|v| v.legacy)
+    }
+
+    /// Returns whether the virtual audio CLI utilities (`virtual_audio_util` /
+    /// `virtual_audio_legacy_util`) are enabled.
+    pub fn is_virtual_audio_tools_enabled(&self) -> bool {
+        self.virtual_audio.as_ref().is_some_and(|v| v.tools)
+    }
+}
+
 impl VirtualAudioConfig {
     pub fn is_modern_enabled(&self) -> bool {
         self.modern.unwrap_or(!self.legacy)
@@ -262,5 +280,70 @@ impl DevelopmentSupportConfig {
                 Ok(false)
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_audio_tools_virtual_audio_none() {
+        let config = AudioToolsConfig::default();
+        assert!(!config.is_virtual_audio_modern_enabled());
+        assert!(!config.is_virtual_audio_legacy_enabled());
+        assert!(!config.is_virtual_audio_tools_enabled());
+    }
+
+    #[test]
+    fn test_audio_tools_virtual_audio_default_modern() {
+        let config = AudioToolsConfig {
+            virtual_audio: Some(VirtualAudioConfig { legacy: false, modern: None, tools: true }),
+            ..Default::default()
+        };
+        assert!(config.is_virtual_audio_modern_enabled());
+        assert!(!config.is_virtual_audio_legacy_enabled());
+        assert!(config.is_virtual_audio_tools_enabled());
+    }
+
+    #[test]
+    fn test_audio_tools_virtual_audio_legacy_only() {
+        let config = AudioToolsConfig {
+            virtual_audio: Some(VirtualAudioConfig { legacy: true, modern: None, tools: false }),
+            ..Default::default()
+        };
+        assert!(!config.is_virtual_audio_modern_enabled());
+        assert!(config.is_virtual_audio_legacy_enabled());
+        assert!(!config.is_virtual_audio_tools_enabled());
+    }
+
+    #[test]
+    fn test_audio_tools_virtual_audio_both() {
+        let config = AudioToolsConfig {
+            virtual_audio: Some(VirtualAudioConfig {
+                legacy: true,
+                modern: Some(true),
+                tools: true,
+            }),
+            ..Default::default()
+        };
+        assert!(config.is_virtual_audio_modern_enabled());
+        assert!(config.is_virtual_audio_legacy_enabled());
+        assert!(config.is_virtual_audio_tools_enabled());
+    }
+
+    #[test]
+    fn test_audio_tools_virtual_audio_explicit_disabled() {
+        let config = AudioToolsConfig {
+            virtual_audio: Some(VirtualAudioConfig {
+                legacy: false,
+                modern: Some(false),
+                tools: false,
+            }),
+            ..Default::default()
+        };
+        assert!(!config.is_virtual_audio_modern_enabled());
+        assert!(!config.is_virtual_audio_legacy_enabled());
+        assert!(!config.is_virtual_audio_tools_enabled());
     }
 }

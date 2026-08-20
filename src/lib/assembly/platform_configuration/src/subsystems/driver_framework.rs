@@ -167,13 +167,17 @@ impl
             software_names.push("ram-disk");
             software_ids.push(bind_fuchsia_platform::BIND_PLATFORM_DEV_DID_RAM_DISK);
         }
-        if *context.feature_set_level == FeatureSetLevel::Standard
-            && *context.build_type == BuildType::Eng
-        {
-            software_names.push("virtual-audio");
-            software_ids.push(bind_fuchsia_platform::BIND_PLATFORM_DEV_DID_VIRTUAL_AUDIO);
-            software_names.push("virtual-audio-legacy");
-            software_ids.push(bind_fuchsia_platform::BIND_PLATFORM_DEV_DID_VIRTUAL_AUDIO_LEGACY);
+        if *context.build_type == BuildType::Eng {
+            let audio_tools = &development_support.tools.audio;
+            if audio_tools.is_virtual_audio_modern_enabled() {
+                software_names.push("virtual-audio");
+                software_ids.push(bind_fuchsia_platform::BIND_PLATFORM_DEV_DID_VIRTUAL_AUDIO);
+            }
+            if audio_tools.is_virtual_audio_legacy_enabled() {
+                software_names.push("virtual-audio-legacy");
+                software_ids
+                    .push(bind_fuchsia_platform::BIND_PLATFORM_DEV_DID_VIRTUAL_AUDIO_LEGACY);
+            }
         }
 
         if context.board_config.provides_feature(BoardFeature::FakeBattery)

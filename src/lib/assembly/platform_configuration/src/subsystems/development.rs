@@ -131,25 +131,20 @@ impl DefineSubsystemConfiguration<DevelopmentSupportConfig> for DevelopmentConfi
 
         if config.tools.audio.driver_tools {
             builder.platform_bundle("audio_driver_development_tools")?;
-            builder.platform_bundle("audio_legacy_driver_tools")?;
-            builder.platform_bundle("virtual_audio_util")?;
-            builder.platform_bundle("virtual_audio_legacy_util")?;
         }
         if config.tools.audio.legacy_driver_tools {
             builder.platform_bundle("audio_legacy_driver_tools")?;
         }
-        if let Some(vad) = &config.tools.audio.virtual_audio {
-            if vad.is_modern_enabled() {
-                builder.platform_bundle("virtual_audio_driver")?;
-                if vad.tools {
-                    builder.platform_bundle("virtual_audio_util")?;
-                }
+        if config.tools.audio.is_virtual_audio_modern_enabled() {
+            builder.platform_bundle("virtual_audio_driver")?;
+            if config.tools.audio.is_virtual_audio_tools_enabled() {
+                builder.platform_bundle("virtual_audio_util")?;
             }
-            if vad.legacy {
-                builder.platform_bundle("virtual_audio_legacy_driver")?;
-                if vad.tools {
-                    builder.platform_bundle("virtual_audio_legacy_util")?;
-                }
+        }
+        if config.tools.audio.is_virtual_audio_legacy_enabled() {
+            builder.platform_bundle("virtual_audio_legacy_driver")?;
+            if config.tools.audio.is_virtual_audio_tools_enabled() {
+                builder.platform_bundle("virtual_audio_legacy_util")?;
             }
         }
         if config.tools.audio.full_stack_tools {
