@@ -49,5 +49,6 @@ constexpr size_t kVmObjectPhysicalStateOffset = 136;
 constexpr uint32_t kPmmNodeIndexZeroBits = 3;
 constexpr uint32_t kVmPageListTypeBits = 3;
 constexpr uint32_t kVmPageListPageType = 0b000;
+constexpr uint32_t kVmPageListReferenceType = 0b010;
 
 #endif  // ZIRCON_KERNEL_VM_INCLUDE_VM_VM_CONSTANTS_H_

@@ -7,13 +7,17 @@
 use crate::kernel::types::PAddr;
 use crate::vm::page::VmPagePtr;
 use crate::vm::pmm_node::pmm_node;
-use vm_constants_rs::{kPmmNodeIndexZeroBits, kVmPageListPageType, kVmPageListTypeBits};
+use vm_constants_rs::{
+    kPmmNodeIndexZeroBits, kVmPageListPageType, kVmPageListReferenceType, kVmPageListTypeBits,
+};
 
 /// RAII helper for representing content in a page list node. This supports being in one of these
 /// states:
 ///  * Empty       - Contains nothing.
 ///  * Page p      - Contains a `VmPagePtr` 'p'. This 'p' is considered owned by this wrapper and
 ///    `release_page` must be called to give up ownership.
+///  * Reference r - Contains a reference 'r' to some content. This 'r' is considered owned by this
+///    wrapper and `release_reference` must be called to give up ownership.
 ///
 /// Note on Preconditions & Safety Contracts:
 /// `VmPageOrMarker` uses manual bit-packing rather than a native Rust `enum` to maintain
@@ -24,6 +28,35 @@ pub struct VmPageOrMarker {
     raw: u32,
 }
 
+/// Minimal wrapper around a `u32` to provide stronger typing in code to prevent accidental
+/// mixing of references and other values.
+/// Provides a way to query the required alignment of the references and does debug enforcement of
+/// this.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(transparent)]
+pub struct ReferenceValue {
+    value: u32,
+}
+
+impl ReferenceValue {
+    // ALIGN_BITS represents the number of low bits in a reference that must be zero so they can be
+    // used for internal metadata. This is declared here for convenience, and is asserted to be in
+    // sync with the private VmPageOrMarker::TYPE_BITS.
+    pub const ALIGN_BITS: u32 = 3;
+    pub const ALIGN_MASK: u32 = (1 << Self::ALIGN_BITS) - 1;
+
+    /// Creates a new `ReferenceValue`.
+    pub const fn new(val: u32) -> Self {
+        debug_assert!((val & Self::ALIGN_MASK) == 0);
+        Self { value: val }
+    }
+
+    /// Returns the raw value.
+    pub fn value(&self) -> u32 {
+        self.value
+    }
+}
+
 impl VmPageOrMarker {
     // The low 3 bits of raw are reserved to represent the type, any other data has to fit into
     // the remaining high bits. Note that there is no explicit Empty type, rather a PAGE_TYPE with a
@@ -31,6 +64,7 @@ impl VmPageOrMarker {
     const TYPE_BITS: u32 = kVmPageListTypeBits;
     const TYPE_MASK: u32 = (1 << Self::TYPE_BITS) - 1;
     const PAGE_TYPE: u32 = kVmPageListPageType;
+    const REFERENCE_TYPE: u32 = kVmPageListReferenceType;
 
     fn get_type(&self) -> u32 {
         self.raw & Self::TYPE_MASK
@@ -62,6 +96,16 @@ impl VmPageOrMarker {
         debug_assert!((raw & Self::TYPE_MASK) == 0);
         Self { raw: raw | Self::PAGE_TYPE }
     }
+
+    /// Creates a `VmPageOrMarker` from a reference.
+    pub fn from_reference(ref_val: ReferenceValue) -> Self {
+        // Ensure the reference values have alignment such the type bits can be set without
+        // overlapping actual ref being stored. Unlike the page type, which does not allow the 0
+        // value to be stored, a ref value of 0 is valid and may be stored.
+        const _REF_ALIGN_CHECK: () =
+            assert!(ReferenceValue::ALIGN_BITS == VmPageOrMarker::TYPE_BITS);
+        Self { raw: ref_val.value() | Self::REFERENCE_TYPE }
+    }
     /// Returns true if this is empty.
     ///
     /// A `PAGE_TYPE` that otherwise holds a null pointer is considered to be Empty.
@@ -72,6 +116,16 @@ impl VmPageOrMarker {
     /// Returns true if this is a page.
     pub fn is_page(&self) -> bool {
         !self.is_empty() && (self.get_type() == Self::PAGE_TYPE)
+    }
+
+    /// Returns true if this is a reference.
+    pub fn is_reference(&self) -> bool {
+        self.get_type() == Self::REFERENCE_TYPE
+    }
+
+    /// Returns true if this is a page or a reference.
+    pub fn is_page_or_ref(&self) -> bool {
+        self.is_page() || self.is_reference()
     }
 
     /// Returns the underlying page. Is only valid to call if `is_page` is true.
@@ -92,6 +146,12 @@ impl VmPageOrMarker {
         debug_assert!(self.is_page());
         // SAFETY: `self.raw` is guaranteed to be a valid page index when `self` is a page.
         unsafe { pmm_node().index_to_paddr(self.raw) }
+    }
+
+    /// Returns the underlying reference.
+    pub fn reference(&self) -> ReferenceValue {
+        debug_assert!(self.is_reference());
+        ReferenceValue::new(self.raw & !ReferenceValue::ALIGN_MASK)
     }
 
     /// Resets `self` to Empty and returns the raw underlying representation.
@@ -117,6 +177,36 @@ impl VmPageOrMarker {
         }
     }
 
+    /// If this is a reference, moves the underlying reference out and returns it. After this,
+    /// `is_reference` will be false and `is_empty` will be true.
+    pub fn release_reference(&mut self) -> ReferenceValue {
+        debug_assert!(self.is_reference());
+        let raw = self.release();
+        ReferenceValue::new(raw & !ReferenceValue::ALIGN_MASK)
+    }
+
+    /// Changes the content from a reference to a page and returns the original reference.
+    pub fn swap_reference_for_page(&mut self, p: VmPagePtr) -> ReferenceValue {
+        let ref_val = self.release_reference();
+        *self = Self::from_page(p);
+        ref_val
+    }
+
+    /// Changes the content from a page to a reference and returns the original page.
+    pub fn swap_page_for_reference(&mut self, ref_val: ReferenceValue) -> VmPagePtr {
+        let page = self.release_page();
+        *self = Self::from_reference(ref_val);
+        page
+    }
+
+    /// Changes the content from one reference to a different one and returns the original
+    /// reference.
+    pub fn swap_reference_for_reference(&mut self, ref_val: ReferenceValue) -> ReferenceValue {
+        let old = self.release_reference();
+        *self = Self::from_reference(ref_val);
+        old
+    }
+
     /// Swaps content with another `VmPageOrMarker`, returning the previous value of `self`.
     pub fn swap(&mut self, mut other: Self) -> Self {
         let ret = self.raw;
@@ -127,7 +217,10 @@ impl VmPageOrMarker {
 
 impl Drop for VmPageOrMarker {
     fn drop(&mut self) {
-        debug_assert!(!self.is_page(), "VmPageOrMarker dropped while containing page");
+        debug_assert!(
+            !self.is_page_or_ref(),
+            "VmPageOrMarker dropped while containing page or ref"
+        );
     }
 }
 
@@ -135,7 +228,7 @@ impl Drop for VmPageOrMarker {
 #[unittest::suite]
 /// Unit tests for VmPageOrMarker.
 mod vm_page_list_rs {
-    use super::VmPageOrMarker;
+    use super::{ReferenceValue, VmPageOrMarker};
     use unittest::{expect_eq, expect_false, expect_true};
 
     /// Tests empty state creation and predicate checks.
@@ -144,6 +237,8 @@ mod vm_page_list_rs {
         let pm = VmPageOrMarker::empty();
         expect_true!(pm.is_empty());
         expect_false!(pm.is_page());
+        expect_false!(pm.is_reference());
+        expect_false!(pm.is_page_or_ref());
     }
 
     /// Tests release behavior on an empty VmPageOrMarker.
@@ -155,7 +250,7 @@ mod vm_page_list_rs {
         expect_true!(pm.is_empty());
     }
 
-    /// Tests swapping two VmPageOrMarker instances.
+    /// Tests swapping two empty VmPageOrMarker instances.
     #[test]
     fn test_page_or_marker_swap() {
         let mut pm1 = VmPageOrMarker::empty();
@@ -163,5 +258,62 @@ mod vm_page_list_rs {
         let prev = pm1.swap(pm2);
         expect_true!(prev.is_empty());
         expect_true!(pm1.is_empty());
+    }
+
+    /// Tests reference value creation, alignment mask, and getter properties.
+    #[test]
+    fn test_reference_value() {
+        expect_eq!(ReferenceValue::ALIGN_BITS, 3);
+        expect_eq!(ReferenceValue::ALIGN_MASK, 0b111);
+
+        let ref_zero = ReferenceValue::new(0x0);
+        expect_eq!(ref_zero.value(), 0x0);
+
+        let ref_aligned = ReferenceValue::new(0x1000);
+        expect_eq!(ref_aligned.value(), 0x1000);
+
+        let ref_max = ReferenceValue::new(0xFFFFFFF8);
+        expect_eq!(ref_max.value(), 0xFFFFFFF8);
+    }
+
+    /// Tests reference packing in VmPageOrMarker, predicates, and release behavior.
+    #[test]
+    fn test_page_or_marker_reference() {
+        let ref_val = ReferenceValue::new(0x1000); // 8-byte aligned
+        let mut pm = VmPageOrMarker::from_reference(ref_val);
+        expect_true!(pm.is_reference());
+        expect_false!(pm.is_page());
+        expect_false!(pm.is_empty());
+        expect_true!(pm.is_page_or_ref());
+
+        expect_true!(pm.reference() == ref_val);
+        expect_eq!(pm.reference().value(), ref_val.value());
+
+        let released_ref = pm.release_reference();
+        expect_true!(released_ref == ref_val);
+        expect_true!(pm.is_empty());
+    }
+
+    /// Tests swapping references and swap_reference_for_reference method.
+    #[test]
+    fn test_page_or_marker_reference_swap() {
+        let ref_val1 = ReferenceValue::new(0x1000);
+        let ref_val2 = ReferenceValue::new(0x2000);
+        let mut pm1 = VmPageOrMarker::from_reference(ref_val1);
+        let pm2 = VmPageOrMarker::from_reference(ref_val2);
+
+        // Test general swap of two reference instances
+        let mut old = pm1.swap(pm2);
+        expect_true!(old.reference() == ref_val1);
+        expect_true!(pm1.reference() == ref_val2);
+
+        // Test swap_reference_for_reference method directly
+        let ref_val3 = ReferenceValue::new(0x3000);
+        let old_ref = pm1.swap_reference_for_reference(ref_val3);
+        expect_true!(old_ref == ref_val2);
+        expect_true!(pm1.reference() == ref_val3);
+
+        let _ = old.release_reference();
+        let _ = pm1.release_reference();
     }
 }
