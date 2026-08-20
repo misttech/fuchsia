@@ -3,7 +3,6 @@
 # found in the LICENSE file.
 
 import("//build/bazel/bazel_build_action.gni")
-import("//build/bazel/bazel_build_group.gni")
 
 # Build all target examples with Bazel all at once.
 # This invokes a stamp_group() Bazel targets that depends on all
@@ -20,87 +19,81 @@ bazel_build_action("target_examples") {
   ]
 }
 
-bazel_build_group("host_examples") {
+bazel_build_action("hello_world_cpp") {
   bazel_config = "host"
-  subtargets = [
+  bazel_target = "//build/bazel/examples/hello_world:hello_world_cpp"
+  copy_outputs = [
     {
-      bazel_target = "//build/bazel/examples/hello_world:hello_world_cpp"
-      gn_target_name = "hello_world_cpp"
-      copy_outputs = [
-        {
-          bazel = "{{BAZEL_TARGET_OUT_DIR}}/{{BAZEL_TARGET_NAME}}"
-          ninja = "hello_world_cpp_from_bazel"
-        },
-      ]
+      bazel = "{{BAZEL_TARGET_OUT_DIR}}/{{BAZEL_TARGET_NAME}}"
+      ninja = "hello_world_cpp_from_bazel"
     },
-    {
-      bazel_target = "//build/bazel/examples/hello_world:hello_world_rust"
-      gn_target_name = "hello_world_rust"
-      copy_outputs = [
-        {
-          bazel = "{{BAZEL_TARGET_OUT_DIR}}/{{BAZEL_TARGET_NAME}}"
-          ninja = "hello_world_rust_from_bazel"
-        },
+  ]
+}
 
-        # Ensure clippy is run for Rust targets.
-        {
-          bazel = "{{BAZEL_TARGET_OUT_DIR}}/{{BAZEL_TARGET_NAME}}.clippy.ok"
-          ninja = "hello_world_rust_from_bazel.clippy.ok"
-        },
-      ]
+bazel_build_action("hello_world_rust") {
+  bazel_config = "host"
+  bazel_target = "//build/bazel/examples/hello_world:hello_world_rust"
+  copy_outputs = [
+    {
+      bazel = "{{BAZEL_TARGET_OUT_DIR}}/{{BAZEL_TARGET_NAME}}"
+      ninja = "hello_world_rust_from_bazel"
     },
 
-    # {
-    #   bazel_target = "//build/bazel/examples/hello_world:hello_world_rust_test"
-    #   gn_target_name = "hello_world_rust_test"
-    #   copy_outputs = [
-    #     {
-    #       bazel = "{{BAZEL_TARGET_OUT_DIR}}/{{BAZEL_TARGET_NAME}}"
-    #       ninja = "hello_world_rust_test_from_bazel"
-    #     },
-    #   ]
-    # },
+    # Ensure clippy is run for Rust targets.
     {
-      bazel_target = "//build/bazel/examples/hello_python"
-      gn_target_name = "hello_python"
-      copy_outputs = [
-        {
-          bazel = "{{BAZEL_TARGET_OUT_DIR}}/bin"
-          ninja = "hello_python_bin"
-        },
-        {
-          bazel = "{{BAZEL_TARGET_OUT_DIR}}/test"
-          ninja = "hello_python_test"
-        },
-      ]
+      bazel = "{{BAZEL_TARGET_OUT_DIR}}/{{BAZEL_TARGET_NAME}}.clippy.ok"
+      ninja = "hello_world_rust_from_bazel.clippy.ok"
+    },
+  ]
+}
+
+# bazel_build_action("hello_world_rust_test") {
+#   bazel_config = "host"
+#   bazel_target = "//build/bazel/examples/hello_world:hello_world_rust_test"
+#   copy_outputs = [
+#     {
+#       bazel = "{{BAZEL_TARGET_OUT_DIR}}/{{BAZEL_TARGET_NAME}}"
+#       ninja = "hello_world_rust_test_from_bazel"
+#     },
+#   ]
+# }
+
+bazel_build_action("hello_python") {
+  bazel_config = "host"
+  bazel_target = "//build/bazel/examples/hello_python"
+  copy_outputs = [
+    {
+      bazel = "{{BAZEL_TARGET_OUT_DIR}}/bin"
+      ninja = "hello_python_bin"
+    },
+    {
+      bazel = "{{BAZEL_TARGET_OUT_DIR}}/test"
+      ninja = "hello_python_test"
     },
   ]
 }
 
 if (host_cpu == "x64") {
-  bazel_build_group("host_examples_arm64") {
+  bazel_build_action("hello_world_cpp_arm64") {
     bazel_config = "host"
     bazel_platform = "linux_arm64"
-    subtargets = [
+    bazel_target = "//build/bazel/examples/hello_world:hello_world_cpp"
+    copy_outputs = [
       {
-        bazel_target = "//build/bazel/examples/hello_world:hello_world_cpp"
-        gn_target_name = "hello_world_cpp_arm64"
-        copy_outputs = [
-          {
-            bazel = "{{BAZEL_TARGET_OUT_DIR}}/{{BAZEL_TARGET_NAME}}"
-            ninja = "hello_world_cpp_arm64_from_bazel"
-          },
-        ]
+        bazel = "{{BAZEL_TARGET_OUT_DIR}}/{{BAZEL_TARGET_NAME}}"
+        ninja = "hello_world_cpp_arm64_from_bazel"
       },
+    ]
+  }
+
+  bazel_build_action("hello_world_rust_arm64") {
+    bazel_config = "host"
+    bazel_platform = "linux_arm64"
+    bazel_target = "//build/bazel/examples/hello_world:hello_world_rust"
+    copy_outputs = [
       {
-        bazel_target = "//build/bazel/examples/hello_world:hello_world_rust"
-        gn_target_name = "hello_world_rust_arm64"
-        copy_outputs = [
-          {
-            bazel = "{{BAZEL_TARGET_OUT_DIR}}/{{BAZEL_TARGET_NAME}}"
-            ninja = "hello_world_rust_arm64_from_bazel"
-          },
-        ]
+        bazel = "{{BAZEL_TARGET_OUT_DIR}}/{{BAZEL_TARGET_NAME}}"
+        ninja = "hello_world_rust_arm64_from_bazel"
       },
     ]
   }
@@ -109,10 +102,15 @@ if (host_cpu == "x64") {
 group("examples") {
   testonly = true
   deps = [
-    ":host_examples",
+    ":hello_python",
+    ":hello_world_cpp",
+    ":hello_world_rust",
     ":target_examples",
   ]
   if (host_cpu == "x64") {
-    deps += [ ":host_examples_arm64" ]
+    deps += [
+      ":hello_world_cpp_arm64",
+      ":hello_world_rust_arm64",
+    ]
   }
 }
