@@ -4,7 +4,7 @@
 
 use super::*;
 use fidl_fuchsia_update_installer_ext::{
-    Progress, StageFailureReason, State, UpdateInfo, UpdateInfoAndProgress,
+    Progress, StageFailureReason, State, StateId, UpdateInfo, UpdateInfoAndProgress,
 };
 use maplit::btreemap;
 use pretty_assertions::assert_eq;
@@ -1175,23 +1175,21 @@ async fn fails_on_firmware_write_error_packageless() {
 
     let mut attempt = env.start_packageless_update().await.unwrap();
     let info = UpdateInfo::builder().download_size(0).build();
-    let progress = Progress::builder().fraction_completed(0.0).bytes_downloaded(0).build();
+    let manifest_size = env.ota_manifest_size() as u64;
+    let total_goal = manifest_size + firmware_content.len() as u64 * 2;
+    let progress = Progress::builder()
+        .fraction_completed(manifest_size as f32 / total_goal as f32)
+        .bytes_downloaded(manifest_size)
+        .build();
     assert_eq!(attempt.next().await.unwrap().unwrap(), State::Prepare);
+    let state = loop {
+        let state = attempt.next().await.unwrap().unwrap();
+        if state.id() != StateId::Stage {
+            break state;
+        }
+    };
     assert_eq!(
-        attempt.next().await.unwrap().unwrap(),
-        State::Stage(
-            UpdateInfoAndProgress::builder()
-                .info(info)
-                .progress(Progress::builder().fraction_completed(0.0).bytes_downloaded(0).build())
-                .build()
-        )
-    );
-    assert_eq!(
-        attempt.next().await.unwrap().unwrap(),
-        State::Stage(UpdateInfoAndProgress::builder().info(info).progress(progress).build())
-    );
-    assert_eq!(
-        attempt.next().await.unwrap().unwrap(),
+        state,
         State::FailStage(
             UpdateInfoAndProgress::builder()
                 .info(info)

@@ -797,6 +797,10 @@ impl TestEnv {
         self.start_update_with_options(UPDATE_PKG_URL, default_options(), None).await
     }
 
+    fn ota_manifest_size(&self) -> usize {
+        self.http_loader_service.manifest.as_ref().unwrap().len()
+    }
+
     async fn start_packageless_update(&self) -> Result<UpdateAttempt, UpdateAttemptError> {
         self.start_update_with_options(MANIFEST_URL, default_options(), None).await
     }

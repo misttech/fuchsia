@@ -828,7 +828,6 @@ async fn retry_image_package_resolve_twice_fails_update() {
     let mut attempt = env.start_update().await.unwrap();
 
     let info = UpdateInfo::builder().download_size(0).build();
-    let progress = Progress::builder().fraction_completed(0.0).bytes_downloaded(0).build();
 
     assert_eq!(attempt.next().await.unwrap().unwrap(), State::Prepare);
 
@@ -839,7 +838,7 @@ async fn retry_image_package_resolve_twice_fails_update() {
         State::FailStage(
             UpdateInfoAndProgress::builder()
                 .info(info)
-                .progress(progress)
+                .progress(Progress::none())
                 .build()
                 .with_stage_reason(StageFailureReason::OutOfSpace)
         )
@@ -874,6 +873,7 @@ async fn retry_image_blob_fetch_twice_fails_update_packageless() {
     let zbi_content = b"real zbi contents";
     let zbi_hash = fuchsia_merkle::root_from_slice(zbi_content);
     let content_blob = vec![1; 200];
+    let content_blob_len = content_blob.len() as u64;
     let content_blob_hash = fuchsia_merkle::root_from_slice(&content_blob);
 
     let manifest = OtaManifest {
@@ -886,7 +886,7 @@ async fn retry_image_blob_fetch_twice_fails_update_packageless() {
             },
         }],
         ..make_manifest([manifest::Blob {
-            uncompressed_size: content_blob.len() as u64,
+            uncompressed_size: content_blob_len,
             fuchsia_merkle_root: content_blob_hash,
         }])
     };
@@ -902,11 +902,25 @@ async fn retry_image_blob_fetch_twice_fails_update_packageless() {
     let mut attempt = env.start_packageless_update().await.unwrap();
 
     let info = UpdateInfo::builder().download_size(0).build();
-    let progress = Progress::builder().fraction_completed(0.0).bytes_downloaded(0).build();
+    let manifest_size = env.ota_manifest_size() as u64;
+    let total_goal = manifest_size + zbi_content.len() as u64 * 2 + content_blob_len;
+    let progress = Progress::builder()
+        .fraction_completed(manifest_size as f32 / total_goal as f32)
+        .bytes_downloaded(manifest_size)
+        .build();
 
     assert_eq!(attempt.next().await.unwrap().unwrap(), State::Prepare);
 
-    assert_eq!(attempt.next().await.unwrap().unwrap().id(), StateId::Stage);
+    assert_eq!(
+        attempt.next().await.unwrap().unwrap(),
+        State::Stage(
+            UpdateInfoAndProgress::builder().info(info).progress(Progress::none()).build()
+        )
+    );
+    assert_eq!(
+        attempt.next().await.unwrap().unwrap(),
+        State::Stage(UpdateInfoAndProgress::builder().info(info).progress(progress).build())
+    );
 
     assert_eq!(
         attempt.next().await.unwrap().unwrap(),

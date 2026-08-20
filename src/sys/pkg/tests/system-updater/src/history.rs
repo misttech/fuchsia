@@ -241,8 +241,11 @@ async fn writes_history(update_url: &str, update_hash: &str, system_image_hash: 
         if update_url == UPDATE_PKG_URL { hashstr(6) } else { zbi_hash.to_string() };
     let expected_vbmeta_hash =
         if update_url == UPDATE_PKG_URL { hashstr(3) } else { vbmeta_hash.to_string() };
-    let expected_bytes_downloaded =
-        if update_url == UPDATE_PKG_URL { 0 } else { zbi_content.len() + vbmeta_content.len() };
+    let expected_bytes_downloaded = if update_url == UPDATE_PKG_URL {
+        0
+    } else {
+        env.ota_manifest_size() + zbi_content.len() + vbmeta_content.len()
+    };
 
     assert_eq!(
         env.read_history().map(strip_attempt_ids).map(strip_start_time),
@@ -309,6 +312,8 @@ async fn replaces_bogus_history(update_url: &str, update_hash: &str) {
     env.run_update_with_options(update_url, default_options()).await.unwrap();
 
     let expected_zbi_hash = if update_url == UPDATE_PKG_URL { EMPTY_SHA256 } else { EMPTY_MERKLE };
+    let expected_bytes_downloaded =
+        if update_url == UPDATE_PKG_URL { 0 } else { env.ota_manifest_size() };
 
     assert_eq!(
         env.read_history().map(strip_attempt_ids).map(strip_start_time),
@@ -344,7 +349,7 @@ async fn replaces_bogus_history(update_url: &str, update_hash: &str) {
                         "download_size": 0,
                     },
                     "progress": {
-                        "bytes_downloaded": 0,
+                        "bytes_downloaded": expected_bytes_downloaded,
                         "fraction_completed": 1.0,
                     },
                 },
@@ -439,8 +444,11 @@ async fn increments_attempts_counter_on_retry(
         if update_url == UPDATE_PKG_URL { hashstr(6) } else { zbi_hash.to_string() };
     let expected_vbmeta_hash =
         if update_url == UPDATE_PKG_URL { hashstr(3) } else { vbmeta_hash.to_string() };
-    let expected_bytes_downloaded =
-        if update_url == UPDATE_PKG_URL { 0 } else { zbi_content.len() + vbmeta_content.len() };
+    let expected_bytes_downloaded = if update_url == UPDATE_PKG_URL {
+        0
+    } else {
+        env.ota_manifest_size() + zbi_content.len() + vbmeta_content.len()
+    };
 
     assert_eq!(
         env.read_history().map(strip_attempt_ids).map(strip_start_time),

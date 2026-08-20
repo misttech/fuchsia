@@ -5,8 +5,8 @@
 use super::*;
 use crate::{merkle_str, pinned_pkg_url};
 use fidl_fuchsia_update_installer_ext::{
-    FetchFailureReason, PrepareFailureReason, Progress, StageFailureReason, State, UpdateInfo,
-    UpdateInfoAndProgress,
+    FetchFailureReason, PrepareFailureReason, Progress, StageFailureReason, State, StateId,
+    UpdateInfo, UpdateInfoAndProgress,
 };
 use pretty_assertions::assert_eq;
 use test_case::test_case;
@@ -348,7 +348,17 @@ async fn test_stage_failure_reason_packageless(
 
     assert_eq!(attempt.next().await.unwrap().unwrap(), State::Prepare);
     let info = UpdateInfo::builder().download_size(0).build();
-    let progress = Progress::builder().fraction_completed(0.0).bytes_downloaded(0).build();
+    assert_eq!(
+        attempt.next().await.unwrap().unwrap(),
+        State::Stage(
+            UpdateInfoAndProgress::builder().info(info).progress(Progress::none()).build()
+        )
+    );
+    let manifest_size = env.ota_manifest_size() as u64;
+    let progress = Progress::builder()
+        .fraction_completed(manifest_size as f32 / (manifest_size as f32 + 2000.0))
+        .bytes_downloaded(manifest_size)
+        .build();
     assert_eq!(
         attempt.next().await.unwrap().unwrap(),
         State::Stage(UpdateInfoAndProgress::builder().info(info).progress(progress).build())
@@ -436,27 +446,26 @@ async fn test_fetch_failure_reason(
     let mut attempt =
         env.start_update_with_options(update_url, default_options(), None).await.unwrap();
 
+    let (fraction_completed, expected_bytes_downloaded) = if update_url == UPDATE_PKG_URL {
+        (0.5, 0)
+    } else {
+        let manifest_size = env.ota_manifest_size() as u64;
+        (manifest_size as f32 / (manifest_size as f32 + 1.0), manifest_size)
+    };
     let info = UpdateInfo::builder().download_size(0).build();
     let progress = Progress::builder()
-        .fraction_completed(if update_url == UPDATE_PKG_URL { 0.5 } else { 0.0 })
-        .bytes_downloaded(0)
+        .fraction_completed(fraction_completed)
+        .bytes_downloaded(expected_bytes_downloaded)
         .build();
     assert_eq!(attempt.next().await.unwrap().unwrap(), State::Prepare);
+    let state = loop {
+        let state = attempt.next().await.unwrap().unwrap();
+        if state.id() != StateId::Stage {
+            break state;
+        }
+    };
     assert_eq!(
-        attempt.next().await.unwrap().unwrap(),
-        State::Stage(
-            UpdateInfoAndProgress::builder()
-                .info(info)
-                .progress(Progress::builder().fraction_completed(0.0).bytes_downloaded(0).build())
-                .build()
-        )
-    );
-    assert_eq!(
-        attempt.next().await.unwrap().unwrap(),
-        State::Stage(UpdateInfoAndProgress::builder().info(info).progress(progress).build())
-    );
-    assert_eq!(
-        attempt.next().await.unwrap().unwrap(),
+        state,
         State::Fetch(UpdateInfoAndProgress::builder().info(info).progress(progress).build())
     );
     assert_eq!(

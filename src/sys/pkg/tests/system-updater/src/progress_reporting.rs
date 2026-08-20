@@ -130,11 +130,36 @@ async fn progress_reporting_fetch_multiple_blobs_packageless() {
     let info = UpdateInfo::builder().download_size(0).build();
     handle_ota_manifest.await.unwrap().send(()).unwrap();
 
-    assert_eq!(attempt.next().await.unwrap().unwrap().id(), StateId::Stage);
+    let manifest_size = env.ota_manifest_size() as u64;
+    let total_size = manifest_size as f32 + 4120.0;
+    let mut total_downloaded_progress = manifest_size as f32;
+    let mut total_bytes_downloaded = manifest_size;
+    assert_eq!(
+        attempt.next().await.unwrap().unwrap(),
+        State::Stage(
+            UpdateInfoAndProgress::builder().info(info).progress(Progress::none()).build()
+        )
+    );
+    assert_eq!(
+        attempt.next().await.unwrap().unwrap(),
+        State::Stage(
+            UpdateInfoAndProgress::builder()
+                .info(info)
+                .progress(
+                    Progress::builder()
+                        .fraction_completed(total_downloaded_progress / total_size)
+                        .bytes_downloaded(total_bytes_downloaded)
+                        .build()
+                )
+                .build()
+        )
+    );
 
     let sender = handle_image_blob.await.unwrap();
     let () = env.blobfs.write_blob(image_hash, &image_content).await.unwrap();
     sender.send(Ok(500)).unwrap();
+    total_downloaded_progress += 1000.0;
+    total_bytes_downloaded += 500;
 
     assert_eq!(
         attempt.next().await.unwrap().unwrap(),
@@ -143,8 +168,8 @@ async fn progress_reporting_fetch_multiple_blobs_packageless() {
                 .info(info)
                 .progress(
                     Progress::builder()
-                        .fraction_completed(1000.0 / 4120.0)
-                        .bytes_downloaded(500)
+                        .fraction_completed(total_downloaded_progress / total_size)
+                        .bytes_downloaded(total_bytes_downloaded)
                         .build()
                 )
                 .build()
@@ -159,15 +184,11 @@ async fn progress_reporting_fetch_multiple_blobs_packageless() {
         async move { (3000.0, 3000u64, handle_blob3.await) }.boxed(),
     ];
 
-    let mut total_downloaded = 1000.0;
-    let mut total_bytes_downloaded = 500;
-    let total_size = 4120.0;
-
     while !remaining_blobs.is_empty() {
         let ((size, blob_bytes, sender), _index, remaining) =
             futures::future::select_all(remaining_blobs).await;
         sender.unwrap().send(Ok(blob_bytes)).unwrap();
-        total_downloaded += size;
+        total_downloaded_progress += size;
         total_bytes_downloaded += blob_bytes;
 
         assert_eq!(
@@ -177,7 +198,7 @@ async fn progress_reporting_fetch_multiple_blobs_packageless() {
                     .info(info)
                     .progress(
                         Progress::builder()
-                            .fraction_completed(total_downloaded / total_size)
+                            .fraction_completed(total_downloaded_progress / total_size)
                             .bytes_downloaded(total_bytes_downloaded)
                             .build()
                     )
