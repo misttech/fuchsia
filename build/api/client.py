@@ -736,8 +736,22 @@ def _find_bazel_wrapper_target(
     build_dir: Path,
     outputs: "gn_ninja_outputs.NinjaOutputsBase",
     qualifier: "gn_labels.GnLabelQualifier",
-) -> tuple[list[str], str | None] | None:
-    """Find the GN wrapper target or direct Bazel command for a Bazel target."""
+) -> tuple[str, list[str], str]:
+    """Find the GN wrapper target or direct Bazel command for a Bazel target.
+
+    Args:
+        label: The target label to look up (e.g. "//tools/foo:bar").
+        build_dir: Path to Ninja build directory.
+        outputs: Ninja outputs database for mapping stamp files to GN labels.
+        qualifier: Helper to qualify GN labels and format build args.
+
+    Returns:
+        A tuple of (gn_target, gn_args, bazel_target) where:
+          - gn_target: The matching GN wrapper target label, or "" if not found.
+          - gn_args: A list of build arguments for the GN target, or [].
+          - bazel_target: A direct Bazel command hint if applicable, or "".
+        If no matching wrapper is found, returns ("", [], "").
+    """
     target_label = _normalize_label(label)
 
     # 1. Check bazel_root_targets.json (host tools)
@@ -749,6 +763,7 @@ def _find_bazel_wrapper_target(
             if gn_target:
                 bazel_arg = f"@{target_label}"
                 return (
+                    gn_target,
                     qualifier.label_to_build_args(gn_target),
                     f"fx build --host {bazel_arg}",
                 )
@@ -758,9 +773,13 @@ def _find_bazel_wrapper_target(
         if _normalize_label(item.get("bazel_target", "")) == target_label:
             stamp = item.get("stamp_path")
             if stamp and (gn_target := outputs.path_to_gn_label(stamp)):
-                return (qualifier.label_to_build_args(gn_target), None)
+                return (
+                    gn_target,
+                    qualifier.label_to_build_args(gn_target),
+                    "",
+                )
 
-    return None
+    return ("", [], "")
 
 
 def resolve_gn_labels_to_ninja_paths(
@@ -806,11 +825,20 @@ def resolve_gn_labels_to_ninja_paths(
             if paths:
                 all_paths.extend(paths)
                 continue
-            bazel_hint = _find_bazel_wrapper_target(
+            gn_target, gn_args, direct_bazel = _find_bazel_wrapper_target(
                 qualified_label, build_dir, outputs, qualifier
             )
-            if bazel_hint:
-                gn_args, direct_bazel = bazel_hint
+            if gn_target:
+                qualified_gn = qualifier.qualify_label(gn_target)
+                wrapper_paths = outputs.gn_label_to_paths(qualified_gn)
+                if wrapper_paths:
+                    all_paths.extend(wrapper_paths)
+                    gn_cmd = f"fx build {' '.join(gn_args)}"
+                    print(
+                        f"NOTE: Auto-mapped Bazel target '{label}' to GN wrapper '{gn_cmd}'.",
+                        file=sys.stderr,
+                    )
+                    continue
                 gn_cmd = f"fx build {' '.join(gn_args)}"
                 msg = (
                     f"Unknown GN label (not in the configured graph): {label}\n"

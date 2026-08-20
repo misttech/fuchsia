@@ -538,7 +538,11 @@ class ClientTest(ClientTestBase):
         )
 
     def test_gn_labels_to_ninja_paths_bazel_hints(self) -> None:
-        # Test Bazel host target hint from bazel_root_targets.json
+        # Test Bazel host target auto-mapping from bazel_root_targets.json
+        self._ninja_outputs[
+            "//build/bazel/host:bazel_root_host_tools.bar(//build/toolchain:host_y64)"
+        ] = ["host_y64/bar"]
+        _write_json(self._build_dir / "ninja_outputs.json", self._ninja_outputs)
         _write_json(
             self._build_dir / "bazel_root_targets.json",
             [
@@ -549,15 +553,13 @@ class ClientTest(ClientTestBase):
                 }
             ],
         )
-        self.assert_error(
+        self.assert_output(
             ["gn_label_to_ninja_paths", "//tools/foo:bar"],
-            "ERROR: Unknown GN label (not in the configured graph): //tools/foo:bar\n"
-            "NOTE: '//tools/foo:bar' is a Bazel target wrapped by GN.\n"
-            "      Did you mean: fx build --host //build/bazel/host:bazel_root_host_tools.bar\n"
-            "      Or for direct Bazel: fx build --host @//tools/foo:bar\n",
+            expected_out="host_y64/bar\n",
+            expected_err="NOTE: Auto-mapped Bazel target '//tools/foo:bar' to GN wrapper 'fx build --host //build/bazel/host:bazel_root_host_tools.bar'.\n",
         )
 
-        # Test Bazel platform target hint from bazel_target_infos.json
+        # Test Bazel platform target auto-mapping from bazel_target_infos.json
         self._ninja_outputs["//src/devices/board:vim3_wrapper"] = [
             "obj/src/devices/board/vim3_wrapper.stamp"
         ]
@@ -571,11 +573,28 @@ class ClientTest(ClientTestBase):
                 }
             ],
         )
-        self.assert_error(
+        self.assert_output(
             ["gn_label_to_ninja_paths", "//src/devices/board:vim3"],
-            "ERROR: Unknown GN label (not in the configured graph): //src/devices/board:vim3\n"
-            "NOTE: '//src/devices/board:vim3' is a Bazel target wrapped by GN.\n"
-            "      Did you mean: fx build //src/devices/board:vim3_wrapper\n",
+            expected_out="obj/src/devices/board/vim3_wrapper.stamp\n",
+            expected_err="NOTE: Auto-mapped Bazel target '//src/devices/board:vim3' to GN wrapper 'fx build //src/devices/board:vim3_wrapper'.\n",
+        )
+
+        # Test fallback when wrapper exists in JSON but not in Ninja outputs
+        _write_json(
+            self._build_dir / "bazel_root_targets.json",
+            [
+                {
+                    "bazel_label": "//tools/unbuilt:tool",
+                    "host_bin_label": "//build/bazel/host:unbuilt.tool(//build/toolchain:host_y64)",
+                }
+            ],
+        )
+        self.assert_error(
+            ["gn_label_to_ninja_paths", "//tools/unbuilt:tool"],
+            "ERROR: Unknown GN label (not in the configured graph): //tools/unbuilt:tool\n"
+            "NOTE: '//tools/unbuilt:tool' is a Bazel target wrapped by GN.\n"
+            "      Did you mean: fx build --host //build/bazel/host:unbuilt.tool\n"
+            "      Or for direct Bazel: fx build --host @//tools/unbuilt:tool\n",
         )
 
         # Test shorthand label qualification (e.g. //tools/foo matching //tools/foo:foo)
