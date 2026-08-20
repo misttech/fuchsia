@@ -18,6 +18,7 @@ use futures::stream::StreamExt;
 use futures::{FutureExt, channel};
 use log::info;
 use netext::{MultithreadedTokioAsyncWrapper, TcpListenerStream, TokioAsyncReadExt};
+use safe_string::TermSafe;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use signal_hook::consts::signal::SIGINT;
@@ -83,7 +84,7 @@ impl StarnixAdbCommand {
         context: &EnvironmentContext,
         rcs_connector: &Connector<RemoteControlProxyHolder>,
         socket_addr: SshAddrHolder,
-        nodename: Option<String>,
+        nodename: Option<TermSafe>,
     ) -> Result<AdbCommandOutput> {
         self.check_adb()?;
         match self.subcommand {
@@ -142,7 +143,7 @@ impl AdbConnectArgs {
         context: &EnvironmentContext,
         adb: String,
         ssh_address: &SshAddrHolder,
-        nodename: Option<String>,
+        nodename: Option<TermSafe>,
     ) -> Result<ConnectOutput> {
         let Self {} = self;
         if ssh_address.port() != 22 && ssh_address.port() != 8022 {

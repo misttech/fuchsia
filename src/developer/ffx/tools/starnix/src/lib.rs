@@ -80,7 +80,7 @@ impl FfxMain for StarnixTool {
                     &self.context,
                     &self.rcs_connector,
                     self.ssh_addr?,
-                    (*self.nodename.await?).clone(),
+                    self.nodename.await?.into_inner(),
                 )
                 .await
                 .map(StarnixToolOutput::Adb),
