@@ -53,5 +53,8 @@ fuchsia_unittest_package("fuchsia-url-tests") {
 
 group("tests") {
   testonly = true
-  deps = [ ":fuchsia-url-tests" ]
+  deps = [
+    ":fuchsia-url-tests",
+    ":fuchsia-url_test($host_toolchain)",
+  ]
 }

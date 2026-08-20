@@ -3349,14 +3349,14 @@ alias(
 )
 
 alias(
-    name = "url-2.3.1",
-    actual = "//third_party/rust_crates/vendor/url-2.3.1:url",
+    name = "url-2.5.8",
+    actual = "//third_party/rust_crates/vendor/url-2.5.8:url",
     tags = ["manual"],
 )
 
 alias(
     name = "url",
-    actual = "//third_party/rust_crates/vendor/url-2.3.1:url",
+    actual = "//third_party/rust_crates/vendor/url-2.5.8:url",
     tags = ["manual"],
 )
 

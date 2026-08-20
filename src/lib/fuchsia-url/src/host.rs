@@ -73,7 +73,7 @@ mod tests {
         for host in ["fu:chsia.com", "fu#chsia.com", "fu?chsia.com", "fu/chsia.com"] {
             assert_eq!(
                 Host::parse(host.to_string()),
-                Err(ParseError::UrlParseError(url::ParseError::InvalidDomainCharacter)),
+                Err(ParseError::UrlParseError(url::ParseError::IdnaError)),
                 "the host string {:?}",
                 host
             );

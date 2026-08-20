@@ -265,7 +265,7 @@ unicode-segmentation = "1.13.2"
 unicode-width = "0.2.2"
 unicode-xid = "0.2.6"
 untrusted = "0.9"
-url = { version = "2.3", features = ["serde"] }
+url = { version = "2.5.8", features = ["serde"] }
 utf8parse = "0.2.2"
 uuid = { version = "1.23.3", features = ["serde", "v4"] }
 valico = "4.0.0"
@@ -751,6 +751,10 @@ rustflags = [
   "--cfg=httparse_simd",
   "--cfg=httparse_simd_neon_intrinsics",
 ]
+
+[gn.package.icu_normalizer_data."2.2.0"]
+
+[gn.package.icu_properties_data."2.2.0"]
 
 [gn.package.indexmap."1.9.2"]
 rustflags = ["--cfg=has_std"]
