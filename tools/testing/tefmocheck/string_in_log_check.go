@@ -462,6 +462,19 @@ func StringInLogsChecks() []FailureModeCheck {
 // fuchsiaLogChecks returns checks for logs that come from the target Fuchsia
 // device rather than from infrastructure host tools.
 func fuchsiaLogChecks() []FailureModeCheck {
+	// Ignore driver removal hangs as reboot_hang_test starts until device finishes shutdown
+	// or test ends.
+	hangOnStopExceptBlocks := []*logBlock{
+		{
+			startString: "Started executing 'test_reboot_to_bootloader_on_hang'",
+			endString:   "Shutting down debuglog",
+		},
+		{
+			startString: "Started executing 'test_reboot_to_bootloader_on_hang'",
+			endString:   "Finished executing 'test_reboot_to_bootloader_on_hang'",
+		},
+	}
+
 	ret := []FailureModeCheck{
 		// For b/513546752
 		&stringInLogCheck{
@@ -667,22 +680,21 @@ func fuchsiaLogChecks() []FailureModeCheck {
 		// For https://fxbug.dev/500045713
 		// This is for driver manager removal and bootup hangs.
 		&stringInLogCheck{
-			String:        "Full node removal hanging",
-			Type:          serialLogType,
-			AlwaysFlake:   true,
-			ExceptStrings: []string{"hang-on-stop"},
+			String:       "Full node removal hanging",
+			Type:         serialLogType,
+			AlwaysFlake:  true,
+			ExceptBlocks: hangOnStopExceptBlocks,
 		},
 		&stringInLogCheck{
-			String:        "Package node removal hanging",
-			Type:          serialLogType,
-			AlwaysFlake:   true,
-			ExceptStrings: []string{"hang-on-stop"},
+			String:      "Package node removal hanging",
+			Type:        serialLogType,
+			AlwaysFlake: true,
 		},
 		&stringInLogCheck{
-			String:        "waiting for driver's Stop() function and destructor finish running",
-			Type:          serialLogType,
-			AlwaysFlake:   true,
-			ExceptStrings: []string{"hang-on-stop"},
+			String:       "waiting for driver's Stop() function and destructor finish running",
+			Type:         serialLogType,
+			AlwaysFlake:  true,
+			ExceptBlocks: hangOnStopExceptBlocks,
 		},
 		&stringInLogCheck{
 			String:      "Deadline exceeded in the bootup tracker with:",
