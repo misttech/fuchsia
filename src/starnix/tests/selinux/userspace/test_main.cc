@@ -77,10 +77,55 @@ void PrepareTestEnvironment() {
   LoadPolicy(policy_path);
 }
 
+std::string g_initial_task_security_context;
+
+class TaskSecurityContextChecker : public ::testing::EmptyTestEventListener {
+ public:
+  void OnTestStart(const testing::TestInfo& test_info) override {
+    CheckSecurityContext(test_info, "start");
+  }
+
+  void OnTestEnd(const testing::TestInfo& test_info) override {
+    CheckSecurityContext(test_info, "end");
+  }
+
+ private:
+  void CheckSecurityContext(const testing::TestInfo& test_info, const char* phase) {
+    auto current_context = ReadTaskAttr("current");
+    if (current_context.is_error()) {
+      ADD_FAILURE() << "Failed to read current security context at " << phase << " of test "
+                    << test_info.test_suite_name() << "." << test_info.name() << ": "
+                    << strerror(current_context.error_value());
+      return;
+    }
+    if (current_context.value() != g_initial_task_security_context) {
+      ADD_FAILURE() << "Security context mismatch at " << phase << " of test "
+                    << test_info.test_suite_name() << "." << test_info.name() << ". Expected '"
+                    << g_initial_task_security_context << "', got '" << current_context.value()
+                    << "'";
+      // Reset back to initial context to avoid poisoning subsequent tests.
+      auto reset_result = WriteTaskAttr("current", g_initial_task_security_context);
+      if (reset_result.is_error()) {
+        ADD_FAILURE() << "Failed to reset security context back to '"
+                      << g_initial_task_security_context
+                      << "': " << strerror(reset_result.error_value());
+      }
+    }
+  }
+};
+
 class UserspaceTestEnvironment : public ::testing::Environment {
  public:
   void SetUp() override {
     PrepareTestEnvironment();
+
+    auto initial_context = ReadTaskAttr("current");
+    if (initial_context.is_error()) {
+      fprintf(stderr, "Failed to read initial security context: %s\n",
+              strerror(initial_context.error_value()));
+      _exit(1);
+    }
+    g_initial_task_security_context = initial_context.value();
 
     // gTest is documented as treating `Environment::SetUp` fatal failures as fatal, but does not
     // appear to actually do so, so we manually terminate the attempt on setup failures.
@@ -127,6 +172,7 @@ int main(int argc, char** argv) {
   ::testing::AddGlobalTestEnvironment(new UserspaceTestEnvironment);
 
   testing::TestEventListeners& listeners = testing::UnitTest::GetInstance()->listeners();
+  listeners.Append(new TaskSecurityContextChecker);
   // The `with_json_generation()` function can be used to get an `AuditChecker` which will
   // generate audit log JSON objects.
   if (parse_res.value().generate_json) {
