@@ -137,6 +137,9 @@ rustc_library("arch-rs") {
   name = "libarch"
   edition = "2024"
 
+  # Since the crate name is already "lib"-prefixed.
+  output_prefix_override = true
+
   sources = [
     "src/arm64/cache.rs",
     "src/arm64/feature.rs",
