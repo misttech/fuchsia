@@ -204,8 +204,7 @@ impl PartialEq<TrackedBss> for BssDescription {
 pub struct InternalSavedNetworkData {
     pub has_ever_connected: bool,
     pub recent_failures: Vec<config_management::ConnectFailure>,
-    pub past_connections:
-        config_management::HistoricalListsByBssid<config_management::PastConnectionData>,
+    pub past_connections: std::collections::HashMap<Bssid, config_management::PastConnectionList>,
 }
 #[derive(Clone)]
 // To avoid printing PII, only allow Debug in tests, runtime logging should use Display

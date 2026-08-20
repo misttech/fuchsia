@@ -44,6 +44,7 @@ const PENDING_ROAM_TIMEOUT: zx::MonotonicDuration = zx::MonotonicDuration::from_
 
 type State = state_machine::State<ExitReason>;
 type ReqStream = stream::Fuse<mpsc::Receiver<ManualRequest>>;
+pub type TrackedSignals = HistoricalList<types::TimestampedSignal, NUM_PAST_SCORES>;
 
 #[derive(Clone)]
 struct PendingRoam {
@@ -580,7 +581,7 @@ struct ConnectedOptions {
     ess_connect_start_time: fasync::MonotonicInstant,
     bss_connect_start_time: fasync::MonotonicInstant,
     initial_signal: types::Signal,
-    tracked_signals: HistoricalList<types::TimestampedSignal>,
+    tracked_signals: TrackedSignals,
     roam_monitor_sender: RoamDataSender,
     roam_request_receiver: mpsc::Receiver<PolicyRoamRequest>,
     post_connect_metric_timer: Pin<Box<fasync::Timer>>,
@@ -600,7 +601,7 @@ impl ConnectedOptions {
         network_is_likely_hidden: bool,
     ) -> Self {
         // Tracked signals
-        let mut past_signals = HistoricalList::new(NUM_PAST_SCORES);
+        let mut past_signals = TrackedSignals::new();
         let initial_signal = ap_state.tracked.signal;
         past_signals.add(types::TimestampedSignal {
             time: fasync::MonotonicInstant::now(),
@@ -627,7 +628,7 @@ impl ConnectedOptions {
             ess_connect_start_time: fasync::MonotonicInstant::now(),
             bss_connect_start_time: fasync::MonotonicInstant::now(),
             initial_signal,
-            tracked_signals: HistoricalList::new(NUM_PAST_SCORES),
+            tracked_signals: TrackedSignals::new(),
             roam_monitor_sender,
             roam_request_receiver,
             post_connect_metric_timer: Box::pin(fasync::Timer::new(
@@ -1192,7 +1193,7 @@ fn update_internal_state_on_roam_success(
     );
     *options.ap_state = ap_state;
     options.bss_connect_start_time = fasync::MonotonicInstant::now();
-    options.tracked_signals = HistoricalList::new(NUM_PAST_SCORES);
+    options.tracked_signals = TrackedSignals::new();
     options.initial_signal = options.ap_state.tracked.signal;
     options.tracked_signals.add(types::TimestampedSignal {
         time: fasync::MonotonicInstant::now(),

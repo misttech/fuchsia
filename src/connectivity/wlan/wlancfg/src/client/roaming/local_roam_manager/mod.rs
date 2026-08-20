@@ -14,7 +14,7 @@ use futures::channel::mpsc;
 use futures::future::LocalBoxFuture;
 use futures::lock::Mutex;
 use futures::stream::FuturesUnordered;
-use futures::{select, StreamExt};
+use futures::{StreamExt, select};
 use log::{debug, error};
 use std::convert::Infallible;
 use std::sync::Arc;
@@ -105,7 +105,7 @@ pub async fn serve_local_roam_manager_requests(
     // Queue of created monitor futures.
     let mut monitor_futs: FuturesUnordered<LocalBoxFuture<'static, Result<(), anyhow::Error>>> =
         FuturesUnordered::new();
-    let past_roams = Arc::new(Mutex::new(PastRoamList::new(NUM_PLATFORM_MAX_ROAMS_PER_DAY)));
+    let past_roams = Arc::new(Mutex::new(PastRoamList::new()));
 
     loop {
         select! {
@@ -134,8 +134,8 @@ mod tests {
     use super::*;
     use crate::telemetry::TelemetryEvent;
     use crate::util::testing::{
-        generate_random_ap_state, generate_random_network_identifier, generate_random_password,
-        generate_random_roaming_connection_data, FakeSavedNetworksManager,
+        FakeSavedNetworksManager, generate_random_ap_state, generate_random_network_identifier,
+        generate_random_password, generate_random_roaming_connection_data,
     };
     use assert_matches::assert_matches;
     use fidl_fuchsia_wlan_internal::SignalReportIndication;
@@ -178,7 +178,7 @@ mod tests {
         let (telemetry_sender, _) = mpsc::channel::<TelemetryEvent>(100);
         let telemetry_sender = TelemetrySender::new(telemetry_sender);
         let saved_networks = Arc::new(FakeSavedNetworksManager::new());
-        let past_roams = Arc::new(Mutex::new(PastRoamList::new(NUM_PLATFORM_MAX_ROAMS_PER_DAY)));
+        let past_roams = Arc::new(Mutex::new(PastRoamList::new()));
         let monitor = create_roam_monitor(
             roaming_policy,
             generate_random_ap_state(),

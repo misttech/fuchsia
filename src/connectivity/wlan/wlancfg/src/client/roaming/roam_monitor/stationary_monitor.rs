@@ -253,7 +253,7 @@ mod test {
         let (telemetry_sender, telemetry_receiver) = mpsc::channel::<TelemetryEvent>(100);
         let telemetry_sender = TelemetrySender::new(telemetry_sender);
         let saved_networks = Arc::new(FakeSavedNetworksManager::new());
-        let past_roams = Arc::new(Mutex::new(PastRoamList::new(NUM_MAX_ROAMS_PER_DAY)));
+        let past_roams = Arc::new(Mutex::new(PastRoamList::new()));
         // Set the fake saved networks manager to respond that the network is not single BSS by
         // default since most tests are for cases where roaming should be considered.
         saved_networks.set_is_single_bss_response(false);
@@ -272,7 +272,7 @@ mod test {
         let (telemetry_sender, telemetry_receiver) = mpsc::channel::<TelemetryEvent>(100);
         let telemetry_sender = TelemetrySender::new(telemetry_sender);
         let saved_networks = Arc::new(FakeSavedNetworksManager::new());
-        let past_roams = Arc::new(Mutex::new(PastRoamList::new(NUM_MAX_ROAMS_PER_DAY)));
+        let past_roams = Arc::new(Mutex::new(PastRoamList::new()));
         let monitor = StationaryMonitor {
             connection_data,
             telemetry_sender,

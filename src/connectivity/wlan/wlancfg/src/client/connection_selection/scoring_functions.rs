@@ -243,8 +243,8 @@ mod test {
         // Record a short uptime for the worse network and a long enough uptime for the better one.
         let short_uptime_data = past_connection_with_bssid_uptime(bss_worse.bssid, short_uptime);
         let okay_uptime_data = past_connection_with_bssid_uptime(bss_better.bssid, okay_uptime);
-        internal_data.past_connections.add(bss_worse.bssid, short_uptime_data);
-        internal_data.past_connections.add(bss_better.bssid, okay_uptime_data);
+        internal_data.past_connections.entry(bss_worse.bssid).or_default().add(short_uptime_data);
+        internal_data.past_connections.entry(bss_better.bssid).or_default().add(okay_uptime_data);
         let shared_candidate_data = types::ScannedCandidate {
             saved_network_info: internal_data,
             ..generate_random_scanned_candidate()
@@ -368,7 +368,7 @@ mod test {
         let short_uptime = zx::MonotonicDuration::from_seconds(30);
         let data = past_connection_with_bssid_uptime(bss.bssid, short_uptime);
         for _ in 0..10 {
-            internal_data.past_connections.add(bss.bssid, data);
+            internal_data.past_connections.entry(bss.bssid).or_default().add(data);
         }
         let scanned_candidate = types::ScannedCandidate {
             bss,

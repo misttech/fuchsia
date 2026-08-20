@@ -13,14 +13,14 @@ pub trait Timestamped {
 /// Struct for list that stores historical data in a VecDeque, up to the some number of most
 /// recent entries.
 #[derive(Clone, Debug, PartialEq)]
-pub struct HistoricalList<T: Timestamped>(pub VecDeque<T>);
+pub struct HistoricalList<T: Timestamped, const N: usize>(pub VecDeque<T>);
 
-impl<T> HistoricalList<T>
+impl<T, const N: usize> HistoricalList<T, N>
 where
     T: Timestamped + Clone,
 {
-    pub fn new(capacity: usize) -> Self {
-        Self(VecDeque::with_capacity(capacity))
+    pub fn new() -> Self {
+        Self(VecDeque::with_capacity(N))
     }
 
     /// Add a new entry, purging the oldest if at capacity. Entry must be newer than the most recent
@@ -32,7 +32,7 @@ where
             warn!("HistoricalList entry must be newer than existing elements.");
             return;
         }
-        if self.0.len() == self.0.capacity() {
+        if self.0.len() == N {
             let _ = self.0.pop_front();
         }
         self.0.push_back(historical_data);
@@ -76,6 +76,15 @@ where
     }
 }
 
+impl<T, const N: usize> Default for HistoricalList<T, N>
+where
+    T: Timestamped + Clone,
+{
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 // Allow for storing just timestamps
 impl Timestamped for zx::MonotonicInstant {
     fn time(&self) -> fuchsia_async::MonotonicInstant {
@@ -97,7 +106,7 @@ mod tests {
         fuchsia_async::MonotonicInstant::from_nanos(1_000_000_000);
     fn create_test_list(
         earlist_time: fuchsia_async::MonotonicInstant,
-    ) -> HistoricalList<fuchsia_async::MonotonicInstant> {
+    ) -> HistoricalList<fuchsia_async::MonotonicInstant, 4> {
         HistoricalList(VecDeque::from_iter([
             earlist_time,
             earlist_time + MonotonicDuration::from_seconds(1),

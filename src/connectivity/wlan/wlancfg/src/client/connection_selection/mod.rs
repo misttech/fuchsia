@@ -494,7 +494,9 @@ impl types::ScannedCandidate {
     pub fn recent_short_connections(&self) -> usize {
         self.saved_network_info
             .past_connections
-            .get_list_for_bss(&self.bss.bssid)
+            .get(&self.bss.bssid)
+            .cloned()
+            .unwrap_or_default()
             .get_recent(fasync::MonotonicInstant::now() - RECENT_DISCONNECT_WINDOW)
             .iter()
             .filter(|d| d.connection_uptime < SHORT_CONNECT_DURATION)
@@ -649,7 +651,7 @@ fn merge_config_and_scan_data(
             network_has_multiple_bss: multiple_bss_candidates,
             saved_network_info: InternalSavedNetworkData {
                 has_ever_connected: network_config.has_ever_connected,
-                recent_failures: network_config.perf_stats.connect_failures.get_recent_for_network(
+                recent_failures: network_config.get_recent_connection_failures(
                     fasync::MonotonicInstant::now() - RECENT_FAILURE_WINDOW,
                 ),
                 past_connections: network_config.perf_stats.past_connections.clone(),
@@ -696,12 +698,9 @@ async fn merge_saved_networks_and_scan_data(
                     network_has_multiple_bss: multiple_bss_candidates,
                     saved_network_info: InternalSavedNetworkData {
                         has_ever_connected: saved_config.has_ever_connected,
-                        recent_failures: saved_config
-                            .perf_stats
-                            .connect_failures
-                            .get_recent_for_network(
-                                fasync::MonotonicInstant::now() - RECENT_FAILURE_WINDOW,
-                            ),
+                        recent_failures: saved_config.get_recent_connection_failures(
+                            fasync::MonotonicInstant::now() - RECENT_FAILURE_WINDOW,
+                        ),
                         past_connections: saved_config.perf_stats.past_connections.clone(),
                     },
                     bss,
@@ -748,7 +747,6 @@ fn record_metrics_on_scan(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config_management::network_config::HistoricalListsByBssid;
     use crate::config_management::{ConnectFailure, FailureReason, SavedNetworksManager};
     use crate::util::testing::fakes::{FakeSavedNetworksManager, FakeScanRequester};
     use crate::util::testing::{
@@ -926,14 +924,13 @@ mod tests {
             .await;
 
         // build our expected result
-        let failure_time = test_values
+        let saved_config = test_values
             .real_saved_network_manager
             .lookup(&test_id_1.clone())
             .await
-            .expect("failed to get config")
-            .perf_stats
-            .connect_failures
-            .get_recent_for_network(fasync::MonotonicInstant::now() - RECENT_FAILURE_WINDOW)
+            .expect("failed to get config");
+        let failure_time = saved_config
+            .get_recent_connection_failures(fasync::MonotonicInstant::now() - RECENT_FAILURE_WINDOW)
             .first()
             .expect("failed to get recent failure")
             .time;
@@ -945,7 +942,7 @@ mod tests {
         let expected_internal_data_1 = InternalSavedNetworkData {
             has_ever_connected: true,
             recent_failures: recent_failures.clone(),
-            past_connections: HistoricalListsByBssid::new(),
+            past_connections: HashMap::new(),
         };
         let wpa3_authenticator = select_authentication_method(
             HashSet::from([SecurityDescriptor::WPA3_PERSONAL]),
@@ -991,7 +988,7 @@ mod tests {
                 saved_network_info: InternalSavedNetworkData {
                     has_ever_connected: false,
                     recent_failures: Vec::new(),
-                    past_connections: HistoricalListsByBssid::new(),
+                    past_connections: HashMap::new(),
                 },
                 bss: mock_scan_results[1].entries[0].clone(),
                 authenticator: open_authenticator.clone(),

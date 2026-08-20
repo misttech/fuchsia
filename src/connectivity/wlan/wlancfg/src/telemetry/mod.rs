@@ -6,7 +6,9 @@ mod convert;
 mod windowed_stats;
 
 use crate::client;
+
 use crate::client::roaming::lib::{PolicyRoamRequest, RoamReason};
+use crate::client::state_machine::TrackedSignals;
 use crate::mode_management::{Defect, IfaceFailure};
 use crate::telemetry::windowed_stats::WindowedStats;
 use crate::util::pseudo_energy::{EwmaSignalData, RssiVelocity};
@@ -128,7 +130,7 @@ pub struct DisconnectInfo {
     pub disconnect_source: fidl_sme::DisconnectSource,
     pub previous_connect_reason: client::types::ConnectReason,
     pub ap_state: client::types::ApState,
-    pub signals: HistoricalList<client::types::TimestampedSignal>,
+    pub signals: TrackedSignals,
 }
 
 pub trait DisconnectSourceExt {
@@ -341,7 +343,7 @@ pub enum TelemetryEvent {
     PostConnectionSignals {
         connect_time: fasync::MonotonicInstant,
         signal_at_connect: client::types::Signal,
-        signals: HistoricalList<client::types::TimestampedSignal>,
+        signals: TrackedSignals,
     },
     /// Notify telemetry of an API request to start client connections.
     StartClientConnectionsRequest,
@@ -3527,11 +3529,11 @@ impl StatsLogger {
         ));
     }
 
-    async fn log_post_connection_score_deltas_by_signal(
+    async fn log_post_connection_score_deltas_by_signal<const N: usize>(
         &mut self,
         connect_time: fasync::MonotonicInstant,
         signal_at_connect: client::types::Signal,
-        signals: HistoricalList<client::types::TimestampedSignal>,
+        signals: HistoricalList<client::types::TimestampedSignal, N>,
     ) {
         // The following time ranges are 100ms longer than the corresponding duration dimensions.
         // Scores should be logged every 1 second, but the extra time provides a buffer reports are
@@ -3579,10 +3581,10 @@ impl StatsLogger {
         .await;
     }
 
-    async fn log_pre_disconnect_score_deltas_by_signal(
+    async fn log_pre_disconnect_score_deltas_by_signal<const N: usize>(
         &mut self,
         connect_duration: zx::MonotonicDuration,
-        mut signals: HistoricalList<client::types::TimestampedSignal>,
+        mut signals: HistoricalList<client::types::TimestampedSignal, N>,
     ) {
         // The following time ranges are 100ms longer than the corresponding duration dimensions.
         // Scores should be logged every 1 second, but the extra time provides a buffer reports are
@@ -3633,11 +3635,11 @@ impl StatsLogger {
         }
     }
 
-    async fn log_post_connection_rssi_deltas(
+    async fn log_post_connection_rssi_deltas<const N: usize>(
         &mut self,
         connect_time: fasync::MonotonicInstant,
         signal_at_connect: client::types::Signal,
-        signals: HistoricalList<client::types::TimestampedSignal>,
+        signals: HistoricalList<client::types::TimestampedSignal, N>,
     ) {
         // The following time ranges are 100ms longer than the corresponding duration dimensions.
         // RSSI should be logged every 1 second, but the extra time provides a buffer reports are
@@ -3685,10 +3687,10 @@ impl StatsLogger {
         .await;
     }
 
-    async fn log_pre_disconnect_rssi_deltas(
+    async fn log_pre_disconnect_rssi_deltas<const N: usize>(
         &mut self,
         connect_duration: zx::MonotonicDuration,
-        mut signals: HistoricalList<client::types::TimestampedSignal>,
+        mut signals: HistoricalList<client::types::TimestampedSignal, N>,
     ) {
         // The following time ranges are 100ms longer than the corresponding duration dimensions.
         // RSSI should be logged every 1 second, but the extra time provides a buffer reports are
@@ -3749,9 +3751,9 @@ impl StatsLogger {
         }
     }
 
-    async fn log_short_duration_connection_metrics(
+    async fn log_short_duration_connection_metrics<const N: usize>(
         &mut self,
-        signals: HistoricalList<client::types::TimestampedSignal>,
+        signals: HistoricalList<client::types::TimestampedSignal, N>,
         disconnect_source: fidl_sme::DisconnectSource,
         previous_connect_reason: client::types::ConnectReason,
     ) {
@@ -6652,7 +6654,7 @@ mod tests {
 
         let channel = generate_random_channel();
         let ap_state = random_bss_description!(Wpa2, channel: channel).into();
-        let mut signals = HistoricalList::new(5);
+        let mut signals = HistoricalList::new();
         signals.add(client::types::TimestampedSignal {
             signal: client::types::Signal { rssi_dbm: -30, snr_db: 60 },
             time: now,
@@ -10377,7 +10379,7 @@ mod tests {
             disconnect_source: fidl_disconnect_info.disconnect_source,
             previous_connect_reason: client::types::ConnectReason::IdleInterfaceAutoconnect,
             ap_state: random_bss_description!(Wpa2).into(),
-            signals: HistoricalList::new(8),
+            signals: HistoricalList::new(),
         }
     }
 

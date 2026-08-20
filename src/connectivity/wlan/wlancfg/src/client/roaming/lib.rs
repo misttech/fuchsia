@@ -168,4 +168,4 @@ impl Timestamped for RoamEvent {
     }
 }
 
-pub type PastRoamList = HistoricalList<RoamEvent>;
+pub type PastRoamList = HistoricalList<RoamEvent, NUM_PLATFORM_MAX_ROAMS_PER_DAY>;

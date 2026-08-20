@@ -352,8 +352,7 @@ impl SavedNetworksManagerApi for SavedNetworksManager {
                 }
                 (fidl_ieee80211::StatusCode::Canceled, _) => {}
                 (_, true) => {
-                    network.perf_stats.connect_failures.add(
-                        bssid,
+                    network.perf_stats.connect_failures.entry(bssid).or_default().add(
                         ConnectFailure {
                             time: fasync::MonotonicInstant::now(),
                             reason: FailureReason::CredentialRejected,
@@ -362,8 +361,7 @@ impl SavedNetworksManagerApi for SavedNetworksManager {
                     );
                 }
                 (_, _) => {
-                    network.perf_stats.connect_failures.add(
-                        bssid,
+                    network.perf_stats.connect_failures.entry(bssid).or_default().add(
                         ConnectFailure {
                             time: fasync::MonotonicInstant::now(),
                             reason: FailureReason::GeneralFailure,
@@ -394,7 +392,7 @@ impl SavedNetworksManagerApi for SavedNetworksManager {
             }
         };
         if &network.credential == credential {
-            network.perf_stats.past_connections.add(bssid, data);
+            network.perf_stats.past_connections.entry(bssid).or_default().add(data);
         }
     }
 
@@ -512,7 +510,9 @@ impl SavedNetworksManagerApi for SavedNetworksManager {
             .await
             .get(id)
             .filter(|config| &config.credential == credential)
-            .map(|config| config.perf_stats.past_connections.get_list_for_bss(bssid))
+            .map(|config| {
+                config.perf_stats.past_connections.get(bssid).cloned().unwrap_or_default()
+            })
             .unwrap_or_else(|| new_past_connection_list())
     }
 }
@@ -598,8 +598,8 @@ pub fn security_is_compatible(
 mod tests {
     use super::*;
     use crate::config_management::{
-        HistoricalListsByBssid, PROB_HIDDEN_DEFAULT, PROB_HIDDEN_IF_CONNECT_ACTIVE,
-        PROB_HIDDEN_IF_CONNECT_PASSIVE, PROB_HIDDEN_IF_SEEN_PASSIVE,
+        PROB_HIDDEN_DEFAULT, PROB_HIDDEN_IF_CONNECT_ACTIVE, PROB_HIDDEN_IF_CONNECT_PASSIVE,
+        PROB_HIDDEN_IF_SEEN_PASSIVE,
     };
     use crate::util::testing::{generate_random_bss, generate_string, random_connection_data};
     use assert_matches::assert_matches;
@@ -1127,8 +1127,7 @@ mod tests {
         assert_eq!(1, saved_networks.known_network_count().await);
         let saved_config =
             saved_networks.lookup(&network_id).await.expect("Failed to get saved network config");
-        let connect_failures =
-            saved_config.perf_stats.connect_failures.get_recent_for_network(before_recording);
+        let connect_failures = saved_config.get_recent_connection_failures(before_recording);
         assert_matches!(connect_failures, failures => {
             // There are 2 failures. One is a general failure and one rejected credentials failure.
             assert_eq!(failures.len(), 2);
@@ -1192,8 +1191,7 @@ mod tests {
         assert_eq!(1, saved_networks.known_network_count().await);
         let saved_config =
             saved_networks.lookup(&network_id).await.expect("Failed to get saved network config");
-        let connect_failures =
-            saved_config.perf_stats.connect_failures.get_recent_for_network(before_recording);
+        let connect_failures = saved_config.get_recent_connection_failures(before_recording);
         assert_eq!(0, connect_failures.len());
     }
 
@@ -1220,13 +1218,9 @@ mod tests {
         saved_networks.record_disconnect(&id, &credential, data).await;
 
         // Check that a data was recorded about the connection that just ended.
-        let recent_connections = saved_networks
-            .lookup(&id)
-            .await
-            .expect("Failed to get saved network")
-            .perf_stats
-            .past_connections
-            .get_recent_for_network(fasync::MonotonicInstant::INFINITE_PAST);
+        let saved_config = saved_networks.lookup(&id).await.expect("Failed to get saved network");
+        let recent_connections =
+            saved_config.get_recent_connections(fasync::MonotonicInstant::INFINITE_PAST);
         assert_matches!(recent_connections.as_slice(), [connection_data] => {
             assert_eq!(connection_data, &data);
         })
@@ -2096,20 +2090,20 @@ mod tests {
         let credential = Credential::Password(b"some_password".to_vec());
         let mut config = NetworkConfig::new(id.clone(), credential.clone(), true, None)
             .expect("failed to create config");
-        let mut past_connections = HistoricalListsByBssid::new();
+        let mut past_connections = HashMap::<_, PastConnectionList>::new();
 
         // Add two past connections with the same bssid
         let data_1 = random_connection_data();
         let bssid_1 = data_1.bssid;
         let mut data_2 = random_connection_data();
         data_2.bssid = bssid_1;
-        past_connections.add(bssid_1, data_1);
-        past_connections.add(bssid_1, data_2);
+        past_connections.entry(bssid_1).or_default().add(data_1);
+        past_connections.entry(bssid_1).or_default().add(data_2);
 
         // Add a past connection with different bssid
         let data_3 = random_connection_data();
         let bssid_2 = data_3.bssid;
-        past_connections.add(bssid_2, data_3);
+        past_connections.entry(bssid_2).or_default().add(data_3);
         config.perf_stats.past_connections = past_connections;
 
         // Create SavedNetworksManager with configs that have past connections

@@ -12,7 +12,8 @@ use log::info;
 use std::cmp::Reverse;
 use std::collections::{HashMap, HashSet};
 use std::fmt::{self, Debug};
-use wlan_common::historical_list::{HistoricalList, Timestamped};
+pub use wlan_common::historical_list::HistoricalList;
+use wlan_common::historical_list::Timestamped;
 use wlan_common::security::wep::WepKey;
 use wlan_common::security::wpa::WpaDescriptor;
 use wlan_common::security::wpa::credential::{Passphrase, Psk};
@@ -21,6 +22,7 @@ use wlan_common::security::{SecurityAuthenticator, SecurityDescriptor};
 /// The max number of connection results we will store per BSS at a time. For now, this number is
 /// chosen arbitartily.
 pub const NUM_CONNECTION_RESULTS_PER_BSS: usize = 10;
+pub const MAX_PAST_CONNECTIONS: usize = 120;
 /// constants for the constraints on valid credential values
 const WEP_40_ASCII_LEN: usize = 5;
 const WEP_40_HEX_LEN: usize = 10;
@@ -73,8 +75,8 @@ impl HiddenProbabilityStats {
 /// and maintain connection with a network and if it is weakening. Used in choosing best network.
 #[derive(Clone, Debug, PartialEq)]
 pub struct PerformanceStats {
-    pub connect_failures: HistoricalListsByBssid<ConnectFailure>,
-    pub past_connections: HistoricalListsByBssid<PastConnectionData>,
+    pub connect_failures: HashMap<client_types::Bssid, ConnectFailureList>,
+    pub past_connections: HashMap<client_types::Bssid, PastConnectionList>,
 }
 
 impl Default for PerformanceStats {
@@ -85,10 +87,21 @@ impl Default for PerformanceStats {
 
 impl PerformanceStats {
     pub fn new() -> Self {
-        Self {
-            connect_failures: HistoricalListsByBssid::new(),
-            past_connections: HistoricalListsByBssid::new(),
-        }
+        Self { connect_failures: HashMap::new(), past_connections: HashMap::new() }
+    }
+
+    pub fn get_recent_connection_failures(
+        &self,
+        earliest_time: fasync::MonotonicInstant,
+    ) -> Vec<ConnectFailure> {
+        get_recent_for_bssid_map(&self.connect_failures, earliest_time)
+    }
+
+    pub fn get_recent_connections(
+        &self,
+        earliest_time: fasync::MonotonicInstant,
+    ) -> Vec<PastConnectionData> {
+        get_recent_for_bssid_map(&self.past_connections, earliest_time)
     }
 }
 
@@ -173,58 +186,24 @@ impl Timestamped for PastConnectionData {
     }
 }
 
-/// Data structures for storing historical connection information for a BSS.
-pub type PastConnectionList = HistoricalList<PastConnectionData>;
+pub type ConnectFailureList = HistoricalList<ConnectFailure, NUM_CONNECTION_RESULTS_PER_BSS>;
+pub type PastConnectionList = HistoricalList<PastConnectionData, MAX_PAST_CONNECTIONS>;
 pub fn new_past_connection_list() -> PastConnectionList {
-    PastConnectionList::new(NUM_CONNECTION_RESULTS_PER_BSS)
+    PastConnectionList::new()
 }
-
-/// Struct for map from BSSID to HistoricalList
-#[derive(Clone, Debug, PartialEq)]
-pub struct HistoricalListsByBssid<T: Timestamped>(HashMap<client_types::Bssid, HistoricalList<T>>);
-
-impl<T> Default for HistoricalListsByBssid<T>
+/// Retrieve list of entries to any BSS with a time more recent than earliest_time, sorted
+/// from oldest to newest. May be empty.
+fn get_recent_for_bssid_map<T, const N: usize>(
+    map: &HashMap<client_types::Bssid, HistoricalList<T, N>>,
+    earliest_time: fasync::MonotonicInstant,
+) -> Vec<T>
 where
     T: Timestamped + Clone,
 {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl<T> HistoricalListsByBssid<T>
-where
-    T: Timestamped + Clone,
-{
-    pub fn new() -> Self {
-        Self(HashMap::new())
-    }
-
-    pub fn add(&mut self, bssid: client_types::Bssid, data: T) {
-        self.0
-            .entry(bssid)
-            .or_insert_with(|| HistoricalList::new(NUM_CONNECTION_RESULTS_PER_BSS))
-            .add(data);
-    }
-
-    /// Retrieve list of Data entries to any BSS with a time more recent than earliest_time, sorted
-    /// from oldest to newest. May be empty.
-    pub fn get_recent_for_network(&self, earliest_time: fasync::MonotonicInstant) -> Vec<T> {
-        let mut recents: Vec<T> = vec![];
-        for bssid in self.0.keys() {
-            recents.append(&mut self.get_list_for_bss(bssid).get_recent(earliest_time));
-        }
-        recents.sort_by_key(|a| a.time());
-        recents
-    }
-
-    /// Retrieve List for a particular BSS, in order to retrieve BSS specific Data entries.
-    pub fn get_list_for_bss(&self, bssid: &client_types::Bssid) -> HistoricalList<T> {
-        self.0
-            .get(bssid)
-            .cloned()
-            .unwrap_or_else(|| HistoricalList::new(NUM_CONNECTION_RESULTS_PER_BSS))
-    }
+    let mut recents: Vec<T> =
+        map.values().flat_map(|list| list.get_recent(earliest_time)).collect();
+    recents.sort_by_key(|a| a.time());
+    recents
 }
 
 /// Used to allow hidden probability calculations to make use of what happened most recently
@@ -340,6 +319,24 @@ impl NetworkConfig {
     pub fn is_likely_single_bss(&self) -> bool {
         return !self.scan_stats.have_seen_multi_bss
             && self.scan_stats.num_scans > NUM_SCANS_TO_DECIDE_LIKELY_SINGLE_BSS;
+    }
+
+    /// Retrieve list of connection failures to any BSS of this network with a time more recent
+    /// than earliest_time, sorted from oldest to newest. May be empty.
+    pub fn get_recent_connection_failures(
+        &self,
+        earliest_time: fasync::MonotonicInstant,
+    ) -> Vec<ConnectFailure> {
+        self.perf_stats.get_recent_connection_failures(earliest_time)
+    }
+
+    /// Retrieve list of past connections to any BSS of this network with a time more recent
+    /// than earliest_time, sorted from oldest to newest. May be empty.
+    pub fn get_recent_connections(
+        &self,
+        earliest_time: fasync::MonotonicInstant,
+    ) -> Vec<PastConnectionData> {
+        self.perf_stats.get_recent_connections(earliest_time)
     }
 }
 
@@ -940,7 +937,7 @@ mod tests {
                 scan_stats: ScanStats::new(),
             }
         );
-        assert!(network_config.perf_stats.connect_failures.0.is_empty());
+        assert!(network_config.perf_stats.connect_failures.is_empty());
     }
 
     #[fuchsia::test]
@@ -1151,7 +1148,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_connect_failures_by_bssid_add_and_get() {
-        let mut connect_failures = HistoricalListsByBssid::new();
+        let mut perf_stats = PerformanceStats::new();
         let curr_time = fasync::MonotonicInstant::now();
 
         // Add two failures for BSSID_1
@@ -1161,19 +1158,20 @@ mod tests {
             bssid: bssid_1,
             reason: FailureReason::GeneralFailure,
         };
-        connect_failures.add(bssid_1, failure_1_bssid_1);
+        perf_stats.connect_failures.entry(bssid_1).or_default().add(failure_1_bssid_1);
 
         let failure_2_bssid_1 = ConnectFailure {
             time: curr_time - zx::MonotonicDuration::from_seconds(5),
             bssid: bssid_1,
             reason: FailureReason::CredentialRejected,
         };
-        connect_failures.add(bssid_1, failure_2_bssid_1);
+        perf_stats.connect_failures.entry(bssid_1).or_default().add(failure_2_bssid_1);
 
-        // Verify get_recent_for_network(curr_time - 10) retrieves both entries
+        // Verify get_recent_connection_failures(curr_time - 10) retrieves both entries
         assert_eq!(
-            connect_failures
-                .get_recent_for_network(curr_time - zx::MonotonicDuration::from_seconds(10)),
+            perf_stats.get_recent_connection_failures(
+                curr_time - zx::MonotonicDuration::from_seconds(10)
+            ),
             vec![failure_1_bssid_1, failure_2_bssid_1]
         );
 
@@ -1184,40 +1182,41 @@ mod tests {
             bssid: bssid_2,
             reason: FailureReason::GeneralFailure,
         };
-        connect_failures.add(bssid_2, failure_1_bssid_2);
+        perf_stats.connect_failures.entry(bssid_2).or_default().add(failure_1_bssid_2);
 
-        // Verify get_recent_for_network(curr_time - 10) includes entries from both BSSIDs
+        // Verify get_recent_connection_failures(curr_time - 10) includes entries from both BSSIDs
         assert_eq!(
-            connect_failures
-                .get_recent_for_network(curr_time - zx::MonotonicDuration::from_seconds(10)),
+            perf_stats.get_recent_connection_failures(
+                curr_time - zx::MonotonicDuration::from_seconds(10)
+            ),
             vec![failure_1_bssid_1, failure_2_bssid_1, failure_1_bssid_2]
         );
 
-        // Verify get_recent_for_network(curr_time - 9) excludes older entries
+        // Verify get_recent_connection_failures(curr_time - 9) excludes older entries
         assert_eq!(
-            connect_failures
-                .get_recent_for_network(curr_time - zx::MonotonicDuration::from_seconds(9)),
+            perf_stats
+                .get_recent_connection_failures(curr_time - zx::MonotonicDuration::from_seconds(9)),
             vec![failure_2_bssid_1, failure_1_bssid_2]
         );
 
-        // Verify get_recent_for_network(curr_time) is empty
-        assert_eq!(connect_failures.get_recent_for_network(curr_time), vec![]);
+        // Verify get_recent_connection_failures(curr_time) is empty
+        assert_eq!(perf_stats.get_recent_connection_failures(curr_time), vec![]);
 
         // Verify get_list_for_bss retrieves correct connect failures
         assert_eq!(
-            connect_failures.get_list_for_bss(&bssid_1),
+            perf_stats.connect_failures.get(&bssid_1).cloned().unwrap_or_default(),
             HistoricalList(VecDeque::from_iter([failure_1_bssid_1, failure_2_bssid_1]))
         );
 
         assert_eq!(
-            connect_failures.get_list_for_bss(&bssid_2),
+            perf_stats.connect_failures.get(&bssid_2).cloned().unwrap_or_default(),
             HistoricalList(VecDeque::from_iter([failure_1_bssid_2]))
         );
     }
 
     #[fuchsia::test]
     async fn failure_list_add_and_get() {
-        let mut connect_failures = HistoricalList::new(NUM_CONNECTION_RESULTS_PER_BSS);
+        let mut connect_failures = ConnectFailureList::new();
 
         // Get time before adding so we can get back everything we added.
         let curr_time = fasync::MonotonicInstant::now();
@@ -1238,11 +1237,11 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_failure_list_add_when_full() {
-        let mut connect_failures = HistoricalList::new(NUM_CONNECTION_RESULTS_PER_BSS);
+        let mut connect_failures = ConnectFailureList::new();
         let curr_time = fasync::MonotonicInstant::now();
 
         // Add to list, exceeding the capacity by one entry
-        for i in 0..connect_failures.0.capacity() + 1 {
+        for i in 0..NUM_CONNECTION_RESULTS_PER_BSS + 1 {
             connect_failures.add(ConnectFailure {
                 time: curr_time + zx::MonotonicDuration::from_seconds(i as i64),
                 reason: FailureReason::GeneralFailure,
@@ -1258,7 +1257,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_past_connections_by_bssid_add_and_get() {
-        let mut past_connections_list = HistoricalListsByBssid::new();
+        let mut perf_stats = PerformanceStats::new();
         let curr_time = fasync::MonotonicInstant::now();
 
         // Add two past_connections for BSSID_1
@@ -1266,17 +1265,16 @@ mod tests {
         let bssid_1 = data_1_bssid_1.bssid;
         data_1_bssid_1.disconnect_time = curr_time - zx::MonotonicDuration::from_seconds(10);
 
-        past_connections_list.add(bssid_1, data_1_bssid_1);
+        perf_stats.past_connections.entry(bssid_1).or_default().add(data_1_bssid_1);
 
         let mut data_2_bssid_1 = random_connection_data();
         data_2_bssid_1.bssid = bssid_1;
         data_2_bssid_1.disconnect_time = curr_time - zx::MonotonicDuration::from_seconds(5);
-        past_connections_list.add(bssid_1, data_2_bssid_1);
+        perf_stats.past_connections.entry(bssid_1).or_default().add(data_2_bssid_1);
 
-        // Verify get_recent_for_network(curr_time - 10) retrieves both entries
+        // Verify get_recent_connections(curr_time - 10) retrieves both entries
         assert_eq!(
-            past_connections_list
-                .get_recent_for_network(curr_time - zx::MonotonicDuration::from_seconds(10)),
+            perf_stats.get_recent_connections(curr_time - zx::MonotonicDuration::from_seconds(10)),
             vec![data_1_bssid_1, data_2_bssid_1]
         );
 
@@ -1284,35 +1282,59 @@ mod tests {
         let mut data_1_bssid_2 = random_connection_data();
         let bssid_2 = data_1_bssid_2.bssid;
         data_1_bssid_2.disconnect_time = curr_time - zx::MonotonicDuration::from_seconds(3);
-        past_connections_list.add(bssid_2, data_1_bssid_2);
+        perf_stats.past_connections.entry(bssid_2).or_default().add(data_1_bssid_2);
 
-        // Verify get_recent_for_network(curr_time - 10) includes entries from both BSSIDs
+        // Verify get_recent_connections(curr_time - 10) includes entries from both BSSIDs
         assert_eq!(
-            past_connections_list
-                .get_recent_for_network(curr_time - zx::MonotonicDuration::from_seconds(10)),
+            perf_stats.get_recent_connections(curr_time - zx::MonotonicDuration::from_seconds(10)),
             vec![data_1_bssid_1, data_2_bssid_1, data_1_bssid_2]
         );
 
-        // Verify get_recent_for_network(curr_time - 9) excludes older entries
+        // Verify get_recent_connections(curr_time - 9) excludes older entries
         assert_eq!(
-            past_connections_list
-                .get_recent_for_network(curr_time - zx::MonotonicDuration::from_seconds(9)),
+            perf_stats.get_recent_connections(curr_time - zx::MonotonicDuration::from_seconds(9)),
             vec![data_2_bssid_1, data_1_bssid_2]
         );
 
-        // Verify get_recent_for_network(curr_time) is empty
-        assert_eq!(past_connections_list.get_recent_for_network(curr_time), vec![]);
+        // Verify get_recent_connections(curr_time) is empty
+        assert_eq!(perf_stats.get_recent_connections(curr_time), vec![]);
 
         // Verify get_list_for_bss retrieves correct PastConnectionLists
         assert_eq!(
-            past_connections_list.get_list_for_bss(&bssid_1),
+            perf_stats.past_connections.get(&bssid_1).cloned().unwrap_or_default(),
             PastConnectionList { 0: VecDeque::from_iter([data_1_bssid_1, data_2_bssid_1]) }
         );
 
         assert_eq!(
-            past_connections_list.get_list_for_bss(&bssid_2),
+            perf_stats.past_connections.get(&bssid_2).cloned().unwrap_or_default(),
             PastConnectionList { 0: VecDeque::from_iter([data_1_bssid_2]) }
         );
+    }
+
+    #[fuchsia::test]
+    async fn test_network_config_get_recent_methods() {
+        let mut network_config = NetworkConfig::new(
+            NetworkIdentifier::try_from("test_ssid", SecurityType::None).unwrap(),
+            Credential::None,
+            false,
+            None,
+        )
+        .expect("Failed to create network config");
+
+        let curr_time = fasync::MonotonicInstant::now();
+        let bssid = client_types::Bssid::from([1; 6]);
+
+        let failure =
+            ConnectFailure { time: curr_time, bssid, reason: FailureReason::GeneralFailure };
+        network_config.perf_stats.connect_failures.entry(bssid).or_default().add(failure);
+
+        let mut data = random_connection_data();
+        data.bssid = bssid;
+        data.disconnect_time = curr_time;
+        network_config.perf_stats.past_connections.entry(bssid).or_default().add(data);
+
+        assert_eq!(network_config.get_recent_connection_failures(curr_time), vec![failure]);
+        assert_eq!(network_config.get_recent_connections(curr_time), vec![data]);
     }
 
     #[fuchsia::test]

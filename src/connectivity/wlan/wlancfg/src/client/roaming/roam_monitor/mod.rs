@@ -9,6 +9,8 @@ use crate::client::types;
 use crate::telemetry::{TelemetryEvent, TelemetrySender};
 use anyhow::{Error, format_err};
 use async_trait::async_trait;
+use fidl_fuchsia_wlan_common as fidl_common;
+use fidl_fuchsia_wlan_internal as fidl_internal;
 use futures::channel::mpsc;
 use futures::future::LocalBoxFuture;
 use futures::lock::Mutex;
@@ -17,7 +19,6 @@ use futures::{FutureExt, select};
 use log::{debug, error, info, warn};
 use std::any::Any;
 use std::sync::Arc;
-use {fidl_fuchsia_wlan_common as fidl_common, fidl_fuchsia_wlan_internal as fidl_internal};
 
 pub mod default_monitor;
 pub mod stationary_monitor;
@@ -158,7 +159,7 @@ async fn get_roaming_connection_selection_future(
 mod test {
     use super::*;
     use crate::client::connection_selection::ConnectionSelectionRequest;
-    use crate::client::roaming::lib::{NUM_PLATFORM_MAX_ROAMS_PER_DAY, RoamingProfile};
+    use crate::client::roaming::lib::RoamingProfile;
     use crate::telemetry::TelemetryEvent;
     use crate::util::testing::fakes::FakeRoamMonitor;
     use crate::util::testing::{
@@ -166,12 +167,13 @@ mod test {
         generate_random_scanned_candidate,
     };
     use assert_matches::assert_matches;
+    use fidl_fuchsia_wlan_common as fidl_common;
+    use fidl_fuchsia_wlan_internal as fidl_internal;
     use fuchsia_async::{self as fasync, TestExecutor};
     use futures::task::Poll;
     use futures::{Future, pin_mut};
     use std::pin::Pin;
     use test_case::test_case;
-    use {fidl_fuchsia_wlan_common as fidl_common, fidl_fuchsia_wlan_internal as fidl_internal};
 
     struct TestValues {
         trigger_data_sender: mpsc::Sender<RoamTriggerData>,
@@ -194,7 +196,7 @@ mod test {
             ConnectionSelectionRequester::new(connection_selection_request_sender);
         let (telemetry_sender, telemetry_receiver) = mpsc::channel::<TelemetryEvent>(100);
         let telemetry_sender = TelemetrySender::new(telemetry_sender);
-        let past_roams = Arc::new(Mutex::new(PastRoamList::new(NUM_PLATFORM_MAX_ROAMS_PER_DAY)));
+        let past_roams = Arc::new(Mutex::new(PastRoamList::new()));
         TestValues {
             trigger_data_sender,
             trigger_data_receiver,

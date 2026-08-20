@@ -5,7 +5,7 @@
 
 use crate::client::roaming::lib::{PolicyRoamRequest, RoamReason, RoamingConnectionData};
 use crate::client::types;
-use crate::config_management::{Credential, HistoricalListsByBssid};
+use crate::config_management::Credential;
 use crate::util::pseudo_energy::EwmaSignalData;
 use fidl_fuchsia_wlan_ieee80211 as fidl_ieee80211;
 use fidl_fuchsia_wlan_internal as fidl_internal;
@@ -14,6 +14,7 @@ use fidl_fuchsia_wlan_sme as fidl_sme;
 use ieee80211::{Bssid, MacAddrBytes, Ssid};
 use rand::distr::{Alphanumeric, SampleString};
 use rand::{Rng as _, RngCore};
+use std::collections::HashMap;
 use wlan_common::bss::BssDescription;
 use wlan_common::channel::{Bandwidth, Channel};
 use wlan_common::random_fidl_bss_description;
@@ -153,7 +154,7 @@ pub fn generate_random_saved_network_data() -> types::InternalSavedNetworkData {
     types::InternalSavedNetworkData {
         has_ever_connected: rand::random(),
         recent_failures: Vec::new(),
-        past_connections: HistoricalListsByBssid::new(),
+        past_connections: HashMap::new(),
     }
 }
 
