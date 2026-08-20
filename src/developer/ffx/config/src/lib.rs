@@ -159,16 +159,24 @@ pub const SDK_OVERRIDE_KEY_PREFIX: &str = "sdk.overrides";
 /// and no override is found, sdk.get_host_tool() is called.
 pub fn get_host_tool(ctx: &EnvironmentContext, name: &str) -> Result<PathBuf, LibError> {
     // Check for configured override for the host tool.
+    // Tool binary overrides must come from explicit user-controlled levels (Runtime flags,
+    // User config, or Global config). Default-level configuration (including project-local
+    // fuchsia_env files) and Build-level configuration are explicitly excluded to prevent
+    // untrusted repository directories from hijacking tool execution.
     let sdk = ctx.get_sdk()?;
     let override_key = format!("{SDK_OVERRIDE_KEY_PREFIX}.{name}");
-    let override_result: Result<PathBuf, ConfigError> = ctx.get(&override_key);
-
-    if let Ok(tool_path) = override_result {
-        if tool_path.exists() {
-            log::info!("Using configured override for {name}: {tool_path:?}");
-            return Ok(tool_path);
-        } else {
-            return Err(LibError::OverrideNotExist(name.to_string(), tool_path));
+    for level in [ConfigLevel::Runtime, ConfigLevel::User, ConfigLevel::Global] {
+        match ctx.query(&override_key).level(Some(level)).build().get::<PathBuf>(ctx) {
+            Ok(tool_path) => {
+                if tool_path.exists() {
+                    log::info!("Using configured override for {name}: {tool_path:?}");
+                    return Ok(tool_path);
+                } else {
+                    return Err(LibError::OverrideNotExist(name.to_string(), tool_path));
+                }
+            }
+            Err(ConfigError::KeyNotFound | ConfigError::NoValueSet(_)) => continue,
+            Err(e) => return Err(LibError::from(e)),
         }
     }
     let tool_path = sdk.get_host_tool(name)?;
@@ -528,5 +536,67 @@ mod test {
             result.err().unwrap().to_string(),
             format!("Override path for a_host_tool set to {override_path:?}, but does not exist")
         );
+    }
+
+    #[fuchsia::test]
+    fn test_get_host_tool_ignores_default_level_override() {
+        let mut builder = ffx_config::test_env();
+        let sdk_root = builder.isolate_root().join("sdk");
+
+        put_file!(sdk_root, "../test_data/sdk", "meta/manifest.json");
+        put_file!(sdk_root, "../test_data/sdk", "tools/x64/a_host_tool-meta.json");
+
+        let expected_sdk_tool = sdk_root.join("tools/x64/a-host-tool");
+        fs::write(&expected_sdk_tool, "real_sdk_tool").expect("sdk file written");
+
+        // Set an override in the Default level of configuration
+        let override_path = builder.isolate_root().join("untrusted_override_host_tool");
+        fs::write(&override_path, "untrusted_contents").expect("override file written");
+
+        let mut env = builder
+            .user_config("sdk.root", sdk_root.to_string_lossy())
+            .build()
+            .expect("create test config");
+
+        // Insert override directly into default level (simulating default-level injection)
+        let override_key = format!("{SDK_OVERRIDE_KEY_PREFIX}.a_host_tool");
+        let mut default_map =
+            env.context.config.get_level(ConfigLevel::Default).cloned().unwrap_or_default();
+        let key_vec: Vec<&str> = override_key.split('.').collect();
+        crate::nested::nested_set(
+            &mut default_map,
+            key_vec[0],
+            &key_vec[1..],
+            serde_json::Value::String(override_path.to_string_lossy().into_owned()),
+        );
+        env.context.config.default = default_map;
+
+        // get_host_tool must ignore the default-level override and return the SDK host tool
+        let result = get_host_tool(&env.context, "a_host_tool").expect("a_host_tool");
+        assert_eq!(result, expected_sdk_tool);
+    }
+
+    #[fuchsia::test]
+    fn test_get_host_tool_runtime_override() {
+        let mut builder = ffx_config::test_env();
+        let sdk_root = builder.isolate_root().join("sdk");
+
+        put_file!(sdk_root, "../test_data/sdk", "meta/manifest.json");
+        put_file!(sdk_root, "../test_data/sdk", "tools/x64/a_host_tool-meta.json");
+
+        let override_path = builder.isolate_root().join("runtime_override_host_tool");
+        fs::write(&override_path, "runtime_tool_contents").expect("override file written");
+
+        let env = builder
+            .user_config("sdk.root", sdk_root.to_string_lossy())
+            .runtime_config(
+                &format!("{SDK_OVERRIDE_KEY_PREFIX}.a_host_tool"),
+                override_path.to_string_lossy(),
+            )
+            .build()
+            .expect("create test config");
+
+        let result = get_host_tool(&env.context, "a_host_tool").expect("a_host_tool");
+        assert_eq!(result, override_path);
     }
 }

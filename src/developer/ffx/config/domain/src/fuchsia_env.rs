@@ -67,18 +67,6 @@ pub struct FuchsiaProject {
     #[serde(alias = "build-config-path")]
     pub build_config_path: Option<ConfigPath>,
 
-    /// A command to run if the file at [`FuchsiaProject::build_config_path`]
-    /// isn't present to try to bootstrap it. It will be run from the
-    /// configuration domain root directory, and each element of the array will
-    /// be passed as an argument.
-    ///
-    /// It will be treated as a fatal error if this command exits successfully
-    /// (with a zero exit code) and the file doesn't exist after it exits. If
-    /// the command exits non-zero, output from the command will be shown and
-    /// the tool evaluating it will exit with the same code.
-    #[serde(alias = "bootstrap-command")]
-    pub bootstrap_command: Option<Vec<String>>,
-
     /// Any key specified here will be treated as a default configuration
     /// key and value for this configuration domain. This has a pretty
     /// similar effect to the current behavior of the “global” config
@@ -88,20 +76,6 @@ pub struct FuchsiaProject {
     pub default_config: ConfigMap,
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
-pub struct FuchsiaSdk {
-    /// The location within the project root of files that the project tooling
-    /// use to control the version of the SDK in use.
-    #[serde(alias = "version-check-files")]
-    pub version_check_files: Option<Vec<Utf8PathBuf>>,
-    /// A command to run to check that the sdk version is up to date before
-    /// searching it. This will be run if any of the files in
-    /// [`FuchsiaSdk::version_check_files`] has changed since they were last
-    /// recorded
-    #[serde(alias = "version-check-command")]
-    pub version_check_command: Option<Vec<String>>,
-}
-
 /// Keys meant for any tool to consume are in the [fuchsia] section.
 /// These keys should not change often, because they must be
 /// interpretable by the broadest range of versions. The `fuchsia`
@@ -109,8 +83,6 @@ pub struct FuchsiaSdk {
 /// interpreted as a config domain control file.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct Fuchsia {
-    #[serde(default)]
-    pub sdk: FuchsiaSdk,
     #[serde(default)]
     #[serde(alias = "config")]
     pub project: FuchsiaProject,
