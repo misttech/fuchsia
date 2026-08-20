@@ -15,11 +15,6 @@
 #include "debug_priv.h"
 
 // TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
-extern "C" FFI_ALWAYS_INLINE int cpp_platform_dgetc(char* c, bool wait) {
-  return platform_dgetc(c, wait);
-}
-
-// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
 extern "C" FFI_ALWAYS_INLINE void cpp_persistent_dlog_write(const char* ptr, size_t len) {
   persistent_dlog_write({ptr, len});
 }

@@ -55,6 +55,7 @@ void cpp_arch_set_current_thread(void* thread);
 void cpp_arch_set_restricted_flag(bool in_restricted);
 void cpp_dump_common_exception_context(const arch_exception_context_t* context);
 bool cpp_with_frame_pointers();
+void cpp_arch_set_blocking_disallowed(bool value);
 
 // TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
 FFI_ALWAYS_INLINE bool cpp_arch_blocking_disallowed() { return arch_blocking_disallowed(); }
@@ -98,5 +99,8 @@ FFI_ALWAYS_INLINE void cpp_dump_common_exception_context(const arch_exception_co
   dump_common_exception_context(context);
 }
 FFI_ALWAYS_INLINE bool cpp_with_frame_pointers() { return WITH_FRAME_POINTERS != 0; }
+FFI_ALWAYS_INLINE void cpp_arch_set_blocking_disallowed(bool value) {
+  arch_set_blocking_disallowed(value);
+}
 
 }  // extern "C"

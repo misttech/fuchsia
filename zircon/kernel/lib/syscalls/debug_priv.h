@@ -17,7 +17,6 @@
 
 __BEGIN_CDECLS
 
-int cpp_platform_dgetc(char* c, bool wait);
 void cpp_persistent_dlog_write(const char* ptr, size_t len);
 void cpp_dlog_serial_write(const char* ptr, size_t len);
 zx_status_t cpp_console_run_script(const char* str);

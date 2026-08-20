@@ -70,26 +70,6 @@ struct cmd {
 
 #endif  // CONSOLE_ENABLED
 
-// TODO(cpu): move somewhere else.
-class RecurringCallback {
- public:
-  using CallbackFunc = void (*)();
-
-  explicit RecurringCallback(CallbackFunc callback) : func_(callback) {}
-
-  void Toggle();
-
- private:
-  DISALLOW_COPY_ASSIGN_AND_MOVE(RecurringCallback);
-
-  static void CallbackWrapper(Timer* t, zx_instant_mono_t now, void* arg);
-
-  DECLARE_SPINLOCK(RecurringCallback) lock_;
-  Timer timer_;
-  bool started_ = false;
-  CallbackFunc func_ = nullptr;
-};
-
 /* external api */
 int console_run_script(const char* string);
 extern "C" int console_run_script_locked(const char* string);  // special case from inside a command

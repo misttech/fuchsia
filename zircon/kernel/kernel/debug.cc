@@ -32,6 +32,7 @@
 #include <kernel/cpu.h>
 #include <kernel/mp.h>
 #include <kernel/percpu.h>
+#include <kernel/recurring_callback.h>
 #include <kernel/scheduler.h>
 #include <kernel/thread.h>
 #include <ktl/bit.h>

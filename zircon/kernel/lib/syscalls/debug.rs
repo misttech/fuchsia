@@ -13,6 +13,7 @@ use zx_status::{ErrorStatus, Status};
 use zx_types::{ZX_RSRC_SYSTEM_DEBUG_BASE, ZX_RSRC_SYSTEM_TRACING_BASE, zx_status_t};
 
 use crate::object::{HandleValue, validate_system_resource};
+use crate::platform_rs::debug::platform_dgetc;
 use crate::user_copy::{UserInOutPtr, UserInPtr, UserOutPtr};
 
 const LOCAL_TRACE: u32 = 0;
@@ -22,7 +23,6 @@ const LOCAL_TRACE: u32 = 0;
 pub const MAX_DEBUG_WRITE_SIZE: usize = 256;
 
 unsafe extern "C" {
-    fn cpp_platform_dgetc(c: *mut c_char, wait: bool) -> i32;
     fn cpp_persistent_dlog_write(ptr: *const c_char, len: usize);
     fn cpp_dlog_serial_write(ptr: *const c_char, len: usize);
     fn cpp_console_run_script(str: *const c_char) -> zx_status_t;
@@ -60,8 +60,7 @@ pub fn sys_debug_read(
         // We avoid reading all the characters so that interactive applications can stay responsive
         // without losing efficiency by being forced to read one character at a time.
         let wait = idx == 0;
-        // SAFETY: `&mut c` is a valid pointer to stack storage.
-        let err = unsafe { cpp_platform_dgetc(&mut c, wait) };
+        let err = platform_dgetc(&mut c, wait);
         if err < 0 {
             Status::ok(err)?;
         } else if err == 0 {

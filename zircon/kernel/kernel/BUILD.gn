@@ -25,6 +25,7 @@ source_set("kernel") {
     "owned_wait_queue.cc",
     "owned_wait_queue_pool.cc",
     "percpu.cc",
+    "recurring_callback.cc",
     "restricted.cc",
     "restricted_ffi.cc",
     "rppm_ffi.cc",

@@ -58,6 +58,7 @@ unsafe extern "C" {
         fault_va: *mut usize,
         fault_flags: *mut u32,
     ) -> i32;
+    fn cpp_arch_set_blocking_disallowed(value: bool);
 }
 
 /// The arch_blocking_disallowed() flag is used to check that in-kernel interrupt
@@ -257,4 +258,10 @@ pub unsafe fn arch_copy_to_user_capture_faults(
         cpp_arch_copy_to_user_capture_faults(dst, src, len, &raw mut fault_va, &raw mut fault_flags)
     };
     capture_faults_result(status, fault_va, fault_flags)
+}
+
+/// Sets whether the current thread is allowed to block.
+#[inline(always)]
+pub fn set_blocking_disallowed(value: bool) {
+    unsafe { cpp_arch_set_blocking_disallowed(value) }
 }

@@ -13,6 +13,7 @@ source_set("platform") {
 
   sources = [
     "debug.cc",
+    "debug_ffi.cc",
     "efi.cc",
     "efi_bootbyte.cc",
     "efi_crashlog.cc",
@@ -24,6 +25,7 @@ source_set("platform") {
     "timer_ffi.cc",
   ]
   deps = [
+    ":ffi",
     "//sdk/lib/zbi-format",
     "//src/lib/zbitl",
     "//zircon/kernel/dev/interrupt",
@@ -83,10 +85,15 @@ group("kernel-tests") {
   }
 }
 
+source_set("ffi") {
+  deps = [ "//zircon/kernel/lib/ktl" ]
+}
+
 kernel_rust_mod("platform-rs") {
   output_name = "platform_rs"
   source_root = "platform.rs"
   sources = [
+    "debug.rs",
     "platform.rs",
     "power.rs",
     "timer.rs",
