@@ -8,7 +8,8 @@ use crate::kernel::types::PAddr;
 use crate::vm::page::VmPagePtr;
 use crate::vm::pmm_node::pmm_node;
 use vm_constants_rs::{
-    kPmmNodeIndexZeroBits, kVmPageListPageType, kVmPageListReferenceType, kVmPageListTypeBits,
+    kPmmNodeIndexZeroBits, kVmPageListPageType, kVmPageListParentContentType,
+    kVmPageListReferenceType, kVmPageListTypeBits, kVmPageListZeroMarkerType,
 };
 
 /// RAII helper for representing content in a page list node. This supports being in one of these
@@ -18,6 +19,13 @@ use vm_constants_rs::{
 ///    `release_page` must be called to give up ownership.
 ///  * Reference r - Contains a reference 'r' to some content. This 'r' is considered owned by this
 ///    wrapper and `release_reference` must be called to give up ownership.
+///  * Marker      - Indicates that whilst not a page, it is also not empty. Markers can be used to
+///    separate the distinction between "there's no page because we've deduped to the zero page" (a
+///    `Marker` is inserted) and "there's no page because our parent contains the content" (which is
+///    represented as `Empty`).
+///  * ParentContent - Indicates that there might be content for this slot, but the page list in the
+///    parent must be checked for it. The difference between `Empty`, which can also indicate that
+///    the parent must be searched, and `ParentContent` is up to the specific VMO.
 ///
 /// Note on Preconditions & Safety Contracts:
 /// `VmPageOrMarker` uses manual bit-packing rather than a native Rust `enum` to maintain
@@ -64,7 +72,12 @@ impl VmPageOrMarker {
     const TYPE_BITS: u32 = kVmPageListTypeBits;
     const TYPE_MASK: u32 = (1 << Self::TYPE_BITS) - 1;
     const PAGE_TYPE: u32 = kVmPageListPageType;
+    const ZERO_MARKER_TYPE: u32 = kVmPageListZeroMarkerType;
     const REFERENCE_TYPE: u32 = kVmPageListReferenceType;
+    const PARENT_CONTENT_TYPE: u32 = kVmPageListParentContentType;
+
+    const MARKER_SHARE_COUNT_MASK: u32 = !Self::TYPE_MASK;
+    const MARKER_SHARE_COUNT_STEP: u32 = 1 << Self::TYPE_BITS;
 
     fn get_type(&self) -> u32 {
         self.raw & Self::TYPE_MASK
@@ -106,6 +119,24 @@ impl VmPageOrMarker {
             assert!(ReferenceValue::ALIGN_BITS == VmPageOrMarker::TYPE_BITS);
         Self { raw: ref_val.value() | Self::REFERENCE_TYPE }
     }
+
+    /// Creates a marker `VmPageOrMarker`.
+    pub fn marker() -> Self {
+        Self { raw: Self::ZERO_MARKER_TYPE }
+    }
+
+    /// Creates a marker `VmPageOrMarker` with a share count.
+    pub fn marker_with_share_count(share_count: u32) -> Self {
+        Self {
+            raw: Self::ZERO_MARKER_TYPE
+                | ((share_count << Self::TYPE_BITS) & Self::MARKER_SHARE_COUNT_MASK),
+        }
+    }
+
+    /// Creates a parent content `VmPageOrMarker`.
+    pub fn parent_content() -> Self {
+        Self { raw: Self::PARENT_CONTENT_TYPE }
+    }
     /// Returns true if this is empty.
     ///
     /// A `PAGE_TYPE` that otherwise holds a null pointer is considered to be Empty.
@@ -126,6 +157,43 @@ impl VmPageOrMarker {
     /// Returns true if this is a page or a reference.
     pub fn is_page_or_ref(&self) -> bool {
         self.is_page() || self.is_reference()
+    }
+
+    /// Returns true if this is a marker.
+    pub fn is_marker(&self) -> bool {
+        self.get_type() == Self::ZERO_MARKER_TYPE
+    }
+
+    /// Returns true if this is parent content.
+    pub fn is_parent_content(&self) -> bool {
+        self.get_type() == Self::PARENT_CONTENT_TYPE
+    }
+
+    /// Returns the marker share count.
+    pub fn marker_share_count(&self) -> u32 {
+        debug_assert!(self.is_marker());
+        self.raw >> Self::TYPE_BITS
+    }
+
+    /// Sets the marker share count.
+    pub fn set_marker_share_count(&mut self, share_count: u32) {
+        debug_assert!(self.is_marker());
+        self.raw = (self.raw & !Self::MARKER_SHARE_COUNT_MASK)
+            | ((share_count << Self::TYPE_BITS) & Self::MARKER_SHARE_COUNT_MASK);
+    }
+
+    /// Increments the marker share count.
+    pub fn increment_marker_share_count(&mut self) {
+        debug_assert!(self.is_marker());
+        self.raw += Self::MARKER_SHARE_COUNT_STEP;
+    }
+
+    /// Decrements the marker share count.
+    pub fn decrement_marker_share_count(&mut self) {
+        debug_assert!(self.is_marker());
+        // It is invalid to decrement marker share count from zero.
+        debug_assert!(self.marker_share_count() > 0);
+        self.raw -= Self::MARKER_SHARE_COUNT_STEP;
     }
 
     /// Returns the underlying page. Is only valid to call if `is_page` is true.
@@ -315,5 +383,42 @@ mod vm_page_list_rs {
 
         let _ = old.release_reference();
         let _ = pm1.release_reference();
+    }
+
+    /// Tests marker state creation and share count modifications.
+    #[test]
+    fn test_page_or_marker_marker() {
+        let mut pm = VmPageOrMarker::marker();
+        expect_true!(pm.is_marker());
+        expect_false!(pm.is_page());
+        expect_false!(pm.is_reference());
+        expect_false!(pm.is_parent_content());
+        expect_eq!(pm.marker_share_count(), 0);
+
+        pm.increment_marker_share_count();
+        expect_eq!(pm.marker_share_count(), 1);
+
+        pm.increment_marker_share_count();
+        expect_eq!(pm.marker_share_count(), 2);
+
+        pm.decrement_marker_share_count();
+        expect_eq!(pm.marker_share_count(), 1);
+
+        pm.set_marker_share_count(100);
+        expect_eq!(pm.marker_share_count(), 100);
+
+        let pm_shared = VmPageOrMarker::marker_with_share_count(5);
+        expect_true!(pm_shared.is_marker());
+        expect_eq!(pm_shared.marker_share_count(), 5);
+    }
+
+    /// Tests parent content state properties.
+    #[test]
+    fn test_page_or_marker_parent_content() {
+        let pm = VmPageOrMarker::parent_content();
+        expect_true!(pm.is_parent_content());
+        expect_false!(pm.is_page());
+        expect_false!(pm.is_reference());
+        expect_false!(pm.is_marker());
     }
 }
