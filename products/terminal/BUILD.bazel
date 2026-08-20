@@ -37,6 +37,11 @@ _PRODUCT_CONFIG_BASE_JSON = {
                 "audio": {
                     "driver_tools": True,
                     "full_stack_tools": True,
+                    "legacy_driver_tools": True,
+                    "virtual_audio": {
+                        "legacy": True,
+                        "tools": True,
+                    },
                 },
                 "connectivity": {
                     "enable_networking": True,

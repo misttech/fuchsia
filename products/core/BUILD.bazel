@@ -41,6 +41,10 @@ PLATFORM_BASE = {
             "audio": {
                 "driver_tools": True,
                 "full_stack_tools": True,
+                "virtual_audio": {
+                    "legacy": True,
+                    "tools": False,
+                },
             },
             "connectivity": {
                 "enable_networking": True,

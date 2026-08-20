@@ -138,6 +138,12 @@ fuchsia_product_configuration(
                 "tools": {
                     "audio": {
                         "driver_tools": True,
+                        "legacy_driver_tools": True,
+                        "virtual_audio": {
+                            "modern": True,
+                            "legacy": True,
+                            "tools": True,
+                        },
                     },
                     "display": {
                         "driver_tools": True,
