@@ -15,6 +15,7 @@
 #include <string>
 #include <utility>
 
+#include "src/developer/forensics/feedback_data/constants.h"
 #include "src/developer/forensics/utils/errors.h"
 
 namespace forensics::feedback {
@@ -107,8 +108,13 @@ void DiskBackedSystemLog::handle_unknown_event(
 ::fpromise::promise<AttachmentData> DiskBackedSystemLog::Get(uint64_t ticket) {
   FX_CHECK(!completers_.contains(ticket)) << "Ticket used twice: " << ticket;
 
+  // TODO(https://fxbug.dev/495946460): check if SystemLogRecorder used a fallback stream.
+  const AttachmentMetadata metadata({
+      {feedback_data::kAttachmentMetadataSourceKey, feedback_data::kAttachmentMetadataSourceDisk},
+  });
+
   if (!client_.is_valid()) {
-    return ::fpromise::make_ok_promise(AttachmentData(Error::kConnectionError));
+    return ::fpromise::make_ok_promise(AttachmentData(Error::kConnectionError, metadata));
   }
 
   auto [complete_ok, complete_error, consume] = CompletesAndConsume();
@@ -173,10 +179,10 @@ void DiskBackedSystemLog::handle_unknown_event(
   fxl::WeakPtr<DiskBackedSystemLog> self = ptr_factory_.GetWeakPtr();
 
   return consume.then(
-      [self,
-       ticket](::fpromise::result<LogData, Error>& result) -> ::fpromise::result<AttachmentData> {
+      [self, ticket,
+       metadata](::fpromise::result<LogData, Error>& result) -> ::fpromise::result<AttachmentData> {
         if (!self) {
-          return ::fpromise::ok(AttachmentData(Error::kLogicError));
+          return ::fpromise::ok(AttachmentData(Error::kLogicError, metadata));
         }
 
         self->completers_.erase(ticket);
@@ -185,7 +191,7 @@ void DiskBackedSystemLog::handle_unknown_event(
           if (result.error() == Error::kLogicError) {
             FX_LOGS(FATAL) << "Log collection promise was incorrectly dropped";
           }
-          return ::fpromise::ok(AttachmentData(result.error()));
+          return ::fpromise::ok(AttachmentData(result.error(), metadata));
         }
 
         LogData& data = result.value();
@@ -203,7 +209,7 @@ void DiskBackedSystemLog::handle_unknown_event(
           }
         }
 
-        return ::fpromise::ok(AttachmentData(std::move(data.contents)));
+        return ::fpromise::ok(AttachmentData(std::move(data.contents), metadata));
       });
 }
 

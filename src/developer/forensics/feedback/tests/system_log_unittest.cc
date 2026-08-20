@@ -469,6 +469,32 @@ TEST_F(SystemLogTest, GetCalledWithSameTicket) {
       "Ticket used twice: ");
 }
 
+TEST_F(SystemLogTest, AddsSourceMetadata) {
+  SetUpLogServer(Messages());
+
+  EXPECT_EQ(CollectSystemLog().Metadata(),
+            AttachmentMetadata({{feedback_data::kAttachmentMetadataSourceKey,
+                                 feedback_data::kAttachmentMetadataSourceStream}}));
+}
+
+TEST_F(SystemLogTest, AddsSourceMetadataOnEmptyLog) {
+  const uint64_t kTicket = 1234;
+  SetUpLogServer({});
+
+  RunLoopFor(kLogTimestamp + zx::sec(1));
+
+  AttachmentData log(Error::kNotSet);
+  GetExecutor().schedule_task(CollectSystemLog(kTicket).and_then(
+      [&log](AttachmentData& result) { log = std::move(result); }));
+
+  RunLoopUntilIdle();
+  GetSystemLog().ForceCompletion(kTicket, Error::kMissingValue);
+  RunLoopUntilIdle();
+
+  EXPECT_EQ(log.Metadata(), AttachmentMetadata({{feedback_data::kAttachmentMetadataSourceKey,
+                                                 feedback_data::kAttachmentMetadataSourceStream}}));
+}
+
 class SimpleRedactor : public RedactorBase {
  public:
   SimpleRedactor() : RedactorBase(inspect::BoolProperty()) {}

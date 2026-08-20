@@ -55,6 +55,7 @@ source_set("disk_backed_system_log") {
 
   deps = [
     "//sdk/lib/syslog/cpp",
+    "//src/developer/forensics/feedback_data:constants",
     "//src/developer/forensics/utils:errors",
   ]
 }

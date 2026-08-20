@@ -109,6 +109,16 @@
               utc_boot_difference.get());                                 \
   }
 
+#define LOG_SOURCE_IS(json, name, expected_source)                                        \
+  {                                                                                       \
+    ASSERT_TRUE(json.HasMember("files"));                                                 \
+    auto& files = json["files"];                                                          \
+    ASSERT_TRUE(files.HasMember(name));                                                   \
+    ASSERT_TRUE(files[name].HasMember(kAttachmentMetadataSourceKey));                     \
+    ASSERT_TRUE(files[name][kAttachmentMetadataSourceKey].IsString());                    \
+    EXPECT_STREQ(files[name][kAttachmentMetadataSourceKey].GetString(), expected_source); \
+  }
+
 #define COLLECTION_DURATION_IS(json, name, collection_duration)                \
   {                                                                            \
     ASSERT_TRUE(json.HasMember("files"));                                      \
@@ -327,6 +337,87 @@ TEST_F(MetadataTest, Check_FormatAttachmentsProperly) {
   COLLECTION_DURATION_IS(metadata_json, "partial attachment 2", zx::msec(40));
   COLLECTION_DURATION_IS(metadata_json, "missing attachment 1", zx::msec(50));
   COLLECTION_DURATION_IS(metadata_json, "missing attachment 2", zx::msec(60));
+}
+
+TEST_F(MetadataTest, FormatAttachmentWithSourceDisk) {
+  const feedback::AttachmentKeys attachment_allowlist = {
+      "log.system.txt",
+  };
+
+  feedback::AttachmentData attachment_data(
+      "log content", {{kAttachmentMetadataSourceKey, kAttachmentMetadataSourceDisk}});
+  feedback::Attachments attachments;
+  attachments.insert(
+      {"log.system.txt", feedback::AttachmentValue(std::move(attachment_data), zx::msec(10))});
+
+  SetUpMetadata(/*annotation_allowlist=*/{}, attachment_allowlist);
+
+  const rapidjson::Document metadata_json = MakeJsonReport({}, attachments);
+
+  HAS_COMPLETE_ATTACHMENT(metadata_json, "log.system.txt");
+  LOG_SOURCE_IS(metadata_json, "log.system.txt", kAttachmentMetadataSourceDisk);
+  COLLECTION_DURATION_IS(metadata_json, "log.system.txt", zx::msec(10));
+}
+
+TEST_F(MetadataTest, FormatAttachmentWithSourceStream) {
+  const feedback::AttachmentKeys attachment_allowlist = {
+      "log.system.txt",
+  };
+
+  feedback::AttachmentData attachment_data(
+      "log content", {{kAttachmentMetadataSourceKey, kAttachmentMetadataSourceStream}});
+  feedback::Attachments attachments;
+  attachments.insert(
+      {"log.system.txt", feedback::AttachmentValue(std::move(attachment_data), zx::msec(10))});
+
+  SetUpMetadata(/*annotation_allowlist=*/{}, attachment_allowlist);
+
+  const rapidjson::Document metadata_json = MakeJsonReport({}, attachments);
+
+  HAS_COMPLETE_ATTACHMENT(metadata_json, "log.system.txt");
+  LOG_SOURCE_IS(metadata_json, "log.system.txt", kAttachmentMetadataSourceStream);
+  COLLECTION_DURATION_IS(metadata_json, "log.system.txt", zx::msec(10));
+}
+
+TEST_F(MetadataTest, FormatPartialAttachmentWithSource) {
+  const feedback::AttachmentKeys attachment_allowlist = {
+      "log.system.txt",
+  };
+
+  feedback::AttachmentData attachment_data(
+      "partial log content", Error::kTimeout,
+      {{kAttachmentMetadataSourceKey, kAttachmentMetadataSourceDisk}});
+  feedback::Attachments attachments;
+  attachments.insert(
+      {"log.system.txt", feedback::AttachmentValue(std::move(attachment_data), zx::msec(10))});
+
+  SetUpMetadata(/*annotation_allowlist=*/{}, attachment_allowlist);
+
+  const rapidjson::Document metadata_json = MakeJsonReport({}, attachments);
+
+  HAS_PARTIAL_ATTACHMENT(metadata_json, "log.system.txt", "data collection timeout");
+  LOG_SOURCE_IS(metadata_json, "log.system.txt", kAttachmentMetadataSourceDisk);
+  COLLECTION_DURATION_IS(metadata_json, "log.system.txt", zx::msec(10));
+}
+
+TEST_F(MetadataTest, FormatMissingAttachmentWithSource) {
+  const feedback::AttachmentKeys attachment_allowlist = {
+      "log.system.txt",
+  };
+
+  feedback::AttachmentData attachment_data(
+      Error::kFileReadFailure, {{kAttachmentMetadataSourceKey, kAttachmentMetadataSourceStream}});
+  feedback::Attachments attachments;
+  attachments.insert(
+      {"log.system.txt", feedback::AttachmentValue(std::move(attachment_data), zx::msec(10))});
+
+  SetUpMetadata(/*annotation_allowlist=*/{}, attachment_allowlist);
+
+  const rapidjson::Document metadata_json = MakeJsonReport({}, attachments);
+
+  HAS_MISSING_ATTACHMENT(metadata_json, "log.system.txt", "file read failure");
+  LOG_SOURCE_IS(metadata_json, "log.system.txt", kAttachmentMetadataSourceStream);
+  COLLECTION_DURATION_IS(metadata_json, "log.system.txt", zx::msec(10));
 }
 
 TEST_F(MetadataTest, Check_NonPlatformAnnotationsComplete) {

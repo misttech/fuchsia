@@ -16,6 +16,7 @@
 #include <gtest/gtest.h>
 
 #include "src/developer/forensics/feedback/attachments/types.h"
+#include "src/developer/forensics/feedback_data/constants.h"
 #include "src/developer/forensics/testing/backoff.h"
 #include "src/developer/forensics/testing/gmatchers.h"
 #include "src/developer/forensics/testing/gpretty_printers.h"  // IWYU pragma: keep
@@ -518,6 +519,56 @@ TEST_F(DiskBackedSystemLogTest, GetCurrentBootLogsNoCobaltLogsIfUnderCapacity) {
   RunLoopUntilIdle();
   EXPECT_TRUE(callback_called);
   EXPECT_THAT(ReceivedCobaltEvents(), IsEmpty());
+}
+
+TEST_F(DiskBackedSystemLogTest, AddsSourceMetadata) {
+  stubs::SystemLogRecorder stub;
+  stub.SetResponse(fit::ok("stub logs content"));
+  InjectServiceProvider(&stub);
+
+  DiskBackedSystemLog system_log(dispatcher(), services(), std::make_unique<MonotonicBackoff>(),
+                                 Redactor(), Cobalt());
+
+  const uint64_t kTicket = 1234;
+  AttachmentData result(Error::kNotSet);
+  bool callback_called = false;
+  GetExecutor().schedule_task(system_log.Get(kTicket)
+                                  .and_then([&result, &callback_called](AttachmentData& res) {
+                                    result = std::move(res);
+                                    callback_called = true;
+                                  })
+                                  .or_else([] { FX_LOGS(FATAL) << "Bad path"; }));
+
+  RunLoopUntilIdle();
+  EXPECT_TRUE(callback_called);
+  EXPECT_EQ(result.Metadata(),
+            AttachmentMetadata({{feedback_data::kAttachmentMetadataSourceKey,
+                                 feedback_data::kAttachmentMetadataSourceDisk}}));
+}
+
+TEST_F(DiskBackedSystemLogTest, AddsSourceMetadataOnError) {
+  stubs::SystemLogRecorder stub;
+  stub.SetResponse(fit::error(fuchsia_feedback_internal::RecorderError::kIoError));
+  InjectServiceProvider(&stub);
+
+  DiskBackedSystemLog system_log(dispatcher(), services(), std::make_unique<MonotonicBackoff>(),
+                                 Redactor(), Cobalt());
+
+  const uint64_t kTicket = 1234;
+  AttachmentData result(Error::kNotSet);
+  bool callback_called = false;
+  GetExecutor().schedule_task(system_log.Get(kTicket)
+                                  .and_then([&result, &callback_called](AttachmentData& res) {
+                                    result = std::move(res);
+                                    callback_called = true;
+                                  })
+                                  .or_else([] { FX_LOGS(FATAL) << "Bad path"; }));
+
+  RunLoopUntilIdle();
+  EXPECT_TRUE(callback_called);
+  EXPECT_EQ(result.Metadata(),
+            AttachmentMetadata({{feedback_data::kAttachmentMetadataSourceKey,
+                                 feedback_data::kAttachmentMetadataSourceDisk}}));
 }
 
 }  // namespace

@@ -201,6 +201,7 @@ cc_test_executable("disk_backed_system_log_unittest_exe") {
   deps = [
     "//src/developer/forensics/feedback/attachments",
     "//src/developer/forensics/feedback/attachments:disk_backed_system_log",
+    "//src/developer/forensics/feedback_data:constants",
     "//src/developer/forensics/testing:backoff",
     "//src/developer/forensics/testing:gmatchers",
     "//src/developer/forensics/testing:gpretty_printers",

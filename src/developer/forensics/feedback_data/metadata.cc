@@ -78,14 +78,16 @@ feedback::Attachments AllAttachments(const feedback::AttachmentKeys& allowlist,
   for (const auto& [k, v] : attachments) {
     switch (v.State()) {
       case feedback::AttachmentState::kComplete:
-        all_attachments.insert({k, feedback::AttachmentValue("", v.CollectionDuration())});
+        all_attachments.insert(
+            {k, feedback::AttachmentValue("", v.CollectionDuration(), v.Metadata())});
         break;
       case feedback::AttachmentState::kPartial:
         all_attachments.insert(
-            {k, feedback::AttachmentValue("", v.Error(), v.CollectionDuration())});
+            {k, feedback::AttachmentValue("", v.Error(), v.CollectionDuration(), v.Metadata())});
         break;
       case feedback::AttachmentState::kMissing:
-        all_attachments.insert({k, feedback::AttachmentValue(v.Error(), v.CollectionDuration())});
+        all_attachments.insert(
+            {k, feedback::AttachmentValue(v.Error(), v.CollectionDuration(), v.Metadata())});
         break;
     }
   }
@@ -150,6 +152,9 @@ void AddAttachments(const feedback::AttachmentKeys& attachment_allowlist,
     }
     file.AddMember("collection_duration_monotonic_nanos",
                    Value().SetInt64(v.CollectionDuration().get()), allocator);
+    for (const auto& [meta_key, meta_val] : v.Metadata()) {
+      file.AddMember(MakeValue(meta_key), MakeValue(meta_val), allocator);
+    }
 
     (*metadata_json)["files"].AddMember(MakeValue(name), file, allocator);
   }

@@ -278,8 +278,15 @@ auto CompletesAndConsume() {
 
   return consume.then([self, ticket](const ::fpromise::result<void, Error>& result)
                           -> ::fpromise::result<AttachmentData> {
+    const AttachmentMetadata metadata{
+        {
+            feedback_data::kAttachmentMetadataSourceKey,
+            feedback_data::kAttachmentMetadataSourceStream,
+        },
+    };
+
     if (!self) {
-      return ::fpromise::ok(AttachmentData(Error::kLogicError));
+      return ::fpromise::ok(AttachmentData(Error::kLogicError, metadata));
     }
 
     if (result.is_error() && result.error() == Error::kLogicError) {
@@ -312,11 +319,12 @@ auto CompletesAndConsume() {
 
     if (system_log.empty()) {
       const Error error = (result.is_ok()) ? Error::kMissingValue : result.error();
-      return ::fpromise::ok(AttachmentData(error));
+      return ::fpromise::ok(AttachmentData(error, metadata));
     }
 
-    return ::fpromise::ok(result.is_ok() ? AttachmentData(std::move(system_log))
-                                         : AttachmentData(std::move(system_log), result.error()));
+    return ::fpromise::ok(result.is_ok()
+                              ? AttachmentData(std::move(system_log), metadata)
+                              : AttachmentData(std::move(system_log), result.error(), metadata));
   });
 }
 

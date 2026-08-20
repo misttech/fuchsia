@@ -53,6 +53,13 @@ constexpr const char* kMetadataSchema = R"({
                       "missing"
                    ]
                 },
+                "source":{
+                   "type":"string",
+                   "enum":[
+                      "disk",
+                      "stream"
+                   ]
+                },
                 "error":{
                    "type":"string"
                 }
