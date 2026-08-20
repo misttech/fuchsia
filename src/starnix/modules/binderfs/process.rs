@@ -195,20 +195,22 @@ impl Releasable for TransactionState {
         for guard in self.guards {
             guard.release(&mut drop_actions);
         }
-        if let Some(proc) = self.proc.upgrade() {
-            // Release handles only if the owning process is still alive.
-            let mut proc_state = proc.lock();
-            for handle in &self.handles {
-                if let Err(error) =
-                    proc_state.handles.dec_strong(handle.object_index(), &mut drop_actions)
-                {
-                    // Ignore the error because there is little we can do about it.
-                    // Panicking would be wrong, in case the client issued an extra strong decrement.
-                    log_warn!(
-                        "Error when dropping transaction state for process {}: {:?}",
-                        proc.key.pid(),
-                        error
-                    );
+        if !self.handles.is_empty() {
+            if let Some(proc) = self.proc.upgrade() {
+                // Release handles only if the owning process is still alive.
+                let mut proc_state = proc.lock();
+                for handle in &self.handles {
+                    if let Err(error) =
+                        proc_state.handles.dec_strong(handle.object_index(), &mut drop_actions)
+                    {
+                        // Ignore the error because there is little we can do about it.
+                        // Panicking would be wrong, in case the client issued an extra strong decrement.
+                        log_warn!(
+                            "Error when dropping transaction state for process {}: {:?}",
+                            proc.key.pid(),
+                            error
+                        );
+                    }
                 }
             }
         }

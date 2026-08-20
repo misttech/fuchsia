@@ -1493,14 +1493,18 @@ impl BinderDriver {
         let userspace_addrs = unsafe { data.transaction_data.data.ptr };
 
         // Copy the data straight into the target's buffer.
-        source.memory_accessor.read_memory_to_slice(
-            UserAddress::from(userspace_addrs.buffer),
-            allocations.data_buffer.as_mut_bytes(),
-        )?;
-        source.memory_accessor.read_objects_to_slice(
-            UserRef::new(UserAddress::from(userspace_addrs.offsets)),
-            allocations.offsets_buffer.as_mut_bytes(),
-        )?;
+        if data.transaction_data.data_size > 0 {
+            source.memory_accessor.read_memory_to_slice(
+                UserAddress::from(userspace_addrs.buffer),
+                allocations.data_buffer.as_mut_bytes(),
+            )?;
+        }
+        if data.transaction_data.offsets_size > 0 {
+            source.memory_accessor.read_objects_to_slice(
+                UserRef::new(UserAddress::from(userspace_addrs.offsets)),
+                allocations.offsets_buffer.as_mut_bytes(),
+            )?;
+        }
 
         // Translate any handles/fds from the source process' handle table to the target process'
         // handle table.
@@ -1605,6 +1609,10 @@ impl BinderDriver {
         transaction_data: &mut [u8],
         sg_buffer: &mut SharedBuffer<'_, u8>,
     ) -> Result<TransientTransactionState<'a>, TransactionError> {
+        if offsets.is_empty() {
+            return Ok(TransientTransactionState::new(target_resource_accessor, target_proc));
+        }
+
         let mut transaction_state =
             TransientTransactionState::new(target_resource_accessor, target_proc);
         release_on_error!(transaction_state, (), {
