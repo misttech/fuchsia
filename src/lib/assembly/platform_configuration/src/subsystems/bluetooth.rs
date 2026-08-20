@@ -157,6 +157,14 @@ impl DefineSubsystemConfiguration<(&BluetoothConfig, &PlatformMediaConfig)>
             Config::new(ConfigValueType::Uint16, core.scan.active_window.into()),
         )?;
         builder.set_config_capability(
+            "fuchsia.bluetooth.LeBatchedScanningEnabled",
+            Config::new(ConfigValueType::Bool, core.scan.batched.into()),
+        )?;
+        builder.set_config_capability(
+            "fuchsia.bluetooth.LeScanBatchMaxReadDelaySeconds",
+            Config::new(ConfigValueType::Uint8, core.scan.batch_max_read_delay_seconds.into()),
+        )?;
+        builder.set_config_capability(
             "fuchsia.bluetooth.LeScanOffloadFiltersEnabled",
             Config::new(ConfigValueType::Bool, core.scan.offload_filters_enabled.into()),
         )?;

@@ -85,6 +85,8 @@ pub async fn add_host_routes(
         "fuchsia.bluetooth.LeVeryFastAdvMaxTxPower",
         "fuchsia.bluetooth.LeActiveScanInterval",
         "fuchsia.bluetooth.LeActiveScanWindow",
+        "fuchsia.bluetooth.LeBatchedScanningEnabled",
+        "fuchsia.bluetooth.LeScanBatchMaxReadDelaySeconds",
         "fuchsia.bluetooth.LeScanOffloadFiltersEnabled",
     ];
 
@@ -152,6 +154,18 @@ pub async fn add_host_routes(
         .add_capability(cm_rust::CapabilityDecl::Config(cm_rust::ConfigurationDecl {
             name: "fuchsia.bluetooth.LeActiveScanWindow".parse()?,
             value: cm_rust::ConfigValue::Single(cm_rust::ConfigSingleValue::Uint16(0)),
+        }))
+        .await?;
+    builder
+        .add_capability(cm_rust::CapabilityDecl::Config(cm_rust::ConfigurationDecl {
+            name: "fuchsia.bluetooth.LeBatchedScanningEnabled".parse()?,
+            value: cm_rust::ConfigValue::Single(cm_rust::ConfigSingleValue::Bool(false)),
+        }))
+        .await?;
+    builder
+        .add_capability(cm_rust::CapabilityDecl::Config(cm_rust::ConfigurationDecl {
+            name: "fuchsia.bluetooth.LeScanBatchMaxReadDelaySeconds".parse()?,
+            value: cm_rust::ConfigValue::Single(cm_rust::ConfigSingleValue::Uint8(3)),
         }))
         .await?;
     builder

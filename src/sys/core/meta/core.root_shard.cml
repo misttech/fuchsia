@@ -18,9 +18,11 @@
             config: [
                 "fuchsia.bluetooth.LeActiveScanInterval",
                 "fuchsia.bluetooth.LeActiveScanWindow",
+                "fuchsia.bluetooth.LeBatchedScanningEnabled",
                 "fuchsia.bluetooth.LeFastAdvIntervalMax",
                 "fuchsia.bluetooth.LeFastAdvIntervalMin",
                 "fuchsia.bluetooth.LeFastAdvMaxTxPower",
+                "fuchsia.bluetooth.LeScanBatchMaxReadDelaySeconds",
                 "fuchsia.bluetooth.LeScanOffloadFiltersEnabled",
                 "fuchsia.bluetooth.LeSlowAdvIntervalMax",
                 "fuchsia.bluetooth.LeSlowAdvIntervalMin",

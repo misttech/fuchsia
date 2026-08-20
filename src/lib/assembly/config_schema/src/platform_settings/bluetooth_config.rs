@@ -518,7 +518,7 @@ impl Default for LeAdvertisingConfig {
 }
 
 /// Platform configuration for Bluetooth Low Energy scanning.
-#[derive(Clone, Copy, Debug, Default, Deserialize, Serialize, PartialEq, JsonSchema)]
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, JsonSchema)]
 #[serde(default)]
 pub struct LeScanConfig {
     #[serde(skip_serializing_if = "crate::common::is_default")]
@@ -527,11 +527,32 @@ pub struct LeScanConfig {
     #[serde(skip_serializing_if = "crate::common::is_default")]
     pub active_window: u16,
 
+    /// Whether batched scanning is enabled; bt-host checks for firmware support before actually
+    /// using the feature. This flag only enables the feature if the firmware also supports it.
+    #[serde(skip_serializing_if = "crate::common::is_default")]
+    pub batched: bool,
+
+    /// Maximum read delay in seconds for batched scanning.
+    #[serde(skip_serializing_if = "crate::common::is_default")]
+    pub batch_max_read_delay_seconds: u8,
+
     /// Whether offloaded packet filtering is enabled for scanning; bt-host checks for firmware
     /// support before actually using the feature. This flag only enables the feature if the
     /// firmware also supports it.
     #[serde(skip_serializing_if = "crate::common::is_default")]
     pub offload_filters_enabled: bool,
+}
+
+impl Default for LeScanConfig {
+    fn default() -> Self {
+        Self {
+            active_interval: 0,
+            active_window: 0,
+            batched: false,
+            batch_max_read_delay_seconds: 3,
+            offload_filters_enabled: false,
+        }
+    }
 }
 
 /// Platform configuration for Bluetooth core features.
@@ -832,6 +853,8 @@ mod tests {
             scan: LeScanConfig {
                 active_interval: 30,
                 active_window: 60,
+                batched: false,
+                batch_max_read_delay_seconds: 3,
                 offload_filters_enabled: false,
             },
             hci_command_timeout: 10,
@@ -1098,5 +1121,57 @@ mod tests {
             panic!("expected standard config");
         };
         assert!(!core.scan.offload_filters_enabled);
+    }
+
+    #[test]
+    fn test_deserialize_le_scan_batched() {
+        let json_enabled = serde_json::json!({
+            "type": "standard",
+            "core": {
+                "scan": {
+                    "batched": true,
+                }
+            }
+        });
+        let parsed: BluetoothConfig = serde_json::from_value(json_enabled).unwrap();
+        let BluetoothConfig::Standard { core, .. } = parsed else {
+            panic!("expected standard config");
+        };
+        assert!(core.scan.batched);
+
+        let json_default = serde_json::json!({
+            "type": "standard",
+        });
+        let parsed_default: BluetoothConfig = serde_json::from_value(json_default).unwrap();
+        let BluetoothConfig::Standard { core, .. } = parsed_default else {
+            panic!("expected standard config");
+        };
+        assert!(!core.scan.batched);
+    }
+
+    #[test]
+    fn test_deserialize_le_scan_batch_max_read_delay_seconds() {
+        let json_enabled = serde_json::json!({
+            "type": "standard",
+            "core": {
+                "scan": {
+                    "batch_max_read_delay_seconds": 5,
+                }
+            }
+        });
+        let parsed: BluetoothConfig = serde_json::from_value(json_enabled).unwrap();
+        let BluetoothConfig::Standard { core, .. } = parsed else {
+            panic!("expected standard config");
+        };
+        assert_eq!(core.scan.batch_max_read_delay_seconds, 5);
+
+        let json_default = serde_json::json!({
+            "type": "standard",
+        });
+        let parsed_default: BluetoothConfig = serde_json::from_value(json_default).unwrap();
+        let BluetoothConfig::Standard { core, .. } = parsed_default else {
+            panic!("expected standard config");
+        };
+        assert_eq!(core.scan.batch_max_read_delay_seconds, 3);
     }
 }
