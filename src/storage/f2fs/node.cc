@@ -698,7 +698,9 @@ void NodeManager::BuildFreeNids() {
 
   // find free nids from current sum_pages
   fs_->GetSegmentManager().GetSummaryBlock(CursegType::kCursegHotData, [&](SummaryBlock &sum) {
-    for (int i = 0; i < NatsInCursum(sum); ++i) {
+    int n_nats = NatsInCursum(sum);
+    ZX_DEBUG_ASSERT(n_nats <= static_cast<int>(kNatJournalEntries));
+    for (int i = 0; i < n_nats; ++i) {
       block_t addr = LeToCpu(NatInJournal(sum, i).block_addr);
       nid_t nid = LeToCpu(NidInJournal(sum, i));
       if (addr == kNullAddr) {
@@ -783,46 +785,45 @@ zx_status_t NodeManager::RecoverInodePage(NodePage &page) {
 }
 
 bool NodeManager::FlushNatsInJournal() {
-  int i;
-  zx_status_t status =
-      fs_->GetSegmentManager().SetSummaryBlock(CursegType::kCursegHotData, [&](SummaryBlock &sum) {
-        {
-          fs::SharedLock nat_lock(nat_tree_lock_);
-          size_t dirty_nat_cnt = dirty_nat_list_.size_slow();
-          if ((NatsInCursum(sum) + dirty_nat_cnt) <= kNatJournalEntries) {
-            return ZX_ERR_OUT_OF_RANGE;
-          }
-        }
-
-        for (i = 0; i < NatsInCursum(sum); ++i) {
-          NatEntry *cache_entry = nullptr;
-          RawNatEntry raw_entry = NatInJournal(sum, i);
-          nid_t nid = LeToCpu(NidInJournal(sum, i));
-
-          while (!cache_entry) {
-            std::lock_guard nat_lock(nat_tree_lock_);
-            cache_entry = LookupNatCache(nid);
-            if (cache_entry) {
-              SetNatCacheDirty(*cache_entry);
-            } else {
-              cache_entry = GrabNatEntry(nid);
-              if (!cache_entry) {
-                continue;
-              }
-              cache_entry->SetBlockAddress(LeToCpu(raw_entry.block_addr));
-              cache_entry->SetIno(LeToCpu(raw_entry.ino));
-              cache_entry->SetVersion(raw_entry.version);
-              SetNatCacheDirty(*cache_entry);
-            }
-          }
-        }
-        UpdateNatsInCursum(sum, -i);
+  bool flushed = false;
+  fs_->GetSegmentManager().SetSummaryBlock(CursegType::kCursegHotData, [&](SummaryBlock &sum) {
+    int n_nats = NatsInCursum(sum);
+    ZX_DEBUG_ASSERT(n_nats <= static_cast<int>(kNatJournalEntries));
+    {
+      fs::SharedLock nat_lock(nat_tree_lock_);
+      size_t dirty_nat_cnt = dirty_nat_list_.size_slow();
+      if ((n_nats + dirty_nat_cnt) <= kNatJournalEntries) {
         return ZX_OK;
-      });
-  if (status != ZX_OK) {
-    return false;
-  }
-  return true;
+      }
+    }
+
+    for (int i = 0; i < n_nats; ++i) {
+      NatEntry *cache_entry = nullptr;
+      RawNatEntry raw_entry = NatInJournal(sum, i);
+      nid_t nid = LeToCpu(NidInJournal(sum, i));
+
+      while (!cache_entry) {
+        std::lock_guard nat_lock(nat_tree_lock_);
+        cache_entry = LookupNatCache(nid);
+        if (cache_entry) {
+          SetNatCacheDirty(*cache_entry);
+        } else {
+          cache_entry = GrabNatEntry(nid);
+          if (!cache_entry) {
+            continue;
+          }
+          cache_entry->SetBlockAddress(LeToCpu(raw_entry.block_addr));
+          cache_entry->SetIno(LeToCpu(raw_entry.ino));
+          cache_entry->SetVersion(raw_entry.version);
+          SetNatCacheDirty(*cache_entry);
+        }
+      }
+    }
+    UpdateNatsInCursum(sum, -n_nats);
+    flushed = true;
+    return ZX_OK;
+  });
+  return flushed;
 }
 
 // This function is called during the checkpointing process.
