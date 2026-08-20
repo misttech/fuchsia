@@ -7,6 +7,13 @@
 # FFX subtools parse this file to create a command line with the same confuration.
 # This is done to allow for easier debugging since the options appear in the log.
 
+# Note: StrictHostKeyChecking is disabled because Fuchsia development devices
+# are frequently reflashed, paved, and netbooted with ephemeral filesystems,
+# which generates fresh SSH host keys on each boot. Enforcing host key
+# verification would cause frequent host key mismatch errors during standard
+# development workflows. For untrusted network environments, use transport-level
+# isolation such as direct point-to-point USB (USB_VSOCK) or disable network
+# connectivity (ffx config set connectivity.enable_network false).
 CheckHostIP=no
 StrictHostKeyChecking=no
 UserKnownHostsFile=/dev/null

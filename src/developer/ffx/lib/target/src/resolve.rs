@@ -597,7 +597,7 @@ enum ResolutionTarget {
     Addr(SocketAddr),
     Usb(u32),
     Vsock(u32),
-    TestMock(Box<dyn Fn() -> Result<Connection>>),
+    TestMock(Box<dyn Fn() -> Result<Connection> + Send + Sync>),
 }
 
 impl Debug for ResolutionTarget {
@@ -786,7 +786,7 @@ impl Resolution {
         }
     }
 
-    pub fn mock(f: impl Fn() -> Result<Connection> + 'static) -> Self {
+    pub fn mock(f: impl Fn() -> Result<Connection> + Send + Sync + 'static) -> Self {
         Self::from_target(ResolutionTarget::TestMock(Box::new(f)))
     }
 
@@ -876,6 +876,11 @@ impl Resolution {
             }
             Err(_) => {
                 *conn_guard = ConnectionState::Failed;
+                // If a connection attempt fails, invalidate the discovery cache file so subsequent
+                // attempts re-discover rather than pinning to a stale or unreachable cached entry.
+                if let Err(e) = crate::cache::remove_target_cache(context) {
+                    log::debug!("Failed to remove target cache on connection failure: {e:?}");
+                }
             }
         }
         conn_res
@@ -1471,5 +1476,44 @@ mod test {
 
         resolver.set_discovery_timeout(Some(Duration::from_millis(100)));
         assert_eq!(resolver.discovery_timeout(), Some(Duration::from_millis(100)));
+    }
+
+    #[fuchsia::test]
+    async fn test_connection_failure_removes_discovery_cache() {
+        use crate::cache::{Cache, get_discovery_cache_file};
+
+        let temp_dir = tempfile::tempdir().unwrap();
+        let cache_dir_path = temp_dir.path().to_path_buf();
+
+        let test_env = ffx_config::test_env()
+            .user_config(
+                ffx_config::keys::DISCOVERY_CACHE_DIR_CONFIG,
+                serde_json::json!(cache_dir_path.to_str().unwrap()),
+            )
+            .build()
+            .unwrap();
+
+        // Write a cache file containing target info
+        let cache_file = get_discovery_cache_file(&test_env.context).unwrap();
+        let sa: SocketAddr = "127.0.0.1:8080".parse().unwrap();
+        let mut target_info = crate::TargetInfo::default();
+        target_info.nodename = Some("test-target".to_string());
+        target_info.target_state = info::TargetState::Product;
+        target_info.addresses = vec![sa.into()];
+        let cache = Cache::new(vec![target_info]);
+        cache.save(&cache_file).unwrap();
+
+        assert!(cache_file.exists());
+
+        // Create a Resolution that fails to connect
+        let resolution = Resolution::from_target(ResolutionTarget::TestMock(Box::new(|| {
+            Err(anyhow::anyhow!("Connection error"))
+        })));
+
+        let res = resolution.get_connection(&test_env.context).await;
+        assert!(res.is_err());
+
+        // Cache file should now have been removed
+        assert!(!cache_file.exists());
     }
 }
