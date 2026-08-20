@@ -811,9 +811,16 @@ mod tests {
                 .await;
             }
 
-            for task in
-                stats.tree.lock().get(&moniker.into()).unwrap().lock().tasks_mut().iter_mut()
-            {
+            let extended_moniker: ExtendedMoniker = moniker.clone().into();
+
+            let tasks_to_terminate: Vec<_> = {
+                let tree_guard = stats.tree.lock();
+                let mut node_guard = tree_guard.get(&extended_moniker).unwrap().lock();
+
+                node_guard.tasks_mut().iter().cloned().collect()
+            };
+
+            for task in tasks_to_terminate {
                 task.force_terminate().await;
                 clock.add_ticks(1);
             }
@@ -870,18 +877,17 @@ mod tests {
         });
 
         for moniker in moniker_list {
-            for task in stats
-                .tree
-                .lock()
-                .get(&moniker.clone().into())
-                .unwrap()
-                .lock()
-                .tasks_mut()
-                .iter_mut()
-            {
+            let extended_moniker = moniker.clone().into();
+
+            let tasks_to_terminate = {
+                let tree_guard = stats.tree.lock();
+                let mut node_guard = tree_guard.get(&extended_moniker).unwrap().lock();
+
+                node_guard.tasks_mut().to_vec()
+            };
+
+            for task in tasks_to_terminate {
                 task.force_terminate().await;
-                // the timestamp for termination is used as a key when pruning,
-                // so all of the tasks cannot be removed at exactly the same time
                 clock.add_ticks(1);
             }
         }

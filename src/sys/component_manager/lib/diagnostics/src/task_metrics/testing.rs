@@ -63,9 +63,11 @@ impl RuntimeStatsSource for FakeTask {
 
 impl TaskInfo<FakeTask> {
     pub async fn force_terminate(&self) {
-        let mut guard = self.most_recent_measurement_nanos.lock();
-        *guard = Some(self.time_source.now());
-        drop(guard);
+        {
+            let mut guard = self.most_recent_measurement_nanos.lock();
+            *guard = Some(self.time_source.now());
+        }
+
         match &*self.task.lock() {
             TaskState::Alive(t) | TaskState::Terminated(t) => t.terminate(),
             TaskState::TerminatedAndMeasured => {}
