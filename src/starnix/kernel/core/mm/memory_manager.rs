@@ -4405,7 +4405,23 @@ impl MemoryManager {
     }
 
     pub fn atomic_load_u32_acquire(&self, futex_addr: FutexAddress) -> Result<u32, Errno> {
-        self.run_atomic_op(futex_addr, |uc| uc.atomic_load_u32_acquire(futex_addr.ptr()))
+        if usercopy().is_some() {
+            self.run_atomic_op(futex_addr, |uc| uc.atomic_load_u32_acquire(futex_addr.ptr()))
+        } else {
+            // SAFETY: `self.state.read().read_memory` only returns `Ok` if all
+            // bytes were read to.
+            let buf = unsafe {
+                read_to_array(|buf| {
+                    self.state
+                        .read()
+                        .read_memory(futex_addr.into(), buf, &self.mapping_context)
+                        .map(|bytes_read| {
+                            debug_assert_eq!(bytes_read.len(), std::mem::size_of::<u32>())
+                        })
+                })
+            }?;
+            Ok(u32::from_ne_bytes(buf))
+        }
     }
 
     pub fn atomic_load_u32_relaxed(&self, futex_addr: FutexAddress) -> Result<u32, Errno> {

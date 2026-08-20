@@ -11,6 +11,7 @@
 #include <unistd.h>
 
 #include <atomic>
+#include <barrier>
 #include <ctime>
 #include <latch>
 #include <new>
@@ -597,6 +598,66 @@ TEST_P(GetRobustListTest, DifferentUserRequiresCapSysPtrace) {
   });
 
   EXPECT_TRUE(tracer_helper.WaitForChildren());
+}
+
+TEST(FutexTest, EvictedPageContentionUnderMemoryPressure) {
+  test_helper::ForkHelper helper;
+  helper.RunInForkedProcess([] {
+    char filename[] = "/tmp/futex_test_XXXXXX";
+    int fd = mkstemp(filename);
+    ASSERT_GE(fd, 0);
+    unlink(filename);
+
+    constexpr size_t kFileSize = 16 * 1024 * 1024;  // 16 MB
+    ASSERT_EQ(ftruncate(fd, kFileSize), 0);
+
+    uint32_t *mapped = reinterpret_cast<uint32_t *>(
+        mmap(nullptr, kFileSize, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0));
+    ASSERT_NE(mapped, MAP_FAILED);
+
+    std::atomic<bool> stop{false};
+    std::barrier sync_barrier(2);
+
+    // Thread 1: loops calling FUTEX_WAIT on madvise'd pages
+    std::thread t_waiter([&]() {
+      size_t offset = 0;
+      sync_barrier.arrive_and_wait();
+      while (!stop.load()) {
+        madvise(&mapped[offset], 4096, MADV_DONTNEED);
+        struct timespec ts = {.tv_sec = 0, .tv_nsec = 1000000};  // 1ms
+        syscall(SYS_futex, &mapped[offset], FUTEX_WAIT, 0, &ts, nullptr, 0);
+        offset = (offset + 1024) % (kFileSize / sizeof(uint32_t));
+      }
+    });
+
+    sync_barrier.arrive_and_wait();
+
+    // Thread 2: Simulates ActivityManager reading /proc/self/status concurrently
+    std::thread t_procfs([&]() {
+      char buf[1024];
+      while (!stop.load()) {
+        int pfd = open("/proc/self/status", O_RDONLY);
+        if (pfd >= 0) {
+          read(pfd, buf, sizeof(buf));
+          close(pfd);
+        }
+      }
+    });
+
+    // Main thread verifies other futex operations proceed without deadlocking
+    uint32_t dummy_futex = 0;
+    for (int i = 0; i < 200; ++i) {
+      syscall(SYS_futex, &dummy_futex, FUTEX_WAKE, 1, nullptr, nullptr, 0);
+      usleep(1000);
+    }
+
+    stop.store(true);
+    t_waiter.join();
+    t_procfs.join();
+    munmap(mapped, kFileSize);
+    close(fd);
+  });
+  EXPECT_TRUE(helper.WaitForChildren());
 }
 
 INSTANTIATE_TEST_SUITE_P(

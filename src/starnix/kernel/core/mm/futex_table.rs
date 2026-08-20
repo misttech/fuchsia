@@ -48,6 +48,11 @@ impl<Key: FutexKey> FutexTable<Key> {
         timer_slack: zx::BootDuration,
     ) -> Result<(), Errno> {
         let addr = FutexAddress::try_from(addr)?;
+        // Pre-fault the address before acquiring the FutexTable lock to make page faults or
+        // memory reclamation under the lock highly unlikely.
+        // TODO(https://fxbug.dev/548025031): Implement a non-blocking try_load and retry loop once
+        // supported by Zircon.
+        let _ = current_task.mm()?.atomic_load_u32_acquire(addr)?;
         let mut state = self.state.lock();
         // As the state is locked, no wake can happen before the waiter is registered.
         // If the addr is remapped, we will read stale data, but we will not miss a futex wake.
@@ -97,6 +102,11 @@ impl<Key: FutexKey> FutexTable<Key> {
         deadline: zx::MonotonicInstant,
     ) -> Result<(), Errno> {
         let addr = FutexAddress::try_from(addr)?;
+        // Pre-fault the address before acquiring the FutexTable lock to make page faults or
+        // memory reclamation under the lock highly unlikely.
+        // TODO(https://fxbug.dev/548025031): Implement a non-blocking try_load and retry loop once
+        // supported by Zircon.
+        let _ = current_task.mm()?.atomic_load_u32_acquire(addr)?;
         let mut state = self.state.lock();
         // As the state is locked, no wake can happen before the waiter is registered.
         // If the addr is remapped, we will read stale data, but we will not miss a futex wake.
@@ -154,6 +164,13 @@ impl<Key: FutexKey> FutexTable<Key> {
     ) -> Result<usize, Errno> {
         let addr = FutexAddress::try_from(addr)?;
         let new_addr = FutexAddress::try_from(new_addr)?;
+        if expected_value.is_some() {
+            // Pre-fault the address before acquiring the FutexTable lock to make page faults or
+            // memory reclamation under the lock highly unlikely.
+            // TODO(https://fxbug.dev/548025031): Implement a non-blocking try_load and retry loop once
+            // supported by Zircon.
+            let _ = current_task.mm()?.atomic_load_u32_acquire(addr)?;
+        }
         let key = Key::get(current_task, addr)?;
         let new_key = Key::get(current_task, new_addr)?;
         let mut state = self.state.lock();
@@ -179,13 +196,21 @@ impl<Key: FutexKey> FutexTable<Key> {
         deadline: zx::MonotonicInstant,
     ) -> Result<(), Errno> {
         let addr = FutexAddress::try_from(addr)?;
+        let mm = current_task.mm()?;
+        // Perform a dummy CAS to pre-fault the page with write permissions (e.g. for COW pages)
+        // before acquiring the FutexTable lock to make page faults or memory reclamation under
+        // the lock highly unlikely.
+        // TODO(https://fxbug.dev/548025031): Implement a non-blocking try_load and retry loop once
+        // supported by Zircon.
+        if let Ok(current) = mm.atomic_load_u32_relaxed(addr) {
+            let _ = mm.atomic_compare_exchange_u32_acq_rel(addr, current, current);
+        }
         let mut state = self.state.lock();
         // As the state is locked, no unlock can happen before the waiter is registered.
         // If the addr is remapped, we will read stale data, but we will not miss a futex unlock.
         let key = Key::get(current_task, addr)?;
 
         let tid = current_task.get_tid() as u32;
-        let mm = current_task.mm()?;
 
         // Use a relaxed ordering because the compare/exchange below creates a synchronization
         // point with userspace threads in the success case. No synchronization is required in
@@ -198,8 +223,8 @@ impl<Key: FutexKey> FutexTable<Key> {
                 //
                 //   EDEADLK
                 //          (FUTEX_LOCK_PI, FUTEX_LOCK_PI2, FUTEX_TRYLOCK_PI,
-                //          FUTEX_CMP_REQUEUE_PI) The futex word at uaddr is already
-                //          locked by the caller.
+                //          FUTEX_CMP_REQUEUE_PI) The futex word at uaddr is
+                //          already locked by the caller.
                 return error!(EDEADLOCK);
             }
 
@@ -262,9 +287,17 @@ impl<Key: FutexKey> FutexTable<Key> {
     /// See FUTEX_UNLOCK_PI.
     pub fn unlock_pi(&self, current_task: &CurrentTask, addr: UserAddress) -> Result<(), Errno> {
         let addr = FutexAddress::try_from(addr)?;
+        let mm = current_task.mm()?;
+        // Perform a placeholder CAS to pre-fault the page with write permissions (e.g. for COW pages)
+        // before acquiring the FutexTable lock to make page faults or memory reclamation under
+        // the lock highly unlikely.
+        // TODO(https://fxbug.dev/548025031): Implement a non-blocking try_load and retry loop once
+        // supported by Zircon.
+        if let Ok(current) = mm.atomic_load_u32_relaxed(addr) {
+            let _ = mm.atomic_compare_exchange_u32_acq_rel(addr, current, current);
+        }
         let mut state = self.state.lock();
         let tid = current_task.get_tid() as u32;
-        let mm = current_task.mm()?;
 
         let key = Key::get(current_task, addr)?;
 
@@ -926,5 +959,100 @@ mod tests {
         state.remove_waiter_from_queue(key, &dummy_event);
 
         assert_eq!(state.waiters.len(), 0, "Stale external waiter should be removed");
+    }
+
+    #[::fuchsia::test]
+    async fn test_futex_deadlock_with_pager() {
+        use crate::mm::memory::MemoryObject;
+        use crate::mm::{DesiredAddress, MappingName, MappingOptions, PAGE_SIZE, ProtectionFlags};
+        use crate::testing::spawn_kernel_and_run;
+        use starnix_uapi::file_mode::Access;
+        use std::sync::atomic::{AtomicBool, Ordering};
+        use zx::sys::zx_page_request_command_t::ZX_PAGER_VMO_READ;
+
+        spawn_kernel_and_run(async move |current_task| {
+            let mm = current_task.mm().unwrap();
+
+            let port = Arc::new(zx::Port::create());
+            let port_clone = port.clone();
+            let pager =
+                Arc::new(zx::Pager::create(zx::PagerOptions::empty()).expect("create failed"));
+            let pager_clone = pager.clone();
+
+            let vmo = Arc::new(
+                pager
+                    .create_vmo(zx::VmoOptions::RESIZABLE, &port, 1, *PAGE_SIZE)
+                    .expect("create_vmo failed"),
+            );
+            let vmo_clone = vmo.clone();
+
+            let mapped_addr = mm
+                .map_memory(
+                    DesiredAddress::Any,
+                    Arc::new(MemoryObject::from(
+                        (*vmo).duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap(),
+                    )),
+                    0,
+                    *PAGE_SIZE as usize,
+                    ProtectionFlags::READ | ProtectionFlags::WRITE,
+                    Access::rwx(),
+                    MappingOptions::empty(),
+                    MappingName::None,
+                )
+                .expect("map failed");
+
+            let futex_table = Arc::new(FutexTable::<PrivateFutexKey>::default());
+            let futex_table_clone = futex_table.clone();
+            let task_clone = current_task.task.clone();
+            let dummy_addr = UserAddress::from((RESTRICTED_ASPACE_BASE + 0x2000) as u64);
+
+            let page_requested = Arc::new(AtomicBool::new(false));
+            let wake_completed = Arc::new(AtomicBool::new(false));
+
+            let page_req_clone = page_requested.clone();
+            let wake_completed_clone = wake_completed.clone();
+
+            let pager_thread = std::thread::spawn(move || {
+                let packet = port_clone.wait(zx::MonotonicInstant::INFINITE).expect("wait failed");
+                if let zx::PacketContents::Pager(contents) = packet.contents() {
+                    if contents.command() == ZX_PAGER_VMO_READ {
+                        let range = contents.range();
+                        page_req_clone.store(true, Ordering::SeqCst);
+
+                        // Spawn waker thread while main thread is page-faulting before acquiring the lock
+                        let waker = std::thread::spawn(move || {
+                            let _ = futex_table_clone.wake(&task_clone, dummy_addr, 1, u32::MAX);
+                            wake_completed_clone.store(true, Ordering::SeqCst);
+                        });
+
+                        // Verify waker completes immediately without being blocked by the page fault
+                        waker.join().unwrap();
+                        assert!(
+                            wake_completed.load(Ordering::SeqCst),
+                            "Waker thread must NOT be blocked while page fault is in progress!"
+                        );
+
+                        // Supply pages to unblock the main thread's page fault
+                        let source_vmo =
+                            zx::Vmo::create(range.end - range.start).expect("create failed");
+                        pager_clone
+                            .supply_pages(&vmo_clone, range, &source_vmo, 0)
+                            .expect("supply_pages failed");
+                    }
+                }
+            });
+
+            // This will lock the FutexTable, then page fault on mapped_addr when reading value
+            let _ = futex_table.wait(
+                current_task,
+                mapped_addr,
+                0,
+                u32::MAX,
+                zx::MonotonicInstant::from_nanos(1),
+            );
+
+            pager_thread.join().unwrap();
+        })
+        .await;
     }
 }
