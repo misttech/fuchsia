@@ -30,20 +30,27 @@ You should consider using logging if you want the ability to:
 
 ## Tracing
 
-Fuchsia's [tracing system][tracing-docs] which offers a comprehensive way to
-collect, aggregate, and visualize diagnostic tracing information from the
-Fuchsia user space processes and the Zircon kernel. Traces, like logs, also
-represent events from a Fuchsia system, but are fine grained, higher frequency
-and are meant for machine consumption to compute other insights and
-visualizations. When you combine structured logging and tracing it helps you
-diagnose, debug and troubleshoot diverse Fuchsia target devices more efficiently.
+Fuchsia's [tracing system][tracing-docs] offers a comprehensive way to collect,
+aggregate, and visualize fine-grained diagnostic tracing information from
+Fuchsia user space processes and the Zircon kernel. Traces represent events from
+a Fuchsia system with submicrosecond precision, designed for high-frequency
+event recording and post-collection visual analysis.
 
-You should consider using tracing if you **do not** need to view data in real
-time and want the ability to:
+When combined with the [Perfetto UI][perfetto-ui], tracing allows you to see
+instants and durations visually along an interactive timeline.
 
-- Collect submicrosecond granular structured data.
-- Visualize data in an interactive viewer.
-- Query and aggregate data in SQL.
+You should consider using tracing if you want the ability to:
+
+* See instant milestones and duration slices visually on a timeline.
+
+* Measure precise submicrosecond latencies and identify execution bottlenecks.
+
+* Follow asynchronous operations and flow events across processes and threads.
+
+* Correlate user space execution with Zircon kernel scheduling events.
+
+* Query and aggregate trace data offline using SQL in the Perfetto Trace
+  Processor.
 
 ## Inspect
 
@@ -148,6 +155,8 @@ You can also follow the tracing tutorials and guides:
 [tracing-docs]: /docs/concepts/kernel/tracing-system.md
 [tracing-codelab]: /docs/development/tracing/tutorial/README.md
 [tracing-async-guide]: /docs/development/tracing/advanced/tracing-asynchronously.md
+[perfetto-docs]: https://perfetto.dev/docs/
+[perfetto-ui]: https://ui.perfetto.dev/
 [sampler-docs]: /docs/development/diagnostics/analytics/sampler.md
 [ffx-trace-ref]: https://fuchsia.dev/reference/tools/sdk/ffx.md#ffx_trace
 [cobalt-readme]: https://fuchsia.googlesource.com/cobalt/+/main/README.md
