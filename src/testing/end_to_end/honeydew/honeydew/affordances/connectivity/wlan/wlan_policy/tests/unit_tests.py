@@ -513,7 +513,7 @@ class WlanPolicyTests(unittest.IsolatedAsyncioTestCase):
         state = await self.wlan_policy_obj.wait_for_network_state(
             ssid="ssid1",
             expected_state=f_wlan_policy.ConnectionState.CONNECTED,
-            timeout=5,
+            timeout=timedelta(seconds=5),
         )
         self.assertEqual(state, f_wlan_policy.ConnectionState.CONNECTED)
         await push_task

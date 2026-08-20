@@ -407,7 +407,7 @@ class WlanPolicy(AsyncLazyReady):
             await self.wait_for_network_state(
                 target_ssid,
                 f_wlan_policy.ConnectionState.CONNECTED,
-                timeout=timeout,
+                timeout=None if timeout is None else timedelta(seconds=timeout),
             )
         except FcTransportStatus as status:
             raise wlan_errors.HoneydewWlanError(
@@ -598,7 +598,7 @@ class WlanPolicy(AsyncLazyReady):
         self,
         ssid: str,
         expected_state: f_wlan_policy.ConnectionState,
-        timeout: float | None = _DEFAULT_WLAN_POLICY_OPERATION_TIMEOUT_SEC,
+        timeout: timedelta | None = _DEFAULT_WLAN_POLICY_OPERATION_TIMEOUT,
     ) -> f_wlan_policy.ConnectionState:
         await self.set_new_update_listener()
 
@@ -622,10 +622,7 @@ class WlanPolicy(AsyncLazyReady):
                         )
             return False
 
-        matched_update = await self._wait_on_update(
-            check_net,
-            timeout=None if timeout is None else timedelta(seconds=timeout),
-        )
+        matched_update = await self._wait_on_update(check_net, timeout=timeout)
 
         for net in matched_update.networks:
             if net.network_identifier.ssid == ssid:

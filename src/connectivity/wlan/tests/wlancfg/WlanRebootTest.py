@@ -11,6 +11,7 @@ import logging
 import os
 import time
 from dataclasses import dataclass
+from datetime import timedelta
 from enum import Enum, StrEnum, auto, unique
 
 import fidl_fuchsia_wlan_policy as f_wlan_policy
@@ -46,7 +47,7 @@ from openwrt_access_point.lib.access_point_config_mapper import (
     AccessPointConfigMapper as ConfigMapper,
 )
 
-DUT_NETWORK_CONNECTION_TIMEOUT = 60
+DUT_NETWORK_CONNECTION_TIMEOUT = timedelta(seconds=60)
 
 
 @unique
@@ -470,11 +471,11 @@ class WlanRebootTest(base_test.WifiBaseTest):
                     self.access_point.hard_power_cycle(self.pdu_devices)
             self.log.info(
                 f"Waiting for DUT to disconnect from {ssid} after AP reboot. Will retry for "
-                f"{DUT_NETWORK_CONNECTION_TIMEOUT} seconds."
+                f"{DUT_NETWORK_CONNECTION_TIMEOUT.total_seconds():.0f} seconds."
             )
             fuchsia_async_extension.get_loop().run_until_complete(
                 self.fuchsia_device.honeydew_fd.wlan_policy.wait_for_no_connections(
-                    timeout=DUT_NETWORK_CONNECTION_TIMEOUT,
+                    timeout=DUT_NETWORK_CONNECTION_TIMEOUT.total_seconds(),
                 )
             )
             self.setup_ap(ssid, band, ip_version, security, password)
@@ -484,7 +485,7 @@ class WlanRebootTest(base_test.WifiBaseTest):
             try:
                 self.log.info(
                     f"Checking if DUT is connected to {ssid} network. Will retry for "
-                    f"{DUT_NETWORK_CONNECTION_TIMEOUT} seconds."
+                    f"{DUT_NETWORK_CONNECTION_TIMEOUT.total_seconds():.0f} seconds."
                 )
                 fuchsia_async_extension.get_loop().run_until_complete(
                     self.fuchsia_device.honeydew_fd.wlan_policy.wait_for_network_state(

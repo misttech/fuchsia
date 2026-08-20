@@ -6,6 +6,7 @@
 
 import logging
 import time
+from datetime import timedelta
 
 import fidl_fuchsia_wlan_policy as f_wlan_policy
 import fuchsia_wlan_base_test
@@ -34,8 +35,8 @@ from openwrt_access_point.lib.access_point_config import (
 # tests because the device should probabilistically perform active scans for
 # hidden networks. Multiple scans are necessary to verify a very low chance of
 # random failure.
-TIME_WAIT_FOR_CONNECT = 90
-TIME_ATTEMPT_SCANS = 90
+TIME_WAIT_FOR_CONNECT = timedelta(seconds=90)
+TIME_ATTEMPT_SCANS = timedelta(seconds=90)
 
 
 class HiddenNetworksTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
@@ -139,7 +140,7 @@ class HiddenNetworksTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
         start_time = time.time()
         num_performed_scans = 0
 
-        while time.time() < start_time + TIME_ATTEMPT_SCANS:
+        while time.time() < start_time + TIME_ATTEMPT_SCANS.total_seconds():
             num_performed_scans = num_performed_scans + 1
             scan_result = await self.dut.wlan_policy.scan_for_networks()
 
