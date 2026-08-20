@@ -114,6 +114,10 @@ impl UpdateGenerations {
         *self.default_network.entry(id).or_default() = generation.default_network;
     }
 
+    fn remove_default(&mut self, id: &ConnectionId) -> Option<usize> {
+        self.default_network.remove(id)
+    }
+
     fn properties(&self, id: &PropertyWatcherConnectionId) -> Option<usize> {
         self.properties.get(id).copied()
     }
@@ -802,15 +806,27 @@ impl NetpolNetworksService {
         id: ConnectionId,
         req: Result<fnp_properties::NetworksRequest, fidl::Error>,
     ) -> Result<(), anyhow::Error> {
-        let req = req.context("network attributes request")?;
+        let req = match req {
+            Err(e) => {
+                info!("Networks request stream ended: {e:?}");
+                let _: Option<_> = self.default_network_responders.remove(&id);
+                let _: Option<_> = self.generations_by_connection.remove_default(&id);
+                return Ok(());
+            }
+            Ok(req) => req,
+        };
         match req {
             fnp_properties::NetworksRequest::WatchDefault { responder } => {
                 match self.default_network_responders.entry(id) {
-                    std::collections::hash_map::Entry::Occupied(_) => {
+                    std::collections::hash_map::Entry::Occupied(entry) => {
                         warn!(
                             "Only one call to fuchsia.net.policy.properties/Networks.WatchDefault \
-                             may be active per connection"
+                              may be active per connection"
                         );
+                        // Disarm and remove the first responder so it does not leak in memory
+                        // or log an unhandled drop warning when shutting down the channel.
+                        let first_responder = entry.remove();
+                        first_responder.drop_without_shutdown();
                         responder.control_handle().shutdown_with_epitaph(zx::Status::ALREADY_EXISTS)
                     }
                     std::collections::hash_map::Entry::Vacant(vacant_entry) => {
@@ -910,15 +926,20 @@ impl NetpolNetworksService {
                         responder.control_handle().shutdown_with_epitaph(zx::Status::INTERNAL);
                     }
                     Some(registration) => {
-                        if registration.responder.is_some() {
+                        if let Some(first_responder) = registration.responder.take() {
                             warn!(
                                 "Only one call to \
                                 fuchsia.net.policy.properties/PropertyWatcher.Watch may be \
                                 active per connection"
                             );
+                            // Disarm and remove the first responder, and purge the registration.
+                            first_responder.drop_without_shutdown();
                             responder
                                 .control_handle()
                                 .shutdown_with_epitaph(zx::Status::ALREADY_EXISTS);
+                            let _: Option<_> = self.property_watchers.remove(&id);
+                            let _: Option<_> =
+                                self.generations_by_connection.remove_properties(&id);
                         } else {
                             registration.responder = Some(responder);
                             match self.tokens.get_contents(&registration.token) {
@@ -2243,6 +2264,7 @@ mod tests {
                     if epitaph == zx::Status::ALREADY_EXISTS
             );
         }
+        assert!(service.property_watchers.is_empty());
     }
 
     #[fuchsia::test]
@@ -2276,6 +2298,7 @@ mod tests {
                     if epitaph == zx::Status::ALREADY_EXISTS
             );
         }
+        assert!(service.default_network_responders.is_empty());
     }
 
     #[fuchsia::test]
