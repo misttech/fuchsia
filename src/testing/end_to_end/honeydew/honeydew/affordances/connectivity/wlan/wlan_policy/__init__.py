@@ -999,7 +999,7 @@ class WlanPolicy(AsyncLazyReady):
     async def wait_for_no_connections(
         self,
         *,
-        timeout: float | None = _DEFAULT_WLAN_POLICY_OPERATION_TIMEOUT_SEC,
+        timeout: timedelta | None = _DEFAULT_WLAN_POLICY_OPERATION_TIMEOUT,
     ) -> None:
         await self.set_new_update_listener()
         connection_states = {
@@ -1013,7 +1013,7 @@ class WlanPolicy(AsyncLazyReady):
                     n.connection_state in connection_states
                     for n in update.networks
                 ),
-                timeout=None if timeout is None else timedelta(seconds=timeout),
+                timeout=timeout,
             )
         except wlan_errors.HoneydewWlanError as e:
             raise wlan_errors.HoneydewWlanError(

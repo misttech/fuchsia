@@ -475,7 +475,7 @@ class WlanRebootTest(base_test.WifiBaseTest):
             )
             fuchsia_async_extension.get_loop().run_until_complete(
                 self.fuchsia_device.honeydew_fd.wlan_policy.wait_for_no_connections(
-                    timeout=DUT_NETWORK_CONNECTION_TIMEOUT.total_seconds(),
+                    timeout=DUT_NETWORK_CONNECTION_TIMEOUT,
                 )
             )
             self.setup_ap(ssid, band, ip_version, security, password)
