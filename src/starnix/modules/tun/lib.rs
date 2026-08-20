@@ -18,6 +18,7 @@ use starnix_core::vfs::socket::IfReqPtr;
 use starnix_core::vfs::{FileObject, FileObjectState, FileOps, call_fidl_and_await_close};
 use starnix_logging::{log_info, log_warn};
 use starnix_sync::{LockDepMutex, TunDevTunLock};
+use starnix_uapi::auth::CAP_NET_ADMIN;
 use starnix_uapi::error;
 use starnix_uapi::errors::Errno;
 use std::num::NonZeroU64;
@@ -373,6 +374,9 @@ impl FileOps for DevTun {
     ) -> Result<starnix_syscalls::SyscallResult, Errno> {
         match request {
             starnix_uapi::TUNSETIFF => {
+                // Linux requires CAP_NET_ADMIN in the network namespace for TUNSETIFF;
+                // SELinux tun_socket create (check_tun_dev_create_access) is additional.
+                security::check_task_capable(current_task, CAP_NET_ADMIN)?;
                 security::check_tun_dev_create_access(current_task)?;
                 log_info!("handling TUNSETIFF for /dev/tun");
                 let user_addr = IfReqPtr::new(current_task, arg);
