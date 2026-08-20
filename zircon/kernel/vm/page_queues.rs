@@ -108,6 +108,19 @@ impl PageQueues {
         }
     }
 
+    /// Returns whether `page` is in the pager backed dirty queue.
+    ///
+    /// # Safety
+    ///
+    /// The caller must guarantee `page` is attached to a VM object.
+    pub unsafe fn debug_page_is_pager_backed_dirty(&self, page: VmPagePtr) -> bool {
+        // SAFETY: `self` is valid for required accesses, and the caller guarantees `page` is
+        // attached to a VM object per function safety preconditions.
+        unsafe {
+            bindings::cpp_page_queues_debug_page_is_pager_backed_dirty(self.as_raw(), page.as_raw())
+        }
+    }
+
     /// Returns `Some(QueueAge)` if `page` is currently in a reclaim queue, or `None` if it is not.
     ///
     /// # Safety

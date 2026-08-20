@@ -322,6 +322,7 @@ kernel_bindgen_crate("page-queues-bindings") {
     "cpp_page_queues_debug_page_is_wired",
     "cpp_page_queues_debug_page_is_any_anonymous",
     "cpp_page_queues_debug_page_is_reclaim",
+    "cpp_page_queues_debug_page_is_pager_backed_dirty",
     "cpp_page_queues_rotate_reclaim_queues",
   ]
   type_allowlist = [
@@ -599,6 +600,7 @@ kernel_bindgen_crate("vm-object-bindings") {
     "cpp_vm_object_user_id",
     "cpp_vm_object_parent_user_id",
     "cpp_vm_object_lookup",
+    "cpp_vm_object_lookup_contiguous",
     "cpp_vm_object_get_page",
     "cpp_vm_object_get_attributed_memory",
     "cpp_vm_object_get_attributed_memory_in_reference_owner",
@@ -740,6 +742,7 @@ kernel_bindgen_crate("vm-cow-pages-bindings") {
     "cpp_vm_cow_pages_should_delay_reuse_on_free",
     "cpp_vm_cow_pages_debug_get_parent",
     "cpp_vm_cow_pages_dedup_zero_page",
+    "cpp_vm_cow_pages_evict_loaned_page",
   ]
   type_allowlist = [
     "DirtyState",

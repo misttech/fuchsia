@@ -32,6 +32,11 @@ FFI_ALWAYS_INLINE bool cpp_page_queues_debug_page_is_reclaim(const PageQueues* q
   return queues->DebugPageIsReclaim(page, out_queue);
 }
 
+FFI_ALWAYS_INLINE bool cpp_page_queues_debug_page_is_pager_backed_dirty(const PageQueues* queues,
+                                                                        const vm_page_t* page) {
+  return queues->DebugPageIsPagerBackedDirty(page);
+}
+
 FFI_ALWAYS_INLINE void cpp_page_queues_rotate_reclaim_queues(PageQueues* queues) {
   queues->RotateReclaimQueues();
 }

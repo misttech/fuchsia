@@ -96,6 +96,19 @@ mod vmo_rs {
         }
     }
 
+    /// # Safety
+    ///
+    /// `page` must be associated with a VM object.
+    unsafe fn evict_loaned_page(vmo: &VmObjectPaged, page: VmPagePtr, offset: u64) -> bool {
+        // SAFETY: Caller guarantees `page` is associated with a VM object.
+        let status = unsafe {
+            vmo.debug_get_cow_pages()
+                .expect("paged VMO has backing cow pages")
+                .evict_loaned_page(page, offset)
+        };
+        status.is_ok()
+    }
+
     /// Creates a vm object.
     #[test]
     fn vmo_create_test() {
@@ -224,6 +237,48 @@ mod vmo_rs {
         drop(vmo);
         // SAFETY: vm_page was allocated via alloc_page above and is no longer referenced by vmo.
         unsafe { pmm::free_page(vm_page) };
+    }
+
+    /// Creates a vm object that commits contiguous memory.
+    #[test]
+    fn vmo_create_contiguous_test() {
+        let alloc_size = PAGE_SIZE * 16;
+        let vmo = unwrap_ok!(
+            VmObjectPaged::create_contiguous(pmm::ALLOC_FLAG_ANY, alloc_size, 0),
+            "vmobject creation\n"
+        );
+
+        expect_true!(vmo.is_contiguous(), "vmo is contig\n");
+
+        // Contiguous VMOs are not pinned, but they are notionally wired as they will not be
+        // automatically manipulated by the kernel.
+        // SAFETY: Test owns `vmo` and pages remain attached during check.
+        expect_true!(unsafe { pages_in_wired_queue(&vmo, 0, alloc_size) });
+
+        let mut last_pa = PAddr(0);
+        let lookup_func = |offset, pa: PAddr, last_pa: &mut PAddr| {
+            if offset != 0 && PAddr(last_pa.0 + PAGE_SIZE as usize) != pa {
+                return Err(Status::BAD_STATE);
+            }
+            *last_pa = pa;
+            Err(Status::NEXT)
+        };
+        let status = vmo.lookup(0, alloc_size, &mut last_pa, lookup_func);
+        expect_ok!(status, "vmo lookup\n");
+        let first_pa = unwrap_ok!(vmo.lookup_contiguous(0, alloc_size));
+        expect_eq!(first_pa.0 + alloc_size as usize - PAGE_SIZE as usize, last_pa.0);
+        let second_pa = unwrap_ok!(vmo.lookup_contiguous(PAGE_SIZE, PAGE_SIZE));
+        expect_eq!(first_pa.0 + PAGE_SIZE as usize, second_pa.0);
+        expect_eq!(
+            Status::INVALID_ARGS.into_raw(),
+            Status::result_into_raw(vmo.lookup_contiguous(42, PAGE_SIZE).map(|_| ()))
+        );
+        expect_eq!(
+            Status::OUT_OF_RANGE.into_raw(),
+            Status::result_into_raw(
+                vmo.lookup_contiguous(alloc_size - PAGE_SIZE, PAGE_SIZE * 2).map(|_| ())
+            )
+        );
     }
 
     /// Tests pinning and decommitting ranges in a Paged VMO.
@@ -962,6 +1017,88 @@ mod vmo_rs {
         // SAFETY: `vm_page` is a valid allocated PMM page from `pmm::alloc_page` that has not been
         // freed.
         unsafe { pmm::free_page(vm_page) };
+    }
+
+    /// Tests lookup and contiguous lookup on uncommitted and committed VMO ranges.
+    #[test]
+    fn vmo_lookup_test() {
+        let _scanner_disable = AutoVmScannerDisable::new();
+
+        let alloc_size = PAGE_SIZE * 16;
+        let vmo = unwrap_ok!(
+            VmObjectPaged::create(pmm::ALLOC_FLAG_ANY, 0, alloc_size),
+            "vmobject creation\n"
+        );
+
+        let mut pages_seen = 0;
+        let lookup_fn = |_offset: u64, _pa: PAddr, pages_seen: &mut usize| {
+            *pages_seen += 1;
+            Err(Status::NEXT)
+        };
+        expect_ok!(vmo.lookup(0, alloc_size, &mut pages_seen, lookup_fn));
+        expect_eq!(0, pages_seen, "lookup on uncommitted pages\n");
+        pages_seen = 0;
+
+        let status = vmo.commit_range(PAGE_SIZE, PAGE_SIZE);
+        expect_ok!(status, "committing vm object\n");
+        expect_true!(
+            make_private_attribution_counts(PAGE_SIZE, 0) == vmo.get_attributed_memory(),
+            "committing vm object\n"
+        );
+        expect_true!(
+            verify_continuous_attribution_bytes(&vmo, PAGE_SIZE),
+            "committing vm object\n"
+        );
+
+        // Should not see any pages in the early range.
+        expect_ok!(vmo.lookup(0, PAGE_SIZE, &mut pages_seen, lookup_fn));
+        expect_eq!(0, pages_seen, "lookup on partially committed pages\n");
+        pages_seen = 0;
+
+        // Should see a committed page if looking at any range covering the committed.
+        expect_ok!(vmo.lookup(0, alloc_size, &mut pages_seen, lookup_fn));
+        expect_eq!(1, pages_seen, "lookup on partially committed pages\n");
+        pages_seen = 0;
+
+        expect_ok!(vmo.lookup(PAGE_SIZE, alloc_size - PAGE_SIZE, &mut pages_seen, lookup_fn));
+        expect_eq!(1, pages_seen, "lookup on partially committed pages\n");
+        pages_seen = 0;
+
+        expect_ok!(vmo.lookup(PAGE_SIZE, PAGE_SIZE, &mut pages_seen, lookup_fn));
+        expect_eq!(1, pages_seen, "lookup on partially committed pages\n");
+        pages_seen = 0;
+
+        // Contiguous lookups of single pages should also succeed
+        let status = vmo.lookup_contiguous(PAGE_SIZE, PAGE_SIZE).map(|_| ());
+        expect_ok!(status, "contiguous lookup of single page\n");
+
+        // Commit the rest
+        let status = vmo.commit_range(0, alloc_size);
+        expect_ok!(status, "committing vm object\n");
+        expect_true!(
+            make_private_attribution_counts(alloc_size, 0) == vmo.get_attributed_memory(),
+            "committing vm object\n"
+        );
+        expect_true!(
+            verify_continuous_attribution_bytes(&vmo, alloc_size),
+            "committing vm object\n"
+        );
+
+        let status = vmo.lookup(0, alloc_size, &mut pages_seen, lookup_fn);
+        expect_ok!(status, "lookup on partially committed pages\n");
+        expect_eq!(
+            (alloc_size / PAGE_SIZE) as usize,
+            pages_seen,
+            "lookup on partially committed pages\n"
+        );
+        let status = vmo.lookup_contiguous(0, PAGE_SIZE).map(|_| ());
+        expect_ok!(status, "contiguous lookup of single page\n");
+        let status = vmo.lookup_contiguous(0, alloc_size).map(|_| ());
+        expect_ne!(
+            Status::OK.into_raw(),
+            Status::result_into_raw(status),
+            "contiguous lookup of multiple pages\n"
+        );
     }
 
     /// Tests that looking up pages in a child slice translates offsets relative to the slice.
@@ -1776,6 +1913,59 @@ mod vmo_rs {
         }
     }
 
+    /// Tests unloaning and evicting loaned pages from VMOs.
+    #[test]
+    fn vmo_unloan_test() {
+        // Disable the page scanner as this test would be flaky if our pages get evicted by someone
+        // else.
+        let _scanner_disable = AutoVmScannerDisable::new();
+
+        let _enable_loaning = ScopedLoaningEnabled::new(true);
+
+        let contiguous_vmo =
+            unwrap_ok!(VmObjectPaged::create_contiguous(ALLOC_FLAG_ANY, 2 * PAGE_SIZE, 0));
+        assert_ok!(contiguous_vmo.decommit_range(0, 2 * PAGE_SIZE));
+
+        let (vmo, [page]) = unwrap_ok!(make_committed_pager_vmo(
+            /*trap_dirty=*/ false, /*resizable=*/ false
+        ));
+        let cow_pages = vmo.debug_get_cow_pages().expect("paged VMO has backing cow pages");
+        assert_ok!(cow_pages.replace_page_with_loaned(page, 0));
+        let page = vmo.debug_get_page(0).expect("vmo should have a page at offset 0");
+        assert_true!(unsafe { page.is_loaned() });
+
+        let (vmo2, [page2]) = unwrap_ok!(make_committed_pager_vmo(
+            /*trap_dirty=*/ false, /*resizable=*/ false
+        ));
+        assert_ok!(
+            vmo2.debug_get_cow_pages()
+                .expect("paged VMO has backing cow pages")
+                .replace_page_with_loaned(page2, 0)
+        );
+        let page2 = vmo2.debug_get_page(0).expect("vmo2 should have a page at offset 0");
+        assert_true!(unsafe { page2.is_loaned() });
+
+        // Shouldn't be able to evict pages from the wrong VMO.
+        // SAFETY: `page2` is associated with `vmo2`.
+        assert_false!(unsafe { evict_loaned_page(&vmo, page2, 0) });
+        // SAFETY: `page` is associated with `vmo`.
+        assert_false!(unsafe { evict_loaned_page(&vmo2, page, 0) });
+
+        // Evicting a loaned page should drop the number of committed pages.
+        expect_true!(make_private_attribution_counts(PAGE_SIZE, 0) == vmo2.get_attributed_memory());
+        expect_true!(verify_continuous_attribution_bytes(&vmo2, PAGE_SIZE));
+        // SAFETY: `page2` is associated with `vmo2`.
+        assert_true!(unsafe { evict_loaned_page(&vmo2, page2, 0) });
+        expect_true!(attribution::zero() == vmo2.get_attributed_memory());
+        expect_true!(verify_continuous_attribution_bytes(&vmo2, 0));
+
+        // Pinned pages should not be evictable.
+        expect_ok!(vmo.commit_range_pinned(0, PAGE_SIZE, false));
+        // SAFETY: `page` is associated with `vmo`.
+        assert_false!(unsafe { evict_loaned_page(&vmo, page, 0) });
+        vmo.unpin(0, PAGE_SIZE);
+    }
+
     /// # Safety
     ///
     /// Must be able to get the paddr for `page`.
@@ -2019,6 +2209,39 @@ mod vmo_rs {
             ));
             expect_true!(test_vmo(bidirectional_clone));
         }
+    }
+
+    /// Tests that dirty pages cannot be deduped.
+    #[test]
+    fn vmo_dedup_dirty_test() {
+        let _scanner_disable = AutoVmScannerDisable::new();
+
+        let (vmo, [page]) = unwrap_ok!(make_committed_pager_vmo(false, false));
+
+        // Our page should now be in a pager backed page queue.
+        // SAFETY: `page` is attached to `vmo`.
+        expect_true!(unsafe { pmm::page_queues().debug_page_is_reclaim(page) }.is_some());
+
+        // The page is clean. We should be able to dedup the page.
+        expect_true!(vmo.debug_get_cow_pages().unwrap().dedup_zero_page(page, 0));
+
+        // No committed pages remaining.
+        expect_true!(attribution::zero() == vmo.get_attributed_memory());
+        expect_true!(verify_continuous_attribution_bytes(&vmo, 0));
+
+        // Write to the page making it dirty.
+        let data = 0xffu8;
+        assert_ok!(vmo.write(0, &[data]));
+
+        // The page should now be dirty.
+        let page = vmo.debug_get_page(0).unwrap();
+        // SAFETY: `page` is attached to `vmo`.
+        expect_true!(unsafe { pmm::page_queues().debug_page_is_pager_backed_dirty(page) });
+
+        // We should not be able to dedup the page.
+        expect_false!(vmo.debug_get_cow_pages().unwrap().dedup_zero_page(page, 0));
+        expect_true!(make_private_attribution_counts(PAGE_SIZE, 0) == vmo.get_attributed_memory());
+        expect_true!(verify_continuous_attribution_bytes(&vmo, PAGE_SIZE));
     }
 
     /// Tests creating a zero-sized always-pinned VMO fails gracefully.

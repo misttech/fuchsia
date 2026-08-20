@@ -65,6 +65,8 @@ FFI_ALWAYS_INLINE uint64_t cpp_vm_object_user_id(const VmObject* vmo);
 FFI_ALWAYS_INLINE uint64_t cpp_vm_object_parent_user_id(const VmObject* vmo);
 FFI_ALWAYS_INLINE zx_status_t cpp_vm_object_lookup(VmObject* vmo, uint64_t offset, uint64_t len,
                                                    void* ctx, cpp_vm_object_lookup_fn callback);
+FFI_ALWAYS_INLINE zx_status_t cpp_vm_object_lookup_contiguous(VmObject* vmo, uint64_t offset,
+                                                              uint64_t len, paddr_t* out_paddr);
 FFI_ALWAYS_INLINE zx_status_t cpp_vm_object_get_page(VmObject* vmo, uint64_t offset,
                                                      uint32_t pf_flags,
                                                      MultiPageRequest* page_request,

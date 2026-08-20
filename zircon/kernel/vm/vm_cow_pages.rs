@@ -130,6 +130,22 @@ impl VmCowPages {
         // valid `vm_page_t` pointer.
         unsafe { bindings::cpp_vm_cow_pages_dedup_zero_page(self.as_raw(), page.as_raw(), offset) }
     }
+
+    /// Evict a specific loaned page for the use case of reclaiming loaned pages by the physical
+    /// page provider. Unlike ReclaimPage this function can assume it just needs to evict, and
+    /// has no requirements on updating any reclamation lists.
+    ///
+    /// # Safety
+    ///
+    /// `page` must be an object-associated page.
+    pub unsafe fn evict_loaned_page(&self, page: VmPagePtr, offset: u64) -> Result<(), Status> {
+        // SAFETY: `self.as_raw()` returns a valid `VmCowPages` pointer, and `page.as_raw()` is a
+        // valid `vm_page_t` pointer.
+        let status = unsafe {
+            bindings::cpp_vm_cow_pages_evict_loaned_page(self.as_raw(), page.as_raw(), offset)
+        };
+        Status::ok(status)
+    }
 }
 
 fn initialize_page_cache(level: init::LkInitLevel) {

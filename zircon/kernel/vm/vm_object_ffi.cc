@@ -140,6 +140,11 @@ FFI_ALWAYS_INLINE zx_status_t cpp_vm_object_lookup(VmObject* vmo, uint64_t offse
   });
 }
 
+FFI_ALWAYS_INLINE zx_status_t cpp_vm_object_lookup_contiguous(VmObject* vmo, uint64_t offset,
+                                                              uint64_t len, paddr_t* out_paddr) {
+  return vmo->LookupContiguous(offset, len, out_paddr);
+}
+
 FFI_ALWAYS_INLINE zx_status_t cpp_vm_object_get_page(VmObject* vmo, uint64_t offset,
                                                      uint32_t pf_flags,
                                                      MultiPageRequest* page_request,

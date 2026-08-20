@@ -47,4 +47,9 @@ FFI_ALWAYS_INLINE bool cpp_vm_cow_pages_dedup_zero_page(VmCowPages* cow, vm_page
   return cow->DedupZeroPage(page, offset);
 }
 
+FFI_ALWAYS_INLINE zx_status_t cpp_vm_cow_pages_evict_loaned_page(VmCowPages* cow, vm_page_t* page,
+                                                                 uint64_t offset) {
+  return cow->EvictLoanedPage(page, offset);
+}
+
 }  // extern "C"

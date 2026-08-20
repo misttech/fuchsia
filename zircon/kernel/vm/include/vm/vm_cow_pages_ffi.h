@@ -23,6 +23,7 @@ void cpp_vm_cow_pages_initialize_page_cache(uint32_t level);
 PmmOptDelayReuse cpp_vm_cow_pages_should_delay_reuse_on_free(const VmCowPages* cow);
 VmCowPages* cpp_vm_cow_pages_debug_get_parent(VmCowPages* cow);
 bool cpp_vm_cow_pages_dedup_zero_page(VmCowPages* cow, vm_page_t* page, uint64_t offset);
+zx_status_t cpp_vm_cow_pages_evict_loaned_page(VmCowPages* cow, vm_page_t* page, uint64_t offset);
 
 __END_CDECLS
 

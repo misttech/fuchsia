@@ -400,6 +400,20 @@ impl VmObject {
         Status::ok(status)
     }
 
+    /// Attempts to lookup the given range in the VMO. If it exists and is physically contiguous
+    /// returns the paddr of the start of the range. The offset must be page aligned.
+    /// Ranges of length zero are considered invalid and will return ZX_ERR_INVALID_ARGS.
+    pub fn lookup_contiguous(&self, offset: u64, len: u64) -> Result<PAddr, Status> {
+        let mut paddr = 0;
+        // SAFETY: `self.as_raw()` points to a live `VmObject`, and `paddr` points to
+        // valid stack storage for writing.
+        let status = unsafe {
+            bindings::cpp_vm_object_lookup_contiguous(self.as_raw(), offset, len, &mut paddr)
+        };
+        Status::ok(status)?;
+        Ok(PAddr(paddr))
+    }
+
     /// Gets a pointer to the page structure at the specified offset.
     /// Valid flags are `fault::flag::*`.
     ///
