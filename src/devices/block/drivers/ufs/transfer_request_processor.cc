@@ -371,7 +371,26 @@ zx_status_t TransferRequestProcessor::UpiuCompletion(uint8_t slot_num, RequestSl
 
     if (request_slot.is_scsi_command) {
       status_message = CheckScsiAndGetStatusMessage(slot_num, response);
-      sense_data = *reinterpret_cast<scsi::FixedFormatSenseDataHeader *>(response.GetSenseData());
+      uint16_t sense_data_len = betoh16(response.GetData<ResponseUpiuData>()->sense_data_len);
+      // Per the UFS specification (JESD220, Table 10.19 / Section 11.3.17), UFS-compliant devices
+      // return a fixed format data record of exactly 18 bytes when sense data is present (with
+      // additional_sense_length set to 10 / 0x0A), or 0 when no sense data is returned.
+      if (sense_data_len == sizeof(scsi::FixedFormatSenseDataHeader)) {
+        auto *header =
+            reinterpret_cast<scsi::FixedFormatSenseDataHeader *>(response.GetSenseData());
+        constexpr uint8_t kUfsFixedSenseDataAdditionalLength = 10;
+        if (header->additional_sense_length == kUfsFixedSenseDataAdditionalLength) {
+          sense_data = *header;
+        } else {
+          fdf::warn("UFS response returned invalid additional_sense_length: {} (expected 10)",
+                    header->additional_sense_length);
+          request_result = zx::error(ZX_ERR_BAD_STATE);
+        }
+      } else if (sense_data_len != 0) {
+        fdf::warn("UFS response returned invalid sense data length: {} (expected 18 or 0)",
+                  sense_data_len);
+        request_result = zx::error(ZX_ERR_BAD_STATE);
+      }
     }
   }
 

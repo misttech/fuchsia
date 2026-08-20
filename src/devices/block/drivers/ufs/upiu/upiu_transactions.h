@@ -8,6 +8,7 @@
 #include <endian.h>
 
 #include <optional>
+#include <utility>
 
 #include <fbl/algorithm.h>
 #include <hwreg/bitfields.h>
@@ -102,6 +103,19 @@ class AbstractUpiu {
 
   virtual ~AbstractUpiu() = default;
 
+  AbstractUpiu(AbstractUpiu&& other) noexcept
+      : data_ptr_(std::exchange(other.data_ptr_, nullptr)) {}
+
+  AbstractUpiu& operator=(AbstractUpiu&& other) noexcept {
+    if (this != &other) {
+      data_ptr_ = std::exchange(other.data_ptr_, nullptr);
+    }
+    return *this;
+  }
+
+  AbstractUpiu(const AbstractUpiu&) = default;
+  AbstractUpiu& operator=(const AbstractUpiu&) = default;
+
   // Used to read or write the request descriptor in the UPIU.
   template <typename T = void>
   T* GetData() {
@@ -131,6 +145,27 @@ class AbstractRequestUpiu : public AbstractUpiu {
     data_ = std::make_unique<RequestData>(data);
     SetData(data_.get());
   }
+
+  AbstractRequestUpiu(AbstractRequestUpiu&& other) noexcept
+      : AbstractUpiu(std::move(other)), data_(std::move(other.data_)) {
+    if (data_) {
+      SetData(data_.get());
+    }
+  }
+
+  AbstractRequestUpiu& operator=(AbstractRequestUpiu&& other) noexcept {
+    if (this != &other) {
+      AbstractUpiu::operator=(std::move(other));
+      data_ = std::move(other.data_);
+      if (data_) {
+        SetData(data_.get());
+      }
+    }
+    return *this;
+  }
+
+  AbstractRequestUpiu(const AbstractRequestUpiu&) = delete;
+  AbstractRequestUpiu& operator=(const AbstractRequestUpiu&) = delete;
 
   ~AbstractRequestUpiu() override = default;
 

@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 #include <lib/fpromise/single_threaded_executor.h>
+#include <lib/sync/cpp/completion.h>
 
 #include <fbl/unaligned.h>
 
@@ -195,6 +196,43 @@ TEST_F(InitTest, LogicalLunPowerOnWriteProtectDisable) {
   mock_device_.GetLogicalUnit(lun).GetUnitDesc().bLUWriteProtect = LUWriteProtect::kNoWriteProtect;
   ASSERT_NO_FATAL_FAILURE(StartDriver());
   ASSERT_FALSE(dut_->GetDeviceManager().IsLogicalLunPowerOnWriteProtect());
+}
+
+TEST_F(InitTest, CancelIrqOnInitFailure) {
+  // Inject LinkStartUp failure so InitController() fails midway after registering IRQ handler
+  mock_device_.GetUicCmdProcessor().SetHook(
+      UicCommandOpcode::kDmeLinkStartUp,
+      [](ufs_mock_device::UfsMockDevice& mock_device, uint32_t ucmdarg1, uint32_t ucmdarg2,
+         uint32_t ucmdarg3) {});
+
+  driver_test().RunInEnvironmentTypeContext(
+      [&](Environment& env) { env.pci_server().SetMockDevice(&mock_device_); });
+  TestUfs::SetMockDevice(&mock_device_);
+
+  zx::result result = driver_test().StartDriverWithCustomStartArgs([&](fdf::DriverStartArgs& args) {
+    ufs_config::Config fake_config;
+    fake_config.enable_suspend() = false;
+    args.config(fake_config.ToVmo());
+  });
+  ASSERT_TRUE(result.is_error());
+}
+
+TEST_F(InitTest, DispatcherShutdownSynchronization) {
+  ASSERT_NO_FATAL_FAILURE(StartDriver());
+
+  // Post tasks to the driver's worker dispatchers right before driver stop.
+  // The worker dispatchers must execute these tasks and flush cleanly prior to/during shutdown.
+  libsync::Completion io_done;
+  async::PostTask(dut_->io_worker_dispatcher()->async_dispatcher(),
+                  [&io_done] { io_done.Signal(); });
+
+  libsync::Completion admin_done;
+  async::PostTask(dut_->admin_worker_dispatcher()->async_dispatcher(),
+                  [&admin_done] { admin_done.Signal(); });
+
+  // Wait for posted tasks on worker dispatchers to execute cleanly (up to 60s).
+  ASSERT_OK(io_done.Wait(zx::sec(60)));
+  ASSERT_OK(admin_done.Wait(zx::sec(60)));
 }
 
 }  // namespace ufs

@@ -488,15 +488,19 @@ zx::result<PostProcess> Controller::CheckSenseData(const FixedFormatSenseDataHea
   return zx::ok(post_process);
 }
 
-zx::result<PostProcess> Controller::CheckScsiStatus(StatusCode status_code,
-                                                    const FixedFormatSenseDataHeader& sense_data) {
+zx::result<PostProcess> Controller::CheckScsiStatus(
+    StatusCode status_code,
+    std::optional<std::reference_wrapper<FixedFormatSenseDataHeader>> sense_data) {
   PostProcess post_process = PostProcess::kNone;
   switch (status_code) {
     case StatusCode::GOOD:
     case StatusCode::TASK_ABORTED:
       break;
     case StatusCode::CHECK_CONDITION:
-      return CheckSenseData(sense_data);
+      if (!sense_data) {
+        return zx::error(ZX_ERR_INVALID_ARGS);
+      }
+      return CheckSenseData(*sense_data);
     case StatusCode::TASK_SET_FULL:
     case StatusCode::BUSY:
       post_process = PostProcess::kNeedsRetry;
@@ -520,10 +524,7 @@ zx::result<> Controller::ScsiComplete(
 
   switch (status_message.host_status_code) {
     case HostStatusCode::kOk: {
-      if (!sense_data.has_value()) {
-        return zx::error(ZX_ERR_INVALID_ARGS);
-      }
-      post_process = CheckScsiStatus(status_message.scsi_status_code, sense_data.value());
+      post_process = CheckScsiStatus(status_message.scsi_status_code, sense_data);
       break;
     }
     case HostStatusCode::kTimeout:

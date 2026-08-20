@@ -1176,8 +1176,9 @@ class Controller {
 
  private:
   friend class BlockDeviceTest;
-  zx::result<PostProcess> CheckScsiStatus(StatusCode status_code,
-                                          const FixedFormatSenseDataHeader& sense_data);
+  zx::result<PostProcess> CheckScsiStatus(
+      StatusCode status_code,
+      std::optional<std::reference_wrapper<FixedFormatSenseDataHeader>> sense_data);
   // Currently, it only supports fixed format sense data.
   zx::result<PostProcess> CheckSenseData(const FixedFormatSenseDataHeader& sense_data);
 

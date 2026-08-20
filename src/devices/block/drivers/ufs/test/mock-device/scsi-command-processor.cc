@@ -99,6 +99,7 @@ void ScsiCommandProcessor::BuildSenseData(ResponseUpiuData &response_upiu,
   sense_data->set_response_code(scsi::SenseDataResponseCodes::kFixedCurrentInformation);
   sense_data->set_valid(0);
   sense_data->set_sense_key(sense_key);
+  sense_data->additional_sense_length = 10;
   if (sense_key != scsi::SenseKey::NO_SENSE) {
     response_upiu.header.status = static_cast<uint8_t>(scsi::StatusCode::CHECK_CONDITION);
   }
@@ -161,7 +162,9 @@ zx_status_t ScsiCommandProcessor::HandleScsiCommand(
     BuildSenseData(response_upiu, scsi::SenseKey::ILLEGAL_REQUEST);
     return ZX_ERR_NOT_SUPPORTED;
   }
-  BuildSenseData(response_upiu, scsi::SenseKey::NO_SENSE);
+  if (response_upiu.header.status == static_cast<uint8_t>(scsi::StatusCode::GOOD)) {
+    BuildSenseData(response_upiu, scsi::SenseKey::NO_SENSE);
+  }
 
   zx_status_t status = ZX_OK;
   if (command_upiu.header_flags_r()) {
@@ -186,6 +189,7 @@ zx::result<std::vector<uint8_t>> ScsiCommandProcessor::DefaultRequestSenseHandle
   sense_data->set_response_code(scsi::SenseDataResponseCodes::kFixedCurrentInformation);
   sense_data->set_valid(0);
   sense_data->set_sense_key(scsi::SenseKey::NO_SENSE);
+  sense_data->additional_sense_length = 10;
 
   ZX_ASSERT(command_upiu.header_flags_r());
   if (auto status = CopyBufferToPhysicalRegion(mock_device, prdt_upius, data_buffer);

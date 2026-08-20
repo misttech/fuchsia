@@ -523,8 +523,9 @@ class BlockDeviceTest : public ::testing::Test {
     });
   }
 
-  zx::result<PostProcess> CheckScsiStatus(StatusCode status_code,
-                                          FixedFormatSenseDataHeader& sense_data) {
+  zx::result<PostProcess> CheckScsiStatus(
+      StatusCode status_code,
+      std::optional<std::reference_wrapper<FixedFormatSenseDataHeader>> sense_data) {
     return driver_test().RunInDriverContext<zx::result<PostProcess>>(
         [&](TestController& controller) {
           return controller.CheckScsiStatus(status_code, sense_data);
@@ -666,9 +667,21 @@ TEST_F(BlockDeviceTest, ScsiComplete) {
   sense_data.additional_sense_code = 0x0;
   sense_data.additional_sense_code_qualifier = 0x0;
 
-  // Success
+  // Success with sense data
   driver_test().RunInDriverContext([&](TestController& controller) {
     EXPECT_OK(controller.ScsiComplete(status_message, sense_data));
+  });
+
+  // Success without sense data (standard SCSI/UFS behavior for GOOD status)
+  driver_test().RunInDriverContext([&](TestController& controller) {
+    EXPECT_OK(controller.ScsiComplete(status_message, std::nullopt));
+  });
+
+  // CHECK_CONDITION without sense data should fail with ZX_ERR_INVALID_ARGS
+  StatusMessage check_condition_message = {HostStatusCode::kOk, StatusCode::CHECK_CONDITION};
+  driver_test().RunInDriverContext([&](TestController& controller) {
+    EXPECT_EQ(controller.ScsiComplete(check_condition_message, std::nullopt).status_value(),
+              ZX_ERR_INVALID_ARGS);
   });
 
   // Abort
@@ -722,6 +735,8 @@ TEST_F(BlockDeviceTest, CheckScsiStatus) {
   // StatusCode::GOOD, TASK_ABORTED
   {
     EXPECT_OK(CheckScsiStatus(StatusCode::GOOD, sense_data));
+    EXPECT_OK(CheckScsiStatus(StatusCode::GOOD, std::nullopt));
+    EXPECT_OK(CheckScsiStatus(StatusCode::TASK_ABORTED, std::nullopt));
   }
 
   // StatusCode::CHECK_CONDITION
@@ -729,6 +744,9 @@ TEST_F(BlockDeviceTest, CheckScsiStatus) {
     auto post_process = CheckScsiStatus(StatusCode::CHECK_CONDITION, sense_data);
     EXPECT_OK(post_process);
     EXPECT_EQ(post_process.value(), PostProcess::kNone);
+
+    auto missing_sense = CheckScsiStatus(StatusCode::CHECK_CONDITION, std::nullopt);
+    EXPECT_EQ(missing_sense.status_value(), ZX_ERR_INVALID_ARGS);
   }
 
   // StatusCode::TASK_SET_FULL

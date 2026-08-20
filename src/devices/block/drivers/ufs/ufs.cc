@@ -613,7 +613,6 @@ zx::result<> Ufs::InitMmioBuffer() {
 }
 
 Ufs::Ufs() : fdf::DriverBase2(kDriverName), hardware_power_element_runner_server_(*this) {}
-Ufs::~Ufs() = default;
 
 zx_status_t Ufs::Init() {
   list_initialize(&pending_commands_);
@@ -738,9 +737,9 @@ zx::result<> Ufs::InitController() {
 
   // Create and post IRQ worker
   {
-    auto irq_dispatcher =
-        fdf::SynchronizedDispatcher::Create(fdf::SynchronizedDispatcher::Options::kAllowSyncCalls,
-                                            "ufs-irq-worker", [](fdf_dispatcher_t*) {});
+    auto irq_dispatcher = fdf::SynchronizedDispatcher::Create(
+        fdf::SynchronizedDispatcher::Options::kAllowSyncCalls, "ufs-irq-worker",
+        [this](fdf_dispatcher_t*) { OnDispatcherShutdown(); });
     if (irq_dispatcher.is_error()) {
       fdf::error("Failed to create IRQ dispatcher: {}",
                  zx_status_get_string(irq_dispatcher.status_value()));
@@ -755,6 +754,8 @@ zx::result<> Ufs::InitController() {
       return zx::error(status);
     }
   }
+
+  auto cancel_irq = fit::defer([this] { irq_handler_.Cancel(); });
 
   // Notify platform UFS that we are going to init the UFS host controller.
   if (zx::result<> result = Notify(NotifyEvent::kInit, 0); result.is_error()) {
@@ -798,9 +799,9 @@ zx::result<> Ufs::InitController() {
 
   // Create Admin worker dispatcher
   {
-    auto admin_dispatcher =
-        fdf::SynchronizedDispatcher::Create(fdf::SynchronizedDispatcher::Options::kAllowSyncCalls,
-                                            "ufs-admin-worker", [](fdf_dispatcher_t*) {});
+    auto admin_dispatcher = fdf::SynchronizedDispatcher::Create(
+        fdf::SynchronizedDispatcher::Options::kAllowSyncCalls, "ufs-admin-worker",
+        [this](fdf_dispatcher_t*) { OnDispatcherShutdown(); });
     if (admin_dispatcher.is_error()) {
       fdf::error("Failed to create Admin dispatcher: {}",
                  zx_status_get_string(admin_dispatcher.status_value()));
@@ -811,9 +812,9 @@ zx::result<> Ufs::InitController() {
 
   // Create IO worker dispatcher
   {
-    auto io_dispatcher =
-        fdf::SynchronizedDispatcher::Create(fdf::SynchronizedDispatcher::Options::kAllowSyncCalls,
-                                            "ufs-io-worker", [](fdf_dispatcher_t*) {});
+    auto io_dispatcher = fdf::SynchronizedDispatcher::Create(
+        fdf::SynchronizedDispatcher::Options::kAllowSyncCalls, "ufs-io-worker",
+        [this](fdf_dispatcher_t*) { OnDispatcherShutdown(); });
     if (io_dispatcher.is_error()) {
       fdf::error("Failed to create IO dispatcher: {}",
                  zx_status_get_string(io_dispatcher.status_value()));
@@ -824,9 +825,9 @@ zx::result<> Ufs::InitController() {
 
   // Create Exception Event worker
   {
-    auto ee_dispatcher =
-        fdf::SynchronizedDispatcher::Create(fdf::SynchronizedDispatcher::Options::kAllowSyncCalls,
-                                            "ufs-exception-event-worker", [](fdf_dispatcher_t*) {});
+    auto ee_dispatcher = fdf::SynchronizedDispatcher::Create(
+        fdf::SynchronizedDispatcher::Options::kAllowSyncCalls, "ufs-exception-event-worker",
+        [this](fdf_dispatcher_t*) { OnDispatcherShutdown(); });
     if (ee_dispatcher.is_error()) {
       fdf::error("Failed to create Exception Event dispatcher: {}",
                  zx_status_get_string(ee_dispatcher.status_value()));
@@ -835,6 +836,7 @@ zx::result<> Ufs::InitController() {
     exception_event_dispatcher_ = *std::move(ee_dispatcher);
   }
 
+  cancel_irq.cancel();
   return zx::ok();
 }
 
@@ -1364,6 +1366,21 @@ zx::result<> Ufs::Start(fdf::DriverContext context) {
   return zx::ok();
 }
 
+void Ufs::OnDispatcherShutdown() {
+  std::optional<fdf::StopCompleter> completer;
+  {
+    std::lock_guard<std::mutex> lock(lock_);
+    if (pending_dispatcher_shutdowns_ > 0 && --pending_dispatcher_shutdowns_ == 0) {
+      if (auto old = std::exchange(stop_completer_, std::nullopt); old.has_value()) {
+        completer.emplace(std::move(*old));
+      }
+    }
+  }
+  if (completer.has_value()) {
+    (*completer)(zx::ok());
+  }
+}
+
 void Ufs::Stop(fdf::StopCompleter completer) {
   {
     std::lock_guard<std::mutex> lock(lock_);
@@ -1380,28 +1397,51 @@ void Ufs::Stop(fdf::StopCompleter completer) {
     irq_.destroy();
   }
 
+  uint32_t dispatchers_to_shutdown = 0;
+  if (exception_event_dispatcher_.get())
+    dispatchers_to_shutdown++;
+  if (irq_worker_dispatcher_.get())
+    dispatchers_to_shutdown++;
+  if (io_worker_dispatcher_.get())
+    dispatchers_to_shutdown++;
+  if (admin_worker_dispatcher_.get())
+    dispatchers_to_shutdown++;
+
+  if (dispatchers_to_shutdown == 0) {
+    completer(zx::ok());
+    return;
+  }
+
+  {
+    std::lock_guard<std::mutex> lock(lock_);
+    stop_completer_.emplace(std::move(completer));
+    pending_dispatcher_shutdowns_ = dispatchers_to_shutdown;
+  }
+
   if (exception_event_dispatcher_.get()) {
     exception_event_dispatcher_.ShutdownAsync();
   }
-
   if (irq_worker_dispatcher_.get()) {
     irq_worker_dispatcher_.ShutdownAsync();
   }
-
   if (io_worker_dispatcher_.get()) {
     io_worker_dispatcher_.ShutdownAsync();
   }
-
   if (admin_worker_dispatcher_.get()) {
     admin_worker_dispatcher_.ShutdownAsync();
   }
-
-  completer(zx::ok());
 }
 
 void Ufs::Serve(fidl::ServerEnd<fuchsia_hardware_ufs::Ufs> server_end) {
   auto server_impl = std::make_unique<UfsServer>(this);
   fidl::BindServer(dispatcher(), std::move(server_end), std::move(server_impl));
+}
+
+Ufs::~Ufs() {
+  irq_handler_.Cancel();
+  if (irq_.is_valid()) {
+    irq_.destroy();
+  }
 }
 
 }  // namespace ufs

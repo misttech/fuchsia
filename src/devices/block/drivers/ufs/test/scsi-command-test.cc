@@ -385,6 +385,150 @@ TEST_F(ScsiCommandTest, RequestSense) {
   ASSERT_EQ(sense_data->sense_key(), scsi::SenseKey::NO_SENSE);
 }
 
+TEST_F(ScsiCommandTest, ShortSenseDataHeader) {
+  const uint8_t kTestLun = 0;
+
+  mock_device_.GetScsiCommandProcessor().SetHook(
+      scsi::Opcode::TEST_UNIT_READY,
+      [](ufs_mock_device::UfsMockDevice &mock_device, CommandUpiuData &command_upiu,
+         ResponseUpiuData &response_upiu,
+         cpp20::span<PhysicalRegionDescriptionTableEntry> &prdt_upiu)
+          -> zx::result<std::vector<uint8_t>> {
+        response_upiu.header.status = static_cast<uint8_t>(scsi::StatusCode::CHECK_CONDITION);
+        response_upiu.header.data_segment_length = htobe16(2);
+        response_upiu.sense_data_len = htobe16(2);
+        return zx::ok(std::vector<uint8_t>{});
+      });
+
+  uint8_t cdb_buffer[6] = {};
+  auto cdb = reinterpret_cast<scsi::TestUnitReadyCDB *>(cdb_buffer);
+  cdb->opcode = scsi::Opcode::TEST_UNIT_READY;
+
+  ScsiCommandUpiu upiu(cdb_buffer, sizeof(*cdb), DataDirection::kNone);
+  auto response = dut_->GetTransferRequestProcessor().SendAdminScsiCmd(upiu, kTestLun);
+  ASSERT_EQ(response.status_value(), ZX_ERR_BAD_STATE);
+}
+
+TEST_F(ScsiCommandTest, LongSenseDataHeader) {
+  const uint8_t kTestLun = 0;
+
+  mock_device_.GetScsiCommandProcessor().SetHook(
+      scsi::Opcode::TEST_UNIT_READY,
+      [](ufs_mock_device::UfsMockDevice &mock_device, CommandUpiuData &command_upiu,
+         ResponseUpiuData &response_upiu,
+         cpp20::span<PhysicalRegionDescriptionTableEntry> &prdt_upiu)
+          -> zx::result<std::vector<uint8_t>> {
+        response_upiu.header.status = static_cast<uint8_t>(scsi::StatusCode::CHECK_CONDITION);
+        response_upiu.header.data_segment_length = htobe16(24);
+        response_upiu.sense_data_len = htobe16(24);
+        return zx::ok(std::vector<uint8_t>{});
+      });
+
+  uint8_t cdb_buffer[6] = {};
+  auto cdb = reinterpret_cast<scsi::TestUnitReadyCDB *>(cdb_buffer);
+  cdb->opcode = scsi::Opcode::TEST_UNIT_READY;
+
+  ScsiCommandUpiu upiu(cdb_buffer, sizeof(*cdb), DataDirection::kNone);
+  auto response = dut_->GetTransferRequestProcessor().SendAdminScsiCmd(upiu, kTestLun);
+  ASSERT_EQ(response.status_value(), ZX_ERR_BAD_STATE);
+}
+
+TEST_F(ScsiCommandTest, IoCommandInvalidSenseDataLength) {
+  const uint8_t kTestLun = 0;
+  uint32_t block_offset = 0;
+
+  // Set mock device to return CHECK_CONDITION with short sense data (< 18 bytes) for READ_10.
+  mock_device_.GetScsiCommandProcessor().SetHook(
+      scsi::Opcode::READ_10,
+      [](ufs_mock_device::UfsMockDevice &mock_device, CommandUpiuData &command_upiu,
+         ResponseUpiuData &response_upiu,
+         cpp20::span<PhysicalRegionDescriptionTableEntry> &prdt_upiu)
+          -> zx::result<std::vector<uint8_t>> {
+        response_upiu.header.status = static_cast<uint8_t>(scsi::StatusCode::CHECK_CONDITION);
+        response_upiu.header.data_segment_length = htobe16(4);
+        response_upiu.sense_data_len = htobe16(4);
+        return zx::ok(std::vector<uint8_t>{});
+      });
+
+  scsi::Read10CDB cdb = {};
+  cdb.opcode = scsi::Opcode::READ_10;
+  cdb.logical_block_address = htobe32(block_offset);
+  cdb.transfer_length = htobe16(GetBlockCount());
+
+  ScsiCommandUpiu upiu(reinterpret_cast<const uint8_t *>(&cdb), sizeof(cdb),
+                       DataDirection::kDeviceToHost, GetBlockCount() * GetBlockSize());
+
+  IoCommand io_cmd = GetEmptyIoCommand(/*is_write=*/false, GetVmo().get());
+  sync_completion_t completion;
+  zx_status_t op_status = ZX_OK;
+  io_cmd.device_op.completion_cb = [](void *cookie, zx_status_t status, block_op_t *op) {
+    auto *pair = static_cast<std::pair<sync_completion_t *, zx_status_t *> *>(cookie);
+    *pair->second = status;
+    sync_completion_signal(pair->first);
+  };
+  std::pair<sync_completion_t *, zx_status_t *> cookie = {&completion, &op_status};
+  io_cmd.device_op.cookie = &cookie;
+
+  auto send_result = dut_->GetTransferRequestProcessor().SendIoScsiCmd(upiu, kTestLun, &io_cmd);
+  ASSERT_OK(send_result);
+  ASSERT_OK(sync_completion_wait(&completion, ZX_TIME_INFINITE));
+  // Because sense_data_len != 18, sense_data is nullopt, causing ScsiComplete to return
+  // ZX_ERR_BAD_STATE.
+  ASSERT_EQ(op_status, ZX_ERR_BAD_STATE);
+}
+
+TEST_F(ScsiCommandTest, IoCommandInvalidAdditionalSenseLength) {
+  const uint8_t kTestLun = 0;
+  uint32_t block_offset = 0;
+
+  // Set mock device to return CHECK_CONDITION with 18 bytes of sense data, but invalid
+  // additional_sense_length (e.g. 0 instead of 10).
+  mock_device_.GetScsiCommandProcessor().SetHook(
+      scsi::Opcode::READ_10,
+      [](ufs_mock_device::UfsMockDevice &mock_device, CommandUpiuData &command_upiu,
+         ResponseUpiuData &response_upiu,
+         cpp20::span<PhysicalRegionDescriptionTableEntry> &prdt_upiu)
+          -> zx::result<std::vector<uint8_t>> {
+        response_upiu.header.status = static_cast<uint8_t>(scsi::StatusCode::CHECK_CONDITION);
+        response_upiu.header.data_segment_length =
+            htobe16(sizeof(scsi::FixedFormatSenseDataHeader));
+        response_upiu.sense_data_len = htobe16(sizeof(scsi::FixedFormatSenseDataHeader));
+        auto *sense_data =
+            reinterpret_cast<scsi::FixedFormatSenseDataHeader *>(response_upiu.sense_data);
+        sense_data->set_response_code(scsi::SenseDataResponseCodes::kFixedCurrentInformation);
+        sense_data->set_valid(0);
+        sense_data->set_sense_key(scsi::SenseKey::ILLEGAL_REQUEST);
+        sense_data->additional_sense_length = 0;  // Invalid! Must be 10 (0x0A) per UFS Table 10.19.
+        return zx::ok(std::vector<uint8_t>{});
+      });
+
+  scsi::Read10CDB cdb = {};
+  cdb.opcode = scsi::Opcode::READ_10;
+  cdb.logical_block_address = htobe32(block_offset);
+  cdb.transfer_length = htobe16(GetBlockCount());
+
+  ScsiCommandUpiu upiu(reinterpret_cast<const uint8_t *>(&cdb), sizeof(cdb),
+                       DataDirection::kDeviceToHost, GetBlockCount() * GetBlockSize());
+
+  IoCommand io_cmd = GetEmptyIoCommand(/*is_write=*/false, GetVmo().get());
+  sync_completion_t completion;
+  zx_status_t op_status = ZX_OK;
+  io_cmd.device_op.completion_cb = [](void *cookie, zx_status_t status, block_op_t *op) {
+    auto *pair = static_cast<std::pair<sync_completion_t *, zx_status_t *> *>(cookie);
+    *pair->second = status;
+    sync_completion_signal(pair->first);
+  };
+  std::pair<sync_completion_t *, zx_status_t *> cookie = {&completion, &op_status};
+  io_cmd.device_op.cookie = &cookie;
+
+  auto send_result = dut_->GetTransferRequestProcessor().SendIoScsiCmd(upiu, kTestLun, &io_cmd);
+  ASSERT_OK(send_result);
+  ASSERT_OK(sync_completion_wait(&completion, ZX_TIME_INFINITE));
+  // Because additional_sense_length != 10, sense_data is rejected, causing ScsiComplete to return
+  // ZX_ERR_BAD_STATE.
+  ASSERT_EQ(op_status, ZX_ERR_BAD_STATE);
+}
+
 TEST_F(ScsiCommandTest, SynchronizeCache10) {
   const uint8_t kTestLun = 0;
   uint32_t block_offset = 0;

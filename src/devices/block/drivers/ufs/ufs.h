@@ -375,6 +375,8 @@ class Ufs : public fdf::DriverBase2, public scsi::Controller {
   // waiting for IO to start.
   list_node_t pending_commands_ TA_GUARDED(commands_lock_);
 
+  void OnDispatcherShutdown() TA_EXCL(lock_);
+
   // Dispatcher for processing queued block requests.
   fdf::Dispatcher irq_worker_dispatcher_;
   fdf::Dispatcher io_worker_dispatcher_;
@@ -398,7 +400,10 @@ class Ufs : public fdf::DriverBase2, public scsi::Controller {
   // Callback function to perform when the host controller is notified.
   HostControllerCallback host_controller_callback_;
 
+  std::mutex lock_;
   bool driver_shutdown_ TA_GUARDED(lock_) = false;
+  uint32_t pending_dispatcher_shutdowns_ TA_GUARDED(lock_) = 0;
+  std::optional<fdf::StopCompleter> stop_completer_ TA_GUARDED(lock_);
 
   // The maximum transfer size supported by UFSHCI spec is 65535 * 256 KiB. However, we limit the
   // maximum transfer size to 1MiB for performance reason.
@@ -406,8 +411,6 @@ class Ufs : public fdf::DriverBase2, public scsi::Controller {
 
   bool qemu_quirk_ = false;
   bool intel_quirk_ = false;
-
-  std::mutex lock_;
 
   ufs_config::Config config_;
 
