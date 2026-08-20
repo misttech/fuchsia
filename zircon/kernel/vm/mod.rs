@@ -16,6 +16,7 @@ pub mod physical_page_borrowing_config;
 pub mod physmap;
 pub mod pinned_vm_object;
 pub mod pmm;
+pub mod pmm_node;
 pub mod scanner;
 #[allow(clippy::module_inception)]
 pub mod vm;
@@ -26,3 +27,4 @@ pub mod vm_mapping;
 pub mod vm_object;
 pub mod vm_object_paged;
 pub mod vm_object_physical;
+pub mod vm_page_list;

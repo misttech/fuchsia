@@ -237,6 +237,8 @@ kernel_bindgen_crate("vm-constants-rs") {
   var_allowlist = [
     "kVmObjectPhysicalState.*",
     "kVmCachePolicyMask",
+    "kVmPageList.*",
+    "kPmmNodeIndexZeroBits",
   ]
 
   expect_lints = [ "non_upper_case_globals" ]
@@ -281,6 +283,9 @@ kernel_bindgen_crate("pmm-bindings") {
     "cpp_pmm_alloc_page",
     "cpp_pmm_free_page",
     "cpp_paddr_to_vm_page",
+    "cpp_pmm_page_to_index",
+    "cpp_pmm_index_to_page",
+    "cpp_pmm_index_to_paddr",
   ]
   type_allowlist = [ "PmmOptDelayReuse" ]
   type_blocklist = [
@@ -860,6 +865,7 @@ kernel_rust_mod("vm-rs") {
     "physmap.rs",
     "pinned_vm_object.rs",
     "pmm.rs",
+    "pmm_node.rs",
     "scanner.rs",
     "vm.rs",
     "vm_address_region.rs",
@@ -869,6 +875,7 @@ kernel_rust_mod("vm-rs") {
     "vm_object.rs",
     "vm_object_paged.rs",
     "vm_object_physical.rs",
+    "vm_page_list.rs",
   ]
 
   deps = [

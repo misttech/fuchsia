@@ -22,6 +22,7 @@
 #include <ktl/unique_ptr.h>
 #include <vm/page.h>
 #include <vm/pmm.h>
+#include <vm/vm_constants.h>
 
 class VmPageList;
 class VmPageSpliceList;
@@ -212,6 +213,7 @@ class VmPageOrMarker {
   [[nodiscard]] static VmPageOrMarker Page(vm_page* p) {
     // Ensure the pmm page-to-index has enough zero bits.
     static_assert(kTypeBits <= PmmNode::kIndexZeroBits);
+    static_assert(kPmmNodeIndexZeroBits == PmmNode::kIndexZeroBits);
     // A null page is incorrect for two reasons
     // 1. It's a violation of the API of this method
     // 2. A null page cannot be represented internally as this is used to represent Empty
@@ -457,6 +459,9 @@ class VmPageOrMarker {
   }
 
   uint32_t raw_;
+
+  static_assert(kTypeBits == kVmPageListTypeBits);
+  static_assert(kPageType == kVmPageListPageType);
 
   friend VmPageList;
 };
