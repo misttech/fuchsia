@@ -27,7 +27,7 @@ main repository.
 
 **Current value (from the default):** `[]`
 
-From //BUILD.gn:108
+From //BUILD.gn:104
 
 ### additional_default_targets
 
@@ -36,7 +36,7 @@ the //:default target
 
 **Current value (from the default):** `[]`
 
-From //BUILD.gn:124
+From //BUILD.gn:120
 
 ### additional_tefmocheck_labels
 
@@ -45,7 +45,7 @@ Defaults to empty.
 
 **Current value (from the default):** `[]`
 
-From //BUILD.gn:128
+From //BUILD.gn:124
 
 ### all_cpu_kernel_boot_tests
 
@@ -139,7 +139,7 @@ The result will be built and uploaded to CIPD by infra.
 
 **Current value (from the default):** `[]`
 
-From //BUILD.gn:112
+From //BUILD.gn:108
 
 ### assembly_partitions_configs
 
@@ -148,7 +148,7 @@ The result will be built and uploaded to CIPD by infra.
 
 **Current value (from the default):** `[]`
 
-From //BUILD.gn:120
+From //BUILD.gn:116
 
 ### assembly_product_configs
 
@@ -157,7 +157,7 @@ The result will be built and uploaded to CIPD by infra.
 
 **Current value (from the default):** `[]`
 
-From //BUILD.gn:116
+From //BUILD.gn:112
 
 ### avb_atx_metadata
 
@@ -207,7 +207,7 @@ NOTE: Enabling will add a several seconds of overhead to the build.
 
 **Current value (from the default):** `false`
 
-From //build/bazel/bazel_action.gni:16
+From //build/bazel/bazel_action.gni:15
 
 ### bazel_execution_logs
 
@@ -608,7 +608,7 @@ From //out/not-default/args.gn:13
 
 **Overridden from the default:** `[]`
 
-From //BUILD.gn:136
+From //BUILD.gn:132
 
 **Current value for `target_cpu = "riscv64"`:** `[]`
 
@@ -616,7 +616,7 @@ From //out/not-default/args.gn:13
 
 **Overridden from the default:** `[]`
 
-From //BUILD.gn:136
+From //BUILD.gn:132
 
 **Current value for `target_cpu = "x64"`:** `[]`
 
@@ -624,7 +624,7 @@ From //out/not-default/args.gn:13
 
 **Overridden from the default:** `[]`
 
-From //BUILD.gn:136
+From //BUILD.gn:132
 
 ### build_should_trace_actions
 
@@ -946,7 +946,7 @@ This should never be set as a build argument.
 }
   static = {
   clang_rt = "lib/clang/24/lib/armv7-unknown-linux-gnueabihf/libclang_rt.lsan.a"
-  clang_rt_cxx = "../../../../out/not-default/libclang_rt.lsan_cxx.a"
+  clang_rt_cxx = ""
 }
 }
   tsan = {
@@ -954,7 +954,7 @@ This should never be set as a build argument.
   clang_rt = "../../../../out/not-default/libclang_rt.tsan.so"
 }
   static = {
-  clang_rt = ""
+  clang_rt = "../../../../out/not-default/libclang_rt.tsan.a"
   clang_rt_cxx = "../../../../out/not-default/libclang_rt.tsan_cxx.a"
 }
 }
@@ -1083,20 +1083,20 @@ This should never be set as a build argument.
   cflags = []
   ldflags = []
   runtime = [{
-  breakpad = "debug/.build-id/b3/d5620253c1399947b847fcaaeee5c3875562ca.sym"
-  debug = "debug/.build-id/b3/d5620253c1399947b847fcaaeee5c3875562ca.debug"
+  breakpad = "debug/.build-id/13/ee7d4be468dd6ad249f6550bcd9f45c75da5c5.sym"
+  debug = "debug/.build-id/13/ee7d4be468dd6ad249f6550bcd9f45c75da5c5.debug"
   dist = "aarch64-unknown-fuchsia/libc++.so.2"
   name = "libc++"
   soname = "libc++.so.2"
 }, {
-  breakpad = "debug/.build-id/97/d9c606d3b6907c0ace6a782dc623ffd8524a34.sym"
-  debug = "debug/.build-id/97/d9c606d3b6907c0ace6a782dc623ffd8524a34.debug"
+  breakpad = "debug/.build-id/46/77e5962fafa852fd9be2820cbc274e9400b5ec.sym"
+  debug = "debug/.build-id/46/77e5962fafa852fd9be2820cbc274e9400b5ec.debug"
   dist = "aarch64-unknown-fuchsia/libc++abi.so.1"
   name = "libc++abi"
   soname = "libc++abi.so.1"
 }, {
-  breakpad = "debug/.build-id/8e/4dde0850a4174213e7e912942faf9eeb00a9f5.sym"
-  debug = "debug/.build-id/8e/4dde0850a4174213e7e912942faf9eeb00a9f5.debug"
+  breakpad = "debug/.build-id/7e/e5152694fa05ab41649202d1aa2e7cae30c95d.sym"
+  debug = "debug/.build-id/7e/e5152694fa05ab41649202d1aa2e7cae30c95d.debug"
   dist = "aarch64-unknown-fuchsia/libunwind.so.1"
   name = "libunwind"
   soname = "libunwind.so.1"
@@ -1106,25 +1106,25 @@ This should never be set as a build argument.
   cflags = ["-fsanitize=address"]
   ldflags = []
   runtime = [{
-  breakpad = "debug/.build-id/17/ec0e91bd4959ae8922e432d1ea2cc179f40776.sym"
-  debug = "debug/.build-id/17/ec0e91bd4959ae8922e432d1ea2cc179f40776.debug"
+  breakpad = "debug/.build-id/34/6fcb6a69a759d245f80818072413082aff2a8c.sym"
+  debug = "debug/.build-id/34/6fcb6a69a759d245f80818072413082aff2a8c.debug"
   dist = "clang/24/lib/aarch64-unknown-fuchsia/libclang_rt.asan.so"
   soname = "libclang_rt.asan.so"
 }, {
-  breakpad = "debug/.build-id/29/b3346d53ec6e8127c5230023b93eada217c647.sym"
-  debug = "debug/.build-id/29/b3346d53ec6e8127c5230023b93eada217c647.debug"
+  breakpad = "debug/.build-id/f9/0b68a9594d4387a92e4f82300e510927bf1fa4.sym"
+  debug = "debug/.build-id/f9/0b68a9594d4387a92e4f82300e510927bf1fa4.debug"
   dist = "aarch64-unknown-fuchsia/asan/libc++.so.2"
   name = "libc++"
   soname = "libc++.so.2"
 }, {
-  breakpad = "debug/.build-id/c9/a2bd2974cf547d7490893cafe9fed8fbdfe051.sym"
-  debug = "debug/.build-id/c9/a2bd2974cf547d7490893cafe9fed8fbdfe051.debug"
+  breakpad = "debug/.build-id/99/5d8d0daa0c1e02bc4a01f781fce1ea7251d45c.sym"
+  debug = "debug/.build-id/99/5d8d0daa0c1e02bc4a01f781fce1ea7251d45c.debug"
   dist = "aarch64-unknown-fuchsia/asan/libc++abi.so.1"
   name = "libc++abi"
   soname = "libc++abi.so.1"
 }, {
-  breakpad = "debug/.build-id/a4/6c97f08796a67da85b0bcb18e20140fe9a2f73.sym"
-  debug = "debug/.build-id/a4/6c97f08796a67da85b0bcb18e20140fe9a2f73.debug"
+  breakpad = "debug/.build-id/6c/5a1375486ffa4d6056c00590f3bcb9d4b30fa9.sym"
+  debug = "debug/.build-id/6c/5a1375486ffa4d6056c00590f3bcb9d4b30fa9.debug"
   dist = "aarch64-unknown-fuchsia/asan/libunwind.so.1"
   name = "libunwind"
   soname = "libunwind.so.1"
@@ -1134,25 +1134,25 @@ This should never be set as a build argument.
   cflags = ["-fsanitize=undefined"]
   ldflags = []
   runtime = [{
-  breakpad = "debug/.build-id/52/22f9fa9c9eb210fcde68f3e251fd1d917887f5.sym"
-  debug = "debug/.build-id/52/22f9fa9c9eb210fcde68f3e251fd1d917887f5.debug"
+  breakpad = "debug/.build-id/70/7149973570acd73d4758a0fe34778fcba1bcfb.sym"
+  debug = "debug/.build-id/70/7149973570acd73d4758a0fe34778fcba1bcfb.debug"
   dist = "clang/24/lib/aarch64-unknown-fuchsia/libclang_rt.ubsan_standalone.so"
   soname = "libclang_rt.ubsan_standalone.so"
 }, {
-  breakpad = "debug/.build-id/b3/d5620253c1399947b847fcaaeee5c3875562ca.sym"
-  debug = "debug/.build-id/b3/d5620253c1399947b847fcaaeee5c3875562ca.debug"
+  breakpad = "debug/.build-id/13/ee7d4be468dd6ad249f6550bcd9f45c75da5c5.sym"
+  debug = "debug/.build-id/13/ee7d4be468dd6ad249f6550bcd9f45c75da5c5.debug"
   dist = "aarch64-unknown-fuchsia/libc++.so.2"
   name = "libc++"
   soname = "libc++.so.2"
 }, {
-  breakpad = "debug/.build-id/97/d9c606d3b6907c0ace6a782dc623ffd8524a34.sym"
-  debug = "debug/.build-id/97/d9c606d3b6907c0ace6a782dc623ffd8524a34.debug"
+  breakpad = "debug/.build-id/46/77e5962fafa852fd9be2820cbc274e9400b5ec.sym"
+  debug = "debug/.build-id/46/77e5962fafa852fd9be2820cbc274e9400b5ec.debug"
   dist = "aarch64-unknown-fuchsia/libc++abi.so.1"
   name = "libc++abi"
   soname = "libc++abi.so.1"
 }, {
-  breakpad = "debug/.build-id/8e/4dde0850a4174213e7e912942faf9eeb00a9f5.sym"
-  debug = "debug/.build-id/8e/4dde0850a4174213e7e912942faf9eeb00a9f5.debug"
+  breakpad = "debug/.build-id/7e/e5152694fa05ab41649202d1aa2e7cae30c95d.sym"
+  debug = "debug/.build-id/7e/e5152694fa05ab41649202d1aa2e7cae30c95d.debug"
   dist = "aarch64-unknown-fuchsia/libunwind.so.1"
   name = "libunwind"
   soname = "libunwind.so.1"
@@ -1162,25 +1162,25 @@ This should never be set as a build argument.
   cflags = ["-fsanitize=hwaddress"]
   ldflags = []
   runtime = [{
-  breakpad = "debug/.build-id/1a/ca940df4dc37e2f4d861760eee395f9f2503e3.sym"
-  debug = "debug/.build-id/1a/ca940df4dc37e2f4d861760eee395f9f2503e3.debug"
+  breakpad = "debug/.build-id/3d/c9aef0d9989a10d3b3e9a25d67b706a3a3683d.sym"
+  debug = "debug/.build-id/3d/c9aef0d9989a10d3b3e9a25d67b706a3a3683d.debug"
   dist = "clang/24/lib/aarch64-unknown-fuchsia/libclang_rt.hwasan.so"
   soname = "libclang_rt.hwasan.so"
 }, {
-  breakpad = "debug/.build-id/19/4c8525a078371ce72f144c59e370f8376ca4e1.sym"
-  debug = "debug/.build-id/19/4c8525a078371ce72f144c59e370f8376ca4e1.debug"
+  breakpad = "debug/.build-id/54/044fd783d06a470432016a602bcee33337a044.sym"
+  debug = "debug/.build-id/54/044fd783d06a470432016a602bcee33337a044.debug"
   dist = "aarch64-unknown-fuchsia/hwasan/libc++.so.2"
   name = "libc++"
   soname = "libc++.so.2"
 }, {
-  breakpad = "debug/.build-id/b4/34fb39944ef4b562fe691afe0b1215620d8163.sym"
-  debug = "debug/.build-id/b4/34fb39944ef4b562fe691afe0b1215620d8163.debug"
+  breakpad = "debug/.build-id/2d/6a7cdceec34ef3ddf51bb0866fab2c867ebc5b.sym"
+  debug = "debug/.build-id/2d/6a7cdceec34ef3ddf51bb0866fab2c867ebc5b.debug"
   dist = "aarch64-unknown-fuchsia/hwasan/libc++abi.so.1"
   name = "libc++abi"
   soname = "libc++abi.so.1"
 }, {
-  breakpad = "debug/.build-id/ba/2eece6bfee6393f127b576ae2280e55f35d383.sym"
-  debug = "debug/.build-id/ba/2eece6bfee6393f127b576ae2280e55f35d383.debug"
+  breakpad = "debug/.build-id/83/fcd3b83aecc11fec37ee6112770f611ff91344.sym"
+  debug = "debug/.build-id/83/fcd3b83aecc11fec37ee6112770f611ff91344.debug"
   dist = "aarch64-unknown-fuchsia/hwasan/libunwind.so.1"
   name = "libunwind"
   soname = "libunwind.so.1"
@@ -1195,25 +1195,25 @@ This should never be set as a build argument.
   cflags = ["-fsanitize=address"]
   ldflags = ["-static-libstdc++"]
   runtime = [{
-  breakpad = "debug/.build-id/17/ec0e91bd4959ae8922e432d1ea2cc179f40776.sym"
-  debug = "debug/.build-id/17/ec0e91bd4959ae8922e432d1ea2cc179f40776.debug"
+  breakpad = "debug/.build-id/34/6fcb6a69a759d245f80818072413082aff2a8c.sym"
+  debug = "debug/.build-id/34/6fcb6a69a759d245f80818072413082aff2a8c.debug"
   dist = "clang/24/lib/aarch64-unknown-fuchsia/libclang_rt.asan.so"
   soname = "libclang_rt.asan.so"
 }, {
-  breakpad = "debug/.build-id/29/b3346d53ec6e8127c5230023b93eada217c647.sym"
-  debug = "debug/.build-id/29/b3346d53ec6e8127c5230023b93eada217c647.debug"
+  breakpad = "debug/.build-id/f9/0b68a9594d4387a92e4f82300e510927bf1fa4.sym"
+  debug = "debug/.build-id/f9/0b68a9594d4387a92e4f82300e510927bf1fa4.debug"
   dist = "aarch64-unknown-fuchsia/asan/libc++.so.2"
   name = "libc++"
   soname = "libc++.so.2"
 }, {
-  breakpad = "debug/.build-id/c9/a2bd2974cf547d7490893cafe9fed8fbdfe051.sym"
-  debug = "debug/.build-id/c9/a2bd2974cf547d7490893cafe9fed8fbdfe051.debug"
+  breakpad = "debug/.build-id/99/5d8d0daa0c1e02bc4a01f781fce1ea7251d45c.sym"
+  debug = "debug/.build-id/99/5d8d0daa0c1e02bc4a01f781fce1ea7251d45c.debug"
   dist = "aarch64-unknown-fuchsia/asan/libc++abi.so.1"
   name = "libc++abi"
   soname = "libc++abi.so.1"
 }, {
-  breakpad = "debug/.build-id/a4/6c97f08796a67da85b0bcb18e20140fe9a2f73.sym"
-  debug = "debug/.build-id/a4/6c97f08796a67da85b0bcb18e20140fe9a2f73.debug"
+  breakpad = "debug/.build-id/6c/5a1375486ffa4d6056c00590f3bcb9d4b30fa9.sym"
+  debug = "debug/.build-id/6c/5a1375486ffa4d6056c00590f3bcb9d4b30fa9.debug"
   dist = "aarch64-unknown-fuchsia/asan/libunwind.so.1"
   name = "libunwind"
   soname = "libunwind.so.1"
@@ -1223,25 +1223,25 @@ This should never be set as a build argument.
   cflags = ["-fsanitize=undefined"]
   ldflags = ["-static-libstdc++"]
   runtime = [{
-  breakpad = "debug/.build-id/52/22f9fa9c9eb210fcde68f3e251fd1d917887f5.sym"
-  debug = "debug/.build-id/52/22f9fa9c9eb210fcde68f3e251fd1d917887f5.debug"
+  breakpad = "debug/.build-id/70/7149973570acd73d4758a0fe34778fcba1bcfb.sym"
+  debug = "debug/.build-id/70/7149973570acd73d4758a0fe34778fcba1bcfb.debug"
   dist = "clang/24/lib/aarch64-unknown-fuchsia/libclang_rt.ubsan_standalone.so"
   soname = "libclang_rt.ubsan_standalone.so"
 }, {
-  breakpad = "debug/.build-id/b3/d5620253c1399947b847fcaaeee5c3875562ca.sym"
-  debug = "debug/.build-id/b3/d5620253c1399947b847fcaaeee5c3875562ca.debug"
+  breakpad = "debug/.build-id/13/ee7d4be468dd6ad249f6550bcd9f45c75da5c5.sym"
+  debug = "debug/.build-id/13/ee7d4be468dd6ad249f6550bcd9f45c75da5c5.debug"
   dist = "aarch64-unknown-fuchsia/libc++.so.2"
   name = "libc++"
   soname = "libc++.so.2"
 }, {
-  breakpad = "debug/.build-id/97/d9c606d3b6907c0ace6a782dc623ffd8524a34.sym"
-  debug = "debug/.build-id/97/d9c606d3b6907c0ace6a782dc623ffd8524a34.debug"
+  breakpad = "debug/.build-id/46/77e5962fafa852fd9be2820cbc274e9400b5ec.sym"
+  debug = "debug/.build-id/46/77e5962fafa852fd9be2820cbc274e9400b5ec.debug"
   dist = "aarch64-unknown-fuchsia/libc++abi.so.1"
   name = "libc++abi"
   soname = "libc++abi.so.1"
 }, {
-  breakpad = "debug/.build-id/8e/4dde0850a4174213e7e912942faf9eeb00a9f5.sym"
-  debug = "debug/.build-id/8e/4dde0850a4174213e7e912942faf9eeb00a9f5.debug"
+  breakpad = "debug/.build-id/7e/e5152694fa05ab41649202d1aa2e7cae30c95d.sym"
+  debug = "debug/.build-id/7e/e5152694fa05ab41649202d1aa2e7cae30c95d.debug"
   dist = "aarch64-unknown-fuchsia/libunwind.so.1"
   name = "libunwind"
   soname = "libunwind.so.1"
@@ -1251,25 +1251,25 @@ This should never be set as a build argument.
   cflags = ["-fsanitize=hwaddress"]
   ldflags = ["-static-libstdc++"]
   runtime = [{
-  breakpad = "debug/.build-id/1a/ca940df4dc37e2f4d861760eee395f9f2503e3.sym"
-  debug = "debug/.build-id/1a/ca940df4dc37e2f4d861760eee395f9f2503e3.debug"
+  breakpad = "debug/.build-id/3d/c9aef0d9989a10d3b3e9a25d67b706a3a3683d.sym"
+  debug = "debug/.build-id/3d/c9aef0d9989a10d3b3e9a25d67b706a3a3683d.debug"
   dist = "clang/24/lib/aarch64-unknown-fuchsia/libclang_rt.hwasan.so"
   soname = "libclang_rt.hwasan.so"
 }, {
-  breakpad = "debug/.build-id/19/4c8525a078371ce72f144c59e370f8376ca4e1.sym"
-  debug = "debug/.build-id/19/4c8525a078371ce72f144c59e370f8376ca4e1.debug"
+  breakpad = "debug/.build-id/54/044fd783d06a470432016a602bcee33337a044.sym"
+  debug = "debug/.build-id/54/044fd783d06a470432016a602bcee33337a044.debug"
   dist = "aarch64-unknown-fuchsia/hwasan/libc++.so.2"
   name = "libc++"
   soname = "libc++.so.2"
 }, {
-  breakpad = "debug/.build-id/b4/34fb39944ef4b562fe691afe0b1215620d8163.sym"
-  debug = "debug/.build-id/b4/34fb39944ef4b562fe691afe0b1215620d8163.debug"
+  breakpad = "debug/.build-id/2d/6a7cdceec34ef3ddf51bb0866fab2c867ebc5b.sym"
+  debug = "debug/.build-id/2d/6a7cdceec34ef3ddf51bb0866fab2c867ebc5b.debug"
   dist = "aarch64-unknown-fuchsia/hwasan/libc++abi.so.1"
   name = "libc++abi"
   soname = "libc++abi.so.1"
 }, {
-  breakpad = "debug/.build-id/ba/2eece6bfee6393f127b576ae2280e55f35d383.sym"
-  debug = "debug/.build-id/ba/2eece6bfee6393f127b576ae2280e55f35d383.debug"
+  breakpad = "debug/.build-id/83/fcd3b83aecc11fec37ee6112770f611ff91344.sym"
+  debug = "debug/.build-id/83/fcd3b83aecc11fec37ee6112770f611ff91344.debug"
   dist = "aarch64-unknown-fuchsia/hwasan/libunwind.so.1"
   name = "libunwind"
   soname = "libunwind.so.1"
@@ -1279,17 +1279,17 @@ This should never be set as a build argument.
   cflags = []
   ldflags = []
   runtime = [{
-  debug = "debug/.build-id/f6/ea83bf0bbe75cdad18e7f9ff61972964c7f01a.debug"
+  debug = "debug/.build-id/1b/2ad6c94ea7d18285f5a77528e6429270cdba60.debug"
   dist = "riscv64-unknown-fuchsia/libc++.so.2"
   name = "libc++"
   soname = "libc++.so.2"
 }, {
-  debug = "debug/.build-id/fa/9f1d10bd813eda98cc667a10b1e092efd04d15.debug"
+  debug = "debug/.build-id/b6/58784e23a76986eca8d5496ebfb3eec31542f9.debug"
   dist = "riscv64-unknown-fuchsia/libc++abi.so.1"
   name = "libc++abi"
   soname = "libc++abi.so.1"
 }, {
-  debug = "debug/.build-id/58/a0765f5f26ebdfc728f977ee8273ba0f5bdb4a.debug"
+  debug = "debug/.build-id/70/bad7a5178e494fdbf6c7397e04fe515cf9d7c2.debug"
   dist = "riscv64-unknown-fuchsia/libunwind.so.1"
   name = "libunwind"
   soname = "libunwind.so.1"
@@ -1299,21 +1299,21 @@ This should never be set as a build argument.
   cflags = ["-fsanitize=address"]
   ldflags = []
   runtime = [{
-  debug = "debug/.build-id/29/ea0c5c065334438f9882f4c8a524daf0c6c2f9.debug"
+  debug = "debug/.build-id/a9/116aa1957a598a272a98eb6954f85e584ec1ed.debug"
   dist = "clang/24/lib/riscv64-unknown-fuchsia/libclang_rt.asan.so"
   soname = "libclang_rt.asan.so"
 }, {
-  debug = "debug/.build-id/f7/2aae25e9ccfa58d214eff3cca533dac06dc38a.debug"
+  debug = "debug/.build-id/ab/6014a2a8eea88dc4132050a48e177a9d1de7b4.debug"
   dist = "riscv64-unknown-fuchsia/asan/libc++.so.2"
   name = "libc++"
   soname = "libc++.so.2"
 }, {
-  debug = "debug/.build-id/e7/dd42c4adcb5529770b2dd692b1c621a9244116.debug"
+  debug = "debug/.build-id/46/87be591b3e748005ecd3b0cd5727e79418ef39.debug"
   dist = "riscv64-unknown-fuchsia/asan/libc++abi.so.1"
   name = "libc++abi"
   soname = "libc++abi.so.1"
 }, {
-  debug = "debug/.build-id/be/3a72a8744030db0330a09560684e076ec370e5.debug"
+  debug = "debug/.build-id/59/bc576b2c0dad8a44e5e49e3a434d90e832463b.debug"
   dist = "riscv64-unknown-fuchsia/asan/libunwind.so.1"
   name = "libunwind"
   soname = "libunwind.so.1"
@@ -1323,21 +1323,21 @@ This should never be set as a build argument.
   cflags = ["-fsanitize=undefined"]
   ldflags = []
   runtime = [{
-  debug = "debug/.build-id/eb/4faf1cc22c9f1ca3f01234c1489b542f718c9a.debug"
+  debug = "debug/.build-id/35/b0125a457d8bbf397a191514121ec60e50dc07.debug"
   dist = "clang/24/lib/riscv64-unknown-fuchsia/libclang_rt.ubsan_standalone.so"
   soname = "libclang_rt.ubsan_standalone.so"
 }, {
-  debug = "debug/.build-id/f6/ea83bf0bbe75cdad18e7f9ff61972964c7f01a.debug"
+  debug = "debug/.build-id/1b/2ad6c94ea7d18285f5a77528e6429270cdba60.debug"
   dist = "riscv64-unknown-fuchsia/libc++.so.2"
   name = "libc++"
   soname = "libc++.so.2"
 }, {
-  debug = "debug/.build-id/fa/9f1d10bd813eda98cc667a10b1e092efd04d15.debug"
+  debug = "debug/.build-id/b6/58784e23a76986eca8d5496ebfb3eec31542f9.debug"
   dist = "riscv64-unknown-fuchsia/libc++abi.so.1"
   name = "libc++abi"
   soname = "libc++abi.so.1"
 }, {
-  debug = "debug/.build-id/58/a0765f5f26ebdfc728f977ee8273ba0f5bdb4a.debug"
+  debug = "debug/.build-id/70/bad7a5178e494fdbf6c7397e04fe515cf9d7c2.debug"
   dist = "riscv64-unknown-fuchsia/libunwind.so.1"
   name = "libunwind"
   soname = "libunwind.so.1"
@@ -1347,21 +1347,21 @@ This should never be set as a build argument.
   cflags = ["-fsanitize=hwaddress"]
   ldflags = []
   runtime = [{
-  debug = "debug/.build-id/ef/6273e8c36582731831d611a3a30e21e1ab1279.debug"
+  debug = "debug/.build-id/fc/1d09d9cd1959a99257b946f28ede20b0fdb0a8.debug"
   dist = "clang/24/lib/riscv64-unknown-fuchsia/libclang_rt.hwasan.so"
   soname = "libclang_rt.hwasan.so"
 }, {
-  debug = "debug/.build-id/f6/ea83bf0bbe75cdad18e7f9ff61972964c7f01a.debug"
+  debug = "debug/.build-id/1b/2ad6c94ea7d18285f5a77528e6429270cdba60.debug"
   dist = "riscv64-unknown-fuchsia/hwasan/libc++.so.2"
   name = "libc++"
   soname = "libc++.so.2"
 }, {
-  debug = "debug/.build-id/fa/9f1d10bd813eda98cc667a10b1e092efd04d15.debug"
+  debug = "debug/.build-id/b6/58784e23a76986eca8d5496ebfb3eec31542f9.debug"
   dist = "riscv64-unknown-fuchsia/hwasan/libc++abi.so.1"
   name = "libc++abi"
   soname = "libc++abi.so.1"
 }, {
-  debug = "debug/.build-id/a7/d94840038bd223da170bd6ab36e251eee54ad8.debug"
+  debug = "debug/.build-id/a3/5815d9d14d61ad189bbae0a8789c0279a3a604.debug"
   dist = "riscv64-unknown-fuchsia/hwasan/libunwind.so.1"
   name = "libunwind"
   soname = "libunwind.so.1"
@@ -1376,21 +1376,21 @@ This should never be set as a build argument.
   cflags = ["-fsanitize=address"]
   ldflags = ["-static-libstdc++"]
   runtime = [{
-  debug = "debug/.build-id/29/ea0c5c065334438f9882f4c8a524daf0c6c2f9.debug"
+  debug = "debug/.build-id/a9/116aa1957a598a272a98eb6954f85e584ec1ed.debug"
   dist = "clang/24/lib/riscv64-unknown-fuchsia/libclang_rt.asan.so"
   soname = "libclang_rt.asan.so"
 }, {
-  debug = "debug/.build-id/f7/2aae25e9ccfa58d214eff3cca533dac06dc38a.debug"
+  debug = "debug/.build-id/ab/6014a2a8eea88dc4132050a48e177a9d1de7b4.debug"
   dist = "riscv64-unknown-fuchsia/asan/libc++.so.2"
   name = "libc++"
   soname = "libc++.so.2"
 }, {
-  debug = "debug/.build-id/e7/dd42c4adcb5529770b2dd692b1c621a9244116.debug"
+  debug = "debug/.build-id/46/87be591b3e748005ecd3b0cd5727e79418ef39.debug"
   dist = "riscv64-unknown-fuchsia/asan/libc++abi.so.1"
   name = "libc++abi"
   soname = "libc++abi.so.1"
 }, {
-  debug = "debug/.build-id/be/3a72a8744030db0330a09560684e076ec370e5.debug"
+  debug = "debug/.build-id/59/bc576b2c0dad8a44e5e49e3a434d90e832463b.debug"
   dist = "riscv64-unknown-fuchsia/asan/libunwind.so.1"
   name = "libunwind"
   soname = "libunwind.so.1"
@@ -1400,21 +1400,21 @@ This should never be set as a build argument.
   cflags = ["-fsanitize=undefined"]
   ldflags = ["-static-libstdc++"]
   runtime = [{
-  debug = "debug/.build-id/eb/4faf1cc22c9f1ca3f01234c1489b542f718c9a.debug"
+  debug = "debug/.build-id/35/b0125a457d8bbf397a191514121ec60e50dc07.debug"
   dist = "clang/24/lib/riscv64-unknown-fuchsia/libclang_rt.ubsan_standalone.so"
   soname = "libclang_rt.ubsan_standalone.so"
 }, {
-  debug = "debug/.build-id/f6/ea83bf0bbe75cdad18e7f9ff61972964c7f01a.debug"
+  debug = "debug/.build-id/1b/2ad6c94ea7d18285f5a77528e6429270cdba60.debug"
   dist = "riscv64-unknown-fuchsia/libc++.so.2"
   name = "libc++"
   soname = "libc++.so.2"
 }, {
-  debug = "debug/.build-id/fa/9f1d10bd813eda98cc667a10b1e092efd04d15.debug"
+  debug = "debug/.build-id/b6/58784e23a76986eca8d5496ebfb3eec31542f9.debug"
   dist = "riscv64-unknown-fuchsia/libc++abi.so.1"
   name = "libc++abi"
   soname = "libc++abi.so.1"
 }, {
-  debug = "debug/.build-id/58/a0765f5f26ebdfc728f977ee8273ba0f5bdb4a.debug"
+  debug = "debug/.build-id/70/bad7a5178e494fdbf6c7397e04fe515cf9d7c2.debug"
   dist = "riscv64-unknown-fuchsia/libunwind.so.1"
   name = "libunwind"
   soname = "libunwind.so.1"
@@ -1424,21 +1424,21 @@ This should never be set as a build argument.
   cflags = ["-fsanitize=hwaddress"]
   ldflags = ["-static-libstdc++"]
   runtime = [{
-  debug = "debug/.build-id/ef/6273e8c36582731831d611a3a30e21e1ab1279.debug"
+  debug = "debug/.build-id/fc/1d09d9cd1959a99257b946f28ede20b0fdb0a8.debug"
   dist = "clang/24/lib/riscv64-unknown-fuchsia/libclang_rt.hwasan.so"
   soname = "libclang_rt.hwasan.so"
 }, {
-  debug = "debug/.build-id/f6/ea83bf0bbe75cdad18e7f9ff61972964c7f01a.debug"
+  debug = "debug/.build-id/1b/2ad6c94ea7d18285f5a77528e6429270cdba60.debug"
   dist = "riscv64-unknown-fuchsia/hwasan/libc++.so.2"
   name = "libc++"
   soname = "libc++.so.2"
 }, {
-  debug = "debug/.build-id/fa/9f1d10bd813eda98cc667a10b1e092efd04d15.debug"
+  debug = "debug/.build-id/b6/58784e23a76986eca8d5496ebfb3eec31542f9.debug"
   dist = "riscv64-unknown-fuchsia/hwasan/libc++abi.so.1"
   name = "libc++abi"
   soname = "libc++abi.so.1"
 }, {
-  debug = "debug/.build-id/a7/d94840038bd223da170bd6ab36e251eee54ad8.debug"
+  debug = "debug/.build-id/a3/5815d9d14d61ad189bbae0a8789c0279a3a604.debug"
   dist = "riscv64-unknown-fuchsia/hwasan/libunwind.so.1"
   name = "libunwind"
   soname = "libunwind.so.1"
@@ -1448,20 +1448,20 @@ This should never be set as a build argument.
   cflags = []
   ldflags = []
   runtime = [{
-  breakpad = "debug/.build-id/9e/ec3c4f8c737e57d8e1acd4eabb4dafd0555bb3.sym"
-  debug = "debug/.build-id/9e/ec3c4f8c737e57d8e1acd4eabb4dafd0555bb3.debug"
+  breakpad = "debug/.build-id/63/d224f538678f6749d2ac068f49bd0628a689ec.sym"
+  debug = "debug/.build-id/63/d224f538678f6749d2ac068f49bd0628a689ec.debug"
   dist = "x86_64-unknown-fuchsia/libc++.so.2"
   name = "libc++"
   soname = "libc++.so.2"
 }, {
-  breakpad = "debug/.build-id/f3/1833e35bda7c8305242960b9f8649f4b807c55.sym"
-  debug = "debug/.build-id/f3/1833e35bda7c8305242960b9f8649f4b807c55.debug"
+  breakpad = "debug/.build-id/87/78b6694e030d452fdb8a35d18271be38a6637b.sym"
+  debug = "debug/.build-id/87/78b6694e030d452fdb8a35d18271be38a6637b.debug"
   dist = "x86_64-unknown-fuchsia/libc++abi.so.1"
   name = "libc++abi"
   soname = "libc++abi.so.1"
 }, {
-  breakpad = "debug/.build-id/93/75f1d9bcf92ad6e08d9a276e6d5d04f58ae899.sym"
-  debug = "debug/.build-id/93/75f1d9bcf92ad6e08d9a276e6d5d04f58ae899.debug"
+  breakpad = "debug/.build-id/52/751629af8b7bcac60651550ef9662bc9c69df1.sym"
+  debug = "debug/.build-id/52/751629af8b7bcac60651550ef9662bc9c69df1.debug"
   dist = "x86_64-unknown-fuchsia/libunwind.so.1"
   name = "libunwind"
   soname = "libunwind.so.1"
@@ -1471,25 +1471,25 @@ This should never be set as a build argument.
   cflags = ["-fsanitize=address"]
   ldflags = []
   runtime = [{
-  breakpad = "debug/.build-id/54/1704d13a34b454e26ee5f3f3ca46e2bd243a15.sym"
-  debug = "debug/.build-id/54/1704d13a34b454e26ee5f3f3ca46e2bd243a15.debug"
+  breakpad = "debug/.build-id/62/4bb8eb8d7a410bc4309d642422e0ed9a0fe0db.sym"
+  debug = "debug/.build-id/62/4bb8eb8d7a410bc4309d642422e0ed9a0fe0db.debug"
   dist = "clang/24/lib/x86_64-unknown-fuchsia/libclang_rt.asan.so"
   soname = "libclang_rt.asan.so"
 }, {
-  breakpad = "debug/.build-id/bb/fafe4411d6858ac87a17a5c14c851a83e6598c.sym"
-  debug = "debug/.build-id/bb/fafe4411d6858ac87a17a5c14c851a83e6598c.debug"
+  breakpad = "debug/.build-id/6e/ae98c741e3ea2fbc8e81ca02815def5f2ae99d.sym"
+  debug = "debug/.build-id/6e/ae98c741e3ea2fbc8e81ca02815def5f2ae99d.debug"
   dist = "x86_64-unknown-fuchsia/asan/libc++.so.2"
   name = "libc++"
   soname = "libc++.so.2"
 }, {
-  breakpad = "debug/.build-id/c2/42058488c889fd5489c656b00eb8ad0549f1ce.sym"
-  debug = "debug/.build-id/c2/42058488c889fd5489c656b00eb8ad0549f1ce.debug"
+  breakpad = "debug/.build-id/b8/5a67a3ef0a7ebca1220f94ac70e9f1ce7286ef.sym"
+  debug = "debug/.build-id/b8/5a67a3ef0a7ebca1220f94ac70e9f1ce7286ef.debug"
   dist = "x86_64-unknown-fuchsia/asan/libc++abi.so.1"
   name = "libc++abi"
   soname = "libc++abi.so.1"
 }, {
-  breakpad = "debug/.build-id/a7/909f972d95e99c62da43fcf07fe3b38554cbf3.sym"
-  debug = "debug/.build-id/a7/909f972d95e99c62da43fcf07fe3b38554cbf3.debug"
+  breakpad = "debug/.build-id/f3/82ad2383c5fda41556e8da6ba54a7405fc3948.sym"
+  debug = "debug/.build-id/f3/82ad2383c5fda41556e8da6ba54a7405fc3948.debug"
   dist = "x86_64-unknown-fuchsia/asan/libunwind.so.1"
   name = "libunwind"
   soname = "libunwind.so.1"
@@ -1499,25 +1499,25 @@ This should never be set as a build argument.
   cflags = ["-fsanitize=undefined"]
   ldflags = []
   runtime = [{
-  breakpad = "debug/.build-id/bd/0b10f31725698ef5f3c84d0614ed162c0a979b.sym"
-  debug = "debug/.build-id/bd/0b10f31725698ef5f3c84d0614ed162c0a979b.debug"
+  breakpad = "debug/.build-id/b8/b63e412bacad0ff97f3d419c1c8ef5f6aa5672.sym"
+  debug = "debug/.build-id/b8/b63e412bacad0ff97f3d419c1c8ef5f6aa5672.debug"
   dist = "clang/24/lib/x86_64-unknown-fuchsia/libclang_rt.ubsan_standalone.so"
   soname = "libclang_rt.ubsan_standalone.so"
 }, {
-  breakpad = "debug/.build-id/9e/ec3c4f8c737e57d8e1acd4eabb4dafd0555bb3.sym"
-  debug = "debug/.build-id/9e/ec3c4f8c737e57d8e1acd4eabb4dafd0555bb3.debug"
+  breakpad = "debug/.build-id/63/d224f538678f6749d2ac068f49bd0628a689ec.sym"
+  debug = "debug/.build-id/63/d224f538678f6749d2ac068f49bd0628a689ec.debug"
   dist = "x86_64-unknown-fuchsia/libc++.so.2"
   name = "libc++"
   soname = "libc++.so.2"
 }, {
-  breakpad = "debug/.build-id/f3/1833e35bda7c8305242960b9f8649f4b807c55.sym"
-  debug = "debug/.build-id/f3/1833e35bda7c8305242960b9f8649f4b807c55.debug"
+  breakpad = "debug/.build-id/87/78b6694e030d452fdb8a35d18271be38a6637b.sym"
+  debug = "debug/.build-id/87/78b6694e030d452fdb8a35d18271be38a6637b.debug"
   dist = "x86_64-unknown-fuchsia/libc++abi.so.1"
   name = "libc++abi"
   soname = "libc++abi.so.1"
 }, {
-  breakpad = "debug/.build-id/93/75f1d9bcf92ad6e08d9a276e6d5d04f58ae899.sym"
-  debug = "debug/.build-id/93/75f1d9bcf92ad6e08d9a276e6d5d04f58ae899.debug"
+  breakpad = "debug/.build-id/52/751629af8b7bcac60651550ef9662bc9c69df1.sym"
+  debug = "debug/.build-id/52/751629af8b7bcac60651550ef9662bc9c69df1.debug"
   dist = "x86_64-unknown-fuchsia/libunwind.so.1"
   name = "libunwind"
   soname = "libunwind.so.1"
@@ -1532,25 +1532,25 @@ This should never be set as a build argument.
   cflags = ["-fsanitize=address"]
   ldflags = ["-static-libstdc++"]
   runtime = [{
-  breakpad = "debug/.build-id/54/1704d13a34b454e26ee5f3f3ca46e2bd243a15.sym"
-  debug = "debug/.build-id/54/1704d13a34b454e26ee5f3f3ca46e2bd243a15.debug"
+  breakpad = "debug/.build-id/62/4bb8eb8d7a410bc4309d642422e0ed9a0fe0db.sym"
+  debug = "debug/.build-id/62/4bb8eb8d7a410bc4309d642422e0ed9a0fe0db.debug"
   dist = "clang/24/lib/x86_64-unknown-fuchsia/libclang_rt.asan.so"
   soname = "libclang_rt.asan.so"
 }, {
-  breakpad = "debug/.build-id/bb/fafe4411d6858ac87a17a5c14c851a83e6598c.sym"
-  debug = "debug/.build-id/bb/fafe4411d6858ac87a17a5c14c851a83e6598c.debug"
+  breakpad = "debug/.build-id/6e/ae98c741e3ea2fbc8e81ca02815def5f2ae99d.sym"
+  debug = "debug/.build-id/6e/ae98c741e3ea2fbc8e81ca02815def5f2ae99d.debug"
   dist = "x86_64-unknown-fuchsia/asan/libc++.so.2"
   name = "libc++"
   soname = "libc++.so.2"
 }, {
-  breakpad = "debug/.build-id/c2/42058488c889fd5489c656b00eb8ad0549f1ce.sym"
-  debug = "debug/.build-id/c2/42058488c889fd5489c656b00eb8ad0549f1ce.debug"
+  breakpad = "debug/.build-id/b8/5a67a3ef0a7ebca1220f94ac70e9f1ce7286ef.sym"
+  debug = "debug/.build-id/b8/5a67a3ef0a7ebca1220f94ac70e9f1ce7286ef.debug"
   dist = "x86_64-unknown-fuchsia/asan/libc++abi.so.1"
   name = "libc++abi"
   soname = "libc++abi.so.1"
 }, {
-  breakpad = "debug/.build-id/a7/909f972d95e99c62da43fcf07fe3b38554cbf3.sym"
-  debug = "debug/.build-id/a7/909f972d95e99c62da43fcf07fe3b38554cbf3.debug"
+  breakpad = "debug/.build-id/f3/82ad2383c5fda41556e8da6ba54a7405fc3948.sym"
+  debug = "debug/.build-id/f3/82ad2383c5fda41556e8da6ba54a7405fc3948.debug"
   dist = "x86_64-unknown-fuchsia/asan/libunwind.so.1"
   name = "libunwind"
   soname = "libunwind.so.1"
@@ -1560,25 +1560,25 @@ This should never be set as a build argument.
   cflags = ["-fsanitize=undefined"]
   ldflags = ["-static-libstdc++"]
   runtime = [{
-  breakpad = "debug/.build-id/bd/0b10f31725698ef5f3c84d0614ed162c0a979b.sym"
-  debug = "debug/.build-id/bd/0b10f31725698ef5f3c84d0614ed162c0a979b.debug"
+  breakpad = "debug/.build-id/b8/b63e412bacad0ff97f3d419c1c8ef5f6aa5672.sym"
+  debug = "debug/.build-id/b8/b63e412bacad0ff97f3d419c1c8ef5f6aa5672.debug"
   dist = "clang/24/lib/x86_64-unknown-fuchsia/libclang_rt.ubsan_standalone.so"
   soname = "libclang_rt.ubsan_standalone.so"
 }, {
-  breakpad = "debug/.build-id/9e/ec3c4f8c737e57d8e1acd4eabb4dafd0555bb3.sym"
-  debug = "debug/.build-id/9e/ec3c4f8c737e57d8e1acd4eabb4dafd0555bb3.debug"
+  breakpad = "debug/.build-id/63/d224f538678f6749d2ac068f49bd0628a689ec.sym"
+  debug = "debug/.build-id/63/d224f538678f6749d2ac068f49bd0628a689ec.debug"
   dist = "x86_64-unknown-fuchsia/libc++.so.2"
   name = "libc++"
   soname = "libc++.so.2"
 }, {
-  breakpad = "debug/.build-id/f3/1833e35bda7c8305242960b9f8649f4b807c55.sym"
-  debug = "debug/.build-id/f3/1833e35bda7c8305242960b9f8649f4b807c55.debug"
+  breakpad = "debug/.build-id/87/78b6694e030d452fdb8a35d18271be38a6637b.sym"
+  debug = "debug/.build-id/87/78b6694e030d452fdb8a35d18271be38a6637b.debug"
   dist = "x86_64-unknown-fuchsia/libc++abi.so.1"
   name = "libc++abi"
   soname = "libc++abi.so.1"
 }, {
-  breakpad = "debug/.build-id/93/75f1d9bcf92ad6e08d9a276e6d5d04f58ae899.sym"
-  debug = "debug/.build-id/93/75f1d9bcf92ad6e08d9a276e6d5d04f58ae899.debug"
+  breakpad = "debug/.build-id/52/751629af8b7bcac60651550ef9662bc9c69df1.sym"
+  debug = "debug/.build-id/52/751629af8b7bcac60651550ef9662bc9c69df1.debug"
   dist = "x86_64-unknown-fuchsia/libunwind.so.1"
   name = "libunwind"
   soname = "libunwind.so.1"
@@ -2160,6 +2160,13 @@ From //build/config/compiler.gni:82
 }]
   install_host_tool = true
 }, {
+  bazel_label = "//tools/fuzz:undercoat"
+  copy_outputs = [{
+  bazel = "{{BAZEL_TARGET_OUT_DIR}}/undercoat_/undercoat"
+  ninja = "undercoat"
+}]
+  install_host_tool = true
+}, {
   bazel_label = "//tools/go_test_parser:go_test_parser"
   copy_outputs = [{
   bazel = "{{BAZEL_TARGET_OUT_DIR}}/go_test_parser_/go_test_parser"
@@ -2230,6 +2237,10 @@ From //build/config/compiler.gni:82
   bazel_label = "//tools/rust_extract"
   install_host_tool = true
 }, {
+  bazel_label = "//tools/create:create_bin"
+  install_host_tool = true
+  ninja_name = "create"
+}, {
   bazel_label = "//tools/fidl/fidldoc:fidldoc"
   install_host_tool = true
 }, {
@@ -2281,6 +2292,13 @@ From //build/config/compiler.gni:82
 }]
   install_host_tool = true
   ninja_name = "readme_fuchsia"
+}, {
+  bazel_label = "//tools/testing/tefmocheck:tefmocheck"
+  copy_outputs = [{
+  bazel = "{{BAZEL_TARGET_OUT_DIR}}/tefmocheck_/tefmocheck"
+  ninja = "tefmocheck"
+}]
+  install_host_tool = true
 }, {
   bazel_label = "//tools/testing/testparser:testparser_cmd"
   copy_outputs = [{
@@ -2400,7 +2418,7 @@ These are always a dependency of the main product assembly.
 
 **Current value (from the default):** `[]`
 
-From //BUILD.gn:86
+From //BUILD.gn:82
 
 ### dir_docker
 
@@ -3743,7 +3761,7 @@ As these cannot be part of the legacy AIB for a product, there is no
 
 **Current value (from the default):** `[]`
 
-From //BUILD.gn:50
+From //BUILD.gn:46
 
 ### dont_profile_source_files
 
@@ -3769,7 +3787,7 @@ hardware or emulated).
 
 **Current value (from the default):** `[]`
 
-From //BUILD.gn:75
+From //BUILD.gn:71
 
 ### emboss_build_dir_to_root
 
@@ -3808,15 +3826,9 @@ From //build/bazel/remote_services.gni:16
 
 ### enable_delayed_bazel_actions
 
-Enable Bazel delayed actions to optimize the Fuchsia build. This makes
-Ninja delay the invocation of Bazel actions, to later launch several
-of them through a special worker script that can combine several
-`bazel build` invocations into a single one.
-See https://fxbug.dev/468100333
+**Current value (from the default):** `""`
 
-**Current value (from the default):** `true`
-
-From //build/config/enable_delayed_bazel_actions.gni:11
+From //BUILD.gn:145
 
 ### enable_frame_pointers
 
@@ -4356,7 +4368,7 @@ packages instead of explicitly adding the labels of the
 
 **Current value (from the default):** `[]`
 
-From //BUILD.gn:64
+From //BUILD.gn:60
 
 ### extra_bazel_assembly_targets
 
@@ -4805,7 +4817,7 @@ Fully hermetic tests (both by packaging and at runtime)
 
 **Current value (from the default):** `[]`
 
-From //BUILD.gn:71
+From //BUILD.gn:67
 
 ### host_byteorder
 
@@ -4831,7 +4843,7 @@ From //out/not-default/args.gn:14
 
 **Overridden from the default:** `[]`
 
-From //BUILD.gn:93
+From //BUILD.gn:89
 
 **Current value for `target_cpu = "riscv64"`:** `[]`
 
@@ -4839,7 +4851,7 @@ From //out/not-default/args.gn:14
 
 **Overridden from the default:** `[]`
 
-From //BUILD.gn:93
+From //BUILD.gn:89
 
 **Current value for `target_cpu = "x64"`:** `[]`
 
@@ -4847,7 +4859,7 @@ From //out/not-default/args.gn:14
 
 **Overridden from the default:** `[]`
 
-From //BUILD.gn:93
+From //BUILD.gn:89
 
 ### host_os
 
@@ -4862,7 +4874,7 @@ These will be added to the build using the host toolchain.
 
 **Current value (from the default):** `[]`
 
-From //BUILD.gn:81
+From //BUILD.gn:77
 
 ### host_tools_base_path_override
 
@@ -6690,7 +6702,7 @@ bundle.
 
 **Current value (from the default):** `[]`
 
-From //BUILD.gn:140
+From //BUILD.gn:136
 
 ### profile_source_files
 
@@ -8919,7 +8931,7 @@ toolchain, so that recompilations with the new compiler can be triggered.
 When using the prebuilt, this is ignored and the CIPD instance ID of the
 prebuilt is used.
 
-**Current value (from the default):** `"udpyXnwDrqzro91Z7B9jUwoPS_0ELvVZAxPoAg55wFwC"`
+**Current value (from the default):** `"MCwGmTQ7oDy6ApmB5JlJG7UdC8GXvmhHU2H_mOIUEbcC"`
 
 From //build/rust/config.gni:47
 
@@ -9021,7 +9033,7 @@ extension mechanism for IDK bits outside of the main repository.
 
 **Current value (from the default):** `[]`
 
-From //BUILD.gn:103
+From //BUILD.gn:99
 
 ### sdk_cross_compile_host_tools
 
@@ -9500,7 +9512,7 @@ From //out/not-default/args.gn:15
 
 **Overridden from the default:** `[]`
 
-From //BUILD.gn:38
+From //BUILD.gn:34
 
 **Current value for `target_cpu = "riscv64"`:** `["//bundles/docs_roller"]`
 
@@ -9508,7 +9520,7 @@ From //out/not-default/args.gn:15
 
 **Overridden from the default:** `[]`
 
-From //BUILD.gn:38
+From //BUILD.gn:34
 
 **Current value for `target_cpu = "x64"`:** `["//bundles/docs_roller"]`
 
@@ -9516,7 +9528,7 @@ From //out/not-default/args.gn:15
 
 **Overridden from the default:** `[]`
 
-From //BUILD.gn:38
+From //BUILD.gn:34
 
 ### target_os
 
@@ -9583,15 +9595,13 @@ afterwards.
 
 **Current value (from the default):** `""`
 
-From //BUILD.gn:99
+From //BUILD.gn:95
 
 ### test_package_labels
 
-DEPRECATED, left to trigger warnings
-
 **Current value (from the default):** `[]`
 
-From //BUILD.gn:149
+From //BUILD.gn:144
 
 ### thinlto_cache_dir
 
@@ -9692,7 +9702,7 @@ the build.
 
 **Current value (from the default):** `[]`
 
-From //BUILD.gn:35
+From //BUILD.gn:31
 
 ### update_goldens
 
