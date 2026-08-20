@@ -951,10 +951,10 @@ This should never be set as a build argument.
 }
   tsan = {
   shared = {
-  clang_rt = ""
+  clang_rt = "../../../../out/not-default/libclang_rt.tsan.so"
 }
   static = {
-  clang_rt = "../../../../out/not-default/libclang_rt.tsan.a"
+  clang_rt = ""
   clang_rt_cxx = "../../../../out/not-default/libclang_rt.tsan_cxx.a"
 }
 }
@@ -1848,6 +1848,16 @@ Tells openweave to include files that require heap access.
 **Current value (from the default):** `true`
 
 From //third_party/openweave-core/config.gni:32
+
+### console_enable_history
+
+Controls whether the Zircon kernel console compiles in command history
+storage and shell navigation features. Defaults to true, but can be disabled
+on a per-build basis.
+
+**Current value (from the default):** `true`
+
+From //zircon/kernel/lib/console/config.gni:11
 
 ### crash_diagnostics_dir
 
@@ -5311,7 +5321,7 @@ memory profile.
 
 **Current value (from the default):** `false`
 
-From //zircon/kernel/switch/BUILD.gn:28
+From //zircon/kernel/switch/BUILD.gn:29
 
 ### kernel_no_userabi
 
