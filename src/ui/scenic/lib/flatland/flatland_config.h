@@ -14,6 +14,7 @@ struct FlatlandConfig {
   bool pass_acquire_fences = false;
   bool skips_present_credits = false;
   bool skips_on_frame_presented = false;
+  bool use_flatland2 = false;
   bool use_trusted_flatland_api = false;
 };
 

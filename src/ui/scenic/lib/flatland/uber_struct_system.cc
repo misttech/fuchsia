@@ -183,7 +183,7 @@ std::ostream& operator<<(std::ostream& out, const UberStructLayer& layer) {
   } else {
     static_assert(3 == std::variant_size_v<decltype(UberStructLayer::content)>,
                   "Must handle all UberStructLayer content types");
-    __UNREACHABLE;
+    out << " invisible";
   }
   return out;
 }

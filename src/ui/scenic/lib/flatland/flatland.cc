@@ -193,6 +193,7 @@ Flatland::Flatland(std::shared_ptr<utils::DispatcherHolder> dispatcher_holder,
       transform_graph_(session_id_),
       local_root_(transform_graph_.CreateTransform()),
       content_handles_(&pool_),
+      layer_handles_(&pool_),
       layer_objects_(&pool_),
       layer_stacks_(&pool_),
       error_reporter_(scenic_impl::ErrorReporter::DefaultUnique()),
@@ -553,7 +554,7 @@ void Flatland::Present(fuchsia_ui_composition::PresentArgs args) {
 
     uber_struct->debug_name.assign(debug_name_);
     uber_struct->creation_time = zx::time_monotonic(async_now(dispatcher()));
-    uber_struct->flatland_version = 1u;  // Will use FlatlandConfig::use_flatland2 when it exists.
+    uber_struct->flatland_version = config_.use_flatland2 ? 2u : 1u;
   }
 
   // Obtain the PresentId which is needed to:
@@ -1289,6 +1290,12 @@ void Flatland::CreateViewport(
     ContentId viewport_id, fuchsia_ui_views::ViewportCreationToken token,
     fuchsia_ui_composition::ViewportProperties properties,
     fidl::ServerEnd<fuchsia_ui_composition::ChildViewWatcher> child_view_watcher) {
+  if (config_.use_flatland2) {
+    error_reporter_->ERROR() << "CreateViewport is illegal because Flatland2 is enabled";
+    CloseConnection(FlatlandError::kBadOperation);
+    return;
+  }
+
   // Attempting to link with an invalid token will never succeed, so its better to fail early and
   // immediately close the link connection.
   if (!token.value().is_valid()) {
@@ -1412,6 +1419,27 @@ UberStructLayer::SolidColorModeProperties* Flatland::GetFacadeLayerSolidColorCon
   return &layer->solid_color_mode;
 }
 
+// TODO(https://fxbug.dev/474444799): This is a stub; the only thing it is supposed to demonstrate
+// is that it captures "illegal usage".
+void Flatland::CreateViewport2(CreateViewport2Request& request,
+                               CreateViewport2Completer::Sync& completer) {
+  CreateViewport2(ViewportId(request.viewport_id().value()), std::move(request.token()),
+                  std::move(request.properties()), std::move(request.child_view_watcher()));
+}
+
+void Flatland::CreateViewport2(
+    ViewportId viewport_id, fuchsia_ui_views::ViewportCreationToken token,
+    fuchsia_ui_composition::ViewportProperties properties,
+    fidl::ServerEnd<fuchsia_ui_composition::ChildViewWatcher> child_view_watcher) {
+  if (!config_.use_flatland2) {
+    error_reporter_->ERROR() << "CreateViewport2 called, but Flatland2 not enabled";
+    CloseConnection(FlatlandError::kBadOperation);
+    return;
+  }
+  error_reporter_->ERROR() << "CreateViewport2: NOT IMPLEMENTED";
+  CloseConnection(FlatlandError::kBadOperation);
+}
+
 void Flatland::CreateImage(CreateImageRequest& request, CreateImageCompleter::Sync& completer) {
   TRACE_DURATION("gfx", "Flatland::CreateImage", "debug_name", TA_STRING(debug_name_.c_str()));
 
@@ -1422,6 +1450,12 @@ void Flatland::CreateImage(CreateImageRequest& request, CreateImageCompleter::Sy
 void Flatland::CreateImage(ContentId image_id,
                            fuchsia_ui_composition::BufferCollectionImportToken import_token,
                            uint32_t vmo_index, fuchsia_ui_composition::ImageProperties properties) {
+  if (config_.use_flatland2) {
+    error_reporter_->ERROR() << "CreateImage is illegal because Flatland2 is enabled";
+    CloseConnection(FlatlandError::kBadOperation);
+    return;
+  }
+
   if (image_id == kInvalidContentId) {
     error_reporter_->ERROR() << "CreateImage called with image_id 0";
     CloseConnection(FlatlandError::kBadOperation);
@@ -1541,12 +1575,36 @@ void Flatland::CreateImage(ContentId image_id,
   executor_.schedule_task(std::move(join_promise));
 }
 
+void Flatland::CreateImage2(CreateImage2Request& request, CreateImage2Completer::Sync& completer) {
+  CreateImage2(ImageId(request.image_id().value()), std::move(request.import_token()),
+               request.vmo_index(), std::move(request.properties()));
+}
+
+void Flatland::CreateImage2(ImageId image_id,
+                            fuchsia_ui_composition::BufferCollectionImportToken import_token,
+                            uint32_t vmo_index,
+                            fuchsia_ui_composition::ImageProperties properties) {
+  if (!config_.use_flatland2) {
+    error_reporter_->ERROR() << "CreateImage2 called, but Flatland2 not enabled";
+    CloseConnection(FlatlandError::kBadOperation);
+    return;
+  }
+  error_reporter_->ERROR() << "CreateImage2: NOT IMPLEMENTED";
+  CloseConnection(FlatlandError::kBadOperation);
+}
+
 void Flatland::SetImageSampleRegion(SetImageSampleRegionRequest& request,
                                     SetImageSampleRegionCompleter::Sync& completer) {
   SetImageSampleRegion(ContentId(request.image_id()), types::RectangleF::From(request.rect()));
 }
 
 void Flatland::SetImageSampleRegion(ContentId image_id, types::RectangleF rect) {
+  if (config_.use_flatland2) {
+    error_reporter_->ERROR() << "SetImageSampleRegion is illegal because Flatland2 is enabled";
+    CloseConnection(FlatlandError::kBadOperation);
+    return;
+  }
+
   if (image_id == kInvalidContentId) {
     error_reporter_->ERROR() << "SetImageSampleRegion called with content id 0";
     CloseConnection(FlatlandError::kBadOperation);
@@ -1608,6 +1666,12 @@ void Flatland::SetImageDestinationSize(SetImageDestinationSizeRequest& request,
 }
 
 void Flatland::SetImageDestinationSize(ContentId image_id, fuchsia_math::SizeU size) {
+  if (config_.use_flatland2) {
+    error_reporter_->ERROR() << "SetImageDestinationSize is illegal because Flatland2 is enabled";
+    CloseConnection(FlatlandError::kBadOperation);
+    return;
+  }
+
   if (image_id == kInvalidContentId) {
     error_reporter_->ERROR() << "SetImageDestinationSize called with image_id 0";
     CloseConnection(FlatlandError::kBadOperation);
@@ -1647,6 +1711,12 @@ void Flatland::SetImageBlendMode(SetImageBlendModeRequest& request,
 }
 
 void Flatland::SetImageBlendMode(ContentId image_id, BlendMode blend_mode) {
+  if (config_.use_flatland2) {
+    error_reporter_->ERROR() << "SetImageBlendMode is illegal because Flatland2 is enabled";
+    CloseConnection(FlatlandError::kBadOperation);
+    return;
+  }
+
   if (image_id == kInvalidContentId) {
     error_reporter_->ERROR() << "SetImageBlendMode called with content id 0";
     CloseConnection(FlatlandError::kBadOperation);
@@ -1675,6 +1745,12 @@ void Flatland::SetImageFlip(SetImageFlipRequest& request, SetImageFlipCompleter:
 }
 
 void Flatland::SetImageFlip(ContentId image_id, fuchsia_ui_composition::ImageFlip flip) {
+  if (config_.use_flatland2) {
+    error_reporter_->ERROR() << "SetImageFlip is illegal because Flatland2 is enabled";
+    CloseConnection(FlatlandError::kBadOperation);
+    return;
+  }
+
   if (image_id == kInvalidContentId) {
     error_reporter_->ERROR() << "SetImageFlip called with content id 0";
     CloseConnection(FlatlandError::kBadOperation);
@@ -1706,6 +1782,12 @@ void Flatland::CreateFilledRect(CreateFilledRectRequest& request,
 }
 
 void Flatland::CreateFilledRect(ContentId rect_id) {
+  if (config_.use_flatland2) {
+    error_reporter_->ERROR() << "CreateFilledRect is illegal because Flatland2 is enabled";
+    CloseConnection(FlatlandError::kBadOperation);
+    return;
+  }
+
   if (rect_id == kInvalidContentId) {
     error_reporter_->ERROR() << "CreateFilledRect called with rect_id 0";
     CloseConnection(FlatlandError::kBadOperation);
@@ -1749,6 +1831,12 @@ void Flatland::SetSolidFill(SetSolidFillRequest& request, SetSolidFillCompleter:
 
 void Flatland::SetSolidFill(ContentId rect_id, fuchsia_ui_composition::ColorRgba color,
                             fuchsia_math::SizeU size) {
+  if (config_.use_flatland2) {
+    error_reporter_->ERROR() << "SetSolidFill is illegal because Flatland2 is enabled";
+    CloseConnection(FlatlandError::kBadOperation);
+    return;
+  }
+
   if (rect_id == kInvalidContentId) {
     error_reporter_->ERROR() << "SetSolidFill called with rect_id 0";
     CloseConnection(FlatlandError::kBadOperation);
@@ -1808,6 +1896,12 @@ void Flatland::ReleaseFilledRect(ReleaseFilledRectRequest& request,
 }
 
 void Flatland::ReleaseFilledRect(ContentId rect_id) {
+  if (config_.use_flatland2) {
+    error_reporter_->ERROR() << "ReleaseFilledRect is illegal because Flatland2 is enabled";
+    CloseConnection(FlatlandError::kBadOperation);
+    return;
+  }
+
   if (rect_id == kInvalidContentId) {
     error_reporter_->ERROR() << "ReleaseFilledRect called with rect_id zero";
     CloseConnection(FlatlandError::kBadOperation);
@@ -1845,6 +1939,12 @@ void Flatland::SetImageOpacity(SetImageOpacityRequest& request,
 }
 
 void Flatland::SetImageOpacity(ContentId image_id, float opacity) {
+  if (config_.use_flatland2) {
+    error_reporter_->ERROR() << "SetImageOpacity is illegal because Flatland2 is enabled";
+    CloseConnection(FlatlandError::kBadOperation);
+    return;
+  }
+
   if (image_id == kInvalidContentId) {
     error_reporter_->ERROR() << "SetImageOpacity called with invalid image_id";
     CloseConnection(FlatlandError::kBadOperation);
@@ -1946,6 +2046,12 @@ void Flatland::SetContent(SetContentRequest& request, SetContentCompleter::Sync&
 }
 
 void Flatland::SetContent(TransformId transform_id, ContentId content_id) {
+  if (config_.use_flatland2) {
+    error_reporter_->ERROR() << "SetContent is illegal because Flatland2 is enabled";
+    CloseConnection(FlatlandError::kBadOperation);
+    return;
+  }
+
   if (transform_id == kInvalidTransformId) {
     error_reporter_->ERROR() << "SetContent called with transform_id zero";
     CloseConnection(FlatlandError::kBadOperation);
@@ -1985,6 +2091,73 @@ void Flatland::SetContent(TransformId transform_id, ContentId content_id) {
   transform_graph_.SetPriorityChild(transform_kv->second, content_kv->second);
 }
 
+void Flatland::SetTransformContent(SetTransformContentRequest& request,
+                                   SetTransformContentCompleter::Sync& completer) {
+  SetTransformContent(TransformId(request.transform_id()), std::move(request.content()));
+}
+
+void Flatland::SetTransformContent(TransformId transform_id,
+                                   fidl::Box<fuchsia_ui_composition::TransformContent> content) {
+  if (!config_.use_flatland2) {
+    error_reporter_->ERROR() << "SetTransformContent called, but Flatland2 not enabled";
+    CloseConnection(FlatlandError::kBadOperation);
+    return;
+  }
+
+  auto transform_kv = transforms_.find(transform_id);
+  if (transform_kv == transforms_.end()) {
+    error_reporter_->ERROR() << "SetTransformContent: transform " << transform_id << " not found";
+    CloseConnection(FlatlandError::kBadOperation);
+    return;
+  }
+
+  // Detach semantics: absence clears the priority child.
+  if (!content.has_value()) {
+    transform_graph_.ClearPriorityChild(transform_kv->second);
+    return;
+  }
+
+  // Attach semantics: validate valid non-zero IDs in corresponding arm registry.
+  switch (content->Which()) {
+    case fuchsia_ui_composition::TransformContent::Tag::kLayerStack: {
+      const fuchsia_ui_composition::LayerStackId& layer_stack_id = content->layer_stack().value();
+      if (!layer_stack_id.value()) {
+        error_reporter_->ERROR()
+            << "SetTransformContent: LayerStackId must be non-zero (to clear content, omit "
+               "`content`)";
+        CloseConnection(FlatlandError::kBadOperation);
+        return;
+      }
+
+      // TODO(https://fxbug.dev/474444799): stub
+      error_reporter_->ERROR() << "SetTransformContent: NOT IMPLEMENTED";
+      CloseConnection(FlatlandError::kBadOperation);
+
+      break;
+    }
+    case fuchsia_ui_composition::TransformContent::Tag::kViewport: {
+      const fuchsia_ui_composition::ViewportId& viewport_id = content->viewport().value();
+      if (!viewport_id.value()) {
+        error_reporter_->ERROR()
+            << "SetTransformContent: ViewportId must be non-zero (to clear content, omit "
+               "`content`)";
+        CloseConnection(FlatlandError::kBadOperation);
+        return;
+      }
+
+      // TODO(https://fxbug.dev/474444799): stub
+      error_reporter_->ERROR() << "SetTransformContent: NOT IMPLEMENTED";
+      CloseConnection(FlatlandError::kBadOperation);
+
+      break;
+    }
+    default: {
+      error_reporter_->ERROR() << "SetTransformContent: unknown content type";
+      CloseConnection(FlatlandError::kBadOperation);
+    }
+  }
+}
+
 void Flatland::SetViewportProperties(SetViewportPropertiesRequest& request,
                                      SetViewportPropertiesCompleter::Sync& completer) {
   SetViewportProperties(ContentId(request.viewport_id()), std::move(request.properties()));
@@ -1992,6 +2165,12 @@ void Flatland::SetViewportProperties(SetViewportPropertiesRequest& request,
 
 void Flatland::SetViewportProperties(ContentId viewport_id,
                                      fuchsia_ui_composition::ViewportProperties properties) {
+  if (config_.use_flatland2) {
+    error_reporter_->ERROR() << "SetViewportProperties is illegal because Flatland2 is enabled";
+    CloseConnection(FlatlandError::kBadOperation);
+    return;
+  }
+
   if (viewport_id == kInvalidContentId) {
     error_reporter_->ERROR() << "SetViewportProperties called with link_id zero.";
     CloseConnection(FlatlandError::kBadOperation);
@@ -2047,6 +2226,23 @@ void Flatland::SetViewportProperties(ContentId viewport_id,
   link_system_->UpdateViewportPropertiesFor(viewport_handle, fidl::NaturalToHLCPP(properties));
 }
 
+void Flatland::SetViewportProperties2(SetViewportProperties2Request& request,
+                                      SetViewportProperties2Completer::Sync& completer) {
+  SetViewportProperties2(ViewportId(request.viewport_id().value()),
+                         std::move(request.properties()));
+}
+
+void Flatland::SetViewportProperties2(ViewportId viewport_id,
+                                      fuchsia_ui_composition::ViewportProperties properties) {
+  if (!config_.use_flatland2) {
+    error_reporter_->ERROR() << "SetViewportProperties2 called, but Flatland2 not enabled";
+    CloseConnection(FlatlandError::kBadOperation);
+    return;
+  }
+  error_reporter_->ERROR() << "SetViewportProperties2: NOT IMPLEMENTED";
+  CloseConnection(FlatlandError::kBadOperation);
+}
+
 void Flatland::ReleaseTransform(ReleaseTransformRequest& request,
                                 ReleaseTransformCompleter::Sync& completer) {
   ReleaseTransform(TransformId(request.transform_id()));
@@ -2084,6 +2280,12 @@ void Flatland::ReleaseViewport(ReleaseViewportRequest& request,
 
 void Flatland::ReleaseViewport(
     ContentId viewport_id, fit::function<void(fuchsia_ui_views::ViewportCreationToken)> completer) {
+  if (config_.use_flatland2) {
+    error_reporter_->ERROR() << "ReleaseViewport is illegal because Flatland2 is enabled";
+    CloseConnection(FlatlandError::kBadOperation);
+    return;
+  }
+
   if (viewport_id == kInvalidContentId) {
     error_reporter_->ERROR() << "ReleaseViewport called with link_id zero";
     CloseConnection(FlatlandError::kBadOperation);
@@ -2146,11 +2348,38 @@ void Flatland::ReleaseViewport(
       });
 }
 
+void Flatland::ReleaseViewport2(ReleaseViewport2Request& request,
+                                ReleaseViewport2Completer::Sync& completer) {
+  ReleaseViewport2(
+      ViewportId(request.viewport_id().value()),
+      [completer = completer.ToAsync()](fuchsia_ui_views::ViewportCreationToken token) mutable {
+        completer.Reply(std::move(token));
+      });
+}
+
+void Flatland::ReleaseViewport2(
+    ViewportId viewport_id,
+    fit::function<void(fuchsia_ui_views::ViewportCreationToken)> completer) {
+  if (!config_.use_flatland2) {
+    error_reporter_->ERROR() << "ReleaseViewport2 called, but Flatland2 not enabled";
+    CloseConnection(FlatlandError::kBadOperation);
+    return;
+  }
+  error_reporter_->ERROR() << "ReleaseViewport2: NOT IMPLEMENTED";
+  CloseConnection(FlatlandError::kBadOperation);
+}
+
 void Flatland::ReleaseImage(ReleaseImageRequest& request, ReleaseImageCompleter::Sync& completer) {
   ReleaseImage(ContentId(request.image_id()));
 }
 
 void Flatland::ReleaseImage(ContentId image_id) {
+  if (config_.use_flatland2) {
+    error_reporter_->ERROR() << "ReleaseImage is illegal because Flatland2 is enabled";
+    CloseConnection(FlatlandError::kBadOperation);
+    return;
+  }
+
   if (image_id == kInvalidContentId) {
     error_reporter_->ERROR() << "ReleaseImage called with image_id 0";
     CloseConnection(FlatlandError::kBadOperation);
@@ -2186,6 +2415,23 @@ void Flatland::ReleaseImage(ContentId image_id) {
   content_handles_.erase(image_id);
 }
 
+void Flatland::ReleaseImage2(ReleaseImage2Request& request,
+                             ReleaseImage2Completer::Sync& completer) {
+  ReleaseImage2(ImageId(request.image_id().value()));
+}
+
+// TODO(https://fxbug.dev/474444799): This is a stub; the only thing it is supposed to demonstrate
+// is that it captures "illegal usage".  See TODO in CreateLayer.
+void Flatland::ReleaseImage2(ImageId image_id) {
+  if (!config_.use_flatland2) {
+    error_reporter_->ERROR() << "ReleaseImage2 called, but Flatland2 not enabled";
+    CloseConnection(FlatlandError::kBadOperation);
+    return;
+  }
+  error_reporter_->ERROR() << "ReleaseImage2: NOT IMPLEMENTED";
+  CloseConnection(FlatlandError::kBadOperation);
+}
+
 void Flatland::SetDebugName(SetDebugNameRequest& request, SetDebugNameCompleter::Sync& completer) {
   std::string name(std::move(request.name()));
 
@@ -2212,6 +2458,12 @@ void Flatland::ReleaseImageImmediately(ReleaseImageImmediatelyRequest& request,
 }
 
 void Flatland::ReleaseImageImmediately(ContentId image_id) {
+  if (config_.use_flatland2) {
+    error_reporter_->ERROR() << "ReleaseImageImmediately is illegal because Flatland2 is enabled";
+    CloseConnection(FlatlandError::kBadOperation);
+    return;
+  }
+
   if (!config_.use_trusted_flatland_api) {
     error_reporter_->ERROR()
         << "ReleaseImageImmediately called on a Flatland instance not created via "
@@ -2259,6 +2511,336 @@ void Flatland::ReleaseImageImmediately(ContentId image_id) {
   for (auto& importer : buffer_collection_importers_) {
     importer->ReleaseBufferImage(identifier);
   }
+}
+
+void Flatland::ReleaseImageImmediately2(ReleaseImageImmediately2Request& request,
+                                        ReleaseImageImmediately2Completer::Sync& completer) {
+  ReleaseImageImmediately2(ImageId(request.image_id().value()));
+}
+
+// TODO(https://fxbug.dev/474444799): This is a stub; the only thing it is supposed to demonstrate
+// is that it captures "illegal usage".  See TODO in CreateLayer.
+void Flatland::ReleaseImageImmediately2(ImageId image_id) {
+  if (!config_.use_trusted_flatland_api) {
+    error_reporter_->ERROR()
+        << "ReleaseImageImmediately2 called on a Flatland instance not created via "
+           "TrustedFlatlandFactory.";
+    CloseConnection(FlatlandError::kBadOperation);
+    return;
+  }
+
+  if (!config_.use_flatland2) {
+    error_reporter_->ERROR() << "ReleaseImageImmediately2 called, but Flatland2 not enabled";
+    CloseConnection(FlatlandError::kBadOperation);
+    return;
+  }
+
+  error_reporter_->ERROR() << "ReleaseImageImmediately2: NOT IMPLEMENTED";
+  CloseConnection(FlatlandError::kBadOperation);
+}
+
+void Flatland::CreateLayer(CreateLayerRequest& request, CreateLayerCompleter::Sync& completer) {
+  CreateLayer(LayerId(request.layer_id().value()));
+}
+
+// TODO(https://fxbug.dev/474444799): This is a stub; the only thing it is supposed to demonstrate
+// is that it captures "illegal usage".  We don't know what this will look like yet, e.g. this will
+// probably need a transform from `transform_graph_`, similar to what CreateImage() does.
+void Flatland::CreateLayer(LayerId layer_id) {
+  if (!config_.use_flatland2) {
+    error_reporter_->ERROR() << "CreateLayer called, but Flatland2 not enabled";
+    CloseConnection(FlatlandError::kBadOperation);
+    return;
+  }
+
+  if (layer_id == kInvalidLayerId) {
+    error_reporter_->ERROR() << "CreateLayer: layer id 0 is invalid";
+    CloseConnection(FlatlandError::kBadOperation);
+    return;
+  }
+
+  if (layer_handles_.contains(layer_id)) {
+    error_reporter_->ERROR() << "CreateLayer: layer " << layer_id << " already exists";
+    CloseConnection(FlatlandError::kBadOperation);
+    return;
+  }
+
+  LayerHandle handle = CreateLayerObject();
+  // TODO(https://fxbug.dev/474444799): ideally wouldn't need to reach back into the map to add ref.
+  layer_objects_[handle].ref_count++;
+  layer_handles_[layer_id] = handle;
+}
+
+void Flatland::ReleaseLayer(ReleaseLayerRequest& request, ReleaseLayerCompleter::Sync& completer) {
+  ReleaseLayer(LayerId(request.layer_id().value()));
+}
+
+// TODO(https://fxbug.dev/474444799): This is a stub; the only thing it is supposed to demonstrate
+// is that it captures "illegal usage".  See TODO in CreateLayer.
+void Flatland::ReleaseLayer(LayerId layer_id) {
+  if (!config_.use_flatland2) {
+    error_reporter_->ERROR() << "ReleaseLayer called, but Flatland2 not enabled";
+    CloseConnection(FlatlandError::kBadOperation);
+    return;
+  }
+
+  auto it = layer_handles_.find(layer_id);
+  if (it == layer_handles_.end()) {
+    error_reporter_->ERROR() << "ReleaseLayer: layer " << layer_id << " not found";
+    CloseConnection(FlatlandError::kBadOperation);
+    return;
+  }
+  const LayerHandle handle = it->second;
+  layer_handles_.erase(it);
+
+  // TODO(https://fxbug.dev/474444799): if an image was attached to the layer, and the layer was
+  // deleted, need to do something with it.
+  allocation::GlobalImageId image_id = ReleaseLayerObject(handle);
+  FX_CHECK(image_id == allocation::kInvalidImageId) << "image cleanup is not yet implemented";
+}
+
+void Flatland::CreateLayerStack(CreateLayerStackRequest& request,
+                                CreateLayerStackCompleter::Sync& completer) {
+  CreateLayerStack(LayerStackId(request.stack_id().value()));
+}
+
+void Flatland::CreateLayerStack(LayerStackId stack_id) {
+  if (!config_.use_flatland2) {
+    error_reporter_->ERROR() << "CreateLayerStack called, but Flatland2 not enabled";
+    CloseConnection(FlatlandError::kBadOperation);
+    return;
+  }
+  error_reporter_->ERROR() << "CreateLayerStack: NOT IMPLEMENTED";
+  CloseConnection(FlatlandError::kBadOperation);
+}
+
+void Flatland::ReleaseLayerStack(ReleaseLayerStackRequest& request,
+                                 ReleaseLayerStackCompleter::Sync& completer) {
+  ReleaseLayerStack(LayerStackId(request.stack_id().value()));
+}
+
+void Flatland::ReleaseLayerStack(LayerStackId stack_id) {
+  if (!config_.use_flatland2) {
+    error_reporter_->ERROR() << "ReleaseLayerStack called, but Flatland2 not enabled";
+    CloseConnection(FlatlandError::kBadOperation);
+    return;
+  }
+  error_reporter_->ERROR() << "ReleaseLayerStack: NOT IMPLEMENTED";
+  CloseConnection(FlatlandError::kBadOperation);
+}
+
+void Flatland::SetStackLayers(SetStackLayersRequest& request,
+                              SetStackLayersCompleter::Sync& completer) {
+  const size_t num_layers = request.layers().size();
+  if (num_layers > fuchsia_ui_composition::kMaxStackLayers) {
+    error_reporter_->ERROR() << "SetStackLayers: too many layers: " << num_layers;
+    CloseConnection(FlatlandError::kBadOperation);
+    return;
+  }
+  std::array<LayerId, fuchsia_ui_composition::kMaxStackLayers> stack_layers;
+  for (size_t i = 0; i < num_layers; ++i) {
+    stack_layers[i] = LayerId(request.layers()[i].value());
+  }
+  SetStackLayers(LayerStackId(request.stack_id().value()),
+                 std::span<const LayerId>(stack_layers.data(), num_layers));
+}
+
+void Flatland::SetStackLayers(LayerStackId stack_id, std::span<const flatland::LayerId> layers) {
+  if (!config_.use_flatland2) {
+    error_reporter_->ERROR() << "SetStackLayers called, but Flatland2 not enabled";
+    CloseConnection(FlatlandError::kBadOperation);
+    return;
+  }
+  if (layers.size() > fuchsia_ui_composition::kMaxStackLayers) {
+    error_reporter_->ERROR() << "SetStackLayers: too many layers: " << layers.size();
+    CloseConnection(FlatlandError::kBadOperation);
+    return;
+  }
+  error_reporter_->ERROR() << "SetStackLayers: NOT IMPLEMENTED";
+  CloseConnection(FlatlandError::kBadOperation);
+}
+
+// TODO(https://fxbug.dev/474444799): This is a stub; the only thing it is supposed to demonstrate
+// is that it captures "illegal usage".
+void Flatland::SetLayerImage(SetLayerImageRequest& request,
+                             SetLayerImageCompleter::Sync& completer) {
+  SetLayerImage(LayerId(request.layer_id().value()), ImageId(request.image_id().value()),
+                std::move(request.acquire_fence()), std::move(request.release_fence()));
+}
+
+void Flatland::SetLayerImage(LayerId layer_id, ImageId image_id,
+                             fidl::Box<fuchsia_ui_composition::WaitFence> acquire_fence,
+                             fidl::Box<fuchsia_ui_composition::SignalFence> release_fence) {
+  if (!config_.use_flatland2) {
+    error_reporter_->ERROR() << "SetLayerImage called, but Flatland2 not enabled";
+    CloseConnection(FlatlandError::kBadOperation);
+    return;
+  }
+
+  auto it = layer_handles_.find(layer_id);
+  if (it == layer_handles_.end()) {
+    error_reporter_->ERROR() << "SetLayerImage: layer " << layer_id << " not found";
+    CloseConnection(FlatlandError::kBadOperation);
+    return;
+  }
+  LayerObject& layer_object = GetLayerObject(it->second);
+
+  // TODO(https://fxbug.dev/474444799): This is a stub for validating that the image exists; we know
+  // that it can't be created with an ID of zero.  The real impl will need to find a valid image.
+  if (image_id == kInvalidImageId) {
+    error_reporter_->ERROR() << "SetLayerImage: image " << image_id << " not found";
+    CloseConnection(FlatlandError::kBadOperation);
+    return;
+  }
+
+  error_reporter_->ERROR() << "SetLayerImage: NOT IMPLEMENTED";
+  CloseConnection(FlatlandError::kBadOperation);
+}
+
+void Flatland::SetLayerProperties(SetLayerPropertiesRequest& request,
+                                  SetLayerPropertiesCompleter::Sync& completer) {
+  SetLayerProperties(LayerId(request.layer_id().value()), std::move(request.properties()));
+}
+
+void Flatland::SetLayerProperties(LayerId layer_id,
+                                  fuchsia_ui_composition::LayerProperties properties) {
+  if (!config_.use_flatland2) {
+    error_reporter_->ERROR() << "SetLayerProperties called, but Flatland2 not enabled";
+    CloseConnection(FlatlandError::kBadOperation);
+    return;
+  }
+
+  auto it = layer_handles_.find(layer_id);
+  if (it == layer_handles_.end()) {
+    error_reporter_->ERROR() << "SetLayerProperties: layer " << layer_id << " not found";
+    CloseConnection(FlatlandError::kBadOperation);
+    return;
+  }
+  LayerObject& layer_object = GetLayerObject(it->second);
+
+  // TODO(https://fxbug.dev/474444799): is there anything to check here beyond well-formedness?
+  // This will be clipped downstream anyway, and the layer discarded if invisible, right?
+  if (properties.display_rect().has_value()) {
+    if (!types::Rectangle::IsValid(properties.display_rect().value())) {
+      error_reporter_->ERROR() << "SetLayerProperties: display_rect is invalid";
+      CloseConnection(FlatlandError::kBadOperation);
+      return;
+    }
+    layer_object.common.display_rect = types::Rectangle::From(properties.display_rect().value());
+  }
+
+  if (properties.opacity().has_value()) {
+    const float opacity = properties.opacity().value();
+    if (opacity < 0.f || opacity > 1.f || isnan(opacity) || isinf(opacity)) {
+      error_reporter_->ERROR() << "SetLayerProperties: opacity value " << opacity
+                               << " is not within valid range [0, 1]";
+      CloseConnection(FlatlandError::kBadOperation);
+      return;
+    }
+    layer_object.common.opacity = opacity;
+  }
+
+  if (properties.blend_mode().has_value()) {
+    layer_object.common.blend_mode = types::BlendMode::From(properties.blend_mode().value());
+  }
+
+  if (properties.color().has_value()) {
+    const auto& color = properties.color().value();
+    if (color.red() < 0.f || color.red() > 1.f || isnan(color.red()) || isinf(color.red()) ||
+        color.green() < 0.f || color.green() > 1.f || isnan(color.green()) ||
+        isinf(color.green()) || color.blue() < 0.f || color.blue() > 1.f || isnan(color.blue()) ||
+        isinf(color.blue()) || color.alpha() < 0.f || color.alpha() > 1.f || isnan(color.alpha()) ||
+        isinf(color.alpha())) {
+      error_reporter_->ERROR() << "SetLayerProperties: Invalid color channel(s) (" << color.red()
+                               << ", " << color.green() << ", " << color.blue() << ", "
+                               << color.alpha() << ")";
+      CloseConnection(FlatlandError::kBadOperation);
+      return;
+    }
+    layer_object.solid_color_mode.color = {color.red(), color.green(), color.blue(), color.alpha()};
+  }
+
+  if (properties.sample_rect().has_value()) {
+    // This simple well-formedness check is necessary but insufficient.
+    // The sample rect must also be validated against the dimensions of the layer's bound image,
+    // which is validated once per Present(), and only for layers whose composition mode is IMAGE.
+    // Doing that check here would force clients into a data-dependent call order (growing an
+    // image requires SetLayerImage first; shrinking it requires SetLayerProperties first),
+    // could not validate a rect authored while no image is bound, and would reject
+    // intermediate states that never reach the screen. See the `sample_rect` doc comment in
+    // flatland2.fidl.
+    // TODO(https://fxbug.dev/474444799): the Present()-time sample_rect check is not
+    // implemented yet.
+    if (!types::RectangleF::IsValid(properties.sample_rect().value())) {
+      error_reporter_->ERROR() << "SetLayerProperties: sample_rect is invalid";
+      CloseConnection(FlatlandError::kBadOperation);
+      return;
+    }
+    layer_object.image_mode.sample_rect = types::RectangleF::From(properties.sample_rect().value());
+  }
+
+  if (properties.transform().has_value()) {
+    // TODO(https://fxbug.dev/474444799): stub; will use a `types::RotateFlip::From()` helper to
+    // handle the translation.
+    error_reporter_->ERROR() << "SetLayerProperties[transform]: NOT IMPLEMENTED";
+    CloseConnection(FlatlandError::kBadOperation);
+    return;
+  }
+
+  if (properties.hint_damage_rects().has_value()) {
+    // TODO(https://fxbug.dev/474444799): stub
+    error_reporter_->ERROR() << "SetLayerProperties[hint_damage_rects]: NOT IMPLEMENTED";
+    CloseConnection(FlatlandError::kBadOperation);
+    return;
+  }
+
+  if (properties.hint_visible_rects().has_value()) {
+    // TODO(https://fxbug.dev/474444799): stub
+    error_reporter_->ERROR() << "SetLayerProperties[hint_visible_rects]: NOT IMPLEMENTED";
+    CloseConnection(FlatlandError::kBadOperation);
+    return;
+  }
+
+  if (properties.composition_mode().has_value()) {
+    switch (properties.composition_mode().value()) {
+      case fuchsia_ui_composition::CompositionMode::kInvisible:
+        layer_object.mode = LayerObject::Mode::kInvisible;
+        break;
+      case fuchsia_ui_composition::CompositionMode::kImage:
+        layer_object.mode = LayerObject::Mode::kImage;
+        break;
+      case fuchsia_ui_composition::CompositionMode::kSolidColor:
+        layer_object.mode = LayerObject::Mode::kSolidColor;
+        break;
+      default:
+        error_reporter_->ERROR() << "SetLayerProperties: Unknown composition_mode";
+        CloseConnection(FlatlandError::kBadOperation);
+        return;
+    }
+  }
+}
+
+void Flatland::ResetLayer(ResetLayerRequest& request, ResetLayerCompleter::Sync& completer) {
+  ResetLayer(LayerId(request.layer_id().value()));
+}
+
+void Flatland::ResetLayer(LayerId layer_id) {
+  if (!config_.use_flatland2) {
+    error_reporter_->ERROR() << "ResetLayer called, but Flatland2 not enabled";
+    CloseConnection(FlatlandError::kBadOperation);
+    return;
+  }
+
+  auto it = layer_handles_.find(layer_id);
+  if (it == layer_handles_.end()) {
+    error_reporter_->ERROR() << "ResetLayer: layer " << layer_id << " not found";
+    CloseConnection(FlatlandError::kBadOperation);
+    return;
+  }
+  LayerObject& layer_object = GetLayerObject(it->second);
+
+  error_reporter_->ERROR() << "ResetLayer: NOT IMPLEMENTED";
+  CloseConnection(FlatlandError::kBadOperation);
 }
 
 void Flatland::OnNextFrameBegin(uint32_t additional_present_credits,

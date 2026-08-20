@@ -39,12 +39,13 @@ struct TestParameters {
     config.pass_acquire_fences() = other.pass_acquire_fences();
     config.skips_present_credits() = other.skips_present_credits();
     config.skips_on_frame_presented() = other.skips_on_frame_presented();
+    config.use_flatland2_api() = other.use_flatland2_api();
     return config;
 
     // This will break if another field is added to `TrustedFlatlandConfig`, to notify us that this
     // function needs updating.
     static_assert(sizeof(fuchsia_ui_composition::TrustedFlatlandConfig) ==
-                  4 * sizeof(std::optional<bool>));
+                  5 * sizeof(std::optional<bool>));
   }
 };
 
@@ -60,10 +61,17 @@ fuchsia_ui_composition::TrustedFlatlandConfig DirectAcquireFencesConfig() {
   return config;
 }
 
+fuchsia_ui_composition::TrustedFlatlandConfig UseFlatland2Config() {
+  fuchsia_ui_composition::TrustedFlatlandConfig config;
+  config.use_flatland2_api() = true;
+  return config;
+}
+
 fuchsia_ui_composition::TrustedFlatlandConfig AllOptionsConfig() {
   fuchsia_ui_composition::TrustedFlatlandConfig config;
   config.schedule_asap() = true;
   config.pass_acquire_fences() = true;
+  config.use_flatland2_api() = true;
   return config;
 }
 
@@ -104,6 +112,7 @@ INSTANTIATE_TEST_SUITE_P(
     zxtest::Values(TestParameters("DefaultConfig", {}),
                    TestParameters("ScheduleAsap", ScheduleAsapConfig()),
                    TestParameters("DirectAcquireFences", DirectAcquireFencesConfig()),
+                   TestParameters("UseFlatland2", UseFlatland2Config()),
                    TestParameters("AllOptions", AllOptionsConfig())),
     [](const zxtest::TestParamInfo<TestParameters>& info) { return info.param.test_name; });
 

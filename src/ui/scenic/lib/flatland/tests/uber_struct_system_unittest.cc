@@ -9,6 +9,7 @@
 #include <chrono>
 #include <cstddef>
 #include <mutex>
+#include <sstream>
 #include <thread>
 
 #include <gmock/gmock.h>
@@ -653,6 +654,13 @@ TEST(UberStructSystemTest, UberStructLayerFieldsRoundTrip) {
   EXPECT_EQ(color_iter->second, us_layer_color);
 
   EXPECT_EQ(iter->second->flatland_version, 2u);
+}
+
+TEST(UberStructSystemTest, MonostateLayerPrints) {
+  UberStructLayer layer;  // `content` defaults to std::monostate.
+  std::ostringstream str;
+  str << layer;
+  EXPECT_THAT(str.str(), ::testing::HasSubstr("invisible"));
 }
 
 }  // namespace test

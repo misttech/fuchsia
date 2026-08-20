@@ -182,11 +182,23 @@ class Flatland : public fidl::Server<fuchsia_ui_composition::Flatland>,
                       fuchsia_ui_composition::ViewportProperties properties,
                       fidl::ServerEnd<fuchsia_ui_composition::ChildViewWatcher> child_view_watcher);
 
+  void CreateViewport2(CreateViewport2Request& request,
+                       CreateViewport2Completer::Sync& completer) override;
+  void CreateViewport2(
+      ViewportId viewport_id, fuchsia_ui_views::ViewportCreationToken token,
+      fuchsia_ui_composition::ViewportProperties properties,
+      fidl::ServerEnd<fuchsia_ui_composition::ChildViewWatcher> child_view_watcher);
+
   // |fuchsia_ui_composition::Flatland|
   void CreateImage(CreateImageRequest& request, CreateImageCompleter::Sync& completer) override;
   void CreateImage(ContentId image_id,
                    fuchsia_ui_composition::BufferCollectionImportToken import_token,
                    uint32_t vmo_index, fuchsia_ui_composition::ImageProperties properties);
+
+  void CreateImage2(CreateImage2Request& request, CreateImage2Completer::Sync& completer) override;
+  void CreateImage2(ImageId image_id,
+                    fuchsia_ui_composition::BufferCollectionImportToken import_token,
+                    uint32_t vmo_index, fuchsia_ui_composition::ImageProperties properties);
 
   // |fuchsia_ui_composition::Flatland|
   void SetImageSampleRegion(SetImageSampleRegionRequest& request,
@@ -247,11 +259,21 @@ class Flatland : public fidl::Server<fuchsia_ui_composition::Flatland>,
   void SetContent(SetContentRequest& request, SetContentCompleter::Sync& completer) override;
   void SetContent(TransformId transform_id, ContentId content_id);
 
+  void SetTransformContent(SetTransformContentRequest& request,
+                           SetTransformContentCompleter::Sync& completer) override;
+  void SetTransformContent(TransformId transform_id,
+                           fidl::Box<fuchsia_ui_composition::TransformContent> content);
+
   // |fuchsia_ui_composition::Flatland|
   void SetViewportProperties(SetViewportPropertiesRequest& request,
                              SetViewportPropertiesCompleter::Sync& completer) override;
   void SetViewportProperties(ContentId viewport_id,
                              fuchsia_ui_composition::ViewportProperties properties);
+
+  void SetViewportProperties2(SetViewportProperties2Request& request,
+                              SetViewportProperties2Completer::Sync& completer) override;
+  void SetViewportProperties2(ViewportId viewport_id,
+                              fuchsia_ui_composition::ViewportProperties properties);
 
   // |fuchsia_ui_composition::Flatland|
   void ReleaseTransform(ReleaseTransformRequest& request,
@@ -264,9 +286,19 @@ class Flatland : public fidl::Server<fuchsia_ui_composition::Flatland>,
   void ReleaseViewport(ContentId viewport_id,
                        fit::function<void(fuchsia_ui_views::ViewportCreationToken)> completer);
 
+  void ReleaseViewport2(ReleaseViewport2Request& request,
+                        ReleaseViewport2Completer::Sync& completer) override;
+  void ReleaseViewport2(ViewportId viewport_id,
+                        fit::function<void(fuchsia_ui_views::ViewportCreationToken)> completer);
+
   // |fuchsia_ui_composition::Flatland|
   void ReleaseImage(ReleaseImageRequest& request, ReleaseImageCompleter::Sync& completer) override;
   void ReleaseImage(ContentId image_id);
+
+  // |fuchsia_ui_composition::Flatland2|
+  void ReleaseImage2(ReleaseImage2Request& request,
+                     ReleaseImage2Completer::Sync& completer) override;
+  void ReleaseImage2(ImageId image_id);
 
   // |fuchsia_ui_composition::Flatland|
   void SetDebugName(SetDebugNameRequest& request, SetDebugNameCompleter::Sync& completer) override;
@@ -276,6 +308,49 @@ class Flatland : public fidl::Server<fuchsia_ui_composition::Flatland>,
   void ReleaseImageImmediately(ReleaseImageImmediatelyRequest& request,
                                ReleaseImageImmediatelyCompleter::Sync& completer) override;
   void ReleaseImageImmediately(ContentId image_id);
+
+  void ReleaseImageImmediately2(ReleaseImageImmediately2Request& request,
+                                ReleaseImageImmediately2Completer::Sync& completer) override;
+  void ReleaseImageImmediately2(ImageId image_id);
+
+  // |fuchsia_ui_composition::Flatland2|
+  void CreateLayer(CreateLayerRequest& request, CreateLayerCompleter::Sync& completer) override;
+  void CreateLayer(LayerId layer_id);
+
+  // |fuchsia_ui_composition::Flatland2|
+  void ReleaseLayer(ReleaseLayerRequest& request, ReleaseLayerCompleter::Sync& completer) override;
+  void ReleaseLayer(LayerId layer_id);
+
+  // |fuchsia_ui_composition::Flatland2|
+  void CreateLayerStack(CreateLayerStackRequest& request,
+                        CreateLayerStackCompleter::Sync& completer) override;
+  void CreateLayerStack(LayerStackId stack_id);
+
+  // |fuchsia_ui_composition::Flatland2|
+  void ReleaseLayerStack(ReleaseLayerStackRequest& request,
+                         ReleaseLayerStackCompleter::Sync& completer) override;
+  void ReleaseLayerStack(LayerStackId stack_id);
+
+  // |fuchsia_ui_composition::Flatland2|
+  void SetStackLayers(SetStackLayersRequest& request,
+                      SetStackLayersCompleter::Sync& completer) override;
+  void SetStackLayers(LayerStackId stack_id, std::span<const flatland::LayerId> layers);
+
+  // |fuchsia_ui_composition::Flatland2|
+  void SetLayerImage(SetLayerImageRequest& request,
+                     SetLayerImageCompleter::Sync& completer) override;
+  void SetLayerImage(LayerId layer_id, ImageId image_id,
+                     fidl::Box<fuchsia_ui_composition::WaitFence> acquire_fence,
+                     fidl::Box<fuchsia_ui_composition::SignalFence> release_fence);
+
+  // |fuchsia_ui_composition::Flatland2|
+  void SetLayerProperties(SetLayerPropertiesRequest& request,
+                          SetLayerPropertiesCompleter::Sync& completer) override;
+  void SetLayerProperties(LayerId layer_id, fuchsia_ui_composition::LayerProperties properties);
+
+  // |fuchsia_ui_composition::Flatland2|
+  void ResetLayer(ResetLayerRequest& request, ResetLayerCompleter::Sync& completer) override;
+  void ResetLayer(LayerId layer_id);
 
   // Called just before the FIDL client receives the event of the same name, indicating that this
   // Flatland instance should allow a |additional_present_credits| calls to Present().
@@ -433,6 +508,9 @@ class Flatland : public fidl::Server<fuchsia_ui_composition::Flatland>,
   // priority child of the Transform.
   std::pmr::unordered_map<ContentId, TransformHandle> content_handles_;
 
+  // A mapping from user-generated ID to the LayerHandle that owns that layer object.
+  std::pmr::unordered_map<LayerId, LayerHandle> layer_handles_;
+
   // Flatland2 layer state authored by this session, keyed by session-internal handles.
   // `layer_objects_` owns the layers; `layer_stacks_` maps a stack's content handle (its
   // attachment point in the transform graph) to the ordered list of layers it displays
@@ -475,6 +553,14 @@ class Flatland : public fidl::Server<fuchsia_ui_composition::Flatland>,
   // TODO(https://fxbug.dev/523371761): after transition to Flatland2 UberStruct schema is complete,
   // revisit order of public/private sections, and verify "methods-first, fields-last" declaration
   // order (as mandated by style guide).
+
+  // Return the `LayerObject` corresponding to `handle`, which must exist.
+  // The returned reference remains valid until this element is erased.
+  LayerObject& GetLayerObject(LayerHandle handle) {
+    auto it = layer_objects_.find(handle);
+    FX_CHECK(it != layer_objects_.end()) << "GetLayerObject() called with bad handle: " << handle;
+    return it->second;
+  }
 
   // Returns the LayerObject for the given stack's content handle, or nullptr if none exists.
   LayerObject* GetFacadeLayerObject(TransformHandle content_handle);

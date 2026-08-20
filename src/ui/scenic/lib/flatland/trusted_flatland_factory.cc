@@ -26,6 +26,7 @@ FlatlandConfig TrustedFlatlandFactoryImpl::ToInternalConfig(
       .pass_acquire_fences = config.pass_acquire_fences().value_or(false),
       .skips_present_credits = config.skips_present_credits().value_or(false),
       .skips_on_frame_presented = config.skips_on_frame_presented().value_or(false),
+      .use_flatland2 = config.use_flatland2_api().value_or(false),
       .use_trusted_flatland_api = true,
   };
 }

@@ -20,13 +20,29 @@ using ContentIdTraits =
     types::DefaultIdTypeTraitsForNaturalFidl<uint64_t, fuchsia_ui_composition::ContentId>;
 using TransformIdTraits =
     types::DefaultIdTypeTraitsForNaturalFidl<uint64_t, fuchsia_ui_composition::TransformId>;
+using LayerIdTraits =
+    types::DefaultIdTypeTraitsForNaturalFidl<uint64_t, fuchsia_ui_composition::LayerId>;
+using LayerStackIdTraits =
+    types::DefaultIdTypeTraitsForNaturalFidl<uint64_t, fuchsia_ui_composition::LayerStackId>;
+using ImageIdTraits =
+    types::DefaultIdTypeTraitsForNaturalFidl<uint64_t, fuchsia_ui_composition::ImageId>;
+using ViewportIdTraits =
+    types::DefaultIdTypeTraitsForNaturalFidl<uint64_t, fuchsia_ui_composition::ViewportId>;
 }  // namespace internal
 
 using ContentId = types::IdType<::flatland::internal::ContentIdTraits>;
 using TransformId = types::IdType<::flatland::internal::TransformIdTraits>;
+using LayerId = types::IdType<::flatland::internal::LayerIdTraits>;
+using LayerStackId = types::IdType<::flatland::internal::LayerStackIdTraits>;
+using ImageId = types::IdType<::flatland::internal::ImageIdTraits>;
+using ViewportId = types::IdType<::flatland::internal::ViewportIdTraits>;
 
 constexpr ContentId kInvalidContentId = ContentId(0);
 constexpr TransformId kInvalidTransformId = TransformId(0);
+constexpr LayerId kInvalidLayerId = LayerId(0);
+constexpr LayerStackId kInvalidLayerStackId = LayerStackId(0);
+constexpr ImageId kInvalidImageId = ImageId(0);
+constexpr ViewportId kInvalidViewportId = ViewportId(0);
 
 // The session-side state of a single Flatland2 layer.
 //

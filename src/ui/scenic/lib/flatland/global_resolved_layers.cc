@@ -243,6 +243,8 @@ void ComputeGlobalResolvedLayers(std::vector<ResolvedLayer>& output,
       continue;
     }
     const auto& uber_struct = uber_struct_kv->second;
+    FX_CHECK(uber_struct->flatland_version == 1u || uber_struct->flatland_version == 2u)
+        << "unknown UberStruct::flatland_version: " << uber_struct->flatland_version;
 
     auto layer_stack_it = uber_struct->layer_stacks.find(handle);
     if (layer_stack_it == uber_struct->layer_stacks.end()) {

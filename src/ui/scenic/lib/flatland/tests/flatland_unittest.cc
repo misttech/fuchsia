@@ -74,7 +74,10 @@ using flatland::kDefaultDisplayPixelRatio;
 using flatland::kDefaultInset;
 using flatland::kDefaultSize;
 using flatland::kInvalidContentId;
+using flatland::kInvalidLayerId;
 using flatland::kInvalidTransformId;
+using flatland::LayerId;
+using flatland::LayerStackId;
 using flatland::LinkSystem;
 using flatland::MockFlatlandPresenter;
 using flatland::NoViewProtocols;
@@ -590,21 +593,20 @@ TEST_F(FlatlandTest, SetHitRegionsErrorTest) {
   }
 }
 
+class TestErrorReporter : public scenic_impl::ErrorReporter {
+ public:
+  TestErrorReporter(std::optional<std::string>* last_error_log) : reported_error(last_error_log) {}
+
+  std::optional<std::string>* reported_error = nullptr;
+
+ private:
+  // |scenic_impl::ErrorReporter|
+  void ReportError(fuchsia_logging::LogSeverity severity, std::string error_string) override {
+    *reported_error = error_string;
+  }
+};
+
 TEST_F(FlatlandTest, SetDebugNameAddsPrefixToLogs) {
-  class TestErrorReporter : public scenic_impl::ErrorReporter {
-   public:
-    TestErrorReporter(std::optional<std::string>* last_error_log)
-        : reported_error(last_error_log) {}
-
-    std::optional<std::string>* reported_error = nullptr;
-
-   private:
-    // |scenic_impl::ErrorReporter|
-    void ReportError(fuchsia_logging::LogSeverity severity, std::string error_string) override {
-      *reported_error = error_string;
-    }
-  };
-
   // No prefix in errors by default.
   {
     std::optional<std::string> error_log;
@@ -5517,6 +5519,55 @@ TEST_F(FlatlandTest, ReleaseImageImmediatelyTrusted) {
   EXPECT_FALSE(flatland->GetContentHandle(kImageId).has_value());
 }
 
+TEST_F(FlatlandTest, CreateLayerRejectsZeroId) {
+  std::shared_ptr<Flatland> flatland = CreateFlatland(FlatlandConfig{.use_flatland2 = true});
+  flatland->CreateLayer(kInvalidLayerId);
+  PRESENT(flatland, false);
+}
+
+TEST_F(FlatlandTest, SetTransformContentRejectsZeroId) {
+  const TransformId kId(1);
+
+  // LayerStack variant.
+  {
+    std::optional<std::string> error_log;
+    std::shared_ptr<Flatland> flatland = CreateFlatland(FlatlandConfig{.use_flatland2 = true});
+    flatland->SetErrorReporter(std::make_unique<TestErrorReporter>(&error_log));
+    flatland->CreateTransform(kId);
+    flatland->SetTransformContent(kId, std::make_unique<fuchsia_ui_composition::TransformContent>(
+                                           fuchsia_ui_composition::TransformContent::WithLayerStack(
+                                               fuchsia_ui_composition::LayerStackId{0})));
+    PRESENT(flatland, false);
+    ASSERT_TRUE(error_log.has_value());
+    EXPECT_NE(error_log->find("must be non-zero"), std::string::npos);
+  }
+
+  // Viewport variant.
+  {
+    std::optional<std::string> error_log;
+    std::shared_ptr<Flatland> flatland = CreateFlatland(FlatlandConfig{.use_flatland2 = true});
+    flatland->SetErrorReporter(std::make_unique<TestErrorReporter>(&error_log));
+    flatland->CreateTransform(kId);
+    flatland->SetTransformContent(kId, std::make_unique<fuchsia_ui_composition::TransformContent>(
+                                           fuchsia_ui_composition::TransformContent::WithViewport(
+                                               fuchsia_ui_composition::ViewportId{0})));
+    PRESENT(flatland, false);
+    ASSERT_TRUE(error_log.has_value());
+    EXPECT_NE(error_log->find("must be non-zero"), std::string::npos);
+  }
+}
+
+TEST_F(FlatlandTest, SetStackLayersRejectsTooManyLayers) {
+  std::optional<std::string> error_log;
+  std::shared_ptr<Flatland> flatland = CreateFlatland(FlatlandConfig{.use_flatland2 = true});
+  flatland->SetErrorReporter(std::make_unique<TestErrorReporter>(&error_log));
+  const std::vector<LayerId> layers(fuchsia_ui_composition::kMaxStackLayers + 1, LayerId(1));
+  flatland->SetStackLayers(LayerStackId(1), layers);
+  PRESENT(flatland, false);
+  ASSERT_TRUE(error_log.has_value());
+  EXPECT_NE(error_log->find("too many layers"), std::string::npos);
+}
+
 TEST_F(FlatlandTest, LayerHandleNeverReused) {
   std::shared_ptr<Flatland> flatland = CreateFlatland();
   const size_t N = 10;
@@ -5702,10 +5753,14 @@ TEST_F(FlatlandTest, PresentStampsFlatlandVersion) {
     EXPECT_EQ(uber_struct->flatland_version, 1u);
   }
 
-  // Flatland2 session constructed with FlatlandConfig{.use_flatland2 = true}
-  // Present -> snapshot flatland_version == 2
-  // NOTE: this half of the test cannot be added until `FlatlandConfig::use_flatland2` exists;
-  //       it will land in the Flatland2 API CL.
+  // Flatland2 session -> snapshot flatland_version == 2
+  {
+    std::shared_ptr<Flatland> flatland = CreateFlatland(FlatlandConfig{.use_flatland2 = true});
+    PRESENT(flatland, true);
+    auto uber_struct = GetUberStruct(flatland.get());
+    ASSERT_NE(uber_struct, nullptr);
+    EXPECT_EQ(uber_struct->flatland_version, 2u);
+  }
 }
 
 // TODO(https://fxbug.dev/42156567): other FlatlandDisplayTests that should be written:

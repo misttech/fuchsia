@@ -17,6 +17,11 @@ namespace types {
 
 // Covers the rotate/flip permutations supported by
 // `fuchsia.hardware.display.types/CoordinateTransformation`.
+// TODO(https://fxbug.dev/356385730): Flatland2 introduces `FlipThenRotate`, which adopts Android
+// conventions.  These differ from current display coordinator conventions:
+//   - Android uses flip-then-rotate, display coordinator uses rotate-then-flip
+//   - Android uses clockwise, display coordinator uses counter-clockwise
+// Eventually both display coordinator and Scenic impl are expected to adopt the Android convention.
 class RotateFlip {
  public:
   enum class Enum : uint8_t {
