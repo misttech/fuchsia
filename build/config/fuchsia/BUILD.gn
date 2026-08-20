@@ -116,7 +116,6 @@ compiler_config("compiler") {
     "-L${_clang_resource_dir}/lib/${current_target_tuple}",
     "--pack-dyn-relocs=relr",
     "-dynamic-linker=ld.so.1",
-    "--icf=all",
   ]
 
   if (rust_rbe_enable) {
