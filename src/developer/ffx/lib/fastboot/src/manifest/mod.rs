@@ -229,23 +229,20 @@ pub async fn from_path<T: FastbootInterface>(
     cmd: ManifestParams,
 ) -> Result<()> {
     log::debug!("fastboot manifest from_path");
-    match path.extension() {
-        Some(ext) => {
-            if ext == "zip" {
-                let r = ArchiveResolver::new(path)?;
-                load_flash_manifest(r).await?.flash(messenger, fastboot_interface, cmd).await
-            } else if ext == "tgz" || ext == "tar.gz" || ext == "tar" {
-                let r = FlashManifestTarResolver::new(path)?;
-                load_flash_manifest(r).await?.flash(messenger, fastboot_interface, cmd).await
-            } else {
-                let r = FlashManifestResolver::new(path)?;
-                load_flash_manifest(r).await?.flash(messenger, fastboot_interface, cmd).await
-            }
-        }
-        _ => {
-            let r = FlashManifestResolver::new(path)?;
-            load_flash_manifest(r).await?.flash(messenger, fastboot_interface, cmd).await
-        }
+    let ext = path.extension().and_then(|e| e.to_str());
+    let is_tar_gz = path.to_string_lossy().ends_with(".tar.gz") || ext == Some("tgz");
+    let is_tar = ext == Some("tar");
+    let is_zip = ext == Some("zip");
+
+    if is_zip {
+        let r = ArchiveResolver::new(path)?;
+        load_flash_manifest(r).await?.flash(messenger, fastboot_interface, cmd).await
+    } else if is_tar_gz || is_tar {
+        let r = FlashManifestTarResolver::new(path)?;
+        load_flash_manifest(r).await?.flash(messenger, fastboot_interface, cmd).await
+    } else {
+        let r = FlashManifestResolver::new(path)?;
+        load_flash_manifest(r).await?.flash(messenger, fastboot_interface, cmd).await
     }
 }
 

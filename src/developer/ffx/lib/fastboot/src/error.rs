@@ -181,4 +181,7 @@ pub enum FfxFastbootError {
 
     #[error("Fastboot streaming flash error: {message}")]
     StreamingFlash { message: String },
+
+    #[error("File path '{path}' is outside the allowed directory '{root}'")]
+    PathOutsideDirectory { path: PathBuf, root: PathBuf },
 }

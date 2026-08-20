@@ -15,6 +15,12 @@ use tar::Archive;
 use tempfile::{TempDir, tempdir};
 use zip::read::ZipArchive;
 
+/// EmptyResolver resolves paths directly from the host environment / CWD.
+///
+/// This resolver is only used for direct command-line arguments (such as
+/// `ffx target bootloader boot --zbi <path>` and `unlock --cred <path>`)
+/// where the user explicitly supplies file paths from the shell, and is not
+/// used for parsing manifests or external archives.
 pub struct EmptyResolver {
     fake: PathBuf,
 }
@@ -50,16 +56,22 @@ impl FileResolver for EmptyResolver {
 
 pub struct Resolver {
     root_path: PathBuf,
+    base_dir: PathBuf,
 }
 
 impl Resolver {
     pub fn new(path: PathBuf) -> Result<Self> {
-        Ok(Self {
-            root_path: path.canonicalize().map_err(|e| FfxFastbootError::CanonicalizePath {
-                path: path.clone(),
-                source: e,
-            })?,
-        })
+        let root_path = path
+            .canonicalize()
+            .map_err(|e| FfxFastbootError::CanonicalizePath { path: path.clone(), source: e })?;
+        let base_dir = if root_path.is_dir() {
+            root_path.clone()
+        } else if let Some(parent) = root_path.parent() {
+            parent.to_path_buf()
+        } else {
+            return Err(FfxFastbootError::NoParentDirectory);
+        };
+        Ok(Self { root_path, base_dir })
     }
 
     pub fn root_path(&self) -> &Path {
@@ -70,19 +82,18 @@ impl Resolver {
 #[async_trait]
 impl FileResolver for Resolver {
     async fn get_file(&mut self, file: &str) -> Result<String> {
-        if PathBuf::from(file).is_absolute() {
-            Ok(file.to_string())
-        } else if let Some(p) = self.root_path().parent() {
-            let mut parent = p.to_path_buf();
-            parent.push(file);
-            if let Some(f) = parent.to_str() {
-                Ok(f.to_string())
-            } else {
-                return Err(FfxFastbootError::NonUtf8Path);
-            }
-        } else {
-            return Err(FfxFastbootError::NoParentDirectory);
+        let path = Path::new(file);
+        let target = if path.is_absolute() { path.to_path_buf() } else { self.base_dir.join(path) };
+        let canonical = target
+            .canonicalize()
+            .map_err(|e| FfxFastbootError::CanonicalizePath { path: target.clone(), source: e })?;
+        if !canonical.starts_with(&self.base_dir) {
+            return Err(FfxFastbootError::PathOutsideDirectory {
+                path: canonical,
+                root: self.base_dir.clone(),
+            });
         }
+        canonical.to_str().map(|s| s.to_string()).ok_or(FfxFastbootError::NonUtf8Path)
     }
 }
 
@@ -128,6 +139,7 @@ impl FileResolver for ZipArchiveResolver {
 
 pub struct TarResolver {
     temp_dir: TempDir,
+    canonical_root: PathBuf,
 }
 
 impl TarResolver {
@@ -136,20 +148,25 @@ impl TarResolver {
         let file = File::open(path.clone())
             .map_err(|e| FfxFastbootError::FileOpen { path: path.clone(), source: e })?;
         log::debug!("Extracting to {}", temp_dir.path().display());
-        // Tarballs can't do per file extraction well like Zip, so just unpack it all.
-        match path.extension() {
-            Some(ext) if ext == "tar.gz" || ext == "tgz" => {
-                let mut archive = Archive::new(GzDecoder::new(file));
-                archive.unpack(temp_dir.path())?;
-            }
-            Some(ext) if ext == "tar" => {
-                let mut archive = Archive::new(file);
-                archive.unpack(temp_dir.path())?;
-            }
-            _ => return Err(FfxFastbootError::InvalidTarArchive),
+        let is_tar_gz = path.to_string_lossy().ends_with(".tar.gz")
+            || path.extension().and_then(|e| e.to_str()) == Some("tgz");
+        let is_tar = path.extension().and_then(|e| e.to_str()) == Some("tar");
+
+        if is_tar_gz {
+            let mut archive = Archive::new(GzDecoder::new(file));
+            archive.unpack(temp_dir.path())?;
+        } else if is_tar {
+            let mut archive = Archive::new(file);
+            archive.unpack(temp_dir.path())?;
+        } else {
+            return Err(FfxFastbootError::InvalidTarArchive);
         }
 
-        Ok(Self { temp_dir })
+        let canonical_root = temp_dir.path().canonicalize().map_err(|e| {
+            FfxFastbootError::CanonicalizePath { path: temp_dir.path().to_path_buf(), source: e }
+        })?;
+
+        Ok(Self { temp_dir, canonical_root })
     }
 
     pub fn root_path(&self) -> &Path {
@@ -160,13 +177,24 @@ impl TarResolver {
 #[async_trait]
 impl FileResolver for TarResolver {
     async fn get_file(&mut self, file: &str) -> Result<String> {
-        let mut parent = self.root_path().to_path_buf();
-        parent.push(file);
-        if let Some(f) = parent.to_str() {
-            Ok(f.to_string())
-        } else {
-            return Err(FfxFastbootError::NonUtf8Path);
+        let path = Path::new(file);
+        if path.is_absolute() {
+            return Err(FfxFastbootError::PathOutsideDirectory {
+                path: path.to_path_buf(),
+                root: self.canonical_root.clone(),
+            });
         }
+        let target = self.canonical_root.join(path);
+        let canonical = target
+            .canonicalize()
+            .map_err(|e| FfxFastbootError::CanonicalizePath { path: target.clone(), source: e })?;
+        if !canonical.starts_with(&self.canonical_root) {
+            return Err(FfxFastbootError::PathOutsideDirectory {
+                path: canonical,
+                root: self.canonical_root.clone(),
+            });
+        }
+        canonical.to_str().map(|s| s.to_string()).ok_or(FfxFastbootError::NonUtf8Path)
     }
 }
 
@@ -175,14 +203,146 @@ impl FileResolver for TarResolver {
 
 #[cfg(test)]
 mod test {
-    // use tempfile::NamedTempFile;
-
     use super::*;
     type Result<T> = std::result::Result<T, anyhow::Error>;
     use std::io::{Read, Write};
     use std::str::FromStr;
     use zip::CompressionMethod;
     use zip::write::{SimpleFileOptions as FileOptions, ZipWriter};
+
+    ////////////////////////////////////////////////////////////////////////////////
+    // EmptyResolver
+
+    #[fuchsia::test]
+    async fn empty_resolver_resolves_cli_paths() -> Result<()> {
+        let tmpdir = tempdir()?;
+        let file_path = tmpdir.path().join("my_cred.bin");
+        std::fs::write(&file_path, "cred_data")?;
+
+        let mut resolver = EmptyResolver::new()?;
+
+        let resolved = resolver.get_file(file_path.to_str().unwrap()).await?;
+        assert_eq!(resolved, file_path.to_str().unwrap());
+
+        Ok(())
+    }
+
+    ////////////////////////////////////////////////////////////////////////////////
+    // Resolver
+
+    #[fuchsia::test]
+    async fn resolver_manifest_file() -> Result<()> {
+        let tmpdir = tempdir()?;
+        let parent_dir = tmpdir.path().canonicalize()?;
+        let manifest_dir = parent_dir.join("manifest_dir");
+        std::fs::create_dir_all(&manifest_dir)?;
+        let manifest_path = manifest_dir.join("flash.json");
+        std::fs::write(&manifest_path, "{}")?;
+        let image_path = manifest_dir.join("zircon_a.img");
+        std::fs::write(&image_path, "zircon_data")?;
+
+        let mut resolver = Resolver::new(manifest_path)?;
+
+        // Relative path inside directory
+        let file_path = resolver.get_file("zircon_a.img").await?;
+        assert_eq!(file_path, image_path.to_str().unwrap());
+
+        // Absolute path inside directory
+        let file_path_abs = resolver.get_file(image_path.to_str().unwrap()).await?;
+        assert_eq!(file_path_abs, image_path.to_str().unwrap());
+
+        // Create an outside file in parent_dir so it exists on disk
+        let outside_file = parent_dir.join("outside.img");
+        std::fs::write(&outside_file, "outside")?;
+
+        // Outside file (absolute)
+        assert!(resolver.get_file(outside_file.to_str().unwrap()).await.is_err());
+
+        // Outside file (relative traversal that resolves to an existing file outside base)
+        assert!(resolver.get_file("../outside.img").await.is_err());
+
+        Ok(())
+    }
+
+    #[fuchsia::test]
+    async fn resolver_directory() -> Result<()> {
+        let tmpdir = tempdir()?;
+        let parent_dir = tmpdir.path().canonicalize()?;
+        let pb_dir = parent_dir.join("pb");
+        let image_dir = pb_dir.join("system_a");
+        std::fs::create_dir_all(&image_dir)?;
+        let image_path = image_dir.join("fuchsia.zbi");
+        std::fs::write(&image_path, "zbi_data")?;
+
+        let mut resolver = Resolver::new(pb_dir)?;
+
+        // Relative path inside directory
+        let file_path = resolver.get_file("system_a/fuchsia.zbi").await?;
+        assert_eq!(file_path, image_path.to_str().unwrap());
+
+        // Absolute path inside directory
+        let file_path_abs = resolver.get_file(image_path.to_str().unwrap()).await?;
+        assert_eq!(file_path_abs, image_path.to_str().unwrap());
+
+        // Create an outside file in parent_dir so it exists on disk
+        let outside_file = parent_dir.join("outside.img");
+        std::fs::write(&outside_file, "outside")?;
+
+        // Outside file (absolute)
+        assert!(resolver.get_file(outside_file.to_str().unwrap()).await.is_err());
+
+        // Outside file (relative traversal)
+        assert!(resolver.get_file("../outside.img").await.is_err());
+
+        Ok(())
+    }
+
+    ////////////////////////////////////////////////////////////////////////////////
+    // TarResolver
+
+    #[fuchsia::test]
+    async fn tar_resolver_get_file() -> Result<()> {
+        let tmpdir = tempdir()?;
+        let tar_path = tmpdir.path().join("test.tar.gz");
+        let file = File::create(&tar_path)?;
+        let enc = flate2::write::GzEncoder::new(file, flate2::Compression::default());
+        let mut tar = tar::Builder::new(enc);
+
+        let mut header = tar::Header::new_gnu();
+        header.set_path("hello.txt")?;
+        header.set_size(13);
+        header.set_mode(0o644);
+        header.set_cksum();
+        tar.append(&header, "Hello, World!".as_bytes())?;
+        let enc = tar.into_inner()?;
+        enc.finish()?;
+
+        let mut resolver = TarResolver::new(tar_path)?;
+        let file_path = resolver.get_file("hello.txt").await?;
+        let content = std::fs::read_to_string(file_path)?;
+        assert_eq!(content, "Hello, World!");
+
+        // Create an outside file in tmpdir so that relative traversal points to an existing file
+        let outside_file = tmpdir.path().join("outside.txt");
+        std::fs::write(&outside_file, "outside")?;
+
+        // Absolute path should be rejected
+        assert!(resolver.get_file("/etc/shadow").await.is_err());
+
+        // Path traversal should be rejected even when target exists
+        assert!(resolver.get_file("../../outside.txt").await.is_err());
+
+        Ok(())
+    }
+
+    #[test]
+    fn tar_resolver_invalid_extension() -> Result<()> {
+        let tmpdir = tempdir()?;
+        let gz_path = tmpdir.path().join("test.gz");
+        File::create(&gz_path)?;
+        assert!(TarResolver::new(gz_path).is_err());
+        Ok(())
+    }
 
     ////////////////////////////////////////////////////////////////////////////////
     // ZipArchiveResolver
