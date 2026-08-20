@@ -573,24 +573,25 @@ where
         .try_fold(socket_sink, |mut socket_sink, request| async move {
             match request {
                 fidl_fuchsia_net_dhcp::Server_Request::StartServing { responder } => {
-                    responder.send(
-                        match server.borrow_mut().enable() {
-                            Ok(Some(socket_collection)) => {
-                                socket_sink.send(socket_collection).await.map_err(|e| {
-                                    error!("Failed to send sockets to sink: {:?}", e);
-                                    // Disable the server again to keep a consistent state.
-                                    server.borrow_mut().disable();
-                                    zx::Status::INTERNAL
-                                })
-                            }
-                            Ok(None) => {
-                                info!("Server already running");
-                                Ok(())
-                            }
-                            Err(status) => Err(status),
+                    let enable_result = server.borrow_mut().enable();
+
+                    let result = match enable_result {
+                        Ok(Some(socket_collection)) => {
+                            socket_sink.send(socket_collection).await.map_err(|e| {
+                                error!("Failed to send sockets to sink: {:?}", e);
+                                // Disable the server again to keep a consistent state.
+                                server.borrow_mut().disable();
+                                zx::Status::INTERNAL
+                            })
                         }
-                        .map_err(zx::Status::into_raw),
-                    )
+                        Ok(None) => {
+                            info!("Server already running");
+                            Ok(())
+                        }
+                        Err(status) => Err(status),
+                    };
+
+                    responder.send(result.map_err(zx::Status::into_raw))
                 }
                 fidl_fuchsia_net_dhcp::Server_Request::StopServing { responder } => {
                     server.borrow_mut().disable();
