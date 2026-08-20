@@ -29,6 +29,10 @@
         {
             protocol: [ "fuchsia.diagnostics.ArchiveAccessor" ],
         },
+        {
+            protocol: [ "fuchsia.hwinfo.Device" ],
+            availability: "optional",
+        },
     ],
     expose: [
         {

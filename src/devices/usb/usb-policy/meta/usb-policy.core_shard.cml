@@ -23,6 +23,12 @@
             from: "parent/diagnostics-accessors",
             to: "#usb-policy",
         },
+        {
+            protocol: "fuchsia.hwinfo.Device",
+            from: "#hwinfo",
+            to: "#usb-policy",
+            availability: "optional",
+        },
     ],
     expose: [
         {

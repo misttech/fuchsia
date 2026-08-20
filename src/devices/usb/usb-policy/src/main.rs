@@ -12,6 +12,7 @@
 
 use fidl_fuchsia_hardware_usb_peripheral as peripheral;
 use fidl_fuchsia_hardware_usb_policy as fpolicy;
+use fidl_fuchsia_hwinfo as hwinfo;
 use fidl_fuchsia_usb_policy as usb_policy;
 use fuchsia_component::client::Service;
 
@@ -39,16 +40,26 @@ struct UsbPolicySharedStateInner {
 /// A thread-safe wrapper around `UsbPolicySharedStateInner` that encapsulates locking.
 struct UsbPolicySharedState {
     inner: std::sync::Mutex<UsbPolicySharedStateInner>,
+    serial_number: String,
 }
 
 impl UsbPolicySharedState {
     pub fn new() -> Self {
+        Self::new_with_serial("12345678".to_string())
+    }
+
+    pub fn new_with_serial(serial_number: String) -> Self {
         Self {
             inner: std::sync::Mutex::new(UsbPolicySharedStateInner {
                 controller: None,
                 waiters: Vec::new(),
             }),
+            serial_number,
         }
+    }
+
+    pub fn get_serial_number(&self) -> String {
+        self.serial_number.clone()
     }
 
     pub fn set_controller(&self, state: Arc<controller::ControllerState>) {
@@ -80,6 +91,12 @@ impl UsbPolicySharedState {
     }
 }
 
+impl Default for UsbPolicySharedState {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 enum IncomingRequest {
     Health(usb_policy::HealthRequestStream),
     Provider(usb_policy::PolicyProviderRequestStream),
@@ -93,10 +110,42 @@ async fn get_peripheral_device() -> Result<peripheral::DeviceProxy, anyhow::Erro
     Ok(device)
 }
 
-async fn handle_get_configuration() -> Result<
-    (peripheral::DeviceDescriptor, Vec<Vec<peripheral::FunctionDescriptor>>),
-    zx::Status,
-> {
+async fn fetch_serial_number() -> String {
+    let Ok(device_info_proxy) =
+        fuchsia_component::client::connect_to_protocol::<hwinfo::DeviceMarker>()
+    else {
+        warn!("Failed to connect to fuchsia.hwinfo.Device; using default serial 12345678");
+        return "12345678".to_string();
+    };
+
+    match device_info_proxy.get_info().await {
+        Ok(info) => {
+            if let Some(serial) = info.serial_number {
+                if !serial.is_empty() {
+                    serial
+                } else {
+                    warn!(
+                        "fuchsia.hwinfo.Device returned empty serial; using default serial 12345678"
+                    );
+                    "12345678".to_string()
+                }
+            } else {
+                warn!("fuchsia.hwinfo.Device returned no serial; using default serial 12345678");
+                "12345678".to_string()
+            }
+        }
+        Err(e) => {
+            warn!(
+                "Failed to get info from fuchsia.hwinfo.Device: {:?}; using default serial 12345678",
+                e
+            );
+            "12345678".to_string()
+        }
+    }
+}
+
+async fn handle_get_configuration()
+-> Result<(peripheral::DeviceDescriptor, Vec<Vec<peripheral::FunctionDescriptor>>), zx::Status> {
     let device = get_peripheral_device().await.map_err(|_| zx::Status::UNAVAILABLE)?;
     let (device_desc, config_descriptors) = device
         .get_configuration()
@@ -109,10 +158,11 @@ async fn handle_get_configuration() -> Result<
 async fn handle_set_configuration(
     mut device_desc: peripheral::DeviceDescriptor,
     config_descriptors: Vec<Vec<peripheral::FunctionDescriptor>>,
+    serial_number: String,
 ) -> Result<(), zx::Status> {
     let device = get_peripheral_device().await.map_err(|_| zx::Status::UNAVAILABLE)?;
     if device_desc.serial.is_empty() {
-        device_desc.serial = "12345678".to_string();
+        device_desc.serial = serial_number;
     }
     device.clear_functions().await.map_err(|_| zx::Status::INTERNAL)?;
     device
@@ -123,7 +173,10 @@ async fn handle_set_configuration(
     Ok(())
 }
 
-async fn run_configuration_server(mut stream: usb_policy::ConfigurationRequestStream) {
+async fn run_configuration_server(
+    mut stream: usb_policy::ConfigurationRequestStream,
+    shared_state: Arc<UsbPolicySharedState>,
+) {
     while let Some(request_result) = stream.next().await {
         match request_result {
             Ok(request) => match request {
@@ -146,7 +199,13 @@ async fn run_configuration_server(mut stream: usb_policy::ConfigurationRequestSt
                     device_desc,
                     config_descriptors,
                     responder,
-                } => match handle_set_configuration(device_desc, config_descriptors).await {
+                } => match handle_set_configuration(
+                    device_desc,
+                    config_descriptors,
+                    shared_state.get_serial_number(),
+                )
+                .await
+                {
                     Ok(()) => {
                         if let Err(e) = responder.send(Ok(())) {
                             warn!("Failed to send SetConfiguration response: {:?}", e);
@@ -265,7 +324,8 @@ async fn run_health_server(
 }
 
 async fn run_usb_policy_service() -> Result<(), Error> {
-    let shared_state = Arc::new(UsbPolicySharedState::new());
+    let serial_number = fetch_serial_number().await;
+    let shared_state = Arc::new(UsbPolicySharedState::new_with_serial(serial_number));
 
     let shared_state_clone = shared_state.clone();
     let scope = fuchsia_async::Scope::new();
@@ -311,7 +371,9 @@ async fn run_usb_policy_service() -> Result<(), Error> {
             match req {
                 IncomingRequest::Health(stream) => run_health_server(stream, state).await,
                 IncomingRequest::Provider(stream) => run_provider_server(stream, state).await,
-                IncomingRequest::Configuration(stream) => run_configuration_server(stream).await,
+                IncomingRequest::Configuration(stream) => {
+                    run_configuration_server(stream, state).await
+                }
             }
         }
     });
@@ -437,10 +499,18 @@ mod tests {
         Ok(())
     }
     #[fuchsia::test]
+    async fn test_fetch_serial_number_fallback() {
+        let serial = fetch_serial_number().await;
+        assert!(!serial.is_empty());
+        assert_eq!(serial, "12345678");
+    }
+
+    #[fuchsia::test]
     async fn test_configuration_server_unavailable() -> Result<(), anyhow::Error> {
         let (config_proxy, stream) = create_proxy_and_stream::<usb_policy::ConfigurationMarker>();
 
-        fasync::Task::local(run_configuration_server(stream)).detach();
+        let shared_state = Arc::new(UsbPolicySharedState::new());
+        fasync::Task::local(run_configuration_server(stream, shared_state)).detach();
 
         let get_res = config_proxy.get_configuration().await?;
         assert_eq!(get_res.err(), Some(zx::Status::UNAVAILABLE.into_raw()));

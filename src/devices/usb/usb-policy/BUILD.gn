@@ -16,6 +16,7 @@ rustc_binary("bin") {
   deps = [
     "//sdk/fidl/fuchsia.hardware.usb.peripheral:fuchsia.hardware.usb.peripheral_rust",
     "//sdk/fidl/fuchsia.hardware.usb.policy:fuchsia.hardware.usb.policy_rust",
+    "//sdk/fidl/fuchsia.hwinfo:fuchsia.hwinfo_rust",
     "//sdk/fidl/fuchsia.usb.policy:fuchsia.usb.policy_rust",
     "//sdk/rust/zx",
     "//src/lib/async-utils",
