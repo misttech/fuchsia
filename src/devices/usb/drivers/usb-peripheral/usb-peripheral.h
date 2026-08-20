@@ -41,8 +41,7 @@
     This driver is responsible for USB in the peripheral role, that is,
     acting as a USB device to a USB host.
     It serves as the central point of coordination for the peripheral role.
-    It is configured via ioctls in the fuchsia.hardware.usb.peripheral FIDL interface
-    (which is used by the usbctl command line program).
+    It is configured via the fuchsia.hardware.usb.peripheral FIDL interface.
     Based on this configuration, it creates one or more devmgr devices with protocol
     ZX_PROTOCOL_USB_FUNCTION. These devices are bind points for USB function drivers,
     which implement USB interfaces for particular functions (like USB ethernet or mass storage).

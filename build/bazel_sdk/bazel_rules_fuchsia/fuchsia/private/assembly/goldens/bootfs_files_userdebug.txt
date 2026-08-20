@@ -23,7 +23,6 @@ bin/sh
 bin/signal
 bin/threads
 bin/top
-bin/usbctl
 bin/vmaps
 bin/vmos
 bin/waitfor
@@ -55,8 +54,6 @@ lib/libinspector.so
 ?lib/librust-trace-provider.so
 lib/libssl.so
 lib/libstd-*
-lib/libsvc.so
 lib/libtrace-engine.so
 lib/libunwind.so.1
-lib/libusb-peripheral-utils.so
 lib/libvfs_rust.so

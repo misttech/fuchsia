@@ -311,7 +311,6 @@ fuchsia_package("bootstrap_userdebug.bootfs_files_package") {
   deps = [
     "//src/connectivity/network/bin/ping:bootfs",
     "//src/devices/block/bin/fvm-check:bootfs",
-    "//src/devices/usb/bin/usbctl",
     "//src/storage/bin/dd:bootfs",
     "//src/storage/bin/df:bootfs",
     "//src/zircon/bin/kstress:bootfs",

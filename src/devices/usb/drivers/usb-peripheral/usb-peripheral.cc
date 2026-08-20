@@ -1819,7 +1819,7 @@ void UsbPeripheral::OnHostConnectionChanged(bool connected) {
   }
 }
 
-// This is called by management components (e.g. usbctl) to define the initial configuration of the
+// This is called by management components to define the initial configuration of the
 // USB peripheral device.
 void UsbPeripheral::SetConfiguration(SetConfigurationRequestView request,
                                      SetConfigurationCompleter::Sync& completer) {

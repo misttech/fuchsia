@@ -5,6 +5,7 @@
 #include "lib/usb-virtual-bus-launcher/usb-virtual-bus-launcher.h"
 
 #include <fidl/fuchsia.driver.test/cpp/fidl.h>
+#include <fidl/fuchsia.hardware.usb.peripheral/cpp/wire.h>
 #include <lib/async-loop/loop.h>
 #include <lib/component/incoming/cpp/directory.h>
 #include <lib/component/incoming/cpp/protocol.h>
@@ -13,7 +14,6 @@
 #include <lib/device-watcher/cpp/device-watcher.h>
 #include <lib/fdio/cpp/caller.h>
 #include <lib/fdio/watcher.h>
-#include <lib/usb-peripheral-utils/event-watcher.h>
 #include <zircon/status.h>
 
 #include <iostream>
@@ -21,6 +21,44 @@
 #include <fbl/string.h>
 #include <fbl/unique_fd.h>
 #include <usb/usb.h>
+
+namespace {
+
+class EventWatcher : public fidl::WireServer<fuchsia_hardware_usb_peripheral::Events> {
+ public:
+  EventWatcher(async::Loop& loop, fidl::ServerEnd<fuchsia_hardware_usb_peripheral::Events> svc,
+               size_t functions)
+      : loop_(loop), functions_(functions) {
+    fidl::BindServer(loop.dispatcher(), std::move(svc), this);
+  }
+
+  void FunctionRegistered(FunctionRegisteredCompleter::Sync& completer) override {
+    functions_registered_++;
+    if (all_functions_registered()) {
+      loop_.Quit();
+      completer.Close(ZX_ERR_CANCELED);
+    } else {
+      completer.Reply();
+    }
+  }
+
+  void FunctionsCleared(FunctionsClearedCompleter::Sync& completer) override {
+    all_functions_cleared_ = true;
+    loop_.Quit();
+    completer.Close(ZX_ERR_CANCELED);
+  }
+
+  bool all_functions_registered() const { return functions_registered_ == functions_; }
+  bool all_functions_cleared() const { return all_functions_cleared_; }
+
+ private:
+  async::Loop& loop_;
+  const size_t functions_;
+  size_t functions_registered_ = 0;
+  bool all_functions_cleared_ = false;
+};
+
+}  // namespace
 
 namespace usb_virtual {
 
@@ -143,7 +181,7 @@ zx_status_t BusLauncher::SetupPeripheralDevice(DeviceDescriptor&& device_desc,
   }
 
   async::Loop loop(&kAsyncLoopConfigNeverAttachToThread);
-  usb_peripheral_utils::EventWatcher watcher(loop, std::move(server), 1);
+  EventWatcher watcher(loop, std::move(server), 1);
 
   if (zx_status_t status = loop.Run(); status != ZX_ERR_CANCELED) {
     std::cerr << "loop.Run(): " << zx_status_get_string(status) << '\n';
@@ -187,7 +225,7 @@ zx_status_t BusLauncher::ClearPeripheralDeviceFunctions() {
   }
 
   async::Loop loop(&kAsyncLoopConfigNeverAttachToThread);
-  usb_peripheral_utils::EventWatcher watcher(loop, std::move(server), 1);
+  EventWatcher watcher(loop, std::move(server), 1);
 
   if (zx_status_t status = loop.Run(); status != ZX_ERR_CANCELED) {
     std::cerr << "loop.Run(): " << zx_status_get_string(status) << '\n';
