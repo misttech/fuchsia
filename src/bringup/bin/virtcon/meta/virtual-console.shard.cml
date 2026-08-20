@@ -69,11 +69,9 @@
             to: "#virtual_console",
         },
         {
-            directory: "dev-class",
-            from: "#devfs-with-pkg",
-            as: "input-report",
+            service: "fuchsia.input.report.Service",
+            from: "#boot-drivers",
             to: "#virtual_console",
-            subdir: "input-report",
         },
         {
             protocol: "fuchsia.hardware.pty.Device",

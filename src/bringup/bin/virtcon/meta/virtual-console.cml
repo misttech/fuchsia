@@ -113,11 +113,6 @@
             path: "/boot/data",
         },
         {
-            directory: "input-report",
-            rights: [ "r*" ],
-            path: "/dev/class/input-report",
-        },
-        {
             protocol: [
                 "fuchsia.boot.ReadOnlyLog",
                 "fuchsia.boot.WriteOnlyLog",
@@ -139,6 +134,7 @@
             availability: "optional",
         },
         { service: "fuchsia.hardware.display.Service" },
+        { service: "fuchsia.input.report.Service" },
     ],
     expose: [
         {
