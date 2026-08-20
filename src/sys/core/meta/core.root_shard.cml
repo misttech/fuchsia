@@ -21,6 +21,7 @@
                 "fuchsia.bluetooth.LeFastAdvIntervalMax",
                 "fuchsia.bluetooth.LeFastAdvIntervalMin",
                 "fuchsia.bluetooth.LeFastAdvMaxTxPower",
+                "fuchsia.bluetooth.LeScanOffloadFiltersEnabled",
                 "fuchsia.bluetooth.LeSlowAdvIntervalMax",
                 "fuchsia.bluetooth.LeSlowAdvIntervalMin",
                 "fuchsia.bluetooth.LeSlowAdvMaxTxPower",

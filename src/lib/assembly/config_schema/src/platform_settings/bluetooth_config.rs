@@ -526,6 +526,12 @@ pub struct LeScanConfig {
 
     #[serde(skip_serializing_if = "crate::common::is_default")]
     pub active_window: u16,
+
+    /// Whether offloaded packet filtering is enabled for scanning; bt-host checks for firmware
+    /// support before actually using the feature. This flag only enables the feature if the
+    /// firmware also supports it.
+    #[serde(skip_serializing_if = "crate::common::is_default")]
+    pub offload_filters_enabled: bool,
 }
 
 /// Platform configuration for Bluetooth core features.
@@ -823,7 +829,11 @@ mod tests {
                 interval_max: 40,
                 max_tx_power: 30,
             },
-            scan: LeScanConfig { active_interval: 30, active_window: 60 },
+            scan: LeScanConfig {
+                active_interval: 30,
+                active_window: 60,
+                offload_filters_enabled: false,
+            },
             hci_command_timeout: 10,
         };
         let expected = BluetoothConfig::Standard {
@@ -1062,5 +1072,31 @@ mod tests {
             profiles.hfp.controller_encodes,
             ControllerCodecs::Codecs(vec![HfpCodecId::Cvsd])
         );
+    }
+
+    #[test]
+    fn test_deserialize_le_scan_offload_filters_enabled() {
+        let json_enabled = serde_json::json!({
+            "type": "standard",
+            "core": {
+                "scan": {
+                    "offload_filters_enabled": true,
+                }
+            }
+        });
+        let parsed: BluetoothConfig = serde_json::from_value(json_enabled).unwrap();
+        let BluetoothConfig::Standard { core, .. } = parsed else {
+            panic!("expected standard config");
+        };
+        assert!(core.scan.offload_filters_enabled);
+
+        let json_default = serde_json::json!({
+            "type": "standard",
+        });
+        let parsed_default: BluetoothConfig = serde_json::from_value(json_default).unwrap();
+        let BluetoothConfig::Standard { core, .. } = parsed_default else {
+            panic!("expected standard config");
+        };
+        assert!(!core.scan.offload_filters_enabled);
     }
 }

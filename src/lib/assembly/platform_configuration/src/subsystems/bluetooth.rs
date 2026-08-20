@@ -157,6 +157,10 @@ impl DefineSubsystemConfiguration<(&BluetoothConfig, &PlatformMediaConfig)>
             Config::new(ConfigValueType::Uint16, core.scan.active_window.into()),
         )?;
         builder.set_config_capability(
+            "fuchsia.bluetooth.LeScanOffloadFiltersEnabled",
+            Config::new(ConfigValueType::Bool, core.scan.offload_filters_enabled.into()),
+        )?;
+        builder.set_config_capability(
             "fuchsia.bluetooth.HciCommandTimeout",
             Config::new(ConfigValueType::Uint16, core.hci_command_timeout.into()),
         )?;
