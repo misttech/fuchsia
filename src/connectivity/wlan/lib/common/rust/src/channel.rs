@@ -116,7 +116,7 @@ impl Channel {
     fn get_center_chan_idx(&self) -> Result<u8, anyhow::Error> {
         let is_valid = match self.band {
             fidl_ieee80211::WlanBand::TwoGhz => (1..=14).contains(&self.primary),
-            fidl_ieee80211::WlanBand::FiveGhz => (36..=165).contains(&self.primary),
+            fidl_ieee80211::WlanBand::FiveGhz => (36..=177).contains(&self.primary),
             _ => false,
         };
         if !is_valid {
@@ -142,7 +142,8 @@ impl Channel {
                 100..=112 => Ok(106),
                 116..=128 => Ok(122),
                 132..=144 => Ok(138),
-                148..=161_ => Ok(155),
+                149..=161 => Ok(155),
+                165..=177 => Ok(171),
                 _ => {
                     return Err(format_err!(
                         "cannot get center channel index for invalid channel {}",
@@ -150,21 +151,17 @@ impl Channel {
                     ));
                 }
             },
-            Bandwidth::Cbw160 => {
-                // See IEEE Std 802.11-2016 Table 9-252 and 9-253.
-                // Note CBW160 has only one frequency segment, regardless of
-                // encodings on CCFS0 and CCFS1 in VHT Operation Information IE.
-                match p {
-                    36..=64 => Ok(50),
-                    100..=128 => Ok(114),
-                    _ => {
-                        return Err(format_err!(
-                            "cannot get center channel index for invalid channel {}",
-                            self
-                        ));
-                    }
+            Bandwidth::Cbw160 => match p {
+                36..=64 => Ok(50),
+                100..=128 => Ok(114),
+                149..=177 => Ok(163),
+                _ => {
+                    return Err(format_err!(
+                        "cannot get center channel index for invalid channel {}",
+                        self
+                    ));
                 }
-            }
+            },
         }
     }
 
@@ -337,8 +334,74 @@ mod tests {
         assert_eq!(8, Channel::new(6, Bandwidth::Cbw40, TwoGhz).get_center_chan_idx().unwrap());
         assert_eq!(36, Channel::new(36, Bandwidth::Cbw20, FiveGhz).get_center_chan_idx().unwrap());
         assert_eq!(38, Channel::new(36, Bandwidth::Cbw40, FiveGhz).get_center_chan_idx().unwrap());
+
+        // 80 MHz ranges: beginning and end of each range
         assert_eq!(42, Channel::new(36, Bandwidth::Cbw80, FiveGhz).get_center_chan_idx().unwrap());
+        assert_eq!(42, Channel::new(48, Bandwidth::Cbw80, FiveGhz).get_center_chan_idx().unwrap());
+        assert_eq!(58, Channel::new(52, Bandwidth::Cbw80, FiveGhz).get_center_chan_idx().unwrap());
+        assert_eq!(58, Channel::new(64, Bandwidth::Cbw80, FiveGhz).get_center_chan_idx().unwrap());
+        assert_eq!(
+            106,
+            Channel::new(100, Bandwidth::Cbw80, FiveGhz).get_center_chan_idx().unwrap()
+        );
+        assert_eq!(
+            106,
+            Channel::new(112, Bandwidth::Cbw80, FiveGhz).get_center_chan_idx().unwrap()
+        );
+        assert_eq!(
+            122,
+            Channel::new(116, Bandwidth::Cbw80, FiveGhz).get_center_chan_idx().unwrap()
+        );
+        assert_eq!(
+            122,
+            Channel::new(128, Bandwidth::Cbw80, FiveGhz).get_center_chan_idx().unwrap()
+        );
+        assert_eq!(
+            138,
+            Channel::new(132, Bandwidth::Cbw80, FiveGhz).get_center_chan_idx().unwrap()
+        );
+        assert_eq!(
+            138,
+            Channel::new(144, Bandwidth::Cbw80, FiveGhz).get_center_chan_idx().unwrap()
+        );
+        assert_eq!(
+            155,
+            Channel::new(149, Bandwidth::Cbw80, FiveGhz).get_center_chan_idx().unwrap()
+        );
+        assert_eq!(
+            155,
+            Channel::new(161, Bandwidth::Cbw80, FiveGhz).get_center_chan_idx().unwrap()
+        );
+        assert_eq!(
+            171,
+            Channel::new(165, Bandwidth::Cbw80, FiveGhz).get_center_chan_idx().unwrap()
+        );
+        assert_eq!(
+            171,
+            Channel::new(177, Bandwidth::Cbw80, FiveGhz).get_center_chan_idx().unwrap()
+        );
+
+        // 160 MHz ranges: beginning and end of each range
         assert_eq!(50, Channel::new(36, Bandwidth::Cbw160, FiveGhz).get_center_chan_idx().unwrap());
+        assert_eq!(50, Channel::new(64, Bandwidth::Cbw160, FiveGhz).get_center_chan_idx().unwrap());
+        assert_eq!(
+            114,
+            Channel::new(100, Bandwidth::Cbw160, FiveGhz).get_center_chan_idx().unwrap()
+        );
+        assert_eq!(
+            114,
+            Channel::new(128, Bandwidth::Cbw160, FiveGhz).get_center_chan_idx().unwrap()
+        );
+        assert_eq!(
+            163,
+            Channel::new(149, Bandwidth::Cbw160, FiveGhz).get_center_chan_idx().unwrap()
+        );
+        assert_eq!(
+            163,
+            Channel::new(177, Bandwidth::Cbw160, FiveGhz).get_center_chan_idx().unwrap()
+        );
+
+        // 80+80 MHz
         assert_eq!(
             42,
             Channel::new(36, Bandwidth::Cbw80P80 { vht_secondary_80_channel: 155 }, FiveGhz)
@@ -385,8 +448,32 @@ mod tests {
             Channel::new(36, Bandwidth::Cbw80, FiveGhz).get_center_freq().unwrap()
         );
         assert_eq!(
+            5775 as MHz,
+            Channel::new(149, Bandwidth::Cbw80, FiveGhz).get_center_freq().unwrap()
+        );
+        assert_eq!(
+            5855 as MHz,
+            Channel::new(165, Bandwidth::Cbw80, FiveGhz).get_center_freq().unwrap()
+        );
+        assert_eq!(
             5250 as MHz,
             Channel::new(36, Bandwidth::Cbw160, FiveGhz).get_center_freq().unwrap()
+        );
+        assert_eq!(
+            5570 as MHz,
+            Channel::new(100, Bandwidth::Cbw160, FiveGhz).get_center_freq().unwrap()
+        );
+        assert_eq!(
+            5815 as MHz,
+            Channel::new(149, Bandwidth::Cbw160, FiveGhz).get_center_freq().unwrap()
+        );
+        assert_eq!(
+            5815 as MHz,
+            Channel::new(165, Bandwidth::Cbw160, FiveGhz).get_center_freq().unwrap()
+        );
+        assert_eq!(
+            5815 as MHz,
+            Channel::new(173, Bandwidth::Cbw160, FiveGhz).get_center_freq().unwrap()
         );
         assert_eq!(
             5210 as MHz,
