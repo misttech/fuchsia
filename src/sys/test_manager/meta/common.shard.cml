@@ -608,7 +608,10 @@
         },
         {
             // This service replaces the directory capability above.
-            service: "fuchsia.gpu.magma.Service",
+            service: [
+                "fuchsia.gpu.magma.Service",
+                "fuchsia.gpu.magma.TrustedService",
+            ],
             from: "parent",
             to: [ "#system-tests" ],
         },
