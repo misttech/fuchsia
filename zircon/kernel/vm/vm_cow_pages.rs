@@ -6,6 +6,7 @@
 
 use super::page::VmPagePtr;
 use crate::vm::compressor::VmCompressor;
+use crate::vm::discardable_vmo_tracker::DiscardableVmoTracker;
 use crate::vm::pmm::PmmOptDelayReuse;
 use core::marker::PhantomPinned;
 use core::mem::MaybeUninit;
@@ -147,6 +148,19 @@ impl VmCowPages {
     pub fn debug_is_empty(&self, offset: u64) -> bool {
         // SAFETY: `self.as_raw()` returns a valid `VmCowPages` pointer.
         unsafe { bindings::cpp_vm_cow_pages_debug_is_empty(self.as_raw(), offset) }
+    }
+
+    /// Returns the debug discardable tracker, if present.
+    pub fn debug_get_discardable_tracker(&self) -> Option<&DiscardableVmoTracker> {
+        // SAFETY: `self.as_raw()` returns a valid `VmCowPages` pointer.
+        let raw =
+            unsafe { bindings::cpp_vm_cow_pages_debug_get_discardable_tracker(self.as_raw()) };
+        if raw.is_null() {
+            None
+        } else {
+            // SAFETY: `raw` points to a live `DiscardableVmoTracker` owned by `self`.
+            Some(unsafe { DiscardableVmoTracker::from_raw_ref(raw) })
+        }
     }
 
     /// Evict a specific loaned page for the use case of reclaiming loaned pages by the physical

@@ -172,6 +172,21 @@ FFI_ALWAYS_INLINE zx_status_t cpp_vm_object_zero_range(VmObject* vmo, uint64_t o
   return vmo->ZeroRange(offset, len);
 }
 
+FFI_ALWAYS_INLINE zx_status_t cpp_vm_object_try_lock_range(VmObject* vmo, uint64_t offset,
+                                                           uint64_t len) {
+  return vmo->TryLockRange(offset, len);
+}
+
+FFI_ALWAYS_INLINE zx_status_t cpp_vm_object_lock_range(VmObject* vmo, uint64_t offset, uint64_t len,
+                                                       zx_vmo_lock_state_t* lock_state_out) {
+  return vmo->LockRange(offset, len, lock_state_out);
+}
+
+FFI_ALWAYS_INLINE zx_status_t cpp_vm_object_unlock_range(VmObject* vmo, uint64_t offset,
+                                                         uint64_t len) {
+  return vmo->UnlockRange(offset, len);
+}
+
 FFI_ALWAYS_INLINE zx_status_t cpp_vm_object_dirty_pages(VmObject* vmo, uint64_t offset,
                                                         uint64_t len) {
   return vmo->DirtyPages(offset, len);

@@ -60,4 +60,13 @@ FFI_ALWAYS_INLINE void cpp_page_queues_queue_counts(const PageQueues* queues,
   *out_counts = queues->QueueCounts();
 }
 
+FFI_ALWAYS_INLINE bool cpp_page_queues_reclaim_is_only_pager_backed(const PageQueues* queues) {
+  return queues->ReclaimIsOnlyPagerBacked();
+}
+
+FFI_ALWAYS_INLINE bool cpp_page_queues_debug_page_is_anonymous(const PageQueues* queues,
+                                                               const vm_page_t* page) {
+  return queues->DebugPageIsAnonymous(page);
+}
+
 }  // extern "C"

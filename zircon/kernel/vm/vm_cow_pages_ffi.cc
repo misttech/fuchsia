@@ -73,4 +73,9 @@ FFI_ALWAYS_INLINE bool cpp_vm_cow_pages_reclaim_page(
   return false;
 }
 
+FFI_ALWAYS_INLINE DiscardableVmoTracker* cpp_vm_cow_pages_debug_get_discardable_tracker(
+    const VmCowPages* cow) {
+  return cow->DebugGetDiscardableTracker();
+}
+
 }  // extern "C"

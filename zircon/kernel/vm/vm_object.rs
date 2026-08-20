@@ -25,6 +25,7 @@ use zx_types::zx_status_t;
 pub use bindings::{
     Resizability, SnapshotType, VmObject_EvictionHint as EvictionHint, VmObjectChildObserver,
 };
+pub use zx_types::zx_vmo_lock_state_t;
 
 /// Argument that specifies the context in which we are supplying pages.
 pub type SupplyOptions = bindings::SupplyOptions;
@@ -534,6 +535,36 @@ impl VmObject {
     pub fn zero_range(&self, offset: u64, len: u64) -> Result<(), Status> {
         // SAFETY: `self.as_raw()` points to a live `VmObject`.
         let status = unsafe { bindings::cpp_vm_object_zero_range(self.as_raw(), offset, len) };
+        Status::ok(status)
+    }
+
+    /// Lock a range from being discarded by the kernel. Can fail if the range was already
+    /// discarded.
+    pub fn try_lock_range(&self, offset: u64, len: u64) -> Result<(), Status> {
+        // SAFETY: `self.as_raw()` points to a live `VmObject`.
+        let status = unsafe { bindings::cpp_vm_object_try_lock_range(self.as_raw(), offset, len) };
+        Status::ok(status)
+    }
+
+    /// Lock a range from being discarded by the kernel. Guaranteed to succeed.
+    /// `zx_vmo_lock_state_t` is populated with relevant information about the locked and discarded
+    /// ranges.
+    pub fn lock_range(&self, offset: u64, len: u64) -> Result<zx_vmo_lock_state_t, Status> {
+        let mut lock_state = MaybeUninit::uninit();
+        // SAFETY: `self.as_raw()` points to a live `VmObject` and out-pointer is valid for write.
+        let status = unsafe {
+            bindings::cpp_vm_object_lock_range(self.as_raw(), offset, len, lock_state.as_mut_ptr())
+        };
+        Status::ok(status)?;
+        // SAFETY: `cpp_vm_object_lock_range` initialized `lock_state` when returning `ZX_OK`.
+        Ok(unsafe { lock_state.assume_init() })
+    }
+
+    /// Unlock a range, making it available for the kernel to discard. The range could have been
+    /// locked either by `try_lock_range` or `lock_range`.
+    pub fn unlock_range(&self, offset: u64, len: u64) -> Result<(), Status> {
+        // SAFETY: `self.as_raw()` points to a live `VmObject`.
+        let status = unsafe { bindings::cpp_vm_object_unlock_range(self.as_raw(), offset, len) };
         Status::ok(status)
     }
 

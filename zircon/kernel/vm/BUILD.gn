@@ -23,6 +23,7 @@ source_set("vm") {
     "continuous_attribution_tracker.cc",
     "debug_compressor.cc",
     "discardable_vmo_tracker.cc",
+    "discardable_vmo_tracker_ffi.cc",
     "evictor.cc",
     "kstack.cc",
     "lz4_compressor.cc",
@@ -183,6 +184,36 @@ kernel_bindgen_crate("physical-page-borrowing-config-bindings") {
   expect_lints = []
 }
 
+kernel_bindgen_crate("discardable-vmo-tracker-bindings") {
+  visibility = [ ":*" ]
+  headers = [ "include/vm/discardable_vmo_tracker_ffi.h" ]
+  non_rust_deps = [ ":bindgen_common_deps" ]
+  output_name = "discardable_vmo_tracker_bindings.rs"
+  cpp = true
+
+  edition = "2024"
+  notice_year = 2026
+  function_allowlist = [
+    "cpp_discardable_vmo_tracker_debug_is_reclaimable",
+    "cpp_discardable_vmo_tracker_debug_is_unreclaimable",
+    "cpp_discardable_vmo_tracker_debug_is_discarded",
+    "cpp_discardable_vmo_tracker_debug_get_lock_count",
+  ]
+  type_allowlist = [ "DiscardableVmoTracker" ]
+  type_blocklist = [
+    "DiscardableVmoTracker_Cursor",
+    "DiscardableVmoTracker_DiscardableList",
+    "DiscardableVmoTracker_DiscardablePageCounts",
+    "DiscardableVmoTracker_DiscardableState",
+  ]
+  opaque_types = [ "DiscardableVmoTracker" ]
+  function_blocklist = [ "DiscardableVmoTracker_.*" ]
+  additional_bindgen_flags = [ "--no-recursive-allowlist" ]
+
+  raw_lines = [ "#![no_std]" ]
+  expect_lints = []
+}
+
 library_headers("headers") {
   headers = []
 
@@ -329,7 +360,9 @@ kernel_bindgen_crate("page-queues-bindings") {
     "cpp_page_queues_debug_page_is_reclaim",
     "cpp_page_queues_debug_page_is_pager_backed_dirty",
     "cpp_page_queues_debug_page_is_reclaim_isolate",
+    "cpp_page_queues_debug_page_is_anonymous",
     "cpp_page_queues_rotate_reclaim_queues",
+    "cpp_page_queues_reclaim_is_only_pager_backed",
     "cpp_page_queues_is_page_reclaimable",
     "cpp_page_queues_move_to_reclaim_dont_need",
     "cpp_page_queues_queue_counts",
@@ -619,6 +652,9 @@ kernel_bindgen_crate("vm-object-bindings") {
     "cpp_vm_object_read",
     "cpp_vm_object_zero_range",
     "cpp_vm_object_dirty_pages",
+    "cpp_vm_object_try_lock_range",
+    "cpp_vm_object_lock_range",
+    "cpp_vm_object_unlock_range",
     "cpp_vm_object_writeback_begin",
     "cpp_vm_object_writeback_end",
     "cpp_vm_object_reclamation_event_count",
@@ -640,6 +676,7 @@ kernel_bindgen_crate("vm-object-bindings") {
     "paddr_t",
     "vm_page_t",
     "zx_status_t",
+    "zx_vmo_lock_state_t",
     "VmObject_AttributionCounts",
     "VmObject_ChildObserverLock",
     "VmObject_ChildType",
@@ -679,6 +716,7 @@ kernel_bindgen_crate("vm-object-bindings") {
     "use page_source_bindings::MultiPageRequest;",
     "use zx_types::zx_paddr_t as paddr_t;",
     "use zx_types::zx_status_t;",
+    "pub use zx_types::zx_vmo_lock_state_t;",
   ]
   expect_lints = [
     "non_camel_case_types",
@@ -785,12 +823,14 @@ kernel_bindgen_crate("vm-cow-pages-bindings") {
     "cpp_vm_cow_pages_evict_loaned_page",
     "cpp_vm_cow_pages_debug_get_page",
     "cpp_vm_cow_pages_debug_is_empty",
+    "cpp_vm_cow_pages_debug_get_discardable_tracker",
     "cpp_vm_cow_pages_reclaim_page",
   ]
   type_allowlist = [
     "DirtyState",
     "EvictionAction",
     "PageSourceType",
+    "VmCompressor",
     "VmCowPages",
     "VmCowPagesOptions",
     "VmCowReclaimFailure",
@@ -798,8 +838,11 @@ kernel_bindgen_crate("vm-cow-pages-bindings") {
     "VmCowReclaimSuccess_Type",
   ]
   type_blocklist = [
+    "DiscardableVmoTracker",
     "PmmOptDelayReuse",
     "VmCompressor",
+    "VmCompressor_CompressedRef",
+    "VmCompressor_CompressResult",
     "vm_page_t",
     "zx_status_t",
     "VmCowPages_AddPageTransaction",
@@ -815,7 +858,10 @@ kernel_bindgen_crate("vm-cow-pages-bindings") {
     "VmCowPages_RangeChangeOp",
   ]
   var_allowlist = [ "VmCowPagesOptions_.*" ]
-  opaque_types = [ "VmCowPages" ]
+  opaque_types = [
+    "VmCompressor",
+    "VmCowPages",
+  ]
   rustified_enum = [
     "PageSourceType",
     "VmCowPages_DirtyState",
@@ -823,7 +869,10 @@ kernel_bindgen_crate("vm-cow-pages-bindings") {
     "VmCowReclaimFailure",
     "VmCowReclaimSuccess_Type",
   ]
-  function_blocklist = [ "VmCowPages_.*" ]
+  function_blocklist = [
+    "VmCompressor_.*",
+    "VmCowPages_.*",
+  ]
   additional_bindgen_flags = [ "--no-recursive-allowlist" ]
   expect_lints = [
     "non_camel_case_types",
@@ -834,6 +883,7 @@ kernel_bindgen_crate("vm-cow-pages-bindings") {
 
   deps = [
     ":compressor-bindings",
+    ":discardable-vmo-tracker-bindings",
     ":page-bindings",
     ":pmm-bindings",
     "//sdk/rust/zx-types",
@@ -842,6 +892,7 @@ kernel_bindgen_crate("vm-cow-pages-bindings") {
   raw_lines = [
     "#![no_std]",
     "pub use compressor_bindings::VmCompressor;",
+    "use discardable_vmo_tracker_bindings::DiscardableVmoTracker;",
     "use page_bindings::vm_page_t;",
     "use pmm_bindings::PmmOptDelayReuse;",
     "use zx_types::zx_status_t;",
@@ -855,6 +906,7 @@ kernel_rust_mod("vm-rs") {
     "arch_vm_aspace.rs",
     "attribution.rs",
     "compressor.rs",
+    "discardable_vmo_tracker.rs",
     "fault.rs",
     "mod.rs",
     "page.rs",
@@ -881,6 +933,7 @@ kernel_rust_mod("vm-rs") {
   deps = [
     ":attribution-bindings",
     ":compressor-bindings",
+    ":discardable-vmo-tracker-bindings",
     ":page-bindings",
     ":page-queues-bindings",
     ":page-source-bindings",

@@ -2710,6 +2710,16 @@ pub struct zx_smc_result_t {
     pub arg6: u64,
 }
 
+#[repr(C)]
+#[derive(Default, Debug, Copy, Clone, Eq, PartialEq)]
+#[cfg_attr(feature = "zerocopy", derive(KnownLayout, FromBytes, Immutable, IntoBytes))]
+pub struct zx_vmo_lock_state_t {
+    pub offset: u64,
+    pub size: u64,
+    pub discarded_offset: u64,
+    pub discarded_size: u64,
+}
+
 pub const ZX_CPU_SET_MAX_CPUS: usize = 512;
 pub const ZX_CPU_SET_BITS_PER_WORD: usize = 64;
 

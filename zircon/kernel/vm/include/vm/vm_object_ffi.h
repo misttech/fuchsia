@@ -88,6 +88,12 @@ FFI_ALWAYS_INLINE zx_status_t cpp_vm_object_writeback_end(VmObject* vmo, uint64_
 FFI_ALWAYS_INLINE uint64_t cpp_vm_object_reclamation_event_count(const VmObject* vmo);
 FFI_ALWAYS_INLINE void cpp_vm_object_get_attributed_memory_in_range(
     const VmObject* vmo, uint64_t offset, uint64_t len, vm::AttributionCounts* out_counts);
+FFI_ALWAYS_INLINE zx_status_t cpp_vm_object_try_lock_range(VmObject* vmo, uint64_t offset,
+                                                           uint64_t len);
+FFI_ALWAYS_INLINE zx_status_t cpp_vm_object_lock_range(VmObject* vmo, uint64_t offset, uint64_t len,
+                                                       zx_vmo_lock_state_t* lock_state_out);
+FFI_ALWAYS_INLINE zx_status_t cpp_vm_object_unlock_range(VmObject* vmo, uint64_t offset,
+                                                         uint64_t len);
 
 __END_CDECLS
 

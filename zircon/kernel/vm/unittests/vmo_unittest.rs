@@ -1713,6 +1713,152 @@ mod vmo_rs {
         expect_eq!(child3.parent_user_id(), 42);
     }
 
+    /// Tests the state transitions for a discardable VMO.
+    #[test]
+    fn vmo_discardable_states_test() {
+        // Tests the state transitions for a discardable VMO. Verifies that a discardable VMO is
+        // discarded only when unlocked, and can be locked / unlocked again after the discard.
+        let _scanner_disable = AutoVmScannerDisable::new();
+
+        let k_size = 3 * PAGE_SIZE;
+        let vmo = unwrap_ok!(VmObjectPaged::create(
+            pmm::ALLOC_FLAG_ANY,
+            VmObjectPaged::DISCARDABLE,
+            k_size
+        ));
+
+        let cow = vmo.debug_get_cow_pages().expect("vmo has cow pages");
+        let tracker = cow.debug_get_discardable_tracker().expect("cow has discardable tracker");
+
+        // A newly created discardable vmo is not on any list yet.
+        expect_false!(tracker.debug_is_unreclaimable());
+        expect_false!(tracker.debug_is_reclaimable());
+        expect_false!(tracker.debug_is_discarded());
+
+        // Lock and commit all pages.
+        expect_ok!(vmo.try_lock_range(0, k_size));
+        expect_ok!(vmo.commit_range(0, k_size));
+        expect_true!(tracker.debug_is_unreclaimable());
+        expect_false!(tracker.debug_is_reclaimable());
+        expect_false!(tracker.debug_is_discarded());
+
+        // Cannot discard when locked.
+        let (page, _) = unwrap_ok!(vmo.get_page_blocking(0, 0));
+        // SAFETY: `page` is attached to `vmo`.
+        expect_false!(unsafe { pmm::page_queues().debug_page_is_reclaim(page) }.is_some());
+        // SAFETY: It is sound to reclaim `page` at offset 0.
+        let reclaimed = unsafe { cow.reclaim_page(page, 0, EvictionAction::FollowHint, None) };
+        expect_true!(reclaimed.is_err());
+
+        // Unlock.
+        expect_ok!(vmo.unlock_range(0, k_size));
+        expect_true!(tracker.debug_is_reclaimable());
+        expect_false!(tracker.debug_is_unreclaimable());
+        expect_false!(tracker.debug_is_discarded());
+        if pmm::page_queues().reclaim_is_only_pager_backed() {
+            // SAFETY: `page` is attached to `vmo`.
+            expect_true!(unsafe { pmm::page_queues().debug_page_is_anonymous(page) });
+        } else {
+            // SAFETY: `page` is attached to `vmo`.
+            expect_true!(unsafe { pmm::page_queues().debug_page_is_reclaim(page) }.is_some());
+        }
+
+        // Should be able to discard now.
+        // SAFETY: It is sound to reclaim `page` at offset 0.
+        let reclaimed = unsafe { cow.reclaim_page(page, 0, EvictionAction::FollowHint, None) };
+        assert_true!(reclaimed.is_ok());
+        expect_eq!(k_size / PAGE_SIZE, reclaimed.as_ref().unwrap().num_pages);
+        expect_true!(tracker.debug_is_discarded());
+        expect_false!(tracker.debug_is_unreclaimable());
+        expect_false!(tracker.debug_is_reclaimable());
+
+        // Try lock should fail after discard.
+        expect_eq!(
+            Status::result_into_raw(vmo.try_lock_range(0, k_size)),
+            Status::UNAVAILABLE.into_raw()
+        );
+
+        // Lock should succeed.
+        let lock_state = unwrap_ok!(vmo.lock_range(0, k_size));
+        expect_true!(tracker.debug_is_unreclaimable());
+        expect_false!(tracker.debug_is_reclaimable());
+        expect_false!(tracker.debug_is_discarded());
+
+        // Verify the lock state returned.
+        expect_eq!(0, lock_state.offset);
+        expect_eq!(k_size, lock_state.size);
+        expect_eq!(0, lock_state.discarded_offset);
+        expect_eq!(k_size, lock_state.discarded_size);
+
+        expect_ok!(vmo.commit_range(0, k_size));
+        let (page, _) = unwrap_ok!(vmo.get_page_blocking(0, 0));
+        // SAFETY: `page` is attached to `vmo`.
+        expect_false!(unsafe { pmm::page_queues().debug_page_is_reclaim(page) }.is_some());
+
+        // Try lock should succeed now.
+        expect_ok!(vmo.try_lock_range(0, k_size));
+        expect_true!(tracker.debug_is_unreclaimable());
+        // SAFETY: `page` is attached to `vmo`.
+        expect_false!(unsafe { pmm::page_queues().debug_page_is_reclaim(page) }.is_some());
+
+        // Lock count 2->1. So no change in reclaimable state.
+        expect_ok!(vmo.unlock_range(0, k_size));
+        expect_true!(tracker.debug_is_unreclaimable());
+        // SAFETY: `page` is attached to `vmo`.
+        expect_false!(unsafe { pmm::page_queues().debug_page_is_reclaim(page) }.is_some());
+
+        // Unlock.
+        expect_ok!(vmo.unlock_range(0, k_size));
+        expect_true!(tracker.debug_is_reclaimable());
+        expect_false!(tracker.debug_is_unreclaimable());
+        expect_false!(tracker.debug_is_discarded());
+        let (page, _) = unwrap_ok!(vmo.get_page_blocking(0, 0));
+        if pmm::page_queues().reclaim_is_only_pager_backed() {
+            // SAFETY: `page` is attached to `vmo`.
+            expect_true!(unsafe { pmm::page_queues().debug_page_is_anonymous(page) });
+        } else {
+            // SAFETY: `page` is attached to `vmo`.
+            expect_true!(unsafe { pmm::page_queues().debug_page_is_reclaim(page) }.is_some());
+        }
+
+        // Lock again and verify the lock state returned without a discard.
+        let lock_state = unwrap_ok!(vmo.lock_range(0, k_size));
+        expect_true!(tracker.debug_is_unreclaimable());
+        expect_false!(tracker.debug_is_reclaimable());
+        expect_false!(tracker.debug_is_discarded());
+        let (page, _) = unwrap_ok!(vmo.get_page_blocking(0, 0));
+        // SAFETY: `page` is attached to `vmo`.
+        expect_false!(unsafe { pmm::page_queues().debug_page_is_reclaim(page) }.is_some());
+
+        expect_eq!(0, lock_state.offset);
+        expect_eq!(k_size, lock_state.size);
+        expect_eq!(0, lock_state.discarded_offset);
+        expect_eq!(0, lock_state.discarded_size);
+
+        // Unlock and discard again.
+        expect_ok!(vmo.unlock_range(0, k_size));
+        expect_true!(tracker.debug_is_reclaimable());
+        expect_false!(tracker.debug_is_unreclaimable());
+        expect_false!(tracker.debug_is_discarded());
+        let (page, _) = unwrap_ok!(vmo.get_page_blocking(0, 0));
+        if pmm::page_queues().reclaim_is_only_pager_backed() {
+            // SAFETY: `page` is attached to `vmo`.
+            expect_true!(unsafe { pmm::page_queues().debug_page_is_anonymous(page) });
+        } else {
+            // SAFETY: `page` is attached to `vmo`.
+            expect_true!(unsafe { pmm::page_queues().debug_page_is_reclaim(page) }.is_some());
+        }
+
+        let (page, _) = unwrap_ok!(vmo.get_page_blocking(0, 0));
+        // SAFETY: It is sound to reclaim `page` at offset 0.
+        let reclaimed = unsafe { cow.reclaim_page(page, 0, EvictionAction::FollowHint, None) };
+        assert_true!(reclaimed.is_ok());
+        expect_eq!(k_size / PAGE_SIZE, reclaimed.as_ref().unwrap().num_pages);
+        expect_true!(tracker.debug_is_discarded());
+        expect_false!(tracker.debug_is_unreclaimable());
+        expect_false!(tracker.debug_is_reclaimable());
+    }
+
     /// Tests dirty pages with eviction hints.
     #[test]
     fn vmo_dirty_pages_with_hints_test() {
@@ -2112,7 +2258,7 @@ mod vmo_rs {
         expect_true!(unsafe { pmm::page_queues().debug_page_is_pager_backed_dirty(page) });
 
         // Should not be able to evict a dirty page.
-        // SAFETY: It is sound to attempt to reclaim `page` at offset 0.
+        // SAFETY: It is sound to reclaim `page` at offset 0.
         assert_eq!(unsafe { reclaim(&vmo, page, 0, EvictionAction::FollowHint) }, 0);
         expect_true!(
             make_private_attribution_counts(PAGE_SIZE, 0)

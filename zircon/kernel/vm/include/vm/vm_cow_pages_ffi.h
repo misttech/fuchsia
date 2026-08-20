@@ -26,6 +26,7 @@ bool cpp_vm_cow_pages_dedup_zero_page(VmCowPages* cow, vm_page_t* page, uint64_t
 zx_status_t cpp_vm_cow_pages_evict_loaned_page(VmCowPages* cow, vm_page_t* page, uint64_t offset);
 vm_page_t* cpp_vm_cow_pages_debug_get_page(const VmCowPages* cow, uint64_t offset);
 bool cpp_vm_cow_pages_debug_is_empty(const VmCowPages* cow, uint64_t offset);
+DiscardableVmoTracker* cpp_vm_cow_pages_debug_get_discardable_tracker(const VmCowPages* cow);
 bool cpp_vm_cow_pages_reclaim_page(VmCowPages* cow, vm_page_t* page, uint64_t offset,
                                    VmCowPages::EvictionAction eviction_action,
                                    VmCompressor* compressor, VmCowReclaimSuccess* out_success,
