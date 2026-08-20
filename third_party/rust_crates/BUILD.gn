@@ -1420,11 +1420,11 @@ group("pest-2.9.0") {
 }
 
 group("pest_derive") {
-  public_deps = [ ":pest_derive-v2_8_6($host_toolchain)" ]
+  public_deps = [ ":pest_derive-v2_9_0($host_toolchain)" ]
 }
 
-group("pest_derive-2.8.6") {
-  public_deps = [ ":pest_derive-v2_8_6" ]
+group("pest_derive-2.9.0") {
+  public_deps = [ ":pest_derive-v2_9_0" ]
 }
 
 if (!(current_os == "fuchsia")) {
@@ -10649,7 +10649,7 @@ rustc_library("handlebars-v6_4_2") {
   deps += [ ":log-v0_4_29" ]
   deps += [ ":num-order-v1_2_0" ]
   deps += [ ":pest-v2_9_0" ]
-  deps += [ ":pest_derive-v2_8_6($host_toolchain)" ]
+  deps += [ ":pest_derive-v2_9_0($host_toolchain)" ]
   deps += [ ":serde-v1_0_229" ]
   deps += [ ":serde_json-v1_0_149" ]
   deps += [ ":thiserror-v2_0_20" ]
@@ -15307,18 +15307,18 @@ rustc_library("pest-v2_9_0") {
   applicable_licenses = [ ":pest-v2_9_0.license" ]
 }
 
-license("pest_derive-v2_8_6.license") {
+license("pest_derive-v2_9_0.license") {
   public_package_name = "pest_derive"
   license_files = [
-    "//third_party/rust_crates/vendor/pest_derive-2.8.6/LICENSE-APACHE",
-    "//third_party/rust_crates/vendor/pest_derive-2.8.6/LICENSE-MIT",
+    "//third_party/rust_crates/vendor/pest_derive-2.9.0/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/pest_derive-2.9.0/LICENSE-MIT",
   ]
 }
 
-rustc_macro("pest_derive-v2_8_6") {
+rustc_macro("pest_derive-v2_9_0") {
   crate_name = "pest_derive"
-  source_root = "//third_party/rust_crates/vendor/pest_derive-2.8.6/src/lib.rs"
-  output_name = "pest_derive-db2bd01cde3db68a"
+  source_root = "//third_party/rust_crates/vendor/pest_derive-2.9.0/src/lib.rs"
+  output_name = "pest_derive-c8673a27f66f9d86"
   edition = "2021"
   disable_clippy = true
   enforce_source_listing = false
@@ -15326,36 +15326,36 @@ rustc_macro("pest_derive-v2_8_6") {
 
   deps = []
   deps += [ ":pest-v2_9_0" ]
-  deps += [ ":pest_generator-v2_8_6" ]
+  deps += [ ":pest_generator-v2_9_0" ]
 
   rustenv = []
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=db2bd01cde3db68a",
-    "-Cextra-filename=-db2bd01cde3db68a",
+    "-Cmetadata=c8673a27f66f9d86",
+    "-Cextra-filename=-c8673a27f66f9d86",
     "--cfg=feature=\"default\"",
     "--cfg=feature=\"std\"",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":pest_derive-v2_8_6.license" ]
+  applicable_licenses = [ ":pest_derive-v2_9_0.license" ]
 }
 
-license("pest_generator-v2_8_6.license") {
+license("pest_generator-v2_9_0.license") {
   public_package_name = "pest_generator"
   license_files = [
-    "//third_party/rust_crates/vendor/pest_generator-2.8.6/LICENSE-APACHE",
-    "//third_party/rust_crates/vendor/pest_generator-2.8.6/LICENSE-MIT",
+    "//third_party/rust_crates/vendor/pest_generator-2.9.0/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/pest_generator-2.9.0/LICENSE-MIT",
   ]
 }
 
-rustc_library("pest_generator-v2_8_6") {
+rustc_library("pest_generator-v2_9_0") {
   crate_name = "pest_generator"
   source_root =
-      "//third_party/rust_crates/vendor/pest_generator-2.8.6/src/lib.rs"
-  output_name = "pest_generator-2538500d97580e0"
+      "//third_party/rust_crates/vendor/pest_generator-2.9.0/src/lib.rs"
+  output_name = "pest_generator-2102caf17dc48d7d"
   edition = "2021"
   disable_clippy = true
   enforce_source_listing = false
@@ -15363,7 +15363,7 @@ rustc_library("pest_generator-v2_8_6") {
 
   deps = []
   deps += [ ":pest-v2_9_0" ]
-  deps += [ ":pest_meta-v2_8_6" ]
+  deps += [ ":pest_meta-v2_9_0" ]
   deps += [ ":proc-macro2-v1_0_106" ]
   deps += [ ":quote-v1_0_45" ]
   deps += [ ":syn-v2_0_119" ]
@@ -15372,28 +15372,28 @@ rustc_library("pest_generator-v2_8_6") {
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=2538500d97580e0",
-    "-Cextra-filename=-2538500d97580e0",
+    "-Cmetadata=2102caf17dc48d7d",
+    "-Cextra-filename=-2102caf17dc48d7d",
     "--cfg=feature=\"std\"",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":pest_generator-v2_8_6.license" ]
+  applicable_licenses = [ ":pest_generator-v2_9_0.license" ]
 }
 
-license("pest_meta-v2_8_6.license") {
+license("pest_meta-v2_9_0.license") {
   public_package_name = "pest_meta"
   license_files = [
-    "//third_party/rust_crates/vendor/pest_meta-2.8.6/LICENSE-APACHE",
-    "//third_party/rust_crates/vendor/pest_meta-2.8.6/LICENSE-MIT",
+    "//third_party/rust_crates/vendor/pest_meta-2.9.0/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/pest_meta-2.9.0/LICENSE-MIT",
   ]
 }
 
-rustc_library("pest_meta-v2_8_6") {
+rustc_library("pest_meta-v2_9_0") {
   crate_name = "pest_meta"
-  source_root = "//third_party/rust_crates/vendor/pest_meta-2.8.6/src/lib.rs"
-  output_name = "pest_meta-539eb9ee214aa58b"
+  source_root = "//third_party/rust_crates/vendor/pest_meta-2.9.0/src/lib.rs"
+  output_name = "pest_meta-b34a91f73b516250"
   edition = "2021"
   disable_clippy = true
   enforce_source_listing = false
@@ -15406,14 +15406,14 @@ rustc_library("pest_meta-v2_8_6") {
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=539eb9ee214aa58b",
-    "-Cextra-filename=-539eb9ee214aa58b",
+    "-Cmetadata=b34a91f73b516250",
+    "-Cextra-filename=-b34a91f73b516250",
     "--cfg=feature=\"default\"",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":pest_meta-v2_8_6.license" ]
+  applicable_licenses = [ ":pest_meta-v2_9_0.license" ]
 }
 
 license("petgraph-v0_8_3.license") {
@@ -20151,7 +20151,7 @@ rustc_library("serde_json5-v0_2_1") {
 
   deps = []
   deps += [ ":pest-v2_9_0" ]
-  deps += [ ":pest_derive-v2_8_6($host_toolchain)" ]
+  deps += [ ":pest_derive-v2_9_0($host_toolchain)" ]
   deps += [ ":serde-v1_0_229" ]
 
   rustenv = []

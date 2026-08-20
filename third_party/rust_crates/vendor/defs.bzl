@@ -662,7 +662,7 @@ _PROC_MACRO_DEPENDENCIES = {
             "enumn": Label("//third_party/rust_crates/vendor/enumn-0.1.14:enumn"),
             "num-derive": Label("//third_party/rust_crates/vendor/num-derive-0.4.2:num_derive"),
             "paste": Label("//third_party/rust_crates/vendor/paste-1.0.15:paste"),
-            "pest_derive": Label("//third_party/rust_crates/vendor/pest_derive-2.8.6:pest_derive"),
+            "pest_derive": Label("//third_party/rust_crates/vendor/pest_derive-2.9.0:pest_derive"),
             "proptest-derive": Label("//third_party/rust_crates/vendor/proptest-derive-0.8.0:proptest_derive"),
             "sapphire-rpc-macro": Label("//third_party/rust_crates/vendor/sapphire-rpc-macro-0.1.0:sapphire_rpc_macro"),
             "serde_derive": Label("//third_party/rust_crates/vendor/serde_derive-1.0.229:serde_derive"),
