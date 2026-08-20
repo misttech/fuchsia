@@ -41,18 +41,30 @@ type DeviceDescriptor = struct {
 /// of the completion of various server-side events.
 /// This callback interface can be registered using the SetStateChangeListener
 /// method on the Device protocol.
-closed protocol Events {
+open protocol Events {
     /// Invoked when a function registers
-    strict FunctionRegistered() -> ();
+    flexible FunctionRegistered() -> ();
     /// Invoked when all functions have been cleared.
-    strict FunctionsCleared();
+    flexible FunctionsCleared();
 };
 
-closed protocol Device {
+open protocol Device {
+    /// Retrieves the current device descriptor and active configuration descriptors.
+    ///
+    /// Returns the active USB device descriptor and all associated configuration
+    /// descriptors registered with the peripheral device manager.
+    ///
+    /// * error:
+    ///   * `ZX_ERR_BAD_STATE`: The peripheral device has not been configured.
+    flexible GetConfiguration() -> (struct {
+        device_desc DeviceDescriptor;
+        config_descriptors vector<ConfigurationDescriptor>:MAX_CONFIG_DESCRIPTORS;
+    }) error zx.Status;
+
     /// Sets the device's descriptors, adds the functions and creates the child devices for the
     /// configuration's interfaces.
     /// At least one function descriptor must be provided.
-    strict SetConfiguration(struct {
+    flexible SetConfiguration(struct {
         device_desc DeviceDescriptor;
         config_descriptors vector<ConfigurationDescriptor>:MAX_CONFIG_DESCRIPTORS;
     }) -> () error zx.Status;
@@ -60,9 +72,10 @@ closed protocol Device {
     /// Tells the device to remove the child devices for the configuration's interfaces
     /// and reset the list of functions to empty.
     /// The caller should wait for the `FunctionsCleared` event.
-    strict ClearFunctions() -> ();
+    flexible ClearFunctions() -> ();
+
     /// Adds a state change listener that is invoked when a state change completes.
-    strict SetStateChangeListener(resource struct {
+    flexible SetStateChangeListener(resource struct {
         listener client_end:Events;
     });
 };

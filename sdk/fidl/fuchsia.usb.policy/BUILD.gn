@@ -43,6 +43,7 @@ fidl("fuchsia.usb.policy") {
   stable = false
   visibility = [ "*" ]
   public_deps = [
+    "//sdk/fidl/fuchsia.hardware.usb.peripheral",
     "//sdk/fidl/fuchsia.hardware.usb.policy",
     "//zircon/vdso/zx",
   ]

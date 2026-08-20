@@ -17,6 +17,7 @@ fidl_library(
     stable = False,
     visibility = ["//visibility:public"],
     deps = [
+        "//sdk/fidl/fuchsia.hardware.usb.peripheral",
         "//sdk/fidl/fuchsia.hardware.usb.policy",
         "//zircon/vdso/zx",
     ],

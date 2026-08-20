@@ -249,6 +249,7 @@ PARTNER_IDK_UNSTABLE_FIDL_LIBRARY_ATOMS_LIST = [
     "//sdk/fidl/fuchsia.hardware.usb.dci:fuchsia.hardware.usb.dci_idk",
     "//sdk/fidl/fuchsia.hardware.usb.descriptor:fuchsia.hardware.usb.descriptor_idk",
     "//sdk/fidl/fuchsia.hardware.usb.endpoint:fuchsia.hardware.usb.endpoint_idk",
+    "//sdk/fidl/fuchsia.hardware.usb.peripheral:fuchsia.hardware.usb.peripheral_idk",
     "//sdk/fidl/fuchsia.hardware.usb.phy:fuchsia.hardware.usb.phy_idk",
     "//sdk/fidl/fuchsia.hardware.usb.policy:fuchsia.hardware.usb.policy_idk",
     "//sdk/fidl/fuchsia.hardware.usb.request:fuchsia.hardware.usb.request_idk",

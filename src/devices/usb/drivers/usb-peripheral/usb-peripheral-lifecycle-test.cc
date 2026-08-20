@@ -261,6 +261,66 @@ TEST_F(UnmanagedUsbPeripheralTest, ClearFunctionsWhenNoneAdded) {
   ExpectState(UsbPeripheral::DeviceState::kNoConfiguration);
 }
 
+TEST_F(UnmanagedUsbPeripheralTest, GetConfiguration) {
+  StartDriverWithConfig(usb_peripheral_config::Config{});
+
+  auto client = this->Client();
+
+  // Test GetConfiguration before configuration is set returns ZX_ERR_BAD_STATE.
+  {
+    auto res = client->GetConfiguration();
+    ASSERT_TRUE(res.ok()) << res.FormatDescription();
+    ASSERT_TRUE(res->is_error());
+    EXPECT_EQ(res->error_value(), ZX_ERR_BAD_STATE);
+  }
+
+  // Set device descriptor and configuration.
+  {
+    fperipheral::wire::DeviceDescriptor dev_desc = {
+        .bcd_usb = 0x0200,
+        .b_device_class = 0,
+        .b_device_sub_class = 0,
+        .b_device_protocol = 0,
+        .b_max_packet_size0 = 64,
+        .id_vendor = 0x18d1,
+        .id_product = 0xa001,
+        .bcd_device = 0x0100,
+        .manufacturer = fidl::StringView::FromExternal("Google"),
+        .product = fidl::StringView::FromExternal("Fuchsia"),
+        .serial = fidl::StringView::FromExternal("12345678"),
+        .b_num_configurations = 1,
+    };
+
+    fidl::Arena arena;
+    fidl::VectorView<fperipheral::wire::FunctionDescriptor> functions(arena, 1);
+    functions[0] = fperipheral::wire::FunctionDescriptor{
+        .interface_class = 0xff,
+        .interface_subclass = 0x00,
+        .interface_protocol = 0x00,
+    };
+    fidl::VectorView<fidl::VectorView<fperipheral::wire::FunctionDescriptor>> configs(arena, 1);
+    configs[0] = functions;
+
+    auto set_desc_res = client->SetConfiguration(dev_desc, configs);
+    ASSERT_TRUE(set_desc_res.ok()) << set_desc_res.FormatDescription();
+    ASSERT_TRUE(set_desc_res->is_ok());
+  }
+
+  // Verify GetConfiguration returns the configured descriptors and strings.
+  {
+    auto res = client->GetConfiguration();
+    ASSERT_TRUE(res.ok()) << res.FormatDescription();
+    ASSERT_TRUE(res->is_ok());
+    const auto& dev_desc = res->value()->device_desc;
+    EXPECT_EQ(dev_desc.id_vendor, 0x18d1);
+    EXPECT_EQ(dev_desc.id_product, 0xa001);
+    EXPECT_EQ(std::string_view(dev_desc.manufacturer.data(), dev_desc.manufacturer.size()),
+              "Google");
+    EXPECT_EQ(std::string_view(dev_desc.product.data(), dev_desc.product.size()), "Fuchsia");
+    EXPECT_EQ(std::string_view(dev_desc.serial.data(), dev_desc.serial.size()), "12345678");
+  }
+}
+
 TEST_F(UnmanagedUsbPeripheralTest, ClearFunctionsDoubleCallIsNoOp) {
   StartDriverWithConfig(usb_peripheral_config::Config{});
 

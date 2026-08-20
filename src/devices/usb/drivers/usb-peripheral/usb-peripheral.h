@@ -11,7 +11,6 @@
 #include <lib/async/cpp/executor.h>
 #include <lib/driver/component/cpp/driver_base2.h>
 #include <lib/driver/component/cpp/driver_export2.h>
-#include <lib/driver/devfs/cpp/connector.h>
 #include <lib/fit/function.h>
 #include <lib/fpromise/bridge.h>
 #include <lib/fpromise/promise.h>
@@ -186,8 +185,12 @@ class UsbPeripheral : public fdf::DriverBase2,
   void SetConfiguration(SetConfigurationRequestView request,
                         SetConfigurationCompleter::Sync& completer) override;
   void ClearFunctions(ClearFunctionsCompleter::Sync& completer) override;
+  void GetConfiguration(GetConfigurationCompleter::Sync& completer) override;
   void SetStateChangeListener(SetStateChangeListenerRequestView request,
                               SetStateChangeListenerCompleter::Sync& completer) override;
+  void handle_unknown_method(
+      fidl::UnknownMethodMetadata<fuchsia_hardware_usb_peripheral::Device> metadata,
+      fidl::UnknownMethodCompleter::Sync& completer) override;
 
   zx_status_t SetDeviceDescriptor(DeviceDescriptor desc);
   // Validates a function and returns the number of interfaces it uses on
@@ -391,7 +394,7 @@ class UsbPeripheral : public fdf::DriverBase2,
   bool supports_dynamic_ep_sizing_ = false;
   std::vector<DciEndpointInfo> dci_endpoints_;
   bool has_dci_hardware_info_ = false;
-  // USB device descriptor set via ioctl_usb_peripheral_set_device_desc()
+  // USB device descriptor set via SetConfiguration()
   usb_device_descriptor_t device_desc_ = {};
   // Map from endpoint index to function index.
   std::optional<size_t> endpoint_map_[USB_MAX_EPS];
@@ -402,7 +405,7 @@ class UsbPeripheral : public fdf::DriverBase2,
   // mutex for protecting our state
   // mutable to allow locking in const methods (e.g. state())
   mutable fbl::Mutex lock_;
-  // Current USB mode set via ioctl_usb_peripheral_set_mode()
+  // Current USB mode.
   usb_mode_t cur_usb_mode_ __TA_GUARDED(lock_) = USB_MODE_NONE;
   // Our parent's USB mode. Should not change after being set.
   usb_mode_t parent_usb_mode_ __TA_GUARDED(lock_) = USB_MODE_NONE;
@@ -445,8 +448,6 @@ class UsbPeripheral : public fdf::DriverBase2,
 
   fidl::ServerBindingGroup<fuchsia_hardware_usb_peripheral::Device> bindings_;
   fdf::OwnedChildNode child_;
-  driver_devfs::Connector<fuchsia_hardware_usb_peripheral::Device> devfs_connector_{
-      fit::bind_member<&UsbPeripheral::Connect>(this)};
   std::shared_ptr<fdf::Namespace> incoming_;
 
   struct InspectEndpoint {

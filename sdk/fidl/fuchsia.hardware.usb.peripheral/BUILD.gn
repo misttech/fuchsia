@@ -35,6 +35,9 @@ if (is_host) {
 
 fidl("fuchsia.hardware.usb.peripheral") {
   sources = [ "usb-peripheral.fidl" ]
+  sdk_area = "Drivers"
+  sdk_category = "partner"
+  stable = false
   visibility = [ "*" ]
   public_deps = [ "//zircon/vdso/zx" ]
 }

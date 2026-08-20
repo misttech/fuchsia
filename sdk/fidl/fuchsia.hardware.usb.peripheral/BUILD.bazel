@@ -11,6 +11,9 @@ fidl_library(
     srcs = [
         "usb-peripheral.fidl",
     ],
+    api_area = "Drivers",
+    category = "partner",
+    stable = False,
     visibility = ["//visibility:public"],
     deps = [
         "//zircon/vdso/zx",

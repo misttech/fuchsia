@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 library fuchsia.usb.policy;
 
+using fuchsia.hardware.usb.peripheral;
 using fuchsia.hardware.usb.policy;
 using zx;
 
@@ -25,4 +26,42 @@ open protocol Health {
 @discoverable
 open protocol PolicyProvider {
     compose fuchsia.hardware.usb.policy.DeviceStateWatcher;
+};
+
+/// Protocol for querying and dynamically reconfiguring USB peripheral functions.
+///
+/// Enables policy managers and system command-line tools to inspect active USB peripheral
+/// configurations and reconfigure the peripheral device function stack at runtime.
+@discoverable
+open protocol Configuration {
+    /// Retrieves the current USB device descriptor and active configuration descriptors.
+    ///
+    /// # Errors
+    ///
+    /// * `ZX_ERR_NOT_SUPPORTED`: Peripheral function querying is not supported on the target
+    ///   hardware.
+    flexible GetConfiguration() -> (struct {
+        device_desc fuchsia.hardware.usb.peripheral.DeviceDescriptor;
+        config_descriptors
+                vector<fuchsia.hardware.usb.peripheral.ConfigurationDescriptor>:fuchsia.hardware.usb.peripheral.MAX_CONFIG_DESCRIPTORS;
+    }) error zx.Status;
+
+    /// Sets and activates a new USB peripheral function configuration.
+    ///
+    /// Teardown of the previous peripheral function stack occurs before initializing
+    /// and binding the newly specified functions. The call completes once the peripheral
+    /// controller and underlying function drivers are registered and ready.
+    ///
+    /// # Errors
+    ///
+    /// * `ZX_ERR_INVALID_ARGS`: Configuration parameters are invalid.
+    /// * `ZX_ERR_ALREADY_BOUND`: An existing peripheral configuration is locked or undergoing
+    ///   transition.
+    /// * `ZX_ERR_NOT_SUPPORTED`: The requested combination of functions cannot be supported
+    ///   simultaneously.
+    flexible SetConfiguration(struct {
+        device_desc fuchsia.hardware.usb.peripheral.DeviceDescriptor;
+        config_descriptors
+                vector<fuchsia.hardware.usb.peripheral.ConfigurationDescriptor>:fuchsia.hardware.usb.peripheral.MAX_CONFIG_DESCRIPTORS;
+    }) -> () error zx.Status;
 };

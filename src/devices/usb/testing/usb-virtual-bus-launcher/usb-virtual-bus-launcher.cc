@@ -48,6 +48,10 @@ class EventWatcher : public fidl::WireServer<fuchsia_hardware_usb_peripheral::Ev
     completer.Close(ZX_ERR_CANCELED);
   }
 
+  void handle_unknown_method(
+      fidl::UnknownMethodMetadata<fuchsia_hardware_usb_peripheral::Events> metadata,
+      fidl::UnknownMethodCompleter::Sync& completer) override {}
+
   bool all_functions_registered() const { return functions_registered_ == functions_; }
   bool all_functions_cleared() const { return all_functions_cleared_; }
 

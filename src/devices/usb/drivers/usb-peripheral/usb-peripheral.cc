@@ -202,17 +202,7 @@ zx::result<> UsbPeripheral::Start(fdf::DriverContext context) {
   }
 
   // Create child.
-  zx::result<fidl::ClientEnd<fuchsia_device_fs::Connector>> bind_devfs_connector_result =
-      devfs_connector_.Bind(dispatcher());
-  if (bind_devfs_connector_result.is_error()) {
-    fdf::error("Failed to bind devfs connector: {}", bind_devfs_connector_result);
-    return bind_devfs_connector_result.take_error();
-  }
-  fuchsia_driver_framework::DevfsAddArgs devfs_args{{
-      .connector = std::move(bind_devfs_connector_result).value(),
-      .connector_supports = fuchsia_device_fs::ConnectionType::kDevice,
-  }};
-  zx::result child = AddOwnedChild(kChildNodeName, devfs_args);
+  zx::result child = AddOwnedChild(kChildNodeName);
   if (child.is_error()) {
     fdf::error("Failed to add child: {}", child);
     return child.take_error();
@@ -1926,12 +1916,80 @@ void UsbPeripheral::ClearFunctions(ClearFunctionsCompleter::Sync& completer) {
   WaitForFunctionsCleared(std::move(on_complete));
 }
 
+void UsbPeripheral::GetConfiguration(GetConfigurationCompleter::Sync& completer) {
+  TRACE_DURATION("usb-peripheral", __func__);
+  fbl::AutoLock lock(&lock_);
+
+  if (configurations_.empty()) {
+    completer.ReplyError(ZX_ERR_BAD_STATE);
+    return;
+  }
+
+  fidl::Arena arena;
+
+  fperipheral::wire::DeviceDescriptor dev_desc{
+      .bcd_usb = device_desc_.bcd_usb,
+      .b_device_class = device_desc_.b_device_class,
+      .b_device_sub_class = device_desc_.b_device_sub_class,
+      .b_device_protocol = device_desc_.b_device_protocol,
+      .b_max_packet_size0 = device_desc_.b_max_packet_size0,
+      .id_vendor = device_desc_.id_vendor,
+      .id_product = device_desc_.id_product,
+      .bcd_device = device_desc_.bcd_device,
+      .manufacturer = fidl::StringView(arena, ""),
+      .product = fidl::StringView(arena, ""),
+      .serial = fidl::StringView(arena, ""),
+      .b_num_configurations = device_desc_.b_num_configurations,
+  };
+
+  if (device_desc_.i_manufacturer != 0 && device_desc_.i_manufacturer <= strings_.size() &&
+      strings_[device_desc_.i_manufacturer - 1].allocated) {
+    dev_desc.manufacturer = fidl::StringView(arena, strings_[device_desc_.i_manufacturer - 1].text);
+  }
+  if (device_desc_.i_product != 0 && device_desc_.i_product <= strings_.size() &&
+      strings_[device_desc_.i_product - 1].allocated) {
+    dev_desc.product = fidl::StringView(arena, strings_[device_desc_.i_product - 1].text);
+  }
+  if (device_desc_.i_serial_number != 0 && device_desc_.i_serial_number <= strings_.size() &&
+      strings_[device_desc_.i_serial_number - 1].allocated) {
+    dev_desc.serial = fidl::StringView(arena, strings_[device_desc_.i_serial_number - 1].text);
+  }
+
+  fidl::VectorView<fidl::VectorView<fperipheral::wire::FunctionDescriptor>> configs(
+      arena, configurations_.size());
+
+  size_t config_idx = 0;
+  for (const auto& config : configurations_) {
+    fidl::VectorView<fperipheral::wire::FunctionDescriptor> funcs(arena, config.functions.size());
+    size_t func_idx = 0;
+    for (size_t function_index : config.functions) {
+      if (function_index < functions_.size() && functions_[function_index] != nullptr) {
+        const auto& desc = functions_[function_index]->GetFunctionDescriptor();
+        funcs[func_idx].interface_class = desc.interface_class;
+        funcs[func_idx].interface_subclass = desc.interface_subclass;
+        funcs[func_idx].interface_protocol = desc.interface_protocol;
+        func_idx++;
+      }
+    }
+    funcs.set_size(func_idx);
+    configs[config_idx++] = funcs;
+  }
+  configs.set_size(config_idx);
+
+  completer.ReplySuccess(dev_desc, configs);
+}
+
 void UsbPeripheral::SetStateChangeListener(SetStateChangeListenerRequestView request,
                                            SetStateChangeListenerCompleter::Sync& completer) {
   TRACE_DURATION("usb-peripheral", __func__);
   fbl::AutoLock lock(&lock_);
   listener_ =
       fidl::WireSharedClient<fperipheral::Events>(std::move(request->listener), dispatcher());
+}
+
+void UsbPeripheral::handle_unknown_method(fidl::UnknownMethodMetadata<fperipheral::Device> metadata,
+                                          fidl::UnknownMethodCompleter::Sync& completer) {
+  fdf::error("UsbPeripheral: unknown method ordinal={}", metadata.method_ordinal);
 }
 
 void UsbPeripheral::Stop(fdf::StopCompleter completer) {

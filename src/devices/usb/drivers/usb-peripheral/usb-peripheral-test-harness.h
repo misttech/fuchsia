@@ -452,6 +452,8 @@ class FakeEvents : public fidl::WireServer<fperipheral::Events> {
   void FunctionsCleared(FunctionsClearedCompleter::Sync& completer) override {
     cleared_called_ = true;
   }
+  void handle_unknown_method(fidl::UnknownMethodMetadata<fperipheral::Events> metadata,
+                             fidl::UnknownMethodCompleter::Sync& completer) override {}
 
   void WaitUntilCleared(fdf_testing::DriverRuntime& runtime) {
     runtime.RunUntil([&]() { return cleared_called_; });
