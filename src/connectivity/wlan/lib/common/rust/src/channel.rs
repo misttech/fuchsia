@@ -115,7 +115,7 @@ impl Channel {
 
     fn get_center_chan_idx(&self) -> Result<u8, anyhow::Error> {
         let is_valid = match self.band {
-            fidl_ieee80211::WlanBand::TwoGhz => self.primary <= 14,
+            fidl_ieee80211::WlanBand::TwoGhz => (1..=14).contains(&self.primary),
             fidl_ieee80211::WlanBand::FiveGhz => (36..=165).contains(&self.primary),
             _ => false,
         };
@@ -129,8 +129,13 @@ impl Channel {
         let p = self.primary;
         match self.bandwidth {
             Bandwidth::Cbw20 => Ok(p),
-            Bandwidth::Cbw40 => Ok(p + 2),
-            Bandwidth::Cbw40Below => Ok(p - 2),
+            Bandwidth::Cbw40 => {
+                p.checked_add(2).ok_or_else(|| format_err!("invalid channel for Cbw40: {}", p))
+            }
+            Bandwidth::Cbw40Below => p
+                .checked_sub(2)
+                .filter(|&res| res != INVALID_CHAN_IDX)
+                .ok_or_else(|| format_err!("invalid channel for Cbw40Below: {}", p)),
             Bandwidth::Cbw80 | Bandwidth::Cbw80P80 { .. } => match p {
                 36..=48 => Ok(42),
                 52..=64 => Ok(58),
@@ -170,7 +175,12 @@ impl Channel {
         let start_freq = self.get_band_start_freq()?;
         let center_chan_idx = self.get_center_chan_idx()?;
         let spacing: MHz = 5;
-        Ok(start_freq + spacing * center_chan_idx as u16)
+        let offset = spacing
+            .checked_mul(center_chan_idx as u16)
+            .ok_or_else(|| format_err!("overflow computing channel spacing offset for {}", self))?;
+        start_freq
+            .checked_add(offset)
+            .ok_or_else(|| format_err!("overflow computing center frequency for {}", self))
     }
 }
 
@@ -249,8 +259,8 @@ pub fn derive_wide_channel_bandwidth(
     use ie::VhtChannelBandwidth as Vcb;
     match vht_cbw_and_segs {
         Some((Vcb::CBW_80_160_80P80, _, 0)) => Bandwidth::Cbw80,
-        Some((Vcb::CBW_80_160_80P80, seg0, seg1)) if abs_sub(seg0, seg1) == 8 => Bandwidth::Cbw160,
-        Some((Vcb::CBW_80_160_80P80, seg0, seg1)) if abs_sub(seg0, seg1) > 16 => {
+        Some((Vcb::CBW_80_160_80P80, seg0, seg1)) if seg0.abs_diff(seg1) == 8 => Bandwidth::Cbw160,
+        Some((Vcb::CBW_80_160_80P80, seg0, seg1)) if seg0.abs_diff(seg1) > 16 => {
             // See IEEE 802.11-2016, Table 9-252, about channel center frequency segment 1
             Bandwidth::Cbw80P80 { vht_secondary_80_channel: seg1 }
         }
@@ -263,10 +273,6 @@ pub fn derive_wide_channel_bandwidth(
             ie::SecChanOffset::SECONDARY_NONE | _ => Bandwidth::Cbw20,
         },
     }
-}
-
-fn abs_sub(v1: u8, v2: u8) -> u8 {
-    if v2 >= v1 { v2 - v1 } else { v1 - v2 }
 }
 
 /// Converts a 20MHz primary channel center frequency in MHz to a channel number. Returns an error
@@ -339,6 +345,13 @@ mod tests {
                 .get_center_chan_idx()
                 .unwrap()
         );
+
+        // These tests are edge-case channel validity checks.
+        // Channel 1 Cbw40Below has the potential to underflow.
+        // Channel 255 Cbw40 has the potential to overflow, but is caught by earlier channel index
+        // validation.
+        assert!(Channel::new(1, Bandwidth::Cbw40Below, TwoGhz).get_center_chan_idx().is_err());
+        assert!(Channel::new(255, Bandwidth::Cbw40, TwoGhz).get_center_chan_idx().is_err());
     }
 
     #[test]
