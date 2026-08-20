@@ -97,9 +97,7 @@ impl RootDir for BlobDirectory {
             vfs::service::host(move |r| this.clone().handle_blob_creator_requests(r)),
         )?;
 
-        let mapping_provider = Arc::new(
-            BlobMappingProvider::new(self.clone()).expect("Failed to create BlobMappingProvider"),
-        );
+        let mapping_provider = Arc::new(BlobMappingProvider::new(self.clone())?);
         svc_dir.add_entry(
             MappingProviderMarker::PROTOCOL_NAME,
             vfs::service::host(move |r| {
@@ -521,6 +519,12 @@ mod tests {
     use futures::StreamExt as _;
     use std::path::PathBuf;
 
+    use crate::fuchsia::testing::{TestFixture, TestFixtureOptions};
+    use fidl_fuchsia_storage_mapping::MappingProviderMarker;
+    use fuchsia_fs::directory::open_directory_async;
+    use storage_device::DeviceHolder;
+    use storage_device::fake_device::FakeDevice;
+
     #[fuchsia::test(threads = 10)]
     async fn test_unlink() {
         let fixture = new_blob_fixture().await;
@@ -794,6 +798,24 @@ mod tests {
             .await
             .expect("fidl transport")
             .expect_err("Blob should not exist");
+        fixture.close().await;
+    }
+
+    #[fuchsia::test]
+    async fn test_mapping_provider_exposure() {
+        let fixture = TestFixture::open(
+            DeviceHolder::new(FakeDevice::new(16384, 512)),
+            TestFixtureOptions { encrypted: false, as_blob: true, ..Default::default() },
+        )
+        .await;
+
+        let svc_dir = open_directory_async(fixture.volume_out_dir(), "svc", fio::PERM_READABLE)
+            .expect("failed to open svc dir");
+
+        let entries = readdir_inclusive(&svc_dir).await.expect("readdir");
+        let is_exposed = entries.iter().any(|e| e.name == MappingProviderMarker::PROTOCOL_NAME);
+        assert!(is_exposed, "MappingProvider not exposed");
+
         fixture.close().await;
     }
 }

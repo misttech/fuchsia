@@ -42,6 +42,10 @@
             path: "/fs/blob/svc/fuchsia.fxfs.BlobReader",
         },
         {
+            protocol: "fuchsia.storage.mapping.MappingProvider",
+            path: "/fs/blob/svc/fuchsia.storage.mapping.MappingProvider",
+        },
+        {
             protocol: "fuchsia.fxfs.FileBackedVolumeProvider",
             path: "/fs/data/svc/fuchsia.fxfs.FileBackedVolumeProvider",
         },
@@ -134,6 +138,11 @@
         },
         {
             protocol: "fuchsia.fxfs.BlobReader",
+            from: "self",
+            availability: "same_as_target",
+        },
+        {
+            protocol: "fuchsia.storage.mapping.MappingProvider",
             from: "self",
             availability: "same_as_target",
         },

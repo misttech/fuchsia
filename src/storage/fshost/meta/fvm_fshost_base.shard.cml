@@ -97,6 +97,7 @@
                 "fuchsia.fshost.StarnixVolumeProvider",
                 "fuchsia.fxfs.FileBackedVolumeProvider",
                 "fuchsia.hardware.inlineencryption.Device",
+                "fuchsia.storage.mapping.MappingProvider",
             ],
             from: "void",
             availability: "optional",
