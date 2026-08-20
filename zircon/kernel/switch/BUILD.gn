@@ -427,7 +427,6 @@ foreach(level,
 config("warnings") {
   cflags = [
     "-Wformat=2",
-    "-Wmissing-declarations",
     "-Wvla",
   ]
 
@@ -439,7 +438,10 @@ config("warnings") {
   # TODO(https://fxbug.dev/42159114): Eventually enable -Wshadow for GCC.  It's currently
   # disabled because GCC is more aggressive than Clang.
   if (!is_gcc) {
-    cflags += [ "-Wshadow" ]
+    cflags += [
+      "-Wmissing-declarations",
+      "-Wshadow",
+    ]
   }
 
   cflags_c = [ "-Wmissing-prototypes" ]
