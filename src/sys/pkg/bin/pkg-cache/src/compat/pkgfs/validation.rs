@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::BasePackages;
+use crate::BaseIndex;
 use fidl_fuchsia_io as fio;
 use log::{error, info};
 use std::sync::Arc;
@@ -17,11 +17,11 @@ use vfs::{ObjectRequestRef, ProtocolsExt as _, immutable_attributes};
 /// have the "present" file).
 pub(crate) struct Validation {
     blobfs: blobfs::Client,
-    base_packages: Arc<BasePackages>,
+    base_packages: Arc<BaseIndex>,
 }
 
 impl Validation {
-    pub(crate) fn new(blobfs: blobfs::Client, base_packages: Arc<BasePackages>) -> Arc<Self> {
+    pub(crate) fn new(blobfs: blobfs::Client, base_packages: Arc<BaseIndex>) -> Arc<Self> {
         Arc::new(Self { blobfs, base_packages })
     }
 
@@ -175,14 +175,14 @@ mod tests {
     impl TestEnv {
         async fn new() -> (Self, Arc<Validation>) {
             Self::with_base_packages_and_blobfs_contents(
-                Arc::new(BasePackages::new_test_only(HashSet::new(), std::iter::empty())),
+                Arc::new(BaseIndex::new_test_only(HashSet::new(), std::iter::empty())),
                 std::iter::empty(),
             )
             .await
         }
 
         async fn with_base_packages_and_blobfs_contents(
-            base_packages: Arc<BasePackages>,
+            base_packages: Arc<BaseIndex>,
             blobfs_contents: impl IntoIterator<Item = (fuchsia_hash::Hash, Vec<u8>)>,
         ) -> (Self, Arc<Validation>) {
             let blobfs = BlobfsRamdisk::start().await.unwrap();
@@ -266,10 +266,7 @@ mod tests {
     #[fuchsia::test]
     async fn directory_entry_open_missing() {
         let (_env, validation) = TestEnv::with_base_packages_and_blobfs_contents(
-            Arc::new(BasePackages::new_test_only(
-                HashSet::from([[0; 32].into()]),
-                std::iter::empty(),
-            )),
+            Arc::new(BaseIndex::new_test_only(HashSet::from([[0; 32].into()]), std::iter::empty())),
             std::iter::empty(),
         )
         .await;
@@ -414,10 +411,7 @@ mod tests {
     #[fuchsia::test]
     async fn make_missing_contents_missing_blob() {
         let (_env, validation) = TestEnv::with_base_packages_and_blobfs_contents(
-            Arc::new(BasePackages::new_test_only(
-                HashSet::from([[0; 32].into()]),
-                std::iter::empty(),
-            )),
+            Arc::new(BaseIndex::new_test_only(HashSet::from([[0; 32].into()]), std::iter::empty())),
             std::iter::empty(),
         )
         .await;
@@ -431,7 +425,7 @@ mod tests {
     #[fuchsia::test]
     async fn make_missing_contents_two_missing_blob() {
         let (_env, validation) = TestEnv::with_base_packages_and_blobfs_contents(
-            Arc::new(BasePackages::new_test_only(
+            Arc::new(BaseIndex::new_test_only(
                 HashSet::from([[0; 32].into(), [1; 32].into()]),
                 std::iter::empty(),
             )),
@@ -452,7 +446,7 @@ mod tests {
         let blob = vec![0u8, 1u8];
         let hash = fuchsia_merkle::root_from_slice(&blob);
         let (_env, validation) = TestEnv::with_base_packages_and_blobfs_contents(
-            Arc::new(BasePackages::new_test_only(HashSet::new(), std::iter::empty())),
+            Arc::new(BaseIndex::new_test_only(HashSet::new(), std::iter::empty())),
             [(hash, blob)],
         )
         .await;
@@ -465,7 +459,7 @@ mod tests {
         let blob = vec![0u8, 1u8];
         let hash = fuchsia_merkle::root_from_slice(&blob);
         let (_env, validation) = TestEnv::with_base_packages_and_blobfs_contents(
-            Arc::new(BasePackages::new_test_only(HashSet::from([hash]), std::iter::empty())),
+            Arc::new(BaseIndex::new_test_only(HashSet::from([hash]), std::iter::empty())),
             [(hash, blob)],
         )
         .await;
@@ -482,7 +476,7 @@ mod tests {
         let missing_hash = missing_hash.into();
 
         let (_env, validation) = TestEnv::with_base_packages_and_blobfs_contents(
-            Arc::new(BasePackages::new_test_only(
+            Arc::new(BaseIndex::new_test_only(
                 HashSet::from([hash, missing_hash]),
                 std::iter::empty(),
             )),

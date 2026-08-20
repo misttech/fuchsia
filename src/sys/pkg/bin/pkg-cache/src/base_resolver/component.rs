@@ -10,16 +10,15 @@ use fidl_fuchsia_component_decl as fcomponent_decl;
 use fidl_fuchsia_component_resolution as fcomponent_resolution;
 use fidl_fuchsia_io as fio;
 use fidl_fuchsia_pkg as fpkg;
-use fuchsia_url::fuchsia_pkg::{ComponentUrl, PackageUrl, UnpinnedAbsolutePackageUrl};
+use fuchsia_url::fuchsia_pkg::{ComponentUrl, PackageUrl};
 use futures::stream::TryStreamExt as _;
 use log::{error, warn};
-use sorted_vec_map::SortedVecMap;
 use std::sync::Arc;
 use version_history::AbiRevision;
 
 pub(crate) async fn serve_request_stream(
     mut stream: fcomponent_resolution::ResolverRequestStream,
-    base_packages: Arc<SortedVecMap<UnpinnedAbsolutePackageUrl, fuchsia_hash::Hash>>,
+    base_index: Arc<crate::BaseIndex>,
     authenticator: context_authenticator::ContextAuthenticator,
     open_packages: crate::RootDirCache,
     scope: package_directory::ExecutionScope,
@@ -34,7 +33,7 @@ pub(crate) async fn serve_request_stream(
                     .send(
                         resolve(
                             &component_url,
-                            &base_packages,
+                            &base_index,
                             authenticator.clone(),
                             &open_packages,
                             scope.clone(),
@@ -63,7 +62,7 @@ pub(crate) async fn serve_request_stream(
                         resolve_with_context(
                             &component_url,
                             context,
-                            &base_packages,
+                            &base_index,
                             authenticator.clone(),
                             &open_packages,
                             scope.clone(),
@@ -94,7 +93,7 @@ pub(crate) async fn serve_request_stream(
 
 async fn resolve(
     url: &str,
-    base_packages: &SortedVecMap<UnpinnedAbsolutePackageUrl, fuchsia_hash::Hash>,
+    base_index: &crate::BaseIndex,
     authenticator: context_authenticator::ContextAuthenticator,
     open_packages: &crate::RootDirCache,
     scope: package_directory::ExecutionScope,
@@ -108,7 +107,7 @@ async fn resolve(
             PackageUrl::Relative(_) => Err(ResolverError::AbsoluteUrlRequired)?,
         },
         server_end,
-        base_packages,
+        base_index,
         authenticator,
         open_packages,
         scope,
@@ -122,7 +121,7 @@ async fn resolve(
 async fn resolve_with_context(
     url: &str,
     context: fcomponent_resolution::Context,
-    base_packages: &SortedVecMap<UnpinnedAbsolutePackageUrl, fuchsia_hash::Hash>,
+    base_index: &crate::BaseIndex,
     authenticator: context_authenticator::ContextAuthenticator,
     open_packages: &crate::RootDirCache,
     scope: package_directory::ExecutionScope,
@@ -134,7 +133,7 @@ async fn resolve_with_context(
         url.package_url(),
         fpkg::ResolutionContext { bytes: context.bytes },
         server_end,
-        base_packages,
+        base_index,
         authenticator,
         open_packages,
         scope,
@@ -214,7 +213,7 @@ mod tests {
         assert_matches!(
             resolve(
                 "relative#meta/missing",
-                &SortedVecMap::new(),
+                &crate::BaseIndex::empty(),
                 context_authenticator::ContextAuthenticator::new(),
                 &crate::root_dir::new_test(blobfs::Client::new_test().0).await.1,
                 package_directory::ExecutionScope::new(),

@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::base_packages::{BasePackages, CachePackages};
+use crate::frozen_index::{BaseIndex, CacheIndex};
 use crate::index::PackageIndex;
 use crate::upgradable_packages::UpgradablePackages;
 use anyhow::{Context as _, anyhow};
@@ -18,8 +18,8 @@ use std::sync::Arc;
 
 pub async fn serve(
     blobfs: blobfs::Client,
-    base_packages: Arc<BasePackages>,
-    cache_packages: Arc<CachePackages>,
+    base_packages: Arc<BaseIndex>,
+    cache_packages: Arc<CacheIndex>,
     upgradable_packages: Option<Arc<UpgradablePackages>>,
     package_index: Arc<async_lock::RwLock<PackageIndex>>,
     open_packages: crate::RootDirCache,
@@ -53,8 +53,8 @@ pub async fn serve(
 
 async fn gc(
     blobfs: &blobfs::Client,
-    base_packages: &BasePackages,
-    cache_packages: &CachePackages,
+    base_packages: &BaseIndex,
+    cache_packages: &CacheIndex,
     upgradable_packages: Option<&UpgradablePackages>,
     package_index: &Arc<async_lock::RwLock<PackageIndex>>,
     open_packages: &crate::RootDirCache,

@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::base_packages::{BasePackages, CachePackages};
+use crate::frozen_index::{BaseIndex, CacheIndex};
 use fidl_fuchsia_pkg as fpkg;
 use fuchsia_sync::Mutex;
 use fuchsia_url::fuchsia_pkg::{PinnedAbsolutePackageUrl, UnpinnedAbsolutePackageUrl};
@@ -12,12 +12,12 @@ use std::sync::Arc;
 
 pub struct UpgradablePackages {
     packages: Mutex<HashMap<UnpinnedAbsolutePackageUrl, fuchsia_url::Hash>>,
-    cache_packages: Arc<CachePackages>,
+    cache_packages: Arc<CacheIndex>,
     init_event: async_utils::event::Event,
 }
 
 impl UpgradablePackages {
-    pub fn new(cache_packages: Arc<CachePackages>) -> Self {
+    pub fn new(cache_packages: Arc<CacheIndex>) -> Self {
         Self {
             packages: Mutex::new(HashMap::new()),
             cache_packages,
@@ -37,7 +37,7 @@ impl UpgradablePackages {
     pub fn set_upgradable_urls(
         &self,
         pinned_urls: Vec<fpkg::PackageUrl>,
-        base_packages: &BasePackages,
+        base_packages: &BaseIndex,
     ) -> Result<(), fpkg::SetUpgradableUrlsError> {
         let mut partial_set = false;
         {

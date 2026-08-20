@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::base_packages::{BasePackages, CachePackages};
+use crate::frozen_index::{BaseIndex, CacheIndex};
 use crate::index::PackageIndex;
 use crate::upgradable_packages::UpgradablePackages;
 use anyhow::{Error, anyhow};
@@ -41,8 +41,8 @@ pub(crate) async fn serve(
     package_index: Arc<async_lock::RwLock<PackageIndex>>,
     blobfs: blobfs::Client,
     root_dir_factory: crate::RootDirFactory,
-    base_packages: Arc<BasePackages>,
-    cache_packages: Arc<CachePackages>,
+    base_packages: Arc<BaseIndex>,
+    cache_packages: Arc<CacheIndex>,
     upgradable_packages: Option<Arc<UpgradablePackages>>,
     executability_restrictions: system_image::ExecutabilityRestrictions,
     scope: package_directory::ExecutionScope,
@@ -173,8 +173,8 @@ enum PackageAvailability {
 
 impl PackageAvailability {
     fn get(
-        base_packages: &BasePackages,
-        cache_packages: &CachePackages,
+        base_packages: &BaseIndex,
+        cache_packages: &CacheIndex,
         open_packages: &crate::RootDirCache,
         package: &fuchsia_hash::Hash,
     ) -> Self {
@@ -198,7 +198,7 @@ enum ExecutabilityStatus {
 
 fn executability_status(
     executability_restrictions: system_image::ExecutabilityRestrictions,
-    base_packages: &BasePackages,
+    base_packages: &BaseIndex,
     package: fuchsia_hash::Hash,
 ) -> ExecutabilityStatus {
     use ExecutabilityStatus::*;
@@ -224,8 +224,8 @@ impl From<ExecutabilityStatus> for fio::Flags {
 /// Fetch a package and optionally open it.
 async fn get(
     package_index: &async_lock::RwLock<PackageIndex>,
-    base_packages: &BasePackages,
-    cache_packages: &CachePackages,
+    base_packages: &BaseIndex,
+    cache_packages: &CacheIndex,
     executability_restrictions: system_image::ExecutabilityRestrictions,
     blobfs: &blobfs::Client,
     root_dir_factory: &crate::RootDirFactory,
@@ -279,8 +279,8 @@ async fn get(
 /// Fetch a package and optionally open it.
 async fn get_impl(
     package_index: &async_lock::RwLock<PackageIndex>,
-    base_packages: &BasePackages,
-    cache_packages: &CachePackages,
+    base_packages: &BaseIndex,
+    cache_packages: &CacheIndex,
     executability_restrictions: system_image::ExecutabilityRestrictions,
     blobfs: &blobfs::Client,
     root_dir_factory: &crate::RootDirFactory,
@@ -877,7 +877,7 @@ async fn serve_package_index(
 }
 
 async fn get_subpackage(
-    base_packages: &BasePackages,
+    base_packages: &BaseIndex,
     executability_restrictions: system_image::ExecutabilityRestrictions,
     open_packages: &crate::RootDirCache,
     superpackage: Hash,
@@ -2453,8 +2453,8 @@ mod get_handler_tests {
         assert_matches::assert_matches!(
             get(
                 &package_index,
-                &BasePackages::new_test_only(HashSet::new(), vec![]),
-                &CachePackages::new_test_only(HashSet::new(), vec![]),
+                &BaseIndex::new_test_only(HashSet::new(), vec![]),
+                &CacheIndex::new_test_only(HashSet::new(), vec![]),
                 system_image::ExecutabilityRestrictions::DoNotEnforce,
                 &blobfs,
                 &root_dir_factory,

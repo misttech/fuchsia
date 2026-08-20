@@ -27,18 +27,18 @@ pub struct FrozenIndex<Marker> {
     phantom: std::marker::PhantomData<Marker>,
 }
 
-/// Marker type for BasePackages.
+/// Marker type for BaseIndex.
 #[derive(Debug)]
 pub struct Base;
 /// The system_image package, the packages in the static packages manifest, and the transitive
-/// closure of their subpackages, or none if the system does not have a system_image package.
-pub type BasePackages = FrozenIndex<Base>;
+/// closure of their subpackages, or empty if the system does not have a system_image package.
+pub type BaseIndex = FrozenIndex<Base>;
 
-/// Marker type for CachePackages.
+/// Marker type for CacheIndex.
 #[derive(Debug)]
 pub struct Cache;
 /// The packages in the cache packages manifest and the transitive closure of their subpackages,
-/// or none if the system does not have a cache packages manifest.
+/// or empty if the system does not have a cache packages manifest.
 /// To avoid breaking the system because of a failure in a non-critical package, packages and blobs
 /// are loaded best-effort from blobfs. Packages with missing meta.fars or missing subpackage
 /// meta.fars will be dropped from the index, resulting in:
@@ -47,7 +47,7 @@ pub struct Cache;
 ///     referenced by another package)
 ///
 /// root_package_urls_and_hashes will still return the URLs and hashes of dropped packages.
-pub type CachePackages = FrozenIndex<Cache>;
+pub type CacheIndex = FrozenIndex<Cache>;
 
 #[derive(Debug, Clone, Copy)]
 enum OnPackageLoadError {
@@ -198,6 +198,11 @@ impl<Marker: Send + Sync + 'static> FrozenIndex<Marker> {
     /// Hashmap mapping the root (i.e not including subpackages) package urls to hashes.
     pub fn root_package_urls_and_hashes(&self) -> &SortedVecMap<UnpinnedAbsolutePackageUrl, Hash> {
         &self.root_package_urls_and_hashes
+    }
+
+    /// Obtain the hash of the package indicated by the URL if it exists in the index, else None.
+    pub fn url_to_hash(&self, url: &UnpinnedAbsolutePackageUrl) -> Option<&Hash> {
+        self.root_package_urls_and_hashes.get(url)
     }
 
     /// Returns a callback to be given to `finspect::Node::record_lazy_child`.

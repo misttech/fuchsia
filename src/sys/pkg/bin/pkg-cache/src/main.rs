@@ -7,7 +7,7 @@
 #![allow(clippy::from_over_into)]
 #![allow(clippy::too_many_arguments)]
 
-use crate::base_packages::{BasePackages, CachePackages};
+use crate::frozen_index::{BaseIndex, CacheIndex};
 use crate::index::PackageIndex;
 use anyhow::{Context as _, Error, anyhow, format_err};
 use cobalt_sw_delivery_registry as metrics;
@@ -29,17 +29,16 @@ use fuchsia_url::fuchsia_pkg::UnpinnedAbsolutePackageUrl;
 use futures::join;
 use futures::prelude::*;
 use log::{error, info};
-use sorted_vec_map::SortedVecMap;
 use std::sync::Arc;
 use std::sync::atomic::AtomicU32;
 use vfs::directory::helper::DirectlyMutable as _;
 use vfs::remote::remote_dir;
 
-mod base_packages;
 mod base_resolver;
 mod blob_fetcher;
 mod cache_service;
 mod compat;
+mod frozen_index;
 mod gc_service;
 mod index;
 mod ota_resolver;
@@ -146,36 +145,34 @@ async fn main_inner() -> Result<(), Error> {
 
     let system_image_result =
         system_image::SystemImage::new(blobfs.clone(), &system_image_hash).await;
-    let (executability_restrictions, base_packages, cache_packages) = match system_image_result {
+    let (executability_restrictions, base_index, cache_index) = match system_image_result {
         Ok(system_image) => {
             info!("system_image package: {}", system_image.hash());
             inspector.root().record_string("system_image", system_image.hash().to_string());
 
-            let (base_packages_res, cache_packages_res) =
-                join!(BasePackages::new(&blobfs, &system_image), async {
-                    let cache_packages =
+            let (base_index_res, cache_index_res) =
+                join!(BaseIndex::new(&blobfs, &system_image), async {
+                    let cache_index =
                         system_image.cache_packages().await.context("reading cache_packages")?;
-                    CachePackages::new(&blobfs, &cache_packages)
-                        .await
-                        .context("creating CachePackages index")
+                    CacheIndex::new(&blobfs, &cache_index).await.context("creating CacheIndex")
                 });
-            let base_packages = match base_packages_res {
-                Ok(base_packages) => base_packages,
+            let base_index = match base_index_res {
+                Ok(base_index) => base_index,
                 Err(e) if require_system_image => {
                     return Err(e).context("loading base packages");
                 }
                 Err(e) => {
                     error!("Failed to load base packages, using empty: {e:#}");
-                    BasePackages::empty()
+                    BaseIndex::empty()
                 }
             };
-            let cache_packages = cache_packages_res.unwrap_or_else(|e: anyhow::Error| {
+            let cache_index = cache_index_res.unwrap_or_else(|e: anyhow::Error| {
                 error!("Failed to load cache packages, using empty: {e:#}");
-                CachePackages::empty()
+                CacheIndex::empty()
             });
             let executability_restrictions = system_image.load_executability_restrictions();
 
-            (executability_restrictions, base_packages, cache_packages)
+            (executability_restrictions, base_index, cache_index)
         }
         Err(e) if require_system_image => {
             return Err(e).context("Accessing contents of system_image package");
@@ -185,8 +182,8 @@ async fn main_inner() -> Result<(), Error> {
             inspector.root().record_string("system_image", "failed_to_load");
             (
                 system_image::ExecutabilityRestrictions::Enforce,
-                BasePackages::empty(),
-                CachePackages::empty(),
+                BaseIndex::empty(),
+                CacheIndex::empty(),
             )
         }
     };
@@ -194,12 +191,10 @@ async fn main_inner() -> Result<(), Error> {
     inspector
         .root()
         .record_string("executability-restrictions", format!("{executability_restrictions:?}"));
-    let base_resolver_base_packages =
-        Arc::new(base_packages.root_package_urls_and_hashes().clone());
-    let base_packages = Arc::new(base_packages);
-    let cache_packages = Arc::new(cache_packages);
-    inspector.root().record_lazy_child("base-packages", base_packages.record_lazy_inspect());
-    inspector.root().record_lazy_child("cache-packages", cache_packages.record_lazy_inspect());
+    let base_index = Arc::new(base_index);
+    let cache_index = Arc::new(cache_index);
+    inspector.root().record_lazy_child("base-packages", base_index.record_lazy_inspect());
+    inspector.root().record_lazy_child("cache-packages", cache_index.record_lazy_inspect());
     let package_index = Arc::new(async_lock::RwLock::new(PackageIndex::new()));
     inspector.root().record_lazy_child("index", PackageIndex::record_lazy_inspect(&package_index));
     let scope = vfs::execution_scope::ExecutionScope::new();
@@ -222,9 +217,8 @@ async fn main_inner() -> Result<(), Error> {
     .context("creating root dir helpers")?;
     inspector.root().record_lazy_child("open-packages", open_packages.record_lazy_inspect());
 
-    let upgradable_packages = enable_upgradable_packages.then(|| {
-        Arc::new(upgradable_packages::UpgradablePackages::new(Arc::clone(&cache_packages)))
-    });
+    let upgradable_packages = enable_upgradable_packages
+        .then(|| Arc::new(upgradable_packages::UpgradablePackages::new(Arc::clone(&cache_index))));
 
     // Use VFS to serve the out dir because ServiceFs does not support PERM_EXECUTABLE and
     // pkgfs/{packages|system} require it.
@@ -235,8 +229,8 @@ async fn main_inner() -> Result<(), Error> {
         let blobfs = blobfs.clone();
         let root_dir_factory = root_dir_factory.clone();
         let open_packages = open_packages.clone();
-        let base_packages = Arc::clone(&base_packages);
-        let cache_packages = Arc::clone(&cache_packages);
+        let base_index = Arc::clone(&base_index);
+        let cache_index = Arc::clone(&cache_index);
         let upgradable_packages = upgradable_packages.clone();
         let scope = scope.clone();
         let cobalt_sender = cobalt_sender.clone();
@@ -251,8 +245,8 @@ async fn main_inner() -> Result<(), Error> {
                         Arc::clone(&package_index),
                         blobfs.clone(),
                         root_dir_factory.clone(),
-                        Arc::clone(&base_packages),
-                        Arc::clone(&cache_packages),
+                        Arc::clone(&base_index),
+                        Arc::clone(&cache_index),
                         upgradable_packages.clone(),
                         executability_restrictions,
                         scope.clone(),
@@ -309,7 +303,7 @@ async fn main_inner() -> Result<(), Error> {
     }
     {
         let blobfs = blobfs.clone();
-        let base_packages = Arc::clone(&base_packages);
+        let base_index = Arc::clone(&base_index);
         let upgradable_packages = upgradable_packages.clone();
         let package_index = Arc::clone(&package_index);
         let open_packages = open_packages.clone();
@@ -324,8 +318,8 @@ async fn main_inner() -> Result<(), Error> {
                     move |stream: fidl_fuchsia_pkg_garbagecollector::ManagerRequestStream| {
                         gc_service::serve(
                             blobfs.clone(),
-                            Arc::clone(&base_packages),
-                            Arc::clone(&cache_packages),
+                            Arc::clone(&base_index),
+                            Arc::clone(&cache_index),
                             upgradable_packages.clone(),
                             Arc::clone(&package_index),
                             open_packages.clone(),
@@ -341,7 +335,7 @@ async fn main_inner() -> Result<(), Error> {
             .context("adding fuchsia.pkg.garbagecollector/Manager to /svc")?;
     }
     {
-        let base_resolver_base_packages = Arc::clone(&base_resolver_base_packages);
+        let base_index = Arc::clone(&base_index);
         let authenticator = authenticator.clone();
         let open_packages = open_packages.clone();
         let scope = scope.clone();
@@ -352,7 +346,7 @@ async fn main_inner() -> Result<(), Error> {
                 vfs::service::host(move |stream: fpkg::PackageResolverRequestStream| {
                     base_resolver::package::serve_request_stream(
                         stream,
-                        Arc::clone(&base_resolver_base_packages),
+                        Arc::clone(&base_index),
                         authenticator.clone(),
                         open_packages.clone(),
                         scope.clone(),
@@ -366,7 +360,7 @@ async fn main_inner() -> Result<(), Error> {
             .context("adding fuchsia.pkg/PackageResolver to /svc")?;
     }
     {
-        let base_resolver_base_packages = Arc::clone(&base_resolver_base_packages);
+        let base_index = Arc::clone(&base_index);
         let authenticator = authenticator.clone();
         let open_packages = open_packages.clone();
         let scope = scope.clone();
@@ -378,7 +372,7 @@ async fn main_inner() -> Result<(), Error> {
                     move |stream: fidl_fuchsia_component_resolution::ResolverRequestStream| {
                         base_resolver::component::serve_request_stream(
                             stream,
-                            Arc::clone(&base_resolver_base_packages),
+                            Arc::clone(&base_index),
                             authenticator.clone(),
                             open_packages.clone(),
                             scope.clone(),
@@ -449,7 +443,7 @@ async fn main_inner() -> Result<(), Error> {
                 name.parse().expect("valid package name"),
                 None,
             ),
-            base_resolver_base_packages.as_ref(),
+            base_index.as_ref(),
             &open_packages,
             scope.clone(),
         )
@@ -460,7 +454,7 @@ async fn main_inner() -> Result<(), Error> {
         "svc" => svc_dir,
         "pkgfs" =>
             crate::compat::pkgfs::make_dir(
-                Arc::clone(&base_packages),
+                Arc::clone(&base_index),
                 blobfs.clone(),
             ),
         "specific-base-packages" => vfs::pseudo_directory! {
@@ -493,7 +487,7 @@ async fn main_inner() -> Result<(), Error> {
 
 async fn serve_base_package_if_present(
     url: UnpinnedAbsolutePackageUrl,
-    base_packages: &SortedVecMap<UnpinnedAbsolutePackageUrl, fuchsia_hash::Hash>,
+    base_index: &crate::BaseIndex,
     open_packages: &RootDirCache,
     scope: package_directory::ExecutionScope,
 ) -> anyhow::Result<fio::DirectoryProxy> {
@@ -501,7 +495,7 @@ async fn serve_base_package_if_present(
     match base_resolver::package::resolve_package(
         &url,
         server,
-        base_packages,
+        base_index,
         open_packages,
         scope,
         &None,

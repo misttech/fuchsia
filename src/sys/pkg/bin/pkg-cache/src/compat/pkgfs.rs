@@ -9,7 +9,7 @@ mod validation;
 /// Make the pkgfs compatibility directory, which has the following structure:
 ///   ./ctl/validation/missing
 pub fn make_dir(
-    base_packages: Arc<crate::BasePackages>,
+    base_packages: Arc<crate::BaseIndex>,
     blobfs: blobfs::Client,
 ) -> Arc<dyn vfs::directory::entry::DirectoryEntry> {
     vfs::pseudo_directory! {

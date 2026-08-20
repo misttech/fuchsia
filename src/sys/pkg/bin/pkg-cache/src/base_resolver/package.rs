@@ -11,14 +11,13 @@ use fidl_fuchsia_pkg as fpkg;
 use fuchsia_url::fuchsia_pkg::{AbsolutePackageUrl, PackageUrl, UnpinnedAbsolutePackageUrl};
 use futures::stream::TryStreamExt as _;
 use log::error;
-use sorted_vec_map::SortedVecMap;
 use std::sync::Arc;
 
 const FLAGS: fio::Flags = fio::PERM_READABLE.union(fio::PERM_EXECUTABLE);
 
 pub(crate) async fn serve_request_stream(
     mut stream: fpkg::PackageResolverRequestStream,
-    base_packages: Arc<SortedVecMap<UnpinnedAbsolutePackageUrl, fuchsia_hash::Hash>>,
+    base_index: Arc<crate::BaseIndex>,
     authenticator: context_authenticator::ContextAuthenticator,
     open_packages: crate::RootDirCache,
     scope: package_directory::ExecutionScope,
@@ -32,7 +31,7 @@ pub(crate) async fn serve_request_stream(
                 match resolve(
                     &package_url,
                     dir,
-                    &base_packages,
+                    &base_index,
                     authenticator.clone(),
                     &open_packages,
                     scope.clone(),
@@ -63,7 +62,7 @@ pub(crate) async fn serve_request_stream(
                     &package_url,
                     context,
                     dir,
-                    &base_packages,
+                    &base_index,
                     authenticator.clone(),
                     &open_packages,
                     scope.clone(),
@@ -102,7 +101,7 @@ async fn resolve_with_context(
     package_url: &str,
     context: fpkg::ResolutionContext,
     dir: ServerEnd<fio::DirectoryMarker>,
-    base_packages: &SortedVecMap<UnpinnedAbsolutePackageUrl, fuchsia_hash::Hash>,
+    base_index: &crate::BaseIndex,
     authenticator: context_authenticator::ContextAuthenticator,
     open_packages: &crate::RootDirCache,
     scope: package_directory::ExecutionScope,
@@ -112,7 +111,7 @@ async fn resolve_with_context(
         &PackageUrl::parse(package_url)?,
         context,
         dir,
-        base_packages,
+        base_index,
         authenticator,
         open_packages,
         scope,
@@ -125,7 +124,7 @@ pub(super) async fn resolve_with_context_impl(
     package_url: &PackageUrl,
     context: fpkg::ResolutionContext,
     dir: ServerEnd<fio::DirectoryMarker>,
-    base_packages: &SortedVecMap<UnpinnedAbsolutePackageUrl, fuchsia_hash::Hash>,
+    base_index: &crate::BaseIndex,
     authenticator: context_authenticator::ContextAuthenticator,
     open_packages: &crate::RootDirCache,
     scope: package_directory::ExecutionScope,
@@ -139,7 +138,7 @@ pub(super) async fn resolve_with_context_impl(
             resolve_impl(
                 url,
                 dir,
-                base_packages,
+                base_index,
                 authenticator,
                 open_packages,
                 scope,
@@ -156,7 +155,7 @@ pub(super) async fn resolve_with_context_impl(
 async fn resolve(
     url: &str,
     dir: ServerEnd<fio::DirectoryMarker>,
-    base_packages: &SortedVecMap<UnpinnedAbsolutePackageUrl, fuchsia_hash::Hash>,
+    base_index: &crate::BaseIndex,
     authenticator: context_authenticator::ContextAuthenticator,
     open_packages: &crate::RootDirCache,
     scope: package_directory::ExecutionScope,
@@ -165,7 +164,7 @@ async fn resolve(
     resolve_impl(
         &url.parse()?,
         dir,
-        base_packages,
+        base_index,
         authenticator,
         open_packages,
         scope,
@@ -177,7 +176,7 @@ async fn resolve(
 pub(super) async fn resolve_impl(
     url: &AbsolutePackageUrl,
     dir: ServerEnd<fio::DirectoryMarker>,
-    base_packages: &SortedVecMap<UnpinnedAbsolutePackageUrl, fuchsia_hash::Hash>,
+    base_index: &crate::BaseIndex,
     authenticator: context_authenticator::ContextAuthenticator,
     open_packages: &crate::RootDirCache,
     scope: package_directory::ExecutionScope,
@@ -193,7 +192,7 @@ pub(super) async fn resolve_impl(
             // TODO(https://fxbug.dev/452379656) Implement handle-based contexts for package
             // resolution, migrate CM to using said contexts to re-resolve packages instead of
             // making pinned resolves, and then re-forbid pinned resolves here.
-            match base_packages.get(pinned.as_unpinned()) {
+            match base_index.url_to_hash(pinned.as_unpinned()) {
                 Some(base_hash) if base_hash == &pinned.hash() => url,
                 Some(base_hash) => {
                     return Err(ResolverError::MismatchedPin {
@@ -207,14 +206,14 @@ pub(super) async fn resolve_impl(
         AbsolutePackageUrl::Unpinned(url) => url,
     };
     let hash =
-        resolve_package(url, dir, base_packages, open_packages, scope, upgradable_packages).await?;
+        resolve_package(url, dir, base_index, open_packages, scope, upgradable_packages).await?;
     Ok(authenticator.create(&hash))
 }
 
 pub(crate) async fn resolve_package(
     url: &UnpinnedAbsolutePackageUrl,
     dir: ServerEnd<fio::DirectoryMarker>,
-    base_packages: &SortedVecMap<UnpinnedAbsolutePackageUrl, fuchsia_hash::Hash>,
+    base_index: &crate::BaseIndex,
     open_packages: &crate::RootDirCache,
     scope: package_directory::ExecutionScope,
     upgradable_packages: &Option<Arc<UpgradablePackages>>,
@@ -231,7 +230,7 @@ pub(crate) async fn resolve_package(
         },
         _ => url,
     };
-    let hash = get_package_hash(url, base_packages, upgradable_packages)
+    let hash = get_package_hash(url, base_index, upgradable_packages)
         .await
         .ok_or_else(|| ResolverError::PackageNotInBase(url.clone().into()))?;
     let root = open_packages
@@ -244,10 +243,10 @@ pub(crate) async fn resolve_package(
 
 async fn get_package_hash(
     url: &UnpinnedAbsolutePackageUrl,
-    base_packages: &SortedVecMap<UnpinnedAbsolutePackageUrl, fuchsia_hash::Hash>,
+    base_index: &crate::BaseIndex,
     upgradable_packages: &Option<Arc<UpgradablePackages>>,
 ) -> Option<fuchsia_hash::Hash> {
-    if let Some(hash) = base_packages.get(url) {
+    if let Some(hash) = base_index.url_to_hash(url) {
         return Some(*hash);
     }
     if let Some(upgradable_packages) = upgradable_packages
@@ -290,6 +289,7 @@ async fn resolve_subpackage(
 mod tests {
     use super::*;
     use assert_matches::assert_matches;
+    use std::collections::HashSet;
 
     #[fuchsia::test]
     async fn resolve_rejects_pinned_url_that_does_not_match_base_package_hash() {
@@ -298,7 +298,7 @@ mod tests {
                 "fuchsia-pkg://fuchsia.test/name?\
                     hash=1111111111111111111111111111111111111111111111111111111111111111",
                 fidl::endpoints::create_endpoints().1,
-                &SortedVecMap::from_iter([(
+                &crate::BaseIndex::new_test_only(HashSet::new(), [(
                     "fuchsia-pkg://fuchsia.test/name".parse().unwrap(),
                     [0; 32].into()
                 )]),
@@ -324,10 +324,10 @@ mod tests {
         let _: fpkg::ResolutionContext = resolve(
             "fuchsia-pkg://fuchsia.test/name/0",
             server,
-            &SortedVecMap::from_iter([(
-                "fuchsia-pkg://fuchsia.test/name".parse().unwrap(),
-                *pkg.hash(),
-            )]),
+            &crate::BaseIndex::new_test_only(
+                HashSet::new(),
+                [("fuchsia-pkg://fuchsia.test/name".parse().unwrap(), *pkg.hash())],
+            ),
             context_authenticator::ContextAuthenticator::new(),
             &open_packages,
             vfs::execution_scope::ExecutionScope::new(),
@@ -353,10 +353,10 @@ mod tests {
         let _: fpkg::ResolutionContext = resolve(
             &format!("fuchsia-pkg://fuchsia.test/name?hash={}", pkg.hash()),
             server,
-            &SortedVecMap::from_iter([(
-                "fuchsia-pkg://fuchsia.test/name".parse().unwrap(),
-                *pkg.hash(),
-            )]),
+            &crate::BaseIndex::new_test_only(
+                HashSet::new(),
+                [("fuchsia-pkg://fuchsia.test/name".parse().unwrap(), *pkg.hash())],
+            ),
             context_authenticator::ContextAuthenticator::new(),
             &open_packages,
             vfs::execution_scope::ExecutionScope::new(),
@@ -377,10 +377,10 @@ mod tests {
             resolve(
                 "fuchsia-pkg://fuchsia.test/name/1",
                 fidl::endpoints::create_proxy().1,
-                &SortedVecMap::from_iter([(
-                    "fuchsia-pkg://fuchsia.test/name".parse().unwrap(),
-                    [0u8; 32].into()
-                )]),
+                &crate::BaseIndex::new_test_only(
+                    HashSet::new(),
+                    [("fuchsia-pkg://fuchsia.test/name".parse().unwrap(), [0u8; 32].into())]
+                ),
                 context_authenticator::ContextAuthenticator::new(),
                 &crate::root_dir::new_test(blobfs::Client::new_test().0).await.1,
                 vfs::execution_scope::ExecutionScope::new(),
