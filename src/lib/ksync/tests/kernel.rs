@@ -98,6 +98,16 @@ mod ksync_tests {
             lock: *const core::ffi::c_void,
             expected_id: *const core::ffi::c_void,
         ) -> bool;
+
+        fn cpp_get_test_singleton_mutex_ptr() -> *const core::ffi::c_void;
+        fn cpp_get_test_singleton_mutex_size() -> usize;
+        fn cpp_get_test_singleton_mutex_raw_lock_ptr() -> *const core::ffi::c_void;
+        fn cpp_get_test_singleton_mutex_raw_lock_size() -> usize;
+
+        fn cpp_get_test_singleton_critical_mutex_ptr() -> *const core::ffi::c_void;
+        fn cpp_get_test_singleton_critical_mutex_size() -> usize;
+        fn cpp_get_test_singleton_critical_mutex_raw_lock_ptr() -> *const core::ffi::c_void;
+        fn cpp_get_test_singleton_critical_mutex_raw_lock_size() -> usize;
     }
 
     /// test Rust KMutex ID
@@ -398,5 +408,70 @@ mod ksync_tests {
         expect_true!(*guard.seek() == 0);
         *guard.as_mut().seek_mut() = 4096;
         expect_true!(*guard.seek() == 4096);
+    }
+
+    ksync::declare_singleton_mutex!(TestKernelSingletonMutex);
+    ksync::declare_singleton_critical_mutex!(TestKernelSingletonCriticalMutex);
+
+    /// test Rust declare_singleton_mutex and declare_singleton_critical_mutex
+    #[test]
+    fn singleton_mutex() {
+        let lock1 = TestKernelSingletonMutex::Get();
+        let lock2 = TestKernelSingletonMutex::get();
+        expect_true!(core::ptr::eq(lock1, lock2));
+
+        // Verify that the C++ lockdep helper reads the lock ID from the Rust singleton correctly.
+        unsafe {
+            expect_true!(cpp_verify_mutex_id(
+                lock1 as *const _ as *const core::ffi::c_void,
+                <TestKernelSingletonMutex as ksync::LockClass>::ID,
+            ));
+            expect_true!(cpp_verify_critical_mutex_id(
+                TestKernelSingletonCriticalMutex::Get() as *const _ as *const core::ffi::c_void,
+                <TestKernelSingletonCriticalMutex as ksync::LockClass>::ID,
+            ));
+        }
+
+        // Compare total sizes of Rust-declared singletons vs C++-declared singletons.
+        let rust_mutex_size = core::mem::size_of_val(lock1);
+        let cpp_mutex_size = unsafe { cpp_get_test_singleton_mutex_size() };
+        expect_true!(rust_mutex_size == cpp_mutex_size);
+
+        let rust_critical_size = core::mem::size_of_val(TestKernelSingletonCriticalMutex::Get());
+        let cpp_critical_size = unsafe { cpp_get_test_singleton_critical_mutex_size() };
+        expect_true!(rust_critical_size == cpp_critical_size);
+
+        // Compare raw mutex storage byte-by-byte between Rust and C++.
+        let cpp_raw_ptr = unsafe { cpp_get_test_singleton_mutex_raw_lock_ptr() };
+        let cpp_raw_size = unsafe { cpp_get_test_singleton_mutex_raw_lock_size() };
+        let cpp_raw_bytes =
+            unsafe { core::slice::from_raw_parts(cpp_raw_ptr as *const u8, cpp_raw_size) };
+
+        let rust_raw_bytes = lock1.raw_mutex().raw_storage_slice();
+        expect_true!(rust_raw_bytes == cpp_raw_bytes);
+
+        // Compare CriticalMutex raw storage byte-by-byte between Rust and C++.
+        let cpp_critical_raw_ptr = unsafe { cpp_get_test_singleton_critical_mutex_raw_lock_ptr() };
+        let cpp_critical_raw_size =
+            unsafe { cpp_get_test_singleton_critical_mutex_raw_lock_size() };
+        let cpp_critical_raw_bytes = unsafe {
+            core::slice::from_raw_parts(cpp_critical_raw_ptr as *const u8, cpp_critical_raw_size)
+        };
+
+        let rust_critical_raw_bytes =
+            TestKernelSingletonCriticalMutex::Get().raw_mutex().raw_storage_slice();
+        expect_true!(rust_critical_raw_bytes == cpp_critical_raw_bytes);
+
+        {
+            ksync::lock!(let _guard = TestKernelSingletonMutex::Get().lock());
+        }
+
+        {
+            ksync::lock!(TestKernelSingletonMutex::lock());
+        }
+
+        {
+            ksync::lock!(let _guard = TestKernelSingletonCriticalMutex::Get().lock());
+        }
     }
 }

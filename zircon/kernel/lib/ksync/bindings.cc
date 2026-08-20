@@ -109,11 +109,9 @@ using LockPtr = T*;
 
 extern "C" {
 
-void cpp_mutex_init(LockPtr<Mutex> mutex, const void* class_id);
 void cpp_mutex_destroy(LockPtr<Mutex> mutex);
 void cpp_mutex_acquire(LockPtr<Mutex> lock, void* entry_storage);
 void cpp_mutex_release(LockPtr<Mutex> lock, void* entry_storage);
-void cpp_critical_mutex_init(LockPtr<CriticalMutex> mutex, const void* class_id);
 void cpp_critical_mutex_destroy(LockPtr<CriticalMutex> mutex);
 bool cpp_critical_mutex_acquire(LockPtr<CriticalMutex> lock, void* entry_storage);
 void cpp_critical_mutex_release(LockPtr<CriticalMutex> lock, void* entry_storage,
@@ -140,14 +138,6 @@ void cpp_brwlock_pi_acquire_write(LockPtr<BrwLockPi> lock, void* entry_storage);
 void cpp_brwlock_pi_release_write(LockPtr<BrwLockPi> lock, void* entry_storage);
 void cpp_lock_validate_release(void* entry_storage);
 void cpp_lock_validate_acquire(void* entry_storage);
-
-FFI_ALWAYS_INLINE void cpp_mutex_init(LockPtr<Mutex> lock, const void* class_id) {
-#if WITH_LOCK_DEP
-  new (lock) LockInitHelper<Mutex>(reinterpret_cast<lockdep::LockClassId>(class_id));
-#else
-  new (lock) Mutex();
-#endif
-}
 
 FFI_ALWAYS_INLINE void cpp_mutex_destroy(LockPtr<Mutex> lock) {
 #if WITH_LOCK_DEP
@@ -182,14 +172,6 @@ FFI_ALWAYS_INLINE void cpp_mutex_release(LockPtr<Mutex> lock,
   lock->lock().Release();
 #else
   lock->Release();
-#endif
-}
-
-FFI_ALWAYS_INLINE void cpp_critical_mutex_init(LockPtr<CriticalMutex> lock, const void* class_id) {
-#if WITH_LOCK_DEP
-  new (lock) LockInitHelper<CriticalMutex>(reinterpret_cast<lockdep::LockClassId>(class_id));
-#else
-  new (lock) CriticalMutex();
 #endif
 }
 

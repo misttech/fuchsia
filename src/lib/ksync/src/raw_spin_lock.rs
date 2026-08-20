@@ -50,6 +50,25 @@ pub struct RawSpinlock {
     storage: RawSpinlockStorage,
 }
 
+impl RawSpinlock {
+    pub const INIT: Self = Self::const_init(core::ptr::null());
+
+    /// Statically initializes a RawSpinlock in constant context.
+    pub const fn const_init(_class_id: *const c_void) -> Self {
+        Self {
+            #[cfg(feature = "lock_dep")]
+            class_id: _class_id,
+            storage: RawSpinlockStorage(zr::OpaqueBytes::new([0u8; RAW_SPINLOCK_SIZE])),
+        }
+    }
+}
+
+impl Default for RawSpinlock {
+    fn default() -> Self {
+        Self::INIT
+    }
+}
+
 // SAFETY: RawSpinlock is safe to share and access across threads.
 unsafe impl Sync for RawSpinlock {}
 unsafe impl Send for RawSpinlock {}

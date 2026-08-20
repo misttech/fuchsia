@@ -8,7 +8,7 @@
 extern crate self as ksync;
 
 pub use kstring::declare_interned_string;
-pub use ksync_macro::guarded;
+pub use ksync_macro::{declare_singleton_lock, guarded};
 pub use pin_init;
 
 /// Locks a mutex.
@@ -43,6 +43,7 @@ mod kmutex;
 mod lock_token;
 mod phantom_mutex;
 mod raw_lock;
+mod singleton;
 
 #[cfg(not(feature = "kernel"))]
 mod raw_userspace_mutex;
@@ -68,9 +69,10 @@ pub use kmutex::{
     AliasedLock, KMutex, KMutexAliasedGuard, KMutexGuard, aliased_lock, aliased_lock_policy,
 };
 pub use lock_token::LockToken;
-pub use lockdep::{LockClass, LockClassRegistration};
+pub use lockdep::{LOCK_FLAGS_SINGLETON_LOCK, LockClass, LockClassRegistration, LockFlags};
 pub use phantom_mutex::PhantomMutex;
 pub use raw_lock::{LockPolicy, RawLock};
+pub use singleton::SingletonMutex;
 
 #[cfg(not(feature = "kernel"))]
 pub use raw_userspace_mutex::RawMutex;

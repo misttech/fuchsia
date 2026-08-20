@@ -75,6 +75,13 @@ impl<Class: LockClass, M: RawLock> KMutex<Class, M> {
         KMutexAliasedGuard::new(self, alias)
     }
 
+    /// Returns a reference to the underlying raw lock.
+    #[cfg(any(test, ktest))]
+    #[inline]
+    pub fn raw_mutex(&self) -> &M {
+        &self.mutex
+    }
+
     const fn class_id() -> *const core::ffi::c_void {
         if cfg!(feature = "lock_dep") { Class::ID } else { core::ptr::null() }
     }

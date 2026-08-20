@@ -1522,3 +1522,100 @@ fn extract_lock_type(ty: &Type) -> Result<Option<proc_macro2::TokenStream>, syn:
         )),
     }
 }
+
+struct SingletonLockInput {
+    attrs: Vec<syn::Attribute>,
+    vis: syn::Visibility,
+    _struct_token: Option<syn::Token![struct]>,
+    name: Ident,
+    lock_type: Option<Type>,
+}
+
+impl syn::parse::Parse for SingletonLockInput {
+    fn parse(input: syn::parse::ParseStream<'_>) -> syn::Result<Self> {
+        let attrs = input.call(syn::Attribute::parse_outer)?;
+        let vis = input.parse::<syn::Visibility>()?;
+        let _struct_token = if input.peek(syn::Token![struct]) {
+            Some(input.parse::<syn::Token![struct]>()?)
+        } else {
+            None
+        };
+        let name = input.parse::<Ident>()?;
+        let lock_type = if input.peek(syn::Token![,]) {
+            input.parse::<syn::Token![,]>()?;
+            Some(input.parse::<Type>()?)
+        } else {
+            None
+        };
+        Ok(SingletonLockInput { attrs, vis, _struct_token, name, lock_type })
+    }
+}
+
+#[proc_macro]
+pub fn declare_singleton_lock(input: TokenStream) -> TokenStream {
+    let SingletonLockInput { attrs, vis, name, lock_type, .. } =
+        parse_macro_input!(input as SingletonLockInput);
+
+    let raw_lock = lock_type.unwrap_or_else(|| syn::parse_quote!(::ksync::RawMutex));
+    let name_str = name.to_string();
+    let name_upper = name_str.to_ascii_uppercase();
+    let string_reg_ident = format_ident!("{}_STRING_REG", name_upper);
+    let reg_ident = format_ident!("{}_REGISTRATION", name_upper);
+
+    quote! {
+        #(#attrs)*
+        #[derive(Debug, Copy, Clone)]
+        #vis struct #name;
+
+        const _: () = {
+            ::ksync::declare_interned_string!(#string_reg_ident, #name_str);
+
+            #[unsafe(link_section = "rust_lock_classes")]
+            #[used]
+            static #reg_ident: ::ksync::LockClassRegistration =
+                ::ksync::LockClassRegistration::with_flags(
+                    &#string_reg_ident,
+                    ::ksync::LOCK_FLAGS_SINGLETON_LOCK,
+                );
+
+            impl ::ksync::LockClass for #name {
+                const ID: *mut ::core::ffi::c_void = #reg_ident.get();
+            }
+        };
+
+        impl #name {
+            /// Returns a reference to the global singleton mutex.
+            #[inline]
+            pub fn Get() -> &'static ::ksync::KMutex<#name, #raw_lock> {
+                Self::get()
+            }
+
+            /// Returns a reference to the global singleton mutex.
+            #[inline]
+            pub fn get() -> &'static ::ksync::KMutex<#name, #raw_lock> {
+                static SINGLETON: ::ksync::KMutex<#name, #raw_lock> =
+                    ::ksync::KMutex::new(<#raw_lock>::const_init(<#name as ::ksync::LockClass>::ID));
+                &SINGLETON
+            }
+
+            /// Acquires the singleton mutex using the default policy.
+            #[inline]
+            pub fn lock() -> impl ::ksync::pin_init::PinInit<
+                ::ksync::KMutexGuard<'static, #name, #raw_lock>,
+                ::core::convert::Infallible,
+            > {
+                Self::get().lock()
+            }
+
+            /// Acquires the singleton mutex using the specified lock policy.
+            #[inline]
+            pub fn lock_policy<P: ::ksync::LockPolicy<#raw_lock>>() -> impl ::ksync::pin_init::PinInit<
+                ::ksync::KMutexGuard<'static, #name, #raw_lock, P>,
+                ::core::convert::Infallible,
+            > {
+                Self::get().lock_policy::<P>()
+            }
+        }
+    }
+    .into()
+}

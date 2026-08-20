@@ -34,6 +34,7 @@ rustc_library("ksync") {
     "src/raw_spin_lock.rs",
     "src/raw_userspace_brwlock.rs",
     "src/raw_userspace_mutex.rs",
+    "src/singleton.rs",
   ]
   with_unit_tests = !is_kernel
 
