@@ -5,6 +5,7 @@
 use discovery::TargetHandle;
 use ffx_config::EnvironmentContext;
 use ffx_diagnostics::{Check, CheckExt, Notifier};
+use safe_string::TermSafe;
 use std::time::Duration;
 use termio::Colors;
 
@@ -117,13 +118,11 @@ where
         .await
         .map_err(|e: anyhow::Error| fho::Error::User(e.into()))?;
     let info_bits = [
-        info.name.as_ref().map(|n| format!("name: {}", safe_string::TermSafe::from_str_escaped(n))),
-        info.model
-            .as_ref()
-            .map(|m| format!("model: {}", safe_string::TermSafe::from_str_escaped(m))),
+        info.name.as_ref().map(|n| format!("name: {}", TermSafe::from_str_escaped(n))),
+        info.model.as_ref().map(|m| format!("model: {}", TermSafe::from_str_escaped(m))),
         info.manufacturer
             .as_ref()
-            .map(|m| format!("manufacturer: {}", safe_string::TermSafe::from_str_escaped(m))),
+            .map(|m| format!("manufacturer: {}", TermSafe::from_str_escaped(m))),
     ]
     .into_iter()
     .flatten()

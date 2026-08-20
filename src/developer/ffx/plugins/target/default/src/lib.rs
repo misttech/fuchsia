@@ -62,7 +62,9 @@ pub async fn exec_target_default_impl(
                 writer.machine(&info)?;
             } else {
                 match &info.target {
-                    Some(target) => writeln!(writer, "{}", target)?,
+                    Some(target) => {
+                        writeln!(writer, "{}", safe_string::TermSafe::from_str_escaped(target))?
+                    }
                     _ => write!(writer.stderr(), "{}", TARGET_GET_NO_TARGET_MSG)?,
                 }
             }
@@ -234,5 +236,30 @@ mod test {
 
         let result = VerifiedMachineWriter::<TargetDefaultInfo>::try_from_env(&env).await;
         assert!(result.is_ok(), "VerifiedMachineWriter should support --machine json");
+    }
+
+    #[fuchsia::test]
+    async fn test_get_escapes_ansi_sequences() -> Result<()> {
+        let test_build_dir = tempdir().expect("output directory");
+        let env = test_env()
+            .in_tree(&test_build_dir.path())
+            .env_var("FUCHSIA_NODENAME", "evil\x1b[31m_target\x1b[0m")
+            .build()
+            .unwrap();
+        let test_buffers = TestBuffers::default();
+        let mut writer = VerifiedMachineWriter::<TargetDefaultInfo>::new_test(None, &test_buffers);
+
+        exec_target_default_impl(
+            &env.context,
+            TargetDefaultCommand { subcommand: SubCommand::Get(TargetDefaultGetCommand {}) },
+            &mut writer,
+        )
+        .await
+        .unwrap();
+
+        let (stdout, stderr) = test_buffers.into_strings();
+        assert_eq!(stdout, "evil\\u{1b}[31m_target\\u{1b}[0m\n");
+        assert_eq!(stderr, "");
+        Ok(())
     }
 }

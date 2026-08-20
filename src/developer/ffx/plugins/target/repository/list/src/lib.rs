@@ -191,7 +191,7 @@ impl ListTool {
 
         for repo in info {
             table.add_row(row!(
-                repo.name,
+                safe_string::TermSafe::from_str_escaped(&repo.name),
                 format!("{:?}", repo.mirrors),
                 format!("{:?}", repo.aliases)
             ));
@@ -410,5 +410,28 @@ mod test {
 
         static EXPECT: &str = "{\"ok\":{\"data\":[]}}\n";
         assert_eq!(EXPECT, (test_buffers.into_stdout_str()));
+    }
+
+    #[fuchsia::test]
+    async fn list_escapes_ansi_sequences() {
+        let client = fdomain_local::local_client_empty();
+        let test_buffers = TestBuffers::default();
+        let writer = <ListTool as fho::FfxMain>::Writer::new_test(None, &test_buffers);
+        let tool = ListTool {
+            _cmd: ListCommand {},
+            repo_proxy: setup_fake_repo_proxy(
+                client.clone(),
+                vec![RepositoryConfig {
+                    repo_url: Some("evil\x1b[31m_repo\x1b[0m".to_string()),
+                    ..Default::default()
+                }],
+            )
+            .await,
+            engine_proxy: setup_fake_engine_proxy(client, vec![]).await,
+        };
+        tool.main(writer).await.expect("main ok");
+        let stdout = test_buffers.into_stdout_str();
+        assert!(stdout.contains("evil\\u{1b}[31m_repo\\u{1b}[0m"));
+        assert!(!stdout.contains("\x1b"));
     }
 }

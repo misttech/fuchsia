@@ -334,7 +334,6 @@ mod tests {
             "mDNS bind event to unspecified socket (this is highly unexpected)"
         );
     }
-
     #[test]
     fn test_formatting_escapes_control_characters() {
         let info = ffx::TargetInfo {

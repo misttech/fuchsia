@@ -13,6 +13,7 @@ ffx_plugin("ffx_target_repository_list") {
     "//sdk/fidl/fuchsia.pkg:fuchsia.pkg_rust_fdomain",
     "//sdk/fidl/fuchsia.pkg.rewrite:fuchsia.pkg.rewrite_rust_fdomain",
     "//src/developer/ffx/lib/fho:lib",
+    "//src/developer/ffx/lib/safe_string:lib",
     "//src/developer/ffx/lib/target/holders:lib",
     "//src/developer/ffx/lib/writer:lib",
     "//src/lib/fdomain/client",
