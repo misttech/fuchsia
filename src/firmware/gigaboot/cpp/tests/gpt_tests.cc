@@ -403,6 +403,185 @@ TEST_F(GptReadWriteTest, ReadWritePartitionNonExistingPartition) {
   ASSERT_TRUE(read_res.is_error());
 }
 
+TEST(GigabootTest, FindEfiGptDeviceFallback) {
+  MockStubService stub_service;
+  Device image_device({"nic", "image"});
+  BlockDevice block_device({"disk", "gpt"}, 1024);
+  auto cleanup = SetupEfiGlobalState(stub_service, image_device);
+
+  stub_service.AddDevice(&image_device);
+  stub_service.AddDevice(&block_device);
+
+  block_device.InitializeGpt();
+  gpt_entry_t zircon_a_entry{{}, {}, kGptFirstUsableBlocks, kGptFirstUsableBlocks + 5, 0, {}};
+  SetGptEntryName(GPT_ZIRCON_A_NAME, zircon_a_entry);
+  block_device.AddGptPartition(zircon_a_entry);
+
+  auto res = FindEfiGptDevice();
+  ASSERT_TRUE(res.is_ok());
+  const gpt_entry_t* find_res = res.value().FindPartition(GPT_ZIRCON_A_NAME);
+  ASSERT_NE(find_res, nullptr);
+}
+
+class NoDevicePathDevice : public Device {
+ public:
+  NoDevicePathDevice() : Device({}) {}
+  efi_device_path_protocol* GetDevicePathProtocol() override { return nullptr; }
+};
+
+TEST(GigabootTest, FindEfiGptDeviceFallbackNoImageDevicePath) {
+  MockStubService stub_service;
+  NoDevicePathDevice image_device;
+  BlockDevice block_device({"disk", "gpt"}, 1024);
+  auto cleanup = SetupEfiGlobalState(stub_service, image_device);
+
+  stub_service.AddDevice(&image_device);
+  stub_service.AddDevice(&block_device);
+
+  block_device.InitializeGpt();
+  gpt_entry_t zircon_a_entry{{}, {}, kGptFirstUsableBlocks, kGptFirstUsableBlocks + 5, 0, {}};
+  SetGptEntryName(GPT_ZIRCON_A_NAME, zircon_a_entry);
+  block_device.AddGptPartition(zircon_a_entry);
+
+  auto res = FindEfiGptDevice();
+  ASSERT_TRUE(res.is_ok());
+  const gpt_entry_t* find_res = res.value().FindPartition(GPT_ZIRCON_A_NAME);
+  ASSERT_NE(find_res, nullptr);
+}
+
+TEST(GigabootTest, FindEfiGptDeviceFallbackMultipleCandidates) {
+  MockStubService stub_service;
+  Device image_device({"nic", "image"});
+  BlockDevice block_device1({"disk1", "gpt"}, 1024);
+  BlockDevice block_device2({"disk2", "gpt"}, 1024);
+  auto cleanup = SetupEfiGlobalState(stub_service, image_device);
+
+  stub_service.AddDevice(&image_device);
+  stub_service.AddDevice(&block_device1);
+  stub_service.AddDevice(&block_device2);
+
+  block_device1.InitializeGpt();
+  gpt_entry_t zircon_a_entry1{{}, {}, kGptFirstUsableBlocks, kGptFirstUsableBlocks + 5, 0, {}};
+  SetGptEntryName(GPT_ZIRCON_A_NAME, zircon_a_entry1);
+  block_device1.AddGptPartition(zircon_a_entry1);
+
+  block_device2.InitializeGpt();
+  gpt_entry_t zircon_a_entry2{{}, {}, kGptFirstUsableBlocks, kGptFirstUsableBlocks + 5, 0, {}};
+  SetGptEntryName(GPT_ZIRCON_A_NAME, zircon_a_entry2);
+  block_device2.AddGptPartition(zircon_a_entry2);
+
+  auto res = FindEfiGptDevice();
+  ASSERT_TRUE(res.is_error());
+
+  // Positive control. Without one, this test passes even with the fallback
+  // removed entirely -- two non-matching device paths error out on their own,
+  // so the assertion above would be satisfied for the wrong reason. Destroying
+  // one disk's GPT leaves a single candidate, and the identical call must then
+  // succeed, which pins the refusal on ambiguity.
+  ResetFindEfiGptDeviceCacheForTest();
+  auto& contents2 = block_device2.fake_disk_io_protocol().contents(0);
+  uint8_t* const data2 = contents2.data();
+  reinterpret_cast<gpt_header_t*>(data2 + kBlockSize)->crc32 = 0;
+  reinterpret_cast<gpt_header_t*>(data2 + contents2.size() - kBlockSize)->crc32 = 0;
+
+  ASSERT_TRUE(FindEfiGptDevice().is_ok());
+}
+
+// Load() repairs a damaged primary GPT from the backup as a SIDE EFFECT, and
+// that repair writes to the disk. The content-based scan examines every block
+// device in the system, most of which are not ours, so it must probe read-only
+// -- otherwise merely looking for our disk silently rewrites media we are about
+// to reject.
+TEST(GigabootTest, FindEfiGptDeviceFallbackDoesNotWriteToRejectedDisk) {
+  MockStubService stub_service;
+  Device image_device({"nic", "image"});
+  BlockDevice other_disk({"disk1", "gpt"}, 1024);
+  BlockDevice fuchsia_disk({"disk2", "gpt"}, 1024);
+  auto cleanup = SetupEfiGlobalState(stub_service, image_device);
+
+  stub_service.AddDevice(&image_device);
+  stub_service.AddDevice(&other_disk);
+  stub_service.AddDevice(&fuchsia_disk);
+
+  // Someone else's disk: a valid GPT carrying no Fuchsia partitions, whose
+  // primary header is damaged but whose backup is intact -- exactly the state
+  // that tempts Load() into a repair write.
+  other_disk.InitializeGpt();
+  reinterpret_cast<gpt_header_t*>(other_disk.fake_disk_io_protocol().contents(0).data() +
+                                  kBlockSize)
+      ->crc32 = 0;
+  uint8_t* const other_data = other_disk.fake_disk_io_protocol().contents(0).data();
+  const std::vector<uint8_t> before(other_data + kBlockSize, other_data + 2 * kBlockSize);
+
+  fuchsia_disk.InitializeGpt();
+  gpt_entry_t zircon_a_entry{{}, {}, kGptFirstUsableBlocks, kGptFirstUsableBlocks + 5, 0, {}};
+  SetGptEntryName(GPT_ZIRCON_A_NAME, zircon_a_entry);
+  fuchsia_disk.AddGptPartition(zircon_a_entry);
+
+  auto res = FindEfiGptDevice();
+  ASSERT_TRUE(res.is_ok());
+  ASSERT_NE(res.value().FindPartition(GPT_ZIRCON_A_NAME), nullptr);
+
+  uint8_t* const other_after = other_disk.fake_disk_io_protocol().contents(0).data();
+  const std::vector<uint8_t> after(other_after + kBlockSize, other_after + 2 * kBlockSize);
+  ASSERT_EQ(before, after);
+}
+
+TEST(GigabootTest, FindEfiGptDeviceCaching) {
+  MockStubService stub_service;
+  Device image_device({"nic", "image"});
+  BlockDevice block_device({"disk", "gpt"}, 1024);
+  auto cleanup = SetupEfiGlobalState(stub_service, image_device);
+
+  stub_service.AddDevice(&image_device);
+  stub_service.AddDevice(&block_device);
+
+  block_device.InitializeGpt();
+  gpt_entry_t zircon_a_entry{{}, {}, kGptFirstUsableBlocks, kGptFirstUsableBlocks + 5, 0, {}};
+  SetGptEntryName(GPT_ZIRCON_A_NAME, zircon_a_entry);
+  block_device.AddGptPartition(zircon_a_entry);
+
+  // Populates the cache by way of the fallback scan.
+  ASSERT_TRUE(FindEfiGptDevice().is_ok());
+
+  // Destroy both GPT headers, so no scan can identify this disk as a Fuchsia
+  // install any more.
+  auto& contents = block_device.fake_disk_io_protocol().contents(0);
+  uint8_t* const data = contents.data();
+  reinterpret_cast<gpt_header_t*>(data + kBlockSize)->crc32 = 0;
+  reinterpret_cast<gpt_header_t*>(data + contents.size() - kBlockSize)->crc32 = 0;
+
+  // Served from the cache, which never consults the GPT.
+  ASSERT_TRUE(FindEfiGptDevice().is_ok());
+
+  // Drop the cache and the very same call fails. That is what makes the
+  // assertion above evidence of a cache hit rather than a successful rescan.
+  ResetFindEfiGptDeviceCacheForTest();
+  ASSERT_TRUE(FindEfiGptDevice().is_error());
+}
+
+// A disk provisioned under the legacy "zircon-a" naming scheme is still a
+// Fuchsia disk; gigaboot supports both spellings elsewhere (utils.cc
+// MaybeMapPartitionName), so the fallback must not key on the modern one alone.
+TEST(GigabootTest, FindEfiGptDeviceFallbackLegacyPartitionName) {
+  MockStubService stub_service;
+  Device image_device({"nic", "image"});
+  BlockDevice block_device({"disk", "gpt"}, 1024);
+  auto cleanup = SetupEfiGlobalState(stub_service, image_device);
+
+  stub_service.AddDevice(&image_device);
+  stub_service.AddDevice(&block_device);
+
+  block_device.InitializeGpt();
+  gpt_entry_t zircon_a_entry{{}, {}, kGptFirstUsableBlocks, kGptFirstUsableBlocks + 5, 0, {}};
+  SetGptEntryName(GUID_ZIRCON_A_NAME, zircon_a_entry);
+  block_device.AddGptPartition(zircon_a_entry);
+
+  auto res = FindEfiGptDevice();
+  ASSERT_TRUE(res.is_ok());
+  ASSERT_NE(res.value().FindPartition(GUID_ZIRCON_A_NAME), nullptr);
+}
+
 }  // namespace
 
 }  // namespace gigaboot

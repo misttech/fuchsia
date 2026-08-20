@@ -30,6 +30,7 @@
 #include <phys/efi/protocol.h>
 
 #include "acpi.h"
+#include "gpt.h"
 #include "network.h"
 
 namespace gigaboot {
@@ -45,7 +46,7 @@ class Device {
   virtual efi_graphics_output_protocol* GetGraphicsOutputProtocol() { return nullptr; }
   virtual efi_managed_network_protocol* GetManagedNetworkProtocol() { return nullptr; }
 
-  efi_device_path_protocol* GetDevicePathProtocol() {
+  virtual efi_device_path_protocol* GetDevicePathProtocol() {
     return reinterpret_cast<efi_device_path_protocol*>(device_path_buffer_.data());
   }
 
@@ -220,6 +221,7 @@ extern const fbl::NoDestructor<EfiConfigTable> kDefaultEfiConfigTable;
 // The following overrides Efi global variables for test.
 inline auto SetupEfiGlobalState(MockStubService& stub, Device& image,
                                 const EfiConfigTable& config = *kDefaultEfiConfigTable) {
+  ResetFindEfiGptDeviceCacheForTest();
   EXPECT_FALSE(gEfiLoadedImage);
   EXPECT_FALSE(gEfiSystemTable);
   static efi_loaded_image_protocol loaded_image;
@@ -235,6 +237,7 @@ inline auto SetupEfiGlobalState(MockStubService& stub, Device& image,
   return fit::defer([]() {
     gEfiLoadedImage = nullptr;
     gEfiSystemTable = nullptr;
+    ResetFindEfiGptDeviceCacheForTest();
   });
 }
 

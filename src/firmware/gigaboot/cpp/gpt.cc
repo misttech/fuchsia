@@ -56,7 +56,22 @@ gpt_header_t GenerateComplementaryHeader(const gpt_header_t &good) {
   return restored;
 }
 
+// Whether this disk looks like a Fuchsia install target.
+//
+// Both the modern ("zircon_a") and the legacy ("zircon-a") naming schemes count.
+// gigaboot still supports disks provisioned under the legacy scheme -- see
+// MaybeMapPartitionName() in utils.cc -- so keying only on the modern name would
+// leave a legacy-provisioned disk unfindable.
+bool HasFuchsiaGpt(EfiGptBlockDevice &device) {
+  return device.FindPartition(GPT_ZIRCON_A_NAME) != nullptr ||
+         device.FindPartition(GUID_ZIRCON_A_NAME) != nullptr;
+}
+
+efi_handle g_cached_gpt_handle = nullptr;
+
 }  // namespace
+
+void ResetFindEfiGptDeviceCacheForTest() { g_cached_gpt_handle = nullptr; }
 
 FuchsiaFirmwareStorage EfiGptBlockDevice::GenerateStorageOps() {
   size_t scratch_size = BlockSize();
@@ -209,7 +224,7 @@ fit::result<efi_status> EfiGptBlockDevice::Reinitialize() {
   return fit::ok();
 }
 
-fit::result<efi_status> EfiGptBlockDevice::RestoreFromBackup() {
+fit::result<efi_status> EfiGptBlockDevice::RestoreFromBackup(GptRepair repair) {
   gpt_header_t backup;
   if (efi_status status = Read(&backup, BlockSize() * LastBlock(), sizeof(backup));
       status != EFI_SUCCESS) {
@@ -231,6 +246,14 @@ fit::result<efi_status> EfiGptBlockDevice::RestoreFromBackup() {
   }
 
   gpt_header_ = GenerateComplementaryHeader(backup);
+
+  // The in-memory copies are now good, which is all a probe needs. Writing the
+  // repair back is the caller's business, and not ours if this disk may not be
+  // one we own.
+  if (repair == GptRepair::kNo) {
+    return fit::ok();
+  }
+
   if (efi_status status = Write(&gpt_header_, BlockSize(), sizeof(gpt_header_));
       status != EFI_SUCCESS) {
     return fit::error(status);
@@ -266,7 +289,11 @@ fit::result<efi_status, EfiGptBlockDevice> EfiGptBlockDevice::Create(efi_handle 
   return fit::ok(std::move(ret));
 }
 
-fit::result<efi_status> EfiGptBlockDevice::Load() {
+fit::result<efi_status> EfiGptBlockDevice::Load(GptRepair repair) {
+  if (generation_id_ == GENERATION_ID) {
+    return fit::ok();
+  }
+
   // First block is MBR. Read the second block for the GPT header.
   if (efi_status status = Read(&gpt_header_, BlockSize(), sizeof(gpt_header_));
       status != EFI_SUCCESS) {
@@ -283,7 +310,7 @@ fit::result<efi_status> EfiGptBlockDevice::Load() {
   // This slows down boot in the common case where everything is fine;
   // it is arguably better to leave this task to a post-boot daemon.
   if (!ValidateHeader(gpt_header_)) {
-    auto res = RestoreFromBackup();
+    auto res = RestoreFromBackup(repair);
     if (!res.is_ok()) {
       return res;
     }
@@ -296,7 +323,7 @@ fit::result<efi_status> EfiGptBlockDevice::Load() {
                                  sizeof(entries_[0]) * entries_.size());
 
     if (entries_crc != gpt_header_.entries_crc) {
-      auto res = RestoreFromBackup();
+      auto res = RestoreFromBackup(repair);
       if (!res.is_ok()) {
         return res;
       }
@@ -454,11 +481,12 @@ std::span<const std::array<char, GPT_NAME_LEN / 2>> EfiGptBlockDevice::ListParti
 // the currently running image. This can be a problem when booting from USB. Add support to handle
 // the USB case.
 fit::result<efi_status, EfiGptBlockDevice> FindEfiGptDevice() {
-  auto image_device_path = EfiOpenProtocol<efi_device_path_protocol>(gEfiLoadedImage->DeviceHandle);
-  if (image_device_path.is_error()) {
-    printf("Failed to open device path protocol %s\n",
-           EfiStatusToString(image_device_path.error_value()));
-    return fit::error{image_device_path.error_value()};
+  if (g_cached_gpt_handle != nullptr) {
+    auto device = EfiGptBlockDevice::Create(g_cached_gpt_handle);
+    if (device.is_ok()) {
+      return fit::ok(std::move(device.value()));
+    }
+    g_cached_gpt_handle = nullptr;
   }
 
   // Find all handles that support block io protocols.
@@ -470,36 +498,99 @@ fit::result<efi_status, EfiGptBlockDevice> FindEfiGptDevice() {
 
   // Scan all handles and find the one from which the currently running image comes.
   // This is done by checking if they share common device path prefix.
+  if (gEfiLoadedImage) {
+    auto image_device_path =
+        EfiOpenProtocol<efi_device_path_protocol>(gEfiLoadedImage->DeviceHandle);
+    if (image_device_path.is_ok()) {
+      for (auto handle : block_io_supported_handles->AsSpan()) {
+        auto block_io = EfiOpenProtocol<efi_block_io_protocol>(handle);
+        if (block_io.is_error()) {
+          continue;
+        }
+
+        // Skip logical partition blocks and non present devices.
+        efi_block_io_protocol *bio = block_io.value().get();
+        if (bio->Media->LogicalPartition || !bio->Media->MediaPresent) {
+          continue;
+        }
+
+        // Check device path prefix match.
+        auto device_path = EfiOpenProtocol<efi_device_path_protocol>(handle);
+        if (device_path.is_error()) {
+          continue;
+        }
+
+        if (EfiDevicePathNode::StartsWith(image_device_path.value().get(),
+                                          device_path.value().get())) {
+          // Open the disk io protocol
+          auto efi_gpt_device = EfiGptBlockDevice::Create(handle);
+          if (efi_gpt_device.is_error()) {
+            // Not fatal: another handle may match, and failing that the
+            // content-based fallback below can still resolve the disk.
+            continue;
+          }
+
+          g_cached_gpt_handle = handle;
+          return fit::ok(std::move(efi_gpt_device.value()));
+        }
+      }
+    }
+  }
+
+  // Nothing shares a device path prefix with the running image (or opening the
+  // running image's device path failed). That is the normal case when gigaboot
+  // was network-booted (its "boot device" is the NIC) or booted from removable
+  // media -- see https://fxbug.dev/42159406.
+  //
+  // Fall back to identifying the target by its *contents* rather than by how we
+  // got here: the disk carrying a Fuchsia GPT. Partition names are canonical, so
+  // this is the same question "which disk is the Fuchsia install on" asked
+  // directly. Only an unambiguous answer is accepted -- with more than one
+  // candidate we refuse rather than risk flashing the wrong disk.
+  //
+  // Probing is strictly read-only (GptRepair::kNo). Most of the disks examined
+  // here are not ours -- repairing a damaged primary GPT on a disk we are about
+  // to reject would be an unannounced write to someone else's media.
+  efi_handle fallback_handle = nullptr;
+  size_t candidates = 0;
   for (auto handle : block_io_supported_handles->AsSpan()) {
     auto block_io = EfiOpenProtocol<efi_block_io_protocol>(handle);
     if (block_io.is_error()) {
-      printf("Failed to open block io protocol\n");
-      return fit::error(block_io.error_value());
+      continue;
     }
-
-    // Skip logical partition blocks and non present devices.
     efi_block_io_protocol *bio = block_io.value().get();
     if (bio->Media->LogicalPartition || !bio->Media->MediaPresent) {
       continue;
     }
 
-    // Check device path prefix match.
-    auto device_path = EfiOpenProtocol<efi_device_path_protocol>(handle);
-    if (device_path.is_error()) {
-      printf("Failed to create device path protocol\n");
-      return fit::error(device_path.error_value());
+    auto probe = EfiGptBlockDevice::Create(handle);
+    if (probe.is_error() || probe.value().Load(GptRepair::kNo).is_error()) {
+      continue;
+    }
+    if (!HasFuchsiaGpt(probe.value())) {
+      continue;
     }
 
-    if (EfiDevicePathNode::StartsWith(image_device_path.value().get(), device_path.value().get())) {
-      // Open the disk io protocol
-      auto efi_gpt_device = EfiGptBlockDevice::Create(handle);
-      if (efi_gpt_device.is_error()) {
-        printf("Failed to create GPT device\n");
-        return fit::error(efi_gpt_device.error_value());
-      }
-
-      return fit::ok(std::move(efi_gpt_device.value()));
+    candidates++;
+    if (fallback_handle == nullptr) {
+      fallback_handle = handle;
     }
+  }
+
+  if (candidates == 1) {
+    printf("Image did not boot from a block device; using the disk with a Fuchsia GPT\n");
+    // Deliberately a fresh device rather than the probe: the caller's Load()
+    // then reads the GPT for real, repair included, on the one disk we chose.
+    auto device = EfiGptBlockDevice::Create(fallback_handle);
+    if (device.is_error()) {
+      return fit::error(device.error_value());
+    }
+    g_cached_gpt_handle = fallback_handle;
+    return fit::ok(std::move(device.value()));
+  }
+  if (candidates > 1) {
+    printf("Refusing to guess: %zu disks carry a Fuchsia GPT\n", candidates);
+    return fit::error{EFI_NOT_FOUND};
   }
 
   printf("No matching block device found\n");

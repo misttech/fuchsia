@@ -21,6 +21,16 @@
 
 namespace gigaboot {
 
+// Whether a load may repair a damaged primary GPT from the backup copy.
+//
+// Repair WRITES to the disk. Code that is merely probing a device to decide
+// whether it is the one it wants must pass kNo: a probe must not modify media
+// that turns out not to be ours.
+enum class GptRepair {
+  kYes,
+  kNo,
+};
+
 class EfiGptBlockDevice {
  public:
   static fit::result<efi_status, EfiGptBlockDevice> Create(efi_handle device_handle);
@@ -62,7 +72,11 @@ class EfiGptBlockDevice {
   // Reading both tables all the time slows down boot in the common case where
   // both tables are fine. This sort of verification and repair is arguably better
   // suited to a post-boot daemon.
-  fit::result<efi_status> Load();
+  //
+  // Note the repair described above writes to the disk. Pass GptRepair::kNo to
+  // load without that side effect, at the cost of leaving a damaged primary
+  // damaged.
+  fit::result<efi_status> Load(GptRepair repair = GptRepair::kYes);
 
   // Create a FuchsiaFirmwareStorage structure for the firmware SDK storage library.
   FuchsiaFirmwareStorage GenerateStorageOps();
@@ -111,7 +125,7 @@ class EfiGptBlockDevice {
   efi_status Write(const void *data, size_t offset, size_t length);
 
   fit::result<efi_status> LoadGptEntries(const gpt_header_t &);
-  fit::result<efi_status> RestoreFromBackup();
+  fit::result<efi_status> RestoreFromBackup(GptRepair repair);
 
   // Check that the given range is within boundary of a partition and returns the absolute offset
   // relative to the storage start.
@@ -121,6 +135,7 @@ class EfiGptBlockDevice {
 };
 
 fit::result<efi_status, EfiGptBlockDevice> FindEfiGptDevice();
+void ResetFindEfiGptDeviceCacheForTest();
 
 }  // namespace gigaboot
 
