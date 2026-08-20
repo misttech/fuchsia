@@ -322,12 +322,17 @@ group("abi_source_deps") {
 # This is the top config for all kernel code (after :abi).
 variant("kernel_config") {
   configs = [
+    # Various option predefines.
     ":jtrace_config",
     ":lock_dep",
     ":scheduler",
     ":persistent_ram_config",
     ":kernel_memory_profiler",
+
+    # This enables warnings that can then be moderated by later configs.
+    "//build/config/rust/lints:clippy_warn_all",
     ":warnings",
+
     "//zircon/kernel/arch/$zircon_cpu:kernel",
     "//build/config:no-finite-loops",
     "//build/config:zero-call-used-regs",
@@ -438,6 +443,9 @@ config("warnings") {
   }
 
   cflags_c = [ "-Wmissing-prototypes" ]
+
+  # Needed for kernel_rust_mod().
+  rustflags = [ "-Aclippy::duplicate_mod" ]
 }
 
 config("lock_dep") {
@@ -608,4 +616,44 @@ kernel_rust_mod_attr("no_main") {
 # conversion process.
 kernel_rust_mod_attr("allow_dead_code") {
   output_name = "allow(dead_code)"
+}
+
+# TODO(https://fxbug.dev/548748442): remove when all fixed in the code
+clippy_lints = [
+  "assertions-on-constants",
+  "clone-on-copy",
+  "collapsible-if",
+  "crate-in-macro-def",
+  "derivable-impls",
+  "doc-lazy-continuation",
+  "empty-line-after-doc-comments",
+  "if-same-then-else",
+  "len-zero",
+  "let-unit-value",
+  "manual-div-ceil",
+  "manual-is-multiple-of",
+  "manual-non-exhaustive",
+  "manual-swap",
+  "match-like-matches-macro",
+  "needless-late-init",
+  "needless-lifetimes",
+  "needless-range-loop",
+  "new-without-default",
+  "non-canonical-clone-impl",
+  "option-as-ref-deref",
+  "ptr-eq",
+  "redundant-pattern-matching",
+  "suspicious-arithmetic-impl",
+  "test-attr-in-doctest",
+  "too-many-arguments",
+  "type-complexity",
+  "unnecessary-cast",
+  "unnecessary-unwrap",
+  "while-let-loop",
+  "write-with-newline",
+]
+foreach(lint, clippy_lints) {
+  config("allow-$lint") {
+    rustflags = [ "--allow=clippy::$lint" ]
+  }
 }

@@ -19,6 +19,9 @@ rustc_library("kalloc") {
 
   if (is_kernel) {
     rustflags = [ "--cfg=is_kernel" ]
+
+    # TODO(https://fxbug.dev/548748442): remove when all fixed in the code
+    configs += [ "//zircon/kernel/switch:allow-unnecessary-cast" ]
   }
 }
 

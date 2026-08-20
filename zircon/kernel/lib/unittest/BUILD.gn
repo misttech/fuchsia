@@ -72,6 +72,10 @@ rustc_library("unittest-rs") {
     features = [ "kernel" ]
     sources += [ "src/user_memory.rs" ]
     deps += [ "//src/lib/zr" ]
+
+    # TODO(https://fxbug.dev/548748442): remove when all fixed in the code
+    configs += [ "//zircon/kernel/switch:allow-test-attr-in-doctest" ]
+    configs += [ "//zircon/kernel/switch:allow-too-many-arguments" ]
   }
 
   with_unit_tests = true

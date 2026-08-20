@@ -39,6 +39,11 @@ rustc_library("counters-rs") {
     "//src/lib/zr",
   ]
   rustenv = [ "SMP_MAX_CPUS=${smp_max_cpus}" ]
+
+  # TODO(https://fxbug.dev/548748442): remove when all fixed in the code
+  if (is_kernel) {
+    configs += [ "//zircon/kernel/switch:allow-unnecessary-cast" ]
+  }
 }
 
 library_headers("headers") {

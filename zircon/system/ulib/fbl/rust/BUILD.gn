@@ -51,6 +51,21 @@ rustc_library("fbl") {
     "//src/lib/zr",
     "//third_party/rust_crates:pin-init",
   ]
+
+  # TODO(https://fxbug.dev/548748442): remove when all fixed in the code
+  if (is_kernel) {
+    configs += [ "//zircon/kernel/switch:allow-redundant-pattern-matching" ]
+    configs += [ "//zircon/kernel/switch:allow-collapsible-if" ]
+    configs += [ "//zircon/kernel/switch:allow-let-unit-value" ]
+    configs += [ "//zircon/kernel/switch:allow-manual-swap" ]
+    configs += [ "//zircon/kernel/switch:allow-type-complexity" ]
+    configs += [ "//zircon/kernel/switch:allow-ptr-eq" ]
+    configs += [ "//zircon/kernel/switch:allow-len-zero" ]
+    configs += [ "//zircon/kernel/switch:allow-needless-late-init" ]
+    configs += [ "//zircon/kernel/switch:allow-unnecessary-unwrap" ]
+    configs += [ "//zircon/kernel/switch:allow-new-without-default" ]
+    configs += [ "//zircon/kernel/switch:allow-needless-range-loop" ]
+  }
 }
 
 source_set("test_support") {

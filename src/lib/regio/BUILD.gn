@@ -26,9 +26,21 @@ regio_common = {
   deps = [ "//zircon/system/ulib/mmio-ptr:mmio-ptr-rs" ]
 }
 
+# TODO(https://fxbug.dev/548748442): remove when all fixed in the code
+regio_configs = []
+if (is_kernel) {
+  regio_configs += [ "//zircon/kernel/switch:allow-new-without-default" ]
+  regio_configs += [ "//zircon/kernel/switch:allow-clone-on-copy" ]
+  regio_configs += [ "//zircon/kernel/switch:allow-non-canonical-clone-impl" ]
+  regio_configs += [ "//zircon/kernel/switch:allow-doc-lazy-continuation" ]
+  regio_configs += [ "//zircon/kernel/switch:allow-assertions-on-constants" ]
+  regio_configs += [ "//zircon/kernel/switch:allow-let-unit-value" ]
+}
+
 rustc_library("regio") {
   forward_variables_from(regio_common, "*")
   with_unit_tests = true
+  configs += regio_configs
 }
 
 # The same crate as ":regio", but with the testing feature enabled.
@@ -36,6 +48,7 @@ rustc_library("regio-testing") {
   forward_variables_from(regio_common, "*")
   testonly = true
   features = [ "testing" ]
+  configs += regio_configs
 }
 
 fuchsia_unittest_package("regio-tests") {

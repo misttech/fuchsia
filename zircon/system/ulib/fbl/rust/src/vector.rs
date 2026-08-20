@@ -133,7 +133,6 @@ impl<T, A: Allocator> Vector<T, A> {
     }
 
     /// Appends an element to the back of the vector.
-
     pub fn push_back(&mut self, value: T) -> Result<(), AllocError> {
         self.grow_for_new_element()?;
         self.buf[self.size].write(value);
@@ -155,7 +154,6 @@ impl<T, A: Allocator> Vector<T, A> {
     }
 
     /// Inserts an element at position index, shifting all elements after it to the right.
-
     pub fn insert(&mut self, index: usize, value: T) -> Result<(), AllocError> {
         assert!(index <= self.size);
         self.push_back(value)?;
@@ -191,7 +189,6 @@ impl<T, A: Allocator> Vector<T, A> {
     /// If new_size is smaller, elements are truncated.
     /// If new_size is larger, new elements are initialized with `Default::default()`.
     /// Returns None if allocation fails.
-
     pub fn resize_with_default(&mut self, new_size: usize) -> Result<(), AllocError>
     where
         T: Default,
@@ -203,7 +200,6 @@ impl<T, A: Allocator> Vector<T, A> {
     /// If new_size is smaller, elements are truncated.
     /// If new_size is larger, new elements are cloned from `value`.
     /// Returns None if allocation fails.
-
     pub fn resize(&mut self, new_size: usize, value: T) -> Result<(), AllocError>
     where
         T: Clone,
@@ -215,7 +211,6 @@ impl<T, A: Allocator> Vector<T, A> {
     /// If new_size is smaller, elements are truncated.
     /// If new_size is larger, new elements are created by calling the closure.
     /// Returns None if allocation fails.
-
     pub fn resize_with<F>(&mut self, new_size: usize, mut f: F) -> Result<(), AllocError>
     where
         F: FnMut() -> T,
@@ -274,7 +269,7 @@ impl<T, A: Allocator> Vector<T, A> {
 
     /// Creates a vector from an iterator.
     /// Returns None if allocation fails.
-
+    ///
     /// Creates a vector from an iterator with the given allocator.
     pub fn try_from_iter_in<I: IntoIterator<Item = T>>(
         iter: I,

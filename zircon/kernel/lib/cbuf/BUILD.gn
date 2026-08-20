@@ -35,6 +35,11 @@ kernel_rust_crate("cbuf-rs") {
     "//src/lib/ksync",
     "//third_party/rust_crates:pin-init",
   ]
+
+  # TODO(https://fxbug.dev/548748442): remove when all fixed in the code
+  if (is_kernel) {
+    configs += [ "//zircon/kernel/switch:allow-collapsible-if" ]
+  }
 }
 
 kernel_rust_mod("cbuf_rs_tests") {

@@ -12,4 +12,9 @@ kernel_rust_crate("ktrace-macro") {
     "src/enabled.rs",
     "src/lib.rs",
   ]
+
+  # TODO(https://fxbug.dev/548748442): remove when all fixed in the code
+  if (is_kernel) {
+    configs += [ "//zircon/kernel/switch:allow-crate-in-macro-def" ]
+  }
 }

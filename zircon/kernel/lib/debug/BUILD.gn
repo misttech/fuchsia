@@ -16,6 +16,12 @@ rustc_library("debug") {
     "src/lib.rs",
     "src/ltrace.rs",
   ]
+
+  # TODO(https://fxbug.dev/548748442): remove when all fixed in the code
+  if (is_kernel) {
+    configs += [ "//zircon/kernel/switch:allow-if-same-then-else" ]
+    configs += [ "//zircon/kernel/switch:allow-write-with-newline" ]
+  }
 }
 
 group("tests") {

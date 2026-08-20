@@ -17,6 +17,13 @@ rustc_library("affine") {
   ]
   deps = [ "//src/lib/zr" ]
   with_unit_tests = true
+
+  # TODO(https://fxbug.dev/548748442): remove when all fixed in the code
+  if (is_kernel) {
+    configs += [ "//zircon/kernel/switch:allow-suspicious-arithmetic-impl" ]
+    configs += [ "//zircon/kernel/switch:allow-derivable-impls" ]
+    configs += [ "//zircon/kernel/switch:allow-match-like-matches-macro" ]
+  }
 }
 
 fuchsia_unittest_package("affine-rust-test-pkg") {

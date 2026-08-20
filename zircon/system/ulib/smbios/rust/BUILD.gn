@@ -23,6 +23,11 @@ rustc_library("smbios") {
     "//src/lib/zr",
     "//third_party/rust_crates:zerocopy",
   ]
+
+  # TODO(https://fxbug.dev/548748442): remove when all fixed in the code
+  if (is_kernel) {
+    configs += [ "//zircon/kernel/switch:allow-collapsible-if" ]
+  }
 }
 
 fuchsia_unittest_package("smbios-rust-test-pkg") {

@@ -179,7 +179,7 @@ impl<T: ?Sized, A: Allocator> Box<T, A> {
     /// The allocator `A` is also leaked. This is intentional and matches the
     /// behavior of `std::boxed::Box::leak`, ensuring that a stateful allocator
     /// remains valid as long as the leaked reference.
-
+    ///
     /// Consumes the `Box`, returning a raw pointer and the allocator.
     ///
     /// The memory will be leaked, and never deallocated unless reconstructed.

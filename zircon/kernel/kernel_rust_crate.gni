@@ -91,3 +91,7 @@ template("kernel_rust_crate") {
     }
   }
 }
+
+set_defaults("kernel_rust_crate") {
+  configs = default_common_binary_configs
+}

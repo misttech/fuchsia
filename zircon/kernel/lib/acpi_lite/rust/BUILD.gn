@@ -37,6 +37,12 @@ rustc_library("acpi_lite") {
     "src/tests/debug_port_tests.rs",
     "src/tests/numa_tests.rs",
   ]
+
+  # TODO(https://fxbug.dev/548748442): remove when all fixed in the code
+  if (is_kernel) {
+    configs += [ "//zircon/kernel/switch:allow-unnecessary-cast" ]
+    configs += [ "//zircon/kernel/switch:allow-needless-lifetimes" ]
+  }
 }
 
 # Fuzzers
