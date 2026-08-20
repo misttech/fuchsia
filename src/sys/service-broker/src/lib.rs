@@ -36,7 +36,11 @@ fn extract_event_filename<'a>(path: &'a Path) -> Option<Cow<'a, str>> {
 async fn wait_for_first_instance(svc: &fio::DirectoryProxy) -> Result<String> {
     const INPUT_SERVICE: &str = "input";
     let (service_dir, request) = fidl::endpoints::create_proxy::<fio::DirectoryMarker>();
-    svc.as_ref_directory().open(INPUT_SERVICE, fio::Flags::PROTOCOL_DIRECTORY, request.into())?;
+    svc.as_ref_directory().open(
+        INPUT_SERVICE,
+        fio::Flags::PROTOCOL_DIRECTORY | fio::PERM_READABLE,
+        request.into(),
+    )?;
     let watcher = Watcher::new(&service_dir).await.context("failed to create watcher")?;
 
     let mut stream =
