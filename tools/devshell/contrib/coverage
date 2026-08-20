@@ -128,10 +128,10 @@ function main() {
   readonly _REL_BUILD_DIR="$(realpath -s --relative-to="${FUCHSIA_BUILD_DIR}" "${FUCHSIA_DIR}")"
 
   readonly start_time=$SECONDS
-  fx-command-run host-tool ffx \
-    --config 'coverage=true' \
+  fx-command-run host-tool ffx-coverage \
     coverage \
     --clang-dir "${PREBUILT_CLANG_DIR}" \
+    --symbol-index-json "${FUCHSIA_BUILD_DIR}/.symbol-index.json" \
     --test-output-dir "${test_output_dir}" \
     ${ffx_cov_args[@]+"${ffx_cov_args[@]}"} \
     --path-remappings "${_REL_BUILD_DIR},${FUCHSIA_DIR}" \
