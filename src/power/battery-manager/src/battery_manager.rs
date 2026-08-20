@@ -1113,15 +1113,19 @@ mod tests {
             power_observability_state_recorders: contains {
                 raw_level_percent: contains {
                     history: contains {
-                        "0": contains {
-                            value: 3u64,
+                        shards: contains {
+                            "0": contains {
+                                values: vec![3u64],
+                            }
                         }
                     }
                 },
                 level_percent: contains {
                     history: contains {
-                        "0": contains {
-                            value: 0u64,
+                        shards: contains {
+                            "0": contains {
+                                values: vec![0u64],
+                            }
                         }
                     }
                 },
@@ -1131,8 +1135,10 @@ mod tests {
                         type: "enum",
                     },
                     history: contains {
-                        "0": contains {
-                            value: "Discharging",
+                        shards: contains {
+                            "0": contains {
+                                values: vec![2u64],
+                            }
                         }
                     }
                 },
@@ -1161,8 +1167,10 @@ mod tests {
             power_observability_state_recorders: contains {
                 battery_level_fault: contains {
                     history: contains {
-                        "1": contains {
-                            value: "DriverDisconnected",
+                        shards: contains {
+                            "0": contains {
+                                values: vec![0u64, 2u64],
+                            }
                         }
                     }
                 }

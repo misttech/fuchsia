@@ -13,13 +13,11 @@
 //! [strc]: https://cs.opensource.google/fuchsia/fuchsia/+/main:examples/power/state_recorder
 //!
 
-use fuchsia_inspect as inspect;
-use fuchsia_inspect::Inspector;
-use fuchsia_inspect_contrib::nodes::BoundedListNode;
+use fuchsia_inspect::{self as inspect, ArrayProperty, Inspector, Property};
 use fuchsia_sync::Mutex;
 use fuchsia_trace as ftrace;
 use futures_util::FutureExt;
-use std::cmp::Eq;
+use std::cmp::{Eq, max, min};
 pub use std::collections::HashMap;
 pub use std::ffi::{CStr, CString};
 use std::fmt::{Debug, Display};
@@ -100,6 +98,7 @@ fn lazy_static_cstr(s: &str) -> Result<&'static CStr, StateRecorderError> {
 }
 
 static ROOT_NODE_NAME: &str = "power_observability_state_recorders";
+pub const FORMAT_VERSION: &str = "2.0";
 
 // StateRecorderManager for use with the singleton inspector.
 static SINGLETON_MANAGER: LazyLock<Arc<Mutex<StateRecorderManager>>> =
@@ -167,95 +166,277 @@ fn register_with_manager(
     Ok(manager.node.create_child(name))
 }
 
-fn setup_recording_backend<T, F>(
+/// The number of entries per Inspect array shard.
+///
+/// In Inspect VMO format, the maximum allocation block size is Order 7 (2048 bytes).
+/// Subtracting an 8-byte block header and an 8-byte array metadata header leaves 2032 bytes
+/// for elements. For 64-bit entries (8 bytes each), a single array block can hold at most
+/// 254 slots ((2048 - 16) / 8 = 254). 200 is chosen as a round capacity safely under this limit
+/// so that each shard fits within a single max-order Inspect VMO block.
+pub const SHARD_CAPACITY: usize = 200;
+
+#[derive(Debug)]
+pub enum InspectValueArray {
+    Uint(inspect::UintArrayProperty),
+    Int(inspect::IntArrayProperty),
+    Double(inspect::DoubleArrayProperty),
+}
+
+impl InspectValueArray {
+    pub fn record_property(self, node: &inspect::Node) {
+        match self {
+            Self::Uint(p) => node.record(p),
+            Self::Int(p) => node.record(p),
+            Self::Double(p) => node.record(p),
+        }
+    }
+}
+
+#[derive(Debug)]
+pub struct InspectShard {
+    _node: inspect::Node,
+    pub times: inspect::IntArrayProperty,
+    pub values: InspectValueArray,
+}
+
+impl InspectShard {
+    pub fn new(
+        parent_node: &inspect::Node,
+        shard_index: usize,
+        size: usize,
+        create_values: impl FnOnce(&inspect::Node, usize) -> InspectValueArray,
+    ) -> Self {
+        let node = parent_node.create_child(shard_index.to_string());
+        let times = node.create_int_array("times", size);
+        let values = create_values(&node, size);
+        Self { _node: node, times, values }
+    }
+}
+
+#[derive(Debug)]
+pub struct EagerShardedBuffer {
+    _history_node: inspect::Node,
+    _shards_node: inspect::Node,
+    current_index: inspect::UintProperty,
+    current_size: inspect::UintProperty,
+    shards: Vec<InspectShard>,
+    capacity: usize,
+    index_tracker: usize,
+    size_tracker: usize,
+}
+
+impl EagerShardedBuffer {
+    pub fn new(
+        parent_node: &inspect::Node,
+        capacity: usize,
+        create_values: impl Fn(&inspect::Node, usize) -> InspectValueArray,
+    ) -> Self {
+        let history_node = parent_node.create_child("history");
+        let current_index = history_node.create_uint("current_index", 0);
+        let current_size = history_node.create_uint("current_size", 0);
+        let shards_node = history_node.create_child("shards");
+
+        let active_capacity = max(capacity, 1);
+        let total_shards = (active_capacity + SHARD_CAPACITY - 1) / SHARD_CAPACITY;
+        let mut shards = Vec::with_capacity(total_shards);
+
+        for s in 0..total_shards {
+            let start_idx = s * SHARD_CAPACITY;
+            let end_idx = min(start_idx + SHARD_CAPACITY, capacity);
+            let shard_size = max(end_idx - start_idx, 1);
+            shards
+                .push(InspectShard::new(&shards_node, s, shard_size, |n, sz| create_values(n, sz)));
+        }
+
+        Self {
+            _history_node: history_node,
+            _shards_node: shards_node,
+            current_index,
+            current_size,
+            shards,
+            capacity,
+            index_tracker: 0,
+            size_tracker: 0,
+        }
+    }
+
+    pub fn record<T>(
+        &mut self,
+        timestamp_ns: i64,
+        val: T,
+        set_val: impl FnOnce(&InspectValueArray, usize, T),
+    ) {
+        if self.capacity == 0 {
+            return;
+        }
+        let shard_idx = self.index_tracker / SHARD_CAPACITY;
+        let slot_idx = self.index_tracker % SHARD_CAPACITY;
+
+        let shard = &self.shards[shard_idx];
+        shard.times.set(slot_idx, timestamp_ns);
+        set_val(&shard.values, slot_idx, val);
+
+        self.index_tracker = (self.index_tracker + 1) % self.capacity;
+        self.size_tracker = min(self.size_tracker + 1, self.capacity);
+
+        self.current_index.set(self.index_tracker as u64);
+        self.current_size.set(self.size_tracker as u64);
+    }
+}
+
+fn build_sharded_history_inspector<T>(
+    items: &[(i64, T)],
+    create_values: impl Fn(&inspect::Node, usize) -> InspectValueArray,
+    set_value: impl Fn(&InspectValueArray, usize, &T),
+) -> Inspector {
+    let inspector = Inspector::default();
+    let local_root = inspector.root();
+    let size = items.len();
+
+    local_root.record_uint("current_index", 0);
+    local_root.record_uint("current_size", size as u64);
+
+    let shards_node = local_root.create_child("shards");
+    let active_capacity = max(size, 1);
+    let num_shards = (active_capacity + SHARD_CAPACITY - 1) / SHARD_CAPACITY;
+
+    for s in 0..num_shards {
+        let shard_start_idx = s * SHARD_CAPACITY;
+        let shard_end_idx = min(shard_start_idx + SHARD_CAPACITY, size);
+        let shard_size =
+            if shard_end_idx > shard_start_idx { shard_end_idx - shard_start_idx } else { 0 };
+
+        let shard_node = shards_node.create_child(s.to_string());
+        let times_prop = shard_node.create_int_array("times", max(shard_size, 1));
+        let values_prop = create_values(&shard_node, max(shard_size, 1));
+
+        for i in 0..shard_size {
+            let (ts, val) = &items[shard_start_idx + i];
+            times_prop.set(i, *ts);
+            set_value(&values_prop, i, val);
+        }
+
+        shard_node.record(times_prop);
+        values_prop.record_property(&shard_node);
+        shards_node.record(shard_node);
+    }
+
+    local_root.record(shards_node);
+    inspector
+}
+
+fn setup_lazy_recording_backend<T, FCreate, FSet>(
     node: &inspect::Node,
     options: &RecorderOptions,
-    record_item: F,
+    create_values: FCreate,
+    set_value: FSet,
 ) -> Result<(RecorderHistory<T>, Option<PersistenceHandler<T>>), StateRecorderError>
 where
     T: Copy + std::fmt::Debug + std::fmt::Display + std::str::FromStr + Send + Sync + 'static,
-    F: Fn(&inspect::Node, &T) + Send + Sync + Clone + 'static,
+    FCreate: Fn(&inspect::Node, usize) -> InspectValueArray + Send + Sync + 'static,
+    FSet: Fn(&InspectValueArray, usize, &T) + Send + Sync + Clone + 'static,
+{
+    let create_values_arc = Arc::new(create_values);
+
+    let shared_buffer = if let Some(config) = &options.persistence {
+        let (handler, buffer) = PersistenceHandler::new(config.clone(), options.capacity);
+
+        // Handle Previous Boot Node
+        let prev_data = PersistenceHandler::<T>::read_log(&config.previous_path);
+        if !prev_data.is_empty() {
+            let data_arc = Arc::new(prev_data);
+            let create_values = create_values_arc.clone();
+            let set_value = set_value.clone();
+            node.record_lazy_child("previous_boot_history", move || {
+                let data = data_arc.clone();
+                let create_values = create_values.clone();
+                let set_value = set_value.clone();
+                async move {
+                    Ok(build_sharded_history_inspector(
+                        &data,
+                        move |n, s| create_values(n, s),
+                        &set_value,
+                    ))
+                }
+                .boxed()
+            });
+        }
+        (Some(handler), buffer)
+    } else {
+        (None, Arc::new(Mutex::new(TimestampRingBuffer::<T>::with_capacity(options.capacity))))
+    };
+
+    // reset_info
+    let buffer_cloned = shared_buffer.1.clone();
+    node.record_lazy_child("reset_info", move || {
+        let history = buffer_cloned.clone();
+        async move {
+            let inspector = Inspector::default();
+            let node = inspector.root();
+            let (count, last_reset_ns) = history.lock().get_reset_info();
+            node.record_int("count", count as i64);
+            node.record_int("last_reset_ns", last_reset_ns);
+            Ok(inspector)
+        }
+        .boxed()
+    });
+
+    // history
+    let buffer_cloned = shared_buffer.1.clone();
+    let create_values = create_values_arc;
+    node.record_lazy_child("history", move || {
+        let history = buffer_cloned.clone();
+        let create_values = create_values.clone();
+        let set_value = set_value.clone();
+        async move {
+            let items: Vec<(i64, T)> = history.lock().iter().collect();
+            Ok(build_sharded_history_inspector(&items, move |n, s| create_values(n, s), &set_value))
+        }
+        .boxed()
+    });
+
+    Ok((RecorderHistory::Lazy(shared_buffer.1), shared_buffer.0))
+}
+
+fn setup_eager_recording_backend<T, FCreate>(
+    node: &inspect::Node,
+    options: &RecorderOptions,
+    create_values: FCreate,
+) -> Result<(RecorderHistory<T>, Option<PersistenceHandler<T>>), StateRecorderError>
+where
+    T: Copy + std::fmt::Debug,
+    FCreate: Fn(&inspect::Node, usize) -> InspectValueArray + Send + Sync + 'static,
+{
+    if options.persistence.is_some() {
+        return Err(StateRecorderError::InvalidOptions(
+            "Persistence not supported in eager mode".to_string(),
+        ));
+    }
+
+    node.record_child("reset_info", |node| {
+        node.record_int("count", 0);
+        node.record_int("last_reset_ns", zx::BootInstant::get().into_nanos());
+    });
+
+    let eager_buffer = EagerShardedBuffer::new(node, options.capacity, create_values);
+    Ok((RecorderHistory::Eager(eager_buffer), None))
+}
+
+fn setup_recording_backend<T, FCreate, FSet>(
+    node: &inspect::Node,
+    options: &RecorderOptions,
+    create_values: FCreate,
+    set_value: FSet,
+) -> Result<(RecorderHistory<T>, Option<PersistenceHandler<T>>), StateRecorderError>
+where
+    T: Copy + std::fmt::Debug + std::fmt::Display + std::str::FromStr + Send + Sync + 'static,
+    FCreate: Fn(&inspect::Node, usize) -> InspectValueArray + Send + Sync + 'static,
+    FSet: Fn(&InspectValueArray, usize, &T) + Send + Sync + Clone + 'static,
 {
     if options.lazy_record {
-        let shared_buffer = if let Some(config) = &options.persistence {
-            let (handler, buffer) = PersistenceHandler::new(config.clone(), options.capacity);
-
-            // Handle Previous Boot Node
-            let prev_data = PersistenceHandler::<T>::read_log(&config.previous_path);
-            if !prev_data.is_empty() {
-                let data_arc = Arc::new(prev_data);
-                let record_item = record_item.clone();
-                node.record_lazy_child("previous_boot_history", move || {
-                    let data = data_arc.clone();
-                    let record_item = record_item.clone();
-                    async move {
-                        let inspector = Inspector::default();
-                        let root = inspector.root();
-                        for (i, (ts, val)) in data.iter().enumerate() {
-                            root.record_child(i.to_string(), |child| {
-                                child.record_int("@time", *ts);
-                                record_item(child, val);
-                            });
-                        }
-                        Ok(inspector)
-                    }
-                    .boxed()
-                });
-            }
-            (Some(handler), buffer)
-        } else {
-            (None, Arc::new(Mutex::new(TimestampRingBuffer::<T>::with_capacity(options.capacity))))
-        };
-
-        // reset_info
-        let buffer_cloned = shared_buffer.1.clone();
-        node.record_lazy_child("reset_info", move || {
-            let history = buffer_cloned.clone();
-            async move {
-                let inspector = Inspector::default();
-                let node = inspector.root();
-                let (count, last_reset_ns) = history.lock().get_reset_info();
-                node.record_int("count", count as i64);
-                node.record_int("last_reset_ns", last_reset_ns);
-                Ok(inspector)
-            }
-            .boxed()
-        });
-
-        // history
-        let buffer_cloned = shared_buffer.1.clone();
-        node.record_lazy_child("history", move || {
-            let history = buffer_cloned.clone();
-            let record_item = record_item.clone();
-            async move {
-                let inspector = Inspector::default();
-                let node = inspector.root();
-                for (i, (timestamp, state_value)) in history.lock().iter().enumerate() {
-                    node.record_child(format!("{}", i), |node| {
-                        node.record_int("@time", timestamp);
-                        record_item(node, &state_value);
-                    });
-                }
-                Ok(inspector)
-            }
-            .boxed()
-        });
-
-        Ok((RecorderHistory::Lazy(shared_buffer.1), shared_buffer.0))
+        setup_lazy_recording_backend(node, options, create_values, set_value)
     } else {
-        if options.persistence.is_some() {
-            return Err(StateRecorderError::InvalidOptions(
-                "Persistence not supported in eager mode".to_string(),
-            ));
-        }
-
-        node.record_child("reset_info", |node| {
-            node.record_int("count", 0);
-            node.record_int("last_reset_ns", zx::BootInstant::get().into_nanos());
-        });
-
-        let history_node = BoundedListNode::new(node.create_child("history"), options.capacity);
-        Ok((RecorderHistory::Eager(history_node), None))
+        setup_eager_recording_backend(node, options, create_values)
     }
 }
 
@@ -343,6 +524,7 @@ impl NamedU64StateRecorder {
         }
 
         node.record_child("metadata", |metadata_node| {
+            metadata_node.record_string("format_version", FORMAT_VERSION);
             metadata_node.record_string("name", &name);
             metadata_node.record_string("type", "enum");
             metadata_node.record_child("states", |states_node| {
@@ -352,17 +534,17 @@ impl NamedU64StateRecorder {
             });
         });
 
-        // Closure to format values using the state_names map
-        // We clone the map for use in the closure.
-        let names_map: HashMap<u64, Arc<String>> =
-            state_names.iter().map(|(k, v)| (*k, v.inspect_name.clone())).collect();
-        let names_map_arc = Arc::new(names_map);
-        let record_item = move |node: &inspect::Node, val: &u64| {
-            let name_str = names_map_arc.get(val).map(|s| s.as_str()).unwrap_or("<Unknown>");
-            node.record_string("value", name_str);
+        let create_values = |n: &inspect::Node, sz: usize| {
+            InspectValueArray::Uint(n.create_uint_array("values", sz))
+        };
+        let set_value = |arr: &InspectValueArray, idx: usize, val: &u64| {
+            if let InspectValueArray::Uint(a) = arr {
+                a.set(idx, *val);
+            }
         };
 
-        let (history, persistence) = setup_recording_backend(&node, &options, record_item)?;
+        let (history, persistence) =
+            setup_recording_backend(&node, &options, create_values, set_value)?;
 
         let vthread = ftrace::VThread::new(name.clone(), ftrace::Id::new().into());
 
@@ -397,7 +579,7 @@ impl NamedU64StateRecorder {
             }
         }
 
-        let StateName { inspect_name, trace_name } = self.get_state_name(val);
+        let StateName { trace_name, .. } = self.get_state_name(val);
         self.current_state_trace_name = Some(trace_name);
 
         if let Some(context) = context.as_ref() {
@@ -414,9 +596,10 @@ impl NamedU64StateRecorder {
             // Update manually
             match &mut self.history {
                 RecorderHistory::Eager(history) => {
-                    history.add_entry(|node| {
-                        node.record_int("@time", timestamp);
-                        node.record_string("value", inspect_name.as_ref());
+                    history.record(timestamp, val, |arr, idx, v| {
+                        if let InspectValueArray::Uint(a) = arr {
+                            a.set(idx, v);
+                        }
                     });
                 }
                 RecorderHistory::Lazy(history) => {
@@ -482,6 +665,8 @@ pub trait RecordableNumericType:
     fn trace_value(&self) -> Self::TraceType;
     fn record(&self, node: &inspect::Node, name: &str);
     fn record_range(range: &(Self, Self), node: &inspect::Node);
+    fn create_array_property(node: &inspect::Node, name: &str, size: usize) -> InspectValueArray;
+    fn set_array_value(array: &InspectValueArray, index: usize, val: Self);
 }
 
 macro_rules! impl_recordable_numeric_type {
@@ -499,6 +684,18 @@ macro_rules! impl_recordable_numeric_type {
                 node.record_uint("min_inc", range.0 as u64);
                 node.record_uint("max_inc", range.1 as u64);
             }
+            fn create_array_property(
+                node: &inspect::Node,
+                name: &str,
+                size: usize,
+            ) -> InspectValueArray {
+                InspectValueArray::Uint(node.create_uint_array(name, size))
+            }
+            fn set_array_value(array: &InspectValueArray, index: usize, val: Self) {
+                if let InspectValueArray::Uint(arr) = array {
+                    arr.set(index, val as u64);
+                }
+            }
         }
     };
     ($numeric_type:ty, $trace_type:ty, i64) => {
@@ -515,6 +712,18 @@ macro_rules! impl_recordable_numeric_type {
                 node.record_int("min_inc", range.0 as i64);
                 node.record_int("max_inc", range.1 as i64);
             }
+            fn create_array_property(
+                node: &inspect::Node,
+                name: &str,
+                size: usize,
+            ) -> InspectValueArray {
+                InspectValueArray::Int(node.create_int_array(name, size))
+            }
+            fn set_array_value(array: &InspectValueArray, index: usize, val: Self) {
+                if let InspectValueArray::Int(arr) = array {
+                    arr.set(index, val as i64);
+                }
+            }
         }
     };
     ($numeric_type:ty, $trace_type:ty, f64) => {
@@ -530,6 +739,18 @@ macro_rules! impl_recordable_numeric_type {
             fn record_range(range: &(Self, Self), node: &inspect::Node) {
                 node.record_double("min_inc", range.0 as f64);
                 node.record_double("max_inc", range.1 as f64);
+            }
+            fn create_array_property(
+                node: &inspect::Node,
+                name: &str,
+                size: usize,
+            ) -> InspectValueArray {
+                InspectValueArray::Double(node.create_double_array(name, size))
+            }
+            fn set_array_value(array: &InspectValueArray, index: usize, val: Self) {
+                if let InspectValueArray::Double(arr) = array {
+                    arr.set(index, val as f64);
+                }
             }
         }
     };
@@ -806,7 +1027,7 @@ pub struct RecorderOptions {
 
 #[derive(Debug)]
 enum RecorderHistory<T: Copy + Debug> {
-    Eager(BoundedListNode),
+    Eager(EagerShardedBuffer),
     Lazy(Arc<Mutex<TimestampRingBuffer<T>>>),
 }
 
@@ -860,6 +1081,9 @@ impl<T: Copy> TimestampRingBuffer<T> {
     }
 
     fn insert(&mut self, timestamp_ns: i64, value: T) {
+        if self.offset_ms.capacity() == 0 {
+            return;
+        }
         let timestamp_ms = ns_to_ms(timestamp_ns);
         // Attempt to down-convert the offset from last_timestamp_ms to an i32
         let offset_ms = match i32::try_from(timestamp_ms - self.last_timestamp_ms) {
@@ -971,6 +1195,7 @@ impl<T: RecordableNumericType> NumericStateRecorder<T> {
         let units_str = format!("{}", units);
 
         node.record_child("metadata", |metadata_node| {
+            metadata_node.record_string("format_version", FORMAT_VERSION);
             metadata_node.record_string("name", &name);
             metadata_node.record_string("type", "numeric");
             metadata_node.record_string("units", &units_str);
@@ -980,11 +1205,14 @@ impl<T: RecordableNumericType> NumericStateRecorder<T> {
             }
         });
 
-        let record_item = |node: &inspect::Node, val: &T| {
-            val.record(node, "value");
+        let create_values =
+            |n: &inspect::Node, sz: usize| T::create_array_property(n, "values", sz);
+        let set_value = |arr: &InspectValueArray, idx: usize, val: &T| {
+            T::set_array_value(arr, idx, *val);
         };
 
-        let (history, persistence) = setup_recording_backend(&node, &options, record_item)?;
+        let (history, persistence) =
+            setup_recording_backend(&node, &options, create_values, set_value)?;
 
         Ok(Self {
             manager,
@@ -1016,9 +1244,8 @@ impl<T: RecordableNumericType> NumericStateRecorder<T> {
         } else {
             match &mut self.history {
                 RecorderHistory::Eager(history) => {
-                    history.add_entry(|node| {
-                        node.record_int("@time", timestamp);
-                        state_value.record(node, "value");
+                    history.record(timestamp, state_value, |arr, idx, val| {
+                        T::set_array_value(arr, idx, val);
                     });
                 }
                 RecorderHistory::Lazy(history) => {
@@ -1038,7 +1265,7 @@ impl<T: RecordableNumericType> Drop for NumericStateRecorder<T> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use diagnostics_assertions::{AnyIntProperty, assert_data_tree};
+    use diagnostics_assertions::{AnyIntProperty, AnyProperty, assert_data_tree};
     use fuchsia_inspect::Inspector;
     use strum_macros::{Display, EnumIter, EnumString};
     use test_case::test_case;
@@ -1126,42 +1353,67 @@ mod tests {
         recorder.record(SwitchState::ON);
         recorder.record(SwitchState::OFF);
         recorder.record(SwitchState::ON);
-        assert_data_tree!(inspector, root: {
-            power_observability_state_recorders: {
-                my_switch: {
-                    metadata: {
-                        name: "my_switch",
-                        type: "enum",
-                        states: {
-                            "OFF": 0u64,
-                            "ON": 1u64,
+        if lazy_record {
+            assert_data_tree!(inspector, root: {
+                power_observability_state_recorders: {
+                    my_switch: {
+                        metadata: {
+                            format_version: "2.0",
+                            name: "my_switch",
+                            type: "enum",
+                            states: {
+                                "OFF": 0u64,
+                                "ON": 1u64,
+                            }
+                        },
+                        history: {
+                            current_index: 0u64,
+                            current_size: 4u64,
+                            shards: {
+                                "0": {
+                                    times: AnyProperty,
+                                    values: vec![0u64, 1u64, 0u64, 1u64],
+                                }
+                            }
+                        },
+                        reset_info: {
+                            count: 0,
+                            last_reset_ns: AnyIntProperty,
                         }
-                    },
-                    history: {
-                        "0": {
-                            "@time": AnyIntProperty,
-                            "value": "OFF",
-                        },
-                        "1": {
-                            "@time": AnyIntProperty,
-                            "value": "ON",
-                        },
-                        "2": {
-                            "@time": AnyIntProperty,
-                            "value": "OFF",
-                        },
-                        "3": {
-                            "@time": AnyIntProperty,
-                            "value": "ON",
-                        },
-                    },
-                    reset_info: {
-                        count: 0,
-                        last_reset_ns: AnyIntProperty,
                     }
                 }
-            }
-        });
+            });
+        } else {
+            assert_data_tree!(inspector, root: {
+                power_observability_state_recorders: {
+                    my_switch: {
+                        metadata: {
+                            format_version: "2.0",
+                            name: "my_switch",
+                            type: "enum",
+                            states: {
+                                "OFF": 0u64,
+                                "ON": 1u64,
+                            }
+                        },
+                        history: {
+                            current_index: 4u64,
+                            current_size: 4u64,
+                            shards: {
+                                "0": {
+                                    times: AnyProperty,
+                                    values: vec![0u64, 1u64, 0u64, 1u64, 0u64, 0u64, 0u64, 0u64, 0u64, 0u64],
+                                }
+                            }
+                        },
+                        reset_info: {
+                            count: 0,
+                            last_reset_ns: AnyIntProperty,
+                        }
+                    }
+                }
+            });
+        }
     }
 
     #[test_case(false; "eager")]
@@ -1210,58 +1462,117 @@ mod tests {
         recorder_1.record(EnablementState::ENABLED);
         recorder_1.record(EnablementState::DISABLED);
 
-        assert_data_tree!(inspector, root: {
-            power_observability_state_recorders: {
-                switch_0: {
-                    metadata: {
-                        name: "switch_0",
-                        type: "enum",
-                        states: {
-                            "OFF": 0u64,
-                            "ON": 1u64,
+        if lazy_record {
+            assert_data_tree!(inspector, root: {
+                power_observability_state_recorders: {
+                    switch_0: {
+                        metadata: {
+                            format_version: "2.0",
+                            name: "switch_0",
+                            type: "enum",
+                            states: {
+                                "OFF": 0u64,
+                                "ON": 1u64,
+                            }
+                        },
+                        history: {
+                            current_index: 0u64,
+                            current_size: 2u64,
+                            shards: {
+                                "0": {
+                                    times: AnyProperty,
+                                    values: vec![0u64, 1u64],
+                                }
+                            }
+                        },
+                        reset_info: {
+                            count: 0,
+                            last_reset_ns: AnyIntProperty,
                         }
                     },
-                    history: {
-                        "0": {
-                            "@time": AnyIntProperty,
-                            "value": "OFF",
+                    switch_1: {
+                        metadata: {
+                            format_version: "2.0",
+                            name: "switch_1",
+                            type: "enum",
+                            states: {
+                                "DISABLED": 0u64,
+                                "ENABLED": 1u64,
+                            }
                         },
-                        "1": {
-                            "@time": AnyIntProperty,
-                            "value": "ON",
+                        history: {
+                            current_index: 0u64,
+                            current_size: 2u64,
+                            shards: {
+                                "0": {
+                                    times: AnyProperty,
+                                    values: vec![1u64, 0u64],
+                                }
+                            }
                         },
-                    },
-                    reset_info: {
-                        count: 0,
-                        last_reset_ns: AnyIntProperty,
-                    }
-                },
-               switch_1: {
-                    metadata: {
-                        name: "switch_1",
-                        type: "enum",
-                        states: {
-                            "DISABLED": 0u64,
-                            "ENABLED": 1u64,
+                        reset_info: {
+                            count: 0,
+                            last_reset_ns: AnyIntProperty,
                         }
-                    },
-                    history: {
-                        "0": {
-                            "@time": AnyIntProperty,
-                            "value": "ENABLED",
-                        },
-                        "1": {
-                            "@time": AnyIntProperty,
-                            "value": "DISABLED",
-                        },
-                    },
-                    reset_info: {
-                        count: 0,
-                        last_reset_ns: AnyIntProperty,
                     }
                 }
-            }
-        })
+            });
+        } else {
+            assert_data_tree!(inspector, root: {
+                power_observability_state_recorders: {
+                    switch_0: {
+                        metadata: {
+                            format_version: "2.0",
+                            name: "switch_0",
+                            type: "enum",
+                            states: {
+                                "OFF": 0u64,
+                                "ON": 1u64,
+                            }
+                        },
+                        history: {
+                            current_index: 2u64,
+                            current_size: 2u64,
+                            shards: {
+                                "0": {
+                                    times: AnyProperty,
+                                    values: vec![0u64, 1u64, 0u64, 0u64, 0u64, 0u64, 0u64, 0u64, 0u64, 0u64],
+                                }
+                            }
+                        },
+                        reset_info: {
+                            count: 0,
+                            last_reset_ns: AnyIntProperty,
+                        }
+                    },
+                    switch_1: {
+                        metadata: {
+                            format_version: "2.0",
+                            name: "switch_1",
+                            type: "enum",
+                            states: {
+                                "DISABLED": 0u64,
+                                "ENABLED": 1u64,
+                            }
+                        },
+                        history: {
+                            current_index: 2u64,
+                            current_size: 2u64,
+                            shards: {
+                                "0": {
+                                    times: AnyProperty,
+                                    values: vec![1u64, 0u64, 0u64, 0u64, 0u64, 0u64, 0u64, 0u64, 0u64, 0u64],
+                                }
+                            }
+                        },
+                        reset_info: {
+                            count: 0,
+                            last_reset_ns: AnyIntProperty,
+                        }
+                    }
+                }
+            });
+        }
     }
 
     #[test_case(false; "eager")]
@@ -1302,47 +1613,69 @@ mod tests {
         recorder.record(FanSpeed::HIGH);
         recorder.record(FanSpeed::OFF);
         recorder.record(FanSpeed::HIGH);
-        assert_data_tree!(inspector, root: {
-            power_observability_state_recorders: {
-                the_best_fan: {
-                    metadata: {
-                        name: "the_best_fan",
-                        type: "enum",
-                        states: {
-                            "OFF": 0u64,
-                            "LOW": 1u64,
-                            "HIGH": 2u64,
+        if lazy_record {
+            assert_data_tree!(inspector, root: {
+                power_observability_state_recorders: {
+                    the_best_fan: {
+                        metadata: {
+                            format_version: "2.0",
+                            name: "the_best_fan",
+                            type: "enum",
+                            states: {
+                                "OFF": 0u64,
+                                "LOW": 1u64,
+                                "HIGH": 2u64,
+                            }
+                        },
+                        history: {
+                            current_index: 0u64,
+                            current_size: 5u64,
+                            shards: {
+                                "0": {
+                                    times: AnyProperty,
+                                    values: vec![0u64, 1u64, 2u64, 0u64, 2u64],
+                                }
+                            }
+                        },
+                        reset_info: {
+                            count: 0,
+                            last_reset_ns: AnyIntProperty,
                         }
-                    },
-                    history: {
-                        "0": {
-                            "@time": AnyIntProperty,
-                            "value": "OFF",
-                        },
-                        "1": {
-                            "@time": AnyIntProperty,
-                            "value": "LOW",
-                        },
-                        "2": {
-                            "@time": AnyIntProperty,
-                            "value": "HIGH",
-                        },
-                        "3": {
-                            "@time": AnyIntProperty,
-                            "value": "OFF",
-                        },
-                        "4": {
-                            "@time": AnyIntProperty,
-                            "value": "HIGH",
-                        },
-                    },
-                    reset_info: {
-                        count: 0,
-                        last_reset_ns: AnyIntProperty,
                     }
                 }
-            }
-        });
+            });
+        } else {
+            assert_data_tree!(inspector, root: {
+                power_observability_state_recorders: {
+                    the_best_fan: {
+                        metadata: {
+                            format_version: "2.0",
+                            name: "the_best_fan",
+                            type: "enum",
+                            states: {
+                                "OFF": 0u64,
+                                "LOW": 1u64,
+                                "HIGH": 2u64,
+                            }
+                        },
+                        history: {
+                            current_index: 5u64,
+                            current_size: 5u64,
+                            shards: {
+                                "0": {
+                                    times: AnyProperty,
+                                    values: vec![0u64, 1u64, 2u64, 0u64, 2u64, 0u64, 0u64, 0u64, 0u64, 0u64],
+                                }
+                            }
+                        },
+                        reset_info: {
+                            count: 0,
+                            last_reset_ns: AnyIntProperty,
+                        }
+                    }
+                }
+            });
+        }
     }
 
     #[test_case(false; "eager")]
@@ -1395,6 +1728,207 @@ mod tests {
     #[test_case(false; "eager")]
     #[test_case(true; "lazy")]
     #[fuchsia::test]
+    async fn test_zero_capacity(lazy_record: bool) {
+        let inspector = Inspector::default();
+        let manager = StateRecorderManager::new(&inspector);
+        let mut recorder = EnumStateRecorder::<SwitchState>::new(
+            "zero_cap_switch".into(),
+            c"power_test",
+            RecorderOptions { lazy_record, capacity: 0, manager: Some(manager), persistence: None },
+        )
+        .unwrap();
+
+        // Recording with 0 capacity should not panic.
+        recorder.record(SwitchState::OFF);
+        recorder.record(SwitchState::ON);
+    }
+
+    #[test_case(false; "eager")]
+    #[test_case(true; "lazy")]
+    #[fuchsia::test]
+    async fn test_multi_shard_and_wraparound(lazy_record: bool) {
+        let inspector = Inspector::default();
+        let manager = StateRecorderManager::new(&inspector);
+        let capacity = SHARD_CAPACITY + 50;
+        let mut recorder = EnumStateRecorder::<SwitchState>::new(
+            "multi_shard_switch".into(),
+            c"power_test",
+            RecorderOptions { lazy_record, capacity, manager: Some(manager), persistence: None },
+        )
+        .unwrap();
+
+        // 1. Record 220 items to cross SHARD_CAPACITY (200) into the second shard.
+        for i in 0..220 {
+            let state = if i % 2 == 0 { SwitchState::OFF } else { SwitchState::ON };
+            recorder.record(state);
+        }
+
+        let expected_shard_0: Vec<u64> = (0..SHARD_CAPACITY).map(|i| (i % 2) as u64).collect();
+        let expected_shard_1: Vec<u64> = (SHARD_CAPACITY..220).map(|i| (i % 2) as u64).collect();
+
+        if lazy_record {
+            assert_data_tree!(inspector, root: {
+                power_observability_state_recorders: {
+                    multi_shard_switch: {
+                        metadata: {
+                            format_version: "2.0",
+                            name: "multi_shard_switch",
+                            type: "enum",
+                            states: {
+                                "OFF": 0u64,
+                                "ON": 1u64,
+                            }
+                        },
+                        history: {
+                            current_index: 0u64,
+                            current_size: 220u64,
+                            shards: {
+                                "0": {
+                                    times: AnyProperty,
+                                    values: expected_shard_0.clone(),
+                                },
+                                "1": {
+                                    times: AnyProperty,
+                                    values: expected_shard_1.clone(),
+                                }
+                            }
+                        },
+                        reset_info: {
+                            count: 0,
+                            last_reset_ns: AnyIntProperty,
+                        }
+                    }
+                }
+            });
+        } else {
+            let mut expected_eager_shard_1 = expected_shard_1.clone();
+            expected_eager_shard_1.resize(50, 0u64);
+            assert_data_tree!(inspector, root: {
+                power_observability_state_recorders: {
+                    multi_shard_switch: {
+                        metadata: {
+                            format_version: "2.0",
+                            name: "multi_shard_switch",
+                            type: "enum",
+                            states: {
+                                "OFF": 0u64,
+                                "ON": 1u64,
+                            }
+                        },
+                        history: {
+                            current_index: 220u64,
+                            current_size: 220u64,
+                            shards: {
+                                "0": {
+                                    times: AnyProperty,
+                                    values: expected_shard_0.clone(),
+                                },
+                                "1": {
+                                    times: AnyProperty,
+                                    values: expected_eager_shard_1,
+                                }
+                            }
+                        },
+                        reset_info: {
+                            count: 0,
+                            last_reset_ns: AnyIntProperty,
+                        }
+                    }
+                }
+            });
+        }
+
+        // 2. Record items 220..300 (total 300 into capacity 250) to trigger ring buffer wraparound.
+        for i in 220..300 {
+            let state = if i % 2 == 0 { SwitchState::OFF } else { SwitchState::ON };
+            recorder.record(state);
+        }
+
+        if lazy_record {
+            let lazy_shard_0: Vec<u64> = (50..250).map(|i| (i % 2) as u64).collect();
+            let lazy_shard_1: Vec<u64> = (250..300).map(|i| (i % 2) as u64).collect();
+            assert_data_tree!(inspector, root: {
+                power_observability_state_recorders: {
+                    multi_shard_switch: {
+                        metadata: {
+                            format_version: "2.0",
+                            name: "multi_shard_switch",
+                            type: "enum",
+                            states: {
+                                "OFF": 0u64,
+                                "ON": 1u64,
+                            }
+                        },
+                        history: {
+                            current_index: 0u64,
+                            current_size: 250u64,
+                            shards: {
+                                "0": {
+                                    times: AnyProperty,
+                                    values: lazy_shard_0,
+                                },
+                                "1": {
+                                    times: AnyProperty,
+                                    values: lazy_shard_1,
+                                }
+                            }
+                        },
+                        reset_info: {
+                            count: 0,
+                            last_reset_ns: AnyIntProperty,
+                        }
+                    }
+                }
+            });
+        } else {
+            let mut eager_shard_0: Vec<u64> = Vec::with_capacity(SHARD_CAPACITY);
+            for i in 250..300 {
+                eager_shard_0.push((i % 2) as u64);
+            }
+            for i in 50..200 {
+                eager_shard_0.push((i % 2) as u64);
+            }
+            let eager_shard_1: Vec<u64> = (200..250).map(|i| (i % 2) as u64).collect();
+
+            assert_data_tree!(inspector, root: {
+                power_observability_state_recorders: {
+                    multi_shard_switch: {
+                        metadata: {
+                            format_version: "2.0",
+                            name: "multi_shard_switch",
+                            type: "enum",
+                            states: {
+                                "OFF": 0u64,
+                                "ON": 1u64,
+                            }
+                        },
+                        history: {
+                            current_index: 50u64,
+                            current_size: 250u64,
+                            shards: {
+                                "0": {
+                                    times: AnyProperty,
+                                    values: eager_shard_0,
+                                },
+                                "1": {
+                                    times: AnyProperty,
+                                    values: eager_shard_1,
+                                }
+                            }
+                        },
+                        reset_info: {
+                            count: 0,
+                            last_reset_ns: AnyIntProperty,
+                        }
+                    }
+                }
+            });
+        }
+    }
+
+    #[test_case(false; "eager")]
+    #[test_case(true; "lazy")]
+    #[fuchsia::test]
     async fn test_singleton_manager(lazy_record: bool) {
         let mut recorder = EnumStateRecorder::new(
             "my_switch".into(),
@@ -1405,34 +1939,67 @@ mod tests {
 
         recorder.record(SwitchState::OFF);
         recorder.record(SwitchState::ON);
-        assert_data_tree!(inspect::component::inspector(), root: {
-            power_observability_state_recorders: {
-                my_switch: {
-                    metadata: {
-                        name: "my_switch",
-                        type: "enum",
-                        states: {
-                            "OFF": 0u64,
-                            "ON": 1u64,
+        if lazy_record {
+            assert_data_tree!(inspect::component::inspector(), root: {
+                power_observability_state_recorders: {
+                    my_switch: {
+                        metadata: {
+                            format_version: "2.0",
+                            name: "my_switch",
+                            type: "enum",
+                            states: {
+                                "OFF": 0u64,
+                                "ON": 1u64,
+                            }
+                        },
+                        history: {
+                            current_index: 0u64,
+                            current_size: 2u64,
+                            shards: {
+                                "0": {
+                                    times: AnyProperty,
+                                    values: vec![0u64, 1u64],
+                                }
+                            }
+                        },
+                        reset_info: {
+                            count: 0,
+                            last_reset_ns: AnyIntProperty,
                         }
-                    },
-                    history: {
-                        "0": {
-                            "@time": AnyIntProperty,
-                            "value": "OFF",
-                        },
-                        "1": {
-                            "@time": AnyIntProperty,
-                            "value": "ON",
-                        },
-                    },
-                    reset_info: {
-                        count: 0,
-                        last_reset_ns: AnyIntProperty,
                     }
                 }
-            }
-        });
+            });
+        } else {
+            assert_data_tree!(inspect::component::inspector(), root: {
+                power_observability_state_recorders: {
+                    my_switch: {
+                        metadata: {
+                            format_version: "2.0",
+                            name: "my_switch",
+                            type: "enum",
+                            states: {
+                                "OFF": 0u64,
+                                "ON": 1u64,
+                            }
+                        },
+                        history: {
+                            current_index: 2u64,
+                            current_size: 2u64,
+                            shards: {
+                                "0": {
+                                    times: AnyProperty,
+                                    values: vec![0u64, 1u64, 0u64, 0u64, 0u64, 0u64, 0u64, 0u64, 0u64, 0u64],
+                                }
+                            }
+                        },
+                        reset_info: {
+                            count: 0,
+                            last_reset_ns: AnyIntProperty,
+                        }
+                    }
+                }
+            });
+        }
     }
 
     #[fuchsia::test]
@@ -1463,35 +2030,69 @@ mod tests {
 
         recorder.record(T::from(10));
         recorder.record(T::from(0));
-        assert_data_tree!(inspector, root: {
-            power_observability_state_recorders: {
-                my_stateful_thing: {
-                    metadata: {
-                        name: "my_stateful_thing",
-                        type: "numeric",
-                        units: "%",
-                        range: {
-                            min_inc: 0u64,
-                            max_inc: 255u64
+        if lazy_record {
+            assert_data_tree!(inspector, root: {
+                power_observability_state_recorders: {
+                    my_stateful_thing: {
+                        metadata: {
+                            format_version: "2.0",
+                            name: "my_stateful_thing",
+                            type: "numeric",
+                            units: "%",
+                            range: {
+                                min_inc: 0u64,
+                                max_inc: 255u64
+                            },
                         },
-                    },
-                    history: {
-                        "0": {
-                            "@time": AnyIntProperty,
-                            "value": 10u64,
+                        history: {
+                            current_index: 0u64,
+                            current_size: 2u64,
+                            shards: {
+                                "0": {
+                                    times: AnyProperty,
+                                    values: vec![10u64, 0u64],
+                                }
+                            }
                         },
-                        "1": {
-                            "@time": AnyIntProperty,
-                            "value": 0u64,
-                        },
-                    },
-                    reset_info: {
-                        count: 0,
-                        last_reset_ns: AnyIntProperty,
+                        reset_info: {
+                            count: 0,
+                            last_reset_ns: AnyIntProperty,
+                        }
                     }
                 }
-            }
-        });
+            });
+        } else {
+            assert_data_tree!(inspector, root: {
+                power_observability_state_recorders: {
+                    my_stateful_thing: {
+                        metadata: {
+                            format_version: "2.0",
+                            name: "my_stateful_thing",
+                            type: "numeric",
+                            units: "%",
+                            range: {
+                                min_inc: 0u64,
+                                max_inc: 255u64
+                            },
+                        },
+                        history: {
+                            current_index: 2u64,
+                            current_size: 2u64,
+                            shards: {
+                                "0": {
+                                    times: AnyProperty,
+                                    values: vec![10u64, 0u64, 0u64, 0u64, 0u64, 0u64, 0u64, 0u64, 0u64, 0u64],
+                                }
+                            }
+                        },
+                        reset_info: {
+                            count: 0,
+                            last_reset_ns: AnyIntProperty,
+                        }
+                    }
+                }
+            });
+        }
     }
 
     #[test_case(false; "eager")]
@@ -1526,35 +2127,69 @@ mod tests {
 
         recorder.record(T::from(10));
         recorder.record(T::from(0));
-        assert_data_tree!(inspector, root: {
-            power_observability_state_recorders: {
-                my_stateful_thing: {
-                    metadata: {
-                        name: "my_stateful_thing",
-                        type: "numeric",
-                        units: "#",
-                        range: {
-                            min_inc: -128i64,
-                            max_inc: 127i64
+        if lazy_record {
+            assert_data_tree!(inspector, root: {
+                power_observability_state_recorders: {
+                    my_stateful_thing: {
+                        metadata: {
+                            format_version: "2.0",
+                            name: "my_stateful_thing",
+                            type: "numeric",
+                            units: "#",
+                            range: {
+                                min_inc: -128i64,
+                                max_inc: 127i64
+                            },
                         },
-                    },
-                    history: {
-                        "0": {
-                            "@time": AnyIntProperty,
-                            "value": 10i64,
+                        history: {
+                            current_index: 0u64,
+                            current_size: 2u64,
+                            shards: {
+                                "0": {
+                                    times: AnyProperty,
+                                    values: vec![10i64, 0i64],
+                                }
+                            }
                         },
-                        "1": {
-                            "@time": AnyIntProperty,
-                            "value": 0i64,
-                        },
-                    },
-                    reset_info: {
-                        count: 0,
-                        last_reset_ns: AnyIntProperty,
+                        reset_info: {
+                            count: 0,
+                            last_reset_ns: AnyIntProperty,
+                        }
                     }
                 }
-            }
-        });
+            });
+        } else {
+            assert_data_tree!(inspector, root: {
+                power_observability_state_recorders: {
+                    my_stateful_thing: {
+                        metadata: {
+                            format_version: "2.0",
+                            name: "my_stateful_thing",
+                            type: "numeric",
+                            units: "#",
+                            range: {
+                                min_inc: -128i64,
+                                max_inc: 127i64
+                            },
+                        },
+                        history: {
+                            current_index: 2u64,
+                            current_size: 2u64,
+                            shards: {
+                                "0": {
+                                    times: AnyProperty,
+                                    values: vec![10i64, 0i64, 0i64, 0i64, 0i64, 0i64, 0i64, 0i64, 0i64, 0i64],
+                                }
+                            }
+                        },
+                        reset_info: {
+                            count: 0,
+                            last_reset_ns: AnyIntProperty,
+                        }
+                    }
+                }
+            });
+        }
     }
 
     #[test_case(false; "eager")]
@@ -1589,35 +2224,69 @@ mod tests {
 
         recorder.record(T::from(10));
         recorder.record(T::from(0));
-        assert_data_tree!(inspector, root: {
-            power_observability_state_recorders: {
-                my_stateful_thing: {
-                    metadata: {
-                        name: "my_stateful_thing",
-                        type: "numeric",
-                        units: "kHz",
-                        range: {
-                            min_inc: 0.0,
-                            max_inc: 255.0
+        if lazy_record {
+            assert_data_tree!(inspector, root: {
+                power_observability_state_recorders: {
+                    my_stateful_thing: {
+                        metadata: {
+                            format_version: "2.0",
+                            name: "my_stateful_thing",
+                            type: "numeric",
+                            units: "kHz",
+                            range: {
+                                min_inc: 0.0,
+                                max_inc: 255.0
+                            },
                         },
-                    },
-                    history: {
-                        "0": {
-                            "@time": AnyIntProperty,
-                            "value": 10.0,
+                        history: {
+                            current_index: 0u64,
+                            current_size: 2u64,
+                            shards: {
+                                "0": {
+                                    times: AnyProperty,
+                                    values: vec![10.0f64, 0.0f64],
+                                }
+                            }
                         },
-                        "1": {
-                            "@time": AnyIntProperty,
-                            "value": 0.0,
-                        },
-                    },
-                    reset_info: {
-                        count: 0,
-                        last_reset_ns: AnyIntProperty,
+                        reset_info: {
+                            count: 0,
+                            last_reset_ns: AnyIntProperty,
+                        }
                     }
                 }
-            }
-        });
+            });
+        } else {
+            assert_data_tree!(inspector, root: {
+                power_observability_state_recorders: {
+                    my_stateful_thing: {
+                        metadata: {
+                            format_version: "2.0",
+                            name: "my_stateful_thing",
+                            type: "numeric",
+                            units: "kHz",
+                            range: {
+                                min_inc: 0.0,
+                                max_inc: 255.0
+                            },
+                        },
+                        history: {
+                            current_index: 2u64,
+                            current_size: 2u64,
+                            shards: {
+                                "0": {
+                                    times: AnyProperty,
+                                    values: vec![10.0f64, 0.0f64, 0.0f64, 0.0f64, 0.0f64, 0.0f64, 0.0f64, 0.0f64, 0.0f64, 0.0f64],
+                                }
+                            }
+                        },
+                        reset_info: {
+                            count: 0,
+                            last_reset_ns: AnyIntProperty,
+                        }
+                    }
+                }
+            });
+        }
     }
 
     #[test_case(false; "eager")]
@@ -1695,7 +2364,7 @@ mod tests {
         fs::write(&prev_csv, "").unwrap();
 
         // 4. START RECORDER 2 (Simulate Restart)
-        // This triggers hydration from disk into (Lazy: RingBuffer) or (Eager: BoundedListNode)
+        // This triggers hydration from disk into (Lazy: Dynamic nodes) or (Eager: EagerShardedBuffer)
         let mut recorder_restarted = EnumStateRecorder::<SwitchState>::new(
             "crash_test".into(),
             c"power_test",
@@ -1708,6 +2377,7 @@ mod tests {
             power_observability_state_recorders: {
                 crash_test: {
                     metadata: {
+                        format_version: "2.0",
                         name: "crash_test",
                         type: "enum",
                         states: {
@@ -1716,14 +2386,14 @@ mod tests {
                         }
                     },
                     history: {
-                        "0": {
-                            "@time": AnyIntProperty,
-                            "value": "ON",
-                        },
-                        "1": {
-                            "@time": AnyIntProperty,
-                            "value": "OFF",
-                        },
+                        current_index: 0u64,
+                        current_size: 2u64,
+                        shards: {
+                            "0": {
+                                times: AnyProperty,
+                                values: vec![1u64, 0u64],
+                            }
+                        }
                     },
                     reset_info: {
                         count: 0i64, // Matches both lazy (casted i64) and eager (0 literal)
@@ -1739,6 +2409,7 @@ mod tests {
             power_observability_state_recorders: {
                 crash_test: {
                     metadata: {
+                        format_version: "2.0",
                         name: "crash_test",
                         type: "enum",
                         states: {
@@ -1747,18 +2418,14 @@ mod tests {
                         }
                     },
                     history: {
-                        "0": {
-                            "@time": AnyIntProperty,
-                            "value": "ON",
-                        },
-                        "1": {
-                            "@time": AnyIntProperty,
-                            "value": "OFF",
-                        },
-                        "2": {
-                            "@time": AnyIntProperty,
-                            "value": "ON",
-                        },
+                        current_index: 0u64,
+                        current_size: 3u64,
+                        shards: {
+                            "0": {
+                                times: AnyProperty,
+                                values: vec![1u64, 0u64, 1u64],
+                            }
+                        }
                     },
                     reset_info: {
                         count: 0i64,
@@ -1829,6 +2496,7 @@ mod tests {
             power_observability_state_recorders: {
                 reboot_test: {
                     metadata: {
+                        format_version: "2.0",
                         name: "reboot_test",
                         type: "enum",
                         states: {
@@ -1838,17 +2506,26 @@ mod tests {
                     },
                     // DATA FROM FILE IS HERE (Read Only / Static)
                     previous_boot_history: {
-                        "0": {
-                            "@time": 1000i64,
-                            "value": "ON",
-                        },
-                        "1": {
-                            "@time": 2000i64,
-                            "value": "OFF",
-                        },
+                        current_index: 0u64,
+                        current_size: 2u64,
+                        shards: {
+                            "0": {
+                                times: vec![1000i64, 2000i64],
+                                values: vec![1u64, 0u64],
+                            }
+                        }
                     },
                     // ACTIVE HISTORY IS EMPTY (Fresh start)
-                    history: {},
+                    history: {
+                        current_index: 0u64,
+                        current_size: 0u64,
+                        shards: {
+                            "0": {
+                                times: vec![0i64],
+                                values: vec![0u64],
+                            }
+                        }
+                    },
                     reset_info: {
                         count: 0i64,
                         last_reset_ns: AnyIntProperty,
@@ -1864,6 +2541,7 @@ mod tests {
             power_observability_state_recorders: {
                 reboot_test: {
                     metadata: {
+                        format_version: "2.0",
                         name: "reboot_test",
                         type: "enum",
                         states: {
@@ -1873,25 +2551,25 @@ mod tests {
                     },
                     // DATA FROM FILE IS HERE (Read Only / Static)
                     previous_boot_history: {
-                        "0": {
-                            "@time": 1000i64,
-                            "value": "ON",
-                        },
-                        "1": {
-                            "@time": 2000i64,
-                            "value": "OFF",
-                        },
+                        current_index: 0u64,
+                        current_size: 2u64,
+                        shards: {
+                            "0": {
+                                times: vec![1000i64, 2000i64],
+                                values: vec![1u64, 0u64],
+                            }
+                        }
                     },
                     // ACTIVE HISTORY IS NOW POPULATED WITH NEW DATA
                     history: {
-                        "0": {
-                            "@time": AnyIntProperty, // New timestamp
-                            "value": "ON",
-                        },
-                        "1": {
-                            "@time": AnyIntProperty, // New timestamp
-                            "value": "OFF",
-                        },
+                        current_index: 0u64,
+                        current_size: 2u64,
+                        shards: {
+                            "0": {
+                                times: AnyProperty,
+                                values: vec![1u64, 0u64],
+                            }
+                        }
                     },
                     reset_info: {
                         count: 0i64,
@@ -1993,6 +2671,7 @@ mod tests {
                 power_observability_state_recorders: {
                     my_u64_metrics_p: {
                         metadata: {
+                            format_version: "2.0",
                             name: "my_u64_metrics_p",
                             type: "enum",
                             states: {
@@ -2001,20 +2680,25 @@ mod tests {
                             }
                         },
                         previous_boot_history: {
-                            "0": {
-                                "@time": AnyIntProperty,
-                                "value": "Hundred",
-                            },
-                            "1": {
-                                "@time": AnyIntProperty,
-                                "value": "TwoHundred",
-                            },
-                             "2": {
-                                "@time": AnyIntProperty,
-                                "value": "<Unknown>",
-                            },
+                            current_index: 0u64,
+                            current_size: 3u64,
+                            shards: {
+                                "0": {
+                                    times: AnyProperty,
+                                    values: vec![100u64, 200u64, 300u64],
+                                }
+                            }
                         },
-                        history: {},
+                        history: {
+                            current_index: 0u64,
+                            current_size: 0u64,
+                            shards: {
+                                "0": {
+                                    times: vec![0i64],
+                                    values: vec![0u64],
+                                }
+                            }
+                        },
                         reset_info: {
                             count: 0,
                             last_reset_ns: AnyIntProperty,
@@ -2029,6 +2713,7 @@ mod tests {
                 power_observability_state_recorders: {
                     my_u64_metrics_p: {
                         metadata: {
+                            format_version: "2.0",
                             name: "my_u64_metrics_p",
                             type: "enum",
                             states: {
@@ -2037,18 +2722,14 @@ mod tests {
                             }
                         },
                         history: {
-                            "0": {
-                                "@time": AnyIntProperty,
-                                "value": "Hundred",
-                            },
-                            "1": {
-                                "@time": AnyIntProperty,
-                                "value": "TwoHundred",
-                            },
-                             "2": {
-                                "@time": AnyIntProperty,
-                                "value": "<Unknown>",
-                            },
+                            current_index: 3u64,
+                            current_size: 3u64,
+                            shards: {
+                                "0": {
+                                    times: AnyProperty,
+                                    values: vec![100u64, 200u64, 300u64, 0u64, 0u64, 0u64, 0u64, 0u64, 0u64, 0u64],
+                                }
+                            }
                         },
                         reset_info: {
                             count: 0,
@@ -2120,6 +2801,7 @@ mod tests {
             power_observability_state_recorders: {
                 num_reboot_test: {
                     metadata: {
+                        format_version: "2.0",
                         name: "num_reboot_test",
                         type: "numeric",
                         units: "#",
@@ -2129,16 +2811,25 @@ mod tests {
                         }
                     },
                     previous_boot_history: {
-                        "0": {
-                            "@time": 1000i64,
-                            "value": 42u64,
-                        },
-                        "1": {
-                            "@time": 2000i64,
-                            "value": 100u64,
-                        },
+                        current_index: 0u64,
+                        current_size: 2u64,
+                        shards: {
+                            "0": {
+                                times: vec![1000i64, 2000i64],
+                                values: vec![42u64, 100u64],
+                            }
+                        }
                     },
-                    history: {},
+                    history: {
+                        current_index: 0u64,
+                        current_size: 0u64,
+                        shards: {
+                            "0": {
+                                times: vec![0i64],
+                                values: vec![0u64],
+                            }
+                        }
+                    },
                     reset_info: {
                         count: 0i64,
                         last_reset_ns: AnyIntProperty,

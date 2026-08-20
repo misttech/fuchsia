@@ -61,11 +61,11 @@ The key elements of the data are:
       If supporting exclusive bounds or API support for out-of-range values
       would be helpful to you, please [file a
       bug](https://issues.fuchsia.dev/issues?q=componentid:1585130).*
-* History of state values, represented as a sequence of nodes with
-      properties:
-    * `@time`: Boot clock timestamp in nanoseconds
-    * `value`: State value; string name for enum states, and numeric value for
-    numeric states.
+* History of state values:
+    * **Rust (Sharded Buffer)**: Stored under a `history` (or `previous_boot_history`) node containing `current_index`, `current_size`, and a `shards` child node with numeric array properties (`times` and `values`).
+    * **C++ (Legacy format)**: Stored as a sequence of child nodes under `history`, each with properties:
+        * `@time`: Boot clock timestamp in nanoseconds
+        * `value`: State value (string name for enum states, numeric value for numeric states)
 
 ### Trace
 
@@ -76,11 +76,7 @@ receiving a unique track. Numeric states are recorded as counters.
 
 #### Inspect
 
-Below is a brief example involving a battery, with charge recorded as an
-integer percentage once per minute, and charging state -- one of `Charging`,
-`FullyCharged`, or `Discharging` -- recorded on transition. Persistence is
-used by the battery level, but not the charging state to illustrate their
-differences.
+Below are examples involving a battery, with charge recorded as an integer percentage once per minute, and charging state -- one of `Charging`, `FullyCharged`, or `Discharging` -- recorded on transition.
 
 The specifications in the table result in the Inspect data that follows:
 
@@ -90,50 +86,85 @@ The specifications in the table result in the Inspect data that follows:
 | 120        | Charge increases to 100%; now `FullyCharged` |
 | 240        | Battery is `Discharging`; drains 1% per minute |
 
+##### Rust (Sharded Circular Buffer Format)
+
+In Rust, history samples are recorded into numeric arrays inside `shards` under `history` (and `previous_boot_history` when persistence is enabled):
+
 ```
     root:
       power_observability_state_recorders:
         battery_level:
-          history:
-            0:
-              @time = 0
-              value = 98
-            1:
-              @time = 60000000000
-              value = 99
-            2:
-              @time = 120000000000
-              value = 100
-            3:
-              @time = 180000000000
-              value = 100
-            4:
-              @time = 240000000000
-              value = 100
-            5:
-              @time = 300000000000
-              value = 100
-            6:
-              @time = 360000000000
-              value = 99
-            7:
-              @time = 420000000000
-              value = 98
           metadata:
+            format_version = 2.0
             name = battery_level
             range:
               min_inc = 0
               max_inc = 100
             type = numeric
             units = percent
+          history:
+            current_index = 8
+            current_size = 8
+            shards:
+              0:
+                times = [0, 60000000000, 120000000000, 180000000000, 240000000000, 300000000000, 360000000000, 420000000000]
+                values = [98, 99, 100, 100, 100, 100, 99, 98]
           previous_boot_history:
-            0:
-              @time = 8000000000
-              value = 98
-            1:
-              @time = 110000000000
-              value = 99
+            current_index = 0
+            current_size = 2
+            shards:
+              0:
+                times = [8000000000, 110000000000]
+                values = [98, 99]
         charging_state:
+          metadata:
+            format_version = 2.0
+            name = charging_state
+            type = enum
+            states:
+              Charging = 1
+              Discharging = 0
+              FullyCharged = 2
+          history:
+            current_index = 3
+            current_size = 3
+            shards:
+              0:
+                times = [0, 120000000000, 240000000000]
+                values = [1, 2, 0]
+```
+
+###### Interpreting the Circular Buffer
+To reconstruct the chronological sequence of state samples:
+
+1. **Reconstructing Chronological Order**:
+   - `current_size`: Total number of valid elements currently recorded, up to `capacity`.
+   - `current_index`: The next insertion index (head) in the buffer.
+   - **Before the buffer wraps (`current_size < capacity`)**:
+     Elements are located at indices `0` through `current_size - 1` in chronological order.
+   - **After the buffer wraps (`current_size == capacity`)**:
+     `current_index` points to the oldest sample (which will be overwritten next).
+
+2. **Interpreting Values**:
+   - **Numeric States**: Values are read directly as numeric values (`u64`, `i64`, or `f64`).
+   - **Enum States**: Integer values in `values` are translated back to state names using the reverse mapping of `metadata.states`.
+   - **Unpopulated Slots**: Slots with timestamp `0` in pre-allocated buffers represent unused entries and can be ignored.
+
+##### C++ (Legacy Format)
+
+Until the C++ library is updated to support sharded circular buffers, C++ records each sample as an individual child node under `history`:
+
+```
+    root:
+      power_observability_state_recorders:
+        charging_state:
+          metadata:
+            name = charging_state
+            type = enum
+            states:
+              Charging = 1
+              Discharging = 0
+              FullyCharged = 2
           history:
             0:
               @time = 0
@@ -144,13 +175,6 @@ The specifications in the table result in the Inspect data that follows:
             2:
               @time = 240000000000
               value = Discharging
-          metadata:
-            name = charging_state
-            type = enum
-            states:
-              Charging = 1
-              Discharging = 0
-              FullyCharged = 2
 ```
 
 #### Trace

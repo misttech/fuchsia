@@ -556,7 +556,7 @@ mod tests {
     use crate::message::Message;
     use crate::test::mock_node::{MessageMatcher, MockNode, MockNodeMaker, create_dummy_node};
     use crate::{msg_eq, msg_ok_return};
-    use diagnostics_assertions::{AnyIntProperty, assert_data_tree};
+    use diagnostics_assertions::{AnyProperty, assert_data_tree};
     use std::task::Poll::Ready;
 
     /// Tests that each node config file has proper configuration for ThermalLoadDriver entries. The
@@ -977,31 +977,23 @@ mod tests {
             root: {
                 power_observability_state_recorders: {
                     fake_driver_1_max: contains {
-                        history: {
-                            "0": {
-                                "@time": AnyIntProperty,
-                                "value": 21.0,
-                            },
-                            "1": {
-                                "@time": AnyIntProperty,
-                                "value": 23.0,
-                            },
-                            "2": {
-                                "@time": AnyIntProperty,
-                                "value": 25.0,
-                            },
+                        history: contains {
+                            shards: contains {
+                                "0": contains {
+                                    times: AnyProperty,
+                                    values: vec![21.0f64, 23.0f64, 25.0f64],
+                                }
+                            }
                         }
                     },
                     fake_driver_2_max: contains {
-                        "history": {
-                            "0": {
-                                "@time": AnyIntProperty,
-                                "value": 30.0,
-                            },
-                            "1": {
-                                "@time": AnyIntProperty,
-                                "value": 27.0,
-                            },
+                        history: contains {
+                            shards: contains {
+                                "0": contains {
+                                    times: AnyProperty,
+                                    values: vec![30.0f64, 27.0f64],
+                                }
+                            }
                         }
                     }
                 },

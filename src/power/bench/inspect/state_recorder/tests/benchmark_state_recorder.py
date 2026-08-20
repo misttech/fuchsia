@@ -176,47 +176,16 @@ class StateRecorderMemoryBenchmarkTest(fuchsia_base_test.FuchsiaBaseTest):
     async def test_memory_benchmarks(self) -> None:
         results = []
 
-        # Run Eager mode benchmark
-        results.extend(
-            await self._run_benchmark(
-                capacity=100,
-                entries=100,
-                lazy_record=False,
-                metric_group="Eager",
+        # Run eager mode benchmarks for implementation
+        for size in [100, 200, 400, 800, 1600]:
+            results.extend(
+                await self._run_benchmark(
+                    capacity=size,
+                    entries=size,
+                    lazy_record=False,
+                    metric_group="Eager",
+                )
             )
-        )
-        results.extend(
-            await self._run_benchmark(
-                capacity=200,
-                entries=200,
-                lazy_record=False,
-                metric_group="Eager",
-            )
-        )
-        results.extend(
-            await self._run_benchmark(
-                capacity=400,
-                entries=400,
-                lazy_record=False,
-                metric_group="Eager",
-            )
-        )
-        results.extend(
-            await self._run_benchmark(
-                capacity=800,
-                entries=800,
-                lazy_record=False,
-                metric_group="Eager",
-            )
-        )
-        results.extend(
-            await self._run_benchmark(
-                capacity=1600,
-                entries=1600,
-                lazy_record=False,
-                metric_group="Eager",
-            )
-        )
 
         test_perf_file = os.path.join(self.log_path, "test.fuchsiaperf.json")
         with open(test_perf_file, "w") as f:

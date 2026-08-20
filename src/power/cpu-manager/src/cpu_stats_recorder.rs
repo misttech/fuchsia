@@ -5,17 +5,20 @@
 use crate::node::Node;
 use anyhow::{Result, format_err};
 use async_trait::async_trait;
+use fidl_fuchsia_kernel as fstats;
+use fuchsia_async as fasync;
 use fuchsia_inspect::{self as inspect};
 use fuchsia_sync::Mutex;
 use futures::future::{FutureExt as _, LocalBoxFuture};
 use futures::stream::{FuturesUnordered, StreamExt};
 use serde_derive::Deserialize;
+use serde_json as json;
 use state_recorder::{NumericStateRecorder, RecorderOptions, StateRecorderManager, units};
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
 use std::sync::Arc;
-use {fidl_fuchsia_kernel as fstats, fuchsia_async as fasync, serde_json as json, zx};
+use zx;
 
 /// Node: CpuStatsRecorder
 ///
@@ -281,7 +284,7 @@ impl Node for CpuStatsRecorder {
 mod tests {
     use super::*;
     use async_utils::PollExt as _;
-    use diagnostics_assertions::{AnyIntProperty, assert_data_tree};
+    use diagnostics_assertions::{AnyProperty, assert_data_tree};
     use fuchsia_inspect as inspect;
 
     fn setup_fake_service<F>(mut get_stats: F) -> fstats::StatsProxy
@@ -450,26 +453,22 @@ mod tests {
                         root: {
                             power_observability_state_recorders: {
                                 cpu_load: contains {
-                                    history: {
-                                        "0": {
-                                            "@time": AnyIntProperty,
-                                            "value": 2.5f32,
-                                        },
-                                        "1": {
-                                            "@time": AnyIntProperty,
-                                            "value": 1.25f32,
+                                    history: contains {
+                                        shards: contains {
+                                            "0": {
+                                                times: AnyProperty,
+                                                values: vec![2.5f64, 1.25f64],
+                                            }
                                         }
                                     }
                                 },
                                 power: contains {
-                                    history: {
-                                        "0": {
-                                            "@time": AnyIntProperty,
-                                            "value": 425.0f32,
-                                        },
-                                        "1": {
-                                            "@time": AnyIntProperty,
-                                            "value": 175.0f32,
+                                    history: contains {
+                                        shards: contains {
+                                            "0": {
+                                                times: AnyProperty,
+                                                values: vec![425.0f64, 175.0f64],
+                                            }
                                         }
                                     }
                                 }
