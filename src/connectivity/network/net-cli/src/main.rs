@@ -235,10 +235,40 @@ impl net_cli::ServiceConnector<fnet_migration::StateMarker> for Connector {
     }
 }
 
+#[async_trait::async_trait]
+impl net_cli::ServiceConnector<fdebug::PacketCaptureProviderMarker> for Connector {
+    async fn connect(
+        &self,
+    ) -> Result<<fdebug::PacketCaptureProviderMarker as ProtocolMarker>::Proxy, Error> {
+        self.connect_to_exposed_protocol::<fdebug::PacketCaptureProviderMarker>(NETSTACK_MONIKER)
+            .await
+    }
+}
+
+struct Deps;
+
+impl net_cli::CaptureDeps for Deps {
+    type OutputWriter = std::io::BufWriter<std::fs::File>;
+    fn create_output_writer(
+        &self,
+        path: &std::path::Path,
+    ) -> Result<Self::OutputWriter, anyhow::Error> {
+        if let Some(parent) = path.parent() {
+            if !parent.as_os_str().is_empty() {
+                std::fs::create_dir_all(parent)?;
+            }
+        }
+        std::fs::File::create(path)
+            .map(|w| std::io::BufWriter::with_capacity(65535, w))
+            .map_err(Into::into)
+    }
+}
+
 #[fuchsia::main(logging = false)]
 async fn main() -> Result<(), Error> {
     logger_init();
     let command: net_cli::Command = argh::from_env();
     let connector = Connector::new()?;
-    net_cli::do_root(writer::JsonWriter::new(None), command, &connector).await
+    let deps = Deps;
+    net_cli::do_root(writer::JsonWriter::new(None), command, &connector, &deps).await
 }

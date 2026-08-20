@@ -1,114 +1,68 @@
 # Packet Capture on Fuchsia
 
-Packet capture is a fundamental tool for developing, debugging, and testing networking.
+Packet capture is a fundamental tool for developing, debugging, and testing
+networking.
 
-`fx sniff` is a development host command that:
+Fuchsia provides target-side packet capturing capabilities via the **`net`**
+CLI tool (part of `net-cli`).
 
-* Runs the packet capture on the Fuchsia **target** device.
-* Stores the packets in PCAPNG format on the Fuchsia development **host**.
-* Streams out to a graphical user interface such as `Wireshark`.
+## Running the `ffx net capture` plugin on the host
 
-`tcpdump` is a packet capturer with rich capture filter support. `fx sniff` internally invokes `tcpdump` with predefined capture filters that are necessary for Fuchsia's developer workflow. For use cases where `fx sniff` is not viable (e.g. when you have serial console access but without dev host connected), use `tcpdump` directly.
+> Warning: **Host Tool Deprecation (`fx sniff`)**:
+> `fx sniff` which is a host-side script that wraps running `tcpdump` on the
+> target is a deprecated workflow. The new `net capture` CLI tool currently only
+> supports rolling packet captures and does not yet support streamed mode,
+> but unless streaming packet captures to see the output in real time is
+> necessary, the newer `net capture` should be preferred as it provides
+> better ergonomics.
 
-## Prepare the image {#prepare-image}
+The `ffx net capture` host plugin allows managing rolling captures directly from your
+development host.
 
-Make sure to bundle `tcpdump` into your set of base packages.
-
-```shell
-$ fx set core.x64 --with-base //third_party/tcpdump
-$ fx build
-```
-
-## How-to (On Host)
-
-### Capture packets over WLAN interface
+### Start a rolling capture
 
 ```shell
-[host] $ fx sniff wlan
+[host] $ ffx net capture start-rolling name:lo
 ```
 
-By default, this command captures packets for 30 seconds. To configure the duration, add the `--time {sec}` or `-t {sec}` option.
+You can optionally specify a packet filter using standard
+[pcap-filter] syntax,
+just like for `tcpdump` or `tshark`. See the help string for other arguments
+that the start command takes or the [README] for more examples.
 
-If you don't know the network interface name, run `fx sniff` without options. The error message shows you what interfaces are available. Alternatively, run:
+The default, minimum, and maximum buffer sizes are defined in [FIDL], and the
+resulting rolling packet capture will contain as many of the most recently
+captured packets that fit the negotiated buffer size. The `--snap-len` argument
+can also be used so that only the first N bytes of each packet is captured
+instead of the entire packet, which can help fit more packets into the capture
+since the contents of the payload is often not relevant.
+
+### Stop and download a rolling capture
 
 ```shell
-[host] $ fx shell net if list
+[host] $ ffx net capture stop-rolling
 ```
 
-### Show the hexdump of packets over the ethernet interface
+This stops the capture, downloads the accumulated packet capture directly
+to your development host, and prints the path on the host where the pcapng
+file has been saved.
+
+## Running the `net` binary on the target directly
+
+In order to run the `net` tool on the target directly, ensure
+`//src/connectivity/network/net-cli` is included in your build.
+
+Usage is otherwise virtually identical to the ffx plugin.
 
 ```shell
-[host] $ fx sniff --view hex eth
+[target] $ net capture start-rolling name:lo
+[target] $ net capture stop-rolling
 ```
 
-### Capture WLAN packets and store them in a file
+## Running `tcpdump` on the target directly
 
-```shell
-[host] $ fx sniff --file my_packets wlan
-```
-
-The captured packets are first stored in the target's `/tmp/` directory. After the capture is complete, the files are moved to `//out/my_packets.pcapng` automatically.
-
-### Stream out to Wireshark in realtime
-
-**_NOTE:_** Linux only.
-
-```shell
-[host] $ fx sniff --view wireshark wlan
-```
-
-### Force stop
-Packet capture runs for the specified duration (`--time` or `-t` option). If a user desires to stop early, presse one of the following keys:
-
-```
-c, q, C, Q
-```
-This will stop both a target side process and a host side process.
-
-## How-to (on target device)
-
-### Use tcpdump for debugging
-
-`fx sniff` requires working `ssh` connectivity from the host to the target, which means that networking must be working to some degree. In some cases, networking might not be working at all. If you have access to the serial console while networking, including `ssh`, is not working, you must run `tcpdump` directly on the target. `tcpdump` provides a richer set of features than `fx sniff`.
-
-#### Capture packets over the WLAN interface
-
-```shell
-[target] $ tcpdump -i wlan --no-promiscuous-mode
-```
-
-#### Stream out the binary dump in PCAPNG format
-
-```shell
-[target] $ tcpdump -i wlan --no-promiscuous-mode -w -
-```
-
-#### Capture packets and store them in a file
-
-```shell
-[target] $ tcpdump -i wlan --no-promiscuous-mode -w /tmp/my_packets.pcapng
-```
-
-#### Copy the dump file to the host
-
-```shell
-[host] $ cd ${FUCHSIA_OUT_DIR} && fx scp "[$(fx get-device-addr)]:/tmp/my_packets.pcapng"
-```
-
-#### `tcpdump` help
-
-```shell
-[target] $ tcpdump --help
-```
-
-#### Only Watch ARP, DHCP, and DNS packets
-
-```shell
-[target] $ tcpdump -i  wlan --no-promiscuous-mode "arp or port dns,dhcp" "$iface_filepath"
-```
-
-## Filter syntax
-`tcpdump` uses `libpcap` under the hood. See [pcap-filter](https://www.tcpdump.org/manpages/pcap-filter.7.html).
+Ensure that `//third_party/tcpdump` is included in your build so that `tcpdump`
+can be run on the target directly.
 
 ## Reference: `fx` workflow packet signatures
 There are many different kinds of services running between the Fuchsia
@@ -118,6 +72,11 @@ workflows. The following table lists noteworthy signatures.
 
 | Use                  | Signature                    | Reference                                  |
 |----------------------|------------------------------|--------------------------------------------|
+| fx shell             | port 22                      | devshell/shell                             |
+| SSDP                 | port 1900                    | UPnP discovery traffic                     |
+| zxdb (legacy)        | port 2345                    | Legacy raw TCP debug agent connection      |
+| mDNS                 | port 5353                    | Dynamic target discovery                   |
+| Package Server       | port 8083                    | docs/packages.md                           |
 | Logger               | port 33337                   | NETBOOT_DEBUGLOG_PORT_SERVER               |
 | Logger               | port 33338                   | NETBOOT_DEBUGLOG_PORT_ACK                  |
 | Bootserver           | port 33330                   | NETBOOT_PORT_SERVER                        |
@@ -126,19 +85,11 @@ workflows. The following table lists noteworthy signatures.
 | Bootserver           | port 33339                   | NETBOOT_PORT_CMD_END                       |
 | Bootserver           | port 33340                   | NETBOOT_PORT_TFTP_OUTGOING                 |
 | Bootserver           | port 33341                   | NETBOOT_PORT_TFTP_INCOMING                 |
-| Package Server       | port 8083                    | docs/packages.md                           |
-| fx shell             | port 22                      | devshell/shell                             |
 | target netsvc addr   | fe80::xxxx:xxff:fexx:xxxx%XX | fx device-finder list --netboot            |
 | host link-local addr | fe80::xxxx:xxxx:xxxx:xxxx%XX | fx device-finder list --ipv4=false --local |
 | target netstack addr | fe80::xxxx:xxxx:xxxx:xxxx%XX | fx get-device-addr                         |
-| zxdb                 | port 2345                    | devshell/contrib/debug                     |
-| -                    | port 65026                   |                                            |
-| -                    | port 65268                   |                                            |
-| -                    | 1900                         |                                            |
 
 
-## Troubleshooting
-
-**_Q_** I get the error `/boot/bin/sh: tcpdump not found`
-
-**A** The `tcpdump` package is not prepared. Make sure to bundle `tcpdump` in the image. See [prepare the image](#prepare-image).
+[pcap-filter]: https://www.tcpdump.org/manpages/pcap-filter.7.html
+[FIDL]: /sdk/fidl/fuchsia.net.debug/packet_capture.fidl
+[README]: /src/connectivity/network/net-cli/README.md

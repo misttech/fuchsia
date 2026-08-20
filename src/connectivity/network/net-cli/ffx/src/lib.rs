@@ -235,6 +235,35 @@ impl net_cli::ServiceConnector<fnet_migration::StateMarker> for FfxConnector<'_>
     }
 }
 
+#[async_trait::async_trait]
+impl net_cli::ServiceConnector<fdebug::PacketCaptureProviderMarker> for FfxConnector<'_> {
+    async fn connect(
+        &self,
+    ) -> Result<<fdebug::PacketCaptureProviderMarker as ProtocolMarker>::Proxy, anyhow::Error> {
+        self.remotecontrol_connect::<fdebug::PacketCaptureProviderMarker>(NETSTACK_MONIKER_SUFFIX)
+            .await
+    }
+}
+
+struct Deps;
+
+impl net_cli::CaptureDeps for Deps {
+    type OutputWriter = std::io::BufWriter<std::fs::File>;
+    fn create_output_writer(
+        &self,
+        path: &std::path::Path,
+    ) -> Result<Self::OutputWriter, anyhow::Error> {
+        if let Some(parent) = path.parent() {
+            if !parent.as_os_str().is_empty() {
+                std::fs::create_dir_all(parent)?;
+            }
+        }
+        std::fs::File::create(path)
+            .map(|w| std::io::BufWriter::with_capacity(65535, w))
+            .map_err(Into::into)
+    }
+}
+
 #[derive(FfxTool)]
 pub struct NetTool {
     #[command]
@@ -257,10 +286,13 @@ fho::embedded_plugin!(NetTool);
 impl NetTool {
     async fn net(&self, writer: <Self as fho::FfxMain>::Writer) -> fho::Result<()> {
         let realm = self.cmd.realm.as_deref().unwrap_or(NETWORK_REALM);
+        let connector = FfxConnector { remote_control: self.remote_control.deref().clone(), realm };
+        let deps = Deps;
         let res = net_cli::do_root(
             writer.into(),
             net_cli::Command { cmd: self.cmd.cmd.clone() },
-            &FfxConnector { remote_control: self.remote_control.deref().clone(), realm },
+            &connector,
+            &deps,
         )
         .await
         .map_err(|e| match net_cli::underlying_user_facing_error(&e) {

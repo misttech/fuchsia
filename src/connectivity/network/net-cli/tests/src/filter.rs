@@ -44,6 +44,7 @@ async fn run_command(realm: &netemul::TestRealm<'_>, args: &[&'static str]) -> R
         net_cli::Command::from_args(&["net"], &[&["filter"], args].concat())
             .expect("should parse args successfully"),
         &TestRealmConnector { realm },
+        &crate::TestDeps,
     )
     .await
 }

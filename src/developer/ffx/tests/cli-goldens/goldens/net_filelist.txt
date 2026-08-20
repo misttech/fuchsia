@@ -1,4 +1,7 @@
 ffx/net.golden
+ffx/net/capture.golden
+ffx/net/capture/start-rolling.golden
+ffx/net/capture/stop-rolling.golden
 ffx/net/dhcp.golden
 ffx/net/dhcp/start.golden
 ffx/net/dhcp/stop.golden

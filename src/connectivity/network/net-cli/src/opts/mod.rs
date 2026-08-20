@@ -16,6 +16,7 @@ use std::collections::HashMap;
 use std::convert::TryInto as _;
 use std::num::NonZeroU64;
 
+pub(crate) mod capture;
 pub(crate) mod dhcpd;
 pub(crate) mod dns;
 pub(crate) mod filter;
@@ -52,6 +53,7 @@ pub struct Command {
 #[derive(ArgsInfo, FromArgs, Clone, Debug, PartialEq)]
 #[argh(subcommand)]
 pub enum CommandEnum {
+    Capture(capture::Capture),
     FilterDeprecated(FilterDeprecated),
     Filter(filter::Filter),
     If(If),

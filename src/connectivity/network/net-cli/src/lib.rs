@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+mod capture;
 mod filter;
 mod opts;
 mod ser;
@@ -82,6 +83,14 @@ pub trait ServiceConnector<S: flex_client::fidl::ProtocolMarker> {
     async fn connect(&self) -> Result<S::Proxy, Error>;
 }
 
+pub trait CaptureDeps {
+    type OutputWriter: std::io::Write + Send + 'static;
+    fn create_output_writer(
+        &self,
+        path: &std::path::Path,
+    ) -> Result<Self::OutputWriter, anyhow::Error>;
+}
+
 /// An interface for acquiring all system dependencies required by net-cli.
 ///
 /// FIDL dependencies are specified as supertraits. These supertraits are a complete enumeration of
@@ -106,6 +115,7 @@ pub trait NetCliDepsConnector:
     + ServiceConnector<fnet_migration::ControlMarker>
     + ServiceConnector<fnet_migration::StateMarker>
     + ServiceConnector<fnet_filter::StateMarker>
+    + ServiceConnector<fdebug::PacketCaptureProviderMarker>
 {
 }
 
@@ -129,15 +139,24 @@ impl<O> NetCliDepsConnector for O where
         + ServiceConnector<fnet_migration::ControlMarker>
         + ServiceConnector<fnet_migration::StateMarker>
         + ServiceConnector<fnet_filter::StateMarker>
+        + ServiceConnector<fdebug::PacketCaptureProviderMarker>
 {
 }
 
-pub async fn do_root<C: NetCliDepsConnector>(
+pub async fn do_root<C, D>(
     mut out: writer::JsonWriter<serde_json::Value>,
     Command { cmd }: Command,
     connector: &C,
-) -> Result<(), Error> {
+    deps: &D,
+) -> Result<(), Error>
+where
+    C: NetCliDepsConnector,
+    D: CaptureDeps,
+{
     match cmd {
+        CommandEnum::Capture(cmd) => capture::do_capture(out, cmd, connector, deps)
+            .await
+            .context("failed during capture command"),
         CommandEnum::If(opts::If { if_cmd: cmd }) => {
             do_if(&mut out, cmd, connector).await.context("failed during if command")
         }
@@ -2108,6 +2127,17 @@ mod testutil {
         pub name_lookup: Option<fname::LookupProxy>,
         pub filter: Option<fnet_filter::StateProxy>,
         pub installer: Option<finterfaces_admin::InstallerProxy>,
+        pub packet_capture_provider: Option<fdebug::PacketCaptureProviderProxy>,
+    }
+
+    impl CaptureDeps for TestConnector {
+        type OutputWriter = std::io::Sink;
+        fn create_output_writer(
+            &self,
+            _path: &std::path::Path,
+        ) -> Result<Self::OutputWriter, anyhow::Error> {
+            Ok(std::io::sink())
+        }
     }
 
     #[async_trait::async_trait]
@@ -2184,6 +2214,18 @@ mod testutil {
                 .as_ref()
                 .cloned()
                 .ok_or_else(|| anyhow!("connector has no fuchsia.net.interfaces.admin.Installer"))
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl ServiceConnector<fdebug::PacketCaptureProviderMarker> for TestConnector {
+        async fn connect(
+            &self,
+        ) -> Result<<fdebug::PacketCaptureProviderMarker as ProtocolMarker>::Proxy, Error> {
+            self.packet_capture_provider
+                .as_ref()
+                .cloned()
+                .ok_or_else(|| anyhow!("connector has no packet capture provider instance"))
         }
     }
 

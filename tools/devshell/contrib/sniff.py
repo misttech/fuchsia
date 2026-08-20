@@ -249,6 +249,13 @@ def is_target_ready():
 
 
 def main():
+    print(
+        "WARNING: `fx sniff` is deprecated and will be removed in a future release.\n"
+        "Please use the host-side `ffx net capture` plugin or target-side `net capture` tool.\n"
+        "See docs/development/debugging/packet_capture.md for details.\n",
+        file=sys.stderr,
+    )
+
     if not is_target_ready():
         sys.exit(1)
 

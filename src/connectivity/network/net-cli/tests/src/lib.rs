@@ -49,6 +49,17 @@ impl<'a, P: fidl::endpoints::DiscoverableProtocolMarker> net_cli::ServiceConnect
     }
 }
 
+pub(crate) struct TestDeps;
+impl net_cli::CaptureDeps for TestDeps {
+    type OutputWriter = std::io::Sink;
+    fn create_output_writer(
+        &self,
+        _path: &std::path::Path,
+    ) -> Result<Self::OutputWriter, anyhow::Error> {
+        Ok(std::io::sink())
+    }
+}
+
 impl<'a> NetworkTestRealmConnector<'a> {
     async fn connect_to_protocol<P: fidl::endpoints::DiscoverableProtocolMarker>(
         &self,
@@ -185,6 +196,7 @@ async fn add_del_route(ip_version: IpVersion) {
             net_cli::Command::from_args(&["net"], &["route", "list"])
                 .expect("should parse args successfully"),
             &connector,
+            &TestDeps,
         )
         .await
         .expect("should succeed");
@@ -248,6 +260,7 @@ async fn add_del_route(ip_version: IpVersion) {
             )
             .expect("should parse successfully"),
             &connector,
+            &TestDeps,
         )
         .await
         .expect("should succeed");
@@ -285,6 +298,7 @@ async fn add_del_route(ip_version: IpVersion) {
             )
             .expect("should parse successfully"),
             &connector,
+            &TestDeps,
         )
         .await
         .expect("should succeed");
@@ -360,6 +374,7 @@ async fn rule_list() {
             net_cli::Command::from_args(&["net"], &["rule", "list"])
                 .expect("should parse args successfully"),
             &connector,
+            &TestDeps,
         )
         .await
         .expect("should succeed");
@@ -523,6 +538,7 @@ async fn add_remove_blackhole() {
             net_cli::Command::from_args(&["net"], &["if", "add", "blackhole", INTERFACE1_NAME])
                 .expect("should parse args successfully"),
             &connector,
+            &TestDeps,
         )
         .await
         .expect("should succeed");
@@ -547,6 +563,7 @@ async fn add_remove_blackhole() {
             )
             .expect("should parse args successfully"),
             &connector,
+            &TestDeps,
         )
         .await
         .expect("should succeed");
@@ -582,6 +599,7 @@ async fn add_remove_blackhole() {
             )
             .expect("should parse args successfully"),
             &connector,
+            &TestDeps,
         )
         .await
         .expect("should succeed");
@@ -610,6 +628,7 @@ async fn add_remove_blackhole() {
             )
             .expect("should parse args successfully"),
             &connector,
+            &TestDeps,
         )
         .await;
         let error = result.unwrap_err();

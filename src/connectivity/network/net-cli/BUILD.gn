@@ -15,11 +15,13 @@ template("net_cli_lib") {
     edition = "2024"
 
     deps = [
+             "//sdk/fidl/fuchsia.ebpf:fuchsia.ebpf_rust",
              "//sdk/rust/zx-status",
              "//sdk/rust/zx-types",
              "//src/connectivity/lib/fidl_fuchsia_net_stack_ext",
              "//src/connectivity/lib/net-types",
              "//src/connectivity/network/lib/netfilter",
+             "//src/connectivity/network/lib/pcap:pcap-compile",
              "//src/developer/lib/writer:lib",
              "//src/lib/network/fidl_fuchsia_net_ext",
              "//third_party/rust_crates:anyhow",
@@ -52,8 +54,10 @@ template("net_cli_lib") {
     }
 
     sources = [
+      "src/capture.rs",
       "src/filter.rs",
       "src/lib.rs",
+      "src/opts/capture.rs",
       "src/opts/dhcpd.rs",
       "src/opts/dns.rs",
       "src/opts/filter.rs",
@@ -66,6 +70,8 @@ template("net_cli_lib") {
 }
 
 _fidl_deps = [
+  "//sdk/fidl/fuchsia.ebpf:fuchsia.ebpf_rust",
+  "//sdk/fidl/fuchsia.io:fuchsia.io_rust",
   "//sdk/fidl/fuchsia.net:fuchsia.net_rust",
   "//sdk/fidl/fuchsia.net.debug:fuchsia.net.debug_rust",
   "//sdk/fidl/fuchsia.net.dhcp:fuchsia.net.dhcp_rust",
