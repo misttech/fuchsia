@@ -39,6 +39,12 @@
             source_availability: "unknown",
         },
         {
+            protocol: "fuchsia.time.alarms.WakeAlarms",
+            from: "#timekeeper",
+            to: "#bluetooth-core",
+            availability: "optional",
+        },
+        {
             config: "fuchsia.power.SuspendEnabled",
             from: "parent",
             to: "#bluetooth-core",

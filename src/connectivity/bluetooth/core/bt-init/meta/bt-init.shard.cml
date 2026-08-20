@@ -95,6 +95,12 @@
             to: [ "#bt-host-collection" ],
         },
         {
+            protocol: "fuchsia.time.alarms.WakeAlarms",
+            from: "parent",
+            to: [ "#bt-host-collection" ],
+            availability: "optional",
+        },
+        {
             config: "fuchsia.bluetooth.LegacyPairing",
             from: "parent",
             to: [ "#bt-host-collection" ],
