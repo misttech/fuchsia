@@ -368,6 +368,7 @@ void VsockUsb::HandleSocketReadable(async_dispatcher_t*, async::WaitBase*, zx_st
 
   if (status == ZX_OK) {
     (*request)->data()->at(0).size(actual);
+    (*request)->short_(actual < kMtu);
     status = request->CacheFlush(bulk_in_ep_.GetMapped());
     if (status != ZX_OK) {
       FDF_SLOG(ERROR, "Cache flush failed", KV("status", zx_status_get_string(status)));

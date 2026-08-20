@@ -343,6 +343,7 @@ class VsockUsbTest : public ::testing::Test {
           ASSERT_EQ(buffer->Which(), fuchsia_hardware_usb_request::Buffer::Tag::kVmoId);
           uint64_t vmo_id = buffer->vmo_id().value();
           ret.resize(data->front().size().value());
+          EXPECT_EQ(request.short_().value_or(false), ret.size() < 1024);
           size_t offset = data->front().offset().value_or(0);
           FDF_LOG(DEBUG, "reading %zu bytes from incoming vmo at offset %zu", ret.size(), offset);
           in_ep.WithVmo(vmo_id, [&ret, offset](zx::vmo& vmo) {
@@ -753,6 +754,33 @@ TEST_F(VsockUsbTest, Inspect) {
                                                       8, rx_size);
     EXPECT_TRUE(err_out.is_ok()) << err_out.error_value();
   });
+
+  UnconfigureDevice();
+}
+
+TEST_F(VsockUsbTest, ShortFlagOnTxRequest) {
+  ConfigureDevice();
+  std::vector<zx::socket> sockets;
+  auto callback =
+      SetupCallback(1, [&sockets](zx::socket socket) { sockets.emplace_back(std::move(socket)); });
+  while (sockets.size() < 1u) {
+    driver_test().runtime().RunUntilIdle();
+  }
+
+  // 1. Send data with size < MTU (1024) -> short should be true.
+  std::vector<uint8_t> short_data(500, 0xAB);
+  ASSERT_TRUE(SocketWriteAll(&sockets[0], short_data.data(), short_data.size()));
+  ASSERT_TRUE(GetRxConcatExpect(short_data.data(), short_data.size()));
+
+  // 2. Send data with size == MTU (1024) -> short should be false.
+  std::vector<uint8_t> mtu_data(1024, 0xCD);
+  ASSERT_TRUE(SocketWriteAll(&sockets[0], mtu_data.data(), mtu_data.size()));
+  ASSERT_TRUE(GetRxConcatExpect(mtu_data.data(), mtu_data.size()));
+
+  // 3. Send data with size < MTU again to verify transitions.
+  std::vector<uint8_t> another_short(1, 0xEF);
+  ASSERT_TRUE(SocketWriteAll(&sockets[0], another_short.data(), another_short.size()));
+  ASSERT_TRUE(GetRxConcatExpect(another_short.data(), another_short.size()));
 
   UnconfigureDevice();
 }
