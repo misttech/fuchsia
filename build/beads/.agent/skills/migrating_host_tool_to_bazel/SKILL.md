@@ -60,6 +60,22 @@ description: >-
 - [Rust](references/rust_migration.md)
   (See **Common Pitfalls and Best Practices** section).
 
+4. For host tests (e.g., `go_test`, `rustc_test`, `cc_test`):
+   - Identify the `"host_tests"` `test_suite()` target in the parent or other ancestor
+     directory (e.g., `//tools:host_tests` in [`//tools/BUILD.bazel`](//tools/BUILD.bazel)
+     or `//build/tools:host_tests` in [`//build/tools/BUILD.bazel`](//build/tools/BUILD.bazel))
+     of the migrated host tool.
+      - If no ancestor `"host_tests"` `test_suite()` target exists, ask the user for guidance.
+   - Group migrated host tool test targets in a package-level `"tests"` `test_suite()` target.
+     Set its `visibility` to the parent/ancestor package containing the `"host_tests"`
+     `test_suite()` identified above. For example, `visibility = ["//tools:__pkg__"]`
+     or `visibility = ["//build/tools:__pkg__"]`.
+   - Register the new package-level `"tests"` target in the `"host_tests"` `test_suite()`.
+   - **Remove migrated tests from GN:** Remove the migrated test from the parent GN test
+     group (e.g., `group("tests_no_e2e")` in `//tools/BUILD.gn` or `group("tests")` in
+     `//build/tools/BUILD.gn`) so GN does not depend on deleted GN test targets. Ensure
+     any un-migrated tests remain in GN.
+
 **NOTE:** Set `target_compatible_with = HOST_CONSTRAINTS` (or `HOST_OS_CONSTRAINTS`
 for tools in the IDK) on your Bazel targets.
 See [target_compatible_with.md](references/target_compatible_with.md).
@@ -86,55 +102,32 @@ Update the references in the external targets to use the new Bazel host tool
 targets following instructions from
 [bazel_root_targets_list.md](references/bazel_root_targets_list.md).
 
-### Step 4: Sync to GN for Library and Test Targets
+### Step 4: Handle GN Targets and BUILD.gn
 
-Follow the following steps for migrated library and test targets
-(e.g. `go_library`, `rustc_library`, `rustc_test`, `source_set`, `static_library`):
+Determine whether `{directory_path}/BUILD.gn` can be deleted directly or requires `bazel2gn` syncing:
 
-**CRITICAL `bazel2gn` GOTCHAS:**
+- **Case 1: All targets in `{directory_path}/BUILD.gn` are migrated:**
+  If all targets in `BUILD.gn` have been migrated to Bazel and no other GN targets depend on targets in this directory:
+  1. Simply **delete `{directory_path}/BUILD.gn`**.
+  2. **Do NOT sync back from Bazel to GN:** Do NOT run `bazel2gn`, do NOT add `# @bazel2gn:skip` in `BUILD.bazel`, and do NOT add `verify_bazel2gn` to `//build/bazel2gn_verification_targets.gni`.
+  3. Run `fx gen` to validate the GN build graph.
 
-- **Prevent Redundant Binary Syncs:** Add `# @bazel2gn:skip` on the line
-  immediately preceding `go_binary_host_tool` or `rustc_binary` in `BUILD.bazel`
-  so it isn't output into GN as a binary.
-- **Missing `verify` Targets:** Every synchronized directory outputs a
-  `verify_bazel2gn` target. You MUST manually add
-  `"//{directory_path}:verify_bazel2gn"` to the `bazel2gn_verification_targets`
-  list in `//build/bazel2gn_verification_targets.gni` (or
-  `//sdk/fidl/bazel2gn_verification_targets.gni` for FIDL targets) to hook it
-  into the main build graph.
-- **Testing Host Tests:** If you need to add the migrated host tests to the active
-  build configuration for verification:
-  - **Pitfall:** Running `fx add-test` on host-only tests will fail with
-    unresolved target toolchain (e.g., `fuchsia:arm64`) dependencies.
-  - **Fix:** Always use `fx add-host-test` instead of `fx add-test` for host
-    tests.
+- **Case 2: Unmigrated GN targets remain or external GN targets still depend on libraries in `{directory_path}`:**
+  1. Remove the migrated targets from `{directory_path}/BUILD.gn`.
+  2. **Prevent redundant binary syncs:** Add `# @bazel2gn:skip` on the line immediately preceding `go_binary_host_tool` or `rustc_binary` in `BUILD.bazel` so it isn't output into GN as a binary.
+  3. **Sync back to GN:** Sync the required library targets back from Bazel to GN using the `syncing-bazel-to-gn` skill (see `../syncing_bazel_to_gn/SKILL.md`).
+  4. **Add verification target:** Add `"//{directory_path}:verify_bazel2gn"` to the `bazel2gn_verification_targets` list in `//build/bazel2gn_verification_targets.gni` (or `//sdk/fidl/bazel2gn_verification_targets.gni` for FIDL targets) to hook it into the main build graph.
+  5. Run `fx gen` to validate the GN build graph.
+     - **NOTE:** If `fx gen` fails with missing GN targets, sync them back using [`syncing-bazel-to-gn`](../syncing_bazel_to_gn/SKILL.md).
+  6. **Clean up redundant GN targets:**
+     - In the synced `BUILD.gn` file, if a library target (e.g., `go_library`) is not referenced by other GN targets, remove it.
+     - If there are no targets left in the synced `BUILD.gn`, remove `BUILD.gn`, remove `# @bazel2gn:skip` from `BUILD.bazel`, and remove `"//{directory_path}:verify_bazel2gn"` from `bazel2gn_verification_targets.gni`.
 
-1. Remove the targets you've migrated from `{directory_path}/BUILD.gn`.
+**Testing Host Tests:** If you need to add migrated host tests to the active build configuration for verification:
+- **Pitfall:** Running `fx add-test` on host-only tests will fail with unresolved target toolchain (e.g., `fuchsia:arm64`) dependencies.
+- **Fix:** Always use `fx add-host-test` instead of `fx add-test` for host tests.
 
-2. Sync the target back from Bazel to GN using the `syncing-bazel-to-gn` skill
-   (see `../syncing_bazel_to_gn/SKILL.md`).
-
-3. Run `fx gen` to validate the GN build graph.
-   - **NOTE:** If `fx gen` fails with missing GN targets, sync them back using
-     [`syncing-bazel-to-gn`](../syncing_bazel_to_gn/SKILL.md).
-   - Only if you suspect the tests are completely missing from the active build
-     configuration, reconfigure the build using:
-     ```bash
-     fx set core.x64 --with '//bundles/buildbot/core' --with '//bundles/tests'
-     ```
-     (Avoid running `fx set` if possible, as it is slow and overwrites the active board/product configuration).
-
-### Step 5: Remove Redundant GN Targets
-1. In the synced BUILD.gn file:
-- if the `go_library` targets is not referenced by other targets, remove it.
-- if there is no targets in the synced BUILD.gn, remove the BUILD.gn file.
-2. In the BUILD.bazel file, if the BUILD.gn is removed:
-  - Remove the `# @bazel2gn:skip` added on the line immediately preceding
-    `go_binary_host_tool` or `rustc_binary`.
-  - Remove the entry `"//{directory_path}:verify_bazel2gn"` added to the
-    `bazel2gn_verification_targets` list.
-
-### Step 6: Format Code
+### Step 5: Format Code
 
 Format all changed files with:
 
@@ -142,7 +135,7 @@ Format all changed files with:
 fx format-code --parallel
 ```
 
-### Step 7: Final Verification
+### Step 6: Final Verification
 
 Ensure everything builds correctly using the new Bazel targets:
 

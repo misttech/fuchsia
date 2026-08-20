@@ -88,11 +88,15 @@ rustc_binary(
 
 ### Rule 2.6: Synchronizer (`bazel2gn`) & Verification Targets
 
+- **Deleting `BUILD.gn` When Fully Migrated:**
+  - If all targets in `{directory_path}/BUILD.gn` are migrated to Bazel and no external GN targets depend on them, delete `BUILD.gn` directly.
+  - Do NOT run `bazel2gn`, do NOT add `# @bazel2gn:skip`, and do NOT add `"//{directory_path}:verify_bazel2gn"`.
 - **`# @bazel2gn:skip` Directive:**
   - MUST add `# @bazel2gn:skip` on the line immediately preceding `go_binary_host_tool` or `rustc_binary` in `BUILD.bazel` IF a `BUILD.gn` file remains in that directory for synced libraries/tests.
-  - MUST REMOVE `# @bazel2gn:skip` if the `BUILD.gn` file is completely deleted.
+  - MUST REMOVE (or not add) `# @bazel2gn:skip` if the `BUILD.gn` file is completely deleted.
 - **Verification List (`bazel2gn_verification_targets.gni`):**
   - Directories containing synced libraries or tests MUST have `"//{directory_path}:verify_bazel2gn"` added to `bazel2gn_verification_targets` in `//build/bazel2gn_verification_targets.gni`.
+  - Do NOT add `"//{directory_path}:verify_bazel2gn"` if `BUILD.gn` is deleted.
   - Entries MUST preserve alphabetical sorting inside the `# keep-sorted` block.
 
 **GOOD:**
@@ -128,6 +132,37 @@ go_binary_host_tool(
   - `with_unit_tests = true` in GN -> `with_host_unit_tests = True` in Bazel.
   - `features` in GN -> `crate_features` in Bazel.
 - **Third-Party Dependencies:** Third-party crate references MUST use the Bazel vendor path (e.g., `//third_party/rust_crates/vendor:anyhow`).
+
+---
+
+### Rule 2.8: Host Test Suite & Registration
+
+- **Package Test Suite:** Migrated test targets SHOULD be grouped under a package-level `"tests"` `test_suite()` target with `visibility` restricted to the parent/ancestor directory containing the root `test_suite()` (e.g., `visibility = ["//tools:__pkg__"]` or `visibility = ["//build/tools:__pkg__"]`).
+- **Root Host Tests Registration:** When migrating host tests, `"//{directory_path}:tests"` MUST be added to the parent/ancestor `"host_tests"` `test_suite()` target (e.g., the `//tools:host_tests` `test_suite()` target in `//tools/BUILD.bazel` or `//build/tools:host_tests` in `//build/tools/BUILD.bazel`) so the tests are automatically included in centralized CI test suites.
+- **Do Not Duplicate in GN:** Migrated Bazel host tests should be Bazel-only. They are automatically included in CI/CQ when added to the parent `test_suite()` target above. Do NOT add them to GN `group("tests")`, and ensure any old GN test references for migrated tests are removed from `group("tests_no_e2e")` in `//tools/BUILD.gn` (or equivalent in `//build/tools/BUILD.gn`).
+- **Reviewer Check for Test Parity:** Reviewers must ensure all tests removed from `BUILD.gn` have matching definitions in a `BUILD.bazel` file that is included in a Bazel `test_suite()` named `"tests"`. Tests defined in GN that cannot yet be migrated must remain in GN.
+
+**GOOD:**
+
+```bazel
+# In //tools/my_tool/BUILD.bazel
+test_suite(
+    name = "tests",
+    tests = [":my_tool_tests"],
+    visibility = ["//tools:__pkg__"],
+)
+
+# In //tools/BUILD.bazel
+test_suite(
+    name = "host_tests",
+    tests = [
+        ...
+        "//tools/my_tool:tests",
+    ],
+)
+```
+
+**BAD:** Migrating host tests without including them in a `"tests"` `test_suite()`, without exposing and registering that `"tests"` target in the parent/ancestor `"host_tests"` `test_suite()` target, duplicating the host test in GN test groups, or deleting un-migrated GN tests.
 
 ---
 
