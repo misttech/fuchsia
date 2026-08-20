@@ -6,10 +6,22 @@
 #define SRC_PERFORMANCE_EXPERIMENTAL_PROFILER_COMPONENT_WATCHER_H_
 
 #include <fidl/fuchsia.component/cpp/fidl.h>
+#include <fidl/fuchsia.io/cpp/fidl.h>
 #include <lib/async/dispatcher.h>
+#include <lib/zx/eventpair.h>
 #include <lib/zx/result.h>
 
+#include <optional>
+#include <string>
+
 namespace profiler {
+
+struct ComponentStartEvent {
+  std::string moniker;
+  std::string url;
+  std::optional<fidl::ClientEnd<fuchsia_io::Directory>> runtime_dir;
+  std::optional<zx::eventpair> break_on_start;
+};
 
 class ComponentWatcher {
  public:
@@ -20,7 +32,7 @@ class ComponentWatcher {
   void Clear();
   void HandleEvent(fidl::Result<fuchsia_component::EventStream::GetNext>& res);
 
-  using ComponentEventHandler = fit::function<void(std::string moniker, std::string url)>;
+  using ComponentEventHandler = fit::function<void(ComponentStartEvent event)>;
 
   // Run a handler when we receive a start/stop event for a moniker
   zx::result<> WatchForMoniker(std::string moniker, ComponentEventHandler handler);

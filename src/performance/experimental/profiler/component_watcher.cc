@@ -89,15 +89,26 @@ void profiler::ComponentWatcher::HandleEvent(
       fuchsia_component::EventType event_type = event.header()->event_type().value();
       switch (event_type) {
         case fuchsia_component::EventType::kDebugStarted: {
+          ComponentStartEvent start_event{.moniker = moniker, .url = component_url};
+          if (event.payload() && event.payload()->debug_started()) {
+            auto &debug_started = event.payload()->debug_started().value();
+            if (debug_started.runtime_dir()) {
+              start_event.runtime_dir = std::move(*debug_started.runtime_dir());
+            }
+            if (debug_started.break_on_start()) {
+              start_event.break_on_start = std::move(*debug_started.break_on_start());
+            }
+          }
           auto moniker_handler = moniker_watchers_.find(moniker);
           if (moniker_handler != moniker_watchers_.end()) {
-            moniker_handler->second(moniker, component_url);
+            auto handler = std::move(moniker_handler->second);
             moniker_watchers_.erase(moniker_handler);
-          }
-          if (auto url_handler = url_watchers_.find(component_url);
-              url_handler != url_watchers_.end()) {
-            url_handler->second(moniker, component_url);
+            handler(std::move(start_event));
+          } else if (auto url_handler = url_watchers_.find(component_url);
+                     url_handler != url_watchers_.end()) {
+            auto handler = std::move(url_handler->second);
             url_watchers_.erase(url_handler);
+            handler(std::move(start_event));
           }
           break;
         }

@@ -45,19 +45,20 @@ zx::result<> profiler::TestComponent::Start(fxl::WeakPtr<Sampler> notify) {
   // somewhere else is much less of an issue.
   if (auto res = component_watcher_.WatchForUrl(
           url_,
-          [this](std::string moniker, std::string url) {
-            zx::result<> watch_for_children = TraverseRealm(moniker, [this](std::string moniker) {
-              return component_watcher_.WatchForMoniker(
-                  std::move(moniker), [this](std::string moniker, std::string url) {
-                    on_start_.value()(std::move(moniker), std::move(url));
-                  });
-            });
+          [this](ComponentStartEvent event) {
+            zx::result<> watch_for_children =
+                TraverseRealm(event.moniker, [this](std::string moniker) {
+                  return component_watcher_.WatchForMoniker(
+                      std::move(moniker), [this](ComponentStartEvent child_event) {
+                        on_start_.value()(std::move(child_event));
+                      });
+                });
             if (watch_for_children.is_error()) {
               FX_PLOGS(WARNING, watch_for_children.error_value())
                   << "Failed to watch for test's children!";
             }
 
-            on_start_.value()(std::move(moniker), std::move(url));
+            on_start_.value()(std::move(event));
           });
       res.is_error()) {
     return res.take_error();

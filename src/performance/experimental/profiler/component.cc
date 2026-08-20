@@ -120,73 +120,61 @@ zx::result<zx_koid_t> ReadElfJobId(const fidl::SyncClient<fuchsia_io::Directory>
   }
   return zx::ok(job_id);
 }
-zx::result<zx_koid_t> MonikerToJobId(const std::string& moniker) {
-  TRACE_DURATION("cpu_profiler", __PRETTY_FUNCTION__);
-  zx::result<fidl::ClientEnd<fuchsia_sys2::RealmQuery>> client_end =
-      component::Connect<fuchsia_sys2::RealmQuery>("/svc/fuchsia.sys2.RealmQuery.root");
-  if (client_end.is_error()) {
-    FX_LOGS(WARNING) << "Unable to connect to RealmQuery. Attaching by moniker isn't supported!";
-    return client_end.take_error();
-  }
-  auto [directory_client_endpoint, directory_server] =
-      fidl::Endpoints<fuchsia_io::Directory>::Create();
-  fidl::SyncClient<fuchsia_io::Directory> directory_client{std::move(directory_client_endpoint)};
-  fidl::SyncClient realm_query_client{std::move(*client_end)};
-
-  fidl::Result<fuchsia_sys2::RealmQuery::OpenDirectory> open_result =
-      realm_query_client->OpenDirectory({{
-          .moniker = moniker,
-          .dir_type = fuchsia_sys2::OpenDirType::kRuntimeDir,
-          .object = std::move(directory_server),
-      }});
-  if (open_result.is_error()) {
-    FX_LOGS(WARNING) << "Unable to open the runtime directory of " << moniker << ": "
-                     << open_result.error_value();
-    return zx::error(ZX_ERR_BAD_PATH);
-  }
-  zx::result<zx_koid_t> job_id = ReadElfJobId(directory_client);
-  if (job_id.is_error()) {
-    FX_LOGS(WARNING) << "Unable to read component directory";
-  }
-  return job_id;
-}
 }  // namespace
 
 profiler::ComponentWatcher::ComponentEventHandler profiler::MakeOnStartHandler(
     fxl::WeakPtr<profiler::Sampler> sampler) {
-  return [sampler = std::move(sampler)](std::string moniker, std::string) {
+  return [sampler = std::move(sampler)](ComponentStartEvent start_event) {
     if (!sampler) {
       return;
     }
     elf_search::Searcher searcher;
-    FX_LOGS(INFO) << "Attaching via moniker: " << moniker;
-    zx::result<zx_koid_t> job_id = MonikerToJobId(moniker);
+    FX_LOGS(INFO) << "Attaching via moniker: " << start_event.moniker;
+    // Holding start_event.break_on_start defers process creation by elf_runner
+    // until we finish setup and this scope exits.
+    if (!start_event.runtime_dir.has_value()) {
+      FX_LOGS(ERROR) << "No runtime directory in component start event for: "
+                     << start_event.moniker;
+      return;
+    }
+    fidl::SyncClient<fuchsia_io::Directory> directory_client{std::move(*start_event.runtime_dir)};
+    zx::result<zx_koid_t> job_id = ReadElfJobId(directory_client);
     if (job_id.is_error()) {
-      FX_PLOGS(ERROR, job_id.error_value()) << "Failed to get Job ID from moniker";
+      FX_PLOGS(ERROR, job_id.error_value())
+          << "Failed to get Job ID from moniker: " << start_event.moniker;
       return;
     }
     TaskFinder tf;
     tf.AddJob(*job_id);
     zx::result<TaskFinder::FoundTasks> handles = tf.FindHandles();
     if (handles.is_error()) {
-      FX_PLOGS(ERROR, handles.error_value()) << "Failed to find handle for: " << moniker;
+      FX_PLOGS(ERROR, handles.error_value())
+          << "Failed to find handle for: " << start_event.moniker;
       return;
     }
+    bool job_found = false;
     for (auto& [koid, handle] : handles->jobs) {
-      if (koid == job_id) {
+      if (koid == *job_id) {
+        job_found = true;
         zx::result<profiler::JobTarget> target =
             profiler::MakeJobTarget(zx::job(handle.release()), searcher);
         if (target.is_error()) {
-          FX_PLOGS(ERROR, target.status_value()) << "Failed to make target for: " << moniker;
+          FX_PLOGS(ERROR, target.status_value())
+              << "Failed to make target for: " << start_event.moniker;
           return;
         }
         zx::result<> target_result = sampler->AddTarget(std::move(*target));
         if (target_result.is_error()) {
-          FX_PLOGS(ERROR, target_result.error_value()) << "Failed to add target for: " << moniker;
+          FX_PLOGS(ERROR, target_result.error_value())
+              << "Failed to add target for: " << start_event.moniker;
           return;
         }
         break;
       }
+    }
+    if (!job_found) {
+      FX_LOGS(WARNING) << "Job ID " << *job_id
+                       << " not found in task handles for moniker: " << start_event.moniker;
     }
   };
 }
@@ -297,9 +285,8 @@ zx::result<> profiler::ControlledComponent::Start(fxl::WeakPtr<Sampler> notify) 
   on_start_ = profiler::MakeOnStartHandler(std::move(notify));
   zx::result<> watch_result = TraverseRealm(moniker_.ToString(), [this](std::string moniker) {
     return component_watcher_.WatchForMoniker(
-        std::move(moniker), [this](std::string moniker, std::string url) {
-          on_start_.value()(std::move(moniker), std::move(url));
-        });
+        std::move(moniker),
+        [this](ComponentStartEvent event) { on_start_.value()(std::move(event)); });
   });
 
   if (watch_result.is_error()) {
