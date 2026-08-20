@@ -81,10 +81,8 @@ impl UnhandledInputHandler for MediaButtonsHandler {
                 }
 
                 self.inspect_status.count_received_event(&event_time);
-                let mut media_buttons_event = Self::create_media_buttons_event(
-                    consumer_controls_event,
-                    device_descriptor.device_id,
-                );
+                let mut media_buttons_event =
+                    Self::create_media_buttons_event(consumer_controls_event, device_descriptor);
 
                 // Send the event if the media buttons are supported.
                 self.send_event_to_listeners(&media_buttons_event).await;
@@ -168,26 +166,48 @@ impl MediaButtonsHandler {
     /// -  `event`: The MediaButtonEvent to create a MediaButtonsEvent from.
     fn create_media_buttons_event(
         event: &mut consumer_controls_binding::ConsumerControlsEvent,
-        device_id: u32,
+        device_descriptor: &consumer_controls_binding::ConsumerControlsDeviceDescriptor,
     ) -> fidl_ui_input::MediaButtonsEvent {
         let mut new_event = fidl_ui_input::MediaButtonsEvent {
-            volume: Some(0),
-            mic_mute: Some(false),
-            pause: Some(false),
-            camera_disable: Some(false),
-            power: Some(false),
-            function: Some(false),
-            device_id: Some(device_id),
+            volume: None,
+            mic_mute: None,
+            pause: None,
+            camera_disable: None,
+            power: None,
+            function: None,
+            device_id: Some(device_descriptor.device_id),
             wake_lease: event.wake_lease.take(),
             ..Default::default()
         };
+
+        for button in &device_descriptor.buttons {
+            match button {
+                fidl_fuchsia_input::ConsumerControlButton::VolumeUp
+                | fidl_fuchsia_input::ConsumerControlButton::VolumeDown => {
+                    new_event.volume = Some(0)
+                }
+                fidl_fuchsia_input::ConsumerControlButton::MicMute => {
+                    new_event.mic_mute = Some(false)
+                }
+                fidl_fuchsia_input::ConsumerControlButton::Pause => new_event.pause = Some(false),
+                fidl_fuchsia_input::ConsumerControlButton::CameraDisable => {
+                    new_event.camera_disable = Some(false)
+                }
+                fidl_fuchsia_input::ConsumerControlButton::Power => new_event.power = Some(false),
+                fidl_fuchsia_input::ConsumerControlButton::Function => {
+                    new_event.function = Some(false)
+                }
+                _ => {}
+            }
+        }
+
         for button in &event.pressed_buttons {
             match button {
                 fidl_fuchsia_input::ConsumerControlButton::VolumeUp => {
-                    new_event.volume = Some(new_event.volume.unwrap().saturating_add(1));
+                    new_event.volume = Some(new_event.volume.unwrap_or(0).saturating_add(1));
                 }
                 fidl_fuchsia_input::ConsumerControlButton::VolumeDown => {
-                    new_event.volume = Some(new_event.volume.unwrap().saturating_sub(1));
+                    new_event.volume = Some(new_event.volume.unwrap_or(0).saturating_sub(1));
                 }
                 fidl_fuchsia_input::ConsumerControlButton::MicMute => {
                     new_event.mic_mute = Some(true);

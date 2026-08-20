@@ -99,6 +99,8 @@ impl InputDeviceRegistry {
                         ConsumerControlButton::MicMute,
                         ConsumerControlButton::Reboot,
                         ConsumerControlButton::CameraDisable,
+                        ConsumerControlButton::Power,
+                        ConsumerControlButton::Function,
                     ]),
                     ..Default::default()
                 }),
