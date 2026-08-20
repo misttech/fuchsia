@@ -5,16 +5,16 @@
 use crate::{StarnixKernel, generate_kernel_name};
 use anyhow::Error;
 use fidl::endpoints::ServerEnd;
+use fidl_fuchsia_component as fcomponent;
+use fidl_fuchsia_component_runner as frunner;
+use fidl_fuchsia_power_system as fpower;
 use frunner::{ComponentControllerMarker, ComponentStartInfo};
 use fuchsia_component::client::connect_to_protocol;
 use fuchsia_sync::Mutex;
 use std::collections::HashMap;
 use std::sync::Arc;
 use vfs::execution_scope::ExecutionScope;
-use {
-    fidl_fuchsia_component as fcomponent, fidl_fuchsia_component_runner as frunner,
-    fidl_fuchsia_power_system as fpower, zx,
-};
+use zx;
 
 /// The component URL of the Starnix kernel.
 const KERNEL_URL: &str = "starnix_kernel#meta/starnix_kernel.cm";
@@ -112,21 +112,32 @@ impl Kernels {
         fuchsia_trace::duration!("power", "starnix-runner:acquire-application-activity-lease");
         // LINT.ThenChange(//src/performance/lib/trace_processing/metrics/suspend.py)
         let job_koid = container_job.koid()?;
-        if let Some(kernel) = self.kernels.lock().get(&job_koid) {
-            let activity_governor = connect_to_protocol::<fpower::ActivityGovernorMarker>()?;
-            let wake_lease = match activity_governor
-                .take_application_activity_lease(&create_lease_name(&kernel.name))
-                .await
-            {
-                Ok(l) => l,
-                Err(e) => {
-                    log::warn!("Failed to acquire application activity lease for kernel: {:?}", e);
-                    return Ok(());
-                }
+
+        let kernel_name = {
+            let guard = self.kernels.lock();
+            let Some(kernel) = guard.get(&job_koid) else {
+                return Ok(());
             };
+            kernel.name.clone()
+        };
+
+        let activity_governor = connect_to_protocol::<fpower::ActivityGovernorMarker>()?;
+        let wake_lease = match activity_governor
+            .take_application_activity_lease(&create_lease_name(&kernel_name))
+            .await
+        {
+            Ok(l) => l,
+            Err(e) => {
+                log::warn!("Failed to acquire application activity lease for kernel: {:?}", e);
+                return Ok(());
+            }
+        };
+
+        if let Some(kernel) = self.kernels.lock().get(&job_koid) {
             *kernel.wake_lease.lock() = Some(wake_lease);
             log::info!("Acquired wake lease for {:?}", container_job);
         }
+
         Ok(())
     }
 }
