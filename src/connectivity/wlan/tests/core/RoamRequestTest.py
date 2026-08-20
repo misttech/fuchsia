@@ -645,6 +645,17 @@ class RoamRequestTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
                                 target_bss_desc.bssid,
                                 "Roamed to wrong BSSID",
                             )
+                            # Verify target channel reported in roam result BSS description.
+                            if next_txn.result.bss_description is None:
+                                raise signals.TestError(
+                                    "Roam result did not include a BSS description"
+                                )
+                            assert_equal(
+                                next_txn.result.bss_description.primary.number,
+                                target_bss_desc.primary.number,
+                                f"Expected post-roam primary channel {target_bss_desc.primary.number}, "
+                                f"but roam result reported {next_txn.result.bss_description.primary.number}",
+                            )
                             # Verify DUT is connected to the AP using the target interface
                             if self.openwrt_ap:
                                 status = self.get_single_sta_status(

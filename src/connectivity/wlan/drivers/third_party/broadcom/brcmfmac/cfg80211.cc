@@ -1996,7 +1996,7 @@ void brcmf_return_roam_start(struct net_device* ndev) {
 
   selected_bss.capability_info = target_bss_info->capability;
   selected_bss.primary =
-      chanspec_to_operating_channel_number(&cfg->d11inf, target_bss_info->chanspec);
+      chanspec_to_primary_channel_number(&cfg->d11inf, target_bss_info->chanspec);
   selected_bss.bandwidth = chanspec_to_channel_bandwidth(&cfg->d11inf, target_bss_info->chanspec);
   selected_bss.vht_secondary_80_channel =
       chanspec_to_secondary80(&cfg->d11inf, target_bss_info->chanspec);
