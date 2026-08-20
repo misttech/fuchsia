@@ -10,36 +10,40 @@ load("//build/bazel/rules/host_tests:host_go_test.bzl", "host_go_test")
 package(default_applicable_licenses = ["//:license"])
 
 go_library(
-    name = "rfcmeta_lib",
+    name = "clippy_reporter_lib",
     srcs = [
-        "rfcmeta.go",
+        "main.go",
     ],
-    importpath = "go.fuchsia.dev/fuchsia/tools/staticanalysis/rfcmeta",
+    importpath = "go.fuchsia.dev/fuchsia/tools/staticanalysis/clippy-reporter",
     target_compatible_with = HOST_CONSTRAINTS,
     deps = [
-        "//third_party/golibs:gopkg.in/yaml.v2",
+        "//third_party/golibs:golang.org/x/exp/maps",
+        "//tools/build",
+        "//tools/lib/jsonutil",
+        "//tools/lib/logger",
         "//tools/staticanalysis",
     ],
 )
 
 go_binary_host_tool(
-    name = "rfcmeta",
-    embed = [":rfcmeta_lib"],
+    name = "clippy-reporter",
+    embed = [":clippy_reporter_lib"],
     target_compatible_with = HOST_CONSTRAINTS,
     visibility = ["//visibility:public"],
 )
 
 host_go_test(
-    name = "rfcmeta_tests",
+    name = "clippy_reporter_tests",
     srcs = [
-        "rfcmeta_test.go",
+        "main_test.go",
     ],
-    embed = [":rfcmeta_lib"],
+    embed = [":clippy_reporter_lib"],
     target_compatible_with = HOST_CONSTRAINTS,
     visibility = ["//tools:__pkg__"],
     deps = [
         "//third_party/golibs:github.com/google/go-cmp/cmp",
         "//third_party/golibs:github.com/google/go-cmp/cmp/cmpopts",
+        "//tools/build",
         "//tools/staticanalysis",
     ],
 )

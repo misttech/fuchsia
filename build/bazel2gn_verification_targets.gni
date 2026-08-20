@@ -174,7 +174,6 @@ bazel2gn_verification_targets = [
   "//tools/net/tftp:verify_bazel2gn",
   "//tools/qemu:verify_bazel2gn",
   "//tools/rust_extract:verify_bazel2gn",
-  "//tools/staticanalysis:verify_bazel2gn",
   "//tools/testing/runtests:verify_bazel2gn",
   "//tools/testing/tap:verify_bazel2gn",
   "//tools/testing/testparser:verify_bazel2gn",

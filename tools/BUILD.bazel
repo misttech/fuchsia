@@ -33,6 +33,7 @@ test_suite(
         "//tools/qemu:qemu_tests",
         "//tools/readme_fuchsia:tests",
         "//tools/rust_test_parser:rust_test_parser_lib_tests",
+        "//tools/staticanalysis/clippy-reporter:clippy_reporter_tests",
         "//tools/staticanalysis/rfcmeta:rfcmeta_tests",
         "//tools/testing/tefmocheck:tefmocheck_lib_tests",
         "//tools/whereiscl:host_tests",

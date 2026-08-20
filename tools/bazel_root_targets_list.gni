@@ -144,6 +144,16 @@ tools_bazel_root_targets = [
     ]
   },
   {
+    bazel_label = "//tools/staticanalysis/clippy-reporter:clippy-reporter"
+    copy_outputs = [
+      {
+        bazel = "{{BAZEL_TARGET_OUT_DIR}}/clippy-reporter_/clippy-reporter"
+        ninja = "clippy-reporter"
+      },
+    ]
+    install_host_tool = true
+  },
+  {
     bazel_label = "//tools/staticanalysis/rfcmeta:rfcmeta"
     copy_outputs = [
       {
