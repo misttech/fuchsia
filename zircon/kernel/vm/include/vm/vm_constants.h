@@ -51,6 +51,7 @@ constexpr uint32_t kVmPageListTypeBits = 3;
 constexpr uint32_t kVmPageListPageType = 0b000;
 constexpr uint32_t kVmPageListReferenceType = 0b010;
 constexpr uint32_t kVmPageListZeroMarkerType = 0b001;
+constexpr uint32_t kVmPageListIntervalType = 0b011;
 constexpr uint32_t kVmPageListParentContentType = 0b100;
 
 // Interval sentinel limits

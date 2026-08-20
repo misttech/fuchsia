@@ -464,6 +464,7 @@ class VmPageOrMarker {
   static_assert(kPageType == kVmPageListPageType);
   static_assert(kReferenceType == kVmPageListReferenceType);
   static_assert(kZeroMarkerType == kVmPageListZeroMarkerType);
+  static_assert(kIntervalType == kVmPageListIntervalType);
   static_assert(kParentContentType == kVmPageListParentContentType);
 
   friend VmPageList;

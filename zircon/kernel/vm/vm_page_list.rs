@@ -8,7 +8,8 @@ use crate::kernel::types::PAddr;
 use crate::vm::page::VmPagePtr;
 use crate::vm::pmm_node::pmm_node;
 use vm_constants_rs::{
-    kPmmNodeIndexZeroBits, kVmPageListIntervalBits, kVmPageListPageType,
+    kPmmNodeIndexZeroBits, kVmPageListIntervalBits, kVmPageListIntervalSentinelBits,
+    kVmPageListIntervalType, kVmPageListIntervalTypeBits, kVmPageListPageType,
     kVmPageListParentContentType, kVmPageListReferenceType, kVmPageListTypeBits,
     kVmPageListZeroMarkerType,
 };
@@ -27,6 +28,20 @@ use vm_constants_rs::{
 ///  * ParentContent - Indicates that there might be content for this slot, but the page list in the
 ///    parent must be checked for it. The difference between `Empty`, which can also indicate that
 ///    the parent must be searched, and `ParentContent` is up to the specific VMO.
+///  * Interval    - Indicates that this page is part of a sparse page interval. An interval will
+///    have a Start sentinel, and an End sentinel, and all offsets that lie between the two will be
+///    empty. If the interval spans a single page, it will be represented as a Slot sentinel, which
+///    is conceptually the same as both a Start and an End sentinel.
+///
+/// There are certain invariants that the page list tries to maintain at all times. It might not
+/// always be possible to enforce these as the checks involved might be expensive, however it is
+/// important that any code that manipulates the page list abide by them, primarily to keep the
+/// memory occupied by the page list nodes in check:
+/// 1. Page list nodes cannot be completely empty i.e. they must contain at least one non-empty
+///    slot.
+/// 2. Any intervals in the page list should span a maximal range. In other words, there should not
+///    be consecutive intervals in the page list which it would have been possible to represent with
+///    a single interval instead.
 ///
 /// Note on Preconditions & Safety Contracts:
 /// `VmPageOrMarker` uses manual bit-packing rather than a native Rust `enum` to maintain
@@ -35,6 +50,26 @@ use vm_constants_rs::{
 #[repr(transparent)]
 pub struct VmPageOrMarker {
     raw: u32,
+}
+
+/// The types of sparse page interval types that are supported.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(u32)]
+enum IntervalType {
+    /// Represents a range of zero pages.
+    Zero = 0,
+}
+
+/// Sentinel types that are used to represent a sparse page interval.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(u32)]
+enum SentinelType {
+    /// Represents a single page interval.
+    Slot = 0,
+    /// The first page of a multi-page interval.
+    Start,
+    /// The last page of a multi-page interval.
+    End,
 }
 
 /// The various dirty states that a zero interval can be in. Refer to VmCowPages::DirtyState for
@@ -173,10 +208,31 @@ impl VmPageOrMarker {
     const PAGE_TYPE: u32 = kVmPageListPageType;
     const ZERO_MARKER_TYPE: u32 = kVmPageListZeroMarkerType;
     const REFERENCE_TYPE: u32 = kVmPageListReferenceType;
+    const INTERVAL_TYPE: u32 = kVmPageListIntervalType;
     const PARENT_CONTENT_TYPE: u32 = kVmPageListParentContentType;
 
     const MARKER_SHARE_COUNT_MASK: u32 = !Self::TYPE_MASK;
     const MARKER_SHARE_COUNT_STEP: u32 = 1 << Self::TYPE_BITS;
+
+    // In addition to storing the type for an interval, we also need to track the type of interval
+    // sentinel: the start, the end, or a single slot marker.
+    const INTERVAL_SENTINEL_BITS: u32 = kVmPageListIntervalSentinelBits;
+    const INTERVAL_SENTINEL_SHIFT: u32 = Self::TYPE_BITS;
+    const INTERVAL_SENTINEL_MASK: u32 = (1 << Self::INTERVAL_SENTINEL_BITS) - 1;
+
+    // Next we also need to store the type of interval being represented; reserve a couple of bits
+    // for this. Currently we only support one type of interval: a range of zero pages, but
+    // reserving 2 bits allows for more types in the future.
+    const INTERVAL_TYPE_BITS: u32 = kVmPageListIntervalTypeBits;
+    const INTERVAL_TYPE_SHIFT: u32 = Self::INTERVAL_SENTINEL_SHIFT + Self::INTERVAL_SENTINEL_BITS;
+    const INTERVAL_TYPE_MASK: u32 = (1 << Self::INTERVAL_TYPE_BITS) - 1;
+
+    const INTERVAL_BITS: u32 =
+        Self::TYPE_BITS + Self::INTERVAL_SENTINEL_BITS + Self::INTERVAL_TYPE_BITS;
+    const INTERVAL_MASK: u32 = (1 << Self::INTERVAL_BITS) - 1;
+
+    const _ZERO_RANGE_ALIGN_CHECK: () =
+        assert!(ZeroRange::ALIGN_BITS == VmPageOrMarker::INTERVAL_BITS);
 
     fn get_type(&self) -> u32 {
         self.raw & Self::TYPE_MASK
@@ -236,6 +292,18 @@ impl VmPageOrMarker {
     pub fn parent_content() -> Self {
         Self { raw: Self::PARENT_CONTENT_TYPE }
     }
+
+    /// Creates a zero interval `VmPageOrMarker`.
+    ///
+    /// Only support creation of zero interval type for now.
+    /// Private in C++ (friended with VmPageList) so callers cannot arbitrarily create sentinels.
+    fn zero_interval(sentinel: SentinelType, state: ZeroRangeDirtyState) -> Self {
+        let sentinel_bits = (sentinel as u32) << Self::INTERVAL_SENTINEL_SHIFT;
+        let type_bits = (IntervalType::Zero as u32) << Self::INTERVAL_TYPE_SHIFT;
+        let zr = ZeroRange::new_with_state(0, state);
+        Self { raw: zr.value() | type_bits | sentinel_bits | Self::INTERVAL_TYPE }
+    }
+
     /// Returns true if this is empty.
     ///
     /// A `PAGE_TYPE` that otherwise holds a null pointer is considered to be Empty.
@@ -293,6 +361,127 @@ impl VmPageOrMarker {
         // It is invalid to decrement marker share count from zero.
         debug_assert!(self.marker_share_count() > 0);
         self.raw -= Self::MARKER_SHARE_COUNT_STEP;
+    }
+
+    /// Returns true if this is an interval.
+    pub fn is_interval(&self) -> bool {
+        self.get_type() == Self::INTERVAL_TYPE
+    }
+
+    /// Returns the interval sentinel type.
+    fn interval_sentinel(&self) -> SentinelType {
+        let bits = (self.raw >> Self::INTERVAL_SENTINEL_SHIFT) & Self::INTERVAL_SENTINEL_MASK;
+        match bits {
+            0 => SentinelType::Slot,
+            1 => SentinelType::Start,
+            2 => SentinelType::End,
+            _ => panic!("invalid sentinel type"),
+        }
+    }
+
+    /// Sets the interval sentinel type.
+    fn set_interval_sentinel(&mut self, sentinel: SentinelType) {
+        self.raw &= !(Self::INTERVAL_SENTINEL_MASK << Self::INTERVAL_SENTINEL_SHIFT);
+        self.raw |= (sentinel as u32) << Self::INTERVAL_SENTINEL_SHIFT;
+    }
+
+    /// Returns the interval type.
+    fn interval_type(&self) -> IntervalType {
+        let bits = (self.raw >> Self::INTERVAL_TYPE_SHIFT) & Self::INTERVAL_TYPE_MASK;
+        match bits {
+            0 => IntervalType::Zero,
+            _ => panic!("invalid interval type"),
+        }
+    }
+
+    // Getters and setters for the interval type.
+
+    /// Returns true if this is the start of an interval.
+    pub fn is_interval_start(&self) -> bool {
+        self.is_interval() && self.interval_sentinel() == SentinelType::Start
+    }
+
+    /// Returns true if this is the end of an interval.
+    pub fn is_interval_end(&self) -> bool {
+        self.is_interval() && self.interval_sentinel() == SentinelType::End
+    }
+
+    /// Returns true if this is an interval slot.
+    pub fn is_interval_slot(&self) -> bool {
+        self.is_interval() && self.interval_sentinel() == SentinelType::Slot
+    }
+
+    /// Returns true if this is a zero interval.
+    pub fn is_interval_zero(&self) -> bool {
+        self.is_interval() && self.interval_type() == IntervalType::Zero
+    }
+
+    // Getters and setter for the zero interval type.
+
+    /// Returns true if this zero interval is clean.
+    pub fn is_zero_interval_clean(&self) -> bool {
+        debug_assert!(self.is_interval_zero());
+        let zr_val = self.raw & !Self::INTERVAL_MASK;
+        ZeroRange::new(zr_val).dirty_state() == ZeroRangeDirtyState::Clean
+    }
+
+    /// Returns true if this zero interval is dirty.
+    pub fn is_zero_interval_dirty(&self) -> bool {
+        debug_assert!(self.is_interval_zero());
+        let zr_val = self.raw & !Self::INTERVAL_MASK;
+        ZeroRange::new(zr_val).dirty_state() == ZeroRangeDirtyState::Dirty
+    }
+
+    /// Returns true if this zero interval is untracked.
+    pub fn is_zero_interval_untracked(&self) -> bool {
+        debug_assert!(self.is_interval_zero());
+        let zr_val = self.raw & !Self::INTERVAL_MASK;
+        ZeroRange::new(zr_val).dirty_state() == ZeroRangeDirtyState::Untracked
+    }
+
+    /// Returns the dirty state of this zero interval.
+    pub fn zero_interval_dirty_state(&self) -> ZeroRangeDirtyState {
+        debug_assert!(self.is_interval_zero());
+        let zr_val = self.raw & !Self::INTERVAL_MASK;
+        ZeroRange::new(zr_val).dirty_state()
+    }
+
+    /// Sets the awaiting-clean length of this zero interval.
+    pub fn set_zero_interval_awaiting_clean_length(&mut self, len: u64) {
+        debug_assert!(self.is_interval_zero());
+        debug_assert!(self.is_interval_start() || self.is_interval_slot());
+        let mut zr = ZeroRange::new(self.raw & !Self::INTERVAL_MASK);
+        zr.set_awaiting_clean_length(len);
+        self.raw = (self.raw & Self::INTERVAL_MASK) | zr.value();
+    }
+
+    /// Returns the awaiting-clean length of this zero interval.
+    pub fn zero_interval_awaiting_clean_length(&self) -> u64 {
+        debug_assert!(self.is_interval_zero());
+        debug_assert!(self.is_interval_start() || self.is_interval_slot());
+        let zr = ZeroRange::new(self.raw & !Self::INTERVAL_MASK);
+        zr.awaiting_clean_length()
+    }
+
+    /// Change the interval sentinel type for an existing interval, while preserving the rest of the
+    /// original state. Only valid to call on an existing interval type. The only permissible
+    /// transitions are from Slot to Start/End and vice versa, as these are the only valid
+    /// transitions when extending or clipping intervals.
+    fn change_interval_sentinel(&mut self, new_sentinel: SentinelType) {
+        if cfg!(debug_assertions) {
+            debug_assert!(self.is_interval());
+            let old_sentinel = self.interval_sentinel();
+            debug_assert!(old_sentinel != new_sentinel);
+            if old_sentinel == SentinelType::Start || old_sentinel == SentinelType::End {
+                debug_assert!(new_sentinel == SentinelType::Slot);
+            } else {
+                debug_assert!(old_sentinel == SentinelType::Slot);
+                debug_assert!(
+                    new_sentinel == SentinelType::Start || new_sentinel == SentinelType::End
+                );
+            }
+        }
+        self.set_interval_sentinel(new_sentinel);
     }
 
     /// Returns the underlying page. Is only valid to call if `is_page` is true.
@@ -563,5 +752,32 @@ mod vm_page_list_rs {
 
         zr.set_awaiting_clean_length(0);
         expect_eq!(zr.awaiting_clean_length(), 0);
+    }
+
+    /// Tests interval creation, properties, sentinel transitions, and dirty states.
+    #[test]
+    fn test_page_or_marker_interval() {
+        let mut pm =
+            VmPageOrMarker::zero_interval(SentinelType::Slot, ZeroRangeDirtyState::Untracked);
+        expect_true!(pm.is_interval());
+        expect_true!(pm.is_interval_zero());
+        expect_true!(pm.is_interval_slot());
+        expect_false!(pm.is_interval_start());
+        expect_false!(pm.is_interval_end());
+        expect_true!(pm.is_zero_interval_untracked());
+        expect_false!(pm.is_zero_interval_clean());
+        expect_false!(pm.is_zero_interval_dirty());
+
+        pm.change_interval_sentinel(SentinelType::Start);
+        expect_true!(pm.is_interval_start());
+        expect_false!(pm.is_interval_slot());
+
+        let mut pm_dirty =
+            VmPageOrMarker::zero_interval(SentinelType::Start, ZeroRangeDirtyState::Dirty);
+        expect_true!(pm_dirty.is_zero_interval_dirty());
+        expect_eq!(pm_dirty.zero_interval_awaiting_clean_length(), 0);
+
+        pm_dirty.set_zero_interval_awaiting_clean_length(8192);
+        expect_eq!(pm_dirty.zero_interval_awaiting_clean_length(), 8192);
     }
 }
