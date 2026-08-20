@@ -108,6 +108,30 @@
       "hidden": false
     },
     {
+      "kind": {
+        "Option": {
+          "arg_name": "include-filename-regex"
+        }
+      },
+      "optionality": "optional",
+      "long": "--include-filename-regex",
+      "short": null,
+      "description": "regular expression pattern to only include matching source files",
+      "hidden": false
+    },
+    {
+      "kind": {
+        "Option": {
+          "arg_name": "ignore-filename-regex"
+        }
+      },
+      "optionality": "optional",
+      "long": "--ignore-filename-regex",
+      "short": null,
+      "description": "regular expression pattern to skip matching source files",
+      "hidden": false
+    },
+    {
       "kind": "Switch",
       "optionality": "optional",
       "long": "--verbose",

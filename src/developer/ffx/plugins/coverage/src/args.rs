@@ -41,6 +41,14 @@ pub struct CoverageCommand {
     #[argh(option)]
     pub compilation_dir: Option<PathBuf>,
 
+    /// regular expression pattern to only include matching source files
+    #[argh(option)]
+    pub include_filename_regex: Option<String>,
+
+    /// regular expression pattern to skip matching source files
+    #[argh(option)]
+    pub ignore_filename_regex: Option<String>,
+
     /// paths to source files to show coverage for
     #[argh(positional)]
     pub src_files: Vec<PathBuf>,

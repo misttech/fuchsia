@@ -106,12 +106,19 @@ pub async fn coverage(cmd: CoverageCommand) -> Result<()> {
     }
     let unique_binaries_vec: Vec<PathBuf> = unique_binaries.into_iter().collect();
 
+    let extra_args = to_extra_export_args(
+        &cmd.path_remappings,
+        cmd.compilation_dir.as_ref(),
+        cmd.include_filename_regex.as_deref(),
+        cmd.ignore_filename_regex.as_deref(),
+    );
+
     let params = ExportParams {
         llvm_cov_bin,
         merged_profile,
         bin_files_args: to_llvm_cov_args(&unique_binaries_vec),
         src_files: cmd.src_files,
-        extra_args: to_extra_export_args(&cmd.path_remappings, cmd.compilation_dir.as_ref()),
+        extra_args,
     };
 
     match (cmd.export_html, cmd.export_lcov, cmd.export_json) {
@@ -315,6 +322,8 @@ fn to_llvm_cov_args(bin_files: &[PathBuf]) -> Vec<&str> {
 fn to_extra_export_args<'a>(
     path_remappings: &'a [String],
     compilation_dir: Option<&'a PathBuf>,
+    include_filename_regex: Option<&'a str>,
+    ignore_filename_regex: Option<&'a str>,
 ) -> Vec<&'a str> {
     match path_remappings {
         &[] => Vec::new(),
@@ -326,6 +335,14 @@ fn to_extra_export_args<'a>(
     .into_iter()
     .chain(match compilation_dir {
         Some(dir) => vec!["-compilation-dir", dir.to_str().unwrap()],
+        None => Vec::new(),
+    })
+    .chain(match include_filename_regex {
+        Some(include_regex) => vec!["--include-filename-regex", include_regex],
+        None => Vec::new(),
+    })
+    .chain(match ignore_filename_regex {
+        Some(ignore_regex) => vec!["--ignore-filename-regex", ignore_regex],
         None => Vec::new(),
     })
     .collect()
@@ -522,6 +539,8 @@ mod tests {
                 export_json: None,
                 path_remappings: Vec::new(),
                 compilation_dir: None,
+                include_filename_regex: None,
+                ignore_filename_regex: None,
                 src_files: Vec::new(),
                 verbose: false,
             })
@@ -544,6 +563,8 @@ mod tests {
                 export_json: None,
                 path_remappings: Vec::new(),
                 compilation_dir: None,
+                include_filename_regex: None,
+                ignore_filename_regex: None,
                 src_files: Vec::new(),
                 verbose: false,
             })
@@ -565,6 +586,8 @@ mod tests {
                 export_json: None,
                 path_remappings: Vec::new(),
                 compilation_dir: None,
+                include_filename_regex: None,
+                ignore_filename_regex: None,
                 src_files: Vec::new(),
                 verbose: false,
             })
@@ -583,6 +606,8 @@ mod tests {
                 export_json: None,
                 path_remappings: Vec::new(),
                 compilation_dir: None,
+                include_filename_regex: None,
+                ignore_filename_regex: None,
                 src_files: Vec::new(),
                 verbose: false,
             })
@@ -601,6 +626,8 @@ mod tests {
                 export_json: None,
                 path_remappings: Vec::new(),
                 compilation_dir: None,
+                include_filename_regex: None,
+                ignore_filename_regex: None,
                 src_files: Vec::new(),
                 verbose: false,
             })
@@ -619,6 +646,8 @@ mod tests {
                 export_json: Some(PathBuf::from(&test_dir_path).join("test.json")),
                 path_remappings: Vec::new(),
                 compilation_dir: None,
+                include_filename_regex: None,
+                ignore_filename_regex: None,
                 src_files: Vec::new(),
                 verbose: false,
             })
@@ -640,6 +669,8 @@ mod tests {
                     "from_path2,to_path2".to_string()
                 ],
                 compilation_dir: Some(PathBuf::from("path/to/comp/dir")),
+                include_filename_regex: Some("include_pat".to_string()),
+                ignore_filename_regex: Some("ignore_pat".to_string()),
                 src_files: Vec::new(),
                 verbose: false,
             })
@@ -805,18 +836,37 @@ mod tests {
 
     #[test]
     fn test_to_extra_export_args() {
-        assert_eq!(to_extra_export_args(&[], None), Vec::<&str>::new());
+        assert_eq!(to_extra_export_args(&[], None, None, None), Vec::<&str>::new());
         assert_eq!(
-            to_extra_export_args(&["from,to".to_string(), "path1,path2".to_string()], None),
+            to_extra_export_args(
+                &["from,to".to_string(), "path1,path2".to_string()],
+                None,
+                None,
+                None
+            ),
             vec!["-path-equivalence", "from,to", "path1,path2"]
         );
         assert_eq!(
-            to_extra_export_args(&[], Some(&PathBuf::from("path/to/comp/dir"))),
+            to_extra_export_args(&[], Some(&PathBuf::from("path/to/comp/dir")), None, None),
             vec!["-compilation-dir", "path/to/comp/dir"]
         );
         assert_eq!(
-            to_extra_export_args(&["p1,p2".to_string()], Some(&PathBuf::from("comp_dir"))),
-            vec!["-path-equivalence", "p1,p2", "-compilation-dir", "comp_dir"]
+            to_extra_export_args(
+                &["p1,p2".to_string()],
+                Some(&PathBuf::from("comp_dir")),
+                Some("include_pattern"),
+                Some("ignore_pattern"),
+            ),
+            vec![
+                "-path-equivalence",
+                "p1,p2",
+                "-compilation-dir",
+                "comp_dir",
+                "--include-filename-regex",
+                "include_pattern",
+                "--ignore-filename-regex",
+                "ignore_pattern",
+            ]
         );
     }
 
