@@ -91,6 +91,20 @@ class InputLatencyMetricsProcessor(trace_metrics.MetricsProcessor):
                 e, _CATEGORY_GFX, _DISPLAY_VSYNC_EVENT_NAME
             )
 
+            # If vsync is None, it could be that a frame was dropped or not rendered, find the next vsync in chronological order.
+            if vsync is None:
+                following_vsyncs = trace_utils.filter_events(
+                    model.all_events(),
+                    category=_CATEGORY_GFX,
+                    name=_DISPLAY_VSYNC_EVENT_NAME,
+                    type=trace_model.Event,
+                )
+                vsync = next(
+                    (v for v in following_vsyncs if v.start >= e.start),
+                    None,
+                )
+
+            # If there isn't a vsync, loop through and find the next event.
             if vsync is None:
                 continue
 
@@ -100,6 +114,10 @@ class InputLatencyMetricsProcessor(trace_metrics.MetricsProcessor):
             if latency_ms > max_latency:
                 max_latency = latency_ms
                 max_latency_ts = e.start
+
+        if not latencies:
+            _LOGGER.warning("No valid input latency events found in trace.")
+            return []
 
         if max_latency_ts is not None:
             _LOGGER.info(

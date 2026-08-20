@@ -208,6 +208,8 @@ void DefaultFrameScheduler::MaybeRenderFrame(async_dispatcher_t*, async::TaskBas
 
     inspect_wakeups_without_render_.Set(++wakeups_without_render_);
 
+    TRACE_FLOW_END("gfx", "scenic_frame", frame_number);
+
     // Nothing to render. Continue with next request in the queue.
     HandleNextFrameRequest();
     return;
@@ -227,6 +229,8 @@ void DefaultFrameScheduler::MaybeRenderFrame(async_dispatcher_t*, async::TaskBas
                          << "  target_presentation_time=" << target_presentation_time.get()
                          << "  skipping render because frame_number="
                          << (last_presented_frame_number_ + 1) << "  is still in flight";
+
+    TRACE_FLOW_END("gfx", "scenic_frame", frame_number);
 
     last_frame_is_presented_ = false;
     return;

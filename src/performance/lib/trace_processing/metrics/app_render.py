@@ -87,10 +87,29 @@ class AppRenderLatencyMetricsProcessor(trace_metrics.MetricsProcessor):
             ):
                 continue
 
+            # Follow the flow event graph.
             vsync = trace_utils.get_nearest_following_flow_event(
                 present_flow_event, _EVENT_CATEGORY, _DISPLAY_VSYNC_EVENT_NAME
             )
 
+            # If vsync is None, it could be that a frame was dropped or not rendered, find the next vsync in chronological order.
+            if vsync is None:
+                following_vsyncs = trace_utils.filter_events(
+                    model.all_events(),
+                    category=_EVENT_CATEGORY,
+                    name=_DISPLAY_VSYNC_EVENT_NAME,
+                    type=trace_model.Event,
+                )
+                vsync = next(
+                    (
+                        v
+                        for v in following_vsyncs
+                        if v.start >= present_flow_event.start
+                    ),
+                    None,
+                )
+
+            # If there isn't a vsync, loop through and find the next event.
             if vsync is None:
                 continue
 
