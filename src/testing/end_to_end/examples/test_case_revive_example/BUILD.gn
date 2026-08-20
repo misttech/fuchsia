@@ -60,12 +60,3 @@ python_mobly_test("test_case_revive_with_hard_reboot") {
     nuc11_env,
   ]
 }
-
-group("tests") {
-  testonly = true
-  public_deps = [
-    ":run_wo_test_case_revive($host_toolchain)",
-    ":test_case_revive_with_hard_reboot($host_toolchain)",
-    ":test_case_revive_with_soft_reboot($host_toolchain)",
-  ]
-}

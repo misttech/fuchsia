@@ -8,7 +8,7 @@ import("//build/testing/environments.gni")
 assert(is_host, "Python E2E tests are host-only")
 
 python_mobly_test("power_cycle_test") {
-  main_source = "test_power_cycle.py"
+  main_source = "power_cycle_test.py"
   libraries = [
     "//src/testing/end_to_end/honeydew",
     "//src/testing/end_to_end/mobly_base_tests/fuchsia_base_test",
@@ -23,9 +23,4 @@ python_mobly_test("power_cycle_test") {
     nelson_env,
     sherlock_env,
   ]
-}
-
-group("tests") {
-  testonly = true
-  public_deps = [ ":power_cycle_test($host_toolchain)" ]
 }

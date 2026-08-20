@@ -64,7 +64,7 @@ Before proceeding further please ensure you have completed the
         [Lacewing Getting Started Guide]. Below is an example of an updated
         BUILD.gn with the local_config_source for this multi device test
         ```sh
-        python_mobly_test("test_multi_device") {
+        python_mobly_test("multi_device_test_sl4f") {
           main_source = "test_multi_device.py"
 
           # The library below provides device interaction APIs.
@@ -85,7 +85,7 @@ $ fx set core.vim3 \
     --args=core_realm_shards+="[\"//src/testing/sl4f:sl4f_core_shard\"]" \
     --with //src/testing/end_to_end/examples
 
-$ fx test //src/testing/end_to_end/examples/test_multi_device:multi_device_test_sl4f --e2e --output
+$ fx test //src/testing/end_to_end/examples/multi_device_test_sl4f --e2e --output
 ```
 
 [Lacewing Getting Started Guide]: ../../README.md#getting-started-30-mins

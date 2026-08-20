@@ -29,7 +29,7 @@ Use below commands to run HelloWorld Lacewing test locally:
 ```shell
 $ fx set core.x64 --with //src/testing/end_to_end/examples
 
-$ fx test //src/testing/end_to_end/examples/test_hello_world:hello_world_test --e2e --output
+$ fx test //src/testing/end_to_end/examples/hello_world_test --e2e --output
 ```
 
 ### Data resource access Test
@@ -42,7 +42,7 @@ Use below commands to run this test locally:
 ```shell
 $ fx set core.x64 --with //src/testing/end_to_end/examples
 
-$ fx test //src/testing/end_to_end/examples/test_data_resource_access:data_resource_access_test --e2e --output
+$ fx test //src/testing/end_to_end/examples/data_resource_access_test --e2e --output
 ```
 
 ### Example Revive Test Case
@@ -76,4 +76,4 @@ $ fx test //src/testing/end_to_end/examples/test_soft_reboot:soft_reboot_test --
 
 Refer to [Multi Device Test] for running multi-device Lacewing test locally.
 
-[Multi Device Test]: test_multi_device/README.md
+[Multi Device Test]: multi_device_test_sl4f/README.md

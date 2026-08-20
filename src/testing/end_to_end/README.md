@@ -87,7 +87,7 @@ Lacewing so nothing is required from test authors (besides picking the correct
 
 Multi-device testbeds follows a similar configuration but is out-of-scope of
 this guide - Please direct to
-[Multi-device setup and execution](https://cs.opensource.google/fuchsia/fuchsia/+/main:src/testing/end_to_end/examples/test_multi_device/README.md)
+[Multi-device setup and execution](https://cs.opensource.google/fuchsia/fuchsia/+/main:src/testing/end_to_end/examples/multi_device_test_sl4f/README.md)
 
 ### Lacewing test module
 

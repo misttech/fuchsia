@@ -58,16 +58,17 @@ template("group_with_no_dir_target_deps") {
 # core.x64
 group_with_no_dir_target_deps("core_x64_stable_sl4f_tests") {
   testonly = true
-  public_deps = [ "examples/test_soft_reboot:test_soft_reboot_sl4f" ]
+  public_deps =
+      [ "examples/test_soft_reboot:test_soft_reboot_sl4f($host_toolchain)" ]
 }
 
 group_with_no_dir_target_deps("core_x64_stable_tests") {
   testonly = true
   public_deps = [
+    "examples/power_cycle_test($host_toolchain)",
     "examples/test_case_revive_example:run_wo_test_case_revive($host_toolchain)",
     "examples/test_case_revive_example:test_case_revive_with_hard_reboot($host_toolchain)",
     "examples/test_case_revive_example:test_case_revive_with_soft_reboot($host_toolchain)",
-    "examples/test_power_cycle:power_cycle_test($host_toolchain)",
     "examples/test_soft_reboot:soft_reboot_test($host_toolchain)",
     "examples/test_soft_reboot:soft_reboot_test.hermetic($host_toolchain)",
     "examples/test_soft_reboot:soft_reboot_test_with_ffx_monitor($host_toolchain)",
@@ -93,7 +94,7 @@ group_with_no_dir_target_deps("core_x64_unstable_tests") {
   public_deps = [
     # This test is designed to always fail to verify the test exoneration
     # mechanism.
-    "examples/test_exoneration_failing:exoneration_failing_test($host_toolchain)",
+    "examples/exoneration_failing_test($host_toolchain)",
     "//src/developer/ffx/plugins/log/tests/e2e:ffx_log_e2e_test($host_toolchain)",
   ]
 }
@@ -112,10 +113,10 @@ group("core_x64_staging_tests") {
 group_with_no_dir_target_deps("workbench_x64_stable_tests") {
   testonly = true
   public_deps = [
+    "examples/power_cycle_test($host_toolchain)",
     "examples/test_case_revive_example:run_wo_test_case_revive($host_toolchain)",
     "examples/test_case_revive_example:test_case_revive_with_hard_reboot($host_toolchain)",
     "examples/test_case_revive_example:test_case_revive_with_soft_reboot($host_toolchain)",
-    "examples/test_power_cycle:power_cycle_test($host_toolchain)",
     "examples/test_soft_reboot:soft_reboot_test($host_toolchain)",
     "examples/test_soft_reboot:soft_reboot_test_with_ffx_monitor($host_toolchain)",
     "honeydew/honeydew/affordances/connectivity/netstack/tests:functional_tests($host_toolchain)",
@@ -149,10 +150,10 @@ group("workbench_x64_staging_tests") {
 group_with_no_dir_target_deps("core_vim3_stable_tests") {
   testonly = true
   public_deps = [
+    "examples/power_cycle_test($host_toolchain)",
     "examples/test_case_revive_example:run_wo_test_case_revive($host_toolchain)",
     "examples/test_case_revive_example:test_case_revive_with_hard_reboot($host_toolchain)",
     "examples/test_case_revive_example:test_case_revive_with_soft_reboot($host_toolchain)",
-    "examples/test_power_cycle:power_cycle_test($host_toolchain)",
     "examples/test_soft_reboot:soft_reboot_test($host_toolchain)",
     "examples/test_soft_reboot:soft_reboot_test_with_ffx_monitor($host_toolchain)",
     "honeydew/honeydew/affordances/tracing/tests/functional_tests:tracing_ffx_test($host_toolchain)",
@@ -181,10 +182,10 @@ group("core_vim3_staging_tests") {
 group_with_no_dir_target_deps("workbench_vim3_stable_tests") {
   testonly = true
   public_deps = [
+    "examples/power_cycle_test($host_toolchain)",
     "examples/test_case_revive_example:run_wo_test_case_revive($host_toolchain)",
     "examples/test_case_revive_example:test_case_revive_with_hard_reboot($host_toolchain)",
     "examples/test_case_revive_example:test_case_revive_with_soft_reboot($host_toolchain)",
-    "examples/test_power_cycle:power_cycle_test($host_toolchain)",
     "examples/test_soft_reboot:soft_reboot_test($host_toolchain)",
     "examples/test_soft_reboot:soft_reboot_test_with_ffx_monitor($host_toolchain)",
     "honeydew/honeydew/affordances/connectivity/netstack/tests:functional_tests($host_toolchain)",

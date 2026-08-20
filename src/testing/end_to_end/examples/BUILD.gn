@@ -2,37 +2,27 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-# Target-side packages needed by example lacewing tests.
-group("packages") {
-  testonly = true
-  public_deps = [ "../honeydew:sl4f_packages" ]
-}
-
-if (is_host) {
-  # Group containing all of the Lacewing example test cases.
-  group("tests") {
-    testonly = true
-    public_deps = [
-      "async_test_cases_example:tests",
-      "test_case_revive_example:tests",
-      "test_cases_example:tests",
-      "test_cases_revive_example:tests",
-      "test_data_resource_access:tests",
-      "test_exoneration_failing:tests",
-      "test_hello_world:tests",
-      "test_multi_device:tests",
-      "test_openwrt_ap:tests",
-      "test_power_cycle:tests",
-      "test_soft_reboot:tests",
-    ]
-  }
-}
+assert(is_host, "Python targets only build in a host toolchain")
 
 # All of the lacewing example tests and their dependencies.
 group("examples") {
   testonly = true
   public_deps = [
-    ":packages",
-    ":tests($host_toolchain)",
+    "async_test_cases_example",
+    "data_resource_access_test",
+    "exoneration_failing_test",
+    "hello_world_test",
+    "multi_device_test_sl4f",
+    "openwrt_ap_test",
+    "power_cycle_test",
+    "test_case_revive_example:run_wo_test_case_revive",
+    "test_case_revive_example:test_case_revive_with_hard_reboot",
+    "test_case_revive_example:test_case_revive_with_soft_reboot",
+    "test_cases_example",
+    "test_cases_revive_example",
+    "test_soft_reboot:soft_reboot_test",
+    "test_soft_reboot:soft_reboot_test.hermetic",
+    "test_soft_reboot:soft_reboot_test_with_ffx_monitor",
+    "test_soft_reboot:test_soft_reboot_sl4f",
   ]
 }

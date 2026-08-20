@@ -16,8 +16,3 @@ python_mobly_test("test_cases_revive_example") {
   ]
   environments = [ emu_env ]
 }
-
-group("tests") {
-  testonly = true
-  public_deps = [ ":test_cases_revive_example($host_toolchain)" ]
-}

@@ -15,8 +15,3 @@ python_mobly_test("async_test_cases_example") {
   ]
   environments = [ emu_env ]
 }
-
-group("tests") {
-  testonly = true
-  public_deps = [ ":async_test_cases_example($host_toolchain)" ]
-}

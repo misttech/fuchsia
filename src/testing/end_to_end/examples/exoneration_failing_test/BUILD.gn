@@ -7,17 +7,11 @@ import("//build/testing/environments.gni")
 
 assert(is_host, "Python E2E tests are host-only")
 
-python_mobly_test("openwrt_ap_test") {
-  main_source = "test_openwrt_ap.py"
+python_mobly_test("exoneration_failing_test") {
+  main_source = "exoneration_failing_test.py"
   libraries = [
-    "//src/testing/end_to_end/mobly_controller",
     "//src/testing/end_to_end/honeydew",
     "//src/testing/end_to_end/mobly_base_tests/fuchsia_base_test",
   ]
-  environments = [ sorrel_env ]
-}
-
-group("tests") {
-  testonly = true
-  public_deps = [ ":openwrt_ap_test($host_toolchain)" ]
+  environments = [ aemu_env ]
 }

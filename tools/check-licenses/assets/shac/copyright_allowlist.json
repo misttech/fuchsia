@@ -171,7 +171,6 @@
         "src/testing/end_to_end/antlion/packages/antlion/unit_tests/libs/ota/ota_runners/__init__.py",
         "src/testing/end_to_end/antlion/packages/antlion/unit_tests/libs/ota/ota_tools/__init__.py",
         "src/testing/end_to_end/antlion/packages/antlion/unit_tests/libs/proc/__init__.py",
-        "src/testing/end_to_end/examples/test_power_cycle/__init__.py",
         "src/testing/end_to_end/honeydew/honeydew/affordances/virtual_audio/tests/__init__.py",
         "src/testing/end_to_end/honeydew/honeydew/fuchsia_device/__init__.py",
         "src/testing/end_to_end/libs/__init__.py",
