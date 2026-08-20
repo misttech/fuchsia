@@ -1678,7 +1678,7 @@ mod tests {
         );
 
         let (inner_proxy, server) = create_proxy::<fio::DirectoryMarker>();
-        dir_proxy.open("c", Default::default(), &Default::default(), server.into()).unwrap();
+        dir_proxy.open("c", fio::PERM_READABLE, &Default::default(), server.into()).unwrap();
         let readdir_results = fuchsia_fs::directory::readdir(&inner_proxy).await.unwrap();
         assert_eq!(
             readdir_results,
