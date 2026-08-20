@@ -45,8 +45,6 @@
 
 #include <lib/syscalls/forward.h>
 
-#include "driver_priv.h"
-
 #define LOCAL_TRACE 0
 
 // zx_status_t zx_vmo_create_contiguous
@@ -611,31 +609,4 @@ zx_status_t sys_interrupt_trigger(zx_handle_t handle, uint32_t options, zx_time_
   }
 
   return interrupt->Trigger(timestamp);
-}
-
-// zx_status_t zx_smc_call
-zx_status_t sys_smc_call(zx_handle_t handle, user_in_ptr<const zx_smc_parameters_t> parameters,
-                         user_out_ptr<zx_smc_result_t> out_smc_result) {
-  if (!parameters || !out_smc_result) {
-    return ZX_ERR_INVALID_ARGS;
-  }
-
-  zx_smc_parameters_t params;
-  zx_status_t status = parameters.copy_from_user(&params);
-  if (status != ZX_OK) {
-    return status;
-  }
-
-  uint32_t service_call_num = ARM_SMC_GET_SERVICE_CALL_NUM_FROM_FUNC_ID(params.func_id);
-  if ((status = validate_resource_smc(handle, service_call_num)) != ZX_OK) {
-    return status;
-  }
-
-  zx_smc_result_t result;
-
-  status = arch_smc_call(&params, &result);
-  if (status != ZX_OK) {
-    return status;
-  }
-  return out_smc_result.copy_to_user(result);
 }

@@ -2684,6 +2684,7 @@ pub struct x86_power_limit {
 // source: zircon/system/public/zircon/syscalls/smc.h
 #[repr(C)]
 #[derive(Debug, Copy, Clone, Default, Eq, PartialEq)]
+#[cfg_attr(feature = "zerocopy", derive(FromBytes, IntoBytes, Immutable, KnownLayout))]
 pub struct zx_smc_parameters_t {
     pub func_id: u32,
     padding1: [PadByte; 4],
@@ -2699,7 +2700,8 @@ pub struct zx_smc_parameters_t {
 }
 
 #[repr(C)]
-#[derive(Debug, Copy, Clone, Eq, PartialEq)]
+#[derive(Debug, Copy, Clone, Default, Eq, PartialEq)]
+#[cfg_attr(feature = "zerocopy", derive(FromBytes, IntoBytes, Immutable, KnownLayout))]
 pub struct zx_smc_result_t {
     pub arg0: u64,
     pub arg1: u64,

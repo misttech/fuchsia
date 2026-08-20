@@ -20,6 +20,7 @@ mod object_wait;
 mod profile;
 mod restricted;
 mod sampler;
+mod smc;
 mod socket;
 mod system;
 mod task;

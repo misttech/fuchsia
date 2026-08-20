@@ -37,7 +37,6 @@ source_set("impl") {
     "clock.cc",
     "debug_ffi.cc",
     "driver.cc",
-    "driver_${zircon_cpu}.cc",
     "exceptions.cc",
     "futex.cc",
     "handle_ops.cc",
@@ -147,6 +146,7 @@ kernel_rust_mod("syscalls-rs") {
     "profile.rs",
     "restricted.rs",
     "sampler.rs",
+    "smc.rs",
     "socket.rs",
     "system.rs",
     "task.rs",
@@ -160,6 +160,7 @@ kernel_rust_mod("syscalls-rs") {
     "//sdk/rust/zx-status",
     "//sdk/rust/zx-types",
     "//src/lib/kalloc",
+    "//src/lib/ksync",
     "//src/lib/zr",
     "//third_party/rust_crates:zerocopy",
     "//zircon/kernel/lib/boot-options:boot-options-rs",
@@ -172,4 +173,5 @@ kernel_rust_mod("syscalls-rs") {
     "//zircon/vdso:private",
     "//zircon/vdso:syscall-signatures",
   ]
+  test_deps = [ "//zircon/kernel/lib/unittest:unittest-rs" ]
 }
