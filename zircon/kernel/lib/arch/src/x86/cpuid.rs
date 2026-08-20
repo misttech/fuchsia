@@ -4,7 +4,7 @@
 
 use core::str::Utf8Error;
 
-use bitrs::layout;
+use bitrs::{bitfield_repr, layout};
 use regio::x86::{Cpuid, CpuidValue, EAX, EBX, ECX, EDX};
 
 use super::Vendor;
@@ -198,6 +198,219 @@ layout!({
         let __ @ 1..0;
     }
 });
+
+/// Cache type for Cache Topology leaves.
+#[bitfield_repr(u8)]
+#[derive(Clone, Copy)]
+pub enum CacheType {
+    Null = 0,
+    Data = 1,
+    Instruction = 2,
+    Unified = 3,
+}
+
+// TODO(https://github.com/rust-lang/rust/issues/113521): These values should
+// be generic over subleaf.
+
+/// Leaf/Function 0x4, EAX (subleaf 0)
+///
+/// [intel/vol2]: Table 3-8.  Information Returned by CPUID Instruction.
+pub const INTEL_CACHE_TOPOLOGY_A: CpuidValue<0x4, 0, EAX, CacheTopologyA> = CpuidValue::new();
+
+/// Leaf/Function 0x8000_001d, EAX (subleaf 0)
+///
+/// [amd/vol3]: E.4.15  Function 8000_001Dh—Cache Topology Information.
+pub const AMD_CACHE_TOPOLOGY_A: CpuidValue<0x8000_001d, 0, EAX, CacheTopologyA> = CpuidValue::new();
+
+layout!({
+    /// The layout of EAX in Intel and AMD Cache Topology leaves.
+    pub struct CacheTopologyA(u32);
+    {
+        let max_cores @ 31..26; // Reserved on AMD.
+        let max_sharing_logical_processors @ 25..14;
+        let __ @ 13..10;
+        let fully_associative @ 9;
+        let self_initializing @ 8;
+        let cache_level @ 7..5;
+        let cache_type @ 4..0: CacheType;
+    }
+});
+
+layout!({
+    /// The layout of EBX in Intel and AMD Cache Topology leaves.
+    pub struct CacheTopologyB(u32);
+    {
+        let ways @ 31..22;
+        let physical_line_partitions @ 21..12;
+        let system_coherency_line_size @ 11..0;
+    }
+});
+
+layout!({
+    /// The layout of ECX in Intel and AMD Cache Topology leaves.
+    pub struct CacheTopologyC(u32);
+    {
+        let sets @ 31..0;
+    }
+});
+
+layout!({
+    /// The layout of EDX in Intel and AMD Cache Topology leaves.
+    pub struct CacheTopologyD(u32);
+    {
+        let __ @ 31..3;
+        let complex_cache_indexing @ 2;
+        let inclusive @ 1;
+        let wbinvd @ 0;
+    }
+});
+
+/// Leaf/Function 0x8000_0005, ECX
+///
+/// [amd/vol3]: E.4.4  Function 8000_0005h — L1 Cache and TLB Information.
+pub const AMD_L1_DATA_CACHE_INFO: CpuidValue<0x8000_0005, 0, ECX, AmdL1CacheInformation> =
+    CpuidValue::new();
+
+/// Leaf/Function 0x8000_0005, EDX
+///
+/// [amd/vol3]: E.4.4  Function 8000_0005h — L1 Cache and TLB Information.
+pub const AMD_L1_INSTRUCTION_CACHE_INFO: CpuidValue<0x8000_0005, 0, EDX, AmdL1CacheInformation> =
+    CpuidValue::new();
+
+layout!({
+    /// The layout of [`AMD_L1_DATA_CACHE_INFO`] and
+    /// [`AMD_L1_INSTRUCTION_CACHE_INFO`].
+    pub struct AmdL1CacheInformation(u32);
+    {
+        let size_kb @ 31..24;
+        let assoc @ 23..16;
+        let lines_per_tag @ 15..8;
+        let line_size @ 7..0;
+    }
+});
+
+impl AmdL1CacheInformation {
+    pub const FULLY_ASSOCIATIVE: u8 = 0xff;
+
+    pub fn ways_of_associativity(&self) -> usize {
+        if self.assoc() as u8 == Self::FULLY_ASSOCIATIVE { 0 } else { self.assoc() as usize }
+    }
+
+    pub fn fully_associative(&self) -> Option<bool> {
+        match self.assoc() as u8 {
+            0 => None,
+            Self::FULLY_ASSOCIATIVE => Some(true),
+            _ => Some(false),
+        }
+    }
+}
+
+/// Associativity encoding for L2 and L3 cache information leaves.
+#[bitfield_repr(u8)]
+#[derive(Clone, Copy)]
+pub enum AmdL2L3Associativity {
+    Disabled = 0x0,
+    DirectMapped = 0x1,
+    Ways2 = 0x2,
+    Ways3 = 0x3,
+    Ways4 = 0x4,
+    Ways6 = 0x5,
+    Ways8 = 0x6,
+    // 0x7 is reserved.
+    Ways16 = 0x8,
+    SeeLeaf0x8000001d = 0x9,
+    Ways32 = 0xa,
+    Ways48 = 0xb,
+    Ways64 = 0xc,
+    Ways96 = 0xd,
+    Ways128 = 0xe,
+    FullyAssociative = 0xf,
+}
+
+impl AmdL2L3Associativity {
+    /// Indeterminate if zero.
+    pub fn ways_of_associativity(&self) -> usize {
+        match self {
+            Self::Disabled | Self::SeeLeaf0x8000001d | Self::FullyAssociative => 0,
+            Self::DirectMapped => 1,
+            Self::Ways2 => 2,
+            Self::Ways3 => 3,
+            Self::Ways4 => 4,
+            Self::Ways6 => 6,
+            Self::Ways8 => 8,
+            Self::Ways16 => 16,
+            Self::Ways32 => 32,
+            Self::Ways48 => 48,
+            Self::Ways64 => 64,
+            Self::Ways96 => 96,
+            Self::Ways128 => 128,
+        }
+    }
+
+    /// Indeterminate if std::nullopt.
+    pub fn fully_associative(&self) -> Option<bool> {
+        match self {
+            Self::Disabled => None,
+            Self::FullyAssociative => Some(true),
+            _ => Some(false),
+        }
+    }
+}
+
+/// Leaf/Function 0x8000_0006, ECX
+///
+/// [amd/vol3]: E.4.5  Function 8000_0006h—L2 Cache and TLB and L3 Cache Information.
+pub const AMD_L2_CACHE_INFO: CpuidValue<0x8000_0006, 0, ECX, AmdL2CacheInformation> =
+    CpuidValue::new();
+
+layout!({
+    /// The layout of ECX in [`AMD_L2_CACHE_INFO`].
+    pub struct AmdL2CacheInformation(u32);
+    {
+        let size_kb @ 31..16;
+        let assoc @ 15..12: AmdL2L3Associativity;
+        let lines_per_tag @ 11..8;
+        let line_size @ 7..0;
+    }
+});
+
+impl AmdL2CacheInformation {
+    pub fn ways_of_associativity(&self) -> usize {
+        self.assoc().ways_of_associativity()
+    }
+
+    pub fn fully_associative(&self) -> Option<bool> {
+        self.assoc().fully_associative()
+    }
+}
+
+/// Leaf/Function 0x8000_0006, EDX
+///
+/// [amd/vol3]: E.4.5  Function 8000_0006h—L2 Cache and TLB and L3 Cache Information.
+pub const AMD_L3_CACHE_INFO: CpuidValue<0x8000_0006, 0, EDX, AmdL3CacheInformation> =
+    CpuidValue::new();
+
+layout!({
+    /// The layout of EDX in [`AMD_L3_CACHE_INFO`].
+    pub struct AmdL3CacheInformation(u32);
+    {
+        let size @ 31..18;
+        let __ @ 17..16;
+        let assoc @ 15..12: AmdL2L3Associativity;
+        let lines_per_tag @ 11..8;
+        let line_size @ 7..0;
+    }
+});
+
+impl AmdL3CacheInformation {
+    pub fn ways_of_associativity(&self) -> usize {
+        self.assoc().ways_of_associativity()
+    }
+
+    pub fn fully_associative(&self) -> Option<bool> {
+        self.assoc().fully_associative()
+    }
+}
 
 #[cfg(test)]
 mod tests {

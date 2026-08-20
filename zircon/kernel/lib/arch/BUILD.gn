@@ -147,6 +147,7 @@ rustc_library("arch-rs") {
     "src/riscv64/mod.rs",
     "src/riscv64/paging.rs",
     "src/riscv64/system.rs",
+    "src/x86/cache.rs",
     "src/x86/cpuid.rs",
     "src/x86/extension.rs",
     "src/x86/feature.rs",
