@@ -1056,7 +1056,7 @@ void CodecImpl::RecycleOutputPacket(fuchsia::media::PacketHeader available_outpu
     }
 
     ZX_ASSERT(packet);
-    VLOGF("=-=-=-= RecycleOutputPacket ptr: %p index: %u", packet, packet->packet_index());
+    VLOGF("RecycleOutputPacket ptr: %p index: %u", packet, packet->packet_index());
     ZX_ASSERT(packet->buffer());
     --packet->buffer()->output_in_flight_count_;
 
@@ -1834,7 +1834,7 @@ void CodecImpl::ParticipateInBufferAllocationInternal(
     fidl::ClientEnd<fuchsia_sysmem2::BufferCollectionToken> token,
     std::optional<uint64_t> maybe_buffer_lifetime_ordinal, bool allow_single_buffer) {
   ZX_DEBUG_ASSERT(port == kInputPort && IsStreamControl() || port == kOutputPort && IsFidl());
-  LOG(INFO, "CodecImpl::ParticipateInBufferAllocationInternal port: %u", port);
+  LOG(DEBUG, "CodecImpl::ParticipateInBufferAllocationInternal port: %u", port);
   ScopedLock lock(lock_);
   if (IsStoppingLocked()) {
     // This StreamProcessor is going away. We can just drop the token and return.
@@ -1866,7 +1866,7 @@ void CodecImpl::ParticipateInBufferAllocationInternal(
     // using bufferqueue or haven't yet started only reusing buffers, and can only happen for the
     // output port because last_required_buffer_constraints_version_ordinal_[kInputPort] stays zero.
     ZX_DEBUG_ASSERT(port == kOutputPort);
-    LOG(INFO,
+    LOG(DEBUG,
         "CodecImpl::ParticipateInBufferAllocationInternal setting generic constraints port: %u",
         port);
     PostToSharedFidl([this, token = std::move(token)]() mutable {
@@ -4087,7 +4087,7 @@ void CodecImpl::AddBufferInternal(CodecPort port, uint64_t buffer_constraints_ve
       //
       // This is particularly important if a video decoder is trying to allocate new output buffers
       // for a new stream that has different bit depth or similar.
-      LOG(INFO, "=-=-=-= buffer_constraints_version_ordinal stale; dropping");
+      LOG(DEBUG, "buffer_constraints_version_ordinal stale; dropping");
       return;
     }
     // We've peeled off too new and too old above.
@@ -7173,7 +7173,7 @@ void CodecImpl::onCoreCodecOutputTimestampHasNoOutput(uint64_t timestamp_ish) {
   if constexpr (!::codec_impl::internal::kEnableDynamicBuffers) {
     return;
   }
-  LOG(INFO, " timestamp_ish: %" PRIu64 " stream_lifetime_ordinal: %" PRIu64, timestamp_ish,
+  LOG(DEBUG, " timestamp_ish: %" PRIu64 " stream_lifetime_ordinal: %" PRIu64, timestamp_ish,
       stream_lifetime_ordinal_);
   VLOGF("CodecImpl::onCoreCodecOutputTimestampHasNoOutput %" PRId64, timestamp_ish);
   // The CodecAdapter is responsible for only calling onCoreCodecOutputTimestampHasNoOutput after
