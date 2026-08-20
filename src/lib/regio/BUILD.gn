@@ -22,6 +22,7 @@ regio_common = {
     "src/x86/cr.rs",
     "src/x86/mod.rs",
     "src/x86/msr.rs",
+    "src/x86/pio.rs",
   ]
   deps = [ "//zircon/system/ulib/mmio-ptr:mmio-ptr-rs" ]
 }

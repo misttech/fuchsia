@@ -5,10 +5,12 @@
 mod cpuid;
 mod cr;
 mod msr;
+mod pio;
 
 pub use cpuid::{Cpuid, CpuidRawResult, CpuidValue, DirectCpuid};
 pub use cr::{Cr, CrIo, Xcr, XcrIo};
 pub use msr::{Msr, MsrIo};
+pub use pio::{Port, PortIo};
 
 /// Represents the EAX register.
 pub const EAX: u8 = 0;

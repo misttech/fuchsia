@@ -225,3 +225,19 @@ const IA32_TIME_STAMP_COUNTER: Msr<0x10, u64, RwSafe> = Msr::new();
 
 println!("Current timestamp: {:#x}", IA32_TIME_STAMP_COUNTER.read());
 ```
+
+## x86 I/O Ports
+
+`Port` is an alias of `Register` used to model x86 I/O ports:
+
+```rust
+use regio::RwSafe;
+use regio::x86::Port;
+
+const SERIAL_PORT: Port<u8, u8, RwSafe> = Port::new(0x3f8);
+
+SERIAL_PORT.write(b'A');
+```
+
+
+
