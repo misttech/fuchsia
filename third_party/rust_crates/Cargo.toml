@@ -217,6 +217,7 @@ sapphire-buffer = { version = "0.1.0", features = ["std"] }
 sapphire-collections = { version = "0.1.0", features = ["std"] }
 sapphire-common = "0.1.0"
 sapphire-emboss = "0.1.0"
+sapphire-gap = "0.1.0"
 sapphire-gatt = "0.1.0"
 sapphire-hci = "0.1.0"
 sapphire-host = "0.1.0"
@@ -390,6 +391,7 @@ sapphire-buffer = { path = "intree/sunstone/sapphire-buffer" }
 sapphire-collections = { path = "intree/sunstone/sapphire-collections" }
 sapphire-common = { path = "intree/sunstone/sapphire-common" }
 sapphire-emboss = { path = "intree/sunstone/sapphire-emboss" }
+sapphire-gap = { path = "intree/sunstone/sapphire-gap" }
 sapphire-gatt = { path = "intree/sunstone/sapphire-gatt" }
 sapphire-hci = { path = "intree/sunstone/sapphire-hci" }
 sapphire-host = { path = "intree/sunstone/sapphire-host" }
@@ -661,6 +663,9 @@ uses_fuchsia_license = true
 
 [gn.package.sapphire-emboss."0.1.0"]
 existing_gn_target = "//src/connectivity/bluetooth/sunstone/sapphire-emboss"
+
+[gn.package.sapphire-gap."0.1.0"]
+uses_fuchsia_license = true
 
 [gn.package.sapphire-gatt."0.1.0"]
 uses_fuchsia_license = true

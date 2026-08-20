@@ -2557,6 +2557,18 @@ alias(
 )
 
 alias(
+    name = "sapphire-gap-0.1.0",
+    actual = "//third_party/rust_crates/intree/sunstone/sapphire-gap:sapphire_gap",
+    tags = ["manual"],
+)
+
+alias(
+    name = "sapphire-gap",
+    actual = "//third_party/rust_crates/intree/sunstone/sapphire-gap:sapphire_gap",
+    tags = ["manual"],
+)
+
+alias(
     name = "sapphire-gatt-0.1.0",
     actual = "//third_party/rust_crates/intree/sunstone/sapphire-gatt:sapphire_gatt",
     tags = ["manual"],

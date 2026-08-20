@@ -1935,6 +1935,14 @@ group("sapphire-emboss-0.1.0") {
   public_deps = [ ":sapphire-emboss-v0_1_0" ]
 }
 
+group("sapphire-gap") {
+  public_deps = [ ":sapphire-gap-v0_1_0" ]
+}
+
+group("sapphire-gap-0.1.0") {
+  public_deps = [ ":sapphire-gap-v0_1_0" ]
+}
+
 group("sapphire-gatt") {
   public_deps = [ ":sapphire-gatt-v0_1_0" ]
 }
@@ -19741,6 +19749,30 @@ rustc_library("sapphire-common-v0_1_0") {
 
 group("sapphire-emboss-v0_1_0") {
   public_deps = [ "//src/connectivity/bluetooth/sunstone/sapphire-emboss" ]
+}
+
+rustc_library("sapphire-gap-v0_1_0") {
+  crate_name = "sapphire_gap"
+  source_root = "//src/connectivity/bluetooth/sunstone/sapphire-gap/src/lib.rs"
+  output_name = "sapphire_gap-ef5e8557744a7dc5"
+  edition = "2024"
+  disable_clippy = true
+  enforce_source_listing = false
+  configs -= [ "//build/config/rust:2018_idioms" ]
+
+  deps = []
+
+  rustenv = []
+
+  rustflags = [
+    "--cap-lints=allow",
+    "-Cmetadata=ef5e8557744a7dc5",
+    "-Cextra-filename=-ef5e8557744a7dc5",
+  ]
+
+  visibility = [ ":*" ]
+
+  applicable_licenses = [ "//build/licenses:fuchsia_license" ]
 }
 
 rustc_library("sapphire-gatt-v0_1_0") {

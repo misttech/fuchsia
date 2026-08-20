@@ -8,6 +8,7 @@ members = [
   "sapphire-collections",
   "sapphire-common",
   "sapphire-emboss",
+  "sapphire-gap",
   "sapphire-gatt",
   "sapphire-hci",
   "sapphire-host",

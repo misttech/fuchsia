@@ -2011,6 +2011,7 @@ dependencies = [
  "sapphire-collections",
  "sapphire-common",
  "sapphire-emboss",
+ "sapphire-gap",
  "sapphire-gatt",
  "sapphire-hci",
  "sapphire-host",
@@ -4842,6 +4843,10 @@ version = "0.1.0"
 
 [[package]]
 name = "sapphire-emboss"
+version = "0.1.0"
+
+[[package]]
+name = "sapphire-gap"
 version = "0.1.0"
 
 [[package]]

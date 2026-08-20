@@ -61,6 +61,12 @@ if (is_host) {
     sources = [ "sapphire-host/src/lib.rs" ]
   }
 
+  rustc_test("sapphire_gap_test") {
+    edition = "2024"
+    source_root = "sapphire-gap/src/lib.rs"
+    sources = [ "sapphire-gap/src/lib.rs" ]
+  }
+
   rustc_test("sapphire_gatt_test") {
     edition = "2024"
     source_root = "sapphire-gatt/src/lib.rs"
@@ -185,6 +191,7 @@ group("tests") {
     ":sapphire_collections_test($host_toolchain)",
     ":sapphire_common_test($host_toolchain)",
     ":sapphire_emboss_test($host_toolchain)",
+    ":sapphire_gap_test($host_toolchain)",
     ":sapphire_gatt_test($host_toolchain)",
     ":sapphire_hci_test($host_toolchain)",
     ":sapphire_host_test($host_toolchain)",
