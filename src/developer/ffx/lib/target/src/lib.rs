@@ -50,8 +50,9 @@ pub use info::TargetInfo;
 pub use list::list_targets;
 pub use resolve::{
     DefaultTargetResolver, Resolution, TargetResolver, build_discovery,
-    build_discovery_from_config, discover_single_default_target, get_discovered_targets,
-    get_discovery_stream, maybe_locally_resolve_target_spec, resolve_target_address,
+    build_discovery_builder_common, build_discovery_from_config, discover_single_default_target,
+    get_discovered_targets, get_discovery_stream, maybe_locally_resolve_target_spec,
+    resolve_target_address,
 };
 pub use target_connector::{
     FDomainConnection, OvernetConnection, TargetConnection, TargetConnectionError, TargetConnector,

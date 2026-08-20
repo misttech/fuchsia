@@ -20,6 +20,12 @@ rustc_library("lib") {
     "//third_party/rust_crates:log",
   ]
 
+  test_deps = [
+    "//src/developer/ffx/config:lib",
+    "//src/developer/ffx/lib/target:lib",
+    "//src/lib/fuchsia",
+  ]
+
   sources = [ "src/lib.rs" ]
 }
 

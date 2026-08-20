@@ -417,6 +417,10 @@ pub fn build_discovery(sources: DiscoverySources, ctx: &EnvironmentContext) -> D
 }
 
 pub fn build_discovery_from_config(ctx: &EnvironmentContext) -> Discovery {
+    build_discovery_builder_common(ctx).build(ctx)
+}
+
+pub fn build_discovery_builder_common(ctx: &EnvironmentContext) -> DiscoveryBuilder {
     let mut sources = DiscoverySources::all();
     // Fastboot targets (bootloaders) are not ssh-able and do not support target
     // address resolution, so we exclude them from configuration-based discovery.
@@ -427,7 +431,7 @@ pub fn build_discovery_from_config(ctx: &EnvironmentContext) -> Discovery {
     if !ctx.get(ffx_config::keys::NETWORK_ENABLED).unwrap_or(true) {
         sources.remove(DiscoverySources::MDNS);
     }
-    build_discovery(sources, ctx)
+    build_discovery_builder(sources, ctx)
 }
 
 // Return a stream of TargetHandles that come from the specified sources, and
@@ -479,6 +483,14 @@ pub struct DefaultTargetResolver {
 impl DefaultTargetResolver {
     pub fn new(discovery: Discovery) -> Self {
         Self { discovery }
+    }
+
+    pub fn discovery_timeout(&self) -> Option<Duration> {
+        self.discovery.timeout()
+    }
+
+    pub fn set_discovery_timeout(&mut self, timeout: Option<Duration>) {
+        self.discovery.set_timeout(timeout);
     }
 }
 
@@ -1421,12 +1433,43 @@ mod test {
         assert_eq!(target_spec, addr_spec);
     }
 
+    // Tests that `build_discovery_from_config` reads and applies the discovery timeout from the
+    // configuration key (`discovery.timeout`), in addition to filtering out fastboot sources.
     #[fuchsia::test]
-    async fn test_build_discovery_from_config_default() {
-        let test_env = ffx_config::test_env().build().unwrap();
+    async fn test_build_discovery_from_config_reads_timeout_from_config() {
+        let test_env = ffx_config::test_env()
+            .user_config(ffx_config::keys::LOCAL_DISCOVERY_TIMEOUT, 2500)
+            .build()
+            .unwrap();
         let discovery = build_discovery_from_config(&test_env.context);
         let sources = discovery.sources();
         assert!(!sources.contains(DiscoverySources::USB_FASTBOOT));
         assert!(!sources.contains(DiscoverySources::FASTBOOT_FILE));
+        assert_eq!(discovery.timeout(), Some(Duration::from_millis(2500)));
+    }
+
+    // Tests that `build_discovery_from_config_with_timeout` overrides any timeout configured
+    // in the environment context with the explicitly requested timeout (e.g. `None` for indefinite discovery),
+    // and that `DefaultTargetResolver::set_discovery_timeout` can dynamically update the timeout afterwards.
+    #[fuchsia::test]
+    async fn test_build_discovery_from_config_maybe_indef() {
+        let test_env = ffx_config::test_env()
+            .user_config(ffx_config::keys::LOCAL_DISCOVERY_TIMEOUT, 2500)
+            .build()
+            .unwrap();
+        let discovery = build_discovery_builder_common(&test_env.context)
+            .with_timeout_msecs(None)
+            .build(&test_env.context);
+        let sources = discovery.sources();
+        assert!(!sources.contains(DiscoverySources::USB_FASTBOOT));
+        assert!(!sources.contains(DiscoverySources::FASTBOOT_FILE));
+        // Overrides configured 2500ms with None (indefinite)
+        assert_eq!(discovery.timeout(), None);
+
+        let mut resolver = DefaultTargetResolver::new(discovery);
+        assert_eq!(resolver.discovery_timeout(), None);
+
+        resolver.set_discovery_timeout(Some(Duration::from_millis(100)));
+        assert_eq!(resolver.discovery_timeout(), Some(Duration::from_millis(100)));
     }
 }

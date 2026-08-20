@@ -288,6 +288,14 @@ impl Discovery {
         self.sources
     }
 
+    pub fn timeout(&self) -> Option<Duration> {
+        self.timeout
+    }
+
+    pub fn set_timeout(&mut self, timeout: Option<Duration>) {
+        self.timeout = timeout;
+    }
+
     // Discover devices via mDNS broadcast, etc, with a time limit
     fn create_stream(&self) -> Result<Pin<Box<dyn Stream<Item = TargetEvent> + Send>>> {
         if let Some(stream) = self.stream.lock().unwrap().take() {
@@ -328,6 +336,7 @@ impl Discovery {
         // get Dropped early, so we wrap it in an Arc<Mutex<>>.
         let (single_target_tx, single_target_rx) = futures::channel::oneshot::channel();
         let single_target_tx = Arc::new(Mutex::new(Some(single_target_tx)));
+        let is_indefinite = self.timeout.is_none();
         Ok(stream
             .filter_map(move |ev| {
                 let query = query.clone();
@@ -336,10 +345,10 @@ impl Discovery {
                     let th = ev.target_handle();
                     // Only match against the query
                     if query.match_handle(th) {
-                        // When we add a handle that matches our (non-First)
-                        // query, fire the oneshot
+                        // When we add a handle that matches our query, fire the oneshot if not First
+                        // or if timeout is indefinite (since indefinite streams will not end otherwise).
                         if matches!(ev, TargetEvent::Added(_))
-                            && !matches!(query, TargetInfoQuery::First)
+                            && (!matches!(query, TargetInfoQuery::First) || is_indefinite)
                         {
                             // We'll only need the oneshot once
                             if let Some(s) = sender.lock().unwrap().take() {
@@ -626,6 +635,37 @@ pub mod test {
         // We should get both handles.
         assert_eq!(stream.next().await.unwrap().target_handle(), &handle1);
         assert_eq!(stream.next().await.unwrap().target_handle(), &handle2);
+        assert!(stream.next().await.is_none());
+    }
+
+    // Tests that when discovery is configured with an indefinite timeout (`timeout: None`),
+    // querying for the default/first target (`TargetInfoQuery::First`) short-circuits as
+    // soon as the first target is added. This ensures that callers waiting indefinitely for a
+    // target to appear will return immediately upon detecting the device, rather than hanging
+    // indefinitely on an open stream.
+    #[fuchsia::test]
+    async fn test_indefinite_discovery_stream_first_query() {
+        let env = ffx_config::test_env().build().expect("Test Env Init");
+        let handle1 = TargetHandle {
+            node_name: Some("test-target-1".to_string()),
+            state: TargetState::Unknown,
+            manual: false,
+        };
+        let handle2 = TargetHandle {
+            node_name: Some("test-target-2".to_string()),
+            state: TargetState::Unknown,
+            manual: false,
+        };
+        let (sender, receiver) = futures::channel::mpsc::unbounded();
+        sender.unbounded_send(TargetEvent::Added(handle1.clone())).unwrap();
+        sender.unbounded_send(TargetEvent::Added(handle2.clone())).unwrap();
+        let discovery = DiscoveryBuilder::default()
+            .with_timeout_msecs(None)
+            .build_with_stream(&env.context, receiver);
+        let mut stream = discovery.discovery_stream(TargetInfoQuery::First).unwrap();
+
+        // Under indefinite timeout, First should short-circuit on the first added device.
+        assert_eq!(stream.next().await.unwrap().target_handle(), &handle1);
         assert!(stream.next().await.is_none());
     }
 

@@ -35,6 +35,21 @@ where
         let ConnectionBehavior::Direct(dc) = &*behavior;
         direct_connector_try_connect::<T>(&self.env, dc, &mut log_target_wait).await
     }
+
+    /// Try to get a `T` from the environment with an indefinite discovery timeout.
+    /// Will wait indefinitely for the target to appear.
+    pub async fn try_connect_indefinitely(
+        &self,
+        mut log_target_wait: impl FnMut(&Option<String>, &Option<Error>) -> Result<()>,
+    ) -> Result<T> {
+        let behavior =
+            self.target_env.init_connection_behavior_indef(self.env.environment_context()).await?;
+        match *behavior {
+            ConnectionBehavior::Direct(ref dc) => {
+                direct_connector_try_connect::<T>(&self.env, dc, &mut log_target_wait).await
+            }
+        }
+    }
 }
 
 #[async_trait(?Send)]
@@ -75,5 +90,58 @@ where
             }
             Ok(res) => Ok(res),
         };
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ffx_config::test_env;
+    use target_behavior::ConnectionBehavior;
+
+    struct DummyHolder;
+
+    #[async_trait(?Send)]
+    impl TryFromEnv for DummyHolder {
+        type Error = ffx_command_error::Error;
+        async fn try_from_env(_env: &FhoEnvironment) -> Result<Self, Self::Error> {
+            Ok(DummyHolder)
+        }
+    }
+
+    // Tests that `Connector<T>` can successfully connect via `try_connect` (using default
+    // discovery timeout) and `try_connect_indefinitely` (using indefinite discovery timeout)
+    // without errors when a valid direct connection behavior and target environment are configured.
+    #[fuchsia::test]
+    async fn test_connector_try_connect_and_try_connect_indefinitely() {
+        let env = test_env().build().unwrap();
+        let fho_env = FhoEnvironment::new_with_args(&env.context, &["some", "test"]);
+        let target_env = target_behavior::target_interface(&fho_env);
+
+        let resolution = ffx_target::Resolution::mock(|| unreachable!());
+        #[derive(Debug)]
+        struct PlaceholderConnector;
+        impl ffx_target::TargetConnector for PlaceholderConnector {
+            const CONNECTION_TYPE: &'static str = "placeholder";
+            async fn connect(
+                &mut self,
+            ) -> Result<ffx_target::TargetConnection, ffx_target::TargetConnectionError>
+            {
+                Ok(ffx_target::TargetConnection::FDomain(ffx_target::FDomainConnection::invalid()))
+            }
+        }
+        let conn = ffx_target::Connection::new(PlaceholderConnector).await.unwrap();
+        resolution.set_connection_for_test(Some(conn)).await;
+        let behavior = ConnectionBehavior::fake_direct_connector(resolution);
+        target_env.set_behavior_for_test(behavior);
+
+        let connector =
+            Connector::<DummyHolder>::try_from_env(&fho_env).await.expect("create connector");
+
+        let res = connector.try_connect(|_, _| Ok(())).await;
+        assert!(res.is_ok());
+
+        let res_indef = connector.try_connect_indefinitely(|_, _| Ok(())).await;
+        assert!(res_indef.is_ok());
     }
 }

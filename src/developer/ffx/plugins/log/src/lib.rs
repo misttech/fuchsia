@@ -151,7 +151,7 @@ struct DeviceConnection {
 async fn connect_to_rcs(
     rcs_connector: &Connector<RemoteControlProxyHolder>,
 ) -> fho::Result<RemoteControlProxyHolder> {
-    rcs_connector.try_connect(|_target, _err| Ok(())).await
+    rcs_connector.try_connect_indefinitely(|_target, _err| Ok(())).await
 }
 
 // TODO(https://fxbug.dev/42080003): Remove this once Overnet

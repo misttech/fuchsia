@@ -7,10 +7,14 @@ use discovery::DiscoverySources;
 use discovery::{DiscoveryBuilder, TargetEvent, TargetHandle, TargetState};
 use ffx_command_error::{Result, bug};
 use ffx_config::EnvironmentContext;
-use ffx_target::{DefaultTargetResolver, Resolution, build_discovery, build_discovery_from_config};
+use ffx_target::{
+    DefaultTargetResolver, Resolution, build_discovery, build_discovery_builder_common,
+    build_discovery_from_config,
+};
 use std::fmt;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::time::Duration;
 use tokio::sync::OnceCell;
 
 struct DirectConnectorInner {
@@ -44,6 +48,14 @@ impl DirectConnector {
             resolution: futures::lock::Mutex::new(Some(Arc::new(resolution))),
             resolver: futures::lock::Mutex::new(DefaultTargetResolver::new(discovery)),
         }))
+    }
+
+    pub async fn discovery_timeout(&self) -> Option<Duration> {
+        self.0.resolver.lock().await.discovery_timeout()
+    }
+
+    pub async fn set_discovery_timeout(&self, timeout: Option<Duration>) {
+        self.0.resolver.lock().await.set_discovery_timeout(timeout);
     }
 
     // Return a pinned boxed future (LocalBoxFuture) to prevent deep recursion
@@ -200,6 +212,14 @@ impl FhoTargetEnvironmentOuter {
         self.init_direct_connection_behavior(context).await
     }
 
+    /// Initialize connection behavior with an infinite discovery timeout.
+    pub async fn init_connection_behavior_indef(
+        &self,
+        context: &EnvironmentContext,
+    ) -> Result<Arc<ConnectionBehavior>> {
+        self.inner.init_direct_connection_behavior_indef(context).await
+    }
+
     /// Explicitly create direct connection behavior.
     pub async fn init_direct_connection_behavior(
         &self,
@@ -254,6 +274,28 @@ impl FhoTargetEnvironmentInner {
             }
         }
         err
+    }
+
+    /// Explicitly create direct connection behavior with a specific discovery timeout.
+    pub async fn init_direct_connection_behavior_indef(
+        &self,
+        context: &EnvironmentContext,
+    ) -> Result<Arc<ConnectionBehavior>> {
+        let behavior = self
+            .initialize_behavior_with(|| async {
+                log::info!("Initializing indef ConnectionBehavior::DirectConnector");
+                let discovery =
+                    build_discovery_builder_common(context).with_timeout_msecs(None).build(context);
+                let resolver = DefaultTargetResolver::new(discovery);
+                let connector = DirectConnector(Arc::new(DirectConnectorInner {
+                    context: context.clone(),
+                    resolution: futures::lock::Mutex::new(None),
+                    resolver: futures::lock::Mutex::new(resolver),
+                }));
+                Ok(ConnectionBehavior::Direct(connector))
+            })
+            .await?;
+        Ok(behavior)
     }
 
     /// Explicitly create direct connection behavior. Note that we don't actually
@@ -652,5 +694,23 @@ mod tests {
         assert!(res2.is_ok());
         let res2 = res2.unwrap();
         assert_eq!(res2.target_spec(), "127.0.0.1:8083");
+    }
+
+    // Tests that `FhoTargetEnvironment` can initialize a `DirectConnector` connection behavior
+    // with an explicit indefinite discovery timeout (`timeout: None`), and that `set_discovery_timeout`
+    // can be called on the resulting `DirectConnector` to update its resolver's discovery timeout.
+    #[fuchsia::test]
+    async fn test_init_direct_connection_behavior_with_indefinite_timeout() {
+        let env = test_env().build().unwrap();
+        let target_env = FhoTargetEnvironment::default();
+        let behavior =
+            target_env.0.inner.init_direct_connection_behavior_indef(&env.context).await.unwrap();
+        match &*behavior {
+            ConnectionBehavior::Direct(dc) => {
+                assert_eq!(dc.discovery_timeout().await, None);
+                dc.set_discovery_timeout(Some(Duration::from_millis(500))).await;
+                assert_eq!(dc.discovery_timeout().await, Some(Duration::from_millis(500)));
+            }
+        }
     }
 }
