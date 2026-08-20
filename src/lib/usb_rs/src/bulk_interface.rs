@@ -1,7 +1,7 @@
 // Copyright 2023 The Fuchsia Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
-use crate::{Endpoint, Interface};
+use crate::{Endpoint, Interface, ZeroPacket};
 use futures::io::{AsyncRead, AsyncWrite};
 use std::future::Future;
 use std::io::Write;
@@ -111,7 +111,7 @@ impl AsyncWrite for BulkInterface {
                         );
                         let guard = guard_ref.write();
                         for chunk in buffer.chunks(MAX_USBFS_BULK_WRITE_SIZE) {
-                            boe.write(&chunk).await.map_err(|e| {
+                            boe.write(&chunk, ZeroPacket::DoNotSend).await.map_err(|e| {
                                 log::warn!("Got error: {}", e);
                                 std::io::Error::new(
                                     std::io::ErrorKind::Other,

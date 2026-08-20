@@ -15,6 +15,16 @@ pub use usb_plat::{
     IsochronousEndpoint,
 };
 
+/// Controls whether a zero-length packet (ZLP) is sent to terminate an OUT transfer
+/// that ends on a packet boundary.
+#[derive(Copy, Clone, PartialEq, Eq, Debug)]
+pub enum ZeroPacket {
+    /// Send a zero-length packet if the transfer length is an exact multiple of the endpoint max packet size.
+    Send,
+    /// Do not send a zero-length packet.
+    DoNotSend,
+}
+
 /// Selects the bit in USB endpoint addresses that tells us whether it is an in or and out endpoint.
 pub(crate) const USB_ENDPOINT_DIR_MASK: u8 = 0x80;
 

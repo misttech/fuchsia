@@ -27,7 +27,7 @@ use zerocopy::Ref;
 
 use crate::{
     DeviceDescriptor, Endpoint, EndpointDescriptor, EndpointDirection, EndpointType, Error,
-    InterfaceDescriptor, Result,
+    InterfaceDescriptor, Result, USB_ENDPOINT_DIR_MASK, ZeroPacket,
 };
 
 /// The Linux sysfs folder where usb devices are stored
@@ -469,6 +469,7 @@ impl InterfaceInner {
         address: u8,
         ty: u8,
         buffer_action: BufferAction<'_, 'a>,
+        zero_packet: ZeroPacket,
     ) -> Result<impl Future<Output = Result<usize>> + use<'a>> {
         let urb = self.alloc_urb(&buffer_action).await?;
         let out = if let BufferAction::CopyOut(o) = buffer_action { Some(o) } else { None };
@@ -482,6 +483,12 @@ impl InterfaceInner {
 
             urb_inner.type_ = ty;
             urb_inner.endpoint = address;
+            urb_inner.flags =
+                if zero_packet == ZeroPacket::Send && (address & USB_ENDPOINT_DIR_MASK) == 0 {
+                    USBDEVFS_URB_ZERO_PACKET
+                } else {
+                    0
+                };
             urb_inner.status = -1;
 
             let got = urb.refs.fetch_add(1, Ordering::Relaxed);
@@ -716,6 +723,7 @@ impl BulkInEndpoint {
                 self.descriptor.address,
                 USBDEVFS_URB_TYPE_BULK as u8,
                 BufferAction::CopyOut(buf),
+                ZeroPacket::DoNotSend,
             )
             .await?;
 
@@ -765,6 +773,7 @@ impl BulkInEndpoint {
                                         this.descriptor.address,
                                         USBDEVFS_URB_TYPE_BULK as u8,
                                         BufferAction::CopyOut(&mut buf),
+                                        ZeroPacket::DoNotSend,
                                     )
                                     .await?;
                                 let sequence_number = *sequence_counter;
@@ -815,8 +824,8 @@ pub struct BulkOutEndpoint {
 
 impl BulkOutEndpoint {
     /// Write data to this endpoint.
-    pub async fn write(&self, buf: &[u8]) -> Result<()> {
-        self.write_defer_wait(buf).await?.await
+    pub async fn write(&self, buf: &[u8], zero_packet: ZeroPacket) -> Result<()> {
+        self.write_defer_wait(buf, zero_packet).await?.await
     }
 
     /// Submit a write request but don't wait for the response right away. This
@@ -827,6 +836,7 @@ impl BulkOutEndpoint {
     pub async fn write_defer_wait<'s>(
         &'s self,
         buf: &[u8],
+        zero_packet: ZeroPacket,
     ) -> Result<impl Future<Output = Result<()>> + use<'s>> {
         let fut = self
             .inner
@@ -834,6 +844,7 @@ impl BulkOutEndpoint {
                 self.descriptor.address,
                 USBDEVFS_URB_TYPE_BULK as u8,
                 BufferAction::CopyIn(buf),
+                zero_packet,
             )
             .await?;
         let len = buf.len();
@@ -1119,6 +1130,7 @@ mod test {
 
             match endpoint.direction() {
                 EndpointDirection::Out => {
+                    assert!(urb.flags == 0 || urb.flags == USBDEVFS_URB_ZERO_PACKET);
                     // SAFETY: The crate under test should never pass us an invalid pointer.
                     let data = unsafe {
                         std::slice::from_raw_parts(
@@ -1135,6 +1147,7 @@ mod test {
                     dev.reap_sender.send(urb_ptr).unwrap();
                 }
                 EndpointDirection::In => {
+                    assert_eq!(urb.flags, 0);
                     let waiting_readers = match buffer {
                         EndpointBuffer::WaitingReaders(readers) => readers,
                         EndpointBuffer::Data(queue) => {
@@ -1235,9 +1248,13 @@ mod test {
         assert_eq!(b"Wango!".len(), len);
         assert_eq!(b"Wango!", &buf[..len]);
 
-        o.write(b"Bango!").await.unwrap();
+        o.write(b"Bango!", ZeroPacket::Send).await.unwrap();
         let data = env.get_dev(fd).unwrap().endpoint_read_from_target(1).unwrap();
         assert_eq!(b"Bango!", &*data);
+
+        o.write(b"Bongo!", ZeroPacket::DoNotSend).await.unwrap();
+        let data = env.get_dev(fd).unwrap().endpoint_read_from_target(1).unwrap();
+        assert_eq!(b"Bongo!", &*data);
 
         assert_eq!(1, env.get_dev(fd).unwrap().times_claimed());
         assert_eq!(1, env.get_dev(fd).unwrap().times_interface_set());

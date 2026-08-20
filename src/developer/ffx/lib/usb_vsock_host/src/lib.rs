@@ -137,7 +137,7 @@ async fn wait_for_magic(
 ) -> Result<ConnectionInfo, SyncError> {
     let mut magic_timer = fasync::Timer::new(MAGIC_TIMEOUT);
     let mut buf = [0u8; MTU];
-    out_ep.write(&sync_packet()).await.map_err(SyncError::Send)?;
+    out_ep.write(&sync_packet(), usb_rs::ZeroPacket::Send).await.map_err(SyncError::Send)?;
     loop {
         let size = {
             log::trace!(device:? = debug_name; "Reading from in endpoint for magic string");
@@ -176,7 +176,10 @@ async fn wait_for_magic(
                         "Invalid USB magic string (len = {}) received, ignoring and re-attempting sync",
                         packet.header.payload_len
                     );
-                    out_ep.write(&sync_packet()).await.map_err(SyncError::Send)?;
+                    out_ep
+                        .write(&sync_packet(), usb_rs::ZeroPacket::Send)
+                        .await
+                        .map_err(SyncError::Send)?;
                 }
                 PacketType::Echo => {
                     log::debug!(
@@ -184,7 +187,10 @@ async fn wait_for_magic(
                         "received echo packet while waiting for sync, responding."
                     );
                     out_ep
-                        .write(&echo_reply_packet(&Address::from(packet.header), packet.payload))
+                        .write(
+                            &echo_reply_packet(&Address::from(packet.header), packet.payload),
+                            usb_rs::ZeroPacket::Send,
+                        )
                         .await
                         .map_err(SyncError::Send)?;
                 }
@@ -193,7 +199,10 @@ async fn wait_for_magic(
                         device:? = debug_name;
                         "Unexpected packet type '{ty:?}' waiting for packet synchronization, ignoring and re-attempting sync"
                     );
-                    out_ep.write(&sync_packet()).await.map_err(SyncError::Send)?;
+                    out_ep
+                        .write(&sync_packet(), usb_rs::ZeroPacket::Send)
+                        .await
+                        .map_err(SyncError::Send)?;
                 }
             }
         }
@@ -295,7 +304,10 @@ async fn run_usb_link<S: AsyncRead + AsyncWrite + Send + 'static>(
 
     let debug_name = format!("usb:cid:{cid} ({debug_name})");
 
-    out_ep.write(&sync_ack_packet(cid, protocol_version)).await.map_err(SyncError::Send)?;
+    out_ep
+        .write(&sync_ack_packet(cid, protocol_version), usb_rs::ZeroPacket::Send)
+        .await
+        .map_err(SyncError::Send)?;
 
     let tx_conn = connection.clone();
     let tx = async move {
@@ -306,7 +318,7 @@ async fn run_usb_link<S: AsyncRead + AsyncWrite + Send + 'static>(
             while let Ok(got) = tx_conn.fill_usb_packet(builder).await {
                 builder = got;
                 let err_fut = out_ep
-                    .write_defer_wait(builder.take_usb_packet().unwrap())
+                    .write_defer_wait(builder.take_usb_packet().unwrap(), usb_rs::ZeroPacket::Send)
                     .await
                     .map_err(LinkError::Send)?;
                 if tx_err_sender.unbounded_send(err_fut).is_err() {
