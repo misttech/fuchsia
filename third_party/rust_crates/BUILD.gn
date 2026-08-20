@@ -1722,11 +1722,11 @@ group("ring-0.17.14") {
 }
 
 group("rkyv") {
-  public_deps = [ ":rkyv-v0_8_16" ]
+  public_deps = [ ":rkyv-v0_8_18" ]
 }
 
-group("rkyv-0.8.16") {
-  public_deps = [ ":rkyv-v0_8_16" ]
+group("rkyv-0.8.18") {
+  public_deps = [ ":rkyv-v0_8_18" ]
 }
 
 group("rsa") {
@@ -18197,15 +18197,15 @@ rustc_library("ringbuf-v0_5_1") {
   applicable_licenses = [ ":ringbuf-v0_5_1.license" ]
 }
 
-license("rkyv-v0_8_16.license") {
+license("rkyv-v0_8_18.license") {
   public_package_name = "rkyv"
-  license_files = [ "//third_party/rust_crates/vendor/rkyv-0.8.16/LICENSE" ]
+  license_files = [ "//third_party/rust_crates/vendor/rkyv-0.8.18/LICENSE" ]
 }
 
-rustc_library("rkyv-v0_8_16") {
+rustc_library("rkyv-v0_8_18") {
   crate_name = "rkyv"
-  source_root = "//third_party/rust_crates/vendor/rkyv-0.8.16/src/lib.rs"
-  output_name = "rkyv-8b65fa84753628cc"
+  source_root = "//third_party/rust_crates/vendor/rkyv-0.8.18/src/lib.rs"
+  output_name = "rkyv-576357315ac7ef63"
   edition = "2021"
   disable_clippy = true
   enforce_source_listing = false
@@ -18220,7 +18220,7 @@ rustc_library("rkyv-v0_8_16") {
   deps += [ ":ptr_meta-v0_3_1" ]
   deps += [ ":rancor-v0_1_1" ]
   deps += [ ":rend-v0_5_3" ]
-  deps += [ ":rkyv_derive-v0_8_16($host_toolchain)" ]
+  deps += [ ":rkyv_derive-v0_8_18($host_toolchain)" ]
   deps += [ ":tinyvec-v1_11_0" ]
   deps += [ ":uuid-v1_23_3" ]
 
@@ -18228,8 +18228,8 @@ rustc_library("rkyv-v0_8_16") {
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=8b65fa84753628cc",
-    "-Cextra-filename=-8b65fa84753628cc",
+    "-Cmetadata=576357315ac7ef63",
+    "-Cextra-filename=-576357315ac7ef63",
     "--cfg=feature=\"alloc\"",
     "--cfg=feature=\"bytecheck\"",
     "--cfg=feature=\"default\"",
@@ -18247,21 +18247,21 @@ rustc_library("rkyv-v0_8_16") {
   }
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":rkyv-v0_8_16.license" ]
+  applicable_licenses = [ ":rkyv-v0_8_18.license" ]
 }
 
-license("rkyv_derive-v0_8_16.license") {
+license("rkyv_derive-v0_8_18.license") {
   public_package_name = "rkyv_derive"
   license_files = [
-    "//third_party/rust_crates/vendor/rkyv_derive-0.8.16/LICENSE",
-    "//third_party/rust_crates/vendor/rkyv_derive-0.8.16/src/serde/LICENSE",
+    "//third_party/rust_crates/vendor/rkyv_derive-0.8.18/LICENSE",
+    "//third_party/rust_crates/vendor/rkyv_derive-0.8.18/src/serde/LICENSE",
   ]
 }
 
-rustc_macro("rkyv_derive-v0_8_16") {
+rustc_macro("rkyv_derive-v0_8_18") {
   crate_name = "rkyv_derive"
-  source_root = "//third_party/rust_crates/vendor/rkyv_derive-0.8.16/src/lib.rs"
-  output_name = "rkyv_derive-ea56bdd7b3da52a2"
+  source_root = "//third_party/rust_crates/vendor/rkyv_derive-0.8.18/src/lib.rs"
+  output_name = "rkyv_derive-6cbdd9bfad9af676"
   edition = "2021"
   disable_clippy = true
   enforce_source_listing = false
@@ -18270,20 +18270,20 @@ rustc_macro("rkyv_derive-v0_8_16") {
   deps = []
   deps += [ ":proc-macro2-v1_0_106" ]
   deps += [ ":quote-v1_0_45" ]
-  deps += [ ":syn-v2_0_119" ]
+  deps += [ ":syn-v3_0_3" ]
 
   rustenv = []
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=ea56bdd7b3da52a2",
-    "-Cextra-filename=-ea56bdd7b3da52a2",
+    "-Cmetadata=6cbdd9bfad9af676",
+    "-Cextra-filename=-6cbdd9bfad9af676",
     "--cfg=feature=\"bytecheck\"",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":rkyv_derive-v0_8_16.license" ]
+  applicable_licenses = [ ":rkyv_derive-v0_8_18.license" ]
 }
 
 license("rsa-v0_9_10.license") {
