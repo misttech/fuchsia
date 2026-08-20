@@ -8,8 +8,9 @@ use crate::kernel::types::PAddr;
 use crate::vm::page::VmPagePtr;
 use crate::vm::pmm_node::pmm_node;
 use vm_constants_rs::{
-    kPmmNodeIndexZeroBits, kVmPageListPageType, kVmPageListParentContentType,
-    kVmPageListReferenceType, kVmPageListTypeBits, kVmPageListZeroMarkerType,
+    kPmmNodeIndexZeroBits, kVmPageListIntervalBits, kVmPageListPageType,
+    kVmPageListParentContentType, kVmPageListReferenceType, kVmPageListTypeBits,
+    kVmPageListZeroMarkerType,
 };
 
 /// RAII helper for representing content in a page list node. This supports being in one of these
@@ -34,6 +35,104 @@ use vm_constants_rs::{
 #[repr(transparent)]
 pub struct VmPageOrMarker {
     raw: u32,
+}
+
+/// The various dirty states that a zero interval can be in. Refer to VmCowPages::DirtyState for
+/// an explanation of the states. Note that an AwaitingClean state is not encoded in the interval
+/// state bits. This information is instead stored using the AwaitingCleanLength for convenience,
+/// where a non-zero length indicates that the interval is AwaitingClean. Doing this affords
+/// more convenient splitting and merging of intervals.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(u32)]
+pub enum ZeroRangeDirtyState {
+    /// Dirty state is untracked.
+    Untracked = 0,
+    /// Range is clean.
+    Clean,
+    /// Range is dirty.
+    Dirty,
+}
+
+/// The remaining bits of an interval type store any information specific to the type of interval
+/// being tracked. The ZeroRange class is defined here to group together the encoding of these bits
+/// specific to IntervalType::Zero.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(transparent)]
+struct ZeroRange {
+    value: u32,
+}
+
+impl ZeroRange {
+    // This is the same as kIntervalBits in C++.
+    const ALIGN_BITS: u32 = kVmPageListIntervalBits;
+    const ALIGN_MASK: u32 = (1 << Self::ALIGN_BITS) - 1;
+    // Bound to VM_PAGE_OBJECT_DIRTY_STATE_BITS in C++.
+    // For zero range tracking, we also need to track dirty state information, and if the interval
+    // is AwaitingClean, the length that is AwaitingClean.
+    const DIRTY_STATE_BITS: u32 = crate::vm::page::object::DIRTY_STATE_BITS;
+    const DIRTY_STATE_SHIFT: u32 = Self::ALIGN_BITS;
+    const AWAITING_CLEAN_LENGTH_SHIFT: u32 = Self::ALIGN_BITS + Self::DIRTY_STATE_BITS;
+
+    const PAGE_SHIFT: u32 = 12;
+    const PAGE_SIZE: u64 = 1 << Self::PAGE_SHIFT;
+    const DIRTY_STATE_MASK: u32 = ((1 << Self::DIRTY_STATE_BITS) - 1) << Self::DIRTY_STATE_SHIFT;
+    const AWAITING_CLEAN_LENGTH_MASK: u32 = !((1 << Self::AWAITING_CLEAN_LENGTH_SHIFT) - 1);
+
+    /// Creates a new `ZeroRange` with a raw aligned value.
+    const fn new(val: u32) -> Self {
+        debug_assert!((val & Self::ALIGN_MASK) == 0);
+        Self { value: val }
+    }
+
+    /// Creates a `ZeroRange` with a raw aligned value and initial dirty state.
+    fn new_with_state(val: u32, state: ZeroRangeDirtyState) -> Self {
+        let mut this = Self::new(val);
+        this.set_dirty_state(state);
+        this
+    }
+
+    /// Returns the raw packed `u32` value.
+    const fn value(&self) -> u32 {
+        self.value
+    }
+
+    /// Returns the `ZeroRangeDirtyState`.
+    fn dirty_state(&self) -> ZeroRangeDirtyState {
+        let state_bits = (self.value & Self::DIRTY_STATE_MASK) >> Self::DIRTY_STATE_SHIFT;
+        match state_bits {
+            0 => ZeroRangeDirtyState::Untracked,
+            1 => ZeroRangeDirtyState::Clean,
+            2 => ZeroRangeDirtyState::Dirty,
+            _ => panic!("invalid dirty state"),
+        }
+    }
+
+    /// Sets the `ZeroRangeDirtyState`.
+    fn set_dirty_state(&mut self, state: ZeroRangeDirtyState) {
+        debug_assert!(
+            matches!(state, ZeroRangeDirtyState::Dirty | ZeroRangeDirtyState::Untracked),
+            "Only allow dirty and untracked zero ranges for now"
+        );
+        self.value =
+            (self.value & !Self::DIRTY_STATE_MASK) | ((state as u32) << Self::DIRTY_STATE_SHIFT);
+    }
+
+    /// Sets the page-aligned awaiting clean length.
+    fn set_awaiting_clean_length(&mut self, len: u64) {
+        debug_assert!(len == 0 || self.dirty_state() == ZeroRangeDirtyState::Dirty);
+        debug_assert!(len.is_multiple_of(Self::PAGE_SIZE), "len must be page-aligned");
+        // The awaiting clean length is always page-aligned, so mask out the low bits and store only
+        // upper bits.
+        let encoded_len = ((len >> Self::PAGE_SHIFT) << Self::AWAITING_CLEAN_LENGTH_SHIFT) as u32;
+        self.value = (self.value & !Self::AWAITING_CLEAN_LENGTH_MASK)
+            | (encoded_len & Self::AWAITING_CLEAN_LENGTH_MASK);
+    }
+
+    /// Returns the page-aligned awaiting clean length.
+    fn awaiting_clean_length(&self) -> u64 {
+        let len_bits = (self.value & Self::AWAITING_CLEAN_LENGTH_MASK) as u64;
+        (len_bits >> Self::AWAITING_CLEAN_LENGTH_SHIFT) << Self::PAGE_SHIFT
+    }
 }
 
 /// Minimal wrapper around a `u32` to provide stronger typing in code to prevent accidental
@@ -420,5 +519,49 @@ mod vm_page_list_rs {
         expect_false!(pm.is_page());
         expect_false!(pm.is_reference());
         expect_false!(pm.is_marker());
+    }
+
+    /// Tests ZeroRange basic value initialization and boundary limits.
+    #[test]
+    fn test_zero_range_basic() {
+        let zr = ZeroRange::new(0);
+        expect_eq!(zr.value(), 0);
+        expect_eq!(zr.dirty_state(), ZeroRangeDirtyState::Untracked);
+        expect_eq!(zr.awaiting_clean_length(), 0);
+
+        let zr2 = ZeroRange::new(0x80); // 128 (aligned to 7 bits)
+        expect_eq!(zr2.value(), 0x80);
+    }
+
+    /// Tests ZeroRange dirty state transitions.
+    #[test]
+    fn test_zero_range_dirty_state() {
+        let mut zr = ZeroRange::new(0);
+        expect_eq!(zr.dirty_state(), ZeroRangeDirtyState::Untracked);
+
+        zr.set_dirty_state(ZeroRangeDirtyState::Dirty);
+        expect_eq!(zr.dirty_state(), ZeroRangeDirtyState::Dirty);
+
+        zr.set_dirty_state(ZeroRangeDirtyState::Untracked);
+        expect_eq!(zr.dirty_state(), ZeroRangeDirtyState::Untracked);
+    }
+
+    /// Tests ZeroRange awaiting clean length encoding.
+    #[test]
+    fn test_zero_range_awaiting_clean_length() {
+        let mut zr = ZeroRange::new(0);
+        // Can only set length if state is Dirty.
+        zr.set_dirty_state(ZeroRangeDirtyState::Dirty);
+        expect_eq!(zr.awaiting_clean_length(), 0);
+
+        // AwaitingCleanLength is page aligned (4096).
+        zr.set_awaiting_clean_length(4096);
+        expect_eq!(zr.awaiting_clean_length(), 4096);
+
+        zr.set_awaiting_clean_length(8192);
+        expect_eq!(zr.awaiting_clean_length(), 8192);
+
+        zr.set_awaiting_clean_length(0);
+        expect_eq!(zr.awaiting_clean_length(), 0);
     }
 }

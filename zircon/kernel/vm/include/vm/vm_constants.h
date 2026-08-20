@@ -53,4 +53,10 @@ constexpr uint32_t kVmPageListReferenceType = 0b010;
 constexpr uint32_t kVmPageListZeroMarkerType = 0b001;
 constexpr uint32_t kVmPageListParentContentType = 0b100;
 
+// Interval sentinel limits
+constexpr uint32_t kVmPageListIntervalSentinelBits = 2;
+constexpr uint32_t kVmPageListIntervalTypeBits = 2;
+constexpr uint32_t kVmPageListIntervalBits =
+    kVmPageListTypeBits + kVmPageListIntervalSentinelBits + kVmPageListIntervalTypeBits;
+
 #endif  // ZIRCON_KERNEL_VM_INCLUDE_VM_VM_CONSTANTS_H_
