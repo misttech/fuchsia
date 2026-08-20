@@ -308,6 +308,42 @@ async fn wait_for_battery_info(
     Err(anyhow::anyhow!("Watcher stream ended without receiving valid battery info"))
 }
 
+async fn update_and_check(
+    control: &ftest_battery::ControlProxy,
+    fake_clock_control: &ftesting::FakeClockControlProxy,
+    watcher_stream: &mut fpower::BatteryInfoWatcherRequestStream,
+    advance_time: zx::MonotonicDuration,
+    raw_level: f32,
+    expected_scaled: f32,
+) -> Result<()> {
+    fake_clock_control
+        .advance(&ftesting::Increment::Determined(advance_time.into_nanos()))
+        .await?
+        .map_err(|e| anyhow::anyhow!("failed to advance fake clock: {:?}", e))?;
+
+    control
+        .set_battery_status(&fbattery::Status {
+            level_percent: Some(raw_level),
+            charge_status: Some(fbattery::ChargeStatus::Charging),
+            ..Default::default()
+        })
+        .await?;
+
+    let Some(Ok(fpower::BatteryInfoWatcherRequest::OnChangeBatteryInfo {
+        info, responder, ..
+    })) = watcher_stream.next().await
+    else {
+        return Err(anyhow::anyhow!("Watcher stream ended prematurely"));
+    };
+    responder.send()?;
+    let level = info.level_percent.expect("level_percent missing");
+    assert!(
+        (level - expected_scaled).abs() < f32::EPSILON,
+        "expected level_percent {expected_scaled}, got {level}"
+    );
+    Ok(())
+}
+
 #[test_case(FidlRouteMode::NewOnly; "new_only")]
 #[test_case(FidlRouteMode::OldOnly; "old_only")]
 #[test_case(FidlRouteMode::Both; "both")]
@@ -481,64 +517,48 @@ async fn test_shutdown_offset_scaling() -> Result<()> {
         realm.root.connect_to_protocol_at_exposed_dir::<ftesting::FakeClockControlProxy>()?;
     fake_clock_control.pause().await?;
 
-    async fn update_and_check(
-        control: &ftest_battery::ControlProxy,
-        fake_clock_control: &ftesting::FakeClockControlProxy,
-        watcher_stream: &mut fpower::BatteryInfoWatcherRequestStream,
-        raw_level: f32,
-        expected_scaled: f32,
-    ) -> Result<()> {
-        // Advance time by 1000 seconds to bypass the rate limiter's maximum rate limit
-        fake_clock_control
-            .advance(&ftesting::Increment::Determined(
-                zx::MonotonicDuration::from_seconds(1000).into_nanos(),
-            ))
-            .await?
-            .map_err(|e| anyhow::anyhow!("failed to advance fake clock: {:?}", e))?;
-
-        control
-            .set_battery_status(&fbattery::Status {
-                level_percent: Some(raw_level),
-                charge_status: Some(fbattery::ChargeStatus::Charging),
-                ..Default::default()
-            })
-            .await?;
-
-        let Some(Ok(fpower::BatteryInfoWatcherRequest::OnChangeBatteryInfo {
-            info,
-            responder,
-            ..
-        })) = watcher_stream.next().await
-        else {
-            return Err(anyhow::anyhow!("Watcher stream ended prematurely"));
-        };
-        responder.send()?;
-        let level = info.level_percent.expect("level_percent missing");
-        assert!(
-            (level - expected_scaled).abs() < f32::EPSILON,
-            "expected level_percent {expected_scaled}, got {level}"
-        );
-        Ok(())
-    }
+    let advance_1000s = zx::MonotonicDuration::from_seconds(1000);
 
     // Test cases:
     // 1. Raw level at or below offset (3.0%) -> Scaled level 0.0%
-    update_and_check(&control, &fake_clock_control, &mut watcher_stream, 4.0, 2.0).await?;
-    update_and_check(&control, &fake_clock_control, &mut watcher_stream, 3.1, 1.0).await?;
-    update_and_check(&control, &fake_clock_control, &mut watcher_stream, 3.0, 0.0).await?;
-    update_and_check(&control, &fake_clock_control, &mut watcher_stream, 2.0, 0.0).await?;
+    update_and_check(&control, &fake_clock_control, &mut watcher_stream, advance_1000s, 4.0, 2.0)
+        .await?;
+    update_and_check(&control, &fake_clock_control, &mut watcher_stream, advance_1000s, 3.1, 1.0)
+        .await?;
+    update_and_check(&control, &fake_clock_control, &mut watcher_stream, advance_1000s, 3.0, 0.0)
+        .await?;
+    update_and_check(&control, &fake_clock_control, &mut watcher_stream, advance_1000s, 2.0, 0.0)
+        .await?;
 
     // 2. Raw level in middle (51.5%) -> Scaled level 50.0%
-    update_and_check(&control, &fake_clock_control, &mut watcher_stream, 51.5, 50.0).await?;
+    update_and_check(&control, &fake_clock_control, &mut watcher_stream, advance_1000s, 51.5, 50.0)
+        .await?;
 
     // 3. Raw level 99.0% -> Scaled level 99.0%
-    update_and_check(&control, &fake_clock_control, &mut watcher_stream, 99.0, 99.0).await?;
+    update_and_check(&control, &fake_clock_control, &mut watcher_stream, advance_1000s, 99.0, 99.0)
+        .await?;
 
     // 4. Raw level 100% -> Scaled level 100.0%
-    update_and_check(&control, &fake_clock_control, &mut watcher_stream, 100.0, 100.0).await?;
+    update_and_check(
+        &control,
+        &fake_clock_control,
+        &mut watcher_stream,
+        advance_1000s,
+        100.0,
+        100.0,
+    )
+    .await?;
 
     // 5. Raw level above 100% (101.0%) -> Scaled level capped at 100.0%
-    update_and_check(&control, &fake_clock_control, &mut watcher_stream, 101.0, 100.0).await?;
+    update_and_check(
+        &control,
+        &fake_clock_control,
+        &mut watcher_stream,
+        advance_1000s,
+        101.0,
+        100.0,
+    )
+    .await?;
 
     Ok(())
 }
@@ -653,6 +673,83 @@ async fn test_charging_wake_lease() -> Result<()> {
     // 7. Verify that the wake lease was dropped (Fake SAG detects PEER_CLOSED)
     let event3 = lease_events.next().await.ok_or_else(|| anyhow::anyhow!("lease_events ended"))?;
     assert_eq!(event3, LeaseEvent::Dropped("charging_block_suspension".to_string()));
+
+    Ok(())
+}
+
+#[fuchsia::test]
+async fn test_rate_limiter() -> Result<()> {
+    // 1. Setup realm with suspend_enabled = false
+    let (realm, _lease_events) = setup_realm(FidlRouteMode::NewOnly, false).await?;
+
+    let battery_mgr: fpower::BatteryManagerProxy =
+        realm.root.connect_to_protocol_at_exposed_dir()?;
+    let service = fuchsia_component::client::Service::open_from_dir(
+        realm.root.get_exposed_dir(),
+        ftest_battery::ServiceMarker,
+    )?;
+    let service_instance = service.watch_for_any().await?;
+    let control = service_instance.connect_to_control()?;
+
+    let (watcher_client, watcher_stream) =
+        fidl::endpoints::create_request_stream::<fpower::BatteryInfoWatcherMarker>();
+    battery_mgr.watch(watcher_client)?;
+
+    let fake_clock_control =
+        realm.root.connect_to_protocol_at_exposed_dir::<ftesting::FakeClockControlProxy>()?;
+    fake_clock_control.pause().await?;
+
+    // Wait for the initial update from driver (which is scaled 98.7% -> 99.0%)
+    let (info, mut watcher_stream) = wait_for_battery_info(watcher_stream).await?;
+    assert_eq!(info.level_percent, Some(99.0));
+
+    // 2. Set raw level to 51.5% -> maps to 50.0% scaled level.
+    // Advance time by 1000s to let it settle immediately (bypass the rate limiter for the setup).
+    update_and_check(
+        &control,
+        &fake_clock_control,
+        &mut watcher_stream,
+        zx::MonotonicDuration::from_seconds(1000),
+        51.5,
+        50.0,
+    )
+    .await?;
+
+    // 3. Suddenly update the raw level to 61.2% -> maps to 60.0% scaled level.
+    // Step 1: Advance clock by 15 seconds. Max delta is 2.0%.
+    // So the level should increase to 52.0%.
+    update_and_check(
+        &control,
+        &fake_clock_control,
+        &mut watcher_stream,
+        zx::MonotonicDuration::from_seconds(15),
+        61.2,
+        52.0,
+    )
+    .await?;
+
+    // Step 2: Advance clock by another 15 seconds.
+    // The level should increase to 54.0%.
+    update_and_check(
+        &control,
+        &fake_clock_control,
+        &mut watcher_stream,
+        zx::MonotonicDuration::from_seconds(15),
+        61.2,
+        54.0,
+    )
+    .await?;
+
+    // Step 3: Advance clock by 100 seconds to let it fully reach 60.0%.
+    update_and_check(
+        &control,
+        &fake_clock_control,
+        &mut watcher_stream,
+        zx::MonotonicDuration::from_seconds(100),
+        61.2,
+        60.0,
+    )
+    .await?;
 
     Ok(())
 }
