@@ -8,6 +8,7 @@
 #include <fidl/fuchsia.hardware.network.driver/cpp/driver/wire.h>
 #include <fidl/fuchsia.hardware.network.driver/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.network/cpp/wire.h>
+#include <lib/async/cpp/task.h>
 #include <lib/async/dispatcher.h>
 #include <lib/fidl/cpp/wire/server.h>
 
@@ -35,7 +36,8 @@ class MacClientInstance;
 
 class MacInterface : public ::network::MacAddrDeviceInterface {
  public:
-  static void Create(fdf::WireSharedClient<netdriver::MacAddr>&& parent, OnCreated&& on_created);
+  static void Create(fdf::ClientEnd<netdriver::MacAddr> parent, fdf_dispatcher_t* dispatcher,
+                     OnCreated&& on_created);
 
   ~MacInterface() override;
 
@@ -51,23 +53,29 @@ class MacInterface : public ::network::MacAddrDeviceInterface {
   friend MacClientInstance;
   // Consolidates all the requested operating modes and multicast filtering from all the attached
   // clients into a final operating mode and sets it on the parent device implementation.
-  void Consolidate(fit::function<void(zx_status_t)> callback) __TA_REQUIRES(lock_);
+  void Consolidate(fit::function<void(zx_status_t)> callback) __TA_RELEASE(lock_);
   // Closes a client instance, causing a new operating mode to be calculated once the instance state
   // is removed. If the `MacInterface` is undergoing a teardown, the teardown will be finished if
   // there are no more open client instances.
   void CloseClient(MacClientInstance* client) __TA_EXCLUDES(lock_);
+  // Called when `impl_` finishes tearing down the binding.
+  void OnImplTeardown();
+  // Checks if all of the teardown conditions are complete, and calls
+  // `teardown_callback_` if so.
+  void MaybeFinishTeardown() __TA_RELEASE(lock_);
 
   void Init(fit::callback<void(zx_status_t)>&& on_complete);
   void GetFeatures(fit::callback<void(zx_status_t)>&& on_complete);
   void SetDefaultMode(fit::callback<void(zx_status_t)>&& on_complete);
 
-  explicit MacInterface(fdf::WireSharedClient<netdriver::MacAddr>&& parent);
+  MacInterface() = default;
 
   fdf::WireSharedClient<netdriver::MacAddr> impl_;
+  bool impl_torn_down_ __TA_GUARDED(lock_) = false;
 
   netdriver::Features features_;
   netdev::wire::MacFilterMode default_mode_;
-  fbl::Mutex lock_;
+  mutable fbl::Mutex lock_;
   fbl::DoublyLinkedList<std::unique_ptr<MacClientInstance>> clients_ __TA_GUARDED(lock_);
   fbl::DoublyLinkedList<std::unique_ptr<MacClientInstance>> dead_clients_ __TA_GUARDED(lock_);
   fit::callback<void()> teardown_callback_ __TA_GUARDED(lock_);
@@ -134,9 +142,14 @@ class MacClientInstance : public fidl::WireServer<netdev::MacAddressing>,
   const ClientState& state() const { return state_; }
 
  private:
+  // Triggers consolidation on `parent_`.
+  void Consolidate();
+
   // Pointer to parent MacInterface, not owned.
   MacInterface* const parent_;
   ClientState state_ __TA_GUARDED(parent_->lock_);
+  async::TaskClosureMethod<MacClientInstance, &MacClientInstance::Consolidate> consolidate_task_{
+      this};
   std::optional<fidl::ServerBindingRef<netdev::MacAddressing>> binding_;
 };
 

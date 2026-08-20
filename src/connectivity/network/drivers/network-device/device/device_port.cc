@@ -130,9 +130,8 @@ void DevicePort::GetMac(
 void DevicePort::CreateMacInterface(::fdf::ClientEnd<netdriver::MacAddr>&& client_end,
                                     fdf_dispatcher_t* mac_dispatcher,
                                     fit::callback<void(zx_status_t)>&& on_complete) {
-  fdf::WireSharedClient mac_client(std::move(client_end), mac_dispatcher);
   MacAddrDeviceInterface::Create(
-      std::move(mac_client),
+      std::move(client_end), mac_dispatcher,
       [this, on_complete = std::move(on_complete)](
           zx::result<std::unique_ptr<MacAddrDeviceInterface>> result) mutable {
         if (result.is_error()) {

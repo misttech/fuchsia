@@ -27,8 +27,8 @@ class MacAddrDeviceInterface {
   // asynchronously through a callback. Note that on an error the callback may be (but is not
   // guaranteed to be) called inline from the Create call. Because of this it's a good idea to avoid
   // acquiring locks in the on_created callback when an error is reported.
-  static void Create(fdf::WireSharedClient<fuchsia_hardware_network_driver::MacAddr> parent,
-                     OnCreated&& on_created);
+  static void Create(fdf::ClientEnd<fuchsia_hardware_network_driver::MacAddr> parent,
+                     fdf_dispatcher_t* dispatcher, OnCreated&& on_created);
 
   // Binds the request channel req to this MacAddrDeviceInterface. Requests will be handled on the
   // provided dispatcher.

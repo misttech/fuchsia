@@ -12,18 +12,14 @@
 
 namespace network {
 
-void MacAddrDeviceInterface::Create(
-    fdf::WireSharedClient<fuchsia_hardware_network_driver::MacAddr> parent,
-    OnCreated&& on_created) {
-  internal::MacInterface::Create(std::move(parent), std::move(on_created));
+void MacAddrDeviceInterface::Create(fdf::ClientEnd<fuchsia_hardware_network_driver::MacAddr> parent,
+                                    fdf_dispatcher_t* dispatcher, OnCreated&& on_created) {
+  internal::MacInterface::Create(std::move(parent), dispatcher, std::move(on_created));
 }
 
 namespace internal {
 
 constexpr uint8_t kMacMulticast = 0x01;
-
-MacInterface::MacInterface(fdf::WireSharedClient<fuchsia_hardware_network_driver::MacAddr>&& parent)
-    : impl_(std::move(parent)) {}
 
 MacInterface::~MacInterface() {
   ZX_ASSERT_MSG(clients_.is_empty(),
@@ -34,10 +30,10 @@ MacInterface::~MacInterface() {
                 dead_clients_.size_slow());
 }
 
-void MacInterface::Create(fdf::WireSharedClient<fuchsia_hardware_network_driver::MacAddr>&& parent,
-                          OnCreated&& on_created) {
+void MacInterface::Create(fdf::ClientEnd<fuchsia_hardware_network_driver::MacAddr> parent,
+                          fdf_dispatcher_t* dispatcher, OnCreated&& on_created) {
   fbl::AllocChecker ac;
-  std::unique_ptr<MacInterface> mac(new (&ac) MacInterface(std::move(parent)));
+  std::unique_ptr<MacInterface> mac(new (&ac) MacInterface());
   if (!ac.check()) {
     LOGF_ERROR("Could not allocate MacInterface");
     on_created(zx::error(ZX_ERR_NO_MEMORY));
@@ -45,14 +41,38 @@ void MacInterface::Create(fdf::WireSharedClient<fuchsia_hardware_network_driver:
   }
   // Keep a raw pointer for making the call below, the unique ptr will have been moved.
   MacInterface* mac_ptr = mac.get();
+  mac_ptr->impl_.Bind(std::move(parent), dispatcher,
+                      fidl::ObserveTeardown([mac_ptr]() { mac_ptr->OnImplTeardown(); }));
   mac_ptr->Init(
       [mac = std::move(mac), on_created = std::move(on_created)](zx_status_t status) mutable {
         if (status != ZX_OK) {
-          on_created(zx::error(status));
+          MacInterface* mac_ptr = mac.get();
+          mac_ptr->Teardown([mac = std::move(mac), on_created = std::move(on_created),
+                             status]() mutable { on_created(zx::error(status)); });
           return;
         }
         on_created(zx::ok(std::move(mac)));
       });
+}
+
+void MacInterface::OnImplTeardown() {
+  lock_.Acquire();
+  impl_torn_down_ = true;
+  // The parent binding is torn down so the dead clients' consolidation
+  // operations may never finish. Clear them out and check if we can finish
+  // tearing down.
+  dead_clients_.clear();
+  MaybeFinishTeardown();
+}
+
+void MacInterface::MaybeFinishTeardown() {
+  if (clients_.is_empty() && dead_clients_.is_empty() && impl_torn_down_ && teardown_callback_) {
+    fit::callback<void()> teardown = std::move(teardown_callback_);
+    lock_.Release();
+    teardown();
+  } else {
+    lock_.Release();
+  }
 }
 
 void MacInterface::Init(fit::callback<void(zx_status_t)>&& on_complete) {
@@ -86,14 +106,6 @@ zx_status_t MacInterface::Bind(async_dispatcher_t* dispatcher,
   }
 
   clients_.push_back(std::move(client_instance));
-  // TODO(https://fxbug.dev/42051219): Improve communication with parent driver. MacInterface relies
-  // heavily on synchronous communication which can be problematic and cause lock inversions with
-  // the parent driver. We need a better strategy here that is going to be more compatible with
-  // DFv2. For now, dispatching to do the work eliminates known deadlocks.
-  async::PostTask(dispatcher, [this]() {
-    fbl::AutoLock lock(&lock_);
-    Consolidate([](zx_status_t /*status*/) {});
-  });
   return ZX_OK;
 }
 
@@ -133,6 +145,13 @@ std::optional<netdev::wire::MacFilterMode> MacInterface::ConvertMode(
 }
 
 void MacInterface::Consolidate(fit::function<void(zx_status_t)> callback) {
+  if (!impl_.is_valid() || impl_torn_down_) {
+    // Avoid deadlocking as a result of the callback attempting to acquire the
+    // lock.
+    lock_.Release();
+    callback(ZX_ERR_BAD_STATE);
+    return;
+  }
   netdev::wire::MacFilterMode mode = default_mode_;
   // Gather the most permissive mode that the clients want.
   for (auto& c : clients_) {
@@ -191,28 +210,36 @@ void MacInterface::Consolidate(fit::function<void(zx_status_t)> callback) {
         }
         callback(ZX_OK);
       });
+  lock_.Release();
 }
 
 void MacInterface::CloseClient(MacClientInstance* client) {
-  fbl::AutoLock lock(&lock_);
-  // Keep the client alive until consolidation completes. Otherwise another
-  // client closure could observe an empty list of clients and call the teardown
-  // callback before this consolidation has completed. The client cannot be kept
-  // in clients_ as it must not take part in consolidation now that it's closed.
-  dead_clients_.push_back(clients_.erase(*client));
+  lock_.Acquire();
+  std::unique_ptr<MacClientInstance> client_ptr;
+  if (client->InContainer()) {
+    client_ptr = clients_.erase(*client);
+  }
+  if (impl_torn_down_ || !impl_.is_valid()) {
+    // If the parent is dead, skip consolidation and check if we're ready to
+    // complete teardown.
+    MaybeFinishTeardown();
+    return;
+  }
+
+  if (client_ptr) {
+    // Keep the client alive until consolidation completes. Otherwise another
+    // client closure could observe an empty list of clients and call the
+    // teardown callback before this consolidation has completed. The client
+    // cannot be kept in clients_ as it must not take part in consolidation now
+    // that it's closed.
+    dead_clients_.push_back(std::move(client_ptr));
+  }
   Consolidate([client, this](zx_status_t /*status*/) {
-    fit::callback<void()> teardown;
-    {
-      fbl::AutoLock lock(&lock_);
+    lock_.Acquire();
+    if (client->InContainer()) {
       dead_clients_.erase(*client);
-      if (clients_.is_empty() && dead_clients_.is_empty() && teardown_callback_) {
-        teardown = std::move(teardown_callback_);
-        impl_ = {};
-      }
     }
-    if (teardown) {
-      teardown();
-    }
+    MaybeFinishTeardown();
   });
 }
 
@@ -274,18 +301,15 @@ void MacInterface::SetDefaultMode(fit::callback<void(zx_status_t)>&& on_complete
 }
 
 void MacInterface::Teardown(fit::callback<void()> callback) {
-  fbl::AutoLock lock(&lock_);
+  lock_.Acquire();
   // Can't call teardown if already tearing down.
   ZX_ASSERT(!teardown_callback_);
-  if (clients_.is_empty() && dead_clients_.is_empty()) {
-    lock.release();
-    callback();
-  } else {
-    teardown_callback_ = std::move(callback);
-    for (auto& client : clients_) {
-      client.Unbind();
-    }
+  teardown_callback_ = std::move(callback);
+  for (auto& client : clients_) {
+    client.Unbind();
   }
+  impl_.AsyncTeardown();
+  MaybeFinishTeardown();
 }
 
 void MacClientInstance::GetUnicastAddress(GetUnicastAddressCompleter::Sync& completer) {
@@ -306,7 +330,7 @@ void MacClientInstance::GetUnicastAddress(GetUnicastAddressCompleter::Sync& comp
 void MacClientInstance::SetMode(SetModeRequestView request, SetModeCompleter::Sync& completer) {
   auto resolved_mode = parent_->ConvertMode(request->mode);
   if (resolved_mode.has_value()) {
-    fbl::AutoLock lock(&parent_->lock_);
+    parent_->lock_.Acquire();
     state_.filter_mode = resolved_mode.value();
     parent_->Consolidate(
         [completer = completer.ToAsync()](zx_status_t status) mutable { completer.Reply(status); });
@@ -320,15 +344,15 @@ void MacClientInstance::AddMulticastAddress(AddMulticastAddressRequestView reque
   if ((request->address.octets[0] & kMacMulticast) == 0) {
     completer.Reply(ZX_ERR_INVALID_ARGS);
   } else {
-    fbl::AutoLock lock(&parent_->lock_);
-    if (state_.addresses.size() < netdriver::wire::kMaxMacFilter) {
-      state_.addresses.insert(ClientState::Addr{request->address});
-      parent_->Consolidate([completer = completer.ToAsync()](zx_status_t status) mutable {
-        completer.Reply(status);
-      });
-    } else {
+    parent_->lock_.Acquire();
+    if (state_.addresses.size() >= netdriver::wire::kMaxMacFilter) {
+      parent_->lock_.Release();
       completer.Reply(ZX_ERR_NO_RESOURCES);
+      return;
     }
+    state_.addresses.insert(ClientState::Addr{request->address});
+    parent_->Consolidate(
+        [completer = completer.ToAsync()](zx_status_t status) mutable { completer.Reply(status); });
   }
 }
 
@@ -337,11 +361,16 @@ void MacClientInstance::RemoveMulticastAddress(RemoveMulticastAddressRequestView
   if ((request->address.octets[0] & kMacMulticast) == 0) {
     completer.Reply(ZX_ERR_INVALID_ARGS);
   } else {
-    fbl::AutoLock lock(&parent_->lock_);
+    parent_->lock_.Acquire();
     state_.addresses.erase(ClientState::Addr{request->address});
     parent_->Consolidate(
         [completer = completer.ToAsync()](zx_status_t status) mutable { completer.Reply(status); });
   }
+}
+
+void MacClientInstance::Consolidate() {
+  parent_->lock_.Acquire();
+  parent_->Consolidate([](zx_status_t /*unused*/) {});
 }
 
 MacClientInstance::MacClientInstance(MacInterface* parent, netdev::wire::MacFilterMode default_mode)
@@ -353,8 +382,15 @@ zx_status_t MacClientInstance::Bind(async_dispatcher_t* dispatcher,
       fidl::BindServer(dispatcher, std::move(req), this,
                        [](MacClientInstance* client_instance, fidl::UnbindInfo /*unused*/,
                           fidl::ServerEnd<fuchsia_hardware_network::MacAddressing> /*unused*/) {
+                         client_instance->consolidate_task_.Cancel();
                          client_instance->parent_->CloseClient(client_instance);
                        });
+  // TODO(https://fxbug.dev/42051219): Improve communication with parent driver.
+  // MacInterface relies heavily on synchronous communication which can be
+  // problematic and cause lock inversions with the parent driver. We need a
+  // better strategy here that is going to be more compatible with DFv2. For
+  // now, dispatching to do the work eliminates known deadlocks.
+  consolidate_task_.Post(dispatcher);
   return ZX_OK;
 }
 
