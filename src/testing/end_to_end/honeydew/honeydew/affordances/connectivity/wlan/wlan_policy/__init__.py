@@ -365,7 +365,7 @@ class WlanPolicy(AsyncLazyReady):
         target_ssid: str,
         security_type: f_wlan_policy.SecurityType,
         *,
-        timeout: float | None = _DEFAULT_WLAN_POLICY_OPERATION_TIMEOUT_SEC,
+        timeout: timedelta | None = _DEFAULT_WLAN_POLICY_OPERATION_TIMEOUT,
     ) -> None:
         """Triggers connection to a network and blocks until connected.
 
@@ -396,7 +396,7 @@ class WlanPolicy(AsyncLazyReady):
                 self._client_controller.proxy.connect(
                     id_=NetworkIdentifier(target_ssid, security_type).to_fidl(),
                 ),
-                timeout,
+                None if timeout is None else timeout.total_seconds(),
             )
             status = f_wlan_policy.RequestStatus(resp.status)
             if status != f_wlan_policy.RequestStatus.ACKNOWLEDGED:
@@ -407,7 +407,7 @@ class WlanPolicy(AsyncLazyReady):
             await self.wait_for_network_state(
                 target_ssid,
                 f_wlan_policy.ConnectionState.CONNECTED,
-                timeout=None if timeout is None else timedelta(seconds=timeout),
+                timeout=timeout,
             )
         except FcTransportStatus as status:
             raise wlan_errors.HoneydewWlanError(

@@ -5,6 +5,7 @@
 # found in the LICENSE file.
 
 import logging
+from datetime import timedelta
 from typing import Literal, NamedTuple, cast
 
 import fidl_fuchsia_wlan_policy as f_wlan_policy
@@ -219,7 +220,7 @@ class RegulatoryComplianceTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
             await self.dut.wlan_policy.connect(
                 ssid,
                 f_wlan_policy.SecurityType.NONE,
-                timeout=30,
+                timeout=timedelta(seconds=30),
             )
             associated = True
         except Exception as e:

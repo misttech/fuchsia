@@ -25,7 +25,7 @@ from honeydew.affordances.connectivity.wlan.utils.errors import (
 )
 from mobly.records import TestResultRecord
 
-DEFAULT_ASSOCIATE_TIMEOUT_SEC = 30
+DEFAULT_ASSOCIATE_TIMEOUT = timedelta(seconds=30)
 
 
 class FuchsiaWlanDevice:
@@ -80,7 +80,6 @@ class FuchsiaWlanDevice:
         key_mgmt: str | None = None,
         check_connectivity: bool = True,
         hidden: bool = False,
-        timeout_sec: int = DEFAULT_ASSOCIATE_TIMEOUT_SEC,
     ) -> bool:
         try:
             fuchsia_async_extension.get_loop().run_until_complete(
@@ -94,7 +93,7 @@ class FuchsiaWlanDevice:
                 self.device.honeydew_fd.wlan_policy.connect(
                     target_ssid,
                     target_security.fuchsia_security_type(),
-                    timeout=timeout_sec,
+                    timeout=DEFAULT_ASSOCIATE_TIMEOUT,
                 )
             )
             return True

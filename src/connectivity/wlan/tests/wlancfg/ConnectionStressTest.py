@@ -10,6 +10,7 @@ Script for testing WiFi connection and disconnection in a loop
 import logging
 import time
 from dataclasses import dataclass
+from datetime import timedelta
 
 import fidl_fuchsia_wlan_policy as f_wlan_policy
 import fuchsia_wlan_base_test
@@ -223,7 +224,7 @@ class ConnectionStressTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
                 await self.dut.wlan_policy.connect(
                     test.dut_ssid,
                     security_type,
-                    timeout=30,
+                    timeout=timedelta(seconds=30),
                 )
                 associated = True
             except Exception as e:
