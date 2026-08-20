@@ -24,6 +24,7 @@
 #include "src/ui/scenic/lib/display/singleton_display_service.h"
 #include "src/ui/scenic/lib/display/vsync_source_manager.h"
 #include "src/ui/scenic/lib/flatland/engine/display_compositor.h"
+#include "src/ui/scenic/lib/flatland/flatland_factory.h"
 #include "src/ui/scenic/lib/flatland/flatland_manager.h"
 #include "src/ui/scenic/lib/flatland/flatland_presenter_impl.h"
 #include "src/ui/scenic/lib/flatland/link_system.h"
@@ -123,6 +124,7 @@ class App {
   std::shared_ptr<flatland::LinkSystem> link_system_;
   std::shared_ptr<flatland::FlatlandPresenterImpl> flatland_presenter_;
   std::shared_ptr<flatland::FlatlandManager> flatland_manager_;
+  std::unique_ptr<flatland::FlatlandFactoryImpl> flatland_factory_;
   std::unique_ptr<flatland::TrustedFlatlandFactoryImpl> trusted_flatland_factory_;
   std::shared_ptr<flatland::DisplayCompositor> flatland_compositor_;
   std::shared_ptr<flatland::Engine> flatland_engine_;

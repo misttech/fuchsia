@@ -493,6 +493,11 @@ void App::InitializeGraphics(std::shared_ptr<display::Display> display) {
       FX_CHECK(app_context_->outgoing()->AddPublicService(std::move(handler)) == ZX_OK);
     }
     {
+      flatland_factory_ = std::make_unique<flatland::FlatlandFactoryImpl>(flatland_manager_);
+      FX_CHECK(app_context_->outgoing()->AddProtocol<fuchsia_ui_composition::FlatlandFactory>(
+                   flatland_factory_->GetHandler()) == ZX_OK);
+    }
+    {
       trusted_flatland_factory_ =
           std::make_unique<flatland::TrustedFlatlandFactoryImpl>(flatland_manager_);
       FX_CHECK(

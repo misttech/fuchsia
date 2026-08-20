@@ -49,7 +49,7 @@ class FlatlandManager {
                       register_mouse_source);
   ~FlatlandManager();
 
-  scheduling::SessionId CreateFlatland(
+  std::optional<scheduling::SessionId> CreateFlatland(
       fidl::InterfaceRequest<fuchsia::ui::composition::Flatland> flatland,
       const FlatlandConfig& config = FlatlandConfig{});
 
@@ -132,11 +132,11 @@ class FlatlandManager {
   // Removes the Flatland instance associated with |session_id|.
   void RemoveFlatlandInstance(scheduling::SessionId session_id);
 
-  scheduling::SessionId CreateTrustedFlatland(
+  std::optional<scheduling::SessionId> CreateTrustedFlatland(
       fidl::InterfaceRequest<fuchsia::ui::composition::Flatland> request,
       const FlatlandConfig& config);
 
-  scheduling::SessionId CreateUntrustedFlatland(
+  std::optional<scheduling::SessionId> CreateUntrustedFlatland(
       fidl::InterfaceRequest<fuchsia::ui::composition::Flatland> request,
       const FlatlandConfig& config);
 

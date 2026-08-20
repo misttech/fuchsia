@@ -78,7 +78,7 @@ FlatlandManager::~FlatlandManager() {
   }
 }
 
-scheduling::SessionId FlatlandManager::CreateFlatland(
+std::optional<scheduling::SessionId> FlatlandManager::CreateFlatland(
     fidl::InterfaceRequest<fuchsia::ui::composition::Flatland> request,
     const FlatlandConfig& config) {
   utils::CheckIsOnMainThread();
@@ -90,7 +90,7 @@ scheduling::SessionId FlatlandManager::CreateFlatland(
   }
 }
 
-scheduling::SessionId FlatlandManager::CreateTrustedFlatland(
+std::optional<scheduling::SessionId> FlatlandManager::CreateTrustedFlatland(
     fidl::InterfaceRequest<fuchsia::ui::composition::Flatland> request,
     const FlatlandConfig& config) {
   const scheduling::SessionId id = uber_struct_system_->GetNextInstanceId();
@@ -116,7 +116,7 @@ scheduling::SessionId FlatlandManager::CreateTrustedFlatland(
   return id;
 }
 
-scheduling::SessionId FlatlandManager::CreateUntrustedFlatland(
+std::optional<scheduling::SessionId> FlatlandManager::CreateUntrustedFlatland(
     fidl::InterfaceRequest<fuchsia::ui::composition::Flatland> request,
     const FlatlandConfig& config) {
   const scheduling::SessionId id = uber_struct_system_->GetNextInstanceId();
@@ -171,7 +171,11 @@ scheduling::SessionId FlatlandManager::CreateUntrustedFlatland(
       buffer_collection_importers_, config);
 
   zx_status_t status = loop_holder->loop().StartThread(name.c_str());
-  FX_DCHECK(status == ZX_OK);
+  if (status != ZX_OK) {
+    FX_LOGS(ERROR) << "Failed to start thread for Flatland session: " << status;
+    flatland_instances_.erase(id);
+    return std::nullopt;
+  }
 
   alive_sessions_++;
   return id;

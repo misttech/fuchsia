@@ -199,7 +199,8 @@ class FlatlandManagerTest : public LoggingEventLoop, public ::testing::Test {
 
   fidl::InterfacePtr<fuchsia::ui::composition::Flatland> CreateFlatland() {
     fidl::InterfacePtr<fuchsia::ui::composition::Flatland> flatland;
-    const scheduling::SessionId id = manager_->CreateFlatland(flatland.NewRequest(dispatcher()));
+    const scheduling::SessionId id =
+        manager_->CreateFlatland(flatland.NewRequest(dispatcher())).value();
     FX_LOGS(INFO) << "Created flatland with ID " << id;
     return flatland;
   }
@@ -278,8 +279,10 @@ TEST_F(FlatlandManagerTest, UntrustedFlatlandRunsOnIndependentThread) {
 
 TEST_F(FlatlandManagerTest, TrustedFlatlandRunsOnMainThread) {
   fidl::InterfacePtr<fuchsia::ui::composition::Flatland> flatland;
-  const scheduling::SessionId id = manager_->CreateFlatland(flatland.NewRequest(dispatcher()),
-                                                            {.use_trusted_flatland_api = true});
+  const scheduling::SessionId id =
+      manager_
+          ->CreateFlatland(flatland.NewRequest(dispatcher()), {.use_trusted_flatland_api = true})
+          .value();
 
   RunLoopUntilIdle();
 
@@ -810,7 +813,7 @@ TEST_F(FlatlandManagerTest, SkipsOnFramePresentedComparison) {
   flatland::FlatlandConfig config1;
   config1.skips_on_frame_presented = true;
   const scheduling::SessionId id1 =
-      manager_->CreateFlatland(flatland1.NewRequest(dispatcher()), config1);
+      manager_->CreateFlatland(flatland1.NewRequest(dispatcher()), config1).value();
 
   std::optional<fuchsia::scenic::scheduling::FramePresentedInfo> info1;
   flatland1.events().OnFramePresented =
@@ -821,7 +824,7 @@ TEST_F(FlatlandManagerTest, SkipsOnFramePresentedComparison) {
   flatland::FlatlandConfig config2;
   config2.skips_on_frame_presented = false;
   const scheduling::SessionId id2 =
-      manager_->CreateFlatland(flatland2.NewRequest(dispatcher()), config2);
+      manager_->CreateFlatland(flatland2.NewRequest(dispatcher()), config2).value();
 
   std::optional<fuchsia::scenic::scheduling::FramePresentedInfo> info2;
   flatland2.events().OnFramePresented =
@@ -866,7 +869,7 @@ TEST_F(FlatlandManagerTest, SkipsPresentCreditsComparison) {
   flatland::FlatlandConfig config1;
   config1.skips_present_credits = true;
   const scheduling::SessionId id1 =
-      manager_->CreateFlatland(flatland1.NewRequest(dispatcher()), config1);
+      manager_->CreateFlatland(flatland1.NewRequest(dispatcher()), config1).value();
 
   bool began1 = false;
   flatland1.events().OnNextFrameBegin = [&began1](OnNextFrameBeginValues values) { began1 = true; };
@@ -876,7 +879,7 @@ TEST_F(FlatlandManagerTest, SkipsPresentCreditsComparison) {
   flatland::FlatlandConfig config2;
   config2.skips_present_credits = false;
   const scheduling::SessionId id2 =
-      manager_->CreateFlatland(flatland2.NewRequest(dispatcher()), config2);
+      manager_->CreateFlatland(flatland2.NewRequest(dispatcher()), config2).value();
 
   bool began2 = false;
   flatland2.events().OnNextFrameBegin = [&began2](OnNextFrameBeginValues values) { began2 = true; };

@@ -6,7 +6,6 @@
 #define SRC_UI_SCENIC_LIB_FLATLAND_TRUSTED_FLATLAND_FACTORY_H_
 
 #include <fidl/fuchsia.ui.composition/cpp/fidl.h>
-#include <lib/fit/function.h>
 
 #include "src/ui/scenic/lib/flatland/flatland_manager.h"
 
@@ -21,9 +20,8 @@ class TrustedFlatlandFactoryImpl
   // |fuchsia_ui_composition::TrustedFlatlandFactory|
   void CreateFlatland(CreateFlatlandRequest& request,
                       CreateFlatlandCompleter::Sync& completer) override;
-  void CreateFlatland(fidl::InterfaceRequest<fuchsia::ui::composition::Flatland> server_end,
-                      fuchsia_ui_composition::TrustedFlatlandConfig config);
 
+  static bool IsValidConfig(const fuchsia_ui_composition::TrustedFlatlandConfig& config);
   static FlatlandConfig ToInternalConfig(
       const fuchsia_ui_composition::TrustedFlatlandConfig& config);
 

@@ -9,6 +9,8 @@ source_set("flatland") {
     "flatland_config.h",
     "flatland_display.cc",
     "flatland_display.h",
+    "flatland_factory.cc",
+    "flatland_factory.h",
     "flatland_manager.cc",
     "flatland_manager.h",
     "flatland_presenter.h",

@@ -4,18 +4,20 @@
 
 #include "src/ui/scenic/lib/flatland/trusted_flatland_factory.h"
 
+#include <lib/syslog/cpp/macros.h>
+
 namespace flatland {
 
 TrustedFlatlandFactoryImpl::TrustedFlatlandFactoryImpl(
     std::shared_ptr<FlatlandManager> flatland_manager)
     : flatland_manager_(std::move(flatland_manager)) {}
 
-void TrustedFlatlandFactoryImpl::CreateFlatland(CreateFlatlandRequest& request,
-                                                CreateFlatlandCompleter::Sync& completer) {
-  CreateFlatland(fidl::InterfaceRequest<fuchsia::ui::composition::Flatland>(
-                     request.server_end().TakeChannel()),
-                 std::move(request.config()));
-  completer.Reply(fit::ok());
+// static
+bool TrustedFlatlandFactoryImpl::IsValidConfig(
+    const fuchsia_ui_composition::TrustedFlatlandConfig& config) {
+  // Currently all TrustedFlatlandConfig table fields are valid.
+  // Validation logic for field combinations can be added here as needed.
+  return true;
 }
 
 // static
@@ -31,10 +33,23 @@ FlatlandConfig TrustedFlatlandFactoryImpl::ToInternalConfig(
   };
 }
 
-void TrustedFlatlandFactoryImpl::CreateFlatland(
-    fidl::InterfaceRequest<fuchsia::ui::composition::Flatland> server_end,
-    fuchsia_ui_composition::TrustedFlatlandConfig config) {
-  flatland_manager_->CreateFlatland(std::move(server_end), ToInternalConfig(config));
+void TrustedFlatlandFactoryImpl::CreateFlatland(CreateFlatlandRequest& request,
+                                                CreateFlatlandCompleter::Sync& completer) {
+  if (!IsValidConfig(request.config())) {
+    FX_LOGS(WARNING) << "CreateFlatland called with invalid config.";
+    completer.Reply(fit::error(fuchsia_ui_composition::TrustedFlatlandFactoryError::kBadOperation));
+    return;
+  }
+
+  fidl::InterfaceRequest<fuchsia::ui::composition::Flatland> server_end(
+      request.server_end().TakeChannel());
+  std::optional<scheduling::SessionId> session_id =
+      flatland_manager_->CreateFlatland(std::move(server_end), ToInternalConfig(request.config()));
+  if (!session_id.has_value()) {
+    completer.Reply(fit::error(fuchsia_ui_composition::TrustedFlatlandFactoryError::kBadOperation));
+    return;
+  }
+  completer.Reply(fit::ok());
 }
 
 }  // namespace flatland
