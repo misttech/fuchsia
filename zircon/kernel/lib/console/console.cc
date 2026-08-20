@@ -30,17 +30,11 @@
 
 #include <ktl/enforce.h>
 
-#ifndef CONSOLE_ENABLE_HISTORY
-#define CONSOLE_ENABLE_HISTORY 1
-#endif
-
 #define LINE_LEN 128
 
 #define PANIC_LINE_LEN 32
 
 #define MAX_NUM_ARGS 16
-
-#define HISTORY_LEN 16
 
 #define LOCAL_TRACE 0
 
@@ -62,115 +56,18 @@ DECLARE_SINGLETON_MUTEX(CommandLock);
 }  // namespace
 static int lastresult;
 
-#if CONSOLE_ENABLE_HISTORY
-/* command history stuff */
-static char* history;  // HISTORY_LEN rows of LINE_LEN chars a piece
-static uint history_next;
+// FFI bindings for console history. The Rust implementation is the source of truth and safely
+// handles cases where history is disabled or not compiled in.
+extern "C" bool rust_console_is_history_enabled(void);
+extern "C" void rust_console_init_history(void);
+extern "C" void rust_console_add_history(const char* line);
+extern "C" uint32_t rust_console_start_history_cursor(void);
+extern "C" const char* rust_console_next_history(uint32_t* cursor);
+extern "C" const char* rust_console_prev_history(uint32_t* cursor);
 
-static void init_history(void);
-static void add_history(const char* line);
-static uint start_history_cursor(void);
-static const char* next_history(uint* cursor);
-static const char* prev_history(uint* cursor);
-static void dump_history(void);
-#endif
-
-// A linear array of statically defined commands.
-extern const cmd __start_commands[];
-extern const cmd __stop_commands[];
-
-#if CONSOLE_ENABLE_HISTORY
-static int cmd_history(int argc, const cmd_args* argv, uint32_t flags);
-#endif
-
-STATIC_COMMAND_START
-#if CONSOLE_ENABLE_HISTORY
-STATIC_COMMAND_MASKED("history", "command history", &cmd_history, CMD_AVAIL_ALWAYS)
-#endif
-STATIC_COMMAND_END(history)
-
-static void console_init(uint level) {
-#if CONSOLE_ENABLE_HISTORY
-  init_history();
-#endif
-}
+static void console_init(uint level) { rust_console_init_history(); }
 
 LK_INIT_HOOK(console, console_init, LK_INIT_LEVEL_HEAP)
-
-#if CONSOLE_ENABLE_HISTORY
-static int cmd_history(int argc, const cmd_args* argv, uint32_t flags) {
-  dump_history();
-  return 0;
-}
-
-static inline char* history_line(uint line) { return history + line * LINE_LEN; }
-
-static inline uint ptrnext(uint ptr) { return (ptr + 1) % HISTORY_LEN; }
-
-static inline uint ptrprev(uint ptr) { return (ptr - 1) % HISTORY_LEN; }
-
-static void dump_history(void) {
-  printf("command history:\n");
-  uint ptr = ptrprev(history_next);
-  int i;
-  for (i = 0; i < HISTORY_LEN; i++) {
-    if (history_line(ptr)[0] != 0)
-      printf("\t%s\n", history_line(ptr));
-    ptr = ptrprev(ptr);
-  }
-}
-
-static void init_history(void) {
-  /* allocate and set up the history buffer */
-  history = static_cast<char*>(calloc(1, HISTORY_LEN * LINE_LEN));
-  history_next = 0;
-}
-
-static void add_history(const char* line) {
-  // reject some stuff
-  if (line[0] == 0)
-    return;
-
-  uint last = ptrprev(history_next);
-  if (strcmp(line, history_line(last)) == 0)
-    return;
-
-  strlcpy(history_line(history_next), line, LINE_LEN);
-  history_next = ptrnext(history_next);
-}
-
-static uint start_history_cursor(void) { return ptrprev(history_next); }
-
-static const char* next_history(uint* cursor) {
-  uint i = ptrnext(*cursor);
-
-  if (i == history_next)
-    return "";  // can't let the cursor hit the head
-
-  *cursor = i;
-  return history_line(i);
-}
-
-static const char* prev_history(uint* cursor) {
-  uint i;
-  const char* str = history_line(*cursor);
-
-  /* if we are already at head, stop here */
-  if (*cursor == history_next)
-    return str;
-
-  /* back up one */
-  i = ptrprev(*cursor);
-
-  /* if the next one is gonna be null */
-  if (history_line(i)[0] == '\0')
-    return str;
-
-  /* update the cursor */
-  *cursor = i;
-  return str;
-}
-#endif
 
 static inline int cgetchar(void) {
   char c;
@@ -183,9 +80,7 @@ static inline void cputs(const char* s) { platform_dputs_thread(s, strlen(s)); }
 static int read_debug_line(const char** outbuffer, void* cookie) {
   size_t pos = 0;
   int escape_level = 0;
-#if CONSOLE_ENABLE_HISTORY
-  uint history_cursor = start_history_cursor();
-#endif
+  uint32_t history_cursor = rust_console_start_history_cursor();
 
   char* buffer = debug_buffer;
 
@@ -247,9 +142,11 @@ static int read_debug_line(const char** outbuffer, void* cookie) {
             }
           }
           break;
-#if CONSOLE_ENABLE_HISTORY
         case 65:  // up arrow -- previous history
         case 66:  // down arrow -- next history
+          if (!rust_console_is_history_enabled()) {
+            break;
+          }
           // wipe out the current line
           while (pos > 0) {
             pos--;
@@ -259,14 +156,13 @@ static int read_debug_line(const char** outbuffer, void* cookie) {
           }
 
           if (c == 65)
-            strlcpy(buffer, prev_history(&history_cursor), LINE_LEN);
+            strlcpy(buffer, rust_console_prev_history(&history_cursor), LINE_LEN);
           else
-            strlcpy(buffer, next_history(&history_cursor), LINE_LEN);
+            strlcpy(buffer, rust_console_next_history(&history_cursor), LINE_LEN);
           pos = strlen(buffer);
           if (rust_console_get_echo())
             cputs(buffer);
           break;
-#endif
         default:
           break;
       }
@@ -287,10 +183,8 @@ done:
   // null terminate
   buffer[pos] = 0;
 
-#if CONSOLE_ENABLE_HISTORY
   // add to history
-  add_history(buffer);
-#endif
+  rust_console_add_history(buffer);
 
   // return a pointer to our buffer
   *outbuffer = buffer;
@@ -639,10 +533,8 @@ static int fetch_next_line(const char** buffer, void* cookie) {
   }
   lineread->buffer[bufpos] = 0;
 
-#if CONSOLE_ENABLE_HISTORY
   // add to history
-  add_history(lineread->buffer);
-#endif
+  rust_console_add_history(lineread->buffer);
 
   *buffer = lineread->buffer;
 
