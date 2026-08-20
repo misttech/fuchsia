@@ -303,7 +303,14 @@ pin_init!(Self {
       common naming differences, e.g. for functions C++ tends to use
       UpperCamelCase where as Rust uses lower_snake_case.
 
-### 3.11. FFI Interoperability
+### 3.12. Copyright Modernization & Preservation
+- Keep existing copyright headers and dates if the converted file is not
+  meaningfully divergent. Do not automatically modernize the year to the current
+  year when porting code that is largely a direct translation or maintains the
+  original architecture. Maintain the original copyright authors and dates from
+  the C++ file.
+
+### 3.13. FFI Interoperability
 - Minimal Shims: FFI functions (`*_ffi.cc`/`*_ffi.rs`) should be purely
   declarative with zero logic.
 - Consistent Naming:
@@ -400,6 +407,8 @@ Reviewers and Coders must audit code against this checklist:
      (via default module name or `#[unittest::suite(name = "...")]`) following
      conventions: keep `mod tests` idiomatic, append `_rust` if colliding with
      an existing C++ suite name (e.g. `cbuf_rust`), and avoid `rust_` prefixes.
+27.  [ ] **Copyright Preservation**: Original copyright authors and dates are
+     maintained if the ported file is not meaningfully divergent.
 
 ---
 
