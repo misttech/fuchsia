@@ -2,10 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{format_err, Error};
+use anyhow::{Error, format_err};
 use fuchsia_sync::Mutex;
 use futures::future::FutureExt;
-use futures::{pin_mut, StreamExt};
+use futures::{StreamExt, pin_mut};
 use std::sync::Arc;
 
 use bt_common::{PeerId, Uuid};
@@ -94,7 +94,8 @@ where
     };
 
     drop(pinned_stream);
-    let _ = connect::<T>(state.lock().get_central(), connect_id, None).await;
+    let central = state.lock().get_central();
+    let _ = connect::<T>(central, connect_id, None).await;
     Ok(())
 }
 

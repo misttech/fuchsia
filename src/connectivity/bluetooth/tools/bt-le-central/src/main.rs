@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{format_err, Context as _, Error};
+use anyhow::{Context as _, Error, format_err};
 use bt_gatt::Central;
 use bt_gatt_fuchsia::FuchsiaTypes;
 use fidl_fuchsia_bluetooth_le::CentralMarker;
@@ -142,12 +142,8 @@ where
 
     let peer_id: PeerId = PeerId::from_str(&args[0]).map_err(|_| format_err!("invalid peer id"))?;
 
-    central::connect::<T>(
-        state.lock().get_central(),
-        bt_gatt_fuchsia::to_gatt_peer_id(&peer_id.into()),
-        uuid,
-    )
-    .await
+    let central = state.lock().get_central();
+    central::connect::<T>(central, bt_gatt_fuchsia::to_gatt_peer_id(&peer_id.into()), uuid).await
 }
 
 fn usage(appname: &str) -> () {
