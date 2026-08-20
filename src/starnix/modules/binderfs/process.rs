@@ -177,12 +177,12 @@ pub struct TransactionState {
     /// is a local process.
     pub remote_resource_accessor: Option<Arc<RemoteResourceAccessor>>,
     /// The objects to strongly owned for the duration of the transaction.
-    pub guards: Vec<StrongRefGuard>,
+    pub guards: smallvec::SmallVec<[StrongRefGuard; 2]>,
     /// The handles to decrement their strong reference count.
-    pub handles: Vec<Handle>,
+    pub handles: smallvec::SmallVec<[Handle; 2]>,
     /// The FDs of the target process that the kernel is responsible for closing, because they were
     /// sent with BINDER_TYPE_FDA.
-    pub owned_fds: Vec<FdNumber>,
+    pub owned_fds: smallvec::SmallVec<[FdNumber; 2]>,
 }
 
 impl Releasable for TransactionState {
@@ -222,7 +222,7 @@ impl Releasable for TransactionState {
             if let Some(task) = get_task_for_thread_group(&self.key) {
                 let resource_accessor =
                     get_resource_accessor(task.deref(), &self.remote_resource_accessor);
-                if let Err(error) = resource_accessor.close_files(self.owned_fds) {
+                if let Err(error) = resource_accessor.close_files(self.owned_fds.into_vec()) {
                     log_warn!(
                         "Error when dropping transaction state while closing fd for task {}: {:?}",
                         task.tid,
@@ -244,7 +244,7 @@ pub struct TransientTransactionState<'a> {
     /// The task to which the transient file descriptors belong.
     pub accessor: &'a dyn ResourceAccessor,
     /// The file descriptors to close in case of an error.
-    pub transient_fds: Vec<FdNumber>,
+    pub transient_fds: smallvec::SmallVec<[FdNumber; 2]>,
     /// A guard that will ensure a panic on drop if `state` has not been released.
     pub drop_guard: DropGuard,
 }
@@ -252,7 +252,9 @@ pub struct TransientTransactionState<'a> {
 impl<'a> Releasable for TransientTransactionState<'a> {
     type Context<'b> = ();
     fn release<'b>(self, _: ()) {
-        let _ = self.accessor.close_files(self.transient_fds);
+        if !self.transient_fds.is_empty() {
+            let _ = self.accessor.close_files(self.transient_fds.into_vec());
+        }
         self.state.release(());
         self.drop_guard.disarm();
     }
@@ -278,14 +280,14 @@ impl<'a> TransientTransactionState<'a> {
                     proc: target_proc.weak_self.clone(),
                     key: target_proc.key.clone(),
                     remote_resource_accessor: target_proc.remote_resource_accessor.clone(),
-                    guards: vec![],
-                    handles: vec![],
-                    owned_fds: vec![],
+                    guards: smallvec::SmallVec::new(),
+                    handles: smallvec::SmallVec::new(),
+                    owned_fds: smallvec::SmallVec::new(),
                 }
                 .into(),
             ),
             accessor,
-            transient_fds: vec![],
+            transient_fds: smallvec::SmallVec::new(),
             drop_guard: DropGuard::default(),
         }
         .into()
