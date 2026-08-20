@@ -4,6 +4,7 @@
 # license that can be found in the LICENSE file or at
 # https://opensource.org/licenses/MIT
 
+import("//build/config/compiler_config.gni")
 import("//build/zircon/zircon_cpu.gni")
 
 # 1 shadow byte covers 2^3 bytes.
@@ -94,8 +95,9 @@ config("kasan-defines") {
   ]
 }
 
-config("kasan") {
+compiler_config("kasan") {
   configs = [ ":kasan-defines" ]
+
   cflags = [
     # This tells the instrumentation to treat user-defined operator
     # new[] like the standard one and check that the array cookie is
@@ -103,27 +105,25 @@ config("kasan") {
     # operator new[] in the kernel, and it just wraps the normal
     # allocation semantics.
     "-fsanitize-address-poison-custom-array-cookie",
+  ]
 
+  llvm_flags = [
     # TODO(https://fxbug.dev/42104852): Disable poisoning around stack allocations until later.
-    "-mllvm",
     "-asan-stack=0",
 
-    "-mllvm",
     "-asan-mapping-scale=$asan_mapping_scale",
 
-    "-mllvm",
     "-asan-mapping-offset=$asan_mapping_offset",
 
     # Avoid GOT-indirected weak symbol references used with
     # __asan_register_elf_globals
-    "-mllvm",
     "-asan-globals-live-support=false",
   ]
+
   if (current_cpu == "arm64") {
-    cflags += [
+    llvm_flags += [
       # TODO(https://fxbug.dev/42104852): Disable inline instrumentation on arm64 until we
       # preallocate/pre-map the ASAN shadow.
-      "-mllvm",
       "-asan-instrumentation-with-call-threshold=0",
     ]
   }
