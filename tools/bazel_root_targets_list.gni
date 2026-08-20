@@ -225,6 +225,11 @@ tools_bazel_root_targets = [
     install_host_tool = true
   },
   {
+    bazel_label = "//tools/create:create_bin"
+    ninja_name = "create"
+    install_host_tool = true
+  },
+  {
     bazel_label = "//tools/fidl/fidldoc:fidldoc"
     install_host_tool = true
   },

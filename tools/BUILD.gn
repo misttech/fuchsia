@@ -24,7 +24,7 @@ if (is_host) {
       "//tools/component_id_index",
       "//tools/component_manager_config",
       "//tools/configc:install",
-      "//tools/create:install",
+      "//tools/create",
       "//tools/doc_checker",
       "//tools/dupefinder",
       "//tools/fidl",

@@ -3,19 +3,12 @@
 # found in the LICENSE file.
 
 import("//build/host.gni")
-import("//build/rust/rustc_binary.gni")
-
-install_host_tools("install") {
-  deps = [
-    ":create_bin($host_toolchain)",
-    "templates($host_toolchain)",
-  ]
-
-  outputs = [ "create" ]
-}
 
 group("create") {
-  deps = [ ":install" ]
+  deps = [
+    "templates($host_toolchain)",
+    "//build/bazel/host:bazel_root_host_tools.create.host_tool",
+  ]
 }
 
 group("tests") {

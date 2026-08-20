@@ -76,7 +76,7 @@ template("golden_test") {
       ":${target_copy_goldens}",
 
       # The test script invokes the create tool.
-      "//tools/create:install",
+      "//tools/create",
     ]
     output_conversion = "json"
 
