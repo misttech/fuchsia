@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use super::ResolverError;
 use crate::upgradable_packages::UpgradablePackages;
 use anyhow::Context as _;
 use fidl::endpoints::ServerEnd;
@@ -106,7 +105,7 @@ async fn resolve_with_context(
     open_packages: &crate::RootDirCache,
     scope: package_directory::ExecutionScope,
     upgradable_packages: &Option<Arc<UpgradablePackages>>,
-) -> Result<fpkg::ResolutionContext, ResolverError> {
+) -> Result<fpkg::ResolutionContext, Error> {
     resolve_with_context_impl(
         &PackageUrl::parse(package_url)?,
         context,
@@ -129,11 +128,11 @@ pub(super) async fn resolve_with_context_impl(
     open_packages: &crate::RootDirCache,
     scope: package_directory::ExecutionScope,
     upgradable_packages: &Option<Arc<UpgradablePackages>>,
-) -> Result<fpkg::ResolutionContext, ResolverError> {
+) -> Result<fpkg::ResolutionContext, Error> {
     match package_url {
         PackageUrl::Absolute(url) => {
             if !context.bytes.is_empty() {
-                return Err(ResolverError::ContextWithAbsoluteUrl);
+                return Err(Error::ContextWithAbsoluteUrl);
             }
             resolve_impl(
                 url,
@@ -160,7 +159,7 @@ async fn resolve(
     open_packages: &crate::RootDirCache,
     scope: package_directory::ExecutionScope,
     upgradable_packages: &Option<Arc<UpgradablePackages>>,
-) -> Result<fpkg::ResolutionContext, ResolverError> {
+) -> Result<fpkg::ResolutionContext, Error> {
     resolve_impl(
         &url.parse()?,
         dir,
@@ -181,7 +180,7 @@ pub(super) async fn resolve_impl(
     open_packages: &crate::RootDirCache,
     scope: package_directory::ExecutionScope,
     upgradable_packages: &Option<Arc<UpgradablePackages>>,
-) -> Result<fpkg::ResolutionContext, ResolverError> {
+) -> Result<fpkg::ResolutionContext, Error> {
     let url = match url {
         AbsolutePackageUrl::Pinned(pinned) => {
             // Resolution of pinned packages is used by CM to save memory by recreating component
@@ -195,12 +194,12 @@ pub(super) async fn resolve_impl(
             match base_index.url_to_hash(pinned.as_unpinned()) {
                 Some(base_hash) if base_hash == &pinned.hash() => url,
                 Some(base_hash) => {
-                    return Err(ResolverError::MismatchedPin {
+                    return Err(Error::MismatchedPin {
                         pinned_hash: pinned.hash(),
                         base_hash: *base_hash,
                     });
                 }
-                None => return Err(ResolverError::PackageHashNotSupported),
+                None => return Err(Error::PackageHashNotSupported),
             }
         }
         AbsolutePackageUrl::Unpinned(url) => url,
@@ -217,7 +216,7 @@ pub(crate) async fn resolve_package(
     open_packages: &crate::RootDirCache,
     scope: package_directory::ExecutionScope,
     upgradable_packages: &Option<Arc<UpgradablePackages>>,
-) -> Result<fuchsia_hash::Hash, ResolverError> {
+) -> Result<fuchsia_hash::Hash, Error> {
     // TODO(https://fxbug.dev/335388895) Remove zero-variant fallback once variant concept is gone.
     // Base packages must have a variant of zero, and the variant is cleared before adding the URL
     // to the base_packages map. Clients are allowed to specify or omit the variant (clients
@@ -232,11 +231,9 @@ pub(crate) async fn resolve_package(
     };
     let hash = get_package_hash(url, base_index, upgradable_packages)
         .await
-        .ok_or_else(|| ResolverError::PackageNotInBase(url.clone().into()))?;
-    let root = open_packages
-        .get_or_insert(hash, None)
-        .await
-        .map_err(ResolverError::ServePackageDirectory)?;
+        .ok_or_else(|| Error::PackageNotInIndex)?;
+    let root =
+        open_packages.get_or_insert(hash, None).await.map_err(Error::CreatePackageDirectory)?;
     vfs::directory::serve_on(root, FLAGS, scope, dir);
     Ok(hash)
 }
@@ -264,25 +261,98 @@ async fn resolve_subpackage(
     authenticator: context_authenticator::ContextAuthenticator,
     open_packages: &crate::RootDirCache,
     scope: package_directory::ExecutionScope,
-) -> Result<fpkg::ResolutionContext, ResolverError> {
+) -> Result<fpkg::ResolutionContext, Error> {
     let super_hash = authenticator.clone().authenticate(context)?;
-    let super_package =
-        open_packages.get(&super_hash).ok_or_else(|| ResolverError::SuperpackageNotOpen {
-            superpackage: super_hash,
-            subpackage: package_url.clone(),
-        })?;
+    let super_package = open_packages.get(&super_hash).ok_or_else(|| {
+        Error::SuperpackageNotOpen { superpackage: super_hash, subpackage: package_url.clone() }
+    })?;
     let subpackage = *super_package
         .subpackages()
         .await?
         .subpackages()
         .get(package_url)
-        .ok_or_else(|| ResolverError::SubpackageNotFound)?;
+        .ok_or_else(|| Error::SubpackageNotFound)?;
     let root = open_packages
         .get_or_insert(subpackage, None)
         .await
-        .map_err(ResolverError::ServePackageDirectory)?;
+        .map_err(Error::CreatePackageDirectory)?;
     vfs::directory::serve_on(root, FLAGS, scope, dir);
     Ok(authenticator.create(&subpackage))
+}
+
+#[derive(thiserror::Error, Debug)]
+pub(crate) enum Error {
+    #[error("invalid URL")]
+    InvalidUrl(#[from] fuchsia_url::errors::ParseError),
+
+    #[error("resolution of pinned URLs only supported for base packages")]
+    PackageHashNotSupported,
+
+    #[error("hash in URL does not match hash in index, url: {pinned_hash}, index: {base_hash}")]
+    MismatchedPin { pinned_hash: fuchsia_hash::Hash, base_hash: fuchsia_hash::Hash },
+
+    #[error("create package directory")]
+    CreatePackageDirectory(#[source] package_directory::Error),
+
+    #[error("context must be empty when resolving absolute URL")]
+    ContextWithAbsoluteUrl,
+
+    #[error("subpackage name was not found in the package's subpackage list")]
+    SubpackageNotFound,
+
+    #[error("the package URL was not found in the index")]
+    PackageNotInIndex,
+
+    #[error("failed to read the superpackage's subpackage manifest")]
+    ReadingSubpackageManifest(#[from] package_directory::SubpackagesError),
+
+    #[error("invalid context")]
+    InvalidContext(#[from] context_authenticator::ContextAuthenticatorError),
+
+    #[error(
+        "package directory for {superpackage} was not open when resolving subpackage {subpackage}"
+    )]
+    SuperpackageNotOpen {
+        superpackage: fuchsia_hash::Hash,
+        subpackage: fuchsia_url::RelativePackageUrl,
+    },
+}
+
+impl From<&Error> for fidl_fuchsia_component_resolution::ResolverError {
+    fn from(err: &Error) -> fidl_fuchsia_component_resolution::ResolverError {
+        use Error::*;
+        use fidl_fuchsia_component_resolution::ResolverError as ferror;
+        match err {
+            InvalidUrl(_)
+            | PackageHashNotSupported
+            | MismatchedPin { .. }
+            | InvalidContext(_)
+            | ContextWithAbsoluteUrl => ferror::InvalidArgs,
+            CreatePackageDirectory(_) | ReadingSubpackageManifest(_) => ferror::Io,
+            SuperpackageNotOpen { .. } => ferror::Internal,
+            SubpackageNotFound | PackageNotInIndex => ferror::PackageNotFound,
+        }
+    }
+}
+
+impl From<Error> for fidl_fuchsia_component_resolution::ResolverError {
+    fn from(err: Error) -> fidl_fuchsia_component_resolution::ResolverError {
+        (&err).into()
+    }
+}
+
+impl From<&Error> for fpkg::ResolveError {
+    fn from(err: &Error) -> fpkg::ResolveError {
+        use Error::*;
+        use fpkg::ResolveError as ferror;
+        match err {
+            InvalidUrl(_) | PackageHashNotSupported | MismatchedPin { .. } => ferror::InvalidUrl,
+            SuperpackageNotOpen { .. } => ferror::Internal,
+            CreatePackageDirectory(_) | ReadingSubpackageManifest(_) => ferror::Io,
+            PackageNotInIndex | SubpackageNotFound => ferror::PackageNotFound,
+            ContextWithAbsoluteUrl | InvalidContext(_) => ferror::InvalidContext,
+        }
+    }
 }
 
 #[cfg(test)]
@@ -308,7 +378,7 @@ mod tests {
                 &None,
             )
             .await,
-            Err(ResolverError::MismatchedPin{pinned_hash, base_hash})
+            Err(Error::MismatchedPin{pinned_hash, base_hash})
                 if pinned_hash == [17; 32].into() && base_hash == [0; 32].into()
         )
     }
@@ -387,7 +457,7 @@ mod tests {
                 &None,
             )
             .await,
-            Err(ResolverError::PackageNotInBase(_))
+            Err(Error::PackageNotInIndex)
         );
     }
 }

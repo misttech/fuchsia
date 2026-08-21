@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use super::ResolverError;
 use crate::upgradable_packages::UpgradablePackages;
 use anyhow::Context as _;
 use fidl::endpoints::Proxy as _;
@@ -98,13 +97,13 @@ async fn resolve(
     open_packages: &crate::RootDirCache,
     scope: package_directory::ExecutionScope,
     upgradable_packages: &Option<Arc<UpgradablePackages>>,
-) -> Result<fcomponent_resolution::Component, ResolverError> {
+) -> Result<fcomponent_resolution::Component, Error> {
     let url = ComponentUrl::parse(url)?;
     let (package, server_end) = fidl::endpoints::create_proxy();
     let context = super::package::resolve_impl(
         match url.package_url() {
             PackageUrl::Absolute(url) => url,
-            PackageUrl::Relative(_) => Err(ResolverError::AbsoluteUrlRequired)?,
+            PackageUrl::Relative(_) => Err(Error::AbsoluteUrlRequired)?,
         },
         server_end,
         base_index,
@@ -113,7 +112,8 @@ async fn resolve(
         scope,
         upgradable_packages,
     )
-    .await?;
+    .await
+    .map_err(Error::PackageResolve)?;
     resolve_from_package(&url, package, fcomponent_resolution::Context { bytes: context.bytes })
         .await
 }
@@ -126,7 +126,7 @@ async fn resolve_with_context(
     open_packages: &crate::RootDirCache,
     scope: package_directory::ExecutionScope,
     upgradable_packages: &Option<Arc<UpgradablePackages>>,
-) -> Result<fcomponent_resolution::Component, ResolverError> {
+) -> Result<fcomponent_resolution::Component, Error> {
     let url = ComponentUrl::parse(url)?;
     let (package, server_end) = fidl::endpoints::create_proxy();
     let context = super::package::resolve_with_context_impl(
@@ -139,7 +139,8 @@ async fn resolve_with_context(
         scope,
         upgradable_packages,
     )
-    .await?;
+    .await
+    .map_err(Error::PackageResolve)?;
     resolve_from_package(&url, package, fcomponent_resolution::Context { bytes: context.bytes })
         .await
 }
@@ -147,21 +148,21 @@ async fn resolve_with_context(
 async fn load_config(
     decl: &fcomponent_decl::Component,
     package: &fio::DirectoryProxy,
-) -> Result<Option<fidl_fuchsia_mem::Data>, ResolverError> {
+) -> Result<Option<fidl_fuchsia_mem::Data>, Error> {
     let Some(config_decl) = decl.config.as_ref() else {
         return Ok(None);
     };
-    let strategy = config_decl.value_source.as_ref().ok_or(ResolverError::InvalidConfigSource)?;
+    let strategy = config_decl.value_source.as_ref().ok_or(Error::InvalidConfigSource)?;
     let config_path = match strategy {
         fcomponent_decl::ConfigValueSource::Capabilities(_) => return Ok(None),
         fcomponent_decl::ConfigValueSource::PackagePath(path) => path,
-        other => return Err(ResolverError::UnsupportedConfigSource(other.to_owned())),
+        other => return Err(Error::UnsupportedConfigSource(other.to_owned())),
     };
 
     Ok(Some(
         mem_util::open_file_data(package, config_path)
             .await
-            .map_err(ResolverError::ConfigValuesNotFound)?,
+            .map_err(Error::ConfigValuesNotFound)?,
     ))
 }
 
@@ -169,19 +170,18 @@ async fn resolve_from_package(
     url: &ComponentUrl,
     package: fio::DirectoryProxy,
     outgoing_context: fcomponent_resolution::Context,
-) -> Result<fcomponent_resolution::Component, ResolverError> {
+) -> Result<fcomponent_resolution::Component, Error> {
     let data = mem_util::open_file_data(&package, url.resource())
         .await
-        .map_err(ResolverError::ComponentNotFound)?;
-    let decl: fcomponent_decl::Component = fidl::unpersist(
-        mem_util::bytes_from_data(&data).map_err(ResolverError::ReadManifest)?.as_ref(),
-    )
-    .map_err(ResolverError::ParsingManifest)?;
+        .map_err(Error::ComponentNotFound)?;
+    let decl: fcomponent_decl::Component =
+        fidl::unpersist(mem_util::bytes_from_data(&data).map_err(Error::ReadManifest)?.as_ref())
+            .map_err(Error::ParsingManifest)?;
     let config_values = load_config(&decl, &package).await?;
     let abi_revision =
         fidl_fuchsia_component_abi_ext::read_abi_revision_optional(&package, AbiRevision::PATH)
             .await
-            .map_err(ResolverError::AbiRevision)?;
+            .map_err(Error::AbiRevision)?;
     Ok(fcomponent_resolution::Component {
         url: Some(url.to_string()),
         resolution_context: Some(outgoing_context),
@@ -191,7 +191,7 @@ async fn resolve_from_package(
             directory: Some(
                 package
                     .into_channel()
-                    .map_err(|_| ResolverError::ConvertProxyToChannel)?
+                    .map_err(|_| Error::ConvertProxyToChannel)?
                     .into_zx_channel()
                     .into(),
             ),
@@ -201,6 +201,73 @@ async fn resolve_from_package(
         abi_revision: abi_revision.map(Into::into),
         ..Default::default()
     })
+}
+
+#[derive(thiserror::Error, Debug)]
+pub(crate) enum Error {
+    #[error("invalid URL")]
+    InvalidUrl(#[from] fuchsia_url::errors::ParseError),
+
+    #[error("component not found")]
+    ComponentNotFound(#[source] mem_util::FileError),
+
+    #[error("couldn't parse component manifest")]
+    ParsingManifest(#[source] fidl::Error),
+
+    #[error("couldn't find config values")]
+    ConfigValuesNotFound(#[source] mem_util::FileError),
+
+    #[error("config source missing or invalid")]
+    InvalidConfigSource,
+
+    #[error("resolving the package")]
+    PackageResolve(#[source] super::package::Error),
+
+    #[error("unsupported config source: {0:?}")]
+    UnsupportedConfigSource(fcomponent_decl::ConfigValueSource),
+
+    #[error("failed to read the manifest")]
+    ReadManifest(#[source] mem_util::DataError),
+
+    #[error("failed to read abi revision")]
+    AbiRevision(#[source] fidl_fuchsia_component_abi_ext::AbiRevisionFileError),
+
+    #[error("failed to read the superpackage's subpackage manifest")]
+    ReadingSubpackageManifest(#[from] package_directory::SubpackagesError),
+
+    #[error("invalid context")]
+    InvalidContext(#[from] context_authenticator::ContextAuthenticatorError),
+
+    #[error("resolve must be called with an absolute (not relative) url")]
+    AbsoluteUrlRequired,
+
+    #[error("failed to convert proxy to channel")]
+    ConvertProxyToChannel,
+}
+
+impl From<&Error> for fcomponent_resolution::ResolverError {
+    fn from(err: &Error) -> fcomponent_resolution::ResolverError {
+        use Error::*;
+        use fcomponent_resolution::ResolverError as ferror;
+        match err {
+            InvalidUrl(_) | InvalidContext(_) | AbsoluteUrlRequired => ferror::InvalidArgs,
+            ComponentNotFound(_) => ferror::ManifestNotFound,
+            PackageResolve(e) => e.into(),
+            ConfigValuesNotFound(_) => ferror::ConfigValuesNotFound,
+            ParsingManifest(_) | UnsupportedConfigSource(_) | InvalidConfigSource => {
+                ferror::InvalidManifest
+            }
+            ReadManifest(_) | ReadingSubpackageManifest(_) => ferror::Io,
+            ConvertProxyToChannel => ferror::Internal,
+            AbiRevision(_) => ferror::InvalidAbiRevision,
+        }
+    }
+}
+
+impl From<Error> for fcomponent_resolution::ResolverError {
+    fn from(err: Error) -> fcomponent_resolution::ResolverError {
+        (&err).into()
+    }
 }
 
 #[cfg(test)]
@@ -220,7 +287,7 @@ mod tests {
                 &None,
             )
             .await,
-            Err(ResolverError::AbsoluteUrlRequired)
+            Err(Error::AbsoluteUrlRequired)
         )
     }
 }

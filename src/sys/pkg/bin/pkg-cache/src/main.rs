@@ -505,7 +505,7 @@ async fn serve_base_package_if_present(
     .await
     {
         Ok::<fuchsia_hash::Hash, _>(_) => (),
-        Err(base_resolver::ResolverError::PackageNotInBase(_)) => {
+        Err(base_resolver::package::Error::PackageNotInIndex) => {
             log::warn!(url:%; "package not in base, so exposed directory will close connections")
         }
         Err(e) => Err(e).context("resolving specific base package")?,
