@@ -35,6 +35,12 @@ FFI_ALWAYS_INLINE zx_status_t cpp_make_partially_committed_pager_vmo(
   return status;
 }
 
+FFI_ALWAYS_INLINE zx_status_t cpp_supply_pager_vmo_pages(VmObjectPaged* vmo, uint64_t page_offset,
+                                                         uint64_t num_pages,
+                                                         vm_page_t** out_pages) {
+  return vm_unittest::supply_pager_vmo_pages(vmo, page_offset, num_pages, out_pages);
+}
+
 FFI_ALWAYS_INLINE bool cpp_verify_continuous_attribution_bytes(VmObject* vmo,
                                                                uint64_t expected_bytes) {
   return vm_unittest::verify_continuous_attribution_bytes(*vmo, expected_bytes);

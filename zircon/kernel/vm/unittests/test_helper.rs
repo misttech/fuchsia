@@ -98,6 +98,32 @@ pub fn make_partially_committed_pager_vmo<const C: usize>(
     Ok((vmo, pages))
 }
 
+/// Re-supplies `num_pages` to `vmo` starting at `page_offset`, returning the updated pages array.
+pub fn supply_pager_vmo_pages<const N: usize>(
+    vmo: &VmObjectPaged,
+    page_offset: u64,
+    num_pages: u64,
+) -> Result<[VmPagePtr; N], Status> {
+    let mut pages = [core::ptr::null_mut(); N];
+    // SAFETY: `vmo.as_raw()` is a valid pointer to a live `VmObjectPaged`. `pages.as_mut_ptr()`
+    // points to a stack array of length `N`.
+    let status = unsafe {
+        bindings::cpp_supply_pager_vmo_pages(
+            vmo.as_raw(),
+            page_offset,
+            num_pages,
+            pages.as_mut_ptr(),
+        )
+    };
+    Status::ok(status)?;
+    let pages = pages.map(|page| {
+        // SAFETY: When `cpp_supply_pager_vmo_pages` returns ZX_OK, `page` is guaranteed
+        // to be a valid pointer to a page.
+        unsafe { VmPagePtr::from_ffi(page) }.expect("page pointer is non-null")
+    });
+    Ok(pages)
+}
+
 /// Verifies that `vmo` has `expected_bytes` tracked by continuous attribution.
 pub fn verify_continuous_attribution_bytes(vmo: &VmObject, expected_bytes: u64) -> bool {
     // SAFETY: `vmo.as_raw()` points to a live `VmObjectPaged`.

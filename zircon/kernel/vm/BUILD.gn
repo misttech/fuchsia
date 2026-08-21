@@ -560,7 +560,12 @@ kernel_bindgen_crate("attribution-bindings") {
 
   edition = "2024"
   notice_year = 2026
-  function_allowlist = [ "cpp_attribution_counts_zero" ]
+  function_allowlist = [
+    "cpp_attribution_counts_zero",
+    "cpp_fractional_bytes_add",
+    "cpp_fractional_bytes_from_fraction",
+    "cpp_fractional_bytes_from_whole",
+  ]
   type_allowlist = [
     "vm::AttributionCounts",
     "vm::FractionalBytes",
@@ -632,6 +637,7 @@ kernel_bindgen_crate("vm-object-bindings") {
     "cpp_vm_object_set_user_id",
     "cpp_vm_object_user_id",
     "cpp_vm_object_parent_user_id",
+    "cpp_vm_object_num_children",
     "cpp_vm_object_lookup",
     "cpp_vm_object_lookup_contiguous",
     "cpp_vm_object_get_page",
@@ -969,6 +975,7 @@ kernel_bindgen_crate("test-helper-bindings") {
     "cpp_make_committed_pager_vmo",
     "cpp_make_partially_committed_pager_vmo",
     "cpp_make_private_attribution_counts",
+    "cpp_supply_pager_vmo_pages",
     "cpp_test_region",
     "cpp_verify_continuous_attribution_bytes",
     "cpp_verify_private_attribution_counts",

@@ -13,7 +13,9 @@ mod vmo_rs {
         ARCH_MMU_FLAG_CACHE_MASK, ARCH_MMU_FLAG_PERM_READ, ARCH_MMU_FLAG_PERM_WRITE,
         ARCH_MMU_FLAG_UNCACHED, ARCH_MMU_FLAG_UNCACHED_DEVICE,
     };
+    use crate::vm::attribution::{self, AttributionCounts};
     use crate::vm::compressor::VmCompressor;
+    use crate::vm::fault;
     use crate::vm::page::VmPagePtr;
     use crate::vm::page_queues::PageQueues;
     use crate::vm::page_source::MultiPageRequest;
@@ -27,11 +29,10 @@ mod vmo_rs {
     use crate::vm::vm_object::{EvictionHint, Resizability, SnapshotType, VmObject};
     use crate::vm::vm_object_paged::VmObjectPaged;
     use crate::vm::vm_object_physical::VmObjectPhysical;
-    use crate::vm::{attribution, fault};
     use crate::vm_unittests::test_helper::{
         ARCH_RW_FLAGS, fill_and_test, fill_region, make_committed_pager_vmo,
-        make_partially_committed_pager_vmo, make_private_attribution_counts, test_region,
-        verify_continuous_attribution_bytes,
+        make_partially_committed_pager_vmo, make_private_attribution_counts,
+        supply_pager_vmo_pages, test_region, verify_continuous_attribution_bytes,
     };
     use core::ffi::c_void;
     use core::mem::MaybeUninit;
@@ -41,8 +42,8 @@ mod vmo_rs {
     use page::SIZE as PAGE_SIZE_USIZE;
     use pin_init::stack_pin_init;
     use unittest::{
-        assert_eq, assert_false, assert_le, assert_ok, assert_true, expect_eq, expect_false,
-        expect_gt, expect_ne, expect_ok, expect_true, unwrap_ok,
+        assert_eq, assert_false, assert_ge, assert_le, assert_lt, assert_ok, assert_true,
+        expect_eq, expect_false, expect_gt, expect_ne, expect_ok, expect_true, unwrap_ok,
     };
     use zx_status::Status;
     use zx_types::ZX_KOID_KERNEL;
@@ -1333,6 +1334,133 @@ mod vmo_rs {
         expect_eq!(0, queue.0);
     }
 
+    /// Tests memory attribution under various cloning behaviors.
+    #[test]
+    fn vmo_attribution_clones_test() {
+        // Tests memory attribution under various cloning behaviors - creation of snapshot clones
+        // and slices, removal of clones, committing pages in the original vmo and in the clones.
+        let _scanner_disable = AutoVmScannerDisable::new();
+
+        let vmo = unwrap_ok!(VmObjectPaged::create(pmm::ALLOC_FLAG_ANY, 0, 4 * PAGE_SIZE));
+        // Fake user id to keep the cloning code happy.
+        vmo.set_user_id(0xff);
+
+        expect_true!(vmo.get_attributed_memory() == attribution::zero());
+        expect_true!(verify_continuous_attribution_bytes(&vmo, 0));
+
+        // Commit the first two pages.
+        let status = vmo.commit_range(0, 2 * PAGE_SIZE);
+        assert_ok!(status);
+        expect_true!(
+            vmo.get_attributed_memory() == make_private_attribution_counts(2 * PAGE_SIZE, 0)
+        );
+        expect_true!(verify_continuous_attribution_bytes(&vmo, 2 * PAGE_SIZE));
+
+        // Create a clone that sees the second and third pages.
+        let clone = unwrap_ok!(vmo.create_clone(
+            Resizability::NonResizable,
+            SnapshotType::Full,
+            PAGE_SIZE,
+            2 * PAGE_SIZE,
+            true,
+        ));
+        clone.set_user_id(0xfc);
+
+        expect_true!(
+            vmo.get_attributed_memory()
+                == AttributionCounts {
+                    uncompressed_bytes: 2 * PAGE_SIZE_USIZE,
+                    private_uncompressed_bytes: PAGE_SIZE_USIZE,
+                    scaled_uncompressed_bytes: attribution::fractional_bytes_add(
+                        attribution::fractional_bytes_from_fraction(PAGE_SIZE, 2),
+                        attribution::fractional_bytes_from_whole(PAGE_SIZE),
+                    ),
+                    ..attribution::zero()
+                }
+        );
+        expect_true!(verify_continuous_attribution_bytes(&vmo, 2 * PAGE_SIZE));
+
+        expect_true!(
+            clone.get_attributed_memory()
+                == AttributionCounts {
+                    uncompressed_bytes: PAGE_SIZE_USIZE,
+                    scaled_uncompressed_bytes: attribution::fractional_bytes_from_fraction(
+                        PAGE_SIZE, 2
+                    ),
+                    ..attribution::zero()
+                }
+        );
+        expect_true!(verify_continuous_attribution_bytes(&clone, PAGE_SIZE));
+
+        // Commit both pages in the clone.
+        let status = clone.commit_range(0, 2 * PAGE_SIZE);
+        assert_ok!(status);
+        expect_true!(
+            vmo.get_attributed_memory() == make_private_attribution_counts(2 * PAGE_SIZE, 0)
+        );
+        expect_true!(
+            clone.get_attributed_memory() == make_private_attribution_counts(2 * PAGE_SIZE, 0)
+        );
+        expect_true!(verify_continuous_attribution_bytes(&vmo, 2 * PAGE_SIZE));
+        expect_true!(verify_continuous_attribution_bytes(&clone, 2 * PAGE_SIZE));
+
+        // Commit the last page in the original vmo.
+        let status = vmo.commit_range(3 * PAGE_SIZE, PAGE_SIZE);
+        assert_ok!(status);
+        expect_true!(
+            vmo.get_attributed_memory() == make_private_attribution_counts(3 * PAGE_SIZE, 0)
+        );
+        expect_true!(verify_continuous_attribution_bytes(&vmo, 3 * PAGE_SIZE));
+
+        // Create a slice that sees all four pages of the original vmo.
+        let slice = unwrap_ok!(vmo.create_child_slice(0, 4 * PAGE_SIZE, true));
+        slice.set_user_id(0xf5);
+
+        expect_true!(
+            vmo.get_attributed_memory() == make_private_attribution_counts(3 * PAGE_SIZE, 0)
+        );
+        expect_true!(
+            clone.get_attributed_memory() == make_private_attribution_counts(2 * PAGE_SIZE, 0)
+        );
+        expect_true!(verify_continuous_attribution_bytes(&vmo, 3 * PAGE_SIZE));
+        expect_true!(verify_continuous_attribution_bytes(&clone, 2 * PAGE_SIZE));
+        expect_true!(slice.get_attributed_memory() == attribution::zero());
+
+        // Committing the slice's last page is a no-op (as the page is already committed).
+        let status = slice.commit_range(3 * PAGE_SIZE, PAGE_SIZE);
+        assert_ok!(status);
+        expect_true!(
+            vmo.get_attributed_memory() == make_private_attribution_counts(3 * PAGE_SIZE, 0)
+        );
+        expect_true!(verify_continuous_attribution_bytes(&vmo, 3 * PAGE_SIZE));
+
+        // Committing the remaining 3 pages in the slice will commit pages in the original vmo.
+        let status = slice.commit_range(0, 4 * PAGE_SIZE);
+        assert_ok!(status);
+        expect_true!(
+            vmo.get_attributed_memory() == make_private_attribution_counts(4 * PAGE_SIZE, 0)
+        );
+        expect_true!(
+            clone.get_attributed_memory() == make_private_attribution_counts(2 * PAGE_SIZE, 0)
+        );
+        expect_true!(verify_continuous_attribution_bytes(&vmo, 4 * PAGE_SIZE));
+        expect_true!(verify_continuous_attribution_bytes(&clone, 2 * PAGE_SIZE));
+        expect_true!(slice.get_attributed_memory() == attribution::zero());
+
+        drop(clone);
+        expect_true!(
+            vmo.get_attributed_memory() == make_private_attribution_counts(4 * PAGE_SIZE, 0)
+        );
+        expect_true!(verify_continuous_attribution_bytes(&vmo, 4 * PAGE_SIZE));
+        expect_true!(slice.get_attributed_memory() == attribution::zero());
+
+        drop(slice);
+        expect_true!(
+            vmo.get_attributed_memory() == make_private_attribution_counts(4 * PAGE_SIZE, 0)
+        );
+        expect_true!(verify_continuous_attribution_bytes(&vmo, 4 * PAGE_SIZE));
+    }
+
     /// Tests memory attribution under various operations.
     #[test]
     fn vmo_attribution_ops_test() {
@@ -2335,7 +2463,7 @@ mod vmo_rs {
 
     /// Tests that contiguous VMOs can be decommitted when ppb is enabled.
     #[test]
-    fn vmo_contiguous_decommit_enabled() {
+    fn vmo_contiguous_decommit_enabled_test() {
         let _loaning_enabled = ScopedLoaningEnabled::new(true);
 
         let alloc_size: u64 = PAGE_SIZE * 16;
@@ -2411,6 +2539,111 @@ mod vmo_rs {
         }
     }
 
+    /// Tests eviction hints on a VMO.
+    #[test]
+    fn vmo_eviction_hints_test() {
+        let _scanner_disable = AutoVmScannerDisable::new();
+
+        // Create a pager-backed VMO with two pages.
+        let (vmo, mut pages) = unwrap_ok!(make_committed_pager_vmo::<2>(
+            /*trap_dirty=*/ false, /*resizable=*/ false
+        ));
+
+        // Newly created page should be in the first pager backed page queue.
+        // SAFETY: `pages[0]` is attached to `vmo`.
+        let queue = unsafe { pmm::page_queues().debug_page_is_reclaim(pages[0]) }
+            .expect("page is in reclaim queue");
+        expect_eq!(0, queue.0);
+
+        // Hint that first page is not needed.
+        assert_ok!(vmo.hint_range(0, PAGE_SIZE, EvictionHint::DontNeed));
+
+        // The page should now have moved to the Isolate queue.
+        // SAFETY: `pages[0]` is attached to `vmo`.
+        expect_false!(unsafe { pmm::page_queues().debug_page_is_reclaim(pages[0]) }.is_some());
+        // SAFETY: `pages[0]` is attached to `vmo`.
+        expect_true!(unsafe { pmm::page_queues().debug_page_is_reclaim_isolate(pages[0]) });
+
+        // Hint that the page is always needed.
+        assert_ok!(vmo.hint_range(0, PAGE_SIZE, EvictionHint::AlwaysNeed));
+
+        // If the page was loaned, it will be replaced with a non-loaned page now.
+        pages[0] = vmo.debug_get_page(0).expect("vmo should have a page at offset 0");
+
+        // The page should now have moved to the first LRU queue.
+        // SAFETY: `pages[0]` is attached to `vmo`.
+        expect_false!(unsafe { pmm::page_queues().debug_page_is_reclaim_isolate(pages[0]) });
+        // SAFETY: `pages[0]` is attached to `vmo`.
+        let queue = unsafe { pmm::page_queues().debug_page_is_reclaim(pages[0]) }
+            .expect("page is in reclaim queue");
+        expect_eq!(0, queue.0);
+
+        // We should not be able to evict the page.
+        // SAFETY: `pages[0]` is attached to `vmo` at offset 0.
+        assert_lt!(unsafe { reclaim(&vmo, pages[0], 0, EvictionAction::FollowHint) }, 2);
+        expect_true!(
+            make_private_attribution_counts(PAGE_SIZE, 0)
+                == vmo.get_attributed_memory_in_range(0, PAGE_SIZE)
+        );
+
+        // Hint that the page is not needed again.
+        assert_ok!(vmo.hint_range(0, PAGE_SIZE, EvictionHint::DontNeed));
+
+        // HintRange() is allowed to replace the page.
+        pages[0] = vmo.debug_get_page(0).expect("vmo should have a page at offset 0");
+
+        // The page should now have moved to the Isolate queue.
+        // SAFETY: `pages[0]` is attached to `vmo`.
+        expect_false!(unsafe { pmm::page_queues().debug_page_is_reclaim(pages[0]) }.is_some());
+        // SAFETY: `pages[0]` is attached to `vmo`.
+        expect_true!(unsafe { pmm::page_queues().debug_page_is_reclaim_isolate(pages[0]) });
+
+        // We should still not be able to evict the page, the AlwaysNeed hint is sticky.
+        // SAFETY: `pages[0]` is attached to `vmo` at offset 0.
+        assert_lt!(unsafe { reclaim(&vmo, pages[0], 0, EvictionAction::FollowHint) }, 2);
+        expect_true!(
+            make_private_attribution_counts(PAGE_SIZE, 0)
+                == vmo.get_attributed_memory_in_range(0, PAGE_SIZE)
+        );
+
+        // Accessing the page should move it out of the Isolate queue.
+        // SAFETY: `pages[0]` is attached to `vmo`.
+        expect_false!(unsafe { pmm::page_queues().debug_page_is_reclaim_isolate(pages[0]) });
+        // SAFETY: `pages[0]` is attached to `vmo`.
+        let queue = unsafe { pmm::page_queues().debug_page_is_reclaim(pages[0]) }
+            .expect("page is in reclaim queue");
+        expect_eq!(0, queue.0);
+
+        // Verify that the page can be rotated as normal.
+        pmm::page_queues().rotate_reclaim_queues();
+        // SAFETY: `pages[0]` is attached to `vmo`.
+        let queue = unsafe { pmm::page_queues().debug_page_is_reclaim(pages[0]) }
+            .expect("page is in reclaim queue");
+        expect_eq!(1, queue.0);
+
+        // Touching the page should move it back to the first queue.
+        unwrap_ok!(vmo.get_page_blocking(0, fault::flag::SW_FAULT));
+        // SAFETY: `pages[0]` is attached to `vmo`.
+        let queue = unsafe { pmm::page_queues().debug_page_is_reclaim(pages[0]) }
+            .expect("page is in reclaim queue");
+        expect_eq!(0, queue.0);
+
+        // We should be able to evict first page when told to override the hint.
+        // SAFETY: `pages[0]` is attached to `vmo` at offset 0.
+        assert_ge!(unsafe { reclaim(&vmo, pages[0], 0, EvictionAction::IgnoreHint) }, 1);
+        expect_true!(attribution::zero() == vmo.get_attributed_memory_in_range(0, PAGE_SIZE));
+
+        // Re-supply pages.
+        let mut pages = unwrap_ok!(supply_pager_vmo_pages::<2>(&vmo, 0, 2));
+
+        // Hint that second page is always needed.
+        assert_ok!(vmo.hint_range(PAGE_SIZE, PAGE_SIZE, EvictionHint::AlwaysNeed));
+        // If the page was loaned, it will be replaced with a non-loaned page now.
+        pages[1] =
+            vmo.debug_get_page(PAGE_SIZE).expect("vmo should have a page at offset PAGE_SIZE");
+        let _ = pages;
+    }
+
     /// Tests HintRange(AlwaysNeed) evicts loaned pages.
     #[test]
     fn vmo_always_need_evicts_loaned_test() {
@@ -2451,6 +2684,209 @@ mod vmo_rs {
 
             assert_false!(unsafe { page.is_loaned() });
         }
+    }
+
+    /// Tests eviction hints on clones.
+    #[test]
+    fn vmo_eviction_hints_clone_test() {
+        let _scanner_disable = AutoVmScannerDisable::new();
+
+        // Create a pager-backed VMO with two pages. We will fork a page in a clone later.
+        let (vmo, mut pages) = unwrap_ok!(make_committed_pager_vmo::<2>(
+            /*trap_dirty=*/ false, /*resizable=*/ false
+        ));
+
+        // Newly created pages should be in the first pager backed page queue.
+        // SAFETY: `pages[0]` is attached to `vmo`.
+        let queue = unsafe { pmm::page_queues().debug_page_is_reclaim(pages[0]) }
+            .expect("page is in reclaim queue");
+        expect_eq!(0, queue.0);
+        // SAFETY: `pages[1]` is attached to `vmo`.
+        let queue = unsafe { pmm::page_queues().debug_page_is_reclaim(pages[1]) }
+            .expect("page is in reclaim queue");
+        expect_eq!(0, queue.0);
+
+        // Create a clone.
+        let clone = unwrap_ok!(vmo.create_clone(
+            Resizability::NonResizable,
+            SnapshotType::OnWrite,
+            0,
+            2 * PAGE_SIZE,
+            true
+        ));
+
+        // Use the clone to perform a bunch of hinting operations on the first page.
+        // Hint that the page is not needed.
+        assert_ok!(clone.hint_range(0, PAGE_SIZE, EvictionHint::DontNeed));
+
+        // The page should now have moved to the Isolate queue.
+        // SAFETY: `pages[0]` is attached to `vmo`.
+        expect_false!(unsafe { pmm::page_queues().debug_page_is_reclaim(pages[0]) }.is_some());
+        // SAFETY: `pages[0]` is attached to `vmo`.
+        expect_true!(unsafe { pmm::page_queues().debug_page_is_reclaim_isolate(pages[0]) });
+
+        // Hint that the page is always needed.
+        assert_ok!(clone.hint_range(0, PAGE_SIZE, EvictionHint::AlwaysNeed));
+
+        // If the page was loaned, it will be replaced with a non-loaned page now.
+        pages[0] = vmo.debug_get_page(0).expect("vmo should have a page at offset 0");
+
+        // The page should now have moved to the first LRU queue.
+        // SAFETY: `pages[0]` is attached to `vmo`.
+        expect_false!(unsafe { pmm::page_queues().debug_page_is_reclaim_isolate(pages[0]) });
+        // SAFETY: `pages[0]` is attached to `vmo`.
+        let queue = unsafe { pmm::page_queues().debug_page_is_reclaim(pages[0]) }
+            .expect("page is in reclaim queue");
+        expect_eq!(0, queue.0);
+
+        // Evicting the page should fail.
+        // SAFETY: `pages[0]` is attached to `vmo` at offset 0.
+        assert_lt!(unsafe { reclaim(&vmo, pages[0], 0, EvictionAction::FollowHint) }, 2);
+        expect_true!(
+            make_private_attribution_counts(PAGE_SIZE, 0)
+                == vmo.get_attributed_memory_in_range(0, PAGE_SIZE)
+        );
+
+        // Hinting should also work via a clone of a clone.
+        let clone2 = unwrap_ok!(clone.create_clone(
+            Resizability::NonResizable,
+            SnapshotType::OnWrite,
+            0,
+            2 * PAGE_SIZE,
+            true
+        ));
+
+        // Hint that the page is not needed.
+        assert_ok!(clone2.hint_range(0, PAGE_SIZE, EvictionHint::DontNeed));
+
+        // The page should now have moved to the Isolate queue.
+        // SAFETY: `pages[0]` is attached to `vmo`.
+        expect_false!(unsafe { pmm::page_queues().debug_page_is_reclaim(pages[0]) }.is_some());
+        // SAFETY: `pages[0]` is attached to `vmo`.
+        expect_true!(unsafe { pmm::page_queues().debug_page_is_reclaim_isolate(pages[0]) });
+
+        // Hint that the page is always needed.
+        assert_ok!(clone2.hint_range(0, PAGE_SIZE, EvictionHint::AlwaysNeed));
+
+        // If the page was loaned, it will be replaced with a non-loaned page now.
+        pages[0] = vmo.debug_get_page(0).expect("vmo should have a page at offset 0");
+
+        // The page should now have moved to the first LRU queue.
+        // SAFETY: `pages[0]` is attached to `vmo`.
+        expect_false!(unsafe { pmm::page_queues().debug_page_is_reclaim_isolate(pages[0]) });
+        // SAFETY: `pages[0]` is attached to `vmo`.
+        let queue = unsafe { pmm::page_queues().debug_page_is_reclaim(pages[0]) }
+            .expect("page is in reclaim queue");
+        expect_eq!(0, queue.0);
+
+        // Evicting the page should fail.
+        // SAFETY: `pages[0]` is attached to `vmo` at offset 0.
+        assert_lt!(unsafe { reclaim(&vmo, pages[0], 0, EvictionAction::FollowHint) }, 2);
+        expect_true!(
+            make_private_attribution_counts(PAGE_SIZE, 0)
+                == vmo.get_attributed_memory_in_range(0, PAGE_SIZE)
+        );
+
+        // Re supply the second page, in case it was evicted.
+        let [second_page] = unwrap_ok!(supply_pager_vmo_pages(&vmo, 1, 1));
+        pages[1] = second_page;
+
+        // SAFETY: `pages[1]` is attached to `vmo`.
+        expect_true!(unsafe { pmm::page_queues().debug_page_is_reclaim(pages[1]) }.is_some());
+
+        // Verify that hinting still works via the parent VMO.
+        // Hint that the page is not needed again.
+        assert_ok!(vmo.hint_range(0, PAGE_SIZE, EvictionHint::DontNeed));
+
+        // The page should now have moved to the Isolate queue.
+        // SAFETY: `pages[0]` is attached to `vmo`.
+        expect_false!(unsafe { pmm::page_queues().debug_page_is_reclaim(pages[0]) }.is_some());
+        // SAFETY: `pages[0]` is attached to `vmo`.
+        expect_true!(unsafe { pmm::page_queues().debug_page_is_reclaim_isolate(pages[0]) });
+
+        // Fork the page in the clone. And make sure hints no longer apply.
+        let data: u64 = 0xff;
+        assert_ok!(clone.write(0, &data.to_ne_bytes()));
+        expect_true!(
+            make_private_attribution_counts(PAGE_SIZE, 0) == clone.get_attributed_memory()
+        );
+        expect_true!(verify_continuous_attribution_bytes(&clone, PAGE_SIZE));
+
+        // The write will have moved the page to the first page queue, because the page is still
+        // accessed in order to perform the fork. So hint using the parent again to move to the
+        // Isolate queue.
+        assert_ok!(vmo.hint_range(0, PAGE_SIZE, EvictionHint::DontNeed));
+
+        // The page should now have moved to the Isolate queue.
+        // SAFETY: `pages[0]` is attached to `vmo`.
+        expect_false!(unsafe { pmm::page_queues().debug_page_is_reclaim(pages[0]) }.is_some());
+        // SAFETY: `pages[0]` is attached to `vmo`.
+        expect_true!(unsafe { pmm::page_queues().debug_page_is_reclaim_isolate(pages[0]) });
+
+        // Hint that the page is always needed via the clone.
+        assert_ok!(clone.hint_range(0, PAGE_SIZE, EvictionHint::AlwaysNeed));
+
+        // The page should still be in the Isolate queue.
+        // SAFETY: `pages[0]` is attached to `vmo`.
+        expect_false!(unsafe { pmm::page_queues().debug_page_is_reclaim(pages[0]) }.is_some());
+        // SAFETY: `pages[0]` is attached to `vmo`.
+        expect_true!(unsafe { pmm::page_queues().debug_page_is_reclaim_isolate(pages[0]) });
+
+        // Hint that the page is always needed via the second level clone.
+        assert_ok!(clone2.hint_range(0, PAGE_SIZE, EvictionHint::AlwaysNeed));
+
+        // This should move the page out of the the Isolate queue. Since we forked the page in the
+        // intermediate clone *after* this clone was created, it will still refer to the original
+        // page, which is the same as the page in the root.
+        // SAFETY: `pages[0]` is attached to `vmo`.
+        expect_true!(unsafe { pmm::page_queues().debug_page_is_reclaim(pages[0]) }.is_some());
+        // SAFETY: `pages[0]` is attached to `vmo`.
+        expect_false!(unsafe { pmm::page_queues().debug_page_is_reclaim_isolate(pages[0]) });
+
+        // Create another clone that sees the forked page.
+        // Hinting through this clone should have no effect, since it will see the forked page.
+        let clone3 = unwrap_ok!(clone.create_clone(
+            Resizability::NonResizable,
+            SnapshotType::OnWrite,
+            0,
+            2 * PAGE_SIZE,
+            true
+        ));
+
+        // Move the page back to the Isolate queue first.
+        assert_ok!(vmo.hint_range(0, PAGE_SIZE, EvictionHint::DontNeed));
+
+        // The page should now have moved to the Isolate queue.
+        // SAFETY: `pages[0]` is attached to `vmo`.
+        expect_false!(unsafe { pmm::page_queues().debug_page_is_reclaim(pages[0]) }.is_some());
+        // SAFETY: `pages[0]` is attached to `vmo`.
+        expect_true!(unsafe { pmm::page_queues().debug_page_is_reclaim_isolate(pages[0]) });
+
+        // Hint through clone3.
+        assert_ok!(clone3.hint_range(0, PAGE_SIZE, EvictionHint::AlwaysNeed));
+
+        // The page should still be in the Isolate queue.
+        // SAFETY: `pages[0]` is attached to `vmo`.
+        expect_false!(unsafe { pmm::page_queues().debug_page_is_reclaim(pages[0]) }.is_some());
+        // SAFETY: `pages[0]` is attached to `vmo`.
+        expect_true!(unsafe { pmm::page_queues().debug_page_is_reclaim_isolate(pages[0]) });
+
+        // Hint on the second page using clone3. This page hasn't been forked by the intermediate
+        // clone. So clone3 should still be able to see the root page.
+        // First verify that the page is still in queue 0.
+        // SAFETY: `pages[1]` is attached to `vmo`.
+        let queue = unsafe { pmm::page_queues().debug_page_is_reclaim(pages[1]) }
+            .expect("page is in reclaim queue");
+        expect_eq!(0, queue.0);
+
+        // Hint DontNeed through clone 3.
+        assert_ok!(clone3.hint_range(PAGE_SIZE, PAGE_SIZE, EvictionHint::DontNeed));
+
+        // The page should have moved to the Isolate queue.
+        // SAFETY: `pages[1]` is attached to `vmo`.
+        expect_false!(unsafe { pmm::page_queues().debug_page_is_reclaim(pages[1]) }.is_some());
+        // SAFETY: `pages[1]` is attached to `vmo`.
+        expect_true!(unsafe { pmm::page_queues().debug_page_is_reclaim_isolate(pages[1]) });
     }
 
     /// Tests unloaning and evicting loaned pages from VMOs.
@@ -2838,6 +3274,273 @@ mod vmo_rs {
         expect_false!(vmo.debug_get_cow_pages().unwrap().dedup_zero_page(page, 0));
         expect_true!(make_private_attribution_counts(PAGE_SIZE, 0) == vmo.get_attributed_memory());
         expect_true!(verify_continuous_attribution_bytes(&vmo, PAGE_SIZE));
+    }
+
+    /// Tests that snapshot modified behaves as expected
+    #[test]
+    fn vmo_snapshot_modified_test() {
+        let _scanner_disable = AutoVmScannerDisable::new();
+
+        // Create 3 page, pager-backed VMO.
+        const NUM_PAGES: usize = 3;
+        let alloc_size = (NUM_PAGES as u64) * PAGE_SIZE;
+
+        let (vmo, _pages) = unwrap_ok!(make_committed_pager_vmo::<NUM_PAGES>(
+            /*trap_dirty=*/ false, /*resizable=*/ false
+        ));
+        vmo.set_user_id(42);
+
+        // Snapshot-modified all 3 pages of root.
+        let clone = unwrap_ok!(
+            vmo.create_clone(
+                Resizability::NonResizable,
+                SnapshotType::Modified,
+                0,
+                alloc_size,
+                false,
+            ),
+            "vmobject full clone\n"
+        );
+        clone.set_user_id(43);
+
+        // Hang another snapshot-modified clone off root that only sees the first page.
+        let clone2 = unwrap_ok!(
+            vmo.create_clone(
+                Resizability::NonResizable,
+                SnapshotType::Modified,
+                0,
+                PAGE_SIZE,
+                false,
+            ),
+            "vmobject partial clone\n"
+        );
+        clone2.set_user_id(44);
+
+        // Ensures all pages are attributed to the root VMO, and not the clones, as the root VMO is
+        // not a hidden node.
+        expect_true!(make_private_attribution_counts(alloc_size, 0) == vmo.get_attributed_memory());
+        expect_true!(verify_continuous_attribution_bytes(&vmo, alloc_size));
+        expect_true!(attribution::zero() == clone.get_attributed_memory());
+        expect_true!(verify_continuous_attribution_bytes(&clone, 0));
+        expect_true!(attribution::zero() == clone2.get_attributed_memory());
+        expect_true!(verify_continuous_attribution_bytes(&clone2, 0));
+
+        // COW page into clone & check that it is attributed.
+        let data = 0xffu8;
+        assert_ok!(clone.write(0, &[data]));
+
+        expect_true!(
+            make_private_attribution_counts(PAGE_SIZE, 0) == clone.get_attributed_memory()
+        );
+        expect_true!(verify_continuous_attribution_bytes(&clone, PAGE_SIZE));
+
+        // Try to COW a page into clone2 that it doesn't see.
+        let status = clone2.write(PAGE_SIZE, &[data]);
+        assert_eq!(Status::OUT_OF_RANGE.into_raw(), Status::result_into_raw(status));
+
+        // Call snapshot-modified again on the full clone, which will create a hidden parent.
+        let snapshot = unwrap_ok!(
+            clone.create_clone(
+                Resizability::NonResizable,
+                SnapshotType::Modified,
+                0,
+                PAGE_SIZE * (NUM_PAGES as u64),
+                false,
+            ),
+            "vmobject snapshot-modified\n"
+        );
+
+        // Pages in hidden parent will be attributed to both children.
+        expect_true!(
+            (attribution::AttributionCounts {
+                uncompressed_bytes: PAGE_SIZE as usize,
+                scaled_uncompressed_bytes: attribution::fractional_bytes_from_fraction(
+                    PAGE_SIZE, 2
+                ),
+                ..attribution::zero()
+            }) == clone.get_attributed_memory()
+        );
+        expect_true!(
+            (attribution::AttributionCounts {
+                uncompressed_bytes: PAGE_SIZE as usize,
+                scaled_uncompressed_bytes: attribution::fractional_bytes_from_fraction(
+                    PAGE_SIZE, 2
+                ),
+                ..attribution::zero()
+            }) == snapshot.get_attributed_memory()
+        );
+
+        // Calling CreateClone directly with SnapshotAtLeastOnWrite should upgrade to
+        // snapshot-modified.
+        let _atleastonwrite = unwrap_ok!(
+            clone.create_clone(
+                Resizability::NonResizable,
+                SnapshotType::OnWrite,
+                0,
+                alloc_size,
+                false,
+            ),
+            "vmobject snapshot-at-least-on-write clone.\n"
+        );
+
+        // Create a slice of the first two pages of the root VMO.
+        let slice_size = 2 * PAGE_SIZE;
+        let slice = unwrap_ok!(vmo.create_child_slice(0, slice_size, false), "slice root vmo");
+        slice.set_user_id(45);
+
+        // The oot VMO should have 3 children at this point.
+        assert_eq!(vmo.num_children(), 3);
+
+        // Snapshot-modified of root-slice should work.
+        let slicesnapshot = unwrap_ok!(
+            slice.create_clone(
+                Resizability::NonResizable,
+                SnapshotType::Modified,
+                0,
+                slice_size,
+                false,
+            ),
+            "snapshot-modified root-slice\n"
+        );
+        slicesnapshot.set_user_id(46);
+
+        // At the VMO level, the slice should see the snapshot as a child.
+        assert_eq!(vmo.num_children(), 3);
+        assert_eq!(slice.num_children(), 1);
+
+        // The cow pages, however, should be hung off the root VMO.
+        let slicesnapshot_p = VmObject::downcast_paged(slicesnapshot.clone()).expect("is paged");
+        let vmo_cow_pages = vmo.debug_get_cow_pages().expect("vmo has cow pages");
+        let slicesnapshot_cow_pages =
+            slicesnapshot_p.debug_get_cow_pages().expect("slicesnapshot has cow pages");
+
+        assert_eq!(
+            slicesnapshot_cow_pages
+                .debug_get_parent()
+                .map(|p| p.as_raw())
+                .unwrap_or(core::ptr::null_mut()),
+            vmo_cow_pages.as_raw()
+        );
+
+        // Create a slice of the clone of the root-slice.
+        let slicesnapshot_slice = unwrap_ok!(
+            slicesnapshot.create_clone(
+                Resizability::NonResizable,
+                SnapshotType::Modified,
+                0,
+                slice_size,
+                false,
+            ),
+            "slice snapshot-modified-root-slice\n"
+        );
+        slicesnapshot_slice.set_user_id(47);
+
+        // Check that snapshot-modified will work again on the snapshot-modified clone of the slice.
+        let slicesnapshot2 = unwrap_ok!(
+            slicesnapshot.create_clone(
+                Resizability::NonResizable,
+                SnapshotType::Modified,
+                0,
+                slice_size,
+                false,
+            ),
+            "snapshot-modified root-slice-snapshot\n"
+        );
+        slicesnapshot2.set_user_id(48);
+
+        // Create a slice of a clone
+        let cloneslice =
+            unwrap_ok!(clone.create_child_slice(0, slice_size, false), "slice root vmo");
+
+        // Snapshot-modified should not be allowed on a slice of a clone.
+        let status = cloneslice.create_clone(
+            Resizability::NonResizable,
+            SnapshotType::Modified,
+            0,
+            slice_size,
+            false,
+        );
+        assert_eq!(
+            Status::NOT_SUPPORTED.into_raw(),
+            Status::result_into_raw(status.map(|_| ())),
+            "snapshot-modified clone-slice\n"
+        );
+
+        // Tests that SnapshotModified will be upgraded to Snapshot when used on an anonymous VMO.
+        let anon_vmo = unwrap_ok!(VmObjectPaged::create(pmm::ALLOC_FLAG_ANY, 0, alloc_size));
+        anon_vmo.set_user_id(0x49);
+
+        let anon_clone = unwrap_ok!(anon_vmo.create_clone(
+            Resizability::NonResizable,
+            SnapshotType::Modified,
+            0,
+            PAGE_SIZE,
+            true,
+        ));
+        anon_clone.set_user_id(0x50);
+
+        // Check that a hidden, common cow pages was made.
+        let anon_clone_p = VmObject::downcast_paged(anon_clone.clone()).expect("is paged");
+        let anon_vmo_cow_pages = anon_vmo.debug_get_cow_pages().expect("anon_vmo has cow pages");
+        let anon_clone_cow_pages =
+            anon_clone_p.debug_get_cow_pages().expect("anon_clone has cow pages");
+
+        assert_eq!(
+            anon_clone_cow_pages
+                .debug_get_parent()
+                .map(|p| p.as_raw())
+                .unwrap_or(core::ptr::null_mut()),
+            anon_vmo_cow_pages
+                .debug_get_parent()
+                .map(|p| p.as_raw())
+                .unwrap_or(core::ptr::null_mut())
+        );
+
+        // Snapshot-modified should also be upgraded when used on a SNAPSHOT clone.
+        let anon_snapshot = unwrap_ok!(anon_clone.create_clone(
+            Resizability::NonResizable,
+            SnapshotType::Modified,
+            0,
+            PAGE_SIZE,
+            true,
+        ));
+        anon_snapshot.set_user_id(0x51);
+
+        // Snapshot-modified should not be allowed on a unidirectional chain of length > 2
+        let chain1 = unwrap_ok!(vmo.create_clone(
+            Resizability::NonResizable,
+            SnapshotType::OnWrite,
+            0,
+            PAGE_SIZE,
+            true,
+        ));
+        chain1.set_user_id(0x52);
+        let data1 = 42u64;
+        expect_ok!(chain1.write(0, &data1.to_ne_bytes()[..core::mem::size_of_val(&data)]));
+
+        let chain2 = unwrap_ok!(chain1.create_clone(
+            Resizability::NonResizable,
+            SnapshotType::OnWrite,
+            0,
+            PAGE_SIZE,
+            true,
+        ));
+        chain2.set_user_id(0x51);
+        let data2 = 43u64;
+        expect_ok!(chain2.write(0, &data2.to_ne_bytes()[..core::mem::size_of_val(&data)]));
+
+        let chain_snap = chain2.create_clone(
+            Resizability::NonResizable,
+            SnapshotType::Modified,
+            0,
+            PAGE_SIZE,
+            true,
+        );
+        assert_eq!(
+            Status::NOT_SUPPORTED.into_raw(),
+            Status::result_into_raw(chain_snap.map(|_| ())),
+            "snapshot-modified unidirectional chain\n"
+        );
     }
 
     /// Test that unmaps propagated to copy-on-write children are not applied to kernel mappings.

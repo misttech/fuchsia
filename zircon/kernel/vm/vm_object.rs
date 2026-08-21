@@ -349,6 +349,12 @@ impl VmObject {
         unsafe { bindings::cpp_vm_object_parent_user_id(self.as_raw()) }
     }
 
+    /// Returns the number of children of the VMO.
+    pub fn num_children(&self) -> u32 {
+        // SAFETY: `self.as_raw()` returns a valid `VmObject` pointer.
+        unsafe { bindings::cpp_vm_object_num_children(self.as_raw()) }
+    }
+
     /// execute lookup_fn on a given range of physical addresses within the vmo. Only pages that are
     /// present and writable in this VMO will be enumerated. Any copy-on-write pages in our parent
     /// will not be enumerated. The physical addresses given to the lookup_fn should not be retained

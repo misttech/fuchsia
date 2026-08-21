@@ -4148,7 +4148,7 @@ bool vmo_snapshot_modified_test() {
   ASSERT_OK(status);
   anon_snapshot->set_user_id(0x51);
 
-  // Snapshot-modified shold not be allowed on a unidirectional chain of length > 2
+  // Snapshot-modified should not be allowed on a unidirectional chain of length > 2
   fbl::RefPtr<VmObject> chain1;
   status = vmo->CreateClone(Resizability::NonResizable, SnapshotType::OnWrite, 0, kPageSize, true,
                             &chain1);

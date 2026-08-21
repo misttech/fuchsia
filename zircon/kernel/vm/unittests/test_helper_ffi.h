@@ -27,6 +27,9 @@ zx_status_t cpp_make_partially_committed_pager_vmo(size_t num_pages, size_t comm
                                                    bool ignore_requests, vm_page_t** out_pages,
                                                    VmObjectPaged** out_vmo);
 
+zx_status_t cpp_supply_pager_vmo_pages(VmObjectPaged* vmo, uint64_t page_offset, uint64_t num_pages,
+                                       vm_page_t** out_pages);
+
 bool cpp_verify_continuous_attribution_bytes(VmObject* vmo, uint64_t expected_bytes);
 void cpp_make_private_attribution_counts(uint64_t uncompressed, uint64_t compressed,
                                          vm::AttributionCounts* out_counts);
