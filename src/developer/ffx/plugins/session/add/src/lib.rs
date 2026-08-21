@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{Result, format_err};
 use async_trait::async_trait;
 use fdomain_client::fidl::Proxy;
 use fdomain_fuchsia_element::{
@@ -10,13 +9,15 @@ use fdomain_fuchsia_element::{
     ControllerProxy, ManagerProxy, Spec,
 };
 use ffx_session_add_args::SessionAddCommand;
-use ffx_writer::SimpleWriter;
-use fho::{FfxMain, FfxTool};
+use ffx_session_common::CommandStatus;
+use ffx_writer::{ToolIO, VerifiedMachineWriter};
+use fho::{FfxMain, FfxTool, Result, bug, user_error};
 use futures::FutureExt;
 use futures::channel::oneshot;
 use signal_hook::consts::signal::*;
 use signal_hook::iterator::Signals;
 use std::future::Future;
+use std::io::Write;
 use target_holders::moniker;
 
 #[derive(FfxTool)]
@@ -31,8 +32,7 @@ fho::embedded_plugin!(AddTool);
 
 #[async_trait(?Send)]
 impl FfxMain for AddTool {
-    // TODO(b/472310565) Support actual "json" output, not just "raw"
-    type Writer = SimpleWriter;
+    type Writer = VerifiedMachineWriter<CommandStatus>;
     type Error = ::fho::Error;
 
     async fn main(self, mut writer: Self::Writer) -> fho::Result<()> {
@@ -41,13 +41,15 @@ impl FfxMain for AddTool {
     }
 }
 
-pub async fn add_impl<W: std::io::Write>(
+pub async fn add_impl(
     manager_proxy: ManagerProxy,
     cmd: SessionAddCommand,
     ctrl_c_signal: impl Future<Output = ()>,
-    writer: &mut W,
+    writer: &mut VerifiedMachineWriter<CommandStatus>,
 ) -> Result<()> {
-    writeln!(writer, "Add {} to the current session", cmd.url)?;
+    if !writer.is_machine() {
+        writeln!(writer, "Add {} to the current session", cmd.url)?;
+    }
     let (_controller_client, controller_server) = if cmd.interactive {
         let (client, server) = manager_proxy.domain().create_endpoints::<ControllerMarker>();
         let client: ControllerProxy = client.into_proxy();
@@ -87,12 +89,17 @@ pub async fn add_impl<W: std::io::Write>(
             },
             controller_server,
         )
-        .await?
-        .map_err(|err| format_err!("{:?}", err))?;
+        .await
+        .map_err(|err| bug!("Transport error proposing element: {err:?}"))?
+        .map_err(|err| user_error!("Failed to propose element: {err:?}"))?;
+
+    writer.machine(&CommandStatus::Ok { message: None })?;
 
     if cmd.interactive {
         // TODO(https://fxbug.dev/42058904) wait for either ctrl+c or the controller to close
-        writeln!(writer, "Waiting for Ctrl+C before terminating element...")?;
+        if !writer.is_machine() {
+            writeln!(writer, "Waiting for Ctrl+C before terminating element...")?;
+        }
         ctrl_c_signal.await;
     }
 
@@ -113,8 +120,10 @@ fn spawn_ctrl_c_listener() -> impl Future<Output = ()> {
 #[cfg(test)]
 mod test {
     use super::*;
+    use anyhow::Result;
     use assert_matches::assert_matches;
     use fdomain_fuchsia_element::{self as felement, ManagerRequest};
+    use ffx_writer::{Format, TestBuffers};
     use futures::poll;
     use target_holders::fake_proxy;
 
@@ -137,7 +146,9 @@ mod test {
             persist: false,
             name: None,
         };
-        let response = add_impl(proxy, add_cmd, async {}.boxed(), &mut std::io::stdout()).await;
+        let test_buffers = TestBuffers::default();
+        let mut writer = VerifiedMachineWriter::<CommandStatus>::new_test(None, &test_buffers);
+        let response = add_impl(proxy, add_cmd, async {}.boxed(), &mut writer).await;
         assert!(response.is_ok());
     }
 
@@ -159,7 +170,9 @@ mod test {
             persist: false,
             name: None,
         };
-        let response = add_impl(proxy, add_cmd, async {}.boxed(), &mut std::io::stdout()).await;
+        let test_buffers = TestBuffers::default();
+        let mut writer = VerifiedMachineWriter::<CommandStatus>::new_test(None, &test_buffers);
+        let response = add_impl(proxy, add_cmd, async {}.boxed(), &mut writer).await;
         assert!(response.is_ok());
     }
 
@@ -182,9 +195,10 @@ mod test {
             name: None,
         };
         let (ctrl_c_sender, ctrl_c_receiver) = oneshot::channel();
-        let mut stdout = std::io::stdout();
+        let test_buffers = TestBuffers::default();
+        let mut writer = VerifiedMachineWriter::<CommandStatus>::new_test(None, &test_buffers);
         let mut add_fut =
-            Box::pin(add_impl(proxy, add_cmd, ctrl_c_receiver.map(|_| ()), &mut stdout));
+            Box::pin(add_impl(proxy, add_cmd, ctrl_c_receiver.map(|_| ()), &mut writer));
 
         assert!(poll!(&mut add_fut).is_pending(), "add should yield until ctrl+c");
 
@@ -230,7 +244,93 @@ mod test {
             persist: true,
             name: Some("foo".to_string()),
         };
-        let response = add_impl(proxy, add_cmd, async {}.boxed(), &mut std::io::stdout()).await;
+        let test_buffers = TestBuffers::default();
+        let mut writer = VerifiedMachineWriter::<CommandStatus>::new_test(None, &test_buffers);
+        let response = add_impl(proxy, add_cmd, async {}.boxed(), &mut writer).await;
         assert!(response.is_ok());
+    }
+
+    #[fuchsia::test]
+    async fn test_add_element_machine() -> Result<()> {
+        const TEST_ELEMENT_URL: &str = "Test Element Url";
+
+        let client = fdomain_local::local_client_empty();
+        let proxy = fake_proxy(client, |req| match req {
+            ManagerRequest::ProposeElement { spec, responder, .. } => {
+                assert_eq!(spec.component_url.unwrap(), TEST_ELEMENT_URL.to_string());
+                let _ = responder.send(Ok(()));
+            }
+            ManagerRequest::RemoveElement { .. } => unreachable!(),
+        });
+
+        let add_cmd = SessionAddCommand {
+            url: TEST_ELEMENT_URL.to_string(),
+            interactive: false,
+            persist: false,
+            name: None,
+        };
+        let test_buffers = TestBuffers::default();
+        let mut writer =
+            VerifiedMachineWriter::<CommandStatus>::new_test(Some(Format::Json), &test_buffers);
+        let response = add_impl(proxy, add_cmd, async {}.boxed(), &mut writer).await;
+        assert!(response.is_ok());
+        let output = test_buffers.into_stdout_str();
+        let status: CommandStatus = serde_json::from_str(&output)?;
+        assert_eq!(status, CommandStatus::Ok { message: None });
+        Ok(())
+    }
+
+    #[fuchsia::test]
+    async fn test_add_element_error() -> Result<()> {
+        const TEST_ELEMENT_URL: &str = "Test Element Url";
+
+        let client = fdomain_local::local_client_empty();
+        let proxy = fake_proxy(client, |req| match req {
+            ManagerRequest::ProposeElement { responder, .. } => {
+                let _ = responder.send(Err(felement::ManagerError::NotFound));
+            }
+            ManagerRequest::RemoveElement { .. } => unreachable!(),
+        });
+
+        let add_cmd = SessionAddCommand {
+            url: TEST_ELEMENT_URL.to_string(),
+            interactive: false,
+            persist: false,
+            name: None,
+        };
+        let test_buffers = TestBuffers::default();
+        let mut writer =
+            VerifiedMachineWriter::<CommandStatus>::new_test(Some(Format::Json), &test_buffers);
+        let response = add_impl(proxy, add_cmd, async {}.boxed(), &mut writer).await;
+        assert!(response.is_err());
+        assert_eq!(response.unwrap_err().to_string(), "Failed to propose element: NotFound");
+        let output = test_buffers.into_stdout_str();
+        assert!(output.is_empty());
+        Ok(())
+    }
+
+    #[fuchsia::test]
+    async fn test_add_element_transport_error() -> Result<()> {
+        const TEST_ELEMENT_URL: &str = "Test Element Url";
+
+        let client = fdomain_local::local_client_empty();
+        let (proxy, server) = client.create_proxy_and_stream::<felement::ManagerMarker>();
+        drop(server);
+
+        let add_cmd = SessionAddCommand {
+            url: TEST_ELEMENT_URL.to_string(),
+            interactive: false,
+            persist: false,
+            name: None,
+        };
+        let test_buffers = TestBuffers::default();
+        let mut writer =
+            VerifiedMachineWriter::<CommandStatus>::new_test(Some(Format::Json), &test_buffers);
+        let response = add_impl(proxy, add_cmd, async {}.boxed(), &mut writer).await;
+        assert!(response.is_err());
+        assert!(response.unwrap_err().to_string().contains("Transport error proposing element"));
+        let output = test_buffers.into_stdout_str();
+        assert!(output.is_empty());
+        Ok(())
     }
 }
