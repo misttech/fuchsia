@@ -257,7 +257,7 @@ class BuildLock:
         self, build_dir: pathlib.Path, print_message: bool = False
     ) -> None:
         # LINT.IfChange(build_lock)
-        self.build_lock_file = build_dir.with_suffix(".build_lock")
+        self.build_lock_file = pathlib.Path(f"{build_dir}.build_lock")
         # LINT.ThenChange(//tools/devshell/lib/vars.sh:build_lock)
         self._has_shlock = check_shell_command("shlock")
         self.print_message = print_message
