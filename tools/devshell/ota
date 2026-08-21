@@ -98,7 +98,11 @@ function main {
   done
 
   local started_serve=false
-  if $serve; then
+  if $packageless; then
+    if $serve; then
+      fx-info "--serve is not needed in packageless OTAs, a temporary server is always started by ffx."
+    fi
+  elif $serve; then
     # TODO(https://fxbug.dev/504722186): Implement temporary server in `ffx target update`.
     if ! check-for-package-server >/dev/null 2>&1; then
       fx-info "Package server not running. Starting 'fx serve'..."
@@ -134,17 +138,17 @@ function main {
     fx-info "$(date '+%Y-%m-%d %H:%M:%S') Build completed in ${build_duration} seconds."
   fi
 
-  # Note: the following command continues to run as the system goes into
-  # reboot, so we lose SSH connection before it "completes". As such the
-  # following command completes with error, but that is not actually an error.
   local ota_args=()
   if $packageless; then
-    ota_args+=("--packageless")
+    ota_args+=("--product-bundle" "--packageless")
   fi
 
   fx-info "$(date '+%Y-%m-%d %H:%M:%S') Starting OTA..."
   local ota_start_time=$(date +%s)
 
+  # Note: the following command continues to run as the system goes into
+  # reboot, so we lose SSH connection before it "completes". As such the
+  # following command completes with error, but that is not actually an error.
   fx-command-run ffx target update force-install "${ota_args[@]}" || true
 
   local ota_end_time=$(date +%s)
