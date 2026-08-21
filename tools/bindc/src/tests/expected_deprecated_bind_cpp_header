@@ -12,8 +12,6 @@
 
 namespace bind_fuchsia {
 
-static const char FLAGS[] = "fuchsia.BIND_FLAGS";
-
 static const char PROTOCOL[] = "fuchsia.BIND_PROTOCOL";
 
 static const char NAME[] = "fuchsia.NAME";
@@ -72,19 +70,7 @@ static const char IHDA_CODEC_VID[] = "fuchsia.BIND_IHDA_CODEC_VID";
 
 static const char IHDA_CODEC_DID[] = "fuchsia.BIND_IHDA_CODEC_DID";
 
-static const char IHDA_CODEC_MAJOR_REV[] = "fuchsia.BIND_IHDA_CODEC_MAJOR_REV";
-
-static const char IHDA_CODEC_MINOR_REV[] = "fuchsia.BIND_IHDA_CODEC_MINOR_REV";
-
-static const char IHDA_CODEC_VENDOR_REV[] = "fuchsia.BIND_IHDA_CODEC_VENDOR_REV";
-
-static const char IHDA_CODEC_VENDOR_STEP[] = "fuchsia.BIND_IHDA_CODEC_VENDOR_STEP";
-
 static const char SERIAL_CLASS[] = "fuchsia.BIND_SERIAL_CLASS";
-
-static const char SERIAL_VID[] = "fuchsia.BIND_SERIAL_VID";
-
-static const char SERIAL_PID[] = "fuchsia.BIND_SERIAL_PID";
 
 static const char NAND_CLASS[] = "fuchsia.BIND_NAND_CLASS";
 
@@ -100,17 +86,9 @@ static const char I2C_BUS_ID[] = "fuchsia.BIND_I2C_BUS_ID";
 
 static const char I2C_ADDRESS[] = "fuchsia.BIND_I2C_ADDRESS";
 
-static const char I2C_VID[] = "fuchsia.BIND_I2C_VID";
-
-static const char I2C_DID[] = "fuchsia.BIND_I2C_DID";
-
 static const char GPIO_PIN[] = "fuchsia.BIND_GPIO_PIN";
 
 static const char GPIO_CONTROLLER[] = "fuchsia.BIND_GPIO_CONTROLLER";
-
-static const char POWER_DOMAIN[] = "fuchsia.BIND_POWER_DOMAIN";
-
-static const char POWER_DOMAIN_COMPOSITE[] = "fuchsia.BIND_POWER_DOMAIN_COMPOSITE";
 
 static const char SPI_BUS_ID[] = "fuchsia.BIND_SPI_BUS_ID";
 

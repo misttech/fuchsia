@@ -79,11 +79,7 @@ class HdaCodecConnection : public fbl::RefCounted<HdaCodecConnection>,
   static constexpr size_t PROP_PROTOCOL = 0;
   static constexpr size_t PROP_VID = 1;
   static constexpr size_t PROP_DID = 2;
-  static constexpr size_t PROP_MAJOR_REV = 3;
-  static constexpr size_t PROP_MINOR_REV = 4;
-  static constexpr size_t PROP_VENDOR_REV = 5;
-  static constexpr size_t PROP_VENDOR_STEP = 6;
-  static constexpr size_t PROP_COUNT = 7;
+  static constexpr size_t PROP_COUNT = 3;
 
   static zx_protocol_device_t CODEC_DEVICE_THUNKS;
   static ihda_codec_protocol_ops_t CODEC_PROTO_THUNKS;

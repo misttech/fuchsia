@@ -352,15 +352,9 @@ fn deprecated_keys() -> Vec<(String, u32)> {
     // Intel HDA Codec binding variables at 0x05XX
     keys.push(("BIND_IHDA_CODEC_VID".to_string(), 0x0500));
     keys.push(("BIND_IHDA_CODEC_DID".to_string(), 0x0501));
-    keys.push(("BIND_IHDA_CODEC_MAJOR_REV".to_string(), 0x0502));
-    keys.push(("BIND_IHDA_CODEC_MINOR_REV".to_string(), 0x0503));
-    keys.push(("BIND_IHDA_CODEC_VENDOR_REV".to_string(), 0x0504));
-    keys.push(("BIND_IHDA_CODEC_VENDOR_STEP".to_string(), 0x0505));
 
     // Serial binding variables at 0x06XX
     keys.push(("BIND_SERIAL_CLASS".to_string(), 0x0600));
-    keys.push(("BIND_SERIAL_VID".to_string(), 0x0601));
-    keys.push(("BIND_SERIAL_PID".to_string(), 0x0602));
 
     // NAND binding variables at 0x07XX
     keys.push(("BIND_NAND_CLASS".to_string(), 0x0700));
@@ -378,10 +372,6 @@ fn deprecated_keys() -> Vec<(String, u32)> {
     // GPIO binding variables at 0x0A1X
     keys.push(("BIND_GPIO_PIN".to_string(), 0x0A10));
     keys.push(("BIND_GPIO_CONTROLLER".to_string(), 0x0A11));
-
-    // POWER binding variables at 0x0A2X
-    keys.push(("BIND_POWER_DOMAIN".to_string(), 0x0A20));
-    keys.push(("BIND_POWER_DOMAIN_COMPOSITE".to_string(), 0x0A21));
 
     // SPI binding variables at 0x0A4X
     keys.push(("BIND_SPI_BUS_ID".to_string(), 0x0A41));
@@ -414,7 +404,6 @@ pub fn get_deprecated_key_identifiers() -> HashMap<u32, String> {
 
 pub fn get_deprecated_key_identifier(key: u32) -> Option<String> {
     match key {
-        0x0000 => Some("fuchsia.BIND_FLAGS".to_string()),
         0x0001 => Some("fuchsia.BIND_PROTOCOL".to_string()),
         0x0002 => Some("fuchsia.BIND_AUTOBIND".to_string()),
         0x0003 => Some("fuchsia.BIND_COMPOSITE".to_string()),
@@ -451,15 +440,9 @@ pub fn get_deprecated_key_identifier(key: u32) -> Option<String> {
         // Intel HDA Codec binding variables at 0x05XX.
         0x0500 => Some("fuchsia.BIND_IHDA_CODEC_VID".to_string()),
         0x0501 => Some("fuchsia.BIND_IHDA_CODEC_DID".to_string()),
-        0x0502 => Some("fuchsia.BIND_IHDA_CODEC_MAJOR_REV".to_string()),
-        0x0503 => Some("fuchsia.BIND_IHDA_CODEC_MINOR_REV".to_string()),
-        0x0504 => Some("fuchsia.BIND_IHDA_CODEC_VENDOR_REV".to_string()),
-        0x0505 => Some("fuchsia.BIND_IHDA_CODEC_VENDOR_STEP".to_string()),
 
         // Serial binding variables at 0x06XX.
         0x0600 => Some("fuchsia.BIND_SERIAL_CLASS".to_string()),
-        0x0601 => Some("fuchsia.BIND_SERIAL_VID".to_string()),
-        0x0602 => Some("fuchsia.BIND_SERIAL_PID".to_string()),
 
         // NAND binding variables at 0x07XX.
         0x0700 => Some("fuchsia.BIND_NAND_CLASS".to_string()),
@@ -473,16 +456,10 @@ pub fn get_deprecated_key_identifier(key: u32) -> Option<String> {
         0x0A00 => Some("fuchsia.BIND_I2C_CLASS".to_string()),
         0x0A01 => Some("fuchsia.BIND_I2C_BUS_ID".to_string()),
         0x0A02 => Some("fuchsia.BIND_I2C_ADDRESS".to_string()),
-        0x0A03 => Some("fuchsia.BIND_I2C_VID".to_string()),
-        0x0A04 => Some("fuchsia.BIND_I2C_DID".to_string()),
 
         // GPIO binding variables at 0x0A1X.
         0x0A10 => Some("fuchsia.BIND_GPIO_PIN".to_string()),
         0x0A11 => Some("fuchsia.BIND_GPIO_CONTROLLER".to_string()),
-
-        // POWER binding variables at 0x0A2X.
-        0x0A20 => Some("fuchsia.BIND_POWER_DOMAIN".to_string()),
-        0x0A21 => Some("fuchsia.BIND_POWER_DOMAIN_COMPOSITE".to_string()),
 
         // SPI binding variables at 0x0A4X.
         0x0A41 => Some("fuchsia.BIND_SPI_BUS_ID".to_string()),
@@ -500,7 +477,6 @@ pub fn get_deprecated_key_identifier(key: u32) -> Option<String> {
 
 pub fn get_deprecated_key_value(key: &str) -> Option<u32> {
     match key {
-        "fuchsia.BIND_FLAGS" => Some(0x0000),
         "fuchsia.BIND_PROTOCOL" => Some(0x0001),
         "fuchsia.BIND_AUTOBIND" => Some(0x0002),
         "fuchsia.BIND_COMPOSITE" => Some(0x0003),
@@ -537,15 +513,9 @@ pub fn get_deprecated_key_value(key: &str) -> Option<u32> {
         // Intel HDA Codec binding variables at 0x05XX
         "fuchsia.BIND_IHDA_CODEC_VID" => Some(0x0500),
         "fuchsia.BIND_IHDA_CODEC_DID" => Some(0x0501),
-        "fuchsia.BIND_IHDA_CODEC_MAJOR_REV" => Some(0x0502),
-        "fuchsia.BIND_IHDA_CODEC_MINOR_REV" => Some(0x0503),
-        "fuchsia.BIND_IHDA_CODEC_VENDOR_REV" => Some(0x0504),
-        "fuchsia.BIND_IHDA_CODEC_VENDOR_STEP" => Some(0x0505),
 
         // Serial binding variables at 0x06XX
         "fuchsia.BIND_SERIAL_CLASS" => Some(0x0600),
-        "fuchsia.BIND_SERIAL_VID" => Some(0x0601),
-        "fuchsia.BIND_SERIAL_PID" => Some(0x0602),
 
         // NAND binding variables at 0x07XX
         "fuchsia.BIND_NAND_CLASS" => Some(0x0700),
@@ -559,16 +529,10 @@ pub fn get_deprecated_key_value(key: &str) -> Option<u32> {
         "fuchsia.BIND_I2C_CLASS" => Some(0x0A00),
         "fuchsia.BIND_I2C_BUS_ID" => Some(0x0A01),
         "fuchsia.BIND_I2C_ADDRESS" => Some(0x0A02),
-        "fuchsia.BIND_I2C_VID" => Some(0x0A03),
-        "fuchsia.BIND_I2C_DID" => Some(0x0A04),
 
         // GPIO binding variables at 0x0A1X
         "fuchsia.BIND_GPIO_PIN" => Some(0x0A10),
         "fuchsia.BIND_GPIO_CONTROLLER" => Some(0x0A11),
-
-        // POWER binding variables at 0x0A2X
-        "fuchsia.BIND_POWER_DOMAIN" => Some(0x0A20),
-        "fuchsia.BIND_POWER_DOMAIN_COMPOSITE" => Some(0x0A21),
 
         // SPI binding variables at 0x0A4X
         "fuchsia.BIND_SPI_BUS_ID" => Some(0x0A41),

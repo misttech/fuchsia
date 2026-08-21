@@ -240,11 +240,6 @@ zx_status_t HdaCodecConnection::ParseRevisionId(const CodecResponse& resp) {
   props_.rev_id = static_cast<uint8_t>((resp.data >> 8) & 0xFF);
   props_.step_id = static_cast<uint8_t>(resp.data & 0xFF);
 
-  SET_DEVICE_PROP(MAJOR_REV, props_.ihda_vmaj);
-  SET_DEVICE_PROP(MINOR_REV, props_.ihda_vmin);
-  SET_DEVICE_PROP(VENDOR_REV, props_.rev_id);
-  SET_DEVICE_PROP(VENDOR_STEP, props_.step_id);
-
   state_ = State::FINDING_DRIVER;
   return PublishDevice();
 }

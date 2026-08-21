@@ -4,9 +4,6 @@
 
 library fuchsia;
 
-// Value of the flags register.
-uint BIND_FLAGS;
-
 // Primary protocol of the device.
 uint BIND_PROTOCOL;
 
@@ -60,15 +57,9 @@ uint BIND_ACPI_ID;
 // Intel HDA Codec bind properties.
 uint BIND_IHDA_CODEC_VID;
 uint BIND_IHDA_CODEC_DID;
-uint BIND_IHDA_CODEC_MAJOR_REV;
-uint BIND_IHDA_CODEC_MINOR_REV;
-uint BIND_IHDA_CODEC_VENDOR_REV;
-uint BIND_IHDA_CODEC_VENDOR_STEP;
 
 // Serial bind properties.
 uint BIND_SERIAL_CLASS;
-uint BIND_SERIAL_VID;
-uint BIND_SERIAL_PID;
 
 // NAND bind properties.
 uint BIND_NAND_CLASS;
@@ -82,16 +73,10 @@ uint BIND_SDIO_FUNCTION;
 uint BIND_I2C_CLASS;
 uint BIND_I2C_BUS_ID;
 uint BIND_I2C_ADDRESS;
-uint BIND_I2C_VID;
-uint BIND_I2C_DID;
 
 // GPIO bind properties.
 uint BIND_GPIO_PIN;
 uint BIND_GPIO_CONTROLLER;
-
-// POWER bind properties.
-uint BIND_POWER_DOMAIN;
-uint BIND_POWER_DOMAIN_COMPOSITE;
 
 // SPI bind properties.
 uint BIND_SPI_BUS_ID;
