@@ -40,6 +40,7 @@ _tools = [
   "starnix",
   "storage",
   "triage",
+  "usb",
   "usb_driver",
   "wm",
   "verify-ssh-keys",
