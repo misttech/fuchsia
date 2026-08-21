@@ -8,8 +8,7 @@ use crate::vm::vm_address_region as vmar;
 use crate::vm::vm_aspace::VmAspace;
 use crate::vm::vm_mapping::VmMapping;
 use crate::vm::vm_object_physical::VmObjectPhysical;
-use acpi_lite::structures::AcpiSdtHeader;
-use acpi_lite::{AcpiParser, AcpiParserInterface, PhysMemReader};
+use acpi_lite::{AcpiParser, PhysMemReader};
 use core::mem::MaybeUninit;
 use core::ptr::NonNull;
 use fbl::{RefPtr, SinglyLinkedList, SinglyLinkedListContainable, SinglyLinkedListNode, UniquePtr};
@@ -142,41 +141,6 @@ pub unsafe fn acpi_parser_init(rsdp_pa: PAddr) -> Result<AcpiParser<'static>, St
 
 zr::static_assert!(core::mem::size_of::<AcpiParser<'static>>() == 56);
 zr::static_assert!(core::mem::align_of::<AcpiParser<'static>>() == 8);
-
-#[unsafe(no_mangle)]
-pub extern "C" fn rust_acpi_parser_init(
-    rsdp_pa: PAddr,
-    out_parser: *mut AcpiParser<'static>,
-) -> Status {
-    match unsafe { acpi_parser_init(rsdp_pa) } {
-        Ok(parser) => {
-            unsafe { out_parser.write(parser) };
-            Status::OK
-        }
-        Err(e) => e,
-    }
-}
-
-#[unsafe(no_mangle)]
-pub extern "C" fn rust_acpi_parser_dump_tables(parser: *const AcpiParser<'static>) {
-    unsafe { parser.as_ref_unchecked() }.dump_tables();
-}
-
-#[unsafe(no_mangle)]
-pub extern "C" fn rust_acpi_parser_num_tables(parser: *const AcpiParser<'static>) -> usize {
-    unsafe { parser.as_ref_unchecked() }.num_tables()
-}
-
-#[unsafe(no_mangle)]
-pub extern "C" fn rust_acpi_parser_get_table_at_index(
-    parser: *const AcpiParser<'static>,
-    index: usize,
-) -> *const AcpiSdtHeader {
-    unsafe { parser.as_ref_unchecked() }
-        .get_table_at_index(index)
-        .map(|x| x as *const AcpiSdtHeader)
-        .unwrap_or(core::ptr::null())
-}
 
 /// ACPI Lite Zircon tests.
 #[cfg(ktest)]

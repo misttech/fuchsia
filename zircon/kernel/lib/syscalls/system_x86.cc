@@ -17,7 +17,6 @@
 #include <kernel/percpu.h>
 #include <kernel/recurring_callback.h>
 #include <kernel/timer.h>
-#include <platform/pc/acpi.h>
 
 #include "system_priv.h"
 

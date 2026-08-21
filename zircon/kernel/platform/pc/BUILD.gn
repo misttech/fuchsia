@@ -12,7 +12,6 @@ source_set("pc") {
   public_deps = [ ":headers" ]
 
   sources = [
-    "acpi.cc",
     "dev-init.cc",
     "efi_expected.cc",
     "memory.cc",
@@ -30,8 +29,6 @@ source_set("pc") {
     "//zircon/kernel/arch/x86:headers",
     "//zircon/kernel/dev/hw_rng/intel_rng",
     "//zircon/kernel/dev/interrupt",
-    "//zircon/kernel/lib/acpi_lite",
-    "//zircon/kernel/lib/acpi_lite/rust/zircon",
     "//zircon/kernel/lib/arch",
     "//zircon/kernel/lib/boot-options",
     "//zircon/kernel/lib/cbuf",
@@ -101,10 +98,12 @@ kernel_rust_mod("platform_pc") {
   deps = [
     "//sdk/rust/zx-status",
     "//sdk/rust/zx-types",
+    "//src/lib/kprint",
     "//src/lib/ksync",
     "//src/lib/zr",
     "//third_party/rust_crates:zerocopy",
     "//zircon/kernel/lib/acpi_lite/rust:acpi_lite",
+    "//zircon/kernel/lib/acpi_lite/rust/zircon",
     "//zircon/kernel/lib/debug",
     "//zircon/system/ulib/affine/rust:affine",
     "//zircon/system/ulib/bitmap/rust:bitmap",

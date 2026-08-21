@@ -11,7 +11,6 @@ use zx_types::zx_status_t;
 const LOCAL_TRACE: u32 = 0;
 
 unsafe extern "C" {
-    fn cpp_global_acpi_parser_state() -> *const core::ffi::c_void;
     fn cpp_system_topology_initialize_system_topology(
         nodes: *const zbi::TopologyNode,
         count: usize,
@@ -455,10 +454,7 @@ pub fn generate_flat_topology(
 }
 
 fn get_global_acpi_lite_parser() -> &'static acpi_lite::AcpiParser<'static> {
-    // SAFETY: `cpp_global_acpi_parser_state` returns a valid static pointer to the AcpiParser once initialized.
-    let parser_ptr = unsafe { cpp_global_acpi_parser_state() };
-    assert!(!parser_ptr.is_null(), "PlatformInitAcpi() not called.");
-    unsafe { &*(parser_ptr as *const acpi_lite::AcpiParser<'static>) }
+    crate::platform_pc::acpi::global_acpi_lite_parser()
 }
 
 /// Generates system topology and initializes the system topology graph.

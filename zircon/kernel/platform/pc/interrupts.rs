@@ -77,7 +77,6 @@ unsafe extern "C" {
     fn cpp_arch_ints_disabled() -> bool;
     fn apic_bsp_id() -> u8;
     fn cpp_resource_dispatcher_inititialize_allocator(base: usize, size: usize) -> zx_status_t;
-    fn cpp_global_acpi_parser_state() -> *const core::ffi::c_void;
 }
 
 // Convert an ACPI entry into the format required by the platform's APIC code.
@@ -119,13 +118,7 @@ fn platform_init_apic(_level: init::LkInitLevel) {
     pic_map(0x20, 0x28);
     pic_disable();
 
-    // SAFETY: `cpp_global_acpi_parser_state` retrieves a pointer to the global ACPI parser
-    // constructed during boot. This is safe to call on the main thread during boot.
-    let parser_ptr = unsafe { cpp_global_acpi_parser_state() };
-    assert!(!parser_ptr.is_null());
-    // SAFETY: `parser_ptr` is verified to be non-null. The ACPI parser is valid for the
-    // lifetime of the kernel and is initialized prior to this call.
-    let parser = unsafe { &*(parser_ptr as *const acpi_lite::AcpiParser<'static>) };
+    let parser = super::acpi::global_acpi_lite_parser();
 
     // Enumerate the IO APICs
     let mut descriptors = fbl::Vector::<IoApicDescriptor>::new();

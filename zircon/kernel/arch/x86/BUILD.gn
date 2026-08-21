@@ -285,9 +285,6 @@ library_headers("headers") {
 
     # <arch/x86.h> has #include <lib/arch/intrin.h>.
     "//zircon/kernel/lib/arch:headers",
-
-    # <arch/x86/system_topology.h> has #include <lib/acpi_lite.h>.
-    "//zircon/kernel/lib/acpi_lite:headers",
   ]
 }
 
