@@ -74,6 +74,7 @@ rustc_library("ffx_inspect") {
     "//src/lib/fuchsia-async",
     "//third_party/rust_crates:pretty_assertions",
     "//third_party/rust_crates:tempfile",
+    "//third_party/rust_crates:test-case",
   ]
 }
 
