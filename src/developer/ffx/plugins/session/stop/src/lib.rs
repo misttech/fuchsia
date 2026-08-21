@@ -2,12 +2,14 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{Result, format_err};
+use anyhow::Result;
 use async_trait::async_trait;
 use fdomain_fuchsia_session::LifecycleProxy;
+use ffx_session_common::CommandStatus;
 use ffx_session_stop_args::SessionStopCommand;
-use ffx_writer::SimpleWriter;
+use ffx_writer::{ToolIO, VerifiedMachineWriter};
 use fho::{FfxMain, FfxTool};
+use std::io::Write;
 use target_holders::moniker;
 
 const STOPPING_SESSION: &str = "Stopping the session\n";
@@ -24,8 +26,7 @@ fho::embedded_plugin!(StopTool);
 
 #[async_trait(?Send)]
 impl FfxMain for StopTool {
-    // TODO(b/472310565) Support actual "json" output, not just "raw"
-    type Writer = SimpleWriter;
+    type Writer = VerifiedMachineWriter<CommandStatus>;
     type Error = ::fho::Error;
 
     async fn main(self, mut writer: Self::Writer) -> fho::Result<()> {
@@ -34,19 +35,29 @@ impl FfxMain for StopTool {
     }
 }
 
-pub async fn stop_impl<W: std::io::Write>(
+pub async fn stop_impl(
     lifecycle_proxy: LifecycleProxy,
     _cmd: SessionStopCommand,
-    writer: &mut W,
-) -> Result<()> {
-    write!(writer, "{}", STOPPING_SESSION)?;
-    lifecycle_proxy.stop().await?.map_err(|err| format_err!("{:?}", err))
+    writer: &mut VerifiedMachineWriter<CommandStatus>,
+) -> fho::Result<()> {
+    if !writer.is_machine() {
+        write!(writer, "{}", STOPPING_SESSION)?;
+    }
+    match lifecycle_proxy.stop().await {
+        Ok(Ok(())) => {
+            writer.machine(&CommandStatus::Ok { message: None })?;
+            Ok(())
+        }
+        Ok(Err(err)) => Err(fho::user_error!("Failed to stop session: {err:?}")),
+        Err(err) => Err(fho::user_error!("Transport error stopping session: {err:?}")),
+    }
 }
 
 #[cfg(test)]
 mod test {
     use super::*;
     use fdomain_fuchsia_session::LifecycleRequest;
+    use ffx_writer::{Format, TestBuffers};
     use target_holders::fake_proxy;
 
     #[fuchsia::test]
@@ -56,14 +67,77 @@ mod test {
             LifecycleRequest::Stop { responder } => {
                 let _ = responder.send(Ok(()));
             }
-            _ => panic!("Unxpected Lifecycle request"),
+            _ => panic!("Unexpected Lifecycle request"),
         });
 
         let stop_cmd = SessionStopCommand {};
-        let mut writer = Vec::new();
+        let test_buffers = TestBuffers::default();
+        let mut writer = VerifiedMachineWriter::<CommandStatus>::new_test(None, &test_buffers);
         stop_impl(proxy, stop_cmd, &mut writer).await?;
-        let output = String::from_utf8(writer).unwrap();
+        let output = test_buffers.into_stdout_str();
         assert_eq!(output, STOPPING_SESSION);
+        Ok(())
+    }
+
+    #[fuchsia::test]
+    async fn test_stop_session_machine() -> Result<()> {
+        let client = fdomain_local::local_client_empty();
+        let proxy = fake_proxy(client, |req| match req {
+            LifecycleRequest::Stop { responder } => {
+                let _ = responder.send(Ok(()));
+            }
+            _ => panic!("Unexpected Lifecycle request"),
+        });
+
+        let stop_cmd = SessionStopCommand {};
+        let test_buffers = TestBuffers::default();
+        let mut writer =
+            VerifiedMachineWriter::<CommandStatus>::new_test(Some(Format::Json), &test_buffers);
+        stop_impl(proxy, stop_cmd, &mut writer).await?;
+        let output = test_buffers.into_stdout_str();
+        let status: CommandStatus = serde_json::from_str(&output)?;
+        assert_eq!(status, CommandStatus::Ok { message: None });
+        Ok(())
+    }
+
+    #[fuchsia::test]
+    async fn test_stop_session_error() -> Result<()> {
+        let client = fdomain_local::local_client_empty();
+        let proxy = fake_proxy(client, |req| match req {
+            LifecycleRequest::Stop { responder } => {
+                let _ = responder.send(Err(fdomain_fuchsia_session::LifecycleError::NotFound));
+            }
+            _ => panic!("Unexpected Lifecycle request"),
+        });
+
+        let stop_cmd = SessionStopCommand {};
+        let test_buffers = TestBuffers::default();
+        let mut writer =
+            VerifiedMachineWriter::<CommandStatus>::new_test(Some(Format::Json), &test_buffers);
+        let response = stop_impl(proxy, stop_cmd, &mut writer).await;
+        assert!(response.is_err());
+        assert_eq!(response.unwrap_err().to_string(), "Failed to stop session: NotFound");
+        let output = test_buffers.into_stdout_str();
+        assert!(output.is_empty());
+        Ok(())
+    }
+
+    #[fuchsia::test]
+    async fn test_stop_session_transport_error() -> Result<()> {
+        let client = fdomain_local::local_client_empty();
+        let (proxy, server) =
+            client.create_proxy_and_stream::<fdomain_fuchsia_session::LifecycleMarker>();
+        drop(server);
+
+        let stop_cmd = SessionStopCommand {};
+        let test_buffers = TestBuffers::default();
+        let mut writer =
+            VerifiedMachineWriter::<CommandStatus>::new_test(Some(Format::Json), &test_buffers);
+        let response = stop_impl(proxy, stop_cmd, &mut writer).await;
+        assert!(response.is_err());
+        assert!(response.unwrap_err().to_string().starts_with("Transport error stopping session"));
+        let output = test_buffers.into_stdout_str();
+        assert!(output.is_empty());
         Ok(())
     }
 }
