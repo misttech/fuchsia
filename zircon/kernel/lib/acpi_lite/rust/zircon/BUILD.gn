@@ -18,7 +18,8 @@ kernel_rust_mod("zircon") {
     "//third_party/rust_crates:pin-init",
     "//zircon/kernel/lib/acpi_lite/rust:acpi_lite",
     "//zircon/kernel/lib/page:page-rs",
-    "//zircon/kernel/lib/unittest:unittest-rs",
     "//zircon/system/ulib/fbl/rust:fbl",
   ]
+
+  test_deps = [ "//zircon/kernel/lib/unittest:unittest-rs" ]
 }

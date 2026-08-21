@@ -20,7 +20,7 @@ use zx_status::Status;
 // NOTE: Keep constants, structures, and layout definitions in sync with the C++ header:
 // zircon/kernel/dev/pdev/interrupt/include/pdev/interrupt.h
 
-pub use dev_interrupt::{
+pub use crate::dev_interrupt::{
     InterruptHandler, InterruptPolarity, InterruptTriggerMode, InterruptVector, MAX_INTERRUPTS,
     MsiBlock,
 };

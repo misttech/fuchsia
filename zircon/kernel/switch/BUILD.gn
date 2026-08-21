@@ -445,9 +445,6 @@ config("warnings") {
   }
 
   cflags_c = [ "-Wmissing-prototypes" ]
-
-  # Needed for kernel_rust_mod().
-  rustflags = [ "-Aclippy::duplicate_mod" ]
 }
 
 config("lock_dep") {

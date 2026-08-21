@@ -2,8 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use unittest as _;
-
 use crate::kernel::types::PAddr;
 use crate::vm::arch_vm_aspace::ARCH_MMU_FLAG_PERM_READ;
 use crate::vm::vm_address_region as vmar;

@@ -18,6 +18,7 @@ library_headers("headers") {
 }
 
 kernel_rust_mod("dev_interrupt") {
+  visibility = [ ":*" ]
   source_root = "interrupt.rs"
   sources = [ "interrupt.rs" ]
 }

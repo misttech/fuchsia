@@ -74,10 +74,9 @@ kernel_rust_mod("user_copy_rs_kernel_tests") {
   testonly = true
   source_root = "tests/kernel.rs"
   sources = [ "tests/kernel.rs" ]
-  deps = [ ":user-copy-rs" ]
-  test_deps = [
+  deps = [
     "//sdk/rust/zx-status",
     "//sdk/rust/zx-types",
-    "//zircon/kernel/lib/unittest:unittest-rs",
   ]
+  test_deps = [ "//zircon/kernel/lib/unittest:unittest-rs" ]
 }

@@ -27,7 +27,6 @@ kernel_rust_mod("interrupt-rs") {
     "//sdk/rust/zx-status",
     "//src/lib/ksync",
     "//third_party/rust_crates:pin-init",
-    "//zircon/kernel/dev/interrupt:dev_interrupt",
     "//zircon/kernel/lib/debug",
   ]
   test_deps = [ "//zircon/kernel/lib/unittest:unittest-rs" ]

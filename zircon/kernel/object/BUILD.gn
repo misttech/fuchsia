@@ -253,8 +253,6 @@ kernel_rust_mod("object-rs") {
     "//zircon/kernel/lib/counters:counters-rs",
     "//zircon/kernel/lib/object-constants:object-constants-rs",
     "//zircon/kernel/lib/relaxed_atomic:relaxed_atomic-rs",
-    "//zircon/kernel/lib/user_copy:user-copy-rs",
-    "//zircon/kernel/platform:platform-rs",
     "//zircon/system/ulib/fbl/rust:fbl",
   ]
   test_deps = [ "//zircon/kernel/lib/unittest:unittest-rs" ]
