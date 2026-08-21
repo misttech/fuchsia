@@ -190,6 +190,7 @@ impl TestEnv {
 #[derive(Debug, Default)]
 pub struct TestEnvBuilder {
     build_dir: Option<PathBuf>,
+    self_path: Option<PathBuf>,
     env_vars: EnvVars,
     runtime_config: ConfigMap,
     user_config: ConfigMap,
@@ -221,6 +222,12 @@ impl TestEnvBuilder {
     /// This also allows ConfigLevel::Build to be used in tests.
     pub fn in_tree(mut self, build_dir: &Path) -> Self {
         self.build_dir = Some(build_dir.into());
+        self
+    }
+
+    /// Sets the executable path on the resulting `TestEnv.context.self_path`.
+    pub fn self_path(mut self, path: &Path) -> Self {
+        self.self_path = Some(path.into());
         self
     }
 
@@ -288,7 +295,7 @@ impl TestEnvBuilder {
     /// Not doing so will result in strange behaviour.
     pub fn build(mut self) -> Result<TestEnv> {
         let isolate_root = self.isolate_root.take().unwrap_or_else(|| tempfile::tempdir().unwrap());
-        let env = match self.build_dir {
+        let mut env = match self.build_dir {
             Some(build_dir) => TestEnv::new_intree(
                 build_dir.as_path(),
                 self.env_vars,
@@ -307,6 +314,9 @@ impl TestEnvBuilder {
                 isolate_root,
             ),
         }?;
+        if let Some(self_path) = self.self_path {
+            env.context.self_path = self_path;
+        }
 
         Ok(env)
     }

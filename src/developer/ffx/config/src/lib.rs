@@ -153,19 +153,45 @@ impl argh::FromArgValue for ConfigLevel {
 }
 
 pub const SDK_OVERRIDE_KEY_PREFIX: &str = "sdk.overrides";
+pub const SDK_ALLOW_BUILD_HOST_TOOLS: &str = keys::SDK_ALLOW_BUILD_HOST_TOOLS;
 
-/// Returns the path to the tool with the given name by first
-/// checking for configured override with the key of `sdk.override.{name}`,
-/// and no override is found, sdk.get_host_tool() is called.
+/// Returns whether build-level tool overrides (`sdk.overrides.*` in build configuration)
+/// are enabled.
+///
+/// If explicitly configured at a trusted user configuration level ([`ConfigLevel::Runtime`],
+/// [`ConfigLevel::User`], or [`ConfigLevel::Global`]), that value is used.
+/// Otherwise, defaults to `true` if `ffx` itself is running from within the configured
+/// build directory, and `false` otherwise.
+pub fn allow_build_host_tools(ctx: &EnvironmentContext) -> bool {
+    for level in [ConfigLevel::Runtime, ConfigLevel::User, ConfigLevel::Global] {
+        match ctx.query(SDK_ALLOW_BUILD_HOST_TOOLS).level(Some(level)).build().get::<bool>(ctx) {
+            Ok(allowed) => return allowed,
+            Err(ConfigError::KeyNotFound | ConfigError::NoValueSet(_)) => continue,
+            Err(_) => continue,
+        }
+    }
+    ctx.is_self_in_build_dir()
+}
+
+/// Returns the path to the tool with the given name by first checking for configured
+/// overrides with the key `sdk.overrides.{name}`, falling back to [`Sdk::get_host_tool`].
+///
+/// Tool binary overrides must come from explicit user-controlled levels ([`ConfigLevel::Runtime`],
+/// [`ConfigLevel::User`], or [`ConfigLevel::Global`]), or from [`ConfigLevel::Build`] if
+/// build overrides are enabled via `sdk.overrides.allow-build-host-tools` (which defaults to
+/// `true` when `ffx` is running from within the build directory). Default-level configuration
+/// (including project-local `fuchsia_env` files) is always excluded to prevent untrusted
+/// repository directories from hijacking tool execution.
 pub fn get_host_tool(ctx: &EnvironmentContext, name: &str) -> Result<PathBuf, LibError> {
-    // Check for configured override for the host tool.
-    // Tool binary overrides must come from explicit user-controlled levels (Runtime flags,
-    // User config, or Global config). Default-level configuration (including project-local
-    // fuchsia_env files) and Build-level configuration are explicitly excluded to prevent
-    // untrusted repository directories from hijacking tool execution.
     let sdk = ctx.get_sdk()?;
     let override_key = format!("{SDK_OVERRIDE_KEY_PREFIX}.{name}");
-    for level in [ConfigLevel::Runtime, ConfigLevel::User, ConfigLevel::Global] {
+    let check_build_level = allow_build_host_tools(ctx);
+    let levels: &[ConfigLevel] = if check_build_level {
+        &[ConfigLevel::Runtime, ConfigLevel::User, ConfigLevel::Build, ConfigLevel::Global]
+    } else {
+        &[ConfigLevel::Runtime, ConfigLevel::User, ConfigLevel::Global]
+    };
+    for &level in levels {
         match ctx.query(&override_key).level(Some(level)).build().get::<PathBuf>(ctx) {
             Ok(tool_path) => {
                 if tool_path.exists() {
@@ -179,6 +205,22 @@ pub fn get_host_tool(ctx: &EnvironmentContext, name: &str) -> Result<PathBuf, Li
             Err(e) => return Err(LibError::from(e)),
         }
     }
+
+    if !check_build_level {
+        if ctx
+            .query(&override_key)
+            .level(Some(ConfigLevel::Build))
+            .build()
+            .get::<PathBuf>(ctx)
+            .is_ok()
+        {
+            eprintln!(
+                "WARNING: Ignoring build-level override for '{name}' because build overrides are \
+                 disabled. To enable, configure '{SDK_ALLOW_BUILD_HOST_TOOLS}=true'."
+            );
+        }
+    }
+
     let tool_path = sdk.get_host_tool(name)?;
     if tool_path.exists() {
         log::info!("SDK returned {tool_path:?} for {name}");
@@ -598,5 +640,192 @@ mod test {
 
         let result = get_host_tool(&env.context, "a_host_tool").expect("a_host_tool");
         assert_eq!(result, override_path);
+    }
+
+    #[fuchsia::test]
+    fn test_get_host_tool_ignores_build_level_override_when_outside_build_dir() {
+        let mut builder = ffx_config::test_env();
+        let build_dir = builder.isolate_root().join("build");
+        fs::create_dir_all(&build_dir).expect("build dir created");
+        let sdk_root = builder.isolate_root().join("sdk");
+
+        let external_bin = builder.isolate_root().join("external_bin");
+        fs::create_dir_all(&external_bin).expect("external bin dir created");
+        let external_ffx = external_bin.join("ffx");
+        fs::write(&external_ffx, "").expect("external ffx created");
+
+        put_file!(sdk_root, "../test_data/sdk", "meta/manifest.json");
+        put_file!(sdk_root, "../test_data/sdk", "tools/x64/a_host_tool-meta.json");
+
+        let expected_sdk_tool = sdk_root.join("tools/x64/a-host-tool");
+        fs::write(&expected_sdk_tool, "real_sdk_tool").expect("sdk file written");
+
+        let build_override_path = builder.isolate_root().join("build_override_host_tool");
+        fs::write(&build_override_path, "build_override_tool_contents")
+            .expect("override file written");
+
+        let env = builder
+            .in_tree(&build_dir)
+            .self_path(&external_ffx)
+            .user_config("sdk.root", sdk_root.to_string_lossy())
+            .build_config(
+                &format!("{SDK_OVERRIDE_KEY_PREFIX}.a_host_tool"),
+                build_override_path.to_string_lossy(),
+            )
+            .build()
+            .expect("create test config");
+
+        // When running outside build dir and not opted in, build override is ignored
+        let result = get_host_tool(&env.context, "a_host_tool").expect("a_host_tool");
+        assert_eq!(result, expected_sdk_tool);
+    }
+
+    #[fuchsia::test]
+    fn test_get_host_tool_accepts_build_level_override_when_inside_build_dir() {
+        let mut builder = ffx_config::test_env();
+        let build_dir = builder.isolate_root().join("build");
+        fs::create_dir_all(&build_dir).expect("build dir created");
+        let sdk_root = builder.isolate_root().join("sdk");
+
+        let in_tree_host_tools = build_dir.join("host_x64");
+        fs::create_dir_all(&in_tree_host_tools).expect("host_x64 dir created");
+        let in_tree_ffx = in_tree_host_tools.join("ffx");
+        fs::write(&in_tree_ffx, "").expect("in tree ffx created");
+
+        put_file!(sdk_root, "../test_data/sdk", "meta/manifest.json");
+        put_file!(sdk_root, "../test_data/sdk", "tools/x64/a_host_tool-meta.json");
+
+        let build_override_path = builder.isolate_root().join("build_override_host_tool");
+        fs::write(&build_override_path, "build_override_tool_contents")
+            .expect("override file written");
+
+        let env = builder
+            .in_tree(&build_dir)
+            .self_path(&in_tree_ffx)
+            .user_config("sdk.root", sdk_root.to_string_lossy())
+            .build_config(
+                &format!("{SDK_OVERRIDE_KEY_PREFIX}.a_host_tool"),
+                build_override_path.to_string_lossy(),
+            )
+            .build()
+            .expect("create test config");
+
+        // When running inside build dir, build override is accepted by default
+        let result = get_host_tool(&env.context, "a_host_tool").expect("a_host_tool");
+        assert_eq!(result, build_override_path);
+    }
+
+    #[fuchsia::test]
+    fn test_get_host_tool_accepts_build_level_override_when_opted_in() {
+        let mut builder = ffx_config::test_env();
+        let build_dir = builder.isolate_root().join("build");
+        fs::create_dir_all(&build_dir).expect("build dir created");
+        let sdk_root = builder.isolate_root().join("sdk");
+
+        let external_bin = builder.isolate_root().join("external_bin");
+        fs::create_dir_all(&external_bin).expect("external bin dir created");
+        let external_ffx = external_bin.join("ffx");
+        fs::write(&external_ffx, "").expect("external ffx created");
+
+        put_file!(sdk_root, "../test_data/sdk", "meta/manifest.json");
+        put_file!(sdk_root, "../test_data/sdk", "tools/x64/a_host_tool-meta.json");
+
+        let build_override_path = builder.isolate_root().join("build_override_host_tool");
+        fs::write(&build_override_path, "build_override_tool_contents")
+            .expect("override file written");
+
+        let env = builder
+            .in_tree(&build_dir)
+            .self_path(&external_ffx)
+            .user_config("sdk.root", sdk_root.to_string_lossy())
+            .user_config(SDK_ALLOW_BUILD_HOST_TOOLS, true)
+            .build_config(
+                &format!("{SDK_OVERRIDE_KEY_PREFIX}.a_host_tool"),
+                build_override_path.to_string_lossy(),
+            )
+            .build()
+            .expect("create test config");
+
+        // When opted in explicitly at user level, build-level override is used even if outside build dir
+        let result = get_host_tool(&env.context, "a_host_tool").expect("a_host_tool");
+        assert_eq!(result, build_override_path);
+    }
+
+    #[fuchsia::test]
+    fn test_get_host_tool_ignores_build_level_override_when_opted_out_explicitly() {
+        let mut builder = ffx_config::test_env();
+        let build_dir = builder.isolate_root().join("build");
+        fs::create_dir_all(&build_dir).expect("build dir created");
+        let sdk_root = builder.isolate_root().join("sdk");
+
+        let in_tree_host_tools = build_dir.join("host_x64");
+        fs::create_dir_all(&in_tree_host_tools).expect("host_x64 dir created");
+        let in_tree_ffx = in_tree_host_tools.join("ffx");
+        fs::write(&in_tree_ffx, "").expect("in tree ffx created");
+
+        put_file!(sdk_root, "../test_data/sdk", "meta/manifest.json");
+        put_file!(sdk_root, "../test_data/sdk", "tools/x64/a_host_tool-meta.json");
+
+        let expected_sdk_tool = sdk_root.join("tools/x64/a-host-tool");
+        fs::write(&expected_sdk_tool, "real_sdk_tool").expect("sdk file written");
+
+        let build_override_path = builder.isolate_root().join("build_override_host_tool");
+        fs::write(&build_override_path, "build_override_tool_contents")
+            .expect("override file written");
+
+        let env = builder
+            .in_tree(&build_dir)
+            .self_path(&in_tree_ffx)
+            .user_config("sdk.root", sdk_root.to_string_lossy())
+            .user_config(SDK_ALLOW_BUILD_HOST_TOOLS, false)
+            .build_config(
+                &format!("{SDK_OVERRIDE_KEY_PREFIX}.a_host_tool"),
+                build_override_path.to_string_lossy(),
+            )
+            .build()
+            .expect("create test config");
+
+        // Explicit user config false overrides the default true
+        let result = get_host_tool(&env.context, "a_host_tool").expect("a_host_tool");
+        assert_eq!(result, expected_sdk_tool);
+    }
+
+    #[fuchsia::test]
+    fn test_get_host_tool_ignores_opt_in_from_build_config() {
+        let mut builder = ffx_config::test_env();
+        let build_dir = builder.isolate_root().join("build");
+        fs::create_dir_all(&build_dir).expect("build dir created");
+        let sdk_root = builder.isolate_root().join("sdk");
+
+        let external_bin = builder.isolate_root().join("external_bin");
+        fs::create_dir_all(&external_bin).expect("external bin dir created");
+        let external_ffx = external_bin.join("ffx");
+        fs::write(&external_ffx, "").expect("external ffx created");
+
+        put_file!(sdk_root, "../test_data/sdk", "meta/manifest.json");
+        put_file!(sdk_root, "../test_data/sdk", "tools/x64/a_host_tool-meta.json");
+
+        let expected_sdk_tool = sdk_root.join("tools/x64/a-host-tool");
+        fs::write(&expected_sdk_tool, "real_sdk_tool").expect("sdk file written");
+
+        let build_override_path = builder.isolate_root().join("build_override_host_tool");
+        fs::write(&build_override_path, "build_override_tool_contents")
+            .expect("override file written");
+
+        let env = builder
+            .in_tree(&build_dir)
+            .self_path(&external_ffx)
+            .user_config("sdk.root", sdk_root.to_string_lossy())
+            .build_config(SDK_ALLOW_BUILD_HOST_TOOLS, true)
+            .build_config(
+                &format!("{SDK_OVERRIDE_KEY_PREFIX}.a_host_tool"),
+                build_override_path.to_string_lossy(),
+            )
+            .build()
+            .expect("create test config");
+
+        // Setting sdk.overrides.allow-build-host-tools in build_config itself must be ignored
+        let result = get_host_tool(&env.context, "a_host_tool").expect("a_host_tool");
+        assert_eq!(result, expected_sdk_tool);
     }
 }

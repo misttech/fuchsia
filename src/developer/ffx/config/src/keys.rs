@@ -60,3 +60,6 @@ pub const DISCOVERY_CACHE_DIR_CONFIG: &str = "target.discovery_cache_dir";
 
 /// Whether or not to enable colored output for log commands.
 pub const LOG_CMD_COLOR: &str = "log_cmd.color";
+
+/// Whether or not to allow build-level configuration overrides for SDK host tools (sdk.overrides.*).
+pub const SDK_ALLOW_BUILD_HOST_TOOLS: &str = "sdk.overrides.allow-build-host-tools";

@@ -77,7 +77,7 @@ pub struct EnvironmentContext {
     pub(crate) runtime_args: ConfigMap,
     env_file_path: Option<PathBuf>,
     pub(crate) config: Config,
-    self_path: PathBuf,
+    pub(crate) self_path: PathBuf,
     // A target spec is an Option<String>. The extra Option<> indicates whether it has been set.
     override_target_spec: Option<Option<String>>,
     /// if true, do not read or write any environment files.
@@ -663,6 +663,18 @@ impl EnvironmentContext {
 
     pub fn get_overridden_target_specifier(&self) -> Option<Option<String>> {
         self.override_target_spec.clone()
+    }
+
+    /// Returns whether the running ffx executable is located within the active build directory.
+    pub fn is_self_in_build_dir(&self) -> bool {
+        if let Some(build_dir) = self.build_dir() {
+            if let (Ok(canonical_build_dir), Ok(canonical_self_path)) =
+                (std::fs::canonicalize(build_dir), std::fs::canonicalize(&self.self_path))
+            {
+                return canonical_self_path.starts_with(canonical_build_dir);
+            }
+        }
+        false
     }
 }
 
