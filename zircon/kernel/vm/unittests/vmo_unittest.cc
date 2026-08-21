@@ -1872,7 +1872,7 @@ bool vmo_eviction_hints_clone_test() {
               vmo->GetAttributedMemoryInRange(0, kPageSize));
 
   // Re supply the second page, in case it was evicted.
-  supply_pager_vmo_pages(vmo.get(), 1, 1, pages);
+  supply_pager_vmo_pages(vmo.get(), 1, 1, &pages[1]);
   EXPECT_TRUE(pmm_page_queues()->DebugPageIsReclaim(pages[1], &queue));
 
   // Verify that hinting still works via the parent VMO.
