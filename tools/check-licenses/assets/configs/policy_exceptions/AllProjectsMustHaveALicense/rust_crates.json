@@ -5,7 +5,6 @@
                 "bug": "TODO: b/missing",
                 "description": "Migrated from legacy _config.json",
                 "paths": [
-                    "third_party/rust_crates",
                     "third_party/rust_crates/empty/android_system_properties",
                     "third_party/rust_crates/empty/cc",
                     "third_party/rust_crates/empty/cfg_aliases",

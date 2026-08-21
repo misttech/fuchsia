@@ -87,6 +87,18 @@ func (p *Project) FoundLicenses() []ClassifiedFile {
 	return found
 }
 
+// IsFirstParty returns true if the project explicitly declares FirstParty == "yes" in its README.
+func (p *Project) IsFirstParty() bool {
+	if p.Readme != nil {
+		for _, s := range p.Readme.OriginalSegments() {
+			if s.FirstParty == "yes" {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 // FilteredProject represents the output of the Build Graph Filtering Stage (Pruner).
 type FilteredProject struct {
 	Project
@@ -119,6 +131,7 @@ type ClassifiedFile struct {
 	ProjectRoot   string
 	IsLicenseFile bool
 	HasReadme     bool
+	IsFirstParty  bool
 	AnalyzedText  []byte
 
 	// Matches contains every discrete license or copyright block found in the file.

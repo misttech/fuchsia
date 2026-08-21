@@ -56,6 +56,7 @@ func (v *Validator) Run(ctx context.Context, in <-chan pipeline.ClassifiedFile) 
 
 		projectHasLicense := make(map[string]bool)
 		projectHasReadme := make(map[string]bool)
+		projectIsFirstParty := make(map[string]bool)
 
 		for cf := range in {
 			if ctx.Err() != nil {
@@ -67,6 +68,9 @@ func (v *Validator) Run(ctx context.Context, in <-chan pipeline.ClassifiedFile) 
 			}
 			if cf.HasReadme {
 				projectHasReadme[cf.ProjectRoot] = true
+			}
+			if cf.IsFirstParty {
+				projectIsFirstParty[cf.ProjectRoot] = true
 			}
 
 			// We need a consistent relative path for allowlist lookups
@@ -109,9 +113,9 @@ func (v *Validator) Run(ctx context.Context, in <-chan pipeline.ClassifiedFile) 
 			}
 
 			// 2. Check: AllFuchsiaAuthorSourceFilesMustHaveCopyrightHeaders
-			// Source code owned by Fuchsia (ProjectRoot == FuchsiaDir) MUST have a FuchsiaCopyright,
+			// Source code owned by Fuchsia (ProjectRoot == FuchsiaDir or IsFirstParty) MUST have a FuchsiaCopyright,
 			// UNLESS their file path is explicitly allowlisted.
-			isFuchsiaProject := cf.ProjectRoot == v.FuchsiaDir || cf.ProjectRoot == "." || cf.ProjectRoot == ""
+			isFuchsiaProject := cf.ProjectRoot == v.FuchsiaDir || cf.ProjectRoot == "." || cf.ProjectRoot == "" || cf.IsFirstParty
 
 			if !cf.IsLicenseFile && isFuchsiaProject {
 				hasFuchsiaCopyright := CheckCopyrightText(cf.AnalyzedText)
@@ -188,7 +192,8 @@ func (v *Validator) Run(ctx context.Context, in <-chan pipeline.ClassifiedFile) 
 		sort.Strings(projs)
 		for _, proj := range projs {
 			hasLicense := projectHasLicense[proj]
-			if proj == v.FuchsiaDir || proj == "." || proj == "" {
+			isFirstParty := projectIsFirstParty[proj]
+			if proj == v.FuchsiaDir || proj == "." || proj == "" || isFirstParty {
 				continue
 			}
 			if !hasLicense {

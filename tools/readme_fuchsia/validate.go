@@ -41,34 +41,38 @@ func Validate(projectRoot string, readmes []*Readme) []error {
 			errs = append(errs, fmt.Errorf("[%d]: Missing required field 'Name' (http://go/readme_fuchsia#name)", i+1))
 		}
 
-		hasUrlAndRev := r.URL != "" && r.Revision != ""
-		hasCpeAndVer := r.CPEPrefix != "" && r.Version != ""
-		if !hasUrlAndRev && !hasCpeAndVer {
-			errs = append(errs, fmt.Errorf("[%d]: Missing required fields. Must specify either ('URL' AND 'Revision') OR ('CPEPrefix' AND 'Version') (http://go/readme_fuchsia#url)", i+1))
-		}
-
-		if r.SecurityCritical == "" {
-			errs = append(errs, fmt.Errorf("[%d]: Missing required field 'Security Critical' (http://go/readme_fuchsia#security-critical)", i+1))
-		} else if r.SecurityCritical != "yes" && r.SecurityCritical != "no" {
-			errs = append(errs, fmt.Errorf("[%d]: Field 'Security Critical' has an unknown value. Required 'yes' or 'no', got %q (http://go/readme_fuchsia#security-critical)", i+1, r.SecurityCritical))
-		}
 		if r.FirstParty != "" && r.FirstParty != "yes" && r.FirstParty != "no" {
 			errs = append(errs, fmt.Errorf("[%d]: Field 'First Party' has an unknown value. Required 'yes' or 'no', got %q (http://go/readme_fuchsia#first-party)", i+1, r.FirstParty))
 		}
+
+		if r.FirstParty != "yes" {
+			hasUrlAndRev := r.URL != "" && r.Revision != ""
+			hasCpeAndVer := r.CPEPrefix != "" && r.Version != ""
+			if !hasUrlAndRev && !hasCpeAndVer {
+				errs = append(errs, fmt.Errorf("[%d]: Missing required fields. Must specify either ('URL' AND 'Revision') OR ('CPEPrefix' AND 'Version') (http://go/readme_fuchsia#url)", i+1))
+			}
+
+			if r.SecurityCritical == "" {
+				errs = append(errs, fmt.Errorf("[%d]: Missing required field 'Security Critical' (http://go/readme_fuchsia#security-critical)", i+1))
+			} else if r.SecurityCritical != "yes" && r.SecurityCritical != "no" {
+				errs = append(errs, fmt.Errorf("[%d]: Field 'Security Critical' has an unknown value. Required 'yes' or 'no', got %q (http://go/readme_fuchsia#security-critical)", i+1, r.SecurityCritical))
+			}
+			if len(r.Licenses) == 0 {
+				errs = append(errs, fmt.Errorf("[%d]: Missing required field 'License' (http://go/readme_fuchsia#license)", i+1))
+			}
+			if len(r.LicenseFiles) == 0 {
+				errs = append(errs, fmt.Errorf("[%d]: Missing required field 'License File'. At least one must be specified. (http://go/readme_fuchsia#license-file)", i+1))
+			}
+		}
+
 		if i > 0 && r.Location == "" {
 			errs = append(errs, fmt.Errorf("[%d]: Missing required field 'Location' for sub-project defined after a DEPENDENCY DIVIDER (http://go/readme_fuchsia#location)", i+1))
 		}
-		if len(r.Licenses) == 0 {
-			errs = append(errs, fmt.Errorf("[%d]: Missing required field 'License' (http://go/readme_fuchsia#license)", i+1))
-		}
-		if len(r.LicenseFiles) == 0 {
-			errs = append(errs, fmt.Errorf("[%d]: Missing required field 'License File'. At least one must be specified. (http://go/readme_fuchsia#license-file)", i+1))
-		} else {
-			for _, lf := range r.LicenseFiles {
-				filePath := filepath.Join(currentDir, lf)
-				if _, err := os.Stat(filePath); os.IsNotExist(err) {
-					errs = append(errs, fmt.Errorf("[%d]: License File does not exist: %s (http://go/readme_fuchsia#license-file)", i+1, filepath.Join(currentDir, lf)))
-				}
+
+		for _, lf := range r.LicenseFiles {
+			filePath := filepath.Join(currentDir, lf)
+			if _, err := os.Stat(filePath); os.IsNotExist(err) {
+				errs = append(errs, fmt.Errorf("[%d]: License File does not exist: %s (http://go/readme_fuchsia#license-file)", i+1, filepath.Join(currentDir, lf)))
 			}
 		}
 

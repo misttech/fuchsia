@@ -116,9 +116,7 @@ func UpdateWithClassifiedFiles(fuchsiaDir, absDir string, readmes []*Readme, fou
 
 		lics := make(map[string]bool)
 		for _, m := range cf.Matches {
-			if isPrimaryLicenseFile[cf.Path] {
-				lics[m.SPDXID] = true
-			} else if m.MatchType != "Copyright" && !strings.HasPrefix(m.MatchType, "_") {
+			if m.IsLicense() {
 				lics[m.SPDXID] = true
 			}
 		}

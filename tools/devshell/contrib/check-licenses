@@ -24,4 +24,5 @@ export PREBUILT_3P_DIR HOST_PLATFORM
 fx-run-bazel false "$(fx-get-bazel)" run --config=host \
   --run_env=FUCHSIA_DIR="${FUCHSIA_DIR}" \
   --run_env=FUCHSIA_BUILD_DIR="${FUCHSIA_BUILD_DIR}" \
+  --run_env=BUILD_WORKING_DIRECTORY="${PWD}" \
   '//tools/check-licenses' -- "$@"

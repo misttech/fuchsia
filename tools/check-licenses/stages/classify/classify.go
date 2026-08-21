@@ -79,6 +79,9 @@ func (c *Classifier) Run(ctx context.Context, in <-chan pipeline.FilteredProject
 			go func() {
 				defer wg.Done()
 				for proj := range in {
+					hasReadme := proj.Readme != nil
+					isFirstParty := proj.IsFirstParty()
+
 					for _, fileInfo := range proj.Files {
 						path := fileInfo.Path
 						if ctx.Err() != nil {
@@ -87,14 +90,13 @@ func (c *Classifier) Run(ctx context.Context, in <-chan pipeline.FilteredProject
 
 						metrics.TotalFilesProcessed.Inc()
 
-						hasReadme := proj.Readme != nil
 						if fileInfo.IsNonLicense {
 							metrics.FilesProcessed.Inc("skipped_non_license")
 							// Emit an unclassified file
 							select {
 							case <-ctx.Done():
 								return
-							case out <- pipeline.ClassifiedFile{Path: path, ProjectRoot: proj.RootPath, IsLicenseFile: false, HasReadme: hasReadme}:
+							case out <- pipeline.ClassifiedFile{Path: path, ProjectRoot: proj.RootPath, IsLicenseFile: false, HasReadme: hasReadme, IsFirstParty: isFirstParty}:
 							}
 							continue
 						}
@@ -111,7 +113,7 @@ func (c *Classifier) Run(ctx context.Context, in <-chan pipeline.FilteredProject
 								select {
 								case <-ctx.Done():
 									return
-								case out <- pipeline.ClassifiedFile{Path: path, ProjectRoot: proj.RootPath, IsLicenseFile: isLicense, HasReadme: hasReadme}:
+								case out <- pipeline.ClassifiedFile{Path: path, ProjectRoot: proj.RootPath, IsLicenseFile: isLicense, HasReadme: hasReadme, IsFirstParty: isFirstParty}:
 								}
 								continue
 							}
@@ -123,6 +125,7 @@ func (c *Classifier) Run(ctx context.Context, in <-chan pipeline.FilteredProject
 							continue
 						}
 						classified.HasReadme = hasReadme
+						classified.IsFirstParty = isFirstParty
 
 						metrics.FilesProcessed.Inc("classified")
 

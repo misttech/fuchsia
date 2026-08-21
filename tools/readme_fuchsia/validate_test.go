@@ -150,4 +150,14 @@ func TestValidate_FirstParty_Success(t *testing.T) {
 	if len(errs) != 0 {
 		t.Fatalf("expected validation success for valid FirstParty, got: %v", errs)
 	}
+
+	// Minimal first-party README with only Name and FirstParty
+	minimalReadme := Readme{
+		Name:       "test",
+		FirstParty: "yes",
+	}
+	minimalErrs := Validate(tmpDir, []*Readme{&minimalReadme})
+	if len(minimalErrs) != 0 {
+		t.Fatalf("expected validation success for minimal FirstParty, got: %v", minimalErrs)
+	}
 }

@@ -164,8 +164,12 @@ func ResolveAndValidatePath(fuchsiaDir, inputPath string) (string, string, error
 	if filepath.IsAbs(inputPath) {
 		absInputPath = filepath.Clean(inputPath)
 	} else {
-		if wd, err := os.Getwd(); err == nil && (wd == absFuchsiaDir || strings.HasPrefix(wd, absFuchsiaDir+string(filepath.Separator))) {
-			absInputPath = filepath.Join(wd, inputPath)
+		workingDir := os.Getenv("BUILD_WORKING_DIRECTORY")
+		if workingDir == "" {
+			workingDir, _ = os.Getwd()
+		}
+		if workingDir != "" && (workingDir == absFuchsiaDir || strings.HasPrefix(workingDir, absFuchsiaDir+string(filepath.Separator))) {
+			absInputPath = filepath.Join(workingDir, inputPath)
 		} else {
 			absInputPath = filepath.Join(absFuchsiaDir, inputPath)
 		}

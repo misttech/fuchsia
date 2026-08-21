@@ -77,19 +77,20 @@ func (g *Grouper) Run(ctx context.Context, in <-chan pipeline.RawPath) (<-chan p
 						strings.Contains(slashRel, "/prebuilt/")
 
 					dir := filepath.Dir(slashRel)
-					isSubPackage := strings.Contains(dir, "/example") ||
-						strings.Contains(dir, "/benchmark") ||
-						strings.Contains(dir, "/test") ||
-						strings.Contains(dir, "/interop") ||
-						strings.Contains(dir, "/debug_extension") ||
-						strings.Contains(dir, "/doc") ||
-						strings.Contains(dir, "/tools/") ||
-						strings.Contains(dir, "/misc") ||
-						strings.HasPrefix(slashRel, "third_party/go/src/") // e.g. go/src/vendor, go/src/cmd/vendor
+					parts := strings.Split(dir, "/")
+					isSubPackage := strings.HasPrefix(slashRel, "third_party/go/src/")
+					for i, part := range parts {
+						if i > 1 {
+							switch part {
+							case "example", "examples", "benchmark", "benchmarks", "test", "tests",
+								"interop", "debug_extension", "doc", "docs", "tools", "misc":
+								isSubPackage = true
+							}
+						}
+					}
 
 					if strings.HasPrefix(slashRel, "third_party/rust_crates/mirrors/") {
-						parts := strings.Split(slashRel, "/")
-						if len(parts) > 5 { // third_party / rust_crates / mirrors / <repo> / Cargo.toml (5 parts)
+						if len(parts) > 4 { // third_party / rust_crates / mirrors / <repo> (4 parts)
 							isSubPackage = true
 						}
 					}
@@ -140,10 +141,8 @@ func (g *Grouper) Run(ctx context.Context, in <-chan pipeline.RawPath) (<-chan p
 					if parent == g.FuchsiaDir {
 						continue
 					}
-					relParent, _ := filepath.Rel(g.FuchsiaDir, parent)
-					// third_party/rust_crates has a container README, but crates under it are independent projects.
-					if filepath.ToSlash(relParent) == "third_party/rust_crates" {
-						continue
+					if g.isBarrier(parent) {
+						break
 					}
 					if readmeDirs[parent] {
 						hasReadmeAncestor = true
@@ -324,7 +323,7 @@ func (g *Grouper) findProjectRoot(filePath string, projectRoots map[string][]*re
 	for {
 		// Is this directory a registered project boundary?
 		if _, isBoundary := projectRoots[dir]; isBoundary {
-			if dir == g.FuchsiaDir && barrierChild != "" {
+			if barrierChild != "" {
 				return barrierChild
 			}
 			return dir
