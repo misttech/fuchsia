@@ -21,7 +21,7 @@ use netstack3_base::{
 use packet::{EitherSerializer, EmptyBuf, InnerPacketBuilder as _};
 use packet_formats::icmp::ndp::options::NdpOptionBuilder;
 use packet_formats::icmp::ndp::{OptionSequenceBuilder, RouterSolicitation};
-use rand::Rng as _;
+use rand::RngExt as _;
 
 use crate::internal::base::IpSendFrameError;
 use crate::internal::device::Ipv6LinkLayerAddr;

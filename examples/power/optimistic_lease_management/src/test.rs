@@ -4,21 +4,23 @@
 
 use anyhow::{Context, Result};
 use fidl::endpoints;
+use fidl_fuchsia_example_power as fexample;
+use fidl_fuchsia_hardware_power_suspend as fhardware_suspend;
+use fidl_fuchsia_power_system as fsag;
+use fidl_fuchsia_testing_harness as ftest_harness;
+use fidl_test_sagcontrol as sagcontrol;
+use fidl_test_suspendcontrol as fsuspend_control;
+use fidl_test_systemactivitygovernor as sag_test;
 use ftest::{ChildOptions, RealmBuilder};
+use fuchsia_async as fasync;
 use fuchsia_component::client as component;
+use fuchsia_component_test as ftest;
 use futures::StreamExt;
 use futures::channel::mpsc;
 use futures::lock::Mutex;
 use log::info;
 use power_framework_test_realm::PowerFrameworkTestRealmBuilder;
-use rand::RngCore;
-use {
-    fidl_fuchsia_example_power as fexample,
-    fidl_fuchsia_hardware_power_suspend as fhardware_suspend, fidl_fuchsia_power_system as fsag,
-    fidl_fuchsia_testing_harness as ftest_harness, fidl_test_sagcontrol as sagcontrol,
-    fidl_test_suspendcontrol as fsuspend_control, fidl_test_systemactivitygovernor as sag_test,
-    fuchsia_async as fasync, fuchsia_component_test as ftest,
-};
+use rand::Rng as _;
 
 #[fuchsia::test]
 async fn run_components() -> Result<()> {

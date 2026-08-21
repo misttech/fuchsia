@@ -6,7 +6,7 @@
 //! goes like this -
 //!
 //! ```
-//! use {rand::{Rng, SeedableRng, rngs::StdRng}, static_tree::{EntryDistribution, DirectoryEntry}};
+//! use {rand::{Rng, SeedableRng as _, rngs::StdRng}, static_tree::{EntryDistribution, DirectoryEntry}};
 //! let mut rng = StdRng::seed_from_u64(seed);
 //! let dist = EntryDistribution::new(depth);
 //! let tree: DirectoryEntry = rng.sample(&dist);
@@ -15,8 +15,8 @@
 
 use anyhow::Error;
 use fidl_fuchsia_io as fio;
-use rand::Rng;
 use rand::distr::{Bernoulli, Distribution, StandardUniform};
+use rand::{Rng, RngExt as _};
 
 /// A random distribution specialized to generation of random directory trees. This distribution
 /// decreases the likelyhood of a directory being generated linearly relative to the depth of the
@@ -164,7 +164,7 @@ mod tests {
     use super::{DirectoryEntry, Entry, EntryDistribution, FileEntry};
     use fs_management::Minfs;
     use ramdevice_client::RamdiskClient;
-    use rand::{Rng as _, RngCore};
+    use rand::RngExt as _;
 
     struct StepRng {
         state: u64,
@@ -177,22 +177,21 @@ mod tests {
         }
     }
 
-    impl RngCore for StepRng {
-        fn next_u32(&mut self) -> u32 {
-            self.next_u64() as u32
+    impl rand::TryRng for StepRng {
+        type Error = core::convert::Infallible;
+
+        fn try_next_u32(&mut self) -> Result<u32, Self::Error> {
+            Ok(self.try_next_u64()? as u32)
         }
 
-        fn next_u64(&mut self) -> u64 {
+        fn try_next_u64(&mut self) -> Result<u64, Self::Error> {
             let r = self.state;
             self.state = self.state.wrapping_add(self.increment);
-            r
+            Ok(r)
         }
 
-        fn fill_bytes(&mut self, dst: &mut [u8]) {
-            rand_core::utils::fill_bytes_via_next_word(dst, || {
-                Ok::<_, core::convert::Infallible>(self.next_u64())
-            })
-            .unwrap()
+        fn try_fill_bytes(&mut self, dst: &mut [u8]) -> Result<(), Self::Error> {
+            rand::rand_core::utils::fill_bytes_via_next_word(dst, || self.try_next_u64())
         }
     }
 

@@ -10,8 +10,8 @@ use fxfs_crypto::{
     Crypt, EncryptionKey, FscryptKeyIdentifierAndNonce, KeyPurpose, ObjectType, UnwrappedKey,
     WrappedKey, WrappingKeyId,
 };
+use rand::RngExt as _;
 use rand::rngs::StdRng;
-use rand::{RngCore, SeedableRng};
 use std::collections::hash_map::{Entry, HashMap};
 use std::sync::atomic::{AtomicBool, Ordering};
 use zx_status as zx;
@@ -144,7 +144,7 @@ impl Crypt for CryptBase {
         let nonce = zero_extended_nonce(owner);
 
         let mut uwnrapped_key = [0u8; 32];
-        StdRng::from_os_rng().fill_bytes(&mut uwnrapped_key);
+        rand::make_rng::<StdRng>().fill(&mut uwnrapped_key);
 
         let wrapped_key = cipher.encrypt(&nonce, &uwnrapped_key[..])?;
         Ok((
@@ -169,7 +169,7 @@ impl Crypt for CryptBase {
         match object_type {
             ObjectType::Directory | ObjectType::Symlink => {
                 let mut nonce = [0; 16];
-                StdRng::from_os_rng().fill_bytes(&mut nonce);
+                rand::make_rng::<StdRng>().fill(&mut nonce);
                 let inner = self.inner.lock();
                 let cipher = inner.ciphers.get(&wrapping_key_id).ok_or(zx::Status::UNAVAILABLE)?;
                 let mut unwrapped_key = [0u8; 96];
@@ -187,7 +187,7 @@ impl Crypt for CryptBase {
                 let cipher = inner.ciphers.get(&wrapping_key_id).ok_or(zx::Status::UNAVAILABLE)?;
                 let nonce = zero_extended_nonce(owner);
                 let mut unwrapped_key = [0u8; 32];
-                StdRng::from_os_rng().fill_bytes(&mut unwrapped_key);
+                rand::make_rng::<StdRng>().fill(&mut unwrapped_key);
                 let wrapped = cipher.encrypt(&nonce, &unwrapped_key[..])?;
                 Ok((
                     EncryptionKey::Fxfs(fxfs_crypto::FxfsKey {

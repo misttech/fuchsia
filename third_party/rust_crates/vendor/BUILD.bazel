@@ -2173,14 +2173,14 @@ alias(
 )
 
 alias(
-    name = "rand-0.9.4",
-    actual = "//third_party/rust_crates/vendor/rand-0.9.4:rand",
+    name = "rand-0.10.2",
+    actual = "//third_party/rust_crates/vendor/rand-0.10.2:rand",
     tags = ["manual"],
 )
 
 alias(
     name = "rand",
-    actual = "//third_party/rust_crates/vendor/rand-0.9.4:rand",
+    actual = "//third_party/rust_crates/vendor/rand-0.10.2:rand",
     tags = ["manual"],
 )
 
@@ -2197,14 +2197,14 @@ alias(
 )
 
 alias(
-    name = "rand_xorshift-0.4.0",
-    actual = "//third_party/rust_crates/vendor/rand_xorshift-0.4.0:rand_xorshift",
+    name = "rand_xorshift-0.5.0",
+    actual = "//third_party/rust_crates/vendor/rand_xorshift-0.5.0:rand_xorshift",
     tags = ["manual"],
 )
 
 alias(
     name = "rand_xorshift",
-    actual = "//third_party/rust_crates/vendor/rand_xorshift-0.4.0:rand_xorshift",
+    actual = "//third_party/rust_crates/vendor/rand_xorshift-0.5.0:rand_xorshift",
     tags = ["manual"],
 )
 

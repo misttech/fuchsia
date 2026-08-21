@@ -9,7 +9,6 @@ use anyhow::{Error, ensure};
 use async_trait::async_trait;
 use block_protocol::{ReadOptions, WriteFlags, WriteOptions};
 use fuchsia_sync::Mutex;
-use rand::Rng;
 use std::ops::Range;
 use std::sync::atomic::{AtomicBool, Ordering};
 
@@ -220,6 +219,7 @@ impl Device for FakeDevice {
 
     fn discard_random_since_last_flush(&self) -> Result<(), Error> {
         let bs = self.allocator.block_size();
+        use rand::RngExt as _;
         let mut rng = rand::rng();
         let mut guard = self.inner.lock();
         let Inner { data, blocks_written_since_last_barrier, .. } = &mut *guard;

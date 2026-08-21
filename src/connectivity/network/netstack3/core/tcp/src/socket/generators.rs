@@ -7,7 +7,7 @@
 use core::hash::{Hash, Hasher};
 
 use netstack3_base::{Instant, Milliseconds, SeqNum, Timestamp};
-use rand::Rng;
+use rand::{Rng, RngExt as _};
 use siphasher::sip128::SipHasher24;
 
 /// A secure generator of TCP parameters.

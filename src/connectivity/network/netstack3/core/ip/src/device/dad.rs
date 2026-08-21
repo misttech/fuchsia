@@ -27,7 +27,7 @@ use netstack3_base::{
 use packet_formats::icmp::ndp::NeighborSolicitation;
 use packet_formats::icmp::ndp::options::{MIN_NONCE_LENGTH, NdpNonce};
 use packet_formats::utils::NonZeroDuration;
-use rand::Rng;
+use rand::RngExt as _;
 
 use crate::internal::device::nud::DEFAULT_MAX_MULTICAST_SOLICIT;
 use crate::internal::device::{IpAddressState, IpDeviceEvent, IpDeviceIpExt, WeakIpAddressId};

@@ -8,8 +8,8 @@ use anyhow::{Context, Result};
 use fidl_fuchsia_io as fio;
 use rand::distr::{Distribution, StandardUniform};
 use rand::rngs::StdRng;
-use rand::seq::IndexedMutRandom;
-use rand::{Rng, SeedableRng};
+use rand::seq::IndexedMutRandom as _;
+use rand::{Rng, RngExt as _, SeedableRng as _};
 use std::sync::atomic::{AtomicU64, Ordering};
 
 // Arbitrary maximum file size just to put a cap on it.

@@ -11,10 +11,10 @@ use fuchsia_storage_benchmarks::filesystems::{
     BlobFilesystem, DeliveryBlob, FxblobInstance, PkgDirInstance,
 };
 use futures::stream::{self, StreamExt};
-use rand::distr::Distribution;
+use rand::distr::Distribution as _;
 use rand::distr::weighted::WeightedIndex;
-use rand::seq::SliceRandom;
-use rand::{Rng, SeedableRng};
+use rand::seq::SliceRandom as _;
+use rand::{RngExt as _, SeedableRng as _};
 use rand_xorshift::XorShiftRng;
 use std::ops::Range;
 use storage_benchmarks::{

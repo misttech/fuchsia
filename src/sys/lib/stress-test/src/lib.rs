@@ -11,18 +11,18 @@ mod counter;
 use crate::counter::start_counter;
 use crate::environment::Environment;
 use fuchsia_async::{MonotonicInstant, Timer};
-use futures::future::{select, Aborted, Either};
-use futures::stream::FuturesUnordered;
 use futures::StreamExt;
+use futures::future::{Aborted, Either, select};
+use futures::stream::FuturesUnordered;
 use log::{error, info};
+use rand::RngExt as _;
 use rand::rngs::SmallRng;
-use rand::{Rng, SeedableRng};
 use std::pin::pin;
 use std::time::Duration;
 
 /// Use entropy to generate a random seed
 pub fn random_seed() -> u64 {
-    let mut temp_rng = SmallRng::from_os_rng();
+    let mut temp_rng: SmallRng = rand::make_rng();
     temp_rng.random()
 }
 

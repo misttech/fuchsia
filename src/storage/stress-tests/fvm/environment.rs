@@ -9,7 +9,7 @@ use crate::volume_actor::VolumeActor;
 use async_trait::async_trait;
 use futures::lock::Mutex;
 use rand::rngs::SmallRng;
-use rand::{Rng, SeedableRng};
+use rand::{RngExt as _, SeedableRng as _};
 use std::sync::Arc;
 use std::time::Duration;
 use storage_stress_test_utils::fvm::{FvmInstance, FvmVolume, Guid};

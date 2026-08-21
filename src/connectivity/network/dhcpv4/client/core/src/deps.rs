@@ -420,6 +420,7 @@ mod test {
     use futures::channel::mpsc;
     use futures::{FutureExt, StreamExt};
     use net_declare::std_socket_addr;
+    use rand::RngExt as _;
     use std::pin::pin;
 
     #[test]

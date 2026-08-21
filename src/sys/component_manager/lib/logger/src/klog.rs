@@ -127,7 +127,7 @@ mod tests {
     use fidl_fuchsia_boot as fboot;
     use fuchsia_component::client::connect_channel_to_protocol;
     use log::{error, info, warn};
-    use rand::Rng;
+    use rand::RngExt as _;
     use std::panic;
 
     const MAX_INFO_LINE_LEN: usize =

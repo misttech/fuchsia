@@ -23,7 +23,7 @@ use futures::stream::FusedStream;
 use futures::{FutureExt as _, Stream, StreamExt as _, TryStreamExt as _, select, select_biased};
 use net_types::ethernet::Mac;
 use net_types::{SpecifiedAddr, Witness as _};
-use rand::Rng as _;
+use rand::RngExt as _;
 
 use std::fmt::{Debug, Display};
 use std::net::Ipv4Addr;

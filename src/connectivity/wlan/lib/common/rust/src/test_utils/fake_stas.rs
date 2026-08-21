@@ -17,8 +17,8 @@ use fidl_fuchsia_wlan_sme as fidl_sme;
 use ieee80211::Ssid;
 use num_derive::FromPrimitive;
 use num_traits::FromPrimitive;
-use rand::Rng;
 use rand::distr::{Distribution, StandardUniform};
+use rand::{Rng, RngExt as _};
 
 #[rustfmt::skip]
 const DEFAULT_MOCK_IES: &'static [u8] = &[
@@ -490,6 +490,7 @@ macro_rules! fake_fidl_bss_description {
 #[macro_export]
 macro_rules! random_fidl_bss_description {
     ($($bss_key:ident: $bss_value:expr),* $(,)?) => {{
+        use rand::RngExt as _;
         let mut rng = rand::rng();
         $crate::fake_fidl_bss_description__!(
             $crate::test_utils::fake_stas::build_random_bss_description_creator__,
@@ -537,6 +538,7 @@ macro_rules! fake_bss_description {
 #[macro_export]
 macro_rules! random_bss_description {
     ($($bss_key:ident: $bss_value:expr),* $(,)?) => {{
+        use rand::RngExt as _;
         let mut rng = rand::rng();
         $crate::fake_bss_description__!(
             random_fidl_bss_description,

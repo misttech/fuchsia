@@ -25,7 +25,7 @@ use futures::TryStreamExt;
 use kernels::Kernels;
 use log::warn;
 use proxy::ChannelProxy;
-use rand::Rng;
+use rand::RngExt as _;
 use starnix_sync::{LockDepMutex, WakeSourcesLock};
 use std::future::Future;
 use std::sync::Arc;

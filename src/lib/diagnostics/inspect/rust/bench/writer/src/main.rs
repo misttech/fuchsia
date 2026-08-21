@@ -12,7 +12,7 @@ use fuchsia_inspect::{
 use inspect_format::Container;
 use num::traits::FromPrimitive;
 use num::{One, pow};
-use rand::Rng;
+use rand::RngExt as _;
 use std::ops::{Add, Mul};
 
 const NAME: &str = "name";

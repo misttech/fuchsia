@@ -287,7 +287,7 @@ mod tests {
     use async_utils::PollExt;
     use fuchsia_async as fasync;
     use futures::channel::mpsc::{self, UnboundedSender};
-    use rand::Rng;
+    use rand::RngExt as _;
     use rand::distr::StandardUniform;
     use std::collections::VecDeque;
     use virtio_device::fake_queue::{ChainBuilder, IdentityDriverMem, TestQueue};

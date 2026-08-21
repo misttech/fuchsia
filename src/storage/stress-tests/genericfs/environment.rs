@@ -24,7 +24,7 @@ use futures::StreamExt as _;
 use futures::lock::Mutex as FuturesMutex;
 use key_bag::Aes256Key;
 use rand::rngs::SmallRng;
-use rand::{Rng, SeedableRng};
+use rand::{RngExt as _, SeedableRng as _};
 use std::ops::Deref;
 use std::path::PathBuf;
 use std::sync::Arc;

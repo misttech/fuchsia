@@ -8,7 +8,7 @@ use core::fmt::{self, Debug};
 
 use hmac::{KeyInit as _, Mac as _};
 use net_types::ip::{Ipv6Addr, Subnet};
-use rand::Rng;
+use rand::{Rng, RngExt as _};
 
 /// The length in bytes of the [`IidSecret`] secret key.
 const IID_SECRET_KEY_BYTES: usize = 32;

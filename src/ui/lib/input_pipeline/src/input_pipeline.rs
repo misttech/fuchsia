@@ -931,7 +931,7 @@ mod tests {
     use fuchsia_async as fasync;
     use futures::FutureExt;
     use pretty_assertions::assert_eq;
-    use rand::Rng;
+    use rand::RngExt as _;
     use sorted_vec_map::SortedVecSet;
     use vfs::{pseudo_directory, service as pseudo_fs_service};
 

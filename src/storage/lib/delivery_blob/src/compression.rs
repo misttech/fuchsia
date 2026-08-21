@@ -733,7 +733,7 @@ mod tests {
     use crate::Type1Blob;
 
     use super::*;
-    use rand::Rng;
+    use rand::RngExt as _;
     use std::matches;
 
     /// Create a compressed archive and ensure we can decode it as a valid archive that passes all

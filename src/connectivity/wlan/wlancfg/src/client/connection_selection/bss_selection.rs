@@ -91,7 +91,6 @@ mod test {
     use fuchsia_inspect as inspect;
     use futures::channel::mpsc;
     use ieee80211_testutils::{BSSID_REGEX, SSID_REGEX};
-    use rand::Rng;
     use wlan_common::random_fidl_bss_description;
     use wlan_common::scan::Incompatible;
 

@@ -12,7 +12,7 @@
 //!   network stack are not predictable by outside observers. This helps prevent
 //!   certain kinds of fingerprinting and denial of service attacks.
 
-use rand::{CryptoRng, RngCore};
+use rand::{CryptoRng, Rng};
 
 /// A context that provides a random number generator (RNG).
 pub trait RngContext {
@@ -23,7 +23,7 @@ pub trait RngContext {
     ///
     /// The provided RNG must be cryptographically secure, and users may rely on
     /// that property for their correctness and security.
-    type Rng<'a>: RngCore + CryptoRng
+    type Rng<'a>: Rng + CryptoRng
     where
         Self: 'a;
 
@@ -35,13 +35,13 @@ pub trait RngContext {
 pub(crate) mod testutil {
     use alloc::sync::Arc;
 
-    use rand::{CryptoRng, Rng as _, RngCore, SeedableRng};
+    use rand::{Rng, RngExt as _, SeedableRng, TryCryptoRng, TryRng};
     use rand_xorshift::XorShiftRng;
 
     use crate::RngContext;
     use crate::sync::Mutex;
 
-    /// A wrapper which implements `RngCore` and `CryptoRng` for any `RngCore`.
+    /// A wrapper which implements `Rng` and `CryptoRng` for any `Rng`.
     ///
     /// This is used to satisfy [`RngContext`]'s requirement that the
     /// associated `Rng` type implements `CryptoRng`.
@@ -83,19 +83,22 @@ pub(crate) mod testutil {
         }
     }
 
-    impl<R: RngCore> RngCore for FakeCryptoRng<R> {
-        fn next_u32(&mut self) -> u32 {
-            self.0.lock().next_u32()
+    impl<R: Rng> TryRng for FakeCryptoRng<R> {
+        type Error = core::convert::Infallible;
+
+        fn try_next_u32(&mut self) -> Result<u32, Self::Error> {
+            Ok(self.0.lock().next_u32())
         }
-        fn next_u64(&mut self) -> u64 {
-            self.0.lock().next_u64()
+        fn try_next_u64(&mut self) -> Result<u64, Self::Error> {
+            Ok(self.0.lock().next_u64())
         }
-        fn fill_bytes(&mut self, dest: &mut [u8]) {
-            self.0.lock().fill_bytes(dest)
+        fn try_fill_bytes(&mut self, dest: &mut [u8]) -> Result<(), Self::Error> {
+            self.0.lock().fill_bytes(dest);
+            Ok(())
         }
     }
 
-    impl<R: RngCore> CryptoRng for FakeCryptoRng<R> {}
+    impl<R: Rng> TryCryptoRng for FakeCryptoRng<R> {}
 
     impl<R: SeedableRng> SeedableRng for FakeCryptoRng<R> {
         type Seed = R::Seed;
@@ -105,7 +108,7 @@ pub(crate) mod testutil {
         }
     }
 
-    impl<R: RngCore> RngContext for FakeCryptoRng<R> {
+    impl<R: Rng> RngContext for FakeCryptoRng<R> {
         type Rng<'a>
             = &'a mut Self
         where

@@ -16,7 +16,7 @@ use {
         EMPTY_REPO_PATH, TestEnv, TestEnvBuilder, extra_blob_contents, make_pkg_with_extra_blobs,
         resolve_package, test_package_bin, test_package_cml,
     },
-    rand::TryRngCore as _,
+    rand::RngReader,
     rand::prelude::*,
     std::{
         io::{self, Read},
@@ -240,11 +240,11 @@ async fn large_uncompressible_blobs() {
 
     verify_resolve(
         PackageBuilder::new(s)
-            .add_resource_at("data/1mb/1", rng.read_adapter().take(1 * 1024 * 1024))
-            .add_resource_at("data/1mb/2", rng.read_adapter().take(1 * 1024 * 1024))
-            .add_resource_at("data/1mb/3", rng.read_adapter().take(1 * 1024 * 1024))
-            .add_resource_at("data/2mb", rng.read_adapter().take(2 * 1024 * 1024))
-            .add_resource_at("data/3mb", rng.read_adapter().take(3 * 1024 * 1024))
+            .add_resource_at("data/1mb/1", RngReader(&mut rng).take(1 * 1024 * 1024))
+            .add_resource_at("data/1mb/2", RngReader(&mut rng).take(1 * 1024 * 1024))
+            .add_resource_at("data/1mb/3", RngReader(&mut rng).take(1 * 1024 * 1024))
+            .add_resource_at("data/2mb", RngReader(&mut rng).take(2 * 1024 * 1024))
+            .add_resource_at("data/3mb", RngReader(&mut rng).take(3 * 1024 * 1024))
             .build()
             .await
             .unwrap(),

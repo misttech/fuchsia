@@ -604,7 +604,7 @@ pub const MINIMUM_HEADER_SIZE: u32 = Type1Blob::HEADER.header_length;
 mod tests {
 
     use super::*;
-    use rand::Rng;
+    use rand::RngExt as _;
 
     const DATA_LEN: usize = 500_000;
 

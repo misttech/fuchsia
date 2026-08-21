@@ -16,7 +16,7 @@ use fuchsia_sync::Mutex;
 use futures::StreamExt;
 use futures::channel::mpsc;
 use log::{debug, error, warn};
-use rand::{Rng, SeedableRng};
+use rand::{RngExt as _, SeedableRng as _};
 use std::collections::HashMap;
 use std::sync::{Arc, Weak};
 use vfs::directory::entry::{DirectoryEntry, EntryInfo, GetEntryInfo, OpenRequest};

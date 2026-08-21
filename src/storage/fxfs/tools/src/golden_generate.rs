@@ -16,7 +16,7 @@ use fxfs_crypto::Crypt;
 use fxfs_insecure_crypto::new_insecure_crypt;
 use fxfs_make_blob_image::{CompressionAlgorithm, FxBlobBuilder};
 use rand::rngs::SmallRng;
-use rand::{Rng, SeedableRng};
+use rand::{RngExt as _, SeedableRng as _};
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;

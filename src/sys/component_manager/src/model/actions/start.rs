@@ -756,7 +756,7 @@ mod tests {
     use futures::stream::FuturesUnordered;
     use futures::{FutureExt, StreamExt};
     use hooks::{Event, EventType, Hook, HooksRegistration};
-    use rand::seq::SliceRandom;
+    use rand::seq::SliceRandom as _;
     use std::sync::Weak;
 
     // Child name for test child components instantiated during tests.

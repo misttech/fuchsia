@@ -18,7 +18,7 @@ mod tests {
     use super::*;
     use fidl_fuchsia_wlan_ieee80211 as fidl_ieee80211;
     use ieee80211::{Bssid, MacAddr, Ssid};
-    use rand::Rng;
+    use rand::RngExt as _;
 
     fn random_six_byte_array() -> [u8; 6] {
         rand::random::<[u8; 6]>()

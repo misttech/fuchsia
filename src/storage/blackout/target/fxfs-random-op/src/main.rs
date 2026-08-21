@@ -12,7 +12,7 @@ use fidl_fuchsia_fxfs::{CryptManagementMarker, CryptMarker, KeyPurpose};
 use fs_management::Fxfs;
 use fs_management::filesystem::Filesystem;
 use fuchsia_component::client::connect_to_protocol;
-use rand::Rng;
+use rand::{Rng, RngExt as _};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 

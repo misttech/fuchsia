@@ -35,7 +35,6 @@ use fuchsia_inspect::ArrayProperty;
 use futures::StreamExt;
 use futures::channel::oneshot;
 use log::{debug, error, info, warn};
-use rand::SeedableRng;
 use rand::rngs::StdRng;
 use std::cell::RefCell;
 use std::collections::HashSet;
@@ -113,7 +112,7 @@ impl DriverRunner {
                 memory_attributor,
                 launcher: None,
                 enable_test_shutdown_delays,
-                shutdown_test_rng: Rc::new(RefCell::new(StdRng::from_os_rng())),
+                shutdown_test_rng: Rc::new(RefCell::new(rand::make_rng())),
                 scope: fasync::Scope::new_with_name("driver_runner"),
             }
         })

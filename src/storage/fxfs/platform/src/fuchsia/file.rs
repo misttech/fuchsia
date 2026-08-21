@@ -859,7 +859,7 @@ mod tests {
     use fxfs::object_handle::INVALID_OBJECT_ID;
     use fxfs::object_store::Timestamp;
     use fxfs_crypto::WrappingKeyId;
-    use rand::{Rng, rng};
+    use rand::{RngExt as _, rng};
     use std::sync::Arc;
     use std::sync::atomic::{self, AtomicBool};
     use std::time::Duration;

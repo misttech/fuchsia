@@ -18,7 +18,7 @@ use netstack3_base::{
 };
 use once_cell::sync::OnceCell;
 use packet_formats::ip::IpExt;
-use rand::Rng as _;
+use rand::RngExt as _;
 
 use crate::FilterBindingsContext;
 use crate::conntrack::{

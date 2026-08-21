@@ -29,7 +29,7 @@ use packet::{
 use packet_formats::icmp::{
     IcmpEchoReply, IcmpEchoRequest, IcmpMessage, IcmpPacketBuilder, IcmpPacketRaw, IcmpZeroCode,
 };
-use rand::Rng as _;
+use rand::RngExt as _;
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::convert::{TryFrom as _, TryInto as _};

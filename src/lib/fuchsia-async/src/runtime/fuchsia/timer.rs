@@ -787,8 +787,8 @@ mod test {
     use futures::channel::oneshot::channel;
     use futures::future::Either;
     use futures::prelude::*;
-    use rand::seq::SliceRandom;
-    use rand::{Rng, rng};
+    use rand::seq::SliceRandom as _;
+    use rand::{RngExt as _, rng};
     use std::future::poll_fn;
     use std::pin::pin;
     use zx::MonotonicDuration;

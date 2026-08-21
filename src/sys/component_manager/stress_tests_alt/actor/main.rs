@@ -6,14 +6,14 @@ mod stressor;
 
 use crate::stressor::Stressor;
 use anyhow::Result;
-use futures::future::BoxFuture;
 use futures::FutureExt;
+use futures::future::BoxFuture;
 use log::warn;
 use moniker::Moniker;
+use rand::RngExt as _;
 use rand::rngs::SmallRng;
-use rand::seq::IndexedRandom;
-use rand::Rng;
-use stress_test_actor::{actor_loop, Action};
+use rand::seq::IndexedRandom as _;
+use stress_test_actor::{Action, actor_loop};
 
 const COLLECTION_NAME: &'static str = "dynamic_children";
 const ECHO_CLIENT_URL: &'static str = "#meta/unreliable_echo_client.cm";

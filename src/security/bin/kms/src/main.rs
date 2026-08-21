@@ -30,7 +30,7 @@ fn main() -> Result<(), Error> {
         let mut key_manager = KeyManager::new();
         match get_provider_from_config() {
             Ok(provider) => {
-                info!("Config found, using provider: {:?} for KMS", &provider);
+                info!("Config found, using provider: {:?} for KMS", provider);
                 key_manager.set_provider(provider)?;
             }
             Err(err) => {

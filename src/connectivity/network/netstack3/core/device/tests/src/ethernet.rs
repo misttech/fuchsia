@@ -38,7 +38,7 @@ use packet_formats::testdata::{dns_request_v4, dns_request_v6};
 use packet_formats::testutil::{
     parse_icmp_packet_in_ip_packet_in_ethernet_frame, parse_ip_packet_in_ethernet_frame,
 };
-use rand::Rng;
+use rand::RngExt as _;
 use test_case::test_case;
 
 fn contains_addr<A: IpAddress>(

@@ -15,7 +15,7 @@ use std::hint::black_box;
 use criterion::{Criterion, criterion_group, criterion_main};
 use fidl_next::EncoderExt as _;
 use rand::rngs::StdRng;
-use rand::{Rng, SeedableRng as _};
+use rand::{Rng, RngExt as _, SeedableRng as _};
 
 pub trait Generate {
     fn generate(rng: &mut impl Rng) -> Self;

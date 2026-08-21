@@ -9,7 +9,7 @@ use std::io::Write as _;
 use fidl_fuchsia_netstack_persistence as fnetstack_persistence;
 use log::{debug, info, warn};
 use netstack3_core::ip::IidSecret;
-use rand::RngCore;
+use rand::Rng;
 use thiserror::Error;
 
 /// State that is persisted by the netstack across reboots.
@@ -56,7 +56,7 @@ impl State {
     /// is generated. Then attempts to store this new state. If errors are
     /// encountered when attempting to *store*, the new state will be returned as
     /// temporary state.
-    pub(crate) fn load_or_create<R: RngCore>(rng: &mut R) -> Self {
+    pub(crate) fn load_or_create<R: Rng>(rng: &mut R) -> Self {
         debug!("getting or creating state from persistent storage");
 
         match Self::load() {
@@ -75,7 +75,7 @@ impl State {
         }
     }
 
-    fn new<R: RngCore>(rng: &mut R) -> Self {
+    fn new<R: Rng>(rng: &mut R) -> Self {
         Self { opaque_iid_secret_key: IidSecret::new_random(rng) }
     }
 

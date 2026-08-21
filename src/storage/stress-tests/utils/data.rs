@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use rand::Rng;
-use rand::prelude::IteratorRandom;
+use rand::RngExt as _;
+use rand::prelude::IteratorRandom as _;
 use rand::rngs::SmallRng;
 use std::cmp::min;
 

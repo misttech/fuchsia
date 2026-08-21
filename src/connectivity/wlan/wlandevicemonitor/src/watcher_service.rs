@@ -208,7 +208,7 @@ mod tests {
     use fidl_fuchsia_wlan_device_service::DeviceWatcherEvent;
     use fuchsia_async::TestExecutor;
     use futures::task::Poll;
-    use rand::Rng;
+    use rand::RngExt as _;
     use std::mem;
     use std::pin::pin;
 

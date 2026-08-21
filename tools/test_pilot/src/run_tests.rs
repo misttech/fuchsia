@@ -287,7 +287,7 @@ async fn run_command<W1: io::Write + Send, W2: io::Write + Send>(
 mod tests {
     use super::*;
     use assert_matches::assert_matches;
-    use rand::Rng;
+    use rand::RngExt as _;
     use rand::distr::Alphanumeric;
     use serde_json::{Value, from_reader, json};
     use std::collections::HashMap;

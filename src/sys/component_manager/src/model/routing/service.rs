@@ -963,7 +963,7 @@ mod tests {
     use fidl_fuchsia_component_decl as fdecl;
     use maplit::hashmap;
     use proptest::prelude::*;
-    use rand::SeedableRng;
+    use rand::SeedableRng as _;
     use router_error::RouterError;
     use runtime_capabilities::{Routable, WeakInstanceToken};
     use std::collections::HashSet;

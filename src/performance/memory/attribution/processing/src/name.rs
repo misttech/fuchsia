@@ -207,7 +207,7 @@ impl<'de> Deserialize<'de> for ZXName {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rand::Rng;
+    use rand::RngExt as _;
     #[test]
     fn empty_name() {
         for empty in [

@@ -8,10 +8,10 @@
 //! Panics if operations fail.
 
 use fuchsia_sync::{Mutex, RwLock};
-use rand::Rng;
-use rand::distr::Distribution;
+use rand::RngExt as _;
+use rand::distr::Distribution as _;
 use rand::distr::weighted::WeightedIndex;
-use rand::seq::IndexedRandom;
+use rand::seq::IndexedRandom as _;
 use std::fs::File;
 use std::io::ErrorKind;
 use std::os::unix::fs::FileExt;

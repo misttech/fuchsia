@@ -27,8 +27,8 @@ use netstack3_base::{
 };
 use packet_formats::icmp::ndp::NonZeroNdpLifetime;
 use packet_formats::utils::NonZeroDuration;
-use rand::Rng;
 use rand::distr::Uniform;
+use rand::{Rng, RngExt as _};
 
 use crate::device::Ipv6AddrSlaacConfig;
 use crate::internal::device::opaque_iid::{IidSecret, OpaqueIid, OpaqueIidNonce};

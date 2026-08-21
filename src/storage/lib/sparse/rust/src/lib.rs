@@ -799,8 +799,8 @@ mod test {
     use super::{
         BLK_SIZE, Chunk, NO_SOURCE, SparseFileWriter, add_sparse_chunk, resparse, unsparse,
     };
+    use rand::Rng as _;
     use rand::rngs::SmallRng;
-    use rand::{RngCore, SeedableRng};
     use std::io::{Cursor, Read as _, Seek as _, SeekFrom, Write as _};
     #[cfg(target_os = "linux")]
     use std::path::Path;
@@ -1115,7 +1115,7 @@ mod test {
 
         // Generate a large temporary file
         let (mut file, _temp_path) = NamedTempFile::new_in(&tmpdir).unwrap().into_parts();
-        let mut rng = SmallRng::from_os_rng();
+        let mut rng: SmallRng = rand::make_rng();
         let mut buf = Vec::<u8>::new();
         buf.resize(1 * 4096, 0);
         rng.fill_bytes(&mut buf);
@@ -1173,7 +1173,7 @@ mod test {
 
         // Generate a large temporary file
         let (mut file, temp_path) = NamedTempFile::new_in(&tmpdir).unwrap().into_parts();
-        let mut rng = SmallRng::from_os_rng();
+        let mut rng: SmallRng = rand::make_rng();
         let mut buf = Vec::<u8>::new();
         // Dont want it to neatly fit a block size
         buf.resize(50 * 4096 + 1244, 0);
@@ -1247,7 +1247,7 @@ mod test {
 
         // Generate a large temporary file
         let (mut file, _temp_path) = NamedTempFile::new_in(&tmpdir).unwrap().into_parts();
-        let mut rng = SmallRng::from_os_rng();
+        let mut rng: SmallRng = rand::make_rng();
         let mut buf = Vec::<u8>::new();
         buf.resize(10 * 4096, 0);
         rng.fill_bytes(&mut buf);

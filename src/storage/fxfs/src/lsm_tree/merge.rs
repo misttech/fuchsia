@@ -784,7 +784,7 @@ mod tests {
     use crate::testing::writer::Writer;
     use fprint::TypeFingerprint;
     use fxfs_macros::{FuzzyHash, SerializeKey};
-    use rand::Rng;
+    use rand::RngExt as _;
     use std::hash::Hash;
     use std::ops::{Bound, Range};
     use std::sync::Arc;

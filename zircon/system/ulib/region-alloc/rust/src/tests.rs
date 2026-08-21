@@ -1247,7 +1247,7 @@ fn allocated_walk_helper(flavor: TestFlavor) {
     alloc.walk_allocated_regions(&mut cb);
     assert_eq!(r_cnt, pos);
 
-    use rand::{Rng, SeedableRng};
+    use rand::{RngExt as _, SeedableRng as _};
     let mut rng = rand::rngs::StdRng::seed_from_u64(42);
 
     for _ in 0..1024 {

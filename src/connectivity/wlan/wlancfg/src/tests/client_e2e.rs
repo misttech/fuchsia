@@ -34,7 +34,6 @@ use futures::task::Poll;
 
 use log::{debug, info};
 use proc_macros::with_roam_protection_permutations;
-use rand::Rng;
 use std::convert::Infallible;
 use std::pin::{Pin, pin};
 use std::rc::Rc;

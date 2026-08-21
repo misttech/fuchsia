@@ -16,8 +16,8 @@ use fuchsia_component::client::connect_to_protocol_at_dir_root;
 use futures::FutureExt;
 use log::{debug, info};
 use rand::rngs::SmallRng;
-use rand::seq::{IndexedMutRandom, IndexedRandom};
-use rand::{Rng, SeedableRng};
+use rand::seq::{IndexedMutRandom as _, IndexedRandom as _};
+use rand::{RngExt as _, SeedableRng as _};
 use std::str::FromStr;
 use std::time::Duration;
 
@@ -195,7 +195,7 @@ impl StressTest {
         let rng = if let Some(seed) = get_and_parse::<u64>("seed", &dictionary) {
             SmallRng::seed_from_u64(seed)
         } else {
-            SmallRng::from_os_rng()
+            rand::make_rng()
         };
 
         let num_retries = get_and_parse::<u64>("num_retries", &dictionary).unwrap_or(0);

@@ -6,7 +6,7 @@
 
 use fuchsia_rcu::RcuReadScope;
 use once_cell::sync::OnceCell;
-use rand::Rng;
+use rand::RngExt as _;
 use starnix_core::fs::tmpfs::{TmpFs, TmpFsDirectory};
 use starnix_core::mm::memory::MemoryObject;
 use starnix_core::security::{self, PermissionFlags};

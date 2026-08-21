@@ -13,7 +13,7 @@ use fidl_fuchsia_io as fio;
 use fs_management::Blobfs;
 use futures::lock::Mutex;
 use rand::rngs::SmallRng;
-use rand::{Rng, SeedableRng};
+use rand::{RngExt as _, SeedableRng as _};
 use std::sync::Arc;
 use std::time::Duration;
 use storage_stress_test_utils::data::{Compressibility, FileFactory, UncompressedSize};

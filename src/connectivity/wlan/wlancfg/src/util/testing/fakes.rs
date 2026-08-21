@@ -17,7 +17,7 @@ use fidl_fuchsia_wlan_sme as fidl_sme;
 use fuchsia_async as fasync;
 use futures::lock::Mutex;
 use log::{info, warn};
-use rand::Rng;
+use rand::RngExt as _;
 use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
 

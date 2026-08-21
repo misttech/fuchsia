@@ -21,7 +21,7 @@ use fuchsia_fs::directory::readdir;
 use futures::{FutureExt, StreamExt, TryFutureExt, TryStreamExt, future};
 use rand::distr::StandardUniform;
 use rand::rngs::StdRng;
-use rand::{Rng, SeedableRng};
+use rand::{RngExt as _, SeedableRng as _};
 use std::pin::pin;
 use std::sync::Arc;
 

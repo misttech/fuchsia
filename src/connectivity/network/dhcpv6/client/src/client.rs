@@ -37,7 +37,6 @@ use net_types::MulticastAddress as _;
 use net_types::ip::{Ip as _, Ipv6, Ipv6Addr, Subnet, SubnetError};
 use packet::ParsablePacket;
 use packet_formats_dhcp::v6;
-use rand::SeedableRng;
 use rand::rngs::StdRng;
 
 /// A thin wrapper around `zx::MonotonicInstant` that implements `dhcpv6_core::Instant`.
@@ -282,7 +281,7 @@ fn create_state_machine(
             } else {
                 Ok(dhcpv6_core::client::ClientStateMachine::start_stateless(
                     information_option_codes,
-                    StdRng::from_os_rng(),
+                    rand::make_rng(),
                     now,
                 ))
             }
@@ -300,7 +299,7 @@ fn create_state_machine(
             configured_non_temporary_addresses,
             configured_delegated_prefixes.unwrap_or_else(Default::default),
             information_option_codes,
-            StdRng::from_os_rng(),
+            rand::make_rng(),
             now,
         )),
     }

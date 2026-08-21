@@ -1070,7 +1070,7 @@ mod tests {
     use fuchsia_async::TestExecutor;
     use futures::channel::mpsc;
     use futures::{FutureExt, TryStreamExt};
-    use rand::Rng;
+    use rand::RngExt as _;
     use rand::distr::StandardUniform;
     use std::collections::HashSet;
     use std::io::Read;
