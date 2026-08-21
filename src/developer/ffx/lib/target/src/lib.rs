@@ -1,8 +1,8 @@
 // Copyright 2022 The Fuchsia Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
+
 use anyhow::Result;
-use compat_info::CompatibilityInfo;
 use discovery::{DiscoverySources, TargetHandle};
 use ffx_config::keys::TARGET_DEFAULT_KEY;
 
@@ -411,12 +411,8 @@ impl RcsKnocker for LocalRcsKnockerImpl {
             Some(self.ever_found.clone()),
         )
         .await
-        .map(|compat| {
-            let msg = match compat {
-                Some(c) => format!("Received compat info: {c:?}"),
-                None => format!("No compat info received"),
-            };
-            log::debug!("Knocked target. {msg}");
+        .map(|()| {
+            log::debug!("Knocked target.");
         })
     }
 }
@@ -482,7 +478,7 @@ pub async fn knock_target_daemonless(
     target_spec: &TargetInfoQuery,
     context: &EnvironmentContext,
     knock_timeout: Option<Duration>,
-) -> Result<Option<CompatibilityInfo>, KnockError> {
+) -> Result<(), KnockError> {
     knock_target_daemonless_impl(target_spec, context, knock_timeout, false, None).await
 }
 
@@ -492,7 +488,7 @@ pub(crate) async fn knock_target_daemonless_impl(
     knock_timeout: Option<Duration>,
     use_cache: bool,
     ever_found: Option<std::sync::Arc<std::sync::atomic::AtomicBool>>,
-) -> Result<Option<CompatibilityInfo>, KnockError> {
+) -> Result<(), KnockError> {
     let knock_timeout = knock_timeout.unwrap_or(DEFAULT_RCS_KNOCK_TIMEOUT * 2);
     let res_future = async {
         log::debug!("resolving target spec address from {target_spec:?}");
@@ -516,20 +512,16 @@ pub(crate) async fn knock_target_daemonless_impl(
         }
 
         log::debug!("daemonless knock connecting to resolved target {:?}", res);
-        let conn = match res.get_connection_if_already_established() {
-            Some(c) => c,
-            None => {
-                let conn = res.get_connection(context).await.map_err(|e| {
-                    KnockError::Critical(KnockCriticalError::TargetError(format!("{:?}", e)))
-                })?;
-                log::debug!("daemonless knock connection established");
-                let _ = conn.rcs_proxy_fdomain().await.map_err(|e| {
-                    KnockError::NonCritical(KnockNonCriticalError::Custom(format!("{:?}", e)))
-                })?;
-                conn
-            }
-        };
-        Ok(conn.compatibility_info())
+        if res.get_connection_if_already_established().is_none() {
+            let conn = res.get_connection(context).await.map_err(|e| {
+                KnockError::Critical(KnockCriticalError::TargetError(format!("{:?}", e)))
+            })?;
+            log::debug!("daemonless knock connection established");
+            let _ = conn.rcs_proxy_fdomain().await.map_err(|e| {
+                KnockError::NonCritical(KnockNonCriticalError::Custom(format!("{:?}", e)))
+            })?;
+        }
+        Ok(())
     };
     futures_lite::pin!(res_future);
     timeout::timeout(knock_timeout, res_future).await.map_err(|_| {

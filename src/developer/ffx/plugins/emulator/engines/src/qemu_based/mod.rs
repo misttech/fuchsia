@@ -24,7 +24,6 @@ use ffx_emulator_config::{EmulatorEngine, EngineConsoleType, ShowDetail};
 use ffx_ssh::SshKeyFiles;
 use ffx_target::{KnockError, TargetInfoQuery};
 use fho::{FfxContext, Result, bug, return_bug, return_user_error, user_error};
-use fidl_fuchsia_developer_ffx as ffx;
 use fuchsia_async::Timer;
 use serde_json::{Deserializer, Value, json};
 use shared_child::SharedChild;
@@ -780,38 +779,9 @@ pub(crate) trait QemuBasedEngine: EmulatorEngine {
                     Some(KNOCK_TARGET_TIMEOUT),
                 )
                 .await;
-                if let Ok(compat) = compat_res {
+                if let Ok(()) = compat_res {
                     eprintln!("\nEmulator is ready.");
                     log::debug!("Emulator is ready after {} seconds.", start.elapsed().as_secs());
-                    let compat = compat.map(|c| ffx::CompatibilityInfo::from(c.into()));
-                    match compat {
-                        Some(compatibility)
-                            if compatibility.state == ffx::CompatibilityState::Supported =>
-                        {
-                            log::info!("Compatibility status: {:?}", compatibility.state)
-                        }
-                        // Add a new check and present an actionable message to the user. As an
-                        // example, this was noticed when starting the emulator and it was unclear
-                        // what to do next.
-                        Some(compatibility)
-                            if compatibility
-                                .message
-                                .contains("timed out during banner exchange") =>
-                        {
-                            println!("Compatibility status: {:?}", compatibility.state);
-                            println!(
-                                "There was a timeout during SSH banner exchange,\n client was
-                            unable to establish a connection to the SSH server\n within the timeout
-                            period. Please check target logs or restart the emulator\n
-                            by running `ffx emu stop --all && ffx emu start`."
-                            );
-                        }
-                        Some(compatibility) => eprintln!(
-                            "Compatibility status: {:?}\n {}",
-                            compatibility.state, compatibility.message
-                        ),
-                        None => eprintln!("Warning: no compatibility information is available"),
-                    }
                     return Ok(0);
                 } else {
                     match compat_res.unwrap_err() {
@@ -824,6 +794,14 @@ pub(crate) trait QemuBasedEngine: EmulatorEngine {
                         }
                         KnockError::Critical(e) => {
                             eprintln!("Failed to connect to emulator: {e:?}");
+                            if format!("{e:?}").contains("timed out during banner exchange") {
+                                eprintln!(
+                                    "There was a timeout during SSH banner exchange,\n client was \
+                                    unable to establish a connection to the SSH server\n within the timeout \
+                                    period. Please check target logs or restart the emulator\n \
+                                    by running `ffx emu stop --all && ffx emu start`."
+                                );
+                            }
                             return Ok(1);
                         }
                     }
@@ -865,6 +843,17 @@ pub(crate) trait QemuBasedEngine: EmulatorEngine {
             eprintln!("Here are the following errors encountered while connecting:");
             for (i, e) in connection_errors.iter().enumerate() {
                 eprintln!("\t{}: {e:?}", i + 1);
+            }
+            if connection_errors
+                .iter()
+                .any(|e| format!("{e:?}").contains("timed out during banner exchange"))
+            {
+                eprintln!(
+                    "There was a timeout during SSH banner exchange,\n client was \
+                    unable to establish a connection to the SSH server\n within the timeout \
+                    period. Please check target logs or restart the emulator\n \
+                    by running `ffx emu stop --all && ffx emu start`."
+                );
             }
             if self.is_running().await {
                 eprintln!("The emulator process is still running (pid {}).", self.get_pid());

@@ -35,8 +35,6 @@
       "description": "Information about the target device.",
       "type": "object",
       "required": [
-        "compatibility_message",
-        "compatibility_state",
         "last_reboot_graceful",
         "name",
         "uptime_nanos"
@@ -56,17 +54,6 @@
               "type": "null"
             }
           ]
-        },
-        "compatibility_state": {
-          "description": "Compatibility information between this host tool and the device.",
-          "allOf": [
-            {
-              "$ref": "#/definitions/CompatibilityState"
-            }
-          ]
-        },
-        "compatibility_message": {
-          "type": "string"
         },
         "last_reboot_graceful": {
           "description": "True if the last reboot was graceful.",
@@ -103,45 +90,6 @@
           "minimum": 0.0
         }
       }
-    },
-    "CompatibilityState": {
-      "oneOf": [
-        {
-          "description": "An error was encountered determining the compatibility status.",
-          "type": "string",
-          "enum": [
-            "error"
-          ]
-        },
-        {
-          "description": "The compatibility information is not present.",
-          "type": "string",
-          "enum": [
-            "absent"
-          ]
-        },
-        {
-          "description": "ABI revision was not recognized.",
-          "type": "string",
-          "enum": [
-            "unknown"
-          ]
-        },
-        {
-          "description": "ABI revision it presented is not supported.",
-          "type": "string",
-          "enum": [
-            "unsupported"
-          ]
-        },
-        {
-          "description": "ABI revision is supported",
-          "type": "string",
-          "enum": [
-            "supported"
-          ]
-        }
-      ]
     },
     "BoardData": {
       "description": "Information about the hardware board of the target device.",

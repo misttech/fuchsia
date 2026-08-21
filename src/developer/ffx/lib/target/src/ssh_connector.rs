@@ -153,7 +153,7 @@ impl SshConnector {
             cmd.stderr.take().expect("process should have stderr"),
         );
         match ffx_ssh::parse::parse_ssh_output(&mut stdout, &mut stderr, &self.env_context).await {
-            Ok((addr, device_connection_info)) => {
+            Ok((addr, _overnet_id)) => {
                 let stdin = cmd.stdin.take().expect("process should have stdin");
                 let stderr = stderr.lines();
                 let (error_sender, errors_receiver) = async_channel::unbounded();
@@ -165,7 +165,6 @@ impl SshConnector {
                     output: Box::new(stdout),
                     input: Box::new(stdin),
                     errors: errors_receiver,
-                    compat: device_connection_info.map(|dci| dci.into()),
                     main_task,
                     ssh_host_address: Some(addr),
                 }))
@@ -338,15 +337,15 @@ async fn start_overnet_ssh_command(
     env_context: &EnvironmentContext,
     use_log_id: bool,
 ) -> Result<Child> {
-    let rev: u64 =
-        version_history_data::HISTORY.get_misleading_version_for_ffx().abi_revision.as_u64();
-    let abi_revision = format!("{}", rev);
     // Converting milliseconds since unix epoch should have enough bits for u64. As of writing
     // it takes up 43 of the 128 bits to represent the number.
     let circuit_id =
         SystemTime::now().duration_since(UNIX_EPOCH).expect("system time").as_millis() as u64;
     let circuit_id_str = format!("{}", circuit_id);
     let log_id = format!("{:0>20}", *ffx_config::logging::LOGGING_ID);
+    let rev: u64 =
+        version_history_data::HISTORY.get_misleading_version_for_ffx().abi_revision.as_u64();
+    let abi_revision = format!("{rev}");
     let mut args = vec![
         "remote_control_runner",
         "--circuit",

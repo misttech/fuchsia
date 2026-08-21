@@ -9,7 +9,6 @@ use crate::target_connector::{
 use crate::{ConnectionError, FDomainConnection};
 use anyhow::Result;
 use async_channel::Receiver;
-use compat_info::CompatibilityInfo;
 use ffx_diagnostics_analytics::ResultExt;
 use ffx_ssh::parse::HostAddr;
 use fuchsia_async::{Task, Timer};
@@ -32,7 +31,6 @@ pub struct FidlPipe {
     // Using atomic bool because turning `Task<()>` into a fused future didn't appear to behave as
     // intended, e.g. `terminated()` did not return `true` even if the task had run to completion.
     is_terminated: Arc<AtomicBool>,
-    compat: Option<CompatibilityInfo>,
     device_address: Option<SocketAddr>,
     host_ssh_address: Option<HostAddr>,
 }
@@ -81,10 +79,6 @@ pub fn create_overnet_socket(
 }
 
 impl FidlPipe {
-    pub fn compatibility_info(&self) -> Option<CompatibilityInfo> {
-        self.compat.clone()
-    }
-
     /// This is the main internal constructor for FIDL pipe. This will take a connector and attempt
     /// to connect to it. If the connector fails, this function will attempt to reconnect as long
     /// as the error is not fatal (using an exponential backoff of `t**(2n)` where `t` is the
@@ -133,7 +127,6 @@ impl FidlPipe {
 
         let device_address = connector.device_address();
         let (error_sender, error_queue) = async_channel::unbounded();
-        let compat = overnet_connection.as_ref().and_then(|x| x.compat.clone());
         let host_ssh_address = overnet_connection.as_ref().and_then(|x| x.ssh_host_address.clone());
 
         let (node, overnet_task) = if let Some(overnet_connection) = overnet_connection {
@@ -201,7 +194,6 @@ impl FidlPipe {
             Self {
                 task: Some(main_task),
                 error_queue,
-                compat,
                 device_address,
                 host_ssh_address,
                 is_terminated,
@@ -246,7 +238,6 @@ impl FidlPipe {
         Self {
             task: None,
             error_queue,
-            compat: None,
             device_address,
             host_ssh_address,
             is_terminated: Arc::new(AtomicBool::new(false)),
@@ -295,7 +286,6 @@ mod test {
                 output: Box::new(BufReader::new(sock1)),
                 input: Box::new(sock2),
                 errors: error_rx,
-                compat: None,
                 main_task: Some(error_task),
                 ssh_host_address: None,
             };
@@ -334,7 +324,6 @@ mod test {
                 output: Box::new(BufReader::new(sock1)),
                 input: Box::new(sock2),
                 errors: error_rx,
-                compat: None,
                 main_task: Some(error_task),
                 ssh_host_address: None,
             };
@@ -373,7 +362,6 @@ mod test {
                 output: Box::new(BufReader::new(sock1)),
                 input: Box::new(sock2),
                 errors: error_rx,
-                compat: None,
                 main_task: Some(error_task),
                 ssh_host_address: None,
             };

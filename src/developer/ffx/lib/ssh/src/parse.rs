@@ -3,7 +3,6 @@
 // found in the LICENSE file.
 
 use anyhow::{Context as _, Result};
-use compat_info::{ConnectionInfo, DeviceConnectionInfo};
 use ffx_config::EnvironmentContext;
 use ffx_config::logging::LogDirHandling;
 use fuchsia_async::TimeoutExt;
@@ -16,6 +15,21 @@ use std::sync::OnceLock;
 use std::time::Duration;
 use tokio::io::{AsyncBufRead, AsyncRead, AsyncReadExt, BufReader};
 use tokio::process::{ChildStderr, ChildStdout};
+
+#[derive(Clone, Debug, PartialEq, serde::Deserialize, serde::Serialize)]
+struct ConnectionInfo {
+    ssh_connection: String,
+    #[serde(default)]
+    overnet_id: Option<u64>,
+    #[serde(default)]
+    compatibility: Option<LegacyCompatInfo>,
+}
+
+#[derive(Clone, Debug, PartialEq, serde::Deserialize, serde::Serialize)]
+struct LegacyCompatInfo {
+    #[serde(default)]
+    overnet_id: Option<u64>,
+}
 
 const BUFSIZE: usize = 1024;
 pub struct LineBuffer {
@@ -114,7 +128,7 @@ pub async fn read_ssh_line_with_timeouts<R: AsyncBufRead + Unpin>(
 
 fn parse_ssh_connection_legacy(
     line: &str,
-) -> std::result::Result<(String, Option<DeviceConnectionInfo>), ParseSshConnectionError> {
+) -> std::result::Result<(String, Option<u64>), ParseSshConnectionError> {
     let mut parts = line.split(" ");
     // The first part should be our anchor.
     match parts.next() {
@@ -180,7 +194,7 @@ fn parse_ssh_connection_legacy(
 async fn parse_ssh_connection<R: AsyncBufRead + Unpin>(
     stdout: &mut R,
     ctx: &EnvironmentContext,
-) -> std::result::Result<(String, Option<DeviceConnectionInfo>), ParseSshConnectionError> {
+) -> std::result::Result<(String, Option<u64>), ParseSshConnectionError> {
     let line = read_ssh_line_with_timeouts(stdout).await?;
     if line.is_empty() {
         log::error!("Failed to read first line from stdout");
@@ -245,15 +259,15 @@ pub async fn parse_ssh_output(
     stdout: &mut BufReader<ChildStdout>,
     stderr: &mut BufReader<ChildStderr>,
     ctx: &EnvironmentContext,
-) -> std::result::Result<(HostAddr, Option<DeviceConnectionInfo>), PipeError> {
+) -> std::result::Result<(HostAddr, Option<u64>), PipeError> {
     let res = match parse_ssh_connection(stdout, ctx).await.context("reading ssh connection") {
-        Ok((addr, connection_info)) => {
-            if connection_info.as_ref().map(|dci| dci.overnet_id).is_none() {
+        Ok((addr, overnet_id)) => {
+            if overnet_id.is_none() {
                 log::info!(
                     "Did not receive overnet_id from remote host, presumably it is an old device. Warning: without the overnet_id we cannot determine whether this connection is to an already-known target"
                 );
             }
-            (Some(HostAddr(addr)), connection_info)
+            (Some(HostAddr(addr)), overnet_id)
         }
         Err(e) => {
             // Upon a successful connection, OpenSSH sets several environment variables.
@@ -268,8 +282,8 @@ pub async fn parse_ssh_output(
         }
     };
     // Check for early exit.
-    if let (Some(addr), compat) = res {
-        Ok((addr, compat))
+    if let (Some(addr), overnet_id) = res {
+        Ok((addr, overnet_id))
     } else {
         // If we failed to parse the ssh connection, there might be information in stderr
         // We seem to always come here even if the error above was successfully parsed because we
@@ -336,15 +350,18 @@ async fn parse_ssh_error<R: AsyncBufRead + Unpin>(
 
 fn parse_ssh_connection_with_info(
     line: &str,
-) -> std::result::Result<(String, Option<DeviceConnectionInfo>), ParseSshConnectionError> {
+) -> std::result::Result<(String, Option<u64>), ParseSshConnectionError> {
     let connection_info: ConnectionInfo =
         serde_json::from_str(&line).map_err(|e| ParseSshConnectionError::Parse(e.to_string()))?;
     let mut parts = connection_info.ssh_connection.split(" ");
     // SSH_CONNECTION identifies the client and server ends of the connection.
     // The variable contains four space-separated values: client IP address,
     // client port number, server IP address, and server port number.
+    let overnet_id = connection_info
+        .overnet_id
+        .or_else(|| connection_info.compatibility.and_then(|c| c.overnet_id));
     if let Some(client_address) = parts.nth(0) {
-        Ok((client_address.to_string(), Some(connection_info.connect_info)))
+        Ok((client_address.to_string(), overnet_id))
     } else {
         Err(ParseSshConnectionError::Parse(line.into()))
     }
@@ -396,7 +413,6 @@ pub fn write_ssh_log(prefix: &str, line: &String, file: &Mutex<File>) {
 mod test {
     use super::*;
     use assert_matches::assert_matches;
-    use compat_info::CompatibilityState;
 
     #[fuchsia::test]
     async fn test_parse_ssh_output_doesnt_fail_with_debug2() {
@@ -499,13 +515,7 @@ mod test {
         let env = ffx_config::test_init().expect("test env init");
         let line = &"{\"ssh_connection\":\"10.0.2.2 34502 10.0.2.15 22\",\"compatibility\":{\"status\":\"supported\",\"platform_abi\":12345,\"message\":\"foo\"}}\n"
             [..];
-        let dci = DeviceConnectionInfo {
-            status: CompatibilityState::Supported,
-            platform_abi: 12345,
-            message: String::from("foo"),
-            overnet_id: None,
-        };
-        let expected = ("10.0.2.2".to_string(), Some(dci));
+        let expected = ("10.0.2.2".to_string(), None);
         match parse_ssh_connection(&mut line.as_bytes(), &env.context).await {
             Ok(actual) => assert_eq!(expected, actual),
             res => {
@@ -519,13 +529,7 @@ mod test {
         let env = ffx_config::test_init().expect("test env init");
         let line = &"{\"ssh_connection\":\"10.0.2.2 34502 10.0.2.15 22\",\"compatibility\":{\"status\":\"supported\",\"platform_abi\":12345,\"message\":\"foo\", \"overnet_id\": 6789}}\n"
             [..];
-        let dci = DeviceConnectionInfo {
-            status: CompatibilityState::Supported,
-            platform_abi: 12345,
-            message: String::from("foo"),
-            overnet_id: Some(6789),
-        };
-        let expected = ("10.0.2.2".to_string(), Some(dci));
+        let expected = ("10.0.2.2".to_string(), Some(6789));
         match parse_ssh_connection(&mut line.as_bytes(), &env.context).await {
             Ok(actual) => assert_eq!(expected, actual),
             res => {

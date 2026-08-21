@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use compat_info::CompatibilityState;
 use ffx_target_show_args::TargetShow;
 use schemars::JsonSchema;
 use serde::Serialize;
@@ -34,9 +33,6 @@ pub struct TargetData {
     pub name: String,
     /// SSH address of the target device.
     pub ssh_address: Option<AddressData>,
-    /// Compatibility information between this host tool and the device.
-    pub compatibility_state: CompatibilityState,
-    pub compatibility_message: String,
     /// True if the last reboot was graceful.
     pub last_reboot_graceful: bool,
     /// Reason for last reboot, if available.
@@ -166,18 +162,6 @@ impl From<&TargetData> for ShowEntry {
                     "ssh_address",
                     "Interface address",
                     &value.ssh_address.as_ref().map(|addr| format!("{}:{}", addr.host, addr.port)),
-                ),
-                ShowEntry::str_value_with_highlight(
-                    "Compatibility state",
-                    "compatibility_state",
-                    "Compatibility state",
-                    &Some(format!("{:?}", value.compatibility_state)),
-                ),
-                ShowEntry::str_value_with_highlight(
-                    "Compatibility message",
-                    "compatibility_message",
-                    "Compatibility messsage",
-                    &Some(value.compatibility_message.clone()),
                 ),
                 ShowEntry::str_value(
                     "Last Reboot Graceful",

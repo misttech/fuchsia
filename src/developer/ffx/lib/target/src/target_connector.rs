@@ -4,7 +4,6 @@
 
 use anyhow::Result;
 use async_channel::{Receiver, Sender};
-use compat_info::CompatibilityInfo;
 use ffx_ssh::parse::HostAddr;
 use fuchsia_async::Task;
 use std::fmt::Debug;
@@ -90,7 +89,6 @@ pub struct OvernetConnection {
     pub(crate) output: Box<dyn AsyncBufRead + Unpin>,
     pub(crate) input: Box<dyn AsyncWrite + Unpin>,
     pub(crate) errors: Receiver<ConnectionStreamError>,
-    pub(crate) compat: Option<CompatibilityInfo>,
     pub(crate) main_task: Option<Task<()>>,
     pub(crate) ssh_host_address: Option<HostAddr>,
 }

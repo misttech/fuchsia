@@ -19,8 +19,6 @@ class TargetData:
     Args:
         name: Node name of the target device.
         ssh_address: SSH address of the target device.
-        compatibility_state: Compatibility state between this host tool and the device.
-        compatibility_message: Compatibility information.
         last_reboot_graceful: True if the last reboot was graceful.
         last_reboot_reason: Reason for last reboot, if available.
         uptime_nanos: Target device update in nanoseconds.
@@ -28,8 +26,6 @@ class TargetData:
 
     name: str
     ssh_address: IpPort | None
-    compatibility_state: str
-    compatibility_message: str
     last_reboot_graceful: bool
     last_reboot_reason: str | None
     uptime_nanos: int

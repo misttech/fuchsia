@@ -57,11 +57,6 @@ target_show = runner.target_show()
 print(target_show)
 print()
 
-# Make sure that the returned compatibility_state is "supported".
-compatibility_state = target_show["target"]["compatibility_state"]
-assert (
-    compatibility_state == "supported"
-), f"expected:\n\t'supported'\ngot:\n\t'{compatibility_state}'"
 
 # Print the number of components returned from `ffx component list`
 print("Running ffx component list in strict mode:")

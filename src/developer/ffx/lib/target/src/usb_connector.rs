@@ -58,7 +58,6 @@ impl UsbConnector {
             output: Box::new(output),
             input: Box::new(input),
             errors,
-            compat: None,
             main_task: None,
             ssh_host_address: None,
         })

@@ -6,7 +6,6 @@ use crate::fidl_pipe::FidlPipe;
 use crate::target_connector::{ConnectionStreamError, TargetConnector};
 use anyhow::Result;
 use async_lock::Mutex;
-use compat_info::CompatibilityInfo;
 use fdomain_client::fidl::DiscoverableProtocolMarker;
 use fdomain_fuchsia_developer_remotecontrol::{
     RemoteControlMarker as FDRemoteControlMarker, RemoteControlProxy as FDRemoteControlProxy,
@@ -161,10 +160,6 @@ impl Connection {
             return WrappedConnectionError::WithPipeErrors { original: e, pipe_errors };
         }
         WrappedConnectionError::NoPipeErrors(e)
-    }
-
-    pub fn compatibility_info(&self) -> Option<CompatibilityInfo> {
-        self.fidl_pipe.compatibility_info()
     }
 
     /// The device to which we are connected.
@@ -433,7 +428,6 @@ pub mod testing {
                 output: Box::new(tokio::io::BufReader::new(circuit_reader)),
                 input: Box::new(circuit_writer),
                 errors: self.error_receiver.clone(),
-                compat: None,
                 main_task: Some(rcs_task),
                 ssh_host_address: None,
             }))

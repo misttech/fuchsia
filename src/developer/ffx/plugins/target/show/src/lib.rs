@@ -136,8 +136,7 @@ impl ShowTool {
 
 async fn gather_target_info_direct(
     connection: &ffx_target::Connection,
-) -> Result<(Option<AddressData>, Option<fidl_fuchsia_developer_ffx::CompatibilityInfo>), ShowError>
-{
+) -> Result<Option<AddressData>, ShowError> {
     // If we've gotten a connection, we must have an address we connected to
     let ad = match connection.device_address() {
         Some(addr) => match ScopedSocketAddr::from_socket_addr(addr) {
@@ -152,7 +151,7 @@ async fn gather_target_info_direct(
         },
         None => None,
     };
-    Ok((ad, connection.compatibility_info().map(|ci| ci.into())))
+    Ok(ad)
 }
 
 /// Determine target information.
@@ -164,7 +163,7 @@ async fn gather_target_show(
 ) -> Result<TargetData, ShowError> {
     let host = rcs_proxy.identify_host().await?.map_err(ShowError::RcsHostIdentification)?;
     let name = host.nodename;
-    let (ssh_address, compat) = gather_target_info_direct(
+    let ssh_address = gather_target_info_direct(
         &*connector
             .resolution()
             .await
@@ -174,23 +173,12 @@ async fn gather_target_show(
             .map_err(ShowError::TargetConnection)?,
     )
     .await?;
-    let (compatibility_state, compatibility_message) = match compat {
-        Some(compatibility) => {
-            (compat_info::CompatibilityState::from(compatibility.state), compatibility.message)
-        }
-        None => (
-            compat_info::CompatibilityState::Absent,
-            "Compatibility information is not available".to_string(),
-        ),
-    };
 
     let info = last_reboot_info_proxy.get().await?;
 
     Ok(TargetData {
         name: name.unwrap_or_else(|| "".into()),
         ssh_address,
-        compatibility_state,
-        compatibility_message,
         last_reboot_graceful: info.graceful.unwrap_or(false),
         last_reboot_reason: info.reason.map(|r| format!("{r:?}")),
         uptime_nanos: info.uptime.unwrap_or(-1),
@@ -311,10 +299,7 @@ mod tests {
     };
     use fdomain_fuchsia_intl::RegulatoryDomain;
     use fdomain_fuchsia_update_channelcontrol::ChannelControlRequest;
-    use ffx_target::{FidlPipe, Resolution};
     use ffx_writer::{Format, TestBuffers};
-    use fidl_fuchsia_developer_ffx::TargetInfo;
-    use net_declare::std_socket_addr;
     use serde_json::Value;
     use std::sync::Arc;
     use target_holders::fake_proxy;
@@ -323,8 +308,6 @@ mod tests {
         Target: \
         \n    Name: \u{1b}[38;5;2m\"fake_fuchsia_device\"\u{1b}[m\
         \n    SSH Address: \u{1b}[38;5;2m\"127.0.0.1:22\"\u{1b}[m\
-        \n    Compatibility state: \u{1b}[38;5;2m\"Absent\"\u{1b}[m\
-        \n    Compatibility message: \u{1b}[38;5;2m\"Compatibility information is not available\"\u{1b}[m\
         \n    Last Reboot Graceful: \"true\"\
         \n    Last Reboot Reason: \"ZbiSwap\"\
         \n    Uptime (ns): \"65000\"\
@@ -428,7 +411,7 @@ mod tests {
         let fho_env = FhoEnvironment::default();
         let target_env = target_behavior::target_interface(&fho_env);
         target_env.set_behavior_for_test(ConnectionBehavior::fake_direct_connector(
-            setup_fake_resolution().await,
+            target_behavior::setup_fake_resolution(None).await,
         ));
         let tool = ShowTool {
             cmd: args::TargetShow { ..Default::default() },
@@ -596,7 +579,7 @@ mod tests {
         let fho_env = FhoEnvironment::default();
         let target_env = target_behavior::target_interface(&fho_env);
         target_env.set_behavior_for_test(ConnectionBehavior::fake_direct_connector(
-            setup_fake_resolution().await,
+            target_behavior::setup_fake_resolution(None).await,
         ));
         let tool = ShowTool {
             cmd: args::TargetShow { ..Default::default() },
@@ -629,19 +612,6 @@ mod tests {
         };
     }
 
-    async fn setup_fake_resolution() -> Resolution {
-        use addr::TargetIpAddr;
-        let device_address = std_socket_addr!("127.0.0.1:22");
-        let target_addr = TargetIpAddr::from(device_address.clone());
-        let target_info =
-            TargetInfo { addresses: Some(vec![target_addr.into()]), ..Default::default() };
-        let ret = Resolution::from_target_handle(target_info.try_into().unwrap()).unwrap();
-        let fidl_pipe = FidlPipe::fake(Some(device_address));
-        let conn = ffx_target::Connection::fake(fidl_pipe);
-        ret.set_connection_for_test(Some(conn)).await;
-        ret
-    }
-
     #[fuchsia::test]
     async fn test_show_cmd_impl_direct_connection() {
         let client = fdomain_local::local_client_empty();
@@ -650,7 +620,7 @@ mod tests {
         let fho_env = FhoEnvironment::default();
         let target_env = target_behavior::target_interface(&fho_env);
         target_env.set_behavior_for_test(ConnectionBehavior::fake_direct_connector(
-            setup_fake_resolution().await,
+            target_behavior::setup_fake_resolution(None).await,
         ));
         let tool = ShowTool {
             cmd: args::TargetShow { ..Default::default() },
@@ -699,7 +669,7 @@ mod tests {
         let fho_env = FhoEnvironment::default();
         let target_env = target_behavior::target_interface(&fho_env);
         target_env.set_behavior_for_test(ConnectionBehavior::fake_direct_connector(
-            setup_fake_resolution().await,
+            target_behavior::setup_fake_resolution(None).await,
         ));
 
         let rcs_proxy = testing_lib::setup_fake_rcs(

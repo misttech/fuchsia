@@ -17,8 +17,6 @@ ffx_plugin("ffx_target_show") {
     "//sdk/fidl/fuchsia.update.channel:fuchsia.update.channel_rust_fdomain",
     "//sdk/fidl/fuchsia.update.channelcontrol:fuchsia.update.channelcontrol_rust_fdomain",
     "//sdk/rust/zx-status",
-    "//src/developer/ffx/fidl:fuchsia.developer.ffx_rust",
-    "//src/developer/ffx/lib/compat_info:lib",
     "//src/developer/ffx/lib/errors:lib",
     "//src/developer/ffx/lib/fho:lib",
     "//src/developer/ffx/lib/netext:lib",
@@ -39,8 +37,6 @@ ffx_plugin("ffx_target_show") {
   ]
   test_deps = [
     "//sdk/fidl/fuchsia.intl:fuchsia.intl_rust_fdomain",
-    "//src/connectivity/lib/net-declare",
-    "//src/developer/ffx/lib/addr:lib",
     "//src/developer/ffx/lib/testing:lib",
     "//src/lib/fdomain/local",
     "//src/lib/fuchsia",

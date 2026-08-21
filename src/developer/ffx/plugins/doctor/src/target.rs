@@ -29,8 +29,6 @@ pub async fn check_single_target_locally<W: Write>(
         return Ok(());
     }
 
-    check_compatibility(ledger, target);
-
     let done = check_identify_host(ledger, target, env_context, retry_delay).await;
     if done {
         return Ok(());
@@ -93,27 +91,6 @@ pub async fn check_identify_host<W: Write>(
             true
         }
     }
-}
-
-pub fn check_compatibility<W: Write>(ledger: &mut LedgerNodeGuard<'_, W>, target: &TargetInfo) {
-    let (compatibility_state, compatibility_message) = match &target.compatibility {
-        Some(info) => (info.state.into(), info.message.clone()),
-        None => (
-            compat_info::CompatibilityState::Absent,
-            "Compatibility information is not available".to_string(),
-        ),
-    };
-    let outcome = match compatibility_state {
-        compat_info::CompatibilityState::Supported => LedgerOutcome::Success,
-        compat_info::CompatibilityState::Error => LedgerOutcome::Failure,
-        compat_info::CompatibilityState::Absent => LedgerOutcome::SoftWarning,
-        compat_info::CompatibilityState::Unsupported => LedgerOutcome::Warning,
-        compat_info::CompatibilityState::Unknown => LedgerOutcome::SoftWarning,
-    };
-    let mut state_node = ledger
-        .add_node(&format!("Compatibility state: {compatibility_state}"), LedgerMode::Verbose);
-    state_node.add_node(&compatibility_message, LedgerMode::Verbose).set_outcome(outcome);
-    state_node.set_outcome(outcome);
 }
 
 pub fn make_ssh_fix_suggestion(ssh_log: &str) -> Option<&'static str> {

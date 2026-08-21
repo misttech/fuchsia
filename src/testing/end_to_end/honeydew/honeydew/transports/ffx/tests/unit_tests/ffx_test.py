@@ -54,8 +54,6 @@ _FFX_TARGET_SHOW_JSON: dict[str, Any] = {
     "target": {
         "name": _TARGET_NAME,
         "ssh_address": {"host": f"{_SSH_ADDRESS}", "port": _SSH_PORT},
-        "compatibility_state": "supported",
-        "compatibility_message": "",
         "last_reboot_graceful": "false",
         "last_reboot_reason": None,
         "uptime_nanos": -1,
