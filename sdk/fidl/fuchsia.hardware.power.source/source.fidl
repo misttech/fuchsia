@@ -47,6 +47,8 @@ type Error = flexible enum {
     NOT_SUPPORTED = 2;
     /// One or more arguments provided to the method were invalid.
     INVALID_ARGS = 3;
+    /// Source is already being watched.
+    ALREADY_BOUND = 4;
 };
 
 /// Static hardware characteristics of a power source.
@@ -133,6 +135,9 @@ open protocol Source {
     /// + `status`: The updated status table containing the fields that changed.
     /// + `wake_lease`: An optional lease token provided if the change triggered
     ///   a `wake_on` condition and the server is maintaining system state.
+    ///
+    /// Errors:
+    /// + `ALREADY_BOUND`: If the source is already being watched.
     flexible Watch(resource struct {
         interest Status;
         wake_on Status;
@@ -140,7 +145,7 @@ open protocol Source {
     }) -> (resource struct {
         status Status;
         wake_lease fuchsia.power.system.LeaseToken:optional;
-    });
+    }) error Error;
 };
 
 service Service {

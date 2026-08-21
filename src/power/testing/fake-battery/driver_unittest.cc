@@ -100,7 +100,7 @@ TEST_F(FakeBatteryDriverTest, CanGetInfoNewProtocol) {
 TEST_F(FakeBatteryDriverTest, CanWatchNewProtocol) {
   auto result = fidl::WireCall(GetHardwareBatteryClient())->Watch({}, {}, {});
   ASSERT_EQ(result.status(), ZX_OK);
-  const auto& status = result.value().status;
+  const auto& status = result.value()->status;
   ASSERT_TRUE(status.has_level_percent());
   ASSERT_EQ(status.level_percent(), 98.7f);
   ASSERT_TRUE(status.has_charge_status());

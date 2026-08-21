@@ -46,6 +46,10 @@ open protocol Charger {
     ///
     /// Follows the same semantics and power management rules as
     /// [`fuchsia.hardware.power.source/Source.Watch`].
+    ///
+    /// # Errors
+    ///
+    /// * `ALREADY_BOUND` if `Watch` is called before the previous call completes.
     flexible Watch(resource struct {
         interest Status;
         wake_on Status;
@@ -53,7 +57,7 @@ open protocol Charger {
     }) -> (resource struct {
         status Status;
         wake_lease fuchsia.power.system.LeaseToken:optional;
-    });
+    }) error fuchsia.hardware.power.source.Error;
 };
 
 service Service {

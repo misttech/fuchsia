@@ -78,7 +78,7 @@ void HardwareBatteryServer::GetStatus(sbattery::GetStatusCompleter::Sync& comple
 void HardwareBatteryServer::Watch(sbattery::WatchRequest& request,
                                   sbattery::WatchCompleter::Sync& completer) {
   if (watch_completer_) {
-    completer.Close(ZX_ERR_ALREADY_BOUND);
+    completer.Reply(fit::error(fuchsia_hardware_power_source::Error::kAlreadyBound));
     return;
   }
   watch_completer_ = completer.ToAsync();
@@ -129,7 +129,8 @@ void HardwareBatteryServer::NotifyOnce(fuchsia_hardware_power_battery::Status st
     return;
   }
 
-  watch_completer_->Reply({status, {}});
+  watch_completer_->Reply(
+      fit::ok(fuchsia_hardware_power_battery::BatteryWatchResponse(status, {})));
   watch_completer_.reset();
 }
 

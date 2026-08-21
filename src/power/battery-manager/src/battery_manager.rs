@@ -494,7 +494,7 @@ impl BatteryManager {
 
         while let Some(res) = stream.next().await {
             match res {
-                Ok((info, wake_lease)) => {
+                Ok(Ok((info, wake_lease))) => {
                     let downstream_lease = wake_lease
                         .as_ref()
                         .and_then(|token| token.duplicate_handle(zx::Rights::SAME_RIGHTS).ok());
@@ -505,9 +505,11 @@ impl BatteryManager {
                     let info = self.process_battery_info(converted_info, sag.clone()).await;
                     self.update_watchers_conditionally(false, info, downstream_lease);
                 }
+                Ok(Err(e)) => {
+                    return Err(anyhow::anyhow!("Source error: {:?}", e));
+                }
                 Err(e) => {
-                    error!("Error in WatchBattery: {e:?}");
-                    return Err(e.into());
+                    return Err(anyhow::Error::from(e).context("Error in WatchBattery"));
                 }
             }
         }
@@ -1002,7 +1004,7 @@ mod tests {
             |state: &State, responder: fbattery::BatteryWatchResponder| {
                 let status = &state.status;
                 let lease = state.wake_lease.lock().unwrap().take();
-                responder.send(status, lease).is_ok()
+                responder.send(Ok((status, lease))).is_ok()
             },
         );
 
