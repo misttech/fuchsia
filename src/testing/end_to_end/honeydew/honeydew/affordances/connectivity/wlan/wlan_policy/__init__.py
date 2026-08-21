@@ -113,7 +113,7 @@ async def collect_network_config_iterator(
 async def collect_scan_result_iterator(
     iterator: f_wlan_policy.ScanResultIteratorClient,
     *,
-    timeout: float | None = _DEFAULT_WLAN_POLICY_OPERATION_TIMEOUT_SEC,
+    timeout: timedelta | None = _DEFAULT_WLAN_POLICY_OPERATION_TIMEOUT,
 ) -> list[f_wlan_policy.ScanResultIteratorGetNextResponse]:
     """Collect all elements from a ScanResultIterator.
 
@@ -132,7 +132,10 @@ async def collect_scan_result_iterator(
     elements = []
     while True:
         try:
-            result = await asyncio.wait_for(iterator.get_next(), timeout)
+            result = await asyncio.wait_for(
+                iterator.get_next(),
+                None if timeout is None else timeout.total_seconds(),
+            )
         except (FcTransportStatus, ZxStatus) as status:
             is_fdomain_close = False
             if isinstance(status, FcTransportStatus):
@@ -784,7 +787,7 @@ class WlanPolicy(AsyncLazyReady):
     async def scan_for_networks(
         self,
         *,
-        timeout: float | None = _DEFAULT_WLAN_POLICY_OPERATION_TIMEOUT_SEC,
+        timeout: timedelta | None = _DEFAULT_WLAN_POLICY_OPERATION_TIMEOUT,
     ) -> list[str]:
         """Scans for networks.
 
