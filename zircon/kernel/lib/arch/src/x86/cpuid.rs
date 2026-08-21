@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use core::fmt;
 use core::str::Utf8Error;
 
 use bitrs::{bitfield_repr, layout};
@@ -683,6 +684,252 @@ layout!({
         let node_id @ 7..0;
     }
 });
+
+/// Leaf/Function 0x1, EAX.
+///
+/// [intel/vol2]: Table 3-8.  Information Returned by CPUID Instruction.
+/// [amd/vol3]: E.3.2  Function 1h-Processor and Processor Feature Identifiers
+/// [intel/vol2]: Figure 3-6.  Version Information Returned by CPUID in EAX.
+/// [amd/vol3]: E.3.2, CPUID Fn0000_0001_EAX  Family, Model, Stepping Identifiers.
+pub const VERSION_INFO: CpuidValue<0x1, 0x0, EAX, VersionInfo> = CpuidValue::new();
+
+/// Encoding for intel processor type in [`VersionInfo`].
+///
+/// [intel/vol2]: Table 3-9.  Processor Type Field.
+#[bitfield_repr(u8)]
+#[derive(Clone, Copy)]
+pub enum IntelProcessorType {
+    OriginalOem = 0b00,
+    IntelOverdrive = 0b01,
+    Dual = 0b10,
+    Reserved = 0b11,
+}
+
+layout!({
+    /// The layout of EAX in [`VERSION_INFO`].
+    pub struct VersionInfo(u32);
+    {
+        let __ @ 31..28;
+        let extended_family @ 27..20;
+        let extended_model @ 19..16;
+        let __ @ 15..14;
+        let intel_processor @ 13..12: IntelProcessorType;
+        let base_family @ 11..8;
+        let base_model @ 7..4;
+        let stepping @ 3..0;
+    }
+});
+
+impl VersionInfo {
+    fn family(self) -> u8 {
+        if self.base_family() == 0xf {
+            self.base_family() + self.extended_family()
+        } else {
+            self.base_family()
+        }
+    }
+
+    fn model(self) -> u8 {
+        if self.base_family() == 0x6 || self.base_family() == 0xf {
+            (self.extended_model() << 4) | self.base_model()
+        } else {
+            self.base_model()
+        }
+    }
+
+    /// Attempts to derives the microarchitecture with the assumption that the
+    /// system relates to a particular vendor.
+    pub fn microarchitecture(self, vendor: Vendor) -> Microarchitecture {
+        // TODO(https://fxbug.dev/42138852): check in a source of truth for this information and
+        // refer to that here.
+        match vendor {
+            Vendor::Intel => {
+                // Table largely from https://en.wikichip.org/wiki/intel/cpuid
+                match self.family() {
+                    0x6 => match self.model() {
+                        // Big cores
+                        0x0f | // Merom
+                        0x16 | // Merom L
+                        0x17 | // Penryn, Wolfdale, Yorkfield, Harpertown, QC
+                        0x1d   // Dunnington
+                            => Microarchitecture::IntelCore2,
+                        0x1a | // Bloomfield, EP, WS
+                        0x1e | // Lynnfield, Clarksfield
+                        0x1f | // Auburndale, Havendale
+                        0x2e   // EX
+                            => Microarchitecture::IntelNehalem,
+                        0x25 | // Arrandale, Clarkdale
+                        0x2c | // Gulftown, EP
+                        0x2f   // EX
+                            => Microarchitecture::IntelWestmere,
+                        0x2a | // M, H
+                        0x2d   // E, EN, EP
+                            => Microarchitecture::IntelSandyBridge,
+                        0x3a | // M, H, Gladden
+                        0x3e   // E, EN, EP, EX
+                            => Microarchitecture::IntelIvyBridge,
+                        0x3c | // S
+                        0x3f | // E, EP, EX
+                        0x45 | // ULT
+                        0x46   // GT3E
+                            => Microarchitecture::IntelHaswell,
+                        0x3d | // U, Y, S
+                        0x47 | // H, C, W
+                        0x56 | // DE, Hewitt Lake
+                        0x4f   // E, EP, EX
+                            => Microarchitecture::IntelBroadwell,
+                        0x4e | // Skylake Y, U
+                        0x5e | // Skylake DT, H, S
+                        0x8e | // Kaby Lake Y, U, Coffee Lake U;
+                               // Whiskey Lake U; Amber Lake Y; Comet Lake U
+                        0x9e | // Kaby Lake T, H, S, X, Coffee Lake S, H, E
+                        0xa5   // Comet Lake S, H
+                            => Microarchitecture::IntelSkylake,
+                        0x55   // Skylake SP, X, DE, W, Cascade Lake SP, X, W; Cooper Lake
+                            => Microarchitecture::IntelSkylakeServer,
+                        0x66   // Cannon Lake U
+                            => Microarchitecture::IntelCannonLake,
+                        0x6a | // Ice Lake Server SP
+                        0x6c | // Ice Lake Server DE
+                        0x7d | // Ice Lake Y
+                        0x7e   // Ice Lake U
+                            => Microarchitecture::IntelIceLake,
+                        0x8c | // Tiger Lake UP
+                        0x8d   // Tiger Lake H
+                            => Microarchitecture::IntelTigerLake,
+                        0x97 | // Alder Lake S
+                        0x9a   // Alder Lake H, P, U
+                            => Microarchitecture::IntelAlderLake,
+                        0xb7   // Raptor Lake S
+                            => Microarchitecture::IntelRaptorLake,
+
+                        // Small cores
+                        0x1c | // Silverthorne, Diamondville, Pineview
+                        0x26   // Lincroft
+                            => Microarchitecture::IntelBonnell,
+                        0x27 | // Penwell
+                        0x35 | // Cloverview
+                        0x36   // Cedarview
+                            => Microarchitecture::IntelSaltwell,
+                        0x37 | // Bay Trail
+                        0x4a | // Tangier
+                        0x4d | // Avoton, Rangeley
+                        0x5a | // Anniedale
+                        0x5d   // SoFIA
+                            => Microarchitecture::IntelSilvermont,
+                        0x4c   // Cherry Trail, Braswell
+                            => Microarchitecture::IntelAirmont,
+                        0x5c | // Apollo Lake, Broxton
+                        0x5f   // Denverton
+                            => Microarchitecture::IntelGoldmont,
+                        0x7a   // Gemini Lake
+                            => Microarchitecture::IntelGoldmontPlus,
+                        0x8a | // Lakefield
+                        0x96 | // Elkhart Lake
+                        0x9c   // Jasper Lake
+                            => Microarchitecture::IntelTremont,
+                        _ => Microarchitecture::Unknown,
+                    },
+                    _ => Microarchitecture::Unknown,
+                }
+            }
+            Vendor::Amd => {
+                // Table largely from https://en.wikichip.org/wiki/amd/cpuid
+                match self.family() {
+                    0x15 // Bulldozer/Piledriver/Steamroller/Excavator
+                        => Microarchitecture::AmdFamilyBulldozer,
+                    0x16 // Jaguar
+                        => Microarchitecture::AmdFamilyJaguar,
+                    0x17 // Zen 1 - 2
+                        => Microarchitecture::AmdFamilyZen,
+                    0x19 // Zen 3 - 4
+                        => Microarchitecture::AmdFamilyZen3,
+                    _ => Microarchitecture::Unknown,
+                }
+            }
+            Vendor::Unknown => Microarchitecture::Unknown,
+        }
+    }
+}
+
+/// The list is not exhaustive and is in chronological order within groupings.
+/// Microarchictectures that use the same processor (and, say, differ only in
+/// performance or SoC composition) are regarded as equivalent.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum Microarchitecture {
+    Unknown,
+
+    // Intel Core family (64-bit, display family 0x6).
+    IntelCore2,
+    IntelNehalem,
+    IntelWestmere,
+    IntelSandyBridge,
+    IntelIvyBridge,
+    IntelHaswell,
+    IntelBroadwell,
+    /// Includes Kaby/Coffee/Whiskey/Amber/Comet Lake.
+    IntelSkylake,
+    /// Includes Cascade/Cooper Lake.
+    IntelSkylakeServer,
+    /// A 10nm prototype only ever released on the Intel Core i3-8121U.
+    IntelCannonLake,
+    IntelIceLake,
+    IntelTigerLake,
+    IntelAlderLake,
+    IntelRaptorLake,
+
+    // Intel Atom family.
+    IntelBonnell,
+    IntelSaltwell,
+    IntelSilvermont,
+    IntelAirmont,
+    IntelGoldmont,
+    IntelGoldmontPlus,
+    IntelTremont,
+
+    // AMD families.
+    /// Bulldozer/Piledriver/Steamroller/Excavator.
+    AmdFamilyBulldozer,
+    /// Jaguar.
+    AmdFamilyJaguar,
+    /// Zen 1, 1+, 2.
+    AmdFamilyZen,
+    /// Zen 3, 4.
+    AmdFamilyZen3,
+}
+
+impl fmt::Display for Microarchitecture {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(match self {
+            Self::Unknown => "Unknown",
+            Self::IntelCore2 => "Intel Core 2",
+            Self::IntelNehalem => "Intel Nehalem",
+            Self::IntelWestmere => "Intel Westmere",
+            Self::IntelSandyBridge => "Intel Sandy Bridge",
+            Self::IntelIvyBridge => "Intel Ivy Bridge",
+            Self::IntelBroadwell => "Intel Broadwell",
+            Self::IntelHaswell => "Intel Haswell",
+            Self::IntelSkylake => "Intel Skylake",
+            Self::IntelSkylakeServer => "Intel Skylake (server)",
+            Self::IntelCannonLake => "Intel Cannon Lake",
+            Self::IntelIceLake => "Intel Ice Lake",
+            Self::IntelTigerLake => "Intel Tiger Lake",
+            Self::IntelAlderLake => "Intel Alder Lake",
+            Self::IntelRaptorLake => "Intel Raptor Lake",
+            Self::IntelBonnell => "Intel Bonnell",
+            Self::IntelSaltwell => "Intel Saltwell",
+            Self::IntelSilvermont => "Intel Silvermont",
+            Self::IntelAirmont => "Intel Airmont",
+            Self::IntelGoldmont => "Intel Goldmont",
+            Self::IntelGoldmontPlus => "Intel Goldmont Plus",
+            Self::IntelTremont => "Intel Tremont",
+            Self::AmdFamilyBulldozer => "AMD Bulldozer",
+            Self::AmdFamilyJaguar => "AMD Jaguar",
+            Self::AmdFamilyZen => "AMD Zen 1-2",
+            Self::AmdFamilyZen3 => "AMD Zen 3-4",
+        })
+    }
+}
 
 #[cfg(test)]
 mod tests {
