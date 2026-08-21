@@ -731,7 +731,7 @@ class WlanPolicy(AsyncLazyReady):
         security_type: f_wlan_policy.SecurityType,
         target_pwd: str | None = None,
         *,
-        timeout: float | None = _DEFAULT_WLAN_POLICY_OPERATION_TIMEOUT_SEC,
+        timeout: timedelta | None = _DEFAULT_WLAN_POLICY_OPERATION_TIMEOUT,
     ) -> None:
         """Saves a network to the device.
 
@@ -768,7 +768,7 @@ class WlanPolicy(AsyncLazyReady):
                         ).to_fidl(),
                     ),
                 ),
-                timeout,
+                None if timeout is None else timeout.total_seconds(),
             )
             if res.err:
                 raise wlan_errors.HoneydewWlanError(
