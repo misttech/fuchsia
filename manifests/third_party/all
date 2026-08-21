@@ -549,7 +549,7 @@
              path="third_party/vulkan-cts"
              remote="https://fuchsia.googlesource.com/third_party/vulkan-cts"
              gerrithost="https://fuchsia-review.googlesource.com"
-             revision="45e48feee296a43c368a6012142e0c8656e94a88"
+             revision="633e681e52a2819128182b552714ddafa1c13e6e"
              attributes="vulkan-cts"/>
     <project name="third_party/Vulkan-Headers"
              path="third_party/Vulkan-Headers/src"
