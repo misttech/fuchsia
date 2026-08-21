@@ -687,6 +687,7 @@ class KTraceTests {
       ASSERT_EQ(1u, (header >> 20) & 0xf);   // Arg count
       uint64_t arg_header = get_word(4);
       ASSERT_EQ(2u, arg_header & 0xf);  // kUint32
+      ASSERT_EQ(1u, (arg_header >> 4) & 0xfff);
       ASSERT_EQ(101u, arg_header >> 32);
       offset += 40;
     }
@@ -700,6 +701,7 @@ class KTraceTests {
       ASSERT_EQ(1u, (header >> 20) & 0xf);
       uint64_t arg_header = get_word(4);
       ASSERT_EQ(2u, arg_header & 0xf);
+      ASSERT_EQ(1u, (arg_header >> 4) & 0xfff);
       ASSERT_EQ(102u, arg_header >> 32);
       offset += 40;
     }
@@ -713,6 +715,7 @@ class KTraceTests {
       ASSERT_EQ(1u, (header >> 20) & 0xf);
       uint64_t arg_header = get_word(4);
       ASSERT_EQ(2u, arg_header & 0xf);
+      ASSERT_EQ(1u, (arg_header >> 4) & 0xfff);
       ASSERT_EQ(103u, arg_header >> 32);
       offset += 40;
     }
@@ -726,6 +729,7 @@ class KTraceTests {
       ASSERT_EQ(1u, (header >> 20) & 0xf);
       uint64_t arg_header = get_word(4);
       ASSERT_EQ(2u, arg_header & 0xf);
+      ASSERT_EQ(1u, (arg_header >> 4) & 0xfff);
       ASSERT_EQ(105u, arg_header >> 32);
       ASSERT_EQ(104u, get_word(5));  // Counter ID
       offset += 48;
@@ -740,6 +744,7 @@ class KTraceTests {
       ASSERT_EQ(1u, (header >> 20) & 0xf);
       uint64_t arg_header = get_word(4);
       ASSERT_EQ(2u, arg_header & 0xf);
+      ASSERT_EQ(1u, (arg_header >> 4) & 0xfff);
       ASSERT_EQ(107u, arg_header >> 32);
       ASSERT_EQ(106u, get_word(5));  // Flow ID
       offset += 48;
@@ -754,6 +759,7 @@ class KTraceTests {
       ASSERT_EQ(1u, (header >> 20) & 0xf);
       uint64_t arg_header = get_word(4);
       ASSERT_EQ(2u, arg_header & 0xf);
+      ASSERT_EQ(1u, (arg_header >> 4) & 0xfff);
       ASSERT_EQ(108u, arg_header >> 32);
       ASSERT_EQ(106u, get_word(5));  // Flow ID
       offset += 48;
@@ -768,6 +774,7 @@ class KTraceTests {
       ASSERT_EQ(1u, (header >> 20) & 0xf);
       uint64_t arg_header = get_word(4);
       ASSERT_EQ(2u, arg_header & 0xf);
+      ASSERT_EQ(1u, (arg_header >> 4) & 0xfff);
       ASSERT_EQ(109u, arg_header >> 32);
       ASSERT_EQ(106u, get_word(5));  // Flow ID
       offset += 48;
@@ -783,6 +790,7 @@ class KTraceTests {
       ASSERT_EQ(110u, get_word(1));  // Start timestamp
       uint64_t arg_header = get_word(4);
       ASSERT_EQ(2u, arg_header & 0xf);
+      ASSERT_EQ(1u, (arg_header >> 4) & 0xfff);
       ASSERT_EQ(111u, arg_header >> 32);
       offset += 48;
     }
@@ -797,6 +805,7 @@ class KTraceTests {
       ASSERT_EQ(112u, get_word(1));          // KOID
       uint64_t arg_header = get_word(2);
       ASSERT_EQ(2u, arg_header & 0xf);
+      ASSERT_EQ(1u, (arg_header >> 4) & 0xfff);
       ASSERT_EQ(113u, arg_header >> 32);
       offset += 24;
     }
@@ -811,6 +820,7 @@ class KTraceTests {
       ASSERT_EQ(114u, get_word(1));  // KOID
       uint64_t arg_header = get_word(2);
       ASSERT_EQ(2u, arg_header & 0xf);
+      ASSERT_EQ(1u, (arg_header >> 4) & 0xfff);
       ASSERT_EQ(115u, arg_header >> 32);
       offset += 24;
     }
@@ -831,6 +841,7 @@ class KTraceTests {
                       reinterpret_cast<const uint8_t*>(name_buf), 16);
       uint64_t arg_header = get_word(4);
       ASSERT_EQ(8u, arg_header & 0xf);  // kKoid (8)
+      ASSERT_EQ(2u, (arg_header >> 4) & 0xfff);
       ASSERT_NE(0u, (arg_header >> 16) & 0xffff);
       ASSERT_EQ(117u, get_word(5));  // Koid value
       offset += 48;

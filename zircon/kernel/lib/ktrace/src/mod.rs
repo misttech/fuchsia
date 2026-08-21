@@ -192,13 +192,14 @@ impl<'a> Argument<'a> {
             | ArgValue::Double(_)
             | ArgValue::Pointer(_)
             | ArgValue::Koid(_) => 2,
-            ArgValue::String(s) => 1 + s.len().div_ceil(8),
+            ArgValue::String(s) => 1 + s.len().min(0x7fff).div_ceil(8),
         }
     }
 
     fn write(&self, res: &mut KTraceReservation<'_>) -> Result<(), Status> {
         let name_id = self.name.id() as u64;
-        let mut header = 0u64;
+        let size_words = self.size_words() as u64;
+        let mut header = (size_words & 0xfff) << 4; // ArgumentSize
         header |= (name_id & 0xffff) << 16; // NameRef
 
         match &self.value {
@@ -233,11 +234,10 @@ impl<'a> Argument<'a> {
             }
             ArgValue::String(s) => {
                 header |= 6u64; // ArgumentType::kString (6)
-                let string_len = s.len();
-                header |= (string_len.div_ceil(8) as u64) << 4; // ArgumentSize in words
-                header |= (string_len as u64) << 32; // String length in bytes
+                let string_len = s.len().min(0x7fff);
+                header |= ((0x8000 | string_len) as u64) << 32; // StringRef: inline flag | length
                 res.write_word(header)?;
-                res.write_bytes(s.as_bytes())?;
+                res.write_bytes(&s.as_bytes()[..string_len])?;
             }
             ArgValue::Pointer(v) => {
                 header |= 7u64; // ArgumentType::kPointer (7)
@@ -1211,6 +1211,7 @@ mod tests {
         // Verify Argument 1 ("arg1" => 42i32) (word 4)
         let arg1_header = u64::from_ne_bytes(read_bytes[32..40].try_into().unwrap());
         expect_eq!(arg1_header & 0xf, 1);
+        expect_eq!((arg1_header >> 4) & 0xfff, 1);
         expect_eq!((arg1_header >> 32) & 0xffffffff, 42);
         let arg1_name_id = (arg1_header >> 16) & 0xffff;
         expect_ne!(arg1_name_id, 0);
@@ -1218,8 +1219,8 @@ mod tests {
         // Verify Argument 2 ("arg2" => "hello") (words 5 & 6)
         let arg2_header = u64::from_ne_bytes(read_bytes[40..48].try_into().unwrap());
         expect_eq!(arg2_header & 0xf, 6);
-        expect_eq!((arg2_header >> 4) & 0xf, 1);
-        expect_eq!((arg2_header >> 32) & 0xffffffff, 5);
+        expect_eq!((arg2_header >> 4) & 0xfff, 2);
+        expect_eq!((arg2_header >> 32) & 0xffff, 0x8005);
         let arg2_name_id = (arg2_header >> 16) & 0xffff;
         expect_ne!(arg2_name_id, 0);
 
@@ -1259,6 +1260,7 @@ mod tests {
         // Verify Koid Argument (words 4 & 5: arg header + koid value)
         let arg_header = u64::from_ne_bytes(read_bytes[32..40].try_into().unwrap());
         expect_eq!(arg_header & 0xf, 8); // ArgumentType::kKoid (8)
+        expect_eq!((arg_header >> 4) & 0xfff, 2); // ArgumentSize = 2 words
         expect_ne!((arg_header >> 16) & 0xffff, 0); // NameStringRef
         expect_eq!(u64::from_ne_bytes(read_bytes[40..48].try_into().unwrap()), 300);
     }
@@ -1300,6 +1302,151 @@ mod tests {
 
         let arg = Argument::new(DROP_STATS_REF, koid_val);
         expect_eq!(arg.size_words(), 2);
+    }
+
+    /// Verifies argument size and header encoding across all argument types.
+    #[test]
+    fn test_all_argument_types() {
+        let _guard = InterruptDisableGuard::new();
+        let mut storage = [0u8; 1024];
+        let mut inner_buf = unsafe { Buffer::from_raw_parts(storage.as_mut_ptr(), storage.len()) };
+        let leaked_ref = unsafe { &mut *ptr::from_mut(&mut inner_buf) };
+        let mut stats = DroppedRecordStats::default();
+        let leaked_stats = unsafe { &mut *ptr::from_mut(&mut stats) };
+        let mut kbuf = KTraceBuffer::new(leaked_ref, leaked_stats, 1, 100, 200);
+
+        // Test each argument type writing via a reservation.
+        let args = [
+            Argument::new(DROP_STATS_REF, ArgValue::Null),
+            Argument::new(DROP_STATS_REF, true),
+            Argument::new(DROP_STATS_REF, -123i32),
+            Argument::new(DROP_STATS_REF, 456u32),
+            Argument::new(DROP_STATS_REF, -789i64),
+            Argument::new(DROP_STATS_REF, 101112u64),
+            Argument::new(DROP_STATS_REF, 3.14159f64),
+            Argument::new(DROP_STATS_REF, "hello_world"),
+            Argument::new(DROP_STATS_REF, ArgValue::Pointer(0x12345678)),
+            Argument::new(DROP_STATS_REF, Koid(9999)),
+        ];
+
+        let total_arg_words: usize = args.iter().map(|a| a.size_words()).sum();
+        let total_words = 1 + total_arg_words; // 1 header + args
+        let header = 4u64 | ((total_words as u64) << 4);
+
+        let mut res = unwrap_ok!(kbuf.reserve(header));
+        for arg in &args {
+            assert_ok!(arg.write(&mut res));
+        }
+        assert_ok!(res.commit());
+
+        let mut read_bytes = [0u8; 1024];
+        let read_len = unwrap_ok!(kbuf.read(
+            |offset, src| {
+                read_bytes[offset as usize..offset as usize + src.len()].copy_from_slice(src);
+                Ok(())
+            },
+            (total_words * 8) as u32,
+        ));
+        expect_eq!(read_len, (total_words * 8) as u32);
+
+        let mut word_idx = 1; // skip record header
+
+        // 0: Null (1 word)
+        let null_hdr =
+            u64::from_ne_bytes(read_bytes[word_idx * 8..(word_idx + 1) * 8].try_into().unwrap());
+        expect_eq!(null_hdr & 0xf, 0); // kNull
+        expect_eq!((null_hdr >> 4) & 0xfff, 1);
+        word_idx += 1;
+
+        // 1: Bool (1 word)
+        let bool_hdr =
+            u64::from_ne_bytes(read_bytes[word_idx * 8..(word_idx + 1) * 8].try_into().unwrap());
+        expect_eq!(bool_hdr & 0xf, 9); // kBool
+        expect_eq!((bool_hdr >> 4) & 0xfff, 1);
+        expect_eq!((bool_hdr >> 32) & 1, 1);
+        word_idx += 1;
+
+        // 2: Int32 (1 word)
+        let i32_hdr =
+            u64::from_ne_bytes(read_bytes[word_idx * 8..(word_idx + 1) * 8].try_into().unwrap());
+        expect_eq!(i32_hdr & 0xf, 1); // kInt32
+        expect_eq!((i32_hdr >> 4) & 0xfff, 1);
+        expect_eq!((i32_hdr >> 32) as u32 as i32, -123);
+        word_idx += 1;
+
+        // 3: Uint32 (1 word)
+        let u32_hdr =
+            u64::from_ne_bytes(read_bytes[word_idx * 8..(word_idx + 1) * 8].try_into().unwrap());
+        expect_eq!(u32_hdr & 0xf, 2); // kUint32
+        expect_eq!((u32_hdr >> 4) & 0xfff, 1);
+        expect_eq!((u32_hdr >> 32) as u32, 456);
+        word_idx += 1;
+
+        // 4: Int64 (2 words)
+        let i64_hdr =
+            u64::from_ne_bytes(read_bytes[word_idx * 8..(word_idx + 1) * 8].try_into().unwrap());
+        expect_eq!(i64_hdr & 0xf, 3); // kInt64
+        expect_eq!((i64_hdr >> 4) & 0xfff, 2);
+        let i64_val = i64::from_ne_bytes(
+            read_bytes[(word_idx + 1) * 8..(word_idx + 2) * 8].try_into().unwrap(),
+        );
+        expect_eq!(i64_val, -789);
+        word_idx += 2;
+
+        // 5: Uint64 (2 words)
+        let u64_hdr =
+            u64::from_ne_bytes(read_bytes[word_idx * 8..(word_idx + 1) * 8].try_into().unwrap());
+        expect_eq!(u64_hdr & 0xf, 4); // kUint64
+        expect_eq!((u64_hdr >> 4) & 0xfff, 2);
+        let u64_val = u64::from_ne_bytes(
+            read_bytes[(word_idx + 1) * 8..(word_idx + 2) * 8].try_into().unwrap(),
+        );
+        expect_eq!(u64_val, 101112);
+        word_idx += 2;
+
+        // 6: Double (2 words)
+        let d_hdr =
+            u64::from_ne_bytes(read_bytes[word_idx * 8..(word_idx + 1) * 8].try_into().unwrap());
+        expect_eq!(d_hdr & 0xf, 5); // kDouble
+        expect_eq!((d_hdr >> 4) & 0xfff, 2);
+        let d_bits = u64::from_ne_bytes(
+            read_bytes[(word_idx + 1) * 8..(word_idx + 2) * 8].try_into().unwrap(),
+        );
+        expect_eq!(d_bits, 3.14159f64.to_bits());
+        word_idx += 2;
+
+        // 7: String (1 header + 2 payload words = 3 words)
+        let s_hdr =
+            u64::from_ne_bytes(read_bytes[word_idx * 8..(word_idx + 1) * 8].try_into().unwrap());
+        expect_eq!(s_hdr & 0xf, 6); // kString
+        expect_eq!((s_hdr >> 4) & 0xfff, 3);
+        expect_eq!((s_hdr >> 32) & 0xffff, 0x800b); // 11 bytes inline
+        expect_true!(&read_bytes[(word_idx + 1) * 8..(word_idx + 1) * 8 + 11] == b"hello_world");
+        word_idx += 3;
+
+        // 8: Pointer (2 words)
+        let ptr_hdr =
+            u64::from_ne_bytes(read_bytes[word_idx * 8..(word_idx + 1) * 8].try_into().unwrap());
+        expect_eq!(ptr_hdr & 0xf, 7); // kPointer
+        expect_eq!((ptr_hdr >> 4) & 0xfff, 2);
+        let ptr_val = usize::from_ne_bytes(
+            read_bytes[(word_idx + 1) * 8..(word_idx + 2) * 8].try_into().unwrap(),
+        );
+        expect_eq!(ptr_val, 0x12345678);
+        word_idx += 2;
+
+        // 9: Koid (2 words)
+        let koid_hdr =
+            u64::from_ne_bytes(read_bytes[word_idx * 8..(word_idx + 1) * 8].try_into().unwrap());
+        expect_eq!(koid_hdr & 0xf, 8); // kKoid
+        expect_eq!((koid_hdr >> 4) & 0xfff, 2);
+        let koid_val = u64::from_ne_bytes(
+            read_bytes[(word_idx + 1) * 8..(word_idx + 2) * 8].try_into().unwrap(),
+        );
+        expect_eq!(koid_val, 9999);
+        word_idx += 2;
+
+        expect_eq!(word_idx, total_words);
     }
 }
 
