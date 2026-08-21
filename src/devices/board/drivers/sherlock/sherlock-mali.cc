@@ -104,8 +104,7 @@ zx_status_t Sherlock::MaliInit() {
         .properties =
             {
                 fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.registers.Service"),
-                fdf::MakeProperty2(bind_fuchsia::NAME,
-                                   bind_fuchsia_amlogic_platform::NAME_REGISTER_MALI_RESET),
+                fdf::MakeProperty2(bind_fuchsia::NAME, "register-reset"),
             },
     }};
 

@@ -65,6 +65,7 @@ TEST(UsbVisitorTest, TestMetadataAndBindProperty) {
           fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.usb.phy.Service"),
           fdf::MakeProperty2("fuchsia.hardware.usb.phy.Service",
                              "fuchsia.hardware.usb.phy.Service.ZirconTransport"),
+          fdf::MakeProperty2(bind_fuchsia::NAME, "xhci"),
           fdf::MakeProperty2(bind_fuchsia::PLATFORM_DEV_VID,
                              bind_fuchsia_platform::BIND_PLATFORM_DEV_VID_GENERIC),
           fdf::MakeProperty2(bind_fuchsia::PLATFORM_DEV_PID,

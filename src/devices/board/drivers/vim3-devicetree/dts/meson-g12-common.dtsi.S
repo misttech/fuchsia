@@ -41,7 +41,7 @@
 			compatible = "amlogic,ethernet-phy";
 			reg = <0x0 0xff634000 0x0 0x1000>, <0x0 0xff63c000 0x0 0x2000>;
 			gpios = <&gpio A311D_GPIOZ(14) 0>;
-			gpio-names = "ETH_INTERRUPT";
+			gpio-names = "gpio-int";
 			pinctrl-0 = <&ethernet_phy_cfg>;
 			#phy-cells = <0>;
 		};

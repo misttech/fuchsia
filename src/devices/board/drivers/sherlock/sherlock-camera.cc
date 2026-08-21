@@ -475,8 +475,7 @@ zx_status_t Sherlock::CameraInit() {
               fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.registers.Service"),
               fdf::MakeProperty2("fuchsia.hardware.registers.Service",
                                  "fuchsia.hardware.registers.Service.ZirconTransport"),
-              fdf::MakeProperty2(bind_fuchsia::NAME,
-                                 bind_fuchsia_amlogic_platform::NAME_REGISTER_ISP_RESET),
+              fdf::MakeProperty2(bind_fuchsia::NAME, "register-reset"),
           },
   }};
 

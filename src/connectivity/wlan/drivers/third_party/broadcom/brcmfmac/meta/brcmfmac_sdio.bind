@@ -7,7 +7,6 @@ composite brcmfmac_sdio;
 using fuchsia;
 
 using fuchsia.hardware.pin;
-using fuchsia.hardware.pin;
 using fuchsia.broadcom.platform;
 using fuchsia.gpio;
 using fuchsia.hardware.gpio;
@@ -26,6 +25,7 @@ parent "sdio-function-2" {
 
 parent "gpio-oob" {
   fuchsia.Service == "fuchsia.hardware.gpio.Service";
+  fuchsia.NAME == "gpio-oob";
 }
 
 parent "pdev" {

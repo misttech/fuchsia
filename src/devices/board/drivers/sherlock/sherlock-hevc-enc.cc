@@ -70,7 +70,7 @@ const std::vector<fuchsia_driver_framework::NodeProperty2> kClkDosProperties = s
     fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.clock.Service"),
     fdf::MakeProperty2("fuchsia.hardware.clock.Service",
                        "fuchsia.hardware.clock.Service.ZirconTransport"),
-    fdf::MakeProperty2(bind_fuchsia::NAME, "DOS"),
+    fdf::MakeProperty2(bind_fuchsia::NAME, "clock-dos"),
 };
 
 static const fpbus::Node hevc_enc_dev = []() {

@@ -246,6 +246,15 @@ impl From<CompilerError> for UserError {
             CompilerError::FalseStatementMustBeIsolated => {
                 UserError::new("E111", "`true` must be the only statement in a block", None, false)
             }
+            CompilerError::MismatchedParentName { parent_name, property_name } => UserError::new(
+                "E112",
+                &format!(
+                    "Parent name `{}` does not match fuchsia.NAME value `{}`.",
+                    parent_name, property_name
+                ),
+                None,
+                false,
+            ),
         }
     }
 }

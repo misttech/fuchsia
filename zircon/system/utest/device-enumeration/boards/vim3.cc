@@ -56,7 +56,7 @@ TEST_F(DeviceEnumerationTest, Vim3DeviceTreeTest) {
       "mmc-ffe07000.aml-sd-emmc.sdmmc.sdmmc-mmc.user",
 
       "usb-phy-ffe09000.aml_usb_phy",
-      "usb-phy-ffe09000.aml_usb_phy.dwc2",
+      "usb-phy-ffe09000.aml_usb_phy.dwc2-phy",
       "usb-ff400000.dwc2",
       "usb-ff400000.dwc2.usb-peripheral.function-000.usb-cdc-netdev.network-device",
       "usb-phy-ffe09000.aml_usb_phy.xhci",

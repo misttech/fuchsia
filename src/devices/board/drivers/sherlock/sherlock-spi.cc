@@ -81,8 +81,7 @@ const std::vector kResetRegisterRules = {
 
 const std::vector kResetRegisterProperties = {
     fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.registers.Service"),
-    fdf::MakeProperty2(bind_fuchsia::NAME,
-                       bind_fuchsia_amlogic_platform::NAME_REGISTER_SPICC0_RESET),
+    fdf::MakeProperty2(bind_fuchsia::NAME, "reset"),
 };
 
 const std::vector<fuchsia_driver_framework::BindRule2> kGpioInitRules = std::vector{

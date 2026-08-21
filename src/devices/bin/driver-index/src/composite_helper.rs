@@ -41,10 +41,28 @@ pub fn node_matches_composite_driver(
     node: &fdf::ParentSpec2,
     bind_rules_node: &Vec<u8>,
     symbol_table: &HashMap<u32, String>,
+    expected_parent_name: &str,
 ) -> bool {
+    for prop in &node.properties {
+        if prop.key == "fuchsia.NAME" {
+            if let fdf::NodePropertyValue::StringValue(ref val) = prop.value {
+                if val != expected_parent_name {
+                    return false;
+                }
+            }
+        }
+    }
+
     match node_to_device_property(&node.properties) {
         Err(_) => false,
         Ok(props) => {
+            if let Some(Symbol::StringValue(val)) =
+                props.get(&PropertyKey::StringKey("fuchsia.NAME".to_string()))
+            {
+                if val != expected_parent_name {
+                    return false;
+                }
+            }
             match_bind(MatchBindData { symbol_table, instructions: bind_rules_node }, &props)
                 .unwrap_or(false)
         }
@@ -179,11 +197,13 @@ pub fn match_composite_properties<'a>(
     // First find a matching primary node.
     let mut primary_parent_index = 0;
     let mut primary_matches = false;
+    let primary_name = &composite.symbol_table[&composite.primary_parent.name_id];
     for i in 0..parents.len() {
         primary_matches = node_matches_composite_driver(
             &parents[i],
             &composite.primary_parent.instructions,
             &composite.symbol_table,
+            primary_name,
         );
         if primary_matches {
             primary_parent_index = i as u32;
@@ -235,15 +255,16 @@ pub fn match_composite_properties<'a>(
 
         // First check if any of the additional nodes match it.
         for &j in &unmatched_additional_indices {
+            let additional_name = &composite.symbol_table[&composite.additional_parents[j].name_id];
             let matches = node_matches_composite_driver(
                 &parents[i],
                 &composite.additional_parents[j].instructions,
                 &composite.symbol_table,
+                additional_name,
             );
             if matches {
                 matched = Some(j);
-                matched_name =
-                    Some(composite.symbol_table[&composite.additional_parents[j].name_id].clone());
+                matched_name = Some(additional_name.clone());
                 break;
             }
         }
@@ -251,17 +272,17 @@ pub fn match_composite_properties<'a>(
         // If no additional nodes matched it, then look in the optional nodes.
         if matched.is_none() {
             for &j in &unmatched_optional_indices {
+                let optional_name = &composite.symbol_table[&composite.optional_parents[j].name_id];
                 let matches = node_matches_composite_driver(
                     &parents[i],
                     &composite.optional_parents[j].instructions,
                     &composite.symbol_table,
+                    optional_name,
                 );
                 if matches {
                     from_optional = true;
                     matched = Some(j);
-                    matched_name = Some(
-                        composite.symbol_table[&composite.optional_parents[j].name_id].clone(),
-                    );
+                    matched_name = Some(optional_name.clone());
                     break;
                 }
             }
@@ -296,4 +317,33 @@ pub fn match_composite_properties<'a>(
         primary_parent_index: Some(primary_parent_index),
         ..Default::default()
     }));
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_node_matches_composite_driver_matching_name() {
+        let parent = fdf::ParentSpec2 {
+            bind_rules: vec![],
+            properties: vec![fdf::NodeProperty2 {
+                key: "fuchsia.NAME".to_string(),
+                value: fdf::NodePropertyValue::StringValue("my_parent".to_string()),
+            }],
+        };
+        assert!(node_matches_composite_driver(&parent, &vec![], &HashMap::new(), "my_parent"));
+    }
+
+    #[test]
+    fn test_node_matches_composite_driver_mismatched_name() {
+        let parent = fdf::ParentSpec2 {
+            bind_rules: vec![],
+            properties: vec![fdf::NodeProperty2 {
+                key: "fuchsia.NAME".to_string(),
+                value: fdf::NodePropertyValue::StringValue("wrong_parent".to_string()),
+            }],
+        };
+        assert!(!node_matches_composite_driver(&parent, &vec![], &HashMap::new(), "my_parent"));
+    }
 }

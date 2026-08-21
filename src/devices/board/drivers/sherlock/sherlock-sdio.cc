@@ -152,6 +152,7 @@ zx::result<> AddWifiNode(fdf::WireSyncClient<fpbus::PlatformBus>& pbus) {
   static const std::vector<fuchsia_driver_framework::NodeProperty2> kGpioWifiHostProperties =
       std::vector{
           fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.gpio.Service"),
+          fdf::MakeProperty2(bind_fuchsia::NAME, "gpio-oob"),
   };
 
   fit::result persisted_wifi_config = fidl::Persist(kWifiConfig);

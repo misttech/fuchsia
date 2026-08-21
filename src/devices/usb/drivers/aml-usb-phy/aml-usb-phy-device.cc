@@ -292,6 +292,7 @@ zx::result<> AmlUsbPhyDevice::ChildNode::Publish() {
   fuchsia_driver_framework::Offer offers[]{
       fdf::MakeOffer2<fuchsia_hardware_usb_phy::Service>(name_)};
   auto properties = std::vector{
+      fdf::MakeProperty2(bind_fuchsia::NAME, name_),
       fdf::MakeProperty2(bind_fuchsia::PLATFORM_DEV_VID,
                          bind_fuchsia_platform::BIND_PLATFORM_DEV_VID_GENERIC),
       fdf::MakeProperty2(bind_fuchsia::PLATFORM_DEV_PID,

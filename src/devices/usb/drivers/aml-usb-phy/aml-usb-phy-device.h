@@ -59,7 +59,7 @@ class AmlUsbPhyDevice : public fdf::DriverBase2 {
   void UnbindOnFailure();
 
   ChildNode xhci_{this, "xhci", PDEV_DID_USB_XHCI_COMPOSITE};
-  ChildNode dwc2_{this, "dwc2", PDEV_DID_USB_DWC2};
+  ChildNode dwc2_{this, "dwc2-phy", PDEV_DID_USB_DWC2};
 
   // For testing.
   std::unique_ptr<AmlUsbPhy>& device() { return device_; }

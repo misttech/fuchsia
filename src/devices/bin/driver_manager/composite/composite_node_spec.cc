@@ -4,8 +4,11 @@
 
 #include "src/devices/bin/driver_manager/composite/composite_node_spec.h"
 
+#include <bind/fuchsia/cpp/bind.h>
+
 #include "src/devices/bin/driver_manager/node_property_conversion.h"
 #include "src/devices/bin/driver_manager/resource.h"
+#include "src/devices/lib/log/log.h"
 
 namespace fdd = fuchsia_driver_development;
 
@@ -59,6 +62,19 @@ zx::result<std::optional<NodeWkPtr>> CompositeNodeSpec::BindParent(
 
   std::vector<fuchsia_driver_framework::NodeProperty2> properties =
       parent_specs()[composite_parent.index()].properties();
+
+  for (const auto& prop : properties) {
+    if (prop.key() == bind_fuchsia::NAME) {
+      if (const auto& str_val = prop.value().string_value(); str_val.has_value()) {
+        if (str_val.value() != parent_names[node_index]) {
+          fdf_log::error(
+              "Parent property fuchsia.NAME '{}' does not match composite parent name '{}'",
+              str_val.value(), parent_names[node_index]);
+          return zx::error(ZX_ERR_INVALID_ARGS);
+        }
+      }
+    }
+  }
 
   zx::result<> add_result =
       parent_set_collector_.AddResource(composite_parent.index(), properties, resource);

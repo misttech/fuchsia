@@ -33,6 +33,7 @@ pub enum CompilerError {
     IfStatementMustBeTerminal,
     TrueStatementMustBeIsolated,
     FalseStatementMustBeIsolated,
+    MismatchedParentName { parent_name: String, property_name: String },
 }
 
 impl fmt::Display for CompilerError {
@@ -264,6 +265,19 @@ pub fn compile_bind_composite<'a>(
 ) -> Result<CompositeBindRules<'a>, CompilerError> {
     let ast = bind_composite::Ast::try_from(rules_str).map_err(CompilerError::BindParserError)?;
     let symbol_table = get_symbol_table_from_libraries(&ast.using, libraries, lint)?;
+
+    validate_parent_statements(
+        &ast.primary_parent.name,
+        &ast.primary_parent.statements,
+        &symbol_table,
+    )?;
+    for parent in &ast.additional_parents {
+        validate_parent_statements(&parent.name, &parent.statements, &symbol_table)?;
+    }
+    for parent in &ast.optional_parents {
+        validate_parent_statements(&parent.name, &parent.statements, &symbol_table)?;
+    }
+
     let primary_parent = CompositeParent {
         name: ast.primary_parent.name,
         instructions: compile_statements(
@@ -300,6 +314,84 @@ pub fn compile_bind_composite<'a>(
         optional_parents: optional_parents,
         enable_debug: enable_debug,
     })
+}
+
+fn validate_parent_statements(
+    parent_name: &str,
+    statements: &[Statement<'_>],
+    symbol_table: &SymbolTable,
+) -> Result<(), CompilerError> {
+    for statement in statements {
+        match statement {
+            Statement::ConditionStatement { condition, .. } => {
+                validate_parent_condition(parent_name, condition, symbol_table)?;
+            }
+            Statement::Accept { identifier, values, .. } => {
+                if is_fuchsia_name_key(identifier, symbol_table)
+                    && !values.iter().any(|v| get_value_string(v, symbol_table) == parent_name)
+                {
+                    let prop_name = values
+                        .first()
+                        .map(|v| get_value_string(v, symbol_table))
+                        .unwrap_or_default();
+                    return Err(CompilerError::MismatchedParentName {
+                        parent_name: parent_name.to_string(),
+                        property_name: prop_name,
+                    });
+                }
+            }
+            Statement::If { blocks, else_block, .. } => {
+                for (condition, block_statements) in blocks {
+                    validate_parent_condition(parent_name, condition, symbol_table)?;
+                    validate_parent_statements(parent_name, block_statements, symbol_table)?;
+                }
+                validate_parent_statements(parent_name, else_block, symbol_table)?;
+            }
+            Statement::True { .. } | Statement::False { .. } => {}
+        }
+    }
+    Ok(())
+}
+
+fn validate_parent_condition(
+    parent_name: &str,
+    condition: &Condition<'_>,
+    symbol_table: &SymbolTable,
+) -> Result<(), CompilerError> {
+    if is_fuchsia_name_key(&condition.lhs, symbol_table) && condition.op == ConditionOp::Equals {
+        let prop_name = get_value_string(&condition.rhs, symbol_table);
+        if prop_name != parent_name {
+            return Err(CompilerError::MismatchedParentName {
+                parent_name: parent_name.to_string(),
+                property_name: prop_name,
+            });
+        }
+    }
+    Ok(())
+}
+
+fn is_fuchsia_name_key(ident: &CompoundIdentifier, symbol_table: &SymbolTable) -> bool {
+    if let Some(Symbol::Key(key, _)) = symbol_table.get(ident) {
+        if key == "fuchsia.NAME" {
+            return true;
+        }
+    }
+    ident.to_string() == "fuchsia.NAME" || ident.to_string() == "NAME"
+}
+
+fn get_value_string(value: &Value, symbol_table: &SymbolTable) -> String {
+    match value {
+        Value::StringLiteral(s) => s.clone(),
+        Value::Identifier(ident) => {
+            if let Some(Symbol::StringValue(s)) = symbol_table.get(ident) {
+                s.clone()
+            } else {
+                ident.to_string()
+            }
+        }
+        Value::NumericLiteral(n) => n.to_string(),
+        Value::BoolLiteral(b) => b.to_string(),
+    }
 }
 
 pub fn compile_statements<'a, 'b>(
@@ -985,6 +1077,168 @@ mod test {
                     rhs: Symbol::NumberValue(8)
                 }
             },]
+        );
+    }
+
+    #[test]
+    fn composite_matching_parent_names() {
+        let fuchsia_lib = "library fuchsia;\nstring NAME;\n";
+        let libraries = vec![fuchsia_lib.to_string()];
+        let rules = "
+            composite test_device;
+            using fuchsia;
+
+            primary parent \"primary_node\" {
+                fuchsia.NAME == \"primary_node\";
+            }
+
+            parent \"additional_node\" {
+                fuchsia.NAME == \"additional_node\";
+            }
+
+            optional parent \"optional_node\" {
+                fuchsia.NAME == \"optional_node\";
+            }
+        ";
+
+        assert!(compile_bind_composite(rules, &libraries, false, false, false).is_ok());
+    }
+
+    #[test]
+    fn composite_mismatched_primary_parent_name() {
+        let fuchsia_lib = "library fuchsia;\nstring NAME;\n";
+        let libraries = vec![fuchsia_lib.to_string()];
+        let rules = "
+            composite test_device;
+            using fuchsia;
+
+            primary parent \"primary_node\" {
+                fuchsia.NAME == \"wrong_name\";
+            }
+        ";
+
+        assert_eq!(
+            compile_bind_composite(rules, &libraries, false, false, false),
+            Err(CompilerError::MismatchedParentName {
+                parent_name: "primary_node".to_string(),
+                property_name: "wrong_name".to_string(),
+            })
+        );
+    }
+
+    #[test]
+    fn composite_mismatched_additional_parent_name() {
+        let fuchsia_lib = "library fuchsia;\nstring NAME;\n";
+        let libraries = vec![fuchsia_lib.to_string()];
+        let rules = "
+            composite test_device;
+            using fuchsia;
+
+            primary parent \"primary_node\" {
+                fuchsia.NAME == \"primary_node\";
+            }
+
+            parent \"node_b\" {
+                fuchsia.NAME == \"wrong_b\";
+            }
+        ";
+
+        assert_eq!(
+            compile_bind_composite(rules, &libraries, false, false, false),
+            Err(CompilerError::MismatchedParentName {
+                parent_name: "node_b".to_string(),
+                property_name: "wrong_b".to_string(),
+            })
+        );
+    }
+
+    #[test]
+    fn composite_mismatched_optional_parent_name() {
+        let fuchsia_lib = "library fuchsia;\nstring NAME;\n";
+        let libraries = vec![fuchsia_lib.to_string()];
+        let rules = "
+            composite test_device;
+            using fuchsia;
+
+            primary parent \"primary_node\" {
+                fuchsia.NAME == \"primary_node\";
+            }
+
+            optional parent \"opt_node\" {
+                fuchsia.NAME == \"wrong_opt\";
+            }
+        ";
+
+        assert_eq!(
+            compile_bind_composite(rules, &libraries, false, false, false),
+            Err(CompilerError::MismatchedParentName {
+                parent_name: "opt_node".to_string(),
+                property_name: "wrong_opt".to_string(),
+            })
+        );
+    }
+
+    #[test]
+    fn composite_accept_parent_name() {
+        let fuchsia_lib = "library fuchsia;\nstring NAME;\n";
+        let libraries = vec![fuchsia_lib.to_string()];
+        let rules = "
+            composite test_device;
+            using fuchsia;
+
+            primary parent \"primary_node\" {
+                accept fuchsia.NAME { \"primary_node\", \"other_name\" }
+            }
+        ";
+
+        assert!(compile_bind_composite(rules, &libraries, false, false, false).is_ok());
+    }
+
+    #[test]
+    fn composite_mismatched_accept_parent_name() {
+        let fuchsia_lib = "library fuchsia;\nstring NAME;\n";
+        let libraries = vec![fuchsia_lib.to_string()];
+        let rules = "
+            composite test_device;
+            using fuchsia;
+
+            primary parent \"primary_node\" {
+                accept fuchsia.NAME { \"other_name\", \"another_name\" }
+            }
+        ";
+
+        assert_eq!(
+            compile_bind_composite(rules, &libraries, false, false, false),
+            Err(CompilerError::MismatchedParentName {
+                parent_name: "primary_node".to_string(),
+                property_name: "other_name".to_string(),
+            })
+        );
+    }
+
+    #[test]
+    fn composite_mismatched_if_parent_name() {
+        let fuchsia_lib = "library fuchsia;\nstring NAME;\nuint PROTOCOL;\n";
+        let libraries = vec![fuchsia_lib.to_string()];
+        let rules = "
+            composite test_device;
+            using fuchsia;
+
+            primary parent \"primary_node\" {
+                if fuchsia.PROTOCOL == 1 {
+                    fuchsia.NAME == \"wrong_name\";
+                } else {
+                    fuchsia.NAME == \"primary_node\";
+                }
+            }
+        ";
+
+        assert_eq!(
+            compile_bind_composite(rules, &libraries, false, false, false),
+            Err(CompilerError::MismatchedParentName {
+                parent_name: "primary_node".to_string(),
+                property_name: "wrong_name".to_string(),
+            })
         );
     }
 }

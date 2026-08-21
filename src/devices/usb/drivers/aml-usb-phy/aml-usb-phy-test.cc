@@ -240,7 +240,7 @@ TEST_F(AmlUsbPhyTest, SetMode) {
   // Trigger interrupt, and switch to Peripheral mode.
   TriggerInterruptAndCheckMode(fuchsia_hardware_usb_phy::Mode::kPeripheral);
   // PHY 0 and 2 are still in Host mode (xhci), while PHY 1 is now in Peripheral mode (dwc2).
-  CheckDevices(std::vector<std::string>{"xhci", "dwc2"});
+  CheckDevices(std::vector<std::string>{"xhci", "dwc2-phy"});
 
   // Trigger interrupt, and switch (back) to Host mode.
   TriggerInterruptAndCheckMode(fuchsia_hardware_usb_phy::Mode::kHost);

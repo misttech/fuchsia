@@ -119,8 +119,7 @@ zx_status_t Nelson::MaliInit() {
         .properties =
             {
                 fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.registers.Service"),
-                fdf::MakeProperty2(bind_fuchsia::NAME,
-                                   bind_fuchsia_amlogic_platform::NAME_REGISTER_MALI_RESET),
+                fdf::MakeProperty2(bind_fuchsia::NAME, "register-reset"),
             },
     }};
     auto aml_gpu_clock_node = fuchsia_driver_framework::ParentSpec2{{
@@ -133,7 +132,7 @@ zx_status_t Nelson::MaliInit() {
         .properties =
             {
                 fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.clock.Service"),
-                fdf::MakeProperty2(bind_fuchsia::NAME, "GP0_PLL"),
+                fdf::MakeProperty2(bind_fuchsia::NAME, "clock-gp0-pll"),
             },
     }};
 

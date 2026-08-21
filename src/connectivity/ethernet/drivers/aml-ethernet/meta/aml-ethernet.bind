@@ -29,6 +29,7 @@ optional parent "gpio-init" {
 
 parent "gpio-int" {
   fuchsia.Service == "fuchsia.hardware.gpio.Service";
+  fuchsia.NAME == "gpio-int";
 }
 
 optional parent "pin-states-0" {

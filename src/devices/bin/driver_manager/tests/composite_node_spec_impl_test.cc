@@ -290,3 +290,43 @@ TEST_F(CompositeNodeSpecTest, SpecBindWithResourcesAndDictionary) {
   ASSERT_EQ(fake_util.receivers_.size(), 1u);
   ASSERT_TRUE(fake_util.receivers_.count("service_1"));
 }
+
+TEST_F(CompositeNodeSpecTest, SpecBindParentNameProperty) {
+  std::vector<fuchsia_driver_framework::ParentSpec2> parents;
+  parents.push_back(fuchsia_driver_framework::ParentSpec2{{
+      .bind_rules = {},
+      .properties =
+          {
+              fuchsia_driver_framework::NodeProperty2{{
+                  .key = "fuchsia.NAME",
+                  .value = fuchsia_driver_framework::NodePropertyValue::WithStringValue("node-0"),
+              }},
+          },
+  }});
+  parents.push_back(fuchsia_driver_framework::ParentSpec2{{
+      .bind_rules = {},
+      .properties =
+          {
+              fuchsia_driver_framework::NodeProperty2{{
+                  .key = "fuchsia.NAME",
+                  .value =
+                      fuchsia_driver_framework::NodePropertyValue::WithStringValue("wrong-node-1"),
+              }},
+          },
+  }});
+  driver_manager::CompositeNodeSpec spec(
+      driver_manager::CompositeNodeSpecCreateInfo{
+          .name = "spec",
+          .parents = std::move(parents),
+      },
+      dispatcher(), node_manager_.get());
+
+  std::shared_ptr parent_1 = CreateNode("spec_parent_1");
+  auto result = MatchAndBindParentSpec(spec, parent_1, {"node-0", "node-1"}, 0);
+  ASSERT_TRUE(result.is_ok());
+
+  std::shared_ptr parent_2 = CreateNode("spec_parent_2");
+  result = MatchAndBindParentSpec(spec, parent_2, {"node-0", "node-1"}, 1);
+  ASSERT_TRUE(result.is_error());
+  ASSERT_EQ(ZX_ERR_INVALID_ARGS, result.status_value());
+}

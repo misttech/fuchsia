@@ -496,7 +496,7 @@
 		ethernet-phy@ff634000 {
 			#phy-cells = <0x00>;
 			compatible = "amlogic,ethernet-phy";
-			gpio-names = "ETH_INTERRUPT";
+			gpio-names = "gpio-int";
 			gpios = <0x06 0x0e 0x00>;
 			phandle = <0x02>;
 			pinctrl-0 = <0x07>;
@@ -876,7 +876,7 @@
 
 	wifi {
 		compatible = "broadcom,bcm4359";
-		gpio-names = "WIFI_WAKE_HOST";
+		gpio-names = "gpio-oob";
 		gpios = <0x06 0x3f 0x00>;
 		pinctrl-0 = <0x35>;
 	};

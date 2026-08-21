@@ -88,7 +88,7 @@ fdf::wire::CompositeNodeSpec MakeSpiCompositeNodeSpec(fidl::AnyArena& fidl_arena
 
   const std::vector kResetRegisterProperties = {
       fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.registers.Service"),
-      fdf::MakeProperty2(bind_fuchsia::NAME, register_id),
+      fdf::MakeProperty2(bind_fuchsia::NAME, "reset"),
   };
 
   const std::vector<fuchsia_driver_framework::BindRule2> kGpioInitRules = std::vector{

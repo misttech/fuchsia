@@ -187,7 +187,7 @@
     },
     {
       service: "fuchsia.hardware.usb.phy.Service",
-      name: "xhci-phy",
+      name: "xhci",
       from: "#usb-phy-ffe09000",
       to: "#usb-ff500000",
       constraints: {

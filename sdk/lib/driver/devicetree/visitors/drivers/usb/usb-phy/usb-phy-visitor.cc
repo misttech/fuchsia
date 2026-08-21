@@ -95,7 +95,7 @@ zx::result<> UsbPhyVisitor::AddChildNodeSpec(fdf_devicetree::Node& child,
   };
 
   std::optional<uint32_t> did;
-  if (phy_name == "xhci-phy") {
+  if (phy_name == "xhci-phy" || phy_name == "xhci") {
     did = bind_fuchsia_platform::BIND_PLATFORM_DEV_DID_XHCI;
   } else if (phy_name == "dwc2-phy") {
     did = bind_fuchsia_platform::BIND_PLATFORM_DEV_DID_USB_DWC2;
@@ -107,12 +107,17 @@ zx::result<> UsbPhyVisitor::AddChildNodeSpec(fdf_devicetree::Node& child,
   }
 
   if (did) {
+    std::string_view parent_name = phy_name;
+    if (phy_name == "xhci-phy") {
+      parent_name = "xhci";
+    }
     bind_rules.emplace_back(fdf::MakeAcceptBindRule(
         bind_fuchsia::PLATFORM_DEV_VID, bind_fuchsia_platform::BIND_PLATFORM_DEV_VID_GENERIC));
     bind_rules.emplace_back(fdf::MakeAcceptBindRule(
         bind_fuchsia::PLATFORM_DEV_PID, bind_fuchsia_platform::BIND_PLATFORM_DEV_PID_GENERIC));
     bind_rules.emplace_back(fdf::MakeAcceptBindRule(bind_fuchsia::PLATFORM_DEV_DID, *did));
 
+    bind_properties.emplace_back(fdf::MakeProperty2(bind_fuchsia::NAME, parent_name));
     bind_properties.emplace_back(fdf::MakeProperty2(
         bind_fuchsia::PLATFORM_DEV_VID, bind_fuchsia_platform::BIND_PLATFORM_DEV_VID_GENERIC));
     bind_properties.emplace_back(fdf::MakeProperty2(

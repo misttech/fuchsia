@@ -27,6 +27,7 @@ parent "registers" {
 
 parent "reset" {
   fuchsia.hardware.reset.Service == fuchsia.hardware.reset.Service.ZirconTransport;
+  fuchsia.NAME == "reset";
 }
 
 parent "power-domain" {

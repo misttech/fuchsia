@@ -38,9 +38,10 @@ primary parent "pdev" {
   }
 }
 
-optional parent "xhci-phy" {
+optional parent "xhci" {
   fuchsia.Service == "fuchsia.hardware.usb.phy.Service";
   fuchsia.BIND_PLATFORM_DEV_DID == fuchsia.platform.BIND_PLATFORM_DEV_DID.XHCI;
+  fuchsia.NAME == "xhci";
 }
 
 optional parent "acpi" {

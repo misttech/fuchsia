@@ -146,8 +146,7 @@ zx_status_t AddUsbPhyComposite(fdf::WireSyncClient<fpbus::PlatformBus>& pbus,
 
   const std::vector<fuchsia_driver_framework::NodeProperty2> kResetRegisterProperties = std::vector{
       fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.registers.Service"),
-      fdf::MakeProperty2(bind_fuchsia::NAME,
-                         bind_fuchsia_amlogic_platform::NAME_REGISTER_USB_PHY_V2_RESET),
+      fdf::MakeProperty2(bind_fuchsia::NAME, "register-reset"),
   };
 
   std::vector<fuchsia_driver_framework::ParentSpec2> parents{
