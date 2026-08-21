@@ -2,12 +2,14 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+mod apic_id;
 mod cache;
 pub mod cpuid;
 mod extension;
 mod feature;
 mod system;
 
+pub use apic_id::*;
 pub use cache::*;
 pub use extension::*;
 pub use feature::*;

@@ -73,6 +73,119 @@ impl VendorString {
     }
 }
 
+/// Leaf/Function 0x1, EBX
+///
+/// [intel/vol2]: Table 3-8.  Information Returned by CPUID Instruction.
+/// [amd/vol3]: E.3.2  Function 1h—Processor and Processor Feature Identifiers.
+pub const PROCESSOR_INFO: CpuidValue<0x1, 0x0, EBX, ProcessorInfo> = CpuidValue::new();
+
+layout!({
+    /// The layout of EBX in [`PROCESSOR_INFO`].
+    pub struct ProcessorInfo(u32);
+    {
+        let initial_apic_id @ 31..24;
+        let max_logical_processors @ 23..16;
+        let clflush_size @ 15..8;
+        let brand_index @ 7..0;
+    }
+});
+
+impl ProcessorInfo {
+    pub fn cache_line_size_bytes(&self) -> usize {
+        self.clflush_size() as usize * 8
+    }
+}
+
+/// Leaf/Function 0x1, ECX
+///
+/// [intel/vol2]: Table 3-10.  Feature Information Returned in the ECX Register.
+/// [amd/vol3]: E.3.2, CPUID Fn0000_0001_ECX Feature Identifiers.
+pub const FEATURE_FLAGS_C: CpuidValue<0x1, 0x0, ECX, FeatureFlagsC> = CpuidValue::new();
+
+layout!({
+    /// The layout of ECX in [`FEATURE_FLAGS_C`].
+    pub struct FeatureFlagsC(u32);
+    {
+        let hypervisor @ 31;
+        let rdrand @ 30;
+        let f16c @ 29;
+        let avx @ 28;
+        let osxsave @ 27;
+        let xsave @ 26;
+        let aes @ 25;
+        let tsc_deadline @ 24;
+        let popcnt @ 23;
+        let movbe @ 22;
+        let x2apic @ 21;
+        let sse4_2 @ 20;
+        let sse4_1 @ 19;
+        let dca @ 18;
+        let pcid @ 17;
+        let __ @ 16;
+        let pdcm @ 15;
+        let xtpr @ 14;
+        let cmpxchg16b @ 13;
+        let fma @ 12;
+        let sdbg @ 11;
+        let cnxt_id @ 10;
+        let ssse3 @ 9;
+        let tm2 @ 8;
+        let eist @ 7;
+        let smx @ 6;
+        let vmx @ 5;
+        let ds_cpl @ 4;
+        let monitor @ 3;
+        let dtes64 @ 2;
+        let pclmulqdq @ 1;
+        let sse3 @ 0;
+    }
+});
+
+/// Leaf/Function 0x1, EDX
+///
+/// [intel/vol2]: Table 3-11.  More on Feature Information Returned in the EDX Register.
+/// [amd/vol3]: E.3.6  Function 7h—Structured Extended Feature Identifiers.
+pub const FEATURE_FLAGS_D: CpuidValue<0x1, 0x0, EDX, FeatureFlagsD> = CpuidValue::new();
+
+layout!({
+    /// The layout of EDX in [`FEATURE_FLAGS_D`].
+    pub struct FeatureFlagsD(u32);
+    {
+        let pbe @ 31;
+        let __ @ 30;
+        let tm @ 29;
+        let htt @ 28;
+        let ss @ 27;
+        let sse2 @ 26;
+        let sse @ 25;
+        let fxsr @ 24;
+        let mmx @ 23;
+        let acpi @ 22;
+        let ds @ 21;
+        let __ @ 20;
+        let clfsh @ 19;
+        let psn @ 18;
+        let pse36 @ 17;
+        let pat @ 16;
+        let cmov @ 15;
+        let mca @ 14;
+        let pge @ 13;
+        let mtrr @ 12;
+        let sep @ 11;
+        let __ @ 10;
+        let apic @ 9;
+        let cx8 @ 8;
+        let mce @ 7;
+        let pae @ 6;
+        let msr @ 5;
+        let tsc @ 4;
+        let pse @ 3;
+        let de @ 2;
+        let vme @ 1;
+        let fpu @ 0;
+    }
+});
+
 /// Leaf/Function 0x7, EBX
 ///
 /// [intel/vol2]: Table 3-8.  Information Returned by CPUID Instruction.
@@ -411,6 +524,165 @@ impl AmdL3CacheInformation {
         self.assoc().fully_associative()
     }
 }
+
+/// Topology level type for CPUID topology enumeration leaves.
+#[bitfield_repr(u8)]
+#[derive(Clone, Copy)]
+pub enum TopologyLevelType {
+    Invalid = 0,
+    Smt = 1,
+    Core = 2,
+    Module = 3,
+    Tile = 4,
+    Die = 5,
+}
+
+layout!({
+    /// The layout of EAX in topology enumeration leaves.
+    pub struct TopologyEnumerationA(u32);
+    {
+        let __ @ 31..5;
+        let next_level_apic_id_shift @ 4..0;
+    }
+});
+
+layout!({
+    /// The layout of EBX in topology enumeration leaves.
+    pub struct TopologyEnumerationB(u32);
+    {
+        let __ @ 31..16;
+        let num_logical_processors @ 15..0;
+    }
+});
+
+layout!({
+    /// The layout of ECX in topology enumeration leaves.
+    pub struct TopologyEnumerationC(u32);
+    {
+        let __ @ 31..16;
+        let level_type @ 15..8: TopologyLevelType;
+        let level_number @ 7..0;
+    }
+});
+
+layout!({
+    /// The layout of EDX in topology enumeration leaves.
+    pub struct TopologyEnumerationD(u32);
+    {
+        let x2apic_id @ 31..0;
+    }
+});
+
+/// Leaf/Function 0xb (V1 Topology), EAX (subleaf 0)
+///
+/// [intel/vol2]: Table 3-8.  Information Returned by CPUID Instruction.
+pub const V1_TOPOLOGY_A: CpuidValue<0xb, 0, EAX, TopologyEnumerationA> = CpuidValue::new();
+
+/// Leaf/Function 0xb (V1 Topology), EBX (subleaf 0)
+///
+/// [intel/vol2]: Table 3-8.  Information Returned by CPUID Instruction.
+pub const V1_TOPOLOGY_B: CpuidValue<0xb, 0, EBX, TopologyEnumerationB> = CpuidValue::new();
+
+/// Leaf/Function 0xb (V1 Topology), ECX (subleaf 0)
+///
+/// [intel/vol2]: Table 3-8.  Information Returned by CPUID Instruction.
+pub const V1_TOPOLOGY_C: CpuidValue<0xb, 0, ECX, TopologyEnumerationC> = CpuidValue::new();
+
+/// Leaf/Function 0xb (V1 Topology), EDX (subleaf 0)
+///
+/// [intel/vol2]: Table 3-8.  Information Returned by CPUID Instruction.
+pub const V1_TOPOLOGY_D: CpuidValue<0xb, 0, EDX, TopologyEnumerationD> = CpuidValue::new();
+
+/// Leaf/Function 0x1f (V2 Topology), EAX (subleaf 0)
+///
+/// [intel/vol2]: Table 3-8.  Information Returned by CPUID Instruction.
+pub const V2_TOPOLOGY_A: CpuidValue<0x1f, 0, EAX, TopologyEnumerationA> = CpuidValue::new();
+
+/// Leaf/Function 0x1f (V2 Topology), EBX (subleaf 0)
+///
+/// [intel/vol2]: Table 3-8.  Information Returned by CPUID Instruction.
+pub const V2_TOPOLOGY_B: CpuidValue<0x1f, 0, EBX, TopologyEnumerationB> = CpuidValue::new();
+
+/// Leaf/Function 0x1f (V2 Topology), ECX (subleaf 0)
+///
+/// [intel/vol2]: Table 3-8.  Information Returned by CPUID Instruction.
+pub const V2_TOPOLOGY_C: CpuidValue<0x1f, 0, ECX, TopologyEnumerationC> = CpuidValue::new();
+
+/// Leaf/Function 0x1f (V2 Topology), EDX (subleaf 0)
+///
+/// [intel/vol2]: Table 3-8.  Information Returned by CPUID Instruction.
+pub const V2_TOPOLOGY_D: CpuidValue<0x1f, 0, EDX, TopologyEnumerationD> = CpuidValue::new();
+
+/// Performance timestamp counter size.
+#[bitfield_repr(u8)]
+#[derive(Clone, Copy)]
+pub enum PerfTimestampCounterSize {
+    Bits40 = 0b00,
+    Bits48 = 0b01,
+    Bits56 = 0b10,
+    Bits64 = 0b11,
+}
+
+/// Leaf/Function 0x8000_0008, ECX
+///
+/// [amd/vol3]: E.4.7  Function 8000_0008h—Processor Capacity Parameters and
+/// Extended Feature Identification.
+pub const EXTENDED_SIZE_INFO: CpuidValue<0x8000_0008, 0, ECX, ExtendedSizeInfo> = CpuidValue::new();
+
+layout!({
+    /// The layout of ECX in [`EXTENDED_SIZE_INFO`].
+    pub struct ExtendedSizeInfo(u32);
+    {
+        let __ @ 31..18;
+        let perf_tsc_size @ 17..16: PerfTimestampCounterSize;
+        let apic_id_size @ 15..12;
+        let __ @ 11..8;
+        let nc @ 7..0;
+    }
+});
+
+/// Leaf/Function 0x8000_001e, EAX
+///
+/// [amd/vol3]: E.4.16  Function 8000_001Eh—Processor Topology Information.
+pub const EXTENDED_APIC_ID: CpuidValue<0x8000_001e, 0, EAX, ExtendedApicId> = CpuidValue::new();
+
+layout!({
+    /// The layout of EAX in [`EXTENDED_APIC_ID`].
+    pub struct ExtendedApicId(u32);
+    {
+        let x2apic_id @ 31..0;
+    }
+});
+
+/// Leaf/Function 0x8000_001e, EBX
+///
+/// [amd/vol3]: E.4.16  Function 8000_001Eh—Processor Topology Information.
+pub const COMPUTE_UNIT_INFO: CpuidValue<0x8000_001e, 0, EBX, ComputeUnitInfo> = CpuidValue::new();
+
+layout!({
+    /// The layout of EBX in [`COMPUTE_UNIT_INFO`].
+    pub struct ComputeUnitInfo(u32);
+    {
+        let __ @ 31..16;
+        let threads_per_compute_unit @ 15..8;
+        let compute_unit_id @ 7..0;
+    }
+});
+
+/// Leaf/Function 0x8000_001e, ECX
+///
+/// [amd/vol3]: E.4.16  Function 8000_001Eh—Processor Topology Information.
+pub const NODE_INFO: CpuidValue<0x8000_001e, 0, ECX, NodeInfo> = CpuidValue::new();
+
+layout!({
+    /// The layout of ECX in [`NODE_INFO`].
+    pub struct NodeInfo(u32);
+    {
+        let __ @ 31..11;
+        let nodes_per_package @ 10..8;
+        let node_id @ 7..0;
+    }
+});
 
 #[cfg(test)]
 mod tests {
