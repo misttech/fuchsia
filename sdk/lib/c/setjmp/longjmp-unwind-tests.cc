@@ -627,10 +627,6 @@ TEST_F(LibcSetjmpTests, LongjmpCorrupted) {
   constexpr uint64_t kCallSavedValue = 0xd00d'feed'face'f00d;
   constexpr uint64_t kBogusValue = 0x2'bad'd00d'0'f00d;
 
-#if !defined(__x86_64__) && !defined(__aarch64__)
-  GTEST_SKIP() << "jmp_buf checksum not implemented yet on this machine";
-#endif
-
   // Start the test thread.
   jmp_buf buf;
   CaptiveThread thread{LongjmpTestThread, auto(buf), 0};
