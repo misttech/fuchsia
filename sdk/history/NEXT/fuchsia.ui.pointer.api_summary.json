@@ -32,6 +32,12 @@
         "value": "128"
     },
     {
+        "kind": "const",
+        "name": "fuchsia.ui.pointer/MOUSE_SOURCE_V2_MAX_UNACKNOWLEDGED_EVENTS",
+        "type": "uint32",
+        "value": "150"
+    },
+    {
         "kind": "alias",
         "name": "fuchsia.ui.pointer/Mat3",
         "type": "array<float32,9>"
@@ -199,6 +205,55 @@
         "transport": "channel"
     },
     {
+        "kind": "protocol/member",
+        "name": "fuchsia.ui.pointer/MouseSourceV2.AcknowledgeEvents",
+        "strictness": "strict",
+        "ordinal": "2010338908912430321",
+        "direction": "one_way",
+        "request": "fuchsia.ui.pointer/MouseSourceV2AcknowledgeEventsRequest"
+    },
+    {
+        "kind": "protocol/member",
+        "name": "fuchsia.ui.pointer/MouseSourceV2.OnMouseEvents",
+        "strictness": "strict",
+        "ordinal": "7059630200947155853",
+        "direction": "event",
+        "request": "fuchsia.ui.pointer/MouseSourceV2OnMouseEventsRequest"
+    },
+    {
+        "kind": "protocol",
+        "name": "fuchsia.ui.pointer/MouseSourceV2",
+        "openness": "open",
+        "transport": "channel"
+    },
+    {
+        "kind": "struct/member",
+        "name": "fuchsia.ui.pointer/MouseSourceV2AcknowledgeEventsRequest.last_acknowledged_event_stamp",
+        "ordinal": "1",
+        "type": "uint64"
+    },
+    {
+        "kind": "struct",
+        "name": "fuchsia.ui.pointer/MouseSourceV2AcknowledgeEventsRequest"
+    },
+    {
+        "kind": "struct/member",
+        "name": "fuchsia.ui.pointer/MouseSourceV2OnMouseEventsRequest.events",
+        "ordinal": "1",
+        "type": "vector<fuchsia.ui.pointer/MouseEvent>:128"
+    },
+    {
+        "kind": "struct/member",
+        "name": "fuchsia.ui.pointer/MouseSourceV2OnMouseEventsRequest.last_event_stamp",
+        "ordinal": "2",
+        "type": "uint64"
+    },
+    {
+        "kind": "struct",
+        "name": "fuchsia.ui.pointer/MouseSourceV2OnMouseEventsRequest",
+        "resourceness": "resource"
+    },
+    {
         "kind": "struct/member",
         "name": "fuchsia.ui.pointer/MouseSourceWatchResponse.events",
         "ordinal": "1",
@@ -260,6 +315,12 @@
         "name": "fuchsia.ui.pointer/TOUCH_MAX_EVENT",
         "type": "uint32",
         "value": "128"
+    },
+    {
+        "kind": "const",
+        "name": "fuchsia.ui.pointer/TOUCH_SOURCE_V2_MAX_UNACKNOWLEDGED_EVENTS",
+        "type": "uint32",
+        "value": "150"
     },
     {
         "kind": "table/member",
@@ -492,6 +553,55 @@
     {
         "kind": "struct",
         "name": "fuchsia.ui.pointer/TouchSourceUpdateResponseRequest"
+    },
+    {
+        "kind": "protocol/member",
+        "name": "fuchsia.ui.pointer/TouchSourceV2.AcknowledgeEvents",
+        "strictness": "strict",
+        "ordinal": "2749841684328810258",
+        "direction": "one_way",
+        "request": "fuchsia.ui.pointer/TouchSourceV2AcknowledgeEventsRequest"
+    },
+    {
+        "kind": "protocol/member",
+        "name": "fuchsia.ui.pointer/TouchSourceV2.OnTouchEvents",
+        "strictness": "strict",
+        "ordinal": "2930220512181597175",
+        "direction": "event",
+        "request": "fuchsia.ui.pointer/TouchSourceV2OnTouchEventsRequest"
+    },
+    {
+        "kind": "protocol",
+        "name": "fuchsia.ui.pointer/TouchSourceV2",
+        "openness": "open",
+        "transport": "channel"
+    },
+    {
+        "kind": "struct/member",
+        "name": "fuchsia.ui.pointer/TouchSourceV2AcknowledgeEventsRequest.last_acknowledged_event_stamp",
+        "ordinal": "1",
+        "type": "uint64"
+    },
+    {
+        "kind": "struct",
+        "name": "fuchsia.ui.pointer/TouchSourceV2AcknowledgeEventsRequest"
+    },
+    {
+        "kind": "struct/member",
+        "name": "fuchsia.ui.pointer/TouchSourceV2OnTouchEventsRequest.events",
+        "ordinal": "1",
+        "type": "vector<fuchsia.ui.pointer/TouchEvent>:128"
+    },
+    {
+        "kind": "struct/member",
+        "name": "fuchsia.ui.pointer/TouchSourceV2OnTouchEventsRequest.last_event_stamp",
+        "ordinal": "2",
+        "type": "uint64"
+    },
+    {
+        "kind": "struct",
+        "name": "fuchsia.ui.pointer/TouchSourceV2OnTouchEventsRequest",
+        "resourceness": "resource"
     },
     {
         "kind": "struct/member",

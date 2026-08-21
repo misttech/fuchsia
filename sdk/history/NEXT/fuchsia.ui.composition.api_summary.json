@@ -1685,9 +1685,21 @@
     },
     {
         "kind": "table/member",
+        "name": "fuchsia.ui.composition/ViewBoundProtocols.mouse_source_v2",
+        "ordinal": "6",
+        "type": "server_end:fuchsia.ui.pointer/MouseSourceV2"
+    },
+    {
+        "kind": "table/member",
         "name": "fuchsia.ui.composition/ViewBoundProtocols.touch_source",
         "ordinal": "3",
         "type": "server_end:fuchsia.ui.pointer/TouchSource"
+    },
+    {
+        "kind": "table/member",
+        "name": "fuchsia.ui.composition/ViewBoundProtocols.touch_source_v2",
+        "ordinal": "5",
+        "type": "server_end:fuchsia.ui.pointer/TouchSourceV2"
     },
     {
         "kind": "table/member",

@@ -7,6 +7,19 @@ using zx;
 
 const TOUCH_MAX_EVENT uint32 = 128;
 
+/// The default maximum number of unacknowledged events allowed in flight for
+/// [`TouchSourceV2`].
+///
+/// Reflects approximately 0.625 seconds (625ms) of buffered events for a typical
+/// 240Hz touch sensor sampling rate.
+///
+/// The server (Scenic) will throttle event delivery when unacknowledged events
+/// in flight reach this limit. Clients should send acknowledgments periodically
+/// (e.g. before reaching the limit, such as within 20 remaining credits) to
+/// avoid being throttled.
+@available(added=NEXT)
+const TOUCH_SOURCE_V2_MAX_UNACKNOWLEDGED_EVENTS uint32 = 150;
+
 /// A method for a client to receive touch events and respond in a global
 /// gesture disambiguation protocol.
 ///
@@ -87,6 +100,77 @@ closed protocol TouchSource {
         interaction TouchInteractionId;
         response TouchResponse;
     }) -> ();
+};
+
+/// A push-based reader protocol for a client to receive touch events.
+///
+/// Does not support cooperative gesture disambiguation (always-consume model).
+/// If Scenic has a mix of V1 and V2 clients contesting the same touch
+/// interaction in the view tree, Scenic's gesture arena will implicitly treat
+/// the V2 client as if it immediately responded `YES` (claim ownership) to all
+/// pointer samples. Gesture ownership is then resolved using standard priority
+/// rules against other V1 clients' explicit responses (like `YES`, `MAYBE`, or
+/// `HOLD`).
+///
+/// Clients requiring cooperative gesture disambiguation or augmentation (such
+/// as the accessibility subsystem using `LocalHit`) must continue using the
+/// pull-based [`TouchSource`] protocol instead.
+///
+/// Flow control and acknowledgment rules:
+/// - The server will not push more than
+///   `TOUCH_SOURCE_V2_MAX_UNACKNOWLEDGED_EVENTS` (or a product-configured
+///   maximum) events without receiving an acknowledgment from the client.
+///   The server (Scenic) will throttle event delivery when unacknowledged
+///   events in flight reach this limit.
+/// - Clients should send acknowledgments periodically (e.g. before reaching
+///   the limit, such as within 20 remaining credits) to avoid being throttled.
+/// - No head-of-line blocking: Because channels and credit limits are
+///   independent per-view, a slow client that fails to acknowledge terminal
+///   events only blocks its own channel. Scenic can immediately start pushing
+///   events to other views on their own channels.
+///
+/// Like [`TouchSource`], Scenic only dispatches touch events to the
+/// `TouchSourceV2` channel if the touch coordinate successfully intersects one
+/// of the view's active hit regions (determined via Scenic's global hit
+/// testing). If the hit test fails or targets a different view, no touch events
+/// are routed to this client's `TouchSourceV2` channel, preserving the security
+/// containment boundaries of the Fuchsia UI system.
+///
+/// The position of a touch event is defined in the context of a viewport,
+/// situated in the view, identical to [`TouchSource`].
+@available(added=NEXT)
+open protocol TouchSourceV2 {
+    /// Pushes touch events from the server to the client.
+    ///
+    /// Streaming begins automatically on connection. The server will not push
+    /// more than `TOUCH_SOURCE_V2_MAX_UNACKNOWLEDGED_EVENTS` (or a
+    /// product-configured maximum) events without receiving an acknowledgment.
+    /// The server will throttle event delivery when unacknowledged events in
+    /// flight reach this limit.
+    strict -> OnTouchEvents(resource struct {
+        events vector<TouchEvent>:TOUCH_MAX_EVENT;
+        /// The stamp associated with the last event in this batch.
+        /// Must be strictly increasing.
+        last_event_stamp uint64;
+    });
+
+    /// Acknowledges receipt of events up to `last_acknowledged_event_stamp`.
+    ///
+    /// This grants the server "credits" to send more events. All events sent
+    /// with a `last_event_stamp` less than or equal to
+    /// `last_acknowledged_event_stamp` are considered acknowledged.
+    ///
+    /// The server (Scenic) will throttle event delivery when unacknowledged
+    /// events in flight reach `TOUCH_SOURCE_V2_MAX_UNACKNOWLEDGED_EVENTS` (or a
+    /// product-configured maximum). Clients should send acknowledgments
+    /// periodically (e.g. before reaching the limit, such as within 20
+    /// remaining credits) to avoid being throttled.
+    ///
+    /// `last_acknowledged_event_stamp` must be strictly increasing.
+    /// Non-compliance results in channel closure.
+    strict AcknowledgeEvents(struct {
+        last_acknowledged_event_stamp uint64;
+    });
 };
 
 @available(replaced=HEAD)

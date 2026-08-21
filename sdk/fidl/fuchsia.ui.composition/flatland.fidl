@@ -401,10 +401,26 @@ type ViewBoundProtocols = resource table {
     2: view_focuser server_end:fuchsia.ui.views.Focuser;
 
     /// Receive touch events that are associated with a View.
+    /// Mutually exclusive with `touch_source_v2`. Providing both will result in
+    /// a `FlatlandError.BAD_OPERATION` error and channel closure.
     3: touch_source server_end:fuchsia.ui.pointer.TouchSource;
 
     /// Receive mouse events that are associated with a View.
+    /// Mutually exclusive with `mouse_source_v2`. Providing both will result in
+    /// a `FlatlandError.BAD_OPERATION` error and channel closure.
     4: mouse_source server_end:fuchsia.ui.pointer.MouseSource;
+
+    /// Receive touch events that are associated with a View.
+    /// Mutually exclusive with `touch_source`. Providing both will result in
+    /// a `FlatlandError.BAD_OPERATION` error and channel closure.
+    @available(added=NEXT)
+    5: touch_source_v2 server_end:fuchsia.ui.pointer.TouchSourceV2;
+
+    /// Receive mouse events that are associated with a View.
+    /// Mutually exclusive with `mouse_source`. Providing both will result in
+    /// a `FlatlandError.BAD_OPERATION` error and channel closure.
+    @available(added=NEXT)
+    6: mouse_source_v2 server_end:fuchsia.ui.pointer.MouseSourceV2;
 };
 
 /// A maximum of 64 hit regions is enough for the expected usage of these APIs.
