@@ -5,8 +5,8 @@
 use crate::log::*;
 use crate::lsm_tree;
 use crate::lsm_tree::types::{
-    BoxedItem, Item, ItemRef, Key, Layer, LayerIterator, LayerIteratorMut, LayerKey, MergeType,
-    OrdLowerBound, Value,
+    BoxedItem, Item, ItemRef, Key, Layer, LayerIterator, LayerIteratorMut, LayerKey,
+    MaybeContainsKey, MergeType, OrdLowerBound, Value,
 };
 use anyhow::Error;
 use async_trait::async_trait;
@@ -285,12 +285,12 @@ pub enum Query<'a, K: Key + LayerKey + OrdLowerBound> {
 }
 
 impl<'a, K: Key + LayerKey + OrdLowerBound> Query<'a, K> {
-    fn needs_layer<V>(&self, layer: &dyn Layer<K, V>) -> bool {
+    fn check_layer<V>(&self, layer: &dyn Layer<K, V>) -> MaybeContainsKey {
         match self {
             Self::Point(key) => layer.maybe_contains_key(key),
             Self::LimitedRange(key) => layer.maybe_contains_key(key),
-            Self::FullRange(_) => true,
-            Self::FullScan => true,
+            Self::FullRange(_) => MaybeContainsKey::Maybe,
+            Self::FullScan => MaybeContainsKey::Maybe,
         }
     }
 }
@@ -331,12 +331,20 @@ impl<'a, K: Key + LayerKey + OrdLowerBound, V: Value> Merger<'a, K, V> {
             debug_assert!(!key.is_range_key())
         };
         let len = self.iterators.len();
+        let mut excessive_partitions = false;
         let pending_iterators = {
             fxfs_trace::duration!("Merger::filter_layer_files", "len" => len);
             self.iterators
                 .iter_mut()
                 .rev()
-                .filter(|l| query.needs_layer(l.layer.clone().unwrap()))
+                .filter(|l| match query.check_layer(l.layer.unwrap()) {
+                    MaybeContainsKey::False => false,
+                    MaybeContainsKey::Maybe => true,
+                    MaybeContainsKey::RangeKeyTooLarge => {
+                        excessive_partitions = true;
+                        true
+                    }
+                })
                 .collect::<Vec<&mut MergeLayerIterator<'a, K, V>>>()
         };
         let layer_count = pending_iterators.len();
@@ -346,6 +354,9 @@ impl<'a, K: Key + LayerKey + OrdLowerBound, V: Value> Merger<'a, K, V> {
             self.counters
                 .layer_files_skipped
                 .fetch_add(len - layer_count, atomic::Ordering::Relaxed);
+            if excessive_partitions {
+                self.counters.excessive_hash_partitions.fetch_add(1, atomic::Ordering::Relaxed);
+            }
         }
         log::debug!(query:?; "Consulting {}/{} layers", layer_count, len);
         let mut merger_iter = MergerIterator {
@@ -772,8 +783,8 @@ mod tests {
     use crate::lsm_tree::persistent_layer::{PersistentLayer, PersistentLayerWriter};
     use crate::lsm_tree::skip_list_layer::SkipListLayer;
     use crate::lsm_tree::types::{
-        FuzzyHash, Item, ItemRef, Key, Layer, LayerIterator, LayerKey, LayerWriter, MergeType,
-        OrdLowerBound, OrdUpperBound, SortByU64,
+        FuzzyHash, Item, ItemRef, Key, Layer, LayerIterator, LayerKey, LayerWriter,
+        MaybeContainsKey, MergeType, OrdLowerBound, OrdUpperBound, SortByU64,
     };
     use crate::lsm_tree::{self, Query, Value};
     use crate::object_store::{self, AttributeId, ObjectKey, ObjectValue, VOLUME_DATA_KEY_ID};
@@ -1771,10 +1782,13 @@ mod tests {
     async fn write_layer<K: Key, V: Value>(items: Vec<Item<K, V>>) -> Arc<dyn Layer<K, V>> {
         let object = Arc::new(FakeObject::new());
         let write_handle = FakeObjectHandle::new(object.clone());
-        let mut writer =
-            PersistentLayerWriter::<_, K, V>::new(Writer::new(&write_handle).await, 1, 512)
-                .await
-                .expect("PersistentLayerWriter::new failed");
+        let mut writer = PersistentLayerWriter::<_, K, V>::new(
+            Writer::new(&write_handle).await,
+            items.len(),
+            512,
+        )
+        .await
+        .expect("PersistentLayerWriter::new failed");
         for item in items {
             writer.write(item.as_item_ref()).await.expect("write failed");
         }
@@ -2011,5 +2025,38 @@ mod tests {
 
         iter.advance().await.expect("advance failed");
         assert!(iter.get().is_none());
+    }
+
+    #[fuchsia::test]
+    async fn test_excessive_hash_partitions_counter() {
+        use std::sync::atomic::Ordering;
+
+        let layer_0_items: Vec<_> = (0..100)
+            .map(|i| {
+                Item::new(
+                    ObjectKey::extent(0, AttributeId::TEST_ID, i * 512..(i + 1) * 512),
+                    ObjectValue::extent(0, VOLUME_DATA_KEY_ID),
+                )
+            })
+            .collect();
+        let layers: [Arc<dyn Layer<ObjectKey, ObjectValue>>; 1] =
+            [write_layer(layer_0_items).await];
+        let counters = counters();
+        let mut merger =
+            Merger::new(dyn_layer_ref_iter(&layers), object_store::merge::merge, counters.clone());
+
+        // A query with <= MAX_HASH_PARTITIONS (e.g. 1 partition: 0..4096)
+        merger
+            .query(Query::LimitedRange(&ObjectKey::extent(0, AttributeId::TEST_ID, 0..4096)))
+            .await
+            .expect("seek failed");
+        assert_eq!(counters.excessive_hash_partitions.load(Ordering::Relaxed), 0);
+
+        let key_large = ObjectKey::extent(0, AttributeId::TEST_ID, 0..10485760);
+        assert_eq!(layers[0].maybe_contains_key(&key_large), MaybeContainsKey::RangeKeyTooLarge);
+
+        // A query with > MAX_HASH_PARTITIONS (e.g. 10MB range: 0..10485760 = 10 partitions)
+        merger.query(Query::LimitedRange(&key_large)).await.expect("seek failed");
+        assert_eq!(counters.excessive_hash_partitions.load(Ordering::Relaxed), 1);
     }
 }

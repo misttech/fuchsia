@@ -124,7 +124,20 @@ impl Iterator for ExtentPartitionIterator {
             Some(start..end)
         }
     }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        let len = if self.range.start >= self.range.end {
+            0
+        } else {
+            let diff = self.range.end - self.range.start;
+            let count = diff.div_ceil(EXTENT_HASH_BUCKET_SIZE);
+            usize::try_from(count).unwrap_or(usize::MAX)
+        };
+        (len, Some(len))
+    }
 }
+
+impl ExactSizeIterator for ExtentPartitionIterator {}
 
 // The normal comparison uses the end of the range before the start of the range. This makes
 // searching for records easier because it's easy to find K.. (where K is the key you are searching
@@ -166,7 +179,7 @@ impl PartialOrd for Extent {
 
 #[cfg(test)]
 mod tests {
-    use super::Extent;
+    use super::{EXTENT_HASH_BUCKET_SIZE, Extent};
     use crate::lsm_tree::types::{OrdLowerBound, OrdUpperBound};
     use crate::serialized_types::serialized_key::{KeyDeserializer, SerializeKey};
     use std::cmp::Ordering;
@@ -270,5 +283,35 @@ mod tests {
         assert_eq!(extent.cmp_upper_bound(&extent.search_key()), Ordering::Greater);
         assert_eq!(extent.key_for_merge_into(), Extent(0..100));
         assert_eq!(extent.cmp_lower_bound(&extent.key_for_merge_into()), Ordering::Greater);
+    }
+
+    #[test]
+    fn test_extent_partition_iterator_len() {
+        let mut iter = Extent(0..0).fuzzy_hash_partition();
+        assert_eq!(iter.len(), 0);
+        assert_eq!(iter.size_hint(), (0, Some(0)));
+        assert_eq!(iter.next(), None);
+
+        let mut iter = Extent(0..512).fuzzy_hash_partition();
+        assert_eq!(iter.len(), 1);
+        assert_eq!(iter.size_hint(), (1, Some(1)));
+        assert_eq!(iter.next(), Some(0..EXTENT_HASH_BUCKET_SIZE));
+        assert_eq!(iter.len(), 0);
+        assert_eq!(iter.size_hint(), (0, Some(0)));
+        assert_eq!(iter.next(), None);
+
+        let mut iter = Extent(0..3 * EXTENT_HASH_BUCKET_SIZE).fuzzy_hash_partition();
+        assert_eq!(iter.len(), 3);
+        assert_eq!(iter.size_hint(), (3, Some(3)));
+        assert!(iter.next().is_some());
+        assert_eq!(iter.len(), 2);
+        assert_eq!(iter.size_hint(), (2, Some(2)));
+        assert!(iter.next().is_some());
+        assert_eq!(iter.len(), 1);
+        assert_eq!(iter.size_hint(), (1, Some(1)));
+        assert!(iter.next().is_some());
+        assert_eq!(iter.len(), 0);
+        assert_eq!(iter.size_hint(), (0, Some(0)));
+        assert_eq!(iter.next(), None);
     }
 }

@@ -456,10 +456,22 @@ impl Iterator for ObjectKeyFuzzyHashIterator {
             Self::NotExtent(hash) => hash.take(),
         }
     }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        match self {
+            Self::Extent(_, _, extent_keys) => extent_keys.size_hint(),
+            Self::NotExtent(hash) => {
+                let len = if hash.is_some() { 1 } else { 0 };
+                (len, Some(len))
+            }
+        }
+    }
 }
 
+impl ExactSizeIterator for ObjectKeyFuzzyHashIterator {}
+
 impl FuzzyHash for ObjectKey {
-    fn fuzzy_hash(&self) -> impl Iterator<Item = u64> {
+    fn fuzzy_hash(&self) -> impl ExactSizeIterator<Item = u64> {
         match &self.data {
             ObjectKeyData::Attribute(attr_id, AttributeKey::Extent(extent)) => {
                 ObjectKeyFuzzyHashIterator::Extent(
@@ -1151,6 +1163,30 @@ mod tests {
                 .collect::<Vec<_>>()[..],
             &[11090579907097549012, 2814892992701560424]
         );
+    }
+
+    #[test]
+    fn test_fuzzy_hash_len() {
+        let key = ObjectKey::object(100);
+        let mut iter = key.fuzzy_hash();
+        assert_eq!(iter.len(), 1);
+        assert_eq!(iter.size_hint(), (1, Some(1)));
+        assert!(iter.next().is_some());
+        assert_eq!(iter.len(), 0);
+        assert_eq!(iter.size_hint(), (0, Some(0)));
+        assert_eq!(iter.next(), None);
+
+        let key = ObjectKey::extent(1, AttributeId::DATA, 0..2 * 1024 * 1024);
+        let mut iter = key.fuzzy_hash();
+        assert_eq!(iter.len(), 2);
+        assert_eq!(iter.size_hint(), (2, Some(2)));
+        assert!(iter.next().is_some());
+        assert_eq!(iter.len(), 1);
+        assert_eq!(iter.size_hint(), (1, Some(1)));
+        assert!(iter.next().is_some());
+        assert_eq!(iter.len(), 0);
+        assert_eq!(iter.size_hint(), (0, Some(0)));
+        assert_eq!(iter.next(), None);
     }
 
     #[test]

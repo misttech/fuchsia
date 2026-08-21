@@ -120,6 +120,8 @@ pub struct TreeCounters {
     pub layer_files_total: AtomicUsize,
     /// Tracks how many layer files we skipped searching thanks to the bloom filter rejecting them.
     pub layer_files_skipped: AtomicUsize,
+    /// Tracks the number of queries that had an excessive number of fuzzy hash partitions.
+    pub excessive_hash_partitions: AtomicUsize,
     /// Embedded counters for mutable metrics that require locking.
     pub compaction: Mutex<CompactionCounters>,
 }
@@ -130,6 +132,7 @@ impl Default for TreeCounters {
             num_seeks: AtomicUsize::new(0),
             layer_files_total: AtomicUsize::new(0),
             layer_files_skipped: AtomicUsize::new(0),
+            excessive_hash_partitions: AtomicUsize::new(0),
             compaction: Mutex::new(CompactionCounters::default()),
         }
     }
@@ -462,6 +465,10 @@ impl<'tree, K: MergeableKey, V: Value> LSMTree<K, V> {
                     (layer_files_skipped * 100).div_ceil(layer_files_total) as u64
                 }
             });
+            root.record_uint(
+                "excessive_hash_partitions",
+                self.counters.excessive_hash_partitions.load(Ordering::Relaxed) as u64,
+            );
             root.record_uint("compactions", counters.compactions);
             root.record_uint("compaction_bytes_written", counters.compaction_bytes_written);
             root.record_uint("compaction_time_ns", counters.compaction_time_ns);

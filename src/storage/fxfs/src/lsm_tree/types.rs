@@ -40,8 +40,9 @@ pub trait FuzzyHash: Hash + Sized {
     /// will have a unique return value for `Self::hash`.  For point-based keys, a single hash
     /// suffices, in which case None is returned and the hash value of `self` should be checked.
     /// Note that in general only a small number of partitions (e.g. 2) should be checked at once.
-    /// Debug assertions will fire if too large of a range is checked.
-    fn fuzzy_hash(&self) -> impl Iterator<Item = u64>;
+    /// Queries checking too many partitions will fall back to returning true from bloom filter
+    /// checks to avoid degenerate performance.
+    fn fuzzy_hash(&self) -> impl ExactSizeIterator<Item = u64>;
 
     /// Returns whether the type is a range-based key. Used to prevent use of range-based keys as
     /// a point query (see [`crate::lsm_tree::merge::Query::Point`]).
@@ -309,6 +310,16 @@ pub enum Existence {
     Missing,
 }
 
+#[derive(Debug, Eq, PartialEq, Clone, Copy)]
+pub enum MaybeContainsKey {
+    /// The layer definitely does not contain records relevant to the key.
+    False,
+    /// The layer might contain records relevant to the key.
+    Maybe,
+    /// The range key was too large to check against the existence filter, so the check was skipped.
+    RangeKeyTooLarge,
+}
+
 /// Layer is a trait that all layers need to implement (mutable and immutable).
 #[async_trait]
 pub trait Layer<K, V>: Send + Sync {
@@ -331,11 +342,13 @@ pub trait Layer<K, V>: Send + Sync {
     fn len(&self) -> usize;
 
     /// Returns whether the layer *might* contain records relevant to `key`.  Note that this can
-    /// return true even if the layer has no records relevant to `key`, but it will never return
-    /// false if there are such records.  (As such, always returning true is a trivially correct
-    /// implementation.)
-    fn maybe_contains_key(&self, _key: &K) -> bool {
-        true
+    /// return `MaybeContainsKey::Maybe` even if the layer has no records relevant to `key`, but it will
+    /// never return `MaybeContainsKey::False` if there are such records.  (As such, always
+    /// returning `MaybeContainsKey::Maybe` is a trivially correct implementation.)
+    /// If the key has too many hash partitions to check against the existence filter, returns
+    /// `MaybeContainsKey::RangeKeyTooLarge`.
+    fn maybe_contains_key(&self, _key: &K) -> MaybeContainsKey {
+        MaybeContainsKey::Maybe
     }
 
     /// This is similar to `maybe_contains_key` except that there *must* be a `key` and possible

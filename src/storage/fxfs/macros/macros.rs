@@ -362,7 +362,7 @@ pub fn derive_fuzzy_hash(input: TokenStream) -> TokenStream {
     let syn::DeriveInput { ident, .. } = parse_macro_input!(input);
     TokenStream::from(quote! {
         impl FuzzyHash for #ident {
-            fn fuzzy_hash(&self) -> impl std::iter::Iterator<Item = u64> {
+            fn fuzzy_hash(&self) -> impl std::iter::ExactSizeIterator<Item = u64> {
                 let hash = crate::stable_hash::stable_hash(self);
                 std::iter::once(hash)
             }
@@ -375,7 +375,7 @@ pub fn impl_fuzzy_hash(input: TokenStream) -> TokenStream {
     let ident: syn::Type = parse_macro_input!(input);
     TokenStream::from(quote! {
         impl FuzzyHash for #ident {
-            fn fuzzy_hash(&self) -> impl std::iter::Iterator<Item = u64> {
+            fn fuzzy_hash(&self) -> impl std::iter::ExactSizeIterator<Item = u64> {
                 let hash = crate::stable_hash::stable_hash(self);
                 std::iter::once(hash)
             }

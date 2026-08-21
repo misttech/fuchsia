@@ -64,7 +64,7 @@ use crate::log::*;
 use crate::lsm_tree::bloom_filter::{BloomFilterReader, BloomFilterStats, BloomFilterWriter};
 use crate::lsm_tree::types::{
     BoxedLayerIterator, Existence, FuzzyHash, Item, ItemRef, Key, Layer, LayerIterator, LayerValue,
-    LayerWriter,
+    LayerWriter, MaybeContainsKey,
 };
 use crate::object_handle::{ObjectHandle, ReadObjectHandle, WriteBytes};
 use crate::object_store::caching_object_handle::{CHUNK_SIZE, CachedChunk, CachingObjectHandle};
@@ -77,6 +77,7 @@ use async_trait::async_trait;
 use byteorder::{ByteOrder, LittleEndian, ReadBytesExt, WriteBytesExt};
 use fprint::TypeFingerprint;
 use fuchsia_sync::Mutex;
+use futures::stream::{FuturesUnordered, TryStreamExt};
 use serde::{Deserialize, Serialize};
 use static_assertions::const_assert;
 use std::cmp::Ordering;
@@ -407,6 +408,8 @@ async fn load_seek_table(
     Ok(seek_table)
 }
 
+const BLOOM_FILTER_READ_CHUNK_SIZE: usize = 1024 * 1024;
+
 async fn load_bloom_filter<K: FuzzyHash>(
     handle: &(impl ReadObjectHandle + 'static),
     bloom_filter_offset: u64,
@@ -419,7 +422,17 @@ async fn load_bloom_filter<K: FuzzyHash>(
         return Err(anyhow!(FxfsError::NotSupported)).context("Bloom filter too large");
     }
     let mut buffer = handle.allocate_buffer(layer_info.bloom_filter_size_bytes).await;
-    handle.read(bloom_filter_offset, buffer.as_mut()).await.context("Failed to read")?;
+    let reads = FuturesUnordered::new();
+    let mut offset = bloom_filter_offset;
+    for chunk in buffer.as_mut().chunks_mut(BLOOM_FILTER_READ_CHUNK_SIZE) {
+        let chunk_len = chunk.len() as u64;
+        reads.push(async move {
+            handle.read(offset, chunk).await.context("Failed to read")?;
+            Ok::<(), Error>(())
+        });
+        offset += chunk_len;
+    }
+    reads.try_collect::<()>().await?;
     Ok(Some(BloomFilterReader::read(
         buffer.subslice(0..layer_info.bloom_filter_size_bytes).as_ptr_slice(),
         layer_info.bloom_filter_seed,
@@ -675,16 +688,17 @@ impl<K: Key, V: LayerValue> Layer<K, V> for PersistentLayer<K, V> {
         self.num_items
     }
 
-    fn maybe_contains_key(&self, key: &K) -> bool {
-        self.bloom_filter.as_ref().map_or(true, |f| f.maybe_contains(key))
+    fn maybe_contains_key(&self, key: &K) -> MaybeContainsKey {
+        self.bloom_filter.as_ref().map_or(MaybeContainsKey::Maybe, |f| f.maybe_contains(key))
     }
 
     async fn key_exists(&self, key: &K) -> Result<Existence, Error> {
         match &self.bloom_filter {
-            Some(filter) => Ok(if filter.maybe_contains(key) {
-                Existence::MaybeExists
-            } else {
-                Existence::Missing
+            Some(filter) => Ok(match filter.maybe_contains(key) {
+                MaybeContainsKey::False => Existence::Missing,
+                MaybeContainsKey::Maybe | MaybeContainsKey::RangeKeyTooLarge => {
+                    Existence::MaybeExists
+                }
             }),
             None => {
                 let iter = self.seek(Bound::Included(key)).await?;
@@ -972,7 +986,9 @@ mod tests {
     use crate::filesystem::MAX_BLOCK_SIZE;
     use crate::lsm_tree::LayerIterator;
     use crate::lsm_tree::persistent_layer::MINIMUM_DATA_BLOCKS_FOR_BLOOM_FILTER;
-    use crate::lsm_tree::types::{Existence, Item, ItemRef, Layer, LayerWriter, OrdUpperBound};
+    use crate::lsm_tree::types::{
+        Existence, Item, ItemRef, Layer, LayerWriter, MaybeContainsKey, OrdUpperBound,
+    };
     use crate::object_handle::WriteBytes;
     use crate::object_store::AttributeId;
     use crate::object_store::object_record::ObjectKey;
@@ -1686,5 +1702,41 @@ mod tests {
         }
         // We expect mostly Missing.
         assert!(missing_count > ITEM_COUNT / 2);
+    }
+
+    #[fuchsia::test]
+    async fn test_load_large_bloom_filter_multi_chunk() {
+        const BLOCK_SIZE: u64 = 512;
+        // Sizing for 600_000 items creates a 2 MiB bloom filter (exceeding 1 MiB chunk size).
+        const ESTIMATED_ITEMS: usize = 600_000;
+        const WRITTEN_ITEMS: i32 = 2000;
+
+        let handle = FakeObjectHandle::new(Arc::new(FakeObject::new()));
+        {
+            let mut writer = PersistentLayerWriter::<_, i32, i32>::new(
+                Writer::new(&handle).await,
+                ESTIMATED_ITEMS,
+                BLOCK_SIZE,
+            )
+            .await
+            .expect("writer new");
+            for i in 0..WRITTEN_ITEMS {
+                writer.write(Item::new(i * 2, i * 2).as_item_ref()).await.expect("write failed");
+            }
+            writer.complete().await.expect("flush failed");
+        }
+        let layer = PersistentLayer::<i32, i32>::open(handle).await.expect("open failed");
+        assert!(layer.has_bloom_filter());
+
+        for i in 0..WRITTEN_ITEMS {
+            assert_eq!(layer.maybe_contains_key(&(i * 2)), MaybeContainsKey::Maybe);
+        }
+        let mut false_count = 0;
+        for i in 0..WRITTEN_ITEMS {
+            if layer.maybe_contains_key(&(i * 2 + 1)) == MaybeContainsKey::False {
+                false_count += 1;
+            }
+        }
+        assert!(false_count > WRITTEN_ITEMS / 2);
     }
 }

@@ -8,7 +8,7 @@ use crate::log::*;
 use crate::lsm_tree::Query;
 use crate::lsm_tree::skip_list_layer::SkipListLayer;
 use crate::lsm_tree::types::{
-    BoxedLayerIterator, Item, Key, Layer, LayerIterator, LayerKey, Value,
+    BoxedLayerIterator, Item, Key, Layer, LayerIterator, LayerKey, MaybeContainsKey, Value,
 };
 use crate::object_handle::INVALID_OBJECT_ID;
 use crate::object_store::allocator::{AllocatorKey, AllocatorValue, CoalescingIterator};
@@ -443,7 +443,7 @@ impl<'a> Fsck<'a> {
                     ))?;
                 }
             }
-            if !layer.maybe_contains_key(item.key) {
+            if layer.maybe_contains_key(item.key) == MaybeContainsKey::False {
                 // Key reported as not existing in filter
                 self.fatal(FsckFatal::InvalidBloomFilter(
                     allocator_or_store_object_id,

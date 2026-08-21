@@ -2254,8 +2254,8 @@ pub struct NeedsTrim(pub bool);
 mod tests {
     use super::{ChecksumRangeChunk, OverwriteBitmaps};
     use crate::errors::FxfsError;
-    use crate::filesystem::{FxFilesystem, OpenFxFilesystem};
-    use crate::object_handle::{ObjectHandle, WriteObjectHandle};
+    use crate::filesystem::{FxFilesystem, JournalingObject, OpenFxFilesystem};
+    use crate::object_handle::{ObjectHandle, ReadObjectHandle, WriteObjectHandle};
     use crate::object_store::data_object_handle::WRITE_ATTR_BATCH_SIZE;
     use crate::object_store::transaction::{Mutation, Options, lock_keys};
     use crate::object_store::{
@@ -3201,5 +3201,24 @@ mod tests {
             bitmaps.take_bitmaps(),
             Some((BitVec::from_bytes(&[0b01010101]), BitVec::from_bytes(&[0b11111111])))
         );
+    }
+
+    #[fuchsia::test]
+    async fn test_read_large_buffer_excessive_partitions() {
+        let (_fs, object) = test_filesystem_and_empty_object().await;
+
+        // Write 5 MiB of data so that reading it spans > MAX_HASH_PARTITIONS (5 > 4 partitions).
+        let size = 5 * 1024 * 1024;
+        let mut buf = object.allocate_buffer(size).await;
+        buf.as_mut_ptr_slice().fill(0xab);
+        object.write_or_append(Some(0), buf.as_ref()).await.expect("write failed");
+
+        // Flush to create persistent layers with bloom filters.
+        object.owner().flush().await.expect("flush failed");
+
+        // Read the entire 5 MiB buffer back.
+        let mut read_buf = object.allocate_buffer(size).await;
+        assert_eq!(object.read(0, read_buf.as_mut()).await.expect("read failed"), size);
+        assert_eq!(&read_buf.as_ptr_slice().to_vec()[..], &buf.as_ptr_slice().to_vec()[..]);
     }
 }

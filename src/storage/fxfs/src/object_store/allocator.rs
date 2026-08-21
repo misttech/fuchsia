@@ -345,10 +345,23 @@ impl Iterator for AllocatorKeyPartitionIterator {
             Some(hash)
         }
     }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        let len = if self.device_range.start >= self.device_range.end {
+            0
+        } else {
+            let diff = self.device_range.end - self.device_range.start;
+            let count = diff.div_ceil(EXTENT_HASH_BUCKET_SIZE);
+            usize::try_from(count).unwrap_or(usize::MAX)
+        };
+        (len, Some(len))
+    }
 }
 
+impl ExactSizeIterator for AllocatorKeyPartitionIterator {}
+
 impl FuzzyHash for AllocatorKey {
-    fn fuzzy_hash(&self) -> impl Iterator<Item = u64> {
+    fn fuzzy_hash(&self) -> impl ExactSizeIterator<Item = u64> {
         AllocatorKeyPartitionIterator {
             device_range: round_down(self.device_range.start, EXTENT_HASH_BUCKET_SIZE)
                 ..round_up(self.device_range.end, EXTENT_HASH_BUCKET_SIZE).unwrap_or(u64::MAX),
@@ -2185,7 +2198,7 @@ mod tests {
     use crate::object_handle::ObjectHandle;
     use crate::object_store::allocator::merge::merge;
     use crate::object_store::allocator::{
-        Allocator, AllocatorKey, AllocatorValue, CoalescingIterator,
+        Allocator, AllocatorKey, AllocatorValue, CoalescingIterator, EXTENT_HASH_BUCKET_SIZE,
     };
     use crate::object_store::transaction::{Options, TRANSACTION_METADATA_MAX_AMOUNT, lock_keys};
     use crate::object_store::volume::root_volume;
@@ -2207,6 +2220,33 @@ mod tests {
     fn test_allocator_key_is_range_based() {
         // Make sure we disallow using allocator keys with point queries.
         assert!(AllocatorKey { device_range: (0..100).into() }.is_range_key());
+    }
+
+    #[test]
+    fn test_allocator_key_fuzzy_hash_len() {
+        let key = AllocatorKey { device_range: (0..512).into() };
+        let mut iter = key.fuzzy_hash();
+        assert_eq!(iter.len(), 1);
+        assert_eq!(iter.size_hint(), (1, Some(1)));
+        assert!(iter.next().is_some());
+        assert_eq!(iter.len(), 0);
+        assert_eq!(iter.size_hint(), (0, Some(0)));
+        assert_eq!(iter.next(), None);
+
+        let key = AllocatorKey { device_range: (0..3 * EXTENT_HASH_BUCKET_SIZE).into() };
+        let mut iter = key.fuzzy_hash();
+        assert_eq!(iter.len(), 3);
+        assert_eq!(iter.size_hint(), (3, Some(3)));
+        assert!(iter.next().is_some());
+        assert_eq!(iter.len(), 2);
+        assert_eq!(iter.size_hint(), (2, Some(2)));
+        assert!(iter.next().is_some());
+        assert_eq!(iter.len(), 1);
+        assert_eq!(iter.size_hint(), (1, Some(1)));
+        assert!(iter.next().is_some());
+        assert_eq!(iter.len(), 0);
+        assert_eq!(iter.size_hint(), (0, Some(0)));
+        assert_eq!(iter.next(), None);
     }
 
     #[test]
