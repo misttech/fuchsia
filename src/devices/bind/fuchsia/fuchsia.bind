@@ -22,10 +22,6 @@ uint BIND_AUTOBIND;
 // Indicates whether this is a composite.
 uint BIND_COMPOSITE;
 
-// Primary FIDL protocol of the device.
-// This is now DEPRECATED. Please use fidl service based bind properties.
-uint BIND_FIDL_PROTOCOL;
-
 // PCI bind properties.
 uint BIND_PCI_VID;
 uint BIND_PCI_DID;

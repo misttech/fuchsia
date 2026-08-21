@@ -474,7 +474,7 @@ mod test {
                 fuchsia.BIND_PROTOCOL == 1;
             }
             optional parent \"redpoll\" {
-                fuchsia.BIND_FIDL_PROTOCOL == 2;
+                fuchsia.BIND_AUTOBIND == 2;
             }";
 
         let compiled_bind_rules =
@@ -521,14 +521,14 @@ mod test {
         checker.verify_parent_header(RawParentType::Optional, 3, optional_node_bytes);
         checker.verify_debug_line_number(6);
         checker.verify_abort_not_equal(
-            EncodedValue { value_type: RawValueType::NumberValue, value: 4 },
+            EncodedValue { value_type: RawValueType::NumberValue, value: 2 },
             EncodedValue { value_type: RawValueType::NumberValue, value: 2 },
         );
 
         // Debug section.
-        checker.verify_debug_header(65);
-        checker.verify_debug_symbol_table_header(57);
-        checker.verify_symbol_table(&["fuchsia.BIND_PROTOCOL", "fuchsia.BIND_FIDL_PROTOCOL"]);
+        checker.verify_debug_header(60);
+        checker.verify_debug_symbol_table_header(52);
+        checker.verify_symbol_table(&["fuchsia.BIND_PROTOCOL", "fuchsia.BIND_AUTOBIND"]);
         checker.verify_end();
     }
 

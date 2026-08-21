@@ -317,8 +317,6 @@ fn deprecated_keys() -> Vec<(String, u32)> {
 
     keys.push(("BIND_COMPOSITE".to_string(), 0x0003));
 
-    keys.push(("BIND_FIDL_PROTOCOL".to_string(), 0x0004));
-
     keys.push(("BIND_PLATFORM_DEV_VID".to_string(), 0x0300));
     keys.push(("BIND_PCI_VID".to_string(), 0x0100));
 
@@ -407,7 +405,6 @@ pub fn get_deprecated_key_identifier(key: u32) -> Option<String> {
         0x0001 => Some("fuchsia.BIND_PROTOCOL".to_string()),
         0x0002 => Some("fuchsia.BIND_AUTOBIND".to_string()),
         0x0003 => Some("fuchsia.BIND_COMPOSITE".to_string()),
-        0x0004 => Some("fuchsia.BIND_FIDL_PROTOCOL".to_string()),
 
         // PCI binding variables at 0x01XX.
         0x0100 => Some("fuchsia.BIND_PCI_VID".to_string()),
@@ -480,7 +477,6 @@ pub fn get_deprecated_key_value(key: &str) -> Option<u32> {
         "fuchsia.BIND_PROTOCOL" => Some(0x0001),
         "fuchsia.BIND_AUTOBIND" => Some(0x0002),
         "fuchsia.BIND_COMPOSITE" => Some(0x0003),
-        "fuchsia.BIND_FIDL_PROTOCOL" => Some(0x0004),
 
         // PCI binding variables at 0x01XX.
         "fuchsia.BIND_PCI_VID" => Some(0x0100),

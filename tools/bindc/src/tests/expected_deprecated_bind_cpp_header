@@ -24,8 +24,6 @@ static const char AUTOBIND[] = "fuchsia.BIND_AUTOBIND";
 
 static const char COMPOSITE[] = "fuchsia.BIND_COMPOSITE";
 
-static const char FIDL_PROTOCOL[] = "fuchsia.BIND_FIDL_PROTOCOL";
-
 static const char PCI_VID[] = "fuchsia.BIND_PCI_VID";
 
 static const char PCI_DID[] = "fuchsia.BIND_PCI_DID";
