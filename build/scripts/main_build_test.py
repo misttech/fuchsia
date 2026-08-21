@@ -3,12 +3,16 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import builtins
 import contextlib
 import io
 import os
 import pathlib
+import shutil
 import signal
 import subprocess
+import tempfile
+import time
 import unittest
 from contextlib import contextmanager
 from typing import Any, Generator
@@ -23,8 +27,8 @@ class MainBuildTestBase(unittest.TestCase):
 
     def setUp(self) -> None:
         # Default mock for read_json to avoid file system errors for rbe_settings.json etc.
-        self.read_json_patcher = mock.patch(
-            "main_build.read_json", return_value={}
+        self.read_json_patcher = mock.patch.object(
+            main_build, "read_json", return_value={}
         )
         self.mock_read_json = self.read_json_patcher.start()
 
@@ -127,9 +131,12 @@ class FuchsiaBuildContextTest(MainBuildTestBase):
             new_callable=mock.PropertyMock,
             return_value=True,
         ):
-            with mock.patch("main_build.is_executable", return_value=True):
-                with mock.patch(
-                    "subprocess.check_output",
+            with mock.patch.object(
+                main_build, "is_executable", return_value=True
+            ):
+                with mock.patch.object(
+                    subprocess,
+                    "check_output",
                     return_value="some output\nrestricted\n",
                 ) as mock_sub:
                     self.assertEqual(context.loas_type, "restricted")
@@ -170,8 +177,10 @@ class FuchsiaBuildContextTest(MainBuildTestBase):
             )
 
     def test_load_user_preference(self) -> None:
-        with mock.patch("main_build.exists", return_value=True), mock.patch(
-            "pathlib.Path.read_text", return_value="resultstore=all\n"
+        with mock.patch.object(
+            main_build, "exists", return_value=True
+        ), mock.patch.object(
+            pathlib.Path, "read_text", return_value="resultstore=all\n"
         ):
             result = main_build.load_user_preference(pathlib.Path("path"))
             self.assertEqual(result, "all")
@@ -204,8 +213,8 @@ class FuchsiaBuildContextTest(MainBuildTestBase):
                     return local_val
                 return None
 
-            with mock.patch(
-                "main_build.load_user_preference", side_effect=mock_load
+            with mock.patch.object(
+                main_build, "load_user_preference", side_effect=mock_load
             ):
                 ctx = main_build.FuchsiaBuildContext.from_args(
                     parsed_args, environ
@@ -393,7 +402,7 @@ class BuildCommandExecutionTest(unittest.TestCase):
         mock_popen.return_value = mock_process
 
         with mock.patch.object(main_build, "exists", return_value=True):
-            with mock.patch("pathlib.Path.unlink") as mock_unlink:
+            with mock.patch.object(pathlib.Path, "unlink") as mock_unlink:
                 result = exec_info.run()
                 self.assertEqual(result.return_code, 0)
                 mock_popen.assert_called_once()
@@ -460,9 +469,9 @@ class BuildCommandExecutionTest(unittest.TestCase):
 
 
 class BuildLockTest(unittest.TestCase):
-    @mock.patch("main_build.check_shell_command", return_value=True)
-    @mock.patch("subprocess.call")
-    @mock.patch("builtins.print")
+    @mock.patch.object(main_build, "check_shell_command", return_value=True)
+    @mock.patch.object(subprocess, "call")
+    @mock.patch.object(builtins, "print")
     def test_acquire_lock_success(
         self,
         mock_print: mock.Mock,
@@ -485,10 +494,10 @@ class BuildLockTest(unittest.TestCase):
         mock_print.assert_any_call("Lock acquired, proceeding with build.")
         mock_print.assert_any_call("Build completed.")
 
-    @mock.patch("main_build.check_shell_command", return_value=True)
-    @mock.patch("subprocess.call")
-    @mock.patch("time.sleep")
-    @mock.patch("builtins.print")
+    @mock.patch.object(main_build, "check_shell_command", return_value=True)
+    @mock.patch.object(subprocess, "call")
+    @mock.patch.object(time, "sleep")
+    @mock.patch.object(builtins, "print")
     def test_acquire_lock_retries(
         self,
         mock_print: mock.Mock,
@@ -509,7 +518,7 @@ class BuildLockTest(unittest.TestCase):
 class FindFuchsiaDirTest(unittest.TestCase):
     def test_find_success(self) -> None:
         # Mock exists() at the module level
-        with mock.patch("main_build.exists") as mock_exists:
+        with mock.patch.object(main_build, "exists") as mock_exists:
             # .jiri_manifest checks:
             # 1. /tmp/a/b/c/.jiri_manifest -> False
             # 2. /tmp/a/b/.jiri_manifest -> False
@@ -560,13 +569,13 @@ class CheckRbeEnvVarsTest(unittest.TestCase):
 
 class ChooseConcurrencyTest(unittest.TestCase):
     def test_local(self) -> None:
-        with mock.patch("main_build.get_cpu_count", return_value=8):
+        with mock.patch.object(main_build, "get_cpu_count", return_value=8):
             self.assertEqual(
                 main_build.choose_concurrency(rbe_enabled=False), 8
             )
 
     def test_rbe(self) -> None:
-        with mock.patch("main_build.get_cpu_count", return_value=8):
+        with mock.patch.object(main_build, "get_cpu_count", return_value=8):
             self.assertEqual(
                 main_build.choose_concurrency(rbe_enabled=True), 80
             )
@@ -638,7 +647,7 @@ class NewBuildCommandExecutionTest(MainBuildTestBase):
                 rbe_enabled=mock.PropertyMock(return_value=False),
                 needs_auth=mock.PropertyMock(return_value=False),
             ):
-                with mock.patch("main_build.mkdir"):
+                with mock.patch.object(main_build, "mkdir"):
                     exec_info = main_build.new_build_command_execution(
                         invocation, "ninja", ["ninja", "target"]
                     )
@@ -663,7 +672,7 @@ class PrepareFunctionsTest(MainBuildTestBase):
     def test_fint(self) -> None:
         context = self.create_context()
         with self.mock_invocation_context():
-            with mock.patch("tempfile.NamedTemporaryFile") as mock_tmp:
+            with mock.patch.object(tempfile, "NamedTemporaryFile") as mock_tmp:
                 mock_tmp.return_value.__enter__.return_value.name = (
                     "/tmp/fint.proto"
                 )
@@ -695,12 +704,12 @@ class PrepareFunctionsTest(MainBuildTestBase):
 
 
 class CheckShellCommandTest(unittest.TestCase):
-    @mock.patch("shutil.which", return_value="/usr/bin/ls")
+    @mock.patch.object(shutil, "which", return_value="/usr/bin/ls")
     def test_success(self, mock_which: mock.Mock) -> None:
         self.assertTrue(main_build.check_shell_command("ls"))
         mock_which.assert_called_once_with("ls")
 
-    @mock.patch("shutil.which", return_value=None)
+    @mock.patch.object(shutil, "which", return_value=None)
     def test_failure(self, mock_which: mock.Mock) -> None:
         self.assertFalse(main_build.check_shell_command("nonexistent"))
 
@@ -731,8 +740,8 @@ class MainFunctionTest(MainBuildTestBase):
             mock_args.func.side_effect = main_build.BuildConfigurationError(
                 "test error"
             )
-            with mock.patch("main_build.FuchsiaBuildContext.from_args"):
-                with mock.patch("builtins.print") as mock_print:
+            with mock.patch.object(main_build.FuchsiaBuildContext, "from_args"):
+                with mock.patch.object(builtins, "print") as mock_print:
                     rc = main_build.main(
                         ["--build-dir", "out/default", "ninja"]
                     )
@@ -749,7 +758,7 @@ class MainFunctionTest(MainBuildTestBase):
             with mock.patch.object(
                 main_build.FuchsiaBuildContext, "from_args"
             ) as mock_from_args:
-                with mock.patch("builtins.print") as mock_print:
+                with mock.patch.object(builtins, "print") as mock_print:
                     rc = main_build.main(
                         ["--build-dir", "out/default", "ninja"]
                     )
@@ -770,7 +779,7 @@ class MainFunctionTest(MainBuildTestBase):
             with mock.patch.object(
                 main_build.FuchsiaBuildContext, "from_args"
             ) as mock_from_args:
-                with mock.patch("builtins.print") as mock_print:
+                with mock.patch.object(builtins, "print") as mock_print:
                     rc = main_build.main(
                         ["--build-dir", "out/default", "ninja"]
                     )
@@ -781,7 +790,7 @@ class MainFunctionTest(MainBuildTestBase):
 
 
 class BuildCommandSignalTest(MainBuildTestBase):
-    @mock.patch("signal_utils.SignalManagedProcess")
+    @mock.patch.object(signal_utils, "SignalManagedProcess")
     def test_signal_forwarding_no_tui(self, mock_managed: mock.Mock) -> None:
         """Verify that without TUI, we use a separate process group."""
         context = self.create_context(tui=False)
@@ -807,7 +816,7 @@ class BuildCommandSignalTest(MainBuildTestBase):
         )
         mock_instance.run.assert_called_once()
 
-    @mock.patch("signal_utils.SignalManagedProcess")
+    @mock.patch.object(signal_utils, "SignalManagedProcess")
     def test_signal_forwarding_with_tui(self, mock_managed: mock.Mock) -> None:
         """Verify that with TUI, we do NOT use a separate process group."""
         context = self.create_context(tui=True)
@@ -833,7 +842,7 @@ class BuildCommandSignalTest(MainBuildTestBase):
         )
         mock_instance.run.assert_called_once()
 
-    @mock.patch("signal_utils.SignalManagedProcess")
+    @mock.patch.object(signal_utils, "SignalManagedProcess")
     def test_wait_resilience_to_interrupt(
         self, mock_managed: mock.Mock
     ) -> None:
