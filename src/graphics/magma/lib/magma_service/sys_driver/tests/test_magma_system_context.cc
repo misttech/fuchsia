@@ -43,6 +43,25 @@ TEST(MagmaSystemContext, ExecuteCommandBuffer_InvalidExecResourceHandle) {
   EXPECT_FALSE(cmd_buf->Execute());
 }
 
+TEST(MagmaSystemContext, ExecuteCommandBuffer_InvalidResourceOffset) {
+  auto cmd_buf = CommandBufferHelper::Create();
+  cmd_buf->abi_resources()[0].offset = CommandBufferHelper::BufferSize() + 1;
+  EXPECT_FALSE(cmd_buf->Execute());
+}
+
+TEST(MagmaSystemContext, ExecuteCommandBuffer_ResourceOffsetOverflow) {
+  auto cmd_buf = CommandBufferHelper::Create();
+  cmd_buf->abi_resources()[0].offset = 1;
+  cmd_buf->abi_resources()[0].length = UINT64_MAX;
+  EXPECT_FALSE(cmd_buf->Execute());
+}
+
+TEST(MagmaSystemContext, ExecuteCommandBuffer_InvalidResourceLength) {
+  auto cmd_buf = CommandBufferHelper::Create();
+  cmd_buf->abi_resources()[0].length = CommandBufferHelper::BufferSize() + 1;
+  EXPECT_FALSE(cmd_buf->Execute());
+}
+
 TEST(MagmaSystemContext, ExecuteCommandBuffer_DuplicateExecResourceHandle) {
   auto cmd_buf = CommandBufferHelper::Create();
   cmd_buf->abi_resources()[1].buffer_id = cmd_buf->abi_resources()[0].buffer_id;

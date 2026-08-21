@@ -37,6 +37,18 @@ magma::Status MagmaSystemContext::ExecuteCommandBuffers(
                             "ExecuteCommandBuffer: exec resource has invalid buffer handle");
     }
 
+    if (resource.offset + resource.length < resource.offset) {
+      return MAGMA_DRET_MSG(MAGMA_STATUS_INVALID_ARGS,
+                            "ExecuteCommandBuffer: resource offset + length overflows");
+    }
+
+    if (resource.offset + resource.length > buffer->size()) {
+      return MAGMA_DRET_MSG(
+          MAGMA_STATUS_INVALID_ARGS,
+          "ExecuteCommandBuffer: resource range [0x%lx, 0x%lx) out of bounds (size 0x%lx)",
+          resource.offset, resource.offset + resource.length, buffer->size());
+    }
+
     system_resources.push_back(buffer);
     msd_buffers.push_back(buffer->msd_buf());
   }
