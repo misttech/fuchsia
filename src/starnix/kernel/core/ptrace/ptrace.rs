@@ -712,8 +712,13 @@ fn ptrace_cont(
     // or interfere with another tracer's control.
     {
         let ptrace = state.ptrace.as_ref().ok_or_else(|| errno!(ESRCH))?;
-        let tracer_task = ptrace.core_state.task.upgrade().ok_or_else(|| errno!(ESRCH))?;
-        if !tracer.matches_task(&tracer_task) {
+        let tracer_tg = ptrace.core_state.thread_group.upgrade().ok_or_else(|| errno!(ESRCH))?;
+        let tracer_task = ptrace.core_state.task.upgrade();
+        let is_match = match tracer_task {
+            Some(tracer_task) if !tracer_task.is_exitted() => tracer.matches_task(&tracer_task),
+            _ => tracer.thread_group() == &*tracer_tg,
+        };
+        if !is_match {
             return error!(ESRCH);
         }
     }
