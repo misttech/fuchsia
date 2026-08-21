@@ -670,7 +670,7 @@ class WlanPolicy(AsyncLazyReady):
                 target_ssid=network.ssid,
                 security_type=network.security_type,
                 target_pwd=network.credential_value,
-                timeout=timeout,
+                timeout=None if timeout is None else timedelta(seconds=timeout),
             )
 
     @ensure_ready
@@ -680,7 +680,7 @@ class WlanPolicy(AsyncLazyReady):
         security_type: f_wlan_policy.SecurityType,
         target_pwd: str | None = None,
         *,
-        timeout: float | None = _DEFAULT_WLAN_POLICY_OPERATION_TIMEOUT_SEC,
+        timeout: timedelta | None = _DEFAULT_WLAN_POLICY_OPERATION_TIMEOUT,
     ) -> None:
         """Removes or "forgets" a network from saved networks.
 
@@ -710,7 +710,7 @@ class WlanPolicy(AsyncLazyReady):
                 self._client_controller.proxy.forget_network(
                     id_=NetworkIdentifier(target_ssid, security_type).to_fidl(),
                 ),
-                timeout,
+                None if timeout is None else timeout.total_seconds(),
             )
             if res.err:
                 raise wlan_errors.HoneydewWlanError(
