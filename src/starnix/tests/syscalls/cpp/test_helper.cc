@@ -9,6 +9,7 @@
 #include <lib/fit/function.h>
 #include <lib/stdcompat/string_view.h>
 #include <limits.h>
+#include <poll.h>
 #include <sched.h>
 #include <signal.h>
 #include <stdio.h>
@@ -833,11 +834,12 @@ Holder &Holder::operator=(Holder &&o) {
 }
 
 void Holder::hold() {
-  int pipe_read_side_fd = pipe_read_side_.get();
-  fd_set read_fds;
-  FD_ZERO(&read_fds);
-  FD_SET(pipe_read_side_fd, &read_fds);
-  SAFE_SYSCALL(select(pipe_read_side_fd + 1, &read_fds, nullptr, nullptr, nullptr));
+  struct pollfd pfd = {
+      .fd = pipe_read_side_.get(),
+      .events = POLLIN | POLLHUP,
+      .revents = 0,
+  };
+  SAFE_SYSCALL(HANDLE_EINTR(poll(&pfd, 1, -1)));
 }
 
 Rendezvous MakeRendezvous() { return MakeRendezvous(ScopedPipe()); }
