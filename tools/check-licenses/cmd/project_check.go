@@ -69,8 +69,8 @@ func (c *ProjectCheckCommand) Execute(ctx context.Context, f *flag.FlagSet, _ ..
 	pruner := prune.NewPruner(nil)
 	validator := validate.NewValidator(inputCtx.FuchsiaDir, inputCtx.Config.Validate)
 
-	// Step 3: Iterate through input targets, running Orchestrator with Stage 6 TargetComplianceVerifier.
-	cache := make(map[string]error)
+	// Step 3: Group input targets by project root.
+	projectTargets := make(map[string][]string)
 	hasErrors := false
 
 	for _, inputPath := range inputPaths {
@@ -80,50 +80,51 @@ func (c *ProjectCheckCommand) Execute(ctx context.Context, f *flag.FlagSet, _ ..
 			hasErrors = true
 			continue
 		}
+		projectTargets[projectRoot] = append(projectTargets[projectRoot], inputPath)
+	}
 
-		if prevErr, processed := cache[projectRoot]; !processed {
-			var targetProj *pipeline.Project
-			verifier := report.NewTargetComplianceVerifier(inputCtx.FuchsiaDir, inputPath, inputCtx.Config)
-			passPrinter := pipeline.RenderFunc(func(ctx context.Context, projects []*pipeline.Project, errors []pipeline.ComplianceError) error {
-				for _, p := range projects {
-					if p.RootPath == projectRoot {
-						targetProj = p
-						break
-					}
+	for projectRoot, targets := range projectTargets {
+		var targetProj *pipeline.Project
+		verifier := report.NewTargetComplianceVerifier(inputCtx.FuchsiaDir, inputCtx.Config, targets...)
+		passPrinter := pipeline.RenderFunc(func(ctx context.Context, projects []*pipeline.Project, errors []pipeline.ComplianceError) error {
+			for _, p := range projects {
+				if p.RootPath == projectRoot {
+					targetProj = p
+					break
 				}
-				return nil
-			})
+			}
+			return nil
+		})
 
-			renderers := pipeline.MultiRenderer{verifier, passPrinter}
-			orchestrator := pipeline.NewOrchestrator(discoverer, grouper, pruner, classifier, validator, renderers)
-			runErr := orchestrator.Run(ctx, []string{projectRoot})
-			if runErr != nil {
-				fmt.Fprintf(os.Stderr, "❌ Error in %s: %v\n", inputPath, runErr)
-				hasErrors = true
-				cache[projectRoot] = runErr
-				continue
+		renderers := pipeline.MultiRenderer{verifier, passPrinter}
+		orchestrator := pipeline.NewOrchestrator(discoverer, grouper, pruner, classifier, validator, renderers)
+		runErr := orchestrator.Run(ctx, []string{projectRoot})
+		if runErr != nil {
+			fmt.Fprintf(os.Stderr, "❌ Error in %s: %v\n", projectRoot, runErr)
+			hasErrors = true
+			continue
+		}
+
+		// Step 4: Output pass confirmation for compliant targets.
+		if targetProj != nil && targetProj.Readme != nil {
+			projectName := "Unknown Project"
+			origs := targetProj.Readme.OriginalSegments()
+			if len(origs) > 0 && origs[0].Name != "" {
+				projectName = origs[0].Name
+			} else {
+				projectName = findProjectBasename(inputCtx.FuchsiaDir, projectRoot, inputCtx.Config)
 			}
 
-			// Step 4: Output pass confirmation for compliant targets.
-			if targetProj != nil && targetProj.Readme != nil {
-				projectName := "Unknown Project"
-				origs := targetProj.Readme.OriginalSegments()
-				if len(origs) > 0 && origs[0].Name != "" {
-					projectName = origs[0].Name
-				} else {
-					projectName = findProjectBasename(inputCtx.FuchsiaDir, inputPath, inputCtx.Config)
-				}
-
-				if inputPath == "" || inputPath == "." {
+			if len(targets) == 1 {
+				target := targets[0]
+				if target == "" || target == "." {
 					fmt.Printf("✅ Passed: %s\n", projectName)
 				} else {
-					fmt.Printf("✅ Passed: %s (%s)\n", projectName, inputPath)
+					fmt.Printf("✅ Passed: %s (%s)\n", projectName, target)
 				}
+			} else {
+				fmt.Printf("✅ Passed: %s (%d files checked)\n", projectName, len(targets))
 			}
-
-			cache[projectRoot] = nil
-		} else if prevErr != nil {
-			hasErrors = true
 		}
 	}
 

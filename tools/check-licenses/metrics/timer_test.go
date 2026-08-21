@@ -78,3 +78,22 @@ func TestTimer_Concurrency(t *testing.T) {
 		t.Errorf("expected non-zero total duration")
 	}
 }
+
+func TestTimer_ActiveDuration(t *testing.T) {
+	timer := RegisterTimer("test_timer_active", "test")
+
+	stop := timer.Track()
+	time.Sleep(15 * time.Millisecond)
+
+	activeDuration := timer.GetTotalDuration()
+	if activeDuration < 10*time.Millisecond {
+		t.Errorf("expected active duration >= 10ms, got %v", activeDuration)
+	}
+
+	stop()
+
+	finalDuration := timer.GetTotalDuration()
+	if finalDuration < 15*time.Millisecond {
+		t.Errorf("expected final duration >= 15ms, got %v", finalDuration)
+	}
+}

@@ -18,6 +18,8 @@ type Timer struct {
 	TotalDuration time.Duration `json:"total_duration"`
 	CallCount     int64         `json:"call_count"`
 	MaxDuration   time.Duration `json:"max_duration"`
+	activeCount   int
+	activeStart   time.Time
 }
 
 // RegisterTimer adds a new Timer to the global registry.
@@ -37,6 +39,14 @@ func RegisterTimer(name, description string) *Timer {
 // e.g. `defer metrics.PhaseDuration.Track()()`
 func (t *Timer) Track() func() {
 	start := time.Now()
+
+	t.mu.Lock()
+	if t.activeCount == 0 {
+		t.activeStart = start
+	}
+	t.activeCount++
+	t.mu.Unlock()
+
 	return func() {
 		duration := time.Since(start)
 
@@ -48,6 +58,11 @@ func (t *Timer) Track() func() {
 		if duration > t.MaxDuration {
 			t.MaxDuration = duration
 		}
+		t.activeCount--
+		if t.activeCount <= 0 {
+			t.activeCount = 0
+			t.activeStart = time.Time{}
+		}
 	}
 }
 
@@ -55,5 +70,8 @@ func (t *Timer) Track() func() {
 func (t *Timer) GetTotalDuration() time.Duration {
 	t.mu.RLock()
 	defer t.mu.RUnlock()
+	if !t.activeStart.IsZero() {
+		return t.TotalDuration + time.Since(t.activeStart)
+	}
 	return t.TotalDuration
 }

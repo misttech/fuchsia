@@ -15,6 +15,7 @@ import (
 	"github.com/google/subcommands"
 
 	v2config "go.fuchsia.dev/fuchsia/tools/check-licenses/config"
+	"go.fuchsia.dev/fuchsia/tools/check-licenses/metrics"
 	v2pipeline "go.fuchsia.dev/fuchsia/tools/check-licenses/pipeline"
 	v2boundary "go.fuchsia.dev/fuchsia/tools/check-licenses/stages/boundary"
 	v2classify "go.fuchsia.dev/fuchsia/tools/check-licenses/stages/classify"
@@ -58,6 +59,8 @@ func (p *ValidateCommand) SetFlags(f *flag.FlagSet) {
 }
 
 func (p *ValidateCommand) Execute(ctx context.Context, f *flag.FlagSet, _ ...interface{}) subcommands.ExitStatus {
+	defer metrics.TotalRuntime.Track()()
+
 	if w, err := getLogWriters(p.logLevel, p.outDir); err == nil {
 		log.SetOutput(w)
 	} else {

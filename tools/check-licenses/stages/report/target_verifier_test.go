@@ -51,7 +51,7 @@ func TestTargetComplianceVerifier_Declared(t *testing.T) {
 		},
 	}
 
-	v := NewTargetComplianceVerifier(tempDir, "foo.cc", nil)
+	v := NewTargetComplianceVerifier(tempDir, nil, "foo.cc")
 	if err := v.Run(context.Background(), []*pipeline.Project{proj}, nil); err != nil {
 		t.Errorf("Expected success for declared license, got: %v", err)
 	}
@@ -94,7 +94,7 @@ func TestTargetComplianceVerifier_Undeclared(t *testing.T) {
 		},
 	}
 
-	v := NewTargetComplianceVerifier(tempDir, "bar.cc", nil)
+	v := NewTargetComplianceVerifier(tempDir, nil, "bar.cc")
 	if err := v.Run(context.Background(), []*pipeline.Project{proj}, nil); err == nil {
 		t.Errorf("Expected error for undeclared license, got nil")
 	}
