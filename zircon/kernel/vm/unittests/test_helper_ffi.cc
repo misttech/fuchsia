@@ -60,4 +60,6 @@ FFI_ALWAYS_INLINE bool cpp_test_region(uintptr_t seed, void* ptr, size_t len) {
   return vm_unittest::test_region(seed, ptr, len);
 }
 
+FFI_ALWAYS_INLINE uint32_t cpp_test_rand(uint32_t seed) { return vm_unittest::test_rand(seed); }
+
 }  // extern "C"

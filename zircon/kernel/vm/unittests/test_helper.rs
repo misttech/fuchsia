@@ -172,3 +172,8 @@ pub fn fill_and_test(buf: &mut [MaybeUninit<u8>]) -> (&mut [u8], bool) {
     let result = test_region(seed, buf);
     (buf, result)
 }
+
+pub fn test_rand(seed: u32) -> u32 {
+    // SAFETY: `cpp_test_rand` has no preconditions.
+    unsafe { bindings::cpp_test_rand(seed) }
+}

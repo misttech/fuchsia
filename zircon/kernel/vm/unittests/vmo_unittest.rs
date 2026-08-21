@@ -15,6 +15,7 @@ mod vmo_rs {
     };
     use crate::vm::attribution::{self, AttributionCounts};
     use crate::vm::compressor::VmCompressor;
+    use crate::vm::discardable_vmo_tracker::{DiscardablePageCounts, DiscardableVmoTracker};
     use crate::vm::fault;
     use crate::vm::page::VmPagePtr;
     use crate::vm::page_queues::PageQueues;
@@ -32,18 +33,19 @@ mod vmo_rs {
     use crate::vm_unittests::test_helper::{
         ARCH_RW_FLAGS, fill_and_test, fill_region, make_committed_pager_vmo,
         make_partially_committed_pager_vmo, make_private_attribution_counts,
-        supply_pager_vmo_pages, test_region, verify_continuous_attribution_bytes,
+        supply_pager_vmo_pages, test_rand, test_region, verify_continuous_attribution_bytes,
     };
     use core::ffi::c_void;
     use core::mem::MaybeUninit;
-    use core::slice;
+    use core::{ptr, slice};
     use debug::dprintf;
     use fbl::{RefPtr, Vector};
     use page::SIZE as PAGE_SIZE_USIZE;
     use pin_init::stack_pin_init;
     use unittest::{
         assert_eq, assert_false, assert_ge, assert_le, assert_lt, assert_ok, assert_true,
-        expect_eq, expect_false, expect_gt, expect_ne, expect_ok, expect_true, unwrap_ok,
+        expect_eq, expect_false, expect_gt, expect_le, expect_ne, expect_ok, expect_true,
+        unwrap_ok,
     };
     use zx_status::Status;
     use zx_types::ZX_KOID_KERNEL;
@@ -1985,6 +1987,64 @@ mod vmo_rs {
         expect_true!(tracker.debug_is_discarded());
         expect_false!(tracker.debug_is_unreclaimable());
         expect_false!(tracker.debug_is_reclaimable());
+    }
+
+    /// Tests discardable page counts.
+    #[test]
+    fn vmo_discardable_counts_test() {
+        let _scanner_disable = AutoVmScannerDisable::new();
+
+        const NUM_VMOS: usize = 10;
+        let mut vmos: [Option<RefPtr<VmObjectPaged>>; NUM_VMOS] = Default::default();
+
+        // Create some discardable vmos.
+        for (i, vmo) in vmos.iter_mut().enumerate() {
+            *vmo = Some(unwrap_ok!(VmObjectPaged::create(
+                pmm::ALLOC_FLAG_ANY,
+                VmObjectPaged::DISCARDABLE,
+                (i as u64 + 1) * PAGE_SIZE,
+            )));
+        }
+
+        let mut rand_val = ptr::from_ref(vmos[0].as_ref().unwrap()).addr() as u32;
+        let mut expected = DiscardablePageCounts { locked: 0, unlocked: 0 };
+
+        // Lock all vmos. Unlock a few. And discard a few unlocked ones.
+        // Compute the expected page counts as a result of these operations.
+        for (i, vmo) in vmos.iter().enumerate() {
+            let vmo = vmo.as_ref().unwrap();
+            expect_ok!(vmo.try_lock_range(0, (i as u64 + 1) * PAGE_SIZE));
+            expect_ok!(vmo.commit_range(0, (i as u64 + 1) * PAGE_SIZE));
+
+            rand_val = test_rand(rand_val);
+            if !rand_val.is_multiple_of(2) {
+                expect_ok!(vmo.unlock_range(0, (i as u64 + 1) * PAGE_SIZE));
+
+                rand_val = test_rand(rand_val);
+                if !rand_val.is_multiple_of(2) {
+                    // Discarded pages won't show up under locked or unlocked counts.
+                    let (page, _) = unwrap_ok!(vmo.get_page_blocking(0, 0));
+                    let cow = vmo.debug_get_cow_pages().expect("vmo has cow pages");
+                    // SAFETY: It is sound to reclaim `page` at offset 0.
+                    let reclaimed =
+                        unsafe { cow.reclaim_page(page, 0, EvictionAction::FollowHint, None) };
+                    assert_true!(reclaimed.is_ok());
+                    expect_eq!((i + 1) as u64, reclaimed.unwrap().num_pages);
+                } else {
+                    // Unlocked but not discarded.
+                    expected.unlocked += (i + 1) as u64;
+                }
+            } else {
+                // Locked.
+                expected.locked += (i + 1) as u64;
+            }
+        }
+
+        let counts = DiscardableVmoTracker::debug_discardable_page_counts();
+        // There might be other discardable vmos in the rest of the system, so the actual page
+        // counts might be higher than the expected counts.
+        expect_le!(expected.locked, counts.locked);
+        expect_le!(expected.unlocked, counts.unlocked);
     }
 
     /// Tests dirty pages with eviction hints.

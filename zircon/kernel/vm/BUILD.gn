@@ -198,12 +198,16 @@ kernel_bindgen_crate("discardable-vmo-tracker-bindings") {
     "cpp_discardable_vmo_tracker_debug_is_unreclaimable",
     "cpp_discardable_vmo_tracker_debug_is_discarded",
     "cpp_discardable_vmo_tracker_debug_get_lock_count",
+    "cpp_discardable_vmo_tracker_debug_discardable_page_counts",
   ]
-  type_allowlist = [ "DiscardableVmoTracker" ]
+  type_allowlist = [
+    "DiscardableVmoTracker",
+    "DiscardableVmoTracker_DiscardablePageCounts",
+    "VmCowPages_DiscardablePageCounts",
+  ]
   type_blocklist = [
     "DiscardableVmoTracker_Cursor",
     "DiscardableVmoTracker_DiscardableList",
-    "DiscardableVmoTracker_DiscardablePageCounts",
     "DiscardableVmoTracker_DiscardableState",
   ]
   opaque_types = [ "DiscardableVmoTracker" ]
@@ -211,7 +215,7 @@ kernel_bindgen_crate("discardable-vmo-tracker-bindings") {
   additional_bindgen_flags = [ "--no-recursive-allowlist" ]
 
   raw_lines = [ "#![no_std]" ]
-  expect_lints = []
+  expect_lints = [ "non_camel_case_types" ]
 }
 
 library_headers("headers") {
@@ -976,6 +980,7 @@ kernel_bindgen_crate("test-helper-bindings") {
     "cpp_make_partially_committed_pager_vmo",
     "cpp_make_private_attribution_counts",
     "cpp_supply_pager_vmo_pages",
+    "cpp_test_rand",
     "cpp_test_region",
     "cpp_verify_continuous_attribution_bytes",
     "cpp_verify_private_attribution_counts",

@@ -5,8 +5,11 @@
 // https://opensource.org/licenses/MIT
 
 use core::marker::{PhantomData, PhantomPinned};
+use core::mem::MaybeUninit;
 use discardable_vmo_tracker_bindings as bindings;
 use zr::Opaque;
+
+pub use bindings::DiscardableVmoTracker_DiscardablePageCounts as DiscardablePageCounts;
 
 /// Tracks state relevant for discardable VMOs.
 #[repr(C)]
@@ -31,6 +34,22 @@ impl DiscardableVmoTracker {
         // SAFETY: bindings::DiscardableVmoTracker is layout-compatible with
         // DiscardableVmoTracker.
         unsafe { ptr.as_ref_unchecked() }
+    }
+
+    // Returns the total number of pages locked and unlocked across all discardable vmos.
+    // Note that this might not be exact and we might miss some vmos, because the
+    // |DiscardableVmosLock| is dropped after processing each vmo on the global discardable lists.
+    // That is fine since these numbers are only used for accounting.
+    pub fn debug_discardable_page_counts() -> DiscardablePageCounts {
+        let mut counts = MaybeUninit::uninit();
+        // SAFETY: `counts.as_mut_ptr()` is valid for writing `DiscardablePageCounts`.
+        unsafe {
+            bindings::cpp_discardable_vmo_tracker_debug_discardable_page_counts(
+                counts.as_mut_ptr(),
+            );
+        }
+        // SAFETY: `cpp_discardable_vmo_tracker_debug_discardable_page_counts` initialized `counts`.
+        unsafe { counts.assume_init() }
     }
 
     /// Returns whether the VMO is in the reclaimable state.

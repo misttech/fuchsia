@@ -36,6 +36,7 @@ void cpp_make_private_attribution_counts(uint64_t uncompressed, uint64_t compres
 
 void cpp_fill_region(uintptr_t seed, void* ptr, size_t len);
 bool cpp_test_region(uintptr_t seed, void* ptr, size_t len);
+uint32_t cpp_test_rand(uint32_t seed);
 __END_CDECLS
 
 #endif  // ZIRCON_KERNEL_VM_UNITTESTS_TEST_HELPER_FFI_H_

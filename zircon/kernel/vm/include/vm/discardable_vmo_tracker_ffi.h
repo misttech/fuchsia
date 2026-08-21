@@ -19,6 +19,8 @@ bool cpp_discardable_vmo_tracker_debug_is_reclaimable(const DiscardableVmoTracke
 bool cpp_discardable_vmo_tracker_debug_is_unreclaimable(const DiscardableVmoTracker* tracker);
 bool cpp_discardable_vmo_tracker_debug_is_discarded(const DiscardableVmoTracker* tracker);
 uint64_t cpp_discardable_vmo_tracker_debug_get_lock_count(const DiscardableVmoTracker* tracker);
+void cpp_discardable_vmo_tracker_debug_discardable_page_counts(
+    DiscardableVmoTracker::DiscardablePageCounts* out_counts);
 
 __END_CDECLS
 

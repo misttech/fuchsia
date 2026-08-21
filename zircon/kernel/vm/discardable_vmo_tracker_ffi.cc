@@ -7,6 +7,7 @@
 #include "vm/discardable_vmo_tracker_ffi.h"
 
 #include <kernel/ffi.h>
+#include <ktl/memory.h>
 
 #include "vm/discardable_vmo_tracker.h"
 
@@ -31,6 +32,13 @@ FFI_ALWAYS_INLINE bool cpp_discardable_vmo_tracker_debug_is_discarded(
 FFI_ALWAYS_INLINE uint64_t
 cpp_discardable_vmo_tracker_debug_get_lock_count(const DiscardableVmoTracker* tracker) {
   return tracker->DebugGetLockCount();
+}
+
+FFI_ALWAYS_INLINE void cpp_discardable_vmo_tracker_debug_discardable_page_counts(
+    DiscardableVmoTracker::DiscardablePageCounts* out_counts) {
+  DiscardableVmoTracker::DiscardablePageCounts counts =
+      DiscardableVmoTracker::DebugDiscardablePageCounts();
+  ktl::construct_at(out_counts, counts);
 }
 
 }  // extern "C"
