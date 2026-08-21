@@ -946,12 +946,12 @@ This should never be set as a build argument.
 }
   static = {
   clang_rt = "lib/clang/24/lib/armv7-unknown-linux-gnueabihf/libclang_rt.lsan.a"
-  clang_rt_cxx = ""
+  clang_rt_cxx = "../../../../out/not-default/libclang_rt.lsan_cxx.a"
 }
 }
   tsan = {
   shared = {
-  clang_rt = "../../../../out/not-default/libclang_rt.tsan.so"
+  clang_rt = ""
 }
   static = {
   clang_rt = "../../../../out/not-default/libclang_rt.tsan.a"
@@ -2091,6 +2091,12 @@ From //build/config/compiler.gni:82
 }]
   install_host_tool = true
 }, {
+  bazel_label = "//tools/dart_test_parser:dart_test_parser"
+  copy_outputs = [{
+  bazel = "{{BAZEL_TARGET_OUT_DIR}}/dart_test_parser_/dart_test_parser"
+  ninja = "dart_test_parser"
+}]
+}, {
   bazel_label = "//tools/rust_test_parser:rust_test_parser"
   copy_outputs = [{
   bazel = "{{BAZEL_TARGET_OUT_DIR}}/rust_test_parser_/rust_test_parser"
@@ -2160,6 +2166,12 @@ From //build/config/compiler.gni:82
 }]
   install_host_tool = true
 }, {
+  bazel_label = "//tools/fidl/lib/fidlgen/testing:roundtripper"
+  copy_outputs = [{
+  bazel = "{{BAZEL_TARGET_OUT_DIR}}/roundtripper_/roundtripper"
+  ninja = "roundtripper"
+}]
+}, {
   bazel_label = "//tools/fuzz:undercoat"
   copy_outputs = [{
   bazel = "{{BAZEL_TARGET_OUT_DIR}}/undercoat_/undercoat"
@@ -2172,6 +2184,13 @@ From //build/config/compiler.gni:82
   bazel = "{{BAZEL_TARGET_OUT_DIR}}/go_test_parser_/go_test_parser"
   ninja = "go_test_parser"
 }]
+}, {
+  bazel_label = "//tools/staticanalysis/clippy-reporter:clippy-reporter"
+  copy_outputs = [{
+  bazel = "{{BAZEL_TARGET_OUT_DIR}}/clippy-reporter_/clippy-reporter"
+  ninja = "clippy-reporter"
+}]
+  install_host_tool = true
 }, {
   bazel_label = "//tools/staticanalysis/rfcmeta:rfcmeta"
   copy_outputs = [{
