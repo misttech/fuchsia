@@ -402,18 +402,19 @@ async fn main_inner() -> Result<(), Error> {
             .context("error connecting to fuchsia.pkg.http/Client")?,
     );
     let fetch_queue_fut = Task::spawn(fetch_queue_fut);
-    let (resolve_queue_fut, queued_tuf_resolver) = queued_resolver::QueuedResolver::new(
+    let (resolve_queue_fut, queued_resolver) = queued_resolver::QueuedResolver::new(
         MAX_CONCURRENT_TUF_RESOLVES,
-        fuchsia_component::client::connect_to_protocol::<fpkg::AuthorityMarker>()
-            .context("error connecting to fuchsia.pkg/Authority")?,
         package_index.clone(),
         blobfs.clone(),
         blob_fetcher,
         root_dir_factory.clone(),
     );
     let resolve_queue_fut = Task::spawn(resolve_queue_fut);
+    let tuf_authority = fuchsia_component::client::connect_to_protocol::<fpkg::AuthorityMarker>()
+        .context("error connecting to fuchsia.pkg/Authority")?;
     {
-        let queued_tuf_resolver = queued_tuf_resolver.clone();
+        let tuf_authority = tuf_authority.clone();
+        let queued_resolver = queued_resolver.clone();
         let authenticator = authenticator.clone();
         let root_dir_factory = root_dir_factory.clone();
         let scope = scope.clone();
@@ -423,7 +424,8 @@ async fn main_inner() -> Result<(), Error> {
                 vfs::service::host(move |stream: fpkg::PackageResolverRequestStream| {
                     ota_resolver::serve_request_stream(
                         stream,
-                        queued_tuf_resolver.clone(),
+                        tuf_authority.clone(),
+                        queued_resolver.clone(),
                         authenticator.clone(),
                         root_dir_factory.clone(),
                         scope.clone(),

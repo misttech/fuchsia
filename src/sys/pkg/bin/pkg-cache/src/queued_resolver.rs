@@ -3,7 +3,6 @@
 // found in the LICENSE file.
 
 use fidl_fuchsia_pkg as fpkg;
-use fuchsia_url::fuchsia_pkg::AbsolutePackageUrl;
 use std::collections::HashSet;
 use std::sync::Arc;
 
@@ -13,22 +12,29 @@ use std::sync::Arc;
 #[derive(Clone, Debug)]
 pub struct QueuedResolver {
     sender: work_queue::WorkSender<
-        AbsolutePackageUrl,
+        fuchsia_hash::Hash,
         QueueContext,
         Result<Arc<crate::RootDir>, Arc<Error>>,
     >,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 struct QueueContext {
+    blob_source: http::Uri,
     gc_protection: fpkg::GcProtection,
 }
 
 impl work_queue::TryMerge for QueueContext {
     // Do not merge Contexts with differing GC protection. Clients depend on the different GC
     // protection behaviors.
+    // Do not merge Contexts with differing blob sources, the blob sources may have different
+    // versions of the blobs, e.g. different compression levels.
     fn try_merge(&mut self, other: Self) -> Result<(), Self> {
-        if self.gc_protection == other.gc_protection { Ok(()) } else { Err(other) }
+        if self.gc_protection == other.gc_protection && self.blob_source == other.blob_source {
+            Ok(())
+        } else {
+            Err(other)
+        }
     }
 }
 
@@ -39,7 +45,6 @@ impl QueuedResolver {
     ///   2. a Self that enables pushing work onto the queue
     pub(crate) fn new(
         max_concurrency: usize,
-        authority: fpkg::AuthorityProxy,
         package_index: Arc<async_lock::RwLock<crate::index::PackageIndex>>,
         blobfs_client: blobfs::Client,
         blob_fetcher: crate::blob_fetcher::BlobFetcher,
@@ -47,17 +52,16 @@ impl QueuedResolver {
     ) -> (impl Future<Output = ()>, Self) {
         let (queue, sender) = work_queue::work_queue(
             max_concurrency,
-            move |url: fuchsia_url::FuchsiaPkgAbsolutePackageUrl, context: QueueContext| {
-                let authority = authority.clone();
+            move |pkg_id: fuchsia_hash::Hash, context: QueueContext| {
                 let package_index = package_index.clone();
                 let blobfs_client = blobfs_client.clone();
                 let blob_fetcher = blob_fetcher.clone();
                 let root_dir_factory = root_dir_factory.clone();
                 async move {
                     resolve(
-                        url,
+                        pkg_id,
+                        context.blob_source,
                         context.gc_protection,
-                        &authority,
                         package_index.as_ref(),
                         &blobfs_client,
                         &blob_fetcher,
@@ -72,17 +76,21 @@ impl QueuedResolver {
 
     pub(crate) async fn resolve(
         &self,
-        url: fuchsia_url::FuchsiaPkgAbsolutePackageUrl,
+        pkg_id: fuchsia_hash::Hash,
+        blob_source: http::Uri,
         gc_protection: fpkg::GcProtection,
     ) -> Result<Arc<crate::RootDir>, Arc<Error>> {
-        self.sender.push(url, QueueContext { gc_protection }).await.map_err(Error::PushQueue)?
+        self.sender
+            .push(pkg_id, QueueContext { blob_source, gc_protection })
+            .await
+            .map_err(Error::PushQueue)?
     }
 }
 
 async fn resolve(
-    url: fuchsia_url::FuchsiaPkgAbsolutePackageUrl,
+    pkg_id: fuchsia_hash::Hash,
+    blob_source: http::Uri,
     gc_protection: fpkg::GcProtection,
-    authority: &fpkg::AuthorityProxy,
     package_index: &async_lock::RwLock<crate::index::PackageIndex>,
     blobfs_client: &blobfs::Client,
     blob_fetcher: &crate::blob_fetcher::BlobFetcher,
@@ -90,17 +98,10 @@ async fn resolve(
 ) -> Result<Arc<crate::RootDir>, Arc<Error>> {
     // TODO(https://fxbug.dev/542381507): Support open package tracking.
     std::assert_matches!(gc_protection, fpkg::GcProtection::Retained);
-    let (fpkg::BlobId { merkle_root }, http_blob_dir) = authority
-        .lookup(&fpkg::PackageUrl { url: url.as_unpinned().to_string() })
-        .await
-        .map_err(Error::AuthorityFidl)?
-        .map_err(Error::Authority)?;
-    // TODO(https://fxbug.dev/519687989): Stop allowing pinned URLs to override authorities.
-    let pkg_id = url.hash().unwrap_or_else(|| merkle_root.into());
     let gc_guard = package_index.write().await.start_writing(pkg_id, gc_protection);
     let resolve_ret = resolve_impl(
         pkg_id,
-        &http_blob_dir,
+        blob_source,
         package_index,
         gc_protection,
         blobfs_client,
@@ -121,7 +122,7 @@ async fn resolve(
 
 async fn resolve_impl(
     pkg_id: fuchsia_merkle::Hash,
-    http_blob_dir: &str,
+    blob_source: http::Uri,
     package_index: &async_lock::RwLock<crate::index::PackageIndex>,
     gc_protection: fpkg::GcProtection,
     blobfs_client: &blobfs::Client,
@@ -130,9 +131,7 @@ async fn resolve_impl(
 ) -> Result<Arc<crate::RootDir>, Error> {
     let mut queue = std::collections::VecDeque::from([pkg_id]);
     let mut queued = HashSet::from([pkg_id]);
-    let context = crate::blob_fetcher::QueueContext::new(
-        http_blob_dir.parse().map_err(Error::InvalidBlobDirUri)?,
-    );
+    let context = crate::blob_fetcher::QueueContext::new(blob_source);
     let mut ret = None;
     while let Some(blob_id) = queue.pop_front() {
         // The blob fetcher performs this check as well, but check here to avoid blocking the
@@ -192,15 +191,6 @@ async fn resolve_impl(
 
 #[derive(thiserror::Error, Debug)]
 pub(crate) enum Error {
-    #[error("authority call failed")]
-    AuthorityFidl(#[source] fidl::Error),
-
-    #[error("authority lookup failed: {0:?}")]
-    Authority(fpkg::AuthorityLookupError),
-
-    #[error("invalid blob dir URI")]
-    InvalidBlobDirUri(#[source] http::uri::InvalidUri),
-
     #[error("pushing a blob onto the fetch queue")]
     BlobPush(#[source] work_queue::Closed),
 
@@ -243,9 +233,6 @@ impl From<&Error> for fpkg::ResolveError {
         use Error::*;
         use fpkg::ResolveError as Err;
         match err {
-            AuthorityFidl(_) => Err::Io,
-            Authority(e) => authority_to_resolve_err(e),
-            InvalidBlobDirUri(_) => Err::Internal,
             BlobPush(_) => Err::Internal,
             BlobFetch(e) => fetch_to_resolve_err(e),
             CreatingRootDir { .. } => Err::Io,
@@ -255,18 +242,6 @@ impl From<&Error> for fpkg::ResolveError {
             ResolveAndClearFailed { source, .. } => (&**source).into(),
             PushQueue(_) => Err::Internal,
         }
-    }
-}
-
-fn authority_to_resolve_err(err: &fpkg::AuthorityLookupError) -> fpkg::ResolveError {
-    use fpkg::AuthorityLookupError::*;
-    use fpkg::ResolveError as Err;
-    match err {
-        InvalidUrl => Err::InvalidUrl,
-        PinnedUrlNotAllowed => Err::Internal,
-        RepositoryNotFound => Err::RepoNotFound,
-        PackageNotFound => Err::PackageNotFound,
-        Internal => Err::Internal,
     }
 }
 

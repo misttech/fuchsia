@@ -23,7 +23,8 @@ const FLAGS: fio::Flags = fio::PERM_READABLE;
 ///     short-circuit the blob write if a blob is readable via `fuchsia.fxfs/BlobReader.GetVmo`)
 pub(crate) async fn serve_request_stream(
     stream: fpkg::PackageResolverRequestStream,
-    queued_tuf_resolver: crate::queued_resolver::QueuedResolver,
+    authority: fpkg::AuthorityProxy,
+    queued_resolver: crate::queued_resolver::QueuedResolver,
     authenticator: context_authenticator::ContextAuthenticator,
     root_dir_factory: crate::root_dir::RootDirFactory,
     scope: package_directory::ExecutionScope,
@@ -36,7 +37,8 @@ pub(crate) async fn serve_request_stream(
                     match resolve(
                         &package_url,
                         dir,
-                        &queued_tuf_resolver,
+                        &authority,
+                        &queued_resolver,
                         authenticator.clone(),
                         scope.clone(),
                     )
@@ -45,7 +47,11 @@ pub(crate) async fn serve_request_stream(
                         Ok(context) => responder.send(Ok(&context)),
                         Err(e) => {
                             let fidl_error = (&e).into();
-                            error!("failed to resolve package {}: {:#}", package_url, anyhow!(e));
+                            error!(
+                                "ota resolver failed to resolve {}: {:#}",
+                                package_url,
+                                anyhow!(e)
+                            );
                             responder.send(Err(fidl_error))
                         }
                     }
@@ -60,7 +66,8 @@ pub(crate) async fn serve_request_stream(
                     &package_url,
                     context,
                     dir,
-                    &queued_tuf_resolver,
+                    &authority,
+                    &queued_resolver,
                     authenticator.clone(),
                     &root_dir_factory,
                     scope.clone(),
@@ -71,7 +78,7 @@ pub(crate) async fn serve_request_stream(
                     Err(e) => {
                         let fidl_error = (&e).into();
                         error!(
-                            "failed to resolve with context package {}: {:#}",
+                            "ota resolver failed to resolve with context {}: {:#}",
                             package_url,
                             anyhow!(e)
                         );
@@ -97,7 +104,8 @@ async fn resolve_with_context(
     package_url: &str,
     context: fpkg::ResolutionContext,
     dir: ServerEnd<fio::DirectoryMarker>,
-    queued_tuf_resolver: &crate::queued_resolver::QueuedResolver,
+    authority: &fpkg::AuthorityProxy,
+    queued_resolver: &crate::queued_resolver::QueuedResolver,
     authenticator: context_authenticator::ContextAuthenticator,
     root_dir_factory: &crate::root_dir::RootDirFactory,
     scope: package_directory::ExecutionScope,
@@ -106,7 +114,8 @@ async fn resolve_with_context(
         &PackageUrl::parse(package_url).map_err(Error::InvalidUrl)?,
         context,
         dir,
-        queued_tuf_resolver,
+        authority,
+        queued_resolver,
         authenticator,
         root_dir_factory,
         scope,
@@ -118,7 +127,8 @@ async fn resolve_with_context_impl(
     package_url: &PackageUrl,
     context: fpkg::ResolutionContext,
     dir: ServerEnd<fio::DirectoryMarker>,
-    queued_tuf_resolver: &crate::queued_resolver::QueuedResolver,
+    authority: &fpkg::AuthorityProxy,
+    queued_resolver: &crate::queued_resolver::QueuedResolver,
     authenticator: context_authenticator::ContextAuthenticator,
     root_dir_factory: &crate::root_dir::RootDirFactory,
     scope: package_directory::ExecutionScope,
@@ -128,7 +138,7 @@ async fn resolve_with_context_impl(
             if !context.bytes.is_empty() {
                 return Err(Error::ContextWithAbsoluteUrl);
             }
-            resolve_impl(url, dir, queued_tuf_resolver, authenticator, scope).await
+            resolve_impl(url, dir, authority, queued_resolver, authenticator, scope).await
         }
         PackageUrl::Relative(url) => {
             resolve_subpackage(url, context, dir, authenticator, root_dir_factory, scope).await
@@ -139,14 +149,16 @@ async fn resolve_with_context_impl(
 async fn resolve(
     url: &str,
     dir: ServerEnd<fio::DirectoryMarker>,
-    queued_tuf_resolver: &crate::queued_resolver::QueuedResolver,
+    authority: &fpkg::AuthorityProxy,
+    queued_resolver: &crate::queued_resolver::QueuedResolver,
     authenticator: context_authenticator::ContextAuthenticator,
     scope: package_directory::ExecutionScope,
 ) -> Result<fpkg::ResolutionContext, Error> {
     resolve_impl(
         &url.parse().map_err(Error::InvalidUrl)?,
         dir,
-        queued_tuf_resolver,
+        authority,
+        queued_resolver,
         authenticator,
         scope,
     )
@@ -156,12 +168,24 @@ async fn resolve(
 pub(crate) async fn resolve_impl(
     url: &AbsolutePackageUrl,
     dir: ServerEnd<fio::DirectoryMarker>,
-    queued_tuf_resolver: &crate::queued_resolver::QueuedResolver,
+    authority: &fpkg::AuthorityProxy,
+    queued_resolver: &crate::queued_resolver::QueuedResolver,
     authenticator: context_authenticator::ContextAuthenticator,
     scope: package_directory::ExecutionScope,
 ) -> Result<fpkg::ResolutionContext, Error> {
-    let root_dir = queued_tuf_resolver
-        .resolve(url.clone(), fpkg::GcProtection::Retained)
+    let (fpkg::BlobId { merkle_root }, http_blob_dir) = authority
+        .lookup(&fpkg::PackageUrl { url: url.as_unpinned().to_string() })
+        .await
+        .map_err(Error::AuthorityFidl)?
+        .map_err(Error::Authority)?;
+    // TODO(https://fxbug.dev/519687989): Stop allowing pinned URLs to override authorities.
+    let pkg_id = url.hash().unwrap_or_else(|| merkle_root.into());
+    let root_dir = queued_resolver
+        .resolve(
+            pkg_id,
+            http_blob_dir.parse().map_err(Error::InvalidBlobDirUri)?,
+            fpkg::GcProtection::Retained,
+        )
         .await
         .map_err(Error::QueuedResolve)?;
     let hash = *root_dir.hash();
@@ -208,6 +232,15 @@ pub(crate) enum Error {
     #[error("absolute package URLs must have an empty context")]
     ContextWithAbsoluteUrl,
 
+    #[error("authority call failed")]
+    AuthorityFidl(#[source] fidl::Error),
+
+    #[error("authority lookup failed: {0:?}")]
+    Authority(fpkg::AuthorityLookupError),
+
+    #[error("invalid blob dir URI")]
+    InvalidBlobDirUri(#[source] http::uri::InvalidUri),
+
     #[error("forwarding to the queued resolver")]
     QueuedResolve(#[source] Arc<crate::queued_resolver::Error>),
 
@@ -245,6 +278,9 @@ impl From<&Error> for fpkg::ResolveError {
         match err {
             InvalidUrl(_) => Err::InvalidUrl,
             ContextWithAbsoluteUrl => Err::InvalidContext,
+            AuthorityFidl(_) => Err::Io,
+            Authority(e) => authority_to_resolve_err(e),
+            InvalidBlobDirUri(_) => Err::Internal,
             QueuedResolve(source) => source.as_ref().into(),
             ContextAuthenticator(_) => Err::InvalidContext,
             CreatingSuperpackageRootDir { .. } => Err::Io,
@@ -252,5 +288,17 @@ impl From<&Error> for fpkg::ResolveError {
             SubpackageNotFound { .. } => Err::PackageNotFound,
             CreatingSubpackageRootDir { .. } => Err::Io,
         }
+    }
+}
+
+fn authority_to_resolve_err(err: &fpkg::AuthorityLookupError) -> fpkg::ResolveError {
+    use fpkg::AuthorityLookupError::*;
+    use fpkg::ResolveError as Err;
+    match err {
+        InvalidUrl => Err::InvalidUrl,
+        PinnedUrlNotAllowed => Err::Internal,
+        RepositoryNotFound => Err::RepoNotFound,
+        PackageNotFound => Err::PackageNotFound,
+        Internal => Err::Internal,
     }
 }
