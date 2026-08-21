@@ -2696,9 +2696,10 @@ bool vmo_lock_count_test() {
         [](void* arg) -> int {
           zx_status_t status;
           auto state = static_cast<struct thread_state*>(arg);
+          uint32_t rand_val = static_cast<uint32_t>(reinterpret_cast<uintptr_t>(state->vmo));
 
           // Randomly decide between try-lock and lock.
-          if (rand() % 2) {
+          if (rand_val = test_rand(rand_val); rand_val % 2) {
             if ((status = state->vmo->TryLockRange(0, kSize)) != ZX_OK) {
               return status;
             }
@@ -2710,7 +2711,7 @@ bool vmo_lock_count_test() {
           }
 
           // Randomly decide whether to unlock, or leave the vmo locked.
-          if (rand() % 2) {
+          if (rand_val = test_rand(rand_val); rand_val % 2) {
             if ((status = state->vmo->UnlockRange(0, kSize)) != ZX_OK) {
               return status;
             }
@@ -3159,6 +3160,7 @@ bool vmo_discardable_counts_test() {
     ASSERT_EQ(ZX_OK, status);
   }
 
+  uint32_t rand_val = static_cast<uint32_t>(reinterpret_cast<uintptr_t>(vmos[0].get()));
   DiscardableVmoTracker::DiscardablePageCounts expected = {};
 
   // Lock all vmos. Unlock a few. And discard a few unlocked ones.
@@ -3167,10 +3169,10 @@ bool vmo_discardable_counts_test() {
     EXPECT_EQ(ZX_OK, vmos[i]->TryLockRange(0, (i + 1) * kPageSize));
     EXPECT_EQ(ZX_OK, vmos[i]->CommitRange(0, (i + 1) * kPageSize));
 
-    if (rand() % 2) {
+    if (rand_val = test_rand(rand_val); rand_val % 2) {
       EXPECT_EQ(ZX_OK, vmos[i]->UnlockRange(0, (i + 1) * kPageSize));
 
-      if (rand() % 2) {
+      if (rand_val = test_rand(rand_val); rand_val % 2) {
         // Discarded pages won't show up under locked or unlocked counts.
         vm_page_t* page;
         ASSERT_OK(vmos[i]->GetPageBlocking(0, 0, &page, nullptr));
