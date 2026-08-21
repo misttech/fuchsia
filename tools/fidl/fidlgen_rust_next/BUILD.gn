@@ -88,8 +88,8 @@ if (is_host) {
       if (info.denylist + [ "fidlgen_rust_next" ] - [ "fidlgen_rust_next" ] ==
           info.denylist) {
         deps += [
-          "${info.target}_rust_next_common_generate($fidl_toolchain)",
-          "${info.target}_rust_next_generate($fidl_toolchain)",
+          "${info.target}_rust_next_common_internal_generate($fidl_toolchain)",
+          "${info.target}_rust_next_internal_generate($fidl_toolchain)",
         ]
         _library_underscore = string_replace(info.library, ".", "_")
         comparisons += [

@@ -23,5 +23,4 @@ fidl("fuchsia.boot") {
   ]
 
   enable_hlcpp = true
-  enable_rust_next = true
 }

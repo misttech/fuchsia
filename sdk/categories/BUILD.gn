@@ -76,8 +76,11 @@ if (is_host || is_fidl_toolchain) {
                 "_common",
                 "_fdomain",
                 "_next",
+                "_next_internal",
                 "_next_common",
+                "_next_common_internal",
                 "_fdomain_next",
+                "_fdomain_next_internal",
                 "_next_convert",
               ]) {
         visibility += [

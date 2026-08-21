@@ -64,7 +64,6 @@ rustc_test("libasync_rust_fidl_integration_test") {
 fidl("fuchsia.examples.gizmo") {
   sources = [ "gizmo.test.fidl" ]
   public_deps = [ "//zircon/vdso/zx" ]
-  enable_rust_next = true
 }
 
 fuchsia_unittest_package("libasync_rust_fidl_unit_tests") {

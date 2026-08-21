@@ -596,8 +596,8 @@ If not specified, appropriate values will be determined based on the target API 
             configurable = False,
         ),
         "enable_rust_next": attr.bool(
-            doc = "Set to True to enable next-generation Rust bindings for this library",
-            default = False,
+            doc = "Set to False to disable next-generation Rust bindings for this library",
+            default = True,
             configurable = False,
         ),
         "enable_rust_drivers": attr.bool(

@@ -7,6 +7,34 @@ import("//build/fidl/toolchain.gni")
 import("//build/rust/config.gni")
 import("//build/rust/rustc_library.gni")
 
+# LINT.IfChange
+# The new Rust bindings are currently in a phased rollout. This allowlist
+# controls where in the tree generated bindings may be used from.
+fidl_rust_next_allowlist = [
+  "//examples/*",
+  "//examples/fidl/new/key_value_store/use_generic_values/rust_next/*",
+  "//examples/fidl/rust_next/*",
+  "//sdk/fidl/*",
+  "//sdk/lib/async/*",
+  "//sdk/lib/driver/*",
+  "//src/bringup/lib/userboot/*",
+  "//src/connectivity/overnet/*",
+  "//src/connectivity/wlan/*",
+  "//src/devices/*",
+  "//src/graphics/*",
+  "//src/lib/fdomain/*",
+  "//src/lib/fidl/rust_next/*",
+  "//src/lib/fuchsia-component/*",
+  "//src/tests/fidl/conformance_suite/*",
+  "//src/ui/lib/input_pipeline/*",
+  "//src/ui/tools/print-input-report-new/*",
+  "//tools/fidl/*",
+  "//vendor/google/*",
+  "//zircon/kernel/lib/userabi/userboot/*",
+]
+
+# LINT.ThenChange(fidl_rust_next.bzl)
+
 # Generates next-generation Rust bindings for a FIDL library.
 #
 # Parameters
@@ -191,7 +219,7 @@ template("fidl_rust_next") {
       disable_clippy = true
 
       deps = [
-        "//src/lib/fidl/rust_next/fidl_next",
+        "//src/lib/fidl/rust_next/fidl_next:fidl_next_internal",
         "//third_party/rust_crates:static_assertions",
       ]
       if (defined(invoker.deps)) {
@@ -215,11 +243,11 @@ template("fidl_rust_next") {
           if (label == "//zircon/vdso/zx:zx") {
             deps += [ "//sdk/rust/zx-types" ]
           } else if (common) {
-            deps += [ "${label}_rust_next_common" ]
+            deps += [ "${label}_rust_next_common_internal" ]
           } else if (fdomain) {
-            deps += [ "${label}_rust_fdomain_next" ]
+            deps += [ "${label}_rust_fdomain_next_internal" ]
           } else {
-            deps += [ "${label}_rust_next" ]
+            deps += [ "${label}_rust_next_internal" ]
           }
         }
       }

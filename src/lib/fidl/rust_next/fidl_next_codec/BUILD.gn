@@ -4,16 +4,18 @@
 
 import("//build/components.gni")
 import("//build/fidl/fidl.gni")
+import("//build/rust/fidl_rust_next.gni")
 import("//build/rust/rustc_library.gni")
 import("//build/rust/rustc_test.gni")
+
 fuchsia_unittest_package("fidl_next_codec_test_package") {
-  deps = [ ":fidl_next_codec_test" ]
+  deps = [ ":fidl_next_codec_internal_test" ]
 }
 
 group("tests") {
   testonly = true
   deps = [
-    ":fidl_next_codec_test($host_toolchain)",
+    ":fidl_next_codec_internal_test($host_toolchain)",
     ":fidl_next_codec_test_package",
   ]
 }
@@ -49,7 +51,7 @@ if (is_host) {
   }
 }
 
-rustc_library("fidl_next_codec") {
+rustc_library("fidl_next_codec_internal") {
   sources = []
   sources += [
     "src/chunk.rs",
@@ -102,6 +104,7 @@ rustc_library("fidl_next_codec") {
   } else {
     features = []
   }
+  crate_name = "fidl_next_codec"
   edition = "2024"
   visibility = [
     "//src/lib/fdomain/client/*",
@@ -119,4 +122,8 @@ rustc_library("fidl_next_codec") {
   if (is_fuchsia) {
     deps += [ "//sdk/rust/zx" ]
   }
+}
+group("fidl_next_codec") {
+  public_deps = [ ":fidl_next_codec_internal" ]
+  visibility = fidl_rust_next_allowlist
 }
