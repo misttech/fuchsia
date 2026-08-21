@@ -9,7 +9,11 @@ use ffx_diagnostics_analytics::{PointOfFailure, ResultExt};
 use ffx_target::connection::ConnectionError;
 use ffx_target::ssh_connector::SshConnector;
 use ffx_target::{Connection, TargetConnection, TargetConnectionError, TargetConnector};
+use fuchsia_async::TimeoutExt;
+use std::time::Duration;
 use termio::Colors;
+
+const DEFAULT_SSH_TIMEOUT: Duration = Duration::from_secs(30);
 
 pub trait SshConnectorProvider {
     async fn connector_for_target<N>(
@@ -123,12 +127,61 @@ where
         notifier: &'a mut Self::Notifier,
     ) -> CheckFut<'a, Self::Output> {
         Box::pin(async {
+            let timeout = match self.ctx.get::<Option<u64>, _>(ffx_ssh::ssh::CONNECT_TIMEOUT_CONFIG)
+            {
+                Ok(Some(0)) => {
+                    notifier.info("SSH connect timeout is disabled (0 seconds).")?;
+                    Duration::ZERO
+                }
+                Ok(Some(secs)) => {
+                    notifier.info(format!(
+                        "Using configured SSH connect timeout of {} seconds.",
+                        secs
+                    ))?;
+                    Duration::from_secs(secs)
+                }
+                Ok(None) => {
+                    notifier.info(format!(
+                        "No SSH connect timeout configured; using default of {} seconds.",
+                        DEFAULT_SSH_TIMEOUT.as_secs()
+                    ))?;
+                    DEFAULT_SSH_TIMEOUT
+                }
+                Err(e) => {
+                    log::warn!(
+                        "Failed to read '{}': {e}. Using default timeout of {} seconds.",
+                        ffx_ssh::ssh::CONNECT_TIMEOUT_CONFIG,
+                        DEFAULT_SSH_TIMEOUT.as_secs()
+                    );
+                    notifier.info(format!(
+                        "Failed to read '{}': {e}. Using default SSH connect timeout of {} seconds.",
+                        ffx_ssh::ssh::CONNECT_TIMEOUT_CONFIG,
+                        DEFAULT_SSH_TIMEOUT.as_secs()
+                    ))?;
+                    DEFAULT_SSH_TIMEOUT
+                }
+            };
             // All analytics/errors are handled inside this function.
-            let connector = self
-                .conn_provider
-                .connector_for_target(self.ctx.clone(), input.clone(), notifier)
-                .await?;
-            match Connection::new(connector).await {
+            let connect_fut = async {
+                let connector = self
+                    .conn_provider
+                    .connector_for_target(self.ctx.clone(), input.clone(), notifier)
+                    .await?;
+                Connection::new(connector).await
+            };
+            let conn_res = if timeout.is_zero() {
+                connect_fut.await
+            } else {
+                connect_fut
+                    .on_timeout(timeout, || {
+                        Err(ConnectionError::ConnectionStartError(
+                            "ssh".to_string(),
+                            format!("connection timed out after {} seconds", timeout.as_secs()),
+                        ))
+                    })
+                    .await
+            };
+            match conn_res {
                 Ok(res) => Ok(res),
                 Err(e) => {
                     ffx_diagnostics_analytics::mark_point_of_failure(
@@ -214,6 +267,17 @@ mod test {
         }
     }
 
+    #[derive(Debug)]
+    struct HangingConnector;
+
+    impl TargetConnector for HangingConnector {
+        const CONNECTION_TYPE: &'static str = "hanging";
+
+        async fn connect(&mut self) -> Result<TargetConnection, TargetConnectionError> {
+            futures::future::pending().await
+        }
+    }
+
     #[fuchsia::test]
     async fn test_connect_ssh() {
         let env = ffx_config::test_env().build().unwrap();
@@ -229,6 +293,52 @@ mod test {
         };
         let res = check.check(handle, &mut notifier).await;
         assert!(res.is_ok());
+        let output: String = notifier.into();
+        assert!(output.contains("No SSH connect timeout configured; using default of 30 seconds."));
+    }
+
+    #[fuchsia::test]
+    async fn test_connect_ssh_timeout() {
+        let env = ffx_config::test_env()
+            .runtime_config(ffx_ssh::ssh::CONNECT_TIMEOUT_CONFIG, "1")
+            .build()
+            .unwrap();
+        let m = MockSshConnectorProvider::with_res(Ok(HangingConnector));
+        let mut notifier = ffx_diagnostics::StringNotifier::new();
+        let mut check = ConnectSsh::new(&env.context, &m);
+        let handle = TargetHandle {
+            node_name: Some("test-node".to_string()),
+            state: TargetState::Unknown,
+            manual: false,
+        };
+        let res = check.check(handle, &mut notifier).await;
+        assert!(res.is_err());
+        let err = res.unwrap_err().to_string();
+        assert!(err.contains("timed out"), "Expected timeout error, got: {err}");
+        let output: String = notifier.into();
+        assert!(output.contains("Using configured SSH connect timeout of 1 seconds."));
+    }
+
+    #[fuchsia::test]
+    async fn test_connect_ssh_disabled_timeout() {
+        let env = ffx_config::test_env()
+            .runtime_config(ffx_ssh::ssh::CONNECT_TIMEOUT_CONFIG, "0")
+            .build()
+            .unwrap();
+        let m = MockSshConnectorProvider::with_res(Ok(MockConnector::with_results([Ok(
+            TargetConnection::FDomain(FDomainConnection::invalid()),
+        )])));
+        let mut notifier = ffx_diagnostics::StringNotifier::new();
+        let mut check = ConnectSsh::new(&env.context, &m);
+        let handle = TargetHandle {
+            node_name: Some("test-node".to_string()),
+            state: TargetState::Unknown,
+            manual: false,
+        };
+        let res = check.check(handle, &mut notifier).await;
+        assert!(res.is_ok());
+        let output: String = notifier.into();
+        assert!(output.contains("SSH connect timeout is disabled (0 seconds)."));
     }
 
     #[fuchsia::test]
