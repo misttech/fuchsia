@@ -5,8 +5,8 @@
 use crate::execution::execute_task;
 use crate::mm::{DumpPolicy, MemoryAccessor, MemoryAccessorExt, PAGE_SIZE};
 use crate::ptrace::{
-    PR_SET_PTRACER_ANY, PtraceAllowedPtracers, PtraceAttachType, PtraceOptions, ptrace_attach,
-    ptrace_dispatch, ptrace_traceme,
+    PR_SET_PTRACER_ANY, PR_SET_PTRACER_ANY_ARCH32, PtraceAllowedPtracers, PtraceAttachType,
+    PtraceOptions, ptrace_attach, ptrace_dispatch, ptrace_traceme,
 };
 use crate::security;
 use crate::signals::syscalls::RUsagePtr;
@@ -994,7 +994,9 @@ pub fn sys_prctl(
             Ok(().into())
         }
         PR_SET_PTRACER => {
-            let allowed_ptracers = if arg2 == PR_SET_PTRACER_ANY as u64 {
+            let allowed_ptracers = if arg2 == PR_SET_PTRACER_ANY
+                || (current_task.is_arch32() && arg2 == PR_SET_PTRACER_ANY_ARCH32)
+            {
                 PtraceAllowedPtracers::Any
             } else if arg2 == 0 {
                 PtraceAllowedPtracers::None

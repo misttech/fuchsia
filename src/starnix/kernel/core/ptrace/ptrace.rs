@@ -642,9 +642,9 @@ impl ZombiePtracees {
     }
 }
 
-// PR_SET_PTRACER_ANY is defined as ((unsigned long) -1),
-// which is not understood by bindgen.
-pub const PR_SET_PTRACER_ANY: i32 = -1;
+// PR_SET_PTRACER_ANY is defined as ((unsigned long) -1) in Linux UAPI.
+pub const PR_SET_PTRACER_ANY: u64 = u64::MAX;
+pub const PR_SET_PTRACER_ANY_ARCH32: u64 = u32::MAX as u64;
 
 /// Indicates processes specifically allowed to trace a given process if using
 /// SCOPE_RESTRICTED.  Used by prctl(PR_SET_PTRACER).
@@ -1501,9 +1501,7 @@ mod tests {
                 error!(EPERM)
             );
 
-            assert!(
-                sys_prctl(&mut tracee, PR_SET_PTRACER, PR_SET_PTRACER_ANY as u64, 0, 0, 0).is_ok()
-            );
+            assert!(sys_prctl(&mut tracee, PR_SET_PTRACER, PR_SET_PTRACER_ANY, 0, 0, 0).is_ok());
 
             assert!(
                 ptrace_attach(
