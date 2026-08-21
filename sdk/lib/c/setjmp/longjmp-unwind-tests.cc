@@ -15,6 +15,7 @@
 
 #include "../asm-linkage.h"
 #include "fuchsia/jmp_buf.h"
+#include "mock-corrupted.h"
 #include "src/lib/unwinder/fuchsia.h"
 #include "src/lib/unwinder/unwind.h"
 #include "src/setjmp/longjmp.h"
@@ -53,6 +54,7 @@ using captive_thread::testing::GotSingleStep;
 using captive_thread::testing::HasRegisters;
 using captive_thread::testing::Hex;
 using captive_thread::testing::IsPageFault;
+using captive_thread::testing::IsTrap;
 using captive_thread::testing::RegistersAsContainer;
 using captive_thread::testing::RegistersContainer;
 using captive_thread::testing::WithFp;
@@ -83,6 +85,11 @@ constexpr unwinder::RegisterID kUnwinderReturnValueRegister =
 #endif
     ;
 
+const Hex kBaseAddress = arch::kAsmLabelAddress<__ehdr_start>;
+
+const Hex kSetjmpEntry = arch::kAsmLabelAddress<kSetjmpStart>;
+const Hex kLongjmpEntry = arch::kAsmLabelAddress<kLongjmpStart>;
+
 constexpr int64_t AddressDistance(uint64_t a, uint64_t b) {
   return std::abs(std::bit_cast<int64_t>(a) - std::bit_cast<int64_t>(b));
 }
@@ -100,15 +107,16 @@ auto InAsmLabel() {
 auto InSetjmp() { return InAsmLabel<kSetjmpStart, kSetjmpEnd>(); }
 auto InLongjmp() { return InAsmLabel<kLongjmpStart, kLongjmpEnd>(); }
 
+auto Called0() { return AllOf(GotException(IsPageFault(0)), HasRegisters(WithPc(0))); }
+
 constexpr size_t kJmpBufSizeBytes = sizeof(jmp_buf);
 
-// Copies the jmp_buf into an array of bytes or words for examination.
+// Views the jmp_buf as a span of bytes or words for examination.
 template <typename T>
   requires(kJmpBufSizeBytes % sizeof(T) == 0)
 auto JmpBufAs(jmp_buf buf) {
-  std::array<T, kJmpBufSizeBytes / sizeof(T)> result;
-  memcpy(result.data(), buf, std::span{result}.size_bytes());
-  return result;
+  constexpr size_t N = kJmpBufSizeBytes / sizeof(T);
+  return std::span<T, N>{reinterpret_cast<T*>(buf), N};
 }
 
 // How an `int` argument or return value appears in a register.
@@ -162,16 +170,37 @@ void LongjmpTestThread(jmp_buf buf, int val) {
   GTEST_FAIL() << "should not be reached";
 }
 
-void PrepareManglers() {
-  // This is the test LIBC_NAMESPACE, so no startup code has touched the
-  // globals.  Get some nonzero values into the manglers so they actually do
-  // something.  This only needs to be done once, but it doesn't hurt to do it
-  // just before the test, assuming there aren't other threads using it for
-  // tests too.  Use known values for convenient identification in debugging,
-  // and to keep the test deterministic.  Use different values for each word
-  // since setjmp should use each one for a different purpose.
-  std::ranges::iota(gJmpBufManglers, uint64_t{0xdeadbeef} << 32);
-}
+class MockCorrupted {
+ public:
+  MOCK_METHOD(void, Corrupted, (jmp_buf));
+};
+
+class LibcSetjmpTests : public ::testing::Test {
+ public:
+  static void SetUpTestSuite() {
+    // This is the test LIBC_NAMESPACE, so no startup code has touched the
+    // globals.  Get some nonzero values into the manglers so they actually do
+    // something.  Use known values for convenient identification in debugging,
+    // and to keep the test deterministic.  Use different values for each word
+    // since setjmp should use each one for a different purpose.
+    std::ranges::iota(gJmpBufManglers, uint64_t{0xdeadbeef} << 32);
+  }
+
+  void SetUp() override {
+    EXPECT_EQ(gMockLongjmpCorrupted, nullptr);
+    gMockLongjmpCorrupted = [this](jmp_buf env) { mock_.Corrupted(env); };
+  }
+
+  void TearDown() override {
+    gMockLongjmpCorrupted = nullptr;
+    ::testing::Mock::VerifyAndClear(&mock_);
+  }
+
+  auto& mock_corrupted() { return mock_; }
+
+ private:
+  ::testing::StrictMock<MockCorrupted> mock_;
+};
 
 class Unwinder {
  public:
@@ -258,10 +287,14 @@ auto FixedRegisters(const zx_thread_state_general_regs_t& regs [[clang::lifetime
   return std::views::drop(SpecialRegisters(regs), 1);
 }
 
-TEST(LibcTests, UnwindLongjmp) {
-  const uint64_t kSetjmpEntry = arch::kAsmLabelAddress<kSetjmpStart>;
-  const uint64_t kLongjmpEntry = arch::kAsmLabelAddress<kLongjmpStart>;
+// The PC can be warped to the real entry point before resuming the thread.
+zx_thread_state_general_regs_t WarpTo(CaptiveThread& thread, uint64_t pc) {
+  zx_thread_state_general_regs_t regs = *thread.Registers();
+  SpecialRegisters(regs).pc() = pc;
+  return regs;
+}
 
+TEST_F(LibcSetjmpTests, UnwindLongjmp) {
   const auto in_setjmp = HasRegisters(WithPc(InSetjmp()));
   const auto in_longjmp = HasRegisters(WithPc(InLongjmp()));
 
@@ -269,8 +302,6 @@ TEST(LibcTests, UnwindLongjmp) {
   constexpr auto keep_only_unwinder_regs = [](auto& regs) {
     std::erase_if(regs, [](const auto& reg) { return !kUnwinderRegs.contains(reg.first); });
   };
-
-  PrepareManglers();
 
   // Start the test thread.
   jmp_buf buf;
@@ -282,22 +313,14 @@ TEST(LibcTests, UnwindLongjmp) {
   };
 
   // It will first attempt to call setjmp but actually call nullptr (0).
-  auto called_0 = AllOf(GotException(IsPageFault(0)), HasRegisters(WithPc(0)));
-  ASSERT_THAT(thread.WaitForException(), called_0);
-
-  // The PC can be warped to the real entry point before resuming the thread.
-  auto warp_to = [&thread](uint64_t pc) {
-    zx_thread_state_general_regs_t regs = *thread.Registers();
-    SpecialRegisters(regs).pc() = pc;
-    return regs;
-  };
+  ASSERT_THAT(thread.WaitForException(), Called0());
 
   // Fill the jmp_buf with known garbage before setjmp is called.
   constexpr uint8_t kFillByte = 0xbb;
   memset(buf, kFillByte, sizeof(buf));
 
   // Warp the thread as if it had actually called setjmp.
-  auto setjmp_entry_regs = warp_to(kSetjmpEntry);
+  auto setjmp_entry_regs = WarpTo(thread, kSetjmpEntry);
 
   // Fill the call-saved registers with distinct but boring values.  These will
   // be saved in the jmp_buf, so make sure their values can't collide with any
@@ -394,10 +417,10 @@ TEST(LibcTests, UnwindLongjmp) {
   thread.ResolveException();
 
   // It will next attempt to call longjmp but again actually call PC 0.
-  ASSERT_THAT(thread.WaitForException(), called_0);
+  ASSERT_THAT(thread.WaitForException(), Called0());
 
   // Warp the thread as if it had actually called longjmp.
-  const auto longjmp_entry_regs = FillRegs(warp_to(kLongjmpEntry));
+  const auto longjmp_entry_regs = FillRegs(WarpTo(thread, kLongjmpEntry));
   result = thread.SetRegisters(longjmp_entry_regs);
   ASSERT_TRUE(result.is_ok()) << result.status_string();
   {
@@ -468,7 +491,7 @@ TEST(LibcTests, UnwindLongjmp) {
             zx::result result = thread.SetRegisters(regs);
             ASSERT_TRUE(result.is_ok()) << result.status_string();
             thread.ResolveException();
-            ASSERT_THAT(thread.WaitForException(), called_0);
+            ASSERT_THAT(thread.WaitForException(), Called0());
             regs = *thread.Registers();  // Fetch the new registers.
             ASSERT_EQ(ra, 0u);           // Still references the regs field.
             SpecialRegisters(regs).pc() = pc = ra = step_over_until;
@@ -598,6 +621,96 @@ TEST(LibcTests, UnwindLongjmp) {
                   WithReturnValue(IntInRegister(kReturnValue)),
                   AsContainer(IsSupersetOf(setjmp_return_unwind_regs)))))
       << current_regs();
+}
+
+TEST_F(LibcSetjmpTests, LongjmpCorrupted) {
+  constexpr uint64_t kCallSavedValue = 0xd00d'feed'face'f00d;
+  constexpr uint64_t kBogusValue = 0x2'bad'd00d'0'f00d;
+
+#ifndef __x86_64__
+  GTEST_SKIP() << "jmp_buf checksum not implemented yet on this machine";
+#endif
+
+  // Start the test thread.
+  jmp_buf buf;
+  CaptiveThread thread{LongjmpTestThread, auto(buf), 0};
+
+  auto current_regs = [&thread] -> RegistersContainer {
+    if (auto regs = thread.Registers(); regs.is_ok()) {
+      return RegistersAsContainer(*regs);
+    }
+    return {};
+  };
+
+  // It will first attempt to call setjmp but actually call nullptr (0).
+  ASSERT_THAT(thread.WaitForException(), Called0());
+
+  // Warp the thread as if it had actually called setjmp.
+  auto setjmp_entry_regs = WarpTo(thread, kSetjmpEntry);
+
+  // Also Set one normal call-saved register to a known value so that will be
+  // captured in the jmp_buf.
+  const uint64_t saved =
+      std::exchange(CallSavedRegisters(setjmp_entry_regs).front(), kCallSavedValue);
+
+  // Step through setjmp starting with the modified registers.
+  {
+    zx::result result = thread.SetRegisters(setjmp_entry_regs);
+    ASSERT_TRUE(result.is_ok()) << result.status_string();
+  }
+  do {
+    zx::result result = thread.ResolveExceptionSingleStep();
+    ASSERT_TRUE(result.is_ok()) << result.status_string();
+    ASSERT_THAT(thread.WaitForException(), GotSingleStep())
+        << current_regs() << " from base " << kBaseAddress << " vs setjmp @ " << kSetjmpEntry;
+  } while (Value(thread.Registers(), HasRegisters(WithPc(InSetjmp()))));
+
+  // Now that setjmp has returned, its caller might care about that register.
+  // Put back the original value; setjmp used the the other value forced in.
+  {
+    auto regs = thread.Registers();
+    ASSERT_THAT(regs, HasRegisters());
+    EXPECT_EQ(std::exchange(CallSavedRegisters(*regs).front(), saved), kCallSavedValue);
+    zx::result result = thread.SetRegisters(*regs);
+    ASSERT_TRUE(result.is_ok()) << result.status_string();
+  }
+
+  // Now let it continue from after the setjmp call.  The thread doesn't notice
+  // that anything happened, but now we know the jmp_buf it captured contains
+  // kCallSavedValue in some slot.
+  thread.ResolveException();
+
+  // It will next attempt to call longjmp but again actually call PC 0.
+  ASSERT_THAT(thread.WaitForException(), Called0())
+      << current_regs() << " from base " << kBaseAddress << " vs setjmp @ " << kSetjmpEntry
+      << " longjmp @" << kLongjmpEntry;
+
+  // Warp the thread as if it had actually called longjmp.
+  {
+    const auto longjmp_entry_regs = WarpTo(thread, kLongjmpEntry);
+    zx::result result = thread.SetRegisters(longjmp_entry_regs);
+    ASSERT_TRUE(result.is_ok()) << result.status_string();
+  }
+
+  // That normal call-saved register should be found verbatim in the jmp_buf.
+  std::span buf_regs = JmpBufAs<uint64_t>(buf);
+  ASSERT_THAT(buf_regs, Contains(kCallSavedValue));
+
+  // Change it.  That should corrupt the buffer, but would not make any
+  // non-checking version of longjmp fail to return properly since the
+  // essential registers in the jmp_buf are intact.
+  auto it = std::ranges::find(buf_regs, kCallSavedValue);
+  *it = kBogusValue;
+
+  // The panic path should call into the mock.  The expectation will fail at
+  // the end of the test if it was never called after the thread is destroyed.
+  EXPECT_CALL(mock_corrupted(), Corrupted(buf));
+
+  // Let it continue to enter longjmp with the corrupted jmp_buf.
+  thread.ResolveException();
+  ASSERT_THAT(thread.WaitForException(), GotException(IsTrap()))
+      << current_regs() << " from base " << kBaseAddress << " vs setjmp @ " << kSetjmpEntry
+      << " longjmp @" << kLongjmpEntry;
 }
 
 }  // namespace

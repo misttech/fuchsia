@@ -16,23 +16,24 @@
 #else
 #define JB_SCSP 3
 #endif
-#define JB_UNUSED 4  // TODO(https://fxbug.dev/42076381)
-#define JB_MANGLE_COUNT 5
+#define JB_MANGLE_COUNT 4
+#define JB_CHECKSUM JB_MANGLE_COUNT
+#define JB_COMMON_COUNT (JB_CHECKSUM + 1)
 
 #ifdef __x86_64__
 
 // Other callee-saves registers.
-#define JB_RBX (JB_MANGLE_COUNT + 0)
-#define JB_R12 (JB_MANGLE_COUNT + 1)
-#define JB_R13 (JB_MANGLE_COUNT + 2)
-#define JB_R14 (JB_MANGLE_COUNT + 3)
-#define JB_R15 (JB_MANGLE_COUNT + 4)
-#define JB_COUNT (JB_MANGLE_COUNT + 5)
+#define JB_RBX (JB_COMMON_COUNT + 0)
+#define JB_R12 (JB_COMMON_COUNT + 1)
+#define JB_R13 (JB_COMMON_COUNT + 2)
+#define JB_R14 (JB_COMMON_COUNT + 3)
+#define JB_R15 (JB_COMMON_COUNT + 4)
+#define JB_COUNT (JB_COMMON_COUNT + 5)
 
 #elif defined(__aarch64__)
 
 // Callee-saves registers are [x19,x28] and [d8,d15].
-#define JB_X(n) (JB_MANGLE_COUNT + (n) - 19)
+#define JB_X(n) (JB_COMMON_COUNT + (n) - 19)
 #define JB_D(n) (JB_X(29) + (n) - 8)
 #define JB_SPARE JB_D(16)  // Unused.
 #define JB_COUNT (JB_SPARE + 1)
@@ -40,7 +41,7 @@
 #elif defined(__riscv)
 
 // Callee-saves registers are s0..s11, but s0 is FP and so handled above.
-#define JB_S(n) (JB_MANGLE_COUNT + (n) - 1)
+#define JB_S(n) (JB_COMMON_COUNT + (n) - 1)
 
 // FP registers fs0..fs11 are also callee-saves.
 #define JB_FS(n) (JB_S(12) + (n))
@@ -74,6 +75,9 @@ namespace LIBC_NAMESPACE_DECL {
     LIBC_ASM_LINKAGE_DECLARE(gJmpBufManglers);
 
 static_assert(sizeof(__jmp_buf) == sizeof(uint64_t) * JB_COUNT, "fix __jmp_buf definition");
+
+// longjmp tail-calls this when called with a corrupted jmp_buf.
+[[noreturn]] void longjmp_corrupted(jmp_buf) LIBC_ASM_LINKAGE_DECLARE(longjmp_corrupted);
 
 }  // namespace LIBC_NAMESPACE_DECL
 

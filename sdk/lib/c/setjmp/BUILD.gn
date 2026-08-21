@@ -25,6 +25,8 @@ llvm_libc_source_set("setjmp") {
       "../startup:startup-random",
       "//zircon/kernel/lib/arch",
     ]
+    non_test_deps = [ ":longjmp-corrupted" ]
+    test_deps = [ ":mock-corrupted" ]
 
     # The llvm-libc internal headers for the LIBC_NAMESPACE_DECL declarations
     # need to be preempted with wrappers that apply LIBC_ASM_LINKAGE.  There is
@@ -52,7 +54,27 @@ llvm_libc_source_set("setjmp") {
 source_set("jmp_buf") {
   visibility = [ ":*" ]
   public = [ "fuchsia/jmp_buf.h" ]
-  deps = [ "..:asm-linkage" ]
+  public_deps = [ "..:asm-linkage" ]
+}
+
+# The .testonly subtarget is never used, :mock-corrupted is used instead.
+libc_source_set("longjmp-corrupted") {
+  visibility = [ ":*" ]
+  sources = [ "fuchsia/longjmp-corrupted.cc" ]
+  deps = [ ":jmp_buf" ]
+}
+
+# This isn't libc_test() so it depends on neither zxtest nor gtest.
+source_set("mock-corrupted") {
+  visibility = [ ":*" ]
+  testonly = true
+  configs += libc_testonly_configs
+
+  public = [ "mock-corrupted.h" ]
+  public_deps = [ "//sdk/lib/fit" ]
+
+  sources = [ "mock-corrupted.cc" ]
+  deps = [ ":jmp_buf" ]
 }
 
 # TODO(https://fxbug.dev/345351373): This has to be a separate test binary
@@ -71,10 +93,12 @@ libc_test("longjmp-unwind-tests") {
   ]
   deps = [
     ":jmp_buf",
+    ":mock-corrupted",
     ":setjmp.testonly",
     "..:asm-linkage",
     "//src/lib/captive-thread/testing",
     "//src/lib/unwinder",
+    "//third_party/googletest:gmock",
     "//zircon/kernel/lib/arch",
   ]
 }
