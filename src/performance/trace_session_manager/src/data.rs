@@ -282,6 +282,7 @@ mod tests {
                 ..Default::default()
             }]),
             requested_categories: Some(vec!["cat1".to_string()]),
+            compression: Some(fidl_fuchsia_tracing_controller::CompressionType::Zstd),
             ..Default::default()
         };
 
@@ -296,6 +297,107 @@ mod tests {
             &expected_options.triggers.as_ref().unwrap()[0],
         );
         assert_eq!(converted_options.requested_categories, expected_options.requested_categories);
+        assert_eq!(converted_options.compression, expected_options.compression);
+    }
+
+    #[test]
+    fn test_trace_options_conversion_none_compression() {
+        let options = || fidl_fuchsia_tracing_controller::TraceOptions {
+            duration_ns: None,
+            triggers: None,
+            requested_categories: None,
+            compression: Some(fidl_fuchsia_tracing_controller::CompressionType::None),
+            ..Default::default()
+        };
+
+        let data: TraceOptionsData = options().into();
+        let converted_options: fidl_fuchsia_tracing_controller::TraceOptions = data.into();
+
+        assert_eq!(
+            converted_options.compression,
+            Some(fidl_fuchsia_tracing_controller::CompressionType::None)
+        );
+    }
+
+    #[test]
+    fn test_on_boot_trace_config_serde_roundtrip() {
+        let on_boot_config = OnBootTraceConfig {
+            options: TraceOptionsData {
+                duration_ns: Some(5_000_000_000),
+                triggers: Some(vec![TriggerData {
+                    action: Some("TERMINATE".to_string()),
+                    alert: Some("high_memory".to_string()),
+                }]),
+                requested_categories: Some(vec!["kernel:sched".to_string(), "gfx".to_string()]),
+                compression: Some("ZSTD".to_string()),
+            },
+            config: TraceConfigData {
+                categories: Some(vec!["kernel:sched".to_string(), "gfx".to_string()]),
+                buffer_size_megabytes_hint: Some(16),
+                start_timeout_milliseconds: Some(2500),
+                buffering_mode: Some("CIRCULAR".to_string()),
+                provider_specs: Some(vec![ProviderSpecData {
+                    name: Some("archivist".to_string()),
+                    buffer_size_megabytes_hint: Some(2),
+                    categories: Some(vec!["log".to_string()]),
+                }]),
+                version: Some(FxtVersionData { major: Some(1), minor: Some(0) }),
+                defer_transfer: Some(false),
+            },
+        };
+
+        let json_str = serde_json::to_string_pretty(&on_boot_config)
+            .expect("Failed to serialize OnBootTraceConfig");
+        let deserialized: OnBootTraceConfig =
+            serde_json::from_str(&json_str).expect("Failed to deserialize OnBootTraceConfig");
+
+        assert_eq!(deserialized.options.duration_ns, on_boot_config.options.duration_ns);
+        assert_eq!(
+            deserialized.options.requested_categories,
+            on_boot_config.options.requested_categories
+        );
+        assert_eq!(deserialized.options.compression, on_boot_config.options.compression);
+        assert_eq!(deserialized.options.triggers.as_ref().map(|t| t.len()), Some(1));
+        assert_eq!(
+            deserialized.options.triggers.as_ref().unwrap()[0].action,
+            Some("TERMINATE".to_string())
+        );
+        assert_eq!(
+            deserialized.options.triggers.as_ref().unwrap()[0].alert,
+            Some("high_memory".to_string())
+        );
+
+        assert_eq!(deserialized.config.categories, on_boot_config.config.categories);
+        assert_eq!(
+            deserialized.config.buffer_size_megabytes_hint,
+            on_boot_config.config.buffer_size_megabytes_hint
+        );
+        assert_eq!(
+            deserialized.config.start_timeout_milliseconds,
+            on_boot_config.config.start_timeout_milliseconds
+        );
+        assert_eq!(deserialized.config.buffering_mode, on_boot_config.config.buffering_mode);
+        assert_eq!(deserialized.config.provider_specs.as_ref().map(|p| p.len()), Some(1));
+        assert_eq!(
+            deserialized.config.provider_specs.as_ref().unwrap()[0].name,
+            Some("archivist".to_string())
+        );
+        assert_eq!(deserialized.config.version.as_ref().unwrap().major, Some(1));
+        assert_eq!(deserialized.config.version.as_ref().unwrap().minor, Some(0));
+        assert_eq!(deserialized.config.defer_transfer, Some(false));
+
+        // Also verify converting deserialized config back to FIDL types
+        let fidl_options: fidl_fuchsia_tracing_controller::TraceOptions =
+            deserialized.options.into();
+        assert_eq!(fidl_options.duration_ns, Some(5_000_000_000));
+        assert_eq!(
+            fidl_options.compression,
+            Some(fidl_fuchsia_tracing_controller::CompressionType::Zstd)
+        );
+
+        let fidl_config: fidl_fuchsia_tracing_controller::TraceConfig = deserialized.config.into();
+        assert_eq!(fidl_config.buffer_size_megabytes_hint, Some(16));
+        assert_eq!(fidl_config.buffering_mode, Some(BufferingMode::Circular));
     }
 
     #[test]
