@@ -28,6 +28,7 @@ template("driver_tools_lib") {
     deps = [
       "//sdk/fidl/fuchsia.component.decl:fuchsia.component.decl_rust",
       "//sdk/rust/zx-status",
+      "//src/developer/ffx/lib/safe_string:lib",
       "//src/devices/lib/bind",
       "//third_party/rust_crates:ansi_term",
       "//third_party/rust_crates:anyhow",

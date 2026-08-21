@@ -12,6 +12,7 @@ use flex_fuchsia_driver_development as fdd;
 #[cfg(feature = "fdomain")]
 use fuchsia_driver_dev_fdomain as fuchsia_driver_dev;
 use itertools::Itertools;
+use safe_string::DotSafe;
 use std::collections::{BTreeMap, HashMap};
 
 pub struct ClusterInfo {
@@ -131,8 +132,9 @@ pub async fn graph_node(
         for (driver, cluster_nodes) in &cluster_drivers {
             // Get just the last bit of the url.
             let driver_name = driver.rsplit_once('/').unwrap_or(("", &driver)).1;
-            writeln!(writer, "{TAB}{TAB}subgraph \"cluster_{}_{}\" {{", koid, driver_name)?;
-            writeln!(writer, "{TAB}{TAB}{TAB}label = \"{}\";", driver_name)?;
+            let safe_driver_name = DotSafe::from_str_lossy(driver_name);
+            writeln!(writer, "{TAB}{TAB}subgraph \"cluster_{}_{}\" {{", koid, safe_driver_name)?;
+            writeln!(writer, "{TAB}{TAB}{TAB}label = \"{}\";", safe_driver_name)?;
             writeln!(writer, "{TAB}{TAB}{TAB}style = \"filled,rounded\";")?;
             writeln!(writer, r#"{TAB}{TAB}{TAB}fillcolor = " #dce0e3";"#)?;
 
@@ -561,7 +563,14 @@ fn print_graph_node(
     let (_, name) = moniker.rsplit_once('.').unwrap_or(("", &moniker));
     let node_id = node.id.as_ref().ok_or_else(|| format_err!("Node missing id"))?;
 
-    writeln!(writer, "{}\"{}\" [label=\"{}\", id = \"{}\"]", prefix, node_id, name, node_id)?;
+    writeln!(
+        writer,
+        "{}\"{}\" [label=\"{}\", id = \"{}\"]",
+        prefix,
+        node_id,
+        DotSafe::from_str_lossy(name),
+        node_id
+    )?;
     Ok(())
 }
 
@@ -605,7 +614,9 @@ fn get_labeled_graph_edge(
     Ok(vec![
         format!(
             "{TAB}\"{}\" [shape=oval, style=\"dotted\", label=\"{}\", id = \"{}_x\"];",
-            intermediate_node_id, label, id_group
+            intermediate_node_id,
+            DotSafe::from_str_lossy(label),
+            id_group
         ),
         format!(
             "{TAB}\"{}\" -> \"{}\" [dir=back arrowtail = inv, color = \" #566168\" penwidth = 1 style = solid, id = \"{}_y\"];",
@@ -665,4 +676,578 @@ fn find_primary_parent<'a>(
         }
         false
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use anyhow::Context;
+    use argh::FromArgs;
+    use fidl_fuchsia_component_decl as fcd;
+    use flex_client::fidl::ServerEnd;
+    use fuchsia_async as fasync;
+    use futures::future::{Future, FutureExt};
+    use futures::stream::StreamExt;
+    #[cfg(feature = "fdomain")]
+    use std::sync::Arc;
+
+    async fn test_graph_node<F, Fut>(
+        #[cfg(feature = "fdomain")] client: Arc<flex_client::Client>,
+        cmd: GraphNodeCommand,
+        on_driver_development_request: F,
+    ) -> Result<String>
+    where
+        F: Fn(fdd::ManagerRequest) -> Fut + Send + Sync + 'static,
+        Fut: Future<Output = Result<()>> + Send + Sync,
+    {
+        #[cfg(not(feature = "fdomain"))]
+        let client = flex_client::fidl::ZirconClient;
+        let (driver_development_proxy, mut driver_development_requests) =
+            client.create_proxy_and_stream::<fdd::ManagerMarker>();
+
+        let mut writer = Vec::new();
+        let request_handler_task = fasync::Task::spawn(async move {
+            while let Some(res) = driver_development_requests.next().await {
+                let request = res.context("Failed to get next request")?;
+                on_driver_development_request(request).await.context("Failed to handle request")?;
+            }
+            anyhow::bail!("Driver development request stream unexpectedly closed");
+        });
+        futures::select! {
+            res = request_handler_task.fuse() => {
+                res?;
+                anyhow::bail!("Request handler task unexpectedly finished");
+            }
+            res = graph_node(cmd, &mut writer, driver_development_proxy).fuse() => {
+                res.context("Graph node command failed")?;
+            }
+        }
+
+        String::from_utf8(writer).context("Failed to convert graph node output to a string")
+    }
+
+    async fn run_device_info_iterator_server(
+        mut device_infos: Vec<fdd::NodeInfo>,
+        iterator: ServerEnd<fdd::NodeInfoIteratorMarker>,
+    ) -> Result<()> {
+        let mut iterator = iterator.into_stream();
+        while let Some(res) = iterator.next().await {
+            let request = res.context("Failed to get request")?;
+            match request {
+                fdd::NodeInfoIteratorRequest::GetNext { responder } => {
+                    responder
+                        .send(&device_infos)
+                        .context("Failed to send device infos to responder")?;
+                    device_infos.clear();
+                }
+            }
+        }
+        Ok(())
+    }
+
+    #[fuchsia::test]
+    async fn test_graph_node_simple() {
+        #[cfg(feature = "fdomain")]
+        let client = fdomain_local::local_client_empty();
+        let cmd = GraphNodeCommand::from_args(&["graph"], &[]).unwrap();
+
+        let output = test_graph_node(
+            #[cfg(feature = "fdomain")]
+            Arc::clone(&client),
+            cmd,
+            |request: fdd::ManagerRequest| async move {
+                match request {
+                    fdd::ManagerRequest::GetNodeInfo { iterator, .. } => {
+                        run_device_info_iterator_server(
+                            vec![
+                                fdd::NodeInfo {
+                                    id: Some(0),
+                                    parent_ids: Some(vec![]),
+                                    child_ids: Some(vec![1]),
+                                    driver_host_koid: Some(100),
+                                    bound_driver_url: Some(
+                                        "fuchsia-pkg://fuchsia.com/root#meta/root.cm".to_string(),
+                                    ),
+                                    moniker: Some("root".to_string()),
+                                    ..Default::default()
+                                },
+                                fdd::NodeInfo {
+                                    id: Some(1),
+                                    parent_ids: Some(vec![0]),
+                                    child_ids: Some(vec![]),
+                                    driver_host_koid: Some(100),
+                                    bound_driver_url: Some(
+                                        "fuchsia-pkg://fuchsia.com/child-pkg#meta/child_driver.cm"
+                                            .to_string(),
+                                    ),
+                                    moniker: Some("root.child_node".to_string()),
+                                    ..Default::default()
+                                },
+                            ],
+                            iterator,
+                        )
+                        .await
+                        .context("Failed to run device info iterator server")?;
+                    }
+                    _ => {}
+                }
+                Ok(())
+            },
+        )
+        .await
+        .unwrap();
+
+        assert!(output.starts_with("digraph {"));
+        assert!(output.contains(r#"rankdir = "TB""#));
+        assert!(output.contains(r#"subgraph "cluster_100" {"#));
+        assert!(output.contains(r#"subgraph "cluster_100_root.cm" {"#));
+        assert!(output.contains(r#"label = "root.cm";"#));
+        assert!(output.contains(r#""0" [label="root", id = "0"]"#));
+        assert!(output.contains(r#"subgraph "cluster_100_child_driver.cm" {"#));
+        assert!(output.contains(r#"label = "child_driver.cm";"#));
+        assert!(output.contains(r#""1" [label="child_node", id = "1"]"#));
+        assert!(output.contains(r#""0" -> "1" [arrowhead = box id = "0_1"]"#));
+        assert!(output.ends_with("}\n"));
+    }
+
+    #[fuchsia::test]
+    async fn test_graph_node_orientation_lr() {
+        #[cfg(feature = "fdomain")]
+        let client = fdomain_local::local_client_empty();
+        let cmd = GraphNodeCommand::from_args(&["graph"], &["--orientation", "lr"]).unwrap();
+
+        let output = test_graph_node(
+            #[cfg(feature = "fdomain")]
+            Arc::clone(&client),
+            cmd,
+            |request: fdd::ManagerRequest| async move {
+                if let fdd::ManagerRequest::GetNodeInfo { iterator, .. } = request {
+                    run_device_info_iterator_server(vec![], iterator).await.unwrap();
+                }
+                Ok(())
+            },
+        )
+        .await
+        .unwrap();
+
+        assert!(output.contains(r#"rankdir = "LR""#));
+    }
+
+    #[fuchsia::test]
+    async fn test_graph_unbound_nodes() {
+        #[cfg(feature = "fdomain")]
+        let client = fdomain_local::local_client_empty();
+        let cmd = GraphNodeCommand::from_args(&["graph"], &[]).unwrap();
+
+        let output = test_graph_node(
+            #[cfg(feature = "fdomain")]
+            Arc::clone(&client),
+            cmd,
+            |request: fdd::ManagerRequest| async move {
+                if let fdd::ManagerRequest::GetNodeInfo { iterator, .. } = request {
+                    run_device_info_iterator_server(
+                        vec![fdd::NodeInfo {
+                            id: Some(5),
+                            parent_ids: Some(vec![]),
+                            child_ids: Some(vec![]),
+                            driver_host_koid: None,
+                            bound_driver_url: Some("unbound".to_string()),
+                            moniker: Some("unbound_node".to_string()),
+                            ..Default::default()
+                        }],
+                        iterator,
+                    )
+                    .await
+                    .unwrap();
+                }
+                Ok(())
+            },
+        )
+        .await
+        .unwrap();
+
+        assert!(!output.contains("subgraph"));
+        assert!(output.contains(r#"    "5" [label="unbound_node", id = "5"]"#));
+    }
+
+    #[fuchsia::test]
+    async fn test_injection_driver_url_subgraph_and_label() {
+        #[cfg(feature = "fdomain")]
+        let client = fdomain_local::local_client_empty();
+        let cmd = GraphNodeCommand::from_args(&["graph"], &[]).unwrap();
+
+        let output = test_graph_node(
+            #[cfg(feature = "fdomain")]
+            Arc::clone(&client),
+            cmd,
+            |request: fdd::ManagerRequest| async move {
+                if let fdd::ManagerRequest::GetNodeInfo { iterator, .. } = request {
+                    run_device_info_iterator_server(
+                        vec![fdd::NodeInfo {
+                            id: Some(0),
+                            parent_ids: Some(vec![]),
+                            child_ids: Some(vec![]),
+                            driver_host_koid: Some(200),
+                            bound_driver_url: Some(
+                                "fuchsia-pkg://fuchsia.com/pkg#meta/evil.cm\"; evil_subgraph [label=\"hacked\"];".to_string(),
+                            ),
+                            moniker: Some("root".to_string()),
+                            ..Default::default()
+                        }],
+                        iterator,
+                    )
+                    .await
+                    .unwrap();
+                }
+                Ok(())
+            },
+        )
+        .await
+        .unwrap();
+
+        // Check that quotes in driver_name are safely escaped with \"
+        assert!(
+            output
+                .contains(r#"subgraph "cluster_200_evil.cm\"; evil_subgraph [label=\"hacked\"];""#)
+        );
+        assert!(output.contains(r#"label = "evil.cm\"; evil_subgraph [label=\"hacked\"];";"#));
+        // Verify raw unescaped breakout does not exist
+        assert!(!output.contains(r#"subgraph "cluster_200_evil.cm"; evil_subgraph"#));
+    }
+
+    #[fuchsia::test]
+    async fn test_injection_node_moniker_quotes_and_backslashes() {
+        #[cfg(feature = "fdomain")]
+        let client = fdomain_local::local_client_empty();
+        let cmd = GraphNodeCommand::from_args(&["graph"], &[]).unwrap();
+
+        let output = test_graph_node(
+            #[cfg(feature = "fdomain")]
+            Arc::clone(&client),
+            cmd,
+            |request: fdd::ManagerRequest| async move {
+                if let fdd::ManagerRequest::GetNodeInfo { iterator, .. } = request {
+                    run_device_info_iterator_server(
+                        vec![fdd::NodeInfo {
+                            id: Some(42),
+                            parent_ids: Some(vec![]),
+                            child_ids: Some(vec![]),
+                            driver_host_koid: None,
+                            bound_driver_url: Some("unbound".to_string()),
+                            moniker: Some(
+                                r#"sys.sensor" [color=red, label="injected"]; "evil"#.to_string(),
+                            ),
+                            ..Default::default()
+                        }],
+                        iterator,
+                    )
+                    .await
+                    .unwrap();
+                }
+                Ok(())
+            },
+        )
+        .await
+        .unwrap();
+
+        assert!(output.contains(r#"label="sensor\" [color=red, label=\"injected\"]; \"evil""#));
+        assert!(!output.contains(r#"label="sensor" [color=red"#));
+    }
+
+    #[fuchsia::test]
+    async fn test_injection_node_moniker_newlines_and_control_chars() {
+        #[cfg(feature = "fdomain")]
+        let client = fdomain_local::local_client_empty();
+        let cmd = GraphNodeCommand::from_args(&["graph"], &[]).unwrap();
+
+        let output = test_graph_node(
+            #[cfg(feature = "fdomain")]
+            Arc::clone(&client),
+            cmd,
+            |request: fdd::ManagerRequest| async move {
+                if let fdd::ManagerRequest::GetNodeInfo { iterator, .. } = request {
+                    run_device_info_iterator_server(
+                        vec![fdd::NodeInfo {
+                            id: Some(10),
+                            parent_ids: Some(vec![]),
+                            child_ids: Some(vec![]),
+                            driver_host_koid: None,
+                            bound_driver_url: Some("unbound".to_string()),
+                            moniker: Some(
+                                "root.line1\nline2\r\nline3\x1b[31m\x07alert\x7fdel\0null"
+                                    .to_string(),
+                            ),
+                            ..Default::default()
+                        }],
+                        iterator,
+                    )
+                    .await
+                    .unwrap();
+                }
+                Ok(())
+            },
+        )
+        .await
+        .unwrap();
+
+        let rep = char::REPLACEMENT_CHARACTER;
+        let expected_label = format!("line1\\nline2\\nline3{rep}[31m{rep}alert{rep}del{rep}null");
+        assert!(output.contains(&format!("label=\"{}\"", expected_label)));
+    }
+
+    #[fuchsia::test]
+    async fn test_injection_service_offers_and_renamed_instances() {
+        #[cfg(feature = "fdomain")]
+        let client = fdomain_local::local_client_empty();
+        let cmd = GraphNodeCommand::from_args(&["graph"], &["--services"]).unwrap();
+
+        let output = test_graph_node(
+            #[cfg(feature = "fdomain")]
+            Arc::clone(&client),
+            cmd,
+            |request: fdd::ManagerRequest| async move {
+                if let fdd::ManagerRequest::GetNodeInfo { iterator, .. } = request {
+                    run_device_info_iterator_server(
+                        vec![
+                            fdd::NodeInfo {
+                                id: Some(0),
+                                parent_ids: Some(vec![]),
+                                child_ids: Some(vec![1]),
+                                driver_host_koid: Some(100),
+                                bound_driver_url: Some(
+                                    "fuchsia-pkg://fuchsia.com/root#meta/root.cm".to_string(),
+                                ),
+                                moniker: Some("root".to_string()),
+                                ..Default::default()
+                            },
+                            fdd::NodeInfo {
+                                id: Some(1),
+                                parent_ids: Some(vec![0]),
+                                child_ids: Some(vec![]),
+                                driver_host_koid: Some(100),
+                                bound_driver_url: Some(
+                                    "fuchsia-pkg://fuchsia.com/child#meta/child.cm".to_string(),
+                                ),
+                                moniker: Some("root.child".to_string()),
+                                offer_list: Some(vec![fcd::Offer::Service(fcd::OfferService {
+                                    source_name: Some(
+                                        "fuchsia.evil.Service\"; evil [label=\"pwned\"]; //"
+                                            .to_string(),
+                                    ),
+                                    target_name: Some("fuchsia.evil.Service".to_string()),
+                                    source: Some(fcd::Ref::Child(fcd::ChildRef {
+                                        name: "root".to_string(),
+                                        collection: None,
+                                    })),
+                                    target: None,
+                                    source_instance_filter: None,
+                                    renamed_instances: Some(vec![fcd::NameMapping {
+                                        source_name: "src\" [style=bold]; \"".to_string(),
+                                        target_name: "dst\nbreakout".to_string(),
+                                    }]),
+                                    availability: None,
+                                    ..Default::default()
+                                })]),
+                                ..Default::default()
+                            },
+                        ],
+                        iterator,
+                    )
+                    .await
+                    .unwrap();
+                }
+                Ok(())
+            },
+        )
+        .await
+        .unwrap();
+
+        // Verify the label has escaped quotes and newlines
+        assert!(output.contains(r#"label="fuchsia.evil.Service\"; evil [label=\"pwned\"]; //(src\" [style=bold]; \"-->dst\nbreakout)""#));
+        // Verify edge connections to and from intermediate node
+        assert!(output.contains(r#"-> "intermediate_0_1_"#));
+        assert!(output.contains(r#""intermediate_0_1_"#));
+    }
+
+    #[fuchsia::test]
+    async fn test_stress_graphviz_dot_syntax_invariants_on_complex_hierarchies() {
+        #[cfg(feature = "fdomain")]
+        let client = fdomain_local::local_client_empty();
+        let cmd = GraphNodeCommand::from_args(&["graph"], &["--services", "--orientation", "lr"])
+            .unwrap();
+
+        let attack_payloads = [
+            r#"payload" [color=red]; evil_node [label="injected"]; "#,
+            r#"subgraph" { label="hacked"; a -> b; } "#,
+            "multi\nline\r\nstring\twith\x1b[31mcontrol\x07codes",
+            r#"path\with\trailing\backslash\"#,
+            r#"" -> "evil_target" [label="hijack"]; "node"#,
+            "Unicode_🦀_日本語_Café_100%",
+            "/* comment */ // line\nnode [shape=box];",
+        ];
+
+        let mut test_nodes = Vec::new();
+        // Create 20 nodes with various parent-child edges and driver hosts
+        for i in 0u64..20u64 {
+            let host_koid = (i % 4) + 1000;
+            let driver_idx = (i as usize) % attack_payloads.len();
+            let moniker_idx = ((i + 1) as usize) % attack_payloads.len();
+
+            let parent_ids: Vec<u64> = if i > 0 { vec![(i - 1) / 2] } else { vec![] };
+            let child_ids: Vec<u64> = vec![];
+
+            let offers = if i % 2 == 1 {
+                Some(vec![fcd::Offer::Service(fcd::OfferService {
+                    source_name: Some(format!(
+                        "fuchsia.service.{}",
+                        attack_payloads[(i as usize) % attack_payloads.len()]
+                    )),
+                    target_name: Some("fuchsia.service.target".to_string()),
+                    source: Some(fcd::Ref::Child(fcd::ChildRef {
+                        name: format!("node_{}", (i - 1) / 2),
+                        collection: None,
+                    })),
+                    target: None,
+                    source_instance_filter: None,
+                    renamed_instances: Some(vec![fcd::NameMapping {
+                        source_name: format!(
+                            "src_{}",
+                            attack_payloads[((i + 2) as usize) % attack_payloads.len()]
+                        ),
+                        target_name: format!(
+                            "dst_{}",
+                            attack_payloads[((i + 3) as usize) % attack_payloads.len()]
+                        ),
+                    }]),
+                    availability: None,
+                    ..Default::default()
+                })])
+            } else {
+                None
+            };
+
+            test_nodes.push(fdd::NodeInfo {
+                id: Some(i),
+                parent_ids: Some(parent_ids),
+                child_ids: Some(child_ids),
+                driver_host_koid: Some(host_koid),
+                bound_driver_url: Some(format!(
+                    "fuchsia-pkg://fuchsia.com/pkg#meta/driver_{}.cm",
+                    attack_payloads[driver_idx]
+                )),
+                moniker: Some(format!("root.node_{}.{}", i, attack_payloads[moniker_idx])),
+                offer_list: offers,
+                ..Default::default()
+            });
+        }
+
+        // Set child_ids reciprocally
+        for i in 1u64..20u64 {
+            let parent_idx = ((i - 1) / 2) as usize;
+            if let Some(ref mut children) = test_nodes[parent_idx].child_ids {
+                children.push(i);
+            }
+        }
+
+        let output = test_graph_node(
+            #[cfg(feature = "fdomain")]
+            Arc::clone(&client),
+            cmd,
+            move |request: fdd::ManagerRequest| {
+                let nodes_clone = test_nodes.clone();
+                async move {
+                    if let fdd::ManagerRequest::GetNodeInfo { iterator, .. } = request {
+                        run_device_info_iterator_server(nodes_clone, iterator).await.unwrap();
+                    }
+                    Ok(())
+                }
+            },
+        )
+        .await
+        .unwrap();
+
+        // Validate Graphviz AST Invariants on the entire output
+        assert!(output.starts_with("digraph {"));
+        assert!(output.trim_end().ends_with('}'));
+        assert!(output.contains(r#"rankdir = "LR""#));
+
+        // Invariant 1: No raw C0 or C1 control characters in output
+        for c in output.chars() {
+            if c != '\n' && c != '\r' && c != '\t' {
+                assert!(
+                    !c.is_control(),
+                    "Raw control character U+{:04X} found in DOT output",
+                    c as u32
+                );
+            }
+        }
+
+        // Invariant 2: Verify brace nesting outside string literals
+        let mut brace_depth = 0;
+        let mut in_string = false;
+        let mut string_escaped = false;
+
+        for c in output.chars() {
+            if in_string {
+                if string_escaped {
+                    string_escaped = false;
+                } else if c == '\\' {
+                    string_escaped = true;
+                } else if c == '"' {
+                    in_string = false;
+                }
+            } else if c == '"' {
+                in_string = true;
+                string_escaped = false;
+            } else if c == '{' {
+                brace_depth += 1;
+            } else if c == '}' {
+                brace_depth -= 1;
+                assert!(brace_depth >= 0, "Mismatched closing brace in DOT output");
+            }
+        }
+
+        assert_eq!(brace_depth, 0, "Unclosed braces in DOT output");
+        assert!(!in_string, "Unclosed string literal in DOT output");
+
+        // Invariant 3: Validate all label="..." and subgraph "..." attributes are safe
+        for line in output.lines() {
+            let mut cursor = line;
+            while let Some(start_idx) = cursor.find('"') {
+                let after_start = &cursor[start_idx + 1..];
+                // Find closing unescaped quote
+                let mut end_idx = None;
+                let mut esc = false;
+                for (byte_offset, ch) in after_start.char_indices() {
+                    if esc {
+                        esc = false;
+                    } else if ch == '\\' {
+                        esc = true;
+                    } else if ch == '"' {
+                        end_idx = Some(byte_offset);
+                        break;
+                    }
+                }
+
+                let quote_end = end_idx.unwrap_or_else(|| panic!("Unclosed quote in line: {line}"));
+                let inner = &after_start[..quote_end];
+                // Verify inner does not have illegal escapes
+                let mut check_esc = false;
+                for ch in inner.chars() {
+                    if check_esc {
+                        assert!(
+                            ch == '\\' || ch == '"' || ch == 'n',
+                            "Invalid escape sequence \\{ch} in line: {line}"
+                        );
+                        check_esc = false;
+                    } else if ch == '\\' {
+                        check_esc = true;
+                    }
+                }
+                assert!(!check_esc, "Trailing unescaped backslash in literal in line: {line}");
+
+                cursor = &after_start[quote_end + 1..];
+            }
+        }
+    }
 }
