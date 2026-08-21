@@ -58,6 +58,9 @@ var transformerAnnotationNames = map[string]transformer{
 // This map is also used to check known Bazel rules that can be converted to GN.
 // i.e. Bazel rules not found in this map is not supported by bazel2gn yet.
 var bazelRuleToGNTemplate = map[string]string{
+	// Bazel primitives
+	"alias": "group",
+
 	// Go
 	"go_binary":    "go_binary",
 	"go_library":   "go_library",
@@ -175,6 +178,10 @@ var commonAttrMap = map[string]string{
 	"hdrs": "public",
 }
 
+var aliasAttrMap = map[string]string{
+	"actual": "public_deps",
+}
+
 // ccCommonAttrMap maps from attribute names common in Bazel CC rules to GN parameter names.
 // This map only includes attributes that have different names in Bazel and GN.
 var ccCommonAttrMap = map[string]string{
@@ -286,6 +293,9 @@ var pythonBinAttrMap = map[string]string{
 // A mapping from Bazel rule names to attribute mappings.
 // Attribute mappings map from Bazel rule attributes that use different names in GN.
 var attrMapsByRules = map[string]map[string]string{
+	// Bazel
+	"alias": aliasAttrMap,
+
 	// Python
 	"py_binary": pythonBinAttrMap,
 

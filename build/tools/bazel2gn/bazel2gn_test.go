@@ -204,6 +204,39 @@ python_binary("generate_version_history_bin") {
 	]
 }`,
 		},
+		{
+			name: "Aliases",
+			bazel: `alias(
+	name = "alias_name",
+	actual = ":actual_target",
+)`,
+			wantGN: `group("alias_name") {
+	public_deps = [
+		":actual_target",
+	]
+}`,
+		},
+		{
+			name: "AliasesSelect",
+			bazel: `alias(
+	name = "alias_name",
+	actual = select({
+		"@platforms//os:fuchsia": ":actual_target_fuchsia",
+		"//conditions:default": ":actual_target_default",
+	}),
+)`,
+			wantGN: `group("alias_name") {
+	if (is_fuchsia) {
+		public_deps = [
+			":actual_target_fuchsia",
+		]
+	} else {
+		public_deps = [
+			":actual_target_default",
+		]
+	}
+}`,
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			f := toSyntaxFile(t, tc.bazel)

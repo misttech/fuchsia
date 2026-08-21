@@ -205,3 +205,32 @@ func bazelLdflagsToGN(expr syntax.Expr) (syntax.Expr, error) {
 	}
 	return lit, nil
 }
+
+// listifiedAnnotation is a comment annotation we add to expressions after we
+// convert them to a list. This prevents subsequent transformations from
+// wrapping the already-listified value in another layer of list.
+const listifiedAnnotation = "# @bazel2gn:listified"
+
+func addListifiedAnnotation(expr syntax.Expr) {
+	expr.AllocComments()
+	comments := expr.Comments()
+	comments.Before = append(comments.Before, syntax.Comment{Text: listifiedAnnotation})
+}
+
+func bazelExprToGNList(expr syntax.Expr) (syntax.Expr, error) {
+	expr = unwrapParenExpr(expr)
+	if comments := expr.Comments(); comments != nil {
+		for _, c := range comments.Before {
+			if c.Text == listifiedAnnotation {
+				return expr, nil
+			}
+		}
+	}
+
+	addListifiedAnnotation(expr)
+
+	list := syntax.ListExpr{List: []syntax.Expr{expr}}
+	addListifiedAnnotation(&list)
+
+	return &list, nil
+}
