@@ -34,7 +34,7 @@ pub const VENDOR_STRING_C: CpuidValue<0x0, 0x0, ECX, u32> = CpuidValue::new();
 pub const VENDOR_STRING_D: CpuidValue<0x0, 0x0, EDX, u32> = CpuidValue::new();
 
 /// A vendor string derived from CPUID.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct VendorString([u8; 12]);
 
 impl VendorString {
@@ -61,9 +61,9 @@ impl VendorString {
     /// Returns [`Vendor::Unknown`] when the vendor string does not correspond
     /// to a known vendor.
     pub fn vendor(&self) -> Vendor {
-        match self {
-            &Self::INTEL => Vendor::Intel,
-            &Self::AMD => Vendor::Amd,
+        match *self {
+            Self::INTEL => Vendor::Intel,
+            Self::AMD => Vendor::Amd,
             _ => Vendor::Unknown,
         }
     }
@@ -293,11 +293,11 @@ impl AmdL1CacheInformation {
     pub const FULLY_ASSOCIATIVE: u8 = 0xff;
 
     pub fn ways_of_associativity(&self) -> usize {
-        if self.assoc() as u8 == Self::FULLY_ASSOCIATIVE { 0 } else { self.assoc() as usize }
+        if self.assoc() == Self::FULLY_ASSOCIATIVE { 0 } else { self.assoc() as usize }
     }
 
     pub fn fully_associative(&self) -> Option<bool> {
-        match self.assoc() as u8 {
+        match self.assoc() {
             0 => None,
             Self::FULLY_ASSOCIATIVE => Some(true),
             _ => Some(false),
