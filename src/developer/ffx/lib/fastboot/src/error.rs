@@ -184,4 +184,7 @@ pub enum FfxFastbootError {
 
     #[error("File path '{path}' is outside the allowed directory '{root}'")]
     PathOutsideDirectory { path: PathBuf, root: PathBuf },
+
+    #[error("Fastboot condition error: {0}")]
+    FastbootConditionError(String),
 }

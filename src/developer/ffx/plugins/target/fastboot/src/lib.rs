@@ -137,11 +137,17 @@ where
             .map_err(fho::Error::from)?;
         }
         FastbootSubcommand::Oem(cmd) => {
-            interface
+            let (msg, info) = interface
                 .oem(&cmd.command.join(" ").to_string())
                 .await
                 .map_err(|e| anyhow!(e))
                 .map_err(fho::Error::from)?;
+            for line in info {
+                writeln!(writer, "{line}").map_err(|e| anyhow!(e)).map_err(fho::Error::from)?;
+            }
+            if !msg.is_empty() {
+                writeln!(writer, "{msg}").map_err(|e| anyhow!(e)).map_err(fho::Error::from)?;
+            }
         }
         FastbootSubcommand::Continue(_) => {
             interface.continue_boot().await.map_err(|e| anyhow!(e)).map_err(fho::Error::from)?;
@@ -333,9 +339,9 @@ mod test {
             Ok(())
         }
 
-        async fn oem(&mut self, command: &str) -> Result<(), FastbootError> {
+        async fn oem(&mut self, command: &str) -> Result<(String, Vec<String>), FastbootError> {
             self.oem_commands.lock().unwrap().push(format!("oem {}", command));
-            Ok(())
+            Ok(("".to_string(), vec![]))
         }
 
         async fn continue_boot(&mut self) -> Result<(), FastbootError> {

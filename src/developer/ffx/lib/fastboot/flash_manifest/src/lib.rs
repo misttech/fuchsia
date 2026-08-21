@@ -4,7 +4,7 @@
 
 use crate::v1::FlashManifest as FlashManifestV1;
 use crate::v2::FlashManifest as FlashManifestV2;
-use crate::v3::{Condition, FlashManifest as FlashManifestV3, Partition, Product};
+use crate::v3::{FlashManifest as FlashManifestV3, Partition, Product};
 use crate::v4::FlashManifest as FlashManifestV4;
 use assembly_partitions_config::{PartitionAndImage, PartitionImageMapper, Slot};
 use product_bundle::{ProductBundle, ProductBundleV2};
@@ -226,10 +226,12 @@ impl FlashManifestVersion {
         let mut bootloader_partitions = vec![];
         for p in &product_bundle.partitions.bootloader_partitions {
             if let Some(name) = &p.name {
+                let condition_json = p.condition_json.clone();
                 let partition = Partition {
                     name: name.to_string(),
                     path: p.image.to_string(),
                     condition: None,
+                    condition_json,
                 };
                 log::debug!("Adding bootloader partition: {:#?}", partition);
                 bootloader_partitions.push(partition);
@@ -239,13 +241,14 @@ impl FlashManifestVersion {
         // Copy the bootstrap partitions from the partitions config to the flash manifest.
         let mut bootstrap_partitions = vec![];
         for p in &product_bundle.partitions.bootstrap_partitions {
-            let condition = if let Some(c) = &p.condition {
-                Some(Condition { variable: c.variable.to_string(), value: c.value.to_string() })
-            } else {
-                None
+            let condition = p.condition.as_ref().map(Into::into);
+            let condition_json = p.condition_json.clone();
+            let partition = Partition {
+                name: p.name.to_string(),
+                path: p.image.to_string(),
+                condition,
+                condition_json,
             };
-            let partition =
-                Partition { name: p.name.to_string(), path: p.image.to_string(), condition };
             log::debug!("Adding bootstrap partition: {:#?}", partition);
             bootstrap_partitions.push(partition);
         }
@@ -353,6 +356,7 @@ fn get_mapped_partitions(image_map: &PartitionImageMapper, _is_recovery: bool) -
             name: partition.name().clone(),
             path: path.to_string(),
             condition: None,
+            condition_json: None,
         })
         .collect()
 }

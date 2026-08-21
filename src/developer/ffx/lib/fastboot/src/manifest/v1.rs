@@ -54,6 +54,10 @@ impl PartitionTrait for Partition {
     fn variable_value(&self) -> Option<&str> {
         self.variable_value()
     }
+
+    fn condition_json(&self) -> Option<&str> {
+        self.condition_json()
+    }
 }
 
 #[async_trait]

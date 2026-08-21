@@ -224,6 +224,7 @@ regex_visibility = [
   "//src/connectivity/wlan/wlancfg:*",
   "//src/developer/ffx/command:*",
   "//src/developer/ffx/config:*",
+  "//src/developer/ffx/lib/fastboot:*",
   "//src/developer/ffx/lib/netext:*",
   "//src/developer/ffx/lib/sdk:*",
   "//src/developer/ffx/lib/target_errors:*",

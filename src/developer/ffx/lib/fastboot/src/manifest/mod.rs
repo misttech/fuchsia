@@ -411,12 +411,14 @@ mod test {
                 bootstrap_partitions: vec![BootstrapPartition {
                     name: "bootstrap_part".into(),
                     condition: None,
+                    condition_json: None,
                     image: Utf8PathBuf::from("bootstrap_image"),
                 }],
                 bootloader_partitions: vec![BootloaderPartition {
                     name: Some("bootloader_part".into()),
                     image: Utf8PathBuf::from("bootloader_image"),
                     partition_type: "".into(),
+                    condition_json: None,
                 }],
                 partitions: vec![],
                 hardware_revision: String::default(),
@@ -448,12 +450,14 @@ mod test {
                 Partition {
                     name: "bootstrap_part".into(),
                     path: "bootstrap_image".into(),
-                    condition: None
+                    condition: None,
+                    condition_json: None,
                 },
                 Partition {
                     name: "bootloader_part".into(),
                     path: "bootloader_image".into(),
-                    condition: None
+                    condition: None,
+                    condition_json: None,
                 },
             ]
         )

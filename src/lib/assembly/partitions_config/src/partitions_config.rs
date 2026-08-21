@@ -187,7 +187,12 @@ pub struct BootstrapPartition {
     pub image: Utf8PathBuf,
 
     /// The condition that must be met before attempting to flash.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub condition: Option<BootstrapCondition>,
+
+    /// A JSON condition string representing nested AND/OR/Base fastboot conditions.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub condition_json: Option<String>,
 }
 
 /// The fastboot variable condition that must equal the value before a bootstrap partition should
@@ -217,6 +222,10 @@ pub struct BootloaderPartition {
     /// The path on host to the bootloader image.
     #[walk_paths]
     pub image: Utf8PathBuf,
+
+    /// A JSON condition string representing nested AND/OR/Base fastboot conditions.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub condition_json: Option<String>,
 }
 
 /// A non-bootloader partition which

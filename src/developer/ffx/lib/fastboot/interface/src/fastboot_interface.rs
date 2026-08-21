@@ -49,7 +49,10 @@ pub trait Fastboot: Send {
 
     async fn set_active(&mut self, slot: &str) -> Result<(), FastbootError>;
 
-    async fn oem(&mut self, command: &str) -> Result<(), FastbootError>;
+    /// Sends OEM commands.
+    ///
+    /// On success returns the OKAY response, and all INFO responses.
+    async fn oem(&mut self, command: &str) -> Result<(String, Vec<String>), FastbootError>;
 
     async fn stream<'a>(
         &mut self,
@@ -121,7 +124,7 @@ impl<F: Fastboot + ?Sized> Fastboot for Box<F> {
         (**self).set_active(slot).await
     }
 
-    async fn oem(&mut self, command: &str) -> Result<(), FastbootError> {
+    async fn oem(&mut self, command: &str) -> Result<(String, Vec<String>), FastbootError> {
         (**self).oem(command).await
     }
 

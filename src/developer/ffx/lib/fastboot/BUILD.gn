@@ -41,8 +41,10 @@ rustc_library("lib") {
     "//third_party/rust_crates:flate2",
     "//third_party/rust_crates:futures",
     "//third_party/rust_crates:log",
+    "//third_party/rust_crates:regex",
     "//third_party/rust_crates:ring",
     "//third_party/rust_crates:serde",
+    "//third_party/rust_crates:serde_json",
     "//third_party/rust_crates:tar",
     "//third_party/rust_crates:tempfile",
     "//third_party/rust_crates:thiserror",
@@ -56,7 +58,6 @@ rustc_library("lib") {
     "//src/lib/assembly/partitions_config",
     "//src/lib/fuchsia",
     "//third_party/rust_crates:anyhow",
-    "//third_party/rust_crates:serde_json",
   ]
 
   sources = [

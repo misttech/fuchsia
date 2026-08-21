@@ -624,11 +624,13 @@ mod tests {
                     name: "bootstrap".into(),
                     image: "bootstrap".into(),
                     condition: None,
+                    condition_json: None,
                 }],
                 bootloader_partitions: vec![BootloaderPartition {
                     partition_type: "bl2".into(),
                     name: None,
                     image: "bootloader".into(),
+                    condition_json: None,
                 }],
                 partitions: vec![
                     Partition::ZBI { name: "zbi".into(), slot: Slot::A, size: None },
@@ -722,11 +724,13 @@ mod tests {
                     name: "bootstrap".into(),
                     image: tempdir.join("bootstrap"),
                     condition: None,
+                    condition_json: None,
                 }],
                 bootloader_partitions: vec![BootloaderPartition {
                     partition_type: "bl2".into(),
                     name: None,
                     image: tempdir.join("bootloader"),
+                    condition_json: None,
                 }],
                 partitions: vec![
                     Partition::ZBI { name: "zbi".into(), slot: Slot::A, size: None },

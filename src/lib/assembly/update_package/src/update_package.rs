@@ -525,6 +525,7 @@ mod tests {
                 partition_type: "tpl".into(),
                 name: Some("firmware_tpl".into()),
                 image: fake_bootloader.to_path_buf(),
+                condition_json: None,
             }],
             partitions: vec![Partition::ZBI {
                 name: "zircon_a".into(),
@@ -662,6 +663,7 @@ mod tests {
                 partition_type: "tpl".into(),
                 name: Some("firmware_tpl".into()),
                 image: fake_bootloader.to_path_buf(),
+                condition_json: None,
             }],
             partitions: vec![
                 Partition::ZBI { name: "zircon_a".into(), slot: PartitionSlot::A, size: None },

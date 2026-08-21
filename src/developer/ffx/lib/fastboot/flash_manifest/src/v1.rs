@@ -21,6 +21,7 @@ pub struct Partition(
     String,
     #[serde(default)] Option<String>,
     #[serde(default)] Option<String>,
+    #[serde(default)] Option<String>,
 );
 
 impl Partition {
@@ -39,6 +40,10 @@ impl Partition {
     pub fn variable_value(&self) -> Option<&str> {
         self.3.as_ref().map(|s| s.as_str())
     }
+
+    pub fn condition_json(&self) -> Option<&str> {
+        self.4.as_ref().map(|s| s.as_str())
+    }
 }
 
 impl Partition {
@@ -48,7 +53,17 @@ impl Partition {
         variable: Option<String>,
         variable_value: Option<String>,
     ) -> Self {
-        Self(name, file, variable, variable_value)
+        Self(name, file, variable, variable_value, None)
+    }
+
+    pub fn new_with_condition_json(
+        name: String,
+        file: String,
+        variable: Option<String>,
+        variable_value: Option<String>,
+        condition_json: Option<String>,
+    ) -> Self {
+        Self(name, file, variable, variable_value, condition_json)
     }
 }
 
