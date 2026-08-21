@@ -36,8 +36,15 @@ class FakePci : public fidl::WireServer<fuchsia_hardware_pci::Device> {
     });
   }
 
+  void SetDeviceInfo(uint16_t vendor_id, uint16_t device_id) {
+    vendor_id_ = vendor_id;
+    device_id_ = device_id;
+  }
+
   void GetDeviceInfo(GetDeviceInfoCompleter::Sync& completer) override {
     fuchsia_hardware_pci::wire::DeviceInfo info;
+    info.vendor_id = vendor_id_;
+    info.device_id = device_id_;
     completer.Reply(info);
   }
   void GetBar(GetBarRequestView request, GetBarCompleter::Sync& completer) override {
@@ -114,6 +121,8 @@ class FakePci : public fidl::WireServer<fuchsia_hardware_pci::Device> {
 
   zx::interrupt irq_;
   ufs_mock_device::UfsMockDevice* mock_device_;
+  uint16_t vendor_id_ = 0;
+  uint16_t device_id_ = 0;
 };
 
 class FakeCpuElementManager

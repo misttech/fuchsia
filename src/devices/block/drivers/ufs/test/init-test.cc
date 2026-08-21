@@ -8,6 +8,7 @@
 #include <fbl/unaligned.h>
 
 #include "src/devices/block/drivers/ufs/device_manager.h"
+#include "src/devices/block/drivers/ufs/registers.h"
 #include "unit-lib.h"
 
 namespace ufs {
@@ -233,6 +234,45 @@ TEST_F(InitTest, DispatcherShutdownSynchronization) {
   // Wait for posted tasks on worker dispatchers to execute cleanly (up to 60s).
   ASSERT_OK(io_done.Wait(zx::sec(60)));
   ASSERT_OK(admin_done.Wait(zx::sec(60)));
+}
+
+TEST_F(InitTest, AutoHibernateEnabled) {
+  CapabilityReg::Get()
+      .ReadFrom(mock_device_.GetRegisters())
+      .set_auto_hibernation_support(true)
+      .WriteTo(mock_device_.GetRegisters());
+  ASSERT_NO_FATAL_FAILURE(StartDriver());
+
+  auto ahit_reg = AutoHibernateIdleTimerReg::Get().ReadFrom(&dut_->GetMmio());
+  EXPECT_EQ(ahit_reg.timer_scale(), kAutoHibernateScale);
+  EXPECT_EQ(ahit_reg.timer_value(), kAutoHibernateTimerValue);
+}
+
+TEST_F(InitTest, AutoHibernateNotSupported) {
+  CapabilityReg::Get()
+      .ReadFrom(mock_device_.GetRegisters())
+      .set_auto_hibernation_support(false)
+      .WriteTo(mock_device_.GetRegisters());
+  ASSERT_NO_FATAL_FAILURE(StartDriver());
+
+  auto ahit_reg = AutoHibernateIdleTimerReg::Get().ReadFrom(&dut_->GetMmio());
+  EXPECT_EQ(ahit_reg.timer_value(), 0u);
+}
+
+TEST_F(InitTest, AutoHibernateQemuQuirk) {
+  CapabilityReg::Get()
+      .ReadFrom(mock_device_.GetRegisters())
+      .set_auto_hibernation_support(true)
+      .WriteTo(mock_device_.GetRegisters());
+  driver_test().RunInEnvironmentTypeContext([](Environment& env) {
+    constexpr uint16_t kRedHatVendorId = 0x1b36;
+    constexpr uint16_t kQemuUfsHostController = 0x0013;
+    env.pci_server().SetDeviceInfo(kRedHatVendorId, kQemuUfsHostController);
+  });
+  ASSERT_NO_FATAL_FAILURE(StartDriver());
+
+  auto ahit_reg = AutoHibernateIdleTimerReg::Get().ReadFrom(&dut_->GetMmio());
+  EXPECT_EQ(ahit_reg.timer_value(), 0u);
 }
 
 }  // namespace ufs

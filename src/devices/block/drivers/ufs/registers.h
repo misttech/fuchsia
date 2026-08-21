@@ -80,6 +80,26 @@ class VersionReg : public hwreg::RegisterBase<VersionReg, uint32_t, hwreg::Enabl
   static auto Get() { return hwreg::RegisterAddr<VersionReg>(RegisterMap::kVER); }
 };
 
+// UFSHCI Specification Version 3.0, section 5.2.5
+// "Offset 18h: AHIT – Auto-Hibernate Idle Timer".
+class AutoHibernateIdleTimerReg
+    : public hwreg::RegisterBase<AutoHibernateIdleTimerReg, uint32_t, hwreg::EnablePrinter> {
+ public:
+  enum class Scale : uint32_t {
+    k1us = 0,
+    k10us = 1,
+    k100us = 2,
+    k1ms = 3,
+    k10ms = 4,
+    k100ms = 5,
+  };
+
+  DEF_FIELD(9, 0, timer_value);
+  DEF_ENUM_FIELD(Scale, 12, 10, timer_scale);
+
+  static auto Get() { return hwreg::RegisterAddr<AutoHibernateIdleTimerReg>(RegisterMap::kAHIT); }
+};
+
 // UFSHCI Specification Version 3.0, section 5.3.1
 // "Offset 20h: IS – Interrupt Status".
 class InterruptStatusReg

@@ -38,6 +38,39 @@ TEST_F(RegisterTest, Version) {
             ufs_mock_device::kVersionSuffix);
 }
 
+TEST_F(RegisterTest, AutoHibernateIdleTimer) {
+  // Test register address.
+  EXPECT_EQ(AutoHibernateIdleTimerReg::Get().addr(), 0x18u);
+
+  // Test scale and value encoding: 15000 usec.
+  auto reg = AutoHibernateIdleTimerReg::Get().FromValue(0);
+  reg.set_timer_scale(AutoHibernateIdleTimerReg::Scale::k100us);
+  reg.set_timer_value(150);
+  reg.WriteTo(&dut_->GetMmio());
+  auto read_reg = AutoHibernateIdleTimerReg::Get().ReadFrom(&dut_->GetMmio());
+  EXPECT_EQ(read_reg.timer_scale(), AutoHibernateIdleTimerReg::Scale::k100us);
+  EXPECT_EQ(static_cast<uint32_t>(read_reg.timer_scale()), 2u);
+  EXPECT_EQ(read_reg.timer_value(), 150u);
+
+  // Test 1us scale (value 0 per spec).
+  reg.set_timer_scale(AutoHibernateIdleTimerReg::Scale::k1us);
+  reg.set_timer_value(500);
+  reg.WriteTo(&dut_->GetMmio());
+  read_reg = AutoHibernateIdleTimerReg::Get().ReadFrom(&dut_->GetMmio());
+  EXPECT_EQ(read_reg.timer_scale(), AutoHibernateIdleTimerReg::Scale::k1us);
+  EXPECT_EQ(static_cast<uint32_t>(read_reg.timer_scale()), 0u);
+  EXPECT_EQ(read_reg.timer_value(), 500u);
+
+  // Test boundary with maximum 10-bit timer value (1023 / 0x3FF) and 100ms scale.
+  reg.set_timer_scale(AutoHibernateIdleTimerReg::Scale::k100ms);
+  reg.set_timer_value(1023);
+  reg.WriteTo(&dut_->GetMmio());
+  read_reg = AutoHibernateIdleTimerReg::Get().ReadFrom(&dut_->GetMmio());
+  EXPECT_EQ(read_reg.timer_scale(), AutoHibernateIdleTimerReg::Scale::k100ms);
+  EXPECT_EQ(static_cast<uint32_t>(read_reg.timer_scale()), 5u);
+  EXPECT_EQ(read_reg.timer_value(), 1023u);
+}
+
 TEST_F(RegisterTest, InterruptStatus) {
   // Clear IS register to zero.
   InterruptStatusReg::Get()

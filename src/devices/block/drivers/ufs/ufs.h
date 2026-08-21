@@ -29,6 +29,7 @@
 #include <fbl/string_printf.h>
 
 #include "src/devices/block/drivers/ufs/device_manager.h"
+#include "src/devices/block/drivers/ufs/registers.h"
 #include "src/devices/block/drivers/ufs/request_processor.h"
 #include "src/devices/block/drivers/ufs/task_management_request_processor.h"
 #include "src/devices/block/drivers/ufs/transfer_request_processor.h"
@@ -45,6 +46,8 @@ constexpr uint32_t kHostControllerTimeoutUs = 1000;
 constexpr int kMaxRetries = 3;
 constexpr uint32_t kMaxTransferSize1MiB = 1024 * 1024;
 constexpr uint8_t kPlaceholderTarget = 0;
+constexpr auto kAutoHibernateScale = AutoHibernateIdleTimerReg::Scale::k10us;
+constexpr uint32_t kAutoHibernateTimerValue = 100;
 
 constexpr uint32_t kBlockSize = 4096;
 constexpr uint32_t kSectorSize = 512;
@@ -319,6 +322,7 @@ class Ufs : public fdf::DriverBase2, public scsi::Controller {
   zx::result<> InitMmioBuffer();
   zx::result<> InitController();
   zx::result<> InitDeviceInterface(inspect::Node &controller_node);
+  zx::result<> MaybeConfigureAutoHibernate();
   zx::result<> GetControllerDescriptor();
   zx::result<uint32_t> AddLogicalUnits();
 

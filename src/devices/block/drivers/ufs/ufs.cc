@@ -949,6 +949,12 @@ zx::result<> Ufs::InitDeviceInterface(inspect::Node& controller_node) {
   }
   properties_.b_boot_lun_en = attributes_node.CreateUint("bBootLunEn", result.value());
 
+  // Configure Auto-Hibernate (AH8) if supported by the host controller.
+  if (zx::result<> result = MaybeConfigureAutoHibernate(); result.is_error()) {
+    fdf::error("Failed to configure Auto-Hibernate: {}", result);
+    return result.take_error();
+  }
+
   // TODO(https://fxbug.dev/42075643): Set bMaxNumOfRTT (Read-to-transfer)
 
   if (component_inspector_) {
@@ -956,6 +962,26 @@ zx::result<> Ufs::InitDeviceInterface(inspect::Node& controller_node) {
     component_inspector_->inspector().emplace(std::move(attributes_node));
   }
 
+  return zx::ok();
+}
+
+zx::result<> Ufs::MaybeConfigureAutoHibernate() {
+  if (qemu_quirk_) {
+    return zx::ok();
+  }
+
+  const fdf::MmioBuffer& mmio = mmio_.value();
+  if (!CapabilityReg::Get().ReadFrom(&mmio).auto_hibernation_support()) {
+    fdf::info("UFS Auto-Hibernate not supported by controller");
+    return zx::ok();
+  }
+
+  AutoHibernateIdleTimerReg::Get()
+      .FromValue(0)
+      .set_timer_scale(kAutoHibernateScale)
+      .set_timer_value(kAutoHibernateTimerValue)
+      .WriteTo(&mmio);
+  fdf::info("UFS Auto-Hibernate enabled");
   return zx::ok();
 }
 
