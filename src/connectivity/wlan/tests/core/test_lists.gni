@@ -53,6 +53,9 @@ core_tests_for_fyi = [
   "//src/connectivity/wlan/tests/core:wlan_driver_restart_test",
 ]
 
+# FYI Tests that require an iperf server
+core_tests_for_fyi_iperf = []
+
 # Tests longer than ~20 minutes consume significant resources and significantly
 # lengthen the cadence of the test runs. Split these tests out so we can run
 # them at reduced frequency.

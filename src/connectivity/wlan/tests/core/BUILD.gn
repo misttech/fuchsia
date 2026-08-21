@@ -163,6 +163,7 @@ group("tests_host") {
   testonly = true
   public_deps = [
     ":tests_for_fyi",
+    ":tests_for_fyi_iperf",
     ":tests_for_fyi_long",
     ":tests_for_postsubmit",
     ":tests_for_presubmit",
@@ -194,6 +195,11 @@ group("tests_for_postsubmit") {
 group("tests_for_fyi") {
   testonly = true
   public_deps = core_tests_for_fyi  # Edit in test_lists.gni
+}
+
+group("tests_for_fyi_iperf") {
+  testonly = true
+  public_deps = core_tests_for_fyi_iperf  # Edit in test_lists.gni
 }
 
 group("tests_for_fyi_long") {
