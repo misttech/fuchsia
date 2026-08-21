@@ -23,15 +23,6 @@ use dml_config::parser::{
 /// rules and properties for the child devices published by this driver.
 static VIM3_PARSER_CONFIG: DmlParserConfig = DmlParserConfig {
     service_configs: phf::phf_map! {
-        "fuchsia.hardware.pin.PinStatesService" => ServiceBindConfig {
-            rules: &[PropertyRule {
-                bind_key: "fuchsia.NAME",
-                sources: &[ValueSource::ResourceNode],
-                value_type: RuleValueType::String,
-                destination: Destination::BindRules,
-            }],
-            ..DEFAULT_SERVICE_BIND_CONFIG
-        },
         "fuchsia.hardware.i2c.Service" => ServiceBindConfig {
             rules: &[
                 PropertyRule {
