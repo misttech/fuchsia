@@ -35,7 +35,8 @@ if (current_toolchain == default_toolchain) {
       inputs = [ input_json ]
       outputs = [ output_json ]
 
-      tool = "testing:roundtripper"
+      tool = "//build/bazel/host:bazel_root_host_tools.roundtripper"
+      tool_output_name = "roundtripper"
 
       args = [
         "-in",

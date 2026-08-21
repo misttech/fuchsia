@@ -18,6 +18,7 @@ test_suite(
         "//tools/build/ninjago/ninjacommand:ninjacommand_tests",
         "//tools/build/ninjago/rbetrace:rbetrace_test",
         "//tools/check-licenses:tests",
+        "//tools/dart_test_parser:dart_test_parser_lib_tests",
         "//tools/fidl/fidlgen_rust/codegen:fidlgen_rust_lib_tests",
         "//tools/fidl/gidl-format:gidl_format_tests",
         "//tools/fidl/gidl/backend/golang:gidl_golang_tests",

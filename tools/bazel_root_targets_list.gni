@@ -25,6 +25,15 @@ tools_bazel_root_targets = [
     install_host_tool = true
   },
   {
+    bazel_label = "//tools/dart_test_parser:dart_test_parser"
+    copy_outputs = [
+      {
+        bazel = "{{BAZEL_TARGET_OUT_DIR}}/dart_test_parser_/dart_test_parser"
+        ninja = "dart_test_parser"
+      },
+    ]
+  },
+  {
     bazel_label = "//tools/rust_test_parser:rust_test_parser"
     copy_outputs = [
       {
@@ -123,6 +132,15 @@ tools_bazel_root_targets = [
       },
     ]
     install_host_tool = true
+  },
+  {
+    bazel_label = "//tools/fidl/lib/fidlgen/testing:roundtripper"
+    copy_outputs = [
+      {
+        bazel = "{{BAZEL_TARGET_OUT_DIR}}/roundtripper_/roundtripper"
+        ninja = "roundtripper"
+      },
+    ]
   },
   {
     bazel_label = "//tools/fuzz:undercoat"
