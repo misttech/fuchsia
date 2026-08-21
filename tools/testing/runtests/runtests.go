@@ -157,6 +157,15 @@ type TestResult struct {
 	// This will be ignored if the test status is a success. Host tests must exit with
 	// a non-zero exit code to be considered a failure.
 	FailureReason *FailureReason `json:"failure_reason,omitempty"`
+
+	// SetupSucceeded indicates whether test setup completed successfully.
+	SetupSucceeded *bool `json:"setup_succeeded,omitempty"`
+
+	// TeardownSucceeded indicates whether test teardown completed successfully.
+	TeardownSucceeded *bool `json:"teardown_succeeded,omitempty"`
+
+	// ExitCode is the process exit code of the test binary.
+	ExitCode *int `json:"exit_code,omitempty"`
 }
 
 // FailureReasonError represents a problem that caused a test to fail, such as a crash

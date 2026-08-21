@@ -4,6 +4,7 @@
 
 load("@io_bazel_rules_go//go:def.bzl", "go_library")
 load("@platforms//host:constraints.bzl", "HOST_CONSTRAINTS")
+load("//build/bazel/rules/host_tests:host_go_test.bzl", "host_go_test")
 
 package(default_applicable_licenses = ["//:license"])
 
@@ -29,4 +30,15 @@ go_library(
         "//tools/net/sshutil",
         "//tools/net/tftp",
     ],
+)
+
+host_go_test(
+    name = "runtests_tests",
+    srcs = [
+        "data_sinks_test.go",
+        "runtests_test.go",
+    ],
+    embed = [":runtests"],
+    target_compatible_with = HOST_CONSTRAINTS,
+    visibility = ["//visibility:public"],
 )

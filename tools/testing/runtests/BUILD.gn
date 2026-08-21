@@ -65,3 +65,13 @@ if (is_host) {
     ]
   }
 }
+if (is_host) {
+  go_test("runtests_tests") {
+    sources = [
+      "data_sinks_test.go",
+      "runtests_test.go",
+    ]
+    embed = [ ":runtests" ]
+    visibility = [ "*" ]
+  }
+}
