@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{Error, anyhow};
+use anyhow::{anyhow, Error};
 use fuchsia_async as fasync;
 use futures::{AsyncReadExt, AsyncWriteExt, StreamExt};
 use machina_virtio_device::{GuestMem, WrappedDescChainStream};
@@ -108,7 +108,11 @@ impl ConsoleDevice {
             let count = if idx == 0 {
                 // Block until any data is available to write to the chain.
                 let count = socket.read(slice).await?;
-                if count == 0 { Err(anyhow!("Socket is closed")) } else { Ok(count) }
+                if count == 0 {
+                    Err(anyhow!("Socket is closed"))
+                } else {
+                    Ok(count)
+                }
             } else {
                 // As soon as data is on the chain, synchronously fill any remaining descriptors
                 // with any remaining data.
@@ -138,8 +142,8 @@ mod tests {
     use super::*;
     use async_utils::PollExt;
     use futures::FutureExt;
-    use rand::RngExt as _;
     use rand::distr::StandardUniform;
+    use rand::Rng;
     use virtio_device::fake_queue::{ChainBuilder, IdentityDriverMem, TestQueue};
 
     #[fuchsia::test]

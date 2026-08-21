@@ -11,7 +11,7 @@ use core::hash::Hash;
 use core::marker::PhantomData;
 use core::ops::RangeInclusive;
 
-use rand::{Rng, RngExt as _};
+use rand::Rng;
 
 /// A port number.
 // NB: `PortNumber` could be a trait, but given the expected use of the

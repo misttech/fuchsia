@@ -423,9 +423,10 @@ pub async fn create_randomly_named_file(
     prefix: &str,
     flags: fio::Flags,
 ) -> Result<(String, fio::FileProxy), OpenError> {
+    use rand::SeedableRng as _;
     use rand::distr::{Alphanumeric, SampleString as _};
     use rand::rngs::SmallRng;
-    let mut rng: SmallRng = rand::make_rng();
+    let mut rng = SmallRng::from_os_rng();
 
     let flags = flags | fio::Flags::FLAG_MUST_CREATE;
 

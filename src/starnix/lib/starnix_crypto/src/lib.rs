@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use rand::Rng as _;
+use rand::RngCore;
 
 /// Overwrite `buffer` with bytes drawn from a thread-local CSPRNG (backed by ChaCha12).
 pub fn cprng_draw(buffer: &mut [u8]) {

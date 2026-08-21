@@ -533,8 +533,8 @@ mod test {
     mod fragmented_payload {
         use super::*;
 
-        use proptest::prelude::Rng as _;
         use proptest::strategy::{Just, Strategy};
+        use rand::Rng as _;
 
         const TEST_STORAGE: usize = 5;
         type TestFragmentedPayload = FragmentedPayload<'static, TEST_STORAGE>;

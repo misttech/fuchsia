@@ -13,7 +13,7 @@ use ffx_writer::SimpleWriter;
 use fho::{FfxMain, FfxTool};
 use fuchsia_audio::Format;
 use fuchsia_audio::format::SampleType;
-use rand::RngExt as _;
+use rand::Rng;
 use rand::rngs::ThreadRng;
 use std::f64::consts::PI;
 use std::io;

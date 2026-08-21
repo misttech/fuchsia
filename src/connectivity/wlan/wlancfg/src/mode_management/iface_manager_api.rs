@@ -499,6 +499,7 @@ mod tests {
     use futures::future::LocalBoxFuture;
     use futures::stream::StreamFuture;
     use futures::task::Poll;
+    use rand::Rng;
     use std::pin::pin;
     use test_case::test_case;
     use wlan_common::channel::Bandwidth;

@@ -471,7 +471,7 @@ mod tests {
     use fuchsia_async as fasync;
     use futures::stream::StreamFuture;
     use futures::task::Poll;
-    use rand::RngExt as _;
+    use rand::Rng;
     use rand::prelude::ThreadRng;
     use std::pin::pin;
     use test_case::test_case;

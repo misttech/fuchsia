@@ -495,7 +495,7 @@ impl<K: Key, V: LayerValue> LayerIteratorMut<K, V> for SkipListLayerIterMut<'_, 
     }
 
     fn insert(&mut self, item: Item<K, V>) {
-        use rand::RngExt as _;
+        use rand::Rng;
         let mut rng = rand::rng();
         let max_pointers = self.skip_list.pointers.len();
         // This chooses a random number of pointers such that each level has half the number of

@@ -9,7 +9,7 @@ use driver_manager_driver_host::DriverHost;
 use driver_manager_types::{Collection, ShutdownState};
 use fuchsia_async as fasync;
 use log::debug;
-use rand::RngExt as _;
+use rand::Rng;
 use std::cell::RefCell;
 use std::rc::{Rc, Weak};
 

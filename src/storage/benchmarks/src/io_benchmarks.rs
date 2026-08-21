@@ -4,8 +4,8 @@
 
 use crate::{Benchmark, CacheClearableFilesystem, Filesystem, OperationDuration, OperationTimer};
 use async_trait::async_trait;
-use rand::seq::SliceRandom as _;
-use rand::{Rng, SeedableRng as _};
+use rand::seq::SliceRandom;
+use rand::{Rng, SeedableRng};
 use rand_xorshift::XorShiftRng;
 use std::fs::OpenOptions;
 use std::io::{Seek, SeekFrom, Write};

@@ -11,7 +11,7 @@ use fatfs::{FsOptions, NullTimeProvider, OemCpConverter, TimeProvider};
 use gpt::partition_types::{OperatingSystem, Type as PartType};
 use gpt::{DiskDevice, GptDisk};
 use product_bundle::{LoadedProductBundle, ProductBundle};
-use rand::{Rng as _, SeedableRng as _};
+use rand::{RngCore, SeedableRng};
 use rand_xorshift::XorShiftRng;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;

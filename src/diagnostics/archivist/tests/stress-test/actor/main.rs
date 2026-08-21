@@ -11,7 +11,7 @@ use fuchsia_component::client::connect_to_protocol;
 use futures::future::BoxFuture;
 use futures::{FutureExt, StreamExt};
 use log::info;
-use rand::RngExt as _;
+use rand::Rng;
 use rand::rngs::SmallRng;
 use stress_test_actor::{Action, actor_loop};
 

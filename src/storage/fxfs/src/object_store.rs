@@ -63,7 +63,7 @@ use fxfs_crypto::{
     key_to_cipher,
 };
 use fxfs_macros::{Migrate, migrate_to_version};
-use rand::Rng as _;
+use rand::RngCore;
 use scopeguard::ScopeGuard;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;

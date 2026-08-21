@@ -14,7 +14,7 @@ use fidl_fuchsia_pkg as fpkg;
 use fuchsia_async as fasync;
 use futures::future::FutureExt as _;
 use futures::stream::StreamExt as _;
-use rand::{RngReader, SeedableRng as _};
+use rand::{SeedableRng as _, TryRngCore as _};
 use std::collections::HashMap;
 use std::io::Read as _;
 use std::sync::Arc;
@@ -76,7 +76,7 @@ async fn large_blob() {
     let pkg = fuchsia_pkg_testing::PackageBuilder::new("test-package")
         .add_resource_at(
             "large-blob",
-            RngReader(rand::rngs::StdRng::from_seed([0u8; 32])).take(1024 * 1024),
+            rand::rngs::StdRng::from_seed([0u8; 32]).read_adapter().take(1024 * 1024),
         )
         .build()
         .await
@@ -89,7 +89,7 @@ async fn many_blobs() {
     let mut pkg = fuchsia_pkg_testing::PackageBuilder::new("test-package");
     let mut rng = rand::rngs::StdRng::from_seed([0u8; 32]);
     for i in 0..200 {
-        pkg = pkg.add_resource_at(format!("blob-{i}"), RngReader(&mut rng).take(10));
+        pkg = pkg.add_resource_at(format!("blob-{i}"), rng.read_adapter().take(10));
     }
     let pkg = pkg.build().await.unwrap();
     let () = verify_resolution(&pkg).await;

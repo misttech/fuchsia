@@ -8,7 +8,7 @@ use fidl_fuchsia_power_broker as fbroker;
 use fidl_fuchsia_power_system as fsystem;
 use fuchsia_async as fasync;
 use power_broker_client::PowerElementContext;
-use rand::RngExt as _;
+use rand::Rng;
 use rand::distr::Alphanumeric;
 use std::sync::Arc;
 

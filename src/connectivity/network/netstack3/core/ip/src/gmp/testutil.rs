@@ -8,6 +8,9 @@
 use alloc::vec::Vec;
 use core::borrow::Borrow;
 use core::time::Duration;
+use packet_formats::gmp::{GmpReportGroupRecord, GroupRecordType};
+use rand::SeedableRng as _;
+
 use net_declare::{net_ip_v4, net_ip_v6};
 use net_types::MulticastAddr;
 use net_types::ip::{Ip, Ipv4, Ipv4Addr, Ipv6, Ipv6Addr};
@@ -16,7 +19,6 @@ use netstack3_base::{
     AnyDevice, CtxPair, DeviceIdContext, HandleableTimer, InspectableValue, Inspector,
     IntoCoreTimerCtx, TimerBindingsTypes,
 };
-use packet_formats::gmp::{GmpReportGroupRecord, GroupRecordType};
 use packet_formats::utils::NonZeroDuration;
 
 use crate::internal::gmp::{
@@ -195,7 +197,7 @@ pub(super) fn new_context_with_mode<I: IpExt>(mode: GmpMode) -> FakeCtx<I> {
 
         // We start with enabled true to make tests easier to write.
         let enabled = true;
-        bindings_ctx.rng = rand::make_rng();
+        bindings_ctx.rng = netstack3_base::testutil::FakeCryptoRng::from_os_rng();
         FakeGmpContext {
             inner: FakeGmpContextInner::default(),
             enabled,

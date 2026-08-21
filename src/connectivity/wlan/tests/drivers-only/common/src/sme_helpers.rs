@@ -4,7 +4,7 @@
 //
 use fidl_fuchsia_wlan_ieee80211 as fidl_ieee80211;
 use fidl_fuchsia_wlan_sme as fidl_sme;
-use rand::RngExt as _;
+use rand::Rng;
 use rand::distr::Alphanumeric;
 use std::sync::LazyLock;
 

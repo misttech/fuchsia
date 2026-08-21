@@ -10,7 +10,7 @@ use fidl_fuchsia_mem as fmem;
 use fuchsia_component::client::{connect_to_service_instance, open_service_at};
 use fuchsia_fs::directory::{WatchEvent, Watcher};
 use futures::StreamExt;
-use rand::RngExt as _;
+use rand::Rng;
 use spi_system_test_config::Config;
 use zx::Status;
 

@@ -1142,6 +1142,7 @@ pub mod test_utils {
     use futures::StreamExt;
     use futures::channel::mpsc;
     use ieee80211::{MacAddrBytes, Ssid};
+    use rand::Rng as _;
     use wlan_common::random_bss_description;
 
     pub static FAKE_IFACE_RESPONSE: fidl_device_service::QueryIfaceResponse =

@@ -535,7 +535,7 @@ mod tests {
     use cm_rust::*;
     use cm_rust_testing::*;
     use fidl_fuchsia_io as fio;
-    use rand::RngExt as _;
+    use rand::Rng;
     use rand::distr::Alphanumeric;
 
     #[fuchsia::test]

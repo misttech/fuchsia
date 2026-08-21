@@ -17,6 +17,7 @@ use fullmac_helpers::recorded_request_stream::FullmacRequest;
 use fullmac_helpers::{COMPATIBLE_OPEN_BSS, COMPATIBLE_WPA2_BSS, COMPATIBLE_WPA3_BSS};
 use futures::StreamExt;
 use ieee80211::{MacAddr, MacAddrBytes};
+use rand::Rng;
 use wlan_common::random_fidl_bss_description;
 use wlan_rsn::key::Tk;
 use wlan_rsn::key::exchange::Key;

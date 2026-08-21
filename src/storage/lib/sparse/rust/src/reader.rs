@@ -198,8 +198,8 @@ impl<R: Read + Seek> Seek for SparseReader<R> {
 mod test {
     use crate::builder::{DataSource, SparseImageBuilder};
     use crate::reader::SparseReader;
-    use rand::Rng as _;
     use rand::rngs::SmallRng;
+    use rand::{RngCore, SeedableRng};
     use std::io::{Read as _, Seek as _, SeekFrom, Write as _};
     use tempfile::{NamedTempFile, TempDir};
 
@@ -334,7 +334,7 @@ mod test {
 
         // Generate a large temporary file
         let (mut file, _temp_path) = NamedTempFile::new_in(&tmpdir).unwrap().into_parts();
-        let mut rng: SmallRng = rand::make_rng();
+        let mut rng = SmallRng::from_os_rng();
         let mut data = Vec::<u8>::new();
         data.resize(100 * 4096, 0);
         rng.fill_bytes(&mut data);
@@ -379,7 +379,7 @@ mod test {
 
         // Generate a large temporary file
         let (mut file, _temp_path) = NamedTempFile::new_in(&tmpdir).unwrap().into_parts();
-        let mut rng: SmallRng = rand::make_rng();
+        let mut rng = SmallRng::from_os_rng();
         let mut data = Vec::<u8>::new();
         data.resize(100 * 4096, 0);
         rng.fill_bytes(&mut data);

@@ -73,7 +73,8 @@ use futures::{FutureExt as _, StreamExt as _};
 use log::{debug, error, info, warn};
 use netstack3_core::ChecksumOffloadResult;
 use packet::BufferMut;
-use rand::rngs::SysRng;
+use rand::rngs::OsRng;
+use rand::{CryptoRng, RngCore, TryRngCore as _};
 use util::{ConversionContext, IntoFidl as _};
 
 use devices::{
@@ -499,34 +500,32 @@ pub(crate) struct RngImpl;
 
 impl RngImpl {
     fn new() -> Self {
-        // A change detector in case SysRng is no longer a ZST and we should keep
+        // A change detector in case OsRng is no longer a ZST and we should keep
         // state for it inside RngImpl.
-        let SysRng {} = SysRng::default();
+        let OsRng {} = OsRng::default();
         RngImpl {}
     }
 }
 
-/// [`Rng`] for `RngImpl` relies entirely on the operating system to
+/// [`RngCore`] for `RngImpl` relies entirely on the operating system to
 /// generate random numbers and it needs not keep any state itself.
 ///
-/// [`SysRng`] is a zero-sized type that provides randomness from the OS.
-impl rand::TryRng for RngImpl {
-    type Error = core::convert::Infallible;
-
-    fn try_next_u32(&mut self) -> Result<u32, Self::Error> {
-        Ok(SysRng.try_next_u32().unwrap())
+/// [`OsRng`] is a zero-sized type that provides randomness from the OS.
+impl RngCore for RngImpl {
+    fn next_u32(&mut self) -> u32 {
+        OsRng::default().try_next_u32().unwrap()
     }
 
-    fn try_next_u64(&mut self) -> Result<u64, Self::Error> {
-        Ok(SysRng.try_next_u64().unwrap())
+    fn next_u64(&mut self) -> u64 {
+        OsRng::default().try_next_u64().unwrap()
     }
 
-    fn try_fill_bytes(&mut self, dest: &mut [u8]) -> Result<(), Self::Error> {
-        Ok(SysRng.try_fill_bytes(dest).unwrap())
+    fn fill_bytes(&mut self, dest: &mut [u8]) {
+        OsRng::default().try_fill_bytes(dest).unwrap()
     }
 }
 
-impl rand::TryCryptoRng for RngImpl {}
+impl CryptoRng for RngImpl where OsRng: rand::TryCryptoRng {}
 
 impl RngContext for BindingsCtx {
     type Rng<'a> = RngImpl;

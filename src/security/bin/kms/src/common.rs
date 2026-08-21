@@ -145,7 +145,7 @@ macro_rules! debug_err_fn_no_argument {
 
 #[cfg(test)]
 pub fn generate_random_data(size: u32) -> Vec<u8> {
-    use rand::RngExt as _;
+    use rand::Rng;
     let mut random_data = Vec::new();
     let mut rng = rand::rng();
     for _i in 0..size {

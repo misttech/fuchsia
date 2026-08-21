@@ -4,9 +4,9 @@
 
 use async_trait::async_trait;
 use log::{debug, info};
-use rand::RngExt as _;
+use rand::Rng;
 use rand::rngs::SmallRng;
-use rand::seq::IndexedRandom as _;
+use rand::seq::IndexedRandom;
 use storage_stress_test_utils::io::Directory;
 use stress_test::actor::{Actor, ActorError};
 use zx::Status;
@@ -43,7 +43,7 @@ impl Actor for DeletionActor {
         debug!("Deleting {} blobs", num_blobs_to_delete);
 
         // Randomly select blobs from the list and remove them
-        let blobs_to_delete = blobs.sample(&mut self.rng, num_blobs_to_delete);
+        let blobs_to_delete = blobs.choose_multiple(&mut self.rng, num_blobs_to_delete);
         for blob in blobs_to_delete {
             match self.root_dir.remove(blob).await {
                 Ok(()) => {}

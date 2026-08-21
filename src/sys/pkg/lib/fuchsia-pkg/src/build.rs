@@ -203,7 +203,7 @@ mod test_build_with_file_system {
     use crate::test::*;
     use assert_matches::assert_matches;
     use proptest::prelude::*;
-    use rand::{RngExt as _, SeedableRng as _};
+    use rand::SeedableRng as _;
     use std::collections::{HashMap, HashSet};
     use std::fs::File;
     use tempfile::TempDir;
@@ -474,7 +474,7 @@ mod test_build {
     use crate::MetaPackage;
     use crate::test::*;
     use proptest::prelude::*;
-    use rand::{RngExt as _, SeedableRng as _};
+    use rand::SeedableRng as _;
     use std::io::Write;
     use tempfile::TempDir;
 

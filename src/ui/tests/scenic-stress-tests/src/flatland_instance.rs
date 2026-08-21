@@ -4,20 +4,19 @@
 
 use crate::input_listener;
 use fidl::endpoints::*;
-use fidl_fuchsia_math as fmath;
-use fidl_fuchsia_ui_composition as flatland;
-use fidl_fuchsia_ui_pointer as fpointer;
-use fidl_fuchsia_ui_views as fviews;
-use fuchsia_async as fasync;
 use fuchsia_component_test::ScopedInstance;
-use fuchsia_scenic as scenic;
 use futures::StreamExt;
 use log::debug;
-use rand::RngExt as _;
 use rand::rngs::SmallRng;
-use rand::seq::IndexedMutRandom as _;
-use std::sync::Arc;
+use rand::seq::IndexedMutRandom;
+use rand::Rng;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Arc;
+use {
+    fidl_fuchsia_math as fmath, fidl_fuchsia_ui_composition as flatland,
+    fidl_fuchsia_ui_pointer as fpointer, fidl_fuchsia_ui_views as fviews, fuchsia_async as fasync,
+    fuchsia_scenic as scenic,
+};
 
 pub const DISPLAY_WIDTH: u16 = 1024;
 pub const DISPLAY_HEIGHT: u16 = 600;

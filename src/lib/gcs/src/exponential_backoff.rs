@@ -7,8 +7,8 @@
 use crate::error::GcsError;
 use anyhow::Error;
 use fuchsia_backoff::Backoff;
-use rand::RngExt as _;
 use rand::rngs::StdRng;
+use rand::{Rng, SeedableRng};
 use std::cmp;
 use std::time::Duration;
 
@@ -63,7 +63,7 @@ impl Backoff<Error> for ExponentialBackoff {
 /// retries.
 pub fn default_backoff_strategy() -> ExponentialBackoff {
     ExponentialBackoff {
-        rng: rand::make_rng(),
+        rng: StdRng::from_os_rng(),
         backoff_base: 4,
         backoff_budget: 5000,
         transient_errors: 0,

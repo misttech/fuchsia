@@ -762,6 +762,7 @@ mod tests {
     use fuchsia_inspect as inspect;
     use futures::task::Poll;
     use ieee80211_testutils::BSSID_REGEX;
+    use rand::Rng;
     use std::pin::pin;
     use std::rc::Rc;
     use std::sync::LazyLock;

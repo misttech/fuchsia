@@ -55,7 +55,6 @@ rust_library(
     crate_features = [
         "cipher",
         "default",
-        "rng",
     ],
     crate_root = "src/lib.rs",
     edition = "2024",
@@ -80,7 +79,6 @@ rust_library(
     deps = [
         "//third_party/rust_crates/vendor/cfg-if-1.0.4:cfg_if",
         "//third_party/rust_crates/vendor/cipher-0.5.2:cipher",
-        "//third_party/rust_crates/vendor/rand_core-0.10.1:rand_core",
     ] + select({
         "@rules_rust//rust/platform:x86_64-unknown-fuchsia": [
             "//third_party/rust_crates/vendor/cpufeatures-0.3.0:cpufeatures",  # cfg(any(target_arch = "x86_64", target_arch = "x86"))

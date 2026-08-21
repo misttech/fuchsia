@@ -10,7 +10,7 @@ use fidl_fuchsia_power_broker as fbroker;
 use fidl_fuchsia_power_topology_test as fpt;
 use fuchsia_component::client::connect_to_protocol_sync;
 
-use rand::RngExt as _;
+use rand::Rng;
 use std::sync::Arc;
 
 #[inline(always)]

@@ -328,7 +328,7 @@ mod tests {
     use futures::stream::{StreamExt, StreamFuture};
     use futures::task::Poll;
     use ieee80211::Ssid;
-    use rand::{Rng as _, RngExt as _};
+    use rand::Rng as _;
     use std::convert::{TryFrom, TryInto};
     use std::pin::pin;
     use wlan_common::channel::{Bandwidth, Channel};

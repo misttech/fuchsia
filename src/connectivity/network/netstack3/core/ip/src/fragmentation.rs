@@ -28,7 +28,7 @@ use packet_formats::ipv4::{
 use packet_formats::ipv6::{
     Ipv6PacketBuilder, Ipv6PacketBuilderBeforeFragment, Ipv6PacketBuilderWithFragmentHeader,
 };
-use rand::RngExt as _;
+use rand::Rng;
 
 /// The maximum fragment offset that can be expressed in both IPv4 and IPv6
 /// headers. The maximum transmissible body is this value plus the maximum bytes

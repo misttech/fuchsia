@@ -5,8 +5,8 @@
 use crate::flatland_instance::FlatlandInstance;
 use async_trait::async_trait;
 use fuchsia_component_test::RealmInstance;
-use rand::RngExt as _;
 use rand::rngs::SmallRng;
+use rand::Rng;
 use std::sync::Arc;
 use stress_test::actor::{Actor, ActorError};
 

@@ -13,7 +13,7 @@ use fidl_fuchsia_wlan_policy as fidl_policy;
 use fidl_fuchsia_wlan_sme as fidl_sme;
 use ieee80211::{Bssid, MacAddrBytes, Ssid};
 use rand::distr::{Alphanumeric, SampleString};
-use rand::{Rng as _, RngExt as _};
+use rand::{Rng as _, RngCore};
 use std::collections::HashMap;
 use wlan_common::bss::BssDescription;
 use wlan_common::channel::{Bandwidth, Channel};

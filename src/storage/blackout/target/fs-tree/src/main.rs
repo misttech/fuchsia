@@ -16,7 +16,7 @@ use fs_management::filesystem::{
 use fs_management::{Fxfs, Minfs};
 use fuchsia_component::client::connect_to_protocol;
 use rand::rngs::StdRng;
-use rand::{RngExt as _, SeedableRng as _};
+use rand::{Rng, SeedableRng};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 

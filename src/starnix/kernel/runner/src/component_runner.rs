@@ -18,7 +18,7 @@ use fuchsia_runtime::{HandleInfo, HandleType};
 use futures::channel::oneshot;
 use futures::{FutureExt, StreamExt};
 use rand::distr::Alphanumeric;
-use rand::{RngExt as _, rng};
+use rand::{Rng, rng};
 use serde::Deserialize;
 use serde::de::Error as _;
 use starnix_core::execution::{create_init_child_process, execute_task_with_prerun_result};

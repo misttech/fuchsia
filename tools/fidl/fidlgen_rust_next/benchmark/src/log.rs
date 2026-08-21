@@ -3,10 +3,9 @@
 // found in the LICENSE file.
 
 use crate::{Generate, generate_vec, make_rng};
-use fidl_next_test_benchmark as ftb_next;
-use fidl_test_benchmark as ftb;
+use {fidl_next_test_benchmark as ftb_next, fidl_test_benchmark as ftb};
 
-use rand::{Rng, RngExt as _};
+use rand::Rng;
 
 impl_generate! {
     for ftb::Address, ftb_next::Address => rng {

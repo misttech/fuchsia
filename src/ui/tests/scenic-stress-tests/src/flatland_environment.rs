@@ -13,7 +13,7 @@ use fidl_fuchsia_ui_composition as flatland;
 use fidl_fuchsia_ui_pointerinjector as pointerinjector;
 use fuchsia_component_test::{Capability, ChildOptions, RealmBuilder, RealmInstance, Ref, Route};
 use futures::lock::Mutex;
-use rand::SeedableRng as _;
+use rand::SeedableRng;
 use rand::rngs::SmallRng;
 use std::sync::Arc;
 use std::time::Duration;

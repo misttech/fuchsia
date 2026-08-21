@@ -96,7 +96,7 @@ impl<'de> Deserialize<'de> for InstanceId {
 mod tests {
     use super::*;
     use proptest::prelude::*;
-    use rand::{Rng as _, SeedableRng as _};
+    use rand::SeedableRng as _;
     use test_case::test_case;
 
     #[test]

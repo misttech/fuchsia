@@ -8,7 +8,7 @@
 
 use anyhow::{Result, anyhow};
 use nix::sys::socket::{AddressFamily, SockFlag, SockType, VsockAddr, connect, socket};
-use rand::{RngExt as _, distr};
+use rand::{Rng as _, distr};
 use std::fs::File;
 use std::io::{BufRead, ErrorKind, Write};
 use std::os::fd::AsRawFd;

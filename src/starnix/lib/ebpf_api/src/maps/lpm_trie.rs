@@ -353,7 +353,8 @@ mod internal {
             // SAFETY: `RwMapLock` wraps `HeapState` to ensure access to
             // the heap is synchronized.
             unsafe {
-                let lpm_trie_header = store.buf.ptr().get_ptr::<LpmTrieHeader>(0).unwrap().deref();
+                let lpm_trie_header =
+                    store.buf.ptr().get_ptr::<LpmTrieHeader>(0).unwrap().deref();
                 RwMapLock::new(
                     &lpm_trie_header.heap_lock,
                     store.buf.vmo().as_handle_ref(),
@@ -520,7 +521,8 @@ mod internal {
             // SAFETY: `RwMapLock` wraps `LpmTrieState` to ensure access to
             // the free list is synchronized.
             unsafe {
-                let lpm_trie_header = store.buf.ptr().get_ptr::<LpmTrieHeader>(0).unwrap().deref();
+                let lpm_trie_header =
+                    store.buf.ptr().get_ptr::<LpmTrieHeader>(0).unwrap().deref();
                 RwMapLock::new(
                     &lpm_trie_header.lock,
                     store.buf.vmo().as_handle_ref(),
@@ -1032,7 +1034,7 @@ impl MapImpl for LpmTrie {
 #[cfg(test)]
 mod test {
     use super::*;
-    use rand::seq::SliceRandom as _;
+    use rand::seq::SliceRandom;
     use test_case::test_case;
     use zerocopy::{FromBytes, Immutable, IntoBytes};
 

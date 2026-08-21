@@ -18,7 +18,7 @@ use fuchsia_runtime::{HandleType, take_startup_handle};
 use futures::TryStreamExt;
 use futures::channel::oneshot;
 use log::{error, warn};
-use rand::RngExt as _;
+use rand::Rng;
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::rc::Rc;

@@ -54,7 +54,9 @@ rust_library(
     ),
     crate_features = [
         "alloc",
+        "default",
         "os_rng",
+        "small_rng",
         "std",
         "std_rng",
         "thread_rng",

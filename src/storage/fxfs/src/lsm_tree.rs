@@ -596,7 +596,7 @@ mod tests {
     use fuchsia_sync::Mutex;
 
     use rand::rng;
-    use rand::seq::SliceRandom as _;
+    use rand::seq::SliceRandom;
 
     use std::sync::Arc;
 

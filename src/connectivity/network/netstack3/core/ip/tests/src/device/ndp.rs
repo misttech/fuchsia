@@ -33,7 +33,7 @@ use packet_formats::testutil::{
     parse_ethernet_frame, parse_icmp_packet_in_ip_packet_in_ethernet_frame,
 };
 use packet_formats::utils::NonZeroDuration;
-use rand::RngExt as _;
+use rand::Rng;
 use test_case::test_case;
 use zerocopy::SplitByteSlice;
 

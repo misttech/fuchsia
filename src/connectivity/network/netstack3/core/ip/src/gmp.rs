@@ -55,7 +55,7 @@ use netstack3_base::{
     InstantBindingsTypes, LocalTimerHeap, RngContext, TimerBindingsTypes, TimerContext,
     WeakDeviceIdentifier,
 };
-use rand::{Rng, RngExt as _};
+use rand::Rng;
 
 /// The result of joining a multicast group.
 ///

@@ -336,7 +336,7 @@ mod tests {
     use super::*;
     use crate::MmioOperand;
     use fuchsia_sync::RwLock;
-    use rand::RngExt as _;
+    use rand::Rng;
     use std::sync::Barrier;
     use std::thread::sleep;
     use std::time::Duration;

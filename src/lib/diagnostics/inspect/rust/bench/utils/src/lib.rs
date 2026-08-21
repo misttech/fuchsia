@@ -12,7 +12,7 @@ use inspect_runtime::TreeServerSendPreference;
 use inspect_runtime::service::handle_request_stream;
 use rand::distr::Uniform;
 use rand::rngs::StdRng;
-use rand::{Rng, RngExt as _, SeedableRng};
+use rand::{Rng, SeedableRng};
 use std::borrow::Cow;
 use std::collections::{HashSet, VecDeque};
 use std::future::IntoFuture;

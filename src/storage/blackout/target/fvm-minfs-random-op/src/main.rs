@@ -10,7 +10,7 @@ use crypt_policy::Policy;
 use fidl_fuchsia_fs_startup::{CheckOptions, CreateOptions, MountOptions};
 use fs_management::filesystem::Filesystem;
 use fs_management::{DATA_TYPE_GUID, Fvm};
-use rand::{Rng, RngExt as _};
+use rand::Rng;
 use std::sync::Arc;
 use zxcrypt_crypt::with_crypt_service;
 

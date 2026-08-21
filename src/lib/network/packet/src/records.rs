@@ -2670,7 +2670,7 @@ pub mod options {
             //   - 1. be at least as large as the original `pos`.
             //   - 2. be in form of x * n + y for some integer n.
             //   - 3. for any number in between, they shouldn't be in form of x * n + y.
-            use rand::RngExt as _;
+            use rand::Rng;
             let mut rng = rand::rng();
             for _ in 0..100_000 {
                 let x = rng.random_range(1usize..256);

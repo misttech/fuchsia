@@ -10,7 +10,7 @@ use fidl_fuchsia_wlan_policy::{
 use futures::future::BoxFuture;
 use futures::task::{Context, Poll};
 use futures::{Future, FutureExt, Stream, StreamExt};
-use rand::seq::IteratorRandom as _;
+use rand::seq::IteratorRandom;
 use std::collections::HashMap;
 use std::pin::Pin;
 use thiserror::Error;
@@ -121,7 +121,7 @@ impl BssCache for RealBssCache {
         if deduped_list.len() > MAX_BSSES {
             let mut rng = rand::rng();
             self.bss_map =
-                deduped_list.into_iter().sample(&mut rng, MAX_BSSES).into_iter().collect();
+                deduped_list.into_iter().choose_multiple(&mut rng, MAX_BSSES).into_iter().collect();
         } else {
             self.bss_map = deduped_list;
         }

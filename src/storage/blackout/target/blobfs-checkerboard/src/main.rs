@@ -12,7 +12,7 @@ use fs_management::filesystem::Filesystem;
 use fuchsia_fs::directory::readdir;
 use rand::distr::Standard;
 use rand::rngs::StdRng;
-use rand::{Rng, RngExt as _, SeedableRng as _};
+use rand::{Rng, SeedableRng};
 use std::collections::HashMap;
 use std::sync::Arc;
 

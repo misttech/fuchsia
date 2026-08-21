@@ -4,10 +4,9 @@
 
 use crate::FullmacDriverFixture;
 use assert_matches::assert_matches;
-use fidl_fuchsia_wlan_common as fidl_common;
-use fidl_fuchsia_wlan_fullmac as fidl_fullmac;
-use fullmac_helpers::config::{FullmacDriverConfig, default_fullmac_query_info};
-use rand::seq::IndexedRandom as _;
+use fullmac_helpers::config::{default_fullmac_query_info, FullmacDriverConfig};
+use rand::seq::IndexedRandom;
+use {fidl_fuchsia_wlan_common as fidl_common, fidl_fuchsia_wlan_fullmac as fidl_fullmac};
 
 #[fuchsia::test]
 async fn test_generic_sme_query() {

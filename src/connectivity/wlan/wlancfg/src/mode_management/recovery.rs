@@ -570,7 +570,7 @@ mod tests {
     use super::*;
     use fuchsia_async::{MonotonicInstant, TestExecutor};
 
-    use rand::RngExt as _;
+    use rand::Rng;
     use test_case::test_case;
 
     #[fuchsia::test]

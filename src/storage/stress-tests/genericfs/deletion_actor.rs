@@ -4,9 +4,9 @@
 
 use async_trait::async_trait;
 use log::{debug, info};
-use rand::RngExt as _;
+use rand::Rng;
 use rand::rngs::SmallRng;
-use rand::seq::IndexedRandom as _;
+use rand::seq::IndexedRandom;
 use storage_stress_test_utils::io::Directory;
 use stress_test::actor::{Actor, ActorError};
 use zx::Status;
@@ -44,7 +44,7 @@ impl Actor for DeletionActor {
         debug!("Deleting {} files", num_files_to_delete);
 
         // Randomly select files from the list and remove them
-        let files_to_delete = files.sample(&mut self.rng, num_files_to_delete);
+        let files_to_delete = files.choose_multiple(&mut self.rng, num_files_to_delete);
         for file in files_to_delete {
             let res = self.home_dir.remove(file).await;
             match &res {

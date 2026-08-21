@@ -206,7 +206,7 @@ impl<T: PartialEq> EventHistory<T> {
 mod tests {
     use super::*;
     use fuchsia_async::TestExecutor;
-    use rand::RngExt as _;
+    use rand::Rng;
     use test_util::{assert_gt, assert_lt};
 
     #[fuchsia::test]

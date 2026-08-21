@@ -554,8 +554,8 @@ mod tests {
     use fuchsia_async as fasync;
     use futures::future::join_all;
     use futures::pin_mut;
-    use rand::seq::IndexedRandom as _;
-    use rand::{RngExt as _, rng};
+    use rand::seq::IndexedRandom;
+    use rand::{Rng, rng};
     use std::sync::Arc;
     use std::sync::atomic::{AtomicBool, Ordering};
 

@@ -12,7 +12,7 @@ use fidl_fuchsia_wlan_ieee80211 as fidl_ieee80211;
 use fidl_fuchsia_wlan_sme as fidl_sme;
 use fullmac_helpers::config::FullmacDriverConfig;
 use fullmac_helpers::recorded_request_stream::FullmacRequest;
-use rand::seq::IndexedRandom as _;
+use rand::seq::IndexedRandom;
 use wlan_common::ie::rsn::rsne;
 
 /// Many tests require a started BSS. This helper function creates and starts an AP in the test

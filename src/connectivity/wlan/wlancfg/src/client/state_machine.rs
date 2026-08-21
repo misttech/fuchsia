@@ -1254,6 +1254,7 @@ mod tests {
     use futures::Future;
     use futures::task::Poll;
     use ieee80211::MacAddrBytes;
+    use rand::Rng;
     use std::pin::pin;
     use wlan_common::random_fidl_bss_description;
     use wlan_metrics_registry::PolicyDisconnectionMigratedMetricDimensionReason;

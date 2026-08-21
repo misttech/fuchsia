@@ -6,7 +6,7 @@ use block_server::async_interface::Interface;
 use block_server::{DeviceInfo, ReadOptions, WriteFlags, WriteOptions};
 use fuchsia_sync::{Mutex, MutexGuard};
 use fxfs_crypto::{FscryptSoftwareInoLblk32FileCipher, UnwrappedKey};
-use rand::RngExt as _;
+use rand::Rng as _;
 use std::borrow::Cow;
 use std::collections::BTreeMap;
 use std::num::NonZero;

@@ -8,7 +8,7 @@ use argh::FromArgs;
 use fidl_fuchsia_io as fio;
 use fuchsia_trace as trace;
 use fuchsiaperf::{Direction, FuchsiaPerfBenchmarkResult, Unit};
-use rand::RngExt as _;
+use rand::Rng as _;
 use std::fs::OpenOptions;
 use std::path::Path;
 use std::sync::Arc;

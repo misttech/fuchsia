@@ -12,7 +12,7 @@ use num::CheckedMul;
 use num::rational::Ratio;
 use packet::serialize::InnerPacketBuilder;
 use packet_formats_dhcp::v6;
-use rand::{Rng, RngExt as _};
+use rand::Rng;
 use std::cmp::{Eq, Ord, PartialEq, PartialOrd};
 use std::collections::hash_map::Entry;
 use std::collections::{BinaryHeap, HashMap, HashSet};
@@ -6160,7 +6160,7 @@ mod tests {
 
     use super::*;
     use packet::ParsablePacket;
-    use rand::TryRng;
+    use rand::RngCore;
     use test_case::test_case;
     use testconsts::*;
     use testutil::{
@@ -6180,24 +6180,21 @@ mod tests {
         }
     }
 
-    impl TryRng for StepRng {
-        type Error = core::convert::Infallible;
-
-        fn try_next_u32(&mut self) -> Result<u32, Self::Error> {
-            Ok(self.try_next_u64()? as u32)
+    impl RngCore for StepRng {
+        fn next_u32(&mut self) -> u32 {
+            self.next_u64() as u32
         }
 
-        fn try_next_u64(&mut self) -> Result<u64, Self::Error> {
+        fn next_u64(&mut self) -> u64 {
             let r = self.state;
             self.state = self.state.wrapping_add(self.increment);
-            Ok(r)
+            r
         }
 
-        fn try_fill_bytes(&mut self, dst: &mut [u8]) -> Result<(), Self::Error> {
+        fn fill_bytes(&mut self, dst: &mut [u8]) {
             for byte in dst {
-                *byte = self.try_next_u64()? as u8;
+                *byte = self.next_u64() as u8;
             }
-            Ok(())
         }
     }
 

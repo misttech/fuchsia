@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{Result, format_err};
+use anyhow::{format_err, Result};
 use fidl::endpoints::create_request_stream;
 use fidl_fuchsia_stresstest::{
     Action as FidlAction, ActionIteratorMarker, ActionIteratorRequest, ActorRequest,
@@ -11,8 +11,8 @@ use fidl_fuchsia_stresstest::{
 use fuchsia_component::server::ServiceFs;
 use futures::future::BoxFuture;
 use futures::{StreamExt, TryStreamExt};
-use rand::SeedableRng as _;
 use rand::rngs::SmallRng;
+use rand::SeedableRng;
 use rust_measure_tape_for_action::Measurable;
 use zx::sys::ZX_CHANNEL_MAX_MSG_BYTES;
 

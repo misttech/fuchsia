@@ -6,8 +6,8 @@ use crate::resolved_driver::ResolvedDriver;
 use fuchsia_async as fasync;
 use futures::SinkExt;
 use rand::rngs::SmallRng;
-use rand::seq::SliceRandom as _;
-use rand::{Rng as _, SeedableRng as _};
+use rand::seq::SliceRandom;
+use rand::{RngCore, SeedableRng};
 
 pub struct Session {
     sender: futures::channel::mpsc::UnboundedSender<Vec<ResolvedDriver>>,
