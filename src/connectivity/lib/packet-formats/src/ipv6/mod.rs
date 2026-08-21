@@ -1572,12 +1572,13 @@ impl<B: Ipv6HeaderBuilder, C: IpSerializationContext<Ipv6>> PartialPacketBuilder
 ///
 /// Panics if the provided header is too small to hold a valid header.
 pub(crate) fn reassemble_fragmented_packet<
+    'a,
     B: SplitByteSliceMut,
     BV: BufferViewMut<B>,
-    I: Iterator<Item = Vec<u8>>,
+    I: Iterator<Item = &'a [u8]>,
 >(
     mut buffer: BV,
-    header: Vec<u8>,
+    header: &[u8],
     body_fragments: I,
 ) -> IpParseResult<Ipv6, ()> {
     assert!(header.len() >= IPV6_FIXED_HDR_LEN);
@@ -1585,12 +1586,12 @@ pub(crate) fn reassemble_fragmented_packet<
     let bytes = buffer.as_mut();
 
     // First, copy over the header data.
-    bytes[0..header.len()].copy_from_slice(&header[..]);
+    bytes[0..header.len()].copy_from_slice(header);
     let mut byte_count = header.len();
 
     // Next, copy over the body fragments.
     for p in body_fragments {
-        bytes[byte_count..byte_count + p.len()].copy_from_slice(&p[..]);
+        bytes[byte_count..byte_count + p.len()].copy_from_slice(p);
         byte_count += p.len();
     }
 

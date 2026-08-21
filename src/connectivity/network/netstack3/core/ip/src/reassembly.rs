@@ -833,12 +833,13 @@ impl<I: ReassemblyIpExt, BT: FragmentBindingsTypes> IpPacketFragmentCache<I, BT>
         self.untrack_data(&data);
 
         // If we are not missing fragments, we must have header data.
-        assert_matches!(data.header, Some(_));
+        let header = data.header.expect("should have header if we're not missing fragments");
 
         // TODO(https://github.com/rust-lang/rust/issues/59278): Use
         // `BinaryHeap::into_iter_sorted`.
-        let body_fragments = data.body_fragments.into_sorted_vec().into_iter().map(|x| x.data);
-        I::Packet::reassemble_fragmented_packet(buffer, data.header.unwrap(), body_fragments)
+        let fragments = data.body_fragments.into_sorted_vec();
+        let body_fragments = fragments.iter().map(|x| x.data.as_slice());
+        I::Packet::reassemble_fragmented_packet(buffer, header.as_slice(), body_fragments)
             .map_err(|_| FragmentReassemblyError::PacketParsingError)
     }
 

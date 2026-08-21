@@ -268,9 +268,9 @@ pub trait IpPacket<B: SplitByteSlice, I: IpExt>:
     /// # Panics
     ///
     /// Panics if the provided header is too small to hold a valid header.
-    fn reassemble_fragmented_packet<BV: BufferViewMut<B>, IT: Iterator<Item = Vec<u8>>>(
+    fn reassemble_fragmented_packet<'a, BV: BufferViewMut<B>, IT: Iterator<Item = &'a [u8]>>(
         buffer: BV,
-        header: Vec<u8>,
+        header: &[u8],
         body_fragments: IT,
     ) -> IpParseResult<I, ()>
     where
@@ -315,9 +315,9 @@ impl<B: SplitByteSlice> IpPacket<B, Ipv4> for Ipv4Packet<B> {
         IpAddr::V4(self)
     }
 
-    fn reassemble_fragmented_packet<BV: BufferViewMut<B>, IT: Iterator<Item = Vec<u8>>>(
+    fn reassemble_fragmented_packet<'a, BV: BufferViewMut<B>, IT: Iterator<Item = &'a [u8]>>(
         buffer: BV,
-        header: Vec<u8>,
+        header: &[u8],
         body_fragments: IT,
     ) -> IpParseResult<Ipv4, ()>
     where
@@ -366,9 +366,9 @@ impl<B: SplitByteSlice> IpPacket<B, Ipv6> for Ipv6Packet<B> {
     fn as_ip_addr_ref(&self) -> IpAddr<&'_ Ipv4Packet<B>, &'_ Self> {
         IpAddr::V6(self)
     }
-    fn reassemble_fragmented_packet<BV: BufferViewMut<B>, IT: Iterator<Item = Vec<u8>>>(
+    fn reassemble_fragmented_packet<'a, BV: BufferViewMut<B>, IT: Iterator<Item = &'a [u8]>>(
         buffer: BV,
-        header: Vec<u8>,
+        header: &[u8],
         body_fragments: IT,
     ) -> IpParseResult<Ipv6, ()>
     where
