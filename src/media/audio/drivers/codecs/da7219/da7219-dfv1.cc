@@ -89,7 +89,7 @@ zx_status_t Driver::Bind(void* ctx, zx_device_t* parent) {
       ddk::MakeStrProperty(bind_fuchsia::PLATFORM_DEV_VID, static_cast<uint32_t>(PDEV_VID_DIALOG)),
       ddk::MakeStrProperty(bind_fuchsia::PLATFORM_DEV_DID,
                            static_cast<uint32_t>(PDEV_DID_DIALOG_DA7219)),
-      ddk::MakeStrProperty(bind_fuchsia::CODEC_INSTANCE, 1u),
+      ddk::MakeStrProperty(bind_fuchsia::ID, 1u),
   };
   status = output_driver->DdkAdd(ddk::DeviceAddArgs("DA7219-output").set_str_props(output_props));
   if (status != ZX_OK) {
@@ -103,7 +103,7 @@ zx_status_t Driver::Bind(void* ctx, zx_device_t* parent) {
       ddk::MakeStrProperty(bind_fuchsia::PLATFORM_DEV_VID, static_cast<uint32_t>(PDEV_VID_DIALOG)),
       ddk::MakeStrProperty(bind_fuchsia::PLATFORM_DEV_DID,
                            static_cast<uint32_t>(PDEV_DID_DIALOG_DA7219)),
-      ddk::MakeStrProperty(bind_fuchsia::CODEC_INSTANCE, 2u),
+      ddk::MakeStrProperty(bind_fuchsia::ID, 2u),
   };
   status = input_driver->DdkAdd(ddk::DeviceAddArgs("DA7219-input").set_str_props(input_props));
   if (status != ZX_OK) {

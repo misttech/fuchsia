@@ -69,16 +69,16 @@ optional parent "pin-states-0" {
 
 optional parent "codec-01" {
   fuchsia.Service == "fuchsia.hardware.audio.CodecService";
-  fuchsia.BIND_CODEC_INSTANCE == 1;
+  fuchsia.ID == 1;
 }
 
 optional parent "codec-02" {
   fuchsia.Service == "fuchsia.hardware.audio.CodecService";
-  fuchsia.BIND_CODEC_INSTANCE == 2;
+  fuchsia.ID == 2;
 }
 
 optional parent "codec-03" {
   fuchsia.Service == "fuchsia.hardware.audio.CodecService";
-  fuchsia.BIND_CODEC_INSTANCE == 3;
+  fuchsia.ID == 3;
 }
 

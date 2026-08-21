@@ -57,12 +57,12 @@ zx::result<> AudioCodecVisitor::Visit(fdf_devicetree::Node& node,
     std::vector bind_rules = {
         fdf::MakeAcceptBindRule(bind_fuchsia_hardware_audio::CODECSERVICE,
                                 bind_fuchsia_hardware_audio::CODECSERVICE_ZIRCONTRANSPORT),
-        fdf::MakeAcceptBindRule(bind_fuchsia::CODEC_INSTANCE, codec_instance),
+        fdf::MakeAcceptBindRule(bind_fuchsia::ID, codec_instance),
     };
     std::vector bind_properties = {
         fdf::MakeProperty2(bind_fuchsia_hardware_audio::CODECSERVICE,
                            bind_fuchsia_hardware_audio::CODECSERVICE_ZIRCONTRANSPORT),
-        fdf::MakeProperty2(bind_fuchsia::CODEC_INSTANCE, codec_instance),
+        fdf::MakeProperty2(bind_fuchsia::ID, codec_instance),
     };
 
     auto codec_spec = fuchsia_driver_framework::ParentSpec2{{bind_rules, bind_properties}};

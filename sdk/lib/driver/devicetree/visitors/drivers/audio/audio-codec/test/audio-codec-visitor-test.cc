@@ -78,14 +78,14 @@ TEST(AudioCodecVisitorTest, TestLinkingAndInstanceId) {
       {{
           fdf::MakeAcceptBindRule(bind_fuchsia_hardware_audio::CODECSERVICE,
                                   bind_fuchsia_hardware_audio::CODECSERVICE_ZIRCONTRANSPORT),
-          fdf::MakeAcceptBindRule(bind_fuchsia::CODEC_INSTANCE, 1u),
+          fdf::MakeAcceptBindRule(bind_fuchsia::ID, 1u),
       }},
       (*composite_spec.parents2())[1].bind_rules(), false));
   EXPECT_TRUE(fdf_devicetree::testing::CheckHasProperties(
       {{
           fdf::MakeProperty2(bind_fuchsia_hardware_audio::CODECSERVICE,
                              bind_fuchsia_hardware_audio::CODECSERVICE_ZIRCONTRANSPORT),
-          fdf::MakeProperty2(bind_fuchsia::CODEC_INSTANCE, 1u),
+          fdf::MakeProperty2(bind_fuchsia::ID, 1u),
       }},
       (*composite_spec.parents2())[1].properties(), false));
 
@@ -94,14 +94,14 @@ TEST(AudioCodecVisitorTest, TestLinkingAndInstanceId) {
       {{
           fdf::MakeAcceptBindRule(bind_fuchsia_hardware_audio::CODECSERVICE,
                                   bind_fuchsia_hardware_audio::CODECSERVICE_ZIRCONTRANSPORT),
-          fdf::MakeAcceptBindRule(bind_fuchsia::CODEC_INSTANCE, 2u),
+          fdf::MakeAcceptBindRule(bind_fuchsia::ID, 2u),
       }},
       (*composite_spec.parents2())[2].bind_rules(), false));
   EXPECT_TRUE(fdf_devicetree::testing::CheckHasProperties(
       {{
           fdf::MakeProperty2(bind_fuchsia_hardware_audio::CODECSERVICE,
                              bind_fuchsia_hardware_audio::CODECSERVICE_ZIRCONTRANSPORT),
-          fdf::MakeProperty2(bind_fuchsia::CODEC_INSTANCE, 2u),
+          fdf::MakeProperty2(bind_fuchsia::ID, 2u),
       }},
       (*composite_spec.parents2())[2].properties(), false));
 }

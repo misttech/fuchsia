@@ -23,12 +23,12 @@ zx_bind_inst_t codec_match[] = {
 };
 
 If there are more than one instance of the same codec in the system, also specify a non-zero
-BIND_CODEC_INSTANCE value also returned by the each instance of the driver in
+BIND_ID value also returned by the each instance of the driver in
 DriverIds.instance_count, for instance:
 
 zx_bind_inst_t codec_woofer_match[] = {
   BI_ABORT_IF(NE, BIND_PROTOCOL, ZX_PROTOCOL_CODEC),
   BI_ABORT_IF(NE, BIND_PLATFORM_DEV_VID, PDEV_VID_TI),
   BI_ABORT_IF(NE, BIND_PLATFORM_DEV_DID, PDEV_DID_TI_TAS5720),
-  BI_MATCH_IF(EQ, BIND_CODEC_INSTANCE, 1),
+  BI_MATCH_IF(EQ, BIND_ID, 1),
 };

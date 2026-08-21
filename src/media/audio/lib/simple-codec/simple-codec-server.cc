@@ -89,7 +89,7 @@ zx_status_t SimpleCodecServer::CreateAndAddToDdkInternal() {
     zx_device_str_prop_t props[] = {
         ddk::MakeStrProperty(bind_fuchsia::PLATFORM_DEV_VID, driver_ids_.vendor_id),
         ddk::MakeStrProperty(bind_fuchsia::PLATFORM_DEV_DID, driver_ids_.device_id),
-        ddk::MakeStrProperty(bind_fuchsia::CODEC_INSTANCE, driver_ids_.instance_count),
+        ddk::MakeStrProperty(bind_fuchsia::ID, driver_ids_.instance_count),
     };
     return DdkAdd(ddk::DeviceAddArgs(info.product_name.c_str())
                       .set_str_props(props)

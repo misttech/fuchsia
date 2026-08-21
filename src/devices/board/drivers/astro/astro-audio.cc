@@ -100,7 +100,7 @@ const std::vector<fuchsia_driver_framework::NodeProperty2> kCodecProps{
     fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.audio.CodecService"),
     fdf::MakeProperty2("fuchsia.hardware.audio.CodecService",
                        "fuchsia.hardware.audio.CodecService.ZirconTransport"),
-    fdf::MakeProperty2(bind_fuchsia::CODEC_INSTANCE, static_cast<uint32_t>(1)),
+    fdf::MakeProperty2(bind_fuchsia::ID, static_cast<uint32_t>(1)),
 };
 
 const std::vector<fuchsia_driver_framework::BindRule2> kI2cRules{

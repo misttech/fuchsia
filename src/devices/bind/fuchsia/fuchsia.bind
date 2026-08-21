@@ -100,9 +100,6 @@ uint BIND_SPI_CHIP_SELECT;
 // Init Step bind properties.
 uint BIND_INIT_STEP;
 
-// Codec bind properties.
-uint BIND_CODEC_INSTANCE;
-
 // Power sensor bind properties.
 uint BIND_POWER_SENSOR_DOMAIN;
 

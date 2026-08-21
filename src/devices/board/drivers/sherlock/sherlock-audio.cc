@@ -183,13 +183,13 @@ zx_status_t Sherlock::AudioInit() {
                                 bind_fuchsia_ti_platform::BIND_PLATFORM_DEV_VID_TI),
         fdf::MakeAcceptBindRule(bind_fuchsia::PLATFORM_DEV_DID,
                                 bind_fuchsia_ti_platform::BIND_PLATFORM_DEV_DID_TAS5720),
-        fdf::MakeAcceptBindRule(bind_fuchsia::CODEC_INSTANCE, static_cast<uint32_t>(i + 1)),
+        fdf::MakeAcceptBindRule(bind_fuchsia::ID, static_cast<uint32_t>(i + 1)),
     };
     auto codec_props = std::vector{
         fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.audio.CodecService"),
         fdf::MakeProperty2("fuchsia.hardware.audio.CodecService",
                            "fuchsia.hardware.audio.CodecService.ZirconTransport"),
-        fdf::MakeProperty2(bind_fuchsia::CODEC_INSTANCE, static_cast<uint32_t>(i + 1)),
+        fdf::MakeProperty2(bind_fuchsia::ID, static_cast<uint32_t>(i + 1)),
     };
     sherlock_tdm_i2s_parents.push_back(fuchsia_driver_framework::ParentSpec2{{
         .bind_rules = codec_rules,
