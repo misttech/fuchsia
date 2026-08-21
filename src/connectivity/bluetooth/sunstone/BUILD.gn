@@ -64,7 +64,16 @@ if (is_host) {
   rustc_test("sapphire_gap_test") {
     edition = "2024"
     source_root = "sapphire-gap/src/lib.rs"
-    sources = [ "sapphire-gap/src/lib.rs" ]
+    sources = [
+      "sapphire-gap/src/lib.rs",
+      "sapphire-gap/src/peer_cache.rs",
+    ]
+    features = []
+    deps = [
+      "//third_party/rust_crates:rand_core",
+      "//third_party/rust_crates:sapphire-collections",
+      "//third_party/rust_crates:sapphire-common",
+    ]
   }
 
   rustc_test("sapphire_gatt_test") {

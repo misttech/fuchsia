@@ -19761,6 +19761,9 @@ rustc_library("sapphire-gap-v0_1_0") {
   configs -= [ "//build/config/rust:2018_idioms" ]
 
   deps = []
+  deps += [ ":sapphire-collections-v0_1_0" ]
+  deps += [ ":sapphire-common-v0_1_0" ]
+  deps += [ ":rand_core-v0_10_1" ]
 
   rustenv = []
 

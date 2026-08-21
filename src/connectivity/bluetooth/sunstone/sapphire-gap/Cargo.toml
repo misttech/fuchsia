@@ -9,3 +9,7 @@ edition = "2024"
 publish = false
 
 [dependencies]
+rand_core = { version = "0.10.1", default-features = false }
+sapphire-collections = { path = "../sapphire-collections" }
+sapphire-common = { path = "../sapphire-common" }
+

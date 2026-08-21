@@ -58,11 +58,15 @@ impl DeviceAddress {
     /// - `RandomStatic`: `0b11`
     ///
     /// Returns `None` if the MSB bits do not match the address type or if the bits are `0b10` (RFU).
-    pub fn new(kind: AddressType, bytes: [u8; ADDR_LEN]) -> Option<Self> {
-        if kind == AddressType::Public || AddressType::from_random_bytes(bytes) == Some(kind) {
-            Some(Self { kind, bytes })
-        } else {
-            None
+    pub const fn new(kind: AddressType, bytes: [u8; ADDR_LEN]) -> Option<Self> {
+        match (kind, AddressType::from_random_bytes(bytes)) {
+            (AddressType::Public, _)
+            | (AddressType::RandomStatic, Some(AddressType::RandomStatic))
+            | (AddressType::ResolvablePrivate, Some(AddressType::ResolvablePrivate))
+            | (AddressType::NonResolvablePrivate, Some(AddressType::NonResolvablePrivate)) => {
+                Some(Self { kind, bytes })
+            }
+            _ => None,
         }
     }
 

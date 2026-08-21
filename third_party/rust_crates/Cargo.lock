@@ -4848,6 +4848,11 @@ version = "0.1.0"
 [[package]]
 name = "sapphire-gap"
 version = "0.1.0"
+dependencies = [
+ "rand_core 0.10.1",
+ "sapphire-collections",
+ "sapphire-common",
+]
 
 [[package]]
 name = "sapphire-gatt"

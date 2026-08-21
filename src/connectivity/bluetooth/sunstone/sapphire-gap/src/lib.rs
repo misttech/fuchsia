@@ -5,3 +5,7 @@
 //! The `sapphire-gap` crate, providing Generic Access Profile (GAP) functionality.
 
 #![no_std]
+
+pub mod peer_cache;
+
+pub use peer_cache::*;
