@@ -653,7 +653,7 @@ class WlanPolicy(AsyncLazyReady):
     async def remove_all_networks(
         self,
         *,
-        timeout: float | None = _DEFAULT_WLAN_POLICY_OPERATION_TIMEOUT_SEC,
+        timeout: timedelta | None = _DEFAULT_WLAN_POLICY_OPERATION_TIMEOUT,
     ) -> None:
         """Deletes all saved networks on the device.
 
@@ -668,14 +668,12 @@ class WlanPolicy(AsyncLazyReady):
         """
         assert self._client_controller is not None
 
-        for network in await self.get_saved_networks(
-            timeout=None if timeout is None else timedelta(seconds=timeout)
-        ):
+        for network in await self.get_saved_networks(timeout=timeout):
             await self.forget_network(
                 target_ssid=network.ssid,
                 security_type=network.security_type,
                 target_pwd=network.credential_value,
-                timeout=None if timeout is None else timedelta(seconds=timeout),
+                timeout=timeout,
             )
 
     @ensure_ready
