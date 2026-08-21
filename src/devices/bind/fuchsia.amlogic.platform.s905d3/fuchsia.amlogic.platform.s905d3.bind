@@ -17,6 +17,7 @@ extend uint fuchsia.ID {
     PWM_AO_B = 7,
     PWM_AO_C = 8,
     PWM_AO_D = 9,
+    POWER_SENSOR_DOMAIN_AUDIO = 1,
 };
 
 uint GPIOZ_PIN_ID {
@@ -142,8 +143,3 @@ uint GPIOE_PIN_ID {
     PIN_1 = 98,
     PIN_2 = 99,
 };
-
-extend uint fuchsia.BIND_POWER_SENSOR_DOMAIN {
-    AUDIO = 1,
-};
-

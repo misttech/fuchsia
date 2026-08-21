@@ -224,8 +224,8 @@ zx_status_t Nelson::BrownoutProtectionInit() {
 
   const device_bind_prop_t kPowerSensorProperties[] = {
       ddk::MakeProperty(bind_fuchsia::SERVICE, "fuchsia.hardware.power.sensor.Service"),
-      ddk::MakeProperty(bind_fuchsia::POWER_SENSOR_DOMAIN,
-                        bind_fuchsia_amlogic_platform_s905d3::BIND_POWER_SENSOR_DOMAIN_AUDIO),
+      ddk::MakeProperty(bind_fuchsia::ID,
+                        bind_fuchsia_amlogic_platform_s905d3::ID_POWER_SENSOR_DOMAIN_AUDIO),
   };
 
   const device_bind_prop_t kGpioInitProperties[] = {

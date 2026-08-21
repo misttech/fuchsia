@@ -378,9 +378,6 @@ fn deprecated_keys() -> Vec<(String, u32)> {
     // Init step binding variables at 0x0A6X.
     keys.push(("BIND_INIT_STEP".to_string(), 0x0A60));
 
-    // Power sensor binding variables at 0x0A9X
-    keys.push(("BIND_POWER_SENSOR_DOMAIN".to_string(), 0x0A90));
-
     keys
 }
 
@@ -465,9 +462,6 @@ pub fn get_deprecated_key_identifier(key: u32) -> Option<String> {
         // Init step binding variables at 0x0A6X.
         0x0A60 => Some("fuchsia.BIND_INIT_STEP".to_string()),
 
-        // Power sensor binding variables at 0x0A9X.
-        0x0A90 => Some("fuchsia.BIND_POWER_SENSOR_DOMAIN".to_string()),
-
         _ => None,
     }
 }
@@ -536,9 +530,6 @@ pub fn get_deprecated_key_value(key: &str) -> Option<u32> {
 
         // Init step binding variables at 0x0A6X.
         "fuchsia.BIND_INIT_STEP" => Some(0x0A60),
-
-        // Power sensor binding variables at 0x0A9X
-        "fuchsia.BIND_POWER_SENSOR_DOMAIN" => Some(0x0A90),
 
         _ => None,
     }

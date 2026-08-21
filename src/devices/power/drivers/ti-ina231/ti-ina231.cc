@@ -219,7 +219,7 @@ zx::result<> TiIna231::Start(fdf::DriverContext context) {
       fdf::MakeOffer2<fuchsia_hardware_power_sensor::Service>(component::kDefaultInstance)};
 
   const std::vector<fuchsia_driver_framework::NodeProperty2> properties = {
-      fdf::MakeProperty2(bind_fuchsia::POWER_SENSOR_DOMAIN, metadata.power_sensor_domain().value()),
+      fdf::MakeProperty2(bind_fuchsia::ID, metadata.power_sensor_domain().value()),
   };
 
   zx::result child = AddChild(kChildNodeName, devfs_args, properties, offers);

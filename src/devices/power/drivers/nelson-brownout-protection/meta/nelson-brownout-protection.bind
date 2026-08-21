@@ -16,7 +16,7 @@ primary parent "codec" {
 
 parent "power-sensor" {
   fuchsia.Service == "fuchsia.hardware.power.sensor.Service";
-  fuchsia.BIND_POWER_SENSOR_DOMAIN == fuchsia.amlogic.platform.s905d3.BIND_POWER_SENSOR_DOMAIN.AUDIO;
+  fuchsia.ID == fuchsia.amlogic.platform.s905d3.ID.POWER_SENSOR_DOMAIN_AUDIO;
 }
 
 parent "alert-gpio" {

@@ -94,8 +94,6 @@ static const char SPI_CHIP_SELECT[] = "fuchsia.BIND_SPI_CHIP_SELECT";
 
 static const char INIT_STEP[] = "fuchsia.BIND_INIT_STEP";
 
-static const char POWER_SENSOR_DOMAIN[] = "fuchsia.BIND_POWER_SENSOR_DOMAIN";
-
 static const char SERVICE[] = "fuchsia.Service";
 
 }  // namespace bind_fuchsia
