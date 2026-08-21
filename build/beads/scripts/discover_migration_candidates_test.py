@@ -2,6 +2,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import io
 import pathlib
 import unittest
 from unittest import mock
@@ -376,6 +377,70 @@ class TestDiscoverMigrationCandidates(unittest.TestCase):
             calc._to_fully_qualified_label(pathlib.Path("src"), "bar"),
             "//src:bar",
         )
+
+    def test_resolve_template_subtarget(self) -> None:
+        calc = discover_migration_candidates.ComplexityCalculator(
+            pathlib.Path("/root"), [], []
+        )
+        calc._target_cache["//src:my_tool"] = GnTargetInfo(
+            path=pathlib.Path("/root/BUILD.gn"),
+            name="my_tool",
+            type="ffx_tool",
+        )
+
+        self.assertEqual(
+            calc._resolve_template_subtarget("//src:my_tool_bin"),
+            "//src:my_tool",
+        )
+        self.assertIsNone(
+            calc._resolve_template_subtarget("//src:other_tool_bin")
+        )
+        self.assertIsNone(calc._resolve_template_subtarget("invalid_label"))
+
+    def test_parts_from_fully_qualified_label(self) -> None:
+        calc = discover_migration_candidates.ComplexityCalculator(
+            pathlib.Path("/root"), [], []
+        )
+        self.assertEqual(
+            calc._parts_from_fully_qualified_label("//src/foo:bar"),
+            (pathlib.Path("src/foo"), "bar"),
+        )
+        with self.assertRaises(ValueError):
+            calc._parts_from_fully_qualified_label("invalid")
+
+    def test_to_fully_qualified_label_shorthand(self) -> None:
+        calc = discover_migration_candidates.ComplexityCalculator(
+            pathlib.Path("/root"), [], []
+        )
+        self.assertEqual(
+            calc._to_fully_qualified_label(
+                pathlib.Path("src"), "//src/lib/fdomain/client"
+            ),
+            "//src/lib/fdomain/client:client",
+        )
+
+    @mock.patch("sys.stderr", new_callable=io.StringIO)
+    def test_complexity_for_label_cycle(self, mock_stderr: io.StringIO) -> None:
+        root = pathlib.Path("/root")
+        calc = discover_migration_candidates.ComplexityCalculator(root, [], [])
+
+        calc._target_cache["//root:t1"] = GnTargetInfo(
+            path=root / "BUILD.gn", name="t1", type="action", deps=["//root:t2"]
+        )
+        calc._target_cache["//root:t2"] = GnTargetInfo(
+            path=root / "BUILD.gn", name="t2", type="action", deps=["//root:t1"]
+        )
+
+        with mock.patch.object(
+            discover_migration_candidates.ComplexityCalculator,
+            "_is_bazel_target",
+            return_value=False,
+        ):
+            self.assertGreater(calc.complexity_for_label("//root:t1"), 0)
+            self.assertIn(
+                "WARNING: Dependency cycle detected at //root:t1.",
+                mock_stderr.getvalue(),
+            )
 
 
 if __name__ == "__main__":

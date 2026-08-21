@@ -19,17 +19,29 @@ _DEBUG = False
 # The root directory of the Fuchsia source tree.
 _FUCHSIA_DIR = pathlib.Path(__file__).parent.parent.parent.parent
 
-# Fields that are considered "standard" and easy to convert.
-_STANDARD_FIELDS = {
+# Fields that are considered dependencies. Dependencies need to be migrated to Bazel first before
+# this target can be migrated.
+_DEP_FIELDS = [
     "deps",
-    "edition",
+    "public_deps",
+    "test_deps",
+    "data",
     "embed",
+    "plugin_deps",
+    "args_deps",
+    "args_test_deps",
+    "ffx_deps",
+    "proc_macro_deps",
+]
+
+# Fields that are considered "standard" and easy to convert.
+_STANDARD_FIELDS = set(_DEP_FIELDS) | {
+    "edition",
     "inputs",
     "name",
     "output_name",
     "source_root",
     "sources",
-    "test_deps",
     "testonly",
     "visibility",
     "with_unit_tests",
@@ -54,9 +66,21 @@ _COMPLEX_FIELDS = {
     "forward_variables_from": 2,
 }
 
-# Fields that are considered dependencies. Dependencies need to be migrated to Bazel first before
-# this target can be migrated.
-_DEP_FIELDS = ["deps", "public_deps", "test_deps", "data", "embed"]
+# Mapping from GN template type to a list of subtarget suffixes it generates.
+# This is used to resolve generated implicit subtargets back to their base target.
+_TEMPLATE_SUBTARGET_SUFFIXES = {
+    "ffx_plugin": ["_suite", "_args", "_sub_command", "_test", "_tests"],
+    "ffx_tool": [
+        "_versioned",
+        "_unversioned",
+        "_host_tool",
+        "_test",
+        "_tests",
+        "_bin",
+        "_bin_unversioned",
+        "_bin_unversioned_test",
+    ],
+}
 
 # Toolchain shorthands for convenience.
 _TOOLCHAIN_SHORTHANDS = {
@@ -440,6 +464,11 @@ class ComplexityCalculator:
         if ":" in label:
             label_path, target_name = label.split(":", 1)
             target_path = dir_path / label_path
+        elif label.startswith("//"):
+            # Shorthand notation like "//src/lib/fdomain/client" -> target is "client"
+            label_path = label.lstrip("//")
+            target_name = pathlib.Path(label_path).name
+            target_path = pathlib.Path(label_path)
         else:
             target_name = label
             target_path = dir_path
@@ -456,18 +485,64 @@ class ComplexityCalculator:
         path_part, target_name = label.lstrip("//").split(":", 1)
         return pathlib.Path(path_part), target_name
 
-    def complexity_for_label(self, label: str) -> int:
+    def _resolve_template_subtarget(self, label: str) -> str | None:
+        """Resolve a generated template subtarget to its base label.
+
+        Args:
+            label: The fully qualified label of the subtarget.
+
+        Returns:
+            The fully qualified base label if found, otherwise None.
+        """
+        parts = label.split(":", 1)
+        if len(parts) != 2:
+            return None
+
+        base_path, target_name = parts
+
+        for target_type, suffixes in _TEMPLATE_SUBTARGET_SUFFIXES.items():
+            # Match the longest ones first.
+            for suffix in sorted(suffixes, key=len, reverse=True):
+                if not target_name.endswith(suffix):
+                    continue
+                base_name = target_name[: -len(suffix)]
+                base_label = f"{base_path}:{base_name}"
+
+                if (
+                    base_label in self._target_cache
+                    and self._target_cache[base_label].type == target_type
+                ):
+                    return base_label
+        return None
+
+    def complexity_for_label(
+        self, label: str, visiting: set[str] | None = None
+    ) -> int:
         """Calculate complexity for a target taking its dependencies and fields into account.
 
-        Actionable targets are those that are not already in Bazel and are not
-        third-party targets. Their complexity is at least 1. Non-actionable
-        targets have complexity 0.
+        This recursively aggregates the complexity of its dependencies, adding a penalty for
+        non-standard fields. To handle GN templates creating implicit dependencies (e.g. ffx_plugin, ffx_tool),
+        we check if generated suffixes map back to their parent target type to traverse the full graph.
+
+        We also track a `visiting` set to detect and break dependency cycles, omitting back-edges
+        to prevent infinite recursion and duplicate counting.
         """
+        if visiting is None:
+            visiting = set()
+
+        next_visiting = visiting | {label}
+
         if not self._is_fully_qualified_label(label):
             raise ValueError(
                 f"Invalid label: {label}, only fully-qualified labels are supported."
             )
 
+        if label in visiting:
+            print(
+                f"WARNING: Dependency cycle detected at {label}. Path: {visiting}",
+                file=sys.stderr,
+            )
+            return 0
         # If the target is already in Bazel (e.g. bazel2gn targets) or is a third-party target,
         # its complexity is 0.
         if self._is_bazel_target(label) or self._is_third_party_target(label):
@@ -477,6 +552,11 @@ class ComplexityCalculator:
             return self._complexity_cache[label]
 
         if label not in self._target_cache:
+            base_label = self._resolve_template_subtarget(label)
+            if base_label is not None:
+                res = self.complexity_for_label(base_label, next_visiting)
+                return res
+            print(f"WARNING: Unknown {label}, ignoring...", file=sys.stderr)
             return _UNKNOWN_DEP_COMPLEXITY
 
         target = self._target_cache[label]
@@ -494,7 +574,8 @@ class ComplexityCalculator:
         ]
         # Each dependency adds (1 + their complexity) to the total complexity of this target.
         dep_complexity = len(complex_deps) + sum(
-            self.complexity_for_label(dep) for dep in complex_deps
+            self.complexity_for_label(dep, next_visiting)
+            for dep in complex_deps
         )
 
         field_complexity = sum(
@@ -547,7 +628,11 @@ def _infer_language(target_type: str) -> str:
     Returns:
         The inferred language of the target.
     """
-    if target_type.startswith("rustc_"):
+    if target_type == "ffx_plugin":
+        return "Rust (ffx plugin)"
+    elif target_type == "ffx_tool":
+        return "Rust (ffx tool)"
+    elif target_type.startswith("rustc_"):
         return "Rust"
     elif target_type.startswith("go_"):
         return "Go"
@@ -575,11 +660,11 @@ def _complexity_to_string(complexity: int) -> str:
         A string representing the complexity (LOW, MEDIUM, or HIGH).
     """
     if complexity <= 5:
-        return "LOW"
+        return "0 - LOW"
     elif complexity <= 20:
-        return "MEDIUM"
+        return "1 - MEDIUM"
     else:
-        return "HIGH"
+        return "2 - HARD"
 
 
 def print_results_csv(file_results: list[GnFileInfo], top: int) -> None:
@@ -604,10 +689,11 @@ def print_results_csv(file_results: list[GnFileInfo], top: int) -> None:
     )
     for file_res in file_results[:top]:
         for target in file_res.targets:
+            is_migrated = "YES" if target.complexity == 0 else "NO"
             writer.writerow(
                 [
                     "",
-                    "NO",
+                    is_migrated,
                     target.name,
                     f"//{file_res.path}",
                     _infer_language(target.type),
@@ -625,7 +711,9 @@ def print_results(file_results: list[GnFileInfo], top: int) -> None:
         print(f"{i+1}. {file_res.path}")
         print(f"   Targets ({file_res.total_targets}):")
         for target in file_res.targets:
+            is_migrated = "YES" if target.complexity == 0 else "NO"
             print(f"     - {target.name} ({target.type})")
+            print(f"       Migrated: {is_migrated}")
             print(f"       Inferred language: {_infer_language(target.type)}")
             print(
                 f"       Estimated Complexity: {_complexity_to_string(target.complexity)}"
@@ -701,6 +789,11 @@ def main() -> int:
         targets are built with the specified toolchain.""",
     )
     parser.add_argument(
+        "--include-migrated",
+        action="store_true",
+        help="Include already migrated targets in the output",
+    )
+    parser.add_argument(
         "-v",
         "--verbose",
         action="store_true",
@@ -727,7 +820,10 @@ def main() -> int:
         calculator.complexity_for_file(gn_file, args.target_types)
         for gn_file in gn_files
     ]
-    actionable_files = [f for f in file_results if f.total_complexity > 0]
+    if args.include_migrated:
+        actionable_files = file_results
+    else:
+        actionable_files = [f for f in file_results if f.total_complexity > 0]
 
     # Sort by total complexity and then by number of targets.
     actionable_files.sort(key=lambda x: (x.total_complexity, x.total_targets))
