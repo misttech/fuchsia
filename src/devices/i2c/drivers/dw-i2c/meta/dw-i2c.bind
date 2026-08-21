@@ -6,7 +6,6 @@ composite dw_i2c;
 
 using fuchsia;
 using fuchsia.hardware.pin;
-using fuchsia.hardware.clock;
 using fuchsia.hardware.reset;
 using fuchsia.hardware.powerdomain;
 using fuchsia.gpio;
@@ -16,12 +15,12 @@ primary parent "pdev" {
 }
 
 parent "bus" {
-  fuchsia.hardware.clock.Service == fuchsia.hardware.clock.Service.ZirconTransport;
+  fuchsia.Service == "fuchsia.hardware.clock.Service";
   fuchsia.NAME == "bus";
 }
 
 parent "registers" {
-  fuchsia.hardware.clock.Service == fuchsia.hardware.clock.Service.ZirconTransport;
+  fuchsia.Service == "fuchsia.hardware.clock.Service";
   fuchsia.NAME == "registers";
 }
 

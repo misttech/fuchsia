@@ -8,6 +8,7 @@ using fuchsia;
 using fuchsia.platform;
 using fuchsia.amlogic.platform;
 using fuchsia.gpio;
+using fuchsia.hardware.pwm;
 
 primary parent "pdev" {
   fuchsia.BIND_PROTOCOL == fuchsia.platform.BIND_PROTOCOL.DEVICE;

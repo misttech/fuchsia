@@ -12,7 +12,6 @@
 #include <lib/driver/devicetree/visitors/registry.h>
 
 #include <bind/fuchsia/cpp/bind.h>
-#include <bind/fuchsia/hardware/audio/cpp/bind.h>
 #include <gtest/gtest.h>
 
 namespace audio_codec_visitor_dt {
@@ -76,32 +75,28 @@ TEST(AudioCodecVisitorTest, TestLinkingAndInstanceId) {
   // Check 1st codec parent spec bind rules.
   EXPECT_TRUE(fdf_devicetree::testing::CheckHasBindRules(
       {{
-          fdf::MakeAcceptBindRule(bind_fuchsia_hardware_audio::CODECSERVICE,
-                                  bind_fuchsia_hardware_audio::CODECSERVICE_ZIRCONTRANSPORT),
           fdf::MakeAcceptBindRule(bind_fuchsia::ID, 1u),
+          fdf::MakeAcceptBindRule(bind_fuchsia::SERVICE, "fuchsia.hardware.audio.CodecService"),
       }},
       (*composite_spec.parents2())[1].bind_rules(), false));
   EXPECT_TRUE(fdf_devicetree::testing::CheckHasProperties(
       {{
-          fdf::MakeProperty2(bind_fuchsia_hardware_audio::CODECSERVICE,
-                             bind_fuchsia_hardware_audio::CODECSERVICE_ZIRCONTRANSPORT),
           fdf::MakeProperty2(bind_fuchsia::ID, 1u),
+          fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.audio.CodecService"),
       }},
       (*composite_spec.parents2())[1].properties(), false));
 
   // Check 2nd codec parent spec bind rules.
   EXPECT_TRUE(fdf_devicetree::testing::CheckHasBindRules(
       {{
-          fdf::MakeAcceptBindRule(bind_fuchsia_hardware_audio::CODECSERVICE,
-                                  bind_fuchsia_hardware_audio::CODECSERVICE_ZIRCONTRANSPORT),
           fdf::MakeAcceptBindRule(bind_fuchsia::ID, 2u),
+          fdf::MakeAcceptBindRule(bind_fuchsia::SERVICE, "fuchsia.hardware.audio.CodecService"),
       }},
       (*composite_spec.parents2())[2].bind_rules(), false));
   EXPECT_TRUE(fdf_devicetree::testing::CheckHasProperties(
       {{
-          fdf::MakeProperty2(bind_fuchsia_hardware_audio::CODECSERVICE,
-                             bind_fuchsia_hardware_audio::CODECSERVICE_ZIRCONTRANSPORT),
           fdf::MakeProperty2(bind_fuchsia::ID, 2u),
+          fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.audio.CodecService"),
       }},
       (*composite_spec.parents2())[2].properties(), false));
 }

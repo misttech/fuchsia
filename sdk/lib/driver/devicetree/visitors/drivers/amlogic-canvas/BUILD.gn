@@ -25,7 +25,6 @@ devicetree_visitor("amlogic-canvas-visitor") {
     "//sdk/lib/driver/logging/cpp",
   ]
   non_sdk_deps = [
-    "//sdk/fidl/fuchsia.hardware.amlogiccanvas:fuchsia.hardware.amlogiccanvas_bindlib_cpp",
     "//src/devices/bind/fuchsia:fuchsia_cpp",
     "//src/lib/ddk",
   ]
@@ -35,7 +34,6 @@ test("amlogic-canvas-visitor-test-bin") {
   sources = [ "test/amlogic-canvas-visitor-test.cc" ]
   deps = [
     ":amlogic-canvas-visitor.static",
-    "//sdk/fidl/fuchsia.hardware.amlogiccanvas:fuchsia.hardware.amlogiccanvas_bindlib_cpp",
     "//sdk/lib/driver/devicetree/testing:visitor-test-helper",
     "//sdk/lib/driver/devicetree/visitors:registry",
     "//sdk/lib/driver/devicetree/visitors/default/bind-property",

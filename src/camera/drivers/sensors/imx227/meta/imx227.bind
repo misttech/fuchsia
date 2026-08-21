@@ -7,7 +7,6 @@ composite imx227_sensor;
 using fuchsia;
 using fuchsia.hardware.pin;
 using fuchsia.gpio;
-using fuchsia.hardware.clock;
 using fuchsia.hardware.gpio;
 using fuchsia.hardware.i2c;
 using fuchsia.camera;

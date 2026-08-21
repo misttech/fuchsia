@@ -9,8 +9,6 @@ using fuchsia.hardware.pin;
 using fuchsia.amlogic.platform;
 using fuchsia.gpio;
 using fuchsia.clock;
-using fuchsia.hardware.audio;
-using fuchsia.hardware.clock;
 using fuchsia.hardware.gpio;
 using fuchsia.platform;
 using fuchsia.amlogic.platform.meson;

@@ -7,6 +7,8 @@ composite brownout_protection;
 using fuchsia;
 using fuchsia.amlogic.platform.s905d3;
 using fuchsia.gpio;
+using fuchsia.hardware.gpio;
+using fuchsia.hardware.power.sensor;
 
 primary parent "codec" {
   fuchsia.Service == "fuchsia.hardware.audio.CodecService";

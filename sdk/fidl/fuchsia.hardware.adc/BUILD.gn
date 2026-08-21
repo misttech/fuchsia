@@ -37,6 +37,7 @@ fidl("fuchsia.hardware.adc") {
   sources = [ "adc.fidl" ]
   sdk_area = "Media"
   sdk_category = "partner"
+  enable_bindlib = false
   stable = true
   visibility = [ "*" ]
   public_deps = [ "//zircon/vdso/zx" ]

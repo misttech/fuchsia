@@ -14,7 +14,6 @@
 #include <cstdint>
 
 #include <bind/fuchsia/cpp/bind.h>
-#include <bind/fuchsia/hardware/ethernet/board/cpp/bind.h>
 #include <gtest/gtest.h>
 namespace eth_phy_visitor_dt {
 
@@ -53,8 +52,6 @@ TEST(EthVisitorTest, TestMetadataAndBindProperty) {
   EXPECT_TRUE(fdf_devicetree::testing::CheckHasProperties(
       {{
           fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.ethernet.board.Service"),
-          fdf::MakeProperty2(bind_fuchsia_hardware_ethernet_board::SERVICE,
-                             bind_fuchsia_hardware_ethernet_board::SERVICE_ZIRCONTRANSPORT),
       }},
       (*mgr_request.parents2())[1].properties(), false));
 }

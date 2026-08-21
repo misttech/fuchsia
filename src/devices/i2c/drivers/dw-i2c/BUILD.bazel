@@ -1,8 +1,8 @@
-load("@rules_cc//cc:cc_library.bzl", "cc_library")
 # Copyright 2026 The Fuchsia Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load(
     "@rules_fuchsia//fuchsia:defs.bzl",
     "fuchsia_cc_driver",
@@ -21,9 +21,7 @@ fuchsia_driver_bind_bytecode(
     rules = "meta/dw-i2c.bind",
     deps = [
         "@fuchsia_sdk//bind/fuchsia",
-        "@fuchsia_sdk//bind/fuchsia.clock",
         "@fuchsia_sdk//bind/fuchsia.gpio",
-        "@fuchsia_sdk//fidl/fuchsia.hardware.clock:fuchsia.hardware.clock_bindlib",
         "@fuchsia_sdk//fidl/fuchsia.hardware.pin:fuchsia.hardware.pin_bindlib",
         "@fuchsia_sdk//fidl/fuchsia.hardware.powerdomain:fuchsia.hardware.powerdomain_bindlib",
         "@fuchsia_sdk//fidl/fuchsia.hardware.reset:fuchsia.hardware.reset_bindlib",

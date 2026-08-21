@@ -72,6 +72,7 @@ optional parent "sys-cpu-little-clk" {
   fuchsia.NAME == "sys-cpu-little-clk";
 }
 
+
 optional parent "gpio-init" {
   fuchsia.BIND_INIT_STEP == fuchsia.gpio.BIND_INIT_STEP.GPIO;
 }

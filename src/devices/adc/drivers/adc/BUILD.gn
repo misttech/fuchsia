@@ -20,10 +20,7 @@ driver_bind_rules("adc_bind") {
   dml_label = ":adc-dml"
   bind_output = "adc.bindbc"
   tests = "meta/test_bind.json"
-  deps = [
-    "//sdk/fidl/fuchsia.hardware.adcimpl:fuchsia.hardware.adcimpl_bindlib",
-    "//src/devices/bind/fuchsia",
-  ]
+  deps = [ "//src/devices/bind/fuchsia" ]
 }
 
 source_set("common") {

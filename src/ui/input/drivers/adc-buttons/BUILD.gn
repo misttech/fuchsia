@@ -21,7 +21,6 @@ driver_bind_rules("adc-buttons-bind") {
   bind_output = "adc-buttons.bindbc"
   tests = "meta/bind-tests.json"
   deps = [
-    "//sdk/fidl/fuchsia.hardware.adc:fuchsia.hardware.adc_bindlib",
     "//src/devices/bind/fuchsia",
     "//src/devices/bind/fuchsia.adc",
     "//src/devices/bind/fuchsia.platform",

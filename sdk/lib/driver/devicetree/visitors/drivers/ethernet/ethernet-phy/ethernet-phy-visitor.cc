@@ -10,7 +10,6 @@
 #include <lib/driver/logging/cpp/logger.h>
 
 #include <bind/fuchsia/cpp/bind.h>
-#include <bind/fuchsia/hardware/ethernet/board/cpp/bind.h>
 
 namespace eth_phy_visitor_dt {
 
@@ -62,8 +61,6 @@ zx::result<> EthPhyVisitor::AddChildNodeSpec(fdf_devicetree::Node& child) {
            },
        .properties = {
            fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.ethernet.board.Service"),
-           fdf::MakeProperty2(bind_fuchsia_hardware_ethernet_board::SERVICE,
-                              bind_fuchsia_hardware_ethernet_board::SERVICE_ZIRCONTRANSPORT),
        }}};
 
   child.AddNodeSpec(phy_node);

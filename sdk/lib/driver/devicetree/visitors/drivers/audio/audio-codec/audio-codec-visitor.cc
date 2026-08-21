@@ -11,7 +11,6 @@
 #include <lib/driver/logging/cpp/logger.h>
 
 #include <bind/fuchsia/cpp/bind.h>
-#include <bind/fuchsia/hardware/audio/cpp/bind.h>
 
 namespace audio_codec_visitor_dt {
 
@@ -55,14 +54,12 @@ zx::result<> AudioCodecVisitor::Visit(fdf_devicetree::Node& node,
 
     // 2. Link the codec to the audio controller node by adding a parent spec.
     std::vector bind_rules = {
-        fdf::MakeAcceptBindRule(bind_fuchsia_hardware_audio::CODECSERVICE,
-                                bind_fuchsia_hardware_audio::CODECSERVICE_ZIRCONTRANSPORT),
         fdf::MakeAcceptBindRule(bind_fuchsia::ID, codec_instance),
+        fdf::MakeAcceptBindRule(bind_fuchsia::SERVICE, "fuchsia.hardware.audio.CodecService"),
     };
     std::vector bind_properties = {
-        fdf::MakeProperty2(bind_fuchsia_hardware_audio::CODECSERVICE,
-                           bind_fuchsia_hardware_audio::CODECSERVICE_ZIRCONTRANSPORT),
         fdf::MakeProperty2(bind_fuchsia::ID, codec_instance),
+        fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.audio.CodecService"),
     };
 
     auto codec_spec = fuchsia_driver_framework::ParentSpec2{{bind_rules, bind_properties}};

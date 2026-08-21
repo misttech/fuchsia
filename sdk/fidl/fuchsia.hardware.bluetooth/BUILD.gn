@@ -43,6 +43,7 @@ fidl("fuchsia.hardware.bluetooth") {
   ]
   sdk_area = "Bluetooth"
   sdk_category = "partner"
+  enable_bindlib = false
   stable = true
   visibility = [ "*" ]
   public_deps = [

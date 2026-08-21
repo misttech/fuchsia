@@ -28,7 +28,6 @@ devicetree_visitor("audio-codec-visitor") {
     "//sdk/lib/driver/devicetree/visitors:property-parser",
   ]
   non_sdk_deps = [
-    "//sdk/fidl/fuchsia.hardware.audio:fuchsia.hardware.audio_bindlib_cpp",
     "//src/devices/bind/fuchsia:fuchsia_cpp",
     "//src/lib/ddk:ddk_metadata",
   ]
@@ -38,7 +37,6 @@ test("audio-codec-visitor-test-bin") {
   sources = [ "test/audio-codec-visitor-test.cc" ]
   deps = [
     ":audio-codec-visitor.static",
-    "//sdk/fidl/fuchsia.hardware.audio:fuchsia.hardware.audio_bindlib_cpp",
     "//sdk/lib/driver/devicetree/testing:visitor-test-helper",
     "//sdk/lib/driver/devicetree/visitors:registry",
     "//sdk/lib/driver/devicetree/visitors/default/bind-property",

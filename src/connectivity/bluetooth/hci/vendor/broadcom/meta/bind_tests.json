@@ -1,7 +1,7 @@
 [
     {
         "device": {
-            "fuchsia.hardware.bluetooth.HciService": "fuchsia.bluetooth.BIND_PROTOCOL.DEVICE"
+            "fuchsia.BIND_PROTOCOL": "fuchsia.bluetooth.BIND_PROTOCOL.DEVICE"
         },
         "expected": "abort",
         "name": "Incorrect_Protocol"

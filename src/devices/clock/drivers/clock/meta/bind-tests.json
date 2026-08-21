@@ -8,7 +8,7 @@
     },
     {
         "device": {
-            "fuchsia.hardware.clock.Service": "fuchsia.hardware.clock.Service.ZirconTransport"
+            "fuchsia.Service": "\"fuchsia.hardware.clock.Service\""
         },
         "expected": "abort",
         "name": "BadProtocol"
