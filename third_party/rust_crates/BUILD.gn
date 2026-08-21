@@ -94,11 +94,11 @@ group("arrayref-0.3.9") {
 }
 
 group("arrayvec") {
-  public_deps = [ ":arrayvec-v0_7_6" ]
+  public_deps = [ ":arrayvec-v0_7_8" ]
 }
 
-group("arrayvec-0.7.6") {
-  public_deps = [ ":arrayvec-v0_7_6" ]
+group("arrayvec-0.7.8") {
+  public_deps = [ ":arrayvec-v0_7_8" ]
 }
 
 group("ash") {
@@ -3529,18 +3529,18 @@ rustc_library("arrayvec-v0_5_2") {
   applicable_licenses = [ ":arrayvec-v0_5_2.license" ]
 }
 
-license("arrayvec-v0_7_6.license") {
+license("arrayvec-v0_7_8.license") {
   public_package_name = "arrayvec"
   license_files = [
-    "//third_party/rust_crates/vendor/arrayvec-0.7.6/LICENSE-APACHE",
-    "//third_party/rust_crates/vendor/arrayvec-0.7.6/LICENSE-MIT",
+    "//third_party/rust_crates/vendor/arrayvec-0.7.8/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/arrayvec-0.7.8/LICENSE-MIT",
   ]
 }
 
-rustc_library("arrayvec-v0_7_6") {
+rustc_library("arrayvec-v0_7_8") {
   crate_name = "arrayvec"
-  source_root = "//third_party/rust_crates/vendor/arrayvec-0.7.6/src/lib.rs"
-  output_name = "arrayvec-1e48e5173705452a"
+  source_root = "//third_party/rust_crates/vendor/arrayvec-0.7.8/src/lib.rs"
+  output_name = "arrayvec-dfd67b50c6db4dfb"
   edition = "2018"
   disable_clippy = true
   enforce_source_listing = false
@@ -3552,15 +3552,15 @@ rustc_library("arrayvec-v0_7_6") {
 
   rustflags = [
     "--cap-lints=allow",
-    "-Cmetadata=1e48e5173705452a",
-    "-Cextra-filename=-1e48e5173705452a",
+    "-Cmetadata=dfd67b50c6db4dfb",
+    "-Cextra-filename=-dfd67b50c6db4dfb",
     "--cfg=feature=\"default\"",
     "--cfg=feature=\"std\"",
   ]
 
   visibility = [ ":*" ]
 
-  applicable_licenses = [ ":arrayvec-v0_7_6.license" ]
+  applicable_licenses = [ ":arrayvec-v0_7_8.license" ]
 }
 
 license("ash-v0_38_0+1_3_281.license") {
@@ -25112,7 +25112,7 @@ rustc_library("vte-v0_15_0") {
 
   deps = []
   deps += [ ":memchr-v2_8_0" ]
-  deps += [ ":arrayvec-v0_7_6" ]
+  deps += [ ":arrayvec-v0_7_8" ]
 
   rustenv = []
 
