@@ -50,7 +50,7 @@ impl DefaultStorage {
 impl Storage for DefaultStorage {
     fn allocate(&mut self, size: usize) -> Result<(), Status> {
         let usize_size = core::mem::size_of::<usize>();
-        let num_elements = (size + usize_size - 1) / usize_size;
+        let num_elements = size.div_ceil(usize_size);
         let new_storage = kalloc::Box::<[usize]>::try_new_zeroed_slice(num_elements)
             .map_err(|_| Status::NO_MEMORY)?;
         self.storage = new_storage;
@@ -90,7 +90,7 @@ impl<const N: usize> FixedStorage<N> {
 impl<const N: usize> Storage for FixedStorage<N> {
     fn allocate(&mut self, size: usize) -> Result<(), Status> {
         let usize_size = core::mem::size_of::<usize>();
-        let required_elements = (size + usize_size - 1) / usize_size;
+        let required_elements = size.div_ceil(usize_size);
         if required_elements > N {
             return Err(Status::INVALID_ARGS);
         }

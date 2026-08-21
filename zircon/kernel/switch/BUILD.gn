@@ -629,7 +629,6 @@ clippy_lints = [
   "if-same-then-else",
   "len-zero",
   "let-unit-value",
-  "manual-div-ceil",
   "manual-is-multiple-of",
   "manual-non-exhaustive",
   "manual-swap",
