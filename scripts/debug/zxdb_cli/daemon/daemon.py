@@ -629,7 +629,6 @@ class Daemon:
         allowed_events = {
             "stopped",
             "processStopped",
-            "continued",
             "exited",
             "terminated",
             "thread",
@@ -670,14 +669,6 @@ class Daemon:
                                 )
                                 thread.is_stopped = True
                         self.event_waiter.notify_process_stop(pid, event)
-                case "continued":
-                    if body.get("allThreadsContinued"):
-                        for thread in self.threads.values():
-                            thread.is_stopped = False
-                    elif (thread_id := body.get("threadId")) is not None:
-                        target_thread = self.threads.get(thread_id)
-                        if target_thread is not None:
-                            target_thread.is_stopped = False
                 case "thread":
                     thread_id = body.get("threadId")
                     reason = body.get("reason")

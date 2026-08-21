@@ -19,10 +19,10 @@ class TestDaemonEvents(unittest.IsolatedAsyncioTestCase):
 
         # Put events into queue
         await daemon.event_queue.put(
-            {"event": "stopped", "body": {"threadId": 1}}
+            {"event": "thread", "body": {"threadId": 1}}
         )
         await daemon.event_queue.put(
-            {"event": "continued", "body": {"threadId": 1}}
+            {"event": "stopped", "body": {"threadId": 1}}
         )
 
         # Run process events in background
@@ -44,8 +44,8 @@ class TestDaemonEvents(unittest.IsolatedAsyncioTestCase):
         daemon = Daemon(port=None)
 
         daemon.all_events = {
-            1: {"seq": 1, "event": "stopped"},
-            2: {"seq": 2, "event": "continued"},
+            1: {"seq": 1, "event": "thread"},
+            2: {"seq": 2, "event": "stopped"},
         }
         daemon.latest_seq = 2
 
@@ -111,8 +111,8 @@ class TestDaemonEvents(unittest.IsolatedAsyncioTestCase):
         daemon = Daemon(port=None)
 
         daemon.all_events = {
-            1: {"seq": 1, "event": "stopped"},
-            2: {"seq": 2, "event": "continued"},
+            1: {"seq": 1, "event": "thread"},
+            2: {"seq": 2, "event": "stopped"},
             3: {"seq": 3, "event": "exited"},
         }
         daemon.latest_seq = 3
@@ -241,23 +241,6 @@ class TestDaemonEvents(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(daemon.threads[3].is_stopped)
         assert daemon.threads[3].process is not None
         self.assertEqual(daemon.threads[3].process.id, 5678)
-
-    async def test_continued_event_all_threads_continued(self) -> None:
-        daemon = Daemon(port=None)
-        daemon.get_or_create_thread(1, process_id=1234).is_stopped = True
-        daemon.get_or_create_thread(2, process_id=1234).is_stopped = True
-        await daemon.event_queue.put(
-            {
-                "event": "continued",
-                "body": {"threadId": 1, "allThreadsContinued": True},
-            }
-        )
-        await daemon.event_queue.put({"type": READER_STOPPED_EVENT})
-
-        await daemon._process_events()
-
-        self.assertFalse(daemon.threads[1].is_stopped)
-        self.assertFalse(daemon.threads[2].is_stopped)
 
     async def test_process_stopped_event(self) -> None:
         daemon = Daemon(port=None)
