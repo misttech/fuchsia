@@ -71,7 +71,7 @@ pub(crate) type EnvVars = HashMap<String, String>;
 /// Contextual information about where this instance of ffx is running
 #[derive(Clone, Debug)]
 pub struct EnvironmentContext {
-    kind: EnvironmentKind,
+    pub(crate) kind: EnvironmentKind,
     exe_kind: ExecutableKind,
     pub(crate) env_vars: Option<EnvVars>,
     pub(crate) runtime_args: ConfigMap,

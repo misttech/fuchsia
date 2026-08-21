@@ -5,7 +5,6 @@
 use super::ConfigValue;
 use super::value::TryConvert;
 use crate::api::ConfigResult;
-use crate::mapping::env_var::env_var_strict;
 use crate::nested::RecursiveMap;
 use crate::{ConfigError, ConfigLevel, EnvironmentContext, ValueStrategy};
 
@@ -127,52 +126,32 @@ impl<'a> ConfigQuery<'a> {
         // will all change: we'll build a single ConfigMap before invoking the subtool, rather than
         // doing substitutions and layers at query time.
         if ctx.is_strict() {
-            // If we are going to fail to a reference to an env var, it's important that we
-            // know which one. Threading the failure through the ConfigValue apparatus is quite
-            // difficult, so for now, let's have an explicit check. Unfortunately, we need to
-            // do all the other mappings first, since they _all_ look like env vars ("$BUILD_DIR", etc)
-            let cv = self
-                .get_config(ctx)?
-                .try_recursive_map(&|val| Ok(shared_data(&ctx, val)?))?
-                .recursive_map(&|val| build(&ctx, val))
-                .recursive_map(&|val| workspace(&ctx, val));
-            let cv = if let Some(ref v) = cv.0 {
-                // We want recursive mapping here, so that arrays that contain
-                // env variables get handled correctly.
-                let ev_res = cv.clone().recursive_map(&|val| env_var_strict(val));
-                if ev_res.0.is_none() {
-                    // Conveniently, this message will make sense for config
-                    // mappings that we are ignoring because they are based on
-                    // home: $CACHE, etc. Since they all look like environment
-                    // variables, they will cause the env_var_strict() check
-                    // to fail
-                    return Err(ConfigError::BadValue {
-                        value: v.clone(),
-                        reason: format!(
-                            "The value for {} contains a variable mapping, which is ignored in strict mode",
-                            self.name.unwrap(),
-                        ),
-                    });
+            let cv = self.get_config(ctx)?;
+            let raw_val = cv.0.clone();
+            let had_strict_ignored = std::cell::Cell::new(false);
+            let cv = cv.try_recursive_map(&|val| match expand_macros_strict(ctx, val) {
+                Ok(v) => Ok(v),
+                Err(MappingError::StrictVariableIgnored(_)) => {
+                    had_strict_ignored.set(true);
+                    Ok(None)
                 }
-                ev_res
-            } else {
-                cv
-            };
-            // The problem is not with an env variable; keep going
+                Err(e) => Err(e.into()),
+            })?;
+            if had_strict_ignored.get() && cv.0.is_none() {
+                return Err(ConfigError::BadValue {
+                    value: raw_val.unwrap_or(Value::Null),
+                    reason: format!(
+                        "The value for {} contains a variable mapping, which is ignored in strict mode",
+                        self.name.unwrap_or("<unnamed>"),
+                    ),
+                });
+            }
             let cv = cv.recursive_map(&T::handle_arrays);
             T::try_convert(cv)
         } else {
             let cv = self
                 .get_config(ctx)?
-                .recursive_map(&|val| runtime(&ctx, val))
-                .recursive_map(&|val| cache(&ctx, val))
-                .recursive_map(&|val| data(&ctx, val))
-                .try_recursive_map(&|val| Ok(shared_data(&ctx, val)?))?
-                .recursive_map(&|val| config(&ctx, val))
-                .recursive_map(&|val| home(&ctx, val))
-                .recursive_map(&|val| build(&ctx, val))
-                .recursive_map(&|val| workspace(&ctx, val))
-                .recursive_map(&|val| env_var(&ctx, val))
+                .try_recursive_map(&|val| Ok(expand_macros(ctx, val)?))?
                 .recursive_map(&T::handle_arrays);
             T::try_convert(cv)
         }
@@ -188,41 +167,32 @@ impl<'a> ConfigQuery<'a> {
         T::validate_query(self)?;
         // See comments re strict checking in get() above
         if ctx.is_strict() {
-            let cv = self
-                .get_config(ctx)?
-                .try_recursive_map(&|val| Ok(shared_data(&ctx, val)?))?
-                .recursive_map(&|val| build(&ctx, val))
-                .recursive_map(&|val| workspace(&ctx, val));
-            let cv = if let Some(ref v) = cv.0 {
-                let ev_res = cv.clone().recursive_map(&|val| env_var_strict(val));
-                if ev_res.0.is_none() {
-                    return Err(ConfigError::BadValue {
-                        value: v.clone(),
-                        reason: format!(
-                            "The value for {} contains a variable mapping, which is ignored in strict mode",
-                            self.name.unwrap(),
-                        ),
-                    });
+            let cv = self.get_config(ctx)?;
+            let raw_val = cv.0.clone();
+            let had_strict_ignored = std::cell::Cell::new(false);
+            let cv = cv.try_recursive_map(&|val| match expand_macros_strict(ctx, val) {
+                Ok(v) => Ok(v),
+                Err(MappingError::StrictVariableIgnored(_)) => {
+                    had_strict_ignored.set(true);
+                    Ok(None)
                 }
-                ev_res
-            } else {
-                cv
-            };
-            // The problem is not with an env variable; keep going
+                Err(e) => Err(e.into()),
+            })?;
+            if had_strict_ignored.get() && cv.0.is_none() {
+                return Err(ConfigError::BadValue {
+                    value: raw_val.unwrap_or(Value::Null),
+                    reason: format!(
+                        "The value for {} contains a variable mapping, which is ignored in strict mode",
+                        self.name.unwrap_or("<unnamed>"),
+                    ),
+                });
+            }
             let cv = cv.recursive_map(&T::handle_arrays).recursive_map(&file_check);
             T::try_convert(cv)
         } else {
             let cv = self
                 .get_config(ctx)?
-                .recursive_map(&|val| runtime(&ctx, val))
-                .recursive_map(&|val| cache(&ctx, val))
-                .recursive_map(&|val| data(&ctx, val))
-                .try_recursive_map(&|val| Ok(shared_data(&ctx, val)?))?
-                .recursive_map(&|val| config(&ctx, val))
-                .recursive_map(&|val| home(&ctx, val))
-                .recursive_map(&|val| build(&ctx, val))
-                .recursive_map(&|val| workspace(&ctx, val))
-                .recursive_map(&|val| env_var(&ctx, val))
+                .try_recursive_map(&|val| Ok(expand_macros(ctx, val)?))?
                 .recursive_map(&T::handle_arrays)
                 .recursive_map(&file_check);
             T::try_convert(cv)
@@ -281,5 +251,111 @@ impl<'a> From<ConfigLevel> for ConfigQueryBuilder<'a> {
     fn from(value: ConfigLevel) -> Self {
         let level = Some(value);
         ConfigQueryBuilder { level, ..Default::default() }
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use crate::ConfigMap;
+    use std::path::PathBuf;
+
+    #[test]
+    fn test_strict_query_env_var_failure_message() {
+        let mut default_map = ConfigMap::new();
+        default_map.insert(
+            "test".to_string(),
+            serde_json::json!({
+                "disallowed_env": "$FOO_ENV/path",
+                "disallowed_home": "$HOME/path",
+                "allowed_build": "$BUILD_DIR/output",
+            }),
+        );
+        let mut ctx = EnvironmentContext::default();
+        ctx.kind = crate::environment::EnvironmentKind::StrictContext;
+        ctx.config = crate::storage::Config::new(None, None, None, ConfigMap::new(), default_map);
+
+        // 1. Disallowed env var in strict mode produces a descriptive BadValue error
+        let q_env = ConfigQueryBuilder::from("test.disallowed_env").build();
+        let res: Result<String, ConfigError> = q_env.get(&ctx);
+        match res {
+            Err(ConfigError::BadValue { value, reason }) => {
+                assert_eq!(value, serde_json::json!("$FOO_ENV/path"));
+                assert_eq!(
+                    reason,
+                    "The value for test.disallowed_env contains a variable mapping, which is ignored in strict mode"
+                );
+            }
+            other => panic!("expected ConfigError::BadValue, got {:?}", other),
+        }
+
+        // 2. Disallowed $HOME in strict mode produces the same descriptive BadValue error
+        let q_home = ConfigQueryBuilder::from("test.disallowed_home").build();
+        let res_home: Result<String, ConfigError> = q_home.get(&ctx);
+        match res_home {
+            Err(ConfigError::BadValue { value, reason }) => {
+                assert_eq!(value, serde_json::json!("$HOME/path"));
+                assert_eq!(
+                    reason,
+                    "The value for test.disallowed_home contains a variable mapping, which is ignored in strict mode"
+                );
+            }
+            other => panic!("expected ConfigError::BadValue, got {:?}", other),
+        }
+
+        // 3. Allowed variable $BUILD_DIR expands properly in strict mode (None here since no build dir set)
+        let q_build = ConfigQueryBuilder::from("test.allowed_build").build();
+        let res_build: Result<Option<String>, ConfigError> = q_build.get(&ctx);
+        // build dir is None in this strict context, so $BUILD_DIR/output returns None
+        assert_eq!(res_build.unwrap(), None);
+
+        // 4. get_file with disallowed env var in strict mode
+        let res_file: Result<PathBuf, ConfigError> = q_env.get_file(&ctx);
+        match res_file {
+            Err(ConfigError::BadValue { value, reason }) => {
+                assert_eq!(value, serde_json::json!("$FOO_ENV/path"));
+                assert_eq!(
+                    reason,
+                    "The value for test.disallowed_env contains a variable mapping, which is ignored in strict mode"
+                );
+            }
+            other => panic!("expected ConfigError::BadValue, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_strict_query_fallback_array() {
+        let mut default_map = ConfigMap::new();
+        default_map.insert(
+            "ssh".to_string(),
+            serde_json::json!({
+                "controlmaster": {
+                    "dir": ["$XDG_RUNTIME_DIR/ffx", "/tmp/ffx-ssh"]
+                },
+                "all_disallowed": ["$XDG_RUNTIME_DIR/ffx", "$HOME/.ssh/id"],
+            }),
+        );
+        let mut ctx = EnvironmentContext::default();
+        ctx.kind = crate::environment::EnvironmentKind::StrictContext;
+        ctx.config = crate::storage::Config::new(None, None, None, ConfigMap::new(), default_map);
+
+        // 1. Fallback array with a disallowed element drops the disallowed element and succeeds with the literal fallback
+        let q_ctrl = ConfigQueryBuilder::from("ssh.controlmaster.dir").build();
+        let res_ctrl: Result<String, ConfigError> = q_ctrl.get(&ctx);
+        assert_eq!(res_ctrl.unwrap(), "/tmp/ffx-ssh".to_string());
+
+        // 2. Fallback array where all elements are disallowed in strict mode fails with BadValue
+        let q_all = ConfigQueryBuilder::from("ssh.all_disallowed").build();
+        let res_all: Result<String, ConfigError> = q_all.get(&ctx);
+        match res_all {
+            Err(ConfigError::BadValue { value, reason }) => {
+                assert_eq!(value, serde_json::json!(["$XDG_RUNTIME_DIR/ffx", "$HOME/.ssh/id"]));
+                assert_eq!(
+                    reason,
+                    "The value for ssh.all_disallowed contains a variable mapping, which is ignored in strict mode"
+                );
+            }
+            other => panic!("expected ConfigError::BadValue, got {:?}", other),
+        }
     }
 }

@@ -64,7 +64,7 @@ fn format_env_variables_error(preamble: &Option<String>, values: &Vec<ConfigValu
         .iter()
         .map(|cv| {
             format!(
-                "    -\"{}\" points to \"{}\", which expands to {}",
+                "    -\"{}\" points to \"{}\", which contains variable mapping {}",
                 cv.path, cv.value, cv.expansion,
             )
         })
@@ -72,12 +72,12 @@ fn format_env_variables_error(preamble: &Option<String>, values: &Vec<ConfigValu
         .join("\n");
     let flags_string = values
         .iter()
-        .map(|cv| format!("--config {}=\"{}\"", cv.path, cv.value))
+        .map(|cv| format!("--config {}=\"<value>\"", cv.path))
         .collect::<Vec<_>>()
         .join(" ");
     let mut error_title = concat!(
-        "One or more configuration values includes an env variable. ",
-        "Please expand these in the command line."
+        "One or more configuration values includes a variable mapping that is ignored in strict mode. ",
+        "Please provide explicit values on the command line."
     )
     .to_string();
     if let Some(p) = preamble {
@@ -96,7 +96,7 @@ pub struct ConfigValue {
     pub path: String,
     /// The string value from the config.
     pub value: String,
-    /// The string value from the config after env expansion.
+    /// The variable name or expansion from the config.
     pub expansion: String,
 }
 
@@ -146,12 +146,17 @@ impl AssertNoEnv for ConfigMap {
                     }
                 }
                 Value::Null | Value::Bool(_) | Value::Number(_) => {}
-                val @ Value::String(s) => match crate::mapping::env_var::env_var_check(&ctx, val) {
-                    Some(expansion) => {
-                        errors.push(ConfigValue { path: kv.key, value: s.clone(), expansion })
+                Value::String(s) => {
+                    if let Err(crate::mapping::MappingError::StrictVariableIgnored(var)) =
+                        crate::mapping::expand_macros_strict(&ctx, Value::String(s.clone()))
+                    {
+                        errors.push(ConfigValue {
+                            path: kv.key,
+                            value: s.clone(),
+                            expansion: format!("${var}"),
+                        });
                     }
-                    None => {}
-                },
+                }
                 Value::Array(arr) => {
                     for elmnt in arr.iter() {
                         values.push(KeyValue { key: kv.key.clone(), value: elmnt })
@@ -1429,20 +1434,110 @@ mod test {
         assert!(
             config_values.iter().any(|cv| cv.path.as_str() == "inner_map.leaf.last"
                 && cv.value == format!("${TEST_ENV_VAR2}")
-                && cv.expansion.replace("\"", "") == TEST_ENV_VAR2_VALUE.to_owned()),
+                && cv.expansion == format!("${TEST_ENV_VAR2}")),
             "config error not found in {config_values:?}"
         );
         assert!(
             config_values.iter().any(|cv| cv.path.as_str() == "inner_map.baz"
                 && cv.value == format!("${TEST_ENV_VAR1}")
-                && cv.expansion.replace("\"", "") == TEST_ENV_VAR1_VALUE.to_owned()),
+                && cv.expansion == format!("${TEST_ENV_VAR1}")),
             "config error not found in {config_values:?}"
         );
         assert!(
             config_values.iter().any(|cv| cv.path.as_str() == "foo"
                 && cv.value == format!("${TEST_ENV_VAR1}")
-                && cv.expansion.replace("\"", "") == TEST_ENV_VAR1_VALUE.to_owned()),
+                && cv.expansion == format!("${TEST_ENV_VAR1}")),
             "config error not found in {config_values:?}"
         );
+        assert!(
+            config_values.iter().any(|cv| cv.path.as_str() == "inner_map.leaf.last_other"
+                && cv.value == "$NONEXISTENT_VAR"
+                && cv.expansion == "$NONEXISTENT_VAR"),
+            "config error not found in {config_values:?}"
+        );
+    }
+
+    #[test]
+    fn test_assert_no_env_allowed_macros_and_escaped_dollars() {
+        let mut config_map = ConfigMap::new();
+        config_map.insert("build".to_owned(), Value::String("$BUILD_DIR/out".to_owned()));
+        config_map.insert("shared".to_owned(), Value::String("$SHARED_DATA/data".to_owned()));
+        config_map.insert("ws".to_owned(), Value::String("$FIND_WORKSPACE_ROOT/ws".to_owned()));
+        config_map.insert("escaped".to_owned(), Value::String("$$HOME/path".to_owned()));
+        config_map.insert("literal".to_owned(), Value::String("regular string".to_owned()));
+
+        let isolate_dir = tempdir().expect("tempdir");
+        let context = EnvironmentContext::isolated(
+            crate::environment::ExecutableKind::Test,
+            isolate_dir.path().to_owned(),
+            HashMap::new(),
+            Default::default(),
+            None,
+            None,
+            true,
+        )
+        .expect("env context creation");
+
+        assert!(config_map.assert_no_env(None, &context).is_ok());
+    }
+
+    #[test]
+    fn test_assert_no_env_disallowed_builtin_macros() {
+        let mut config_map = ConfigMap::new();
+        config_map.insert("home".to_owned(), Value::String("$HOME/.config".to_owned()));
+        config_map.insert("runtime".to_owned(), Value::String("$RUNTIME/run".to_owned()));
+
+        let isolate_dir = tempdir().expect("tempdir");
+        let context = EnvironmentContext::isolated(
+            crate::environment::ExecutableKind::Test,
+            isolate_dir.path().to_owned(),
+            HashMap::new(),
+            Default::default(),
+            None,
+            None,
+            true,
+        )
+        .expect("env context creation");
+
+        let result = config_map.assert_no_env(None, &context);
+        assert!(result.is_err());
+        let AssertNoEnvError::EnvVariablesFound(None, config_values) = result.unwrap_err() else {
+            panic!("wrong error type");
+        };
+        assert!(
+            config_values.iter().any(|cv| cv.path == "home"
+                && cv.value == "$HOME/.config"
+                && cv.expansion == "$HOME")
+        );
+        assert!(config_values.iter().any(|cv| cv.path == "runtime"
+            && cv.value == "$RUNTIME/run"
+            && cv.expansion == "$RUNTIME"));
+    }
+
+    #[test]
+    fn test_assert_no_env_disallowed_after_unset_allowed_macro() {
+        let mut config_map = ConfigMap::new();
+        config_map.insert("entry".to_owned(), Value::String("$BUILD_DIR/$HOME".to_owned()));
+
+        let isolate_dir = tempdir().expect("tempdir");
+        let context = EnvironmentContext::isolated(
+            crate::environment::ExecutableKind::Test,
+            isolate_dir.path().to_owned(),
+            HashMap::new(),
+            Default::default(),
+            None,
+            None,
+            true,
+        )
+        .expect("env context creation");
+
+        let result = config_map.assert_no_env(None, &context);
+        assert!(result.is_err());
+        let AssertNoEnvError::EnvVariablesFound(None, config_values) = result.unwrap_err() else {
+            panic!("wrong error type");
+        };
+        assert!(config_values.iter().any(|cv| cv.path == "entry"
+            && cv.value == "$BUILD_DIR/$HOME"
+            && cv.expansion == "$HOME"));
     }
 }
