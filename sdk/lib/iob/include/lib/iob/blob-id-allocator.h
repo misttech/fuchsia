@@ -327,7 +327,7 @@ class BlobIdAllocator {
     static_assert(std::is_invocable_v<CopyBlob, Blob, cpp20::span<std::byte>>);
 
     cpp20::atomic_ref<Header> ref = header();
-    Header hdr = ref.load(std::memory_order_relaxed);
+    Header hdr = ref.load(std::memory_order_acquire);
     bool retry = true;
     while (retry) {
       size_t remaining;
@@ -344,7 +344,8 @@ class BlobIdAllocator {
           .next_id = hdr.next_id + 1,
           .blob_head = hdr.blob_head - static_cast<uint32_t>(blob_size),
       };
-      retry = !ref.compare_exchange_weak(hdr, updated, std::memory_order_relaxed);
+      retry = !ref.compare_exchange_weak(hdr, updated, std::memory_order_acq_rel,
+                                         std::memory_order_acquire);
     }
 
     // When the loop terminates `hdr` reflects the header just prior to the
@@ -411,8 +412,7 @@ class BlobIdAllocator {
       if (next_id > kMaxNextId) [[unlikely]] {
         return fit::failed();
       }
-      return fit::ok(
-          static_cast<uint32_t>(sizeof(Header) + next_id * sizeof(Index)));
+      return fit::ok(static_cast<uint32_t>(sizeof(Header) + (next_id * sizeof(Index))));
     }
 
     // See AllocateError::kInvalidHeader.
