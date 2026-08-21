@@ -248,17 +248,15 @@ impl AsKPrintPointer for usize {
 
 /// Trait implemented by types that can be formatted as a character (`{:c}`).
 pub trait AsKPrintChar {
-    fn kprint_encode_char<'a>(
-        &self,
-        buf: &'a mut [u8; 4],
-    ) -> (core::ffi::c_int, *const core::ffi::c_char);
+    fn kprint_encode_char(&self, buf: &mut [u8; 4])
+    -> (core::ffi::c_int, *const core::ffi::c_char);
 }
 
 impl AsKPrintChar for char {
     #[inline(always)]
-    fn kprint_encode_char<'a>(
+    fn kprint_encode_char(
         &self,
-        buf: &'a mut [u8; 4],
+        buf: &mut [u8; 4],
     ) -> (core::ffi::c_int, *const core::ffi::c_char) {
         let s = self.encode_utf8(buf);
         (s.len() as core::ffi::c_int, s.as_ptr() as *const core::ffi::c_char)
@@ -267,9 +265,9 @@ impl AsKPrintChar for char {
 
 impl AsKPrintChar for &char {
     #[inline(always)]
-    fn kprint_encode_char<'a>(
+    fn kprint_encode_char(
         &self,
-        buf: &'a mut [u8; 4],
+        buf: &mut [u8; 4],
     ) -> (core::ffi::c_int, *const core::ffi::c_char) {
         (*self).kprint_encode_char(buf)
     }
@@ -277,9 +275,9 @@ impl AsKPrintChar for &char {
 
 impl AsKPrintChar for u8 {
     #[inline(always)]
-    fn kprint_encode_char<'a>(
+    fn kprint_encode_char(
         &self,
-        buf: &'a mut [u8; 4],
+        buf: &mut [u8; 4],
     ) -> (core::ffi::c_int, *const core::ffi::c_char) {
         buf[0] = *self;
         (1, buf.as_ptr() as *const core::ffi::c_char)
@@ -288,9 +286,9 @@ impl AsKPrintChar for u8 {
 
 impl AsKPrintChar for &u8 {
     #[inline(always)]
-    fn kprint_encode_char<'a>(
+    fn kprint_encode_char(
         &self,
-        buf: &'a mut [u8; 4],
+        buf: &mut [u8; 4],
     ) -> (core::ffi::c_int, *const core::ffi::c_char) {
         (*self).kprint_encode_char(buf)
     }

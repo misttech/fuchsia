@@ -62,10 +62,10 @@ impl AcpiTable for AcpiDbg2Table {
 }
 
 // Get the first table matching the given signature. Return None if no table found.
-pub fn get_table_by_signature<'a>(
-    parser: &'a dyn AcpiParserInterface,
+pub fn get_table_by_signature(
+    parser: &dyn AcpiParserInterface,
     sig: AcpiSignature,
-) -> Option<&'a AcpiSdtHeader> {
+) -> Option<&AcpiSdtHeader> {
     let num_tables = parser.num_tables();
     for i in 0..num_tables {
         let header = match parser.get_table_at_index(i) {
@@ -90,7 +90,7 @@ pub fn get_table_by_signature<'a>(
 
 // Get the first table of the given type. Return None if no table found, or the
 // table is invalid.
-pub fn get_table_by_type<'a, T>(parser: &'a dyn AcpiParserInterface) -> Option<&'a T>
+pub fn get_table_by_type<T>(parser: &dyn AcpiParserInterface) -> Option<&T>
 where
     T: AcpiTable + 'static,
 {
@@ -141,7 +141,7 @@ pub fn acpi_checksum_valid(buf: &[u8]) -> bool {
 /// # Safety
 /// The caller must ensure that `phys` points to a valid ACPI structure of type `T`
 /// in physical memory, and that the memory remains valid for `'a`.
-fn map_structure<'a, T>(reader: &'a dyn PhysMemReader, phys: usize) -> Result<&'a T, Status>
+fn map_structure<T>(reader: &dyn PhysMemReader, phys: usize) -> Result<&T, Status>
 where
     T: VariableSized + zerocopy::FromBytes + zerocopy::Immutable + zerocopy::KnownLayout,
 {
@@ -255,10 +255,10 @@ fn find_root_tables(
 }
 
 // Validate the RSDT table.
-pub fn validate_rsdt<'a>(
-    reader: &'a dyn PhysMemReader,
+pub fn validate_rsdt(
+    reader: &dyn PhysMemReader,
     rsdt_pa: usize,
-) -> Result<(&'a AcpiRsdt, usize), Status> {
+) -> Result<(&AcpiRsdt, usize), Status> {
     // Map in the RSDT.
     let rsdt = map_structure::<AcpiRsdt>(reader, rsdt_pa)?;
     // Ensure we have an RSDT signature.
@@ -280,10 +280,10 @@ pub fn validate_rsdt<'a>(
 }
 
 // Validate the XSDT table.
-pub fn validate_xsdt<'a>(
-    reader: &'a dyn PhysMemReader,
+pub fn validate_xsdt(
+    reader: &dyn PhysMemReader,
     xsdt_pa: usize,
-) -> Result<(&'a AcpiXsdt, usize), Status> {
+) -> Result<(&AcpiXsdt, usize), Status> {
     // Map in the XSDT.
     let xsdt = map_structure::<AcpiXsdt>(reader, xsdt_pa)?;
     // Ensure we have an XSDT signature.

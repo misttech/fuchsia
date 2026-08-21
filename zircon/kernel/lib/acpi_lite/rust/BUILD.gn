@@ -41,7 +41,6 @@ rustc_library("acpi_lite") {
   # TODO(https://fxbug.dev/548748442): remove when all fixed in the code
   if (is_kernel) {
     configs += [ "//zircon/kernel/switch:allow-unnecessary-cast" ]
-    configs += [ "//zircon/kernel/switch:allow-needless-lifetimes" ]
   }
 }
 

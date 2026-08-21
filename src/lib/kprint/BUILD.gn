@@ -15,11 +15,6 @@ rustc_library("kprint") {
   ]
 
   deps = [ "macro:kprint-macro" ]
-
-  # TODO(https://fxbug.dev/548748442): remove when all fixed in the code
-  if (is_kernel) {
-    configs += [ "//zircon/kernel/switch:allow-needless-lifetimes" ]
-  }
 }
 
 fuchsia_unittest_package("kprint-test") {

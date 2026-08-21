@@ -634,7 +634,6 @@ clippy_lints = [
   "manual-non-exhaustive",
   "match-like-matches-macro",
   "needless-late-init",
-  "needless-lifetimes",
   "needless-range-loop",
   "new-without-default",
   "non-canonical-clone-impl",
