@@ -9,10 +9,15 @@
 
 // These get mangled so the raw pointer values don't leak into the heap.
 #define JB_PC 0
-#define JB_SP 1
-#define JB_FP 2
+#define JB_FP 1
+#define JB_SP 2
+#ifdef __x86_64__
 #define JB_USP 3
-#define JB_MANGLE_COUNT (4 + JB_ARCH_MANGLE_COUNT)
+#else
+#define JB_SCSP 3
+#endif
+#define JB_UNUSED 4  // TODO(https://fxbug.dev/42076381)
+#define JB_MANGLE_COUNT 5
 
 #ifdef __x86_64__
 
@@ -24,23 +29,15 @@
 #define JB_R15 (JB_MANGLE_COUNT + 4)
 #define JB_COUNT (JB_MANGLE_COUNT + 5)
 
-#define JB_ARCH_MANGLE_COUNT 0
-
 #elif defined(__aarch64__)
 
-// The shadow call stack pointer (x18) is also mangled.
-#define JB_ARCH_MANGLE_COUNT 1
-
 // Callee-saves registers are [x19,x28] and [d8,d15].
-#define JB_X(n) (JB_MANGLE_COUNT + n - 19)
-#define JB_D(n) (JB_X(29) + n - 8)
-#define JB_COUNT JB_D(16)
+#define JB_X(n) (JB_MANGLE_COUNT + (n) - 19)
+#define JB_D(n) (JB_X(29) + (n) - 8)
+#define JB_SPARE JB_D(16)  // Unused.
+#define JB_COUNT (JB_SPARE + 1)
 
 #elif defined(__riscv)
-
-// The shadow call stack pointer (gp / x3) is also mangled.
-#define JB_SCSP 4
-#define JB_ARCH_MANGLE_COUNT 1
 
 // Callee-saves registers are s0..s11, but s0 is FP and so handled above.
 #define JB_S(n) (JB_MANGLE_COUNT + (n) - 1)
@@ -51,7 +48,8 @@
 #error "JB_FS defined wrong"
 #endif
 
-#define JB_COUNT JB_FS(12)
+#define JB_SPARE JB_FS(12)  // Unused.
+#define JB_COUNT (JB_SPARE + 1)
 
 #else
 
@@ -75,13 +73,7 @@ namespace LIBC_NAMESPACE_DECL {
 [[gnu::visibility("hidden")]] extern std::array<uint64_t, JB_MANGLE_COUNT> gJmpBufManglers
     LIBC_ASM_LINKAGE_DECLARE(gJmpBufManglers);
 
-// TODO(https://fxbug.dev/42076381): The size has been expanded to accommodate a checksum
-// word, but this is not yet used until callers can be expected to use the new
-// larger size.
-#define JB_COUNT_UNUSED 1
-
-static_assert(sizeof(__jmp_buf) == sizeof(uint64_t) * (JB_COUNT + JB_COUNT_UNUSED),
-              "fix __jmp_buf definition");
+static_assert(sizeof(__jmp_buf) == sizeof(uint64_t) * JB_COUNT, "fix __jmp_buf definition");
 
 }  // namespace LIBC_NAMESPACE_DECL
 
@@ -93,6 +85,30 @@ static_assert(sizeof(__jmp_buf) == sizeof(uint64_t) * (JB_COUNT + JB_COUNT_UNUSE
   .llvm_libc_public \name
   .llvm_libc_public \name, _\name
   .llvm_libc_public \name, sig\name, weak
+
+  // This is .end_function but also defines an end symbol for use in tests.
+  .macro jmp_buf.end_function
+    .purgem jmp_buf.end_function
+    .label LIBC_ASM_LINKAGE(\name\()_end), global
+    .end_function
+  .endm
+
+  // This extra alias for the start is also convenient for tests.
+  .label LIBC_ASM_LINKAGE(\name\()_start), global
+.endm
+
+// CFI to find regno at [jb_regno, #8 * index].
+.macro jmp_buf.cfi jb_regno, regno, index
+  .sleb128.size_dispatch jmp_buf.cfi.1byte, jmp_buf.cfi.2byte, \
+                         (8 * \index), \jb_regno, \regno
+.endm
+.macro jmp_buf.cfi.1byte offset, jb_regno, regno
+  .cfi_escape DW_CFA_expression, \regno, 2, \
+              DW_OP_breg(\jb_regno), SLEB128_1BYTE(\offset)
+.endm
+.macro jmp_buf.cfi.2byte offset, jb_regno, regno
+  .cfi_escape DW_CFA_expression, \regno, 3, \
+              DW_OP_breg(\jb_regno), SLEB128_2BYTE(\offset)
 .endm
 
 #endif // clang-format off

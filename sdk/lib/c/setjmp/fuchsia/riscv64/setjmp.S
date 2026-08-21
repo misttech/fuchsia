@@ -8,6 +8,7 @@
 #include "../jmp_buf.h"
 
 jmp_buf.llvm_libc_function setjmp
+  .cfi_same_value a0
 
 #ifndef __riscv_float_abi_soft
   // Store call-saved FP registers.
@@ -56,6 +57,7 @@ jmp_buf.llvm_libc_function setjmp
   sd a5, JB_SCSP*8(a0)
 
   mv a0, zero
+  .cfi_undefined a0
   ret
 
-.end_function
+jmp_buf.end_function

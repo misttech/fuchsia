@@ -9,27 +9,14 @@
 #include "../jmp_buf.h"
 
 
-// CFI to find regno at [x16, #8*index].
-.macro jb_cfi regno, index
-  .sleb128.size_dispatch jb_cfi.1byte, jb_cfi.2byte, 8 * \index, \regno
-.endm
-.macro jb_cfi.1byte offset, regno
-  .cfi_escape DW_CFA_expression, \regno, 2, \
-              DW_OP_breg(16), SLEB128_1BYTE(\offset)
-.endm
-.macro jb_cfi.2byte offset, regno
-  .cfi_escape DW_CFA_expression, \regno, 3, \
-              DW_OP_breg(16), SLEB128_2BYTE(\offset)
-.endm
-
-// CFI to compute regno as ([x0, #8*index] ^ [x16, #8*index]).
-.macro jb_cfi_mangled regno, index
-  .ifgt (8 * \index) - 0x7f
+// CFI to compute regno as (temp ^ [x2, #8*index]).
+.macro jb_cfi_mangled_temp regno, temp, index
+  .ifgt (8 * \index) - 0x3f
     .error "offset too large for one-byte LEB128"
   .endif
-  .cfi_escape DW_CFA_val_expression, \regno, 7, \
-              DW_OP_breg(0), 8 * \index, DW_OP_deref, \
-              DW_OP_breg(16), 8 * \index, DW_OP_deref, DW_OP_xor
+  .cfi_escape DW_CFA_val_expression, \regno, 6, \
+              DW_OP_breg(2), 8 * \index, DW_OP_deref, \
+              DW_OP_breg(\temp), 0, DW_OP_xor
 .endm
 
 // CFI to compute regno as (mangled ^ mangler).
@@ -39,12 +26,17 @@
 .endm
 
 .macro restore_pair reg1, reg2, index
-  ldp \reg1, \reg2, [x16, #8*\index]
+  ldp \reg1, \reg2, [x0, #8*\index]
   .cfi_same_value \reg1
   .cfi_same_value \reg2
 .endm
 
 jmp_buf.llvm_libc_function longjmp
+  // The caller's x0 value is actually recoverable throughout, though
+  // its default state is undefined (call-clobbered).  Likewise, the
+  // caller's x1 value is recoverable until the apparent caller is setjmp.
+  .cfi_same_value x0
+  .cfi_same_value x1
 
   // The sanitizer runtime wants to be informed of non-local exits.
   // Call __asan_handle_no_return() before doing the actual longjmp.
@@ -54,76 +46,66 @@ jmp_buf.llvm_libc_function longjmp
   // just to keep the stack aligned correctly as required by the ABI.
   stp.spill x0, x1
   stp.spill x30, xzr
+  .label LIBC_ASM_LINKAGE(longjmp_sanitizer_call), global
   bl __asan_handle_no_return
+  .label LIBC_ASM_LINKAGE(longjmp_sanitizer_return), global
   ldp.reload x30, xzr
   ldp.reload x0, x1
 #endif
 
-  // Move the jmp_buf pointer to a temporary register.
-  // We'll use x0 as a scratch register since we clobber it on return anyway.
-  mov x16, x0
-  .cfi_register x0, x16
-
   // Find the manglers.
-  adr_global x0, LIBC_ASM_LINKAGE(gJmpBufManglers)
+  adr_global x2, LIBC_ASM_LINKAGE(gJmpBufManglers)
 
   // Load the words that need to be demangled into temporaries.
   // These just hold values that were in the jmp_buf, so we don't
   // care about leaking them.
-.ifne JB_SP - JB_PC - 1
-.error "JB_SP expected to follow JB_PC immediately"
-.endif
-  ldp x4, x5, [x16, #8*JB_PC]
-  ldr x6, [x16, #8*JB_FP]
-  ldr x7, [x16, #8*JB_X(18)]
+  ldp x3, x4, [x0, #8*JB_PC]  // x3 <= mangled PC; x4 <= mangled FP
+  ldp x5, x6, [x0, #8*JB_SP]  // x5 <= mangled SP; x6 <= mangled SCSP (x18)
 
-  // The next instruction clobbers the state of longjmp's caller.
-  // So from here on, we'll use CFI that unwinds to setjmp's caller instead.
-  // Both callers have the same x0 value, which we now have in x16.
+  // The next instruction clobbers the state of longjmp's caller.  So from here
+  // on, we'll use CFI that unwinds to setjmp's caller instead.  Both callers
+  // have the same x0 value.  The CFA rule is unchanged and continues to report
+  // longjmp's CFA (the SP on entry).  The setjmp caller's x1 was never saved.
   .cfi_undefined x1
-  jb_cfi 19, JB_X(19)
-  jb_cfi 20, JB_X(20)
-  jb_cfi 21, JB_X(21)
-  jb_cfi 22, JB_X(22)
-  jb_cfi 23, JB_X(23)
-  jb_cfi 24, JB_X(24)
-  jb_cfi 25, JB_X(25)
-  jb_cfi 26, JB_X(26)
-  jb_cfi 27, JB_X(27)
-  jb_cfi_mangled 29, JB_FP
-  jb_cfi_mangled 30, JB_PC
-  jb_cfi_mangled 31, JB_SP
-  jb_cfi 64+8, JB_D(8)
-  jb_cfi 64+9, JB_D(9)
-  jb_cfi 64+10, JB_D(10)
-  jb_cfi 64+11, JB_D(11)
-  jb_cfi 64+12, JB_D(12)
-  jb_cfi 64+13, JB_D(13)
-  jb_cfi 64+14, JB_D(14)
+  jmp_buf.cfi 0, 19, JB_X(19)
+  jmp_buf.cfi 0, 20, JB_X(20)
+  jmp_buf.cfi 0, 21, JB_X(21)
+  jmp_buf.cfi 0, 22, JB_X(22)
+  jmp_buf.cfi 0, 23, JB_X(23)
+  jmp_buf.cfi 0, 24, JB_X(24)
+  jmp_buf.cfi 0, 25, JB_X(25)
+  jmp_buf.cfi 0, 26, JB_X(26)
+  jmp_buf.cfi 0, 27, JB_X(27)
+  jmp_buf.cfi 0, 28, JB_X(28)
+  jb_cfi_mangled_temp 29, 4, JB_FP
+  jb_cfi_mangled_temp 30, 3, JB_PC
+  jb_cfi_mangled_temp 31, 5, JB_SP
+  jmp_buf.cfi 0, 64+8, JB_D(8)
+  jmp_buf.cfi 0, 64+9, JB_D(9)
+  jmp_buf.cfi 0, 64+10, JB_D(10)
+  jmp_buf.cfi 0, 64+11, JB_D(11)
+  jmp_buf.cfi 0, 64+12, JB_D(12)
+  jmp_buf.cfi 0, 64+13, JB_D(13)
+  jmp_buf.cfi 0, 64+14, JB_D(14)
 
   // We don't want to leak the raw mangler values, so load them into
   // their target registers rather than temporaries so we don't have
   // more temporaries to clear.
-  ldp x30, x3, [x0, #8*JB_PC]
-  jb_cfi_mangled_reg 30, 4, 30        // x30 (LR) = x30 ^ x4
-  jb_cfi_mangled_reg 31, 5, 3         // sp = x3 ^ x5
-  ldp x29, x2, [x0, #8*JB_FP]
-  jb_cfi_mangled_reg 29, 6, 29        // x29 (FP) = x29 ^ x6
-  ldr x18, [x0, #8*JB_X(18)]
-  jb_cfi_mangled_reg 18, 7, 18        // x18 (SCSP) = x7 ^ x18
-
-  // Get the thread pointer, where the unsafe SP is stored.
-  // Reuse x0 so the address of gJmpBufManglers is not leaked.
-  mrs x0, TPIDR_EL0
+  ldp x30, x29, [x2, #8*JB_PC]
+  jb_cfi_mangled_reg 30, 3, 30        // x30 (LR) = x30 ^ x3
+  jb_cfi_mangled_reg 29, 4, 29        // x29 (FP) = x29 ^ x4
+  ldp x2, x18, [x2, #8*JB_SP]
+  jb_cfi_mangled_reg 31, 5, 2         // sp = x2 ^ x5
+  jb_cfi_mangled_reg 18, 6, 18        // x18 (SCSP) = x18 ^ x6
 
   // Demangle in place.
-  eor x30, x30, x4    // PC (LR)
+  eor x30, x30, x3    // PC (LR)
   .cfi_same_value x30
-  eor x3, x3, x5      // SP
-  .cfi_register sp, x3
-  eor x29, x29, x6    // FP
+  eor x29, x29, x4    // FP
   .cfi_same_value x29
-  eor x18, x18, x7     // Shadow call stack pointer
+  eor x2, x2, x5      // SP
+  .cfi_register sp, x2
+  eor x18, x18, x6     // Shadow call stack pointer
   .cfi_same_value x18
 
   // Restore all the vanilla callee-saves registers.
@@ -139,18 +121,17 @@ jmp_buf.llvm_libc_function longjmp
 
   // Restore SP last.
   // After this, our CFA is setjmp's CFA rather than longjmp's CFA.
-  str x2, [x0, #ZX_TLS_UNSAFE_SP_OFFSET]
-  mov sp, x3
-  .cfi_same_value sp
+  mov sp, x2
+  .cfi_restore sp
 
-  // Don't leak the raw SP values.
+  // Don't leak the raw SP value.
   mov x2, xzr
-  mov x3, xzr
 
   // w0 = w1 ?: 1
   cmp w1, wzr
   csinc w0, w1, wzr, ne
+  .cfi_undefined x0
 
   ret
 
-.end_function
+jmp_buf.end_function

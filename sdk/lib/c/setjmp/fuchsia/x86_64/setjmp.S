@@ -14,6 +14,9 @@
 .endm
 
 jmp_buf.llvm_libc_function setjmp
+  // The caller's %rdi value is actually recoverable throughout, though
+  // its default state is undefined (call-clobbered).
+  .cfi_same_value %rdi
 
   // Copy the values that need mangling into temporaries.
   mov (%rsp), %rax                            // PC
@@ -45,4 +48,4 @@ jmp_buf.llvm_libc_function setjmp
 
   ret
 
-.end_function
+jmp_buf.end_function

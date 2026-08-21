@@ -59,6 +59,7 @@ boot_test_specs = {
 libc_component_tests = [
   "../dlfcn:dlfcn-abi-tests",
   "../scudo:scudo-unittests",
+  "../setjmp:setjmp-tests",
   "../rust:zx-libc_test",
 ]
 libc_test_manifests = []

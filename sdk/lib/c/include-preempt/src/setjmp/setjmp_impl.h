@@ -14,7 +14,7 @@
 #include "asm-linkage.h"
 
 // The llvm-libc header provides the namespaced declaration.
-#include_next "src/setjmp/setjmp_impl.h"
+#include_next "src/setjmp/setjmp_impl.h"  // IWYU pragma: export
 
 namespace LIBC_NAMESPACE_DECL {
 

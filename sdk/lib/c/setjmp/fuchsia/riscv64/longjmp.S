@@ -8,6 +8,9 @@
 #include "../jmp_buf.h"
 
 jmp_buf.llvm_libc_function longjmp
+  // The caller's a0 value is actually recoverable throughout, though
+  // its default state is undefined (call-clobbered).
+  .cfi_same_value a0
 
   // The sanitizer runtime wants to be informed of non-local exits.
   // Call __asan_handle_no_return() before doing the actual longjmp.
@@ -21,14 +24,14 @@ jmp_buf.llvm_libc_function longjmp
   sd a0, 8(sp)
   .cfi_rel_offset a0, 8
   sd a1, 16(sp)
-  .cfi_rel_offset a1, 16
+  .label LIBC_ASM_LINKAGE(longjmp_sanitizer_call), global
   call __asan_handle_no_return
+  .label LIBC_ASM_LINKAGE(longjmp_sanitizer_return), global
   ld ra, 0(sp)
   .cfi_same_value ra
   ld a0, 8(sp)
   .cfi_same_value a0
   ld a1, 16(sp)
-  .cfi_same_value a1
   add sp, sp, 32
   .cfi_adjust_cfa_offset -32
 #endif
@@ -47,56 +50,41 @@ jmp_buf.llvm_libc_function longjmp
   // The next instruction clobbers the state of longjmp's caller.
   // So from here on, we'll use CFI that unwinds to setjmp's caller instead.
   // Both callers have the same a0 value (the jmp_buf).
-  // The a1 value is that of longjmp's caller, not setjmp's.
-  .cfi_same_value a0
-  .cfi_undefined a1
-
-   // CFI to find regno at \offset(a0).
-  .macro jb_cfi regno, offset
-    .if \offset < 0x7f
-      .cfi_escape DW_CFA_expression, \regno, 2, DW_OP_breg(10), \offset
-    .elseif \offset < 0x3fff
-      .cfi_escape DW_CFA_expression, \regno, 3, DW_OP_breg(10), \
-        (\offset & 0x7f) | 0x80, \offset >> 7
-    .else
-      .error "offset too large for two-byte SLEB128"
-    .endif
-  .endm
 
   // CFI to find fs\n at JB_FS(\n)*8(a0).
   .macro jb_cfi_fs n
     .if \n < 2
-      jb_cfi (32 + 8 + \n), JB_FS(\n)*8
+      jmp_buf.cfi 10, (32 + 8 + \n), JB_FS(\n)
     .else
-      jb_cfi (32 + 18 + \n - 2), JB_FS(\n)*8
+      jmp_buf.cfi 10, (32 + 18 + \n - 2), JB_FS(\n)
     .endif
   .endm
 
   // CFI to compute regno as (\offset(a0) ^ \offset(a2)).
-  .macro jb_cfi_mangled regno, offset
-    .ifgt \offset - 0x7f
+  .macro jb_cfi_mangled regno, index
+    .ifgt (8 * \index) - 0x3f
       .error "offset too large for one-byte SLEB128"
     .endif
     .cfi_escape DW_CFA_val_expression, \regno, 7, \
-                DW_OP_breg(10), \offset, DW_OP_deref, \
-                DW_OP_breg(12), \offset, DW_OP_deref, DW_OP_xor
+                DW_OP_breg(10), (8 * \index), DW_OP_deref, \
+                DW_OP_breg(12), (8 * \index), DW_OP_deref, DW_OP_xor
   .endm
 
-  jb_cfi_mangled 1, JB_PC*8  // ra
-  jb_cfi_mangled 2, JB_SP*8  // sp
-  jb_cfi_mangled 8, JB_FP*8  // s0
-  jb_cfi_mangled 3, JB_SCSP*8 // gp
-  jb_cfi 9, JB_S(1)*8
-  jb_cfi 18, JB_S(2)*8
-  jb_cfi 19, JB_S(3)*8
-  jb_cfi 20, JB_S(4)*8
-  jb_cfi 21, JB_S(5)*8
-  jb_cfi 22, JB_S(6)*8
-  jb_cfi 23, JB_S(7)*8
-  jb_cfi 24, JB_S(8)*8
-  jb_cfi 25, JB_S(9)*8
-  jb_cfi 26, JB_S(10)*8
-  jb_cfi 27, JB_S(11)*8
+  jb_cfi_mangled 1, JB_PC  // ra
+  jb_cfi_mangled 2, JB_SP  // sp
+  jb_cfi_mangled 8, JB_FP  // s0
+  jb_cfi_mangled 3, JB_SCSP // gp
+  jmp_buf.cfi 10, 9, JB_S(1)
+  jmp_buf.cfi 10, 18, JB_S(2)
+  jmp_buf.cfi 10, 19, JB_S(3)
+  jmp_buf.cfi 10, 20, JB_S(4)
+  jmp_buf.cfi 10, 21, JB_S(5)
+  jmp_buf.cfi 10, 22, JB_S(6)
+  jmp_buf.cfi 10, 23, JB_S(7)
+  jmp_buf.cfi 10, 24, JB_S(8)
+  jmp_buf.cfi 10, 25, JB_S(9)
+  jmp_buf.cfi 10, 26, JB_S(10)
+  jmp_buf.cfi 10, 27, JB_S(11)
 #ifndef __riscv_float_abi_soft
   jb_cfi_fs 0
   jb_cfi_fs 1
@@ -115,16 +103,16 @@ jmp_buf.llvm_libc_function longjmp
   // We don't want to leak the raw mangler values, so load
   // them into their target registers rather than temporaries
   // so we don't have more temporaries to clear.
-  .macro load_mangler regno, offset, tmpno
-    ld x\regno, \offset(a2)
+  .macro load_mangler regno, index, tmpno
+    ld x\regno, (8 * \index)(a2)
     // CFI to compute x\regno as (x\regno ^ x\tmpno).
     .cfi_escape DW_CFA_val_expression, \regno, 5, \
                 DW_OP_breg(\regno), 0, DW_OP_breg(\tmpno), 0, DW_OP_xor
   .endm
-  load_mangler 1, JB_PC*8, 13     // a3 = x13
-  load_mangler 2, JB_SP*8, 14     // a4 = x14
-  load_mangler 8, JB_FP*8, 15     // a5 = x15
-  load_mangler 3, JB_SCSP*8, 12   // a2 = x12
+  load_mangler 1, JB_PC, 13     // a3 = x13
+  load_mangler 2, JB_SP, 14     // a4 = x14
+  load_mangler 8, JB_FP, 15     // a5 = x15
+  load_mangler 3, JB_SCSP, 16   // a6 = x16
 
   // Now demangle the jmp_buf values in place.
   .macro restore_mangled reg, tmp
@@ -178,4 +166,4 @@ jmp_buf.llvm_libc_function longjmp
   add a0, a0, a1                // a0 += a1; AKA a0 = (a1 == 0) ? 1 : a1
   ret
 
-.end_function
+jmp_buf.end_function

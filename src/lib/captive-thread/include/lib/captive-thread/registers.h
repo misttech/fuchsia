@@ -169,16 +169,14 @@ constexpr RegisterRange auto TemporaryRegisters(
 
 constexpr RegisterRange auto CallSavedRegisters(
     AnyValue<zx_riscv64_thread_state_general_regs_t> auto&& regs [[clang::lifetimebound]]) {
-  return ScatterRange(
-      // s0 is fp and so counted as "special".
-      AnyValueSpan<1>(&regs.s1),
-      // s2 is shadow-call-sp and so counted as "special".
-      AnyValueSpan<9>(&regs.s3));
+  return ScatterRange(            // s0..s1 are discontiguous with s2..s11.
+      AnyValueSpan<1>(&regs.s1),  // s0 is fp and so counted as "special".
+      AnyValueSpan<10>(&regs.s2));
 }
 
 constexpr SpecialRegisterRange auto SpecialRegisters(
     AnyValue<zx_riscv64_thread_state_general_regs_t> auto&& regs [[clang::lifetimebound]]) {
-  return SpecialRegisterAdapter{ScatterRange(regs.pc, regs.sp, regs.s0, regs.tp, regs.ra, regs.s2)};
+  return SpecialRegisterAdapter{ScatterRange(regs.pc, regs.sp, regs.s0, regs.tp, regs.ra, regs.gp)};
 }
 
 constexpr RegisterRange auto ArgumentRegisters(

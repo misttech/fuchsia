@@ -203,6 +203,8 @@ MATCHER_P(WithReturnValue, matcher, "") {
 }
 
 struct Hex {
+  constexpr Hex() = default;
+
   constexpr explicit(false) Hex(uint64_t x) : value{x} {}
 
   constexpr explicit(false) operator uint64_t() const { return value; }
@@ -213,7 +215,7 @@ struct Hex {
 
   friend void PrintTo(const Hex& hex, std::ostream* os) { *os << hex.AsString(); }
 
-  uint64_t value;
+  uint64_t value = 0;
 };
 
 constexpr std::ostream& operator<<(std::ostream& os, const Hex& hex) {

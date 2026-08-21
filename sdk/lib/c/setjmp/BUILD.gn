@@ -2,6 +2,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import("//build/test.gni")
 import("../libc.gni")
 
 llvm_libc_source_set("setjmp") {
@@ -52,4 +53,28 @@ source_set("jmp_buf") {
   visibility = [ ":*" ]
   public = [ "fuchsia/jmp_buf.h" ]
   deps = [ "..:asm-linkage" ]
+}
+
+# TODO(https://fxbug.dev/345351373): This has to be a separate test binary
+# because it uses gtest, not zxtest.  When libc-unittests can use gtest, this
+# should be folded in.
+test("setjmp-tests") {
+  deps = [ ":longjmp-unwind-tests" ]
+}
+
+libc_test("longjmp-unwind-tests") {
+  visibility = [ ":*" ]
+  gtest = true
+  sources = [
+    "longjmp-unwind-tests.cc",
+    "unwind-all-regs.S",
+  ]
+  deps = [
+    ":jmp_buf",
+    ":setjmp.testonly",
+    "..:asm-linkage",
+    "//src/lib/captive-thread/testing",
+    "//src/lib/unwinder",
+    "//zircon/kernel/lib/arch",
+  ]
 }
