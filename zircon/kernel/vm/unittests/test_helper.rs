@@ -8,7 +8,7 @@ use crate::vm::arch_vm_aspace::{
     ARCH_MMU_FLAG_PERM_READ, ARCH_MMU_FLAG_PERM_USER, ARCH_MMU_FLAG_PERM_WRITE, ArchMmuFlags,
 };
 use crate::vm::attribution::AttributionCounts;
-use crate::vm::page::{VmPagePtr, vm_page_t};
+use crate::vm::page::VmPagePtr;
 use crate::vm::vm_object::VmObject;
 use crate::vm::vm_object_paged::VmObjectPaged;
 use core::ffi::c_void;
@@ -26,7 +26,7 @@ pub fn make_committed_pager_vmo<const N: usize>(
     resizable: bool,
 ) -> Result<(RefPtr<VmObjectPaged>, [VmPagePtr; N]), Status> {
     let mut raw_vmo = core::ptr::null_mut();
-    let mut page_ptrs: [*mut vm_page_t; N] = [core::ptr::null_mut(); N];
+    let mut page_ptrs = [core::ptr::null_mut(); N];
 
     // SAFETY: page_ptrs.as_mut_ptr() is valid for writing N pointers, and raw_vmo is a valid out-pointer.
     let status = unsafe {
@@ -50,7 +50,7 @@ pub fn make_committed_pager_vmo<const N: usize>(
     let pages = page_ptrs.map(|ptr| {
         // SAFETY: When cpp_make_committed_pager_vmo returns ZX_OK, ptr is a valid pointer to a
         //kernel page.
-        let ptr = unsafe { VmPagePtr::from_raw(ptr) };
+        let ptr = unsafe { VmPagePtr::from_ffi(ptr) };
         // Based on cpp_make_committed_pager_vmo returning ZX_OK, all page pointers are guaranteed
         // to be non-null and available.
         ptr.unwrap()
@@ -69,7 +69,7 @@ pub fn make_partially_committed_pager_vmo<const C: usize>(
 ) -> Result<(RefPtr<VmObjectPaged>, [VmPagePtr; C]), Status> {
     assert!(C <= num_pages, "committed_pages ({C}) cannot exceed num_pages ({num_pages})");
     let mut raw_vmo = core::ptr::null_mut();
-    let mut page_ptrs: [*mut vm_page_t; C] = [core::ptr::null_mut(); C];
+    let mut page_ptrs = [core::ptr::null_mut(); C];
 
     // SAFETY: The page pointer array and output VMO reference are valid for
     // their respective writes.
@@ -92,7 +92,7 @@ pub fn make_partially_committed_pager_vmo<const C: usize>(
     let pages = page_ptrs.map(|ptr| {
         // SAFETY: When cpp_make_partially_committed_pager_vmo returns ZX_OK, ptr is a valid
         // pointer to a page.
-        unsafe { VmPagePtr::from_raw(ptr) }.expect("page pointer is non-null")
+        unsafe { VmPagePtr::from_ffi(ptr) }.expect("page pointer is non-null")
     });
 
     Ok((vmo, pages))

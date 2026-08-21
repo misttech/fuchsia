@@ -95,7 +95,7 @@ impl PageQueues {
     pub unsafe fn debug_page_is_wired(&self, page: VmPagePtr) -> bool {
         // SAFETY: `self` is valid for required accesses, and the caller guarantees `page` is
         // attached to a VM object per function safety preconditions.
-        unsafe { bindings::cpp_page_queues_debug_page_is_wired(self.as_raw(), page.as_raw()) }
+        unsafe { bindings::cpp_page_queues_debug_page_is_wired(self.as_raw(), page.as_ffi()) }
     }
 
     /// Returns whether `page` is in any anonymous queue.
@@ -107,7 +107,7 @@ impl PageQueues {
         // SAFETY: `self` is valid for required accesses, and the caller guarantees `page` is
         // attached to a VM object per function safety preconditions.
         unsafe {
-            bindings::cpp_page_queues_debug_page_is_any_anonymous(self.as_raw(), page.as_raw())
+            bindings::cpp_page_queues_debug_page_is_any_anonymous(self.as_raw(), page.as_ffi())
         }
     }
 
@@ -120,7 +120,7 @@ impl PageQueues {
         // SAFETY: `self` is valid for required accesses, and the caller guarantees `page` is
         // attached to a VM object per function safety preconditions.
         unsafe {
-            bindings::cpp_page_queues_debug_page_is_pager_backed_dirty(self.as_raw(), page.as_raw())
+            bindings::cpp_page_queues_debug_page_is_pager_backed_dirty(self.as_raw(), page.as_ffi())
         }
     }
 
@@ -133,7 +133,7 @@ impl PageQueues {
         // SAFETY: `self` is valid for required accesses, and the caller guarantees `page` is
         // attached to a VM object per function safety preconditions.
         unsafe {
-            bindings::cpp_page_queues_debug_page_is_reclaim_isolate(self.as_raw(), page.as_raw())
+            bindings::cpp_page_queues_debug_page_is_reclaim_isolate(self.as_raw(), page.as_ffi())
         }
     }
 
@@ -147,7 +147,7 @@ impl PageQueues {
         // SAFETY: `self` and `&mut age` are valid for required accesses, and the caller
         // guarantees `page` is attached to a VM object per function safety preconditions.
         let is_reclaim = unsafe {
-            bindings::cpp_page_queues_debug_page_is_reclaim(self.as_raw(), page.as_raw(), &mut age)
+            bindings::cpp_page_queues_debug_page_is_reclaim(self.as_raw(), page.as_ffi(), &mut age)
         };
         if is_reclaim { Some(QueueAge(age)) } else { None }
     }
@@ -177,7 +177,7 @@ impl PageQueues {
     /// The caller must guarantee `page` is attached to a VM object.
     pub unsafe fn is_page_reclaimable(page: VmPagePtr) -> bool {
         // SAFETY: The caller guarantees `page` is attached to a VM object.
-        unsafe { bindings::cpp_page_queues_is_page_reclaimable(page.as_raw()) }
+        unsafe { bindings::cpp_page_queues_is_page_reclaimable(page.as_ffi()) }
     }
 
     /// # Safety
@@ -186,7 +186,7 @@ impl PageQueues {
     pub unsafe fn move_to_reclaim_dont_need(&self, page: VmPagePtr) {
         // SAFETY: `self` is valid for required accesses, and the caller guarantees `page` is
         // attached to a VM object per function safety preconditions.
-        unsafe { bindings::cpp_page_queues_move_to_reclaim_dont_need(self.as_raw(), page.as_raw()) }
+        unsafe { bindings::cpp_page_queues_move_to_reclaim_dont_need(self.as_raw(), page.as_ffi()) }
     }
 
     /// Returns whether or not the reclaim queues only include pager backed pages or not.
@@ -203,6 +203,6 @@ impl PageQueues {
     pub unsafe fn debug_page_is_anonymous(&self, page: VmPagePtr) -> bool {
         // SAFETY: `self` is valid for required accesses, and the caller guarantees `page` is
         // attached to a VM object per function safety preconditions.
-        unsafe { bindings::cpp_page_queues_debug_page_is_anonymous(self.as_raw(), page.as_raw()) }
+        unsafe { bindings::cpp_page_queues_debug_page_is_anonymous(self.as_raw(), page.as_ffi()) }
     }
 }

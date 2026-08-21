@@ -311,7 +311,7 @@ impl VmObject {
         };
         Status::ok(status)?;
         // SAFETY: `page_ptr` points to a live `vm_page_t` returned by `GetPageBlocking` on `ZX_OK`.
-        let page = unsafe { VmPagePtr::from_raw(page_ptr) }.expect("page pointer is non-null");
+        let page = unsafe { VmPagePtr::from_ffi(page_ptr) }.expect("page pointer is non-null");
         Ok((page, PAddr(paddr)))
     }
 
@@ -458,7 +458,7 @@ impl VmObject {
             )
         };
         Status::ok(status)?;
-        let page = unsafe { VmPagePtr::from_raw(page_ptr) }.expect("page pointer is non-null");
+        let page = unsafe { VmPagePtr::from_ffi(page_ptr) }.expect("page pointer is non-null");
         Ok((page, PAddr(paddr)))
     }
 

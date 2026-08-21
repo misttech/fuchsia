@@ -88,7 +88,7 @@ impl VmObjectPaged {
     /// Debug helper to fetch backing page pointer.
     pub fn debug_get_page(&self, offset: u64) -> Option<VmPagePtr> {
         let raw = unsafe { bindings::cpp_vm_object_paged_debug_get_page(self.as_raw(), offset) };
-        unsafe { VmPagePtr::from_raw(raw) }
+        unsafe { VmPagePtr::from_ffi(raw) }
     }
 
     /// Converts a `RefPtr<VmObjectPaged>` into a base `RefPtr<VmObject>`.

@@ -426,19 +426,8 @@ kernel_bindgen_crate("page-bindings") {
   function_allowlist = [
     "cpp_get_count",
     "cpp_add_to_initial_count",
-    "cpp_vm_page_is_loan_cancelled",
-    "cpp_vm_page_is_loaned",
-    "cpp_vm_page_set_is_loaned",
-    "cpp_vm_page_clear_is_loaned",
-    "cpp_vm_page_set_is_loan_cancelled",
-    "cpp_vm_page_clear_is_loan_cancelled",
     "cpp_vm_page_dump",
-    "cpp_vm_page_paddr",
-    "cpp_vm_page_state",
     "cpp_vm_page_set_state",
-    "cpp_vm_page_object_get_object",
-    "cpp_vm_page_object_get_page_offset",
-    "cpp_vm_page_object_get_pin_count",
   ]
   type_allowlist = [
     "vm_page_t",
@@ -953,6 +942,7 @@ kernel_rust_mod("vm-rs") {
     "//src/lib/kprint",
     "//src/lib/ksync",
     "//src/lib/zr",
+    "//third_party/rust_crates:bitflags",
     "//third_party/rust_crates:pin-init",
     "//zircon/kernel/lib/init:init_rust",
     "//zircon/kernel/lib/page:page-rs",

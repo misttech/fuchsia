@@ -26,13 +26,13 @@ impl PmmNode {
         let ptr = unsafe { bindings::cpp_pmm_index_to_page(index) };
         // SAFETY: `ptr` is guaranteed to be a valid pointer to a kernel page if it is not null
         // because `index` was valid.
-        unsafe { VmPagePtr::from_raw(ptr) }
+        unsafe { VmPagePtr::from_ffi(ptr) }
     }
 
     /// Converts a `VmPagePtr` to a page index.
     pub fn page_to_index(&self, page: VmPagePtr) -> u32 {
         // SAFETY: `page.as_raw()` is guaranteed to be a valid pointer to a kernel page.
-        unsafe { bindings::cpp_pmm_page_to_index(page.as_raw()) }
+        unsafe { bindings::cpp_pmm_page_to_index(page.as_ffi()) }
     }
 
     /// Converts a page index to a physical address.

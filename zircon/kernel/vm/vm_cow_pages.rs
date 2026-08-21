@@ -107,7 +107,7 @@ impl VmCowPages {
         let status = unsafe {
             bindings::cpp_vm_cow_pages_replace_page_with_loaned(
                 self.as_raw(),
-                before_page.as_raw(),
+                before_page.as_ffi(),
                 offset,
             )
         };
@@ -133,7 +133,7 @@ impl VmCowPages {
     pub fn dedup_zero_page(&self, page: VmPagePtr, offset: u64) -> bool {
         // SAFETY: `self.as_raw()` returns a valid `VmCowPages` pointer, and `page.as_raw()` is a
         // valid `vm_page_t` pointer.
-        unsafe { bindings::cpp_vm_cow_pages_dedup_zero_page(self.as_raw(), page.as_raw(), offset) }
+        unsafe { bindings::cpp_vm_cow_pages_dedup_zero_page(self.as_raw(), page.as_ffi(), offset) }
     }
 
     /// Returns the page at `offset`, if present in this node.
@@ -141,7 +141,7 @@ impl VmCowPages {
         // SAFETY: `self.as_raw()` returns a valid `VmCowPages` pointer.
         let raw = unsafe { bindings::cpp_vm_cow_pages_debug_get_page(self.as_raw(), offset) };
         // SAFETY: `raw` is either null or points to a valid `vm_page_t`.
-        unsafe { VmPagePtr::from_raw(raw) }
+        unsafe { VmPagePtr::from_ffi(raw) }
     }
 
     /// Returns whether this node has no page at `offset`.
@@ -174,7 +174,7 @@ impl VmCowPages {
         // SAFETY: `self.as_raw()` returns a valid `VmCowPages` pointer, and `page.as_raw()` is a
         // valid `vm_page_t` pointer.
         let status = unsafe {
-            bindings::cpp_vm_cow_pages_evict_loaned_page(self.as_raw(), page.as_raw(), offset)
+            bindings::cpp_vm_cow_pages_evict_loaned_page(self.as_raw(), page.as_ffi(), offset)
         };
         Status::ok(status)
     }
@@ -222,7 +222,7 @@ impl VmCowPages {
         let ok = unsafe {
             bindings::cpp_vm_cow_pages_reclaim_page(
                 self.as_raw(),
-                page.as_raw(),
+                page.as_ffi(),
                 offset,
                 eviction_action,
                 compressor_ptr,
