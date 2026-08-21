@@ -33,17 +33,17 @@ profiler::KernelSamplerSession::CreateAndInit(const zx_sampler_config_t& config)
 
   zx::resource sampling_resource = std::move(sampling_result->resource());
 
-  zx::iob iob;
+  zx::handle sampler;
 
   FX_LOGS(DEBUG) << "Creating kernel sampler.";
   if (zx_status_t init_status =
-          zx_sampler_create(sampling_resource.get(), 0, &config, iob.reset_and_get_address());
+          zx_sampler_create(sampling_resource.get(), 0, &config, sampler.reset_and_get_address());
       init_status != ZX_OK) {
     FX_PLOGS(ERROR, init_status) << "Failed to create the kernel sampler.";
     return zx::error(init_status);
   }
 
-  return zx::ok(std::make_unique<profiler::KernelSamplerSession>(std::move(iob)));
+  return zx::ok(std::make_unique<profiler::KernelSamplerSession>(std::move(sampler)));
 }
 
 zx::result<> profiler::KernelSamplerSession::Start() {
@@ -53,7 +53,22 @@ zx::result<> profiler::KernelSamplerSession::Start() {
   }
   FX_LOGS(DEBUG) << "Starting kernel sampler.";
   running_ = true;
-  return zx::make_result(zx_sampler_start(per_cpu_buffers_.get()));
+  return zx::make_result(zx_sampler_start(sampler_.get()));
+}
+
+void profiler::KernelSampler::ServiceBuffers() {
+  if (session_ && session_->is_running()) {
+    service_buffers_task_.set_handler([this]() {
+      if (session_ && session_->is_running()) {
+        if (zx::result<> res = ForwardBuffers(); res.is_error()) {
+          FX_PLOGS(WARNING, res.error_value()) << "Failed to forward buffers";
+          return;
+        }
+        ServiceBuffers();
+      }
+    });
+    service_buffers_task_.PostDelayed(dispatcher_, zx::sec(1));
+  }
 }
 
 zx::result<> profiler::KernelSamplerSession::Stop() {
@@ -62,7 +77,7 @@ zx::result<> profiler::KernelSamplerSession::Stop() {
     return zx::error(ZX_ERR_BAD_STATE);
   }
   running_ = false;
-  return zx::make_result(zx_sampler_stop(per_cpu_buffers_.get()));
+  return zx::make_result(zx_sampler_stop(sampler_.get()));
 }
 
 zx::result<> profiler::KernelSampler::Start(size_t buffer_size_mb) {
@@ -97,6 +112,19 @@ zx::result<> profiler::KernelSampler::Start(size_t buffer_size_mb) {
     return session_result.take_error();
   }
   session_ = std::move(session_result).value();
+
+  // Passing a nullptr to zx_sampler_read queries the required buffer size to read out data.
+  size_t max_size = 0;
+  if (zx_status_t status = zx_sampler_read(session_->BorrowSampler()->get(), nullptr, 0, &max_size);
+      status != ZX_OK) {
+    return zx::error(status);
+  }
+
+  if (max_size == 0) {
+    return zx::error(ZX_ERR_BAD_STATE);
+  }
+
+  sample_buffer_.resize((max_size + sizeof(uint64_t) - 1) / sizeof(uint64_t));
 
   FX_LOGS(DEBUG) << "Attaching to known tasks and watching for new ones.";
   zx::result known_threads_res = targets_.ForEachProcess(
@@ -144,7 +172,11 @@ zx::result<> profiler::KernelSampler::Start(size_t buffer_size_mb) {
   if (watch_result.is_error()) {
     return watch_result;
   }
-  return session_->Start();
+  zx::result<> res = session_->Start();
+  if (res.is_ok()) {
+    ServiceBuffers();
+  }
+  return res;
 }
 
 zx::result<> profiler::KernelSampler::AddTarget(JobTarget&& target) {
@@ -169,20 +201,12 @@ zx::result<> profiler::KernelSampler::AddTarget(JobTarget&& target) {
   return targets_.AddJob(std::move(target));
 }
 
-zx::result<> profiler::KernelSampler::Stop() {
+zx::result<> profiler::KernelSampler::ForwardBuffers() {
   TRACE_DURATION("cpu_profiler", __PRETTY_FUNCTION__);
-  FX_LOGS(DEBUG) << "Stopping kernel sampler.";
-  if (zx::result res = session_->Stop(); res.is_error()) {
-    FX_PLOGS(WARNING, res.error_value()) << "Failed to stop";
-    return res;
+  if (!session_) {
+    return zx::ok();
   }
-  zx::iob buffers;
-  if (zx::result buffers_result = session_->GetBuffers(); buffers_result.is_ok()) {
-    buffers = *std::move(buffers_result);
-  } else {
-    return buffers_result.take_error();
-  }
-  session_.reset();
+  zx::unowned_handle sampler = session_->BorrowSampler();
 
   // Flatten the watched threads so that we can filter out the records that aren't relevant.
   std::unordered_set<zx_koid_t> profiled_threads;
@@ -224,27 +248,51 @@ zx::result<> profiler::KernelSampler::Stop() {
   };
   trace::TraceReader reader{std::move(consume_record), std::move(handle_error)};
 
-  // Query to get the size we need to allocate.
-  size_t max_size;
-  if (zx_status_t status = zx_sampler_read(buffers.get(), nullptr, 0, &max_size); status != ZX_OK) {
-    return zx::error(status);
-  }
-
-  std::vector<uint8_t> data(max_size);
-
-  size_t bytes_read;
-  if (zx_status_t status = zx_sampler_read(buffers.get(), data.data(), max_size, &bytes_read);
+  size_t bytes_read = 0;
+  if (zx_status_t status = zx_sampler_read(sampler->get(), sample_buffer_.data(),
+                                           sample_buffer_.size() * sizeof(uint64_t), &bytes_read);
       status != ZX_OK) {
     return zx::error(status);
   }
+  if (bytes_read == 0) {
+    return zx::ok();
+  }
 
-  trace::Chunk chunk{reinterpret_cast<uint64_t*>(data.data()), bytes_read / 8};
+  trace::Chunk chunk{sample_buffer_.data(), bytes_read / sizeof(uint64_t)};
   if (!reader.ReadRecords(chunk)) {
     FX_LOGS(ERROR) << "Buffer data corrupted";
     encountered_error = ZX_ERR_BAD_STATE;
   }
 
   return zx::make_result(encountered_error);
+}
+
+profiler::KernelSampler::~KernelSampler() { std::ignore = Stop(); }
+
+zx::result<> profiler::KernelSampler::Stop() {
+  TRACE_DURATION("cpu_profiler", __PRETTY_FUNCTION__);
+  FX_LOGS(DEBUG) << "Stopping kernel sampler.";
+  service_buffers_task_.Cancel();
+  job_watchers_.clear();
+  process_watchers_.clear();
+  if (!session_) {
+    sample_cb_ = nullptr;
+    return zx::ok();
+  }
+  if (zx::result res = session_->Stop(); res.is_error()) {
+    FX_PLOGS(WARNING, res.error_value()) << "Failed to stop";
+    session_.reset();
+    sample_buffer_.clear();
+    sample_buffer_.shrink_to_fit();
+    sample_cb_ = nullptr;
+    return res;
+  }
+  zx::result res = ForwardBuffers();
+  session_.reset();
+  sample_buffer_.clear();
+  sample_buffer_.shrink_to_fit();
+  sample_cb_ = nullptr;
+  return res;
 }
 
 void profiler::KernelSampler::AddThread(std::vector<zx_koid_t> job_path, zx_koid_t pid,

@@ -17,24 +17,21 @@ namespace profiler {
 // Wrapper over zx_sampler_start
 class KernelSamplerSession {
  public:
-  explicit KernelSamplerSession(zx::iob per_cpu_buffers)
-      : per_cpu_buffers_(std::move(per_cpu_buffers)) {}
+  explicit KernelSamplerSession(zx::handle sampler) : sampler_(std::move(sampler)) {}
   static zx::result<std::unique_ptr<KernelSamplerSession>> CreateAndInit(
       const zx_sampler_config_t& config);
 
   zx::result<> Start();
   zx::result<> Stop();
-  zx::result<zx::iob> GetBuffers() {
-    zx::iob duplicate;
-    return zx::make_result(per_cpu_buffers_.duplicate(ZX_RIGHT_SAME_RIGHTS, &duplicate),
-                           std::move(duplicate));
-  }
+  zx::unowned_handle BorrowSampler() { return zx::unowned_handle(sampler_.get()); }
+
+  bool is_running() const { return running_; }
 
   ~KernelSamplerSession() = default;
 
  private:
   bool running_ = false;
-  zx::iob per_cpu_buffers_;
+  zx::handle sampler_;
 };
 
 class KernelSampler : public Sampler {
@@ -47,14 +44,19 @@ class KernelSampler : public Sampler {
   zx::result<> AddTarget(JobTarget&& target) override;
   zx::result<> Start(size_t buffer_size_mb) override;
   zx::result<> Stop() override;
+  ~KernelSampler() override;
 
  private:
   void AddThread(std::vector<zx_koid_t> job_path, zx_koid_t pid, zx_koid_t tid,
                  zx::thread t) override;
   void RemoveThread(std::vector<zx_koid_t> job_path, zx_koid_t pid, zx_koid_t tid) override;
+  zx::result<> ForwardBuffers();
+  void ServiceBuffers();
 
   std::unique_ptr<KernelSamplerSession> session_;
   size_t buffer_size_bytes_;
+  async::TaskClosure service_buffers_task_;
+  std::vector<uint64_t> sample_buffer_;
 };
 }  // namespace profiler
 #endif  // SRC_PERFORMANCE_EXPERIMENTAL_PROFILER_KERNEL_SAMPLER_H_

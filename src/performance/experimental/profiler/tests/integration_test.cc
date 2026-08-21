@@ -7,6 +7,7 @@
 #include <lib/component/incoming/cpp/protocol.h>
 #include <lib/fdio/spawn.h>
 #include <lib/syslog/cpp/macros.h>
+#include <lib/zx/clock.h>
 #include <lib/zx/job.h>
 #include <lib/zx/process.h>
 #include <lib/zx/result.h>
@@ -21,8 +22,10 @@
 #include <zircon/types.h>
 
 #include <cctype>
+#include <condition_variable>
 #include <cstddef>
 #include <cstdlib>
+#include <mutex>
 #include <set>
 #include <sstream>
 #include <string>
@@ -47,53 +50,133 @@ void MakeWork() {
   zx_thread_exit();
 }
 
-std::pair<std::set<zx_koid_t>, std::set<zx_koid_t>> GetOutputKoids(zx::socket sock) {
-  std::string contents;
-  if (!fsl::BlockingCopyToString(std::move(sock), &contents)) {
-    return std::make_pair(std::set<zx_koid_t>(), std::set<zx_koid_t>());
+class SocketReader {
+ public:
+  explicit SocketReader(zx::socket sock) : sock_(std::move(sock)) {
+    thread_ = std::thread([this]() { ReadLoop(); });
   }
 
-  std::set<zx_koid_t> pids;
-  std::set<zx_koid_t> tids;
+  ~SocketReader() {
+    sock_.reset();
+    if (thread_.joinable()) {
+      thread_.join();
+    }
+  }
 
-  auto record_consumer = [&](trace::Record record) {
-    if (record.type() == trace::RecordType::kProfiler) {
-      const auto& profiler_record = record.GetProfiler();
-      if (profiler_record.type() == trace::ProfilerRecordType::kBacktrace) {
-        const auto& pt = profiler_record.backtrace().process_thread;
-        if (pt.process_koid() != 0) {
-          pids.insert(pt.process_koid());
+  void ReadUntilRecordCount(size_t min_records = 11, size_t min_pids = 0, size_t min_tids = 0) {
+    std::unique_lock<std::mutex> lock(mutex_);
+    cv_.wait(lock, [this, min_records, min_pids, min_tids]() {
+      return (record_count_ >= min_records && pids_.size() >= min_pids &&
+              tids_.size() >= min_tids) ||
+             closed_;
+    });
+  }
+
+  std::set<zx_koid_t> pids() {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return pids_;
+  }
+
+  std::set<zx_koid_t> tids() {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return tids_;
+  }
+
+  size_t record_count() {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return record_count_;
+  }
+
+ private:
+  void ReadLoop() {
+    auto record_consumer = [this](trace::Record record) {
+      std::lock_guard<std::mutex> lock(mutex_);
+      if (record.type() == trace::RecordType::kProfiler) {
+        const auto& profiler_record = record.GetProfiler();
+        if (profiler_record.type() == trace::ProfilerRecordType::kBacktrace) {
+          record_count_++;
+          const auto& pt = profiler_record.backtrace().process_thread;
+          if (pt.process_koid() != 0) {
+            pids_.insert(pt.process_koid());
+          }
+          if (pt.thread_koid() != 0) {
+            tids_.insert(pt.thread_koid());
+          }
         }
-        if (pt.thread_koid() != 0) {
-          tids.insert(pt.thread_koid());
+      } else if (record.type() == trace::RecordType::kLargeRecord) {
+        const auto& large_record = record.GetLargeRecord();
+        if (large_record.type() == trace::LargeRecordType::kBlob) {
+          const auto& blob = large_record.GetBlob();
+          if (std::holds_alternative<trace::LargeRecordData::BlobEvent>(blob)) {
+            record_count_++;
+            const auto& event = std::get<trace::LargeRecordData::BlobEvent>(blob);
+            if (event.process_thread.process_koid() != 0) {
+              pids_.insert(event.process_thread.process_koid());
+            }
+            if (event.process_thread.thread_koid() != 0) {
+              tids_.insert(event.process_thread.thread_koid());
+            }
+          }
         }
       }
-    } else if (record.type() == trace::RecordType::kLargeRecord) {
-      const auto& large_record = record.GetLargeRecord();
-      if (large_record.type() == trace::LargeRecordType::kBlob) {
-        const auto& blob = large_record.GetBlob();
-        if (std::holds_alternative<trace::LargeRecordData::BlobEvent>(blob)) {
-          const auto& event = std::get<trace::LargeRecordData::BlobEvent>(blob);
-          if (event.process_thread.process_koid() != 0) {
-            pids.insert(event.process_thread.process_koid());
-          }
-          if (event.process_thread.thread_koid() != 0) {
-            tids.insert(event.process_thread.thread_koid());
-          }
+      cv_.notify_all();
+    };
+
+    trace::TraceReader reader(record_consumer, [](std::string_view) {});
+    std::vector<uint8_t> buffer;
+    size_t buffer_end = 0;
+
+    while (true) {
+      if (buffer.size() - buffer_end < 65536) {
+        buffer.resize(buffer_end + 65536);
+      }
+      size_t actual = 0;
+      zx_status_t status =
+          sock_.read(0, buffer.data() + buffer_end, buffer.size() - buffer_end, &actual);
+      if (status == ZX_ERR_SHOULD_WAIT) {
+        zx_signals_t pending = 0;
+        status = sock_.wait_one(ZX_SOCKET_READABLE | ZX_SOCKET_PEER_CLOSED, zx::time::infinite(),
+                                &pending);
+        if (status == ZX_OK && (pending & ZX_SOCKET_PEER_CLOSED) &&
+            !(pending & ZX_SOCKET_READABLE)) {
+          break;
+        }
+        continue;
+      } else if (status == ZX_ERR_PEER_CLOSED) {
+        break;
+      } else if (status != ZX_OK) {
+        break;
+      }
+
+      if (actual > 0) {
+        buffer_end += actual;
+        size_t words_in_chunk = buffer_end / sizeof(uint64_t);
+        trace::Chunk chunk(reinterpret_cast<const uint64_t*>(buffer.data()), words_in_chunk);
+        reader.ReadRecords(chunk);
+        size_t words_consumed = words_in_chunk - chunk.remaining_words();
+        size_t bytes_consumed = words_consumed * sizeof(uint64_t);
+        if (bytes_consumed > 0) {
+          memmove(buffer.data(), buffer.data() + bytes_consumed, buffer_end - bytes_consumed);
+          buffer_end -= bytes_consumed;
         }
       }
     }
-  };
+    {
+      std::lock_guard<std::mutex> lock(mutex_);
+      closed_ = true;
+    }
+    cv_.notify_all();
+  }
 
-  trace::TraceReader reader(record_consumer, [](std::string_view) {});
-
-  const uint64_t* words = reinterpret_cast<const uint64_t*>(contents.data());
-  size_t num_words = contents.size() / sizeof(uint64_t);
-  trace::Chunk chunk(words, num_words);
-  reader.ReadRecords(chunk);
-
-  return {std::move(pids), std::move(tids)};
-}
+  zx::socket sock_;
+  std::thread thread_;
+  std::mutex mutex_;
+  std::condition_variable cv_;
+  std::set<zx_koid_t> pids_;
+  std::set<zx_koid_t> tids_;
+  size_t record_count_ = 0;
+  bool closed_ = false;
+};
 
 // Sample the callstack via frame pointer at 100hz.
 std::vector<fprofiler::SamplingConfig> default_sample_configs() {
@@ -238,9 +321,9 @@ TEST(ProfilerIntegrationTest, EndToEnd) {
                   }})
                   .is_ok());
 
+  SocketReader reader(std::move(in_socket));
   ASSERT_TRUE(client->Start({{.buffer_results = true}}).is_ok());
-  // Get some samples
-  sleep(1);
+  reader.ReadUntilRecordCount(11);
 
   auto stop_response = client->Stop();
   ASSERT_TRUE(stop_response.is_ok());
@@ -283,6 +366,7 @@ TEST(ProfilerIntegrationTest, NewThreads) {
                       .config = std::move(config),
                   }})
                   .is_ok());
+  SocketReader reader(std::move(in_socket));
   ASSERT_TRUE(client->Start({{.buffer_results = true}}).is_ok());
 
   // Start some threads;
@@ -292,22 +376,20 @@ TEST(ProfilerIntegrationTest, NewThreads) {
   t1.detach();
   t2.detach();
   t3.detach();
-  // Get some samples
-  sleep(1);
+  reader.ReadUntilRecordCount(11, 1, 2);
 
   auto stop_response = client->Stop();
   ASSERT_TRUE(stop_response.is_ok());
   ASSERT_TRUE(stop_response.value().samples_collected().has_value());
   EXPECT_GT(stop_response.value().samples_collected().value(), size_t{10});
-  auto [pids, tids] = GetOutputKoids(std::move(in_socket));
 
   ASSERT_TRUE(client->Reset().is_ok());
 
   // We should only have one pid
-  EXPECT_EQ(size_t{1}, pids.size());
+  EXPECT_EQ(size_t{1}, reader.pids().size());
 
   // We should only have more than one thread
-  EXPECT_GT(tids.size(), size_t{1});
+  EXPECT_GT(reader.tids().size(), size_t{1});
 }
 
 // Monitor ourself via our job id
@@ -342,6 +424,7 @@ TEST(ProfilerIntegrationTest, OwnJobId) {
                       .config = std::move(config),
                   }})
                   .is_ok());
+  SocketReader reader(std::move(in_socket));
   ASSERT_TRUE(client->Start({{.buffer_results = true}}).is_ok());
 
   std::thread t1{MakeWork};
@@ -350,25 +433,24 @@ TEST(ProfilerIntegrationTest, OwnJobId) {
   t1.detach();
   t2.detach();
   t3.detach();
-  // Get some samples
-  sleep(1);
+  reader.ReadUntilRecordCount(11, 1, 1);
 
   auto stop_response = client->Stop();
   ASSERT_TRUE(stop_response.is_ok());
   ASSERT_TRUE(stop_response.value().samples_collected().has_value());
   ASSERT_GT(stop_response.value().samples_collected().value(), size_t{10});
-  auto [pids, tids] = GetOutputKoids(std::move(in_socket));
+
   ASSERT_TRUE(client->Reset().is_ok());
 
   // We should only have one pid
-  EXPECT_EQ(size_t{1}, pids.size());
+  EXPECT_EQ(size_t{1}, reader.pids().size());
 
   // And that pid should be us
   zx::unowned_process process_self = zx::process::self();
   zx_info_handle_basic_t process_info;
   ASSERT_EQ(ZX_OK, process_self->get_info(ZX_INFO_HANDLE_BASIC, &process_info, sizeof(process_info),
                                           nullptr, nullptr));
-  EXPECT_EQ(*pids.begin(), process_info.koid);
+  EXPECT_EQ(*reader.pids().begin(), process_info.koid);
 }
 
 // Monitor ourself via our job id and then launch a process as part of our job and check that it
@@ -415,6 +497,7 @@ TEST(ProfilerIntegrationTest, LaunchedProcess) {
                   }})
                   .is_ok());
 
+  SocketReader reader(std::move(in_socket));
   ASSERT_TRUE(client->Start({{.buffer_results = true}}).is_ok());
 
   // Launch a thread in our process to ensure we get samples that aren't
@@ -429,14 +512,13 @@ TEST(ProfilerIntegrationTest, LaunchedProcess) {
 
   self->get_info(ZX_INFO_JOB_PROCESSES, nullptr, 0, nullptr, &num_processes);
   ASSERT_EQ(num_processes, size_t{3});
-  // Get some samples
-  sleep(1);
+  reader.ReadUntilRecordCount(11, 3, 1);
 
   auto stop_response = client->Stop();
   ASSERT_TRUE(stop_response.is_ok());
   ASSERT_TRUE(stop_response.value().samples_collected().has_value());
   ASSERT_GT(stop_response.value().samples_collected().value(), size_t{10});
-  auto [pids, tids] = GetOutputKoids(std::move(in_socket));
+
   ASSERT_TRUE(client->Reset().is_ok());
 
   // We should three pids, our pid, the pid of process1, and the pid of process2
@@ -450,10 +532,10 @@ TEST(ProfilerIntegrationTest, LaunchedProcess) {
   ASSERT_EQ(ZX_OK,
             process2.get_info(ZX_INFO_HANDLE_BASIC, &pid_info, sizeof(pid_info), nullptr, nullptr));
   zx_koid_t process2_pid = pid_info.koid;
-  EXPECT_EQ(size_t{3}, pids.size());
-  EXPECT_TRUE(pids.find(our_pid) != pids.end());
-  EXPECT_TRUE(pids.find(process1_pid) != pids.end());
-  EXPECT_TRUE(pids.find(process2_pid) != pids.end());
+  EXPECT_EQ(size_t{3}, reader.pids().size());
+  EXPECT_TRUE(reader.pids().find(our_pid) != reader.pids().end());
+  EXPECT_TRUE(reader.pids().find(process1_pid) != reader.pids().end());
+  EXPECT_TRUE(reader.pids().find(process2_pid) != reader.pids().end());
   process1.kill();
   process2.kill();
 }
@@ -492,6 +574,7 @@ TEST(ProfilerIntegrationTest, LaunchedProcessThreadSpawner) {
                   }})
                   .is_ok());
 
+  SocketReader reader(std::move(in_socket));
   ASSERT_TRUE(client->Start({{.buffer_results = true}}).is_ok());
 
   // Launch the thread spawner process after starting
@@ -500,18 +583,17 @@ TEST(ProfilerIntegrationTest, LaunchedProcessThreadSpawner) {
 
   ASSERT_EQ(ZX_OK, fdio_spawn(self->get(), FDIO_SPAWN_CLONE_ALL, "/pkg/bin/thread_spawner", kArgs,
                               process.reset_and_get_address()));
-  // Get some samples
-  sleep(2);
+  reader.ReadUntilRecordCount(11, 1, 11);
 
   auto stop_response = client->Stop();
   ASSERT_TRUE(stop_response.is_ok());
   ASSERT_TRUE(stop_response.value().samples_collected().has_value());
   ASSERT_GT(stop_response.value().samples_collected().value(), size_t{10});
-  auto [pids, tids] = GetOutputKoids(std::move(in_socket));
+
   ASSERT_TRUE(client->Reset().is_ok());
 
   // We should have many sampled threads
-  EXPECT_GT(tids.size(), size_t{10});
+  EXPECT_GT(reader.tids().size(), size_t{10});
 
   process.kill();
 }
@@ -542,21 +624,20 @@ TEST(ProfilerIntegrationTest, ComponentByMoniker) {
                       .config = std::move(demo_target_config),
                   }})
                   .is_ok());
+  SocketReader reader(std::move(in_socket));
   ASSERT_TRUE(client->Start({{.buffer_results = true}}).is_ok());
-
-  // Get some samples
-  sleep(1);
+  reader.ReadUntilRecordCount(11, 1, 1);
 
   auto stop_response = client->Stop();
   ASSERT_TRUE(stop_response.is_ok());
   ASSERT_TRUE(stop_response.value().samples_collected().has_value());
   ASSERT_GT(stop_response.value().samples_collected().value(), size_t{10});
-  auto [pids, tids] = GetOutputKoids(std::move(in_socket));
+
   ASSERT_TRUE(client->Reset().is_ok());
 
   // We should have only one thread and one process
-  EXPECT_EQ(tids.size(), size_t{1});
-  EXPECT_EQ(pids.size(), size_t{1});
+  EXPECT_EQ(reader.tids().size(), size_t{1});
+  EXPECT_EQ(reader.pids().size(), size_t{1});
 }
 
 TEST(ProfilerIntegrationTest, LaunchedComponent) {
@@ -584,9 +665,9 @@ TEST(ProfilerIntegrationTest, LaunchedComponent) {
                       .config = std::move(config),
                   }})
                   .is_ok());
+  SocketReader reader(std::move(in_socket));
   ASSERT_TRUE(client->Start({{.buffer_results = true}}).is_ok());
-  // Get some samples
-  sleep(1);
+  reader.ReadUntilRecordCount(11);
 
   auto stop_response = client->Stop();
   ASSERT_TRUE(stop_response.is_ok());
@@ -622,21 +703,20 @@ TEST(ProfilerIntegrationTest, ChildComponents) {
                   }})
                   .is_ok());
 
+  SocketReader reader(std::move(in_socket));
   ASSERT_TRUE(client->Start({{.buffer_results = true}}).is_ok());
-  // Get some samples (use 3 seconds to ensure HWASan / QEMU multi-component startup completes)
-  sleep(3);
+  reader.ReadUntilRecordCount(11, 4, 4);
 
   auto stop_response = client->Stop();
   ASSERT_TRUE(stop_response.is_ok());
   ASSERT_TRUE(stop_response.value().samples_collected().has_value());
   EXPECT_GT(stop_response.value().samples_collected().value(), size_t{10});
-  auto [pids, tids] = GetOutputKoids(std::move(in_socket));
-
-  // We should see 4 different pids and tids
-  EXPECT_EQ(tids.size(), size_t{4});
-  EXPECT_EQ(pids.size(), size_t{4});
 
   ASSERT_TRUE(client->Reset().is_ok());
+
+  // We should see 4 different pids and tids
+  EXPECT_EQ(reader.tids().size(), size_t{4});
+  EXPECT_EQ(reader.pids().size(), size_t{4});
 }
 
 TEST(ProfilerIntegrationTest, ChildComponentsByMoniker) {
@@ -673,21 +753,20 @@ TEST(ProfilerIntegrationTest, ChildComponentsByMoniker) {
                   }})
                   .is_ok());
 
+  SocketReader reader(std::move(in_socket));
   ASSERT_TRUE(client->Start({{.buffer_results = true}}).is_ok());
-  // Get some samples (use 3 seconds to ensure HWASan / QEMU multi-component startup completes)
-  sleep(3);
+  reader.ReadUntilRecordCount(11, 4, 4);
 
   auto stop_response = client->Stop();
   ASSERT_TRUE(stop_response.is_ok());
   ASSERT_TRUE(stop_response.value().samples_collected().has_value());
   EXPECT_GT(stop_response.value().samples_collected().value(), size_t{10});
-  auto [pids, tids] = GetOutputKoids(std::move(in_socket));
-
-  // We should see 4 different pids and tids
-  EXPECT_EQ(tids.size(), size_t{4});
-  EXPECT_EQ(pids.size(), size_t{4});
 
   ASSERT_TRUE(client->Reset().is_ok());
+
+  // We should see 4 different pids and tids
+  EXPECT_EQ(reader.tids().size(), size_t{4});
+  EXPECT_EQ(reader.pids().size(), size_t{4});
   ASSERT_TRUE(TearDownInstance(lifecycle_client, name, moniker).is_ok());
 }
 
@@ -719,6 +798,7 @@ TEST(ProfilerIntegrationTest, DelayedConnectByMoniker) {
                       .config = std::move(config),
                   }})
                   .is_ok());
+  SocketReader reader(std::move(in_socket));
   ASSERT_TRUE(client->Start({{.buffer_results = true}}).is_ok());
 
   auto lifecycle_client_end = component::Connect<fuchsia_sys2::LifecycleController>();
@@ -727,20 +807,18 @@ TEST(ProfilerIntegrationTest, DelayedConnectByMoniker) {
 
   ASSERT_TRUE(RunInstance(lifecycle_client, name, url, moniker).is_ok());
 
-  // Get some samples
-  sleep(1);
+  reader.ReadUntilRecordCount(11, 1, 1);
 
   auto stop_response = client->Stop();
   ASSERT_TRUE(stop_response.is_ok());
   ASSERT_TRUE(stop_response.value().samples_collected().has_value());
   EXPECT_GT(stop_response.value().samples_collected().value(), size_t{10});
-  auto [pids, tids] = GetOutputKoids(std::move(in_socket));
-
-  // We should see 1 pid and tid from the demo target
-  EXPECT_EQ(tids.size(), size_t{1});
-  EXPECT_EQ(pids.size(), size_t{1});
 
   ASSERT_TRUE(client->Reset().is_ok());
+
+  // We should see 1 pid and tid from the demo target
+  EXPECT_EQ(reader.tids().size(), size_t{1});
+  EXPECT_EQ(reader.pids().size(), size_t{1});
   ASSERT_TRUE(TearDownInstance(lifecycle_client, name, moniker).is_ok());
 }
 
@@ -772,6 +850,7 @@ TEST(ProfilerIntegrationTest, DelayedConnectByUrl) {
                       .config = std::move(config),
                   }})
                   .is_ok());
+  SocketReader reader(std::move(in_socket));
   ASSERT_TRUE(client->Start({{.buffer_results = true}}).is_ok());
 
   auto lifecycle_client_end = component::Connect<fuchsia_sys2::LifecycleController>();
@@ -780,20 +859,18 @@ TEST(ProfilerIntegrationTest, DelayedConnectByUrl) {
 
   ASSERT_TRUE(RunInstance(lifecycle_client, name, url, moniker).is_ok());
 
-  // Get some samples
-  sleep(1);
+  reader.ReadUntilRecordCount(11, 1, 1);
 
   auto stop_response = client->Stop();
   ASSERT_TRUE(stop_response.is_ok());
   ASSERT_TRUE(stop_response.value().samples_collected().has_value());
   EXPECT_GT(stop_response.value().samples_collected().value(), size_t{10});
-  auto [pids, tids] = GetOutputKoids(std::move(in_socket));
-
-  // We should see 1 pid and tid from the demo target
-  EXPECT_EQ(tids.size(), size_t{1});
-  EXPECT_EQ(pids.size(), size_t{1});
 
   ASSERT_TRUE(client->Reset().is_ok());
+
+  // We should see 1 pid and tid from the demo target
+  EXPECT_EQ(reader.tids().size(), size_t{1});
+  EXPECT_EQ(reader.pids().size(), size_t{1});
   ASSERT_TRUE(TearDownInstance(lifecycle_client, name, moniker).is_ok());
 }
 
@@ -829,10 +906,10 @@ TEST(ProfilerIntegrationTest, ExitedProcess) {
                                 }}}})
                   .is_ok());
 
+  SocketReader reader(std::move(in_socket));
   ASSERT_TRUE(client->Start({{.buffer_results = true}}).is_ok());
 
-  // Get some samples
-  sleep(2);
+  reader.ReadUntilRecordCount(11, 1, 1);
 
   // Destroy the target before the profiler stops
   ASSERT_TRUE(TearDownInstance(lifecycle_client, name, moniker).is_ok());
@@ -844,11 +921,10 @@ TEST(ProfilerIntegrationTest, ExitedProcess) {
   ASSERT_TRUE(stop_response.is_ok());
   ASSERT_TRUE(stop_response.value().samples_collected().has_value());
   EXPECT_GT(stop_response.value().samples_collected().value(), size_t{10});
-  auto [pids, tids] = GetOutputKoids(std::move(in_socket));
 
   // We should see 1 pid and tid from the demo target.
-  EXPECT_EQ(tids.size(), size_t{1});
-  EXPECT_EQ(pids.size(), size_t{1});
+  EXPECT_EQ(reader.tids().size(), size_t{1});
+  EXPECT_EQ(reader.pids().size(), size_t{1});
 
   // We should still see the mapping we eagerly pulled.
   EXPECT_EQ(stop_response->missing_process_mappings()->size(), size_t{0});
@@ -886,11 +962,11 @@ TEST(ProfilerIntegrationTest, ExitedProcessLateAttach) {
                                 }}}})
                   .is_ok());
 
+  SocketReader reader(std::move(in_socket));
   ASSERT_TRUE(client->Start({{.buffer_results = true}}).is_ok());
 
   ASSERT_TRUE(RunInstance(lifecycle_client, name, url, moniker).is_ok());
-  // Get some samples
-  sleep(1);
+  reader.ReadUntilRecordCount(11, 1, 1);
 
   // Destroy the target before the profiler stops
   ASSERT_TRUE(TearDownInstance(lifecycle_client, name, moniker).is_ok());
@@ -902,11 +978,10 @@ TEST(ProfilerIntegrationTest, ExitedProcessLateAttach) {
   ASSERT_TRUE(stop_response.is_ok());
   ASSERT_TRUE(stop_response.value().samples_collected().has_value());
   EXPECT_GT(stop_response.value().samples_collected().value(), size_t{10});
-  auto [pids, tids] = GetOutputKoids(std::move(in_socket));
 
   // We should see 1 pid and tid from the demo target.
-  EXPECT_EQ(tids.size(), size_t{1});
-  EXPECT_EQ(pids.size(), size_t{1});
+  EXPECT_EQ(reader.tids().size(), size_t{1});
+  EXPECT_EQ(reader.pids().size(), size_t{1});
 
   // We should still see the mapping we eagerly pulled.
   EXPECT_EQ(stop_response->missing_process_mappings()->size(), size_t{0});
@@ -944,6 +1019,7 @@ TEST(ProfilerIntegrationTest, ExitedAfterConfigure) {
   // Destroy the instance after configuring, but before starting. We should still be able to run the
   // profiler, though we may not get any samples.
   ASSERT_TRUE(TearDownInstance(lifecycle_client, name, moniker).is_ok());
+  SocketReader reader(std::move(in_socket));
   ASSERT_TRUE(client->Start({{.buffer_results = true}}).is_ok());
   ASSERT_TRUE(client->Stop().is_ok());
   ASSERT_TRUE(client->Reset().is_ok());
@@ -987,18 +1063,17 @@ TEST(ProfilerIntegrationTest, StackSampling) {
                   }})
                   .is_ok());
 
+  SocketReader reader(std::move(in_socket));
   ASSERT_TRUE(client->Start({{.buffer_results = true}}).is_ok());
-  // Get some samples
-  sleep(1);
+  reader.ReadUntilRecordCount(11, 1, 1);
 
   auto stop_response = client->Stop();
   ASSERT_TRUE(stop_response.is_ok());
   ASSERT_TRUE(stop_response.value().samples_collected().has_value());
   EXPECT_GT(stop_response.value().samples_collected().value(), size_t{10});
 
-  auto [pids, tids] = GetOutputKoids(std::move(in_socket));
-  EXPECT_EQ(tids.size(), size_t{1});
-  EXPECT_EQ(pids.size(), size_t{1});
+  EXPECT_EQ(reader.tids().size(), size_t{1});
+  EXPECT_EQ(reader.pids().size(), size_t{1});
 
   ASSERT_TRUE(client->Reset().is_ok());
 }
