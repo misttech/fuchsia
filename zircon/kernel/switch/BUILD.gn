@@ -632,7 +632,6 @@ clippy_lints = [
   "manual-div-ceil",
   "manual-is-multiple-of",
   "manual-non-exhaustive",
-  "manual-swap",
   "match-like-matches-macro",
   "needless-late-init",
   "needless-lifetimes",

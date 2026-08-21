@@ -57,7 +57,6 @@ rustc_library("fbl") {
     configs += [ "//zircon/kernel/switch:allow-redundant-pattern-matching" ]
     configs += [ "//zircon/kernel/switch:allow-collapsible-if" ]
     configs += [ "//zircon/kernel/switch:allow-let-unit-value" ]
-    configs += [ "//zircon/kernel/switch:allow-manual-swap" ]
     configs += [ "//zircon/kernel/switch:allow-type-complexity" ]
     configs += [ "//zircon/kernel/switch:allow-ptr-eq" ]
     configs += [ "//zircon/kernel/switch:allow-len-zero" ]

@@ -1239,20 +1239,15 @@ where
             }
 
             if ptr_ref2 != ns1.right.get() {
-                let tmp = *ptr_ref1;
-                *ptr_ref1 = *ptr_ref2;
-                *ptr_ref2 = tmp;
-
+                #[allow(clippy::swap_ptr_to_ref)]
+                core::mem::swap(&mut *ptr_ref1, &mut *ptr_ref2);
                 *ns1_rp = node2;
                 ptr_ref2
             } else {
                 debug_assert_eq!(*ns1.parent.get(), node1);
                 debug_assert_eq!(*ns2.right.get(), node2);
-
-                let tmp = *ptr_ref1;
-                *ptr_ref1 = *ns2.right.get();
-                *ns2.right.get() = tmp;
-
+                #[allow(clippy::swap_ptr_to_ref)]
+                core::mem::swap(&mut *ptr_ref1, &mut *ns2.right.get());
                 *ns1.parent.get() = node2;
                 ns2.right.get()
             }
