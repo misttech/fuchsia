@@ -100,7 +100,7 @@ zx::channel LdLoadZirconProcessTestsBase::Start(bool custom_bootstrap) {
 
   // Now that all the allocations are done, clear the address space
   // reservation so there's no such VMAR when the process starts.
-  ClearLegacyAddressSpaceReservation();
+  ClearVmarReservation();
 
   // Pack up the bootstrap message(s) and start the process running.
   zx::channel bootstrap_receiver = procargs_.MakeBootstrap();
@@ -147,15 +147,10 @@ void LdLoadZirconProcessTestsBase::NeverStart() {
   CheckVmar();
 
   // Remove this before examination as before start.
-  ClearLegacyAddressSpaceReservation();
+  ClearVmarReservation();
 }
 
-void LdLoadZirconProcessTestsBase::ClearLegacyAddressSpaceReservation() {
-  if (zx::vmar vmar = std::exchange(legacy_reserve_vmar_, {})) {
-    zx_status_t status = vmar.destroy();
-    ASSERT_EQ(status, ZX_OK) << zx_status_get_string(status);
-  }
-}
+void LdLoadZirconProcessTestsBase::ClearVmarReservation() { reserve_vmar_ = {}; }
 
 zx_info_vmar_t LdLoadZirconProcessTestsBase::RootVmarInfo() const {
   EXPECT_TRUE(root_vmar_);
@@ -170,9 +165,7 @@ zx_info_vmar_t LdLoadZirconProcessTestsBase::RootVmarInfo() const {
 
 // This is only called after CreateProcess(), via some subclass Init().
 // But it's before anything has used the root VMAR for anything.
-void LdLoadZirconProcessTestsBase::LegacyAddressSpaceReservation() {
-  ASSERT_FALSE(legacy_reserve_vmar_) << "called twice??";
-
+void LdLoadZirconProcessTestsBase::VmarReservation() {
   zx_info_vmar_t info = RootVmarInfo();
 
   // TODO(https://fxbug.dev/42099306): Match the system program loader
@@ -188,14 +181,19 @@ void LdLoadZirconProcessTestsBase::LegacyAddressSpaceReservation() {
   }
 
   const uint64_t size = top_half_start - info.base;
-  uintptr_t reserve_base;
-  zx_status_t status =
-      root_vmar_.allocate(ZX_VM_SPECIFIC, 0, size, &legacy_reserve_vmar_, &reserve_base);
-  ASSERT_EQ(status, ZX_OK) << "zx_vmar_allocate " << std::hex << std::showbase << size << " at 0 "
-                           << zx_status_get_string(status) << " vs root base=" << info.base
-                           << " len=" << info.len;
-  ASSERT_TRUE(legacy_reserve_vmar_);
-  ASSERT_EQ(reserve_base, info.base);
+  InitVmarReservation({.base = info.base, .len = size});
+}
+
+void LdLoadZirconProcessTestsBase::InitVmarReservation(zx_info_vmar_t bounds) {
+  ASSERT_FALSE(reserve_vmar_) << "called twice??";
+
+  zx_info_vmar_t info = RootVmarInfo();
+  auto res = reserve_vmar_.Init(root_vmar_.borrow(), info, bounds);
+
+  ASSERT_TRUE(res.is_ok()) << "zx_vmar_allocate " << std::hex << std::showbase << bounds.len
+                           << " at 0 " << zx_status_get_string(res.status_value())
+                           << " vs root base=" << info.base << " len=" << info.len;
+  ASSERT_TRUE(reserve_vmar_);
 }
 
 int64_t LdLoadZirconProcessTestsBase::Run() {

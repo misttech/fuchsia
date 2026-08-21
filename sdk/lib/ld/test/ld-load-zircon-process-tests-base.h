@@ -8,6 +8,7 @@
 #include <lib/elfldltl/soname.h>
 #include <lib/fit/function.h>
 #include <lib/ld/testing/test-processargs.h>
+#include <lib/ld/vmar.h>
 #include <lib/zx/process.h>
 #include <lib/zx/thread.h>
 #include <lib/zx/vmar.h>
@@ -57,7 +58,7 @@ class LdLoadZirconProcessTestsBase : public LdLoadZirconLdsvcTestsBase {
   // process_log_fd() before this is applied.
   void RedirectFd(int target_number, fbl::unique_fd transfer_fd);
 
-  zx_info_vmar_t RootVmarInfo() const;
+  [[gnu::const]] zx_info_vmar_t RootVmarInfo() const;
 
  protected:
   const zx::process& process() const { return process_; }
@@ -73,7 +74,10 @@ class LdLoadZirconProcessTestsBase : public LdLoadZirconLdsvcTestsBase {
 
   // Call this after CreateProcess() to mimic the system program loader's
   // behavior of avoiding the low half of the address space.
-  void LegacyAddressSpaceReservation();
+  void VmarReservation();
+
+  // This does the actual initialization of the `reserve_vmar_`.
+  void InitVmarReservation(zx_info_vmar_t bounds);
 
   // These are set by CreateProcess() and used by Start() and Run().
   const zx::vmar& root_vmar() { return root_vmar_; }
@@ -108,7 +112,7 @@ class LdLoadZirconProcessTestsBase : public LdLoadZirconLdsvcTestsBase {
   int64_t Wait();
 
  private:
-  void ClearLegacyAddressSpaceReservation();
+  void ClearVmarReservation();
 
   uint32_t create_options_ = 0;
   zx::process process_;
@@ -116,7 +120,7 @@ class LdLoadZirconProcessTestsBase : public LdLoadZirconLdsvcTestsBase {
   // Not all subclasses use these.
   fbl::unique_fd process_log_fd_;
   zx::vmar root_vmar_;
-  zx::vmar legacy_reserve_vmar_;
+  ld::VmarReservation reserve_vmar_;
   zx::thread thread_;
   TestProcessArgs procargs_;
   std::vector<fit::function<void(TestProcessArgs&)>> procargs_deferred_;

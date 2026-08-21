@@ -7,6 +7,7 @@
 
 #include <lib/zx/result.h>
 #include <lib/zx/vmar.h>
+#include <zircon/assert.h>
 #include <zircon/syscalls.h>
 
 #include <utility>
@@ -59,8 +60,13 @@ class VmarReservation {
                     zx_info_vmar_t reserve_info) {
     uintptr_t child_addr;
     uintptr_t offset = reserve_info.base - parent_info.base;
-    return zx::make_result(
-        parent->allocate(ZX_VM_SPECIFIC, offset, reserve_info.len, &vmar_, &child_addr));
+    zx_status_t status =
+        parent->allocate(ZX_VM_SPECIFIC, offset, reserve_info.len, &vmar_, &child_addr);
+    if (status != ZX_OK) {
+      return zx::error{status};
+    }
+    ZX_DEBUG_ASSERT(child_addr == reserve_info.base);
+    return zx::ok();
   }
 
   const zx::vmar& vmar() const { return vmar_; }
