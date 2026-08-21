@@ -307,7 +307,7 @@ impl<'a> BufferRef<'a> {
     }
 
     /// Splits at `mid` (included in the right child), yielding two BufferRefs.
-    pub fn split_at(&self, mid: usize) -> (BufferRef<'_>, BufferRef<'_>) {
+    pub fn split_at(&self, mid: usize) -> (BufferRef<'a>, BufferRef<'a>) {
         let ranges = split_range(&self.range(), mid);
         let (left_slice, right_slice) = self.slice.split_at(mid);
         (
@@ -326,6 +326,20 @@ impl<'a> BufferRef<'a> {
                 trusted: self.trusted,
             },
         )
+    }
+
+    /// Returns an iterator over byte chunks of up to `chunk_size` bytes.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `chunk_size` is 0.
+    pub fn chunks(self, chunk_size: usize) -> Chunks<'a> {
+        Chunks {
+            inner: self.slice.chunks(chunk_size),
+            start: self.start,
+            allocator_id: self.allocator_id,
+            trusted: self.trusted,
+        }
     }
 
     /// Returns the range in the underlying BufferSource that this BufferRef covers.
@@ -591,11 +605,102 @@ impl<'a> MutableBufferRef<'a> {
         self.slice.reborrow()
     }
 
+    /// Returns an iterator over mutable byte chunks of up to `chunk_size` bytes.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `chunk_size` is 0.
+    pub fn chunks_mut(self, chunk_size: usize) -> ChunksMut<'a> {
+        ChunksMut {
+            inner: self.slice.into_chunks_mut(chunk_size),
+            start: self.range.start,
+            allocator_id: self.allocator_id,
+            trusted: self.trusted,
+        }
+    }
+
     /// Consumes this reference and returns a mutable pointer slice.
     pub fn into_mut_ptr_slice(self) -> MutPtrByteSlice<'a> {
         self.slice
     }
 }
+
+/// An iterator over slice chunks of a `BufferRef`.
+#[derive(Debug)]
+pub struct Chunks<'a> {
+    inner: storage_ptr_slice::Chunks<'a>,
+    start: usize,
+    allocator_id: usize,
+    trusted: bool,
+}
+
+impl<'a> Iterator for Chunks<'a> {
+    type Item = BufferRef<'a>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let slice = self.inner.next()?;
+        let len = slice.len();
+        let start = self.start;
+        self.start += len;
+        Some(BufferRef {
+            slice,
+            start,
+            end: start + len,
+            allocator_id: self.allocator_id,
+            trusted: self.trusted,
+        })
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        self.inner.size_hint()
+    }
+}
+
+impl ExactSizeIterator for Chunks<'_> {
+    fn len(&self) -> usize {
+        self.inner.len()
+    }
+}
+
+impl std::iter::FusedIterator for Chunks<'_> {}
+
+/// An iterator over mutable slice chunks of a `MutableBufferRef`.
+#[derive(Debug)]
+pub struct ChunksMut<'a> {
+    inner: storage_ptr_slice::ChunksMut<'a>,
+    start: usize,
+    allocator_id: usize,
+    trusted: bool,
+}
+
+impl<'a> Iterator for ChunksMut<'a> {
+    type Item = MutableBufferRef<'a>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let slice = self.inner.next()?;
+        let len = slice.len();
+        let start = self.start;
+        self.start += len;
+        Some(MutableBufferRef {
+            slice,
+            range: start..start + len,
+            allocator_id: self.allocator_id,
+            trusted: self.trusted,
+        })
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        self.inner.size_hint()
+    }
+}
+
+impl ExactSizeIterator for ChunksMut<'_> {
+    fn len(&self) -> usize {
+        self.inner.len()
+    }
+}
+
+impl std::iter::FusedIterator for ChunksMut<'_> {}
 
 // SAFETY: BufferRef is a read-only view over allocator-managed memory. It does not allow
 // mutation and behaves like `&[u8]`, which is Send and Sync.
@@ -608,3 +713,131 @@ unsafe impl Sync for BufferRef<'_> {}
 unsafe impl Send for MutableBufferRef<'_> {}
 // SAFETY: See Send impl above.
 unsafe impl Sync for MutableBufferRef<'_> {}
+
+#[cfg(test)]
+mod tests {
+    use crate::buffer_allocator::{BufferAllocator, BufferSource};
+
+    #[fuchsia::test]
+    async fn test_chunks() {
+        let source = BufferSource::new(1024 * 1024);
+        let allocator = BufferAllocator::new(512, source);
+        let mut buf = allocator.allocate_buffer(1000).await;
+        let init_data: Vec<u8> = (0..1000).map(|i| (i % 256) as u8).collect();
+        buf.as_mut().copy_from_slice(&init_data);
+
+        let bref = buf.as_ref();
+        let chunks: Vec<_> = bref.chunks(300).collect();
+        assert_eq!(chunks.len(), 4);
+        assert_eq!(chunks[0].len(), 300);
+        assert_eq!(chunks[1].len(), 300);
+        assert_eq!(chunks[2].len(), 300);
+        assert_eq!(chunks[3].len(), 100);
+
+        let mut data = vec![0u8; 300];
+        chunks[0].copy_to_slice(&mut data);
+        assert_eq!(data, (0..300).map(|i| (i % 256) as u8).collect::<Vec<u8>>());
+
+        let mut data_last = vec![0u8; 100];
+        chunks[3].copy_to_slice(&mut data_last);
+        assert_eq!(data_last, (900..1000).map(|i| (i % 256) as u8).collect::<Vec<u8>>());
+
+        // Test exact multiple
+        let bref_exact = buf.subslice(0..600);
+        let chunks_exact: Vec<_> = bref_exact.chunks(200).collect();
+        assert_eq!(chunks_exact.len(), 3);
+        assert_eq!(chunks_exact.iter().map(|c| c.len()).collect::<Vec<_>>(), vec![200, 200, 200]);
+
+        // Test empty buffer
+        let bref_empty = buf.subslice(0..0);
+        assert_eq!(bref_empty.chunks(100).count(), 0);
+        assert_eq!(bref_empty.chunks(100).len(), 0);
+
+        // Test chunk larger than buffer
+        let chunks_large: Vec<_> = bref.chunks(2000).collect();
+        assert_eq!(chunks_large.len(), 1);
+        assert_eq!(chunks_large[0].len(), 1000);
+
+        // Test ExactSizeIterator and size_hint
+        let mut iter = bref.chunks(300);
+        assert_eq!(iter.len(), 4);
+        assert_eq!(iter.size_hint(), (4, Some(4)));
+        assert_eq!(iter.next().unwrap().len(), 300);
+        assert_eq!(iter.len(), 3);
+        assert_eq!(iter.size_hint(), (3, Some(3)));
+        assert_eq!(iter.next().unwrap().len(), 300);
+        assert_eq!(iter.len(), 2);
+        assert_eq!(iter.size_hint(), (2, Some(2)));
+        assert_eq!(iter.next().unwrap().len(), 300);
+        assert_eq!(iter.len(), 1);
+        assert_eq!(iter.size_hint(), (1, Some(1)));
+        assert_eq!(iter.next().unwrap().len(), 100);
+        assert_eq!(iter.len(), 0);
+        assert_eq!(iter.size_hint(), (0, Some(0)));
+        assert!(iter.next().is_none());
+    }
+
+    #[fuchsia::test]
+    async fn test_chunks_mut() {
+        let source = BufferSource::new(1024 * 1024);
+        let allocator = BufferAllocator::new(512, source);
+        let mut buf = allocator.allocate_buffer(1000).await;
+
+        for (i, mut chunk) in buf.as_mut().chunks_mut(300).enumerate() {
+            chunk.fill(i as u8 + 1);
+        }
+
+        let mut data = vec![0u8; 1000];
+        buf.copy_to_slice(&mut data);
+        assert_eq!(&data[0..300], &[1u8; 300]);
+        assert_eq!(&data[300..600], &[2u8; 300]);
+        assert_eq!(&data[600..900], &[3u8; 300]);
+        assert_eq!(&data[900..1000], &[4u8; 100]);
+
+        // Test exact multiple
+        let mut buf_exact = allocator.allocate_buffer(600).await;
+        for (i, mut chunk) in buf_exact.as_mut().chunks_mut(200).enumerate() {
+            chunk.fill((i + 10) as u8);
+        }
+        let mut data_exact = vec![0u8; 600];
+        buf_exact.copy_to_slice(&mut data_exact);
+        assert_eq!(&data_exact[0..200], &[10u8; 200]);
+        assert_eq!(&data_exact[200..400], &[11u8; 200]);
+        assert_eq!(&data_exact[400..600], &[12u8; 200]);
+
+        // Test empty buffer
+        let mut buf_empty = allocator.allocate_buffer(512).await;
+        let empty_ref = buf_empty.subslice_mut(0..0);
+        assert_eq!(empty_ref.chunks_mut(100).count(), 0);
+
+        // Test ExactSizeIterator on chunks_mut
+        let mut buf_exact_iter = allocator.allocate_buffer(1000).await;
+        let mut iter = buf_exact_iter.as_mut().chunks_mut(300);
+        assert_eq!(iter.len(), 4);
+        assert_eq!(iter.size_hint(), (4, Some(4)));
+        let mut c1 = iter.next().unwrap();
+        c1.fill(0x11);
+        assert_eq!(iter.len(), 3);
+        assert_eq!(iter.size_hint(), (3, Some(3)));
+        let mut c2 = iter.next().unwrap();
+        c2.fill(0x22);
+        assert_eq!(iter.len(), 2);
+        assert_eq!(iter.size_hint(), (2, Some(2)));
+        let mut c3 = iter.next().unwrap();
+        c3.fill(0x33);
+        assert_eq!(iter.len(), 1);
+        assert_eq!(iter.size_hint(), (1, Some(1)));
+        let mut c4 = iter.next().unwrap();
+        c4.fill(0x44);
+        assert_eq!(iter.len(), 0);
+        assert_eq!(iter.size_hint(), (0, Some(0)));
+        assert!(iter.next().is_none());
+
+        let mut data_iter = vec![0u8; 1000];
+        buf_exact_iter.copy_to_slice(&mut data_iter);
+        assert_eq!(&data_iter[0..300], &[0x11; 300]);
+        assert_eq!(&data_iter[300..600], &[0x22; 300]);
+        assert_eq!(&data_iter[600..900], &[0x33; 300]);
+        assert_eq!(&data_iter[900..1000], &[0x44; 100]);
+    }
+}

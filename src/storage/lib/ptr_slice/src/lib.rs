@@ -209,7 +209,7 @@ impl<'a> PtrByteSlice<'a> {
     /// # Panics
     ///
     /// Panics if `chunk_size` is 0.
-    pub fn chunks(&self, chunk_size: usize) -> Chunks<'_> {
+    pub fn chunks(&self, chunk_size: usize) -> Chunks<'a> {
         assert!(chunk_size > 0, "chunk_size must be > 0");
         Chunks { slice: *self, chunk_size, offset: 0 }
     }
@@ -462,6 +462,17 @@ impl<'a> MutPtrByteSlice<'a> {
         ChunksMut { slice: self.reborrow(), chunk_size, offset: 0 }
     }
 
+    /// Consumes this slice and returns an iterator over mutable byte chunks of up to
+    /// `chunk_size` bytes.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `chunk_size` is 0.
+    pub fn into_chunks_mut(self, chunk_size: usize) -> ChunksMut<'a> {
+        assert!(chunk_size > 0, "chunk_size must be > 0");
+        ChunksMut { slice: self, chunk_size, offset: 0 }
+    }
+
     /// Returns an `io::Write` adapter for this slice.
     pub fn writer(self) -> Writer<'a> {
         Writer::new(self)
@@ -665,6 +676,7 @@ impl<T: Copy + FromBytes> ElemMut<'_, T> {
 }
 
 /// An iterator over read-only byte chunks of a pointer slice.
+#[derive(Debug)]
 pub struct Chunks<'a> {
     slice: PtrByteSlice<'a>,
     chunk_size: usize,
@@ -684,9 +696,24 @@ impl<'a> Iterator for Chunks<'a> {
             Some(chunk)
         }
     }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        let len = self.len();
+        (len, Some(len))
+    }
 }
 
+impl ExactSizeIterator for Chunks<'_> {
+    fn len(&self) -> usize {
+        let remaining = self.slice.len().saturating_sub(self.offset);
+        remaining.div_ceil(self.chunk_size)
+    }
+}
+
+impl std::iter::FusedIterator for Chunks<'_> {}
+
 /// An iterator over mutable byte chunks of a pointer slice.
+#[derive(Debug)]
 pub struct ChunksMut<'a> {
     slice: MutPtrByteSlice<'a>,
     chunk_size: usize,
@@ -706,7 +733,21 @@ impl<'a> Iterator for ChunksMut<'a> {
             Some(chunk)
         }
     }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        let len = self.len();
+        (len, Some(len))
+    }
 }
+
+impl ExactSizeIterator for ChunksMut<'_> {
+    fn len(&self) -> usize {
+        let remaining = self.slice.len().saturating_sub(self.offset);
+        if remaining == 0 { 0 } else { remaining.div_ceil(self.chunk_size) }
+    }
+}
+
+impl std::iter::FusedIterator for ChunksMut<'_> {}
 
 impl std::io::Read for PtrByteSlice<'_> {
     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
