@@ -11,7 +11,7 @@ extern crate std;
 
 #[cfg(fuzz)]
 pub mod fuzzers;
-#[cfg(any(test, fuzz))]
+#[cfg(any(ktest, test, fuzz))]
 pub mod test_data;
 #[cfg(any(test, fuzz))]
 pub mod test_util;

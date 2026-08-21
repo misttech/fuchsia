@@ -13,6 +13,7 @@ pub mod platform_access;
 pub mod pv;
 pub mod registers;
 pub mod suspend;
+pub mod system_topology;
 pub mod x86;
 
 /// Architecture-specific saved normal mode state for x86_64.

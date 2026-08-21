@@ -213,7 +213,6 @@ source_set("x86") {
     "spinlock.cc",
     "start.S",
     "start16.S",
-    "system_topology.cc",
     "thread.cc",
     "timer_freq.cc",
     "uspace_entry.S",
@@ -315,18 +314,22 @@ kernel_rust_mod("arch-x86-rs") {
     "src/pv.rs",
     "src/registers.rs",
     "src/suspend.rs",
+    "src/system_topology.rs",
     "src/x86.rs",
   ]
   deps = [
+    "//sdk/rust/zbi",
     "//sdk/rust/zx-status",
     "//sdk/rust/zx-types",
     "//src/lib/kalloc",
     "//src/lib/kprint",
     "//src/lib/ksync",
     "//src/lib/regio",
+    "//src/lib/zr",
     "//third_party/rust_crates:pin-init",
     "//zircon/kernel/arch:arch-types-bindings",
     "//zircon/kernel/lib/acpi_lite/rust:acpi_lite",
+    "//zircon/kernel/lib/arch:arch-rs",
     "//zircon/kernel/lib/debug",
     "//zircon/kernel/lib/page:page-rs",
     "//zircon/system/ulib/fbl/rust:fbl",
@@ -341,7 +344,6 @@ source_set("tests") {
     "idle_states_test.cc",
     "mmu_tests.cc",
     "platform_tests.cc",
-    "system_topology_test.cc",
   ]
   deps = [
     ":headers",

@@ -293,3 +293,23 @@ uint8_t GetPerformanceClass(cpu_num_t cpu_id) {
 }
 
 }  // namespace system_topology
+
+extern "C" {
+
+zx_status_t cpp_system_topology_initialize_system_topology(const zbi_topology_node_t* nodes,
+                                                           size_t count);
+zx_status_t cpp_system_topology_validate_and_initialize(const zbi_topology_node_t* nodes,
+                                                        size_t count);
+
+zx_status_t cpp_system_topology_initialize_system_topology(const zbi_topology_node_t* nodes,
+                                                           size_t count) {
+  return system_topology::Graph::InitializeSystemTopology(nodes, count);
+}
+
+zx_status_t cpp_system_topology_validate_and_initialize(const zbi_topology_node_t* nodes,
+                                                        size_t count) {
+  system_topology::Graph graph;
+  return system_topology::Graph::Initialize(&graph, nodes, count);
+}
+
+}  // extern "C"
