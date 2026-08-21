@@ -2,39 +2,33 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use std::sync::Arc;
+
 use bstr::ByteSlice;
 use fidl_fuchsia_hardware_power_statecontrol as fpower;
-use fuchsia_component::client::connect_to_protocol_sync;
+use fuchsia_component::client::connect_to_protocol;
 use linux_uapi::{
     LINUX_REBOOT_CMD_CAD_OFF, LINUX_REBOOT_CMD_CAD_ON, LINUX_REBOOT_CMD_HALT,
     LINUX_REBOOT_CMD_KEXEC, LINUX_REBOOT_CMD_POWER_OFF, LINUX_REBOOT_CMD_RESTART,
     LINUX_REBOOT_CMD_RESTART2, LINUX_REBOOT_CMD_SW_SUSPEND,
 };
-use starnix_logging::{log_debug, log_info, log_warn, track_stub};
-use starnix_sync::InterruptibleEvent;
+use starnix_core::mm::MemoryAccessorExt;
+use starnix_core::security;
+use starnix_core::task::{CurrentTask, ExitStatus};
+use starnix_core::vfs::FsString;
+use starnix_logging::{log_debug, log_error, log_info, log_warn, track_stub};
+use starnix_sync::{InterruptibleEvent, Mutex};
 use starnix_uapi::auth::CAP_SYS_BOOT;
-use starnix_uapi::errors::Errno;
+use starnix_uapi::errors::{EINTR, Errno};
+use starnix_uapi::signals::SigSet;
 use starnix_uapi::user_address::{UserAddress, UserCString};
 use starnix_uapi::{
     LINUX_REBOOT_MAGIC1, LINUX_REBOOT_MAGIC2, LINUX_REBOOT_MAGIC2A, LINUX_REBOOT_MAGIC2B,
     LINUX_REBOOT_MAGIC2C, errno, error,
 };
 
-use starnix_core::mm::MemoryAccessorExt;
-use starnix_core::security;
-use starnix_core::task::{CurrentTask, Kernel};
-use starnix_core::vfs::FsString;
-
-#[track_caller]
-fn panic_or_error(kernel: &Kernel, errno: Errno) -> Result<(), Errno> {
-    if kernel.features.error_on_failed_reboot {
-        return Err(errno);
-    }
-    panic!("Fatal: {errno:?}");
-}
-
 pub fn sys_reboot(
-    current_task: &CurrentTask,
+    current_task: &mut CurrentTask,
     magic: u32,
     magic2: u32,
     cmd: u32,
@@ -67,8 +61,6 @@ pub fn sys_reboot(
         return current_task.block_until(event.begin_wait(), zx::MonotonicInstant::INFINITE);
     }
 
-    let proxy = connect_to_protocol_sync::<fpower::AdminMarker>().or_else(|_| error!(EINVAL))?;
-
     match cmd {
         // CAD on/off commands turn Ctrl-Alt-Del keystroke on or off without halting the system.
         LINUX_REBOOT_CMD_CAD_ON | LINUX_REBOOT_CMD_CAD_OFF => Ok(()),
@@ -88,81 +80,111 @@ pub fn sys_reboot(
                 reasons: Some(vec![shutdown_reason]),
                 ..Default::default()
             };
-
-            match proxy.shutdown(&options, zx::MonotonicInstant::INFINITE) {
-                Ok(_) => {
-                    // System is rebooting... wait until runtime ends.
-                    zx::MonotonicInstant::INFINITE.sleep();
-                }
-                Err(e) => {
-                    return panic_or_error(
-                        current_task.kernel(),
-                        errno!(EINVAL, format!("Failed to power off, status: {e}")),
-                    );
-                }
-            }
-            Ok(())
+            shutdown_and_block(current_task, options, "sys_reboot_poweroff")
         }
 
         LINUX_REBOOT_CMD_RESTART | LINUX_REBOOT_CMD_RESTART2 => {
             let reboot_args: Vec<_> = arg_bytes.split_str(b",").collect();
 
-            let reboot_result = if reboot_args.contains(&&b"bootloader"[..]) {
+            let options = if reboot_args.contains(&&b"bootloader"[..]) {
                 log_info!("Rebooting to bootloader");
-                let options = fpower::ShutdownOptions {
+                fpower::ShutdownOptions {
                     action: Some(fpower::ShutdownAction::RebootToBootloader),
                     reasons: Some(vec![fpower::ShutdownReason::StarnixContainerNoReason]),
                     ..Default::default()
-                };
-                proxy.shutdown(&options, zx::MonotonicInstant::INFINITE)
+                }
             } else if reboot_args.contains(&&b"recovery"[..]) {
                 log_info!("Rebooting to recovery...");
-                let options = fpower::ShutdownOptions {
+                fpower::ShutdownOptions {
                     action: Some(fpower::ShutdownAction::RebootToRecovery),
                     reasons: Some(vec![fpower::ShutdownReason::StarnixContainerNoReason]),
                     ..Default::default()
-                };
-                proxy.shutdown(&options, zx::MonotonicInstant::INFINITE)
+                }
             } else {
                 let shutdown_reason = parse_shutdown_reason(&reboot_args, &arg_bytes);
-
                 log_info!("Rebooting... reason: {:?}", shutdown_reason);
-                proxy.shutdown(
-                    &fpower::ShutdownOptions {
-                        action: Some(fpower::ShutdownAction::Reboot),
-                        reasons: Some(vec![shutdown_reason]),
-                        ..Default::default()
-                    },
-                    zx::MonotonicInstant::INFINITE,
-                )
+                fpower::ShutdownOptions {
+                    action: Some(fpower::ShutdownAction::Reboot),
+                    reasons: Some(vec![shutdown_reason]),
+                    ..Default::default()
+                }
             };
-
-            match reboot_result {
-                Ok(Ok(())) => {
-                    // System is rebooting... wait until runtime ends.
-                    zx::MonotonicInstant::INFINITE.sleep();
-                }
-                Ok(Err(e)) => {
-                    return panic_or_error(
-                        current_task.kernel(),
-                        errno!(
-                            EINVAL,
-                            format!("Failed to reboot, status: {}", zx::Status::err_from_raw(e))
-                        ),
-                    );
-                }
-                Err(e) => {
-                    return panic_or_error(
-                        current_task.kernel(),
-                        errno!(EINVAL, format!("Failed to reboot, FIDL error: {e}")),
-                    );
-                }
-            }
-            Ok(())
+            shutdown_and_block(current_task, options, "sys_reboot_reboot")
         }
 
         _ => error!(EINVAL),
     }
+}
+
+fn shutdown_and_block(
+    current_task: &mut CurrentTask,
+    options: fpower::ShutdownOptions,
+    debug_name: &'static str,
+) -> Result<(), Errno> {
+    let event = InterruptibleEvent::new();
+    let event_clone = event.clone();
+    let error_state = Arc::new(Mutex::new(None));
+    let error_state_clone = error_state.clone();
+
+    let kernel = current_task.kernel().clone();
+    kernel.kthreads.spawn_future(
+        move || async move {
+            match connect_to_protocol::<fpower::AdminMarker>() {
+                Ok(proxy) => match proxy.shutdown(&options).await {
+                    Ok(Ok(())) => {}
+                    Ok(Err(status)) => {
+                        log_error!(
+                            "sys_reboot: proxy.shutdown async ({debug_name}) returned error: {}",
+                            zx::Status::err_from_raw(status)
+                        );
+                        error_state_clone.lock().replace(errno!(EIO));
+                        event_clone.notify();
+                    }
+                    Err(e) => {
+                        log_error!("sys_reboot: proxy.shutdown async ({debug_name}) failed: {e:?}");
+                        error_state_clone.lock().replace(errno!(EIO));
+                        event_clone.notify();
+                    }
+                },
+                Err(e) => {
+                    log_error!(
+                        "sys_reboot: failed to connect to Admin async ({debug_name}): {e:?}"
+                    );
+                    error_state_clone.lock().replace(errno!(ENOTSUP));
+                    event_clone.notify();
+                }
+            }
+        },
+        debug_name,
+    );
+
+    // Mask all maskable signals for the current task before blocking so that
+    // normal signals do not wake up the task and return EINTR to userspace.
+    // Unmaskable signals like SIGKILL (sent during container teardown) will
+    // still interrupt the block and cause the task to exit without returning to userspace.
+    let result = current_task.wait_with_temporary_mask(!SigSet::default(), |current_task| {
+        current_task.block_until(event.begin_wait(), zx::MonotonicInstant::INFINITE)
+    });
+
+    if let Some(err) = error_state.lock().take() {
+        return Err(err);
+    }
+
+    if let Err(err) = result {
+        if err.code == EINTR {
+            // Linux expects `sys_reboot` to never return. If we return `Err(EINTR)`
+            // after receiving `SIGKILL` during container teardown, Android `init`
+            // will abort and re-enter `reboot()`, causing a deadlock that blocks
+            // component teardown from concluding inside Starnix.
+            // Thus, we manually terminate the thread group.
+            current_task.thread_group().kill(ExitStatus::Exit(0), None);
+            return Ok(());
+        }
+
+        return Err(err);
+    }
+
+    Ok(())
 }
 
 fn parse_shutdown_reason(reboot_args: &[&[u8]], arg_bytes: &FsString) -> fpower::ShutdownReason {
