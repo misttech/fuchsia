@@ -254,11 +254,11 @@ macro_rules! impl_peered_dispatcher_facade_with_state {
             pub fn on_zero_handles(&self) {
                 ksync::lock!(let mut guard = self.state().peered.lock());
                 let peer = guard.as_mut().peer_mut().take();
-                self.on_zero_handles_locked(guard.token());
+                self.on_zero_handles_locked(guard.as_mut().token_mut());
 
                 if let Some(peer) = peer {
                     *peer.state().peered.guard_mu_mut(guard.as_mut().token_mut()).peer_mut() = None;
-                    peer.on_peer_zero_handles_locked(guard.token());
+                    peer.on_peer_zero_handles_locked(guard.as_mut().token_mut());
                 }
             }
         }
