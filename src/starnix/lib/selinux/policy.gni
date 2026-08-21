@@ -1,0 +1,258 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+import("//build/testing/config.gni")
+
+_DEFAULT_INITIAL_SIDS =
+    "//src/starnix/lib/selinux/testdata/composite_policies/initial_sids"
+_DEFAULT_BASE_POLICY =
+    "//src/starnix/lib/selinux/testdata/composite_policies/base_policy.conf"
+_DEFAULT_TEST_POLICY = "//src/starnix/lib/selinux/testdata/composite_policies/new_file/test_policy.conf"
+
+# Low-level rule to verify or compile a single SELinux text policy (.conf).
+#
+# Parameters:
+#   source (required)
+#     Path to the .conf file.
+#
+#   prebuilt (optional)
+#     Path to the checked-in binary policy prebuilt. Defaults to "$target_name".
+#
+#   hash_file (optional)
+#     Path to the checked-in source hash file. Defaults to "${prebuilt}.hash".
+#
+#   handle_unknown (optional)
+#     "deny" (default), "allow", or "reject".
+#
+#   output_name (optional)
+#     Output binary filename in target_out_dir. Defaults to target_name.
+#
+template("selinux_policy") {
+  assert(defined(invoker.source),
+         "source must be provided for selinux_policy($target_name)")
+
+  handle_unknown = "deny"
+  if (defined(invoker.handle_unknown)) {
+    handle_unknown = invoker.handle_unknown
+  }
+
+  output_name = target_name
+  if (defined(invoker.output_name)) {
+    output_name = invoker.output_name
+  }
+
+  if (defined(invoker.prebuilt)) {
+    prebuilt_policy = invoker.prebuilt
+  } else {
+    prebuilt_policy = output_name
+  }
+
+  if (defined(invoker.hash_file)) {
+    hash_file = invoker.hash_file
+  } else {
+    hash_file = "${prebuilt_policy}.hash"
+  }
+
+  action(target_name) {
+    forward_variables_from(invoker,
+                           [
+                             "testonly",
+                             "visibility",
+                           ])
+    script = "//src/starnix/lib/selinux/scripts/verify_or_compile_policy.py"
+
+    out_policy = "$target_out_dir/$prebuilt_policy"
+    stamp_file = "$target_gen_dir/$target_name.verified"
+    depfile = "${stamp_file}.d"
+
+    inputs = [
+      "//src/starnix/lib/selinux/scripts/merge_policies.py",
+      invoker.source,
+    ]
+
+    outputs = [
+      out_policy,
+      stamp_file,
+    ]
+
+    args = [
+      "--policy-name",
+      output_name,
+      "--inputs",
+      rebase_path(invoker.source, root_build_dir),
+      "--prebuilt",
+      rebase_path(prebuilt_policy, root_build_dir),
+      "--hash-file",
+      rebase_path(hash_file, root_build_dir),
+      "--output",
+      rebase_path(out_policy, root_build_dir),
+      "--handle-unknown",
+      handle_unknown,
+      "--stamp",
+      rebase_path(stamp_file, root_build_dir),
+      "--depfile",
+      rebase_path(depfile, root_build_dir),
+    ]
+
+    if (update_goldens) {
+      args += [ "--bless" ]
+    }
+  }
+}
+
+# High-level rule for SEStarnix test policies composed of fragments.
+# Automatically includes default initial_sids, base_policy.conf, and
+# test_policy.conf unless overridden.
+#
+# Parameters:
+#   fragments (optional)
+#     List of .conf fragment files to include.
+#
+#   base_policy (optional)
+#     Path to the base policy .conf. Defaults to _DEFAULT_BASE_POLICY.
+#     Set to false to omit base_policy.
+#
+#   test_policy (optional)
+#     Path to test_policy.conf defining test_u/test_r/test_a. Defaults to _DEFAULT_TEST_POLICY.
+#     Set to false to omit test_policy.
+#
+#   initial_sids (optional)
+#     Path to initial_sids file. Defaults to _DEFAULT_INITIAL_SIDS.
+#     Set to false to omit initial_sids.
+#
+#   prebuilt (optional)
+#     Path to checked-in prebuilt binary. Defaults to "compiled/$target_name".
+#
+#   hash_file (optional)
+#     Path to checked-in hash file. Defaults to "${prebuilt}.hash".
+#
+#   handle_unknown (optional)
+#     "deny" (default), "allow", or "reject".
+#
+#   output_name (optional)
+#     Output filename in target_out_dir. Defaults to target_name.
+#
+template("sestarnix_test_policy") {
+  handle_unknown = "deny"
+  if (defined(invoker.handle_unknown)) {
+    handle_unknown = invoker.handle_unknown
+  }
+
+  output_name = target_name
+  if (defined(invoker.output_name)) {
+    output_name = invoker.output_name
+  }
+
+  if (defined(invoker.prebuilt)) {
+    prebuilt_policy = invoker.prebuilt
+  } else {
+    prebuilt_policy = "composite_policies/compiled/$output_name"
+  }
+
+  if (defined(invoker.hash_file)) {
+    hash_file = invoker.hash_file
+  } else {
+    hash_file = "${prebuilt_policy}.hash"
+  }
+
+  use_base_policy = true
+  if (defined(invoker.base_policy) && invoker.base_policy == false) {
+    use_base_policy = false
+  }
+
+  use_test_policy = true
+  if (defined(invoker.test_policy) && invoker.test_policy == false) {
+    use_test_policy = false
+  }
+
+  use_initial_sids = true
+  if (defined(invoker.initial_sids) && invoker.initial_sids == false) {
+    use_initial_sids = false
+  }
+
+  all_fragments = []
+  if (use_base_policy) {
+    if (defined(invoker.base_policy)) {
+      all_fragments += [ invoker.base_policy ]
+    } else {
+      all_fragments += [ _DEFAULT_BASE_POLICY ]
+    }
+  }
+  if (use_test_policy) {
+    if (defined(invoker.test_policy)) {
+      all_fragments += [ invoker.test_policy ]
+    } else {
+      all_fragments += [ _DEFAULT_TEST_POLICY ]
+    }
+  }
+  if (defined(invoker.fragments)) {
+    all_fragments += invoker.fragments
+  }
+
+  assert(all_fragments != [],
+         "sestarnix_test_policy($target_name) must have at least one fragment")
+
+  action(target_name) {
+    forward_variables_from(invoker,
+                           [
+                             "testonly",
+                             "visibility",
+                           ])
+    script = "//src/starnix/lib/selinux/scripts/verify_or_compile_policy.py"
+
+    out_policy = "$target_out_dir/$prebuilt_policy"
+    stamp_file = "$target_gen_dir/$target_name.verified"
+    depfile = "${stamp_file}.d"
+
+    inputs = [ "//src/starnix/lib/selinux/scripts/merge_policies.py" ] +
+             all_fragments
+
+    if (use_initial_sids) {
+      if (defined(invoker.initial_sids)) {
+        initial_sids_path = invoker.initial_sids
+      } else {
+        initial_sids_path = _DEFAULT_INITIAL_SIDS
+      }
+      inputs += [ initial_sids_path ]
+    }
+
+    outputs = [
+      out_policy,
+      stamp_file,
+    ]
+
+    args = [
+      "--policy-name",
+      output_name,
+      "--prebuilt",
+      rebase_path(prebuilt_policy, root_build_dir),
+      "--hash-file",
+      rebase_path(hash_file, root_build_dir),
+      "--output",
+      rebase_path(out_policy, root_build_dir),
+      "--handle-unknown",
+      handle_unknown,
+      "--stamp",
+      rebase_path(stamp_file, root_build_dir),
+      "--depfile",
+      rebase_path(depfile, root_build_dir),
+    ]
+
+    if (use_initial_sids) {
+      args += [
+        "--initial-sids",
+        rebase_path(initial_sids_path, root_build_dir),
+      ]
+    }
+
+    args += [ "--inputs" ]
+    foreach(fragment, all_fragments) {
+      args += [ rebase_path(fragment, root_build_dir) ]
+    }
+
+    if (update_goldens) {
+      args += [ "--bless" ]
+    }
+  }
+}

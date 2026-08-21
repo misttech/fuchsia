@@ -122,6 +122,7 @@ rustc_library("selinux") {
     "//third_party/rust_crates:serde_json5",
   ]
   configs += [ "//src/starnix/build:kernel_library_config" ]
+  non_rust_deps = [ "testdata:test_policies" ]
 
   if (is_host) {
     # Host builds use `parking_lot` for lock primitives.
@@ -145,5 +146,6 @@ group("tests") {
   deps = [
     ":starnix-selinux-unit-tests",
     "scripts:tests",
+    "testdata:test_policies",
   ]
 }

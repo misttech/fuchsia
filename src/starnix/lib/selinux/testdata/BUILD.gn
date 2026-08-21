@@ -1,0 +1,320 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+import("//src/starnix/lib/selinux/policy.gni")
+
+# --- Standard Composite Policies (includes base_policy.conf + test_policy.conf
+# automatically) ---
+
+sestarnix_test_policy("anon_inode_policy") {
+  fragments = [ "composite_policies/new_file/anon_inode_policy.conf" ]
+}
+
+sestarnix_test_policy("append_policy") {
+  fragments = [ "composite_policies/new_file/append.conf" ]
+}
+
+sestarnix_test_policy("audit_access_policy") {
+  fragments = [ "composite_policies/new_file/audit_access_policy.conf" ]
+}
+
+sestarnix_test_policy("binder_policy") {
+  fragments = [ "composite_policies/new_file/binder.conf" ]
+}
+
+sestarnix_test_policy("bpf_policy") {
+  fragments = [ "composite_policies/new_file/bpf_policy.conf" ]
+}
+
+sestarnix_test_policy("capabilities_policy") {
+  fragments = [ "composite_policies/new_file/capabilities_policy.conf" ]
+}
+
+sestarnix_test_policy("conditional_policy") {
+  fragments = [ "composite_policies/new_file/conditional_policy.conf" ]
+}
+
+sestarnix_test_policy("fcntl_policy") {
+  fragments = [ "composite_policies/new_file/fcntl_policy.conf" ]
+}
+
+sestarnix_test_policy("file_transition_policy") {
+  fragments = [ "composite_policies/new_file/file_transition_policy.conf" ]
+}
+
+sestarnix_test_policy("fs_test_policy") {
+  fragments = [ "composite_policies/new_file/fs_test.conf" ]
+}
+
+sestarnix_test_policy("genfscon_create_policy") {
+  fragments = [ "composite_policies/new_file/genfscon_create.conf" ]
+}
+
+sestarnix_test_policy("genfscon_policy") {
+  fragments = [ "composite_policies/new_file/genfscon_policy.conf" ]
+}
+
+sestarnix_test_policy("inherit_policy") {
+  fragments = [ "composite_policies/new_file/inherit_policy.conf" ]
+}
+
+sestarnix_test_policy("io_uring_policy") {
+  fragments = [ "composite_policies/new_file/io_uring_policy.conf" ]
+}
+
+sestarnix_test_policy("ioctl_policy") {
+  fragments = [ "composite_policies/new_file/ioctl_policy.conf" ]
+}
+
+sestarnix_test_policy("memfd_class_policy") {
+  fragments = [ "composite_policies/new_file/memfd_class.conf" ]
+}
+
+sestarnix_test_policy("memfd_transition_policy") {
+  fragments = [ "composite_policies/new_file/memfd_transition.conf" ]
+}
+
+sestarnix_test_policy("minimal_policy") {
+  fragments = [ "composite_policies/new_file/minimal_policy.conf" ]
+}
+
+sestarnix_test_policy("mount_policy") {
+  fragments = [ "composite_policies/new_file/mount_policy.conf" ]
+}
+
+sestarnix_test_policy("mprotect_policy") {
+  fragments = [ "composite_policies/new_file/mprotect.conf" ]
+}
+
+sestarnix_test_policy("netlink_audit_policy") {
+  fragments = [ "composite_policies/new_file/netlink_audit.conf" ]
+}
+
+sestarnix_test_policy("netlink_xperms_policy") {
+  fragments = [ "composite_policies/new_file/netlink_xperms_policy.conf" ]
+}
+
+sestarnix_test_policy("open_perms_policy") {
+  fragments = [ "composite_policies/new_file/open_perms.conf" ]
+}
+
+sestarnix_test_policy("overlayfs_policy") {
+  fragments = [ "composite_policies/new_file/overlayfs_policy.conf" ]
+}
+
+sestarnix_test_policy("perf_event_policy") {
+  fragments = [ "composite_policies/new_file/perf_event.conf" ]
+}
+
+sestarnix_test_policy("pipe_policy") {
+  fragments = [ "composite_policies/new_file/pipe_policy.conf" ]
+}
+
+sestarnix_test_policy("ptrace_policy") {
+  fragments = [ "composite_policies/new_file/ptrace_policy.conf" ]
+}
+
+sestarnix_test_policy("sched_policy") {
+  fragments = [ "composite_policies/new_file/sched.conf" ]
+}
+
+sestarnix_test_policy("selinuxfs_policy") {
+  fragments = [ "composite_policies/new_file/selinuxfs_policy.conf" ]
+}
+
+sestarnix_test_policy("socket_policy") {
+  fragments = [ "composite_policies/new_file/socket_policy.conf" ]
+}
+
+sestarnix_test_policy("syslog_policy") {
+  fragments = [ "composite_policies/new_file/syslog.conf" ]
+}
+
+sestarnix_test_policy("timerslack_policy") {
+  fragments = [ "composite_policies/new_file/timerslack.conf" ]
+}
+
+sestarnix_test_policy("tun_policy") {
+  fragments = [ "composite_policies/new_file/tun_policy.conf" ]
+}
+
+sestarnix_test_policy("userspace_initial_context_policy") {
+  fragments = [ "composite_policies/new_file/userspace_initial_context.conf" ]
+}
+
+sestarnix_test_policy("with_additional_domain_policy") {
+  fragments = [
+    "composite_policies/new_file/minimal_policy.conf",
+    "composite_policies/new_file/with_unlabeled_access_domain_policy.conf",
+    "composite_policies/new_file/with_additional_domain_policy.conf",
+  ]
+}
+
+sestarnix_test_policy("with_unlabeled_access_domain_policy") {
+  fragments = [
+    "composite_policies/new_file/minimal_policy.conf",
+    "composite_policies/new_file/with_unlabeled_access_domain_policy.conf",
+  ]
+}
+
+sestarnix_test_policy("xattr_access_policy") {
+  fragments = [ "composite_policies/new_file/xattr_access_policy.conf" ]
+}
+
+# --- Composite Policies that omit test_policy.conf ---
+
+sestarnix_test_policy("allow_fork_policy") {
+  test_policy = false
+  fragments = [
+    "composite_policies/new_file/minimal_policy.conf",
+    "composite_policies/new_file/allow_fork.conf",
+  ]
+}
+
+sestarnix_test_policy("bounded_transition_policy") {
+  test_policy = false
+  fragments = [ "composite_policies/new_file/bounded_transition_policy.conf" ]
+}
+
+sestarnix_test_policy("class_defaults_policy") {
+  test_policy = false
+  fragments = [ "composite_policies/new_file/class_defaults_policy.conf" ]
+}
+
+sestarnix_test_policy("exceptions_config_policy") {
+  test_policy = false
+  fragments = [ "composite_policies/new_file/exceptions_config_policy.conf" ]
+}
+
+sestarnix_test_policy("range_transition_policy") {
+  test_policy = false
+  fragments = [ "composite_policies/new_file/range_transition_policy.conf" ]
+}
+
+sestarnix_test_policy("role_transition_not_allowed_policy") {
+  test_policy = false
+  fragments =
+      [ "composite_policies/new_file/role_transition_not_allowed_policy.conf" ]
+}
+
+sestarnix_test_policy("role_transition_policy") {
+  test_policy = false
+  fragments = [ "composite_policies/new_file/role_transition_policy.conf" ]
+}
+
+sestarnix_test_policy("type_transition_policy") {
+  test_policy = false
+  fragments = [ "composite_policies/new_file/type_transition_policy.conf" ]
+}
+
+# --- Handle Unknown Variants ---
+
+foreach(mode,
+        [
+          "allow",
+          "deny",
+          "reject",
+        ]) {
+  sestarnix_test_policy("handle_unknown_policy-$mode") {
+    output_name = "handle_unknown_policy-$mode"
+    prebuilt = "composite_policies/compiled/handle_unknown_policy-$mode"
+    handle_unknown = mode
+    base_policy = false
+    test_policy = false
+    fragments = [ "composite_policies/new_file/handle_unknown_policy.conf" ]
+  }
+}
+
+# --- Standalone / Legacy Micro Policies (Single .conf file) ---
+
+micro_policies = [
+  "allow_a_attr_b_attr_class0_perm0_policy",
+  "allow_a_t_a1_attr_class0_perm0_a2_attr_class0_perm1_policy",
+  "allow_a_t_b_attr_class0_perm0_policy",
+  "allow_a_t_b_t_class0_perm0_policy",
+  "allow_with_constraints_policy",
+  "allowxperm_policy",
+  "constraints_policy",
+  "file_no_defaults_policy",
+  "file_range_source_high_policy",
+  "file_range_source_low_high_policy",
+  "file_range_source_low_policy",
+  "file_range_target_high_policy",
+  "file_range_target_low_high_policy",
+  "file_range_target_low_policy",
+  "file_source_defaults_policy",
+  "file_target_defaults_policy",
+  "hooks_tests_policy",
+  "minimal_policy",
+  "multiple_levels_and_categories_policy",
+  "no_allow_a_attr_b_attr_class0_perm0_policy",
+  "no_allow_a_t_b_attr_class0_perm0_policy",
+  "no_allow_a_t_b_t_class0_perm0_policy",
+  "security_context_tests_policy",
+  "security_server_tests_policy",
+]
+
+foreach(name, micro_policies) {
+  selinux_policy("micro_$name") {
+    source = "micro_policies/$name.conf"
+    prebuilt = "micro_policies/$name"
+    output_name = name
+  }
+}
+
+group("test_policies") {
+  deps = [
+    ":allow_fork_policy",
+    ":anon_inode_policy",
+    ":append_policy",
+    ":audit_access_policy",
+    ":binder_policy",
+    ":bounded_transition_policy",
+    ":bpf_policy",
+    ":capabilities_policy",
+    ":class_defaults_policy",
+    ":conditional_policy",
+    ":exceptions_config_policy",
+    ":fcntl_policy",
+    ":file_transition_policy",
+    ":fs_test_policy",
+    ":genfscon_create_policy",
+    ":genfscon_policy",
+    ":handle_unknown_policy-allow",
+    ":handle_unknown_policy-deny",
+    ":handle_unknown_policy-reject",
+    ":inherit_policy",
+    ":io_uring_policy",
+    ":ioctl_policy",
+    ":memfd_class_policy",
+    ":memfd_transition_policy",
+    ":minimal_policy",
+    ":mount_policy",
+    ":mprotect_policy",
+    ":netlink_audit_policy",
+    ":netlink_xperms_policy",
+    ":open_perms_policy",
+    ":overlayfs_policy",
+    ":perf_event_policy",
+    ":pipe_policy",
+    ":ptrace_policy",
+    ":range_transition_policy",
+    ":role_transition_not_allowed_policy",
+    ":role_transition_policy",
+    ":sched_policy",
+    ":selinuxfs_policy",
+    ":socket_policy",
+    ":syslog_policy",
+    ":timerslack_policy",
+    ":tun_policy",
+    ":type_transition_policy",
+    ":userspace_initial_context_policy",
+    ":with_additional_domain_policy",
+    ":with_unlabeled_access_domain_policy",
+    ":xattr_access_policy",
+  ]
+  foreach(name, micro_policies) {
+    deps += [ ":micro_$name" ]
+  }
+}
