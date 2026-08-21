@@ -35,9 +35,6 @@ use std::borrow::{Borrow, Cow};
 use std::path::Path;
 use zx::{Event, MonotonicDuration};
 
-#[cfg(feature = "ota_ui")]
-mod ui_v2;
-
 #[cfg(feature = "http_setup_server")]
 use {
     fidl::endpoints::{DiscoverableProtocolMarker, RequestStream},
@@ -1326,10 +1323,6 @@ fn make_app_assistant() -> AssistantCreatorFunc {
 
 fn main() -> Result<(), Error> {
     println!("recovery: started");
-    // When UI code is moved and used this main.rs will disppear.
-    #[cfg(feature = "ota_ui")]
-    ui_v2::main()?;
-    // This line always stays here otherwise we have use problems with code that is to be moved later.
     App::run(make_app_assistant())
 }
 
