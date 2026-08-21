@@ -93,28 +93,56 @@ jmp_buf.llvm_libc_function longjmp
   restore_pair d12, d13, JB_D(12)
   restore_pair d14, d15, JB_D(14)
 
-  // Restore the fixed registers by demangling the temporaries.
-  eor x30, x3, x7         // PC (LR)
+  // Demangle temporaries.  Be careful not to leak these values on return!
+  eor x5, x5, x9         // SP
+  .cfi_register sp, x5
+  eor x6, x6, x2         // Shadow call stack pointer
+  .cfi_register x18, x6
+  eor x4, x4, x8         // FP (x29)
+  .cfi_register x29, x4
+  eor x2, x3, x7         // PC (LR / x30)
+  .cfi_register x30, x2
+
+  // x9 will now hold the saved checksum to be checked against.
+  ldr x9, [x0, #8*JB_CHECKSUM]
+
+  // Accumulate the CRC32C of all the saved registers (post-demangling) in w8,
+  // in the same order setjmp computed them: sp, x18, x19..x28, x29, x30.
+  crc32cx w8, wzr, x5
+  .irp n,6,19,20,21,22,23,24,25,26,27,28,4,2
+    crc32cx w8, w8, x\n
+  .endr
+  .irp n,8,9,10,11,12,13,14,15
+    fmov x7, d\n
+    crc32cx w8, w8, x7
+  .endr
+
+  // Finally, insert the low bits of the mangled PC into the high bits of the
+  // checksum, as setjmp does.
+  bfi x8, x3, #32, #32
+
+  // If the checksums don't match, do a tail call to panic.
+  cmp x8, x9
+  bne LIBC_ASM_LINKAGE(longjmp_corrupted)
+
+  // Restore the fixed registers from the demangled temporaries.
+  mov x30, x2
   .cfi_same_value x30
-  eor x29, x4, x8         // FP
-  .cfi_same_value x29
-  eor x18, x6, x2         // Shadow call stack pointer
+  mov x18, x6
   .cfi_same_value x18
+  mov x29, x4
+  .cfi_same_value x29
 
   // Restore SP last.  After this, the CFA is the setjmp frame's CFA again.
-  eor x3, x5, x9
-  mov sp, x3
+  mov sp, x5
   .cfi_restore sp
 
-  // Don't leak the raw values.
+  // Don't leak the raw values.  Temporaries that just have copies of
+  // the jmp_buf words don't need to be cleared.
   mov x2, xzr
-  mov x3, xzr
   mov x4, xzr
   mov x5, xzr
   mov x6, xzr
-  mov x7, xzr
-  mov x8, xzr
-  mov x9, xzr
 
   // w0 = w1 ?: 1
   cmp w1, wzr

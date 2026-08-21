@@ -610,7 +610,7 @@ TEST_F(LibcSetjmpTests, UnwindLongjmp) {
   }
 
   // The original setjmp caller's registers have been restored as they could be
-  // unwound on entry to setjmp, except for the return address register.
+  // unwound on entry to setjmp, except for the return value register.
   auto setjmp_return_regs = setjmp_caller_regs;
   setjmp_return_regs.Unset(kUnwinderReturnValueRegister);
   const auto setjmp_return_unwind_regs = UnwinderRegs(setjmp_return_regs);
@@ -627,7 +627,7 @@ TEST_F(LibcSetjmpTests, LongjmpCorrupted) {
   constexpr uint64_t kCallSavedValue = 0xd00d'feed'face'f00d;
   constexpr uint64_t kBogusValue = 0x2'bad'd00d'0'f00d;
 
-#ifndef __x86_64__
+#if !defined(__x86_64__) && !defined(__aarch64__)
   GTEST_SKIP() << "jmp_buf checksum not implemented yet on this machine";
 #endif
 

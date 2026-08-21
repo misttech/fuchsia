@@ -38,12 +38,28 @@ jmp_buf.llvm_libc_function setjmp
   stp x2, x3, [x0, #8*JB_PC]
 
   eor x4, x4, x18      // Mangled shadow call stack pointer.
-  mov x2, sp
-  eor x1, x1, x2       // Mangled SP.
+  mov x3, sp
+  eor x1, x1, x3       // Mangled SP.
   stp x1, x4, [x0, #8*JB_SP]
 
-  // Don't leak the raw SP.
-  mov x2, xzr
+  // Accumulate the CRC32C of all the saved registers (pre-mangling) in w3 in
+  // the order longjmp will expect: sp, x18, x19..x28, x29, x30.  This clobbers
+  // the raw SP value, so the only values leaked in registers are the values
+  // going directly into the jmp_buf.
+  crc32cx w3, wzr, x3
+  .irp n,18,19,20,21,22,23,24,25,26,27,28,29,30
+    crc32cx w3, w3, x\n
+  .endr
+  .irp n,8,9,10,11,12,13,14,15
+    fmov x1, d\n
+    crc32cx w3, w3, x1
+  .endr
+
+  // The CRC32C only occupies the low 32 bits of the checksum word, leaving the
+  // high 32 bits unused.  So swizzle in the low bits of the mangled PC for
+  // good measure.
+  bfi x3, x2, #32, #32
+  str x3, [x0, #8*JB_CHECKSUM]
 
   mov w0, wzr
   .cfi_undefined x0
