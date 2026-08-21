@@ -13,6 +13,8 @@ extend uint fuchsia.ID {
     PWM_D = 3,
     PWM_E = 4,
     PWM_F = 5,
+    MAILBOX_ID0 = 0,
+    MAILBOX_ID1 = 1,
 };
 
 uint GPIOP_PIN_ID {
@@ -90,9 +92,4 @@ uint GPIOA_PIN_ID {
     PIN_9 = 59,
     PIN_10 = 60,
     PIN_11 = 61,
-};
-
-extend uint fuchsia.BIND_MAILBOX_ID {
-    MAILBOX_ID0 = 0,
-    MAILBOX_ID1 = 1,
 };

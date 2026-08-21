@@ -103,9 +103,6 @@ uint BIND_INIT_STEP;
 // Power sensor bind properties.
 uint BIND_POWER_SENSOR_DOMAIN;
 
-// Mailbox bind properties.
-uint BIND_MAILBOX_ID;
-
 // The FIDL service offered to the node.
 string Service;
 
