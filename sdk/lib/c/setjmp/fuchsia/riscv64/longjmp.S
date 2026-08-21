@@ -39,26 +39,17 @@ jmp_buf.llvm_libc_function longjmp
   // Find the manglers.
   lla a2, LIBC_ASM_LINKAGE(gJmpBufManglers)
 
-  // Load the words that need to be demangled into temporaries.
-  // These just hold values that were in the jmp_buf, so we don't
-  // care about leaking them.
+  // The PC (ra) and FP (s0) need to be demangled via temporaries first.
   ld a3, JB_PC*8(a0)
-  ld a4, JB_SP*8(a0)
-  ld a5, JB_FP*8(a0)
-  ld a6, JB_SCSP*8(a0)
+  ld a4, JB_FP*8(a0)
+  ld a5, JB_PC*8(a2)
+  ld a6, JB_FP*8(a2)
 
-  // The next instruction clobbers the state of longjmp's caller.
-  // So from here on, we'll use CFI that unwinds to setjmp's caller instead.
-  // Both callers have the same a0 value (the jmp_buf).
-
-  // CFI to find fs\n at JB_FS(\n)*8(a0).
-  .macro jb_cfi_fs n
-    .if \n < 2
-      jmp_buf.cfi 10, (32 + 8 + \n), JB_FS(\n)
-    .else
-      jmp_buf.cfi 10, (32 + 18 + \n - 2), JB_FS(\n)
-    .endif
-  .endm
+  // The next instruction clobbers the state of longjmp's caller.  So from here
+  // on, we'll use CFI that unwinds to setjmp's caller instead.  Both callers
+  // have the same a0 value (the jmp_buf).  The setjmp caller's a1 value cannot
+  // be recovered.
+  .cfi_undefined a1
 
   // CFI to compute regno as (\offset(a0) ^ \offset(a2)).
   .macro jb_cfi_mangled regno, index
@@ -70,10 +61,26 @@ jmp_buf.llvm_libc_function longjmp
                 DW_OP_breg(12), (8 * \index), DW_OP_deref, DW_OP_xor
   .endm
 
-  jb_cfi_mangled 1, JB_PC  // ra
-  jb_cfi_mangled 2, JB_SP  // sp
-  jb_cfi_mangled 8, JB_FP  // s0
-  jb_cfi_mangled 3, JB_SCSP // gp
+  // CFI to compute x\regno as (x\tmpno ^ x\mangler).
+  .macro jb_cfi_mangled_temp regno, tmpno, mangler
+    .cfi_escape DW_CFA_val_expression, \regno, 5, \
+                DW_OP_breg(\tmpno), 0, DW_OP_breg(\mangler), 0, DW_OP_xor
+  .endm
+
+  // CFI to find fs\n at JB_FS(\n)*8(a0).
+  .macro jb_cfi_fs n
+    .if \n < 2
+      jmp_buf.cfi 10, (32 + 8 + \n), JB_FS(\n)
+    .else
+      jmp_buf.cfi 10, (32 + 18 + \n - 2), JB_FS(\n)
+    .endif
+  .endm
+
+  jb_cfi_mangled_temp 1, 13, 15  // ra = x1, a3 = x13, a5 = x15
+  jb_cfi_mangled_temp 8, 14, 16  // fp (s0) = x8, a4 = x14, a6 = x16
+  jb_cfi_mangled 2, JB_SP        // sp = x2
+  jb_cfi_mangled 3, JB_SCSP      // gp = x3
+
   jmp_buf.cfi 10, 9, JB_S(1)
   jmp_buf.cfi 10, 18, JB_S(2)
   jmp_buf.cfi 10, 19, JB_S(3)
@@ -99,30 +106,6 @@ jmp_buf.llvm_libc_function longjmp
   jb_cfi_fs 10
   jb_cfi_fs 11
 #endif
-
-  // We don't want to leak the raw mangler values, so load
-  // them into their target registers rather than temporaries
-  // so we don't have more temporaries to clear.
-  .macro load_mangler regno, index, tmpno
-    ld x\regno, (8 * \index)(a2)
-    // CFI to compute x\regno as (x\regno ^ x\tmpno).
-    .cfi_escape DW_CFA_val_expression, \regno, 5, \
-                DW_OP_breg(\regno), 0, DW_OP_breg(\tmpno), 0, DW_OP_xor
-  .endm
-  load_mangler 1, JB_PC, 13     // a3 = x13
-  load_mangler 2, JB_SP, 14     // a4 = x14
-  load_mangler 8, JB_FP, 15     // a5 = x15
-  load_mangler 3, JB_SCSP, 16   // a6 = x16
-
-  // Now demangle the jmp_buf values in place.
-  .macro restore_mangled reg, tmp
-    xor \reg, \reg, \tmp
-    .cfi_same_value \reg
-  .endm
-  restore_mangled ra, a3
-  restore_mangled sp, a4
-  restore_mangled s0, a5
-  restore_mangled gp, a6
 
   // Restore the vanilla call-saved registers.
   .macro restore_s n
@@ -160,6 +143,34 @@ jmp_buf.llvm_libc_function longjmp
   restore_fs 10
   restore_fs 11
 #endif
+
+  // Demangle and restore the fixed registers.
+  xor ra, a3, a5
+  .cfi_same_value ra
+
+  xor fp, a4, a6
+  .cfi_same_value fp
+
+  ld a3, JB_SP*8(a0)
+  ld a4, JB_SCSP*8(a0)
+  ld a5, JB_SP*8(a2)
+  jb_cfi_mangled_temp 2, 13, 15
+  ld a6, JB_SCSP*8(a2)
+  jb_cfi_mangled_temp 3, 14, 16
+
+  // After this, the CFA is the original setjmp frame's CFA again.
+  xor sp, a3, a5
+  .cfi_restore sp
+
+  xor gp, a4, a6
+  .cfi_same_value gp
+
+  // Don't leak raw values.
+  mv a2, zero
+  mv a3, zero
+  mv a4, zero
+  mv a5, zero
+  mv a6, zero
 
   seqz a0, a1                   // a0 = (a1 == 0) ? 1 : 0
   .cfi_undefined a0             // Caller's a0 is no longer recoverable.

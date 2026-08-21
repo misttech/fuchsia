@@ -55,12 +55,17 @@ using captive_thread::testing::Hex;
 using captive_thread::testing::IsPageFault;
 using captive_thread::testing::RegistersAsContainer;
 using captive_thread::testing::RegistersContainer;
+using captive_thread::testing::WithFp;
 using captive_thread::testing::WithPc;
+using captive_thread::testing::WithReturnAddress;
 using captive_thread::testing::WithReturnValue;
+using captive_thread::testing::WithScsp;
+using captive_thread::testing::WithSp;
 using ::testing::AllOf;
 using ::testing::Contains;
-using ::testing::DistanceFrom;
+using ::testing::ElementsAreArray;
 using ::testing::IsSupersetOf;
+using ::testing::Le;
 using ::testing::Lt;
 using ::testing::Ne;
 using ::testing::Not;
@@ -78,15 +83,18 @@ constexpr unwinder::RegisterID kUnwinderReturnValueRegister =
 #endif
     ;
 
+constexpr int64_t AddressDistance(uint64_t a, uint64_t b) {
+  return std::abs(std::bit_cast<int64_t>(a) - std::bit_cast<int64_t>(b));
+}
+
+auto AddressDistanceFrom(uint64_t addr, auto matcher) {
+  return ::testing::DistanceFrom(addr, AddressDistance, matcher);
+}
+
 // This produces a matcher for a PC value in [Start, End).
 template <arch::AsmLabel& Start, arch::AsmLabel& End>
 auto InAsmLabel() {
-  return DistanceFrom(
-      arch::kAsmLabelAddress<Start>,
-      [](uint64_t a, uint64_t b) {
-        return std::abs(std::bit_cast<int64_t>(a) - std::bit_cast<int64_t>(b));
-      },
-      Lt(arch::kAsmLabelSize<Start, End>));
+  return AddressDistanceFrom(arch::kAsmLabelAddress<Start>, Lt(arch::kAsmLabelSize<Start, End>));
 }
 
 auto InSetjmp() { return InAsmLabel<kSetjmpStart, kSetjmpEnd>(); }
@@ -130,6 +138,16 @@ auto NullOf(R (*)(Args...)) {
   return ptr;
 }
 
+// The test thread calls longjmp through this wrapper just to ensure it moves
+// the stack pointer around from where it was when setjmp was called.
+struct Waste {
+  std::byte space[128];
+};
+[[gnu::noinline]] void DoTestLongjmp(jmp_buf buf, int val, Waste& waste) {
+  __asm__ volatile("" : "=m"(waste));
+  NullOf(LIBC_NAMESPACE::longjmp)(buf, val);
+}
+
 // The captive thread runs this function.  The test single-steps through it
 // checking on things.  Once it sees longjmp return, the thread is never
 // allowed to complete.
@@ -137,7 +155,8 @@ void LongjmpTestThread(jmp_buf buf, int val) {
   auto* volatile save_buf = buf;
   volatile int save_val = val;
   if (NullOf(LIBC_NAMESPACE::setjmp)(buf) == 0) {
-    NullOf(LIBC_NAMESPACE::longjmp)(save_buf, save_val);
+    Waste waste;
+    DoTestLongjmp(save_buf, save_val, waste);
     GTEST_FAIL() << "longjmp returned!";
   }
   GTEST_FAIL() << "should not be reached";
@@ -227,6 +246,18 @@ zx_thread_state_general_regs_t FillRegs(zx_thread_state_general_regs_t regs) {
   return regs;
 }
 
+auto FixedRegsMatcher(const zx_thread_state_general_regs_t& regs) {
+  auto r = SpecialRegisters(regs);
+  return AllOf(WithReturnAddress(r.ra()), WithScsp(r.scsp()), WithFp(r.fp()),
+               // The stack can move around a little around the sanitizer call.
+               WithSp(AllOf(Le(r.sp()), AddressDistanceFrom(r.sp(), Lt(128)))));
+}
+
+auto FixedRegisters(const zx_thread_state_general_regs_t& regs [[clang::lifetimebound]]) {
+  // Ignore the PC, which is first.
+  return std::views::drop(SpecialRegisters(regs), 1);
+}
+
 TEST(LibcTests, UnwindLongjmp) {
   const uint64_t kSetjmpEntry = arch::kAsmLabelAddress<kSetjmpStart>;
   const uint64_t kLongjmpEntry = arch::kAsmLabelAddress<kLongjmpStart>;
@@ -281,6 +312,9 @@ TEST(LibcTests, UnwindLongjmp) {
   zx::result result = thread.SetRegisters(setjmp_entry_regs);
   ASSERT_TRUE(result.is_ok()) << result.status_string();
 
+  // Make a matcher to verify that the fixed registers are never changed.
+  const auto setjmp_fixed_regs = FixedRegsMatcher(setjmp_entry_regs);
+
   // Unwind from the setjmp entry point and note the return address.
   Unwinder unwind_from;
   const auto setjmp_caller_regs = unwind_from(setjmp_entry_regs);
@@ -295,9 +329,14 @@ TEST(LibcTests, UnwindLongjmp) {
     decltype(auto(setjmp_unwind_regs)) caller_regs;
     int step = 0;
     do {
+      EXPECT_THAT(*thread.Registers(), setjmp_fixed_regs)
+          << "at setjmp instruction #" << step << " " << current_regs() << " vs setjmp caller "
+          << setjmp_unwind_regs;
+
       ++step;
       ASSERT_THAT(thread.StepToException(), AllOf(GotSingleStep(), HasRegisters()))
-          << "at setjmp instruction #" << step << " " << current_regs();
+          << "at setjmp instruction #" << step << " " << current_regs() << " vs setjmp caller "
+          << setjmp_unwind_regs;
       caller_regs = UnwinderRegs(unwind_from(*thread.Registers()));
     } while (Value(caller_regs, UnorderedElementsAreArray(setjmp_unwind_regs)));
 
@@ -311,6 +350,9 @@ TEST(LibcTests, UnwindLongjmp) {
       expected_regs.Unset(kUnwinderReturnValueRegister);
       const auto expected_unwind_regs = UnwinderRegs(expected_regs);
       do {
+        EXPECT_THAT(*thread.Registers(), setjmp_fixed_regs)
+            << "at setjmp instruction #" << step << " " << current_regs() << " vs setjmp caller "
+            << setjmp_unwind_regs;
         EXPECT_THAT(caller_regs, UnorderedElementsAreArray(expected_unwind_regs))
             << "at setjmp instruction #" << step << " " << current_regs() << " vs setjmp caller "
             << setjmp_unwind_regs;
@@ -373,6 +415,9 @@ TEST(LibcTests, UnwindLongjmp) {
   const auto longjmp_caller_pc = UnwinderPc(longjmp_caller_regs);
   ASSERT_THAT(longjmp_caller_pc, Optional(Not(InLongjmp())));
   const uint64_t longjmp_retaddr = *longjmp_caller_pc;
+
+  // Make a matcher to check for when the fixed registers change.
+  const auto longjmp_fixed_regs = FixedRegsMatcher(longjmp_entry_regs);
 
   // When there is a call into the sanitizer runtime, we'll step through it
   // until we get back to the return address in longjmp.
@@ -457,6 +502,9 @@ TEST(LibcTests, UnwindLongjmp) {
       auto caller_regs = UnwinderRegs(caller);
       EXPECT_THAT(caller_regs, UnorderedElementsAreArray(longjmp_unwind_regs))
           << "at longjmp instruction #" << step << " " << current_regs();
+      EXPECT_THAT(*thread.Registers(), longjmp_fixed_regs)
+          << "at longjmp instruction #" << step << " " << current_regs() << " vs longjmp entry "
+          << RegistersAsContainer(longjmp_entry_regs);
     }
 
     // We should still be in longjmp when the unwound return address changes.
@@ -470,9 +518,43 @@ TEST(LibcTests, UnwindLongjmp) {
         << "at longjmp instruction #" << step << " " << current_regs() << " vs setjmp entry "
         << RegistersAsContainer(setjmp_entry_regs);
 
+    // At this point, each fixed register has the longjmp entry value until a
+    // step that switches it to the setjmp entry value.  Each can validly (and
+    // independently) still be the longjmp value at each step, but once it
+    // changes then it must be into the setjmp value and then not change again.
+    const std::vector<Hex> setjmp_entry_fixed{
+        std::from_range,
+        FixedRegisters(setjmp_entry_regs),
+    };
+    std::vector<std::optional<Hex>> longjmp_entry_fixed{
+        std::from_range,
+        FixedRegisters(longjmp_entry_regs),
+    };
+
     // Unwinding should recover the same caller registers at every step.
     decltype(longjmp_setjmp_unwind_regs) caller_regs;
     do {
+      // Each fixed register whose longjmp value is no longer seen is instead
+      // checked against the setjmp value.
+      const std::vector<Hex> current_fixed_regs{
+          std::from_range,
+          FixedRegisters(*thread.Registers()),
+      };
+      std::vector<Hex> expected_fixed_regs;
+      for (auto&& [longjmp_entry, setjmp_entry, current] :
+           std::views::zip(longjmp_entry_fixed, setjmp_entry_fixed, current_fixed_regs)) {
+        if (current != longjmp_entry) {
+          longjmp_entry.reset();
+          expected_fixed_regs.push_back(setjmp_entry);
+        } else {
+          expected_fixed_regs.push_back(current);
+        }
+      }
+      EXPECT_THAT(current_fixed_regs, ElementsAreArray(expected_fixed_regs))
+          << "at longjmp instruction #" << step << " " << current_regs() << " vs longjmp entry "
+          << RegistersAsContainer(longjmp_entry_regs) << " vs setjmp entry "
+          << RegistersAsContainer(setjmp_entry_regs);
+
       ++step;
       ASSERT_THAT(thread.StepToException(), AllOf(GotSingleStep(), HasRegisters()))
           << "at longjmp instruction #" << step << " " << current_regs() << " vs setjmp entry "
@@ -492,12 +574,13 @@ TEST(LibcTests, UnwindLongjmp) {
     while (Value(thread.Registers(), in_longjmp)) {
       EXPECT_THAT(caller_regs, IsSupersetOf(longjmp_setjmp_unwind_regs))
           << "at longjmp instruction #" << step << " " << current_regs() << " vs setjmp entry "
-          << setjmp_unwind_regs;
+          << setjmp_unwind_regs << " vs longjmp entry " << RegistersAsContainer(longjmp_entry_regs);
 
       ++step;
       ASSERT_THAT(thread.StepToException(), AllOf(GotSingleStep(), HasRegisters()))
           << "at longjmp instruction #" << step << " " << current_regs() << " vs setjmp entry "
-          << RegistersAsContainer(setjmp_entry_regs);
+          << RegistersAsContainer(setjmp_entry_regs) << " vs longjmp entry "
+          << RegistersAsContainer(longjmp_entry_regs);
       caller_regs = UnwinderRegs(unwind_from(*thread.Registers()));
       keep_only_unwinder_regs(caller_regs);
     }

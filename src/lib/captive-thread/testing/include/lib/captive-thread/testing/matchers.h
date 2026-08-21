@@ -195,6 +195,17 @@ MATCHER_P(WithPc, matcher, "") {
 MATCHER_P(WithSp, matcher, "") {
   return ::testing::ExplainMatchResult(matcher, SpecialRegisters(arg).sp(), result_listener);
 }
+MATCHER_P(WithFp, matcher, "") {
+  return ::testing::ExplainMatchResult(matcher, SpecialRegisters(arg).fp(), result_listener);
+}
+MATCHER_P(WithReturnAddress, matcher, "") {
+  std::optional<uint64_t> ra = SpecialRegisters(arg).ra();
+  return !ra || ::testing::ExplainMatchResult(matcher, ra, result_listener);
+}
+MATCHER_P(WithScsp, matcher, "") {
+  std::optional<uint64_t> scsp = SpecialRegisters(arg).scsp();
+  return !scsp || ::testing::ExplainMatchResult(matcher, scsp, result_listener);
+}
 MATCHER_P(WithTp, matcher, "") {
   return ::testing::ExplainMatchResult(matcher, SpecialRegisters(arg).tp(), result_listener);
 }
