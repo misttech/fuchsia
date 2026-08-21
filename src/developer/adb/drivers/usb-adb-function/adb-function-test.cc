@@ -32,6 +32,8 @@ class UsbAdbTestHelper {
   static bool has_usb_function_binding(const UsbAdbDevice& device) {
     return device.usb_function_binding_.has_value();
   }
+  static bool CancelAllCompleted(const UsbAdbDevice& device) { return device.CancelAllCompleted(); }
+  static bool AllRequestsReturned(UsbAdbDevice& device) { return device.AllRequestsReturned(); }
   static bool InternalPoolsFull(UsbAdbDevice& device) {
     return device.bulk_out_ep_.RequestsFull() && device.bulk_in_ep_.RequestsFull();
   }
@@ -68,6 +70,10 @@ class DelayedCancelEndpoint : public fake_usb_endpoint::FakeEndpoint {
   void CancelAll(CancelAllCompleter::Sync& completer) override {
     {
       std::lock_guard<std::mutex> _(lock_);
+      if (cancel_status_ != ZX_OK) {
+        completer.Reply(fit::error(cancel_status_));
+        return;
+      }
       if (hold_cancel_) {
         delayed_cancels_.push_back(completer.ToAsync());
         return;
@@ -93,6 +99,11 @@ class DelayedCancelEndpoint : public fake_usb_endpoint::FakeEndpoint {
     hold_cancel_ = hold;
   }
 
+  void set_cancel_status(zx_status_t status) {
+    std::lock_guard<std::mutex> _(lock_);
+    cancel_status_ = status;
+  }
+
  private:
   void DoCancelAll(CancelAllCompleter::Async completer) {
     std::vector<fuchsia_hardware_usb_endpoint::Completion> completions;
@@ -116,6 +127,7 @@ class DelayedCancelEndpoint : public fake_usb_endpoint::FakeEndpoint {
     completer.Reply(fit::ok());
   }
 
+  zx_status_t cancel_status_ __TA_GUARDED(lock_) = ZX_OK;
   bool hold_cancel_ __TA_GUARDED(lock_) = false;
   std::vector<CancelAllCompleter::Async> delayed_cancels_ __TA_GUARDED(lock_);
 };
@@ -483,6 +495,17 @@ class UsbAdbTest : public testing::Test {
     driver_stopped_ = true;
   }
 
+  void WaitForState(State target_state) {
+    ASSERT_TRUE(driver_test_.runtime().RunWithTimeoutOrUntil(
+        [&]() {
+          bool match = false;
+          driver_test_.RunInDriverContext(
+              [&](UsbAdbDevice& dev) { match = (UsbAdbTestHelper::state(dev) == target_state); });
+          return match;
+        },
+        zx::sec(5)));
+  }
+
   void ExpectHandleOneEventSafe(fidl::WireSyncClient<fadb::UsbAdbImpl>& client,
                                 EventHandler& handler) {
     while (true) {
@@ -695,7 +718,7 @@ TEST_F(UsbAdbTest, RecvAdbMessage) {
   SafeStopDriver();
 }
 
-TEST_F(UsbAdbTest, VerifyShutdownBypassesRequestWaitOnDeadSilicon) {
+TEST_F(UsbAdbTest, VerifyShutdownCompletesWhenHardwareUnresponsive) {
   auto usb_impl = NormalStartAdb();
   EventHandler handler;
   handler.expected_statuses_.emplace(fadb::StatusFlags::kOnline);
@@ -716,9 +739,11 @@ TEST_F(UsbAdbTest, VerifyShutdownBypassesRequestWaitOnDeadSilicon) {
 
   CancelAllUsbRequestsOnDeconfigure();
 
+  // Simulate hardware power-off or inactive controller endpoints where CancelAll
+  // returns ZX_ERR_IO_NOT_PRESENT. The driver should handle the error and complete shutdown.
   driver_test_.RunInEnvironmentTypeContext([](UsbAdbEnvironment& env) {
-    env.fake_dev_->fake_endpoint(kBulkOutEp).set_hold_cancel(true);
-    env.fake_dev_->fake_endpoint(kBulkInEp).set_hold_cancel(true);
+    env.fake_dev_->fake_endpoint(kBulkOutEp).set_cancel_status(ZX_ERR_IO_NOT_PRESENT);
+    env.fake_dev_->fake_endpoint(kBulkInEp).set_cancel_status(ZX_ERR_IO_NOT_PRESENT);
   });
 
   EXPECT_TRUE(driver_test_.StopDriver().is_ok());
@@ -874,9 +899,13 @@ TEST_F(UsbAdbTest, StartAdbTwiceFails) {
 
 TEST_F(UsbAdbTest, IsConfiguredReflectsDeconfigureState) {
   auto usb_impl = NormalStartAdb();
-  EnableUsb();
   driver_test_.RunInEnvironmentTypeContext(
       [&](UsbAdbEnvironment& env) { EXPECT_TRUE(env.fake_dev_->is_configured()); });
+
+  driver_test_.RunInEnvironmentTypeContext([](UsbAdbEnvironment& env) {
+    env.fake_dev_->fake_endpoint(kBulkOutEp).set_hold_cancel(true);
+    env.fake_dev_->fake_endpoint(kBulkInEp).set_hold_cancel(true);
+  });
 
   EnsureIfaceBound();
   ASSERT_TRUE(iface_client_.is_valid());
@@ -887,8 +916,19 @@ TEST_F(UsbAdbTest, IsConfiguredReflectsDeconfigureState) {
   EXPECT_TRUE(result.is_ok()) << result.error_value().FormatDescription();
   driver_test_.runtime().RunUntilIdle();
 
+  driver_test_.RunInDriverContext([&](UsbAdbDevice& dev) {
+    EXPECT_EQ(UsbAdbTestHelper::state(dev), State::kStoppingForReconnect);
+  });
   driver_test_.RunInEnvironmentTypeContext(
       [&](UsbAdbEnvironment& env) { EXPECT_FALSE(env.fake_dev_->is_configured()); });
+
+  driver_test_.RunInEnvironmentTypeContext([](UsbAdbEnvironment& env) {
+    env.fake_dev_->fake_endpoint(kBulkOutEp).ReleaseCancelAll();
+    env.fake_dev_->fake_endpoint(kBulkInEp).ReleaseCancelAll();
+    env.fake_dev_->fake_endpoint(kBulkOutEp).set_hold_cancel(false);
+    env.fake_dev_->fake_endpoint(kBulkInEp).set_hold_cancel(false);
+    env.CancelAllUsbRequests();
+  });
 }
 
 TEST_F(UsbAdbTest, OfflineTxQueuedAndFlushedOnline) {
@@ -1003,6 +1043,12 @@ TEST_F(UsbAdbTest, DisconnectTransitionsToStoppingState) {
   handler.expected_statuses_.emplace(fadb::StatusFlags::kOnline);
   ExpectHandleOneEventSafe(usb_impl, handler);
 
+  // Disable cancellation so the fake endpoints hold onto the requests during stopping.
+  driver_test_.RunInEnvironmentTypeContext([](UsbAdbEnvironment& env) {
+    env.fake_dev_->fake_endpoint(kBulkOutEp).set_hold_cancel(true);
+    env.fake_dev_->fake_endpoint(kBulkInEp).set_hold_cancel(true);
+  });
+
   // Deconfiguring USB transitions driver state to kStoppingForReconnect.
   auto deconfig_result = iface_client_->SetConfigured({{
       .configured = false,
@@ -1010,9 +1056,54 @@ TEST_F(UsbAdbTest, DisconnectTransitionsToStoppingState) {
   }});
   ASSERT_TRUE(deconfig_result.is_ok());
 
+  WaitForState(State::kStoppingForReconnect);
+
+  // Release cancellation so the driver can finish stopping cleanly.
+  driver_test_.RunInEnvironmentTypeContext([](UsbAdbEnvironment& env) {
+    env.fake_dev_->fake_endpoint(kBulkOutEp).ReleaseCancelAll();
+    env.fake_dev_->fake_endpoint(kBulkInEp).ReleaseCancelAll();
+    env.fake_dev_->fake_endpoint(kBulkOutEp).set_hold_cancel(false);
+    env.fake_dev_->fake_endpoint(kBulkInEp).set_hold_cancel(false);
+    env.CancelAllUsbRequests();
+  });
+
+  ASSERT_NO_FATAL_FAILURE(SafeStopDriver());
+}
+
+TEST_F(UsbAdbTest, TeardownWhileRequestsPending) {
+  auto usb_impl = NormalStartAdb();
+  EventHandler handler;
+  handler.expected_statuses_.emplace(fadb::StatusFlags::kOnline);
+  ExpectHandleOneEventSafe(usb_impl, handler);
+
+  // Disable cancellation so the fake endpoints hold onto the requests.
+  driver_test_.RunInEnvironmentTypeContext([](UsbAdbEnvironment& env) {
+    env.fake_dev_->fake_endpoint(kBulkOutEp).set_hold_cancel(true);
+    env.fake_dev_->fake_endpoint(kBulkInEp).set_hold_cancel(true);
+  });
+
+  // Initiate disconnect/reset while hold is active to set up pending CancelAll requests.
+  usb_impl = {};
+  iface_client_ = {};
+
+  WaitForState(State::kStoppingForReconnect);
+
+  // Verify the driver is waiting for CancelAll and in stopping state:
   driver_test_.RunInDriverContext([&](UsbAdbDevice& dev) {
+    EXPECT_FALSE(UsbAdbTestHelper::CancelAllCompleted(dev));
+    EXPECT_FALSE(UsbAdbTestHelper::AllRequestsReturned(dev));
     EXPECT_EQ(UsbAdbTestHelper::state(dev), State::kStoppingForReconnect);
   });
+
+  // Release cancellation so the driver receives the CancelAll callbacks during unbind.
+  driver_test_.RunInEnvironmentTypeContext([](UsbAdbEnvironment& env) {
+    env.fake_dev_->fake_endpoint(kBulkOutEp).ReleaseCancelAll();
+    env.fake_dev_->fake_endpoint(kBulkInEp).ReleaseCancelAll();
+    env.fake_dev_->fake_endpoint(kBulkOutEp).set_hold_cancel(false);
+    env.fake_dev_->fake_endpoint(kBulkInEp).set_hold_cancel(false);
+    env.CancelAllUsbRequests();
+  });
+
   ASSERT_NO_FATAL_FAILURE(SafeStopDriver());
 }
 

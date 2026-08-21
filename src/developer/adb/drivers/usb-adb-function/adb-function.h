@@ -232,6 +232,16 @@ class UsbAdbDevice : public fdf::DriverBase2,
   // become available.
   std::queue<txn_req_t> tx_pending_reqs_;
 
+  bool bulk_in_cancelled_ = false;
+  bool bulk_out_cancelled_ = false;
+
+  bool CancelAllCompleted() const { return bulk_in_cancelled_ && bulk_out_cancelled_; }
+  bool AllRequestsReturned() {
+    bool bulk_in_ready = bulk_in_ep_.RequestsFull() || !bulk_in_ep_.client().is_valid();
+    bool bulk_out_ready = bulk_out_ep_.RequestsFull() || !bulk_out_ep_.client().is_valid();
+    return bulk_in_ready && bulk_out_ready;
+  }
+
   // Inspect diagnostics
   std::optional<inspect::ComponentInspector> component_inspector_;
   inspect::Node inspect_node_;

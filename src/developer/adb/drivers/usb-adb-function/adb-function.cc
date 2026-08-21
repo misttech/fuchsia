@@ -137,6 +137,53 @@ void UsbAdbDevice::ResetOrStopUsb(State stop_state) {
     tx_pending_reqs_.pop();
   }
 
+  bulk_in_cancelled_ = false;
+  bulk_out_cancelled_ = false;
+
+  SetState(stop_state);
+
+  // Cancel in-flight bulk endpoint requests.
+  zxlogf(INFO, "Canceling all bulk endpoint requests");
+  if (bulk_in_ep_.client().is_valid()) {
+    bulk_in_ep_->CancelAll().Then([this](auto& result) {
+      bulk_in_cancelled_ = true;
+      if (result.is_error()) {
+        if (result.error_value().is_domain_error() &&
+            result.error_value().domain_error() == ZX_ERR_IO_NOT_PRESENT) {
+          zxlogf(INFO,
+                 "CancelAll on bulk_in_ep_: hardware endpoint is inactive, request cleanup "
+                 "complete");
+        } else {
+          zxlogf(WARNING, "CancelAll on bulk_in_ep_ failed: %s",
+                 result.error_value().FormatDescription().c_str());
+        }
+      }
+      CheckUsbStopComplete();
+    });
+  } else {
+    bulk_in_cancelled_ = true;
+  }
+
+  if (bulk_out_ep_.client().is_valid()) {
+    bulk_out_ep_->CancelAll().Then([this](auto& result) {
+      bulk_out_cancelled_ = true;
+      if (result.is_error()) {
+        if (result.error_value().is_domain_error() &&
+            result.error_value().domain_error() == ZX_ERR_IO_NOT_PRESENT) {
+          zxlogf(INFO,
+                 "CancelAll on bulk_out_ep_: hardware endpoint is inactive, request cleanup "
+                 "complete");
+        } else {
+          zxlogf(WARNING, "CancelAll on bulk_out_ep_ failed: %s",
+                 result.error_value().FormatDescription().c_str());
+        }
+      }
+      CheckUsbStopComplete();
+    });
+  } else {
+    bulk_out_cancelled_ = true;
+  }
+
   // Disconnect USB.
   // TODO(b/417808660): Replace logs with Inspect once the bug is fixed.
   zxlogf(INFO, "Disconnecting from USB by deconfiguring");
@@ -148,8 +195,6 @@ void UsbAdbDevice::ResetOrStopUsb(State stop_state) {
   if (usb_function_binding_.has_value()) {
     usb_function_binding_.reset();
   }
-
-  SetState(stop_state);
 
   CheckUsbStopComplete();
 }
@@ -236,9 +281,16 @@ void UsbAdbDevice::ReceiveQueued() {
     auto req = usb::FidlRequest(std::move(completion.request().value()));
 
     if (status != ZX_OK) {
-      zxlogf(ERROR, "RxComplete called with error %s.", zx_status_get_string(status));
+      zx_status_t reply_status = (status == ZX_ERR_IO_NOT_PRESENT || status == ZX_ERR_CANCELED)
+                                     ? ZX_ERR_CANCELED
+                                     : ZX_ERR_INTERNAL;
+      if (status == ZX_ERR_IO_NOT_PRESENT || status == ZX_ERR_CANCELED) {
+        zxlogf(INFO, "RxComplete called with teardown status: %s.", zx_status_get_string(status));
+      } else {
+        zxlogf(ERROR, "RxComplete called with error %s.", zx_status_get_string(status));
+      }
       bulk_out_inspect_.AddFailedRxBytes(req.length());
-      rx_requests_.front().Reply(fit::error(ZX_ERR_INTERNAL));
+      rx_requests_.front().Reply(fit::error(reply_status));
     } else {
       // This should always be true because when we registered VMOs, we only registered one per
       // request.
@@ -507,18 +559,22 @@ void UsbAdbDevice::handle_unknown_method(
 
 void UsbAdbDevice::CheckUsbStopComplete() {
   if (state_ != State::kStoppingForUnbind && state_ != State::kStoppingForReconnect) {
-    ZX_PANIC("Unexpected state: %d", static_cast<int>(state_));
-  }
-
-  if (!bulk_in_ep_.RequestsFull() || !bulk_out_ep_.RequestsFull()) {
-    // Still waiting for outstanding USB requests to return.
-    // TODO(b/417808660): Replace logs with Inspect once the bug is fixed.
-    zxlogf(INFO, "Not all USB requests complete (in:%d out:%d)", bulk_in_ep_.RequestsFull(),
-           bulk_out_ep_.RequestsFull());
     return;
   }
 
-  zxlogf(INFO, "All USB requests complete. Completing USB stop.");
+  if (!AllRequestsReturned() || !CancelAllCompleted()) {
+    // Still waiting for outstanding USB requests to return and CancelAll calls to complete.
+    // TODO(b/417808660): Replace logs with Inspect once the bug is fixed.
+    zxlogf(
+        INFO,
+        "Not all USB requests complete (in_inflight:%zu/%zu out_inflight:%zu/%zu) or CancelAll complete (in:%d out:%d)",
+        bulk_in_ep_.GetInFlightCount(), bulk_in_ep_.GetTotalCount(),
+        bulk_out_ep_.GetInFlightCount(), bulk_out_ep_.GetTotalCount(), bulk_in_cancelled_,
+        bulk_out_cancelled_);
+    return;
+  }
+
+  zxlogf(INFO, "Completing USB stop.");
 
   if (adb_binding_.has_value()) {
     auto result = fidl::WireSendEvent(*adb_binding_)->OnStatusChanged(fadb::StatusFlags(0));
@@ -691,6 +747,8 @@ void UsbAdbDevice::StartUsb() {
   }
 
   SetState(State::kAwaitingUsbConnection);
+  bulk_in_cancelled_ = false;
+  bulk_out_cancelled_ = false;
 }
 
 }  // namespace usb_adb_function
