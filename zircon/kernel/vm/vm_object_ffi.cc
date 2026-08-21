@@ -6,6 +6,7 @@
 
 #include "vm/vm_object_ffi.h"
 
+#include <lib/user_copy/user_ptr.h>
 #include <zircon/types.h>
 
 #include <kernel/ffi.h>
@@ -213,6 +214,29 @@ FFI_ALWAYS_INLINE uint64_t cpp_vm_object_reclamation_event_count(const VmObject*
 FFI_ALWAYS_INLINE void cpp_vm_object_get_attributed_memory_in_range(
     const VmObject* vmo, uint64_t offset, uint64_t len, vm::AttributionCounts* out_counts) {
   *out_counts = vmo->GetAttributedMemoryInRange(offset, len);
+}
+
+zx_status_t cpp_vm_object_read_user(VmObject* vmo, void* buffer, uint64_t offset, size_t size,
+                                    size_t* out_actual) {
+  auto [st, out_actual_bytes] = vmo->ReadUser(make_user_out_ptr(buffer).reinterpret<char>(), offset,
+                                              size, VmObjectReadWriteOptions::TrimLength);
+  if (st != ZX_OK) {
+    return st;
+  }
+  *out_actual = out_actual_bytes;
+  return ZX_OK;
+}
+
+zx_status_t cpp_vm_object_write_user(VmObject* vmo, const void* buffer, uint64_t offset,
+                                     size_t size, size_t* out_actual) {
+  auto [st, out_actual_bytes] =
+      vmo->WriteUser(make_user_in_ptr(buffer).reinterpret<const char>(), offset, size,
+                     VmObjectReadWriteOptions::TrimLength, /*on_bytes_transferred=*/nullptr);
+  if (st != ZX_OK) {
+    return st;
+  }
+  *out_actual = out_actual_bytes;
+  return ZX_OK;
 }
 
 }  // extern "C"

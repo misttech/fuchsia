@@ -9,7 +9,7 @@ use super::handle::{HandleValue, KernelHandle};
 use super::job_dispatcher::JobDispatcher;
 use super::process_dispatcher::ProcessDispatcher;
 use super::thread_dispatcher::ThreadDispatcher;
-use zx_types::{zx_info_process_t, zx_rights_t, zx_status_t, zx_vaddr_t};
+use zx_types::{zx_handle_t, zx_info_process_t, zx_rights_t, zx_status_t, zx_vaddr_t};
 
 unsafe extern "C" {
     /// Returns a raw pointer to the current process dispatcher.
@@ -17,7 +17,7 @@ unsafe extern "C" {
     /// # Safety
     ///
     /// The caller must only call this when executing within a valid thread context.
-    pub(crate) fn cpp_process_dispatcher_current() -> *const ProcessDispatcher;
+    pub(crate) fn cpp_process_dispatcher_current() -> *mut ProcessDispatcher;
 
     /// Checks if the given ProcessDispatcher is the current process.
     ///
@@ -31,11 +31,11 @@ unsafe extern "C" {
     /// # Safety
     ///
     /// `process` must point to a valid `ProcessDispatcher`.
-    /// `thread` must point to a valid `ThreadDispatcher`.
-    /// `arg_handle` must point to a valid raw handle or be null.
+    /// `thread` must carry an acquired reference count transferred to C++.
+    /// `arg_handle` must be a valid raw owned handle or null.
     pub(crate) fn cpp_process_dispatcher_start(
-        process: *const ProcessDispatcher,
-        thread: *const ThreadDispatcher,
+        process: *mut ProcessDispatcher,
+        thread: *mut ThreadDispatcher,
         pc: zx_vaddr_t,
         sp: zx_vaddr_t,
         arg_handle: *mut core::ffi::c_void,
@@ -47,7 +47,7 @@ unsafe extern "C" {
     /// # Safety
     ///
     /// `process` must point to a valid `ProcessDispatcher`.
-    pub(crate) fn cpp_process_dispatcher_kill(process: *const ProcessDispatcher, retcode: i64);
+    pub(crate) fn cpp_process_dispatcher_kill(process: *mut ProcessDispatcher, retcode: i64);
 
     /// Calls into C++ implementation to suspend a process.
     ///
@@ -71,7 +71,7 @@ unsafe extern "C" {
     /// `handle` must point to a valid `KernelHandle<Dispatcher>`.
     /// `out_handle` must point to writable memory.
     pub(crate) fn cpp_process_dispatcher_make_and_add_handle(
-        process: *const ProcessDispatcher,
+        process: *mut ProcessDispatcher,
         handle: *mut KernelHandle<Dispatcher>,
         rights: zx_rights_t,
         out_handle: *mut HandleValue,
@@ -85,18 +85,13 @@ unsafe extern "C" {
     /// `dispatcher` must be a valid `fbl::RefPtr<Dispatcher>`.
     /// `out_handle` must point to writable memory.
     pub(crate) fn cpp_process_dispatcher_make_and_add_handle_from_ref(
-        process: *const ProcessDispatcher,
-        raw_dispatcher: *const Dispatcher,
+        process: *mut ProcessDispatcher,
+        raw_dispatcher: *mut Dispatcher,
         rights: zx_rights_t,
         out_handle: *mut HandleValue,
     ) -> zx_status_t;
 
     /// Retrieves a dispatcher and rights from the handle table of the current process.
-    ///
-    /// Upon success, the `out_dispatcher` argument is initialized by C++ to contain a
-    /// `fbl::RefPtr<Dispatcher>` pointing to the dispatcher associated with the given handle.
-    /// The caller typically uses `MaybeUninit::uninit()` and checks the return status to
-    /// determine if C++ initialized the value.
     ///
     /// # Safety
     ///
@@ -108,17 +103,31 @@ unsafe extern "C" {
         out_rights: *mut zx_rights_t,
     ) -> zx_status_t;
 
+    /// Removes a handle from the given process's handle table and returns the raw handle pointer.
+    ///
+    /// # Safety
+    ///
+    /// `process` must point to a valid `ProcessDispatcher`.
+    pub(crate) fn cpp_process_dispatcher_remove_handle(
+        process: *mut ProcessDispatcher,
+        handle: zx_handle_t,
+    ) -> *mut core::ffi::c_void;
+
     /// Enforces basic policy for the given process.
     ///
     /// # Safety
     ///
     /// `process` must point to a valid `ProcessDispatcher`.
     pub(crate) fn cpp_process_dispatcher_enforce_basic_policy(
-        process: *const ProcessDispatcher,
+        process: *mut ProcessDispatcher,
         policy: u32,
     ) -> zx_status_t;
 
     /// Returns the timer slack policy amount for the given process.
+    ///
+    /// # Safety
+    ///
+    /// `process` must point to a valid `ProcessDispatcher`.
     pub(crate) fn cpp_process_dispatcher_get_timer_slack_policy_amount(
         process: *const ProcessDispatcher,
     ) -> i64;
@@ -172,4 +181,69 @@ unsafe extern "C" {
         job: *mut JobDispatcher,
         retcode_nonzero: bool,
     ) -> zx_status_t;
+
+    /// Creates a new process and its root VMAR under the specified job.
+    ///
+    /// # Safety
+    ///
+    /// `job` must point to a valid `JobDispatcher` whose reference count was transferred.
+    /// `name_ptr` must point to `name_len` readable bytes.
+    /// Output handle and rights pointers must point to writable memory.
+    pub(crate) fn cpp_process_dispatcher_create(
+        job: *mut JobDispatcher,
+        name_ptr: *const core::ffi::c_char,
+        name_len: usize,
+        flags: u32,
+        out_proc_handle: *mut KernelHandle<ProcessDispatcher>,
+        out_proc_rights: *mut zx_rights_t,
+        out_vmar_handle: *mut KernelHandle<
+            super::vm_address_region_dispatcher::VmAddressRegionDispatcher,
+        >,
+        out_vmar_rights: *mut zx_rights_t,
+    ) -> zx_status_t;
+
+    /// Creates a new shared process that shares state with `shared_proc`.
+    ///
+    /// # Safety
+    ///
+    /// `shared_proc` must point to a valid `ProcessDispatcher` whose reference count was transferred.
+    /// `name_ptr` must point to `name_len` readable bytes.
+    /// Output handle and rights pointers must point to writable memory.
+    pub(crate) fn cpp_process_dispatcher_create_shared(
+        shared_proc: *mut ProcessDispatcher,
+        name_ptr: *const core::ffi::c_char,
+        name_len: usize,
+        flags: u32,
+        out_proc_handle: *mut KernelHandle<ProcessDispatcher>,
+        out_proc_rights: *mut zx_rights_t,
+        out_restricted_vmar_handle: *mut KernelHandle<
+            super::vm_address_region_dispatcher::VmAddressRegionDispatcher,
+        >,
+        out_restricted_vmar_rights: *mut zx_rights_t,
+    ) -> zx_status_t;
+
+    /// Exits the current process with the given return code.
+    ///
+    /// # Safety
+    ///
+    /// Must only be called within a valid running thread context. Terminates current process execution.
+    pub(crate) fn cpp_process_dispatcher_exit_current(retcode: i64) -> !;
+
+    /// Returns the address space of `process` at the given virtual address.
+    ///
+    /// # Safety
+    ///
+    /// `process` must point to a valid `ProcessDispatcher`.
+    pub(crate) fn cpp_process_dispatcher_aspace_at(
+        process: *mut ProcessDispatcher,
+        va: usize,
+    ) -> *mut crate::vm::vm_aspace::VmAspace;
+
+    /// Returns the job of `process`.
+    ///
+    /// # Safety
+    ///
+    /// `process` must point to a valid `ProcessDispatcher`.
+    pub(crate) fn cpp_process_dispatcher_job(process: *mut ProcessDispatcher)
+    -> *mut JobDispatcher;
 }

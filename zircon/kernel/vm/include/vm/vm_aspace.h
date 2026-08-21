@@ -373,4 +373,8 @@ class VmAspace : public fbl::DoublyLinkedListable<VmAspace*>, public fbl::RefCou
   friend void vm_init_preheap();
 };
 
+extern "C" {
+VmMapping* cpp_vm_aspace_find_mapping(VmAspace* aspace, zx_vaddr_t vaddr);
+}
+
 #endif  // ZIRCON_KERNEL_VM_INCLUDE_VM_VM_ASPACE_H_

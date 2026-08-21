@@ -8,6 +8,7 @@ rustc_library("zr") {
   edition = "2024"
   sources = [
     "src/lib.rs",
+    "src/lossy_utf8.rs",
     "src/opaque.rs",
     "src/opaque_bytes.rs",
     "src/pin_init.rs",

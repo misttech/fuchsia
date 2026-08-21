@@ -446,7 +446,8 @@ zx_status_t cpp_process_dispatcher_make_and_add_handle_from_ref(ProcessDispatche
 zx_status_t cpp_handle_table_get_dispatcher(zx_handle_t handle,
                                             ffi::Uninitialized<fbl::RefPtr<Dispatcher>>* out_disp,
                                             zx_rights_t* out_rights);
-zx_status_t cpp_process_dispatcher_enforce_basic_policy(const ProcessDispatcher* process,
+Handle* cpp_process_dispatcher_remove_handle(ProcessDispatcher* process, zx_handle_t handle_value);
+zx_status_t cpp_process_dispatcher_enforce_basic_policy(ProcessDispatcher* process,
                                                         uint32_t policy);
 int64_t cpp_process_dispatcher_get_timer_slack_policy_amount(const ProcessDispatcher* process);
 void cpp_process_dispatcher_get_timer_slack_policy(const ProcessDispatcher* process,
@@ -457,6 +458,23 @@ Handle* cpp_process_dispatcher_handle_table_get_handle_locked(ProcessDispatcher*
 zx_info_process_t cpp_process_dispatcher_get_info(const ProcessDispatcher* process);
 zx_status_t cpp_process_dispatcher_set_critical_to_job(ProcessDispatcher* process,
                                                        JobDispatcher* job, bool retcode_nonzero);
+zx_status_t cpp_process_dispatcher_create(
+    JobDispatcher* job, const char* name_ptr, size_t name_len, uint32_t flags,
+    ffi::Uninitialized<KernelHandle<ProcessDispatcher>>* out_proc_handle,
+    zx_rights_t* out_proc_rights,
+    ffi::Uninitialized<KernelHandle<VmAddressRegionDispatcher>>* out_vmar_handle,
+    zx_rights_t* out_vmar_rights);
+zx_status_t cpp_process_dispatcher_create_shared(
+    ProcessDispatcher* shared_proc, const char* name_ptr, size_t name_len, uint32_t flags,
+    ffi::Uninitialized<KernelHandle<ProcessDispatcher>>* out_proc_handle,
+    zx_rights_t* out_proc_rights,
+    ffi::Uninitialized<KernelHandle<VmAddressRegionDispatcher>>* out_restricted_vmar_handle,
+    zx_rights_t* out_restricted_vmar_rights);
+[[noreturn]] void cpp_process_dispatcher_exit_current(int64_t retcode);
+
+JobDispatcher* cpp_process_dispatcher_job(ProcessDispatcher* process);
+
+VmAspace* cpp_process_dispatcher_aspace_at(ProcessDispatcher* process, zx_vaddr_t va);
 }
 
 #endif  // ZIRCON_KERNEL_OBJECT_INCLUDE_OBJECT_PROCESS_DISPATCHER_H_

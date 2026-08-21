@@ -7,17 +7,25 @@
 import("//build/cpp/library_headers.gni")
 import("//build/zircon/c_utils.gni")
 import("//build/zircon/zircon_cpu.gni")
+import("//zircon/kernel/kernel_rust_mod.gni")
 import("//zircon/kernel/params.gni")
 
 static_library("userabi") {
   public_deps = [ ":headers" ]
   if (is_kernel && !kernel_no_userabi) {
     deps = [
+      ":userabi-rs",
       ":userboot",
       ":vdso",
       "//zircon/kernel/lib/instrumentation",
     ]
   }
+}
+
+kernel_rust_mod("userabi-rs") {
+  output_name = "userabi"
+  source_root = "vdso.rs"
+  sources = [ "vdso.rs" ]
 }
 
 library_headers("headers") {

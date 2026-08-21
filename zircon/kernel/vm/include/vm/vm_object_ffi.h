@@ -96,6 +96,11 @@ FFI_ALWAYS_INLINE zx_status_t cpp_vm_object_lock_range(VmObject* vmo, uint64_t o
 FFI_ALWAYS_INLINE zx_status_t cpp_vm_object_unlock_range(VmObject* vmo, uint64_t offset,
                                                          uint64_t len);
 
+zx_status_t cpp_vm_object_read_user(VmObject* vmo, void* buffer, uint64_t offset, size_t size,
+                                    size_t* out_actual);
+zx_status_t cpp_vm_object_write_user(VmObject* vmo, const void* buffer, uint64_t offset,
+                                     size_t size, size_t* out_actual);
+
 __END_CDECLS
 
 #endif  // ZIRCON_KERNEL_VM_INCLUDE_VM_VM_OBJECT_FFI_H_

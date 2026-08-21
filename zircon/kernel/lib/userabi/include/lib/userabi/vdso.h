@@ -9,7 +9,9 @@
 
 #include <lib/fasttime/internal/abi.h>
 #include <lib/instrumentation/kernel-mapped-vmo.h>
+#include <zircon/compiler.h>
 
+#include <kernel/ffi.h>
 #include <object/vm_object_dispatcher.h>
 #include <vm/handoff-end.h>
 #include <vm/vm_object.h>
@@ -33,7 +35,7 @@ class VDso {
       ktl::span<KernelHandle<VmObjectDispatcher>, kNumVdsoVariants> vmo_kernel_handles,
       KernelHandle<VmObjectDispatcher>* time_values_handle);
 
-  static bool vmo_is_vdso(const fbl::RefPtr<VmObject>& vmo) {
+  static bool vmo_is_vdso(const VmObject* vmo) {
 #ifdef KERNEL_NO_USERABI
     // In the nouserabi case the instance_ variable is not present
     return false;
@@ -41,6 +43,8 @@ class VDso {
     return likely(instance_) && instance_->vmo_is_vdso_impl(vmo);
 #endif
   }
+
+  static bool vmo_is_vdso(const fbl::RefPtr<VmObject>& vmo) { return vmo_is_vdso(vmo.get()); }
 
   static bool valid_code_mapping(uint64_t vmo_offset, size_t size);
 
@@ -76,11 +80,11 @@ class VDso {
   void CreateTimeValuesVmo(KernelHandle<VmObjectDispatcher>* time_values_handle);
   zx_status_t MapTimeValuesVmo(Variant, const fbl::RefPtr<VmObject>& vdso_vmo);
 
-  bool vmo_is_vdso_impl(const fbl::RefPtr<VmObject>& vmo_ref) const {
-    if (vmo_ref == vmo_)
+  bool vmo_is_vdso_impl(const VmObject* vmo) const {
+    if (vmo == vmo_.get())
       return true;
     for (const auto& v : variant_vmo_) {
-      if (vmo_ref == v->vmo())
+      if (vmo == v->vmo().get())
         return true;
     }
     return false;
@@ -99,5 +103,12 @@ class VDso {
 
   static const VDso* instance_;
 };
+
+__BEGIN_CDECLS
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE bool cpp_vmo_is_vdso(const VmObject* vmo);
+
+__END_CDECLS
 
 #endif  // ZIRCON_KERNEL_LIB_USERABI_INCLUDE_LIB_USERABI_VDSO_H_

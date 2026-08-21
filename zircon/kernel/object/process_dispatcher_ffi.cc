@@ -9,6 +9,8 @@
 #include <object/job_dispatcher.h>
 #include <object/process_dispatcher.h>
 #include <object/thread_dispatcher.h>
+#include <object/vm_address_region_dispatcher.h>
+#include <object/vm_object_dispatcher.h>
 
 extern "C" {
 
@@ -22,11 +24,12 @@ FFI_ALWAYS_INLINE bool cpp_process_dispatcher_is_current(const ProcessDispatcher
   return process == ProcessDispatcher::GetCurrent();
 }
 
-zx_status_t cpp_process_dispatcher_start(ProcessDispatcher* process, ThreadDispatcher* thread,
-                                         zx_vaddr_t pc, zx_vaddr_t sp, Handle* arg_handle,
-                                         uintptr_t arg2) {
-  return process->Start(fbl::RefPtr<ThreadDispatcher>(thread), pc, sp, HandleOwner(arg_handle),
-                        arg2);
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE zx_status_t cpp_process_dispatcher_start(ProcessDispatcher* process,
+                                                           ThreadDispatcher* thread, zx_vaddr_t pc,
+                                                           zx_vaddr_t sp, Handle* arg_handle,
+                                                           uintptr_t arg2) {
+  return process->Start(fbl::ImportFromRawPtr(thread), pc, sp, HandleOwner(arg_handle), arg2);
 }
 
 // TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
@@ -72,9 +75,15 @@ FFI_ALWAYS_INLINE zx_status_t cpp_handle_table_get_dispatcher(
 }
 
 // TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE Handle* cpp_process_dispatcher_remove_handle(ProcessDispatcher* process,
+                                                               zx_handle_t handle_value) {
+  return process->handle_table().RemoveHandle(*process, handle_value).release();
+}
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
 FFI_ALWAYS_INLINE zx_status_t
-cpp_process_dispatcher_enforce_basic_policy(const ProcessDispatcher* process, uint32_t policy) {
-  return const_cast<ProcessDispatcher*>(process)->EnforceBasicPolicy(policy);
+cpp_process_dispatcher_enforce_basic_policy(ProcessDispatcher* process, uint32_t policy) {
+  return process->EnforceBasicPolicy(policy);
 }
 
 // TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
@@ -109,6 +118,63 @@ FFI_ALWAYS_INLINE zx_status_t cpp_process_dispatcher_set_critical_to_job(Process
                                                                          JobDispatcher* job,
                                                                          bool retcode_nonzero) {
   return process->SetCriticalToJob(fbl::ImportFromRawPtr(job), retcode_nonzero);
+}
+
+zx_status_t cpp_process_dispatcher_create(
+    JobDispatcher* job, const char* name_ptr, size_t name_len, uint32_t flags,
+    ffi::Uninitialized<KernelHandle<ProcessDispatcher>>* out_proc_handle,
+    zx_rights_t* out_proc_rights,
+    ffi::Uninitialized<KernelHandle<VmAddressRegionDispatcher>>* out_vmar_handle,
+    zx_rights_t* out_vmar_rights) {
+  ktl::string_view sp(name_ptr, name_len);
+  KernelHandle<ProcessDispatcher> proc_handle;
+  KernelHandle<VmAddressRegionDispatcher> vmar_handle;
+  zx_status_t status =
+      ProcessDispatcher::Create(fbl::ImportFromRawPtr(job), sp, flags, &proc_handle,
+                                out_proc_rights, &vmar_handle, out_vmar_rights);
+  if (status != ZX_OK) {
+    return status;
+  }
+  out_proc_handle->Initialize(ktl::move(proc_handle));
+  out_vmar_handle->Initialize(ktl::move(vmar_handle));
+  return ZX_OK;
+}
+
+zx_status_t cpp_process_dispatcher_create_shared(
+    ProcessDispatcher* shared_proc, const char* name_ptr, size_t name_len, uint32_t flags,
+    ffi::Uninitialized<KernelHandle<ProcessDispatcher>>* out_proc_handle,
+    zx_rights_t* out_proc_rights,
+    ffi::Uninitialized<KernelHandle<VmAddressRegionDispatcher>>* out_restricted_vmar_handle,
+    zx_rights_t* out_restricted_vmar_rights) {
+  ktl::string_view sp(name_ptr, name_len);
+  KernelHandle<ProcessDispatcher> proc_handle;
+  KernelHandle<VmAddressRegionDispatcher> restricted_vmar_handle;
+  zx_status_t status = ProcessDispatcher::CreateShared(
+      fbl::ImportFromRawPtr(shared_proc), sp, flags, &proc_handle, out_proc_rights,
+      &restricted_vmar_handle, out_restricted_vmar_rights);
+  if (status != ZX_OK) {
+    return status;
+  }
+  out_proc_handle->Initialize(ktl::move(proc_handle));
+  out_restricted_vmar_handle->Initialize(ktl::move(restricted_vmar_handle));
+  return ZX_OK;
+}
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+[[noreturn]] FFI_ALWAYS_INLINE void cpp_process_dispatcher_exit_current(int64_t retcode) {
+  ProcessDispatcher::ExitCurrent(retcode);
+}
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE JobDispatcher* cpp_process_dispatcher_job(ProcessDispatcher* process) {
+  fbl::RefPtr<JobDispatcher> job = process->job();
+  return fbl::ExportToRawPtr(&job);
+}
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE VmAspace* cpp_process_dispatcher_aspace_at(ProcessDispatcher* process,
+                                                             zx_vaddr_t va) {
+  return process->aspace_at(va);
 }
 
 }  // extern "C"

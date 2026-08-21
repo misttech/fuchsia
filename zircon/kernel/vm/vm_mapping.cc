@@ -1883,6 +1883,7 @@ zx_status_t cpp_vm_mapping_debug_unmap(VmMapping* mapping, vaddr_t base, size_t 
 zx_status_t cpp_vm_mapping_debug_protect(VmMapping* mapping, vaddr_t base, size_t size,
                                          arch_mmu_flags_t new_arch_mmu_flags);
 const VmObject* cpp_vm_mapping_vmo(VmMapping* mapping);
+zx_status_t cpp_vm_mapping_force_writable(VmMapping* mapping, VmMapping** out_mapping);
 
 fbl::RefCounted<VmAddressRegionOrMapping>* cpp_vm_mapping_get_ref_counted(VmMapping* mapping) {
   return mapping;
@@ -1910,5 +1911,14 @@ zx_status_t cpp_vm_mapping_debug_protect(VmMapping* mapping, vaddr_t base, size_
 const VmObject* cpp_vm_mapping_vmo(VmMapping* mapping) {
   fbl::RefPtr<VmObject> vmo = mapping->vmo();
   return fbl::ExportToRawPtr(&vmo);
+}
+zx_status_t cpp_vm_mapping_force_writable(VmMapping* mapping, VmMapping** out_mapping) {
+  auto result = mapping->ForceWritable();
+  if (result.is_error()) {
+    return result.error_value();
+  }
+  auto res = *result;
+  *out_mapping = fbl::ExportToRawPtr(&res);
+  return ZX_OK;
 }
 }

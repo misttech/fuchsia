@@ -29,7 +29,7 @@ mod msi_dispatcher_ffi;
 mod msi_interrupt_dispatcher;
 mod msi_interrupt_dispatcher_ffi;
 mod process_dispatcher;
-mod process_dispatcher_ffi;
+pub(crate) mod process_dispatcher_ffi;
 mod profile_dispatcher;
 mod profile_dispatcher_ffi;
 mod resource_ffi;

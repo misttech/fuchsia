@@ -558,3 +558,10 @@ void VDso::CreateVariant(Variant variant, KernelHandle<VmObjectDispatcher>* vmo_
 bool VDso::valid_code_mapping(uint64_t vmo_offset, size_t size) {
   return vmo_offset == kVdsoCodeStart && size == kVdsoCodeSize;
 }
+
+extern "C" {
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE bool cpp_vmo_is_vdso(const VmObject* vmo) { return VDso::vmo_is_vdso(vmo); }
+
+}  // extern "C"

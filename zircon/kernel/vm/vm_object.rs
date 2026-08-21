@@ -10,6 +10,7 @@ use super::page::VmPagePtr;
 use super::page_source::MultiPageRequest;
 use super::vm_object_paged::VmObjectPaged;
 use crate::kernel::types::PAddr;
+use crate::user_copy::{UserInPtr, UserOutPtr};
 use core::ffi::c_void;
 use core::marker::{PhantomData, PhantomPinned};
 use core::mem::{ManuallyDrop, MaybeUninit};
@@ -614,6 +615,66 @@ impl VmObject {
     pub fn reclamation_event_count(&self) -> u64 {
         // SAFETY: `self.as_raw()` points to a live `VmObject`.
         unsafe { bindings::cpp_vm_object_reclamation_event_count(self.as_raw()) }
+    }
+
+    /// Read/write operators against user space pointers only.
+    ///
+    /// The number of bytes successfully processed is always returned, even upon error. This allows for
+    /// callers to still pass on this bytes transferred if a particular error was expected.
+    ///
+    /// May block on user pager requests and must be called without locks held.
+    ///
+    /// Bytes are guaranteed to be transferred in order from low to high offset.
+    pub fn read_user<T>(
+        &self,
+        buffer: UserOutPtr<T>,
+        offset: u64,
+        size: usize,
+    ) -> Result<usize, Status> {
+        let mut out_actual = 0usize;
+        // SAFETY: `self.as_raw()` returns a valid `VmObject` pointer. `out_actual` points to
+        // stack-allocated memory.
+        let status = unsafe {
+            bindings::cpp_vm_object_read_user(
+                self.as_raw(),
+                buffer.as_ptr().cast(),
+                offset,
+                size,
+                &mut out_actual,
+            )
+        };
+        Status::ok(status)?;
+        Ok(out_actual)
+    }
+
+    /// Read/write operators against user space pointers only.
+    ///
+    /// The number of bytes successfully processed is always returned, even upon error. This allows for
+    /// callers to still pass on this bytes transferred if a particular error was expected.
+    ///
+    /// May block on user pager requests and must be called without locks held.
+    ///
+    /// Bytes are guaranteed to be transferred in order from low to high offset.
+    pub fn write_user<T>(
+        &self,
+        buffer: UserInPtr<T>,
+        offset: u64,
+        size: usize,
+    ) -> Result<usize, Status> {
+        let mut out_actual = 0usize;
+        // SAFETY: `self.as_raw()` returns a valid `VmObject` pointer. `out_actual` points to
+        // stack-allocated memory.
+        let status = unsafe {
+            bindings::cpp_vm_object_write_user(
+                self.as_raw(),
+                buffer.as_ptr().cast(),
+                offset,
+                size,
+                &mut out_actual,
+            )
+        };
+        Status::ok(status)?;
+        Ok(out_actual)
     }
 }
 

@@ -34,6 +34,10 @@ unsafe extern "C" {
         new_arch_mmu_flags: ArchMmuFlags,
     ) -> i32;
     fn cpp_vm_mapping_vmo(mapping: *mut VmMapping) -> *const VmObject;
+    fn cpp_vm_mapping_force_writable(
+        mapping: *mut VmMapping,
+        out_mapping: *mut *mut VmMapping,
+    ) -> i32;
 }
 
 fbl::impl_opaque_ref_counted_facade!(
@@ -114,5 +118,17 @@ impl VmMapping {
     /// Returns the underlying VMO backing this mapping.
     pub fn vmo(&self) -> Option<RefPtr<VmObject>> {
         unsafe { RefPtr::try_from_raw(cpp_vm_mapping_vmo(self.to_mut_ptr())) }
+    }
+
+    /// Informs the mapping that a write is going to be performed to the backing VMO.
+    ///
+    /// If necessary, creates a private clone of the VMO and returns a new mapping.
+    pub fn force_writable(&self) -> Result<RefPtr<VmMapping>, Status> {
+        let mut out = core::ptr::null_mut();
+        // SAFETY: `self.to_mut_ptr()` is a valid pointer to this `VmMapping`, and `out` points to writable memory.
+        let status = unsafe { cpp_vm_mapping_force_writable(self.to_mut_ptr(), &mut out) };
+        Status::ok(status)?;
+        // SAFETY: `out` was exported by `fbl::ExportToRawPtr` from C++.
+        Ok(unsafe { RefPtr::try_from_raw(out).expect("Should never be null with OK status") })
     }
 }

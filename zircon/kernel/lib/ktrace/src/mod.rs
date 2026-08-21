@@ -6,7 +6,7 @@
 
 use crate::arch_rs::{InterruptDisableGuard, curr_cpu_num, ints_disabled};
 use crate::kernel::thread::{FxtRef, ThreadPtr};
-use crate::kernel::types::Koid;
+pub use crate::kernel::types::Koid;
 pub use crate::platform_rs::timer::{InstantBootTicks, timer_current_boot_ticks};
 use core::cell::UnsafeCell;
 use core::mem::{MaybeUninit, size_of};

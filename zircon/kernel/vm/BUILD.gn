@@ -657,6 +657,8 @@ kernel_bindgen_crate("vm-object-bindings") {
     "cpp_vm_object_writeback_begin",
     "cpp_vm_object_writeback_end",
     "cpp_vm_object_reclamation_event_count",
+    "cpp_vm_object_read_user",
+    "cpp_vm_object_write_user",
   ]
   type_allowlist = [
     "EvictionHint",

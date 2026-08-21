@@ -891,6 +891,7 @@ zx_status_t cpp_vm_aspace_map_object_internal(VmAspace* aspace, VmObject* vmo, c
 zx_status_t cpp_vm_aspace_free_region(VmAspace* aspace, vaddr_t va);
 void cpp_vm_aspace_free(VmAspace* aspace);
 ArchVmAspace* cpp_vm_aspace_arch_aspace(VmAspace* aspace);
+VmMapping* cpp_vm_aspace_find_mapping(VmAspace* aspace, zx_vaddr_t vaddr);
 
 fbl::RefCounted<VmAspace>* cpp_vm_aspace_get_ref_counted(VmAspace* aspace) { return aspace; }
 VmAspace* cpp_vm_aspace_create(VmAspace::Type type, const char* name) {
@@ -972,4 +973,19 @@ zx_status_t cpp_vm_aspace_free_region(VmAspace* aspace, vaddr_t va) {
 }
 void cpp_vm_aspace_free(VmAspace* aspace) { delete aspace; }
 ArchVmAspace* cpp_vm_aspace_arch_aspace(VmAspace* aspace) { return &aspace->arch_aspace(); }
+
+VmMapping* cpp_vm_aspace_find_mapping(VmAspace* aspace, zx_vaddr_t vaddr) {
+  if (!aspace) {
+    return nullptr;
+  }
+  auto region = aspace->FindRegion(vaddr);
+  if (!region) {
+    return nullptr;
+  }
+  auto vm_mapping = region->as_vm_mapping();
+  if (!vm_mapping) {
+    return nullptr;
+  }
+  return fbl::ExportToRawPtr(&vm_mapping);
+}
 }

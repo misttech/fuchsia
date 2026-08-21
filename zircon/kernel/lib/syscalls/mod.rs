@@ -17,6 +17,7 @@ mod membarrier;
 mod msi;
 mod nanosleep;
 mod object_wait;
+mod process;
 mod profile;
 mod restricted;
 mod sampler;

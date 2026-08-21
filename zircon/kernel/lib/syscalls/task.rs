@@ -4,13 +4,35 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
-use crate::object::{Dispatcher, HandleValue, ProcessDispatcher, SuspendTokenDispatcher};
+use crate::object::{
+    Dispatcher, HandleValue, JobDispatcher, ProcessDispatcher, SuspendTokenDispatcher,
+    ThreadDispatcher,
+};
 use debug::ltracef;
 use syscalls_macro::syscall;
-use zx_status::ErrorStatus;
-use zx_types::ZX_RIGHT_WRITE;
+use zx_status::{ErrorStatus, Status};
+use zx_types::{ZX_RIGHT_DESTROY, ZX_RIGHT_WRITE, ZX_TASK_RETCODE_SYSCALL_KILL};
 
 const LOCAL_TRACE: u32 = 0;
+
+#[syscall]
+pub fn sys_task_kill(handle: HandleValue) -> Result<(), ErrorStatus> {
+    ltracef!("handle {:#x}\n", handle.raw_value());
+
+    let dispatcher = Dispatcher::get_with_rights::<Dispatcher>(handle, ZX_RIGHT_DESTROY)?;
+
+    if let Some(job) = dispatcher.downcast::<JobDispatcher>() {
+        job.kill(ZX_TASK_RETCODE_SYSCALL_KILL);
+        Ok(())
+    } else if let Some(process) = dispatcher.downcast::<ProcessDispatcher>() {
+        process.kill(ZX_TASK_RETCODE_SYSCALL_KILL);
+        Ok(())
+    } else if dispatcher.downcast::<ThreadDispatcher>().is_some() {
+        Err(Status::NOT_SUPPORTED.into())
+    } else {
+        Err(Status::WRONG_TYPE.into())
+    }
+}
 
 #[syscall]
 pub fn sys_task_suspend(handle: HandleValue, token: &mut HandleValue) -> Result<(), ErrorStatus> {

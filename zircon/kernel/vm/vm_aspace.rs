@@ -6,6 +6,7 @@
 
 use super::arch_vm_aspace::{ArchMmuFlags, ArchVmAspace, NonTerminalAction, TerminalAction};
 use super::vm_address_region::VmAddressRegion;
+use super::vm_mapping::VmMapping;
 use super::vm_object::VmObject;
 use crate::kernel::thread::{Thread, ThreadPtr};
 use crate::kernel::types::PAddr;
@@ -130,6 +131,7 @@ unsafe extern "C" {
     ) -> i32;
     fn cpp_vm_aspace_free_region(aspace: *mut VmAspace, va: usize) -> i32;
     fn cpp_vm_aspace_free(aspace: *mut VmAspace);
+    fn cpp_vm_aspace_find_mapping(aspace: *mut VmAspace, vaddr: usize) -> *mut VmMapping;
 }
 
 fbl::impl_opaque_ref_counted_facade!(
@@ -474,5 +476,13 @@ impl VmAspace {
     /// Returns whether this address space is currently set to be a high memory priority.
     pub fn is_high_memory_priority(&self) -> bool {
         unsafe { cpp_vm_aspace_is_high_memory_priority(self.to_mut_ptr()) }
+    }
+
+    /// Finds the memory mapping for `vaddr` in this address space.
+    pub fn find_mapping(&self, vaddr: usize) -> Option<RefPtr<VmMapping>> {
+        // SAFETY: `self.to_mut_ptr()` is a valid pointer to this `VmAspace`.
+        let ptr = unsafe { cpp_vm_aspace_find_mapping(self.to_mut_ptr(), vaddr) };
+        // SAFETY: `ptr` is either null or was exported with an acquired refcount via `fbl::ExportToRawPtr`.
+        unsafe { RefPtr::try_from_raw(ptr) }
     }
 }

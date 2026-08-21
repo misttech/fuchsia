@@ -4,6 +4,7 @@
 
 #![no_std]
 
+mod lossy_utf8;
 mod opaque;
 mod opaque_bytes;
 mod pin_init;
@@ -11,6 +12,7 @@ mod ptr;
 mod static_assert;
 mod string;
 
+pub use lossy_utf8::from_utf8_lossy;
 pub use opaque::{Opaque, OpaqueFacade};
 pub use opaque_bytes::OpaqueBytes;
 pub use ptr::{AtomicConstPtr, ToMutPtr};
