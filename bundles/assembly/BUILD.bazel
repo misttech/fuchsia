@@ -2923,6 +2923,23 @@ assembly_input_bundle(
     memory_buckets = ["//src/developer/memory/buckets:starnix.json5"],
 )
 
+# EROFS support for Starnix.
+# buildifier: leave-alone
+assembly_input_bundle(
+    name = "erofs_support",
+    experimental = True,
+    allowed_in = [
+        "userdebug",
+        "eng",
+    ],
+    flexible_packages = [
+        "//bundles/assembly/bazel_inputs/src/storage/erofs:erofs",
+    ],
+    core_shards = [
+        "//src/storage/erofs/component:meta/erofs.core_shard.cml",
+    ],
+)
+
 # Core adb support. Does not include daemon. Daemon should be included separately.
 # buildifier: leave-alone
 assembly_input_bundle(

@@ -24,6 +24,7 @@ syscall_tests_resources = [
   # go/keep-sorted start
 
   ":fuse_overlayfs",
+  ":simple_erofs_image",
   ":simple_ext4_image",
 
   # go/keep-sorted end
@@ -78,7 +79,6 @@ syscall_tests = [
   "membarrier_test",
   "memfd_test",
   "mmap_test",
-  "mount_test",
   "netlink_test",
   "overlayfs_test",
   "perf_event_open_test",
@@ -435,6 +435,18 @@ resource("simple_ext4_image") {
   outputs = [ "data/tests/deps/{{source_file_part}}" ]
 }
 
+resource("simple_erofs_image") {
+  sources = [
+    "//src/storage/erofs/testing/data/simple.erofs",
+    "//src/storage/erofs/testing/data/simple/file1",
+  ]
+  outputs = [ "data/tests/deps/{{source_file_part}}" ]
+}
+
+syscall_test("mount_test") {
+  includes = [ "//src/starnix/tests/syscalls/cpp/meta/mount_test.shard.cml" ]
+}
+
 config("march") {
   if (current_cpu == "riscv64") {
     # Keep `march` consistent with the value used by Android, see
@@ -681,8 +693,12 @@ fuchsia_test_package("starnix_syscalls_cpp_tests") {
   test_components = [
     ":crash_test",
     ":ext4_write_test",
+    ":mount_test",
   ]
-  deps = []
+  deps = [
+    ":mount_test_config",
+    "//src/storage/erofs/component:erofs_component",
+  ]
   foreach(test_name, all_test_names) {
     test_components += [ ":${test_name}" ]
     deps += [ ":${test_name}_config" ]

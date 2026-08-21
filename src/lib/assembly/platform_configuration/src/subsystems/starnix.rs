@@ -73,6 +73,7 @@ impl DefineSubsystemConfiguration<(&PlatformStarnixConfig, &PlatformConnectivity
                 builder.platform_bundle("hvdcp_opti_support")?;
                 builder.platform_bundle("nanohub_support")?;
                 builder.platform_bundle("fastrpc_support")?;
+                builder.platform_bundle("erofs_support")?;
             } else {
                 builder.set_config_capability(
                     "fuchsia.starnix.runner.EnableDataCollection",

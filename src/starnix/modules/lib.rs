@@ -105,6 +105,7 @@ pub fn register_common_file_systems(kernel: &Kernel) {
     registry.register(b"debugfs".into(), debug_fs);
     registry.register(b"devpts".into(), dev_pts_fs);
     registry.register(b"devtmpfs".into(), dev_tmp_fs);
+    registry.register(b"erofs".into(), starnix_modules_erofs::new_fs);
     registry.register(b"ext4".into(), ExtFilesystem::new_fs);
     registry.register(b"functionfs".into(), FunctionFs::new_fs);
     registry.register(b"fuse".into(), new_fuse_fs);

@@ -152,6 +152,7 @@
                 "fuchsia.boot.Items",
                 "fuchsia.buildinfo.Provider",
                 "fuchsia.diagnostics.ArchiveAccessor",
+                "fuchsia.erofs.Erofs",
                 "fuchsia.feedback.CrashReporter",
                 "fuchsia.feedback.LastRebootInfoProvider",
                 "fuchsia.hardware.backlight.Device",

@@ -127,6 +127,12 @@
             source_availability: "unknown",
         },
         {
+            protocol: [ "fuchsia.erofs.Erofs" ],
+            from: "#erofs",
+            to: "#starnix_runner",
+            source_availability: "unknown",
+        },
+        {
             protocol: [
                 "fuchsia.sysmem.Allocator",
                 "fuchsia.sysmem2.Allocator",

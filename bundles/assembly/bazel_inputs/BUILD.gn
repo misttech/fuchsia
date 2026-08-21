@@ -1005,6 +1005,10 @@ group("starnix_support") {
   ]
 }
 
+group("erofs_support") {
+  deps = [ "//bundles/assembly/bazel_inputs/src/storage/erofs" ]
+}
+
 fuchsia_package("starnix_support.bootfs_files_package") {
   deps = [ "//src/starnix/config:bootfs" ]
 }

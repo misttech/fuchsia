@@ -136,6 +136,8 @@ pub struct RemoteFs {
 
     /// Casefold support is only assumed if QueryFilesystem exists and fs_type is Fxfs.
     casefold: bool,
+
+    name: &'static str,
 }
 
 impl RemoteFs {
@@ -214,7 +216,7 @@ impl FileSystemOps for RemoteFs {
     }
 
     fn name(&self) -> &'static FsStr {
-        "remotefs".into()
+        self.name.into()
     }
 
     fn uses_external_node_ids(&self) -> bool {
@@ -495,9 +497,10 @@ fn get_attributes(attrs: &Option<fio::NodeAttributes2>) -> &fio::NodeAttributes2
 }
 
 impl RemoteFs {
-    pub(super) fn new(
+    pub fn new(
         root: zx::Channel,
         root_rights: fio::Flags,
+        name: &'static str,
     ) -> Result<(RemoteFs, Box<dyn FsNodeOps>, FsNodeInfo, u64), Errno> {
         let (client_end, server_end) = zx::Channel::create();
         let root_proxy = fio::DirectorySynchronousProxy::new(root);
@@ -528,10 +531,15 @@ impl RemoteFs {
             root_proxy.query_filesystem(zx::MonotonicInstant::INFINITE).map_err(|_| errno!(EIO))?;
 
         // Be tolerant of errors here; many filesystems return `ZX_ERR_NOT_SUPPORTED`.
-        let is_fxfs = status == 0
-            && info
-                .map(|i| i.fs_type == fidl_fuchsia_fs::VfsType::Fxfs.into_primitive())
-                .unwrap_or(false);
+        let vfs_type = (status == 0)
+            .then_some(info)
+            .flatten()
+            .and_then(|i| fidl_fuchsia_fs::VfsType::from_primitive(i.fs_type));
+        let (use_remote_ids, casefold) = match vfs_type {
+            Some(fidl_fuchsia_fs::VfsType::Fxfs) => (true, true),
+            Some(fidl_fuchsia_fs::VfsType::Erofs) => (true, false),
+            _ => (false, false),
+        };
 
         // The OnRepresentation response will return an initial set of `attrs`.
         let mut node_info = FsNodeInfo::new(mode!(IFDIR, 0o777), FsCred::root());
@@ -541,12 +549,8 @@ impl RemoteFs {
         )
         .map_err(map_sync_io_client_error)?;
 
-        // We currently only support remote_ids and casefold on Fxfs.
-        let use_remote_ids = is_fxfs;
-        let casefold = is_fxfs;
-
         Ok((
-            RemoteFs { use_remote_ids, root_proxy, root_rights, casefold },
+            RemoteFs { use_remote_ids, root_proxy, root_rights, casefold, name },
             remote_node,
             node_info,
             node_id,
@@ -559,7 +563,7 @@ impl RemoteFs {
         options: FileSystemOptions,
         rights: fio::Flags,
     ) -> Result<FileSystemHandle, Errno> {
-        let (remotefs, root_node, info, node_id) = RemoteFs::new(root, rights)?;
+        let (remotefs, root_node, info, node_id) = RemoteFs::new(root, rights, "remotefs")?;
 
         if !rights.contains(fio::PERM_WRITABLE) {
             options.flags.fetch_or(FileSystemFlags::RDONLY, Ordering::Relaxed);

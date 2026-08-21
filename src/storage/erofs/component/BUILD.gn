@@ -66,6 +66,10 @@ fuchsia_component("erofs_component") {
   deps = [ ":bin" ]
 }
 
+fuchsia_package("erofs") {
+  deps = [ ":erofs_component" ]
+}
+
 rustc_test("erofs_integration_test_bin") {
   name = "erofs_integration_test"
   edition = "2024"

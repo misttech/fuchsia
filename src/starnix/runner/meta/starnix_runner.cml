@@ -43,6 +43,10 @@
     ],
     use: [
         {
+            protocol: "fuchsia.erofs.Erofs",
+            availability: "optional",
+        },
+        {
             protocol: "fuchsia.component.Realm",
             from: "framework",
         },
@@ -75,6 +79,12 @@
         },
     ],
     offer: [
+        {
+            protocol: "fuchsia.erofs.Erofs",
+            from: "parent",
+            to: [ "#kernels" ],
+            availability: "optional",
+        },
         {
             protocol: [
                 "fuchsia.boot.Items",

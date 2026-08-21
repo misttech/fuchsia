@@ -315,6 +315,35 @@ TEST_F(MountTest, Ext4ReadOnlySmokeTest) {
   ASSERT_EQ(expected_contents, observed_contents);
 }
 
+TEST_F(MountTest, ErofsReadOnlySmokeTest) {
+  std::string expected_contents;
+  EXPECT_TRUE(files::ReadFileToString("data/tests/deps/file1", &expected_contents));
+
+  fbl::unique_fd loop_control(open("/dev/loop-control", O_RDWR, 0777));
+  ASSERT_TRUE(loop_control.is_valid());
+
+  int free_loop_device_num(ioctl(loop_control.get(), LOOP_CTL_GET_FREE, nullptr));
+  ASSERT_TRUE(free_loop_device_num >= 0);
+
+  std::string loop_device_path = "/dev/loop" + std::to_string(free_loop_device_num);
+  fbl::unique_fd free_loop_device(open(loop_device_path.c_str(), O_RDONLY, 0644));
+  ASSERT_TRUE(free_loop_device.is_valid());
+
+  fbl::unique_fd erofs_image(open("data/tests/deps/simple.erofs", O_RDONLY, 0644));
+  ASSERT_TRUE(erofs_image.is_valid());
+
+  ASSERT_SUCCESS(ioctl(free_loop_device.get(), LOOP_SET_FD, erofs_image.get()));
+
+  ASSERT_SUCCESS(MakeDir("basic_erofs"));
+  ASSERT_SUCCESS(mount(loop_device_path.c_str(), TestPath("basic_erofs").c_str(), "erofs",
+                       MS_RDONLY, nullptr));
+
+  std::string observed_contents;
+  EXPECT_TRUE(files::ReadFileToString(TestPath("basic_erofs/file1"), &observed_contents));
+
+  ASSERT_EQ(expected_contents, observed_contents);
+}
+
 TEST_F(MountTest, RemountReadOnlyToReadWriteIgnored) {
   // Create a tmpfs mount with a readonly superblock, and verify the reported mount flags.
   ASSERT_SUCCESS(MakeDir("a"));

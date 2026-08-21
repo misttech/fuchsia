@@ -282,6 +282,7 @@ platform_aib_names = bringup_platform_aib_names + [
     "setui_with_camera",
 
     # Storage
+    "erofs_support",
     "factory_data",
     "paver_shards_core",
     "storage_cache_manager",

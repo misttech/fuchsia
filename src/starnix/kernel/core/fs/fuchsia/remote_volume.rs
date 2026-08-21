@@ -371,7 +371,8 @@ pub fn new_remote_vol(
 
     let rights = fio::PERM_READABLE | fio::PERM_WRITABLE;
 
-    let (remotefs, root_node, info, node_id) = RemoteFs::new(root.into_channel(), rights)?;
+    let (remotefs, root_node, info, node_id) =
+        RemoteFs::new(root.into_channel(), rights, "remotevol")?;
 
     let use_remote_ids = remotefs.use_remote_ids();
     let remotevol = RemoteVolume { remotefs, exposed_dir_proxy, crypt_service };
