@@ -30,10 +30,6 @@
         },
         { service: "fuchsia.driver.compat.Service" },
         {
-            service: "fuchsia.gpio.Init",
-            availability: "optional",
-        },
-        {
             service: "fuchsia.hardware.gpio.Service",
             availability: "optional",
         },

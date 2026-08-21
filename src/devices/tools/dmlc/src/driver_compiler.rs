@@ -79,9 +79,14 @@ pub fn compile_driver(args: &CompileDriverArgs, year: &str) -> Result<(), anyhow
             let primary = obj.remove("primary").and_then(|v| v.as_bool()).unwrap_or(false);
             let transport_val = obj.remove("transport");
             let bind_val = obj.remove("requirements").or_else(|| obj.remove("bind"));
+            let generate_bind_rule = obj
+                .remove("generate_bind_rule")
+                .or_else(|| obj.remove("generate_bind_rules"))
+                .and_then(|v| v.as_bool())
+                .unwrap_or(true);
             let parent_val = obj.remove("name").or_else(|| obj.remove("instance_name"));
             if let Some(parent_val) = parent_val {
-                if let Some(parent_name) = parent_val.as_str() {
+                if generate_bind_rule && let Some(parent_name) = parent_val.as_str() {
                     let service_name = obj
                         .get("service")
                         .or_else(|| obj.get("protocol"))
@@ -131,7 +136,14 @@ pub fn compile_driver(args: &CompileDriverArgs, year: &str) -> Result<(), anyhow
                     });
                 }
             }
-            cleaned_use_entries.push(entry);
+            let is_init_step = obj
+                .get("service")
+                .and_then(|v| v.as_str())
+                .map(|s| crate::workarounds::try_generate_init_step_bind_rule(s).is_some())
+                .unwrap_or(false);
+            if !is_init_step {
+                cleaned_use_entries.push(entry);
+            }
         } else {
             cleaned_use_entries.push(entry_val.clone());
         }
@@ -259,4 +271,170 @@ pub fn compile_driver(args: &CompileDriverArgs, year: &str) -> Result<(), anyhow
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_generate_bind_rule_false() {
+        let temp_dir = std::env::temp_dir().join("test_temp_generate_bind_rule_false");
+        let _ = std::fs::remove_dir_all(&temp_dir);
+        std::fs::create_dir_all(&temp_dir).unwrap();
+
+        let dml_content = r#"{
+            name: "sample_driver",
+            program: {
+                bind: {
+                    protocol: "fuchsia.platform.BIND_PROTOCOL.DEVICE",
+                },
+            },
+            use: [
+                {
+                    service: "fuchsia.boot.metadata.PartitionMap",
+                    name: "partition_map",
+                    generate_bind_rule: false,
+                },
+            ],
+        }"#;
+
+        let dml_path = temp_dir.join("sample.dml");
+        std::fs::write(&dml_path, dml_content).unwrap();
+
+        let bind_path = temp_dir.join("sample.bind");
+        let cml_path = temp_dir.join("sample.cml");
+
+        let args = CompileDriverArgs {
+            input_file: dml_path.to_str().unwrap().to_string(),
+            h_output: None,
+            cc_output: None,
+            cml_output: Some(cml_path.to_str().unwrap().to_string()),
+            bind_output: Some(bind_path.to_str().unwrap().to_string()),
+            namespace: None,
+        };
+
+        compile_driver(&args, "2026").unwrap();
+
+        let bind_content = std::fs::read_to_string(&bind_path).unwrap();
+        assert!(!bind_content.contains("composite"));
+        assert!(!bind_content.contains("partition_map"));
+        assert!(
+            bind_content
+                .contains("fuchsia.BIND_PROTOCOL == fuchsia.platform.BIND_PROTOCOL.DEVICE;")
+        );
+
+        let cml_content = std::fs::read_to_string(&cml_path).unwrap();
+        assert!(cml_content.contains("fuchsia.boot.metadata.PartitionMap"));
+
+        let _ = std::fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn test_generate_bind_rule_true_default() {
+        let temp_dir = std::env::temp_dir().join("test_temp_generate_bind_rule_true");
+        let _ = std::fs::remove_dir_all(&temp_dir);
+        std::fs::create_dir_all(&temp_dir).unwrap();
+
+        let dml_content = r#"{
+            name: "sample_composite",
+            use: [
+                {
+                    service: "fuchsia.hardware.platform.device.Service",
+                    name: "pdev",
+                    primary: true,
+                    bind: {
+                        compat: "sample,hardware",
+                    },
+                },
+                {
+                    service: "fuchsia.hardware.gpio.Service",
+                    name: "gpio-reset",
+                },
+            ],
+        }"#;
+
+        let dml_path = temp_dir.join("composite.dml");
+        std::fs::write(&dml_path, dml_content).unwrap();
+
+        let bind_path = temp_dir.join("composite.bind");
+
+        let args = CompileDriverArgs {
+            input_file: dml_path.to_str().unwrap().to_string(),
+            h_output: None,
+            cc_output: None,
+            cml_output: None,
+            bind_output: Some(bind_path.to_str().unwrap().to_string()),
+            namespace: None,
+        };
+
+        compile_driver(&args, "2026").unwrap();
+
+        let bind_content = std::fs::read_to_string(&bind_path).unwrap();
+        assert!(bind_content.contains("composite sample_composite;"));
+        assert!(bind_content.contains("primary parent \"pdev\""));
+        assert!(bind_content.contains("parent \"gpio-reset\""));
+
+        let _ = std::fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn test_init_step_excluded_from_cml() {
+        let temp_dir = std::env::temp_dir().join("test_temp_init_step_excluded");
+        let _ = std::fs::remove_dir_all(&temp_dir);
+        std::fs::create_dir_all(&temp_dir).unwrap();
+
+        let dml_content = r#"{
+            name: "buttons_sample",
+            use: [
+                {
+                    service: "fuchsia.hardware.platform.device.Service",
+                    name: "pdev",
+                    primary: true,
+                    bind: {
+                        compat: "sample,buttons",
+                    },
+                },
+                {
+                    service: "fuchsia.gpio.Init",
+                    name: "gpio-init",
+                    availability: "optional",
+                },
+                {
+                    service: "fuchsia.hardware.gpio.Service",
+                    name: "mic-mute",
+                    availability: "optional",
+                },
+            ],
+        }"#;
+
+        let dml_path = temp_dir.join("sample.dml");
+        std::fs::write(&dml_path, dml_content).unwrap();
+
+        let bind_path = temp_dir.join("sample.bind");
+        let cml_path = temp_dir.join("sample.cml");
+
+        let args = CompileDriverArgs {
+            input_file: dml_path.to_str().unwrap().to_string(),
+            h_output: None,
+            cc_output: None,
+            cml_output: Some(cml_path.to_str().unwrap().to_string()),
+            bind_output: Some(bind_path.to_str().unwrap().to_string()),
+            namespace: None,
+        };
+
+        compile_driver(&args, "2026").unwrap();
+
+        let bind_content = std::fs::read_to_string(&bind_path).unwrap();
+        assert!(bind_content.contains("optional parent \"gpio-init\""));
+        assert!(
+            bind_content.contains("fuchsia.BIND_INIT_STEP == fuchsia.gpio.BIND_INIT_STEP.GPIO;")
+        );
+
+        let cml_content = std::fs::read_to_string(&cml_path).unwrap();
+        assert!(!cml_content.contains("fuchsia.gpio.Init"));
+        assert!(cml_content.contains("fuchsia.hardware.gpio.Service"));
+
+        let _ = std::fs::remove_dir_all(&temp_dir);
+    }
 }

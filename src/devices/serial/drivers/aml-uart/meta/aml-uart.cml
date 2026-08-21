@@ -28,15 +28,10 @@
         { protocol: "fuchsia.power.system.ActivityGovernor" },
         { service: "fuchsia.boot.metadata.MacAddressMetadata" },
         {
-            service: "fuchsia.gpio.Init",
-            availability: "optional",
-        },
-        {
             service: "fuchsia.hardware.pin.PinStatesService",
             availability: "optional",
         },
         { service: "fuchsia.hardware.platform.device.Service" },
-        { service: "fuchsia.pwm.Init" },
     ],
     expose: [
         {
