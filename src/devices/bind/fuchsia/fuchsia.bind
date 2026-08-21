@@ -106,9 +106,6 @@ uint BIND_POWER_SENSOR_DOMAIN;
 // Mailbox bind properties.
 uint BIND_MAILBOX_ID;
 
-// Interconnect bind properties.
-uint BIND_INTERCONNECT_PATH_ID;
-
 // The FIDL service offered to the node.
 string Service;
 

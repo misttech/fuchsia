@@ -7,12 +7,13 @@ use fidl::endpoints::create_endpoints;
 use fidl_fuchsia_driver_development::ManagerProxy;
 use fidl_fuchsia_driver_framework::{NodePropertyKey, NodePropertyValue};
 use fidl_fuchsia_driver_test::RealmArgs;
+use fidl_fuchsia_interconnect_test as ft;
+use fuchsia_async as fasync;
 use fuchsia_component::server::ServiceFs;
 use fuchsia_component_test::{ChildOptions, LocalComponentHandles, RealmBuilder};
 use fuchsia_driver_test::{DriverTestRealmBuilder, DriverTestRealmInstance};
 use futures::channel::mpsc;
 use futures::{StreamExt, TryStreamExt};
-use {fidl_fuchsia_interconnect_test as ft, fuchsia_async as fasync};
 
 const WAITER_NAME: &'static str = "waiter";
 
@@ -84,8 +85,7 @@ async fn test_interconnect_driver() -> Result<()> {
 
     let expected_props = [0, 1, 2];
     for (node, expected_prop) in nodes.iter().zip(&expected_props) {
-        let expected_key =
-            NodePropertyKey::StringValue(bind_fuchsia::BIND_INTERCONNECT_PATH_ID.to_owned());
+        let expected_key = NodePropertyKey::StringValue(bind_fuchsia::ID.to_owned());
         let expected_value = NodePropertyValue::IntValue(*expected_prop);
         let prop_found = node
             .node_property_list

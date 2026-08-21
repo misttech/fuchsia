@@ -300,7 +300,7 @@ impl Driver for InterconnectDriver {
                 .build_zircon_offer_next();
 
             let node_args = NodeBuilder::new(&name)
-                .add_property(bind_fuchsia::BIND_INTERCONNECT_PATH_ID, path.id().0)
+                .add_property(bind_fuchsia::ID, path.id().0)
                 .add_offer(offer)
                 .build();
             let controller = node.add_child(node_args).await?.into_proxy();

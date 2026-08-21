@@ -121,7 +121,7 @@ TEST(InterconnectVisitorTest, InterconnectsProperty) {
                                   "fuchsia.hardware.interconnect.PathService"),
           fdf::MakeAcceptBindRule(bind_fuchsia_hardware_interconnect::PATHSERVICE,
                                   bind_fuchsia_hardware_interconnect::PATHSERVICE_ZIRCONTRANSPORT),
-          fdf::MakeAcceptBindRule(bind_fuchsia::INTERCONNECT_PATH_ID, 1u)}},
+          fdf::MakeAcceptBindRule(bind_fuchsia::ID, 1u)}},
         (*mgr_request.parents2())[1].bind_rules(), false));
 
     EXPECT_TRUE(fdf_devicetree::testing::CheckHasProperties(
@@ -135,7 +135,7 @@ TEST(InterconnectVisitorTest, InterconnectsProperty) {
                                   "fuchsia.hardware.interconnect.PathService"),
           fdf::MakeAcceptBindRule(bind_fuchsia_hardware_interconnect::PATHSERVICE,
                                   bind_fuchsia_hardware_interconnect::PATHSERVICE_ZIRCONTRANSPORT),
-          fdf::MakeAcceptBindRule(bind_fuchsia::INTERCONNECT_PATH_ID, 2u)}},
+          fdf::MakeAcceptBindRule(bind_fuchsia::ID, 2u)}},
         (*mgr_request.parents2())[2].bind_rules(), false));
   }
 
@@ -162,7 +162,7 @@ TEST(InterconnectVisitorTest, InterconnectsProperty) {
                                   "fuchsia.hardware.interconnect.PathService"),
           fdf::MakeAcceptBindRule(bind_fuchsia_hardware_interconnect::PATHSERVICE,
                                   bind_fuchsia_hardware_interconnect::PATHSERVICE_ZIRCONTRANSPORT),
-          fdf::MakeAcceptBindRule(bind_fuchsia::INTERCONNECT_PATH_ID, uint32_t{3})}},
+          fdf::MakeAcceptBindRule(bind_fuchsia::ID, uint32_t{3})}},
         (*mgr_request.parents2())[1].bind_rules(), false));
   }
 }
