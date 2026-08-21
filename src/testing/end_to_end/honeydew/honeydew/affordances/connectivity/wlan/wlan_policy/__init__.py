@@ -65,7 +65,7 @@ _DEFAULT_WLAN_POLICY_OPERATION_TIMEOUT = timedelta(
 async def collect_network_config_iterator(
     iterator: f_wlan_policy.NetworkConfigIteratorClient,
     *,
-    timeout: float | None = _DEFAULT_WLAN_POLICY_OPERATION_TIMEOUT_SEC,
+    timeout: timedelta | None = _DEFAULT_WLAN_POLICY_OPERATION_TIMEOUT,
 ) -> list[f_wlan_policy.NetworkConfigIteratorGetNextResponse]:
     """Collect all elements from a NetworkConfigIterator.
 
@@ -84,7 +84,10 @@ async def collect_network_config_iterator(
     elements = []
     while True:
         try:
-            response = await asyncio.wait_for(iterator.get_next(), timeout)
+            response = await asyncio.wait_for(
+                iterator.get_next(),
+                None if timeout is None else timeout.total_seconds(),
+            )
         except (FcTransportStatus, ZxStatus) as status:
             is_fdomain_close = False
             if isinstance(status, FcTransportStatus):
@@ -418,7 +421,7 @@ class WlanPolicy(AsyncLazyReady):
     async def get_saved_networks(
         self,
         *,
-        timeout: float | None = _DEFAULT_WLAN_POLICY_OPERATION_TIMEOUT_SEC,
+        timeout: timedelta | None = _DEFAULT_WLAN_POLICY_OPERATION_TIMEOUT,
     ) -> list[NetworkConfig]:
         """Gets networks saved on device.
 
@@ -665,7 +668,9 @@ class WlanPolicy(AsyncLazyReady):
         """
         assert self._client_controller is not None
 
-        for network in await self.get_saved_networks(timeout=timeout):
+        for network in await self.get_saved_networks(
+            timeout=None if timeout is None else timedelta(seconds=timeout)
+        ):
             await self.forget_network(
                 target_ssid=network.ssid,
                 security_type=network.security_type,
