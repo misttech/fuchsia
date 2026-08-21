@@ -6,7 +6,7 @@ library fuchsia.amlogic.platform.s905d3;
 
 // These values are take from <soc/aml-s905d3/s905d3-gpio.h>
 
-extend uint fuchsia.BIND_PWM_ID {
+extend uint fuchsia.ID {
     PWM_A = 0,
     PWM_B = 1,
     PWM_C = 2,

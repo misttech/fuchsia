@@ -289,7 +289,7 @@ zx::result<> CreateThermalPllNode(
   for (auto& [pwm_id, function] : kPwmIdMap) {
     auto rules = std::vector{
         fdf::MakeAcceptBindRule(bind_fuchsia::SERVICE, "fuchsia.hardware.pwm.Service"),
-        fdf::MakeAcceptBindRule(bind_fuchsia::PWM_ID, pwm_id),
+        fdf::MakeAcceptBindRule(bind_fuchsia::ID, pwm_id),
     };
     auto properties = std::vector{
         fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.pwm.Service"),

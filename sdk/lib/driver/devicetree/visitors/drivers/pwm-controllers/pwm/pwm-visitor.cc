@@ -144,7 +144,7 @@ zx::result<> PwmVisitor::AddChildNodeSpec(fdf_devicetree::Node& child, uint32_t 
       .bind_rules =
           {
               fdf::MakeAcceptBindRule(bind_fuchsia::SERVICE, "fuchsia.hardware.pwm.Service"),
-              fdf::MakeAcceptBindRule(bind_fuchsia::PWM_ID, id),
+              fdf::MakeAcceptBindRule(bind_fuchsia::ID, id),
           },
       .properties =
           {

@@ -3,8 +3,8 @@
 // found in the LICENSE file.
 
 use crate::bytecode_constants::*;
-use crate::compiler::symbol_table::get_deprecated_key_identifier;
 use crate::compiler::Symbol;
+use crate::compiler::symbol_table::get_deprecated_key_identifier;
 use crate::interpreter::common::*;
 use crate::interpreter::decode_bind_rules::DecodedBindRules;
 use crate::parser::bind_library;
@@ -708,7 +708,7 @@ mod test {
             Symbol::NumberValue(10),
         );
         device_properties.insert(
-            PropertyKey::StringKey("fuchsia.BIND_PWM_ID".to_string()),
+            PropertyKey::StringKey("fuchsia.BIND_I2C_BUS_ID".to_string()),
             Symbol::NumberValue(5),
         );
 
@@ -725,7 +725,7 @@ mod test {
             &mut instructions,
             EncodedValue {
                 value_type: RawValueType::NumberValue,
-                value: 0x0A50, /* BIND_PWN_ID */
+                value: 0x0A01, /* BIND_I2C_BUS_ID */
             },
             EncodedValue { value_type: RawValueType::NumberValue, value: 5 },
         );

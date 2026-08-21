@@ -97,9 +97,6 @@ uint BIND_POWER_DOMAIN_COMPOSITE;
 uint BIND_SPI_BUS_ID;
 uint BIND_SPI_CHIP_SELECT;
 
-// PWM bind properties.
-uint BIND_PWM_ID;
-
 // Init Step bind properties.
 uint BIND_INIT_STEP;
 

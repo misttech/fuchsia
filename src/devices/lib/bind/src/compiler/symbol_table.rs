@@ -387,10 +387,7 @@ fn deprecated_keys() -> Vec<(String, u32)> {
     keys.push(("BIND_SPI_BUS_ID".to_string(), 0x0A41));
     keys.push(("BIND_SPI_CHIP_SELECT".to_string(), 0x0A42));
 
-    // PWM binding variables at 0x0A5X
-    keys.push(("BIND_PWM_ID".to_string(), 0x0A50));
-
-    // PWM binding variables at 0x0A6X
+    // Init step binding variables at 0x0A6X.
     keys.push(("BIND_INIT_STEP".to_string(), 0x0A60));
 
     // PWM binding variables at 0x0A7X
@@ -497,9 +494,6 @@ pub fn get_deprecated_key_identifier(key: u32) -> Option<String> {
         0x0A41 => Some("fuchsia.BIND_SPI_BUS_ID".to_string()),
         0x0A42 => Some("fuchsia.BIND_SPI_CHIP_SELECT".to_string()),
 
-        // PWM binding variables at 0x0A5X.
-        0x0A50 => Some("fuchsia.BIND_PWM_ID".to_string()),
-
         // Init step binding variables at 0x0A6X.
         0x0A60 => Some("fuchsia.BIND_INIT_STEP".to_string()),
 
@@ -591,9 +585,6 @@ pub fn get_deprecated_key_value(key: &str) -> Option<u32> {
         // SPI binding variables at 0x0A4X
         "fuchsia.BIND_SPI_BUS_ID" => Some(0x0A41),
         "fuchsia.BIND_SPI_CHIP_SELECT" => Some(0x0A42),
-
-        // PWM binding variables at 0x0A5X
-        "fuchsia.BIND_PWM_ID" => Some(0x0A50),
 
         // Init step binding variables at 0x0A6X.
         "fuchsia.BIND_INIT_STEP" => Some(0x0A60),

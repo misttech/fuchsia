@@ -181,8 +181,7 @@ zx_status_t Sherlock::LightInit() {
 
   auto amber_led_pwm_bind_rules = std::vector{
       fdf::MakeAcceptBindRule(bind_fuchsia::SERVICE, "fuchsia.hardware.pwm.Service"),
-      fdf::MakeAcceptBindRule(bind_fuchsia::PWM_ID,
-                              bind_fuchsia_amlogic_platform_t931::BIND_PWM_ID_PWM_AO_A),
+      fdf::MakeAcceptBindRule(bind_fuchsia::ID, bind_fuchsia_amlogic_platform_t931::ID_PWM_AO_A),
   };
 
   auto amber_led_pwm_properties = std::vector{
@@ -203,8 +202,7 @@ zx_status_t Sherlock::LightInit() {
 
   auto green_led_pwm_bind_rules = std::vector{
       fdf::MakeAcceptBindRule(bind_fuchsia::SERVICE, "fuchsia.hardware.pwm.Service"),
-      fdf::MakeAcceptBindRule(bind_fuchsia::PWM_ID,
-                              bind_fuchsia_amlogic_platform_t931::BIND_PWM_ID_PWM_F),
+      fdf::MakeAcceptBindRule(bind_fuchsia::ID, bind_fuchsia_amlogic_platform_t931::ID_PWM_F),
   };
 
   auto green_led_pwm_properties = std::vector{

@@ -116,8 +116,6 @@ static const char SPI_BUS_ID[] = "fuchsia.BIND_SPI_BUS_ID";
 
 static const char SPI_CHIP_SELECT[] = "fuchsia.BIND_SPI_CHIP_SELECT";
 
-static const char PWM_ID[] = "fuchsia.BIND_PWM_ID";
-
 static const char INIT_STEP[] = "fuchsia.BIND_INIT_STEP";
 
 static const char CODEC_INSTANCE[] = "fuchsia.BIND_CODEC_INSTANCE";

@@ -59,7 +59,7 @@ static fpbus::Node pwm_dev = []() {
 
 const ddk::BindRule kPwmRules[] = {
     ddk::MakeAcceptBindRule(bind_fuchsia::SERVICE, "fuchsia.hardware.pwm.Service"),
-    ddk::MakeAcceptBindRule(bind_fuchsia::PWM_ID, static_cast<uint32_t>(S905D2_PWM_E)),
+    ddk::MakeAcceptBindRule(bind_fuchsia::ID, static_cast<uint32_t>(S905D2_PWM_E)),
 };
 
 const device_bind_prop_t kPwmProperties[] = {

@@ -194,7 +194,7 @@ static const aml_thermal_info_t aml_thermal_info = {
 
 const std::vector<fuchsia_driver_framework::BindRule2> kPwmRules = std::vector{
     fdf::MakeAcceptBindRule(bind_fuchsia::SERVICE, "fuchsia.hardware.pwm.Service"),
-    fdf::MakeAcceptBindRule(bind_fuchsia::PWM_ID, static_cast<uint32_t>(S905D3_PWM_AO_D)),
+    fdf::MakeAcceptBindRule(bind_fuchsia::ID, static_cast<uint32_t>(S905D3_PWM_AO_D)),
 };
 
 const std::vector<fuchsia_driver_framework::NodeProperty2> kPwmProperties = std::vector{

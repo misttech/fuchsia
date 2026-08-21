@@ -6,7 +6,7 @@ library fuchsia.amlogic.platform.t931;
 
 // Values taken from <soc/aml-t931/t931-gpio.h>
 
-extend uint fuchsia.BIND_PWM_ID {
+extend uint fuchsia.ID {
     PWM_A = 0,
     PWM_B = 1,
     PWM_C = 2,

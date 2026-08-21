@@ -151,8 +151,7 @@ zx_status_t Nelson::LightInit() {
 
   auto amber_led_pwm_bind_rules = std::vector{
       fdf::MakeAcceptBindRule(bind_fuchsia::SERVICE, "fuchsia.hardware.pwm.Service"),
-      fdf::MakeAcceptBindRule(bind_fuchsia::PWM_ID,
-                              bind_fuchsia_amlogic_platform_s905d3::BIND_PWM_ID_PWM_AO_A),
+      fdf::MakeAcceptBindRule(bind_fuchsia::ID, bind_fuchsia_amlogic_platform_s905d3::ID_PWM_AO_A),
   };
 
   auto amber_led_pwm_properties = std::vector{
