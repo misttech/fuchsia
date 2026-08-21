@@ -74,6 +74,34 @@ async fn test_fshost_reboots_on_volume_death() {
     );
     assert_eq!(report.is_fatal, Some(true));
 
+    // Assert fshost process termination and verify it exited with a non-zero error rather than
+    // a graceful exit.
+    let mut event_stream = fixture.execution_controller.take_event_stream();
+    let event = event_stream
+        .next()
+        .await
+        .expect("Expected OnStop event")
+        .expect("FIDL error waiting for OnStop");
+    match event {
+        fidl_fuchsia_component::ExecutionControllerEvent::OnStop { stopped_payload } => {
+            // A normal/clean exit has status Some(0) and exit_code Some(0).
+            // A non-zero exit status / error has non-zero status / exit code.
+            assert_ne!(
+                stopped_payload.status,
+                Some(0),
+                "Expected fshost to exit abnormally with non-zero status, but got status 0: {:?}",
+                stopped_payload
+            );
+            assert_ne!(
+                stopped_payload.exit_code,
+                Some(0),
+                "Expected fshost to exit abnormally with non-zero exit_code, but got exit_code 0: {:?}",
+                stopped_payload
+            );
+        }
+        _ => panic!("Unexpected event on ExecutionController"),
+    }
+
     // Assert fshost process termination (reboot hook)
     let status = data_dir.query_filesystem().await;
     assert_matches!(

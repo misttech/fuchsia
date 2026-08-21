@@ -18,6 +18,8 @@ rustc_library("fshost_test_fixture") {
   ]
   deps = [
     "//sdk/fidl/fuchsia.boot:fuchsia.boot_rust",
+    "//sdk/fidl/fuchsia.component:fuchsia.component_rust",
+    "//sdk/fidl/fuchsia.component.decl:fuchsia.component.decl_rust",
     "//sdk/fidl/fuchsia.component.test:fuchsia.component.test_rust",
     "//sdk/fidl/fuchsia.driver.framework:fuchsia.driver.framework_rust",
     "//sdk/fidl/fuchsia.driver.test:fuchsia.driver.test_rust",
@@ -494,6 +496,7 @@ template("fshost_integration_test_package") {
       data_filesystem_variant = invoker.data_filesystem_variant
       source_root = "tests/volume_death.rs"
       deps = [
+        "//sdk/fidl/fuchsia.component:fuchsia.component_rust",
         "//sdk/fidl/fuchsia.io:fuchsia.io_rust",
         "//src/lib/fidl/rust/fidl",
         "//src/lib/fuchsia-async",

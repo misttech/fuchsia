@@ -108,10 +108,8 @@ impl FshostBuilder {
     pub async fn build(mut self, realm_builder: &RealmBuilder) -> ChildRef {
         let fshost_url = format!("#meta/{}.cm", self.component_name);
         log::info!(fshost_url:%; "building test fshost instance");
-        let fshost = realm_builder
-            .add_child("test-fshost", fshost_url, ChildOptions::new().eager())
-            .await
-            .unwrap();
+        let fshost =
+            realm_builder.add_child("test-fshost", fshost_url, ChildOptions::new()).await.unwrap();
 
         let bootfs = vfs::pseudo_directory! {
             "boot" => vfs::pseudo_directory! {

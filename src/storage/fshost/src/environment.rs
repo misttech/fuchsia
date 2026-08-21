@@ -170,7 +170,12 @@ impl Filesystem {
         match old {
             Filesystem::Queue(_) => Ok(()),
             Filesystem::ServingVolumeInMultiVolume(_, volume) => {
-                volume.shutdown().await.context("shutdown failed")
+                if volume.root().is_closed() {
+                    log::info!("volume is already closed, skipping volume shutdown");
+                    Ok(())
+                } else {
+                    volume.shutdown().await.context("shutdown failed")
+                }
             }
             Filesystem::ServingGpt(fs) => fs.shutdown().await.context("shutdown failed"),
             // Getting shut down when we are already shut down is fine. We are already in the

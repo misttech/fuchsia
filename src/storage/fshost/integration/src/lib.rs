@@ -200,6 +200,16 @@ impl TestFixtureBuilder {
             .await
             .unwrap();
 
+        builder
+            .add_route(
+                Route::new()
+                    .capability(Capability::protocol::<fidl_fuchsia_component::RealmMarker>())
+                    .from(Ref::framework())
+                    .to(Ref::parent()),
+            )
+            .await
+            .unwrap();
+
         let maybe_zbi_vmo = match self.zbi_ramdisk {
             Some(disk_builder) => Some(disk_builder.build_as_zbi_ramdisk().await),
             None => None,
@@ -313,11 +323,41 @@ impl TestFixtureBuilder {
             .await
             .unwrap();
 
+        let realm = builder.build().await.unwrap();
+        let realm_proxy = connect_to_protocol_at_dir_root::<fidl_fuchsia_component::RealmMarker>(
+            realm.root.get_exposed_dir(),
+        )
+        .expect("failed to connect to Realm");
+        let (controller, controller_server_end) =
+            create_proxy::<fidl_fuchsia_component::ControllerMarker>();
+        realm_proxy
+            .open_controller(
+                &fidl_fuchsia_component_decl::ChildRef {
+                    name: "test-fshost".to_string(),
+                    collection: None,
+                },
+                controller_server_end,
+            )
+            .await
+            .expect("failed to open controller")
+            .expect("open controller error");
+        let (execution_controller, execution_controller_server_end) =
+            create_proxy::<fidl_fuchsia_component::ExecutionControllerMarker>();
+        controller
+            .start(
+                fidl_fuchsia_component::StartChildArgs::default(),
+                execution_controller_server_end,
+            )
+            .await
+            .expect("failed to start fshost")
+            .expect("start fshost error");
+
         let mut fixture = TestFixture {
-            realm: builder.build().await.unwrap(),
+            realm,
             ramdisks: Vec::new(),
             main_disk: None,
             crash_reports,
+            execution_controller,
             torn_down: TornDown(false),
         };
 
@@ -380,6 +420,7 @@ pub struct TestFixture {
     pub ramdisks: Vec<RamdiskClient>,
     pub main_disk: Option<Disk>,
     pub crash_reports: mpsc::Receiver<ffeedback::CrashReport>,
+    pub execution_controller: fidl_fuchsia_component::ExecutionControllerProxy,
     torn_down: TornDown,
 }
 

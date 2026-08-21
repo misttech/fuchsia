@@ -240,18 +240,20 @@ async fn main() -> Result<(), Error> {
     };
 
     log::info!("shutdown signal received");
-    match &shutdown_responder {
+    let is_crash = match &shutdown_responder {
         service::FshostShutdownResponder::Lifecycle(_) => {
             // TODO(https://fxbug.dev/42069366): //src/tests/oom looks for "received shutdown
             // command over lifecycle interface" to indicate fshost shutdown is starting. Shutdown
             // logs have to go straight to serial because of timing issues
             // (https://fxbug.dev/42179880).
             debug_log("received shutdown command over lifecycle interface");
+            false
         }
         service::FshostShutdownResponder::Crash(volume_name) => {
             file_crash_report(format!("{}-volume-crash", volume_name)).await;
+            true
         }
-    }
+    };
 
     // Shutting down fshost involves sending asynchronous shutdown signals to several different
     // systems in order. If at any point we hit an error, we log loudly, but continue with the
@@ -275,6 +277,10 @@ async fn main() -> Result<(), Error> {
     // 3. Notify whoever asked for a shutdown that it's complete. After this point, it's possible
     //    the fshost process will be terminated externally.
     shutdown_responder.close()?;
+
+    if is_crash {
+        return Err(anyhow::format_err!("fshost shutting down due to volume crash"));
+    }
 
     Ok(())
 }
