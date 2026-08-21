@@ -5197,10 +5197,7 @@ static bool vmo_lookup_readable_simple_test() {
   };
 
   VmCowPages* vmo_cow = vmo->DebugGetCowPages().get();
-  {
-    Guard<CriticalMutex> guard{vmo_cow->lock()};
-    status = vmo_cow->LookupReadableLocked(VmCowRange(0, alloc_size), lookup_fn);
-  }
+  status = vmo_cow->DebugLookupReadable(VmCowRange(0, alloc_size), lookup_fn);
   EXPECT_OK(status);
   EXPECT_EQ(page_count, pages_seen);
 
@@ -5253,10 +5250,7 @@ static bool vmo_lookup_readable_clone_test() {
   };
 
   VmCowPages* clone_cow = clone->DebugGetCowPages().get();
-  {
-    Guard<CriticalMutex> guard{clone_cow->lock()};
-    status = clone_cow->LookupReadableLocked(VmCowRange(0, alloc_size), lookup_fn);
-  }
+  status = clone_cow->DebugLookupReadable(VmCowRange(0, alloc_size), lookup_fn);
   EXPECT_OK(status);
   EXPECT_EQ(page_count, pages_seen);
 

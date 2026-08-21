@@ -78,4 +78,10 @@ FFI_ALWAYS_INLINE DiscardableVmoTracker* cpp_vm_cow_pages_debug_get_discardable_
   return cow->DebugGetDiscardableTracker();
 }
 
+FFI_ALWAYS_INLINE zx_status_t cpp_vm_cow_pages_debug_lookup_readable(
+    VmCowPages* cow, VmCowRange range, void* ctx, cpp_vm_cow_pages_lookup_readable_fn callback) {
+  return cow->DebugLookupReadable(
+      range, [ctx, callback](uint64_t offset, paddr_t pa) { return callback(ctx, offset, pa); });
+}
+
 }  // extern "C"

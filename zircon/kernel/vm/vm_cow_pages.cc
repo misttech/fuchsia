@@ -5746,6 +5746,12 @@ zx_status_t VmCowPages::LookupReadableLocked(VmCowRange range, LookupReadableFun
   return ZX_OK;
 }
 
+zx_status_t VmCowPages::DebugLookupReadable(VmCowRange range, LookupReadableFunction lookup_fn) {
+  canary_.Assert();
+  Guard<CriticalMutex> guard{AssertOrderedLock, lock(), lock_order()};
+  return LookupReadableLocked(range, ktl::move(lookup_fn));
+}
+
 zx_status_t VmCowPages::TakePages(VmCowRange range, uint64_t splice_offset, VmPageSpliceList* pages,
                                   uint64_t* taken_len, MultiPageRequest* page_request) {
   canary_.Assert();

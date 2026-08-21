@@ -15,6 +15,9 @@
 
 __BEGIN_CDECLS
 
+typedef zx_status_t (*cpp_vm_cow_pages_lookup_readable_fn)(void* ctx, uint64_t offset,
+                                                           uint64_t paddr);
+
 zx_status_t cpp_vm_cow_pages_replace_page_with_loaned(VmCowPages* cow, vm_page_t* before_page,
                                                       uint64_t offset);
 void* cpp_vm_cow_pages_get_ref_counted(const VmCowPages* cow);
@@ -31,6 +34,8 @@ bool cpp_vm_cow_pages_reclaim_page(VmCowPages* cow, vm_page_t* page, uint64_t of
                                    VmCowPages::EvictionAction eviction_action,
                                    VmCompressor* compressor, VmCowReclaimSuccess* out_success,
                                    VmCowReclaimFailure* out_failure);
+zx_status_t cpp_vm_cow_pages_debug_lookup_readable(VmCowPages* cow, VmCowRange range, void* ctx,
+                                                   cpp_vm_cow_pages_lookup_readable_fn callback);
 
 __END_CDECLS
 

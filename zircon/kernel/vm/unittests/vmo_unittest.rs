@@ -23,7 +23,7 @@ mod vmo_rs {
     use crate::vm::pmm::{self, ALLOC_FLAG_ANY, PmmOptDelayReuse, paddr_to_vm_page};
     use crate::vm::scanner::AutoVmScannerDisable;
     use crate::vm::vm_aspace::{VmAspace, vmm_flag};
-    use crate::vm::vm_cow_pages::{EvictionAction, VmCowPages, VmCowReclaimFailure};
+    use crate::vm::vm_cow_pages::{EvictionAction, VmCowPages, VmCowRange, VmCowReclaimFailure};
     use crate::vm::vm_object::{EvictionHint, Resizability, SnapshotType, VmObject};
     use crate::vm::vm_object_paged::VmObjectPaged;
     use crate::vm::vm_object_physical::VmObjectPhysical;
@@ -2923,6 +2923,91 @@ mod vmo_rs {
         // VMO, which is not a valid request.  However, under the hood, we'll make it far enough to create
         // the VMO even thought it will be destroyed before the call returns.
         assert_eq!(Status::result_into_raw(vmo.map(|_| ())), Status::INVALID_ARGS.into_raw());
+    }
+
+    /// Verify that LookupReadableLocked works for a simple VMO with all pages committed.
+    #[test]
+    fn vmo_lookup_readable_simple_test() {
+        let _scanner_disable = AutoVmScannerDisable::new();
+
+        let page_count = 4;
+        let alloc_size = PAGE_SIZE * page_count;
+
+        // Create a VMO.
+        let vmo = unwrap_ok!(VmObjectPaged::create(pmm::ALLOC_FLAG_ANY, 0, alloc_size));
+
+        // Commit the whole VMO.
+        let status = vmo.commit_range(0, alloc_size);
+        assert_ok!(status);
+
+        // Lookup readable on the VMO should find all 4 pages.
+        let mut pages_seen = 0;
+        let lookup_fn = |_offset: u64, _pa: PAddr, pages_seen: &mut u64| {
+            *pages_seen += 1;
+            Err(Status::NEXT)
+        };
+
+        let vmo_cow = vmo.debug_get_cow_pages().expect("vmo has cow pages");
+        let status = vmo_cow.debug_lookup_readable(
+            VmCowRange { offset: 0, len: alloc_size },
+            &mut pages_seen,
+            lookup_fn,
+        );
+        expect_ok!(status);
+        expect_eq!(page_count, pages_seen);
+    }
+
+    /// Tests that LookupReadableLocked works when a parent VMO lookup segment is split.
+    #[test]
+    fn vmo_lookup_readable_clone_test() {
+        // Verify that LookupReadableLocked works when a parent VMO lookup segment is
+        // immediately followed by a page committed locally in the clone VMO (which splits
+        // the parent lookup). This is a regression test for https://fxbug.dev/513654391.
+        let _scanner_disable = AutoVmScannerDisable::new();
+
+        let page_count = 4;
+        let alloc_size = PAGE_SIZE * page_count;
+
+        // Create a parent VMO.
+        let parent = unwrap_ok!(VmObjectPaged::create(pmm::ALLOC_FLAG_ANY, 0, alloc_size));
+
+        parent.set_user_id(42);
+
+        // Commit the whole parent VMO.
+        assert_ok!(parent.commit_range(0, alloc_size));
+
+        // Create a COW clone of the parent.
+        let clone_no_paged = unwrap_ok!(parent.create_clone(
+            Resizability::NonResizable,
+            SnapshotType::Full,
+            0,
+            alloc_size,
+            false,
+        ));
+
+        clone_no_paged.set_user_id(43);
+        let clone = VmObject::downcast_paged(clone_no_paged);
+        assert_true!(clone.is_some());
+        let clone = clone.unwrap();
+
+        // Commit page 1 in the clone to split the parent lookup.
+        assert_ok!(clone.commit_range(PAGE_SIZE, PAGE_SIZE));
+
+        // Lookup readable on the clone VMO should find all 4 pages.
+        let mut pages_seen = 0;
+        let lookup_fn = |_offset: u64, _pa: PAddr, pages_seen: &mut u64| {
+            *pages_seen += 1;
+            Err(Status::NEXT)
+        };
+
+        let clone_cow = clone.debug_get_cow_pages().unwrap();
+        let status = clone_cow.debug_lookup_readable(
+            VmCowRange { offset: 0, len: alloc_size },
+            &mut pages_seen,
+            lookup_fn,
+        );
+        expect_ok!(status);
+        expect_eq!(page_count, pages_seen);
     }
 
     /// Tests accessing all offsets of a VMO via GetPage.

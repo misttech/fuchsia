@@ -814,6 +814,7 @@ kernel_bindgen_crate("vm-cow-pages-bindings") {
     "cpp_vm_cow_pages_debug_is_empty",
     "cpp_vm_cow_pages_debug_get_discardable_tracker",
     "cpp_vm_cow_pages_reclaim_page",
+    "cpp_vm_cow_pages_debug_lookup_readable",
   ]
   type_allowlist = [
     "DirtyState",
@@ -822,9 +823,11 @@ kernel_bindgen_crate("vm-cow-pages-bindings") {
     "VmCompressor",
     "VmCowPages",
     "VmCowPagesOptions",
+    "VmCowRange",
     "VmCowReclaimFailure",
     "VmCowReclaimSuccess",
     "VmCowReclaimSuccess_Type",
+    "cpp_vm_cow_pages_lookup_readable_fn",
   ]
   type_blocklist = [
     "DiscardableVmoTracker",
@@ -861,6 +864,7 @@ kernel_bindgen_crate("vm-cow-pages-bindings") {
   function_blocklist = [
     "VmCompressor_.*",
     "VmCowPages_.*",
+    "VmCowRange_.*",
   ]
   additional_bindgen_flags = [ "--no-recursive-allowlist" ]
   expect_lints = [

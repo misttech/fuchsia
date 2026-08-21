@@ -431,6 +431,11 @@ class VmCowPages final : public fbl::ContainableBaseClasses<
   zx_status_t LookupReadableLocked(VmCowRange range, LookupReadableFunction lookup_fn)
       TA_REQ(lock());
 
+  // This function merely calls |LookupReadableLocked| with the lock held. Note that there is no way
+  // non-test code can use this function in a correct way due to its internal locking.
+  zx_status_t DebugLookupReadable(VmCowRange range, LookupReadableFunction lookup_fn)
+      TA_EXCL(lock());
+
   // See VmObject::TakePages
   //
   // May return ZX_ERR_SHOULD_WAIT if the |page_request| is filled out and needs waiting on. In this
