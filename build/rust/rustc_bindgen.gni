@@ -173,7 +173,7 @@ template("rustc_bindgen") {
 
   _output_path = "$target_gen_dir/${_output_name}"
   _bindgen_bin = "//prebuilt/third_party/rust_bindgen/$host_platform/bindgen"
-  _rustfmt_bin = "//prebuilt/third_party/rust/$host_platform/bin/rustfmt"
+  _rustfmt_bin = "$rustc_prefix/bin/rustfmt"
   _rustfmt_config = "//rustfmt.toml"
 
   action(target_name) {
