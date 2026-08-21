@@ -37,6 +37,7 @@ rustc_library("bitmap") {
     # TODO(https://fxbug.dev/548748442): remove when all fixed in the code
     configs += [ "//zircon/kernel/switch:allow-needless-range-loop" ]
     configs += [ "//zircon/kernel/switch:allow-option-as-ref-deref" ]
+    configs += [ "//zircon/kernel/switch:allow-manual-div-ceil" ]
     configs += [ "//zircon/kernel/switch:allow-while-let-loop" ]
   } else if (target_os == "fuchsia") {
     deps += [
