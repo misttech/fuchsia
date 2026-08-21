@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 use crate::logs::error::LogsError;
+use crate::logs::servers::StreamError;
 use fidl_fuchsia_diagnostics::BatchIteratorControlHandle;
 use log::warn;
 use thiserror::Error;
@@ -69,6 +70,12 @@ pub enum AccessorError {
         source: fidl::Error,
     },
 
+    #[error("Stream error")]
+    Stream {
+        #[from]
+        source: StreamError,
+    },
+
     #[error("Unable to create a VMO -- extremely unusual!")]
     VmoCreate(#[source] ZxStatus),
 
@@ -111,7 +118,9 @@ impl AccessorError {
             }
             AccessorError::Serialization { .. } => ZxStatus::BAD_STATE,
             AccessorError::CborSerialization { .. } => ZxStatus::BAD_STATE,
-            AccessorError::Ipc { .. } | AccessorError::Io(_) => ZxStatus::IO,
+            AccessorError::Ipc { .. } | AccessorError::Stream { .. } | AccessorError::Io(_) => {
+                ZxStatus::IO
+            }
         };
         control.shutdown_with_epitaph(epitaph);
     }

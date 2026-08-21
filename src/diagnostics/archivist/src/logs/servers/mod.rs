@@ -12,6 +12,6 @@ pub use log::LogServer;
 pub use log_flush::LogFlushServer;
 pub use log_freeze::LogFreezeServer;
 pub use log_settings::LogSettingsServer;
-pub use log_stream::LogStreamServer;
+pub use log_stream::{LogStreamServer, StreamError};
 
 pub(crate) use log_stream::{ExtendRecordOpts, extend_fxt_record};

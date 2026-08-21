@@ -11,6 +11,7 @@ use crate::formatter::{
 use crate::inspect::ReaderServer;
 use crate::inspect::repository::InspectRepository;
 use crate::logs::repository::LogsRepository;
+use crate::logs::servers::LogStreamServer;
 use crate::logs::shared_buffer::FilterCursor;
 use crate::pipeline::Pipeline;
 use diagnostics_data::{Data, DiagnosticsData, ExtendedMoniker, Metadata};
@@ -265,17 +266,24 @@ impl ArchiveAccessorServer {
                     }
                     Format::Fxt => {
                         let cursor = log_repo.logs_cursor_raw(mode, selectors);
-                        BatchIterator::new_serving_fxt(
-                            cursor,
-                            requests,
-                            mode,
-                            stats,
-                            trace_id,
-                            performance_config,
-                            true,
-                        )?
-                        .run()
-                        .await?;
+                        match requests.into_socket_or_channel() {
+                            Either::Left(socket) => {
+                                LogStreamServer::stream_logs_with_manifest(socket, cursor).await?;
+                            }
+                            Either::Right(channel) => {
+                                BatchIterator::new_serving_fxt(
+                                    cursor,
+                                    channel,
+                                    mode,
+                                    stats,
+                                    trace_id,
+                                    performance_config,
+                                    true,
+                                )?
+                                .run()
+                                .await?;
+                            }
+                        }
                         Ok(())
                     }
                     Format::Json => {
@@ -350,6 +358,13 @@ pub trait ArchiveAccessorWriter {
         results: Vec<FormattedContent>,
     ) -> impl Future<Output = Result<(), IteratorError>> + Send;
 
+    fn into_socket_or_channel(self) -> Either<fuchsia_async::Socket, Self>
+    where
+        Self: Sized,
+    {
+        Either::Right(self)
+    }
+
     /// Waits for a buffer to be available for writing into. For sockets, this is a no-op.
     fn wait_for_buffer(&mut self) -> impl Future<Output = anyhow::Result<()>> + Send {
         futures::future::ready(Ok(()))
@@ -400,6 +415,10 @@ impl ArchiveAccessorWriter for fuchsia_async::Socket {
             }
         }
         Ok(())
+    }
+
+    fn into_socket_or_channel(self) -> Either<fuchsia_async::Socket, Self> {
+        Either::Left(self)
     }
 
     async fn wait_for_close(&mut self) {

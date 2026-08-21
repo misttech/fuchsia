@@ -23,7 +23,7 @@ use std::task::{Poll, ready};
 use zerocopy::{FromBytes, IntoBytes};
 
 #[derive(thiserror::Error, Debug)]
-enum StreamError {
+pub enum StreamError {
     #[error(transparent)]
     Io(#[from] std::io::Error),
 }
@@ -143,7 +143,7 @@ impl LogStreamServer {
         }
     }
 
-    async fn stream_logs_with_manifest(
+    pub async fn stream_logs_with_manifest(
         mut socket: fasync::Socket,
         logs: FilterCursor,
     ) -> Result<(), StreamError> {
