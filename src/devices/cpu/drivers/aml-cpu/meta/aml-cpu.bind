@@ -34,7 +34,11 @@ parent "pdev" {
 
 primary parent "power-01" {
   fuchsia.Service == "fuchsia.hardware.power.Service";
-  fuchsia.power.POWER_DOMAIN == fuchsia.amlogic.platform.POWER_DOMAIN.ARM_CORE_BIG;
+  if fuchsia.NAME == "power-01" {
+    true;
+  } else {
+    fuchsia.power.POWER_DOMAIN == fuchsia.amlogic.platform.POWER_DOMAIN.ARM_CORE_BIG;
+  }
 }
 
 parent "sys-pll-div16" {
@@ -54,7 +58,11 @@ parent "sys-cpu-big-clk" {
 
 optional parent "power-02" {
   fuchsia.Service == "fuchsia.hardware.power.Service";
-  fuchsia.power.POWER_DOMAIN == fuchsia.amlogic.platform.POWER_DOMAIN.ARM_CORE_LITTLE;
+  if fuchsia.NAME == "power-02" {
+    true;
+  } else {
+    fuchsia.power.POWER_DOMAIN == fuchsia.amlogic.platform.POWER_DOMAIN.ARM_CORE_LITTLE;
+  }
 }
 
 optional parent "sys-pllb-div16" {
