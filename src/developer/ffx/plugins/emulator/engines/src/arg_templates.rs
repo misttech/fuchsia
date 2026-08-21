@@ -10,7 +10,7 @@ use anyhow::{Context as anyhow_context, Result};
 use emulator_instance::{DataUnits, DiskImage, EmulatorConfiguration, FlagData};
 use handlebars::{
     Context, Handlebars, Helper, HelperDef, HelperResult, JsonRender, Output, RenderContext,
-    RenderErrorReason, no_escape,
+    RenderErrorReason,
 };
 
 //  Actual path is //src/developer/ffx/plugins/emulator/templates/emulator_flags.json.template
@@ -111,8 +111,8 @@ impl HelperDef for UnitAbbreviationHelper {
         })?;
 
         match serde_json::from_value::<DataUnits>(param.value().clone()) {
-            Ok(units) => out.write(units.abbreviate())?,
-            Err(_) => out.write(param.value().render().as_ref())?,
+            Ok(units) => out.write(&json_escape(units.abbreviate()))?,
+            Err(_) => out.write(&json_escape(param.value().render().as_ref()))?,
         };
         Ok(())
     }
@@ -145,11 +145,13 @@ impl HelperDef for DiskImageHelper {
         })?;
 
         match serde_json::from_value::<DiskImage>(param.value().clone()) {
-            Ok(path) => out
-                .write(path.to_str().ok_or_else(|| {
-                    RenderErrorReason::Other(format!("Invalid path {:?}", path))
-                })?)?,
-            Err(_) => out.write(param.value().render().as_ref())?,
+            Ok(path) => {
+                let path_str = path
+                    .to_str()
+                    .ok_or_else(|| RenderErrorReason::Other(format!("Invalid path {:?}", path)))?;
+                out.write(&json_escape(path_str))?;
+            }
+            Err(_) => out.write(&json_escape(param.value().render().as_ref()))?,
         };
         Ok(())
     }
@@ -198,7 +200,7 @@ impl HelperDef for EnvironmentHelper {
         })?;
         if let Some(key) = param.value().as_str() {
             match std::env::var(key) {
-                Ok(val) => out.write(&val)?,
+                Ok(val) => out.write(&json_escape(&val))?,
                 Err(_) => (), // An Err means the variable isn't set or the key is invalid.
             }
         }
@@ -281,6 +283,25 @@ pub(crate) fn process_flags_from_str(
     process_flag_template_inner(text, emu_config)
 }
 
+/// Escapes string content for safe interpolation into JSON flag templates.
+///
+/// Emulator flag templates are rendered as raw JSON text using Handlebars before
+/// being parsed by `serde_json`. Because variables are interpolated directly inside
+/// JSON string quotes (e.g., `"{{guest.kernel_image}}"`), string values must have
+/// quotes, backslashes, and control characters escaped to prevent JSON injection
+/// into the generated argument lists.
+///
+/// This escaping is specific to the emulator flag template rendering workflow,
+/// where Handlebars outputs raw JSON text rather than structured data structures.
+pub(crate) fn json_escape(s: &str) -> String {
+    let json_str = serde_json::to_string(s).unwrap_or_else(|_| s.to_string());
+    json_str
+        .strip_prefix('"')
+        .and_then(|str_slice| str_slice.strip_suffix('"'))
+        .unwrap_or(&json_str)
+        .to_string()
+}
+
 fn process_flag_template_inner(
     template_text: &str,
     emu_config: &EmulatorConfiguration,
@@ -288,7 +309,7 @@ fn process_flag_template_inner(
     // This performs all the variable substitution and condition resolution.
     let mut handlebars = Handlebars::new();
     handlebars.set_strict_mode(true);
-    handlebars.register_escape_fn(no_escape);
+    handlebars.register_escape_fn(json_escape);
     handlebars.register_helper("env", Box::new(EnvironmentHelper {}));
     handlebars.register_helper("eq", Box::new(EqHelper {}));
     handlebars.register_helper("ua", Box::new(UnitAbbreviationHelper {}));
@@ -1026,5 +1047,90 @@ mod tests {
         .collect();
 
         assert_eq!(actual.args, expected_args)
+    }
+
+    #[test]
+    fn test_json_escape() {
+        assert_eq!(json_escape(""), "");
+        assert_eq!(json_escape("hello"), "hello");
+        assert_eq!(json_escape("a=b"), "a=b");
+        assert_eq!(json_escape(r#"evil", "-flag"#), r#"evil\", \"-flag"#);
+        assert_eq!(json_escape("hello\nworld\r\t\\\""), "hello\\nworld\\r\\t\\\\\\\"");
+    }
+
+    #[fuchsia::test]
+    fn test_json_injection_kernel_image() {
+        let malicious_path = r#"kernel", "-append", "init=/bin/sh", "-kernel", "kernel"#;
+        let config = EmulatorConfiguration {
+            guest: GuestConfig {
+                kernel_image: Some(PathBuf::from(malicious_path)),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+
+        let actual = process_flag_template(&config).expect("ok processing");
+        // Ensure the injected arguments did not become separate elements in `args`.
+        assert!(!actual.args.contains(&"-append".to_string()));
+        assert!(!actual.args.contains(&"init=/bin/sh".to_string()));
+        let kernel_idx = actual.args.iter().position(|r| r == "-kernel").unwrap();
+        assert_eq!(actual.args[kernel_idx + 1], malicious_path);
+    }
+
+    #[fuchsia::test]
+    fn test_json_injection_disk_image() {
+        let malicious_disk = r#"fxfs.blk", "-fsdev", "local,path=/,id=hostfs"#;
+        let config = EmulatorConfiguration {
+            guest: GuestConfig {
+                disk_image: Some(DiskImage::Fxfs(malicious_disk.into())),
+                kernel_image: Some(PathBuf::from("/path/to/kernel")),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+
+        let actual = process_flag_template(&config).expect("ok processing");
+        assert!(!actual.args.contains(&"-fsdev".to_string()));
+        assert!(!actual.args.contains(&"local,path=/,id=hostfs".to_string()));
+        assert!(actual.args.iter().any(|arg| arg.contains(malicious_disk)));
+    }
+
+    #[fuchsia::test]
+    fn test_json_injection_ramdisk() {
+        let malicious_ramdisk = r#"ramdisk.zbi", "-fsdev", "local,path=/,id=hostfs"#;
+        let config = EmulatorConfiguration {
+            guest: GuestConfig {
+                kernel_image: Some(PathBuf::from("/path/to/kernel")),
+                ramdisk: Some(emulator_instance::Ramdisk {
+                    path: malicious_ramdisk.into(),
+                    kind: emulator_instance::RamdiskKind::Zbi,
+                }),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+
+        let actual = process_flag_template(&config).expect("ok processing");
+        assert!(!actual.args.contains(&"-fsdev".to_string()));
+        assert!(!actual.args.contains(&"local,path=/,id=hostfs".to_string()));
+        let initrd_idx = actual.args.iter().position(|r| r == "-initrd").unwrap();
+        assert_eq!(actual.args[initrd_idx + 1], malicious_ramdisk);
+    }
+
+    #[fuchsia::test]
+    async fn test_json_injection_env_helper() {
+        unsafe { std::env::set_var("EVIL_INJECT_VAR", r#"val", "injected_arg"#) };
+        let template = r#"
+        {
+            "args": ["{{env "EVIL_INJECT_VAR"}}"],
+            "envs": {},
+            "features": [],
+            "kernel_args": [],
+            "options": []
+        }"#;
+        let emu_config = EmulatorConfiguration::default();
+        let flags = process_flag_template_inner(template, &emu_config).expect("processed");
+        assert_eq!(flags.args.len(), 1);
+        assert_eq!(flags.args[0], r#"val", "injected_arg"#);
     }
 }
