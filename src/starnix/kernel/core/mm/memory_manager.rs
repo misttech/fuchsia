@@ -1532,7 +1532,7 @@ impl MemoryManagerState {
                             TODO("https://fxbug.dev/322874496"),
                             "MADV_DONTNEED with file-backed mapping"
                         );
-                        return error!(EINVAL);
+                        return Ok(());
                     }
                     MADV_DONTNEED if mapping.flags().contains(MappingFlags::LOCKED) => {
                         return error!(EINVAL);

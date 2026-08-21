@@ -105,9 +105,6 @@
                 "MMapAllProtectionsTest/MMapAllProtectionsTest.PrivateFileMappingAllowAllProtections/rwx_and_rwx",
                 "MMapAllProtectionsTest/MMapAllProtectionsTest.PrivateFileMappingAllowAllProtections/r_x_and_rw_",
 
-                // TODO(https://fxbug.dev/42079266)
-                "VdsoTest.VdsoCanBeMadvised",
-
                 // TODO(https://g-issues.fuchsia.dev/issues/318701791)
                 "MemfdFaultTest/FaultFileTest.ReadV/0",
                 "TmpfsFaultTest/FaultFileTest.ReadV/0",
