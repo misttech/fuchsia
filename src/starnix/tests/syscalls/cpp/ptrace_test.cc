@@ -2386,4 +2386,221 @@ TEST(PtraceTest, AttachAllowedWithCapSysPtrace) {
   });
 }
 
+class PtraceThreadTracerTest : public ::testing::Test {
+ protected:
+  pid_t tracee_pid() const { return tracee_pid_; }
+  test_helper::ForkHelper &helper() { return helper_; }
+
+  // Starts the child tracee process. It sets up PR_SET_PTRACER, signals that the tracee is ready,
+  // waits for the exit signal on `tracee_exit`, and exits.
+  void StartTracee() {
+    ASSERT_EQ(tracee_pid_, 0);
+    tracee_pid_ =
+        helper_.RunInForkedProcess([tracee_ready = std::move(tracee_ready_.poker),
+                                    tracee_exit = std::move(tracee_exit_.holder), this]() mutable {
+          // Close child's inherited write-end so closing the parent's poker delivers POLLHUP.
+          tracee_exit_.poker = {};
+          SAFE_SYSCALL(prctl(PR_SET_PTRACER, PR_SET_PTRACER_ANY, 0, 0, 0));
+          tracee_ready.poke();
+          tracee_exit.hold();
+          _exit(0);
+        });
+    tracee_ready_.holder.hold();
+  }
+
+  // Starts the tracer thread. It attaches to the tracee, optionally waits for the initial SIGSTOP
+  // stop notification if `wait_for_stop` is true, and then runs `action(tracee_pid_)`.
+  void StartTracerThread(fit::function<void(pid_t tracee_pid)> action, bool wait_for_stop = true) {
+    ASSERT_FALSE(tracer_thread_.has_value());
+    ASSERT_TRUE(action);
+    tracer_thread_.emplace([this, action = std::move(action), wait_for_stop]() {
+      ASSERT_THAT(ptrace(PTRACE_ATTACH, tracee_pid_, nullptr, nullptr), SyscallSucceeds());
+      if (wait_for_stop) {
+        int status;
+        SAFE_SYSCALL(waitpid(tracee_pid_, &status, 0));
+        ASSERT_TRUE(WIFSTOPPED(status));
+        ASSERT_EQ(WSTOPSIG(status), SIGSTOP);
+      }
+
+      action(tracee_pid_);
+    });
+  }
+
+  // Joins the tracer thread if running.
+  void JoinTracerThread() {
+    if (tracer_thread_) {
+      tracer_thread_->join();
+      tracer_thread_.reset();
+    }
+  }
+
+  // Signals the tracee that it may exit and verifies all children.
+  void FinishAndVerifyTracee() {
+    JoinTracerThread();
+    tracee_exit_.poker.poke();
+    EXPECT_TRUE(helper_.WaitForChildren());
+  }
+
+  // Similar to `FinishAndVerifyTracee()` but releases the exit barrier without writing to the
+  // rendezvous pipe and verifies all children.
+  //
+  // In tests where the tracee is expected to be terminated by the kernel (e.g. via SIGKILL),
+  // the tracee's read end of the pipe is closed upon death. Calling poke() in that case would
+  // fail with EPIPE (Broken pipe) on Linux. Resetting the poker closes the write end instead,
+  // which avoids EPIPE while still sending POLLHUP to allow any surviving tracee to unblock
+  // cleanly without hanging.
+  void ReleaseAndVerifyTracee() {
+    JoinTracerThread();
+    tracee_exit_.poker = {};
+    EXPECT_TRUE(helper_.WaitForChildren());
+  }
+
+  void TearDown() override { JoinTracerThread(); }
+
+ private:
+  test_helper::ForkHelper helper_;
+  test_helper::Rendezvous tracee_ready_ = test_helper::MakeRendezvous();
+  test_helper::Rendezvous tracee_exit_ = test_helper::MakeRendezvous();
+  pid_t tracee_pid_ = 0;
+  std::optional<std::thread> tracer_thread_;
+};
+
+TEST_F(PtraceThreadTracerTest, SiblingThreadCannotIssuePtraceCommands) {
+  StartTracee();
+
+  std::latch attached_and_stopped(1);
+  std::latch sibling_done(1);
+
+  StartTracerThread([&](pid_t pid) {
+    // Notify the sibling thread that the tracee is attached and stopped.
+    attached_and_stopped.count_down();
+
+    // Wait for the sibling thread to attempt its ptrace command.
+    sibling_done.wait();
+
+    // Clean up the tracee by detaching it so it resumes.
+    ASSERT_THAT(ptrace(PTRACE_DETACH, pid, nullptr, 0), SyscallSucceeds());
+  });
+
+  attached_and_stopped.wait();
+
+  // In Linux, the tracer is a specific thread (task), not the whole thread group.
+  // A sibling thread in the tracer thread group cannot issue ptrace commands to the tracee.
+  EXPECT_THAT(ptrace(PTRACE_SETOPTIONS, tracee_pid(), nullptr, PTRACE_O_TRACESYSGOOD),
+              SyscallFailsWithErrno(ESRCH));
+
+  sibling_done.count_down();
+  FinishAndVerifyTracee();
+}
+
+TEST_F(PtraceThreadTracerTest, SiblingThreadCanWaitOnTracee) {
+  StartTracee();
+
+  std::latch attached(1);
+  std::latch waited(1);
+
+  // The tracer thread only attaches (does not waitpid), allowing the sibling thread to wait on it.
+  StartTracerThread(
+      [&](pid_t pid) {
+        attached.count_down();
+        waited.wait();
+        ASSERT_THAT(ptrace(PTRACE_DETACH, pid, nullptr, 0), SyscallSucceeds());
+      },
+      /*wait_for_stop=*/false);
+
+  attached.wait();
+
+  // In Linux, any thread in the tracer's thread group can wait on and reap ptrace
+  // stop notifications for the tracee via waitpid().
+  int status = 0;
+  EXPECT_EQ(SAFE_SYSCALL(waitpid(tracee_pid(), &status, WUNTRACED)), tracee_pid());
+  EXPECT_TRUE(WIFSTOPPED(status));
+  EXPECT_EQ(WSTOPSIG(status), SIGSTOP);
+
+  waited.count_down();
+  FinishAndVerifyTracee();
+}
+
+TEST_F(PtraceThreadTracerTest, TraceeDetachesWhenTracerThreadExits) {
+  StartTracee();
+
+  // Tracer thread attaches and immediately exits.
+  StartTracerThread([](pid_t) {});
+
+  JoinTracerThread();
+
+  // In Linux, when the tracer thread exits, the tracee is automatically detached.
+  // Therefore, issuing PTRACE_DETACH to the detached tracee fails with ESRCH.
+  // On Starnix, the tracee was not detached, so this PTRACE_DETACH succeeds (failing the
+  // assertion as expected) and detaches the tracee so it can exit cleanly.
+  EXPECT_THAT(ptrace(PTRACE_DETACH, tracee_pid(), nullptr, 0), SyscallFailsWithErrno(ESRCH));
+
+  FinishAndVerifyTracee();
+}
+
+TEST_F(PtraceThreadTracerTest, TraceeKilledWhenTracerThreadExitsWithExitKill) {
+  StartTracee();
+
+  StartTracerThread([](pid_t pid) {
+    // Set PTRACE_O_EXITKILL on the tracee.
+    ASSERT_THAT(ptrace(PTRACE_SETOPTIONS, pid, nullptr, PTRACE_O_EXITKILL), SyscallSucceeds());
+    // Tracer thread exits here.
+  });
+
+  JoinTracerThread();
+
+  // In Linux, when a tracer thread with PTRACE_O_EXITKILL exits, the tracee is sent SIGKILL.
+  // Therefore, issuing PTRACE_DETACH to the dead tracee fails with ESRCH.
+  // On Starnix, the tracee was not killed, so this PTRACE_DETACH succeeds (failing the
+  // assertion as expected) and detaches the tracee so it can exit cleanly.
+  EXPECT_THAT(ptrace(PTRACE_DETACH, tracee_pid(), nullptr, 0), SyscallFailsWithErrno(ESRCH));
+  helper().ExpectSignal(SIGKILL);
+
+  ReleaseAndVerifyTracee();
+}
+
+TEST(PtraceTest, SigcontDoesNotWakePtraceEventStop) {
+  test_helper::ForkHelper helper;
+
+  pid_t tracee_pid = helper.RunInForkedProcess([]() {
+    ASSERT_THAT(ptrace(PTRACE_TRACEME, 0, nullptr, nullptr), SyscallSucceeds());
+    SAFE_SYSCALL(raise(SIGSTOP));
+    _exit(42);
+  });
+
+  // Wait for the initial SIGSTOP.
+  int status;
+  SAFE_SYSCALL(waitpid(tracee_pid, &status, 0));
+  ASSERT_TRUE(WIFSTOPPED(status));
+  ASSERT_EQ(WSTOPSIG(status), SIGSTOP);
+
+  // Enable PTRACE_O_TRACEEXIT and resume tracee.
+  ASSERT_THAT(ptrace(PTRACE_SETOPTIONS, tracee_pid, nullptr, PTRACE_O_TRACEEXIT),
+              SyscallSucceeds());
+  ASSERT_THAT(ptrace(PTRACE_CONT, tracee_pid, nullptr, 0), SyscallSucceeds());
+
+  // Wait for the PTRACE_EVENT_EXIT stop.
+  SAFE_SYSCALL(waitpid(tracee_pid, &status, 0));
+  ASSERT_TRUE(WIFSTOPPED(status));
+  ASSERT_EQ(status >> 8, (SIGTRAP | (PTRACE_EVENT_EXIT << 8)));
+
+  // Send SIGCONT to the tracee while it is stopped in PTRACE_EVENT_EXIT.
+  SAFE_SYSCALL(kill(tracee_pid, SIGCONT));
+
+  // In Linux, SIGCONT has no effect on a ptrace event stop.
+  // The tracee must remain stopped in PTRACE_EVENT_EXIT and must NOT exit yet.
+  int check_status;
+  EXPECT_EQ(waitpid(tracee_pid, &check_status, WNOHANG), 0);
+
+  // Resume the tracee properly with PTRACE_CONT.
+  ASSERT_THAT(ptrace(PTRACE_CONT, tracee_pid, nullptr, 0), SyscallSucceeds());
+
+  // Now wait for the tracee to actually exit with code 42.
+  SAFE_SYSCALL(waitpid(tracee_pid, &status, 0));
+  EXPECT_TRUE(WIFEXITED(status) && WEXITSTATUS(status) == 42);
+
+  helper.ExpectExitValue(42);
+  EXPECT_TRUE(helper.WaitForChildren());
+}
+
 }  // namespace

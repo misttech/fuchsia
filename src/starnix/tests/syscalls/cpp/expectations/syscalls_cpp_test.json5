@@ -151,6 +151,14 @@
                 // TODO(https://fxbug.dev/495916611)
                 "ProcfsTest.ProcSysNetInvalidWriteReturnsEinval",
 
+                // TODO(https://fxbug.dev/394934526)
+                "PtraceThreadTracerTest.SiblingThreadCannotIssuePtraceCommands",
+                "PtraceThreadTracerTest.TraceeDetachesWhenTracerThreadExits",
+                "PtraceThreadTracerTest.TraceeKilledWhenTracerThreadExitsWithExitKill",
+
+                // SIGCONT should not resume a tracee from a ptrace event stop.
+                "PtraceTest.SigcontDoesNotWakePtraceEventStop",
+
                 // TODO(https://fxbug.dev/445790710): Implement ptrace poke across 2 mappings.
                 "PtraceTest.PokeAcrossMappings",
 
