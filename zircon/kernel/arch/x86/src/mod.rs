@@ -9,6 +9,7 @@ pub mod fake_msr_access;
 pub mod feature;
 pub mod interrupts;
 pub mod ioapic;
+pub mod lapic;
 pub mod platform_access;
 pub mod pv;
 pub mod registers;

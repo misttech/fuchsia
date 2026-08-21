@@ -52,18 +52,20 @@ struct GsiRange {
   uint32_t end;
 };
 
+extern "C" {
+
 // Functionality provided by the local APIC
-extern "C" void apic_vm_init();
-extern "C" void apic_local_init();
+void apic_vm_init();
+void apic_local_init();
 uint8_t apic_local_id();
-extern "C" uint8_t apic_bsp_id();  // The APIC ID of the bootstrap processor
+uint8_t apic_bsp_id();  // The APIC ID of the bootstrap processor
 void apic_irq_set(unsigned int vector, bool enable);
 void apic_send_ipi(uint8_t vector, uint32_t dst_apic_id, enum apic_interrupt_delivery_mode dm);
 void apic_send_self_ipi(uint8_t vector, enum apic_interrupt_delivery_mode dm);
 void apic_send_broadcast_ipi(uint8_t vector, enum apic_interrupt_delivery_mode dm);
 void apic_send_broadcast_self_ipi(uint8_t vector, enum apic_interrupt_delivery_mode dm);
 void apic_send_mask_ipi(uint8_t vector, cpu_mask_t mask, enum apic_interrupt_delivery_mode dm);
-extern "C" void apic_issue_eoi();
+void apic_issue_eoi();
 
 zx_status_t apic_timer_set_oneshot(uint32_t count, uint8_t divisor, bool masked);
 void apic_timer_set_tsc_deadline(uint64_t deadline);
@@ -78,6 +80,8 @@ void apic_timer_interrupt_handler();
 
 // platform code needs to implement this
 void platform_handle_apic_timer_tick();
+
+}  // extern "C"
 
 // Information about the system IO APICs
 struct io_apic_descriptor {

@@ -136,7 +136,12 @@ x86_percpu* x86_get_percpu_for_test(cpu_num_t);
 void x86_init_percpu(cpu_num_t cpu_num);
 
 // used to set the bootstrap processor's apic_id once the APIC is initialized
-void x86_set_local_apic_id(uint32_t apic_id);
+extern "C" void x86_set_local_apic_id(uint32_t apic_id);
+
+extern "C" {
+uint32_t cpp_x86_percpu_get_apic_id(cpu_num_t cpu_num);
+uint32_t cpp_x86_curr_percpu_get_apic_id();
+}
 
 int x86_apic_id_to_cpu_num(uint32_t apic_id);
 

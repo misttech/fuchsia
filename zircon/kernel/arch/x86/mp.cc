@@ -38,6 +38,7 @@
 #include <hwreg/x86msr.h>
 #include <kernel/auto_preempt_disabler.h>
 #include <kernel/cpu.h>
+#include <kernel/ffi.h>
 #include <kernel/timer.h>
 #include <ktl/algorithm.h>
 #include <ktl/memory.h>
@@ -317,11 +318,23 @@ void x86_init_percpu(cpu_num_t cpu_num) {
   arch::ApplyX86ErrataWorkarounds(arch::BootCpuidIo{}, hwreg::X86MsrIo{});
 }
 
+extern "C" {
+
 void x86_set_local_apic_id(uint32_t apic_id) {
   struct x86_percpu* percpu = x86_get_percpu();
   DEBUG_ASSERT(percpu->cpu_num == 0);
   percpu->apic_id = apic_id;
 }
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE uint32_t cpp_x86_percpu_get_apic_id(cpu_num_t cpu_num) {
+  return x86_get_percpu(cpu_num).apic_id;
+}
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE uint32_t cpp_x86_curr_percpu_get_apic_id() { return x86_get_percpu()->apic_id; }
+
+}  // extern "C"
 
 int x86_apic_id_to_cpu_num(uint32_t apic_id) {
   if (bp_percpu.apic_id == apic_id) {
