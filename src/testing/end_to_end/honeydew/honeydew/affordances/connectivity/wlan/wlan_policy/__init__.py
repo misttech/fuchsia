@@ -932,7 +932,7 @@ class WlanPolicy(AsyncLazyReady):
         self,
         *,
         wait_for_confirmation: bool = True,
-        timeout: float | None = _DEFAULT_WLAN_POLICY_OPERATION_TIMEOUT_SEC,
+        timeout: timedelta | None = _DEFAULT_WLAN_POLICY_OPERATION_TIMEOUT,
     ) -> None:
         """Disables device for initiating connections to networks.
 
@@ -953,7 +953,9 @@ class WlanPolicy(AsyncLazyReady):
         assert self._client_controller is not None
 
         try:
-            client = await self.get_status(timeout=timeout)
+            client = await self.get_status(
+                timeout=None if timeout is None else timeout.total_seconds()
+            )
             if (
                 client.state
                 != f_wlan_policy.WlanClientState.CONNECTIONS_ENABLED
@@ -976,7 +978,7 @@ class WlanPolicy(AsyncLazyReady):
         try:
             resp = await asyncio.wait_for(
                 self._client_controller.proxy.stop_client_connections(),
-                timeout,
+                None if timeout is None else timeout.total_seconds(),
             )
             status = f_wlan_policy.RequestStatus(resp.status)
             if status != f_wlan_policy.RequestStatus.ACKNOWLEDGED:
@@ -987,9 +989,7 @@ class WlanPolicy(AsyncLazyReady):
             if wait_for_confirmation:
                 await self.wait_for_client_state(
                     f_wlan_policy.WlanClientState.CONNECTIONS_DISABLED,
-                    timeout=None
-                    if timeout is None
-                    else timedelta(seconds=timeout),
+                    timeout=timeout,
                 )
         except FcTransportStatus as status:
             raise wlan_errors.HoneydewWlanError(
