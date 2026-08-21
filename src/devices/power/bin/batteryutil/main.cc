@@ -2,12 +2,14 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include <lib/async-loop/cpp/loop.h>
-#include <lib/async-loop/default.h>
 #include <lib/component/incoming/cpp/protocol.h>
 #include <lib/fit/defer.h>
 
 #include "batteryutil.h"
+
+namespace fbattery = fuchsia_hardware_power_battery;
+namespace fcharger = fuchsia_hardware_power_charger;
+namespace fpowerbattery = fuchsia_power_battery;
 
 static void usage() {
   printf(
@@ -40,64 +42,40 @@ int main(int argc, char** argv) {
     return 1;
   }
   CmdArgs args = args_result.value();
+  if (args.func == BatteryFunc::kHelp) {
+    return 0;
+  }
 
   // Cancel usage printing for runtime errors to avoid spamming usage when arguments were parsed
   // correctly.
   print_usage.cancel();
 
-  zx::result<std::string> path_result = ResolveServicePath(args.path, args.func);
-  if (path_result.is_error()) {
-    return 1;
+  zx::result<std::string> device_path = zx::ok("");
+  if (args.func != BatteryFunc::kSetPowerSource) {
+    device_path =
+        !args.path.empty()
+            ? zx::ok(args.path)
+            : SelectInstance(args.func == BatteryFunc::kGet
+                                 ? std::vector<std::string>{fbattery::Service::Name,
+                                                            fpowerbattery::InfoService::Name}
+                                 : std::vector<std::string>{fcharger::Service::Name,
+                                                            fpowerbattery::ChargerService::Name});
+
+    if (device_path.is_error()) {
+      return 1;
+    }
   }
-  std::string device_path = path_result.value() + "/device";
+  std::string path = device_path.value();
 
   switch (args.func) {
-    case BatteryFunc::kGet: {
-      zx::result client_end =
-          component::Connect<fuchsia_power_battery::BatteryInfoProvider>(device_path);
-      if (client_end.is_error()) {
-        fprintf(stderr, "Could not connect to BatteryInfoProvider: %s\n",
-                client_end.status_string());
-        return 1;
-      }
-
-      auto result = fidl::WireCall(client_end.value())->GetBatteryInfo();
-      if (!result.ok()) {
-        fprintf(stderr, "Call to get battery info failed: %s\n",
-                result.FormatDescription().c_str());
-        return 1;
-      }
-      PrintBatteryInfo(result.value().info);
-      break;
-    }
-    case BatteryFunc::kEnableCharger: {
-      zx::result client_end = component::Connect<fuchsia_power_battery::Charger>(device_path);
-      if (client_end.is_error()) {
-        fprintf(stderr, "Could not connect to Charger: %s\n", client_end.status_string());
-        return 1;
-      }
-
-      std::string_view arg = args.value;
-      auto result = fidl::WireCall(client_end.value())->Enable(arg == "1");
-      if (!result.ok()) {
-        fprintf(stderr, "Call to enable charger failed: %s\n", result.FormatDescription().c_str());
-        return 1;
-      }
-      if (result->is_error()) {
-        fprintf(stderr, "Could not enable charger: %d\n", result->error_value());
-        return 1;
-      }
-      break;
-    }
-    case BatteryFunc::kSetPowerSource: {
-      if (auto result = SetPowerSource(args.value); result.is_error()) {
-        return 1;
-      }
-      break;
-    }
-    default:
-      fprintf(stderr, "Invalid function\n");
-      return 1;
+    case BatteryFunc::kHelp:
+      return 0;
+    case BatteryFunc::kGet:
+      return GetBatteryInfoCmd(path).is_ok() ? 0 : 1;
+    case BatteryFunc::kEnableCharger:
+      return EnableChargerCmd(path, args.value == "1").is_ok() ? 0 : 1;
+    case BatteryFunc::kSetPowerSource:
+      return SetPowerSource(args.value).is_ok() ? 0 : 1;
   }
   return 0;
 }
