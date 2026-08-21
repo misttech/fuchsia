@@ -445,7 +445,7 @@ function fx-build-config-load {
 
 function fx-export-default-target {
   # Set the device specified at the build directory level, if any.
-  if [[ -z "${FUCHSIA_NODENAME}" || "${FUCHSIA_NODENAME_IS_FROM_FILE}" == "true" ]]; then
+  if [[ -z "${FUCHSIA_NODENAME_SET_BY_FX_FLAG}" && ( -z "${FUCHSIA_NODENAME}" || "${FUCHSIA_NODENAME_IS_FROM_FILE}" == "true" ) ]]; then
     if [[ -f "${FUCHSIA_BUILD_DIR}.device" ]]; then
       FUCHSIA_NODENAME="$(<"${FUCHSIA_BUILD_DIR}.device")"
       export FUCHSIA_NODENAME_IS_FROM_FILE="true"

@@ -103,6 +103,7 @@ test_scripts = [
   "tests/subcommands/fx_mkzedboot_test",
   "tests/subcommands/fx_ota_test",
   "tests/subcommands/fx_remote_test",
+  "tests/subcommands/fx_serve_test",
   "tests/subcommands/fx_set_test",
   "tests/subcommands/fx_set_device_test",
   "tests/subcommands/fx_setup_go_test",

@@ -402,6 +402,7 @@ while [[ $# -ne 0 ]]; do
       # The precedence of these environment variables is defined by
       # //src/developer/ffx/data/config.json
       unset FUCHSIA_DEVICE_ADDR
+      unset FUCHSIA_NODENAME_IS_FROM_FILE
       # This name needs to be coordinated with ffx default configuration
       # LINT.IfChange
       export FUCHSIA_NODENAME="$1"

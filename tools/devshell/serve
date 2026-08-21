@@ -190,6 +190,10 @@ if [[ "${verbose}" == true ]]; then
   ffx_flags+=( --verbose )
 fi
 
+if [[ -n "${FUCHSIA_NODENAME}" && -z "${no_device}" ]]; then
+  ffx_flags+=( --target "${FUCHSIA_NODENAME}" )
+fi
+
 # Start repository server in foreground, wait until it
 # voluntarily exits
 # TODO(b/360931702): Allow listening IP address to be set.
