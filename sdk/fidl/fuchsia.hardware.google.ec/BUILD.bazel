@@ -11,6 +11,7 @@ fidl_library(
     srcs = [
         "ec.fidl",
     ],
+    enable_bindlib = False,
     visibility = ["//visibility:public"],
     deps = [
         "//zircon/vdso/zx",

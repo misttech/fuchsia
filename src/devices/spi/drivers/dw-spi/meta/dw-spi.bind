@@ -9,7 +9,6 @@ using fuchsia.hardware.pin;
 using fuchsia.hardware.reset;
 using fuchsia.hardware.powerdomain;
 using fuchsia.gpio;
-using fuchsia.hardware.gpio;
 
 primary parent "pdev" {
   fuchsia.COMPATIBLE == "google,spi";
@@ -35,7 +34,7 @@ parent "power-domain" {
 }
 
 optional parent "cs-0" {
-  fuchsia.hardware.gpio.Service == fuchsia.hardware.gpio.Service.ZirconTransport;
+  fuchsia.Service == "fuchsia.hardware.gpio.Service";
   fuchsia.NAME == "cs-0";
 }
 

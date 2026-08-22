@@ -3,13 +3,9 @@
 // found in the LICENSE file.
 
 composite post_init;
-
-using fuchsia.hardware.pin;
 using fuchsia.amlogic.platform.s905d2;
 using fuchsia.google.platform;
 using fuchsia.gpio;
-using fuchsia.hardware.gpio;
-using fuchsia.hardware.platform.bus;
 
 primary parent "pbus" {
   fuchsia.Service == "fuchsia.hardware.platform.bus.Service";

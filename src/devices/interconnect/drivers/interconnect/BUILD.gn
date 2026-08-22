@@ -10,7 +10,7 @@ import("//build/test.gni")
 driver_bind_rules("bind") {
   rules = "meta/interconnect.bind"
   bind_output = "interconnect.bindbc"
-  deps = [ "//sdk/fidl/fuchsia.hardware.interconnect:fuchsia.hardware.interconnect_bindlib" ]
+  deps = [ "//src/devices/bind/fuchsia" ]
 }
 
 fuchsia_rust_driver("driver") {
@@ -72,7 +72,10 @@ fuchsia_unittest_package("unit-test-package") {
 driver_bind_rules("fake_bind") {
   rules = "meta/fake_interconnect.bind"
   bind_output = "fake_interconnect.bindbc"
-  deps = [ "//sdk/fidl/fuchsia.hardware.interconnect:fuchsia.hardware.interconnect_bindlib" ]
+  deps = [
+    "//src/devices/bind/fuchsia",
+    "//src/devices/bind/fuchsia.test",
+  ]
 }
 
 fidl("fuchsia.interconnect.test") {

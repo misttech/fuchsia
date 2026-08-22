@@ -10,7 +10,6 @@ driver_bind_rules("astro-post-init-bind") {
   rules = "meta/post-init.bind"
   tests = "meta/post-init-bind-test.json"
   deps = [
-    "//sdk/fidl/fuchsia.hardware.gpio:fuchsia.hardware.gpio_bindlib",
     "//sdk/fidl/fuchsia.hardware.pin:fuchsia.hardware.pin_bindlib",
     "//sdk/fidl/fuchsia.hardware.platform.bus:fuchsia.hardware.platform.bus_bindlib",
     "//src/devices/bind/fuchsia",
@@ -31,9 +30,7 @@ fuchsia_cc_driver("post-init-driver") {
   deps = [
     ":astro-post-init-bind",
     "//sdk/fidl/fuchsia.driver.framework:fuchsia.driver.framework_cpp",
-    "//sdk/fidl/fuchsia.hardware.gpio:fuchsia.hardware.gpio_bindlib_cpp",
     "//sdk/fidl/fuchsia.hardware.gpio:fuchsia.hardware.gpio_cpp",
-    "//sdk/fidl/fuchsia.hardware.i2c:fuchsia.hardware.i2c_bindlib_cpp",
     "//sdk/fidl/fuchsia.hardware.input.focaltech:fuchsia.hardware.input.focaltech_cpp",
     "//sdk/fidl/fuchsia.hardware.pin:fuchsia.hardware.pin_cpp",
     "//sdk/fidl/fuchsia.hardware.platform.bus:fuchsia.hardware.platform.bus_cpp",

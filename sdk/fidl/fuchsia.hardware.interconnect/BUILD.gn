@@ -37,6 +37,7 @@ fidl("fuchsia.hardware.interconnect") {
   sources = [ "interconnect.fidl" ]
   sdk_area = "Drivers"
   sdk_category = "partner"
+  enable_bindlib = false
   enable_rust_next = true
   stable = false
   visibility = [ "*" ]

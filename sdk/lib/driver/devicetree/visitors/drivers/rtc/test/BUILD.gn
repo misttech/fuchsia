@@ -19,7 +19,6 @@ resource("test-data-file") {
 test("rtc-visitor-test-bin") {
   sources = [ "rtc-visitor-test.cc" ]
   deps = [
-    "//sdk/fidl/fuchsia.hardware.hrtimer:fuchsia.hardware.hrtimer_bindlib_cpp",
     "//sdk/lib/driver/devicetree/testing:visitor-test-helper",
     "//sdk/lib/driver/devicetree/visitors:registry",
     "//sdk/lib/driver/devicetree/visitors/default/bind-property",

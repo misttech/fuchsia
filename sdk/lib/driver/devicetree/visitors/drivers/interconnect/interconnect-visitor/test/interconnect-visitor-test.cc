@@ -15,7 +15,6 @@
 #include <cstdint>
 
 #include <bind/fuchsia/cpp/bind.h>
-#include <bind/fuchsia/hardware/interconnect/cpp/bind.h>
 #include <bind/fuchsia/platform/cpp/bind.h>
 #include <gtest/gtest.h>
 
@@ -112,29 +111,21 @@ TEST(InterconnectVisitorTest, InterconnectsProperty) {
     // 1st parent is pdev. Skipping that.
     EXPECT_TRUE(fdf_devicetree::testing::CheckHasProperties(
         {{fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.interconnect.PathService"),
-          fdf::MakeProperty2(bind_fuchsia_hardware_interconnect::PATHSERVICE,
-                             bind_fuchsia_hardware_interconnect::PATHSERVICE_ZIRCONTRANSPORT),
           fdf::MakeProperty2(bind_fuchsia::NAME, std::string(PATH1_NAME))}},
         (*mgr_request.parents2())[1].properties(), false));
     EXPECT_TRUE(fdf_devicetree::testing::CheckHasBindRules(
         {{fdf::MakeAcceptBindRule(bind_fuchsia::SERVICE,
                                   "fuchsia.hardware.interconnect.PathService"),
-          fdf::MakeAcceptBindRule(bind_fuchsia_hardware_interconnect::PATHSERVICE,
-                                  bind_fuchsia_hardware_interconnect::PATHSERVICE_ZIRCONTRANSPORT),
           fdf::MakeAcceptBindRule(bind_fuchsia::ID, 1u)}},
         (*mgr_request.parents2())[1].bind_rules(), false));
 
     EXPECT_TRUE(fdf_devicetree::testing::CheckHasProperties(
         {{fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.interconnect.PathService"),
-          fdf::MakeProperty2(bind_fuchsia_hardware_interconnect::PATHSERVICE,
-                             bind_fuchsia_hardware_interconnect::PATHSERVICE_ZIRCONTRANSPORT),
           fdf::MakeProperty2(bind_fuchsia::NAME, std::string(PATH2_NAME))}},
         (*mgr_request.parents2())[2].properties(), false));
     EXPECT_TRUE(fdf_devicetree::testing::CheckHasBindRules(
         {{fdf::MakeAcceptBindRule(bind_fuchsia::SERVICE,
                                   "fuchsia.hardware.interconnect.PathService"),
-          fdf::MakeAcceptBindRule(bind_fuchsia_hardware_interconnect::PATHSERVICE,
-                                  bind_fuchsia_hardware_interconnect::PATHSERVICE_ZIRCONTRANSPORT),
           fdf::MakeAcceptBindRule(bind_fuchsia::ID, 2u)}},
         (*mgr_request.parents2())[2].bind_rules(), false));
   }
@@ -153,15 +144,11 @@ TEST(InterconnectVisitorTest, InterconnectsProperty) {
     // 2nd is the interconnect  parent.
     EXPECT_TRUE(fdf_devicetree::testing::CheckHasProperties(
         {{fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.interconnect.PathService"),
-          fdf::MakeProperty2(bind_fuchsia_hardware_interconnect::PATHSERVICE,
-                             bind_fuchsia_hardware_interconnect::PATHSERVICE_ZIRCONTRANSPORT),
           fdf::MakeProperty2(bind_fuchsia::NAME, std::string(PATH3_NAME))}},
         (*mgr_request.parents2())[1].properties(), false));
     EXPECT_TRUE(fdf_devicetree::testing::CheckHasBindRules(
         {{fdf::MakeAcceptBindRule(bind_fuchsia::SERVICE,
                                   "fuchsia.hardware.interconnect.PathService"),
-          fdf::MakeAcceptBindRule(bind_fuchsia_hardware_interconnect::PATHSERVICE,
-                                  bind_fuchsia_hardware_interconnect::PATHSERVICE_ZIRCONTRANSPORT),
           fdf::MakeAcceptBindRule(bind_fuchsia::ID, uint32_t{3})}},
         (*mgr_request.parents2())[1].bind_rules(), false));
   }

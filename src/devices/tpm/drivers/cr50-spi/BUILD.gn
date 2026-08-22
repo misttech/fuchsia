@@ -11,7 +11,7 @@ driver_bind_rules("cr50-spi_bind") {
   rules = "meta/cr50-spi.bind"
   tests = "meta/bind_tests.json"
   deps = [
-    "//sdk/fidl/fuchsia.hardware.interrupt:fuchsia.hardware.interrupt_bindlib",
+    "//src/devices/bind/fuchsia",
     "//src/devices/bind/fuchsia.acpi",
   ]
 }

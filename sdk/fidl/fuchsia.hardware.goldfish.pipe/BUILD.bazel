@@ -11,6 +11,7 @@ fidl_library(
     srcs = [
         "goldfish-pipe.fidl",
     ],
+    enable_bindlib = False,
     visibility = ["//visibility:public"],
     deps = [
         "//zircon/vdso/zx",

@@ -17,6 +17,7 @@ fidl_library(
     ],
     api_area = "Drivers",
     category = "partner",
+    enable_bindlib = False,
     stable = False,
     visibility = ["//visibility:public"],
     deps = [

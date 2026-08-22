@@ -3,7 +3,6 @@
 // found in the LICENSE file.
 
 composite fusb302;
-
 using fuchsia;
 using fuchsia.gpio;
 

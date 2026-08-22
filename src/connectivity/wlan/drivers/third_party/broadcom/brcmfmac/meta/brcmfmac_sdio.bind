@@ -5,12 +5,8 @@
 composite brcmfmac_sdio;
 
 using fuchsia;
-
-using fuchsia.hardware.pin;
 using fuchsia.broadcom.platform;
 using fuchsia.gpio;
-using fuchsia.hardware.gpio;
-using fuchsia.hardware.sdio;
 using fuchsia.platform;
 
 primary parent "sdio-function-1" {

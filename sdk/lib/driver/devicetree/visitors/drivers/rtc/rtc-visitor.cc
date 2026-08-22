@@ -13,7 +13,6 @@
 #include <zircon/assert.h>
 
 #include <bind/fuchsia/cpp/bind.h>
-#include <bind/fuchsia/hardware/hrtimer/cpp/bind.h>
 
 namespace rtc_dt {
 
@@ -49,13 +48,11 @@ zx::result<> RtcVisitor::Visit(fdf_devicetree::Node& node,
 zx::result<> RtcVisitor::ParseReferenceChild(fdf_devicetree::Node& child,
                                              fdf_devicetree::ReferenceNode& parent) {
   std::vector bind_rules = {{
-      fdf::MakeAcceptBindRule(bind_fuchsia_hardware_hrtimer::SERVICE,
-                              bind_fuchsia_hardware_hrtimer::SERVICE_ZIRCONTRANSPORT),
+      fdf::MakeAcceptBindRule(bind_fuchsia::SERVICE, "fuchsia.hardware.hrtimer.Service"),
   }};
 
   std::vector bind_properties = {{
-      fdf::MakeProperty2(bind_fuchsia_hardware_hrtimer::SERVICE,
-                         bind_fuchsia_hardware_hrtimer::SERVICE_ZIRCONTRANSPORT),
+      fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.hrtimer.Service"),
   }};
 
   child.AddNodeSpec(fuchsia_driver_framework::ParentSpec2(bind_rules, bind_properties));

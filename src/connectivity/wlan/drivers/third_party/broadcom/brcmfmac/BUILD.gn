@@ -214,7 +214,6 @@ driver_bind_rules("brcmfmac_sdio_bind") {
   rules = "meta/brcmfmac_sdio.bind"
   bind_output = "brcmfmac_sdio.bindbc"
   deps = [
-    "//sdk/fidl/fuchsia.hardware.gpio:fuchsia.hardware.gpio_bindlib",
     "//sdk/fidl/fuchsia.hardware.pin:fuchsia.hardware.pin_bindlib",
     "//sdk/fidl/fuchsia.hardware.sdio:fuchsia.hardware.sdio_bindlib",
     "//src/devices/bind/fuchsia",

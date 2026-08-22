@@ -9,8 +9,6 @@
 
 #include <bind/fuchsia/acpi/cpp/bind.h>
 #include <bind/fuchsia/cpp/bind.h>
-#include <bind/fuchsia/hardware/i2c/cpp/bind.h>
-#include <bind/fuchsia/hardware/interrupt/cpp/bind.h>
 #include <bind/fuchsia/hardware/spi/cpp/bind.h>
 #include <bind/fuchsia/pci/cpp/bind.h>
 #include <fbl/string_printf.h>
@@ -339,9 +337,7 @@ zx::result<> DeviceBuilder::BuildComposite(acpi::Manager* manager,
             ddk::MakeProperty(bind_fuchsia::ACPI_ID, device_id_),
             ddk::MakeProperty(bind_fuchsia::PLATFORM_DEV_INTERRUPT_ID,
                               bind_platform_dev_interrupt_id),
-            ddk::MakeProperty(bind_fuchsia::SERVICE, "fuchsia.hardware.interrupt.Service"),
-            ddk::MakeProperty(bind_fuchsia_hardware_interrupt::SERVICE,
-                              bind_fuchsia_hardware_interrupt::SERVICE_ZIRCONTRANSPORT)});
+            ddk::MakeProperty(bind_fuchsia::SERVICE, "fuchsia.hardware.interrupt.Service")});
   }
 
 #if !defined(IS_TEST)
@@ -427,9 +423,6 @@ DeviceBuilder::GetFragmentBindRulesAndPropertiesForChild(size_t child_index) {
           properties.emplace_back(ddk::MakeProperty(bind_fuchsia::I2C_ADDRESS, chan_addr));
           properties.emplace_back(
               ddk::MakeProperty(bind_fuchsia::SERVICE, "fuchsia.hardware.i2c.Service"));
-          properties.emplace_back(
-              ddk::MakeProperty(bind_fuchsia_hardware_i2c::SERVICE,
-                                bind_fuchsia_hardware_i2c::SERVICE_ZIRCONTRANSPORT));
         }
       },
       bus_children_);

@@ -3,12 +3,8 @@
 // found in the LICENSE file.
 
 composite aml_pwm_init;
-
 using fuchsia;
-using fuchsia.hardware.pin;
 using fuchsia.gpio;
-using fuchsia.hardware.gpio;
-using fuchsia.hardware.pwm;
 
 primary parent "pwm" {
   fuchsia.Service == "fuchsia.hardware.pwm.Service";

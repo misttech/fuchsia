@@ -3,12 +3,8 @@
 // found in the LICENSE file.
 
 composite tas58xx;
-
 using fuchsia;
-using fuchsia.hardware.pin;
 using fuchsia.gpio;
-using fuchsia.hardware.gpio;
-using fuchsia.hardware.i2c;
 using fuchsia.ti.platform;
 using fuchsia.platform;
 

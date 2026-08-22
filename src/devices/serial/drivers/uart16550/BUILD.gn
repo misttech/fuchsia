@@ -74,7 +74,6 @@ driver_bind_rules("uart16550_bind") {
   rules = "meta/uart16550.bind"
   tests = "meta/bind_tests.json"
   deps = [
-    "//sdk/fidl/fuchsia.hardware.interrupt:fuchsia.hardware.interrupt_bindlib",
     "//src/devices/bind/fuchsia",
     "//src/devices/bind/fuchsia.acpi",
   ]

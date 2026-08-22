@@ -3,12 +3,9 @@
 // found in the LICENSE file.
 
 composite aml_sdmmc;
-
 using fuchsia;
-using fuchsia.hardware.pin;
 using fuchsia.amlogic.platform;
 using fuchsia.gpio;
-using fuchsia.hardware.gpio;
 using fuchsia.platform;
 using fuchsia.pwm;
 

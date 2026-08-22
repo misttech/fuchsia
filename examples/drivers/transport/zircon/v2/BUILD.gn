@@ -34,7 +34,7 @@ fuchsia_driver_component("parent_component") {
 driver_bind_rules("child_bind") {
   rules = "meta/child-driver.bind"
   bind_output = "child-driver.bindbc"
-  deps = [ "//sdk/fidl/fuchsia.hardware.i2c:fuchsia.hardware.i2c_bindlib" ]
+  deps = [ "//src/devices/bind/fuchsia" ]
 }
 
 fuchsia_cc_driver("child_driver") {

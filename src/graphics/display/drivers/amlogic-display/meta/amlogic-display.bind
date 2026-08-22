@@ -3,10 +3,8 @@
 // found in the LICENSE file.
 
 composite display;
-
 using fuchsia;
 using fuchsia.hardware.pin;
-using fuchsia.hardware.gpio;
 using fuchsia.gpio;
 using fuchsia.platform;
 using fuchsia.amlogic.platform;

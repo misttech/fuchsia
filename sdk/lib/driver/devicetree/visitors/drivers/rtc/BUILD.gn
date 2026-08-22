@@ -26,8 +26,5 @@ devicetree_visitor("rtc-visitor") {
     "//sdk/lib/driver/logging/cpp",
   ]
   public_deps = [ "//sdk/lib/driver/devicetree/visitors:driver-visitor" ]
-  non_sdk_deps = [
-    "//sdk/fidl/fuchsia.hardware.hrtimer:fuchsia.hardware.hrtimer_bindlib_cpp",
-    "//src/devices/bind/fuchsia:fuchsia_cpp",
-  ]
+  non_sdk_deps = [ "//src/devices/bind/fuchsia:fuchsia_cpp" ]
 }

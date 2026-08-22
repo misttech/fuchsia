@@ -4,8 +4,6 @@
 
 composite aml_pdm;
 using fuchsia;
-
-using fuchsia.hardware.pin;
 using fuchsia.platform;
 using fuchsia.amlogic.platform;
 using fuchsia.clock;

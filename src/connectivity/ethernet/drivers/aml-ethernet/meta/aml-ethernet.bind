@@ -5,11 +5,9 @@
 composite aml_eth;
 
 using fuchsia;
-
 using fuchsia.hardware.pin;
 using fuchsia.amlogic.platform;
 using fuchsia.gpio;
-using fuchsia.hardware.gpio;
 using fuchsia.platform;
 
 primary parent "pdev" {

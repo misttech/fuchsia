@@ -3,4 +3,4 @@
 // found in the LICENSE file.
 
 
-fuchsia.hardware.interconnect.Service == fuchsia.hardware.interconnect.Service.ZirconTransport;
+fuchsia.Service == "fuchsia.hardware.interconnect.Service";

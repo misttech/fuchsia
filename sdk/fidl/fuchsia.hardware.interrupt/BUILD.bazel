@@ -11,6 +11,7 @@ fidl_library(
     srcs = [
         "interrupt.fidl",
     ],
+    enable_bindlib = False,
     enable_rust_next = True,
     visibility = ["//visibility:public"],
     deps = [

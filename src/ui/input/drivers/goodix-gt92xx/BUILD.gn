@@ -21,8 +21,6 @@ driver_bind_rules("goodix_gt92xx_bind") {
   bind_output = "goodix-gt92xx.bindbc"
   tests = "meta/goodix-gt92xx-bind-test.json"
   deps = [
-    "//sdk/fidl/fuchsia.hardware.gpio:fuchsia.hardware.gpio_bindlib",
-    "//sdk/fidl/fuchsia.hardware.i2c:fuchsia.hardware.i2c_bindlib",
     "//src/devices/bind/fuchsia",
     "//src/devices/bind/fuchsia.goodix.platform",
     "//src/devices/bind/fuchsia.gpio",

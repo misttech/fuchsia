@@ -11,7 +11,6 @@
 #include <lib/driver/devicetree/visitors/registry.h>
 
 #include <bind/fuchsia/cpp/bind.h>
-#include <bind/fuchsia/hardware/hrtimer/cpp/bind.h>
 #include <gtest/gtest.h>
 
 namespace rtc_dt {
@@ -43,15 +42,13 @@ TEST(RtcVisitorTester, TestReferences) {
   // Parent 1 - RTC
   EXPECT_TRUE(fdf_devicetree::testing::CheckHasBindRules(
       {{
-          fdf::MakeAcceptBindRule(bind_fuchsia_hardware_hrtimer::SERVICE,
-                                  bind_fuchsia_hardware_hrtimer::SERVICE_ZIRCONTRANSPORT),
+          fdf::MakeAcceptBindRule(bind_fuchsia::SERVICE, "fuchsia.hardware.hrtimer.Service"),
       }},
       (*parents)[1].bind_rules(), false));
 
   EXPECT_TRUE(fdf_devicetree::testing::CheckHasProperties(
       {{
-          fdf::MakeProperty2(bind_fuchsia_hardware_hrtimer::SERVICE,
-                             bind_fuchsia_hardware_hrtimer::SERVICE_ZIRCONTRANSPORT),
+          fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.hrtimer.Service"),
       }},
       (*parents)[1].properties(), false));
 }

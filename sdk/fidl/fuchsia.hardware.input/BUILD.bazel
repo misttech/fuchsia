@@ -11,6 +11,7 @@ fidl_library(
     srcs = [
         "input.fidl",
     ],
+    enable_bindlib = False,
     enable_hlcpp = True,
     visibility = ["//visibility:public"],
     deps = [

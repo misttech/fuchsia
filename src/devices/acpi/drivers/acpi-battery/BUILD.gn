@@ -16,7 +16,7 @@ driver_bind_rules("bind") {
   rules = "meta/acpi-battery.bind"
   bind_output = "acpi-battery.bindbc"
   deps = [
-    "//sdk/fidl/fuchsia.hardware.interrupt:fuchsia.hardware.interrupt_bindlib",
+    "//src/devices/bind/fuchsia",
     "//src/devices/bind/fuchsia.acpi",
   ]
 }

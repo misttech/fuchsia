@@ -3,7 +3,6 @@
 // found in the LICENSE file.
 
 composite aml_light;
-
 using fuchsia;
 using fuchsia.amlogic.platform;
 using fuchsia.gpio;

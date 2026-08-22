@@ -12,6 +12,7 @@ fidl_library(
         "mali.fidl",
     ],
     contains_drivers = True,
+    enable_bindlib = False,
     visibility = ["//visibility:public"],
     deps = [
         "//zircon/vdso/zx",

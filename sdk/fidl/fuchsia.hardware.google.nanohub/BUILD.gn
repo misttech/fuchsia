@@ -43,6 +43,7 @@ fidl("fuchsia.hardware.google.nanohub") {
   ]
   sdk_area = "Drivers"
   sdk_category = "partner"
+  enable_bindlib = false
   stable = false
   visibility = [ "*" ]
   public_deps = [ "//zircon/vdso/zx" ]

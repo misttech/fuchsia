@@ -31,9 +31,6 @@ namespace gpio_impl_dt {
 
 namespace {
 
-// TODO(https://fxbug.dev/494450198): Remove this once we fix the Bazel dependency issue for FIDL
-// generated bind cpp headers
-
 using fuchsia_hardware_gpio::BufferMode;
 using fuchsia_hardware_pin::DriveType;
 using fuchsia_hardware_pin::Pull;

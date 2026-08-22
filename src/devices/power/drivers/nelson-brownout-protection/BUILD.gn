@@ -11,9 +11,6 @@ driver_bind_rules("nelson-brownout-protection-bind") {
   rules = "meta/nelson-brownout-protection.bind"
   tests = "meta/nelson-brownout-protection-bind-test.json"
   deps = [
-    "//sdk/fidl/fuchsia.hardware.gpio:fuchsia.hardware.gpio_bindlib",
-    "//sdk/fidl/fuchsia.hardware.pin:fuchsia.hardware.pin_bindlib",
-    "//sdk/fidl/fuchsia.hardware.power.sensor:fuchsia.hardware.power.sensor_bindlib",
     "//src/devices/bind/fuchsia",
     "//src/devices/bind/fuchsia.amlogic.platform.s905d3",
     "//src/devices/bind/fuchsia.gpio",
