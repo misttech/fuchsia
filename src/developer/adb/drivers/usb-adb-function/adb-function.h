@@ -246,6 +246,7 @@ class UsbAdbDevice : public fdf::DriverBase2,
   std::optional<inspect::ComponentInspector> component_inspector_;
   inspect::Node inspect_node_;
   inspect::StringProperty state_property_;
+  inspect::BoolProperty online_property_;
   usb_inspect::EndpointInspect bulk_in_inspect_;
   usb_inspect::EndpointInspect bulk_out_inspect_;
 

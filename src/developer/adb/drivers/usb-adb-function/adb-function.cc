@@ -86,6 +86,9 @@ void UsbAdbDevice::SetState(State new_state) {
   state_ = new_state;
   if (state_property_) {
     state_property_.Set(StateToString(state_));
+    if (online_property_) {
+      online_property_.Set(state_ == State::kOnline);
+    }
     RecordEvent(std::string("state_changed: ") + StateToString(state_));
     UpdateQueueStats();
   }
@@ -703,6 +706,7 @@ zx::result<> UsbAdbDevice::Start(fdf::DriverContext context) {
   if (component_inspector_.has_value()) {
     inspect_node_ = component_inspector_->root().CreateChild("usb-adb-function");
     state_property_ = inspect_node_.CreateString("state", StateToString(state_));
+    online_property_ = inspect_node_.CreateBool("online", state_ == State::kOnline);
     bulk_in_inspect_.Init(inspect_node_, "bulk_in");
     bulk_out_inspect_.Init(inspect_node_, "bulk_out");
 

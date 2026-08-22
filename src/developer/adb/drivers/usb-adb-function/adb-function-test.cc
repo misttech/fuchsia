@@ -799,6 +799,11 @@ TEST_F(UsbAdbTest, VerifyInspect) {
   ASSERT_NE(nullptr, state_prop);
   EXPECT_EQ("kOnline", state_prop->value());
 
+  // Verify online boolean property
+  const auto* online_prop = root_node->node().get_property<inspect::BoolPropertyValue>("online");
+  ASSERT_NE(nullptr, online_prop);
+  EXPECT_TRUE(online_prop->value());
+
   // Verify bulk_in (TX) stats using the shared helper
   auto* bulk_in = this->hierarchy().GetByPath({"usb-adb-function", "bulk_in"});
   ASSERT_NE(nullptr, bulk_in);
@@ -1117,6 +1122,9 @@ TEST_F(UsbAdbTest, InspectStateTransitions) {
   const auto* state_prop = root_node->node().get_property<inspect::StringPropertyValue>("state");
   ASSERT_NE(nullptr, state_prop);
   EXPECT_EQ("kAwaitingUsbConnection", state_prop->value());
+  const auto* online_prop = root_node->node().get_property<inspect::BoolPropertyValue>("online");
+  ASSERT_NE(nullptr, online_prop);
+  EXPECT_FALSE(online_prop->value());
 
   auto usb_impl = NormalStartAdb();
   driver_test_.RunInDriverContext(
@@ -1127,6 +1135,9 @@ TEST_F(UsbAdbTest, InspectStateTransitions) {
   state_prop = root_node->node().get_property<inspect::StringPropertyValue>("state");
   ASSERT_NE(nullptr, state_prop);
   EXPECT_EQ("kOnline", state_prop->value());
+  online_prop = root_node->node().get_property<inspect::BoolPropertyValue>("online");
+  ASSERT_NE(nullptr, online_prop);
+  EXPECT_TRUE(online_prop->value());
 
   ASSERT_NO_FATAL_FAILURE(SafeStopDriver());
 }
