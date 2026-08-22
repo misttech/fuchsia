@@ -645,7 +645,12 @@ TEST_F(UsbCdcTest, Inspect) {
     auto* cdc_node = hierarchy.GetByPath({"usb-cdc-function"});
     ASSERT_TRUE(cdc_node != nullptr);
 
+    const auto* online_prop = cdc_node->node().get_property<inspect::BoolPropertyValue>("online");
+    ASSERT_TRUE(online_prop != nullptr);
+    EXPECT_TRUE(online_prop->value());
+
     auto* bulk_in = hierarchy.GetByPath({"usb-cdc-function", "bulk_in"});
+
     ASSERT_TRUE(bulk_in != nullptr);
     auto err_in = usb_inspect::VerifyEndpointInspect(bulk_in, kTxDataSize, std::nullopt, 0,
                                                      std::nullopt, kTxDataSize);

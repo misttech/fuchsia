@@ -448,6 +448,7 @@ void UsbCdcFunction::SetConfigured(SetConfiguredRequest &request,
   }
 
   online_ = false;
+  online_property_.Set(false);
   UpdatePortStatus();
 
   fdf::info("configured = {}", configured);
@@ -561,6 +562,7 @@ void UsbCdcFunction::SetInterface(SetInterfaceRequest &request,
   }
 
   online_ = online;
+  online_property_.Set(online);
   UpdatePortStatus();
   CdcSendNotifications();
 
@@ -706,6 +708,7 @@ zx::result<> UsbCdcFunction::Start(fdf::DriverContext context) {
   }
 
   inspect_node_ = inspector().root().CreateChild("usb-cdc-function");
+  online_property_ = inspect_node_.CreateBool("online", online_);
   bulk_in_inspect_.Init(inspect_node_, "bulk_in");
   bulk_out_inspect_.Init(inspect_node_, "bulk_out");
 
