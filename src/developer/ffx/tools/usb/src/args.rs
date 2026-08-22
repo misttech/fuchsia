@@ -10,4 +10,33 @@ use argh::{ArgsInfo, FromArgs};
     name = "usb",
     description = "Collect and view telemetry for USB controllers and devices"
 )]
-pub struct UsbCommand {}
+pub struct UsbCommand {
+    #[argh(subcommand)]
+    pub subcommand: UsbSubCommand,
+}
+
+#[derive(ArgsInfo, FromArgs, Debug, PartialEq)]
+#[argh(subcommand)]
+pub enum UsbSubCommand {
+    Diagnostics(DiagnosticsCommand),
+}
+
+#[derive(ArgsInfo, FromArgs, Debug, PartialEq, Clone)]
+#[argh(
+    subcommand,
+    name = "diagnostics",
+    description = "Inspect USB health and diagnostics on the target device"
+)]
+pub struct DiagnosticsCommand {
+    /// query and print the fuchsia.usb.policy.Health report (default mode if no flags are specified)
+    #[argh(switch, short = 'H')]
+    pub health: bool,
+
+    /// query and print device-side USB Inspect diagnostics
+    #[argh(switch, short = 'i')]
+    pub inspect: bool,
+
+    /// query and print all available USB diagnostics (both health and inspect)
+    #[argh(switch, short = 'a')]
+    pub all: bool,
+}
