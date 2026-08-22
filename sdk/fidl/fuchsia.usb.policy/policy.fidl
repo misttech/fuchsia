@@ -7,12 +7,83 @@ using fuchsia.hardware.usb.peripheral;
 using fuchsia.hardware.usb.policy;
 using zx;
 
+const MAX_DETAILS_LENGTH uint32 = 128;
+
+/// Status of the physical USB cable connection.
+type CableStatus = flexible enum {
+    DISCONNECTED = 0;
+    CONNECTED = 1;
+};
+
+/// Health status of a USB function driver or connection.
+type FunctionStatus = flexible enum {
+    DISABLED = 0;
+    DISCONNECTED = 1;
+    CONNECTED = 2;
+    ERROR = 3;
+};
+
+
+/// Health information for the USB ADB function subsystem.
+type AdbHealth = table {
+    /// Describes the high-level policy and configuration state of the ADB function.
+    1: status FunctionStatus;
+    /// Provides additional diagnostic details or state description.
+    2: details string:MAX_DETAILS_LENGTH;
+    /// Indicates whether the underlying ADB daemon connection and transport are actively online and
+    /// communicating with the host. In contrast to `status == CONNECTED` (which indicates the USB
+    /// peripheral function descriptor is configured and bound), `online` indicates that end-to-end
+    /// ADB transport is active.
+    3: online bool;
+    /// Describes the runtime execution state reported by the ADB function driver
+    /// (e.g. "kAwaitingUsbConnection", "kOnline", "kStoppingForReconnect", "kStoppingForUnbind").
+    4: driver_state string:32;
+};
+
+/// Health information for the USB CDC Ethernet function subsystem.
+type CdcEthernetHealth = table {
+    /// Describes the high-level policy and configuration state of the CDC Ethernet function.
+    1: status FunctionStatus;
+    /// Provides additional diagnostic details or state description.
+    2: details string:MAX_DETAILS_LENGTH;
+    /// Indicates whether the underlying Ethernet network interface and link are actively online and ready
+    /// for network traffic. In contrast to `status == CONNECTED` (which indicates the USB CDC
+    /// interface is configured on the bus), `online` indicates that the link state is up.
+    3: online bool;
+};
+
+/// Health information for the USB VSOCK function subsystem.
+type VsockHealth = table {
+    /// Describes the high-level policy and configuration state of the VSOCK function.
+    1: status FunctionStatus;
+    /// The number of currently active or open multiplexed VSOCK socket channels. If unknown or
+    /// unsupported by the function driver, this field is absent (None).
+    2: active_channels uint32;
+    /// Provides additional diagnostic details or state description.
+    3: details string:MAX_DETAILS_LENGTH;
+    /// Indicates whether the underlying VSOCK transport driver is actively online and ready for traffic.
+    /// In contrast to `status == CONNECTED` (which indicates the USB function is configured on the bus),
+    /// `online` indicates that the VSOCK service is bound and ready to accept connections.
+    4: online bool;
+    /// Describes the runtime execution state reported by the VSOCK function driver
+    /// (e.g. "Unconfigured", "Running").
+    5: driver_state string:32;
+};
+
 /// A snapshot of the USB controller's current status and health.
 type HealthReport = table {
-    /// The current state of the device as defined by the USB 2.0 spec.
+    /// Describes the current state of the device as defined by the USB 2.0 spec.
     1: state fuchsia.hardware.usb.policy.DeviceState;
     /// The address assigned to the USB device.
     2: address uint8;
+    /// Indicates whether the USB physical cable / `VBUS` is attached ([CableStatus]).
+    3: cable_status CableStatus;
+    /// Describes the health status of the ADB function subsystem ([AdbHealth]).
+    4: adb AdbHealth;
+    /// Describes the health status of the CDC Ethernet function subsystem ([CdcEthernetHealth]).
+    5: cdc_ethernet CdcEthernetHealth;
+    /// Describes the health status of the VSOCK function subsystem ([VsockHealth]).
+    6: vsock VsockHealth;
 };
 
 /// Protocol for retrieving diagnostic and health information from the USB system.

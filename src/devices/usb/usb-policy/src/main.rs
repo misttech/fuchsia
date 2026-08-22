@@ -10,21 +10,34 @@
 #![warn(clippy::unreachable)]
 #![warn(clippy::unimplemented)]
 
+use anyhow::{Error, format_err};
 use fidl_fuchsia_hardware_usb_peripheral as peripheral;
 use fidl_fuchsia_hardware_usb_policy as fpolicy;
 use fidl_fuchsia_hwinfo as hwinfo;
 use fidl_fuchsia_usb_policy as usb_policy;
 use fuchsia_component::client::Service;
 
-use anyhow::{Error, format_err};
-
 use fidl_fuchsia_hardware_usb_policy::DeviceState;
+use fuchsia_async::TimeoutExt as _;
+
 use futures::{FutureExt, StreamExt};
+
 use log::warn;
 use std::sync::Arc;
 mod controller;
 
 use fuchsia_component::server::ServiceFs;
+
+const DEFAULT_SERIAL_NUMBER: &str = "12345678";
+const GET_CONFIG_TIMEOUT: zx::MonotonicDuration = zx::MonotonicDuration::from_millis(500);
+
+const USB_CLASS_COMMUNICATIONS: u8 = 2;
+const USB_CLASS_CDC_DATA: u8 = 10;
+const USB_CLASS_VENDOR_SPECIFIC: u8 = 255;
+const USB_SUBCLASS_ADB: u8 = 0x42;
+const USB_PROTOCOL_ADB: u8 = 0x01;
+const USB_SUBCLASS_VSOCK: u8 = 0x43;
+const USB_PROTOCOL_VSOCK: u8 = 0x00;
 
 /// State shared between the background discovery task and the FIDL server instances.
 ///
@@ -33,6 +46,7 @@ use fuchsia_component::server::ServiceFs;
 struct UsbPolicySharedStateInner {
     /// The active controller state, if discovered.
     controller: Option<Arc<controller::ControllerState>>,
+
     /// Senders to notify tasks waiting for the controller to become available.
     waiters: Vec<futures::channel::oneshot::Sender<()>>,
 }
@@ -45,7 +59,7 @@ struct UsbPolicySharedState {
 
 impl UsbPolicySharedState {
     pub fn new() -> Self {
-        Self::new_with_serial("12345678".to_string())
+        Self::new_with_serial(DEFAULT_SERIAL_NUMBER.to_string())
     }
 
     pub fn new_with_serial(serial_number: String) -> Self {
@@ -114,8 +128,10 @@ async fn fetch_serial_number() -> String {
     let Ok(device_info_proxy) =
         fuchsia_component::client::connect_to_protocol::<hwinfo::DeviceMarker>()
     else {
-        warn!("Failed to connect to fuchsia.hwinfo.Device; using default serial 12345678");
-        return "12345678".to_string();
+        warn!(
+            "Failed to connect to fuchsia.hwinfo.Device; using default serial {DEFAULT_SERIAL_NUMBER}"
+        );
+        return DEFAULT_SERIAL_NUMBER.to_string();
     };
 
     match device_info_proxy.get_info().await {
@@ -125,34 +141,42 @@ async fn fetch_serial_number() -> String {
                     serial
                 } else {
                     warn!(
-                        "fuchsia.hwinfo.Device returned empty serial; using default serial 12345678"
+                        "fuchsia.hwinfo.Device returned empty serial; using default serial {DEFAULT_SERIAL_NUMBER}"
                     );
-                    "12345678".to_string()
+                    DEFAULT_SERIAL_NUMBER.to_string()
                 }
             } else {
-                warn!("fuchsia.hwinfo.Device returned no serial; using default serial 12345678");
-                "12345678".to_string()
+                warn!(
+                    "fuchsia.hwinfo.Device returned no serial; using default serial {DEFAULT_SERIAL_NUMBER}"
+                );
+                DEFAULT_SERIAL_NUMBER.to_string()
             }
         }
         Err(e) => {
             warn!(
-                "Failed to get info from fuchsia.hwinfo.Device: {:?}; using default serial 12345678",
+                "Failed to get info from fuchsia.hwinfo.Device: {:?}; using default serial {DEFAULT_SERIAL_NUMBER}",
                 e
             );
-            "12345678".to_string()
+            DEFAULT_SERIAL_NUMBER.to_string()
         }
     }
 }
 
 async fn handle_get_configuration()
 -> Result<(peripheral::DeviceDescriptor, Vec<Vec<peripheral::FunctionDescriptor>>), zx::Status> {
-    let device = get_peripheral_device().await.map_err(|_| zx::Status::UNAVAILABLE)?;
-    let (device_desc, config_descriptors) = device
-        .get_configuration()
+    let get_config_fut = async {
+        let device = get_peripheral_device().await.map_err(|_| zx::Status::UNAVAILABLE)?;
+        let (device_desc, config_descriptors) = device
+            .get_configuration()
+            .await
+            .map_err(|_| zx::Status::INTERNAL)?
+            .map_err(zx::Status::from_raw)?;
+        Ok((device_desc, config_descriptors))
+    };
+
+    get_config_fut
+        .on_timeout(zx::MonotonicInstant::after(GET_CONFIG_TIMEOUT), || Err(zx::Status::TIMED_OUT))
         .await
-        .map_err(|_| zx::Status::INTERNAL)?
-        .map_err(zx::Status::from_raw)?;
-    Ok((device_desc, config_descriptors))
 }
 
 async fn handle_set_configuration(
@@ -284,6 +308,137 @@ async fn run_provider_server(
     }
 }
 
+fn collate_function_health(
+    config_descriptors: &[Vec<peripheral::FunctionDescriptor>],
+    is_attached: bool,
+    is_configured: bool,
+) -> (usb_policy::AdbHealth, usb_policy::CdcEthernetHealth, usb_policy::VsockHealth) {
+    let mut adb_configured = false;
+    let mut cdc_configured = false;
+    let mut vsock_configured = false;
+
+    // TODO(https://fxbug.dev/547909518): Currently inspects all configurations; when multi-config
+    // peripheral support is added, restrict this check to the currently active configuration.
+    for config in config_descriptors {
+        for func in config {
+            match func.interface_class {
+                USB_CLASS_COMMUNICATIONS | USB_CLASS_CDC_DATA => cdc_configured = true,
+                USB_CLASS_VENDOR_SPECIFIC => {
+                    if func.interface_subclass == USB_SUBCLASS_ADB
+                        && func.interface_protocol == USB_PROTOCOL_ADB
+                    {
+                        adb_configured = true;
+                    } else if func.interface_subclass == USB_SUBCLASS_VSOCK
+                        && func.interface_protocol == USB_PROTOCOL_VSOCK
+                    {
+                        vsock_configured = true;
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+
+    let compute_status = |configured: bool| -> (usb_policy::FunctionStatus, String) {
+        if !configured {
+            (usb_policy::FunctionStatus::Disabled, "Not configured".to_string())
+        } else if !is_attached {
+            (usb_policy::FunctionStatus::Disconnected, "Cable disconnected".to_string())
+        } else if is_configured {
+            (usb_policy::FunctionStatus::Connected, "Active and connected".to_string())
+        } else {
+            (
+                usb_policy::FunctionStatus::Disconnected,
+                "Enumerating / Waiting for host configuration".to_string(),
+            )
+        }
+    };
+
+    let (adb_status, adb_details) = compute_status(adb_configured);
+    let (cdc_status, cdc_details) = compute_status(cdc_configured);
+    let (vsock_status, vsock_details) = compute_status(vsock_configured);
+
+    let adb = usb_policy::AdbHealth {
+        status: Some(adb_status),
+        details: Some(adb_details),
+        ..Default::default()
+    };
+
+    let cdc_ethernet = usb_policy::CdcEthernetHealth {
+        status: Some(cdc_status),
+        details: Some(cdc_details),
+        ..Default::default()
+    };
+
+    let vsock = usb_policy::VsockHealth {
+        status: Some(vsock_status),
+        // TODO(https://fxbug.dev/547909518): Query actual open socket channel count from the vsock-service
+        // driver once an Inspect or FIDL interface is exposed.
+        active_channels: None,
+        details: Some(vsock_details),
+        ..Default::default()
+    };
+
+    (adb, cdc_ethernet, vsock)
+}
+
+async fn build_health_report(shared_state: &Arc<UsbPolicySharedState>) -> usb_policy::HealthReport {
+    let controller = shared_state.get_controller();
+    let (dev_state, address) = if let Some(state) = &controller {
+        let current_state = state.get_state();
+        (Some(current_state.device_state), Some(current_state.address))
+    } else {
+        (None, None)
+    };
+
+    let is_attached = dev_state.is_some_and(|s| s != DeviceState::NotAttached);
+    let is_configured = dev_state == Some(DeviceState::Configured);
+
+    let cable_status = dev_state.map(|s| {
+        if s != DeviceState::NotAttached {
+            usb_policy::CableStatus::Connected
+        } else {
+            usb_policy::CableStatus::Disconnected
+        }
+    });
+
+    let (adb, cdc_ethernet, vsock) = match handle_get_configuration().await {
+        Ok((_device_desc, config_descriptors)) => {
+            collate_function_health(&config_descriptors, is_attached, is_configured)
+        }
+        Err(status) => {
+            let err_msg = format!("Failed to query peripheral configuration: {status}");
+            let adb = usb_policy::AdbHealth {
+                status: Some(usb_policy::FunctionStatus::Error),
+                details: Some(err_msg.clone()),
+                ..Default::default()
+            };
+            let cdc_ethernet = usb_policy::CdcEthernetHealth {
+                status: Some(usb_policy::FunctionStatus::Error),
+                details: Some(err_msg.clone()),
+                ..Default::default()
+            };
+            let vsock = usb_policy::VsockHealth {
+                status: Some(usb_policy::FunctionStatus::Error),
+                active_channels: None,
+                details: Some(err_msg),
+                ..Default::default()
+            };
+            (adb, cdc_ethernet, vsock)
+        }
+    };
+
+    usb_policy::HealthReport {
+        state: dev_state,
+        address,
+        cable_status,
+        adb: Some(adb),
+        cdc_ethernet: Some(cdc_ethernet),
+        vsock: Some(vsock),
+        ..Default::default()
+    }
+}
+
 async fn run_health_server(
     mut stream: usb_policy::HealthRequestStream,
     shared_state: Arc<UsbPolicySharedState>,
@@ -292,21 +447,7 @@ async fn run_health_server(
         match request_result {
             Ok(request) => match request {
                 usb_policy::HealthRequest::GetReport { responder } => {
-                    let controller = shared_state.get_controller();
-                    let report = if let Some(state) = controller {
-                        let current_state = state.get_state();
-                        usb_policy::HealthReport {
-                            state: Some(current_state.device_state),
-                            address: Some(current_state.address),
-                            ..Default::default()
-                        }
-                    } else {
-                        usb_policy::HealthReport {
-                            state: None,
-                            address: None,
-                            ..Default::default()
-                        }
-                    };
+                    let report = build_health_report(&shared_state).await;
                     if let Err(e) = responder.send(Ok(&report)) {
                         warn!("Failed to send Health report: {:?}", e);
                     }
@@ -420,6 +561,62 @@ mod tests {
         };
         assert_eq!(report.state, Some(DeviceState::Attached));
         assert_eq!(report.address, Some(42));
+        assert_eq!(report.cable_status, Some(usb_policy::CableStatus::Connected));
+        assert!(report.adb.is_some());
+        assert!(report.cdc_ethernet.is_some());
+        assert!(report.vsock.is_some());
+        Ok(())
+    }
+
+    #[fuchsia::test]
+    async fn test_health_report_configured() -> Result<(), anyhow::Error> {
+        let (controller_proxy, _) = create_proxy_and_stream::<fpolicy::ControllerMarker>();
+        let shared_state = Arc::new(UsbPolicySharedState::new());
+        let controller_state = Arc::new(controller::ControllerState::new(
+            controller_proxy,
+            DeviceState::Configured,
+            22,
+            fuchsia_inspect::Inspector::default().root().create_child("test"),
+        ));
+        shared_state.set_controller(controller_state);
+
+        let (health_proxy, stream) = create_proxy_and_stream::<usb_policy::HealthMarker>();
+        fasync::Task::local(run_health_server(stream, shared_state)).detach();
+
+        let report_res = health_proxy.get_report().await?;
+        let report = match report_res {
+            Ok(r) => r,
+            Err(e) => return Err(format_err!("Health report error: {:?}", e)),
+        };
+        assert_eq!(report.state, Some(DeviceState::Configured));
+        assert_eq!(report.address, Some(22));
+        assert_eq!(report.cable_status, Some(usb_policy::CableStatus::Connected));
+        Ok(())
+    }
+
+    #[fuchsia::test]
+    async fn test_health_report_not_attached() -> Result<(), anyhow::Error> {
+        let (controller_proxy, _) = create_proxy_and_stream::<fpolicy::ControllerMarker>();
+        let shared_state = Arc::new(UsbPolicySharedState::new());
+        let controller_state = Arc::new(controller::ControllerState::new(
+            controller_proxy,
+            DeviceState::NotAttached,
+            0,
+            fuchsia_inspect::Inspector::default().root().create_child("test"),
+        ));
+        shared_state.set_controller(controller_state);
+
+        let (health_proxy, stream) = create_proxy_and_stream::<usb_policy::HealthMarker>();
+        fasync::Task::local(run_health_server(stream, shared_state)).detach();
+
+        let report_res = health_proxy.get_report().await?;
+        let report = match report_res {
+            Ok(r) => r,
+            Err(e) => return Err(format_err!("Health report error: {:?}", e)),
+        };
+        assert_eq!(report.state, Some(DeviceState::NotAttached));
+        assert_eq!(report.address, Some(0));
+        assert_eq!(report.cable_status, Some(usb_policy::CableStatus::Disconnected));
         Ok(())
     }
 
@@ -464,6 +661,7 @@ mod tests {
         };
         assert_eq!(report.state, None);
         assert_eq!(report.address, None);
+        assert_eq!(report.cable_status, None);
         Ok(())
     }
 
@@ -532,5 +730,77 @@ mod tests {
         let set_res = config_proxy.set_configuration(&dev_desc, &[]).await?;
         assert_eq!(set_res.err(), Some(zx::Status::UNAVAILABLE.into_raw()));
         Ok(())
+    }
+
+    #[test]
+    fn test_collate_function_health_all_configured() {
+        let configs = vec![vec![
+            peripheral::FunctionDescriptor {
+                interface_class: 255,
+                interface_subclass: 0x42,
+                interface_protocol: 0x01,
+            },
+            peripheral::FunctionDescriptor {
+                interface_class: 2,
+                interface_subclass: 0,
+                interface_protocol: 0,
+            },
+            peripheral::FunctionDescriptor {
+                interface_class: 255,
+                interface_subclass: 0x43,
+                interface_protocol: 0x00,
+            },
+        ]];
+
+        let (adb, cdc, vsock) = collate_function_health(&configs, true, true);
+        assert_eq!(adb.status, Some(usb_policy::FunctionStatus::Connected));
+        assert_eq!(adb.details, Some("Active and connected".to_string()));
+        assert_eq!(adb.online, None);
+        assert_eq!(adb.driver_state, None);
+        assert_eq!(cdc.status, Some(usb_policy::FunctionStatus::Connected));
+        assert_eq!(cdc.details, Some("Active and connected".to_string()));
+        assert_eq!(cdc.online, None);
+        assert_eq!(vsock.status, Some(usb_policy::FunctionStatus::Connected));
+        assert_eq!(vsock.details, Some("Active and connected".to_string()));
+        assert_eq!(vsock.online, None);
+        assert_eq!(vsock.driver_state, None);
+        assert_eq!(vsock.active_channels, None);
+    }
+
+    #[test]
+    fn test_collate_function_health_fastboot_not_vsock() {
+        // Fastboot is 255 / 0x42 / 0x03
+        let configs = vec![vec![peripheral::FunctionDescriptor {
+            interface_class: 255,
+            interface_subclass: 0x42,
+            interface_protocol: 0x03,
+        }]];
+
+        let (adb, cdc, vsock) = collate_function_health(&configs, true, true);
+        assert_eq!(adb.status, Some(usb_policy::FunctionStatus::Disabled));
+        assert_eq!(cdc.status, Some(usb_policy::FunctionStatus::Disabled));
+        assert_eq!(vsock.status, Some(usb_policy::FunctionStatus::Disabled));
+    }
+
+    #[test]
+    fn test_collate_function_health_disconnected_and_enumerating() {
+        let configs = vec![vec![peripheral::FunctionDescriptor {
+            interface_class: 255,
+            interface_subclass: 0x42,
+            interface_protocol: 0x01,
+        }]];
+
+        // Cable disconnected
+        let (adb_disconn, _, _) = collate_function_health(&configs, false, false);
+        assert_eq!(adb_disconn.status, Some(usb_policy::FunctionStatus::Disconnected));
+        assert_eq!(adb_disconn.details, Some("Cable disconnected".to_string()));
+
+        // Cable connected, but enumerating (not yet configured)
+        let (adb_enum, _, _) = collate_function_health(&configs, true, false);
+        assert_eq!(adb_enum.status, Some(usb_policy::FunctionStatus::Disconnected));
+        assert_eq!(
+            adb_enum.details,
+            Some("Enumerating / Waiting for host configuration".to_string())
+        );
     }
 }
