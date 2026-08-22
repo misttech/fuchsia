@@ -13,11 +13,10 @@ def _ffx_generate_cmd_impl(ctx):
     args = ctx.actions.args()
     args.add("--out", out_file.path)
     args.add("--deps", ",".join(ctx.attr.crate_names))
-    args.add("--template", ctx.file.template.path)
 
     ctx.actions.run(
         outputs = [out_file],
-        inputs = [ctx.file.template],
+        inputs = [],
         executable = ctx.executable._tool,
         arguments = [args],
         mnemonic = "FfxGenCmd",
@@ -30,10 +29,6 @@ _ffx_generate_cmd = rule(
     attrs = {
         "output_name": attr.string(mandatory = True),
         "crate_names": attr.string_list(mandatory = True),
-        "template": attr.label(
-            default = "//src/developer/ffx/build:templates/command.rs.jinja",
-            allow_single_file = True,
-        ),
         "_tool": attr.label(
             executable = True,
             cfg = "exec",
@@ -46,13 +41,12 @@ def _ffx_generate_plugins_impl(ctx):
     out_file = ctx.actions.declare_file(ctx.attr.output_name)
     args = ctx.actions.args()
     args.add("--out", out_file.path)
-    args.add("--template", ctx.file.template.path)
     args.add("--args", ctx.attr.args_lib)
     args.add("--execution_lib", ctx.attr.execution_lib)
     if ctx.attr.includes_execution:
-        args.add("--includes_execution", "true")
+        args.add("--includes_execution")
     if ctx.attr.includes_subcommands:
-        args.add("--includes_subcommands", "true")
+        args.add("--includes_subcommands")
     if ctx.attr.plugin_crate_names:
         args.add("--deps", ",".join(ctx.attr.plugin_crate_names))
     if ctx.attr.sub_command_lib:
@@ -60,7 +54,7 @@ def _ffx_generate_plugins_impl(ctx):
 
     ctx.actions.run(
         outputs = [out_file],
-        inputs = [ctx.file.template],
+        inputs = [],
         executable = ctx.executable._tool,
         arguments = [args],
         mnemonic = "FfxGenPlugins",
@@ -78,10 +72,6 @@ _ffx_generate_plugins = rule(
         "includes_subcommands": attr.bool(default = False),
         "plugin_crate_names": attr.string_list(),
         "sub_command_lib": attr.string(),
-        "template": attr.label(
-            default = "//src/developer/ffx/build:templates/plugins.rs.jinja",
-            allow_single_file = True,
-        ),
         "_tool": attr.label(
             executable = True,
             cfg = "exec",

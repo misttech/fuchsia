@@ -33,16 +33,10 @@ template("plugins") {
     invoker.execution_lib,
   ]
   if (includes_execution) {
-    script_args += [
-      "--includes_execution",
-      "true",
-    ]
+    script_args += [ "--includes_execution" ]
   }
   if (includes_subcommands) {
-    script_args += [
-      "--includes_subcommands",
-      "true",
-    ]
+    script_args += [ "--includes_subcommands" ]
   }
   if (defined(invoker.plugin_deps)) {
     libraries = []
@@ -65,14 +59,7 @@ template("plugins") {
 
   python_action(target_name) {
     binary_label = "//src/developer/ffx/build:gn_generate_plugins"
-    template = "//src/developer/ffx/build/templates/plugins.rs.jinja"
-    args = script_args + [
-             "--template",
-             rebase_path(template, root_build_dir),
-           ]
-
-    # Rebuild if the template changes
-    inputs = [ template ]
+    args = script_args
     outputs = [ generated_file ]
     deps = [ "//src/developer/ffx/build:gn_generate_plugins" ]
     forward_variables_from(invoker,

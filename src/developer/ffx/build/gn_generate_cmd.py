@@ -4,13 +4,7 @@
 # found in the LICENSE file.
 #
 import argparse
-import filecmp
-import os
-import shutil
 import sys
-import tempfile
-
-from jinja2 import Environment, FileSystemLoader
 
 
 def to_camel_case(snake_str: str) -> str:
@@ -20,6 +14,48 @@ def to_camel_case(snake_str: str) -> str:
 
 def wrap_deps(dep: str) -> dict[str, str]:
     return {"enum": to_camel_case(dep), "lib": dep + "_args"}
+
+
+def generate_cmd(deps: list[dict[str, str]]) -> str:
+    boxed_types = "\n".join(
+        f"pub type Boxed{d['enum']} = Boxed<{d['lib']}::FfxPluginCommand>;"
+        for d in deps
+    )
+    enum_variants = "\n".join(f"  {d['enum']}(Boxed{d['enum']})," for d in deps)
+
+    return f"""#[derive(Debug, PartialEq)]
+pub struct Boxed<T>(pub Box<T>);
+
+impl<T: argh::FromArgs> argh::FromArgs for Boxed<T> {{
+    fn from_args(command_name: &[&str], args: &[&str]) -> Result<Self, argh::EarlyExit> {{
+        T::from_args(command_name, args).map(|t| Boxed(Box::new(t)))
+    }}
+    fn redact_arg_values(
+        command_name: &[&str],
+        args: &[&str],
+    ) -> Result<Vec<String>, argh::EarlyExit> {{
+        T::redact_arg_values(command_name, args)
+    }}
+}}
+
+impl<T: argh::SubCommand> argh::SubCommand for Boxed<T> {{
+    const COMMAND: &'static argh::CommandInfo = T::COMMAND;
+}}
+
+impl<T: argh::ArgsInfo> argh::ArgsInfo for Boxed<T> {{
+    fn get_args_info() -> argh::CommandInfoWithArgs {{
+        T::get_args_info()
+    }}
+}}
+
+{boxed_types}
+
+#[derive(argh::ArgsInfo, argh::FromArgs, Debug, PartialEq)]
+#[argh(subcommand)]
+pub enum SubCommand {{
+{enum_variants}
+}}
+"""
 
 
 def main(args_list: list[str] | None = None) -> int:
@@ -37,8 +73,8 @@ def main(args_list: list[str] | None = None) -> int:
 
     parser.add_argument(
         "--template",
-        help="The template file to use to generate code",
-        required=True,
+        help="Deprecated: template file argument",
+        required=False,
     )
 
     if args_list:
@@ -46,23 +82,20 @@ def main(args_list: list[str] | None = None) -> int:
     else:
         args = parser.parse_args()
 
-    template_dir, template_name = os.path.split(args.template)
-    env = Environment(
-        loader=FileSystemLoader(template_dir),
-        trim_blocks=True,
-        lstrip_blocks=True,
-    )
-    template = env.get_template(template_name)
-    libraries = args.deps.split(",")
-    deps = map(wrap_deps, libraries)
-    temp_file = tempfile.NamedTemporaryFile(mode="w")
-    with open(temp_file.name, "w") as file:
-        file.write(template.render(deps=deps))
-        file.flush()
-        if not os.path.isfile(args.out) or not filecmp.cmp(
-            temp_file.name, args.out, shallow=False
-        ):
-            shutil.copyfile(temp_file.name, args.out)
+    libraries = args.deps.split(",") if args.deps else []
+    deps = [wrap_deps(lib) for lib in libraries if lib]
+    rendered = generate_cmd(deps)
+
+    try:
+        with open(args.out, "r") as f:
+            existing = f.read()
+    except FileNotFoundError:
+        existing = None
+
+    if existing != rendered:
+        with open(args.out, "w") as f:
+            f.write(rendered)
+
     return 0
 
 
