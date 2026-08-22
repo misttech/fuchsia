@@ -43,7 +43,7 @@ struct MultiLayerSquaresScene {
 
 impl MultiLayerSquaresScene {
     pub fn new(width: u32, height: u32) -> Self {
-        let dim = height / 8;
+        let dim = min(width, height) / 8;
         let squares = vec![
             // Pink square for layer 1
             BouncingSquare {
