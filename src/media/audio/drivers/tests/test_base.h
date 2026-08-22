@@ -233,6 +233,8 @@ class TestBase : public media::audio::test::TestFixture {
   fidl::InterfacePtr<fuchsia::hardware::audio::StreamConfig> stream_config_;
   fidl::InterfacePtr<fuchsia::hardware::audio::Health> health_;
 
+  zx::channel ProbeDevice(zx::channel channel, bool* is_busy);
+
   std::vector<fuchsia::hardware::audio::PcmSupportedFormats> ring_buffer_pcm_formats_;
   std::vector<fuchsia::hardware::audio::DaiSupportedFormats> dai_formats_;
 };

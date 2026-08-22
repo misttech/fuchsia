@@ -17,6 +17,7 @@ namespace virtual_audio {
 
 class VirtualAudioComposite
     : public fidl::Server<fuchsia_virtualaudio::Device>,
+      public fidl::Server<fuchsia_hardware_audio::CompositeConnector>,
       public fidl::Server<fuchsia_hardware_audio::Composite>,
       public fidl::Server<fuchsia_hardware_audio_signalprocessing::SignalProcessing> {
  public:
@@ -55,6 +56,9 @@ class VirtualAudioComposite
                        ChangePlugStateCompleter::Sync& completer) override;
   void AdjustClockRate(AdjustClockRateRequest& request,
                        AdjustClockRateCompleter::Sync& completer) override;
+
+  // fuchsia.hardware.audio.CompositeConnector implementation.
+  void Connect(ConnectRequest& request, ConnectCompleter::Sync& completer) override;
 
   // fuchsia.hardware.audio.Composite implementation.
   void Reset(ResetCompleter::Sync& completer) override;
@@ -121,7 +125,7 @@ class VirtualAudioComposite
   void MaybeCompleteWatchTopology();
   void MaybeCompleteWatchElementState(fuchsia_hardware_audio_signalprocessing::ElementId);
 
-  void Serve(fidl::ServerEnd<fuchsia_hardware_audio::Composite> server);
+  void Serve(fidl::ServerEnd<fuchsia_hardware_audio::CompositeConnector> server);
   void ResetRingBuffer();
   void OnSignalProcessingClosed(fidl::UnbindInfo info);
   fuchsia_virtualaudio::RingBuffer& GetRingBuffer(uint64_t id);
@@ -130,6 +134,7 @@ class VirtualAudioComposite
   }
 
   std::optional<fidl::ServerBinding<fuchsia_hardware_audio::Composite>> composite_binding_;
+  fidl::ServerBindingGroup<fuchsia_hardware_audio::CompositeConnector> connector_bindings_;
 
   // This driver exposes only one DAI element.
   std::optional<fuchsia_hardware_audio::DaiFormat> dai_format_;
@@ -170,7 +175,7 @@ class VirtualAudioComposite
 
   async_dispatcher_t* dispatcher_;
   fidl::ServerBinding<fuchsia_virtualaudio::Device> device_binding_;
-  driver_devfs::Connector<fuchsia_hardware_audio::Composite> devfs_connector_{
+  driver_devfs::Connector<fuchsia_hardware_audio::CompositeConnector> devfs_connector_{
       fit::bind_member<&VirtualAudioComposite::Serve>(this)};
   std::optional<fdf::OwnedChildNode> child_;
   InstanceId instance_id_;

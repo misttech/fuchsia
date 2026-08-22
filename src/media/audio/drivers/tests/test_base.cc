@@ -49,29 +49,68 @@ void TestBase::SetUp() {
   }
 
   switch (entry.driver_type) {
-    case DriverType::Codec:
-      CreateCodecFromChannel(
+    case DriverType::Codec: {
+      auto handle =
           ConnectWithTrampoline<fuchsia::hardware::audio::Codec,
-                                fuchsia::hardware::audio::CodecConnectorPtr>(device_entry()));
+                                fuchsia::hardware::audio::CodecConnectorPtr>(device_entry());
+      if (entry.device_type == DeviceType::BuiltIn) {
+        bool is_busy = false;
+        auto channel = ProbeDevice(handle.TakeChannel(), &is_busy);
+        if (is_busy) {
+          GTEST_SKIP() << "BuiltIn Codec is busy. Skipping test.";
+        }
+        handle = fidl::InterfaceHandle<fuchsia::hardware::audio::Codec>(std::move(channel));
+      }
+      CreateCodecFromChannel(std::move(handle));
       break;
-    case DriverType::Composite:
-      // For the driver type `Composite`, we need not connect via intermediate "trampoline".
-      CreateCompositeFromChannel(Connect<fuchsia::hardware::audio::CompositePtr>(device_entry()));
+    }
+    case DriverType::Composite: {
+      auto handle =
+          ConnectWithTrampoline<fuchsia::hardware::audio::Composite,
+                                fuchsia::hardware::audio::CompositeConnectorPtr>(device_entry());
+      if (entry.device_type == DeviceType::BuiltIn) {
+        bool is_busy = false;
+        auto channel = ProbeDevice(handle.TakeChannel(), &is_busy);
+        if (is_busy) {
+          GTEST_SKIP() << "BuiltIn Composite is busy. Skipping test.";
+        }
+        handle = fidl::InterfaceHandle<fuchsia::hardware::audio::Composite>(std::move(channel));
+      }
+      CreateCompositeFromChannel(std::move(handle));
       break;
-    case DriverType::Dai:
-      CreateDaiFromChannel(
+    }
+    case DriverType::Dai: {
+      auto handle =
           ConnectWithTrampoline<fuchsia::hardware::audio::Dai,
-                                fuchsia::hardware::audio::DaiConnectorPtr>(device_entry()));
+                                fuchsia::hardware::audio::DaiConnectorPtr>(device_entry());
+      if (entry.device_type == DeviceType::BuiltIn) {
+        bool is_busy = false;
+        auto channel = ProbeDevice(handle.TakeChannel(), &is_busy);
+        if (is_busy) {
+          GTEST_SKIP() << "BuiltIn Dai is busy. Skipping test.";
+        }
+        handle = fidl::InterfaceHandle<fuchsia::hardware::audio::Dai>(std::move(channel));
+      }
+      CreateDaiFromChannel(std::move(handle));
       break;
+    }
     case DriverType::StreamConfigInput:
       [[fallthrough]];
-    case DriverType::StreamConfigOutput:
-      CreateStreamConfigFromChannel(
+    case DriverType::StreamConfigOutput: {
+      auto handle =
           ConnectWithTrampoline<fuchsia::hardware::audio::StreamConfig,
-                                fuchsia::hardware::audio::StreamConfigConnectorPtr>(
-              device_entry()));
-
+                                fuchsia::hardware::audio::StreamConfigConnectorPtr>(device_entry());
+      if (entry.device_type == DeviceType::BuiltIn) {
+        bool is_busy = false;
+        auto channel = ProbeDevice(handle.TakeChannel(), &is_busy);
+        if (is_busy) {
+          GTEST_SKIP() << "BuiltIn StreamConfig is busy. Skipping test.";
+        }
+        handle = fidl::InterfaceHandle<fuchsia::hardware::audio::StreamConfig>(std::move(channel));
+      }
+      CreateStreamConfigFromChannel(std::move(handle));
       break;
+    }
   }
 }
 
@@ -166,6 +205,19 @@ DeviceType TestBase::Connect(const DeviceEntry& device_entry) {
     FAIL() << status << "Err " << status << ", failed to open channel for audio " << driver_type();
   });
   return std::move(device);
+}
+
+zx::channel TestBase::ProbeDevice(zx::channel channel, bool* is_busy) {
+  *is_busy = false;
+  fuchsia::hardware::audio::HealthSyncPtr health;
+  health.Bind(std::move(channel));
+  fuchsia::hardware::audio::HealthState state;
+  zx_status_t status = health->GetHealthState(&state);
+  if (status == ZX_ERR_PEER_CLOSED || status == ZX_ERR_ALREADY_BOUND) {
+    *is_busy = true;
+    return zx::channel();
+  }
+  return health.Unbind().TakeChannel();
 }
 
 void TestBase::CreateCodecFromChannel(

@@ -7,9 +7,12 @@
 #include <fuchsia/hardware/audio/cpp/fidl.h>
 #include <lib/async-loop/cpp/loop.h>
 #include <lib/async-loop/default.h>
+#include <lib/async/cpp/task.h>
 #include <lib/fdio/namespace.h>
 #include <lib/fidl/cpp/binding_set.h>
 #include <lib/syslog/cpp/macros.h>
+
+#include <future>
 
 #include "src/lib/testing/loop_fixture/real_loop_fixture.h"
 #include "src/storage/lib/vfs/cpp/pseudo_dir.h"
@@ -31,7 +34,7 @@ class FakeAudioDevice : public fuchsia::hardware::audio::StreamConfigConnector,
 
   fbl::RefPtr<fs::Service> AsService() {
     return fbl::MakeRefCounted<fs::Service>([this](zx::channel c) {
-      connector_binding_.Bind(std::move(c));
+      connector_binding_.Bind(std::move(c), loop_.dispatcher());
       return ZX_OK;
     });
   }
@@ -100,27 +103,39 @@ class PlugDetectorTest : public gtest::RealLoopFixture,
                          public ::testing::WithParamInterface<const char*> {
  protected:
   void SetUp() override {
-    ASSERT_EQ(fdio_ns_get_installed(&ns_), ZX_OK);
-    zx::channel c1, c2;
+    // Setup the emulated svc directory containing both services.
+    svc_dir_->AddEntry("fuchsia.hardware.audio.StreamConfigConnectorInputService", input_dir_);
+    svc_dir_->AddEntry("fuchsia.hardware.audio.StreamConfigConnectorOutputService", output_dir_);
 
-    // Serve up the emulated audio-input directory
-    auto [in_client, in_server] = fidl::Endpoints<fuchsia_io::Directory>::Create();
-    ASSERT_EQ(vfs_.ServeDirectory(input_dir_, std::move(in_server)), ZX_OK);
-    ASSERT_EQ(fdio_ns_bind(ns_, "/dev/class/audio-input", in_client.TakeChannel().release()),
-              ZX_OK);
-
-    // Serve up the emulated audio-output directory
-    auto [out_client, out_server] = fidl::Endpoints<fuchsia_io::Directory>::Create();
-    ASSERT_EQ(vfs_.ServeDirectory(output_dir_, std::move(out_server)), ZX_OK);
-    ASSERT_EQ(fdio_ns_bind(ns_, "/dev/class/audio-output", out_client.TakeChannel().release()),
-              ZX_OK);
+    ASSERT_EQ(vfs_loop_.StartThread("vfs-loop"), ZX_OK);
   }
+
+  bool IsEmpty(fbl::RefPtr<fs::PseudoDir> dir) {
+    std::promise<bool> promise;
+    auto future = promise.get_future();
+    async::PostTask(vfs_loop_.dispatcher(), [promise = std::move(promise), dir]() mutable {
+      promise.set_value(dir->IsEmpty());
+    });
+    return future.get();
+  }
+
   void TearDown() override {
-    ASSERT_TRUE(input_dir_->IsEmpty());
-    ASSERT_TRUE(output_dir_->IsEmpty());
-    ASSERT_NE(ns_, nullptr);
-    ASSERT_EQ(fdio_ns_unbind(ns_, "/dev/class/audio-input"), ZX_OK);
-    ASSERT_EQ(fdio_ns_unbind(ns_, "/dev/class/audio-output"), ZX_OK);
+    EXPECT_TRUE(IsEmpty(input_dir_));
+    EXPECT_TRUE(IsEmpty(output_dir_));
+    vfs_loop_.Shutdown();
+  }
+
+  fidl::ClientEnd<fuchsia_io::Directory> GetSvcClient() {
+    auto [client, server] = fidl::Endpoints<fuchsia_io::Directory>::Create();
+    std::promise<zx_status_t> promise;
+    auto future = promise.get_future();
+    async::PostTask(vfs_loop_.dispatcher(),
+                    [this, promise = std::move(promise), server = std::move(server)]() mutable {
+                      promise.set_value(vfs_.ServeDirectory(svc_dir_, std::move(server)));
+                    });
+    zx_status_t status = future.get();
+    ZX_ASSERT(status == ZX_OK);
+    return std::move(client);
   }
 
   // Holds a reference to a pseudo dir entry that removes the entry when this object goes out of
@@ -128,39 +143,72 @@ class PlugDetectorTest : public gtest::RealLoopFixture,
   struct ScopedDirent {
     std::string name;
     fbl::RefPtr<fs::PseudoDir> dir;
+    async_dispatcher_t* dispatcher;
+
+    ScopedDirent(std::string n, fbl::RefPtr<fs::PseudoDir> d, async_dispatcher_t* disp)
+        : name(std::move(n)), dir(std::move(d)), dispatcher(disp) {}
+
+    ScopedDirent(const ScopedDirent&) = delete;
+    ScopedDirent& operator=(const ScopedDirent&) = delete;
+    ScopedDirent(ScopedDirent&&) = default;
+    ScopedDirent& operator=(ScopedDirent&&) = delete;
+
     ~ScopedDirent() {
       if (dir) {
-        dir->RemoveEntry(name);
+        async::PostTask(dispatcher, [n = name, d = dir]() { d->RemoveEntry(n); });
       }
     }
   };
 
-  // Adds a |FakeAudioDevice| to the emulated 'audio-input' directory that has been installed in
-  // the local namespace at /dev/class/audio-input.
+  // Adds a |FakeAudioDevice| to the emulated 'audio-input' service directory.
   ScopedDirent AddInputDevice(FakeAudioDevice* device) {
-    auto name = std::to_string(next_input_device_number_++);
-    EXPECT_EQ(ZX_OK, input_dir_->AddEntry(name, device->AsService()));
-    return {name, input_dir_};
+    auto instance_name = std::to_string(next_input_device_number_++);
+    std::promise<zx_status_t> promise;
+    auto future = promise.get_future();
+    async::PostTask(vfs_loop_.dispatcher(), [this, instance_name, device,
+                                             promise = std::move(promise)]() mutable {
+      auto instance_dir = fbl::MakeRefCounted<fs::PseudoDir>();
+      zx_status_t status = instance_dir->AddEntry("stream_config_connector", device->AsService());
+      if (status != ZX_OK) {
+        promise.set_value(status);
+        return;
+      }
+      promise.set_value(input_dir_->AddEntry(instance_name, instance_dir));
+    });
+    EXPECT_EQ(ZX_OK, future.get());
+    return ScopedDirent(instance_name, input_dir_, vfs_loop_.dispatcher());
   }
 
-  // Adds a |FakeAudioDevice| to the emulated 'audio-output' directory that has been installed in
-  // the local namespace at /dev/class/audio-output.
+  // Adds a |FakeAudioDevice| to the emulated 'audio-output' service directory.
   ScopedDirent AddOutputDevice(FakeAudioDevice* device) {
-    auto name = std::to_string(next_output_device_number_++);
-    EXPECT_EQ(ZX_OK, output_dir_->AddEntry(name, device->AsService()));
-    return {name, output_dir_};
+    auto instance_name = std::to_string(next_output_device_number_++);
+    std::promise<zx_status_t> promise;
+    auto future = promise.get_future();
+    async::PostTask(vfs_loop_.dispatcher(), [this, instance_name, device,
+                                             promise = std::move(promise)]() mutable {
+      auto instance_dir = fbl::MakeRefCounted<fs::PseudoDir>();
+      zx_status_t status = instance_dir->AddEntry("stream_config_connector", device->AsService());
+      if (status != ZX_OK) {
+        promise.set_value(status);
+        return;
+      }
+      promise.set_value(output_dir_->AddEntry(instance_name, instance_dir));
+    });
+    EXPECT_EQ(ZX_OK, future.get());
+    return ScopedDirent(instance_name, output_dir_, vfs_loop_.dispatcher());
   }
 
  private:
-  fdio_ns_t* ns_ = nullptr;
   uint32_t next_input_device_number_ = 0;
   uint32_t next_output_device_number_ = 0;
 
-  fs::SynchronousVfs vfs_{dispatcher()};
+  async::Loop vfs_loop_{&kAsyncLoopConfigNoAttachToCurrentThread};
+  fs::SynchronousVfs vfs_{vfs_loop_.dispatcher()};
   // Note these _must_ be RefPtrs since the vfs_ will attempt to AdoptRef on a raw pointer passed
   // to it.
   fbl::RefPtr<fs::PseudoDir> input_dir_{fbl::MakeRefCounted<fs::PseudoDir>()};
   fbl::RefPtr<fs::PseudoDir> output_dir_{fbl::MakeRefCounted<fs::PseudoDir>()};
+  fbl::RefPtr<fs::PseudoDir> svc_dir_{fbl::MakeRefCounted<fs::PseudoDir>()};
 };
 
 TEST_F(PlugDetectorTest, DetectExistingDevices) {
@@ -174,7 +222,7 @@ TEST_F(PlugDetectorTest, DetectExistingDevices) {
 
   // Create the plug detector; no events should be sent until |Start|.
   DeviceTracker tracker;
-  auto plug_detector = PlugDetector::Create();
+  auto plug_detector = PlugDetector::Create(GetSvcClient());
   RunLoopUntilIdle();
   EXPECT_EQ(0u, tracker.size());
 
@@ -192,7 +240,7 @@ TEST_F(PlugDetectorTest, DetectExistingDevices) {
 
 TEST_F(PlugDetectorTest, DetectHotplugDevices) {
   DeviceTracker tracker;
-  auto plug_detector = PlugDetector::Create();
+  auto plug_detector = PlugDetector::Create(GetSvcClient());
   ASSERT_EQ(ZX_OK, plug_detector->Start(tracker.GetHandler()));
   RunLoopUntilIdle();
   EXPECT_EQ(0u, tracker.size());

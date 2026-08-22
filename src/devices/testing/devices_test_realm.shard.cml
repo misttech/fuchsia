@@ -75,21 +75,6 @@
             to: "#devices-tests",
         },
         {
-            // The `audio_driver_tests` suite requires access to various audio driver types...
-            // TODO(https://fxbug.dev/324273348): Remove this capability once the clients have been migrated to services. The service capability has been added below.
-            directory: [
-                "dev-audio-composite",
-                "dev-audio-input",
-                "dev-audio-output",
-                "dev-codec",
-                "dev-dai",
-            ],
-            from: "parent",
-            to: [ "#devices-tests" ],
-            rights: [ "r*" ],
-        },
-        {
-            // These services replace the directory capabilities above.
             service: [
                 "fuchsia.gpu.magma.PerformanceCounterService",
                 "fuchsia.gpu.magma.PowerService",

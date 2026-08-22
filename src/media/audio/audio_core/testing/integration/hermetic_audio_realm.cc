@@ -193,6 +193,7 @@ HermeticAudioRealm::CtorArgs HermeticAudioRealm::BuildRealm(Options options,
   using component_testing::ParentRef;
   using component_testing::Protocol;
   using component_testing::SelfRef;
+  using component_testing::Service;
 
   builder.AddChild(kAudioCore, "#meta/audio_core.cm");
 
@@ -314,23 +315,23 @@ HermeticAudioRealm::CtorArgs HermeticAudioRealm::BuildRealm(Options options,
       }},
   });
 
-  // Add a hermetic driver realm and route "/dev" to audio_core.
-  driver_test_realm::Setup(builder, dispatcher, {}, std::move(realm_args));
+  // Add a hermetic driver realm and route audio services to audio_core.
+  driver_test_realm::OptionsBuilder options_builder;
+  options_builder.driver_exposes({
+      fuchsia_component_test::Capability::WithService(fuchsia_component_test::Service{{
+          .name = "fuchsia.hardware.audio.StreamConfigConnectorInputService",
+      }}),
+      fuchsia_component_test::Capability::WithService(fuchsia_component_test::Service{{
+          .name = "fuchsia.hardware.audio.StreamConfigConnectorOutputService",
+      }}),
+  });
+
+  driver_test_realm::Setup(builder, dispatcher, options_builder.Build(), std::move(realm_args));
   builder.AddRoute({
       .capabilities =
           {
-              Directory{
-                  .name = "dev-class",
-                  .as = "dev-audio-input",
-                  .subdir = "audio-input",
-                  .path = "/dev/class/audio-input",
-              },
-              Directory{
-                  .name = "dev-class",
-                  .as = "dev-audio-output",
-                  .subdir = "audio-output",
-                  .path = "/dev/class/audio-output",
-              },
+              Service{.name = "fuchsia.hardware.audio.StreamConfigConnectorInputService"},
+              Service{.name = "fuchsia.hardware.audio.StreamConfigConnectorOutputService"},
           },
       .source = ChildRef{"driver_test_realm"},
       .targets = {ChildRef{kAudioCore}},

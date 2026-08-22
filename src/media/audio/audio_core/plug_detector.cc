@@ -4,9 +4,11 @@
 
 #include "src/media/audio/audio_core/plug_detector.h"
 
-#include <fcntl.h>
+#include <fidl/fuchsia.hardware.audio/cpp/fidl.h>
 #include <fuchsia/hardware/audio/cpp/fidl.h>
-#include <lib/fdio/directory.h>
+#include <lib/async/default.h>
+#include <lib/component/incoming/cpp/directory.h>
+#include <lib/component/incoming/cpp/service_member_watcher.h>
 #include <lib/fit/defer.h>
 #include <lib/syslog/cpp/macros.h>
 #include <lib/trace/event.h>
@@ -16,102 +18,129 @@
 #include <memory>
 #include <vector>
 
-#include <fbl/unique_fd.h>
-
-#include "src/lib/fsl/io/device_watcher.h"
 #include "src/media/audio/audio_core/reporter.h"
 
 namespace media::audio {
 namespace {
 
-static const struct {
-  const char* path;
-  bool is_input;
-} AUDIO_DEVNODES[] = {
-    {.path = "/dev/class/audio-output", .is_input = false},
-    {.path = "/dev/class/audio-input", .is_input = true},
-};
-
 class PlugDetectorImpl : public PlugDetector {
  public:
+  explicit PlugDetectorImpl(fidl::ClientEnd<fuchsia_io::Directory> svc_dir)
+      : svc_dir_(std::move(svc_dir)) {}
+
   zx_status_t Start(Observer observer) final {
     TRACE_DURATION("audio", "PlugDetectorImpl::Start");
     // Start should only be called once.
-    FX_DCHECK(watchers_.empty());
     FX_DCHECK(!observer_);
     FX_DCHECK(observer);
 
     observer_ = std::move(observer);
 
-    // If we fail to set up monitoring for any of our target directories,
-    // automatically stop monitoring all sources of device nodes.
     auto error_cleanup = fit::defer([this]() { Stop(); });
 
-    // Create our watchers.
-    for (const auto& devnode : AUDIO_DEVNODES) {
-      auto watcher = fsl::DeviceWatcher::Create(
-          devnode.path,
-          [this, is_input = devnode.is_input](const fidl::ClientEnd<fuchsia_io::Directory>& dir,
-                                              const std::string& filename) {
-            AddAudioDevice(dir, filename, is_input);
+    // Start watching input service
+    {
+      input_watcher_ = std::make_unique<component::ServiceMemberWatcher<
+          fuchsia_hardware_audio::StreamConfigConnectorInputService::StreamConfigConnector>>(
+          svc_dir_.borrow());
+      zx::result<> result = input_watcher_->Begin(
+          async_get_default_dispatcher(),
+          [this](fidl::ClientEnd<fuchsia_hardware_audio::StreamConfigConnector> client_end,
+                 std::string instance) {
+            AddAudioDevice(std::move(client_end), instance, /*is_input=*/true);
           });
+      if (result.is_error()) {
+        if (result.status_value() != ZX_ERR_NOT_FOUND) {
+          FX_LOGS(ERROR) << "Failed to start input service watcher: " << result.status_string();
+          return result.status_value();
+        }
+        input_watcher_.reset();
+      }
+    }
 
-      if (watcher != nullptr) {
-        watchers_.emplace_back(std::move(watcher));
-      } else {
-        FX_LOGS(ERROR) << "PlugDetectorImpl failed to create DeviceWatcher for '" << devnode.path
-                       << "'.";
+    // Start watching output service
+    {
+      output_watcher_ = std::make_unique<component::ServiceMemberWatcher<
+          fuchsia_hardware_audio::StreamConfigConnectorOutputService::StreamConfigConnector>>(
+          svc_dir_.borrow());
+      zx::result<> result = output_watcher_->Begin(
+          async_get_default_dispatcher(),
+          [this](fidl::ClientEnd<fuchsia_hardware_audio::StreamConfigConnector> client_end,
+                 std::string instance) {
+            AddAudioDevice(std::move(client_end), instance, /*is_input=*/false);
+          });
+      if (result.is_error()) {
+        if (result.status_value() != ZX_ERR_NOT_FOUND) {
+          FX_LOGS(ERROR) << "Failed to start output service watcher: " << result.status_string();
+          return result.status_value();
+        }
+        output_watcher_.reset();
       }
     }
 
     error_cleanup.cancel();
-
     return ZX_OK;
   }
 
   void Stop() final {
     TRACE_DURATION("audio", "PlugDetectorImpl::Stop");
     observer_ = nullptr;
-    watchers_.clear();
+    if (input_watcher_) {
+      (void)input_watcher_->Cancel();
+      input_watcher_.reset();
+    }
+    if (output_watcher_) {
+      (void)output_watcher_->Cancel();
+      output_watcher_.reset();
+    }
   }
 
  private:
-  void AddAudioDevice(const fidl::ClientEnd<fuchsia_io::Directory>& dir, const std::string& name,
-                      bool is_input) {
+  void AddAudioDevice(
+      fidl::ClientEnd<fuchsia_hardware_audio::StreamConfigConnector> connector_client_end,
+      const std::string& name, bool is_input) {
     TRACE_DURATION("audio", "PlugDetectorImpl::AddAudioDevice");
     if (!observer_) {
       return;
     }
-
-    fuchsia::hardware::audio::StreamConfigConnectorPtr device;
-    if (zx_status_t status = fdio_service_connect_at(dir.channel().get(), name.c_str(),
-                                                     device.NewRequest().TakeChannel().release());
-        status != ZX_OK) {
-      Reporter::Singleton().FailedToConnectToDevice(name, is_input, status);
-      FX_PLOGS(ERROR, status) << "Failed to connect to audio " << (is_input ? "input" : "output")
-                              << " device '" << name << "'";
-
-      return;
-    }
-    device.set_error_handler([name, is_input](zx_status_t res) {
-      Reporter::Singleton().FailedToObtainStreamChannel(name, is_input, res);
-      FX_PLOGS(ERROR, res) << "Failed to open channel to audio " << (is_input ? "input" : "output")
-                           << " '" << name << "'";
-    });
     fidl::InterfaceHandle<fuchsia::hardware::audio::StreamConfig> stream_config_client;
     fidl::InterfaceRequest<fuchsia::hardware::audio::StreamConfig> stream_config_server =
         stream_config_client.NewRequest();
-    device->Connect(std::move(stream_config_server));
+
+    auto result = fidl::Call(connector_client_end)
+                      ->Connect(fidl::ServerEnd<fuchsia_hardware_audio::StreamConfig>(
+                          stream_config_server.TakeChannel()));
+    if (result.is_error()) {
+      FX_LOGS(WARNING) << "Failed to send Connect request: " << result.error_value();
+      Reporter::Singleton().FailedToConnectToDevice(name, is_input, result.error_value().status());
+      return;
+    }
+
     observer_(name, is_input, std::move(stream_config_client));
   }
+
+  fidl::ClientEnd<fuchsia_io::Directory> svc_dir_;
   Observer observer_;
-  std::vector<std::unique_ptr<fsl::DeviceWatcher>> watchers_;
+  std::unique_ptr<component::ServiceMemberWatcher<
+      fuchsia_hardware_audio::StreamConfigConnectorInputService::StreamConfigConnector>>
+      input_watcher_;
+  std::unique_ptr<component::ServiceMemberWatcher<
+      fuchsia_hardware_audio::StreamConfigConnectorOutputService::StreamConfigConnector>>
+      output_watcher_;
 };
 
 }  // namespace
 
-std::unique_ptr<PlugDetector> PlugDetector::Create() {
-  return std::make_unique<PlugDetectorImpl>();
+std::unique_ptr<PlugDetector> PlugDetector::Create(fidl::ClientEnd<fuchsia_io::Directory> svc_dir) {
+  if (!svc_dir.is_valid()) {
+    auto client = component::OpenServiceRoot();
+    if (client.is_error()) {
+      FX_LOGS(ERROR) << "Failed to open /svc: " << client.status_string();
+      return nullptr;
+    }
+    svc_dir = std::move(*client);
+  }
+  return std::make_unique<PlugDetectorImpl>(std::move(svc_dir));
 }
 
 }  // namespace media::audio

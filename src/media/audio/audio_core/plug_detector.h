@@ -5,6 +5,8 @@
 #ifndef SRC_MEDIA_AUDIO_AUDIO_CORE_PLUG_DETECTOR_H_
 #define SRC_MEDIA_AUDIO_AUDIO_CORE_PLUG_DETECTOR_H_
 
+#include <fidl/fuchsia.io/cpp/wire.h>
+#include <lib/fidl/cpp/wire/channel.h>
 #include <lib/fit/function.h>
 #include <lib/zx/channel.h>
 #include <zircon/types.h>
@@ -17,7 +19,7 @@ namespace media::audio {
 
 class PlugDetector {
  public:
-  static std::unique_ptr<PlugDetector> Create();
+  static std::unique_ptr<PlugDetector> Create(fidl::ClientEnd<fuchsia_io::Directory> svc_dir = {});
 
   virtual ~PlugDetector() = default;
 

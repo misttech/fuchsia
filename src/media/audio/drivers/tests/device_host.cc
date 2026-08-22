@@ -42,28 +42,24 @@ extern void RegisterPositionTestsForDevice(const DeviceEntry& device_entry);
 
 static const struct {
   const char* path;
+  const char* member;
   DriverType driver_type;
-} kAudioDevNodes[] = {
-    {
-        .path = "/dev/class/audio-composite",
-        .driver_type = DriverType::Composite,
-    },
-    {
-        .path = "/dev/class/audio-input",
-        .driver_type = DriverType::StreamConfigInput,
-    },
-    {
-        .path = "/dev/class/audio-output",
-        .driver_type = DriverType::StreamConfigOutput,
-    },
-    {
-        .path = "/dev/class/codec",
-        .driver_type = DriverType::Codec,
-    },
-    {
-        .path = "/dev/class/dai",
-        .driver_type = DriverType::Dai,
-    },
+} kAudioServices[] = {
+    {.path = "/svc/fuchsia.hardware.audio.CompositeConnectorService",
+     .member = "composite_connector",
+     .driver_type = DriverType::Composite},
+    {.path = "/svc/fuchsia.hardware.audio.StreamConfigConnectorInputService",
+     .member = "stream_config_connector",
+     .driver_type = DriverType::StreamConfigInput},
+    {.path = "/svc/fuchsia.hardware.audio.StreamConfigConnectorOutputService",
+     .member = "stream_config_connector",
+     .driver_type = DriverType::StreamConfigOutput},
+    {.path = "/svc/fuchsia.hardware.audio.CodecConnectorService",
+     .member = "codec_connector",
+     .driver_type = DriverType::Codec},
+    {.path = "/svc/fuchsia.hardware.audio.DaiConnectorService",
+     .member = "dai_connector",
+     .driver_type = DriverType::Dai},
 };
 
 // Our thread and dispatcher must exist during the entirety of test execution; create it now.
@@ -111,29 +107,27 @@ void DeviceHost::DetectDevices(bool no_bluetooth, bool no_virtual_audio) {
 
   // Set up the device watchers. If any fail, automatically stop monitoring all device sources.
   // First, we add any preexisting ("built-in") devices.
-  for (const auto& devnode : kAudioDevNodes) {
+  for (const auto& service : kAudioServices) {
     initial_enumeration_done = false;
     auto watcher = fsl::DeviceWatcher::CreateWithIdleCallback(
-        devnode.path,
-        [this, driver_type = devnode.driver_type](const fidl::ClientEnd<fuchsia_io::Directory>& dir,
-                                                  const std::string& filename) {
+        service.path,
+        [this, driver_type = service.driver_type, member = service.member](
+            const fidl::ClientEnd<fuchsia_io::Directory>& dir, const std::string& filename) {
           ASSERT_FALSE(device_enumeration_complete_)
               << "Unexpected audio device detection occurred after test suite configuration";
 
           FX_LOGS(TRACE) << "dir handle " << dir.channel().get() << " for '" << filename << "' ("
                          << dev_type << " " << driver_type << ")";
-          device_entries().insert({
-              .dir = dir,
-              .filename = filename,
-              .driver_type = driver_type,
-              .device_type = dev_type,
-          });
+          device_entries().insert({.dir = dir,
+                                   .filename = filename + "/" + member,
+                                   .driver_type = driver_type,
+                                   .device_type = dev_type});
         },
         []() { initial_enumeration_done = true; }, device_loop_.dispatcher());
 
     if (watcher == nullptr) {
       ASSERT_FALSE(watcher == nullptr)
-          << "AudioDriver::TestBase failed creating DeviceWatcher for '" << devnode.path << "'.";
+          << "AudioDriver::TestBase failed creating DeviceWatcher for '" << service.path << "'.";
     }
 
     // If we hang indefinitely here, the test execution environment will eventually timeout.
@@ -142,7 +136,7 @@ void DeviceHost::DetectDevices(bool no_bluetooth, bool no_virtual_audio) {
     }
     ASSERT_TRUE(initial_enumeration_done)
         << "DeviceWatcher did not finish initial enumeration, for " << dev_type << "/"
-        << devnode.driver_type;
+        << service.driver_type;
 
     // We must save this so each device's fidl::ClientEnd<fuchsia_io::Directory is not dropped.
     device_watchers().emplace_back(std::move(watcher));
