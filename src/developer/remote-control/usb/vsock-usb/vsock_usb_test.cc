@@ -742,7 +742,16 @@ TEST_F(VsockUsbTest, Inspect) {
     auto* vsock_node = hierarchy.GetByPath({"vsock-usb"});
     ASSERT_TRUE(vsock_node != nullptr);
 
+    const auto* state_prop = vsock_node->node().get_property<inspect::StringPropertyValue>("state");
+    ASSERT_TRUE(state_prop != nullptr);
+    EXPECT_EQ(state_prop->value(), "Running");
+
+    const auto* online_prop = vsock_node->node().get_property<inspect::BoolPropertyValue>("online");
+    ASSERT_TRUE(online_prop != nullptr);
+    EXPECT_TRUE(online_prop->value());
+
     auto* bulk_in = hierarchy.GetByPath({"vsock-usb", "bulk_in"});
+
     ASSERT_TRUE(bulk_in != nullptr);
     auto err_in = usb_inspect::VerifyEndpointInspect(bulk_in, tx_size, std::nullopt, 0,
                                                      std::nullopt, tx_size);

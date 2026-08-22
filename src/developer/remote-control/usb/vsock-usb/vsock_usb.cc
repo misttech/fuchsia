@@ -139,6 +139,8 @@ zx::result<> VsockUsb::Start(fdf::DriverContext context) {
   }
 
   inspect_node_ = inspector().root().CreateChild("vsock-usb");
+  online_property_ = inspect_node_.CreateBool("online", false);
+  state_property_ = inspect_node_.CreateString("state", "Unconfigured");
   bulk_in_inspect_.Init(inspect_node_, "bulk_in");
   bulk_out_inspect_.Init(inspect_node_, "bulk_out");
   throughput_tracker_.emplace(dispatcher(), [this](zx::duration delta) {
@@ -228,6 +230,12 @@ zx_status_t VsockUsb::ConfigureEndpoints() {
     FDF_SLOG(FATAL, "Failed to create socket", KV("status", zx_status_get_string(status)));
   }
   state_ = Running(std::move(socket), this);
+  if (state_property_) {
+    state_property_.Set("Running");
+  }
+  if (online_property_) {
+    online_property_.Set(true);
+  }
   HandleSocketAvailable();
   ProcessReadsFromSocket();
 
@@ -260,6 +268,12 @@ zx_status_t VsockUsb::UnconfigureEndpoints() {
 
   FDF_LOG(TRACE, "UnconfigureEndpoints: Setting endpoint state to unconfigured");
   state_ = Unconfigured();
+  if (state_property_) {
+    state_property_.Set("Unconfigured");
+  }
+  if (online_property_) {
+    online_property_.Set(false);
+  }
   callback_ = std::nullopt;
 
   for (const uint8_t ep_addr : {BulkInAddress(), BulkOutAddress()}) {

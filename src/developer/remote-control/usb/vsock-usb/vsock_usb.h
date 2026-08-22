@@ -322,6 +322,8 @@ class VsockUsb : public fdf::DriverBase2,
 
   std::optional<inspect::ComponentInspector> inspector_;
   inspect::Node inspect_node_;
+  inspect::BoolProperty online_property_;
+  inspect::StringProperty state_property_;
   usb_inspect::EndpointInspect bulk_in_inspect_;
   usb_inspect::EndpointInspect bulk_out_inspect_;
   std::optional<usb_inspect::ThroughputTracker> throughput_tracker_;
