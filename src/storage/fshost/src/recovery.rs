@@ -163,6 +163,10 @@ impl RecoveryOps {
 
         if self.config.fxfs_blob {
             if format != DiskFormat::Fxfs {
+                log::warn!(
+                    format:?, expected_format:? = DiskFormat::Fxfs;
+                    "found unexpected format - shred_data returning early",
+                );
                 return Ok(());
             }
 
@@ -183,6 +187,10 @@ impl RecoveryOps {
             log::info!("Deleted fxfs-data keybag");
         } else if self.config.data_filesystem_format == "minfs" {
             if format != DiskFormat::Fvm {
+                log::warn!(
+                    format:?, expected_format:? = DiskFormat::Fvm;
+                    "found unexpected format - shred_data returning early",
+                );
                 return Ok(());
             }
 
@@ -204,6 +212,8 @@ impl RecoveryOps {
                 zx::Status::INTERNAL
             })?;
             log::info!("Shredded zxcrypt instances in fvm");
+        } else {
+            log::warn!(format:?; "found unexpected format - shred_data returning early");
         }
         Ok(())
     }
