@@ -2,10 +2,12 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import("//build/config/python_interpreter.gni")
 import("//build/fidl/fidl.gni")
 import("//build/python/host.gni")
 import("//build/python/python_host_test.gni")
 import("//build/python/python_library.gni")
+import("//build/python/python_wheel.gni")
 import("//build/rust/rustc_staticlib.gni")
 import("//sdk/categories/compatibility.gni")
 import("//src/tests/fidl/conformance_suite/gidl-conformance-suite.gni")
@@ -124,7 +126,10 @@ python_host_test("fuchsia_controller_static_conformance_tests") {
 
 group("fuchsia-controller") {
   testonly = true
-  deps = [ ":fuchsia_controller_py" ]
+  deps = [
+    ":fuchsia_controller_py",
+    ":fuchsia_controller_wheel",
+  ]
 }
 
 group("tests") {
@@ -159,6 +164,38 @@ group("host_tests") {
     # issue is fixed.
     if (!is_coverage) {
       deps += [ "tests:fuchsia_controller_e2e_test" ]
+    }
+  }
+}
+
+python_wheel("fuchsia_controller_wheel") {
+  deps = [
+    ":fidl_bindings",
+    ":fuchsia_controller_py",
+  ]
+  pyproject_toml = "pyproject.toml"
+  version = "0.1.0"
+  package_name = "fuchsia-controller"
+  packages = [
+    "fuchsia_controller_py",
+    "fuchsia_controller_internal",
+    "fidl",
+  ]
+
+  _python_version_tag = "cp" + string_replace(python_version, ".", "")
+  if (current_os == "linux") {
+    if (current_cpu == "x64") {
+      wheel_tags = "${_python_version_tag}-${_python_version_tag}-linux_x86_64"
+    } else if (current_cpu == "arm64") {
+      wheel_tags = "${_python_version_tag}-${_python_version_tag}-linux_aarch64"
+    }
+  } else if (current_os == "mac") {
+    if (current_cpu == "x64") {
+      wheel_tags =
+          "${_python_version_tag}-${_python_version_tag}-macosx_10_9_x86_64"
+    } else if (current_cpu == "arm64") {
+      wheel_tags =
+          "${_python_version_tag}-${_python_version_tag}-macosx_11_0_arm64"
     }
   }
 }

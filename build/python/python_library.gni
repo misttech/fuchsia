@@ -167,6 +167,9 @@ template("python_library") {
           sources = invoker.sources
           data_package_name = _data_package_name
           data_sources = _full_data_source_paths
+          if (defined(invoker.shared_libs)) {
+            shared_libs = rebase_path(invoker.shared_libs, root_build_dir)
+          }
 
           # Label a library as having mypy support if it includes stubs.
           # When included as a dependency, the libraries stubs will be

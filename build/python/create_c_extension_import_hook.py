@@ -41,6 +41,9 @@ def main():
     shlib_dir = os.path.dirname(args.shlib)
     # This file includes both `shlib` and the system search path `sys.path` so
     # that scripts not invoked in the root build dir can include the library.
+    # Note: `{{search_path}}` below uses double curly braces for this generator f-string
+    # so that it emits `{search_path}` in the generated script's f-string, where it is
+    # evaluated at runtime.
     with open(main_file, "w", encoding="utf-8") as main_file_out:
         main_file_out.write(
             f"""
@@ -55,12 +58,15 @@ import importlib.machinery
 import sys
 
 def _init() -> object:
+    # Scope import os locally to avoid namespace pollution for the import hook module.
+    import os
     finder = importlib.machinery.PathFinder()
-    search_path = ['{shlib_dir}'] + sys.path
+    curr_dir = os.path.abspath(os.path.dirname(__file__))
+    search_path = [curr_dir, '{shlib_dir}'] + sys.path
     spec = finder.find_spec('{shlib}', path=search_path)
     if spec is None:
-        raise Exception(
-            'Couldn\\'t find library "{shlib}.so" anywhere in path: {{search_path}}')
+        raise ImportError(
+            f"Couldn't find library '{shlib}.so' anywhere in path: {{search_path}}")
     mod = importlib.util.module_from_spec(spec)
     assert isinstance(spec.loader, Loader)
     spec.loader.exec_module(mod)

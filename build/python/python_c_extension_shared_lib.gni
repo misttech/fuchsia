@@ -13,6 +13,7 @@ template("python_c_extension_shared_lib") {
 
   shared_library(target_name) {
     output_prefix_override = true
+    output_extension = "so"
     forward_variables_from(invoker,
                            [
                              "assert_no_deps",

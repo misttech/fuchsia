@@ -46,6 +46,12 @@ python_binary("python_hermetic_concatenate") {
   main_source = "python_hermetic_concatenate.py"
 }
 
+python_binary("package_python_wheel") {
+  enable_mypy = true
+  main_source = "package_python_wheel.py"
+  deps = [ "//build/python/modules/depfile" ]
+}
+
 group("tests") {
   testonly = true
   deps = [

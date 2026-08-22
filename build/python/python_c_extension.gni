@@ -120,6 +120,10 @@ template("python_c_extension") {
     deps = [ ":${main_target_name}_wrapper" ]
     source_root = "${target_gen_dir}/${main_target_name}"
     sources = [ "__init__.py" ]
+
+    _shlib_out_dir = get_label_info(":${shlib_target_name}", "root_out_dir")
+    _shlib_path = "${_shlib_out_dir}/${shlib_target_name}.so"
+    shared_libs = [ _shlib_path ]
     if (defined(invoker.stubs)) {
       foreach(stub_target_name, stub_target_names) {
         deps += [ ":${stub_target_name}" ]
