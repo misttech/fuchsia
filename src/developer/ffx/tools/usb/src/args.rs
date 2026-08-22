@@ -39,4 +39,8 @@ pub struct DiagnosticsCommand {
     /// query and print all available USB diagnostics (both health and inspect)
     #[argh(switch, short = 'a')]
     pub all: bool,
+
+    /// print verbose health details
+    #[argh(switch, short = 'v')]
+    pub verbose: bool,
 }
