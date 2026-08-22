@@ -1649,16 +1649,16 @@ class TestMainIntegration(unittest.IsolatedAsyncioTestCase):
             # This will trigger rebuilding package lists.
             f.write('{"signed": {"targets": {}}}')
 
-        def build_handler(*args: typing.Any, **kwargs: typing.Any) -> int:
-            shutil.copy(
-                os.path.join(self.test_data_path, "package-targets.json"),
-                self.package_target_file_path,
-            )
-            return 0
+        async def build_handler(
+            *args: typing.Any, **kwargs: typing.Any
+        ) -> None:
+            if "build" in args:
+                shutil.copy(
+                    os.path.join(self.test_data_path, "package-targets.json"),
+                    self.package_target_file_path,
+                )
 
-        command_mock = self._mock_run_command(0)
-        subprocess_mock = self._mock_subprocess_call(0)
-        subprocess_mock.side_effect = build_handler
+        command_mock = self._mock_run_command(0, async_handler=build_handler)
         self._mock_has_package_server_connected_to_device(True)
         self._mock_has_tests_in_base([])
 
@@ -1669,9 +1669,6 @@ class TestMainIntegration(unittest.IsolatedAsyncioTestCase):
 
         call_prefixes = self._make_call_args_prefix_set(
             command_mock.call_args_list
-        )
-        call_prefixes.update(
-            self._make_call_args_prefix_set(subprocess_mock.call_args_list)
         )
 
         # Make sure we built, published, and ran the device test.
@@ -1760,6 +1757,7 @@ class TestMainIntegration(unittest.IsolatedAsyncioTestCase):
         app._exec_env = environment.ExecutionEnvironment.initialize_from_args(
             app._flags
         )
+        app._end_execution_request_event = asyncio.Event()
         empty_selections = selection_types.TestSelections(
             selected=[],
             selected_but_not_run=[],
@@ -1774,7 +1772,7 @@ class TestMainIntegration(unittest.IsolatedAsyncioTestCase):
         self, mock_build: mock.AsyncMock
     ) -> None:
         """Test that device tests with missing packages add lightweight package list targets."""
-        mock_build.return_value = 0
+        mock_build.return_value = mock.MagicMock(return_code=0)
         self._mock_has_tests_in_base([])
 
         app = main.AsyncMain.__new__(main.AsyncMain)
@@ -1783,6 +1781,7 @@ class TestMainIntegration(unittest.IsolatedAsyncioTestCase):
         app._exec_env = environment.ExecutionEnvironment.initialize_from_args(
             app._flags
         )
+        app._end_execution_request_event = asyncio.Event()
         app._publish_packages = mock.AsyncMock()
 
         mock_test = test_list_file.Test(
@@ -2384,7 +2383,10 @@ class TestMainIntegration(unittest.IsolatedAsyncioTestCase):
             ],
         )
 
-    @mock.patch("main.run_build_with_suspended_output", side_effect=[0])
+    @mock.patch(
+        "main.run_build_with_suspended_output",
+        side_effect=[mock.MagicMock(return_code=0)],
+    )
     async def test_updateifinbase(self, _build_mock: mock.AsyncMock) -> None:
         """Test that we appropriately update tests in base"""
 
@@ -3299,4 +3301,119 @@ class TestMainIntegration(unittest.IsolatedAsyncioTestCase):
             "echo",
             recorder=app._recorder,
             quiet_mode=True,
+        )
+
+    @mock.patch("execution.run_command")
+    async def test_run_build_with_suspended_output(
+        self, mock_run_command: mock.AsyncMock
+    ) -> None:
+        """Test run_build_with_suspended_output executes asynchronously with expected args."""
+        mock_run_command.return_value = mock.MagicMock(return_code=0)
+        exec_env = environment.ExecutionEnvironment.initialize_from_args(
+            args.parse_args(["--simple"])
+        )
+        recorder = event.EventRecorder()
+        parent_id = event.Id(1)
+        abort_signal = asyncio.Event()
+
+        res = await main.run_build_with_suspended_output(
+            exec_env,
+            ["//src:foo"],
+            recorder=recorder,
+            parent=parent_id,
+            abort_signal=abort_signal,
+        )
+        self.assertIsNotNone(res)
+        self.assertEqual(res.return_code, 0)
+        mock_run_command.assert_called_once_with(
+            *exec_env.fx_cmd_line("build", "//src:foo"),
+            recorder=recorder,
+            parent=parent_id,
+            abort_signal=abort_signal,
+            quiet_mode=True,
+        )
+
+    @mock.patch("main.run_build_with_suspended_output")
+    async def test_do_build_failure_outputs_compiler_error(
+        self, mock_build: mock.AsyncMock
+    ) -> None:
+        """Test that build failure outputs compiler diagnostics to the event recorder."""
+        mock_build.return_value = mock.MagicMock(
+            return_code=1,
+            stdout="",
+            stderr="ninja: error: build.ninja:1: syntax error",
+        )
+
+        app = main.AsyncMain.__new__(main.AsyncMain)
+        recorder = mock.MagicMock()
+        app._recorder = recorder
+        app._flags = args.parse_args(["--simple"])
+        app._exec_env = environment.ExecutionEnvironment.initialize_from_args(
+            app._flags
+        )
+        app._end_execution_request_event = asyncio.Event()
+
+        mock_test = test_list_file.Test(
+            build=tests_json_file.TestEntry(
+                test=tests_json_file.TestSection(
+                    name="my_host_test",
+                    label="//src:my_host_test(//build/toolchain:host_x64)",
+                    os="linux",
+                )
+            )
+        )
+
+        selections = selection_types.TestSelections(
+            selected=[mock_test],
+            selected_but_not_run=[],
+            best_score={},
+            group_matches=[],
+            fuzzy_distance_threshold=0,
+        )
+
+        res = await app._do_build(selections)
+        self.assertFalse(res)
+        recorder.emit_verbatim_message.assert_called_with(
+            "ninja: error: build.ninja:1: syntax error"
+        )
+        recorder.emit_end.assert_called_with(
+            "Build returned non-zero exit code 1", id=mock.ANY
+        )
+
+    @mock.patch("main.run_build_with_suspended_output")
+    async def test_do_build_aborted(self, mock_build: mock.AsyncMock) -> None:
+        """Test that _do_build handles build abort (None return value)."""
+        mock_build.return_value = None
+
+        app = main.AsyncMain.__new__(main.AsyncMain)
+        recorder = mock.MagicMock()
+        app._recorder = recorder
+        app._flags = args.parse_args(["--simple"])
+        app._exec_env = environment.ExecutionEnvironment.initialize_from_args(
+            app._flags
+        )
+        app._end_execution_request_event = asyncio.Event()
+
+        mock_test = test_list_file.Test(
+            build=tests_json_file.TestEntry(
+                test=tests_json_file.TestSection(
+                    name="my_host_test",
+                    label="//src:my_host_test(//build/toolchain:host_x64)",
+                    os="linux",
+                )
+            )
+        )
+
+        selections = selection_types.TestSelections(
+            selected=[mock_test],
+            selected_but_not_run=[],
+            best_score={},
+            group_matches=[],
+            fuzzy_distance_threshold=0,
+        )
+
+        res = await app._do_build(selections)
+        self.assertFalse(res)
+        recorder.emit_end.assert_called_with(
+            "Build returned non-zero exit code -1", id=mock.ANY
         )

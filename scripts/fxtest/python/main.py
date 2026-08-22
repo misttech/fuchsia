@@ -743,15 +743,15 @@ class AsyncMain:
             recorder.emit_instruction_message(
                 "Use --no-updateifinbase to skip updating base packages."
             )
-            build_return_code = await run_build_with_suspended_output(
+            output = await run_build_with_suspended_output(
                 exec_env,
                 ["//build/images/updates"],
-                show_output=not exec_env.log_to_stdout(),
+                recorder=recorder,
+                abort_signal=self._end_execution_request_event,
             )
-            if build_return_code != 0:
-                await end_execution(
-                    f"Failed to build update package ({build_return_code})"
-                )
+            if output is None or output.return_code != 0:
+                error = _emit_build_failure(recorder, output)
+                await end_execution(f"Failed to build update package: {error}")
                 return 1
             recorder.emit_info_message(
                 "\nRunning an OTA before executing tests"
@@ -1349,27 +1349,31 @@ class AsyncMain:
         await asyncio.sleep(0.1)
 
         if build_command_line:
-            return_code = await run_build_with_suspended_output(
+            build_output = await run_build_with_suspended_output(
                 exec_env,
                 build_command_line,
-                show_output=not exec_env.log_to_stdout(),
+                recorder=self._recorder,
+                parent=build_id,
+                abort_signal=self._end_execution_request_event,
             )
 
-            if return_code != 0:
-                error = f"Build returned non-zero exit code {return_code}"
+            if build_output is None or build_output.return_code != 0:
+                error = _emit_build_failure(recorder, build_output)
                 recorder.emit_end(error, id=build_id)
                 return False
 
         # Second, launch another command line to build and export Bazel host tests
         if build_bazel_targets:
-            return_code = await run_build_with_suspended_output(
+            build_output = await run_build_with_suspended_output(
                 exec_env,
                 ["--host", "--quiet"] + build_bazel_targets,
-                show_output=not exec_env.log_to_stdout(),
+                recorder=self._recorder,
+                parent=build_id,
+                abort_signal=self._end_execution_request_event,
             )
 
-            if return_code != 0:
-                error = f"Build returned non-zero exit code {return_code}"
+            if build_output is None or build_output.return_code != 0:
+                error = _emit_build_failure(recorder, build_output)
                 recorder.emit_end(error, id=build_id)
                 return False
 
@@ -2491,27 +2495,31 @@ async def has_package_server_connected_to_device(
     return output is not None and output.return_code == 0
 
 
+def _emit_build_failure(
+    recorder: event.EventRecorder,
+    output: command.CommandOutput | None,
+) -> str:
+    """Emit compiler diagnostics from a failed build and format error message."""
+    if output is not None and (msg := (output.stderr or output.stdout)):
+        recorder.emit_verbatim_message(msg)
+    rc = output.return_code if output is not None else -1
+    return f"Build returned non-zero exit code {rc}"
+
+
 async def run_build_with_suspended_output(
     exec_env: environment.ExecutionEnvironment,
     build_command_line: list[str],
-    show_output: bool = True,
-) -> int:
-    # Allow display to update.
-    await asyncio.sleep(0.1)
-
-    if termout.is_init():
-        # Clear the status output while we are doing the build.
-        termout.write_lines([])
-
-    stdout = None if show_output else subprocess.DEVNULL
-    stderr = None if show_output else subprocess.DEVNULL
-
-    return_code = subprocess.call(
-        exec_env.fx_cmd_line("build", *build_command_line),
-        stdout=stdout,
-        stderr=stderr,
+    recorder: event.EventRecorder | None = None,
+    parent: event.Id | None = None,
+    abort_signal: asyncio.Event | None = None,
+) -> command.CommandOutput | None:
+    return await execution.run_command(
+        *exec_env.fx_cmd_line("build", *build_command_line),
+        recorder=recorder,
+        parent=parent,
+        abort_signal=abort_signal,
+        quiet_mode=True,
     )
-    return return_code
 
 
 async def run_commands_in_parallel(
