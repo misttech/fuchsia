@@ -1,0 +1,45 @@
+// Copyright 2026 The Fuchsia Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
+
+{
+  name: "nand",
+  include: [
+    "driver_component/driver.shard.cml",
+  ],
+  program: {
+    colocate: "true",
+    default_dispatcher_opts: [
+      "allow_sync_calls",
+    ],
+    allowed_scheduler_roles: [
+      "fuchsia.devices.nand.drivers.nand.device",
+    ],
+    bind: {
+      protocol: "fuchsia.rawnand.BIND_PROTOCOL.DEVICE",
+    },
+  },
+  capabilities: [
+    {
+      service: "fuchsia.boot.metadata.PartitionMap",
+    },
+  ],
+  use: [
+    {
+      protocol: "fuchsia.scheduler.RoleManager",
+      name: "role_manager",
+      generate_bind_rule: false,
+    },
+    {
+      service: "fuchsia.boot.metadata.PartitionMap",
+      name: "partition_map",
+      generate_bind_rule: false,
+    },
+  ],
+  expose: [
+    {
+      service: "fuchsia.boot.metadata.PartitionMap",
+      from: "self",
+    },
+  ],
+}

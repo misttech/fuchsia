@@ -5,8 +5,13 @@
 import("//build/bind/bind.gni")
 import("//build/drivers.gni")
 
+fuchsia_driver_dml("usb-harriet-dml") {
+  dml = "meta/usb-harriet.dml"
+  driver_name = "usb-harriet"
+}
+
 driver_bind_rules("usb_harriet_bind") {
-  rules = "meta/usb-harriet.bind"
+  dml_label = ":usb-harriet-dml"
   bind_output = "usb-harriet.bindbc"
   tests = "meta/bind_tests.json"
   deps = [ "//src/devices/bind/fuchsia.usb" ]
@@ -48,8 +53,8 @@ fuchsia_driver_component("usb-harriet") {
   ]
   info = "meta/usb-harriet-info.json"
   component_name = "usb-harriet"
+  dml_label = ":usb-harriet-dml"
   deps = [ ":usb-harriet-driver" ]
-  manifest = "meta/usb-harriet.cml"
 }
 
 fuchsia_driver_package("package") {

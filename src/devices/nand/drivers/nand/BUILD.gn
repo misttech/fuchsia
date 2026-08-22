@@ -5,8 +5,13 @@
 import("//build/bind/bind.gni")
 import("//build/drivers.gni")
 
+fuchsia_driver_dml("nand-dml") {
+  dml = "meta/nand.dml"
+  driver_name = "nand"
+}
+
 driver_bind_rules("nand-bind") {
-  rules = "meta/nand.bind"
+  dml_label = ":nand-dml"
   bind_output = "nand.bindbc"
   tests = "meta/bind-tests.json"
   deps = [ "//src/devices/bind/fuchsia.rawnand" ]
@@ -50,11 +55,11 @@ fuchsia_cc_driver("nand-driver") {
 fuchsia_driver_component("nand") {
   info = "meta/nand-info.json"
   component_name = "nand"
+  dml_label = ":nand-dml"
   deps = [
     ":nand-bind",
     ":nand-driver",
   ]
-  manifest = "meta/nand.cml"
 }
 
 fuchsia_driver_package("package") {

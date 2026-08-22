@@ -7,8 +7,14 @@ import("//build/components.gni")
 import("//build/drivers.gni")
 import("//build/test.gni")
 
+fuchsia_driver_dml("ram-nand-dml") {
+  dml = "meta/ram-nand.dml"
+  driver_name = "ram-nand"
+}
+
 driver_bind_rules("ram-nand-bind") {
-  rules = "meta/ram-nand.bind"
+  dml_label = ":ram-nand-dml"
+  bind_output = "ram-nand.bindbc"
   tests = "meta/bind-tests.json"
   deps = [ "//src/devices/bind/fuchsia.platform" ]
 }
@@ -20,12 +26,12 @@ fuchsia_cc_driver("ram-nand-driver") {
 
 fuchsia_driver_component("ram-nand") {
   component_name = "ram-nand"
+  dml_label = ":ram-nand-dml"
   deps = [
     ":ram-nand-bind",
     ":ram-nand-driver",
   ]
   info = "meta/ram-nand-info.json"
-  manifest = "meta/ram-nand.cml"
 }
 
 source_set("common") {

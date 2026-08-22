@@ -15,8 +15,13 @@ group("tests") {
   ]
 }
 
+fuchsia_driver_dml("power-dml") {
+  dml = "meta/power.dml"
+  driver_name = "power"
+}
+
 driver_bind_rules("power-bind") {
-  rules = "meta/power.bind"
+  dml_label = ":power-dml"
   bind_output = "power.bindbc"
   tests = "meta/bind-tests.json"
   deps = [
@@ -57,8 +62,8 @@ fuchsia_driver_component("power") {
   ]
   info = "meta/power-info.json"
   component_name = "power"
+  dml_label = ":power-dml"
   deps = [ ":power-driver" ]
-  manifest = "meta/power.cml"
 }
 
 fuchsia_driver_package("package") {

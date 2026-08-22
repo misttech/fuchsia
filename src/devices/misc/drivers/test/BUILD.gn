@@ -5,8 +5,14 @@
 import("//build/bind/bind.gni")
 import("//build/drivers.gni")
 
+fuchsia_driver_dml("test-dml") {
+  dml = "meta/test.dml"
+  driver_name = "test"
+}
+
 driver_bind_rules("test_bind") {
-  rules = "meta/test.bind"
+  dml_label = ":test-dml"
+  bind_output = "test.bindbc"
   tests = "meta/bind_tests.json"
   deps = [
     "//src/devices/bind/fuchsia.test",
@@ -49,7 +55,7 @@ fuchsia_driver_component("test") {
     "//src/devices/tests/ddk-metadata-test:*",
   ]
   component_name = "test"
+  dml_label = ":test-dml"
   deps = [ ":test-driver" ]
   info = "meta/test-info.json"
-  manifest = "meta/test.cml"
 }
