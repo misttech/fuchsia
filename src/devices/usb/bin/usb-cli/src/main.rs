@@ -31,7 +31,11 @@ enum SubCommand {
 #[derive(FromArgs, PartialEq, Debug)]
 /// Prints the USB policy health report.
 #[argh(subcommand, name = "health")]
-struct HealthArgs {}
+struct HealthArgs {
+    /// prints verbose health details
+    #[argh(switch, short = 'v')]
+    verbose: bool,
+}
 
 #[derive(FromArgs, PartialEq, Debug)]
 /// Prints the device-side USB Inspect diagnostics.
@@ -41,12 +45,20 @@ struct InspectArgs {}
 #[derive(FromArgs, PartialEq, Debug)]
 /// Prints both USB health report and Inspect diagnostics.
 #[argh(subcommand, name = "diagnostics")]
-struct DiagnosticsArgs {}
+struct DiagnosticsArgs {
+    /// prints verbose health details
+    #[argh(switch, short = 'v')]
+    verbose: bool,
+}
 
 #[derive(FromArgs, PartialEq, Debug)]
 /// Prints both USB health report and Inspect diagnostics (alias for 'diagnostics').
 #[argh(subcommand, name = "diag")]
-struct DiagArgs {}
+struct DiagArgs {
+    /// prints verbose health details
+    #[argh(switch, short = 'v')]
+    verbose: bool,
+}
 
 #[derive(FromArgs, PartialEq, Debug)]
 /// Prints the current USB peripheral configuration in JSON format.
@@ -157,10 +169,14 @@ async fn get_health_report() -> Result<usb_policy::HealthReport, Error> {
         })
 }
 
-async fn run_health() -> Result<(), Error> {
+async fn run_health(args: HealthArgs) -> Result<(), Error> {
     match get_health_report().await {
         Ok(report) => {
-            println!("{}", health::format_report(&report));
+            if args.verbose {
+                println!("{}", health::format_verbose(&report));
+            } else {
+                println!("{}", health::format_dashboard(&report));
+            }
             Ok(())
         }
         Err(e) => {
@@ -172,9 +188,15 @@ async fn run_health() -> Result<(), Error> {
     }
 }
 
-async fn run_diagnostics() -> Result<(), Error> {
+async fn run_diagnostics(verbose: bool) -> Result<(), Error> {
     match get_health_report().await {
-        Ok(report) => println!("{}", health::format_report(&report)),
+        Ok(report) => {
+            if verbose {
+                println!("{}", health::format_verbose(&report));
+            } else {
+                println!("{}", health::format_dashboard(&report));
+            }
+        }
         Err(_) => {
             println!("USB Policy Health service not available (skipping).");
         }
@@ -191,9 +213,10 @@ async fn run_cli() -> Result<(), Error> {
     let args: UsbCliArgs = argh::from_env();
 
     match args.subcommand {
-        SubCommand::Health(_) => run_health().await,
+        SubCommand::Health(sc_args) => run_health(sc_args).await,
         SubCommand::Inspect(_) => inspect::print_usb_inspect_diagnostics().await,
-        SubCommand::Diagnostics(_) | SubCommand::Diag(_) => run_diagnostics().await,
+        SubCommand::Diagnostics(sc_args) => run_diagnostics(sc_args.verbose).await,
+        SubCommand::Diag(sc_args) => run_diagnostics(sc_args.verbose).await,
         SubCommand::GetConfig(sc_args) => run_get_config(sc_args).await,
         SubCommand::SetConfig(sc_args) => run_set_config(sc_args).await,
     }
@@ -211,7 +234,16 @@ mod tests {
     #[test]
     fn test_parse_health() {
         let args = UsbCliArgs::from_args(&["usb-cli"], &["health"]).unwrap();
-        assert_eq!(args, UsbCliArgs { subcommand: SubCommand::Health(HealthArgs {}) });
+        assert_eq!(
+            args,
+            UsbCliArgs { subcommand: SubCommand::Health(HealthArgs { verbose: false }) }
+        );
+
+        let args_v = UsbCliArgs::from_args(&["usb-cli"], &["health", "-v"]).unwrap();
+        assert_eq!(
+            args_v,
+            UsbCliArgs { subcommand: SubCommand::Health(HealthArgs { verbose: true }) }
+        );
     }
 
     #[test]
@@ -223,13 +255,31 @@ mod tests {
     #[test]
     fn test_parse_diagnostics() {
         let args = UsbCliArgs::from_args(&["usb-cli"], &["diagnostics"]).unwrap();
-        assert_eq!(args, UsbCliArgs { subcommand: SubCommand::Diagnostics(DiagnosticsArgs {}) });
+        assert_eq!(
+            args,
+            UsbCliArgs { subcommand: SubCommand::Diagnostics(DiagnosticsArgs { verbose: false }) }
+        );
+
+        let args_v = UsbCliArgs::from_args(&["usb-cli"], &["diagnostics", "--verbose"]).unwrap();
+        assert_eq!(
+            args_v,
+            UsbCliArgs { subcommand: SubCommand::Diagnostics(DiagnosticsArgs { verbose: true }) }
+        );
     }
 
     #[test]
     fn test_parse_diag_alias() {
         let args = UsbCliArgs::from_args(&["usb-cli"], &["diag"]).unwrap();
-        assert_eq!(args, UsbCliArgs { subcommand: SubCommand::Diag(DiagArgs {}) });
+        assert_eq!(args, UsbCliArgs { subcommand: SubCommand::Diag(DiagArgs { verbose: false }) });
+
+        let args_v = UsbCliArgs::from_args(&["usb-cli"], &["diag", "-v"]).unwrap();
+        assert_eq!(args_v, UsbCliArgs { subcommand: SubCommand::Diag(DiagArgs { verbose: true }) });
+
+        let args_verbose = UsbCliArgs::from_args(&["usb-cli"], &["diag", "--verbose"]).unwrap();
+        assert_eq!(
+            args_verbose,
+            UsbCliArgs { subcommand: SubCommand::Diag(DiagArgs { verbose: true }) }
+        );
     }
 
     #[test]
