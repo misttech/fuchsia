@@ -1103,7 +1103,7 @@ where
                             snapshot,
                             Some((&meta, delegation.name().clone())),
                         ));
-                    let (term, res) = f.await;
+                    let (term, res): (bool, Result<TargetDescription>) = f.await;
 
                     if term && res.is_err() {
                         return (true, res);
