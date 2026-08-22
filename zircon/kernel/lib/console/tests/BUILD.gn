@@ -7,8 +7,8 @@
 import("//zircon/kernel/kernel_rust_mod.gni")
 
 kernel_rust_mod("console_tests_rust") {
-  source_root = "src/mod.rs"
-  sources = [ "src/mod.rs" ]
+  source_root = "mod.rs"
+  sources = [ "mod.rs" ]
   deps = [
     "//sdk/rust/zx-status",
     "//src/lib/zr",

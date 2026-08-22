@@ -13,7 +13,7 @@ static_library("console") {
 
   complete_static_lib = true
 
-  sources = [ "console.cc" ]
+  sources = [ "console_ffi.cc" ]
   defines = [ "BOOT_TEST_SUCCESS_STRING=\"$boot_test_success_string\"" ]
   deps = [
     "//zircon/kernel/lib/boot-options:headers",
@@ -33,16 +33,16 @@ library_headers("headers") {
 rustc_library("console_env") {
   edition = "2024"
   output_name = "console_env"
-  sources = [ "rust/src/env.rs" ]
-  source_root = "rust/src/env.rs"
+  sources = [ "env.rs" ]
+  source_root = "env.rs"
   rustenv = [ "BOOT_TEST_SUCCESS_STRING=$boot_test_success_string" ]
 }
 
 kernel_rust_mod("console_rust") {
   output_name = "console_rust"
   visibility = [ "//zircon/kernel/*" ]
-  sources = [ "rust/src/mod.rs" ]
-  source_root = "rust/src/mod.rs"
+  sources = [ "mod.rs" ]
+  source_root = "mod.rs"
   deps = [
     ":console_env",
     "//sdk/rust/zx-status",

@@ -70,23 +70,37 @@ struct cmd {
 
 #endif  // CONSOLE_ENABLED
 
+#if CONSOLE_ENABLED
+
 /* external api */
-int console_run_script(const char* string);
-extern "C" int console_run_script_locked(const char* string);  // special case from inside a command
+extern "C" int rust_console_run_script(const char* string);
+extern "C" int rust_console_run_script_locked(
+    const char* string);  // special case from inside a command
+extern "C" void cpp_console_lock();
+extern "C" void cpp_console_unlock();
 
 /* panic shell api */
-void panic_shell_start();
+extern "C" void rust_panic_shell_start();
 
 // Attempt to start the kernel shell.
 // Will return if shell is not started or if shell exits.
-void kernel_shell_init();
+extern "C" void rust_kernel_shell_init();
 
-#if !CONSOLE_ENABLED
+// FFIs
+inline int console_run_script(const char* string) { return rust_console_run_script(string); }
+inline int console_run_script_locked(const char* string) {
+  return rust_console_run_script_locked(string);
+}
+inline void panic_shell_start() { rust_panic_shell_start(); }
+inline void kernel_shell_init() { rust_kernel_shell_init(); }
+
+#else
+
 // Easier to link in stubbed definitions when the console is disabled.
 inline int console_run_script(const char* string) { return 0; }
 inline int console_run_script_locked(const char* string) { return 0; }
 inline void panic_shell_start() {}
 inline void kernel_shell_init() {}
-#endif
+#endif  // CONSOLE_ENABLED
 
 #endif  // ZIRCON_KERNEL_LIB_CONSOLE_INCLUDE_LIB_CONSOLE_H_
