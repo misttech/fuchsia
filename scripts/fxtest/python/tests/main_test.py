@@ -11,6 +11,7 @@ import os
 import re
 import shutil
 import signal
+import subprocess
 import tempfile
 import typing
 import unittest
@@ -1474,6 +1475,187 @@ class TestMainIntegration(unittest.IsolatedAsyncioTestCase):
                 for w in warnings
             )
         )
+
+    async def test_teardown_resources_cleans_up_package_server_and_emulator(
+        self,
+    ) -> None:
+        """Test _teardown_resources cancels package server task and tears down emulator."""
+        app = main.AsyncMain.__new__(main.AsyncMain)
+        recorder = mock.Mock()
+        app._recorder = recorder
+        app._teardown_emulator = mock.AsyncMock(return_value=True)
+
+        package_server_event = asyncio.Event()
+        package_server_task = asyncio.create_task(asyncio.sleep(100))
+        app._package_server_event = package_server_event
+        app._package_server_task = package_server_task
+        app._emu_instance_dir = mock.MagicMock()
+
+        await app._teardown_resources()
+
+        self.assertTrue(package_server_event.is_set())
+        self.assertTrue(package_server_task.done())
+        self.assertIsNone(app._package_server_event)
+        self.assertIsNone(app._package_server_task)
+        app._teardown_emulator.assert_awaited_once()
+
+    async def test_main_wrapper_calls_teardown_resources_on_exception(
+        self,
+    ) -> None:
+        """Test AsyncMain.main guarantees _teardown_resources is called when _main_impl raises."""
+        app = main.AsyncMain.__new__(main.AsyncMain)
+        app._teardown_resources = mock.AsyncMock()
+        app._main_impl = mock.AsyncMock(side_effect=RuntimeError("Boom"))
+
+        with self.assertRaises(RuntimeError):
+            await app.main()
+
+        app._teardown_resources.assert_awaited_once()
+
+    def test_fallback_stop_emulator_success(self) -> None:
+        """Test _fallback_stop_emulator runs subprocess.run with timeout=15 and cleans up instance dir."""
+        app = main.AsyncMain.__new__(main.AsyncMain)
+        app._exec_env = mock.Mock()
+        app._exec_env.fx_cmd_line.side_effect = lambda *args: list(args)
+        mock_tempdir = mock.MagicMock()
+        mock_tempdir.name = "/tmp/test-emu"
+        app._emu_instance_dir = mock_tempdir
+
+        with (
+            mock.patch("main.subprocess.run") as mock_run,
+            mock.patch.dict(os.environ, {"FUCHSIA_NODENAME": "test-node"}),
+        ):
+            app._fallback_stop_emulator()
+            mock_run.assert_called_once_with(
+                [
+                    "ffx",
+                    "--config",
+                    "emu.instance_dir=/tmp/test-emu",
+                    "emu",
+                    "stop",
+                    "test-emu",
+                ],
+                check=False,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                timeout=15,
+            )
+            mock_tempdir.cleanup.assert_called_once()
+            self.assertIsNone(app._emu_instance_dir)
+            self.assertNotIn("FUCHSIA_NODENAME", os.environ)
+
+    def test_fallback_stop_emulator_timeout_and_error(self) -> None:
+        """Test _fallback_stop_emulator cleans up even if subprocess times out and cleanup errors."""
+        app = main.AsyncMain.__new__(main.AsyncMain)
+        app._exec_env = mock.Mock()
+        app._exec_env.fx_cmd_line.side_effect = lambda *args: list(args)
+        mock_tempdir = mock.MagicMock()
+        mock_tempdir.name = "/tmp/test-emu"
+        mock_tempdir.cleanup.side_effect = OSError("Permission denied")
+        app._emu_instance_dir = mock_tempdir
+
+        with (
+            mock.patch(
+                "main.subprocess.run",
+                side_effect=subprocess.TimeoutExpired(
+                    cmd=["ffx", "emu", "stop"], timeout=15
+                ),
+            ),
+            mock.patch.dict(os.environ, {"FUCHSIA_NODENAME": "test-node"}),
+        ):
+            app._fallback_stop_emulator()
+            mock_tempdir.cleanup.assert_called_once()
+            self.assertIsNone(app._emu_instance_dir)
+            self.assertNotIn("FUCHSIA_NODENAME", os.environ)
+
+    async def test_teardown_emulator_success(self) -> None:
+        """Test _teardown_emulator stops emulator with timeout=30.0, unregisters fallback, and cleans up."""
+        app = main.AsyncMain.__new__(main.AsyncMain)
+        recorder = mock.Mock()
+        app._recorder = recorder
+        app._exec_env = mock.Mock()
+        app._exec_env.fx_cmd_line.side_effect = lambda *args: list(args)
+        mock_tempdir = mock.MagicMock()
+        mock_tempdir.name = "/tmp/test-emu"
+        app._emu_instance_dir = mock_tempdir
+
+        with (
+            mock.patch(
+                "main.execution.run_command",
+                return_value=mock.MagicMock(return_code=0),
+            ) as mock_run,
+            mock.patch("main.atexit.unregister") as mock_unregister,
+            mock.patch.dict(os.environ, {"FUCHSIA_NODENAME": "test-node"}),
+        ):
+            result = await app._teardown_emulator()
+            self.assertTrue(result)
+            mock_run.assert_awaited_once_with(
+                "ffx",
+                "--config",
+                "emu.instance_dir=/tmp/test-emu",
+                "emu",
+                "stop",
+                "test-emu",
+                recorder=recorder,
+                timeout=30.0,
+            )
+            mock_unregister.assert_called_once_with(app._fallback_stop_emulator)
+            mock_tempdir.cleanup.assert_called_once()
+            self.assertIsNone(app._emu_instance_dir)
+            self.assertNotIn("FUCHSIA_NODENAME", os.environ)
+
+    async def test_teardown_emulator_on_exception(self) -> None:
+        """Test _teardown_emulator performs cleanup even when run_command raises an error."""
+        app = main.AsyncMain.__new__(main.AsyncMain)
+        recorder = mock.Mock()
+        app._recorder = recorder
+        app._exec_env = mock.Mock()
+        app._exec_env.fx_cmd_line.side_effect = lambda *args: list(args)
+        mock_tempdir = mock.MagicMock()
+        mock_tempdir.name = "/tmp/test-emu"
+        app._emu_instance_dir = mock_tempdir
+
+        with (
+            mock.patch(
+                "main.execution.run_command",
+                side_effect=RuntimeError("Command failed"),
+            ),
+            mock.patch("main.atexit.unregister") as mock_unregister,
+            mock.patch.dict(os.environ, {"FUCHSIA_NODENAME": "test-node"}),
+        ):
+            with self.assertRaises(RuntimeError):
+                await app._teardown_emulator()
+            mock_unregister.assert_called_once_with(app._fallback_stop_emulator)
+            mock_tempdir.cleanup.assert_called_once()
+            self.assertIsNone(app._emu_instance_dir)
+            self.assertNotIn("FUCHSIA_NODENAME", os.environ)
+
+    async def test_teardown_emulator_cleanup_exception(self) -> None:
+        """Test _teardown_emulator logs warning and completes when cleanup raises an exception."""
+        app = main.AsyncMain.__new__(main.AsyncMain)
+        recorder = mock.Mock()
+        app._recorder = recorder
+        app._exec_env = mock.Mock()
+        app._exec_env.fx_cmd_line.side_effect = lambda *args: list(args)
+        mock_tempdir = mock.MagicMock()
+        mock_tempdir.name = "/tmp/test-emu"
+        mock_tempdir.cleanup.side_effect = OSError("Permission denied")
+        app._emu_instance_dir = mock_tempdir
+
+        with (
+            mock.patch(
+                "main.execution.run_command",
+                return_value=mock.MagicMock(return_code=0),
+            ),
+            mock.patch("main.atexit.unregister") as mock_unregister,
+            mock.patch.dict(os.environ, {"FUCHSIA_NODENAME": "test-node"}),
+        ):
+            result = await app._teardown_emulator()
+            self.assertTrue(result)
+            mock_unregister.assert_called_once_with(app._fallback_stop_emulator)
+            mock_tempdir.cleanup.assert_called_once()
+            recorder.emit_warning_message.assert_called_once()
+            self.assertIsNone(app._emu_instance_dir)
 
     async def test_full_success(self) -> None:
         """Test that we can run all tests and report success"""

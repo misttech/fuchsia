@@ -432,6 +432,15 @@ async def do_replay_log(
     return 0
 
 
+def _set_target_nodename(nodename: str | None) -> None:
+    """Set or clear FUCHSIA_NODENAME and clear FUCHSIA_NODENAME_IS_FROM_FILE."""
+    if nodename:
+        os.environ["FUCHSIA_NODENAME"] = nodename
+    else:
+        os.environ.pop("FUCHSIA_NODENAME", None)
+    os.environ.pop("FUCHSIA_NODENAME_IS_FROM_FILE", None)
+
+
 class AsyncMain:
     _ALL_PACKAGE_MANIFESTS_PATH = [
         "all_package_manifests.list",
@@ -471,6 +480,24 @@ class AsyncMain:
         self._emu_instance_dir: tempfile.TemporaryDirectory[str] | None = None
         self._end_execution_request_event = end_execution_request_event
         self._termination_callback_event = termination_callback_event
+        self._package_server_task: asyncio.Task[typing.Any] | None = None
+        self._package_server_event: asyncio.Event | None = None
+
+    async def _teardown_resources(self) -> None:
+        """Tear down all ephemeral resources (emulator, package server) created by this run."""
+        if self._package_server_event and self._package_server_task:
+            self._package_server_event.set()
+            try:
+                await asyncio.wait_for(self._package_server_task, timeout=15.0)
+            except TimeoutError:
+                self._recorder.emit_warning_message(
+                    "Timed out waiting for package server to stop, cancelling task"
+                )
+                self._package_server_task.cancel()
+            self._package_server_event = None
+            self._package_server_task = None
+        if self._emu_instance_dir is not None:
+            await self._teardown_emulator()
 
     async def main(self) -> int:
         """Execute the fx test command through this wrapper.
@@ -478,6 +505,12 @@ class AsyncMain:
         Returns:
             The return code of the program.
         """
+        try:
+            return await self._main_impl()
+        finally:
+            await asyncio.shield(self._teardown_resources())
+
+    async def _main_impl(self) -> int:
         do_status_output_signal: asyncio.Event = asyncio.Event()
         do_output_to_stdout = self._flags.logpath == args.LOG_TO_STDOUT_OPTION
         recorder = self._recorder
@@ -693,39 +726,15 @@ class AsyncMain:
             recorder.emit_end()
             return 0
 
-        # Check if we have a running package server. We do this here so that we
-        # can fail early before running a full build.
         need_emulator = False
         emulator_started = False
         if selections.has_device_test() and not await self._has_active_device():
             need_emulator = True
 
-        package_server_task: asyncio.Task[typing.Any] | None = None
-        package_server_event: asyncio.Event | None = None
-
         async def end_execution(
             error: str | None = None, id: event.Id | None = None
         ) -> None:
-            if (
-                package_server_event is not None
-                and package_server_task is not None
-            ):
-                package_server_event.set()
-                try:
-                    await asyncio.wait_for(package_server_task, timeout=15.0)
-                except TimeoutError:
-                    recorder.emit_warning_message(
-                        "Timed out waiting for package server task to complete."
-                    )
-            if emulator_started:
-                try:
-                    await asyncio.wait_for(
-                        self._teardown_emulator(), timeout=30.0
-                    )
-                except TimeoutError:
-                    recorder.emit_warning_message(
-                        "Timed out waiting for emulator teardown."
-                    )
+            await self._teardown_resources()
             recorder.emit_end(error=error, id=id)
 
         # If enabled, try to build and update the selected tests.
@@ -794,10 +803,7 @@ class AsyncMain:
                 case self._PackageServerBehavior.PRESENT:
                     pass
                 case self._PackageServerBehavior.START:
-                    (
-                        package_server_task,
-                        package_server_event,
-                    ) = self._start_package_server()
+                    self._start_package_server()
 
         if selections.has_device_test() and not flags.list_runtime_deps:
             recorder.emit_info_message("Waiting for repository registration...")
@@ -2134,42 +2140,48 @@ class AsyncMain:
                     quiet_mode=True,
                 )
             )
-            await cancel_event.wait()
             try:
-                deregister_output = await execution.run_command(
-                    *exec_env.fx_cmd_line(
-                        "ffx",
-                        "target",
-                        "repository",
-                        "deregister",
-                        "-r",
-                        repo_name,
-                    ),
-                    recorder=recorder,
-                    quiet_mode=True,
-                    timeout=5.0,
-                )
-                if (
-                    deregister_output is None
-                    or deregister_output.return_code != 0
-                ):
-                    raise RuntimeError(
-                        f"exit code {deregister_output.return_code if deregister_output is not None else -1}"
-                    )
-            except Exception as e:
-                recorder.emit_warning_message(
-                    f"Failed to deregister temporary package repository {repo_name}: {e}"
-                )
+                await cancel_event.wait()
             finally:
-                repo_deregistered_event.set()
                 try:
-                    await asyncio.wait_for(serve_task, timeout=10.0)
-                except TimeoutError:
-                    recorder.emit_warning_message(
-                        f"Timed out waiting for temporary package server ({repo_name}) to stop."
+                    deregister_output = await execution.run_command(
+                        *exec_env.fx_cmd_line(
+                            "ffx",
+                            "target",
+                            "repository",
+                            "deregister",
+                            "-r",
+                            repo_name,
+                        ),
+                        recorder=recorder,
+                        quiet_mode=True,
+                        timeout=5.0,
                     )
+                    if (
+                        deregister_output is None
+                        or deregister_output.return_code != 0
+                    ):
+                        raise RuntimeError(
+                            f"exit code {deregister_output.return_code if deregister_output is not None else -1}"
+                        )
+                except Exception as e:
+                    recorder.emit_warning_message(
+                        f"Failed to deregister temporary package repository {repo_name}: {e}"
+                    )
+                finally:
+                    repo_deregistered_event.set()
+                    try:
+                        await asyncio.wait_for(serve_task, timeout=10.0)
+                    except TimeoutError:
+                        recorder.emit_warning_message(
+                            f"Timed out waiting for temporary package server ({repo_name}) to stop."
+                        )
+                        serve_task.cancel()
 
-        return (asyncio.create_task(impl()), cancel_event)
+        task = asyncio.create_task(impl())
+        self._package_server_task = task
+        self._package_server_event = cancel_event
+        return (task, cancel_event)
 
     async def _get_active_devices(self) -> list[dict[str, typing.Any]]:
         """Fetch the list of active devices from ffx.
@@ -2213,7 +2225,7 @@ class AsyncMain:
         if len(active_devices) == 1:
             nodename = active_devices[0].get("nodename")
             if nodename:
-                os.environ["FUCHSIA_NODENAME"] = nodename
+                _set_target_nodename(nodename)
                 recorder.emit_info_message(
                     f"Found exactly one active device: {nodename}. "
                     "Setting FUCHSIA_NODENAME to target this device."
@@ -2410,7 +2422,7 @@ class AsyncMain:
             return False
 
         recorder.emit_instruction_message(f"Emulator ready at {emu_addr}")
-        os.environ["FUCHSIA_NODENAME"] = emu_addr
+        _set_target_nodename(emu_addr)
         return True
 
     def _get_emu_stop_cmd(self) -> list[str]:
@@ -2431,27 +2443,32 @@ class AsyncMain:
         Returns:
             bool: True if the emulator stops successfully, False otherwise.
         """
-        recorder = self._recorder
         if self._emu_instance_dir is None:
             return True
 
+        recorder = self._recorder
         recorder.emit_instruction_message("\nStopping the headless emulator...")
-        output = await execution.run_command(
-            *self._get_emu_stop_cmd(),
-            recorder=recorder,
-        )
-        atexit.unregister(self._fallback_stop_emulator)
         try:
-            self._emu_instance_dir.cleanup()
-        except Exception as e:
-            recorder.emit_warning_message(
-                "Failed to clean up temporary emulator instance directory at "
-                f"{self._emu_instance_dir.name}: {e}"
+            output = await execution.run_command(
+                *self._get_emu_stop_cmd(),
+                recorder=recorder,
+                timeout=30.0,
             )
-        self._emu_instance_dir = None
-        os.environ.pop("FUCHSIA_NODENAME", None)
-
-        return output is not None and output.return_code == 0
+            if output is None or output.return_code != 0:
+                recorder.emit_warning_message("Failed to stop emulator.")
+                return False
+            return True
+        finally:
+            atexit.unregister(self._fallback_stop_emulator)
+            try:
+                self._emu_instance_dir.cleanup()
+            except Exception as e:
+                recorder.emit_warning_message(
+                    "Failed to clean up temporary emulator instance directory at "
+                    f"{self._emu_instance_dir.name}: {e}"
+                )
+            self._emu_instance_dir = None
+            _set_target_nodename(None)
 
     def _fallback_stop_emulator(self) -> None:
         """Stops the headless emulator synchronously, suitable for atexit."""
@@ -2464,10 +2481,18 @@ class AsyncMain:
                 check=False,
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
-                timeout=5,
+                timeout=15,
             )
         except Exception:
             pass
+        finally:
+            if self._emu_instance_dir is not None:
+                try:
+                    self._emu_instance_dir.cleanup()
+                except Exception:
+                    pass
+                self._emu_instance_dir = None
+            _set_target_nodename(None)
 
 
 @functools.lru_cache
