@@ -36,6 +36,13 @@ def _make_exec_env(
 
 
 class TestExecution(unittest.IsolatedAsyncioTestCase):
+    def setUp(self) -> None:
+        super().setUp()
+        patch = mock.patch.dict(os.environ, {}, clear=False)
+        patch.start()
+        os.environ.pop("FUCHSIA_NODENAME", None)
+        self.addCleanup(patch.stop)
+
     def assertContainsSublist(
         self, target: list[typing.Any], data: list[typing.Any]
     ) -> None:

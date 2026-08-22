@@ -8,6 +8,8 @@ import tempfile
 import unittest
 import unittest.mock as mock
 
+from parameterized import parameterized
+
 import args
 import environment
 
@@ -161,3 +163,122 @@ class TestExecutionEnvironment(unittest.TestCase):
                         default_flags
                     ),
                 )
+
+    @parameterized.expand(
+        [
+            (
+                "unset_ffx",
+                {},
+                ["ffx", "target", "list"],
+                [
+                    "fx",
+                    "--dir",
+                    "/fuchsia/out/default",
+                    "ffx",
+                    "target",
+                    "list",
+                ],
+            ),
+            (
+                "unset_serve",
+                {},
+                ["serve"],
+                ["fx", "--dir", "/fuchsia/out/default", "serve"],
+            ),
+            (
+                "unset_build",
+                {},
+                ["build", "test"],
+                ["fx", "--dir", "/fuchsia/out/default", "build", "test"],
+            ),
+            ("unset_empty", {}, [], ["fx", "--dir", "/fuchsia/out/default"]),
+            (
+                "set_ffx",
+                {"FUCHSIA_NODENAME": "dev"},
+                ["ffx", "target", "list"],
+                [
+                    "fx",
+                    "--dir",
+                    "/fuchsia/out/default",
+                    "-t",
+                    "dev",
+                    "ffx",
+                    "target",
+                    "list",
+                ],
+            ),
+            (
+                "set_serve",
+                {"FUCHSIA_NODENAME": "dev"},
+                ["serve", "-v"],
+                [
+                    "fx",
+                    "--dir",
+                    "/fuchsia/out/default",
+                    "-t",
+                    "dev",
+                    "serve",
+                    "-v",
+                ],
+            ),
+            (
+                "set_build",
+                {"FUCHSIA_NODENAME": "dev"},
+                ["build", "test"],
+                [
+                    "fx",
+                    "--dir",
+                    "/fuchsia/out/default",
+                    "-t",
+                    "dev",
+                    "build",
+                    "test",
+                ],
+            ),
+            (
+                "has_short_flag",
+                {"FUCHSIA_NODENAME": "dev"},
+                ["ffx", "-t", "other", "target", "list"],
+                [
+                    "fx",
+                    "--dir",
+                    "/fuchsia/out/default",
+                    "ffx",
+                    "-t",
+                    "other",
+                    "target",
+                    "list",
+                ],
+            ),
+            (
+                "has_long_flag",
+                {"FUCHSIA_NODENAME": "dev"},
+                ["ffx", "--target", "other", "target", "list"],
+                [
+                    "fx",
+                    "--dir",
+                    "/fuchsia/out/default",
+                    "ffx",
+                    "--target",
+                    "other",
+                    "target",
+                    "list",
+                ],
+            ),
+        ]
+    )
+    def test_fx_cmd_line(
+        self,
+        _name: str,
+        env_dict: dict[str, str],
+        input_args: list[str],
+        expected: list[str],
+    ) -> None:
+        env = environment.ExecutionEnvironment(
+            fuchsia_dir="/fuchsia",
+            out_dir="/fuchsia/out/default",
+            test_json_file="/fuchsia/out/default/tests.json",
+            disabled_ctf_tests_file="/fuchsia/sdk/ctf/disabled_tests.json",
+        )
+        with mock.patch.dict(os.environ, env_dict, clear=True):
+            self.assertEqual(env.fx_cmd_line(*input_args), expected)

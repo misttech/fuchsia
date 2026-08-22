@@ -238,11 +238,13 @@ class ExecutionEnvironment:
             list[str]: The full command line to use.
         """
 
-        return [
-            "fx",
-            "--dir",
-            self.out_dir,
-        ] + list(args)
+        cmd = ["fx", "--dir", self.out_dir]
+        if (target := os.environ.get("FUCHSIA_NODENAME")) and {
+            "-t",
+            "--target",
+        }.isdisjoint(args):
+            cmd.extend(["-t", target])
+        return cmd + list(args)
 
     def __hash__(self) -> int:
         return hash(self.fuchsia_dir)
