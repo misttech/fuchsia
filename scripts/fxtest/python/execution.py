@@ -477,10 +477,12 @@ class TestExecution:
             )
         if self._use_test_pilot():
             if self._device_env is not None:
+                # TODO(https://fxbug.dev/550548948): don't assume x64 host
                 env.update(
                     {
                         "FUCHSIA_DEVICE_ADDR": self._device_env.address,
                         "FUCHSIA_SSH_KEY": self._device_env.private_key_path,
+                        "FUCHSIA_HOST_TOOLS": "./host_x64",
                     }
                 )
             if self._flags.extra_args:
