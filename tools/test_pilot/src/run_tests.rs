@@ -168,7 +168,7 @@ fn create_test_launch_command(
     path_env_var_value: &str,
 ) -> Command {
     create_command(
-        &test_config.host_test_binary,
+        &test_config.resolved_host_test_binary(),
         test_config.resolved_host_test_args(test_config_path),
         path_env_var_value,
     )
@@ -182,7 +182,7 @@ fn create_output_processor_command(
     path_env_var_value: &str,
 ) -> Command {
     create_command(
-        &output_processor.binary,
+        &output_processor.resolved_binary(test_config),
         output_processor.resolved_args(test_config, test_config_path),
         path_env_var_value,
     )

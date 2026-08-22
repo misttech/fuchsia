@@ -68,9 +68,20 @@ impl TestConfig {
         Ok(to_return)
     }
 
+    /// Returns the resolved host test binary path. The path is resolved by performing the
+    /// parameter substitutions of parameter names surrounded with curly braces.
+    pub fn resolved_host_test_binary(&self) -> PathBuf {
+        PathBuf::from(
+            self.format_arg(
+                self.host_test_binary.to_str().expect("host test binary not valid UTF-8"),
+                &PathBuf::new(),
+            )
+            .into_owned(),
+        )
+    }
+
     /// Returns the resolved host test arguments. Arguments are resolved by performing the
     /// parameter substitutions of parameter names surrounded with curly braces.
-    #[allow(dead_code)]
     pub fn resolved_host_test_args<'a>(
         &'a self,
         test_config_file_path: &'a PathBuf,
@@ -99,7 +110,13 @@ impl TestConfig {
 
     /// Validates `self`.
     fn validate(&self) -> Result<(), UsageError> {
-        validate_binary_path(&self.host_test_binary, Name::from_str(HOST_TEST_BINARY_OPTION))?;
+        let host_test_binary_as_str =
+            self.host_test_binary.to_str().expect("host test binary not valid UTF-8");
+        self.validate_arg(host_test_binary_as_str)?;
+        validate_binary_path(
+            &self.resolved_host_test_binary(),
+            Name::from_str(HOST_TEST_BINARY_OPTION),
+        )?;
 
         for arg in &self.host_test_args {
             self.validate_arg(arg)?;
@@ -116,7 +133,10 @@ impl TestConfig {
                 continue;
             }
 
-            validate_binary_path(&output_processor.binary, Name::from_str(BINARY_OPTION))?;
+            validate_binary_path(
+                &output_processor.resolved_binary(&self),
+                Name::from_str(BINARY_OPTION),
+            )?;
 
             for arg in &output_processor.args {
                 self.validate_arg(arg)?;
@@ -257,9 +277,19 @@ pub struct OutputProcessor {
 }
 
 impl OutputProcessor {
+    pub fn resolved_binary(&self, test_config: &TestConfig) -> PathBuf {
+        PathBuf::from(
+            test_config
+                .format_arg(
+                    self.binary.to_str().expect("host test binary not valid UTF-8"),
+                    &PathBuf::new(),
+                )
+                .into_owned(),
+        )
+    }
+
     /// Returns the output processors arguments. Arguments are resolved by performing the
     /// parameter substitutions of parameter names surrounded with curly braces.
-    #[allow(dead_code)]
     pub fn resolved_args<'a>(
         &'a self,
         test_config: &'a TestConfig,
@@ -773,5 +803,217 @@ mod tests {
         assert!(!test_config.parameter_is_defined("host_test_args"));
 
         temp_file.close().expect("Failed to close temporary file");
+    }
+
+    #[test]
+    // Tests `resolved_host_test_binary`.
+    fn test_resolved_host_test_binary() {
+        let temp_file = NamedTempFile::new().expect("Failed to create temporary file");
+        let temp_file_path = temp_file.path().display();
+
+        // Plain binary path without patterns.
+        let fake_env = FakeEnv::new(
+            format!("--host-test-binary={} --output-directory=/out", temp_file_path).as_str(),
+            "",
+        );
+        let result = TestConfig::from_env_like(&fake_env, test_schema(), &mut NullLogger);
+        assert_matches!(result, Ok(_));
+        assert_eq!(
+            result.unwrap().resolved_host_test_binary(),
+            PathBuf::from(format!("{}", temp_file_path))
+        );
+
+        // Pattern substitution with custom parameter.
+        let fake_env = FakeEnv::new(
+            format!("--host-test-binary={{foo}} --output-directory=/out --foo={}", temp_file_path)
+                .as_str(),
+            "",
+        );
+        let result = TestConfig::from_env_like(&fake_env, test_schema(), &mut NullLogger);
+        assert_matches!(result, Ok(_));
+        assert_eq!(
+            result.unwrap().resolved_host_test_binary(),
+            PathBuf::from(format!("{}", temp_file_path))
+        );
+
+        // Multiple pattern substitutions.
+        let mut test_config = TestConfig {
+            host_test_binary: PathBuf::from("{foo}/{bar}/{baz}"),
+            output_directory: PathBuf::from("/out"),
+            ..Default::default()
+        };
+        test_config.unknown.insert("foo".to_string(), Value::String("bin".to_string()));
+        test_config.unknown.insert("bar".to_string(), Value::String("dir".to_string()));
+        test_config.unknown.insert("baz".to_string(), Value::String("test_bin".to_string()));
+        assert_eq!(test_config.resolved_host_test_binary(), PathBuf::from("bin/dir/test_bin"));
+
+        // Substitution of output_directory.
+        let test_config = TestConfig {
+            host_test_binary: PathBuf::from("{output_directory}/binary"),
+            output_directory: PathBuf::from("/custom_out"),
+            ..Default::default()
+        };
+        assert_eq!(test_config.resolved_host_test_binary(), PathBuf::from("/custom_out/binary"));
+
+        temp_file.close().expect("Failed to close temporary file");
+    }
+
+    #[test]
+    // Tests `OutputProcessor::resolved_binary`.
+    fn test_output_processor_resolved_binary() {
+        let test_config = TestConfig {
+            host_test_binary: PathBuf::from("/bin/host_test"),
+            output_directory: PathBuf::from("/out/dir"),
+            unknown: [
+                ("processor_dir".to_string(), Value::String("/tools/bin".to_string())),
+                ("processor_name".to_string(), Value::String("resummarize".to_string())),
+            ]
+            .into_iter()
+            .collect(),
+            ..Default::default()
+        };
+
+        // Plain binary path.
+        let output_processor =
+            OutputProcessor { binary: PathBuf::from("/usr/bin/processor"), ..Default::default() };
+        assert_eq!(
+            output_processor.resolved_binary(&test_config),
+            PathBuf::from("/usr/bin/processor")
+        );
+
+        // Pattern substitution with custom parameter.
+        let output_processor = OutputProcessor {
+            binary: PathBuf::from("{processor_dir}/{processor_name}"),
+            ..Default::default()
+        };
+        assert_eq!(
+            output_processor.resolved_binary(&test_config),
+            PathBuf::from("/tools/bin/resummarize")
+        );
+
+        // Built-in parameters {host_test_binary} and {output_directory}.
+        let output_processor = OutputProcessor {
+            binary: PathBuf::from("{output_directory}/post_process"),
+            ..Default::default()
+        };
+        assert_eq!(
+            output_processor.resolved_binary(&test_config),
+            PathBuf::from("/out/dir/post_process")
+        );
+
+        let output_processor = OutputProcessor {
+            binary: PathBuf::from("{host_test_binary}_post"),
+            ..Default::default()
+        };
+        assert_eq!(
+            output_processor.resolved_binary(&test_config),
+            PathBuf::from("/bin/host_test_post")
+        );
+    }
+
+    #[test]
+    // Tests validation of resolved binaries for host_test_binary and output_processors.
+    fn test_validate_resolved_binaries() {
+        let binary_temp_file = NamedTempFile::new().expect("Failed to create temporary file");
+        let binary_temp_file_path = binary_temp_file.path().display().to_string();
+
+        let processor_temp_file = NamedTempFile::new().expect("Failed to create temporary file");
+        let processor_temp_file_path = processor_temp_file.path().display().to_string();
+
+        // Host test binary with pattern resolving to an existing file passes validation.
+        let fake_env = FakeEnv::new(
+            format!(
+                "--host-test-binary={{foo}} --output-directory=/out --foo={}",
+                binary_temp_file_path
+            )
+            .as_str(),
+            "",
+        );
+        let result = TestConfig::from_env_like(&fake_env, test_schema(), &mut NullLogger);
+        assert_matches!(result, Ok(_));
+
+        // Host test binary with pattern resolving to a non-existent file fails validation.
+        let fake_env = FakeEnv::new(
+            "--host-test-binary={foo} --output-directory=/out --foo=/nonexistent/binary",
+            "",
+        );
+        let result = TestConfig::from_env_like(&fake_env, test_schema(), &mut NullLogger);
+        assert_usage_error(
+            result,
+            UsageError::BinaryDoesNotExist {
+                option: Name::from_str(HOST_TEST_BINARY_OPTION),
+                path: PathBuf::from("/nonexistent/binary"),
+            },
+        );
+
+        // Output processor with resolved binary that exists passes validation.
+        let mut test_config = TestConfig {
+            host_test_binary: PathBuf::from(&binary_temp_file_path),
+            output_directory: PathBuf::from("/out"),
+            output_processors: vec![OutputProcessor {
+                binary: PathBuf::from("{proc_path}"),
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+        test_config
+            .unknown
+            .insert("proc_path".to_string(), Value::String(processor_temp_file_path.clone()));
+        assert_matches!(test_config.validate(), Ok(()));
+
+        // Output processor with resolved binary that does not exist fails validation.
+        let mut test_config = TestConfig {
+            host_test_binary: PathBuf::from(&binary_temp_file_path),
+            output_directory: PathBuf::from("/out"),
+            output_processors: vec![OutputProcessor {
+                binary: PathBuf::from("{proc_path}"),
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+        test_config
+            .unknown
+            .insert("proc_path".to_string(), Value::String("/nonexistent/processor".to_string()));
+        assert_matches!(
+            test_config.validate(),
+            Err(UsageError::BinaryDoesNotExist { option, path })
+                if option == Name::from_str(BINARY_OPTION) && path == PathBuf::from("/nonexistent/processor")
+        );
+
+        // Output processor with non-existent binary is skipped if use_if_defined condition is not met.
+        let test_config = TestConfig {
+            host_test_binary: PathBuf::from(&binary_temp_file_path),
+            output_directory: PathBuf::from("/out"),
+            output_processors: vec![OutputProcessor {
+                binary: PathBuf::from("/nonexistent/processor"),
+                use_if_defined: vec!["undefined_parameter".to_string()],
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+        assert_matches!(test_config.validate(), Ok(()));
+
+        // Output processor with non-existent binary is validated and fails if use_if_defined condition is met.
+        let mut test_config = TestConfig {
+            host_test_binary: PathBuf::from(&binary_temp_file_path),
+            output_directory: PathBuf::from("/out"),
+            output_processors: vec![OutputProcessor {
+                binary: PathBuf::from("/nonexistent/processor"),
+                use_if_defined: vec!["defined_parameter".to_string()],
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+        test_config
+            .unknown
+            .insert("defined_parameter".to_string(), Value::String("some_value".to_string()));
+        assert_matches!(
+            test_config.validate(),
+            Err(UsageError::BinaryDoesNotExist { option, path })
+                if option == Name::from_str(BINARY_OPTION) && path == PathBuf::from("/nonexistent/processor")
+        );
+
+        binary_temp_file.close().expect("Failed to close temporary file");
+        processor_temp_file.close().expect("Failed to close temporary file");
     }
 }
