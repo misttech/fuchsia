@@ -37,6 +37,9 @@ import test_list_file
 # values in build files, but most tests use this default timeout of 5 minutes.
 DEFAULT_TIMEOUT = 5 * 60
 
+# Bounded timeout for target device discovery, address resolution, and ssh key lookups.
+_DEVICE_PROBE_TIMEOUT_SECONDS: float = 30.0
+
 
 class TestExecutionError(Exception):
     """Base error type for test failures."""
@@ -793,6 +796,7 @@ async def get_device_environment_from_exec_env(
     wait_output = await run_command(
         *exec_env.fx_cmd_line("ffx", "target", "wait", "-t", "10"),
         recorder=recorder,
+        timeout=_DEVICE_PROBE_TIMEOUT_SECONDS,
     )
     if not wait_output or wait_output.return_code != 0:
         raise DeviceConfigError("Failed to wait for target to become reachable")
@@ -800,6 +804,7 @@ async def get_device_environment_from_exec_env(
     target_output = await run_command(
         *exec_env.fx_cmd_line("ffx", "target", "default", "get"),
         recorder=recorder,
+        timeout=_DEVICE_PROBE_TIMEOUT_SECONDS,
     )
     if not target_output or target_output.return_code != 0:
         raise DeviceConfigError(
@@ -817,6 +822,7 @@ async def get_device_environment_from_exec_env(
             target_name,
         ),
         recorder=recorder,
+        timeout=_DEVICE_PROBE_TIMEOUT_SECONDS,
     )
 
     if (
@@ -849,6 +855,7 @@ async def get_device_environment_from_exec_env(
             "ssh.priv",
         ),
         recorder=recorder,
+        timeout=_DEVICE_PROBE_TIMEOUT_SECONDS,
     )
     if not ssh_key_output or ssh_key_output.return_code != 0:
         msg = "No return information"

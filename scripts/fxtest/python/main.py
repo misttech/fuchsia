@@ -47,6 +47,13 @@ import selection_types
 import test_list_file
 import tests_json_file
 
+# Subprocess and probe timeout constants in seconds.
+_DEFAULT_PROBE_TIMEOUT_SECONDS: float = 30.0
+_PACKAGE_SERVER_PROBE_TIMEOUT_SECONDS: float = 15.0
+_DEFAULT_EMU_START_TIMEOUT_SECONDS: float = 60.0
+_EMU_START_TIMEOUT_PADDING_SECONDS: float = 15.0
+_TARGET_WAIT_TIMEOUT_SECONDS: float = 30.0
+
 
 def main() -> None:
     # Main entrypoint.
@@ -2197,6 +2204,7 @@ class AsyncMain:
             *exec_env.fx_cmd_line("ffx", "--machine", "json", "target", "list"),
             recorder=recorder,
             quiet_mode=True,
+            timeout=_DEFAULT_PROBE_TIMEOUT_SECONDS,
         )
         if output is None or output.return_code != 0:
             return []
@@ -2250,6 +2258,7 @@ class AsyncMain:
                 *exec_env.fx_cmd_line("ffx", "target", "default", "get"),
                 recorder=recorder,
                 quiet_mode=True,
+                timeout=_DEFAULT_PROBE_TIMEOUT_SECONDS,
             )
             if default_output and default_output.return_code == 0:
                 target = default_output.stdout.strip()
@@ -2260,6 +2269,7 @@ class AsyncMain:
                 *exec_env.fx_cmd_line("ffx", "-t", target, "target", "echo"),
                 recorder=recorder,
                 quiet_mode=True,
+                timeout=_DEFAULT_PROBE_TIMEOUT_SECONDS,
             )
             if echo_output and echo_output.return_code == 0:
                 return True
@@ -2281,6 +2291,7 @@ class AsyncMain:
                     ),
                     recorder=recorder,
                     quiet_mode=True,
+                    timeout=_PACKAGE_SERVER_PROBE_TIMEOUT_SECONDS,
                 )
                 if (
                     output is not None
@@ -2320,6 +2331,7 @@ class AsyncMain:
             ),
             recorder=recorder,
             quiet_mode=True,
+            timeout=_DEFAULT_PROBE_TIMEOUT_SECONDS,
         )
         if not target_list_output or target_list_output.return_code != 0:
             return None
@@ -2342,6 +2354,40 @@ class AsyncMain:
         except json.JSONDecodeError:
             pass
         return None
+
+    async def _get_emu_start_timeout(
+        self, config_args: tuple[str, ...]
+    ) -> float:
+        """Query configured emulator start timeout from ffx config.
+
+        Args:
+            config_args (tuple[str, ...]): Config arguments for ffx.
+
+        Returns:
+            float: The configured timeout in seconds, or the default timeout if not configured or invalid.
+        """
+        recorder = self._recorder
+        exec_env = self._exec_env
+        assert exec_env is not None
+
+        output = await execution.run_command(
+            *exec_env.fx_cmd_line(
+                "ffx",
+                *config_args,
+                "config",
+                "get",
+                "emu.start.timeout",
+            ),
+            recorder=recorder,
+            timeout=_DEFAULT_PROBE_TIMEOUT_SECONDS,
+        )
+        if output is not None and output.return_code == 0:
+            try:
+                return float(output.stdout.strip().strip('"'))
+            except ValueError:
+                pass
+
+        return _DEFAULT_EMU_START_TIMEOUT_SECONDS
 
     async def _start_emulator(self) -> bool:
         """Start a headless emulator.
@@ -2370,6 +2416,12 @@ class AsyncMain:
         recorder.emit_instruction_message(
             "\nNo active device detected. Starting a headless emulator..."
         )
+
+        # Query configured emulator start timeout from ffx config (defaulting to 60.0s)
+        # and allow padding for start command execution.
+        emu_timeout = await self._get_emu_start_timeout(config_args)
+
+        start_timeout = emu_timeout + _EMU_START_TIMEOUT_PADDING_SECONDS
         output = await execution.run_command(
             *exec_env.fx_cmd_line(
                 "ffx",
@@ -2383,6 +2435,7 @@ class AsyncMain:
                 emu_name,
             ),
             recorder=recorder,
+            timeout=start_timeout,
         )
         if output is None or output.return_code != 0:
             recorder.emit_warning_message("Failed to start emulator.")
@@ -2402,8 +2455,11 @@ class AsyncMain:
                 emu_name,
                 "target",
                 "wait",
+                "-t",
+                str(int(_TARGET_WAIT_TIMEOUT_SECONDS)),
             ),
             recorder=recorder,
+            timeout=_TARGET_WAIT_TIMEOUT_SECONDS,
         )
         if wait_output is None or wait_output.return_code != 0:
             recorder.emit_warning_message(
@@ -2452,7 +2508,7 @@ class AsyncMain:
             output = await execution.run_command(
                 *self._get_emu_stop_cmd(),
                 recorder=recorder,
-                timeout=30.0,
+                timeout=_DEFAULT_PROBE_TIMEOUT_SECONDS,
             )
             if output is None or output.return_code != 0:
                 recorder.emit_warning_message("Failed to stop emulator.")
@@ -2500,12 +2556,14 @@ async def has_package_server_connected_to_device(
     exec_env: environment.ExecutionEnvironment,
     recorder: event.EventRecorder,
     parent: event.Id | None = None,
+    timeout: float = _PACKAGE_SERVER_PROBE_TIMEOUT_SECONDS,
 ) -> bool:
     """Check if a device is connected for running target tests.
 
     Args:
         recorder (event.EventRecorder): Recorder for events.
         parent (event.Id, optional): Parent task ID. Defaults to None.
+        timeout (float, optional): Subprocess timeout in seconds.
 
     Returns:
         bool: True only if a device is available to run target tests.
@@ -2516,6 +2574,7 @@ async def has_package_server_connected_to_device(
         ),
         recorder=recorder,
         parent=parent,
+        timeout=timeout,
     )
     return output is not None and output.return_code == 0
 

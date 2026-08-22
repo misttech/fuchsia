@@ -952,6 +952,56 @@ class TestMainIntegration(unittest.IsolatedAsyncioTestCase):
         missing = await app._resolve_target_ip("other-emu")
         self.assertIsNone(missing)
 
+    @mock.patch("main.execution.run_command")
+    async def test_get_emu_start_timeout(
+        self, mock_run_command: mock.AsyncMock
+    ) -> None:
+        """Test _get_emu_start_timeout covers success, non-zero return code, invalid string, and timeout."""
+        app = main.AsyncMain.__new__(main.AsyncMain)
+        app._recorder = mock.Mock()
+        app._exec_env = mock.Mock()
+        app._exec_env.fx_cmd_line.side_effect = lambda *args: list(args)
+
+        config_args = ("--config", "emu.instance_dir=/tmp/fxtest-emu")
+
+        # 1. Successful query returning configured float.
+        mock_run_command.return_value = mock.MagicMock(
+            return_code=0, stdout='  "120.0" \n'
+        )
+        timeout = await app._get_emu_start_timeout(config_args)
+        self.assertEqual(timeout, 120.0)
+        mock_run_command.assert_called_once_with(
+            "ffx",
+            *config_args,
+            "config",
+            "get",
+            "emu.start.timeout",
+            recorder=app._recorder,
+            timeout=main._DEFAULT_PROBE_TIMEOUT_SECONDS,
+        )
+
+        # 2. Non-zero return code falling back to default.
+        mock_run_command.reset_mock()
+        mock_run_command.return_value = mock.MagicMock(
+            return_code=1, stdout="120.0"
+        )
+        timeout = await app._get_emu_start_timeout(config_args)
+        self.assertEqual(timeout, main._DEFAULT_EMU_START_TIMEOUT_SECONDS)
+
+        # 3. Invalid string output falling back to default.
+        mock_run_command.reset_mock()
+        mock_run_command.return_value = mock.MagicMock(
+            return_code=0, stdout="invalid-timeout"
+        )
+        timeout = await app._get_emu_start_timeout(config_args)
+        self.assertEqual(timeout, main._DEFAULT_EMU_START_TIMEOUT_SECONDS)
+
+        # 4. Command timeout returning None falling back to default.
+        mock_run_command.reset_mock()
+        mock_run_command.return_value = None
+        timeout = await app._get_emu_start_timeout(config_args)
+        self.assertEqual(timeout, main._DEFAULT_EMU_START_TIMEOUT_SECONDS)
+
     async def test_missing_package_merkle_hash_fails_before_emulator_start(
         self,
     ) -> None:
@@ -3411,6 +3461,7 @@ class TestMainIntegration(unittest.IsolatedAsyncioTestCase):
             "get",
             recorder=app._recorder,
             quiet_mode=True,
+            timeout=30.0,
         )
         mock_run_command.assert_any_call(
             "ffx",
@@ -3420,6 +3471,7 @@ class TestMainIntegration(unittest.IsolatedAsyncioTestCase):
             "echo",
             recorder=app._recorder,
             quiet_mode=True,
+            timeout=30.0,
         )
 
         # Case 2: Specific target is unreachable, fallback succeeds with active device.
@@ -3483,6 +3535,7 @@ class TestMainIntegration(unittest.IsolatedAsyncioTestCase):
             "echo",
             recorder=app._recorder,
             quiet_mode=True,
+            timeout=30.0,
         )
 
     @mock.patch("execution.run_command")
