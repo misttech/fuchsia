@@ -13,6 +13,7 @@ pub mod interfaces;
 pub mod ndp;
 pub mod nud;
 pub mod packets;
+pub mod pcap;
 pub mod ping;
 #[macro_use]
 pub mod realms;

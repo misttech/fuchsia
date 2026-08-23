@@ -23,27 +23,12 @@ use net_declare::fidl_subnet;
 use netstack_testing_common::realms::{Netstack3, TestSandboxExt as _};
 use test_case::test_case;
 
-struct TestRealmConnector<'a> {
-    realm: &'a netemul::TestRealm<'a>,
-}
-
-#[async_trait::async_trait]
-impl<'a, P: fidl::endpoints::DiscoverableProtocolMarker> net_cli::ServiceConnector<P>
-    for TestRealmConnector<'a>
-{
-    async fn connect(
-        &self,
-    ) -> Result<<P as fidl::endpoints::ProtocolMarker>::Proxy, anyhow::Error> {
-        self.realm.connect_to_protocol::<P>()
-    }
-}
-
 async fn run_command(realm: &netemul::TestRealm<'_>, args: &[&'static str]) -> Result<()> {
     net_cli::do_root(
         writer::JsonWriter::new(None),
         net_cli::Command::from_args(&["net"], &[&["filter"], args].concat())
             .expect("should parse args successfully"),
-        &TestRealmConnector { realm },
+        &crate::TestRealmConnector { realm },
         &crate::TestDeps,
     )
     .await

@@ -17,70 +17,11 @@ use futures::StreamExt as _;
 
 use net_declare::{fidl_subnet, net_ip_v4, std_ip_v4};
 use netemul::RealmUdpSocket as _;
+use netstack_testing_common::pcap as pcap_helper;
 use netstack_testing_common::realms::{Netstack3, TestRealmExt as _, TestSandboxExt as _};
 use netstack_testing_macros::netstack_test;
 use packet::ParsablePacket as _;
 use test_case::test_case;
-
-async fn send_and_recv_udp(
-    realm: &netemul::TestRealm<'_>,
-    bind_addr: std::net::SocketAddr,
-    payload: &[u8],
-) {
-    let sock =
-        fasync::net::UdpSocket::bind_in_realm(realm, bind_addr).await.expect("create socket");
-    let sent = sock.send_to(payload, bind_addr).await.expect("send_to failed");
-    assert_eq!(sent, payload.len());
-
-    let mut recv_buf = vec![0u8; payload.len()];
-    let (received, from_addr) = sock.recv_from(&mut recv_buf).await.expect("recv_from failed");
-    assert_eq!(received, payload.len());
-    assert_eq!(recv_buf.as_slice(), payload);
-    assert_eq!(from_addr, bind_addr);
-}
-
-fn assert_udp_packets<'a>(
-    packets_iter: pcap::PcapNgPacketIter<'a>,
-    expected_packets: &[(net_types::ip::Ipv4Addr, u16, &[u8])],
-) {
-    let packets = packets_iter.collect::<Result<Vec<_>, _>>().expect("EPB parse error");
-
-    assert_eq!(packets.len(), expected_packets.len());
-
-    for (epb, expected) in packets.into_iter().zip(expected_packets) {
-        let (expected_ip, expected_port, expected_payload) = expected;
-        assert_eq!(epb.interface_id, 0);
-        assert_eq!(usize::try_from(epb.original_length).unwrap(), epb.packet_data.len());
-        assert_eq!(usize::try_from(epb.captured_length).unwrap(), epb.packet_data.len());
-        let buf = &epb.packet_data;
-        let (mut body, _src_mac, _dst_mac, src_ip, dst_ip, proto, _ttl) =
-            packet_formats::testutil::parse_ip_packet_in_ethernet_frame::<net_types::ip::Ipv4>(
-                &buf,
-                packet_formats::ethernet::EthernetFrameLengthCheck::NoCheck,
-            )
-            .expect("failed to parse IP packet");
-
-        assert_eq!(proto, packet_formats::ip::Ipv4Proto::Proto(packet_formats::ip::IpProto::Udp));
-        let udp = packet_formats::udp::UdpPacket::parse(
-            &mut body,
-            packet_formats::udp::UdpParseArgs::with_context(
-                src_ip,
-                dst_ip,
-                // Transport-layer checksums aren't computed for packets sent over
-                // the loopback interface (which is the case for packets sent via
-                // `send_and_recv_udp`) so we skip validation here.
-                packet_formats::testutil::ForceSkipChecksumValidation(true),
-            ),
-        )
-        .expect("failed to parse UDP packet");
-
-        assert_eq!(udp.src_port().map(|p| p.get()), Some(*expected_port));
-        assert_eq!(udp.dst_port().get(), *expected_port);
-        assert_eq!(src_ip, *expected_ip);
-        assert_eq!(dst_ip, *expected_ip);
-        assert_eq!(body, *expected_payload);
-    }
-}
 
 async fn setup_interface<'a>(
     realm: &netemul::TestRealm<'a>,
@@ -151,8 +92,18 @@ async fn rolling_packet_capture_test(name: &str, use_bpf: bool) {
     const PORT2: u16 = 54321;
     const PAYLOAD1: [u8; 4] = [1, 2, 3, 4];
     const PAYLOAD2: [u8; 4] = [5, 6, 7, 8];
-    send_and_recv_udp(&realm, (std_ip_v4!("127.0.0.1"), PORT1).into(), &PAYLOAD1).await;
-    send_and_recv_udp(&realm, (std_ip_v4!("127.0.0.1"), PORT2).into(), &PAYLOAD2).await;
+    pcap_helper::send_udp_to_self_and_recv(
+        &realm,
+        (std_ip_v4!("127.0.0.1"), PORT1).into(),
+        &PAYLOAD1,
+    )
+    .await;
+    pcap_helper::send_udp_to_self_and_recv(
+        &realm,
+        (std_ip_v4!("127.0.0.1"), PORT2).into(),
+        &PAYLOAD2,
+    )
+    .await;
 
     // Stop and download.
     let (file_client, file_server) = fidl::endpoints::create_endpoints();
@@ -185,17 +136,37 @@ async fn rolling_packet_capture_test(name: &str, use_bpf: bool) {
     );
 
     if use_bpf {
-        assert_udp_packets(
+        pcap_helper::assert_udp_packets(
             cap.packet_blocks(),
-            &[(net_declare::net_ip_v4!("127.0.0.1"), PORT1, &PAYLOAD1[..])],
+            &[pcap_helper::ExpectedUdpPacket {
+                src_ip: net_declare::net_ip_v4!("127.0.0.1"),
+                dst_ip: net_declare::net_ip_v4!("127.0.0.1"),
+                src_port: PORT1,
+                dst_port: PORT1,
+                payload: &PAYLOAD1,
+            }],
+            true, /* force_skip_checksum_validation */
         );
     } else {
-        assert_udp_packets(
+        pcap_helper::assert_udp_packets(
             cap.packet_blocks(),
             &[
-                (net_declare::net_ip_v4!("127.0.0.1"), PORT1, &PAYLOAD1[..]),
-                (net_declare::net_ip_v4!("127.0.0.1"), PORT2, &PAYLOAD2[..]),
+                pcap_helper::ExpectedUdpPacket {
+                    src_ip: net_declare::net_ip_v4!("127.0.0.1"),
+                    dst_ip: net_declare::net_ip_v4!("127.0.0.1"),
+                    src_port: PORT1,
+                    dst_port: PORT1,
+                    payload: &PAYLOAD1,
+                },
+                pcap_helper::ExpectedUdpPacket {
+                    src_ip: net_declare::net_ip_v4!("127.0.0.1"),
+                    dst_ip: net_declare::net_ip_v4!("127.0.0.1"),
+                    src_port: PORT2,
+                    dst_port: PORT2,
+                    payload: &PAYLOAD2,
+                },
             ],
+            true, /* force_skip_checksum_validation */
         );
     };
 }
@@ -237,8 +208,18 @@ async fn packet_capture_multiple_interfaces_test(name: &str) {
     const PAYLOAD1: [u8; 4] = [1, 2, 3, 4];
     const PAYLOAD2: [u8; 4] = [5, 6, 7, 8];
 
-    send_and_recv_udp(&realm, (std_ip_v4!("192.0.2.1"), PORT).into(), &PAYLOAD1).await;
-    send_and_recv_udp(&realm, (std_ip_v4!("192.0.2.2"), PORT).into(), &PAYLOAD2).await;
+    pcap_helper::send_udp_to_self_and_recv(
+        &realm,
+        (std_ip_v4!("192.0.2.1"), PORT).into(),
+        &PAYLOAD1,
+    )
+    .await;
+    pcap_helper::send_udp_to_self_and_recv(
+        &realm,
+        (std_ip_v4!("192.0.2.2"), PORT).into(),
+        &PAYLOAD2,
+    )
+    .await;
 
     // Stop and download.
     let (file_client, file_server) = fidl::endpoints::create_endpoints();
@@ -249,9 +230,16 @@ async fn packet_capture_multiple_interfaces_test(name: &str) {
     let cap = pcap::parse_pcapng(&bytes).expect("could not parse file with pcap library");
 
     // Verify capture contains PAYLOAD1 but not PAYLOAD2.
-    assert_udp_packets(
+    pcap_helper::assert_udp_packets(
         cap.packet_blocks(),
-        &[(net_declare::net_ip_v4!("192.0.2.1"), PORT, &PAYLOAD1[..])],
+        &[pcap_helper::ExpectedUdpPacket {
+            src_ip: net_declare::net_ip_v4!("192.0.2.1"),
+            dst_ip: net_declare::net_ip_v4!("192.0.2.1"),
+            src_port: PORT,
+            dst_port: PORT,
+            payload: &PAYLOAD1,
+        }],
+        true, /* force_skip_checksum_validation */
     );
 }
 
@@ -536,7 +524,7 @@ async fn rolling_packet_capture_detach_reconnect_test(name: &str) {
         std::net::IpAddr::V4(std::net::Ipv4Addr::new(127, 0, 0, 1)),
         12345,
     );
-    send_and_recv_udp(&realm, bind_addr, payload).await;
+    pcap_helper::send_udp_to_self_and_recv(&realm, bind_addr, payload).await;
 
     let channel = provider
         .reconnect_rolling(capture_name)
@@ -579,15 +567,25 @@ async fn rolling_packet_capture_detach_reconnect_test(name: &str) {
     let fnet_debug::RollingPacketCaptureEvent::OnEnded { reason } = event;
     assert_eq!(reason, fnet_debug::PacketCaptureEndReason::UserRequest);
 
-    let (file_client2, file_server) = fidl::endpoints::create_endpoints();
-    rolling_proxy.stop_and_download(file_server).expect("stop_and_download failed");
+    let (file_client2, file_server2) = fidl::endpoints::create_endpoints();
+    rolling_proxy.stop_and_download(file_server2).expect("stop_and_download failed");
     let file_proxy2 = file_client2.into_proxy();
     for file_proxy in [&file_proxy1, &file_proxy2] {
         let bytes = fuchsia_fs::file::read(file_proxy).await.expect("read file failed");
         let cap = pcap::parse_pcapng(&bytes).expect("could not parse file with pcap library");
 
-        let expected_packets = [(net_ip_v4!("127.0.0.1"), 12345, payload.as_slice())];
-        assert_udp_packets(cap.packet_blocks(), &expected_packets);
+        let expected_packets = [pcap_helper::ExpectedUdpPacket {
+            src_ip: net_ip_v4!("127.0.0.1"),
+            dst_ip: net_ip_v4!("127.0.0.1"),
+            src_port: 12345,
+            dst_port: 12345,
+            payload: payload.as_slice(),
+        }];
+        pcap_helper::assert_udp_packets(
+            cap.packet_blocks(),
+            &expected_packets,
+            true, /* force_skip_checksum_validation */
+        );
     }
 
     rolling_proxy.discard().await.expect("discard FIDL");
@@ -634,7 +632,12 @@ async fn packet_capture_interface_removed_test(name: &str, disconnect_before_rem
     // Bind socket and send a packet.
     const PORT: u16 = 9876;
     const PAYLOAD: [u8; 4] = [1, 2, 3, 4];
-    send_and_recv_udp(&realm, (std_ip_v4!("192.0.2.1"), PORT).into(), &PAYLOAD).await;
+    pcap_helper::send_udp_to_self_and_recv(
+        &realm,
+        (std_ip_v4!("192.0.2.1"), PORT).into(),
+        &PAYLOAD,
+    )
+    .await;
 
     let capture_name = "interface_removed_test";
 
@@ -676,9 +679,16 @@ async fn packet_capture_interface_removed_test(name: &str, disconnect_before_rem
     let cap = pcap::parse_pcapng(&bytes).expect("could not parse file with pcap library");
 
     // Verify capture contains the UDP packet.
-    assert_udp_packets(
+    pcap_helper::assert_udp_packets(
         cap.packet_blocks(),
-        &[(net_declare::net_ip_v4!("192.0.2.1"), PORT, &PAYLOAD[..])],
+        &[pcap_helper::ExpectedUdpPacket {
+            src_ip: net_declare::net_ip_v4!("192.0.2.1"),
+            dst_ip: net_declare::net_ip_v4!("192.0.2.1"),
+            src_port: PORT,
+            dst_port: PORT,
+            payload: &PAYLOAD,
+        }],
+        true, /* force_skip_checksum_validation */
     );
 
     // Discard and clean up.
@@ -712,7 +722,12 @@ async fn packet_capture_interface_removed_after_stop_and_download_test(name: &st
 
     const PORT: u16 = 9876;
     const PAYLOAD: [u8; 4] = [1, 2, 3, 4];
-    send_and_recv_udp(&realm, (std_ip_v4!("192.0.2.1"), PORT).into(), &PAYLOAD).await;
+    pcap_helper::send_udp_to_self_and_recv(
+        &realm,
+        (std_ip_v4!("192.0.2.1"), PORT).into(),
+        &PAYLOAD,
+    )
+    .await;
 
     let (file_client, file_server) = fidl::endpoints::create_endpoints();
     rolling_proxy.stop_and_download(file_server).expect("stop_and_download failed");
@@ -732,9 +747,16 @@ async fn packet_capture_interface_removed_after_stop_and_download_test(name: &st
     let bytes = fuchsia_fs::file::read(&file_proxy).await.expect("read file failed");
     let cap = pcap::parse_pcapng(&bytes).expect("could not parse file with pcap library");
 
-    assert_udp_packets(
+    pcap_helper::assert_udp_packets(
         cap.packet_blocks(),
-        &[(net_declare::net_ip_v4!("192.0.2.1"), PORT, &PAYLOAD[..])],
+        &[pcap_helper::ExpectedUdpPacket {
+            src_ip: net_declare::net_ip_v4!("192.0.2.1"),
+            dst_ip: net_declare::net_ip_v4!("192.0.2.1"),
+            src_port: PORT,
+            dst_port: PORT,
+            payload: &PAYLOAD,
+        }],
+        true, /* force_skip_checksum_validation */
     );
 
     rolling_proxy.discard().await.expect("discard failed");

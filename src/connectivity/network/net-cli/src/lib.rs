@@ -62,6 +62,7 @@ use std::str::FromStr as _;
 use writer::ToolIO as _;
 use zx_status as zx;
 
+pub use capture::DEFAULT_CAPTURE_NAME;
 pub use opts::{
     Command, CommandEnum, UserFacingError, underlying_user_facing_error, user_facing_error,
 };

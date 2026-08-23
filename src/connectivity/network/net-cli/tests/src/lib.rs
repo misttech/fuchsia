@@ -11,6 +11,7 @@
 
 #![cfg(test)]
 
+mod capture;
 mod filter;
 
 use std::collections::HashMap;
@@ -46,6 +47,21 @@ impl<'a, P: fidl::endpoints::DiscoverableProtocolMarker> net_cli::ServiceConnect
         &self,
     ) -> Result<<P as fidl::endpoints::ProtocolMarker>::Proxy, anyhow::Error> {
         Ok(connect_to_hermetic_network_realm_protocol::<P>(self.realm).await)
+    }
+}
+
+struct TestRealmConnector<'a> {
+    pub(crate) realm: &'a netemul::TestRealm<'a>,
+}
+
+#[async_trait::async_trait]
+impl<'a, P: fidl::endpoints::DiscoverableProtocolMarker> net_cli::ServiceConnector<P>
+    for TestRealmConnector<'a>
+{
+    async fn connect(
+        &self,
+    ) -> Result<<P as fidl::endpoints::ProtocolMarker>::Proxy, anyhow::Error> {
+        self.realm.connect_to_protocol::<P>()
     }
 }
 

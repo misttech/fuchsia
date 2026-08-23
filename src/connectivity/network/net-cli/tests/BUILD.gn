@@ -18,6 +18,7 @@ rustc_test("net-cli-integration") {
     "//sdk/fidl/fuchsia.net.routes.admin:fuchsia.net.routes.admin_rust",
     "//src/connectivity/lib/net-declare",
     "//src/connectivity/lib/net-types",
+    "//src/connectivity/network/lib/pcap:pcap-compile",
     "//src/connectivity/network/net-cli:lib",
     "//src/connectivity/network/testing/netemul/rust:lib",
     "//src/connectivity/network/testing/network-test-realm/fidl:fuchsia.net.test.realm_rust",
@@ -26,6 +27,7 @@ rustc_test("net-cli-integration") {
     "//src/developer/lib/writer:lib",
     "//src/lib/fidl/rust/fidl",
     "//src/lib/fuchsia",
+    "//src/lib/fuchsia-async",
     "//src/lib/fuchsia-component",
     "//src/lib/network/fidl_fuchsia_net_filter_ext",
     "//src/lib/network/fidl_fuchsia_net_interfaces_ext",
@@ -40,6 +42,7 @@ rustc_test("net-cli-integration") {
     "//third_party/rust_crates:test-case",
   ]
   sources = [
+    "src/capture.rs",
     "src/filter.rs",
     "src/lib.rs",
   ]
