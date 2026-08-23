@@ -39,6 +39,14 @@ antlion_host_test("suggest_ap_mac_address_test") {
   ]
 }
 
+antlion_host_test("soft_ap_lifecycle_test") {
+  main_source = "//src/connectivity/wlan/tests/wlancfg/SoftApLifecycleTest.py"
+  libraries = [
+    "//src/testing/end_to_end/mobly_base_tests:fuchsia_wlan_base_test",
+    "//sdk/fidl/fuchsia.wlan.policy:fuchsia.wlan.policy_python",
+  ]
+}
+
 antlion_host_test("connection_stress_test") {
   main_source = "//src/connectivity/wlan/tests/wlancfg/ConnectionStressTest.py"
   libraries = [

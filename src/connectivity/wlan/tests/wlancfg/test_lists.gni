@@ -60,6 +60,7 @@ wlancfg_tests_for_fyi = [
   "//src/testing/end_to_end/antlion/tests/wlan/compliance:wlan_security_type_test",
   "//src/connectivity/wlan/tests/wlancfg:reboot_ap_test_quick",
   "//src/connectivity/wlan/tests/wlancfg:reboot_dut_test_quick",
+  "//src/connectivity/wlan/tests/wlancfg:soft_ap_lifecycle_test",
   "//src/connectivity/wlan/tests/wlancfg:wlan_wireless_network_management_test",
 ]
 
