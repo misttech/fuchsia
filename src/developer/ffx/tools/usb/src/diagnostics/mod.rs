@@ -344,9 +344,8 @@ impl DiagnosticsTool {
 
         let rcs = self.rcs_holder.as_ref().map_err(|e| {
             fho::Error::User(anyhow::anyhow!(
-                "Target connection required for USB diagnostics; target is offline or RCS is unreachable: {e}\n\n\
-                 If you need to check on a device that is not responding, \
-                 you can run `usb-cli health` in a serial console."
+                "Could not connect to target for USB diagnostics: {e}\n\n\
+                 Tip: If the target is unreachable over the network, you can run `usb-cli health` directly in a serial console."
             ))
         })?;
 
