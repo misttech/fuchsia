@@ -217,7 +217,12 @@ pub fn cooling_device_init(kernel: &Kernel, devices: Vec<String>) -> Result<(), 
                     log_error!("Failed to register 'fcc' cooling device: {e:?}");
                 }
             }
-            "cpu" => register_cpu_domains(kernel, &mut registrar)?,
+            "cpu" => {
+                // TODO(b/460321934): Return errors rather than logging them.
+                if let Err(e) = register_cpu_domains(kernel, &mut registrar) {
+                    log_error!("Failed to register 'cpu' cooling device: {e:?}");
+                }
+            }
             t => {
                 return Err(format_err!("Unknown cooling device: {t:?}"));
             }
