@@ -779,8 +779,12 @@ func runTestOnce(
 	var err error
 	select {
 	case res := <-ch:
-		res.result.IsMultipliedRun = !collectOutputsOnPass
-		result, err = t.ProcessResult(testCtx, test, outDir, res.result, res.err)
+		if res.result != nil {
+			res.result.IsMultipliedRun = !collectOutputsOnPass
+			result, err = t.ProcessResult(testCtx, test, outDir, res.result, res.err)
+		} else {
+			result, err = nil, res.err
+		}
 		timeout = test.Timeout
 	case <-timeoutCh:
 		result.Status = runtests.TestAborted
@@ -791,6 +795,9 @@ func runTestOnce(
 	if err != nil && !isConnectionError(err) {
 		// The tester encountered a fatal condition and cannot run any more
 		// tests.
+		return nil, err
+	}
+	if result == nil {
 		return nil, err
 	}
 	if !result.Passed() && ctx.Err() != nil {
