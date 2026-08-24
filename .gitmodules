@@ -168,11 +168,6 @@
 	url = https://fuchsia.googlesource.com/third_party/iperf
 	name = third_party/iperf
 	ignore = all
-[submodule "third_party/jinja2/jinja2"]
-	path = third_party/jinja2/jinja2
-	url = https://fuchsia.googlesource.com/third_party/jinja2
-	name = third_party/jinja2
-	ignore = all
 [submodule "third_party/json5.vim"]
 	path = third_party/json5.vim
 	url = https://fuchsia.googlesource.com/third_party/github.com/gutenye/json5.vim
