@@ -535,6 +535,32 @@ TEST(PseudoFile, WriteBuffered) {
   EXPECT_EQ(writer.strings()[5], fbl::String("too-long-o"));
 }
 
+TEST(PseudoFile, WriteBufferedGapZeroInitialized) {
+  VectorWriter writer(2u);
+  auto file = fbl::MakeRefCounted<fs::BufferedPseudoFile>(nullptr, writer.GetHandler(), 32u);
+
+  {
+    fbl::RefPtr<fs::Vnode> redirect;
+    ASSERT_TRUE(file->ValidateRights(fuchsia_io::kWStarDir));
+    EXPECT_EQ(ZX_OK, file->Open(&redirect));
+    CheckWrite(redirect, ZX_OK, 4u, "test", 4u);
+    EXPECT_EQ(ZX_OK, redirect->Close());
+  }
+
+  {
+    fbl::RefPtr<fs::Vnode> redirect;
+    ASSERT_TRUE(file->ValidateRights(fuchsia_io::kWStarDir));
+    EXPECT_EQ(ZX_OK, file->Open(&redirect));
+    CheckWrite(redirect, ZX_OK, 0u, "head", 4u);
+    CheckWrite(redirect, ZX_OK, 8u, "tail", 4u);
+    EXPECT_EQ(ZX_OK, redirect->Close());
+  }
+
+  EXPECT_EQ(2u, writer.strings().size());
+  EXPECT_EQ(writer.strings()[0], fbl::String(std::string_view("\0\0\0\0test", 8u)));
+  EXPECT_EQ(writer.strings()[1], fbl::String(std::string_view("head\0\0\0\0tail", 12u)));
+}
+
 TEST(PseudoFile, WriteUnbuffered) {
   VectorWriter writer(10u);
   auto file = fbl::MakeRefCounted<fs::UnbufferedPseudoFile>(nullptr, writer.GetHandler());

@@ -115,7 +115,11 @@ zx_status_t BufferedPseudoFile::Content::Write(const void* data, size_t length, 
     return ZX_ERR_NO_SPACE;
   }
   length = std::min(length, file_->input_buffer_capacity_ - offset);
-  if (offset + length > input_length_) {
+  if (offset > input_length_) {
+    size_t old_length = input_length_;
+    SetInputLength(offset + length);
+    memset(input_data_ + old_length, 0, offset - old_length);
+  } else if (offset + length > input_length_) {
     SetInputLength(offset + length);
   }
   memcpy(input_data_ + offset, data, length);
