@@ -44,6 +44,7 @@ if (is_host) {
     "selection.py",
     "selection_action.py",
     "selection_types.py",
+    "summary.py",
     "test_list_file.py",
     "tests_json_file.py",
   ]
@@ -88,6 +89,7 @@ if (is_host) {
     "main",
     "selection",
     "selection_action",
+    "summary",
     "test_list_file",
     "tests_json_file",
   ]

@@ -135,6 +135,8 @@ class Flags:
     slow: float
     quiet: bool
     replay_speed: float
+    summary_json: str | None
+    summary_to_stdout: bool
 
     def validate(self) -> None:
         """Validate incoming flags, raising an exception on failure.
@@ -829,6 +831,17 @@ def parse_args(
         action=argparse.BooleanOptionalAction,
         help="""If set, include captured syslog in output. Set by default.""",
         default=True,
+    )
+    output.add_argument(
+        "--summary-json",
+        default=None,
+        help="If set, write a structured JSON summary of the test run to this path.",
+    )
+    output.add_argument(
+        "--summary-to-stdout",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="If set, print the structured JSON summary to stdout on completion.",
     )
 
     if defaults is not None:

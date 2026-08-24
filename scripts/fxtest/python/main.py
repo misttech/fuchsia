@@ -44,6 +44,7 @@ import log
 import package_repository
 import selection
 import selection_types
+import summary
 import test_list_file
 import tests_json_file
 
@@ -483,10 +484,12 @@ class AsyncMain:
         self._recorder = recorder
         self._config_file = config_file
         self._replay_mode = replay_mode
+        self._summary_val: summary.RunSummary = summary.RunSummary()
         self._exec_env: environment.ExecutionEnvironment | None = None
         self._emu_instance_dir: tempfile.TemporaryDirectory[str] | None = None
         self._end_execution_request_event = end_execution_request_event
         self._termination_callback_event = termination_callback_event
+
         self._package_server_task: asyncio.Task[typing.Any] | None = None
         self._package_server_event: asyncio.Event | None = None
 
@@ -506,6 +509,30 @@ class AsyncMain:
         if self._emu_instance_dir is not None:
             await self._teardown_emulator()
 
+    @property
+    def _summary(self) -> summary.RunSummary:
+        if not hasattr(self, "_summary_val"):
+            self._summary_val = summary.RunSummary()
+        return self._summary_val
+
+    @_summary.setter
+    def _summary(self, val: summary.RunSummary) -> None:
+        self._summary_val = val
+
+    def _get_logs_dir(self) -> str | None:
+        return summary.get_logs_dir(
+            summary_json=self._flags.summary_json,
+            artifact_output_directory=self._flags.artifact_output_directory,
+        )
+
+    def _emit_summary(self, error: str | None = None) -> None:
+        if self._flags.summary_json or self._flags.summary_to_stdout:
+            self._summary.finalize(error=error)
+            if self._flags.summary_json:
+                self._summary.write_to_file(self._flags.summary_json)
+            if self._flags.summary_to_stdout:
+                print(self._summary.to_json())
+
     async def main(self) -> int:
         """Execute the fx test command through this wrapper.
 
@@ -519,7 +546,10 @@ class AsyncMain:
 
     async def _main_impl(self) -> int:
         do_status_output_signal: asyncio.Event = asyncio.Event()
-        do_output_to_stdout = self._flags.logpath == args.LOG_TO_STDOUT_OPTION
+        do_output_to_stdout = (
+            self._flags.logpath == args.LOG_TO_STDOUT_OPTION
+            or self._flags.summary_to_stdout
+        )
         recorder = self._recorder
         flags = self._flags
 
@@ -718,6 +748,7 @@ class AsyncMain:
         try:
             await self._validate_test_selections(selections)
         except self._SelectionValidationError as e:
+            self._emit_summary(error=str(e))
             recorder.emit_end(str(e))
             return 1
 
@@ -743,6 +774,7 @@ class AsyncMain:
         ) -> None:
             await self._teardown_resources()
             recorder.emit_end(error=error, id=id)
+            self._emit_summary(error=error)
 
         # If enabled, try to build and update the selected tests.
         if flags.build and not await self._do_build(selections):
@@ -1150,6 +1182,12 @@ class AsyncMain:
 
                 for group, output in zip(missing_groups, outputs):
                     if output is not None and output.stdout:
+                        group_suggestions = (
+                            summary.parse_suggestions_from_output(output.stdout)
+                        )
+                        for s in group_suggestions:
+                            if s not in self._summary.suggestions:
+                                self._summary.suggestions.append(s)
                         recorder.emit_verbatim_message(
                             f"\nFor `{group}`, did you mean any of the following?\n"
                         )
@@ -1361,6 +1399,11 @@ class AsyncMain:
 
         await asyncio.sleep(0.1)
 
+        logs_dir = self._get_logs_dir()
+        build_log_path = (
+            os.path.join(logs_dir, "build.log") if logs_dir else None
+        )
+
         if build_command_line:
             build_output = await run_build_with_suspended_output(
                 exec_env,
@@ -1372,8 +1415,20 @@ class AsyncMain:
 
             if build_output is None or build_output.return_code != 0:
                 error = _emit_build_failure(recorder, build_output)
+                self._summary.build = summary.BuildResult(
+                    status="FAILED",
+                    exit_code=build_output.return_code if build_output else -1,
+                    log_path=build_log_path,
+                    error=error,
+                )
                 recorder.emit_end(error, id=build_id)
                 return False
+            else:
+                self._summary.build = summary.BuildResult(
+                    status="PASSED",
+                    exit_code=build_output.return_code,
+                    log_path=build_log_path,
+                )
 
         # Second, launch another command line to build and export Bazel host tests
         if build_bazel_targets:
@@ -1387,8 +1442,20 @@ class AsyncMain:
 
             if build_output is None or build_output.return_code != 0:
                 error = _emit_build_failure(recorder, build_output)
+                self._summary.build = summary.BuildResult(
+                    status="FAILED",
+                    exit_code=build_output.return_code if build_output else -1,
+                    log_path=build_log_path,
+                    error=error,
+                )
                 recorder.emit_end(error, id=build_id)
                 return False
+            else:
+                self._summary.build = summary.BuildResult(
+                    status="PASSED",
+                    exit_code=build_output.return_code,
+                    log_path=build_log_path,
+                )
 
         if tests.has_device_test():
             try:
@@ -1959,6 +2026,19 @@ class AsyncMain:
                 finally:
                     recorder.emit_test_suite_ended(
                         test_suite_id, status, message
+                    )
+                    test_type = (
+                        "host"
+                        if not to_run.exec._test.needs_device()
+                        else "device"
+                    )
+                    self._summary.add_test(
+                        summary.TestResult(
+                            name=to_run.exec.name(),
+                            type=test_type,
+                            outcome=status.value,
+                            message=message,
+                        )
                     )
 
                 async with run_condition:
