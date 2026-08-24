@@ -265,6 +265,20 @@ generated_file("gn_build_variables_for_bazel") {
   # LINT.ThenChange(//build/config/clang/clang_prefix.gni)
 
   # LINT.IfChange
+  declaration = "//build/rust/config.gni"
+  import(declaration)
+  contents += [
+    {
+      name = "rustc_prefix"
+      value = rustc_prefix
+      type = "path"
+      location = declaration
+    },
+  ]
+
+  # LINT.ThenChange(//build/rust/config.gni)
+
+  # LINT.IfChange
   declaration = "//build/config/compilation_modes.gni"
   import(declaration)
   contents += [

@@ -303,7 +303,7 @@ build_config = struct(
     # Create symlinks used to locate host prebuilts without an explicit
     # fuchsia_host_tag in their path, making the top-level MODULE.bazel easier
     # to write.
-    prebuilt_host_subdirs = ["go", "rust", "llvm", "python3"]
+    prebuilt_host_subdirs = ["go", "llvm", "python3"]
     prebuilt_host_tools = ["ninja", "gn", "buildifier"]
     prebuilt_bin_host_tools = ["jq"]  # Tools that live in an additional "bin" subdirectory.
 
@@ -326,6 +326,19 @@ build_config = struct(
         repo_ctx.symlink(repo_ctx.path(clang_prefix).dirname, "host_prebuilts/clang")
     else:
         prebuilt_host_subdirs.append("clang")
+
+    # In case users set a custom rustc prefix in GN, respect that config.
+    if "rustc_prefix" in gn_args:
+        rustc_prefix = gn_args["rustc_prefix"]
+
+        # GN rustc_prefix can be GN labels, which are relative to workspace root.
+        if rustc_prefix.startswith("//"):
+            rustc_prefix = "{}/{}".format(repo_ctx.workspace_root, rustc_prefix[2:])
+
+        # GN rustc_prefix points to the root directory under rust dir.
+        repo_ctx.symlink(repo_ctx.path(rustc_prefix), "host_prebuilts/rust")
+    else:
+        prebuilt_host_subdirs.append("rust")
 
     for subdir in prebuilt_host_subdirs:
         repo_ctx.symlink("{}/prebuilt/third_party/{}/{}".format(repo_ctx.workspace_root, subdir, host_tag), "host_prebuilts/{}".format(subdir))
