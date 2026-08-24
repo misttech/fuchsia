@@ -372,6 +372,15 @@ _bazel_command+=(
 # Save the final invocation to a log file.
 echo "${_bazel_command[*]}" >> "${_BAZEL_INVOCATION_LOG_DIR}/bazel_invocation"
 
+if [[ "${FUCHSIA_BAZEL_PRINT_COMMANDS}" == "1" ]]; then
+  # Print to stderr to avoid polluting stdout when command output
+  # (e.g. from bazel query) is piped or redirected.
+  # LINT.IfChange(bazel_command_prefix)
+  _BAZEL_COMMAND_PREFIX="[bazel-command]"
+  # LINT.ThenChange(//build/bazel/scripts/build_utils.py:bazel_command_prefix)
+  echo >&2 "${_BAZEL_COMMAND_PREFIX} ${_bazel_command[*]}"
+fi
+
 # Wait for a command while ignoring signals to ensure the parent outlives the child.
 # This prevents the shell from exiting prematurely and orphaning backgrounded
 # subprocesses during a signal (like Ctrl-C).

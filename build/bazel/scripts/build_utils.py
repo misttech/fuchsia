@@ -1019,11 +1019,27 @@ class BazelLauncher(object):
         ]
 
         ret = self._runner.run_command(cmd_args, **subprocess_kwargs)
+
+        # Log `stdout` and `stderr` on failure when `_log_err` is defined.
+        # Note that `stderr` is only printed when there is an error since it may
+        # contain progress or other status messages we don't want to log in
+        # normal circumstances.
         if ret.returncode != 0 and self._log_err:
             self._log_err(
                 "Error when invoking command: %s\n%s\n%s\n"
                 % (cmd_args_to_string(cmd_args), ret.stderr, ret.stdout)
             )
+        elif (
+            os.environ.get("FUCHSIA_BAZEL_PRINT_COMMANDS") == "1" and ret.stderr
+        ):
+            # `stderr` is not being logged, but printing Bazel commands is
+            # enabled. Print only the Bazel command lines.
+            # LINT.IfChange(bazel_command_prefix)
+            _BAZEL_COMMAND_PREFIX = "[bazel-command]"
+            # LINT.ThenChange(//build/bazel/wrapper.bazel.sh:bazel_command_prefix)
+            for line in ret.stderr.splitlines():
+                if line.startswith(_BAZEL_COMMAND_PREFIX):
+                    print(line, file=sys.stderr)
 
         return ret
 

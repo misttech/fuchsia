@@ -21,7 +21,10 @@ if (is_host) {
 
   python_build_time_tests("build_utils_test") {
     tests = [ "build_utils_test.py" ]
-    inputs = [ "build_utils.py" ]
+    inputs = [
+      "build_utils.py",
+      "//build/bazel/wrapper.bazel.sh",
+    ]
   }
 
   python_build_time_tests("compute_content_hash_test") {

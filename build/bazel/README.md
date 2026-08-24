@@ -587,3 +587,20 @@ The log files are rotated, up to 3 older revisions are stored in the
 `${BAZEL_TOPDIR}/logs` directory so you can compare them if possible.
 
 [Platforms]: https://bazel.build/concepts/platforms-intro
+
+### Printing Bazel commands used during the build
+
+Set the `FUCHSIA_BAZEL_PRINT_COMMANDS` environment variable to `1` to print the
+`bazel` command lines executed during the build to `stderr`. This is useful for
+understanding what the build is doing or getting Bazel commands to run manually.
+
+For example:
+```shell
+FUCHSIA_BAZEL_PRINT_COMMANDS=1 fx gen
+
+FUCHSIA_BAZEL_PRINT_COMMANDS=1 fx bazel build --config=fuchsia_platform //build/bazel/rules/tests
+```
+
+This only applies to Bazel commands executed as part of the Fuchsia platform
+build, including host tools, tests, etc. It does not apply to Bazel commands
+invoked by the Fuchsia Bazel SDK.

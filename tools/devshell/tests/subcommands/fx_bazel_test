@@ -213,4 +213,10 @@ TEST_bazel_wrapper_build_command_with_disk_cache_with_max_size() {
     BT_EXPECT_EQ "${BT_MOCK_ARGS[9]}" //some:target
 }
 
+TEST_bazel_wrapper_print_commands() {
+    FUCHSIA_BAZEL_PRINT_COMMANDS=1 "${bazel}" build --config=some_config //some:target 2> stderr.txt
+    BT_EXPECT_FILE_CONTAINS_SUBSTRING stderr.txt "[bazel-command]"
+    BT_EXPECT_FILE_CONTAINS_SUBSTRING stderr.txt "//some:target"
+}
+
 BT_RUN_TESTS "$@"

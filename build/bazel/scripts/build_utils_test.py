@@ -977,5 +977,173 @@ class MockBazelLauncherTest(unittest.TestCase):
         self.assertEqual(result.stderr, "")
 
 
+class BazelCommandWithBazelWrapperTest(unittest.TestCase):
+    """Test fixture that executes the real Bazel wrapper script in a mocked environment.
+
+    This fixture configures a mini Fuchsia build environment as follows:
+      - Copy/symlink the real `wrapper.bazel.sh`
+      - Generate a mock config file `bazel.sh.config` in a temporary directory
+      - Create mocked dependencies (e.g. for python3 and bazel)
+
+    This allows running the real wrapper script hermetically and without
+    triggering the real Bazel daemon.
+    """
+
+    _td: tempfile.TemporaryDirectory[str]
+    _tmpdir_path: Path
+    _bazel_bin: Path
+    _bazel_workspace: Path
+    _ninja_build_dir: Path
+    _prebuilt_ninja: Path
+    _python_dir: Path
+    _python_bin_dir: Path
+    _python_exe: Path
+    _wrapper_dest: Path
+    _launcher: BazelLauncher
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        import stat
+
+        cls._td = tempfile.TemporaryDirectory()
+        cls._tmpdir_path = Path(cls._td.name)
+
+        # Paths to mock files/dirs
+        cls._bazel_bin = cls._tmpdir_path / "bazel_bin"
+        cls._bazel_bin.touch()
+        # Make bazel_bin executable and print something if called
+        cls._bazel_bin.write_text("#!/bin/sh\necho 'mock bazel run'\n")
+        cls._bazel_bin.chmod(cls._bazel_bin.stat().st_mode | stat.S_IEXEC)
+
+        cls._bazel_workspace = cls._tmpdir_path / "workspace"
+        cls._bazel_workspace.mkdir()
+
+        cls._ninja_build_dir = cls._tmpdir_path / "ninja_build"
+        cls._ninja_build_dir.mkdir()
+
+        cls._prebuilt_ninja = cls._tmpdir_path / "ninja"
+        cls._prebuilt_ninja.touch()
+
+        cls._python_dir = cls._tmpdir_path / "python_dir"
+        cls._python_bin_dir = cls._python_dir / "bin"
+        cls._python_bin_dir.mkdir(parents=True)
+        cls._python_exe = cls._python_bin_dir / "python3"
+        cls._python_exe.write_text("#!/bin/sh\nexit 0\n")
+        cls._python_exe.chmod(cls._python_exe.stat().st_mode | stat.S_IEXEC)
+
+        # Symlink real wrapper.bazel.sh to tmpdir so readlink -f resolves to the real source tree.
+        wrapper_src = (
+            Path(__file__).parents[3] / "build" / "bazel" / "wrapper.bazel.sh"
+        )
+        cls._wrapper_dest = cls._tmpdir_path / "wrapper.bazel.sh"
+        os.symlink(wrapper_src, cls._wrapper_dest)
+
+        # Create bazel.sh.config
+        config_content = f"""
+_BAZEL_BIN="{cls._bazel_bin}"
+_BAZEL_LOG_DIR="{cls._tmpdir_path}"
+_BAZEL_WORKSPACE="{cls._bazel_workspace}"
+_BAZEL_OUTPUT_BASE="{cls._tmpdir_path / 'output_base'}"
+_BAZEL_OUTPUT_USER_ROOT="{cls._tmpdir_path / 'output_user_root'}"
+_NINJA_BUILD_DIR="{cls._ninja_build_dir}"
+_PREBUILT_NINJA="{cls._prebuilt_ninja}"
+_PREBUILT_PYTHON_DIR="{cls._python_dir}"
+"""
+        (cls._tmpdir_path / "bazel.sh.config").write_text(config_content)
+
+        # Use the default CommandRunner (which executes the real subprocess)
+        cls._launcher = BazelLauncher(str(cls._wrapper_dest))
+
+    @classmethod
+    def tearDownClass(cls) -> None:
+        cls._td.cleanup()
+
+    def _run_bazel_command_with_env(
+        self, bazel_args: list[str], env_updates: dict[str, str | None]
+    ) -> tuple[str, str]:
+        """Run the Bazel wrapper script with the given bazel args and env updates.
+
+        Returns (stdout, stderr).
+        """
+        import subprocess
+        from unittest.mock import patch
+
+        env = os.environ.copy()
+        # Set FX_BUILD_LOGDIR to self._tmpdir_path to prevent wrapper.bazel.sh
+        # from printing a warning about missing log dir to stderr.
+        env["FX_BUILD_LOGDIR"] = str(self._tmpdir_path)
+        for k, v in env_updates.items():
+            if v is None:
+                env.pop(k, None)
+            else:
+                env[k] = v
+
+        with patch.dict(os.environ, env, clear=True):
+            result = self._launcher.run_bazel_command(
+                bazel_args, stderr=subprocess.PIPE
+            )
+            return result.stdout, result.stderr
+
+
+class BazelCommandPrintTest(BazelCommandWithBazelWrapperTest):
+    """Test that the executed Bazel command is printed to stderr when requested."""
+
+    def test_bazel_build_command_not_printed_by_default(self) -> None:
+        stdout, stderr = self._run_bazel_command_with_env(
+            ["build", "//does_not_exist"],
+            {"FUCHSIA_BAZEL_PRINT_COMMANDS": None},
+        )
+        self.assertEqual(stderr, "")
+        self.assertNotEqual(stdout, "")
+
+    def test_bazel_build_command_printed_when_env_var_set(self) -> None:
+        stdout, stderr = self._run_bazel_command_with_env(
+            ["build", "//does_not_exist"],
+            {"FUCHSIA_BAZEL_PRINT_COMMANDS": "1"},
+        )
+        self.assertIn("[bazel-command]", stderr)
+        self.assertIn("build", stderr)
+        self.assertIn(str(self._bazel_bin), stderr)
+        self.assertIn("//does_not_exist", stderr)
+        self.assertNotEqual(stdout, "")
+
+    def test_bazel_test_command_not_printed_by_default(self) -> None:
+        stdout, stderr = self._run_bazel_command_with_env(
+            ["test", "//does_not_exist"],
+            {"FUCHSIA_BAZEL_PRINT_COMMANDS": None},
+        )
+        self.assertEqual(stderr, "")
+        self.assertNotEqual(stdout, "")
+
+    def test_bazel_test_command_printed_when_env_var_set(self) -> None:
+        stdout, stderr = self._run_bazel_command_with_env(
+            ["test", "//does_not_exist"],
+            {"FUCHSIA_BAZEL_PRINT_COMMANDS": "1"},
+        )
+        self.assertIn("[bazel-command]", stderr)
+        self.assertIn("test", stderr)
+        self.assertIn(str(self._bazel_bin), stderr)
+        self.assertIn("//does_not_exist", stderr)
+        self.assertNotEqual(stdout, "")
+
+    def test_bazel_info_command_not_printed_by_default(self) -> None:
+        stdout, stderr = self._run_bazel_command_with_env(
+            ["info"],
+            {"FUCHSIA_BAZEL_PRINT_COMMANDS": None},
+        )
+        self.assertEqual(stderr, "")
+        self.assertNotEqual(stdout, "")
+
+    def test_bazel_info_command_printed_when_env_var_set(self) -> None:
+        stdout, stderr = self._run_bazel_command_with_env(
+            ["info"],
+            {"FUCHSIA_BAZEL_PRINT_COMMANDS": "1"},
+        )
+        self.assertIn("[bazel-command]", stderr)
+        self.assertIn("info", stderr)
+        self.assertIn(str(self._bazel_bin), stderr)
+        self.assertNotEqual(stdout, "")
+
+
 if __name__ == "__main__":
     unittest.main()

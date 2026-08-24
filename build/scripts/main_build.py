@@ -538,6 +538,7 @@ class BuildInvocation(object):
             "FUCHSIA_BAZEL_DISK_CACHE",
             "FUCHSIA_BAZEL_DISK_CACHE_SIZE",
             "FUCHSIA_BAZEL_JOB_COUNT",
+            "FUCHSIA_BAZEL_PRINT_COMMANDS",
             "FUCHSIA_DEBUG_BAZEL_SANDBOX",
             "NINJA_PERSISTENT_TIMEOUT_SECONDS",
             "NINJA_PERSISTENT_LOG_FILE",
