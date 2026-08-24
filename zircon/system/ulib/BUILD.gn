@@ -52,6 +52,7 @@ group("tests") {
     "trace-vthread:tests",
     "uart:tests",
     "zircon-internal:tests",
+    "zx:tests",
     "zxtest:tests",
     "//third_party/lz4:tests",
     "//zircon/third_party/ulib/safemath:tests",

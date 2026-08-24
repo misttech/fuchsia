@@ -10,17 +10,19 @@
 #include <lib/zx/job.h>
 #include <stdio.h>
 
+#include <zxtest/zxtest.h>
+
 zx::resource GetProfileResource() {
   zx::result local = component::Connect<fuchsia_kernel::ProfileResource>();
   if (!local.is_ok()) {
-    fprintf(stderr, "unable to open fuchsia.boot.ProfileResource channel\n");
-    return zx::resource();
+    EXPECT_OK(local.status_value(), "unable to open fuchsia.boot.ProfileResource channel");
+    return {};
   }
 
   auto result = fidl::WireCall(*local)->Get();
   if (!result.ok()) {
-    fprintf(stderr, "unable to get profile resource %d\n", result.error().status());
-    return zx::resource();
+    EXPECT_OK(result.error().status(), "unable to get profile resource");
+    return {};
   }
 
   return std::move(result->resource);
