@@ -130,12 +130,19 @@ class DebugAdapterContext : public ThreadObserver,
   std::vector<fxl::WeakPtr<Breakpoint>>* GetBreakpointsForSource(
       const std::filesystem::path& source);
 
+  // Helper methods to get/set function breakpoint mapping.
+  void StoreFunctionBreakpoint(Breakpoint* bp);
+  const std::vector<fxl::WeakPtr<Breakpoint>>& GetFunctionBreakpoints() const {
+    return function_bps_;
+  }
+
   // Helper methods to get/set breakpoint to ID mapping
   int64_t IdForBreakpoint(Breakpoint* breakpoint);
 
-  // These 2 methods only delete breakpoints added by the debug adapter.
+  // These methods only delete breakpoints added by the debug adapter.
   // Breakpoints added from console are not deleted.
   void DeleteBreakpointsForSource(const std::filesystem::path& source);
+  void DeleteAllFunctionBreakpoints();
   void DeleteAllBreakpoints();
 
   void StoreFilter(Filter* filter);
@@ -195,6 +202,9 @@ class DebugAdapterContext : public ThreadObserver,
   // members, so `source_to_bp_` trades off a potential simplification for sake of correctness.
   // See https://fxbug.dev/377344509 and `FileLine::comp_dir()` documentation for more context.
   std::map<std::filesystem::path, std::vector<fxl::WeakPtr<Breakpoint>>> source_to_bp_;
+
+  // Stores all function breakpoints added by the debug adapter client.
+  std::vector<fxl::WeakPtr<Breakpoint>> function_bps_;
 
   // Stores all filters added by the debug adapter client.
   std::vector<Filter*> filters_;

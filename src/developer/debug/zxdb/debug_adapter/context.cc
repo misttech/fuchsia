@@ -22,6 +22,7 @@
 #include "src/developer/debug/zxdb/debug_adapter/handlers/request_breakpoint.h"
 #include "src/developer/debug/zxdb/debug_adapter/handlers/request_continue.h"
 #include "src/developer/debug/zxdb/debug_adapter/handlers/request_evaluate.h"
+#include "src/developer/debug/zxdb/debug_adapter/handlers/request_function_breakpoint.h"
 #include "src/developer/debug/zxdb/debug_adapter/handlers/request_launch.h"
 #include "src/developer/debug/zxdb/debug_adapter/handlers/request_next.h"
 #include "src/developer/debug/zxdb/debug_adapter/handlers/request_pause.h"
@@ -132,7 +133,7 @@ void DebugAdapterContext::DidResolveConnection(const Err& err) {
     return;
   }
   dap::InitializeResponse response;
-  response.supportsFunctionBreakpoints = false;
+  response.supportsFunctionBreakpoints = true;
   response.supportsConfigurationDoneRequest = true;
   response.supportsEvaluateForHovers = false;
   response.supportsTerminateRequest = true;
@@ -157,6 +158,11 @@ void DebugAdapterContext::Init() {
   dap_->registerHandler([this](const dap::SetBreakpointsRequest& req) {
     DEBUG_LOG(DebugAdapter) << "SetBreakpointsRequest received";
     return OnRequestBreakpoint(this, req);
+  });
+
+  dap_->registerHandler([this](const dap::SetFunctionBreakpointsRequest& req) {
+    DEBUG_LOG(DebugAdapter) << "SetFunctionBreakpointsRequest received";
+    return OnRequestFunctionBreakpoint(this, req);
   });
 
   dap_->registerHandler([](const dap::ConfigurationDoneRequest& req) {
@@ -704,7 +710,24 @@ void DebugAdapterContext::DeleteBreakpointsForSource(const std::filesystem::path
   source_to_bp_.erase(it);
 }
 
+void DebugAdapterContext::StoreFunctionBreakpoint(Breakpoint* bp) {
+  FX_DCHECK(bp);
+  function_bps_.push_back(bp->GetWeakPtr());
+}
+
+void DebugAdapterContext::DeleteAllFunctionBreakpoints() {
+  for (auto& bp : function_bps_) {
+    if (bp) {
+      breakpoint_to_id_.erase(bp.get());
+      session()->system().DeleteBreakpoint(bp.get());
+    }
+  }
+  function_bps_.clear();
+}
+
 void DebugAdapterContext::DeleteAllBreakpoints() {
+  DeleteAllFunctionBreakpoints();
+
   for (auto& it : source_to_bp_) {
     for (auto& bp : it.second) {
       if (bp) {
