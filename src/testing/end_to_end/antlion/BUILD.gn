@@ -17,12 +17,6 @@ group("e2e_tests") {
   public_deps = [ "tests:e2e_tests" ]
 }
 
-# Subset of tests to validate builds in under 15 minutes.
-group("e2e_tests_quick") {
-  testonly = true
-  public_deps = [ "tests:e2e_tests_quick" ]
-}
-
 # Test cases that are not run automatically in infra, they are only used for
 # release testing.
 group("e2e_tests_manual") {

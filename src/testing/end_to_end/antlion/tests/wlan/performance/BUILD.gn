@@ -58,8 +58,3 @@ group("e2e_tests") {
     ":wlan_rvr_test_5g_wpa2",
   ]
 }
-
-group("e2e_tests_quick") {
-  testonly = true
-  public_deps = []
-}
