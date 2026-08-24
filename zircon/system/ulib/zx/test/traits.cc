@@ -4,11 +4,10 @@
 
 #include <assert.h>
 #include <fidl/fuchsia.boot/cpp/fidl.h>
+#include <lib/captive-thread/captive-thread.h>
 #include <lib/component/incoming/cpp/protocol.h>
-#include <lib/elfldltl/machine.h>
 #include <lib/fdio/directory.h>
 #include <lib/fzl/time.h>
-#include <lib/test-exceptions/exception-handling.h>
 #include <lib/zx/bti.h>
 #include <lib/zx/channel.h>
 #include <lib/zx/debuglog.h>
@@ -140,13 +139,6 @@ void Peering(const Handle& handle) {
   zx_status_t status = zx_object_signal_peer(handle.get(), 0u, ZX_USER_SIGNAL_0);
 
   ASSERT_STATUS(status, expected_status);
-}
-
-[[noreturn, clang::no_sanitize("all"), gnu::no_stack_protector]] void do_segfault() {
-  int* p = nullptr;
-  __asm__("" : "=r"(p) : "0"(p));  // Mask the pointer value from the compiler.
-  *p = 1;
-  zx_thread_exit();
 }
 
 TEST(TraitsTestCase, EventTraits) {
@@ -373,33 +365,25 @@ TEST(TraitsTestCase, IommuTraits) {
 TEST(TraitsTestCase, ExceptionTraits) {
   // Create a thread that segfaults so we can catch and analyze the
   // resulting exception object.
-  zx::thread thread;
-  zx::channel exception_channel;
-  ASSERT_OK(zx::thread::create(*zx::process::self(), "", 0, 0, &thread));
-  ASSERT_OK(thread.create_exception_channel(0, &exception_channel));
+  captive_thread::CaptiveThread thread([] {
+    volatile int* ptr = nullptr;
+    __asm__("" : "+r"(ptr));  // The compiler doesn't know it's still nullptr.
+    *ptr = 1;
+  });
+  ASSERT_OK(thread.WaitForException().status_value());
+  auto report = thread.ExceptionReport();
+  ASSERT_TRUE(report);
+  EXPECT_EQ(report->header.type, ZX_EXCP_FATAL_PAGE_FAULT);
 
-  const uint64_t pc = reinterpret_cast<uintptr_t>(&do_segfault);
+  zx::unowned_exception exception = thread.exception();
+  ASSERT_TRUE(exception->is_valid());
 
-  alignas(elfldltl::AbiTraits<>::kStackAlignment<>) static std::byte thread_stack[1024];
-  const uint64_t sp = elfldltl::AbiTraits<>::InitialStackPointer(
-      reinterpret_cast<uintptr_t>(thread_stack), sizeof(thread_stack));
-  ASSERT_OK(thread.start(pc, sp));
-
-  zx::exception exception;
-  zx_exception_info_t info;
-  ASSERT_OK(exception_channel.wait_one(ZX_CHANNEL_READABLE, zx::time::infinite(), nullptr));
-  ASSERT_OK(exception_channel.read(0, &info, exception.reset_and_get_address(), sizeof(info), 1,
-                                   nullptr, nullptr));
-
-  ASSERT_NO_FATAL_FAILURE(Duplicating(exception));
-  ASSERT_NO_FATAL_FAILURE(GetChild(exception));
-  ASSERT_NO_FATAL_FAILURE(SetProfile(exception));
-  ASSERT_NO_FATAL_FAILURE(UserSignaling(exception));
-  ASSERT_NO_FATAL_FAILURE(Waiting(exception));
-  ASSERT_NO_FATAL_FAILURE(Peering(exception));
-
-  ASSERT_OK(test_exceptions::ExitExceptionZxThread(std::move(exception)));
-  ASSERT_OK(thread.wait_one(ZX_THREAD_TERMINATED, zx::time::infinite(), nullptr));
+  ASSERT_NO_FATAL_FAILURE(Duplicating(*exception));
+  ASSERT_NO_FATAL_FAILURE(GetChild(*exception));
+  ASSERT_NO_FATAL_FAILURE(SetProfile(*exception));
+  ASSERT_NO_FATAL_FAILURE(UserSignaling(*exception));
+  ASSERT_NO_FATAL_FAILURE(Waiting(*exception));
+  ASSERT_NO_FATAL_FAILURE(Peering(*exception));
 }
 
 }  // namespace

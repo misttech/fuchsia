@@ -141,6 +141,10 @@ class CaptiveThread {
   // the CaptiveThread object, even after the actual thread dies.
   zx::unowned_thread thread_handle() const { return thread_handle_.borrow(); }
 
+  // Borrow the handle for the current exception.  This handle is only valid
+  // while InException() is true, until ResolveException() is called.
+  zx::unowned_exception exception() const { return exception_.borrow(); }
+
   // Wait for the thread to get an exception or exit.  If this succeeds, then
   // either InException() is true, or the thread has exited.  If the thread is
   // suspended, this will wait until it resumes and hits an exception or exits.
