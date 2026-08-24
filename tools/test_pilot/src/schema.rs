@@ -13,7 +13,7 @@ use std::fs::File;
 use std::io::BufReader;
 use std::path::PathBuf;
 
-const DEFAULT_SCHEMA_PATH: &str = "../../build/sdk/test_config_schema.json5";
+const DEFAULT_SCHEMA_PATH: &str = "../../build/testing/test_config_schema.json5";
 const SCHEMA_ARG_PREFIX: &str = "--schema=";
 
 /// A JSON schema. `Schema` holds a test config schema in two forms: A serde_json Value suitable

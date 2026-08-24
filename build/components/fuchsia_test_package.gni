@@ -147,36 +147,16 @@ template("fuchsia_test_package") {
     # this target test. It is not included as a dependency, because doing so
     # would push the the scheduling of the test target creation steps to after
     # the compilation of ffx, which would slow the build significantly. ffx is
-    # ambiently available when these tests are run and is listed as a dependency
-    # in //bundles/infra/test:host_tools.
-
-    # This isn't working yet, because the location of the host tools at runtime
-    # can vary in ways that can't be determined at build time. For example, a
-    # amd64 target cpu might require x64 host tools at runtime if a physical
-    # device is being tested or arm64 tools if a qemu instance is being used. A
-    # subsequent CL will address this problem and the problem of which flavors
-    # of host tools to build. b/443323806 tracks this work.
+    # ambiently available when these tests are run and is listed as a
+    # dependency in //bundles/infra/test:host_tools.
     if (!defined(invoker.is_bootfs) || !invoker.is_bootfs) {
       ffx_test_tool_target = "//src/developer/ffx/plugins/test:ffx_test_tool_test_data($host_toolchain)"
+
       host_test_component_target =
           "//src/developer/ffx:suite_test_data($host_toolchain)"
-      test_host_tool_dir =
-          get_label_info(host_test_component_target, "root_out_dir")
-      test_host_tool_dir_rebased =
-          rebase_path(test_host_tool_dir, root_build_dir)
-
-      host_executable = "$test_host_tool_dir/ffx"
-      host_executable_rebased = rebase_path(host_executable, root_build_dir)
 
       resummarize_target = "//tools/test_pilot/post_processing/resummarize:test_deps($host_toolchain)"
-      resummarize_executable = "$test_host_tool_dir/resummarize"
-      resummarize_executable_rebased =
-          rebase_path(resummarize_executable, root_build_dir)
-
       test_pilot_target = "//tools/test_pilot:test_deps($host_toolchain)"
-      test_pilot_executable = "$test_host_tool_dir/test-pilot"
-      test_pilot_executable_rebased =
-          rebase_path(test_pilot_executable, root_build_dir)
     }
 
     test_deps = []
@@ -218,16 +198,43 @@ template("fuchsia_test_package") {
           }
         }
 
+        # _test_config is used to produce a JSON file that controls test-pilot
+        # in the execution of the test in question. In this case, the test is
+        # executed by first running ffx and then running the post-processor
+        # 'resummarize', which produces a summary in the format suitable for
+        # consumption by botanist.
+        #
+        # test-pilot performs a number of substitutions at test runtime. JSON
+        # properties of the form 'foo: { from_env: "BAR" }' assign the value of
+        # the environment variable "BAR" to property "foo". If "BAR" is not
+        # defined in the runtime environment, test-pilot fails the test run.
+        # JSON properties of the form 'foo: { try_from_env: "BAR" }' perform the
+        # same assignment, but silently do nothing if "BAR" is not defined.
+        #
+        # test-pilot also performs substitutions in command paths and command
+        # arguments. For example in 'host_test_binary: "{host_tools_dir}/ffx',
+        # '{host_tools_dir}' is replaced by the value of the property
+        # 'host_tools_dir'.
+        #
+        # This configuration uses the environment variable "FUCHSIA_HOST_TOOLS"
+        # to locate binaries that are needed at test runtime: specifically
+        # test-pilot, ffx, and resummarize. When botanist runs a test, host
+        # tools can be in any number of different locations depending on the
+        # bot. ./host_x64 and ./host_arm64 are the most common locations, but
+        # other directories are used as well.
         _test_config = {
         }
         _test_config = {
-          host_test_binary = host_executable_rebased
+          # This is the ffx command that runs the test. The substitution of
+          # '{host_tools_dir}' is done by test-pilot at runtime as described
+          # above.
+          host_test_binary = "{host_tools_dir}/ffx"
           host_test_args = [
             "--log-output",
             "{output_directory}/test/ffx.log",
             "--strict",
             "--config",
-            "ffx.subtool-search-paths=${test_host_tool_dir_rebased}",
+            "ffx.subtool-search-paths={host_tools_dir}",
             "--config",
             "log.dir={output_directory}/test/ffx_logs",
             "--config",
@@ -244,32 +251,39 @@ template("fuchsia_test_package") {
             "{test_config_file}",
             "--filter-ansi",
           ]
-          output_directory = {
-            try_from_env = "FUCHSIA_TEST_OUTDIR"
+          host_tools_dir = {
+            from_env = "FUCHSIA_HOST_TOOLS"
           }
-          resultdb_output_summary_file = {
-            try_from_env = "TEST_OUTPUT_SUMMARY_PATH"
+          output_directory = {
+            from_env = "FUCHSIA_TEST_OUTDIR"
           }
           target = {
-            try_from_env = "FUCHSIA_DEVICE_ADDR"
+            from_env = "FUCHSIA_DEVICE_ADDR"
           }
           ssh_private_key_path = {
-            try_from_env = "FUCHSIA_SSH_KEY"
+            from_env = "FUCHSIA_SSH_KEY"
           }
           ffx_config = {
             try_from_env = "FFX_CONFIG"
           }
+          botanist_output_summary_file = {
+            try_from_env = "TEST_OUTPUT_SUMMARY_PATH"
+          }
           output_processors = [
+            # This is the resummarize post-processor that translates the output
+            # summary into a form required by botanist. Note that resummarize is
+            # only executed if TEST_OUTPUT_SUMMARY_PATH is defined in the
+            # runtime environment.
             {
-              binary = resummarize_executable_rebased
+              binary = "{host_tools_dir}/resummarize"
               args = [
                 "{test_config_file}",
                 "{output_directory}/output_summary.json",
-                "{resultdb_output_summary_file}",
+                "{botanist_output_summary_file}",
               ]
               use_on_success = true
               use_on_failure = true
-              use_if_defined = [ "resultdb_output_summary_file" ]
+              use_if_defined = [ "botanist_output_summary_file" ]
             },
           ]
 
@@ -335,8 +349,6 @@ template("fuchsia_test_package") {
             final_output_config_path,
           ]
           args = [
-            "--test-pilot",
-            "./${test_pilot_executable_rebased}",
             "--component-manifest-path",
             rebase_path(manifest_path[0], root_build_dir),
             "--partial-test-config",
@@ -359,9 +371,10 @@ template("fuchsia_test_package") {
             test,
           ]
         }
-        script_outputs = []
-        script_outputs = get_target_outputs(":${test_target}_script_gen")
-        script_outputs += [ "//build/sdk/test_config_schema.json5" ]
+
+        runtime_deps = []
+        runtime_deps = get_target_outputs(":${test_target}_script_gen")
+        runtime_deps += [ "//build/testing/test_config_schema.json5" ]
 
         group("${test_target}_runtime_deps_group") {
           testonly = true
@@ -373,7 +386,7 @@ template("fuchsia_test_package") {
             test_pilot_target,
           ]
           metadata = {
-            test_runtime_deps = script_outputs
+            test_runtime_deps = runtime_deps
 
             # avoid adding unintended entries to the test package due to
             # dependency on ffx.
@@ -401,7 +414,7 @@ template("fuchsia_test_package") {
         if (!defined(invoker.is_bootfs) || !invoker.is_bootfs) {
           # Adding new_path for transition period. We will later replace this
           # with path.
-          new_path = script_outputs[0]
+          new_path = runtime_deps[0]
           data_deps += [ ":${test_target}_runtime_deps_group" ]
         }
       }

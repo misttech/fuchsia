@@ -64,11 +64,11 @@
                         type: "boolean",
                     },
                     use_on_failure: {
-                        description: "Whether the output processor should be used for successful test runs",
+                        description: "Whether the output processor should be used for failed test runs",
                         type: "boolean",
                     },
                     use_if_defined: {
-                        description: "Parameters that must be defined for the output processor to be used",
+                        description: "Parameters all of which must be defined for the output processor to be run",
                         type: "array",
                         items: {
                             type: "string",
@@ -81,8 +81,11 @@
                 additionalProperties: false,
             },
         },
-        resultdb_output_summary_file: {
-            description: "Path at which to deposit output summary file in resultdb format",
+        botanist_output_summary_file: {
+            // TODO(https://fxbug.dev/5550529245): remove this once temporary properties are
+            // supported in test-pilot. See fuchsia_test_package.gni for an explanation of this
+            // property.
+            description: "Path at which to deposit output summary file in a format defined by botanist",
             type: "string",
         },
         ssh_private_key_path: {
@@ -187,6 +190,13 @@ due to a timeout",
         show_full_moniker_in_logs: {
             description: "Whether the full moniker should be shown in unstructured logs",
             type: "boolean",
+        },
+        host_tools_dir: {
+            // TODO(https://fxbug.dev/5550529245): remove this once temporary properties are
+            // supported in test-pilot. See fuchsia_test_package.gni for an explanation of this
+            // property.
+            description: "Directory containing host tools",
+            type: "string",
         },
     },
 

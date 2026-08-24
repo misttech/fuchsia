@@ -14,11 +14,8 @@ use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
 
 #[derive(Debug, Parser)]
-#[command(about = "Generate a bash wrapper script amd test config for test components.")]
+#[command(about = "Generate a bash wrapper script and test config for test components.")]
 struct Args {
-    #[arg(long, help = "The path to the test pilot.")]
-    test_pilot: String,
-
     #[arg(long, help = "Generated script path.")]
     script_output_filename: String,
 
@@ -79,8 +76,11 @@ fn generate_bash_script(args: &Args) -> Result<(), Error> {
     file.write_all(b"#!/bin/bash\n")?;
     file.write_all(b"\n")?;
     file.write_all(
-        format!("{} --include={} $@\n", args.test_pilot, args.test_config_output_filename)
-            .as_bytes(),
+        format!(
+            "${{FUCHSIA_HOST_TOOLS}}/test-pilot --include={} $@\n",
+            args.test_config_output_filename
+        )
+        .as_bytes(),
     )?;
     let mut perm = file.metadata()?.permissions();
     // Add the executable bit for user, group, and others
@@ -95,7 +95,7 @@ fn read_partial_config(file: &Path) -> Result<TestConfig, Error> {
     let mut t: TestConfig = serde_json::from_str(&buffer)?;
     // Oops, some of our test fixtures use `test_filters`, some others use
     // `test_case_filters`.
-    // See: //build/sdk/test_config_schema.json5
+    // See: //build/testing/test_config_schema.json5
     t.test_case_filters.extend(std::mem::take(&mut t.test_filters));
     Ok(t)
 }
