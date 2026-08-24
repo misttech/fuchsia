@@ -65,6 +65,10 @@ patternProperties:
       drive-strength-microamp:
         description: Drive strength in microamps.
 
+      drive-strength:
+        $ref: /schemas/types.yaml#/definitions/uint32
+        description: Pin drive strength. Interpretation is controller specific. Must not be specified if drive-strength-microamp exists.
+
       output-disable:
         type: boolean
         description: Disable output.

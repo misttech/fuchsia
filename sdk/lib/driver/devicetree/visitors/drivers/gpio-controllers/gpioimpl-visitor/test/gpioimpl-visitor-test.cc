@@ -64,11 +64,12 @@ TEST(GpioImplVisitorTest, TestGpiosProperty) {
   gpioA_id = *controller_metadata->controller_id();
 
   ASSERT_TRUE(controller_metadata->init_steps());
-  // 10 init steps:
+  // 11 init steps:
   //   - 6 from gpio-hog (3 pins * 2 steps)
-  //   - 4 from video (2 pins * 2 steps)
+  //   - 4 from video group2 (2 pins * 2 steps)
+  //   - 1 from video group6 (1 pin * 1 step)
   // Note: Audio node configurations are parsed as pin states and do not generate init steps.
-  ASSERT_EQ((*controller_metadata).init_steps()->size(), 10u);
+  ASSERT_EQ((*controller_metadata).init_steps()->size(), 11u);
 
   // GPIO Hog init steps.
   const auto& init_steps = *controller_metadata->init_steps();
@@ -122,6 +123,13 @@ TEST(GpioImplVisitorTest, TestGpiosProperty) {
   ASSERT_EQ(init_steps[9].call()->pin(), static_cast<uint32_t>(GROUP2_PIN2));
   ASSERT_EQ(init_steps[9].call()->call(), fuchsia_hardware_pinimpl::InitCall::WithBufferMode(
                                               fuchsia_hardware_gpio::BufferMode::kOutputLow));
+
+  // Pin controller config init steps (from video node group6 which doesn't have pinctrl-names).
+  ASSERT_TRUE(init_steps[10].call());
+  ASSERT_EQ(init_steps[10].call()->pin(), static_cast<uint32_t>(GROUP6_PIN1));
+  ASSERT_EQ(init_steps[10].call()->call(),
+            fuchsia_hardware_pinimpl::InitCall::WithPinConfig(
+                {{.drive_strength = static_cast<uint64_t>(GROUP6_DRIVE_STRENGTH)}}));
 
   // Test device_pin_states metadata.
   ASSERT_TRUE(controller_metadata->device_pin_states().has_value());

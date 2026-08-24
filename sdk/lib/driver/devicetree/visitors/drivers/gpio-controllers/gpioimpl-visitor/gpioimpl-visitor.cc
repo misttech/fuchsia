@@ -424,6 +424,20 @@ zx::result<fuchsia_hardware_pin::Configuration> GpioImplVisitor::ParsePinConfigu
     return drive_strength_ua.take_error();
   }
 
+  auto drive_strength = cfg_node.GetProperty<uint32_t>(kPinDriveStrength);
+  if (drive_strength.is_ok()) {
+    if (config.drive_strength_ua().has_value()) {
+      fdf::error("Pin controller config '{}' specifies drive-strength and drive-strength-microamp.",
+                 cfg_node.name());
+      return zx::error(ZX_ERR_INVALID_ARGS);
+    }
+    config.drive_strength(drive_strength.value());
+  } else if (drive_strength.status_value() != ZX_ERR_NOT_FOUND) {
+    fdf::error("Pin controller config '{}' has invalid drive strength: {}.", cfg_node.name(),
+               drive_strength);
+    return drive_strength.take_error();
+  }
+
   std::optional<DriveType> drive_type;
   auto save_drive_type = [&](DriveType val) -> zx::result<> {
     if (drive_type.has_value()) {

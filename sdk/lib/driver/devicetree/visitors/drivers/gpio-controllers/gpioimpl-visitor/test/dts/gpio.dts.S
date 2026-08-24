@@ -49,6 +49,11 @@
 			drive-open-source;
 			fuchsia,interrupt-wake-vector;
 		};
+
+		group6: group6 {
+			pins = <GROUP6_PIN1>;
+			drive-strength = <GROUP6_DRIVE_STRENGTH>;
+		};
 	};
 
 	gpio-controller@ffffb000 {
@@ -82,6 +87,6 @@
 	video@ffffd000 {
 		compatible = "test,video";
 		reg = <0x0 0xffffd000 0x0 0x1000>;
-		pinctrl-0 = <&group2 &group4 &group5>;
+		pinctrl-0 = <&group2 &group4 &group5 &group6>;
 	};
 };
