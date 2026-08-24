@@ -34,6 +34,9 @@ dap::ResponseOrError<dap::SetFunctionBreakpointsResponse> OnRequestFunctionBreak
     Breakpoint* breakpoint = ctx->session()->system().CreateNewBreakpoint();
     BreakpointSettings settings;
     settings.locations = {InputLocation(ident)};
+    if (request_bp.condition.has_value()) {
+      settings.condition = request_bp.condition.value();
+    }
     breakpoint->SetSettings(settings);
     ctx->StoreFunctionBreakpoint(breakpoint);
 

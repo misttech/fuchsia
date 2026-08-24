@@ -64,6 +64,7 @@ TEST_F(ContextTest, InitializeRequest) {
   auto got = response.get();
   EXPECT_EQ(got.error, false);
   EXPECT_EQ(bool(got.response.supportsFunctionBreakpoints), true);
+  EXPECT_EQ(bool(got.response.supportsConditionalBreakpoints), true);
   EXPECT_EQ(bool(got.response.supportsConfigurationDoneRequest), true);
 }
 

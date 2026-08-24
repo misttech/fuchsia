@@ -8,6 +8,8 @@
 
 #include <gtest/gtest.h>
 
+#include "src/developer/debug/zxdb/client/breakpoint.h"
+#include "src/developer/debug/zxdb/client/breakpoint_settings.h"
 #include "src/developer/debug/zxdb/debug_adapter/context_test.h"
 
 namespace zxdb {
@@ -173,6 +175,28 @@ TEST_F(RequestBreakpointTest, SetBreakpointsWithNoPathSet) {
   auto got = response.get();
   EXPECT_EQ(got.error, true);
   EXPECT_EQ(got.response.breakpoints.size(), 0u);
+}
+
+TEST_F(RequestBreakpointTest, SetBreakpointsWithCondition) {
+  InitializeDebugging();
+
+  dap::SetBreakpointsRequest req = {};
+  req.source.path = file_path_.string();
+  req.lines = {10};
+  req.breakpoints = {{.condition = "y == 100", .line = 10}};
+  auto response = client().send(req);
+
+  context().OnStreamReadable();
+  RunClient();
+
+  auto got = response.get();
+  EXPECT_FALSE(got.error);
+  ASSERT_EQ(got.response.breakpoints.size(), 1u);
+  auto bps = context().GetBreakpointsForSource(file_path_);
+  ASSERT_NE(bps, nullptr);
+  ASSERT_EQ(bps->size(), 1u);
+  ASSERT_TRUE((*bps)[0]);
+  EXPECT_EQ((*bps)[0]->GetSettings().condition, "y == 100");
 }
 
 }  // namespace zxdb

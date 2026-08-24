@@ -134,6 +134,7 @@ void DebugAdapterContext::DidResolveConnection(const Err& err) {
   }
   dap::InitializeResponse response;
   response.supportsFunctionBreakpoints = true;
+  response.supportsConditionalBreakpoints = true;
   response.supportsConfigurationDoneRequest = true;
   response.supportsEvaluateForHovers = false;
   response.supportsTerminateRequest = true;

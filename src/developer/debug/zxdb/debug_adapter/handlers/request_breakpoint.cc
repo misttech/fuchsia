@@ -59,6 +59,9 @@ dap::ResponseOrError<dap::SetBreakpointsResponse> OnRequestBreakpoint(
     std::vector<InputLocation> locations;
     locations.emplace_back(FileLine(path, request_bp.line));
     settings.locations = locations;
+    if (request_bp.condition.has_value()) {
+      settings.condition = request_bp.condition.value();
+    }
     breakpoint->SetSettings(settings);
     ctx->StoreBreakpointForSource(path, breakpoint);
 

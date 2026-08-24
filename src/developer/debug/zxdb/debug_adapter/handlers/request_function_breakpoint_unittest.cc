@@ -104,6 +104,28 @@ TEST_F(RequestFunctionBreakpointTest, ClearFunctionBreakpoints) {
   EXPECT_TRUE(context().GetFunctionBreakpoints().empty());
 }
 
+TEST_F(RequestFunctionBreakpointTest, SetFunctionBreakpointsWithCondition) {
+  InitializeDebugging();
+
+  dap::SetFunctionBreakpointsRequest req = {};
+  req.breakpoints = {
+      dap::FunctionBreakpoint{.condition = "x == 42", .name = "main"},
+  };
+  auto response = client().send(req);
+
+  context().OnStreamReadable();
+  RunClient();
+
+  auto got = response.get();
+  EXPECT_FALSE(got.error);
+  ASSERT_EQ(got.response.breakpoints.size(), 1u);
+  ASSERT_EQ(context().GetFunctionBreakpoints().size(), 1u);
+
+  auto bp = context().GetFunctionBreakpoints()[0];
+  ASSERT_TRUE(bp);
+  EXPECT_EQ(bp->GetSettings().condition, "x == 42");
+}
+
 TEST_F(RequestFunctionBreakpointTest, SetFunctionBreakpointsWithInvalidName) {
   InitializeDebugging();
 
