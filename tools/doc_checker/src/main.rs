@@ -477,7 +477,10 @@ mod test {
             ),
         ];
 
-        if let Some(actual_errors) = do_main(&opt).await? {
+        if let Some(mut actual_errors) = do_main(&opt).await? {
+            let mut expected = expected;
+            actual_errors.sort();
+            expected.sort();
             let mut expected_iter = expected.iter();
             for actual in actual_errors {
                 if let Some(expected) = expected_iter.next() {

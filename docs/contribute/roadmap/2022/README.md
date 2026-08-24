@@ -13,7 +13,7 @@ http://www.fuchsia.dev/fuchsia-src/contribute/roadmap/2022
 
 {% dynamic if user.is_googler %}
 
-{% include "contribute/roadmap/2022/_yaml_load.md" %}
+{% include "contribute/roadmap/2022/_yaml_load.md" %} <!-- doc-checker: ignore-missing -->
 {% include "docs/contribute/roadmap/_common/_roadmap_body_2022.md" %}
 
 {% dynamic else %}

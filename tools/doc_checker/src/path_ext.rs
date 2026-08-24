@@ -57,7 +57,6 @@ impl DocPathExt for Path {
 
 /// Standard path normalization that resolves '.' and '..' components without accessing the filesystem.
 /// Returns `Err` if the path escapes the root (i.e. starts with '..').
-#[allow(dead_code)]
 pub fn normalize_path(path: &Path) -> anyhow::Result<PathBuf> {
     let mut normalized = PathBuf::new();
     for component in path.components() {
@@ -81,10 +80,15 @@ pub fn normalize_path(path: &Path) -> anyhow::Result<PathBuf> {
 
 /// Normalizes the path and verifies it remains within the specified `root_dir`.
 /// If the normalized path is outside `root_dir`, returns an error.
-#[allow(dead_code)]
 pub fn normalize_and_validate_path(path: &Path, root_dir: &Path) -> anyhow::Result<PathBuf> {
-    let normalized = normalize_path(&root_dir.join(path))?;
     let normalized_root = normalize_path(root_dir).unwrap_or_else(|_| root_dir.to_path_buf());
+    if let Ok(normalized_path) = normalize_path(path) {
+        if normalized_path.starts_with(&normalized_root) {
+            return Ok(normalized_path);
+        }
+    }
+
+    let normalized = normalize_path(&root_dir.join(path))?;
     if normalized.starts_with(&normalized_root) {
         Ok(normalized)
     } else {
