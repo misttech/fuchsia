@@ -55,7 +55,6 @@ source_set("strings") {
     "//third_party/abseil-cpp/src/absl/strings/internal/charconv_parse.h",
     "//third_party/abseil-cpp/src/absl/strings/internal/damerau_levenshtein_distance.h",
     "//third_party/abseil-cpp/src/absl/strings/internal/memutil.h",
-    "//third_party/abseil-cpp/src/absl/strings/internal/stl_type_traits.h",
     "//third_party/abseil-cpp/src/absl/strings/internal/str_join_internal.h",
     "//third_party/abseil-cpp/src/absl/strings/internal/str_split_internal.h",
     "//third_party/abseil-cpp/src/absl/strings/internal/string_constant.h",
