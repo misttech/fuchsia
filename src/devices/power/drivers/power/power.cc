@@ -17,6 +17,7 @@
 
 #include <memory>
 
+#include <bind/fuchsia/cpp/bind.h>
 #include <bind/fuchsia/power/cpp/bind.h>
 #include <ddktl/metadata_server.h>
 #include <fbl/alloc_checker.h>
@@ -389,9 +390,15 @@ zx_status_t PowerDomain::Create(void* ctx, zx_device_t* parent,
   if (!ac.check()) {
     return ZX_ERR_NO_MEMORY;
   }
-  zx_device_str_prop_t props[] = {
+  std::vector<zx_device_str_prop_t> props = {
       {bind_fuchsia_power::POWER_DOMAIN, str_prop_int_val(index)},
   };
+  if (domain_info.global_id().has_value()) {
+    props.push_back({bind_fuchsia::ID, str_prop_int_val(*domain_info.global_id())});
+  }
+  if (domain_info.name().has_value()) {
+    props.push_back({bind_fuchsia::NAME, str_prop_str_val(domain_info.name()->c_str())});
+  }
 
   auto endpoints = fidl::CreateEndpoints<fuchsia_io::Directory>();
   if (endpoints.is_error()) {
