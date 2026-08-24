@@ -4,6 +4,7 @@
 
 #include <dirent.h>
 #include <fcntl.h>
+#include <fidl/fuchsia.fs/cpp/common_types.h>
 #include <fidl/fuchsia.io/cpp/markers.h>
 #include <fidl/fuchsia.io/cpp/wire_types.h>
 #include <lib/async-loop/cpp/loop.h>
@@ -534,6 +535,25 @@ TEST(MemfsTest, TruncateToMaxFileSize) {
 
   // Try to truncate beyond the max file size.
   ASSERT_STATUS(file->Truncate(max_file_size + 1), ZX_ERR_OUT_OF_RANGE);
+}
+
+TEST(MemfsTest, GetFilesystemInfo) {
+  async::Loop loop(&kAsyncLoopConfigAttachToCurrentThread);
+
+  zx::result result = memfs::Memfs::Create(loop.dispatcher(), "<tmp>");
+  ASSERT_TRUE(result.is_ok()) << result.status_string();
+  auto& [vfs, root] = result.value();
+
+  zx::result<fs::FilesystemInfo> info_or = vfs->GetFilesystemInfo();
+  ASSERT_TRUE(info_or.is_ok()) << info_or.status_string();
+  const fs::FilesystemInfo& info = info_or.value();
+
+  EXPECT_EQ(info.total_bytes, zx_system_get_physmem());
+  EXPECT_EQ(info.used_bytes, 0u);
+  EXPECT_EQ(info.total_nodes, UINT64_MAX);
+  EXPECT_EQ(info.name, "memfs");
+  EXPECT_EQ(info.block_size, zx_system_get_page_size());
+  EXPECT_EQ(info.fs_type, fuchsia_fs::VfsType::kMemfs);
 }
 
 }  // namespace

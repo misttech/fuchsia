@@ -15,6 +15,7 @@
 #include <unistd.h>
 #include <zircon/errors.h>
 #include <zircon/limits.h>
+#include <zircon/syscalls.h>
 #include <zircon/types.h>
 
 #include <cstdint>
@@ -140,8 +141,7 @@ TEST(FidlTests, TestFidlQueryFilesystem) {
   fuchsia_io::wire::FilesystemInfo info;
   ASSERT_NO_FATAL_FAILURE(QueryInfo("/fidltmp-basic", &info));
 
-  // These values are nonsense, but they're the nonsense we expect memfs to generate.
-  ASSERT_EQ(info.total_bytes, UINT64_MAX);
+  ASSERT_EQ(info.total_bytes, zx_system_get_physmem());
   ASSERT_EQ(info.used_bytes, 0);
 
   std::promise<zx_status_t> promise;

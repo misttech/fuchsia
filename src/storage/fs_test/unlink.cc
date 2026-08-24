@@ -139,6 +139,10 @@ TEST_P(UnlinkTest, OpenElsewhereLongName) {
 }
 
 TEST_P(UnlinkTest, SpaceReturned) {
+  if (fs().GetTraits().in_memory) {
+    GTEST_SKIP() << "In-memory filesystems do not track space usage";
+  }
+
   const std::string path1 = GetPath("file1");
   fbl::unique_fd fd1(open(path1.c_str(), O_RDWR | O_CREAT, 0644));
   ASSERT_TRUE(fd1);

@@ -44,10 +44,11 @@ zx::result<fs::FilesystemInfo> Memfs::GetFilesystemInfo() {
   info.fs_type = fuchsia_fs::VfsType::kMemfs;
   info.SetFsId(fs_id_);
 
-  // TODO(https://fxbug.dev/42168054) Define a better value for "unknown" or "undefined" for the
-  // total_bytes and used_bytes (memfs vends writable duplicates of its underlying VMOs to its
-  // clients which makes accounting difficult).
-  info.total_bytes = UINT64_MAX;
+  // memfs vends writable duplicates of its underlying VMOs to its clients which makes accounting
+  // difficult, so used_bytes is reported as 0.  We used to return UINT64_MAX for total_bytes, but
+  // that caused issues with clients which attempted to do arithmetic on the value, so we now return
+  // the available system memory, so some reasonable value is returned.
+  info.total_bytes = zx_system_get_physmem();
   info.used_bytes = 0;
   info.total_nodes = UINT64_MAX;
   uint64_t deleted_ino_count = Vnode::GetDeletedInoCounter();
