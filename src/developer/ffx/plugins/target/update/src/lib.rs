@@ -555,8 +555,8 @@ for more detail on the progress of update-related downloads.\n"
                     // if waiting for reboot, wait for a while to get a head start, hopefully returning after
                     // the shutdown.
                     write_progress_kb(&info, "Waiting to Reboot", writer)?;
-                    write!(writer, "\n")?;
                     if reboot {
+                        writeln!(writer)?;
                         return Ok(());
                     }
                 }
@@ -564,39 +564,24 @@ for more detail on the progress of update-related downloads.\n"
                 | fidl_fuchsia_update_installer_ext::State::DeferReboot(info)
                 | fidl_fuchsia_update_installer_ext::State::Complete(info) => {
                     write_progress_kb(&info, "Complete", writer)?;
+                    writeln!(writer)?;
                     return Ok(());
                 }
 
                 fidl_fuchsia_update_installer_ext::State::FailPrepare(reason) => {
-                    write!(
-                        writer,
-                        "
-"
-                    )?;
+                    writeln!(writer)?;
                     return Err(UpdateError::InstallFailedPrepare(reason));
                 }
                 fidl_fuchsia_update_installer_ext::State::FailStage(data) => {
-                    write!(
-                        writer,
-                        "
-"
-                    )?;
+                    writeln!(writer)?;
                     return Err(UpdateError::InstallFailedStage(data.reason()));
                 }
                 fidl_fuchsia_update_installer_ext::State::FailFetch(data) => {
-                    write!(
-                        writer,
-                        "
-"
-                    )?;
+                    writeln!(writer)?;
                     return Err(UpdateError::InstallFailedFetch(data.reason()));
                 }
                 fidl_fuchsia_update_installer_ext::State::Canceled => {
-                    write!(
-                        writer,
-                        "
-"
-                    )?;
+                    writeln!(writer)?;
                     return Err(UpdateError::InstallCanceled);
                 }
 

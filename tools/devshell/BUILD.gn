@@ -237,6 +237,7 @@ host_script_test_data("fx_bash_tests") {
         "//tools/devshell/metrics",
         "//tools/devshell/mkzedboot",
         "//tools/devshell/ota",
+        "//tools/devshell/reboot",
         "//tools/devshell/serve",
         "//tools/devshell/serve-remote",
         "//tools/devshell/set",

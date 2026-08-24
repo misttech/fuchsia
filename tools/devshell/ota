@@ -138,7 +138,7 @@ function main {
     fx-info "$(date '+%Y-%m-%d %H:%M:%S') Build completed in ${build_duration} seconds."
   fi
 
-  local ota_args=()
+  local ota_args=("--reboot" "false")
   if $packageless; then
     ota_args+=("--product-bundle" "--packageless")
   fi
@@ -146,16 +146,15 @@ function main {
   fx-info "$(date '+%Y-%m-%d %H:%M:%S') Starting OTA..."
   local ota_start_time=$(date +%s)
 
-  # Note: the following command continues to run as the system goes into
-  # reboot, so we lose SSH connection before it "completes". As such the
-  # following command completes with error, but that is not actually an error.
-  fx-command-run ffx target update force-install "${ota_args[@]}" || true
+  fx-command-run ffx target update force-install "${ota_args[@]}"
 
   local ota_end_time=$(date +%s)
   local ota_duration=$((ota_end_time - ota_start_time))
 
   # Assuming ffx prints its own byte counts in its progress bar, this measures the wall clock time.
   fx-info "$(date '+%Y-%m-%d %H:%M:%S') OTA sequence completed in ${ota_duration} seconds."
+
+  fx-command-run reboot
 
   fx-info "$(date '+%Y-%m-%d %H:%M:%S') Waiting for device to reboot..."
   local wait_start_time=$(date +%s)
