@@ -951,11 +951,11 @@ This should never be set as a build argument.
 }
   tsan = {
   shared = {
-  clang_rt = ""
+  clang_rt = "../../../../out/not-default/libclang_rt.tsan.so"
 }
   static = {
   clang_rt = "../../../../out/not-default/libclang_rt.tsan.a"
-  clang_rt_cxx = "../../../../out/not-default/libclang_rt.tsan_cxx.a"
+  clang_rt_cxx = ""
 }
 }
   ubsan = {
@@ -1706,7 +1706,7 @@ Makes clippy targets fail to build when any "deny" lints are found
 
 **Current value (from the default):** `true`
 
-From //build/rust/config.gni:75
+From //build/rust/config.gni:78
 
 ### clippy_force_warn_all
 
@@ -1716,7 +1716,7 @@ should only be used to collect stats about clippy lints in our source tree.
 
 **Current value (from the default):** `false`
 
-From //build/rust/config.gni:72
+From //build/rust/config.gni:75
 
 ### clippy_ignore_rustc
 
@@ -1729,7 +1729,7 @@ clippy lints, they just wont show up in ninja's stderr
 
 **Current value (from the default):** `false`
 
-From //build/rust/config.gni:92
+From //build/rust/config.gni:95
 
 ### clippy_warn_all
 
@@ -1738,7 +1738,7 @@ Note: setting lint levels in source takes precedence over this.
 
 **Current value (from the default):** `false`
 
-From //build/rust/config.gni:67
+From //build/rust/config.gni:70
 
 ### cobalt_environment
 
@@ -8757,7 +8757,7 @@ LINT.IfChange
 
 **Current value (from the default):** `"deny"`
 
-From //build/rust/config.gni:61
+From //build/rust/config.gni:64
 
 ### rust_debug_assertions
 
@@ -8765,7 +8765,7 @@ Enable debug assertions, e.g. for overflow checking.
 
 **Current value (from the default):** `false`
 
-From //build/rust/config.gni:23
+From //build/rust/config.gni:26
 
 ### rust_incremental
 
@@ -8782,7 +8782,7 @@ Sets the default LTO type for rustc builds.
 
 **Current value (from the default):** `""`
 
-From //build/rust/config.gni:56
+From //build/rust/config.gni:59
 
 ### rust_one_rlib_per_dir
 
@@ -8905,10 +8905,11 @@ From //src/virtualization/bin/args.gni:8
 
 Sets a custom base directory for `rustc` and `cargo`.
 This can be used to test custom Rust toolchains.
+LINT.IfChange
 
 **Current value (from the default):** `"//prebuilt/third_party/rust/linux-x64"`
 
-From //build/rust/config.gni:20
+From //build/rust/config.gni:21
 
 ### rustc_timeout
 
@@ -8939,7 +8940,7 @@ e.g., clang_version_description = read_file("$_rustc_lib_dir/VERSION")
 
 **Current value (from the default):** `""`
 
-From //build/rust/config.gni:53
+From //build/rust/config.gni:56
 
 ### rustc_version_string
 
@@ -8952,13 +8953,13 @@ prebuilt is used.
 
 **Current value (from the default):** `"MCwGmTQ7oDy6ApmB5JlJG7UdC8GXvmhHU2H_mOIUEbcC"`
 
-From //build/rust/config.gni:47
+From //build/rust/config.gni:50
 
 ### rustdoc_extern_html_root_url_base
 
 **Current value (from the default):** `"https://fuchsia-docs.firebaseapp.com/rust"`
 
-From //build/rust/config.gni:84
+From //build/rust/config.gni:87
 
 ### scenic_enable_vulkan_validation
 
