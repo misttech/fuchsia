@@ -5,10 +5,11 @@
 // https://opensource.org/licenses/MIT
 
 use super::dispatcher_ffi::{
-    cpp_dispatcher_add_observer, cpp_dispatcher_get_ref_counted, cpp_dispatcher_get_related_koid,
-    cpp_dispatcher_get_type, cpp_dispatcher_on_zero_handles, cpp_dispatcher_recycle,
-    cpp_dispatcher_remove_observer, cpp_dispatcher_signals_state_locked,
-    cpp_dispatcher_update_state, cpp_dispatcher_update_state_locked,
+    cpp_dispatcher_add_observer, cpp_dispatcher_current_handle_count, cpp_dispatcher_get_name,
+    cpp_dispatcher_get_ref_counted, cpp_dispatcher_get_related_koid, cpp_dispatcher_get_type,
+    cpp_dispatcher_on_zero_handles, cpp_dispatcher_recycle, cpp_dispatcher_remove_observer,
+    cpp_dispatcher_set_name, cpp_dispatcher_signals_state_locked, cpp_dispatcher_update_state,
+    cpp_dispatcher_update_state_locked,
 };
 use super::handle::HandleValue;
 use super::process_dispatcher_ffi::cpp_handle_table_get_dispatcher;
@@ -438,6 +439,41 @@ impl Dispatcher {
             unsafe { Some(&*(self as *const Self as *const T)) }
         } else {
             None
+        }
+    }
+
+    /// Gets the name of the dispatcher.
+    pub fn get_name(&self, out_name: &mut [u8; zx_types::ZX_MAX_NAME_LEN]) -> Result<(), Status> {
+        // SAFETY: self is a valid Dispatcher and out_name points to a valid buffer of ZX_MAX_NAME_LEN bytes.
+        let status = unsafe {
+            cpp_dispatcher_get_name(self, out_name.as_mut_ptr() as *mut core::ffi::c_char)
+        };
+        Status::ok(status)
+    }
+
+    /// Sets the name of the dispatcher.
+    pub fn set_name(&self, name: &[u8]) -> Result<(), Status> {
+        // SAFETY: self is a valid Dispatcher and name points to name.len() bytes of valid memory.
+        let status = unsafe {
+            cpp_dispatcher_set_name(self, name.as_ptr() as *const core::ffi::c_char, name.len())
+        };
+        Status::ok(status)
+    }
+
+    /// Returns the current number of handles pointing to this dispatcher.
+    pub fn current_handle_count(&self) -> u32 {
+        // SAFETY: self is a valid Dispatcher reference.
+        unsafe { cpp_dispatcher_current_handle_count(self) }
+    }
+
+    /// Returns the basic handle information for this dispatcher.
+    pub fn get_handle_info(&self, rights: zx_rights_t) -> zx_types::zx_info_handle_basic_t {
+        zx_types::zx_info_handle_basic_t {
+            koid: self.get_koid(),
+            rights,
+            type_: self.get_type(),
+            related_koid: self.get_related_koid(),
+            ..Default::default()
         }
     }
 

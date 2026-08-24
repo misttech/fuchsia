@@ -43,6 +43,9 @@ zx_status_t cpp_dispatcher_add_observer(Dispatcher* dispatcher, SignalObserver* 
                                         const void* handle, zx_signals_t signals);
 bool cpp_dispatcher_remove_observer(Dispatcher* dispatcher, SignalObserver* observer,
                                     zx_signals_t* out_signals);
+zx_status_t cpp_dispatcher_get_name(const Dispatcher* disp, char out_name[ZX_MAX_NAME_LEN]);
+zx_status_t cpp_dispatcher_set_name(Dispatcher* disp, const char* name, size_t len);
+uint32_t cpp_dispatcher_current_handle_count(const Dispatcher* disp);
 }
 
 template <typename T>

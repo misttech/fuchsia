@@ -205,4 +205,15 @@ unsafe extern "C" {
     pub(crate) fn cpp_thread_dispatcher_set_blocked_reason(
         reason: super::thread_dispatcher::Blocked,
     ) -> super::thread_dispatcher::Blocked;
+
+    /// Retrieves exception report from thread.
+    ///
+    /// # Safety
+    ///
+    /// `thread` must point to a valid `ThreadDispatcher`.
+    /// `out_report` must point to valid uninitialized memory for `zx_exception_report_t`.
+    pub(crate) fn cpp_thread_dispatcher_get_exception_report(
+        thread: *const ThreadDispatcher,
+        out_report: *mut zx_types::zx_exception_report_t,
+    ) -> zx_status_t;
 }

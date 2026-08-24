@@ -16,6 +16,7 @@ mod job;
 mod membarrier;
 mod msi;
 mod nanosleep;
+mod object_info;
 mod object_wait;
 mod process;
 mod profile;

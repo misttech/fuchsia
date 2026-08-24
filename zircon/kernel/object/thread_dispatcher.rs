@@ -8,9 +8,10 @@ use super::handle::KernelHandle;
 use super::process_dispatcher::ProcessDispatcher;
 use super::thread_dispatcher_ffi::{
     cpp_sys_thread_legacy_yield, cpp_sys_thread_raise_exception, cpp_thread_dispatcher_create,
-    cpp_thread_dispatcher_exit_current, cpp_thread_dispatcher_get_info_for_userspace,
-    cpp_thread_dispatcher_get_runtime_stats, cpp_thread_dispatcher_get_stats_for_userspace,
-    cpp_thread_dispatcher_initialize, cpp_thread_dispatcher_is_current, cpp_thread_dispatcher_kill,
+    cpp_thread_dispatcher_exit_current, cpp_thread_dispatcher_get_exception_report,
+    cpp_thread_dispatcher_get_info_for_userspace, cpp_thread_dispatcher_get_runtime_stats,
+    cpp_thread_dispatcher_get_stats_for_userspace, cpp_thread_dispatcher_initialize,
+    cpp_thread_dispatcher_is_current, cpp_thread_dispatcher_kill,
     cpp_thread_dispatcher_kill_current, cpp_thread_dispatcher_read_state,
     cpp_thread_dispatcher_restricted_kick, cpp_thread_dispatcher_resume,
     cpp_thread_dispatcher_set_base_profile, cpp_thread_dispatcher_set_soft_affinity,
@@ -271,6 +272,18 @@ impl ThreadDispatcher {
             cpp_thread_dispatcher_get_runtime_stats(self as *const _, info.as_mut_ptr());
             info.assume_init()
         }
+    }
+
+    /// Returns the thread's current exception report.
+    pub fn get_exception_report(&self) -> Result<zx_types::zx_exception_report_t, Status> {
+        let mut report = MaybeUninit::<zx_types::zx_exception_report_t>::uninit();
+        // SAFETY: self is a valid ThreadDispatcher and report points to uninitialized stack memory.
+        let status = unsafe {
+            cpp_thread_dispatcher_get_exception_report(self as *const _, report.as_mut_ptr())
+        };
+        Status::ok(status)?;
+        // SAFETY: cpp_thread_dispatcher_get_exception_report succeeded and initialized report.
+        Ok(unsafe { report.assume_init() })
     }
 
     /// Raises a user exception for the job debugger.

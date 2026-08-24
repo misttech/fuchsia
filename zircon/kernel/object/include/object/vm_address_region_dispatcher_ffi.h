@@ -31,6 +31,10 @@ FFI_ALWAYS_INLINE zx_status_t cpp_vmar_dispatcher_map(VmAddressRegionDispatcher*
                                                       uint64_t vmo_offset, size_t len,
                                                       uint32_t flags, zx_vaddr_t* out_base);
 
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE zx_info_vmar_t
+cpp_vmar_dispatcher_get_vmar_info(const VmAddressRegionDispatcher* vmar);
+
 __END_CDECLS
 
 #endif  // ZIRCON_KERNEL_OBJECT_INCLUDE_OBJECT_VM_ADDRESS_REGION_DISPATCHER_FFI_H_

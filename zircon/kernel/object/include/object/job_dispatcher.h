@@ -332,6 +332,10 @@ void cpp_job_dispatcher_set_kill_on_oom(JobDispatcher* job, bool value);
 bool cpp_job_dispatcher_get_kill_on_oom(const JobDispatcher* job);
 bool cpp_job_dispatcher_kill_job_with_kill_on_oom(JobDispatcher* job);
 void cpp_job_dispatcher_get_info(const JobDispatcher* job, zx_info_job_t* info_out);
+zx_info_task_runtime_t cpp_job_dispatcher_get_runtime_stats(const JobDispatcher* job);
+zx_status_t cpp_job_dispatcher_enumerate_children(const JobDispatcher* job, zx_koid_t* user_koids,
+                                                  size_t max, bool is_jobs, size_t* out_count,
+                                                  size_t* out_avail);
 }
 
 #endif  // ZIRCON_KERNEL_OBJECT_INCLUDE_OBJECT_JOB_DISPATCHER_H_

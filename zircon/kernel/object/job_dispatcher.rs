@@ -16,8 +16,9 @@ use zx_types::{
 
 use super::handle::KernelHandle;
 use super::job_dispatcher_ffi::{
-    cpp_job_dispatcher_create, cpp_job_dispatcher_get_info, cpp_job_dispatcher_get_kill_on_oom,
-    cpp_job_dispatcher_get_root_job, cpp_job_dispatcher_is_root, cpp_job_dispatcher_kill,
+    cpp_job_dispatcher_create, cpp_job_dispatcher_enumerate_children, cpp_job_dispatcher_get_info,
+    cpp_job_dispatcher_get_kill_on_oom, cpp_job_dispatcher_get_root_job,
+    cpp_job_dispatcher_get_runtime_stats, cpp_job_dispatcher_is_root, cpp_job_dispatcher_kill,
     cpp_job_dispatcher_kill_job_with_kill_on_oom, cpp_job_dispatcher_max_height,
     cpp_job_dispatcher_parent, cpp_job_dispatcher_set_basic_policy_v1,
     cpp_job_dispatcher_set_basic_policy_v2, cpp_job_dispatcher_set_kill_on_oom,
@@ -210,5 +211,35 @@ impl JobDispatcher {
             cpp_job_dispatcher_get_info(self as *const _, info.as_mut_ptr());
             info.assume_init()
         }
+    }
+
+    /// Returns aggregate runtime stats for this job and child processes.
+    pub fn get_runtime_stats(&self) -> zx_types::zx_info_task_runtime_t {
+        // SAFETY: self is a valid JobDispatcher reference.
+        unsafe { cpp_job_dispatcher_get_runtime_stats(self as *const _) }
+    }
+
+    /// Enumerates child jobs or child processes into user buffer and returns (actual_count, available_count).
+    pub fn enumerate_children(
+        &self,
+        user_koids: crate::user_copy::UserOutPtr<zx_types::zx_koid_t>,
+        max: usize,
+        is_jobs: bool,
+    ) -> Result<(usize, usize), Status> {
+        let mut count = 0usize;
+        let mut avail = 0usize;
+        // SAFETY: self is a valid JobDispatcher reference and user_koids is a user pointer.
+        let status = unsafe {
+            cpp_job_dispatcher_enumerate_children(
+                self as *const _,
+                user_koids.as_ptr(),
+                max,
+                is_jobs,
+                &mut count,
+                &mut avail,
+            )
+        };
+        Status::ok(status)?;
+        Ok((count, avail))
     }
 }

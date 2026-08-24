@@ -170,7 +170,7 @@ pub struct ThreadStats {
 
 impl ThreadStats {
     fn from_raw(
-        sys::zx_info_thread_stats_t { total_runtime, last_scheduled_cpu }: sys::zx_info_thread_stats_t,
+        sys::zx_info_thread_stats_t { total_runtime, last_scheduled_cpu, .. }: sys::zx_info_thread_stats_t,
     ) -> Self {
         Self { total_runtime: MonotonicDuration::from_nanos(total_runtime), last_scheduled_cpu }
     }

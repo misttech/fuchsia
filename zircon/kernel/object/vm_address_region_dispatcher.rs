@@ -79,4 +79,14 @@ impl VmAddressRegionDispatcher {
         Status::ok(status)?;
         Ok(out_base)
     }
+
+    /// Returns information about this VMAR.
+    pub fn get_vmar_info(&self) -> zx_types::zx_info_vmar_t {
+        // SAFETY: self is a valid VmAddressRegionDispatcher reference.
+        unsafe {
+            super::vm_address_region_dispatcher_ffi::cpp_vmar_dispatcher_get_vmar_info(
+                self as *const _,
+            )
+        }
+    }
 }

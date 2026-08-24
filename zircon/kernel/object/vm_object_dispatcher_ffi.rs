@@ -22,4 +22,8 @@ unsafe extern "C" {
         out_handle: *mut MaybeUninit<KernelHandle<VmObjectDispatcher>>,
         out_rights: *mut zx_rights_t,
     ) -> zx_status_t;
+    pub(crate) fn cpp_vm_object_dispatcher_get_vmo_info(
+        vmo: *mut VmObjectDispatcher,
+        rights: zx_types::zx_rights_t,
+    ) -> zx_types::zx_info_vmo_t;
 }

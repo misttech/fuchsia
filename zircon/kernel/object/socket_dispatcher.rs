@@ -521,6 +521,7 @@ impl SocketDispatcher {
             rx_buf_available: if is_datagram { data.datagram_size() } else { data.stream_size() },
             tx_buf_max: 0,
             tx_buf_size: 0,
+            ..Default::default()
         };
 
         if let Some(peer) = peer {

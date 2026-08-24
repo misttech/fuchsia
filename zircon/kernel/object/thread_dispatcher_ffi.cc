@@ -159,4 +159,11 @@ FFI_ALWAYS_INLINE ThreadDispatcher::Blocked cpp_thread_dispatcher_set_blocked_re
   return ThreadDispatcher::SetBlockedReason(reason);
 }
 
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE zx_status_t cpp_thread_dispatcher_get_exception_report(
+    const ThreadDispatcher* thread, ffi::Uninitialized<zx_exception_report_t>* out_report) {
+  return const_cast<ThreadDispatcher*>(thread)->GetExceptionReport(
+      out_report->GetAddressUnchecked());
+}
+
 }  // extern "C"

@@ -52,4 +52,13 @@ unsafe extern "C" {
         flags: u32,
         out_base: *mut zx_vaddr_t,
     ) -> zx_status_t;
+
+    /// Calls into C++ implementation to get VMAR info.
+    ///
+    /// # Safety
+    ///
+    /// `vmar` must point to a valid `VmAddressRegionDispatcher`.
+    pub fn cpp_vmar_dispatcher_get_vmar_info(
+        vmar: *const VmAddressRegionDispatcher,
+    ) -> zx_types::zx_info_vmar_t;
 }

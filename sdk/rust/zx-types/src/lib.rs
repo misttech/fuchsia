@@ -1289,7 +1289,7 @@ pub struct zx_exception_info_t {
 
 #[repr(C)]
 #[derive(Default, Copy, Clone, Eq, PartialEq)]
-#[cfg_attr(feature = "zerocopy", derive(KnownLayout, FromBytes, Immutable))]
+#[cfg_attr(feature = "zerocopy", derive(KnownLayout, FromBytes, Immutable, IntoBytes))]
 pub struct zx_x86_64_exc_data_t {
     pub vector: u64,
     pub err_code: u64,
@@ -1304,7 +1304,7 @@ impl Debug for zx_x86_64_exc_data_t {
 
 #[repr(C)]
 #[derive(Default, Copy, Clone, Eq, PartialEq)]
-#[cfg_attr(feature = "zerocopy", derive(FromBytes, Immutable))]
+#[cfg_attr(feature = "zerocopy", derive(KnownLayout, FromBytes, Immutable, IntoBytes))]
 pub struct zx_arm64_exc_data_t {
     pub esr: u32,
     padding1: [PadByte; 4],
@@ -1320,7 +1320,7 @@ impl Debug for zx_arm64_exc_data_t {
 
 #[repr(C)]
 #[derive(Default, Copy, Clone, Eq, PartialEq)]
-#[cfg_attr(feature = "zerocopy", derive(FromBytes, Immutable))]
+#[cfg_attr(feature = "zerocopy", derive(KnownLayout, FromBytes, Immutable, IntoBytes))]
 pub struct zx_riscv64_exc_data_t {
     pub cause: u64,
     pub tval: u64,
@@ -1377,7 +1377,7 @@ impl Debug for zx_exception_header_arch_t {
 
 #[repr(C)]
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
-#[cfg_attr(feature = "zerocopy", derive(KnownLayout, FromBytes, Immutable))]
+#[cfg_attr(feature = "zerocopy", derive(KnownLayout, FromBytes, Immutable, IntoBytes))]
 pub struct zx_exception_header_t {
     pub size: u32,
     pub type_: zx_excp_type_t,
@@ -1426,6 +1426,20 @@ pub struct zx_exception_report_t {
     pub header: zx_exception_header_t,
     pub context: zx_exception_context_t,
 }
+
+const_assert_eq!(core::mem::size_of::<zx_exception_report_t>(), 40);
+const_assert_eq!(core::mem::align_of::<zx_exception_report_t>(), 8);
+
+#[repr(C, align(8))]
+#[derive(Debug, Copy, Clone, Eq, PartialEq)]
+#[cfg_attr(feature = "zerocopy", derive(KnownLayout, FromBytes, Immutable, IntoBytes))]
+pub struct zx_exception_report_v1_t {
+    pub header: zx_exception_header_t,
+    pub context: [u8; 24],
+}
+
+const_assert_eq!(core::mem::size_of::<zx_exception_report_v1_t>(), 32);
+const_assert_eq!(core::mem::align_of::<zx_exception_report_v1_t>(), 8);
 
 pub type zx_exception_state_t = u32;
 
@@ -1982,18 +1996,29 @@ multiconst!(zx_object_info_topic_t, [
     ZX_INFO_JOB_CHILDREN               = 8;  // zx_koid_t[n]
     ZX_INFO_JOB_PROCESSES              = 9;  // zx_koid_t[n]
     ZX_INFO_THREAD                     = 10; // zx_info_thread_t[1]
+    ZX_INFO_THREAD_EXCEPTION_REPORT_V1 = info_topic(11, 0); // zx_exception_report_v1_t[1]
     ZX_INFO_THREAD_EXCEPTION_REPORT    = info_topic(11, 1); // zx_exception_report_t[1]
+    ZX_INFO_TASK_STATS_V1              = info_topic(12, 0); // zx_info_task_stats_v1_t[1]
     ZX_INFO_TASK_STATS                 = info_topic(12, 1); // zx_info_task_stats_t[1]
+    ZX_INFO_PROCESS_MAPS_V1            = info_topic(13, 0); // zx_info_maps_t[n]
+    ZX_INFO_PROCESS_MAPS_V2            = info_topic(13, 1); // zx_info_maps_t[n]
     ZX_INFO_PROCESS_MAPS               = info_topic(13, 2); // zx_info_maps_t[n]
+    ZX_INFO_PROCESS_VMOS_V1            = info_topic(14, 0); // zx_info_vmo_t[n]
+    ZX_INFO_PROCESS_VMOS_V2            = info_topic(14, 1); // zx_info_vmo_t[n]
+    ZX_INFO_PROCESS_VMOS_V3            = info_topic(14, 2); // zx_info_vmo_t[n]
     ZX_INFO_PROCESS_VMOS               = info_topic(14, 3); // zx_info_vmo_t[n]
     ZX_INFO_THREAD_STATS               = 15; // zx_info_thread_stats_t[1]
     ZX_INFO_CPU_STATS                  = 16; // zx_info_cpu_stats_t[n]
+    ZX_INFO_KMEM_STATS_V1              = info_topic(17, 0); // zx_info_kmem_stats_v1_t[1]
     ZX_INFO_KMEM_STATS                 = info_topic(17, 1); // zx_info_kmem_stats_t[1]
     ZX_INFO_RESOURCE                   = 18; // zx_info_resource_t[1]
     ZX_INFO_HANDLE_COUNT               = 19; // zx_info_handle_count_t[1]
     ZX_INFO_BTI                        = 20; // zx_info_bti_t[1]
     ZX_INFO_PROCESS_HANDLE_STATS       = 21; // zx_info_process_handle_stats_t[1]
     ZX_INFO_SOCKET                     = 22; // zx_info_socket_t[1]
+    ZX_INFO_VMO_V1                     = info_topic(23, 0); // zx_info_vmo_v1_t[1]
+    ZX_INFO_VMO_V2                     = info_topic(23, 1); // zx_info_vmo_v2_t[1]
+    ZX_INFO_VMO_V3                     = info_topic(23, 2); // zx_info_vmo_v3_t[1]
     ZX_INFO_VMO                        = info_topic(23, 3); // zx_info_vmo_t[1]
     ZX_INFO_JOB                        = 24; // zx_info_job_t[1]
     ZX_INFO_TIMER                      = 25; // zx_info_timer_t[1]
@@ -2001,6 +2026,7 @@ multiconst!(zx_object_info_topic_t, [
     ZX_INFO_HANDLE_TABLE               = 27; // zx_info_handle_extended_t[n]
     ZX_INFO_MSI                        = 28; // zx_info_msi_t[1]
     ZX_INFO_GUEST_STATS                = 29; // zx_info_guest_stats_t[1]
+    ZX_INFO_TASK_RUNTIME_V1            = info_topic(30, 0); // zx_info_task_runtime_v1_t[1]
     ZX_INFO_TASK_RUNTIME               = info_topic(30, 1); // zx_info_task_runtime_t[1]
     ZX_INFO_KMEM_STATS_EXTENDED        = 31; // zx_info_kmem_stats_extended_t[1]
     ZX_INFO_VCPU                       = 32; // zx_info_vcpu_t[1]
@@ -2010,6 +2036,7 @@ multiconst!(zx_object_info_topic_t, [
     ZX_INFO_VMAR_MAPS                  = 36; // zx_info_maps_t[n]
     ZX_INFO_POWER_DOMAINS              = 37; // zx_info_power_domain_info_t[n]
     ZX_INFO_MEMORY_STALL               = 38; // zx_info_memory_stall_t[1]
+    ZX_INFO_INTERRUPT                  = 39; // zx_info_interrupt_t[1]
     ZX_INFO_CLOCK_MAPPED_SIZE          = 40; // usize[1]
 ]);
 
@@ -2036,19 +2063,23 @@ macro_rules! struct_decl_macro {
 // Don't need struct_decl_macro for this, the wrapper is different.
 #[repr(C)]
 #[derive(Default, Debug, Copy, Clone, Eq, PartialEq)]
-#[cfg_attr(feature = "zerocopy", derive(FromBytes, Immutable, KnownLayout))]
+#[cfg_attr(feature = "zerocopy", derive(FromBytes, Immutable, IntoBytes, KnownLayout))]
 pub struct zx_info_handle_basic_t {
     pub koid: zx_koid_t,
     pub rights: zx_rights_t,
     pub type_: zx_obj_type_t,
     pub related_koid: zx_koid_t,
-    padding1: [PadByte; 4],
+    pub reserved: u32,
+    pub padding1: [PadByte; 4],
 }
+
+const_assert_eq!(core::mem::size_of::<zx_info_handle_basic_t>(), 32);
+const_assert_eq!(core::mem::align_of::<zx_info_handle_basic_t>(), 8);
 
 // Don't need struct_decl_macro for this, the wrapper is different.
 #[repr(C)]
 #[derive(Default, Debug, Copy, Clone, Eq, PartialEq)]
-#[cfg_attr(feature = "zerocopy", derive(FromBytes, Immutable, KnownLayout))]
+#[cfg_attr(feature = "zerocopy", derive(FromBytes, Immutable, IntoBytes, KnownLayout))]
 pub struct zx_info_handle_extended_t {
     pub type_: zx_obj_type_t,
     pub handle_value: zx_handle_t,
@@ -2062,7 +2093,7 @@ pub struct zx_info_handle_extended_t {
 struct_decl_macro! {
     #[repr(C)]
     #[derive(Default, Debug, Copy, Clone, Eq, PartialEq)]
-    #[derive(zerocopy::FromBytes, zerocopy::Immutable)]
+    #[derive(zerocopy::FromBytes, zerocopy::Immutable, zerocopy::IntoBytes)]
     pub struct <zx_info_handle_count_t> {
         pub handle_count: u32,
     }
@@ -2073,9 +2104,10 @@ zx_info_handle_count_t!(zx_info_handle_count_t);
 // Don't need struct_decl_macro for this, the wrapper is different.
 #[repr(C)]
 #[derive(Default, Debug, Copy, Clone, Eq, PartialEq)]
-#[cfg_attr(feature = "zerocopy", derive(FromBytes, Immutable, KnownLayout))]
+#[cfg_attr(feature = "zerocopy", derive(FromBytes, Immutable, IntoBytes, KnownLayout))]
 pub struct zx_info_socket_t {
     pub options: u32,
+    pub padding1: [PadByte; 4],
     pub rx_buf_max: usize,
     pub rx_buf_size: usize,
     pub rx_buf_available: usize,
@@ -2083,9 +2115,12 @@ pub struct zx_info_socket_t {
     pub tx_buf_size: usize,
 }
 
+const_assert_eq!(core::mem::size_of::<zx_info_socket_t>(), 48);
+const_assert_eq!(core::mem::align_of::<zx_info_socket_t>(), 8);
+
 #[repr(C)]
 #[derive(Default, Debug, Copy, Clone, Eq, PartialEq)]
-#[cfg_attr(feature = "zerocopy", derive(FromBytes, Immutable, KnownLayout))]
+#[cfg_attr(feature = "zerocopy", derive(FromBytes, Immutable, IntoBytes, KnownLayout))]
 pub struct zx_info_iob_t {
     pub options: u64,
     pub region_count: u32,
@@ -2109,11 +2144,12 @@ multiconst!(u32, [
 struct_decl_macro! {
     #[repr(C)]
     #[derive(Default, Debug, Copy, Clone, Eq, PartialEq)]
-    #[derive(zerocopy::FromBytes, zerocopy::Immutable)]
+    #[derive(zerocopy::FromBytes, zerocopy::Immutable, zerocopy::IntoBytes)]
     pub struct <zx_info_process_t> {
         pub return_code: i64,
         pub start_time: zx_time_t,
         pub flags: u32,
+        pub padding1: [PadByte; 4],
     }
 }
 
@@ -2122,16 +2158,19 @@ zx_info_process_t!(zx_info_process_t);
 struct_decl_macro! {
     #[repr(C)]
     #[derive(Default, Debug, Copy, Clone, Eq, PartialEq)]
-    #[derive(zerocopy::FromBytes, zerocopy::Immutable)]
+    #[derive(zerocopy::FromBytes, zerocopy::Immutable, zerocopy::IntoBytes)]
     pub struct <zx_info_job_t> {
         pub return_code: i64,
         pub exited: u8,
         pub kill_on_oom: u8,
         pub debugger_attached: u8,
+        pub padding1: [PadByte; 5],
     }
 }
 
 zx_info_job_t!(zx_info_job_t);
+const_assert_eq!(core::mem::size_of::<zx_info_job_t>(), 16);
+const_assert_eq!(core::mem::align_of::<zx_info_job_t>(), 8);
 
 struct_decl_macro! {
     #[repr(C)]
@@ -2258,6 +2297,74 @@ pub struct zx_info_vmo_t {
     pub populated_fractional_scaled_bytes: u64,
 }
 
+#[repr(C)]
+#[derive(Default, Debug, Copy, Clone, Eq, PartialEq)]
+#[cfg_attr(feature = "zerocopy", derive(KnownLayout, FromBytes, Immutable, IntoBytes))]
+pub struct zx_info_vmo_v1_t {
+    pub koid: zx_koid_t,
+    pub name: [u8; ZX_MAX_NAME_LEN],
+    pub size_bytes: u64,
+    pub parent_koid: zx_koid_t,
+    pub num_children: usize,
+    pub num_mappings: usize,
+    pub share_count: usize,
+    pub flags: u32,
+    pub padding1: [PadByte; 4],
+    pub committed_bytes: u64,
+    pub handle_rights: zx_rights_t,
+    pub cache_policy: u32,
+}
+
+const_assert_eq!(core::mem::size_of::<zx_info_vmo_v1_t>(), 104);
+const_assert_eq!(core::mem::align_of::<zx_info_vmo_v1_t>(), 8);
+
+#[repr(C)]
+#[derive(Default, Debug, Copy, Clone, Eq, PartialEq)]
+#[cfg_attr(feature = "zerocopy", derive(KnownLayout, FromBytes, Immutable, IntoBytes))]
+pub struct zx_info_vmo_v2_t {
+    pub koid: zx_koid_t,
+    pub name: [u8; ZX_MAX_NAME_LEN],
+    pub size_bytes: u64,
+    pub parent_koid: zx_koid_t,
+    pub num_children: usize,
+    pub num_mappings: usize,
+    pub share_count: usize,
+    pub flags: u32,
+    pub padding1: [PadByte; 4],
+    pub committed_bytes: u64,
+    pub handle_rights: zx_rights_t,
+    pub cache_policy: u32,
+    pub metadata_bytes: u64,
+    pub committed_change_events: u64,
+}
+
+const_assert_eq!(core::mem::size_of::<zx_info_vmo_v2_t>(), 120);
+const_assert_eq!(core::mem::align_of::<zx_info_vmo_v2_t>(), 8);
+
+#[repr(C)]
+#[derive(Default, Debug, Copy, Clone, Eq, PartialEq)]
+#[cfg_attr(feature = "zerocopy", derive(KnownLayout, FromBytes, Immutable, IntoBytes))]
+pub struct zx_info_vmo_v3_t {
+    pub koid: zx_koid_t,
+    pub name: [u8; ZX_MAX_NAME_LEN],
+    pub size_bytes: u64,
+    pub parent_koid: zx_koid_t,
+    pub num_children: usize,
+    pub num_mappings: usize,
+    pub share_count: usize,
+    pub flags: u32,
+    pub padding1: [PadByte; 4],
+    pub committed_bytes: u64,
+    pub handle_rights: zx_rights_t,
+    pub cache_policy: u32,
+    pub metadata_bytes: u64,
+    pub committed_change_events: u64,
+    pub populated_bytes: u64,
+}
+
+const_assert_eq!(core::mem::size_of::<zx_info_vmo_v3_t>(), 128);
+const_assert_eq!(core::mem::align_of::<zx_info_vmo_v3_t>(), 8);
+
 struct_decl_macro! {
     #[repr(C)]
     #[derive(Default, Debug, Copy, Clone, Eq, PartialEq)]
@@ -2320,6 +2427,27 @@ struct_decl_macro! {
     #[repr(C)]
     #[derive(Default, Debug, Copy, Clone, Eq, PartialEq)]
     #[derive(zerocopy::FromBytes, zerocopy::Immutable)]
+    pub struct <zx_info_kmem_stats_v1_t> {
+        pub total_bytes: u64,
+        pub free_bytes: u64,
+        pub wired_bytes: u64,
+        pub total_heap_bytes: u64,
+        pub free_heap_bytes: u64,
+        pub vmo_bytes: u64,
+        pub mmu_overhead_bytes: u64,
+        pub ipc_bytes: u64,
+        pub other_bytes: u64,
+    }
+}
+
+zx_info_kmem_stats_v1_t!(zx_info_kmem_stats_v1_t);
+const_assert_eq!(core::mem::size_of::<zx_info_kmem_stats_v1_t>(), 72);
+const_assert_eq!(core::mem::align_of::<zx_info_kmem_stats_v1_t>(), 8);
+
+struct_decl_macro! {
+    #[repr(C)]
+    #[derive(Default, Debug, Copy, Clone, Eq, PartialEq)]
+    #[derive(zerocopy::FromBytes, zerocopy::Immutable)]
     pub struct <zx_info_kmem_stats_extended_t> {
         pub total_bytes: u64,
         pub free_bytes: u64,
@@ -2368,7 +2496,7 @@ zx_info_kmem_stats_compression_t!(zx_info_kmem_stats_compression_t);
 struct_decl_macro! {
     #[repr(C)]
     #[derive(Default, Debug, Copy, Clone, Eq, PartialEq)]
-    #[derive(zerocopy::FromBytes, zerocopy::Immutable)]
+    #[derive(zerocopy::FromBytes, zerocopy::Immutable, zerocopy::IntoBytes)]
     pub struct <zx_info_resource_t> {
         pub kind: u32,
         pub flags: u32,
@@ -2377,6 +2505,9 @@ struct_decl_macro! {
         pub name: [u8; ZX_MAX_NAME_LEN],
     }
 }
+
+const_assert_eq!(core::mem::size_of::<zx_info_resource_t>(), 56);
+const_assert_eq!(core::mem::align_of::<zx_info_resource_t>(), 8);
 
 struct_decl_macro! {
     #[repr(C)]
@@ -2429,7 +2560,7 @@ multiconst!(zx_thread_state_t, [
 
 #[repr(C)]
 #[derive(Default, Debug, Copy, Clone, Eq, PartialEq)]
-#[cfg_attr(feature = "zerocopy", derive(FromBytes, Immutable))]
+#[cfg_attr(feature = "zerocopy", derive(FromBytes, Immutable, IntoBytes, KnownLayout))]
 pub struct zx_info_thread_t {
     pub state: zx_thread_state_t,
     pub wait_exception_channel_type: u32,
@@ -2439,21 +2570,24 @@ pub struct zx_info_thread_t {
 struct_decl_macro! {
     #[repr(C)]
     #[derive(Default, Debug, Copy, Clone, Eq, PartialEq)]
-    #[derive(zerocopy::FromBytes, zerocopy::Immutable)]
+    #[derive(zerocopy::FromBytes, zerocopy::Immutable, zerocopy::IntoBytes)]
     pub struct <zx_info_thread_stats_t> {
         pub total_runtime: zx_duration_t,
         pub last_scheduled_cpu: u32,
+        pub padding1: [PadByte; 4],
     }
 }
 
 zx_info_thread_stats_t!(zx_info_thread_stats_t);
+const_assert_eq!(core::mem::size_of::<zx_info_thread_stats_t>(), 16);
+const_assert_eq!(core::mem::align_of::<zx_info_thread_stats_t>(), 8);
 
 zx_info_resource_t!(zx_info_resource_t);
 
 struct_decl_macro! {
     #[repr(C)]
     #[derive(Default, Debug, Copy, Clone, Eq, PartialEq)]
-    #[derive(zerocopy::FromBytes, zerocopy::Immutable)]
+    #[derive(zerocopy::FromBytes, zerocopy::Immutable, zerocopy::IntoBytes)]
     pub struct <zx_info_vmar_t> {
         pub base: usize,
         pub len: usize,
@@ -2461,11 +2595,13 @@ struct_decl_macro! {
 }
 
 zx_info_vmar_t!(zx_info_vmar_t);
+const_assert_eq!(core::mem::size_of::<zx_info_vmar_t>(), 16);
+const_assert_eq!(core::mem::align_of::<zx_info_vmar_t>(), 8);
 
 struct_decl_macro! {
     #[repr(C)]
     #[derive(Default, Debug, Copy, Clone, Eq, PartialEq)]
-    #[derive(zerocopy::FromBytes, zerocopy::Immutable)]
+    #[derive(zerocopy::FromBytes, zerocopy::Immutable, zerocopy::IntoBytes)]
     pub struct <zx_info_task_stats_t> {
         pub mem_mapped_bytes: usize,
         pub mem_private_bytes: usize,
@@ -2476,11 +2612,29 @@ struct_decl_macro! {
 }
 
 zx_info_task_stats_t!(zx_info_task_stats_t);
+const_assert_eq!(core::mem::size_of::<zx_info_task_stats_t>(), 40);
+const_assert_eq!(core::mem::align_of::<zx_info_task_stats_t>(), 8);
 
 struct_decl_macro! {
     #[repr(C)]
     #[derive(Default, Debug, Copy, Clone, Eq, PartialEq)]
-    #[derive(zerocopy::FromBytes, zerocopy::Immutable)]
+    #[derive(zerocopy::FromBytes, zerocopy::Immutable, zerocopy::IntoBytes)]
+    pub struct <zx_info_task_stats_v1_t> {
+        pub mem_mapped_bytes: usize,
+        pub mem_private_bytes: usize,
+        pub mem_shared_bytes: usize,
+        pub mem_scaled_shared_bytes: usize,
+    }
+}
+
+zx_info_task_stats_v1_t!(zx_info_task_stats_v1_t);
+const_assert_eq!(core::mem::size_of::<zx_info_task_stats_v1_t>(), 32);
+const_assert_eq!(core::mem::align_of::<zx_info_task_stats_v1_t>(), 8);
+
+struct_decl_macro! {
+    #[repr(C)]
+    #[derive(Default, Debug, Copy, Clone, Eq, PartialEq)]
+    #[derive(zerocopy::FromBytes, zerocopy::Immutable, zerocopy::IntoBytes)]
     pub struct <zx_info_task_runtime_t> {
         pub cpu_time: zx_duration_t,
         pub queue_time: zx_duration_t,
@@ -2490,6 +2644,22 @@ struct_decl_macro! {
 }
 
 zx_info_task_runtime_t!(zx_info_task_runtime_t);
+const_assert_eq!(core::mem::size_of::<zx_info_task_runtime_t>(), 32);
+const_assert_eq!(core::mem::align_of::<zx_info_task_runtime_t>(), 8);
+
+struct_decl_macro! {
+    #[repr(C)]
+    #[derive(Default, Debug, Copy, Clone, Eq, PartialEq)]
+    #[derive(zerocopy::FromBytes, zerocopy::Immutable, zerocopy::IntoBytes)]
+    pub struct <zx_info_task_runtime_v1_t> {
+        pub cpu_time: zx_duration_mono_t,
+        pub queue_time: zx_duration_mono_t,
+    }
+}
+
+zx_info_task_runtime_v1_t!(zx_info_task_runtime_v1_t);
+const_assert_eq!(core::mem::size_of::<zx_info_task_runtime_v1_t>(), 16);
+const_assert_eq!(core::mem::align_of::<zx_info_task_runtime_v1_t>(), 8);
 
 multiconst!(zx_info_maps_type_t, [
     ZX_INFO_MAPS_TYPE_NONE    = 0;
@@ -2504,7 +2674,7 @@ struct_decl_macro! {
     #[derive(zerocopy::FromBytes, zerocopy::Immutable, IntoBytes)]
     pub struct <zx_info_maps_mapping_t> {
         pub mmu_flags: zx_vm_option_t,
-        padding1: [PadByte; 4],
+        pub padding1: [PadByte; 4],
         pub vmo_koid: zx_koid_t,
         pub vmo_offset: u64,
         pub committed_bytes: usize,
@@ -2546,11 +2716,14 @@ zx_info_maps_t!(zx_info_maps_t);
 struct_decl_macro! {
     #[repr(C)]
     #[derive(Debug, Copy, Clone, Eq, PartialEq)]
-    #[derive(zerocopy::FromBytes, zerocopy::Immutable)]
+    #[derive(zerocopy::FromBytes, zerocopy::Immutable, zerocopy::IntoBytes)]
     pub struct <zx_info_process_handle_stats_t> {
         pub handle_count: [u32; ZX_OBJ_TYPE_UPPER_BOUND],
     }
 }
+
+const_assert_eq!(core::mem::size_of::<zx_info_process_handle_stats_t>(), 256);
+const_assert_eq!(core::mem::align_of::<zx_info_process_handle_stats_t>(), 4);
 
 impl Default for zx_info_process_handle_stats_t {
     fn default() -> Self {
@@ -2725,7 +2898,7 @@ pub const ZX_CPU_SET_BITS_PER_WORD: usize = 64;
 
 #[repr(C)]
 #[derive(Debug, Default, Copy, Clone, Eq, PartialEq)]
-#[cfg_attr(feature = "zerocopy", derive(FromBytes, Immutable))]
+#[cfg_attr(feature = "zerocopy", derive(FromBytes, Immutable, IntoBytes, KnownLayout))]
 pub struct zx_cpu_set_t {
     pub mask: [u64; ZX_CPU_SET_MAX_CPUS / ZX_CPU_SET_BITS_PER_WORD],
 }

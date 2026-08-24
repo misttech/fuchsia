@@ -44,4 +44,14 @@ unsafe extern "C" {
         observer: *mut core::ffi::c_void,
         out_signals: *mut zx_types::zx_signals_t,
     ) -> bool;
+    pub(crate) fn cpp_dispatcher_get_name(
+        dispatcher: *const Dispatcher,
+        out_name: *mut core::ffi::c_char,
+    ) -> zx_types::zx_status_t;
+    pub(crate) fn cpp_dispatcher_set_name(
+        dispatcher: *const Dispatcher,
+        name: *const core::ffi::c_char,
+        len: usize,
+    ) -> zx_types::zx_status_t;
+    pub(crate) fn cpp_dispatcher_current_handle_count(dispatcher: *const Dispatcher) -> u32;
 }

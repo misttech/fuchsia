@@ -28,7 +28,7 @@ pub struct JobInfo {
 
 impl From<sys::zx_info_job_t> for JobInfo {
     fn from(
-        sys::zx_info_job_t { return_code, exited, kill_on_oom, debugger_attached }: sys::zx_info_job_t,
+        sys::zx_info_job_t { return_code, exited, kill_on_oom, debugger_attached, .. }: sys::zx_info_job_t,
     ) -> Self {
         Self {
             return_code,

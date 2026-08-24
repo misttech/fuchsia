@@ -125,4 +125,17 @@ unsafe extern "C" {
         job: *const JobDispatcher,
         info_out: *mut zx_info_job_t,
     );
+
+    pub(crate) fn cpp_job_dispatcher_get_runtime_stats(
+        job: *const JobDispatcher,
+    ) -> zx_types::zx_info_task_runtime_t;
+
+    pub(crate) fn cpp_job_dispatcher_enumerate_children(
+        job: *const JobDispatcher,
+        user_koids: *mut zx_types::zx_koid_t,
+        max: usize,
+        is_jobs: bool,
+        out_count: *mut usize,
+        out_avail: *mut usize,
+    ) -> zx_status_t;
 }

@@ -5,7 +5,9 @@
 // https://opensource.org/licenses/MIT
 
 use super::handle::KernelHandle;
-use super::vm_object_dispatcher_ffi::cpp_vm_object_dispatcher_get_vmo;
+use super::vm_object_dispatcher_ffi::{
+    cpp_vm_object_dispatcher_get_vmo, cpp_vm_object_dispatcher_get_vmo_info,
+};
 use crate::vm::vm_object::VmObject;
 use crate::vm::vm_object_paged::VmObjectPaged;
 use core::mem::MaybeUninit;
@@ -13,7 +15,8 @@ use fbl::RefPtr;
 use page;
 use zx_status::Status;
 use zx_types::{
-    ZX_OBJ_TYPE_VMO, ZX_VMO_DISCARDABLE, ZX_VMO_RESIZABLE, ZX_VMO_UNBOUNDED, zx_rights_t,
+    ZX_OBJ_TYPE_VMO, ZX_VMO_DISCARDABLE, ZX_VMO_RESIZABLE, ZX_VMO_UNBOUNDED, zx_info_vmo_t,
+    zx_rights_t,
 };
 
 // LINT.IfChange(InitialMutability)
@@ -111,6 +114,12 @@ impl VmObjectDispatcher {
         }
 
         Ok(res)
+    }
+
+    /// Returns information about this VMO.
+    pub fn get_vmo_info(&self, rights: zx_rights_t) -> zx_info_vmo_t {
+        // SAFETY: `self` is a valid `VmObjectDispatcher` reference.
+        unsafe { cpp_vm_object_dispatcher_get_vmo_info(self as *const _ as *mut _, rights) }
     }
 }
 

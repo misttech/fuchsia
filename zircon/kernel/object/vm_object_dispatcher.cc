@@ -609,3 +609,9 @@ extern "C" zx_status_t cpp_vm_object_dispatcher_create(
   out_handle->Initialize(ktl::move(handle));
   return ZX_OK;
 }
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+extern "C" FFI_ALWAYS_INLINE zx_info_vmo_t
+cpp_vm_object_dispatcher_get_vmo_info(VmObjectDispatcher* vmo, zx_rights_t rights) {
+  return vmo->GetVmoInfo(rights);
+}

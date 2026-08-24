@@ -59,4 +59,21 @@ FFI_ALWAYS_INLINE bool cpp_dispatcher_remove_observer(Dispatcher* dispatcher,
   return dispatcher->RemoveObserver(observer, out_signals);
 }
 
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE zx_status_t cpp_dispatcher_get_name(const Dispatcher* disp,
+                                                      char out_name[ZX_MAX_NAME_LEN]) {
+  return disp->get_name(*reinterpret_cast<char (*)[ZX_MAX_NAME_LEN]>(out_name));
+}
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE zx_status_t cpp_dispatcher_set_name(Dispatcher* disp, const char* name,
+                                                      size_t len) {
+  return disp->set_name(name, len);
+}
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE uint32_t cpp_dispatcher_current_handle_count(const Dispatcher* disp) {
+  return disp->current_handle_count();
+}
+
 }  // extern "C"
