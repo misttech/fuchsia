@@ -8,7 +8,7 @@ use fidl_fuchsia_io as fio;
 use fxfs::errors::FxfsError;
 use fxfs::filesystem::OpenFxFilesystem;
 use fxfs::fsck;
-use fxfs::object_handle::{ObjectHandle, ReadObjectHandle, WriteObjectHandle};
+use fxfs::object_handle::{ObjectHandle, WriteObjectHandle};
 use fxfs::object_store::directory::{ReplacedChild, replace_child};
 use fxfs::object_store::transaction::{LockKey, Options, lock_keys};
 use fxfs::object_store::volume::root_volume;

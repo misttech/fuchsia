@@ -77,6 +77,7 @@ use async_trait::async_trait;
 use byteorder::{ByteOrder, LittleEndian, ReadBytesExt, WriteBytesExt};
 use fprint::TypeFingerprint;
 use fuchsia_sync::Mutex;
+use futures::future::BoxFuture;
 use futures::stream::{FuturesUnordered, TryStreamExt};
 use serde::{Deserialize, Serialize};
 use static_assertions::const_assert;
@@ -335,7 +336,6 @@ impl<'iter, K: Key, V: LayerValue> Iterator<'iter, K, V> {
     }
 }
 
-#[async_trait]
 impl<'iter, K: Key, V: LayerValue> LayerIterator<K, V> for Iterator<'iter, K, V> {
     async fn advance(&mut self) -> Result<(), Error> {
         self.inner.advance().await?;
@@ -353,6 +353,10 @@ impl<'iter, K: Key, V: LayerValue> LayerIterator<K, V> for Iterator<'iter, K, V>
             None
         };
         Ok(())
+    }
+
+    fn advance_dyn<'a>(&'a mut self) -> BoxFuture<'a, Result<(), Error>> {
+        Box::pin(self.advance())
     }
 
     fn get(&self) -> Option<ItemRef<'_, K, V>> {
@@ -557,24 +561,17 @@ impl<K: Key, V: LayerValue> PersistentLayer<K, V> {
     fn data_offset(&self) -> u64 {
         NUM_HEADER_BLOCKS * self.block_size
     }
-}
 
-#[async_trait]
-impl<K: Key, V: LayerValue> Layer<K, V> for PersistentLayer<K, V> {
-    fn handle(&self) -> Option<&dyn ReadObjectHandle> {
-        Some(&self.object_handle)
-    }
-
-    fn purge_cached_data(&self) {
-        self.caching_object_handle.purge();
-    }
-
-    async fn seek<'a>(&'a self, bound: Bound<&K>) -> Result<BoxedLayerIterator<'a, K, V>, Error> {
+    /// Seeks to `bound`.
+    ///
+    /// This is an inherent version of the `Layer::seek` trait method which avoids boxing the
+    /// returned `Iterator`.
+    async fn seek<'a>(&'a self, bound: Bound<&K>) -> Result<Iterator<'a, K, V>, Error> {
         let (key, excluded) = match bound {
             Bound::Unbounded => {
                 let mut iterator = Iterator::new(KeyOnlyIterator::new(self, self.data_offset()))?;
                 iterator.advance().await.context("Unbounded seek advance")?;
-                return Ok(Box::new(iterator));
+                return Ok(iterator);
             }
             Bound::Included(k) => (k, false),
             Bound::Excluded(k) => (k, true),
@@ -603,14 +600,14 @@ impl<K: Key, V: LayerValue> Layer<K, V> for PersistentLayer<K, V> {
         let mut left = KeyOnlyIterator::new(self, left_offset);
         left.advance().await.context("Initial seek advance")?;
         match left.get() {
-            None => return Ok(Box::new(Iterator::new(left)?)),
+            None => return Ok(Iterator::new(left)?),
             Some(left_key) => match left_key.cmp_upper_bound(key) {
-                Ordering::Greater => return Ok(Box::new(Iterator::new(left)?)),
+                Ordering::Greater => return Ok(Iterator::new(left)?),
                 Ordering::Equal => {
                     if excluded {
                         left.advance().await?;
                     }
-                    return Ok(Box::new(Iterator::new(left)?));
+                    return Ok(Iterator::new(left)?);
                 }
                 Ordering::Less => {}
             },
@@ -632,7 +629,7 @@ impl<K: Key, V: LayerValue> Layer<K, V> for PersistentLayer<K, V> {
                     if excluded {
                         iterator.advance().await?;
                     }
-                    return Ok(Box::new(Iterator::new(iterator)?));
+                    return Ok(Iterator::new(iterator)?);
                 }
                 Ordering::Less => {
                     left_offset = mid_offset;
@@ -657,7 +654,7 @@ impl<K: Key, V: LayerValue> Layer<K, V> for PersistentLayer<K, V> {
                     if excluded {
                         left.advance().await?;
                     }
-                    return Ok(Box::new(Iterator::new(left)?));
+                    return Ok(Iterator::new(left)?);
                 }
                 Ordering::Less => {
                     left_index = mid_index;
@@ -672,7 +669,7 @@ impl<K: Key, V: LayerValue> Layer<K, V> for PersistentLayer<K, V> {
             left.seek_to_block_item(right_index)
                 .context("Read index for offset of right pointer")?;
         } else if let Some(right) = right {
-            return Ok(Box::new(Iterator::new(right)?));
+            return Ok(Iterator::new(right)?);
         } else {
             // We want the end of the layer.  `right_index == left.item_count`, so `left_index ==
             // left.item_count - 1`, and the left iterator must be positioned on `left_index` since
@@ -681,7 +678,22 @@ impl<K: Key, V: LayerValue> Layer<K, V> for PersistentLayer<K, V> {
             // the iterator.
         }
         left.advance().await?;
-        return Ok(Box::new(Iterator::new(left)?));
+        Ok(Iterator::new(left)?)
+    }
+}
+
+#[async_trait]
+impl<K: Key, V: LayerValue> Layer<K, V> for PersistentLayer<K, V> {
+    fn handle(&self) -> Option<&dyn ReadObjectHandle> {
+        Some(&self.object_handle)
+    }
+
+    fn purge_cached_data(&self) {
+        self.caching_object_handle.purge();
+    }
+
+    async fn seek<'a>(&'a self, bound: Bound<&K>) -> Result<BoxedLayerIterator<'a, K, V>, Error> {
+        Ok(Box::new(PersistentLayer::seek(self, bound).await?))
     }
 
     fn len(&self) -> usize {
@@ -1458,8 +1470,7 @@ mod tests {
 
         let layer = PersistentLayer::<ObjectKey, u64>::open(handle).await.expect("new failed");
         for target in to_find {
-            let iterator: Box<dyn LayerIterator<ObjectKey, u64>> =
-                layer.seek(Bound::Included(&target)).await.expect("failed to seek");
+            let iterator = layer.seek(Bound::Included(&target)).await.expect("failed to seek");
             let ItemRef { key, .. } = iterator.get().expect("missing item");
             assert_eq!(&target, key);
         }
@@ -1508,8 +1519,7 @@ mod tests {
 
         let layer = PersistentLayer::<TestKey, u64>::open(handle).await.expect("new failed");
         for target in to_find {
-            let iterator: Box<dyn LayerIterator<TestKey, u64>> =
-                layer.seek(Bound::Included(&target)).await.expect("failed to seek");
+            let iterator = layer.seek(Bound::Included(&target)).await.expect("failed to seek");
             let ItemRef { key, .. } = iterator.get().expect("missing item");
             assert_eq!(&target, key);
         }

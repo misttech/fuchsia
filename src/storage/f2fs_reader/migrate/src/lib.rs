@@ -7,7 +7,7 @@ use f2fs_reader::{
     InlineFlags, Inode, NEW_ADDR, NULL_ADDR, XattrIndex,
 };
 use fxfs::filesystem::{FxFilesystemBuilder, OpenFxFilesystem};
-use fxfs::object_handle::{ObjectHandle, ObjectProperties, ReadObjectHandle};
+use fxfs::object_handle::{ObjectHandle, ObjectProperties};
 use fxfs::object_store::journal::BLOCK_SIZE as FXFS_BLOCK_SIZE;
 use fxfs::object_store::journal::super_block::SuperBlockInstance;
 use fxfs::object_store::transaction::{LockKey, Mutation, Options, Transaction, lock_keys};

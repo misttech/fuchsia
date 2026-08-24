@@ -27,7 +27,6 @@ use crate::object_store::{
 use crate::range::RangeExt;
 use crate::round::{round_down, round_up};
 use anyhow::{Context, Error, anyhow, bail, ensure};
-use async_trait::async_trait;
 use fidl_fuchsia_io as fio;
 use fsverity_merkle::{
     FsVerityDescriptor, FsVerityDescriptorRaw, FsVerityHash, FsVerityHasher, FsVerityHasherOptions,
@@ -38,7 +37,9 @@ use futures::TryStreamExt;
 use futures::stream::FuturesOrdered;
 use fxfs_trace::trace;
 use std::cmp::min;
+use std::future::Future;
 use std::ops::{Deref, Range};
+use std::pin::Pin;
 use std::sync::Arc;
 use std::sync::atomic::{self, AtomicU64, Ordering};
 use storage_device::WriteFlags;
@@ -1794,6 +1795,35 @@ impl<S: HandleOwner> DataObjectHandle<S> {
         let extents: Vec<FileExtent> = stream.try_collect().await?;
         Ok(extents)
     }
+
+    /// Fills |buf| with up to |buf.len()| bytes read from |offset| on the underlying device.
+    /// |offset| and |buf| must both be block-aligned.
+    ///
+    /// This is an inherent version of the `ReadObjectHandle::read` trait method which avoids boxing
+    /// the returned `Future`.
+    pub async fn read(&self, offset: u64, mut buf: MutableBufferRef<'_>) -> Result<usize, Error> {
+        let fs = self.store().filesystem();
+        let guard = fs
+            .lock_manager()
+            .read_lock(lock_keys![LockKey::object_attribute(
+                self.store().store_object_id,
+                self.object_id(),
+                self.attribute_id(),
+            )])
+            .await;
+
+        let size = self.get_size();
+        if offset >= size {
+            return Ok(0);
+        }
+        let length = min(buf.len() as u64, size - offset) as usize;
+        buf = buf.subslice_mut(0..length);
+        self.handle.read_unchecked(self.attribute_id(), offset, buf.reborrow(), &guard).await?;
+        if self.is_verified_file() {
+            self.verify_data(offset as usize, buf.as_ptr_slice())?;
+        }
+        Ok(length)
+    }
 }
 
 impl<S: HandleOwner> AssociatedObject for DataObjectHandle<S> {
@@ -1864,30 +1894,18 @@ impl<S: HandleOwner> ObjectHandle for DataObjectHandle<S> {
     }
 }
 
-#[async_trait]
 impl<S: HandleOwner> ReadObjectHandle for DataObjectHandle<S> {
-    async fn read(&self, offset: u64, mut buf: MutableBufferRef<'_>) -> Result<usize, Error> {
-        let fs = self.store().filesystem();
-        let guard = fs
-            .lock_manager()
-            .read_lock(lock_keys![LockKey::object_attribute(
-                self.store().store_object_id,
-                self.object_id(),
-                self.attribute_id(),
-            )])
-            .await;
-
-        let size = self.get_size();
-        if offset >= size {
-            return Ok(0);
-        }
-        let length = min(buf.len() as u64, size - offset) as usize;
-        buf = buf.subslice_mut(0..length);
-        self.handle.read_unchecked(self.attribute_id(), offset, buf.reborrow(), &guard).await?;
-        if self.is_verified_file() {
-            self.verify_data(offset as usize, buf.as_ptr_slice())?;
-        }
-        Ok(length)
+    fn read<'a, 'b, 'c>(
+        &'a self,
+        offset: u64,
+        buf: MutableBufferRef<'b>,
+    ) -> Pin<Box<dyn Future<Output = Result<usize, Error>> + Send + 'c>>
+    where
+        'a: 'c,
+        'b: 'c,
+        Self: 'c,
+    {
+        Box::pin(DataObjectHandle::read(self, offset, buf))
     }
 
     fn get_size(&self) -> u64 {

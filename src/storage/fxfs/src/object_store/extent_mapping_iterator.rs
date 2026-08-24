@@ -20,7 +20,7 @@ use crate::object_store::{
 };
 use crate::range::RangeExt as _;
 use anyhow::{Context as _, Error};
-use async_trait::async_trait;
+use futures::future::BoxFuture;
 use std::num::NonZero;
 use std::ops::Range;
 
@@ -185,7 +185,6 @@ impl<I: LayerIterator<ObjectKey, ObjectValue>> ExtentMappingIterator<I> {
     }
 }
 
-#[async_trait]
 impl<I: LayerIterator<ObjectKey, ObjectValue>> LayerIterator<ObjectKey, ObjectValue>
     for ExtentMappingIterator<I>
 {
@@ -196,6 +195,10 @@ impl<I: LayerIterator<ObjectKey, ObjectValue>> LayerIterator<ObjectKey, ObjectVa
             self.inner_iterator.advance().await?;
             self.process_item()
         }
+    }
+
+    fn advance_dyn<'a>(&'a mut self) -> BoxFuture<'a, Result<(), Error>> {
+        Box::pin(self.advance())
     }
 
     fn get(&self) -> Option<ItemRef<'_, ObjectKey, ObjectValue>> {
@@ -273,11 +276,14 @@ mod tests {
         index: usize,
     }
 
-    #[async_trait]
     impl<'a> LayerIterator<ObjectKey, ObjectValue> for TestIterator<'a> {
         async fn advance(&mut self) -> Result<(), Error> {
             self.index = std::cmp::min(self.index + 1, self.objects.len());
             Ok(())
+        }
+
+        fn advance_dyn<'b>(&'b mut self) -> BoxFuture<'b, Result<(), Error>> {
+            Box::pin(self.advance())
         }
 
         fn get(&self) -> Option<ItemRef<'_, ObjectKey, ObjectValue>> {

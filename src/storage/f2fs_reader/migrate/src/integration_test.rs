@@ -13,7 +13,6 @@ use fidl_fuchsia_storage_block::{BlockMarker, BlockProxy};
 use fuchsia_async::{LocalExecutor, LocalExecutorBuilder};
 
 use fxfs::filesystem::{FxFilesystemBuilder, OpenFxFilesystem};
-use fxfs::object_handle::ReadObjectHandle;
 use fxfs::object_store::journal::super_block::SuperBlockInstance;
 use fxfs::object_store::volume::root_volume as fxfs_root_volume;
 use fxfs::object_store::{Directory, HandleOptions, ObjectStore};

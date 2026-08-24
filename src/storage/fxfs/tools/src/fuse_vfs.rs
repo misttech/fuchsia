@@ -15,7 +15,7 @@ use futures_util::{StreamExt, stream};
 use fxfs::errors::FxfsError;
 use fxfs::filesystem::SyncOptions;
 use fxfs::log::info;
-use fxfs::object_handle::{ObjectHandle, ReadObjectHandle, WriteObjectHandle};
+use fxfs::object_handle::{ObjectHandle, WriteObjectHandle};
 use fxfs::object_store::directory::{ReplacedChild, replace_child};
 use fxfs::object_store::transaction::{LockKey, Options, lock_keys};
 use fxfs::object_store::{ObjectDescriptor, Timestamp};

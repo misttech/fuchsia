@@ -9,12 +9,12 @@ use crate::serialized_types::{Version, Versioned, VersionedLatest};
 use anyhow::Error;
 use async_trait::async_trait;
 use fprint::TypeFingerprint;
+use futures::future::BoxFuture;
 use serde::{Deserialize, Serialize};
 use std::fmt::Debug;
 use std::future::Future;
 use std::hash::Hash;
 use std::marker::PhantomData;
-use std::pin::Pin;
 use std::sync::Arc;
 
 pub use fxfs_macros::impl_fuzzy_hash;
@@ -381,10 +381,14 @@ pub trait Layer<K, V>: Send + Sync {
 }
 
 /// Something that implements LayerIterator is returned by the seek function.
-#[async_trait]
 pub trait LayerIterator<K, V>: Send + Sync {
-    /// Advances the iterator.
-    async fn advance(&mut self) -> Result<(), Error>;
+    /// Advances the iterator (static dispatch, unboxed future).
+    fn advance(&mut self) -> impl Future<Output = Result<(), Error>> + Send
+    where
+        Self: Sized;
+
+    /// Advances the iterator for dynamic dispatch (trait objects).
+    fn advance_dyn<'a>(&'a mut self) -> BoxFuture<'a, Result<(), Error>>;
 
     /// Returns the current item. This will be None if called when the iterator is first crated i.e.
     /// before either seek or advance has been called, and None if the iterator has reached the end
@@ -410,16 +414,16 @@ pub trait LayerIterator<K, V>: Send + Sync {
 pub type BoxedLayerIterator<'iter, K, V> = Box<dyn LayerIterator<K, V> + 'iter>;
 
 impl<'iter, K, V> LayerIterator<K, V> for BoxedLayerIterator<'iter, K, V> {
-    // Manual expansion of `async_trait` to avoid double boxing the `Future`.
-    fn advance<'a, 'b>(&'a mut self) -> Pin<Box<dyn Future<Output = Result<(), Error>> + Send + 'b>>
-    where
-        'a: 'b,
-        Self: 'b,
-    {
-        (**self).advance()
+    fn advance(&mut self) -> impl Future<Output = Result<(), Error>> + Send {
+        self.as_mut().advance_dyn()
     }
+
+    fn advance_dyn<'a>(&'a mut self) -> BoxFuture<'a, Result<(), Error>> {
+        self.as_mut().advance_dyn()
+    }
+
     fn get(&self) -> Option<ItemRef<'_, K, V>> {
-        (**self).get()
+        self.as_ref().get()
     }
 }
 
@@ -489,7 +493,6 @@ where
     }
 }
 
-#[async_trait]
 impl<I, P, K, V> LayerIterator<K, V> for FilterLayerIterator<I, P, K, V>
 where
     I: LayerIterator<K, V>,
@@ -500,6 +503,10 @@ where
     async fn advance(&mut self) -> Result<(), Error> {
         self.iter.advance().await?;
         self.skip_filtered().await
+    }
+
+    fn advance_dyn<'a>(&'a mut self) -> BoxFuture<'a, Result<(), Error>> {
+        Box::pin(self.advance())
     }
 
     fn get(&self) -> Option<ItemRef<'_, K, V>> {

@@ -14,7 +14,7 @@ use fxfs::blob_metadata::{
 };
 use fxfs::errors::FxfsError;
 use fxfs::filesystem::{FxFilesystemBuilder, OpenFxFilesystem};
-use fxfs::object_handle::{ObjectHandle, ReadObjectHandle, WriteBytes};
+use fxfs::object_handle::{ObjectHandle, WriteBytes};
 use fxfs::object_store::directory::Directory;
 use fxfs::object_store::journal::RESERVED_SPACE;
 use fxfs::object_store::journal::super_block::SuperBlockInstance;

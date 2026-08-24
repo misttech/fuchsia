@@ -1210,9 +1210,7 @@ mod tests {
     use crate::log::*;
     use crate::lsm_tree::Operation;
     use crate::lsm_tree::types::Item;
-    use crate::object_handle::{
-        INVALID_OBJECT_ID, ObjectHandle, ReadObjectHandle, WriteObjectHandle,
-    };
+    use crate::object_handle::{INVALID_OBJECT_ID, ObjectHandle, WriteObjectHandle};
     use crate::object_store::directory::{Directory, replace_child};
     use crate::object_store::journal::JournalOptions;
     use crate::object_store::journal::super_block::SuperBlockInstance;

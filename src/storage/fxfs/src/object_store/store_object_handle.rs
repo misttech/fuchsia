@@ -2255,7 +2255,7 @@ mod tests {
     use super::{ChecksumRangeChunk, OverwriteBitmaps};
     use crate::errors::FxfsError;
     use crate::filesystem::{FxFilesystem, JournalingObject, OpenFxFilesystem};
-    use crate::object_handle::{ObjectHandle, ReadObjectHandle, WriteObjectHandle};
+    use crate::object_handle::{ObjectHandle, WriteObjectHandle};
     use crate::object_store::data_object_handle::WRITE_ATTR_BATCH_SIZE;
     use crate::object_store::transaction::{Mutation, Options, lock_keys};
     use crate::object_store::{

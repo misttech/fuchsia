@@ -9,7 +9,7 @@ use crate::lsm_tree::types::{
     MaybeContainsKey, MergeType, OrdLowerBound, Value,
 };
 use anyhow::Error;
-use async_trait::async_trait;
+use futures::future::BoxFuture;
 use futures::try_join;
 use std::cmp::Ordering;
 use std::collections::BinaryHeap;
@@ -568,7 +568,6 @@ impl<'a, 'b, K: Key + LayerKey + OrdLowerBound, V: Value> MergerIterator<'a, 'b,
     }
 }
 
-#[async_trait]
 impl<'a, K: Key + LayerKey + OrdLowerBound, V: Value> LayerIterator<K, V>
     for MergerIterator<'a, '_, K, V>
 {
@@ -626,6 +625,10 @@ impl<'a, K: Key + LayerKey + OrdLowerBound, V: Value> LayerIterator<K, V>
         }
 
         self.advance_impl(search_key).await
+    }
+
+    fn advance_dyn<'b>(&'b mut self) -> BoxFuture<'b, Result<(), Error>> {
+        Box::pin(self.advance())
     }
 
     fn get(&self) -> Option<ItemRef<'_, K, V>> {
@@ -1043,7 +1046,7 @@ mod tests {
         skip_list
             .merge_into(items[1].clone(), &items[0].key, |_left, _right| MergeResult::EmitLeft);
 
-        let mut iter = skip_list.seek(Bound::Unbounded).await.unwrap();
+        let mut iter = skip_list.seek(Bound::Unbounded);
         let ItemRef { key, value, .. } = iter.get().expect("missing item");
         assert_eq!((key, value), (&items[0].key, &items[0].value));
         iter.advance().await.unwrap();
@@ -1077,7 +1080,7 @@ mod tests {
             }
         });
 
-        let mut iter = skip_list.seek(Bound::Unbounded).await.unwrap();
+        let mut iter = skip_list.seek(Bound::Unbounded);
         let ItemRef { key, value, .. } = iter.get().expect("missing item");
         assert_eq!((key, value), (&items[1].key, &items[1].value));
         iter.advance().await.unwrap();
@@ -1108,7 +1111,7 @@ mod tests {
             }
         });
 
-        let mut iter = skip_list.seek(Bound::Unbounded).await.unwrap();
+        let mut iter = skip_list.seek(Bound::Unbounded);
         let ItemRef { key, value, .. } = iter.get().expect("missing item");
         assert_eq!((key, value), (&TestKey(2..2), &2));
         iter.advance().await.unwrap();
@@ -1148,7 +1151,7 @@ mod tests {
             }
         });
 
-        let mut iter = skip_list.seek(Bound::Unbounded).await.unwrap();
+        let mut iter = skip_list.seek(Bound::Unbounded);
         let ItemRef { key, value, .. } = iter.get().expect("missing item");
         assert_eq!((key, value), (&TestKey(2..2), &2));
         iter.advance().await.unwrap();
@@ -1172,7 +1175,7 @@ mod tests {
             right: Discard,
         });
 
-        let mut iter = skip_list.seek(Bound::Unbounded).await.unwrap();
+        let mut iter = skip_list.seek(Bound::Unbounded);
         let ItemRef { key, value, .. } = iter.get().expect("missing item");
         assert_eq!((key, value), (&TestKey(2..2), &2));
         iter.advance().await.unwrap();
@@ -1209,7 +1212,7 @@ mod tests {
             }
         });
 
-        let mut iter = skip_list.seek(Bound::Unbounded).await.unwrap();
+        let mut iter = skip_list.seek(Bound::Unbounded);
         let ItemRef { key, value, .. } = iter.get().expect("missing item");
         assert_eq!((key, value), (&TestKey(4..4), &4));
         iter.advance().await.unwrap();
@@ -1235,7 +1238,7 @@ mod tests {
             }
         });
 
-        let mut iter = skip_list.seek(Bound::Unbounded).await.unwrap();
+        let mut iter = skip_list.seek(Bound::Unbounded);
         let ItemRef { key, value, .. } = iter.get().expect("missing item");
         assert_eq!((key, value), (&items[0].key, &items[0].value));
         iter.advance().await.unwrap();
@@ -1257,7 +1260,7 @@ mod tests {
             right: Keep,
         });
 
-        let mut iter = skip_list.seek(Bound::Unbounded).await.unwrap();
+        let mut iter = skip_list.seek(Bound::Unbounded);
         let ItemRef { key, value, .. } = iter.get().expect("missing item");
         assert_eq!((key, value), (&items[1].key, &items[1].value));
         iter.advance().await.unwrap();
@@ -1273,7 +1276,7 @@ mod tests {
             panic!("Unexpected merge!");
         });
 
-        let mut iter = skip_list.seek(Bound::Unbounded).await.unwrap();
+        let mut iter = skip_list.seek(Bound::Unbounded);
         let ItemRef { key, value, .. } = iter.get().expect("missing item");
         assert_eq!((key, value), (&items[0].key, &items[0].value));
         iter.advance().await.unwrap();

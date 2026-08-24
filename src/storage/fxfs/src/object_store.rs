@@ -3264,9 +3264,7 @@ mod tests {
     use crate::hooks::{Hooks, HooksHandle};
     use crate::lsm_tree::Query;
     use crate::lsm_tree::types::{ItemRef, LayerIterator};
-    use crate::object_handle::{
-        INVALID_OBJECT_ID, ObjectHandle, ReadObjectHandle, WriteObjectHandle,
-    };
+    use crate::object_handle::{INVALID_OBJECT_ID, ObjectHandle, WriteObjectHandle};
     use crate::object_store::directory::{Directory, replace_child};
     use crate::object_store::journal::JournalOptions;
     use crate::object_store::object_record::{AttributeKey, ObjectKey, ObjectKind, ObjectValue};

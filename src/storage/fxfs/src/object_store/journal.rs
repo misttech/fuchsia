@@ -27,7 +27,7 @@ use crate::errors::FxfsError;
 use crate::filesystem::{ApplyContext, ApplyMode, FxFilesystem, SyncOptions};
 use crate::log::*;
 use crate::lsm_tree::cache::NullCache;
-use crate::lsm_tree::types::Layer;
+use crate::lsm_tree::types::LayerIterator;
 use crate::object_handle::{ObjectHandle as _, ReadObjectHandle};
 use crate::object_store::allocator::Allocator;
 use crate::object_store::data_object_handle::OverwriteOptions;
@@ -684,17 +684,14 @@ impl Journal {
         let mut handle;
         {
             let root_parent_layer = root_parent.tree().mutable_layer();
-            let mut iter = root_parent_layer
-                .seek(Bound::Included(&ObjectKey::attribute(
-                    super_block.journal_object_id,
-                    AttributeId::DATA,
-                    AttributeKey::Extent(Extent::search_key_from_offset(round_down(
-                        super_block.journal_checkpoint.file_offset,
-                        BLOCK_SIZE,
-                    ))),
-                )))
-                .await
-                .context("Failed to seek root parent store")?;
+            let mut iter = root_parent_layer.seek(Bound::Included(&ObjectKey::attribute(
+                super_block.journal_object_id,
+                AttributeId::DATA,
+                AttributeKey::Extent(Extent::search_key_from_offset(round_down(
+                    super_block.journal_checkpoint.file_offset,
+                    BLOCK_SIZE,
+                ))),
+            )));
             let start_offset = if let Some(ItemRef {
                 key:
                     ObjectKey {
@@ -2114,7 +2111,7 @@ mod tests {
     use super::SuperBlockInstance;
     use crate::filesystem::{FxFilesystem, FxFilesystemBuilder, SyncOptions};
     use crate::fsck::fsck;
-    use crate::object_handle::{ObjectHandle, ReadObjectHandle, WriteObjectHandle};
+    use crate::object_handle::{ObjectHandle, WriteObjectHandle};
     use crate::object_store::directory::Directory;
     use crate::object_store::transaction::Options;
     use crate::object_store::volume::root_volume;

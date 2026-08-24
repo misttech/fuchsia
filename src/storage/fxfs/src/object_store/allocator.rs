@@ -121,6 +121,7 @@ use fprint::TypeFingerprint;
 use fuchsia_inspect::HistogramProperty;
 use fuchsia_sync::Mutex;
 use futures::FutureExt;
+use futures::future::BoxFuture;
 use fxfs_macros::SerializeKey;
 use merge::{filter_marked_for_deletion, filter_tombstones, merge};
 use serde::{Deserialize, Serialize};
@@ -1971,7 +1972,6 @@ impl<I: LayerIterator<AllocatorKey, AllocatorValue>> CoalescingIterator<I> {
     }
 }
 
-#[async_trait]
 impl<I: LayerIterator<AllocatorKey, AllocatorValue>> LayerIterator<AllocatorKey, AllocatorValue>
     for CoalescingIterator<I>
 {
@@ -2001,6 +2001,10 @@ impl<I: LayerIterator<AllocatorKey, AllocatorValue>> LayerIterator<AllocatorKey,
                 }
             }
         }
+    }
+
+    fn advance_dyn<'a>(&'a mut self) -> BoxFuture<'a, Result<(), Error>> {
+        Box::pin(self.advance())
     }
 
     fn get(&self) -> Option<ItemRef<'_, AllocatorKey, AllocatorValue>> {
@@ -2193,7 +2197,7 @@ mod tests {
     use crate::fsck::fsck;
     use crate::lsm_tree::cache::NullCache;
     use crate::lsm_tree::skip_list_layer::SkipListLayer;
-    use crate::lsm_tree::types::{FuzzyHash as _, Item, ItemRef, Layer, LayerIterator};
+    use crate::lsm_tree::types::{FuzzyHash as _, Item, ItemRef, LayerIterator};
     use crate::lsm_tree::{LSMTree, Query};
     use crate::object_handle::ObjectHandle;
     use crate::object_store::allocator::merge::merge;
@@ -2289,9 +2293,7 @@ mod tests {
         skip_list.insert(items[1].clone()).expect("insert error");
         skip_list.insert(items[0].clone()).expect("insert error");
         let mut iter =
-            CoalescingIterator::new(skip_list.seek(Bound::Unbounded).await.expect("seek failed"))
-                .await
-                .expect("new failed");
+            CoalescingIterator::new(skip_list.seek(Bound::Unbounded)).await.expect("new failed");
         let ItemRef { key, value, .. } = iter.get().expect("get failed");
         assert_eq!(
             (key, value),

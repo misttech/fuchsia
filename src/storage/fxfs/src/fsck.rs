@@ -476,7 +476,7 @@ impl<'a> Fsck<'a> {
         .await
         .expect("filter failed");
         let mut observed_allocations =
-            CoalescingIterator::new(self.allocations.seek(Bound::Unbounded).await?).await?;
+            CoalescingIterator::new(self.allocations.seek(Bound::Unbounded)).await?;
         let mut observed_owner_allocated_bytes = BTreeMap::new();
         let mut extra_allocations: Vec<errors::Allocation> = vec![];
         let bs = filesystem.block_size();

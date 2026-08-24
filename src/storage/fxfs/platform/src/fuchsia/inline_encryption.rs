@@ -16,7 +16,7 @@ mod tests {
     use fuchsia_async::Task;
     use fxfs::filesystem::{FxFilesystemBuilder, OpenFxFilesystem};
     use fxfs::lock_keys;
-    use fxfs::object_handle::{ObjectHandle, ReadObjectHandle, WriteObjectHandle};
+    use fxfs::object_handle::{ObjectHandle, WriteObjectHandle};
     use fxfs::object_store::directory::Directory;
     use fxfs::object_store::transaction::{LockKey, Options};
     use fxfs::object_store::volume::root_volume;

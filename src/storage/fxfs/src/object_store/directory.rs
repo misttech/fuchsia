@@ -1916,7 +1916,7 @@ mod tests {
     use crate::errors::FxfsError;
     use crate::filesystem::{FxFilesystem, JournalingObject, SyncOptions};
     use crate::fsck::{fsck, fsck_volume};
-    use crate::object_handle::{ObjectHandle, ReadObjectHandle, WriteObjectHandle};
+    use crate::object_handle::{ObjectHandle, WriteObjectHandle};
     use crate::object_store::directory::{
         Directory, MutableAttributesInternal, ReplacedChild, replace_child,
     };
