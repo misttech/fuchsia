@@ -299,7 +299,9 @@ mod tests {
                     payload,
                     responder,
                 }))) => {
-                    responder.send(Ok(())).expect("failed to send WlanPhyInitResponse");
+                    responder
+                        .send(Ok(fidl_wlan_phy::WlanPhyInitResponse::default()))
+                        .expect("failed to send WlanPhyInitResponse");
                     payload.notify_client
                 }
                 other => panic!("expected Init request, got {:?}", other),

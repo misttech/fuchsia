@@ -124,7 +124,8 @@ impl phy::WlanPhyLocalServerHandler for WlanPhyServer {
         responder: Responder<phy::wlan_phy::Init>,
     ) {
         conn_log_method_call!(self.conn_id, "init");
-        if let Err(e) = responder.respond(()).await {
+        let response = phy::WlanPhyInitResponse::default();
+        if let Err(e) = responder.respond(response).await {
             conn_log_respond_error!(self.conn_id, "init", e);
         }
     }

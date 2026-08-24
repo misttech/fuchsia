@@ -51,6 +51,7 @@ fidl("fuchsia.power.broker") {
     "//sdk/fidl/fuchsia.power.system/*",
     "//sdk/fidl/fuchsia.power.topology.test/*",
     "//sdk/fidl/fuchsia.session.power/*",
+    "//sdk/fidl/fuchsia.wlan.phy/*",
     "//sdk/lib/driver/power/cpp/*",
     "//sdk/lib/driver/power/rust/*",
     "//src/connectivity/network/netstack3:*",

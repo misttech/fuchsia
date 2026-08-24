@@ -151,7 +151,7 @@ void WlanPhyDevice::Init(InitRequest& request, InitCompleter::Sync& completer) {
     completer.Reply(fit::error(ZX_ERR_INVALID_ARGS));
   }
   notify_client_ = std::move(request.notify_client().value());
-  completer.Reply(fit::ok());
+  completer.Reply(fit::ok(fuchsia_wlan_phy::WlanPhyInitResponse{}));
 }
 
 void WlanPhyDevice::GetSupportedMacRoles(GetSupportedMacRolesCompleter::Sync& completer) {

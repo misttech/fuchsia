@@ -283,7 +283,7 @@ void Device::Init(InitRequest& request, InitCompleter::Sync& completer) {
   }
   phy_notify_client_.Bind(std::move(request.notify_client().value()),
                           fdf_dispatcher_get_async_dispatcher(GetDriverDispatcher()));
-  completer.Reply(fit::ok());
+  completer.Reply(fit::ok(fuchsia_wlan_phy::WlanPhyInitResponse{}));
 }
 
 void Device::GetSupportedMacRoles(GetSupportedMacRolesCompleter::Sync& completer) {

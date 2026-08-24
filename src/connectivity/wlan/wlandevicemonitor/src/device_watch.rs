@@ -91,7 +91,8 @@ mod tests {
                     if let fidl_fuchsia_wlan_phy::WlanPhyRequest::Init { payload: _, responder } =
                         req
                     {
-                        let _ = responder.send(Ok(()));
+                        let _ = responder
+                            .send(Ok(fidl_fuchsia_wlan_phy::WlanPhyInitResponse::default()));
                     }
                 }
             },

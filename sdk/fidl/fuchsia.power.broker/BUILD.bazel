@@ -28,6 +28,7 @@ fidl_library(
         "//sdk/fidl/fuchsia.power.system:__subpackages__",
         "//sdk/fidl/fuchsia.power.topology.test:__subpackages__",
         "//sdk/fidl/fuchsia.session.power:__subpackages__",
+        "//sdk/fidl/fuchsia.wlan.phy:__subpackages__",
         "//sdk/lib/driver/power/cpp:__subpackages__",
         "//sdk/lib/driver/power/rust:__subpackages__",
         "//src/connectivity/network/netstack3:__pkg__",

@@ -4,6 +4,7 @@
 @available(added=HEAD)
 library fuchsia.wlan.phy;
 
+using fuchsia.power.broker;
 using fuchsia.wlan.common;
 using fuchsia.wlan.ieee80211 as ieee80211;
 using fuchsia.wlan.internal;
@@ -50,7 +51,12 @@ open protocol WlanPhy {
         ///
         /// This field is required.
         1: notify_client client_end:WlanPhyNotify;
-    }) -> () error zx.Status;
+    }) -> (resource table {
+        /// If power control is supported by the driver and hardware, a dependency token will
+        /// be returned to allow the upper layers to express a dependency on specified power
+        /// states (e.g. "on").
+        1: power_dependency_token fuchsia.power.broker.DependencyToken;
+    }) error zx.Status;
 
     /// MAC roles supported for ifaces on the physical device.
     flexible GetSupportedMacRoles() -> (table {

@@ -65,8 +65,7 @@ void WlanPhyDevice::CreateIface(CreateIfaceRequest& request,
   uint16_t out_iface_id;
   wlan_phy_impl_create_iface_req_t create_iface_req{};
 
-  if (request.init_sta_addr().has_value() &&
-      !MacAddr(*request.init_sta_addr()).IsZero()) {
+  if (request.init_sta_addr().has_value() && !MacAddr(*request.init_sta_addr()).IsZero()) {
     create_iface_req.has_init_sta_addr = true;
     std::copy(request.init_sta_addr()->begin(), request.init_sta_addr()->end(),
               create_iface_req.init_sta_addr);
@@ -191,7 +190,7 @@ void WlanPhyDevice::Init(InitRequest& request, InitCompleter::Sync& completer) {
     return;
   }
   notify_client_ = std::move(request.notify_client().value());
-  completer.Reply(zx::ok());
+  completer.Reply(zx::ok(fuchsia_wlan_phy::WlanPhyInitResponse{}));
 }
 
 void WlanPhyDevice::PowerDown(PowerDownCompleter::Sync& completer) {

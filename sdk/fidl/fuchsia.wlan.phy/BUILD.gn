@@ -39,6 +39,7 @@ fidl("fuchsia.wlan.phy") {
   enable_rust_next = true
   visibility = [ "*" ]
   public_deps = [
+    "//sdk/fidl/fuchsia.power.broker",
     "//sdk/fidl/fuchsia.wlan.common",
     "//sdk/fidl/fuchsia.wlan.ieee80211",
     "//sdk/fidl/fuchsia.wlan.internal",
