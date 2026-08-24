@@ -535,7 +535,7 @@ class Flatland : public fidl::Server<fuchsia_ui_composition::Flatland>,
   // The returned ID is primarily used by CleanupFlatland2StateForTest() to
   // verify correct image lifecycle behavior in unit tests.
   allocation::GlobalImageId ReleaseLayerObject(LayerHandle handle);
-  TransformHandle CreateLayerStackData(std::vector<LayerHandle> layers);
+  TransformHandle CreateLayerStackData(std::span<const LayerHandle> layers);
 
   // Test-only accessor/mutators
   // TODO(https://fxbug.dev/523371761): once everything lands, verify whether these are necessary

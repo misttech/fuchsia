@@ -85,7 +85,7 @@ struct LayerObject {
 };
 
 struct LayerStackData {
-  std::vector<LayerHandle> layers;
+  std::pmr::vector<LayerHandle> layers;
 };
 
 }  // namespace flatland

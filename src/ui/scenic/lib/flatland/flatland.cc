@@ -1526,7 +1526,7 @@ void Flatland::CreateImage(ContentId image_id,
       .height = static_cast<int32_t>(properties.size()->height()),
   }};
 
-  handle = CreateLayerStackData({layer_handle});
+  handle = CreateLayerStackData({&layer_handle, 1});
   content_handles_[image_id] = handle;
 
   FLATLAND_VERBOSE_LOG << "Flatland::CreateImage() session_id=" << session_id_
@@ -1818,7 +1818,7 @@ void Flatland::CreateFilledRect(ContentId rect_id) {
   layer_object.solid_color_mode = content;
   layer_object.common.display_rect = {{.x = 0, .y = 0, .width = 0, .height = 0}};
 
-  handle = CreateLayerStackData({layer_handle});
+  handle = CreateLayerStackData({&layer_handle, 1});
   content_handles_[rect_id] = handle;
 
   FLATLAND_VERBOSE_LOG << "Flatland::CreateFilledRect() session_id=" << session_id_
@@ -3053,7 +3053,7 @@ allocation::GlobalImageId Flatland::ReleaseLayerObject(LayerHandle handle) {
   return allocation::kInvalidImageId;
 }
 
-TransformHandle Flatland::CreateLayerStackData(std::vector<LayerHandle> layers) {
+TransformHandle Flatland::CreateLayerStackData(std::span<const LayerHandle> layers) {
   TransformHandle content_handle = transform_graph_.CreateTransform();
 
   for (const auto& layer_handle : layers) {
@@ -3062,9 +3062,7 @@ TransformHandle Flatland::CreateLayerStackData(std::vector<LayerHandle> layers) 
     it->second.ref_count++;
   }
 
-  layer_stacks_[content_handle] = LayerStackData{
-      .layers = std::move(layers),
-  };
+  layer_stacks_.try_emplace(content_handle, LayerStackData{{layers.begin(), layers.end(), &pool_}});
 
   return content_handle;
 }

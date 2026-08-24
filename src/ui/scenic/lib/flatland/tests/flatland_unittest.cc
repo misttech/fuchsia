@@ -5610,7 +5610,7 @@ TEST_F(FlatlandTest, LayerSurvivesWhileStackReferencesIt) {
   LayerHandle layer = flatland->CreateLayerObject();
 
   // Create stack.
-  auto stack_content_handle = flatland->CreateLayerStackData({layer});
+  auto stack_content_handle = flatland->CreateLayerStackData({&layer, 1});
 
   // Verify layer object is still present (ref_count is 1 from the stack).
   const auto* obj = flatland->GetLayerObjectForTest(layer);
@@ -5648,7 +5648,7 @@ TEST_F(FlatlandTest, StackKeepAliveViaAttachedTransform) {
   flatland->SetRootTransform(kTransformId);
 
   LayerHandle layer = flatland->CreateLayerObject();
-  auto stack_content_handle = flatland->CreateLayerStackData({layer});
+  auto stack_content_handle = flatland->CreateLayerStackData({&layer, 1});
 
   // Attach stack to the transform (using the content handle).
   flatland->SetPriorityChildForTest(kTransformId, stack_content_handle);
@@ -5696,7 +5696,7 @@ TEST_F(FlatlandTest, ImageReleaseRidesExistingMachinery) {
   flatland->SetLayerImageForTest(layer, global_image_id);
 
   // Put in a stack.
-  auto stack_content_handle = flatland->CreateLayerStackData({layer});
+  auto stack_content_handle = flatland->CreateLayerStackData({&layer, 1});
 
   // Release the buffer collection.
   EXPECT_CALL(*mock_buffer_collection_importer_, ReleaseBufferCollection(global_collection_id, _))
