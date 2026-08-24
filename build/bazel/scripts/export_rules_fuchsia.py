@@ -124,9 +124,11 @@ def main() -> int:
                 content = filepath.read_text()
                 if "@fuchsia_rules_common" in content:
                     content = content.replace(
-                        "@fuchsia_rules_common//:", "//fuchsia_rules_common:"
+                        "@fuchsia_rules_common//:",
+                        "@rules_fuchsia//fuchsia_rules_common:",
                     ).replace(
-                        "@fuchsia_rules_common//", "//fuchsia_rules_common/"
+                        "@fuchsia_rules_common//",
+                        "@rules_fuchsia//fuchsia_rules_common/",
                     )
                     filepath.write_text(content)
 

@@ -19,10 +19,36 @@ bazel_dep(name = "rules_python", version = "0.36.0")
 bazel_dep(name = "rules_cc", version = "0.0.9")
 
 # BEGIN_FUCHSIA_IN_TREE_ONLY
-# The following definition is only required in-tree, and will be
-# removed from the exported @rules_fuchsia directory, which instead
-# relies on an explicit //fuchsia_rules_common/ package. See
-# //:rules_fuchsia.export in fuchsia.git.
+#
+# Because common provider definitions for in-tree and SDK rules require
+# a single definition location, the @fuchsia_rules_common repository
+# is special:
+#
+# - In the Fuchsia in-tree build, the repository exists and its content
+#   comes from build/bazel_sdk/fuchsia_rules_common, while the content
+#   of @rules_fuchsia comes from build/bazel_sdk/bazel_rules_fuchsia.
+#
+#   Also, all @rules_fuchsia files contain label references that begin
+#   with @fuchsia_rules_common// when they need to access the common
+#   definitions.
+#
+# - The in-tree //:rules_fuchsia.export GN target is used to produce
+#   a version of @rules_fuchsia that can be used out-of-tree without
+#   a separate common directory. To do this, it will:
+#
+#   1) Copy the content of build/bazel_sdk/bazel_rules_fuchsia to
+#      a new $RULES_FUCHSIA output directory.
+#
+#   2) Copy the content of build/bazel_sdk/fuchsia_rules_common to
+#      $RULES_FUCHSIA/fuchsia_rules_common
+#
+#   3) Change all strings in $RULES_FUCHSIA Bazel files that
+#      start with "@fuchsia_rules_common//" to use
+#      "@rules_fuchsia//fuchsia_rules_common" instead. This makes all
+#      label references valid inside $RULES_FUCHSIA.
+#
+# The following definition is only required in-tree as there is no
+# external repository when using this file OOT.
 bazel_dep(name = "fuchsia_rules_common", version = "0")
 local_path_override(
     module_name = "fuchsia_rules_common",
