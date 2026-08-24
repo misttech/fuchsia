@@ -31,7 +31,7 @@ func TestValidateCommand_Execute(t *testing.T) {
 
 	fs := flag.NewFlagSet("test", flag.ContinueOnError)
 	cmd.SetFlags(fs)
-	fs.Parse([]string{"-fuchsia_dir", tempDir, "-out_dir", outDir, "-output_license_file=false"})
+	fs.Parse([]string{"-fuchsia_dir", tempDir, "-out_dir", outDir})
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
