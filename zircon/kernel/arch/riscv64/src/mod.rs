@@ -13,10 +13,8 @@ pub struct ArchSavedNormalState {
     _dummy: u8,
 }
 
-const _: () = {
-    assert!(core::mem::size_of::<ArchSavedNormalState>() == 1);
-    assert!(core::mem::align_of::<ArchSavedNormalState>() == 1);
-};
+zr::static_assert!(core::mem::size_of::<ArchSavedNormalState>() == 1);
+zr::static_assert!(core::mem::align_of::<ArchSavedNormalState>() == 1);
 
 #[allow(unused_imports)]
 pub use arch_types_bindings::{GeneralRegsSource, UserEntryState};
@@ -81,12 +79,10 @@ pub struct Iframe {
 
 pub type SyscallRegs = Iframe;
 
-const _: () = {
-    assert!(core::mem::size_of::<Iframe>() == 272);
-    assert!(core::mem::align_of::<Iframe>() == 16);
-    assert!(core::mem::size_of::<SyscallRegs>() == core::mem::size_of::<Iframe>());
-    assert!(core::mem::align_of::<SyscallRegs>() == core::mem::align_of::<Iframe>());
-};
+zr::static_assert!(core::mem::size_of::<Iframe>() == 272);
+zr::static_assert!(core::mem::align_of::<Iframe>() == 16);
+zr::static_assert!(core::mem::size_of::<SyscallRegs>() == core::mem::size_of::<Iframe>());
+zr::static_assert!(core::mem::align_of::<SyscallRegs>() == core::mem::align_of::<Iframe>());
 
 #[inline]
 pub fn is_user_accessible(va: usize) -> bool {

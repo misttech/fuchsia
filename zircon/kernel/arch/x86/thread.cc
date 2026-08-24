@@ -285,9 +285,7 @@ void arch_context_switch(Thread* oldthread, Thread* newthread)
   x86_context_switch_spec_mitigations(oldthread, newthread);
 
   // set the GS:in_restricted_mode pointer to the state of the new thread
-  const bool in_restricted =
-      newthread->restricted_state() != nullptr && newthread->restricted_state()->in_restricted();
-  arch_set_restricted_flag(in_restricted);
+  arch_set_restricted_flag(newthread->in_restricted());
 
   // On entry to the assembly function, we're still the old thread as far as
   // the compiler and kernel are concerned.  When it returns, we're back again

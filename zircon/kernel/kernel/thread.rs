@@ -11,6 +11,9 @@ use core::ptr::NonNull;
 use zx_status::Status;
 use zx_types::{zx_instant_mono_t, zx_status_t};
 
+use crate::kernel::restricted_state::RestrictedState;
+
+#[allow(improper_ctypes)]
 unsafe extern "C" {
     fn cpp_thread_create_default(
         name: *const c_char,
@@ -40,7 +43,6 @@ unsafe extern "C" {
         now: zx_instant_mono_t,
     ) -> zx_status_t;
     fn cpp_thread_current_soft_fault(va: usize, flags: u32) -> zx_status_t;
-    fn cpp_restricted_enter(vector_table_ptr: usize, context: usize) -> zx_status_t;
     fn cpp_thread_get_stack_top(thread: *mut Thread) -> usize;
     fn cpp_thread_get_shadow_call_base(thread: *mut Thread) -> usize;
     fn cpp_thread_dump_current_stack();
@@ -49,6 +51,10 @@ unsafe extern "C" {
     fn cpp_thread_name(thread: *const Thread) -> *const c_char;
     fn cpp_thread_process_pending_signals(frame: *mut c_void);
     fn cpp_thread_is_in_restricted_mode(thread: *mut Thread) -> bool;
+    fn cpp_thread_current_restricted_state() -> *mut RestrictedState;
+    fn cpp_thread_current_set_restricted_state(raw_rs: *mut RestrictedState);
+    fn cpp_thread_current_is_signaled() -> bool;
+    fn cpp_thread_current_check_for_restricted_kick() -> bool;
 }
 
 // LINT.IfChange(FxtRef)
@@ -69,10 +75,7 @@ pub struct Thread {
 
 /// Enters restricted mode using the given vector table pointer and context.
 pub fn restricted_enter(vector_table_ptr: usize, context: usize) -> Result<(), Status> {
-    // SAFETY: `cpp_restricted_enter` performs validation of vector_table_ptr and context
-    // in architecture-specific restricted mode entry routines.
-    let status = unsafe { cpp_restricted_enter(vector_table_ptr, context) };
-    Status::ok(status)
+    crate::kernel::restricted::restricted_enter(vector_table_ptr, context)
 }
 
 /// Type-safe wrapper around a raw pointer to a Zircon kernel Thread.
@@ -442,6 +445,33 @@ pub unsafe fn name(thread: *const Thread) -> *const c_char {
 pub unsafe fn is_in_restricted_mode(thread: *mut Thread) -> bool {
     // SAFETY: Forwarded to C++ Thread restricted state query with caller-verified pointer.
     unsafe { cpp_thread_is_in_restricted_mode(thread) }
+}
+
+/// Returns the current thread's restricted mode state pointer.
+pub fn current_restricted_state() -> *mut RestrictedState {
+    // SAFETY: Foreign function wrapper for Thread::Current::restricted_state().
+    unsafe { cpp_thread_current_restricted_state() }
+}
+
+/// Sets the current thread's restricted mode state pointer.
+///
+/// # Safety
+/// Caller must pass a valid `RestrictedState` raw pointer or null pointer.
+pub unsafe fn current_set_restricted_state(raw_rs: *mut RestrictedState) {
+    // SAFETY: Forwarded to C++ Thread::Current::Get()->set_restricted_state.
+    unsafe { cpp_thread_current_set_restricted_state(raw_rs) }
+}
+
+/// Returns whether the current thread is signaled.
+pub fn current_is_signaled() -> bool {
+    // SAFETY: Foreign function wrapper for Thread::Current::Get()->IsSignaled().
+    unsafe { cpp_thread_current_is_signaled() }
+}
+
+/// Checks and clears the current thread's restricted kick flag.
+pub fn current_check_for_restricted_kick() -> bool {
+    // SAFETY: Foreign function wrapper for Thread::Current::CheckForRestrictedKick().
+    unsafe { cpp_thread_current_check_for_restricted_kick() }
 }
 
 #[cfg(test)]

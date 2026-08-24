@@ -176,8 +176,7 @@ impl ThreadDispatcher {
     /// Kicks this thread out of restricted mode.
     pub fn restricted_kick(&self) -> Result<(), Status> {
         // SAFETY: `self` is a valid `ThreadDispatcher` reference.
-        let status = unsafe { cpp_thread_dispatcher_restricted_kick(self as *const _ as *mut _) };
-        Status::ok(status)
+        Status::ok(unsafe { cpp_thread_dispatcher_restricted_kick(self as *const _ as *mut _) })
     }
 
     /// Reads architectural state from this thread into `buffer`.

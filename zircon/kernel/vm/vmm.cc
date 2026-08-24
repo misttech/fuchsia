@@ -17,9 +17,12 @@
 #include <zircon/types.h>
 
 #include <fbl/null_lock.h>
+#include <kernel/ffi.h>
 #include <kernel/mutex.h>
+#include <kernel/restricted_state.h>
 #include <kernel/task_runtime_timers.h>
 #include <object/diagnostics.h>
+#include <object/process_dispatcher.h>
 #include <vm/fault.h>
 #include <vm/pmm.h>
 #include <vm/vm.h>
@@ -249,3 +252,22 @@ static int cmd_vmm(int argc, const cmd_args* argv, uint32_t flags) {
 STATIC_COMMAND_START
 STATIC_COMMAND("vmm", "virtual memory manager", &cmd_vmm)
 STATIC_COMMAND_END(vmm)
+
+extern "C" {
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE void cpp_vmm_set_active_aspace_normal() {
+  ProcessDispatcher* up = ProcessDispatcher::GetCurrent();
+  vmm_set_active_aspace(up->normal_aspace());
+}
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE void cpp_vmm_set_active_aspace_restricted() {
+  ProcessDispatcher* up = ProcessDispatcher::GetCurrent();
+  VmAspace* restricted_aspace = up->restricted_aspace();
+  if (restricted_aspace) {
+    vmm_set_active_aspace(restricted_aspace);
+  }
+}
+
+}  // extern "C"

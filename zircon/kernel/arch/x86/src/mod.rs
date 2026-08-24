@@ -27,10 +27,8 @@ pub struct ArchSavedNormalState {
     pub normal_gs_base: u64,
 }
 
-const _: () = {
-    assert!(core::mem::size_of::<ArchSavedNormalState>() == 16);
-    assert!(core::mem::align_of::<ArchSavedNormalState>() == 8);
-};
+zr::static_assert!(core::mem::size_of::<ArchSavedNormalState>() == 16);
+zr::static_assert!(core::mem::align_of::<ArchSavedNormalState>() == 8);
 
 use debug::ltracef;
 use zx_status::Status;
@@ -135,53 +133,51 @@ pub struct SyscallRegs {
     pub rsp: u64,
 }
 
-const _: () = {
-    assert!(core::mem::size_of::<Iframe>() == 176);
-    assert!(core::mem::align_of::<Iframe>() == 8);
-    assert!(core::mem::offset_of!(Iframe, rdi) == 0);
-    assert!(core::mem::offset_of!(Iframe, rsi) == 8);
-    assert!(core::mem::offset_of!(Iframe, rbp) == 16);
-    assert!(core::mem::offset_of!(Iframe, rbx) == 24);
-    assert!(core::mem::offset_of!(Iframe, rdx) == 32);
-    assert!(core::mem::offset_of!(Iframe, rcx) == 40);
-    assert!(core::mem::offset_of!(Iframe, rax) == 48);
-    assert!(core::mem::offset_of!(Iframe, r8) == 56);
-    assert!(core::mem::offset_of!(Iframe, r9) == 64);
-    assert!(core::mem::offset_of!(Iframe, r10) == 72);
-    assert!(core::mem::offset_of!(Iframe, r11) == 80);
-    assert!(core::mem::offset_of!(Iframe, r12) == 88);
-    assert!(core::mem::offset_of!(Iframe, r13) == 96);
-    assert!(core::mem::offset_of!(Iframe, r14) == 104);
-    assert!(core::mem::offset_of!(Iframe, r15) == 112);
-    assert!(core::mem::offset_of!(Iframe, vector) == 120);
-    assert!(core::mem::offset_of!(Iframe, err_code) == 128);
-    assert!(core::mem::offset_of!(Iframe, ip) == 136);
-    assert!(core::mem::offset_of!(Iframe, cs) == 144);
-    assert!(core::mem::offset_of!(Iframe, flags) == 152);
-    assert!(core::mem::offset_of!(Iframe, user_sp) == 160);
-    assert!(core::mem::offset_of!(Iframe, user_ss) == 168);
+zr::static_assert!(core::mem::size_of::<Iframe>() == 176);
+zr::static_assert!(core::mem::align_of::<Iframe>() == 8);
+zr::static_assert!(core::mem::offset_of!(Iframe, rdi) == 0);
+zr::static_assert!(core::mem::offset_of!(Iframe, rsi) == 8);
+zr::static_assert!(core::mem::offset_of!(Iframe, rbp) == 16);
+zr::static_assert!(core::mem::offset_of!(Iframe, rbx) == 24);
+zr::static_assert!(core::mem::offset_of!(Iframe, rdx) == 32);
+zr::static_assert!(core::mem::offset_of!(Iframe, rcx) == 40);
+zr::static_assert!(core::mem::offset_of!(Iframe, rax) == 48);
+zr::static_assert!(core::mem::offset_of!(Iframe, r8) == 56);
+zr::static_assert!(core::mem::offset_of!(Iframe, r9) == 64);
+zr::static_assert!(core::mem::offset_of!(Iframe, r10) == 72);
+zr::static_assert!(core::mem::offset_of!(Iframe, r11) == 80);
+zr::static_assert!(core::mem::offset_of!(Iframe, r12) == 88);
+zr::static_assert!(core::mem::offset_of!(Iframe, r13) == 96);
+zr::static_assert!(core::mem::offset_of!(Iframe, r14) == 104);
+zr::static_assert!(core::mem::offset_of!(Iframe, r15) == 112);
+zr::static_assert!(core::mem::offset_of!(Iframe, vector) == 120);
+zr::static_assert!(core::mem::offset_of!(Iframe, err_code) == 128);
+zr::static_assert!(core::mem::offset_of!(Iframe, ip) == 136);
+zr::static_assert!(core::mem::offset_of!(Iframe, cs) == 144);
+zr::static_assert!(core::mem::offset_of!(Iframe, flags) == 152);
+zr::static_assert!(core::mem::offset_of!(Iframe, user_sp) == 160);
+zr::static_assert!(core::mem::offset_of!(Iframe, user_ss) == 168);
 
-    assert!(core::mem::size_of::<SyscallRegs>() == 144);
-    assert!(core::mem::align_of::<SyscallRegs>() == 8);
-    assert!(core::mem::offset_of!(SyscallRegs, rax) == 0);
-    assert!(core::mem::offset_of!(SyscallRegs, rbx) == 8);
-    assert!(core::mem::offset_of!(SyscallRegs, rcx) == 16);
-    assert!(core::mem::offset_of!(SyscallRegs, rdx) == 24);
-    assert!(core::mem::offset_of!(SyscallRegs, rsi) == 32);
-    assert!(core::mem::offset_of!(SyscallRegs, rdi) == 40);
-    assert!(core::mem::offset_of!(SyscallRegs, rbp) == 48);
-    assert!(core::mem::offset_of!(SyscallRegs, r8) == 56);
-    assert!(core::mem::offset_of!(SyscallRegs, r9) == 64);
-    assert!(core::mem::offset_of!(SyscallRegs, r10) == 72);
-    assert!(core::mem::offset_of!(SyscallRegs, r11) == 80);
-    assert!(core::mem::offset_of!(SyscallRegs, r12) == 88);
-    assert!(core::mem::offset_of!(SyscallRegs, r13) == 96);
-    assert!(core::mem::offset_of!(SyscallRegs, r14) == 104);
-    assert!(core::mem::offset_of!(SyscallRegs, r15) == 112);
-    assert!(core::mem::offset_of!(SyscallRegs, rip) == 120);
-    assert!(core::mem::offset_of!(SyscallRegs, rflags) == 128);
-    assert!(core::mem::offset_of!(SyscallRegs, rsp) == 136);
-};
+zr::static_assert!(core::mem::size_of::<SyscallRegs>() == 144);
+zr::static_assert!(core::mem::align_of::<SyscallRegs>() == 8);
+zr::static_assert!(core::mem::offset_of!(SyscallRegs, rax) == 0);
+zr::static_assert!(core::mem::offset_of!(SyscallRegs, rbx) == 8);
+zr::static_assert!(core::mem::offset_of!(SyscallRegs, rcx) == 16);
+zr::static_assert!(core::mem::offset_of!(SyscallRegs, rdx) == 24);
+zr::static_assert!(core::mem::offset_of!(SyscallRegs, rsi) == 32);
+zr::static_assert!(core::mem::offset_of!(SyscallRegs, rdi) == 40);
+zr::static_assert!(core::mem::offset_of!(SyscallRegs, rbp) == 48);
+zr::static_assert!(core::mem::offset_of!(SyscallRegs, r8) == 56);
+zr::static_assert!(core::mem::offset_of!(SyscallRegs, r9) == 64);
+zr::static_assert!(core::mem::offset_of!(SyscallRegs, r10) == 72);
+zr::static_assert!(core::mem::offset_of!(SyscallRegs, r11) == 80);
+zr::static_assert!(core::mem::offset_of!(SyscallRegs, r12) == 88);
+zr::static_assert!(core::mem::offset_of!(SyscallRegs, r13) == 96);
+zr::static_assert!(core::mem::offset_of!(SyscallRegs, r14) == 104);
+zr::static_assert!(core::mem::offset_of!(SyscallRegs, r15) == 112);
+zr::static_assert!(core::mem::offset_of!(SyscallRegs, rip) == 120);
+zr::static_assert!(core::mem::offset_of!(SyscallRegs, rflags) == 128);
+zr::static_assert!(core::mem::offset_of!(SyscallRegs, rsp) == 136);
 
 /// Entry state for a thread.
 #[allow(unused_imports)]

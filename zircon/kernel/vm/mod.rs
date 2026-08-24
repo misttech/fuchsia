@@ -29,3 +29,4 @@ pub mod vm_object;
 pub mod vm_object_paged;
 pub mod vm_object_physical;
 pub mod vm_page_list;
+pub mod vmm;

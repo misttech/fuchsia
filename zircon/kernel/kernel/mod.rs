@@ -8,6 +8,7 @@ pub mod bits;
 pub mod koid;
 pub mod mp;
 pub mod relaxed_atomic;
+pub mod restricted;
 pub mod restricted_state;
 pub mod stats;
 pub mod thread;

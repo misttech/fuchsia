@@ -55,10 +55,7 @@ const char* excp_type_to_string(uint type) {
   }
 }
 
-bool HasRestrictedInThreadHandler() {
-  RestrictedState* rs = Thread::Current::restricted_state();
-  return rs != nullptr && rs->in_restricted();
-}
+bool HasRestrictedInThreadHandler() { return Thread::Current::Get()->in_restricted(); }
 }  // namespace
 
 // This isn't an "iterator" in the pure c++ sense. We don't need all that

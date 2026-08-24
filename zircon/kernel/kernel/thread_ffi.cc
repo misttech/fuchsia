@@ -11,6 +11,7 @@
 
 #include <arch/regs.h>
 #include <kernel/deadline.h>
+#include <kernel/ffi.h>
 #include <kernel/restricted.h>
 #include <kernel/restricted_state.h>
 #include <kernel/thread.h>
@@ -116,10 +117,6 @@ zx_status_t cpp_thread_current_soft_fault(vaddr_t va, uint flags) {
   return Thread::Current::SoftFault(va, flags);
 }
 
-zx_status_t cpp_restricted_enter(uintptr_t vector_table_ptr, uintptr_t context) {
-  return RestrictedEnter(vector_table_ptr, context);
-}
-
 vaddr_t cpp_thread_get_stack_top(Thread* thread) { return thread->stack().top(); }
 
 vaddr_t cpp_thread_get_shadow_call_base(Thread* thread) {
@@ -148,8 +145,30 @@ void cpp_thread_process_pending_signals(void* frame) {
   Thread::Current::ProcessPendingSignals(GeneralRegsSource::Iframe, static_cast<iframe_t*>(frame));
 }
 
-bool cpp_thread_is_in_restricted_mode(Thread* thread) TA_NO_THREAD_SAFETY_ANALYSIS {
-  return thread->restricted_state() != nullptr && thread->restricted_state()->in_restricted();
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE RestrictedState* cpp_thread_current_restricted_state() {
+  return Thread::Current::restricted_state();
+}
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE void cpp_thread_current_set_restricted_state(RestrictedState* raw_rs) {
+  Thread::Current::Get()->set_restricted_state(raw_rs);
+}
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE bool cpp_thread_current_is_signaled() {
+  return Thread::Current::Get()->IsSignaled();
+}
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE bool cpp_thread_current_check_for_restricted_kick() {
+  return Thread::Current::CheckForRestrictedKick();
+}
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE bool cpp_thread_is_in_restricted_mode(Thread* thread) {
+  DEBUG_ASSERT(thread != nullptr);
+  return thread->in_restricted();
 }
 
 }  // extern "C"

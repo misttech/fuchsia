@@ -303,8 +303,7 @@ zx_status_t Thread::Current::Fault(vaddr_t va, F resolve_fault) {
   // process' aspace_at function to resolve the fault.
   Thread* t = Thread::Current::Get();
   VmAspace* containing_aspace;
-  bool in_restricted = t->restricted_state_ && t->restricted_state_->in_restricted();
-  if (!t->user_thread_ || in_restricted) {
+  if (!t->user_thread_ || t->in_restricted()) {
     containing_aspace = t->aspace_;
   } else {
     containing_aspace = t->user_thread_->process()->aspace_at(va);

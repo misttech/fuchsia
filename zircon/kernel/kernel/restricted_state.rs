@@ -16,7 +16,7 @@ use debug::ltracef;
 use fbl::RefPtr;
 use kalloc::Box;
 use zx_status::Status;
-use zx_types::{zx_exception_report_t, zx_restricted_state_t, zx_status_t};
+use zx_types::{zx_exception_report_t, zx_restricted_state_t};
 
 const LOCAL_TRACE: u32 = 0;
 
@@ -24,12 +24,9 @@ const STATE_VMO_SIZE: usize = page::SIZE;
 
 /// Encapsulates a thread's restricted mode state, including VMO backing and mapping.
 ///
-/// The memory layout of this struct (`#[repr(C)]`) must exactly match its C++ counterpart
-/// (`class RestrictedState` in `zircon/kernel/include/kernel/restricted_state.h`), as instances
-/// allocated here are directly accessed from C++ code by pointer. Any changes to field types,
-/// names, ordering, or layout must be kept in sync between the two definitions, and verified via
-/// static assertions.
-#[repr(C)]
+/// The definition of `RestrictedState` lives completely on the Rust side. Instances are allocated
+/// in Rust via `RestrictedState::create`, destroyed via `Drop` / `rust_restricted_state_destroy`,
+/// and referenced from C++ as an opaque handle pointer.
 pub struct RestrictedState {
     in_restricted: bool,
     vector_ptr: usize,
@@ -40,25 +37,6 @@ pub struct RestrictedState {
     state_mapping_ptr: NonNull<zx_restricted_state_t>,
     arch: ArchSavedNormalState,
 }
-
-// Verify that the memory layout of Rust `RestrictedState` exactly matches the C++
-// `class RestrictedState` in `zircon/kernel/include/kernel/restricted_state.h`.
-//
-// Both types are accessed directly by pointer across the FFI boundary, so any changes to field
-// types, ordering, or layout here must also be mirrored on the C++ side, and vice versa.
-zr::static_assert!(core::mem::offset_of!(RestrictedState, in_restricted) == 0);
-zr::static_assert!(core::mem::offset_of!(RestrictedState, vector_ptr) == 8);
-zr::static_assert!(core::mem::offset_of!(RestrictedState, context) == 16);
-zr::static_assert!(core::mem::offset_of!(RestrictedState, exception_report_ptr) == 24);
-zr::static_assert!(core::mem::offset_of!(RestrictedState, vmo) == 32);
-zr::static_assert!(core::mem::offset_of!(RestrictedState, mapping) == 40);
-zr::static_assert!(core::mem::offset_of!(RestrictedState, state_mapping_ptr) == 48);
-zr::static_assert!(core::mem::offset_of!(RestrictedState, arch) == 56);
-zr::static_assert!(core::mem::align_of::<RestrictedState>() == 8);
-#[cfg(not(target_arch = "riscv64"))]
-zr::static_assert!(core::mem::size_of::<RestrictedState>() == 72);
-#[cfg(target_arch = "riscv64")]
-zr::static_assert!(core::mem::size_of::<RestrictedState>() == 64);
 
 type VmoMapping = (RefPtr<VmObjectPaged>, RefPtr<VmMapping>, NonNull<zx_restricted_state_t>);
 
@@ -94,7 +72,10 @@ fn create_vmo_mapping() -> Result<VmoMapping, Status> {
         return Err(err);
     }
 
-    let state_mapping_ptr = match NonNull::new(map_result.base as *mut _) {
+    let state_mapping_ptr = match NonNull::new(core::ptr::with_exposed_provenance_mut::<
+        zx_restricted_state_t,
+    >(map_result.base))
+    {
         Some(ptr) => ptr,
         None => {
             let _ = map_result.mapping.destroy();
@@ -207,9 +188,9 @@ impl RestrictedState {
         self.state_mapping_ptr.as_ptr().cast::<T>()
     }
 
-    /// Return a raw pointer to the underlying VMO.
-    pub fn vmo(&self) -> *mut VmObjectPaged {
-        RefPtr::as_ptr(&self.vmo) as *mut VmObjectPaged
+    /// Returns a shared reference to the VMO backing the shared mapping.
+    pub fn vmo(&self) -> &VmObject {
+        &self.vmo
     }
 }
 
@@ -221,48 +202,39 @@ impl Drop for RestrictedState {
     }
 }
 
-/// Create a new `RestrictedState` and write its raw pointer into `out_ptr`.
+/// Destroy a `RestrictedState` created by `RestrictedState::create`.
 ///
 /// # Safety
 ///
-/// Caller must ensure `out_ptr` is a valid pointer for writing `*mut RestrictedState`.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn rust_restricted_state_create(
-    exception_report_ptr: *mut zx_exception_report_t,
-    out_ptr: *mut *mut RestrictedState,
-) -> zx_status_t {
-    match RestrictedState::create_from_raw(exception_report_ptr) {
-        Ok(box_state) => {
-            // SAFETY: out_ptr is checked for null above and guaranteed by caller to be valid for writing.
-            unsafe {
-                *out_ptr = Box::into_raw(box_state);
-            }
-            zx_status::sys::ZX_OK
-        }
-        Err(status) => status.into_raw(),
-    }
-}
-
-/// Destroy a `RestrictedState` created by `rust_restricted_state_create`.
-///
-/// # Safety
-///
-/// Caller must pass a pointer returned by `rust_restricted_state_create` exactly once.
+/// Caller must pass a pointer returned by `RestrictedState::create` exactly once.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn rust_restricted_state_destroy(ptr: *mut RestrictedState) {
     if !ptr.is_null() {
-        // SAFETY: ptr was created by Box::into_raw in rust_restricted_state_create and passed once.
+        // SAFETY: ptr was created by Box::into_raw in RestrictedState::create and passed once.
         unsafe {
             let _ = Box::from_raw(ptr);
         }
     }
 }
 
+/// Return whether the restricted state indicates that the thread is in restricted mode.
+///
+/// # Safety
+///
+/// `state` must be a valid, non-null reference to a `RestrictedState`.
+#[unsafe(no_mangle)]
+pub extern "C" fn rust_restricted_state_in_restricted(state: &RestrictedState) -> bool {
+    state.in_restricted()
+}
+
+/// Restricted state kernel unit tests.
 #[cfg(ktest)]
-/// Restricted state unit tests.
 #[unittest::suite(name = "restricted_state_tests")]
 mod tests {
-    use super::{NonNull, RestrictedState, zx_exception_report_t, zx_restricted_state_t};
+    use super::{
+        NonNull, RestrictedState, rust_restricted_state_destroy,
+        rust_restricted_state_in_restricted, zx_exception_report_t, zx_restricted_state_t,
+    };
 
     /// Verifies creation of RestrictedState and basic field accessors and mutators.
     #[test]
@@ -285,7 +257,6 @@ mod tests {
         unittest::expect_true!(rs.exception_report_ptr().is_none());
         unittest::expect_true!(rs.exception_report_raw_ptr().is_null());
 
-        unittest::expect_false!(rs.vmo().is_null());
         unittest::expect_false!(rs.state_ptr().is_null());
         unittest::expect_true!(rs.state_ptr_as::<zx_restricted_state_t>() == rs.state_ptr());
     }
@@ -293,11 +264,29 @@ mod tests {
     /// Verifies creation of RestrictedState when provided with an exception report pointer.
     #[test]
     fn test_restricted_state_with_exception_report() {
+        // SAFETY: zx_exception_report_t contains primitive field types and zero-initialization is sound.
         let mut report = unsafe { core::mem::zeroed::<zx_exception_report_t>() };
         let report_ptr = NonNull::new(&mut report as *mut zx_exception_report_t).unwrap();
         let rs = RestrictedState::create(Some(report_ptr))
             .expect("failed to create RestrictedState with exception report");
         unittest::expect_true!(rs.exception_report_ptr() == Some(report_ptr));
         unittest::expect_true!(rs.exception_report_raw_ptr() == report_ptr.as_ptr());
+    }
+
+    /// Test FFI lifecycle routines (destroy, in_restricted).
+    #[test]
+    fn test_restricted_state_ffi_lifecycle() {
+        let raw_ptr = Box::into_raw(RestrictedState::create(None).unwrap());
+        unittest::expect_false!(raw_ptr.is_null());
+
+        // SAFETY: raw_ptr points to a valid, initialized RestrictedState returned by create.
+        unsafe {
+            unittest::expect_false!(rust_restricted_state_in_restricted(&*raw_ptr));
+        }
+
+        // SAFETY: raw_ptr was returned by rust_restricted_state_create and has not been destroyed.
+        unsafe {
+            rust_restricted_state_destroy(raw_ptr);
+        }
     }
 }

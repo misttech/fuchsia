@@ -205,9 +205,7 @@ void arch_context_switch(Thread* oldthread, Thread* newthread)
   }
 
   // Set the percpu in_restricted_mode field.
-  const bool in_restricted =
-      newthread->restricted_state() != nullptr && newthread->restricted_state()->in_restricted();
-  arch_set_restricted_flag(in_restricted);
+  arch_set_restricted_flag(newthread->in_restricted());
 
   // Regular integer context switch.
   riscv64_context_switch(&oldthread->arch().sp, newthread->arch().sp);

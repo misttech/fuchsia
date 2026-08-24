@@ -4,13 +4,30 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
+use super::handle::KernelHandle;
 use super::vm_object_dispatcher_ffi::cpp_vm_object_dispatcher_get_vmo;
 use crate::vm::vm_object::VmObject;
 use crate::vm::vm_object_paged::VmObjectPaged;
+use core::mem::MaybeUninit;
 use fbl::RefPtr;
 use page;
 use zx_status::Status;
-use zx_types::{ZX_OBJ_TYPE_VMO, ZX_VMO_DISCARDABLE, ZX_VMO_RESIZABLE, ZX_VMO_UNBOUNDED};
+use zx_types::{
+    ZX_OBJ_TYPE_VMO, ZX_VMO_DISCARDABLE, ZX_VMO_RESIZABLE, ZX_VMO_UNBOUNDED, zx_rights_t,
+};
+
+// LINT.IfChange(InitialMutability)
+/// Specifies initial mutability for `VmObjectDispatcher`.
+#[repr(u32)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum InitialMutability {
+    Mutable = 0,
+    Immutable = 1,
+}
+// LINT.ThenChange(//zircon/kernel/object/include/object/vm_object_dispatcher.h:InitialMutability)
+
+zr::static_assert!(core::mem::size_of::<InitialMutability>() == 4);
+zr::static_assert!(core::mem::align_of::<InitialMutability>() == 4);
 
 crate::object::dispatcher::impl_dispatcher_facade!(
     pub struct VmObjectDispatcher,
@@ -24,6 +41,31 @@ pub struct CreateStats {
 }
 
 impl VmObjectDispatcher {
+    /// Creates a `VmObjectDispatcher` wrapping a VMO.
+    pub fn create(
+        vmo: &VmObject,
+        stream_size: u64,
+        initial_mutability: InitialMutability,
+    ) -> Result<(KernelHandle<Self>, zx_rights_t), Status> {
+        let mut handle_out = MaybeUninit::<KernelHandle<Self>>::uninit();
+        let mut rights_out: zx_rights_t = 0;
+        // SAFETY: `vmo.as_raw()` returns a valid raw pointer to a VmObject, and `handle_out` and `rights_out`
+        // point to valid uninitialized memory.
+        let status = unsafe {
+            super::vm_object_dispatcher_ffi::cpp_vm_object_dispatcher_create(
+                vmo.as_raw() as *mut VmObject,
+                stream_size,
+                initial_mutability,
+                &raw mut handle_out,
+                &mut rights_out,
+            )
+        };
+        Status::ok(status)?;
+        // SAFETY: `cpp_vm_object_dispatcher_create` returned ZX_OK, so `handle_out` has been initialized.
+        let handle = unsafe { handle_out.assume_init() };
+        Ok((handle, rights_out))
+    }
+
     /// Returns a reference to the underlying `VmObject`.
     pub fn vmo(&self) -> &RefPtr<VmObject> {
         // SAFETY: `self` is a valid `VmObjectDispatcher` reference.
@@ -69,5 +111,30 @@ impl VmObjectDispatcher {
         }
 
         Ok(res)
+    }
+}
+
+/// Kernel unit tests for `VmObjectDispatcher`.
+#[cfg(ktest)]
+#[unittest::suite(name = "vm_object_dispatcher_tests")]
+mod tests {
+    use super::{InitialMutability, VmObjectDispatcher};
+    use crate::vm::vm_object_paged::VmObjectPaged;
+
+    /// Tests creating a VmObjectDispatcher and accessing its underlying VMO.
+    #[test]
+    fn test_vm_object_dispatcher_create_and_vmo() {
+        let paged_vmo = VmObjectPaged::create(0, 0, 4096).expect("failed to create paged VMO");
+        let vmo_size = paged_vmo.size();
+        unittest::expect_eq!(vmo_size, 4096);
+
+        let (handle, rights) =
+            VmObjectDispatcher::create(&paged_vmo, vmo_size, InitialMutability::Mutable)
+                .expect("failed to create VmObjectDispatcher");
+        unittest::expect_true!(rights != 0);
+
+        let disp = handle.dispatcher();
+        let disp_vmo = disp.vmo();
+        unittest::expect_eq!(disp_vmo.size(), 4096);
     }
 }

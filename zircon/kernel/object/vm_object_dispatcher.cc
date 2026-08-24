@@ -593,3 +593,19 @@ extern "C" FFI_ALWAYS_INLINE const fbl::RefPtr<VmObject>* cpp_vm_object_dispatch
     const VmObjectDispatcher* disp) {
   return &disp->vmo();
 }
+
+extern "C" zx_status_t cpp_vm_object_dispatcher_create(
+    VmObject* raw_vmo, uint64_t stream_size, uint32_t raw_initial_mutability,
+    ffi::Uninitialized<KernelHandle<VmObjectDispatcher>>* out_handle, zx_rights_t* out_rights) {
+  fbl::RefPtr<VmObject> vmo(raw_vmo);
+  auto initial_mutability =
+      static_cast<VmObjectDispatcher::InitialMutability>(raw_initial_mutability);
+  KernelHandle<VmObjectDispatcher> handle;
+  zx_status_t status = VmObjectDispatcher::Create(ktl::move(vmo), stream_size, initial_mutability,
+                                                  &handle, out_rights);
+  if (status != ZX_OK) {
+    return status;
+  }
+  out_handle->Initialize(ktl::move(handle));
+  return ZX_OK;
+}

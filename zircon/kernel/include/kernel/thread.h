@@ -51,6 +51,7 @@
 #include <ktl/atomic.h>
 #include <ktl/optional.h>
 #include <ktl/string_view.h>
+#include <ktl/unique_ptr.h>
 #include <lockdep/thread_lock_state.h>
 #include <vm/kstack.h>
 
@@ -1191,8 +1192,10 @@ struct Thread : public ChainLockable {
 #endif
 
   RestrictedState* restricted_state() { return restricted_state_.get(); }
-  void set_restricted_state(ktl::unique_ptr<RestrictedState> restricted_state) {
-    restricted_state_ = ktl::move(restricted_state);
+  const RestrictedState* restricted_state() const { return restricted_state_.get(); }
+  void set_restricted_state(RestrictedState* raw_rs) { restricted_state_.reset(raw_rs); }
+  bool in_restricted() const {
+    return restricted_state_ ? rust_restricted_state_in_restricted(restricted_state_.get()) : false;
   }
 
   arch_thread& arch() { return arch_; }
@@ -1405,8 +1408,8 @@ struct Thread : public ChainLockable {
   PreemptionState preemption_state_;
   MemoryAllocationState memory_allocation_state_;
 
-  // Must only be accessed by "this" thread. May be null.
-  ktl::unique_ptr<RestrictedState> restricted_state_;
+  // Must only be accessed by "this" thread.
+  RestrictedStatePtr restricted_state_;
 
 #if WITH_LOCK_DEP
   // state for runtime lock validation when in thread context

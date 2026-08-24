@@ -22,6 +22,7 @@
 #include <arch/user_copy.h>
 #include <fbl/alloc_checker.h>
 #include <hypervisor/ktrace.h>
+#include <kernel/ffi.h>
 #include <kernel/koid.h>
 #include <kernel/mp.h>
 #include <ktl/atomic.h>

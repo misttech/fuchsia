@@ -59,6 +59,13 @@ unsafe extern "C" {
         fault_flags: *mut u32,
     ) -> i32;
     fn cpp_arch_set_blocking_disallowed(value: bool);
+    fn cpp_arch_set_restricted_flag(restricted: bool);
+}
+
+/// Sets the architecture-specific restricted mode flag on the current CPU.
+pub fn set_restricted_flag(restricted: bool) {
+    // SAFETY: Foreign function call into architecture-specific restricted mode flag setting.
+    unsafe { cpp_arch_set_restricted_flag(restricted) }
 }
 
 /// The arch_blocking_disallowed() flag is used to check that in-kernel interrupt

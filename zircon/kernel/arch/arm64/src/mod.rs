@@ -14,10 +14,8 @@ pub struct ArchSavedNormalState {
     pub tpidrro_el0: u64,
 }
 
-const _: () = {
-    assert!(core::mem::size_of::<ArchSavedNormalState>() == 16);
-    assert!(core::mem::align_of::<ArchSavedNormalState>() == 8);
-};
+zr::static_assert!(core::mem::size_of::<ArchSavedNormalState>() == 16);
+zr::static_assert!(core::mem::align_of::<ArchSavedNormalState>() == 8);
 
 use core::fmt::Write;
 use debug::ltrace::KernelConsoleWriter;
@@ -80,15 +78,13 @@ pub struct Iframe {
 
 pub type SyscallRegs = Iframe;
 
-const _: () = {
-    assert!(core::mem::size_of::<Iframe>() == 272);
-    assert!(core::mem::align_of::<Iframe>() == 8);
-    assert!(core::mem::offset_of!(Iframe, r) == 0);
-    assert!(core::mem::offset_of!(Iframe, elr) == 240);
-    assert!(core::mem::offset_of!(Iframe, spsr) == 248);
-    assert!(core::mem::offset_of!(Iframe, lr) == 256);
-    assert!(core::mem::offset_of!(Iframe, usp) == 264);
-};
+zr::static_assert!(core::mem::size_of::<Iframe>() == 272);
+zr::static_assert!(core::mem::align_of::<Iframe>() == 8);
+zr::static_assert!(core::mem::offset_of!(Iframe, r) == 0);
+zr::static_assert!(core::mem::offset_of!(Iframe, elr) == 240);
+zr::static_assert!(core::mem::offset_of!(Iframe, spsr) == 248);
+zr::static_assert!(core::mem::offset_of!(Iframe, lr) == 256);
+zr::static_assert!(core::mem::offset_of!(Iframe, usp) == 264);
 
 #[allow(unused_imports)]
 pub use arch_types_bindings::{GeneralRegsSource, UserEntryState};

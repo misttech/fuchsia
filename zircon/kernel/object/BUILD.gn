@@ -62,7 +62,6 @@ source_set("object") {
     "resource.cc",
     "resource_dispatcher.cc",
     "resource_ffi.cc",
-    "restricted_ffi.cc",
     "root_job_observer.cc",
     "sampler_dispatcher.cc",
     "sampler_dispatcher_ffi.cc",

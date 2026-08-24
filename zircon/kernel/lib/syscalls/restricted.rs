@@ -4,29 +4,21 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
-use crate::kernel::thread::restricted_enter;
-use crate::object::{Dispatcher, HandleValue, ThreadDispatcher};
+use crate::kernel::restricted::{restricted_enter, thread_current_set_restricted_state};
+use crate::kernel::restricted_state::RestrictedState;
+use crate::object::{
+    Dispatcher, HandleValue, InitialMutability, ProcessDispatcher, ThreadDispatcher,
+    VmObjectDispatcher,
+};
 use crate::user_copy::UserOutPtr;
 use debug::ltracef;
 use syscalls_macro::syscall;
 use zx_status::{ErrorStatus, Status};
-use zx_types::{ZX_RIGHT_MANAGE_THREAD, zx_exception_report_t, zx_status_t};
+use zx_types::{ZX_POL_NEW_VMO, ZX_RIGHT_MANAGE_THREAD, zx_exception_report_t};
 
 // Disable local tracing by default for this file.
 const LOCAL_TRACE: u32 = 0;
 
-unsafe extern "C" {
-    fn cpp_restricted_bind_state(
-        out_exception_ptr: *mut zx_exception_report_t,
-        out_handle: *mut HandleValue,
-    ) -> zx_status_t;
-    fn cpp_restricted_unbind_state() -> zx_status_t;
-}
-
-/// Enters restricted mode using the given vector table pointer and context.
-///
-/// # Errors
-/// Returns `Status::INVALID_ARGS` if options is non-zero.
 #[syscall]
 pub fn sys_restricted_enter(
     options: u32,
@@ -43,10 +35,6 @@ pub fn sys_restricted_enter(
     Ok(())
 }
 
-/// Binds restricted state to the current thread and returns a handle to the state VMO.
-///
-/// # Errors
-/// Returns `Status::INVALID_ARGS` if options is non-zero.
 #[syscall]
 pub fn sys_restricted_bind_state(
     options: u32,
@@ -60,21 +48,35 @@ pub fn sys_restricted_bind_state(
         return Err(Status::INVALID_ARGS.into());
     }
 
-    // Check if user provided an exception report pointer
+    // Are we allowed to create a VMO?
+    ProcessDispatcher::with_current(|up| up.enforce_basic_policy(ZX_POL_NEW_VMO))?;
+
+    // Check if user provided an exception report pointer.
     let exception_ptr =
         if !out_exception.is_null() { out_exception.as_ptr() } else { core::ptr::null_mut() };
 
-    // SAFETY: cpp_restricted_bind_state handles creating RestrictedState and the VMO dispatcher,
-    // and registers it with the process's handle table and the current thread.
-    let status = unsafe { cpp_restricted_bind_state(exception_ptr, out) };
-    Status::ok(status)?;
+    // Create the restricted state.
+    let rs = RestrictedState::create_from_raw(exception_ptr)?;
+
+    // Wrap the VMO in a VmObjectDispatcher so we can give a handle back to the user.
+    let vmo = rs.vmo();
+    let size = vmo.size();
+    let (kernel_handle, rights) =
+        VmObjectDispatcher::create(vmo, size, InitialMutability::Mutable)?;
+
+    // Wrap the VmObjectDispatcher in a Handle in the process's handle table.
+    let user_handle = kernel_handle.make_and_add_handle(rights)?;
+
+    // Finally, set this thread's restricted state. Note, it's possible the copy-out of the new
+    // handle will fail, but that's OK. If that happens a ZX_EXCP_POLICY_CODE_HANDLE_LEAK will
+    // be generated, at which point the caller will either be terminated or will need to handle
+    // the exception (likely by retrying the operation with a valid out buffer).
+    thread_current_set_restricted_state(Some(rs));
+
+    *out = user_handle;
     Ok(())
 }
 
-/// Unbinds the restricted state from the current thread.
-///
-/// # Errors
-/// Returns `Status::INVALID_ARGS` if options is non-zero.
 #[syscall]
 pub fn sys_restricted_unbind_state(options: u32) -> Result<(), ErrorStatus> {
     ltracef!("options {:#x}\n", options);
@@ -83,16 +85,11 @@ pub fn sys_restricted_unbind_state(options: u32) -> Result<(), ErrorStatus> {
     if options != 0 {
         return Err(Status::INVALID_ARGS.into());
     }
-    // SAFETY: cpp_restricted_unbind_state clears the restricted state from the current thread.
-    let status = unsafe { cpp_restricted_unbind_state() };
-    Status::ok(status)?;
+
+    thread_current_set_restricted_state(None);
     Ok(())
 }
 
-/// Kicks a thread currently running in restricted mode.
-///
-/// # Errors
-/// Returns `Status::INVALID_ARGS` if options is non-zero.
 #[syscall]
 pub fn sys_restricted_kick(handle: HandleValue, options: u32) -> Result<(), ErrorStatus> {
     ltracef!("options {:#x}\n", options);
@@ -102,6 +99,7 @@ pub fn sys_restricted_kick(handle: HandleValue, options: u32) -> Result<(), Erro
         return Err(Status::INVALID_ARGS.into());
     }
 
+    // TODO(https://fxbug.dev/42077353): Decide if this is the correct right for this operation.
     let thread = Dispatcher::get_with_rights::<ThreadDispatcher>(handle, ZX_RIGHT_MANAGE_THREAD)?;
     thread.restricted_kick()?;
     Ok(())

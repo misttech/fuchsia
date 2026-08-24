@@ -73,5 +73,5 @@ pub use suspend_token_dispatcher::SuspendTokenDispatcher;
 pub use thread_dispatcher::{AutoBlocked, Blocked, ThreadDispatcher};
 pub use timer_dispatcher::TimerDispatcher;
 pub use vm_address_region_dispatcher::VmAddressRegionDispatcher;
-pub use vm_object_dispatcher::VmObjectDispatcher;
+pub use vm_object_dispatcher::{InitialMutability, VmObjectDispatcher};
 pub use wait_signal_observer::WaitSignalObserver;

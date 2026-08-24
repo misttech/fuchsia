@@ -17,6 +17,7 @@
 #include <fbl/canary.h>
 #include <fbl/intrusive_container_utils.h>
 #include <fbl/intrusive_double_list.h>
+#include <kernel/ffi.h>
 #include <ktl/atomic.h>
 #include <ktl/limits.h>
 #include <object/dispatcher.h>
@@ -28,12 +29,17 @@ class VmObjectDispatcher;
 
 extern "C" {
 const fbl::RefPtr<VmObject>* cpp_vm_object_dispatcher_get_vmo(const VmObjectDispatcher* disp);
+zx_status_t cpp_vm_object_dispatcher_create(
+    VmObject* raw_vmo, uint64_t stream_size, uint32_t initial_mutability,
+    ffi::Uninitialized<KernelHandle<VmObjectDispatcher>>* out_handle, zx_rights_t* out_rights);
 }
 
 class VmObjectDispatcher final : public SoloDispatcher<VmObjectDispatcher, ZX_DEFAULT_VMO_RIGHTS>,
                                  public VmObjectChildObserver {
  public:
-  enum class InitialMutability { kMutable, kImmutable };
+  // LINT.IfChange(InitialMutability)
+  enum class InitialMutability : uint32_t { kMutable, kImmutable };
+  // LINT.ThenChange(//zircon/kernel/object/vm_object_dispatcher.rs:InitialMutability)
 
   struct CreateStats {
     uint32_t flags;
