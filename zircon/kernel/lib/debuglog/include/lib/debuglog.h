@@ -125,6 +125,10 @@ inline bool dlog_bypass() { return kBootConstants.bypass_debuglog; }
 // were filled.
 size_t dlog_render_to_crashlog(ktl::span<char> target);
 
+// Blocks until the dumper thread has dumped all queued log messages up to the current sequence.
+// Must only be called from a thread context where blocking is permitted.
+void dlog_sync();
+
 extern "C" {
 zx_status_t cpp_dlog_shutdown(zx_instant_mono_t deadline);
 zx_status_t cpp_dlog_write(uint32_t severity, uint32_t flags, const char* ptr, size_t len);
@@ -132,6 +136,8 @@ void cpp_dlog_reader_init(DlogReader* reader, DlogReader::NotifyCallback* notify
 void cpp_dlog_reader_disconnect(DlogReader* reader);
 zx_status_t cpp_dlog_reader_read(DlogReader* reader, uint32_t flags, dlog_record_t* record,
                                  size_t* actual);
+void cpp_dlog_serial_write(const char* ptr, size_t len);
+void cpp_dlog_sync();
 }
 
 #endif  // ZIRCON_KERNEL_LIB_DEBUGLOG_INCLUDE_LIB_DEBUGLOG_H_

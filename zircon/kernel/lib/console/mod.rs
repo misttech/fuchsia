@@ -162,11 +162,11 @@ pub mod console {
     }
 
     fn cputchar(character: u8) {
-        crate::platform_rs::debug::platform_dputs_thread(core::slice::from_ref(&character));
+        crate::debuglog_rs::dlog_serial_write(core::slice::from_ref(&character));
     }
 
     fn cputs(string: &str) {
-        crate::platform_rs::debug::platform_dputs_thread(string.as_bytes());
+        crate::debuglog_rs::dlog_serial_write(string.as_bytes());
     }
 
     fn panic_puts(string: &str) {
@@ -255,11 +255,25 @@ pub mod console {
 
     // Callback implementations.
     unsafe extern "C" fn cmd_echo(argc: c_int, argv: *const CmdArgs, _flags: u32) -> c_int {
-        if argc > 1 {
-            let args = unsafe { core::slice::from_raw_parts(argv, argc as usize) };
-            ECHO.store(args[1].arg_bool, Ordering::Relaxed);
+        if argc < 2 {
+            kprintln!("Usage: echo <true|false|on|off>");
+            return Status::INVALID_ARGS.into_raw();
         }
-        zx_status::sys::ZX_OK
+
+        // SAFETY: `argv` points to `argc` initialized `CmdArgs` structures prepared by `tokenize_command`.
+        let args = unsafe { core::slice::from_raw_parts(argv, argc as usize) };
+        let arg_str = args[1].as_str();
+        let int_res = parse_c_style_int(arg_str);
+        match parse_bool(arg_str, int_res) {
+            Ok(val) => {
+                ECHO.store(val, Ordering::Relaxed);
+                zx_status::sys::ZX_OK
+            }
+            Err(_) => {
+                kprintln!("echo: invalid argument \"{:s}\", expected boolean", arg_str);
+                Status::INVALID_ARGS.into_raw()
+            }
+        }
     }
 
     unsafe extern "C" fn cmd_exit(_argc: c_int, _argv: *const CmdArgs, _flags: u32) -> c_int {
@@ -268,6 +282,7 @@ pub mod console {
     }
 
     unsafe extern "C" fn cmd_test(argc: c_int, argv: *const CmdArgs, _flags: u32) -> c_int {
+        // SAFETY: `argv` points to `argc` initialized `CmdArgs` structures prepared by `tokenize_command`.
         let args = unsafe { core::slice::from_raw_parts(argv, argc as usize) };
         kprintln!("argc {}, argv {:p}", argc, argv);
         for (i, arg) in args.iter().enumerate() {
@@ -326,10 +341,12 @@ pub mod console {
         let start = unsafe { &__start_commands as *const Cmd };
         let stop = unsafe { &__stop_commands as *const Cmd };
         let count = (stop as usize - start as usize) / core::mem::size_of::<Cmd>();
+        // SAFETY: The linker script defines `__start_commands` and `__stop_commands` bounding a contiguous array of `Cmd` structs.
         unsafe { core::slice::from_raw_parts(start, count) }
     }
 
     pub fn match_command(name: &str, availability_mask: u8) -> Option<&'static Cmd> {
+        // SAFETY: `get_commands()` returns a static slice of registered commands from the linker section.
         let commands = unsafe { get_commands() };
         commands
             .iter()
@@ -347,6 +364,7 @@ pub mod console {
             return last;
         }
 
+        // SAFETY: `argv` points to `argc` initialized `CmdArgs` structures.
         let args = unsafe { core::slice::from_raw_parts(argv, argc as usize) };
         let cmd = match match_command(args[1].as_str(), CMD_AVAIL_NORMAL) {
             Some(cmd) => cmd,
@@ -356,6 +374,7 @@ pub mod console {
             }
         };
 
+        // SAFETY: `argv.add(1)` points to `argc - 1` remaining `CmdArgs` elements, valid for the sub-command callback.
         unsafe { (cmd.cmd_callback)(argc - 1, argv.add(1), flags) }
     }
 
@@ -366,6 +385,7 @@ pub mod console {
             return Status::INVALID_ARGS.into_raw();
         }
 
+        // SAFETY: `argv` points to `argc` initialized `CmdArgs` structures.
         let args = unsafe { core::slice::from_raw_parts(argv, argc as usize) };
         let cmd = match match_command(args[2].as_str(), CMD_AVAIL_NORMAL) {
             Some(cmd) => cmd,
@@ -388,6 +408,7 @@ pub mod console {
             }
             kprintln!("");
 
+            // SAFETY: `argv.add(2)` points to `argc - 2` remaining `CmdArgs` elements, valid for the repeated callback.
             let err = unsafe { (cmd.cmd_callback)(argc - 2, argv.add(2), flags) };
             if err != zx_status::sys::ZX_OK {
                 kprintln!("stopping repeat due to nonzero status {}", err);
@@ -499,67 +520,76 @@ pub mod console {
         // Compute next line start index and store.
         let next_start = history_next * LINE_LEN;
         let bytes = line.as_bytes();
-        let copy_len = core::cmp::min(bytes.len(), LINE_LEN);
+        let copy_len = core::cmp::min(bytes.len(), LINE_LEN - 1);
         for i in 0..copy_len {
             HISTORY_BUF[next_start + i].store(bytes[i], Ordering::Relaxed);
         }
-        if copy_len < LINE_LEN {
-            HISTORY_BUF[next_start + copy_len].store(0, Ordering::Relaxed);
-        }
+        HISTORY_BUF[next_start + copy_len].store(0, Ordering::Relaxed);
 
         HISTORY_NEXT.store(ptrnext(history_next), Ordering::Relaxed);
     }
 
-    #[cfg(feature = "console_enable_history")]
-    pub fn start_history_cursor() -> usize {
-        let history_next = HISTORY_NEXT.load(Ordering::Relaxed);
-        ptrprev(history_next)
-    }
-
-    #[cfg(feature = "console_enable_history")]
-    pub fn next_history(cursor: &mut usize, out: &mut [u8; LINE_LEN]) -> usize {
-        *cursor %= HISTORY_LEN;
-        let history_next = HISTORY_NEXT.load(Ordering::Relaxed);
-        let i = ptrnext(*cursor);
-
-        if i == history_next {
-            // Don't let the cursor hit the head.
-            return 0;
-        }
-
-        *cursor = i;
-        load_history_line(i, out)
-    }
-
-    /// # Traversal Behavior
+    /// Move to the next (newer) command in history.
     ///
-    /// Preserves 1:1 C++ behavior: Returns the history command at `*cursor` and steps the cursor
-    /// backward to the previous item. Because `start_history_cursor()` initializes `*cursor` at
-    /// the newest entry, the first Up-Arrow keypress returns the newest command without skipping it.
+    /// If the cursor is already at the prompt (`None`), returns empty (0).
+    /// When stepping past the newest entry, resets the cursor to `None` (the prompt) and returns empty (0).
     #[cfg(feature = "console_enable_history")]
-    pub fn prev_history(cursor: &mut usize, out: &mut [u8; LINE_LEN]) -> usize {
-        *cursor %= HISTORY_LEN;
+    pub fn next_history(cursor: &mut Option<usize>, out: &mut [u8; LINE_LEN]) -> usize {
+        let Some(curr) = *cursor else {
+            // Already at the prompt / bottom.
+            return 0;
+        };
+
         let history_next = HISTORY_NEXT.load(Ordering::Relaxed);
-        let current_len = load_history_line(*cursor, out);
+        let next = ptrnext(curr % HISTORY_LEN);
 
-        // If we are already at head, stop here.
-        if *cursor == history_next {
-            return current_len;
+        // If we reach the head or an empty slot, return to the prompt.
+        if next == history_next || HISTORY_BUF[next * LINE_LEN].load(Ordering::Relaxed) == 0 {
+            *cursor = None;
+            0
+        } else {
+            *cursor = Some(next);
+            load_history_line(next, out)
         }
-
-        // Back up one.
-        let i = ptrprev(*cursor);
-
-        // If the next one is null, stop here.
-        if HISTORY_BUF[i * LINE_LEN].load(Ordering::Relaxed) == 0 {
-            return current_len;
-        }
-
-        *cursor = i;
-        current_len
     }
 
-    pub fn parse_c_int(input_str: &str) -> Result<(u64, i64), zx_status::Status> {
+    /// Move to the previous (older) command in history.
+    ///
+    /// If starting from the prompt (`None`), steps to the newest active command.
+    /// Subsequent calls step backward until reaching the oldest entry, where it remains.
+    #[cfg(feature = "console_enable_history")]
+    pub fn prev_history(cursor: &mut Option<usize>, out: &mut [u8; LINE_LEN]) -> usize {
+        let history_next = HISTORY_NEXT.load(Ordering::Relaxed);
+        let target = match *cursor {
+            None => {
+                // Starting from the prompt: load the newest active entry.
+                let last = ptrprev(history_next);
+                if HISTORY_BUF[last * LINE_LEN].load(Ordering::Relaxed) == 0 {
+                    // History is empty.
+                    return 0;
+                }
+                last
+            }
+            Some(curr) => {
+                // Step back one entry in the ring buffer if not already at the oldest entry.
+                let curr_idx = curr % HISTORY_LEN;
+                let prev = ptrprev(curr_idx);
+                if curr_idx == history_next
+                    || HISTORY_BUF[prev * LINE_LEN].load(Ordering::Relaxed) == 0
+                {
+                    // Reached the oldest entry, so keep current.
+                    curr_idx
+                } else {
+                    prev
+                }
+            }
+        };
+
+        *cursor = Some(target);
+        load_history_line(target, out)
+    }
+
+    pub fn parse_c_style_int(input_str: &str) -> Result<(u64, i64), zx_status::Status> {
         let input_str = input_str.trim();
         let is_neg = input_str.starts_with('-');
         let abs_str = if is_neg {
@@ -581,18 +611,17 @@ pub mod console {
             return Err(zx_status::Status::INVALID_ARGS);
         }
 
-        let unsigned_val = if is_neg {
-            0
-        } else {
-            u64::from_str_radix(digits, base).map_err(|_| zx_status::Status::INVALID_ARGS)?
-        };
-
-        let signed_val = if is_neg {
+        let (unsigned_val, signed_val) = if is_neg {
             let val =
-                i64::from_str_radix(digits, base).map_err(|_| zx_status::Status::INVALID_ARGS)?;
-            val.wrapping_neg()
+                u64::from_str_radix(digits, base).map_err(|_| zx_status::Status::INVALID_ARGS)?;
+            if val > (1u64 << 63) {
+                return Err(zx_status::Status::INVALID_ARGS);
+            }
+            (0, val.wrapping_neg() as i64)
         } else {
-            i64::from_str_radix(digits, base).map_err(|_| zx_status::Status::INVALID_ARGS)?
+            let val =
+                u64::from_str_radix(digits, base).map_err(|_| zx_status::Status::INVALID_ARGS)?;
+            (val, val as i64)
         };
 
         Ok((unsigned_val, signed_val))
@@ -602,13 +631,13 @@ pub mod console {
         input_str: &str,
         int_result: Result<(u64, i64), zx_status::Status>,
     ) -> Result<bool, zx_status::Status> {
-        if input_str == "true" || input_str == "on" {
+        if input_str.eq_ignore_ascii_case("true") || input_str.eq_ignore_ascii_case("on") {
             Ok(true)
-        } else if input_str == "false" || input_str == "off" {
+        } else if input_str.eq_ignore_ascii_case("false") || input_str.eq_ignore_ascii_case("off") {
             Ok(false)
         } else {
             match int_result {
-                Ok((unsigned_val, _)) => Ok(unsigned_val != 0),
+                Ok((unsigned_val, signed_val)) => Ok(unsigned_val != 0 || signed_val != 0),
                 Err(e) => Err(e),
             }
         }
@@ -803,7 +832,7 @@ pub mod console {
             }
             let arg_str = args[i].as_str();
 
-            let int_result = parse_c_int(arg_str);
+            let int_result = parse_c_style_int(arg_str);
             let bool_val = parse_bool(arg_str, int_result).unwrap_or(false);
             let (unsigned_val, signed_val) = int_result.unwrap_or((0, 0));
 
@@ -852,6 +881,8 @@ pub mod console {
                 &line_buf[offset..current_len]
             } else {
                 if showprompt {
+                    // Drain any pending debuglog output before drawing the prompt.
+                    crate::debuglog_rs::dlog_sync();
                     cputs("] ");
                 }
 
@@ -902,11 +933,13 @@ pub mod console {
             };
 
             if !locked {
+                // SAFETY: FFI call to acquire the kernel command lock before running the command callback.
                 unsafe { cpp_console_lock() };
             }
 
             EXIT_CONSOLE.store(false, Ordering::Relaxed);
 
+            // SAFETY: `args.as_mut_ptr()` points to an array of `argc` valid `CmdArgs` elements initialized by `tokenize_command`.
             let last = unsafe { (command.cmd_callback)(argc as c_int, args.as_mut_ptr(), 0) };
             LAST_RESULT.store(last, Ordering::Relaxed);
 
@@ -917,6 +950,7 @@ pub mod console {
             }
 
             if !locked {
+                // SAFETY: FFI call to release the kernel command lock after running the command callback.
                 unsafe { cpp_console_unlock() };
             }
         }
@@ -940,7 +974,8 @@ pub mod console {
         let mut len = 0;
         while line_read.pos < line_read.script_bytes.len() {
             let byte = line_read.script_bytes[line_read.pos];
-            if byte == 0 || byte == b'\n' || byte == b';' {
+            // Semicolon splitting is handled by tokenize_command() to support quoted semicolons.
+            if byte == 0 || byte == b'\n' {
                 line_read.pos += 1;
                 break;
             }
@@ -987,7 +1022,7 @@ pub mod console {
         let mut pos = 0;
         let mut escape_level = 0;
         #[cfg(feature = "console_enable_history")]
-        let mut history_cursor = start_history_cursor();
+        let mut history_cursor: Option<usize> = None;
 
         loop {
             let Some(character) = cgetchar() else {
@@ -1051,13 +1086,13 @@ pub mod console {
                             }
                         }
 
-                        let len = if character == UP_ARROW {
+                        pos = if character == UP_ARROW {
                             prev_history(&mut history_cursor, buffer)
                         } else {
                             next_history(&mut history_cursor, buffer)
                         };
 
-                        pos = len;
+                        pos = core::cmp::min(pos, LINE_LEN - 1);
                         buffer[pos] = 0;
 
                         if echo_enabled && let Ok(s) = core::str::from_utf8(&buffer[..pos]) {
@@ -1069,7 +1104,8 @@ pub mod console {
                 escape_level = 0;
             }
 
-            if pos == LINE_LEN - 1 {
+            // Buffer holds up to LINE_LEN - 1 characters plus null terminator.
+            if pos == LINE_LEN {
                 cputs("\nerror: line too long\n");
                 pos = 0;
                 break;
@@ -1113,7 +1149,8 @@ pub mod console {
                 }
             }
 
-            if pos == len - 1 {
+            // Buffer holds up to len - 1 characters plus null terminator.
+            if pos == len {
                 panic_puts("\nerror: line too long\n");
                 pos = 0;
                 break;
@@ -1209,6 +1246,7 @@ pub mod console {
 
             if let Some(command) = match_command(args[0].as_str(), CMD_AVAIL_PANIC) {
                 let cmd_callback = command.cmd_callback;
+                // SAFETY: `args.as_mut_ptr()` points to `argc` initialized `CmdArgs` elements.
                 unsafe { cmd_callback(argc as c_int, args.as_mut_ptr(), CMD_FLAG_PANIC) };
             } else {
                 panic_puts("command not found\n");

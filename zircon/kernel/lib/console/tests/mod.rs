@@ -106,7 +106,7 @@ fn capture_output_helper(f: impl FnOnce() -> c_int) -> (c_int, &'static core::ff
 mod console_tests {
     use crate::console_rust::console::{
         CMD_AVAIL_ALWAYS, CMD_AVAIL_NORMAL, CMD_AVAIL_PANIC, CMD_FLAG_PANIC, Cmd, CmdArgs, ECHO,
-        EXIT_CONSOLE, console_run_script_locked, match_command, parse_bool, parse_c_int,
+        EXIT_CONSOLE, console_run_script_locked, match_command, parse_bool, parse_c_style_int,
         static_command, tokenize_command,
     };
     use core::sync::atomic::{AtomicI32, Ordering};
@@ -243,6 +243,34 @@ mod console_tests {
         // Set echo setting to true.
         let res = console_run_script_locked("echo true");
         expect_eq!(res, zx_status::sys::ZX_OK);
+        expect_true!(ECHO.load(Ordering::Relaxed));
+
+        // Set echo setting using off and on keywords.
+        console_run_script_locked("echo off");
+        expect_false!(ECHO.load(Ordering::Relaxed));
+        console_run_script_locked("echo on");
+        expect_true!(ECHO.load(Ordering::Relaxed));
+
+        // Set echo setting using case-insensitive keywords and integers.
+        console_run_script_locked("echo OFF");
+        expect_false!(ECHO.load(Ordering::Relaxed));
+        console_run_script_locked("echo TRUE");
+        expect_true!(ECHO.load(Ordering::Relaxed));
+        console_run_script_locked("echo 0");
+        expect_false!(ECHO.load(Ordering::Relaxed));
+        console_run_script_locked("echo 1");
+        expect_true!(ECHO.load(Ordering::Relaxed));
+        console_run_script_locked("echo -1");
+        expect_true!(ECHO.load(Ordering::Relaxed));
+
+        // Invalid argument should not modify the echo setting and return an error.
+        let res = console_run_script_locked("echo invalid_text");
+        expect_eq!(res, Status::INVALID_ARGS.into_raw());
+        expect_true!(ECHO.load(Ordering::Relaxed));
+
+        // Missing argument should return an error.
+        let res = console_run_script_locked("echo");
+        expect_eq!(res, Status::INVALID_ARGS.into_raw());
         expect_true!(ECHO.load(Ordering::Relaxed));
 
         // Restore original.
@@ -430,48 +458,71 @@ mod console_tests {
         expect_false!(contains_command_help(output, b"mock_success", b"mock_success help"));
     }
 
-    /// Test parse_c_int for decimal, hex, and octal integer formats
+    /// Test parse_c_style_int for decimal, hex, and octal integer formats
     #[test]
-    fn parse_c_int_test() {
+    fn parse_c_style_int_test() {
         // Decimal numbers
-        expect_true!(parse_c_int("0") == Ok((0, 0)));
-        expect_true!(parse_c_int("42") == Ok((42, 42)));
-        expect_true!(parse_c_int("+42") == Ok((42, 42)));
-        expect_true!(parse_c_int("-42") == Ok((0, -42)));
+        expect_true!(parse_c_style_int("0") == Ok((0, 0)));
+        expect_true!(parse_c_style_int("42") == Ok((42, 42)));
+        expect_true!(parse_c_style_int("+42") == Ok((42, 42)));
+        expect_true!(parse_c_style_int("-42") == Ok((0, -42)));
 
         // Hexadecimal numbers
-        expect_true!(parse_c_int("0x10") == Ok((16, 16)));
-        expect_true!(parse_c_int("0X10") == Ok((16, 16)));
-        expect_true!(parse_c_int("0x2a") == Ok((42, 42)));
-        expect_true!(parse_c_int("-0x10") == Ok((0, -16)));
+        expect_true!(parse_c_style_int("0x10") == Ok((16, 16)));
+        expect_true!(parse_c_style_int("0X10") == Ok((16, 16)));
+        expect_true!(parse_c_style_int("0x2a") == Ok((42, 42)));
+        expect_true!(parse_c_style_int("-0x10") == Ok((0, -16)));
 
         // Octal numbers
-        expect_true!(parse_c_int("077") == Ok((63, 63)));
-        expect_true!(parse_c_int("-077") == Ok((0, -63)));
+        expect_true!(parse_c_style_int("077") == Ok((63, 63)));
+        expect_true!(parse_c_style_int("-077") == Ok((0, -63)));
 
         // Whitespace trimmed
-        expect_true!(parse_c_int("  100  ") == Ok((100, 100)));
+        expect_true!(parse_c_style_int("  100  ") == Ok((100, 100)));
+
+        // Minimum and maximum 64-bit signed integers
+        expect_true!(parse_c_style_int("-9223372036854775808") == Ok((0, i64::MIN)));
+        expect_true!(parse_c_style_int("9223372036854775807") == Ok((i64::MAX as u64, i64::MAX)));
+
+        // Upper-half 64-bit kernel pointers and u64::MAX
+        expect_true!(
+            parse_c_style_int("0xffffffff80100000") == Ok((0xffffffff80100000, -2146435072))
+        );
+        expect_true!(parse_c_style_int("0xffffffffffffffff") == Ok((u64::MAX, -1)));
+        expect_true!(parse_c_style_int("18446744073709551615") == Ok((u64::MAX, -1)));
+
+        // Overflow beyond 64-bit bounds
+        expect_true!(parse_c_style_int("-9223372036854775809") == Err(Status::INVALID_ARGS));
+        expect_true!(parse_c_style_int("-0x8000000000000001") == Err(Status::INVALID_ARGS));
+        expect_true!(parse_c_style_int("18446744073709551616") == Err(Status::INVALID_ARGS));
+        expect_true!(parse_c_style_int("0x10000000000000000") == Err(Status::INVALID_ARGS));
 
         // Invalid inputs
-        expect_true!(parse_c_int("") == Err(Status::INVALID_ARGS));
-        expect_true!(parse_c_int("-") == Err(Status::INVALID_ARGS));
-        expect_true!(parse_c_int("+") == Err(Status::INVALID_ARGS));
-        expect_true!(parse_c_int("0x") == Err(Status::INVALID_ARGS));
-        expect_true!(parse_c_int("invalid") == Err(Status::INVALID_ARGS));
+        expect_true!(parse_c_style_int("") == Err(Status::INVALID_ARGS));
+        expect_true!(parse_c_style_int("-") == Err(Status::INVALID_ARGS));
+        expect_true!(parse_c_style_int("+") == Err(Status::INVALID_ARGS));
+        expect_true!(parse_c_style_int("0x") == Err(Status::INVALID_ARGS));
+        expect_true!(parse_c_style_int("invalid") == Err(Status::INVALID_ARGS));
     }
 
     /// Test parse_bool for true/false/on/off keywords and integer fallbacks
     #[test]
     fn parse_bool_test() {
-        // Direct string keywords
+        // Direct string keywords (case-insensitive)
         expect_true!(parse_bool("true", Err(Status::INVALID_ARGS)) == Ok(true));
+        expect_true!(parse_bool("TRUE", Err(Status::INVALID_ARGS)) == Ok(true));
         expect_true!(parse_bool("on", Err(Status::INVALID_ARGS)) == Ok(true));
+        expect_true!(parse_bool("ON", Err(Status::INVALID_ARGS)) == Ok(true));
         expect_true!(parse_bool("false", Err(Status::INVALID_ARGS)) == Ok(false));
+        expect_true!(parse_bool("FALSE", Err(Status::INVALID_ARGS)) == Ok(false));
         expect_true!(parse_bool("off", Err(Status::INVALID_ARGS)) == Ok(false));
+        expect_true!(parse_bool("OFF", Err(Status::INVALID_ARGS)) == Ok(false));
 
-        // Numeric fallbacks
+        // Numeric fallbacks (positive and negative integers)
         expect_true!(parse_bool("1", Ok((1, 1))) == Ok(true));
         expect_true!(parse_bool("42", Ok((42, 42))) == Ok(true));
+        expect_true!(parse_bool("-1", Ok((0, -1))) == Ok(true));
+        expect_true!(parse_bool("-100", Ok((0, -100))) == Ok(true));
         expect_true!(parse_bool("0", Ok((0, 0))) == Ok(false));
 
         // Invalid
@@ -543,11 +594,12 @@ mod console_tests {
         let _ = args_tight[0].as_str();
     }
 
-    /// Test executing multiple commands across semicolons and newlines
+    /// Test executing multiple commands across semicolons and newlines, including quoted semicolons
     #[test]
     fn console_run_script_multiline_test() {
         MOCK_CALL_COUNT.store(0, Ordering::Relaxed);
-        let res = console_run_script_locked("mock_success; mock_success\nmock_success");
+        let res =
+            console_run_script_locked("mock_success \"arg1;arg2\"; mock_success\nmock_success");
         expect_eq!(res, zx_status::sys::ZX_OK);
         expect_eq!(MOCK_CALL_COUNT.load(Ordering::Relaxed), 3);
     }
@@ -614,7 +666,6 @@ mod console_tests {
 mod console_history_enabled_tests {
     use crate::console_rust::console::{
         add_history, console_init_history, match_command, next_history, prev_history,
-        start_history_cursor,
     };
     use unittest::{expect_eq, expect_true};
 
@@ -629,7 +680,7 @@ mod console_history_enabled_tests {
         let mut buf = [0u8; 128];
 
         // Test the cursor by moving backwards.
-        let mut cursor = start_history_cursor();
+        let mut cursor = None;
 
         let len = prev_history(&mut cursor, &mut buf);
         expect_true!(&buf[..len] == b"test line 3");
@@ -671,7 +722,7 @@ mod console_history_enabled_tests {
         add_history("cmd_unique_2");
 
         let mut buf = [0u8; 128];
-        let mut cursor = start_history_cursor();
+        let mut cursor = None;
         let len = prev_history(&mut cursor, &mut buf);
         expect_true!(&buf[..len] == b"cmd_unique_2");
         let len = prev_history(&mut cursor, &mut buf);
@@ -704,12 +755,86 @@ mod console_history_enabled_tests {
         add_history("line 17");
         add_history("line 18");
 
+        let expected_lines: [&[u8]; 16] = [
+            b"line 18", b"line 17", b"line 16", b"line 15", b"line 14", b"line 13", b"line 12",
+            b"line 11", b"line 10", b"line 9", b"line 8", b"line 7", b"line 6", b"line 5",
+            b"line 4", b"line 3",
+        ];
         let mut buf = [0u8; 128];
-        let mut cursor = start_history_cursor();
+        let mut cursor = None;
+        for expected in expected_lines {
+            let len = prev_history(&mut cursor, &mut buf);
+            expect_true!(&buf[..len] == expected);
+        }
+
+        // Further UP keypresses at the oldest entry must remain clamped at "line 3" without wrapping
         let len = prev_history(&mut cursor, &mut buf);
-        expect_true!(&buf[..len] == b"line 18");
+        expect_true!(&buf[..len] == b"line 3");
         let len = prev_history(&mut cursor, &mut buf);
-        expect_true!(&buf[..len] == b"line 17");
+        expect_true!(&buf[..len] == b"line 3");
+
+        // Test max length history line clamped to LINE_LEN - 1 (127 bytes)
+        let long_line = "1234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890";
+        add_history(long_line);
+        let mut cursor = None;
+        let len = prev_history(&mut cursor, &mut buf);
+        expect_eq!(len, 127);
+        expect_true!(buf[..len] == long_line.as_bytes()[..127]);
+    }
+
+    /// Test alternating UP and DOWN arrow keys immediately visits adjacent entries.
+    #[test]
+    fn history_direction_switch_test() {
+        console_init_history();
+        add_history("cmd_1");
+        add_history("cmd_2");
+        add_history("cmd_3");
+
+        let mut buf = [0u8; 128];
+        let mut cursor = None;
+
+        // DOWN at prompt returns empty
+        let len = next_history(&mut cursor, &mut buf);
+        expect_true!(&buf[..len] == b"");
+
+        // UP moves to latest
+        let len = prev_history(&mut cursor, &mut buf);
+        expect_true!(&buf[..len] == b"cmd_3");
+        // UP moves to older
+        let len = prev_history(&mut cursor, &mut buf);
+        expect_true!(&buf[..len] == b"cmd_2");
+
+        // Switching direction to DOWN immediately returns newer without duplicate
+        let len = next_history(&mut cursor, &mut buf);
+        expect_true!(&buf[..len] == b"cmd_3");
+
+        // Switching direction to UP immediately returns older without duplicate
+        let len = prev_history(&mut cursor, &mut buf);
+        expect_true!(&buf[..len] == b"cmd_2");
+
+        // UP moves to oldest
+        let len = prev_history(&mut cursor, &mut buf);
+        expect_true!(&buf[..len] == b"cmd_1");
+        // UP at oldest stays at oldest
+        let len = prev_history(&mut cursor, &mut buf);
+        expect_true!(&buf[..len] == b"cmd_1");
+
+        // DOWN moves towards newer
+        let len = next_history(&mut cursor, &mut buf);
+        expect_true!(&buf[..len] == b"cmd_2");
+        let len = next_history(&mut cursor, &mut buf);
+        expect_true!(&buf[..len] == b"cmd_3");
+
+        // DOWN at newest returns to prompt (empty)
+        let len = next_history(&mut cursor, &mut buf);
+        expect_true!(&buf[..len] == b"");
+        // DOWN at prompt stays at prompt
+        let len = next_history(&mut cursor, &mut buf);
+        expect_true!(&buf[..len] == b"");
+
+        // UP from prompt immediately returns newest
+        let len = prev_history(&mut cursor, &mut buf);
+        expect_true!(&buf[..len] == b"cmd_3");
     }
 }
 

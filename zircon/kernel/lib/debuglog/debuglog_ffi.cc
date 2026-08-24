@@ -29,4 +29,7 @@ zx_status_t cpp_dlog_reader_read(DlogReader* reader, uint32_t flags, dlog_record
   return reader->Read(flags, record, actual);
 }
 
+void cpp_dlog_serial_write(const char* ptr, size_t len) { dlog_serial_write({ptr, len}); }
+void cpp_dlog_sync() { dlog_sync(); }
+
 }  // extern "C"

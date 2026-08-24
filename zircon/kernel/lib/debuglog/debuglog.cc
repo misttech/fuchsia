@@ -424,6 +424,9 @@ int DLog::DumperThread() {
       const ktl::string_view sv = tmp_file.as_string_view();
       OutputLogMessage(sv);
     }
+
+    dumper_sequence_.store(expected_sequence, ktl::memory_order_release);
+    dumper_drained_event_.Signal();
   }
 
   return 0;
@@ -594,5 +597,27 @@ void dlog_bluescreen_init() { DLOG->BluescreenInit(); }
 void dlog_panic_start() { DLOG->PanicStart(); }
 zx_status_t dlog_shutdown(zx_instant_mono_t deadline) { return DLOG->Shutdown(deadline); }
 size_t dlog_render_to_crashlog(ktl::span<char> target) { return DLOG->RenderToCrashlog(target); }
+
+void DLog::Sync() {
+  if (dlog_bypass() || ShutdownFinished()) {
+    return;
+  }
+
+  uint64_t target_sequence;
+  {
+    Guard<MonitoredSpinLock, IrqSave> guard{&lock_, SOURCE_TAG};
+    target_sequence = sequence_count_;
+  }
+
+  while (dumper_sequence_.load(ktl::memory_order_acquire) < target_sequence) {
+    if (dumper_state_.thread == nullptr || dumper_state_.shutdown_requested.load()) {
+      break;
+    }
+    dumper_state_.event.Signal();
+    dumper_drained_event_.Wait(Deadline::after_mono(ZX_MSEC(50)));
+  }
+}
+
+void dlog_sync() { DLOG->Sync(); }
 
 LK_INIT_HOOK(debuglog, [](uint level) { DLOG->StartThreads(); }, LK_INIT_LEVEL_PLATFORM)

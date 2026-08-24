@@ -67,6 +67,10 @@ class DLog {
 
   zx_status_t Write(uint32_t severity, uint32_t flags, ktl::string_view str) TA_EXCL(lock_);
 
+  // Blocks until the dumper thread has dumped all queued log messages up to the current sequence.
+  // Must only be called from a thread context where blocking is permitted.
+  void Sync() TA_EXCL(lock_);
+
  protected:
   // Methods that can be overridden for tests.
   virtual void OutputLogMessage(ktl::string_view log);
@@ -272,6 +276,12 @@ class DLog {
 
   // Signaled when shutdown has completed.
   Event shutdown_finished_;
+
+  // The sequence number up to which the dumper thread has dumped.
+  ktl::atomic<uint64_t> dumper_sequence_{0};
+
+  // Signaled when the dumper thread has drained all currently available records.
+  AutounsignalEvent dumper_drained_event_;
 
   // This array contains dlog_header_t object so make sure it's properly aligned.
   alignas(kDLogHeaderFifoAlignment) uint8_t data_[DLOG_SIZE]{0};

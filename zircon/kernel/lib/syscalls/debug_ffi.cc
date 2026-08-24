@@ -20,11 +20,6 @@ extern "C" FFI_ALWAYS_INLINE void cpp_persistent_dlog_write(const char* ptr, siz
 }
 
 // TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
-extern "C" FFI_ALWAYS_INLINE void cpp_dlog_serial_write(const char* ptr, size_t len) {
-  dlog_serial_write({ptr, len});
-}
-
-// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
 extern "C" FFI_ALWAYS_INLINE zx_status_t cpp_console_run_script(const char* str) {
   return console_run_script(str);
 }

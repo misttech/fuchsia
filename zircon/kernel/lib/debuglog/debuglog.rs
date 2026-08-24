@@ -4,6 +4,7 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
+use core::ffi::c_char;
 use object_constants_rs as object_constants;
 use zx_status::Status;
 
@@ -28,6 +29,8 @@ unsafe extern "C" {
         record: *mut dlog_record_t,
         actual: *mut usize,
     ) -> i32;
+    fn cpp_dlog_serial_write(ptr: *const c_char, len: usize);
+    fn cpp_dlog_sync();
 }
 
 /// Shutdown the debuglog subsystem.
@@ -44,6 +47,19 @@ pub fn dlog_shutdown(deadline: crate::platform_rs::timer::InstantMono) -> Result
 pub fn dlog_write(severity: u32, flags: u32, bytes: &[u8]) -> Result<(), Status> {
     // SAFETY: `bytes.as_ptr()` points to `bytes.len()` initialized bytes.
     Status::ok(unsafe { cpp_dlog_write(severity, flags, bytes.as_ptr(), bytes.len()) })
+}
+
+/// Writes `bytes` directly to the serial debug port, synchronized with the debuglog serial lock.
+pub fn dlog_serial_write(bytes: &[u8]) {
+    // SAFETY: `bytes.as_ptr()` points to `bytes.len()` initialized bytes.
+    unsafe { cpp_dlog_serial_write(bytes.as_ptr() as *const c_char, bytes.len()) }
+}
+
+/// Blocks until the debuglog dumper thread has dumped all queued log messages. Must only be called
+/// from a thread context where blocking is permitted.
+pub fn dlog_sync() {
+    // SAFETY: FFI call to dlog_sync which is thread-safe and safely handles uninitialized or shutdown states.
+    unsafe { cpp_dlog_sync() }
 }
 
 #[repr(C, align(8))]
