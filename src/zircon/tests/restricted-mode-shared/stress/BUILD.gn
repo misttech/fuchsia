@@ -20,6 +20,7 @@ group("tests") {
 library_headers("lib_headers") {
   include_dir = "."
   headers = [ "lib.h" ]
+  public_deps = [ "//zircon/system/ulib/zx" ]
 }
 
 source_set("lib") {

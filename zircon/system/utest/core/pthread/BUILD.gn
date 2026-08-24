@@ -8,7 +8,9 @@ source_set("pthread") {
     "pthread.cc",
     "pthread_c.c",
   ]
-
   cflags_c = [ "-pedantic" ]
-  deps = [ "//zircon/system/ulib/zxtest" ]
+  deps = [
+    "//zircon/system/ulib/zx",
+    "//zircon/system/ulib/zxtest",
+  ]
 }

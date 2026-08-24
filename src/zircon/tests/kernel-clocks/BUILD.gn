@@ -16,6 +16,7 @@ test("kernel-clocks") {
   deps = [
     "//sdk/lib/fdio",
     "//zircon/system/ulib/affine",
+    "//zircon/system/ulib/zx",
     "//zircon/system/ulib/zxtest",
   ]
 }

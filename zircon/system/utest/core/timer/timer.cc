@@ -6,6 +6,7 @@
 #include <lib/standalone-test/standalone.h>
 #include <lib/zx/clock.h>
 #include <lib/zx/object.h>
+#include <lib/zx/port.h>
 #include <lib/zx/resource.h>
 #include <lib/zx/result.h>
 #include <lib/zx/time.h>

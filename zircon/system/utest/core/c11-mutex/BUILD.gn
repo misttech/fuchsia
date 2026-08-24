@@ -8,6 +8,7 @@ source_set("c11-mutex") {
   sources = [ "mutex.cc" ]
   deps = [
     "//zircon/system/ulib/zircon-internal",
+    "//zircon/system/ulib/zx",
     "//zircon/system/ulib/zxtest",
   ]
 }

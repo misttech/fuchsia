@@ -18,6 +18,7 @@ test("channel-fatal") {
     "//sdk/lib/fdio",
     "//zircon/kernel/lib/userabi:vdso-code.h",
     "//zircon/system/ulib/test-utils",
+    "//zircon/system/ulib/zx",
     "//zircon/system/ulib/zxtest",
   ]
 }

@@ -23,6 +23,7 @@ if (!is_asan) {
     deps = [
       "restricted-blob",
       "//src//zircon/tests/restricted-mode-shared/helpers",
+      "//zircon/system/ulib/zx",
       "//zircon/system/ulib/zxtest",
     ]
   }

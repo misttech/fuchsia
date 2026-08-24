@@ -7,6 +7,7 @@
 #include <lib/fit/defer.h>
 #include <lib/zx/clock.h>
 #include <lib/zx/event.h>
+#include <lib/zx/port.h>
 #include <lib/zx/process.h>
 #include <lib/zx/time.h>
 #include <lib/zx/vmar.h>

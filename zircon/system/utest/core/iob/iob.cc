@@ -6,6 +6,7 @@
 #include <lib/iob/blob-id-allocator.h>
 #include <lib/zx/channel.h>
 #include <lib/zx/iob.h>
+#include <lib/zx/port.h>
 #include <lib/zx/process.h>
 #include <lib/zx/result.h>
 #include <lib/zx/vmar.h>

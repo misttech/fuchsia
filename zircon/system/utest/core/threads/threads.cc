@@ -12,6 +12,7 @@
 #include <lib/zx/debuglog.h>
 #include <lib/zx/event.h>
 #include <lib/zx/handle.h>
+#include <lib/zx/port.h>
 #include <lib/zx/process.h>
 #include <lib/zx/thread.h>
 #include <lib/zx/vmo.h>

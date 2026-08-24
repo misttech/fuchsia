@@ -5,5 +5,8 @@
 source_set("object-child") {
   testonly = true
   sources = [ "object-child.cc" ]
-  deps = [ "//zircon/system/ulib/zxtest" ]
+  deps = [
+    "//zircon/system/ulib/zx",
+    "//zircon/system/ulib/zxtest",
+  ]
 }
