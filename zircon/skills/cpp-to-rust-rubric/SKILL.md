@@ -53,6 +53,11 @@ the port and **Reviewer agents** evaluating the port.
     declarative, with no business logic. C++ helper functions exposed to Rust
     must be prefixed with `cpp_` and declared in C++ header files. Rust
     functions exposed to C++ must be prefixed with `rust_`.
+10. **Allocation Tier & Stack Parity**: Respect the original C++ memory placement
+    (heap, static, intrusive, or stack). Because kernel thread stacks are
+    constrained, do not shift heap or static storage onto the stack.
+    Intermediate working buffers must maintain the C++ allocation tier, with
+    stack allocation reserved only for small scalar or primitive helpers.
 
 ---
 
@@ -409,6 +414,9 @@ Reviewers and Coders must audit code against this checklist:
      an existing C++ suite name (e.g. `cbuf_rust`), and avoid `rust_` prefixes.
 27.  [ ] **Copyright Preservation**: Original copyright authors and dates are
      maintained if the ported file is not meaningfully divergent.
+28.  [ ] **Allocation Tier & Stack Parity**: Data and working buffers that were
+     heap-allocated or static in C++ are not shifted onto the kernel stack in Rust,
+     with stack allocation reserved only for small scalar or primitive helpers.
 
 ---
 
