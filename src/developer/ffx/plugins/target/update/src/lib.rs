@@ -8,6 +8,7 @@ use async_trait::async_trait;
 use errors;
 use fdomain_client::AsHandleRef;
 use fdomain_client::fidl::Proxy as _;
+use fdomain_fuchsia_buildinfo::ProviderProxy as BuildInfoProviderProxy;
 use fdomain_fuchsia_update::{
     CheckOptions, CommitStatusProviderProxy, Initiator, ManagerProxy, MonitorMarker,
     MonitorRequest, MonitorRequestStream,
@@ -103,15 +104,21 @@ pub enum UpdateError {
     NoProductBundlePath,
 
     #[exit_with_code(1)]
-    #[error("Install failed prepare: {0:?}")]
+    #[error(
+        "Install failed prepare: {0:?}. Inspect target logs with `ffx log --filter system-updater` for details."
+    )]
     InstallFailedPrepare(installer::PrepareFailureReason),
 
     #[exit_with_code(1)]
-    #[error("Install failed stage: {0:?}")]
+    #[error(
+        "Install failed stage: {0:?}. Inspect target logs with `ffx log --filter system-updater` for details."
+    )]
     InstallFailedStage(installer::StageFailureReason),
 
     #[exit_with_code(1)]
-    #[error("Install failed fetch: {0:?}")]
+    #[error(
+        "Install failed fetch: {0:?}. Inspect target logs with `ffx log --filter system-updater` for details."
+    )]
     InstallFailedFetch(installer::FetchFailureReason),
 
     #[exit_with_code(1)]
@@ -147,6 +154,8 @@ pub struct UpdateTool {
     installer_proxy: Deferred<InstallerProxy>,
     #[with(moniker("/core/system-update"))]
     commit_status_provider_proxy: CommitStatusProviderProxy,
+    #[with(moniker("/core/build-info"))]
+    build_info_proxy: BuildInfoProviderProxy,
     target_spec: Deferred<TargetInfoQueryHolder>,
     rcs_proxy_connector: Connector<RemoteControlProxyHolder>,
     host_address: Deferred<HostAddrHolder>,
@@ -193,6 +202,43 @@ impl FfxMain for UpdateTool {
 }
 
 impl UpdateTool {
+    async fn validate_board_compatibility<W: std::io::Write>(
+        product_path: &PathBuf,
+        build_info_proxy: &BuildInfoProviderProxy,
+        writer: &mut W,
+    ) {
+        let utf8_path = match camino::Utf8Path::from_path(product_path) {
+            Some(p) => p,
+            None => return,
+        };
+        let pb = match product_bundle::ProductBundle::try_load_from(utf8_path) {
+            Ok(pb) => pb,
+            Err(_) => return,
+        };
+        let product_bundle::ProductBundle::V2(pb_v2) = pb;
+        let pb_board = match pb_v2.release_info.as_ref().and_then(|r| {
+            r.system_a
+                .as_ref()
+                .or(r.system_b.as_ref())
+                .or(r.system_r.as_ref())
+                .map(|s| s.board.info.name.as_str())
+        }) {
+            Some(b) if !b.is_empty() => b,
+            _ => return,
+        };
+
+        if let Ok(build_info) = build_info_proxy.get_build_info().await {
+            if let Some(target_board) = build_info.board_config.as_deref() {
+                if !target_board.is_empty() && target_board != pb_board {
+                    let _ = writeln!(
+                        writer,
+                        "Warning: Board mismatch: product bundle board is '{pb_board}', target device board is '{target_board}'."
+                    );
+                }
+            }
+        }
+    }
+
     /// If there's a new version available, update to it, printing progress to the
     /// console during the process.
     async fn handle_check_now_cmd<W: std::io::Write>(
@@ -203,6 +249,7 @@ impl UpdateTool {
         let package_server_task = if cmd.product_bundle {
             let product_path =
                 Self::get_product_bundle_path(&cmd.product_bundle_path, &self.context)?;
+            Self::validate_board_compatibility(&product_path, &self.build_info_proxy, writer).await;
             let repo_port: u16 = cmd
                 .product_bundle_port(&self.context)
                 .map_err(UpdateError::ProductBundlePortResolution)?
@@ -314,33 +361,35 @@ impl UpdateTool {
         cmd: &ForceInstall,
         writer: &mut W,
     ) -> Result<(), UpdateError> {
-        let (mut package_server_task, host_address) =
-            if cmd.product_bundle || cmd.product_bundle_path.is_some() {
-                let product_path =
-                    Self::get_product_bundle_path(&cmd.product_bundle_path, &self.context)?;
+        let (mut package_server_task, host_address) = if cmd.product_bundle
+            || cmd.product_bundle_path.is_some()
+        {
+            let product_path =
+                Self::get_product_bundle_path(&cmd.product_bundle_path, &self.context)?;
+            Self::validate_board_compatibility(&product_path, &self.build_info_proxy, writer).await;
 
-                let repo_port: u16 = cmd
-                    .product_bundle_port(&self.context)
-                    .map_err(UpdateError::ProductBundlePortResolution)?
-                    .try_into()
-                    .unwrap();
-                (
-                    Some(
-                        Box::pin(server::package_server_task(
-                            self.target_spec,
-                            self.rcs_proxy_connector.clone(),
-                            self.host_address,
-                            self.context.clone(),
-                            product_path,
-                            repo_port,
-                        ))
-                        .await?,
-                    ),
-                    None,
-                )
-            } else {
-                (None, Some(self.host_address))
-            };
+            let repo_port: u16 = cmd
+                .product_bundle_port(&self.context)
+                .map_err(UpdateError::ProductBundlePortResolution)?
+                .try_into()
+                .unwrap();
+            (
+                Some(
+                    Box::pin(server::package_server_task(
+                        self.target_spec,
+                        self.rcs_proxy_connector.clone(),
+                        self.host_address,
+                        self.context.clone(),
+                        product_path,
+                        repo_port,
+                    ))
+                    .await?,
+                ),
+                None,
+            )
+        } else {
+            (None, Some(self.host_address))
+        };
 
         let installer_proxy = self.installer_proxy.await?;
 
@@ -892,7 +941,7 @@ mod tests {
         output(out);
     }
 
-    async fn write_product_bundle(pb_dir: &camino::Utf8Path) {
+    async fn write_product_bundle(pb_dir: &camino::Utf8Path, board_name: Option<&str>) {
         let blobs_dir = pb_dir.join("blobs");
 
         let repo_name = "fuchsia.com";
@@ -901,6 +950,25 @@ mod tests {
             .await;
 
         std::fs::write(metadata_path.join("ota_manifest"), b"mock ota manifest content").unwrap();
+
+        let release_info =
+            board_name.map(|board| assembly_release_info::ProductBundleReleaseInfo {
+                name: "test".into(),
+                version: "test-product-version".into(),
+                sdk_version: "test-sdk-version".into(),
+                system_a: Some(assembly_release_info::SystemReleaseInfo {
+                    board: assembly_release_info::BoardReleaseInfo {
+                        info: assembly_release_info::ReleaseInfo {
+                            name: board.to_string(),
+                            ..Default::default()
+                        },
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                }),
+                system_b: None,
+                system_r: None,
+            });
 
         let pb = product_bundle::ProductBundle::V2(product_bundle::ProductBundleV2 {
             product_name: "test".into(),
@@ -927,9 +995,57 @@ mod tests {
             }],
             update_package_hash: None,
             virtual_devices_path: None,
-            release_info: None,
+            release_info,
         });
         pb.write(&pb_dir).unwrap();
+    }
+
+    fn fake_build_info_proxy(
+        client: Arc<fdomain_client::Client>,
+        board: Option<&'static str>,
+    ) -> BuildInfoProviderProxy {
+        fake_proxy(Arc::clone(&client), move |req| match req {
+            fdomain_fuchsia_buildinfo::ProviderRequest::GetBuildInfo { responder } => {
+                let info = fdomain_fuchsia_buildinfo::BuildInfo {
+                    board_config: board.map(|s| s.to_string()),
+                    ..Default::default()
+                };
+                responder.send(&info).unwrap();
+            }
+        })
+    }
+
+    #[fuchsia::test]
+    async fn test_validate_board_compatibility_success() {
+        let client = fdomain_local::local_client_empty();
+        let fake_build_info_proxy = fake_build_info_proxy(Arc::clone(&client), Some("sherlock"));
+        let pb_dir_temp = tempfile::tempdir().unwrap();
+        let pb_dir = camino::Utf8PathBuf::from_path_buf(pb_dir_temp.path().to_path_buf()).unwrap();
+        write_product_bundle(&pb_dir, Some("sherlock")).await;
+
+        let pb_path_buf = pb_dir_temp.path().to_path_buf();
+        let mut output = Vec::new();
+        UpdateTool::validate_board_compatibility(&pb_path_buf, &fake_build_info_proxy, &mut output)
+            .await;
+        assert!(output.is_empty());
+    }
+
+    #[fuchsia::test]
+    async fn test_validate_board_compatibility_mismatch() {
+        let client = fdomain_local::local_client_empty();
+        let fake_build_info_proxy = fake_build_info_proxy(Arc::clone(&client), Some("sherlock"));
+        let pb_dir_temp = tempfile::tempdir().unwrap();
+        let pb_dir = camino::Utf8PathBuf::from_path_buf(pb_dir_temp.path().to_path_buf()).unwrap();
+        write_product_bundle(&pb_dir, Some("iris")).await;
+
+        let pb_path_buf = pb_dir_temp.path().to_path_buf();
+        let mut output = Vec::new();
+        UpdateTool::validate_board_compatibility(&pb_path_buf, &fake_build_info_proxy, &mut output)
+            .await;
+        let output_str = String::from_utf8(output).unwrap();
+        assert!(output_str.contains(
+            "Board mismatch: product bundle board is 'iris', target device board is 'sherlock'."
+        ));
     }
 
     #[fuchsia::test]
@@ -1051,6 +1167,7 @@ mod tests {
             channel_control_proxy: fake_channel_control_proxy,
             installer_proxy: fake_installer_proxy,
             commit_status_provider_proxy: fake_commit_status_provider_proxy,
+            build_info_proxy: fake_build_info_proxy(Arc::clone(&client), Some("test")),
             target_spec: fake_env.target_spec,
             rcs_proxy_connector: fake_env.rcs_proxy_connector,
             host_address: fake_env.host_address,
@@ -1119,6 +1236,7 @@ mod tests {
             channel_control_proxy: fake_channel_control_proxy,
             installer_proxy: Deferred::from_output(Ok(fake_installer_proxy)),
             commit_status_provider_proxy: fake_commit_status_provider_proxy,
+            build_info_proxy: fake_build_info_proxy(Arc::clone(&client), Some("test")),
             target_spec: fake_env.target_spec,
             rcs_proxy_connector: fake_env.rcs_proxy_connector,
             host_address: fake_env.host_address,
@@ -1226,6 +1344,7 @@ mod tests {
             channel_control_proxy: fake_channel_control_proxy,
             installer_proxy: Deferred::from_output(Ok(fake_installer_proxy)),
             commit_status_provider_proxy: fake_commit_status_provider_proxy,
+            build_info_proxy: fake_build_info_proxy(Arc::clone(&client), Some("test")),
             target_spec: fake_env.target_spec,
             rcs_proxy_connector: fake_env.rcs_proxy_connector,
             host_address: fake_env.host_address,
@@ -1256,7 +1375,7 @@ mod tests {
         let client = fdomain_local::local_client_empty();
         let pb_dir_temp = tempfile::tempdir().unwrap();
         let pb_dir = camino::Utf8PathBuf::from_path_buf(pb_dir_temp.path().to_path_buf()).unwrap();
-        write_product_bundle(&pb_dir).await;
+        write_product_bundle(&pb_dir, None).await;
 
         let args = ForceInstall {
             reboot: true,
@@ -1297,6 +1416,7 @@ mod tests {
             channel_control_proxy: fake_channel_control_proxy,
             installer_proxy: Deferred::from_output(Ok(fake_installer_proxy)),
             commit_status_provider_proxy: fake_commit_status_provider_proxy,
+            build_info_proxy: fake_build_info_proxy(Arc::clone(&client), Some("test")),
             target_spec: fake_env.target_spec,
             rcs_proxy_connector: fake_env.rcs_proxy_connector,
             host_address: fake_env.host_address,
@@ -1465,6 +1585,7 @@ mod tests {
             channel_control_proxy: fake_channel_control_proxy,
             installer_proxy: Deferred::from_output(Ok(fake_installer_proxy)),
             commit_status_provider_proxy: fake_commit_status_provider_proxy,
+            build_info_proxy: fake_build_info_proxy(Arc::clone(&client), Some("test")),
             target_spec: fake_env.target_spec,
             rcs_proxy_connector: fake_env.rcs_proxy_connector,
             host_address: fake_env.host_address,
@@ -1534,6 +1655,7 @@ mod tests {
             channel_control_proxy: fake_channel_control_proxy,
             installer_proxy: fake_installer_proxy,
             commit_status_provider_proxy: fake_commit_status_provider_proxy,
+            build_info_proxy: fake_build_info_proxy(Arc::clone(&client), Some("test")),
             target_spec: fake_env.target_spec,
             rcs_proxy_connector: fake_env.rcs_proxy_connector,
             host_address: fake_env.host_address,
@@ -1545,6 +1667,73 @@ mod tests {
 
         assert!(result.is_err());
         assert!(matches!(result.unwrap_err(), UpdateError::UpdateCheckingFailed));
+    }
+
+    #[fuchsia::test]
+    async fn test_check_now_monitor_installation_error() {
+        use fdomain_fuchsia_update::ManagerRequest;
+        let client = fdomain_local::local_client_empty();
+        let test_env = ffx_config::test_init().expect("test env");
+
+        let fake_installer_proxy =
+            Deferred::from_output(Ok(fake_proxy(Arc::clone(&client), move |req| {
+                panic!("Unexpected request: {:?}", req)
+            })));
+        let fake_channel_provider_proxy =
+            fake_proxy(Arc::clone(&client), move |req| panic!("Unexpected request: {:?}", req));
+        let fake_channel_control_proxy =
+            fake_proxy(Arc::clone(&client), move |req| panic!("Unexpected request: {:?}", req));
+        let fake_commit_status_provider_proxy =
+            fake_proxy(Arc::clone(&client), move |req| panic!("Unexpected request: {:?}", req));
+
+        let fake_update_manager_proxy = fake_proxy(Arc::clone(&client), move |req| {
+            match req {
+                ManagerRequest::CheckNow { monitor, responder, .. } => {
+                    let monitor_client = monitor.unwrap();
+                    let monitor_proxy = monitor_client.into_proxy();
+                    fuchsia_async::Task::local(async move {
+                        let state = fdomain_fuchsia_update::State::InstallationError(
+                            fdomain_fuchsia_update::InstallationErrorData::default(),
+                        );
+                        monitor_proxy.on_state(&state).await.unwrap();
+                    })
+                    .detach();
+                    responder.send(Ok(())).expect("send ok")
+                }
+                _ => panic!("Unexpected request: {:?}", req),
+            };
+        });
+
+        let fake_env = crate::server::tests::FakeTestEnv::new(&test_env).await;
+
+        let tool = UpdateTool {
+            cmd: Update {
+                cmd: args::Command::CheckNow(args::CheckNow {
+                    service_initiated: false,
+                    monitor: true,
+                    product_bundle: false,
+                    product_bundle_path: None,
+                    product_bundle_port: None,
+                }),
+            },
+            context: test_env.context.clone(),
+            update_manager_proxy: fake_update_manager_proxy,
+            channel_provider_proxy: fake_channel_provider_proxy,
+            channel_control_proxy: fake_channel_control_proxy,
+            installer_proxy: fake_installer_proxy,
+            commit_status_provider_proxy: fake_commit_status_provider_proxy,
+            build_info_proxy: fake_build_info_proxy(Arc::clone(&client), Some("test")),
+            target_spec: fake_env.target_spec,
+            rcs_proxy_connector: fake_env.rcs_proxy_connector,
+            host_address: fake_env.host_address,
+        };
+        let buffers = TestBuffers::default();
+        let writer = SimpleWriter::new_test(&buffers);
+
+        let result = tool.main(writer).await;
+
+        assert!(result.is_err());
+        assert!(matches!(result.unwrap_err(), UpdateError::InternalInstallation(None)));
     }
 
     #[test]

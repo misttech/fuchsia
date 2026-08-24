@@ -11,6 +11,7 @@ ffx_plugin("ffx_update") {
   with_unit_tests = true
   args_with_unit_tests = true
   deps = [
+    "//sdk/fidl/fuchsia.buildinfo:fuchsia.buildinfo_rust_fdomain",
     "//sdk/fidl/fuchsia.pkg:fuchsia.pkg_rust_fdomain",
     "//sdk/fidl/fuchsia.pkg.rewrite:fuchsia.pkg.rewrite_rust_fdomain",
     "//sdk/fidl/fuchsia.sys2:fuchsia.sys2_rust_fdomain",
@@ -59,6 +60,7 @@ ffx_plugin("ffx_update") {
     "//src/developer/ffx/lib/target:lib",
     "//src/developer/ffx/lib/target/behavior:lib",
     "//src/lib/assembly/partitions_config",
+    "//src/lib/assembly/release_info",
     "//src/lib/fdomain/client",
     "//src/lib/fdomain/local",
     "//src/lib/fuchsia",
@@ -86,4 +88,9 @@ ffx_plugin("ffx_update") {
     "src/lib.rs",
     "src/server.rs",
   ]
+}
+
+group("tests") {
+  testonly = true
+  deps = [ ":ffx_update_tests($host_toolchain)" ]
 }
