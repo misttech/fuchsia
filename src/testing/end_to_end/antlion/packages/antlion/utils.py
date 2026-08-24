@@ -788,6 +788,9 @@ def renew_linux_ip_address(runner: Runner, interface: str) -> None:
     runner.run(f"sudo ip link set {interface} down")
     runner.run(f"sudo ip link set {interface} up")
     runner.run(f"sudo dhclient -r {interface}")
+    # Flush existing IP addresses to ensure stale leases from previous networks
+    # are removed, preventing MultipleAddresses errors when a new lease is assigned.
+    runner.run(f"sudo ip addr flush dev {interface}")
     runner.run(f"sudo dhclient {interface}")
 
 
