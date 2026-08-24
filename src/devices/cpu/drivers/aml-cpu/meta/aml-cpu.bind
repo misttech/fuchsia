@@ -3,9 +3,7 @@
 // found in the LICENSE file.
 
 composite aml_cpu;
-
 using fuchsia;
-using fuchsia.hardware.pin;
 using fuchsia.google.platform;
 using fuchsia.amlogic.platform;
 using fuchsia.gpio;
@@ -85,5 +83,5 @@ optional parent "gpio-init" {
 }
 
 optional parent "pin-states-0" {
-  fuchsia.hardware.pin.PinStatesService == fuchsia.hardware.pin.PinStatesService.ZirconTransport;
+  fuchsia.Service == "fuchsia.hardware.pin.PinStatesService";
 }

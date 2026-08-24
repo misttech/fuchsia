@@ -83,8 +83,6 @@ zx::result<> PowerDomainVisitor::AddChildNodeSpec(fdf_devicetree::Node& child, u
     bind_rules.push_back(fdf::MakeAcceptBindRule(bind_fuchsia_power::POWER_DOMAIN, domain_id));
     properties.push_back(
         fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.power.Service"));
-    properties.push_back(fdf::MakeProperty2("fuchsia.hardware.power.Service",
-                                            "fuchsia.hardware.power.Service.ZirconTransport"));
     properties.push_back(fdf::MakeProperty2(bind_fuchsia_power::POWER_DOMAIN, domain_id));
   } else {
     bind_rules.push_back(
@@ -94,9 +92,6 @@ zx::result<> PowerDomainVisitor::AddChildNodeSpec(fdf_devicetree::Node& child, u
         fdf::MakeAcceptBindRule(bind_fuchsia_power::POWER_DOMAIN_NODE_ID, node_id));
     properties.push_back(
         fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.powerdomain.Service"));
-    properties.push_back(
-        fdf::MakeProperty2("fuchsia.hardware.powerdomain.Service",
-                           "fuchsia.hardware.powerdomain.Service.ZirconTransport"));
     properties.push_back(fdf::MakeProperty2(bind_fuchsia_power::POWER_DOMAIN, domain_id));
   }
 

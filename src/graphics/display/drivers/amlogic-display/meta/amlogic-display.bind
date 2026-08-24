@@ -4,7 +4,6 @@
 
 composite display;
 using fuchsia;
-using fuchsia.hardware.pin;
 using fuchsia.gpio;
 using fuchsia.platform;
 using fuchsia.amlogic.platform;

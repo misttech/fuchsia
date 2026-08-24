@@ -21,7 +21,6 @@ driver_bind_rules("focaltech_touch_bind") {
   bind_output = "focaltech.bindbc"
   tests = "meta/bind_tests.json"
   deps = [
-    "//sdk/fidl/fuchsia.hardware.pin:fuchsia.hardware.pin_bindlib",
     "//src/devices/bind/fuchsia",
     "//src/devices/bind/fuchsia.focaltech.platform",
     "//src/devices/bind/fuchsia.gpio",

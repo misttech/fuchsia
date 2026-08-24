@@ -19,7 +19,6 @@ driver_bind_rules("imx227_bind") {
   rules = "meta/imx227.bind"
   tests = "meta/bind_tests.json"
   deps = [
-    "//sdk/fidl/fuchsia.hardware.pin:fuchsia.hardware.pin_bindlib",
     "//src/devices/bind/fuchsia",
     "//src/devices/bind/fuchsia.camera",
     "//src/devices/bind/fuchsia.clock",

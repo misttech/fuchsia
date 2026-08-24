@@ -9,7 +9,6 @@ driver_bind_rules("aml_eth_bind") {
   rules = "meta/aml-ethernet.bind"
   tests = "meta/bind-tests.json"
   deps = [
-    "//sdk/fidl/fuchsia.hardware.pin:fuchsia.hardware.pin_bindlib",
     "//src/devices/bind/fuchsia",
     "//src/devices/bind/fuchsia.amlogic.platform",
     "//src/devices/bind/fuchsia.gpio",

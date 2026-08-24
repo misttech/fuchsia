@@ -26,6 +26,7 @@
 #include <bind/fuchsia/pin/cpp/bind.h>
 
 // TODO(https://fxbug.dev/494450198): Re-add this once the Bazel dependency issue is resolved.
+// #include <bind/fuchsia/hardware/gpio/cpp/bind.h>
 
 namespace gpio_impl_dt {
 

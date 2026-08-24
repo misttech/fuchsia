@@ -10,7 +10,7 @@ import("//build/drivers/dml.gni")
 driver_bind_rules("generic-board-bind") {
   rules = "generic-board.bind"
   bind_output = "generic-board.bindbc"
-  deps = [ "//sdk/fidl/fuchsia.hardware.platform.bus:fuchsia.hardware.platform.bus_bindlib" ]
+  deps = [ "//src/devices/bind/fuchsia" ]
 }
 
 fuchsia_rust_driver("generic-board-driver") {

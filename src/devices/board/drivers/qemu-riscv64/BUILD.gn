@@ -9,7 +9,6 @@ driver_bind_rules("qemu-riscv64_bind") {
   rules = "meta/qemu-riscv64.bind"
   tests = "meta/bind_tests.json"
   deps = [
-    "//sdk/fidl/fuchsia.hardware.platform.bus:fuchsia.hardware.platform.bus_bindlib",
     "//src/devices/bind/fuchsia",
     "//src/devices/bind/fuchsia.platform",
   ]

@@ -13,7 +13,6 @@ driver_bind_rules("wlan_virtio_hwsim_bind") {
   bind_output = "wlan_virtio_hwsim.bindbc"
   tests = "meta/bind_tests.json"
   deps = [
-    "//sdk/fidl/fuchsia.hardware.pci:fuchsia.hardware.pci_bindlib",
     "//src/devices/bind/fuchsia",
     "//src/devices/bind/fuchsia.acpi",
     "//src/devices/bind/fuchsia.pci",

@@ -9,7 +9,6 @@ driver_bind_rules("pci-sdhci-bind") {
   rules = "meta/pci-sdhci.bind"
   tests = "meta/pci-sdhci-bind-test.json"
   deps = [
-    "//sdk/fidl/fuchsia.hardware.pci:fuchsia.hardware.pci_bindlib",
     "//src/devices/bind/fuchsia",
     "//src/devices/bind/fuchsia.acpi",
     "//src/devices/bind/fuchsia.pci",

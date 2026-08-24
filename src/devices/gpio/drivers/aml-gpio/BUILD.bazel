@@ -48,7 +48,6 @@ cc_library(
         "//src/lib/ddk:ddk_metadata",
         "//zircon/system/ulib/ddk-platform-defs",
         "@fuchsia_sdk//bind/fuchsia:fuchsia_cc",
-        "@fuchsia_sdk//fidl/fuchsia.hardware.pinimpl:fuchsia.hardware.pinimpl_bindlib_cc",
         "@fuchsia_sdk//fidl/fuchsia.hardware.pinimpl:fuchsia.hardware.pinimpl_cpp",
         "@fuchsia_sdk//fidl/fuchsia.hardware.platform.device:fuchsia.hardware.platform.device_cpp",
         "@fuchsia_sdk//fidl/fuchsia.logger:fuchsia.logger_cpp",

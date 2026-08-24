@@ -6,7 +6,6 @@ composite spi_0;
 using fuchsia;
 using fuchsia.amlogic.platform;
 using fuchsia.gpio;
-using fuchsia.hardware.pin;
 using fuchsia.platform;
 
 primary parent "gpio-cs-0" {
@@ -34,5 +33,5 @@ optional parent "gpio-init" {
 }
 
 optional parent "pin-states-0" {
-  fuchsia.hardware.pin.PinStatesService == fuchsia.hardware.pin.PinStatesService.ZirconTransport;
+  fuchsia.Service == "fuchsia.hardware.pin.PinStatesService";
 }

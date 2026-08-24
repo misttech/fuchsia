@@ -6,7 +6,7 @@
                 "name": "Match",
                 "expected": "match",
                 "device": {
-                    "fuchsia.hardware.pwm.Service": "fuchsia.hardware.pwm.Service.ZirconTransport"
+                    "fuchsia.Service": "\"fuchsia.hardware.pwm.Service\""
                 }
             }
         ]
@@ -30,7 +30,7 @@
                 "name": "Match",
                 "expected": "match",
                 "device": {
-                    "fuchsia.hardware.gpio.Service": "fuchsia.hardware.gpio.Service.ZirconTransport",
+                    "fuchsia.Service": "\"fuchsia.hardware.gpio.Service\"",
                     "fuchsia.NAME": "\"gpio-bt\""
                 }
             }

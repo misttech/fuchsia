@@ -12,7 +12,6 @@
 #include <lib/driver/devicetree/visitors/registry.h>
 
 #include <bind/fuchsia/cpp/bind.h>
-#include <bind/fuchsia/hardware/pci/cpp/bind.h>
 #include <gtest/gtest.h>
 
 namespace pci_child_dt {
@@ -52,16 +51,14 @@ TEST(PciChildVisitorTest, TestPciChildren) {
 
     EXPECT_TRUE(fdf_devicetree::testing::CheckHasBindRules(
         {{
-            fdf::MakeAcceptBindRule(bind_fuchsia_hardware_pci::SERVICE,
-                                    bind_fuchsia_hardware_pci::SERVICE_ZIRCONTRANSPORT),
+            fdf::MakeAcceptBindRule(bind_fuchsia::SERVICE, "fuchsia.hardware.pci.Service"),
             fdf::MakeAcceptBindRule(bind_fuchsia::PCI_TOPO, 0x08u),
         }},
         (*spec.parents2())[1].bind_rules(), false));
 
     EXPECT_TRUE(fdf_devicetree::testing::CheckHasProperties(
         {{
-            fdf::MakeProperty2(bind_fuchsia_hardware_pci::SERVICE,
-                               bind_fuchsia_hardware_pci::SERVICE_ZIRCONTRANSPORT),
+            fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.pci.Service"),
         }},
         (*spec.parents2())[1].properties(), false));
   }
@@ -77,8 +74,7 @@ TEST(PciChildVisitorTest, TestPciChildren) {
 
     EXPECT_TRUE(fdf_devicetree::testing::CheckHasBindRules(
         {{
-            fdf::MakeAcceptBindRule(bind_fuchsia_hardware_pci::SERVICE,
-                                    bind_fuchsia_hardware_pci::SERVICE_ZIRCONTRANSPORT),
+            fdf::MakeAcceptBindRule(bind_fuchsia::SERVICE, "fuchsia.hardware.pci.Service"),
             fdf::MakeAcceptBindRule(bind_fuchsia::PCI_TOPO, 0x10u),
         }},
         (*spec.parents2())[1].bind_rules(), false));
@@ -87,8 +83,7 @@ TEST(PciChildVisitorTest, TestPciChildren) {
     // child can bind a driver by id.
     EXPECT_TRUE(fdf_devicetree::testing::CheckHasProperties(
         {{
-            fdf::MakeProperty2(bind_fuchsia_hardware_pci::SERVICE,
-                               bind_fuchsia_hardware_pci::SERVICE_ZIRCONTRANSPORT),
+            fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.pci.Service"),
             fdf::MakeProperty2(bind_fuchsia::PCI_VID, 0x8086u),
             fdf::MakeProperty2(bind_fuchsia::PCI_DID, 0x15f2u),
         }},
@@ -110,8 +105,7 @@ TEST(PciChildVisitorTest, TestPciChildren) {
 
     EXPECT_TRUE(fdf_devicetree::testing::CheckHasBindRules(
         {{
-            fdf::MakeAcceptBindRule(bind_fuchsia_hardware_pci::SERVICE,
-                                    bind_fuchsia_hardware_pci::SERVICE_ZIRCONTRANSPORT),
+            fdf::MakeAcceptBindRule(bind_fuchsia::SERVICE, "fuchsia.hardware.pci.Service"),
             fdf::MakeAcceptBindRule(bind_fuchsia::PCI_TOPO, 0x18u),
         }},
         (*spec.parents2())[1].bind_rules(), false));
@@ -129,8 +123,7 @@ TEST(PciChildVisitorTest, TestPciChildren) {
 
     EXPECT_TRUE(fdf_devicetree::testing::CheckHasBindRules(
         {{
-            fdf::MakeAcceptBindRule(bind_fuchsia_hardware_pci::SERVICE,
-                                    bind_fuchsia_hardware_pci::SERVICE_ZIRCONTRANSPORT),
+            fdf::MakeAcceptBindRule(bind_fuchsia::SERVICE, "fuchsia.hardware.pci.Service"),
             fdf::MakeAcceptBindRule(bind_fuchsia::PCI_TOPO, 0x100u),
         }},
         (*spec.parents2())[1].bind_rules(), false));

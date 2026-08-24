@@ -32,7 +32,6 @@ fuchsia_driver_bind_bytecode(
         "@fuchsia_sdk//bind/fuchsia.gpio",
         "@fuchsia_sdk//bind/fuchsia.platform",
         "@fuchsia_sdk//bind/fuchsia.power",
-        "@fuchsia_sdk//fidl/fuchsia.hardware.pin:fuchsia.hardware.pin_bindlib",
     ],
 )
 

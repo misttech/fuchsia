@@ -6,7 +6,7 @@
                 "name": "QEMU",
                 "expected": "match",
                 "device": {
-                    "fuchsia.hardware.pci.Service": "fuchsia.hardware.pci.Service.ZirconTransport",
+                    "fuchsia.Service": "\"fuchsia.hardware.pci.Service\"",
                     "fuchsia.BIND_PCI_VID": "0x8086",
                     "fuchsia.BIND_PCI_DID": "0x100e"
                 }
@@ -15,7 +15,7 @@
                 "name": "NUC",
                 "expected": "match",
                 "device": {
-                    "fuchsia.hardware.pci.Service": "fuchsia.hardware.pci.Service.ZirconTransport",
+                    "fuchsia.Service": "\"fuchsia.hardware.pci.Service\"",
                     "fuchsia.BIND_PCI_VID": "0x8086",
                     "fuchsia.BIND_PCI_DID": "0x156f"
                 }
@@ -24,14 +24,14 @@
                 "name": "WrongProtocol",
                 "expected": "abort",
                 "device": {
-                    "fuchsia.hardware.usb.Service": "fuchsia.hardware.usb.Service.ZirconTransport"
+                    "fuchsia.Service": "\"fuchsia.hardware.usb.Service\""
                 }
             },
             {
                 "name": "WrongVendor",
                 "expected": "abort",
                 "device": {
-                    "fuchsia.hardware.pci.Service": "fuchsia.hardware.pci.Service.ZirconTransport",
+                    "fuchsia.Service": "\"fuchsia.hardware.pci.Service\"",
                     "fuchsia.BIND_PCI_VID": "0x8087",
                     "fuchsia.BIND_PCI_DID": "0x100e"
                 }
@@ -40,7 +40,7 @@
                 "name": "UnsupportedDevice",
                 "expected": "abort",
                 "device": {
-                    "fuchsia.hardware.pci.Service": "fuchsia.hardware.usb.Service.ZirconTransport",
+                    "fuchsia.Service": "\"fuchsia.hardware.pci.Service\"",
                     "fuchsia.BIND_PCI_VID": "0x8086",
                     "fuchsia.BIND_PCI_DID": "0x24fd"
                 }

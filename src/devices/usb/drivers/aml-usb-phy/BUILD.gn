@@ -12,7 +12,6 @@ driver_bind_rules("aml_usb_phy_bind") {
   bind_output = "aml-usb-phy.bindbc"
   tests = "meta/test_bind.json"
   deps = [
-    "//sdk/fidl/fuchsia.hardware.pin:fuchsia.hardware.pin_bindlib",
     "//sdk/fidl/fuchsia.hardware.registers:fuchsia.hardware.registers_bindlib",
     "//src/devices/bind/fuchsia",
     "//src/devices/bind/fuchsia.amlogic.platform",

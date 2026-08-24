@@ -21,7 +21,6 @@ driver_bind_rules("registers_bind") {
   bind_output = "registers.bindbc"
   tests = "meta/tests.json"
   deps = [
-    "//sdk/fidl/fuchsia.hardware.platform.device:fuchsia.hardware.platform.device_bindlib",
     "//src/devices/bind/fuchsia",
     "//src/devices/bind/fuchsia.platform",
   ]

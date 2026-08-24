@@ -17,7 +17,6 @@
 #include <vector>
 
 #include <bind/fuchsia/cpp/bind.h>
-#include <bind/fuchsia/hardware/pci/cpp/bind.h>
 
 namespace pci_child_dt {
 
@@ -201,8 +200,7 @@ void PciChildVisitor::AddChildNodeSpec(fdf_devicetree::ChildNode& child, uint32_
   // The fragment for this device is selected by its PCI topology (BDF). The PCI
   // bus driver publishes exactly one such fragment per discovered device.
   std::vector<fuchsia_driver_framework::BindRule2> bind_rules = {
-      fdf::MakeAcceptBindRule(bind_fuchsia_hardware_pci::SERVICE,
-                              bind_fuchsia_hardware_pci::SERVICE_ZIRCONTRANSPORT),
+      fdf::MakeAcceptBindRule(bind_fuchsia::SERVICE, "fuchsia.hardware.pci.Service"),
       fdf::MakeAcceptBindRule(bind_fuchsia::PCI_TOPO, pci_topo),
       // PCI_TOPO carries no domain, so devices that share a BDF across domains are
       // indistinguishable here. Uncomment the rule below (and name the |domain|
@@ -214,8 +212,7 @@ void PciChildVisitor::AddChildNodeSpec(fdf_devicetree::ChildNode& child, uint32_
   };
 
   std::vector<fuchsia_driver_framework::NodeProperty2> properties = {
-      fdf::MakeProperty2(bind_fuchsia_hardware_pci::SERVICE,
-                         bind_fuchsia_hardware_pci::SERVICE_ZIRCONTRANSPORT),
+      fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.pci.Service"),
   };
   // Advertise the vendor/device id so a driver can bind this device by id. We
   // intentionally do not constrain the fragment selection (bind rules) by id:

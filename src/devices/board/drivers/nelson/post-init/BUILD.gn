@@ -10,8 +10,6 @@ driver_bind_rules("post-init-bind") {
   rules = "meta/post-init.bind"
   tests = "meta/post-init-bind-test.json"
   deps = [
-    "//sdk/fidl/fuchsia.hardware.pin:fuchsia.hardware.pin_bindlib",
-    "//sdk/fidl/fuchsia.hardware.platform.bus:fuchsia.hardware.platform.bus_bindlib",
     "//src/devices/bind/fuchsia",
     "//src/devices/bind/fuchsia.amlogic.platform.s905d3",
     "//src/devices/bind/fuchsia.google.platform",

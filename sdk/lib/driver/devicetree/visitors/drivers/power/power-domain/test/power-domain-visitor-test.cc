@@ -14,8 +14,6 @@
 #include <cstdint>
 
 #include <bind/fuchsia/cpp/bind.h>
-#include <bind/fuchsia/hardware/power/cpp/bind.h>
-#include <bind/fuchsia/hardware/powerdomain/cpp/bind.h>
 #include <bind/fuchsia/power/cpp/bind.h>
 #include <gtest/gtest.h>
 
@@ -52,8 +50,6 @@ TEST(PowerDomainVisitorTest, TestMetadataAndBindProperty) {
   // 1st parent is pdev. Skipping that.
   EXPECT_TRUE(fdf_devicetree::testing::CheckHasProperties(
       {{fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.power.Service"),
-        fdf::MakeProperty2(bind_fuchsia_hardware_power::SERVICE,
-                           bind_fuchsia_hardware_power::SERVICE_ZIRCONTRANSPORT),
         fdf::MakeProperty2(bind_fuchsia_power::POWER_DOMAIN, static_cast<uint32_t>(TEST_DOMAIN_ID)),
         fdf::MakeProperty2(bind_fuchsia::NAME, "ice")}},
       cpufreq_node_spec[0].parents2()->at(1).properties(), false));
@@ -100,8 +96,6 @@ TEST(PowerDomainVisitorTest, TestBasicPowerDomain) {
   // 1st parent is pdev. Skipping that.
   EXPECT_TRUE(fdf_devicetree::testing::CheckHasProperties(
       {{fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.powerdomain.Service"),
-        fdf::MakeProperty2(bind_fuchsia_hardware_powerdomain::SERVICE,
-                           bind_fuchsia_hardware_powerdomain::SERVICE_ZIRCONTRANSPORT),
         fdf::MakeProperty2(bind_fuchsia_power::POWER_DOMAIN, 2u)}},
       device_basic_node_spec[0].parents2()->at(1).properties(), false));
   EXPECT_TRUE(fdf_devicetree::testing::CheckHasBindRules(
@@ -119,8 +113,6 @@ TEST(PowerDomainVisitorTest, TestBasicPowerDomain) {
 
   EXPECT_TRUE(fdf_devicetree::testing::CheckHasProperties(
       {{fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.powerdomain.Service"),
-        fdf::MakeProperty2(bind_fuchsia_hardware_powerdomain::SERVICE,
-                           bind_fuchsia_hardware_powerdomain::SERVICE_ZIRCONTRANSPORT),
         fdf::MakeProperty2(bind_fuchsia_power::POWER_DOMAIN, 2u),
         fdf::MakeProperty2(bind_fuchsia::NAME, "basic_power_2")}},
       device_basic_2_node_spec[0].parents2()->at(1).properties(), false));

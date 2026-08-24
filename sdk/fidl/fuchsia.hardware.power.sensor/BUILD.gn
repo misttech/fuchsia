@@ -37,6 +37,7 @@ fidl("fuchsia.hardware.power.sensor") {
   sources = [ "sensor.fidl" ]
   sdk_area = "Power"
   sdk_category = "partner"
+  enable_bindlib = false
   stable = true
   visibility = [ "*" ]
   public_deps = [ "//zircon/vdso/zx" ]

@@ -5,7 +5,6 @@
 composite aml_usb_phy;
 
 using fuchsia;
-using fuchsia.hardware.pin;
 using fuchsia.amlogic.platform;
 using fuchsia.clock;
 using fuchsia.gpio;

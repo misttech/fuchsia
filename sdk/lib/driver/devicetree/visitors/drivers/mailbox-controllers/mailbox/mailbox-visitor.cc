@@ -10,17 +10,13 @@
 #include <lib/driver/logging/cpp/logger.h>
 
 // TODO(https://fxbug.dev/494450198: Re-add this once the Bazel dependency issue is resoled.
-// #include <bind/fuchsia/hardware/mailbox/cpp/bind.h>
+#include <bind/fuchsia/cpp/bind.h>
 #include <bind/fuchsia/mailbox/cpp/bind.h>
 
 namespace {
 
 // TODO(https://fxbug.dev/494450198): Remove this once we fix the Bazel dependency issue for FIDL
 // generated bind cpp headers
-namespace bind_fuchsia_hardware_mailbox {
-static const char SERVICE[] = "fuchsia.hardware.mailbox.Service";
-static const char SERVICE_ZIRCONTRANSPORT[] = "fuchsia.hardware.mailbox.Service.ZirconTransport";
-}  // namespace bind_fuchsia_hardware_mailbox
 
 constexpr char kMailboxesProperty[] = "mboxes";
 constexpr char kMailboxNamesProperty[] = "mbox-names";
@@ -126,16 +122,14 @@ zx::result<> MailboxVisitor::Visit(fdf_devicetree::Node& node,
     fuchsia_driver_framework::ParentSpec2 parent_spec{{
         .bind_rules =
             {
-                fdf::MakeAcceptBindRule(bind_fuchsia_hardware_mailbox::SERVICE,
-                                        bind_fuchsia_hardware_mailbox::SERVICE_ZIRCONTRANSPORT),
+                fdf::MakeAcceptBindRule(bind_fuchsia::SERVICE, "fuchsia.hardware.mailbox.Service"),
                 fdf::MakeAcceptBindRule(bind_fuchsia_mailbox::CONTROLLER_ID,
                                         reference.reference_node().id()),
                 fdf::MakeAcceptBindRule(bind_fuchsia_mailbox::CHANNEL, spec->channel),
             },
         .properties =
             {
-                fdf::MakeProperty2(bind_fuchsia_hardware_mailbox::SERVICE,
-                                   bind_fuchsia_hardware_mailbox::SERVICE_ZIRCONTRANSPORT),
+                fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.mailbox.Service"),
                 fdf::MakeProperty2(bind_fuchsia_mailbox::CONTROLLER_ID, local_controller_id),
                 fdf::MakeProperty2(bind_fuchsia_mailbox::CHANNEL, spec->channel),
             },

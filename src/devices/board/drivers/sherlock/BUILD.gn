@@ -17,7 +17,6 @@ driver_bind_rules("sherlock-bind") {
   bind_output = "sherlock.bindbc"
   tests = "meta/sherlock-bind-tests.json"
   deps = [
-    "//sdk/fidl/fuchsia.hardware.platform.bus:fuchsia.hardware.platform.bus_bindlib",
     "//src/devices/bind/fuchsia",
     "//src/devices/bind/fuchsia.google.platform",
   ]
@@ -80,9 +79,7 @@ template("sherlock_driver") {
       "//sdk/fidl/fuchsia.hardware.light:fuchsia.hardware.light_cpp",
       "//sdk/fidl/fuchsia.hardware.lightsensor:fuchsia.hardware.lightsensor_cpp",
       "//sdk/fidl/fuchsia.hardware.pinimpl:fuchsia.hardware.pinimpl_cpp",
-      "//sdk/fidl/fuchsia.hardware.platform.bus:fuchsia.hardware.platform.bus_bindlib_cpp",
       "//sdk/fidl/fuchsia.hardware.platform.bus:fuchsia.hardware.platform.bus_cpp",
-      "//sdk/fidl/fuchsia.hardware.pwm:fuchsia.hardware.pwm_bindlib_cpp",
       "//sdk/fidl/fuchsia.hardware.pwm:fuchsia.hardware.pwm_cpp",
       "//sdk/fidl/fuchsia.hardware.registers:fuchsia.hardware.registers_bindlib_cpp",
       "//sdk/fidl/fuchsia.hardware.registers:fuchsia.hardware.registers_cpp",

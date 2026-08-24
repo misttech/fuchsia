@@ -63,7 +63,6 @@ driver_bind_rules("goodix-gt6853-bind") {
   rules = "meta/goodix-gt6853.bind"
   tests = "meta/goodix-gt6853-bind-test.json"
   deps = [
-    "//sdk/fidl/fuchsia.hardware.pin:fuchsia.hardware.pin_bindlib",
     "//src/devices/bind/fuchsia",
     "//src/devices/bind/fuchsia.amlogic.platform.s905d3",
     "//src/devices/bind/fuchsia.goodix.platform",

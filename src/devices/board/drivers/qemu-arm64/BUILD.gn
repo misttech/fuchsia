@@ -9,7 +9,6 @@ driver_bind_rules("qemu-arm64_bind") {
   rules = "meta/qemu-arm64.bind"
   tests = "meta/bind_tests.json"
   deps = [
-    "//sdk/fidl/fuchsia.hardware.platform.bus:fuchsia.hardware.platform.bus_bindlib",
     "//src/devices/bind/fuchsia",
     "//src/devices/bind/fuchsia.platform",
   ]

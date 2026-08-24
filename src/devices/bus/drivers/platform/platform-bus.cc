@@ -28,7 +28,6 @@
 #include <string>
 
 #include <bind/fuchsia/cpp/bind.h>
-#include <bind/fuchsia/hardware/platform/device/cpp/bind.h>
 #include <bind/fuchsia/platform/cpp/bind.h>
 #include <fbl/algorithm.h>
 
@@ -448,8 +447,6 @@ void PlatformBus::AddCompositeNodeSpec(AddCompositeNodeSpecRequestView request, 
               fdf::MakeProperty2(bind_fuchsia::PLATFORM_DEV_DID, did),
               fdf::MakeProperty2(bind_fuchsia::PLATFORM_DEV_INSTANCE_ID, instance_id),
               fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.platform.device.Service"),
-              fdf::MakeProperty2(bind_fuchsia_hardware_platform_device::SERVICE,
-                                 bind_fuchsia_hardware_platform_device::SERVICE_ZIRCONTRANSPORT),
           },
   }});
   zx::result composite_node_manager =

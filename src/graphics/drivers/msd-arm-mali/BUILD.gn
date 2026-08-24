@@ -18,7 +18,6 @@ driver_bind_rules("msd_arm_bind") {
   bind_output = "msd_arm.bindbc"
   tests = "tests/bind_tests.json"
   deps = [
-    "//sdk/fidl/fuchsia.hardware.platform.device:fuchsia.hardware.platform.device_bindlib",
     "//src/devices/bind/fuchsia",
     "//src/devices/bind/fuchsia.arm.platform",
     "//src/devices/bind/fuchsia.platform",

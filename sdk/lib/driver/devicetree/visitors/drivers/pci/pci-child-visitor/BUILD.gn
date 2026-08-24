@@ -18,7 +18,6 @@ devicetree_visitor("pci-child-visitor") {
     "pci-child-visitor.h",
   ]
   deps = [
-    "//sdk/fidl/fuchsia.hardware.pci:fuchsia.hardware.pci_bindlib_cpp",
     "//sdk/fidl/fuchsia.hardware.pci:fuchsia.hardware.pci_cpp",
     "//sdk/lib/driver/devicetree/visitors:registration",
     "//sdk/lib/driver/devicetree/visitors/default/mmio",
@@ -38,7 +37,6 @@ source_set("pci-child") {
     "//sdk/lib/driver/devicetree/manager:node",
   ]
   deps = [
-    "//sdk/fidl/fuchsia.hardware.pci:fuchsia.hardware.pci_bindlib_cpp",
     "//sdk/fidl/fuchsia.hardware.pci:fuchsia.hardware.pci_cpp",
     "//sdk/lib/driver/devicetree/visitors:registration",
     "//sdk/lib/driver/logging/cpp",
@@ -50,7 +48,6 @@ test("pci-child-visitor-test-bin") {
   sources = [ "test/pci-child-visitor-test.cc" ]
   deps = [
     ":pci-child",
-    "//sdk/fidl/fuchsia.hardware.pci:fuchsia.hardware.pci_bindlib_cpp",
     "//sdk/lib/driver/devicetree/testing:visitor-test-helper",
     "//sdk/lib/driver/devicetree/visitors:registry",
     "//sdk/lib/driver/devicetree/visitors/default/bind-property",
