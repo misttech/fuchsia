@@ -114,9 +114,10 @@ breakpoint hit. Perform diagnostics:
     {
       "success": true,
       "body": {
+        "thread_id": 1,
         "stackFrames": [
           {
-            "id": 0,
+            "frame_index": 0,
             "name": "my_test_function",
             "source": {
               "name": "main_test.cc",
@@ -224,7 +225,7 @@ All commands are sent as serialized JSON payloads to `fx debug cli --json
 | **Detach Process** | `{"command": "detach", "pid": <pid>}` or `{"command": "detach", "all": true}` |
 | **Get Stack Trace** | `{"command": "stackTrace", "thread_id": <thread_id>}` |
 | **List Variables** | `{"command": "variables", "thread_id": <thread_id>, "frame_index": <frame_index>}` |
-| **Evaluate Expression** | `{"command": "evaluate", "thread_id": <thread_id>, "frame_index": <idx> or "frame_id": <id>, "expression": "<expr>", "start": <start>, "count": <count>}` |
+| **Evaluate Expression** | `{"command": "evaluate", "thread_id": <thread_id>, "frame_index": <frame_index>, "expression": "<expr>", "start": <start>, "count": <count>}` |
 | **Continue Thread** | `{"command": "continue", "thread_id": <thread_id>}` |
 | **Pause Thread** | `{"command": "pause", "thread_id": <thread_id>}` |
 | **Stop Session** | `{"command": "stop"}` |
