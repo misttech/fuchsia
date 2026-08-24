@@ -104,12 +104,16 @@ breakpoint hit. Perform diagnostics:
     *Note: In the `get-state` thread list representation, the key is `"id"`. Map
     this value to the `"thread_id"` parameter in subsequent requests.*
 
-2.  **Retrieve Stack Trace:** Get the stack trace for the suspended `thread_id`
-    to pinpoint the failure location:
+2.  **Retrieve Stack Trace:** Get the stack trace for a suspended thread
+    (`thread_id`) or across all threads in a process (`pid`):
     ```bash
+    # Thread-level stack trace
     fx debug cli --json '{"command": "stackTrace", "thread_id": 1}'
+
+    # Process-level stack trace (all threads in "pid")
+    fx debug cli --json '{"command": "stackTrace", "pid": 12345}'
     ```
-    Example Response:
+    Example Thread Response:
     ```json
     {
       "success": true,
@@ -128,6 +132,49 @@ breakpoint hit. Perform diagnostics:
           }
         ],
         "totalFrames": 1
+      }
+    }
+    ```
+    Example Process Response:
+    ```json
+    {
+      "success": true,
+      "body": {
+        "processId": 12345,
+        "stacks": [
+          {
+            "thread_id": 1,
+            "stackFrames": [
+              {
+                "frame_index": 0,
+                "name": "my_test_function",
+                "source": {
+                  "name": "main_test.cc",
+                  "path": "/src/main_test.cc"
+                },
+                "line": 42,
+                "column": 1
+              }
+            ],
+            "totalFrames": 1
+          },
+          {
+            "thread_id": 2,
+            "stackFrames": [
+              {
+                "frame_index": 0,
+                "name": "worker_thread_entry",
+                "source": {
+                  "name": "worker.cc",
+                  "path": "/src/worker.cc"
+                },
+                "line": 105,
+                "column": 5
+              }
+            ],
+            "totalFrames": 1
+          }
+        ]
       }
     }
     ```
@@ -223,11 +270,11 @@ All commands are sent as serialized JSON payloads to `fx debug cli --json
 | **Set/Delete Breakpoint** | `{"command": "break", "file": "<workspace_root_path>", "line": <line_num>, "delete": <optional_bool>}` *(To delete, specify matching file and line)* |
 | **Attach Process** | `{"command": "attach", "filter": "<name_or_pid>"}` |
 | **Detach Process** | `{"command": "detach", "pid": <pid>}` or `{"command": "detach", "all": true}` |
-| **Get Stack Trace** | `{"command": "stackTrace", "thread_id": <thread_id>}` |
-| **List Variables** | `{"command": "variables", "thread_id": <thread_id>, "frame_index": <frame_index>}` |
-| **Evaluate Expression** | `{"command": "evaluate", "thread_id": <thread_id>, "frame_index": <frame_index>, "expression": "<expr>", "start": <start>, "count": <count>}` |
-| **Continue Thread** | `{"command": "continue", "thread_id": <thread_id>}` |
-| **Pause Thread** | `{"command": "pause", "thread_id": <thread_id>}` |
+| **Get Stack Trace** | `{"command": "stackTrace", "thread_id": <thread_id>}` or `{"command": "stackTrace", "pid": <pid>, "raw": <optional_bool>}` *(CLI: `stackTrace -t <id>` or `stackTrace -p <pid>`)* |
+| **List Variables** | `{"command": "variables", "thread_id": <thread_id>, "frame_index": <frame_index>}` *(CLI: `variables -t <id> --frame-index <idx>`)* |
+| **Evaluate Expression** | `{"command": "evaluate", "thread_id": <thread_id>, "frame_index": <frame_index>, "expression": "<expr>", "start": <start>, "count": <count>}` *(CLI: `evaluate -t <id> --frame-index <idx> <expr>`)* |
+| **Continue Thread** | `{"command": "continue", "thread_id": <thread_id>}` *(CLI: `continue <id>`)* |
+| **Pause Thread / Process** | `{"command": "pause", "thread_id": <thread_id>}` or `{"command": "pause", "pid": <pid>}` *(CLI: `pause -t <id>` or `pause -p <pid>`)* |
 | **Stop Session** | `{"command": "stop"}` |
 
 ### Global Parameters
