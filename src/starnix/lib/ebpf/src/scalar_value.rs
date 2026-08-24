@@ -362,10 +362,8 @@ impl [< $t:upper ScalarValueData>] {
         debug_assert!(value & unknown_mask == 0);
 
         let diff = urange.min ^ urange.max;
-        let mut common_mask = !0;
-        while diff & common_mask != 0 {
-            common_mask <<= 1;
-        }
+        let shift = [< $t >]::BITS - diff.leading_zeros();
+        let common_mask = if shift == [< $t >]::BITS { 0 } else { !0 << shift };
 
         let unknown_mask = unknown_mask & !common_mask;
         let value = (value & !common_mask) | (urange.min & common_mask);
