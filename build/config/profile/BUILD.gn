@@ -105,9 +105,9 @@ variant("coverage") {
     "-mllvm",
     "-profile-correlate=binary",
 
-    # Enable single byte coverage.
-    "-mllvm",
-    "-enable-single-byte-coverage=true",
+    # TODO(https://fxbug.dev/551939010): Re-enable single-byte coverage.
+    # "-mllvm",
+    # "-enable-single-byte-coverage=true",
   ]
 
   # Enable runtime counter relocation in Linux.
@@ -162,9 +162,9 @@ variant("coverage-cts") {
     "-mllvm",
     "-profile-correlate=binary",
 
-    # Enable single byte coverage.
-    "-mllvm",
-    "-enable-single-byte-coverage=true",
+    # TODO(https://fxbug.dev/551939010): Re-enable single-byte coverage.
+    # "-mllvm",
+    # "-enable-single-byte-coverage=true",
   ]
 
   # Enable runtime counter relocation in Linux.
