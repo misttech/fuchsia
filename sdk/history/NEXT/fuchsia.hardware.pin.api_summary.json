@@ -1,6 +1,12 @@
 [
     {
         "kind": "table/member",
+        "name": "fuchsia.hardware.pin/Configuration.drive_strength",
+        "ordinal": "9",
+        "type": "uint64"
+    },
+    {
+        "kind": "table/member",
         "name": "fuchsia.hardware.pin/Configuration.drive_strength_ua",
         "ordinal": "3",
         "type": "uint64"

@@ -58,6 +58,11 @@ type Configuration = table {
     /// Either `function` or `function_name` can be specified, but not both.
     @available(added=31)
     8: function_name string:MAX_FUNCTION_NAME_LEN;
+
+    /// The pin drive strength. Interpretation is controller dependent. Either `drive_strength_ua`
+    /// or `drive_strength` can be specified, but not both.
+    @available(added=NEXT)
+    9: drive_strength uint64;
 };
 
 open protocol Pin {
