@@ -24,7 +24,11 @@ class Command(BaseCommand):
             ),
         )
         variables_parser.add_argument(
-            "thread_id", type=int, help="Thread ID to query"
+            "-t",
+            "--thread-id",
+            type=int,
+            required=True,
+            help="Thread ID to query",
         )
         variables_parser.add_argument(
             "--frame-index",

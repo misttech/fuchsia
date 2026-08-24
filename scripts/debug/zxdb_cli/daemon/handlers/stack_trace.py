@@ -18,7 +18,7 @@ from shared.protocol.stack_trace import (
 if TYPE_CHECKING:
     from daemon.daemon import Daemon
 
-COMMAND_NAME = "stackTrace"
+COMMAND_NAME = "stack-trace"
 
 
 def _get_frame_origin(frame: StackFrame) -> str | None:

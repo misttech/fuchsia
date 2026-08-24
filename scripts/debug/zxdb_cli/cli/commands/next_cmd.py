@@ -17,7 +17,7 @@ class Command(BaseCommand):
     def register_cli(subparsers: Any) -> None:
         parser = subparsers.add_parser(
             "next",
-            aliases=["n", "step-over", "step_over", "stepover"],
+            aliases=["n", "step-over", "step_over", "stepOver", "stepover"],
             help="Step over execution to the next line (next)",
         )
         parser.add_argument(

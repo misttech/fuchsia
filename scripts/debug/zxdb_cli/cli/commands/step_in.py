@@ -11,13 +11,22 @@ from cli.commands.base import BaseCommand
 class Command(BaseCommand):
     """CLI command implementation for stepping into execution (step_in)."""
 
-    COMMAND_NAME = "step_in"
+    COMMAND_NAME = "step-in"
 
     @staticmethod
     def register_cli(subparsers: Any) -> None:
         parser = subparsers.add_parser(
-            "step_in",
-            aliases=["step-in", "stepin", "s"],
+            "step-in",
+            aliases=[
+                "step_in",
+                "stepIn",
+                "stepin",
+                "step-into",
+                "step_into",
+                "stepinto",
+                "step",
+                "s",
+            ],
             help="Step into execution of current function or line (step in)",
         )
         parser.add_argument(

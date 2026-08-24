@@ -639,7 +639,7 @@ class TestCLIIntegration(unittest.IsolatedAsyncioTestCase):
         try:
             f = StringIO()
             with contextlib.redirect_stdout(f):
-                exit_code = await main(["stackTrace", "-t", "1"])
+                exit_code = await main(["stack-trace", "-t", "1"])
             self.assertEqual(exit_code, 0)
 
             output = f.getvalue()
@@ -649,7 +649,7 @@ class TestCLIIntegration(unittest.IsolatedAsyncioTestCase):
             # Verify stack frame
             body = output_json.get("body")
             self.assertIsNotNone(body)
-            frames = body.get("stackFrames")
+            frames = body.get("stack_frames")
             self.assertEqual(len(frames), 1)
             self.assertEqual(frames[0]["frame_index"], 0)
             self.assertEqual(frames[0]["name"], "main")

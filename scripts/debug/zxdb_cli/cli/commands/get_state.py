@@ -8,6 +8,12 @@ from cli.commands.base import BaseCommand
 
 
 class Command(BaseCommand):
+    COMMAND_NAME = "get-state"
+
     @staticmethod
     def register_cli(subparsers: Any) -> None:
-        subparsers.add_parser("get-state", help="Get state of session")
+        subparsers.add_parser(
+            "get-state",
+            aliases=["get_state", "getState"],
+            help="Get state of session",
+        )

@@ -4,7 +4,7 @@
 
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, model_validator
 from pydap.dap_types import Source
 from shared.protocol.base import BaseRequest
 
@@ -23,25 +23,22 @@ class StackFrame(BaseModel):
 class ThreadStackTraceResponse(BaseModel):
     """Stack trace for a single thread in a process."""
 
-    model_config = ConfigDict(populate_by_name=True)
-
     thread_id: int
-    stack_frames: list[StackFrame] = Field(alias="stackFrames")
-    total_frames: int = Field(alias="totalFrames")
+    stack_frames: list[StackFrame]
+    total_frames: int
 
 
 class ProcessStackTraceResponse(BaseModel):
     """Response containing stack traces for all threads in a process."""
 
-    model_config = ConfigDict(populate_by_name=True)
-    process_id: int = Field(alias="processId", title="ProcessId")
+    process_id: int
     stacks: list[ThreadStackTraceResponse]
 
 
 class StackTraceRequest(BaseRequest):
     """Request stack trace for a thread or all threads in a process."""
 
-    command: Literal["stackTrace"] = "stackTrace"
+    command: Literal["stack-trace"] = "stack-trace"
     thread_id: int | None = None
     pid: int | None = None
     raw: bool = False

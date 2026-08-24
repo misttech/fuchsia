@@ -73,7 +73,7 @@ stopping the daemon.
 
 4. **Pause a thread**:
    ```bash
-   fx debug cli pause 1
+   fx debug cli pause -t 1
    ```
    Output:
    ```
@@ -91,11 +91,11 @@ stopping the daemon.
 
 6. **Get stack trace**:
    ```bash
-   fx debug cli stackTrace 1
+   fx debug cli stack-trace -t 1
    ```
    Output:
    ```
-   {"success": true, "body": {"stackFrames": [{"id": 0, "name": "main", "line": 42}]}}
+   {"success": true, "body": {"thread_id": 1, "stack_frames": [{"frame_index": 0, "name": "main", "line": 42}], "total_frames": 1}}
    ```
 
 7. **Stop the daemon**:
@@ -159,11 +159,11 @@ For programmatic environments or agents, the same operations can be invoked via 
 
 6. **Get stack trace**:
    ```bash
-   fx debug cli --json '{"command": "stackTrace", "thread_id": 1}'
+   fx debug cli --json '{"command": "stack-trace", "thread_id": 1}'
    ```
    Output:
    ```
-   {"success": true, "body": {"stackFrames": [{"id": 0, "name": "main", "line": 42}]}}
+   {"success": true, "body": {"thread_id": 1, "stack_frames": [{"frame_index": 0, "name": "main", "line": 42}], "total_frames": 1}}
    ```
 
 7. **Stop the daemon**:

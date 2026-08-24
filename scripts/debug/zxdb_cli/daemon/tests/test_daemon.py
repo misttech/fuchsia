@@ -290,7 +290,7 @@ class TestCommandHandlerRegistry(unittest.IsolatedAsyncioTestCase):
         daemon.zxdb_writer = Mock()
 
         resp = await daemon.registry.handle(
-            "step_in", StepInRequest(command="step_in", thread_id=1)
+            "step-in", StepInRequest(command="step-in", thread_id=1)
         )
 
         self.assertTrue(resp.success)
@@ -311,7 +311,7 @@ class TestCommandHandlerRegistry(unittest.IsolatedAsyncioTestCase):
         daemon.zxdb_writer = Mock()
 
         resp = await daemon.registry.handle(
-            "step_in", StepInRequest(command="step_in", thread_id=1)
+            "step-in", StepInRequest(command="step-in", thread_id=1)
         )
 
         self.assertFalse(resp.success)
@@ -1087,7 +1087,7 @@ class TestCommandHandlerRegistry(unittest.IsolatedAsyncioTestCase):
             daemon, "ensure_stopped", new_callable=AsyncMock
         ) as mock_ensure_stopped:
             resp = await daemon.registry.handle(
-                "stackTrace", StackTraceRequest(thread_id=1, raw=False)
+                "stack-trace", StackTraceRequest(thread_id=1, raw=False)
             )
 
             self.assertTrue(resp.success)
@@ -1101,7 +1101,7 @@ class TestCommandHandlerRegistry(unittest.IsolatedAsyncioTestCase):
 
             # Raw flag returns uncollapsing frames
             resp_raw = await daemon.registry.handle(
-                "stackTrace", StackTraceRequest(thread_id=1, raw=True)
+                "stack-trace", StackTraceRequest(thread_id=1, raw=True)
             )
             self.assertTrue(resp_raw.success)
             assert isinstance(resp_raw.body, ThreadStackTraceResponse)
@@ -1166,7 +1166,7 @@ class TestCommandHandlerRegistry(unittest.IsolatedAsyncioTestCase):
 
         with patch.object(daemon, "ensure_stopped", new_callable=AsyncMock):
             resp = await daemon.registry.handle(
-                "stackTrace", StackTraceRequest(thread_id=1, raw=False)
+                "stack-trace", StackTraceRequest(thread_id=1, raw=False)
             )
 
             self.assertTrue(resp.success)
@@ -1238,7 +1238,7 @@ class TestCommandHandlerRegistry(unittest.IsolatedAsyncioTestCase):
 
         with patch.object(daemon, "ensure_stopped", new_callable=AsyncMock):
             resp = await daemon.registry.handle(
-                "stackTrace", StackTraceRequest(thread_id=1, raw=False)
+                "stack-trace", StackTraceRequest(thread_id=1, raw=False)
             )
 
             self.assertTrue(resp.success)
@@ -1274,7 +1274,7 @@ class TestCommandHandlerRegistry(unittest.IsolatedAsyncioTestCase):
 
         with patch.object(daemon, "ensure_stopped", new_callable=AsyncMock):
             resp = await daemon.registry.handle(
-                "stackTrace", StackTraceRequest(thread_id=1)
+                "stack-trace", StackTraceRequest(thread_id=1)
             )
 
             self.assertFalse(resp.success)
@@ -1336,7 +1336,7 @@ class TestCommandHandlerRegistry(unittest.IsolatedAsyncioTestCase):
         ).is_stopped = True
 
         resp = await daemon.registry.handle(
-            "stackTrace", StackTraceRequest(pid=12345, raw=False)
+            "stack-trace", StackTraceRequest(pid=12345, raw=False)
         )
 
         self.assertTrue(resp.success)
@@ -1366,7 +1366,7 @@ class TestCommandHandlerRegistry(unittest.IsolatedAsyncioTestCase):
             daemon, "ensure_process_stopped", new_callable=AsyncMock
         ) as mock_ensure_stopped:
             resp = await daemon.registry.handle(
-                "stackTrace", StackTraceRequest(pid=99999, raw=False)
+                "stack-trace", StackTraceRequest(pid=99999, raw=False)
             )
             self.assertFalse(resp.success)
             self.assertIn(
@@ -1386,7 +1386,7 @@ class TestCommandHandlerRegistry(unittest.IsolatedAsyncioTestCase):
             daemon, "ensure_process_stopped", new_callable=AsyncMock
         ):
             resp = await daemon.registry.handle(
-                "stackTrace", StackTraceRequest(pid=12345)
+                "stack-trace", StackTraceRequest(pid=12345)
             )
             self.assertFalse(resp.success)
             self.assertIn(
@@ -1427,7 +1427,7 @@ class TestCommandHandlerRegistry(unittest.IsolatedAsyncioTestCase):
         ).is_stopped = True
 
         resp = await daemon.registry.handle(
-            "stackTrace", StackTraceRequest(pid=12345, raw=False)
+            "stack-trace", StackTraceRequest(pid=12345, raw=False)
         )
 
         self.assertTrue(resp.success)

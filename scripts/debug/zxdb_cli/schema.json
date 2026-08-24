@@ -2,7 +2,7 @@
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "title": "zxdb-cli Protocol Schema",
     "description": "JSON schema for requests and responses in the zxdb-cli UDS protocol",
-    "version": 14,
+    "version": 15,
     "requests": {
         "$defs": {
             "AttachRequest": {
@@ -549,8 +549,8 @@
                 "description": "Request stack trace for a thread or all threads in a process.",
                 "properties": {
                     "command": {
-                        "const": "stackTrace",
-                        "default": "stackTrace",
+                        "const": "stack-trace",
+                        "default": "stack-trace",
                         "title": "Command",
                         "type": "string"
                     },
@@ -669,8 +669,8 @@
                 "description": "Request to step into a function call.",
                 "properties": {
                     "command": {
-                        "const": "step_in",
-                        "default": "step_in",
+                        "const": "step-in",
+                        "default": "step-in",
                         "title": "Command",
                         "type": "string"
                     },
@@ -930,9 +930,9 @@
                 "hello": "#/$defs/HelloRequest",
                 "next": "#/$defs/NextRequest",
                 "pause": "#/$defs/PauseRequest",
-                "stackTrace": "#/$defs/StackTraceRequest",
+                "stack-trace": "#/$defs/StackTraceRequest",
                 "start": "#/$defs/StartRequest",
-                "step_in": "#/$defs/StepInRequest",
+                "step-in": "#/$defs/StepInRequest",
                 "stop": "#/$defs/StopRequest",
                 "threads": "#/$defs/ThreadsRequest",
                 "variables": "#/$defs/VariablesRequest",
@@ -1081,8 +1081,8 @@
             "ProcessStackTraceResponse": {
                 "description": "Response containing stack traces for all threads in a process.",
                 "properties": {
-                    "processId": {
-                        "title": "ProcessId",
+                    "process_id": {
+                        "title": "Process Id",
                         "type": "integer"
                     },
                     "stacks": {
@@ -1094,7 +1094,7 @@
                     }
                 },
                 "required": [
-                    "processId",
+                    "process_id",
                     "stacks"
                 ],
                 "title": "ProcessStackTraceResponse",
@@ -1233,22 +1233,22 @@
                         "title": "Thread Id",
                         "type": "integer"
                     },
-                    "stackFrames": {
+                    "stack_frames": {
                         "items": {
                             "$ref": "#/$defs/StackFrame"
                         },
-                        "title": "Stackframes",
+                        "title": "Stack Frames",
                         "type": "array"
                     },
-                    "totalFrames": {
-                        "title": "Totalframes",
+                    "total_frames": {
+                        "title": "Total Frames",
                         "type": "integer"
                     }
                 },
                 "required": [
                     "thread_id",
-                    "stackFrames",
-                    "totalFrames"
+                    "stack_frames",
+                    "total_frames"
                 ],
                 "title": "ThreadStackTraceResponse",
                 "type": "object"

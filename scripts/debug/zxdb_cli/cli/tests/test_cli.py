@@ -22,6 +22,7 @@ from shared.protocol.break_request import BreakRequest
 from shared.protocol.continue_request import ContinueRequest
 from shared.protocol.evaluate import EvaluateRequest
 from shared.protocol.finish import FinishRequest
+from shared.protocol.get_state import GetStateRequest
 from shared.protocol.next_request import NextRequest
 from shared.protocol.pause import PauseRequest
 from shared.protocol.stack_trace import StackTraceRequest
@@ -29,6 +30,7 @@ from shared.protocol.step_in import StepInRequest
 from shared.protocol.stop import StopRequest
 from shared.protocol.threads import ThreadsRequest
 from shared.protocol.variables import VariablesRequest
+from shared.protocol.wait_for_event import WaitForEventRequest
 
 
 class TestCLI(unittest.IsolatedAsyncioTestCase):
@@ -228,7 +230,7 @@ class TestCLI(unittest.IsolatedAsyncioTestCase):
     async def test_json_option_stack_trace(self, mock_send: Mock) -> None:
         mock_send.return_value = 0
         exit_code = await main(
-            ["--json", '{"command": "stackTrace", "thread_id": 1}']
+            ["--json", '{"command": "stack-trace", "thread_id": 1}']
         )
         self.assertEqual(exit_code, 0)
         mock_send.assert_called_once_with(
@@ -238,14 +240,16 @@ class TestCLI(unittest.IsolatedAsyncioTestCase):
     @patch("cli.cli.send_command")
     async def test_stack_trace_command_thread_id(self, mock_send: Mock) -> None:
         mock_send.return_value = 0
-        exit_code = await main(["stackTrace", "-t", "1"])
-        self.assertEqual(exit_code, 0)
-        mock_send.assert_called_once_with(
-            StackTraceRequest(thread_id=1, raw=False)
-        )
+        for cmd in ["stack-trace", "stack_trace", "stackTrace"]:
+            mock_send.reset_mock()
+            exit_code = await main([cmd, "-t", "1"])
+            self.assertEqual(exit_code, 0)
+            mock_send.assert_called_once_with(
+                StackTraceRequest(thread_id=1, raw=False)
+            )
 
         mock_send.reset_mock()
-        exit_code = await main(["stackTrace", "--thread-id", "1", "-r"])
+        exit_code = await main(["stack-trace", "--thread-id", "1", "-r"])
         self.assertEqual(exit_code, 0)
         mock_send.assert_called_once_with(
             StackTraceRequest(thread_id=1, raw=True)
@@ -254,7 +258,7 @@ class TestCLI(unittest.IsolatedAsyncioTestCase):
     @patch("cli.cli.send_command")
     async def test_stack_trace_command_pid_flag(self, mock_send: Mock) -> None:
         mock_send.return_value = 0
-        exit_code = await main(["stackTrace", "-p", "12345"])
+        exit_code = await main(["stack-trace", "-p", "12345"])
         self.assertEqual(exit_code, 0)
         mock_send.assert_called_once_with(
             StackTraceRequest(pid=12345, raw=False)
@@ -265,7 +269,7 @@ class TestCLI(unittest.IsolatedAsyncioTestCase):
         self, mock_send: Mock
     ) -> None:
         mock_send.return_value = 0
-        exit_code = await main(["stackTrace", "--pid", "12345", "-r"])
+        exit_code = await main(["stack-trace", "--pid", "12345", "-r"])
         self.assertEqual(exit_code, 0)
         mock_send.assert_called_once_with(
             StackTraceRequest(pid=12345, raw=True)
@@ -275,7 +279,7 @@ class TestCLI(unittest.IsolatedAsyncioTestCase):
     async def test_json_option_stack_trace_pid(self, mock_send: Mock) -> None:
         mock_send.return_value = 0
         exit_code = await main(
-            ["--json", '{"command": "stackTrace", "pid": 12345}']
+            ["--json", '{"command": "stack-trace", "pid": 12345}']
         )
         self.assertEqual(exit_code, 0)
         mock_send.assert_called_once_with(
@@ -286,7 +290,7 @@ class TestCLI(unittest.IsolatedAsyncioTestCase):
     async def test_stack_trace_missing_args(self, mock_send: Mock) -> None:
         with contextlib.redirect_stderr(StringIO()):
             with self.assertRaises(SystemExit):
-                await main(["stackTrace"])
+                await main(["stack-trace"])
         mock_send.assert_not_called()
 
     @patch("cli.cli.send_command")
@@ -346,7 +350,18 @@ class TestCLI(unittest.IsolatedAsyncioTestCase):
     @patch("cli.cli.send_command")
     async def test_variables_command(self, mock_send: Mock) -> None:
         mock_send.return_value = 0
-        exit_code = await main(["variables", "1", "--frame-index", "2"])
+        exit_code = await main(
+            ["variables", "--thread-id", "1", "--frame-index", "2"]
+        )
+        self.assertEqual(exit_code, 0)
+        mock_send.assert_called_once_with(
+            VariablesRequest(thread_id=1, frame_index=2)
+        )
+
+    @patch("cli.cli.send_command")
+    async def test_variables_command_short_flag(self, mock_send: Mock) -> None:
+        mock_send.return_value = 0
+        exit_code = await main(["variables", "-t", "1", "--frame-index", "2"])
         self.assertEqual(exit_code, 0)
         mock_send.assert_called_once_with(
             VariablesRequest(thread_id=1, frame_index=2)
@@ -357,7 +372,7 @@ class TestCLI(unittest.IsolatedAsyncioTestCase):
         self, mock_send: Mock
     ) -> None:
         mock_send.return_value = 0
-        exit_code = await main(["variables", "1"])
+        exit_code = await main(["variables", "-t", "1"])
         self.assertEqual(exit_code, 0)
         mock_send.assert_called_once_with(
             VariablesRequest(thread_id=1, frame_index=0)
@@ -366,7 +381,7 @@ class TestCLI(unittest.IsolatedAsyncioTestCase):
     @patch("cli.cli.send_command")
     async def test_locals_alias_command(self, mock_send: Mock) -> None:
         mock_send.return_value = 0
-        exit_code = await main(["locals", "1", "--frame-index", "2"])
+        exit_code = await main(["locals", "-t", "1", "--frame-index", "2"])
         self.assertEqual(exit_code, 0)
         mock_send.assert_called_once_with(
             VariablesRequest(thread_id=1, frame_index=2)
@@ -518,6 +533,21 @@ class TestCLI(unittest.IsolatedAsyncioTestCase):
         )
 
     @patch("cli.cli.send_command")
+    async def test_evaluate_command_short_flag(self, mock_send: Mock) -> None:
+        mock_send.return_value = 0
+        exit_code = await main(["evaluate", "-t", "1", "x", "+", "y"])
+        self.assertEqual(exit_code, 0)
+        mock_send.assert_called_once_with(
+            EvaluateRequest(
+                thread_id=1,
+                frame_index=0,
+                expression="x + y",
+                start=0,
+                count=50,
+            )
+        )
+
+    @patch("cli.cli.send_command")
     async def test_print_alias_command(self, mock_send: Mock) -> None:
         mock_send.return_value = 0
         exit_code = await main(["print", "--thread-id", "1", "x", "+", "y"])
@@ -608,13 +638,49 @@ class TestCLI(unittest.IsolatedAsyncioTestCase):
         exit_code = await main(
             [
                 "--json",
-                '{"command": "step_in", "thread_id": 1, "target_id": 0}',
+                '{"command": "step-in", "thread_id": 1, "target_id": 0}',
             ]
         )
         self.assertEqual(exit_code, 0)
         mock_send.assert_called_once_with(
             StepInRequest(thread_id=1, target_id=0)
         )
+
+    @patch("cli.cli.send_command")
+    async def test_get_state_command(self, mock_send: Mock) -> None:
+        mock_send.return_value = 0
+        for cmd in ["get-state", "get_state", "getState"]:
+            mock_send.reset_mock()
+            exit_code = await main([cmd])
+            self.assertEqual(exit_code, 0)
+            mock_send.assert_called_once_with(GetStateRequest())
+
+    @patch("cli.cli.send_command")
+    async def test_json_option_get_state(self, mock_send: Mock) -> None:
+        mock_send.return_value = 0
+        exit_code = await main(["--json", '{"command": "get-state"}'])
+        self.assertEqual(exit_code, 0)
+        mock_send.assert_called_once_with(GetStateRequest())
+
+    @patch("cli.cli.send_command")
+    async def test_wait_for_event_command(self, mock_send: Mock) -> None:
+        mock_send.return_value = 0
+        for cmd in ["wait-for-event", "wait_for_event", "waitForEvent"]:
+            mock_send.reset_mock()
+            exit_code = await main([cmd, "--last-seen-seq", "10"])
+            self.assertEqual(exit_code, 0)
+            mock_send.assert_called_once_with(
+                WaitForEventRequest(last_seen_seq=10, timeout=10)
+            )
+
+    @patch("cli.cli.send_command")
+    async def test_json_option_wait_for_event(self, mock_send: Mock) -> None:
+        mock_send.return_value = 0
+        exit_code = await main(
+            ["--json", '{"command": "wait-for-event", "last_seen_seq": 10}']
+        )
+        self.assertEqual(exit_code, 0)
+        mock_send.assert_called_once_with(WaitForEventRequest(last_seen_seq=10))
 
 
 if __name__ == "__main__":

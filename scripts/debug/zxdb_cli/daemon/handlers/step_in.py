@@ -13,7 +13,7 @@ from shared.protocol.step_in import StepInRequest
 if TYPE_CHECKING:
     from daemon.daemon import Daemon
 
-COMMAND_NAME = "step_in"
+COMMAND_NAME = "step-in"
 
 
 async def handle(daemon: Daemon, req: StepInRequest) -> Response:

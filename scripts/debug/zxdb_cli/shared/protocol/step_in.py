@@ -11,7 +11,7 @@ from shared.protocol.base import BaseRequest
 class StepInRequest(BaseRequest):
     """Request to step into a function call."""
 
-    command: Literal["step_in"] = "step_in"
+    command: Literal["step-in"] = "step-in"
     thread_id: int
     single_thread: bool | None = None
     target_id: int | None = None

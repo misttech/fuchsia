@@ -69,7 +69,7 @@ fx debug cli --json '{"command": "wait-for-event", "last_seen_seq": 0, "timeout"
 > **Thread ID Key Casing Mapping Pitfall**:
 > Output events returned by `wait-for-event` use **camelCase** keys (e.g.
 > `"threadId": 1`). However, subsequent request commands (such as
-> `stackTrace`, `continue`, or `pause`) strictly require **snake_case**
+> `stack-trace`, `continue`, or `pause`) strictly require **snake_case**
 > parameters (e.g. `"thread_id": 1`).
 > Always map `"threadId"` to `"thread_id"` when programmatically invoking
 > requests.
@@ -108,10 +108,10 @@ breakpoint hit. Perform diagnostics:
     (`thread_id`) or across all threads in a process (`pid`):
     ```bash
     # Thread-level stack trace
-    fx debug cli --json '{"command": "stackTrace", "thread_id": 1}'
+    fx debug cli --json '{"command": "stack-trace", "thread_id": 1}'
 
     # Process-level stack trace (all threads in "pid")
-    fx debug cli --json '{"command": "stackTrace", "pid": 12345}'
+    fx debug cli --json '{"command": "stack-trace", "pid": 12345}'
     ```
     Example Thread Response:
     ```json
@@ -119,7 +119,7 @@ breakpoint hit. Perform diagnostics:
       "success": true,
       "body": {
         "thread_id": 1,
-        "stackFrames": [
+        "stack_frames": [
           {
             "frame_index": 0,
             "name": "my_test_function",
@@ -131,7 +131,7 @@ breakpoint hit. Perform diagnostics:
             "column": 1
           }
         ],
-        "totalFrames": 1
+        "total_frames": 1
       }
     }
     ```
@@ -140,11 +140,11 @@ breakpoint hit. Perform diagnostics:
     {
       "success": true,
       "body": {
-        "processId": 12345,
+        "process_id": 12345,
         "stacks": [
           {
             "thread_id": 1,
-            "stackFrames": [
+            "stack_frames": [
               {
                 "frame_index": 0,
                 "name": "my_test_function",
@@ -156,11 +156,11 @@ breakpoint hit. Perform diagnostics:
                 "column": 1
               }
             ],
-            "totalFrames": 1
+            "total_frames": 1
           },
           {
             "thread_id": 2,
-            "stackFrames": [
+            "stack_frames": [
               {
                 "frame_index": 0,
                 "name": "worker_thread_entry",
@@ -172,7 +172,7 @@ breakpoint hit. Perform diagnostics:
                 "column": 5
               }
             ],
-            "totalFrames": 1
+            "total_frames": 1
           }
         ]
       }
@@ -270,9 +270,12 @@ All commands are sent as serialized JSON payloads to `fx debug cli --json
 | **Set/Delete Breakpoint** | `{"command": "break", "file": "<workspace_root_path>", "line": <line_num>, "delete": <optional_bool>}` *(To delete, specify matching file and line)* |
 | **Attach Process** | `{"command": "attach", "filter": "<name_or_pid>"}` |
 | **Detach Process** | `{"command": "detach", "pid": <pid>}` or `{"command": "detach", "all": true}` |
-| **Get Stack Trace** | `{"command": "stackTrace", "thread_id": <thread_id>}` or `{"command": "stackTrace", "pid": <pid>, "raw": <optional_bool>}` *(CLI: `stackTrace -t <id>` or `stackTrace -p <pid>`)* |
+| **Get Stack Trace** | `{"command": "stack-trace", "thread_id": <thread_id>}` or `{"command": "stack-trace", "pid": <pid>, "raw": <optional_bool>}` *(CLI: `stack-trace -t <id>` or `stack-trace -p <pid>`)* |
 | **List Variables** | `{"command": "variables", "thread_id": <thread_id>, "frame_index": <frame_index>}` *(CLI: `variables -t <id> --frame-index <idx>`)* |
 | **Evaluate Expression** | `{"command": "evaluate", "thread_id": <thread_id>, "frame_index": <frame_index>, "expression": "<expr>", "start": <start>, "count": <count>}` *(CLI: `evaluate -t <id> --frame-index <idx> <expr>`)* |
+| **Step In** | `{"command": "step-in", "thread_id": <thread_id>}` *(CLI: `step-in <id>`)* |
+| **Step Over (Next)** | `{"command": "next", "thread_id": <thread_id>}` *(CLI: `next <id>`)* |
+| **Step Out (Finish)** | `{"command": "finish", "thread_id": <thread_id>}` *(CLI: `finish <id>`)* |
 | **Continue Thread** | `{"command": "continue", "thread_id": <thread_id>}` *(CLI: `continue <id>`)* |
 | **Pause Thread / Process** | `{"command": "pause", "thread_id": <thread_id>}` or `{"command": "pause", "pid": <pid>}` *(CLI: `pause -t <id>` or `pause -p <pid>`)* |
 | **Stop Session** | `{"command": "stop"}` |
@@ -284,7 +287,7 @@ All commands are sent as serialized JSON payloads to `fx debug cli --json
   optimize memory.
 
 ### Performance & Blocking
-* **Smart Blocking**: Commands like `pause`, `stackTrace`, and `wait-for-event`
+* **Smart Blocking**: Commands like `pause`, `stack-trace`, and `wait-for-event`
   are blocking operations and may take up to 10 seconds depending on the
   target's execution state. Unlike those commands, `evaluate` is non-blocking
   and fails immediately if the target thread is not already stopped.

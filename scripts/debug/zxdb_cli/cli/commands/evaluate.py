@@ -22,6 +22,7 @@ class Command(BaseCommand):
             ),
         )
         evaluate_parser.add_argument(
+            "-t",
             "--thread-id",
             type=int,
             required=True,

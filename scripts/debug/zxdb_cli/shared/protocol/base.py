@@ -6,7 +6,7 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict
 
-PROTOCOL_VERSION = 14
+PROTOCOL_VERSION = 15
 
 
 class BaseRequest(BaseModel):
@@ -66,7 +66,7 @@ class ProtocolRegistry:
 
 
 def serialize(obj: BaseModel) -> str:
-    return obj.model_dump_json(by_alias=True) + "\n"
+    return obj.model_dump_json() + "\n"
 
 
 def make_request(data: dict[str, Any]) -> BaseRequest:

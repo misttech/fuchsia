@@ -153,7 +153,7 @@ class TestPolymorphicParsing(unittest.TestCase):
 
     def test_parse_step_in(self) -> None:
         data = {
-            "command": "step_in",
+            "command": "step-in",
             "thread_id": 1,
             "single_thread": True,
             "target_id": 0,
@@ -168,7 +168,7 @@ class TestPolymorphicParsing(unittest.TestCase):
 
     def test_parse_step_in_invalid_granularity(self) -> None:
         data = {
-            "command": "step_in",
+            "command": "step-in",
             "thread_id": 1,
             "granularity": "invalid_granularity",
         }

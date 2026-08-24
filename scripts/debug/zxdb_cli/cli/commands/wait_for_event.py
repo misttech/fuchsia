@@ -8,10 +8,14 @@ from cli.commands.base import BaseCommand
 
 
 class Command(BaseCommand):
+    COMMAND_NAME = "wait-for-event"
+
     @staticmethod
     def register_cli(subparsers: Any) -> None:
         wait_parser = subparsers.add_parser(
-            "wait-for-event", help="Wait for event (default shows all events)"
+            "wait-for-event",
+            aliases=["wait_for_event", "waitForEvent"],
+            help="Wait for event (default shows all events)",
         )
         wait_parser.add_argument(
             "--last-seen-seq",

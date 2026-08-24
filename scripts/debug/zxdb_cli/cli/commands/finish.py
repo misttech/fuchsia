@@ -15,7 +15,7 @@ class Command(BaseCommand):
     def register_cli(subparsers: Any) -> None:
         parser = subparsers.add_parser(
             "finish",
-            aliases=["step-out", "step_out", "stepout"],
+            aliases=["step-out", "step_out", "stepOut", "stepout"],
             help="Finish execution of current function (step out)",
         )
         parser.add_argument("thread_id", type=int, help="Thread ID to finish")
