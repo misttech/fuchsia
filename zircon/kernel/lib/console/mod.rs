@@ -451,7 +451,10 @@ pub mod console {
         // each line into a stack buffer and printing non-empty entries.
         let history_next = HISTORY_NEXT.load(Ordering::Relaxed);
         let mut ptr = ptrprev(history_next);
-        let mut line_buf = [0u8; LINE_LEN];
+        let mut line_buf = match kalloc::Box::<[u8; LINE_LEN]>::try_new_zeroed() {
+            Ok(b) => unsafe { b.assume_init() },
+            Err(_) => return Status::NO_MEMORY.into_raw(),
+        };
         for _ in 0..HISTORY_LEN {
             let len = load_history_line(ptr, &mut line_buf);
             if len > 0
@@ -482,7 +485,11 @@ pub mod console {
 
         let history_next = HISTORY_NEXT.load(Ordering::Relaxed);
         let last = ptrprev(history_next);
-        let mut prev_buf = [0u8; LINE_LEN];
+
+        let mut prev_buf = match kalloc::Box::<[u8; LINE_LEN]>::try_new_zeroed() {
+            Ok(b) => unsafe { b.assume_init() },
+            Err(_) => return, // if OOM, just give up saving history
+        };
         let prev_len = load_history_line(last, &mut prev_buf);
         if &prev_buf[..prev_len] == line.as_bytes() {
             // Don't store duplicate commands in history.
@@ -819,15 +826,26 @@ pub mod console {
         let mut exit = false;
         let mut ret = zx_status::Status::OK;
 
+        // Allocate large buffers on the heap to avoid kernel stack overflows.
         const MAX_NUM_ARGS: usize = 16;
-        let mut args = [CmdArgs::default(); MAX_NUM_ARGS];
+        let mut args = match kalloc::Box::<[CmdArgs; MAX_NUM_ARGS]>::try_new_zeroed() {
+            Ok(b) => unsafe { b.assume_init() },
+            Err(_) => return zx_status::Status::NO_MEMORY,
+        };
 
         const OUTBUFLEN: usize = 1024;
-        let mut outbuf = [0u8; OUTBUFLEN];
+        let mut outbuf = match kalloc::Box::<[u8; OUTBUFLEN]>::try_new_zeroed() {
+            Ok(b) => unsafe { b.assume_init() },
+            Err(_) => return zx_status::Status::NO_MEMORY,
+        };
 
         let mut continue_offset: Option<usize> = None;
         let mut current_len = 0;
-        let mut line_buf = [0u8; LINE_LEN];
+
+        let mut line_buf = match kalloc::Box::<[u8; LINE_LEN]>::try_new_zeroed() {
+            Ok(b) => unsafe { b.assume_init() },
+            Err(_) => return zx_status::Status::NO_MEMORY,
+        };
 
         while !exit {
             let buffer_slice: &[u8] = if let Some(offset) = continue_offset {
@@ -854,7 +872,7 @@ pub mod console {
 
             let mut continue_slice: Option<&[u8]> = None;
             let argc_res =
-                tokenize_command(buffer_slice, &mut continue_slice, &mut outbuf, &mut args);
+                tokenize_command(buffer_slice, &mut continue_slice, &mut *outbuf, &mut *args);
 
             if let Some(slice) = continue_slice {
                 let offset = slice.as_ptr() as usize - line_buf.as_ptr() as usize;
@@ -1132,18 +1150,20 @@ pub mod console {
             && let Ok(c_str) = core::ffi::CStr::from_bytes_until_nul(script_bytes)
         {
             let bytes = c_str.to_bytes();
-            let mut buffer = [0_u8; LINE_LEN];
-            let len = core::cmp::min(bytes.len(), LINE_LEN - 1);
-            buffer[..len].copy_from_slice(&bytes[..len]);
-            for b in &mut buffer[..len] {
-                if *b == b'+' {
-                    *b = b' ';
+            if let Ok(b) = kalloc::Box::<[u8; LINE_LEN]>::try_new_zeroed() {
+                let mut buffer = unsafe { b.assume_init() };
+                let len = core::cmp::min(bytes.len(), LINE_LEN - 1);
+                buffer[..len].copy_from_slice(&bytes[..len]);
+                for b in &mut buffer[..len] {
+                    if *b == b'+' {
+                        *b = b' ';
+                    }
                 }
-            }
-            buffer[len] = 0;
+                buffer[len] = 0;
 
-            if let Ok(script_str) = core::str::from_utf8(&buffer[..len]) {
-                console_run_script(script_str);
+                if let Ok(script_str) = core::str::from_utf8(&buffer[..len]) {
+                    console_run_script(script_str);
+                }
             }
         }
 

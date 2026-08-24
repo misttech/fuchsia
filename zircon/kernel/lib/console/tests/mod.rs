@@ -481,13 +481,14 @@ mod console_tests {
     /// Test tokenize_command for plain tokens, quotes, variables, and semicolons
     #[test]
     fn tokenize_command_test() {
-        let mut args = [CmdArgs::default(); 16];
-        let mut buf = [0u8; 1024];
+        let mut args =
+            unsafe { kalloc::Box::<[CmdArgs; 16]>::try_new_zeroed().unwrap().assume_init() };
+        let mut buf = unsafe { kalloc::Box::<[u8; 1024]>::try_new_zeroed().unwrap().assume_init() };
         let mut continue_slice: Option<&[u8]> = None;
 
         // Plain whitespace tokenization
         let input = b"cmd foo bar 123";
-        let argc = tokenize_command(input, &mut continue_slice, &mut buf, &mut args).unwrap();
+        let argc = tokenize_command(input, &mut continue_slice, &mut *buf, &mut *args).unwrap();
         expect_eq!(argc, 4);
         expect_true!(args[0].as_str() == "cmd");
         expect_true!(args[1].as_str() == "foo");
@@ -498,7 +499,7 @@ mod console_tests {
 
         // Quoted string tokens
         let input = b"cmd \"hello world\" arg3";
-        let argc = tokenize_command(input, &mut continue_slice, &mut buf, &mut args).unwrap();
+        let argc = tokenize_command(input, &mut continue_slice, &mut *buf, &mut *args).unwrap();
         expect_eq!(argc, 3);
         expect_true!(args[0].as_str() == "cmd");
         expect_true!(args[1].as_str() == "hello world");
@@ -506,18 +507,18 @@ mod console_tests {
 
         // Unterminated quote returns error
         let input = b"cmd \"unterminated quote";
-        let res = tokenize_command(input, &mut continue_slice, &mut buf, &mut args);
+        let res = tokenize_command(input, &mut continue_slice, &mut *buf, &mut *args);
         expect_true!(res.is_err());
 
         // Variable expansion to "0"
         let input = b"cmd $var_name";
-        let argc = tokenize_command(input, &mut continue_slice, &mut buf, &mut args).unwrap();
+        let argc = tokenize_command(input, &mut continue_slice, &mut *buf, &mut *args).unwrap();
         expect_eq!(argc, 2);
         expect_true!(args[1].as_str() == "0");
 
         // Semicolon separation
         let input = b"first_cmd arg1; second_cmd arg2";
-        let argc = tokenize_command(input, &mut continue_slice, &mut buf, &mut args).unwrap();
+        let argc = tokenize_command(input, &mut continue_slice, &mut *buf, &mut *args).unwrap();
         expect_eq!(argc, 2);
         expect_true!(args[0].as_str() == "first_cmd");
         expect_true!(args[1].as_str() == "arg1");
