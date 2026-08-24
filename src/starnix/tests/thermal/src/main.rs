@@ -4,13 +4,17 @@
 
 use component_events::events::{EventStream, ExitStatus, Stopped};
 use component_events::matcher::EventMatcher;
+use fidl_fuchsia_hardware_cpu_ctrl as fcpuctrl;
 use fidl_fuchsia_power_battery as fbattery;
+use fidl_fuchsia_power_cpu as fcpu;
+use fidl_fuchsia_thermal as fthermal;
 use fuchsia_component_test::{
     Capability, ChildOptions, LocalComponentHandles, RealmBuilder, RealmBuilderParams, Ref, Route,
 };
 use log::info;
+
 mod fake_battery;
-use {fidl_fuchsia_power_cpu as fcpu, fidl_fuchsia_thermal as fthermal};
+mod fake_cpu_ctrl;
 
 #[fuchsia::main]
 async fn main() {
@@ -82,6 +86,27 @@ async fn main() {
             Route::new()
                 .capability(Capability::service::<fbattery::ChargerServiceMarker>())
                 .from(&battery_charger_mock)
+                .to(Ref::child("kernel")),
+        )
+        .await
+        .unwrap();
+
+    let cpu_ctrl_mock = builder
+        .add_local_child(
+            "cpu_ctrl",
+            move |handles: LocalComponentHandles| {
+                Box::pin(fake_cpu_ctrl::mock_cpu_ctrl_service(handles))
+            },
+            ChildOptions::new(),
+        )
+        .await
+        .unwrap();
+
+    builder
+        .add_route(
+            Route::new()
+                .capability(Capability::service::<fcpuctrl::ServiceMarker>())
+                .from(&cpu_ctrl_mock)
                 .to(Ref::child("kernel")),
         )
         .await

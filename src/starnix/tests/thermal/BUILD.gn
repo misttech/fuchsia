@@ -18,9 +18,11 @@ rustc_binary("bin") {
   output_name = "starnix_thermal_module_test"
 
   deps = [
+    "//sdk/fidl/fuchsia.hardware.cpu.ctrl:fuchsia.hardware.cpu.ctrl_rust",
     "//sdk/fidl/fuchsia.power.battery:fuchsia.power.battery_rust",
     "//sdk/fidl/fuchsia.power.cpu:fuchsia.power.cpu_rust",
     "//sdk/fidl/fuchsia.thermal:fuchsia.thermal_rust",
+    "//sdk/rust/zx",
     "//src/lib/fuchsia",
     "//src/lib/fuchsia-component",
     "//src/lib/fuchsia-component-test",
@@ -32,6 +34,7 @@ rustc_binary("bin") {
   ]
   sources = [
     "src/fake_battery.rs",
+    "src/fake_cpu_ctrl.rs",
     "src/main.rs",
   ]
 }

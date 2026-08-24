@@ -123,6 +123,60 @@ fn check_cpufreq() {
     check_cpufreq_dir(3, 1);
     check_cpufreq_dir(4, 1);
     check_cpufreq_dir(5, 1);
+
+    check_cpufreq_policy_dir(0, 0, "0 1");
+    check_cpufreq_policy_dir(2, 1, "2 3 4 5");
+}
+
+fn check_cpufreq_policy_dir(policy_id: u64, cluster_id: u64, expected_related_cpus: &str) {
+    assert!(std::fs::exists(format!("/sys/devices/system/cpu/cpufreq/policy{policy_id}")).unwrap());
+
+    let max_frequency_str = MAX_FREQUENCIES_HZ[cluster_id as usize];
+    assert_eq!(
+        &format!("{max_frequency_str}\n"),
+        str::from_utf8(
+            &std::fs::read(format!(
+                "/sys/devices/system/cpu/cpufreq/policy{policy_id}/cpuinfo_max_freq"
+            ))
+            .unwrap()
+        )
+        .unwrap()
+    );
+
+    let frequencies_str = FREQUENCIES_HZ[cluster_id as usize];
+    assert_eq!(
+        &format!("{frequencies_str}\n"),
+        str::from_utf8(
+            &std::fs::read(format!(
+                "/sys/devices/system/cpu/cpufreq/policy{policy_id}/scaling_available_frequencies"
+            ))
+            .unwrap()
+        )
+        .unwrap()
+    );
+
+    assert_eq!(
+        &format!("{expected_related_cpus}\n"),
+        str::from_utf8(
+            &std::fs::read(format!(
+                "/sys/devices/system/cpu/cpufreq/policy{policy_id}/related_cpus"
+            ))
+            .unwrap()
+        )
+        .unwrap()
+    );
+
+    let cur_frequency_str = MAX_FREQUENCIES_HZ[cluster_id as usize];
+    assert_eq!(
+        &format!("{cur_frequency_str}\n"),
+        str::from_utf8(
+            &std::fs::read(format!(
+                "/sys/devices/system/cpu/cpufreq/policy{policy_id}/scaling_cur_freq"
+            ))
+            .unwrap()
+        )
+        .unwrap()
+    );
 }
 
 fn check_cpufreq_dir(core_id: u64, cluster_id: u64) {
@@ -147,6 +201,17 @@ fn check_cpufreq_dir(core_id: u64, cluster_id: u64) {
         str::from_utf8(
             &std::fs::read(format!(
                 "/sys/devices/system/cpu/cpu{core_id}/cpufreq/scaling_available_frequencies"
+            ))
+            .unwrap()
+        )
+        .unwrap()
+    );
+
+    assert_eq!(
+        &format!("{max_frequency_str}\n"),
+        str::from_utf8(
+            &std::fs::read(format!(
+                "/sys/devices/system/cpu/cpu{core_id}/cpufreq/scaling_cur_freq"
             ))
             .unwrap()
         )
