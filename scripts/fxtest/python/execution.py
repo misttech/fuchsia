@@ -7,6 +7,7 @@ import math
 import os
 import re
 import tempfile
+import typing
 
 _MOBLY_CLASS_HEADER_REGEX = re.compile(
     r"^==========> (?P<class_name>.*) <==========$"
@@ -43,6 +44,10 @@ _DEVICE_PROBE_TIMEOUT_SECONDS: float = 30.0
 
 class TestExecutionError(Exception):
     """Base error type for test failures."""
+
+    def __init__(self, message: str, command_output: typing.Any = None):
+        super().__init__(message)
+        self.command_output = command_output
 
 
 class TestCouldNotRun(TestExecutionError):
@@ -714,9 +719,12 @@ class TestExecution:
                     recorder.emit_verbatim_message("<No command output>")
 
             if output.was_timeout:
-                raise TestTimeout(f"Test exceeded runtime of {timeout} seconds")
+                raise TestTimeout(
+                    f"Test exceeded runtime of {timeout} seconds",
+                    command_output=output,
+                )
             else:
-                raise TestFailed("Test reported failure")
+                raise TestFailed("Test reported failure", command_output=output)
         return output
 
     def _get_component_url(self) -> str | None:

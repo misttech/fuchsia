@@ -492,6 +492,19 @@ class AsyncMain:
 
         self._package_server_task: asyncio.Task[typing.Any] | None = None
         self._package_server_event: asyncio.Event | None = None
+        self._summary_val = summary.RunSummary()
+        self._agent_log_dir: str | None = None
+        if flags.agent_output:
+            import uuid
+
+            self._agent_log_dir = (
+                f"/tmp/fx_agent_test_{uuid.uuid4().hex[:8]}/logs"
+            )
+            os.makedirs(self._agent_log_dir, exist_ok=True)
+            self._summary.summary_path = (
+                os.path.dirname(self._agent_log_dir) + "/summary.json"
+            )
+            self._flags.summary_json = self._summary.summary_path
 
     async def _teardown_resources(self) -> None:
         """Tear down all ephemeral resources (emulator, package server) created by this run."""
@@ -532,6 +545,8 @@ class AsyncMain:
                 self._summary.write_to_file(self._flags.summary_json)
             if self._flags.summary_to_stdout:
                 print(self._summary.to_json())
+            elif self._flags.agent_output:
+                print(self._summary.to_markdown())
 
     async def main(self) -> int:
         """Execute the fx test command through this wrapper.
@@ -571,6 +586,8 @@ class AsyncMain:
                     )
                 )
             )
+        elif flags.agent_output and not self._replay_mode:
+            pass  # Progress reporter suppressed for agents to keep output clean
 
         # Initialize event recording.
         if not self._replay_mode:
@@ -597,14 +614,17 @@ class AsyncMain:
                 print(f"Failed to load real flags")
             return 1
 
-        recorder.emit_verbatim_message(
-            statusinfo.highlight("Welcome to fx test 🧪\n", style=flags.style)
-        )
+        if not do_output_to_stdout:
+            recorder.emit_verbatim_message(
+                statusinfo.highlight(
+                    "Welcome to fx test 🧪\n", style=flags.style
+                )
+            )
 
-        recorder.emit_instruction_message(
-            "Output too verbose? 🤔  Add `--quiet` to `~/.fxtestrc`!\n"
-            "See https://fuchsia.dev/fuchsia-src/reference/testing/fx-test for more tips!"
-        )
+            recorder.emit_instruction_message(
+                "Output too verbose? 🤔  Add `--quiet` to `~/.fxtestrc`!\n"
+                "See https://fuchsia.dev/fuchsia-src/reference/testing/fx-test for more tips!"
+            )
 
         # Initialize status printing at this point, if desired.
         if flags.status and not do_output_to_stdout:
@@ -1413,6 +1433,16 @@ class AsyncMain:
                 abort_signal=self._end_execution_request_event,
             )
 
+            if build_log_path and build_output:
+                if build_log_path:
+                    os.makedirs(os.path.dirname(build_log_path), exist_ok=True)
+                with open(build_log_path, "w") as f:
+                    stdout = getattr(build_output, "stdout", "")
+                    stderr = getattr(build_output, "stderr", "")
+                    f.write(stdout if stdout else "")
+                    if stderr:
+                        f.write("\n" + stderr)
+
             if build_output is None or build_output.return_code != 0:
                 error = _emit_build_failure(recorder, build_output)
                 self._summary.build = summary.BuildResult(
@@ -1957,19 +1987,20 @@ class AsyncMain:
 
                         # Wait for the command completion and any other signal that
                         # means we should stop running the test.
+                        run_task = asyncio.create_task(
+                            to_run.exec.run(
+                                recorder,
+                                flags,
+                                test_suite_id,
+                                timeout=flags.timeout,
+                                abort_signal=abort_all_tests_event,
+                            )
+                        )
+                        abort_task = asyncio.create_task(
+                            to_run.abort_group.wait()
+                        )
                         done, pending = await asyncio.wait(
-                            [
-                                asyncio.create_task(
-                                    to_run.exec.run(
-                                        recorder,
-                                        flags,
-                                        test_suite_id,
-                                        timeout=flags.timeout,
-                                        abort_signal=abort_all_tests_event,
-                                    )
-                                ),
-                                asyncio.create_task(to_run.abort_group.wait()),
-                            ],
+                            [run_task, abort_task],
                             return_when=asyncio.FIRST_COMPLETED,
                         )
                         for r in pending:
@@ -1981,9 +2012,19 @@ class AsyncMain:
                             # Propagate cancellations
                             await asyncio.wait(pending)
 
+                        command_output = None
                         for r in done:
                             # Re-throw exceptions.
-                            r.result()
+                            exc = r.exception()
+                            if exc:
+                                if hasattr(exc, "command_output"):
+                                    command_output = getattr(
+                                        exc, "command_output", None
+                                    )
+                                raise exc
+                            res = r.result()
+                            if r is run_task:
+                                command_output = res
 
                     if abort_all_tests_event.is_set():
                         status = event.TestSuiteStatus.ABORTED
@@ -2032,11 +2073,42 @@ class AsyncMain:
                         if not to_run.exec._test.needs_device()
                         else "device"
                     )
+                    # CommandOutput might not exist if test failed to start or was skipped
+                    exit_code = (
+                        command_output.return_code if command_output else None
+                    )
+
+                    stdout_log_path = None
+                    stderr_log_path = None
+                    if self._agent_log_dir and command_output:
+                        import re
+
+                        safe_name = re.sub(
+                            r"[^A-Za-z0-9_\.]", "_", to_run.exec.name()
+                        )
+                        stdout_log_path = (
+                            f"{self._agent_log_dir}/{safe_name}.stdout.log"
+                        )
+                        stderr_log_path = (
+                            f"{self._agent_log_dir}/{safe_name}.stderr.log"
+                        )
+                        if self._agent_log_dir:
+                            os.makedirs(self._agent_log_dir, exist_ok=True)
+                        with open(stdout_log_path, "w") as f:
+                            f.write(getattr(command_output, "stdout", ""))
+                        with open(stderr_log_path, "w") as f:
+                            f.write(getattr(command_output, "stderr", ""))
+
                     self._summary.add_test(
                         summary.TestResult(
                             name=to_run.exec.name(),
                             type=test_type,
                             outcome=status.value,
+                            exit_code=exit_code,
+                            log_path=None,
+                            stdout_log_path=stdout_log_path,
+                            stderr_log_path=stderr_log_path,
+                            duration_seconds=None,
                             message=message,
                         )
                     )

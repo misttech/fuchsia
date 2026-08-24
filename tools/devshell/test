@@ -14,10 +14,13 @@
 ##     --test-filter                     Runs specific test cases in v2 suite. Can be specified multiple
 ##                                       times to pass in multiple patterns.
 ##                                       example: --test-filter glob1 --test-filter glob2
+##     --agent-output                    Force machine-readable JSON output and log isolation for AI agents.
+##     --no-agent-output                 Disable agent output and run in standard human-readable mode (default, unless in an agent environment).
 
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)"/lib/vars.sh || exit $?
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)"/lib/dart_utils.sh || exit $?
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)"/lib/host_symbolizer.sh || exit $?
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)"/lib/is_invoked_by_agent.sh || exit $?
 fx-config-read
 
 # Set an envrionment variable so that child processes can know they were invoked (directly or
@@ -28,6 +31,8 @@ export FUCHSIA_FX_TEST_RUN=1
 info_only=false
 has_e2e=false
 host_tests_only=false
+has_no_agent_output=false
+
 for arg in "$@"; do
   if [[ "$arg" == "--help" || "$arg" == "-h" || "$arg" == "--info" || "$arg" == "--dry" ]]; then
     info_only=true
@@ -35,6 +40,8 @@ for arg in "$@"; do
     has_e2e=true
   elif [[ "$arg" == "--host" ]]; then
     host_tests_only=true
+  elif [[ "$arg" == "--no-agent-output" ]]; then
+    has_no_agent_output=true
   fi
 
   if [[ "$arg" == "--" ]]; then
@@ -42,10 +49,16 @@ for arg in "$@"; do
   fi
 done
 
+AGENT_ARGS=()
+if is_invoked_by_agent && [[ "$has_no_agent_output" == false ]]; then
+  echo "Agent invocation detected, applying --agent-output... (Pass --no-agent-output for human output)." >&2
+  AGENT_ARGS+=("--agent-output")
+fi
+
 args=()
 
 fx-command-run host-tool --print symbolizer > /dev/null
 if [[ ! $host_tests_only ]]; then
   fx-command-run host-tool --print ffx > /dev/null
 fi
-fx-command-run host-tool test "${args[@]}" "$@"
+fx-command-run host-tool test "${args[@]}" "${AGENT_ARGS[@]}" "$@"

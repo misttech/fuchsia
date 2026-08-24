@@ -14,13 +14,11 @@ from agents import data  # type: ignore[attr-defined]
 def get_agent_env_vars() -> typing.List[str]:
     """Read the list of agent environment variable names from agents.txt."""
     with files(data).joinpath("agents.txt").open("r", encoding="utf-8") as f:
-        content = f.read()
-
-    return [
-        line.strip()
-        for line in content.splitlines()
-        if line.strip() and not line.strip().startswith("#")
-    ]
+        return [
+            line.strip()
+            for line in f
+            if line.strip() and not line.strip().startswith("#")
+        ]
 
 
 def is_invoked_by_agent(env: typing.Mapping[str, str] | None = None) -> bool:

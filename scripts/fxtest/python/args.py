@@ -137,6 +137,7 @@ class Flags:
     replay_speed: float
     summary_json: str | None
     summary_to_stdout: bool
+    agent_output: bool
 
     def validate(self) -> None:
         """Validate incoming flags, raising an exception on failure.
@@ -144,6 +145,10 @@ class Flags:
         Raises:
             FlagError: If the flags are invalid.
         """
+        if self.agent_output:
+            self.quiet = True
+            self.style = False
+            self.status = False
         if self.agent_debugging_mode:
             if self.break_on_failure is False:
                 raise FlagError(
@@ -842,6 +847,12 @@ def parse_args(
         action=argparse.BooleanOptionalAction,
         default=False,
         help="If set, print the structured JSON summary to stdout on completion.",
+    )
+    output.add_argument(
+        "--agent-output",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="Format output for AI agents with isolated logs and JSON summary output.",
     )
 
     if defaults is not None:

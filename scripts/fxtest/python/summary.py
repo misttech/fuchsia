@@ -178,6 +178,71 @@ class RunSummary:
         else:
             self.total_failed += 1
 
+    def to_markdown(self) -> str:
+        """Returns a Markdown string representation of the test suite."""
+
+        # Determine overall outcome, factoring in build failures
+        if self.build and getattr(self.build, "status", "PASSED") != "PASSED":
+            self.outcome = "BUILD_FAILED"
+
+        lines = [f"# Test Run: {self.outcome}"]
+
+        # Build Status
+        if self.build:
+            lines.append(f"- **Build**: {self.build.status}")
+            if getattr(self.build, "exit_code", None) is not None:
+                lines.append(f"  - exit code: {self.build.exit_code}")
+            if getattr(self.build, "log_path", None) is not None:
+                lines.append(f"  - logs: `{self.build.log_path}`")
+            if getattr(self.build, "error", None) is not None:
+                lines.append(f"  - error: {self.build.error}")
+
+        # Add basic stats
+        lines.append(
+            f"- **Results**: {self.total_passed} Passed | {self.total_failed} Failed | {self.total_skipped} Skipped"
+        )
+
+        if self.summary_path:
+            lines.append(f"- **Summary JSON**: `{self.summary_path}`")
+
+        lines.append("")
+
+        # Test case details
+        if self.tests:
+            lines.append("## Tests")
+            for t in self.tests:
+                duration_str = (
+                    f"{t.duration_seconds:.2f}s"
+                    if t.duration_seconds is not None
+                    else "0.00s"
+                )
+                lines.append(f"- [{t.outcome}] `{t.name}` ({duration_str})")
+
+                if t.stdout_log_path:
+                    lines.append(f"  - stdout: `{t.stdout_log_path}`")
+                elif t.log_path:
+                    # Fallback to general log_path if stdout is not set
+                    lines.append(f"  - stdout: `{t.log_path}`")
+
+                if t.stderr_log_path:
+                    lines.append(f"  - stderr: `{t.stderr_log_path}`")
+                if t.message:
+                    lines.append(f"  - Message: {t.message}")
+
+        if self.suggestions:
+            lines.append("")
+            lines.append("## Suggestions")
+            for s in self.suggestions:
+                if s.similarity is not None:
+                    sim_pct = int(s.similarity * 100)
+                    lines.append(f"- **{s.name}** ({sim_pct}% match)")
+                else:
+                    lines.append(f"- **{s.name}**")
+                if s.add_test_command:
+                    lines.append(f"  - Run: `{s.add_test_command}`")
+
+        return "\n".join(lines)
+
     def finalize(self, error: str | None = None) -> None:
         """Compute the final overall outcome if not already explicitly set."""
         if error is not None:
