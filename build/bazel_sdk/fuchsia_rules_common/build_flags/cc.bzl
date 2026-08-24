@@ -14,10 +14,13 @@ load(
     "ACTION_KIND_CPP_COMPILE",
     "ACTION_KIND_CPP_LINK",
     "ACTION_KIND_C_COMPILE",
-    "BuildFlagsListInfo",
     "CC_ACTION_KINDS",
     "compute_final_build_flags",
     _BUILD_FLAGS_ATTRS_KWARGS = "BUILD_FLAGS_ATTRS_KWARGS",
+)
+load(
+    ":providers.bzl",
+    "BuildFlagsListInfo",
 )
 
 # Re-export for callers' convenience.

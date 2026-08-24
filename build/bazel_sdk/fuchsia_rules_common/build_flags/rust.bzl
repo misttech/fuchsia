@@ -7,11 +7,10 @@ load("@rules_cc//cc/common:cc_info.bzl", "CcInfo")
 load(
     ":build_flags.bzl",
     "ACTION_KIND_RUST_COMPILE",
-    "BuildFlagsInfo",
-    "BuildFlagsListInfo",
     "RUST_ACTION_KINDS",
     "compute_final_build_flags",
 )
+load(":providers.bzl", "BuildFlagsInfo", "BuildFlagsListInfo")
 
 # Common attributes for all Rust rules that support build_flags().
 # Two important points:
