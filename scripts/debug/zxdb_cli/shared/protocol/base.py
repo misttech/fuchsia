@@ -6,7 +6,7 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict
 
-PROTOCOL_VERSION = 13
+PROTOCOL_VERSION = 14
 
 
 class BaseRequest(BaseModel):

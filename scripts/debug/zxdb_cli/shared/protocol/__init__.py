@@ -30,6 +30,7 @@ from shared.protocol.next_request import NextRequest
 from shared.protocol.pause import PauseRequest
 from shared.protocol.stack_trace import (
     ProcessStackTraceResponse,
+    StackFrame,
     StackTraceRequest,
     ThreadStackTraceResponse,
 )
@@ -68,6 +69,7 @@ __all__ = [
     "GetStateResponse",
     "ProcessStackTraceResponse",
     "ThreadStackTraceResponse",
+    "StackFrame",
     "PROTOCOL_VERSION",
     "serialize",
     "make_request",

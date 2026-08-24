@@ -651,6 +651,7 @@ class TestCLIIntegration(unittest.IsolatedAsyncioTestCase):
             self.assertIsNotNone(body)
             frames = body.get("stackFrames")
             self.assertEqual(len(frames), 1)
+            self.assertEqual(frames[0]["frame_index"], 0)
             self.assertEqual(frames[0]["name"], "main")
             self.assertEqual(frames[0]["source"]["name"], "main.cc")
 

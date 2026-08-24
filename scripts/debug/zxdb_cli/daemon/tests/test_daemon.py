@@ -1097,6 +1097,7 @@ class TestCommandHandlerRegistry(unittest.IsolatedAsyncioTestCase):
             frames = resp.body.stack_frames
             self.assertEqual(len(frames), 1)
             self.assertIn("0…1 «Rust panic»", frames[0].name)
+            self.assertEqual(frames[0].frame_index, 0)
 
             # Raw flag returns uncollapsing frames
             resp_raw = await daemon.registry.handle(
@@ -1105,6 +1106,8 @@ class TestCommandHandlerRegistry(unittest.IsolatedAsyncioTestCase):
             self.assertTrue(resp_raw.success)
             assert isinstance(resp_raw.body, ThreadStackTraceResponse)
             self.assertEqual(len(resp_raw.body.stack_frames), 2)
+            self.assertEqual(resp_raw.body.stack_frames[0].frame_index, 0)
+            self.assertEqual(resp_raw.body.stack_frames[1].frame_index, 1)
 
     @patch("daemon.daemon.ZxdbDapClient")
     async def test_handle_stack_trace_subtle_non_subtle_subtle(
@@ -1172,8 +1175,11 @@ class TestCommandHandlerRegistry(unittest.IsolatedAsyncioTestCase):
             frames = resp.body.stack_frames
             self.assertEqual(len(frames), 3)
             self.assertIn("0…1 «Rust panic»", frames[0].name)
+            self.assertEqual(frames[0].frame_index, 0)
             self.assertEqual(frames[1].name, "f3")
+            self.assertEqual(frames[1].frame_index, 2)
             self.assertIn("3…4 «C++ stdlib»", frames[2].name)
+            self.assertEqual(frames[2].frame_index, 3)
 
     @patch("daemon.daemon.ZxdbDapClient")
     async def test_handle_stack_trace_non_subtle_subtle_non_subtle(
@@ -1241,9 +1247,13 @@ class TestCommandHandlerRegistry(unittest.IsolatedAsyncioTestCase):
             frames = resp.body.stack_frames
             self.assertEqual(len(frames), 4)
             self.assertEqual(frames[0].name, "f1")
+            self.assertEqual(frames[0].frame_index, 0)
             self.assertEqual(frames[1].name, "f2")
+            self.assertEqual(frames[1].frame_index, 1)
             self.assertIn("2…3 «Rust panic»", frames[2].name)
+            self.assertEqual(frames[2].frame_index, 2)
             self.assertEqual(frames[3].name, "f5")
+            self.assertEqual(frames[3].frame_index, 4)
 
     @patch("daemon.daemon.ZxdbDapClient")
     async def test_handle_stack_trace_exception(
@@ -1339,9 +1349,11 @@ class TestCommandHandlerRegistry(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(threads[0].thread_id, 101)
         self.assertEqual(len(threads[0].stack_frames), 1)
         self.assertIn("0…1 «Rust panic»", threads[0].stack_frames[0].name)
+        self.assertEqual(threads[0].stack_frames[0].frame_index, 0)
         self.assertEqual(threads[1].thread_id, 102)
         self.assertEqual(len(threads[1].stack_frames), 1)
         self.assertEqual(threads[1].stack_frames[0].name, "worker_func")
+        self.assertEqual(threads[1].stack_frames[0].frame_index, 0)
 
     @patch("daemon.daemon.ZxdbDapClient")
     async def test_handle_stack_trace_pid_not_found(

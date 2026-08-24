@@ -6,11 +6,11 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from pydap.dap_types import StackFrame
 from pydap.models import StackTraceArguments
 from shared.protocol import Response
 from shared.protocol.stack_trace import (
     ProcessStackTraceResponse,
+    StackFrame,
     StackTraceRequest,
     ThreadStackTraceResponse,
 )
@@ -48,7 +48,10 @@ def collapse_elided_frames(
             else:
                 desc = group_origin or "subtle frames"
                 collapsed_frame = frame.model_copy(
-                    update={"name": f"{start_i}…{end_i} «{desc}» (-r expands)"}
+                    update={
+                        "frame_index": start_i,
+                        "name": f"{start_i}…{end_i} «{desc}» (-r expands)",
+                    }
                 )
                 result.append(collapsed_frame)
         else:
@@ -71,12 +74,23 @@ async def _fetch_thread_stack_trace(
     frames: list[StackFrame] = []
     total_frames = 0
     if stack_resp.body:
-        frames = list(stack_resp.body.stack_frames)
+        raw_frames = stack_resp.body.stack_frames
         total_frames = (
             stack_resp.body.total_frames
             if stack_resp.body.total_frames is not None
-            else len(frames)
+            else len(raw_frames)
         )
+        for i, f in enumerate(raw_frames):
+            frames.append(
+                StackFrame(
+                    frame_index=i,
+                    name=f.name,
+                    line=f.line,
+                    column=f.column,
+                    source=f.source,
+                    presentation_hint=f.presentation_hint,
+                )
+            )
     if not raw:
         frames = collapse_elided_frames(frames)
     return ThreadStackTraceResponse(

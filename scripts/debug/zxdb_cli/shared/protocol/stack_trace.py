@@ -5,8 +5,19 @@
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
-from pydap.dap_types import StackFrame
+from pydap.dap_types import Source
 from shared.protocol.base import BaseRequest
+
+
+class StackFrame(BaseModel):
+    """A stack frame representation exposing frame_index instead of DAP frameId."""
+
+    frame_index: int
+    name: str
+    line: int
+    column: int
+    source: Source | None = None
+    presentation_hint: str | None = None
 
 
 class ThreadStackTraceResponse(BaseModel):
@@ -15,8 +26,6 @@ class ThreadStackTraceResponse(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
     thread_id: int
-    # NOTE: It is a deliberate choice to depend on the DAP StackFrame definition here
-    # to avoid duplicating identical definitions, despite coupling the protocols.
     stack_frames: list[StackFrame] = Field(alias="stackFrames")
     total_frames: int = Field(alias="totalFrames")
 
