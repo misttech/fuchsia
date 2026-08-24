@@ -5,13 +5,16 @@
 from typing import Any
 
 from cli.commands.base import BaseCommand
+from shared.protocol.continue_request import COMMAND_NAME
 
 
 class Command(BaseCommand):
+    COMMAND_NAME = COMMAND_NAME
+
     @staticmethod
     def register_cli(subparsers: Any) -> None:
         continue_parser = subparsers.add_parser(
-            "continue", help="Resume execution"
+            Command.COMMAND_NAME, help="Resume execution"
         )
         continue_parser.add_argument(
             "thread_id", type=int, help="Thread ID to resume"

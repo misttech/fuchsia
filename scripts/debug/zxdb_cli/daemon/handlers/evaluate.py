@@ -8,12 +8,16 @@ from typing import TYPE_CHECKING
 
 from pydap.models import EvaluateArguments, StackTraceArguments
 from shared.protocol.base import Response
-from shared.protocol.evaluate import EvaluateRequest, EvaluateResponse
+from shared.protocol.evaluate import (
+    COMMAND_NAME,
+    EvaluateRequest,
+    EvaluateResponse,
+)
+
+__all__ = ["COMMAND_NAME", "handle"]
 
 if TYPE_CHECKING:
     from daemon.daemon import Daemon
-
-COMMAND_NAME = "evaluate"
 
 
 async def handle(daemon: Daemon, req: EvaluateRequest) -> Response:

@@ -6,13 +6,16 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from shared.protocol import GetStateResponse, Response, ThreadInfo
-from shared.protocol.get_state import GetStateRequest
+from shared.protocol.base import GetStateResponse, Response, ThreadInfo
+from shared.protocol.get_state import (
+    COMMAND_NAME,
+    GetStateRequest,
+)
+
+__all__ = ["COMMAND_NAME", "handle"]
 
 if TYPE_CHECKING:
     from daemon.daemon import Daemon
-
-COMMAND_NAME = "get-state"
 
 
 async def handle(daemon: Daemon, _req: GetStateRequest) -> Response:

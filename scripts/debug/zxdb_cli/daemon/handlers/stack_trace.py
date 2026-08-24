@@ -9,16 +9,17 @@ from typing import TYPE_CHECKING
 from pydap.models import StackTraceArguments
 from shared.protocol import Response
 from shared.protocol.stack_trace import (
+    COMMAND_NAME,
     ProcessStackTraceResponse,
     StackFrame,
     StackTraceRequest,
     ThreadStackTraceResponse,
 )
 
+__all__ = ["COMMAND_NAME", "handle"]
+
 if TYPE_CHECKING:
     from daemon.daemon import Daemon
-
-COMMAND_NAME = "stack-trace"
 
 
 def _get_frame_origin(frame: StackFrame) -> str | None:

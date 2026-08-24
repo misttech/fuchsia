@@ -2,16 +2,18 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-from typing import Literal
+from typing import Final, Literal
 
 from pydantic import model_validator
 from shared.protocol.base import BaseRequest
+
+COMMAND_NAME: Final = "pause"
 
 
 class PauseRequest(BaseRequest):
     """Request to pause execution of a thread or process."""
 
-    command: Literal["pause"] = "pause"
+    command: Literal["pause"] = COMMAND_NAME
     thread_id: int | None = None
     pid: int | None = None
 

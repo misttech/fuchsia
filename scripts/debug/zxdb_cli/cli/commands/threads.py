@@ -5,9 +5,12 @@
 from typing import Any
 
 from cli.commands.base import BaseCommand
+from shared.protocol.threads import COMMAND_NAME
 
 
 class Command(BaseCommand):
+    COMMAND_NAME = COMMAND_NAME
+
     @staticmethod
     def register_cli(subparsers: Any) -> None:
-        subparsers.add_parser("threads", help="Get list of threads")
+        subparsers.add_parser(Command.COMMAND_NAME, help="Get list of threads")

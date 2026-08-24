@@ -6,18 +6,20 @@ import argparse
 from typing import Any
 
 from cli.commands.base import BaseCommand
+from shared.protocol.next_request import COMMAND_NAME
 
 
 class Command(BaseCommand):
     """CLI command implementation for stepping over execution (next)."""
 
-    COMMAND_NAME = "next"
+    COMMAND_NAME = COMMAND_NAME
+    ALIASES = ["n", "step-over", "step_over", "stepOver", "stepover"]
 
     @staticmethod
     def register_cli(subparsers: Any) -> None:
         parser = subparsers.add_parser(
-            "next",
-            aliases=["n", "step-over", "step_over", "stepOver", "stepover"],
+            Command.COMMAND_NAME,
+            aliases=Command.ALIASES,
             help="Step over execution to the next line (next)",
         )
         parser.add_argument(

@@ -2,14 +2,16 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-from typing import Literal
+from typing import Final, Literal
 
 from shared.protocol.base import BaseRequest
+
+COMMAND_NAME: Final = "wait-for-event"
 
 
 class WaitForEventRequest(BaseRequest):
     """Request to wait for a debug adapter event."""
 
-    command: Literal["wait-for-event"] = "wait-for-event"
+    command: Literal["wait-for-event"] = COMMAND_NAME
     last_seen_seq: int  # Overridden to be required
     timeout: int | None = None

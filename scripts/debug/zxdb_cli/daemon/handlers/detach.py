@@ -6,14 +6,17 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from shared.protocol import Response
-from shared.protocol.detach import DetachRequest
+from shared.protocol.base import Response
+from shared.protocol.detach import (
+    COMMAND_NAME,
+    DetachRequest,
+)
 from zxdb_dap import ZxdbDetachArguments
+
+__all__ = ["COMMAND_NAME", "handle"]
 
 if TYPE_CHECKING:
     from daemon.daemon import Daemon
-
-COMMAND_NAME = "detach"
 
 
 async def handle(daemon: Daemon, req: DetachRequest) -> Response:

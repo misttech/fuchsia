@@ -6,16 +6,18 @@ import argparse
 from typing import Any
 
 from cli.commands.base import BaseCommand
+from shared.protocol.finish import COMMAND_NAME
 
 
 class Command(BaseCommand):
-    COMMAND_NAME = "finish"
+    COMMAND_NAME = COMMAND_NAME
+    ALIASES = ["step-out", "step_out", "stepOut", "stepout"]
 
     @staticmethod
     def register_cli(subparsers: Any) -> None:
         parser = subparsers.add_parser(
-            "finish",
-            aliases=["step-out", "step_out", "stepOut", "stepout"],
+            Command.COMMAND_NAME,
+            aliases=Command.ALIASES,
             help="Finish execution of current function (step out)",
         )
         parser.add_argument("thread_id", type=int, help="Thread ID to finish")

@@ -5,16 +5,18 @@
 from typing import Any
 
 from cli.commands.base import BaseCommand
+from shared.protocol.wait_for_event import COMMAND_NAME
 
 
 class Command(BaseCommand):
-    COMMAND_NAME = "wait-for-event"
+    COMMAND_NAME = COMMAND_NAME
+    ALIASES = ["wait_for_event", "waitForEvent"]
 
     @staticmethod
     def register_cli(subparsers: Any) -> None:
         wait_parser = subparsers.add_parser(
-            "wait-for-event",
-            aliases=["wait_for_event", "waitForEvent"],
+            Command.COMMAND_NAME,
+            aliases=Command.ALIASES,
             help="Wait for event (default shows all events)",
         )
         wait_parser.add_argument(

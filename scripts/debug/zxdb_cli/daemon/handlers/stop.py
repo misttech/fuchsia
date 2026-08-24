@@ -6,13 +6,16 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from shared.protocol import Response
-from shared.protocol.stop import StopRequest
+from shared.protocol.base import Response
+from shared.protocol.stop import (
+    COMMAND_NAME,
+    StopRequest,
+)
+
+__all__ = ["COMMAND_NAME", "handle"]
 
 if TYPE_CHECKING:
     from daemon.daemon import Daemon
-
-COMMAND_NAME = "stop"
 
 
 async def handle(daemon: Daemon, _req: StopRequest) -> Response:

@@ -7,13 +7,16 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from pydap.models import StepOutArguments
-from shared.protocol import Response
-from shared.protocol.finish import FinishRequest
+from shared.protocol.base import Response
+from shared.protocol.finish import (
+    COMMAND_NAME,
+    FinishRequest,
+)
+
+__all__ = ["COMMAND_NAME", "handle"]
 
 if TYPE_CHECKING:
     from daemon.daemon import Daemon
-
-COMMAND_NAME = "finish"
 
 
 async def handle(daemon: Daemon, req: FinishRequest) -> Response:

@@ -2,16 +2,18 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-from typing import Literal
+from typing import Final, Literal
 
 from pydantic import BaseModel, ConfigDict
 from shared.protocol.base import BaseRequest
+
+COMMAND_NAME: Final = "evaluate"
 
 
 class EvaluateRequest(BaseRequest):
     """Request evaluation of an expression in a given stack frame."""
 
-    command: Literal["evaluate"] = "evaluate"
+    command: Literal["evaluate"] = COMMAND_NAME
     thread_id: int
 
     # Note that this is the index of the frame in this particular thread's stack. It is _not_ the

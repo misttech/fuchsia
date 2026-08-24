@@ -7,18 +7,21 @@ import json
 import sys
 from typing import Any, Final
 
+from cli.commands.base import BaseCommand
 from daemon_manager.manager import UDS_PATH, DaemonManager, DaemonManagerError
+from shared.protocol.start import COMMAND_NAME
 
 DAEMON_STARTUP_TIMEOUT_SECS: Final[float] = 30.0
 
 
-from cli.commands.base import BaseCommand
-
-
 class Command(BaseCommand):
+    COMMAND_NAME = COMMAND_NAME
+
     @staticmethod
     def register_cli(subparsers: Any) -> None:
-        start_parser = subparsers.add_parser("start", help="Start the daemon")
+        start_parser = subparsers.add_parser(
+            Command.COMMAND_NAME, help="Start the daemon"
+        )
         start_parser.add_argument(
             "--port", type=int, help="Port for DAP server", default=None
         )

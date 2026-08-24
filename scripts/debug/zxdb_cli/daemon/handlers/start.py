@@ -8,13 +8,16 @@ from typing import TYPE_CHECKING
 
 import package_server
 from daemon.constants import DEFAULT_DAP_PORT, UDS_PATH
-from shared.protocol import Response
-from shared.protocol.start import StartRequest
+from shared.protocol.base import Response
+from shared.protocol.start import (
+    COMMAND_NAME,
+    StartRequest,
+)
+
+__all__ = ["COMMAND_NAME", "handle"]
 
 if TYPE_CHECKING:
     from daemon.daemon import Daemon
-
-COMMAND_NAME = "start"
 
 
 async def handle(daemon: Daemon, req: StartRequest) -> Response:

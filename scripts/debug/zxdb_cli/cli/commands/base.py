@@ -8,6 +8,7 @@ from typing import Any, ClassVar
 
 class BaseCommand:
     COMMAND_NAME: ClassVar[str] = ""
+    ALIASES: ClassVar[list[str]] = []
 
     @staticmethod
     def register_cli(subparsers: Any) -> None:

@@ -7,13 +7,16 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from pydap.models import AttachRequestArguments
-from shared.protocol import Response
-from shared.protocol.attach import AttachRequest
+from shared.protocol.attach import (
+    COMMAND_NAME,
+    AttachRequest,
+)
+from shared.protocol.base import Response
+
+__all__ = ["COMMAND_NAME", "handle"]
 
 if TYPE_CHECKING:
     from daemon.daemon import Daemon
-
-COMMAND_NAME = "attach"
 
 
 async def handle(daemon: Daemon, req: AttachRequest) -> Response:

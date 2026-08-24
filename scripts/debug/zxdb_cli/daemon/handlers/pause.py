@@ -6,13 +6,16 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from shared.protocol import Response
-from shared.protocol.pause import PauseRequest
+from shared.protocol.base import Response
+from shared.protocol.pause import (
+    COMMAND_NAME,
+    PauseRequest,
+)
+
+__all__ = ["COMMAND_NAME", "handle"]
 
 if TYPE_CHECKING:
     from daemon.daemon import Daemon
-
-COMMAND_NAME = "pause"
 
 
 async def handle(daemon: Daemon, req: PauseRequest) -> Response:

@@ -8,12 +8,15 @@ from typing import Any
 
 from cli.commands.base import BaseCommand
 from daemon_manager.manager import UDS_PATH, DaemonManager
+from shared.protocol.stop import COMMAND_NAME
 
 
 class Command(BaseCommand):
+    COMMAND_NAME = COMMAND_NAME
+
     @staticmethod
     def register_cli(subparsers: Any) -> None:
-        subparsers.add_parser("stop", help="Stop the daemon")
+        subparsers.add_parser(Command.COMMAND_NAME, help="Stop the daemon")
 
     @staticmethod
     async def execute(args: argparse.Namespace) -> int:

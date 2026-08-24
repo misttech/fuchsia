@@ -5,16 +5,18 @@
 from typing import Any
 
 from cli.commands.base import BaseCommand
+from shared.protocol.variables import COMMAND_NAME
 
 
 class Command(BaseCommand):
-    COMMAND_NAME = "variables"
+    COMMAND_NAME = COMMAND_NAME
+    ALIASES = ["locals"]
 
     @staticmethod
     def register_cli(subparsers: Any) -> None:
         variables_parser = subparsers.add_parser(
             Command.COMMAND_NAME,
-            aliases=["locals"],
+            aliases=Command.ALIASES,
             help="Get variables of a stack frame.",
             description=(
                 "Get variables (locals and arguments) of a stack frame.\n\n"

@@ -5,16 +5,18 @@
 from typing import Any
 
 from cli.commands.base import BaseCommand
+from shared.protocol.stack_trace import COMMAND_NAME
 
 
 class Command(BaseCommand):
-    COMMAND_NAME = "stack-trace"
+    COMMAND_NAME = COMMAND_NAME
+    ALIASES = ["stack_trace", "stackTrace", "bt", "backtrace"]
 
     @staticmethod
     def register_cli(subparsers: Any) -> None:
         stack_trace_parser = subparsers.add_parser(
-            "stack-trace",
-            aliases=["stack_trace", "stackTrace", "bt", "backtrace"],
+            Command.COMMAND_NAME,
+            aliases=Command.ALIASES,
             help="Get stack trace of a thread or all threads in a process. This will automatically pause threads when called.",
         )
         group = stack_trace_parser.add_mutually_exclusive_group(required=True)

@@ -4,6 +4,7 @@
 
 import argparse
 import asyncio
+import json
 import sys
 from typing import Final
 
@@ -31,7 +32,6 @@ from daemon_manager.manager import UDS_PATH
 from pydantic import ValidationError
 from shared.protocol import (
     BaseRequest,
-    deserialize_request,
     make_request,
     serialize,
 )
@@ -87,6 +87,13 @@ async def main(args: list[str]) -> int:
         for choice in new_choices:
             commands[choice] = cmd_class
 
+    alias_map: dict[str, str] = {
+        alias: cmd_class.COMMAND_NAME
+        for cmd_class in command_classes
+        for alias in getattr(cmd_class, "ALIASES", [])
+        if cmd_class.COMMAND_NAME
+    }
+
     parsed_args = parser.parse_args(args)
 
     if parsed_args.json and parsed_args.command:
@@ -105,7 +112,12 @@ async def main(args: list[str]) -> int:
     req: BaseRequest | None = None
     if parsed_args.json:
         try:
-            req = deserialize_request(parsed_args.json)
+            data = json.loads(parsed_args.json)
+            if not isinstance(data, dict):
+                raise ValueError("JSON payload must be an object")
+            if "command" in data and data["command"] in alias_map:
+                data["command"] = alias_map[data["command"]]
+            req = make_request(data)
             cmd_cls: type[BaseCommand] | None = commands.get(req.command)
             if cmd_cls is not None:
                 exit_code = await cmd_cls.execute(request_to_namespace(req))

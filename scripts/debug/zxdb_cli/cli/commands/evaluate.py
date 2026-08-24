@@ -6,16 +6,18 @@ import argparse
 from typing import Any
 
 from cli.commands.base import BaseCommand
+from shared.protocol.evaluate import COMMAND_NAME
 
 
 class Command(BaseCommand):
-    COMMAND_NAME = "evaluate"
+    COMMAND_NAME = COMMAND_NAME
+    ALIASES = ["print"]
 
     @staticmethod
     def register_cli(subparsers: Any) -> None:
         evaluate_parser = subparsers.add_parser(
             Command.COMMAND_NAME,
-            aliases=["print"],
+            aliases=Command.ALIASES,
             help="Evaluate an expression in a stack frame.",
             description=(
                 "Evaluate an expression in the context of a stack frame."

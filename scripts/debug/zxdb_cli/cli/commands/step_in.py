@@ -6,27 +6,29 @@ import argparse
 from typing import Any
 
 from cli.commands.base import BaseCommand
+from shared.protocol.step_in import COMMAND_NAME
 
 
 class Command(BaseCommand):
     """CLI command implementation for stepping into execution (step_in)."""
 
-    COMMAND_NAME = "step-in"
+    COMMAND_NAME = COMMAND_NAME
+    ALIASES = [
+        "step_in",
+        "stepIn",
+        "stepin",
+        "step-into",
+        "step_into",
+        "stepinto",
+        "step",
+        "s",
+    ]
 
     @staticmethod
     def register_cli(subparsers: Any) -> None:
         parser = subparsers.add_parser(
-            "step-in",
-            aliases=[
-                "step_in",
-                "stepIn",
-                "stepin",
-                "step-into",
-                "step_into",
-                "stepinto",
-                "step",
-                "s",
-            ],
+            Command.COMMAND_NAME,
+            aliases=Command.ALIASES,
             help="Step into execution of current function or line (step in)",
         )
         parser.add_argument(

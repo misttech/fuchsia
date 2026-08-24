@@ -5,15 +5,17 @@
 from typing import Any
 
 from cli.commands.base import BaseCommand
+from shared.protocol.get_state import COMMAND_NAME
 
 
 class Command(BaseCommand):
-    COMMAND_NAME = "get-state"
+    COMMAND_NAME = COMMAND_NAME
+    ALIASES = ["get_state", "getState"]
 
     @staticmethod
     def register_cli(subparsers: Any) -> None:
         subparsers.add_parser(
-            "get-state",
-            aliases=["get_state", "getState"],
+            Command.COMMAND_NAME,
+            aliases=Command.ALIASES,
             help="Get state of session",
         )

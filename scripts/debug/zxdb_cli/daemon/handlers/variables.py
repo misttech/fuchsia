@@ -11,13 +11,16 @@ from pydap.models import (
     StackTraceArguments,
     VariablesArguments,
 )
-from shared.protocol import Response
-from shared.protocol.variables import VariablesRequest
+from shared.protocol.base import Response
+from shared.protocol.variables import (
+    COMMAND_NAME,
+    VariablesRequest,
+)
+
+__all__ = ["COMMAND_NAME", "handle"]
 
 if TYPE_CHECKING:
     from daemon.daemon import Daemon
-
-COMMAND_NAME = "variables"
 
 
 async def handle(daemon: Daemon, req: VariablesRequest) -> Response:

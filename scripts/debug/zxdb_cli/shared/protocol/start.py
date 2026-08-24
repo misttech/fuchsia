@@ -2,14 +2,16 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-from typing import Literal
+from typing import Final, Literal
 
 from shared.protocol.base import BaseRequest
+
+COMMAND_NAME: Final = "start"
 
 
 class StartRequest(BaseRequest):
     """Request to start the debugging session."""
 
-    command: Literal["start"] = "start"
+    command: Literal["start"] = COMMAND_NAME
     port: int | None = None
     connect: bool = False

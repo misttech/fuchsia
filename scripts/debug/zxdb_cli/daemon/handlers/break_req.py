@@ -8,13 +8,16 @@ from typing import TYPE_CHECKING
 
 from pydap.dap_types import Source, SourceBreakpoint
 from pydap.models import SetBreakpointsArguments
-from shared.protocol import Response
-from shared.protocol.break_request import BreakRequest
+from shared.protocol.base import Response
+from shared.protocol.break_request import (
+    COMMAND_NAME,
+    BreakRequest,
+)
+
+__all__ = ["COMMAND_NAME", "handle"]
 
 if TYPE_CHECKING:
     from daemon.daemon import Daemon
-
-COMMAND_NAME = "break"
 
 
 async def handle(daemon: Daemon, req: BreakRequest) -> Response:

@@ -8,6 +8,7 @@ import sys
 from typing import Any
 
 from cli.commands.base import BaseCommand
+from shared.protocol.break_request import COMMAND_NAME
 
 
 def resolve_path(filepath: str) -> str | None:
@@ -35,19 +36,20 @@ def resolve_path(filepath: str) -> str | None:
 
 
 class Command(BaseCommand):
-    COMMAND_NAME = "break"
+    COMMAND_NAME = COMMAND_NAME
+    ALIASES = [
+        "breakpoint",
+        "b",
+        "setBreakpoints",
+        "set-breakpoints",
+        "set_breakpoints",
+    ]
 
     @staticmethod
     def register_cli(subparsers: Any) -> None:
         break_parser = subparsers.add_parser(
             Command.COMMAND_NAME,
-            aliases=[
-                "breakpoint",
-                "b",
-                "setBreakpoints",
-                "set-breakpoints",
-                "set_breakpoints",
-            ],
+            aliases=Command.ALIASES,
             help="Set or delete a breakpoint",
             description=(
                 "Set or delete a breakpoint at the specified file and line. "

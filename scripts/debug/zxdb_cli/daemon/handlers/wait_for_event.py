@@ -7,13 +7,16 @@ from __future__ import annotations
 import asyncio
 from typing import TYPE_CHECKING
 
-from shared.protocol import Response
-from shared.protocol.wait_for_event import WaitForEventRequest
+from shared.protocol.base import Response
+from shared.protocol.wait_for_event import (
+    COMMAND_NAME,
+    WaitForEventRequest,
+)
+
+__all__ = ["COMMAND_NAME", "handle"]
 
 if TYPE_CHECKING:
     from daemon.daemon import Daemon
-
-COMMAND_NAME = "wait-for-event"
 
 
 async def handle(daemon: Daemon, req: WaitForEventRequest) -> Response:

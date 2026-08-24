@@ -2,9 +2,11 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-from typing import Literal
+from typing import Final, Literal
 
 from shared.protocol.base import BaseRequest
+
+COMMAND_NAME: Final = "break"
 
 
 class BreakRequest(BaseRequest):
@@ -17,7 +19,7 @@ class BreakRequest(BaseRequest):
     To view currently installed breakpoints, use the get-state command.
     """
 
-    command: Literal["break"] = "break"
+    command: Literal["break"] = COMMAND_NAME
     file: str
     line: int
     delete: bool = False

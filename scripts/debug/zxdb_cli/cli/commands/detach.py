@@ -5,13 +5,16 @@
 from typing import Any
 
 from cli.commands.base import BaseCommand
+from shared.protocol.detach import COMMAND_NAME
 
 
 class Command(BaseCommand):
+    COMMAND_NAME = COMMAND_NAME
+
     @staticmethod
     def register_cli(subparsers: Any) -> None:
         detach_parser = subparsers.add_parser(
-            "detach", help="Detach from a process"
+            Command.COMMAND_NAME, help="Detach from a process"
         )
         detach_parser.add_argument(
             "pid", type=int, nargs="?", help="PID of process to detach from"

@@ -136,7 +136,6 @@ class TestCLI(unittest.IsolatedAsyncioTestCase):
     @patch("cli.cli.send_command")
     async def test_json_option_finish(self, mock_send: Mock) -> None:
         mock_send.return_value = 0
-        # TODO(https://fxbug.dev/541037615): support aliases such as step_out and step-out in JSON mode.
         exit_code = await main(
             [
                 "--json",
@@ -681,6 +680,116 @@ class TestCLI(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(exit_code, 0)
         mock_send.assert_called_once_with(WaitForEventRequest(last_seen_seq=10))
+
+    @patch("cli.cli.send_command")
+    async def test_json_option_aliases(self, mock_send: Mock) -> None:
+        mock_send.return_value = 0
+
+        # stack-trace aliases
+        for alias in ["stack_trace", "stackTrace", "bt", "backtrace"]:
+            mock_send.reset_mock()
+            exit_code = await main(
+                ["--json", f'{{"command": "{alias}", "thread_id": 1}}']
+            )
+            self.assertEqual(exit_code, 0)
+            mock_send.assert_called_once_with(StackTraceRequest(thread_id=1))
+
+        # step-in aliases
+        for alias in [
+            "step_in",
+            "stepIn",
+            "stepin",
+            "step-into",
+            "step_into",
+            "stepinto",
+            "step",
+            "s",
+        ]:
+            mock_send.reset_mock()
+            exit_code = await main(
+                ["--json", f'{{"command": "{alias}", "thread_id": 1}}']
+            )
+            self.assertEqual(exit_code, 0)
+            mock_send.assert_called_once_with(StepInRequest(thread_id=1))
+
+        # get-state aliases
+        for alias in ["get_state", "getState"]:
+            mock_send.reset_mock()
+            exit_code = await main(["--json", f'{{"command": "{alias}"}}'])
+            self.assertEqual(exit_code, 0)
+            mock_send.assert_called_once_with(GetStateRequest())
+
+        # wait-for-event aliases
+        for alias in ["wait_for_event", "waitForEvent"]:
+            mock_send.reset_mock()
+            exit_code = await main(
+                ["--json", f'{{"command": "{alias}", "last_seen_seq": 10}}']
+            )
+            self.assertEqual(exit_code, 0)
+            mock_send.assert_called_once_with(
+                WaitForEventRequest(last_seen_seq=10)
+            )
+
+        # next aliases
+        for alias in ["step-over", "step_over", "stepOver", "stepover", "n"]:
+            mock_send.reset_mock()
+            exit_code = await main(
+                ["--json", f'{{"command": "{alias}", "thread_id": 1}}']
+            )
+            self.assertEqual(exit_code, 0)
+            mock_send.assert_called_once_with(NextRequest(thread_id=1))
+
+        # finish aliases
+        for alias in ["step-out", "step_out", "stepOut", "stepout"]:
+            mock_send.reset_mock()
+            exit_code = await main(
+                ["--json", f'{{"command": "{alias}", "thread_id": 1}}']
+            )
+            self.assertEqual(exit_code, 0)
+            mock_send.assert_called_once_with(FinishRequest(thread_id=1))
+
+        # variables aliases
+        for alias in ["locals"]:
+            mock_send.reset_mock()
+            exit_code = await main(
+                ["--json", f'{{"command": "{alias}", "thread_id": 1}}']
+            )
+            self.assertEqual(exit_code, 0)
+            mock_send.assert_called_once_with(VariablesRequest(thread_id=1))
+
+        # break aliases
+        for alias in [
+            "breakpoint",
+            "b",
+            "setBreakpoints",
+            "set-breakpoints",
+            "set_breakpoints",
+        ]:
+            mock_send.reset_mock()
+            exit_code = await main(
+                [
+                    "--json",
+                    f'{{"command": "{alias}", "file": "main.rs", "line": 10}}',
+                ]
+            )
+            self.assertEqual(exit_code, 0)
+            mock_send.assert_called_once_with(
+                BreakRequest(file="main.rs", line=10)
+            )
+
+        # evaluate aliases
+        for alias in ["print"]:
+            mock_send.reset_mock()
+            exit_code = await main(
+                [
+                    "--json",
+                    f'{{"command": "{alias}", "thread_id": 1, "expression": "x"}}',
+                ]
+            )
+            self.assertEqual(exit_code, 0)
+            mock_send.assert_called_once_with(
+                EvaluateRequest(thread_id=1, expression="x")
+            )
 
 
 if __name__ == "__main__":
