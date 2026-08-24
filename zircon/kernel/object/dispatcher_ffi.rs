@@ -12,11 +12,13 @@ unsafe extern "C" {
         dispatcher: *const Dispatcher,
         clear_mask: u32,
         set_mask: u32,
+        strobe_mask: u32,
     );
     pub(crate) fn cpp_dispatcher_update_state_locked(
         dispatcher: *const Dispatcher,
         clear_mask: u32,
         set_mask: u32,
+        strobe_mask: u32,
     );
     pub(crate) fn cpp_dispatcher_signals_state_locked(
         dispatcher: *const Dispatcher,

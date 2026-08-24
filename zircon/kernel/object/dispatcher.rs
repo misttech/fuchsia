@@ -36,22 +36,41 @@ pub trait DispatcherOps {
     }
 
     fn update_state(&self, clear_mask: u32, set_mask: u32) {
+        self.update_state_with_strobe(clear_mask, set_mask, 0);
+    }
+
+    fn update_state_with_strobe(&self, clear_mask: u32, set_mask: u32, strobe_mask: u32) {
         // SAFETY: self.dispatcher() returns a valid pointer to an initialized Dispatcher.
         unsafe {
-            cpp_dispatcher_update_state(self.dispatcher(), clear_mask, set_mask);
+            cpp_dispatcher_update_state(self.dispatcher(), clear_mask, set_mask, strobe_mask);
         }
     }
 
     fn update_state_locked(
         &self,
+        token: &LockToken<'_, Self::LockClass>,
+        clear_mask: u32,
+        set_mask: u32,
+    ) {
+        self.update_state_with_strobe_locked(token, clear_mask, set_mask, 0);
+    }
+
+    fn update_state_with_strobe_locked(
+        &self,
         _token: &LockToken<'_, Self::LockClass>,
         clear_mask: u32,
         set_mask: u32,
+        strobe_mask: u32,
     ) {
         // SAFETY: self.dispatcher() is valid, and the proof token guarantees the state lock is
         // held.
         unsafe {
-            cpp_dispatcher_update_state_locked(self.dispatcher(), clear_mask, set_mask);
+            cpp_dispatcher_update_state_locked(
+                self.dispatcher(),
+                clear_mask,
+                set_mask,
+                strobe_mask,
+            );
         }
     }
 

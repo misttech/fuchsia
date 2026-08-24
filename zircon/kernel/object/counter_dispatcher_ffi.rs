@@ -5,19 +5,13 @@
 // https://opensource.org/licenses/MIT
 
 use super::counter_dispatcher::{CounterDispatcher, CounterDispatcherState};
-use super::dispatcher::Dispatcher;
+use super::dispatcher::DispatcherOps;
 use super::handle::KernelHandle;
 
 use zx_types::zx_status_t;
 
 // C++ FFI declarations
 unsafe extern "C" {
-    pub(crate) fn cpp_dispatcher_update_state(
-        dispatcher: *const Dispatcher,
-        clear_mask: u32,
-        set_mask: u32,
-    );
-
     pub(crate) fn cpp_counter_dispatcher_create(
         handle_out: *mut core::mem::MaybeUninit<KernelHandle<CounterDispatcher>>,
     ) -> zx_status_t;
@@ -37,10 +31,6 @@ pub unsafe extern "C" fn rust_counter_dispatcher_state_init(
 ) {
     unsafe {
         let _ = pin_init::PinInit::__pinned_init(CounterDispatcherState::init(), ptr);
-        cpp_dispatcher_update_state(
-            dispatcher as *const Dispatcher,
-            0,
-            zx_types::ZX_COUNTER_NON_POSITIVE,
-        );
+        (*dispatcher).update_state(0, zx_types::ZX_COUNTER_NON_POSITIVE);
     }
 }

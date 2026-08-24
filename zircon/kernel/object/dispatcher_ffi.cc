@@ -11,13 +11,15 @@ extern "C" {
 
 void cpp_dispatcher_on_zero_handles(Dispatcher* disp) { disp->on_zero_handles(); }
 
-void cpp_dispatcher_update_state(Dispatcher* disp, zx_signals_t clear_mask, zx_signals_t set_mask) {
-  disp->UpdateState(clear_mask, set_mask);
+void cpp_dispatcher_update_state(Dispatcher* disp, zx_signals_t clear_mask, zx_signals_t set_mask,
+                                 zx_signals_t strobe_mask) {
+  disp->UpdateState(clear_mask, set_mask, strobe_mask);
 }
 
 void cpp_dispatcher_update_state_locked(Dispatcher* disp, zx_signals_t clear_mask,
-                                        zx_signals_t set_mask) TA_NO_THREAD_SAFETY_ANALYSIS {
-  disp->UpdateStateLocked(clear_mask, set_mask);
+                                        zx_signals_t set_mask,
+                                        zx_signals_t strobe_mask) TA_NO_THREAD_SAFETY_ANALYSIS {
+  disp->UpdateStateLocked(clear_mask, set_mask, strobe_mask);
 }
 
 zx_signals_t cpp_dispatcher_signals_state_locked(const Dispatcher* disp)

@@ -147,9 +147,10 @@ DECLARE_DISPTAG(SamplerDispatcher, ZX_OBJ_TYPE_SAMPLER, "SMPL")
 // You don't derive directly from this class; instead derive
 // from SoloDispatcher or PeeredDispatcher.
 extern "C" {
-void cpp_dispatcher_update_state(Dispatcher* disp, zx_signals_t clear_mask, zx_signals_t set_mask);
+void cpp_dispatcher_update_state(Dispatcher* disp, zx_signals_t clear_mask, zx_signals_t set_mask,
+                                 zx_signals_t strobe_mask);
 void cpp_dispatcher_update_state_locked(Dispatcher* disp, zx_signals_t clear_mask,
-                                        zx_signals_t set_mask);
+                                        zx_signals_t set_mask, zx_signals_t strobe_mask);
 zx_signals_t cpp_dispatcher_signals_state_locked(const Dispatcher* disp);
 zx_koid_t cpp_dispatcher_get_related_koid(const Dispatcher* disp);
 }
@@ -362,9 +363,9 @@ class Dispatcher : private fbl::RefCountedUpgradeable<Dispatcher>,
  private:
   friend class fbl::Recyclable<Dispatcher>;
   friend void cpp_dispatcher_update_state(Dispatcher* disp, zx_signals_t clear_mask,
-                                          zx_signals_t set_mask);
+                                          zx_signals_t set_mask, zx_signals_t strobe_mask);
   friend void cpp_dispatcher_update_state_locked(Dispatcher* disp, zx_signals_t clear_mask,
-                                                 zx_signals_t set_mask);
+                                                 zx_signals_t set_mask, zx_signals_t strobe_mask);
   friend zx_signals_t cpp_dispatcher_signals_state_locked(const Dispatcher* disp);
   void fbl_recycle();
 
