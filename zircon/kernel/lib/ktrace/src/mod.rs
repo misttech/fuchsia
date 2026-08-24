@@ -1323,7 +1323,7 @@ mod tests {
             Argument::new(DROP_STATS_REF, 456u32),
             Argument::new(DROP_STATS_REF, -789i64),
             Argument::new(DROP_STATS_REF, 101112u64),
-            Argument::new(DROP_STATS_REF, 3.14159f64),
+            Argument::new(DROP_STATS_REF, core::f64::consts::PI),
             Argument::new(DROP_STATS_REF, "hello_world"),
             Argument::new(DROP_STATS_REF, ArgValue::Pointer(0x12345678)),
             Argument::new(DROP_STATS_REF, Koid(9999)),
@@ -1412,7 +1412,7 @@ mod tests {
         let d_bits = u64::from_ne_bytes(
             read_bytes[(word_idx + 1) * 8..(word_idx + 2) * 8].try_into().unwrap(),
         );
-        expect_eq!(d_bits, 3.14159f64.to_bits());
+        expect_eq!(d_bits, core::f64::consts::PI.to_bits());
         word_idx += 2;
 
         // 7: String (1 header + 2 payload words = 3 words)

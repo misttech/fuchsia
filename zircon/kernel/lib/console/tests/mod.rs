@@ -53,7 +53,7 @@ unsafe extern "C" fn write_callback(
     let to_copy = core::cmp::min(len, state.buf_size - 1 - state.len);
     if to_copy > 0 {
         unsafe {
-            core::ptr::copy_nonoverlapping(str_ptr as *const u8, state.buf.add(state.len), to_copy);
+            core::ptr::copy_nonoverlapping(str_ptr.cast::<u8>(), state.buf.add(state.len), to_copy);
         }
         state.len += to_copy;
         unsafe { *state.buf.add(state.len) = 0 };

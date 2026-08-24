@@ -176,10 +176,11 @@ pub mod console {
     }
 
     fn panic_getc() -> Option<u8> {
-        let mut character = 0;
+        let mut character: core::ffi::c_char = 0;
         if crate::platform_rs::debug::platform_pgetc(&mut character) < 0 {
             None
         } else {
+            #[allow(clippy::unnecessary_cast)]
             Some(character as u8)
         }
     }
