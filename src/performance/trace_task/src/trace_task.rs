@@ -19,8 +19,10 @@ use zstd::stream::raw::Operation;
 
 static SERIAL: AtomicU64 = AtomicU64::new(100);
 
-#[derive(Debug)]
 pub struct TraceTask {
+    /// Domain for FDomain client handles. It is here to prevent the domain
+    /// being dropped while it could still be used.
+    _domain: flex_client::ClientArg,
     /// Unique identifier for this task. The value of this id monotonicallly increases.
     task_id: u64,
     /// Tag used to identify this task in the log.
@@ -49,6 +51,27 @@ pub struct TraceTask {
     cancelled: Arc<AtomicBool>,
 }
 
+/// Implement Debug explicitly since `flex_client::ClientArg` does not implement Debug,
+/// so we skip it in this implementation.
+impl std::fmt::Debug for TraceTask {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("TraceTask")
+            .field("task_id", &self.task_id)
+            .field("debug_tag", &self.debug_tag)
+            .field("config", &self.config)
+            .field("requested_categories", &self.requested_categories)
+            .field("duration", &self.duration)
+            .field("triggers", &self.triggers)
+            .field("terminating", &self.terminating)
+            .field("start_time", &self.start_time)
+            .field("shutdown_sender", &self.shutdown_sender)
+            .field("read_socket", &self.read_socket)
+            .field("compression", &self.compression)
+            .field("cancelled", &self.cancelled)
+            .finish()
+    }
+}
+
 // This is just implemented for convenience so the wrapper is await-able.
 impl Future for TraceTask {
     type Output = Option<trace::StopResult>;
@@ -72,8 +95,9 @@ impl TraceTask {
         // of the session and the actual starting of it. This seems like a side-effect.
         log::info!("TraceTask::new called with compression: {:?}", compression);
         let task_id = SERIAL.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        let (client, server) = provisioner.domain().create_stream_socket();
-        let (client_end, server_end) = provisioner.domain().create_proxy::<trace::SessionMarker>();
+        let domain = provisioner.domain();
+        let (client, server) = domain.create_stream_socket();
+        let (client_end, server_end) = domain.create_proxy::<trace::SessionMarker>();
         provisioner.initialize_tracing(server_end, &config, server)?;
 
         client_end
@@ -141,6 +165,7 @@ impl TraceTask {
             terminate_result,
         );
         Ok(Self {
+            _domain: domain,
             task_id,
             debug_tag: logging_prefix_og,
             config,
@@ -395,22 +420,26 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    use flex_client::fidl::Responder;
     use flex_fuchsia_tracing_controller::StartError;
 
     const FAKE_CONTROLLER_TRACE_OUTPUT: &'static str = "HOWDY HOWDY HOWDY";
-
-    fn setup_fake_provisioner_proxy(
+    fn setup_fake_provisioner_proxy_with_payload(
         start_error: Option<StartError>,
         trigger_name: Option<&'static str>,
         expected_write_results: bool,
+        payload_bytes: impl AsRef<[u8]>,
     ) -> trace::ProvisionerProxy {
-        let (proxy, mut stream) =
-            fidl::endpoints::create_proxy_and_stream::<trace::ProvisionerMarker>();
+        let payload_bytes = payload_bytes.as_ref().to_vec();
+        let client = fdomain_local::local_client_empty();
+        let (proxy, mut stream) = client.create_proxy_and_stream::<trace::ProvisionerMarker>();
         fuchsia_async::Task::local(async move {
+            let _client = client;
             while let Ok(Some(req)) = stream.try_next().await {
                 match req {
                     trace::ProvisionerRequest::InitializeTracing { controller, output, .. } => {
                         let mut stream = controller.into_stream();
+                        let mut async_output = socket_to_async(output);
                         while let Ok(Some(req)) = stream.try_next().await {
                             match req {
                                 trace::SessionRequest::StartTracing { responder, .. } => {
@@ -424,26 +453,29 @@ mod tests {
                                     if start_error.is_some() {
                                         responder
                                             .send(Err(trace::StopError::NotStarted))
-                                            .expect("Failed to stop")
+                                            .expect("Failed to stop");
                                     } else {
                                         assert_eq!(
                                             payload.write_results.unwrap(),
                                             expected_write_results
                                         );
-                                        let _ =
-                                            output.write(FAKE_CONTROLLER_TRACE_OUTPUT.as_bytes());
+                                        if expected_write_results && !payload_bytes.is_empty() {
+                                            let _ = async_output.write_all(&payload_bytes).await;
+                                        }
+                                        let _ = async_output.close().await;
                                         let stop_result = trace::StopResult {
                                             provider_stats: Some(vec![]),
                                             ..Default::default()
                                         };
-                                        responder.send(Ok(&stop_result)).expect("Failed to stop")
+                                        responder.send(Ok(&stop_result)).expect("Failed to stop");
                                     }
-                                    break;
                                 }
                                 trace::SessionRequest::WatchAlert { responder } => {
-                                    responder
-                                        .send(trigger_name.unwrap_or(""))
-                                        .expect("Unable to send alert");
+                                    if let Some(trigger) = trigger_name {
+                                        responder.send(trigger).expect("Unable to send alert");
+                                    } else {
+                                        responder.drop_without_shutdown();
+                                    }
                                 }
                                 r => panic!("unexpected request: {:#?}", r),
                             }
@@ -459,7 +491,12 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_trace_task_start_stop_write_check_with_vec() {
-        let provisioner = setup_fake_provisioner_proxy(None, None, true);
+        let provisioner = setup_fake_provisioner_proxy_with_payload(
+            None,
+            None,
+            true,
+            FAKE_CONTROLLER_TRACE_OUTPUT,
+        );
 
         let trace_task = TraceTask::new(
             "test_trace_start_stop_write_check".into(),
@@ -486,7 +523,12 @@ mod tests {
         let temp_dir = tempfile::TempDir::new().unwrap();
         let output = temp_dir.path().join("trace-test.fxt");
 
-        let provisioner = setup_fake_provisioner_proxy(None, None, true);
+        let provisioner = setup_fake_provisioner_proxy_with_payload(
+            None,
+            None,
+            true,
+            FAKE_CONTROLLER_TRACE_OUTPUT,
+        );
         let writer = async_fs::File::create(&output).await.unwrap();
 
         let trace_task = TraceTask::new(
@@ -512,8 +554,12 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_trace_error_handling_already_started() {
-        let provisioner =
-            setup_fake_provisioner_proxy(Some(StartError::AlreadyStarted), None, true);
+        let provisioner = setup_fake_provisioner_proxy_with_payload(
+            Some(StartError::AlreadyStarted),
+            None,
+            true,
+            FAKE_CONTROLLER_TRACE_OUTPUT,
+        );
 
         let trace_task_result = TraceTask::new(
             "test_trace_error_handling_already_started".into(),
@@ -536,7 +582,12 @@ mod tests {
         let temp_dir = tempfile::TempDir::new().unwrap();
         let output = temp_dir.path().join("trace-test.fxt");
 
-        let provisioner = setup_fake_provisioner_proxy(None, None, true);
+        let provisioner = setup_fake_provisioner_proxy_with_payload(
+            None,
+            None,
+            true,
+            FAKE_CONTROLLER_TRACE_OUTPUT,
+        );
         let writer = async_fs::File::create(&output).await.unwrap();
 
         let trace_task = TraceTask::new(
@@ -570,7 +621,12 @@ mod tests {
         let temp_dir = tempfile::TempDir::new().unwrap();
         let output = temp_dir.path().join("trace-test.fxt");
         let alert_name = "some_alert";
-        let provisioner = setup_fake_provisioner_proxy(None, Some(alert_name.into()), true);
+        let provisioner = setup_fake_provisioner_proxy_with_payload(
+            None,
+            Some(alert_name.into()),
+            true,
+            FAKE_CONTROLLER_TRACE_OUTPUT,
+        );
         let writer = async_fs::File::create(output.clone()).await.unwrap();
 
         let trace_task = TraceTask::new(
@@ -595,7 +651,12 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_trace_task_abort() {
-        let provisioner = setup_fake_provisioner_proxy(None, None, false);
+        let provisioner = setup_fake_provisioner_proxy_with_payload(
+            None,
+            None,
+            false,
+            FAKE_CONTROLLER_TRACE_OUTPUT,
+        );
 
         let trace_task = TraceTask::new(
             "test_trace_task_abort".into(),
@@ -614,5 +675,154 @@ mod tests {
             shutdown_result,
             trace::StopResult { provider_stats: Some(vec![]), ..Default::default() }
         );
+    }
+
+    struct FailingAsyncWriter {
+        fail_after_bytes: usize,
+        written: usize,
+    }
+
+    impl AsyncWrite for FailingAsyncWriter {
+        fn poll_write(
+            mut self: Pin<&mut Self>,
+            _cx: &mut FutContext<'_>,
+            buf: &[u8],
+        ) -> Poll<std::io::Result<usize>> {
+            if self.written >= self.fail_after_bytes {
+                return Poll::Ready(Err(std::io::Error::new(
+                    std::io::ErrorKind::BrokenPipe,
+                    "simulated broken pipe in stress test",
+                )));
+            }
+            let allowed = std::cmp::min(buf.len(), self.fail_after_bytes - self.written);
+            self.written += allowed;
+            Poll::Ready(Ok(allowed))
+        }
+
+        fn poll_flush(self: Pin<&mut Self>, _cx: &mut FutContext<'_>) -> Poll<std::io::Result<()>> {
+            Poll::Ready(Ok(()))
+        }
+
+        fn poll_close(self: Pin<&mut Self>, _cx: &mut FutContext<'_>) -> Poll<std::io::Result<()>> {
+            Poll::Ready(Ok(()))
+        }
+    }
+
+    #[fuchsia::test]
+    async fn test_stress_faulty_writer_error_handling() {
+        let payload = b"PAYLOAD_FOR_FAULTY_WRITER_TEST";
+
+        // Failure mode 1: Immediate failure on uncompressed stop_and_receive_data
+        {
+            let provisioner =
+                setup_fake_provisioner_proxy_with_payload(None, None, true, payload.to_vec());
+            let trace_task = TraceTask::new(
+                "faulty_writer_1".into(),
+                trace::TraceConfig::default(),
+                None,
+                vec![],
+                None,
+                trace::CompressionType::None,
+                provisioner,
+            )
+            .await
+            .unwrap();
+
+            let res = trace_task
+                .stop_and_receive_data(FailingAsyncWriter { fail_after_bytes: 0, written: 0 })
+                .await;
+            assert!(res.is_err(), "Expected error when writer fails immediately");
+        }
+
+        // Failure mode 2: Immediate failure on uncompressed await_completion_and_receive_data
+        {
+            let provisioner =
+                setup_fake_provisioner_proxy_with_payload(None, None, true, payload.to_vec());
+            let trace_task = TraceTask::new(
+                "faulty_writer_2".into(),
+                trace::TraceConfig::default(),
+                Some(Duration::from_millis(10)),
+                vec![],
+                None,
+                trace::CompressionType::None,
+                provisioner,
+            )
+            .await
+            .unwrap();
+
+            let res = trace_task
+                .await_completion_and_receive_data(FailingAsyncWriter {
+                    fail_after_bytes: 0,
+                    written: 0,
+                })
+                .await;
+            assert!(res.is_err());
+        }
+
+        // Failure mode 3: Immediate failure on Zstd stop_and_receive_data
+        {
+            let provisioner =
+                setup_fake_provisioner_proxy_with_payload(None, None, true, payload.to_vec());
+            let trace_task = TraceTask::new(
+                "faulty_writer_3".into(),
+                trace::TraceConfig::default(),
+                None,
+                vec![],
+                None,
+                trace::CompressionType::Zstd,
+                provisioner,
+            )
+            .await
+            .unwrap();
+
+            let res = trace_task
+                .stop_and_receive_data(FailingAsyncWriter { fail_after_bytes: 0, written: 0 })
+                .await;
+            assert!(res.is_err());
+        }
+
+        // Failure mode 4: Failure mid-stream (after 10 bytes) on uncompressed
+        {
+            let provisioner =
+                setup_fake_provisioner_proxy_with_payload(None, None, true, payload.to_vec());
+            let trace_task = TraceTask::new(
+                "faulty_writer_4".into(),
+                trace::TraceConfig::default(),
+                None,
+                vec![],
+                None,
+                trace::CompressionType::None,
+                provisioner,
+            )
+            .await
+            .unwrap();
+
+            let res = trace_task
+                .stop_and_receive_data(FailingAsyncWriter { fail_after_bytes: 10, written: 0 })
+                .await;
+            assert!(res.is_err());
+        }
+
+        // Failure mode 5: Failure mid-stream (after 10 bytes) on Zstd
+        {
+            let provisioner =
+                setup_fake_provisioner_proxy_with_payload(None, None, true, payload.to_vec());
+            let trace_task = TraceTask::new(
+                "faulty_writer_5".into(),
+                trace::TraceConfig::default(),
+                None,
+                vec![],
+                None,
+                trace::CompressionType::Zstd,
+                provisioner,
+            )
+            .await
+            .unwrap();
+
+            let res = trace_task
+                .stop_and_receive_data(FailingAsyncWriter { fail_after_bytes: 10, written: 0 })
+                .await;
+            assert!(res.is_err());
+        }
     }
 }
