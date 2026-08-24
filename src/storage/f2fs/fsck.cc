@@ -1264,7 +1264,6 @@ void FsckWorker::PrintCheckpointInfo() {
   DisplayMember(sizeof(uint32_t), alloc_type, "alloc_type[CursegType::kCursegWarmNode]");
   alloc_type = cp.alloc_type[static_cast<int>(CursegType::kCursegColdNode)];
   DisplayMember(sizeof(uint32_t), alloc_type, "alloc_type[CursegType::kCursegColdNode]");
-  alloc_type = cp.alloc_type[static_cast<int>(CursegType::kCursegHotNode)];
   DisplayMember(sizeof(uint32_t), cp.cur_node_segno[0], "cur_node_segno[0]");
   DisplayMember(sizeof(uint32_t), cp.cur_node_segno[1], "cur_node_segno[1]");
   DisplayMember(sizeof(uint32_t), cp.cur_node_segno[2], "cur_node_segno[2]");
@@ -1385,13 +1384,18 @@ zx_status_t FsckWorker::GetValidCheckpoint() {
     return current.error_value();
   }
 
-  superblock_info_->SetCheckpoint(*current->first.get());
+  if (zx_status_t status = superblock_info_->SetCheckpoint(*current->first.get());
+      status != ZX_OK) {
+    return status;
+  }
 
   if (raw_sb.cp_payload) {
     superblock_info_->SetExtraSitBitmap(raw_sb.cp_payload * kBlockSize);
     for (uint32_t i = 0; i < raw_sb.cp_payload; ++i) {
       BlockBuffer blk;
-      ReadBlock(&blk, cp_start_blk_no + 1 + i);
+      if (zx_status_t status = ReadBlock(&blk, cp_start_blk_no + 1 + i); status != ZX_OK) {
+        return status;
+      }
       CloneBits(superblock_info_->GetExtraSitBitmap(), &blk, GetBitSize(i * kBlockSize),
                 GetBitSize(kBlockSize));
     }

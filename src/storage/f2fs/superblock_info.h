@@ -85,8 +85,8 @@ class SuperblockInfo {
   const Checkpoint &GetCheckpoint() const { return *checkpoint_block_; }
   BlockBuffer<Checkpoint> &GetCheckpointBlock() { return checkpoint_block_; }
 
-  zx_status_t SetCheckpoint(const BlockBuffer<Checkpoint> &block) {
-    if (zx_status_t status = CheckBlockSize(*block); status != ZX_OK) {
+  [[nodiscard]] zx_status_t SetCheckpoint(const BlockBuffer<Checkpoint> &block) {
+    if (zx_status_t status = CheckCheckpoint(*block); status != ZX_OK) {
       return status;
     }
     checkpoint_block_ = block;
@@ -223,9 +223,18 @@ class SuperblockInfo {
     return false;
   }
 
-  void IncSegmentCount(int type) { ++segment_count_[type]; }
-  uint64_t GetSegmentCount(int type) const { return segment_count_[type]; }
-  void IncBlockCount(int type) { ++block_count_[type]; }
+  void IncSegmentCount(uint8_t alloc_type) {
+    ZX_ASSERT(alloc_type < std::size(segment_count_));
+    ++segment_count_[alloc_type];
+  }
+  uint64_t GetSegmentCount(uint8_t alloc_type) const {
+    ZX_ASSERT(alloc_type < std::size(segment_count_));
+    return segment_count_[alloc_type];
+  }
+  void IncBlockCount(uint8_t alloc_type) {
+    ZX_ASSERT(alloc_type < std::size(block_count_));
+    ++block_count_[alloc_type];
+  }
 
   void IncreasePageCount(CountType count_type) {
     // Use release-acquire ordering with nr_pages_.
@@ -335,31 +344,51 @@ class SuperblockInfo {
     checkpoint_ver_ = LeToCpu(checkpoint_block_->checkpoint_ver);
   }
 
-  zx_status_t CheckBlockSize(const Checkpoint &ckpt) const {
+  zx_status_t CheckCheckpoint(const Checkpoint &ckpt) const {
     size_t total = LeToCpu(sb_->segment_count);
-    size_t fsmeta = LeToCpu(sb_->segment_count_ckpt);
-    fsmeta += LeToCpu(sb_->segment_count_sit);
-    fsmeta += LeToCpu(sb_->segment_count_nat);
-    fsmeta += LeToCpu(ckpt.rsvd_segment_count);
-    fsmeta += LeToCpu(sb_->segment_count_ssa);
-    if (fsmeta >= total) {
+    auto checked_fsmeta = safemath::CheckAdd<size_t>(
+        LeToCpu(sb_->segment_count_ckpt), LeToCpu(sb_->segment_count_sit),
+        LeToCpu(sb_->segment_count_nat), LeToCpu(ckpt.rsvd_segment_count),
+        LeToCpu(sb_->segment_count_ssa));
+    if (!checked_fsmeta.IsValid() || checked_fsmeta.ValueOrDie() >= total) {
       return ZX_ERR_BAD_STATE;
     }
 
-    size_t sit_ver_bitmap_bytesize =
-        ((LeToCpu(sb_->segment_count_sit) / 2) << LeToCpu(sb_->log_blocks_per_seg)) / 8;
-    size_t nat_ver_bitmap_bytesize =
-        ((LeToCpu(sb_->segment_count_nat) / 2) << LeToCpu(sb_->log_blocks_per_seg)) / 8;
-    block_t nat_blocks = (LeToCpu(sb_->segment_count_nat) >> 1) << LeToCpu(sb_->log_blocks_per_seg);
+    // The segment counts come from the superblock, so the shift below must not drop bits.
+    const auto checked_sit_blocks = safemath::CheckLsh<block_t>(LeToCpu(sb_->segment_count_sit) / 2,
+                                                                LeToCpu(sb_->log_blocks_per_seg));
+    const auto checked_nat_blocks = safemath::CheckLsh<block_t>(LeToCpu(sb_->segment_count_nat) / 2,
+                                                                LeToCpu(sb_->log_blocks_per_seg));
+    const auto checked_max_nid = checked_nat_blocks * kNatEntryPerBlock;
+    if (!checked_sit_blocks.IsValid() || !checked_nat_blocks.IsValid() ||
+        !checked_max_nid.IsValid()) {
+      return ZX_ERR_BAD_STATE;
+    }
 
-    if (LeToCpu(ckpt.sit_ver_bitmap_bytesize) != sit_ver_bitmap_bytesize ||
-        LeToCpu(ckpt.nat_ver_bitmap_bytesize) != nat_ver_bitmap_bytesize ||
-        LeToCpu(ckpt.next_free_nid) >= kNatEntryPerBlock * nat_blocks) {
+    const block_t sit_blocks = checked_sit_blocks.ValueOrDie();
+    const block_t nat_blocks = checked_nat_blocks.ValueOrDie();
+    if (LeToCpu(ckpt.sit_ver_bitmap_bytesize) != sit_blocks / kBitsPerByte ||
+        LeToCpu(ckpt.nat_ver_bitmap_bytesize) != nat_blocks / kBitsPerByte ||
+        LeToCpu(ckpt.next_free_nid) >= checked_max_nid.ValueOrDie()) {
       return ZX_ERR_BAD_STATE;
     }
 
     for (size_t i = 0; i < kNrCursegType; ++i) {
       if (ckpt.alloc_type[i] > static_cast<uint8_t>(AllocMode::kSSR)) {
+        return ZX_ERR_BAD_STATE;
+      }
+    }
+
+    const size_t main_segs = LeToCpu(sb_->segment_count_main);
+    for (size_t i = 0; i < kNrCursegDataType; ++i) {
+      if (LeToCpu(ckpt.cur_data_segno[i]) >= main_segs ||
+          LeToCpu(ckpt.cur_data_blkoff[i]) >= blocks_per_seg_) {
+        return ZX_ERR_BAD_STATE;
+      }
+    }
+    for (size_t i = 0; i < kNrCursegNodeType; ++i) {
+      if (LeToCpu(ckpt.cur_node_segno[i]) >= main_segs ||
+          LeToCpu(ckpt.cur_node_blkoff[i]) >= blocks_per_seg_) {
         return ZX_ERR_BAD_STATE;
       }
     }

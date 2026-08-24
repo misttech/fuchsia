@@ -79,7 +79,7 @@ enum class CursegType {
 // In the VictimSelPolicy->alloc_mode, there are two block allocation modes.
 // LFS writes data sequentially with cleaning operations.
 // SSR (Slack Space Recycle) reuses obsolete space without cleaning operations.
-enum class AllocMode { kLFS = 0, kSSR };
+enum class AllocMode : uint8_t { kLFS = 0, kSSR };
 
 constexpr uint32_t kMinVolumeSegments =
     kMinMetaSegments + kMinReservedSectionsForGc + kNrCursegType;

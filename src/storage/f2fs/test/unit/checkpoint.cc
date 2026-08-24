@@ -1127,21 +1127,71 @@ TEST_F(CheckpointTest, ReadNormalSummaryDiskFail) TA_NO_THREAD_SAFETY_ANALYSIS {
 TEST_F(CheckpointTest, InvalidAllocType) {
   DisableFsck();
   SuperblockInfo &sb_info = fs_->GetSuperblockInfo();
-  BlockBuffer<Checkpoint> ckpt_block = sb_info.GetCheckpointBlock();
-  ckpt_block->alloc_type[0] = static_cast<uint8_t>(AllocMode::kSSR) + 1;
-  ASSERT_EQ(sb_info.SetCheckpoint(ckpt_block), ZX_ERR_BAD_STATE);
+  for (size_t i = 0; i < kNrCursegType; ++i) {
+    BlockBuffer<Checkpoint> ckpt_block = sb_info.GetCheckpointBlock();
+    ckpt_block->alloc_type[i] = static_cast<uint8_t>(AllocMode::kSSR) + 1;
+    ASSERT_EQ(sb_info.SetCheckpoint(ckpt_block), ZX_ERR_BAD_STATE);
+  }
 }
 
-TEST_F(CheckpointTest, InvalidCursegBlkoff) TA_NO_THREAD_SAFETY_ANALYSIS {
+TEST_F(CheckpointTest, InvalidCursegBlkoff) {
   DisableFsck();
   SuperblockInfo &sb_info = fs_->GetSuperblockInfo();
-  BlockBuffer<Checkpoint> ckpt_block = sb_info.GetCheckpointBlock();
-  ckpt_block->cur_data_blkoff[0] = CpuToLe(static_cast<uint16_t>(sb_info.GetBlocksPerSeg()));
-  sb_info.GetCheckpointBlock() = ckpt_block;
-  ASSERT_EQ(fs_->GetSegmentManager().ReadCompactedSummaries(), ZX_ERR_INVALID_ARGS);
-  ASSERT_EQ(
-      fs_->GetSegmentManager().ReadNormalSummaries(static_cast<int>(CursegType::kCursegHotData)),
-      ZX_ERR_INVALID_ARGS);
+  const uint16_t invalid_blkoff = static_cast<uint16_t>(sb_info.GetBlocksPerSeg());
+
+  for (size_t i = 0; i < kNrCursegDataType; ++i) {
+    BlockBuffer<Checkpoint> ckpt_block = sb_info.GetCheckpointBlock();
+    ckpt_block->cur_data_blkoff[i] = CpuToLe(invalid_blkoff);
+    ASSERT_EQ(sb_info.SetCheckpoint(ckpt_block), ZX_ERR_BAD_STATE);
+  }
+
+  for (size_t i = 0; i < kNrCursegNodeType; ++i) {
+    BlockBuffer<Checkpoint> ckpt_block = sb_info.GetCheckpointBlock();
+    ckpt_block->cur_node_blkoff[i] = CpuToLe(invalid_blkoff);
+    ASSERT_EQ(sb_info.SetCheckpoint(ckpt_block), ZX_ERR_BAD_STATE);
+  }
+}
+
+TEST_F(CheckpointTest, InvalidCursegSegno) {
+  DisableFsck();
+  SuperblockInfo &sb_info = fs_->GetSuperblockInfo();
+  const uint32_t main_segs = LeToCpu(sb_info.GetSuperblock().segment_count_main);
+  const std::vector<uint32_t> invalid_segnos = {main_segs, main_segs + 100,
+                                                std::numeric_limits<uint32_t>::max()};
+
+  for (size_t i = 0; i < kNrCursegDataType; ++i) {
+    for (uint32_t invalid_segno : invalid_segnos) {
+      BlockBuffer<Checkpoint> ckpt_block = sb_info.GetCheckpointBlock();
+      ckpt_block->cur_data_segno[i] = CpuToLe(invalid_segno);
+      ASSERT_EQ(sb_info.SetCheckpoint(ckpt_block), ZX_ERR_BAD_STATE);
+    }
+  }
+
+  for (size_t i = 0; i < kNrCursegNodeType; ++i) {
+    for (uint32_t invalid_segno : invalid_segnos) {
+      BlockBuffer<Checkpoint> ckpt_block = sb_info.GetCheckpointBlock();
+      ckpt_block->cur_node_segno[i] = CpuToLe(invalid_segno);
+      ASSERT_EQ(sb_info.SetCheckpoint(ckpt_block), ZX_ERR_BAD_STATE);
+    }
+  }
+}
+
+TEST_F(CheckpointTest, InvalidRsvdSegmentCount) {
+  DisableFsck();
+  SuperblockInfo &sb_info = fs_->GetSuperblockInfo();
+  const uint32_t total_segments = LeToCpu(sb_info.GetSuperblock().segment_count);
+  const std::vector<uint32_t> invalid_rsvd_segment_counts = {
+      total_segments,
+      total_segments + 100,
+      std::numeric_limits<uint32_t>::max() - 100,
+      std::numeric_limits<uint32_t>::max(),
+  };
+
+  for (uint32_t invalid_count : invalid_rsvd_segment_counts) {
+    BlockBuffer<Checkpoint> ckpt_block = sb_info.GetCheckpointBlock();
+    ckpt_block->rsvd_segment_count = CpuToLe(invalid_count);
+    ASSERT_EQ(sb_info.SetCheckpoint(ckpt_block), ZX_ERR_BAD_STATE);
+  }
 }
 
 }  // namespace
