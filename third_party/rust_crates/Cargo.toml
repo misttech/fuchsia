@@ -109,6 +109,7 @@ enumn = "0.1.14"
 eui48 = { version = "1.1.0", default-features = false, features = ["serde", "disp_hexstring"] }
 event-listener = "5.4.1"
 fatfs = "0.3.6"
+figment = "0.10.19"
 flate2 = { version = "1.1.9", default-features = false, features = ["rust_backend"] }
 flyweights = { version = "0.1.5", features = ["json_schema", "serde"] }
 foreign-types = "0.3.1"
@@ -681,6 +682,9 @@ uses_fuchsia_license = true
 
 [gn.package.sapphire-sync."0.1.0"]
 uses_fuchsia_license = true
+
+[gn.package.figment."0.10.19"]
+rustflags = []
 
 [gn.package.futures-channel."0.3.31"]
 env_vars = [ "CARGO_PKG_NAME=futures-channel" ]
@@ -1363,6 +1367,9 @@ env_vars = [ "CARGO_PKG_VERSION=\\\"0.22.0\\\"" ]
 
 [gn.package.tuf."0.3.0-beta14"]
 tests = true
+
+[gn.package.uncased."0.9.10"]
+rustflags = ["--cfg=const_fn_transmute"]
 
 [gn.package.unic-common."0.9.0"]
 env_vars = [ "CARGO_PKG_VERSION=\\\"0.9.0\\\"", "CARGO_PKG_NAME=\\\"unic-common\\\"",  "CARGO_PKG_DESCRIPTION=\\\"\\\"", ]

@@ -643,6 +643,14 @@ group("fatfs-0.3.6") {
   public_deps = [ ":fatfs-v0_3_6" ]
 }
 
+group("figment") {
+  public_deps = [ ":figment-v0_10_19" ]
+}
+
+group("figment-0.10.19") {
+  public_deps = [ ":figment-v0_10_19" ]
+}
+
 if (current_os == "fuchsia") {
   group("flagset") {
     public_deps = [ ":flagset-v0_4_7" ]
@@ -4123,6 +4131,41 @@ rustc_macro("async-trait-v0_1_92") {
   applicable_licenses = [ ":async-trait-v0_1_92.license" ]
 }
 
+license("atomic-v0_6_1.license") {
+  public_package_name = "atomic"
+  license_files = [
+    "//third_party/rust_crates/vendor/atomic-0.6.1/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/atomic-0.6.1/LICENSE-MIT",
+  ]
+}
+
+rustc_library("atomic-v0_6_1") {
+  crate_name = "atomic"
+  source_root = "//third_party/rust_crates/vendor/atomic-0.6.1/src/lib.rs"
+  output_name = "atomic-e4e0b2a490690107"
+  edition = "2018"
+  disable_clippy = true
+  enforce_source_listing = false
+  configs -= [ "//build/config/rust:2018_idioms" ]
+
+  deps = []
+  deps += [ ":bytemuck-v1_25_2" ]
+
+  rustenv = []
+
+  rustflags = [
+    "--cap-lints=allow",
+    "-Cmetadata=e4e0b2a490690107",
+    "-Cextra-filename=-e4e0b2a490690107",
+    "--cfg=feature=\"default\"",
+    "--cfg=feature=\"fallback\"",
+  ]
+
+  visibility = [ ":*" ]
+
+  applicable_licenses = [ ":atomic-v0_6_1.license" ]
+}
+
 license("atomic-waker-v1_1_2.license") {
   public_package_name = "atomic_waker"
   license_files = [
@@ -5339,6 +5382,39 @@ rustc_library("bytecount-v0_6_9") {
   visibility = [ ":*" ]
 
   applicable_licenses = [ ":bytecount-v0_6_9.license" ]
+}
+
+license("bytemuck-v1_25_2.license") {
+  public_package_name = "bytemuck"
+  license_files = [
+    "//third_party/rust_crates/vendor/bytemuck-1.25.2/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/bytemuck-1.25.2/LICENSE-MIT",
+    "//third_party/rust_crates/vendor/bytemuck-1.25.2/LICENSE-ZLIB",
+  ]
+}
+
+rustc_library("bytemuck-v1_25_2") {
+  crate_name = "bytemuck"
+  source_root = "//third_party/rust_crates/vendor/bytemuck-1.25.2/src/lib.rs"
+  output_name = "bytemuck-a1ec1ab5766c9359"
+  edition = "2018"
+  disable_clippy = true
+  enforce_source_listing = false
+  configs -= [ "//build/config/rust:2018_idioms" ]
+
+  deps = []
+
+  rustenv = []
+
+  rustflags = [
+    "--cap-lints=allow",
+    "-Cmetadata=a1ec1ab5766c9359",
+    "-Cextra-filename=-a1ec1ab5766c9359",
+  ]
+
+  visibility = [ ":*" ]
+
+  applicable_licenses = [ ":bytemuck-v1_25_2.license" ]
 }
 
 license("byteorder-v1_5_0.license") {
@@ -9142,6 +9218,43 @@ rustc_library("ff-v0_14_0") {
   visibility = [ ":*" ]
 
   applicable_licenses = [ ":ff-v0_14_0.license" ]
+}
+
+license("figment-v0_10_19.license") {
+  public_package_name = "figment"
+  license_files = [
+    "//third_party/rust_crates/vendor/figment-0.10.19/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/figment-0.10.19/LICENSE-MIT",
+  ]
+}
+
+rustc_library("figment-v0_10_19") {
+  crate_name = "figment"
+  source_root = "//third_party/rust_crates/vendor/figment-0.10.19/src/lib.rs"
+  output_name = "figment-8dbc7ab648106d4b"
+  edition = "2018"
+  disable_clippy = true
+  enforce_source_listing = false
+  configs -= [ "//build/config/rust:2018_idioms" ]
+
+  deps = []
+  deps += [ ":serde-v1_0_229" ]
+  deps += [ ":uncased-v0_9_10" ]
+  if (false || false || (current_cpu == "riscv32" || current_cpu == "arm")) {
+    deps += [ ":atomic-v0_6_1" ]
+  }
+
+  rustenv = []
+
+  rustflags = [
+    "--cap-lints=allow",
+    "-Cmetadata=8dbc7ab648106d4b",
+    "-Cextra-filename=-8dbc7ab648106d4b",
+  ]
+
+  visibility = [ ":*" ]
+
+  applicable_licenses = [ ":figment-v0_10_19.license" ]
 }
 
 license("filetime-v0_2_29.license") {
@@ -24223,6 +24336,41 @@ rustc_library("unarray-v0_1_4") {
   visibility = [ ":*" ]
 
   applicable_licenses = [ ":unarray-v0_1_4.license" ]
+}
+
+license("uncased-v0_9_10.license") {
+  public_package_name = "uncased"
+  license_files = [
+    "//third_party/rust_crates/vendor/uncased-0.9.10/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/uncased-0.9.10/LICENSE-MIT",
+  ]
+}
+
+rustc_library("uncased-v0_9_10") {
+  crate_name = "uncased"
+  source_root = "//third_party/rust_crates/vendor/uncased-0.9.10/src/lib.rs"
+  output_name = "uncased-1e9d82fd876c966"
+  edition = "2018"
+  disable_clippy = true
+  enforce_source_listing = false
+  configs -= [ "//build/config/rust:2018_idioms" ]
+
+  deps = []
+
+  rustenv = []
+
+  rustflags = [
+    "--cap-lints=allow",
+    "-Cmetadata=1e9d82fd876c966",
+    "-Cextra-filename=-1e9d82fd876c966",
+    "--cfg=feature=\"alloc\"",
+    "--cfg=feature=\"default\"",
+    "--cfg=const_fn_transmute",
+  ]
+
+  visibility = [ ":*" ]
+
+  applicable_licenses = [ ":uncased-v0_9_10.license" ]
 }
 
 license("unic-char-property-v0_9_0.license") {

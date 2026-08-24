@@ -925,6 +925,18 @@ alias(
 )
 
 alias(
+    name = "figment-0.10.19",
+    actual = "//third_party/rust_crates/vendor/figment-0.10.19:figment",
+    tags = ["manual"],
+)
+
+alias(
+    name = "figment",
+    actual = "//third_party/rust_crates/vendor/figment-0.10.19:figment",
+    tags = ["manual"],
+)
+
+alias(
     name = "flagset-0.4.7",
     actual = "//third_party/rust_crates/vendor/flagset-0.4.7:flagset",
     tags = ["manual"],
