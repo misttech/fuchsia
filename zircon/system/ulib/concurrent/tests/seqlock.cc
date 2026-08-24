@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 #include <lib/concurrent/seqlock.h>
+#include <zircon/syscalls.h>
 
 #include <chrono>
 #include <thread>
