@@ -90,10 +90,7 @@ source_set("impl") {
     "//zircon/system/ulib/region-alloc",
   ]
   if (current_cpu == "x64") {
-    deps += [
-      "//zircon/kernel/lib/acpi_lite",
-      "//zircon/kernel/platform/pc",
-    ]
+    deps += [ "//zircon/kernel/platform/pc" ]
   }
 }
 

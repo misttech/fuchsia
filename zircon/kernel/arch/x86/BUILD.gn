@@ -224,7 +224,6 @@ source_set("x86") {
     "//sdk/lib/fit",
     "//zircon/kernel/dev/hw_rng",
     "//zircon/kernel/dev/iommu/stub",
-    "//zircon/kernel/lib/acpi_lite",
     "//zircon/kernel/lib/arch",
     "//zircon/kernel/lib/backtrace",
     "//zircon/kernel/lib/boot-options",

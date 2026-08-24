@@ -23,15 +23,6 @@ static_library("acpi_lite") {
   ]
   deps = [ "//zircon/system/ulib/pretty" ]
 
-  # Zircon-specific parts of acpi_lite.
-  if (toolchain_environment == "kernel") {
-    sources += [ "zircon.cc" ]
-    deps += [
-      "//zircon/kernel/lib/page",
-      "//zircon/kernel/vm:headers",
-    ]
-  }
-
   # These bits are needed for both Zircon proper and phys environments.
   if (is_kernel) {
     deps += [
@@ -59,11 +50,6 @@ library_headers("headers") {
 
 source_set("kernel-tests") {
   testonly = true
-  sources = [ "zircon_test.cc" ]
-  deps = [
-    ".",
-    "//zircon/kernel/lib/unittest",
-  ]
 }
 
 group("phys-tests") {
@@ -78,65 +64,6 @@ if (!is_kernel) {
   import("//build/components.gni")
   import("//build/fuzz.gni")
   import("//build/test.gni")
-
-  test("acpi_lite_test") {
-    sources = [
-      "acpi_lite_test.cc",
-      "apic_test.cc",
-      "binary_reader_test.cc",
-      "debug_port_test.cc",
-      "numa_test.cc",
-    ]
-    deps = [
-      ":acpi_lite",
-      "//src/lib/fxl/test:gtest_main",
-      "//third_party/googletest:gtest",
-    ]
-  }
-
-  fuchsia_unittest_package("acpi-lite-test") {
-    deps = [ ":acpi_lite_test" ]
-  }
-
-  fuchsia_library_fuzzer("acpi_lite_fuzztest") {
-    sources = [ "acpi_lite_fuzztest.cc" ]
-    deps = [ ":acpi_lite" ]
-  }
-
-  fuchsia_library_fuzzer("apic_fuzztest") {
-    sources = [ "apic_fuzztest.cc" ]
-    deps = [ ":acpi_lite" ]
-  }
-
-  fuchsia_library_fuzzer("numa_fuzztest") {
-    sources = [ "numa_fuzztest.cc" ]
-    deps = [ ":acpi_lite" ]
-  }
-
-  fuchsia_library_fuzzer("debug_port_fuzztest") {
-    sources = [ "debug_port_fuzztest.cc" ]
-    deps = [ ":acpi_lite" ]
-  }
-
-  fuchsia_fuzzer_component("acpi-lite-fuzztest-component") {
-    manifest = "meta/acpi_lite_fuzztest.cml"
-    deps = [ ":acpi_lite_fuzztest" ]
-  }
-
-  fuchsia_fuzzer_component("apic-fuzztest-component") {
-    manifest = "meta/apic_fuzztest.cml"
-    deps = [ ":apic_fuzztest" ]
-  }
-
-  fuchsia_fuzzer_component("numa-fuzztest-component") {
-    manifest = "meta/numa_fuzztest.cml"
-    deps = [ ":numa_fuzztest" ]
-  }
-
-  fuchsia_fuzzer_component("debug-port-fuzztest-component") {
-    manifest = "meta/debug_port_fuzztest.cml"
-    deps = [ ":debug_port_fuzztest" ]
-  }
 
   fuchsia_fuzzer_component("acpi-lite-fuzztest-rust-component") {
     component_name = "acpi_lite_fuzztest_rust"
@@ -163,12 +90,6 @@ if (!is_kernel) {
   }
 
   fuchsia_fuzzer_package("acpi-lite-fuzzer") {
-    cpp_fuzzer_components = [
-      ":acpi-lite-fuzztest-component",
-      ":apic-fuzztest-component",
-      ":numa-fuzztest-component",
-      ":debug-port-fuzztest-component",
-    ]
     rust_fuzzer_components = [
       ":acpi-lite-fuzztest-rust-component",
       ":apic-fuzztest-rust-component",
@@ -181,8 +102,6 @@ if (!is_kernel) {
     testonly = true
     deps = [
       ":acpi-lite-fuzzer",
-      ":acpi-lite-test",
-      ":acpi_lite_test($host_toolchain)",
       "rust:acpi_lite_test($host_toolchain)",
       "rust:tests",
     ]
