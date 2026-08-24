@@ -172,6 +172,11 @@ the build directory, using the matche's name with a ".lst" suffix.""",
     all_matches = []
     for binary in args.binaries:
         matches = find_binaries(build_dir, binary)
+        matches += [
+            (path, f"local file {path}")
+            for path in [Path(binary), build_dir / binary]
+            if path.exists()
+        ]
         all_matches += matches
         if len(matches) == 0:
             warn(f"'{binary}' did not match any binaries")
@@ -179,16 +184,12 @@ the build directory, using the matche's name with a ".lst" suffix.""",
         fail("No matches")
 
     for bin_path, bin_label in all_matches:
-        full_bin_path = build_dir / bin_path
-        output_path = full_bin_path.with_name(full_bin_path.name + ".lst")
-        output_rel_path = output_path.relative_to(Path.cwd())
-
+        output_path = Path(f"{bin_path}.lst")
         print(f"Disassembling {bin_label}...")
         try:
             with output_path.open("w") as outfile:
                 subprocess.run(
                     [*objdump_args, bin_path],
-                    cwd=build_dir,
                     stdout=outfile,
                     stderr=subprocess.PIPE,
                     text=True,
@@ -196,13 +197,13 @@ the build directory, using the matche's name with a ".lst" suffix.""",
                 )
         except FileNotFoundError:
             warn(
-                f"Binary not found at '{full_bin_path}'; "
-                f"run `fx build -- {bin_path}` to ensure that it is built",
+                f"Binary not found at '{bin_path}'; "
+                f"run `fx build {bin_label}` to ensure that it is built",
             )
         except subprocess.CalledProcessError as e:
             fail(f"objdump failed for '{bin_path}': {e.stderr}")
 
-        print(f"Wrote '{output_rel_path}' for '{bin_label}'")
+        print(f"Wrote '{output_path}' for '{bin_label}'")
 
     if args.edit:
         # $EDITOR may contain other flags like `--wait` supplied in service of
@@ -268,7 +269,7 @@ def find_binaries(
                 and fnmatch.fnmatch(binary["label"], rf"*:{bin_spec}(*")
             )
         ):
-            matches.append((binary["debug"], binary["label"]))
+            matches.append((build_dir / binary["debug"], binary["label"]))
     return matches
 
 
