@@ -9,8 +9,7 @@ use crate::att::bearer::{
 };
 use crate::att::l2cap::{L2CapChannelRx, L2CapChannelTx};
 use crate::att::pdu::{
-    ATT_ERROR_RSP_SIZE, ATT_EXCHANGE_MTU_REQ_SIZE, ATT_EXCHANGE_MTU_RSP_SIZE,
-    ATT_EXECUTE_WRITE_REQ_SIZE, ATT_FIND_BY_TYPE_VALUE_REQ_HEADER_SIZE,
+    ATT_EXCHANGE_MTU_REQ_SIZE, ATT_EXECUTE_WRITE_REQ_SIZE, ATT_FIND_BY_TYPE_VALUE_REQ_HEADER_SIZE,
     ATT_FIND_INFORMATION_REQ_SIZE, ATT_FIND_INFORMATION_RSP_HEADER_SIZE, ATT_HANDLE_VALUE_CFM_SIZE,
     ATT_HANDLES_INFORMATION_SIZE, ATT_HEADER_SIZE, ATT_PREPARE_WRITE_HEADER_SIZE,
     ATT_READ_BLOB_REQ_SIZE, ATT_READ_BY_GROUP_TYPE_REQ_HEADER_SIZE,
@@ -20,11 +19,13 @@ use crate::att::pdu::{
 };
 use crate::att::router::{BearerRouter, BearerRxHandle, RouteFilter};
 use sapphire_emboss::att::{
-    AttErrorRsp, AttExchangeMtuReqMut, AttExchangeMtuRsp, AttExecuteWriteReqMut,
-    AttFindByTypeValueReqHeaderMut, AttFindInformationReqMut, AttFindInformationRspHeader,
-    AttHeader, AttHeaderMut, AttPrepareWriteHeaderMut, AttReadBlobReqMut,
-    AttReadByGroupTypeReqHeaderMut, AttReadByTypeReqHeaderMut, AttReadReqMut, AttWriteCmdMut,
+    AttErrorRsp, AttExchangeMtuReqWriter, AttExchangeMtuRsp, AttExecuteWriteReqWriter,
+    AttFindByTypeValueReqHeaderWriter, AttFindInformationReqWriter, AttFindInformationRspHeader,
+    AttHeader, AttHeaderWriter, AttPrepareWriteHeaderWriter, AttReadBlobReqWriter,
+    AttReadByGroupTypeReqHeaderWriter, AttReadByTypeReqHeaderWriter, AttReadReqWriter,
+    AttWriteCmdWriter,
 };
+use sapphire_emboss::{CheckComplete, InfallibleRead};
 
 use core::cmp::{max, min};
 use core::mem::{MaybeUninit, size_of};
@@ -60,7 +61,7 @@ where
     Tx: L2CapChannelTx,
     R: AttReceiver,
 {
-    /// Creates a new ATT Client instance.
+    /// Creates a new ATT client instance.
     pub fn new(bearer_tx: BearerTx<Tx>, bearer_rx: R, preferred_mtu: u16) -> Self {
         Self { bearer_tx, bearer_rx, preferred_mtu }
     }
@@ -68,24 +69,27 @@ where
     /// Helper to perform a sequential ATT request-response transaction.
     ///
     /// This method:
-    /// 1. Formats and transmits the request packet over the ATT bearer.
-    /// 2. Awaits the incoming response packet from the server.
+    /// 1. Transmits `req_packet` over the ATT bearer.
+    /// 2. Awaits the incoming response packet from the peer into `rx_buf`.
     /// 3. Validates the response:
     ///    - If it matches `expected_rsp_opcode`, it is returned as `Ok`.
-    ///    - If it is an `ErrorRsp` and corresponds to our request, the specific
-    ///      `ErrorCode` is parsed and returned as a `ClientError::ErrorResponse`.
-    ///    - Otherwise, returns `ClientError::UnexpectedOpcode`.
+    ///    - If it is an `ErrorRsp` and corresponds to the transmitted request opcode,
+    ///      the specific `ErrorCode` is parsed and returned as `ClientError::ErrorResponse`.
+    ///    - If the response opcode is unrecognized or unexpected, returns `ClientError::UnexpectedOpcode`.
+    ///    - If the incoming packet or header is malformed, returns `ClientError::InvalidIncomingData`.
     async fn transaction<'a>(
         &mut self,
         req_opcode: Opcode,
         req_packet: &Packet,
         rx_buf: &'a mut [MaybeUninit<u8>],
         expected_rsp_opcode: Opcode,
-    ) -> Result<&'a mut Packet, ClientError> {
-        // Verify the provided buffer is large enough to hold any valid packet under the negotiated MTU.
+    ) -> Result<&'a Packet, ClientError> {
+        let negotiated_mtu = usize::from(self.bearer_tx.mtu());
         assert!(
-            rx_buf.len() >= usize::from(self.bearer_tx.mtu()),
-            "Programming error: provided buffer size is smaller than the negotiated MTU."
+            rx_buf.len() >= negotiated_mtu,
+            "Programming error: rx_buf ({} bytes) is smaller than negotiated MTU ({} bytes)",
+            rx_buf.len(),
+            negotiated_mtu
         );
 
         self.send_packet(req_packet).await?;
@@ -93,9 +97,7 @@ where
         let rx_packet = self.bearer_rx.next_packet(rx_buf).await.map_err(|e| match e {
             BearerRecvError::LinkClosed => ClientError::LinkClosed,
             BearerRecvError::BufferTooSmall => {
-                panic!(
-                    "Programming error: provided buffer size is smaller than the negotiated MTU."
-                );
+                panic!("Programming error: rx_buf is smaller than negotiated MTU")
             }
             BearerRecvError::HeaderTooShort => ClientError::InvalidIncomingData,
             BearerRecvError::PacketTooLarge { .. } => ClientError::InvalidIncomingData,
@@ -106,16 +108,14 @@ where
         match header.attribute_opcode().try_read() {
             Ok(opcode) if opcode == expected_rsp_opcode => Ok(rx_packet),
             Ok(Opcode::ATT_ERROR_RSP) => {
-                if rx_packet.as_bytes().len() != ATT_ERROR_RSP_SIZE {
-                    return Err(ClientError::InvalidIncomingData);
-                }
-                let err = AttErrorRsp::new(rx_packet.as_bytes());
-                let err_req_op = match err.request_opcode_in_error_uint().try_read() {
-                    Ok(op) => op,
+                let err = AttErrorRsp::new(rx_packet.as_bytes())
+                    .check_complete()
+                    .map_err(|_| ClientError::InvalidIncomingData)?;
+                let err_req_op = err.request_opcode_in_error_uint().read();
+                let err_code = match err.error_code().read() {
+                    Ok(c) => c,
                     Err(_) => return Err(ClientError::InvalidIncomingData),
                 };
-                let err_code =
-                    err.error_code().try_read().map_err(|_| ClientError::InvalidIncomingData)?;
                 if err_req_op == u8::from(req_opcode) {
                     Err(ClientError::ErrorResponse(err_code))
                 } else {
@@ -144,9 +144,11 @@ where
     /// see (Vol 3, Part G, Section 5.2.1) and (Vol 3, Part F, Section 3.4.2)
     pub async fn exchange_mtu(&mut self) -> Result<(), ClientError> {
         let mut req_buf = [0u8; ATT_EXCHANGE_MTU_REQ_SIZE];
-        let mut view = AttExchangeMtuReqMut::new(&mut req_buf[..]);
-        view.attribute_opcode().try_write(Opcode::ATT_EXCHANGE_MTU_REQ).expect("valid opcode");
-        view.client_rx_mtu().try_write(self.preferred_mtu).expect("valid mtu");
+        let _ = AttExchangeMtuReqWriter::new(&mut req_buf[..])
+            .check_complete()
+            .expect("statically sized Exchange MTU request buffer must be complete")
+            .write_attribute_opcode(Opcode::ATT_EXCHANGE_MTU_REQ)
+            .write_client_rx_mtu(self.preferred_mtu);
         let tx_packet = Packet::try_ref_from_bytes(&req_buf[..]).expect("valid packet");
         let mut rx_buf = [MaybeUninit::uninit(); DEFAULT_STARTING_MTU as usize];
 
@@ -160,12 +162,10 @@ where
             .await
         {
             Ok(rx_packet) => {
-                if rx_packet.as_bytes().len() != ATT_EXCHANGE_MTU_RSP_SIZE {
-                    return Err(ClientError::InvalidIncomingData);
-                }
-                let rsp = AttExchangeMtuRsp::new(rx_packet.as_bytes());
-                let server_mtu =
-                    rsp.server_rx_mtu().try_read().map_err(|_| ClientError::InvalidIncomingData)?;
+                let rsp = AttExchangeMtuRsp::new(rx_packet.as_bytes())
+                    .check_complete()
+                    .map_err(|_| ClientError::InvalidIncomingData)?;
+                let server_mtu = rsp.server_rx_mtu().read();
                 let negotiated_mtu = max(DEFAULT_STARTING_MTU, min(self.preferred_mtu, server_mtu));
 
                 self.bearer_tx.set_mtu(negotiated_mtu);
@@ -195,10 +195,12 @@ where
         rx_buf: &'a mut [MaybeUninit<u8>],
     ) -> Result<DiscoveredInformation<'a>, ClientError> {
         let mut tx_buf = [0u8; ATT_FIND_INFORMATION_REQ_SIZE];
-        let mut view = AttFindInformationReqMut::new(&mut tx_buf[..]);
-        view.attribute_opcode().try_write(Opcode::ATT_FIND_INFORMATION_REQ).expect("valid opcode");
-        view.starting_handle().try_write(starting_handle.value()).expect("valid handle");
-        view.ending_handle().try_write(ending_handle.value()).expect("valid handle");
+        let _ = AttFindInformationReqWriter::new(&mut tx_buf[..])
+            .check_complete()
+            .expect("valid buffer size")
+            .write_attribute_opcode(Opcode::ATT_FIND_INFORMATION_REQ)
+            .write_starting_handle(starting_handle.value())
+            .write_ending_handle(ending_handle.value());
         let tx_packet = Packet::try_ref_from_bytes(&tx_buf[..]).expect("valid packet");
 
         let rx_packet = self
@@ -210,12 +212,13 @@ where
             )
             .await?;
 
-        if rx_packet.as_bytes().len() < ATT_FIND_INFORMATION_RSP_HEADER_SIZE {
-            return Err(ClientError::InvalidIncomingData);
-        }
-        let header_view = AttFindInformationRspHeader::new(rx_packet.as_bytes());
-        let format =
-            header_view.format().try_read().map_err(|_| ClientError::InvalidIncomingData)?;
+        let header_view = AttFindInformationRspHeader::new(rx_packet.as_bytes())
+            .check_complete()
+            .map_err(|_| ClientError::InvalidIncomingData)?;
+        let format = match header_view.format().read() {
+            Ok(f) => f,
+            Err(_) => return Err(ClientError::InvalidIncomingData),
+        };
         let data_list = &rx_packet.data[1..];
 
         match format {
@@ -249,15 +252,15 @@ where
             "Programming error: request packet size exceeds negotiated MTU."
         );
         let mut tx_buf = [0u8; MAX_SUPPORTED_MTU];
-        let mut view = AttFindByTypeValueReqHeaderMut::new(
+        let _ = AttFindByTypeValueReqHeaderWriter::new(
             &mut tx_buf[..ATT_FIND_BY_TYPE_VALUE_REQ_HEADER_SIZE],
-        );
-        view.attribute_opcode()
-            .try_write(Opcode::ATT_FIND_BY_TYPE_VALUE_REQ)
-            .expect("valid opcode");
-        view.starting_handle().try_write(starting_handle.value()).expect("valid handle");
-        view.ending_handle().try_write(ending_handle.value()).expect("valid handle");
-        view.attribute_type().try_write(attribute_type).expect("valid attribute type");
+        )
+        .check_complete()
+        .expect("valid buffer size")
+        .write_attribute_opcode(Opcode::ATT_FIND_BY_TYPE_VALUE_REQ)
+        .write_starting_handle(starting_handle.value())
+        .write_ending_handle(ending_handle.value())
+        .write_attribute_type(attribute_type);
         tx_buf[ATT_FIND_BY_TYPE_VALUE_REQ_HEADER_SIZE..total_size].copy_from_slice(attribute_value);
         let tx_packet = Packet::try_ref_from_bytes(&tx_buf[..total_size]).expect("valid packet");
 
@@ -280,11 +283,13 @@ where
         &mut self,
         handle: AttributeHandle,
         rx_buf: &'a mut [MaybeUninit<u8>],
-    ) -> Result<&'a mut [u8], ClientError> {
+    ) -> Result<&'a [u8], ClientError> {
         let mut buf = [0u8; ATT_READ_REQ_SIZE];
-        let mut view = AttReadReqMut::new(&mut buf[..]);
-        view.attribute_opcode().try_write(Opcode::ATT_READ_REQ).expect("valid opcode");
-        view.attribute_handle().try_write(handle.value()).expect("valid handle");
+        let _ = AttReadReqWriter::new(&mut buf[..])
+            .check_complete()
+            .expect("statically sized Read request buffer must be complete")
+            .write_attribute_opcode(Opcode::ATT_READ_REQ)
+            .write_attribute_handle(handle.value());
         let tx_packet = Packet::try_ref_from_bytes(&buf[..]).expect("valid packet");
 
         // Perform the transaction and await the matching Read Response.
@@ -292,7 +297,7 @@ where
             self.transaction(Opcode::ATT_READ_REQ, tx_packet, rx_buf, Opcode::ATT_READ_RSP).await?;
 
         // Return the variable-length attribute value.
-        Ok(&mut rsp_packet.data)
+        Ok(&rsp_packet.data)
     }
 
     /// Sends a Read Blob Request and awaits a Read Blob Response.
@@ -303,12 +308,14 @@ where
         handle: AttributeHandle,
         offset: u16,
         rx_buf: &'a mut [MaybeUninit<u8>],
-    ) -> Result<&'a mut [u8], ClientError> {
+    ) -> Result<&'a [u8], ClientError> {
         let mut buf = [0u8; ATT_READ_BLOB_REQ_SIZE];
-        let mut view = AttReadBlobReqMut::new(&mut buf[..]);
-        view.attribute_opcode().try_write(Opcode::ATT_READ_BLOB_REQ).expect("valid opcode");
-        view.attribute_handle().try_write(handle.value()).expect("valid handle");
-        view.value_offset().try_write(offset).expect("valid offset");
+        let _ = AttReadBlobReqWriter::new(&mut buf[..])
+            .check_complete()
+            .expect("statically sized Read Blob request buffer must be complete")
+            .write_attribute_opcode(Opcode::ATT_READ_BLOB_REQ)
+            .write_attribute_handle(handle.value())
+            .write_value_offset(offset);
         let tx_packet = Packet::try_ref_from_bytes(&buf[..]).expect("valid packet");
 
         // Perform the transaction and await the matching Read Blob Response.
@@ -317,7 +324,7 @@ where
             .await?;
 
         // Return the variable-length value chunk.
-        Ok(&mut rsp_packet.data)
+        Ok(&rsp_packet.data)
     }
 
     pub fn mtu(&self) -> u16 {
@@ -346,11 +353,12 @@ where
             "Programming error: request packet size exceeds negotiated MTU."
         );
         let mut tx_buf = [0u8; MAX_SUPPORTED_MTU];
-        let mut view =
-            AttReadByTypeReqHeaderMut::new(&mut tx_buf[..ATT_READ_BY_TYPE_REQ_HEADER_SIZE]);
-        view.attribute_opcode().try_write(Opcode::ATT_READ_BY_TYPE_REQ).expect("valid opcode");
-        view.starting_handle().try_write(starting_handle.value()).expect("valid handle");
-        view.ending_handle().try_write(ending_handle.value()).expect("valid handle");
+        let _ = AttReadByTypeReqHeaderWriter::new(&mut tx_buf[..ATT_READ_BY_TYPE_REQ_HEADER_SIZE])
+            .check_complete()
+            .expect("statically sized Read By Type header buffer must be complete")
+            .write_attribute_opcode(Opcode::ATT_READ_BY_TYPE_REQ)
+            .write_starting_handle(starting_handle.value())
+            .write_ending_handle(ending_handle.value());
         tx_buf[ATT_READ_BY_TYPE_REQ_HEADER_SIZE..total_size].copy_from_slice(type_bytes);
         let tx_packet = Packet::try_ref_from_bytes(&tx_buf[..total_size]).expect("valid packet");
 
@@ -390,14 +398,14 @@ where
             "Programming error: request packet size exceeds negotiated MTU."
         );
         let mut tx_buf = [0u8; MAX_SUPPORTED_MTU];
-        let mut view = AttReadByGroupTypeReqHeaderMut::new(
+        let _ = AttReadByGroupTypeReqHeaderWriter::new(
             &mut tx_buf[..ATT_READ_BY_GROUP_TYPE_REQ_HEADER_SIZE],
-        );
-        view.attribute_opcode()
-            .try_write(Opcode::ATT_READ_BY_GROUP_TYPE_REQ)
-            .expect("valid opcode");
-        view.starting_handle().try_write(starting_handle.value()).expect("valid handle");
-        view.ending_handle().try_write(ending_handle.value()).expect("valid handle");
+        )
+        .check_complete()
+        .expect("statically sized Read By Group Type header buffer must be complete")
+        .write_attribute_opcode(Opcode::ATT_READ_BY_GROUP_TYPE_REQ)
+        .write_starting_handle(starting_handle.value())
+        .write_ending_handle(ending_handle.value());
         tx_buf[ATT_READ_BY_GROUP_TYPE_REQ_HEADER_SIZE..total_size].copy_from_slice(type_bytes);
         let tx_packet = Packet::try_ref_from_bytes(&tx_buf[..total_size]).expect("valid packet");
 
@@ -438,9 +446,11 @@ where
             "Programming error: request packet size exceeds buffer."
         );
         let mut tx_buf = [0u8; MAX_SUPPORTED_MTU];
-        let mut view = AttWriteCmdMut::new(&mut tx_buf[..ATT_WRITE_REQ_HEADER_SIZE]);
-        view.attribute_opcode().try_write(Opcode::ATT_WRITE_REQ).expect("valid opcode");
-        view.attribute_handle().try_write(attribute_handle.value()).expect("valid handle");
+        let _ = AttWriteCmdWriter::new(&mut tx_buf[..ATT_WRITE_REQ_HEADER_SIZE])
+            .check_complete()
+            .expect("statically sized Write Request header buffer must be complete")
+            .write_attribute_opcode(Opcode::ATT_WRITE_REQ)
+            .write_attribute_handle(attribute_handle.value());
         tx_buf[ATT_WRITE_REQ_HEADER_SIZE..req_len].copy_from_slice(attribute_value);
         let tx_packet = Packet::try_ref_from_bytes(&tx_buf[..req_len]).expect("valid packet");
 
@@ -468,9 +478,11 @@ where
             "Programming error: request packet size exceeds buffer."
         );
         let mut tx_buf = [0u8; MAX_SUPPORTED_MTU];
-        let mut view = AttWriteCmdMut::new(&mut tx_buf[..ATT_WRITE_CMD_HEADER_SIZE]);
-        view.attribute_opcode().try_write(Opcode::ATT_WRITE_CMD).expect("valid opcode");
-        view.attribute_handle().try_write(attribute_handle.value()).expect("valid handle");
+        let _ = AttWriteCmdWriter::new(&mut tx_buf[..ATT_WRITE_CMD_HEADER_SIZE])
+            .check_complete()
+            .expect("statically sized Write Command header buffer must be complete")
+            .write_attribute_opcode(Opcode::ATT_WRITE_CMD)
+            .write_attribute_handle(attribute_handle.value());
         tx_buf[ATT_WRITE_CMD_HEADER_SIZE..req_len].copy_from_slice(attribute_value);
         let tx_packet = Packet::try_ref_from_bytes(&tx_buf[..req_len]).expect("valid packet");
 
@@ -498,10 +510,12 @@ where
             "Programming error: request packet size exceeds buffer."
         );
         let mut tx_buf = [0u8; MAX_SUPPORTED_MTU];
-        let mut view = AttPrepareWriteHeaderMut::new(&mut tx_buf[..ATT_PREPARE_WRITE_HEADER_SIZE]);
-        view.attribute_opcode().try_write(Opcode::ATT_PREPARE_WRITE_REQ).expect("valid opcode");
-        view.attribute_handle().try_write(attribute_handle.value()).expect("valid handle");
-        view.value_offset().try_write(value_offset).expect("valid offset");
+        let _ = AttPrepareWriteHeaderWriter::new(&mut tx_buf[..ATT_PREPARE_WRITE_HEADER_SIZE])
+            .check_complete()
+            .expect("statically sized Prepare Write header buffer must be complete")
+            .write_attribute_opcode(Opcode::ATT_PREPARE_WRITE_REQ)
+            .write_attribute_handle(attribute_handle.value())
+            .write_value_offset(value_offset);
         tx_buf[ATT_PREPARE_WRITE_HEADER_SIZE..req_len].copy_from_slice(part_attribute_value);
         let tx_packet = Packet::try_ref_from_bytes(&tx_buf[..req_len]).expect("valid packet");
 
@@ -534,9 +548,11 @@ where
         rx_buf: &mut [MaybeUninit<u8>],
     ) -> Result<(), ClientError> {
         let mut buf = [0u8; ATT_EXECUTE_WRITE_REQ_SIZE];
-        let mut view = AttExecuteWriteReqMut::new(&mut buf[..]);
-        view.attribute_opcode().try_write(Opcode::ATT_EXECUTE_WRITE_REQ).expect("valid opcode");
-        view.flags().try_write(flags).expect("valid flags");
+        let _ = AttExecuteWriteReqWriter::new(&mut buf[..])
+            .check_complete()
+            .expect("statically sized Execute Write request buffer must be complete")
+            .write_attribute_opcode(Opcode::ATT_EXECUTE_WRITE_REQ)
+            .write_flags(flags);
         let tx_packet = Packet::try_ref_from_bytes(&buf[..]).expect("valid packet");
 
         let rx_packet = self
@@ -633,10 +649,10 @@ impl<Tx: L2CapChannelTx, R: AttReceiver> ServerEventStream<Tx, R> {
             Ok(Opcode::ATT_HANDLE_VALUE_NTF) => Ok(event),
             Ok(Opcode::ATT_HANDLE_VALUE_IND) => {
                 let mut cfm_buf = [0u8; ATT_HANDLE_VALUE_CFM_SIZE];
-                let mut view = AttHeaderMut::new(&mut cfm_buf);
-                view.attribute_opcode()
-                    .try_write(Opcode::ATT_HANDLE_VALUE_CFM)
-                    .expect("valid opcode");
+                let _ = AttHeaderWriter::new(&mut cfm_buf)
+                    .check_complete()
+                    .expect("valid buffer size")
+                    .write_attribute_opcode(Opcode::ATT_HANDLE_VALUE_CFM);
                 let tx_packet = Packet::try_ref_from_bytes(&cfm_buf).expect("valid packet");
                 match self.bearer_tx.send(tx_packet).await {
                     Ok(()) => {}
@@ -657,16 +673,20 @@ mod tests {
     use super::*;
     use crate::att::bearer::BearerRx;
     use crate::att::l2cap::mock::setup_mock_channel;
-    use crate::att::pdu::{ATT_EXECUTE_WRITE_RSP_SIZE, ATT_HANDLE_VALUE_IND_HEADER_SIZE};
+    use crate::att::pdu::{
+        ATT_ERROR_RSP_SIZE, ATT_EXCHANGE_MTU_RSP_SIZE, ATT_EXECUTE_WRITE_RSP_SIZE,
+        ATT_HANDLE_VALUE_IND_HEADER_SIZE,
+    };
     use sapphire_async::executor::BoundedExecutor;
     use sapphire_async::testing::TestExecutor;
+    use sapphire_emboss::CheckComplete;
     use sapphire_emboss::att::{
-        AttErrorRspMut, AttExchangeMtuReq, AttExchangeMtuRspMut, AttExecuteWriteReq,
-        AttFindByTypeValueReqHeader, AttFindInformationReq, AttFindInformationRspHeaderMut,
-        AttHandleValueIndHeaderMut, AttHandlesInformation, AttHandlesInformationMut,
-        AttInformationData16, AttInformationData16Mut, AttPrepareWriteHeader, AttReadBlobReq,
-        AttReadByGroupTypeReqHeader, AttReadByGroupTypeRspEntryHeaderMut, AttReadByTypeReqHeader,
-        AttReadReq, AttWriteCmd,
+        AttErrorRspWriter, AttExchangeMtuReq, AttExchangeMtuRspWriter, AttExecuteWriteReq,
+        AttFindByTypeValueReqHeader, AttFindInformationReq, AttFindInformationRspHeaderWriter,
+        AttHandleValueIndHeaderWriter, AttHandlesInformation, AttHandlesInformationWriter,
+        AttInformationData16, AttInformationData16Writer, AttPrepareWriteHeader, AttReadBlobReq,
+        AttReadByGroupTypeReqHeader, AttReadByGroupTypeRspEntryHeaderWriter,
+        AttReadByTypeReqHeader, AttReadReq, AttWriteCmd,
     };
 
     const CLIENT_PREFERRED_MTU: u16 = 512;
@@ -682,11 +702,13 @@ mod tests {
         error_code: ErrorCode,
     ) -> [u8; ATT_ERROR_RSP_SIZE] {
         let mut buf = [0u8; ATT_ERROR_RSP_SIZE];
-        let mut view = AttErrorRspMut::new(&mut buf[..]);
-        view.attribute_opcode().try_write(Opcode::ATT_ERROR_RSP).unwrap();
-        view.request_opcode_in_error_uint().try_write(u8::from(opcode)).unwrap();
-        view.attribute_handle().try_write(handle).unwrap();
-        view.error_code().try_write(error_code).unwrap();
+        let _ = AttErrorRspWriter::new(&mut buf[..])
+            .check_complete()
+            .unwrap()
+            .write_attribute_opcode(Opcode::ATT_ERROR_RSP)
+            .write_request_opcode_in_error_uint(u8::from(opcode))
+            .write_attribute_handle(handle)
+            .write_error_code(error_code);
         buf
     }
 
@@ -715,9 +737,11 @@ mod tests {
 
                 // Reply with ExchangeMtuRsp containing 256-byte MTU
                 let mut rsp_buf = [0u8; ATT_EXCHANGE_MTU_RSP_SIZE];
-                let mut view = AttExchangeMtuRspMut::new(&mut rsp_buf[..]);
-                view.attribute_opcode().try_write(Opcode::ATT_EXCHANGE_MTU_RSP).unwrap();
-                view.server_rx_mtu().try_write(SERVER_MTU).unwrap();
+                let _ = AttExchangeMtuRspWriter::new(&mut rsp_buf[..])
+                    .check_complete()
+                    .unwrap()
+                    .write_attribute_opcode(Opcode::ATT_EXCHANGE_MTU_RSP)
+                    .write_server_rx_mtu(SERVER_MTU);
 
                 let mut server_tx_bearer = BearerTx::new(test_tx);
                 let tx_packet = Packet::try_ref_from_bytes(&rsp_buf[..]).unwrap();
@@ -850,17 +874,23 @@ mod tests {
                 // Handle 1: UUID 0x2A00
                 // Handle 2: UUID 0x2A24
                 let mut tx_buf = [0u8; 64];
-                let mut header = AttFindInformationRspHeaderMut::new(
+                let _ = AttFindInformationRspHeaderWriter::new(
                     &mut tx_buf[..ATT_FIND_INFORMATION_RSP_HEADER_SIZE],
-                );
-                header.attribute_opcode().try_write(Opcode::ATT_FIND_INFORMATION_RSP).unwrap();
-                header.format().try_write(UuidFormat::BIT16).unwrap();
-                let mut e1 = AttInformationData16Mut::new(&mut tx_buf[2..6]);
-                e1.attribute_handle().try_write(1).unwrap();
-                e1.uuid().try_write(0x2A00).unwrap();
-                let mut e2 = AttInformationData16Mut::new(&mut tx_buf[6..10]);
-                e2.attribute_handle().try_write(2).unwrap();
-                e2.uuid().try_write(0x2A24).unwrap();
+                )
+                .check_complete()
+                .unwrap()
+                .write_attribute_opcode(Opcode::ATT_FIND_INFORMATION_RSP)
+                .write_format(UuidFormat::BIT16);
+                let _ = AttInformationData16Writer::new(&mut tx_buf[2..6])
+                    .check_complete()
+                    .unwrap()
+                    .write_attribute_handle(1)
+                    .write_uuid(0x2A00);
+                let _ = AttInformationData16Writer::new(&mut tx_buf[6..10])
+                    .check_complete()
+                    .unwrap()
+                    .write_attribute_handle(2)
+                    .write_uuid(0x2A24);
 
                 let tx_packet = Packet::try_ref_from_bytes(&tx_buf[..10]).unwrap();
                 let mut server_tx_bearer = BearerTx::new(server_tx);
@@ -962,9 +992,11 @@ mod tests {
 
                 let mut tx_buf = [0u8; 64];
                 tx_buf[0] = Opcode::ATT_FIND_BY_TYPE_VALUE_RSP as u8;
-                let mut entry = AttHandlesInformationMut::new(&mut tx_buf[1..5]);
-                entry.attribute_handle().try_write(1).unwrap();
-                entry.group_end_handle().try_write(5).unwrap();
+                let _ = AttHandlesInformationWriter::new(&mut tx_buf[1..5])
+                    .check_complete()
+                    .unwrap()
+                    .write_attribute_handle(1)
+                    .write_group_end_handle(5);
                 let tx_packet = Packet::try_ref_from_bytes(&tx_buf[..5]).unwrap();
                 let mut server_tx_bearer = BearerTx::new(server_tx);
                 server_tx_bearer.send(tx_packet).await.unwrap();
@@ -1052,8 +1084,10 @@ mod tests {
 
                 let val = b"Sunstone";
                 let mut tx_buf = [0u8; 64];
-                let mut view = AttHeaderMut::new(&mut tx_buf[..1]);
-                view.attribute_opcode().try_write(Opcode::ATT_READ_RSP).unwrap();
+                let _ = AttHeaderWriter::new(&mut tx_buf[..1])
+                    .check_complete()
+                    .unwrap()
+                    .write_attribute_opcode(Opcode::ATT_READ_RSP);
                 tx_buf[1..1 + val.len()].copy_from_slice(val);
                 let tx_packet = Packet::try_ref_from_bytes(&tx_buf[..1 + val.len()]).unwrap();
                 let mut server_tx_bearer = BearerTx::new(server_tx);
@@ -1131,8 +1165,10 @@ mod tests {
 
                 let val = b"nstone"; // Part of "Sunstone" starting at offset 2
                 let mut tx_buf = [0u8; 64];
-                let mut view = AttHeaderMut::new(&mut tx_buf[..1]);
-                view.attribute_opcode().try_write(Opcode::ATT_READ_BLOB_RSP).unwrap();
+                let _ = AttHeaderWriter::new(&mut tx_buf[..1])
+                    .check_complete()
+                    .unwrap()
+                    .write_attribute_opcode(Opcode::ATT_READ_BLOB_RSP);
                 tx_buf[1..1 + val.len()].copy_from_slice(val);
                 let tx_packet = Packet::try_ref_from_bytes(&tx_buf[..1 + val.len()]).unwrap();
                 let mut server_tx_bearer = BearerTx::new(server_tx);
@@ -1215,8 +1251,10 @@ mod tests {
                 assert_eq!(&packet.as_bytes()[ATT_READ_BY_TYPE_REQ_HEADER_SIZE..], uuid.as_bytes());
 
                 let mut tx_buf = [0u8; 64];
-                let mut view = AttHeaderMut::new(&mut tx_buf[..1]);
-                view.attribute_opcode().try_write(Opcode::ATT_READ_BY_TYPE_RSP).unwrap();
+                let _ = AttHeaderWriter::new(&mut tx_buf[..1])
+                    .check_complete()
+                    .unwrap()
+                    .write_attribute_opcode(Opcode::ATT_READ_BY_TYPE_RSP);
                 tx_buf[1] = ENTRY_SIZE;
                 // Push entry 1: handle = 2, value = b"PrimaryS"
                 tx_buf[2..4].copy_from_slice(&2u16.to_le_bytes());
@@ -1322,18 +1360,24 @@ mod tests {
                 );
 
                 let mut tx_buf = [0u8; 64];
-                let mut view = AttHeaderMut::new(&mut tx_buf[..1]);
-                view.attribute_opcode().try_write(Opcode::ATT_READ_BY_GROUP_TYPE_RSP).unwrap();
+                let _ = AttHeaderWriter::new(&mut tx_buf[..1])
+                    .check_complete()
+                    .unwrap()
+                    .write_attribute_opcode(Opcode::ATT_READ_BY_GROUP_TYPE_RSP);
                 tx_buf[1] = entry_size;
                 // Push entry 1: handle = 2, group end = 5, value = 0x1801 (\x01\x18)
-                let mut e1 = AttReadByGroupTypeRspEntryHeaderMut::new(&mut tx_buf[2..6]);
-                e1.attribute_handle().try_write(2).unwrap();
-                e1.end_group_handle().try_write(5).unwrap();
+                let _ = AttReadByGroupTypeRspEntryHeaderWriter::new(&mut tx_buf[2..6])
+                    .check_complete()
+                    .unwrap()
+                    .write_attribute_handle(2)
+                    .write_end_group_handle(5);
                 tx_buf[6..8].copy_from_slice(b"\x01\x18");
                 // Push entry 2: handle = 6, group end = 10, value = 0x1800 (\x00\x18)
-                let mut e2 = AttReadByGroupTypeRspEntryHeaderMut::new(&mut tx_buf[8..12]);
-                e2.attribute_handle().try_write(6).unwrap();
-                e2.end_group_handle().try_write(10).unwrap();
+                let _ = AttReadByGroupTypeRspEntryHeaderWriter::new(&mut tx_buf[8..12])
+                    .check_complete()
+                    .unwrap()
+                    .write_attribute_handle(6)
+                    .write_end_group_handle(10);
                 tx_buf[12..14].copy_from_slice(b"\x00\x18");
 
                 let tx_packet = Packet::try_ref_from_bytes(&tx_buf[..14]).unwrap();
@@ -1433,8 +1477,10 @@ mod tests {
 
                 // 2. Respond with empty WriteRsp
                 let mut rsp_buf = [0u8; 1];
-                let mut rsp_view = AttHeaderMut::new(&mut rsp_buf[..]);
-                rsp_view.attribute_opcode().try_write(Opcode::ATT_WRITE_RSP).unwrap();
+                let _ = AttHeaderWriter::new(&mut rsp_buf[..])
+                    .check_complete()
+                    .unwrap()
+                    .write_attribute_opcode(Opcode::ATT_WRITE_RSP);
                 let tx_packet = Packet::try_ref_from_bytes(&rsp_buf[..]).unwrap();
                 server_tx_bearer.send(tx_packet).await.unwrap();
             });
@@ -1582,8 +1628,10 @@ mod tests {
                 // Echo back PrepareWriteRsp
                 let mut rsp_buf = [0u8; 128];
                 rsp_buf[..packet.as_bytes().len()].copy_from_slice(packet.as_bytes());
-                let mut rsp_view = AttHeaderMut::new(&mut rsp_buf[..ATT_HEADER_SIZE]);
-                rsp_view.attribute_opcode().try_write(Opcode::ATT_PREPARE_WRITE_RSP).unwrap();
+                let _ = AttHeaderWriter::new(&mut rsp_buf[..ATT_HEADER_SIZE])
+                    .check_complete()
+                    .unwrap()
+                    .write_attribute_opcode(Opcode::ATT_PREPARE_WRITE_RSP);
                 let tx_packet =
                     Packet::try_ref_from_bytes(&rsp_buf[..packet.as_bytes().len()]).unwrap();
                 server_tx.send(tx_packet).await.unwrap();
@@ -1661,11 +1709,13 @@ mod tests {
                 // Respond with mismatched echoed payload (mismatched offset 1 instead of 0)
                 const PART_VAL: &[u8] = b"Part1";
                 let mut rsp_buf = [0u8; ATT_PREPARE_WRITE_HEADER_SIZE + PART_VAL.len()];
-                let mut view =
-                    AttPrepareWriteHeaderMut::new(&mut rsp_buf[..ATT_PREPARE_WRITE_HEADER_SIZE]);
-                view.attribute_opcode().try_write(Opcode::ATT_PREPARE_WRITE_RSP).unwrap();
-                view.attribute_handle().try_write(10).unwrap();
-                view.value_offset().try_write(1).unwrap();
+                let _ =
+                    AttPrepareWriteHeaderWriter::new(&mut rsp_buf[..ATT_PREPARE_WRITE_HEADER_SIZE])
+                        .check_complete()
+                        .unwrap()
+                        .write_attribute_opcode(Opcode::ATT_PREPARE_WRITE_RSP)
+                        .write_attribute_handle(10)
+                        .write_value_offset(1);
                 rsp_buf[ATT_PREPARE_WRITE_HEADER_SIZE..].copy_from_slice(PART_VAL);
                 let tx_packet = Packet::try_ref_from_bytes(&rsp_buf[..]).unwrap();
                 server_tx.send(tx_packet).await.unwrap();
@@ -1705,8 +1755,10 @@ mod tests {
                 assert_eq!(req.flags().try_read().unwrap(), ExecuteWriteFlags::WRITE);
 
                 let mut rsp_buf = [0u8; ATT_EXECUTE_WRITE_RSP_SIZE];
-                let mut rsp_view = AttHeaderMut::new(&mut rsp_buf[..]);
-                rsp_view.attribute_opcode().try_write(Opcode::ATT_EXECUTE_WRITE_RSP).unwrap();
+                let _ = AttHeaderWriter::new(&mut rsp_buf[..])
+                    .check_complete()
+                    .unwrap()
+                    .write_attribute_opcode(Opcode::ATT_EXECUTE_WRITE_RSP);
                 let tx_packet = Packet::try_ref_from_bytes(&rsp_buf[..]).unwrap();
                 server_tx.send(tx_packet).await.unwrap();
             });
@@ -1758,9 +1810,11 @@ mod tests {
             let server_handle = executor.spawn(async move {
                 let mut server_tx_bearer = BearerTx::new(test_tx);
                 let mut ind_buf = [0u8; ATT_HANDLE_VALUE_IND_HEADER_SIZE];
-                let mut view = AttHandleValueIndHeaderMut::new(&mut ind_buf);
-                view.attribute_opcode().try_write(Opcode::ATT_HANDLE_VALUE_IND).unwrap();
-                view.attribute_handle().try_write(0x1234).unwrap();
+                let _ = AttHandleValueIndHeaderWriter::new(&mut ind_buf)
+                    .check_complete()
+                    .unwrap()
+                    .write_attribute_opcode(Opcode::ATT_HANDLE_VALUE_IND)
+                    .write_attribute_handle(0x1234);
                 let tx_packet = Packet::try_ref_from_bytes(&ind_buf).unwrap();
                 server_tx_bearer.send(tx_packet).await.unwrap();
 

@@ -201,7 +201,8 @@ mod tests {
     use crate::att::pdu::{ATT_HANDLE_VALUE_NTF_HEADER_SIZE, ATT_READ_REQ_SIZE};
     use sapphire_async::executor::BoundedExecutor;
     use sapphire_async::testing::TestExecutor;
-    use sapphire_emboss::att::{AttHandleValueNtfHeaderMut, AttReadReq, AttReadReqMut};
+    use sapphire_emboss::att::{AttHandleValueNtfHeaderWriter, AttReadReq, AttReadReqWriter};
+    use sapphire_emboss::{CheckComplete, InfallibleRead};
     use zerocopy::{IntoBytes, TryFromBytes};
 
     #[test]
@@ -218,9 +219,13 @@ mod tests {
             let _sender_handle = executor.spawn(async move {
                 for i in 0..4u16 {
                     let mut tx_buf = [0u8; 64];
-                    let mut view = AttHandleValueNtfHeaderMut::new(&mut tx_buf);
-                    view.attribute_opcode().try_write(Opcode::ATT_HANDLE_VALUE_NTF).unwrap();
-                    view.attribute_handle().try_write(i + 1).unwrap();
+                    let _ = AttHandleValueNtfHeaderWriter::new(
+                        &mut tx_buf[..ATT_HANDLE_VALUE_NTF_HEADER_SIZE],
+                    )
+                    .check_complete()
+                    .unwrap()
+                    .write_attribute_opcode(Opcode::ATT_HANDLE_VALUE_NTF)
+                    .write_attribute_handle(i + 1);
                     tx_buf[ATT_HANDLE_VALUE_NTF_HEADER_SIZE..ATT_HANDLE_VALUE_NTF_HEADER_SIZE + 2]
                         .copy_from_slice(&[0xAA, 0xBB]);
                     let tx_packet =
@@ -265,9 +270,13 @@ mod tests {
 
             let _sender_handle = executor.spawn(async move {
                 let mut tx_buf = [0u8; 64];
-                let mut view = AttHandleValueNtfHeaderMut::new(&mut tx_buf);
-                view.attribute_opcode().try_write(Opcode::ATT_HANDLE_VALUE_NTF).unwrap();
-                view.attribute_handle().try_write(0x0001).unwrap();
+                let _ = AttHandleValueNtfHeaderWriter::new(
+                    &mut tx_buf[..ATT_HANDLE_VALUE_NTF_HEADER_SIZE],
+                )
+                .check_complete()
+                .unwrap()
+                .write_attribute_opcode(Opcode::ATT_HANDLE_VALUE_NTF)
+                .write_attribute_handle(0x0001);
                 tx_buf[ATT_HANDLE_VALUE_NTF_HEADER_SIZE..ATT_HANDLE_VALUE_NTF_HEADER_SIZE + 4]
                     .copy_from_slice(&[0xAA, 0xBB, 0xCC, 0xDD]);
                 let tx_packet =
@@ -307,9 +316,11 @@ mod tests {
 
             let sender_handle = executor.spawn(async move {
                 let mut buf = [0u8; ATT_READ_REQ_SIZE];
-                let mut view = AttReadReqMut::new(&mut buf[..]);
-                view.attribute_opcode().try_write(Opcode::ATT_READ_REQ).unwrap();
-                view.attribute_handle().try_write(0x0001).unwrap();
+                let _ = AttReadReqWriter::new(&mut buf[..])
+                    .check_complete()
+                    .unwrap()
+                    .write_attribute_opcode(Opcode::ATT_READ_REQ)
+                    .write_attribute_handle(0x0001);
                 let tx_packet = Packet::try_ref_from_bytes(&buf[..]).unwrap();
                 let _ = client_tx_bearer.send(tx_packet).await;
             });
@@ -318,8 +329,8 @@ mod tests {
                 let mut rx_buf = [MaybeUninit::uninit(); MAX_SUPPORTED_MTU];
                 let p = server_rx_handle.next_packet(&mut rx_buf).await.unwrap();
                 assert_eq!(p.opcode, Opcode::ATT_READ_REQ.into());
-                let req = AttReadReq::new(p.as_bytes());
-                assert_eq!(req.attribute_handle().try_read().unwrap(), 0x0001);
+                let req = AttReadReq::new(p.as_bytes()).check_complete().unwrap();
+                assert_eq!(req.attribute_handle().read(), 0x0001);
             });
 
             executor.run_until_stalled();

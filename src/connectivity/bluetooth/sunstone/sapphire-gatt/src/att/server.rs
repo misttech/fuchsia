@@ -32,13 +32,14 @@ use sapphire_collections::storage::StorageFamily;
 use sapphire_collections::vec::Vec;
 use sapphire_common::{PeerId, Uuid};
 use sapphire_emboss::att::{
-    AttErrorRspMut, AttExchangeMtuReq, AttExchangeMtuRspMut, AttExecuteWriteReq,
-    AttFindByTypeValueReqHeader, AttFindInformationReq, AttFindInformationRspHeaderMut,
-    AttHandleValueIndHeaderMut, AttHandleValueNtfHeaderMut, AttHandlesInformationMut, AttHeader,
-    AttHeaderMut, AttInformationData16Mut, AttInformationData128Mut, AttPrepareWriteHeader,
-    AttReadBlobReq, AttReadByGroupTypeReqHeader, AttReadByGroupTypeRspEntryHeaderMut,
-    AttReadByTypeReqHeader, AttReadReq, AttWriteCmd,
+    AttErrorRspWriter, AttExchangeMtuReq, AttExchangeMtuRspWriter, AttExecuteWriteReq,
+    AttFindByTypeValueReqHeader, AttFindInformationReq, AttFindInformationRspHeaderWriter,
+    AttHandleValueIndHeaderWriter, AttHandleValueNtfHeaderWriter, AttHandlesInformationWriter,
+    AttHeader, AttHeaderWriter, AttInformationData16Writer, AttInformationData128Writer,
+    AttPrepareWriteHeader, AttReadBlobReq, AttReadByGroupTypeReqHeader,
+    AttReadByGroupTypeRspEntryHeaderWriter, AttReadByTypeReqHeader, AttReadReq, AttWriteCmd,
 };
+use sapphire_emboss::{CheckComplete, InfallibleRead};
 use sapphire_sync::mutex::raw::{RawMutex, SingleThreadMutex};
 use thiserror::Error;
 use zerocopy::{IntoBytes, TryFromBytes};
@@ -364,15 +365,10 @@ where
     ///
     /// see Bluetooth Core Spec v6.0 (Vol 3, Part F, Section 3.4.2.1) and (Vol 3, Part G, Section 5.2.1)
     async fn handle_exchange_mtu(&mut self, packet_bytes: &[u8]) -> Result<(), TransactionError> {
-        if packet_bytes.len() != ATT_EXCHANGE_MTU_REQ_SIZE {
-            return Err(TransactionError::InvalidPdu {
-                request_opcode: Opcode::ATT_EXCHANGE_MTU_REQ,
-            });
-        }
-        let req = AttExchangeMtuReq::new(packet_bytes);
-        let client_mtu = req.client_rx_mtu().try_read().map_err(|_| {
+        let req = AttExchangeMtuReq::new(packet_bytes).check_complete().map_err(|_| {
             TransactionError::InvalidPdu { request_opcode: Opcode::ATT_EXCHANGE_MTU_REQ }
         })?;
+        let client_mtu = req.client_rx_mtu().read();
 
         let negotiated_mtu = max(DEFAULT_STARTING_MTU, min(client_mtu, self.server_rx_mtu));
 
@@ -382,9 +378,11 @@ where
 
         // Respond with ExchangeMtuRsp containing our supported rx MTU
         let mut buf = [0u8; ATT_EXCHANGE_MTU_RSP_SIZE];
-        let mut view = AttExchangeMtuRspMut::new(&mut buf[..]);
-        view.attribute_opcode().try_write(Opcode::ATT_EXCHANGE_MTU_RSP).expect("valid opcode");
-        view.server_rx_mtu().try_write(self.server_rx_mtu).expect("valid mtu");
+        let _ = AttExchangeMtuRspWriter::new(&mut buf[..])
+            .check_complete()
+            .expect("statically sized Exchange MTU response buffer must be complete")
+            .write_attribute_opcode(Opcode::ATT_EXCHANGE_MTU_RSP)
+            .write_server_rx_mtu(self.server_rx_mtu);
 
         let tx_packet = Packet::try_ref_from_bytes(&buf[..]).expect("valid packet");
         self.send_packet(tx_packet).await?;
@@ -402,13 +400,11 @@ where
                 request_opcode: Opcode::ATT_FIND_INFORMATION_REQ,
             });
         }
-        let req = AttFindInformationReq::new(payload);
-        let start = req.starting_handle().try_read().map_err(|_| TransactionError::InvalidPdu {
-            request_opcode: Opcode::ATT_FIND_INFORMATION_REQ,
+        let req = AttFindInformationReq::new(payload).check_complete().map_err(|_| {
+            TransactionError::InvalidPdu { request_opcode: Opcode::ATT_FIND_INFORMATION_REQ }
         })?;
-        let end = req.ending_handle().try_read().map_err(|_| TransactionError::InvalidPdu {
-            request_opcode: Opcode::ATT_FIND_INFORMATION_REQ,
-        })?;
+        let start = req.starting_handle().read();
+        let end = req.ending_handle().read();
 
         if start > end {
             return Err(TransactionError::ErrorResponse {
@@ -438,14 +434,13 @@ where
             "Programming error: transmission buffer size is smaller than the negotiated MTU."
         );
 
-        let mut header_view = AttFindInformationRspHeaderMut::new(
+        let _ = AttFindInformationRspHeaderWriter::new(
             &mut tx_buf[..ATT_FIND_INFORMATION_RSP_HEADER_SIZE],
-        );
-        header_view
-            .attribute_opcode()
-            .try_write(Opcode::ATT_FIND_INFORMATION_RSP)
-            .expect("valid opcode");
-        header_view.format().try_write(format).expect("valid format");
+        )
+        .check_complete()
+        .expect("statically sized Find Information header buffer must be complete")
+        .write_attribute_opcode(Opcode::ATT_FIND_INFORMATION_RSP)
+        .write_format(format);
 
         let limit = self.effective_mtu();
         let mut offset = ATT_FIND_INFORMATION_RSP_HEADER_SIZE;
@@ -459,21 +454,29 @@ where
                         break;
                     }
                     let uuid16 = u16::try_from(*attr.uuid()).expect("valid 16-bit uuid");
-                    let mut entry = AttInformationData16Mut::new(
+                    let _ = AttInformationData16Writer::new(
                         &mut tx_buf[offset..offset + ATT_INFORMATION_DATA_16_SIZE],
-                    );
-                    entry.attribute_handle().try_write(handle.value()).expect("valid handle");
-                    entry.uuid().try_write(uuid16).expect("valid uuid");
+                    )
+                    .check_complete()
+                    .expect(
+                        "statically sized Find Information 16-bit entry buffer must be complete",
+                    )
+                    .write_attribute_handle(handle.value())
+                    .write_uuid(uuid16);
                     offset += ATT_INFORMATION_DATA_16_SIZE;
                 }
                 UuidFormat::BIT128 => {
                     if offset + ATT_INFORMATION_DATA_128_SIZE > limit {
                         break;
                     }
-                    let mut entry = AttInformationData128Mut::new(
+                    let _ = AttInformationData128Writer::new(
                         &mut tx_buf[offset..offset + ATT_INFORMATION_DATA_128_SIZE],
-                    );
-                    entry.attribute_handle().try_write(handle.value()).expect("valid handle");
+                    )
+                    .check_complete()
+                    .expect(
+                        "statically sized Find Information 128-bit entry buffer must be complete",
+                    )
+                    .write_attribute_handle(handle.value());
                     tx_buf[offset + 2..offset + 18].copy_from_slice(attr.uuid().as_bytes());
                     offset += ATT_INFORMATION_DATA_128_SIZE;
                 }
@@ -498,16 +501,12 @@ where
                 request_opcode: Opcode::ATT_FIND_BY_TYPE_VALUE_REQ,
             });
         }
-        let header = AttFindByTypeValueReqHeader::new(payload);
-        let start = header.starting_handle().try_read().map_err(|_| {
+        let header = AttFindByTypeValueReqHeader::new(payload).check_complete().map_err(|_| {
             TransactionError::InvalidPdu { request_opcode: Opcode::ATT_FIND_BY_TYPE_VALUE_REQ }
         })?;
-        let end = header.ending_handle().try_read().map_err(|_| TransactionError::InvalidPdu {
-            request_opcode: Opcode::ATT_FIND_BY_TYPE_VALUE_REQ,
-        })?;
-        let attr_type = header.attribute_type().try_read().map_err(|_| {
-            TransactionError::InvalidPdu { request_opcode: Opcode::ATT_FIND_BY_TYPE_VALUE_REQ }
-        })?;
+        let start = header.starting_handle().read();
+        let end = header.ending_handle().read();
+        let attr_type = header.attribute_type().read();
         let requested_value = &payload[ATT_FIND_BY_TYPE_VALUE_REQ_HEADER_SIZE..];
 
         if start > end {
@@ -544,11 +543,13 @@ where
                     if offset + ATT_HANDLES_INFORMATION_SIZE > limit {
                         break;
                     }
-                    let mut entry = AttHandlesInformationMut::new(
+                    let _ = AttHandlesInformationWriter::new(
                         &mut tx_buf[offset..offset + ATT_HANDLES_INFORMATION_SIZE],
-                    );
-                    entry.attribute_handle().try_write(handle.value()).expect("valid handle");
-                    entry.group_end_handle().try_write(group_end).expect("valid handle");
+                    )
+                    .check_complete()
+                    .expect("statically sized Find By Type Value entry buffer must be complete")
+                    .write_attribute_handle(handle.value())
+                    .write_group_end_handle(group_end);
                     offset += ATT_HANDLES_INFORMATION_SIZE;
                 }
             }
@@ -576,16 +577,17 @@ where
             return Err(TransactionError::InvalidPdu { request_opcode: Opcode::ATT_READ_REQ });
         }
         // Parse the incoming Read Request.
-        let req = AttReadReq::new(data);
-        let handle_val = req
-            .attribute_handle()
-            .try_read()
+        let req = AttReadReq::new(data)
+            .check_complete()
             .map_err(|_| TransactionError::InvalidPdu { request_opcode: Opcode::ATT_READ_REQ })?;
+        let handle_val = req.attribute_handle().read();
 
         // Read the attribute value from the database, capped to the maximum possible response size.
         let mut tx_buf = [0u8; MAX_SUPPORTED_MTU];
-        let mut view = AttHeaderMut::new(&mut tx_buf[..ATT_HEADER_SIZE]);
-        view.attribute_opcode().try_write(Opcode::ATT_READ_RSP).expect("valid opcode");
+        let _ = AttHeaderWriter::new(&mut tx_buf[..ATT_HEADER_SIZE])
+            .check_complete()
+            .expect("statically sized Read Response header buffer must be complete")
+            .write_attribute_opcode(Opcode::ATT_READ_RSP);
         let response_capacity = self.effective_mtu() - ATT_HEADER_SIZE;
         let read_len = self
             .read_attribute_at(
@@ -611,18 +613,18 @@ where
             return Err(TransactionError::InvalidPdu { request_opcode: Opcode::ATT_READ_BLOB_REQ });
         }
         // Parse the incoming Read Blob Request.
-        let req = AttReadBlobReq::new(data);
-        let handle_val = req.attribute_handle().try_read().map_err(|_| {
+        let req = AttReadBlobReq::new(data).check_complete().map_err(|_| {
             TransactionError::InvalidPdu { request_opcode: Opcode::ATT_READ_BLOB_REQ }
         })?;
-        let offset = req.value_offset().try_read().map_err(|_| TransactionError::InvalidPdu {
-            request_opcode: Opcode::ATT_READ_BLOB_REQ,
-        })?;
+        let handle_val = req.attribute_handle().read();
+        let offset = req.value_offset().read();
 
         // Read the attribute chunk starting from the requested offset, capped to the response size.
         let mut tx_buf = [0u8; MAX_SUPPORTED_MTU];
-        let mut view = AttHeaderMut::new(&mut tx_buf[..ATT_HEADER_SIZE]);
-        view.attribute_opcode().try_write(Opcode::ATT_READ_BLOB_RSP).expect("valid opcode");
+        let _ = AttHeaderWriter::new(&mut tx_buf[..ATT_HEADER_SIZE])
+            .check_complete()
+            .expect("statically sized Read Blob Response header buffer must be complete")
+            .write_attribute_opcode(Opcode::ATT_READ_BLOB_RSP);
         let response_capacity = self.effective_mtu() - ATT_HEADER_SIZE;
         let read_len = self
             .read_attribute_at(
@@ -710,9 +712,22 @@ where
                 }
             };
 
+        // The Length field is 1 byte, so the maximum size of an entry is u8::MAX (255).
         let limit = self.effective_mtu();
-        let max_value_len = u8::MAX as usize - first_entry_header_len;
-        let min_payload_size = ATT_HEADER_SIZE + 1 + first_entry_header_len;
+
+        // Since each entry must contain the entry header,
+        // the maximum value length is u8::MAX - entry header size.
+        let max_value_len = usize::from(u8::MAX) - first_entry_header_len;
+        let min_payload_size = ATT_HEADER_SIZE + size_of::<u8>() + first_entry_header_len;
+
+        // If the attribute value is longer than the remaining MTU space
+        // or the max possible entry size, only the first chunk is read in this response
+        //
+        // (see Bluetooth Core Spec v6.0, Vol 3, Part F, Section 3.4.4.8 for Read By Type,
+        // and Section 3.4.4.10 for Read By Group Type).
+        //
+        // Note: since the minimum ATT MTU is 23, `limit` is guaranteed to be larger than
+        // `min_payload_size` (at most 6), so `first_read_limit` is always > 0.
         let first_read_limit = min(limit.saturating_sub(min_payload_size), max_value_len);
         debug_assert_ne!(first_read_limit, 0);
 
@@ -728,8 +743,10 @@ where
 
         let entry_size = first_entry_header_len + first_read_len;
         let mut tx_buf = [0u8; MAX_SUPPORTED_MTU];
-        let mut view = AttHeaderMut::new(&mut tx_buf[..ATT_HEADER_SIZE]);
-        view.attribute_opcode().try_write(rsp_opcode).expect("valid opcode");
+        let _ = AttHeaderWriter::new(&mut tx_buf[..ATT_HEADER_SIZE])
+            .check_complete()
+            .expect("statically sized Read By Type Response header buffer must be complete")
+            .write_attribute_opcode(rsp_opcode);
         tx_buf[ATT_HEADER_SIZE] =
             u8::try_from(entry_size).expect("Range response payload length fits in u8");
 
@@ -779,13 +796,11 @@ where
                 request_opcode: Opcode::ATT_READ_BY_TYPE_REQ,
             });
         }
-        let req = AttReadByTypeReqHeader::new(payload);
-        let start_handle_val = req.starting_handle().try_read().map_err(|_| {
+        let req = AttReadByTypeReqHeader::new(payload).check_complete().map_err(|_| {
             TransactionError::InvalidPdu { request_opcode: Opcode::ATT_READ_BY_TYPE_REQ }
         })?;
-        let end_handle_val = req.ending_handle().try_read().map_err(|_| {
-            TransactionError::InvalidPdu { request_opcode: Opcode::ATT_READ_BY_TYPE_REQ }
-        })?;
+        let start_handle_val = req.starting_handle().read();
+        let end_handle_val = req.ending_handle().read();
         let type_bytes = &payload[ATT_READ_BY_TYPE_REQ_HEADER_SIZE..];
 
         self.handle_read_by_type_generic(
@@ -814,13 +829,11 @@ where
                 request_opcode: Opcode::ATT_READ_BY_GROUP_TYPE_REQ,
             });
         }
-        let req = AttReadByGroupTypeReqHeader::new(payload);
-        let start_handle_val = req.starting_handle().try_read().map_err(|_| {
+        let req = AttReadByGroupTypeReqHeader::new(payload).check_complete().map_err(|_| {
             TransactionError::InvalidPdu { request_opcode: Opcode::ATT_READ_BY_GROUP_TYPE_REQ }
         })?;
-        let end_handle_val = req.ending_handle().try_read().map_err(|_| {
-            TransactionError::InvalidPdu { request_opcode: Opcode::ATT_READ_BY_GROUP_TYPE_REQ }
-        })?;
+        let start_handle_val = req.starting_handle().read();
+        let end_handle_val = req.ending_handle().read();
         let type_bytes = &payload[ATT_READ_BY_GROUP_TYPE_REQ_HEADER_SIZE..];
 
         self.handle_read_by_type_generic(
@@ -834,11 +847,13 @@ where
                     Some(end_group) => end_group,
                     None => return Err(ErrorCode::UNSUPPORTED_GROUP_TYPE),
                 };
-                let mut view = AttReadByGroupTypeRspEntryHeaderMut::new(
+                let _ = AttReadByGroupTypeRspEntryHeaderWriter::new(
                     &mut buf[..ATT_READ_BY_GROUP_TYPE_RSP_ENTRY_HEADER_SIZE],
-                );
-                view.attribute_handle().try_write(handle.value()).expect("valid handle");
-                view.end_group_handle().try_write(end_group_handle).expect("valid end handle");
+                )
+                .check_complete()
+                .expect("statically sized Read By Group Type entry header buffer must be complete")
+                .write_attribute_handle(handle.value())
+                .write_end_group_handle(end_group_handle);
                 Ok(ATT_READ_BY_GROUP_TYPE_RSP_ENTRY_HEADER_SIZE)
             },
         )
@@ -852,11 +867,10 @@ where
         if payload.len() < ATT_WRITE_REQ_HEADER_SIZE {
             return Err(TransactionError::InvalidPdu { request_opcode: Opcode::ATT_WRITE_REQ });
         }
-        let req = AttWriteCmd::new(&payload[..ATT_WRITE_REQ_HEADER_SIZE]);
-        let handle_val = req
-            .attribute_handle()
-            .try_read()
+        let req = AttWriteCmd::new(&payload[..ATT_WRITE_REQ_HEADER_SIZE])
+            .check_complete()
             .map_err(|_| TransactionError::InvalidPdu { request_opcode: Opcode::ATT_WRITE_REQ })?;
+        let handle_val = req.attribute_handle().read();
         let handle = to_handle(handle_val, Opcode::ATT_WRITE_REQ)?;
         let value = &payload[ATT_WRITE_REQ_HEADER_SIZE..];
 
@@ -877,8 +891,10 @@ where
         })?;
 
         let mut rsp_buf = [0u8; ATT_WRITE_RSP_SIZE];
-        let mut rsp_view = AttHeaderMut::new(&mut rsp_buf[..]);
-        rsp_view.attribute_opcode().try_write(Opcode::ATT_WRITE_RSP).expect("valid opcode");
+        let _ = AttHeaderWriter::new(&mut rsp_buf[..])
+            .check_complete()
+            .expect("statically sized Write Response header buffer must be complete")
+            .write_attribute_opcode(Opcode::ATT_WRITE_RSP);
         let tx_packet = Packet::try_ref_from_bytes(&rsp_buf[..]).expect("valid packet");
         self.send_packet(tx_packet).await?;
 
@@ -892,11 +908,11 @@ where
         if payload.len() < ATT_WRITE_CMD_HEADER_SIZE {
             return Ok(());
         }
-        let req = AttWriteCmd::new(&payload[..ATT_WRITE_CMD_HEADER_SIZE]);
-        let handle_val = match req.attribute_handle().try_read() {
-            Ok(h) => h,
+        let req = match AttWriteCmd::new(&payload[..ATT_WRITE_CMD_HEADER_SIZE]).check_complete() {
+            Ok(r) => r,
             Err(_) => return Ok(()),
         };
+        let handle_val = req.attribute_handle().read();
         let handle = match to_handle(handle_val, Opcode::ATT_WRITE_CMD) {
             Ok(h) => h,
             Err(_) => return Ok(()),
@@ -921,14 +937,14 @@ where
                 request_opcode: Opcode::ATT_PREPARE_WRITE_REQ,
             });
         }
-        let req = AttPrepareWriteHeader::new(&payload[..ATT_PREPARE_WRITE_HEADER_SIZE]);
-        let handle_val = req.attribute_handle().try_read().map_err(|_| {
-            TransactionError::InvalidPdu { request_opcode: Opcode::ATT_PREPARE_WRITE_REQ }
-        })?;
+        let req = AttPrepareWriteHeader::new(&payload[..ATT_PREPARE_WRITE_HEADER_SIZE])
+            .check_complete()
+            .map_err(|_| TransactionError::InvalidPdu {
+                request_opcode: Opcode::ATT_PREPARE_WRITE_REQ,
+            })?;
+        let handle_val = req.attribute_handle().read();
         let handle = to_handle(handle_val, Opcode::ATT_PREPARE_WRITE_REQ)?;
-        let offset = req.value_offset().try_read().map_err(|_| TransactionError::InvalidPdu {
-            request_opcode: Opcode::ATT_PREPARE_WRITE_REQ,
-        })?;
+        let offset = req.value_offset().read();
         let part_attribute_value = &payload[ATT_PREPARE_WRITE_HEADER_SIZE..];
 
         let attr = self.database.find_attribute(handle).ok_or_else(|| {
@@ -974,8 +990,10 @@ where
 
         let mut rsp_buf = [0u8; MAX_SUPPORTED_MTU];
         rsp_buf[..payload.len()].copy_from_slice(payload);
-        let mut rsp_view = AttHeaderMut::new(&mut rsp_buf[..ATT_HEADER_SIZE]);
-        rsp_view.attribute_opcode().try_write(Opcode::ATT_PREPARE_WRITE_RSP).expect("valid opcode");
+        let _ = AttHeaderWriter::new(&mut rsp_buf[..ATT_HEADER_SIZE])
+            .check_complete()
+            .expect("statically sized Prepare Write Response header buffer must be complete")
+            .write_attribute_opcode(Opcode::ATT_PREPARE_WRITE_RSP);
         let tx_packet =
             Packet::try_ref_from_bytes(&rsp_buf[..payload.len()]).expect("valid packet");
         self.send_packet(tx_packet).await?;
@@ -991,10 +1009,17 @@ where
                 request_opcode: Opcode::ATT_EXECUTE_WRITE_REQ,
             });
         }
-        let req = AttExecuteWriteReq::new(payload);
-        let flags = req.flags().try_read().map_err(|_| TransactionError::InvalidPdu {
-            request_opcode: Opcode::ATT_EXECUTE_WRITE_REQ,
+        let req = AttExecuteWriteReq::new(payload).check_complete().map_err(|_| {
+            TransactionError::InvalidPdu { request_opcode: Opcode::ATT_EXECUTE_WRITE_REQ }
         })?;
+        let flags = match req.flags().read() {
+            Ok(f) => f,
+            Err(_) => {
+                return Err(TransactionError::InvalidPdu {
+                    request_opcode: Opcode::ATT_EXECUTE_WRITE_REQ,
+                });
+            }
+        };
 
         match flags {
             ExecuteWriteFlags::CANCEL => {
@@ -1044,8 +1069,10 @@ where
         }
 
         let mut rsp_buf = [0u8; ATT_EXECUTE_WRITE_RSP_SIZE];
-        let mut rsp_view = AttHeaderMut::new(&mut rsp_buf[..]);
-        rsp_view.attribute_opcode().try_write(Opcode::ATT_EXECUTE_WRITE_RSP).expect("valid opcode");
+        let _ = AttHeaderWriter::new(&mut rsp_buf[..])
+            .check_complete()
+            .expect("statically sized Execute Write Response header buffer must be complete")
+            .write_attribute_opcode(Opcode::ATT_EXECUTE_WRITE_RSP);
         let tx_packet = Packet::try_ref_from_bytes(&rsp_buf[..]).expect("valid packet");
         self.send_packet(tx_packet).await?;
         Ok(())
@@ -1101,13 +1128,13 @@ where
     ) -> Result<(), ServerError> {
         let handle_raw = attribute_handle.map(|h| h.value()).unwrap_or(0);
         let mut buf = [0u8; ATT_ERROR_RSP_SIZE];
-        let mut view = AttErrorRspMut::new(&mut buf[..]);
-        view.attribute_opcode().try_write(Opcode::ATT_ERROR_RSP).expect("valid opcode");
-        view.request_opcode_in_error_uint()
-            .try_write(request_opcode.into())
-            .expect("valid req opcode");
-        view.attribute_handle().try_write(handle_raw).expect("valid handle");
-        view.error_code().try_write(error_code).expect("valid error code");
+        let _ = AttErrorRspWriter::new(&mut buf[..])
+            .check_complete()
+            .expect("valid buffer")
+            .write_attribute_opcode(Opcode::ATT_ERROR_RSP)
+            .write_request_opcode_in_error_uint(request_opcode.into())
+            .write_attribute_handle(handle_raw)
+            .write_error_code(error_code);
         let tx_packet = Packet::try_ref_from_bytes(&buf[..]).expect("valid packet");
         self.send_packet(tx_packet).await
     }
@@ -1170,10 +1197,11 @@ where
         );
 
         let mut tx_buf = [0u8; MAX_SUPPORTED_MTU];
-        let mut view =
-            AttHandleValueNtfHeaderMut::new(&mut tx_buf[..ATT_HANDLE_VALUE_NTF_HEADER_SIZE]);
-        view.attribute_opcode().try_write(Opcode::ATT_HANDLE_VALUE_NTF).expect("valid opcode");
-        view.attribute_handle().try_write(handle).expect("valid handle");
+        let _ = AttHandleValueNtfHeaderWriter::new(&mut tx_buf[..ATT_HANDLE_VALUE_NTF_HEADER_SIZE])
+            .check_complete()
+            .expect("valid buffer")
+            .write_attribute_opcode(Opcode::ATT_HANDLE_VALUE_NTF)
+            .write_attribute_handle(handle);
         tx_buf[ATT_HANDLE_VALUE_NTF_HEADER_SIZE..total_size].copy_from_slice(value);
 
         let tx_packet = Packet::try_ref_from_bytes(&tx_buf[..total_size]).expect("valid packet");
@@ -1221,10 +1249,11 @@ where
         );
 
         let mut tx_buf = [0u8; MAX_SUPPORTED_MTU];
-        let mut view =
-            AttHandleValueIndHeaderMut::new(&mut tx_buf[..ATT_HANDLE_VALUE_IND_HEADER_SIZE]);
-        view.attribute_opcode().try_write(Opcode::ATT_HANDLE_VALUE_IND).expect("valid opcode");
-        view.attribute_handle().try_write(handle).expect("valid handle");
+        let _ = AttHandleValueIndHeaderWriter::new(&mut tx_buf[..ATT_HANDLE_VALUE_IND_HEADER_SIZE])
+            .check_complete()
+            .expect("valid buffer")
+            .write_attribute_opcode(Opcode::ATT_HANDLE_VALUE_IND)
+            .write_attribute_handle(handle);
         tx_buf[ATT_HANDLE_VALUE_IND_HEADER_SIZE..total_size].copy_from_slice(value);
 
         let tx_packet = Packet::try_ref_from_bytes(&tx_buf[..total_size]).expect("valid packet");
@@ -1381,9 +1410,11 @@ mod tests {
 
                 // 1. Send ExchangeMtuRsp (0x03) as a request (valid opcode but unsupported request)
                 let mut rsp_buf = [0u8; ATT_EXCHANGE_MTU_RSP_SIZE];
-                let mut view = AttExchangeMtuRspMut::new(&mut rsp_buf[..]);
-                view.attribute_opcode().try_write(Opcode::ATT_EXCHANGE_MTU_RSP).unwrap();
-                view.server_rx_mtu().try_write(SERVER_MTU).unwrap();
+                let _ = AttExchangeMtuRspWriter::new(&mut rsp_buf[..])
+                    .check_complete()
+                    .unwrap()
+                    .write_attribute_opcode(Opcode::ATT_EXCHANGE_MTU_RSP)
+                    .write_server_rx_mtu(SERVER_MTU);
                 let tx_packet = Packet::try_ref_from_bytes(&rsp_buf[..]).unwrap();
                 client_tx_bearer.send(tx_packet).await.unwrap();
 
@@ -2632,6 +2663,7 @@ mod tests {
                 let packet = client_rx_bearer.next_packet(&mut rx_buf).await.unwrap();
                 assert_eq!(packet.opcode, Opcode::ATT_READ_BY_GROUP_TYPE_RSP.into());
 
+                // Verify the response PDU using the client results parser.
                 let length = usize::from(packet.data[0]);
                 let results = ReadByGroupTypeResults::new(length, &packet.data[1..])
                     .expect("Server response should be a valid Read By Group Type response packet");
@@ -3285,8 +3317,10 @@ mod tests {
 
                 // Respond with HandleValueCfm
                 let mut cfm_buf = [0u8; ATT_HANDLE_VALUE_CFM_SIZE];
-                let mut view = AttHeaderMut::new(&mut cfm_buf);
-                view.attribute_opcode().try_write(Opcode::ATT_HANDLE_VALUE_CFM).unwrap();
+                let _ = AttHeaderWriter::new(&mut cfm_buf)
+                    .check_complete()
+                    .unwrap()
+                    .write_attribute_opcode(Opcode::ATT_HANDLE_VALUE_CFM);
                 let tx_packet = Packet::try_ref_from_bytes(&cfm_buf).unwrap();
                 let _ = client_tx_bearer.send(tx_packet).await;
             });
