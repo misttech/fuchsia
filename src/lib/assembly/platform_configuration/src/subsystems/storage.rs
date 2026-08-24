@@ -84,13 +84,7 @@ impl DefineSubsystemConfiguration<(&StorageConfig, &StorageToolsConfig, &Recover
         // The filename "zxcrypt" is used for legacy reasons.
         let data_encryption_config_path = gendir.join("zxcrypt");
 
-        // Fall back to product config if the board config does not set `keymint_enabled`.
-        // TODO(https://fxbug.dev/547900908): Remove product config fallback once all products have
-        // stopped referencing it.
-        let keymint_enabled =
-            context.board_config.filesystems.keymint_enabled || storage_config.keymint_enabled;
-
-        if keymint_enabled {
+        if context.board_config.filesystems.keymint_enabled {
             ensure!(
                 context.board_config.provides_feature(BoardFeature::Keymint),
                 "fuchsia::keymint is not provided by the board, can't use keymint."
@@ -366,7 +360,7 @@ mod tests {
     }
 
     #[test]
-    fn test_keymint_enabled_from_board_config() {
+    fn test_keymint_enabled() {
         let board_config = BoardConfig {
             provided_features: vec![BoardFeature::Keymint.as_ref().to_string()],
             filesystems: BoardFilesystemConfig { keymint_enabled: true, ..Default::default() },
@@ -375,7 +369,7 @@ mod tests {
         let gendir = tempdir().unwrap();
         let gendir_path = Utf8Path::from_path(gendir.path()).unwrap();
         let context = setup_test_context(&board_config, gendir_path);
-        let storage_config = StorageConfig { keymint_enabled: false, ..Default::default() };
+        let storage_config = StorageConfig::default();
         let mut builder: ConfigurationBuilderImpl = Default::default();
 
         let result = StorageSubsystemConfig::define_configuration(
@@ -389,7 +383,7 @@ mod tests {
     }
 
     #[test]
-    fn test_keymint_enabled_from_product_config() {
+    fn test_keymint_disabled() {
         let board_config = BoardConfig {
             provided_features: vec![BoardFeature::Keymint.as_ref().to_string()],
             filesystems: BoardFilesystemConfig { keymint_enabled: false, ..Default::default() },
@@ -398,30 +392,7 @@ mod tests {
         let gendir = tempdir().unwrap();
         let gendir_path = Utf8Path::from_path(gendir.path()).unwrap();
         let context = setup_test_context(&board_config, gendir_path);
-        let storage_config = StorageConfig { keymint_enabled: true, ..Default::default() };
-        let mut builder: ConfigurationBuilderImpl = Default::default();
-
-        let result = StorageSubsystemConfig::define_configuration(
-            &context,
-            &(&storage_config, &StorageToolsConfig::default(), &RecoveryConfig::default()),
-            &mut builder,
-        );
-        assert!(result.is_ok());
-        let zxcrypt_content = std::fs::read_to_string(gendir_path.join("zxcrypt")).unwrap();
-        assert_eq!(zxcrypt_content, "keymint");
-    }
-
-    #[test]
-    fn test_keymint_disabled_when_both_false() {
-        let board_config = BoardConfig {
-            provided_features: vec![BoardFeature::Keymint.as_ref().to_string()],
-            filesystems: BoardFilesystemConfig { keymint_enabled: false, ..Default::default() },
-            ..Default::default()
-        };
-        let gendir = tempdir().unwrap();
-        let gendir_path = Utf8Path::from_path(gendir.path()).unwrap();
-        let context = setup_test_context(&board_config, gendir_path);
-        let storage_config = StorageConfig { keymint_enabled: false, ..Default::default() };
+        let storage_config = StorageConfig::default();
         let mut builder: ConfigurationBuilderImpl = Default::default();
 
         let result = StorageSubsystemConfig::define_configuration(
@@ -443,7 +414,7 @@ mod tests {
         let gendir = tempdir().unwrap();
         let gendir_path = Utf8Path::from_path(gendir.path()).unwrap();
         let context = setup_test_context(&board_config, gendir_path);
-        let storage_config = StorageConfig { keymint_enabled: false, ..Default::default() };
+        let storage_config = StorageConfig::default();
         let mut builder: ConfigurationBuilderImpl = Default::default();
 
         let result = StorageSubsystemConfig::define_configuration(

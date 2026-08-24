@@ -37,10 +37,6 @@ pub struct StorageConfig {
     #[serde(skip_serializing_if = "crate::common::is_default")]
     pub starnix_volume: StarnixVolumeConfig,
 
-    /// If set, use keymint for encrypting data.  Requires the `fuchsia::keymint` board capability.
-    #[serde(skip_serializing_if = "crate::common::is_default")]
-    pub keymint_enabled: bool,
-
     /// If set, include the auto-slot-committer component.
     #[serde(skip_serializing_if = "crate::common::is_default")]
     pub auto_slot_committer: bool,
