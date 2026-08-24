@@ -16,7 +16,9 @@
 
 #include <atomic>
 #include <concepts>
+#include <cstdint>
 #include <memory>
+#include <optional>
 #include <ostream>
 #include <thread>
 #include <tuple>
@@ -75,7 +77,14 @@ class CaptiveThread {
   // fit::callback so as not to complicate allocation issues.
   using Routine = fit::function<void()>;
 
-  CaptiveThread() noexcept = delete;
+  // These are the zx::thread::start arguments for StartRaw() and CreateRaw().
+  struct Raw {
+    uint64_t pc = 0;
+    uint64_t sp = 0;
+    uint64_t arg1 = 0;
+    uint64_t arg2 = 0;
+  };
+
   CaptiveThread(const CaptiveThread&) = delete;
   CaptiveThread(CaptiveThread&& other) noexcept = delete;
 
@@ -91,6 +100,30 @@ class CaptiveThread {
       : CaptiveThread(Routine([f = std::move(f), ... args = std::forward<Args>(args)] mutable {
           std::move(f)(std::forward<Args>(args)...);
         })) {}
+
+  // This starts a new raw thread made with zx::thread::create().  The
+  // arguments are the initial register values passed to zx::thread::start().
+  // With the optional suspend flag set, Suspend() will be done before the
+  // thread starts (it's still necessary to use WaitForStop() to examine it).
+  //
+  // When a "raw" thread is started via CreateRaw() or StartRaw(), it must run
+  // code that's pure assembly or otherwise refrains from any interaction with
+  // normal ABI code or any libc expectations of any kind.  If it's allowed to
+  // run to completion, it must use zx_thread_exit() directly.  When it's
+  // forcibly "joined", that won't use std::thread::join() or run any normal
+  // C++ or libc thread exit code.  Instead, it will force the thread into an
+  // exception state if not already there, and then force it to exit via the
+  // exception handling mechanism.
+  static zx::result<std::unique_ptr<CaptiveThread>> CreateRaw(  //
+      std::string_view name, Raw regs, bool suspended = false);
+
+  // This is like CreateRaw(), but takes ownership of a zx::thread already
+  // created but not yet started.  This allows the thread to be created in some
+  // special fashion (even in another process), or have properties set,
+  // etc. before it starts.  To suspend the thread before it starts, pass in an
+  // existing zx::suspend_token for it that's taken over as if from Suspend().
+  static zx::result<std::unique_ptr<CaptiveThread>> StartRaw(  //
+      zx::thread thread, Raw regs, zx::suspend_token = {});
 
   // After destruction, the thread is guaranteed to be exited and joined.
   ~CaptiveThread();
@@ -181,6 +214,8 @@ class CaptiveThread {
   using TupleOfPtrs = std::tuple<std::unique_ptr<T>...>;
   using RegsTuple = OnRegisterTypes<TupleOfPtrs>;
 
+  CaptiveThread() noexcept = default;
+
   void ResumeInternal();
   zx::result<> StepInternal();
   zx::result<CaptiveThread*> Wait(zx::time deadline, bool suspend_ok);
@@ -198,7 +233,8 @@ class CaptiveThread {
   bool singlestep_ = false;
 
   // Note this member is declared last so others are initialized first.
-  std::thread thread_;
+  // It's only ever std::nullopt in an object created by StartRaw.
+  std::optional<std::thread> thread_;
 };
 static_assert(!std::default_initializable<CaptiveThread>);
 static_assert(!std::movable<CaptiveThread>);

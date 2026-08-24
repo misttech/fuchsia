@@ -5,6 +5,8 @@
 #include <lib/captive-thread/captive-thread.h>
 #include <lib/captive-thread/registers.h>
 #include <lib/captive-thread/testing/matchers.h>
+#include <lib/elfldltl/machine.h>
+#include <zircon/syscalls.h>
 
 #include <cstdint>
 
@@ -21,6 +23,10 @@ using ::testing::IsSupersetOf;
 using ::testing::Ne;
 using ::testing::Not;
 using ::testing::Pair;
+
+std::string_view TestName() {
+  return ::testing::UnitTest::GetInstance()->current_test_info()->name();
+}
 
 // Do a bit cast and also hide the value from the compiler so it cannot be
 // constant-folded in callers.
@@ -279,6 +285,177 @@ TEST(CaptiveThreadTests, SingleStep) {
   // Now let it run to completion without getting another single-step trap.
   thread.ResolveException();
   thread.BlockUntilSuccess();
+}
+
+TEST(CaptiveThreadTests, CreateRaw) {
+  using captive_thread::ArgumentRegisters;
+  using captive_thread::testing::GotException;
+  using captive_thread::testing::HasRegisters;
+  using captive_thread::testing::IsPageFault;
+  using captive_thread::testing::WithPc;
+  using captive_thread::testing::WithSp;
+  using ::testing::AllOf;
+  using ::testing::ElementsAre;
+
+  constexpr captive_thread::CaptiveThread::Raw kRegs{
+      .pc = 0x1230,  // Canonical but guaranteed to fault.
+      .sp = 0x4560,  // Canonical and ABI-aligned but guaranteed to fault.
+
+      // Arbitrary values.
+      .arg1 = 0xdeadbeef12345678,
+      .arg2 = 0xdeadbeef87654321,
+  };
+
+  zx::result result = captive_thread::CaptiveThread::CreateRaw(TestName(), kRegs);
+  ASSERT_TRUE(result.is_ok()) << result.status_string();
+  std::unique_ptr thread = *std::move(result);
+  ASSERT_TRUE(thread);
+
+  ASSERT_THAT(thread->WaitForException(),
+              AllOf(GotException(IsPageFault(0x1230)),
+                    HasRegisters(AllOf(WithPc(kRegs.pc), WithSp(kRegs.sp)))));
+
+  const std::vector<uint64_t> args{
+      std::from_range,
+      std::views::take(ArgumentRegisters(*thread->Registers()), 2),
+  };
+  EXPECT_THAT(args, ElementsAre(kRegs.arg1, kRegs.arg2));
+}
+
+constexpr size_t kRawStackSize = 1024;  // Plenty to call into the vDSO.
+
+class alignas(elfldltl::AbiTraits<>::kStackAlignment<size_t>) RawStack
+    : public std::array<std::byte, kRawStackSize> {
+ public:
+  constexpr RawStack() = default;
+
+  uintptr_t sp() const {
+    return elfldltl::AbiTraits<>::InitialStackPointer(reinterpret_cast<uintptr_t>(data()), size());
+  }
+
+  // Registers to start running on this stack in the vDSO.
+  template <auto* Call = &zx_thread_exit>
+  captive_thread::CaptiveThread::Raw call_regs(uint64_t arg1 = 0, uint64_t arg2 = 0) const {
+    return {
+        .pc = reinterpret_cast<uintptr_t>(Call),
+        .sp = sp(),
+        .arg1 = arg1,
+        .arg2 = arg2,
+    };
+  }
+};
+
+TEST(CaptiveThreadTests, RawExit) {
+  using captive_thread::testing::GotException;
+  using ::testing::Not;
+
+  // Start running directly in the vDSO with enough stack for zx_thread_exit().
+  std::unique_ptr stack = std::make_unique<RawStack>();
+  zx::result result = captive_thread::CaptiveThread::CreateRaw(TestName(), stack->call_regs());
+  ASSERT_TRUE(result.is_ok()) << result.status_string();
+  std::unique_ptr thread = *std::move(result);
+  ASSERT_TRUE(thread);
+
+  ASSERT_THAT(thread->WaitForException(), Not(GotException()));
+
+  thread->BlockUntilSuccess();
+}
+
+TEST(CaptiveThreadTests, CreateRawSuspended) {
+  using captive_thread::ArgumentRegisters;
+  using captive_thread::testing::GotException;
+  using captive_thread::testing::HasRegisters;
+  using captive_thread::testing::WithPc;
+  using captive_thread::testing::WithSp;
+  using ::testing::AllOf;
+  using ::testing::ElementsAre;
+  using ::testing::Not;
+
+  // Start running directly in the vDSO with enough stack for zx_thread_exit().
+  std::unique_ptr stack = std::make_unique<RawStack>();
+  const auto regs = stack->call_regs(0xdeadbeef1234, 0xdeadbeef5678);
+  zx::result result = captive_thread::CaptiveThread::CreateRaw(TestName(), regs, true);
+  ASSERT_TRUE(result.is_ok()) << result.status_string();
+  std::unique_ptr thread = *std::move(result);
+  ASSERT_TRUE(thread);
+
+  ASSERT_TRUE(thread->InSuspend());
+
+  ASSERT_THAT(thread->WaitForStop(), Not(GotException()));
+
+  ASSERT_TRUE(thread->IsStopped());
+  ASSERT_FALSE(thread->InException());
+  ASSERT_FALSE(thread->ExceptionReport());
+
+  ASSERT_THAT(thread->Registers(), HasRegisters(AllOf(WithPc(regs.pc), WithSp(regs.sp))));
+
+  const std::vector<uint64_t> args{
+      std::from_range,
+      std::views::take(ArgumentRegisters(*thread->Registers()), 2),
+  };
+  EXPECT_THAT(args, ElementsAre(regs.arg1, regs.arg2));
+
+  thread->Resume();
+
+  thread->BlockUntilSuccess();
+}
+
+TEST(CaptiveThreadTests, StartRaw) {
+  using captive_thread::ArgumentRegisters;
+  using captive_thread::testing::GotException;
+  using captive_thread::testing::IsPageFault;
+  using ::testing::AllOf;
+
+  std::string_view name = TestName();
+  zx::thread thread_handle;
+  zx::result create = zx::make_result(zx::thread::create(
+      *zx::process::self(), name.data(), static_cast<uint32_t>(name.size()), 0, &thread_handle));
+  ASSERT_TRUE(create.is_ok()) << create.status_string();
+
+  constexpr uint64_t kBadPc = 0x1230;
+  zx::result result =
+      captive_thread::CaptiveThread::StartRaw(std::move(thread_handle), {.pc = kBadPc});
+  ASSERT_TRUE(result.is_ok()) << result.status_string();
+  std::unique_ptr thread = *std::move(result);
+  ASSERT_TRUE(thread);
+
+  EXPECT_THAT(thread->WaitForException(), GotException(IsPageFault(kBadPc)));
+}
+
+TEST(CaptiveThreadTests, StartRawSuspended) {
+  using captive_thread::ArgumentRegisters;
+  using captive_thread::testing::GotException;
+  using captive_thread::testing::HasRegisters;
+  using captive_thread::testing::IsPageFault;
+  using captive_thread::testing::WithPc;
+  using captive_thread::testing::WithSp;
+  using ::testing::AllOf;
+
+  std::string_view name = TestName();
+  zx::thread thread_handle;
+  zx::result create = zx::make_result(zx::thread::create(
+      *zx::process::self(), name.data(), static_cast<uint32_t>(name.size()), 0, &thread_handle));
+  ASSERT_TRUE(create.is_ok()) << create.status_string();
+
+  zx::suspend_token token;
+  zx::result suspend = zx::make_result(thread_handle.suspend(&token));
+  ASSERT_TRUE(suspend.is_ok()) << suspend.status_string();
+
+  constexpr uint64_t kBadPc = 0x1230;
+  zx::result result = captive_thread::CaptiveThread::StartRaw(  //
+      std::move(thread_handle), {.pc = kBadPc}, std::move(token));
+  ASSERT_TRUE(result.is_ok()) << result.status_string();
+  std::unique_ptr thread = *std::move(result);
+  ASSERT_TRUE(thread);
+
+  ASSERT_TRUE(thread->InSuspend());
+
+  EXPECT_THAT(thread->WaitForStop(), Not(GotException()));
+  EXPECT_THAT(thread->Registers(), HasRegisters(AllOf(WithPc(kBadPc), WithSp(0))));
+
+  thread->Resume();
+
+  EXPECT_THAT(thread->WaitForException(), GotException(IsPageFault(kBadPc)));
 }
 
 }  // namespace

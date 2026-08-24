@@ -230,10 +230,10 @@ void RunThread(CaptiveThread::Routine& routine, zx::thread& thread_handle,
   state.store(-1, std::memory_order_release);
 }
 
-void MarkHandled(zx::unowned_exception exception) {
-  constexpr uint32_t kHandled = ZX_EXCEPTION_STATE_HANDLED;
+void MarkHandled(zx::unowned_exception exception,
+                 uint32_t disposition = ZX_EXCEPTION_STATE_HANDLED) {
   zx_status_t status =
-      exception->set_property(ZX_PROP_EXCEPTION_STATE, &kHandled, sizeof(kHandled));
+      exception->set_property(ZX_PROP_EXCEPTION_STATE, &disposition, sizeof(disposition));
   ZX_ASSERT_MSG(status == ZX_OK, "ZX_PROP_EXCEPTION_STATE: %s", zx_status_get_string(status));
 }
 
@@ -255,8 +255,8 @@ CaptiveThread::~CaptiveThread() { ForceJoin(); }
 // it has exclusive access to exit_regs_ and channel_.
 CaptiveThread::CaptiveThread(Routine f)
     : routine_{std::move(f)},
-      thread_(RunThread, std::ref(routine_), std::ref(thread_handle_), std::ref(exit_regs_),
-              std::ref(channel_), std::ref(state_)) {
+      thread_(std::in_place, RunThread, std::ref(routine_), std::ref(thread_handle_),
+              std::ref(exit_regs_), std::ref(channel_), std::ref(state_)) {
   // This synchronizes with the thread filling in thread_handle_, channel_, and
   // exit_regs_; and constitutes reacquiring the lock on those.
   state_.wait(0, std::memory_order_acquire);
@@ -289,12 +289,43 @@ void CaptiveThread::ForceJoin() {
     ZX_ASSERT_MSG(result.is_ok(), "clearing fake-step breakpoints: %s", result.status_string());
   }
 
-  // If the thread was asynchronously suspended rather than hitting an
-  // exception, then don't perturb it if it's already on the exit path.
-  if (InException() || state_.load(std::memory_order_acquire) >= 0) {
+  auto write_exit_regs = [this] {
     zx_status_t status =
         thread_handle_.write_state(ZX_THREAD_STATE_GENERAL_REGS, &exit_regs_, sizeof(exit_regs_));
     ZX_ASSERT_MSG(status == ZX_OK, "zx::thread::write_state: %s", zx_status_get_string(status));
+  };
+
+  if (!thread_) {
+    // For a raw thread, it just needs to be in an exception.  If it's not
+    // already, then it's suspended and we can get it into an exception by
+    // writing the exit_regs_, which is all zero and so gets an immediate page
+    // fault for the PC.
+    if (!InException()) {
+      write_exit_regs();
+      zx::result result = WaitForException();
+      ZX_ASSERT_MSG(result.is_ok(), "%s", result.status_string());
+    }
+
+    // Tell the kernel that resuming from exception means immediate exit.
+    // This thread should never run another user instruction.
+    MarkHandled(exception_.borrow(), ZX_EXCEPTION_STATE_THREAD_EXIT);
+
+    // Let the thread resume to exit.
+    ResumeInternal();
+
+    // Stop handling exceptions before waiting for it to exit.
+    // This has to happen after resuming it, however.
+    channel_.reset();
+
+    // Now wait for the kernel thread to exit.
+    BlockUntilSuccess();
+    return;
+  }
+
+  // If the thread was asynchronously suspended rather than hitting an
+  // exception, then don't perturb it if it's already on the exit path.
+  if (InException() || state_.load(std::memory_order_acquire) >= 0) {
+    write_exit_regs();
   }
 
   if (InException()) {
@@ -313,7 +344,7 @@ void CaptiveThread::ForceJoin() {
   ResumeInternal();
 
   // Do the normal thread join.
-  std::exchange(thread_, {}).join();
+  std::exchange(thread_, {})->join();
 
   // Clear out any allocations or other destructor work for the routine_ object
   // itself.  The routine_ object was kept alive in the CaptiveThread object so
@@ -445,11 +476,20 @@ void CaptiveThread::BlockUntilSuccess() {
   ZX_ASSERT(!IsStopped());
   ZX_ASSERT(!Joined());
   ZX_DEBUG_ASSERT(!singlestep_);
-  channel_.reset();
-  thread_handle_.reset();
   stopped_regs_ = RegsTuple{};
   fake_step_.reset();
-  std::exchange(thread_, {}).join();
+  if (thread_) {
+    channel_.reset();
+    thread_handle_.reset();
+    std::exchange(thread_, {})->join();
+  } else {
+    zx::result result = WaitForException();
+    ZX_ASSERT_MSG(result.is_ok(), "%s", result.status_string());
+    ZX_ASSERT_MSG(!exception_report_, "%s",
+                  zx_exception_get_string(exception_report_->header.type));
+    channel_.reset();
+    thread_handle_.reset();
+  }
 }
 
 zx::result<CaptiveThread*> CaptiveThread::Wait(zx::time deadline, bool suspend_ok) {
@@ -480,6 +520,7 @@ zx::result<CaptiveThread*> CaptiveThread::Wait(zx::time deadline, bool suspend_o
         thread_handle_.get_info(ZX_INFO_THREAD_EXCEPTION_REPORT, std::addressof(*exception_report_),
                                 sizeof(*exception_report_), nullptr, nullptr);
     if (status != ZX_OK) {
+      exception_report_.reset();
       return zx::error{status};
     }
     zx_exception_info_t info;
@@ -535,6 +576,42 @@ zx::result<CaptiveThread*> CaptiveThread::StepToException(zx::time deadline) {
     return step.take_error();
   }
   return WaitForException(deadline);
+}
+
+zx::result<std::unique_ptr<CaptiveThread>> CaptiveThread::CreateRaw(  //
+    std::string_view name, Raw regs, bool suspended) {
+  zx::thread thread;
+  if (zx_status_t status = zx::thread::create(*zx::process::self(), name.data(),
+                                              static_cast<uint32_t>(name.size()), 0, &thread);
+      status != ZX_OK) {
+    return zx::error{status};
+  }
+  zx::suspend_token token;
+  if (suspended) {
+    if (zx_status_t status = thread.suspend(&token); status != ZX_OK) {
+      return zx::error{status};
+    }
+  }
+  return StartRaw(std::move(thread), regs, std::move(token));
+}
+
+zx::result<std::unique_ptr<CaptiveThread>> CaptiveThread::StartRaw(  //
+    zx::thread thread_handle, Raw regs, zx::suspend_token token) {
+  std::unique_ptr<CaptiveThread> thread{new CaptiveThread};
+  thread->thread_handle_ = std::move(thread_handle);
+  thread->suspend_ = std::move(token);
+
+  if (zx_status_t status = thread->thread_handle_.create_exception_channel(0, &thread->channel_);
+      status != ZX_OK) {
+    return zx::error{status};
+  }
+
+  if (zx_status_t status = thread->thread_handle_.start(regs.pc, regs.sp, regs.arg1, regs.arg2);
+      status != ZX_OK) {
+    return zx::error{status};
+  }
+
+  return zx::ok(std::move(thread));
 }
 
 }  // namespace captive_thread
