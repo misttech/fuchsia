@@ -145,6 +145,21 @@ result="$?"
   rm -f "$deps_rspfile.alt"
 }
 
+if [[ -n "$depfile" && -f "$depfile" ]]; then
+  # Relativize any absolute paths pointing into the build directory or source root.
+  # Ninja requires depfile paths to match target outputs (relative to root_build_dir).
+  build_dir_p="$(pwd -P)"
+  build_dir_l="$(pwd -L)"
+  exec_root_p="$(cd "$build_dir_p/../.." 2>/dev/null && pwd -P)"
+  exec_root_l="$(cd "$build_dir_l/../.." 2>/dev/null && pwd -L)"
+  sed -i \
+    -e "s|${build_dir_p}/||g" \
+    -e "s|${build_dir_l}/||g" \
+    -e "s|${exec_root_p}/|../../|g" \
+    -e "s|${exec_root_l}/|../../|g" \
+    "$depfile"
+fi
+
 filter=
 if [[ $ignore_rustc = 1 ]]; then
   filter='(.code.code//"" | startswith("clippy::")) and '
