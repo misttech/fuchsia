@@ -36,6 +36,11 @@ import("//src/developer/ffx/config.gni")
 #    Type: list(string)
 #    Default: empty list
 #
+#  package_deps (optional)
+#    List of Fuchsia packages that need to be available to the test on the target.
+#    Type: list(string)
+#    Default: empty list
+#
 #   deps
 #   environments
 #   visibility
@@ -160,10 +165,11 @@ template("antlion_host_test") {
     forward_variables_from(invoker,
                            [
                              "environments",
-                             "visibility",
                              "isolated",
+                             "package_deps",
                              "product_bundle",
                              "timeout_secs",
+                             "visibility",
                            ])
 
     # Antlion E2E tests are target-bound and communicate with the device over

@@ -39,7 +39,6 @@ pub(crate) struct ProcessRunner {
 fn test_affected_by_b_401318909(test_name: String) -> bool {
     let test_substrings_affected_by_b_401318909 = [
         "beacon_loss_test",
-        "channel_sweep_test",
         "channel_switch_test",
         "connection_stress_test",
         "deprecated_configuration_test",

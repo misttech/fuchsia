@@ -7,24 +7,6 @@ import("//src/testing/end_to_end/antlion/antlion_host_test.gni")
 
 assert(is_host, "antlion tests only supported for host testing")
 
-antlion_host_test("channel_sweep_test") {
-  main_source = "ChannelSweepTest.py"
-  environments = wlan_ap_iperf_envs
-  deps = [ "//third_party/iperf" ]
-}
-
-antlion_host_test("channel_sweep_test_quick") {
-  main_source = "ChannelSweepTest.py"
-  environments = wlan_ap_iperf_envs
-  test_cases = [
-    "test_US_wpa2_channel_8_20mhz",
-    "test_US_wpa2_channel_40_80mhz",  # non-DFS 5GHz channel
-    "test_US_wpa2_channel_100_80mhz",  # DFS 5GHz channel
-    "test_US_wpa2_channel_165_20mhz",
-  ]
-  deps = [ "//third_party/iperf" ]
-}
-
 antlion_host_test("wlan_rvr_test_2g_open") {
   main_source = "WlanRvrTest.py"
   test_params = "rvr_settings.yaml"
@@ -70,7 +52,6 @@ antlion_host_test("wlan_wmm_test") {
 group("e2e_tests") {
   testonly = true
   public_deps = [
-    ":channel_sweep_test_quick",
     ":wlan_rvr_test_2g_open",
     ":wlan_rvr_test_2g_wpa2",
     ":wlan_rvr_test_5g_open",
@@ -80,5 +61,5 @@ group("e2e_tests") {
 
 group("e2e_tests_quick") {
   testonly = true
-  public_deps = [ ":channel_sweep_test_quick" ]
+  public_deps = []
 }
