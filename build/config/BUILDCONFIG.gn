@@ -2040,7 +2040,7 @@ foreach(_target_type,
           # Because the clippy linter is effectively the same as the rust
           # compiler, and we don't enforce hemeticity on rustc, we also exempt
           # clippy.
-          "//build/rust/clippy_wrapper.sh",
+          "//build/rust/clippy_wrapper.py",
 
           # rustdoc writes and reads from an arbitrary tree of files.
           "//build/rust/rustdoc_wrapper.py",

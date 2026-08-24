@@ -149,6 +149,26 @@ some/input3 \
             depfile.deps, set(["some/input1", "some/input2", "some/input3"])
         )
 
+    def test_literal_backslash_continuation(self) -> None:
+        raw = "some/output: \\\n  some/input1 \\\n  some/input2\n"
+        depfile = DepFile.read_from(io.StringIO(raw))
+        self.assertEqual(depfile.outputs, ["some/output"])
+        self.assertEqual(depfile.deps, set(["some/input1", "some/input2"]))
+
+    def test_multiple_rules(self) -> None:
+        raw = """some/output1.d: some/input1 some/input2
+some/output1.rmeta: \\
+  some/input1 \\
+  some/input3
+"""
+        depfile = DepFile.read_from(io.StringIO(raw))
+        self.assertEqual(
+            depfile.outputs, ["some/output1.d", "some/output1.rmeta"]
+        )
+        self.assertEqual(
+            depfile.deps, set(["some/input1", "some/input2", "some/input3"])
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

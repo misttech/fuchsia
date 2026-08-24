@@ -151,44 +151,47 @@ class DepFile:
                     f'Consecutive backslashes found in depfile line "{line}", this is not supported by action tracer'
                 )
 
-            # if we haven't parsed out the outputs lines, do that and setup the
-            # depfile object
-            if not depfile:
-                outputs_string, sep, inputs_string = line.partition(":")
+            if found_continuation:
+                if line.endswith("\\"):
+                    line = line[:-1].rstrip()
+                else:
+                    found_continuation = False
+                inputs = shlex.split(line)
+                assert depfile is not None
+                for input in inputs:
+                    depfile.add_input(input)
+            elif ":" in line:
+                outputs_string, _, inputs_string = line.partition(":")
                 outputs = shlex.split(outputs_string)
-                inputs = shlex.split(inputs_string)
-
-                if not sep:
-                    raise ValueError(
-                        "Fail to parse depfile, no separator found on first line:\n"
-                        + line
-                    )
                 if len(outputs) == 0:
                     raise ValueError(
                         "Failed to parse depfile, no outputs found:\n" + line
                     )
 
-                depfile = DepFile(outputs[0])
-                for output in outputs[1:]:
+                # Create the depfile when we finally have an output:
+                if not depfile:
+                    depfile = DepFile(outputs[0])
+                    outputs = outputs[1:]
+
+                # Add all outputs after the first.
+                for output in outputs:
                     depfile.add_output(output)
 
-                if inputs[-1] in ["\\\n", "\\\r\n"]:
+                inputs_string = inputs_string.strip()
+                if inputs_string.endswith("\\"):
                     found_continuation = True
-                    inputs.pop()
+                    inputs_string = inputs_string[:-1].rstrip()
+                else:
+                    found_continuation = False
 
+                inputs = shlex.split(inputs_string)
                 for input in inputs:
                     depfile.add_input(input)
             else:
-                if not found_continuation:
-                    raise ValueError(
-                        "Found non-empty line without preceding continuation marker."
-                        + line
-                    )
-                inputs = shlex.split(line)
-                if inputs[-1] in ["\\\n", "\\\r\n"]:
-                    found_continuation = True
-                for input in inputs[:-1]:
-                    depfile.add_input(input)
+                raise ValueError(
+                    "Found non-empty line without preceding continuation marker.\n"
+                    + line
+                )
 
         if depfile:
             return depfile

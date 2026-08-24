@@ -125,7 +125,7 @@ template("kernel_executable") {
       "-Cmetadata=clippy",
     ]
 
-    script = "//build/rust/clippy_wrapper.sh"
+    script = "//build/rust/clippy_wrapper.py"
     outputs = [ "$target_gen_dir/$clippy_target" ]
     args = [ "--output=" + rebase_path(outputs[0], root_build_dir) ]
 

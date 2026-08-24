@@ -227,7 +227,7 @@ template("rust_auxiliary") {
         _deps_rmeta_output,
         _transdeps_output,
       ]
-      script = "//build/rust/clippy_wrapper.sh"
+      script = "//build/rust/clippy_wrapper.py"
 
       outputs = [ _clippy_output ]
 
