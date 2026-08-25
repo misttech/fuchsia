@@ -4,7 +4,7 @@
 
 use crate::callback_interface::{Interface, Request, Session, SessionManager};
 use crate::verifier::Verifier;
-use crate::{BlockInfo, DeviceInfo, OffsetMap};
+use crate::{BlockInfo, DeviceInfo};
 use fuchsia_sync::Mutex;
 use std::borrow::Cow;
 use std::sync::Arc;
@@ -42,7 +42,6 @@ impl Interface for MockInterface {
     fn on_open_mapper_session(
         &self,
         _mapping_vmo: &zx::Vmo,
-        _offset_map: &OffsetMap,
         delivery_queue: zx::Vmo,
     ) -> Result<Arc<Verifier>, zx::Status> {
         let verifier = Arc::new(Verifier::new(delivery_queue));

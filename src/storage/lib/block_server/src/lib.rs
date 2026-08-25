@@ -548,12 +548,11 @@ pub trait SessionManager: 'static {
         _orchestrator: Arc<Self::Orchestrator>,
         _session: fidl::endpoints::ServerEnd<fblock::MapperSessionMarker>,
         _mapping_vmo: zx::Vmo,
-        _offset_map: OffsetMap,
         _block_size: u32,
-        _port: zx::Port,
-        _delivery_queue: zx::Vmo,
-    ) -> impl Future<Output = Result<(), Error>> + Send {
-        async { Err(anyhow::anyhow!("Mapper session not supported")) }
+        _port: Option<zx::Port>,
+        _delivery_queue: Option<zx::Vmo>,
+    ) -> Result<impl Future<Output = Result<(), Error>> + Send, zx::Status> {
+        Err::<std::future::Ready<Result<(), Error>>, _>(zx::Status::NOT_SUPPORTED)
     }
 
     /// Returns the active requests.
@@ -634,54 +633,27 @@ impl<SM: SessionManager> BlockServer<SM> {
             fblock::MapperRequest::OpenSession {
                 session,
                 mapping_vmo,
-                mapping_offset,
                 port,
                 delivery_queue,
                 responder,
             } => {
-                let info = self.device_info();
-                let offset_map = if let Some(mapping) = mapping_offset {
-                    let initial_mapping = BlockOffsetMapping {
-                        target_block_offset: mapping.target_block_offset,
-                        length: mapping.length,
-                    };
-                    if let Some(max) = info.block_count() {
-                        if initial_mapping
-                            .target_block_offset
-                            .checked_add(initial_mapping.length)
-                            .unwrap_or(u64::MAX)
-                            > max
-                        {
-                            log::warn!(
-                                "Invalid mapping for mapper session: {initial_mapping:?} \
-                                 (max {max})"
-                            );
-                            responder.send(Err(zx::Status::INVALID_ARGS.into_raw()))?;
-                            return Ok(None);
-                        }
-                    }
-                    match OffsetMap::new(vec![initial_mapping]) {
-                        Ok(map) => map,
-                        Err(status) => {
-                            responder.send(Err(status.into_raw()))?;
-                            return Ok(None);
-                        }
-                    }
-                } else {
-                    OffsetMap::empty()
-                };
-
-                let fut = SM::open_mapper_session(
+                match SM::open_mapper_session(
                     self.orchestrator.clone(),
                     session,
                     mapping_vmo,
-                    offset_map,
                     self.block_size,
                     port,
                     delivery_queue,
-                );
-                responder.send(Ok(()))?;
-                return Ok(Some(fut));
+                ) {
+                    Ok(fut) => {
+                        responder.send(Ok(()))?;
+                        return Ok(Some(fut));
+                    }
+                    Err(status) => {
+                        responder.send(Err(status.into_raw()))?;
+                        return Ok(None);
+                    }
+                }
             }
             fblock::MapperRequest::_UnknownMethod { .. } => Ok(None),
         }
@@ -4337,8 +4309,13 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_mapper_open_session() {
-        let interface = Arc::new(MockInterface::default());
-        let block_server = BlockServer::new(512, interface);
+        use crate::callback_interface::SessionManager;
+        use crate::testing::MockInterface;
+
+        let (tx, _rx) = std::sync::mpsc::channel();
+        let interface = Arc::new(MockInterface::new(tx));
+        let session_manager = Arc::new(SessionManager::new(interface, 512));
+        let block_server = BlockServer::new(512, session_manager);
 
         let (mapper_proxy, mapper_stream) =
             fidl::endpoints::create_proxy_and_stream::<fblock::MapperMarker>();
@@ -4347,17 +4324,49 @@ mod tests {
             let _ = block_server.handle_mapper_requests(mapper_stream).await;
         });
 
+        // 1. Both port and delivery queue provided (with pager):
         let (_mapper_session_proxy, mapper_session_server) =
             fidl::endpoints::create_proxy::<fblock::MapperSessionMarker>();
         let mapping_vmo = zx::Vmo::create(4096).unwrap();
         let port = zx::Port::create();
         let delivery_queue = zx::Vmo::create(4096).unwrap();
-
         let res = mapper_proxy
-            .open_session(mapper_session_server, mapping_vmo, None, port, delivery_queue)
+            .open_session(mapper_session_server, mapping_vmo, Some(port), Some(delivery_queue))
             .await
             .unwrap();
         assert_matches!(res, Ok(()));
+
+        // 2. Neither port nor delivery queue provided (pager-less):
+        let (_mapper_session_proxy, mapper_session_server) =
+            fidl::endpoints::create_proxy::<fblock::MapperSessionMarker>();
+        let mapping_vmo = zx::Vmo::create(4096).unwrap();
+        let res = mapper_proxy
+            .open_session(mapper_session_server, mapping_vmo, None, None)
+            .await
+            .unwrap();
+        assert_matches!(res, Ok(()));
+
+        // 3. Port provided without delivery queue (invalid):
+        let (_mapper_session_proxy, mapper_session_server) =
+            fidl::endpoints::create_proxy::<fblock::MapperSessionMarker>();
+        let mapping_vmo = zx::Vmo::create(4096).unwrap();
+        let port = zx::Port::create();
+        let res = mapper_proxy
+            .open_session(mapper_session_server, mapping_vmo, Some(port), None)
+            .await
+            .unwrap();
+        assert_eq!(res, Err(zx::sys::ZX_ERR_INVALID_ARGS));
+
+        // 4. Delivery queue provided without port (invalid):
+        let (_mapper_session_proxy, mapper_session_server) =
+            fidl::endpoints::create_proxy::<fblock::MapperSessionMarker>();
+        let mapping_vmo = zx::Vmo::create(4096).unwrap();
+        let delivery_queue = zx::Vmo::create(4096).unwrap();
+        let res = mapper_proxy
+            .open_session(mapper_session_server, mapping_vmo, None, Some(delivery_queue))
+            .await
+            .unwrap();
+        assert_eq!(res, Err(zx::sys::ZX_ERR_INVALID_ARGS));
     }
 
     #[fuchsia::test]
@@ -4421,7 +4430,7 @@ mod tests {
         payload_buf.commit(cmd).unwrap();
 
         let res = mapper_proxy
-            .open_session(mapper_session_server, mapping_vmo, None, port, delivery_queue)
+            .open_session(mapper_session_server, mapping_vmo, Some(port), Some(delivery_queue))
             .await
             .unwrap();
         assert_matches!(res, Ok(()));

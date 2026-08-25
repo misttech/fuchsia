@@ -11,8 +11,8 @@ use anyhow::Error;
 use block_protocol::{BlockFifoRequest, BlockFifoResponse};
 use fidl_fuchsia_storage_block as fblock;
 use fuchsia_sync::{Condvar, Mutex};
-use futures::TryStreamExt as _;
 use futures::stream::{AbortHandle, Abortable};
+use futures::{FutureExt as _, TryStreamExt as _};
 use mapping::reader::BlockService;
 use std::borrow::{Borrow, Cow};
 use std::collections::{HashMap, VecDeque};
@@ -69,11 +69,91 @@ pub trait Interface: Send + Sync + Unpin + 'static {
     fn on_open_mapper_session(
         &self,
         _mapping_vmo: &zx::Vmo,
-        _offset_map: &OffsetMap,
         delivery_queue: zx::Vmo,
     ) -> Result<Arc<Verifier>, zx::Status> {
         let verifier = Arc::new(Verifier::new(delivery_queue));
         Ok(verifier)
+    }
+}
+
+async fn run_mapper_session_loop<
+    I: Interface + ?Sized,
+    F: Fn(u64, std::ops::Range<u64>) -> R + Send + Sync + 'static,
+    R: mapping::PageRequest + 'static,
+>(
+    _interface: Arc<I>,
+    _service: Arc<dyn mapping::reader::BlockService>,
+    session: fidl::endpoints::ServerEnd<fblock::MapperSessionMarker>,
+    mapping_vmo: zx::Vmo,
+    files: Arc<mapping::Files<dyn mapping::reader::BlockService, F, R>>,
+) -> Result<(), Error> {
+    let files_for_vmo = files.clone();
+    let mapping_vmo_dup = mapping_vmo.duplicate_handle(zx::Rights::SAME_RIGHTS)?;
+    let mapper_vmo_thread = std::thread::spawn(move || {
+        match vmo_fifo::Receiver::<mapping::RawMappingCommand>::new(mapping_vmo_dup, 256) {
+            Ok(mut receiver) => {
+                while let Ok(msg) = receiver.peek() {
+                    if let Err(error) = mapping::process_mapping_command(&msg, &files_for_vmo) {
+                        log::error!(error:?; "Failed to process mapping command");
+                    }
+                    if let Err(error) = msg.pop() {
+                        log::error!(error:?; "Failed to pop mapping command from FIFO");
+                    }
+                }
+            }
+            Err(error) => {
+                log::error!(error:?; "Failed to create mapping VMO FIFO receiver");
+            }
+        }
+    });
+
+    let mut stream = session.into_stream();
+    while let Some(request) = stream.try_next().await? {
+        match request {
+            fblock::MapperSessionRequest::OpenChildSession { responder, .. } => {
+                responder.send(Err(zx::Status::NOT_SUPPORTED.into_raw()))?;
+            }
+            fblock::MapperSessionRequest::Close { responder } => {
+                responder.send(Ok(()))?;
+                break;
+            }
+            fblock::MapperSessionRequest::_UnknownMethod { .. } => {}
+        }
+    }
+
+    let _ = mapper_vmo_thread.join();
+    Ok(())
+}
+
+fn serve_mapper_session<I: Interface + ?Sized>(
+    interface: Arc<I>,
+    service: Arc<dyn mapping::reader::BlockService>,
+    session: fidl::endpoints::ServerEnd<fblock::MapperSessionMarker>,
+    mapping_vmo: zx::Vmo,
+    port: Option<zx::Port>,
+    delivery_queue: Option<zx::Vmo>,
+) -> Result<futures::future::BoxFuture<'static, Result<(), Error>>, zx::Status> {
+    match (port, delivery_queue) {
+        (Some(port), Some(delivery_queue)) => {
+            let verifier = interface.on_open_mapper_session(&mapping_vmo, delivery_queue)?;
+            let files = Arc::new(mapping::Files::new(service.clone(), move |key, range| {
+                verifier.get_page_request(key, range)
+            }));
+            let pager_thread = mapping::PagerThread::spawn(port, files.clone());
+            Ok(async move {
+                let _pager_thread = pager_thread;
+                run_mapper_session_loop(interface, service, session, mapping_vmo, files).await
+            }
+            .boxed())
+        }
+        (None, None) => {
+            let files = Arc::new(mapping::Files::new_without_pager(service.clone()));
+            Ok(async move {
+                run_mapper_session_loop(interface, service, session, mapping_vmo, files).await
+            }
+            .boxed())
+        }
+        _ => Err(zx::Status::INVALID_ARGS),
     }
 }
 
@@ -187,47 +267,24 @@ impl<I: Interface + ?Sized> super::SessionManager for SessionManager<I> {
         result
     }
 
-    async fn open_mapper_session(
+    fn open_mapper_session(
         orchestrator: Arc<Self::Orchestrator>,
         session: fidl::endpoints::ServerEnd<fblock::MapperSessionMarker>,
         mapping_vmo: zx::Vmo,
-        offset_map: OffsetMap,
         _block_size: u32,
-        port: zx::Port,
-        delivery_queue: zx::Vmo,
-    ) -> Result<(), Error> {
+        port: Option<zx::Port>,
+        delivery_queue: Option<zx::Vmo>,
+    ) -> Result<impl Future<Output = Result<(), Error>> + Send, zx::Status> {
         let sm: &SessionManager<I> = orchestrator.as_ref().borrow();
         let service = sm.into_block_service(&orchestrator);
-        let verifier =
-            sm.interface.on_open_mapper_session(&mapping_vmo, &offset_map, delivery_queue)?;
-
-        let files = Arc::new(mapping::Files::new(service, move |key, range| {
-            verifier.get_page_request(key, range)
-        }));
-
-        let _pager_thread = mapping::PagerThread::spawn(port, files.clone());
-
-        let files_for_vmo = files.clone();
-        let mapper_vmo_thread = std::thread::spawn(move || {
-            if let Ok(mapping_vmo_dup) = mapping_vmo.duplicate_handle(zx::Rights::SAME_RIGHTS) {
-                if let Ok(mut receiver) =
-                    vmo_fifo::Receiver::<mapping::RawMappingCommand>::new(mapping_vmo_dup, 256)
-                {
-                    while let Ok(msg) = receiver.peek() {
-                        let _ = mapping::process_mapping_command(&msg, &files_for_vmo);
-                        let _ = msg.pop();
-                    }
-                }
-            }
-        });
-
-        let mut stream = session.into_stream();
-        while let Some(_request) = stream.try_next().await? {
-            // Future MapperSession requests
-        }
-
-        let _ = mapper_vmo_thread.join();
-        Ok(())
+        serve_mapper_session(
+            sm.interface.clone(),
+            service,
+            session,
+            mapping_vmo,
+            port,
+            delivery_queue,
+        )
     }
 
     fn get_info(&self) -> Cow<'_, super::DeviceInfo> {

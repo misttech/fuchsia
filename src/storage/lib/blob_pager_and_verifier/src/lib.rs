@@ -298,7 +298,7 @@ impl BlobPagerAndVerifier {
         let port_dup = port.duplicate_handle(zx::Rights::SAME_RIGHTS)?;
 
         mapper
-            .open_session(mapper_session_server, mapping_vmo, None, port_dup, delivery_queue)
+            .open_session(mapper_session_server, mapping_vmo, Some(port_dup), Some(delivery_queue))
             .await
             .context("FIDL error calling Mapper.OpenSession")?
             .map_err(|e| anyhow!("Mapper.OpenSession failed: {e:?}"))?;
