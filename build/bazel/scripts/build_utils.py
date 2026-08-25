@@ -33,6 +33,18 @@ _BAZEL_TOPDIR_CONFIG_FROM_FUCHSIA_DIR = "build/bazel/config/bazel_top_dir"
 # LINT.ThenChange(//build/bazel/bazel_workspace.gni:bazel_topdir_config_file)
 
 
+def gn_arch_to_bazel(gn_arch: str) -> str:
+    """Convert GN arch to Bazel arch, following Fuchsia conventions."""
+    if gn_arch == "arm64":
+        return "aarch64"
+    elif gn_arch == "x64":
+        return "x86_64"
+    elif gn_arch == "riscv64":
+        return "riscv64"
+    else:
+        raise ValueError(f"Unexpected GN arch: {gn_arch}")
+
+
 def get_host_platform() -> str:
     """Return host platform name, following Fuchsia conventions."""
     if sys.platform == "linux":

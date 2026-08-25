@@ -618,12 +618,18 @@ def main() -> int:
         platform_sysroot_repository_dir = (
             regenerator_outputs_dir / "fuchsia_platform_sysroot"
         )
+        args_json = json.loads((build_dir / "args.json").read_text())
+        target_cpu = args_json.get("target_cpu")
+        if not target_cpu:
+            raise ValueError("target_cpu not found in args.json")
+
         workspace_utils.generate_fuchsia_platform_sysroot_repository(
             platform_sysroot_repository_dir,
             "fuchsia_platform_sysroot",
             # LINT.IfChange(sysroot_for_fuchsia_platform_json)
             build_dir / "sysroot_for_fuchsia_platform.json",
             # LINT.ThenChange(//zircon/public/sysroot_sdk/BUILD.gn:sysroot_for_fuchsia_platform_json)
+            gn_target_cpu=target_cpu,
         )
 
         # Bazel warm-up: perform a minimalistic query that ensures that the Bazel
@@ -637,7 +643,6 @@ def main() -> int:
             return returncode
 
         time_profile.start("tests.json", "Generating tests.json.")
-        args_json = json.loads((build_dir / "args.json").read_text())
         try:
             extra_ninja_build_inputs |= build_tests_json.build_tests_json(
                 build_dir,

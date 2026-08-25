@@ -872,6 +872,7 @@ class GenerateFuchsiaPlatformSysrootRepositoryTest(unittest.TestCase):
     def setUp(self) -> None:
         self._td = tempfile.TemporaryDirectory()
         self._root = Path(self._td.name)
+        (self._root / ".jiri_manifest").write_text("")
         self._sysroot_json_path = self._root / "sysroot.json"
         self._repository_dir = self._root / "repository"
         self._build_dir = self._root / "build_dir"
@@ -880,11 +881,22 @@ class GenerateFuchsiaPlatformSysrootRepositoryTest(unittest.TestCase):
     def tearDown(self) -> None:
         self._td.cleanup()
 
-    def test_generate_fuchsia_platform_sysroot_repository(self) -> None:
+    def test_generate_fuchsia_platform_sysroot_repository_with_dist_targets(
+        self,
+    ) -> None:
         sysroot_entries = [
             {"source": "../src/foo.h", "dest": "include/foo.h"},
-            {"source": "../src/lib_extra/bar.h", "dest": "include/bar.h"},
             {"source": "obj/libfoo.so", "dest": "lib/libfoo.so"},
+            {"source": "user.libc_x64/libc.so", "dest": "dist/lib/ld.so.1"},
+            {"source": "user.libc_x64/libc.so.debug", "dest": "debug/libc.so"},
+            {
+                "source": "user.libc_x64-asan/libc.so",
+                "dest": "dist/lib/asan/ld.so.1",
+            },
+            {
+                "source": "user.libc_x64-asan/libc.so.debug",
+                "dest": "debug/asan/libc.so",
+            },
         ]
         with self._sysroot_json_path.open("w") as f:
             json.dump(sysroot_entries, f)
@@ -893,12 +905,9 @@ class GenerateFuchsiaPlatformSysrootRepositoryTest(unittest.TestCase):
             self._repository_dir,
             "test_sysroot_repo_name",
             self._sysroot_json_path,
+            "x64",
             self._build_dir,
         )
-
-        sysroot_empty = self._repository_dir / "sysroot/empty"
-        self.assertTrue(sysroot_empty.exists())
-        self.assertEqual(sysroot_empty.read_text(), "")
 
         build_bazel = self._repository_dir / "BUILD.bazel"
         self.assertTrue(build_bazel.exists())
@@ -908,13 +917,17 @@ class GenerateFuchsiaPlatformSysrootRepositoryTest(unittest.TestCase):
             build_bazel.read_text(),
             """# AUTO-GENERATED - DO NOT EDIT
 
+load(
+    "@fuchsia_rules_common//debug_symbols:debug_symbols.bzl",
+    "fuchsia_unstripped_binary",
+)
+
 exports_files(["sysroot/empty"])
 
 filegroup(
     name = "sysroot_header_files",
     srcs = [
         "sysroot/include/foo.h",
-        "sysroot/include/bar.h",
     ],
     visibility = ["//visibility:public"]
 )
@@ -926,25 +939,47 @@ filegroup(
     ],
     visibility = ["//visibility:public"]
 )
+
+fuchsia_unstripped_binary(
+    name = "sysroot_library_dist",
+    dest = "lib/ld.so.1",
+    stripped_file = "sysroot/dist/lib/ld.so.1",
+    unstripped_file = "sysroot/debug/libc.so",
+    target_compatible_with = [
+        "@platforms//os:fuchsia",
+        "@platforms//cpu:x86_64",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+fuchsia_unstripped_binary(
+    name = "sysroot_library_dist.asan",
+    dest = "lib/asan/ld.so.1",
+    stripped_file = "sysroot/dist/lib/asan/ld.so.1",
+    unstripped_file = "sysroot/debug/asan/libc.so",
+    target_compatible_with = [
+        "@platforms//os:fuchsia",
+        "@platforms//cpu:x86_64",
+    ],
+    visibility = ["//visibility:public"],
+)
 """,
         )
 
         self.assertEqual(
             (self._repository_dir / "MODULE.bazel").read_text(),
-            'module(name = "test_sysroot_repo_name")',
-        )
+            dedent(
+                f"""\
+                module(name = "test_sysroot_repo_name")
 
-        self.assertEqual(
-            str((self._repository_dir / "sysroot/include/foo.h").readlink()),
-            "../../../src/foo.h",
-        )
-        self.assertEqual(
-            str((self._repository_dir / "sysroot/include/bar.h").readlink()),
-            "../../../src/lib_extra/bar.h",
-        )
-        self.assertEqual(
-            str((self._repository_dir / "sysroot/lib/libfoo.so").readlink()),
-            "../../../build_dir/obj/libfoo.so",
+                bazel_dep(name = "fuchsia_rules_common", version = "")
+                local_path_override(
+                    module_name = "fuchsia_rules_common",
+                    path = "{self._root}/build/bazel_sdk/fuchsia_rules_common",
+                )
+                bazel_dep(name = "platforms", version = "1.1.0")
+                """
+            ),
         )
 
 
