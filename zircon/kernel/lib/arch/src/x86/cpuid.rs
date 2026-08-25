@@ -642,6 +642,45 @@ layout!({
     }
 });
 
+/// Leaf/Function 0x8000_0008, EBX
+///
+/// [intel/vol2]: Table 3-8.  Information Returned by CPUID Instruction.
+/// [amd/vol3]: E.4.7  Function 8000_0008h-Processor Capacity Parameters and Extended Feature
+/// Identification.
+pub const EXTENDED_AMD_FEATURES_B: CpuidValue<0x8000_0008, 0, EBX, ExtendedAmdFeaturesB> =
+    CpuidValue::new();
+
+layout!({
+    /// Layout for [`EXTENDED_AMD_FEATURES_B`].
+    ///
+    /// [amd/ibc] details bits [18:14] and 12.
+    /// [amd/ssbd] details bits [26:24].
+    pub struct ExtendedAmdFeaturesB(u32);
+    {
+        let __ @ 31..27;
+        let ssb_no @ 26;
+        let virt_ssbd @ 25;
+        let ssbd @ 24;
+        let __ @ 23..19;
+        let prefers_ibrs @ 18;
+        let stibp_always_on @ 17;
+        let ibrs_always_on @ 16;
+        let stibp @ 15;
+        let ibrs @ 14;
+        let __ @ 13;
+        let ibpb @ 12;
+        let __ @ 11..10;
+        let wbnoinvd @ 9;
+        let mcommit @ 8;
+        let __ @ 7..5;
+        let rdpru @ 4;
+        let __ @ 3;
+        let rstr_fp_err_ptrs @ 2;
+        let inst_ret_cnt_msr @ 1;
+        let clzero @ 0;
+    }
+});
+
 /// Leaf/Function 0x8000_001e, EAX
 ///
 /// [amd/vol3]: E.4.16  Function 8000_001Eh—Processor Topology Information.

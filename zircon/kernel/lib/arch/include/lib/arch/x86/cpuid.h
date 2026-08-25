@@ -1067,7 +1067,7 @@ struct CpuidAddressSizeInfo
 // [amd/ssbd] details bits [26:24].
 struct CpuidExtendedAmdFeatureFlagsB
     : public CpuidIoValueBase<CpuidExtendedAmdFeatureFlagsB, 0x8000'0008, 0x0, CpuidIo::kEbx> {
-  // Bits [32:27] are reserved.
+  // Bits [31:27] are reserved.
   DEF_BIT(26, ssb_no);
   DEF_BIT(25, virt_ssbd);
   DEF_BIT(24, ssbd);
