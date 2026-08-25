@@ -4,8 +4,7 @@
 
 use async_trait::async_trait;
 use ffx_config::EnvironmentContext;
-// TODO(b/540443331): Clean up naming (e.g., `knock_target_daemonless`) to remove "daemonless" in a follow-up CL.
-use ffx_target::{TargetInfoQuery, knock_target_daemonless};
+use ffx_target::{TargetInfoQuery, knock_target};
 use ffx_target_add_args::AddCommand;
 use ffx_writer::VerifiedMachineWriter;
 use fho::{FfxMain, FfxTool};
@@ -49,7 +48,7 @@ impl FfxMain for AddTool {
                     return Err(fho::user_error!("{msg}"));
                 }
             };
-            if let Err(e) = knock_target_daemonless(&query, &self.context, None).await {
+            if let Err(e) = knock_target(&query, &self.context, None).await {
                 let msg = format!("Could not connect to target: {e}");
                 let _ = writer.machine(&CommandStatus::UserError { message: msg.clone() });
                 return Err(fho::user_error!("{msg}"));

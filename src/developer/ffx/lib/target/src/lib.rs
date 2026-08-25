@@ -7,9 +7,7 @@ use discovery::{DiscoverySources, TargetHandle};
 use ffx_config::keys::TARGET_DEFAULT_KEY;
 
 use ffx_config::{ConfigLevel, EnvironmentContext};
-use fidl::endpoints::create_proxy;
 use fidl_fuchsia_developer_ffx::{self as ffx, DaemonError};
-use fidl_fuchsia_developer_remotecontrol::RemoteControlMarker;
 use fuchsia_async::Timer;
 use futures::Future;
 use futures::future::{Either, pending};
@@ -17,7 +15,6 @@ use log::{debug, info};
 use std::time::Duration;
 use target_errors::FfxTargetError;
 use thiserror::Error;
-use timeout::timeout;
 
 #[cfg(test)]
 use mockall::predicate::*;
@@ -129,15 +126,6 @@ impl From<ConnectionError> for KnockError {
             other => KnockError::Critical(KnockCriticalError::Custom(format!("{:?}", other))),
         }
     }
-}
-
-/// Attempts to "knock" a target to determine if it is up and connectable via RCS.
-///
-/// This is intended to be run in a loop, with a non-critical error implying the caller
-/// should call again, and a critical error implying the caller should raise the error
-/// and no longer loop.
-pub async fn knock_target(target: &TargetProxy) -> Result<(), KnockError> {
-    knock_target_with_timeout(target, DEFAULT_RCS_KNOCK_TIMEOUT).await
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -403,86 +391,27 @@ impl RcsKnocker for LocalRcsKnockerImpl {
         target_spec: &TargetInfoQuery,
         env: &EnvironmentContext,
     ) -> Result<(), KnockError> {
-        knock_target_daemonless_impl(
-            target_spec,
-            env,
-            None,
-            self.use_cache,
-            Some(self.ever_found.clone()),
-        )
-        .await
-        .map(|()| {
-            log::debug!("Knocked target.");
-        })
+        knock_target_impl(target_spec, env, None, self.use_cache, Some(self.ever_found.clone()))
+            .await
+            .map(|()| {
+                log::debug!("Knocked target.");
+            })
     }
 }
 
-/// Attempts to "knock" a target to determine if it is up and connectable via RCS, within
-/// a specified timeout.
+/// Attempts to "knock" a target to determine if it is up and connectable via RCS.
 ///
-/// This is intended to be run in a loop, with a non-critical error implying the caller
-/// should call again, and a critical error implying the caller should raise the error
-/// and no longer loop.
-///
-/// The timeout must be longer than `rcs::RCS_KNOCK_TIMEOUT`
-async fn knock_target_with_timeout(
-    target: &TargetProxy,
-    rcs_timeout: Duration,
-) -> Result<(), KnockError> {
-    if rcs_timeout <= rcs::RCS_KNOCK_TIMEOUT {
-        return Err(KnockError::Critical(KnockCriticalError::Custom(format!(
-            "rcs verification timeout must be greater than {:?}",
-            rcs::RCS_KNOCK_TIMEOUT
-        ))));
-    }
-    let (rcs_proxy, remote_server_end) = create_proxy::<RemoteControlMarker>();
-
-    let open_result = timeout(rcs_timeout, target.open_remote_control(remote_server_end)).await;
-    match open_result {
-        Err(_) => {
-            return Err(KnockError::NonCritical(KnockNonCriticalError::Timeout {
-                detail: "timing out opening remote control".to_string(),
-            }));
-        }
-        Ok(Err(e)) => {
-            return Err(KnockError::NonCritical(KnockNonCriticalError::Custom(format!(
-                "FIDL error opening remote control: {:?}",
-                e
-            ))));
-        }
-        Ok(Ok(Err(e))) => {
-            return Err(KnockError::NonCritical(KnockNonCriticalError::Custom(format!(
-                "open remote control err: {:?}",
-                e
-            ))));
-        }
-        Ok(Ok(Ok(()))) => {}
-    }
-
-    match rcs::knock_rcs(&rcs_proxy).await {
-        Ok(()) => Ok(()),
-        Err(e) => Err(KnockError::NonCritical(KnockNonCriticalError::RcsKnockFailed {
-            detail: format!("{e:?}"),
-        })),
-    }
-}
-
-/// Identical to the above "knock_target" but does not use the daemon.
-///
-/// Keep in mind because there is no daemon being used, the connection process must be bootstrapped
-/// for each attempt, so this function may need more time to run than the functions that perform
-/// this action through the daemon (which is presumed to be already active). As a result, if
-/// `knock_timeout` is set to `None`, the default timeout will be set to 2 times
+/// If `knock_timeout` is set to `None`, the default timeout will be set to 2 times
 /// `DEFAULT_RCS_KNOCK_TIMEOUT`.
-pub async fn knock_target_daemonless(
+pub async fn knock_target(
     target_spec: &TargetInfoQuery,
     context: &EnvironmentContext,
     knock_timeout: Option<Duration>,
 ) -> Result<(), KnockError> {
-    knock_target_daemonless_impl(target_spec, context, knock_timeout, false, None).await
+    knock_target_impl(target_spec, context, knock_timeout, false, None).await
 }
 
-pub(crate) async fn knock_target_daemonless_impl(
+pub(crate) async fn knock_target_impl(
     target_spec: &TargetInfoQuery,
     context: &EnvironmentContext,
     knock_timeout: Option<Duration>,
@@ -726,24 +655,12 @@ mod test {
         let target = get_target_specifier(&context).expect("get_target_specifier");
         assert_eq!(target, Some("foo".to_string()));
     }
-    #[fuchsia::test]
-    async fn test_target_wait_too_short_timeout() {
-        let (proxy, _server) = fidl::endpoints::create_proxy::<ffx::TargetMarker>();
-        let res = knock_target_with_timeout(&proxy, rcs::RCS_KNOCK_TIMEOUT).await;
-        assert!(res.is_err());
-        let res = knock_target_with_timeout(
-            &proxy,
-            rcs::RCS_KNOCK_TIMEOUT.checked_sub(Duration::new(0, 1)).unwrap(),
-        )
-        .await;
-        assert!(res.is_err());
-    }
 
     #[fuchsia::test]
     async fn test_bad_timeout() {
         let env = test_init().unwrap();
         assert!(
-            knock_target_daemonless(
+            knock_target(
                 &TargetInfoQuery::NodenameOrId("foo".to_string()),
                 &env.context,
                 Some(rcs::RCS_KNOCK_TIMEOUT)

@@ -772,7 +772,7 @@ pub(crate) trait QemuBasedEngine: EmulatorEngine {
             let start = Instant::now();
             let mut connection_errors = Vec::new();
             while start.elapsed().as_secs() <= startup_timeout {
-                let compat_res = ffx_target::knock_target_daemonless(
+                let compat_res = ffx_target::knock_target(
                     &TargetInfoQuery::try_from(name.clone())
                         .map_err(|e| user_error!("Invalid target specifier: {}", e))?,
                     &context,
