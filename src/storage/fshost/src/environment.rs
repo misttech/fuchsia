@@ -211,7 +211,7 @@ pub trait Container: Send + Sync {
         let volumes_dir = fuchsia_fs::directory::open_directory(
             self.fs().exposed_dir(),
             "volumes",
-            fio::Flags::empty(),
+            fuchsia_fs::PERM_READABLE,
         )
         .await
         .context("opening volumes directory")?;
