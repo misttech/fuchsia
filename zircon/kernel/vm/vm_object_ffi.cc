@@ -239,4 +239,15 @@ zx_status_t cpp_vm_object_write_user(VmObject* vmo, const void* buffer, uint64_t
   return ZX_OK;
 }
 
+FFI_ALWAYS_INLINE zx_status_t cpp_vm_object_take_pages(VmObject* vmo, uint64_t offset, uint64_t len,
+                                                       VmPageSpliceList* pages) {
+  return vmo->TakePages(offset, len, pages);
+}
+
+FFI_ALWAYS_INLINE zx_status_t cpp_vm_object_supply_pages(VmObject* vmo, uint64_t offset,
+                                                         uint64_t len, VmPageSpliceList* pages,
+                                                         SupplyOptions options) {
+  return vmo->SupplyPages(offset, len, pages, options);
+}
+
 }  // extern "C"

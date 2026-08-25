@@ -6,13 +6,18 @@
 
 use super::pmm::node as pmm_node;
 use crate::kernel::types::PAddr;
-use crate::vm::page::VmPagePtr;
+use core::pin::Pin;
+use pin_init::pin_data;
 use vm_constants_rs::{
     kPmmNodeIndexZeroBits, kVmPageListIntervalBits, kVmPageListIntervalSentinelBits,
     kVmPageListIntervalType, kVmPageListIntervalTypeBits, kVmPageListPageType,
     kVmPageListParentContentType, kVmPageListReferenceType, kVmPageListTypeBits,
     kVmPageListZeroMarkerType,
 };
+use vm_page_list_bindings as bindings;
+use zr::{Opaque, pin_init_ffi, unsafe_pinned_drop_ffi};
+
+use crate::vm::page::VmPagePtr;
 
 /// RAII helper for representing content in a page list node. This supports being in one of these
 /// states:
@@ -577,6 +582,45 @@ impl Drop for VmPageOrMarker {
             !self.is_page_or_ref(),
             "VmPageOrMarker dropped while containing page or ref"
         );
+    }
+}
+
+/// Class which holds the list of vm_page structs removed from a VmPageList
+/// by AddPagesFrom. The list include information about uncommitted pages and markers.
+/// Every splice list is expected to go through the following series of states:
+/// 1. The splice list is created.
+/// 2. List is Initialized with the desired range.
+/// 3. Pages are added to the splice list.
+/// 4. The list is `Finalize`d, meaning that it can no longer be modified by `Append`.
+/// 5. Pages are then `Pop`d from the list. Once all the pages are popped, the list is considered
+///    "processed".
+/// 6. The list is then considered `Processed` and can be destroyed.
+#[pin_data(PinnedDrop)]
+pub struct VmPageSpliceList {
+    #[pin]
+    opaque: Opaque<bindings::VmPageSpliceList>,
+}
+
+unsafe_pinned_drop_ffi!(VmPageSpliceList, bindings::cpp_vm_page_splice_list_destroy);
+
+impl VmPageSpliceList {
+    /// Returns an in-place initializer for stack-pinning a `VmPageSpliceList`.
+    pub fn new() -> impl pin_init::PinInit<Self> {
+        unsafe fn init_shim(ptr: *mut core::ffi::c_void) {
+            let list_ptr: *mut bindings::VmPageSpliceList = ptr.cast();
+            // SAFETY: `ptr` is guaranteed by `pin_init_ffi!` to point to valid `VmPageSpliceList`
+            // storage.
+            unsafe { bindings::cpp_vm_page_splice_list_construct(list_ptr) }
+        }
+        pin_init_ffi!(init_shim)
+    }
+
+    /// Returns a raw pointer to the underlying C++ `VmPageSpliceList`.
+    ///
+    /// Callers must not use the returned raw pointer to move the object in memory.
+    pub fn as_raw(self: Pin<&mut Self>) -> *mut bindings::VmPageSpliceList {
+        // SAFETY: Obtaining a raw pointer to `opaque` does not move the pinned object.
+        unsafe { self.get_unchecked_mut().opaque.get() }
     }
 }
 

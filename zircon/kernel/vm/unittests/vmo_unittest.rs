@@ -8,6 +8,7 @@
 #[cfg(ktest)]
 #[unittest::suite]
 mod vmo_rs {
+    use crate::kernel::thread::{self, ThreadPtr};
     use crate::kernel::types::PAddr;
     use crate::vm::arch_vm_aspace::{
         ARCH_MMU_FLAG_CACHE_MASK, ARCH_MMU_FLAG_PERM_READ, ARCH_MMU_FLAG_PERM_WRITE,
@@ -28,13 +29,15 @@ mod vmo_rs {
     use crate::vm::scanner::AutoVmScannerDisable;
     use crate::vm::vm_aspace::{VmAspace, vmm_flag};
     use crate::vm::vm_cow_pages::{EvictionAction, VmCowPages, VmCowRange, VmCowReclaimFailure};
-    use crate::vm::vm_object::{EvictionHint, Resizability, SnapshotType, VmObject};
+    use crate::vm::vm_object::{EvictionHint, Resizability, SnapshotType, SupplyOptions, VmObject};
     use crate::vm::vm_object_paged::VmObjectPaged;
     use crate::vm::vm_object_physical::VmObjectPhysical;
+    use crate::vm::vm_page_list::VmPageSpliceList;
     use crate::vm_unittests::test_helper::{
         ARCH_RW_FLAGS, fill_and_test, fill_region, make_committed_pager_vmo,
         make_partially_committed_pager_vmo, make_private_attribution_counts,
-        supply_pager_vmo_pages, test_rand, test_region, verify_continuous_attribution_bytes,
+        make_uncommitted_pager_vmo, supply_pager_vmo_pages, test_rand, test_region,
+        verify_continuous_attribution_bytes,
     };
     use core::ffi::c_void;
     use core::mem::MaybeUninit;
@@ -49,7 +52,7 @@ mod vmo_rs {
         unwrap_ok,
     };
     use zx_status::Status;
-    use zx_types::ZX_KOID_KERNEL;
+    use zx_types::{ZX_KOID_KERNEL, ZX_TIME_INFINITE};
 
     const PAGE_SIZE: u64 = PAGE_SIZE_USIZE as u64;
 
@@ -1729,6 +1732,91 @@ mod vmo_rs {
         }
     }
 
+    /// Tests memory attribution for pager-backed VMO operations.
+    #[test]
+    fn vmo_attribution_pager_test() {
+        // Tests that memory attribution behaves as expected for operations specific to pager-backed
+        // vmo's - supplying pages, creating COW clones.
+        let _scanner_disable = AutoVmScannerDisable::new();
+
+        const NUM_PAGES: usize = 2;
+        let alloc_size = (NUM_PAGES as u64) * PAGE_SIZE;
+        let vmo = unwrap_ok!(make_uncommitted_pager_vmo(
+            NUM_PAGES, /*trap_dirty=*/ false, /*resizable=*/ false
+        ));
+        // Fake user id to keep the cloning code happy.
+        vmo.set_user_id(0xff);
+
+        expect_true!(vmo.get_attributed_memory() == attribution::zero());
+        expect_true!(verify_continuous_attribution_bytes(&vmo, 0));
+
+        // Create an aux VMO to transfer pages into the pager-backed vmo.
+        let aux_vmo = unwrap_ok!(VmObjectPaged::create(
+            pmm::ALLOC_FLAG_ANY,
+            VmObjectPaged::RESIZABLE,
+            alloc_size
+        ));
+
+        expect_true!(aux_vmo.get_attributed_memory() == attribution::zero());
+        expect_true!(verify_continuous_attribution_bytes(&aux_vmo, 0));
+
+        let status = aux_vmo.commit_range(0, alloc_size);
+        assert_ok!(status);
+        expect_true!(
+            aux_vmo.get_attributed_memory() == make_private_attribution_counts(2 * PAGE_SIZE, 0)
+        );
+        expect_true!(verify_continuous_attribution_bytes(&aux_vmo, 2 * PAGE_SIZE));
+
+        stack_pin_init!(let page_list = VmPageSpliceList::new());
+        let status = aux_vmo.take_pages(0, PAGE_SIZE, page_list.as_mut());
+        assert_ok!(status);
+        expect_true!(
+            aux_vmo.get_attributed_memory() == make_private_attribution_counts(PAGE_SIZE, 0)
+        );
+        expect_true!(verify_continuous_attribution_bytes(&aux_vmo, PAGE_SIZE));
+        expect_true!(vmo.get_attributed_memory() == attribution::zero());
+        expect_true!(verify_continuous_attribution_bytes(&vmo, 0));
+
+        let status = vmo.supply_pages(0, PAGE_SIZE, page_list.as_mut(), SupplyOptions::PagerSupply);
+        assert_ok!(status);
+        expect_true!(vmo.get_attributed_memory() == make_private_attribution_counts(PAGE_SIZE, 0));
+        expect_true!(verify_continuous_attribution_bytes(&vmo, PAGE_SIZE));
+        expect_true!(
+            aux_vmo.get_attributed_memory() == make_private_attribution_counts(PAGE_SIZE, 0)
+        );
+        expect_true!(verify_continuous_attribution_bytes(&aux_vmo, PAGE_SIZE));
+
+        drop(aux_vmo);
+
+        // Create a COW clone that sees the first page.
+        let clone = unwrap_ok!(vmo.create_clone(
+            Resizability::NonResizable,
+            SnapshotType::OnWrite,
+            0,
+            PAGE_SIZE,
+            true
+        ));
+        clone.set_user_id(0xfc);
+
+        expect_true!(vmo.get_attributed_memory() == make_private_attribution_counts(PAGE_SIZE, 0));
+        expect_true!(verify_continuous_attribution_bytes(&vmo, PAGE_SIZE));
+        expect_true!(clone.get_attributed_memory() == attribution::zero());
+        expect_true!(verify_continuous_attribution_bytes(&clone, 0));
+
+        let status = clone.commit_range(0, PAGE_SIZE);
+        assert_ok!(status);
+        expect_true!(vmo.get_attributed_memory() == make_private_attribution_counts(PAGE_SIZE, 0));
+        expect_true!(verify_continuous_attribution_bytes(&vmo, PAGE_SIZE));
+        expect_true!(
+            clone.get_attributed_memory() == make_private_attribution_counts(PAGE_SIZE, 0)
+        );
+        expect_true!(verify_continuous_attribution_bytes(&clone, PAGE_SIZE));
+
+        drop(clone);
+        expect_true!(vmo.get_attributed_memory() == make_private_attribution_counts(PAGE_SIZE, 0));
+        expect_true!(verify_continuous_attribution_bytes(&vmo, PAGE_SIZE));
+    }
+
     /// Tests that memory attribution behaves as expected when zero pages are deduped.
     #[test]
     fn vmo_attribution_dedup_test() {
@@ -1838,6 +1926,98 @@ mod vmo_rs {
         drop(child);
         expect_eq!(child2.parent_user_id(), 42);
         expect_eq!(child3.parent_user_id(), 42);
+    }
+
+    /// Test that the discardable VMO's lock count is updated as expected via lock and unlock ops.
+    #[test]
+    fn vmo_lock_count_test() {
+        // Create a vmo to lock and unlock from multiple threads.
+        const K_SIZE: u64 = 3 * PAGE_SIZE;
+        let vmo = unwrap_ok!(VmObjectPaged::create(
+            pmm::ALLOC_FLAG_ANY,
+            VmObjectPaged::DISCARDABLE,
+            K_SIZE,
+        ));
+
+        const K_NUM_THREADS: usize = 5;
+        let mut threads: [Option<ThreadPtr>; K_NUM_THREADS] = [None; K_NUM_THREADS];
+        struct ThreadState {
+            vmo: *const VmObjectPaged,
+            did_unlock: bool,
+        }
+        let mut state =
+            [const { ThreadState { vmo: core::ptr::null(), did_unlock: false } }; K_NUM_THREADS];
+
+        extern "C" fn worker(arg: *mut c_void) -> i32 {
+            let state: *mut ThreadState = arg.cast();
+            // SAFETY: `state` is a valid pointer to a `ThreadState` that lives for the duration
+            // of the thread.
+            let state = unsafe { state.as_mut_unchecked() };
+            // SAFETY: `state.vmo` points to a live `VmObjectPaged` that outlives this thread.
+            let vmo = unsafe { state.vmo.as_ref_unchecked() };
+            let mut rand_val = state.vmo.addr() as u32;
+
+            // Randomly decide between try-lock and lock.
+            rand_val = test_rand(rand_val);
+            if !rand_val.is_multiple_of(2) {
+                if let Err(status) = vmo.try_lock_range(0, K_SIZE) {
+                    return status.into_raw();
+                }
+            } else {
+                if let Err(status) = vmo.lock_range(0, K_SIZE) {
+                    return status.into_raw();
+                }
+            }
+
+            // Randomly decide whether to unlock, or leave the vmo locked.
+            rand_val = test_rand(rand_val);
+            if !rand_val.is_multiple_of(2) {
+                if let Err(status) = vmo.unlock_range(0, K_SIZE) {
+                    return status.into_raw();
+                }
+                state.did_unlock = true;
+            }
+
+            0
+        }
+
+        for i in 0..K_NUM_THREADS {
+            state[i].vmo = &*vmo;
+            state[i].did_unlock = false;
+
+            let state_ptr: *mut ThreadState = &mut state[i];
+            let arg: *mut c_void = state_ptr.cast();
+            // SAFETY: `worker` is a valid entry point and `arg` points to a live `ThreadState`.
+            threads[i] =
+                Some(unwrap_ok!(unsafe { thread::create(c"worker".as_ptr(), worker, arg) }));
+        }
+
+        for t in &threads {
+            // SAFETY: `t` is a valid thread created above and has not been joined or destroyed.
+            unsafe { t.unwrap().resume() };
+        }
+
+        for t in &threads {
+            // SAFETY: `t` is a valid thread that has not yet been joined.
+            let ret = unwrap_ok!(unsafe { t.unwrap().join(ZX_TIME_INFINITE) });
+            expect_eq!(0, ret);
+        }
+
+        let mut expected_lock_count = K_NUM_THREADS as u64;
+        for s in &state {
+            if s.did_unlock {
+                expected_lock_count -= 1;
+            }
+        }
+
+        expect_eq!(
+            expected_lock_count,
+            vmo.debug_get_cow_pages()
+                .expect("vmo has cow pages")
+                .debug_get_discardable_tracker()
+                .expect("cow has discardable tracker")
+                .debug_get_lock_count()
+        );
     }
 
     /// Tests the state transitions for a discardable VMO.
@@ -3589,6 +3769,130 @@ mod vmo_rs {
             Status::result_into_raw(chain_snap.map(|_| ())),
             "snapshot-modified unidirectional chain\n"
         );
+    }
+
+    /// Tests concurrent pinning of different ranges in a contiguous VMO with loaned pages.
+    #[test]
+    fn vmo_pin_race_loaned_test() {
+        // Regression test for https://fxbug.dev/42080926. Concurrent pinning of different ranges in
+        // a contiguous VMO that has its pages loaned.
+
+        let _scanner_disable = AutoVmScannerDisable::new();
+
+        let try_count = 5000;
+        for _try_ordinal in 0..try_count {
+            let _enable_loaning = ScopedLoaningEnabled::new(true);
+
+            const NUM_LOANED: usize = 10;
+            let contiguous_vmo = unwrap_ok!(VmObjectPaged::create_contiguous(
+                pmm::ALLOC_FLAG_ANY,
+                ((NUM_LOANED + 1) as u64) * PAGE_SIZE,
+                /*alignment_log2=*/ 0,
+            ));
+            let mut pages: [Option<VmPagePtr>; NUM_LOANED] = [None; NUM_LOANED];
+            for (i, page) in pages.iter_mut().enumerate() {
+                *page = contiguous_vmo.debug_get_page(((i + 1) as u64) * PAGE_SIZE);
+            }
+            let status = contiguous_vmo.decommit_range(PAGE_SIZE, (NUM_LOANED as u64) * PAGE_SIZE);
+            assert_true!(status.is_ok());
+
+            let mut iteration_count = 0;
+            let max_iterations = 1000;
+            let mut loaned = 0;
+            loop {
+                // Create a pager-backed VMO with a single page.
+                let (vmo, [page]) = unwrap_ok!(make_committed_pager_vmo(
+                    /*trap_dirty=*/ false, /*resizable=*/ false,
+                ));
+
+                // make_committed_pager_vmo is not enough to ensure vmo's only page is loaned.
+                // We must explicitly call replace_page_with_loaned.
+                let cow_pages = vmo.debug_get_cow_pages().expect("paged VMO has backing cow pages");
+                let offset = 0;
+                assert_ok!(cow_pages.replace_page_with_loaned(page, offset));
+
+                // vmo's page should be a new page since we replaced the old one with
+                // a loaned page.
+                let page = vmo.debug_get_page(0).expect("vmo should have a page at offset 0");
+
+                iteration_count += 1;
+                for &saved_page in &pages {
+                    if page == saved_page.expect("pages populated") {
+                        // SAFETY: `page` is attached to `vmo` and its loaned state is not mutated
+                        // in parallel.
+                        assert_true!(unsafe { page.is_loaned() });
+                        loaned += 1;
+                    }
+                }
+
+                if !(loaned < NUM_LOANED && iteration_count < max_iterations) {
+                    break;
+                }
+            }
+
+            // If we hit this iteration count, something almost certainly went wrong...
+            assert_true!(iteration_count < max_iterations);
+            assert_eq!(NUM_LOANED, loaned);
+
+            let mut threads: [Option<ThreadPtr>; NUM_LOANED] = [None; NUM_LOANED];
+            struct ThreadState {
+                vmo: *const VmObjectPaged,
+                index: usize,
+            }
+            let mut states =
+                [const { ThreadState { vmo: core::ptr::null(), index: 0 } }; NUM_LOANED];
+
+            extern "C" fn worker(arg: *mut c_void) -> i32 {
+                let state_ptr: *const ThreadState = arg.cast();
+                // SAFETY: `state_ptr` points to a valid, initialized `ThreadState` on the stack
+                // that outlives the thread.
+                let state = unsafe { state_ptr.as_ref_unchecked() };
+                // SAFETY: `state.vmo` points to `contiguous_vmo` which outlives the thread.
+                let vmo = unsafe { state.vmo.as_ref_unchecked() };
+
+                let status = if state.index == 0 {
+                    vmo.commit_range_pinned(0, 2 * PAGE_SIZE, false)
+                } else {
+                    vmo.commit_range_pinned(
+                        ((state.index + 1) as u64) * PAGE_SIZE,
+                        PAGE_SIZE,
+                        false,
+                    )
+                };
+                if status.is_err() {
+                    return -1;
+                }
+                0
+            }
+
+            for i in 0..NUM_LOANED {
+                states[i].vmo = &*contiguous_vmo;
+                states[i].index = i;
+                let state_ptr: *mut ThreadState = &mut states[i];
+                let arg: *mut c_void = state_ptr.cast();
+                // SAFETY: `worker` is a valid entry point and `arg` points to `states[i]` which
+                // outlives the thread.
+                threads[i] =
+                    Some(unwrap_ok!(unsafe { thread::create(c"worker".as_ptr(), worker, arg) }));
+            }
+
+            for thread in &threads {
+                // SAFETY: `thread` is a valid thread pointer and has not been joined or
+                // destroyed.
+                unsafe { thread.unwrap().resume() };
+            }
+
+            for thread in &threads {
+                // SAFETY: `thread` is a valid thread pointer and has not been joined yet.
+                let ret = unwrap_ok!(unsafe { thread.unwrap().join(ZX_TIME_INFINITE) });
+                expect_eq!(0, ret);
+            }
+
+            for (i, &page) in pages.iter().enumerate() {
+                expect_true!(page == contiguous_vmo.debug_get_page(((i + 1) as u64) * PAGE_SIZE));
+            }
+            contiguous_vmo.unpin(0, ((NUM_LOANED + 1) as u64) * PAGE_SIZE);
+        }
     }
 
     /// Test that unmaps propagated to copy-on-write children are not applied to kernel mappings.

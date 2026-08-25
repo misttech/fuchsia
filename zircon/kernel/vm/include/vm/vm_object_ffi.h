@@ -100,6 +100,10 @@ zx_status_t cpp_vm_object_read_user(VmObject* vmo, void* buffer, uint64_t offset
                                     size_t* out_actual);
 zx_status_t cpp_vm_object_write_user(VmObject* vmo, const void* buffer, uint64_t offset,
                                      size_t size, size_t* out_actual);
+zx_status_t cpp_vm_object_take_pages(VmObject* vmo, uint64_t offset, uint64_t len,
+                                     VmPageSpliceList* pages);
+zx_status_t cpp_vm_object_supply_pages(VmObject* vmo, uint64_t offset, uint64_t len,
+                                       VmPageSpliceList* pages, SupplyOptions options);
 
 __END_CDECLS
 

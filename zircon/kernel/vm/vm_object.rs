@@ -9,6 +9,7 @@ use super::attribution::AttributionCounts;
 use super::page::VmPagePtr;
 use super::page_source::MultiPageRequest;
 use super::vm_object_paged::VmObjectPaged;
+use super::vm_page_list::VmPageSpliceList;
 use crate::kernel::types::PAddr;
 use crate::user_copy::{UserInPtr, UserOutPtr};
 use core::ffi::c_void;
@@ -615,6 +616,52 @@ impl VmObject {
     pub fn reclamation_event_count(&self) -> u64 {
         // SAFETY: `self.as_raw()` points to a live `VmObject`.
         unsafe { bindings::cpp_vm_object_reclamation_event_count(self.as_raw()) }
+    }
+
+    /// Takes pages out of this vmo and places them into the splice list.
+    /// `pages` must be a valid, initialized and empty splice list. The length of the range
+    /// is specified by the length of the splice list.
+    /// The caller must guarantee that there are no active writes to the source range, and that
+    /// pinned pages in the source range. `offset` and `len` must be page aligned.
+    pub fn take_pages(
+        &self,
+        offset: u64,
+        len: u64,
+        pages: Pin<&mut VmPageSpliceList>,
+    ) -> Result<(), Status> {
+        // SAFETY: `self.as_raw()` points to a live `VmObject`, and `pages.as_raw()` points to a
+        // live `VmPageSpliceList`.
+        let status = unsafe {
+            bindings::cpp_vm_object_take_pages(self.as_raw(), offset, len, pages.as_raw())
+        };
+        Status::ok(status)
+    }
+
+    /// Supplies this vmo with pages for the range [offset, offset + len). If this vmo
+    /// already has pages in the target range, the `options` field will dictate what happens:
+    /// If options is SupplyOptions::TransferData, the pages in the target range will be
+    /// overwritten,
+    /// Otherwise, the corresponding pages in `pages` will be freed.
+    /// `offset` and `len` must be page aligned.
+    pub fn supply_pages(
+        &self,
+        offset: u64,
+        len: u64,
+        pages: Pin<&mut VmPageSpliceList>,
+        options: SupplyOptions,
+    ) -> Result<(), Status> {
+        // SAFETY: `self.as_raw()` points to a live `VmObject`, and `pages.as_raw()` points to a
+        // live `VmPageSpliceList`.
+        let status = unsafe {
+            bindings::cpp_vm_object_supply_pages(
+                self.as_raw(),
+                offset,
+                len,
+                pages.as_raw(),
+                options,
+            )
+        };
+        Status::ok(status)
     }
 
     /// Read/write operators against user space pointers only.

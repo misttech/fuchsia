@@ -59,6 +59,16 @@ pub fn make_committed_pager_vmo<const N: usize>(
     Ok((vmo, pages))
 }
 
+/// Same as make_committed_pager_vmo but does not commit any pages in the VMO.
+pub fn make_uncommitted_pager_vmo(
+    num_pages: usize,
+    trap_dirty: bool,
+    resizable: bool,
+) -> Result<RefPtr<VmObjectPaged>, Status> {
+    let (vmo, []) = make_partially_committed_pager_vmo(num_pages, trap_dirty, resizable, false)?;
+    Ok(vmo)
+}
+
 /// Creates a partially committed pager-backed VMO with `num_pages` virtual
 /// pages and `C` committed pages.
 pub fn make_partially_committed_pager_vmo<const C: usize>(
