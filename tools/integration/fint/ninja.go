@@ -331,9 +331,12 @@ func ninjaFailureMessage(ctx context.Context, errorsFileName string, ninjaStderr
 
 // ninjaDryRun does a `ninja explain` dry run against a build directory and
 // returns the stdout and stderr.
-func ninjaDryRun(ctx context.Context, r ninjaRunner, targets []string) (string, string, error) {
+func ninjaDryRun(ctx context.Context, r ninjaRunner, targets []string, dirtySourcesListPath string) (string, string, error) {
 	// -n means dry-run.
 	args := []string{"-d", "explain", "--verbose", "-n"}
+	if dirtySourcesListPath != "" {
+		args = append(args, "--dirty_sources_list", dirtySourcesListPath)
+	}
 	args = append(args, targets...)
 
 	var stdout, stderr bytes.Buffer
@@ -362,7 +365,15 @@ func checkNinjaNoop(
 	targets []string,
 	isMac bool,
 ) (bool, string, map[string]string, error) {
-	stdout, stderr, ninjaErr := ninjaDryRun(ctx, r, targets)
+	dirtySourcesFile, err := os.CreateTemp("", "dirty_sources_list")
+	if err != nil {
+		return false, "", nil, fmt.Errorf("failed to create temporary file for dirty sources list: %w", err)
+	}
+	dirtySourcesPath := dirtySourcesFile.Name()
+	dirtySourcesFile.Close()
+	defer os.Remove(dirtySourcesPath)
+
+	stdout, stderr, ninjaErr := ninjaDryRun(ctx, r, targets, dirtySourcesPath)
 	// Temporarily tolerate a failure if it's on Mac. We won't emit the error if
 	// it seemed to be caused by a known broken Mac path.
 	if ninjaErr != nil && !isMac {
@@ -387,6 +398,11 @@ func checkNinjaNoop(
 			"`ninja -d explain -v -n` stdout": stdout,
 			"`ninja -d explain -v -n` stderr": stderr,
 		}
+
+		if content, err := os.ReadFile(dirtySourcesPath); err == nil && len(content) > 0 {
+			logs["dirty sources list"] = string(content)
+		}
+
 		// Return the original ninja error, which may be non-nil if we're
 		// running on a Mac and the dry run failed but the stdio didn't contain
 		// one of the broken Mac paths.
@@ -524,7 +540,8 @@ func affectedTestsNoWork(
 		return result, err
 	}
 	defer resetTouchFiles(touchNonGNResult)
-	stdout, stderr, err := ninjaDryRun(ctx, runner, targets)
+	// TODO: Pass a real path here to capture dirty sources in the pre-build phase.
+	stdout, stderr, err := ninjaDryRun(ctx, runner, targets, "")
 	if err != nil {
 		return result, err
 	}
@@ -567,7 +584,8 @@ func affectedTestsNoWork(
 		}
 		defer resetTouchFiles(touchGNResult)
 		var stdout, stderr string
-		stdout, stderr, err = ninjaDryRun(ctx, runner, targets)
+		// TODO: Pass a real path here to capture dirty sources in the pre-build phase.
+		stdout, stderr, err = ninjaDryRun(ctx, runner, targets, "")
 		if err != nil {
 			return result, err
 		}

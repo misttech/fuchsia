@@ -307,12 +307,14 @@ func trimLines(s string) string {
 
 func TestCheckNinjaNoop(t *testing.T) {
 	testCases := []struct {
-		name       string
-		isMac      bool
-		stdout     string
-		fail       bool
-		expectNoop bool
-		expectErr  bool
+		name                 string
+		isMac                bool
+		stdout               string
+		fail                 bool
+		expectNoop           bool
+		expectErr            bool
+		run                  func(cmd []string, stdout io.Writer, stderr io.Writer) error
+		expectedDirtySources string
 	}{
 		{
 			name:       "no-op",
@@ -329,6 +331,25 @@ func TestCheckNinjaNoop(t *testing.T) {
 			name:       "dirty",
 			stdout:     "ninja: Entering directory /foo\n[1/1] STAMP foo.stamp",
 			expectNoop: false,
+		},
+		{
+			name:       "dirty with sources list",
+			expectNoop: false,
+			run: func(cmd []string, stdout io.Writer, stderr io.Writer) error {
+				for i, arg := range cmd {
+					if arg == "--dirty_sources_list" && i+1 < len(cmd) {
+						path := cmd[i+1]
+						err := os.WriteFile(path, []byte("sdk/lib/fdio/private.h\n"), 0644)
+						if err != nil {
+							return err
+						}
+					}
+				}
+				stdout.Write([]byte("ninja: Entering directory /foo\n[1/1] STAMP foo.stamp"))
+				stderr.Write([]byte("ninja explain: output foo older than most recent input bar"))
+				return nil
+			},
+			expectedDirtySources: "sdk/lib/fdio/private.h\n",
 		},
 		{
 			name:       "mac dirty",
@@ -362,6 +383,7 @@ func TestCheckNinjaNoop(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			r := ninjaRunner{
 				runner: &fakeSubprocessRunner{
+					run:        tc.run,
 					mockStdout: []byte(tc.stdout),
 					mockStderr: []byte("ninja explain: output foo older than most recent input bar"),
 					fail:       tc.fail,
@@ -389,8 +411,20 @@ func TestCheckNinjaNoop(t *testing.T) {
 					t.Errorf("Got unexpected message: %q", msg)
 				}
 			} else {
-				if len(logFiles) != 2 {
-					t.Errorf("Expected 2 log files in case of non-no-op, but got: %+v", logFiles)
+				expectedLen := 2
+				if tc.expectedDirtySources != "" {
+					expectedLen = 3
+				}
+				if len(logFiles) != expectedLen {
+					t.Errorf("Expected %d log files in case of non-no-op, but got: %+v", expectedLen, logFiles)
+				}
+				if tc.expectedDirtySources != "" {
+					content, ok := logFiles["dirty sources list"]
+					if !ok {
+						t.Errorf("Expected log files to contain 'dirty sources list'")
+					} else if content != tc.expectedDirtySources {
+						t.Errorf("Got unexpected dirty sources list: %q, expected: %q", content, tc.expectedDirtySources)
+					}
 				}
 				expectedMsg := "output foo older than most recent input bar"
 				if msg != expectedMsg {
@@ -667,7 +701,7 @@ func TestNinjaDryRun(t *testing.T) {
 				ninjaPath: "ninja",
 				buildDir:  t.TempDir(),
 			}
-			stdout, stderr, err := ninjaDryRun(ctx, r, []string{"foo"})
+			stdout, stderr, err := ninjaDryRun(ctx, r, []string{"foo"}, "")
 			if err != nil {
 				if !tc.fail {
 					t.Errorf("Unexpected error: %s", err)
