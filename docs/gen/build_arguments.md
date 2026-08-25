@@ -951,7 +951,7 @@ This should never be set as a build argument.
 }
   tsan = {
   shared = {
-  clang_rt = "../../../../out/not-default/libclang_rt.tsan.so"
+  clang_rt = ""
 }
   static = {
   clang_rt = "../../../../out/not-default/libclang_rt.tsan.a"
@@ -2206,6 +2206,19 @@ From //build/config/compiler.gni:82
 }]
   install_host_tool = true
 }, {
+  bazel_label = "//tools/debug/debugsyms:debugsyms"
+  copy_outputs = [{
+  bazel = "{{BAZEL_TARGET_OUT_DIR}}/debugsyms_/debugsyms"
+  ninja = "debugsyms"
+}]
+  install_host_tool = true
+}, {
+  bazel_label = "//tools/debug/generate_breakpad:generate_breakpad"
+  copy_outputs = [{
+  bazel = "{{BAZEL_TARGET_OUT_DIR}}/generate_breakpad_/generate_breakpad"
+  ninja = "generate_breakpad"
+}]
+}, {
   bazel_label = "//tools/debug/symbolize:symbolize"
   copy_outputs = [{
   bazel = "{{BAZEL_TARGET_OUT_DIR}}/symbolize_/symbolize"
@@ -2352,6 +2365,20 @@ From //build/config/compiler.gni:82
   copy_outputs = [{
   bazel = "{{BAZEL_TARGET_OUT_DIR}}/generate_intermediate_json_cmd_/generate_intermediate_json_cmd"
   ninja = "generate_intermediate_json_cmd"
+}]
+  install_host_tool = true
+}, {
+  bazel_label = "//tools/artifactory:artifactory"
+  copy_outputs = [{
+  bazel = "{{BAZEL_TARGET_OUT_DIR}}/artifactory_/artifactory"
+  ninja = "artifactory"
+}]
+  install_host_tool = true
+}, {
+  bazel_label = "//tools/bundle_fetcher:bundle_fetcher"
+  copy_outputs = [{
+  bazel = "{{BAZEL_TARGET_OUT_DIR}}/bundle_fetcher_/bundle_fetcher"
+  ninja = "bundle_fetcher"
 }]
   install_host_tool = true
 }, {
