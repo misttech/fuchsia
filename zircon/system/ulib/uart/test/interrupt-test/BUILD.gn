@@ -74,6 +74,9 @@ if (is_host) {
       "-zbi-path",
       rebase_path(_outputs[0], root_build_dir),
     ]
-    non_go_deps = [ ":uart-interrupt-test-zbi-data" ]
+    non_go_deps = [
+      ":uart-interrupt-test-zbi-data",
+      "//build/images/fuchsia:default_product_bundle_for_emulator.go",
+    ]
   }
 }

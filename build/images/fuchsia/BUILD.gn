@@ -25,6 +25,8 @@ if (is_host) {
       "//src/tests/oom:*",
       "//src/tests/reboot:*",
       "//src/tests/shutdown:*",
+      "//zircon/system/ulib/uart/test/interrupt-test:*",
+      "//zircon/system/ulib/uart/test/polling-input-test:*",
     ]
     sources = [ files.product_bundle_dir ]
     deps = [ labels.images ]
