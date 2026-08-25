@@ -3,7 +3,15 @@
         "parent": "sdio-function-1",
         "tests": [
             {
-                "name": "Match accept 0x4345",
+                "name": "MatchName",
+                "expected": "match",
+                "device": {
+                    "fuchsia.Service": "\"fuchsia.hardware.sdio.Service\"",
+                    "fuchsia.NAME": "\"sdio-function-1\""
+                }
+            },
+            {
+                "name": "MatchFunction",
                 "expected": "match",
                 "device": {
                     "fuchsia.Service": "\"fuchsia.hardware.sdio.Service\"",
@@ -16,7 +24,15 @@
         "parent": "sdio-function-2",
         "tests": [
             {
-                "name": "Match accept 0x4345",
+                "name": "MatchName",
+                "expected": "match",
+                "device": {
+                    "fuchsia.Service": "\"fuchsia.hardware.sdio.Service\"",
+                    "fuchsia.NAME": "\"sdio-function-2\""
+                }
+            },
+            {
+                "name": "MatchFunction",
                 "expected": "match",
                 "device": {
                     "fuchsia.Service": "\"fuchsia.hardware.sdio.Service\"",
@@ -69,6 +85,18 @@
                 "expected": "match",
                 "device": {
                     "fuchsia.BIND_INIT_STEP": "fuchsia.gpio.BIND_INIT_STEP.GPIO"
+                }
+            }
+        ]
+    },
+    {
+        "parent": "pin-states-0",
+        "tests": [
+            {
+                "name": "Match",
+                "expected": "match",
+                "device": {
+                    "fuchsia.Service": "\"fuchsia.hardware.pin.PinStatesService\""
                 }
             }
         ]

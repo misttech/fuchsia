@@ -40,15 +40,6 @@ static VIM3_PARSER_CONFIG: DmlParserConfig = DmlParserConfig {
             ],
             ..DEFAULT_SERVICE_BIND_CONFIG
         },
-        "fuchsia.hardware.sdio.Service" => ServiceBindConfig {
-            rules: &[PropertyRule {
-                bind_key: "fuchsia.BIND_SDIO_FUNCTION",
-                sources: &[ValueSource::ConstraintKey("function")],
-                value_type: RuleValueType::Integer,
-                destination: Destination::Both,
-            }],
-            ..DEFAULT_SERVICE_BIND_CONFIG
-        },
         "fuchsia.clock.Init" => ServiceBindConfig {
             transport: TransportType::None,
             rules: &[PropertyRule {
