@@ -18,14 +18,14 @@ the GPU driver stack.
 
 ## Motivation
 
-For background and definitions, readers are encouraged to read the appendices to
-understand [GPU complexity](#appendix-i-gpu-drivers-are-complex) and industry
+For background and definitions, readers are encouraged to review the appendices to
+understand [GPU complexity](#appendix-i) and industry
 trends
-[towards open-source](#appendix-ii-open-source-gpu-drivers-are-an-irresistible-trend).
+[towards open-source](#appendix-ii).
 
 Magma is [Fuchsia's GPU driver model][magma-driver-model]. Magma acknowledges
 the significant scope for differentiation in UMD and system driver designs, but
-aims for more standardization in cross-driver interface itself. This is useful
+aims for more standardization in the cross-driver interface itself. This is useful
 outside Fuchsia - the Android GPU virtualization effort proposed
 [upstreaming Magma to Mesa][magma-mesa-upstream] to solve virtio fragmentation
 issues (a design known as _magmavirt_).
@@ -86,7 +86,7 @@ Given the limited resources of microkernel projects, the committee will meet
 quarterly via video chat for one hour and target a Mesa-level standard.
 
 We will follow a [consensus-driven approach][consensus-decision-making], similar
-to that of a [Khronos exploratory group](#appendix-iii-khronos).
+to that of a [Khronos exploratory group](#appendix-iii).
 
 Much of the work of GPU drivers can be shared, if architected correctly.
 
@@ -180,7 +180,7 @@ We expect high-priority internal efforts to be the focus of the Fuchsia team.
 Additional staffing is not requested nor required. This is an early-stage
 ecosystem initiative.
 
-## Appendix I: GPU drivers are complex
+## Appendix I: GPU drivers are complex {:#appendix-i}
 
 GPU + NPU driver stacks share a similar topology:
 
@@ -208,7 +208,7 @@ Both Apple's [M1 GPU][m1-gpu-tales] and Nvidia's
 Roscoe argues these co-processors and blobs require a rethink of
 [operating system design][roscoe-os-design].
 
-## Appendix II: Open-source GPU drivers are an irresistible trend
+## Appendix II: Open-source GPU drivers are an irresistible trend {:#appendix-ii}
 
 A complex interplay among hobbyists, OS developers, and hardware vendors has led
 to open-source becoming the best way to develop GPU drivers. This is most
@@ -292,7 +292,7 @@ Freedreno is widely used for [Android gaming][adreno-740-turnip-guide] and the
 Android intends to update [Mesa drivers consistently][android-mesa-updates] for
 the first time ever.
 
-## Appendix III: Khronos
+## Appendix III: Khronos {:#appendix-iii}
 
 The [Khronos Group][khronos-group] is an industry body that creates open
 standards for 3D graphics, machine learning, and AR/VR. Many industry standards
