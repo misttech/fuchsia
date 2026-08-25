@@ -11,9 +11,8 @@ group("plasa") {
   deps = [
     ":filter_compdb",
     ":tests",
-    "model",
-    "plasa_test_coverage_report:host",
     "//build/bazel/host:bazel_root_host_tools.clang_doc_filter($host_toolchain)",
+    "//build/bazel/host:bazel_root_host_tools.plasa_test_coverage_report($host_toolchain)",
   ]
   if (current_toolchain == toolchain_variant.base) {
     deps += [ ":compdb" ]
@@ -22,15 +21,6 @@ group("plasa") {
       deps += [ ":api_coverage_report" ]
     }
   }
-}
-
-group("tests") {
-  testonly = true
-  deps = [
-    "clang_doc_filter:tests",
-    "model:tests",
-    "plasa_test_coverage_report:tests",
-  ]
 }
 
 if (current_toolchain == toolchain_variant.base) {
@@ -51,7 +41,8 @@ if (current_toolchain == toolchain_variant.base) {
     testonly = true
     _plasa_input = "$root_build_dir/manifest.plasa.json"
     _plasa_output = "$root_build_dir/test_coverage_report.plasa.json"
-    tool = "//sdk/ctf/plasa/plasa_test_coverage_report"
+    tool = "//build/bazel/host:bazel_root_host_tools.plasa_test_coverage_report"
+    tool_output_name = "plasa_test_coverage_report"
     outputs = [ _plasa_output ]
     inputs = [ _plasa_input ]
     args = [

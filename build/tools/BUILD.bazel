@@ -10,6 +10,7 @@ test_suite(
     name = "host_tests",
     target_compatible_with = HOST_CONSTRAINTS,
     tests = [
+        "//build/tools/bazel2gn:bazel2gn_tests",
         "//build/tools/json_validator/test:tests",
 
         # This `test_suite()` cannot currently be run by the "*tests" targets

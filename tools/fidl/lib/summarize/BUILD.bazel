@@ -6,10 +6,7 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library")
 load("@platforms//host:constraints.bzl", "HOST_CONSTRAINTS")
 load("//tools/fidl/lib/fidlgentest:fidlgentest_go_test.bzl", "fidlgentest_go_test")
 
-package(
-    default_applicable_licenses = ["//:license"],
-    default_visibility = ["//tools/fidl:__subpackages__"],
-)
+package(default_applicable_licenses = ["//:license"])
 
 go_library(
     name = "gopkg",
@@ -51,5 +48,6 @@ fidlgentest_go_test(
     ],
     embed = [":gopkg"],
     target_compatible_with = HOST_CONSTRAINTS,
+    visibility = ["//tools:__pkg__"],
     deps = ["//third_party/golibs:github.com/google/go-cmp/cmp"],
 )

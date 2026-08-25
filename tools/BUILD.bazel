@@ -31,6 +31,7 @@ test_suite(
         "//tools/fidl/gidl/lib/mixer:gidl_mixer_tests",
         "//tools/fidl/gidl/lib/parser:gidl_parser_tests",
         "//tools/fidl/lib/apidiff:apidiff_test",
+        "//tools/fidl/lib/summarize:summarize_test",
         "//tools/fidl/measure-tape/src:measure_tape_test",
         "//tools/fuzz:undercoat_tests",
         "//tools/go_test_parser:go_test_parser_lib_tests",

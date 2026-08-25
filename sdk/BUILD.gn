@@ -6,6 +6,7 @@
 
 import("//build/bazel/bazel_build_action.gni")
 import("//build/bazel/bazel_fuchsia_sdk.gni")
+import("//build/bazel/bazel_test_suite.gni")
 import("//build/config/build_api_module.gni")
 import("//build/config/fuchsia/platform_version.gni")
 import("//build/config/fuchsia/target_api_level.gni")
@@ -322,14 +323,18 @@ sdk_molecule("fuchsia_idk_atoms_host_tests") {
   deps = [ ":core_experimental_python_e2e_tests" ]
 }
 
+bazel_test_suite("bazel_tests") {
+  host_tests = [ "//sdk:host_tests" ]
+}
+
 group("tests_no_e2e") {
   visibility += [ "*" ]
   testonly = true
   assert_no_deps = e2e_test_libs
 
   deps = [
+    ":bazel_tests",
     "//sdk/categories:tests",
-    "//sdk/ctf/plasa:tests",
     "//sdk/fidl:tests",
     "//sdk/lib:tests",
     "//sdk/pdk:tests",

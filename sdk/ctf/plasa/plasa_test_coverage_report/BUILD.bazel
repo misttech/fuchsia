@@ -11,46 +11,50 @@ load("//build/bazel/rules/host_tests:host_test_data.bzl", "host_test_data_files"
 package(default_applicable_licenses = ["//:license"])
 
 go_library(
-    name = "main_lib",
+    name = "gopkg",
     srcs = [
         "main.go",
     ],
-    importpath = "go.fuchsia.dev/fuchsia/sdk/ctf/plasa/clang_doc_filter/main_lib",
+    importpath = "go.fuchsia.dev/fuchsia/sdk/ctf/plasa/plasa_test_coverage_report",
     target_compatible_with = HOST_CONSTRAINTS,
-    visibility = ["//visibility:public"],
     deps = [
         "//sdk/ctf/plasa/model:gopkg",
         "//third_party/golibs:github.com/google/go-cmp/cmp",
         "//third_party/golibs:gopkg.in/yaml.v2",
+        "//tools/fidl/lib/summarize:gopkg",
     ],
 )
 
 go_binary_host_tool(
-    name = "clang_doc_filter",
-    embed = [":main_lib"],
+    name = "plasa_test_coverage_report",
+    embed = [":gopkg"],
     target_compatible_with = HOST_CONSTRAINTS,
 )
 
 host_test_data_files(
-    name = "clang_doc_filter_testdata",
+    name = "plasa_test_coverage_report_testdata",
     srcs = [
-        "testdata/@nonymous_record_FFBFAD8A3BBD799586600B40A3453BBD95900F13.yaml",
-        "testdata/channel.yaml",
-        "testdata/index.yaml",
+        "testdata/fragment-fidl.plasa.json",
+        "testdata/fragment-vdso.plasa.json",
+        "testdata/fragment1.plasa.json",
+        "testdata/fragment2.plasa.json",
+        "testdata/plasa.manifest.json",
     ],
     dest_dir = "testdata",
 )
 
 host_go_test(
-    name = "clang_doc_filter_test",
-    srcs = ["report_test.go"],
-    embed = [":main_lib"],
+    name = "plasa_test_coverage_report_test",
+    srcs = ["main_test.go"],
+    embed = [":gopkg"],
     target_compatible_with = HOST_CONSTRAINTS,
-    test_args = ["-test_data_dir=testdata"],
-    test_data = [":clang_doc_filter_testdata"],
+    test_args = [
+        "-test_data_dir=testdata",
+        "-fragment-prefix=testdata",
+    ],
+    test_data = [":plasa_test_coverage_report_testdata"],
     visibility = ["//sdk:__pkg__"],
     deps = [
         "//third_party/golibs:github.com/google/go-cmp/cmp",
-        "//third_party/golibs:github.com/google/go-cmp/cmp/cmpopts",
     ],
 )

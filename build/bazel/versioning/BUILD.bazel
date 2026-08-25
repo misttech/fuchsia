@@ -61,7 +61,7 @@ config_setting(
         "//build/config/python/generate_python_api_symbols:__pkg__",
         "//build/tools:__subpackages__",
         "//tools:__subpackages__",
-        "//sdk/ctf/plasa/clang_doc_filter:__pkg__",
+        "//sdk/ctf/plasa:__subpackages__",
     ],
 )
 

@@ -9,7 +9,6 @@ group("tests") {
 
   deps = [
     ":bazel_tests",
-    "bazel2gn:bazel2gn_tests($host_toolchain)",
     "json_merge:json_merge_test($host_toolchain)",
 
     # TODO(https://fxbug.dev/495266204): Move all tests to Bazel and remove.
