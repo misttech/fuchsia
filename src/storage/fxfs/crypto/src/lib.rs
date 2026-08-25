@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use aes::Aes256;
+use aes::cipher::{BlockCipherDecrypt, BlockCipherEncrypt, KeyInit};
 use anyhow::anyhow;
 use async_trait::async_trait;
 use chacha20::cipher::{KeyIvInit, StreamCipher as _, StreamCipherSeek};
@@ -12,6 +14,8 @@ use futures::stream::FuturesUnordered;
 use serde::de::{Error as SerdeError, Visitor};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::collections::BTreeMap;
+use storage_xts::{Tweak, XtsCtsProcessor};
+use zerocopy::IntoBytes;
 use zx_status as zx;
 
 mod cipher;
@@ -289,6 +293,127 @@ impl StreamCipher {
     pub fn offset(&self) -> u64 {
         self.0.current_pos()
     }
+
+    pub fn key_is_new(&self) -> bool {
+        0 == self.0.current_pos()
+    }
+}
+
+/// Cipher used for encrypting and decrypting journal mutations with AES-256-XTS and CTS.
+pub struct JournalXtsCipher {
+    key: Aes256,
+    // Used to prevent reallocations when we need to move into an aligned pointer.
+    aligned_buf: Vec<u128>,
+    tweak: u64,
+    key_start_tweak: u64,
+}
+
+impl JournalXtsCipher {
+    pub fn new(key: &UnwrappedKey, tweak: u64) -> Self {
+        Self {
+            key: Aes256::new(key.as_slice().try_into().expect("Invalid key length")),
+            aligned_buf: Vec::new(),
+            tweak,
+            key_start_tweak: tweak,
+        }
+    }
+
+    /// Encrypts `buffer` in place using AES-256-XTS with ciphertext stealing.
+    /// If `buffer.len() < 16`, it will be zero-padded to 16 bytes first.
+    pub fn encrypt(&mut self, buffer: &mut Vec<u8>) {
+        if buffer.len() < 16 {
+            buffer.resize(16, 0);
+        }
+        let len = buffer.len();
+        let mut tweak = Tweak::new(self.tweak as u128);
+        self.key.encrypt_block(tweak.as_mut_bytes().try_into().unwrap());
+        if buffer.as_ptr().cast::<u128>().is_aligned() {
+            let slice = MutPtrByteSlice::from(buffer.as_mut_bytes());
+            self.key.encrypt_with_backend(XtsCtsProcessor::new_in_place(tweak, slice));
+        } else {
+            self.aligned_buf.resize(buffer.len().div_ceil(16), 0u128);
+            let aligned_bytes = &mut self.aligned_buf.as_mut_bytes()[..len];
+            aligned_bytes.copy_from_slice(buffer);
+            let slice = MutPtrByteSlice::from(aligned_bytes);
+            self.key.encrypt_with_backend(XtsCtsProcessor::new_in_place(tweak, slice));
+            buffer.copy_from_slice(&self.aligned_buf.as_bytes()[..len]);
+        }
+        self.tweak += 1;
+    }
+
+    /// Decrypts `buffer` in place using AES-256-XTS with ciphertext stealing.
+    /// `buffer.len()` must be >= 16.
+    pub fn decrypt(&mut self, buffer: &mut [u8]) {
+        assert!(buffer.len() >= 16);
+        let len = buffer.len();
+        let mut tweak = Tweak::new(self.tweak as u128);
+        self.key.encrypt_block(tweak.as_mut_bytes().try_into().unwrap());
+
+        if buffer.as_ptr().cast::<u128>().is_aligned() {
+            let slice = MutPtrByteSlice::from(buffer);
+            self.key.decrypt_with_backend(XtsCtsProcessor::new_in_place(tweak, slice));
+        } else {
+            self.aligned_buf.resize(buffer.len().div_ceil(16), 0u128);
+            let aligned_bytes = &mut self.aligned_buf.as_mut_bytes()[..len];
+            aligned_bytes.copy_from_slice(buffer);
+            let slice = MutPtrByteSlice::from(aligned_bytes);
+            self.key.decrypt_with_backend(XtsCtsProcessor::new_in_place(tweak, slice));
+            buffer.copy_from_slice(&self.aligned_buf.as_bytes()[..len]);
+        }
+        self.tweak += 1;
+    }
+
+    pub fn current_tweak(&self) -> u64 {
+        self.tweak
+    }
+
+    pub fn key_is_new(&self) -> bool {
+        self.tweak - self.key_start_tweak == 0
+    }
+}
+
+pub enum JournalCipher {
+    ChaCha20(StreamCipher),
+    Aes256Xts(Box<JournalXtsCipher>),
+}
+
+impl JournalCipher {
+    pub fn new_chacha20(key: &UnwrappedKey, offset: u64) -> Self {
+        JournalCipher::ChaCha20(StreamCipher::new(key, offset))
+    }
+
+    pub fn new_aes256_xts(key: &UnwrappedKey, current_tweak: u64) -> Self {
+        JournalCipher::Aes256Xts(Box::new(JournalXtsCipher::new(key, current_tweak)))
+    }
+
+    pub fn encrypt(&mut self, buffer: &mut Vec<u8>) {
+        match self {
+            JournalCipher::ChaCha20(c) => c.encrypt(buffer.as_mut_slice()),
+            JournalCipher::Aes256Xts(c) => c.encrypt(buffer),
+        }
+    }
+
+    pub fn decrypt(&mut self, buffer: &mut [u8]) {
+        match self {
+            JournalCipher::ChaCha20(c) => c.decrypt(buffer),
+            JournalCipher::Aes256Xts(c) => c.decrypt(buffer),
+        }
+    }
+
+    pub fn sequence_number(&self) -> u64 {
+        match self {
+            JournalCipher::ChaCha20(c) => c.offset(),
+            JournalCipher::Aes256Xts(c) => c.current_tweak(),
+        }
+    }
+
+    /// If a key has not been used for encrypting for decrypting yet.
+    pub fn key_is_new(&self) -> bool {
+        match self {
+            JournalCipher::ChaCha20(c) => c.key_is_new(),
+            JournalCipher::Aes256Xts(c) => c.key_is_new(),
+        }
+    }
 }
 
 /// Different keys are used for metadata and data in order to make certain operations requiring a
@@ -406,7 +531,56 @@ pub trait Crypt: Send + Sync {
 
 #[cfg(test)]
 mod tests {
-    use super::{StreamCipher, UnwrappedKey};
+    use super::{JournalCipher, JournalXtsCipher, StreamCipher, UnwrappedKey};
+
+    #[test]
+    fn test_journal_xts_cipher_roundtrip() {
+        let key = UnwrappedKey::new(vec![0x42; 32]);
+        let mut enc = JournalXtsCipher::new(&key, 0);
+        let mut dec = JournalXtsCipher::new(&key, 0);
+
+        // Test < 16 bytes (padded to 16)
+        let mut buf_short = vec![1, 2, 3, 4, 5];
+        enc.encrypt(&mut buf_short);
+        assert_eq!(buf_short.len(), 16);
+        dec.decrypt(&mut buf_short);
+        assert_eq!(&buf_short[..5], &[1, 2, 3, 4, 5]);
+        assert_eq!(&buf_short[5..], &[0; 11]);
+        assert_eq!(enc.current_tweak(), 1);
+        assert_eq!(dec.current_tweak(), 1);
+
+        // Test exact 16 bytes
+        let mut buf_16 = vec![7u8; 16];
+        enc.encrypt(&mut buf_16);
+        assert_eq!(buf_16.len(), 16);
+        dec.decrypt(&mut buf_16);
+        assert_eq!(buf_16, vec![7u8; 16]);
+        assert_eq!(enc.current_tweak(), 2);
+        assert_eq!(dec.current_tweak(), 2);
+
+        // Test 25 bytes (CTS)
+        let mut buf_25: Vec<u8> = (0..25).collect();
+        enc.encrypt(&mut buf_25);
+        assert_eq!(buf_25.len(), 25);
+        dec.decrypt(&mut buf_25);
+        assert_eq!(buf_25, (0..25).collect::<Vec<u8>>());
+        assert_eq!(enc.current_tweak(), 3);
+        assert_eq!(dec.current_tweak(), 3);
+    }
+
+    #[test]
+    fn test_journal_cipher_enum() {
+        let key = UnwrappedKey::new(vec![0x33; 32]);
+        let mut enc = JournalCipher::new_aes256_xts(&key, 0);
+        let mut dec = JournalCipher::new_aes256_xts(&key, 0);
+
+        let mut buf = vec![9u8; 20];
+        enc.encrypt(&mut buf);
+        assert_eq!(buf.len(), 20);
+        dec.decrypt(&mut buf);
+        assert_eq!(buf, vec![9u8; 20]);
+        assert_eq!(enc.sequence_number(), 1);
+    }
 
     #[test]
     fn test_stream_cipher_offset() {
@@ -435,5 +609,65 @@ mod tests {
         xor_fn(&mut c1, &c2);
         xor_fn(&mut p1, &p2);
         assert_ne!(c1, p1);
+    }
+
+    #[test]
+    fn test_journal_xts_cipher_aligned_and_unaligned_allocations() {
+        let key = UnwrappedKey::new(vec![0x5a; 32]);
+        let test_lengths = [1, 5, 16, 25];
+        // Big enough to ensure no re-allocations.
+        let backing_size: usize = test_lengths.iter().max().unwrap() + 1;
+        // Packed into u128 to ensure alignment.
+        let mut backing_vector = vec![0u128; backing_size.div_ceil(16)];
+
+        for &len in &test_lengths {
+            let plaintext = vec![42u8; len];
+            let mut expected_plaintext = plaintext.clone();
+            if expected_plaintext.len() < 16 {
+                expected_plaintext.resize(16, 0);
+            }
+
+            // Aligned case.
+            {
+                let mut buf = std::mem::ManuallyDrop::new(unsafe {
+                    Vec::<u8>::from_raw_parts(
+                        backing_vector.as_mut_ptr().cast::<u8>(),
+                        len,
+                        backing_size,
+                    )
+                });
+                assert!(buf.as_ptr().cast::<u128>().is_aligned());
+                buf.copy_from_slice(plaintext.as_slice());
+                {
+                    let mut enc = JournalXtsCipher::new(&key, 13);
+                    enc.encrypt(&mut buf);
+                }
+                {
+                    let mut enc = JournalXtsCipher::new(&key, 13);
+                    enc.encrypt(&mut buf);
+                }
+            }
+
+            // Unaligned case.
+            {
+                let mut buf = std::mem::ManuallyDrop::new(unsafe {
+                    Vec::<u8>::from_raw_parts(
+                        backing_vector.as_mut_ptr().cast::<u8>().wrapping_byte_add(1),
+                        len,
+                        backing_size,
+                    )
+                });
+                assert!(!buf.as_ptr().cast::<u128>().is_aligned());
+                buf.copy_from_slice(plaintext.as_slice());
+                {
+                    let mut enc = JournalXtsCipher::new(&key, 13);
+                    enc.encrypt(&mut buf);
+                }
+                {
+                    let mut enc = JournalXtsCipher::new(&key, 13);
+                    enc.encrypt(&mut buf);
+                }
+            }
+        }
     }
 }
