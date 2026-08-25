@@ -17,6 +17,7 @@
 #include <lib/fit/defer.h>
 #include <lib/sync/completion.h>
 #include <lib/sync/cpp/completion.h>
+#include <lib/zx/channel.h>
 #include <lib/zx/event.h>
 
 #include <set>
