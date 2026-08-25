@@ -192,6 +192,25 @@ tools_bazel_root_targets = [
     install_host_tool = true  # Required by CI recipe
   },
   {
+    bazel_label = "//tools/debug/debugsyms:debugsyms"
+    copy_outputs = [
+      {
+        bazel = "{{BAZEL_TARGET_OUT_DIR}}/debugsyms_/debugsyms"
+        ninja = "debugsyms"
+      },
+    ]
+    install_host_tool = true
+  },
+  {
+    bazel_label = "//tools/debug/generate_breakpad:generate_breakpad"
+    copy_outputs = [
+      {
+        bazel = "{{BAZEL_TARGET_OUT_DIR}}/generate_breakpad_/generate_breakpad"
+        ninja = "generate_breakpad"
+      },
+    ]
+  },
+  {
     bazel_label = "//tools/debug/symbolize:symbolize"
     copy_outputs = [
       {
