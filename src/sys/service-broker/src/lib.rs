@@ -124,7 +124,7 @@ async fn first_instance_to_default<T: ServiceObjTrait>(
     let (instance_dir, request) = fidl::endpoints::create_proxy::<fio::DirectoryMarker>();
     svc.as_ref_directory().open(
         &instance_dir_path,
-        fio::Flags::PROTOCOL_DIRECTORY,
+        fio::Flags::PROTOCOL_DIRECTORY | fio::PERM_READABLE,
         request.into(),
     )?;
 
