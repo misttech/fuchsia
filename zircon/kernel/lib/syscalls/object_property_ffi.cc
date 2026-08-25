@@ -4,7 +4,6 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
-#include <lib/syscalls/forward.h>
 #include <lib/user_copy/user_ptr.h>
 #include <zircon/syscalls/object.h>
 #include <zircon/types.h>
@@ -15,6 +14,8 @@
 #include <object/socket_dispatcher.h>
 #include <object/stream_dispatcher.h>
 #include <object/vm_object_dispatcher.h>
+
+#include "object_property_priv.h"
 
 #if ARCH_X86
 static zx_status_t RequireCurrentThread(fbl::RefPtr<Dispatcher> dispatcher) {
@@ -29,9 +30,12 @@ static zx_status_t RequireCurrentThread(fbl::RefPtr<Dispatcher> dispatcher) {
 }
 #endif
 
+extern "C" {
+
 // zx_status_t zx_object_get_property
-zx_status_t sys_object_get_property(zx_handle_t handle_value, uint32_t property,
-                                    user_out_ptr<void> _value, size_t size) {
+zx_status_t cpp_object_get_property(zx_handle_t handle_value, uint32_t property, void* raw_value,
+                                    size_t size) {
+  user_out_ptr<void> _value(raw_value);
   if (!_value)
     return ZX_ERR_INVALID_ARGS;
 
@@ -198,8 +202,9 @@ zx_status_t sys_object_get_property(zx_handle_t handle_value, uint32_t property,
 }
 
 // zx_status_t zx_object_set_property
-zx_status_t sys_object_set_property(zx_handle_t handle_value, uint32_t property,
-                                    user_in_ptr<const void> _value, size_t size) {
+zx_status_t cpp_object_set_property(zx_handle_t handle_value, uint32_t property,
+                                    const void* raw_value, size_t size) {
+  user_in_ptr<const void> _value(raw_value);
   if (!_value)
     return ZX_ERR_INVALID_ARGS;
 
@@ -410,3 +415,5 @@ zx_status_t sys_object_set_property(zx_handle_t handle_value, uint32_t property,
 
   __UNREACHABLE;
 }
+
+}  // extern "C"
