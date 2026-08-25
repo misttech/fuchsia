@@ -2,10 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::Result;
 pub use ffx_package_archive_extract_args::PackageArchiveExtractCommand;
-use ffx_writer::SimpleWriter;
-use fho::{FfxMain, FfxTool, user_error};
+use ffx_writer::VerifiedMachineWriter;
+use fho::{FfxContext, FfxMain, FfxTool};
 use package_tool::cmd_package_archive_extract;
 
 #[derive(FfxTool)]
@@ -18,14 +17,15 @@ fho::embedded_plugin!(ArchiveExtractTool);
 
 #[async_trait::async_trait(?Send)]
 impl FfxMain for ArchiveExtractTool {
-    type Writer = SimpleWriter;
+    type Writer = VerifiedMachineWriter<()>;
 
     type Error = ::fho::Error;
 
-    async fn main(self, _writer: <Self as fho::FfxMain>::Writer) -> fho::Result<()> {
+    async fn main(self, mut writer: <Self as fho::FfxMain>::Writer) -> fho::Result<()> {
         cmd_package_archive_extract(self.cmd)
             .await
-            .map_err(|err| user_error!("Error: failed to extract archive: {err:?}"))?;
+            .with_user_message(|| "failed to extract archive")?;
+        writer.machine(&()).bug()?;
         Ok(())
     }
 }

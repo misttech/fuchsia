@@ -27,9 +27,9 @@ pub struct ExtractCommand {
         short = 'o',
         long = "output-dir",
         description = "output directory (defaults to current directory, creates the directory if it doesn't exist)",
-        default = "PathBuf::from(\".\")"
+        default = "Utf8PathBuf::from(\".\")"
     )]
-    pub output_dir: PathBuf,
+    pub output_dir: Utf8PathBuf,
 
     #[argh(positional)]
     pub far_file: PathBuf,

@@ -16,7 +16,7 @@ ffx_plugin("ffx_package_archive_cat") {
     "//third_party/rust_crates:async-trait",
   ]
 
-  test_deps = []
+  test_deps = [ "//third_party/rust_crates:serde_json" ]
 
   args_sources = [ "src/args.rs" ]
   args_deps = [

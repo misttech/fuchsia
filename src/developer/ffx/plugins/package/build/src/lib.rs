@@ -3,8 +3,8 @@
 // found in the LICENSE file.
 
 pub use ffx_package_build_args::PackageBuildCommand;
-use ffx_writer::SimpleWriter;
-use fho::{FfxMain, FfxTool, Result, user_error};
+use ffx_writer::VerifiedMachineWriter;
+use fho::{FfxContext, FfxMain, FfxTool, Result};
 use package_tool::cmd_package_build;
 
 #[derive(FfxTool)]
@@ -17,14 +17,13 @@ fho::embedded_plugin!(PackageBuildTool);
 
 #[async_trait::async_trait(?Send)]
 impl FfxMain for PackageBuildTool {
-    type Writer = SimpleWriter;
+    type Writer = VerifiedMachineWriter<()>;
 
     type Error = ::fho::Error;
 
-    async fn main(self, mut _writer: <Self as fho::FfxMain>::Writer) -> fho::Result<()> {
-        cmd_package_build(self.cmd)
-            .await
-            .map_err(|err| user_error!("Error: failed to build package: {err:?}"))?;
+    async fn main(self, mut writer: <Self as fho::FfxMain>::Writer) -> fho::Result<()> {
+        cmd_package_build(self.cmd).await.with_user_message(|| "failed to build package")?;
+        writer.machine(&()).bug()?;
         Ok(())
     }
 }

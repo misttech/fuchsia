@@ -3,11 +3,12 @@
 // found in the LICENSE file.
 
 use anyhow::{Result, anyhow, bail};
+use base64::Engine as _;
 use fuchsia_archive::{Error, Utf8Entry, Utf8Reader};
 use fuchsia_hash::Hash;
 use fuchsia_pkg::MetaContents;
 use mockall::automock;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::fs::File;
 use std::io::Cursor;
@@ -28,6 +29,16 @@ impl From<Utf8Entry<'_>> for ArchiveEntry {
             length: Some(entry.length()),
         }
     }
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct FarCatResult {
+    pub data_base64: String,
+}
+
+pub fn to_far_cat_result(data: &[u8]) -> FarCatResult {
+    let data_base64 = base64::engine::general_purpose::STANDARD.encode(data);
+    FarCatResult { data_base64 }
 }
 
 /// Trait for listing the contents of the package archive. This

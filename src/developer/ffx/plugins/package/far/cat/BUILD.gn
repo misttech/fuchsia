@@ -19,10 +19,12 @@ ffx_plugin("ffx_package_far_cat") {
   deps = [
     "//src/developer/ffx/lib/fho:lib",
     "//src/developer/ffx/lib/writer:lib",
+    "//src/developer/ffx/plugins/package/archive:lib",
     "//src/sys/pkg/lib/far/rust:fuchsia-archive",
-    "//third_party/rust_crates:anyhow",
     "//third_party/rust_crates:async-trait",
   ]
+
+  test_deps = [ "//third_party/rust_crates:serde_json" ]
 
   args_sources = [ "src/args.rs" ]
 
