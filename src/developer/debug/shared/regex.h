@@ -8,8 +8,7 @@
 #include <memory>
 #include <string>
 
-#include <re2/re2.h>
-
+#include "re2/re2.h"
 #include "src/lib/fxl/macros.h"
 
 namespace debug {
