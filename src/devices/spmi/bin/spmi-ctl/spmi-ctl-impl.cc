@@ -13,10 +13,38 @@
 #include <lib/fdio/fdio.h>
 #include <zircon/status.h>
 
+#include <cerrno>
+#include <cstdio>
+#include <cstdlib>
 #include <filesystem>
+#include <limits>
+#include <optional>
 #include <sstream>
-
 namespace {
+
+enum class ParseResult {
+  kSuccess,
+  kInvalid,
+  kOutOfRange,
+};
+
+// Parses a numerical string and verifies that the complete argument is consumed.
+ParseResult ParseInteger(const char* str, int64_t* out_value) {
+  if (str == nullptr || *str == '\0') {
+    return ParseResult::kInvalid;
+  }
+  char* endptr = nullptr;
+  errno = 0;
+  long long val = std::strtoll(str, &endptr, 0);
+  if (errno == ERANGE) {
+    return ParseResult::kOutOfRange;
+  }
+  if (endptr == str || *endptr != '\0') {
+    return ParseResult::kInvalid;
+  }
+  *out_value = val;
+  return ParseResult::kSuccess;
+}
 
 constexpr char kSpmiDebugServiceDir[] = "/svc/fuchsia.hardware.spmi.DebugService";
 
@@ -24,9 +52,9 @@ constexpr char kUsageSummary[] = R"""(
 SPMI driver control.
 
 Usage:
-  spmi-ctl [-c|--controller <controller>] -t|--target <id> -a|--address <hex_address> -r|--read <hex_bytes_to_read>
-  spmi-ctl [-c|--controller <controller>] -t|--target <id> -a|--address <hex_address> -w|--write <hex_byte_0> <hex_byte_1>...
-  spmi-ctl [-c|--controller <controller>] -t|--target <id> -a|--address <hex_address> -d|--dump <hex_bytes_to_dump>
+  spmi-ctl [-c|--controller <controller>] -t|--target <id> -a|--address <address> -r|--read <bytes_to_read>
+  spmi-ctl [-c|--controller <controller>] -t|--target <id> -a|--address <address> -w|--write <byte_0> <byte_1>...
+  spmi-ctl [-c|--controller <controller>] -t|--target <id> -a|--address <address> -d|--dump <bytes_to_dump>
   spmi-ctl [-c|--controller <controller>] -t|--target <id> -p|--properties
   spmi-ctl -l|--list
   spmi-ctl -h|--help
@@ -34,13 +62,13 @@ Usage:
 
 constexpr char kUsageDetails[] = R"""(
 Options:
-  -c, --controller  Controller device name. If specified, must be listed before other options. If
-                    left unspecified, the first device in /svc/fuchsia.hardware.spmi.DebugService is
-                    used.
+  -c, --controller  Controller device name. If specified, must be listed before other options.
+                    If left unspecified, the first device in
+                    /svc/fuchsia.hardware.spmi.DebugService is used.
   -t, --target      Target ID in [0, 15]. Must be listed before the following options.
   -a, --address     Address to read or write. Must be listed before --read or --write.
   -r, --read        Reads <read_bytes> from the device.
-  -w, --write       Writes <hex_byte0>, <hex_byte1>, etc to the device.
+  -w, --write       Writes <byte0>, <byte1>, etc to the device.
   -d, --dump        Dumps <dump_bytes> from the device, reading one byte at the time.
                     If there is an error, continue with the next register.
   -p, --properties  Retrieves device properties.
@@ -235,30 +263,35 @@ int SpmiCtl::Execute(int argc, char** argv) {
         break;
 
       case 't': {
-        uint32_t target_id;
-        if (sscanf(optarg, "%u", &target_id) != 1) {
+        // Target ID must be within [0, 15].
+        int64_t target_id = 0;
+        const auto res = ParseInteger(optarg, &target_id);
+        if (res == ParseResult::kInvalid) {
           ShowUsage(false);
           return -1;
         }
-        if (target_id >= fuchsia_hardware_spmi::kMaxTargets) {
+        if (res == ParseResult::kOutOfRange || target_id < 0 ||
+            target_id >= static_cast<int64_t>(fuchsia_hardware_spmi::kMaxTargets)) {
           std::cerr << "target must be between 0 and 15 inclusive" << std::endl;
           return -1;
         }
-        target = target_id;
+        target = static_cast<uint8_t>(target_id);
         break;
       }
 
       case 'a': {
-        uint32_t local_address;
-        if (sscanf(optarg, "%x", &local_address) != 1) {
+        // Register address must fit within 16 bits [0, 0xffff].
+        int64_t local_address = 0;
+        const auto res = ParseInteger(optarg, &local_address);
+        if (res == ParseResult::kInvalid) {
           ShowUsage(false);
           return -1;
         }
-        if (local_address > 0xffff) {
+        if (res == ParseResult::kOutOfRange || local_address < 0 || local_address > 0xffff) {
           std::cerr << "Address failed: must be between 0 and 0xffff inclusive" << std::endl;
           return -1;
         }
-        address.emplace(local_address);
+        address.emplace(static_cast<uint16_t>(local_address));
       } break;
 
       case 'r': {
@@ -266,19 +299,23 @@ int SpmiCtl::Execute(int argc, char** argv) {
           break;
         }
 
-        int32_t read_bytes = 0;
-        if (sscanf(optarg, "%x", &read_bytes) != 1) {
+        // Parse number of bytes to read; must be within [1, 0xffffffff].
+        int64_t read_bytes = 0;
+        const auto res = ParseInteger(optarg, &read_bytes);
+        if (res == ParseResult::kInvalid) {
           ShowUsage(false);
           return -1;
         }
-        if (read_bytes < 1) {
-          std::cerr << "Read failed: must read at least 1 byte" << std::endl;
+        if (res == ParseResult::kOutOfRange || read_bytes < 1 ||
+            read_bytes > std::numeric_limits<uint32_t>::max()) {
+          std::cerr << "Read failed: must be between 1 and 0xffffffff inclusive" << std::endl;
           return -1;
         }
 
+        // Read size is represented as an unsigned 32-bit integer in the FIDL request.
         fuchsia_hardware_spmi::DeviceRegisterReadRequest request;
         request.address(std::move(*address));
-        request.size_bytes(static_cast<uint8_t>(read_bytes));
+        request.size_bytes(static_cast<uint32_t>(read_bytes));
         auto client = GetSpmiClient(controller, *target);
         if (!client.is_valid()) {
           return -1;
@@ -288,23 +325,24 @@ int SpmiCtl::Execute(int argc, char** argv) {
           std::cerr << "Read failed: " << result.error_value().FormatDescription() << std::endl;
           return -1;
         }
-        switch (read_bytes) {
-          case 2:
-            printf("Register: 0x%04x  value: 0x%02x%02x (%u)\n", *address, result->data()[1],
-                   result->data()[0], result->data()[0] | (result->data()[1] << 8));
-            break;
-          case 4:
-            printf("Register: 0x%04x  value: 0x%02x%02x%02x%02x (%u)\n", *address,
-                   result->data()[3], result->data()[2], result->data()[1], result->data()[0],
-                   result->data()[0] | (result->data()[1] << 8) | (result->data()[2] << 16) |
-                       (result->data()[3] << 24));
-            break;
-          default:
-            for (int32_t i = 0; i < read_bytes; ++i) {
-              printf("Register: 0x%04x  value: 0x%02x (%u)\n", *address + i, result->data()[i],
-                     result->data()[i]);
-            }
-            break;
+        // Print the read result based on the requested size.
+        if (read_bytes == 2 && result->data().size() >= 2) {
+          printf("Register: 0x%04x  value: 0x%02x%02x (%u)\n", *address, result->data()[1],
+                 result->data()[0],
+                 static_cast<uint32_t>(result->data()[0]) |
+                     (static_cast<uint32_t>(result->data()[1]) << 8));
+        } else if (read_bytes == 4 && result->data().size() >= 4) {
+          printf("Register: 0x%04x  value: 0x%02x%02x%02x%02x (%u)\n", *address, result->data()[3],
+                 result->data()[2], result->data()[1], result->data()[0],
+                 static_cast<uint32_t>(result->data()[0]) |
+                     (static_cast<uint32_t>(result->data()[1]) << 8) |
+                     (static_cast<uint32_t>(result->data()[2]) << 16) |
+                     (static_cast<uint32_t>(result->data()[3]) << 24));
+        } else {
+          for (size_t i = 0; i < result->data().size(); ++i) {
+            printf("Register: 0x%04x  value: 0x%02x (%u)\n", static_cast<uint16_t>(*address + i),
+                   result->data()[i], result->data()[i]);
+          }
         }
         return 0;
       } break;
@@ -314,12 +352,14 @@ int SpmiCtl::Execute(int argc, char** argv) {
           break;
         }
 
-        size_t dump_bytes = 0;
-        if (sscanf(optarg, "%zx", &dump_bytes) != 1) {
+        // Parse number of bytes to dump; must dump at least 1 byte.
+        int64_t dump_bytes = 0;
+        const auto res = ParseInteger(optarg, &dump_bytes);
+        if (res == ParseResult::kInvalid) {
           ShowUsage(false);
           return -1;
         }
-        if (dump_bytes < 1) {
+        if (res == ParseResult::kOutOfRange || dump_bytes < 1) {
           std::cerr << "Dump failed: must dump at least 1 byte" << std::endl;
           return -1;
         }
@@ -330,7 +370,7 @@ int SpmiCtl::Execute(int argc, char** argv) {
         }
         fuchsia_hardware_spmi::DeviceRegisterReadRequest request;
         // Read 1 byte at the time. If there is an error, continue with the next register.
-        for (size_t j = 0; j < dump_bytes; ++j) {
+        for (size_t j = 0; j < static_cast<size_t>(dump_bytes); ++j) {
           if (static_cast<size_t>(*address) + j > std::numeric_limits<uint16_t>::max()) {
             std::cerr << "Dump terminated: address out of 16 bits range" << std::endl;
             return 0;
@@ -356,15 +396,29 @@ int SpmiCtl::Execute(int argc, char** argv) {
         }
 
         std::vector<uint8_t> write_bytes;
-        int32_t write_byte = 0;
-        // At least one byte must be written.
-        if (sscanf(optarg, "%x", &write_byte) != 1) {
-          std::cerr << "Write failed: at least one byte must be provided in hex" << std::endl;
+        int64_t write_byte = 0;
+        // Parse first byte; must be a valid 8-bit integer in [0, 0xff].
+        auto res = ParseInteger(optarg, &write_byte);
+        if (res == ParseResult::kInvalid) {
+          std::cerr << "Write failed: at least one byte must be provided" << std::endl;
+          return -1;
+        }
+        if (res == ParseResult::kOutOfRange || write_byte < 0 || write_byte > 0xff) {
+          std::cerr << "Write failed: byte must be between 0 and 0xff inclusive" << std::endl;
           return -1;
         }
         write_bytes.push_back(static_cast<uint8_t>(write_byte));
-        // Add the other bytes provided.
-        while (optind < argc && sscanf(argv[optind++], "%x", &write_byte) == 1) {
+        // Add any additional bytes provided.
+        while (optind < argc) {
+          res = ParseInteger(argv[optind], &write_byte);
+          if (res == ParseResult::kInvalid) {
+            break;
+          }
+          if (res == ParseResult::kOutOfRange || write_byte < 0 || write_byte > 0xff) {
+            std::cerr << "Write failed: byte must be between 0 and 0xff inclusive" << std::endl;
+            return -1;
+          }
+          optind++;
           write_bytes.push_back(static_cast<uint8_t>(write_byte));
         }
         fuchsia_hardware_spmi::DeviceRegisterWriteRequest request;

@@ -31,7 +31,10 @@ class FakeSpmi : public fidl::testing::TestBase<fuchsia_hardware_spmi::Device>,
       return;
     }
     read_size_ = request.size_bytes();
-    return completer.Reply(zx::ok(data_));
+    // Return data resized to match the requested read size.
+    std::vector<uint8_t> data = data_;
+    data.resize(request.size_bytes());
+    return completer.Reply(zx::ok(data));
   }
   void RegisterWrite(RegisterWriteRequest& request,
                      RegisterWriteCompleter::Sync& completer) override {
@@ -107,41 +110,50 @@ class SpmiCtlTest : public zxtest::Test {
   std::optional<SpmiCtl> spmi_ctl_;
 };
 
+// Tests that invoking spmi-ctl with unknown command line flags returns an error.
 TEST_F(SpmiCtlTest, UnknownCommands) {
   EXPECT_EQ(CallSpmiCtl({"spmi-ctl", "-t", "0", "-b"}), -1);
   EXPECT_EQ(CallSpmiCtl({"spmi-ctl", "-t", "0", "--bad"}), -1);
 }
 
+// Tests that invalid or out-of-range target identifiers return an error.
 TEST_F(SpmiCtlTest, InvalidTarget) {
   EXPECT_EQ(CallSpmiCtl({"spmi-ctl", "-a", "0x1234", "-r", "4"}), -1);
   EXPECT_EQ(CallSpmiCtl({"spmi-ctl", "-t", "-a", "0x1234", "-r", "4"}), -1);
   EXPECT_EQ(CallSpmiCtl({"spmi-ctl", "-t", "16", "-a", "0x1234", "-r", "4"}), -1);
+  EXPECT_EQ(CallSpmiCtl({"spmi-ctl", "-t", "0x10", "-a", "0x1234", "-r", "4"}), -1);
   EXPECT_EQ(CallSpmiCtl({"spmi-ctl", "-t", "100", "-a", "0x1234", "-r", "4"}), -1);
+  EXPECT_EQ(CallSpmiCtl({"spmi-ctl", "-t", "abc", "-a", "0x1234", "-r", "4"}), -1);
+  EXPECT_EQ(CallSpmiCtl({"spmi-ctl", "-t", "-1", "-a", "0x1234", "-r", "4"}), -1);
 }
 
+// Tests successful register write and read operations using both hex and decimal inputs.
 TEST_F(SpmiCtlTest, ReadWriteSuccess) {
   std::vector<uint8_t> canned_data;
-  // Write then read 2 bytes.
-  canned_data = {0x12, 0x34};
-  ASSERT_EQ(CallSpmiCtl({"spmi-ctl", "-t", "0", "-a", "0x1234", "-w", "0x12", "0x34"}), 0);
-  EXPECT_EQ(spmi_->target_id(), 0);
-  EXPECT_TRUE(spmi_->data() == canned_data);
-  EXPECT_EQ(spmi_->address(), 0x1234);
-  ASSERT_EQ(CallSpmiCtl({"spmi-ctl", "-t", "11", "-a", "0x1234", "-r", "2"}), 0);
-  EXPECT_EQ(spmi_->target_id(), 11);
-  EXPECT_EQ(spmi_->read_size(), 2);
-  EXPECT_EQ(spmi_->address(), 0x1234);
 
-  // Write then read 4 bytes.
-  ASSERT_EQ(CallSpmiCtl({"spmi-ctl", "-t", "0", "-a", "0x1122", "-w", "11", "22", "33", "44"}), 0);
+  // Write then read 4 bytes using hex inputs with 0x prefix.
+  ASSERT_EQ(
+      CallSpmiCtl({"spmi-ctl", "-t", "0", "-a", "0x1122", "-w", "0x11", "0x22", "0x33", "0x44"}),
+      0);
   EXPECT_EQ(spmi_->target_id(), 0);
   canned_data = {0x11, 0x22, 0x33, 0x44};
   EXPECT_TRUE(spmi_->data() == canned_data);
   EXPECT_EQ(spmi_->address(), 0x1122);
-  ASSERT_EQ(CallSpmiCtl({"spmi-ctl", "-t", "0", "-a", "0x1122", "-r", "4"}), 0);
+  ASSERT_EQ(CallSpmiCtl({"spmi-ctl", "-t", "0", "-a", "0x1122", "-r", "0x4"}), 0);
   EXPECT_EQ(spmi_->target_id(), 0);
   EXPECT_EQ(spmi_->read_size(), 4);
   EXPECT_EQ(spmi_->address(), 0x1122);
+
+  // Write then read 4 bytes using decimal inputs without 0x prefix.
+  ASSERT_EQ(CallSpmiCtl({"spmi-ctl", "-t", "0", "-a", "4386", "-w", "11", "22", "33", "44"}), 0);
+  EXPECT_EQ(spmi_->target_id(), 0);
+  canned_data = {11, 22, 33, 44};
+  EXPECT_TRUE(spmi_->data() == canned_data);
+  EXPECT_EQ(spmi_->address(), 4386);
+  ASSERT_EQ(CallSpmiCtl({"spmi-ctl", "-t", "0", "-a", "4386", "-r", "4"}), 0);
+  EXPECT_EQ(spmi_->target_id(), 0);
+  EXPECT_EQ(spmi_->read_size(), 4);
+  EXPECT_EQ(spmi_->address(), 4386);
 
   // Write then read 9 bytes.
   ASSERT_EQ(CallSpmiCtl({"spmi-ctl", "-t", "0", "-a", "0x1111", "-w", "1", "2", "3", "4", "5", "6",
@@ -157,13 +169,94 @@ TEST_F(SpmiCtlTest, ReadWriteSuccess) {
   EXPECT_EQ(spmi_->address(), 0x1111);
 }
 
+// Tests error conditions during register write and read operations.
 TEST_F(SpmiCtlTest, ReadWriteErrors) {
-  // Errors.
-  ASSERT_EQ(CallSpmiCtl({"spmi-ctl", "-t", "0", "-w", "0x12", "0x34", "0x56"}),
-            -1);  // No address.
-  ASSERT_EQ(CallSpmiCtl({"spmi-ctl", "-t", "0", "-a", "0x5678", "-r", "4"}),
-            -1);  // Unknown address.
-  ASSERT_EQ(CallSpmiCtl({"spmi-ctl", "-t", "0", "-a", "0x10000", "-r", "4"}),
-            -1);                                                              // Address too big.
-  ASSERT_EQ(CallSpmiCtl({"spmi-ctl", "-t", "0", "-a", "0x1234", "-w"}), -1);  // Write no data.
+  // No address.
+  ASSERT_EQ(CallSpmiCtl({"spmi-ctl", "-t", "0", "-w", "0x12", "0x34", "0x56"}), -1);
+  // Unknown address.
+  ASSERT_EQ(CallSpmiCtl({"spmi-ctl", "-t", "0", "-a", "0x5678", "-r", "4"}), -1);
+  // Address too big (hex).
+  ASSERT_EQ(CallSpmiCtl({"spmi-ctl", "-t", "0", "-a", "0x10000", "-r", "4"}), -1);
+  // Address too big (decimal).
+  ASSERT_EQ(CallSpmiCtl({"spmi-ctl", "-t", "0", "-a", "65536", "-r", "4"}), -1);
+  // Write no data.
+  ASSERT_EQ(CallSpmiCtl({"spmi-ctl", "-t", "0", "-a", "0x1234", "-w"}), -1);
+  // Read size 0 (decimal).
+  ASSERT_EQ(CallSpmiCtl({"spmi-ctl", "-t", "0", "-a", "0x1234", "-r", "0"}), -1);
+  // Read size 0 (hex).
+  ASSERT_EQ(CallSpmiCtl({"spmi-ctl", "-t", "0", "-a", "0x1234", "-r", "0x0"}), -1);
+  // Read size too big (hex).
+  ASSERT_EQ(CallSpmiCtl({"spmi-ctl", "-t", "0", "-a", "0x1234", "-r", "0x100000000"}), -1);
+  // Read size too big (decimal).
+  ASSERT_EQ(CallSpmiCtl({"spmi-ctl", "-t", "0", "-a", "0x1234", "-r", "4294967296"}), -1);
+  // Write byte > 255 (decimal).
+  ASSERT_EQ(CallSpmiCtl({"spmi-ctl", "-t", "0", "-a", "0x1234", "-w", "256"}), -1);
+  // Write byte > 0xff (hex).
+  ASSERT_EQ(CallSpmiCtl({"spmi-ctl", "-t", "0", "-a", "0x1234", "-w", "0x100"}), -1);
+  // Second write byte > 255 (decimal).
+  ASSERT_EQ(CallSpmiCtl({"spmi-ctl", "-t", "0", "-a", "0x1234", "-w", "0x10", "256"}), -1);
+  // Second write byte > 0xff (hex).
+  ASSERT_EQ(CallSpmiCtl({"spmi-ctl", "-t", "0", "-a", "0x1234", "-w", "0x10", "0x100"}), -1);
+  // Second write byte < 0.
+  ASSERT_EQ(CallSpmiCtl({"spmi-ctl", "-t", "0", "-a", "0x1234", "-w", "0x10", "-1"}), -1);
+  // Third write byte > 255 (decimal).
+  ASSERT_EQ(CallSpmiCtl({"spmi-ctl", "-t", "0", "-a", "0x1234", "-w", "0x10", "0x20", "256"}), -1);
+  // Third write byte > 0xff (hex).
+  ASSERT_EQ(CallSpmiCtl({"spmi-ctl", "-t", "0", "-a", "0x1234", "-w", "0x10", "0x20", "0x100"}),
+            -1);
+  // Third write byte < 0.
+  ASSERT_EQ(CallSpmiCtl({"spmi-ctl", "-t", "0", "-a", "0x1234", "-w", "0x10", "0x20", "-1"}), -1);
+  // Target with invalid trailing characters.
+  ASSERT_EQ(CallSpmiCtl({"spmi-ctl", "-t", "0abc", "-a", "0x1234", "-w", "0x10"}), -1);
+  // Address with invalid trailing characters.
+  ASSERT_EQ(CallSpmiCtl({"spmi-ctl", "-t", "0", "-a", "0x1234xyz", "-w", "0x10"}), -1);
+  // Read size with invalid trailing characters.
+  ASSERT_EQ(CallSpmiCtl({"spmi-ctl", "-t", "0", "-a", "0x1234", "-r", "4xyz"}), -1);
+  // Write byte with invalid trailing characters.
+  ASSERT_EQ(CallSpmiCtl({"spmi-ctl", "-t", "0", "-a", "0x1234", "-w", "10xyz"}), -1);
+}
+
+// Tests base-aware parsing where 0x or 0X prefix indicates hex and no prefix indicates decimal.
+TEST_F(SpmiCtlTest, BaseAwareParsing) {
+  // Test target parsing in hex (0xa == 10) and decimal (10).
+  ASSERT_EQ(CallSpmiCtl({"spmi-ctl", "-t", "0xa", "-a", "0x1234", "-w", "0x1"}), 0);
+  EXPECT_EQ(spmi_->target_id(), 10);
+  ASSERT_EQ(CallSpmiCtl({"spmi-ctl", "-t", "10", "-a", "0x1234", "-w", "0x1"}), 0);
+  EXPECT_EQ(spmi_->target_id(), 10);
+
+  // Test target parsing with uppercase 0X (0XF == 15).
+  ASSERT_EQ(CallSpmiCtl({"spmi-ctl", "-t", "0XF", "-a", "0x1234", "-w", "0x1"}), 0);
+  EXPECT_EQ(spmi_->target_id(), 15);
+
+  // Test address parsing: 0x1234 in hex and 4660 in decimal.
+  ASSERT_EQ(CallSpmiCtl({"spmi-ctl", "-t", "0", "-a", "0x1234", "-w", "0x10"}), 0);
+  EXPECT_EQ(spmi_->address(), 0x1234);
+  ASSERT_EQ(CallSpmiCtl({"spmi-ctl", "-t", "0", "-a", "4660", "-w", "16"}), 0);
+  EXPECT_EQ(spmi_->address(), 4660);
+
+  // Test write bytes: 0x10 is 16 in hex, 10 is 10 in decimal.
+  std::vector<uint8_t> hex_data = {16};
+  ASSERT_EQ(CallSpmiCtl({"spmi-ctl", "-t", "0", "-a", "0x1234", "-w", "0x10"}), 0);
+  EXPECT_TRUE(spmi_->data() == hex_data);
+  std::vector<uint8_t> dec_data = {10};
+  ASSERT_EQ(CallSpmiCtl({"spmi-ctl", "-t", "0", "-a", "0x1234", "-w", "10"}), 0);
+  EXPECT_TRUE(spmi_->data() == dec_data);
+
+  // Test read size: 0x2 is 2 bytes, 2 is 2 bytes (with 2 bytes written in advance).
+  ASSERT_EQ(CallSpmiCtl({"spmi-ctl", "-t", "0", "-a", "0x1234", "-w", "0x1", "0x2"}), 0);
+  ASSERT_EQ(CallSpmiCtl({"spmi-ctl", "-t", "0", "-a", "0x1234", "-r", "0x2"}), 0);
+  EXPECT_EQ(spmi_->read_size(), 2);
+  ASSERT_EQ(CallSpmiCtl({"spmi-ctl", "-t", "0", "-a", "0x1234", "-r", "2"}), 0);
+  EXPECT_EQ(spmi_->read_size(), 2);
+}
+
+// Tests that read requests with sizes greater than 255 bytes (e.g. 256 bytes) do not
+// wrap or truncate to 0.
+TEST_F(SpmiCtlTest, ReadLargeSize) {
+  constexpr uint32_t kLargeReadSize = 256;
+  ASSERT_EQ(CallSpmiCtl({"spmi-ctl", "-t", "0", "-a", "0x1234", "-w", "0x1"}), 0);
+  ASSERT_EQ(CallSpmiCtl({"spmi-ctl", "-t", "0", "-a", "0x1234", "-r", "256"}), 0);
+  EXPECT_EQ(spmi_->read_size(), kLargeReadSize);
+  ASSERT_EQ(CallSpmiCtl({"spmi-ctl", "-t", "0", "-a", "0x1234", "-r", "0x100"}), 0);
+  EXPECT_EQ(spmi_->read_size(), kLargeReadSize);
 }
