@@ -4,9 +4,9 @@
 
 import("//build/components.gni")
 import("//build/dist/resource.gni")
+import("//build/rust/rustc_binary.gni")
 import("//build/testing/perf/test.gni")
 import("//src/starnix/kernel/starnix.gni")
-import("//src/starnix/tests/starnix_test_subpackages.gni")
 
 storage_benchmarks_target = "//src/storage/benchmarks/host:host-storage-benchmarks($target_linux_toolchain)"
 
@@ -18,24 +18,47 @@ resource("storage-starnix-benchmarks-bin") {
   outputs = [ "data/tests/storage-starnix-benchmarks" ]
 }
 
-template("storage_starnix_benchmarks_component") {
-  fuchsia_test_component(target_name) {
-    testonly = true
-    test_type = "starnix"
-    deps = [
-      ":storage-starnix-benchmarks-bin",
-      "//src/starnix/tests:starnix_benchmark",
-    ]
-    manifest = "${invoker.manifest}"
-  }
+rustc_binary("storage_starnix_benchmarks_runner") {
+  edition = "2024"
+  testonly = true
+  sources = [ "src/main.rs" ]
+  deps = [
+    "//sdk/fidl/fuchsia.component:fuchsia.component_rust",
+    "//sdk/fidl/fuchsia.power.cpu.manager:fuchsia.power.cpu.manager_rust",
+    "//src/lib/fidl/rust/fidl",
+    "//src/lib/fuchsia",
+    "//src/lib/fuchsia-component",
+    "//src/lib/trace/rust:trace",
+    "//src/lib/trace/rust:trace-provider",
+    "//third_party/rust_crates:anyhow",
+    "//third_party/rust_crates:log",
+  ]
 }
 
-storage_starnix_benchmarks_component("storage-starnix-data-benchmarks") {
+fuchsia_component("storage_starnix_data_benchmark_app") {
+  testonly = true
+  manifest = "meta/storage_starnix_data_benchmark_app.cml"
+  deps = [ ":storage-starnix-benchmarks-bin" ]
+}
+
+fuchsia_component("storage_starnix_tmp_benchmark_app") {
+  testonly = true
+  manifest = "meta/storage_starnix_tmp_benchmark_app.cml"
+  deps = [ ":storage-starnix-benchmarks-bin" ]
+}
+
+fuchsia_test_component("storage-starnix-data-benchmarks") {
+  component_name = "storage-starnix-data-benchmarks"
   manifest = "meta/storage-starnix-data-benchmarks.cml"
+  deps = [ ":storage_starnix_benchmarks_runner" ]
+  test_type = "storage"
 }
 
-storage_starnix_benchmarks_component("storage-starnix-tmp-benchmarks") {
+fuchsia_test_component("storage-starnix-tmp-benchmarks") {
+  component_name = "storage-starnix-tmp-benchmarks"
   manifest = "meta/storage-starnix-tmp-benchmarks.cml"
+  deps = [ ":storage_starnix_benchmarks_runner" ]
+  test_type = "storage"
 }
 
 fuchsia_test_package("storage-starnix-benchmarks") {
@@ -43,9 +66,15 @@ fuchsia_test_package("storage-starnix-benchmarks") {
     ":storage-starnix-data-benchmarks",
     ":storage-starnix-tmp-benchmarks",
   ]
-  subpackages = starnix_test_subpackages +
-                [ "//src/starnix/containers/debian:debian_package" ]
-  deps = [ "//src/starnix/containers/debian:container_resources" ]
+  deps = [
+    ":storage_starnix_data_benchmark_app",
+    ":storage_starnix_tmp_benchmark_app",
+    "//src/starnix/containers/debian:container_resources",
+  ]
+  subpackages = [
+    "//src/starnix/kernel:starnix_kernel_package",
+    "//src/starnix/containers/debian:debian_package",
+  ]
   test_specs = {
     environments = []
 
@@ -58,7 +87,7 @@ fuchsia_component_perf_test("storage_starnix_data_benchmarks") {
   component_name = "storage-starnix-data-benchmarks"
   expected_metric_names_filepath = "//src/tests/end_to_end/perf/expected_metric_names/fuchsia.storage.starnix_data.txt"
   use_component_builtin_args = true
-  test_type = "starnix"
+  test_type = "storage"
 }
 
 fuchsia_component_perf_test("storage_starnix_tmp_benchmarks") {
@@ -66,7 +95,7 @@ fuchsia_component_perf_test("storage_starnix_tmp_benchmarks") {
   component_name = "storage-starnix-tmp-benchmarks"
   expected_metric_names_filepath = "//src/tests/end_to_end/perf/expected_metric_names/fuchsia.storage.starnix_tmp.txt"
   use_component_builtin_args = true
-  test_type = "starnix"
+  test_type = "storage"
 }
 
 group("benchmark-packages") {

@@ -3,29 +3,87 @@
 // found in the LICENSE file.
 {
     include: [
-        "//src/starnix/containers/debian/meta/debian_container_for_test.shard.cml",
-        "//src/starnix/tests/starnix_benchmark.shard.cml",
+        "//sdk/lib/inspect/client.shard.cml",
+        "//sdk/lib/sys/testing/elf_test_runner.shard.cml",
+        "//sdk/lib/syslog/client.shard.cml",
+        "//sdk/lib/trace/client.shard.cml",
     ],
     program: {
-        binary: "data/tests/storage-starnix-benchmarks",
-        args: [
-            "--benchmark-dir",
-            "{component_path}/data",
-            "--output-fuchsiaperf",
-            "/custom_artifacts/results.fuchsiaperf.json",
-            "--filesystem-name",
-            "starnix_data",
-        ],
+        binary: "bin/storage_starnix_benchmarks_runner",
     },
+    children: [
+        {
+            name: "kernel",
+            url: "starnix_kernel#meta/starnix_kernel.cm",
+        },
+        {
+            name: "debian_container",
+            url: "debian#meta/debian_container.cm",
+            environment: "#starnix_kernel_env",
+        },
+        {
+            name: "benchmark_app",
+            url: "#meta/storage_starnix_data_benchmark_app.cm",
+            environment: "#debian_container_env",
+        },
+    ],
     use: [
         {
+            protocol: "fuchsia.component.Binder",
+            from: "#benchmark_app",
+        },
+        {
+            protocol: [ "fuchsia.power.cpu.manager.Boost" ],
+            availability: "optional",
+        },
+    ],
+    offer: [
+        {
+            protocol: [ "fuchsia.kernel.VmexResource" ],
+            from: "parent",
+            to: "#kernel",
+        },
+        {
+            directory: "boot",
+            from: "parent",
+            as: "boot-kernel",
+            to: [ "#kernel" ],
+            subdir: "kernel",
+        },
+        {
             storage: "data",
-            path: "/data",
+            from: "parent",
+            to: [
+                "#benchmark_app",
+                "#debian_container",
+            ],
         },
         {
             storage: "custom_artifacts",
-            rights: [ "rw*" ],
-            path: "/custom_artifacts",
+            from: "parent",
+            to: [ "#benchmark_app" ],
+        },
+    ],
+    environments: [
+        {
+            name: "starnix_kernel_env",
+            extends: "realm",
+            runners: [
+                {
+                    runner: "starnix",
+                    from: "#kernel",
+                },
+            ],
+        },
+        {
+            name: "debian_container_env",
+            extends: "realm",
+            runners: [
+                {
+                    runner: "starnix_container",
+                    from: "#debian_container",
+                },
+            ],
         },
     ],
 }
