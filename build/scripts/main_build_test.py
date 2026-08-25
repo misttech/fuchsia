@@ -59,7 +59,7 @@ class MainBuildTestBase(unittest.TestCase):
                         yield mock_mkdir, mock_write
 
     def create_context(
-        self, **config_kwargs: Any
+        self, env: dict[str, str] | None = None, **config_kwargs: Any
     ) -> main_build.FuchsiaBuildContext:
         """Helper to create a FuchsiaBuildContext with specific config."""
         config_vals: dict[str, Any] = {
@@ -73,11 +73,16 @@ class MainBuildTestBase(unittest.TestCase):
         }
         config_vals.update(config_kwargs)
         config = main_build.FuchsiaBuildConfig(**config_vals)
+
+        env_vals = {"USER": "fake-user"}
+        if env is not None:
+            env_vals.update(env)
+
         return main_build.FuchsiaBuildContext(
             source_dir=pathlib.Path("/tmp/fuchsia"),
             out_dir=pathlib.Path("/tmp/out"),
             build_dir=pathlib.Path("/tmp/out/default"),
-            env={},
+            env=env_vals,
             config=config,
         )
 
@@ -639,7 +644,7 @@ class InjectNinjaArgsTest(MainBuildTestBase):
 
 class NewBuildCommandExecutionTest(MainBuildTestBase):
     def test_new_build_command_execution_ninja(self) -> None:
-        context = self.create_context()
+        context = self.create_context(rbe=False, resultstore="none")
         with self.mock_invocation_context("uuid-123", "ts-456"):
             invocation = main_build.BuildInvocation(context)
             with mock.patch.multiple(
@@ -657,6 +662,34 @@ class NewBuildCommandExecutionTest(MainBuildTestBase):
                     )
                     self.assertIn("--", exec_info.full_command)
                     self.assertEqual(exec_info.env["FX_BUILD_UUID"], "uuid-123")
+
+    def test_new_build_command_execution_ninja_resultstore(self) -> None:
+        context = self.create_context(rbe=False, resultstore="ninja")
+        with self.mock_invocation_context("uuid-123", "ts-456"):
+            invocation = main_build.BuildInvocation(context)
+            with mock.patch.object(main_build, "mkdir"):
+                exec_info = main_build.new_build_command_execution(
+                    invocation, "ninja", ["ninja", "target"]
+                )
+                self.assertIn("--post-build-uploads", exec_info.full_command)
+                metrics_path = (
+                    invocation.log_dir
+                    / "ninja_logs"
+                    / "ninja_action_metrics.json"
+                )
+                self.assertIn(str(metrics_path), exec_info.full_command)
+
+    def test_new_build_command_execution_fint_resultstore(self) -> None:
+        context = self.create_context(rbe=False, resultstore="all")
+        with self.mock_invocation_context("uuid-123", "ts-456"):
+            invocation = main_build.BuildInvocation(context)
+            with mock.patch.object(main_build, "mkdir"):
+                exec_info = main_build.new_build_command_execution(
+                    invocation, "fint", ["fint", "build"]
+                )
+                self.assertIn("--post-build-uploads", exec_info.full_command)
+                trace_path = context.build_dir / "ninja_build_trace.json.gz"
+                self.assertIn(str(trace_path), exec_info.full_command)
 
 
 class PrepareFunctionsTest(MainBuildTestBase):

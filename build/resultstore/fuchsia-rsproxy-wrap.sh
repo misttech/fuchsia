@@ -210,14 +210,14 @@ case "${RS_cas_service:-NOT_SET}" in
     ;;
 esac
 
-# Scan wrapped command arguments for important options.
-# Note: this loops scans *all* arguments, which could potentially
-# include other intermediate wrappers and non-ninja programs.
-# TODO: scan more intelligently, based on -- separators.
+# Scan wrapped command arguments for a build directory override (-C) to
+# organize log directories for nested sub-builds.
+#
+# NOTE: The fragile command-line scanning for Ninja telemetry outputs
+# (--chrome_trace, --action_metrics_output, --dirty_sources_list) has been
+# removed. That responsibility has shifted to the caller (e.g. main_build.py),
+# which explicitly registers those paths using the --post-build-uploads options.
 subbuild_dir=
-action_metrics=
-dirty_sources=
-chrome_trace=
 prev_opt=""
 for opt in "${wrapped_command[@]}"
 do
@@ -229,24 +229,9 @@ do
     continue
   fi
 
-  # Extract optarg from --opt=optarg
-  optarg=
-  case "$opt" in
-    -*=*) optarg="${opt#*=}" ;;  # remove-prefix, shortest-match
-  esac
-
   case "$opt" in
     # ninja options
     -C) prev_opt=subbuild_dir ;;
-
-    --action_metrics_output=*) action_metrics="$optarg" ;;
-    --action_metrics_output) prev_opt=action_metrics ;;
-
-    --chrome_trace=*) chrome_trace="$optarg" ;;
-    --chrome_trace) prev_opt=chrome_trace ;;
-
-    --dirty_sources_list=*) dirty_sources="$optarg" ;;
-    --dirty_sources_list) prev_opt=dirty_sources ;;
   esac
 done
 
@@ -257,29 +242,6 @@ else
   # Default to something generic for log directory structure.
   readonly subbuild_base="top"
 fi
-
-# Upload additional invocation artifacts, such as ninja outputs.
-# Ninja output paths are relative to $subbuild_dir.
-# If the wrapped command is not ninja, it is unlikely to specify
-# these extra outputs, so this section is expected to be a no-op.
-readonly ninja_outputs=(
-  "$action_metrics"
-  "$chrome_trace"
-  "$dirty_sources"
-)
-for f in "${ninja_outputs[@]}"
-do
-  [[ -z "$f" ]] || {
-    case "$f" in
-      /*) rsproxy_options+=( --post_build_uploads="$f" ) ;;  # absolute path
-      *)
-        if [[ -n "$subbuild_dir" ]]; then
-          rsproxy_options+=( --post_build_uploads="$subbuild_dir/$f" )
-        fi
-        ;;
-    esac
-  }
-done
 
 proxy_env=()
 proxy_wrap_options=(

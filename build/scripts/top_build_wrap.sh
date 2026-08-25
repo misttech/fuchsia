@@ -136,10 +136,10 @@ do
 
     --resultstore=*) enable_resultstore="$optarg" ;;
     --resultstore) enable_resultstore=1 ;;
-    --pre-build-uploads=*) pre_build_uploads="$optarg" ;;
-    --pre-build-uploads) prev_opt=pre_build_uploads ;;
-    --post-build-uploads=*) post_build_uploads="$optarg" ;;
-    --post-build-uploads) prev_opt=post_build_uploads ;;
+    --pre-build-uploads=*) pre_build_uploads+=( "$optarg" ) ;;
+    --pre-build-uploads) prev_opt_append=pre_build_uploads ;;
+    --post-build-uploads=*) post_build_uploads+=( "$optarg" ) ;;
+    --post-build-uploads) prev_opt_append=post_build_uploads ;;
 
     --tui) tui=1 ;;
 

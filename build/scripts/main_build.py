@@ -742,6 +742,37 @@ def new_build_command_execution(
     """Creates a self-contained BuildCommandExecution."""
     top_cmd = top_build_command_prefix(invocation)
     build_env = invocation.get_build_env()
+    context = invocation.context
+
+    resultstore_post_build_uploads = []
+
+    if context.config.resultstore in ("all", "ninja"):
+        if command_type == "ninja":
+            ninja_log_dir = invocation.log_dir / "ninja_logs"
+            resultstore_post_build_uploads.extend(
+                [
+                    ninja_log_dir / "ninja_action_metrics.json",
+                    ninja_log_dir / "ninja_dirty_sources.log",
+                    context.ninja_edge_weights_csv,
+                ]
+            )
+        elif command_type == "fint":
+            # TODO(https://fxbug.dev/537038381): Remove fint-awareness from main_build.py
+            # once the build recipes migrate to wrapping fint_build.py around main_build.py.
+            # Under fint builds, the telemetry outputs are expected in the build output directory
+            resultstore_post_build_uploads.extend(
+                [
+                    context.build_dir / "ninja_build_trace.json.gz",
+                    context.build_dir / "ninja_action_metrics.json",
+                    context.ninja_edge_weights_csv,
+                ]
+            )
+
+    top_cmd.extend(
+        arg
+        for f in resultstore_post_build_uploads
+        for arg in ("--post-build-uploads", str(f))
+    )
 
     # Prepare Ninja-specific options
     if command_type == "ninja":
