@@ -202,7 +202,7 @@ impl RamdiskClient {
     ) -> Result<(), Error> {
         Ok(self.outgoing.open(
             &format!("svc/{}", fblock::BlockMarker::PROTOCOL_NAME),
-            fio::Flags::empty(),
+            fio::Flags::PROTOCOL_SERVICE,
             &fio::Options::default(),
             server_end.into_channel(),
         )?)
@@ -213,7 +213,7 @@ impl RamdiskClient {
         let (client, server) = fidl::endpoints::create_proxy::<framdisk::RamdiskMarker>();
         self.outgoing.open(
             &format!("svc/{}", framdisk::RamdiskMarker::PROTOCOL_NAME),
-            fio::Flags::empty(),
+            fio::Flags::PROTOCOL_SERVICE,
             &fio::Options::default(),
             server.into_channel(),
         )?;
@@ -225,7 +225,7 @@ impl RamdiskClient {
         let (client, server) = fidl::endpoints::create_proxy::<fblock::MapperMarker>();
         self.outgoing.open(
             &format!("svc/{}", fblock::MapperMarker::PROTOCOL_NAME),
-            fio::Flags::empty(),
+            fio::Flags::PROTOCOL_SERVICE,
             &fio::Options::default(),
             server.into_channel(),
         )?;

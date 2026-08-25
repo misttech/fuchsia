@@ -87,7 +87,7 @@ impl MemoryReporter {
                     fdio::open_at(
                         outgoing_directory.channel(),
                         &format!("svc/{}", fattribution::ProviderMarker::PROTOCOL_NAME),
-                        fio::Flags::empty(),
+                        fio::Flags::PROTOCOL_SERVICE,
                         server,
                     )
                     .unwrap();
