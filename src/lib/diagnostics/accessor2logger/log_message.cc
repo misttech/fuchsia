@@ -351,15 +351,15 @@ MessageParser* CreateMessageParserForFormat(fuchsia::diagnostics::Format format)
 }
 }  // namespace
 
+void MessageParserDeleter::operator()(MessageParser* parser) const {
+  if (parser) {
+    fuchsia_free_message_parser(parser);
+  }
+}
+
 LogBatchIterator::LogBatchIterator(fuchsia::diagnostics::BatchIteratorPtr iterator,
                                    fuchsia::diagnostics::Format format)
     : iterator_(std::move(iterator)), parser_(CreateMessageParserForFormat(format)) {}
-
-LogBatchIterator::~LogBatchIterator() {
-  if (parser_) {
-    fuchsia_free_message_parser(parser_);
-  }
-}
 
 void LogBatchIterator::GetNext(GetNextCallback callback) {
   iterator_->GetNext([this, callback = std::move(callback)](auto result) mutable {
@@ -371,8 +371,8 @@ void LogBatchIterator::GetNext(GetNextCallback callback) {
 
     std::vector<fpromise::result<fuchsia::logger::LogMessage, std::string>> all_messages;
     for (auto& content : result.response().batch) {
-      auto formatted =
-          ConvertFormattedContentToLogMessagesInternal(std::move(content), parser_, all_messages);
+      auto formatted = ConvertFormattedContentToLogMessagesInternal(std::move(content),
+                                                                    parser_.get(), all_messages);
       if (formatted.is_error()) {
         callback(fpromise::error(formatted.error()));
         return;

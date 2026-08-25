@@ -1087,4 +1087,25 @@ TEST(LogMessage, MissingMessageMemberOutOfBoundsRead) {
   EXPECT_EQ("Expected payload.root.message to be an object if present", results.value()[0].error());
 }
 
+TEST(LogMessage, MoveConstructAndAssignLogBatchIterator) {
+  async::Loop loop(&kAsyncLoopConfigAttachToCurrentThread);
+  FakeBatchIterator fake_iterator;
+  fidl::Binding<fuchsia::diagnostics::BatchIterator> binding(&fake_iterator);
+  fuchsia::diagnostics::BatchIteratorPtr ptr;
+  binding.Bind(ptr.NewRequest());
+
+  auto iterator1 = std::make_unique<diagnostics::accessor2logger::LogBatchIterator>(
+      std::move(ptr), fuchsia::diagnostics::Format::FXT);
+
+  // Move-construct
+  diagnostics::accessor2logger::LogBatchIterator iterator2 = std::move(*iterator1);
+  iterator1.reset();
+
+  // Move-assign
+  fuchsia::diagnostics::BatchIteratorPtr ptr2;
+  diagnostics::accessor2logger::LogBatchIterator iterator3(std::move(ptr2),
+                                                           fuchsia::diagnostics::Format::FXT);
+  iterator3 = std::move(iterator2);
+}
+
 }  // namespace

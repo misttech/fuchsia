@@ -17,6 +17,14 @@
 
 namespace diagnostics::accessor2logger {
 
+// Custom deleter for MessageParser. MessageParser is allocated across the Rust FFI
+// boundary via `fuchsia_new_message_parser()` and must be freed using
+// `fuchsia_free_message_parser()`. Wrapping it in a std::unique_ptr with this deleter
+// ensures safe RAII cleanup and correct move semantics (resetting moved-from pointers).
+struct MessageParserDeleter {
+  void operator()(MessageParser* parser) const;
+};
+
 // LogBatchIterator wraps a fuchsia::diagnostics::BatchIterator and maintains the necessary state
 // (MessageParser) to decode log messages from it.
 // This class is thread-hostile; the same restrictions as InterfacePtr
@@ -27,7 +35,7 @@ class LogBatchIterator {
  public:
   explicit LogBatchIterator(fuchsia::diagnostics::BatchIteratorPtr iterator,
                             fuchsia::diagnostics::Format format);
-  ~LogBatchIterator();
+  ~LogBatchIterator() = default;
 
   // Non-copyable, but movable.
   LogBatchIterator(const LogBatchIterator&) = delete;
@@ -78,7 +86,7 @@ class LogBatchIterator {
 
  private:
   fuchsia::diagnostics::BatchIteratorPtr iterator_;
-  MessageParser* parser_;
+  std::unique_ptr<MessageParser, MessageParserDeleter> parser_;
 };
 
 // Prints formatted content to the log.
