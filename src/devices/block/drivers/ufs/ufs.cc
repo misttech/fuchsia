@@ -1273,6 +1273,11 @@ void Ufs::HardwareElementRunner::SetLevel(
     SetLevelCompleter::Sync& set_level_completer) {
   const fuchsia_power_broker::PowerLevel required_level = request.level();
   switch (required_level) {
+    case kPowerLevelBoot: {
+      // The hardware is already powered on at boot, just acknowledge it.
+      set_level_completer.Reply();
+      break;
+    }
     case kPowerLevelOn: {
       const zx::time start = zx::clock::get_monotonic();
 
@@ -1375,7 +1380,9 @@ zx::result<> Ufs::Start(fdf::DriverContext context) {
   }
 
   if (config().enable_suspend()) {
-    return ConfigurePowerManagement();
+    if (zx::result<> status = ConfigurePowerManagement(); status.is_error()) {
+      return status.take_error();
+    }
   }
 
   {
