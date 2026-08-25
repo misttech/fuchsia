@@ -5,7 +5,7 @@
 use crate::{
     Features, MountAction, expose_root, parse_features, parse_numbered_handles,
     run_container_features, serve_component_runner, serve_container_controller,
-    serve_graphical_presenter, serve_lutex_controller,
+    serve_container_info, serve_graphical_presenter, serve_lutex_controller,
 };
 use anyhow::{Context, Error, anyhow, bail};
 use bootreason::get_or_init_android_bootreason;
@@ -369,7 +369,8 @@ impl Container {
                 .add_fidl_service(ExposedServices::ComponentRunner)
                 .add_fidl_service(ExposedServices::ContainerController)
                 .add_fidl_service(ExposedServices::GraphicalPresenter)
-                .add_fidl_service(ExposedServices::LutexController);
+                .add_fidl_service(ExposedServices::LutexController)
+                .add_fidl_service(ExposedServices::ContainerInfo);
 
             // Expose the root of the container's filesystem.
             let (fs_root, fs_root_server_end) = fidl::endpoints::create_proxy();
@@ -402,6 +403,11 @@ impl Container {
                         serve_lutex_controller(request_stream, self.system_task())
                             .await
                             .expect("failed to start LutexController.")
+                    }
+                    ExposedServices::ContainerInfo(request_stream) => {
+                        serve_container_info(request_stream)
+                            .await
+                            .expect("failed to start ContainerInfo.")
                     }
                 }
             })
@@ -436,6 +442,7 @@ enum ExposedServices {
     ContainerController(fstarcontainer::ControllerRequestStream),
     GraphicalPresenter(felement::GraphicalPresenterRequestStream),
     LutexController(fbinder::LutexControllerRequestStream),
+    ContainerInfo(fstarcontainer::InfoRequestStream),
 }
 
 type TaskResult = Result<ExitStatus, Error>;

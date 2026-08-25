@@ -107,3 +107,12 @@ type SpawnConsoleError = flexible enum {
     /// The console process exited without a normal return code.
     CANCELED = 2;
 };
+
+@available(added=HEAD)
+@discoverable
+open protocol Info {
+    /// Returns the Zircon job KOID of the container.
+    flexible GetJobKoid() -> (table {
+        1: koid zx.Koid;
+    });
+};

@@ -367,6 +367,31 @@ fn forward_to_pty(
     Ok(())
 }
 
+pub async fn serve_container_info(
+    request_stream: fstarcontainer::InfoRequestStream,
+) -> Result<(), Error> {
+    request_stream
+        .map_err(Error::from)
+        .try_for_each_concurrent(None, |event| async {
+            match event {
+                fstarcontainer::InfoRequest::GetJobKoid { responder } => {
+                    let koid = fuchsia_runtime::job_default()
+                        .koid()
+                        .unwrap_or(zx::Koid::from_raw(zx::sys::ZX_KOID_INVALID));
+                    responder.send(&fstarcontainer::InfoGetJobKoidResponse {
+                        koid: Some(koid.raw_koid()),
+                        ..Default::default()
+                    })?;
+                }
+                fstarcontainer::InfoRequest::_UnknownMethod { ordinal, .. } => {
+                    starnix_logging::log_warn!("Unknown InfoRequest method: {}", ordinal);
+                }
+            }
+            Ok(())
+        })
+        .await
+}
+
 pub async fn serve_graphical_presenter(
     mut request_stream: felement::GraphicalPresenterRequestStream,
     kernel: &Kernel,
@@ -801,5 +826,25 @@ mod tests {
             receiver.await.expect("test failed");
         })
         .await;
+    }
+
+    #[fuchsia::test]
+    async fn container_info_test() {
+        let (info_proxy, stream) =
+            fidl::endpoints::create_proxy_and_stream::<fstarcontainer::InfoMarker>();
+
+        let server_fut = serve_container_info(stream);
+        let client_fut = async move {
+            let response = info_proxy.get_job_koid().await.expect("get_job_koid failed");
+            let expected_koid = fuchsia_runtime::job_default()
+                .koid()
+                .unwrap_or(zx::Koid::from_raw(zx::sys::ZX_KOID_INVALID));
+            assert_eq!(response.koid, Some(expected_koid.raw_koid()));
+            assert_ne!(response.koid, Some(zx::sys::ZX_KOID_INVALID));
+            drop(info_proxy);
+        };
+
+        let (server_res, ()) = futures::join!(server_fut, client_fut);
+        server_res.expect("server failed");
     }
 }
