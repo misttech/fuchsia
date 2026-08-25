@@ -51,6 +51,9 @@ main_product_bundle_name = "${build_info_product}.${build_info_board}"
 #   delivery_blob_type (optional)
 #     [int] The type of delivery blob the product needs.
 #
+#   include_blobs (optional; default=true)
+#     [bool] Whether to include blobs in the product bundle repository.
+#
 #   skip_transfer_manifest           (optional; default=false)
 #     [bool] Whether to skip creating transfer manifest
 #
@@ -59,6 +62,10 @@ template("product_bundle") {
          "product_bundle(${target_name}) must define `name`")
 
   product_name = invoker.name
+  include_blobs = true
+  if (defined(invoker.include_blobs)) {
+    include_blobs = invoker.include_blobs
+  }
 
   targets = {
     hermetic_inputs = "${target_name}_hermetic_inputs"
@@ -181,6 +188,8 @@ template("product_bundle") {
       rebase_path(files.tuf_keys, root_build_dir),
       "--gerrit-size-report",
       rebase_path(files.image_size_report, root_build_dir),
+      "--include-blobs",
+      "$include_blobs",
     ]
 
     outputs += [ files.product_bundle_manifest ]

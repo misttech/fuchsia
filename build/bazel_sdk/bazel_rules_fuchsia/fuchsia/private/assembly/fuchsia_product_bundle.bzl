@@ -794,6 +794,10 @@ _build_fuchsia_product_bundle = rule(
     toolchains = [FUCHSIA_TOOLCHAIN_DEFINITION],
     executable = True,
     attrs = {
+        "include_blobs": attr.bool(
+            doc = "Whether to include blobs in the product bundle directory.",
+            default = True,
+        ),
         "product_bundle_name": attr.string(
             doc = "Name of the Fuchsia product. E.g. workstation_eng.x64",
         ),
