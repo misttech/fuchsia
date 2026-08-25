@@ -3,11 +3,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <lib/captive-thread/captive-thread.h>
 #include <lib/core-test-utils.h>
 #include <lib/fit/defer.h>
 #include <lib/stdcompat/span.h>
-#include <lib/test-exceptions/exception-catcher.h>
-#include <lib/test-exceptions/exception-handling.h>
 #include <lib/zx/clock.h>
 #include <lib/zx/debuglog.h>
 #include <lib/zx/event.h>
@@ -254,21 +253,18 @@ TEST(Threads, ProcessStartOnSecondThread) {
 }
 
 // Test that we don't get an assertion failure (and kernel panic) if we
-// pass a zero instruction pointer when starting a thread (in this case via
-// zx_thread_create()).
+// pass a zero instruction pointer when starting a thread.
 TEST(Threads, ThreadStartWithZeroInstructionPointer) {
-  zx_handle_t thread;
-  ASSERT_EQ(zx_thread_create(zx_process_self(), kThreadName, sizeof(kThreadName) - 1, 0, &thread),
-            ZX_OK);
+  zx::result create = captive_thread::CaptiveThread::CreateRaw(kThreadName, {.pc = 0});
+  ASSERT_OK(create.status_value());
+  std::unique_ptr thread = *std::move(create);
 
-  test_exceptions::ExceptionCatcher catcher(*zx::unowned_process(zx_process_self()));
-  ASSERT_EQ(zx_thread_start(thread, 0, 0, 0, 0), ZX_OK);
+  zx::result wait = thread->WaitForException();
+  ASSERT_OK(wait.status_value());
+  ASSERT_TRUE(thread->InException());
 
-  auto result = catcher.ExpectException();
-  ASSERT_TRUE(result.is_ok());
-  ASSERT_OK(test_exceptions::ExitExceptionZxThread(std::move(result.value())));
-
-  ASSERT_EQ(zx_handle_close(thread), ZX_OK);
+  EXPECT_EQ(thread->ExceptionReport()->header.type, ZX_EXCP_FATAL_PAGE_FAULT);
+  EXPECT_EQ(captive_thread::FaultAddress(*thread->ExceptionReport()), 0u);
 }
 
 TEST(Threads, NonstartedThread) {
