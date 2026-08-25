@@ -159,6 +159,3 @@ void ArchSetUpAddressSpace(AddressSpace& aspace) {
   aspace.SetUpIdentityMappings();
   aspace.Install();
 }
-
-// The MMU will be off when the trampoline runs, so there is nothing to do.
-void ArchPrepareAddressSpaceForTrampoline() {}

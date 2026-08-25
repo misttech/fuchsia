@@ -118,7 +118,7 @@ BootZbi::Size BootZbi::GetKernelAllocationSize(BootZbi::Zbi::iterator kernel_ite
                                                    zircon_kernel->data_kernel.reserve_memory_size));
 }
 
-void BootZbi::InitKernelFromItem() { kernel_ = GetZirconKernel(kernel_item_->payload.data()); }
+void BootZbi::InitKernelFromItem() { SetKernel(GetZirconKernel(kernel_item_->payload.data())); }
 
 void BootZbi::InitKernel(Allocation kernel) {
   kernel_buffer_ = ktl::move(kernel);

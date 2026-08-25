@@ -9,9 +9,7 @@
 
 #include <phys/boot-zbi.h>
 
-// TODO(https://fxbug.dev/408020980): Remove gnu::weak when we delete the
-// TrampolineBoot-specific override.
-[[gnu::weak]] void BootZbi::ZbiBoot(uintptr_t entry, void* data) const {
+void BootZbi::ZbiBoot(uintptr_t entry, void* data) const {
   // The ZBI protocol requires that any data cache lines backing the kernel
   // memory image are cleaned (that is, including the "reserve" memory)
   // allowing the image to be present for its own direct memory access.

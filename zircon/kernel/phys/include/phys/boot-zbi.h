@@ -47,7 +47,7 @@ class BootZbi {
   BootZbi(BootZbi&&) = default;
   BootZbi& operator=(BootZbi&&) = default;
 
-  // These are overridden in TrampolineBoot (see x86/phys/boot-shim).
+  // These are overridden in FixedAddressBootZbi (see x86/phys/boot-shim).
   bool Relocating() const { return false; }
   bool MustRelocateDataZbi() const { return false; }
 
@@ -136,6 +136,8 @@ class BootZbi {
 
   void InitKernel(Allocation kernel);
   void InitData(Allocation data);
+
+  void SetKernel(const ZbiKernelImage* kernel) { kernel_ = kernel; }
 
   [[noreturn]] void ZbiBoot(uintptr_t entry, void* data) const;
 

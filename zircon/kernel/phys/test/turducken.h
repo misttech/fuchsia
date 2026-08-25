@@ -35,7 +35,6 @@
 #include <ktl/span.h>
 #include <ktl/string_view.h>
 #include <phys/allocation.h>
-#include <phys/boot-zbi.h>
 
 // Must be defined by each turducken test.
 extern const char* kTestName;

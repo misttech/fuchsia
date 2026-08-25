@@ -61,18 +61,6 @@ extern AddressSpace* gAddressSpace;
 // not go out of scope.  It's usually on the stack of PhysMain.
 void ArchSetUpAddressSpace(AddressSpace& aspace);
 
-// Reset and repeat the work of ArchSetUpAddressSpace.  This reuses the
-// AddressSpace object installed in gAddressSpace by ArchSetUpAddressSpace, but
-// calls its Init() method to reset its state afresh.  This uses the current
-// state of the Allocation pool for all new page table pages, so they will only
-// be in physical pages that are currently free.  This is necessary to prepare
-// for TrampolineBoot::Boot (after TrampolineBoot::Load has reserved whatever
-// space it needs to from the pool).  Even the .bss space of the phys image
-// itself may no longer be safe to use as page table pages, and pages allocated
-// from the pool before TrampolineBoot::Load could overlap with memory that
-// will be clobbered by the trampoline.
-void ArchPrepareAddressSpaceForTrampoline();
-
 // A representation of a virtual address space.
 //
 // This definition relies on two architecture-specific types being defined

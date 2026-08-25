@@ -109,14 +109,3 @@ void ArchSetUpAddressSpace(AddressSpace& aspace) {
   // restrictions.
   aspace.SetPageTableAllocationBounds(ktl::nullopt, ktl::nullopt);
 }
-
-// This just repeats allocation of all the page tables as done before, but in
-// the new state of the Allocation pool where the page tables used before are
-// no longer available and every other address range that needs to be avoided
-// during the trampoline handoff is reserved so the allocator won't use it.
-// The original page tables are leaked here, but this is the very last thing
-// done before the trampoline handoff wipes the slate clean anyway.
-void ArchPrepareAddressSpaceForTrampoline() {
-  ZX_DEBUG_ASSERT(gAddressSpace);
-  SetUpAddressSpace(*gAddressSpace);
-}

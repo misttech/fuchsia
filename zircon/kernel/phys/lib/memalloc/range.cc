@@ -66,9 +66,9 @@ std::string_view ToString(Type type) {
       return "boot shadow call stack"sv;
     case Type::kBootUnsafeStack:
       return "boot unsafe stack"sv;
-    case Type::kTrampolineStagingKernel:
+    case Type::kFixedAddressStagingKernel:
       return "trampoline staging kernel image"sv;
-    case Type::kTrampolineStagingDataZbi:
+    case Type::kFixedAddressStagingDataZbi:
       return "trampoline staging data ZBI";
     case Type::kLegacyBootData:
       return "legacy boot data";

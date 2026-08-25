@@ -89,54 +89,37 @@ struct RangeCollection {
   size_t capacity;
 };
 
-// Returns a range collection, with all the non special ranges, where memory can be allocated from.
-// This ranges in this collection don't care about the specific type, just whether they where
-// reserved by the bootloader for some reason.
-RangeCollection FindAllocableRanges(memalloc::Pool& pool) {
+// Returns the collection of free RAM ranges.
+RangeCollection FindAllocatableRanges(memalloc::Pool& pool) {
   // Collection of ranges where memory can be allocated from. Ranges in this collection, are not
   // necessarily valid for the kernel,since it might not fit.
   RangeCollection ranges(pool.size());
 
-  memalloc::Range* prev = nullptr;
-
-  for (auto& range : pool) {
-    // Special ranges.
-    if (range.type == memalloc::Type::kReserved || range.type == memalloc::Type::kPeripheral) {
+  for (const auto& range : pool) {
+    if (range.type != memalloc::Type::kFreeRam) {
       continue;
     }
-
-    // Skip allocations for the payloads of this test.
-    if (range.type == memalloc::Type::kZbiTestPayload) {
-      continue;
+    ranges.size++;
+    auto& back = ranges.view().back();
+    back = range;
+    // Remove address 0 since is source of problems. By adding 1 offset, the alignment will take
+    // care of the rest.
+    if (back.addr == 0) {
+      back.addr++;
+      back.size--;
     }
-
-    // Disjoint range.
-    if (prev == nullptr || prev->end() != range.addr) {
-      ranges.size++;
-      ranges.view().back() = range;
-      prev = &ranges.view().back();
-      // Remove address 0 since is source of problems. By adding 1 offset, the alignment will take
-      // care of the rest.
-      if (prev->addr == 0) {
-        prev->addr++;
-      }
-      continue;
-    }
-
-    // Coalescing range.
-    prev->size += range.size;
   }
 
   ZX_ASSERT(!ranges.view().empty());
   return ranges;
 }
 
-RangeCollection FindCandidateRanges(const RangeCollection& allocable_ranges, size_t size,
+RangeCollection FindCandidateRanges(const RangeCollection& allocatable_ranges, size_t size,
                                     size_t alignment) {
   // Each candidate range represents a valid starting point, and a wiggle room, that is,
   // how many bytes can an allocation be shifted.
-  RangeCollection ranges(allocable_ranges.size);
-  for (auto range : allocable_ranges.view()) {
+  RangeCollection ranges(allocatable_ranges.size);
+  for (auto range : allocatable_ranges.view()) {
     if (range.size < size) {
       continue;
     }
@@ -171,8 +154,8 @@ RangeCollection FindCandidateRanges(const RangeCollection& allocable_ranges, siz
 uint64_t GetRandomAlignedMemoryRange(memalloc::Pool& pool, BootZbi::Size size, uint64_t& seed) {
   // Each candidate range represents a valid starting point, and a wiggle room, that is,
   // how many bytes can an allocation be shifted.
-  auto allocable_ranges = FindAllocableRanges(pool);
-  auto candidate_ranges = FindCandidateRanges(allocable_ranges, size.size, size.alignment);
+  auto allocatable_ranges = FindAllocatableRanges(pool);
+  auto candidate_ranges = FindCandidateRanges(allocatable_ranges, size.size, size.alignment);
 
   // Now we randomly pick a valid candidate range.
   uint64_t range_index = rand_r(&seed) % candidate_ranges.size;

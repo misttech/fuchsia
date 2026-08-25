@@ -90,12 +90,12 @@ enum class Type : uint64_t {
   kBootUnsafeStack,
 
   // The intermediate kernel memory image used to trampoline into the same image
-  // loaded at a fixed address (i.e., as used by TrampolineBoot).
-  kTrampolineStagingKernel,
+  // loaded at a fixed address (i.e., as used by FixedAddressBootZbi).
+  kFixedAddressStagingKernel,
 
   // The intermediate data ZBI used to trampoline into the same image
-  // loaded at a fixed address (i.e., as used by TrampolineBoot).
-  kTrampolineStagingDataZbi,
+  // loaded at a fixed address (i.e., as used by FixedAddressBootZbi).
+  kFixedAddressStagingDataZbi,
 
   // Data structures related to legacy boot protocols.
   kLegacyBootData,

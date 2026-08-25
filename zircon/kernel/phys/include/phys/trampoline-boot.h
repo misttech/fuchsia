@@ -13,7 +13,12 @@
 
 #include "boot-zbi.h"
 
-class TrampolineBoot : public BootZbi {
+// TODO(https://fxbug.dev/408020980): Rename to <phys/fixed-address-boot-zbi.h>
+//
+// This BootZbi subclass provides support for booting ZBI kernels at a fixed
+// load address. It requires that the provided current locations of the kernel
+// and data do not overlap with their respective intended load addresses.
+class FixedAddressBootZbi : public BootZbi {
  public:
   // Legacy x86 ZBI provide absolute offset, while newer ones use a relative offset.
   static constexpr uint64_t kLegacyLoadAddress = 1 << 20;
@@ -40,7 +45,7 @@ class TrampolineBoot : public BootZbi {
   void Log();
 
  private:
-  class Trampoline;
+  // class Trampoline; (removed)
 
   void set_kernel_load_address(uint64_t load_address) {
     kernel_load_address_ = load_address;
@@ -55,7 +60,6 @@ class TrampolineBoot : public BootZbi {
   ktl::optional<uint64_t> kernel_load_address_;
   ktl::optional<uint64_t> data_load_address_;
   uint64_t kernel_entry_address_ = 0;
-  Trampoline* trampoline_ = nullptr;
 };
 
 #endif  // ZIRCON_KERNEL_PHYS_INCLUDE_PHYS_TRAMPOLINE_BOOT_H_

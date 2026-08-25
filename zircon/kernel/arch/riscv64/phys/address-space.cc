@@ -19,9 +19,6 @@ void ArchSetUpAddressSpace(AddressSpace& aspace) {
   aspace.Install();
 }
 
-// The MMU will be off when the trampoline runs, so there is nothing to do.
-void ArchPrepareAddressSpaceForTrampoline() {}
-
 void AddressSpace::ArchInstall() const {
   arch::RiscvSatp::Get()
       .FromValue(0)

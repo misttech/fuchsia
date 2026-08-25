@@ -128,10 +128,6 @@ if (toolchain_environment == "kernel.phys" ||
 
     sources = [ "trampoline-boot.cc" ]
 
-    if (current_cpu == "arm64") {
-      sources += [ "trampoline-boot-arm64-zbi-boot.cc" ]
-    }
-
     public = [ "include/phys/trampoline-boot.h" ]
 
     public_deps = [ ":boot-zbi" ]

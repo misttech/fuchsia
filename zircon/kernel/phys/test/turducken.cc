@@ -172,7 +172,7 @@ void TurduckenTestBase::Load(TurduckenTestBase::Zbi::iterator kernel_item,
 }
 
 void TurduckenTestBase::Boot() {
-  TrampolineBoot boot;
+  FixedAddressBootZbi boot;
 
   auto result = boot.Init(BootZbi::InputZbi(ktl::as_bytes(loaded_.data())));
   if (result.is_error()) {
