@@ -84,6 +84,7 @@ source_set("main") {
 
 kernel_rust_mod("rust_panic") {
   sources = []
+  deps = [ "//zircon/system/ulib/fbl/rust:fbl" ]
 }
 
 kernel_rust_mod("top_rust") {
