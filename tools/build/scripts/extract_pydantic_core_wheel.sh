@@ -30,7 +30,7 @@ SOURCE_DIR="$FUCHSIA_DIR/$SOURCE_SUBDIR"
 echo "Using source directory: $SOURCE_DIR"
 
 # Locate the wheel file from the source directory.
-SRC_FILE=$(ls "$SOURCE_DIR"/*.whl 2>/dev/null)
+SRC_FILE=$(ls "$SOURCE_DIR"/*.whl 2>/dev/null | head -n1)
 [[ -n "$SRC_FILE" ]] || die "No .whl found in source directory: ${SOURCE_DIR}"
 
 echo "Found wheel file: $SRC_FILE"
@@ -54,6 +54,11 @@ echo "Extracting archive"
 unzip -o -q "${SRC_FILE}" -d "${DEST_DIR}" || die "Could not unzip ${SRC_FILE}"
 [[ -f "${DEST_DIR}/${CHECK_FILE}" ]] ||
     die "Missing file from extracted archive: ${DEST_DIR}/${CHECK_FILE}"
+
+# Find the compiled shared library (.so) file in the extracted package.
+SO_FILE=$(ls "${DEST_DIR}/pydantic_core"/*.so 2>/dev/null | xargs -n1 basename | head -n1)
+[[ -n "${SO_FILE}" ]] || die "Could not find native .so library in ${DEST_DIR}/pydantic_core"
+echo "Found native shared library: ${SO_FILE}"
 
 echo "Modifying __init__.py to support dynamic loading of shared library"
 INIT_FILE="${DEST_DIR}/${CHECK_FILE}"
@@ -114,7 +119,7 @@ if (is_host) {
     sources = [
       "pydantic_core/__init__.py",
       "pydantic_core/core_schema.py",
-      "pydantic_core/_pydantic_core.cpython-311-x86_64-linux-gnu.so",
+      "pydantic_core/${SO_FILE}",
     ]
     outputs = [
       "\$target_gen_dir/pydantic_core/{{source_file_part}}",
@@ -141,7 +146,7 @@ if (is_host) {
     sources = [
       "\$target_gen_dir/pydantic_core/__init__.py",
       "\$target_gen_dir/pydantic_core/core_schema.py",
-      "\$target_gen_dir/pydantic_core/_pydantic_core.cpython-311-x86_64-linux-gnu.so",
+      "\$target_gen_dir/pydantic_core/${SO_FILE}",
     ]
 
     deps = [ ":copy_pydantic_core_files" ]
@@ -152,8 +157,8 @@ EOF
 echo "Writing README.fuchsia file"
 cat > "${DEST_DIR}/README.fuchsia" <<EOF
 Name: pydantic_core
-URL: https://chrome-infra-packages.appspot.com/p/infra/python/wheels/pydantic_core/linux-amd64_cp311_cp311
-Version: 2.33.1
+URL: https://chrome-infra-packages.appspot.com/p/infra/python/wheels/pydantic_core/
+Version: ${SRC_VERSION}
 
 License File: pydantic_core-${SRC_VERSION}.dist-info/licenses/LICENSE
  -> License File Format: Single License

@@ -2,6 +2,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import argparse
 import os
 import tempfile
 import unittest
@@ -76,5 +77,6 @@ class TestConfig(unittest.TestCase):
                 )
 
             self.assertRaises(
-                SystemExit, lambda: config.load_config(config_path)
+                (SystemExit, argparse.ArgumentError),
+                lambda: config.load_config(config_path),
             )

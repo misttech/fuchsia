@@ -446,7 +446,7 @@ class TestExecution(unittest.IsolatedAsyncioTestCase):
         )
 
         command_line = test.command_line()
-        self.assertEquals(
+        self.assertEqual(
             [
                 "/out/fuchsia/bin/test_component_wrapper.sh",
                 "--realm=foo_tests",
@@ -460,13 +460,11 @@ class TestExecution(unittest.IsolatedAsyncioTestCase):
         env = test.environment()
         assert env is not None
         # TODO: Add environment checking when added.
-        self.assertDictContainsSubset(
-            {
-                "CWD": "/out/fuchsia",
-                "FUCHSIA_CUSTOM_TEST_ARGS": "--some_extra_arg",
-            },
-            env,
-        )
+        expected_env_subset = {
+            "CWD": "/out/fuchsia",
+            "FUCHSIA_CUSTOM_TEST_ARGS": "--some_extra_arg",
+        }
+        self.assertTrue(expected_env_subset.items() <= env.items())
 
         # without --use-test-pilot flag
         test = execution.TestExecution(
@@ -976,14 +974,14 @@ class TestExecutionUtils(unittest.IsolatedAsyncioTestCase):
         device_env = await execution.get_device_environment_from_exec_env(
             self._env
         )
-        self.assertDictContainsSubset(
-            {
-                "address": "127.0.0.1",
-                "port": "6000",
-                "name": "foo-bar",
-                "private_key_path": self._ssh_key_file,
-            },
-            vars(device_env),
+        expected_device_subset = {
+            "address": "127.0.0.1",
+            "port": "6000",
+            "name": "foo-bar",
+            "private_key_path": self._ssh_key_file,
+        }
+        self.assertTrue(
+            expected_device_subset.items() <= vars(device_env).items()
         )
 
     @mock.patch("execution.run_command")
@@ -1000,14 +998,14 @@ class TestExecutionUtils(unittest.IsolatedAsyncioTestCase):
         device_env = await execution.get_device_environment_from_exec_env(
             self._env
         )
-        self.assertDictContainsSubset(
-            {
-                "address": "[::1]",
-                "port": "6000",
-                "name": "foo-bar",
-                "private_key_path": self._ssh_key_file,
-            },
-            vars(device_env),
+        expected_device_ipv6_subset = {
+            "address": "[::1]",
+            "port": "6000",
+            "name": "foo-bar",
+            "private_key_path": self._ssh_key_file,
+        }
+        self.assertTrue(
+            expected_device_ipv6_subset.items() <= vars(device_env).items()
         )
 
     @mock.patch("execution.run_command")

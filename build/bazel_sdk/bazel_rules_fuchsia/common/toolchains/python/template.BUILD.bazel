@@ -11,7 +11,7 @@ package(default_visibility = ["//visibility:public"])
 
 filegroup(
     name = "runtime_files",
-    srcs = {python_runtime_files},
+    srcs = {python_runtime_files} + glob(["lib/python{python_version}/lib-dynload/**"], allow_empty = True),
 )
 
 py_runtime(

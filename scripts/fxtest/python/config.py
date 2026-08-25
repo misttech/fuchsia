@@ -2,6 +2,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import argparse
 from dataclasses import dataclass
 from dataclasses import field
 import os
@@ -70,7 +71,7 @@ def load_config(path: str | None = None) -> ConfigFile:
 
     try:
         defaults = args.parse_args(command_line)
-    except SystemExit as e:
+    except (SystemExit, argparse.ArgumentError) as e:
         print(f"Error occurred while applying flags from config file {path}")
         raise e
 

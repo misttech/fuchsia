@@ -110,89 +110,74 @@ def _compact_python_runtime_impl(repo_ctx):
     # Create symlink to include directory.
     repo_ctx.symlink(python_binpath.dirname.get_child("include"), "include")
 
-    # Fuchsia now comes with its own compact python toolchain,
-    #
-    # See https://fuchsia.googlesource.com/infra/3pp/+/refs/heads/main/compact_python/
-    # for the LUCI recipe that creates it.
-    #
-    # It is checked out at the same location as the regular one, the main
-    # difference is that it does not provide a lib/ directory, instead the
-    # file bin/lib_python<version>.zip is used to provide the standard
-    # library modules. Another one is that `python<version>` is a launcher
-    # script that calls `python<version>-real` which is the real interpreter
-    # after adjusting the PYTHONPATH and PYTHONHOME.
-    #
-    # Detect this here by looking whether the lib/ directory exists.
-    if not python_binpath.dirname.get_child("lib").exists:
-        python3_launcher = "python%s" % python_version
-        python_runtime_files = [
-            python3_launcher,
-            python3_launcher + "-real",
-            "lib_python%s.zip" % python_version,
-        ]
-        for f in python_runtime_files:
-            repo_ctx.symlink(python_binpath.get_child(f), f)
+    lib_dir = python_binpath.dirname.get_child("lib")
+    if not lib_dir.exists:
+        fail("Missing python library directory: %s" % lib_dir)
+
+    # Create a symlink to the real interpreter.
+    python3_real = "python%s-real" % python_version
+    repo_ctx.symlink(python_interpreter, python3_real)
+
+    lib_python_zip = "lib_python%s.zip" % python_version
+
+    # Either symlink or create a zip archive that contains the content of
+    # <python_install_dir>/lib/python<version>/
+    if repo_ctx.attr.lib_python_zip:
+        if repo_ctx.attr.lib_python_path:
+            fail("Only one of lib_python_zip or lib_python_path can be defined!")
+        lib_python_zip_path = _make_path_from_str(repo_ctx, repo_ctx.attr.lib_python_zip)
+        repo_ctx.symlink(lib_python_zip_path, lib_python_zip)
     else:
-        # Create a symlink to the real interpreter.
-        python3_real = "python%s-real" % python_version
-        repo_ctx.symlink(python_interpreter, python3_real)
-
-        lib_python_zip = "lib_python%s.zip" % python_version
-
-        # Either symlink or create a zip archive that contains the content of
-        # <python_install_dir>/lib/python<version>/
-        if repo_ctx.attr.lib_python_zip:
-            if repo_ctx.attr.lib_python_path:
-                fail("Only one of lib_python_zip or lib_python_path can be defined!")
-            lib_python_zip_path = _make_path_from_str(repo_ctx, repo_ctx.attr.lib_python_zip)
-            repo_ctx.symlink(lib_python_zip_path, lib_python_zip)
+        if repo_ctx.attr.lib_python_path:
+            lib_python_path = _make_path_from_str(repo_ctx, repo_ctx.attr.lib_python_path)
         else:
-            if repo_ctx.attr.lib_python_path:
-                lib_python_path = _make_path_from_str(repo_ctx, repo_ctx.attr.lib_python_path)
-            else:
-                lib_python_path = python_binpath.dirname.get_child("lib").get_child("python%s" % python_version)
-            if not lib_python_path.exists:
-                fail("Missing python library path: %s" % lib_python_path)
+            lib_python_path = lib_dir.get_child("python%s" % python_version)
+        if not lib_python_path.exists:
+            fail("Missing python library path: %s" % lib_python_path)
 
-            # Create the zip archive using a custom Python script, since this is
-            # more portable than relying on a host `zip` tool being available.
-            # On Linux, this is slightly slower than using the host zip command
-            # (i.e. 0.77s vs 0.483s).
-            zip_directory_script = repo_ctx.path(Label("//common:scripts/zip-directory.py"))
-            ret = repo_ctx.execute(
-                [
-                    str(python_interpreter),
-                    str(zip_directory_script),
-                    str(lib_python_zip),
-                    str(lib_python_path),
-                ],
-                quiet = False,  # False for debugging!
-            )
-            if ret.return_code != 0:
-                fail("Could not create python library zip archive!: %s" % ret.stderr)
+        # Create the zip archive using a custom Python script, since this is
+        # more portable than relying on a host `zip` tool being available.
+        # On Linux, this is slightly slower than using the host zip command
+        # (i.e. 0.77s vs 0.483s).
+        zip_directory_script = repo_ctx.path(Label("//common:scripts/zip-directory.py"))
+        ret = repo_ctx.execute(
+            [
+                str(python_interpreter),
+                str(zip_directory_script),
+                str(lib_python_zip),
+                str(lib_python_path),
+            ],
+            quiet = False,  # False for debugging!
+        )
+        if ret.return_code != 0:
+            fail("Could not create python library zip archive!: %s" % ret.stderr)
 
-        # Create a launcher shell script named 'python3' that invokes 'python3-real'
-        #
-        # - PYTHONHOME is set to _SCRIPT_DIR to ensure sys.path only contains
-        #   paths relative to it. Otherwise, some paths hard-coded in the interpreter
-        #   binary will be used (e.g. `/work/out/python3`), which could lead to
-        #   bad surprises.
-        #
-        # - PYTHONPATH is extended to point to the zip archive, and allows the
-        #   interpreter to find all system libraries from it.
-        #
-        # - The `-S` flag disables site-specific module lookups.
-        #
-        # - The `-s` flag disables user-specific module lookups.
-        #
-        # Note that `python3` also supports the `-I` flag to run in `isolated` mode,
-        # where PYTHONPATH and PYTHONHOME are ignored, but this forces sys.path to
-        # strictly hard-coded values that are unusable here.
-        #
-        python3_launcher = "python3"
-        repo_ctx.file(
-            python3_launcher,
-            content = '''\
+        real_lib_dynload = lib_python_path.get_child("lib-dynload")
+        if real_lib_dynload.exists:
+            repo_ctx.symlink(real_lib_dynload, "lib/python%s/lib-dynload" % python_version)
+
+    # Create a launcher shell script named 'python3' that invokes 'python3-real'
+    #
+    # - PYTHONHOME is set to _SCRIPT_DIR to ensure sys.path only contains
+    #   paths relative to it. Otherwise, some paths hard-coded in the interpreter
+    #   binary will be used (e.g. `/work/out/python3`), which could lead to
+    #   bad surprises.
+    #
+    # - PYTHONPATH is extended to point to the zip archive, and allows the
+    #   interpreter to find all system libraries from it.
+    #
+    # - The `-S` flag disables site-specific module lookups.
+    #
+    # - The `-s` flag disables user-specific module lookups.
+    #
+    # Note that `python3` also supports the `-I` flag to run in `isolated` mode,
+    # where PYTHONPATH and PYTHONHOME are ignored, but this forces sys.path to
+    # strictly hard-coded values that are unusable here.
+    #
+    python3_launcher = "python3"
+    repo_ctx.file(
+        python3_launcher,
+        content = '''\
 #!/bin/bash
 # AUTO-GENERATED - DO NOT EDIT
 
@@ -205,10 +190,10 @@ PYTHONHOME="${{_SCRIPT_DIR}}" \\
 PYTHONPATH="${{_SCRIPT_DIR}}/{lib_python_zip}:${{PYTHONPATH}}" \\
 exec "${{_SCRIPT_DIR}}/{python3_real}" -S -s "$@"
 '''.format(python3_real = python3_real, lib_python_zip = lib_python_zip),
-            executable = True,
-        )
+        executable = True,
+    )
 
-        python_runtime_files = [python3_launcher, python3_real, lib_python_zip]
+    python_runtime_files = [python3_launcher, python3_real, lib_python_zip]
 
     _CPU_MAP = {
         "amd64": "x86_64",
@@ -227,6 +212,7 @@ exec "${{_SCRIPT_DIR}}/{python3_real}" -S -s "$@"
         substitutions = {
             "{python_launcher}": python3_launcher,
             "{python_runtime_files}": str(python_runtime_files),
+            "{python_version}": python_version,
             "{repository_dir}": repo_ctx.attr.name,
             "{host_platform_os_constraint}": "@platforms//os:" + host_os,
             "{host_platform_cpu_constraint}": "@platforms//cpu:" + host_cpu,

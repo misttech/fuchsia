@@ -523,19 +523,17 @@ def parse_args(
         "--fuzzy",
         type=int,
         default=3,
-        help="The Damerau–Levenshtein distance threshold for fuzzy matching tests",
+        help="The Damerau-Levenshtein distance threshold for fuzzy matching tests",
     )
     selection.add_argument(
         "--allow-empty-selection",
         action=argparse.BooleanOptionalAction,
-        type=bool,
         help="If True and multiple selections are provided, allow individual selections that match no tests as long as at least one test is selected. Default is True.",
         default=True,
     )
     selection.add_argument(
         "--show-suggestions",
         action=argparse.BooleanOptionalAction,
-        type=bool,
         help="If True and no tests match, suggest matching tests from the build directory. Default is True.",
         default=True,
     )
@@ -550,7 +548,6 @@ def parse_args(
     execution.add_argument(
         "--use-package-hash",
         action=argparse.BooleanOptionalAction,
-        type=bool,
         help="Use the package Merkle root hash from the build artifacts to ensure you are running the most recently built device test code.",
         default=True,
     )
@@ -800,7 +797,6 @@ def parse_args(
         "--timestamp-artifacts",
         default=False,
         action=argparse.BooleanOptionalAction,
-        type=bool,
         help="If set, output artifacts in a timestamped directory under the given output directory. Default is False.",
     )
     output.add_argument(
