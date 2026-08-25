@@ -48,9 +48,7 @@ TEST_F(UnmanagedTestFixture, NoPrematureWritesOnGetDescriptor) {
     Dwc3TestHelper::SetControllerStarted(drv, true);
 
     auto setup = MakeGetDescriptorSetup();
-
-    void* buf = Dwc3TestHelper::GetEp0BufferVirt(drv);
-    std::memcpy(buf, &setup, sizeof(setup));
+    Dwc3TestHelper::WriteEp0Buffer(drv, &setup, 0, sizeof(setup));
   });
 
   libsync::Completion data_phase_started;
@@ -112,9 +110,7 @@ TEST_F(UnmanagedTestFixture, InvalidSetupRequest) {
     fake_dci.SetControlStatus(ZX_ERR_NOT_SUPPORTED);
 
     auto setup = MakeSetupPacket(0xC0, 0x99, 0, 0, 8);
-
-    void* buf = Dwc3TestHelper::GetEp0BufferVirt(drv);
-    std::memcpy(buf, &setup, sizeof(setup));
+    Dwc3TestHelper::WriteEp0Buffer(drv, &setup, 0, sizeof(setup));
 
     // Simulate Setup phase completion
     Dwc3TestHelper::HandleEp0TransferCompleteEvent(drv, 0);
@@ -343,9 +339,7 @@ TEST_F(UnmanagedTestFixture, FidlControlCallFailure) {
 
   dut_.RunInDriverContext([&](Dwc3& drv) {
     auto setup = MakeSetupPacket(0xC0, 0x99, 0, 0, 8);
-
-    void* buf = Dwc3TestHelper::GetEp0BufferVirt(drv);
-    std::memcpy(buf, &setup, sizeof(setup));
+    Dwc3TestHelper::WriteEp0Buffer(drv, &setup, 0, sizeof(setup));
 
     // Simulate Setup phase completion
     Dwc3TestHelper::HandleEp0TransferCompleteEvent(drv, 0);
@@ -474,8 +468,7 @@ TEST_F(UnmanagedTestFixture, ZeroLengthPacket) {
 
     // Setup packet with wLength = 0
     auto setup = MakeSetupPacket(USB_DIR_OUT | USB_TYPE_VENDOR | USB_RECIP_DEVICE, 0x01, 0, 0, 0);
-
-    std::memcpy(Dwc3TestHelper::GetEp0BufferVirt(drv), &setup, sizeof(setup));
+    Dwc3TestHelper::WriteEp0Buffer(drv, &setup, 0, sizeof(setup));
 
     // Push placeholder TRB to avoid AdvanceRead error
     dwc3_trb_t trb{};
@@ -573,8 +566,7 @@ TEST_F(UnmanagedTestFixture, ZlpInTransferRequired) {
     auto setup = MakeSetupPacket(USB_DIR_IN | USB_TYPE_VENDOR | USB_RECIP_DEVICE, 0x01, 0, 0, 1024);
 
     // Write setup packet to buffer
-    void* buf = Dwc3TestHelper::GetEp0BufferVirt(drv);
-    std::memcpy(buf, &setup, sizeof(setup));
+    Dwc3TestHelper::WriteEp0Buffer(drv, &setup, 0, sizeof(setup));
 
     // Call HandleEp0TransferCompleteEvent to trigger HandleSetup
     Dwc3TestHelper::HandleEp0TransferCompleteEvent(drv, 0);  // 0 is kEp0Out
@@ -637,9 +629,7 @@ TEST_F(UnmanagedTestFixture, ZlpInNotRequiredExactMatch) {
 
     // Setup packet with wLength = 512 (Exact match)
     auto setup = MakeSetupPacket(USB_DIR_IN | USB_TYPE_VENDOR | USB_RECIP_DEVICE, 0x01, 0, 0, 512);
-
-    void* buf = Dwc3TestHelper::GetEp0BufferVirt(drv);
-    std::memcpy(buf, &setup, sizeof(setup));
+    Dwc3TestHelper::WriteEp0Buffer(drv, &setup, 0, sizeof(setup));
 
     Dwc3TestHelper::HandleEp0TransferCompleteEvent(drv, 0);  // 0 is kEp0Out
   });
@@ -689,9 +679,7 @@ TEST_F(UnmanagedTestFixture, ZlpInNotRequiredShortPacketTerminated) {
 
     // Setup packet with wLength = 1024
     auto setup = MakeSetupPacket(USB_DIR_IN | USB_TYPE_VENDOR | USB_RECIP_DEVICE, 0x01, 0, 0, 1024);
-
-    void* buf = Dwc3TestHelper::GetEp0BufferVirt(drv);
-    std::memcpy(buf, &setup, sizeof(setup));
+    Dwc3TestHelper::WriteEp0Buffer(drv, &setup, 0, sizeof(setup));
 
     Dwc3TestHelper::HandleEp0TransferCompleteEvent(drv, 0);  // 0 is kEp0Out
   });
@@ -743,8 +731,7 @@ TEST_F(UnmanagedTestFixture, WaitZlpInTransferCompleteMismatch) {
     Dwc3TestHelper::SetEp0State(drv, Dwc3TestHelper::State::Setup);
 
     auto setup = MakeSetupPacket(USB_DIR_IN | USB_TYPE_VENDOR | USB_RECIP_DEVICE, 0x01, 0, 0, 1024);
-    void* buf = Dwc3TestHelper::GetEp0BufferVirt(drv);
-    std::memcpy(buf, &setup, sizeof(setup));
+    Dwc3TestHelper::WriteEp0Buffer(drv, &setup, 0, sizeof(setup));
 
     Dwc3TestHelper::HandleEp0TransferCompleteEvent(drv, 0);  // Setup
   });
@@ -800,8 +787,7 @@ TEST_F(UnmanagedTestFixture, WaitZlpInTransferNotReadyMismatch) {
     Dwc3TestHelper::SetEp0State(drv, Dwc3TestHelper::State::Setup);
 
     auto setup = MakeSetupPacket(USB_DIR_IN | USB_TYPE_VENDOR | USB_RECIP_DEVICE, 0x01, 0, 0, 1024);
-    void* buf = Dwc3TestHelper::GetEp0BufferVirt(drv);
-    std::memcpy(buf, &setup, sizeof(setup));
+    Dwc3TestHelper::WriteEp0Buffer(drv, &setup, 0, sizeof(setup));
 
     Dwc3TestHelper::HandleEp0TransferCompleteEvent(drv, 0);  // Setup
   });
@@ -984,8 +970,7 @@ TEST_F(UnmanagedTestFixture, ControlReadParseGetDescriptor) {
     Dwc3TestHelper::SetControllerStarted(drv, true);
 
     auto setup = MakeGetDescriptorSetup(18);
-    void* buf = Dwc3TestHelper::GetEp0BufferVirt(drv);
-    std::memcpy(buf, &setup, sizeof(setup));
+    Dwc3TestHelper::WriteEp0Buffer(drv, &setup, 0, sizeof(setup));
     Dwc3TestHelper::HandleEp0TransferCompleteEvent(drv, 0);  // 0 is kEp0Out
   });
 
@@ -1026,8 +1011,7 @@ TEST_F(UnmanagedTestFixture, ControlReadCompleteGetDescriptor) {
     Dwc3TestHelper::SetControllerStarted(drv, true);
 
     auto setup = MakeGetDescriptorSetup(18);
-    void* buf = Dwc3TestHelper::GetEp0BufferVirt(drv);
-    std::memcpy(buf, &setup, sizeof(setup));
+    Dwc3TestHelper::WriteEp0Buffer(drv, &setup, 0, sizeof(setup));
     Dwc3TestHelper::HandleEp0TransferCompleteEvent(drv, 0);  // 0 is kEp0Out
   });
 
@@ -1162,8 +1146,7 @@ TEST_F(UnmanagedTestFixture, DISABLED_ControlWriteComplete) {
     Dwc3TestHelper::SetControllerStarted(drv, true);
 
     auto setup = MakeSetupPacket(USB_DIR_OUT | USB_TYPE_VENDOR | USB_RECIP_DEVICE, 0x99, 0, 0, 8);
-    void* buf = Dwc3TestHelper::GetEp0BufferVirt(drv);
-    std::memcpy(buf, &setup, sizeof(setup));
+    Dwc3TestHelper::WriteEp0Buffer(drv, &setup, 0, sizeof(setup));
     Dwc3TestHelper::HandleEp0TransferCompleteEvent(drv, 0);
     Dwc3TestHelper::ClearSharedFifo(drv);
   });
@@ -1203,8 +1186,7 @@ TEST_F(UnmanagedTestFixture, DISABLED_ControlWriteDataOutOverflow) {
     Dwc3TestHelper::SetControllerStarted(drv, true);
 
     auto setup = MakeSetupPacket(USB_DIR_OUT | USB_TYPE_VENDOR | USB_RECIP_DEVICE, 0x01, 0, 0, 8);
-    void* buf = Dwc3TestHelper::GetEp0BufferVirt(drv);
-    std::memcpy(buf, &setup, sizeof(setup));
+    Dwc3TestHelper::WriteEp0Buffer(drv, &setup, 0, sizeof(setup));
     Dwc3TestHelper::HandleEp0TransferCompleteEvent(drv, 0);
     Dwc3TestHelper::ClearSharedFifo(drv);
   });
@@ -1254,8 +1236,7 @@ TEST_F(UnmanagedTestFixture, ControlWriteShortPacketDataOut) {
     Dwc3TestHelper::SetControllerStarted(drv, true);
 
     auto setup = MakeSetupPacket(USB_DIR_OUT | USB_TYPE_VENDOR | USB_RECIP_DEVICE, 0x01, 0, 0, 16);
-    void* buf = Dwc3TestHelper::GetEp0BufferVirt(drv);
-    std::memcpy(buf, &setup, sizeof(setup));
+    Dwc3TestHelper::WriteEp0Buffer(drv, &setup, 0, sizeof(setup));
     Dwc3TestHelper::HandleEp0TransferCompleteEvent(drv, 0);
     Dwc3TestHelper::ClearSharedFifo(drv);
   });
@@ -1370,6 +1351,475 @@ TEST_F(UnmanagedTestFixture, DISABLED_ZlpOutTransferRequired) {
   // Expect 1 call to Control (for the 64 bytes - wait, the driver chunks it but the test just
   // counts the callback)
   EXPECT_EQ(control_call_count.load(), 1);
+
+  if (binding.has_value()) {
+    binding->Unbind();
+    dut_.runtime().RunUntilIdle();
+  }
+
+  TearDownAndPowerOffDriver();
+}
+
+// Verifies that a 3-stage Control IN transfer (which writes descriptor/data payload into
+// ep0_.buffer) followed by status phase completion and immediately followed by the next control
+// SETUP packet receives and decodes the next setup packet with 100% fidelity without cross-transfer
+// corruption.
+TEST_F(UnmanagedTestFixture, Ep0ControlInThenNextSetupPacket) {
+  FakeUsbDciInterface fake_dci;
+  SetUpAndPowerOnDriver();
+
+  std::vector<uint8_t> read_data(32, 0xAA);
+  fake_dci.SetReadData(std::move(read_data));
+
+  std::atomic<uint8_t> last_received_request{0};
+  std::atomic<int> control_call_count{0};
+  fake_dci.SetControlCallback(
+      [&](fuchsia_hardware_usb_descriptor::wire::UsbSetup setup, cpp20::span<const uint8_t> data) {
+        last_received_request.store(setup.b_request);
+        control_call_count++;
+      });
+
+  auto binding = BindDciInterface(&fake_dci);
+
+  // 1. Initial 3-stage Control IN transfer
+  dut_.RunInDriverContext([&](Dwc3& drv) {
+    Dwc3TestHelper::SetEp0OutEnabled(drv, true);
+    Dwc3TestHelper::SetEp0InEnabled(drv, true);
+    Dwc3TestHelper::Ep0QueueSetup(drv);
+    Dwc3TestHelper::SetEp0State(drv, Dwc3TestHelper::State::Setup);
+    Dwc3TestHelper::SetControllerStarted(drv, true);
+
+    auto setup = MakeSetupPacket(USB_DIR_IN | USB_TYPE_VENDOR | USB_RECIP_DEVICE, 0x42, 0, 0, 32);
+    Dwc3TestHelper::SimulateSetupReceived(drv, setup);
+  });
+
+  // Wait for the driver to queue the data phase transfer to hardware
+  EXPECT_TRUE(dut_.runtime().RunWithTimeoutOrUntil(
+      [&]() {
+        bool queued = false;
+        dut_.RunInDriverContext(
+            [&](Dwc3& drv) { queued = !Dwc3TestHelper::IsSharedFifoEmpty(drv); });
+        return queued;
+      },
+      zx::sec(10)));
+
+  dut_.RunInDriverContext([&](Dwc3& drv) {
+    EXPECT_EQ(Dwc3TestHelper::GetEp0State(drv), Dwc3TestHelper::State::DataIn);
+    Dwc3TestHelper::SimulateDataInPhase(drv);
+    EXPECT_EQ(Dwc3TestHelper::GetEp0State(drv), Dwc3TestHelper::State::WaitNrdyOut);
+    Dwc3TestHelper::SimulateStatusPhase(drv, /*is_in=*/false);
+    EXPECT_EQ(Dwc3TestHelper::GetEp0State(drv), Dwc3TestHelper::State::Setup);
+  });
+
+  EXPECT_EQ(control_call_count.load(), 1);
+  EXPECT_EQ(last_received_request.load(), 0x42);
+
+  // 2. Immediately deliver the NEXT Setup packet (SET_CONFIGURATION request = 0x09)
+  dut_.RunInDriverContext([&](Dwc3& drv) {
+    fuchsia_hardware_usb_descriptor::wire::UsbSetup next_setup;
+    next_setup.bm_request_type = USB_DIR_OUT | USB_TYPE_STANDARD | USB_RECIP_DEVICE;
+    next_setup.b_request = USB_REQ_SET_CONFIGURATION;
+    next_setup.w_value = 1;
+    next_setup.w_index = 0;
+    next_setup.w_length = 0;
+
+    Dwc3TestHelper::SimulateSetupReceived(drv, next_setup);
+  });
+
+  // Wait for the async FIDL Control response to execute and configure the device
+  EXPECT_TRUE(dut_.runtime().RunWithTimeoutOrUntil(
+      [&]() {
+        bool configured = false;
+        dut_.RunInDriverContext([&](Dwc3& drv) {
+          configured = (Dwc3TestHelper::GetDeviceState(drv) ==
+                        fuchsia_hardware_usb_policy::wire::DeviceState::kConfigured);
+        });
+        return configured;
+      },
+      zx::sec(10)));
+
+  dut_.RunInDriverContext([&](Dwc3& drv) {
+    EXPECT_EQ(Dwc3TestHelper::GetDeviceState(drv),
+              fuchsia_hardware_usb_policy::wire::DeviceState::kConfigured);
+  });
+
+  if (binding.has_value()) {
+    binding->Unbind();
+    dut_.runtime().RunUntilIdle();
+  }
+
+  TearDownAndPowerOffDriver();
+}
+
+// Verifies that alternating back-to-back Control IN and Control OUT transfers preserve
+// setup packet integrity and do not corrupt memory or stall the EP0 state machine.
+TEST_F(UnmanagedTestFixture, MultipleSequentialControlTransfers) {
+  FakeUsbDciInterface fake_dci;
+  SetUpAndPowerOnDriver();
+
+  std::vector<uint8_t> read_data(64, 0x55);
+  fake_dci.SetReadData(std::move(read_data));
+
+  std::atomic<int> control_call_count{0};
+  fake_dci.SetControlCallback([&](fuchsia_hardware_usb_descriptor::wire::UsbSetup setup,
+                                  cpp20::span<const uint8_t> data) { control_call_count++; });
+
+  auto binding = BindDciInterface(&fake_dci);
+
+  dut_.RunInDriverContext([&](Dwc3& drv) {
+    Dwc3TestHelper::SetEp0OutEnabled(drv, true);
+    Dwc3TestHelper::SetEp0InEnabled(drv, true);
+    Dwc3TestHelper::Ep0QueueSetup(drv);
+    Dwc3TestHelper::SetEp0State(drv, Dwc3TestHelper::State::Setup);
+    Dwc3TestHelper::SetControllerStarted(drv, true);
+  });
+
+  for (uint8_t iter = 0; iter < 5; ++iter) {
+    // 1. Control IN transfer
+    dut_.RunInDriverContext([&](Dwc3& drv) {
+      auto setup = MakeSetupPacket(USB_DIR_IN | USB_TYPE_VENDOR | USB_RECIP_DEVICE,
+                                   static_cast<uint8_t>(0x10 + iter), 0, 0, 64);
+      Dwc3TestHelper::SimulateSetupReceived(drv, setup);
+    });
+
+    EXPECT_TRUE(dut_.runtime().RunWithTimeoutOrUntil(
+        [&]() {
+          bool queued = false;
+          dut_.RunInDriverContext(
+              [&](Dwc3& drv) { queued = !Dwc3TestHelper::IsSharedFifoEmpty(drv); });
+          return queued;
+        },
+        zx::sec(10)));
+
+    dut_.RunInDriverContext([&](Dwc3& drv) {
+      EXPECT_EQ(Dwc3TestHelper::GetEp0State(drv), Dwc3TestHelper::State::DataIn);
+      Dwc3TestHelper::SimulateDataInPhase(drv);
+      EXPECT_EQ(Dwc3TestHelper::GetEp0State(drv), Dwc3TestHelper::State::WaitNrdyOut);
+      Dwc3TestHelper::SimulateStatusPhase(drv, /*is_in=*/false);
+      EXPECT_EQ(Dwc3TestHelper::GetEp0State(drv), Dwc3TestHelper::State::Setup);
+    });
+
+    // 2. Control OUT 2-stage transfer (SET_ADDRESS)
+    dut_.RunInDriverContext([&](Dwc3& drv) {
+      auto setup = MakeSetupPacket(USB_DIR_OUT | USB_TYPE_STANDARD | USB_RECIP_DEVICE,
+                                   USB_REQ_SET_ADDRESS, static_cast<uint16_t>(1 + iter), 0, 0);
+      Dwc3TestHelper::SimulateSetupReceived(drv, setup);
+      EXPECT_EQ(Dwc3TestHelper::GetEp0State(drv), Dwc3TestHelper::State::WaitHost);
+      Dwc3TestHelper::SimulateStatusPhase(drv, /*is_in=*/true);
+      EXPECT_EQ(Dwc3TestHelper::GetEp0State(drv), Dwc3TestHelper::State::Setup);
+    });
+  }
+
+  EXPECT_EQ(control_call_count.load(), 5);
+
+  if (binding.has_value()) {
+    binding->Unbind();
+    dut_.runtime().RunUntilIdle();
+  }
+
+  TearDownAndPowerOffDriver();
+}
+
+// Verifies that a 2-stage Control OUT transfer (SET_ADDRESS) followed by Status IN phase
+// completion and immediately followed by the next control SETUP packet decodes cleanly.
+TEST_F(UnmanagedTestFixture, TwoStageControlOutThenNextSetupPacket) {
+  FakeUsbDciInterface fake_dci;
+  SetUpAndPowerOnDriver();
+
+  std::atomic<uint8_t> received_request{0};
+  fake_dci.SetControlCallback(
+      [&](fuchsia_hardware_usb_descriptor::wire::UsbSetup setup, cpp20::span<const uint8_t> data) {
+        received_request.store(setup.b_request);
+      });
+
+  auto binding = BindDciInterface(&fake_dci);
+
+  dut_.RunInDriverContext([&](Dwc3& drv) {
+    Dwc3TestHelper::SetEp0OutEnabled(drv, true);
+    Dwc3TestHelper::SetEp0InEnabled(drv, true);
+    Dwc3TestHelper::Ep0QueueSetup(drv);
+    Dwc3TestHelper::SetEp0State(drv, Dwc3TestHelper::State::Setup);
+    Dwc3TestHelper::SetControllerStarted(drv, true);
+
+    // 1. First 2-stage SET_ADDRESS request
+    auto setup = MakeSetupPacket(USB_DIR_OUT | USB_TYPE_STANDARD | USB_RECIP_DEVICE,
+                                 USB_REQ_SET_ADDRESS, 0x05, 0, 0);
+    Dwc3TestHelper::SimulateSetupReceived(drv, setup);
+    EXPECT_EQ(Dwc3TestHelper::GetEp0State(drv), Dwc3TestHelper::State::WaitHost);
+    Dwc3TestHelper::SimulateStatusPhase(drv, /*is_in=*/true);
+    EXPECT_EQ(Dwc3TestHelper::GetEp0State(drv), Dwc3TestHelper::State::Setup);
+
+    // 2. Immediately deliver next GET_DESCRIPTOR setup packet
+    auto next_setup = MakeGetDescriptorSetup(64);
+    Dwc3TestHelper::SimulateSetupReceived(drv, next_setup);
+  });
+
+  // Verify that the driver decoded the next request
+  EXPECT_TRUE(dut_.runtime().RunWithTimeoutOrUntil(
+      [&]() { return received_request.load() == USB_REQ_GET_DESCRIPTOR; }, zx::sec(10)));
+  EXPECT_EQ(received_request.load(), static_cast<uint8_t>(USB_REQ_GET_DESCRIPTOR));
+
+  if (binding.has_value()) {
+    binding->Unbind();
+    dut_.runtime().RunUntilIdle();
+  }
+
+  TearDownAndPowerOffDriver();
+}
+
+// Verifies that a 3-stage Control OUT transfer receives only the exact payload length
+// without contamination from residual bytes previously residing in ep0_.buffer.
+TEST_F(UnmanagedTestFixture, ControlDataOutWithResidualBufferData) {
+  FakeUsbDciInterface fake_dci;
+  SetUpAndPowerOnDriver();
+
+  std::vector<uint8_t> received_payload;
+  libsync::Completion control_called;
+  fake_dci.SetControlCallback(
+      [&](fuchsia_hardware_usb_descriptor::wire::UsbSetup setup, cpp20::span<const uint8_t> data) {
+        received_payload.assign(data.begin(), data.end());
+        control_called.Signal();
+      });
+
+  auto binding = BindDciInterface(&fake_dci);
+
+  dut_.RunInDriverContext([&](Dwc3& drv) {
+    Dwc3TestHelper::SetEp0OutEnabled(drv, true);
+    Dwc3TestHelper::SetEp0InEnabled(drv, true);
+    Dwc3TestHelper::Ep0QueueSetup(drv);
+    Dwc3TestHelper::SetEp0State(drv, Dwc3TestHelper::State::Setup);
+    Dwc3TestHelper::SetControllerStarted(drv, true);
+
+    // Pre-populate ep0_.buffer with residual garbage pattern
+    uint8_t garbage[256];
+    std::memset(garbage, 0xEE, sizeof(garbage));
+    Dwc3TestHelper::WriteEp0Buffer(drv, garbage, 0, sizeof(garbage));
+
+    // Setup 16-byte Vendor OUT transfer
+    auto setup = MakeSetupPacket(USB_DIR_OUT | USB_TYPE_VENDOR | USB_RECIP_DEVICE, 0x33, 0, 0, 16);
+    Dwc3TestHelper::SimulateSetupReceived(drv, setup);
+  });
+
+  dut_.RunInDriverContext([&](Dwc3& drv) {
+    EXPECT_EQ(Dwc3TestHelper::GetEp0State(drv), Dwc3TestHelper::State::DataOut);
+
+    // Simulate 16 bytes of valid data written to buffer
+    uint8_t payload[16];
+    std::memset(payload, 0x42, sizeof(payload));
+    Dwc3TestHelper::WriteEp0Buffer(drv, payload, 0, sizeof(payload));
+    Dwc3TestHelper::SimulateDataOutPhase(drv, 16);
+  });
+
+  ASSERT_EQ(control_called.Wait(zx::sec(10)), ZX_OK);
+  ASSERT_EQ(received_payload.size(), 16u);
+  for (size_t i = 0; i < 16; ++i) {
+    EXPECT_EQ(received_payload[i], 0x42);
+  }
+
+  if (binding.has_value()) {
+    binding->Unbind();
+    dut_.runtime().RunUntilIdle();
+  }
+
+  TearDownAndPowerOffDriver();
+}
+
+// Verifies that a Control IN transfer requiring a ZLP followed by status completion
+// leaves the EP0 state machine ready to process the next incoming setup packet.
+TEST_F(UnmanagedTestFixture, ControlInZlpThenNextSetupPacket) {
+  FakeUsbDciInterface fake_dci;
+  SetUpAndPowerOnDriver();
+
+  // Return 512 bytes where Host wLength is 1024 (multiple of MPS, requiring ZLP)
+  std::vector<uint8_t> read_data(512, 0x77);
+  fake_dci.SetReadData(std::move(read_data));
+
+  std::atomic<uint8_t> next_received_request{0};
+  fake_dci.SetControlCallback(
+      [&](fuchsia_hardware_usb_descriptor::wire::UsbSetup setup, cpp20::span<const uint8_t> data) {
+        if (setup.b_request != 0x50) {
+          next_received_request.store(setup.b_request);
+        }
+      });
+
+  auto binding = BindDciInterface(&fake_dci);
+
+  dut_.RunInDriverContext([&](Dwc3& drv) {
+    Dwc3TestHelper::SetEp0OutEnabled(drv, true);
+    Dwc3TestHelper::SetEp0InEnabled(drv, true);
+    Dwc3TestHelper::Ep0QueueSetup(drv);
+    Dwc3TestHelper::SetEp0State(drv, Dwc3TestHelper::State::Setup);
+    Dwc3TestHelper::SetControllerStarted(drv, true);
+
+    auto setup = MakeSetupPacket(USB_DIR_IN | USB_TYPE_VENDOR | USB_RECIP_DEVICE, 0x50, 0, 0, 1024);
+    Dwc3TestHelper::SimulateSetupReceived(drv, setup);
+  });
+
+  EXPECT_TRUE(dut_.runtime().RunWithTimeoutOrUntil(
+      [&]() {
+        bool queued = false;
+        dut_.RunInDriverContext(
+            [&](Dwc3& drv) { queued = !Dwc3TestHelper::IsSharedFifoEmpty(drv); });
+        return queued;
+      },
+      zx::sec(10)));
+
+  dut_.RunInDriverContext([&](Dwc3& drv) {
+    EXPECT_EQ(Dwc3TestHelper::GetEp0State(drv), Dwc3TestHelper::State::DataIn);
+    Dwc3TestHelper::SimulateDataInPhase(drv);
+    EXPECT_EQ(Dwc3TestHelper::GetEp0State(drv), Dwc3TestHelper::State::WaitZlpIn);
+    Dwc3TestHelper::SimulateDataInPhase(drv);
+    EXPECT_EQ(Dwc3TestHelper::GetEp0State(drv), Dwc3TestHelper::State::WaitNrdyOut);
+    Dwc3TestHelper::SimulateStatusPhase(drv, /*is_in=*/false);
+    EXPECT_EQ(Dwc3TestHelper::GetEp0State(drv), Dwc3TestHelper::State::Setup);
+
+    // Deliver next Setup packet
+    auto next_setup =
+        MakeSetupPacket(USB_DIR_IN | USB_TYPE_VENDOR | USB_RECIP_DEVICE, 0x51, 0, 0, 64);
+    Dwc3TestHelper::SimulateSetupReceived(drv, next_setup);
+  });
+
+  EXPECT_TRUE(dut_.runtime().RunWithTimeoutOrUntil(
+      [&]() { return next_received_request.load() == 0x51; }, zx::sec(10)));
+  EXPECT_EQ(next_received_request.load(), 0x51);
+
+  if (binding.has_value()) {
+    binding->Unbind();
+    dut_.runtime().RunUntilIdle();
+  }
+
+  TearDownAndPowerOffDriver();
+}
+
+// Verifies that stall recovery after a protocol error cleanly flushes FIFO descriptors
+// and resets EP0 to State::Setup to safely accept subsequent Setup packets.
+// Disabled: In production dwc3-ep0.cc, Ep0EndAndStall unconditionally calls CmdEpEndTransfer
+// without checking whether rsrc_id != kInvalidResourceId, which trips a debug assert when
+// attempting to end a transfer before hardware assigns a resource ID.
+// Requires guarding CmdEpEndTransfer with a validity check on rsrc_id.
+TEST_F(UnmanagedTestFixture, DISABLED_Ep0StallRecoveryLeavesCleanBufferForNextSetup) {
+  FakeUsbDciInterface fake_dci;
+  SetUpAndPowerOnDriver();
+
+  std::atomic<uint8_t> next_received_request{0};
+  fake_dci.SetControlCallback(
+      [&](fuchsia_hardware_usb_descriptor::wire::UsbSetup setup, cpp20::span<const uint8_t> data) {
+        next_received_request.store(setup.b_request);
+      });
+
+  auto binding = BindDciInterface(&fake_dci);
+
+  dut_.RunInDriverContext([&](Dwc3& drv) {
+    Dwc3TestHelper::SetEp0OutEnabled(drv, true);
+    Dwc3TestHelper::SetEp0InEnabled(drv, true);
+    Dwc3TestHelper::Ep0QueueSetup(drv);
+    Dwc3TestHelper::SetEp0State(drv, Dwc3TestHelper::State::Setup);
+    Dwc3TestHelper::SetControllerStarted(drv, true);
+
+    // 1. Simulate directional protocol error during DataOut phase: receiving XferNotReady(Data)
+    // on the opposite endpoint (EP0 IN / ep_num = 1) indicates the host reversed direction,
+    // which triggers Ep0EndAndStall(ep0_.out).
+    Dwc3TestHelper::SetEp0State(drv, Dwc3TestHelper::State::DataOut);
+    Dwc3TestHelper::HandleEp0TransferNotReadyEvent(drv, 1, DEPEVT_XFER_NOT_READY_STAGE_DATA);
+
+    // Endpoint should stall and re-queue setup
+    EXPECT_TRUE(Dwc3TestHelper::IsEp0OutStalled(drv));
+    EXPECT_EQ(Dwc3TestHelper::GetEp0State(drv), Dwc3TestHelper::State::Setup);
+
+    // 2. Deliver new Setup packet (which clears stall)
+    auto setup = MakeSetupPacket(USB_DIR_IN | USB_TYPE_VENDOR | USB_RECIP_DEVICE, 0x60, 0, 0, 64);
+    Dwc3TestHelper::SimulateSetupReceived(drv, setup);
+    EXPECT_FALSE(Dwc3TestHelper::IsEp0OutStalled(drv));
+  });
+
+  EXPECT_TRUE(dut_.runtime().RunWithTimeoutOrUntil(
+      [&]() { return next_received_request.load() == 0x60; }, zx::sec(10)));
+  EXPECT_EQ(next_received_request.load(), 0x60);
+
+  if (binding.has_value()) {
+    binding->Unbind();
+    dut_.runtime().RunUntilIdle();
+  }
+
+  TearDownAndPowerOffDriver();
+}
+
+// Verifies that ep0_.buffer is allocated with caching disabled (uncached) to prevent
+// CPU cache line writeback hazards (Clean operations during CacheFlushInvalidate) from
+// clobbering incoming SETUP packets delivered directly to RAM via hardware DMA.
+// Disabled: ep0_.buffer is currently allocated as cached (kEnabled) in production dwc3.cc,
+// which creates dirty cache lines across status ACK / data phases that clobber RAM on
+// Ep0QueueSetup. Requires allocating ep0_.buffer as uncached (kDisabled).
+TEST_F(UnmanagedTestFixture, DISABLED_Ep0BufferIsUncachedToPreventDmaClobber) {
+  SetUpAndPowerOnDriver();
+
+  dut_.RunInDriverContext([&](Dwc3& drv) {
+    // ep0_.buffer must be allocated with CacheOptions::kDisabled.
+    EXPECT_FALSE(Dwc3TestHelper::GetEp0BufferEnableCache(drv));
+    EXPECT_EQ(Dwc3TestHelper::GetEp0BufferCacheOptions(drv), dma_buffer::CacheOptions::kDisabled);
+  });
+
+  TearDownAndPowerOffDriver();
+}
+
+// Verifies that dirty cache lines from preceding data/status phases do not overwrite
+// incoming SETUP packets written to RAM by hardware DMA when Ep0QueueSetup executes.
+// Disabled: In production dwc3-ep0.cc, Ep0QueueSetup executes CacheFlushInvalidate on a cached
+// buffer, which performs an ARM64 Clean operation, flushing stale dirty bytes over the newly
+// arrived Setup packet. Requires allocating ep0_.buffer as uncached (kDisabled) or performing
+// pure cache invalidation without clean.
+TEST_F(UnmanagedTestFixture,
+       DISABLED_Ep0QueueSetupWithDirtyCacheDoesNotClobberIncomingDmaSetupPacket) {
+  FakeUsbDciInterface fake_dci;
+  SetUpAndPowerOnDriver();
+
+  auto binding = BindDciInterface(&fake_dci);
+
+  dut_.RunInDriverContext([&](Dwc3& drv) {
+    Dwc3TestHelper::SetEp0OutEnabled(drv, true);
+    Dwc3TestHelper::SetEp0InEnabled(drv, true);
+    Dwc3TestHelper::SetControllerStarted(drv, true);
+
+    // 1. Simulate dirty cache lines remaining in ep0_.buffer from previous transfer.
+    // Direct memcpy into virt() leaves bytes dirty in CPU cache without issuing a CacheFlush.
+    uint8_t dirty[sizeof(fuchsia_hardware_usb_descriptor::wire::UsbSetup)];
+    std::memset(dirty, 0xAA, sizeof(dirty));
+    std::memcpy(Dwc3TestHelper::GetEp0BufferVirt(drv), dirty, sizeof(dirty));
+
+    // 2. Simulate hardware DMA writing a fresh incoming Setup packet directly to backing physical
+    // RAM/VMO
+    fuchsia_hardware_usb_descriptor::wire::UsbSetup new_setup;
+    new_setup.bm_request_type = USB_DIR_OUT | USB_TYPE_STANDARD | USB_RECIP_DEVICE;
+    new_setup.b_request = USB_REQ_SET_CONFIGURATION;
+    new_setup.w_value = 1;
+    new_setup.w_index = 0;
+    new_setup.w_length = 0;
+
+    Dwc3TestHelper::WriteEp0Buffer(drv, &new_setup, 0, sizeof(new_setup));
+
+    // 3. Driver prepares for Setup packet
+    Dwc3TestHelper::Ep0QueueSetup(drv);
+
+    // 4. Trigger Setup Complete event from hardware
+    Dwc3TestHelper::HandleEp0TransferCompleteEvent(drv, 0);  // EP0 OUT
+  });
+
+  // Verify that the driver decoded the new setup packet rather than stale dirty 0xAA bytes
+  EXPECT_TRUE(dut_.runtime().RunWithTimeoutOrUntil(
+      [&]() {
+        bool configured = false;
+        dut_.RunInDriverContext([&](Dwc3& drv) {
+          configured = (Dwc3TestHelper::GetDeviceState(drv) ==
+                        fuchsia_hardware_usb_policy::wire::DeviceState::kConfigured);
+        });
+        return configured;
+      },
+      zx::sec(10)));
+
+  dut_.RunInDriverContext([&](Dwc3& drv) {
+    EXPECT_EQ(Dwc3TestHelper::GetDeviceState(drv),
+              fuchsia_hardware_usb_policy::wire::DeviceState::kConfigured);
+  });
 
   if (binding.has_value()) {
     binding->Unbind();

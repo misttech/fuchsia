@@ -235,6 +235,23 @@ class Dwc3TestHelper {
   }
   static void* GetEp0BufferVirt(Dwc3& drv) { return drv.ep0_.buffer->virt(); }
   static size_t GetEp0BufferSize(Dwc3& drv) { return drv.ep0_.buffer->size(); }
+  static bool GetEp0BufferEnableCache(Dwc3& drv) { return drv.ep0_.buffer->enable_cache(); }
+  static dma_buffer::CacheOptions GetEp0BufferCacheOptions(Dwc3& drv) {
+    return drv.ep0_.buffer->cache_options();
+  }
+  static zx::unowned_vmo GetEp0BufferVmo(Dwc3& drv) { return drv.ep0_.buffer->vmo(); }
+  static void WriteEp0Buffer(Dwc3& drv, const void* src, size_t offset, size_t size) {
+    ZX_ASSERT_MSG(drv.ep0_.buffer != nullptr, "WriteEp0Buffer called with null ep0_.buffer!");
+    zx::result<> status = drv.ep0_.buffer->Write(src, offset, size);
+    ZX_ASSERT_MSG(status.is_ok(), "WriteEp0Buffer failed: %s", status.status_string());
+  }
+  // Note: dma_buffer::Buffer::Read takes (offset, length, dest), unlike Write which takes (src,
+  // offset, length).
+  static void ReadEp0Buffer(Dwc3& drv, void* dest, size_t offset, size_t size) {
+    ZX_ASSERT_MSG(drv.ep0_.buffer != nullptr, "ReadEp0Buffer called with null ep0_.buffer!");
+    zx::result<> status = drv.ep0_.buffer->Read(offset, size, dest);
+    ZX_ASSERT_MSG(status.is_ok(), "ReadEp0Buffer failed: %s", status.status_string());
+  }
   static bool IsEp0OutStalled(Dwc3& drv) { return drv.ep0_.out.stalled; }
   static bool IsEp0InStalled(Dwc3& drv) { return drv.ep0_.in.stalled; }
   static void SetEp0OutEnabled(Dwc3& drv, bool enabled) { drv.ep0_.out.enabled = enabled; }
@@ -257,8 +274,7 @@ class Dwc3TestHelper {
   // Simulation constructs for EP0
   static void SimulateSetupReceived(Dwc3& drv,
                                     const fuchsia_hardware_usb_descriptor::wire::UsbSetup& setup) {
-    void* buf = drv.ep0_.buffer->virt();
-    std::memcpy(buf, &setup, sizeof(setup));
+    WriteEp0Buffer(drv, &setup, 0, sizeof(setup));
 
     ZX_ASSERT_MSG(!drv.ep0_.shared_fifo.IsEmpty(), "SimulateSetupReceived called on empty FIFO!");
     dwc3_trb_t* trb = drv.ep0_.shared_fifo.current_read();
