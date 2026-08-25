@@ -18,6 +18,7 @@ rustc_library("lib") {
     "//third_party/rust_crates:num-traits",
     "//third_party/rust_crates:paste",
     "//third_party/rust_crates:thiserror",
+    "//third_party/rust_crates:zerocopy",
   ]
 
   if (is_fuchsia) {

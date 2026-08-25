@@ -298,7 +298,7 @@ impl<T: Deref<Target = Q>, Q: ReadBytes> Block<T, Header> {
         }
         let offset = (self.index + 1).offset();
         let value = self.container.get_value(offset).ok_or(Error::InvalidOffset(offset))?;
-        Ok(Some(*value))
+        Ok(Some(value))
     }
 
     /// True if the header is locked, false otherwise.
@@ -460,7 +460,7 @@ impl<T: Deref<Target = Q>, Q: ReadBytes> Block<T, Array<StringRef>> {
             return None;
         }
         let offset = (self.index + 1).offset() + slot_index * StringRef::array_entry_type_size();
-        self.container.get_value(offset).map(|i| BlockIndex::new(*i))
+        self.container.get_value(offset).map(BlockIndex::new)
     }
 }
 
@@ -471,7 +471,7 @@ impl<T: Deref<Target = Q>, Q: ReadBytes> Block<T, Array<Int>> {
             return None;
         }
         let offset = (self.index + 1).offset() + slot_index * 8;
-        self.container.get_value(offset).copied()
+        self.container.get_value(offset)
     }
 }
 
@@ -482,7 +482,7 @@ impl<T: Deref<Target = Q>, Q: ReadBytes> Block<T, Array<Double>> {
             return None;
         }
         let offset = (self.index + 1).offset() + slot_index * 8;
-        self.container.get_value(offset).copied()
+        self.container.get_value(offset)
     }
 }
 
@@ -493,7 +493,7 @@ impl<T: Deref<Target = Q>, Q: ReadBytes> Block<T, Array<Uint>> {
             return None;
         }
         let offset = (self.index + 1).offset() + slot_index * 8;
-        self.container.get_value(offset).copied()
+        self.container.get_value(offset)
     }
 }
 
@@ -825,11 +825,7 @@ impl<T: Deref<Target = Q> + DerefMut<Target = Q>, Q: WriteBytes + ReadBytes> Blo
         if self.order() != constants::HEADER_ORDER {
             return Ok(());
         }
-        match self.container.get_value_mut((self.index + 1).offset()) {
-            Some(value) => *value = size,
-            None => return Err(Error::SizeNotWritten(size)),
-        }
-        Ok(())
+        self.container.set_value((self.index + 1).offset(), size)
     }
 
     /// Freeze the HEADER, indicating a VMO is frozen.
@@ -908,7 +904,9 @@ impl<T: Deref<Target = Q> + DerefMut<Target = Q>, Q: WriteBytes + ReadBytes>
         }
         // 0 is used as special value; the reader won't dereference it
         let type_size = StringRef::array_entry_type_size();
-        self.container.set_value((self.index + 1).offset() + slot_index * type_size, *string_index);
+        let _ = self
+            .container
+            .set_value((self.index + 1).offset() + slot_index * type_size, *string_index);
     }
 }
 
@@ -919,7 +917,7 @@ impl<T: Deref<Target = Q> + DerefMut<Target = Q>, Q: WriteBytes + ReadBytes> Blo
             return;
         }
         let type_size = Int::array_entry_type_size();
-        self.container.set_value((self.index + 1).offset() + slot_index * type_size, value);
+        let _ = self.container.set_value((self.index + 1).offset() + slot_index * type_size, value);
     }
 }
 
@@ -932,7 +930,7 @@ impl<T: Deref<Target = Q> + DerefMut<Target = Q>, Q: WriteBytes + ReadBytes>
             return;
         }
         let type_size = Double::array_entry_type_size();
-        self.container.set_value((self.index + 1).offset() + slot_index * type_size, value);
+        let _ = self.container.set_value((self.index + 1).offset() + slot_index * type_size, value);
     }
 }
 
@@ -943,7 +941,7 @@ impl<T: Deref<Target = Q> + DerefMut<Target = Q>, Q: WriteBytes + ReadBytes> Blo
             return;
         }
         let type_size = Uint::array_entry_type_size();
-        self.container.set_value((self.index + 1).offset() + slot_index * type_size, value);
+        let _ = self.container.set_value((self.index + 1).offset() + slot_index * type_size, value);
     }
 }
 
@@ -1092,14 +1090,14 @@ pub mod testing {
         block: &mut Block<&mut T, K>,
         value: u64,
     ) {
-        block.container.set_value(block.header_offset(), value);
+        let _ = block.container.set_value(block.header_offset(), value);
     }
 
     pub fn override_payload<T: WriteBytes + ReadBytes, K: BlockKind>(
         block: &mut Block<&mut T, K>,
         value: u64,
     ) {
-        block.container.set_value(block.payload_offset(), value);
+        let _ = block.container.set_value(block.payload_offset(), value);
     }
 }
 
@@ -1299,6 +1297,34 @@ mod tests {
     }
 
     #[fuchsia::test]
+    fn test_unaligned_buffer_access() {
+        #[repr(C, packed)]
+        struct Unaligned(u8, [u8; 32]);
+
+        let (mut container, _storage) =
+            Container::read_and_write(constants::MIN_ORDER_SIZE * 2).unwrap();
+        let _ = get_reserved(&mut container).become_header(constants::MIN_ORDER_SIZE * 2).unwrap();
+
+        let mut unaligned = Unaligned(0, [0; 32]);
+        assert_eq!(unaligned.0, 0);
+        unaligned.1.copy_from_slice(container.get_slice_at(0, 32).unwrap());
+
+        let block = unaligned.1.block_at_unchecked::<Header>(BlockIndex::EMPTY);
+        assert_eq!(block.magic_number(), constants::HEADER_MAGIC_NUMBER);
+        assert_eq!(block.version(), constants::HEADER_VERSION_NUMBER);
+        assert_eq!(block.generation_count(), 0);
+    }
+
+    #[fuchsia::test]
+    fn test_set_value_invalid_offset() {
+        let mut buffer = [0u8; 16];
+        assert_eq!(buffer.set_value(16, 42u32), Err(Error::InvalidOffset(16)));
+        assert_eq!(buffer.set_value(14, 42u32), Err(Error::InvalidOffset(14)));
+        assert_eq!(buffer.set_value(0, 42u32), Ok(()));
+        assert_eq!(buffer.get_value::<u32>(0), Some(42));
+    }
+
+    #[fuchsia::test]
     #[should_panic]
     fn test_cant_unlock_locked_header() {
         let (mut container, _storage) =
@@ -1327,7 +1353,7 @@ mod tests {
         // and after unlocking, the value is zero.
         let (mut container, _storage) =
             Container::read_and_write(constants::MIN_ORDER_SIZE * 2).unwrap();
-        container.set_value(8, u64::MAX);
+        container.set_value(8, u64::MAX).unwrap();
         let mut block = container.block_at_unchecked_mut::<Header>(BlockIndex::HEADER);
         block.lock();
     }
@@ -1355,7 +1381,7 @@ mod tests {
         assert_8_bytes!(container, 24, [0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]);
 
         // Test overflow: Ensure that after unlocking, the value is zero.
-        container.set_value(8, u64::MAX);
+        container.set_value(8, u64::MAX).unwrap();
         let mut block = container.block_at_unchecked_mut::<Header>(BlockIndex::HEADER);
         block.unlock();
         assert_eq!(block.generation_count(), 0);
@@ -1579,7 +1605,7 @@ mod tests {
         let slice = container.get_slice_at(25, 7).unwrap();
         assert_eq!(slice, [0, 0, 0, 0, 0, 0, 0]);
 
-        *container.get_value_mut::<u8>(24).unwrap() = 0xff;
+        container.set_value::<u8>(24, 0xff).unwrap();
         let bad_block = Block::<_, Name>::new(&container, BlockIndex::EMPTY);
         assert_eq!(bad_block.length(), 17); // Check we copied correctly
         assert!(bad_block.contents().is_err()); // Make sure we get Error not panic
@@ -1601,7 +1627,7 @@ mod tests {
         let block = get_reserved(&mut container).become_name("abcdefghijklmnopqrstu😀");
         assert_eq!(block.contents().unwrap(), "abcdefghijklmnopqrstu");
         let byte = container.get_value::<u8>(31).unwrap();
-        assert_eq!(*byte, 0);
+        assert_eq!(byte, 0);
     }
 
     #[fuchsia::test]

@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
+
 pub trait BlockContainer {
     type Data;
     type ShareableData;
@@ -27,15 +29,11 @@ pub trait ReadBytes: BlockContainer {
         self.get_slice_at(0, size)
     }
 
-    /// Returns a reference to the value at the give offset, if one exists.
+    /// Returns the value at the given offset, if one exists.
     #[inline]
-    fn get_value<T: ContainerValue>(&self, offset: usize) -> Option<&T> {
-        self.get_slice_at(offset, std::mem::size_of::<T>()).map(|slice| {
-            let ptr = slice.as_ptr() as *const T;
-            // SAFETY: our get_slice_at implementations are guaranteed to validate there's a valid
-            // slice.
-            unsafe { &*ptr }
-        })
+    fn get_value<T: ContainerValue>(&self, offset: usize) -> Option<T> {
+        self.get_slice_at(offset, std::mem::size_of::<T>())
+            .and_then(|slice| T::read_from_bytes(slice).ok())
     }
 }
 
@@ -47,7 +45,11 @@ pub trait CopyBytes: BlockContainer {
     }
 }
 
-pub trait ContainerValue: private::Sealed {}
+/// Trait implemented by primitive types that can be read from and written to an Inspect container.
+pub trait ContainerValue:
+    FromBytes + IntoBytes + KnownLayout + Immutable + Copy + private::Sealed + 'static
+{
+}
 
 mod private {
     pub trait Sealed {}
@@ -90,22 +92,18 @@ pub trait WriteBytes {
         self.copy_from_slice_at(0, bytes);
     }
 
-    /// Returns an exclusive reference to the value at the give offset, if one exists.
+    /// Sets the value at the given offset, if in bounds.
     #[inline]
-    fn get_value_mut<T: ContainerValue>(&mut self, offset: usize) -> Option<&mut T> {
-        self.get_slice_mut_at(offset, std::mem::size_of::<T>()).map(|slice| {
-            let ptr = slice.as_mut_ptr() as *mut T;
-            // SAFETY: our get_slice_at implementations are guaranteed to validate there's a valid
-            // slice.
-            unsafe { &mut *ptr }
-        })
-    }
-
-    #[inline]
-    fn set_value<T: ContainerValue>(&mut self, offset: usize, value: T) {
-        // TODO: error
-        if let Some(value_ref) = self.get_value_mut(offset) {
-            *value_ref = value;
+    fn set_value<T: ContainerValue>(
+        &mut self,
+        offset: usize,
+        value: T,
+    ) -> Result<(), crate::Error> {
+        if let Some(slice) = self.get_slice_mut_at(offset, std::mem::size_of::<T>()) {
+            slice.copy_from_slice(value.as_bytes());
+            Ok(())
+        } else {
+            Err(crate::Error::InvalidOffset(offset))
         }
     }
 }

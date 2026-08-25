@@ -28,7 +28,7 @@ macro_rules! bitfield_fields {
                 if let Some(value) = b.container.get_value::<u64>(b.$offset_fn()) {
                     static MASK : u64 = (1 << ($msb - $lsb + 1)) - 1;
                     // This cast is fine. We only deal with u8, u16, u32, u64 here.
-                    return ((*value >> ($lsb % 64)) & MASK ) as $type;
+                    return ((value >> ($lsb % 64)) & MASK ) as $type;
                 }
                 0
             }
@@ -39,10 +39,11 @@ macro_rules! bitfield_fields {
             pub fn [<set_ $name>]<T: Deref<Target=Q> + DerefMut<Target=Q>, Q: WriteBytes + ReadBytes, K: BlockKind>(
                    b: &mut Block<T, K>, value: $type) {
                 let offset = b.$offset_fn();
-                if let Some(num_ref) = b.container.get_value_mut::<u64>(offset) {
+                if let Some(num) = b.container.get_value::<u64>(offset) {
                     static MASK : u64 = (1u64 << ($msb - $lsb + 1)) - 1;
-                    *num_ref = (*num_ref & !MASK.checked_shl($lsb).unwrap_or(0)) |
+                    let new_val = (num & !MASK.checked_shl($lsb).unwrap_or(0)) |
                                (value as u64).checked_shl($lsb).unwrap_or(0);
+                    let _ = b.container.set_value::<u64>(offset, new_val);
                 }
             }
         }
@@ -60,7 +61,7 @@ macro_rules! block_bitfield {
 
             /// Get the raw 64 bits of the header section of the block.
             pub fn value<T: Deref<Target=Q>, Q: ReadBytes, K: BlockKind>(b: &Block<T, K>) -> u64 {
-                b.container.get_value::<u64>(b.$offset_fn()).map(|x| *x).unwrap_or(0)
+                b.container.get_value::<u64>(b.$offset_fn()).unwrap_or(0)
             }
 
             /// Set the raw 64 bits of the header section of the block.
@@ -69,9 +70,7 @@ macro_rules! block_bitfield {
                 b: &mut Block<T, K>, value: u64
             ) {
                 let offset = b.$offset_fn();
-                if let Some(num_ref) = b.container.get_value_mut::<u64>(offset) {
-                    *num_ref = value;
-                }
+                let _ = b.container.set_value::<u64>(offset, value);
             }
         }
     };
