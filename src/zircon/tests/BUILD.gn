@@ -18,5 +18,6 @@ group("tests") {
     "status:tests",
     "stress-tests:tests",
     "vmo:tests",
+    "x86-umip:tests",
   ]
 }
