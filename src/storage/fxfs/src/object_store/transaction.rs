@@ -27,8 +27,9 @@ use scopeguard::ScopeGuard;
 use serde::{Deserialize, Serialize};
 use std::cell::UnsafeCell;
 use std::cmp::Ordering;
-use std::collections::BTreeSet;
 use std::collections::hash_map::Entry;
+use std::collections::{BTreeSet, btree_set};
+use std::iter::Peekable;
 use std::marker::PhantomPinned;
 use std::ops::{Deref, DerefMut, Range};
 use std::sync::Arc;
@@ -770,6 +771,45 @@ impl std::fmt::Debug for TxnMutation<'_> {
             .field("object_id", &self.object_id)
             .field("mutation", &self.mutation)
             .finish()
+    }
+}
+
+/// An iterator over mutations belonging to a single object store within a transaction.
+/// It wraps a mutable reference to a peekable iterator over transaction mutations and yields
+/// mutations until the object ID changes from the object ID peeked at creation time.
+pub struct ObjectMutationIterator<'a, 'b> {
+    iter: &'a mut Peekable<btree_set::Iter<'b, TxnMutation<'b>>>,
+    object_id: u64,
+}
+
+impl<'a, 'b> ObjectMutationIterator<'a, 'b> {
+    pub fn new(iter: &'a mut Peekable<btree_set::Iter<'b, TxnMutation<'b>>>) -> Option<Self> {
+        let object_id = iter.peek()?.object_id;
+        Some(Self { iter, object_id })
+    }
+
+    pub fn object_id(&self) -> u64 {
+        self.object_id
+    }
+}
+
+impl<'b> Iterator for ObjectMutationIterator<'_, 'b> {
+    type Item = &'b Mutation;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.iter.peek().is_some_and(|m| m.object_id == self.object_id) {
+            Some(&self.iter.next().unwrap().mutation)
+        } else {
+            None
+        }
+    }
+}
+
+impl Drop for ObjectMutationIterator<'_, '_> {
+    // Need to have a drop to iterate to the end so that we always finish the current object before
+    // releasing the borrow.
+    fn drop(&mut self) {
+        for _ in self.by_ref() {}
     }
 }
 
@@ -1749,7 +1789,10 @@ impl<'a> From<&'a LockManager> for LockManagerRef<'a> {
 
 #[cfg(test)]
 mod tests {
-    use super::{AttributeId, LockKey, LockKeys, LockManager, LockState, Mutation, Options};
+    use super::{
+        AssocObj, AttributeId, LockKey, LockKeys, LockManager, LockState, Mutation,
+        ObjectMutationIterator, Options, TxnMutation,
+    };
     use crate::filesystem::FxFilesystem;
     use fuchsia_async as fasync;
     use fuchsia_sync::Mutex;
@@ -1757,6 +1800,7 @@ mod tests {
     use futures::future::FutureExt;
     use futures::stream::FuturesUnordered;
     use futures::{StreamExt, join, pin_mut};
+    use std::collections::BTreeSet;
     use std::task::Poll;
     use std::time::Duration;
     use storage_device::DeviceHolder;
@@ -2227,5 +2271,95 @@ mod tests {
             lock_keys![LOCK_KEY_1, LOCK_KEY_2].iter().collect::<Vec<_>>(),
             vec![&LOCK_KEY_1, &LOCK_KEY_2]
         );
+    }
+
+    #[test]
+    fn test_object_mutation_iterator() {
+        let mut mutations = BTreeSet::new();
+        mutations.insert(TxnMutation {
+            object_id: 1,
+            mutation: Mutation::BeginFlush,
+            associated_object: AssocObj::None,
+        });
+        mutations.insert(TxnMutation {
+            object_id: 1,
+            mutation: Mutation::EndFlush,
+            associated_object: AssocObj::None,
+        });
+        mutations.insert(TxnMutation {
+            object_id: 2,
+            mutation: Mutation::DeleteVolume,
+            associated_object: AssocObj::None,
+        });
+
+        let mut iter = mutations.iter().peekable();
+
+        {
+            let mut obj_iter = ObjectMutationIterator::new(&mut iter).expect("expected object 1");
+            assert_eq!(obj_iter.object_id(), 1);
+            assert_eq!(obj_iter.next(), Some(&Mutation::BeginFlush));
+            assert_eq!(obj_iter.next(), Some(&Mutation::EndFlush));
+            assert_eq!(obj_iter.next(), None);
+        }
+
+        {
+            let mut obj_iter = ObjectMutationIterator::new(&mut iter).expect("expected object 2");
+            assert_eq!(obj_iter.object_id(), 2);
+            assert_eq!(obj_iter.next(), Some(&Mutation::DeleteVolume));
+            assert_eq!(obj_iter.next(), None);
+        }
+
+        // No more objects
+        assert!(ObjectMutationIterator::new(&mut iter).is_none());
+    }
+
+    #[test]
+    fn test_object_mutation_iterator_drop_drains_remaining() {
+        let mut mutations = BTreeSet::new();
+        // Object 1 with 3 mutations
+        mutations.insert(TxnMutation {
+            object_id: 1,
+            mutation: Mutation::BeginFlush,
+            associated_object: AssocObj::None,
+        });
+        mutations.insert(TxnMutation {
+            object_id: 1,
+            mutation: Mutation::EndFlush,
+            associated_object: AssocObj::None,
+        });
+        mutations.insert(TxnMutation {
+            object_id: 1,
+            mutation: Mutation::DeleteVolume,
+            associated_object: AssocObj::None,
+        });
+        // Object 2 with 2 mutations
+        mutations.insert(TxnMutation {
+            object_id: 2,
+            mutation: Mutation::BeginFlush,
+            associated_object: AssocObj::None,
+        });
+        mutations.insert(TxnMutation {
+            object_id: 2,
+            mutation: Mutation::EndFlush,
+            associated_object: AssocObj::None,
+        });
+
+        let mut iter = mutations.iter().peekable();
+
+        {
+            let mut obj_iter = ObjectMutationIterator::new(&mut iter).expect("expected object 1");
+            assert_eq!(obj_iter.object_id(), 1);
+            assert_eq!(obj_iter.next(), Some(&Mutation::BeginFlush));
+            // Drop without reading EndFlush or DeleteVolume
+        }
+
+        {
+            let obj_iter = ObjectMutationIterator::new(&mut iter).expect("expected object 2");
+            assert_eq!(obj_iter.object_id(), 2);
+            // Drop immediately without reading any mutations for object 2
+        }
+
+        // Dropping obj_iter for object 2 should have drained all object 2 mutations as well.
+        assert!(ObjectMutationIterator::new(&mut iter).is_none());
     }
 }

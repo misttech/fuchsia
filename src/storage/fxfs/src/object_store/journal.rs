@@ -45,8 +45,8 @@ use crate::object_store::object_record::{AttributeKey, ObjectKey, ObjectKeyData,
 use crate::object_store::transaction::{
     AllocatorMutation, LockKey, Mutation, MutationV40, MutationV41, MutationV43, MutationV46,
     MutationV47, MutationV49, MutationV50, MutationV54, MutationV55, MutationV56,
-    ObjectStoreMutation, Options, TRANSACTION_MAX_JOURNAL_USAGE, Transaction, TxnMutation,
-    lock_keys,
+    ObjectMutationIterator, ObjectStoreMutation, Options, TRANSACTION_MAX_JOURNAL_USAGE,
+    Transaction, lock_keys,
 };
 use crate::object_store::{
     AssocObj, AttributeId, DataObjectHandle, Extent, HandleOptions, HandleOwner, INVALID_OBJECT_ID,
@@ -58,6 +58,7 @@ use crate::serialized_types::{
     LATEST_VERSION, Migrate, Version, Versioned, migrate_nodefault, migrate_to_version,
 };
 use anyhow::{Context, Error, anyhow, bail, ensure};
+use core::iter::Iterator;
 use event_listener::Event;
 use fprint::TypeFingerprint;
 use fuchsia_inspect::NumericProperty;
@@ -1750,11 +1751,13 @@ impl Journal {
                     inner.needs_barrier = true;
                 }
                 let checkpoint = inner.writer.journal_file_checkpoint();
-                for TxnMutation { object_id, mutation, .. } in transaction.mutations() {
-                    self.objects.write_mutation(
-                        *object_id,
-                        mutation,
-                        Writer(*object_id, &mut inner.writer),
+                let mut iter = transaction.mutations().iter().peekable();
+                while let Some(store_iter) = ObjectMutationIterator::new(&mut iter) {
+                    let object_id = store_iter.object_id();
+                    self.objects.write_mutations(
+                        object_id,
+                        store_iter,
+                        Writer(object_id, &mut inner.writer),
                     );
                 }
                 checkpoint

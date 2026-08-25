@@ -46,8 +46,8 @@ use crate::object_store::graveyard::Graveyard;
 use crate::object_store::journal::{JournalCheckpoint, JournalCheckpointV32, JournaledTransaction};
 use crate::object_store::key_manager::KeyManager;
 use crate::object_store::transaction::{
-    AssocObj, AssociatedObject, LockKey, LockKeys, ObjectStoreMutation, Operation, Options,
-    Transaction, WriteGuard, lock_keys,
+    AssocObj, AssociatedObject, LockKey, LockKeys, ObjectMutationIterator, ObjectStoreMutation,
+    Operation, Options, Transaction, WriteGuard, lock_keys,
 };
 use crate::range::RangeExt;
 use crate::round::round_up;
@@ -2689,7 +2689,7 @@ impl ObjectStore {
             crypt.create_key(self.store_object_id, KeyPurpose::Metadata).await?;
 
         // The mutations_cipher lock must be held for the duration so that mutations_cipher and
-        // store_info are updated atomically.  Otherwise, write_mutation could find a new cipher but
+        // store_info are updated atomically.  Otherwise, write_mutations could find a new cipher but
         // end up writing the wrong wrapped key.
         let mut cipher = self.mutations_cipher.lock();
         *cipher = Some(StreamCipher::new(&unwrapped_key, 0));
@@ -3103,60 +3103,69 @@ impl JournalingObject for ObjectStore {
         self.flush_with_reason(flush::Reason::Journal).await
     }
 
-    fn write_mutation(&self, mutation: &Mutation, mut writer: journal::Writer<'_>) {
-        // Intentionally enumerating all variants to force a decision on any new variants. Encrypt
-        // all mutations that could affect an encrypted object store contents or the `StoreInfo` of
-        // the encrypted object store. During `unlock()` any mutations which haven't been encrypted
-        // won't be replayed after reading `StoreInfo`.
-        match mutation {
-            // Whilst CreateInternalDir is a mutation for `StoreInfo`, which isn't encrypted, we
-            // still choose to encrypt the mutation because it makes it easier to deal with replay.
-            // When we replay mutations for an encrypted store, the only thing we keep in memory are
-            // the encrypted mutations; we don't keep `StoreInfo` or changes to it in memory. So, by
-            // encrypting the CreateInternalDir mutation here, it means we don't have to track both
-            // encrypted mutations bound for the LSM tree and unencrypted mutations for `StoreInfo`
-            // to use in `unlock()`. It'll just bundle CreateInternalDir mutations with the other
-            // encrypted mutations and handled them all in sequence during `unlock()`.
-            Mutation::ObjectStore(_) | Mutation::CreateInternalDir(_) => {
-                let mut cipher = self.mutations_cipher.lock();
-                if let Some(cipher) = cipher.as_mut() {
-                    // If this is the first time we've used this key, we must write the key out.
-                    if cipher.offset() == 0 {
-                        writer.write(Mutation::update_mutations_key(
-                            self.store_info
-                                .lock()
-                                .as_ref()
-                                .unwrap()
-                                .mutations_key
-                                .as_ref()
-                                .unwrap()
-                                .clone(),
-                        ));
+    fn write_mutations(
+        &self,
+        mutations: ObjectMutationIterator<'_, '_>,
+        mut writer: journal::Writer<'_>,
+    ) {
+        let mut cipher = self.mutations_cipher.lock();
+        for mutation in mutations {
+            // Intentionally enumerating all variants to force a decision on any new variants.
+            // Encrypt all mutations that could affect an encrypted object store contents or the
+            // `StoreInfo` of the encrypted object store. During `unlock()` any mutations which
+            // haven't been encrypted won't be replayed after reading `StoreInfo`.
+            match mutation {
+                // Whilst CreateInternalDir is a mutation for `StoreInfo`, which isn't encrypted,
+                // we still choose to encrypt the mutation because it makes it easier to deal with
+                // replay. When we replay mutations for an encrypted store, the only thing we keep
+                // in memory are the encrypted mutations; we don't keep `StoreInfo` or changes to
+                // it in memory. So, by encrypting the CreateInternalDir mutation here, it means we
+                // don't have to track both encrypted mutations bound for the LSM tree and
+                // unencrypted mutations for `StoreInfo` to use in `unlock()`. It'll just bundle
+                // CreateInternalDir mutations with the other encrypted mutations and handled them
+                // all in sequence during `unlock()`.
+                Mutation::ObjectStore(_) | Mutation::CreateInternalDir(_) => {
+                    if let Some(cipher) = cipher.as_mut() {
+                        // If this is the first time we've used this key, we must write the key out.
+                        if cipher.offset() == 0 {
+                            writer.write(Mutation::update_mutations_key(
+                                self.store_info
+                                    .lock()
+                                    .as_ref()
+                                    .unwrap()
+                                    .mutations_key
+                                    .as_ref()
+                                    .unwrap()
+                                    .clone(),
+                            ));
+                        }
+                        let mut buffer = Vec::new();
+                        mutation.serialize_into(&mut buffer).unwrap();
+                        cipher.encrypt(&mut buffer);
+                        writer.write(Mutation::EncryptedObjectStore(buffer.into()));
+                        continue;
                     }
-                    let mut buffer = Vec::new();
-                    mutation.serialize_into(&mut buffer).unwrap();
-                    cipher.encrypt(&mut buffer);
-                    writer.write(Mutation::EncryptedObjectStore(buffer.into()));
-                    return;
                 }
+                // `EncryptedObjectStore` and `UpdateMutationsKey` are both obviously associated
+                // with encrypted object stores, but are either the encrypted mutation data itself
+                // or metadata governing how the data will be encrypted. They should only be
+                // produced here.
+                Mutation::EncryptedObjectStore(_) | Mutation::UpdateMutationsKey(_) => {
+                    debug_assert!(false, "Only this method should generate encrypted mutations");
+                }
+                // `BeginFlush` and `EndFlush` are not needed during `unlock()` and are needed
+                // during the initial journal replay, so should not be encrypted. `Allocator`,
+                // `DeleteVolume`, `UpdateBorrowed` mutations are never associated with an
+                // encrypted store as we do not encrypt the allocator or root/root-parent stores so
+                // we can avoid the locking.
+                Mutation::Allocator(_)
+                | Mutation::BeginFlush
+                | Mutation::EndFlush
+                | Mutation::DeleteVolume
+                | Mutation::UpdateBorrowed(_) => {}
             }
-            // `EncryptedObjectStore` and `UpdateMutationsKey` are both obviously associated with
-            // encrypted object stores, but are either the encrypted mutation data itself or
-            // metadata governing how the data will be encrypted. They should only be produced here.
-            Mutation::EncryptedObjectStore(_) | Mutation::UpdateMutationsKey(_) => {
-                debug_assert!(false, "Only this method should generate encrypted mutations");
-            }
-            // `BeginFlush` and `EndFlush` are not needed during `unlock()` and are needed during
-            // the initial journal replay, so should not be encrypted. `Allocator`, `DeleteVolume`,
-            // `UpdateBorrowed` mutations are never associated with an encrypted store as we do not
-            // encrypt the allocator or root/root-parent stores so we can avoid the locking.
-            Mutation::Allocator(_)
-            | Mutation::BeginFlush
-            | Mutation::EndFlush
-            | Mutation::DeleteVolume
-            | Mutation::UpdateBorrowed(_) => {}
+            writer.write(mutation.clone());
         }
-        writer.write(mutation.clone());
     }
 }
 

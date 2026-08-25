@@ -11,7 +11,8 @@ use crate::object_store::allocator::{Allocator, Reservation};
 use crate::object_store::directory::Directory;
 use crate::object_store::journal::{self, JournalCheckpoint};
 use crate::object_store::transaction::{
-    AssocObj, AssociatedObject, MetadataReservation, Mutation, Transaction, TxnMutation,
+    AssocObj, AssociatedObject, MetadataReservation, Mutation, ObjectMutationIterator, Transaction,
+    TxnMutation,
 };
 use crate::object_store::tree_cache::TreeCache;
 use crate::object_store::volume::{VOLUMES_DIRECTORY, list_volumes};
@@ -696,8 +697,13 @@ impl ObjectManager {
         self.inner.write().borrowed_metadata_space = v;
     }
 
-    pub fn write_mutation(&self, object_id: u64, mutation: &Mutation, writer: journal::Writer<'_>) {
-        self.journaling_object(object_id).unwrap().write_mutation(mutation, writer);
+    pub fn write_mutations(
+        &self,
+        object_id: u64,
+        mutations: ObjectMutationIterator<'_, '_>,
+        writer: journal::Writer<'_>,
+    ) {
+        self.journaling_object(object_id).unwrap().write_mutations(mutations, writer);
     }
 
     pub fn unlocked_stores(&self) -> Vec<Arc<ObjectStore>> {

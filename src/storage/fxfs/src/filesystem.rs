@@ -14,7 +14,7 @@ use crate::object_store::journal::super_block::{SuperBlockHeader, SuperBlockInst
 use crate::object_store::journal::{self, Journal, JournalCheckpoint, JournalOptions};
 use crate::object_store::object_manager::ObjectManager;
 use crate::object_store::transaction::{
-    self, AssocObj, LockKey, LockManager, MetadataReservation, Mutation,
+    self, AssocObj, LockKey, LockManager, MetadataReservation, Mutation, ObjectMutationIterator,
     TRANSACTION_METADATA_MAX_AMOUNT, Transaction, WriteGuard, lock_keys,
 };
 use crate::object_store::volume::{VOLUMES_DIRECTORY, root_volume};
@@ -218,10 +218,16 @@ pub trait JournalingObject: Send + Sync {
     /// Also returns the earliest version of a struct in the filesystem.
     async fn flush(&self) -> Result<Version, Error>;
 
-    /// Writes a mutation to the journal.  This allows objects to encrypt or otherwise modify what
+    /// Writes mutations to the journal.  This allows objects to encrypt or otherwise modify what
     /// gets written to the journal.
-    fn write_mutation(&self, mutation: &Mutation, mut writer: journal::Writer<'_>) {
-        writer.write(mutation.clone());
+    fn write_mutations(
+        &self,
+        mutations: ObjectMutationIterator<'_, '_>,
+        mut writer: journal::Writer<'_>,
+    ) {
+        for mutation in mutations {
+            writer.write(mutation.clone());
+        }
     }
 }
 
