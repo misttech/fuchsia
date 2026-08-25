@@ -58,16 +58,16 @@ const DOMAIN_INFOS: [DomainInfo; 4] = [
 
 unsafe extern "C" {
     fn cpp_iris_get_opp_vaddr() -> usize;
-    fn psci_system_reset_cold() -> Status;
-    fn psci_system_reset2_raw(reset_type: u32, cookie: u32) -> Status;
-    fn psci_system_off() -> Status;
-    fn psci_cpu_off() -> Status;
-    fn psci_cpu_on(hw_cpu_id: u64, entry: u64, context: u64) -> Status;
-    fn psci_get_cpu_state(hw_cpu_id: u64, out_state: *mut PowerCpuState) -> Status;
+    fn psci_system_reset_cold() -> Result<(), Status>;
+    fn psci_system_reset2_raw(reset_type: u32, cookie: u32) -> Result<(), Status>;
+    fn psci_system_off() -> Result<(), Status>;
+    fn psci_cpu_off() -> Result<(), Status>;
+    fn psci_cpu_on(hw_cpu_id: u64, entry: u64, context: u64) -> Result<(), Status>;
+    fn psci_get_cpu_state(hw_cpu_id: u64, out_state: *mut PowerCpuState) -> Result<(), Status>;
 }
 
 /// Reboots the system via PSCI cold reset or vendor-specific warm reset for panic.
-extern "C" fn iris_reboot(flags: PowerRebootFlags) -> Status {
+extern "C" fn iris_reboot(flags: PowerRebootFlags) -> Result<(), Status> {
     match flags {
         PowerRebootFlags::Normal | PowerRebootFlags::Bootloader | PowerRebootFlags::Recovery => {
             dprintf!(INFO, "Iris reboot: performing cold reset\n");
@@ -83,27 +83,30 @@ extern "C" fn iris_reboot(flags: PowerRebootFlags) -> Status {
 }
 
 /// Shuts down the system via PSCI system off call.
-extern "C" fn iris_shutdown() -> Status {
+extern "C" fn iris_shutdown() -> Result<(), Status> {
     // SAFETY: PSCI system off call to hardware firmware.
     unsafe { psci_system_off() }
 }
 
 /// Powers off the calling CPU core via PSCI cpu off call.
-extern "C" fn iris_cpu_off() -> Status {
+extern "C" fn iris_cpu_off() -> Result<(), Status> {
     // SAFETY: PSCI CPU off call.
     unsafe { psci_cpu_off() }
 }
 
 /// Powers on the CPU core with the specified hardware ID via PSCI.
-extern "C" fn iris_cpu_on(hw_cpu_id: u64, entry: u64, context: u64) -> Status {
+extern "C" fn iris_cpu_on(hw_cpu_id: u64, entry: u64, context: u64) -> Result<(), Status> {
     // SAFETY: PSCI CPU on call.
     unsafe { psci_cpu_on(hw_cpu_id, entry, context) }
 }
 
 /// Retrieves the current power state of the CPU core with the specified hardware ID.
-extern "C" fn iris_get_cpu_state(hw_cpu_id: u64, out_state: *mut PowerCpuState) -> Status {
+extern "C" fn iris_get_cpu_state(
+    hw_cpu_id: u64,
+    out_state: *mut PowerCpuState,
+) -> Result<(), Status> {
     if out_state.is_null() {
-        return Status::INVALID_ARGS;
+        return Err(Status::INVALID_ARGS);
     }
     // SAFETY: `out_state` was checked non-null above.
     unsafe { psci_get_cpu_state(hw_cpu_id, out_state) }
@@ -122,40 +125,40 @@ fn get_opp_bank() -> Option<MmioBank<u32, RwSafe>> {
 }
 
 /// Sets the active Operating Performance Point (OPP) for the specified power domain.
-extern "C" fn iris_opp_set(domain_id: u32, opp: u64) -> Status {
+extern "C" fn iris_opp_set(domain_id: u32, opp: u64) -> Result<(), Status> {
     let Some(bank) = get_opp_bank() else {
-        return Status::BAD_STATE;
+        return Err(Status::BAD_STATE);
     };
     let Ok(domain_index) = usize::try_from(domain_id) else {
-        return Status::INVALID_ARGS;
+        return Err(Status::INVALID_ARGS);
     };
     let Some(info) = DOMAIN_INFOS.get(domain_index) else {
-        return Status::INVALID_ARGS;
+        return Err(Status::INVALID_ARGS);
     };
     if opp >= info.opp_count as u64 {
-        return Status::INVALID_ARGS;
+        return Err(Status::INVALID_ARGS);
     }
 
     let mmio_opp = (opp as u32) + info.mmio_offset;
     // SAFETY: `info.reg_offset` is within `OPP_BANK_SIZE` (0x20) and aligned to 4 bytes.
     let reg = unsafe { bank.at(info.reg_offset) };
     reg.write(mmio_opp);
-    Status::OK
+    Ok(())
 }
 
 /// Retrieves the active Operating Performance Point (OPP) for the specified power domain.
-extern "C" fn iris_opp_get(domain_id: u32, out_opp: *mut u64) -> Status {
+extern "C" fn iris_opp_get(domain_id: u32, out_opp: *mut u64) -> Result<(), Status> {
     if out_opp.is_null() {
-        return Status::INVALID_ARGS;
+        return Err(Status::INVALID_ARGS);
     }
     let Some(bank) = get_opp_bank() else {
-        return Status::BAD_STATE;
+        return Err(Status::BAD_STATE);
     };
     let Ok(domain_index) = usize::try_from(domain_id) else {
-        return Status::INVALID_ARGS;
+        return Err(Status::INVALID_ARGS);
     };
     let Some(info) = DOMAIN_INFOS.get(domain_index) else {
-        return Status::INVALID_ARGS;
+        return Err(Status::INVALID_ARGS);
     };
 
     // SAFETY: `info.reg_offset` is within `OPP_BANK_SIZE` (0x20) and aligned to 4 bytes.
@@ -166,19 +169,19 @@ extern "C" fn iris_opp_get(domain_id: u32, out_opp: *mut u64) -> Status {
     unsafe {
         *out_opp = opp;
     }
-    Status::OK
+    Ok(())
 }
 
 /// Retrieves the number of supported OPP control domains.
-extern "C" fn iris_opp_get_domain_count(out_count: *mut usize) -> Status {
+extern "C" fn iris_opp_get_domain_count(out_count: *mut usize) -> Result<(), Status> {
     if out_count.is_null() {
-        return Status::INVALID_ARGS;
+        return Err(Status::INVALID_ARGS);
     }
     // SAFETY: `out_count` was checked non-null above.
     unsafe {
         *out_count = POWER_DOMAIN_COUNT;
     }
-    Status::OK
+    Ok(())
 }
 
 static IRIS_POWER_OPS: PdevPowerOps = PdevPowerOps {
@@ -295,8 +298,7 @@ pub extern "C" fn iris_power_init() {
             level_count: config.frequencies.len() + 1,
         };
 
-        let status = power_management_register_domains(&[domain_config]);
-        if status != Status::OK {
+        if let Err(status) = power_management_register_domains(&[domain_config]) {
             dprintf!(
                 CRITICAL,
                 "POWER: Failed to register iris power domain {}: {}\n",
@@ -315,21 +317,19 @@ pub extern "C" fn iris_power_init() {
 #[unittest::suite(name = "iris_power")]
 mod tests {
     use super::{OPP_REG_BASE, Ordering};
-    use unittest::{assert_eq, assert_ok, assert_true};
+    use unittest::{assert_eq, assert_err, assert_ok};
     use zx_status::Status;
 
     /// Tests that passing a null output pointer to get_cpu_state returns INVALID_ARGS.
     #[test]
     fn test_iris_get_cpu_state_null_arg() {
-        assert_true!(super::iris_get_cpu_state(0, core::ptr::null_mut()) == Status::INVALID_ARGS);
+        assert_err!(super::iris_get_cpu_state(0, core::ptr::null_mut()), Status::INVALID_ARGS);
     }
 
     /// Tests opp_get_domain_count.
     #[test]
     fn test_iris_opp_get_domain_count() {
-        assert_true!(
-            super::iris_opp_get_domain_count(core::ptr::null_mut()) == Status::INVALID_ARGS
-        );
+        assert_err!(super::iris_opp_get_domain_count(core::ptr::null_mut()), Status::INVALID_ARGS);
 
         let mut count = 0usize;
         assert_ok!(super::iris_opp_get_domain_count(&mut count));
@@ -358,11 +358,11 @@ mod tests {
         assert_eq!(opp, 10);
 
         // Test Out of bounds domain
-        assert_true!(super::iris_opp_set(4, 0) == Status::INVALID_ARGS);
-        assert_true!(super::iris_opp_get(4, &mut opp) == Status::INVALID_ARGS);
+        assert_err!(super::iris_opp_set(4, 0), Status::INVALID_ARGS);
+        assert_err!(super::iris_opp_get(4, &mut opp), Status::INVALID_ARGS);
 
         // Test Out of bounds opp
-        assert_true!(super::iris_opp_set(0, 22) == Status::INVALID_ARGS);
+        assert_err!(super::iris_opp_set(0, 22), Status::INVALID_ARGS);
 
         // Restore original base pointer
         OPP_REG_BASE.store(old_base, Ordering::SeqCst);

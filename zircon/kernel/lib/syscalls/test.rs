@@ -98,10 +98,10 @@ pub fn sys_syscall_test_rust_8(
 #[syscall]
 pub fn sys_syscall_test_rust_wrapper(a: i32, b: i32, c: i32) -> Result<(), ErrorStatus> {
     if a < 0 || b < 0 || c < 0 {
-        return Err(Status::INVALID_ARGS.into());
+        return Err(Status::INVALID_ARGS);
     }
     let ret = a.wrapping_add(b).wrapping_add(c);
-    if ret > 50 { Err(Status::OUT_OF_RANGE.into()) } else { ErrorStatus::ok(ret) }
+    if ret > 50 { Err(Status::OUT_OF_RANGE) } else { ErrorStatus::ok(ret) }
 }
 
 #[syscall]
@@ -110,7 +110,7 @@ pub fn sys_syscall_test_rust_inptr(
     value: UserOutPtr<i32>,
 ) -> Result<(), ErrorStatus> {
     if ptr.is_null() || value.is_null() {
-        return Err(Status::INVALID_ARGS.into());
+        return Err(Status::INVALID_ARGS);
     }
     let val = ptr.read()?;
     value.write(val)?;
@@ -120,7 +120,7 @@ pub fn sys_syscall_test_rust_inptr(
 #[syscall]
 pub fn sys_syscall_test_rust_outptr(value: i32, ptr: UserOutPtr<i32>) -> Result<(), ErrorStatus> {
     if ptr.is_null() {
-        return Err(Status::INVALID_ARGS.into());
+        return Err(Status::INVALID_ARGS);
     }
     ptr.write(value)?;
     Ok(())
@@ -129,7 +129,7 @@ pub fn sys_syscall_test_rust_outptr(value: i32, ptr: UserOutPtr<i32>) -> Result<
 #[syscall]
 pub fn sys_syscall_test_rust_inoutptr(ptr: UserInOutPtr<i32>) -> Result<(), ErrorStatus> {
     if ptr.is_null() {
-        return Err(Status::INVALID_ARGS.into());
+        return Err(Status::INVALID_ARGS);
     }
     let val = ptr.read()?;
     ptr.write(val.wrapping_add(val))?;
@@ -142,7 +142,7 @@ pub fn sys_syscall_test_rust_handle(
     value: UserOutPtr<u32>,
 ) -> Result<(), ErrorStatus> {
     if value.is_null() {
-        return Err(Status::INVALID_ARGS.into());
+        return Err(Status::INVALID_ARGS);
     }
     value.write(handle.raw_value())?;
     Ok(())

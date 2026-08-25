@@ -7,28 +7,26 @@
 #![no_std]
 
 use core::fmt;
+use core::num::NonZero;
 
 pub mod sys {
     pub use zx_types::{ZX_OK, zx_status_t};
 }
 
-// Creates associated constants of TypeName of the form
-// `pub const NAME: TypeName = TypeName(path::to::value);`
-// and provides a private `assoc_const_name` method and a `Debug` implementation
-// for the type based on `$name`.
-// If multiple names match, the first will be used in `name` and `Debug`.
-#[macro_export]
 macro_rules! assoc_values {
     ($typename:ident, [$($(#[$attr:meta])* $name:ident = $value:path;)*]) => {
         #[allow(non_upper_case_globals)]
         impl $typename {
             $(
                 $(#[$attr])*
-                pub const $name: $typename = $typename($value);
+                pub const $name: $typename = match $typename::try_from_raw($value) {
+                    Some(val) => val,
+                    None => panic!("Status values must be non-zero"),
+                };
             )*
 
             const fn assoc_const_name(&self) -> Option<&'static str> {
-                match self.0 {
+                match self.0.get() {
                     $(
                         $value => Some(stringify!($name)),
                     )*
@@ -42,23 +40,23 @@ macro_rules! assoc_values {
                 f.write_str(concat!(stringify!($typename), "("))?;
                 match self.assoc_const_name() {
                     Some(name) => f.write_str(&name)?,
-                    None => ::core::fmt::Debug::fmt(&self.0, f)?,
+                    None => ::core::fmt::Debug::fmt(&self.0.get(), f)?,
                 }
                 f.write_str(")")
             }
         }
-    }
+    };
 }
 
-/// Status type indicating the result of a Fuchsia syscall.
+/// A non-zero Zircon status code representing an error.
 ///
-/// This type is generally used to indicate the reason for an error.
-/// While this type can contain `Status::OK` (`ZX_OK` in C land), elements of this type are
-/// generally constructed using the `ok` method, which checks for `ZX_OK` and returns a
-/// `Result<(), Status>` appropriately.
+/// Because this wraps a `core::num::NonZero<zx_types::zx_status_t>`, `Result<(), Status>`
+/// has a niche at `0` (`ZX_OK`), guaranteeing that `Result<(), Status>` has the exact same
+/// 4-byte memory layout and machine ABI as `zx_types::zx_status_t`.
 #[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Hash)]
 #[repr(transparent)]
-pub struct Status(zx_types::zx_status_t);
+pub struct Status(NonZero<zx_types::zx_status_t>);
+
 impl Status {
     /// Returns the symbolic name of the status (e.g. `"INVALID_ARGS"`), or `"UNKNOWN"` if
     /// unrecognized.
@@ -70,10 +68,14 @@ impl Status {
         }
     }
 
-    /// Returns `Ok(())` if the status was `OK`,
+    /// Returns `Ok(())` if the status was `ZX_OK` (0),
     /// otherwise returns `Err(status)`.
-    pub fn ok(raw: zx_types::zx_status_t) -> Result<(), Status> {
-        if raw == Status::OK.0 { Ok(()) } else { Err(Status(raw)) }
+    #[inline]
+    pub const fn ok(raw: zx_types::zx_status_t) -> Result<(), Status> {
+        match NonZero::new(raw) {
+            Some(err) => Err(Status(err)),
+            None => Ok(()),
+        }
     }
 
     /// Returns the raw `zx_status_t` code corresponding to a `Result<(), Status>`.
@@ -83,14 +85,17 @@ impl Status {
     pub const fn result_into_raw(res: Result<(), Self>) -> zx_types::zx_status_t {
         match res {
             Ok(()) => zx_types::ZX_OK,
-            Err(status) => status.0,
+            Err(status) => status.0.get(),
         }
     }
 
     /// Returns `Some(status)` if `raw` is not `ZX_OK`, otherwise returns `None`.
     #[inline]
     pub const fn try_from_raw(raw: zx_types::zx_status_t) -> Option<Self> {
-        if raw == zx_types::ZX_OK { None } else { Some(Status(raw)) }
+        match NonZero::new(raw) {
+            Some(err) => Some(Self(err)),
+            None => None,
+        }
     }
 
     /// Returns a `Status` for `raw`. If `raw` is `ZX_OK` (`0`), returns `Status::INTERNAL`.
@@ -102,20 +107,9 @@ impl Status {
         }
     }
 
-    /// Creates a `Status` from a raw `zx_status_t`.
-    ///
-    /// # Deprecated
-    ///
-    /// This function is deprecated because it does not verify whether `raw` is `0` (`ZX_OK`).
-    /// Prefer [`Status::ok`] or [`Status::try_from_raw`] instead.
     #[inline]
-    #[doc(hidden)]
-    pub const fn from_raw(raw: zx_types::zx_status_t) -> Self {
-        Status(raw)
-    }
-
-    pub fn into_raw(self) -> zx_types::zx_status_t {
-        self.0
+    pub const fn into_raw(self) -> zx_types::zx_status_t {
+        self.0.get()
     }
 }
 
@@ -126,8 +120,6 @@ pub fn ok(raw: zx_types::zx_status_t) -> Result<(), Status> {
 
 // LINT.IfChange(zx_status_t)
 assoc_values!(Status, [
-    #[doc = "Indicates an operation was successful."]
-    OK                     = zx_types::ZX_OK;
     #[doc = "The system encountered an otherwise unspecified error while performing the"]
     #[doc = "operation."]
     INTERNAL               = zx_types::ZX_ERR_INTERNAL;
@@ -296,35 +288,62 @@ assoc_values!(Status, [
 ]);
 // LINT.ThenChange(//zircon/vdso/errors.fidl)
 
-impl Status {
-    pub fn from_result(res: Result<(), Self>) -> Self {
-        res.into()
-    }
-}
-
 impl fmt::Display for Status {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self.assoc_const_name() {
             Some(name) => name.fmt(f),
-            None => write!(f, "Unknown zircon status code: {}", self.0),
+            None => write!(f, "Unknown zircon status code: {}", self.0.get()),
         }
     }
 }
 
 impl core::error::Error for Status {}
 
-impl From<Result<(), Status>> for Status {
-    fn from(res: Result<(), Status>) -> Status {
-        match res {
-            Ok(()) => Self::OK,
-            Err(status) => status,
-        }
+impl From<NonZero<zx_types::zx_status_t>> for Status {
+    #[inline]
+    fn from(val: NonZero<zx_types::zx_status_t>) -> Self {
+        Status(val)
     }
 }
 
+impl From<Status> for NonZero<zx_types::zx_status_t> {
+    #[inline]
+    fn from(status: Status) -> Self {
+        status.0
+    }
+}
+
+impl From<Status> for zx_types::zx_status_t {
+    #[inline]
+    fn from(status: Status) -> zx_types::zx_status_t {
+        status.into_raw()
+    }
+}
+
+impl TryFrom<zx_types::zx_status_t> for Status {
+    type Error = TryFromRawError;
+
+    #[inline]
+    fn try_from(raw: zx_types::zx_status_t) -> Result<Self, Self::Error> {
+        Status::try_from_raw(raw).ok_or(TryFromRawError)
+    }
+}
+
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+pub struct TryFromRawError;
+
+impl fmt::Display for TryFromRawError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "cannot convert ZX_OK (0) to Status")
+    }
+}
+
+impl core::error::Error for TryFromRawError {}
+
 impl From<Status> for Result<(), Status> {
+    #[inline]
     fn from(src: Status) -> Result<(), Status> {
-        Status::ok(src.into_raw())
+        Err(src)
     }
 }
 
@@ -334,62 +353,7 @@ impl From<core::convert::Infallible> for Status {
     }
 }
 
-/// A non-zero Zircon status code representing an error.
-///
-/// Because this wraps a `NonZero<zx_types::zx_status_t>`, `Result<T, ErrorStatus>` has a niche at `0`
-/// (`ZX_OK`), guaranteeing that `Result<(), ErrorStatus>` has the exact same 4-byte memory layout
-/// and machine ABI as `zx_types::zx_status_t` (`Status`).
-#[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Hash)]
-#[repr(transparent)]
-pub struct ErrorStatus(core::num::NonZero<zx_types::zx_status_t>);
-
-impl ErrorStatus {
-    pub fn from_raw(raw: zx_types::zx_status_t) -> Option<Self> {
-        core::num::NonZero::new(raw).map(ErrorStatus)
-    }
-
-    pub fn into_raw(self) -> zx_types::zx_status_t {
-        self.0.get()
-    }
-
-    pub fn ok(raw: zx_types::zx_status_t) -> Result<(), Self> {
-        match core::num::NonZero::new(raw) {
-            Some(err) => Err(ErrorStatus(err)),
-            None => Ok(()),
-        }
-    }
-}
-
-impl From<Status> for ErrorStatus {
-    #[inline]
-    fn from(status: Status) -> Self {
-        ErrorStatus(
-            core::num::NonZero::new(status.into_raw())
-                .expect("Attempted to convert Status::OK into ErrorStatus"),
-        )
-    }
-}
-
-impl From<ErrorStatus> for Status {
-    #[inline]
-    fn from(err: ErrorStatus) -> Self {
-        Status::from_raw(err.0.get())
-    }
-}
-
-impl fmt::Debug for ErrorStatus {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        fmt::Debug::fmt(&Status::from_raw(self.0.get()), f)
-    }
-}
-
-impl fmt::Display for ErrorStatus {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        fmt::Display::fmt(&Status::from_raw(self.0.get()), f)
-    }
-}
-
-impl core::error::Error for ErrorStatus {}
+pub type ErrorStatus = Status;
 
 #[cfg(test)]
 mod test {
@@ -399,10 +363,9 @@ mod test {
     #[test]
     fn status_debug_format() {
         let cases = [
-            ("Status(OK)", Status::OK),
             ("Status(BAD_SYSCALL)", Status::BAD_SYSCALL),
             ("Status(NEXT)", Status::NEXT),
-            ("Status(-5050)", Status(-5050)),
+            ("Status(-5050)", Status::err_from_raw(-5050)),
         ];
         for &(expected, value) in &cases {
             assert_eq!(expected, std::format!("{value:?}"));
@@ -411,17 +374,15 @@ mod test {
 
     #[test]
     fn status_into_result() {
-        let ok_result: Result<(), Status> = Status::OK.into();
-        assert_eq!(ok_result, Ok(()));
-
         let err_result: Result<(), Status> = Status::BAD_SYSCALL.into();
         assert_eq!(err_result, Err(Status::BAD_SYSCALL));
     }
 
     #[test]
-    fn error_status_conversions() {
-        let err_res: Result<(), super::ErrorStatus> = Err(Status::BAD_SYSCALL.into());
-        assert_eq!(err_res, Err(Status::BAD_SYSCALL.into()));
+    fn status_layout() {
+        use core::mem::size_of;
+        assert_eq!(size_of::<Status>(), 4);
+        assert_eq!(size_of::<Result<(), Status>>(), 4);
     }
 
     #[test]
@@ -431,9 +392,15 @@ mod test {
     }
 
     #[test]
+    fn test_try_from() {
+        use super::TryFromRawError;
+        assert_eq!(Status::try_from(zx_types::ZX_OK), Err(TryFromRawError));
+        assert_eq!(Status::try_from(zx_types::ZX_ERR_NOT_FOUND), Ok(Status::NOT_FOUND));
+    }
+
+    #[test]
     fn test_as_str() {
-        assert_eq!(Status::OK.as_str(), "OK");
         assert_eq!(Status::INVALID_ARGS.as_str(), "INVALID_ARGS");
-        assert_eq!(Status::from_raw(-9999).as_str(), "UNKNOWN");
+        assert_eq!(Status::err_from_raw(-9999).as_str(), "UNKNOWN");
     }
 }

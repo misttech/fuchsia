@@ -258,7 +258,7 @@ pub unsafe extern "C" fn rust_smbios_walk_structs(
             )
         };
 
-        if status_raw == Status::OK.into_raw() { Ok(()) } else { Err(Status::from_raw(status_raw)) }
+        Status::ok(status_raw)
     });
 
     Status::result_into_raw(res)
@@ -353,7 +353,7 @@ unsafe extern "C" fn cmd_smbios(argc: i32, argv: *const CmdArgs, _flags: u32) ->
                 printf(c"smbios: failed to walk structs: %d\n".as_ptr(), status.into_raw());
             }
         }
-        Status::OK.into_raw()
+        zx_status::sys::ZX_OK
     } else {
         // SAFETY: `printf` format string is a valid null-terminated C string.
         unsafe {

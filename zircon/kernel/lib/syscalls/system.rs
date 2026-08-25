@@ -89,14 +89,14 @@ pub fn sys_system_mexec_payload_get(
     buffer_size: usize,
 ) -> Result<(), ErrorStatus> {
     if !BootOptions::get().enable_debugging_syscalls {
-        return Err(Status::NOT_SUPPORTED.into());
+        return Err(Status::NOT_SUPPORTED);
     }
     // Highly privileged, only mexec resource should have access.
     validate_system_resource(resource, ZX_RSRC_SYSTEM_MEXEC_BASE)?;
 
     // Limit the size of the result that we can return to userspace.
     if buffer_size > BOOTDATA_PLATFORM_EXTRA_BYTES {
-        return Err(Status::INVALID_ARGS.into());
+        return Err(Status::INVALID_ARGS);
     }
 
     let mut buffer =
@@ -121,7 +121,7 @@ pub fn sys_system_mexec(
     data_zbi_vmo: HandleValue,
 ) -> Result<(), ErrorStatus> {
     if !BootOptions::get().enable_debugging_syscalls {
-        return Err(Status::NOT_SUPPORTED.into());
+        return Err(Status::NOT_SUPPORTED);
     }
     validate_system_resource(resource, ZX_RSRC_SYSTEM_MEXEC_BASE)?;
 
@@ -153,7 +153,7 @@ pub fn sys_system_get_event(
 
     // Validate that the job is in fact the first usermode job (aka root job).
     if !job.is_root() {
-        return Err(Status::ACCESS_DENIED.into());
+        return Err(Status::ACCESS_DENIED);
     }
 
     match kind {
@@ -170,7 +170,7 @@ pub fn sys_system_get_event(
             })?;
             Ok(())
         }
-        _ => Err(Status::INVALID_ARGS.into()),
+        _ => Err(Status::INVALID_ARGS),
     }
 }
 
@@ -208,7 +208,7 @@ pub fn sys_system_set_performance_info(
     // SAFETY: Getting processor count from percpu has no preconditions.
     let num_cpus = unsafe { cpp_percpu_processor_count() };
     if count == 0 || count > num_cpus {
-        return Err(Status::OUT_OF_RANGE.into());
+        return Err(Status::OUT_OF_RANGE);
     }
 
     match topic {
@@ -224,14 +224,14 @@ pub fn sys_system_set_performance_info(
             for info in performance_info.iter() {
                 let cpu = info.logical_cpu_number;
                 if last_cpu != u32::MAX && cpu <= last_cpu {
-                    return Err(Status::INVALID_ARGS.into());
+                    return Err(Status::INVALID_ARGS);
                 }
                 last_cpu = cpu;
                 if cpu as usize >= num_cpus
                     || (info.performance_scale.integer_part == 0
                         && info.performance_scale.fractional_part == 0)
                 {
-                    return Err(Status::OUT_OF_RANGE.into());
+                    return Err(Status::OUT_OF_RANGE);
                 }
             }
             // SAFETY: Passing valid slice pointer and count to C++ scheduler.
@@ -251,15 +251,15 @@ pub fn sys_system_set_performance_info(
             for entry in limit_info.iter() {
                 let cpu = entry.logical_cpu_number;
                 if last_cpu != u32::MAX && cpu <= last_cpu {
-                    return Err(Status::INVALID_ARGS.into());
+                    return Err(Status::INVALID_ARGS);
                 }
                 last_cpu = cpu;
                 if cpu as usize >= num_cpus {
-                    return Err(Status::OUT_OF_RANGE.into());
+                    return Err(Status::OUT_OF_RANGE);
                 }
                 // TODO(eieio): Add support for the other limit types.
                 if entry.limit_type != ZX_CPU_PERF_LIMIT_TYPE_RATE {
-                    return Err(Status::NOT_SUPPORTED.into());
+                    return Err(Status::NOT_SUPPORTED);
                 }
             }
             // SAFETY: Passing valid slice pointer and count to C++ scheduler.
@@ -268,7 +268,7 @@ pub fn sys_system_set_performance_info(
             }
             Ok(())
         }
-        _ => Err(Status::INVALID_ARGS.into()),
+        _ => Err(Status::INVALID_ARGS),
     }
 }
 
@@ -285,10 +285,10 @@ pub fn sys_system_get_performance_info(
     // SAFETY: Getting processor count from percpu has no preconditions.
     let num_cpus = unsafe { cpp_percpu_processor_count() };
     if info_count != num_cpus {
-        return Err(Status::OUT_OF_RANGE.into());
+        return Err(Status::OUT_OF_RANGE);
     }
     if output_count.is_null() {
-        return Err(Status::INVALID_ARGS.into());
+        return Err(Status::INVALID_ARGS);
     }
 
     match topic {
@@ -321,7 +321,7 @@ pub fn sys_system_get_performance_info(
             output_count.write(info_count)?;
             Ok(())
         }
-        _ => Err(Status::INVALID_ARGS.into()),
+        _ => Err(Status::INVALID_ARGS),
     }
 }
 
@@ -350,7 +350,7 @@ pub fn sys_system_powerctl(
             Ok(())
         }
         #[cfg(target_arch = "x86_64")]
-        ZX_SYSTEM_POWERCTL_ACPI_TRANSITION_S_STATE => Err(Status::NOT_SUPPORTED.into()),
+        ZX_SYSTEM_POWERCTL_ACPI_TRANSITION_S_STATE => Err(Status::NOT_SUPPORTED),
         #[cfg(target_arch = "x86_64")]
         ZX_SYSTEM_POWERCTL_X86_SET_PKG_PL1 => {
             let arg = raw_arg.read()?;
@@ -385,7 +385,7 @@ pub fn sys_system_powerctl(
             unsafe { cpp_platform_graceful_halt_helper(HALT_ACTION_SHUTDOWN) };
             Ok(())
         }
-        _ => Err(Status::INVALID_ARGS.into()),
+        _ => Err(Status::INVALID_ARGS),
     }
 }
 
@@ -405,7 +405,7 @@ pub fn sys_system_suspend_enter(
 
     // Make sure that any flags passed by the user are defined.
     if options & !VALID_SUSPEND_FLAGS != 0 {
-        return Err(Status::INVALID_ARGS.into());
+        return Err(Status::INVALID_ARGS);
     }
 
     // The event parameters need to be "consistent".  IOW - if someone wants
@@ -415,7 +415,7 @@ pub fn sys_system_suspend_enter(
     // zero.
     let wants_entries = !out_entries.is_null();
     if (wants_entries != (num_entries > 0)) || (wants_entries != !actual_entries.is_null()) {
-        return Err(Status::INVALID_ARGS.into());
+        return Err(Status::INVALID_ARGS);
     }
 
     // Additionally, if the user passes space for entries, they have to have passed
@@ -423,7 +423,7 @@ pub fn sys_system_suspend_enter(
     // any entries, but not the other way around.
     let wants_report = !out_header.is_null();
     if wants_entries && !wants_report {
-        return Err(Status::INVALID_ARGS.into());
+        return Err(Status::INVALID_ARGS);
     }
 
     // If the user has asked us to discard wake entries for wake vectors which are
@@ -438,7 +438,7 @@ pub fn sys_system_suspend_enter(
     // header, then generate the report and get out.
     if options & ZX_SYSTEM_SUSPEND_OPTION_REPORT_ONLY != 0 {
         if !wants_report {
-            return Err(Status::INVALID_ARGS.into());
+            return Err(Status::INVALID_ARGS);
         }
         // SAFETY: Pass user pointers to C++ report generator after validating pointer consistency.
         let status = unsafe {

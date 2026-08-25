@@ -24,7 +24,7 @@ pub fn sys_fifo_create(
     ltracef!("elem_count {elem_count}, elem_size {elem_size}, options {options:#x}\n");
 
     if options != 0 {
-        return Err(Status::INVALID_ARGS.into());
+        return Err(Status::INVALID_ARGS);
     }
 
     ProcessDispatcher::with_current(|up| up.enforce_basic_policy(ZX_POL_NEW_FIFO))?;

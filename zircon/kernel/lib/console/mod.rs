@@ -848,24 +848,24 @@ pub mod console {
         mut get_line: Option<F>,
         showprompt: bool,
         locked: bool,
-    ) -> zx_status::Status
+    ) -> Result<(), zx_status::Status>
     where
         F: FnMut(&mut [u8; LINE_LEN]) -> Option<usize>,
     {
         let mut exit = false;
-        let mut ret = zx_status::Status::OK;
+        let mut ret = Ok(());
 
         // Allocate large buffers on the heap to avoid kernel stack overflows.
         const MAX_NUM_ARGS: usize = 16;
         let mut args = match kalloc::Box::<[CmdArgs; MAX_NUM_ARGS]>::try_new_zeroed() {
             Ok(b) => unsafe { b.assume_init() },
-            Err(_) => return zx_status::Status::NO_MEMORY,
+            Err(_) => return Err(zx_status::Status::NO_MEMORY),
         };
 
         const OUTBUFLEN: usize = 1024;
         let mut outbuf = match kalloc::Box::<[u8; OUTBUFLEN]>::try_new_zeroed() {
             Ok(b) => unsafe { b.assume_init() },
-            Err(_) => return zx_status::Status::NO_MEMORY,
+            Err(_) => return Err(zx_status::Status::NO_MEMORY),
         };
 
         let mut continue_offset: Option<usize> = None;
@@ -873,7 +873,7 @@ pub mod console {
 
         let mut line_buf = match kalloc::Box::<[u8; LINE_LEN]>::try_new_zeroed() {
             Ok(b) => unsafe { b.assume_init() },
-            Err(_) => return zx_status::Status::NO_MEMORY,
+            Err(_) => return Err(zx_status::Status::NO_MEMORY),
         };
 
         while !exit {
@@ -946,7 +946,7 @@ pub mod console {
             if EXIT_CONSOLE.load(Ordering::Relaxed) {
                 exit = true;
                 EXIT_CONSOLE.store(false, Ordering::Relaxed);
-                ret = zx_status::Status::CANCELED;
+                ret = Err(zx_status::Status::CANCELED);
             }
 
             if !locked {
@@ -1001,7 +1001,7 @@ pub mod console {
     fn console_run_script_etc(script: &str, locked: bool) -> i32 {
         let mut line_read = LineReadStruct { script_bytes: script.as_bytes(), pos: 0 };
 
-        command_loop(
+        let _ = command_loop(
             Some(|buf: &mut [u8; LINE_LEN]| fetch_next_line(&mut line_read, buf)),
             false,
             locked,
@@ -1175,7 +1175,7 @@ pub mod console {
     pub fn console_start() {
         kprintln!("entering main console loop\n");
         while command_loop(Some(|buf: &mut [u8; LINE_LEN]| read_debug_line(buf)), true, false)
-            == zx_status::Status::OK
+            == Ok(())
         {}
         kprintln!("exiting main console loop\n");
     }

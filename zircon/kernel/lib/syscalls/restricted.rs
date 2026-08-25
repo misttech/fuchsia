@@ -29,7 +29,7 @@ pub fn sys_restricted_enter(
 
     // Reject invalid option bits.
     if options != 0 {
-        return Err(Status::INVALID_ARGS.into());
+        return Err(Status::INVALID_ARGS);
     }
     restricted_enter(vector_table_ptr, context)?;
     Ok(())
@@ -45,7 +45,7 @@ pub fn sys_restricted_bind_state(
 
     // No options allowed.
     if options != 0 {
-        return Err(Status::INVALID_ARGS.into());
+        return Err(Status::INVALID_ARGS);
     }
 
     // Are we allowed to create a VMO?
@@ -83,7 +83,7 @@ pub fn sys_restricted_unbind_state(options: u32) -> Result<(), ErrorStatus> {
 
     // No options allowed.
     if options != 0 {
-        return Err(Status::INVALID_ARGS.into());
+        return Err(Status::INVALID_ARGS);
     }
 
     thread_current_set_restricted_state(None);
@@ -96,7 +96,7 @@ pub fn sys_restricted_kick(handle: HandleValue, options: u32) -> Result<(), Erro
 
     // No options allowed.
     if options != 0 {
-        return Err(Status::INVALID_ARGS.into());
+        return Err(Status::INVALID_ARGS);
     }
 
     // TODO(https://fxbug.dev/42077353): Decide if this is the correct right for this operation.

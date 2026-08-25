@@ -27,10 +27,10 @@ fn job_set_policy_basic_v1(
     count: u32,
 ) -> Result<(), ErrorStatus> {
     if options != ZX_JOB_POL_RELATIVE && options != ZX_JOB_POL_ABSOLUTE {
-        return Err(Status::INVALID_ARGS.into());
+        return Err(Status::INVALID_ARGS);
     }
     if policy_ptr.is_null() || count == 0 || count as usize > MAX_POLICY_COUNT {
-        return Err(Status::INVALID_ARGS.into());
+        return Err(Status::INVALID_ARGS);
     }
 
     let mut storage = [MaybeUninit::<zx_policy_basic_v1_t>::uninit(); MAX_POLICY_COUNT];
@@ -52,10 +52,10 @@ fn job_set_policy_basic_v2(
     count: u32,
 ) -> Result<(), ErrorStatus> {
     if options != ZX_JOB_POL_RELATIVE && options != ZX_JOB_POL_ABSOLUTE {
-        return Err(Status::INVALID_ARGS.into());
+        return Err(Status::INVALID_ARGS);
     }
     if policy_ptr.is_null() || count == 0 || count as usize > MAX_POLICY_COUNT {
-        return Err(Status::INVALID_ARGS.into());
+        return Err(Status::INVALID_ARGS);
     }
 
     let mut storage = [MaybeUninit::<zx_policy_basic_v2_t>::uninit(); MAX_POLICY_COUNT];
@@ -77,10 +77,10 @@ fn job_set_policy_timer_slack(
     count: u32,
 ) -> Result<(), ErrorStatus> {
     if options != ZX_JOB_POL_RELATIVE {
-        return Err(Status::INVALID_ARGS.into());
+        return Err(Status::INVALID_ARGS);
     }
     if policy_ptr.is_null() || count != 1 {
-        return Err(Status::INVALID_ARGS.into());
+        return Err(Status::INVALID_ARGS);
     }
 
     let mut uninit_policy = MaybeUninit::<zx_policy_timer_slack_t>::uninit();
@@ -103,7 +103,7 @@ pub fn sys_job_create(
     ltracef!("parent: {:#x}\n", parent_job.raw_value());
 
     if options != 0 {
-        return Err(Status::INVALID_ARGS.into());
+        return Err(Status::INVALID_ARGS);
     }
 
     let parent = Dispatcher::get_with_rights::<JobDispatcher>(parent_job, ZX_RIGHT_MANAGE_JOB)?;
@@ -132,7 +132,7 @@ pub fn sys_job_set_policy(
         zx_types::ZX_JOB_POL_TIMER_SLACK => {
             job_set_policy_timer_slack(handle, options, policy_ptr, count)
         }
-        _ => Err(Status::INVALID_ARGS.into()),
+        _ => Err(Status::INVALID_ARGS),
     }
 }
 
@@ -152,7 +152,7 @@ pub fn sys_job_set_critical(
     let retcode_nonzero = if options == ZX_JOB_CRITICAL_PROCESS_RETCODE_NONZERO {
         true
     } else if options != 0 {
-        return Err(Status::INVALID_ARGS.into());
+        return Err(Status::INVALID_ARGS);
     } else {
         false
     };

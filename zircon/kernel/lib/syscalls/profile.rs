@@ -38,7 +38,7 @@ pub fn sys_profile_create(
     })?;
 
     if options != 0 {
-        return Err(Status::INVALID_ARGS.into());
+        return Err(Status::INVALID_ARGS);
     }
 
     match validate_resource_kind_base(
@@ -47,8 +47,8 @@ pub fn sys_profile_create(
         ZX_RSRC_SYSTEM_PROFILE_BASE,
     ) {
         Ok(()) => {}
-        Err(Status::BAD_HANDLE) => return Err(Status::BAD_HANDLE.into()),
-        Err(_) => return Err(Status::ACCESS_DENIED.into()),
+        Err(Status::BAD_HANDLE) => return Err(Status::BAD_HANDLE),
+        Err(_) => return Err(Status::ACCESS_DENIED),
     }
 
     let mut uninit_profile_info = core::mem::MaybeUninit::uninit();
@@ -79,7 +79,7 @@ pub fn sys_object_set_profile(
     );
 
     if options != 0 {
-        return Err(Status::INVALID_ARGS.into());
+        return Err(Status::INVALID_ARGS);
     }
 
     PROFILE_SET.add(1);
@@ -91,7 +91,7 @@ pub fn sys_object_set_profile(
 
     if let Some(thread) = disp.downcast::<ThreadDispatcher>() {
         if (rights & ZX_RIGHT_MANAGE_THREAD) == 0 {
-            return Err(Status::ACCESS_DENIED.into());
+            return Err(Status::ACCESS_DENIED);
         }
         profile.apply_profile_to_thread(thread)?;
         return Ok(());
@@ -99,11 +99,11 @@ pub fn sys_object_set_profile(
 
     if let Some(vmar) = disp.downcast::<VmAddressRegionDispatcher>() {
         if (rights & ZX_RIGHT_OP_CHILDREN) == 0 {
-            return Err(Status::ACCESS_DENIED.into());
+            return Err(Status::ACCESS_DENIED);
         }
         profile.apply_profile_to_vmar(vmar)?;
         return Ok(());
     }
 
-    Err(Status::WRONG_TYPE.into())
+    Err(Status::WRONG_TYPE)
 }

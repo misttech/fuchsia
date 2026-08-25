@@ -17,7 +17,7 @@ pub fn sys_event_create(options: u32, out: &mut HandleValue) -> Result<(), Error
     ltracef!("options {:#x}\n", options);
 
     if options != 0 {
-        return Err(Status::INVALID_ARGS.into());
+        return Err(Status::INVALID_ARGS);
     }
 
     ProcessDispatcher::with_current(|up| up.enforce_basic_policy(ZX_POL_NEW_EVENT))?;
@@ -37,7 +37,7 @@ pub fn sys_eventpair_create(
     ltracef!("options {:#x}\n", options);
 
     if options != 0 {
-        return Err(Status::NOT_SUPPORTED.into());
+        return Err(Status::NOT_SUPPORTED);
     }
 
     ProcessDispatcher::with_current(|up| up.enforce_basic_policy(ZX_POL_NEW_EVENTPAIR))?;

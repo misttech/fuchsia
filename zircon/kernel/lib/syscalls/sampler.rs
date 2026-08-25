@@ -37,7 +37,7 @@ pub fn sys_sampler_create(
     ltracef!("options {:#x}\n", options);
 
     if options != 0 {
-        return Err(Status::INVALID_ARGS.into());
+        return Err(Status::INVALID_ARGS);
     }
 
     check_sampler_supported()?;
@@ -57,13 +57,13 @@ pub fn sys_sampler_create(
     // When we implement streamed reads, we can reduce this to something more
     // reasonable.
     if config.buffer_size > ZX_SAMPLER_MAX_BUFFER_SIZE {
-        return Err(Status::INVALID_ARGS.into());
+        return Err(Status::INVALID_ARGS);
     }
 
     // The act of taking a sample takes on the order of single digit microseconds. A period close to
     // or shorter than that doesn't make sense.
     if config.period < ZX_SAMPLER_MIN_PERIOD {
-        return Err(Status::INVALID_ARGS.into());
+        return Err(Status::INVALID_ARGS);
     }
 
     let (kernel_handle, rights) = SamplerDispatcher::create(config)?;
@@ -110,5 +110,5 @@ pub fn sys_sampler_read(
     // We may have a partial read: some bytes were copied, but we received an error later on.
     // We provide the caller with how many bytes we copied, but also the error we ran into.
     actual.copy_to_user(&bytes_copied)?;
-    res.map_err(Into::into)
+    res
 }

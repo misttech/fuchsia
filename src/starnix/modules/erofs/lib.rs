@@ -79,12 +79,12 @@ pub fn new_fs(
             MonotonicInstant::INFINITE,
         )
         .map_err(|e| {
-            log_error!("FIDL error on Erofs.Serve: {:?}", e);
+            log_error!("FIDL error on Erofs.Serve: {e:?}");
             errno!(EIO)
         })?
         .map_err(|e| {
-            log_error!("Erofs.Serve failed: {:?}", e);
-            from_status_like_fdio!(zx::Status::from_raw(e))
+            log_error!("Erofs.Serve failed: {e:?}");
+            from_status_like_fdio!(zx::Status::err_from_raw(e))
         })?;
 
     let (remotefs, root_node, info, node_id) =

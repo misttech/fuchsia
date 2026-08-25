@@ -139,9 +139,17 @@ impl KEvent {
     /// # Safety
     ///
     /// `queue_to_own` must be null or a valid OwnedWaitQueue pointer.
-    pub unsafe fn signal_etc(&self, wait_result: Status, queue_to_own: *mut c_void) {
+    pub unsafe fn signal_etc(
+        &self,
+        wait_result: impl Into<Result<(), Status>>,
+        queue_to_own: *mut c_void,
+    ) {
         unsafe {
-            cpp_event_signal_etc(self.raw.as_mut_ptr(), wait_result.into_raw(), queue_to_own);
+            cpp_event_signal_etc(
+                self.raw.as_mut_ptr(),
+                Status::result_into_raw(wait_result.into()),
+                queue_to_own,
+            );
         }
     }
 

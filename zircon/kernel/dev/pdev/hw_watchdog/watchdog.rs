@@ -112,11 +112,8 @@ pub unsafe extern "C" fn hw_watchdog_pet() {
 /// The caller must ensure that `get_driver()` returns a valid reference to a
 /// `WatchdogOps` trait object.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn hw_watchdog_set_enabled(enabled: bool) -> Status {
-    match get_driver().set_enabled(enabled) {
-        Ok(()) => Status::OK,
-        Err(status) => status,
-    }
+pub unsafe extern "C" fn hw_watchdog_set_enabled(enabled: bool) -> Result<(), Status> {
+    get_driver().set_enabled(enabled)
 }
 
 /// Returns `true` if the hardware watchdog is currently enabled.
@@ -182,10 +179,14 @@ pub unsafe extern "C" fn hw_watchdog_is_petting_suppressed() -> bool {
 #[cfg(ktest)]
 #[unittest::suite(name = "hw_watchdog")]
 mod tests {
-    #[allow(unused_imports)]
-    use super::*;
+    use super::{
+        ACTIVE_DRIVER, DurationBoot, InstantBoot, Status, WatchdogOps,
+        hw_watchdog_get_last_pet_time, hw_watchdog_get_timeout_nsec, hw_watchdog_is_enabled,
+        hw_watchdog_is_petting_suppressed, hw_watchdog_pet, hw_watchdog_present,
+        hw_watchdog_set_enabled, hw_watchdog_suppress_petting, register_watchdog,
+    };
     use core::sync::atomic::{AtomicBool, AtomicU32, Ordering};
-    use unittest::{assert_eq, assert_false, assert_true};
+    use unittest::{assert_eq, assert_err, assert_false, assert_ok, assert_true};
 
     /// Test default ops dispatch table fallback behavior and default state.
     #[test]
@@ -196,7 +197,7 @@ mod tests {
             *ACTIVE_DRIVER.0.get() = None;
 
             assert_false!(hw_watchdog_present());
-            assert_eq!(hw_watchdog_set_enabled(true).into_raw(), Status::NOT_SUPPORTED.into_raw());
+            assert_err!(hw_watchdog_set_enabled(true), Status::NOT_SUPPORTED);
             assert_false!(hw_watchdog_is_enabled());
             assert_eq!(hw_watchdog_get_timeout_nsec(), i64::MAX);
             assert_eq!(hw_watchdog_get_last_pet_time(), 0);
@@ -253,7 +254,7 @@ mod tests {
         // SAFETY: Testing invocation of global C-ABI watchdog functions after registration.
         unsafe {
             assert_true!(hw_watchdog_present());
-            assert_eq!(hw_watchdog_set_enabled(true).into_raw(), Status::OK.into_raw());
+            assert_ok!(hw_watchdog_set_enabled(true));
             assert_true!(hw_watchdog_is_enabled());
             assert_eq!(hw_watchdog_get_timeout_nsec(), 12345);
             assert_eq!(hw_watchdog_get_last_pet_time(), 67890);

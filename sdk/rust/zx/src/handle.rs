@@ -857,7 +857,7 @@ pub struct HandleDisposition<'a> {
 
     pub object_type: ObjectType,
     pub rights: Rights,
-    pub result: Status,
+    pub result: Result<(), Status>,
 }
 
 static_assertions::assert_eq_size!(HandleDisposition<'_>, sys::zx_handle_disposition_t);
@@ -888,9 +888,8 @@ impl<'a> HandleDisposition<'a> {
         handle_op: HandleOp<'a>,
         object_type: ObjectType,
         rights: Rights,
-        status: R,
+        result: R,
     ) -> Self {
-        let status = Status::from_raw(Status::result_into_raw(status.into()));
         let (operation, handle) = match handle_op {
             HandleOp::Move(h) => (sys::ZX_HANDLE_OP_MOVE, h.into_raw()),
             HandleOp::Duplicate(h) => (sys::ZX_HANDLE_OP_DUPLICATE, h.raw_handle()),
@@ -901,8 +900,8 @@ impl<'a> HandleDisposition<'a> {
             handle,
             _handle_lifetime: std::marker::PhantomData,
             object_type,
-            rights: rights,
-            result: status,
+            rights,
+            result: result.into(),
         }
     }
 
@@ -949,14 +948,14 @@ impl<'a> HandleDisposition<'a> {
                 handle: std::mem::replace(&mut handle, NullableHandle::invalid()).into_raw(),
                 type_: self.object_type.into_raw(),
                 rights: self.rights.bits(),
-                result: self.result.into_raw(),
+                result: Status::result_into_raw(self.result),
             },
             HandleOp::Duplicate(handle_ref) => sys::zx_handle_disposition_t {
                 operation: sys::ZX_HANDLE_OP_DUPLICATE,
                 handle: handle_ref.raw_handle(),
                 type_: self.object_type.into_raw(),
                 rights: self.rights.bits(),
-                result: self.result.into_raw(),
+                result: Status::result_into_raw(self.result),
             },
         }
     }

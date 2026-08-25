@@ -46,7 +46,7 @@ impl WaitSignalObserverState {
         self.final_signal_state.store(signals, Ordering::Release);
         // SAFETY: `self.event` is a valid KEvent pointer set during begin().
         unsafe {
-            (*self.event).signal_etc(Status::OK, queue_to_own);
+            (*self.event).signal_etc(Ok(()), queue_to_own);
         }
     }
 

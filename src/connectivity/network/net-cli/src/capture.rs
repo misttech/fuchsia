@@ -250,7 +250,7 @@ where
                 .read(fio::MAX_BUF)
                 .await
                 .context("FIDL error reading packet capture")?
-                .map_err(|e| zx_status::Status::from_raw(e))
+                .map_err(zx_status::Status::err_from_raw)
                 .context("Failed to read packet capture")?;
             if data.is_empty() {
                 file.flush().context("Failed to flush packet capture to file")?;

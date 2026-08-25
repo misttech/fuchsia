@@ -28,9 +28,9 @@ pub fn sys_task_kill(handle: HandleValue) -> Result<(), ErrorStatus> {
         process.kill(ZX_TASK_RETCODE_SYSCALL_KILL);
         Ok(())
     } else if dispatcher.downcast::<ThreadDispatcher>().is_some() {
-        Err(Status::NOT_SUPPORTED.into())
+        Err(Status::NOT_SUPPORTED)
     } else {
-        Err(Status::WRONG_TYPE.into())
+        Err(Status::WRONG_TYPE)
     }
 }
 

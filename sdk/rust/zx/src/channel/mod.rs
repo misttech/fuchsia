@@ -1765,7 +1765,7 @@ mod tests {
         )];
         send.write_etc(&[], &mut handles).unwrap_err();
         assert_eq!(handles[0].raw_handle(), sys::ZX_HANDLE_INVALID);
-        assert_eq!(handles[0].result, Status::OK);
+        assert_eq!(handles[0].result, Ok(()));
     }
 
     #[test]
@@ -1780,7 +1780,7 @@ mod tests {
         )];
         send.writev_etc(&[], &mut handles).unwrap_err();
         assert_eq!(handles[0].raw_handle(), sys::ZX_HANDLE_INVALID);
-        assert_eq!(handles[0].result, Status::OK);
+        assert_eq!(handles[0].result, Ok(()));
     }
 
     #[test]
@@ -1812,8 +1812,8 @@ mod tests {
         assert_eq!(handles[1].raw_handle(), sys::ZX_HANDLE_INVALID);
 
         // Each handle should separately report the status of transferring/duplicating that handle.
-        assert_eq!(handles[0].result, Status::OK);
-        assert_ne!(handles[1].result, Status::OK, "must have transfer rights to succeed");
+        assert_eq!(handles[0].result, Ok(()));
+        assert_ne!(handles[1].result, Ok(()), "must have transfer rights to succeed");
     }
 
     #[test]
@@ -1845,8 +1845,8 @@ mod tests {
         assert_eq!(handles[1].raw_handle(), sys::ZX_HANDLE_INVALID);
 
         // Each handle should separately report the status of transferring/duplicating that handle.
-        assert_eq!(handles[0].result, Status::OK);
-        assert_ne!(handles[1].result, Status::OK, "must have transfer rights to succeed");
+        assert_eq!(handles[0].result, Ok(()));
+        assert_ne!(handles[1].result, Ok(()), "must have transfer rights to succeed");
     }
 
     #[test]
@@ -2425,8 +2425,8 @@ mod tests {
         assert_eq!(handles[1].raw_handle(), sys::ZX_HANDLE_INVALID);
 
         // Each handle should separately report the status of transferring/duplicating that handle.
-        assert_eq!(handles[0].result, Status::OK);
-        assert_ne!(handles[1].result, Status::OK, "must have duplicate rights to succeed");
+        assert_eq!(handles[0].result, Ok(()));
+        assert_ne!(handles[1].result, Ok(()), "must have duplicate rights to succeed");
     }
 
     #[test]
@@ -2464,7 +2464,7 @@ mod tests {
         assert_eq!(handles[1].raw_handle(), sys::ZX_HANDLE_INVALID);
 
         // Each handle should separately report the status of transferring/duplicating that handle.
-        assert_eq!(handles[0].result, Status::OK);
-        assert_ne!(handles[1].result, Status::OK, "must have duplicate rights to succeed");
+        assert_eq!(handles[0].result, Ok(()));
+        assert_ne!(handles[1].result, Ok(()), "must have duplicate rights to succeed");
     }
 }

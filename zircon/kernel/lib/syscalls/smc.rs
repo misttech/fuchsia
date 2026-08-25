@@ -182,7 +182,7 @@ pub fn sys_smc_call(
     out_smc_result: UserOutPtr<zx_smc_result_t>,
 ) -> Result<(), ErrorStatus> {
     if parameters.is_null() || out_smc_result.is_null() {
-        return Err(Status::INVALID_ARGS.into());
+        return Err(Status::INVALID_ARGS);
     }
 
     let mut uninit_params = core::mem::MaybeUninit::uninit();

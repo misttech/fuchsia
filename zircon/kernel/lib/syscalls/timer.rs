@@ -24,7 +24,7 @@ pub fn sys_timer_create(
     ltracef!("options {:#x} clock_id {}\n", options, clock_id);
 
     if clock_id != ZX_CLOCK_MONOTONIC && clock_id != ZX_CLOCK_BOOT {
-        return Err(Status::INVALID_ARGS.into());
+        return Err(Status::INVALID_ARGS);
     }
 
     ProcessDispatcher::with_current(|up| up.enforce_basic_policy(ZX_POL_NEW_TIMER))?;
@@ -44,7 +44,7 @@ pub fn sys_timer_set(
     ltracef!("handle {:?} deadline {} slack {}\n", handle, deadline, slack);
 
     if slack < 0 {
-        return Err(Status::OUT_OF_RANGE.into());
+        return Err(Status::OUT_OF_RANGE);
     }
 
     let timer = Dispatcher::get_with_rights::<TimerDispatcher>(handle, ZX_RIGHT_WRITE)?;

@@ -57,11 +57,11 @@ unsafe extern "C" {
         boot_partition_sel: u64,
     ) -> i64;
     fn cpp_moonflower_tz_io_write(paddr: usize, val: u32) -> i64;
-    fn psci_system_reset2_raw(reset_type: u32, cookie: u32) -> Status;
-    fn psci_system_off() -> Status;
-    fn psci_cpu_off() -> Status;
-    fn psci_cpu_on(hw_cpu_id: u64, entry: u64, context: u64) -> Status;
-    fn psci_get_cpu_state(hw_cpu_id: u64, out_state: *mut PowerCpuState) -> Status;
+    fn psci_system_reset2_raw(reset_type: u32, cookie: u32) -> Result<(), Status>;
+    fn psci_system_off() -> Result<(), Status>;
+    fn psci_cpu_off() -> Result<(), Status>;
+    fn psci_cpu_on(hw_cpu_id: u64, entry: u64, context: u64) -> Result<(), Status>;
+    fn psci_get_cpu_state(hw_cpu_id: u64, out_state: *mut PowerCpuState) -> Result<(), Status>;
 }
 
 /// Configures hardware for reboot/shutdown via Qualcomm TZ SMC call.
@@ -84,7 +84,7 @@ fn set_download_mode(mode: MoonflowerDownloadMode) {
 }
 
 /// Reboots the Moonflower platform via PSCI warm reset call.
-extern "C" fn moonflower_reboot(flags: PowerRebootFlags) -> Status {
+extern "C" fn moonflower_reboot(flags: PowerRebootFlags) -> Result<(), Status> {
     dprintf!(INFO, "Moonflower reboot: flags {:#x}\n", flags as u32);
     set_download_mode(MoonflowerDownloadMode::NoDump);
     configure_hw_for_shutdown();
@@ -93,28 +93,31 @@ extern "C" fn moonflower_reboot(flags: PowerRebootFlags) -> Status {
 }
 
 /// Shuts down the Moonflower platform via PSCI system off call.
-extern "C" fn moonflower_shutdown() -> Status {
+extern "C" fn moonflower_shutdown() -> Result<(), Status> {
     configure_hw_for_shutdown();
     // SAFETY: PSCI system off call to hardware firmware.
     unsafe { psci_system_off() }
 }
 
 /// Powers off the calling CPU core via PSCI CPU off call.
-extern "C" fn moonflower_cpu_off() -> Status {
+extern "C" fn moonflower_cpu_off() -> Result<(), Status> {
     // SAFETY: PSCI CPU off call.
     unsafe { psci_cpu_off() }
 }
 
 /// Powers on the CPU core with the specified hardware ID via PSCI CPU on call.
-extern "C" fn moonflower_cpu_on(hw_cpu_id: u64, entry: u64, context: u64) -> Status {
+extern "C" fn moonflower_cpu_on(hw_cpu_id: u64, entry: u64, context: u64) -> Result<(), Status> {
     // SAFETY: PSCI CPU on call.
     unsafe { psci_cpu_on(hw_cpu_id, entry, context) }
 }
 
 /// Retrieves the current power state of the specified CPU core via PSCI.
-extern "C" fn moonflower_get_cpu_state(hw_cpu_id: u64, out_state: *mut PowerCpuState) -> Status {
+extern "C" fn moonflower_get_cpu_state(
+    hw_cpu_id: u64,
+    out_state: *mut PowerCpuState,
+) -> Result<(), Status> {
     if out_state.is_null() {
-        return Status::INVALID_ARGS;
+        return Err(Status::INVALID_ARGS);
     }
     // SAFETY: PSCI get cpu state with valid pointer.
     unsafe { psci_get_cpu_state(hw_cpu_id, out_state) }
@@ -133,30 +136,30 @@ fn get_opp_bank() -> Option<MmioBank<u32, RwSafe>> {
 }
 
 /// Sets the active Operating Performance Point (OPP) for the specified domain.
-extern "C" fn moonflower_opp_set(domain_id: u32, opp: u64) -> Status {
+extern "C" fn moonflower_opp_set(domain_id: u32, opp: u64) -> Result<(), Status> {
     let Some(bank) = get_opp_bank() else {
-        return Status::BAD_STATE;
+        return Err(Status::BAD_STATE);
     };
     if domain_id != DOMAIN_ID || opp > MAX_OPP_INDEX {
-        return Status::INVALID_ARGS;
+        return Err(Status::INVALID_ARGS);
     }
 
     // SAFETY: `OPP_INDEX_OFFSET` (0x920) is within `OPP_BANK_SIZE` (0x1000) and aligned to 4 bytes.
     let reg = unsafe { bank.at(OPP_INDEX_OFFSET) };
     reg.write((MAX_OPP_INDEX - opp) as u32);
-    Status::OK
+    Ok(())
 }
 
 /// Retrieves the active Operating Performance Point (OPP) for the specified domain.
-extern "C" fn moonflower_opp_get(domain_id: u32, out_opp: *mut u64) -> Status {
+extern "C" fn moonflower_opp_get(domain_id: u32, out_opp: *mut u64) -> Result<(), Status> {
     if out_opp.is_null() {
-        return Status::INVALID_ARGS;
+        return Err(Status::INVALID_ARGS);
     }
     let Some(bank) = get_opp_bank() else {
-        return Status::BAD_STATE;
+        return Err(Status::BAD_STATE);
     };
     if domain_id != DOMAIN_ID {
-        return Status::INVALID_ARGS;
+        return Err(Status::INVALID_ARGS);
     }
 
     // SAFETY: `OPP_INDEX_OFFSET` (0x920) is within `OPP_BANK_SIZE` (0x1000) and aligned to 4 bytes.
@@ -166,19 +169,19 @@ extern "C" fn moonflower_opp_get(domain_id: u32, out_opp: *mut u64) -> Status {
     unsafe {
         *out_opp = MAX_OPP_INDEX.saturating_sub(raw_val as u64);
     }
-    Status::OK
+    Ok(())
 }
 
 /// Retrieves the number of supported OPP control domains.
-extern "C" fn moonflower_opp_get_domain_count(out_count: *mut usize) -> Status {
+extern "C" fn moonflower_opp_get_domain_count(out_count: *mut usize) -> Result<(), Status> {
     if out_count.is_null() {
-        return Status::INVALID_ARGS;
+        return Err(Status::INVALID_ARGS);
     }
     // SAFETY: `out_count` was checked non-null.
     unsafe {
         *out_count = POWER_DOMAIN_COUNT;
     }
-    Status::OK
+    Ok(())
 }
 
 static MOONFLOWER_POWER_OPS: PdevPowerOps = PdevPowerOps {
@@ -202,7 +205,7 @@ pub extern "C" fn moonflower_power_init_early() {
 
     let mut current_opp = 0u64;
     let opp_res = moonflower_opp_get(DOMAIN_ID, &mut current_opp);
-    if opp_res == Status::OK {
+    if opp_res.is_ok() {
         dprintf!(INFO, "POWER: current opp {}\n", current_opp);
     } else {
         dprintf!(INFO, "POWER: current opp -1\n");
@@ -272,15 +275,14 @@ pub extern "C" fn moonflower_power_init() {
         level_count: levels.len(),
     }];
 
-    let status = power_management_register_domains(&domain_config);
-    if status == Status::OK {
-        dprintf!(INFO, "POWER: Registered moonflower power domain\n");
-    } else {
+    if let Err(status) = power_management_register_domains(&domain_config) {
         dprintf!(
             CRITICAL,
             "POWER: Failed to register moonflower power domain: {}\n",
             status.into_raw()
         );
+    } else {
+        dprintf!(INFO, "POWER: Registered moonflower power domain\n");
     }
 }
 
@@ -289,22 +291,24 @@ pub extern "C" fn moonflower_power_init() {
 #[unittest::suite(name = "moonflower_power")]
 mod tests {
     use super::{DOMAIN_ID, OPP_REG_BASE, Ordering};
-    use unittest::{assert_eq, assert_ok, assert_true};
+    use unittest::{assert_eq, assert_err, assert_ok};
     use zx_status::Status;
 
     /// Tests that passing a null output pointer to get_cpu_state returns INVALID_ARGS.
     #[test]
     fn test_moonflower_get_cpu_state_null_arg() {
-        assert_true!(
-            super::moonflower_get_cpu_state(0, core::ptr::null_mut()) == Status::INVALID_ARGS
+        assert_err!(
+            super::moonflower_get_cpu_state(0, core::ptr::null_mut()),
+            Status::INVALID_ARGS
         );
     }
 
     /// Tests opp_get_domain_count.
     #[test]
     fn test_moonflower_opp_get_domain_count() {
-        assert_true!(
-            super::moonflower_opp_get_domain_count(core::ptr::null_mut()) == Status::INVALID_ARGS
+        assert_err!(
+            super::moonflower_opp_get_domain_count(core::ptr::null_mut()),
+            Status::INVALID_ARGS
         );
 
         let mut count = 0usize;
@@ -335,11 +339,11 @@ mod tests {
         assert_eq!(opp, 2);
 
         // Test Out of bounds domain
-        assert_true!(super::moonflower_opp_set(1, 0) == Status::INVALID_ARGS);
-        assert_true!(super::moonflower_opp_get(1, &mut opp) == Status::INVALID_ARGS);
+        assert_err!(super::moonflower_opp_set(1, 0), Status::INVALID_ARGS);
+        assert_err!(super::moonflower_opp_get(1, &mut opp), Status::INVALID_ARGS);
 
         // Test Out of bounds OPP index
-        assert_true!(super::moonflower_opp_set(DOMAIN_ID, 4) == Status::INVALID_ARGS);
+        assert_err!(super::moonflower_opp_set(DOMAIN_ID, 4), Status::INVALID_ARGS);
 
         // Restore original base pointer
         OPP_REG_BASE.store(old_base, Ordering::SeqCst);

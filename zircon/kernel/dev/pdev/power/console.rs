@@ -22,10 +22,14 @@ use zx_status::Status;
 
 unsafe extern "C" {
     fn cpp_rppm_dump();
-    fn cpp_rppm_update_active_power_level(cpu: u32, power_level: u8) -> Status;
+    fn cpp_rppm_update_active_power_level(cpu: u32, power_level: u8) -> Result<(), Status>;
     fn cpp_rppm_request_power_level_for_testing(cpu: u32, power_level: u8) -> bool;
-    fn cpp_rppm_get_active_power_level(cpu: u32, out_power_level: *mut u8) -> Status;
-    fn cpp_rppm_update_processing_limits(cpu_mask: u64, min_rate: u64, max_rate: u64) -> Status;
+    fn cpp_rppm_get_active_power_level(cpu: u32, out_power_level: *mut u8) -> Result<(), Status>;
+    fn cpp_rppm_update_processing_limits(
+        cpu_mask: u64,
+        min_rate: u64,
+        max_rate: u64,
+    ) -> Result<(), Status>;
     fn cpp_rppm_get_processor_count() -> usize;
 }
 
@@ -130,7 +134,7 @@ pub unsafe extern "C" fn rppm_console_cmd(argc: c_int, argv: *const CmdArgs, _fl
         let max_rate = slice[4].arg_uint as u64;
         // SAFETY: Invokes processing limit update on scheduler with validated CPU mask.
         let status = unsafe { cpp_rppm_update_processing_limits(cpu_mask_arg, min_rate, max_rate) };
-        return status.into_raw();
+        return Status::result_into_raw(status);
     }
 
     let cpu_id = slice[2].arg_uint as usize;
@@ -155,37 +159,27 @@ pub unsafe extern "C" fn rppm_console_cmd(argc: c_int, argv: *const CmdArgs, _fl
         if is_set_level {
             // SAFETY: Updating active power level for validated CPU number.
             let status = unsafe { cpp_rppm_update_active_power_level(cpu_id as u32, power_level) };
-            if status != Status::OK {
-                dprintf!(ALWAYS, "Failed to set power level: {}\n", status);
+            if let Err(status) = status {
+                dprintf!(ALWAYS, "Failed to set power level: {status}\n");
             } else {
-                dprintf!(ALWAYS, "Set CPU {} to power level {}\n", cpu_id, power_level);
+                dprintf!(ALWAYS, "Set CPU {cpu_id} to power level {power_level}\n");
             }
         } else if is_req_level {
             // SAFETY: Requesting power level for validated CPU number.
             let posted =
                 unsafe { cpp_rppm_request_power_level_for_testing(cpu_id as u32, power_level) };
             if posted {
-                dprintf!(
-                    ALWAYS,
-                    "CPU {} request for power level {} posted.\n",
-                    cpu_id,
-                    power_level
-                );
+                dprintf!(ALWAYS, "CPU {cpu_id} request for power level {power_level} posted.\n");
             } else {
-                dprintf!(
-                    ALWAYS,
-                    "CPU {} request for power level {} ignored.\n",
-                    cpu_id,
-                    power_level
-                );
+                dprintf!(ALWAYS, "CPU {cpu_id} request for power level {power_level} ignored.\n");
                 let mut current_level = 0u8;
                 // SAFETY: Querying active power level with valid stack pointer.
                 let status =
                     unsafe { cpp_rppm_get_active_power_level(cpu_id as u32, &mut current_level) };
-                if status == Status::OK {
-                    dprintf!(ALWAYS, "CPU {} at power level {}\n", cpu_id, current_level);
+                if status.is_ok() {
+                    dprintf!(ALWAYS, "CPU {cpu_id} at power level {current_level}\n");
                 } else {
-                    dprintf!(ALWAYS, "CPU {} power level not set\n", cpu_id);
+                    dprintf!(ALWAYS, "CPU {cpu_id} power level not set\n");
                 }
             }
         }
@@ -193,10 +187,10 @@ pub unsafe extern "C" fn rppm_console_cmd(argc: c_int, argv: *const CmdArgs, _fl
         let mut power_level = 0u8;
         // SAFETY: Querying active power level with valid stack pointer.
         let status = unsafe { cpp_rppm_get_active_power_level(cpu_id as u32, &mut power_level) };
-        if status == Status::OK {
-            dprintf!(ALWAYS, "CPU {} at power level {}\n", cpu_id, power_level);
+        if status.is_ok() {
+            dprintf!(ALWAYS, "CPU {cpu_id} at power level {power_level}\n");
         } else {
-            dprintf!(ALWAYS, "CPU {} power level not set\n", cpu_id);
+            dprintf!(ALWAYS, "CPU {cpu_id} power level not set\n");
         }
     }
 
@@ -271,8 +265,8 @@ pub unsafe extern "C" fn power_console_cmd(
 
     if subcmd == c"cpu-off" {
         let status = rust_power_cpu_off();
-        dprintf!(ALWAYS, "cpu_off returned: {}\n", status);
-        return status.into_raw();
+        dprintf!(ALWAYS, "cpu_off returned: {status:?}\n");
+        return Status::result_into_raw(status);
     }
 
     if subcmd == c"cpu-on" {
@@ -282,8 +276,8 @@ pub unsafe extern "C" fn power_console_cmd(
         }
         let hw_cpu_id = slice[2].arg_uint as u64;
         let status = rust_power_cpu_on(hw_cpu_id, 0, 0);
-        dprintf!(ALWAYS, "cpu_on({}) returned: {}\n", hw_cpu_id, status);
-        return status.into_raw();
+        dprintf!(ALWAYS, "cpu_on({hw_cpu_id}) returned: {status:?}\n");
+        return Status::result_into_raw(status);
     }
 
     if subcmd == c"cpu-state" {
@@ -295,24 +289,24 @@ pub unsafe extern "C" fn power_console_cmd(
         let mut state = PowerCpuState::Off;
         // SAFETY: Stack-allocated `state` pointer is valid and aligned.
         let status = unsafe { rust_power_get_cpu_state(hw_cpu_id, &mut state) };
-        if status == Status::OK {
-            dprintf!(ALWAYS, "CPU {} state: {:?}\n", hw_cpu_id, state);
-        } else {
-            dprintf!(ALWAYS, "Failed to get CPU {} state: {}\n", hw_cpu_id, status);
+        if status.is_ok() {
+            dprintf!(ALWAYS, "CPU {hw_cpu_id} state: {state:?}\n");
+        } else if let Err(err) = status {
+            dprintf!(ALWAYS, "Failed to get CPU {hw_cpu_id} state: {err}\n");
         }
-        return status.into_raw();
+        return Status::result_into_raw(status);
     }
 
     if subcmd == c"opp-domains" {
         let mut count = 0usize;
         // SAFETY: Stack-allocated `count` pointer is valid and aligned.
         let status = unsafe { rust_power_opp_get_domain_count(&mut count) };
-        if status == Status::OK {
-            dprintf!(ALWAYS, "OPP domain count: {}\n", count);
-        } else {
-            dprintf!(ALWAYS, "Failed to get OPP domain count: {}\n", status);
+        if status.is_ok() {
+            dprintf!(ALWAYS, "OPP domain count: {count}\n");
+        } else if let Err(err) = status {
+            dprintf!(ALWAYS, "Failed to get OPP domain count: {err}\n");
         }
-        return status.into_raw();
+        return Status::result_into_raw(status);
     }
 
     if subcmd == c"opp-get" {
@@ -324,12 +318,12 @@ pub unsafe extern "C" fn power_console_cmd(
         let mut opp = 0u64;
         // SAFETY: Stack-allocated `opp` pointer is valid and aligned.
         let status = unsafe { rust_power_opp_get(domain_id, &mut opp) };
-        if status == Status::OK {
-            dprintf!(ALWAYS, "Domain {} active OPP: {}\n", domain_id, opp);
-        } else {
-            dprintf!(ALWAYS, "Failed to get domain {} OPP: {}\n", domain_id, status);
+        if status.is_ok() {
+            dprintf!(ALWAYS, "Domain {domain_id} active OPP: {opp}\n");
+        } else if let Err(err) = status {
+            dprintf!(ALWAYS, "Failed to get domain {domain_id} OPP: {err}\n");
         }
-        return status.into_raw();
+        return Status::result_into_raw(status);
     }
 
     if subcmd == c"opp-set" {
@@ -340,12 +334,12 @@ pub unsafe extern "C" fn power_console_cmd(
         let domain_id = slice[2].arg_uint as u32;
         let opp = slice[3].arg_uint as u64;
         let status = rust_power_opp_set(domain_id, opp);
-        if status == Status::OK {
-            dprintf!(ALWAYS, "Set domain {} OPP to {}\n", domain_id, opp);
-        } else {
-            dprintf!(ALWAYS, "Failed to set domain {} OPP to {}: {}\n", domain_id, opp, status);
+        if status.is_ok() {
+            dprintf!(ALWAYS, "Set domain {domain_id} OPP to {opp}\n");
+        } else if let Err(err) = status {
+            dprintf!(ALWAYS, "Failed to set domain {domain_id} OPP to {opp}: {err}\n");
         }
-        return status.into_raw();
+        return Status::result_into_raw(status);
     }
 
     dprintf!(ALWAYS, "Unrecognized command\n");

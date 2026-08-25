@@ -58,7 +58,7 @@ pub fn sys_process_create(
 
     // currently, the only valid option values are 0 or ZX_PROCESS_SHARED
     if options != 0 && options != ZX_PROCESS_SHARED {
-        return Err(Status::INVALID_ARGS.into());
+        return Err(Status::INVALID_ARGS);
     }
 
     // We check the policy against the process calling zx_process_create, which
@@ -112,7 +112,7 @@ pub fn sys_process_create_shared(
 
     // currently, the only valid option value is 0
     if options != 0 {
-        return Err(Status::INVALID_ARGS.into());
+        return Err(Status::INVALID_ARGS);
     }
 
     // We check the policy against the process calling zx_process_create, which
@@ -190,7 +190,7 @@ pub fn sys_process_start(
                 if arg1_handle.raw_value() != ZX_HANDLE_INVALID {
                     let _ = ProcessDispatcher::with_current(|up| up.remove_handle(arg1_handle));
                 }
-                return Err(err.into());
+                return Err(err);
             }
         };
 
@@ -201,7 +201,7 @@ pub fn sys_process_start(
                 if arg1_handle.raw_value() != ZX_HANDLE_INVALID {
                     let _ = ProcessDispatcher::with_current(|up| up.remove_handle(arg1_handle));
                 }
-                return Err(err.into());
+                return Err(err);
             }
         };
 
@@ -232,7 +232,7 @@ pub fn sys_process_read_memory(
     ltracef!("vaddr {:#x}, size {}\n", vaddr, buffer_size);
 
     if buffer.is_null() || buffer_size == 0 || buffer_size > MAX_DEBUG_READ_BLOCK {
-        return Err(Status::INVALID_ARGS.into());
+        return Err(Status::INVALID_ARGS);
     }
 
     let process =
@@ -253,7 +253,7 @@ pub fn sys_process_read_memory(
     let out_actual = vmo.read_user(buffer, offset, buffer_size)?;
     if out_actual == 0 {
         // If our partial read returned 0 bytes, it means that offset is past the end of the VMO.
-        return Err(Status::OUT_OF_RANGE.into());
+        return Err(Status::OUT_OF_RANGE);
     }
 
     // Do not write |out_actual| to |actual| on error
@@ -272,11 +272,11 @@ pub fn sys_process_write_memory(
     ltracef!("vaddr {:#x}, size {}\n", vaddr, buffer_size);
 
     if !BootOptions::get().enable_debugging_syscalls {
-        return Err(Status::NOT_SUPPORTED.into());
+        return Err(Status::NOT_SUPPORTED);
     }
 
     if buffer.is_null() || buffer_size == 0 || buffer_size > MAX_DEBUG_WRITE_BLOCK {
-        return Err(Status::INVALID_ARGS.into());
+        return Err(Status::INVALID_ARGS);
     }
 
     let process = Dispatcher::get_with_rights::<ProcessDispatcher>(handle, ZX_RIGHT_WRITE)?;
@@ -294,7 +294,7 @@ pub fn sys_process_write_memory(
 
     if VDso::vmo_is_vdso(&vmo) {
         // Don't allow writes to the vDSO.
-        return Err(Status::ACCESS_DENIED.into());
+        return Err(Status::ACCESS_DENIED);
     }
 
     let offset = (vaddr - vm_mapping.base()) as u64 + vm_mapping.object_offset();
@@ -306,7 +306,7 @@ pub fn sys_process_write_memory(
     let out_actual = vmo.write_user(buffer, offset, buffer_size)?;
     if out_actual == 0 {
         // If our partial write returned 0 bytes, it means that offset is past the end of the VMO.
-        return Err(Status::OUT_OF_RANGE.into());
+        return Err(Status::OUT_OF_RANGE);
     }
 
     // Do not write |out_actual| to |actual| on error

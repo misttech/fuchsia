@@ -132,14 +132,14 @@ pub fn to_zx_handle_disposition_t(
             handle: handle.raw_handle(),
             type_: hd.object_type.into_raw(),
             rights: hd.rights.bits(),
-            result: hd.result.into_raw(),
+            result: Status::result_into_raw(hd.result),
         },
         HandleOp::Duplicate(handle_ref) => zx_types::zx_handle_disposition_t {
             operation: zx_types::ZX_HANDLE_OP_DUPLICATE,
             handle: handle_ref.raw_handle(),
             type_: hd.object_type.into_raw(),
             rights: hd.rights.bits(),
-            result: hd.result.into_raw(),
+            result: Status::result_into_raw(hd.result),
         },
     }
 }

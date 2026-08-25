@@ -101,7 +101,7 @@ async fn run_get_config(_args: GetConfigArgs) -> Result<(), Error> {
         .get_configuration()
         .await
         .context("Failed FIDL call get_configuration")?
-        .map_err(zx::Status::from_raw)
+        .map_err(zx::Status::err_from_raw)
         .context("GetConfiguration returned an error status")?;
 
     let functions: Vec<String> = config_descriptors
@@ -131,7 +131,7 @@ async fn run_set_config(args: SetConfigArgs) -> Result<(), Error> {
         .get_configuration()
         .await
         .context("Failed FIDL call get_configuration")?
-        .map_err(zx::Status::from_raw)
+        .map_err(zx::Status::err_from_raw)
         .context("GetConfiguration returned an error status")?;
 
     device_desc.b_num_configurations = 1;
@@ -141,7 +141,7 @@ async fn run_set_config(args: SetConfigArgs) -> Result<(), Error> {
         .set_configuration(&device_desc, &[func_descriptors])
         .await
         .context("Failed set_configuration FIDL call")?
-        .map_err(zx::Status::from_raw)
+        .map_err(zx::Status::err_from_raw)
         .context("SetConfiguration returned an error status")?;
 
     println!("Successfully applied USB peripheral configuration.");
@@ -154,19 +154,14 @@ async fn get_health_report() -> Result<usb_policy::HealthReport, Error> {
             "/exposed/fuchsia.usb.policy.Health",
         )
         .map_err(|e| {
-            anyhow::format_err!("Failed to connect to Health protocol at /exposed: {:?}", e)
+            anyhow::format_err!("Failed to connect to Health protocol at /exposed: {e:?}")
         })?;
 
     health
         .get_report()
         .await
-        .map_err(|e| anyhow::format_err!("Failed to communicate (get_report): {:?}", e))?
-        .map_err(|e| {
-            anyhow::format_err!(
-                "Failed to get report (zx status): {:?}",
-                zx::Status::err_from_raw(e)
-            )
-        })
+        .map_err(|e| anyhow::format_err!("Failed to communicate (get_report): {e:?}"))?
+        .map_err(|e| anyhow::format_err!("Failed to get report (zx status): {e:?}"))
 }
 
 async fn run_health(args: HealthArgs) -> Result<(), Error> {

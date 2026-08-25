@@ -238,7 +238,7 @@ async fn test_erofs_xattrs() {
         .get_extended_attribute(b"security.selinux")
         .await
         .expect("Failed to call get_extended_attribute")
-        .map_err(zx::Status::from_raw)
+        .map_err(zx::Status::err_from_raw)
         .expect("get_extended_attribute returned error");
     let selinux_val_bytes = match selinux_val {
         fio::ExtendedAttributeValue::Bytes(b) => b,
@@ -442,7 +442,7 @@ async fn test_erofs_file_attributes() {
         .get_attributes(fio::NodeAttributesQuery::all())
         .await
         .expect("Failed to get attributes")
-        .map_err(zx::Status::from_raw)
+        .map_err(zx::Status::err_from_raw)
         .expect("get_attributes returned error");
     assert_eq!(quantum_mut_attrs.selinux_context, None);
 
@@ -459,7 +459,7 @@ async fn test_erofs_file_attributes() {
         .get_attributes(fio::NodeAttributesQuery::all())
         .await
         .expect("Failed to get attributes")
-        .map_err(zx::Status::from_raw)
+        .map_err(zx::Status::err_from_raw)
         .expect("get_attributes returned error");
     assert_eq!(
         large_file_mut_attrs.selinux_context,
@@ -471,7 +471,7 @@ async fn test_erofs_file_attributes() {
         .get_extended_attribute(b"security.selinux")
         .await
         .expect("Failed to call get_extended_attribute")
-        .map_err(zx::Status::from_raw)
+        .map_err(zx::Status::err_from_raw)
         .expect("get_extended_attribute returned error");
     let selinux_val_bytes = match selinux_val {
         fio::ExtendedAttributeValue::Bytes(b) => b,
@@ -523,7 +523,7 @@ async fn test_erofs_directory_attributes() {
         .get_attributes(fio::NodeAttributesQuery::all())
         .await
         .expect("Failed to get attributes")
-        .map_err(zx::Status::from_raw)
+        .map_err(zx::Status::err_from_raw)
         .expect("get_attributes returned error");
     assert_eq!(
         large_dir_mut_attrs.selinux_context,
@@ -535,7 +535,7 @@ async fn test_erofs_directory_attributes() {
         .get_extended_attribute(b"security.selinux")
         .await
         .expect("Failed to call get_extended_attribute")
-        .map_err(zx::Status::from_raw)
+        .map_err(zx::Status::err_from_raw)
         .expect("get_extended_attribute returned error");
     let selinux_val_bytes = match selinux_val {
         fio::ExtendedAttributeValue::Bytes(b) => b,
@@ -589,7 +589,7 @@ async fn test_erofs_symlink() {
         .get_attributes(fio::NodeAttributesQuery::all())
         .await
         .expect("Failed to get attributes")
-        .map_err(zx::Status::from_raw)
+        .map_err(zx::Status::err_from_raw)
         .expect("get_attributes returned error");
 
     assert_eq!(immut_attrs.content_size, Some(5));

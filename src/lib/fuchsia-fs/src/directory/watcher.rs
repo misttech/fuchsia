@@ -15,7 +15,6 @@ use std::path::PathBuf;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 use thiserror::Error;
-use zx_status::assoc_values;
 
 #[cfg(not(feature = "fdomain"))]
 use fuchsia_async as fasync;
@@ -50,19 +49,35 @@ pub enum WatcherStreamError {
 #[derive(Copy, Clone, Eq, PartialEq)]
 pub struct WatchEvent(fio::WatchEvent);
 
-assoc_values!(WatchEvent, [
+impl WatchEvent {
     /// The directory being watched has been deleted. The name returned for this event
     /// will be `.` (dot), as it is referring to the directory itself.
-    DELETED     = fio::WatchEvent::Deleted;
+    pub const DELETED: Self = Self(fio::WatchEvent::Deleted);
     /// A file was added.
-    ADD_FILE    = fio::WatchEvent::Added;
+    pub const ADD_FILE: Self = Self(fio::WatchEvent::Added);
     /// A file was removed.
-    REMOVE_FILE = fio::WatchEvent::Removed;
+    pub const REMOVE_FILE: Self = Self(fio::WatchEvent::Removed);
     /// A file existed at the time the Watcher was created.
-    EXISTING    = fio::WatchEvent::Existing;
+    pub const EXISTING: Self = Self(fio::WatchEvent::Existing);
     /// All existing files have been enumerated.
-    IDLE        = fio::WatchEvent::Idle;
-]);
+    pub const IDLE: Self = Self(fio::WatchEvent::Idle);
+
+    const fn assoc_const_name(&self) -> &'static str {
+        match self.0 {
+            fio::WatchEvent::Deleted => "DELETED",
+            fio::WatchEvent::Added => "ADD_FILE",
+            fio::WatchEvent::Removed => "REMOVE_FILE",
+            fio::WatchEvent::Existing => "EXISTING",
+            fio::WatchEvent::Idle => "IDLE",
+        }
+    }
+}
+
+impl std::fmt::Debug for WatchEvent {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "WatchEvent({})", self.assoc_const_name())
+    }
+}
 
 /// A message containing a `WatchEvent` and the filename (relative to the directory being watched)
 /// that triggered the event.

@@ -2229,7 +2229,7 @@ mod tests {
         file.write(&[8; 8192])
             .await
             .expect("FIDL call failed")
-            .map_err(Status::from_raw)
+            .map_err(Status::err_from_raw)
             .expect("write failed");
 
         let descriptor = fio::VerificationOptions {
@@ -2247,14 +2247,14 @@ mod tests {
         file.resize(1)
             .await
             .expect("FIDL transport error")
-            .map_err(Status::from_raw)
+            .map_err(Status::err_from_raw)
             .expect_err("shrink succeeded on fsverity-enabled file");
 
         // Growing via FIDL should fail
         file.resize(16384)
             .await
             .expect("FIDL transport error")
-            .map_err(Status::from_raw)
+            .map_err(Status::err_from_raw)
             .expect_err("grow succeeded on fsverity-enabled file");
 
         close_file_checked(file).await;

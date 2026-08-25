@@ -103,32 +103,32 @@ impl core::ops::Deref for PdevInterruptHolder {
 
 #[repr(C)]
 pub struct PdevInterruptOps {
-    pub mask: extern "C" fn(vector: InterruptVector) -> Status,
-    pub unmask: extern "C" fn(vector: InterruptVector) -> Status,
-    pub deactivate: extern "C" fn(vector: InterruptVector) -> Status,
+    pub mask: extern "C" fn(vector: InterruptVector) -> Result<(), Status>,
+    pub unmask: extern "C" fn(vector: InterruptVector) -> Result<(), Status>,
+    pub deactivate: extern "C" fn(vector: InterruptVector) -> Result<(), Status>,
     pub configure: extern "C" fn(
         vector: InterruptVector,
         tm: InterruptTriggerMode,
         pol: InterruptPolarity,
-    ) -> Status,
+    ) -> Result<(), Status>,
     pub get_config: extern "C" fn(
         vector: InterruptVector,
         tm: *mut InterruptTriggerMode,
         pol: *mut InterruptPolarity,
-    ) -> Status,
-    pub set_affinity: extern "C" fn(vector: InterruptVector, mask: u32) -> Status,
+    ) -> Result<(), Status>,
+    pub set_affinity: extern "C" fn(vector: InterruptVector, mask: u32) -> Result<(), Status>,
     pub is_valid: extern "C" fn(vector: InterruptVector, flags: u32) -> bool,
     pub get_base_vector: extern "C" fn() -> InterruptVector,
     pub get_max_vector: extern "C" fn() -> InterruptVector,
     pub remap: extern "C" fn(vector: InterruptVector) -> InterruptVector,
-    pub send_ipi: extern "C" fn(target: u32, ipi: u32) -> Status,
+    pub send_ipi: extern "C" fn(target: u32, ipi: u32) -> Result<(), Status>,
     pub init_percpu_early: extern "C" fn(),
     pub init_percpu: extern "C" fn(),
     pub handle_irq: extern "C" fn(frame: *mut core::ffi::c_void),
     pub shutdown: extern "C" fn(),
     pub shutdown_cpu: extern "C" fn(),
-    pub suspend_cpu: extern "C" fn() -> Status,
-    pub resume_cpu: extern "C" fn() -> Status,
+    pub suspend_cpu: extern "C" fn() -> Result<(), Status>,
+    pub resume_cpu: extern "C" fn() -> Result<(), Status>,
     pub msi_is_supported: extern "C" fn() -> bool,
     pub msi_supports_masking: extern "C" fn() -> bool,
     pub msi_mask_unmask: extern "C" fn(block: *const MsiBlock, msi_id: u32, mask: bool),
@@ -137,7 +137,7 @@ pub struct PdevInterruptOps {
         can_target_64bit: bool,
         is_msix: bool,
         out_block: *mut MsiBlock,
-    ) -> Status,
+    ) -> Result<(), Status>,
     pub msi_free_block: extern "C" fn(block: *mut MsiBlock),
     pub msi_register_handler:
         extern "C" fn(block: *mut MsiBlock, msi_id: u32, handler: InterruptHandler),
@@ -146,37 +146,37 @@ pub struct PdevInterruptOps {
             vector: InterruptVector,
             out_pending: *mut bool,
             out_enabled: *mut bool,
-        ) -> Status,
+        ) -> Result<(), Status>,
     >,
 }
 
 static INTR_OPS: AtomicPtr<PdevInterruptOps> = AtomicPtr::new(core::ptr::null_mut());
 
-extern "C" fn default_mask(_: InterruptVector) -> Status {
-    Status::NOT_SUPPORTED
+extern "C" fn default_mask(_: InterruptVector) -> Result<(), Status> {
+    Err(Status::NOT_SUPPORTED)
 }
-extern "C" fn default_unmask(_: InterruptVector) -> Status {
-    Status::NOT_SUPPORTED
+extern "C" fn default_unmask(_: InterruptVector) -> Result<(), Status> {
+    Err(Status::NOT_SUPPORTED)
 }
-extern "C" fn default_deactivate(_: InterruptVector) -> Status {
-    Status::NOT_SUPPORTED
+extern "C" fn default_deactivate(_: InterruptVector) -> Result<(), Status> {
+    Err(Status::NOT_SUPPORTED)
 }
 extern "C" fn default_configure(
     _: InterruptVector,
     _: InterruptTriggerMode,
     _: InterruptPolarity,
-) -> Status {
-    Status::NOT_SUPPORTED
+) -> Result<(), Status> {
+    Err(Status::NOT_SUPPORTED)
 }
 extern "C" fn default_get_config(
     _: InterruptVector,
     _: *mut InterruptTriggerMode,
     _: *mut InterruptPolarity,
-) -> Status {
-    Status::NOT_SUPPORTED
+) -> Result<(), Status> {
+    Err(Status::NOT_SUPPORTED)
 }
-extern "C" fn default_set_affinity(_: InterruptVector, _: u32) -> Status {
-    Status::NOT_SUPPORTED
+extern "C" fn default_set_affinity(_: InterruptVector, _: u32) -> Result<(), Status> {
+    Err(Status::NOT_SUPPORTED)
 }
 extern "C" fn default_is_valid(_: InterruptVector, _: u32) -> bool {
     false
@@ -190,19 +190,19 @@ extern "C" fn default_get_max_vector() -> InterruptVector {
 extern "C" fn default_remap(_: InterruptVector) -> InterruptVector {
     InterruptVector(0)
 }
-extern "C" fn default_send_ipi(_: u32, _: u32) -> Status {
-    Status::NOT_SUPPORTED
+extern "C" fn default_send_ipi(_: u32, _: u32) -> Result<(), Status> {
+    Err(Status::NOT_SUPPORTED)
 }
 extern "C" fn default_init_percpu_early() {}
 extern "C" fn default_init_percpu() {}
 extern "C" fn default_handle_irq(_: *mut core::ffi::c_void) {}
 extern "C" fn default_shutdown() {}
 extern "C" fn default_shutdown_cpu() {}
-extern "C" fn default_suspend_cpu() -> Status {
-    Status::NOT_SUPPORTED
+extern "C" fn default_suspend_cpu() -> Result<(), Status> {
+    Err(Status::NOT_SUPPORTED)
 }
-extern "C" fn default_resume_cpu() -> Status {
-    Status::NOT_SUPPORTED
+extern "C" fn default_resume_cpu() -> Result<(), Status> {
+    Err(Status::NOT_SUPPORTED)
 }
 extern "C" fn default_msi_is_supported() -> bool {
     false
@@ -211,8 +211,13 @@ extern "C" fn default_msi_supports_masking() -> bool {
     false
 }
 extern "C" fn default_msi_mask_unmask(_: *const MsiBlock, _: u32, _: bool) {}
-extern "C" fn default_msi_alloc_block(_: u32, _: bool, _: bool, _: *mut MsiBlock) -> Status {
-    Status::NOT_SUPPORTED
+extern "C" fn default_msi_alloc_block(
+    _: u32,
+    _: bool,
+    _: bool,
+    _: *mut MsiBlock,
+) -> Result<(), Status> {
+    Err(Status::NOT_SUPPORTED)
 }
 extern "C" fn default_msi_free_block(_: *mut MsiBlock) {}
 
@@ -331,8 +336,8 @@ unsafe fn register_int_handler_common(
 unsafe extern "C" fn register_int_handler(
     vector: InterruptVector,
     handler: InterruptHandler,
-) -> Status {
-    unsafe { register_int_handler_common(vector, handler, false) }.into()
+) -> Result<(), Status> {
+    unsafe { register_int_handler_common(vector, handler, false) }
 }
 
 /// Registers a permanent interrupt handler for the specified vector.
@@ -344,8 +349,8 @@ unsafe extern "C" fn register_int_handler(
 unsafe extern "C" fn register_permanent_int_handler(
     vector: InterruptVector,
     handler: InterruptHandler,
-) -> Status {
-    unsafe { register_int_handler_common(vector, handler, true) }.into()
+) -> Result<(), Status> {
+    unsafe { register_int_handler_common(vector, handler, true) }
 }
 
 /// Checks if an interrupt is registered
@@ -369,7 +374,7 @@ pub fn query_interrupt_status(vector: u32) -> (Option<bool>, Option<bool>) {
     let mut enabled = false;
     unsafe {
         if let Some(get_status) = (*ops).get_status
-            && get_status(InterruptVector(vector), &mut pending, &mut enabled) == Status::OK
+            && get_status(InterruptVector(vector), &mut pending, &mut enabled).is_ok()
         {
             return (Some(pending), Some(enabled));
         }
@@ -385,7 +390,7 @@ pub fn query_interrupt_config(
     let mut tm = InterruptTriggerMode::Edge;
     let mut pol = InterruptPolarity::High;
     unsafe {
-        if ((*ops).get_config)(InterruptVector(vector), &mut tm, &mut pol) == Status::OK {
+        if ((*ops).get_config)(InterruptVector(vector), &mut tm, &mut pol).is_ok() {
             return (Some(tm), Some(pol));
         }
     }
@@ -398,7 +403,7 @@ pub fn query_interrupt_config(
 ///
 /// The global interrupt ops must be registered, and vector must be valid.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn mask_interrupt(vector: InterruptVector) -> Status {
+pub unsafe extern "C" fn mask_interrupt(vector: InterruptVector) -> Result<(), Status> {
     unsafe { ((*get_ops()).mask)(vector) }
 }
 
@@ -408,7 +413,7 @@ pub unsafe extern "C" fn mask_interrupt(vector: InterruptVector) -> Status {
 ///
 /// The global interrupt ops must be registered, and vector must be valid.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn unmask_interrupt(vector: InterruptVector) -> Status {
+pub unsafe extern "C" fn unmask_interrupt(vector: InterruptVector) -> Result<(), Status> {
     unsafe { ((*get_ops()).unmask)(vector) }
 }
 
@@ -418,7 +423,7 @@ pub unsafe extern "C" fn unmask_interrupt(vector: InterruptVector) -> Status {
 ///
 /// The global interrupt ops must be registered, and vector must be valid.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn deactivate_interrupt(vector: InterruptVector) -> Status {
+pub unsafe extern "C" fn deactivate_interrupt(vector: InterruptVector) -> Result<(), Status> {
     unsafe { ((*get_ops()).deactivate)(vector) }
 }
 
@@ -432,7 +437,7 @@ pub unsafe extern "C" fn configure_interrupt(
     vector: InterruptVector,
     tm: InterruptTriggerMode,
     pol: InterruptPolarity,
-) -> Status {
+) -> Result<(), Status> {
     unsafe { ((*get_ops()).configure)(vector, tm, pol) }
 }
 
@@ -447,7 +452,7 @@ pub unsafe extern "C" fn get_interrupt_config(
     vector: InterruptVector,
     tm: *mut InterruptTriggerMode,
     pol: *mut InterruptPolarity,
-) -> Status {
+) -> Result<(), Status> {
     unsafe { ((*get_ops()).get_config)(vector, tm, pol) }
 }
 
@@ -457,7 +462,10 @@ pub unsafe extern "C" fn get_interrupt_config(
 ///
 /// The global interrupt ops must be registered, and vector must be valid.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn set_interrupt_affinity(vector: InterruptVector, mask: u32) -> Status {
+pub unsafe extern "C" fn set_interrupt_affinity(
+    vector: InterruptVector,
+    mask: u32,
+) -> Result<(), Status> {
     unsafe { ((*get_ops()).set_affinity)(vector, mask) }
 }
 
@@ -507,7 +515,7 @@ pub unsafe extern "C" fn remap_interrupt(vector: InterruptVector) -> InterruptVe
 ///
 /// The global interrupt ops must be registered.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn interrupt_send_ipi(target: u32, ipi: u32) -> Status {
+pub unsafe extern "C" fn interrupt_send_ipi(target: u32, ipi: u32) -> Result<(), Status> {
     unsafe { ((*get_ops()).send_ipi)(target, ipi) }
 }
 
@@ -567,7 +575,7 @@ pub unsafe extern "C" fn shutdown_interrupts_curr_cpu() {
 ///
 /// The global interrupt ops must be registered.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn suspend_interrupts_curr_cpu() -> Status {
+pub unsafe extern "C" fn suspend_interrupts_curr_cpu() -> Result<(), Status> {
     unsafe { ((*get_ops()).suspend_cpu)() }
 }
 
@@ -577,7 +585,7 @@ pub unsafe extern "C" fn suspend_interrupts_curr_cpu() -> Status {
 ///
 /// The global interrupt ops must be registered.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn resume_interrupts_curr_cpu() -> Status {
+pub unsafe extern "C" fn resume_interrupts_curr_cpu() -> Result<(), Status> {
     unsafe { ((*get_ops()).resume_cpu)() }
 }
 
@@ -624,7 +632,7 @@ pub unsafe extern "C" fn msi_alloc_block(
     can_target_64bit: bool,
     is_msix: bool,
     out_block: *mut MsiBlock,
-) -> Status {
+) -> Result<(), Status> {
     unsafe { ((*get_ops()).msi_alloc_block)(requested_irqs, can_target_64bit, is_msix, out_block) }
 }
 
@@ -663,19 +671,13 @@ unsafe impl Sync for PdevInterruptOps {}
 mod tests {
     #[allow(unused_imports)]
     use super::*;
-    use unittest::{assert_eq, assert_false};
+    use unittest::{assert_err, assert_false};
 
     /// Test default ops dispatch table fallback behavior.
     #[test]
     fn test_pdev_default_ops_fallback() {
-        assert_eq!(
-            (DEFAULT_OPS.mask)(InterruptVector(0)).into_raw(),
-            Status::NOT_SUPPORTED.into_raw()
-        );
-        assert_eq!(
-            (DEFAULT_OPS.unmask)(InterruptVector(0)).into_raw(),
-            Status::NOT_SUPPORTED.into_raw()
-        );
+        assert_err!((DEFAULT_OPS.mask)(InterruptVector(0)), Status::NOT_SUPPORTED);
+        assert_err!((DEFAULT_OPS.unmask)(InterruptVector(0)), Status::NOT_SUPPORTED);
     }
 
     /// Test unregistered interrupt vector state query.

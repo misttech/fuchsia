@@ -217,7 +217,7 @@ fn platform_init_apic(_level: init::LkInitLevel) {
             interrupt_get_max_vector() as usize,
         )
     };
-    assert!(status == Status::OK.into_raw());
+    assert!(status == zx_status::sys::ZX_OK);
 }
 
 /// Handles a platform interrupt from an interrupt vector.
@@ -247,14 +247,20 @@ pub unsafe extern "C" fn platform_irq(frame: *const crate::arch_rs::x86::Iframe)
 
 /// Registers the handler for the specified vector.
 #[unsafe(no_mangle)]
-pub extern "C" fn register_int_handler(vector: u32, handler: InterruptHandler) -> Status {
-    get_interrupt_manager().register_interrupt_handler(vector, handler, false).into()
+pub extern "C" fn register_int_handler(
+    vector: u32,
+    handler: InterruptHandler,
+) -> Result<(), Status> {
+    get_interrupt_manager().register_interrupt_handler(vector, handler, false)
 }
 
 /// Registers a permanent handler for the specified vector.
 #[unsafe(no_mangle)]
-pub extern "C" fn register_permanent_int_handler(vector: u32, handler: InterruptHandler) -> Status {
-    get_interrupt_manager().register_interrupt_handler(vector, handler, true).into()
+pub extern "C" fn register_permanent_int_handler(
+    vector: u32,
+    handler: InterruptHandler,
+) -> Result<(), Status> {
+    get_interrupt_manager().register_interrupt_handler(vector, handler, true)
 }
 
 /// Registers the MSI handler.
@@ -308,7 +314,7 @@ pub extern "C" fn get_interrupt_config(
                     *pol = p;
                 }
             }
-            Status::OK.into_raw()
+            zx_status::sys::ZX_OK
         }
         Err(e) => e.into_raw(),
     }
@@ -402,7 +408,7 @@ pub extern "C" fn msi_alloc_block(
     match get_interrupt_manager().msi_alloc_block(requested_irqs, can_target_64bit, is_msix) {
         Ok(block) => {
             *out_block = block;
-            Status::OK.into_raw()
+            zx_status::sys::ZX_OK
         }
         Err(e) => e.into_raw(),
     }

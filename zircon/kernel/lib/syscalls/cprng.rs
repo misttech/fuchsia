@@ -48,7 +48,7 @@ impl<'a, T> Drop for ZeroOnDrop<'a, T> {
 #[syscall]
 pub fn sys_cprng_draw_once(buffer: UserOutPtr<u8>, len: usize) -> Result<(), ErrorStatus> {
     if len > MAX_CPRNG_DRAW {
-        return Err(Status::INVALID_ARGS.into());
+        return Err(Status::INVALID_ARGS);
     }
 
     let mut storage = [0u8; MAX_CPRNG_DRAW];
@@ -60,16 +60,14 @@ pub fn sys_cprng_draw_once(buffer: UserOutPtr<u8>, len: usize) -> Result<(), Err
         cpp_global_prng_draw(kernel_buf.as_mut_ptr(), len);
     }
 
-    buffer
-        .copy_slice_to_user(&kernel_buf[..len])
-        .map_err(|_| ErrorStatus::from(Status::INVALID_ARGS))?;
+    buffer.copy_slice_to_user(&kernel_buf[..len]).map_err(|_| Status::INVALID_ARGS)?;
     Ok(())
 }
 
 #[syscall]
 pub fn sys_cprng_add_entropy(buffer: UserInPtr<u8>, buffer_size: usize) -> Result<(), ErrorStatus> {
     if buffer_size > MAX_CPRNG_SEED {
-        return Err(Status::INVALID_ARGS.into());
+        return Err(Status::INVALID_ARGS);
     }
 
     let mut storage = [core::mem::MaybeUninit::<u8>::uninit(); MAX_CPRNG_SEED];
@@ -78,7 +76,7 @@ pub fn sys_cprng_add_entropy(buffer: UserInPtr<u8>, buffer_size: usize) -> Resul
 
     let slice = buffer
         .copy_slice_from_user(&mut kernel_buf[..buffer_size])
-        .map_err(|_| ErrorStatus::from(Status::INVALID_ARGS))?;
+        .map_err(|_| Status::INVALID_ARGS)?;
 
     // SAFETY: `slice` has been initialized from userspace and has length `buffer_size`.
     unsafe {

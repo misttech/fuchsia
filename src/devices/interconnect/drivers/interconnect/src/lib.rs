@@ -85,7 +85,7 @@ impl Child {
 
         let response = match result {
             Ok(response) => response,
-            Err(err) => return Err(err.into()),
+            Err(err) => return Err(err.err().unwrap_or(Status::INTERNAL)),
         };
 
         graph.borrow_mut().update_stats(response.aggregated_bandwidth);

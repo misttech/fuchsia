@@ -106,27 +106,27 @@ fn plic_disable_vector(vector: u32, hart_id: u32) {
     reg.modify(|val| *val &= !(1 << (vector % 32)));
 }
 
-extern "C" fn plic_mask_interrupt(vector: InterruptVector) -> Status {
+extern "C" fn plic_mask_interrupt(vector: InterruptVector) -> Result<(), Status> {
     ltracef!("vector {}\n", vector.0);
     if vector.0 >= PLIC_MAX_INT.load(Ordering::Relaxed) {
-        return Status::INVALID_ARGS;
+        return Err(Status::INVALID_ARGS);
     }
     plic_disable_vector(vector.0, boot_hart_id());
-    Status::OK
+    Ok(())
 }
 
-extern "C" fn plic_unmask_interrupt(vector: InterruptVector) -> Status {
+extern "C" fn plic_unmask_interrupt(vector: InterruptVector) -> Result<(), Status> {
     ltracef!("vector {}\n", vector.0);
     if vector.0 >= PLIC_MAX_INT.load(Ordering::Relaxed) {
-        return Status::INVALID_ARGS;
+        return Err(Status::INVALID_ARGS);
     }
     plic_enable_vector(vector.0, boot_hart_id());
-    Status::OK
+    Ok(())
 }
 
-extern "C" fn plic_deactivate_interrupt(vector: InterruptVector) -> Status {
+extern "C" fn plic_deactivate_interrupt(vector: InterruptVector) -> Result<(), Status> {
     if vector.0 >= PLIC_MAX_INT.load(Ordering::Relaxed) {
-        return Status::INVALID_ARGS;
+        return Err(Status::INVALID_ARGS);
     }
     // TODO-rvbringup: investigate what this would do
     panic!("PLIC deactivate unimplemented");
@@ -136,25 +136,25 @@ extern "C" fn plic_configure_interrupt(
     vector: InterruptVector,
     tm: InterruptTriggerMode,
     pol: InterruptPolarity,
-) -> Status {
+) -> Result<(), Status> {
     ltracef!("vector {}, trigger mode {:?}, polarity {:?}\n", vector.0, tm, pol);
     if vector.0 >= PLIC_MAX_INT.load(Ordering::Relaxed) {
-        return Status::INVALID_ARGS;
+        return Err(Status::INVALID_ARGS);
     }
     if pol != InterruptPolarity::High {
-        return Status::NOT_SUPPORTED;
+        return Err(Status::NOT_SUPPORTED);
     }
-    Status::OK
+    Ok(())
 }
 
 extern "C" fn plic_get_interrupt_config(
     vector: InterruptVector,
     tm: *mut InterruptTriggerMode,
     pol: *mut InterruptPolarity,
-) -> Status {
+) -> Result<(), Status> {
     ltracef!("vector {}\n", vector.0);
     if vector.0 >= PLIC_MAX_INT.load(Ordering::Relaxed) {
-        return Status::INVALID_ARGS;
+        return Err(Status::INVALID_ARGS);
     }
     // SAFETY: Writing configuration constants back to pointers provided by C++ caller.
     // interrupt_trigger_mode::EDGE is 0, interrupt_polarity::HIGH is 0.
@@ -166,11 +166,11 @@ extern "C" fn plic_get_interrupt_config(
             *pol = InterruptPolarity::High;
         }
     }
-    Status::OK
+    Ok(())
 }
 
-extern "C" fn plic_set_affinity(_vector: InterruptVector, _mask: u32) -> Status {
-    Status::NOT_SUPPORTED
+extern "C" fn plic_set_affinity(_vector: InterruptVector, _mask: u32) -> Result<(), Status> {
+    Err(Status::NOT_SUPPORTED)
 }
 
 extern "C" fn plic_remap_interrupt(vector: InterruptVector) -> InterruptVector {
@@ -208,8 +208,8 @@ extern "C" fn plic_handle_irq(_frame: *mut c_void) {
     ltracef_level!(2, "cpu {} exit\n", curr_hart_id);
 }
 
-extern "C" fn plic_send_ipi(_target: u32, _ipi: u32) -> Status {
-    Status::NOT_SUPPORTED
+extern "C" fn plic_send_ipi(_target: u32, _ipi: u32) -> Result<(), Status> {
+    Err(Status::NOT_SUPPORTED)
 }
 
 extern "C" fn plic_init_percpu() {
@@ -231,12 +231,12 @@ extern "C" fn plic_shutdown_cpu() {
     debug_assert!(boot_hart_id() != curr_hart_id(), "Shutdown called on boot CPU");
 }
 
-extern "C" fn plic_suspend_cpu() -> Status {
-    Status::NOT_SUPPORTED
+extern "C" fn plic_suspend_cpu() -> Result<(), Status> {
+    Err(Status::NOT_SUPPORTED)
 }
 
-extern "C" fn plic_resume_cpu() -> Status {
-    Status::NOT_SUPPORTED
+extern "C" fn plic_resume_cpu() -> Result<(), Status> {
+    Err(Status::NOT_SUPPORTED)
 }
 
 extern "C" fn plic_msi_is_supported() -> bool {
@@ -256,7 +256,7 @@ extern "C" fn plic_msi_alloc_block(
     _can_target_64bit: bool,
     _is_msix: bool,
     _out_block: *mut MsiBlock,
-) -> Status {
+) -> Result<(), Status> {
     panic!("PLIC MSI alloc block unimplemented");
 }
 
@@ -389,7 +389,7 @@ pub unsafe extern "C" fn plic_init_late(config: &DcfgRiscvPlicDriver) {
 #[cfg(ktest)]
 #[unittest::suite(name = "plic")]
 mod tests {
-    use unittest::{assert_eq, assert_false, assert_true};
+    use unittest::{assert_eq, assert_err, assert_false, assert_ok, assert_true};
 
     /// Test HART ID to PLIC context indexing mapping.
     #[test]
@@ -406,10 +406,7 @@ mod tests {
         PLIC_MAX_INT.store(64, Ordering::Relaxed);
         assert_true!(plic_is_valid_interrupt(InterruptVector(63), 0));
         assert_false!(plic_is_valid_interrupt(InterruptVector(64), 0));
-        assert_eq!(
-            plic_mask_interrupt(InterruptVector(64)).into_raw(),
-            Status::INVALID_ARGS.into_raw()
-        );
+        assert_err!(plic_mask_interrupt(InterruptVector(64)), Status::INVALID_ARGS);
         PLIC_MAX_INT.store(orig_max, Ordering::Relaxed);
     }
 
@@ -418,23 +415,18 @@ mod tests {
     fn test_plic_configure_rejects_invalid_polarity() {
         let orig_max = PLIC_MAX_INT.load(Ordering::Relaxed);
         PLIC_MAX_INT.store(64, Ordering::Relaxed);
-        assert_eq!(
-            plic_configure_interrupt(
-                InterruptVector(1),
-                InterruptTriggerMode::Edge,
-                InterruptPolarity::High
-            )
-            .into_raw(),
-            Status::OK.into_raw()
-        );
-        assert_eq!(
+        assert_ok!(plic_configure_interrupt(
+            InterruptVector(1),
+            InterruptTriggerMode::Edge,
+            InterruptPolarity::High
+        ));
+        assert_err!(
             plic_configure_interrupt(
                 InterruptVector(1),
                 InterruptTriggerMode::Edge,
                 InterruptPolarity::Low
-            )
-            .into_raw(),
-            Status::NOT_SUPPORTED.into_raw()
+            ),
+            Status::NOT_SUPPORTED
         );
         PLIC_MAX_INT.store(orig_max, Ordering::Relaxed);
     }

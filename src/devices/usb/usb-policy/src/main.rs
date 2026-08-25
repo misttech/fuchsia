@@ -170,7 +170,7 @@ async fn handle_get_configuration()
             .get_configuration()
             .await
             .map_err(|_| zx::Status::INTERNAL)?
-            .map_err(zx::Status::from_raw)?;
+            .map_err(zx::Status::err_from_raw)?;
         Ok((device_desc, config_descriptors))
     };
 
@@ -193,7 +193,7 @@ async fn handle_set_configuration(
         .set_configuration(&device_desc, &config_descriptors)
         .await
         .map_err(|_| zx::Status::INTERNAL)?
-        .map_err(zx::Status::from_raw)?;
+        .map_err(zx::Status::err_from_raw)?;
     Ok(())
 }
 

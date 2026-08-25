@@ -13,7 +13,7 @@ use zx_types::{ZX_RIGHT_READ, ZX_RIGHT_WRITE};
 #[syscall]
 pub fn sys_counter_create(options: u32, out: &mut HandleValue) -> Result<(), ErrorStatus> {
     if options != 0 {
-        return Err(Status::INVALID_ARGS.into());
+        return Err(Status::INVALID_ARGS);
     }
 
     // TODO(https://fxbug.dev/387324141): Add/enforce ZX_POL_NEW_COUNTER policy.
@@ -40,7 +40,7 @@ pub fn sys_counter_read(
     value_out: UserOutPtr<i64>,
 ) -> Result<(), ErrorStatus> {
     if value_out.is_null() {
-        return Err(Status::INVALID_ARGS.into());
+        return Err(Status::INVALID_ARGS);
     }
 
     let counter = Dispatcher::get_with_rights::<CounterDispatcher>(handle, ZX_RIGHT_READ)?;

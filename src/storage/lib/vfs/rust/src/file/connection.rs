@@ -1930,7 +1930,7 @@ mod tests {
             .allocate(0, 10, fio::AllocateMode::empty())
             .await
             .unwrap()
-            .map_err(Status::from_raw)
+            .map_err(Status::err_from_raw)
             .unwrap();
         let events = env.file.operations.lock();
         assert_eq!(
@@ -1953,7 +1953,7 @@ mod tests {
             .allocate(0, 10, fio::AllocateMode::empty())
             .await
             .unwrap()
-            .map_err(Status::from_raw);
+            .map_err(Status::err_from_raw);
         assert_eq!(result, Err(Status::BAD_HANDLE));
         let events = env.file.operations.lock();
         assert_eq!(

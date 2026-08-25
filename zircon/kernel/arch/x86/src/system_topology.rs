@@ -492,7 +492,7 @@ pub extern "C" fn topology_init() {
         let raw_status = unsafe {
             cpp_system_topology_initialize_system_topology(&FALLBACK_TOPOLOGY as *const _, 1)
         };
-        assert_eq!(raw_status, Status::OK.into_raw());
+        assert_eq!(raw_status, zx_types::ZX_OK);
     }
 }
 
@@ -501,7 +501,6 @@ pub extern "C" fn topology_init() {
 #[unittest::suite(name = "x86_topology_rust")]
 mod tests {
     use super::generate_flat_topology;
-    use zx_status::Status;
     use zx_types::zx_status_t;
 
     unsafe extern "C" {
@@ -712,7 +711,7 @@ mod tests {
         let raw_status = unsafe {
             cpp_system_topology_validate_and_initialize(flat_topology.as_ptr(), flat_topology.len())
         };
-        assert_eq!(raw_status, Status::OK.into_raw());
+        assert_eq!(raw_status, zx_types::ZX_OK);
     }
 
     /// Enumerate CPUs using data from ThreadRipper 2970wx/X399.
@@ -775,7 +774,7 @@ mod tests {
         let raw_status = unsafe {
             cpp_system_topology_validate_and_initialize(flat_topology.as_ptr(), flat_topology.len())
         };
-        assert_eq!(raw_status, Status::OK.into_raw());
+        assert_eq!(raw_status, zx_types::ZX_OK);
     }
 
     /// Enumerate CPUs using data triggering fallback.
@@ -833,6 +832,6 @@ mod tests {
         let raw_status = unsafe {
             cpp_system_topology_validate_and_initialize(flat_topology.as_ptr(), flat_topology.len())
         };
-        assert_eq!(raw_status, Status::OK.into_raw());
+        assert_eq!(raw_status, zx_types::ZX_OK);
     }
 }

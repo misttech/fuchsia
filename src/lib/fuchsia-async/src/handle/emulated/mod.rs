@@ -1666,18 +1666,17 @@ pub struct HandleDisposition<'a> {
     /// increase in rights.
     pub rights: Rights,
     /// Result of attempting to write this handle disposition.
-    pub result: Status,
+    pub result: Result<(), Status>,
 }
 
 impl<'a> HandleDisposition<'a> {
     /// Create a new HandleDisposition.
-    pub fn new<R: Into<Result<(), Status>>>(
+    pub fn new(
         handle_op: HandleOp<'a>,
         object_type: ObjectType,
         rights: Rights,
-        result: R,
+        result: Result<(), Status>,
     ) -> Self {
-        let result = Status::from_raw(Status::result_into_raw(result.into()));
         Self { handle_op, object_type, rights, result }
     }
 

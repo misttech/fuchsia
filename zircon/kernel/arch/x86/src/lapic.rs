@@ -19,7 +19,6 @@ use debug::dprintf;
 use kprint::kprint;
 use libarch::x86::device_memory_barrier;
 use zx_status::Status;
-use zx_types::zx_status_t;
 
 const LOCAL_TRACE: u32 = 0;
 
@@ -570,7 +569,11 @@ pub extern "C" fn apic_timer_stop() {
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn apic_timer_set_oneshot(count: u32, divisor: u8, masked: bool) -> zx_status_t {
+pub extern "C" fn apic_timer_set_oneshot(
+    count: u32,
+    divisor: u8,
+    masked: bool,
+) -> Result<(), Status> {
     let mut timer_config =
         lvt_vector(interrupts::X86_INT_APIC_TIMER.0 as u32) | LVT_TIMER_MODE_ONESHOT;
     if masked {
@@ -579,12 +582,10 @@ pub extern "C" fn apic_timer_set_oneshot(count: u32, divisor: u8, masked: bool) 
 
     let _irqd = InterruptDisableGuard::new();
 
-    if let Err(status) = apic_timer_set_divide_value(divisor) {
-        return status.into_raw();
-    }
+    apic_timer_set_divide_value(divisor)?;
     lapic_reg_write(LAPIC_REG_LVT_TIMER, timer_config);
     lapic_reg_write(LAPIC_REG_INIT_COUNT, count);
-    Status::OK.into_raw()
+    Ok(())
 }
 
 #[unsafe(no_mangle)]
@@ -690,7 +691,7 @@ unsafe extern "C" fn cmd_apic(
         return usage();
     }
 
-    Status::OK.into_raw()
+    zx_status::sys::ZX_OK
 }
 
 #[unsafe(no_mangle)]

@@ -121,7 +121,7 @@ spi_test!(test_transmit_vector, device, {
     let status =
         device.transmit_vector(&txdata).await.context("TransmitVector FIDL call failed")?;
 
-    assert_eq!(Status::from_raw(status), Status::OK);
+    assert_eq!(Status::ok(status), Ok(()));
     Ok(())
 });
 
@@ -133,7 +133,7 @@ spi_test!(test_receive_vector, device, {
         .await
         .context("ReceiveVector FIDL call failed")?;
 
-    assert_eq!(Status::from_raw(status), Status::OK);
+    assert_eq!(Status::ok(status), Ok(()));
     assert_eq!(rxdata.len(), BUFFER_SIZE);
     Ok(())
 });
@@ -147,7 +147,7 @@ spi_test!(test_exchange_vector, device, {
     let (status, rxdata) =
         device.exchange_vector(&txdata).await.context("ExchangeVector FIDL call failed")?;
 
-    assert_eq!(Status::from_raw(status), Status::OK);
+    assert_eq!(Status::ok(status), Ok(()));
     assert_eq!(txdata, rxdata);
     Ok(())
 });
@@ -173,7 +173,7 @@ spi_test!(test_exchange_vector_multiple, device, {
 
     let results = futures::future::try_join_all(futures).await?;
     for (txdata, rxdata, status) in results {
-        assert_eq!(Status::from_raw(status), Status::OK);
+        assert_eq!(Status::ok(status), Ok(()));
         assert_eq!(txdata, rxdata);
     }
     Ok(())
@@ -200,7 +200,9 @@ spi_test!(test_transmit_vmo, device, {
         )
         .await
         .context("RegisterVmo FIDL call failed")?
-        .map_err(|status| anyhow::anyhow!("RegisterVmo failed: {:?}", Status::from_raw(status)))?;
+        .map_err(|status| {
+            anyhow::anyhow!("RegisterVmo failed: {:?}", Status::err_from_raw(status))
+        })?;
 
     device
         .transmit(&fsharedmemory::SharedVmoBuffer {
@@ -210,11 +212,11 @@ spi_test!(test_transmit_vmo, device, {
         })
         .await
         .context("Transmit FIDL call failed")?
-        .map_err(|status| anyhow::anyhow!("Transmit failed: {:?}", Status::from_raw(status)))?;
+        .map_err(|status| anyhow::anyhow!("Transmit failed: {:?}", Status::err_from_raw(status)))?;
 
     let _unregistered_vmo =
         device.unregister_vmo(VMO_ID).await.context("UnregisterVmo FIDL call failed")?.map_err(
-            |status| anyhow::anyhow!("UnregisterVmo failed: {:?}", Status::from_raw(status)),
+            |status| anyhow::anyhow!("UnregisterVmo failed: {:?}", Status::err_from_raw(status)),
         )?;
 
     Ok(())
@@ -236,7 +238,9 @@ spi_test!(test_receive_vmo, device, {
         )
         .await
         .context("RegisterVmo FIDL call failed")?
-        .map_err(|status| anyhow::anyhow!("RegisterVmo failed: {:?}", Status::from_raw(status)))?;
+        .map_err(|status| {
+            anyhow::anyhow!("RegisterVmo failed: {:?}", Status::err_from_raw(status))
+        })?;
 
     device
         .receive(&fsharedmemory::SharedVmoBuffer {
@@ -246,11 +250,11 @@ spi_test!(test_receive_vmo, device, {
         })
         .await
         .context("Receive FIDL call failed")?
-        .map_err(|status| anyhow::anyhow!("Receive failed: {:?}", Status::from_raw(status)))?;
+        .map_err(|status| anyhow::anyhow!("Receive failed: {:?}", Status::err_from_raw(status)))?;
 
     let _unregistered_vmo =
         device.unregister_vmo(VMO_ID).await.context("UnregisterVmo FIDL call failed")?.map_err(
-            |status| anyhow::anyhow!("UnregisterVmo failed: {:?}", Status::from_raw(status)),
+            |status| anyhow::anyhow!("UnregisterVmo failed: {:?}", Status::err_from_raw(status)),
         )?;
 
     Ok(())
@@ -282,7 +286,7 @@ spi_test!(test_exchange_vmo, device, {
         .await
         .context("RegisterVmo TX FIDL call failed")?
         .map_err(|status| {
-            anyhow::anyhow!("RegisterVmo TX failed: {:?}", Status::from_raw(status))
+            anyhow::anyhow!("RegisterVmo TX failed: {:?}", Status::err_from_raw(status))
         })?;
 
     device
@@ -294,7 +298,7 @@ spi_test!(test_exchange_vmo, device, {
         .await
         .context("RegisterVmo RX FIDL call failed")?
         .map_err(|status| {
-            anyhow::anyhow!("RegisterVmo RX failed: {:?}", Status::from_raw(status))
+            anyhow::anyhow!("RegisterVmo RX failed: {:?}", Status::err_from_raw(status))
         })?;
 
     device
@@ -312,7 +316,7 @@ spi_test!(test_exchange_vmo, device, {
         )
         .await
         .context("Exchange FIDL call failed")?
-        .map_err(|status| anyhow::anyhow!("Exchange failed: {:?}", Status::from_raw(status)))?;
+        .map_err(|status| anyhow::anyhow!("Exchange failed: {:?}", Status::err_from_raw(status)))?;
 
     let mut rxdata = vec![0u8; BUFFER_SIZE];
     rx_vmo.read(&mut rxdata, 0).context("Failed to read from RX VMO")?;
@@ -323,7 +327,7 @@ spi_test!(test_exchange_vmo, device, {
         .await
         .context("UnregisterVmo TX FIDL call failed")?
         .map_err(|status| {
-            anyhow::anyhow!("UnregisterVmo TX failed: {:?}", Status::from_raw(status))
+            anyhow::anyhow!("UnregisterVmo TX failed: {:?}", Status::err_from_raw(status))
         })?;
 
     let _unregistered_rx_vmo = device
@@ -331,7 +335,7 @@ spi_test!(test_exchange_vmo, device, {
         .await
         .context("UnregisterVmo RX FIDL call failed")?
         .map_err(|status| {
-            anyhow::anyhow!("UnregisterVmo RX failed: {:?}", Status::from_raw(status))
+            anyhow::anyhow!("UnregisterVmo RX failed: {:?}", Status::err_from_raw(status))
         })?;
 
     Ok(())
@@ -365,7 +369,7 @@ spi_test!(test_exchange_vmo_multiple, device, {
         .await
         .context("RegisterVmo TX FIDL call failed")?
         .map_err(|status| {
-            anyhow::anyhow!("RegisterVmo TX failed: {:?}", Status::from_raw(status))
+            anyhow::anyhow!("RegisterVmo TX failed: {:?}", Status::err_from_raw(status))
         })?;
 
     device
@@ -377,7 +381,7 @@ spi_test!(test_exchange_vmo_multiple, device, {
         .await
         .context("RegisterVmo RX FIDL call failed")?
         .map_err(|status| {
-            anyhow::anyhow!("RegisterVmo RX failed: {:?}", Status::from_raw(status))
+            anyhow::anyhow!("RegisterVmo RX failed: {:?}", Status::err_from_raw(status))
         })?;
 
     let mut futures = Vec::new();
@@ -402,7 +406,7 @@ spi_test!(test_exchange_vmo_multiple, device, {
                 .await
                 .context("Exchange FIDL call failed")?
                 .map_err(|status| {
-                    anyhow::anyhow!("Exchange failed: {:?}", Status::from_raw(status))
+                    anyhow::anyhow!("Exchange failed: {:?}", Status::err_from_raw(status))
                 })?;
             Ok::<_, anyhow::Error>(())
         });
@@ -415,11 +419,11 @@ spi_test!(test_exchange_vmo_multiple, device, {
     assert_eq!(txdata_all, rxdata_all);
 
     device.unregister_vmo(TX_VMO_ID).await.context("UnregisterVmo TX FIDL call failed")?.map_err(
-        |status| anyhow::anyhow!("UnregisterVmo TX failed: {:?}", Status::from_raw(status)),
+        |status| anyhow::anyhow!("UnregisterVmo TX failed: {:?}", Status::err_from_raw(status)),
     )?;
 
     device.unregister_vmo(RX_VMO_ID).await.context("UnregisterVmo RX FIDL call failed")?.map_err(
-        |status| anyhow::anyhow!("UnregisterVmo RX failed: {:?}", Status::from_raw(status)),
+        |status| anyhow::anyhow!("UnregisterVmo RX failed: {:?}", Status::err_from_raw(status)),
     )?;
 
     Ok(())

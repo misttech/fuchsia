@@ -32,12 +32,12 @@ pub fn sys_debuglog_create(
     if rsrc.raw_value() != ZX_HANDLE_INVALID {
         validate_resource_kind_base(rsrc, ZX_RSRC_KIND_SYSTEM, ZX_RSRC_SYSTEM_DEBUGLOG_BASE)?;
     } else if options != 0 {
-        return Err(Status::BAD_HANDLE.into());
+        return Err(Status::BAD_HANDLE);
     }
 
     // Ensure only valid options were provided. Currently only ZX_LOG_FLAG_READABLE.
     if (options & ZX_LOG_FLAG_READABLE) != options {
-        return Err(Status::INVALID_ARGS.into());
+        return Err(Status::INVALID_ARGS);
     }
 
     let (kernel_handle, rights) = LogDispatcher::create(options)?;
@@ -57,7 +57,7 @@ pub fn sys_debuglog_write(
     let len = core::cmp::min(len, DLOG_MAX_DATA);
 
     if (options & !ZX_LOG_FLAGS_MASK) != 0 {
-        return Err(Status::INVALID_ARGS.into());
+        return Err(Status::INVALID_ARGS);
     }
 
     let log = Dispatcher::get_with_rights::<LogDispatcher>(log_handle, ZX_RIGHT_WRITE)?;
@@ -127,7 +127,7 @@ pub fn sys_debuglog_read(
     ltracef!("handle {:#x}, options {:#x}, len {}\n", log_handle.raw_value(), options, len);
 
     if options != 0 {
-        return Err(Status::INVALID_ARGS.into());
+        return Err(Status::INVALID_ARGS);
     }
 
     let log = Dispatcher::get_with_rights::<LogDispatcher>(log_handle, ZX_RIGHT_READ)?;

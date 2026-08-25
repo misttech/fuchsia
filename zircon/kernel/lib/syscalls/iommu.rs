@@ -31,7 +31,7 @@ pub fn sys_iommu_create(
     validate_resource_kind_base(resource, ZX_RSRC_KIND_SYSTEM, ZX_RSRC_SYSTEM_IOMMU_BASE)?;
 
     if desc_size > ZX_IOMMU_MAX_DESC_LEN {
-        return Err(Status::INVALID_ARGS.into());
+        return Err(Status::INVALID_ARGS);
     }
 
     // Copy the descriptor into the kernel and try to create the dispatcher

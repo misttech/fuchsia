@@ -45,7 +45,7 @@ pub fn sys_debug_read(
     ltracef!("ptr {:p}\n", ptr.as_ptr());
 
     if BootOptions::get().enable_serial_syscalls != boot_options::SerialDebugSyscalls::Enabled {
-        return Err(Status::NOT_SUPPORTED.into());
+        return Err(Status::NOT_SUPPORTED);
     }
 
     validate_system_resource(handle, ZX_RSRC_SYSTEM_DEBUG_BASE)?;
@@ -87,7 +87,7 @@ pub fn sys_debug_write(ptr: UserInPtr<u8>, mut len: usize) -> Result<(), ErrorSt
     if enable_serial != boot_options::SerialDebugSyscalls::Enabled
         && enable_serial != boot_options::SerialDebugSyscalls::OutputOnly
     {
-        return Err(Status::NOT_SUPPORTED.into());
+        return Err(Status::NOT_SUPPORTED);
     }
 
     if len > MAX_DEBUG_WRITE_SIZE {
@@ -123,13 +123,13 @@ pub fn sys_debug_send_command(
     ltracef!("ptr {:p}, len {}\n", ptr.as_ptr(), len);
 
     if !BootOptions::get().enable_debugging_syscalls {
-        return Err(Status::NOT_SUPPORTED.into());
+        return Err(Status::NOT_SUPPORTED);
     }
 
     validate_system_resource(resource, ZX_RSRC_SYSTEM_DEBUG_BASE)?;
 
     if len > MAX_DEBUG_WRITE_SIZE {
-        return Err(Status::INVALID_ARGS.into());
+        return Err(Status::INVALID_ARGS);
     }
 
     let mut buf = [core::mem::MaybeUninit::<u8>::uninit(); MAX_DEBUG_WRITE_SIZE + 2];

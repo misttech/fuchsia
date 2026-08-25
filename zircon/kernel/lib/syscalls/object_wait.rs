@@ -66,10 +66,10 @@ pub fn sys_object_wait_one(
     }
 
     if (signals_state & ZX_SIGNAL_HANDLE_CLOSED) != 0 {
-        return Err(Status::CANCELED.into());
+        return Err(Status::CANCELED);
     }
 
-    wait_result.map_err(Into::into)
+    wait_result
 }
 
 #[syscall]
@@ -89,11 +89,11 @@ pub fn sys_object_wait_many(
             let _blocked = AutoBlocked::new(Blocked::WAIT_MANY);
             crate::kernel::thread::sleep_etc(&slack_deadline, Interruptible::YES, now.0)?;
         }
-        return Err(Status::TIMED_OUT.into());
+        return Err(Status::TIMED_OUT);
     }
 
     if count > ZX_WAIT_MANY_MAX_ITEMS {
-        return Err(Status::OUT_OF_RANGE.into());
+        return Err(Status::OUT_OF_RANGE);
     }
 
     let mut uninit_items =
@@ -133,7 +133,7 @@ pub fn sys_object_wait_many(
         for obs in &mut observers[..num_added] {
             obs.end();
         }
-        return Err(err.into());
+        return Err(err);
     }
 
     // Event::Wait() will return ZX_OK if already signaled,
@@ -156,8 +156,8 @@ pub fn sys_object_wait_many(
     user_items.copy_slice_to_user(items)?;
 
     if (combined & ZX_SIGNAL_HANDLE_CLOSED) != 0 {
-        return Err(Status::CANCELED.into());
+        return Err(Status::CANCELED);
     }
 
-    wait_result.map_err(Into::into)
+    wait_result
 }

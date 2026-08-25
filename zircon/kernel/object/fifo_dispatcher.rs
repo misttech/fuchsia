@@ -225,7 +225,6 @@ impl FifoDispatcher {
                 Err(UserCopyCaptureFaultsError { status, fault_info: None }) => {
                     // If there's no fault information then the assumption is that the original copy
                     // cannot have succeeded.
-                    debug_assert_ne!(status, Status::OK);
                     return Err(status);
                 }
             }
@@ -349,7 +348,6 @@ impl FifoDispatcher {
                 Err(UserCopyCaptureFaultsError { status, fault_info: None }) => {
                     // If there's no fault information then the assumption is that the original copy
                     // cannot have succeeded.
-                    debug_assert_ne!(status, Status::OK);
                     return Err(status);
                 }
             }

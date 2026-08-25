@@ -1143,11 +1143,7 @@ mod vmo_rs {
         let status = vmo.lookup_contiguous(0, PAGE_SIZE).map(|_| ());
         expect_ok!(status, "contiguous lookup of single page\n");
         let status = vmo.lookup_contiguous(0, alloc_size).map(|_| ());
-        expect_ne!(
-            Status::OK.into_raw(),
-            Status::result_into_raw(status),
-            "contiguous lookup of multiple pages\n"
-        );
+        expect_false!(status.is_ok(), "contiguous lookup of multiple pages\n");
     }
 
     /// Tests that looking up pages in a child slice translates offsets relative to the slice.

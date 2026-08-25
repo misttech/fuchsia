@@ -44,10 +44,10 @@ pub fn sys_socket_write(
     ltracef!("handle {handle:?}\n");
 
     if size > 0 && buffer.is_null() {
-        return Err(Status::INVALID_ARGS.into());
+        return Err(Status::INVALID_ARGS);
     }
     if options != 0 {
-        return Err(Status::INVALID_ARGS.into());
+        return Err(Status::INVALID_ARGS);
     }
 
     let socket = Dispatcher::get_with_rights::<SocketDispatcher>(handle, ZX_RIGHT_WRITE)?;
@@ -71,10 +71,10 @@ pub fn sys_socket_read(
     ltracef!("handle {handle:?}\n");
 
     if buffer.is_null() && size > 0 {
-        return Err(Status::INVALID_ARGS.into());
+        return Err(Status::INVALID_ARGS);
     }
     if options & !ZX_SOCKET_PEEK != 0 {
-        return Err(Status::INVALID_ARGS.into());
+        return Err(Status::INVALID_ARGS);
     }
 
     let socket = Dispatcher::get_with_rights::<SocketDispatcher>(handle, ZX_RIGHT_READ)?;

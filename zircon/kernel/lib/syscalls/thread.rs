@@ -49,11 +49,11 @@ pub fn sys_thread_create(
 
     // currently, the only valid option value is 0
     if options != 0 {
-        return Err(Status::INVALID_ARGS.into());
+        return Err(Status::INVALID_ARGS);
     }
 
     if name_ptr.is_null() {
-        return Err(Status::INVALID_ARGS.into());
+        return Err(Status::INVALID_ARGS);
     }
 
     // copy out the name
@@ -107,7 +107,7 @@ pub fn sys_thread_start_regs(
     {
         // A noncanonical address cannot be written into the MSR.
         if !crate::arch_rs::x86::is_vaddr_canonical(tp) {
-            return Err(Status::INVALID_ARGS.into());
+            return Err(Status::INVALID_ARGS);
         }
     }
 
@@ -146,7 +146,7 @@ pub fn sys_thread_write_state(
     ltracef!("handle {:#x}, kind {}\n", handle.raw_value(), kind);
 
     if (kind & ZX_THREAD_STATE_DEBUG_REGS) != 0 && !BootOptions::get().enable_debugging_syscalls {
-        return Err(Status::NOT_SUPPORTED.into());
+        return Err(Status::NOT_SUPPORTED);
     }
 
     // TODO(https://fxbug.dev/42105831): debug rights
@@ -164,7 +164,7 @@ pub fn sys_thread_raise_exception(
     ltracef!("options {:#x}, exception type {:#x}\n", options, exception_type);
 
     if user_context_ptr.is_null() {
-        return Err(Status::INVALID_ARGS.into());
+        return Err(Status::INVALID_ARGS);
     }
     let mut context = MaybeUninit::<zx_exception_context_t>::uninit();
     let context_ref =
@@ -185,7 +185,7 @@ pub fn sys_thread_set_rseq(
     // Is this an "unregister" operation?
     if vmo_handle.raw_value() == ZX_HANDLE_INVALID {
         if offset != 0 || size != 0 {
-            return Err(Status::INVALID_ARGS.into());
+            return Err(Status::INVALID_ARGS);
         }
 
         // SAFETY: Resets the restartable sequence configuration on the current thread context.
@@ -197,10 +197,10 @@ pub fn sys_thread_set_rseq(
     //
     // Validate arguments.
     if size != core::mem::size_of::<zx_rseq_t>() as u64 {
-        return Err(Status::INVALID_ARGS.into());
+        return Err(Status::INVALID_ARGS);
     }
     if !offset.is_multiple_of(core::mem::align_of::<zx_rseq_t>() as u64) {
-        return Err(Status::INVALID_ARGS.into());
+        return Err(Status::INVALID_ARGS);
     }
 
     // Get the VMO dispatcher.
