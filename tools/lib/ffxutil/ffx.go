@@ -1018,11 +1018,18 @@ func (f *FFXInstance) GetConfig(ctx context.Context) error {
 }
 
 func (f *FFXInstance) checkSpecificSshKeys(ctx context.Context, privPath, pubPath string) error {
-	// Check that the keys exist and are valid
+	// Check that the keys exist and are valid (create if needed).
+	// Because F32 includes multiple versions of ffx (some of which support
+	// "--create" while earlier ones created keys by default without supporting
+	// the flag), we cannot simply distinguish by API level and must dynamically
+	// fall back to running without "--create".
 	cfgs := fmt.Sprintf("ssh.priv=%s,ssh.pub=%s", privPath, pubPath)
-	args := []string{"-c", cfgs, "config", "check-ssh-keys"}
+	args := []string{"-c", cfgs, "config", "check-ssh-keys", "--create"}
 	if err := f.invoker(args).run(ctx); err != nil {
-		return err
+		legacyArgs := []string{"-c", cfgs, "config", "check-ssh-keys"}
+		if legacyErr := f.invoker(legacyArgs).run(ctx); legacyErr != nil {
+			return err
+		}
 	}
 	return nil
 }

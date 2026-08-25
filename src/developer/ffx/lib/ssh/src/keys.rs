@@ -779,94 +779,93 @@ impl SshKeyFiles {
     /// If it is not possible, an error is returned, and the recommended
     /// course of action is to delete the keys and try again.
     pub fn check_keys(&self, repair_if_needed: bool) -> Result<String, SshKeyError> {
-        let mut message: String = String::from("");
-        let mut del_priv_key = false;
-        let mut recreate_keys = false;
-        let mut append_public_key = false;
+        if !repair_if_needed {
+            self.analyze_check_keys()?;
+            log::info!("SSH Public/Private keys match");
+            return Ok("SSH Public/Private keys match".into());
+        }
 
-        match self.analyze_check_keys() {
-            // If OK, then return OK.
-            Ok(_) => {
-                log::info!("SSH Public/Private keys match");
-                return Ok("SSH Public/Private keys match".into());
-            }
-            Err(e) => {
-                // If there is an error, and repair_if_needed is not set,
-                // return the error.
-                if !repair_if_needed {
-                    return Err(e);
-                }
-                match e.kind {
-                    // Bad Key Type. This means the private key is
-                    // not in the supported format. There is nothing to
-                    // do, so return the error. We don't want to delete it
-                    // since it may be used by some other process/workflow.
-                    SshKeyErrorKind::BadKeyType => return Err(e),
-                    // Bad Format. This means one of the files is
-                    // not a properly formatted key file. In this case,
-                    // we know it cannot be used by another process/workflow
-                    // since it cannot be read, so delete it and recreate the
-                    // keys.
-                    SshKeyErrorKind::BadKeyFormat => {
-                        recreate_keys = true;
-                        del_priv_key = true;
-                        message = format!("{}. Regenerating a private key.", e.message)
-                    }
-                    // Bad File permission. This means the private key file permission is
-                    // wrong. Fix it.
-                    SshKeyErrorKind::BadFilePermission => {
-                        let meta = self.private_key.metadata().map_err(|e| SshKeyError {
-                            kind: SshKeyErrorKind::IOError,
-                            message: format!("{e}"),
-                        })?;
-                        let mut permissions = meta.permissions();
-                        permissions.set_mode(0o600);
-                        fs::set_permissions(&self.private_key, permissions).map_err(|e| {
-                            SshKeyError { kind: SshKeyErrorKind::IOError, message: format!("{e}") }
-                        })?;
-                    }
-                    // Key Mismatch. This is the case of a valid private key, but the matching
-                    // public key is not found. In this case, add the public key to the
-                    // authorized key file.
-                    SshKeyErrorKind::KeyMismatch => {
-                        message = format!("{e}");
-                        recreate_keys = true;
-                        del_priv_key = false;
-                        append_public_key = true;
-                    }
-                    // Any other errors, recreate the keys, reusing the private key if present.
-                    _ => {
-                        message = format!("{e}");
-                        recreate_keys = true;
-                    }
-                };
+        let mut messages: Vec<String> = Vec::new();
+        let mut push_message = |msg: String| {
+            if !messages.contains(&msg) {
+                messages.push(msg);
             }
         };
 
-        if recreate_keys {
-            if del_priv_key && self.private_key.exists() {
-                fs::remove_file(&self.private_key).map_err(|e| SshKeyError {
-                    kind: SshKeyErrorKind::IOError,
-                    message: format!("Cannot delete {:?}: {e}", self.private_key),
-                })?;
-            }
-            // If we get here, there was an error condition that requires the keys to
-            // be (re)created. This may include generating a new private key, or just
-            // the authorized public keys, or both.
-            match self.create_keys_if_needed(append_public_key) {
-                Ok(_) => message = format!("Keys repaired: {message}."),
-                Err(e) => {
-                    // If there was an error, print it, delete the keys,
-                    // and recreate.
-                    log::error!(
-                        "Error repairing SSH keys {e:?}. Please check configuration and/or delete existing key files and retry."
-                    );
-
-                    return Err(e);
+        // Allow multiple repair steps because fixing one issue can uncover the next (e.g.,
+        // repairing file permissions -> detecting invalid key format and regenerating private key ->
+        // appending matching public key to authorized_keys). A maximum of 3 distinct repair steps
+        // can be chained; 5 attempts provide a small safeguard against infinite loops.
+        const MAX_REPAIR_ATTEMPTS: usize = 5;
+        for _ in 0..MAX_REPAIR_ATTEMPTS {
+            match self.analyze_check_keys() {
+                Ok(_) => {
+                    log::info!("SSH Public/Private keys match");
+                    if messages.is_empty() {
+                        return Ok("SSH Public/Private keys match".into());
+                    } else {
+                        return Ok(format!("Keys repaired: {}.", messages.join(", ")));
+                    }
                 }
-            };
+                Err(e) => match e.kind {
+                    // Non-repairable errors: return immediately without modifying files.
+                    SshKeyErrorKind::BadKeyType | SshKeyErrorKind::BadConfiguration => {
+                        return Err(e);
+                    }
+
+                    // Bad Format. The private key file is corrupted or unreadable.
+                    // Delete it and regenerate fresh keys.
+                    SshKeyErrorKind::BadKeyFormat => {
+                        if self.private_key.exists() {
+                            fs::remove_file(&self.private_key).map_err(|io_err| SshKeyError {
+                                kind: SshKeyErrorKind::IOError,
+                                message: format!("Cannot delete {:?}: {io_err}", self.private_key),
+                            })?;
+                        }
+                        self.create_keys_if_needed(false)?;
+                        push_message(format!("{}. Regenerating a private key", e.message));
+                    }
+
+                    // Bad File permission. This means the private key file permission is
+                    // wrong. Fix it.
+                    SshKeyErrorKind::BadFilePermission => {
+                        let meta = self.private_key.metadata().map_err(|io_err| SshKeyError {
+                            kind: SshKeyErrorKind::IOError,
+                            message: format!("{io_err}"),
+                        })?;
+                        let mut permissions = meta.permissions();
+                        permissions.set_mode(0o600);
+                        fs::set_permissions(&self.private_key, permissions).map_err(|io_err| {
+                            SshKeyError {
+                                kind: SshKeyErrorKind::IOError,
+                                message: format!("{io_err}"),
+                            }
+                        })?;
+                        push_message(format!(
+                            "Repaired file permissions for {}",
+                            self.private_key.display()
+                        ));
+                    }
+
+                    // Key Mismatch. The private key is valid, but matching public key is not in authorized_keys.
+                    SshKeyErrorKind::KeyMismatch => {
+                        self.create_keys_if_needed(true)?;
+                        push_message(e.message);
+                    }
+
+                    // File not found or any other error: create missing keys.
+                    _ => {
+                        self.create_keys_if_needed(false)?;
+                        push_message(e.message);
+                    }
+                },
+            }
         }
-        Ok(message)
+
+        // If after multiple repair steps it still fails, run analyze_check_keys one last time
+        // to return the remaining error.
+        self.analyze_check_keys()?;
+        Ok(format!("Keys repaired: {}.", messages.join(", ")))
     }
 
     /// Checks that the corresponding public key from the private key file
@@ -896,16 +895,6 @@ impl SshKeyFiles {
                 });
             }
         }
-        if !self.authorized_keys.exists() {
-            return Err(SshKeyError {
-                kind: SshKeyErrorKind::FileNotFound,
-                message: format!(
-                    "Authorized key file {} does not exist",
-                    self.authorized_keys.to_string_lossy()
-                ),
-            });
-        }
-
         let (key_type, public_key) = match read_public_key_from_private(&self.private_key) {
             Ok((key_type, public_key)) => (key_type, public_key),
             Err(e) => {
@@ -913,15 +902,19 @@ impl SshKeyFiles {
                 return Err(SshKeyError {
                     kind: SshKeyErrorKind::BadKeyFormat,
                     message: format!(
-                        "Could not read data from private key {}",
-                        self.private_key.display()
+                        "Could not read OpenSSH Ed25519 private key from {}: {}. Only unencrypted OpenSSH Ed25519 keys are supported; check `ssh.priv` configuration or replace the key file",
+                        self.private_key.display(),
+                        e.message
                     ),
                 });
             }
         };
         let entry = build_public_key_entry(&key_type, &public_key).map_err(|e| SshKeyError {
             kind: SshKeyErrorKind::BadKeyFormat,
-            message: format!("{e}"),
+            message: format!(
+                "Failed to format public key for private key {}: {e}",
+                self.private_key.display()
+            ),
         })?;
 
         // ffx by default uses ed25519 keys. If the private key is something else (for example rsa), print
@@ -932,6 +925,16 @@ impl SshKeyFiles {
                 message: format!("The private key in {priv} is type {key_type}. This program can only verify ed25529 keys.\
             \n To re-add the public key to {auth}, run\
             \n ssh-keygen -y -f {priv} >> {auth}", priv=self.private_key.to_string_lossy(), auth=self.authorized_keys.to_string_lossy()),
+            });
+        }
+
+        if !self.authorized_keys.exists() {
+            return Err(SshKeyError {
+                kind: SshKeyErrorKind::FileNotFound,
+                message: format!(
+                    "Authorized key file {} does not exist",
+                    self.authorized_keys.to_string_lossy()
+                ),
             });
         }
 
@@ -1455,7 +1458,7 @@ mod test {
             Ok(message) => assert_eq!(
                 message,
                 format!(
-                    "Keys repaired: KeyMismatch:Could not find matching public key for the private key {}.",
+                    "Keys repaired: Could not find matching public key for the private key {}.",
                     other_private_path.to_string_lossy()
                 )
             ),
@@ -1479,6 +1482,132 @@ mod test {
             Ok(_) => (),
             Err(e) => panic!("unexpected error {e} ssh keys"),
         }
+    }
+
+    #[test]
+    fn test_check_keys_bad_format() {
+        let tmp_dir = TempDir::new().expect("creating temp dir");
+
+        let new_dir_path = tmp_dir.path().join("new-dir");
+        let auth_key_path = new_dir_path.join("authorized_keys");
+        let private_path = new_dir_path.join("privatekey");
+
+        fs::create_dir_all(&new_dir_path).expect("create dir");
+        fs::write(&auth_key_path, "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIG... comment\n")
+            .expect("write auth key");
+        fs::write(&private_path, "not an openssh private key").expect("write priv key");
+
+        let mut perms = fs::metadata(&private_path).expect("metadata").permissions();
+        perms.set_mode(0o600);
+        fs::set_permissions(&private_path, perms).expect("set perms");
+
+        let ssh_files =
+            SshKeyFiles { authorized_keys: auth_key_path, private_key: private_path.clone() };
+
+        // check_keys without repair should fail with BadKeyFormat
+        match ssh_files.check_keys(false) {
+            Ok(_) => panic!("bad key format should fail"),
+            Err(e) => {
+                assert_eq!(e.kind, SshKeyErrorKind::BadKeyFormat, "{e:?}");
+                assert!(e.message.contains(&*private_path.to_string_lossy()));
+            }
+        }
+
+        // check_keys with repair_if_needed = true should repair by regenerating a fresh key
+        match ssh_files.check_keys(true) {
+            Ok(message) => {
+                assert!(message.contains("Keys repaired:"));
+                assert!(message.contains("Regenerating a private key."));
+            }
+            Err(e) => panic!("repairing bad key format failed: {e:?}"),
+        }
+
+        // After repair, check_keys should pass
+        match ssh_files.check_keys(false) {
+            Ok(_) => (),
+            Err(e) => panic!("check_keys after repair failed: {e:?}"),
+        }
+
+        // Verify the private key is now a valid key file, not the old invalid content
+        assert!(private_path.exists());
+        let contents = fs::read_to_string(&private_path).expect("read priv key");
+        assert_ne!(contents, "not an openssh private key");
+        assert!(contents.contains("BEGIN OPENSSH PRIVATE KEY"));
+    }
+
+    #[test]
+    fn test_check_keys_bad_permission_repair() {
+        let tmp_dir = TempDir::new().expect("creating temp dir");
+
+        let new_dir_path = tmp_dir.path().join("new-dir");
+        let auth_key_path = new_dir_path.join("authorized_keys");
+        let private_path = new_dir_path.join("privatekey");
+
+        let ssh_files =
+            SshKeyFiles { authorized_keys: auth_key_path, private_key: private_path.clone() };
+        ssh_files.create_keys_if_needed(false).expect("creating test keys");
+
+        // Change permissions to 0644 (wrong permission)
+        let mut perms = fs::metadata(&private_path).expect("metadata").permissions();
+        perms.set_mode(0o644);
+        fs::set_permissions(&private_path, perms).expect("set perms");
+
+        // check_keys without repair should fail with BadFilePermission
+        match ssh_files.check_keys(false) {
+            Ok(_) => panic!("bad permission should fail"),
+            Err(e) => assert_eq!(e.kind, SshKeyErrorKind::BadFilePermission, "{e:?}"),
+        }
+
+        // check_keys with repair should fix the permissions
+        ssh_files.check_keys(true).expect("repair permissions");
+
+        let mode = fs::metadata(&private_path).expect("metadata").permissions().mode();
+        assert_eq!(mode & 0o777, 0o600);
+
+        // After repair, check_keys should pass
+        ssh_files.check_keys(false).expect("check keys after permission repair");
+    }
+
+    #[test]
+    fn test_check_keys_touched_file_multi_repair() {
+        let tmp_dir = TempDir::new().expect("creating temp dir");
+
+        let new_dir_path = tmp_dir.path().join("new-dir");
+        let auth_key_path = new_dir_path.join("authorized_keys");
+        let private_path = new_dir_path.join("privatekey");
+
+        fs::create_dir_all(&new_dir_path).expect("create dir");
+        // Simulate `touch privatekey`: empty file with 0644 permissions
+        fs::write(&private_path, "").expect("touch private key");
+        let mut perms = fs::metadata(&private_path).expect("metadata").permissions();
+        perms.set_mode(0o644);
+        fs::set_permissions(&private_path, perms).expect("set perms");
+
+        let ssh_files = SshKeyFiles {
+            authorized_keys: auth_key_path.clone(),
+            private_key: private_path.clone(),
+        };
+
+        // check_keys without repair fails with BadFilePermission
+        match ssh_files.check_keys(false) {
+            Ok(_) => panic!("touched file should fail"),
+            Err(e) => assert_eq!(e.kind, SshKeyErrorKind::BadFilePermission, "{e:?}"),
+        }
+
+        // check_keys with repair should fix permissions, detect empty format, and regenerate valid keys in ONE pass
+        let repair_msg = ssh_files.check_keys(true).expect("repair touched file in one pass");
+        assert!(repair_msg.contains("Repaired file permissions"));
+        assert!(repair_msg.contains("Regenerating a private key"));
+
+        // After single repair invocation, check_keys without repair passes immediately
+        ssh_files.check_keys(false).expect("check keys after repair");
+
+        // Verify valid private key and authorized_keys on disk
+        let mode = fs::metadata(&private_path).expect("metadata").permissions().mode();
+        assert_eq!(mode & 0o777, 0o600);
+        let contents = fs::read_to_string(&private_path).expect("read priv key");
+        assert!(contents.contains("BEGIN OPENSSH PRIVATE KEY"));
+        assert!(auth_key_path.exists());
     }
 
     #[test]

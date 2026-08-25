@@ -263,12 +263,15 @@ async fn exec_analytics(analytics_cmd: &AnalyticsCommand) -> Result<()> {
 
 async fn exec_check_ssh_keys(
     ctx: &EnvironmentContext,
-    _check_ssh_command: &SshKeyCommand,
+    check_ssh_command: &SshKeyCommand,
     writer: &mut VerifiedMachineWriter<ConfigToolMessage>,
 ) -> Result<()> {
     match SshKeyFiles::load(&ctx) {
         Ok(ssh_files) => {
-            match ssh_files.check_keys(true) {
+            if check_ssh_command.create {
+                let _ = ssh_files.create_keys_if_needed(false);
+            }
+            match ssh_files.check_keys(false) {
                 Ok(message) => {
                     writer.item(&ConfigToolMessage::Message(message))?;
                 }
@@ -279,8 +282,16 @@ async fn exec_check_ssh_keys(
                     SshKeyErrorKind::BadConfiguration => writer.item(
                         &ConfigToolMessage::Message(format!("SSH keys configuration problem: {e}")),
                     )?,
-                    _ => writer
-                        .item(&ConfigToolMessage::Message(format!("SSH keys problem: {e}.")))?,
+                    SshKeyErrorKind::FileNotFound if !check_ssh_command.create => {
+                        writer.item(&ConfigToolMessage::Message(format!(
+                            "{}. Check configuration or run `ffx config check-ssh-keys --create`.",
+                            e.message
+                        )))?
+                    }
+                    _ => writer.item(&ConfigToolMessage::Message(format!(
+                        "{}. Check configuration or run `ffx doctor --repair-keys`.",
+                        e.message
+                    )))?,
                 },
             };
         }
@@ -644,7 +655,7 @@ mod test {
         };
         other_keys.create_keys_if_needed(false).expect("Initializing other keys");
 
-        let cmd = ConfigCommand { sub: SubCommand::CheckSshKeys(SshKeyCommand {}) };
+        let cmd = ConfigCommand { sub: SubCommand::CheckSshKeys(SshKeyCommand { create: false }) };
         let tool = ConfigTool { config: cmd, ctx: test_env.context.clone() };
         let buffers = TestBuffers::default();
         let writer = <ConfigTool as FfxMain>::Writer::new_test(Some(Format::Json), &buffers);
@@ -657,13 +668,17 @@ mod test {
         let expected_message = format!("{}\n",
             serde_json::to_string(
                 &ConfigToolMessage::Message(
-                    format!("Keys repaired: KeyMismatch:Could not find matching public key for the private key {}.", private_path1.to_string_lossy())
+                    format!("Could not find matching public key for the private key {}. Check configuration or run `ffx doctor --repair-keys`.", private_path1.to_string_lossy())
                 )
             ).expect("Should be a string")
         );
         assert_eq!(expected_message, output);
 
-        let cmd = ConfigCommand { sub: SubCommand::CheckSshKeys(SshKeyCommand {}) };
+        // Explicitly repair using SshKeyFiles::load(&test_env.context)
+        let loaded_keys = SshKeyFiles::load(&test_env.context).expect("load keys");
+        loaded_keys.create_keys_if_needed(true).expect("repair keys");
+
+        let cmd = ConfigCommand { sub: SubCommand::CheckSshKeys(SshKeyCommand { create: false }) };
         let tool = ConfigTool { config: cmd, ctx: test_env.context.clone() };
         let buffers = TestBuffers::default();
         let writer = <ConfigTool as FfxMain>::Writer::new_test(Some(Format::Json), &buffers);
@@ -719,7 +734,7 @@ mod test {
             keys.private_key.display().to_string(),
             private_path.to_string_lossy().to_string()
         );
-        let cmd = ConfigCommand { sub: SubCommand::CheckSshKeys(SshKeyCommand {}) };
+        let cmd = ConfigCommand { sub: SubCommand::CheckSshKeys(SshKeyCommand { create: false }) };
         let tool = ConfigTool { config: cmd, ctx: test_env.context.clone() };
         let buffers = TestBuffers::default();
         let writer = <ConfigTool as FfxMain>::Writer::new_test(Some(Format::Json), &buffers);
@@ -773,7 +788,7 @@ mod test {
             private_path.to_string_lossy().to_string()
         );
 
-        let cmd = ConfigCommand { sub: SubCommand::CheckSshKeys(SshKeyCommand {}) };
+        let cmd = ConfigCommand { sub: SubCommand::CheckSshKeys(SshKeyCommand { create: false }) };
         let tool = ConfigTool { config: cmd, ctx: test_env.context.clone() };
         let buffers = TestBuffers::default();
         let writer = <ConfigTool as FfxMain>::Writer::new_test(Some(Format::Json), &buffers);
@@ -785,8 +800,118 @@ mod test {
         let expected_message = format!(
             "{}\n",
             serde_json::to_string(&ConfigToolMessage::Message(format!(
-                "Keys repaired: FileNotFound:Private key {} does not exist.",
+                "Private key {} does not exist. Check configuration or run `ffx config check-ssh-keys --create`.",
                 private_path.to_string_lossy()
+            ),))
+            .expect("Should be a string")
+        );
+        assert_eq!(expected_message, output);
+    }
+
+    #[fuchsia::test]
+    async fn test_exec_check_empty_ssh_keys_with_create() {
+        let mut builder = test_env();
+        let isolate_root = builder.isolate_root();
+
+        let auth_key_path = isolate_root.join("authorized_keys");
+        let private_path = isolate_root.join("privatekey");
+
+        let test_env = builder
+            .user_config(
+                "ssh.pub",
+                json!(["$ENV_PATH_THAT_IS_NOT_SET", auth_key_path.to_string_lossy(), "someother"]),
+            )
+            .user_config(
+                "ssh.priv",
+                json!([
+                    "$ENV_PATH_THAT_IS_NOT_SET_2",
+                    private_path.to_string_lossy(),
+                    "someother/place"
+                ]),
+            )
+            .build()
+            .expect("test env");
+
+        let keys = SshKeyFiles::load(&test_env.context).expect("new ssh keys");
+
+        assert_eq!(
+            keys.authorized_keys.display().to_string(),
+            auth_key_path.to_string_lossy().to_string()
+        );
+        assert_eq!(
+            keys.private_key.display().to_string(),
+            private_path.to_string_lossy().to_string()
+        );
+
+        assert!(!auth_key_path.exists());
+        assert!(!private_path.exists());
+
+        let cmd = ConfigCommand { sub: SubCommand::CheckSshKeys(SshKeyCommand { create: true }) };
+        let tool = ConfigTool { config: cmd, ctx: test_env.context.clone() };
+        let buffers = TestBuffers::default();
+        let writer = <ConfigTool as FfxMain>::Writer::new_test(Some(Format::Json), &buffers);
+
+        let result = tool.main(writer).await;
+        assert!(result.is_ok());
+
+        assert!(auth_key_path.exists());
+        assert!(private_path.exists());
+
+        let output = buffers.into_stdout_str();
+        let expected_message = format!(
+            "{}\n",
+            serde_json::to_string(&ConfigToolMessage::Message(format!(
+                "SSH Public/Private keys match"
+            ),))
+            .expect("Should be a string")
+        );
+        assert_eq!(expected_message, output);
+    }
+
+    #[fuchsia::test]
+    async fn test_exec_check_bad_permissions_with_create() {
+        use std::os::unix::fs::PermissionsExt;
+        let mut builder = test_env();
+        let isolate_root = builder.isolate_root();
+
+        let auth_key_path = isolate_root.join("authorized_keys");
+        let private_path = isolate_root.join("privatekey");
+
+        // Touch the file with 0o644 permissions
+        std::fs::write(&private_path, b"").expect("create file");
+        std::fs::set_permissions(&private_path, std::fs::Permissions::from_mode(0o644))
+            .expect("set permissions");
+
+        let test_env = builder
+            .user_config(
+                "ssh.pub",
+                json!(["$ENV_PATH_THAT_IS_NOT_SET", auth_key_path.to_string_lossy(), "someother"]),
+            )
+            .user_config(
+                "ssh.priv",
+                json!([
+                    "$ENV_PATH_THAT_IS_NOT_SET_2",
+                    private_path.to_string_lossy(),
+                    "someother/place"
+                ]),
+            )
+            .build()
+            .expect("test env");
+
+        let cmd = ConfigCommand { sub: SubCommand::CheckSshKeys(SshKeyCommand { create: true }) };
+        let tool = ConfigTool { config: cmd, ctx: test_env.context.clone() };
+        let buffers = TestBuffers::default();
+        let writer = <ConfigTool as FfxMain>::Writer::new_test(Some(Format::Json), &buffers);
+
+        let result = tool.main(writer).await;
+        assert!(result.is_ok());
+
+        let output = buffers.into_stdout_str();
+        let expected_message = format!(
+            "{}\n",
+            serde_json::to_string(&ConfigToolMessage::Message(format!(
+                "Private key {} has the wrong file permissions. SSH requires 0o600, found 0o100644. Check configuration or run `ffx doctor --repair-keys`.",
+                private_path.display()
             ),))
             .expect("Should be a string")
         );

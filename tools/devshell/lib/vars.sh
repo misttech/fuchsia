@@ -815,7 +815,7 @@ function ffx {
 #
 # The corresponding public key is stored in "$(get-ssh-privkey).pub".
 function get-ssh-privkey {
-  init="$(fx-command-run ffx --config fuchsia.analytics.ffx_invoker=fx config check-ssh-keys)"
+  init="$(fx-command-run ffx --config fuchsia.analytics.ffx_invoker=fx config check-ssh-keys --create)"
   RESULT=$?
   if [ $RESULT -ne 0 ]; then
     fx-error "$init"
@@ -829,7 +829,7 @@ function get-ssh-privkey {
 
 # Prints path to the default authorized_keys to include on Fuchsia devices.
 function get-ssh-authkeys {
-  init="$(fx-command-run ffx --config fuchsia.analytics.ffx_invoker=fx config check-ssh-keys)"
+  init="$(fx-command-run ffx --config fuchsia.analytics.ffx_invoker=fx config check-ssh-keys --create)"
   RESULT=$?
   if [ $RESULT -ne 0 ]; then
     fx-error "$init"

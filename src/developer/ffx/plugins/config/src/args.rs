@@ -256,12 +256,11 @@ pub struct AnalyticsDisableCommand {}
 pub struct AnalyticsShowCommand {}
 
 #[derive(ArgsInfo, FromArgs, Debug, PartialEq)]
-#[argh(
-    subcommand,
-    name = "check-ssh-keys",
-    description = "check the ssh key configuration and create keys if needed."
-)]
-pub struct SshKeyCommand {}
+#[argh(subcommand, name = "check-ssh-keys", description = "check the ssh key configuration.")]
+pub struct SshKeyCommand {
+    #[argh(switch, description = "create ssh keys if they do not exist")]
+    pub create: bool,
+}
 #[cfg(test)]
 mod tests {
     use super::*;

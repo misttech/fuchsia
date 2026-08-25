@@ -40,10 +40,10 @@ copy the existing Fuchsia SSH keys files from one machine to another.
 
 ## Create the keys
 
-To check the configuration of the ssh keys, run the following command:
+To create the SSH keys if they are missing, run the following command:
 
 ```posix-terminal
-ffx config check-ssh-keys
+ffx config check-ssh-keys --create
 ```
 
 This command generates the keys if they are missing, or updates the public key

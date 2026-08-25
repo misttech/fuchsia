@@ -73,7 +73,7 @@ follow these steps:
     you can generate keys with the following command:
 
     ```posix-terminal
-    ffx config check-ssh-keys
+    ffx config check-ssh-keys --create
     ```
 
     This will generate new keys if they don't exist, or update the public key

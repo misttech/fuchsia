@@ -249,23 +249,10 @@ pub async fn check_ssh_keys<W: Write>(
                     SshKeyErrorKind::BadConfiguration => {
                         (format!("SSH keys configuration problem: {e}"), LedgerOutcome::Failure)
                     }
-                    SshKeyErrorKind::IOError | SshKeyErrorKind::FileNotFound => (
-                        format!(
-                            "{}. Check configuration or run `ffx doctor --repair-keys`",
-                            e.message
-                        ),
-                        LedgerOutcome::Failure,
-                    ),
-                    SshKeyErrorKind::KeyMismatch => (
-                        format!(
-                            "{}. Check configuration or run `ffx doctor --repair-keys`",
-                            e.message
-                        ),
-                        LedgerOutcome::Failure,
-                    ),
                     _ => (
                         format!(
-                            "SSH keys problem: {e}. Check configuration or run `ffx doctor --repair-keys`"
+                            "{}. Check configuration or run `ffx doctor --repair-keys`",
+                            e.message
                         ),
                         LedgerOutcome::Failure,
                     ),
