@@ -2415,5 +2415,118 @@ TEST(ChannelTest, ReadWithoutReadRightReturnsAccessDenied) {
                 ZX_ERR_ACCESS_DENIED);
 }
 
+struct SuspendedCallReply {
+  zx_txid_t txid;
+  uint32_t data;
+};
+
+void WaitForThreadState(const zx::thread& thread, zx_thread_state_t expected_state,
+                        zx::duration timeout = zx::sec(5)) {
+  const zx::time deadline = zx::deadline_after(timeout);
+  while (zx::clock::get_monotonic() < deadline) {
+    zx_info_thread_t info;
+    ASSERT_OK(thread.get_info(ZX_INFO_THREAD, &info, sizeof(info), nullptr, nullptr));
+    if (info.state == expected_state) {
+      return;
+    }
+    zx::nanosleep(zx::deadline_after(zx::usec(100)));
+  }
+  FAIL("Thread did not reach expected state %u within timeout", expected_state);
+}
+
+void RunSuspendedCallTest(
+    fit::function<void(const zx::channel&, zx_txid_t*, SuspendedCallReply*, uint32_t*, uint32_t*)>
+        do_call,
+    uint32_t expected_data) {
+  zx::channel local, remote;
+  ASSERT_OK(zx::channel::create(0, &local, &remote));
+
+  zx::thread caller_thread_handle;
+  AutoJoinThread caller_thread([&]() {
+    ASSERT_OK(zx::thread::self()->duplicate(ZX_RIGHT_SAME_RIGHTS, &caller_thread_handle));
+
+    zx_txid_t txid = 0;
+    SuspendedCallReply reply_buf = {};
+    uint32_t actual_bytes = 0;
+    uint32_t actual_handles = 0;
+    do_call(local, &txid, &reply_buf, &actual_bytes, &actual_handles);
+    EXPECT_EQ(actual_bytes, sizeof(reply_buf));
+    EXPECT_EQ(reply_buf.data, expected_data);
+  });
+
+  // Wait for the caller's request message to arrive on remote.
+  // This wait also establishes a happens-before relationship ensuring that
+  // caller_thread_handle has been populated by caller_thread before we read it.
+  ASSERT_OK(remote.wait_one(ZX_CHANNEL_READABLE, zx::time::infinite(), nullptr));
+
+  // Wait until the caller thread is blocked in channel call.
+  ASSERT_NO_FATAL_FAILURE(
+      WaitForThreadState(caller_thread_handle, ZX_THREAD_STATE_BLOCKED_CHANNEL));
+
+  // Suspend the caller thread. This will cause the kernel waiter to return
+  // ZX_ERR_INTERNAL_INTR_RETRY.
+  zx::suspend_token token;
+  ASSERT_OK(caller_thread_handle.suspend(&token));
+
+  // Wait for the thread to enter the suspended state.
+  ASSERT_OK(caller_thread_handle.wait_one(ZX_THREAD_SUSPENDED, zx::time::infinite(), nullptr));
+
+  // Resume the caller thread by closing the suspend token.
+  // The vDSO will call sys_channel_call_finish or sys_channel_call_etc_finish
+  // to resume waiting.
+  token.reset();
+  ASSERT_OK(caller_thread_handle.wait_one(ZX_THREAD_RUNNING, zx::time::infinite(), nullptr));
+
+  // Now the server reads the request and replies.
+  zx_txid_t txid = 0;
+  uint32_t actual_bytes = 0;
+  uint32_t actual_handles = 0;
+  ASSERT_OK(remote.read(0, &txid, nullptr, sizeof(txid), 0, &actual_bytes, &actual_handles));
+  ASSERT_EQ(actual_bytes, sizeof(txid));
+
+  SuspendedCallReply reply = {.txid = txid, .data = expected_data};
+  ASSERT_OK(remote.write(0, &reply, sizeof(reply), nullptr, 0));
+}
+
+TEST(ChannelTest, CallSuspendedThreadResumesAndSucceeds) {
+  constexpr uint32_t kExpectedData = 0x12345678;
+  RunSuspendedCallTest(
+      [](const zx::channel& local, zx_txid_t* txid, SuspendedCallReply* reply_buf,
+         uint32_t* actual_bytes, uint32_t* actual_handles) {
+        zx_channel_call_args_t args = {
+            .wr_bytes = txid,
+            .wr_handles = nullptr,
+            .rd_bytes = reply_buf,
+            .rd_handles = nullptr,
+            .wr_num_bytes = sizeof(*txid),
+            .wr_num_handles = 0,
+            .rd_num_bytes = sizeof(*reply_buf),
+            .rd_num_handles = 0,
+        };
+        EXPECT_OK(local.call(0, zx::time::infinite(), &args, actual_bytes, actual_handles));
+      },
+      kExpectedData);
+}
+
+TEST(ChannelTest, CallEtcSuspendedThreadResumesAndSucceeds) {
+  constexpr uint32_t kExpectedData = 0x87654321;
+  RunSuspendedCallTest(
+      [](const zx::channel& local, zx_txid_t* txid, SuspendedCallReply* reply_buf,
+         uint32_t* actual_bytes, uint32_t* actual_handles) {
+        zx_channel_call_etc_args_t args = {
+            .wr_bytes = txid,
+            .wr_handles = nullptr,
+            .rd_bytes = reply_buf,
+            .rd_handles = nullptr,
+            .wr_num_bytes = sizeof(*txid),
+            .wr_num_handles = 0,
+            .rd_num_bytes = sizeof(*reply_buf),
+            .rd_num_handles = 0,
+        };
+        EXPECT_OK(local.call_etc(0, zx::time::infinite(), &args, actual_bytes, actual_handles));
+      },
+      kExpectedData);
+}
+
 }  // namespace
 }  // namespace channel
