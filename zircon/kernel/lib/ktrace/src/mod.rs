@@ -10,6 +10,7 @@ pub use crate::kernel::types::Koid;
 pub use crate::platform_rs::timer::{InstantBootTicks, timer_current_boot_ticks};
 use core::cell::UnsafeCell;
 use core::mem::{MaybeUninit, size_of};
+use core::ptr::NonNull;
 use core::sync::atomic::{AtomicBool, AtomicPtr, AtomicU32, Ordering};
 use core::{ffi, ptr, slice};
 use kalloc::Box;
@@ -357,12 +358,16 @@ impl DroppedRecordStats {
     }
 }
 
-/// A Rust implementation of `percpu_writer::Buffer` that wraps a static reference to an existing
+/// A Rust implementation of `percpu_writer::Buffer` that wraps an existing
 /// `spsc_buffer::Buffer` and tracks dropped trace records.
 pub struct KTraceBuffer {
-    buffer: &'static mut Buffer<NoOpAllocator>,
-    pub drop_stats: &'static mut DroppedRecordStats,
-    size: u32,
+    // We use `NonNull` raw pointers instead of `&'static mut` because the underlying memory is
+    // allocated and owned by the C++ layer. Holding long-lived `&mut` references would assert
+    // perpetual exclusive ownership (`noalias`), violating Rust's aliasing rules across the FFI
+    // boundary. `NonNull` allows us to create bounded, localized references only when accessed
+    // with interrupts disabled.
+    buffer: NonNull<Buffer<NoOpAllocator>>,
+    drop_stats: NonNull<DroppedRecordStats>,
     cpu_ref_header_entry: u16,
     pub process_koid: u64,
     pub thread_koid: u64,
@@ -374,27 +379,46 @@ unsafe impl Send for KTraceBuffer {}
 unsafe impl Sync for KTraceBuffer {}
 
 impl KTraceBuffer {
-    /// Constructs a `KTraceBuffer` from a static reference to an existing `spsc_buffer::Buffer`,
-    /// a static reference to `DroppedRecordStats`, and its metadata.
+    /// Constructs a `KTraceBuffer` from raw pointers to an existing `spsc_buffer::Buffer`,
+    /// `DroppedRecordStats`, and its metadata.
     pub fn new(
-        buffer: &'static mut Buffer<NoOpAllocator>,
-        drop_stats: &'static mut DroppedRecordStats,
+        buffer: NonNull<Buffer<NoOpAllocator>>,
+        drop_stats: NonNull<DroppedRecordStats>,
         cpu_ref_header_entry: u16,
         process_koid: u64,
         thread_koid: u64,
     ) -> Self {
-        let size = buffer.size();
-        Self { buffer, drop_stats, size, cpu_ref_header_entry, process_koid, thread_koid }
+        Self { buffer, drop_stats, cpu_ref_header_entry, process_koid, thread_koid }
+    }
+
+    #[inline(always)]
+    fn buffer(&self) -> &Buffer<NoOpAllocator> {
+        unsafe { self.buffer.as_ref() }
+    }
+
+    #[inline(always)]
+    fn buffer_mut<'a>(&mut self) -> &'a mut Buffer<NoOpAllocator> {
+        unsafe { &mut *self.buffer.as_ptr() }
+    }
+
+    #[inline(always)]
+    pub fn drop_stats(&self) -> &DroppedRecordStats {
+        unsafe { self.drop_stats.as_ref() }
+    }
+
+    #[inline(always)]
+    pub fn drop_stats_mut<'a>(&mut self) -> &'a mut DroppedRecordStats {
+        unsafe { &mut *self.drop_stats.as_ptr() }
     }
 
     /// Returns the size of the backing storage.
     pub fn size(&self) -> u32 {
-        self.size
+        self.buffer().size()
     }
 
     /// Drains the underlying Buffer.
     pub fn drain(&self) -> Result<(), Status> {
-        self.buffer.drain()
+        self.buffer().drain()
     }
 
     /// Copies `len` bytes out of the buffer using the provided `copy_fn`.
@@ -402,7 +426,7 @@ impl KTraceBuffer {
     where
         F: FnMut(u32, &[u8]) -> Result<(), Status>,
     {
-        self.buffer.read(copy_fn, len)
+        self.buffer().read(copy_fn, len)
     }
 
     /// Reserves a block of the given size in the buffer, interposing to write dropped record
@@ -418,20 +442,20 @@ impl KTraceBuffer {
             // Normal record
             ((header >> 4) & 0xfff) as u32
         };
-        let size = num_words * 8;
+        let size = num_words.checked_mul(8).ok_or(Status::INVALID_ARGS)?;
 
         let mut total_size = size;
-        let event = if self.drop_stats.has_dropped() {
+        let event = if self.drop_stats().has_dropped() {
             total_size += size_of::<DroppedRecordDurationEvent>() as u32;
             Some(self.serialize_drop_stats())
         } else {
             None
         };
 
-        match self.buffer.reserve(total_size) {
+        match self.buffer_mut().reserve(total_size) {
             Err(status) => {
                 let now = timer_current_boot_ticks();
-                self.drop_stats.track(now, size);
+                self.drop_stats_mut().track(now, size);
                 Err(status)
             }
             Ok(mut res) => {
@@ -445,9 +469,9 @@ impl KTraceBuffer {
                         )
                     };
                     res.write(event_bytes)?;
-                    self.drop_stats.reset();
+                    self.drop_stats_mut().reset();
                 }
-                Ok(KTraceReservation::new(res, header))
+                KTraceReservation::new(res, header)
             }
         }
     }
@@ -455,14 +479,14 @@ impl KTraceBuffer {
     /// Emit the dropped record stats to the trace buffer if we're currently tracking them.
     pub fn emit_drop_stats(&mut self) -> Result<(), Status> {
         debug_assert!(ints_disabled());
-        if !self.drop_stats.has_dropped() {
+        if !self.drop_stats().has_dropped() {
             return Ok(());
         }
 
         // Serialize the event first so we release the borrow on self before calling reserve.
         let event = self.serialize_drop_stats();
 
-        let mut res = self.buffer.reserve(size_of::<DroppedRecordDurationEvent>() as u32)?;
+        let mut res = self.buffer_mut().reserve(size_of::<DroppedRecordDurationEvent>() as u32)?;
         // SAFETY: DroppedRecordDurationEvent is repr(C) and has a defined binary layout.
         let event_bytes = unsafe {
             slice::from_raw_parts(
@@ -473,15 +497,8 @@ impl KTraceBuffer {
         res.write(event_bytes)?;
         res.commit()?;
 
-        // Reset the fields directly rather than calling reset_drop_stats() to avoid
-        // borrowing the entire self while res is in scope.
-        self.drop_stats.reset();
+        self.drop_stats_mut().reset();
         Ok(())
-    }
-
-    /// Resets the dropped records statistics to their initial values.
-    pub fn reset_drop_stats(&mut self) {
-        self.drop_stats.reset();
     }
 
     fn serialize_drop_stats(&self) -> DroppedRecordDurationEvent {
@@ -500,24 +517,25 @@ impl KTraceBuffer {
         // ArgumentSize is 1 word (8 bytes)
         // NameRef is packed into bits 16..31
         // Value is packed into bits 32..63
+        let drop_stats = self.drop_stats();
         let mut num_dropped_arg = 2u64;
         num_dropped_arg |= 1u64 << 4;
         num_dropped_arg |= (NUM_RECORDS_REF.id() as u64) << 16;
-        num_dropped_arg |= (self.drop_stats.num_dropped as u64) << 32;
+        num_dropped_arg |= (drop_stats.num_dropped as u64) << 32;
 
         let mut bytes_dropped_arg = 2u64;
         bytes_dropped_arg |= 1u64 << 4;
         bytes_dropped_arg |= (NUM_BYTES_REF.id() as u64) << 16;
-        bytes_dropped_arg |= (self.drop_stats.bytes_dropped as u64) << 32;
+        bytes_dropped_arg |= (drop_stats.bytes_dropped as u64) << 32;
 
         DroppedRecordDurationEvent {
             header,
-            start: self.drop_stats.first_dropped,
+            start: drop_stats.first_dropped,
             process_id: self.process_koid,
             thread_id: self.thread_koid,
             num_dropped_arg,
             bytes_dropped_arg,
-            end: self.drop_stats.last_dropped,
+            end: drop_stats.last_dropped,
         }
     }
 }
@@ -529,10 +547,13 @@ pub struct KTraceReservation<'a> {
 }
 
 impl<'a> KTraceReservation<'a> {
-    fn new(reservation: Reservation<'a>, header: u64) -> Self {
+    fn new(reservation: Reservation<'a>, header: u64) -> Result<Self, Status> {
         let mut this = Self { reservation };
-        let _ = this.write_word(header);
-        this
+        if let Err(e) = this.write_word(header) {
+            this.reservation.cancel();
+            return Err(e);
+        }
+        Ok(this)
     }
 
     /// Writes a single 64-bit word into the reservation.
@@ -609,8 +630,12 @@ impl KTrace {
             return Err(Status::BAD_STATE);
         }
 
-        // Direct, lock-free indexing into the slice, followed by loading the atomic pointer!
-        let ptr = self.buffers[curr_cpu_num() as usize].load(Ordering::Acquire);
+        let cpu_num = curr_cpu_num() as usize;
+        if cpu_num >= self.buffers.len() {
+            return Err(Status::BAD_STATE);
+        }
+
+        let ptr = self.buffers[cpu_num].load(Ordering::Acquire);
         if ptr.is_null() {
             return Err(Status::BAD_STATE);
         }
@@ -659,6 +684,7 @@ impl KTrace {
         let name = name.into();
         let base_size = 2; // Header, KOID
         let name_size = name.payload_words();
+        let args = if args.len() > 15 { &args[..15] } else { args };
         let args_size: usize = args.iter().map(|a| a.size_words()).sum();
         let total_size_words = base_size + name_size + args_size;
 
@@ -668,7 +694,7 @@ impl KTrace {
 
         let mut header = 7u64; // RecordType::kKernelObject (7)
         header |= (total_size_words as u64) << 4; // RecordSize
-        header |= (obj_type as u64) << 16; // ObjectType
+        header |= ((obj_type & 0xff) as u64) << 16; // ObjectType
         header |= (name.header_entry() & 0xffff) << 24; // NameStringRef
         header |= (args.len() as u64) << 40; // ArgumentCount
 
@@ -689,7 +715,6 @@ impl KTrace {
     #[allow(clippy::too_many_arguments)]
     #[inline(never)]
     #[cold]
-    #[allow(clippy::too_many_arguments)]
     pub fn emit_event(
         &self,
         event_type: EventType,
@@ -714,6 +739,9 @@ impl KTrace {
             }
             Context::Cpu => {
                 let cpu = curr_cpu_num() as usize;
+                if cpu >= self.buffers.len() {
+                    return;
+                }
                 let ptr = self.buffers[cpu].load(Ordering::Acquire);
                 if ptr.is_null() {
                     return;
@@ -726,6 +754,7 @@ impl KTrace {
         // 2. Calculate the record size.
         let base_size = 4; // Header, Timestamp, Process KOID, Thread KOID
         let content_size = if content.is_some() { 1 } else { 0 };
+        let args = if args.len() > 15 { &args[..15] } else { args };
         let args_size: usize = args.iter().map(|a| a.size_words()).sum();
         let total_size_words = base_size + content_size + args_size;
 
@@ -812,14 +841,21 @@ pub unsafe extern "C" fn rust_ktrace_init_cpu_buffer(
         return Status::INVALID_ARGS.into_raw();
     }
 
-    // SAFETY: The caller guarantees the pointers are valid, 'static, and binary-compatible with
-    // their respective Rust types.
-    let (buffer, drop_stats) = unsafe {
-        (
-            &mut *spsc_buffer_ptr.cast::<Buffer<NoOpAllocator>>(),
-            &mut *drop_stats_ptr.cast::<DroppedRecordStats>(),
-        )
+    let buffer = match NonNull::new(spsc_buffer_ptr.cast::<Buffer<NoOpAllocator>>()) {
+        Some(b) => b,
+        None => return Status::INVALID_ARGS.into_raw(),
     };
+    let drop_stats = match NonNull::new(drop_stats_ptr.cast::<DroppedRecordStats>()) {
+        Some(d) => d,
+        None => return Status::INVALID_ARGS.into_raw(),
+    };
+
+    // SAFETY: `spsc_buffer_ptr` is verified to be non-null above, and the caller guarantees that it
+    // points to a valid `SpscBuffer` whose memory layout is compatible with
+    // `Buffer<NoOpAllocator>`.
+    if !unsafe { buffer.as_ref().is_valid() } {
+        return Status::BAD_STATE.into_raw();
+    }
 
     // Allocate the KTraceBuffer on the heap.
     let buf =
@@ -863,19 +899,72 @@ mod tests {
     declare_interned_category!(IPC_CAT, "kernel:ipc", extern);
     declare_interned_category!(IRQ_CAT, "kernel:irq", extern);
 
+    unsafe extern "C" {
+        fn ktrace_restore_rust_singleton();
+    }
+
     /// Initialization and size/metadata attributes.
     #[test]
     fn init_and_size() {
         let mut storage = [0u8; 256];
         let mut inner_buf = unsafe { Buffer::from_raw_parts(storage.as_mut_ptr(), storage.len()) };
-        let leaked_ref = unsafe { &mut *ptr::from_mut(&mut inner_buf) };
         let mut stats = DroppedRecordStats::default();
-        let leaked_stats = unsafe { &mut *ptr::from_mut(&mut stats) };
-        let kbuf = KTraceBuffer::new(leaked_ref, leaked_stats, 1, 100, 200);
+        let kbuf = KTraceBuffer::new(
+            NonNull::new(ptr::from_mut(&mut inner_buf)).unwrap(),
+            NonNull::new(ptr::from_mut(&mut stats)).unwrap(),
+            1,
+            100,
+            200,
+        );
 
         expect_eq!(kbuf.size(), 256);
         expect_eq!(kbuf.process_koid, 100);
         expect_eq!(kbuf.thread_koid, 200);
+    }
+
+    // Verifies that constructing or operating on buffers with null or invalid storage fails
+    // gracefully with an error code rather than panicking on slice::from_raw_parts.
+    //
+    /// Buffer operations with null/invalid storage fail gracefully without panicking.
+    #[test]
+    fn invalid_buffer_guards() {
+        let _guard = InterruptDisableGuard::new();
+
+        // 1. rust_ktrace_init_cpu_buffer with null pointers.
+        let mut stats = DroppedRecordStats::default();
+        let stats_ptr = ptr::from_mut(&mut stats).cast::<ffi::c_void>();
+        let status_null_buf =
+            unsafe { rust_ktrace_init_cpu_buffer(0, ptr::null_mut(), stats_ptr, 100, 200, 1) };
+        expect_eq!(status_null_buf, Status::INVALID_ARGS.into_raw());
+
+        let mut storage = [0u8; 256];
+        let mut valid_inner =
+            unsafe { Buffer::from_raw_parts(storage.as_mut_ptr(), storage.len()) };
+        let valid_buf_ptr = ptr::from_mut(&mut valid_inner).cast::<ffi::c_void>();
+        let status_null_stats =
+            unsafe { rust_ktrace_init_cpu_buffer(0, valid_buf_ptr, ptr::null_mut(), 100, 200, 1) };
+        expect_eq!(status_null_stats, Status::INVALID_ARGS.into_raw());
+
+        // 2. rust_ktrace_init_cpu_buffer with invalid backing buffer (null storage / 0 size).
+        let mut invalid_inner = Buffer::<NoOpAllocator>::empty();
+        let invalid_buf_ptr = ptr::from_mut(&mut invalid_inner).cast::<ffi::c_void>();
+        let status_invalid =
+            unsafe { rust_ktrace_init_cpu_buffer(0, invalid_buf_ptr, stats_ptr, 100, 200, 1) };
+        expect_eq!(status_invalid, Status::BAD_STATE.into_raw());
+
+        // 3. Operating on KTraceBuffer wrapping an empty/invalid buffer with null storage.
+        let mut kbuf = KTraceBuffer::new(
+            NonNull::new(ptr::from_mut(&mut invalid_inner)).unwrap(),
+            NonNull::new(ptr::from_mut(&mut stats)).unwrap(),
+            1,
+            100,
+            200,
+        );
+
+        let header = 4u64 | (2u64 << 4);
+        expect_true!(kbuf.reserve(header).err() == Some(Status::BAD_STATE));
+        let read_res = kbuf.read(|_, _| Ok(()), 16);
+        expect_true!(read_res.err() == Some(Status::BAD_STATE));
     }
 
     /// Reservation, writing words, and committing.
@@ -884,10 +973,14 @@ mod tests {
         let _guard = InterruptDisableGuard::new();
         let mut storage = [0u8; 256];
         let mut inner_buf = unsafe { Buffer::from_raw_parts(storage.as_mut_ptr(), storage.len()) };
-        let leaked_ref = unsafe { &mut *ptr::from_mut(&mut inner_buf) };
         let mut stats = DroppedRecordStats::default();
-        let leaked_stats = unsafe { &mut *ptr::from_mut(&mut stats) };
-        let mut kbuf = KTraceBuffer::new(leaked_ref, leaked_stats, 1, 100, 200);
+        let mut kbuf = KTraceBuffer::new(
+            NonNull::new(ptr::from_mut(&mut inner_buf)).unwrap(),
+            NonNull::new(ptr::from_mut(&mut stats)).unwrap(),
+            1,
+            100,
+            200,
+        );
 
         // Reserve 16 bytes (2 words).
         let header = 4u64 | (2u64 << 4);
@@ -921,10 +1014,14 @@ mod tests {
         let _guard = InterruptDisableGuard::new();
         let mut storage = [0u8; 128]; // small buffer
         let mut inner_buf = unsafe { Buffer::from_raw_parts(storage.as_mut_ptr(), storage.len()) };
-        let leaked_ref = unsafe { &mut *ptr::from_mut(&mut inner_buf) };
         let mut stats = DroppedRecordStats::default();
-        let leaked_stats = unsafe { &mut *ptr::from_mut(&mut stats) };
-        let mut kbuf = KTraceBuffer::new(leaked_ref, leaked_stats, 1, 100, 200);
+        let mut kbuf = KTraceBuffer::new(
+            NonNull::new(ptr::from_mut(&mut inner_buf)).unwrap(),
+            NonNull::new(ptr::from_mut(&mut stats)).unwrap(),
+            1,
+            100,
+            200,
+        );
 
         // Reserve almost all space.
         // 128 bytes total. Let's reserve 96 bytes (12 words).
@@ -939,9 +1036,9 @@ mod tests {
         expect_true!(kbuf.reserve(header2).err() == Some(Status::NO_SPACE));
 
         // This failed reservation should have been tracked!
-        expect_true!(kbuf.drop_stats.has_dropped());
-        expect_eq!(kbuf.drop_stats.num_dropped, 1);
-        expect_eq!(kbuf.drop_stats.bytes_dropped, 64);
+        expect_true!(kbuf.drop_stats().has_dropped());
+        expect_eq!(kbuf.drop_stats().num_dropped, 1);
+        expect_eq!(kbuf.drop_stats().bytes_dropped, 64);
 
         // Now, drain the buffer to free all space.
         assert_ok!(kbuf.drain());
@@ -955,9 +1052,9 @@ mod tests {
         assert_ok!(res3.commit());
 
         // The dropped stats should have been reset!
-        expect_false!(kbuf.drop_stats.has_dropped());
-        expect_eq!(kbuf.drop_stats.num_dropped, 0);
-        expect_eq!(kbuf.drop_stats.bytes_dropped, 0);
+        expect_false!(kbuf.drop_stats().has_dropped());
+        expect_eq!(kbuf.drop_stats().num_dropped, 0);
+        expect_eq!(kbuf.drop_stats().bytes_dropped, 0);
 
         // Let's read the buffer content.
         let mut read_bytes = [0u8; 72];
@@ -1008,25 +1105,29 @@ mod tests {
         let _guard = InterruptDisableGuard::new();
         let mut storage = [0u8; 128];
         let mut inner_buf = unsafe { Buffer::from_raw_parts(storage.as_mut_ptr(), storage.len()) };
-        let leaked_ref = unsafe { &mut *ptr::from_mut(&mut inner_buf) };
         let mut stats = DroppedRecordStats::default();
-        let leaked_stats = unsafe { &mut *ptr::from_mut(&mut stats) };
-        let mut kbuf = KTraceBuffer::new(leaked_ref, leaked_stats, 1, 100, 200);
+        let mut kbuf = KTraceBuffer::new(
+            NonNull::new(ptr::from_mut(&mut inner_buf)).unwrap(),
+            NonNull::new(ptr::from_mut(&mut stats)).unwrap(),
+            1,
+            100,
+            200,
+        );
 
         // 1. Force a failed reservation to track a dropped record.
         let header = 4u64 | (32u64 << 4);
         expect_true!(kbuf.reserve(header).err() == Some(Status::NO_SPACE));
 
-        expect_true!(kbuf.drop_stats.has_dropped());
-        expect_eq!(kbuf.drop_stats.num_dropped, 1);
-        expect_eq!(kbuf.drop_stats.bytes_dropped, 256);
+        expect_true!(kbuf.drop_stats().has_dropped());
+        expect_eq!(kbuf.drop_stats().num_dropped, 1);
+        expect_eq!(kbuf.drop_stats().bytes_dropped, 256);
 
         // 2. Call emit_drop_stats directly.
         assert_ok!(kbuf.emit_drop_stats());
 
-        expect_false!(kbuf.drop_stats.has_dropped());
-        expect_eq!(kbuf.drop_stats.num_dropped, 0);
-        expect_eq!(kbuf.drop_stats.bytes_dropped, 0);
+        expect_false!(kbuf.drop_stats().has_dropped());
+        expect_eq!(kbuf.drop_stats().num_dropped, 0);
+        expect_eq!(kbuf.drop_stats().bytes_dropped, 0);
 
         // 3. Read and verify the event.
         let mut read_bytes = [0u8; 56];
@@ -1069,7 +1170,17 @@ mod tests {
     /// Validate full global lifecycle.
     #[test]
     fn global_lifecycle() {
+        struct RestoreGuard;
+        impl Drop for RestoreGuard {
+            fn drop(&mut self) {
+                unsafe {
+                    ktrace_restore_rust_singleton();
+                }
+            }
+        }
+        let _restore_guard = RestoreGuard;
         let _guard = InterruptDisableGuard::new();
+
         // Initialize indices of the categories we're testing.
         META_CAT.set_index(0, kstring::interned_category::InternedCategory::INVALID_INDEX);
         MEMORY_CAT.set_index(1, kstring::interned_category::InternedCategory::INVALID_INDEX);
@@ -1310,10 +1421,14 @@ mod tests {
         let _guard = InterruptDisableGuard::new();
         let mut storage = [0u8; 1024];
         let mut inner_buf = unsafe { Buffer::from_raw_parts(storage.as_mut_ptr(), storage.len()) };
-        let leaked_ref = unsafe { &mut *ptr::from_mut(&mut inner_buf) };
         let mut stats = DroppedRecordStats::default();
-        let leaked_stats = unsafe { &mut *ptr::from_mut(&mut stats) };
-        let mut kbuf = KTraceBuffer::new(leaked_ref, leaked_stats, 1, 100, 200);
+        let mut kbuf = KTraceBuffer::new(
+            NonNull::new(ptr::from_mut(&mut inner_buf)).unwrap(),
+            NonNull::new(ptr::from_mut(&mut stats)).unwrap(),
+            1,
+            100,
+            200,
+        );
 
         // Test each argument type writing via a reservation.
         let args = [

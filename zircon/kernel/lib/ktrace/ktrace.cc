@@ -252,6 +252,25 @@ void KTrace::Init(uint32_t bufsize, uint32_t initial_grpmask) {
   Start(KTRACE_ACTION_START, initial_grpmask);
 }
 
+void KTrace::RestoreRustSingleton() {
+  Guard<Mutex> guard{&lock_};
+  if (num_buffers_ == 0) {
+    return;
+  }
+  rust_ktrace_init(num_buffers_, &state_);
+  if (percpu_buffers_) {
+    for (uint32_t i = 0; i < num_buffers_; i++) {
+      const auto& cpu_ref = cpu_context_map_.GetCpuRef(i);
+      rust_ktrace_init_cpu_buffer(i, percpu_buffers_[i].spsc_buffer(),
+                                  percpu_buffers_[i].drop_stats_ptr(), cpu_ref.process().koid,
+                                  cpu_ref.thread().koid,
+                                  static_cast<uint16_t>(cpu_ref.HeaderEntry()));
+    }
+  }
+}
+
+extern "C" void ktrace_restore_rust_singleton() { KTrace::GetInstance().RestoreRustSingleton(); }
+
 zx_status_t KTrace::Stop() {
   Guard<Mutex> guard{&lock_};
 

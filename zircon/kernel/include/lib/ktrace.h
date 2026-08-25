@@ -655,6 +655,9 @@ using fxt::operator""_intern;
 void ktrace_report_live_threads();
 void ktrace_report_live_processes();
 
+// Test-only helper to restore Rust KTrace back to the global singleton after tests override it.
+extern "C" void ktrace_restore_rust_singleton();
+
 class KTrace {
  public:
   using Reservation = percpu_writer::Buffer::Reservation;
@@ -906,6 +909,10 @@ class KTrace {
  private:
   friend class KTraceTests;
   friend class TestKTrace;
+  friend void ::ktrace_restore_rust_singleton();
+
+  // Test helper to restore the global singleton state in Rust after tests override it.
+  void RestoreRustSingleton() TA_EXCL(lock_);
 
   // A special KOID used to signify the lack of an associated process.
   constexpr static fxt::Koid kNoProcess{0u};

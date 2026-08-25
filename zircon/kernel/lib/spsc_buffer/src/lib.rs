@@ -133,6 +133,12 @@ impl<'a> Reservation<'a> {
             total_len,
         )
     }
+
+    /// Cancels this reservation, allowing it to be safely dropped without advancing the write
+    /// pointer.
+    pub fn cancel(mut self) {
+        self.committed = true;
+    }
 }
 
 /// A transactional, single-producer, single-consumer ring buffer.
@@ -194,6 +200,14 @@ impl<A: Allocator + Default> Buffer<A> {
         })
     }
 
+    /// Returns true if the buffer has valid backing storage (non-null and valid power-of-two size).
+    pub fn is_valid(&self) -> bool {
+        !self.storage.is_null()
+            && self.size > 0
+            && self.size <= Self::MAX_STORAGE_SIZE as usize
+            && self.size.is_power_of_two()
+    }
+
     /// Returns the size of the backing storage.
     pub fn size(&self) -> u32 {
         self.size as u32
@@ -206,6 +220,10 @@ impl<A: Allocator + Default> Buffer<A> {
     pub fn reserve(&mut self, size: u32) -> Result<Reservation<'_>, Status> {
         if size == 0 || size > Self::MAX_STORAGE_SIZE {
             return Err(Status::INVALID_ARGS);
+        }
+
+        if self.storage.is_null() {
+            return Err(Status::BAD_STATE);
         }
 
         let storage_len = self.size as u32;
@@ -264,6 +282,17 @@ impl<A: Allocator + Default> Buffer<A> {
     where
         F: FnMut(u32, &[u8]) -> Result<(), Status>,
     {
+        if len > Self::MAX_STORAGE_SIZE {
+            return Err(Status::INVALID_ARGS);
+        }
+        if len == 0 {
+            return Ok(0);
+        }
+
+        if self.storage.is_null() {
+            return Err(Status::BAD_STATE);
+        }
+
         let initial_state = self.load_pointers();
         let available_data = initial_state.available_data();
         if available_data == 0 {
@@ -431,13 +460,26 @@ impl Buffer<NoOpAllocator> {
     ///
     /// # Safety
     ///
-    /// - `storage` must point to a valid, initialized slice of bytes whose length is a power of two
-    ///   and does not exceed `MAX_STORAGE_SIZE`.
+    /// - `storage` must be non-null and point to a valid, initialized slice of bytes whose length
+    ///   is a power of two and does not exceed `MAX_STORAGE_SIZE`.
     pub unsafe fn from_raw_parts(storage: *mut u8, size: usize) -> Self {
+        assert!(!storage.is_null());
+        assert!(size <= Self::MAX_STORAGE_SIZE as usize);
+        assert!(size.is_power_of_two());
         Self {
             combined_pointers: AtomicU64::new(0),
             storage,
             size,
+            _phantom: core::marker::PhantomData,
+        }
+    }
+
+    /// Constructs an empty `Buffer` with null storage and zero size (for testing).
+    pub const fn empty() -> Self {
+        Self {
+            combined_pointers: AtomicU64::new(0),
+            storage: core::ptr::null_mut(),
+            size: 0,
             _phantom: core::marker::PhantomData,
         }
     }
@@ -881,6 +923,16 @@ mod tests {
             Err(e) => assert_eq!(e, Status::INVALID_ARGS),
             Ok(_) => panic!("reserve(u32::MAX) should fail with INVALID_ARGS"),
         }
+    }
+
+    #[test]
+    fn test_reserve_and_read_null_storage() {
+        let mut spsc = Buffer::<NoOpAllocator>::empty();
+
+        assert!(!spsc.is_valid());
+        assert_eq!(spsc.reserve(16).err(), Some(Status::BAD_STATE));
+        let read_result = spsc.read(|_, _| Ok(()), 16);
+        assert_eq!(read_result.err(), Some(Status::BAD_STATE));
     }
 
     #[test]

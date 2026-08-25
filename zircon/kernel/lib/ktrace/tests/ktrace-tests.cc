@@ -29,6 +29,7 @@ void rust_ktrace_test_macros();
 class TestKTrace : public KTrace {
  public:
   explicit TestKTrace() : KTrace(true) {}
+  ~TestKTrace() override { ktrace_restore_rust_singleton(); }
   void ReportMetadata() override { report_metadata_count_++; }
 
   uint32_t report_metadata_count() const { return report_metadata_count_; }
