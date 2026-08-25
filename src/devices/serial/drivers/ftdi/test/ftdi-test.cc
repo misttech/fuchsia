@@ -8,6 +8,7 @@
 #include <fidl/fuchsia.hardware.serial/cpp/wire.h>
 #include <fidl/fuchsia.hardware.usb.peripheral/cpp/wire.h>
 #include <fidl/fuchsia.hardware.usb.virtual.bus/cpp/wire.h>
+#include <fidl/fuchsia.io/cpp/wire.h>
 #include <lib/component/incoming/cpp/protocol.h>
 #include <lib/ddk/platform-defs.h>
 #include <lib/fdio/cpp/caller.h>
@@ -93,7 +94,9 @@ class FtdiTest : public zxtest::Test {
     ASSERT_OK(bus_->SetupPeripheralDevice(std::move(device_desc), std::move(config_descs)));
 
     fbl::unique_fd fd;
-    ASSERT_OK(fdio_open3_fd_at(bus_->GetRootFd(), "class/serial", 0, fd.reset_and_get_address()));
+    ASSERT_OK(fdio_open3_fd_at(bus_->GetRootFd(), "class/serial",
+                               static_cast<uint64_t>(fuchsia_io::wire::kPermReadable),
+                               fd.reset_and_get_address()));
     ASSERT_STATUS(fdio_watch_directory(fd.get(), WaitForAnyFile, ZX_TIME_INFINITE, &devpath),
                   ZX_ERR_STOP);
     devpath = fbl::String::Concat({fbl::String("class/serial/"), devpath});

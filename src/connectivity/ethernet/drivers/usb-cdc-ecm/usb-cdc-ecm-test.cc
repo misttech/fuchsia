@@ -5,6 +5,7 @@
 #include <endian.h>
 #include <fidl/fuchsia.hardware.network/cpp/wire.h>
 #include <fidl/fuchsia.hardware.usb.peripheral/cpp/wire.h>
+#include <fidl/fuchsia.io/cpp/wire.h>
 #include <lib/async-loop/cpp/loop.h>
 #include <lib/async-loop/default.h>
 #include <lib/async-loop/testing/cpp/real_loop.h>
@@ -277,8 +278,9 @@ class UsbCdcEcmTest : public zxtest::Test {
 
     const auto wait_for_device = [this](DevicePaths& paths) {
       fbl::unique_fd fd;
-      ASSERT_OK(
-          fdio_open3_fd_at(bus_->GetRootFd(), paths.subdir.c_str(), 0, fd.reset_and_get_address()));
+      ASSERT_OK(fdio_open3_fd_at(bus_->GetRootFd(), paths.subdir.c_str(),
+                                 static_cast<uint64_t>(fuchsia_io::wire::kPermReadable),
+                                 fd.reset_and_get_address()));
       ASSERT_STATUS(fdio_watch_directory(fd.get(), WaitForDevice, ZX_TIME_INFINITE, &paths),
                     ZX_ERR_STOP);
     };
