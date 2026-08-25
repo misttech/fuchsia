@@ -17,7 +17,6 @@ driver_bind_rules("amlogic_video_bind") {
   rules = "meta/amlogic_decoder.bind"
   tests = "meta/bind_tests.json"
   deps = [
-    "//sdk/fidl/fuchsia.hardware.tee:fuchsia.hardware.tee_bindlib",
     "//src/devices/bind/fuchsia",
     "//src/devices/bind/fuchsia.amlogic.platform",
     "//src/devices/bind/fuchsia.clock",
@@ -31,7 +30,6 @@ driver_bind_rules("amlogic_video_test_bind") {
   rules = "meta/amlogic_decoder.bind"
   disable_autobind = true
   deps = [
-    "//sdk/fidl/fuchsia.hardware.tee:fuchsia.hardware.tee_bindlib",
     "//src/devices/bind/fuchsia",
     "//src/devices/bind/fuchsia.amlogic.platform",
     "//src/devices/bind/fuchsia.clock",

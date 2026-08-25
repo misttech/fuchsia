@@ -22,7 +22,6 @@
 #include <vector>
 
 #include <bind/fuchsia/cpp/bind.h>
-#include <bind/fuchsia/hardware/registers/cpp/bind.h>
 
 namespace registers_dt {
 
@@ -120,13 +119,9 @@ zx::result<> RegistersVisitor::Visit(fdf_devicetree::Node& node,
 zx::result<> RegistersVisitor::AddChildNodeSpec(fdf_devicetree::Node& child,
                                                 std::optional<std::string> register_name) {
   std::vector bind_rules = {
-      fdf::MakeAcceptBindRule(bind_fuchsia_hardware_registers::SERVICE,
-                              bind_fuchsia_hardware_registers::SERVICE_ZIRCONTRANSPORT),
       fdf::MakeAcceptBindRule(bind_fuchsia::SERVICE, "fuchsia.hardware.registers.Service"),
   };
   std::vector bind_properties = {
-      fdf::MakeProperty2(bind_fuchsia_hardware_registers::SERVICE,
-                         bind_fuchsia_hardware_registers::SERVICE_ZIRCONTRANSPORT),
       fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.registers.Service"),
   };
 

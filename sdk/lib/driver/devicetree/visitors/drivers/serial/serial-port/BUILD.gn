@@ -33,7 +33,6 @@ devicetree_visitor("serial-port-visitor") {
     "//sdk/lib/driver/devicetree/visitors:property-parser",
   ]
   non_sdk_deps = [
-    "//sdk/fidl/fuchsia.hardware.serial:fuchsia.hardware.serial_bindlib_cpp",
     "//src/devices/bind/fuchsia:fuchsia_cpp",
     "//src/devices/bind/fuchsia.serial:fuchsia.serial_cpp",
     "//src/lib/ddk",
@@ -44,7 +43,6 @@ test("serial-port-visitor-test-bin") {
   sources = [ "test/serial-port-visitor-test.cc" ]
   deps = [
     ":serial-port-visitor.static",
-    "//sdk/fidl/fuchsia.hardware.serial:fuchsia.hardware.serial_bindlib_cpp",
     "//sdk/fidl/fuchsia.hardware.serial:fuchsia.hardware.serial_cpp",
     "//sdk/lib/driver/devicetree/testing:visitor-test-helper",
     "//sdk/lib/driver/devicetree/visitors:registry",

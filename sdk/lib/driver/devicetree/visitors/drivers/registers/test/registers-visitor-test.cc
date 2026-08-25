@@ -12,7 +12,6 @@
 #include <lib/driver/devicetree/visitors/registry.h>
 
 #include <bind/fuchsia/cpp/bind.h>
-#include <bind/fuchsia/hardware/registers/cpp/bind.h>
 #include <gtest/gtest.h>
 
 #include "dts/registers.h"
@@ -135,15 +134,11 @@ TEST(RegistersVisitorTest, TestRegistersProperty) {
     auto mgr_request = specs[0];
 
     EXPECT_TRUE(fdf_devicetree::testing::CheckHasBindRules(
-        {{fdf::MakeAcceptBindRule(bind_fuchsia_hardware_registers::SERVICE,
-                                  bind_fuchsia_hardware_registers::SERVICE_ZIRCONTRANSPORT),
-          fdf::MakeAcceptBindRule(bind_fuchsia::SERVICE, "fuchsia.hardware.registers.Service"),
+        {{fdf::MakeAcceptBindRule(bind_fuchsia::SERVICE, "fuchsia.hardware.registers.Service"),
           fdf::MakeAcceptBindRule(bind_fuchsia::NAME, node.name()->c_str())}},
         (*mgr_request.parents2())[1].bind_rules(), false));
     EXPECT_TRUE(fdf_devicetree::testing::CheckHasProperties(
         {{
-            fdf::MakeProperty2(bind_fuchsia_hardware_registers::SERVICE,
-                               bind_fuchsia_hardware_registers::SERVICE_ZIRCONTRANSPORT),
             fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.registers.Service"),
         }},
         (*mgr_request.parents2())[1].properties(), false));
@@ -156,30 +151,20 @@ TEST(RegistersVisitorTest, TestRegistersProperty) {
     auto mgr_request = specs[0];
 
     EXPECT_TRUE(fdf_devicetree::testing::CheckHasBindRules(
-        {{fdf::MakeAcceptBindRule(bind_fuchsia_hardware_registers::SERVICE,
-                                  bind_fuchsia_hardware_registers::SERVICE_ZIRCONTRANSPORT),
-          fdf::MakeAcceptBindRule(bind_fuchsia::SERVICE, "fuchsia.hardware.registers.Service"),
+        {{fdf::MakeAcceptBindRule(bind_fuchsia::SERVICE, "fuchsia.hardware.registers.Service"),
           fdf::MakeAcceptBindRule(bind_fuchsia::NAME, REGISTER_NAME3)}},
-
         (*mgr_request.parents2())[1].bind_rules(), false));
     EXPECT_TRUE(fdf_devicetree::testing::CheckHasProperties(
-        {{fdf::MakeProperty2(bind_fuchsia_hardware_registers::SERVICE,
-                             bind_fuchsia_hardware_registers::SERVICE_ZIRCONTRANSPORT),
-          fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.registers.Service"),
+        {{fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.registers.Service"),
           fdf::MakeProperty2(bind_fuchsia::NAME, REGISTER_NAME3)}},
         (*mgr_request.parents2())[1].properties(), false));
 
     EXPECT_TRUE(fdf_devicetree::testing::CheckHasBindRules(
-        {{fdf::MakeAcceptBindRule(bind_fuchsia_hardware_registers::SERVICE,
-                                  bind_fuchsia_hardware_registers::SERVICE_ZIRCONTRANSPORT),
-          fdf::MakeAcceptBindRule(bind_fuchsia::SERVICE, "fuchsia.hardware.registers.Service"),
+        {{fdf::MakeAcceptBindRule(bind_fuchsia::SERVICE, "fuchsia.hardware.registers.Service"),
           fdf::MakeAcceptBindRule(bind_fuchsia::NAME, REGISTER_NAME4)}},
-
         (*mgr_request.parents2())[2].bind_rules(), false));
     EXPECT_TRUE(fdf_devicetree::testing::CheckHasProperties(
-        {{fdf::MakeProperty2(bind_fuchsia_hardware_registers::SERVICE,
-                             bind_fuchsia_hardware_registers::SERVICE_ZIRCONTRANSPORT),
-          fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.registers.Service"),
+        {{fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.registers.Service"),
           fdf::MakeProperty2(bind_fuchsia::NAME, REGISTER_NAME4)}},
         (*mgr_request.parents2())[2].properties(), false));
   }

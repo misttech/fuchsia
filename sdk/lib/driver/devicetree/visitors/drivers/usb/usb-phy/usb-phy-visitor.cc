@@ -85,13 +85,9 @@ zx::result<> UsbPhyVisitor::AddChildNodeSpec(fdf_devicetree::Node& child,
                                              std::string_view phy_name) {
   std::vector bind_rules = {
       fdf::MakeAcceptBindRule(bind_fuchsia::SERVICE, "fuchsia.hardware.usb.phy.Service"),
-      fdf::MakeAcceptBindRule("fuchsia.hardware.usb.phy.Service",
-                              "fuchsia.hardware.usb.phy.Service.ZirconTransport"),
   };
   std::vector bind_properties = {
       fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.usb.phy.Service"),
-      fdf::MakeProperty2("fuchsia.hardware.usb.phy.Service",
-                         "fuchsia.hardware.usb.phy.Service.ZirconTransport"),
   };
 
   std::optional<uint32_t> did;

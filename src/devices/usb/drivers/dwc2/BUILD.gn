@@ -18,7 +18,6 @@ driver_bind_rules("dwc2_bind") {
   bind_output = "dwc2.bindbc"
   tests = "meta/tests.json"
   deps = [
-    "//sdk/fidl/fuchsia.hardware.usb.phy:fuchsia.hardware.usb.phy_bindlib",
     "//src/devices/bind/fuchsia",
     "//src/devices/bind/fuchsia.designware.platform",
     "//src/devices/bind/fuchsia.platform",

@@ -11,8 +11,7 @@ driver_bind_rules("spi_bind") {
   rules = "meta/spi.bind"
   bind_output = "spi.bindbc"
   tests = "meta/tests.json"
-  deps =
-      [ "//sdk/fidl/fuchsia.hardware.spiimpl:fuchsia.hardware.spiimpl_bindlib" ]
+  deps = [ "//src/devices/bind/fuchsia" ]
 }
 
 fuchsia_component_manifest("spi-manifest") {
@@ -56,7 +55,6 @@ source_set("common") {
   ]
   public_deps = [
     ":spi-config",
-    "//sdk/fidl/fuchsia.hardware.spi:fuchsia.hardware.spi_bindlib_cpp",
     "//sdk/fidl/fuchsia.hardware.spi:fuchsia.hardware.spi_cpp",
     "//sdk/fidl/fuchsia.hardware.spi.businfo:fuchsia.hardware.spi.businfo_cpp",
     "//sdk/fidl/fuchsia.hardware.spiimpl:fuchsia.hardware.spiimpl_cpp",

@@ -84,7 +84,6 @@ fuchsia_cc_driver(
         "@fuchsia_sdk//fidl/fuchsia.driver.framework:fuchsia.driver.framework_cpp",
         "@fuchsia_sdk//fidl/fuchsia.hardware.gpio:fuchsia.hardware.gpio_cpp",
         "@fuchsia_sdk//fidl/fuchsia.hardware.platform.bus:fuchsia.hardware.platform.bus_cpp",
-        "@fuchsia_sdk//fidl/fuchsia.hardware.sdio:fuchsia.hardware.sdio_bindlib_cc",
         "@fuchsia_sdk//fidl/fuchsia.input.report:fuchsia.input.report_cpp",
         "@fuchsia_sdk//pkg/driver_component_cpp",
         "@fuchsia_sdk//pkg/driver_runtime",

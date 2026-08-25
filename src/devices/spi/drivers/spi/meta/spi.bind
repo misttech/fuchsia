@@ -3,4 +3,4 @@
 // found in the LICENSE file.
 
 
-fuchsia.hardware.spiimpl.Service == fuchsia.hardware.spiimpl.Service.DriverTransport;
+fuchsia.Service == "fuchsia.hardware.spiimpl.Service";

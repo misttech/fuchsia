@@ -30,7 +30,6 @@ devicetree_visitor("spi-bus-visitor") {
     "//sdk/lib/driver/devicetree/visitors:driver-visitor",
   ]
   non_sdk_deps = [
-    "//sdk/fidl/fuchsia.hardware.spi:fuchsia.hardware.spi_bindlib_cpp",
     "//src/devices/bind/fuchsia:fuchsia_cpp",
     "//src/lib/ddk",
     "//src/lib/ddk:ddk-metadata-headers",
@@ -41,7 +40,6 @@ test("spi-bus-visitor-test-bin") {
   sources = [ "test/spi-bus-visitor-test.cc" ]
   deps = [
     ":spi-bus-visitor.static",
-    "//sdk/fidl/fuchsia.hardware.spi:fuchsia.hardware.spi_bindlib_cpp",
     "//sdk/lib/driver/devicetree/testing:visitor-test-helper",
     "//sdk/lib/driver/devicetree/visitors:registry",
     "//sdk/lib/driver/devicetree/visitors/default/bind-property",

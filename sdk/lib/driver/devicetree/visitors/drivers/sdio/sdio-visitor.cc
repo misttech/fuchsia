@@ -10,7 +10,6 @@
 #include <lib/driver/logging/cpp/logger.h>
 
 #include <bind/fuchsia/cpp/bind.h>
-#include <bind/fuchsia/hardware/sdio/cpp/bind.h>
 #include <bind/fuchsia/sdio/cpp/bind.h>
 
 namespace sdio_dt {
@@ -67,8 +66,7 @@ zx::result<> SdioVisitor::ParseChild(fdf_devicetree::Node& parent,
                  fdf::MakeAcceptBindRule(bind_fuchsia::SDIO_FUNCTION, func),
              },
          .properties = {
-             fdf::MakeProperty2(bind_fuchsia_hardware_sdio::SERVICE,
-                                bind_fuchsia_hardware_sdio::SERVICE_ZIRCONTRANSPORT),
+             fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.sdio.Service"),
              fdf::MakeProperty2(bind_fuchsia::SDIO_FUNCTION, func),
          }}};
     child.AddNodeSpec(sdio_parent);

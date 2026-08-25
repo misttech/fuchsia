@@ -12,6 +12,7 @@ fidl_library(
         "device_connector.fidl",
         "metadata.fidl",
     ],
+    enable_bindlib = False,
     visibility = ["//visibility:public"],
     deps = [
         "//sdk/fidl/fuchsia.tee",

@@ -12,7 +12,7 @@
 
 #include <utility>
 
-#include <bind/fuchsia/hardware/spmi/cpp/bind.h>
+#include <bind/fuchsia/cpp/bind.h>
 #include <bind/fuchsia/spmi/cpp/bind.h>
 
 #include "spmi.h"
@@ -266,15 +266,14 @@ zx::result<fuchsia_hardware_spmi::TargetInfo> SpmiVisitor::ParseTarget(
     fuchsia_driver_framework::ParentSpec2 target_spec{{
         .bind_rules =
             {
-                fdf::MakeAcceptBindRule(bind_fuchsia_hardware_spmi::TARGETSERVICE,
-                                        bind_fuchsia_hardware_spmi::TARGETSERVICE_ZIRCONTRANSPORT),
+                fdf::MakeAcceptBindRule(bind_fuchsia::SERVICE,
+                                        "fuchsia.hardware.spmi.TargetService"),
                 fdf::MakeAcceptBindRule(bind_fuchsia_spmi::CONTROLLER_ID, controller_id),
                 fdf::MakeAcceptBindRule(bind_fuchsia_spmi::TARGET_ID, target_id),
             },
         .properties =
             {
-                fdf::MakeProperty2(bind_fuchsia_hardware_spmi::TARGETSERVICE,
-                                   bind_fuchsia_hardware_spmi::TARGETSERVICE_ZIRCONTRANSPORT),
+                fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.spmi.TargetService"),
                 fdf::MakeProperty2(bind_fuchsia_spmi::TARGET_ID, target_id),
             },
     }};
@@ -356,9 +355,8 @@ zx::result<std::vector<fuchsia_hardware_spmi::SubTargetInfo>> SpmiVisitor::Parse
     fuchsia_driver_framework::ParentSpec2 sub_target_spec{{
         .bind_rules =
             {
-                fdf::MakeAcceptBindRule(
-                    bind_fuchsia_hardware_spmi::SUBTARGETSERVICE,
-                    bind_fuchsia_hardware_spmi::SUBTARGETSERVICE_ZIRCONTRANSPORT),
+                fdf::MakeAcceptBindRule(bind_fuchsia::SERVICE,
+                                        "fuchsia.hardware.spmi.SubTargetService"),
                 fdf::MakeAcceptBindRule(bind_fuchsia_spmi::CONTROLLER_ID, controller_id),
                 fdf::MakeAcceptBindRule(bind_fuchsia_spmi::TARGET_ID,
                                         static_cast<uint32_t>(*parent.id())),
@@ -366,8 +364,7 @@ zx::result<std::vector<fuchsia_hardware_spmi::SubTargetInfo>> SpmiVisitor::Parse
             },
         .properties =
             {
-                fdf::MakeProperty2(bind_fuchsia_hardware_spmi::SUBTARGETSERVICE,
-                                   bind_fuchsia_hardware_spmi::SUBTARGETSERVICE_ZIRCONTRANSPORT),
+                fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.spmi.SubTargetService"),
                 fdf::MakeProperty2(bind_fuchsia_spmi::TARGET_ID,
                                    static_cast<uint32_t>(*parent.id())),
                 fdf::MakeProperty2(bind_fuchsia_spmi::SUB_TARGET_ADDRESS, address),

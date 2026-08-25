@@ -4,7 +4,6 @@
 
 composite dw_i2c;
 using fuchsia;
-using fuchsia.hardware.reset;
 using fuchsia.gpio;
 
 primary parent "pdev" {
@@ -22,7 +21,7 @@ parent "registers" {
 }
 
 parent "reset" {
-  fuchsia.hardware.reset.Service == fuchsia.hardware.reset.Service.ZirconTransport;
+  fuchsia.Service == "fuchsia.hardware.reset.Service";
   fuchsia.NAME == "reset";
 }
 

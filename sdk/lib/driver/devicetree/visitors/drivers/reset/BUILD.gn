@@ -29,7 +29,6 @@ devicetree_visitor("reset-visitor") {
     "//sdk/lib/driver/devicetree/visitors:driver-visitor",
   ]
   non_sdk_deps = [
-    "//sdk/fidl/fuchsia.hardware.reset:fuchsia.hardware.reset_bindlib_cpp",
     "//src/devices/bind/fuchsia:fuchsia_cpp",
     "//src/devices/bind/fuchsia.reset:fuchsia.reset_cpp",
   ]

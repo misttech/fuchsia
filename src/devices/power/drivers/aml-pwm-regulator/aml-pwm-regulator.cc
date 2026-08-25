@@ -12,7 +12,6 @@
 #include <string>
 
 #include <bind/fuchsia/cpp/bind.h>
-#include <bind/fuchsia/hardware/vreg/cpp/bind.h>
 
 namespace aml_pwm_regulator {
 
@@ -142,8 +141,6 @@ zx::result<std::unique_ptr<AmlPwmRegulator>> AmlPwmRegulator::Create(const VregM
   std::vector properties = {
       fdf::MakeProperty2(bind_fuchsia::NAME, name),
       fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.vreg.Service"),
-      fdf::MakeProperty2(bind_fuchsia_hardware_vreg::SERVICE,
-                         bind_fuchsia_hardware_vreg::SERVICE_ZIRCONTRANSPORT),
   };
 
   zx::result child = fdf::AddChild(driver.node(), driver.logger(), name, properties, offers);

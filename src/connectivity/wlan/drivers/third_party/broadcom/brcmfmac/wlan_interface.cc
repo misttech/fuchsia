@@ -19,7 +19,7 @@
 #include <cstdio>
 #include <cstring>
 
-#include <bind/fuchsia/wlan/fullmac/cpp/bind.h>
+#include <bind/fuchsia/cpp/bind.h>
 
 #include "fidl/fuchsia.wlan.fullmac/cpp/wire_types.h"
 #include "src/connectivity/wlan/drivers/third_party/broadcom/brcmfmac/cfg80211.h"
@@ -120,8 +120,7 @@ zx_status_t WlanInterface::AddWlanFullmacDevice() {
 
   fidl::VectorView<fuchsia_driver_framework::wire::Offer> offers(arena, 1);
   offers[0] = fdf::MakeOffer2<fuchsia_wlan_fullmac::Service>(arena, GetName());
-  auto property = fdf::MakeProperty2(arena, bind_fuchsia_wlan_fullmac::SERVICE,
-                                     bind_fuchsia_wlan_fullmac::SERVICE_ZIRCONTRANSPORT);
+  auto property = fdf::MakeProperty2(arena, bind_fuchsia::SERVICE, "fuchsia.wlan.fullmac.Service");
 
   auto args =
       fdf::wire::NodeAddArgs::Builder(arena)

@@ -11,7 +11,7 @@ primary parent "pci" {
 }
 
 parent "tee" {
-  if fuchsia.hardware.tee.Service == fuchsia.hardware.tee.Service.ZirconTransport {
+  if fuchsia.Service == "fuchsia.hardware.tee.Service" {
     fuchsia.BIND_PLATFORM_DEV_VID == fuchsia.platform.BIND_PLATFORM_DEV_VID.GENERIC;
   } else {
     fuchsia.BIND_PLATFORM_DEV_VID == fuchsia.platform.BIND_PLATFORM_DEV_VID.QEMU;

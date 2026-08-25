@@ -14,7 +14,6 @@
 #include <lib/fit/function.h>
 
 #include <bind/fuchsia/cpp/bind.h>
-#include <bind/fuchsia/hardware/spi/cpp/bind.h>
 #include <fbl/alloc_checker.h>
 
 #include "spi-child.h"

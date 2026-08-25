@@ -12,7 +12,6 @@ driver_bind_rules("optee-bind") {
   bind_output = "optee.bindbc"
   tests = "meta/optee-bind-test.json"
   deps = [
-    "//sdk/fidl/fuchsia.hardware.rpmb:fuchsia.hardware.rpmb_bindlib",
     "//src/devices/bind/fuchsia",
     "//src/devices/bind/fuchsia.platform",
   ]

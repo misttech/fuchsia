@@ -31,7 +31,6 @@ fuchsia_cc_driver("post-init-driver") {
     "//sdk/fidl/fuchsia.hardware.gpio:fuchsia.hardware.gpio_cpp",
     "//sdk/fidl/fuchsia.hardware.input.focaltech:fuchsia.hardware.input.focaltech_cpp",
     "//sdk/fidl/fuchsia.hardware.platform.bus:fuchsia.hardware.platform.bus_cpp",
-    "//sdk/fidl/fuchsia.hardware.sysmem:fuchsia.hardware.sysmem_bindlib_cpp",
     "//sdk/fidl/fuchsia.hardware.ti.metadata:fuchsia.hardware.ti.metadata_cpp",
     "//sdk/lib/driver/component/cpp",
     "//sdk/lib/driver/runtime:driver_runtime_cpp",

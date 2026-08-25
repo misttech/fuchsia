@@ -14,7 +14,7 @@
 #include <lib/fdio/directory.h>
 #include <lib/fidl/cpp/wire/channel.h>
 
-#include <bind/fuchsia/wlan/fullmac/cpp/bind.h>
+#include <bind/fuchsia/cpp/bind.h>
 #include <fbl/string_buffer.h>
 #include <wlan/common/channel.h>
 #include <wlan/drivers/macaddr.h>
@@ -715,8 +715,8 @@ zx_status_t SimTest::StartInterface(wlan_common::WlanMacRole role, SimInterface*
   }
 
   // check that fullmac device count is expected.
-  auto fullmac_service_prop = fdf::MakeProperty2(
-      bind_fuchsia_wlan_fullmac::SERVICE, bind_fuchsia_wlan_fullmac::SERVICE_ZIRCONTRANSPORT);
+  auto fullmac_service_prop =
+      fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.wlan.fullmac.Service");
   EXPECT_EQ(ifaces_.size(), DeviceCountWithProperty(fullmac_service_prop));
 
   return ZX_OK;
@@ -735,8 +735,8 @@ zx_status_t SimTest::InterfaceDestroyed(SimInterface* ifc) {
   ifc->Reset();
   ifaces_.erase(iter);
 
-  auto fullmac_service_prop = fdf::MakeProperty2(
-      bind_fuchsia_wlan_fullmac::SERVICE, bind_fuchsia_wlan_fullmac::SERVICE_ZIRCONTRANSPORT);
+  auto fullmac_service_prop =
+      fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.wlan.fullmac.Service");
   WaitForDeviceCountWithProperty(fullmac_service_prop, ifaces_.size());
 
   return ZX_OK;
@@ -811,8 +811,8 @@ zx_status_t SimTest::DeleteInterface(SimInterface* ifc) {
   // Once the interface data structures have been deleted, our pointers are no longer valid.
   ifaces_.erase(iter);
 
-  auto fullmac_service_prop = fdf::MakeProperty2(
-      bind_fuchsia_wlan_fullmac::SERVICE, bind_fuchsia_wlan_fullmac::SERVICE_ZIRCONTRANSPORT);
+  auto fullmac_service_prop =
+      fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.wlan.fullmac.Service");
   WaitForDeviceCountWithProperty(fullmac_service_prop, ifaces_.size());
 
   return ZX_OK;

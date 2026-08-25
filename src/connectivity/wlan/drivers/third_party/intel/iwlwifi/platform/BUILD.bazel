@@ -168,7 +168,6 @@ cc_library(
 
         # Needed for pcie-iwlwifi-driver.cc/h
         "@fuchsia_sdk//fidl/fuchsia.driver.framework:fuchsia.driver.framework_cpp",
-        "@fuchsia_sdk//fidl/fuchsia.wlan.softmac:fuchsia.wlan.softmac_bindlib_cc",
         "@fuchsia_sdk//pkg/async-loop-cpp",
         "@fuchsia_sdk//pkg/async-loop-default",
         "@fuchsia_sdk//pkg/driver_outgoing_cpp",

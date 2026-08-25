@@ -15,7 +15,6 @@
 
 #include <memory>
 
-#include <bind/fuchsia/wlan/softmac/cpp/bind.h>
 #include <wlan/drivers/log_instance.h>
 
 #include "third_party/iwlwifi/platform/kernel.h"

@@ -16,7 +16,7 @@
     {
         "device": {
             "fuchsia.Service": "\"fuchsia.hardware.serialimpl.Service\"",
-            "fuchsia.hardware.serial.Service": "fuchsia.hardware.serial.Service.ZirconTransport"
+            "fuchsia.BIND_PROTOCOL": "fuchsia.serial.BIND_PROTOCOL.DEVICE"
         },
         "expected": "abort",
         "name": "own node"

@@ -3,10 +3,8 @@
 // found in the LICENSE file.
 
 using fuchsia;
-using fuchsia.hardware.serial;
 using fuchsia.serial;
 
 fuchsia.Service == "fuchsia.hardware.serialimpl.Service";
 // Don't bind to our own node.
-fuchsia.hardware.serial.Service != fuchsia.hardware.serial.Service.ZirconTransport;
 fuchsia.BIND_PROTOCOL != fuchsia.serial.BIND_PROTOCOL.DEVICE;

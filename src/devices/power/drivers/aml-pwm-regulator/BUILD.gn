@@ -27,7 +27,6 @@ source_set("common") {
   public_deps = [
     ":aml-pwm-regulator-bind",
     "//sdk/fidl/fuchsia.hardware.pwm:fuchsia.hardware.pwm_cpp",
-    "//sdk/fidl/fuchsia.hardware.vreg:fuchsia.hardware.vreg_bindlib_cpp",
     "//sdk/fidl/fuchsia.hardware.vreg:fuchsia.hardware.vreg_cpp",
     "//sdk/lib/driver/component/cpp",
     "//src/devices/bind/fuchsia:fuchsia_cpp",

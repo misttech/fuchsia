@@ -20,7 +20,7 @@
 #include <format>
 
 #include <bind/fuchsia/cpp/bind.h>
-#include <bind/fuchsia/hardware/serial/cpp/bind.h>
+#include <bind/fuchsia/serial/cpp/bind.h>
 
 #include "lib/driver/component/cpp/node_add_args.h"
 #include "src/connectivity/bluetooth/hci/transport/uart/bt_transport_uart_config.h"
@@ -184,9 +184,6 @@ zx::result<> BtTransportUart::Start(fdf::DriverContext context) {
   }
 
   auto properties = std::to_array({
-      // Prevent the serial core driver from binding to our node.
-      fdf::MakeProperty2(bind_fuchsia_hardware_serial::SERVICE,
-                         bind_fuchsia_hardware_serial::SERVICE_ZIRCONTRANSPORT),
       fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.bluetooth.HciService"),
   });
 
@@ -205,8 +202,7 @@ zx::result<> BtTransportUart::Start(fdf::DriverContext context) {
   };
   auto impl_properties = std::to_array({
       // Prevent the serial core driver from binding to our node.
-      fdf::MakeProperty2(bind_fuchsia_hardware_serial::SERVICE,
-                         bind_fuchsia_hardware_serial::SERVICE_ZIRCONTRANSPORT),
+      fdf::MakeProperty2(bind_fuchsia::PROTOCOL, bind_fuchsia_serial::BIND_PROTOCOL_DEVICE),
   });
   zx::result impl_child = AddChild("bt-transport-uart-impl", impl_properties, impl_offers);
   if (impl_child.is_error()) {

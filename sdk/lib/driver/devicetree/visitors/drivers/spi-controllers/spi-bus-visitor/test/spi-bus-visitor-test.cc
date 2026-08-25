@@ -14,7 +14,6 @@
 #include <optional>
 
 #include <bind/fuchsia/cpp/bind.h>
-#include <bind/fuchsia/hardware/spi/cpp/bind.h>
 #include <gtest/gtest.h>
 
 namespace spi_bus_dt {
@@ -88,15 +87,13 @@ TEST(SpiBusVisitorTest, TestSpiChannels) {
   // The 0th parent is the board driver.
   EXPECT_TRUE(fdf_devicetree::testing::CheckHasProperties(
       {{
-          fdf::MakeProperty2(bind_fuchsia_hardware_spi::SERVICE,
-                             bind_fuchsia_hardware_spi::SERVICE_ZIRCONTRANSPORT),
+          fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.spi.Service"),
           fdf::MakeProperty2(bind_fuchsia::SPI_CHIP_SELECT, 0u),
       }},
       (*child0_spec.parents2())[1].properties(), false));
   EXPECT_TRUE(fdf_devicetree::testing::CheckHasBindRules(
       {{
-          fdf::MakeAcceptBindRule(bind_fuchsia_hardware_spi::SERVICE,
-                                  bind_fuchsia_hardware_spi::SERVICE_ZIRCONTRANSPORT),
+          fdf::MakeAcceptBindRule(bind_fuchsia::SERVICE, "fuchsia.hardware.spi.Service"),
           fdf::MakeAcceptBindRule(bind_fuchsia::SPI_BUS_ID, 0u),
           fdf::MakeAcceptBindRule(bind_fuchsia::SPI_CHIP_SELECT, 0u),
       }},
@@ -111,15 +108,13 @@ TEST(SpiBusVisitorTest, TestSpiChannels) {
 
   EXPECT_TRUE(fdf_devicetree::testing::CheckHasProperties(
       {{
-          fdf::MakeProperty2(bind_fuchsia_hardware_spi::SERVICE,
-                             bind_fuchsia_hardware_spi::SERVICE_ZIRCONTRANSPORT),
+          fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.spi.Service"),
           fdf::MakeProperty2(bind_fuchsia::SPI_CHIP_SELECT, 0u),
       }},
       (*child1_spec.parents2())[1].properties(), false));
   EXPECT_TRUE(fdf_devicetree::testing::CheckHasBindRules(
       {{
-          fdf::MakeAcceptBindRule(bind_fuchsia_hardware_spi::SERVICE,
-                                  bind_fuchsia_hardware_spi::SERVICE_ZIRCONTRANSPORT),
+          fdf::MakeAcceptBindRule(bind_fuchsia::SERVICE, "fuchsia.hardware.spi.Service"),
           fdf::MakeAcceptBindRule(bind_fuchsia::SPI_BUS_ID, 0u),
           fdf::MakeAcceptBindRule(bind_fuchsia::SPI_CHIP_SELECT, 1u),
       }},
@@ -134,15 +129,13 @@ TEST(SpiBusVisitorTest, TestSpiChannels) {
 
   EXPECT_TRUE(fdf_devicetree::testing::CheckHasProperties(
       {{
-          fdf::MakeProperty2(bind_fuchsia_hardware_spi::SERVICE,
-                             bind_fuchsia_hardware_spi::SERVICE_ZIRCONTRANSPORT),
+          fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.spi.Service"),
           fdf::MakeProperty2(bind_fuchsia::SPI_CHIP_SELECT, 0u),
       }},
       (*child2_spec.parents2())[1].properties(), false));
   EXPECT_TRUE(fdf_devicetree::testing::CheckHasBindRules(
       {{
-          fdf::MakeAcceptBindRule(bind_fuchsia_hardware_spi::SERVICE,
-                                  bind_fuchsia_hardware_spi::SERVICE_ZIRCONTRANSPORT),
+          fdf::MakeAcceptBindRule(bind_fuchsia::SERVICE, "fuchsia.hardware.spi.Service"),
           fdf::MakeAcceptBindRule(bind_fuchsia::SPI_BUS_ID, 0u),
           fdf::MakeAcceptBindRule(bind_fuchsia::SPI_CHIP_SELECT, 2u),
       }},
@@ -150,15 +143,13 @@ TEST(SpiBusVisitorTest, TestSpiChannels) {
 
   EXPECT_TRUE(fdf_devicetree::testing::CheckHasProperties(
       {{
-          fdf::MakeProperty2(bind_fuchsia_hardware_spi::SERVICE,
-                             bind_fuchsia_hardware_spi::SERVICE_ZIRCONTRANSPORT),
+          fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.spi.Service"),
           fdf::MakeProperty2(bind_fuchsia::SPI_CHIP_SELECT, 1u),
       }},
       (*child2_spec.parents2())[2].properties(), false));
   EXPECT_TRUE(fdf_devicetree::testing::CheckHasBindRules(
       {{
-          fdf::MakeAcceptBindRule(bind_fuchsia_hardware_spi::SERVICE,
-                                  bind_fuchsia_hardware_spi::SERVICE_ZIRCONTRANSPORT),
+          fdf::MakeAcceptBindRule(bind_fuchsia::SERVICE, "fuchsia.hardware.spi.Service"),
           fdf::MakeAcceptBindRule(bind_fuchsia::SPI_BUS_ID, 0u),
           fdf::MakeAcceptBindRule(bind_fuchsia::SPI_CHIP_SELECT, 3u),
       }},

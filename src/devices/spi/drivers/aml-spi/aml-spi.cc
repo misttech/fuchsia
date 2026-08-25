@@ -21,7 +21,6 @@
 
 #include <memory>
 
-#include <bind/fuchsia/hardware/spiimpl/cpp/bind.h>
 #include <fbl/algorithm.h>
 #include <fbl/alloc_checker.h>
 #include <safemath/checked_math.h>
@@ -1060,10 +1059,8 @@ void AmlSpiDriver::AddNode(
 
   fidl::Arena arena;
 
-  fidl::VectorView<fuchsia_driver_framework::wire::NodeProperty2> properties(arena, 2);
-  properties[0] = fdf::MakeProperty2(arena, bind_fuchsia_hardware_spiimpl::SERVICE,
-                                     bind_fuchsia_hardware_spiimpl::SERVICE_DRIVERTRANSPORT);
-  properties[1] = fdf::MakeProperty2(arena, "fuchsia.Service", "fuchsia.hardware.spiimpl.Service");
+  fidl::VectorView<fuchsia_driver_framework::wire::NodeProperty2> properties(arena, 1);
+  properties[0] = fdf::MakeProperty2(arena, "fuchsia.Service", "fuchsia.hardware.spiimpl.Service");
 
   std::vector<fuchsia_driver_framework::wire::Offer> offers = {
       fdf::MakeOffer2<fuchsia_hardware_spiimpl::Service>(arena, component::kDefaultInstance),

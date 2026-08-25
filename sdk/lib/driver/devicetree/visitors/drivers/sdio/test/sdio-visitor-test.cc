@@ -12,7 +12,6 @@
 #include <lib/driver/devicetree/visitors/registry.h>
 
 #include <bind/fuchsia/cpp/bind.h>
-#include <bind/fuchsia/hardware/sdio/cpp/bind.h>
 #include <bind/fuchsia/sdio/cpp/bind.h>
 #include <gtest/gtest.h>
 
@@ -64,8 +63,7 @@ TEST(SdioVisitorTest, TestSdioFunctionDevices) {
   // Check parent spec for SDIO function 1.
   EXPECT_TRUE(fdf_devicetree::testing::CheckHasProperties(
       {
-          fdf::MakeProperty2(bind_fuchsia_hardware_sdio::SERVICE,
-                             bind_fuchsia_hardware_sdio::SERVICE_ZIRCONTRANSPORT),
+          fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.sdio.Service"),
           fdf::MakeProperty2(bind_fuchsia::SDIO_FUNCTION, uint32_t{SDIO_FUNCTION_1}),
       },
       sdio_nodes[0].properties(), false));
@@ -79,8 +77,7 @@ TEST(SdioVisitorTest, TestSdioFunctionDevices) {
   // Check parent spec for SDIO function 2.
   EXPECT_TRUE(fdf_devicetree::testing::CheckHasProperties(
       {
-          fdf::MakeProperty2(bind_fuchsia_hardware_sdio::SERVICE,
-                             bind_fuchsia_hardware_sdio::SERVICE_ZIRCONTRANSPORT),
+          fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.sdio.Service"),
           fdf::MakeProperty2(bind_fuchsia::SDIO_FUNCTION, uint32_t{SDIO_FUNCTION_2}),
       },
       sdio_nodes[1].properties(), false));

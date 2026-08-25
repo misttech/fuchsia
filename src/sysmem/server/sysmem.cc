@@ -34,7 +34,6 @@
 #include <string>
 #include <thread>
 
-#include <bind/fuchsia/hardware/sysmem/cpp/bind.h>
 #include <bind/fuchsia/sysmem/heap/cpp/bind.h>
 #include <fbl/string_printf.h>
 #include <sdk/lib/sys/cpp/service_directory.h>

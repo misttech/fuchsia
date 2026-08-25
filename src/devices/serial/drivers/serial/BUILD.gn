@@ -11,8 +11,6 @@ driver_bind_rules("serial_bind") {
   bind_output = "serial.bindbc"
   tests = "tests/tests.json"
   deps = [
-    "//sdk/fidl/fuchsia.hardware.serial:fuchsia.hardware.serial_bindlib",
-    "//sdk/fidl/fuchsia.hardware.serialimpl:fuchsia.hardware.serialimpl_bindlib",
     "//src/devices/bind/fuchsia",
     "//src/devices/bind/fuchsia.serial",
   ]

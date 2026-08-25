@@ -22,7 +22,6 @@ fuchsia_driver_bind_bytecode(
     deps = [
         "@fuchsia_sdk//bind/fuchsia",
         "@fuchsia_sdk//bind/fuchsia.gpio",
-        "@fuchsia_sdk//fidl/fuchsia.hardware.reset:fuchsia.hardware.reset_bindlib",
     ],
 )
 

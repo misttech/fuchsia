@@ -51,8 +51,6 @@ TEST(UsbVisitorTest, TestMetadataAndBindProperty) {
   // 1st parent is pdev. Skip that.
   EXPECT_TRUE(fdf_devicetree::testing::CheckHasBindRules(
       {{fdf::MakeAcceptBindRule(bind_fuchsia::SERVICE, "fuchsia.hardware.usb.phy.Service"),
-        fdf::MakeAcceptBindRule("fuchsia.hardware.usb.phy.Service",
-                                "fuchsia.hardware.usb.phy.Service.ZirconTransport"),
         fdf::MakeAcceptBindRule(bind_fuchsia::PLATFORM_DEV_VID,
                                 bind_fuchsia_platform::BIND_PLATFORM_DEV_VID_GENERIC),
         fdf::MakeAcceptBindRule(bind_fuchsia::PLATFORM_DEV_PID,
@@ -63,8 +61,6 @@ TEST(UsbVisitorTest, TestMetadataAndBindProperty) {
   EXPECT_TRUE(fdf_devicetree::testing::CheckHasProperties(
       {{
           fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.usb.phy.Service"),
-          fdf::MakeProperty2("fuchsia.hardware.usb.phy.Service",
-                             "fuchsia.hardware.usb.phy.Service.ZirconTransport"),
           fdf::MakeProperty2(bind_fuchsia::NAME, "xhci"),
           fdf::MakeProperty2(bind_fuchsia::PLATFORM_DEV_VID,
                              bind_fuchsia_platform::BIND_PLATFORM_DEV_VID_GENERIC),
@@ -78,16 +74,12 @@ TEST(UsbVisitorTest, TestMetadataAndBindProperty) {
   EXPECT_TRUE(fdf_devicetree::testing::CheckHasBindRules(
       {{
           fdf::MakeAcceptBindRule(bind_fuchsia::SERVICE, "fuchsia.hardware.usb.phy.Service"),
-          fdf::MakeAcceptBindRule("fuchsia.hardware.usb.phy.Service",
-                                  "fuchsia.hardware.usb.phy.Service.ZirconTransport"),
           fdf::MakeAcceptBindRule(bind_fuchsia_usb_phy::NAME, "another-phy"),
       }},
       (*mgr_request.parents2())[2].bind_rules(), false));
   EXPECT_TRUE(fdf_devicetree::testing::CheckHasProperties(
       {{
           fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.usb.phy.Service"),
-          fdf::MakeProperty2("fuchsia.hardware.usb.phy.Service",
-                             "fuchsia.hardware.usb.phy.Service.ZirconTransport"),
           fdf::MakeProperty2(bind_fuchsia_usb_phy::NAME, "another-phy"),
       }},
       (*mgr_request.parents2())[2].properties(), false));

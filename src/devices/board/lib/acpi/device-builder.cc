@@ -9,7 +9,6 @@
 
 #include <bind/fuchsia/acpi/cpp/bind.h>
 #include <bind/fuchsia/cpp/bind.h>
-#include <bind/fuchsia/hardware/spi/cpp/bind.h>
 #include <bind/fuchsia/pci/cpp/bind.h>
 #include <fbl/string_printf.h>
 
@@ -390,8 +389,6 @@ DeviceBuilder::GetFragmentBindRulesAndPropertiesForChild(size_t child_index) {
           ddk::MakeAcceptBindRule(bind_fuchsia::SERVICE, "fuchsia.hardware.spi.Service"));
       properties.emplace_back(
           ddk::MakeProperty(bind_fuchsia::SERVICE, "fuchsia.hardware.spi.Service"));
-      properties.emplace_back(ddk::MakeProperty(
-          bind_fuchsia_hardware_spi::SERVICE, bind_fuchsia_hardware_spi::SERVICE_ZIRCONTRANSPORT));
       break;
     case BusType::kUnknown:
       ZX_PANIC("Bus type is unknown");
