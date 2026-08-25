@@ -5,6 +5,7 @@
 // https://opensource.org/licenses/MIT
 
 #include <inttypes.h>
+#include <lib/arch/intrin.h>
 #include <lib/arch/random.h>
 #include <lib/boot-options/boot-options.h>
 #include <lib/memalloc/pool.h>
@@ -274,25 +275,8 @@ void CheckError(Result res) {
   }
 }
 
-template <typename Zbi>
-uint64_t GetRandomSeed(Zbi& zbi) {
-  if (arch::Random<true>::Supported()) {
-    while (true) {
-      if (auto seed = arch::Random<true>::Get()) {
-        return *seed;
-      }
-    }
-  }
-
-  if (arch::Random<false>::Supported()) {
-    while (true) {
-      if (auto seed = arch::Random<false>::Get()) {
-        return *seed;
-      }
-    }
-  }
-
-  // Then there must be entropy item.
+uint64_t GetRandomSeed(auto& zbi) {
+  // Use ZBI-provided entropy if available.
   for (auto [h, p] : zbi) {
     if (h->type == ZBI_TYPE_SECURE_ENTROPY && p.size() >= sizeof(uint64_t)) {
       uint64_t seed = 0;
@@ -302,10 +286,31 @@ uint64_t GetRandomSeed(Zbi& zbi) {
     }
   }
 
-  // Or through the cmdline.
+  // Otherwise use the command-line data if available.
   if (BootOptions::Get()->entropy_mixin.len > 0) {
     return ParseHex(ktl::string_view{BootOptions::Get()->entropy_mixin.c_str(),
                                      ktl::min<size_t>(16, BootOptions::Get()->entropy_mixin.len)});
+  }
+
+  // Try hardware entropy if available, but only if it delivers before long.
+  constexpr int kRandomAttempts = 100;
+
+  if (arch::Random<true>::Supported()) {
+    for (int i = 0; i < kRandomAttempts; ++i) {
+      if (auto seed = arch::Random<true>::Get()) {
+        return *seed;
+      }
+      arch::Yield();
+    }
+  }
+
+  if (arch::Random<false>::Supported()) {
+    for (int i = 0; i < kRandomAttempts; ++i) {
+      if (auto seed = arch::Random<false>::Get()) {
+        return *seed;
+      }
+      arch::Yield();
+    }
   }
 
   ZX_PANIC("No source of entropy available.");
