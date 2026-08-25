@@ -244,8 +244,57 @@ TEST_F(InitTest, AutoHibernateEnabled) {
   ASSERT_NO_FATAL_FAILURE(StartDriver());
 
   auto ahit_reg = AutoHibernateIdleTimerReg::Get().ReadFrom(&dut_->GetMmio());
-  EXPECT_EQ(ahit_reg.timer_scale(), kAutoHibernateScale);
-  EXPECT_EQ(ahit_reg.timer_value(), kAutoHibernateTimerValue);
+  EXPECT_EQ(ahit_reg.timer_scale(), AutoHibernateIdleTimerReg::Scale::k1us);
+  EXPECT_EQ(ahit_reg.timer_value(), 1000u);
+}
+
+TEST_F(InitTest, AutoHibernateDisabledByConfig) {
+  CapabilityReg::Get()
+      .ReadFrom(mock_device_.GetRegisters())
+      .set_auto_hibernation_support(true)
+      .WriteTo(mock_device_.GetRegisters());
+
+  driver_test().RunInEnvironmentTypeContext(
+      [&](Environment& env) { env.pci_server().SetMockDevice(&mock_device_); });
+  TestUfs::SetMockDevice(&mock_device_);
+
+  zx::result result = driver_test().StartDriverWithCustomStartArgs([&](fdf::DriverStartArgs& args) {
+    ufs_config::Config fake_config;
+    fake_config.enable_suspend() = false;
+    fake_config.enable_auto_hibernate() = false;
+    fake_config.auto_hibernate_timer_us() = 1000;
+    args.config(fake_config.ToVmo());
+  });
+  ASSERT_OK(result);
+  dut_ = driver_test().driver();
+
+  auto ahit_reg = AutoHibernateIdleTimerReg::Get().ReadFrom(&dut_->GetMmio());
+  EXPECT_EQ(ahit_reg.timer_value(), 0u);
+}
+
+TEST_F(InitTest, AutoHibernateCustomTimerConfig) {
+  CapabilityReg::Get()
+      .ReadFrom(mock_device_.GetRegisters())
+      .set_auto_hibernation_support(true)
+      .WriteTo(mock_device_.GetRegisters());
+
+  driver_test().RunInEnvironmentTypeContext(
+      [&](Environment& env) { env.pci_server().SetMockDevice(&mock_device_); });
+  TestUfs::SetMockDevice(&mock_device_);
+
+  zx::result result = driver_test().StartDriverWithCustomStartArgs([&](fdf::DriverStartArgs& args) {
+    ufs_config::Config fake_config;
+    fake_config.enable_suspend() = false;
+    fake_config.enable_auto_hibernate() = true;
+    fake_config.auto_hibernate_timer_us() = 50000;
+    args.config(fake_config.ToVmo());
+  });
+  ASSERT_OK(result);
+  dut_ = driver_test().driver();
+
+  auto ahit_reg = AutoHibernateIdleTimerReg::Get().ReadFrom(&dut_->GetMmio());
+  EXPECT_EQ(ahit_reg.timer_scale(), AutoHibernateIdleTimerReg::Scale::k100us);
+  EXPECT_EQ(ahit_reg.timer_value(), 500u);
 }
 
 TEST_F(InitTest, AutoHibernateNotSupported) {

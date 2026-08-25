@@ -69,6 +69,40 @@ TEST_F(RegisterTest, AutoHibernateIdleTimer) {
   EXPECT_EQ(read_reg.timer_scale(), AutoHibernateIdleTimerReg::Scale::k100ms);
   EXPECT_EQ(static_cast<uint32_t>(read_reg.timer_scale()), 5u);
   EXPECT_EQ(read_reg.timer_value(), 1023u);
+
+  // Test FromTimeoutUs calculation across all scales.
+  EXPECT_EQ(AutoHibernateIdleTimerReg::FromTimeoutUs(0).timer_scale(),
+            AutoHibernateIdleTimerReg::Scale::k1us);
+  EXPECT_EQ(AutoHibernateIdleTimerReg::FromTimeoutUs(0).timer_value(), 0u);
+
+  EXPECT_EQ(AutoHibernateIdleTimerReg::FromTimeoutUs(1000).timer_scale(),
+            AutoHibernateIdleTimerReg::Scale::k1us);
+  EXPECT_EQ(AutoHibernateIdleTimerReg::FromTimeoutUs(1000).timer_value(), 1000u);
+
+  EXPECT_EQ(AutoHibernateIdleTimerReg::FromTimeoutUs(5000).timer_scale(),
+            AutoHibernateIdleTimerReg::Scale::k10us);
+  EXPECT_EQ(AutoHibernateIdleTimerReg::FromTimeoutUs(5000).timer_value(), 500u);
+
+  EXPECT_EQ(AutoHibernateIdleTimerReg::FromTimeoutUs(50000).timer_scale(),
+            AutoHibernateIdleTimerReg::Scale::k100us);
+  EXPECT_EQ(AutoHibernateIdleTimerReg::FromTimeoutUs(50000).timer_value(), 500u);
+
+  EXPECT_EQ(AutoHibernateIdleTimerReg::FromTimeoutUs(500000).timer_scale(),
+            AutoHibernateIdleTimerReg::Scale::k1ms);
+  EXPECT_EQ(AutoHibernateIdleTimerReg::FromTimeoutUs(500000).timer_value(), 500u);
+
+  EXPECT_EQ(AutoHibernateIdleTimerReg::FromTimeoutUs(5000000).timer_scale(),
+            AutoHibernateIdleTimerReg::Scale::k10ms);
+  EXPECT_EQ(AutoHibernateIdleTimerReg::FromTimeoutUs(5000000).timer_value(), 500u);
+
+  EXPECT_EQ(AutoHibernateIdleTimerReg::FromTimeoutUs(50000000).timer_scale(),
+            AutoHibernateIdleTimerReg::Scale::k100ms);
+  EXPECT_EQ(AutoHibernateIdleTimerReg::FromTimeoutUs(50000000).timer_value(), 500u);
+
+  // Exceeds maximum 102.3s timeout, should clamp to max.
+  EXPECT_EQ(AutoHibernateIdleTimerReg::FromTimeoutUs(200000000).timer_scale(),
+            AutoHibernateIdleTimerReg::Scale::k100ms);
+  EXPECT_EQ(AutoHibernateIdleTimerReg::FromTimeoutUs(200000000).timer_value(), 1023u);
 }
 
 TEST_F(RegisterTest, InterruptStatus) {

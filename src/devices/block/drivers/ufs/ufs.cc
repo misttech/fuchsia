@@ -970,18 +970,21 @@ zx::result<> Ufs::MaybeConfigureAutoHibernate() {
     return zx::ok();
   }
 
+  if (!config_.enable_auto_hibernate()) {
+    fdf::info("UFS Auto-Hibernate disabled by configuration");
+    return zx::ok();
+  }
+
   const fdf::MmioBuffer& mmio = mmio_.value();
   if (!CapabilityReg::Get().ReadFrom(&mmio).auto_hibernation_support()) {
     fdf::info("UFS Auto-Hibernate not supported by controller");
     return zx::ok();
   }
 
-  AutoHibernateIdleTimerReg::Get()
-      .FromValue(0)
-      .set_timer_scale(kAutoHibernateScale)
-      .set_timer_value(kAutoHibernateTimerValue)
-      .WriteTo(&mmio);
-  fdf::info("UFS Auto-Hibernate enabled");
+  auto ahit_reg = AutoHibernateIdleTimerReg::FromTimeoutUs(config_.auto_hibernate_timer_us());
+  ahit_reg.WriteTo(&mmio);
+  fdf::info("UFS Auto-Hibernate enabled (scale: {}, value: {})",
+            static_cast<uint32_t>(ahit_reg.timer_scale()), ahit_reg.timer_value());
   return zx::ok();
 }
 

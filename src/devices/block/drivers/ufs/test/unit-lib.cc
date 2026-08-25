@@ -34,6 +34,8 @@ void UfsTest::StartDriver(bool supply_power_framework) {
   zx::result result = driver_test().StartDriverWithCustomStartArgs([&](fdf::DriverStartArgs &args) {
     ufs_config::Config fake_config;
     fake_config.enable_suspend() = supply_power_framework;
+    fake_config.enable_auto_hibernate() = true;
+    fake_config.auto_hibernate_timer_us() = 1000;
     args.config(fake_config.ToVmo());
   });
   ASSERT_OK(result);

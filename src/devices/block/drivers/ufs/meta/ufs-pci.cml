@@ -42,4 +42,8 @@
             from: "self",
         },
     ],
+    config: {
+        enable_auto_hibernate: { type: "bool" },
+        auto_hibernate_timer_us: { type: "uint32" },
+    },
 }

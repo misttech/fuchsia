@@ -5,6 +5,8 @@
 #ifndef SRC_DEVICES_BLOCK_DRIVERS_UFS_REGISTERS_H_
 #define SRC_DEVICES_BLOCK_DRIVERS_UFS_REGISTERS_H_
 
+#include <algorithm>
+
 #include <hwreg/bitfields.h>
 
 #include "uic/uic_commands.h"
@@ -97,7 +99,23 @@ class AutoHibernateIdleTimerReg
   DEF_FIELD(9, 0, timer_value);
   DEF_ENUM_FIELD(Scale, 12, 10, timer_scale);
 
+  static constexpr uint32_t kMaxTimerValue = 1023;
+
   static auto Get() { return hwreg::RegisterAddr<AutoHibernateIdleTimerReg>(RegisterMap::kAHIT); }
+
+  static AutoHibernateIdleTimerReg FromTimeoutUs(uint32_t timeout_us) {
+    uint32_t scale = static_cast<uint32_t>(Scale::k1us);
+    uint32_t unit_us = 1;
+    while (scale < static_cast<uint32_t>(Scale::k100ms) && timeout_us > kMaxTimerValue * unit_us) {
+      unit_us *= 10;
+      scale++;
+    }
+    uint32_t timer_val = std::min(timeout_us / unit_us, kMaxTimerValue);
+    return AutoHibernateIdleTimerReg::Get()
+        .FromValue(0)
+        .set_timer_scale(static_cast<Scale>(scale))
+        .set_timer_value(timer_val);
+  }
 };
 
 // UFSHCI Specification Version 3.0, section 5.3.1

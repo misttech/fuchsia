@@ -150,6 +150,8 @@ fuchsia_structured_config_values("sc-pci-values") {
   cm_label = ":ufs-pci-manifest"
   values = {
     enable_suspend = false
+    enable_auto_hibernate = true
+    auto_hibernate_timer_us = 2000
   }
 }
 
@@ -157,6 +159,8 @@ fuchsia_structured_config_values("sc-pdev-values") {
   cm_label = ":ufs-pdev-manifest"
   values = {
     enable_suspend = false
+    enable_auto_hibernate = true
+    auto_hibernate_timer_us = 2000
   }
 }
 
