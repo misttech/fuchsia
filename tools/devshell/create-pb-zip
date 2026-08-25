@@ -28,6 +28,10 @@ main() {
 
     while [[ $# -ge 1 ]]; do
         case "$1" in
+        -h|--help)
+            fx-command-help
+            exit 0
+            ;;
         -o)
             shift
             output=$(realpath "$1")
@@ -48,6 +52,11 @@ main() {
         -g)
             shift
             artifacts_group="$1"
+            ;;
+        *)
+            fx-error "Unknown option $1"
+            fx-command-help
+            exit 1
             ;;
         esac
         shift
