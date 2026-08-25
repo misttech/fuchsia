@@ -118,8 +118,8 @@ import("//build/testing/host_test_data.gni")
 #     if `contains_drivers` is set, as that's the supported mechanism
 #     for using driver transport from rust.
 #
-#   enable_bindlib (optional flag, default to true)
-#     Set to false to disable bindlib bindings for this library
+#   enable_bindlib (optional flag, default to false)
+#     Set to true to enable bindlib bindings for this library
 #
 #   enable_hlcpp (optional flag, default to false)
 #     Set to true to enable legacy HLCPP bindings for this library
@@ -199,7 +199,7 @@ template("fidl") {
   }
 
   # These bindings are enabled by default:
-  enable_bindlib = !defined(invoker.enable_bindlib) || invoker.enable_bindlib
+  enable_bindlib = defined(invoker.enable_bindlib) && invoker.enable_bindlib
   enable_cpp = !defined(invoker.enable_cpp) || invoker.enable_cpp
   enable_rust = !defined(invoker.enable_rust) || invoker.enable_rust
   enable_rust_next =

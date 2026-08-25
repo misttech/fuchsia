@@ -15,7 +15,6 @@ fidl_library(
         "goldfish_sync.fidl",
         "overview.fidl",
     ],
-    enable_bindlib = False,
     enable_hlcpp = True,
     visibility = ["//visibility:public"],
     deps = [

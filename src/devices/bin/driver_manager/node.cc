@@ -188,7 +188,7 @@ bool ShouldExcludeService(std::string_view service_name) {
 // Processes the offer by validating it has a source_name and adding a source ref to it.
 // Returns a tuple containing the offer as well as node property that provides transport
 // information for the offer.
-fit::result<fdf::NodeError, std::tuple<NodeOffer, std::vector<fdf::NodeProperty2>>>
+fit::result<fdf::NodeError, std::tuple<NodeOffer, std::optional<fdf::NodeProperty2>>>
 ProcessNodeOfferWithTransportProperty(const fdf::Offer& add_offer, Collection source_collection,
                                       std::string_view source_name,
                                       bool generate_service_property) {
@@ -199,19 +199,17 @@ ProcessNodeOfferWithTransportProperty(const fdf::Offer& add_offer, Collection so
 
   NodeOffer processed_offer = std::move(result.value());
 
-  std::vector<fdf::NodeProperty2> properties;
   const std::string& name = processed_offer.service_name;
   if (ShouldExcludeService(name)) {
-    return fit::ok(std::make_tuple(std::move(processed_offer), std::move(properties)));
+    return fit::ok(std::make_tuple(std::move(processed_offer), std::nullopt));
   }
 
-  properties.push_back(
-      fdf::MakeProperty2(name, std::format("{}.{}", name, processed_offer.transport)));
+  std::optional<fdf::NodeProperty2> service_property;
   if (generate_service_property) {
-    properties.push_back(fdf::MakeProperty2(bind_fuchsia::SERVICE, name));
+    service_property = fdf::MakeProperty2(bind_fuchsia::SERVICE, name);
   }
 
-  return fit::ok(std::make_tuple(std::move(processed_offer), std::move(properties)));
+  return fit::ok(std::make_tuple(std::move(processed_offer), std::move(service_property)));
 }
 
 bool IsDefaultOffer(std::string_view target_name) { return target_name == "default"; }
@@ -1356,10 +1354,10 @@ void Node::AddChildHelper(fuchsia_driver_framework::NodeAddArgs args,
         callback(new_offer.take_error());
         return;
       }
-      auto [processed_offer, offer_properties] = std::move(new_offer.value());
+      auto [processed_offer, service_property] = std::move(new_offer.value());
       child_offers.emplace_back(processed_offer);
-      for (auto& property : offer_properties) {
-        properties.emplace_back(std::move(property));
+      if (service_property.has_value()) {
+        properties.emplace_back(std::move(service_property.value()));
       }
     }
   }
@@ -1652,10 +1650,10 @@ void Node::ProvideResource(
         completer.ReplyError(new_offer.error_value());
         return;
       }
-      auto [processed_offer, offer_properties] = std::move(new_offer.value());
+      auto [processed_offer, service_property] = std::move(new_offer.value());
       node_offers.push_back(std::move(processed_offer));
-      for (auto& property : offer_properties) {
-        natural_resource.properties()->push_back(std::move(property));
+      if (service_property.has_value()) {
+        natural_resource.properties()->push_back(std::move(service_property.value()));
       }
     }
   }

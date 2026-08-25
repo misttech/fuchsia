@@ -606,8 +606,8 @@ If not specified, appropriate values will be determined based on the target API 
             configurable = False,
         ),
         "enable_bindlib": attr.bool(
-            doc = "Set to False to disable bindlib bindings for this library",
-            default = True,
+            doc = "Set to True to enable bindlib bindings for this library",
+            default = False,
             configurable = False,
         ),
         "enable_banjo": attr.bool(

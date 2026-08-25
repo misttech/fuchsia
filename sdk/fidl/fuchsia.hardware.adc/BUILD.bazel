@@ -13,7 +13,6 @@ fidl_library(
     ],
     api_area = "Media",
     category = "partner",
-    enable_bindlib = False,
     stable = True,
     visibility = ["//visibility:public"],
     deps = [

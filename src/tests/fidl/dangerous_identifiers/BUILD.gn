@@ -140,7 +140,6 @@ template("dangerous_fidl") {
     non_fidl_deps = [ generate_target_dep ]
     enable_hlcpp = true
     disable_rustdoc = true
-    enable_bindlib = false
   }
 }
 

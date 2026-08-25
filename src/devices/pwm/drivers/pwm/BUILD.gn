@@ -20,10 +20,7 @@ driver_bind_rules("pwm-bind") {
   dml_label = ":pwm-dml"
   bind_output = "pwm.bindbc"
   tests = "meta/bind-tests.json"
-  deps = [
-    "//sdk/fidl/fuchsia.hardware.pwmimpl:fuchsia.hardware.pwmimpl_bindlib",
-    "//src/devices/bind/fuchsia",
-  ]
+  deps = [ "//src/devices/bind/fuchsia" ]
 }
 
 fuchsia_cc_driver("pwm-driver") {

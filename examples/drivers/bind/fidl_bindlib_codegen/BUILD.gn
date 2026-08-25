@@ -22,6 +22,7 @@ fidl("my_fidl_target") {  # The target_name
   name = "fuchsia.gizmo.protocol"  # The library_name (optional, defaults to
                                    # target_name)
   sources = [ "protocol.fidl" ]
+  enable_bindlib = true
 }
 
 # [END fidl]

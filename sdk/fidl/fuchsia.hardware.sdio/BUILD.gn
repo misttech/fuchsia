@@ -38,7 +38,6 @@ fidl("fuchsia.hardware.sdio") {
   sdk_area = "Drivers"
   sdk_category = "partner"
   contains_drivers = true
-  enable_bindlib = false
   stable = false
   visibility = [ "*" ]
   public_deps = [

@@ -6,15 +6,14 @@ use crate::node::{Node, NodePropertyEntry};
 use crate::types::{NodeDictionary, NodeState};
 use driver_manager_types::{Collection, NodeOffer, OfferTransport, to_property2};
 use fidl::endpoints::ServerEnd;
+use fidl_fuchsia_component_decl as fdecl;
+use fidl_fuchsia_device_fs as fdevfs;
+use fidl_fuchsia_driver_framework as fdf;
 use futures::channel::oneshot;
 use log::{error, warn};
 use std::cell::RefCell;
 use std::collections::HashSet;
 use std::rc::Rc;
-use {
-    fidl_fuchsia_component_decl as fdecl, fidl_fuchsia_device_fs as fdevfs,
-    fidl_fuchsia_driver_framework as fdf,
-};
 
 impl Node {
     pub async fn add_child(
@@ -40,6 +39,9 @@ impl Node {
         } else {
             vec![]
         };
+
+        let has_manual_service_property =
+            properties.iter().any(|prop| prop.key == bind_fuchsia::SERVICE);
 
         let mut has_dictionary_offer = false;
 
@@ -69,10 +71,13 @@ impl Node {
                     &offer,
                     source_collection,
                     &source_name,
+                    !has_manual_service_property,
                 ) {
                     Ok((processed_offer, property)) => {
                         child.push_offer(processed_offer);
-                        properties.push(property);
+                        if let Some(property) = property {
+                            properties.push(property);
+                        }
                     }
                     Err(e) => return Err(e),
                 }
@@ -247,17 +252,17 @@ impl Node {
         add_offer: &fdf::Offer,
         source_collection: Collection,
         source_name: &str,
-    ) -> Result<(NodeOffer, fdf::NodeProperty2), fdf::NodeError> {
+        generate_service_property: bool,
+    ) -> Result<(NodeOffer, Option<fdf::NodeProperty2>), fdf::NodeError> {
         let processed_offer = Self::process_node_offer(add_offer, source_collection, source_name)?;
         let name = &processed_offer.service_name;
-        let transport_str = match processed_offer.transport {
-            OfferTransport::ZirconTransport => "ZirconTransport",
-            OfferTransport::DriverTransport => "DriverTransport",
-            OfferTransport::Dictionary => "ZirconTransport",
-        };
-        let property = fdf::NodeProperty2 {
-            key: name.clone(),
-            value: fdf::NodePropertyValue::StringValue(format!("{}.{}", name, transport_str)),
+        let property = if generate_service_property && !should_exclude_service(name) {
+            Some(fdf::NodeProperty2 {
+                key: bind_fuchsia::SERVICE.to_string(),
+                value: fdf::NodePropertyValue::StringValue(name.clone()),
+            })
+        } else {
+            None
         };
         Ok((processed_offer, property))
     }
@@ -330,4 +335,18 @@ impl Node {
             properties: properties.into_iter().map(|p| p.into()).collect(),
         });
     }
+}
+
+fn should_exclude_service(service_name: &str) -> bool {
+    if service_name == "fuchsia.driver.compat.Service"
+        || service_name == "fuchsia.hardware.power.PowerTokenService"
+        || service_name == "fuchsia.hardware.interrupt.ControllerRegistryService"
+        || service_name == "fuchsia.hardware.goldfish.ControlService"
+    {
+        return true;
+    }
+    if service_name.contains("Metadata") {
+        return true;
+    }
+    false
 }

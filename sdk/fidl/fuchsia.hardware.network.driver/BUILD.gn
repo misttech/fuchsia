@@ -41,7 +41,6 @@ fidl("fuchsia.hardware.network.driver") {
   sdk_area = "Netstack"
   sdk_category = "partner"
   contains_drivers = true
-  enable_bindlib = false
   stable = false
   visibility = [ "*" ]
   public_deps = [

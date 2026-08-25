@@ -37,7 +37,6 @@ fidl("fuchsia.hardware.i2c") {
   sources = [ "i2c.fidl" ]
   sdk_area = "Drivers"
   sdk_category = "partner"
-  enable_bindlib = false
   enable_rust_next = true
   stable = true
   visibility = [ "*" ]

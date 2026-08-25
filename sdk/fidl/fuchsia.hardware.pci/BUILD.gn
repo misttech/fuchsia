@@ -40,7 +40,6 @@ fidl("fuchsia.hardware.pci") {
   ]
   sdk_area = "Drivers"
   sdk_category = "partner"
-  enable_bindlib = false
   enable_rust = true
   enable_rust_next = true
   stable = true

@@ -15,7 +15,6 @@ fidl_library(
     ],
     api_area = "Graphics",
     contains_drivers = True,
-    enable_bindlib = False,
     enable_rust = True,
     enable_rust_next = True,
     visibility = ["//visibility:public"],

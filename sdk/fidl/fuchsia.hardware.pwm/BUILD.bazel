@@ -12,7 +12,6 @@ fidl_library(
         "metadata.fidl",
         "pwm.fidl",
     ],
-    enable_bindlib = False,
     visibility = ["//visibility:public"],
     deps = [
         "//zircon/vdso/zx",

@@ -36,7 +36,6 @@ if (is_host) {
 fidl("fuchsia.hardware.rpmb") {
   sources = [ "rpmb.fidl" ]
   contains_drivers = true
-  enable_bindlib = false
   enable_rust_next = true
   visibility = [ "*" ]
   public_deps = [

@@ -41,7 +41,6 @@ fidl("fuchsia.hardware.display.engine") {
   ]
   sdk_area = "Graphics"
   contains_drivers = true
-  enable_bindlib = false
   enable_rust = true
   enable_rust_next = true
   visibility = [ "*" ]

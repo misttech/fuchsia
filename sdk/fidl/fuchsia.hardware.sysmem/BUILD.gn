@@ -39,7 +39,6 @@ fidl("fuchsia.hardware.sysmem") {
     "overview.fidl",
     "sysmem.fidl",
   ]
-  enable_bindlib = false
   enable_hlcpp = true
   visibility = [ "*" ]
   public_deps = [

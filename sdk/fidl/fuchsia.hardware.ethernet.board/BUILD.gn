@@ -35,7 +35,6 @@ if (is_host) {
 
 fidl("fuchsia.hardware.ethernet.board") {
   sources = [ "ethernet-board.fidl" ]
-  enable_bindlib = false
   visibility = [ "*" ]
   public_deps = [ "//zircon/vdso/zx" ]
 }

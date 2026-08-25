@@ -38,7 +38,6 @@ fidl("fuchsia.hardware.i2cimpl") {
   sdk_area = "Drivers"
   sdk_category = "partner"
   contains_drivers = true
-  enable_bindlib = false
   enable_rust_next = true
   stable = false
   visibility = [ "*" ]

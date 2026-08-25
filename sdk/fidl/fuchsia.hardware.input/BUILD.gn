@@ -35,7 +35,6 @@ if (is_host) {
 
 fidl("fuchsia.hardware.input") {
   sources = [ "input.fidl" ]
-  enable_bindlib = false
   enable_hlcpp = true
   visibility = [ "*" ]
   public_deps = [

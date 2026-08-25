@@ -61,7 +61,6 @@ fidl("fuchsia.hardware.audio") {
   ]
   sdk_area = "Media"
   sdk_category = "partner"
-  enable_bindlib = false
   enable_hlcpp = true
   stable = true
   visibility = [ "*" ]

@@ -35,7 +35,6 @@ if (is_host) {
 
 fidl("fuchsia.hardware.google.ec") {
   sources = [ "ec.fidl" ]
-  enable_bindlib = false
   visibility = [ "*" ]
   public_deps = [ "//zircon/vdso/zx" ]
 }

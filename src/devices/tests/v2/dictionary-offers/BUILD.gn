@@ -48,17 +48,14 @@ fuchsia_driver_component("root") {
 
 driver_bind_rules("child_bind") {
   testonly = true
-  deps = [ ":fuchsia.dictionaryoffers.test_bindlib" ]
+  deps = [ "//src/devices/bind/fuchsia" ]
   rules = "meta/child.bind"
   bind_output = "dictionary_offers_child.bindbc"
 }
 
 driver_bind_rules("composite_child_bind") {
   testonly = true
-  deps = [
-    ":fuchsia.dictionaryoffers.test_bindlib",
-    "//src/devices/tests/v2/node_group:fuchsia.nodegroupbind.test",
-  ]
+  deps = [ "//src/devices/tests/v2/node_group:fuchsia.nodegroupbind.test" ]
   rules = "meta/composite-child.bind"
   bind_output = "dictionary_offers_composite_child.bindbc"
 }
