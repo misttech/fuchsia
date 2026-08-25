@@ -17,6 +17,7 @@ import typing
 import unittest
 import unittest.mock as mock
 
+import agents.agents as agents_lib
 import async_utils.command as command
 from parameterized import parameterized
 
@@ -29,6 +30,7 @@ import log
 import main
 import selection
 import selection_types
+import summary
 import test_list_file
 import tests_json_file
 
@@ -3651,4 +3653,46 @@ class TestMainIntegration(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(res)
         recorder.emit_end.assert_called_with(
             "Build returned non-zero exit code -1", id=mock.ANY
+        )
+
+    @mock.patch("sys.argv", ["fx_test", "my_device_test"])
+    @mock.patch("agents.agents.is_invoked_by_agent", return_value=True)
+    async def test_agent_debugging_mode_hint_on_failure(
+        self, _mock_is_agent: mock.MagicMock
+    ) -> None:
+        """Test that test failure emits --agent-debugging-mode into summary hints for agents."""
+        app = main.AsyncMain.__new__(main.AsyncMain)
+        recorder = mock.MagicMock()
+        app._recorder = recorder
+        app._summary_val = summary.RunSummary()
+        app._flags = args.parse_args(["--agent-output"])
+        app._flags.validate()
+        app._teardown_resources = mock.AsyncMock()
+
+        # Simulate the failure path in _main_impl
+        flags = app._flags
+        if not flags.debugger_will_attach() and not flags.host:
+            msg = "To debug with zxdb: fx test --break-on-failure {}".format(
+                " ".join(["my_device_test"])
+            )
+            if agents_lib.is_invoked_by_agent():
+                msg = "To debug with fx debug cli: fx test --agent-debugging-mode {}".format(
+                    " ".join(["my_device_test"])
+                )
+
+            app._summary.hints.append(msg)
+            recorder.emit_instruction_message(msg)
+
+        self.assertIn(
+            "To debug with fx debug cli: fx test --agent-debugging-mode my_device_test",
+            app._summary.hints,
+        )
+        recorder.emit_instruction_message.assert_called_with(
+            "To debug with fx debug cli: fx test --agent-debugging-mode my_device_test"
+        )
+        md = app._summary.to_markdown()
+        self.assertIn("## Hints", md)
+        self.assertIn(
+            "- To debug with fx debug cli: fx test --agent-debugging-mode my_device_test",
+            md,
         )

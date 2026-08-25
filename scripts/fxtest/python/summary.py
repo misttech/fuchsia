@@ -167,6 +167,7 @@ class RunSummary:
     build: BuildResult | None = None
     tests: list[TestResult] = field(default_factory=list)
     suggestions: list[Suggestion] = field(default_factory=list)
+    hints: list[str] = field(default_factory=list)
 
     def add_test(self, test: TestResult) -> None:
         """Add a test result and update counters."""
@@ -241,6 +242,12 @@ class RunSummary:
                 if s.add_test_command:
                     lines.append(f"  - Run: `{s.add_test_command}`")
 
+        if self.hints:
+            lines.append("")
+            lines.append("## Hints")
+            for h in self.hints:
+                lines.append(f"- {h}")
+
         return "\n".join(lines)
 
     def finalize(self, error: str | None = None) -> None:
@@ -277,6 +284,8 @@ class RunSummary:
             data["build"] = self.build.to_dict()
         if self.suggestions:
             data["suggestions"] = [s.to_dict() for s in self.suggestions]
+        if self.hints:
+            data["hints"] = [str(h) for h in self.hints]
         data["tests"] = [t.to_dict() for t in self.tests]
         return data
 

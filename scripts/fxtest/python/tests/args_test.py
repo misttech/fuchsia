@@ -50,6 +50,14 @@ class TestArgs(unittest.TestCase):
                 ["--simple", "--style"],
             ),
             (
+                "cannot show status with --agent-output",
+                ["--agent-output", "--status"],
+            ),
+            (
+                "cannot show style with --agent-output",
+                ["--agent-output", "--style"],
+            ),
+            (
                 "cannot show status when terminal is not a TTY",
                 ["--status"],
             ),
@@ -185,6 +193,7 @@ class TestArgs(unittest.TestCase):
             flags = args.parse_args([])
             flags.validate()
             self.assertEqual(flags.simple, False)
+            self.assertEqual(flags.agent_output, False)
 
         # Test with each agent env var
         for var in [
@@ -198,6 +207,7 @@ class TestArgs(unittest.TestCase):
                 flags = args.parse_args([])
                 flags.validate()
                 self.assertEqual(flags.simple, True)
+                self.assertEqual(flags.agent_output, True)
 
         # Test override with --no-simple
         for var in [
@@ -211,6 +221,19 @@ class TestArgs(unittest.TestCase):
                 flags = args.parse_args(["--no-simple"])
                 flags.validate()
                 self.assertEqual(flags.simple, False)
+
+        # Test override with --no-agent-output
+        for var in [
+            "ANTIGRAVITY_AGENT",
+            "ANTIGRAVITY_EDITOR_APP_ROOT",
+            "GEMINI_CLI",
+        ]:
+            env_with_agent = env_without_agents.copy()
+            env_with_agent[var] = "true"
+            with mock.patch.dict(os.environ, env_with_agent, clear=True):
+                flags = args.parse_args(["--no-agent-output"])
+                flags.validate()
+                self.assertEqual(flags.agent_output, False)
 
     def test_allow_temporary_emulator(self) -> None:
         # Default should be True

@@ -145,10 +145,6 @@ class Flags:
         Raises:
             FlagError: If the flags are invalid.
         """
-        if self.agent_output:
-            self.quiet = True
-            self.style = False
-            self.status = False
         if self.agent_debugging_mode:
             if self.break_on_failure is False:
                 raise FlagError(
@@ -170,6 +166,10 @@ class Flags:
             raise FlagError("--simple is incompatible with --status")
         if self.simple and self.style:
             raise FlagError("--simple is incompatible with --style")
+        if self.agent_output and self.status:
+            raise FlagError("--agent-output is incompatible with --status")
+        if self.agent_output and self.style:
+            raise FlagError("--agent-output is incompatible with --style")
         if self.device and self.host:
             raise FlagError("--device is incompatible with --host")
         if self.status_delay < 0.005:
@@ -246,7 +246,7 @@ class Flags:
         if self.only_e2e:
             self.e2e = True
 
-        if self.simple:
+        if self.simple or self.agent_output:
             self.style = False
             self.status = False
         else:
@@ -254,6 +254,9 @@ class Flags:
                 self.style = termout.is_valid()
             if self.status is None:
                 self.status = termout.is_valid()
+
+        if self.agent_output:
+            self.quiet = True
 
     def update_artifacts_directory_with_out_path(self, path: str) -> None:
         if (
@@ -847,7 +850,7 @@ def parse_args(
     output.add_argument(
         "--agent-output",
         action=argparse.BooleanOptionalAction,
-        default=False,
+        default=True if agents_lib.is_invoked_by_agent() else False,
         help="Format output for AI agents with isolated logs and JSON summary output.",
     )
 

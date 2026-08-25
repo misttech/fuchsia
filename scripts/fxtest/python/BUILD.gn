@@ -23,6 +23,7 @@ group("tests") {
     ":main_test($host_toolchain)",
     ":selection_action_test($host_toolchain)",
     ":selection_test($host_toolchain)",
+    ":summary_test($host_toolchain)",
     ":test_list_file_test($host_toolchain)",
     ":tests_json_file_test($host_toolchain)",
     "dataparse:tests",

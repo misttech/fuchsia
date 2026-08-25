@@ -940,6 +940,7 @@ class AsyncMain:
                         " ".join(sys.argv[1:])
                     )
 
+                self._summary.hints.append(msg)
                 recorder.emit_instruction_message(msg)
 
             await end_execution("Failed to run all tests")

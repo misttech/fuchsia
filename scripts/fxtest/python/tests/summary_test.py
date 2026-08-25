@@ -152,6 +152,28 @@ class TestSummary(unittest.TestCase):
             "fx add-test //src/sys/pkg/bin/system-updater:system-updater-tests",
         )
 
+    def test_run_summary_hints(self) -> None:
+        summary = RunSummary()
+        summary.hints = [
+            "To debug with fx debug cli: fx test --agent-debugging-mode host_x64/test1"
+        ]
+        summary.finalize()
+
+        data = summary.to_dict()
+        self.assertIn("hints", data)
+        self.assertEqual(len(data["hints"]), 1)
+        self.assertEqual(
+            data["hints"][0],
+            "To debug with fx debug cli: fx test --agent-debugging-mode host_x64/test1",
+        )
+
+        md = summary.to_markdown()
+        self.assertIn("## Hints", md)
+        self.assertIn(
+            "- To debug with fx debug cli: fx test --agent-debugging-mode host_x64/test1",
+            md,
+        )
+
     def test_parse_suggestions_from_output(self) -> None:
         raw_output = """summary_test (88.89% similar)
 Build includes: host_x64/obj/scripts/fxtest/python/summary_test.sh
