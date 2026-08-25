@@ -68,6 +68,7 @@ def wrap_host_rust_test(
     host_test(
         name = name,
         binary = wrapper_script,
+        unstripped_binary = ":" + binary_name,
         test_label = test_label,
         test_args = test_args,
         data = test_data,

@@ -106,6 +106,9 @@ function main() {
     echo "Using existing test output directory: ${test_output_dir}"
   fi
 
+  # Ensure debug symbols for pure Bazel tests are registered into .build-id/ before exporting coverage.
+  "${PREBUILT_PYTHON3}" "${FUCHSIA_DIR}/build/bazel/scripts/copy_bazel_debug_symbols.py" "${FUCHSIA_BUILD_DIR}" 2>/dev/null || true
+
   # Check if any .profraw files were generated before invoking ffx coverage.
   if [[ -z "$(find "${test_output_dir}" -name "*.profraw" -print -quit)" ]]; then
     fx-warn "No coverage profile (.profraw) files found in ${test_output_dir}"

@@ -613,6 +613,7 @@ build_api_module("binaries") {
 #
 # LINT.ThenChange(
 #    //build/bazel/debug_symbols/aspects.bzl:debug_symbols,
+#    //build/bazel/scripts/bazel_tests_utils.py:debug_symbols,
 #    //tools/artifactory/debug_symbols.go:ExportedDebugSymbol)
 #
 # Note that it is possible for none of "elf_build_id" or "elf_build_id_file" to
@@ -654,6 +655,7 @@ build_api_module("debug_symbols") {
   ]
   deps = [
     ":default",
+    "//:bazel_test_suites",
     "//:prebuilt_binaries",
   ]
 }
@@ -1478,6 +1480,16 @@ generated_file("bazel_test_suites") {
     # And from discoverable, so that --with continues to work
     "//:discoverable_packages",
   ]
+  metadata = {
+    debug_symbol_manifests = [
+      {
+        label = get_label_info(":$target_name", "label_no_toolchain")
+        manifest =
+            rebase_path("${root_build_dir}/bazel_host_tests.debug_symbols.json",
+                        root_build_dir)
+      },
+    ]
+  }
 }
 
 # Tools provided by the build or as prebuilts, to be used outside the build.

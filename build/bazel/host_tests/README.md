@@ -174,6 +174,78 @@ section above, otherwise they will **NOT** be continuously tested on infra.
 There is no explicit distinction between GN and Bazel-defined host tests when
 running them on infra test runners, or when collecting results.
 
+## Debug symbol propagation
+
+Host test binaries compiled with debug symbols must have their unstripped ELF
+binaries registered so that tooling can symbolize backtraces and correlate LLVM
+code coverage profiles (`-profile-correlate=binary`).
+
+For general background on how Fuchsia manages Bazel debug symbols, see
+[Technical Note on Debug Symbol Generation](../debug_symbols/README.md).
+
+### Authoring host test rules with debug symbols
+
+The generic `host_test()` rule exposes the `unstripped_binary` field in its
+`FuchsiaHostTestInfo` provider:
+
+- If `unstripped_binary` is not explicitly set, `host_test()` inspects the
+  underlying `binary` attribute:
+  - If `binary` provides `DebugPackageInfo` (C++ targets), it uses
+    `DebugPackageInfo.unstripped_file`.
+  - If `binary` provides `CrateInfo` (Rust targets), it uses
+    `CrateInfo.output`.
+
+- If the test uses a wrapper script launcher (such as `rust_test_parser` in
+  `host_rustc_test()`), the macro **MUST** explicitly forward the original
+  unstripped binary target via `unstripped_binary`:
+
+  ```starlark
+  host_test(
+      name = name,
+      binary = wrapper_script,
+      unstripped_binary = ":" + binary_name,
+      ...
+  )
+  ```
+
+### Propagation to infra and debuginfod
+
+When Bazel host tests are exported to the GN build:
+
+1. **Test Query**: `bazel_tests_utils.py` runs a `bazel cquery` using
+   `//build/bazel/starlark/FuchsiaHostTestInfo.cquery`, extracting the
+   execroot path of `unstripped_binary` for all registered host tests.
+
+2. **Host Test Manifest**: The paths are normalized relative to the Ninja build
+   directory and written to
+   `${root_build_dir}/bazel_host_tests.debug_symbols.json`.
+
+3. **GN Build API Integration**: `//:bazel_test_suites` in `BUILD.gn` attaches
+   `debug_symbol_manifests` metadata pointing to
+   `bazel_host_tests.debug_symbols.json`, which is consumed by the
+   `build_api_module("debug_symbols")` target.
+
+4. **Artifactory Upload**: In CI/CQ builds, Artifactory processes
+   `debug_symbols.json` and uploads the unstripped ELF binaries to cloud
+   storage / debuginfod servers, allowing tools like `covargs` to resolve
+   Build IDs.
+
+### Local development and `fx coverage`
+
+When running coverage locally at desk, uncommitted binaries have newly generated
+Build IDs that are not present on debuginfod servers.
+
+To support local symbol correlation, `fx coverage` runs:
+
+```bash
+python3 ${FUCHSIA_DIR}/build/bazel/scripts/copy_bazel_debug_symbols.py ${FUCHSIA_BUILD_DIR}
+```
+
+This script reads `bazel_host_tests.debug_symbols.json`, computes the GNU Build
+ID for each ELF binary, and copies or symlinks the unstripped binary into
+`${root_build_dir}/.build-id/xx/yyyyyyyy.debug`. Tooling such as `ffx coverage`
+and `llvm-profdata` then resolves these binaries via `.symbol-index.json`.
+
 ### FAQ
 
 #### Bazel test compatibility

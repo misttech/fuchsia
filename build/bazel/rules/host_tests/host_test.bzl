@@ -2,6 +2,13 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+"""Rule and provider for host tests."""
+
+load(
+    "@rules_cc//cc/common:debug_package_info.bzl",
+    "DebugPackageInfo",
+)
+load("@rules_rust//rust:rust_common.bzl", "CrateInfo")
 load("//build/bazel/rules:current_platform_info.bzl", "CurrentPlatformInfo")
 load(
     "//build/bazel/rules/host_tests:host_test_data.bzl",
@@ -25,6 +32,7 @@ FuchsiaHostTestInfo = provider(
         "test_launcher": "A File value for the test launcher script.",
         "test_runtime_dir": "A string path the test runtime directory.",
         "test_runtime_deps_json": "A File value for the runtime_deps.json file for the test.",
+        "unstripped_binary": "A File value for the unstripped binary (or None).",
         "os": "The OS of the test, using Fuchsia conventions",
         "cpu": "The CPU of the test, using Fuchsia conventions.",
         "list_cases_argument": "Optional command line argument to list test cases.",
@@ -189,6 +197,15 @@ def _host_test_impl(ctx):
 
     current_platform = ctx.attr._current_platform[CurrentPlatformInfo]
 
+    unstripped_file = ctx.file.unstripped_binary
+    if not unstripped_file:
+        if DebugPackageInfo in ctx.attr.binary:
+            unstripped_file = ctx.attr.binary[DebugPackageInfo].unstripped_file
+        elif CrateInfo in ctx.attr.binary:
+            unstripped_file = ctx.attr.binary[CrateInfo].output
+        else:
+            unstripped_file = entry_point
+
     return [
         DefaultInfo(
             files = depset(outputs),
@@ -200,6 +217,7 @@ def _host_test_impl(ctx):
             test_launcher = launcher,
             test_runtime_dir = runtime_dir.path,
             test_runtime_deps_json = test_runtime_deps_json,
+            unstripped_binary = unstripped_file,
             os = current_platform.os,
             cpu = current_platform.cpu,
             list_cases_argument = ctx.attr.list_cases_argument,
@@ -247,6 +265,10 @@ host_test = rule(
                   "test target, as long as it doesn't have its own `args` attribute values.",
             mandatory = True,
             aspects = [collect_fuchsia_host_test_data_aspect],
+        ),
+        "unstripped_binary": attr.label(
+            doc = "Optional label to the unstripped test binary (if different from binary).",
+            allow_single_file = True,
         ),
         "test_label": attr.string(
             doc = "The test label as it will appear in tests.json. This defaults to the current " +

@@ -1445,7 +1445,7 @@ def merge_debug_symbol_manifests(
         "compute_elf_build_ids",
         "Extra GNU build-id values from ELF binaries.",
     )
-    parser = DebugSymbolsManifestParser()
+    parser = DebugSymbolsManifestParser(build_dir)
     parser.enable_build_id_resolution()
     parser.parse_manifest_json(output_manifest)
 

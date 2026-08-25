@@ -218,6 +218,41 @@ class BazelTestsUtilsTest(unittest.TestCase):
                 self.bazel_paths, command_runner=mock_runner
             )
 
+    def test_generate_tests_json_with_debug_symbols(self) -> None:
+        mock_runner = MockCommandRunner()
+        test_info = {
+            "label": "//src/my_test:my_test",
+            "launcher_execroot_path": "bin/my_test",
+            "runtime_deps_json_execroot_path": "bin/my_test.runtime_deps.json",
+            "unstripped_binary_execroot_path": "bin/my_test_unstripped",
+            "os": "linux",
+            "cpu": "x64",
+            "list_cases_argument": "",
+        }
+        mock_runner.push_result(stdout=json.dumps(test_info))
+
+        bazel_tests_utils.generate_tests_json(
+            self.bazel_paths, command_runner=mock_runner
+        )
+
+        manifest_file = (
+            self.bazel_paths.ninja_build_dir
+            / "bazel_host_tests.debug_symbols.json"
+        )
+        self.assertTrue(manifest_file.exists())
+        execroot_path = "gen/build/bazel/output_base/execroot/_main"
+        self.assertEqual(
+            json.loads(manifest_file.read_text()),
+            [
+                {
+                    "cpu": "x64",
+                    "debug": f"{execroot_path}/bin/my_test_unstripped",
+                    "label": "//src/my_test:my_test",
+                    "os": "linux",
+                }
+            ],
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

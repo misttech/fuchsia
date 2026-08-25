@@ -32,6 +32,7 @@ def format(target):
         # by the caller into paths relative to the Ninja build directory.
         "launcher_execroot_path": host_test_info.test_launcher.path,
         "runtime_deps_json_execroot_path": host_test_info.test_runtime_deps_json.path,
+        "unstripped_binary_execroot_path": host_test_info.unstripped_binary.path if hasattr(host_test_info, "unstripped_binary") and host_test_info.unstripped_binary else None,
         "os": host_test_info.os,
         "cpu": host_test_info.cpu,
         "list_cases_argument": host_test_info.list_cases_argument,

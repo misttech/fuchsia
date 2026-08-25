@@ -93,7 +93,30 @@ def generate_tests_json(
             target_cpu = args_json["target_cpu"]
 
     tests_json: list[dict[str, T.Any]] = []
+    host_test_debug_manifests: list[dict[str, str]] = []
     targets_missing_test_info: list[str] = []
+
+    # LINT.IfChange(debug_symbols)
+    def _debug_manifest_entry(
+        label: str,
+        cpu: str,
+        os_val: str,
+        unstripped_binary_execroot_path: str,
+    ) -> dict[str, str]:
+        """Create a debug manifest entry for a host test.
+
+        This is a simple wrapper function to avoid nested IFTTT.
+        """
+        return {
+            "cpu": cpu,
+            "debug": make_execroot_path_relative_to_ninja_build_dir(
+                unstripped_binary_execroot_path
+            ),
+            "label": label,
+            "os": os_val.lower(),
+        }
+
+    # LINT.ThenChange(//BUILD.gn:debug_symbols)
 
     for line in ret.stdout.splitlines():
         line = line.strip()
@@ -158,8 +181,27 @@ def generate_tests_json(
                 "list_cases_argument"
             ]
 
+        if cquery_test.get("unstripped_binary_execroot_path"):
+            host_test_debug_manifests.append(
+                _debug_manifest_entry(
+                    label,
+                    cpu,
+                    os_val,
+                    cquery_test["unstripped_binary_execroot_path"],
+                )
+            )
+
         tests_json.append(test_spec)
         # LINT.ThenChange(//build/bazel/starlark/FuchsiaHostTestInfo.cquery:cquery_output_schema)
+
+    # Write out the top-level debug_symbols.json manifest for all Bazel host tests
+    # so GN debug_symbol_manifests metadata on //:bazel_test_suites can reference it.
+    bazel_host_tests_debug_manifest = (
+        bazel_paths.ninja_build_dir / "bazel_host_tests.debug_symbols.json"
+    )
+    bazel_host_tests_debug_manifest.write_text(
+        json.dumps(host_test_debug_manifests, indent=2) + "\n"
+    )
 
     if targets_missing_test_info:
         if len(targets_missing_test_info) == 1:
