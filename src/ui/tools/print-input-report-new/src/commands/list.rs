@@ -64,7 +64,7 @@ where
 pub async fn run(args: ListArgs) -> Result<()> {
     let service_dir = fuchsia_fs::directory::open_in_namespace(
         SERVICE_DIR,
-        fidl_legacy_io::Flags::PROTOCOL_DIRECTORY,
+        fidl_legacy_io::Flags::PROTOCOL_DIRECTORY | fidl_legacy_io::PERM_READABLE,
     )
     .context(format!("Failed to open {}", SERVICE_DIR))?;
     let output = list_devices_to_string(&service_dir, args.output).await?;
