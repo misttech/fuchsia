@@ -21,8 +21,8 @@
 #include <ktl/span.h>
 #include <ktl/string_view.h>
 #include <phys/address-space.h>
+#include <phys/fixed-address-boot-zbi.h>
 #include <phys/symbolize.h>
-#include <phys/trampoline-boot.h>
 #include <phys/zbitl-allocation.h>
 
 #include "ktl/iterator.h"

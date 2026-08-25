@@ -21,10 +21,10 @@
 #include <ktl/type_traits.h>
 #include <ktl/variant.h>
 #include <phys/address-space.h>
+#include <phys/boot-zbi.h>
 #include <phys/main.h>
 #include <phys/stdio.h>
 #include <phys/symbolize.h>
-#include <phys/trampoline-boot.h>
 #include <phys/uart-console.h>
 #include <phys/zbi.h>
 

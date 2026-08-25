@@ -118,7 +118,7 @@ if (toolchain_environment == "kernel.phys" ||
   group("phys_config_source_deps") {
   }
 
-  source_set("trampoline-boot") {
+  source_set("fixed-address-boot-zbi") {
     visibility = [
       "./*",
 
@@ -126,9 +126,9 @@ if (toolchain_environment == "kernel.phys" ||
       "//zircon/kernel/arch/x86/*",
     ]
 
-    sources = [ "trampoline-boot.cc" ]
+    sources = [ "fixed-address-boot-zbi.cc" ]
 
-    public = [ "include/phys/trampoline-boot.h" ]
+    public = [ "include/phys/fixed-address-boot-zbi.h" ]
 
     public_deps = [ ":boot-zbi" ]
 
@@ -1015,6 +1015,7 @@ if (is_kernel) {
       ":address-space-map",
       ":allocation",
       ":boot-zbi",
+      ":fixed-address-boot-zbi",
       ":handoff",
       ":handoff-prep",
       ":kernel-package",
@@ -1022,7 +1023,6 @@ if (is_kernel) {
       ":main",
       ":stdio",
       ":symbolize",
-      ":trampoline-boot",
       ":uart",
       "//src/lib/zbitl",
       "//zircon/kernel/arch/$zircon_cpu/code-patches",

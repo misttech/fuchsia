@@ -32,7 +32,6 @@
 #include <phys/new.h>
 #include <phys/stdio.h>
 #include <phys/symbolize.h>
-#include <phys/trampoline-boot.h>
 #include <phys/zbi.h>
 #include <pretty/cpp/sizes.h>
 

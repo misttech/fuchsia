@@ -4,7 +4,7 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
-#include "phys/trampoline-boot.h"
+#include "phys/fixed-address-boot-zbi.h"
 
 #include <lib/memalloc/pool.h>
 #include <zircon/assert.h>

@@ -4,8 +4,8 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
-#ifndef ZIRCON_KERNEL_PHYS_INCLUDE_PHYS_TRAMPOLINE_BOOT_H_
-#define ZIRCON_KERNEL_PHYS_INCLUDE_PHYS_TRAMPOLINE_BOOT_H_
+#ifndef ZIRCON_KERNEL_PHYS_INCLUDE_PHYS_FIXED_ADDRESS_BOOT_ZBI_H_
+#define ZIRCON_KERNEL_PHYS_INCLUDE_PHYS_FIXED_ADDRESS_BOOT_ZBI_H_
 
 #include <zircon/assert.h>
 
@@ -59,4 +59,4 @@ class FixedAddressBootZbi : public BootZbi {
   uint64_t kernel_entry_address_ = 0;
 };
 
-#endif  // ZIRCON_KERNEL_PHYS_INCLUDE_PHYS_TRAMPOLINE_BOOT_H_
+#endif  // ZIRCON_KERNEL_PHYS_INCLUDE_PHYS_FIXED_ADDRESS_BOOT_ZBI_H_
