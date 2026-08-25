@@ -2139,5 +2139,207 @@ TEST(ChannelTest, WriteIovecTooManyIovecsReturnsOutOfRange) {
       ZX_ERR_OUT_OF_RANGE);
 }
 
+TEST(ChannelTest, WriteShortPayloadsSucceeds) {
+  zx::channel local, remote;
+  ASSERT_OK(zx::channel::create(0, &local, &remote));
+
+  // Test writing 0, 1, 2, and 3 byte payloads without a waiter.
+  const uint8_t src_data[4] = {0x11, 0x22, 0x33, 0x44};
+
+  for (uint32_t size = 0; size < 4; ++size) {
+    ASSERT_OK(local.write(0, src_data, size, nullptr, 0));
+
+    uint8_t dst_data[4] = {0};
+    uint32_t actual_bytes = 0;
+    uint32_t actual_handles = 0;
+    ASSERT_OK(
+        remote.read(0, dst_data, nullptr, sizeof(dst_data), 0, &actual_bytes, &actual_handles));
+    EXPECT_EQ(actual_bytes, size);
+    EXPECT_EQ(actual_handles, 0u);
+    if (size > 0) {
+      EXPECT_BYTES_EQ(src_data, dst_data, size);
+    }
+  }
+
+  // Now test with an active MessageWaiter to exercise get_txid() on short payloads.
+  std::thread caller_thread([&local]() {
+    zx_txid_t txid = 0;
+    char rd_buf[8] = {0};
+    zx_channel_call_args_t args = {
+        .wr_bytes = &txid,
+        .wr_handles = nullptr,
+        .rd_bytes = rd_buf,
+        .rd_handles = nullptr,
+        .wr_num_bytes = sizeof(txid),
+        .wr_num_handles = 0,
+        .rd_num_bytes = sizeof(rd_buf),
+        .rd_num_handles = 0,
+    };
+    uint32_t actual_bytes = 0;
+    uint32_t actual_handles = 0;
+    EXPECT_OK(local.call(0, zx::time::infinite(), &args, &actual_bytes, &actual_handles));
+    EXPECT_EQ(actual_bytes, sizeof(txid));
+  });
+
+  // Wait for the caller's request message to arrive on remote.
+  ASSERT_OK(remote.wait_one(ZX_CHANNEL_READABLE, zx::time::infinite(), nullptr));
+
+  // Write short payloads to local while local has an active waiter.
+  for (uint32_t size = 0; size < 4; ++size) {
+    ASSERT_OK(remote.write(0, src_data, size, nullptr, 0));
+  }
+
+  // Read the caller's request and reply so the call completes deterministically.
+  zx_txid_t call_txid = 0;
+  uint32_t actual_bytes = 0;
+  uint32_t actual_handles = 0;
+  ASSERT_OK(
+      remote.read(0, &call_txid, nullptr, sizeof(call_txid), 0, &actual_bytes, &actual_handles));
+  ASSERT_EQ(actual_bytes, sizeof(call_txid));
+  ASSERT_OK(remote.write(0, &call_txid, sizeof(call_txid), nullptr, 0));
+
+  caller_thread.join();
+
+  // Verify that the short payloads queued on local can still be read.
+  for (uint32_t size = 0; size < 4; ++size) {
+    uint8_t dst_data[4] = {0};
+    ASSERT_OK(
+        local.read(0, dst_data, nullptr, sizeof(dst_data), 0, &actual_bytes, &actual_handles));
+    EXPECT_EQ(actual_bytes, size);
+    EXPECT_EQ(actual_handles, 0u);
+    if (size > 0) {
+      EXPECT_BYTES_EQ(src_data, dst_data, size);
+    }
+  }
+}
+
+TEST(ChannelTest, ReadBadBufferReturnsInvalidArgs) {
+  zx::channel local, remote;
+  ASSERT_OK(zx::channel::create(0, &local, &remote));
+
+  const uint8_t data[8] = {1, 2, 3, 4, 5, 6, 7, 8};
+  ASSERT_OK(remote.write(0, data, sizeof(data), nullptr, 0));
+
+  void* bad_ptr = reinterpret_cast<void*>(1);
+  uint32_t actual_bytes = 0;
+  uint32_t actual_handles = 0;
+  EXPECT_STATUS(local.read(0, bad_ptr, nullptr, sizeof(data), 0, &actual_bytes, &actual_handles),
+                ZX_ERR_INVALID_ARGS);
+}
+
+TEST(ChannelTest, CallBadReadBufferReturnsInvalidArgs) {
+  zx::channel local, remote;
+  ASSERT_OK(zx::channel::create(0, &local, &remote));
+
+  std::thread server_thread([&remote]() {
+    ASSERT_OK(remote.wait_one(ZX_CHANNEL_READABLE, zx::time::infinite(), nullptr));
+    zx_txid_t txid = 0;
+    uint32_t actual_bytes = 0;
+    uint32_t actual_handles = 0;
+    ASSERT_OK(remote.read(0, &txid, nullptr, sizeof(txid), 0, &actual_bytes, &actual_handles));
+    ASSERT_EQ(actual_bytes, sizeof(txid));
+
+    struct Reply {
+      zx_txid_t txid;
+      uint32_t data;
+    } reply = {.txid = txid, .data = 0x12345678};
+    ASSERT_OK(remote.write(0, &reply, sizeof(reply), nullptr, 0));
+  });
+
+  zx_txid_t txid = 0;
+  void* bad_ptr = reinterpret_cast<void*>(1);
+  zx_channel_call_args_t args = {
+      .wr_bytes = &txid,
+      .wr_handles = nullptr,
+      .rd_bytes = bad_ptr,
+      .rd_handles = nullptr,
+      .wr_num_bytes = sizeof(txid),
+      .wr_num_handles = 0,
+      .rd_num_bytes = 8,
+      .rd_num_handles = 0,
+  };
+
+  uint32_t actual_bytes = 0;
+  uint32_t actual_handles = 0;
+  EXPECT_STATUS(local.call(0, zx::time::infinite(), &args, &actual_bytes, &actual_handles),
+                ZX_ERR_INVALID_ARGS);
+
+  server_thread.join();
+}
+
+TEST(ChannelTest, CallBadReadHandlesReturnsInvalidArgs) {
+  zx::channel local, remote;
+  ASSERT_OK(zx::channel::create(0, &local, &remote));
+
+  std::thread server_thread([&remote]() {
+    ASSERT_OK(remote.wait_one(ZX_CHANNEL_READABLE, zx::time::infinite(), nullptr));
+    zx_txid_t txid = 0;
+    uint32_t actual_bytes = 0;
+    uint32_t actual_handles = 0;
+    ASSERT_OK(remote.read(0, &txid, nullptr, sizeof(txid), 0, &actual_bytes, &actual_handles));
+    ASSERT_EQ(actual_bytes, sizeof(txid));
+
+    zx::event reply_event;
+    ASSERT_OK(zx::event::create(0, &reply_event));
+    zx_handle_t handle = reply_event.release();
+
+    struct Reply {
+      zx_txid_t txid;
+      uint32_t data;
+    } reply = {.txid = txid, .data = 0x12345678};
+    ASSERT_OK(remote.write(0, &reply, sizeof(reply), &handle, 1));
+  });
+
+  zx_txid_t txid = 0;
+  uint8_t rd_bytes[8] = {0};
+  zx_handle_t* bad_handles = reinterpret_cast<zx_handle_t*>(1);
+  zx_channel_call_args_t args = {
+      .wr_bytes = &txid,
+      .wr_handles = nullptr,
+      .rd_bytes = rd_bytes,
+      .rd_handles = bad_handles,
+      .wr_num_bytes = sizeof(txid),
+      .wr_num_handles = 0,
+      .rd_num_bytes = sizeof(rd_bytes),
+      .rd_num_handles = 1,
+  };
+
+  uint32_t actual_bytes = 0;
+  uint32_t actual_handles = 0;
+  EXPECT_STATUS(local.call(0, zx::time::infinite(), &args, &actual_bytes, &actual_handles),
+                ZX_ERR_INVALID_ARGS);
+
+  server_thread.join();
+}
+
+TEST(ChannelTest, WriteEtcReadOnlyHandleDispositionReturnsInvalidArgs) {
+  zx::channel local, remote;
+  ASSERT_OK(zx::channel::create(0, &local, &remote));
+
+  // Create and populate a VMO with an invalid handle disposition.
+  zx::vmo vmo;
+  ASSERT_OK(zx::vmo::create(zx_system_get_page_size(), 0, &vmo));
+
+  zx_handle_disposition_t disp = {
+      .operation = ZX_HANDLE_OP_MOVE,
+      .handle = ZX_HANDLE_INVALID,
+      .type = ZX_OBJ_TYPE_EVENT,
+      .rights = ZX_RIGHT_SAME_RIGHTS,
+      .result = ZX_OK,
+  };
+  ASSERT_OK(vmo.write(&disp, 0, sizeof(disp)));
+
+  // Map the VMO as read-only.
+  zx_vaddr_t vaddr = 0;
+  ASSERT_OK(
+      zx::vmar::root_self()->map(ZX_VM_PERM_READ, 0, vmo, 0, zx_system_get_page_size(), &vaddr));
+
+  auto* read_only_disp = reinterpret_cast<zx_handle_disposition_t*>(vaddr);
+  const char data = 'x';
+  EXPECT_STATUS(local.write_etc(0, &data, 1, read_only_disp, 1), ZX_ERR_INVALID_ARGS);
+
+  ASSERT_OK(zx::vmar::root_self()->unmap(vaddr, zx_system_get_page_size()));
+}
+
 }  // namespace
 }  // namespace channel
