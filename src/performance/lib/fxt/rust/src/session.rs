@@ -8,10 +8,11 @@ use crate::metadata::{
     MetadataRecord, Provider, ProviderEventMetadataRecord, ProviderInfoMetadataRecord,
     ProviderSectionMetadataRecord, TraceInfoMetadataRecord,
 };
-use crate::string::{StringRecord, StringRef};
+use crate::string::{RawByteStringRef, StringRecord, StringRef};
 use crate::thread::{ProcessKoid, ProcessRef, ThreadKoid, ThreadRecord, ThreadRef};
 use crate::{ParseError, ParsedWithOriginalBytes, RawTraceRecord, TraceRecord};
-use flyweights::FlyStr;
+use bstr::ByteSlice;
+use flyweights::{FlyByteStr, FlyStr};
 use fuchsia_sync::Mutex;
 use futures::{AsyncRead, AsyncReadExt, SinkExt, Stream};
 use std::collections::BTreeMap;
@@ -341,6 +342,29 @@ impl ResolveCtx {
         }
     }
 
+    pub(crate) fn resolve_bstr(&self, s: RawByteStringRef<'_>) -> FlyByteStr {
+        match s {
+            RawByteStringRef::Empty => FlyByteStr::default(),
+            RawByteStringRef::Inline(inline) => FlyByteStr::new(inline.as_bytes()),
+            RawByteStringRef::Index(id) => {
+                let Some(ref current_provider) = self.current_provider else {
+                    self.add_warning(ParseWarning::MissingProviderId);
+                    return FlyByteStr::new(b"<unknown>");
+                };
+                let Some(ref string_table) = self.strings.get(&current_provider.id) else {
+                    self.add_warning(ParseWarning::UnknownStringId(id));
+                    return FlyByteStr::new(b"<unknown>");
+                };
+                if let Some(s) = string_table.get(&id).cloned() {
+                    FlyByteStr::new(s.as_bytes())
+                } else {
+                    self.add_warning(ParseWarning::UnknownStringId(id));
+                    FlyByteStr::new(b"<unknown>")
+                }
+            }
+        }
+    }
+
     pub fn resolve_process(&self, p: ProcessRef) -> ProcessKoid {
         match p {
             ProcessRef::Index(id) => {
@@ -437,17 +461,45 @@ mod tests {
     }
 
     #[fuchsia::test]
+    fn session_with_non_utf8_kernel_object_name() {
+        let mut session = vec![];
+        session.extend(&SIMPLE_TRACE_FXT[..8]);
+
+        let mut header = crate::objects::KernelObjHeader::empty();
+        header.set_kernel_obj_type(zx_types::ZX_OBJ_TYPE_PROCESS);
+        let name_bytes = b"binder:936_D\xff\xff\xff";
+        header.set_name_ref(name_bytes.len() as u16 | crate::string::STRING_REF_INLINE_BIT);
+        header.set_num_args(0);
+
+        let kobj_record =
+            FxtBuilder::new(header).atom(1234u64.to_le_bytes()).atom(name_bytes).build();
+        session.extend(kobj_record);
+
+        let mut parser = SessionParser::new(std::io::Cursor::new(session));
+        let mut records = vec![];
+        while let Some(record) = parser.next() {
+            if let Ok(r) = record {
+                records.push(r);
+            }
+        }
+        let kobj = records
+            .iter()
+            .find_map(|r| match r {
+                TraceRecord::KernelObj(kobj) => Some(kobj),
+                _ => None,
+            })
+            .expect("expected KernelObj record in parsed records");
+        assert_eq!(kobj.name, FlyByteStr::new(b"binder:936_D\xff\xff\xff"));
+    }
+
+    #[fuchsia::test]
     fn session_with_invalid_record_in_middle() {
         let mut session = vec![];
         // Add the magic record from the simple trace before we add our bogus record so we don't
         // error on an invalid first record.
         session.extend(&SIMPLE_TRACE_FXT[..8]);
-        // This error is not valid because it's not UTF-8
-        let invalid_record = vec![
-            103, 0, 2, 15, 128, 1, 0, 0, 229, 253, 9, 0, 0, 0, 0, 0, 98, 105, 110, 100, 101, 114,
-            58, 57, 51, 54, 95, 68, 255, 255, 255, 0, 40, 0, 166, 0, 0, 0, 0, 0, 125, 125, 4, 0, 0,
-            0, 0, 0,
-        ];
+        // A record with 0 size is invalid according to FXT spec
+        let invalid_record = vec![0u8; 8];
         session.extend(invalid_record);
         session.extend(&SIMPLE_TRACE_FXT[8..]);
         let mut parser = SessionParser::new(std::io::Cursor::new(session));
@@ -459,14 +511,14 @@ mod tests {
                 Err(_) => had_error_record = true,
             }
         }
-        // We want to test that even we seeing an invalid record, we still parse the rest of the
+        // We want to test that even after seeing an invalid record, we still parse the rest of the
         // session.
         assert_eq!(records, expected_simple_trace_records().0);
         assert_eq!(had_error_record, true);
     }
 
     #[fuchsia::test]
-    fn sessioninvalid_recordwith_incomplete_trailing_record() {
+    fn session_with_incomplete_trailing_record() {
         use crate::string::STRING_REF_INLINE_BIT;
 
         let mut session = SIMPLE_TRACE_FXT.to_vec();

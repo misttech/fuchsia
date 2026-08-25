@@ -4,15 +4,15 @@
 
 use crate::args::{Arg, RawArg};
 use crate::session::ResolveCtx;
-use crate::string::StringRef;
+use crate::string::{RawByteStringRef, StringRef};
 use crate::thread::{ProcessKoid, ProcessRef};
 use crate::{
-    trace_header, ParseResult, Provider, KERNEL_OBJ_RECORD_TYPE, USERSPACE_OBJ_RECORD_TYPE,
+    KERNEL_OBJ_RECORD_TYPE, ParseResult, Provider, USERSPACE_OBJ_RECORD_TYPE, trace_header,
 };
-use flyweights::FlyStr;
+use flyweights::{FlyByteStr, FlyStr};
+use nom::Parser;
 use nom::combinator::all_consuming;
 use nom::number::complete::le_u64;
-use nom::Parser;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct UserspaceObjRecord {
@@ -70,7 +70,7 @@ pub struct KernelObjRecord {
     pub provider: Option<Provider>,
     pub koid: u64,
     pub ty: KernelObjType,
-    pub name: FlyStr,
+    pub name: FlyByteStr,
     pub args: Vec<Arg>,
 }
 
@@ -92,7 +92,7 @@ impl KernelObjRecord {
             provider: ctx.current_provider(),
             koid: raw.koid,
             ty: raw.ty,
-            name: ctx.resolve_str(raw.name),
+            name: ctx.resolve_bstr(raw.name),
             args: Arg::resolve_n(ctx, raw.args),
         }
     }
@@ -102,7 +102,7 @@ impl KernelObjRecord {
 pub(crate) struct RawKernelObjRecord<'a> {
     koid: u64,
     ty: KernelObjType,
-    name: StringRef<'a>,
+    name: RawByteStringRef<'a>,
     args: Vec<RawArg<'a>>,
 }
 
@@ -112,7 +112,7 @@ impl<'a> RawKernelObjRecord<'a> {
         let ty = KernelObjType::from(header.kernel_obj_type());
         let (rem, payload) = header.take_payload(buf)?;
         let (payload, koid) = le_u64(payload)?;
-        let (payload, name) = StringRef::parse(header.name_ref(), payload)?;
+        let (payload, name) = RawByteStringRef::parse(header.name_ref(), payload)?;
         let (empty, args) =
             all_consuming(|p| RawArg::parse_n(header.num_args(), p)).parse(payload)?;
         assert!(empty.is_empty(), "all_consuming must not return any remaining buffer");
@@ -205,11 +205,11 @@ impl From<u32> for KernelObjType {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::RawTraceRecord;
     use crate::args::RawArgValue;
     use crate::fxt_builder::FxtBuilder;
     use crate::string::STRING_REF_INLINE_BIT;
-    use crate::RawTraceRecord;
-    use std::num::{NonZeroU16, NonZeroU8};
+    use std::num::{NonZeroU8, NonZeroU16};
 
     #[test]
     fn userspace_obj_no_args() {
@@ -292,7 +292,7 @@ mod tests {
             RawTraceRecord::KernelObj(RawKernelObjRecord {
                 koid: 64,
                 ty: KernelObjType::Channel,
-                name: StringRef::Index(NonZeroU16::new(19).unwrap()),
+                name: RawByteStringRef::Index(NonZeroU16::new(19).unwrap()),
                 args: vec![],
             },),
         );
@@ -331,7 +331,7 @@ mod tests {
             RawTraceRecord::KernelObj(RawKernelObjRecord {
                 koid,
                 ty: KernelObjType::Fifo,
-                name: StringRef::Index(NonZeroU16::new(91).unwrap()),
+                name: RawByteStringRef::Index(NonZeroU16::new(91).unwrap()),
                 args: vec![
                     RawArg {
                         name: StringRef::Index(NonZeroU16::new(10).unwrap()),

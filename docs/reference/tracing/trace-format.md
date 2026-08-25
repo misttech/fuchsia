@@ -837,7 +837,12 @@ _kernel object id word_
 
 _name stream_ (omitted unless string ref denotes inline string)
 
-- UTF-8 string, padded with zeros to 8 byte alignment
+- Byte sequence, padded with zeros to 8 byte alignment
+
+Trace consumers must tolerate arbitrary byte sequences (for example, non-UTF-8 process
+or thread names from guest operating systems) without failing trace parsing.
+
+
 
 _argument data_ (repeats for each argument)
 

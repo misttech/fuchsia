@@ -2,14 +2,14 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::{take_n_padded, trace_header, ParseError, ParseResult, STRING_RECORD_TYPE};
-use nom::combinator::all_consuming;
+use crate::{ParseError, ParseResult, STRING_RECORD_TYPE, take_n_padded, trace_header};
 use nom::Parser;
+use nom::combinator::all_consuming;
 use std::num::NonZeroU16;
 
 pub(crate) const STRING_REF_INLINE_BIT: u16 = 1 << 15;
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub enum StringRef<'a> {
     Empty,
     Index(NonZeroU16),
@@ -73,10 +73,42 @@ pub(crate) fn parse_padded_string<'a>(
     Ok((rem, value))
 }
 
+pub(crate) fn parse_padded_bstr<'a>(
+    unpadded_len: usize,
+    buf: &'a [u8],
+) -> ParseResult<'a, &'a bstr::BStr> {
+    let (rem, bytes) = take_n_padded(unpadded_len, buf)?;
+    Ok((rem, bstr::BStr::new(bytes)))
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) enum RawByteStringRef<'a> {
+    Empty,
+    Index(NonZeroU16),
+    Inline(&'a bstr::BStr),
+}
+
+impl<'a> RawByteStringRef<'a> {
+    pub(crate) fn parse(str_ref: u16, buf: &'a [u8]) -> ParseResult<'a, Self> {
+        if let Some(nonzero) = NonZeroU16::new(str_ref) {
+            if (nonzero.get() >> 15) & 1 == 0 {
+                Ok((buf, RawByteStringRef::Index(nonzero)))
+            } else {
+                let length = str_ref ^ STRING_REF_INLINE_BIT;
+                let (buf, inline) = parse_padded_bstr(length as usize, buf)?;
+                Ok((buf, RawByteStringRef::Inline(inline)))
+            }
+        } else {
+            Ok((buf, RawByteStringRef::Empty))
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::RawTraceRecord;
+    use bstr::ByteSlice;
 
     #[test]
     fn empty_string() {
@@ -107,6 +139,17 @@ mod tests {
     }
 
     #[test]
+    fn string_invalid_utf8_verbatim() {
+        let mut buf = vec![0x68, 0x65, 0xff, 0x6c, 0x6f]; // "he\xfflo"
+        buf.extend(&[0, 0, 0]); // padding
+        buf.extend([1, 1, 1, 1]); // trailing
+
+        let (trailing, parsed) = parse_padded_bstr(5, &buf).unwrap();
+        assert_eq!(parsed.as_bytes(), &[0x68, 0x65, 0xff, 0x6c, 0x6f]);
+        assert_eq!(trailing, [1, 1, 1, 1]);
+    }
+
+    #[test]
     fn string_ref_index() {
         let (trailing, parsed) = StringRef::parse(10u16, &[1, 1, 1, 1]).unwrap();
         assert_eq!(parsed, StringRef::Index(NonZeroU16::new(10).unwrap()));
@@ -120,7 +163,7 @@ mod tests {
         buf.extend([1, 1, 1, 1]); // trailing
 
         let (trailing, parsed) = StringRef::parse(5 | STRING_REF_INLINE_BIT, &buf).unwrap();
-        assert_eq!(parsed, StringRef::Inline("hello"),);
+        assert_eq!(parsed, StringRef::Inline("hello"));
         assert_eq!(trailing, [1, 1, 1, 1]);
     }
 

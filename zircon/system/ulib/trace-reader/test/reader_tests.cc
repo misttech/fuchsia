@@ -239,5 +239,36 @@ TEST(TraceReader, ProfilerRecords) {
   EXPECT_EQ(0x5000, backtrace.backtrace[1]);
 }
 
+TEST(TraceReader, KernelObjectNonUtf8Name) {
+  std::vector<trace::Record> records;
+  std::string_view error;
+  trace::TraceReader reader(test::MakeRecordConsumer(&records), test::MakeErrorHandler(&error));
+
+  // KernelObject record: 3 words
+  // Header word: type=7 (kKernelObject), size=3 words (24 bytes), obj_type=1 (ZX_OBJ_TYPE_PROCESS),
+  //              name_ref = inline flag (0x8000) | length (5) -> 0x8005, arg_count=0
+  uint64_t kData[3] = {};
+  kData[0] = (trace::RecordFields::RecordSize::Make(3) |
+              trace::ToUnderlyingType(trace::RecordType::kKernelObject) |
+              trace::KernelObjectRecordFields::ObjectType::Make(1) |
+              trace::KernelObjectRecordFields::NameStringRef::Make(0x8005) |
+              trace::KernelObjectRecordFields::ArgumentCount::Make(0));
+  kData[1] = 1234;  // koid
+
+  // Non-UTF-8 5-byte string: "he\xfflo" plus 3 zero padding bytes
+  char raw_name[8] = {'h', 'e', static_cast<char>(0xff), 'l', 'o', 0, 0, 0};
+  memcpy(&kData[2], raw_name, 8);
+
+  trace::Chunk chunk(kData, std::size(kData));
+  EXPECT_TRUE(reader.ReadRecords(chunk));
+  EXPECT_EQ(1, records.size());
+  EXPECT_TRUE(error.empty());
+
+  const auto& kobj = records[0].GetKernelObject();
+  EXPECT_EQ(1234, kobj.koid);
+  EXPECT_EQ(1, kobj.object_type);
+  EXPECT_EQ(std::string("he\xfflo", 5), kobj.name);
+}
+
 }  // namespace
 }  // namespace trace
