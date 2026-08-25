@@ -21,11 +21,6 @@ pub struct Description {
     pub serial: Option<String>,
     pub ssh_port: Option<u16>,
     pub fastboot_interface: Option<FastbootInterface>,
-    // So far this is only used in testing. It's unclear what the reasoning is
-    // for the SSH host address being stored as a string rather than a struct
-    // elsewhere in the code, so this is being done for the sake of congruity.
-    // TODO(b/327682973): Use a real address here or delete this.
-    pub ssh_host_address: Option<String>,
 }
 
 impl From<&TargetHandle> for Description {

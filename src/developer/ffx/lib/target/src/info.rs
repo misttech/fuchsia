@@ -188,7 +188,6 @@ impl From<TargetInfo> for discovery::Description {
             serial: info.serial_number,
             ssh_port: None,
             fastboot_interface: None,
-            ssh_host_address: None,
         }
     }
 }
