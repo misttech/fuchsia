@@ -60,8 +60,8 @@ License File: LICENSE
 	if !strings.Contains(lines[1], "Missing required field 'Security Critical'") {
 		t.Errorf("expected second line to contain \"Missing required field 'Security Critical'\", got: %q", lines[1])
 	}
-	if !strings.Contains(lines[1], "http://go/readme_fuchsia#security-critical") {
-		t.Errorf("expected second line to contain short link 'http://go/readme_fuchsia#security-critical', got: %q", lines[1])
+	if !strings.Contains(lines[1], "https://fuchsia.dev/fuchsia-src/development/source_code/third-party-metadata#security-critical") {
+		t.Errorf("expected second line to contain link 'https://fuchsia.dev/fuchsia-src/development/source_code/third-party-metadata#security-critical', got: %q", lines[1])
 	}
 }
 

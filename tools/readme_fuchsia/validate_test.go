@@ -26,7 +26,7 @@ func TestValidate_ErrorLinks(t *testing.T) {
 				Licenses:         []string{"MIT"},
 				LicenseFiles:     []string{"LICENSE"},
 			},
-			expectedLink: "http://go/readme_fuchsia#name",
+			expectedLink: "https://fuchsia.dev/fuchsia-src/development/source_code/third-party-metadata#name",
 		},
 		{
 			name: "missing url and cpe",
@@ -36,7 +36,7 @@ func TestValidate_ErrorLinks(t *testing.T) {
 				Licenses:         []string{"MIT"},
 				LicenseFiles:     []string{"LICENSE"},
 			},
-			expectedLink: "http://go/readme_fuchsia#url",
+			expectedLink: "https://fuchsia.dev/fuchsia-src/development/source_code/third-party-metadata#url",
 		},
 		{
 			name: "missing security critical",
@@ -47,7 +47,7 @@ func TestValidate_ErrorLinks(t *testing.T) {
 				Licenses:     []string{"MIT"},
 				LicenseFiles: []string{"LICENSE"},
 			},
-			expectedLink: "http://go/readme_fuchsia#security-critical",
+			expectedLink: "https://fuchsia.dev/fuchsia-src/development/source_code/third-party-metadata#security-critical",
 		},
 		{
 			name: "invalid security critical",
@@ -59,7 +59,7 @@ func TestValidate_ErrorLinks(t *testing.T) {
 				Licenses:         []string{"MIT"},
 				LicenseFiles:     []string{"LICENSE"},
 			},
-			expectedLink: "http://go/readme_fuchsia#security-critical",
+			expectedLink: "https://fuchsia.dev/fuchsia-src/development/source_code/third-party-metadata#security-critical",
 		},
 		{
 			name: "missing license",
@@ -70,7 +70,7 @@ func TestValidate_ErrorLinks(t *testing.T) {
 				SecurityCritical: "no",
 				LicenseFiles:     []string{"LICENSE"},
 			},
-			expectedLink: "http://go/readme_fuchsia#license",
+			expectedLink: "https://fuchsia.dev/fuchsia-src/development/source_code/third-party-metadata#license",
 		},
 		{
 			name: "missing license file",
@@ -81,7 +81,7 @@ func TestValidate_ErrorLinks(t *testing.T) {
 				SecurityCritical: "no",
 				Licenses:         []string{"MIT"},
 			},
-			expectedLink: "http://go/readme_fuchsia#license-file",
+			expectedLink: "https://fuchsia.dev/fuchsia-src/development/source_code/third-party-metadata#license-file",
 		},
 		{
 			name: "unknown fields",
@@ -94,7 +94,7 @@ func TestValidate_ErrorLinks(t *testing.T) {
 				LicenseFiles:     []string{"LICENSE"},
 				UnknownFields:    []UnknownField{{Key: "Foo", Value: "Bar"}},
 			},
-			expectedLink: "http://go/readme_fuchsia#unknown-fields",
+			expectedLink: "https://fuchsia.dev/fuchsia-src/development/source_code/third-party-metadata#syntax",
 		},
 		{
 			name: "invalid first party",
@@ -107,7 +107,7 @@ func TestValidate_ErrorLinks(t *testing.T) {
 				Licenses:         []string{"MIT"},
 				LicenseFiles:     []string{"LICENSE"},
 			},
-			expectedLink: "http://go/readme_fuchsia#first-party",
+			expectedLink: "https://fuchsia.dev/fuchsia-src/development/source_code/third-party-metadata",
 		},
 	}
 
