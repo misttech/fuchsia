@@ -552,8 +552,6 @@ template("devicetree_parsed") {
                              "visibility",
                            ])
 
-    # TODO(https://fxbug.dev/544062363): Remove once transition to fuchsia.COMPATIBLE is complete.
-    warn_on_changes = true
     deps = [ ":$generation_target" ]
     comparisons = [
       {
