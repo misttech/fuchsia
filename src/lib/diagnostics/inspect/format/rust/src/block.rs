@@ -737,15 +737,9 @@ impl<T: Deref<Target = Q> + DerefMut<Target = Q>, Q: WriteBytes + ReadBytes> Blo
 
     /// Creates a NAME block.
     pub fn become_name(mut self, name: &str) -> Block<T, Name> {
-        let mut bytes = name.as_bytes();
         let max_len = utils::payload_size_for_order(self.order());
-        if bytes.len() > max_len {
-            bytes = &bytes[..min(bytes.len(), max_len)];
-            // Make sure we didn't split a multibyte UTF-8 character; if so, delete the fragment.
-            while bytes[bytes.len() - 1] & 0x80 != 0 {
-                bytes = &bytes[..bytes.len() - 1];
-            }
-        }
+        let valid_len = name.floor_char_boundary(max_len);
+        let bytes = &name.as_bytes()[..valid_len];
         HeaderFields::set_block_type(&mut self, BlockType::Name as u8);
         // Safety: name length must fit in 12 bytes.
         HeaderFields::set_name_length(&mut self, u16::from_usize(bytes.len()).unwrap());
@@ -1628,6 +1622,11 @@ mod tests {
         assert_eq!(block.contents().unwrap(), "abcdefghijklmnopqrstu");
         let byte = container.get_value::<u8>(31).unwrap();
         assert_eq!(byte, 0);
+
+        let (mut container, _storage) =
+            Container::read_and_write(constants::MIN_ORDER_SIZE * 2).unwrap();
+        let block = get_reserved(&mut container).become_name("🦀🦀🦀🦀🦀🦀🦀🦀");
+        assert_eq!(block.contents().unwrap(), "🦀🦀🦀🦀🦀🦀");
     }
 
     #[fuchsia::test]
