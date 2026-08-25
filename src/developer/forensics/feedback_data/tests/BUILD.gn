@@ -70,6 +70,19 @@ cc_test_executable("inspect_data_budget_unittest_exe") {
   configs += [ "//build/config:Wno-conversion" ]
 }
 
+cc_test_executable("log_buffer_unittest_exe") {
+  testonly = true
+
+  sources = [ "log_buffer_unittest.cc" ]
+
+  deps = [
+    "//src/developer/forensics/feedback_data:log_buffer",
+    "//src/developer/forensics/testing:gtest_with_syslog_main",
+    "//third_party/googletest:gmock",
+    "//third_party/googletest:gtest",
+  ]
+}
+
 cc_test_executable("log_source_unittest_exe") {
   testonly = true
 
@@ -143,6 +156,10 @@ fuchsia_unittest_component("inspect_data_budget_unittest") {
   ]
 }
 
+fuchsia_unittest_component("log_buffer_unittest") {
+  deps = [ ":log_buffer_unittest_exe" ]
+}
+
 fuchsia_unittest_component("log_source_unittest") {
   deps = [ ":log_source_unittest_exe" ]
 }
@@ -162,6 +179,7 @@ fuchsia_test_package("feedback-data-tests") {
   test_components = [
     ":data_provider_unittest",
     ":inspect_data_budget_unittest",
+    ":log_buffer_unittest",
     ":log_source_unittest",
     ":metadata_unittest",
   ]

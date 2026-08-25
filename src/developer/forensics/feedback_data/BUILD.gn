@@ -77,6 +77,28 @@ source_set("inspect_budget") {
   ]
 }
 
+source_set("log_buffer") {
+  sources = [
+    "log_buffer.cc",
+    "log_buffer.h",
+  ]
+
+  public_deps = [
+    ":log_source",
+    "//sdk/lib/fit",
+    "//src/developer/forensics/utils:storage_size",
+    "//src/developer/forensics/utils/redact",
+    "//zircon/system/ulib/zx",
+  ]
+
+  deps = [
+    ":constants",
+    "//sdk/fidl/fuchsia.logger:fuchsia.logger_hlcpp",
+    "//src/developer/forensics/utils:logs",
+    "//src/lib/fxl",
+  ]
+}
+
 source_set("log_source") {
   sources = [
     "log_source.cc",

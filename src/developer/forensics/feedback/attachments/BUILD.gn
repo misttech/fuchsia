@@ -182,9 +182,8 @@ source_set("system_log") {
     "//sdk/lib/fit",
     "//sdk/lib/fit-promise",
     "//sdk/lib/sys/cpp",
+    "//src/developer/forensics/feedback_data:log_buffer",
     "//src/developer/forensics/feedback_data:log_source",
-    "//src/developer/forensics/utils:purge_memory",
-    "//src/developer/forensics/utils:storage_size",
     "//src/developer/forensics/utils/redact",
     "//src/lib/fxl",
     "//src/lib/timekeeper",
@@ -196,9 +195,8 @@ source_set("system_log") {
     "//sdk/lib/syslog/cpp",
     "//src/developer/forensics/feedback_data:constants",
     "//src/developer/forensics/utils:errors",
-    "//src/developer/forensics/utils:logs",
+    "//src/developer/forensics/utils:purge_memory",
     "//src/lib/backoff",
-    "//src/lib/diagnostics/accessor2logger",
   ]
 }
 
