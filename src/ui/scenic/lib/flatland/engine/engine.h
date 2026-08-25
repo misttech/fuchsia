@@ -20,6 +20,7 @@
 #include "src/ui/scenic/lib/flatland/flatland_presenter_impl.h"
 #include "src/ui/scenic/lib/flatland/flatland_types.h"
 #include "src/ui/scenic/lib/flatland/global_matrix_data.h"
+#include "src/ui/scenic/lib/flatland/global_resolved_layers.h"
 #include "src/ui/scenic/lib/flatland/link_system.h"
 #include "src/ui/scenic/lib/flatland/uber_struct_system.h"
 #include "src/ui/scenic/lib/scheduling/frame_scheduler.h"
@@ -95,6 +96,7 @@ class Engine {
     flatland::GlobalTopologyData topology_data;
     flatland::GlobalMatrixVector global_matrices;
     flatland::GlobalTransformClipRegionVector clip_regions;
+    flatland::GlobalOpacityVector opacities;
     std::vector<ResolvedLayer> resolved_layers;
   };
 

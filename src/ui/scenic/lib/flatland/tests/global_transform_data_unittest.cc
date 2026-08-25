@@ -1255,6 +1255,33 @@ TEST(GlobalImageDataTest, GlobalImagesMultipleUberStructs) {
   EXPECT_THAT(global_opacity_values, ::testing::ElementsAreArray(expected_opacity_values));
 }
 
+TEST(GlobalImageDataTest, OutputVectorVariantPopulatesCorrectly) {
+  UberStruct::InstanceMap uber_structs;
+  GlobalTopologyData::TopologyVector topology_vector = {{1, 0}, {2, 0}, {1, 1}};
+  GlobalTopologyData::ParentIndexVector parent_indices = {0, 0, 0};
+
+  auto uber_struct1 = std::make_unique<UberStruct>();
+  auto uber_struct2 = std::make_unique<UberStruct>();
+
+  const float opacity_values[] = {0.5f, 0.3f, 0.9f};
+
+  uber_struct1->local_opacity_values[{1, 0}] = opacity_values[0];
+  uber_struct2->local_opacity_values[{2, 0}] = opacity_values[1];
+  uber_struct1->local_opacity_values[{1, 1}] = opacity_values[2];
+
+  uber_structs[1] = std::move(uber_struct1);
+  uber_structs[2] = std::move(uber_struct2);
+
+  std::vector<float> expected_opacity_values = {opacity_values[0],
+                                                opacity_values[0] * opacity_values[1],
+                                                opacity_values[0] * opacity_values[2]};
+
+  GlobalOpacityVector output;
+  output.push_back(-1.0);  // verify that vector is cleared by ComputeGlobalOpacityValues().
+  ComputeGlobalOpacityValues(output, topology_vector, parent_indices, uber_structs);
+  EXPECT_THAT(output, ::testing::ElementsAreArray(expected_opacity_values));
+}
+
 }  // namespace test
 }  // namespace flatland
 

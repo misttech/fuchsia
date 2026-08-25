@@ -35,6 +35,17 @@ using types::RotateFlip;
 namespace flatland::test {
 namespace {
 
+// Convenience test helper which computes inherited opacities on the fly before calling
+// flatland::ComputeGlobalResolvedLayers().
+std::vector<ResolvedLayer> ComputeGlobalResolvedLayers(
+    const GlobalTopologyData& topology, const UberStruct::InstanceMap& snapshot,
+    const std::vector<glm::mat3>& global_matrices,
+    const std::vector<TransformClipRegion>& clip_regions) {
+  return flatland::ComputeGlobalResolvedLayers(
+      topology, snapshot, global_matrices, clip_regions,
+      ComputeGlobalOpacityValues(topology.topology_vector, topology.parent_indices, snapshot));
+}
+
 // Test behavior of the `ResolveBlendAndOpacity()` helper, which is used internally
 // by `ComputeGlobalResolvedLayers()` to encapsulate the semantics of both the Flatland1
 // and Flatland2 APIs.

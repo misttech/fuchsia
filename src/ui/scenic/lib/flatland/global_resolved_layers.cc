@@ -214,16 +214,17 @@ void ComputeGlobalResolvedLayers(std::vector<ResolvedLayer>& output,
                                  const GlobalTopologyData& topology,
                                  const UberStruct::InstanceMap& snapshot,
                                  const std::vector<glm::mat3>& global_matrices,
-                                 const std::vector<TransformClipRegion>& clip_regions) {
+                                 const std::vector<TransformClipRegion>& clip_regions,
+                                 const GlobalOpacityVector& inherited_opacities) {
   TRACE_DURATION("gfx", "ComputeGlobalResolvedLayers");
+  FX_DCHECK(topology.topology_vector.size() == global_matrices.size());
+  FX_DCHECK(topology.topology_vector.size() == clip_regions.size());
+  FX_DCHECK(topology.topology_vector.size() == inherited_opacities.size());
 
   output.clear();
   if (topology.topology_vector.empty()) {
     return;
   }
-
-  GlobalOpacityVector inherited_opacities =
-      ComputeGlobalOpacityValues(topology.topology_vector, topology.parent_indices, snapshot);
 
   // Note: after step 160 it will no longer be necessary to iterate through the entire topology
   // to find the layer stacks; they will be cached in the common case.
@@ -373,14 +374,24 @@ GlobalOpacityVector ComputeGlobalOpacityValues(
     const GlobalTopologyData::TopologyVector& global_topology,
     const GlobalTopologyData::ParentIndexVector& parent_indices,
     const UberStruct::InstanceMap& uber_structs) {
-  TRACE_DURATION("gfx", "ComputeGlobalOpacityValues");
+  GlobalOpacityVector output;
+  ComputeGlobalOpacityValues(output, global_topology, parent_indices, uber_structs);
+  return output;
+}
 
+void ComputeGlobalOpacityValues(GlobalOpacityVector& output,
+                                const GlobalTopologyData::TopologyVector& global_topology,
+                                const GlobalTopologyData::ParentIndexVector& parent_indices,
+                                const UberStruct::InstanceMap& uber_structs) {
+  TRACE_DURATION("gfx", "ComputeGlobalOpacityValues");
+  FX_DCHECK(global_topology.size() == parent_indices.size());
+
+  output.clear();
   if (global_topology.empty()) {
-    return {};
+    return;
   }
 
-  GlobalOpacityVector opacity_values;
-  opacity_values.reserve(global_topology.size());
+  output.reserve(global_topology.size());
 
   // The root entry's parent pointer points to itself, so special case it.
   const auto& root_handle = global_topology.front();
@@ -389,9 +400,9 @@ GlobalOpacityVector ComputeGlobalOpacityValues(
 
   const auto root_opacity_kv = root_uber_struct_kv->second->local_opacity_values.find(root_handle);
   if (root_opacity_kv == root_uber_struct_kv->second->local_opacity_values.end()) {
-    opacity_values.emplace_back(1.f);
+    output.emplace_back(1.f);
   } else {
-    opacity_values.emplace_back(root_opacity_kv->second);
+    output.emplace_back(root_opacity_kv->second);
   }
 
   for (size_t i = 1; i < global_topology.size(); ++i) {
@@ -404,13 +415,11 @@ GlobalOpacityVector ComputeGlobalOpacityValues(
 
     const auto opacity_kv = uber_stuct_kv->second->local_opacity_values.find(handle);
     if (opacity_kv == uber_stuct_kv->second->local_opacity_values.end()) {
-      opacity_values.emplace_back(opacity_values[parent_index]);
+      output.emplace_back(output[parent_index]);
     } else {
-      opacity_values.emplace_back(opacity_values[parent_index] * opacity_kv->second);
+      output.emplace_back(output[parent_index] * opacity_kv->second);
     }
   }
-
-  return opacity_values;
 }
 
 }  // namespace flatland

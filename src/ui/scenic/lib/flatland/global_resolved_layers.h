@@ -16,6 +16,21 @@
 
 namespace flatland {
 
+// The list of global opacity values for a particular global topology.  Each entry is the
+// global opacity value (i.e. relative to the root TransformHandle) of the transform in the
+// corresponding position of the `topology_vector` supplied to `ComputeGlobalOpacityValues()`.
+using GlobalOpacityVector = std::vector<float>;
+
+// Computes a list of global opacity values for the global topology.
+GlobalOpacityVector ComputeGlobalOpacityValues(
+    const GlobalTopologyData::TopologyVector& global_topology,
+    const GlobalTopologyData::ParentIndexVector& parent_indices,
+    const UberStruct::InstanceMap& uber_structs);
+void ComputeGlobalOpacityValues(GlobalOpacityVector& output,
+                                const GlobalTopologyData::TopologyVector& global_topology,
+                                const GlobalTopologyData::ParentIndexVector& parent_indices,
+                                const UberStruct::InstanceMap& uber_structs);
+
 // Computes the resolved layers list for the global topology.
 // Walks |topology| in DFS order; for each node whose UberStruct has a
 // layer_stacks entry, emits one ResolvedLayer per visible stack layer.
@@ -23,15 +38,18 @@ void ComputeGlobalResolvedLayers(std::vector<ResolvedLayer>& output,
                                  const GlobalTopologyData& topology,
                                  const UberStruct::InstanceMap& snapshot,
                                  const std::vector<glm::mat3>& global_matrices,
-                                 const std::vector<TransformClipRegion>& clip_regions);
+                                 const std::vector<TransformClipRegion>& clip_regions,
+                                 const GlobalOpacityVector& inherited_opacities);
 
 // Helper which returns a new vector instead of taking the output vector as an argument.
 inline std::vector<ResolvedLayer> ComputeGlobalResolvedLayers(
     const GlobalTopologyData& topology, const UberStruct::InstanceMap& snapshot,
     const std::vector<glm::mat3>& global_matrices,
-    const std::vector<TransformClipRegion>& clip_regions) {
+    const std::vector<TransformClipRegion>& clip_regions,
+    const GlobalOpacityVector& inherited_opacities) {
   std::vector<ResolvedLayer> output;
-  ComputeGlobalResolvedLayers(output, topology, snapshot, global_matrices, clip_regions);
+  ComputeGlobalResolvedLayers(output, topology, snapshot, global_matrices, clip_regions,
+                              inherited_opacities);
   return output;
 }
 
@@ -73,18 +91,6 @@ struct ResolvedBlend {
 // decision must match the behavior implemented here.
 ResolvedBlend ResolveBlendAndOpacity(types::BlendMode stored_blend, float effective_opacity,
                                      bool pin_replace);
-
-// Exposed for testing; returned by `ComputeGlobalOpacityValues()`.  The list of global opacity
-// values for a particular global topology.  Each entry is the global opacity value (i.e. relative
-// to the root TransformHandle) of the transform in the corresponding position of the
-// `topology_vector` supplied to `ComputeGlobalOpacityValues()`.
-using GlobalOpacityVector = std::vector<float>;
-
-// Exposed for testing.  Computes a list of global opacity values for the global topology.
-GlobalOpacityVector ComputeGlobalOpacityValues(
-    const GlobalTopologyData::TopologyVector& global_topology,
-    const GlobalTopologyData::ParentIndexVector& parent_indices,
-    const UberStruct::InstanceMap& uber_structs);
 
 }  // namespace flatland
 

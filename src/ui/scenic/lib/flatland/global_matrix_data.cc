@@ -296,6 +296,7 @@ void ComputeGlobalMatrices(GlobalMatrixVector& output,
                            const UberStruct::InstanceMap& uber_structs) {
   TRACE_DURATION("gfx", "ComputeGlobalMatrices");
 
+  output.clear();
   if (global_topology.empty()) {
     return;
   }
@@ -358,6 +359,7 @@ void ComputeGlobalTransformClipRegions(GlobalTransformClipRegionVector& output,
   FX_DCHECK(global_topology.size() == parent_indices.size());
   FX_DCHECK(global_topology.size() == matrix_vector.size());
 
+  output.clear();
   if (global_topology.empty()) {
     return;
   }
