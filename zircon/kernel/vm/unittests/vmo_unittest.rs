@@ -23,7 +23,8 @@ mod vmo_rs {
     use crate::vm::physical_page_borrowing_config::ScopedLoaningEnabled;
     use crate::vm::physmap::paddr_to_physmap;
     use crate::vm::pinned_vm_object::PinnedVmObject;
-    use crate::vm::pmm::{self, ALLOC_FLAG_ANY, PmmOptDelayReuse, paddr_to_vm_page};
+    use crate::vm::pmm::{self, ALLOC_FLAG_ANY, paddr_to_vm_page};
+    use crate::vm::pmm_node::PmmOptDelayReuse;
     use crate::vm::scanner::AutoVmScannerDisable;
     use crate::vm::vm_aspace::{VmAspace, vmm_flag};
     use crate::vm::vm_cow_pages::{EvictionAction, VmCowPages, VmCowRange, VmCowReclaimFailure};

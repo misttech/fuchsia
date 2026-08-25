@@ -4,9 +4,9 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
+use super::pmm::node as pmm_node;
 use crate::kernel::types::PAddr;
 use crate::vm::page::VmPagePtr;
-use crate::vm::pmm_node::pmm_node;
 use vm_constants_rs::{
     kPmmNodeIndexZeroBits, kVmPageListIntervalBits, kVmPageListIntervalSentinelBits,
     kVmPageListIntervalType, kVmPageListIntervalTypeBits, kVmPageListPageType,

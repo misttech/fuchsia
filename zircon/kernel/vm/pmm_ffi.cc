@@ -33,16 +33,4 @@ FFI_ALWAYS_INLINE zx_status_t cpp_pmm_alloc_page(uint32_t flags, vm_page_t** out
 
 FFI_ALWAYS_INLINE void cpp_pmm_free_page(vm_page_t* page) { pmm_free_page(page); }
 
-FFI_ALWAYS_INLINE uint32_t cpp_pmm_page_to_index(const vm_page_t* page) {
-  return Pmm::Node().PageToIndex(page);
-}
-
-FFI_ALWAYS_INLINE vm_page_t* cpp_pmm_index_to_page(uint32_t index) {
-  return Pmm::Node().IndexToPage(index);
-}
-
-FFI_ALWAYS_INLINE zx_paddr_t cpp_pmm_index_to_paddr(uint32_t index) {
-  return Pmm::Node().IndexToPaddr(index);
-}
-
 }  // extern "C"

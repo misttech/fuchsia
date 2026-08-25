@@ -4,17 +4,22 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
+use super::pmm_node::PmmNode;
 use crate::kernel::types::PAddr;
 use crate::vm::page::VmPagePtr;
 use crate::vm::page_queues::PageQueues;
 use pmm_bindings as bindings;
 use zx_status::Status;
 
-pub use bindings::PmmOptDelayReuse;
-
 // Flags for PMM allocation routines.
 pub const ALLOC_FLAG_ANY: u32 = bindings::PMM_ALLOC_FLAG_ANY;
 pub const ALLOC_FLAG_CAN_WAIT: u32 = bindings::PMM_ALLOC_FLAG_CAN_WAIT;
+
+unsafe extern "C" {
+    // C++ name mangled form of `PmmNode Pmm::node_`
+    #[link_name = "_ZN3Pmm5node_E"]
+    static PMM_NODE: PmmNode;
+}
 
 /// Allocates a single physical page from the PMM.
 pub fn alloc_page(flags: u32) -> Result<(VmPagePtr, PAddr), Status> {
@@ -53,4 +58,9 @@ pub fn page_queues() -> &'static PageQueues {
     // SAFETY: `cpp_pmm_page_queues` returns a valid static pointer to the global PmmNode's
     // PageQueues.
     unsafe { queues.as_ref_unchecked() }
+}
+
+/// Returns a reference to the global `PmmNode` instance.
+pub fn node() -> &'static PmmNode {
+    unsafe { &PMM_NODE }
 }

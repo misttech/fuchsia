@@ -8,7 +8,7 @@ use super::page::VmPagePtr;
 use crate::kernel::types::PAddr;
 use crate::vm::compressor::VmCompressor;
 use crate::vm::discardable_vmo_tracker::DiscardableVmoTracker;
-use crate::vm::pmm::PmmOptDelayReuse;
+use crate::vm::pmm_node::PmmOptDelayReuse;
 use core::marker::PhantomPinned;
 use core::mem::MaybeUninit;
 use core::ptr::{self, NonNull};

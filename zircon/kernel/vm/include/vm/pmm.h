@@ -27,6 +27,8 @@ class Pmm {
   static PmmNode& Node() { return node_; }
 
  private:
+  // Note: This is referenced directly from Rust and changing the name of this or the class will
+  // result in a link error.
   static PmmNode node_;
 };
 

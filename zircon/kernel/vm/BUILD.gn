@@ -46,6 +46,7 @@ source_set("vm") {
     "pmm_checker.cc",
     "pmm_ffi.cc",
     "pmm_node.cc",
+    "pmm_node_ffi.cc",
     "ppb_command.cc",
     "scanner.cc",
     "scanner_ffi.cc",
@@ -318,24 +319,22 @@ kernel_bindgen_crate("pmm-bindings") {
     "cpp_pmm_alloc_page",
     "cpp_pmm_free_page",
     "cpp_paddr_to_vm_page",
-    "cpp_pmm_page_to_index",
-    "cpp_pmm_index_to_page",
-    "cpp_pmm_index_to_paddr",
   ]
-  type_allowlist = [ "PmmOptDelayReuse" ]
+  type_allowlist = []
   type_blocklist = [
+    "PmmOptDelayReuse",
     "PageQueues",
+    "PmmNode",
+    "VmPageDoublyLinkedList",
     "vm_page_t",
     "zx_paddr_t",
     "zx_status_t",
   ]
-  additional_bindgen_flags = [
-    "--no-recursive-allowlist",
-    "--rustified-enum=PmmOptDelayReuse",
-  ]
+  additional_bindgen_flags = [ "--no-recursive-allowlist" ]
   deps = [
     ":page-bindings",
     ":page-queues-bindings",
+    ":pmm-node-bindings",
     "//sdk/rust/zx-types",
   ]
   var_allowlist = [ "PMM_ALLOC_FLAG_.*" ]
@@ -345,6 +344,54 @@ kernel_bindgen_crate("pmm-bindings") {
     "use page_bindings::vm_page_t;",
     "use page_queues_bindings::PageQueues;",
     "pub use zx_types::{zx_paddr_t, zx_status_t};",
+    "pub use pmm_node_bindings::PmmOptDelayReuse;",
+    "pub type PmmNode = pmm_node_bindings::PmmNode;",
+    "pub type VmPageDoublyLinkedList = core::ffi::c_void;",
+  ]
+  expect_lints = []
+}
+
+kernel_bindgen_crate("pmm-node-bindings") {
+  visibility = [ ":*" ]
+  headers = [ "include/vm/pmm_node_ffi.h" ]
+  non_rust_deps = [ ":bindgen_common_deps" ]
+  output_name = "pmm_node_bindings.rs"
+  cpp = true
+
+  notice_year = 2026
+  function_allowlist = [
+    "cpp_pmm_node_page_to_index",
+    "cpp_pmm_node_index_to_page",
+    "cpp_pmm_node_index_to_paddr",
+    "cpp_pmm_node_add_free_pages",
+  ]
+  type_allowlist = [
+    "PmmOptDelayReuse",
+    "PmmNode",
+  ]
+  type_blocklist = [
+    "PageQueues",
+    "PmmNode_.*",
+    "VmPageDoublyLinkedList",
+    "vm_page_t",
+    "zx_paddr_t",
+    "zx_status_t",
+  ]
+  opaque_types = [ "PmmNode" ]
+  function_blocklist = [ "PmmNode_.*" ]
+  additional_bindgen_flags = [ "--no-recursive-allowlist" ]
+  rustified_enum = [ "PmmOptDelayReuse" ]
+  deps = [
+    ":page-bindings",
+    "//sdk/rust/zx-types",
+  ]
+  var_allowlist = [ "PMM_ALLOC_FLAG_.*" ]
+  edition = "2024"
+  raw_lines = [
+    "#![no_std]",
+    "use page_bindings::vm_page_t;",
+    "pub use zx_types::{zx_paddr_t, zx_status_t};",
+    "pub type VmPageDoublyLinkedList = core::ffi::c_void;",
   ]
   expect_lints = []
 }
@@ -946,6 +993,7 @@ kernel_rust_mod("vm-rs") {
     ":physical-page-borrowing-config-bindings",
     ":physmap-bindings",
     ":pmm-bindings",
+    ":pmm-node-bindings",
     ":scanner-bindings",
     ":vm-address-region-bindings",
     ":vm-aspace-bindings",
