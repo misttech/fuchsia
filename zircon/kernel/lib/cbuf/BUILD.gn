@@ -7,7 +7,6 @@
 import("//build/components.gni")
 import("//build/cpp/library_headers.gni")
 import("//build/rust/rustc_library.gni")
-import("//zircon/kernel/kernel_rust_crate.gni")
 import("//zircon/kernel/kernel_rust_mod.gni")
 import("//zircon/kernel/params.gni")
 
@@ -18,6 +17,7 @@ static_library("cbuf") {
 
   sources = [ "cbuf.cc" ]
   deps = [
+    ":cbuf_rs",
     "//zircon/kernel/lib/ktl",
     "//zircon/system/ulib/zx",
   ]
@@ -27,31 +27,14 @@ library_headers("headers") {
   headers = [ "lib/cbuf.h" ]
 }
 
-kernel_rust_crate("cbuf-rs") {
-  crate_name = "cbuf"
-  sources = [ "src/lib.rs" ]
+kernel_rust_mod("cbuf_rs") {
+  output_name = "cbuf"
+  source_root = "src/mod.rs"
+  sources = [ "src/mod.rs" ]
   deps = [
     "//sdk/rust/zx-status",
     "//src/lib/ksync",
     "//third_party/rust_crates:pin-init",
-  ]
-
-  # TODO(https://fxbug.dev/548748442): remove when all fixed in the code
-  if (is_kernel) {
-    configs += [ "//zircon/kernel/switch:allow-collapsible-if" ]
-  }
-}
-
-kernel_rust_mod("cbuf_rs_tests") {
-  testonly = true
-  source_root = "tests/kernel.rs"
-  sources = [ "tests/kernel.rs" ]
-  deps = [ ":cbuf-rs" ]
-  test_deps = [
-    "//sdk/rust/zx-status",
-    "//sdk/rust/zx-types",
-    "//third_party/rust_crates:pin-init",
-    "//zircon/kernel/lib/unittest:unittest-rs",
   ]
 }
 
@@ -65,7 +48,6 @@ source_set("kernel-tests") {
   sources = [ "cbuf_tests.cc" ]
   deps = [
     ":cbuf",
-    ":cbuf_rs_tests",
     "//zircon/kernel/lib/unittest",
   ]
 }
