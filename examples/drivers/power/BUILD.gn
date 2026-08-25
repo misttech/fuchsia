@@ -10,6 +10,8 @@ group("drivers") {
   ]
 }
 
+# TODO(https://fxbug.dev/552000162) Note that the downtstream dependencies
+# don't actually include any tests!
 group("hermetic_tests") {
   testonly = true
   deps = [

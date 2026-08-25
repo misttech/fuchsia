@@ -4,16 +4,16 @@
 
 use anyhow::Result;
 use fidl::endpoints::ClientEnd;
+use fidl_fuchsia_component_test as ftest;
 use fidl_fuchsia_driver_test::RealmArgs;
+use fidl_fuchsia_examples as fex;
+use fidl_fuchsia_power_system as fps;
+use fuchsia_async as fasync;
 use fuchsia_component::server::ServiceFs;
 use fuchsia_component_test::{ChildOptions, LocalComponentHandles, RealmBuilder};
 use fuchsia_driver_test::{DriverTestRealmBuilder, DriverTestRealmInstance};
 use futures::channel::mpsc;
 use futures::{StreamExt, TryStreamExt};
-use {
-    fidl_fuchsia_component_test as ftest, fidl_fuchsia_examples as fex,
-    fidl_fuchsia_power_system as fps, fuchsia_async as fasync,
-};
 
 async fn sag_serve(
     mut stream: fps::ActivityGovernorRequestStream,
@@ -78,6 +78,8 @@ async fn setup_capability_provider(
     Ok((receiver, echo_receiver))
 }
 
+// TODO(https://fxbug.dev/552000162) Re-enable after tests are based on power
+// elements instead of `fuchsia.power.system/SuspendBlocker`.
 #[fuchsia::test]
 async fn test_power_driver() -> Result<()> {
     // Create the RealmBuilder.

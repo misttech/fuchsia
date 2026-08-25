@@ -85,6 +85,8 @@ rustc_test("realm-test") {
   ]
 }
 
+# TODO(https://fxbug.dev/552000162) Re-enable after tests are based on power
+# elements instead of `fuchsia.power.system/SuspendBlocker`.
 fuchsia_unittest_package("realm-test-pkg") {
   package_name = "power-driver-realm-test"
   deps = [
@@ -106,5 +108,8 @@ fuchsia_unittest_package("realm-test-pkg") {
 
 group("hermetic_tests") {
   testonly = true
-  deps = [ ":realm-test-pkg" ]
+
+  # TODO(https://fxbug.dev/552000162) Re-enable after tests are based on power
+  # elements instead of `fuchsia.power.system/SuspendBlocker`.
+  deps = []
 }
