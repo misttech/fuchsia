@@ -127,7 +127,10 @@ impl FidlPipe {
 
         let device_address = connector.device_address();
         let (error_sender, error_queue) = async_channel::unbounded();
-        let host_ssh_address = overnet_connection.as_ref().and_then(|x| x.ssh_host_address.clone());
+        let host_ssh_address = overnet_connection
+            .as_ref()
+            .and_then(|x| x.ssh_host_address.clone())
+            .or_else(|| fdomain_connection.as_ref().and_then(|x| x.ssh_host_address.clone()));
 
         let (node, overnet_task) = if let Some(overnet_connection) = overnet_connection {
             let node = overnet_core::Router::new(None)?;
@@ -146,7 +149,8 @@ impl FidlPipe {
         };
 
         let (client, fdomain_task) = if let Some(fdomain_connection) = fdomain_connection {
-            let FDomainConnection { output, input, errors, main_task } = fdomain_connection;
+            let FDomainConnection { output, input, errors, main_task, ssh_host_address: _ } =
+                fdomain_connection;
             let error_send = async move {
                 let mut errors = std::pin::pin!(errors);
                 while let Some(error) = errors.next().await {
@@ -300,6 +304,7 @@ mod test {
                 input: Box::new(sock2),
                 errors: error_rx,
                 main_task: Some(error_task),
+                ssh_host_address: None,
             };
 
             Ok(TargetConnection::Both(fdomain, overnet))
@@ -341,6 +346,7 @@ mod test {
                 input: Box::new(sock2),
                 errors: error_rx,
                 main_task: Some(error_task),
+                ssh_host_address: None,
             };
 
             Ok(TargetConnection::Both(fdomain, overnet))
@@ -376,6 +382,7 @@ mod test {
                 input: Box::new(sock2),
                 errors: error_rx,
                 main_task: Some(error_task),
+                ssh_host_address: None,
             };
 
             Ok(TargetConnection::Both(fdomain, overnet))

@@ -269,11 +269,27 @@ impl SshConnector {
         let stderr_ctx = self.env_context.clone();
         let stderr_reader = async move { read_stderr(stderr, error_sender, &stderr_ctx).await };
         let main_task = Some(Task::local(stderr_reader));
+        let ssh_path: String =
+            self.env_context.get("ssh.path").unwrap_or_else(|_| "ssh".to_string());
+        let ssh_host_address = match ffx_ssh::ssh::get_ssh_host_address(
+            &ssh_path,
+            self.target.clone(),
+            &self.env_context,
+        )
+        .await
+        {
+            Ok(addr) => Some(addr),
+            Err(e) => {
+                log::debug!("Failed to get ssh host address: {e:?}");
+                None
+            }
+        };
         Ok(FDomainConnection {
             output: Box::new(stdout),
             input: Box::new(stdin),
             errors: errors_receiver,
             main_task,
+            ssh_host_address,
         })
     }
 }

@@ -31,7 +31,7 @@ struct LegacyCompatInfo {
     overnet_id: Option<u64>,
 }
 
-const BUFSIZE: usize = 1024;
+pub const BUFSIZE: usize = 1024;
 pub struct LineBuffer {
     buffer: [u8; BUFSIZE],
     pos: usize,

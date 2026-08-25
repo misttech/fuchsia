@@ -68,6 +68,7 @@ pub struct FDomainConnection {
     pub(crate) input: Box<dyn AsyncWrite + Unpin + Send>,
     pub(crate) errors: Receiver<ConnectionStreamError>,
     pub(crate) main_task: Option<Task<()>>,
+    pub(crate) ssh_host_address: Option<HostAddr>,
 }
 
 impl FDomainConnection {
@@ -79,6 +80,7 @@ impl FDomainConnection {
             errors: r,
             output: Box::new(tokio::io::BufReader::new(tokio::io::empty())),
             input: Box::new(Vec::new()),
+            ssh_host_address: None,
         }
     }
 }

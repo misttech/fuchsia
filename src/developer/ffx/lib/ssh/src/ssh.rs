@@ -427,6 +427,43 @@ pub async fn build_ssh_command(
     build_ssh_command_with_ssh_path("ssh", addr, command, env).await
 }
 
+/// Queries the target's perspective of the host's IP address by invoking SSH with `echo $SSH_CONNECTION`.
+pub async fn get_ssh_host_address(
+    ssh_path: &str,
+    addr: ScopedSocketAddr,
+    env: &EnvironmentContext,
+) -> Result<crate::parse::HostAddr, SshError> {
+    let args = vec!["echo", "$SSH_CONNECTION"];
+    let mut ssh = tokio::process::Command::from(
+        build_ssh_command_with_env(ssh_path, addr, env, args)
+            .await
+            .map_err(|e| SshError::Unknown(e.to_string()))?,
+    );
+
+    let ssh_cmd = ssh
+        .stdout(std::process::Stdio::piped())
+        .stdin(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null());
+
+    let mut child = ssh_cmd.spawn().map_err(|e| SshError::Unknown(e.to_string()))?;
+
+    let stdout = child
+        .stdout
+        .take()
+        .ok_or_else(|| SshError::Unknown("unable to get stdout from target pipe".into()))?;
+
+    let mut stdout = tokio::io::BufReader::with_capacity(crate::parse::BUFSIZE, stdout);
+    let line = crate::parse::read_ssh_line_with_timeouts(&mut stdout)
+        .await
+        .map_err(|e| SshError::Unknown(format!("{e:?}")))?;
+
+    line.split(" ")
+        .next()
+        .filter(|x| !x.is_empty())
+        .map(|x| crate::parse::HostAddr(x.to_owned()))
+        .ok_or_else(|| SshError::Unknown(format!("Could not parse {line:?}")))
+}
+
 /// Build the ssh command using a provided sshconfig file.
 pub fn build_ssh_command_with_config_file(
     config_file: &PathBuf,

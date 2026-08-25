@@ -140,6 +140,7 @@ impl VSockConnector {
             input: Box::new(input),
             errors,
             main_task: None,
+            ssh_host_address: None,
         })
     }
 }

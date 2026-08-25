@@ -394,28 +394,31 @@ async fn remove_aliases(repo_url: &str, rewrite_proxy: EngineProxy) -> Result<()
     Ok(())
 }
 
-async fn connect_to_capability<T: DiscoverableProtocolMarker>(
+// Returns a boxed future to avoid `clippy::large_futures` at call sites.
+fn connect_to_capability<T: DiscoverableProtocolMarker>(
     rcs_proxy_connector: Connector<RemoteControlProxyHolder>,
     time_to_wait: Duration,
-) -> Result<T::Proxy> {
-    let rcs_proxy = try_rcs_proxy_connection(rcs_proxy_connector, time_to_wait).await?;
-    // Try to connect via fuchsia.developer.remotecontrol/RemoteControl.ConnectCapability.
-    let (proxy, server) = rcs_proxy.domain().create_proxy::<T>();
-    rcs_proxy
-        .connect_capability(
-            &REPOSITORY_MANAGER_MONIKER,
-            OpenDirType::ExposedDir,
-            T::PROTOCOL_NAME,
-            server.into_channel(),
-        )
-        .await
-        .map_err(|e| bug!(e))?
-        .map_err(|err| {
-            bug!(
-                "Attempting to connect to moniker {REPOSITORY_MANAGER_MONIKER} failed with {err:?}",
+) -> futures::future::LocalBoxFuture<'static, Result<T::Proxy>> {
+    Box::pin(async move {
+        let rcs_proxy = try_rcs_proxy_connection(rcs_proxy_connector, time_to_wait).await?;
+        // Try to connect via fuchsia.developer.remotecontrol/RemoteControl.ConnectCapability.
+        let (proxy, server) = rcs_proxy.domain().create_proxy::<T>();
+        rcs_proxy
+            .connect_capability(
+                &REPOSITORY_MANAGER_MONIKER,
+                OpenDirType::ExposedDir,
+                T::PROTOCOL_NAME,
+                server.into_channel(),
             )
-        })?;
-    return Ok(proxy);
+            .await
+            .map_err(|e| bug!(e))?
+            .map_err(|err| {
+                bug!(
+                    "Attempting to connect to moniker {REPOSITORY_MANAGER_MONIKER} failed with {err:?}",
+                )
+            })?;
+        Ok(proxy)
+    })
 }
 
 async fn try_rcs_proxy_connection(
