@@ -31,19 +31,19 @@ trait SafeOp {
 
 impl SafeOp for u64 {
     fn safe_sub(&self, other: u64) -> u64 {
-        self.checked_sub(other).unwrap_or(0)
+        self.saturating_sub(other)
     }
     fn safe_add(&self, other: u64) -> u64 {
-        self.checked_add(other).unwrap_or(u64::MAX)
+        self.saturating_add(other)
     }
 }
 
 impl SafeOp for i64 {
     fn safe_sub(&self, other: i64) -> i64 {
-        self.checked_sub(other).unwrap_or(i64::MIN)
+        self.saturating_sub(other)
     }
     fn safe_add(&self, other: i64) -> i64 {
-        self.checked_add(other).unwrap_or(i64::MAX)
+        self.saturating_add(other)
     }
 }
 
@@ -1557,6 +1557,16 @@ mod tests {
     use diagnostics_assertions::assert_data_tree;
     use futures::prelude::*;
     use inspect_format::Header;
+
+    #[fuchsia::test]
+    fn test_safe_op_overflow_direction() {
+        assert_eq!((-100i64).safe_add(i64::MIN), i64::MIN);
+        assert_eq!((100i64).safe_add(i64::MAX), i64::MAX);
+        assert_eq!((100i64).safe_sub(i64::MIN), i64::MAX);
+        assert_eq!((-100i64).safe_sub(i64::MAX), i64::MIN);
+        assert_eq!(0u64.safe_sub(10), 0);
+        assert_eq!(u64::MAX.safe_add(10), u64::MAX);
+    }
 
     #[track_caller]
     fn assert_all_free_or_reserved<'a>(
