@@ -1,71 +1,12 @@
-# Copyright 2021 The Fuchsia Authors. All rights reserved.
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-import("//build/go/go_binary.gni")
-import("//build/go/go_library.gni")
-import("//build/go/go_test.gni")
-
-go_binary("bundle_fetcher") {
-  embed = [ ":main" ]
+# A forwarding target to the Bazel-built bundle_fetcher host tool.
+group("bundle_fetcher") {
+  public_deps = [ ":host" ]
 }
 
-install_host_tools("host") {
-  deps = [ ":bundle_fetcher" ]
-  outputs = [ "bundle_fetcher" ]
-}
-
-go_library("main") {
-  source_dir = "cmd"
-
-  sources = [
-    "main.go",
-    "product_list.go",
-    "product_list_test.go",
-  ]
-
-  deps = [
-    ":bundler",
-    "//third_party/golibs:cloud.google.com/go/storage",
-    "//third_party/golibs:github.com/google/subcommands",
-    "//third_party/golibs:google.golang.org/api/iterator",
-    "//tools/artifactory:lib",
-    "//tools/build",
-    "//tools/lib/color",
-    "//tools/lib/logger",
-  ]
-}
-
-go_library("bundler") {
-  source_dir = "bundler"
-  sources = [
-    "cloud_sink.go",
-    "cloud_sink_mock.go",
-    "cloud_sink_test.go",
-  ]
-  deps = [
-    "//third_party/golibs:cloud.google.com/go/storage",
-    "//third_party/golibs:google.golang.org/api/iterator",
-    "//tools/build",
-    "//tools/lib/logger",
-    "//tools/lib/osmisc",
-  ]
-}
-
-go_test("bundler_lib_tests") {
-  embed = [ ":bundler" ]
-  deps = [ "//third_party/golibs:github.com/google/go-cmp" ]
-}
-
-go_test("bundle_fetcher_main_tests") {
-  embed = [ ":main" ]
-  deps = [ "//third_party/golibs:github.com/google/go-cmp" ]
-}
-
-group("tests") {
-  testonly = true
-  deps = [
-    ":bundle_fetcher_main_tests($host_toolchain)",
-    ":bundler_lib_tests($host_toolchain)",
-  ]
+group("host") {
+  public_deps = [ "//build/bazel/host:bazel_root_host_tools.bundle_fetcher.host_tool($host_toolchain)" ]
 }

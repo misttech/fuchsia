@@ -5,7 +5,7 @@
 # This was moved here from //bundles:build_infra
 group("build") {
   public_deps = [
-    "//tools/artifactory($host_toolchain)",
+    "//build/bazel/host:bazel_root_host_tools.artifactory.host_tool",
 
     # The infrastructure uses a version of fint built using the Go toolchain,
     # rather than Ninja, so we technically don't need to include fint here. But

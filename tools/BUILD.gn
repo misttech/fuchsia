@@ -9,6 +9,7 @@ if (is_host) {
     testonly = true
 
     public_deps = [
+      "//build/bazel/host:bazel_root_host_tools.bundle_fetcher.host_tool",
       "//build/bazel/host:bazel_root_host_tools.debroot.host_tool",
       "//build/bazel/host:bazel_root_host_tools.jq5.host_tool",
       "//build/bazel/host:bazel_root_host_tools.mdlint.host_tool",
@@ -18,7 +19,6 @@ if (is_host) {
       "//tools/auto_owners",
       "//tools/bindc:host",
       "//tools/build",
-      "//tools/bundle_fetcher",
       "//tools/clidoc",
       "//tools/cmc:install",
       "//tools/component_id_index",
@@ -86,12 +86,10 @@ group("tests_no_e2e") {
 
   deps = [
     ":bazel_tests",
-    "//tools/artifactory:tests",
     "//tools/auto_owners:tests($host_toolchain)",
     "//tools/bindc:tests",
     "//tools/botanist:tests($host_toolchain)",
     "//tools/build:tests($host_toolchain)",
-    "//tools/bundle_fetcher:tests",
     "//tools/cargo-gnaw:tests",
     "//tools/clidoc:tests",
     "//tools/cmc:tests",

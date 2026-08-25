@@ -10,6 +10,8 @@ test_suite(
     name = "host_tests",
     target_compatible_with = HOST_CONSTRAINTS,
     tests = [
+        "//tools/artifactory:artifactory_lib_tests",
+        "//tools/artifactory:artifactory_main_tests",
         "//tools/build/fx-set:tests",
         "//tools/build/gndoc:gndoc_test",
         "//tools/build/ninjago/buildstats:buildstats_tests",
@@ -17,6 +19,8 @@ test_suite(
         "//tools/build/ninjago/clangtrace:clangtrace_test",
         "//tools/build/ninjago/ninjacommand:ninjacommand_tests",
         "//tools/build/ninjago/rbetrace:rbetrace_test",
+        "//tools/bundle_fetcher:bundle_fetcher_main_tests",
+        "//tools/bundle_fetcher:bundler_lib_tests",
         "//tools/check-licenses:tests",
         "//tools/dart_test_parser:dart_test_parser_lib_tests",
         "//tools/fidl/fidlgen_rust/codegen:fidlgen_rust_lib_tests",
