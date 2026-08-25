@@ -24,12 +24,6 @@
 namespace {
 
 #if defined(__x86_64__) || defined(__i386__)
-// In the legacy fixed-address format, the entry address is always above 1M.
-// In the new format, it's an offset and in practice it's never > 1M.  So
-// this is a safe-enough heuristic to distinguish the new from the ol
-bool IsLegacyEntryAddress(uint64_t address) {
-  return address > FixedAddressBootZbi::kLegacyLoadAddress;
-}
 
 // Relocated blob size must be aligned to |kRelocateAlign|.
 constexpr size_t kRelocateAlign = 1;
@@ -44,9 +38,6 @@ constexpr int64_t kBackwardBias = -1;
 
 #elif defined(__aarch64__)
 
-// ARM does not use legacy fixed address format.
-bool IsLegacyEntryAddress(uint64_t address) { return false; }
-
 // Relocated blob size must be aligned to |kRelocateAlign|.
 constexpr size_t kRelocateAlign = 32;
 
@@ -59,9 +50,6 @@ constexpr int64_t kForwardBias = -16;
 constexpr int64_t kBackwardBias = 0;
 
 #elif defined(__riscv)
-
-// RISC-V does not use legacy fixed address format.
-bool IsLegacyEntryAddress(uint64_t address) { return false; }
 
 // Relocated blob size must be aligned to |kRelocateAlign|.
 constexpr size_t kRelocateAlign = 8;
@@ -133,10 +121,6 @@ bool RecharacterizeAllocations(ktl::span<const ktl::byte> range, memalloc::Type 
 
 void FixedAddressBootZbi::SetKernelAddresses() {
   kernel_entry_address_ = BootZbi::KernelEntryAddress();
-  if (IsLegacyEntryAddress(KernelHeader()->entry)) {
-    set_kernel_load_address(kLegacyLoadAddress);
-    kernel_entry_address_ = KernelHeader()->entry;
-  }
 }
 
 fit::result<BootZbi::Error> FixedAddressBootZbi::Load(uint32_t extra_data_capacity,

@@ -20,9 +20,6 @@
 // and data do not overlap with their respective intended load addresses.
 class FixedAddressBootZbi : public BootZbi {
  public:
-  // Legacy x86 ZBI provide absolute offset, while newer ones use a relative offset.
-  static constexpr uint64_t kLegacyLoadAddress = 1 << 20;
-
   using BootZbi::Error;
 
   // Inits a default constructed object. Just like |BootZbi::*| but performs additional
