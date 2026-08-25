@@ -643,9 +643,10 @@ mod tests {
                     enc.encrypt(&mut buf);
                 }
                 {
-                    let mut enc = JournalXtsCipher::new(&key, 13);
-                    enc.encrypt(&mut buf);
+                    let mut dec = JournalXtsCipher::new(&key, 13);
+                    dec.decrypt(&mut buf);
                 }
+                assert_eq!(*buf, expected_plaintext);
             }
 
             // Unaligned case.
@@ -664,9 +665,10 @@ mod tests {
                     enc.encrypt(&mut buf);
                 }
                 {
-                    let mut enc = JournalXtsCipher::new(&key, 13);
-                    enc.encrypt(&mut buf);
+                    let mut dec = JournalXtsCipher::new(&key, 13);
+                    dec.decrypt(&mut buf);
                 }
+                assert_eq!(*buf, expected_plaintext);
             }
         }
     }
