@@ -12,6 +12,7 @@
 #include <lib/async/time.h>
 #include <lib/fidl/cpp/hlcpp_conversion.h>
 #include <lib/fpromise/bridge.h>
+#include <lib/stdcompat/source_location.h>
 #include <lib/sync/cpp/completion.h>
 #include <lib/sys/cpp/testing/component_context_provider.h>
 #include <lib/syslog/cpp/macros.h>
@@ -50,9 +51,9 @@
 
 namespace flatland {
 
-// Convenience struct for the PRESENT_WITH_ARGS macro to avoid having to update it every time
+// Convenience struct for the PresentWithArgs method to avoid having to update it every time
 // a new argument is added to Flatland::Present(). This struct also includes additional flags
-// to PRESENT_WITH_ARGS itself for testing timing-related Present() functionality.
+// to PresentWithArgs itself for testing timing-related Present() functionality.
 struct PresentArgs {
   // Arguments to Flatland::Present().
   zx::time requested_presentation_time;
@@ -61,7 +62,7 @@ struct PresentArgs {
   std::vector<zx::counter> present_fences;
   bool unsquashable = false;
 
-  // Arguments to the PRESENT_WITH_ARGS macro.
+  // Arguments to the PresentWithArgs method.
 
   // If true, skips the session update associated with the Present(), meaning the new UberStruct
   // will not be in the snapshot and the release fences will not be signaled.
@@ -73,7 +74,7 @@ struct PresentArgs {
   // The future presentation infos that should be returned to the client.
   flatland::Flatland::FuturePresentationInfos presentation_infos = {};
 
-  // If PRESENT_WITH_ARGS is called with |expect_success| = false, the error that should be
+  // If PresentWithArgs is called with |expect_success| = false, the error that should be
   // expected as the return value from Present().
   fuchsia_ui_composition::FlatlandError expected_error =
       fuchsia_ui_composition::FlatlandError::kBadOperation;
@@ -84,92 +85,38 @@ struct GlobalIdPair {
   allocation::GlobalImageId image_id;
 };
 
-// These macros works like functions that check a variety of conditions, but if those conditions
-// fail, the line number for the failure will appear in-line rather than in a function.
-
-// This macro calls Present() on a Flatland object and immediately triggers the session update
-// for all sessions so that changes from that Present() are visible in global systems. This is
-// primarily useful for testing the user-facing Flatland API.
-//
-// This macro must be used within a test using the FlatlandTest harness.
-//
-// |flatland| is a Flatland object constructed with the MockFlatlandPresenter owned by the
-// FlatlandTest harness. |expect_success| should be false if the call to Present() is expected to
-// trigger an error.
-#define PRESENT_WITH_ARGS(flatland, args, expect_success)                                      \
-  {                                                                                            \
-    bool had_acquire_fences = !(args).acquire_fences.empty();                                  \
-    bool processed_callback = false;                                                           \
-    fuchsia_ui_composition::PresentArgs present_args;                                          \
-    present_args.requested_presentation_time((args).requested_presentation_time.get())         \
-        .acquire_fences(std::move((args).acquire_fences))                                      \
-        .release_fences(std::move((args).release_fences))                                      \
-        .present_fences(std::move((args).present_fences))                                      \
-        .unsquashable((args).unsquashable);                                                    \
-    (flatland)->Present(std::move(present_args));                                              \
-    if (expect_success) {                                                                      \
-      /* Even with no acquire_fences, UberStruct updates queue on the dispatcher. */           \
-      if (!had_acquire_fences) {                                                               \
-        EXPECT_CALL(*mock_flatland_presenter_,                                                 \
-                    ScheduleUpdateForSession((args).requested_presentation_time, ::testing::_, \
-                                             (args).unsquashable, ::testing::_, ::testing::_,  \
-                                             ::testing::_, ::testing::_));                     \
-      }                                                                                        \
-      RunLoopUntilIdle();                                                                      \
-      if (!(args).skip_session_update_and_release_fences) {                                    \
-        ApplySessionUpdatesAndSignalFences();                                                  \
-      }                                                                                        \
-      (flatland)->OnNextFrameBegin((args).present_credits_returned,                            \
-                                   std::move((args).presentation_infos));                      \
-    } else {                                                                                   \
-      RunLoopUntilIdle();                                                                      \
-      EXPECT_EQ(GetFlatlandError((flatland)->GetSessionId()), (args).expected_error);          \
-    }                                                                                          \
-  }
-
-// Identical to PRESENT_WITH_ARGS, but supplies an empty PresentArgs to the Present() call.
-#define PRESENT(flatland, expect_success)                       \
-  {                                                             \
-    PRESENT_WITH_ARGS(flatland, PresentArgs(), expect_success); \
-  }
-
-#define REGISTER_BUFFER_COLLECTION(allocator, bc_export_token, token, expect_success)             \
-  if (expect_success) {                                                                           \
-    EXPECT_CALL(*mock_buffer_collection_importer_,                                                \
-                ImportBufferCollection(fsl::GetKoid(bc_export_token.value().get()), ::testing::_, \
-                                       ::testing::_, ::testing::_, ::testing::_))                 \
-        .WillOnce(integration_tests::ReturnPromise(fpromise::ok()));                              \
-  }                                                                                               \
-  bool processed_callback = false;                                                                \
-  fuchsia_ui_composition::RegisterBufferCollectionArgs args;                                      \
-  args.export_token(std::move(bc_export_token));                                                  \
-  args.buffer_collection_token2(                                                                  \
-      fidl::ClientEnd<fuchsia_sysmem2::BufferCollectionToken>(std::move(token).TakeChannel()));   \
-  allocator->RegisterBufferCollection(std::move(args), [&processed_callback](auto result) {       \
-    EXPECT_EQ(expect_success, result.is_ok());                                                    \
-    processed_callback = true;                                                                    \
-  });                                                                                             \
-  RunLoopUntil([&processed_callback] { return processed_callback; });                             \
-  EXPECT_TRUE(processed_callback);
-
-// This macro searches for a local matrix associated with a specific TransformHandle.
+// Searches for a local matrix associated with a specific TransformHandle.
 //
 // |uber_struct| is the UberStruct to search to find the matrix. |target_handle| is the
 // TransformHandle of the matrix to compare. |expected_matrix| is the expected value of that
 // matrix.
-#define EXPECT_MATRIX(uber_struct, target_handle, expected_matrix)                               \
-  {                                                                                              \
-    glm::mat3 matrix = glm::mat3();                                                              \
-    auto matrix_kv = uber_struct->local_matrices.find(target_handle);                            \
-    if (matrix_kv != uber_struct->local_matrices.end()) {                                        \
-      matrix = matrix_kv->second;                                                                \
-    }                                                                                            \
-    for (size_t i = 0; i < 3; ++i) {                                                             \
-      for (size_t j = 0; j < 3; ++j) {                                                           \
-        EXPECT_FLOAT_EQ(matrix[i][j], expected_matrix[i][j]) << " row " << j << " column " << i; \
-      }                                                                                          \
-    }                                                                                            \
+inline void ExpectMatrix(const UberStruct* uber_struct, TransformHandle target_handle,
+                         const glm::mat3& expected_matrix,
+                         cpp20::source_location location = cpp20::source_location::current()) {
+  SCOPED_TRACE(::testing::Message() << location.file_name() << ":" << location.line());
+  glm::mat3 matrix = glm::mat3();
+  auto matrix_kv = uber_struct->local_matrices.find(target_handle);
+  if (matrix_kv != uber_struct->local_matrices.end()) {
+    matrix = matrix_kv->second;
   }
+  for (size_t i = 0; i < 3; ++i) {
+    for (size_t j = 0; j < 3; ++j) {
+      EXPECT_FLOAT_EQ(matrix[i][j], expected_matrix[i][j]) << " row " << j << " column " << i;
+    }
+  }
+}
+
+inline void ExpectMatrix(const std::shared_ptr<const UberStruct>& uber_struct,
+                         TransformHandle target_handle, const glm::mat3& expected_matrix,
+                         cpp20::source_location location = cpp20::source_location::current()) {
+  ExpectMatrix(uber_struct.get(), target_handle, expected_matrix, location);
+}
+
+inline void ExpectMatrix(const std::shared_ptr<UberStruct>& uber_struct,
+                         TransformHandle target_handle, const glm::mat3& expected_matrix,
+                         cpp20::source_location location = cpp20::source_location::current()) {
+  ExpectMatrix(uber_struct.get(), target_handle, expected_matrix, location);
+}
 
 const uint32_t kDefaultSize = 1;
 const glm::vec2 kDefaultDisplayPixelRatio = {1.0f, 1.0f};
@@ -536,6 +483,59 @@ class FlatlandTest : public LoggingEventLoop, public ::testing::Test {
     RunLoopUntilIdle();
   }
 
+  // Calls Present() on a Flatland object and immediately triggers the session update
+  // for all sessions so that changes from that Present() are visible in global systems. This is
+  // primarily useful for testing the user-facing Flatland API.
+  //
+  // |flatland| is a Flatland object constructed with the MockFlatlandPresenter owned by the
+  // FlatlandTest harness. |expect_success| should be false if the call to Present() is expected to
+  // trigger an error.
+  void PresentWithArgs(Flatland* flatland, PresentArgs args, bool expect_success,
+                       cpp20::source_location location = cpp20::source_location::current()) {
+    SCOPED_TRACE(::testing::Message() << location.file_name() << ":" << location.line());
+    bool had_acquire_fences = !args.acquire_fences.empty();
+    fuchsia_ui_composition::PresentArgs present_args;
+    present_args.requested_presentation_time(args.requested_presentation_time.get())
+        .acquire_fences(std::move(args.acquire_fences))
+        .release_fences(std::move(args.release_fences))
+        .present_fences(std::move(args.present_fences))
+        .unsquashable(args.unsquashable);
+    flatland->Present(std::move(present_args));
+    if (expect_success) {
+      // Even with no acquire_fences, UberStruct updates queue on the dispatcher.
+      if (!had_acquire_fences) {
+        EXPECT_CALL(*mock_flatland_presenter_,
+                    ScheduleUpdateForSession(args.requested_presentation_time, ::testing::_,
+                                             args.unsquashable, ::testing::_, ::testing::_,
+                                             ::testing::_, ::testing::_));
+      }
+      RunLoopUntilIdle();
+      if (!args.skip_session_update_and_release_fences) {
+        ApplySessionUpdatesAndSignalFences();
+      }
+      flatland->OnNextFrameBegin(args.present_credits_returned, std::move(args.presentation_infos));
+    } else {
+      RunLoopUntilIdle();
+      EXPECT_EQ(GetFlatlandError(flatland->GetSessionId()), args.expected_error);
+    }
+  }
+
+  void PresentWithArgs(const std::shared_ptr<Flatland>& flatland, PresentArgs args,
+                       bool expect_success,
+                       cpp20::source_location location = cpp20::source_location::current()) {
+    PresentWithArgs(flatland.get(), std::move(args), expect_success, location);
+  }
+
+  void Present(Flatland* flatland, bool expect_success,
+               cpp20::source_location location = cpp20::source_location::current()) {
+    PresentWithArgs(flatland, PresentArgs(), expect_success, location);
+  }
+
+  void Present(const std::shared_ptr<Flatland>& flatland, bool expect_success,
+               cpp20::source_location location = cpp20::source_location::current()) {
+    Present(flatland.get(), expect_success, location);
+  }
+
   void CreateViewport(
       Flatland* parent, Flatland* child, ContentId viewport_id,
       fidl::ServerEnd<fuchsia_ui_composition::ChildViewWatcher> child_view_watcher,
@@ -554,8 +554,8 @@ class FlatlandTest : public LoggingEventLoop, public ::testing::Test {
         std::move(child_token), fidl::HLCPPToNatural(scenic::NewViewIdentityOnCreation()),
         fuchsia_ui_composition::ViewBoundProtocols(), std::move(parent_viewport_watcher));
 
-    PRESENT(parent, true);
-    PRESENT(child, true);
+    Present(parent, true);
+    Present(child, true);
 
     // After View creation the child should have an associated ViewRef.
     auto child_uber_struct = GetUberStruct(child);
@@ -587,6 +587,41 @@ class FlatlandTest : public LoggingEventLoop, public ::testing::Test {
                        std::move(parent_viewport_watcher_server_end));
   }
 
+  void RegisterBufferCollection(
+      allocation::Allocator* allocator,
+      fuchsia_ui_composition::BufferCollectionExportToken bc_export_token,
+      fidl::InterfaceHandle<fuchsia::sysmem2::BufferCollectionToken> token, bool expect_success,
+      cpp20::source_location location = cpp20::source_location::current()) {
+    SCOPED_TRACE(::testing::Message() << location.file_name() << ":" << location.line());
+    if (expect_success) {
+      EXPECT_CALL(*mock_buffer_collection_importer_,
+                  ImportBufferCollection(fsl::GetKoid(bc_export_token.value().get()), ::testing::_,
+                                         ::testing::_, ::testing::_, ::testing::_))
+          .WillOnce(integration_tests::ReturnPromise(fpromise::ok()));
+    }
+    bool processed_callback = false;
+    fuchsia_ui_composition::RegisterBufferCollectionArgs args;
+    args.export_token(std::move(bc_export_token));
+    args.buffer_collection_token2(
+        fidl::ClientEnd<fuchsia_sysmem2::BufferCollectionToken>(std::move(token).TakeChannel()));
+    allocator->RegisterBufferCollection(std::move(args),
+                                        [&processed_callback, expect_success](auto result) {
+                                          EXPECT_EQ(expect_success, result.is_ok());
+                                          processed_callback = true;
+                                        });
+    RunLoopUntil([&processed_callback] { return processed_callback; });
+    EXPECT_TRUE(processed_callback);
+  }
+
+  void RegisterBufferCollection(
+      const std::shared_ptr<allocation::Allocator>& allocator,
+      fuchsia_ui_composition::BufferCollectionExportToken bc_export_token,
+      fidl::InterfaceHandle<fuchsia::sysmem2::BufferCollectionToken> token, bool expect_success,
+      cpp20::source_location location = cpp20::source_location::current()) {
+    RegisterBufferCollection(allocator.get(), std::move(bc_export_token), std::move(token),
+                             expect_success, location);
+  }
+
   // Helper function to create an image, registering it with sysmem and flatland, and presenting.
   GlobalIdPair CreateImage(
       Flatland* flatland, allocation::Allocator* allocator, ContentId image_id,
@@ -594,8 +629,9 @@ class FlatlandTest : public LoggingEventLoop, public ::testing::Test {
       fuchsia_ui_composition::ImageProperties properties) {
     const auto koid =
         fsl::GetKoid(buffer_collection_import_export_tokens.export_token.value().get());
-    REGISTER_BUFFER_COLLECTION(allocator, buffer_collection_import_export_tokens.export_token,
-                               CreateToken(), true);
+    RegisterBufferCollection(allocator,
+                             std::move(buffer_collection_import_export_tokens.export_token),
+                             CreateToken(), true);
 
     FX_DCHECK(properties.size().has_value());
     FX_DCHECK(properties.size()->width());
@@ -612,7 +648,7 @@ class FlatlandTest : public LoggingEventLoop, public ::testing::Test {
 
     flatland->CreateImage(image_id, std::move(buffer_collection_import_export_tokens.import_token),
                           0, std::move(properties));
-    PRESENT(flatland, true);
+    Present(flatland, true);
     return {.collection_id = koid, .image_id = global_image_id};
   }
 
