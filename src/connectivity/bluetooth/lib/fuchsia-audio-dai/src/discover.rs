@@ -16,7 +16,7 @@ const DAI_SERVICE_DIR: &str = "/svc/fuchsia.hardware.audio.DaiConnectorService";
 pub async fn find_devices() -> Result<Vec<DigitalAudioInterface>, Error> {
     // Connect to the component's environment.
     let directory_proxy =
-        fuchsia_fs::directory::open_in_namespace(DAI_SERVICE_DIR, fio::Flags::empty())?;
+        fuchsia_fs::directory::open_in_namespace(DAI_SERVICE_DIR, fuchsia_fs::PERM_READABLE)?;
     find_devices_internal(directory_proxy).await
 }
 

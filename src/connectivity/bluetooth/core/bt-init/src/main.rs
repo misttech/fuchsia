@@ -14,14 +14,15 @@ use fidl_fuchsia_component_decl::{
     Child, CollectionRef, ConfigOverride, ConfigSingleValue, ConfigValue, DependencyType, Offer,
     OfferDirectory, ParentRef, Ref, StartupMode,
 };
+use fidl_fuchsia_io as fio;
 use fidl_fuchsia_io::Operations;
+use fuchsia_async as fasync;
 use fuchsia_bluetooth::constants::{
     BT_HOST, BT_HOST_COLLECTION, BT_HOST_URL, DEV_DIR, HCI_DEVICE_DIR,
 };
 use fuchsia_component::{client, server};
 use futures::{StreamExt, TryStreamExt, future};
 use log::{debug, error, info, warn};
-use {fidl_fuchsia_io as fio, fuchsia_async as fasync};
 
 const BT_GAP_CHILD_NAME: &str = "bt-gap";
 const BT_RFCOMM_CHILD_NAME: &str = "bt-rfcomm";
@@ -130,7 +131,7 @@ async fn create_bt_host(realm: &RealmProxy, filename: String) -> Result<(), Erro
 /// Continuously watch the file system for bt vendor devices being added or removed
 async fn run_device_watcher() -> Result<(), Error> {
     let dir = format!("{}/{}", DEV_DIR, HCI_DEVICE_DIR);
-    let directory = fuchsia_fs::directory::open_in_namespace(&dir, fuchsia_fs::Flags::empty())?;
+    let directory = fuchsia_fs::directory::open_in_namespace(&dir, fuchsia_fs::PERM_READABLE)?;
     let mut stream = device_watcher::watch_for_files(&directory).await?;
 
     let realm = client::connect_to_protocol::<RealmMarker>()

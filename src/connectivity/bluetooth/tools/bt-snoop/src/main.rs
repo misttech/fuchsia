@@ -13,7 +13,6 @@ use fidl_fuchsia_bluetooth_snoop::{
 };
 use fidl_fuchsia_feedback::CrashReporterMarker;
 
-use fidl_fuchsia_io as fio;
 use fidl_fuchsia_io::DirectoryProxy;
 use fuchsia_async as fasync;
 use fuchsia_component::server::ServiceFs;
@@ -470,7 +469,7 @@ async fn run(
 ) -> Result<(), Error> {
     let mut id_gen = IdGenerator::new();
     let directory =
-        fuchsia_fs::directory::open_in_namespace(HCI_DEVICE_CLASS_PATH, fio::Flags::empty())
+        fuchsia_fs::directory::open_in_namespace(HCI_DEVICE_CLASS_PATH, fuchsia_fs::PERM_READABLE)
             .expect("Failed to open hci dev directory");
     let mut hci_device_events =
         Watcher::new(&directory).await.context("Cannot create device watcher")?;
