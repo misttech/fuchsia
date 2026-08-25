@@ -499,7 +499,7 @@ impl RoutingTest {
             let dir_proxy = fuchsia_fs::directory::open_directory(
                 &self.test_dir_proxy,
                 &dir_path.to_str().unwrap(),
-                fio::Flags::empty(),
+                fuchsia_fs::PERM_READABLE,
             )
             .await
             .expect("failed to open directory");
@@ -511,10 +511,13 @@ impl RoutingTest {
 
     /// Lists the contents of a directory.
     pub async fn list_directory(&self, path: &str) -> Vec<String> {
-        let dir_proxy =
-            fuchsia_fs::directory::open_directory(&self.test_dir_proxy, path, fio::Flags::empty())
-                .await
-                .expect("failed to open directory");
+        let dir_proxy = fuchsia_fs::directory::open_directory(
+            &self.test_dir_proxy,
+            path,
+            fuchsia_fs::PERM_READABLE,
+        )
+        .await
+        .expect("failed to open directory");
         list_directory(&dir_proxy).await
     }
 
@@ -1026,7 +1029,7 @@ impl RoutingTestModel for RoutingTest {
     }
 
     async fn check_namespace_subdir_contents(&self, path: &str, expected: Vec<String>) {
-        let dir_proxy = fuchsia_fs::directory::open_in_namespace(path, fio::Flags::empty())
+        let dir_proxy = fuchsia_fs::directory::open_in_namespace(path, fuchsia_fs::PERM_READABLE)
             .expect("failed to open directory");
         assert_eq!(list_directory(&dir_proxy).await, expected)
     }
@@ -1234,7 +1237,7 @@ pub mod capability_util {
         let res = fuchsia_fs::directory::open_directory(
             &test_dir_proxy,
             dir_path.to_str().unwrap(),
-            fio::Flags::empty(),
+            fuchsia_fs::PERM_READABLE,
         )
         .await
         .expect_err("open_directory shouldn't have succeeded");
@@ -1270,7 +1273,7 @@ pub mod capability_util {
         let service_dir = fuchsia_fs::directory::open_directory(
             &dir_proxy,
             path.basename().as_str(),
-            fio::Flags::empty(),
+            fuchsia_fs::PERM_READABLE,
         )
         .await;
         add_dir_to_namespace(namespace, &dirname, dir_proxy).await;
@@ -1284,16 +1287,19 @@ pub mod capability_util {
                 _ => panic!("Unexpected open error {:?}", e),
             })?;
 
-        let instance_dir =
-            fuchsia_fs::directory::open_directory(&service_dir, instance, fio::Flags::empty())
-                .await
-                .map_err(|e| match e {
-                    OpenError::OpenError(status) => fidl::Error::ClientChannelClosed {
-                        epitaph: fidl::Epitaph::Explicit(Err(status)),
-                        protocol_name: "",
-                    },
-                    _ => panic!("Unexpected open error {:?}", e),
-                })?;
+        let instance_dir = fuchsia_fs::directory::open_directory(
+            &service_dir,
+            instance,
+            fuchsia_fs::PERM_READABLE,
+        )
+        .await
+        .map_err(|e| match e {
+            OpenError::OpenError(status) => fidl::Error::ClientChannelClosed {
+                epitaph: fidl::Epitaph::Explicit(Err(status)),
+                protocol_name: "",
+            },
+            _ => panic!("Unexpected open error {:?}", e),
+        })?;
         Ok(connect_to_named_protocol_at_dir_root::<T>(&instance_dir, member)
             .expect("failed to open member protocol"))
     }
@@ -1307,7 +1313,7 @@ pub mod capability_util {
         let service_dir = fuchsia_fs::directory::open_directory(
             &dir_proxy,
             path.basename().as_str(),
-            fio::Flags::empty(),
+            fuchsia_fs::PERM_READABLE,
         )
         .await
         .expect("failed to open service dir");
@@ -1540,10 +1546,13 @@ pub mod capability_util {
         let service_dir = open_in_exposed_dir(&path, moniker, model).await.unwrap();
         // TODO(https://fxbug.dev/42069409): Utilize the new fuchsia_component::client method to connect to
         // the service instance, passing in the service_dir, instance name, and member path.
-        let instance_dir =
-            fuchsia_fs::directory::open_directory(&service_dir, &instance, fio::Flags::empty())
-                .await
-                .expect("failed to open instance");
+        let instance_dir = fuchsia_fs::directory::open_directory(
+            &service_dir,
+            &instance,
+            fuchsia_fs::PERM_READABLE,
+        )
+        .await
+        .expect("failed to open instance");
         let echo_proxy =
             connect_to_named_protocol_at_dir_root::<echo::EchoMarker>(&instance_dir, &member)
                 .expect("failed to connect to Echo service");

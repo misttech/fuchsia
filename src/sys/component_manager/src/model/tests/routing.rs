@@ -2988,10 +2988,13 @@ async fn use_filtered_service_from_sibling() {
     let namespace_c = test.bind_and_get_namespace(["c"].try_into().unwrap()).await;
     let dir_c =
         capability_util::take_dir_from_namespace(&namespace_c, &"/svc".parse().unwrap()).await;
-    let service_dir_c =
-        fuchsia_fs::directory::open_directory(&dir_c, "my.service.Service", fio::Flags::empty())
-            .await
-            .expect("failed to open service");
+    let service_dir_c = fuchsia_fs::directory::open_directory(
+        &dir_c,
+        "my.service.Service",
+        fuchsia_fs::PERM_READABLE,
+    )
+    .await
+    .expect("failed to open service");
     let entries: HashSet<String> = fuchsia_fs::directory::readdir(&service_dir_c)
         .await
         .expect("failed to read entries")
@@ -3006,10 +3009,13 @@ async fn use_filtered_service_from_sibling() {
     let namespace_d = test.bind_and_get_namespace(["d"].try_into().unwrap()).await;
     let dir_d =
         capability_util::take_dir_from_namespace(&namespace_d, &"/svc".parse().unwrap()).await;
-    let service_dir_d =
-        fuchsia_fs::directory::open_directory(&dir_d, "my.service.Service", fio::Flags::empty())
-            .await
-            .expect("failed to open service");
+    let service_dir_d = fuchsia_fs::directory::open_directory(
+        &dir_d,
+        "my.service.Service",
+        fuchsia_fs::PERM_READABLE,
+    )
+    .await
+    .expect("failed to open service");
     let entries: HashSet<String> = fuchsia_fs::directory::readdir(&service_dir_d)
         .await
         .expect("failed to read entries")
@@ -3111,10 +3117,13 @@ async fn use_filtered_aggregate_service_from_sibling() {
     let namespace_c = test.bind_and_get_namespace(["c"].try_into().unwrap()).await;
     let dir_c =
         capability_util::take_dir_from_namespace(&namespace_c, &"/svc".parse().unwrap()).await;
-    let service_dir_c =
-        fuchsia_fs::directory::open_directory(&dir_c, "my.service.Service", fio::Flags::empty())
-            .await
-            .expect("failed to open service");
+    let service_dir_c = fuchsia_fs::directory::open_directory(
+        &dir_c,
+        "my.service.Service",
+        fuchsia_fs::PERM_READABLE,
+    )
+    .await
+    .expect("failed to open service");
     let entries: HashSet<String> = fuchsia_fs::directory::readdir(&service_dir_c)
         .await
         .expect("failed to read entries")

@@ -37,7 +37,6 @@ rustc_binary("proxy_outgoing_to_incoming") {
   source_root = "src/proxy_outgoing_to_incoming.rs"
   sources = [ "src/proxy_outgoing_to_incoming.rs" ]
   deps = [
-    "//sdk/fidl/fuchsia.io:fuchsia.io_rust",
     "//src/lib/fuchsia",
     "//src/lib/fuchsia-component",
     "//src/lib/fuchsia-fs",

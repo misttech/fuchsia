@@ -98,8 +98,9 @@ async fn validate_open_with_node_reference_and_describe(path: &str) -> Result<()
 }
 
 async fn validate_open_with_extra_path_should_fail(path: &str) {
-    let node = fuchsia_fs::node::open_in_namespace(&format!("{}/extra", path), fio::Flags::empty())
-        .unwrap();
+    let node =
+        fuchsia_fs::node::open_in_namespace(&format!("{}/extra", path), fuchsia_fs::PERM_READABLE)
+            .unwrap();
     let mut events = node.take_event_stream();
     let event = events.next().await.unwrap();
     event.expect_err("Opening a protocol with a non-empty relative path should fail.");
