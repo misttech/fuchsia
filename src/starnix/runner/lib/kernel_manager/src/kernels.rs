@@ -65,6 +65,19 @@ impl Kernels {
             }
         };
 
+        if let Ok(boot_control) = connect_to_protocol::<fpower::BootControlMarker>() {
+            log::info!(
+                "Notifying Fuchsia SystemActivityGovernor that Starnix has booted to allow suspend"
+            );
+            let _ = boot_control.set_boot_complete().await;
+            if let Err(e) = boot_control.set_boot_complete().await {
+                log::warn!(
+                    "Failed to notify Fuchsia SystemActivityGovernor that Starnix has booted: {:?}",
+                    e
+                );
+            }
+        }
+
         let (kernel, on_stop) =
             StarnixKernel::create(realm, KERNEL_URL, start_info, controller).await?;
         let kernel_job = kernel.job.clone();

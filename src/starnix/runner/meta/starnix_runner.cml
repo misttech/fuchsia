@@ -57,6 +57,7 @@
         {
             protocol: [
                 "fuchsia.power.system.ActivityGovernor",
+                "fuchsia.power.system.BootControl",
                 "fuchsia.settings.Privacy",
                 "fuchsia.time.external.Adjust",
             ],
