@@ -8,27 +8,21 @@
 #include <fidl/fuchsia.math/cpp/fidl.h>
 #include <lib/syslog/cpp/macros.h>
 
-namespace {
-
-using fuchsia::ui::composition::Orientation;
-using fuchsia_ui_composition::ImageFlip;
-
-}  // namespace
 namespace flatland {
 
-DisplaySrcDstFrames DisplaySrcDstFrames::New(ImageRect rectangle) {
+DisplaySrcDstFrames DisplaySrcDstFrames::New(SrcToDest geometry) {
   types::Rectangle image_source({
-      .x = rectangle.texel_uvs[0].x,
-      .y = rectangle.texel_uvs[0].y,
-      .width = rectangle.texel_uvs[2].x - rectangle.texel_uvs[0].x,
-      .height = rectangle.texel_uvs[2].y - rectangle.texel_uvs[0].y,
+      .x = static_cast<int32_t>(geometry.src.x()),
+      .y = static_cast<int32_t>(geometry.src.y()),
+      .width = static_cast<int32_t>(geometry.src.width()),
+      .height = static_cast<int32_t>(geometry.src.height()),
   });
 
   types::Rectangle display_destination({
-      .x = static_cast<int32_t>(rectangle.origin.x),
-      .y = static_cast<int32_t>(rectangle.origin.y),
-      .width = static_cast<int32_t>(rectangle.extent.x),
-      .height = static_cast<int32_t>(rectangle.extent.y),
+      .x = static_cast<int32_t>(geometry.dest.x()),
+      .y = static_cast<int32_t>(geometry.dest.y()),
+      .width = static_cast<int32_t>(geometry.dest.width()),
+      .height = static_cast<int32_t>(geometry.dest.height()),
   });
   return {.src = image_source, .dst = display_destination};
 }

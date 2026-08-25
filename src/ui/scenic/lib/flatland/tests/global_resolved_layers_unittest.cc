@@ -23,6 +23,7 @@ using flatland::GlobalTopologyData;
 using flatland::kUnclippedRegion;
 using flatland::ResolveBlendAndOpacity;
 using flatland::ResolvedLayer;
+using flatland::SrcToDest;
 using flatland::TransformClipRegion;
 using flatland::TransformHandle;
 using flatland::UberStruct;
@@ -117,10 +118,11 @@ TEST(ResolveBlendAndOpacityTest, ResolvesBlendAndOpacity) {
   }
 }
 
-// TODO(https://fxbug.dev/523371761): Revisit these tests after step 140 revamps ImageRect, with
-// an eye toward using constant values that can be used both to specify the "scene" and the
-// expectation.  For example, we might be able to use the same rectangle in the UberStruct as in
-// the EXPECT_EQ.
+// TODO(https://fxbug.dev/523371761): Consider rewriting these tests to share
+// constant values between the scene specification and the expectations; the
+// stored SrcToDest uses the same RectangleF/RotateFlip types as the
+// UberStructLayer inputs, so e.g. the same rectangle can appear in the
+// UberStruct and in the EXPECT_EQ.
 
 TEST(GlobalRenderListTest, EmptyScene) {
   GlobalTopologyData topology;
@@ -178,12 +180,11 @@ TEST(GlobalRenderListTest, SingleImageLayerIdentityMatrix) {
   ASSERT_EQ(result.size(), 1u);
 
   const auto& layer = result[0];
-  EXPECT_EQ(layer.rect.origin, glm::vec2(0.f, 0.f));
-  EXPECT_EQ(layer.rect.extent, glm::vec2(100.f, 200.f));
-  EXPECT_EQ(layer.rect.orientation, fuchsia::ui::composition::Orientation::CCW_0_DEGREES);
+  EXPECT_EQ(layer.geometry.dest, types::RectangleF({0.f, 0.f, 100.f, 200.f}));
+  EXPECT_EQ(layer.geometry.transform, types::RotateFlip::kIdentity());
+  EXPECT_EQ(layer.geometry.src, types::RectangleF({0.f, 0.f, 100.f, 200.f}));
   EXPECT_EQ(layer.multiply_color, (std::array<float, 4>{1.f, 1.f, 1.f, 1.f}));
   EXPECT_EQ(layer.blend_mode, BlendMode::kReplace());
-  EXPECT_EQ(layer.flip, fuchsia_ui_composition::ImageFlip::kNone);
   EXPECT_EQ(layer.topology_index, 0);
 
   ASSERT_TRUE(std::holds_alternative<ResolvedLayer::ImageContent>(layer.content));
@@ -241,8 +242,8 @@ TEST(GlobalRenderListTest, TranslationAndScaleApplyToDisplayRect) {
   // display_rect.y = 20 -> transformed y = 20 * 3 + 5 = 65
   // display_rect.width = 100 -> transformed width = 100 * 2 = 200
   // display_rect.height = 200 -> transformed height = 200 * 3 = 600
-  EXPECT_EQ(layer.rect.origin, glm::vec2(25.f, 65.f));
-  EXPECT_EQ(layer.rect.extent, glm::vec2(200.f, 600.f));
+  EXPECT_EQ(layer.geometry.dest,
+            types::RectangleF({.x = 25.f, .y = 65.f, .width = 200.f, .height = 600.f}));
 }
 
 TEST(GlobalRenderListTest, Rotation90ProducesOrientationAndPermutedUVs) {
@@ -294,13 +295,8 @@ TEST(GlobalRenderListTest, Rotation90ProducesOrientationAndPermutedUVs) {
   ASSERT_EQ(result.size(), 1u);
 
   const auto& layer = result[0];
-  EXPECT_EQ(layer.rect.orientation, fuchsia::ui::composition::Orientation::CCW_270_DEGREES);
-  // UV check: unclipped rectangle has unrotated UVs, as rotation is handled by the orientation
-  // property.
-  EXPECT_EQ(layer.rect.texel_uvs[0], glm::ivec2(10, 20));
-  EXPECT_EQ(layer.rect.texel_uvs[1], glm::ivec2(110, 20));
-  EXPECT_EQ(layer.rect.texel_uvs[2], glm::ivec2(110, 220));
-  EXPECT_EQ(layer.rect.texel_uvs[3], glm::ivec2(10, 220));
+  EXPECT_EQ(layer.geometry.transform, types::RotateFlip::kRotateCcw270());
+  EXPECT_EQ(layer.geometry.src, types::RectangleF({10.f, 20.f, 100.f, 200.f}));
 }
 
 TEST(GlobalRenderListTest, FlipComposesWithRotation) {
@@ -353,8 +349,8 @@ TEST(GlobalRenderListTest, FlipComposesWithRotation) {
   ASSERT_EQ(result.size(), 1u);
 
   const auto& layer = result[0];
-  EXPECT_EQ(layer.flip, fuchsia_ui_composition::ImageFlip::kLeftRight);
-  EXPECT_EQ(layer.rect.orientation, fuchsia::ui::composition::Orientation::CCW_270_DEGREES);
+  EXPECT_EQ(layer.geometry.transform, types::RotateFlip::kRotateCcw90ReflectY());
+  EXPECT_EQ(layer.geometry.src, types::RectangleF({10.f, 20.f, 100.f, 200.f}));
 }
 
 TEST(GlobalRenderListTest, ClipShrinksDstAndUVsProportionally) {
@@ -397,15 +393,9 @@ TEST(GlobalRenderListTest, ClipShrinksDstAndUVsProportionally) {
   ASSERT_EQ(result.size(), 1u);
 
   const auto& layer = result[0];
-  EXPECT_EQ(layer.rect.origin, glm::vec2(50.f, 0.f));
-  EXPECT_EQ(layer.rect.extent, glm::vec2(50.f, 100.f));
-  // UV check:
-  // Original width 100, x=50 to 100 -> UV x goes from 50 to 100.
-  // Original height 200, y=0 to 100 -> UV y goes from 0 to 100.
-  EXPECT_EQ(layer.rect.texel_uvs[0], glm::ivec2(50, 0));
-  EXPECT_EQ(layer.rect.texel_uvs[1], glm::ivec2(100, 0));
-  EXPECT_EQ(layer.rect.texel_uvs[2], glm::ivec2(100, 100));
-  EXPECT_EQ(layer.rect.texel_uvs[3], glm::ivec2(50, 100));
+  EXPECT_EQ(layer.geometry.dest, types::RectangleF({50.f, 0.f, 50.f, 100.f}));
+  EXPECT_EQ(layer.geometry.transform, types::RotateFlip::kIdentity());
+  EXPECT_EQ(layer.geometry.src, types::RectangleF({50.f, 0.f, 50.f, 100.f}));
 }
 
 TEST(GlobalRenderListTest, ClipToEmptyDropsLayer) {
@@ -1017,10 +1007,12 @@ TEST(GlobalRenderListTest, DagInstancingEmitsPerPath) {
   // Emits twice (once per topological index of child)
   ASSERT_EQ(result.size(), 2u);
 
-  EXPECT_EQ(result[0].rect.origin, glm::vec2(10.f, 0.f));
+  EXPECT_EQ(result[0].geometry.dest,
+            types::RectangleF({.x = 10.f, .y = 0.f, .width = 100.f, .height = 200.f}));
   EXPECT_EQ(result[0].topology_index, 1);
 
-  EXPECT_EQ(result[1].rect.origin, glm::vec2(50.f, 0.f));
+  EXPECT_EQ(result[1].geometry.dest,
+            types::RectangleF({.x = 50.f, .y = 0.f, .width = 100.f, .height = 200.f}));
   EXPECT_EQ(result[1].topology_index, 3);
 }
 
@@ -1332,10 +1324,9 @@ TEST(GlobalRenderListTest, MultipleSessionsMerge) {
 
 TEST(ResolvedLayerTest, EqualityComparesAllFields) {
   ResolvedLayer layer1;
-  layer1.rect = ImageRect(glm::vec2(0, 0), glm::vec2(10, 10));
+  layer1.geometry = SrcToDest(types::RectangleF({0, 0, 10, 10}));
   layer1.multiply_color = {1.f, 1.f, 1.f, 1.f};
   layer1.blend_mode = BlendMode::kReplace();
-  layer1.flip = fuchsia_ui_composition::ImageFlip::kNone;
   layer1.content = ResolvedLayer::ImageContent{.image_id = display::ImageId(1)};
 
   ResolvedLayer layer2 = layer1;
@@ -1343,9 +1334,9 @@ TEST(ResolvedLayerTest, EqualityComparesAllFields) {
 
   // Flip each field and verify inequality:
 
-  // 1. rect
+  // 1. geometry
   layer2 = layer1;
-  layer2.rect = ImageRect(glm::vec2(1, 0), glm::vec2(10, 10));
+  layer2.geometry = SrcToDest(types::RectangleF({1, 0, 10, 10}));
   EXPECT_NE(layer1, layer2);
 
   // 2. color
@@ -1358,22 +1349,17 @@ TEST(ResolvedLayerTest, EqualityComparesAllFields) {
   layer2.blend_mode = BlendMode::kPremultipliedAlpha();
   EXPECT_NE(layer1, layer2);
 
-  // 4. flip
-  layer2 = layer1;
-  layer2.flip = fuchsia_ui_composition::ImageFlip::kLeftRight;
-  EXPECT_NE(layer1, layer2);
-
-  // 5. content variant alternative type (ImageContent -> SolidColorContent)
+  // 4. content variant alternative type (ImageContent -> SolidColorContent)
   layer2 = layer1;
   layer2.content = ResolvedLayer::SolidColorContent{.color = {1.f, 1.f, 1.f, 1.f}};
   EXPECT_NE(layer1, layer2);
 
-  // 6. content inner fields (ImageContent image_id)
+  // 5. content inner fields (ImageContent image_id)
   layer2 = layer1;
   layer2.content = ResolvedLayer::ImageContent{.image_id = display::ImageId(2)};
   EXPECT_NE(layer1, layer2);
 
-  // 7. topology_index
+  // 6. topology_index
   layer2 = layer1;
   layer2.topology_index = 42;
   EXPECT_NE(layer1, layer2);

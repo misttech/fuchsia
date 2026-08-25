@@ -63,12 +63,12 @@ GlobalHitRegionsMap ComputeGlobalHitRegions(
     const GlobalTopologyData::ParentIndexVector& parent_indices,
     const GlobalMatrixVector& matrix_vector, const UberStruct::InstanceMap& uber_structs);
 
-// Constructs an ImageRect by projecting the destination (display) rectangle into screen space
+// Constructs a SrcToDest by projecting the destination (display) rectangle into screen space
 // using the given matrix and clipping it to the provided clip region.  The source (texture) region
 // is clipped proportionally, using the flip and orientation properties to map the screen-space clip
 // boundaries back to the correct source axes and edges.
-ImageRect CreateImageRect(const glm::mat3& matrix, const TransformClipRegion& clip,
-                          const std::array<glm::ivec2, 4>& texel_uvs,
+SrcToDest CreateSrcToDest(const glm::mat3& matrix, const TransformClipRegion& clip,
+                          const types::RectangleF& src,
                           const fuchsia_ui_composition::ImageFlip image_flip);
 }  // namespace flatland
 

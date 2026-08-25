@@ -16,6 +16,8 @@
 #include "src/ui/scenic/lib/flatland/flatland_types.h"
 #include "src/ui/scenic/lib/types/rectangle.h"
 
+#include <glm/glm.hpp>
+
 namespace flatland {
 
 // Struct to represent the display's flatland info. The TransformHandle must be the root
@@ -47,7 +49,7 @@ struct DisplaySrcDstFrames {
   // Rectangle2D struct and ImageMetadata struct, so we just need to convert that over to
   // the proper display controller readable format. The input rectangle contains both the
   // source and destination information.
-  static DisplaySrcDstFrames New(ImageRect rectangle);
+  static DisplaySrcDstFrames New(SrcToDest geometry);
 };
 
 // The data that gets forwarded either to the display or the software renderer. The lengths

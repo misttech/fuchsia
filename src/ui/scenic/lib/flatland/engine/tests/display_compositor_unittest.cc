@@ -40,6 +40,7 @@ using ::testing::Return;
 using allocation::BufferCollectionUsage;
 using allocation::ImageMetadata;
 using flatland::MockDisplayCoordinator;
+using flatland::SrcToDest;
 
 using fuchsia_ui_composition::ImageFlip;
 using integration_tests::ReturnPromise;
@@ -1001,11 +1002,15 @@ TEST_F(DisplayCompositorTest, HardwareFrameCorrectnessTest) {
   };
 
   auto MakeRect = [](const fuchsia_math::wire::RectU& src, const fuchsia_math::wire::RectU& dst) {
-    return ImageRect(
-        glm::vec2(dst.x, dst.y), glm::vec2(dst.width, dst.height),
-        {glm::ivec2(src.x, src.y), glm::ivec2(src.x + src.width, src.y),
-         glm::ivec2(src.x + src.width, src.y + src.height), glm::ivec2(src.x, src.y + src.height)},
-        fuchsia::ui::composition::Orientation::CCW_0_DEGREES);
+    return SrcToDest(types::RectangleF({.x = static_cast<float>(src.x),
+                                        .y = static_cast<float>(src.y),
+                                        .width = static_cast<float>(src.width),
+                                        .height = static_cast<float>(src.height)}),
+                     types::RectangleF({.x = static_cast<float>(dst.x),
+                                        .y = static_cast<float>(dst.y),
+                                        .width = static_cast<float>(dst.width),
+                                        .height = static_cast<float>(dst.height)}),
+                     types::RotateFlip::kIdentity());
   };
 
   EXPECT_CALL(*mock_display_coordinator_,
@@ -1172,7 +1177,7 @@ TEST_F(DisplayCompositorTest, HardwareFrameCorrectnessTest) {
   EXPECT_CALL(*mock_display_coordinator_, CommitConfig(_, _)).Times(1).WillOnce(Return());
 
   ResolvedLayer child_layer = {
-      .rect = MakeRect(kExpectedSources[0], kExpectedDestinations[0]),
+      .geometry = MakeRect(kExpectedSources[0], kExpectedDestinations[0]),
       .multiply_color = {1.f, 1.f, 1.f, 1.f},
       .blend_mode = BlendMode::kReplace(),
       .content = ResolvedLayer::ImageContent{.image_id = child_image_metadata.identifier,
@@ -1180,7 +1185,7 @@ TEST_F(DisplayCompositorTest, HardwareFrameCorrectnessTest) {
                                              .height = child_image_metadata.height},
   };
   ResolvedLayer parent_layer = {
-      .rect = MakeRect(kExpectedSources[1], kExpectedDestinations[1]),
+      .geometry = MakeRect(kExpectedSources[1], kExpectedDestinations[1]),
       .multiply_color = {1.f, 1.f, 1.f, 1.f},
       .blend_mode = BlendMode::kReplace(),
       .content = ResolvedLayer::ImageContent{.image_id = parent_image_metadata.identifier,
@@ -1371,14 +1376,16 @@ void DisplayCompositorTest::HardwareFrameCorrectnessWithRotationTester(
 
   EXPECT_CALL(*mock_display_coordinator_, CommitConfig(_, _)).Times(1).WillOnce(Return());
 
-  std::array<glm::ivec2, 4> uvs = {glm::ivec2(0, 0), glm::ivec2(128, 0), glm::ivec2(128, 256),
-                                   glm::ivec2(0, 256)};
   ResolvedLayer layer = {
-      .rect = {glm::vec2(expected_dst.x, expected_dst.y),
-               glm::vec2(expected_dst.width, expected_dst.height), uvs, orientation},
+      .geometry =
+          SrcToDest(types::RectangleF({.x = 0.f, .y = 0.f, .width = 128.f, .height = 256.f}),
+                    types::RectangleF({.x = static_cast<float>(expected_dst.x),
+                                       .y = static_cast<float>(expected_dst.y),
+                                       .width = static_cast<float>(expected_dst.width),
+                                       .height = static_cast<float>(expected_dst.height)}),
+                    types::RotateFlip::From(expected_transform)),
       .multiply_color = {1.f, 1.f, 1.f, 1.f},
       .blend_mode = BlendMode::kReplace(),
-      .flip = image_flip,
       .content = ResolvedLayer::ImageContent{.image_id = parent_image_metadata.identifier,
                                              .width = parent_image_metadata.width,
                                              .height = parent_image_metadata.height},
@@ -1683,7 +1690,10 @@ TEST_F(DisplayCompositorTest, SolidColorContentTakesColorLayerPath) {
                                   /*out_buffer_collection*/ nullptr);
 
   ResolvedLayer layer = {
-      .rect = {glm::vec2(0, 0), glm::vec2(resolution.x, resolution.y)},
+      .geometry = SrcToDest(types::RectangleF({.x = 0,
+                                               .y = 0,
+                                               .width = static_cast<float>(resolution.x),
+                                               .height = static_cast<float>(resolution.y)})),
       .multiply_color = {1.f, 1.f, 1.f, 1.f},
       .blend_mode = BlendMode::kReplace(),
       .content = ResolvedLayer::SolidColorContent{.color = {1.f, 0.f, 0.f, 1.f}},
@@ -1811,7 +1821,9 @@ TEST_F(DisplayCompositorTest, ImageContentTakesImageLayerPath) {
       display_compositor_->ImportBufferImage(image_metadata, BufferCollectionUsage::kClientImage)));
 
   ResolvedLayer layer = {
-      .rect = {glm::vec2(0, 0), glm::vec2(128, 256)},
+      .geometry = SrcToDest(types::RectangleF({.x = 0, .y = 0, .width = 128.f, .height = 256.f}),
+                            types::RectangleF({.x = 0, .y = 0, .width = 128.f, .height = 256.f}),
+                            types::RotateFlip::kIdentity()),
       .multiply_color = {1.f, 1.f, 1.f, 1.f},
       .blend_mode = BlendMode::kReplace(),
       .content =

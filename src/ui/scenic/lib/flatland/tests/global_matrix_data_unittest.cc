@@ -31,7 +31,6 @@ constexpr int kDisplayHeight = 100;
 struct TestLayerInfo {
   allocation::ImageMetadata metadata;
   BlendMode blend_mode = BlendMode::kReplace();
-  fuchsia_ui_composition::ImageFlip flip = fuchsia_ui_composition::ImageFlip::kNone;
   std::array<float, 4> multiply_color = {1.f, 1.f, 1.f, 1.f};
 };
 
@@ -44,19 +43,18 @@ TestLayerInfo TransparentImage(uint64_t id) {
           .blend_mode = BlendMode::kPremultipliedAlpha()};
 }
 
-using GlobalRectangleVector = std::vector<ImageRect>;
+using GlobalRectangleVector = std::vector<SrcToDest>;
 using GlobalImageVector = std::vector<TestLayerInfo>;
-std::vector<ResolvedLayer> ComputeGlobalResolvedLayers(const std::vector<ImageRect>& rects,
+std::vector<ResolvedLayer> ComputeGlobalResolvedLayers(const std::vector<SrcToDest>& geometries,
                                                        const std::vector<TestLayerInfo>& images) {
   std::vector<ResolvedLayer> output;
-  output.reserve(rects.size());
-  for (size_t i = 0; i < rects.size(); ++i) {
-    const auto& rect = rects[i];
+  output.reserve(geometries.size());
+  for (size_t i = 0; i < geometries.size(); ++i) {
+    const auto& geom = geometries[i];
     const auto& meta = images[i];
     ResolvedLayer layer;
-    layer.rect = rect;
+    layer.geometry = geom;
     layer.blend_mode = meta.blend_mode;
-    layer.flip = meta.flip;
     layer.topology_index = ResolvedLayer::kInvalidTopologyIndex;
 
     if (meta.metadata.identifier == allocation::kInvalidImageId) {
@@ -82,7 +80,7 @@ TEST(CullLayersInPlaceTest, EmptyInput) {
 }
 
 TEST(CullLayersInPlaceTest, NoCulling) {
-  GlobalRectangleVector rects = {ImageRect({10, 10}, {20, 20}), ImageRect({50, 50}, {10, 10})};
+  GlobalRectangleVector rects = {SrcToDest({10, 10, 20, 20}), SrcToDest({50, 50, 10, 10})};
   GlobalImageVector images = {OpaqueImage(1), OpaqueImage(2)};
 
   auto layers = ComputeGlobalResolvedLayers(rects, images);
@@ -94,9 +92,9 @@ TEST(CullLayersInPlaceTest, NoCulling) {
 
 // A full-screen occluder results in culling of all images underneath.
 TEST(CullLayersInPlaceTest, FullOcclusion) {
-  GlobalRectangleVector rects = {ImageRect({10, 10}, {20, 20}),
-                                 ImageRect({0, 0}, {kDisplayWidth, kDisplayHeight}),
-                                 ImageRect({50, 50}, {10, 10})};
+  GlobalRectangleVector rects = {SrcToDest({10, 10, 20, 20}),
+                                 SrcToDest({0, 0, kDisplayWidth, kDisplayHeight}),
+                                 SrcToDest({50, 50, 10, 10})};
   GlobalImageVector images = {OpaqueImage(1), OpaqueImage(2), OpaqueImage(3)};
 
   auto layers = ComputeGlobalResolvedLayers(rects, images);
@@ -104,7 +102,7 @@ TEST(CullLayersInPlaceTest, FullOcclusion) {
   CullLayersInPlace(&layers, kDisplayWidth, kDisplayHeight);
 
   auto expected_layers = ComputeGlobalResolvedLayers(
-      {ImageRect({0, 0}, {kDisplayWidth, kDisplayHeight}), ImageRect({50, 50}, {10, 10})},
+      {SrcToDest({0, 0, kDisplayWidth, kDisplayHeight}), SrcToDest({50, 50, 10, 10})},
       {OpaqueImage(2), OpaqueImage(3)});
   EXPECT_EQ(layers, expected_layers);
 }
@@ -112,9 +110,9 @@ TEST(CullLayersInPlaceTest, FullOcclusion) {
 // A transparent image cannot be an occluder, even if it is full-screen.
 // (compare with `FullOcclusion` test).
 TEST(CullLayersInPlaceTest, TransparentOccluder) {
-  GlobalRectangleVector rects = {ImageRect({10, 10}, {20, 20}),
-                                 ImageRect({0, 0}, {kDisplayWidth, kDisplayHeight}),
-                                 ImageRect({50, 50}, {10, 10})};
+  GlobalRectangleVector rects = {SrcToDest({10, 10, 20, 20}),
+                                 SrcToDest({0, 0, kDisplayWidth, kDisplayHeight}),
+                                 SrcToDest({50, 50, 10, 10})};
   GlobalImageVector images = {OpaqueImage(1), TransparentImage(2), OpaqueImage(3)};
 
   auto layers = ComputeGlobalResolvedLayers(rects, images);
@@ -127,8 +125,8 @@ TEST(CullLayersInPlaceTest, TransparentOccluder) {
 // The culling algorithm is not smart: tt only considers full-screen occluders, even if a
 // a partial-screen occluder should be able to fully occlude a layer under it.
 TEST(CullLayersInPlaceTest, PartialOcclusion) {
-  GlobalRectangleVector rects = {ImageRect({10, 10}, {20, 20}),
-                                 ImageRect({0, 0}, {kDisplayWidth / 2, kDisplayHeight})};
+  GlobalRectangleVector rects = {SrcToDest({10, 10, 20, 20}),
+                                 SrcToDest({0, 0, kDisplayWidth / 2, kDisplayHeight})};
   GlobalImageVector images = {OpaqueImage(1), OpaqueImage(2)};
 
   auto layers = ComputeGlobalResolvedLayers(rects, images);
@@ -142,9 +140,9 @@ TEST(CullLayersInPlaceTest, PartialOcclusion) {
 // is kept; all layers below the latest full-screen occluder are culled.
 TEST(CullLayersInPlaceTest, MultipleOccluders) {
   GlobalRectangleVector rects = {
-      ImageRect({10, 10}, {20, 20}), ImageRect({0, 0}, {kDisplayWidth, kDisplayHeight}),
-      ImageRect({20, 20}, {10, 10}), ImageRect({0, 0}, {kDisplayWidth, kDisplayHeight}),
-      ImageRect({50, 50}, {10, 10})};
+      SrcToDest({10, 10, 20, 20}), SrcToDest({0, 0, kDisplayWidth, kDisplayHeight}),
+      SrcToDest({20, 20, 10, 10}), SrcToDest({0, 0, kDisplayWidth, kDisplayHeight}),
+      SrcToDest({50, 50, 10, 10})};
   GlobalImageVector images = {OpaqueImage(1), OpaqueImage(2), OpaqueImage(3), OpaqueImage(4),
                               OpaqueImage(5)};
 
@@ -153,13 +151,13 @@ TEST(CullLayersInPlaceTest, MultipleOccluders) {
   CullLayersInPlace(&layers, kDisplayWidth, kDisplayHeight);
 
   auto expected_layers = ComputeGlobalResolvedLayers(
-      {ImageRect({0, 0}, {kDisplayWidth, kDisplayHeight}), ImageRect({50, 50}, {10, 10})},
+      {SrcToDest({0, 0, kDisplayWidth, kDisplayHeight}), SrcToDest({50, 50, 10, 10})},
       {OpaqueImage(4), OpaqueImage(5)});
   EXPECT_EQ(layers, expected_layers);
 }
 
 TEST(CullLayersInPlaceTest, WidthZeroRectFiltered) {
-  GlobalRectangleVector rects = {ImageRect({10, 10}, {0, 20}), ImageRect({30, 30}, {10, 10})};
+  GlobalRectangleVector rects = {SrcToDest({10, 10, 0, 20}), SrcToDest({30, 30, 10, 10})};
   GlobalImageVector images = {OpaqueImage(1), OpaqueImage(2)};
 
   auto layers = ComputeGlobalResolvedLayers(rects, images);
@@ -167,12 +165,12 @@ TEST(CullLayersInPlaceTest, WidthZeroRectFiltered) {
   CullLayersInPlace(&layers, kDisplayWidth, kDisplayHeight);
 
   auto expected_layers =
-      ComputeGlobalResolvedLayers({ImageRect({30, 30}, {10, 10})}, {OpaqueImage(2)});
+      ComputeGlobalResolvedLayers({SrcToDest({30, 30, 10, 10})}, {OpaqueImage(2)});
   EXPECT_EQ(layers, expected_layers);
 }
 
 TEST(CullLayersInPlaceTest, HeightZeroRectFiltered) {
-  GlobalRectangleVector rects = {ImageRect({10, 10}, {20, 0}), ImageRect({30, 30}, {10, 10})};
+  GlobalRectangleVector rects = {SrcToDest({10, 10, 20, 0}), SrcToDest({30, 30, 10, 10})};
   GlobalImageVector images = {OpaqueImage(1), OpaqueImage(2)};
 
   auto layers = ComputeGlobalResolvedLayers(rects, images);
@@ -180,15 +178,15 @@ TEST(CullLayersInPlaceTest, HeightZeroRectFiltered) {
   CullLayersInPlace(&layers, kDisplayWidth, kDisplayHeight);
 
   auto expected_layers =
-      ComputeGlobalResolvedLayers({ImageRect({30, 30}, {10, 10})}, {OpaqueImage(2)});
+      ComputeGlobalResolvedLayers({SrcToDest({30, 30, 10, 10})}, {OpaqueImage(2)});
   EXPECT_EQ(layers, expected_layers);
 }
 
 // Opaque solid-color layer culls layers beneath it.
 TEST(CullLayersInPlaceTest, SolidColorFullScreenReplaceOccludes) {
-  GlobalRectangleVector rects = {ImageRect({10, 10}, {20, 20}),
-                                 ImageRect({0, 0}, {kDisplayWidth, kDisplayHeight}),
-                                 ImageRect({50, 50}, {10, 10})};
+  GlobalRectangleVector rects = {SrcToDest({10, 10, 20, 20}),
+                                 SrcToDest({0, 0, kDisplayWidth, kDisplayHeight}),
+                                 SrcToDest({50, 50, 10, 10})};
   GlobalImageVector images = {
       OpaqueImage(1),
       {.metadata = {.identifier = kInvalidImageId}, .blend_mode = BlendMode::kReplace()},
@@ -199,7 +197,7 @@ TEST(CullLayersInPlaceTest, SolidColorFullScreenReplaceOccludes) {
   CullLayersInPlace(&layers, kDisplayWidth, kDisplayHeight);
 
   auto expected_layers = ComputeGlobalResolvedLayers(
-      {ImageRect({0, 0}, {kDisplayWidth, kDisplayHeight}), ImageRect({50, 50}, {10, 10})},
+      {SrcToDest({0, 0, kDisplayWidth, kDisplayHeight}), SrcToDest({50, 50, 10, 10})},
       {{.metadata = {.identifier = kInvalidImageId}, .blend_mode = BlendMode::kReplace()},
        OpaqueImage(3)});
   EXPECT_EQ(layers, expected_layers);
@@ -207,8 +205,8 @@ TEST(CullLayersInPlaceTest, SolidColorFullScreenReplaceOccludes) {
 
 // If a full-screen rect is first, the output should match the input exactly (nothing to cull).
 TEST(CullLayersInPlaceTest, FullScreenRectIsFirst) {
-  GlobalRectangleVector rects = {ImageRect({0, 0}, {kDisplayWidth, kDisplayHeight}),
-                                 ImageRect({10, 20}, {30, 40}), ImageRect({60, 100}, {300, 200})};
+  GlobalRectangleVector rects = {SrcToDest({0, 0, kDisplayWidth, kDisplayHeight}),
+                                 SrcToDest({10, 20, 30, 40}), SrcToDest({60, 100, 300, 200})};
   GlobalImageVector images = {OpaqueImage(1), OpaqueImage(2), OpaqueImage(3)};
 
   auto layers = ComputeGlobalResolvedLayers(rects, images);
@@ -224,14 +222,14 @@ TEST(CullLayersInPlaceTest, MultipleFullScreenRectsWithTransparency) {
   // There are full screen rects at indices [1, 3, and 6]. Indices 3 and 6 are transparent,
   // but 1 is not. So we should ultimately only cull the rect at index 0, leaving 7 output
   // rects in total.
-  GlobalRectangleVector rects = {ImageRect({10, 20}, {30, 40}),
-                                 ImageRect({0, 0}, {kDisplayWidth, kDisplayHeight}),
-                                 ImageRect({60, 100}, {300, 200}),
-                                 ImageRect({0, 0}, {kDisplayWidth, kDisplayHeight}),
-                                 ImageRect({60, 100}, {150, 90}),
-                                 ImageRect({70, 15}, {75, 55}),
-                                 ImageRect({0, 0}, {kDisplayWidth, kDisplayHeight}),
-                                 ImageRect({80, 110}, {900, 350})};
+  GlobalRectangleVector rects = {SrcToDest({10, 20, 30, 40}),
+                                 SrcToDest({0, 0, kDisplayWidth, kDisplayHeight}),
+                                 SrcToDest({60, 100, 300, 200}),
+                                 SrcToDest({0, 0, kDisplayWidth, kDisplayHeight}),
+                                 SrcToDest({60, 100, 150, 90}),
+                                 SrcToDest({70, 15, 75, 55}),
+                                 SrcToDest({0, 0, kDisplayWidth, kDisplayHeight}),
+                                 SrcToDest({80, 110, 900, 350})};
   GlobalImageVector images = {OpaqueImage(0),      OpaqueImage(1), OpaqueImage(2),
                               TransparentImage(3), OpaqueImage(4), OpaqueImage(5),
                               TransparentImage(6), OpaqueImage(7)};
@@ -241,10 +239,10 @@ TEST(CullLayersInPlaceTest, MultipleFullScreenRectsWithTransparency) {
   CullLayersInPlace(&layers, kDisplayWidth, kDisplayHeight);
 
   auto expected_layers = ComputeGlobalResolvedLayers(
-      {ImageRect({0, 0}, {kDisplayWidth, kDisplayHeight}), ImageRect({60, 100}, {300, 200}),
-       ImageRect({0, 0}, {kDisplayWidth, kDisplayHeight}), ImageRect({60, 100}, {150, 90}),
-       ImageRect({70, 15}, {75, 55}), ImageRect({0, 0}, {kDisplayWidth, kDisplayHeight}),
-       ImageRect({80, 110}, {900, 350})},
+      {SrcToDest({0, 0, kDisplayWidth, kDisplayHeight}), SrcToDest({60, 100, 300, 200}),
+       SrcToDest({0, 0, kDisplayWidth, kDisplayHeight}), SrcToDest({60, 100, 150, 90}),
+       SrcToDest({70, 15, 75, 55}), SrcToDest({0, 0, kDisplayWidth, kDisplayHeight}),
+       SrcToDest({80, 110, 900, 350})},
       {OpaqueImage(1), OpaqueImage(2), TransparentImage(3), OpaqueImage(4), OpaqueImage(5),
        TransparentImage(6), OpaqueImage(7)});
   EXPECT_EQ(layers, expected_layers);

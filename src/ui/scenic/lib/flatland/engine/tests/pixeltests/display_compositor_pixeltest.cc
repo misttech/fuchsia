@@ -920,7 +920,16 @@ VK_TEST_P(DisplayCompositorParameterizedPixelTest, FullscreenRectangleTest) {
   EXPECT_TRUE(RunPromise(std::move(promise)));
 
   ResolvedLayer layer = {
-      .rect = {glm::vec2(0, 0), glm::vec2(kRectWidth, kRectHeight)},
+      .geometry =
+          SrcToDest(types::RectangleF({.x = 0,
+                                       .y = 0,
+                                       .width = static_cast<float>(image_metadata.width),
+                                       .height = static_cast<float>(image_metadata.height)}),
+                    types::RectangleF({.x = 0,
+                                       .y = 0,
+                                       .width = static_cast<float>(kRectWidth),
+                                       .height = static_cast<float>(kRectHeight)}),
+                    types::RotateFlip::kIdentity()),
       .multiply_color = {1.f, 1.f, 1.f, 1.f},
       .blend_mode = BlendMode::kReplace(),
       .content = ResolvedLayer::ImageContent{.image_id = image_metadata.identifier,
@@ -1035,7 +1044,10 @@ VK_TEST_P(DisplayCompositorParameterizedPixelTest, ColorConversionTest) {
   EXPECT_TRUE(RunPromise(std::move(promise)));
 
   ResolvedLayer layer = {
-      .rect = {glm::vec2(0, 0), glm::vec2(kRectWidth, kRectHeight)},
+      .geometry = SrcToDest(types::RectangleF({.x = 0,
+                                               .y = 0,
+                                               .width = static_cast<float>(kRectWidth),
+                                               .height = static_cast<float>(kRectHeight)})),
       .multiply_color = {0.f, 1.f, 0.f, 1.f},
       .blend_mode = BlendMode::kReplace(),
       .content = ResolvedLayer::SolidColorContent{.color = {0.f, 1.f, 0.f, 1.f}},
@@ -1133,7 +1145,10 @@ VK_TEST_P(DisplayCompositorParameterizedPixelTest, FullscreenSolidColorRectangle
   EXPECT_TRUE(RunPromise(std::move(promise)));
 
   ResolvedLayer layer = {
-      .rect = {glm::vec2(0, 0), glm::vec2(kRectWidth, kRectHeight)},
+      .geometry = SrcToDest(types::RectangleF({.x = 0,
+                                               .y = 0,
+                                               .width = static_cast<float>(kRectWidth),
+                                               .height = static_cast<float>(kRectHeight)})),
       .multiply_color = {1.f, 1.f, 1.f, 1.f},
       .blend_mode = BlendMode::kReplace(),
       .content = ResolvedLayer::SolidColorContent{.color = {0.f, 0.2f, 0.f, 1.f}},
@@ -1237,7 +1252,10 @@ VK_TEST_P(DisplayCompositorParameterizedPixelTest, SetMinimumRGBTest) {
   EXPECT_TRUE(RunPromise(std::move(promise)));
 
   ResolvedLayer layer = {
-      .rect = {glm::vec2(0, 0), glm::vec2(kRectWidth, kRectHeight)},
+      .geometry = SrcToDest(types::RectangleF({.x = 0,
+                                               .y = 0,
+                                               .width = static_cast<float>(kRectWidth),
+                                               .height = static_cast<float>(kRectHeight)})),
       .multiply_color = {1.f, 1.f, 1.f, 1.f},
       .blend_mode = BlendMode::kReplace(),
       .content = ResolvedLayer::SolidColorContent{.color = {0.f, 0.f, 0.f, 0.f}},
@@ -1404,12 +1422,16 @@ VK_TEST_P(DisplayCompositorFallbackParameterizedPixelTest, SoftwareRenderingTest
   const uint32_t width = display->width_in_px() / 2;
   const uint32_t height = display->height_in_px();
 
-  std::array<glm::ivec2, 4> uvs = {glm::ivec2(0, 0), glm::ivec2(kTextureWidth, 0),
-                                   glm::ivec2(kTextureWidth, kTextureHeight),
-                                   glm::ivec2(0, kTextureHeight)};
   ResolvedLayer layer1 = {
-      .rect = {glm::vec2(0), glm::vec2(width, height), uvs,
-               fuchsia::ui::composition::Orientation::CCW_0_DEGREES},
+      .geometry = SrcToDest(types::RectangleF({.x = 0,
+                                               .y = 0,
+                                               .width = static_cast<float>(kTextureWidth),
+                                               .height = static_cast<float>(kTextureHeight)}),
+                            types::RectangleF({.x = 0,
+                                               .y = 0,
+                                               .width = static_cast<float>(width),
+                                               .height = static_cast<float>(height)}),
+                            types::RotateFlip::kIdentity()),
       .content =
           ResolvedLayer::ImageContent{
               .image_id = image_metadatas[0].identifier,
@@ -1418,8 +1440,15 @@ VK_TEST_P(DisplayCompositorFallbackParameterizedPixelTest, SoftwareRenderingTest
           },
   };
   ResolvedLayer layer2 = {
-      .rect = {glm::vec2(width, 0), glm::vec2(width, height), uvs,
-               fuchsia::ui::composition::Orientation::CCW_0_DEGREES},
+      .geometry = SrcToDest(types::RectangleF({.x = 0,
+                                               .y = 0,
+                                               .width = static_cast<float>(kTextureWidth),
+                                               .height = static_cast<float>(kTextureHeight)}),
+                            types::RectangleF({.x = static_cast<float>(width),
+                                               .y = 0,
+                                               .width = static_cast<float>(width),
+                                               .height = static_cast<float>(height)}),
+                            types::RotateFlip::kIdentity()),
       .content =
           ResolvedLayer::ImageContent{
               .image_id = image_metadatas[1].identifier,
@@ -1582,10 +1611,17 @@ VK_TEST_P(DisplayCompositorTransparencyPixelTest, OverlappingTransparencyTest) {
   const uint32_t width = display->width_in_px() / 2;
   const uint32_t height = display->height_in_px();
 
-  // Have the two rectangles overlap each other slightly with 25 rows in common across the
-  // displays.
   ResolvedLayer layer1 = {
-      .rect = {glm::vec2(0, 0), glm::vec2(width + kNumOverlappingColumns, height)},
+      .geometry =
+          SrcToDest(types::RectangleF({.x = 0,
+                                       .y = 0,
+                                       .width = static_cast<float>(kTextureWidth),
+                                       .height = static_cast<float>(kTextureHeight)}),
+                    types::RectangleF({.x = 0,
+                                       .y = 0,
+                                       .width = static_cast<float>(width + kNumOverlappingColumns),
+                                       .height = static_cast<float>(height)}),
+                    types::RotateFlip::kIdentity()),
       .content =
           ResolvedLayer::ImageContent{
               .image_id = image_metadatas[0].identifier,
@@ -1594,8 +1630,16 @@ VK_TEST_P(DisplayCompositorTransparencyPixelTest, OverlappingTransparencyTest) {
           },
   };
   ResolvedLayer layer2 = {
-      .rect = {glm::vec2(width - kNumOverlappingColumns, 0),
-               glm::vec2(width + kNumOverlappingColumns, height)},
+      .geometry =
+          SrcToDest(types::RectangleF({.x = 0,
+                                       .y = 0,
+                                       .width = static_cast<float>(kTextureWidth),
+                                       .height = static_cast<float>(kTextureHeight)}),
+                    types::RectangleF({.x = static_cast<float>(width - kNumOverlappingColumns),
+                                       .y = 0,
+                                       .width = static_cast<float>(width + kNumOverlappingColumns),
+                                       .height = static_cast<float>(height)}),
+                    types::RotateFlip::kIdentity()),
       .blend_mode = blend_mode_param,
       .content =
           ResolvedLayer::ImageContent{
@@ -1798,11 +1842,13 @@ VK_TEST_P(DisplayCompositorParameterizedTest, MultipleParentPixelTest) {
       display_compositor->AddDisplay(display, display_info, /*num_vmos*/ 2, &render_target_info);
   EXPECT_TRUE(RunPromise(std::move(promise)));
 
-  const std::array uvs = {glm::ivec2(0, 0), glm::ivec2(kTextureWidth, 0),
-                          glm::ivec2(kTextureWidth, kTextureHeight), glm::ivec2(0, kTextureHeight)};
   ResolvedLayer layer1 = {
-      .rect = {glm::vec2(0, 0), glm::vec2(2, 2), uvs,
-               fuchsia::ui::composition::Orientation::CCW_0_DEGREES},
+      .geometry = SrcToDest(types::RectangleF({.x = 0,
+                                               .y = 0,
+                                               .width = static_cast<float>(kTextureWidth),
+                                               .height = static_cast<float>(kTextureHeight)}),
+                            types::RectangleF({.x = 0, .y = 0, .width = 2, .height = 2}),
+                            types::RotateFlip::kIdentity()),
       .multiply_color = {1.f, 1.f, 1.f, 1.f},
       .blend_mode = BlendMode::kReplace(),
       .content = ResolvedLayer::ImageContent{.image_id = image_metadata.identifier,
@@ -1810,8 +1856,12 @@ VK_TEST_P(DisplayCompositorParameterizedTest, MultipleParentPixelTest) {
                                              .height = image_metadata.height},
   };
   ResolvedLayer layer2 = {
-      .rect = {glm::vec2(10, 0), glm::vec2(4, 4), uvs,
-               fuchsia::ui::composition::Orientation::CCW_0_DEGREES},
+      .geometry = SrcToDest(types::RectangleF({.x = 0,
+                                               .y = 0,
+                                               .width = static_cast<float>(kTextureWidth),
+                                               .height = static_cast<float>(kTextureHeight)}),
+                            types::RectangleF({.x = 10, .y = 0, .width = 4, .height = 4}),
+                            types::RotateFlip::kIdentity()),
       .multiply_color = {1.f, 1.f, 1.f, 1.f},
       .blend_mode = BlendMode::kReplace(),
       .content = ResolvedLayer::ImageContent{.image_id = image_metadata.identifier,
@@ -2043,14 +2093,17 @@ VK_TEST_P(DisplayCompositorParameterizedTest, ImageFlipRotate180DegreesPixelTest
       display_compositor->AddDisplay(display, display_info, /*num_vmos*/ 2, &render_target_info);
   EXPECT_TRUE(RunPromise(std::move(promise)));
 
-  std::array<glm::ivec2, 4> uvs = {glm::ivec2(0, 0), glm::ivec2(2, 0), glm::ivec2(2, 2),
-                                   glm::ivec2(0, 2)};
   ResolvedLayer layer = {
-      .rect = {glm::vec2(0, 0), glm::vec2(2, 2), uvs,
-               fuchsia::ui::composition::Orientation::CCW_180_DEGREES},
+      .geometry =
+          SrcToDest(types::RectangleF({.x = 0,
+                                       .y = 0,
+                                       .width = static_cast<float>(image_metadata.width),
+                                       .height = static_cast<float>(image_metadata.height)}),
+                    types::RectangleF({.x = 0, .y = 0, .width = 2, .height = 2}),
+                    types::RotateFlip::From(fuchsia_ui_composition::Orientation::kCcw180Degrees,
+                                            fuchsia_ui_composition::ImageFlip::kUpDown)),
       .multiply_color = {1.f, 1.f, 1.f, 1.f},
       .blend_mode = BlendMode::kReplace(),
-      .flip = fuchsia_ui_composition::ImageFlip::kUpDown,
       .content = ResolvedLayer::ImageContent{.image_id = image_metadata.identifier,
                                              .width = image_metadata.width,
                                              .height = image_metadata.height},
@@ -2228,7 +2281,16 @@ VK_TEST_F(DisplayCompositorPixelTest, SwitchDisplayMode) {
   EXPECT_TRUE(RunPromise(std::move(promise)));
 
   const ResolvedLayer blue_layer = {
-      .rect = {glm::vec2(0, 0), glm::vec2(kRectWidth, kRectHeight)},
+      .geometry =
+          SrcToDest(types::RectangleF({.x = 0,
+                                       .y = 0,
+                                       .width = static_cast<float>(blue_image_metadata.width),
+                                       .height = static_cast<float>(blue_image_metadata.height)}),
+                    types::RectangleF({.x = 0,
+                                       .y = 0,
+                                       .width = static_cast<float>(kRectWidth),
+                                       .height = static_cast<float>(kRectHeight)}),
+                    types::RotateFlip::kIdentity()),
       .multiply_color = {1.f, 1.f, 1.f, 1.f},
       .blend_mode = BlendMode::kReplace(),
       .content = ResolvedLayer::ImageContent{.image_id = blue_image_metadata.identifier,
@@ -2240,7 +2302,16 @@ VK_TEST_F(DisplayCompositorPixelTest, SwitchDisplayMode) {
   std::span<const RenderData> blue_display_list(&blue_render_data, 1);
 
   const ResolvedLayer green_layer = {
-      .rect = {glm::vec2(0, 0), glm::vec2(kRectWidth, kRectHeight)},
+      .geometry =
+          SrcToDest(types::RectangleF({.x = 0,
+                                       .y = 0,
+                                       .width = static_cast<float>(green_image_metadata.width),
+                                       .height = static_cast<float>(green_image_metadata.height)}),
+                    types::RectangleF({.x = 0,
+                                       .y = 0,
+                                       .width = static_cast<float>(kRectWidth),
+                                       .height = static_cast<float>(kRectHeight)}),
+                    types::RotateFlip::kIdentity()),
       .multiply_color = {1.f, 1.f, 1.f, 1.f},
       .blend_mode = BlendMode::kReplace(),
       .content = ResolvedLayer::ImageContent{.image_id = green_image_metadata.identifier,

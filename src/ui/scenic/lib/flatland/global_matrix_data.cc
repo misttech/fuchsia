@@ -23,7 +23,7 @@ constexpr TransformClipRegion kUnclippedRegion({.x = -(std::numeric_limits<int32
 
 namespace {
 
-using fuchsia::ui::composition::Orientation;
+using fuchsia_ui_composition::Orientation;
 
 // TODO(https://fxbug.dev/426028969): `types::RectangleF` exists now; consider using it here after
 // adding helpers such as `Overlap()` or `Intersect(...).IsEmpty()`.  One concern is that we heavily
@@ -134,8 +134,8 @@ types::RectangleF MatrixMultiplyRectF(const glm::mat3& matrix, types::RectangleF
 
 }  // namespace
 
-ImageRect CreateImageRect(const glm::mat3& matrix, const TransformClipRegion& clip,
-                          const std::array<glm::ivec2, 4>& texel_uvs,
+SrcToDest CreateSrcToDest(const glm::mat3& matrix, const TransformClipRegion& clip,
+                          const types::RectangleF& src,
                           const fuchsia_ui_composition::ImageFlip image_flip) {
   // The local space of the renderable has its top-left origin point at (0,0) and grows
   // downward and to the right, so that the bottom-right point is at (1,1). We apply
@@ -169,18 +169,19 @@ ImageRect CreateImageRect(const glm::mat3& matrix, const TransformClipRegion& cl
   // Image Content only, not Transforms (or Viewports), and so are not handled here.
   constexpr Orientation kIndexToOrientation[4] = {
       // If |vert_index| = 0, then the list is in the same order (no rotation).
-      Orientation::CCW_0_DEGREES,
+      Orientation::kCcw0Degrees,
       // If |vert_index| = 1, then the verts have been rotated by 90 degrees (top-left is now
       // top-right).
-      Orientation::CCW_90_DEGREES,
+      Orientation::kCcw90Degrees,
       // If |vert_index| = 2, then the verts have been rotated by 180 degrees (top-left is now
       // bottom-right).
-      Orientation::CCW_180_DEGREES,
+      Orientation::kCcw180Degrees,
       // If |vert_index| = 3, then the verts have been rotated by 270 degrees (top-left is now
       // bottom-left).
-      Orientation::CCW_270_DEGREES};
+      Orientation::kCcw270Degrees};
 
   const Orientation orientation = kIndexToOrientation[vert_index];
+  const types::RotateFlip transform = types::RotateFlip::From(orientation, image_flip);
 
   // Grab the origin, extent and orientation of the rectangle.
   auto origin = reordered_verts[0];
@@ -191,19 +192,23 @@ ImageRect CreateImageRect(const glm::mat3& matrix, const TransformClipRegion& cl
   auto [clipped_origin, clipped_extent] = ClipRectangle(clip, origin, extent);
 
   if (origin == clipped_origin && extent == clipped_extent) {
-    // If no clipping happened, we can leave the UVs as is and return.
-    return ImageRect(clipped_origin, clipped_extent, texel_uvs, orientation);
+    // If no clipping happened, we can leave the source rect as is and return.
+    const types::RectangleF clipped_dest({
+        .x = clipped_origin.x,
+        .y = clipped_origin.y,
+        .width = clipped_extent.x,
+        .height = clipped_extent.y,
+    });
+    return SrcToDest(src, clipped_dest, transform);
   }
   if (clipped_origin == glm::vec2(0) && clipped_extent == glm::vec2(0)) {
     // The entire rectangle is outside of the clip region.
-    return ImageRect(clipped_origin, clipped_extent,
-                     {glm::vec2(0), glm::vec2(0), glm::vec2(0), glm::vec2(0)}, orientation);
+    return SrcToDest(types::RectangleF({.x = 0.f, .y = 0.f, .width = 0.f, .height = 0.f}),
+                     types::RectangleF({.x = 0.f, .y = 0.f, .width = 0.f, .height = 0.f}),
+                     transform);
   }
 
-  // The rectangle was clipped, so we also have to clip the UV coordinates.
-  const auto rlerp = [](int a, int b, float t) -> int {
-    return a + static_cast<int>(std::round(t * static_cast<float>(b - a)));
-  };
+  // The rectangle was clipped, so we also have to clip the source rectangle.
   const float x_lerp = glm::clamp((clipped_origin.x - origin.x) / extent.x, 0.f, 1.f);
   const float y_lerp = glm::clamp((clipped_origin.y - origin.y) / extent.y, 0.f, 1.f);
   const float w_lerp =
@@ -211,74 +216,75 @@ ImageRect CreateImageRect(const glm::mat3& matrix, const TransformClipRegion& cl
   const float h_lerp =
       glm::clamp((clipped_origin.y + clipped_extent.y - origin.y) / extent.y, 0.f, 1.f);
 
-  // The clipped region, the new origin and the new extent already account for orientation. However,
-  // this is not the case for the texel UVs. If the rectangle was rotated by 90 or 270, then the
-  // x-axis in "texture-space" will now be clipped by the "vertical-axis" of the clip rectangle.
-  // The following calculations need to account for this.
+  // Map the dst-space clip ratios onto the source rect's axes.
   //
-  // Once the correct UV coordinates are calculated, they are returned in 'regular' order i.e. in
-  // texture space, starting at the top-left corner and rotating clockwise.
-  //
-  // Note that uv.x is equivalent to uv[0] and uv.y is equivalent to uv[1].
-  const auto rotated_u = vert_index % 2;
-  const auto rotated_v = (vert_index + 1) % 2;
+  // The clip ran in dst (screen) space, yielding four edge ratios. The source
+  // sub-rectangle is the clipped dst mapped back through the leaf transform
+  // (orientation + flip), so each ratio re-attaches to a source edge through that
+  // transform, NOT one-to-one:
+  //   * 0/180:  dst-x -> source-u, dst-y -> source-v   (axes aligned)
+  //   * 90/270: dst-x -> source-v, dst-y -> source-u   (axes swapped)
+  //   * flip mirrors which END of the chosen axis each ratio shrinks.
+  // This is the same dependence the old four-corner path had (`rotated_u`/`rotated_v`
+  // plus the `flip_idx` reorder), reduced to a per-axis edge assignment. The same
+  // orientation + image_flip are combined into the stored RotateFlip above.
+  float u_min_ratio = 0.f, u_max_ratio = 1.f;
+  float v_min_ratio = 0.f, v_max_ratio = 1.f;
 
-  const uint32_t idx = vert_index;
-  const uint32_t idx_1 = (vert_index + 1) % 4;
-  const uint32_t idx_2 = (vert_index + 2) % 4;
-  const uint32_t idx_3 = (vert_index + 3) % 4;
-
-  // If the image is flipped, perform the flip first on the UVs so that the image is clipped
-  // correctly. We also store the indices so that we can reorder the indices again later.
-  std::array<glm::ivec2, 4> flipped_uvs;
-  std::array<int, 4> flip_idx;
-  switch (image_flip) {
-    case fuchsia_ui_composition::ImageFlip::kNone:
-      flip_idx = {0, 1, 2, 3};
-      flipped_uvs = {texel_uvs[0], texel_uvs[1], texel_uvs[2], texel_uvs[3]};
+  switch (orientation) {
+    case Orientation::kCcw0Degrees:
+      u_min_ratio = x_lerp;
+      u_max_ratio = w_lerp;
+      v_min_ratio = y_lerp;
+      v_max_ratio = h_lerp;
       break;
-    case fuchsia_ui_composition::ImageFlip::kLeftRight:
-      flip_idx = {1, 0, 3, 2};
-      flipped_uvs = {texel_uvs[1], texel_uvs[0], texel_uvs[3], texel_uvs[2]};
+    case Orientation::kCcw90Degrees:
+      u_min_ratio = 1.f - h_lerp;
+      u_max_ratio = 1.f - y_lerp;
+      v_min_ratio = x_lerp;
+      v_max_ratio = w_lerp;
       break;
-    case fuchsia_ui_composition::ImageFlip::kUpDown:
-      flip_idx = {3, 2, 1, 0};
-      flipped_uvs = {texel_uvs[3], texel_uvs[2], texel_uvs[1], texel_uvs[0]};
+    case Orientation::kCcw180Degrees:
+      u_min_ratio = 1.f - w_lerp;
+      u_max_ratio = 1.f - x_lerp;
+      v_min_ratio = 1.f - h_lerp;
+      v_max_ratio = 1.f - y_lerp;
+      break;
+    case Orientation::kCcw270Degrees:
+      u_min_ratio = y_lerp;
+      u_max_ratio = h_lerp;
+      v_min_ratio = 1.f - w_lerp;
+      v_max_ratio = 1.f - x_lerp;
       break;
   }
 
-  std::array<glm::ivec2, 4> clipped_uvs;
-  // Top Left (of texture).
-  clipped_uvs[idx][rotated_u] =
-      rlerp(flipped_uvs[idx][rotated_u], flipped_uvs[idx_1][rotated_u], x_lerp);
-  clipped_uvs[idx][rotated_v] =
-      rlerp(flipped_uvs[idx][rotated_v], flipped_uvs[idx_3][rotated_v], y_lerp);
-
-  // Top Right (of texture).
-  clipped_uvs[idx_1][rotated_u] =
-      rlerp(flipped_uvs[idx][rotated_u], flipped_uvs[idx_1][rotated_u], w_lerp);
-  clipped_uvs[idx_1][rotated_v] =
-      rlerp(flipped_uvs[idx_1][rotated_v], flipped_uvs[idx_2][rotated_v], y_lerp);
-
-  // Bottom Right (of texture).
-  clipped_uvs[idx_2][rotated_u] =
-      rlerp(flipped_uvs[idx_3][rotated_u], flipped_uvs[idx_2][rotated_u], w_lerp);
-  clipped_uvs[idx_2][rotated_v] =
-      rlerp(flipped_uvs[idx_1][rotated_v], flipped_uvs[idx_2][rotated_v], h_lerp);
-
-  // Bottom Left (of texture).
-  clipped_uvs[idx_3][rotated_u] =
-      rlerp(flipped_uvs[idx_3][rotated_u], flipped_uvs[idx_2][rotated_u], x_lerp);
-  clipped_uvs[idx_3][rotated_v] =
-      rlerp(flipped_uvs[idx][rotated_v], flipped_uvs[idx_3][rotated_v], h_lerp);
-
-  // Flip UVs back.
-  std::array<glm::ivec2, 4> uvs;
-  for (uint32_t i = 0; i < uvs.size(); i++) {
-    uvs[i] = clipped_uvs[flip_idx[i]];
+  if (image_flip == fuchsia_ui_composition::ImageFlip::kLeftRight) {
+    const float new_u_min = 1.f - u_max_ratio;
+    const float new_u_max = 1.f - u_min_ratio;
+    u_min_ratio = new_u_min;
+    u_max_ratio = new_u_max;
+  } else if (image_flip == fuchsia_ui_composition::ImageFlip::kUpDown) {
+    const float new_v_min = 1.f - v_max_ratio;
+    const float new_v_max = 1.f - v_min_ratio;
+    v_min_ratio = new_v_min;
+    v_max_ratio = new_v_max;
   }
 
-  return ImageRect(clipped_origin, clipped_extent, uvs, orientation);
+  const types::RectangleF clipped_src({
+      .x = src.x() + u_min_ratio * src.width(),
+      .y = src.y() + v_min_ratio * src.height(),
+      .width = (u_max_ratio - u_min_ratio) * src.width(),
+      .height = (v_max_ratio - v_min_ratio) * src.height(),
+  });
+
+  const types::RectangleF clipped_dest({
+      .x = clipped_origin.x,
+      .y = clipped_origin.y,
+      .width = clipped_extent.x,
+      .height = clipped_extent.y,
+  });
+
+  return SrcToDest(clipped_src, clipped_dest, transform);
 }
 
 GlobalMatrixVector ComputeGlobalMatrices(

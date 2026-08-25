@@ -581,15 +581,14 @@ bool DisplayCompositor::SetRenderDataOnDisplay(const RenderData& data) {
           solid_color.color[2] * layer.multiply_color[2],
           solid_color.color[3] * layer.multiply_color[3],
       };
-      ApplyLayerColor(layers[i], layer.rect, final_color, layer.blend_mode);
+      ApplyLayerColor(layers[i], layer.geometry, final_color, layer.blend_mode);
     }
   }
 
   return true;
 }
 
-void DisplayCompositor::ApplyLayerColor(const display::LayerId& layer_id,
-                                        const ImageRect& rectangle,
+void DisplayCompositor::ApplyLayerColor(const display::LayerId& layer_id, const SrcToDest& geometry,
                                         const std::array<float, 4>& color,
                                         const types::BlendMode& blend_mode) {
   FX_DCHECK(main_dispatcher_ == async_get_default_dispatcher());
@@ -609,10 +608,10 @@ void DisplayCompositor::ApplyLayerColor(const display::LayerId& layer_id,
   };
 
   const display::Rectangle display_destination({
-      .x = static_cast<int32_t>(rectangle.origin.x),
-      .y = static_cast<int32_t>(rectangle.origin.y),
-      .width = static_cast<int32_t>(rectangle.extent.x),
-      .height = static_cast<int32_t>(rectangle.extent.y),
+      .x = static_cast<int32_t>(geometry.dest.x()),
+      .y = static_cast<int32_t>(geometry.dest.y()),
+      .width = static_cast<int32_t>(geometry.dest.width()),
+      .height = static_cast<int32_t>(geometry.dest.height()),
   });
 
   display_coordinator_.SetLayerColorConfig(
@@ -630,14 +629,10 @@ void DisplayCompositor::ApplyLayerColor(const display::LayerId& layer_id,
 // however, not all hardware supports images with sizes that differ from the destination size of
 // the rect. So implementing that solution on the display path as well is problematic.
 #if 0
-  const auto [src, dst] = DisplaySrcDstFrames::New(rectangle);
-
-  // TODO(https://fxbug.dev/42056054): `fidl::HLCPPToNatural()` doesn't work with const arguments.
-  const fuchsia_ui_composition::Orientation orientation = fidl::HLCPPToNatural(
-      const_cast<fuchsia::ui::composition::Orientation&>(rectangle.orientation));
+  const auto [src, dst] = DisplaySrcDstFrames::New(geometry);
 
   display_coordinator_.SetLayerPrimaryPosition(
-      layer_id, display:RotateFlip::From(orientation, image.flip), src, dst);
+      layer_id, geometry.transform, src, dst);
 
   const fuchsia_hardware_display_types::AlphaMode alpha_mode =
       image.blend_mode.ToDisplayAlphaMode();
@@ -655,13 +650,9 @@ void DisplayCompositor::ApplyLayerImage(const display::LayerId& layer_id,
 
   const auto& image = std::get<ResolvedLayer::ImageContent>(layer.content);
 
-  const auto [src, dst] = DisplaySrcDstFrames::New(layer.rect);
+  const auto [src, dst] = DisplaySrcDstFrames::New(layer.geometry);
   FX_DCHECK(src.width() && src.height()) << "Source frame cannot be empty.";
   FX_DCHECK(dst.width() && dst.height()) << "Destination frame cannot be empty.";
-
-  // TODO(https://fxbug.dev/42056054): `fidl::HLCPPToNatural()` doesn't work with const arguments.
-  const fuchsia_ui_composition::Orientation orientation = fidl::HLCPPToNatural(
-      const_cast<fuchsia::ui::composition::Orientation&>(layer.rect.orientation));
 
   FX_DCHECK(image_tiling_type_map_.contains(image.image_id));
   const auto image_tiling_type = image_tiling_type_map_.at(image.image_id);
@@ -669,8 +660,7 @@ void DisplayCompositor::ApplyLayerImage(const display::LayerId& layer_id,
       {.width = static_cast<int32_t>(image.width), .height = static_cast<int32_t>(image.height)});
   display_coordinator_.SetLayerPrimaryConfig(layer_id, image_extent, image_tiling_type);
 
-  display_coordinator_.SetLayerPrimaryPosition(
-      layer_id, display::RotateFlip::From(orientation, layer.flip), src, dst);
+  display_coordinator_.SetLayerPrimaryPosition(layer_id, layer.geometry.transform, src, dst);
 
   display_coordinator_.SetLayerPrimaryAlpha(layer_id, layer.blend_mode, layer.multiply_color[3]);
 
@@ -807,7 +797,16 @@ bool DisplayCompositor::PerformGpuComposition(
     SetDisplayLayers(render_data.display_id, std::span<display::LayerId>{&layer_id, 1});
 
     ResolvedLayer gpu_layer = {
-        .rect = {glm::vec2(0), glm::vec2(render_target.width, render_target.height)},
+        .geometry =
+            SrcToDest(types::RectangleF({.x = 0,
+                                         .y = 0,
+                                         .width = static_cast<float>(render_target.width),
+                                         .height = static_cast<float>(render_target.height)}),
+                      types::RectangleF({.x = 0,
+                                         .y = 0,
+                                         .width = static_cast<float>(render_target.width),
+                                         .height = static_cast<float>(render_target.height)}),
+                      types::RotateFlip::kIdentity()),
         .multiply_color = {1.f, 1.f, 1.f, 1.f},
         .content =
             ResolvedLayer::ImageContent{

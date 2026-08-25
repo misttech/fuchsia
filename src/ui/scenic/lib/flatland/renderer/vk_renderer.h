@@ -26,6 +26,10 @@ using allocation::GlobalBufferCollectionId;
 using allocation::GlobalImageId;
 using allocation::ImageMetadata;
 
+// Helper function to normalize UV coordinates and build an escher::Rectangle2D from a
+// ResolvedLayer.
+escher::Rectangle2D GetNormalizedUvRect(const ResolvedLayer& layer);
+
 // Implementation of the Flatland Renderer interface that relies on Escher and
 // by extension the Vulkan API.
 class VkRenderer final : public Renderer {

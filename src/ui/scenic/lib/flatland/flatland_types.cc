@@ -6,44 +6,22 @@
 
 #include <lib/syslog/cpp/macros.h>
 
-#include <glm/gtc/epsilon.hpp>
-
 namespace flatland {
 
-namespace {
-
-std::ostream& operator<<(std::ostream& str, glm::ivec2 v) {
-  return str << "(" << v.x << ", " << v.y << ")";
+std::ostream& operator<<(std::ostream& str, const flatland::SrcToDest& s2d) {
+  return str << "SrcToDest[src:" << s2d.src << " dest:" << s2d.dest
+             << " transform:" << s2d.transform << "]";
 }
 
-std::ostream& operator<<(std::ostream& str, fuchsia::ui::composition::Orientation orientation) {
-  switch (orientation) {
-    case fuchsia::ui::composition::Orientation::CCW_0_DEGREES:
-      return str << "CCW_0_DEGREES";
-    case fuchsia::ui::composition::Orientation::CCW_90_DEGREES:
-      return str << "CCW_90_DEGREES";
-    case fuchsia::ui::composition::Orientation::CCW_180_DEGREES:
-      return str << "CCW_180_DEGREES";
-    case fuchsia::ui::composition::Orientation::CCW_270_DEGREES:
-      return str << "CCW_270_DEGREES";
-  }
-}
-
-}  // namespace
-
-std::ostream& operator<<(std::ostream& str, const flatland::ImageRect& r) {
-  return str << "ImageRect[origin:" << r.origin << " extent:" << r.extent
-             << " orientation:" << r.orientation << " texel_uvs:[" << r.texel_uvs[0] << ","
-             << r.texel_uvs[1] << "," << r.texel_uvs[2] << "," << r.texel_uvs[3] << "]]";
-}
-
-bool ImageRect::operator==(const ImageRect& other) const {
+bool SrcToDest::operator==(const SrcToDest& other) const {
   constexpr float kEpsilon = 0.001f;
-  return glm::all(glm::epsilonEqual(origin, other.origin, kEpsilon)) &&
-         glm::all(glm::epsilonEqual(extent, other.extent, kEpsilon)) &&
-         orientation == other.orientation && texel_uvs[0] == other.texel_uvs[0] &&
-         texel_uvs[1] == other.texel_uvs[1] && texel_uvs[2] == other.texel_uvs[2] &&
-         texel_uvs[3] == other.texel_uvs[3];
+  const auto approx_equal = [](const types::RectangleF& a, const types::RectangleF& b) {
+    return std::abs(a.x() - b.x()) < kEpsilon && std::abs(a.y() - b.y()) < kEpsilon &&
+           std::abs(a.width() - b.width()) < kEpsilon &&
+           std::abs(a.height() - b.height()) < kEpsilon;
+  };
+  return approx_equal(dest, other.dest) && approx_equal(src, other.src) &&
+         transform == other.transform;
 }
 
 HitRegion::HitRegion(const types::RectangleF& region,
@@ -79,9 +57,10 @@ std::ostream& operator<<(std::ostream& str, const flatland::ResolvedLayer& rl) {
   static_assert(2 == std::variant_size_v<decltype(flatland::ResolvedLayer::content)>,
                 "operator<< must be updated to support new content types");
 
-  str << "ResolvedLayer[rect:" << rl.rect << " multiply_color:(" << rl.multiply_color[0] << ","
-      << rl.multiply_color[1] << "," << rl.multiply_color[2] << "," << rl.multiply_color[3] << ")"
-      << " blend_mode:" << rl.blend_mode << " flip:" << static_cast<int>(rl.flip);
+  str << "ResolvedLayer[geometry:" << rl.geometry << " multiply_color:(" << rl.multiply_color[0]
+      << "," << rl.multiply_color[1] << "," << rl.multiply_color[2] << "," << rl.multiply_color[3]
+      << ")"
+      << " blend_mode:" << rl.blend_mode;
   if (std::holds_alternative<flatland::ResolvedLayer::SolidColorContent>(rl.content)) {
     const auto& solid = std::get<flatland::ResolvedLayer::SolidColorContent>(rl.content);
     str << " content:SolidColor(" << solid.color[0] << "," << solid.color[1] << ","

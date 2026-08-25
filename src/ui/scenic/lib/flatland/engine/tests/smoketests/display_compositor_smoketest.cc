@@ -232,7 +232,16 @@ VK_TEST_P(DisplayCompositorParameterizedSmokeTest, FullscreenRectangleTest) {
                                  /*out_collection_info*/ nullptr);
 
   ResolvedLayer layer = {
-      .rect = {glm::vec2(0, 0), glm::vec2(kRectWidth, kRectHeight)},
+      .geometry =
+          SrcToDest(types::RectangleF({.x = 0,
+                                       .y = 0,
+                                       .width = static_cast<float>(image_metadata.width),
+                                       .height = static_cast<float>(image_metadata.height)}),
+                    types::RectangleF({.x = 0,
+                                       .y = 0,
+                                       .width = static_cast<float>(kRectWidth),
+                                       .height = static_cast<float>(kRectHeight)}),
+                    types::RotateFlip::kIdentity()),
       .multiply_color = {1.f, 1.f, 1.f, 1.f},
       .blend_mode = BlendMode::kReplace(),
       .content = ResolvedLayer::ImageContent{.image_id = image_metadata.identifier,

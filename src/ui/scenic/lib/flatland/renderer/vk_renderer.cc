@@ -4,7 +4,6 @@
 
 #include "src/ui/scenic/lib/flatland/renderer/vk_renderer.h"
 
-#include <fidl/fuchsia.ui.composition/cpp/hlcpp_conversion.h>
 #include <fuchsia/sysmem/cpp/fidl.h>
 #include <lib/async/cpp/wait.h>
 #include <lib/async/default.h>
@@ -39,7 +38,6 @@ namespace flatland {
 namespace {
 
 using allocation::BufferCollectionUsage;
-using fuchsia_ui_composition::ImageFlip;
 
 // TODO(https://fxbug.dev/42072347): We support two framebuffer formats and warmup for both.
 // * RGBA is the only supported format for AFBC on mali. Should be the default in production.
@@ -109,70 +107,6 @@ escher::TexturePtr CreateDepthTexture(escher::Escher* escher,
       escher, output_image->use_protected_memory(), output_image->info(),
       escher->device()->caps().GetMatchingDepthStencilFormat().value, depth_buffer);
   return depth_buffer;
-}
-
-constexpr float clamp(float v, float lo, float hi) { return (v < lo) ? lo : (hi < v) ? hi : v; }
-
-std::array<size_t, 4> GetFlippedIndices(const ImageFlip flip_type) {
-  switch (flip_type) {
-    case ImageFlip::kNone:
-      return {0, 1, 2, 3};
-    case ImageFlip::kLeftRight:
-      // The indices are sorted in a clockwise order starting at the top-left, and the left
-      // indices must be swapped with the right.
-      return {1, 0, 3, 2};
-    case ImageFlip::kUpDown:
-      // The indices are sorted in a clockwise order starting at the top-left, and the top indices
-      // must be swapped with the bottom.
-      return {3, 2, 1, 0};
-    default:
-      FX_NOTREACHED();
-      return {0, 0, 0, 0};
-  }
-}
-
-std::array<glm::ivec2, 4> FlipUVs(const std::array<glm::ivec2, 4>& uvs, const ImageFlip flip_type) {
-  const std::array<size_t, 4> flip_indices = GetFlippedIndices(flip_type);
-  std::array<glm::ivec2, 4> flipped_uvs;
-  for (size_t i = 0; i < 4; i++) {
-    flipped_uvs[i] = uvs[flip_indices[i]];
-  }
-  return flipped_uvs;
-}
-
-escher::Rectangle2D GetNormalizedUvRect(const ResolvedLayer& layer) {
-  const ImageRect& rect = layer.rect;
-  const fuchsia::ui::composition::Orientation orientation = rect.orientation;
-  float w = 1.f;
-  float h = 1.f;
-  if (std::holds_alternative<ResolvedLayer::ImageContent>(layer.content)) {
-    const auto& image = std::get<ResolvedLayer::ImageContent>(layer.content);
-    w = static_cast<float>(image.width);
-    h = static_cast<float>(image.height);
-  }
-  FX_DCHECK(w >= 0.f && h >= 0.f);
-
-  // First, reorder the UVs based on whether the image was flipped.
-  const auto texel_uvs = FlipUVs(rect.texel_uvs, layer.flip);
-
-  // Reorder based on rotation and normalize the texel UVs. Normalization is based on the width
-  // and height of the image that is sampled from. Reordering is based on orientation. The texel
-  // UVs are listed in clockwise-order starting at the top-left corner of the texture. They need
-  // to be reordered so that they are listed in clockwise-order and the UV that maps to the
-  // top-left corner of the escher::Rectangle2D is listed first. For instance, if the rectangle is
-  // rotated 90_CCW, the first texel UV of the ImageRect, at index 0, is at index 3 in the
-  // escher::Rectangle2D.
-  std::array<glm::vec2, 4> normalized_uvs;
-  // |fuchsia::ui::composition::Orientation| is an enum value in the range [1, 4].
-  int starting_index = static_cast<int>(orientation) - 1;
-  for (int j = 0; j < 4; j++) {
-    const int index = (starting_index + j) % 4;
-    // Clamp values to ensure they are normalized to the range [0, 1].
-    normalized_uvs[j] = glm::vec2(clamp(static_cast<float>(texel_uvs[index].x), 0, w) / w,
-                                  clamp(static_cast<float>(texel_uvs[index].y), 0, h) / h);
-  }
-
-  return {rect.origin, rect.extent, normalized_uvs};
 }
 
 std::atomic<uint64_t> next_buffer_collection_id = 1;
@@ -395,6 +329,59 @@ std::optional<vk::BufferCollectionFUCHSIA> VkRenderer::GetAllocatedVulkanBufferC
 
   is_allocated = true;
   return vk_collection;
+}
+
+escher::Rectangle2D GetNormalizedUvRect(const ResolvedLayer& layer) {
+  const SrcToDest& geometry = layer.geometry;
+  float w = 1.f;
+  float h = 1.f;
+  if (std::holds_alternative<ResolvedLayer::ImageContent>(layer.content)) {
+    const auto& image = std::get<ResolvedLayer::ImageContent>(layer.content);
+    w = static_cast<float>(image.width);
+    h = static_cast<float>(image.height);
+  }
+  FX_DCHECK(w > 0.f && h > 0.f);
+
+  const auto clamp = [](float v, float lo, float hi) { return (v < lo) ? lo : (hi < v) ? hi : v; };
+
+  const bool use_full_image = geometry.src.width() <= 0.f || geometry.src.height() <= 0.f;
+  const float u0 = use_full_image ? 0.f : clamp(geometry.src.x(), 0.f, w) / w;
+  const float u1 =
+      use_full_image ? 1.f : clamp(geometry.src.x() + geometry.src.width(), 0.f, w) / w;
+  const float v0 = use_full_image ? 0.f : clamp(geometry.src.y(), 0.f, h) / h;
+  const float v1 =
+      use_full_image ? 1.f : clamp(geometry.src.y() + geometry.src.height(), 0.f, h) / h;
+
+  std::array<glm::vec2, 4> normalized_uvs;
+  switch (geometry.transform.enum_value()) {
+    case types::RotateFlip::Enum::kIdentity:
+      normalized_uvs = {glm::vec2(u0, v0), glm::vec2(u1, v0), glm::vec2(u1, v1), glm::vec2(u0, v1)};
+      break;
+    case types::RotateFlip::Enum::kReflectX:
+      normalized_uvs = {glm::vec2(u0, v1), glm::vec2(u1, v1), glm::vec2(u1, v0), glm::vec2(u0, v0)};
+      break;
+    case types::RotateFlip::Enum::kReflectY:
+      normalized_uvs = {glm::vec2(u1, v0), glm::vec2(u0, v0), glm::vec2(u0, v1), glm::vec2(u1, v1)};
+      break;
+    case types::RotateFlip::Enum::kRotateCcw180:
+      normalized_uvs = {glm::vec2(u1, v1), glm::vec2(u0, v1), glm::vec2(u0, v0), glm::vec2(u1, v0)};
+      break;
+    case types::RotateFlip::Enum::kRotateCcw90:
+      normalized_uvs = {glm::vec2(u1, v0), glm::vec2(u1, v1), glm::vec2(u0, v1), glm::vec2(u0, v0)};
+      break;
+    case types::RotateFlip::Enum::kRotateCcw90ReflectX:
+      normalized_uvs = {glm::vec2(u0, v0), glm::vec2(u0, v1), glm::vec2(u1, v1), glm::vec2(u1, v0)};
+      break;
+    case types::RotateFlip::Enum::kRotateCcw90ReflectY:
+      normalized_uvs = {glm::vec2(u1, v1), glm::vec2(u1, v0), glm::vec2(u0, v0), glm::vec2(u0, v1)};
+      break;
+    case types::RotateFlip::Enum::kRotateCcw270:
+      normalized_uvs = {glm::vec2(u0, v1), glm::vec2(u0, v0), glm::vec2(u1, v0), glm::vec2(u1, v1)};
+      break;
+  }
+
+  return {glm::vec2(geometry.dest.x(), geometry.dest.y()),
+          glm::vec2(geometry.dest.width(), geometry.dest.height()), normalized_uvs};
 }
 
 fpromise::promise<> VkRenderer::ImportBufferCollection(

@@ -158,7 +158,7 @@ void DumpLayers(const flatland::GlobalTopologyData& topology_data,
                 "DumpLayers must be updated to support new content types");
 
   output << "\nFrame display-list contains " << layers.size()
-         << " images and image-rectangles (in increasing Z-order):";
+         << " images and geometries (in increasing Z-order):";
   for (size_t i = 0; i < layers.size(); i++) {
     const auto& layer = layers[i];
     if (std::holds_alternative<flatland::ResolvedLayer::SolidColorContent>(layer.content)) {
@@ -167,15 +167,14 @@ void DumpLayers(const flatland::GlobalTopologyData& topology_data,
              << solid.color[2] << "," << solid.color[3] << ")";
     } else {
       const auto& image = std::get<flatland::ResolvedLayer::ImageContent>(layer.content);
-      output << "\n        image: size=" << image.width << "x" << image.height
-             << "  flip=" << cpp23::to_underlying(layer.flip);
+      output << "\n        image: size=" << image.width << "x" << image.height;
     }
     output << "  multiply_color=(" << layer.multiply_color[0] << "," << layer.multiply_color[1]
            << "," << layer.multiply_color[2] << "," << layer.multiply_color[3] << ")"
            << "  blend_mode=" << layer.blend_mode;
     FX_CHECK(layer.topology_index >= 0);
     output << "\n        transform: " << topology_data.topology_vector[layer.topology_index]
-           << "\n        rect: " << layer.rect;
+           << "\n        geometry: " << layer.geometry;
   }
 }
 

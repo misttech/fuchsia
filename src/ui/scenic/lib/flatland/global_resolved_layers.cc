@@ -26,9 +26,9 @@ void CullLayersInPlace(std::vector<flatland::ResolvedLayer>* layers_in_out, uint
     auto is_opaque = layer.blend_mode == flatland::BlendMode::kReplace();
 
     // If the rect is full screen (or larger), and opaque, clear the output vectors.
-    return (is_opaque && layer.rect.origin.x <= 0 && layer.rect.origin.y <= 0 &&
-            layer.rect.extent.x >= static_cast<float>(display_width) &&
-            layer.rect.extent.y >= static_cast<float>(display_height));
+    return (is_opaque && layer.geometry.dest.x() <= 0 && layer.geometry.dest.y() <= 0 &&
+            layer.geometry.dest.width() >= static_cast<float>(display_width) &&
+            layer.geometry.dest.height() >= static_cast<float>(display_height));
   };
 
   // Find the index of the last occluder.
@@ -40,17 +40,17 @@ void CullLayersInPlace(std::vector<flatland::ResolvedLayer>* layers_in_out, uint
   }
 
   // Move all of the remaining renderable data into the output vectors. Entries get erased
-  // if they occur before the last occluder index, or if the rectangle at that entry is empty.
-  const auto is_rect_empty = [](const flatland::ImageRect& rect) {
-    return rect.extent.x <= 0.f || rect.extent.y <= 0.f;
+  // if they occur before the last occluder index, or if the geometry at that entry is empty.
+  const auto is_geometry_empty = [](const flatland::SrcToDest& geometry) {
+    return geometry.dest.width() <= 0.f || geometry.dest.height() <= 0.f;
   };
 
   layers_in_out->erase(
       std::remove_if(layers_in_out->begin(), layers_in_out->end(),
                      [index = static_cast<size_t>(0), occluder_index,
-                      &is_rect_empty](const flatland::ResolvedLayer& layer) mutable {
+                      &is_geometry_empty](const flatland::ResolvedLayer& layer) mutable {
                        auto curr_index = index++;
-                       return curr_index < occluder_index || is_rect_empty(layer.rect);
+                       return curr_index < occluder_index || is_geometry_empty(layer.geometry);
                      }),
       layers_in_out->end());
 }
@@ -123,8 +123,8 @@ static float GetOrientationAngle(fuchsia_ui_composition::Orientation orientation
 // The result is equivalent to creating separate translation/rotation/scale matrices, and returning
 // T*R*S.
 //
-// This matrix is composed with the node's global matrix and handed to CreateImageRect, which
-// decodes it straight back into an (origin, extent, orientation) ImageRect.  This redundant
+// This matrix is composed with the node's global matrix and handed to CreateSrcToDest, which
+// decodes it straight back into an (origin, extent, orientation) SrcToDest.  This redundant
 // manufacture-then-decode round-trip is deliberate here, to temporarily reuse the shared legacy
 // decode (until the step 160 cleanup).
 glm::mat3 GetLayerLocalMatrix(const types::Rectangle& display_rect,
@@ -163,18 +163,18 @@ glm::mat3 GetLayerLocalMatrix(const types::Rectangle& display_rect,
 }
 
 // Helper/adaptor which generates a layer's global matrix in order to pass it to the legacy
-// `CreateImageRect()` helper (which will be deleted in step 160).
-static std::optional<ImageRect> ComputeClippedLayerRect(
+// `CreateSrcToDest()` helper (which will be deleted in step 160).
+static std::optional<SrcToDest> ComputeClippedLayerGeometry(
     const glm::mat3& node_global_matrix, const TransformClipRegion& node_clip_region,
     const types::Rectangle& display_rect, fuchsia_ui_composition::Orientation orientation,
-    fuchsia_ui_composition::ImageFlip flip, const std::array<glm::ivec2, 4>& unclipped_texel_uvs) {
+    fuchsia_ui_composition::ImageFlip flip, const types::RectangleF& unclipped_src) {
   glm::mat3 composed_matrix = node_global_matrix * GetLayerLocalMatrix(display_rect, orientation);
-  ImageRect clipped_rect =
-      CreateImageRect(composed_matrix, node_clip_region, unclipped_texel_uvs, flip);
-  if (clipped_rect.extent.x <= 0.f || clipped_rect.extent.y <= 0.f) {
+  SrcToDest clipped_geometry =
+      CreateSrcToDest(composed_matrix, node_clip_region, unclipped_src, flip);
+  if (clipped_geometry.dest.width() <= 0.f || clipped_geometry.dest.height() <= 0.f) {
     return std::nullopt;
   }
-  return clipped_rect;
+  return clipped_geometry;
 }
 
 // Encapsulates the difference between how Flatland1 and Flatland2 APIs treat REPLACE blend mode
@@ -265,14 +265,10 @@ void ComputeGlobalResolvedLayers(std::vector<ResolvedLayer>& output,
       }
 
       auto [orientation, flip] = DecomposeRotateFlip(image.transform);
-      auto clipped_rect = ComputeClippedLayerRect(
-          node_global_matrix, node_clip_region, layer.common.display_rect, orientation, flip,
-          {glm::ivec2(image.sample_rect.x(), image.sample_rect.y()),
-           glm::ivec2(image.sample_rect.x() + image.sample_rect.width(), image.sample_rect.y()),
-           glm::ivec2(image.sample_rect.x() + image.sample_rect.width(),
-                      image.sample_rect.y() + image.sample_rect.height()),
-           glm::ivec2(image.sample_rect.x(), image.sample_rect.y() + image.sample_rect.height())});
-      if (!clipped_rect) {
+      auto clipped_geometry = ComputeClippedLayerGeometry(node_global_matrix, node_clip_region,
+                                                          layer.common.display_rect, orientation,
+                                                          flip, image.sample_rect);
+      if (!clipped_geometry) {
         return;
       }
 
@@ -281,10 +277,9 @@ void ComputeGlobalResolvedLayers(std::vector<ResolvedLayer>& output,
                                  /*pin_replace=*/flatland_version == 1);
 
       output.push_back(ResolvedLayer{
-          .rect = *clipped_rect,
+          .geometry = *clipped_geometry,
           .multiply_color = multiply_color,
           .blend_mode = blend_mode,
-          .flip = flip,
           .content =
               ResolvedLayer::ImageContent{
                   .image_id = image.image_id,
@@ -299,12 +294,11 @@ void ComputeGlobalResolvedLayers(std::vector<ResolvedLayer>& output,
     // or to skip it e.g. if completely clipped.
     auto process_solid_color_layer = [inherited_opacity, &node_global_matrix, &node_clip_region, i,
                                       &output](const UberStructLayer& layer) {
-      auto clipped_rect =
-          ComputeClippedLayerRect(node_global_matrix, node_clip_region, layer.common.display_rect,
-                                  fuchsia_ui_composition::Orientation::kCcw0Degrees,
-                                  fuchsia_ui_composition::ImageFlip::kNone,
-                                  {glm::ivec2(0), glm::ivec2(0), glm::ivec2(0), glm::ivec2(0)});
-      if (!clipped_rect) {
+      auto clipped_geometry = ComputeClippedLayerGeometry(
+          node_global_matrix, node_clip_region, layer.common.display_rect,
+          fuchsia_ui_composition::Orientation::kCcw0Degrees,
+          fuchsia_ui_composition::ImageFlip::kNone, types::RectangleF());
+      if (!clipped_geometry) {
         return;
       }
 
@@ -334,10 +328,9 @@ void ComputeGlobalResolvedLayers(std::vector<ResolvedLayer>& output,
                                                   solid.color[2] * a, a};
 
       output.push_back(ResolvedLayer{
-          .rect = *clipped_rect,
+          .geometry = *clipped_geometry,
           .multiply_color = multiply_color,
           .blend_mode = blend_mode,
-          .flip = fuchsia_ui_composition::ImageFlip::kNone,
           .content =
               ResolvedLayer::SolidColorContent{
                   .color = content_color,

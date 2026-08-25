@@ -173,11 +173,10 @@ allocation::GlobalBufferCollectionId SetupBufferCollection(
 struct TestLayerInfo {
   allocation::ImageMetadata metadata;
   BlendMode blend_mode = BlendMode::kReplace();
-  fuchsia_ui_composition::ImageFlip flip = fuchsia_ui_composition::ImageFlip::kNone;
   std::array<float, 4> multiply_color = {1.f, 1.f, 1.f, 1.f};
 };
 
-std::vector<ResolvedLayer> MakeLayers(const std::vector<ImageRect>& rects,
+std::vector<ResolvedLayer> MakeLayers(const std::vector<SrcToDest>& rects,
                                       const std::vector<TestLayerInfo>& images = {}) {
   FX_CHECK(rects.size() == images.size() || images.empty());
   std::vector<ResolvedLayer> output;
@@ -186,9 +185,8 @@ std::vector<ResolvedLayer> MakeLayers(const std::vector<ImageRect>& rects,
     const auto& rect = rects[i];
     const auto& meta = images.empty() ? TestLayerInfo{} : images[i];
     ResolvedLayer layer;
-    layer.rect = rect;
+    layer.geometry = rect;
     layer.blend_mode = meta.blend_mode;
-    layer.flip = meta.flip;
     layer.topology_index = ResolvedLayer::kInvalidTopologyIndex;
 
     if (meta.metadata.identifier == allocation::kInvalidImageId) {
@@ -207,7 +205,7 @@ std::vector<ResolvedLayer> MakeLayers(const std::vector<ImageRect>& rects,
   return output;
 }
 
-std::vector<ResolvedLayer> MakeLayers(const std::vector<ImageRect>& rects,
+std::vector<ResolvedLayer> MakeLayers(const std::vector<SrcToDest>& rects,
                                       const std::vector<allocation::ImageMetadata>& images) {
   std::vector<TestLayerInfo> info_list;
   info_list.reserve(images.size());
@@ -511,9 +509,14 @@ void RenderImageAfterBufferCollectionReleasedTest(
   renderer->ReleaseBufferCollection(target_collection_id, BufferCollectionUsage::kRenderTarget);
 
   // We should still be able to render this image.
-  renderer->Render(render_target,
-                   MakeLayers({ImageRect(glm::vec2(0, 0), glm::vec2(kWidth, kHeight))}, {image}),
-                   {});
+  renderer->Render(
+      render_target,
+      MakeLayers({SrcToDest(types::RectangleF({.x = 0,
+                                               .y = 0,
+                                               .width = static_cast<float>(kWidth),
+                                               .height = static_cast<float>(kHeight)}))},
+                 {image}),
+      {});
   if (use_vulkan) {
     auto vk_renderer = static_cast<VkRenderer*>(renderer);
     vk_renderer->WaitIdle();
@@ -915,10 +918,15 @@ VK_TEST_F(VulkanRendererTest, RenderTest) {
 
   // Create a renderable where the upper-left hand corner should be at position (6,3) with a
   // width/height of (4,2).
-  ImageRect renderable(glm::vec2(6, 3), glm::vec2(kTextureWidth, kTextureHeight),
-                       {glm::vec2(0, 0), glm::vec2(kTextureWidth, 0),
-                        glm::vec2(kTextureWidth, kTextureHeight), glm::vec2(0, kTextureHeight)},
-                       Orientation::CCW_0_DEGREES);
+  SrcToDest renderable(types::RectangleF({.x = 0,
+                                          .y = 0,
+                                          .width = static_cast<float>(kTextureWidth),
+                                          .height = static_cast<float>(kTextureHeight)}),
+                       types::RectangleF({.x = 6,
+                                          .y = 3,
+                                          .width = static_cast<float>(kTextureWidth),
+                                          .height = static_cast<float>(kTextureHeight)}),
+                       types::RotateFlip::kIdentity());
 
   // Have the client write pixel values to the renderable's texture.
   MapHostPointer(
@@ -964,14 +972,18 @@ VK_TEST_F(VulkanRendererTest, RenderTest) {
                                       kTextureWidth * kTextureHeight);
                  });
 
-  // Now let's update the uvs of the renderable so only the green portion of the image maps onto
-  // the rect. Take the rightmost column of the image, which is green, to eliminate any linear
+  // Now let's update the src of the renderable so only the green portion of the image maps
+  // onto the rect. Take the rightmost column of the image, which is green, to eliminate any linear
   // filtering artifacts.
-  auto renderable2 = ImageRect(
-      glm::vec2(6, 3), glm::vec2(kTextureWidth, kTextureHeight),
-      {glm::vec2(kTextureWidth - 1, 0), glm::vec2(kTextureWidth, 0),
-       glm::vec2(kTextureWidth, kTextureHeight), glm::vec2(kTextureWidth - 1, kTextureHeight)},
-      Orientation::CCW_0_DEGREES);
+  auto renderable2 = SrcToDest(types::RectangleF({.x = static_cast<float>(kTextureWidth - 1),
+                                                  .y = 0,
+                                                  .width = 1,
+                                                  .height = static_cast<float>(kTextureHeight)}),
+                               types::RectangleF({.x = 6,
+                                                  .y = 3,
+                                                  .width = static_cast<float>(kTextureWidth),
+                                                  .height = static_cast<float>(kTextureHeight)}),
+                               types::RotateFlip::kIdentity());
 
   // Render the renderable to the render target.
   renderer->Render(render_target, MakeLayers({renderable2}, {renderable_texture}), {});
@@ -1050,10 +1062,15 @@ VK_TEST_F(VulkanRendererTest, FullScreenRenderTest) {
       renderer->ImportBufferImage(renderable_texture, BufferCollectionUsage::kClientImage);
   EXPECT_TRUE(RunPromise(loop, std::move(promise2)));
 
-  ImageRect renderable(
-      glm::vec2(0, 0), glm::vec2(kWidth, kHeight),
-      {glm::vec2(0, 0), glm::vec2(kWidth, 0), glm::vec2(kWidth, kHeight), glm::vec2(0, kHeight)},
-      Orientation::CCW_0_DEGREES);
+  SrcToDest renderable(types::RectangleF({.x = 0,
+                                          .y = 0,
+                                          .width = static_cast<float>(kWidth),
+                                          .height = static_cast<float>(kHeight)}),
+                       types::RectangleF({.x = 0,
+                                          .y = 0,
+                                          .width = static_cast<float>(kWidth),
+                                          .height = static_cast<float>(kHeight)}),
+                       types::RotateFlip::kIdentity());
 
   // Have the client write pixel values to the renderable's texture.
   MapHostPointer(
@@ -1219,10 +1236,15 @@ VK_TEST_F(VulkanRendererTest, RotationRenderTest) {
 
   // Create a renderable where the upper-left hand corner should be at position (5,3)
   // with a width/height of (6,2).
-  ImageRect renderable(glm::vec2(5, 3), glm::vec2(kTextureWidth, kTextureHeight),
-                       {glm::vec2(0, 0), glm::vec2(kTextureWidth, 0),
-                        glm::vec2(kTextureWidth, kTextureHeight), glm::vec2(0, kTextureHeight)},
-                       Orientation::CCW_0_DEGREES);
+  SrcToDest renderable(types::RectangleF({.x = 0,
+                                          .y = 0,
+                                          .width = static_cast<float>(kTextureWidth),
+                                          .height = static_cast<float>(kTextureHeight)}),
+                       types::RectangleF({.x = 5,
+                                          .y = 3,
+                                          .width = static_cast<float>(kTextureWidth),
+                                          .height = static_cast<float>(kTextureHeight)}),
+                       types::RotateFlip::kIdentity());
 
   // Have the client write pixel values to the renderable's texture.
   MapHostPointer(
@@ -1475,7 +1497,6 @@ VK_TEST_F(VulkanRendererTest, FlipLeftRightAndRotate90RenderTest) {
                    .vmo_index = 0,
                    .width = static_cast<uint32_t>(kTextureWidth),
                    .height = static_cast<uint32_t>(kTextureHeight)},
-      .flip = ImageFlip::kLeftRight,
   };
 
   auto promise1 = renderer.ImportBufferImage(render_target, BufferCollectionUsage::kRenderTarget);
@@ -1489,10 +1510,16 @@ VK_TEST_F(VulkanRendererTest, FlipLeftRightAndRotate90RenderTest) {
 
   // Create a renderable where the upper-left hand corner should be at position (5,3)
   // with a width/height of (6,2).
-  ImageRect renderable(glm::vec2(5, 3), glm::vec2(kTextureWidth, kTextureHeight),
-                       {glm::vec2(0, 0), glm::vec2(kTextureWidth, 0),
-                        glm::vec2(kTextureWidth, kTextureHeight), glm::vec2(0, kTextureHeight)},
-                       Orientation::CCW_0_DEGREES);
+  SrcToDest renderable(types::RectangleF({.x = 0,
+                                          .y = 0,
+                                          .width = static_cast<float>(kTextureWidth),
+                                          .height = static_cast<float>(kTextureHeight)}),
+                       types::RectangleF({.x = 5,
+                                          .y = 3,
+                                          .width = static_cast<float>(kTextureWidth),
+                                          .height = static_cast<float>(kTextureHeight)}),
+                       types::RotateFlip::From(fuchsia_ui_composition::Orientation::kCcw0Degrees,
+                                               fuchsia_ui_composition::ImageFlip::kLeftRight));
 
   // Have the client write pixel values to the renderable's texture.
   MapHostPointer(
@@ -1657,7 +1684,6 @@ VK_TEST_F(VulkanRendererTest, FlipUpDownAndRotate90RenderTest) {
                    .vmo_index = 0,
                    .width = static_cast<uint32_t>(w),
                    .height = static_cast<uint32_t>(h)},
-      .flip = ImageFlip::kUpDown,
   };
 
   auto promise1 = renderer.ImportBufferImage(render_target, BufferCollectionUsage::kRenderTarget);
@@ -1673,9 +1699,13 @@ VK_TEST_F(VulkanRendererTest, FlipUpDownAndRotate90RenderTest) {
   // with a width/height of (2,6).
   const uint32_t kRenderableWidth = 1;
   const uint32_t kRenderableHeight = 2;
-  ImageRect renderable(glm::vec2(0, 0), glm::vec2(kRenderableWidth, kRenderableHeight),
-                       {glm::vec2(0, 0), glm::vec2(w, 0), glm::vec2(w, h), glm::vec2(0, h)},
-                       Orientation::CCW_0_DEGREES);
+  SrcToDest renderable(types::RectangleF({.x = 0, .y = 0, .width = w, .height = h}),
+                       types::RectangleF({.x = 0,
+                                          .y = 0,
+                                          .width = static_cast<float>(kRenderableWidth),
+                                          .height = static_cast<float>(kRenderableHeight)}),
+                       types::RotateFlip::From(fuchsia_ui_composition::Orientation::kCcw0Degrees,
+                                               fuchsia_ui_composition::ImageFlip::kUpDown));
 
   // Have the client write pixel values to the renderable's texture.
   MapHostPointer(
@@ -1782,7 +1812,10 @@ VK_TEST_F(VulkanRendererColorTest, SolidColorTest) {
   // Create the two renderables.
   const uint32_t kRenderableWidth = 4;
   const uint32_t kRenderableHeight = 2;
-  ImageRect renderable(glm::vec2(6, 3), glm::vec2(kRenderableWidth, kRenderableHeight));
+  SrcToDest renderable(types::RectangleF({.x = 6,
+                                          .y = 3,
+                                          .width = static_cast<float>(kRenderableWidth),
+                                          .height = static_cast<float>(kRenderableHeight)}));
 
   // Render the renderable to the render target.
   renderer->Render(render_target, MakeLayers({renderable}, {renderable_image_data}), {});
@@ -1856,7 +1889,10 @@ VK_TEST_F(VulkanRendererColorTest, ColorCorrectionTest) {
   // Create the two renderables.
   const uint32_t kRenderableWidth = 4;
   const uint32_t kRenderableHeight = 2;
-  ImageRect renderable(glm::vec2(6, 3), glm::vec2(kRenderableWidth, kRenderableHeight));
+  SrcToDest renderable(types::RectangleF({.x = 6,
+                                          .y = 3,
+                                          .width = static_cast<float>(kRenderableWidth),
+                                          .height = static_cast<float>(kRenderableHeight)}));
 
   // Render the renderable to the render target.
   renderer->Render(render_target, MakeLayers({renderable}, {renderable_image_data}),
@@ -1950,8 +1986,14 @@ VK_TEST_F(VulkanRendererColorTest, MultipleSolidColorTest) {
   // Create the two renderables.
   const uint32_t kRenderableWidth = 4;
   const uint32_t kRenderableHeight = 2;
-  ImageRect renderable(glm::vec2(6, 3), glm::vec2(kRenderableWidth, kRenderableHeight));
-  ImageRect renderable_2(glm::vec2(6, 5), glm::vec2(kRenderableWidth, kRenderableHeight));
+  SrcToDest renderable(types::RectangleF({.x = 6,
+                                          .y = 3,
+                                          .width = static_cast<float>(kRenderableWidth),
+                                          .height = static_cast<float>(kRenderableHeight)}));
+  SrcToDest renderable_2(types::RectangleF({.x = 6,
+                                            .y = 5,
+                                            .width = static_cast<float>(kRenderableWidth),
+                                            .height = static_cast<float>(kRenderableHeight)}));
 
   // Render the renderable to the render target.
   renderer->Render(
@@ -2059,9 +2101,14 @@ VK_TEST_F(VulkanRendererColorTest, MixSolidColorAndImageTest) {
   ASSERT_TRUE(RunPromise(loop, std::move(promise2)));
 
   // Create the two renderables.
-  ImageRect renderable(glm::vec2(0, 0), glm::vec2(kRenderableWidth, kRenderableHeight));
-  ImageRect renderable_2(glm::vec2(kRenderableWidth + 1, 0),
-                         glm::vec2(kRenderableWidth, kRenderableHeight));
+  SrcToDest renderable(types::RectangleF({.x = 0,
+                                          .y = 0,
+                                          .width = static_cast<float>(kRenderableWidth),
+                                          .height = static_cast<float>(kRenderableHeight)}));
+  SrcToDest renderable_2(types::RectangleF({.x = static_cast<float>(kRenderableWidth + 1),
+                                            .y = 0,
+                                            .width = static_cast<float>(kRenderableWidth),
+                                            .height = static_cast<float>(kRenderableHeight)}));
 
   // Render the renderable to the render target.
   renderer->Render(
@@ -2169,8 +2216,15 @@ VK_TEST_F(VulkanRendererColorTest, TransparencyTest) {
   // Create the two renderables.
   const uint32_t kRenderableWidth = 4;
   const uint32_t kRenderableHeight = 2;
-  ImageRect renderable(glm::vec2(6, 3), glm::vec2(kRenderableWidth, kRenderableHeight));
-  ImageRect transparent_renderable(glm::vec2(7, 3), glm::vec2(kRenderableWidth, kRenderableHeight));
+  SrcToDest renderable(types::RectangleF({.x = 6,
+                                          .y = 3,
+                                          .width = static_cast<float>(kRenderableWidth),
+                                          .height = static_cast<float>(kRenderableHeight)}));
+  SrcToDest transparent_renderable(
+      types::RectangleF({.x = 7,
+                         .y = 3,
+                         .width = static_cast<float>(kRenderableWidth),
+                         .height = static_cast<float>(kRenderableHeight)}));
 
   // Have the client write pixel values to the renderable's texture.
   MapHostPointer(client_collection_info, renderable_texture.metadata.vmo_index,
@@ -2327,8 +2381,15 @@ VK_TEST_P(VulkanRendererParameterizedMultiplyColorTest, MultiplyColorTest) {
   // Create the two renderables.
   const uint32_t kRenderableWidth = 4;
   const uint32_t kRenderableHeight = 2;
-  ImageRect renderable(glm::vec2(6, 3), glm::vec2(kRenderableWidth, kRenderableHeight));
-  ImageRect transparent_renderable(glm::vec2(7, 3), glm::vec2(kRenderableWidth, kRenderableHeight));
+  SrcToDest renderable(types::RectangleF({.x = 6,
+                                          .y = 3,
+                                          .width = static_cast<float>(kRenderableWidth),
+                                          .height = static_cast<float>(kRenderableHeight)}));
+  SrcToDest transparent_renderable(
+      types::RectangleF({.x = 7,
+                         .y = 3,
+                         .width = static_cast<float>(kRenderableWidth),
+                         .height = static_cast<float>(kRenderableHeight)}));
 
   // Have the client write white pixel values to image backing the above two renderables.
   MapHostPointer(client_collection_info, renderable_texture.metadata.vmo_index,
@@ -2503,7 +2564,10 @@ VK_TEST_P(VulkanRendererParameterizedYuvTest, YuvTest) {
 
   // Create a renderable where the upper-left hand corner should be at position (0,0) with a
   // width/height of (32,32).
-  ImageRect image_renderable(glm::vec2(0, 0), glm::vec2(kTargetWidth, kTargetHeight));
+  SrcToDest image_renderable(types::RectangleF({.x = 0,
+                                                .y = 0,
+                                                .width = static_cast<float>(kTargetWidth),
+                                                .height = static_cast<float>(kTargetHeight)}));
 
   const uint32_t num_pixels = kTargetWidth * kTargetHeight;
   const uint8_t kFuchsiaYuvValues[] = {110U, 192U, 192U};
@@ -2677,7 +2741,10 @@ VK_TEST_F(VulkanRendererTest, ProtectedMemoryTest) {
 
   // Create a renderable where the upper-left hand corner should be at position (0,0) with a
   // width/height of (32,32).
-  ImageRect image_renderable(glm::vec2(0, 0), glm::vec2(kTargetWidth, kTargetHeight));
+  SrcToDest image_renderable(types::RectangleF({.x = 0,
+                                                .y = 0,
+                                                .width = static_cast<float>(kTargetWidth),
+                                                .height = static_cast<float>(kTargetHeight)}));
   // Render the renderable to the render target.
   renderer->Render(render_target_metadata, MakeLayers({image_renderable}, {image_metadata}), {});
   renderer->WaitIdle();
@@ -2746,11 +2813,14 @@ VK_TEST_F(VulkanRendererTest, ReadbackTest) {
   // Create the image metadata for the solid color renderable.
   const auto blend_mode = BlendMode::kPremultipliedAlpha();
   const std::array<float, 4> multiply_color = {1.f, 0.4f, 0.f, 1.f};
-  ImageRect renderable(glm::vec2(0, 0), glm::vec2(kTargetWidth, kTargetHeight));
+  SrcToDest renderable(types::RectangleF({.x = 0,
+                                          .y = 0,
+                                          .width = static_cast<float>(kTargetWidth),
+                                          .height = static_cast<float>(kTargetHeight)}));
 
   // Render the renderable to the render target.
   ResolvedLayer layer = {
-      .rect = renderable,
+      .geometry = renderable,
       .multiply_color = {1.f, 1.f, 1.f, 1.f},
       .blend_mode = BlendMode::kPremultipliedAlpha(),
       .content = ResolvedLayer::SolidColorContent{.color = {1.f, 0.4f, 0.f, 1.f}},
@@ -2838,22 +2908,28 @@ VK_TEST_F(VulkanRendererTest, UnresolvableImageLayerFiltered) {
   ASSERT_TRUE(RunPromise(loop, std::move(promise3)));
 
   // Layer 1: Solid red layer (valid).
-  ImageRect rect1(glm::vec2(0, 0), glm::vec2(kTargetWidth, kTargetHeight));
+  SrcToDest rect1(types::RectangleF({.x = 0,
+                                     .y = 0,
+                                     .width = static_cast<float>(kTargetWidth),
+                                     .height = static_cast<float>(kTargetHeight)}));
   ResolvedLayer layer1 = {
-      .rect = rect1,
+      .geometry = rect1,
       .multiply_color = {1.f, 1.f, 1.f, 1.f},
       .blend_mode = BlendMode::kPremultipliedAlpha(),
       .content = ResolvedLayer::SolidColorContent{.color = {1.f, 0.f, 0.f, 1.f}},
   };
 
   // Layer 2: Image content layer pointing to an unknown/missing image ID, covering full screen.
-  ImageRect rect2(glm::vec2(0, 0), glm::vec2(kTargetWidth, kTargetHeight));
+  SrcToDest rect2(types::RectangleF({.x = 0,
+                                     .y = 0,
+                                     .width = static_cast<float>(kTargetWidth),
+                                     .height = static_cast<float>(kTargetHeight)}));
   ImageMetadata missing_image = {.collection_id = allocation::GenerateUniqueBufferCollectionId(),
                                  .identifier = allocation::GenerateUniqueImageId(),
                                  .width = kTargetWidth,
                                  .height = kTargetHeight};
   ResolvedLayer layer2 = {
-      .rect = rect2,
+      .geometry = rect2,
       .multiply_color = {1.f, 1.f, 1.f, 1.f},
       .blend_mode = BlendMode::kPremultipliedAlpha(),
       .content =
@@ -2966,5 +3042,78 @@ VK_TEST_P(VulkanRendererParameterizedAFBCTest, EnablesAFBC) {
 INSTANTIATE_TEST_SUITE_P(BufferCollectionUsages, VulkanRendererParameterizedAFBCTest,
                          ::testing::Values(allocation::BufferCollectionUsage::kRenderTarget,
                                            allocation::BufferCollectionUsage::kClientImage));
+
+TEST(VkRendererTest, GetNormalizedUvRect) {
+  constexpr uint32_t kImageWidth = 20;
+  constexpr uint32_t kImageHeight = 40;
+  const ResolvedLayer::ImageContent content = {
+      .image_id = allocation::GlobalImageId(1),
+      .width = kImageWidth,
+      .height = kImageHeight,
+  };
+
+  const types::RectangleF dest({.x = 10.f, .y = 20.f, .width = 30.f, .height = 40.f});
+  const types::RectangleF src({.x = 2.f, .y = 4.f, .width = 6.f, .height = 8.f});
+
+  // u0 = 2/20 = 0.1, u1 = (2+6)/20 = 0.4
+  // v0 = 4/40 = 0.1, v1 = (4+8)/40 = 0.3
+  const float u0 = 0.1f;
+  const float u1 = 0.4f;
+  const float v0 = 0.1f;
+  const float v1 = 0.3f;
+
+  struct TestCase {
+    types::RotateFlip transform;
+    std::array<glm::vec2, 4> expected_uvs;
+  };
+
+  const TestCase test_cases[] = {
+      {types::RotateFlip::kIdentity(),
+       {glm::vec2(u0, v0), glm::vec2(u1, v0), glm::vec2(u1, v1), glm::vec2(u0, v1)}},
+      {types::RotateFlip::kReflectX(),
+       {glm::vec2(u0, v1), glm::vec2(u1, v1), glm::vec2(u1, v0), glm::vec2(u0, v0)}},
+      {types::RotateFlip::kReflectY(),
+       {glm::vec2(u1, v0), glm::vec2(u0, v0), glm::vec2(u0, v1), glm::vec2(u1, v1)}},
+      {types::RotateFlip::kRotateCcw180(),
+       {glm::vec2(u1, v1), glm::vec2(u0, v1), glm::vec2(u0, v0), glm::vec2(u1, v0)}},
+      {types::RotateFlip::kRotateCcw90(),
+       {glm::vec2(u1, v0), glm::vec2(u1, v1), glm::vec2(u0, v1), glm::vec2(u0, v0)}},
+      {types::RotateFlip::kRotateCcw90ReflectX(),
+       {glm::vec2(u0, v0), glm::vec2(u0, v1), glm::vec2(u1, v1), glm::vec2(u1, v0)}},
+      {types::RotateFlip::kRotateCcw90ReflectY(),
+       {glm::vec2(u1, v1), glm::vec2(u1, v0), glm::vec2(u0, v0), glm::vec2(u0, v1)}},
+      {types::RotateFlip::kRotateCcw270(),
+       {glm::vec2(u0, v1), glm::vec2(u0, v0), glm::vec2(u1, v0), glm::vec2(u1, v1)}},
+  };
+
+  for (const auto& tc : test_cases) {
+    ResolvedLayer layer = {
+        .geometry = SrcToDest(src, dest, tc.transform),
+        .content = content,
+    };
+    escher::Rectangle2D uv_rect = GetNormalizedUvRect(layer);
+    EXPECT_EQ(uv_rect.origin, glm::vec2(10.f, 20.f));
+    EXPECT_EQ(uv_rect.extent, glm::vec2(30.f, 40.f));
+    for (size_t i = 0; i < 4; ++i) {
+      EXPECT_FLOAT_EQ(uv_rect.clockwise_uvs[i].x, tc.expected_uvs[i].x);
+      EXPECT_FLOAT_EQ(uv_rect.clockwise_uvs[i].y, tc.expected_uvs[i].y);
+    }
+  }
+
+  // Also test default empty source rect falls back to full image (0,0)-(1,1).
+  {
+    ResolvedLayer layer = {
+        .geometry = SrcToDest(dest),
+        .content = content,
+    };
+    escher::Rectangle2D uv_rect = GetNormalizedUvRect(layer);
+    EXPECT_EQ(uv_rect.origin, glm::vec2(10.f, 20.f));
+    EXPECT_EQ(uv_rect.extent, glm::vec2(30.f, 40.f));
+    EXPECT_EQ(uv_rect.clockwise_uvs[0], glm::vec2(0.f, 0.f));
+    EXPECT_EQ(uv_rect.clockwise_uvs[1], glm::vec2(1.f, 0.f));
+    EXPECT_EQ(uv_rect.clockwise_uvs[2], glm::vec2(1.f, 1.f));
+    EXPECT_EQ(uv_rect.clockwise_uvs[3], glm::vec2(0.f, 1.f));
+  }
+}
 
 }  // namespace flatland

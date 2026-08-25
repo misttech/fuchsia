@@ -22,7 +22,7 @@
 #include "src/ui/scenic/tests/utils/promise.h"
 
 using allocation::BufferCollectionImporter;
-using flatland::ImageRect;
+using flatland::SrcToDest;
 using fuchsia_ui_composition::FrameInfo;
 using fuchsia_ui_composition::GetNextFrameArgs;
 using fuchsia_ui_composition::ScreenCaptureConfig;

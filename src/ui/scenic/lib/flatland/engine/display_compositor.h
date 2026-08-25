@@ -236,7 +236,7 @@ class DisplayCompositor final : public allocation::BufferCollectionImporter,
       FXL_EXCLUSIVE_LOCKS_REQUIRED(lock_);
 
   // Takes a solid color rectangle and directly composites it to a hardware layer on the display.
-  void ApplyLayerColor(const display::LayerId& layer_id, const ImageRect& rectangle,
+  void ApplyLayerColor(const display::LayerId& layer_id, const SrcToDest& geometry,
                        const std::array<float, 4>& color, const types::BlendMode& blend_mode)
       FXL_EXCLUSIVE_LOCKS_REQUIRED(lock_);
 

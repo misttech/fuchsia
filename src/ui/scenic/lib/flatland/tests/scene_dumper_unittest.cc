@@ -27,7 +27,7 @@
 #include "src/ui/scenic/lib/flatland/uber_struct_system.h"
 
 using allocation::ImageMetadata;
-using flatland::ImageRect;
+using flatland::SrcToDest;
 
 namespace {
 
@@ -82,9 +82,9 @@ std::string ImageStr(ImageMetadata image) {
   return output.str();
 }
 
-std::string RectStr(ImageRect rect) {
+std::string GeometryStr(SrcToDest geometry) {
   std::ostringstream output;
-  output << rect;
+  output << geometry;
   return output.str();
 }
 
@@ -286,16 +286,16 @@ void ExpectImageDumpCount(const std::vector<std::string>& line_dump, int expecte
   EXPECT_EQ(count, expected_count);
 }
 
-// Sets expectations that the image is dumped alongside its associated transform and image rect.
+// Sets expectations that the image is dumped alongside its associated transform and geometry.
 // Returns the line number of the line following the image dump. This can then be used to specify
 // |beginning_at| to check subsequent image dumps.
-size_t ExpectImageDump(ImageMetadata image, flatland::TransformHandle node, ImageRect rect,
+size_t ExpectImageDump(ImageMetadata image, flatland::TransformHandle node, SrcToDest geometry,
                        const std::vector<std::string>& line_dump, size_t beginning_at = 0) {
   auto line_number = FindImageDumpLineNumber(line_dump, beginning_at);
   EXPECT_LE(line_number, (size_t)-1);
   EXPECT_TRUE(cpp23::contains(line_dump[line_number++], ImageStr(image)));
   EXPECT_TRUE(cpp23::contains(line_dump[line_number++], NodeStr(node)));
-  EXPECT_TRUE(cpp23::contains(line_dump[line_number++], RectStr(rect)));
+  EXPECT_TRUE(cpp23::contains(line_dump[line_number++], GeometryStr(geometry)));
   return line_number;
 }
 
@@ -483,7 +483,7 @@ TEST(SceneDumperTest, TopologyTreeWithNames) {
   ExpectInstanceDump(5, names[4], lines);
 }
 
-TEST(SceneDumperTest, ImageRectangleMetadata) {
+TEST(SceneDumperTest, ImageMetadata) {
   UberStruct::InstanceMap uber_structs;
   GlobalTopologyData::LinkTopologyMap links;
 
@@ -534,16 +534,17 @@ TEST(SceneDumperTest, ImageRectangleMetadata) {
   image2.width = 300;
   image2.height = 400;
   image2.identifier = display::ImageId(2);
-  std::vector<ImageRect> image_rectangles;
-  image_rectangles.push_back(ImageRect({50, 60}, {200, 300}));
-  image_rectangles.push_back(ImageRect({90, 100}, {400, 500}));
+  std::vector<SrcToDest> geometries;
+  geometries.push_back(
+      SrcToDest(types::RectangleF({.x = 50, .y = 60, .width = 200, .height = 300})));
+  geometries.push_back(
+      SrcToDest(types::RectangleF({.x = 90, .y = 100, .width = 400, .height = 500})));
 
   std::vector<ResolvedLayer> resolved_layers;
   resolved_layers.push_back(ResolvedLayer{
-      .rect = image_rectangles[0],
+      .geometry = geometries[0],
       .multiply_color = {1.f, 1.f, 1.f, 1.f},
       .blend_mode = BlendMode::kReplace(),
-      .flip = fuchsia_ui_composition::ImageFlip::kNone,
       .content =
           ResolvedLayer::ImageContent{
               .image_id = image1.identifier,
@@ -553,10 +554,9 @@ TEST(SceneDumperTest, ImageRectangleMetadata) {
       .topology_index = 1,
   });
   resolved_layers.push_back(ResolvedLayer{
-      .rect = image_rectangles[1],
+      .geometry = geometries[1],
       .multiply_color = {.2f, .4f, .8f, 1.f},
       .blend_mode = BlendMode::kReplace(),
-      .flip = fuchsia_ui_composition::ImageFlip::kNone,
       .content =
           ResolvedLayer::ImageContent{
               .image_id = image2.identifier,
@@ -582,11 +582,11 @@ TEST(SceneDumperTest, ImageRectangleMetadata) {
   ExpectImageDumpCount(lines, 2);
   // First image dump.
   const auto& node = vectors[1][0].handle;
-  size_t next_image_dump_line_number = ExpectImageDump(image1, node, image_rectangles[0], lines);
+  size_t next_image_dump_line_number = ExpectImageDump(image1, node, geometries[0], lines);
   // Second image dump.
   const auto& second_node = vectors[2][0].handle;
   next_image_dump_line_number =
-      ExpectImageDump(image2, second_node, image_rectangles[1], lines, next_image_dump_line_number);
+      ExpectImageDump(image2, second_node, geometries[1], lines, next_image_dump_line_number);
   EXPECT_EQ(FindImageDumpLineNumber(lines, next_image_dump_line_number), (size_t)-1);
 }
 
@@ -621,7 +621,7 @@ TEST(SceneDumperTest, DumpsSolidColorLayer) {
 
   std::vector<ResolvedLayer> resolved_layers;
   resolved_layers.push_back(ResolvedLayer{
-      .rect = ImageRect({50, 60}, {200, 300}),
+      .geometry = SrcToDest(types::RectangleF({.x = 50, .y = 60, .width = 200, .height = 300})),
       .content = ResolvedLayer::SolidColorContent{.color = {.2f, .4f, .8f, 1.f}},
       .topology_index = 1,
   });
@@ -635,8 +635,9 @@ TEST(SceneDumperTest, DumpsSolidColorLayer) {
     if (cpp23::contains(lines[i], "solid color: (0.2,0.4,0.8,1)")) {
       found_solid_color_line = true;
       EXPECT_TRUE(cpp23::contains(lines[i + 1], "transform: (2:0)"));
-      EXPECT_TRUE(
-          cpp23::contains(lines[i + 2], "rect: ImageRect[origin:(50, 60) extent:(200, 300)"));
+      EXPECT_TRUE(cpp23::contains(
+          lines[i + 2],
+          "geometry: SrcToDest[src:{x=0, y=0, width=0, height=0} dest:{x=50, y=60, width=200, height=300}"));
       break;
     }
   }

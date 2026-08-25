@@ -28,7 +28,7 @@
 using testing::_;
 
 using allocation::Allocator;
-using flatland::ImageRect;
+using flatland::SrcToDest;
 using fuchsia::ui::composition::internal::FrameInfo;
 using fuchsia::ui::composition::internal::ScreenCaptureConfig;
 using fuchsia::ui::composition::internal::ScreenCaptureError;

@@ -17,13 +17,10 @@
 #include "src/ui/scenic/lib/allocation/id.h"
 #include "src/ui/scenic/lib/scheduling/id.h"
 #include "src/ui/scenic/lib/types/blend_mode.h"
-#include "src/ui/scenic/lib/types/id_type.h"
 #include "src/ui/scenic/lib/types/rectangle.h"
 #include "src/ui/scenic/lib/types/rectangle_f.h"
 #include "src/ui/scenic/lib/types/rotate_flip.h"
 #include "src/ui/scenic/lib/types/view_ref.h"
-
-#include <glm/glm.hpp>
 
 namespace flatland {
 
@@ -69,47 +66,35 @@ using BlendMode = types::BlendMode;
 
 using ViewRef = types::ViewRef;
 
-// Represents an image rectangle, parameterized by an origin point, an extent representing the width
-// and height. The texel UV coordinates specify, in clockwise order, the unnormalized clockwise
-// texel coordinates beginning at the top-left coordinate (in texture-space). The orientation
-// specifies the rotation applied to the rect. Note that origin and extent are specified in the
-// new global coordinate-space (i.e. after all transforms have been applied).
-//
-// TODO(https://fxbug.dev/446975761): consider replacing `orientation` with a `types::RotateFlip`
-// and `origin`/`extent` with a `types::RectangleF`.  This is not completely trivial.
-struct ImageRect {
-  ImageRect(const glm::vec2& origin, const glm::vec2& extent, const std::array<glm::ivec2, 4> uvs,
-            fuchsia::ui::composition::Orientation orientation)
-      : origin(origin), extent(extent), texel_uvs(uvs), orientation(orientation) {}
+// A mapping from a source region to a destination region, produced for each
+// resolved layer: sample the src sub-rectangle of the content (unnormalized
+// texture coordinates), apply transform (rotation and flip), and place the
+// result at dest (global screen space, after all transforms and clipping).
+// Solid color fills have no source; src is left default.
+struct SrcToDest {
+  SrcToDest(types::RectangleF src, types::RectangleF dest, types::RotateFlip transform)
+      : src(src), dest(dest), transform(transform) {}
 
-  // Creates an ImageRect with the specified width and height. |texel_uvs| are initialized using the
-  // specified |extent| of the rectangle. Note that this may not be equal to the image you are
-  // sampling from.
-  ImageRect(const glm::vec2& origin, const glm::vec2& extent)
-      : origin(origin),
-        extent(extent),
-        orientation(fuchsia::ui::composition::Orientation::CCW_0_DEGREES) {
-    texel_uvs = {glm::vec2(0, 0), glm::vec2(extent.x, 0), glm::vec2(extent.x, extent.y),
-                 glm::vec2(0, extent.y)};
-  }
+  explicit SrcToDest(types::RectangleF dest)
+      : src(), dest(dest), transform(types::RotateFlip::kIdentity()) {}
 
-  ImageRect() = default;
+  explicit SrcToDest(types::RectangleF::ConstructorArgs dest)
+      : src(), dest(dest), transform(types::RotateFlip::kIdentity()) {}
 
-  glm::vec2 origin = glm::vec2(0, 0);
-  glm::vec2 extent = glm::vec2(1, 1);
-  std::array<glm::ivec2, 4> texel_uvs = {glm::ivec2(0, 0), glm::ivec2(1, 0), glm::ivec2(1, 1),
-                                         glm::ivec2(0, 1)};
-  fuchsia::ui::composition::Orientation orientation;
+  SrcToDest() = default;
 
-  // Two `ImageRect` are identical if all of the following are true:
-  // - orientations are identical
-  // - texel_uvs are identical
-  // - origins within epsilon-distance
-  // - extents within epsilon-distance
-  bool operator==(const ImageRect& other) const;
+  types::RectangleF src;
+  types::RectangleF dest;
+  types::RotateFlip transform = types::RotateFlip::kIdentity();
+
+  // Two `SrcToDest` are identical if all of the following are true:
+  // - transforms identical
+  // - dests within epsilon-distance
+  // - srcs within epsilon-distance
+  bool operator==(const SrcToDest& other) const;
 };
 
-std::ostream& operator<<(std::ostream& str, const flatland::ImageRect& r);
+std::ostream& operator<<(std::ostream& str, const flatland::SrcToDest& s2d);
 
 // A flexible representation of a flatland hit region.
 class HitRegion {
@@ -152,8 +137,8 @@ struct ResolvedLayer {
   // Reference to a sysmem image bound to a layer.
   struct ImageContent {
     allocation::GlobalImageId image_id = allocation::kInvalidImageId;
-    uint32_t width = 0;
-    uint32_t height = 0;
+    uint32_t width = 0;   // full image width
+    uint32_t height = 0;  // full image height
     bool operator==(const ImageContent&) const = default;
   };
 
@@ -168,14 +153,16 @@ struct ResolvedLayer {
     bool operator==(const SolidColorContent&) const = default;
   };
 
-  ImageRect rect;
+  // The layer's resolved geometry: which source region it samples, the screen-space
+  // destination it maps to, and the rotate/flip between them.
+  SrcToDest geometry;
+
   // Encodes the effective opacity (layer opacity combined with inherited transform opacity),
   // using only the alpha channel when `blend_mode == kStraightAlpha`, and all 4 channels for
   // premultiplied blend modes.  Content opacity does not reside here; it is encoded in the
   // pixels for `ImageContent`, or in the `color` field of `SolidColorContent`.
   std::array<float, 4> multiply_color = {1.f, 1.f, 1.f, 1.f};
   types::BlendMode blend_mode = types::BlendMode::kReplace();
-  fuchsia_ui_composition::ImageFlip flip = fuchsia_ui_composition::ImageFlip::kNone;
   std::variant<ImageContent, SolidColorContent> content;
 
   // Sentinel value representing an unset or invalid topology index (primarily for unit tests).
