@@ -4448,4 +4448,229 @@ mod tests {
         let read_bytes = reader_thread.join().unwrap();
         assert_eq!(read_bytes.len(), 4096);
     }
+
+    #[fuchsia::test]
+    async fn test_mapper_hierarchical_session() {
+        use crate::callback_interface::SessionManager;
+        use crate::testing::MockInterface;
+
+        let (tx, rx) = std::sync::mpsc::channel();
+        let interface = Arc::new(MockInterface::new(tx));
+        let session_manager = Arc::new(SessionManager::new(interface.clone(), 512));
+        let block_server = BlockServer::new(512, session_manager.clone());
+
+        let sm_completer = session_manager.clone();
+        std::thread::spawn(move || {
+            while let Ok(req) = rx.recv() {
+                if let Operation::Read { vmo_offset, block_count, .. } = req.operation {
+                    if let Some(vmo) = req.vmo {
+                        let data = vec![0xABu8; (block_count * 512) as usize];
+                        vmo.write(&data, vmo_offset).unwrap();
+                    }
+                }
+                sm_completer.complete_request(req.request_id, Ok(()));
+            }
+        });
+
+        let (mapper_proxy, mapper_stream) =
+            fidl::endpoints::create_proxy_and_stream::<fblock::MapperMarker>();
+        let scope = fasync::Scope::new();
+        scope.spawn(async move {
+            let _ = block_server.handle_mapper_requests(mapper_stream).await;
+        });
+
+        // 1. Prepare and open intermediate root session without pager.
+        let (root_session_proxy, root_session_server) =
+            fidl::endpoints::create_proxy::<fblock::MapperSessionMarker>();
+        let root_mapping_vmo = zx::Vmo::create(65536).unwrap();
+
+        // Register partition in root session at key 500:
+        // Logical 0..8192 maps to physical device offset 4096..12288.
+        let partition_key = 500u64;
+        let partition_extents =
+            mapping::Extents::encode_extents(&[mapping::Extent::new(0..8192, Some(4096))]);
+        let mut payload_bytes = Vec::new();
+        for w in &partition_extents {
+            payload_bytes.extend_from_slice(&w.to_le_bytes());
+        }
+        let cmd = mapping::RawMappingCommand {
+            opcode: mapping::MAPPINGS_COMMAND,
+            offset: 0,
+            key: partition_key,
+            stored_size: 8192,
+            metadata_count: 0,
+            blob_count: partition_extents.len() as u32,
+        };
+        let mut sender = vmo_fifo::SyncSender::<mapping::RawMappingCommand>::new(
+            root_mapping_vmo.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap(),
+            1024,
+            256,
+        )
+        .unwrap();
+        let mut payload_buf = sender.reserve_payload(payload_bytes.len()).unwrap();
+        payload_buf.data().copy_from_slice(&payload_bytes);
+        payload_buf.commit(cmd).unwrap();
+
+        let res = mapper_proxy
+            .open_session(root_session_server, root_mapping_vmo, None, None)
+            .await
+            .unwrap();
+        assert_matches!(res, Ok(()));
+
+        // 2. Open child session with pager through partition key 500.
+        let pager = Arc::new(zx::Pager::create(zx::PagerOptions::empty()).unwrap());
+        let port = zx::Port::create();
+        let child_key = 2002u64;
+        let paged_vmo = pager.create_vmo(zx::VmoOptions::empty(), &port, child_key, 4096).unwrap();
+
+        let child_mapping_vmo = zx::Vmo::create(65536).unwrap();
+        let delivery_queue = zx::Vmo::create(4096).unwrap();
+
+        let child_extents =
+            mapping::Extents::encode_extents(&[mapping::Extent::new(0..4096, Some(0))]);
+        let mut child_payload_bytes = Vec::new();
+        for w in &child_extents {
+            child_payload_bytes.extend_from_slice(&w.to_le_bytes());
+        }
+        let child_cmd = mapping::RawMappingCommand {
+            opcode: mapping::MAPPINGS_COMMAND,
+            offset: 0,
+            key: child_key,
+            stored_size: 4096,
+            metadata_count: 0,
+            blob_count: child_extents.len() as u32,
+        };
+        let mut child_sender = vmo_fifo::SyncSender::<mapping::RawMappingCommand>::new(
+            child_mapping_vmo.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap(),
+            1024,
+            256,
+        )
+        .unwrap();
+        let mut child_payload_buf =
+            child_sender.reserve_payload(child_payload_bytes.len()).unwrap();
+        child_payload_buf.data().copy_from_slice(&child_payload_bytes);
+        child_payload_buf.commit(child_cmd).unwrap();
+
+        let mut child_res = Err(zx::Status::NOT_FOUND);
+        for _ in 0..100 {
+            let (_child_session_proxy, child_session_server) =
+                fidl::endpoints::create_proxy::<fblock::MapperSessionMarker>();
+            let child_res_raw = root_session_proxy
+                .open_child_session(
+                    child_session_server,
+                    child_mapping_vmo.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap(),
+                    partition_key,
+                    Some(port.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap()),
+                    Some(delivery_queue.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap()),
+                )
+                .await
+                .unwrap();
+            if child_res_raw.is_ok() {
+                child_res = Ok(());
+                break;
+            }
+            fasync::Timer::new(std::time::Duration::from_millis(10)).await;
+        }
+        assert_matches!(child_res, Ok(()));
+
+        let verifier = interface.verifier.lock().as_ref().unwrap().clone();
+        verifier.set_pager(pager);
+        verifier
+            .register_vmo(child_key, paged_vmo.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap());
+
+        let reader_thread = std::thread::spawn(move || {
+            let mut buf = [0u8; 4096];
+            paged_vmo.read(&mut buf, 0).expect("paged vmo read failed");
+            buf
+        });
+
+        let read_bytes = reader_thread.join().unwrap();
+        assert_eq!(read_bytes.len(), 4096);
+        assert_eq!(read_bytes, [0xABu8; 4096]);
+    }
+
+    #[fuchsia::test]
+    async fn test_mapper_child_session_closed_when_parent_closed() {
+        use crate::callback_interface::SessionManager;
+        use crate::testing::MockInterface;
+        use fidl::endpoints::Proxy as _;
+
+        let (tx, _rx) = std::sync::mpsc::channel();
+        let interface = Arc::new(MockInterface::new(tx));
+        let session_manager = Arc::new(SessionManager::new(interface.clone(), 512));
+        let block_server = BlockServer::new(512, session_manager.clone());
+
+        let (mapper_proxy, mapper_stream) =
+            fidl::endpoints::create_proxy_and_stream::<fblock::MapperMarker>();
+        let scope = fasync::Scope::new();
+        scope.spawn(async move {
+            let _ = block_server.handle_mapper_requests(mapper_stream).await;
+        });
+
+        // 1. Prepare and open intermediate root session without pager.
+        let (root_session_proxy, root_session_server) =
+            fidl::endpoints::create_proxy::<fblock::MapperSessionMarker>();
+        let root_mapping_vmo = zx::Vmo::create(65536).unwrap();
+
+        let partition_key = 500u64;
+        let partition_extents =
+            mapping::Extents::encode_extents(&[mapping::Extent::new(0..8192, Some(4096))]);
+        let mut payload_bytes = Vec::new();
+        for w in &partition_extents {
+            payload_bytes.extend_from_slice(&w.to_le_bytes());
+        }
+        let cmd = mapping::RawMappingCommand {
+            opcode: mapping::MAPPINGS_COMMAND,
+            offset: 0,
+            key: partition_key,
+            stored_size: 8192,
+            metadata_count: 0,
+            blob_count: partition_extents.len() as u32,
+        };
+        let mut sender = vmo_fifo::SyncSender::<mapping::RawMappingCommand>::new(
+            root_mapping_vmo.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap(),
+            1024,
+            256,
+        )
+        .unwrap();
+        let mut payload_buf = sender.reserve_payload(payload_bytes.len()).unwrap();
+        payload_buf.data().copy_from_slice(&payload_bytes);
+        payload_buf.commit(cmd).unwrap();
+
+        let res = mapper_proxy
+            .open_session(root_session_server, root_mapping_vmo, None, None)
+            .await
+            .unwrap();
+        assert_matches!(res, Ok(()));
+
+        // 2. Open child session.
+        let child_mapping_vmo = zx::Vmo::create(65536).unwrap();
+        let mut child_session = None;
+        for _ in 0..100 {
+            let (child_session_proxy, child_session_server) =
+                fidl::endpoints::create_proxy::<fblock::MapperSessionMarker>();
+            let child_res_raw = root_session_proxy
+                .open_child_session(
+                    child_session_server,
+                    child_mapping_vmo.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap(),
+                    partition_key,
+                    None,
+                    None,
+                )
+                .await
+                .unwrap();
+            if child_res_raw.is_ok() {
+                child_session = Some(child_session_proxy);
+                break;
+            }
+            fasync::Timer::new(std::time::Duration::from_millis(10)).await;
+        }
+        let child_session_proxy = child_session.expect("Failed to open child session");
+
+        // Close the parent session.
+        root_session_proxy.close().await.unwrap().expect("Close parent session failed");
+
+        // The child session should be closed as well.
+        child_session_proxy.on_closed().await.unwrap();
+    }
 }

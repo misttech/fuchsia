@@ -7,8 +7,9 @@ pub use ring_allocator::AllocationToken;
 use ring_allocator::RingAllocator;
 
 mod signal;
+pub use signal::SIG_SHUTDOWN;
 use signal::{
-    EventSignal, SIG_DATA_AVAILABLE_0, SIG_DATA_AVAILABLE_1, SIG_SHUTDOWN, SIG_SPACE_AVAILABLE_0,
+    EventSignal, SIG_DATA_AVAILABLE_0, SIG_DATA_AVAILABLE_1, SIG_SPACE_AVAILABLE_0,
     SIG_SPACE_AVAILABLE_1,
 };
 use std::fmt::{Debug, Formatter};
