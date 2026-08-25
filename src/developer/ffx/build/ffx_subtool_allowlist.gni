@@ -7,6 +7,8 @@
 # TODO(https://fxbug.dev/42081073): Stabilize these and remove this list.
 ffx_subtool_fidl_partner_unstable_allowlist = [
   "//sdk/fidl/fuchsia.power.broker:fuchsia.power.broker",
+  "//sdk/fidl/fuchsia.hardware.power.battery:fuchsia.hardware.power.battery",
+  "//sdk/fidl/fuchsia.hardware.power.source:fuchsia.hardware.power.source",
 
   # Used by Honeydew via "fuchsia.wlan.device.service".
   # Though this is not ffx, it uses the same mechanism for host tools.

@@ -41,6 +41,7 @@ from honeydew.affordances.connectivity.bluetooth.utils import (
 )
 from honeydew.affordances.connectivity.wlan import wlan_policy, wlan_policy_ap
 from honeydew.affordances.device_knobs import device_knobs
+from honeydew.affordances.drivers import battery
 from honeydew.affordances.hello_world import hello_world, hello_world_using_ffx
 from honeydew.affordances.media import media, media_using_fc
 from honeydew.affordances.power.system_power_state_controller import (
@@ -692,6 +693,21 @@ class FuchsiaDevice(
             wlan.WlanCore object
         """
         return wlan_core.WlanCore(
+            device_name=self.device_name,
+            ffx=self.ffx,
+            fuchsia_controller=self.fuchsia_controller,
+            reboot_affordance=self,
+            fuchsia_device_close=self,
+        )
+
+    @properties.Affordance
+    def battery(self) -> battery.Battery:
+        """Returns a battery affordance object.
+
+        Returns:
+            battery.Battery object
+        """
+        return battery.Battery(
             device_name=self.device_name,
             ffx=self.ffx,
             fuchsia_controller=self.fuchsia_controller,

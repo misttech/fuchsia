@@ -1,0 +1,179 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+"""Battery affordance implementation using Fuchsia Controller."""
+
+from __future__ import annotations
+
+import logging
+
+import fidl_fuchsia_hardware_power_battery as f_battery
+import fidl_fuchsia_hardware_power_source as f_power_source
+from fuchsia_controller_py import FcTransportStatus, ZxStatus
+from honeydew import affordances_capable, errors
+from honeydew.affordances.affordance import AsyncLazyReady, ensure_ready
+from honeydew.affordances.drivers.battery.utils.errors import (
+    BatteryDeviceNotFoundError,
+    BatteryRequestError,
+    HoneydewBatteryError,
+)
+from honeydew.affordances.drivers.battery.utils.types import (
+    BatterySpec,
+    BatteryStatus,
+)
+from honeydew.transports.ffx import ffx as ffx_transport
+from honeydew.transports.ffx import types as ffx_types
+from honeydew.transports.fuchsia_controller import (
+    fuchsia_controller as fc_transport,
+)
+from honeydew.typing.custom_types import FidlEndpoint
+
+_LOGGER: logging.Logger = logging.getLogger(__name__)
+
+# Capability or moniker definition
+_BATTERY_MONIKER = "bootstrap/power-manager"
+_BATTERY_CAPABILITY = "fuchsia.hardware.power.battery.Battery"
+_REQUIRED_CAPABILITIES = [_BATTERY_CAPABILITY]
+
+
+class Battery(AsyncLazyReady):
+    """Battery affordance implemented with Fuchsia Controller."""
+
+    def __init__(
+        self,
+        device_name: str,
+        ffx: ffx_transport.FFX,
+        fuchsia_controller: fc_transport.FuchsiaController,
+        reboot_affordance: affordances_capable.RebootCapableDevice,
+        fuchsia_device_close: affordances_capable.FuchsiaDeviceClose,
+    ) -> None:
+        """Initialize Battery affordance.
+
+        Args:
+            device_name: Target device name.
+            ffx: FFX transport instance.
+            fuchsia_controller: Fuchsia Controller transport instance.
+            reboot_affordance: Callback registry for reboot events.
+            fuchsia_device_close: Callback registry for close events.
+        """
+        super().__init__()
+        self._device_name: str = device_name
+        self._ffx: ffx_transport.FFX = ffx
+        self._fc_transport: fc_transport.FuchsiaController = fuchsia_controller
+        self._reboot_affordance = reboot_affordance
+        self._fuchsia_device_close = fuchsia_device_close
+        self._proxy: f_battery.BatteryClient | None = None
+
+        self.verify_supported()
+
+        self._reboot_affordance.register_for_on_device_boot(self.make_ready)
+        self._fuchsia_device_close.register_for_on_device_close(self._close)
+
+    def verify_supported(self) -> None:
+        """Verifies that the Battery affordance is supported on the target device."""
+        for capability in _REQUIRED_CAPABILITIES:
+            output = self._ffx.run(
+                ["component", "capability", capability],
+                machine=ffx_types.MachineFormat.RAW,
+            )
+            if capability not in output:
+                raise errors.NotSupportedError(
+                    f"Capability '{capability}' not supported on {self._device_name}"
+                )
+
+    async def make_ready(self) -> None:
+        """Establishes connection to the Battery FIDL service."""
+        await super().make_ready()
+        try:
+            endpoint = FidlEndpoint(_BATTERY_MONIKER, _BATTERY_CAPABILITY)
+            channel = self._fc_transport.connect_device_proxy(endpoint)
+            self._proxy = f_battery.BatteryClient(channel)
+        except Exception as err:
+            raise BatteryDeviceNotFoundError(
+                f"Failed to connect to Battery proxy at {_BATTERY_MONIKER}"
+            ) from err
+
+    async def _close(self) -> None:
+        """Releases the client connection."""
+        self._proxy = None
+
+    @ensure_ready
+    async def get_spec(self) -> BatterySpec:
+        """Retrieves static hardware characteristics of the battery.
+
+        Returns:
+            BatterySpec containing battery hardware metadata.
+
+        Raises:
+            BatteryRequestError: If driver returns an error.
+            HoneydewBatteryError: If transport fails.
+        """
+        assert self._proxy is not None
+        try:
+            res = await self._proxy.get_spec()
+            if res.err is not None:
+                raise BatteryRequestError("get_spec", res.err)
+            assert res.response is not None
+            return BatterySpec.from_fidl(res.response.spec)
+        except (FcTransportStatus, ZxStatus) as err:
+            raise HoneydewBatteryError(
+                "Transport error during get_spec"
+            ) from err
+
+    @ensure_ready
+    async def get_status(self) -> BatteryStatus:
+        """Retrieves dynamic telemetry and charge status of the battery.
+
+        Returns:
+            BatteryStatus containing current battery metrics.
+
+        Raises:
+            BatteryRequestError: If driver returns an error.
+            HoneydewBatteryError: If transport fails.
+        """
+        assert self._proxy is not None
+        try:
+            res = await self._proxy.get_status()
+            if res.err is not None:
+                raise BatteryRequestError("get_status", res.err)
+            assert res.response is not None
+            return BatteryStatus.from_fidl(res.response.status)
+        except (FcTransportStatus, ZxStatus) as err:
+            raise HoneydewBatteryError(
+                "Transport error during get_status"
+            ) from err
+
+    @ensure_ready
+    async def watch(
+        self,
+        interest: BatteryStatus | None = None,
+        wake_on: BatteryStatus | None = None,
+    ) -> BatteryStatus:
+        """Hanging get for battery status updates.
+
+        Args:
+            interest: BatteryStatus mask specifying fields to be notified about.
+            wake_on: BatteryStatus mask specifying fields that should trigger system wake.
+
+        Returns:
+            BatteryStatus containing the updated fields.
+
+        Raises:
+            BatteryRequestError: If driver returns an error.
+            HoneydewBatteryError: If transport fails.
+        """
+        assert self._proxy is not None
+        fidl_interest = interest.to_fidl() if interest else f_battery.Status()
+        fidl_wake_on = wake_on.to_fidl() if wake_on else f_battery.Status()
+        try:
+            res = await self._proxy.watch(
+                interest=fidl_interest,
+                wake_on=fidl_wake_on,
+                lease=None,
+            )
+            if res.err is not None:
+                raise BatteryRequestError("watch", res.err)
+            assert res.response is not None
+            return BatteryStatus.from_fidl(res.response.status)
+        except (FcTransportStatus, ZxStatus) as err:
+            raise HoneydewBatteryError("Transport error during watch") from err

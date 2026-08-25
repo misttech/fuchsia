@@ -260,6 +260,9 @@ python_host_test("unit_tests") {
      ```gn
      "//sdk/fidl/<library>:<library>_python",
      ```
+     > [!NOTE]
+     > Do not add FIDL dependencies directly to `group("honeydew")`. Adding them to `group("honeydew_fidl_ir_and_deps")` ensures non-test targets that depend on `honeydew_no_testonly` receive the bindings at runtime.
+     > If the FIDL library is unstable (`stable = false` or not in partner SDK), add it to `host_test_allowlist.gni` and `src/developer/ffx/build/ffx_subtool_allowlist.gni` (`ffx_subtool_fidl_partner_unstable_allowlist`) to satisfy IDK compatibility checks.
    - Add unit test targets to `group("unit_tests")`:
      ```gn
      "honeydew/affordances/<domain>/<name>/tests:unit_tests($host_toolchain)",
