@@ -31,9 +31,9 @@ from honeydew.typing.custom_types import FidlEndpoint
 _LOGGER: logging.Logger = logging.getLogger(__name__)
 
 # Capability or moniker definition
-_BATTERY_MONIKER = "bootstrap/power-manager"
-_BATTERY_CAPABILITY = "fuchsia.hardware.power.battery.Battery"
-_REQUIRED_CAPABILITIES = [_BATTERY_CAPABILITY]
+_BATTERY_MONIKER = "bootstrap/base-drivers:fake-battery"
+_BATTERY_CAPABILITY = "fuchsia.hardware.power.battery.Service/default/battery"
+_REQUIRED_CAPABILITIES = ["fuchsia.hardware.power.battery.Service"]
 
 
 class Battery(AsyncLazyReady):
@@ -81,16 +81,46 @@ class Battery(AsyncLazyReady):
                     f"Capability '{capability}' not supported on {self._device_name}"
                 )
 
+    def _get_battery_moniker(self) -> str:
+        """Determines the active battery driver moniker on the target."""
+        output = self._ffx.run(
+            [
+                "component",
+                "capability",
+                "fuchsia.hardware.power.battery.Service",
+            ],
+            machine=ffx_types.MachineFormat.RAW,
+        )
+        for line in output.splitlines():
+            line = line.strip()
+            if (
+                "declared capability `fuchsia.hardware.power.battery.Service`"
+                in line
+                and "devfs_driver" not in line
+            ):
+                parts = line.split("`")
+                if len(parts) >= 2:
+                    return parts[1]
+            if (
+                "exposed capability `fuchsia.hardware.power.battery.Service` from self to parent"
+                in line
+            ):
+                parts = line.split("`")
+                if len(parts) >= 2:
+                    return parts[1]
+        return _BATTERY_MONIKER
+
     async def make_ready(self) -> None:
         """Establishes connection to the Battery FIDL service."""
         await super().make_ready()
         try:
-            endpoint = FidlEndpoint(_BATTERY_MONIKER, _BATTERY_CAPABILITY)
+            moniker = self._get_battery_moniker()
+            endpoint = FidlEndpoint(moniker, _BATTERY_CAPABILITY)
             channel = self._fc_transport.connect_device_proxy(endpoint)
             self._proxy = f_battery.BatteryClient(channel)
         except Exception as err:
             raise BatteryDeviceNotFoundError(
-                f"Failed to connect to Battery proxy at {_BATTERY_MONIKER}"
+                f"Failed to connect to Battery proxy at {_BATTERY_CAPABILITY}"
             ) from err
 
     async def _close(self) -> None:

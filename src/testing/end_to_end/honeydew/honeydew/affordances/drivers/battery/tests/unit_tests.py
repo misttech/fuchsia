@@ -30,7 +30,7 @@ class BatteryTests(unittest.IsolatedAsyncioTestCase):
         GlobalHandleWaker()._reset_for_testing()
 
         self.ffx_obj = mock.MagicMock(spec=ffx_transport.FFX, autospec=True)
-        self.ffx_obj.run.return_value = "fuchsia.hardware.power.battery.Battery"
+        self.ffx_obj.run.return_value = "fuchsia.hardware.power.battery.Service"
 
         self.reboot_affordance_obj = mock.MagicMock(
             spec=affordances_capable.RebootCapableDevice,
