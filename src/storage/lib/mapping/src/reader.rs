@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::{BLOCK_SIZE, Extents};
-use anyhow::{Error, anyhow};
+use crate::{BLOCK_SIZE, Extents, File};
+use anyhow::{Error, anyhow, bail};
 use fuchsia_sync::Mutex;
 use std::cmp::{Ordering, Reverse, max, min};
 use std::collections::BinaryHeap;
@@ -220,74 +220,190 @@ pub fn read_aligned_range<F>(
         let chunk_index = next_chunk_index;
         next_chunk_index += 1;
 
-        let (mut splittable, handle) = SplittableBuffer::new(buffer);
+        let context_clone = context.clone();
+        if let Err(e) = buffer.split(
+            |splittable| {
+                for extent in extents.iter_extents(offset) {
+                    if extent.logical_range().start >= actual_end {
+                        break;
+                    }
+                    let slice_start = max(extent.logical_range().start, offset);
+                    let slice_end = min(extent.logical_range().end, actual_end);
+                    let len_in_buf = (slice_end - slice_start) as usize;
 
-        for extent in extents.iter_extents(offset) {
-            if extent.logical_range().start >= actual_end {
-                break;
-            }
-            let slice_start = max(extent.logical_range().start, offset);
-            let slice_end = min(extent.logical_range().end, actual_end);
-            let len_in_buf = (slice_end - slice_start) as usize;
-            let mut child_buf = splittable.take_prefix(len_in_buf);
-
-            if let Some(dev_offset) = extent.device_offset() {
-                let extent_dev_offset = dev_offset + (slice_start - extent.logical_range().start);
-                let handle_clone = handle.clone();
-                let context_clone = context.clone();
-                if let Err(e) = service.read_blocks(
-                    extent_dev_offset,
-                    child_buf,
-                    Box::new(move |res| match res {
-                        Ok(buf) => {
-                            drop(buf);
-                            if let Some(merged) = handle_clone.into_buffer() {
-                                ReadContext::on_block_read_completed(
-                                    &context_clone,
-                                    chunk_index,
-                                    Ok(merged),
-                                );
-                            }
-                        }
-                        Err(e) => {
-                            ReadContext::on_block_read_completed(
-                                &context_clone,
-                                chunk_index,
-                                Err(e),
-                            );
-                        }
-                    }),
-                ) {
-                    ReadContext::on_block_read_completed(&context, chunk_index, Err(e));
-                    return;
+                    if let Some(dev_offset) = extent.device_offset() {
+                        let extent_dev_offset =
+                            dev_offset + (slice_start - extent.logical_range().start);
+                        let (child_buf, sub_handle) = splittable.take_prefix(len_in_buf);
+                        service.read_blocks(
+                            extent_dev_offset,
+                            child_buf,
+                            Box::new(move |res| {
+                                sub_handle.merge(|| {
+                                    let _buf = res?;
+                                    Ok(())
+                                });
+                            }),
+                        )?;
+                    } else {
+                        splittable.fill_zeros(len_in_buf);
+                    }
                 }
-            } else {
-                child_buf.fill(0);
-            }
-        }
 
-        let remaining_len = splittable.remaining_range().len();
-        if remaining_len > 0 {
-            ReadContext::on_block_read_completed(
-                &context,
-                chunk_index,
-                Err(anyhow!(
-                    "read_aligned_range: requested range extends {remaining_len} bytes beyond the \
-                     end of extents mappings"
-                )),
-            );
+                let remaining_len = splittable.remaining_range().len();
+                if remaining_len > 0 {
+                    bail!(
+                        "read_aligned_range: requested range extends {remaining_len} bytes \
+                         beyond the end of extents mappings"
+                    );
+                }
+
+                Ok(())
+            },
+            move |res| ReadContext::on_block_read_completed(&context_clone, chunk_index, res),
+        ) {
+            ReadContext::on_block_read_completed(&context, chunk_index, Err(e));
             return;
-        }
-
-        drop(splittable);
-        if let Some(merged) = handle.into_buffer() {
-            ReadContext::on_block_read_completed(&context, chunk_index, Ok(merged));
         }
 
         offset = actual_end;
     }
 
     context.lock().total_chunks = Some(next_chunk_index);
+}
+
+/// Reads data for `dest_buffer` starting at `logical_offset` according to `extents` from `service`.
+///
+/// If the range is contiguous within a single extent, issues a single read. If the range spans
+/// multiple extents or holes, splits `dest_buffer` across the extents and reconstructs the
+/// original buffer when all reads complete.
+pub fn read_buffer_from_extents(
+    extents: &Extents,
+    logical_offset: u64,
+    dest_buffer: OwnedBuffer,
+    service: &(impl BlockService + ?Sized),
+    on_complete: impl FnOnce(Result<OwnedBuffer, Error>) + Send + 'static,
+) -> Result<(), Error> {
+    let total_len = dest_buffer.len() as u64;
+    if total_len == 0 {
+        on_complete(Ok(dest_buffer));
+        return Ok(());
+    }
+
+    dest_buffer.split(
+        |splittable| {
+            let end_offset = logical_offset + total_len;
+
+            // Fast path: Check if the entire range is covered by a single contiguous extent.
+            if let Some(extent) = extents.iter_extents(logical_offset).next() {
+                let logical = extent.logical_range();
+                if logical.start <= logical_offset && logical.end >= end_offset {
+                    if let Some(dev_offset) = extent.device_offset() {
+                        let extent_dev_offset = dev_offset + (logical_offset - logical.start);
+                        let (child_buf, sub_handle) = splittable.take_prefix(total_len as usize);
+                        return service.read_blocks(
+                            extent_dev_offset,
+                            child_buf,
+                            Box::new(move |res| {
+                                sub_handle.merge(|| {
+                                    let _buf = res?;
+                                    Ok(())
+                                });
+                            }),
+                        );
+                    } else {
+                        // Sparse hole covering the full range.
+                        splittable.fill_zeros(total_len as usize);
+                        return Ok(());
+                    }
+                }
+            }
+
+            // Multi-extent path using SplittableBuffer.
+            let mut current_offset = logical_offset;
+            for extent in extents.iter_extents(logical_offset) {
+                if extent.logical_range().start >= end_offset {
+                    break;
+                }
+                let slice_start = max(extent.logical_range().start, current_offset);
+                let slice_end = min(extent.logical_range().end, end_offset);
+                if slice_start >= slice_end {
+                    continue;
+                }
+
+                if slice_start > current_offset {
+                    let hole_len = (slice_start - current_offset) as usize;
+                    splittable.fill_zeros(hole_len);
+                }
+
+                let len_in_buf = (slice_end - slice_start) as usize;
+                if let Some(dev_offset) = extent.device_offset() {
+                    let extent_dev_offset =
+                        dev_offset + (slice_start - extent.logical_range().start);
+                    let (child_buf, sub_handle) = splittable.take_prefix(len_in_buf);
+                    service.read_blocks(
+                        extent_dev_offset,
+                        child_buf,
+                        Box::new(move |res| {
+                            sub_handle.merge(|| {
+                                let _buf = res?;
+                                Ok(())
+                            });
+                        }),
+                    )?;
+                } else {
+                    splittable.fill_zeros(len_in_buf);
+                }
+                current_offset = slice_end;
+            }
+
+            if current_offset < end_offset {
+                let hole_len = (end_offset - current_offset) as usize;
+                splittable.fill_zeros(hole_len);
+            }
+
+            Ok(())
+        },
+        on_complete,
+    )
+}
+
+/// A [`BlockService`] that maps logical block offsets through the extents of a mapped [`File`]
+/// in a parent session.
+pub struct ChildBlockService<S: ?Sized> {
+    parent_service: Arc<S>,
+    file: Arc<File>,
+}
+
+impl<S: BlockService + ?Sized> ChildBlockService<S> {
+    pub fn new(parent_service: Arc<S>, file: Arc<File>) -> Self {
+        Self { parent_service, file }
+    }
+
+    pub fn file(&self) -> &Arc<File> {
+        &self.file
+    }
+}
+
+impl<S: BlockService + ?Sized> BlockService for ChildBlockService<S> {
+    fn allocate_buffer(&self, max_len: usize) -> OwnedBuffer {
+        self.parent_service.allocate_buffer(max_len)
+    }
+
+    fn read_blocks(
+        &self,
+        device_offset: u64,
+        dest_buffer: OwnedBuffer,
+        on_complete: Box<dyn FnOnce(Result<OwnedBuffer, Error>) + Send>,
+    ) -> Result<(), Error> {
+        read_buffer_from_extents(
+            self.file.extents(),
+            device_offset,
+            dest_buffer,
+            self.parent_service.as_ref(),
+            on_complete,
+        )
+    }
 }
 
 #[cfg(test)]
@@ -864,7 +980,7 @@ pub(crate) mod tests {
             ControlFlow::Continue(())
         });
         service.0.lock().clear();
-        assert_eq!(*err_msg.lock(), "ReadContext dropped before completion");
+        assert_eq!(*err_msg.lock(), "Read sub-request dropped before completion");
     }
 
     #[test]
@@ -964,5 +1080,281 @@ pub(crate) mod tests {
         });
 
         assert_eq!(call_count.load(Ordering::Relaxed), 1);
+    }
+
+    #[test]
+    fn test_read_buffer_from_extents_single_extent() {
+        let mut device_data = vec![0u8; 16384];
+        device_data[4096..8192].fill(0xAA);
+        let service = Arc::new(FakeBlockService::new(device_data));
+
+        // Logical 0..4096 maps to device 4096..8192.
+        let extents = vec![Extent::new(0..4096, Some(4096))];
+        let encoded = Extents::encode_extents(&extents);
+        let mappings = Extents::from_encoded(encoded).unwrap();
+
+        let dest = service.allocate_buffer(4096);
+        let (tx, rx) = std::sync::mpsc::channel();
+        read_buffer_from_extents(&mappings, 0, dest, service.as_ref(), move |res| {
+            tx.send(res).unwrap();
+        })
+        .unwrap();
+
+        let buffer = rx.recv().unwrap().unwrap();
+        assert_eq!(buffer.len(), 4096);
+        assert!(buffer.as_ptr_slice().iter_as::<u8>().all(|b| b == 0xAA));
+    }
+
+    #[test]
+    fn test_read_buffer_from_extents_sparse_hole_fast_path() {
+        let service = Arc::new(FakeBlockService::new(vec![0u8; 16384]));
+
+        // Logical 0..4096 is a sparse hole (None).
+        let extents = vec![Extent::new(0..4096, None)];
+        let encoded = Extents::encode_extents(&extents);
+        let mappings = Extents::from_encoded(encoded).unwrap();
+
+        let dest = service.allocate_buffer(4096);
+        let (tx, rx) = std::sync::mpsc::channel();
+        read_buffer_from_extents(&mappings, 0, dest, service.as_ref(), move |res| {
+            tx.send(res).unwrap();
+        })
+        .unwrap();
+
+        let buffer = rx.recv().unwrap().unwrap();
+        assert_eq!(buffer.len(), 4096);
+        assert!(buffer.as_ptr_slice().iter_as::<u8>().all(|b| b == 0x00));
+    }
+
+    #[test]
+    fn test_read_buffer_from_extents_multi_extent_and_holes() {
+        let mut device_data = vec![0u8; 32768];
+        device_data[0..4096].fill(0x11);
+        device_data[8192..12288].fill(0x22);
+        let service = Arc::new(FakeBlockService::new(device_data));
+
+        // Child maps:
+        // 0..4096 -> device 0..4096 (0x11)
+        // 4096..8192 -> hole (0x00)
+        // 8192..12288 -> device 8192..12288 (0x22)
+        let extents = vec![
+            Extent::new(0..4096, Some(0)),
+            Extent::new(4096..8192, None),
+            Extent::new(8192..12288, Some(8192)),
+        ];
+        let encoded = Extents::encode_extents(&extents);
+        let mappings = Extents::from_encoded(encoded).unwrap();
+
+        let dest = service.allocate_buffer(12288);
+        let (tx, rx) = std::sync::mpsc::channel();
+        read_buffer_from_extents(&mappings, 0, dest, service.as_ref(), move |res| {
+            tx.send(res).unwrap();
+        })
+        .unwrap();
+
+        let buffer = rx.recv().unwrap().unwrap();
+        assert_eq!(buffer.len(), 12288);
+        assert!(buffer.as_ptr_slice().subslice(0..4096).iter_as::<u8>().all(|b| b == 0x11));
+        assert!(buffer.as_ptr_slice().subslice(4096..8192).iter_as::<u8>().all(|b| b == 0x00));
+        assert!(buffer.as_ptr_slice().subslice(8192..12288).iter_as::<u8>().all(|b| b == 0x22));
+    }
+
+    #[test]
+    fn test_read_buffer_from_extents_sync_error_disarms_callback() {
+        struct SecondChunkSyncErrorService {
+            inner: FakeBlockService,
+        }
+        impl BlockService for SecondChunkSyncErrorService {
+            fn allocate_buffer(&self, max_len: usize) -> OwnedBuffer {
+                self.inner.allocate_buffer(max_len)
+            }
+            fn read_blocks(
+                &self,
+                device_offset: u64,
+                dest_buffer: OwnedBuffer,
+                on_complete: Box<dyn FnOnce(Result<OwnedBuffer, Error>) + Send>,
+            ) -> Result<(), Error> {
+                if device_offset == 8192 {
+                    Err(anyhow!("sync failure on second chunk"))
+                } else {
+                    self.inner.read_blocks(device_offset, dest_buffer, on_complete)
+                }
+            }
+        }
+
+        let inner = FakeBlockService::new(vec![0u8; 32768]);
+        let service = Arc::new(SecondChunkSyncErrorService { inner });
+
+        // Two extents: 0..4096 (offset 0) and 4096..8192 (offset 8192).
+        let extents = vec![Extent::new(0..4096, Some(0)), Extent::new(4096..8192, Some(8192))];
+        let encoded = Extents::encode_extents(&extents);
+        let mappings = Extents::from_encoded(encoded).unwrap();
+
+        let dest = service.allocate_buffer(8192);
+        let completed = Arc::new(AtomicBool::new(false));
+        let completed_clone = completed.clone();
+
+        let res = read_buffer_from_extents(&mappings, 0, dest, service.as_ref(), move |_res| {
+            completed_clone.store(true, Ordering::Relaxed);
+        });
+
+        // The dispatch must fail synchronously with Err:
+        assert!(res.is_err());
+        // The callback must NOT have been invoked (and must not be invoked by chunk 1 in-flight
+        // completion):
+        assert!(!completed.load(Ordering::Relaxed));
+    }
+
+    #[test]
+    fn test_read_buffer_from_extents_in_flight_chunk_succeeds_after_sync_error() {
+        struct InFlightFirstChunkService {
+            inner: FakeBlockService,
+            pending_first_chunk:
+                Mutex<Option<(OwnedBuffer, Box<dyn FnOnce(Result<OwnedBuffer, Error>) + Send>)>>,
+        }
+        impl BlockService for InFlightFirstChunkService {
+            fn allocate_buffer(&self, max_len: usize) -> OwnedBuffer {
+                self.inner.allocate_buffer(max_len)
+            }
+            fn read_blocks(
+                &self,
+                device_offset: u64,
+                dest_buffer: OwnedBuffer,
+                on_complete: Box<dyn FnOnce(Result<OwnedBuffer, Error>) + Send>,
+            ) -> Result<(), Error> {
+                if device_offset == 0 {
+                    // Keep chunk 1 in flight in the background without invoking callback yet.
+                    *self.pending_first_chunk.lock() = Some((dest_buffer, on_complete));
+                    Ok(())
+                } else if device_offset == 8192 {
+                    // Chunk 2 fails synchronously.
+                    Err(anyhow!("sync failure on second chunk"))
+                } else {
+                    self.inner.read_blocks(device_offset, dest_buffer, on_complete)
+                }
+            }
+        }
+
+        let inner = FakeBlockService::new(vec![0u8; 32768]);
+        let service =
+            Arc::new(InFlightFirstChunkService { inner, pending_first_chunk: Mutex::new(None) });
+
+        // Two extents: 0..4096 (offset 0) and 4096..8192 (offset 8192).
+        let extents = vec![Extent::new(0..4096, Some(0)), Extent::new(4096..8192, Some(8192))];
+        let encoded = Extents::encode_extents(&extents);
+        let mappings = Extents::from_encoded(encoded).unwrap();
+
+        let dest = service.allocate_buffer(8192);
+        let completed = Arc::new(AtomicBool::new(false));
+        let completed_clone = completed.clone();
+
+        let res = read_buffer_from_extents(&mappings, 0, dest, service.as_ref(), move |_res| {
+            completed_clone.store(true, Ordering::Relaxed);
+        });
+
+        // The dispatch must fail synchronously with Err:
+        assert!(res.is_err());
+        assert!(!completed.load(Ordering::Relaxed));
+
+        // Now complete the in-flight chunk 1 with Ok after dispatch has already failed.
+        let (buf, cb) = service.pending_first_chunk.lock().take().expect("chunk 1 pending");
+        cb(Ok(buf));
+
+        // The user callback must NOT have been called.
+        assert!(!completed.load(Ordering::Relaxed));
+    }
+
+    #[test]
+    fn test_read_buffer_from_extents_async_error_disarms_subsequent_chunks() {
+        struct AsyncErrorService {
+            inner: FakeBlockService,
+            pending_chunks:
+                Mutex<Vec<(OwnedBuffer, Box<dyn FnOnce(Result<OwnedBuffer, Error>) + Send>, u64)>>,
+        }
+        impl BlockService for AsyncErrorService {
+            fn allocate_buffer(&self, max_len: usize) -> OwnedBuffer {
+                self.inner.allocate_buffer(max_len)
+            }
+            fn read_blocks(
+                &self,
+                device_offset: u64,
+                dest_buffer: OwnedBuffer,
+                on_complete: Box<dyn FnOnce(Result<OwnedBuffer, Error>) + Send>,
+            ) -> Result<(), Error> {
+                self.pending_chunks.lock().push((dest_buffer, on_complete, device_offset));
+                Ok(())
+            }
+        }
+
+        let inner = FakeBlockService::new(vec![0u8; 32768]);
+        let service = Arc::new(AsyncErrorService { inner, pending_chunks: Mutex::new(Vec::new()) });
+
+        let extents = vec![Extent::new(0..4096, Some(0)), Extent::new(4096..8192, Some(8192))];
+        let encoded = Extents::encode_extents(&extents);
+        let mappings = Extents::from_encoded(encoded).unwrap();
+
+        let dest = service.allocate_buffer(8192);
+        let err_count = Arc::new(AtomicUsize::new(0));
+        let ok_count = Arc::new(AtomicUsize::new(0));
+        let err_count_clone = err_count.clone();
+        let ok_count_clone = ok_count.clone();
+
+        let res = read_buffer_from_extents(&mappings, 0, dest, service.as_ref(), move |res| {
+            if res.is_ok() {
+                ok_count_clone.fetch_add(1, Ordering::Relaxed);
+            } else {
+                err_count_clone.fetch_add(1, Ordering::Relaxed);
+            }
+        });
+        assert!(res.is_ok());
+
+        let mut chunks = service.pending_chunks.lock();
+        assert_eq!(chunks.len(), 2);
+        let (buf1, cb1, _) = chunks.remove(0);
+        let (buf2, cb2, _) = chunks.remove(0);
+        drop(chunks);
+
+        // Chunk 1 fails asynchronously:
+        drop(buf1);
+        cb1(Err(anyhow!("async failure on chunk 1")));
+        assert_eq!(err_count.load(Ordering::Relaxed), 1);
+        assert_eq!(ok_count.load(Ordering::Relaxed), 0);
+
+        // Chunk 2 completes successfully afterwards:
+        cb2(Ok(buf2));
+        // Callback must NOT have been called again (ok_count remains 0, err_count remains 1):
+        assert_eq!(err_count.load(Ordering::Relaxed), 1);
+        assert_eq!(ok_count.load(Ordering::Relaxed), 0);
+    }
+
+    #[test]
+    fn test_child_block_service() {
+        let mut device_data = vec![0u8; 16384];
+        device_data[4096..8192].fill(0x55);
+        let parent_service = Arc::new(FakeBlockService::new(device_data));
+
+        let extents = vec![Extent::new(0..4096, Some(4096))];
+        let encoded = Extents::encode_extents(&extents);
+        let mappings = Extents::from_encoded(encoded).unwrap();
+        let file = Arc::new(File::new(mappings, 4096, None));
+
+        let child_service = ChildBlockService::new(parent_service.clone(), file.clone());
+        assert_eq!(child_service.file().extents().iter_extents(0).count(), 1);
+
+        let dest = child_service.allocate_buffer(4096);
+        let (tx, rx) = std::sync::mpsc::channel();
+        child_service
+            .read_blocks(
+                0,
+                dest,
+                Box::new(move |res| {
+                    tx.send(res).unwrap();
+                }),
+            )
+            .unwrap();
+
+        let buffer = rx.recv().unwrap().unwrap();
+        assert_eq!(buffer.len(), 4096);
+        assert!(buffer.as_ptr_slice().iter_as::<u8>().all(|b| b == 0x55));
     }
 }

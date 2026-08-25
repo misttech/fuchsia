@@ -14,11 +14,12 @@ pub mod testing;
 
 pub use extents::{Extent, Extents, ExtentsIterator};
 pub use file::{File, Files, process_mapping_command, read_blob_metadata};
-pub use page_request::PageRequest;
+pub use page_request::{NullPageRequest, PageRequest};
 pub use pager::{PagerThread, run_pager_loop};
 pub use protocol::{
     CLOSE_BLOB_COMMAND, MAPPING_VMO_SIZE, MAPPINGS_COMMAND, MappingCommand,
     PENDING_COMMANDS_CAPACITY, RawMappingCommand,
 };
+pub use reader::{ChildBlockService, read_buffer_from_extents};
 
 pub const BLOCK_SIZE: u64 = 4096;

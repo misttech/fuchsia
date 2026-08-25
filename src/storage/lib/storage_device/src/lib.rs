@@ -27,7 +27,7 @@ pub mod buffer;
 pub mod buffer_allocator;
 pub mod splittable_buffer;
 
-pub use splittable_buffer::SplittableBuffer;
+pub use splittable_buffer::{SplittableBuffer, SubHandle};
 
 #[cfg(target_os = "fuchsia")]
 pub mod block_device;

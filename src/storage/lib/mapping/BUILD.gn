@@ -26,6 +26,7 @@ rustc_library("mapping") {
     "//src/lib/fuchsia-sync",
     "//src/storage/lib/blob_metadata",
     "//src/storage/lib/delivery_blob",
+    "//src/storage/lib/ptr_slice",
     "//src/storage/lib/storage_device",
     "//src/storage/lib/vmo-fifo",
     "//third_party/rust_crates:anyhow",
@@ -34,10 +35,7 @@ rustc_library("mapping") {
     "//third_party/rust_crates:log",
     "//third_party/rust_crates:zerocopy",
   ]
-  test_deps = [
-    "//src/lib/fuchsia",
-    "//src/storage/lib/ptr_slice",
-  ]
+  test_deps = [ "//src/lib/fuchsia" ]
 }
 
 fuchsia_unittest_package("mapping-tests") {

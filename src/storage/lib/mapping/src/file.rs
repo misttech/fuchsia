@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use crate::reader::{BlockService, read_aligned_range};
-use crate::{Extents, MappingCommand, PageRequest, RawMappingCommand};
+use crate::{Extents, MappingCommand, NullPageRequest, PageRequest, RawMappingCommand};
 use anyhow::{Error, anyhow, bail};
 use blob_metadata::{BlobFormat, BlobMetadata};
 use byteorder::{LittleEndian, ReadBytesExt};
@@ -252,6 +252,13 @@ impl<S: BlockService + ?Sized, R: PageRequest, F: Fn(u64, Range<u64>) -> R + Sen
     }
 }
 
+impl<S: BlockService + ?Sized> Files<S, fn(u64, Range<u64>) -> NullPageRequest, NullPageRequest> {
+    /// Creates a file registry without a pager for intermediate (e.g. partition) sessions.
+    pub fn new_without_pager(service: Arc<S>) -> Self {
+        Self::new(service, |_, _| NullPageRequest)
+    }
+}
+
 /// The version where `BlobMetadata` was introduced in Fxfs.
 /// Eventually, we'll need to integrate Fxfs's code for upgrading data structures.
 const BLOB_METADATA_VERSION: u32 = 53;
@@ -263,7 +270,11 @@ fn deserialize_blob_metadata(mut bytes: &[u8]) -> Result<BlobMetadata, anyhow::E
 
     let version = bytes.read_u32::<LittleEndian>()?;
     if version < BLOB_METADATA_VERSION {
-        bail!("Unsupported blob metadata version: {version} (expected >= {BLOB_METADATA_VERSION})");
+        bail!(
+            "Unsupported blob metadata version: {} (expected >= {})",
+            version,
+            BLOB_METADATA_VERSION
+        );
     }
 
     options
@@ -918,6 +929,18 @@ mod tests {
         assert!(!files.is_loading(100));
         files.remove(100);
         assert!(!files.is_loading(100));
+    }
+
+    #[test]
+    fn test_files_new_without_pager() {
+        let extents = Extents::encode_extents(&[Extent::new(0..4096, Some(0))]);
+        let extents = Extents::from_encoded(extents).unwrap();
+        let file = Arc::new(File::new(extents, 4096, None));
+        let service = Arc::new(FakeBlockService::new(vec![0u8; 4096]));
+        let files = Files::new_without_pager(service);
+
+        files.insert(100, file.clone());
+        assert_eq!(files.get_file(100).unwrap().uncompressed_size(), 4096);
     }
 
     struct DelayedBlockService {
