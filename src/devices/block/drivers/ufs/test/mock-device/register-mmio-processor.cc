@@ -123,6 +123,13 @@ void RegisterMmioProcessor::DefaultUTRLDBRHandler(UfsMockDevice& mock_device, ui
       .WriteTo(mock_device.GetRegisters());
 }
 
+void RegisterMmioProcessor::DefaultUTRLCLRHandler(UfsMockDevice& mock_device, uint32_t value) {
+  uint32_t current_doorbell =
+      UtrListDoorBellReg::Get().ReadFrom(mock_device.GetRegisters()).door_bell();
+  current_doorbell &= value;
+  UtrListDoorBellReg::Get().FromValue(current_doorbell).WriteTo(mock_device.GetRegisters());
+}
+
 void RegisterMmioProcessor::DefaultUTRLRSRHandler(UfsMockDevice& mock_device, uint32_t value) {
   ZX_ASSERT_MSG(value <= 1, "Invalid argument, UTRLRSR register can only be set to 1 or 0. ");
 

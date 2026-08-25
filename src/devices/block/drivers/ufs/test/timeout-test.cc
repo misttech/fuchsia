@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <memory>
 
+#include "src/devices/block/drivers/ufs/registers.h"
 #include "src/devices/block/drivers/ufs/transfer_request_descriptor.h"
 #include "src/devices/block/drivers/ufs/upiu/descriptors.h"
 #include "src/devices/block/drivers/ufs/upiu/upiu_transactions.h"
@@ -134,6 +135,10 @@ TEST_F(TimeoutTest, AsyncCommandTimeout) {
         dut_->GetTransferRequestProcessor().GetRequestListLocked().GetSlot(target_task_tag).state,
         SlotState::kTimeout);
   }
+  // Check that the doorbell bit was cleared via UTRLCLR for the timed-out slot.
+  ASSERT_EQ(
+      UtrListDoorBellReg::Get().ReadFrom(&dut_->GetMmio()).door_bell() & (1u << target_task_tag),
+      0u);
   mock_device_.GetScsiCommandProcessor().Reset();
 }
 

@@ -222,6 +222,20 @@ TEST_F(RegisterTest, UtpTransferRequestListRunStop) {
   // implemented
 }
 
+TEST_F(RegisterTest, UtpTransferRequestListClear) {
+  // Set doorbell directly in mock registers to avoid triggering request descriptor processing
+  UtrListDoorBellReg::Get().FromValue((1u << 0) | (1u << 1)).WriteTo(mock_device_.GetRegisters());
+  ASSERT_EQ(UtrListDoorBellReg::Get().ReadFrom(&dut_->GetMmio()).door_bell(), 0x3u);
+
+  // Clear slot 0 using W0C mask (bit 0 is 0, other bits are 1) via MMIO write
+  UtrListClearReg::Get().FromValue(~(1u << 0)).WriteTo(&dut_->GetMmio());
+  ASSERT_EQ(UtrListDoorBellReg::Get().ReadFrom(&dut_->GetMmio()).door_bell(), (1u << 1));
+
+  // Clear slot 1
+  UtrListClearReg::Get().FromValue(~(1u << 1)).WriteTo(&dut_->GetMmio());
+  ASSERT_EQ(UtrListDoorBellReg::Get().ReadFrom(&dut_->GetMmio()).door_bell(), 0x0u);
+}
+
 TEST_F(RegisterTest, UtpTaskManagementRequestListBaseAddress) {
   // TODO(https://fxbug.dev/42075643): Writing unit test after a task management list is implemented
 }

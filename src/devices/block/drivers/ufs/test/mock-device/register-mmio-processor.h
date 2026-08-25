@@ -34,6 +34,7 @@ class RegisterMmioProcessor {
   static void DefaultISHandler(UfsMockDevice& mock_device, uint32_t value);
   static void DefaultHCEHandler(UfsMockDevice& mock_device, uint32_t value);
   static void DefaultUTRLDBRHandler(UfsMockDevice& mock_device, uint32_t value);
+  static void DefaultUTRLCLRHandler(UfsMockDevice& mock_device, uint32_t value);
   static void DefaultUTRLRSRHandler(UfsMockDevice& mock_device, uint32_t value);
   static void DefaultUTRLCNRHandler(UfsMockDevice& mock_device, uint32_t value);
   static void DefaultUTMRLDBRHandler(UfsMockDevice& mock_device, uint32_t value);
@@ -56,6 +57,7 @@ class RegisterMmioProcessor {
   // RegisterMap::kUTRLBA does not require a handler.
   // RegisterMap::kUTRLBAU does not require a handler.
   DEF_DEFAULT_HANDLER(RegisterMap::kUTRLDBR, DefaultUTRLDBRHandler)
+  DEF_DEFAULT_HANDLER(RegisterMap::kUTRLCLR, DefaultUTRLCLRHandler)
   DEF_DEFAULT_HANDLER(RegisterMap::kUTRLRSR, DefaultUTRLRSRHandler)
   DEF_DEFAULT_HANDLER(RegisterMap::kUTRLCNR, DefaultUTRLCNRHandler)
   // UTP Task Management

@@ -447,6 +447,15 @@ zx_status_t TransferRequestProcessor::UpiuCompletion(uint8_t slot_num, RequestSl
 
 void TransferRequestProcessor::RequestCompletion(uint8_t slot_num, RequestSlot &request_slot,
                                                  bool is_timeout) {
+  if (is_timeout) {
+    // UTRLDBR bit is still set: tell the host controller to abandon the slot
+    // *before* UpiuCompletion() unpins the client VMO and completes the block
+    // op, otherwise a late DATA-IN UPIU will DMA into freed pages.
+    // UFSHCI 3.0 5.4.4: UTRLCLR is W0C - write 0 to the slot bit to clear it.
+    UtrListClearReg::Get().FromValue(~(1u << slot_num)).WriteTo(&register_);
+    SetSlotStateLocked(slot_num, SlotState::kTimeout);
+  }
+
   if (request_slot.data_vmo->is_valid() && request_slot.is_read) {
     // Invalidate the cache so the read data is visible to the CPU.
     zx_status_t status = request_slot.data_vmo->op_range(
@@ -467,22 +476,18 @@ void TransferRequestProcessor::RequestCompletion(uint8_t slot_num, RequestSlot &
   }
   request_slot.result = status;
 
-  if (is_timeout) {
-    SetSlotStateLocked(slot_num, SlotState::kTimeout);
-    uint32_t current_db = UtrListDoorBellReg::Get().ReadFrom(&register_).door_bell();
-    if (current_db & (1u << slot_num)) {
-      UtrListClearReg::Get().FromValue(1u << slot_num).WriteTo(&register_);
-    }
-  } else if (request_slot.is_sync) {
-    sync_completion_signal(&request_slot.complete);
-  } else {
-    UtrListCompletionNotificationReg::Get()
-        .FromValue(0)
-        .set_notification(1u << slot_num)
-        .WriteTo(&register_);
+  if (!is_timeout) {
+    if (request_slot.is_sync) {
+      sync_completion_signal(&request_slot.complete);
+    } else {
+      UtrListCompletionNotificationReg::Get()
+          .FromValue(0)
+          .set_notification(1u << slot_num)
+          .WriteTo(&register_);
 
-    if (zx::result result = ClearSlotLocked(request_slot); result.is_error()) {
-      fdf::error("Failed to clear slot[{}]: {}", slot_num, result);
+      if (zx::result result = ClearSlotLocked(request_slot); result.is_error()) {
+        fdf::error("Failed to clear slot[{}]: {}", slot_num, result);
+      }
     }
   }
 }
