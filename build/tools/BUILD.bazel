@@ -12,6 +12,7 @@ test_suite(
     tests = [
         "//build/tools/bazel2gn:bazel2gn_tests",
         "//build/tools/json_validator/test:tests",
+        "//build/tools/tarmaker:tarmaker_tests",
 
         # This `test_suite()` cannot currently be run by the "*tests" targets
         # in `//build/bazel/rules/tests/BUILD.bazel`, so add this test suite to
