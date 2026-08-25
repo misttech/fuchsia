@@ -760,7 +760,7 @@ layout!({
 });
 
 impl VersionInfo {
-    fn family(self) -> u8 {
+    pub fn family(self) -> u8 {
         if self.base_family() == 0xf {
             self.base_family() + self.extended_family()
         } else {
@@ -768,7 +768,7 @@ impl VersionInfo {
         }
     }
 
-    fn model(self) -> u8 {
+    pub fn model(self) -> u8 {
         if self.base_family() == 0x6 || self.base_family() == 0xf {
             (self.extended_model() << 4) | self.base_model()
         } else {

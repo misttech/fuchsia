@@ -28,11 +28,17 @@
 //! we name the field "erratum_${ID}_workaround".
 
 use super::cpuid::{
-    EXTENDED_AMD_FEATURES_B, EXTENDED_FEATURES_D, Microarchitecture, VERSION_INFO, VendorString,
+    EXTENDED_AMD_FEATURES_B, EXTENDED_FEATURES_D, FEATURE_FLAGS_C, Microarchitecture, VERSION_INFO,
+    VendorString,
 };
-use super::{ArchCapabilitiesMsr, Vendor, has_ibrs, has_stibp, tsx_is_supported};
-use regio::traits::ReadReg;
-use regio::x86::Cpuid;
+use super::{
+    ArchCapabilitiesMsr, SpeculationControlMsr, Vendor, VirtualSpeculationControlMsr, has_ibrs,
+    has_stibp, tsx_is_supported,
+};
+use bitrs::layout;
+use regio::traits::{ReadReg, RwSafeReg, SafeWriteReg};
+use regio::x86::{Cpuid, Msr};
+use regio::{LayoutOver, RwSafe};
 
 /// Whether the CPU is susceptible to swapgs speculation attacks:
 /// https://software.intel.com/security-software-guidance/advisory-guidance/speculative-behavior-swapgs-and-segment-registers
@@ -305,4 +311,198 @@ pub fn get_preferred_spectre_v2_mitigation(
     // Retpolines comprise an architecturally agnostic, pure software solution,
     // which makes it a sensible default strategy.
     SpectreV2Mitigation::IbpbRetpoline
+}
+
+/// [amd/ssbd] references bits 10, 33, 54.
+/// [amd/rg/17h/00h-0Fh] references bits 4, 57.
+pub const AMD_LOAD_STORE_CONFIGURATION: Msr<0xc001_1020, AmdLoadStoreConfigurationMsr, RwSafe> =
+    Msr::new();
+
+layout!({
+    /// Layout for [`AMD_LOAD_STORE_CONFIGURATION`].
+    pub struct AmdLoadStoreConfigurationMsr(u64);
+    {
+        let __ @ 63..58;
+        let erratum_1095_workaround @ 57;
+        let __ @ 56..55;
+        let ssbd_15h @ 54;
+        let __ @ 53..34;
+        let ssbd_16h @ 33;
+        let __ @ 32..11;
+        let ssbd_17h @ 10;
+        let __ @ 9..5;
+        let erratum_1033_workaround @ 4;
+        let __ @ 3..0;
+    }
+});
+
+/// [amd/rg/17h/00h-0Fh] references bit 4.
+pub const AMD_C0011028: Msr<0xc001_1028, AmdC0011028Msr, RwSafe> = Msr::new();
+
+layout!({
+    /// Layout for [`AMD_C0011028`].
+    pub struct AmdC0011028Msr(u64);
+    {
+        let __ @ 63..5;
+        let erratum_1049_workaround @ 4;
+        let __ @ 3..0;
+    }
+});
+
+/// [amd/rg/17h/00h-0Fh] references bit 13.
+pub const AMD_C0011029: Msr<0xc001_1029, AmdC0011029Msr, RwSafe> = Msr::new();
+
+layout!({
+    /// Layout for [`AMD_C0011029`].
+    pub struct AmdC0011029Msr(u64);
+    {
+        let __ @ 63..14;
+        let erratum_1021_workaround @ 13;
+        let __ @ 12..0;
+    }
+});
+
+/// [amd/rg/17h/00h-0Fh] references bit 34.
+pub const AMD_C001102D: Msr<0xc001_102d, AmdC001102dMsr, RwSafe> = Msr::new();
+
+layout!({
+    /// Layout for [`AMD_C001102d`].
+    pub struct AmdC001102dMsr(u64);
+    {
+        let __ @ 63..35;
+        let erratum_1091_workaround @ 34;
+        let __ @ 33..0;
+    }
+});
+
+/// Attempt to mitigate the SSB bug. Return true if the bug was successfully
+/// mitigated.
+pub fn mitigate_x86_ssb_bug(
+    cpuid: &impl Cpuid,
+    speculation: &impl RwSafeReg<SpeculationControlMsr>,
+    virtual_speculation: &impl RwSafeReg<VirtualSpeculationControlMsr>,
+    load_store_configuration: &impl RwSafeReg<AmdLoadStoreConfigurationMsr>,
+) -> bool {
+    if cpuid.read(EXTENDED_FEATURES_D).ssbd() {
+        debug_assert!(SpeculationControlMsr::is_supported(cpuid));
+        speculation.modify(|value| *value.set_ssbd(true));
+        return true;
+    }
+    if cpuid.supports(EXTENDED_AMD_FEATURES_B) {
+        let amd_features = cpuid.read(EXTENDED_AMD_FEATURES_B);
+        if amd_features.ssbd() {
+            debug_assert!(SpeculationControlMsr::is_supported(cpuid));
+            speculation.modify(|value| *value.set_ssbd(true));
+            return true;
+        }
+
+        if amd_features.virt_ssbd() {
+            debug_assert!(VirtualSpeculationControlMsr::is_supported(cpuid));
+            virtual_speculation.modify(|value| *value.set_ssbd(true));
+            return true;
+        }
+    }
+
+    // [amd/ssbd]: NON-ARCHITECTURAL MSRS.
+    //
+    // There are non-architectural mechanisms to disable SSB for AMD families
+    // 0x15-0x17.
+    let version_info = cpuid.read(VERSION_INFO);
+    let vendor = VendorString::from_cpuid(cpuid).vendor();
+    match version_info.microarchitecture(vendor) {
+        Microarchitecture::AmdFamilyBulldozer => {
+            load_store_configuration.modify(|value| *value.set_ssbd_15h(true));
+            true
+        }
+        Microarchitecture::AmdFamilyJaguar => {
+            load_store_configuration.modify(|value| *value.set_ssbd_16h(true));
+            true
+        }
+        Microarchitecture::AmdFamilyZen => {
+            load_store_configuration.modify(|value| *value.set_ssbd_17h(true));
+            true
+        }
+        _ => false,
+    }
+}
+
+pub fn can_mitigate_x86_ssb_bug(cpuid: &impl Cpuid) -> bool {
+    // With a null I/O provider, we can make the requisite checks without
+    // actually committing the writes.
+
+    struct NullMsr;
+
+    impl<Layout: LayoutOver<u64>> ReadReg<Layout> for NullMsr {
+        fn read(&self) -> Layout {
+            Layout::from(0u64)
+        }
+    }
+
+    impl<Layout> SafeWriteReg<Layout> for NullMsr {
+        fn write(&self, _value: Layout) {}
+    }
+
+    mitigate_x86_ssb_bug(cpuid, &NullMsr, &NullMsr, &NullMsr)
+}
+
+/// Applies workarounds to processor-specific errata.
+pub fn apply_x86_errata_workarounds(
+    cpuid: &impl Cpuid,
+    c0011028: &impl RwSafeReg<AmdC0011028Msr>,
+    c0011029: &impl RwSafeReg<AmdC0011029Msr>,
+    c001102d: &impl RwSafeReg<AmdC001102dMsr>,
+    load_store: &impl RwSafeReg<AmdLoadStoreConfigurationMsr>,
+) {
+    if cpuid.read(FEATURE_FLAGS_C).hypervisor() {
+        return;
+    }
+
+    let vendor = VendorString::from_cpuid(cpuid).vendor();
+    match vendor {
+        Vendor::Unknown => {}
+        Vendor::Intel => {}
+        Vendor::Amd => {
+            let info = cpuid.read(VERSION_INFO);
+            #[expect(clippy::single_match)]
+            match info.family() {
+                0x17 => {
+                    #[expect(clippy::single_match)]
+                    match info.model() {
+                        // [amd/rg/17h/00h-0Fh].
+                        0x00..=0x0f => {
+                            // ZP-B1 refers to (model, stepping) == (1, 1); some of the errata are
+                            // detailed as only applying to that CPU.
+                            let zp_b1 = info.model() == 1 && info.stepping() == 1;
+                            // 1021: Load Operation May Receive Stale Data From Older Store
+                            //       Operation.
+                            c0011029.modify(|value| *value.set_erratum_1021_workaround(true));
+
+                            let mut lscfg = load_store.read();
+                            // 1033: A Lock Operation May Cause the System to Hang.
+                            if zp_b1 {
+                                lscfg.set_erratum_1033_workaround(true);
+                            }
+                            // 1095: Potential Violation of Read Ordering In Lock Operation in SMT
+                            //       Mode.
+                            if true {
+                                // TODO(https://fxbug.dev/42113091): Do not apply if SMT is
+                                // disabled.
+                                lscfg.set_erratum_1095_workaround(true);
+                            }
+                            load_store.write(lscfg);
+
+                            // 1049: FCMOV Instruction May Not Execute Correctly.
+                            c0011028.modify(|value| *value.set_erratum_1049_workaround(true));
+
+                            // 1091: 4K Address Boundary Crossing Load Operation May Receive Stale
+                            //       Data.
+                            c001102d.modify(|value| *value.set_erratum_1091_workaround(true));
+                        }
+                        _ => {}
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
 }
