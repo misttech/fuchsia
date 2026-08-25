@@ -577,14 +577,14 @@ class TestFixture : public gtest_base {
     drv.HandleEpTransferNotReadyEvent(ep_num, stage);
   }
 
-  static void TriggerEpTransferComplete(Dwc3& drv, uint8_t ep_num) {
+  static void TriggerEpTransferComplete(Dwc3& drv, uint8_t ep_num, uint32_t residual = 0) {
     auto* uep = drv.get_user_endpoint(ep_num);
     ZX_ASSERT(uep != nullptr);
 
     if (uep->fifo.GetActiveCount() > 0) {
       dwc3_trb_t* trb = uep->fifo.read_;
       trb->control &= ~TRB_HWO;
-      trb->status = 0;  // Set residual byte count to 0 (indicating successful full transfer!)
+      trb->status = TRB_BUFSIZ(residual);
       uep->fifo.Write(trb, 1);
     }
 
@@ -970,6 +970,7 @@ class UnmanagedTestFixture : public TestFixture<false> {
     ASSERT_TRUE(dut_.StartDriverWithCustomStartArgs([](fdf::DriverStartArgs& args) {
                       dwc3_config::Config cfg;
                       cfg.enable_suspend() = false;
+                      cfg.bypass_platform_extension() = true;
                       args.config(cfg.ToVmo());
                     })
                     .is_ok());
