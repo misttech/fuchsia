@@ -427,7 +427,7 @@ func TestGetEnabledExperiments(t *testing.T) {
 }
 
 func TestConstructBaseCommand(t *testing.T) {
-	toolNames := []string{"botanist", "fastboot", "ffx", "llvm-profdata", "ssh"}
+	toolNames := []string{"botanist", "fastboot", "ffx", "llvm-profdata", "resummarize", "ssh", "test-pilot"}
 	tools := build.Tools{}
 	for _, name := range toolNames {
 		for _, cpu := range []string{"x64", "arm64"} {
@@ -482,7 +482,7 @@ func TestConstructBaseCommand(t *testing.T) {
 			wantCmd: []string{"./host_x64/botanist", "-level", "debug", "run", "-timeout", "600s",
 				"-ffx", "./host_x64/ffx", "-product-bundles", "product_bundles.json", "-product-bundle-name", "core.x64",
 				"-local-repo", "repo", "-expects-ssh"},
-			wantDeps: []string{"host_x64/botanist", "host_x64/ffx", "host_x64/ssh"},
+			wantDeps: []string{"host_x64/botanist", "host_x64/ffx", "host_x64/resummarize", "host_x64/ssh", "host_x64/test-pilot"},
 		},
 		{
 			name: "emu x64 shard netboot, no ssh",
@@ -495,7 +495,7 @@ func TestConstructBaseCommand(t *testing.T) {
 			wantCmd: []string{"./host_x64/botanist", "-level", "debug", "run", "-timeout", "0s",
 				"-ffx", "./host_x64/ffx", "-product-bundles", "product_bundles.json", "-product-bundle-name",
 				"core.x64", "-use-serial", "-netboot"},
-			wantDeps: []string{"host_x64/botanist", "host_x64/ffx", "host_x64/ssh"},
+			wantDeps: []string{"host_x64/botanist", "host_x64/ffx", "host_x64/resummarize", "host_x64/ssh", "host_x64/test-pilot"},
 		},
 		{
 			name: "emu arm64 shard boot test",
@@ -510,7 +510,7 @@ func TestConstructBaseCommand(t *testing.T) {
 			wantCmd: []string{"./host_arm64/botanist", "-level", "debug", "run", "-timeout", "0s",
 				"-ffx", "./host_arm64/ffx", "-product-bundles", "product_bundles.json", "-product-bundle-name", "arm64_boot_test",
 				"-boot-test", "-bootup-timeout", "60s", "-use-serial", "-netboot"},
-			wantDeps: []string{"host_arm64/botanist", "host_arm64/ffx", "host_arm64/ssh"},
+			wantDeps: []string{"host_arm64/botanist", "host_arm64/ffx", "host_arm64/resummarize", "host_arm64/ssh", "host_arm64/test-pilot"},
 		},
 		{
 			name: "emu arm64 shard with tcg",
@@ -524,7 +524,7 @@ func TestConstructBaseCommand(t *testing.T) {
 			wantCmd: []string{"./host_x64/botanist", "-level", "debug", "run", "-timeout", "0s",
 				"-ffx", "./host_x64/ffx", "-product-bundles", "product_bundles.json", "-product-bundle-name", "core.arm64",
 				"-expects-ssh", "-test-timeout-scale-factor", "2"},
-			wantDeps: []string{"host_x64/botanist", "host_x64/ffx", "host_x64/ssh"},
+			wantDeps: []string{"host_x64/botanist", "host_x64/ffx", "host_x64/resummarize", "host_x64/ssh", "host_x64/test-pilot"},
 		},
 		{
 			name: "nuc shard",
@@ -538,7 +538,7 @@ func TestConstructBaseCommand(t *testing.T) {
 			wantCmd: []string{"./host_x64/botanist", "-level", "debug", "run", "-llvm-profdata", "host_x64/llvm-profdata=clang",
 				"-timeout", "0s", "-ffx", "./host_x64/ffx", "-product-bundles", "product_bundles.json",
 				"-product-bundle-name", "core.x64", "-expects-ssh"},
-			wantDeps: []string{"host_x64/botanist", "host_x64/ffx", "host_x64/llvm-profdata", "host_x64/ssh"},
+			wantDeps: []string{"host_x64/botanist", "host_x64/ffx", "host_x64/llvm-profdata", "host_x64/resummarize", "host_x64/ssh", "host_x64/test-pilot"},
 		},
 		{
 			name: "vim3 shard",
@@ -553,7 +553,7 @@ func TestConstructBaseCommand(t *testing.T) {
 			wantCmd: []string{"./host_x64/botanist", "-level", "debug", "run", "-timeout", "0s",
 				"-ffx", "./host_x64/ffx", "-experiment", "exp1", "-experiment", "exp2", "-product-bundles", "product_bundles.json",
 				"-product-bundle-name", "core.vim3", "-expects-ssh", "-zircon-args", "arg1", "-zircon-args", "arg2"},
-			wantDeps: []string{"host_x64/botanist", "host_x64/ffx", "host_x64/ssh"},
+			wantDeps: []string{"host_x64/botanist", "host_x64/ffx", "host_x64/resummarize", "host_x64/ssh", "host_x64/test-pilot"},
 		},
 		{
 			name: "iris shard",
@@ -566,7 +566,7 @@ func TestConstructBaseCommand(t *testing.T) {
 			wantCmd: []string{"./host_x64/botanist", "-level", "debug", "run", "-timeout", "0s",
 				"-ffx", "./host_x64/ffx", "-product-bundles", "product_bundles.json",
 				"-product-bundle-name", "core.iris", "-expects-ssh"},
-			wantDeps: []string{"host_x64/botanist", "host_x64/fastboot", "host_x64/ffx", "host_x64/ssh"},
+			wantDeps: []string{"host_x64/botanist", "host_x64/fastboot", "host_x64/ffx", "host_x64/resummarize", "host_x64/ssh", "host_x64/test-pilot"},
 		},
 		{
 			name: "missing product bundle",

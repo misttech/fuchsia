@@ -772,7 +772,7 @@ func (m *fakeModules) Tools() build.Tools {
 		"ffx", "botanist", "ssh", "llvm-profdata",
 		"fvm", "zbi", "llvm-symbolizer", "symbolizer",
 		"tefmocheck", "triage", "resultdb", "perfcompare",
-		"test_filterer",
+		"test_filterer", "resummarize", "test-pilot",
 	} {
 		tools = append(tools, build.Tool{
 			Name: tool,

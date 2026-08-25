@@ -63,6 +63,8 @@ group("host_tools") {
     "//src/developer/ffx/tools:bins",
     "//src/storage/bin/fvm",
     "//tools/botanist",
+    "//tools/test_pilot:test-pilot",
+    "//tools/test_pilot/post_processing/resummarize",
     "//zircon/tools/zbi",
   ]
 

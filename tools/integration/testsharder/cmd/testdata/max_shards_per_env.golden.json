@@ -67,7 +67,9 @@
             "host_x64/ffx",
             "host_x64/fvm",
             "host_x64/llvm-profdata",
+            "host_x64/resummarize",
             "host_x64/ssh",
+            "host_x64/test-pilot",
             "host_x64/zbi",
             "product_bundle/zbi",
             "product_bundles.json"
@@ -252,7 +254,9 @@
             "host_x64/ffx",
             "host_x64/fvm",
             "host_x64/llvm-profdata",
+            "host_x64/resummarize",
             "host_x64/ssh",
+            "host_x64/test-pilot",
             "host_x64/zbi",
             "product_bundle/zbi",
             "product_bundles.json"
@@ -437,7 +441,9 @@
             "host_x64/ffx",
             "host_x64/fvm",
             "host_x64/llvm-profdata",
+            "host_x64/resummarize",
             "host_x64/ssh",
+            "host_x64/test-pilot",
             "host_x64/zbi",
             "product_bundle/zbi",
             "product_bundles.json"
