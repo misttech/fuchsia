@@ -5578,6 +5578,22 @@ zx_status_t brcmf_if_get_iface_stats(net_device* ndev,
         CounterConfigs::WME_BK_TX_GOOD.unnamed(wme_cnt.tx[AC_BK].packets));
     connection_counters.push_back(
         CounterConfigs::WME_BK_TX_BAD.unnamed(wme_cnt.tx_failed[AC_BK].packets));
+
+    auto to_wire_pkt = [&](uint32_t ac) {
+      auto builder = fuchsia_wlan_stats::wire::PacketStats::Builder(arena);
+      builder.rx(wme_cnt.rx[ac].packets);
+      builder.tx(wme_cnt.tx[ac].packets);
+      builder.tx_drop(wme_cnt.tx_failed[ac].packets);
+      // Per-AC tx retries are not supported in WME V1 (wl_wme_cnt_t), so leave retries unset
+      // (none).
+      return builder.Build();
+    };
+    auto wme_builder = fuchsia_wlan_stats::wire::WmePacketStats::Builder(arena);
+    wme_builder.vo(to_wire_pkt(AC_VO));
+    wme_builder.vi(to_wire_pkt(AC_VI));
+    wme_builder.be(to_wire_pkt(AC_BE));
+    wme_builder.bk(to_wire_pkt(AC_BK));
+    connection_stats_builder.wme(wme_builder.Build());
   }
 
   uint8_t cnt_buf[BRCMF_DCMD_MAXLEN] = {0};

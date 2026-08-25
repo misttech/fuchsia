@@ -147,6 +147,20 @@ type IfaceStats = table {
     3: driver_specific_gauges vector<UnnamedGauge>:MAX_DRIVER_SPECIFIC_GAUGES;
 };
 
+type PacketStats = table {
+    1: rx uint64;
+    2: tx uint64;
+    3: tx_drop uint64;
+    4: tx_retries uint64;
+};
+
+type WmePacketStats = table {
+    1: be PacketStats;
+    2: bk PacketStats;
+    3: vi PacketStats;
+    4: vo PacketStats;
+};
+
 type ConnectionStats = table {
     /// ID of the current connection. Used by WLAN telemetry to determine whether
     /// the current counters and the previous counters belong to the same connection.
@@ -165,6 +179,7 @@ type ConnectionStats = table {
     6: rx_multicast uint64;
     7: tx_total uint64;
     8: tx_drop uint64;
+    9: wme WmePacketStats;
 };
 
 /// Config to associate a driver-specific counter ID with a counter name that is
