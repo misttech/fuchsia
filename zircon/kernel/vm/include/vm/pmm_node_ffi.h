@@ -17,6 +17,7 @@ __BEGIN_CDECLS
 uint32_t cpp_pmm_node_page_to_index(PmmNode* node, const vm_page_t* page);
 vm_page_t* cpp_pmm_node_index_to_page(PmmNode* node, uint32_t index);
 zx_paddr_t cpp_pmm_node_index_to_paddr(PmmNode* node, uint32_t index);
+void cpp_pmm_node_add_free_pages(PmmNode* node, VmPageDoublyLinkedList* list);
 
 __END_CDECLS
 

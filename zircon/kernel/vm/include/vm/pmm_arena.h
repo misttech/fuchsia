@@ -78,21 +78,11 @@ class PmmArena {
   void Dump(bool dump_pages, bool dump_free_ranges, PmmStateCount* counts) const;
 
  private:
-  // Walks the region defined by |offset| and |count| and returns the index of
-  // the last non-free page or ZX_ERR_NOT_FOUND if all pages are free.
-  //
-  // It is an error if the range specified by |offset| and |count| is not
-  // completely contained within the arena.
-  //
-  // A loaned page is considered non-free for purposes of contiguous memory
-  // allocation.
-  zx::result<uint64_t> FindLastNonFree(uint64_t offset, size_t count) const;
-
   pmm_arena_info_t info_ = {};
   vm_page_t* page_array_ = nullptr;
-  // The index into |page_array_| at which the next |FindFreeContiguous| serach
-  // should begin.  Used to optimize |FindFreeContiguous|.
-  uint64_t search_hint_ = 0;
+  // Marked maybe_unused since the logic of using this is in Rust, but we need to keep the
+  // definition of data structures equivalent.
+  [[maybe_unused]] uint64_t search_hint_ = 0;
 };
 
 #endif  // ZIRCON_KERNEL_VM_INCLUDE_VM_PMM_ARENA_H_

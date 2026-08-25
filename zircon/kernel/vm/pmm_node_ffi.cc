@@ -27,4 +27,8 @@ FFI_ALWAYS_INLINE zx_paddr_t cpp_pmm_node_index_to_paddr(PmmNode* node, uint32_t
   return node->IndexToPaddr(index);
 }
 
+FFI_ALWAYS_INLINE void cpp_pmm_node_add_free_pages(PmmNode* node, VmPageDoublyLinkedList* list) {
+  node->AddFreePages(list);
+}
+
 }  // extern "C"

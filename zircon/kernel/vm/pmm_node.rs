@@ -5,7 +5,7 @@
 // https://opensource.org/licenses/MIT
 
 use crate::kernel::types::PAddr;
-use crate::vm::page::VmPagePtr;
+use crate::vm::page::{VmPage, VmPagePtr};
 use core::marker::{PhantomData, PhantomPinned};
 use pmm_node_bindings as bindings;
 use zr::Opaque;
@@ -55,5 +55,15 @@ impl PmmNode {
     pub unsafe fn index_to_paddr(&self, index: u32) -> PAddr {
         // SAFETY: The caller guarantees `index` is a valid page index.
         unsafe { PAddr(bindings::cpp_pmm_node_index_to_paddr(self.as_raw(), index)) }
+    }
+
+    /// add new pages to the free queue. used when bootstrapping a PmmArena
+    pub fn add_free_pages(&mut self, list: &mut fbl::DoublyLinkedList<*mut VmPage>) {
+        unsafe {
+            bindings::cpp_pmm_node_add_free_pages(
+                self.as_raw(),
+                (list as *mut fbl::DoublyLinkedList<*mut VmPage>).cast(),
+            )
+        }
     }
 }
