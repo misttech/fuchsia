@@ -11,12 +11,12 @@ use fidl_fuchsia_diagnostics_persistence as fdiagnostics_persistence;
 use fidl_fuchsia_logger as flogger;
 use fidl_fuchsia_power_battery as fbattery;
 use fidl_fuchsia_sys2 as fsys2;
+use fidl_fuchsia_update as fupdate;
 use fuchsia_component_test::{Capability, ChildOptions, RealmBuilder, RealmInstance, Ref, Route};
 use futures::channel::mpsc;
 use futures::{FutureExt, SinkExt, StreamExt, TryStreamExt};
+use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
-
-static INSPECT_COUNTER: AtomicUsize = AtomicUsize::new(0);
 
 fn extract_counter(content: &str) -> Option<u64> {
     let data_vec: Vec<InspectData> = serde_json::from_str(content).ok()?;
@@ -42,7 +42,9 @@ fn extract_counter(content: &str) -> Option<u64> {
 async fn make_realm(
     interval: i64,
     mock_battery_tx: Option<mpsc::Sender<fbattery::BatteryInfoWatcherProxy>>,
+    mock_update_tx: Option<mpsc::Sender<fupdate::NotifierProxy>>,
 ) -> Result<RealmInstance, Error> {
+    let skip_update_check = mock_update_tx.is_none();
     let builder = RealmBuilder::new().await?;
 
     let archivist = builder
@@ -54,13 +56,13 @@ async fn make_realm(
             "publisher",
             move |handles| {
                 Box::pin(async move {
+                    let counter = Arc::new(AtomicUsize::new(0));
                     let inspector = fuchsia_inspect::Inspector::default();
-                    inspector.root().record_lazy_values("", || {
+                    inspector.root().record_lazy_values("", move || {
                         let inspector = fuchsia_inspect::Inspector::default();
-                        inspector.root().record_uint(
-                            "counter",
-                            INSPECT_COUNTER.fetch_add(1, Ordering::SeqCst) as u64,
-                        );
+                        inspector
+                            .root()
+                            .record_uint("counter", counter.fetch_add(1, Ordering::SeqCst) as u64);
                         async move { Ok(inspector) }.boxed()
                     });
                     let mut options = inspect_runtime::PublishOptions::default();
@@ -95,7 +97,9 @@ async fn make_realm(
     builder
         .add_capability(cm_rust::CapabilityDecl::Config(cm_rust::ConfigurationDecl {
             name: "fuchsia.diagnostics.persist.SkipUpdateCheck".parse().unwrap(),
-            value: cm_rust::ConfigValue::Single(cm_rust::ConfigSingleValue::Bool(true)),
+            value: cm_rust::ConfigValue::Single(cm_rust::ConfigSingleValue::Bool(
+                skip_update_check,
+            )),
         }))
         .await?;
     builder
@@ -172,6 +176,54 @@ async fn make_realm(
                 Route::new()
                     .capability(Capability::protocol::<fbattery::BatteryManagerMarker>())
                     .from(&battery_manager)
+                    .to(&persistence),
+            )
+            .await?;
+    }
+
+    if let Some(tx) = mock_update_tx {
+        let update_listener = builder
+            .add_local_child(
+                "update-listener",
+                move |handles| {
+                    let tx = tx.clone();
+                    Box::pin(async move {
+                        let mut fs = fuchsia_component::server::ServiceFs::new();
+                        fs.dir("svc")
+                            .add_fidl_service(|stream: fupdate::ListenerRequestStream| stream);
+                        fs.serve_connection(handles.outgoing_dir)?;
+                        fs.for_each_concurrent(None, move |mut stream| {
+                            let mut tx = tx.clone();
+                            async move {
+                                while let Ok(Some(req)) = stream.try_next().await {
+                                    match req {
+                                        fupdate::ListenerRequest::NotifyOnFirstUpdateCheck {
+                                            payload,
+                                            control_handle: _,
+                                        } => {
+                                            if let Some(notifier) = payload.notifier {
+                                                let proxy = notifier.into_proxy();
+                                                let _ = tx.send(proxy).await;
+                                            }
+                                        }
+                                        _ => {}
+                                    }
+                                }
+                            }
+                        })
+                        .await;
+                        Ok(())
+                    })
+                },
+                ChildOptions::new().eager(),
+            )
+            .await?;
+
+        builder
+            .add_route(
+                Route::new()
+                    .capability(Capability::protocol::<fupdate::ListenerMarker>())
+                    .from(&update_listener)
                     .to(&persistence),
             )
             .await?;
@@ -296,7 +348,7 @@ async fn wait_for_snapshot(
 #[fuchsia::test]
 async fn test_persistence_rotation() -> Result<(), Error> {
     const INTERVAL: i64 = 1;
-    let instance = make_realm(INTERVAL, None).await?;
+    let instance = make_realm(INTERVAL, None, None).await?;
 
     // Boot 1 Check: Connect to PreviousBootDataProvider, verify data.inspect is None
     let provider: fdiagnostics_persistence::PreviousBootDataProviderProxy =
@@ -350,7 +402,7 @@ async fn test_persistence_rotation() -> Result<(), Error> {
 async fn test_low_battery_trigger() -> Result<(), Error> {
     const INTERVAL: i64 = 300;
     let (tx, mut rx) = mpsc::channel(1);
-    let instance = make_realm(INTERVAL, Some(tx)).await?;
+    let instance = make_realm(INTERVAL, Some(tx), None).await?;
 
     // Boot 1 Check: Connect to PreviousBootDataProvider, verify data.inspect is None
     let provider: fdiagnostics_persistence::PreviousBootDataProviderProxy =
@@ -384,10 +436,53 @@ async fn test_low_battery_trigger() -> Result<(), Error> {
         data.inspect.expect("Expected inspect snapshot generated by low battery event");
     let file_proxy = inspect_file.into_proxy();
     let content = fuchsia_fs::file::read_to_string(&file_proxy).await?;
-    let t = extract_counter(&content).unwrap_or_else(|| {
+    let counter = extract_counter(&content).unwrap_or_else(|| {
         panic!("Failed to extract counter from JSON:\n{content}");
     });
-    assert!(t > 0, "Expected valid inspect counter > 0, got {t}");
+    assert!(counter > 0, "Expected valid inspect counter > 0, got {counter}");
+
+    Ok(())
+}
+
+#[fuchsia::test]
+async fn test_update_check_gating() -> Result<(), Error> {
+    const INTERVAL: i64 = 5;
+    let (tx, mut rx) = mpsc::channel(1);
+    let instance = make_realm(INTERVAL, None, Some(tx)).await?;
+
+    let provider: fdiagnostics_persistence::PreviousBootDataProviderProxy =
+        instance.root.connect_to_protocol_at_exposed_dir()?;
+
+    // Wait for persistence to connect to mock update Listener and send notifier proxy
+    let notifier_proxy =
+        rx.next().await.ok_or_else(|| anyhow::anyhow!("Failed to receive NotifierProxy"))?;
+
+    // Signal that the post-boot update check is complete
+    notifier_proxy.notify()?;
+
+    let data = provider.watch_previous_boot_data(&Default::default()).await?;
+    assert!(data.inspect.is_none(), "Expected no previous boot data on initial boot");
+
+    // Sleep so persistence collects an active snapshot
+    fuchsia_async::Timer::new(zx::MonotonicInstant::after(zx::MonotonicDuration::from_seconds(
+        INTERVAL,
+    )))
+    .await;
+
+    let lifecycle: fsys2::LifecycleControllerProxy =
+        instance.root.connect_to_protocol_at_exposed_dir()?;
+    restart_persistence(&lifecycle).await?;
+
+    // On Boot 2 restart, persistence connects to update Listener again
+    let notifier_proxy_2 = rx
+        .next()
+        .await
+        .ok_or_else(|| anyhow::anyhow!("Failed to receive NotifierProxy on Boot 2"))?;
+    notifier_proxy_2.notify()?;
+
+    // Verify inspect snapshot is served by PreviousBootDataProvider
+    let data = wait_for_snapshot(&instance).await?;
+    assert!(data.inspect.is_some(), "Expected previous boot data after update check complete");
 
     Ok(())
 }
