@@ -3538,7 +3538,7 @@ mod tests {
                 let (proxy, server_end) = create_proxy::<fio::SymlinkMarker>();
                 root.open(
                     path,
-                    fio::PERM_READABLE | fio::Flags::FLAG_SEND_REPRESENTATION,
+                    fio::PERM_READABLE | fio::PERM_WRITABLE | fio::Flags::FLAG_SEND_REPRESENTATION,
                     &Default::default(),
                     server_end.into_channel(),
                 )
@@ -3631,7 +3631,7 @@ mod tests {
                 let (proxy, server_end) = create_proxy::<fio::SymlinkMarker>();
                 root.open(
                     path,
-                    fio::PERM_READABLE | fio::Flags::FLAG_SEND_REPRESENTATION,
+                    fio::PERM_READABLE | fio::PERM_WRITABLE | fio::Flags::FLAG_SEND_REPRESENTATION,
                     &Default::default(),
                     server_end.into_channel(),
                 )
@@ -3930,7 +3930,7 @@ mod tests {
             let (proxy, server_end) = create_proxy::<fio::SymlinkMarker>();
             root.open(
                 "symlink",
-                fio::PERM_READABLE,
+                fio::PERM_READABLE | fio::PERM_WRITABLE,
                 &Default::default(),
                 server_end.into_channel(),
             )
@@ -4115,7 +4115,7 @@ mod tests {
                 let (proxy, server_end) = create_proxy::<fio::SymlinkMarker>();
                 root.open(
                     path,
-                    fio::PERM_READABLE | fio::Flags::FLAG_SEND_REPRESENTATION,
+                    fio::PERM_READABLE | fio::PERM_WRITABLE | fio::Flags::FLAG_SEND_REPRESENTATION,
                     &Default::default(),
                     server_end.into_channel(),
                 )

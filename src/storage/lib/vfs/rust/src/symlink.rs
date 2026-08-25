@@ -253,7 +253,16 @@ impl<T: Symlink> Connection<T> {
     }
 
     async fn handle_clone(&mut self, server_end: ServerEnd<fio::SymlinkMarker>) {
-        let flags = fio::Flags::PROTOCOL_SYMLINK | fio::Flags::PERM_GET_ATTRIBUTES;
+        let mut flags = fio::Flags::PROTOCOL_SYMLINK;
+        if self.options.rights.contains(fio::Operations::GET_ATTRIBUTES) {
+            flags |= fio::Flags::PERM_GET_ATTRIBUTES;
+        }
+        if self.options.rights.contains(fio::Operations::READ_BYTES) {
+            flags |= fio::Flags::PERM_READ_BYTES;
+        }
+        if self.options.rights.contains(fio::Operations::WRITE_BYTES) {
+            flags |= fio::Flags::PERM_WRITE_BYTES;
+        }
         self.symlink.will_clone();
         flags
             .to_object_request(server_end)
@@ -269,6 +278,18 @@ impl<T: Symlink> Connection<T> {
         target_name: String,
     ) -> Result<(), Status> {
         let target_name = Name::try_from(target_name).map_err(|_| Status::INVALID_ARGS)?;
+
+        // Enforce the maximum supported rights for symlinks to prevent rights escalation by
+        // hardlinking it into a more privileged connection. In particular, this protects
+        // attributes guarded by GET_ATTRIBUTES as well as extended attributes which are governed
+        // by READ_BYTES and WRITE_BYTES.
+        if !self.options.rights.contains(
+            fio::Operations::READ_BYTES
+                | fio::Operations::WRITE_BYTES
+                | fio::Operations::GET_ATTRIBUTES,
+        ) {
+            return Err(Status::ACCESS_DENIED);
+        }
 
         let (target_parent, target_rights) = self
             .scope
