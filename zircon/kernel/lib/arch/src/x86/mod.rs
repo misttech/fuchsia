@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 mod apic_id;
+mod bug;
 mod cache;
 pub mod cpuid;
 mod extension;
@@ -13,6 +14,7 @@ mod speculation;
 mod system;
 
 pub use apic_id::*;
+pub use bug::*;
 pub use cache::*;
 pub use extension::*;
 pub use feature::*;

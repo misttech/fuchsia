@@ -2,9 +2,11 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+use super::ArchCapabilitiesMsr;
 use super::cpuid::{EXTENDED_AMD_FEATURES_B, EXTENDED_FEATURES_D};
 use bitrs::layout;
 use regio::RwSafe;
+use regio::traits::ReadReg;
 use regio::x86::{Cpuid, Msr};
 
 /// Speculation control.
@@ -67,4 +69,55 @@ impl VirtualSpeculationControlMsr {
         // [amd/ssbd]: HYPERVISOR USAGE MODELS.
         cpuid.supports(EXTENDED_AMD_FEATURES_B) && cpuid.read(EXTENDED_AMD_FEATURES_B).virt_ssbd()
     }
+}
+
+/// Whether Indirect Branch Restricted Speculation (IBRS) is supported. The
+/// "always on" mode refers to an optimization in which IBRS need only be
+/// enabled once; IBRS in this mode are also referred to as "enhanced".
+///
+/// https://software.intel.com/security-software-guidance/deep-dives/deep-dive-indirect-branch-restricted-speculation.
+pub fn has_ibrs(
+    cpuid: &impl Cpuid,
+    msr: &impl ReadReg<ArchCapabilitiesMsr>,
+    always_on_mode: bool,
+) -> bool {
+    // The Intel way.
+    let intel_always_on = ArchCapabilitiesMsr::is_supported(cpuid) && msr.read().ibrs_all();
+    let intel_present = cpuid.read(EXTENDED_FEATURES_D).ibrs_ibpb();
+    if intel_present && (!always_on_mode || intel_always_on) {
+        return true;
+    }
+
+    // The AMD way.
+    if cpuid.supports(EXTENDED_AMD_FEATURES_B) {
+        let features = cpuid.read(EXTENDED_AMD_FEATURES_B);
+        if features.ibrs() && (!always_on_mode || features.ibrs_always_on()) {
+            return true;
+        }
+    }
+
+    false
+}
+
+/// Whether Single Thread Indirect Branch Predictors (STIBP) are supported. The
+/// "always on" mode refers to an optimization in which STIBP need only be
+/// enabled once.
+///
+/// https://software.intel.com/security-software-guidance/deep-dives/deep-dive-single-thread-indirect-branch-predictors.
+pub fn has_stibp(cpuid: &impl Cpuid, always_on_mode: bool) -> bool {
+    // The Intel way.
+    let intel_present = cpuid.read(EXTENDED_FEATURES_D).stibp();
+    if intel_present && !always_on_mode {
+        // Intel does not offer an "always on" mode.
+        return true;
+    }
+
+    // The AMD way.
+    if cpuid.supports(EXTENDED_AMD_FEATURES_B) {
+        let features = cpuid.read(EXTENDED_AMD_FEATURES_B);
+        if features.stibp() && (!always_on_mode || features.stibp_always_on()) {
+            return true;
+        }
+    }
+    false
 }

@@ -475,7 +475,7 @@ inline SpectreV2Mitigation GetPreferredSpectreV2Mitigation(CpuidIoProvider&& cpu
     case Vendor::kAmd: {
       // [amd/ibc]: EXTENDED USAGE MODELS.
       // AMD further offers a feature bit to indicate whether IBRS is a
-      // preffered mitigation strategy.
+      // preferred mitigation strategy.
       if (HasIbrs(cpuid, msr, /*always_on_mode=*/true) &&
           CpuidSupports<CpuidExtendedAmdFeatureFlagsB>(cpuid) &&
           cpuid.template Read<CpuidExtendedAmdFeatureFlagsB>().prefers_ibrs()) {
