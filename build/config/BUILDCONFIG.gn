@@ -1382,7 +1382,6 @@ default_common_binary_configs = toolchain_variant.prefix_configs
 
 default_common_rust_configs = [
   "//build/config/rust:parallel_frontend_threads",
-  "//build/config/rust:default_debug_assertions",
   "//build/config/rust:error_format_human",
   "//build/config/rust:incremental",
   "//build/config/rust:no_features",
@@ -1425,6 +1424,7 @@ if (zircon_toolchain == false) {
     "//build/config:libcpp_remove_transitive_includes",
     "//build/config:werror",
     "//build/config:no-template-backtrace-limit",
+    "//build/config/rust:default_debug_assertions",
   ]
 
   default_common_binary_configs += default_common_rust_configs

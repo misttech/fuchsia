@@ -224,6 +224,11 @@ foreach(level,
     if (level == 0) {
       defines += [ "NDEBUG" ]
     }
+    if (level > 1) {
+      configs = [ "//build/config/rust:debug_assertions" ]
+    } else {
+      configs = [ "//build/config/rust:no_debug_assertions" ]
+    }
   }
 }
 
