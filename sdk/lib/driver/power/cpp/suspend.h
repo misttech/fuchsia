@@ -7,20 +7,13 @@
 
 #include <fidl/fuchsia.hardware.power/cpp/fidl.h>
 #include <fidl/fuchsia.power.broker/cpp/fidl.h>
-#include <fidl/fuchsia.power.system/cpp/fidl.h>
 #include <lib/driver/component/cpp/driver_base.h>
 #include <lib/driver/incoming/cpp/namespace.h>
 #include <lib/zx/result.h>
 
 #include <optional>
-#include <type_traits>
 
 namespace fdf_power {
-
-namespace internal {
-zx::result<fidl::ServerEnd<fuchsia_power_system::SuspendBlocker>> RegisterSuspendHooks(
-    fdf::Namespace& incoming, std::string_view name);
-}
 
 // This class is a wrapper for a callback type that must be called into exactly once
 // before destruction. It is a move only type.
@@ -35,11 +28,18 @@ class Completer {
   Completer(const Completer&) = delete;
   Completer& operator=(const Completer&) = delete;
 
-  ~Completer();
+  ~Completer() {
+    ZX_ASSERT_MSG(callback_ == std::nullopt, "Completer was not called before going out of scope.");
+  }
 
   // Calls the wrapped callback function.
   // This method should not be invoked more than once.
-  void operator()();
+  void operator()() {
+    ZX_ASSERT_MSG(callback_ != std::nullopt, "Cannot call Completer more than once.");
+    auto callback = std::move(callback_.value());
+    callback_.reset();
+    callback();
+  }
 
  private:
   std::optional<fit::callback<void()>> callback_;
@@ -73,16 +73,12 @@ class ResumeCompleter final : public Completer {
 //   * Call `InitializeSuspend` in their start method, after
 //     `take_power_element_runner()` can return a valid value.
 //
-// `InitializeSuspend` does one of three things
+// `InitializeSuspend` does one of two things
 //   1) If suspend is not enabled based on `SuspendEnabled`, it returns
 //      `zx::ok` immediately.
 //   2) If `Driver::take_power_element_runner` returns a value it uses calls
 //      to `SetLevel` to levels 0 and 1 to drive calls to `BeforeSuspend` and
-//      `AfterResume`, respectively.
-//   3) If neither (1) nor (2), it registers a
-//      `fuchsia.power.system/SuspendBlocker` with the `ActivityGovernor`
-//      protocol.
-//
+//      `AfterResume`, respectively. Otherwise it returns ZX_ERR_UNAVAILABLE.
 // The typical implementation for `take_power_element_runner()` returns the
 // value from `DriverContext::take_power_element_runner()` from the
 // `DriverContext` instance passed to the driver's `Start` hook. The driver
@@ -101,13 +97,11 @@ class Suspendable {
         fit::bind_member(this, &Suspendable::InitializeSuspend));
   }
 
-  // Returns true if:
+  // Returns true if
   //   * suspend was enabled and we did one of the following
-  //     a) got a value from `Driver::take_power_element_runner`
-  //     b) successfully registered with SAG as a `fuchsia.power.system/SuspendBlocker`.
-  //   * suspend was not enabled
-  // Returns false if suspend was enabled and we failed to register with SAG.
-  bool SuspendActive() { return binding_.index() != 0; }
+  //   * we got a value from `Driver::take_power_element_runner`
+  // Returns false if suspend was disabled or we didn't get a power element runner.
+  bool SuspendActive() { return binding_.has_value(); }
 
   virtual ~Suspendable() = default;
 
@@ -119,40 +113,21 @@ class Suspendable {
 
     std::optional<fidl::ServerEnd<fuchsia_power_broker::ElementRunner>> runner =
         static_cast<Driver*>(this)->take_power_element_runner();
-    if (runner.has_value()) {
-      binding_.emplace<fidl::ServerBinding<fuchsia_power_broker::ElementRunner>>(
-          dispatcher, std::move(runner.value()), &server_, fidl::kIgnoreBindingClosure);
-      return zx::ok();
+
+    if (!runner.has_value()) {
+      return zx::error_result(ZX_ERR_UNAVAILABLE);
     }
 
-    zx::result server_end = internal::RegisterSuspendHooks(incoming, name);
-    if (server_end.is_error()) {
-      return server_end.take_error();
-    }
-
-    binding_.emplace<fidl::ServerBinding<fuchsia_power_system::SuspendBlocker>>(
-        dispatcher, std::move(server_end.value()), &server_, fidl::kIgnoreBindingClosure);
-
+    binding_.emplace(dispatcher, std::move(runner.value()), &server_, fidl::kIgnoreBindingClosure);
     return zx::ok();
   }
 
  private:
-  class Server : public fidl::Server<fuchsia_power_system::SuspendBlocker>,
-                 public fidl::Server<fuchsia_power_broker::ElementRunner> {
+  class Server : public fidl::Server<fuchsia_power_broker::ElementRunner> {
    public:
     explicit Server(Suspendable<Driver>* parent) : parent_(parent) {}
 
    private:
-    void BeforeSuspend(BeforeSuspendCompleter::Sync& completer) override {
-      parent_->Suspend(
-          SuspendCompleter([completer = completer.ToAsync()]() mutable { completer.Reply(); }));
-    }
-
-    void AfterResume(AfterResumeCompleter::Sync& completer) override {
-      parent_->Resume(
-          ResumeCompleter([completer = completer.ToAsync()]() mutable { completer.Reply(); }));
-    }
-
     void SetLevel(SetLevelRequest& request, SetLevelCompleter::Sync& completer) override {
       if (request.level() !=
           static_cast<uint8_t>(fuchsia_hardware_power::FrameworkElementLevels::kOff)) {
@@ -179,10 +154,6 @@ class Suspendable {
         fidl::UnknownMethodMetadata<fuchsia_power_broker::ElementRunner> metadata,
         fidl::UnknownMethodCompleter::Sync& completer) override {}
 
-    void handle_unknown_method(
-        fidl::UnknownMethodMetadata<fuchsia_power_system::SuspendBlocker> metadata,
-        fidl::UnknownMethodCompleter::Sync& completer) override {}
-
     Suspendable<Driver>* parent_;
 
     // Whether or not the power element has been set to a non-zero level for the first time. This
@@ -193,9 +164,7 @@ class Suspendable {
   };
 
   Server server_;
-  std::variant<std::monostate, fidl::ServerBinding<fuchsia_power_system::SuspendBlocker>,
-               fidl::ServerBinding<fuchsia_power_broker::ElementRunner>>
-      binding_;
+  std::optional<fidl::ServerBinding<fuchsia_power_broker::ElementRunner>> binding_;
 };
 
 }  // namespace fdf_power

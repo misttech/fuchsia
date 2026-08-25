@@ -16,7 +16,7 @@ implement_suspendable.md has information about how perform the actions called ou
 
 Add `suspend_enabled: "true"` program section of the component manifest, [src/devices/block/drivers/sdmmc/meta/sdmmc.cml](https://cs.opensource.google/fuchsia/fuchsia/+/30ec5f992257d1fb2a646e100c18b16eb7108aee:src/devices/block/drivers/sdmmc/meta/sdmmc.cml;l=16) has an example of this.
 
-If a driver already uses the Suspendable mix-in for C++ or the SuspendableDriver trait for Rust, that's all, you're done. The driver's `Suspend` and `Resume` calls will now be triggered by its power element instead of registering a `SuspendBlocker`.
+If a driver already uses the Suspendable mix-in for C++ or the SuspendableDriver trait for Rust, that's all, you're done. The driver's `Suspend` and `Resume` calls will now be triggered by its power element.
 
 ### Implement the fdf\_power::Suspendable mix-in (C++) or the fdf\_power::SuspendableDriver trait (Rust)
 
