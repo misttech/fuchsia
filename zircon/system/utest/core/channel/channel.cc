@@ -2341,5 +2341,79 @@ TEST(ChannelTest, WriteEtcReadOnlyHandleDispositionReturnsInvalidArgs) {
   ASSERT_OK(zx::vmar::root_self()->unmap(vaddr, zx_system_get_page_size()));
 }
 
+TEST(ChannelTest, CallMismatchedTxidQueuesRegularMessage) {
+  zx::channel local, remote;
+  ASSERT_OK(zx::channel::create(0, &local, &remote));
+
+  struct MismatchedMsg {
+    zx_txid_t txid;
+    uint32_t payload;
+  };
+
+  std::thread server_thread([&remote]() {
+    ASSERT_OK(remote.wait_one(ZX_CHANNEL_READABLE, zx::time::infinite(), nullptr));
+    zx_txid_t txid = 0;
+    uint32_t actual_bytes = 0;
+    uint32_t actual_handles = 0;
+    ASSERT_OK(remote.read(0, &txid, nullptr, sizeof(txid), 0, &actual_bytes, &actual_handles));
+    ASSERT_EQ(actual_bytes, sizeof(txid));
+
+    // Send a message with a kernel-generated txid (>= 0x80000000) that does NOT match txid.
+    // This exercises TryWriteToMessageWaiter searching waiters, finding no match, and falling
+    // through.
+    MismatchedMsg mismatched = {.txid = 0x8fffffff, .payload = 0xdeadbeef};
+    ASSERT_OK(remote.write(0, &mismatched, sizeof(mismatched), nullptr, 0));
+
+    // Now send the matching reply so local.call can complete.
+    struct MatchingReply {
+      zx_txid_t txid;
+      uint32_t payload;
+    } reply = {.txid = txid, .payload = 0xcafebabe};
+    ASSERT_OK(remote.write(0, &reply, sizeof(reply), nullptr, 0));
+  });
+
+  zx_txid_t txid = 0;
+  uint8_t rd_buf[8] = {0};
+  zx_channel_call_args_t args = {
+      .wr_bytes = &txid,
+      .wr_handles = nullptr,
+      .rd_bytes = rd_buf,
+      .rd_handles = nullptr,
+      .wr_num_bytes = sizeof(txid),
+      .wr_num_handles = 0,
+      .rd_num_bytes = sizeof(rd_buf),
+      .rd_num_handles = 0,
+  };
+
+  uint32_t actual_bytes = 0;
+  uint32_t actual_handles = 0;
+  ASSERT_OK(local.call(0, zx::time::infinite(), &args, &actual_bytes, &actual_handles));
+  EXPECT_EQ(actual_bytes, sizeof(rd_buf));
+
+  server_thread.join();
+
+  // The mismatched message must be queued in local as a regular readable message.
+  MismatchedMsg received_mismatched = {};
+  ASSERT_OK(local.read(0, &received_mismatched, nullptr, sizeof(received_mismatched), 0,
+                       &actual_bytes, &actual_handles));
+  EXPECT_EQ(actual_bytes, sizeof(received_mismatched));
+  EXPECT_EQ(received_mismatched.txid, 0x8fffffff);
+  EXPECT_EQ(received_mismatched.payload, 0xdeadbeef);
+}
+
+TEST(ChannelTest, ReadWithoutReadRightReturnsAccessDenied) {
+  zx::channel local, remote;
+  ASSERT_OK(zx::channel::create(0, &local, &remote));
+
+  zx::channel reduced;
+  ASSERT_OK(local.replace(ZX_DEFAULT_CHANNEL_RIGHTS & ~ZX_RIGHT_READ, &reduced));
+
+  char buf[8] = {0};
+  uint32_t actual_bytes = 0;
+  uint32_t actual_handles = 0;
+  EXPECT_STATUS(reduced.read(0, buf, nullptr, sizeof(buf), 0, &actual_bytes, &actual_handles),
+                ZX_ERR_ACCESS_DENIED);
+}
+
 }  // namespace
 }  // namespace channel
