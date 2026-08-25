@@ -3472,10 +3472,7 @@ mod vmo_rs {
             slicesnapshot_p.debug_get_cow_pages().expect("slicesnapshot has cow pages");
 
         assert_eq!(
-            slicesnapshot_cow_pages
-                .debug_get_parent()
-                .map(|p| p.as_raw())
-                .unwrap_or(core::ptr::null_mut()),
+            slicesnapshot_cow_pages.debug_get_parent().map(|p| p.as_raw()).unwrap_or_default(),
             vmo_cow_pages.as_raw()
         );
 
@@ -3543,14 +3540,8 @@ mod vmo_rs {
             anon_clone_p.debug_get_cow_pages().expect("anon_clone has cow pages");
 
         assert_eq!(
-            anon_clone_cow_pages
-                .debug_get_parent()
-                .map(|p| p.as_raw())
-                .unwrap_or(core::ptr::null_mut()),
-            anon_vmo_cow_pages
-                .debug_get_parent()
-                .map(|p| p.as_raw())
-                .unwrap_or(core::ptr::null_mut())
+            anon_clone_cow_pages.debug_get_parent().map(|p| p.as_raw()).unwrap_or_default(),
+            anon_vmo_cow_pages.debug_get_parent().map(|p| p.as_raw()).unwrap_or_default()
         );
 
         // Snapshot-modified should also be upgraded when used on a SNAPSHOT clone.

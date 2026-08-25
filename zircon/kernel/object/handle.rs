@@ -70,7 +70,7 @@ where
     }
 
     fn take_ref_ptr(&mut self) -> Option<RefPtr<T>> {
-        let ptr = core::mem::replace(&mut self.ptr, core::ptr::null());
+        let ptr = core::mem::take(&mut self.ptr);
         if ptr.is_null() {
             None
         } else {

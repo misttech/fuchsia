@@ -47,7 +47,7 @@ pub unsafe extern "C" fn lk_init_level(
         // Search for the lowest uncalled hook to call.
         ltracef!(
             "last {:p}, last_called_level {:#x}\n",
-            last.unwrap_or(core::ptr::null()),
+            last.unwrap_or_default(),
             last_called_level.0
         );
 
