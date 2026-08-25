@@ -5,4 +5,3 @@
 library fuchsia.block.gpt;
 
 string PARTITION_NAME;
-string PARTITION_TYPE_GUID;

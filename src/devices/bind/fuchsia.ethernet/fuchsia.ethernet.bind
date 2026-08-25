@@ -10,7 +10,3 @@ extend uint fuchsia.BIND_PROTOCOL {
   MAC = 0x67,
 };
 
-// The ethernet protocol is being deprecated. The LEGACY property allows
-// drivers to bind to the legacy implementation instead of the netdevice
-// migration shim.
-bool LEGACY;
