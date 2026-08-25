@@ -554,6 +554,15 @@ or `pub(crate)` or all private.
 
 **Explanation:** Public fields are not amenable to invariants.
 
+## Synchronization
+
+**Guideline:** Use the `fuchsia_sync` implementations of the following types:
+`Condvar`, `Mutex`, `RwLock`. Do not use the variants in `std::sync` or
+`parking_lot`.
+
+**Explanation:** The `fuchsia_sync` implementations perform deadlock detection
+in `debug` builds.
+
 ## Additional guides
 
 This document focuses on issues commonly encountered while reviewing code
