@@ -10,7 +10,6 @@
 #ifdef __ASSEMBLER__
 #include <lib/arch/arm64/system-asm.h>
 #include <lib/arch/asm.h>
-#include <lib/arch/internal/cache_loop.h>
 #else
 #include <lib/arch/arm64/cache.h>
 #include <lib/arch/intrin.h>
@@ -69,17 +68,6 @@
   isb
 .endm
 
-// Generate assembly to iterate over all ways/sets across all levels of data
-// caches from level 0 to the point of coherence.
-//
-// "op" should be an ARM64 operation that is called on each set/way, such as
-// "csw" (i.e., "Clean by Set and Way").
-//
-// Generated assembly does not use the stack, but clobbers registers [x0 -- x13].
-.macro data_cache_way_set_op op, name
-  data_cache_way_set_op_impl \op, \name
-.endm
-
 // clang-format on
 
 #else
@@ -132,25 +120,6 @@ inline void InvalidateGlobalInstructionCache() {
 // Caller must perform an instruction barrier (e.g., `__isb(ARM_MB_SY)`)
 // prior to relying on the operation being complete.
 inline void InvalidateLocalTlbs() { asm volatile("tlbi vmalle1" ::: "memory"); }
-
-// Local per-cpu cache flush routines.
-//
-// These clean or invalidate the data and instruction caches from the point
-// of view of a single CPU to the point of coherence.
-//
-// These are typically only useful during system setup or shutdown when
-// the MMU is not enabled. Other use-cases should use range-based cache operation.
-//
-// Interrupts must be disabled.  Because these routines may make use of CPU
-// registers that are not saved/restored on exception, it's crucial these
-// routines are not interrupted.
-extern "C" void CleanLocalCaches();
-extern "C" void InvalidateLocalCaches();
-extern "C" void CleanAndInvalidateLocalCaches();
-
-// Disables the local caches and MMU, ensuring that the former are flushed
-// (along with the TLB).
-extern "C" void DisableLocalCachesAndMmu();
 
 }  // namespace arch
 

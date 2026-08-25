@@ -196,7 +196,6 @@ if (toolchain_environment == "kernel.phys" ||
     testonly = true
     sources = [
       "asid_allocator_tests.cc",
-      "cache_test.cc",
       "mmu_tests.cc",
     ]
     deps = [
