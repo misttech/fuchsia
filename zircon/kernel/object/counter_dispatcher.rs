@@ -56,7 +56,9 @@ pub struct CounterDispatcherState {
 }
 
 impl CounterDispatcherState {
-    pub fn init() -> impl PinInit<Self, core::convert::Infallible> {
+    pub fn init(
+        _dispatcher: *const CounterDispatcher,
+    ) -> impl PinInit<Self, core::convert::Infallible> {
         DISPATCHER_COUNTER_CREATE_COUNT.add(1);
         pin_init!(Self {
             canary: Canary::new(),

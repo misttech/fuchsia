@@ -5,7 +5,6 @@
 // https://opensource.org/licenses/MIT
 
 use super::counter_dispatcher::{CounterDispatcher, CounterDispatcherState};
-use super::dispatcher::DispatcherOps;
 use super::handle::KernelHandle;
 
 use zx_types::zx_status_t;
@@ -19,18 +18,4 @@ unsafe extern "C" {
 
 // FFI trampolines for C++ calling into Rust CounterDispatcherState
 
-/// # Safety
-///
-/// The caller must ensure `ptr` points to uninitialized memory of at least
-/// `size_of::<CounterDispatcherState>()` bytes with proper alignment, and `dispatcher`
-/// points to the enclosing C++ `CounterDispatcher`.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn rust_counter_dispatcher_state_init(
-    ptr: *mut CounterDispatcherState,
-    dispatcher: *const CounterDispatcher,
-) {
-    unsafe {
-        let _ = pin_init::PinInit::__pinned_init(CounterDispatcherState::init(), ptr);
-        (*dispatcher).update_state(0, zx_types::ZX_COUNTER_NON_POSITIVE);
-    }
-}
+crate::object::dispatcher::impl_dispatcher_state_init!(CounterDispatcher, CounterDispatcherState);

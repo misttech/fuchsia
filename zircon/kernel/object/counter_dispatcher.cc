@@ -25,7 +25,7 @@ void rust_counter_dispatcher_state_destroy(void* state);
 Lock<CriticalMutex>* rust_counter_dispatcher_state_get_lock(const void* state);
 }  // extern "C"
 
-CounterDispatcher::CounterDispatcher() : Dispatcher(0u) {
+CounterDispatcher::CounterDispatcher() : Dispatcher(ZX_COUNTER_NON_POSITIVE) {
   DISPATCHER_VERIFY_OFFSET(CounterDispatcher, kCounterDispatcherStateOffset);
   rust_counter_dispatcher_state_init(&opaque_storage_, this);
 }
