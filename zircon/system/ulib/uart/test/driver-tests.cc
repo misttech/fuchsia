@@ -326,8 +326,8 @@ TEST(UartTests, All) {
 
   // Use selected driver.
   driver.Visit([](auto&& driver) {
-    driver.template Init();
-    EXPECT_EQ(driver.template Write("hi!"), 3);
+    driver.Init();
+    EXPECT_EQ(driver.Write("hi!"), 3);
   });
 
   // Transfer state to a new instantiation and pick up using it.
@@ -336,8 +336,8 @@ TEST(UartTests, All) {
   EXPECT_FALSE(driver);
   EXPECT_FALSE(newdriver);
   newdriver.Visit([](auto&& driver) {
-    EXPECT_EQ(driver.template Write("hello world\n"), 12);
-    EXPECT_FALSE(driver.template Read());
+    EXPECT_EQ(driver.Write("hello world\n"), 12);
+    EXPECT_FALSE(driver.Read());
   });
 }
 
