@@ -96,6 +96,7 @@ type FFXToolImpl interface {
 	TargetWait(ctx context.Context, target string) error
 	RebootToBootloader(ctx context.Context, target string) error
 	EnsureOutputDirsExist(ctx context.Context) error
+	SetLogLevel(level string)
 }
 
 var _ FFXToolImpl = (*FFXTool)(nil)
@@ -278,6 +279,10 @@ func (t *FFXTool) TargetWait(ctx context.Context, target string) error {
 
 func (t *FFXTool) RebootToBootloader(ctx context.Context, target string) error {
 	return t.impl.RebootToBootloader(ctx, target)
+}
+
+func (t *FFXTool) SetLogLevel(level string) {
+	t.impl.SetLogLevel(level)
 }
 
 // resolveSubtoolsSearchPath returns the provided subtoolsSearchPath if it is not empty.

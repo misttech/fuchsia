@@ -30,6 +30,7 @@ type ffxStrict struct {
 	supportsPackageBlob *bool
 	ffxInstance         *ffxutil.FFXInstance
 	hasPlaceholderKey   bool
+	logLevel            string
 }
 
 func newFfxStrict(ctx context.Context, ffxToolPath string, runDir RunDir, subtoolsSearchPath string) (*ffxStrict, error) {
@@ -90,11 +91,16 @@ func newFfxStrict(ctx context.Context, ffxToolPath string, runDir RunDir, subtoo
 		supportsPackageBlob: nil,
 		ffxInstance:         ffxInst,
 		hasPlaceholderKey:   hasPlaceholderKey,
+		logLevel:            "trace",
 	}, nil
 }
 
 func (f *ffxStrict) SetTarget(target string) {
 	f.ffxInstance.SetTarget(target)
+}
+
+func (f *ffxStrict) SetLogLevel(level string) {
+	f.logLevel = level
 }
 
 func (f *ffxStrict) TargetWait(ctx context.Context, target string) error {
@@ -451,7 +457,7 @@ func (f *ffxStrict) runFFXCmd(ctx context.Context, args ...string) ([]byte, erro
 	}
 
 	// Add default flags to match daemon implementation
-	args = append([]string{"--log-level", "trace"}, args...)
+	args = append([]string{"--log-level", f.logLevel}, args...)
 	logger.Infof(ctx, "running with strict ffx: %s %v", path, args)
 	stdoutStr, err := f.ffxInstance.RunAndGetOutput(ctx, args...)
 	stdout := []byte(stdoutStr)

@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"go.fuchsia.dev/fuchsia/src/testing/host-target-testing/cli"
+	"go.fuchsia.dev/fuchsia/tools/lib/logger"
 )
 
 type config struct {
@@ -32,6 +33,7 @@ type config struct {
 	maxSystemImageSize         uint64
 	checkABR                   bool
 	checkRebootReason          bool
+	logLevel                   logger.LogLevel
 }
 
 func newConfig(fs *flag.FlagSet) (*config, error) {
@@ -51,12 +53,13 @@ func newConfig(fs *flag.FlagSet) (*config, error) {
 		deviceConfig:       deviceConfig,
 		installerConfig:    installerConfig,
 		chainedBuildConfig: cli.NewRepeatableBuildConfig(fs, archiveConfig, deviceConfig, os.Getenv("BUILDBUCKET_ID"), ""),
+		logLevel:           logger.TraceLevel,
 	}
 
 	fs.DurationVar(&c.paveTimeout, "pave-timeout", 5*time.Minute, "Err if a pave takes longer than this time (default is 5 minutes)")
 	fs.UintVar(&c.cycleCount, "cycle-count", 1, "How many cycles to run the test before completing (default is 1)")
 	fs.DurationVar(&c.cycleTimeout, "cycle-timeout", 20*time.Minute, "Err if a test cycle takes longer than this time (default is 20 minutes)")
-	fs.BoolVar(&c.useFlash, "use-flash", false, "Provision device using flashing instead of paving")
+	fs.BoolVar(&c.useFlash, "use-flash", true, "Provision device using flashing instead of paving")
 	fs.UintVar(&c.downgradeOTAAttempts, "downgrade-ota-attempts", 1, "Number of times to try to OTA from the downgrade build to the upgrade build before failing.")
 	fs.StringVar(&c.bootfsCompression, "bootfs-compression", "zstd.max", "compress storage images, default is zstd.max")
 	fs.BoolVar(&c.buildExpectUnknownFirmware, "build-expect-unknown-firmware", false, "Ignore 'Unknown Firmware' during OTAs")
@@ -65,6 +68,7 @@ func newConfig(fs *flag.FlagSet) (*config, error) {
 	fs.Uint64Var(&c.maxSystemImageSize, "max-system-image-size", 0, "Maximum size of all the blobs in the system image")
 	fs.BoolVar(&c.checkABR, "check-abr", true, "Check that the device booted into the expected ABR slot (default is true)")
 	fs.BoolVar(&c.checkRebootReason, "check-reboot-reason", false, "Verify the device reboot reason after OTA (default is false)")
+	fs.Var(&c.logLevel, "log-level", "log level (no, fatal, error, warning, info, debug, trace)")
 
 	return c, nil
 }

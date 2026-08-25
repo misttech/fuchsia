@@ -18,6 +18,7 @@ type FfxConfig struct {
 	ffxPath               string
 	ffxRunDirPath         string
 	ffxSubtoolsSearchPath string
+	ffxLogLevel           string
 	ffx                   *ffx.FFXTool
 }
 
@@ -26,6 +27,7 @@ func NewFfxConfig(fs *flag.FlagSet) *FfxConfig {
 	fs.StringVar(&c.ffxPath, "ffx-path", "host-tools/ffx", "ffx tool path")
 	fs.StringVar(&c.ffxRunDirPath, "ffx-run-dir", "", "ffx run dir path")
 	fs.StringVar(&c.ffxSubtoolsSearchPath, "ffx-subtools-search-path", "", "ffx subtools search path")
+	fs.StringVar(&c.ffxLogLevel, "ffx-log-level", "trace", "ffx log level (default: trace)")
 
 	return c
 }
@@ -40,6 +42,10 @@ func (c *FfxConfig) Validate() error {
 		}
 	}
 	return nil
+}
+
+func (c *FfxConfig) LogLevel() string {
+	return c.ffxLogLevel
 }
 
 func (c *FfxConfig) NewFfxTool(ctx context.Context, sshPrivateKeyPath string) (*ffx.FFXTool, func(), error) {
@@ -64,6 +70,9 @@ func (c *FfxConfig) NewFfxTool(ctx context.Context, sshPrivateKeyPath string) (*
 	if err != nil {
 		cleanupDir()
 		return nil, func() {}, err
+	}
+	if c.ffxLogLevel != "" {
+		ffxTool.SetLogLevel(c.ffxLogLevel)
 	}
 
 	return ffxTool, func() {

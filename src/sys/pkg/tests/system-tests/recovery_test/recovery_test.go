@@ -42,6 +42,10 @@ func TestMain(m *testing.M) {
 
 	flag.Parse()
 
+	if flag.NArg() != 0 {
+		log.Fatalf("unexpected positional arguments: %v", flag.Args())
+	}
+
 	if err = c.validate(); err != nil {
 		log.Fatalf("config is invalid: %s", err)
 	}
@@ -52,7 +56,7 @@ func TestMain(m *testing.M) {
 func TestRecovery(t *testing.T) {
 	ctx := context.Background()
 	l := logger.NewLogger(
-		logger.TraceLevel,
+		c.logLevel,
 		color.NewColor(color.ColorAuto),
 		os.Stdout,
 		os.Stderr,
@@ -87,7 +91,7 @@ func doTest(ctx context.Context) error {
 	defer deviceClient.Close()
 
 	l := logger.NewLogger(
-		logger.TraceLevel,
+		c.logLevel,
 		color.NewColor(color.ColorAuto),
 		os.Stdout,
 		os.Stderr,

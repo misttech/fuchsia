@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"go.fuchsia.dev/fuchsia/src/testing/host-target-testing/cli"
+	"go.fuchsia.dev/fuchsia/tools/lib/logger"
 )
 
 type config struct {
@@ -26,6 +27,7 @@ type config struct {
 	useFlash         bool
 	sleepAfterReboot time.Duration
 	checkABR         bool
+	logLevel         logger.LogLevel
 }
 
 func newConfig(fs *flag.FlagSet) (*config, error) {
@@ -46,6 +48,7 @@ func newConfig(fs *flag.FlagSet) (*config, error) {
 		deviceConfig:    deviceConfig,
 		installerConfig: installerConfig,
 		buildConfig:     cli.NewRepeatableBuildConfig(fs, archiveConfig, deviceConfig, os.Getenv("BUILDBUCKET_ID"), ""),
+		logLevel:        logger.TraceLevel,
 	}
 
 	fs.IntVar(&c.cycleCount, "cycle-count", 1, "How many cycles to run the test before completing (default is 1)")
@@ -54,6 +57,7 @@ func newConfig(fs *flag.FlagSet) (*config, error) {
 	fs.BoolVar(&c.useFlash, "use-flash", false, "Provision device using flashing instead of paving")
 	fs.DurationVar(&c.sleepAfterReboot, "sleep-after-reboot", 0, "How long to sleep after rebooting the device and then connecting to the device (default 0 seconds)")
 	fs.BoolVar(&c.checkABR, "check-abr", true, "Check that the device booted into the expected ABR slot (default is true)")
+	fs.Var(&c.logLevel, "log-level", "log level (no, fatal, error, warning, info, debug, trace)")
 
 	return c, nil
 }

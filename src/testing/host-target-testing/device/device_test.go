@@ -110,9 +110,6 @@ echo "$@" > ` + argsFile + `
 
 	sshKey := generatePublicKey(t)
 	build := fakeBuild{}
-	// Flash calls RebootToBootloader which will fail because we don't have a real SSH client,
-	// but it ignores the error, so we can proceed.
-	// We use a fake script to capture the arguments passed to ffx target flash.
 
 	err = client.Flash(context.Background(), ffxTool, build, sshKey)
 	if err != nil {

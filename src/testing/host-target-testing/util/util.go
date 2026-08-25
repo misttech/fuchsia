@@ -381,7 +381,7 @@ func (i *ImagesManifest) GetPartition(slot string, typ string) (*url.URL, build.
 		}
 	}
 	if !found {
-		return nil, build.MerkleRoot{}, fmt.Errorf("missing entry for zbi")
+		return nil, build.MerkleRoot{}, fmt.Errorf("missing partition in slot %s type %s", slot, typ)
 	}
 
 	return ParsePackageUrl(partition.Url)

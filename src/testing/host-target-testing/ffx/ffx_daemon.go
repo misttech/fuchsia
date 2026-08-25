@@ -32,6 +32,7 @@ type ffxDaemon struct {
 	supportsDirect      bool
 	target              string
 	subtoolsSearchPath  string
+	logLevel            string
 }
 
 var directSupportCache sync.Map
@@ -89,6 +90,10 @@ func (f *ffxDaemon) appendDirectFlag(args []string) []string {
 
 func (f *ffxDaemon) SetTarget(target string) {
 	f.target = target
+}
+
+func (f *ffxDaemon) SetLogLevel(level string) {
+	f.logLevel = level
 }
 
 func (f *ffxDaemon) GetTarget() string {
@@ -367,14 +372,16 @@ func (f *ffxDaemon) runFFXCmd(ctx context.Context, args ...string) ([]byte, erro
 
 	// prepend a config flag for finding subtools that are compiled separately
 	// in the same directory as ffx itself.
-	args = append(
-		[]string{
-			"--log-level", "trace",
-			"--isolate-dir", f.runDir.path,
-			"--config", fmt.Sprintf("ffx.subtool-search-paths=%s", f.subtoolsSearchPath),
-		},
-		args...,
+	var defaultFlags []string
+	if f.logLevel != "" {
+		defaultFlags = append(defaultFlags, "--log-level", f.logLevel)
+	}
+	defaultFlags = append(
+		defaultFlags,
+		"--isolate-dir", f.runDir.path,
+		"--config", fmt.Sprintf("ffx.subtool-search-paths=%s", f.subtoolsSearchPath),
 	)
+	args = append(defaultFlags, args...)
 
 	logger.Infof(ctx, "running: %s %q", path, args)
 	cmd := exec.CommandContext(ctx, path, args...)
