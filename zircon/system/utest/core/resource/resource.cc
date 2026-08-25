@@ -6,6 +6,8 @@
 #include <lib/zbi-format/kernel.h>
 #include <lib/zbi-format/zbi.h>
 #include <lib/zbitl/item.h>
+#include <lib/zx/debuglog.h>
+#include <lib/zx/event.h>
 #include <lib/zx/interrupt.h>
 #include <lib/zx/pager.h>
 #include <lib/zx/port.h>
@@ -17,6 +19,7 @@
 #include <stdlib.h>
 #include <zircon/errors.h>
 #include <zircon/syscalls.h>
+#include <zircon/syscalls/log.h>
 #include <zircon/syscalls/object.h>
 #include <zircon/syscalls/port.h>
 #include <zircon/syscalls/resource.h>
@@ -613,3 +616,60 @@ TEST(Resource, PcInterruptVectorPoolLeak) {
 }
 
 #endif  // defined(__x86_64__)
+
+TEST(Resource, CreateParentMissingWriteRightsReturnsAccessDenied) {
+  zx::resource reduced;
+  ASSERT_OK(get_mmio()->duplicate(ZX_DEFAULT_RESOURCE_RIGHTS & ~ZX_RIGHT_WRITE, &reduced));
+
+  zx::resource out;
+  EXPECT_STATUS(zx::resource::create(reduced, ZX_RSRC_KIND_MMIO, mmio_test_base, mmio_test_size,
+                                     nullptr, 0, &out),
+                ZX_ERR_ACCESS_DENIED);
+}
+
+TEST(Resource, CreateInvalidParentReturnsBadHandle) {
+  zx::resource out;
+  EXPECT_STATUS(zx_resource_create(ZX_HANDLE_INVALID, ZX_RSRC_KIND_MMIO, mmio_test_base,
+                                   mmio_test_size, nullptr, 0, out.reset_and_get_address()),
+                ZX_ERR_BAD_HANDLE);
+}
+
+TEST(Resource, CreateBadNamePointerReturnsInvalidArgs) {
+  zx::resource out;
+  const char* bad_name = reinterpret_cast<const char*>(1);
+  EXPECT_STATUS(zx_resource_create(get_mmio()->get(), ZX_RSRC_KIND_MMIO, mmio_test_base,
+                                   mmio_test_size, bad_name, 8, out.reset_and_get_address()),
+                ZX_ERR_INVALID_ARGS);
+}
+
+TEST(Resource, ValidateResourceKindBaseWithWrongTypeOrKindReturnsError) {
+  // zx_debuglog_create calls validate_resource_kind_base(rsrc, ZX_RSRC_KIND_SYSTEM,
+  // ZX_RSRC_SYSTEM_DEBUGLOG_BASE).
+  zx::debuglog out;
+
+  // 1. Invalid handle with non-zero options returns ZX_ERR_BAD_HANDLE.
+  EXPECT_STATUS(
+      zx_debuglog_create(ZX_HANDLE_INVALID, ZX_LOG_FLAG_READABLE, out.reset_and_get_address()),
+      ZX_ERR_BAD_HANDLE);
+
+  // 2. Non-resource handle (event) returns ZX_ERR_WRONG_TYPE.
+  zx::event event;
+  ASSERT_OK(zx::event::create(0, &event));
+  EXPECT_STATUS(zx_debuglog_create(event.get(), 0, out.reset_and_get_address()), ZX_ERR_WRONG_TYPE);
+
+  // 3. Wrong resource kind (MMIO passed to debuglog_create) returns ZX_ERR_WRONG_TYPE.
+  EXPECT_STATUS(zx_debuglog_create(get_mmio()->get(), 0, out.reset_and_get_address()),
+                ZX_ERR_WRONG_TYPE);
+}
+
+TEST(Resource, ValidateRangedResourceWithWrongKindReturnsAccessDenied) {
+  // Trying to slice a resource using a parent of a different kind returns ZX_ERR_WRONG_TYPE in
+  // validate_ranged_resource, which sys_resource_create translates to ZX_ERR_ACCESS_DENIED.
+  zx::resource parent_mmio;
+  ASSERT_OK(zx::resource::create(*get_mmio(), ZX_RSRC_KIND_MMIO, mmio_test_base, mmio_test_size,
+                                 nullptr, 0, &parent_mmio));
+
+  zx::resource out;
+  EXPECT_STATUS(zx::resource::create(parent_mmio, ZX_RSRC_KIND_IOPORT, 0, 1, nullptr, 0, &out),
+                ZX_ERR_ACCESS_DENIED);
+}
