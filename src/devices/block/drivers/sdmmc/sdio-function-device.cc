@@ -105,7 +105,7 @@ zx_status_t SdioFunctionDevice::AddDevice(const sdio_func_hw_info_t& hw_info) {
                    .class_name("sdio")
                    .Build();
 
-  fidl::VectorView<fuchsia_driver_framework::wire::NodeProperty2> legacy_properties(arena, 5);
+  fidl::VectorView<fuchsia_driver_framework::wire::NodeProperty2> legacy_properties(arena, 6);
   legacy_properties[0] =
       fdf::MakeProperty2(arena, bind_fuchsia::PROTOCOL, bind_fuchsia_sdio::BIND_PROTOCOL_DEVICE);
   legacy_properties[1] = fdf::MakeProperty2(arena, bind_fuchsia::SDIO_VID, hw_info.manufacturer_id);
@@ -114,8 +114,10 @@ zx_status_t SdioFunctionDevice::AddDevice(const sdio_func_hw_info_t& hw_info) {
       fdf::MakeProperty2(arena, bind_fuchsia::SDIO_FUNCTION, static_cast<uint32_t>(function_));
   legacy_properties[4] =
       fdf::MakeProperty2(arena, bind_fuchsia::SERVICE, "fuchsia.hardware.sdio.Service");
+  legacy_properties[5] =
+      fdf::MakeProperty2(arena, bind_fuchsia::NAME, std::format("sdio-function-{}", function_));
 
-  fidl::VectorView<fuchsia_driver_framework::wire::NodeProperty2> driver_properties(arena, 5);
+  fidl::VectorView<fuchsia_driver_framework::wire::NodeProperty2> driver_properties(arena, 6);
   driver_properties[0] =
       fdf::MakeProperty2(arena, bind_fuchsia::PROTOCOL, bind_fuchsia_sdio::BIND_PROTOCOL_DEVICE);
   driver_properties[1] = fdf::MakeProperty2(arena, bind_fuchsia::SDIO_VID, hw_info.manufacturer_id);
@@ -124,6 +126,8 @@ zx_status_t SdioFunctionDevice::AddDevice(const sdio_func_hw_info_t& hw_info) {
       fdf::MakeProperty2(arena, bind_fuchsia::SDIO_FUNCTION, static_cast<uint32_t>(function_));
   driver_properties[4] =
       fdf::MakeProperty2(arena, bind_fuchsia::SERVICE, "fuchsia.hardware.sdio.DriverService");
+  driver_properties[5] =
+      fdf::MakeProperty2(arena, bind_fuchsia::NAME, std::format("sdio-function-{}", function_));
 
   std::vector<fuchsia_driver_framework::wire::Offer> legacy_offers =
       compat_server_.CreateOffers2(arena);
