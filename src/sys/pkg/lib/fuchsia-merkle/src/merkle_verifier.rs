@@ -2,8 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::util::{hash_block, make_hash_hasher, update_with_zeros};
+use crate::util::{hash_block, hash_block_aligned, make_hash_hasher, update_with_zeros};
 use crate::{BLOCK_SIZE, HASH_SIZE, Hash, MerkleRootBuilder};
+use storage_ptr_slice::PtrByteSlice;
 use zx_status::Status;
 
 /// Verifies data against the leaf hashes of a merkle tree.
@@ -42,6 +43,52 @@ impl MerkleVerifier {
 
         for (i, chunk) in data.chunks(BLOCK_SIZE).enumerate() {
             let hash = hash_block(chunk, offset + i * BLOCK_SIZE);
+            if self.hashes[offset / BLOCK_SIZE + i] != hash {
+                return Err(Status::IO_DATA_INTEGRITY);
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Verifies aligned, zero-padded data against the Merkle tree.
+    ///
+    /// The buffer length (`data.len()`) must be a multiple of 4096 bytes.
+    /// `unaligned_len` specifies the actual valid data length within the buffer
+    /// (`0 < unaligned_len <= data.len()`).
+    /// Any buffer bytes beyond `unaligned_len` up to `data.len()` MUST be zeroed for verification
+    /// to pass.
+    ///
+    /// Note: Does not support the null blob (empty 0-length blob, `unaligned_len == 0`).
+    pub fn verify_aligned(
+        &self,
+        offset: usize,
+        data: PtrByteSlice<'_>,
+        unaligned_len: usize,
+    ) -> Result<(), Status> {
+        let len = data.len();
+        let ending = len.checked_add(offset).ok_or(Status::INVALID_ARGS)?;
+        if !offset.is_multiple_of(BLOCK_SIZE)
+            || !len.is_multiple_of(4096)
+            || unaligned_len == 0
+            || unaligned_len > len
+        {
+            return Err(Status::INVALID_ARGS);
+        }
+        if ending.div_ceil(BLOCK_SIZE) > self.hashes.len() {
+            return Err(Status::INVALID_ARGS);
+        }
+
+        for (i, block) in data.chunks(BLOCK_SIZE).enumerate() {
+            let block_buffer_len = block.len();
+            let block_unaligned_len =
+                std::cmp::min(block_buffer_len, unaligned_len.saturating_sub(i * BLOCK_SIZE));
+            let hash = hash_block_aligned(
+                offset + i * BLOCK_SIZE,
+                block,
+                block_buffer_len,
+                block_unaligned_len,
+            );
             if self.hashes[offset / BLOCK_SIZE + i] != hash {
                 return Err(Status::IO_DATA_INTEGRITY);
             }
@@ -154,6 +201,70 @@ impl ReadSizedMerkleVerifier {
                 hash_start_index + i,
                 chunk.chunks(BLOCK_SIZE).enumerate().map(|(j, chunk)| {
                     hash_block(chunk, offset + self.read_size * i + j * BLOCK_SIZE)
+                }),
+            );
+            if hash != self.hashes[hash_start_index + i] {
+                return Err(Status::IO_DATA_INTEGRITY);
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Verifies aligned, zero-padded data against the Merkle tree.
+    ///
+    /// The buffer length (`data.len()`) must be a multiple of 4096 bytes.
+    /// `unaligned_len` specifies the actual valid data length within the buffer
+    /// (`0 < unaligned_len <= data.len()`).
+    /// Any buffer bytes beyond `unaligned_len` up to `data.len()` MUST be zeroed for verification
+    /// to pass.
+    ///
+    /// Note: Does not support the null blob (empty 0-length blob, `unaligned_len == 0`).
+    pub fn verify_aligned(
+        &self,
+        offset: usize,
+        data: PtrByteSlice<'_>,
+        unaligned_len: usize,
+    ) -> Result<(), Status> {
+        let len = data.len();
+        let end = offset.checked_add(len).ok_or(Status::INVALID_ARGS)?;
+        if !offset.is_multiple_of(self.read_size)
+            || !len.is_multiple_of(4096)
+            || unaligned_len == 0
+            || unaligned_len > len
+        {
+            return Err(Status::INVALID_ARGS);
+        }
+
+        let hash_start_index = offset / self.read_size;
+        let hash_end_index = end.div_ceil(self.read_size);
+
+        if !end.is_multiple_of(self.read_size) && hash_end_index != self.hashes.len() {
+            // The end is not aligned and it's not the end of the data.
+            return Err(Status::INVALID_ARGS);
+        }
+        if hash_end_index > self.hashes.len() {
+            return Err(Status::INVALID_ARGS);
+        }
+
+        let hashes_per_hash = self.read_size / BLOCK_SIZE;
+        for (i, chunk) in data.chunks(self.read_size).enumerate() {
+            let block_base_offset = offset + i * self.read_size;
+            let hash = hash_hashes(
+                hashes_per_hash,
+                hash_start_index + i,
+                chunk.chunks(BLOCK_SIZE).enumerate().map(|(j, block)| {
+                    let block_buffer_len = block.len();
+                    let block_unaligned_len = std::cmp::min(
+                        block_buffer_len,
+                        unaligned_len.saturating_sub(i * self.read_size + j * BLOCK_SIZE),
+                    );
+                    hash_block_aligned(
+                        block_base_offset + j * BLOCK_SIZE,
+                        block,
+                        block_buffer_len,
+                        block_unaligned_len,
+                    )
                 }),
             );
             if hash != self.hashes[hash_start_index + i] {
@@ -486,6 +597,101 @@ mod tests {
     #[test_case(8192 * 256 + 1; "2097153")]
     fn test_verification(size: usize) {
         verify_test(&mut create_data(size)).unwrap();
+    }
+
+    #[test]
+    fn test_verify_aligned() {
+        for size in [1, 100, 4096, 4097, 8192, 16384, 65536, 131072] {
+            let data = create_data(size);
+            let (root, leaf_hashes) = MerkleRootBuilder::new(Vec::new()).complete(&data);
+            let verifier = MerkleVerifier::new(root, leaf_hashes.into_boxed_slice()).unwrap();
+            let read_sized_verifier =
+                ReadSizedMerkleVerifier::new(verifier.clone(), 128 * 1024).unwrap();
+
+            let buffer_len = size.next_multiple_of(4096);
+            let mut buf = vec![0u8; buffer_len];
+            buf[..size].copy_from_slice(&data);
+
+            // Test MerkleVerifier::verify_aligned
+            verifier
+                .verify_aligned(0, PtrByteSlice::from(&buf[..]), size)
+                .expect("verify_aligned failed");
+
+            // Test ReadSizedMerkleVerifier::verify_aligned
+            read_sized_verifier
+                .verify_aligned(0, PtrByteSlice::from(&buf[..]), size)
+                .expect("read_sized_verifier.verify_aligned failed");
+
+            // Test sub-chunk verification with non-zero offsets.
+            for chunk_offset in (0..size).step_by(8192) {
+                let chunk_unaligned_len = std::cmp::min(8192, size - chunk_offset);
+                let chunk_buffer_len = chunk_unaligned_len.next_multiple_of(4096);
+                let chunk_slice = &buf[chunk_offset..chunk_offset + chunk_buffer_len];
+                verifier
+                    .verify_aligned(
+                        chunk_offset,
+                        PtrByteSlice::from(chunk_slice),
+                        chunk_unaligned_len,
+                    )
+                    .expect("verify_aligned failed for non-zero offset sub-chunk");
+            }
+
+            // Test corruption detection
+            let mut corrupt_buf = buf.clone();
+            corrupt_buf[0] ^= 0x01;
+            assert_matches!(
+                verifier.verify_aligned(0, PtrByteSlice::from(&corrupt_buf[..]), size),
+                Err(Status::IO_DATA_INTEGRITY)
+            );
+            assert_matches!(
+                read_sized_verifier.verify_aligned(0, PtrByteSlice::from(&corrupt_buf[..]), size),
+                Err(Status::IO_DATA_INTEGRITY)
+            );
+
+            // Test corruption detection at non-zero offset
+            if size > 8192 {
+                let mut corrupt_nonzero_buf = buf.clone();
+                corrupt_nonzero_buf[8192] ^= 0x01;
+                let chunk_unaligned_len = std::cmp::min(8192, size - 8192);
+                let chunk_buffer_len = chunk_unaligned_len.next_multiple_of(4096);
+                assert_matches!(
+                    verifier.verify_aligned(
+                        8192,
+                        PtrByteSlice::from(&corrupt_nonzero_buf[8192..8192 + chunk_buffer_len]),
+                        chunk_unaligned_len
+                    ),
+                    Err(Status::IO_DATA_INTEGRITY)
+                );
+            }
+
+            // Test unzeroed tail padding detection (if size < buffer_len)
+            if size < buffer_len {
+                let mut unzeroed_tail_buf = buf.clone();
+                unzeroed_tail_buf[size] = 0xAA;
+                assert_matches!(
+                    verifier.verify_aligned(0, PtrByteSlice::from(&unzeroed_tail_buf[..]), size),
+                    Err(Status::IO_DATA_INTEGRITY)
+                );
+                assert_matches!(
+                    read_sized_verifier.verify_aligned(
+                        0,
+                        PtrByteSlice::from(&unzeroed_tail_buf[..]),
+                        size
+                    ),
+                    Err(Status::IO_DATA_INTEGRITY)
+                );
+            }
+        }
+
+        // Test non-4096-aligned buffer length returns INVALID_ARGS
+        let data = create_data(100);
+        let (root, leaf_hashes) = MerkleRootBuilder::new(Vec::new()).complete(&data);
+        let verifier = MerkleVerifier::new(root, leaf_hashes.into_boxed_slice()).unwrap();
+        let unaligned_buf = [0u8; 100];
+        assert_matches!(
+            verifier.verify_aligned(0, PtrByteSlice::from(&unaligned_buf[..]), 100),
+            Err(Status::INVALID_ARGS)
+        );
     }
 
     #[test]

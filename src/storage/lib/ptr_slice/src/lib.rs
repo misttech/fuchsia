@@ -27,10 +27,10 @@
 //! 1.  **Copy data out** of the shared region into private, allocator-managed memory (e.g., via
 //!     `copy_to_slice` or `to_vec`). Once copied, the private data is safe from concurrent
 //!     modification and can be safely represented as standard Rust slices.
-//! 2.  **Perform structured access** (e.g., via `iter_as` or `iter_as_mut`) only when the underlying
-//!     types guarantee that arbitrary byte patterns are valid (via `FromBytes`) and we accept that
-//!     the values might change (though we must still be careful about Time-of-Check to Time-of-Use
-//!     (TOCTOU) vulnerabilities).
+//! 2.  **Perform structured access** (e.g., via `iter_as` or `iter_as_mut`) only when the
+//!     underlying types guarantee that arbitrary byte patterns are valid (via `FromBytes`) and we
+//!     accept that the values might change (though we must still be careful about Time-of-Check to
+//!     Time-of-Use (TOCTOU) vulnerabilities).
 //!
 //! By removing direct access to the underlying slice (i.e., not providing `as_slice` or
 //! `as_mut_slice` methods), this crate enforces that helper components must copy data into trusted
@@ -617,7 +617,14 @@ impl<'a, T: Copy + FromBytes> Iterator for IterAs<'a, T> {
             Some(unsafe { std::ptr::read(current) })
         }
     }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        let len = unsafe { self.end.offset_from(self.ptr) as usize };
+        (len, Some(len))
+    }
 }
+
+impl<T: Copy + FromBytes> ExactSizeIterator for IterAs<'_, T> {}
 
 /// An iterator over mutable typed elements of a pointer slice.
 pub struct IterAsMut<'a, T> {
@@ -640,7 +647,14 @@ impl<'a, T: Copy + FromBytes> Iterator for IterAsMut<'a, T> {
             Some(ElemMut { ptr: current, _marker: PhantomData })
         }
     }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        let len = unsafe { self.end.offset_from(self.ptr) as usize };
+        (len, Some(len))
+    }
 }
+
+impl<T: Copy + FromBytes> ExactSizeIterator for IterAsMut<'_, T> {}
 
 /// A mutable typed element of a pointer slice.
 pub struct ElemMut<'a, T> {

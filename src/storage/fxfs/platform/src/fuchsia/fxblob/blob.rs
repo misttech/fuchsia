@@ -401,7 +401,10 @@ impl PagerBacked for FxBlob {
         ensure!(range.start < self.uncompressed_size, FxfsError::InvalidArgs);
         self.record_page_fault_metric(&range);
 
-        let mut buffer = self.allocate_trusted_buffer(range.end - range.start).await;
+        let mut buffer = match self.compression_info {
+            Some(_) => self.allocate_trusted_buffer(range.end - range.start).await,
+            None => self.allocate_buffer(range.end - range.start).await,
+        };
         let unaligned_bytes =
             (std::cmp::min(range.end, self.uncompressed_size) - range.start) as usize;
         match &self.compression_info {
@@ -468,17 +471,18 @@ impl PagerBacked for FxBlob {
                 }
             }
         };
+        // Zero the tail before verification.
+        buffer.subslice_mut(unaligned_bytes..buffer.len()).fill(0);
         {
             // TODO(https://fxbug.dev/42073035): This should be offloaded to the kernel at which
             // point we can delete this.
             fxfs_trace::duration!("blob-verify", "len" => unaligned_bytes);
-            self.merkle_verifier.verify(
+            self.merkle_verifier.verify_aligned(
                 range.start as usize,
-                buffer.subslice(0..unaligned_bytes).try_as_slice().unwrap(),
+                buffer.as_ptr_slice().subslice(0..buffer.len()),
+                unaligned_bytes,
             )?;
         }
-        // Zero the tail.
-        buffer.subslice_mut(unaligned_bytes..buffer.len()).fill(0);
         Ok(buffer)
     }
 }

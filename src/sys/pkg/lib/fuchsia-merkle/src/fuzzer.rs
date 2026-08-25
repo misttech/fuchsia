@@ -7,6 +7,7 @@ use fuchsia_merkle::{
     BLOCK_SIZE, HASH_SIZE, Hash, MerkleRootBuilder, MerkleVerifier, ReadSizedMerkleVerifier,
 };
 use fuzz::fuzz;
+use storage_ptr_slice::PtrByteSlice;
 
 #[derive(Debug)]
 struct RandomMerkleVerifierInput {
@@ -116,6 +117,23 @@ fn fuchsia_merkle_fuzzer_impl(input: RandomMerkleVerifierInput) {
         .verify(ending_start_offset, &data[ending_start_offset..input.data_size + 1])
         .unwrap_err();
 
+    // Also verify using verify_aligned on page-aligned buffers.
+    let aligned_data_len = input.data_size.next_multiple_of(4096);
+    let mut aligned_data = vec![0u8; aligned_data_len];
+    aligned_data[0..input.data_size].copy_from_slice(&data[0..input.data_size]);
+
+    verifier.verify_aligned(0, PtrByteSlice::from(&aligned_data[..]), input.data_size).unwrap();
+
+    for (i, chunk) in data[0..input.data_size].chunks(input.read_size).enumerate() {
+        let chunk_offset = i * input.read_size;
+        let chunk_unaligned_len = chunk.len();
+        let chunk_buf_len = chunk_unaligned_len.next_multiple_of(4096);
+        let chunk_slice = &aligned_data[chunk_offset..chunk_offset + chunk_buf_len];
+        read_aligned_verifier
+            .verify_aligned(chunk_offset, PtrByteSlice::from(chunk_slice), chunk_unaligned_len)
+            .unwrap();
+    }
+
     data[input.data_byte_to_corrupt] ^= 0xFF;
     // Verification should fail with a flipped bit.
     verifier.verify(0, &data[0..input.data_size]).unwrap_err();
@@ -124,6 +142,18 @@ fn fuchsia_merkle_fuzzer_impl(input: RandomMerkleVerifierInput) {
     // Verification should fail with a flipped bit.
     read_aligned_verifier
         .verify(offset, &data[offset..std::cmp::min(offset + input.read_size, data.len() - 1)])
+        .unwrap_err();
+
+    aligned_data[input.data_byte_to_corrupt] ^= 0xFF;
+    verifier.verify_aligned(0, PtrByteSlice::from(&aligned_data[..]), input.data_size).unwrap_err();
+    let chunk_unaligned_len = std::cmp::min(input.read_size, input.data_size - offset);
+    let chunk_buf_len = chunk_unaligned_len.next_multiple_of(4096);
+    read_aligned_verifier
+        .verify_aligned(
+            offset,
+            PtrByteSlice::from(&aligned_data[offset..offset + chunk_buf_len]),
+            chunk_unaligned_len,
+        )
         .unwrap_err();
 }
 
