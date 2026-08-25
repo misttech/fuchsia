@@ -272,7 +272,7 @@ pub fn sys_object_get_info(
                             avail.as_ptr(),
                         )
                     };
-                    return Status::ok(status).map_err(Into::into);
+                    return Status::ok(status);
                 };
             if topic == ZX_INFO_TASK_RUNTIME_V1 {
                 let v1 = zx_info_task_runtime_v1_t {
@@ -331,7 +331,7 @@ pub fn sys_object_get_info(
                     avail.as_ptr(),
                 )
             };
-            Status::ok(status).map_err(Into::into)
+            Status::ok(status)
         }
     }
 }
