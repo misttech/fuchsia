@@ -15,6 +15,12 @@
             to: [ "#persistence" ],
         },
         {
+            protocol: "fuchsia.power.battery.BatteryManager",
+            from: "parent",
+            to: "#persistence",
+            availability: "same_as_target",
+        },
+        {
             dictionary: "diagnostics",
             from: "parent",
             to: "#persistence",
@@ -42,6 +48,12 @@
         },
         {
             config: "fuchsia.diagnostics.persist.PersistencePeriodSeconds",
+            from: "parent",
+            to: "#persistence",
+            availability: "same_as_target",
+        },
+        {
+            config: "fuchsia.diagnostics.persist.LowBatteryThresholdPercent",
             from: "parent",
             to: "#persistence",
             availability: "same_as_target",

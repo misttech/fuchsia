@@ -9,9 +9,11 @@ use fidl::endpoints::Proxy;
 use fidl_fuchsia_diagnostics as fdiagnostics;
 use fidl_fuchsia_diagnostics_persistence as fdiagnostics_persistence;
 use fidl_fuchsia_logger as flogger;
+use fidl_fuchsia_power_battery as fbattery;
 use fidl_fuchsia_sys2 as fsys2;
 use fuchsia_component_test::{Capability, ChildOptions, RealmBuilder, RealmInstance, Ref, Route};
-use futures::{FutureExt, StreamExt};
+use futures::channel::mpsc;
+use futures::{FutureExt, SinkExt, StreamExt, TryStreamExt};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 static INSPECT_COUNTER: AtomicUsize = AtomicUsize::new(0);
@@ -37,7 +39,10 @@ fn extract_counter(content: &str) -> Option<u64> {
     None
 }
 
-async fn make_realm(interval: i64) -> Result<RealmInstance, Error> {
+async fn make_realm(
+    interval: i64,
+    mock_battery_tx: Option<mpsc::Sender<fbattery::BatteryInfoWatcherProxy>>,
+) -> Result<RealmInstance, Error> {
     let builder = RealmBuilder::new().await?;
 
     let archivist = builder
@@ -100,6 +105,12 @@ async fn make_realm(interval: i64) -> Result<RealmInstance, Error> {
         }))
         .await?;
     builder
+        .add_capability(cm_rust::CapabilityDecl::Config(cm_rust::ConfigurationDecl {
+            name: "fuchsia.diagnostics.persist.LowBatteryThresholdPercent".parse().unwrap(),
+            value: cm_rust::ConfigValue::Single(cm_rust::ConfigSingleValue::Uint64(10)),
+        }))
+        .await?;
+    builder
         .add_route(
             Route::new()
                 .capability(Capability::configuration(
@@ -111,10 +122,60 @@ async fn make_realm(interval: i64) -> Result<RealmInstance, Error> {
                 .capability(Capability::configuration(
                     "fuchsia.diagnostics.persist.StopOnIdleTimeoutMillis",
                 ))
+                .capability(Capability::configuration(
+                    "fuchsia.diagnostics.persist.LowBatteryThresholdPercent",
+                ))
                 .from(Ref::self_())
                 .to(&persistence),
         )
         .await?;
+
+    if let Some(tx) = mock_battery_tx {
+        let battery_manager = builder
+            .add_local_child(
+                "battery-manager",
+                move |handles| {
+                    let tx = tx.clone();
+                    Box::pin(async move {
+                        let mut fs = fuchsia_component::server::ServiceFs::new();
+                        fs.dir("svc").add_fidl_service(
+                            |stream: fbattery::BatteryManagerRequestStream| stream,
+                        );
+                        fs.serve_connection(handles.outgoing_dir)?;
+                        fs.for_each_concurrent(None, move |mut stream| {
+                            let mut tx = tx.clone();
+                            async move {
+                                while let Ok(Some(req)) = stream.try_next().await {
+                                    match req {
+                                        fbattery::BatteryManagerRequest::Watch {
+                                            watcher,
+                                            control_handle: _,
+                                        } => {
+                                            let proxy = watcher.into_proxy();
+                                            let _ = tx.send(proxy).await;
+                                        }
+                                        _ => {}
+                                    }
+                                }
+                            }
+                        })
+                        .await;
+                        Ok(())
+                    })
+                },
+                ChildOptions::new().eager(),
+            )
+            .await?;
+
+        builder
+            .add_route(
+                Route::new()
+                    .capability(Capability::protocol::<fbattery::BatteryManagerMarker>())
+                    .from(&battery_manager)
+                    .to(&persistence),
+            )
+            .await?;
+    }
 
     // Route capability_requested event stream to archivist
     builder
@@ -235,7 +296,7 @@ async fn wait_for_snapshot(
 #[fuchsia::test]
 async fn test_persistence_rotation() -> Result<(), Error> {
     const INTERVAL: i64 = 1;
-    let instance = make_realm(INTERVAL).await?;
+    let instance = make_realm(INTERVAL, None).await?;
 
     // Boot 1 Check: Connect to PreviousBootDataProvider, verify data.inspect is None
     let provider: fdiagnostics_persistence::PreviousBootDataProviderProxy =
@@ -281,6 +342,52 @@ async fn test_persistence_rotation() -> Result<(), Error> {
     });
 
     assert!(t2 > t1, "Expected T2 ({t2}) > T1 ({t1})");
+
+    Ok(())
+}
+
+#[fuchsia::test]
+async fn test_low_battery_trigger() -> Result<(), Error> {
+    const INTERVAL: i64 = 300;
+    let (tx, mut rx) = mpsc::channel(1);
+    let instance = make_realm(INTERVAL, Some(tx)).await?;
+
+    // Boot 1 Check: Connect to PreviousBootDataProvider, verify data.inspect is None
+    let provider: fdiagnostics_persistence::PreviousBootDataProviderProxy =
+        instance.root.connect_to_protocol_at_exposed_dir()?;
+    let data = provider.watch_previous_boot_data(&Default::default()).await?;
+    assert!(data.inspect.is_none(), "Expected no previous boot data on initial boot");
+
+    // Wait for persistence to connect to mock BatteryManager and send watcher proxy
+    let watcher_proxy = rx
+        .next()
+        .await
+        .ok_or_else(|| anyhow::anyhow!("Failed to receive BatteryInfoWatcherProxy"))?;
+
+    // Emit a low battery event (8.0% <= threshold 10.0%)
+    let low_battery_info = fbattery::BatteryInfo {
+        level_percent: Some(8.0),
+        level_status: Some(fbattery::LevelStatus::Low),
+        ..Default::default()
+    };
+    watcher_proxy.on_change_battery_info(&low_battery_info, None).await?;
+
+    let lifecycle: fsys2::LifecycleControllerProxy =
+        instance.root.connect_to_protocol_at_exposed_dir()?;
+
+    // Restart persistence to rotate active snapshot to previous_boot
+    restart_persistence(&lifecycle).await?;
+
+    // Verify inspect snapshot generated by low-battery trigger is present
+    let data = wait_for_snapshot(&instance).await?;
+    let inspect_file =
+        data.inspect.expect("Expected inspect snapshot generated by low battery event");
+    let file_proxy = inspect_file.into_proxy();
+    let content = fuchsia_fs::file::read_to_string(&file_proxy).await?;
+    let t = extract_counter(&content).unwrap_or_else(|| {
+        panic!("Failed to extract counter from JSON:\n{content}");
+    });
+    assert!(t > 0, "Expected valid inspect counter > 0, got {t}");
 
     Ok(())
 }

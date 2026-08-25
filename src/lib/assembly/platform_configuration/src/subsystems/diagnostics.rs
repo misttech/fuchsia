@@ -330,6 +330,7 @@ impl<'a> DefineSubsystemConfiguration<DiagnosticsSubsystemConfig<'a>> for Diagno
             skip_update_check,
             stop_on_idle_timeout_millis,
             persistence_period_seconds,
+            low_battery_threshold_percent,
         } = persistence;
 
         builder.set_config_capability(
@@ -363,6 +364,13 @@ impl<'a> DefineSubsystemConfiguration<DiagnosticsSubsystemConfig<'a>> for Diagno
             "fuchsia.diagnostics.persist.PersistencePeriodSeconds",
             match persistence_period_seconds {
                 Some(period) => Config::new(ConfigValueType::Int64, (*period).into()),
+                None => Config::new_void(),
+            },
+        )?;
+        builder.set_config_capability(
+            "fuchsia.diagnostics.persist.LowBatteryThresholdPercent",
+            match low_battery_threshold_percent {
+                Some(threshold) => Config::new(ConfigValueType::Uint64, (*threshold).into()),
                 None => Config::new_void(),
             },
         )?;
@@ -644,6 +652,11 @@ mod tests {
                 .value(),
             Value::Null
         );
+        assert_eq!(
+            config.configuration_capabilities["fuchsia.diagnostics.persist.LowBatteryThresholdPercent"]
+                .value(),
+            Value::Null
+        );
     }
 
     #[test]
@@ -695,6 +708,7 @@ mod tests {
                 skip_update_check: Some(true),
                 stop_on_idle_timeout_millis: Some(5),
                 persistence_period_seconds: Some(10),
+                low_battery_threshold_percent: Some(15),
             },
             ..Default::default()
         };
@@ -725,6 +739,11 @@ mod tests {
             config.configuration_capabilities["fuchsia.diagnostics.persist.PersistencePeriodSeconds"]
                 .value(),
             Value::Number(10.into())
+        );
+        assert_eq!(
+            config.configuration_capabilities["fuchsia.diagnostics.persist.LowBatteryThresholdPercent"]
+                .value(),
+            Value::Number(15.into())
         );
 
         // Test explicit false override on UserDebug

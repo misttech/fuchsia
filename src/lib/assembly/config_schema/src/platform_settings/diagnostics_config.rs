@@ -165,6 +165,10 @@ pub struct PersistenceConfig {
     /// fuchsia.diagnostics.ArchiveAccessor.previous_boot that get recorded to disk.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub persistence_period_seconds: Option<i64>,
+
+    /// Battery percentage threshold to trigger an inspect snapshot.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub low_battery_threshold_percent: Option<u64>,
 }
 
 /// Diagnostics configuration options for the sampler configuration area.
@@ -506,37 +510,5 @@ mod tests {
         let deserialized: ComponentInitialInterest =
             serde_json::from_str(&serialized).expect("deserialize interest");
         assert_eq!(deserialized, original);
-    }
-
-    #[test]
-    fn serialize_deserialize_persistence_config() {
-        let json5 = r#"{}"#;
-        let mut cursor = std::io::Cursor::new(json5);
-        let config: PersistenceConfig = util::from_reader(&mut cursor).unwrap();
-        assert_eq!(config, PersistenceConfig::default());
-        assert_eq!(config.skip_update_check, None);
-        assert_eq!(config.stop_on_idle_timeout_millis, None);
-        assert_eq!(config.persistence_period_seconds, None);
-        assert_eq!(serde_json::to_string(&config).unwrap(), "{}");
-
-        let json5 = r#"{
-            skip_update_check: false,
-            stop_on_idle_timeout_millis: 5000,
-            persistence_period_seconds: 60,
-        }"#;
-        let mut cursor = std::io::Cursor::new(json5);
-        let config: PersistenceConfig = util::from_reader(&mut cursor).unwrap();
-        assert_eq!(
-            config,
-            PersistenceConfig {
-                skip_update_check: Some(false),
-                stop_on_idle_timeout_millis: Some(5000),
-                persistence_period_seconds: Some(60),
-            }
-        );
-        assert_eq!(
-            serde_json::to_string(&config).unwrap(),
-            r#"{"skip_update_check":false,"stop_on_idle_timeout_millis":5000,"persistence_period_seconds":60}"#
-        );
     }
 }

@@ -11,6 +11,7 @@ use fidl::endpoints::Proxy;
 use fidl_fuchsia_diagnostics as fdiagnostics;
 use fidl_fuchsia_diagnostics_persistence as fpersistence;
 use fidl_fuchsia_io as fio;
+use fidl_fuchsia_power_battery as fbattery;
 use fidl_fuchsia_update as fupdate;
 use fuchsia_async as fasync;
 use fuchsia_component::client::{connect_to_protocol, connect_to_protocol_at_path};
@@ -25,6 +26,9 @@ use zx::{BootInstant, MonotonicDuration, MonotonicInstant};
 
 /// The name of the subcommand and the logs-tag, used by launcher
 pub const PROGRAM_NAME: &str = "persistence";
+
+/// Percentage above threshold required to re-arm the low battery snapshot trigger.
+const BATTERY_TRIGGER_HYSTERESIS_PERCENT: f32 = 5.0;
 
 /// Command line args
 #[derive(FromArgs, Debug, PartialEq)]
@@ -100,9 +104,10 @@ pub async fn main(_args: CommandLine) -> Result<(), Error> {
     )?;
 
     let period = MonotonicDuration::from_seconds(config.persistence_period_seconds);
+    let proxy_periodic = proxy.clone();
     scope.spawn(async move {
         let mut reader = ArchiveReader::inspect();
-        reader.with_archive(proxy);
+        reader.with_archive(proxy_periodic);
         if let Err(e) = collect_active_snapshot(&mut reader, cache_dir).await {
             error!(e:?; "Error collecting initial active inspect snapshot");
         }
@@ -114,10 +119,74 @@ pub async fn main(_args: CommandLine) -> Result<(), Error> {
         }
     });
 
-    fuchsia_inspect::component::health().set_ok();
+    if let Ok(battery_manager) = connect_to_protocol::<fbattery::BatteryManagerMarker>() {
+        let threshold = config.low_battery_threshold_percent as f32;
+        let proxy_battery = proxy.clone();
+        let cache_dir_buf = cache_dir.to_path_buf();
+        scope.spawn(async move {
+            if let Err(e) =
+                listen_for_low_battery(battery_manager, threshold, proxy_battery, &cache_dir_buf)
+                    .await
+            {
+                warn!(e:?; "BatteryManager watcher task terminated");
+            }
+        });
+    }
 
+    fuchsia_inspect::component::health().set_ok();
     scope.await;
 
+    Ok(())
+}
+
+async fn listen_for_low_battery(
+    battery_manager: fbattery::BatteryManagerProxy,
+    threshold_percent: f32,
+    proxy: fdiagnostics::ArchiveAccessorProxy,
+    cache_dir: &Path,
+) -> Result<(), Error> {
+    let (watcher_client, mut request_stream) =
+        fidl::endpoints::create_request_stream::<fbattery::BatteryInfoWatcherMarker>();
+    battery_manager.watch(watcher_client)?;
+
+    let mut reader = ArchiveReader::inspect();
+    reader.with_archive(proxy);
+    let mut triggered = false;
+
+    while let Some(request) = request_stream.try_next().await? {
+        match request {
+            fbattery::BatteryInfoWatcherRequest::OnChangeBatteryInfo {
+                info,
+                wake_lease: _,
+                responder,
+            } => {
+                let level_percent = info.level_percent.unwrap_or(100.0);
+                let level_status = info.level_status.unwrap_or(fbattery::LevelStatus::Unknown);
+
+                let is_low = level_percent <= threshold_percent
+                    || level_status == fbattery::LevelStatus::Low
+                    || level_status == fbattery::LevelStatus::Critical;
+
+                if is_low {
+                    if !triggered {
+                        info!(
+                            level_percent,
+                            level_status:?;
+                            "Low battery threshold reached, collecting active snapshot"
+                        );
+                        if let Err(e) = collect_active_snapshot(&mut reader, cache_dir).await {
+                            error!(e:?; "Error collecting active snapshot on low battery");
+                        }
+                        triggered = true;
+                    }
+                } else if level_percent > threshold_percent + BATTERY_TRIGGER_HYSTERESIS_PERCENT {
+                    triggered = false;
+                }
+
+                responder.send()?;
+            }
+        }
+    }
     Ok(())
 }
 

@@ -27,6 +27,11 @@
             from: "parent",
         },
         {
+            protocol: "fuchsia.power.battery.BatteryManager",
+            from: "parent",
+            availability: "optional",
+        },
+        {
             storage: "cache",
             path: "/cache",
         },
@@ -52,6 +57,13 @@
             type: "int64",
             availability: "optional",
             default: 300,
+        },
+        {
+            config: "fuchsia.diagnostics.persist.LowBatteryThresholdPercent",
+            key: "low_battery_threshold_percent",
+            type: "uint64",
+            availability: "optional",
+            default: 10,
         },
 
         // LINT.ThenChange(//src/lib/assembly/platform_configuration/src/subsystems/diagnostics.rs)

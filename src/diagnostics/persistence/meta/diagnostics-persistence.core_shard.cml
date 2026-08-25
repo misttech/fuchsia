@@ -17,6 +17,14 @@
             source_availability: "unknown",
         },
         {
+            protocol: [ "fuchsia.power.battery.BatteryManager" ],
+            from: "#battery_manager",
+            to: [ "#diagnostics" ],
+            dependency: "weak",
+            availability: "optional",
+            source_availability: "unknown",
+        },
+        {
             storage: "cache",
             from: "self",
             to: "#diagnostics",
@@ -34,6 +42,12 @@
         },
         {
             config: "fuchsia.diagnostics.persist.PersistencePeriodSeconds",
+            from: "parent",
+            to: "#diagnostics",
+            availability: "same_as_target",
+        },
+        {
+            config: "fuchsia.diagnostics.persist.LowBatteryThresholdPercent",
             from: "parent",
             to: "#diagnostics",
             availability: "same_as_target",
