@@ -1559,4 +1559,130 @@ TEST(StreamTestCase, FaultBeyondStreamSizeResizeDownRace) {
   }
 }
 
+TEST(StreamTestCase, SyscallInvalidArgs) {
+  zx::vmo vmo;
+  ASSERT_OK(zx::vmo::create(zx_system_get_page_size(), 0, &vmo));
+
+  zx_handle_t raw_stream = ZX_HANDLE_INVALID;
+  EXPECT_EQ(ZX_ERR_INVALID_ARGS, zx_stream_create(0xFFFFFFFF, vmo.get(), 0, &raw_stream));
+  EXPECT_EQ(ZX_ERR_BAD_HANDLE, zx_stream_create(0, ZX_HANDLE_INVALID, 0, &raw_stream));
+
+  zx::event event;
+  ASSERT_OK(zx::event::create(0, &event));
+  EXPECT_EQ(ZX_ERR_WRONG_TYPE, zx_stream_create(0, event.get(), 0, &raw_stream));
+
+  zx::vmo read_only_vmo;
+  ASSERT_OK(vmo.duplicate(ZX_RIGHT_READ, &read_only_vmo));
+  EXPECT_EQ(ZX_ERR_ACCESS_DENIED,
+            zx_stream_create(ZX_STREAM_MODE_WRITE, read_only_vmo.get(), 0, &raw_stream));
+
+  zx::vmo write_only_vmo;
+  ASSERT_OK(vmo.duplicate(ZX_RIGHT_WRITE, &write_only_vmo));
+  EXPECT_EQ(ZX_ERR_ACCESS_DENIED,
+            zx_stream_create(ZX_STREAM_MODE_READ, write_only_vmo.get(), 0, &raw_stream));
+
+  zx::stream rw_stream;
+  ASSERT_OK(zx::stream::create(ZX_STREAM_MODE_READ | ZX_STREAM_MODE_WRITE, vmo, 0, &rw_stream));
+
+  zx::stream ro_stream;
+  ASSERT_OK(zx::stream::create(ZX_STREAM_MODE_READ, vmo, 0, &ro_stream));
+
+  zx::stream wo_stream;
+  ASSERT_OK(zx::stream::create(ZX_STREAM_MODE_WRITE, vmo, 0, &wo_stream));
+
+  char buf[8] = {};
+  zx_iovec_t vec = {
+      .buffer = buf,
+      .capacity = sizeof(buf),
+  };
+  size_t actual = 0;
+
+  // zx_stream_writev
+  EXPECT_EQ(ZX_ERR_INVALID_ARGS, zx_stream_writev(rw_stream.get(), 0x1234, &vec, 1, &actual));
+  EXPECT_EQ(ZX_ERR_INVALID_ARGS, zx_stream_writev(rw_stream.get(), 0, nullptr, 1, &actual));
+  EXPECT_EQ(ZX_ERR_BAD_HANDLE, zx_stream_writev(ZX_HANDLE_INVALID, 0, &vec, 1, &actual));
+  EXPECT_EQ(ZX_ERR_ACCESS_DENIED, zx_stream_writev(ro_stream.get(), 0, &vec, 1, &actual));
+
+  // zx_stream_writev_at
+  EXPECT_EQ(ZX_ERR_INVALID_ARGS, zx_stream_writev_at(rw_stream.get(), 1, 0, &vec, 1, &actual));
+  EXPECT_EQ(ZX_ERR_INVALID_ARGS, zx_stream_writev_at(rw_stream.get(), 0, 0, nullptr, 1, &actual));
+  EXPECT_EQ(ZX_ERR_BAD_HANDLE, zx_stream_writev_at(ZX_HANDLE_INVALID, 0, 0, &vec, 1, &actual));
+  EXPECT_EQ(ZX_ERR_ACCESS_DENIED, zx_stream_writev_at(ro_stream.get(), 0, 0, &vec, 1, &actual));
+
+  // zx_stream_readv
+  EXPECT_EQ(ZX_ERR_INVALID_ARGS, zx_stream_readv(rw_stream.get(), 1, &vec, 1, &actual));
+  EXPECT_EQ(ZX_ERR_INVALID_ARGS, zx_stream_readv(rw_stream.get(), 0, nullptr, 1, &actual));
+  EXPECT_EQ(ZX_ERR_BAD_HANDLE, zx_stream_readv(ZX_HANDLE_INVALID, 0, &vec, 1, &actual));
+  EXPECT_EQ(ZX_ERR_ACCESS_DENIED, zx_stream_readv(wo_stream.get(), 0, &vec, 1, &actual));
+
+  // zx_stream_readv_at
+  EXPECT_EQ(ZX_ERR_INVALID_ARGS, zx_stream_readv_at(rw_stream.get(), 1, 0, &vec, 1, &actual));
+  EXPECT_EQ(ZX_ERR_INVALID_ARGS, zx_stream_readv_at(rw_stream.get(), 0, 0, nullptr, 1, &actual));
+  EXPECT_EQ(ZX_ERR_BAD_HANDLE, zx_stream_readv_at(ZX_HANDLE_INVALID, 0, 0, &vec, 1, &actual));
+  EXPECT_EQ(ZX_ERR_ACCESS_DENIED, zx_stream_readv_at(wo_stream.get(), 0, 0, &vec, 1, &actual));
+
+  // zx_stream_seek
+  zx_off_t seek_out = 0;
+  EXPECT_EQ(ZX_ERR_BAD_HANDLE,
+            zx_stream_seek(ZX_HANDLE_INVALID, ZX_STREAM_SEEK_ORIGIN_START, 0, &seek_out));
+
+  zx::stream no_rights_stream;
+  ASSERT_OK(rw_stream.duplicate(0, &no_rights_stream));
+  EXPECT_EQ(ZX_ERR_ACCESS_DENIED,
+            zx_stream_seek(no_rights_stream.get(), ZX_STREAM_SEEK_ORIGIN_START, 0, &seek_out));
+  EXPECT_EQ(
+      ZX_ERR_INVALID_ARGS,
+      zx_stream_seek(rw_stream.get(), static_cast<zx_stream_seek_origin_t>(999), 0, &seek_out));
+}
+
+TEST(StreamTestCase, ZeroLengthVectors) {
+  zx::vmo vmo;
+  ASSERT_OK(zx::vmo::create(zx_system_get_page_size(), 0, &vmo));
+  ASSERT_OK(vmo.set_prop_content_size(100));
+
+  zx::stream stream;
+  ASSERT_OK(zx::stream::create(ZX_STREAM_MODE_READ | ZX_STREAM_MODE_WRITE, vmo, 10, &stream));
+
+  char buf[8] = {};
+  zx_iovec_t zero_vec = {
+      .buffer = buf,
+      .capacity = 0,
+  };
+  size_t actual = 999;
+
+  // With vector_count = 0 and nullptr vector
+  EXPECT_EQ(ZX_ERR_INVALID_ARGS, zx_stream_readv(stream.get(), 0, nullptr, 0, &actual));
+  EXPECT_EQ(ZX_ERR_INVALID_ARGS, zx_stream_readv_at(stream.get(), 0, 0, nullptr, 0, &actual));
+  EXPECT_EQ(ZX_ERR_INVALID_ARGS, zx_stream_writev(stream.get(), 0, nullptr, 0, &actual));
+  EXPECT_EQ(ZX_ERR_INVALID_ARGS, zx_stream_writev_at(stream.get(), 0, 0, nullptr, 0, &actual));
+  EXPECT_EQ(ZX_ERR_INVALID_ARGS,
+            zx_stream_writev(stream.get(), ZX_STREAM_APPEND, nullptr, 0, &actual));
+
+  // With vector_count = 1 and capacity = 0
+  actual = 999;
+  EXPECT_OK(zx_stream_readv(stream.get(), 0, &zero_vec, 1, &actual));
+  EXPECT_EQ(0u, actual);
+
+  actual = 999;
+  EXPECT_OK(zx_stream_readv_at(stream.get(), 0, 5, &zero_vec, 1, &actual));
+  EXPECT_EQ(0u, actual);
+
+  actual = 999;
+  EXPECT_OK(zx_stream_writev(stream.get(), 0, &zero_vec, 1, &actual));
+  EXPECT_EQ(0u, actual);
+
+  actual = 999;
+  EXPECT_OK(zx_stream_writev_at(stream.get(), 0, 5, &zero_vec, 1, &actual));
+  EXPECT_EQ(0u, actual);
+
+  actual = 999;
+  EXPECT_OK(zx_stream_writev(stream.get(), ZX_STREAM_APPEND, &zero_vec, 1, &actual));
+  EXPECT_EQ(0u, actual);
+
+  // Verify seek position has not changed
+  zx_off_t seek_pos = 0;
+  EXPECT_OK(stream.seek(ZX_STREAM_SEEK_ORIGIN_CURRENT, 0, &seek_pos));
+  EXPECT_EQ(10u, seek_pos);
+}
+
 }  // namespace
