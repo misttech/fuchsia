@@ -14,6 +14,7 @@ block_server_sources = [
   "src/callback_interface/block_service.rs",
   "src/decompression_tests.rs",
   "src/lib.rs",
+  "src/mapper.rs",
   "src/testing.rs",
   "src/verifier.rs",
 ]

@@ -86,6 +86,16 @@ impl VmoBackedServer {
         R::from_client(client)
     }
 
+    pub fn connect_mapper(self: &Arc<Self>) -> fblock::MapperProxy {
+        let (proxy, server) = fidl::endpoints::create_proxy::<fblock::MapperMarker>();
+        let this = self.clone();
+        fuchsia_async::Task::spawn(async move {
+            let _ = this.server.handle_mapper_requests(server.into_stream()).await;
+        })
+        .detach();
+        proxy
+    }
+
     pub fn connect_insecure_inline_encryption_server(
         self: &Arc<Self>,
         server: ServerEnd<DeviceMarker>,

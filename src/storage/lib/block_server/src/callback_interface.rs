@@ -10,10 +10,9 @@ use crate::{
 use anyhow::Error;
 use block_protocol::{BlockFifoRequest, BlockFifoResponse};
 use fidl_fuchsia_storage_block as fblock;
-use fuchsia_async as fasync;
 use fuchsia_sync::{Condvar, Mutex};
+use futures::TryStreamExt as _;
 use futures::stream::{AbortHandle, Abortable};
-use futures::{FutureExt as _, TryStreamExt as _};
 use mapping::reader::BlockService;
 use std::borrow::{Borrow, Cow};
 use std::collections::{HashMap, VecDeque};
@@ -74,156 +73,6 @@ pub trait Interface: Send + Sync + Unpin + 'static {
     ) -> Result<Arc<Verifier>, zx::Status> {
         let verifier = Arc::new(Verifier::new(delivery_queue));
         Ok(verifier)
-    }
-}
-
-struct MapperVmoThread {
-    mapping_vmo: zx::Vmo,
-    thread: Option<std::thread::JoinHandle<()>>,
-}
-
-impl MapperVmoThread {
-    fn spawn<
-        F: Fn(u64, std::ops::Range<u64>) -> R + Send + Sync + 'static,
-        R: mapping::PageRequest + 'static,
-    >(
-        mapping_vmo: &zx::Vmo,
-        files: Arc<mapping::Files<dyn mapping::reader::BlockService, F, R>>,
-    ) -> Result<Self, Error> {
-        let mapping_vmo_dup = mapping_vmo.duplicate_handle(zx::Rights::SAME_RIGHTS)?;
-        let thread_vmo = mapping_vmo.duplicate_handle(zx::Rights::SAME_RIGHTS)?;
-        let files_for_vmo = files.clone();
-        let thread =
-            std::thread::spawn(
-                move || match vmo_fifo::Receiver::<mapping::RawMappingCommand>::new(
-                    mapping_vmo_dup,
-                    256,
-                ) {
-                    Ok(mut receiver) => {
-                        while let Ok(msg) = receiver.peek() {
-                            if let Err(error) =
-                                mapping::process_mapping_command(&msg, &files_for_vmo)
-                            {
-                                log::error!(error:?; "Failed to process mapping command");
-                            }
-                            if let Err(error) = msg.pop() {
-                                log::error!(error:?; "Failed to pop mapping command from FIFO");
-                            }
-                        }
-                    }
-                    Err(error) => {
-                        log::error!(error:?; "Failed to create mapping VMO FIFO receiver");
-                    }
-                },
-            );
-        Ok(Self { mapping_vmo: thread_vmo, thread: Some(thread) })
-    }
-}
-
-impl Drop for MapperVmoThread {
-    fn drop(&mut self) {
-        let _ = self.mapping_vmo.signal(zx::Signals::empty(), vmo_fifo::SIG_SHUTDOWN);
-        if let Some(thread) = self.thread.take() {
-            let _ = thread.join();
-        }
-    }
-}
-
-async fn run_mapper_session_loop<
-    I: Interface + ?Sized,
-    F: Fn(u64, std::ops::Range<u64>) -> R + Send + Sync + 'static,
-    R: mapping::PageRequest + 'static,
->(
-    interface: Arc<I>,
-    service: Arc<dyn mapping::reader::BlockService>,
-    session: fidl::endpoints::ServerEnd<fblock::MapperSessionMarker>,
-    mapping_vmo: zx::Vmo,
-    files: Arc<mapping::Files<dyn mapping::reader::BlockService, F, R>>,
-) -> Result<(), Error> {
-    let _mapper_vmo_thread = MapperVmoThread::spawn(&mapping_vmo, files.clone())?;
-
-    let scope = fasync::Scope::new();
-    let mut stream = session.into_stream();
-    while let Some(request) = stream.try_next().await? {
-        match request {
-            fblock::MapperSessionRequest::OpenChildSession {
-                session,
-                mapping_vmo,
-                parent_key,
-                port,
-                delivery_queue,
-                responder,
-            } => {
-                if let Some(parent_file) = files.get_file(parent_key) {
-                    let child_service = Arc::new(mapping::reader::ChildBlockService::new(
-                        service.clone(),
-                        parent_file,
-                    ));
-                    match serve_mapper_session(
-                        interface.clone(),
-                        child_service,
-                        session,
-                        mapping_vmo,
-                        port,
-                        delivery_queue,
-                    ) {
-                        Ok(child_fut) => {
-                            scope.spawn(async move {
-                                if let Err(e) = child_fut.await {
-                                    log::warn!(e:?; "Child mapper session failed");
-                                }
-                            });
-                            responder.send(Ok(()))?;
-                        }
-                        Err(status) => {
-                            responder.send(Err(status.into_raw()))?;
-                        }
-                    }
-                } else {
-                    responder.send(Err(zx::Status::NOT_FOUND.into_raw()))?;
-                }
-            }
-            fblock::MapperSessionRequest::Close { responder } => {
-                responder.send(Ok(()))?;
-                break;
-            }
-            fblock::MapperSessionRequest::_UnknownMethod { .. } => {}
-        }
-    }
-
-    scope.cancel().await;
-    Ok(())
-}
-
-fn serve_mapper_session<I: Interface + ?Sized>(
-    interface: Arc<I>,
-    service: Arc<dyn mapping::reader::BlockService>,
-    session: fidl::endpoints::ServerEnd<fblock::MapperSessionMarker>,
-    mapping_vmo: zx::Vmo,
-    port: Option<zx::Port>,
-    delivery_queue: Option<zx::Vmo>,
-) -> Result<futures::future::BoxFuture<'static, Result<(), Error>>, zx::Status> {
-    match (port, delivery_queue) {
-        (Some(port), Some(delivery_queue)) => {
-            let verifier = interface.on_open_mapper_session(&mapping_vmo, delivery_queue)?;
-            let files = Arc::new(mapping::Files::new(service.clone(), move |key, range| {
-                verifier.get_page_request(key, range)
-            }));
-            let pager_thread = mapping::PagerThread::spawn(port, files.clone());
-            Ok(async move {
-                let _pager_thread = pager_thread;
-                run_mapper_session_loop(interface, service, session, mapping_vmo, files).await
-            }
-            .boxed())
-        }
-        (None, None) => {
-            let files = Arc::new(mapping::Files::new_without_pager(service.clone()));
-            Ok(async move {
-                run_mapper_session_loop(interface, service, session, mapping_vmo, files).await
-            }
-            .boxed())
-        }
-        _ => Err(zx::Status::INVALID_ARGS),
     }
 }
 
@@ -347,8 +196,11 @@ impl<I: Interface + ?Sized> super::SessionManager for SessionManager<I> {
     ) -> Result<impl Future<Output = Result<(), Error>> + Send, zx::Status> {
         let sm: &SessionManager<I> = orchestrator.as_ref().borrow();
         let service = sm.into_block_service(&orchestrator);
-        serve_mapper_session(
-            sm.interface.clone(),
+        let interface = sm.interface.clone();
+        crate::mapper::serve_mapper_session(
+            Arc::new(move |mapping_vmo: &zx::Vmo, dq: zx::Vmo| {
+                interface.on_open_mapper_session(mapping_vmo, dq)
+            }),
             service,
             session,
             mapping_vmo,

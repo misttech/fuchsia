@@ -21,6 +21,7 @@ use storage_device::buffer::Buffer;
 pub mod async_interface;
 pub mod c_interface;
 pub mod callback_interface;
+mod mapper;
 pub mod verifier;
 
 #[cfg(test)]
