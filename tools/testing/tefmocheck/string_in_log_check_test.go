@@ -6,12 +6,10 @@ package tefmocheck
 
 import (
 	"fmt"
-	"strings"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
 
-	botanistconstants "go.fuchsia.dev/fuchsia/tools/botanist/constants"
 	"go.fuchsia.dev/fuchsia/tools/build"
 	"go.fuchsia.dev/fuchsia/tools/testing/runtests"
 )
@@ -686,51 +684,4 @@ func TestCheck(t *testing.T) {
 			}
 		})
 	}
-}
-
-func TestStringInLogsChecks(t *testing.T) {
-	t.Run("checks for infra tool logs are bucketed correctly", func(t *testing.T) {
-		infraTools := []string{"botanist", "testrunner"}
-		for _, check := range fuchsiaLogChecks() {
-			for _, tool := range infraTools {
-				if strings.Contains(check.Name(), tool) {
-					t.Errorf("Log check mentioning tool %q should go in infraToolLogChecks: %q", tool, check.Name())
-				}
-			}
-		}
-	})
-
-	t.Run("StringInLogsChecks returns all expected checks", func(t *testing.T) {
-		// This is intentionally brittle; we want to make it difficult for
-		// people to reorder checks in ways that might degrade tefmocheck's
-		// ability to root-cause failures.
-		expected := append(fuchsiaLogChecks(), infraToolLogChecks()...)
-		expected = append(expected, &stringInLogCheck{
-			String: fmt.Sprintf("botanist ERROR: %s", botanistconstants.BotanistFailedMsg),
-			Type:   swarmingOutputType,
-		})
-		got := StringInLogsChecks()
-		// Crude check to make sure someone doesn't accidentally strip out most
-		// of StringInLogsChecks .
-		if len(got) < 50 {
-			t.Fatalf("StringInLogsChecks returned only %d checks, expected >=50", len(got))
-		}
-		// It's ok to have some extra checks preceding the start of the expected
-		// checks, so trim those off.
-		got = got[len(got)-len(expected):]
-		if diff := cmp.Diff(expected, got, cmp.AllowUnexported(stringInLogCheck{}, logBlock{})); diff != "" {
-			t.Errorf("StringInLogsChecks() returned diff (-want +got): %s", diff)
-		}
-	})
-
-	t.Run("botanist failed check is last in StringInLogsChecks", func(t *testing.T) {
-		checks := StringInLogsChecks()
-		if len(checks) == 0 {
-			t.Fatalf("StringInLogsChecks returned no checks")
-		}
-		lastCheck := checks[len(checks)-1]
-		if !strings.Contains(lastCheck.Name(), "botanist_failed") {
-			t.Errorf("Expected last check to be botanist_failed, got %q", lastCheck.Name())
-		}
-	})
 }

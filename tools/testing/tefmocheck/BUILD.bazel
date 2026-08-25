@@ -31,15 +31,8 @@ go_library(
     deps = [
         "//third_party/golibs:golang.org/x/sync/errgroup",
         "//third_party/golibs:gopkg.in/yaml.v2",
-        "//tools/botanist:constants",
         "//tools/build",
-        "//tools/lib/ffxutil:constants",
-        "//tools/lib/serial:constants",
-        "//tools/lib/syslog:constants",
-        "//tools/net/netutil:constants",
-        "//tools/net/sshutil:constants",
         "//tools/testing/runtests",
-        "//tools/testing/testrunner:constants",
     ],
 )
 
