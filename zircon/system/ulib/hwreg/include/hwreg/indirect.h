@@ -51,7 +51,7 @@ class IndirectIo {
   void Write(IntType value, uint32_t offset) {
     std::lock_guard<std::mutex> l(lock_);
     io_.template Write<IndexType>(static_cast<IndexType>(offset), index_offset);
-    io_.template Write(value, data_offset);
+    io_.template Write<IntType>(value, data_offset);
   }
 
   template <class IntType>
