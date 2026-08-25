@@ -44,7 +44,7 @@ pub fn sys_object_get_property(
             size,
         )
     };
-    Status::ok(status).map_err(Into::into)
+    Status::ok(status)
 }
 
 #[syscall]
@@ -63,5 +63,5 @@ pub fn sys_object_set_property(
             size,
         )
     };
-    Status::ok(status).map_err(Into::into)
+    Status::ok(status)
 }
