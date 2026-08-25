@@ -14,9 +14,10 @@ use fdomain_fuchsia_diagnostics_host::{
 };
 use fdomain_fuchsia_sys2 as fsys2;
 use futures::AsyncReadExt;
-use iquery_fdomain::commands::{DiagnosticsProvider, connect_accessor, get_accessor_selectors};
+use iquery_fdomain::commands::{
+    DiagnosticsProvider, connect_accessor, fuzzy_search_accessors, get_accessor_selectors,
+};
 use iquery_fdomain::types::Error;
-use moniker::Moniker;
 use serde::Deserialize;
 use std::borrow::Cow;
 
@@ -38,13 +39,6 @@ fn target_protocol_to_host(protocol: &str) -> String {
     } else {
         protocol.to_string()
     }
-}
-
-fn moniker_and_protocol(s: &str) -> Result<(Moniker, String), Error> {
-    let (moniker, protocol) = s.rsplit_once(":").ok_or_else(|| Error::invalid_accessor(s))?;
-    let moniker = Moniker::try_from(moniker).map_err(|_| Error::invalid_accessor(s))?;
-    let host_protocol = target_protocol_to_host(protocol);
-    Ok((moniker, host_protocol))
 }
 
 impl HostArchiveReader {
@@ -72,10 +66,11 @@ impl HostArchiveReader {
 
         let accessor = match accessor.as_deref() {
             Some(s) => {
-                let (moniker, protocol) = moniker_and_protocol(s)?;
+                let (moniker, protocol) = fuzzy_search_accessors(&s, &self.query_proxy).await?;
+                let host_protocol = target_protocol_to_host(&protocol);
                 let proxy = connect_accessor::<HostArchiveAccessorMarker>(
                     &moniker,
-                    &protocol,
+                    &host_protocol,
                     &self.query_proxy,
                 )
                 .await?;
@@ -140,63 +135,32 @@ mod tests {
     use super::*;
     use test_case::test_case;
 
+    #[test_case("fuchsia.diagnostics.ArchiveAccessor", "fuchsia.diagnostics.host.ArchiveAccessor")]
     #[test_case(
-        "bootstrap/archivist:fuchsia.diagnostics.ArchiveAccessor",
-        "bootstrap/archivist",
-        "fuchsia.diagnostics.host.ArchiveAccessor";
-        "default_target_accessor"
+        "fuchsia.diagnostics.ArchiveAccessor.feedback",
+        "fuchsia.diagnostics.host.ArchiveAccessor.feedback"
     )]
     #[test_case(
-        "bootstrap/archivist:fuchsia.diagnostics.ArchiveAccessor.feedback",
-        "bootstrap/archivist",
-        "fuchsia.diagnostics.host.ArchiveAccessor.feedback";
-        "target_feedback_pipeline_accessor"
+        "fuchsia.diagnostics.ArchiveAccessor.previous_boot",
+        "fuchsia.diagnostics.host.ArchiveAccessor.previous_boot"
     )]
     #[test_case(
-        "bootstrap/archivist:fuchsia.diagnostics.ArchiveAccessor.previous_boot",
-        "bootstrap/archivist",
-        "fuchsia.diagnostics.host.ArchiveAccessor.previous_boot";
-        "target_previous_boot_pipeline_accessor"
+        "fuchsia.diagnostics.ArchiveAccessor.lowpan",
+        "fuchsia.diagnostics.host.ArchiveAccessor.lowpan"
     )]
     #[test_case(
-        "core/lowpan:fuchsia.diagnostics.ArchiveAccessor.lowpan",
-        "core/lowpan",
-        "fuchsia.diagnostics.host.ArchiveAccessor.lowpan";
-        "target_lowpan_pipeline_accessor"
+        "fuchsia.diagnostics.ArchiveAccessor.custom_pipeline",
+        "fuchsia.diagnostics.host.ArchiveAccessor.custom_pipeline"
     )]
     #[test_case(
-        "foo/bar:fuchsia.diagnostics.ArchiveAccessor.custom_pipeline",
-        "foo/bar",
-        "fuchsia.diagnostics.host.ArchiveAccessor.custom_pipeline";
-        "target_custom_pipeline_accessor"
+        "fuchsia.diagnostics.host.ArchiveAccessor",
+        "fuchsia.diagnostics.host.ArchiveAccessor"
     )]
     #[test_case(
-        "bootstrap/archivist:fuchsia.diagnostics.host.ArchiveAccessor",
-        "bootstrap/archivist",
-        "fuchsia.diagnostics.host.ArchiveAccessor";
-        "default_host_accessor"
+        "fuchsia.diagnostics.host.ArchiveAccessor.feedback",
+        "fuchsia.diagnostics.host.ArchiveAccessor.feedback"
     )]
-    #[test_case(
-        "bootstrap/archivist:fuchsia.diagnostics.host.ArchiveAccessor.feedback",
-        "bootstrap/archivist",
-        "fuchsia.diagnostics.host.ArchiveAccessor.feedback";
-        "host_feedback_pipeline_accessor"
-    )]
-    fn test_moniker_and_protocol_success(
-        input: &str,
-        expected_moniker: &str,
-        expected_protocol: &str,
-    ) {
-        let (moniker, protocol) = moniker_and_protocol(input).expect("parsing succeeded");
-        assert_eq!(moniker.to_string(), expected_moniker);
-        assert_eq!(protocol, expected_protocol);
-    }
-
-    #[test_case("fuchsia.diagnostics.ArchiveAccessor"; "missing_moniker_default")]
-    #[test_case("fuchsia.diagnostics.ArchiveAccessor.feedback"; "missing_moniker_pipeline")]
-    #[test_case(""; "empty_string")]
-    #[test_case("invalid/moniker/:fuchsia.diagnostics.ArchiveAccessor"; "invalid_moniker_trailing_slash")]
-    fn test_moniker_and_protocol_invalid(input: &str) {
-        assert!(moniker_and_protocol(input).is_err());
+    fn test_target_protocol_to_host(input_protocol: &str, expected_protocol: &str) {
+        assert_eq!(target_protocol_to_host(input_protocol), expected_protocol);
     }
 }

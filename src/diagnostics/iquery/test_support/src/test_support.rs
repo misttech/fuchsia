@@ -69,6 +69,29 @@ impl MockRealmQueryBuilderInner {
         self
     }
 
+    /// Sets the accessors exposed by the component in the diagnostics-accessors dictionary.
+    pub fn accessors(mut self, accessors: &[&str]) -> Self {
+        let mut exposes = vec![Expose::Dictionary(ExposeDictionary {
+            source_name: Some("diagnostics-accessors".into()),
+            target_name: Some("diagnostics-accessors".into()),
+            source: Some(Ref::Self_(SelfRef)),
+            target: Some(Ref::Parent(ParentRef)),
+            ..Default::default()
+        })];
+        for accessor in accessors {
+            exposes.push(Expose::Protocol(ExposeProtocol {
+                source: Some(Ref::Self_(SelfRef)),
+                target: Some(Ref::Parent(ParentRef)),
+                source_name: Some((*accessor).to_owned()),
+                target_name: Some((*accessor).to_owned()),
+                source_dictionary: Some("diagnostics-accessors".to_owned()),
+                ..Default::default()
+            }));
+        }
+        self.exposes = exposes;
+        self
+    }
+
     /// Completes the build and returns a `MockRealmQueryBuilder`.
     pub fn add(mut self) -> MockRealmQueryBuilder {
         let mut parent = *self.parent.unwrap();

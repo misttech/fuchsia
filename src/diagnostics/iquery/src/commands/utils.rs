@@ -70,6 +70,85 @@ async fn list_accessors(
     directory::readdir(&dir_proxy).await.ok()
 }
 
+/// Searches for a diagnostics `ArchiveAccessor` across all components in the
+/// topology.
+///
+/// Unlike [`fuzzy_search`], which queries component instances by their moniker,
+/// URL, or ID, this function specifically inspects capabilities exposed under
+/// the `diagnostics-accessors` dictionary starting with
+/// `fuchsia.diagnostics.ArchiveAccessor`.
+///
+/// Query format:
+/// - `<moniker_query>:<protocol_query>`: Fuzzy matches on both the component
+///   moniker and the accessor protocol name.
+/// - `<moniker_query>`: Fuzzy matches on the moniker and matches any accessor
+///   protocol exposed by that component.
+///
+/// Disambiguation:
+/// - Exact moniker matches take precedence over partial substring moniker
+///   matches.
+/// - Exact protocol matches take precedence over partial substring protocol
+///   matches.
+/// - If resolution cannot be narrowed to a single accessor, returns
+///   [`Error::FuzzyMatchTooManyMatches`].
+pub async fn fuzzy_search_accessors(
+    query: &str,
+    realm_query: &fsys2::RealmQueryProxy,
+) -> Result<(Moniker, String), Error> {
+    let (moniker_query, protocol_query) = query.rsplit_once(':').unwrap_or((query, ""));
+    let mut matching_monikers_and_protocols: Vec<_> = get_accessor_selectors(realm_query)
+        .await?
+        .iter()
+        .filter_map(|i| i.rsplit_once(":"))
+        .filter(|(m, p)| m.contains(moniker_query) && p.contains(protocol_query))
+        .filter_map(|(m, p)| Moniker::parse_str(m).ok().map(|moniker| (moniker, p.to_string())))
+        .collect();
+    if matching_monikers_and_protocols.is_empty() {
+        return Err(Error::SearchParameterNotFound(query.to_string()));
+    } else if matching_monikers_and_protocols.len() > 1 {
+        let mut moniker_exact_match: Vec<_> = matching_monikers_and_protocols
+            .iter()
+            .filter(|(m, _)| m.to_string() == moniker_query)
+            .cloned()
+            .collect();
+        // Return early if the moniker uniquely matches exactly one component.
+        if moniker_exact_match.len() == 1 {
+            return Ok(moniker_exact_match.pop().unwrap());
+        } else if moniker_exact_match.len() > 1 {
+            // If multiple accessors match under the exact moniker, disambiguate by exact protocol.
+            moniker_exact_match.retain(|(_, p)| p == protocol_query);
+            if moniker_exact_match.len() == 1 {
+                return Ok(moniker_exact_match.pop().unwrap());
+            }
+        }
+
+        // If the moniker was a fuzzy query, attempt to disambiguate by exact protocol across
+        // components.
+        let mut protocol_exact_match: Vec<_> = matching_monikers_and_protocols
+            .iter()
+            .filter(|(_, p)| p == protocol_query)
+            .cloned()
+            .collect();
+        if protocol_exact_match.len() == 1 {
+            return Ok(protocol_exact_match.pop().unwrap());
+        }
+
+        return Err(Error::FuzzyMatchTooManyMatches(
+            matching_monikers_and_protocols.into_iter().map(|(m, p)| format!("{m}:{p}")).collect(),
+        ));
+    }
+
+    Ok(matching_monikers_and_protocols.pop().unwrap())
+}
+
+/// Searches for a single component instance in the topology matching `query`.
+///
+/// Unlike [`fuzzy_search_accessors`], which inspects exposed diagnostics
+/// accessor protocols, this function matches `query` against component
+/// identifiers (moniker, component URL, and instance ID) across all instances
+/// in the realm without inspecting exposed capabilities or protocols.
+///
+/// If multiple instances match, returns [`Error::FuzzyMatchTooManyMatches`].
 async fn fuzzy_search(
     query: &str,
     realm_query: &fsys2::RealmQueryProxy,
@@ -520,5 +599,218 @@ mod test {
         .await;
 
         assert_matches!(actual, Err(Error::SearchParameterNotFound(_)));
+    }
+
+    #[fuchsia::test]
+    async fn test_fuzzy_search_accessors_exact_match() {
+        let fake_realm_query = Rc::new(MockRealmQuery::default());
+        let realm_query = Rc::clone(&fake_realm_query).get_proxy().await;
+
+        let (moniker, protocol) = fuzzy_search_accessors(
+            "example/component:fuchsia.diagnostics.ArchiveAccessor",
+            &realm_query,
+        )
+        .await
+        .unwrap();
+        assert_eq!(moniker, Moniker::parse_str("example/component").unwrap());
+        assert_eq!(protocol, "fuchsia.diagnostics.ArchiveAccessor");
+    }
+
+    #[fuchsia::test]
+    async fn test_fuzzy_search_accessors_fuzzy_match_moniker_and_protocol() {
+        let fake_realm_query = Rc::new(MockRealmQuery::default());
+        let realm_query = Rc::clone(&fake_realm_query).get_proxy().await;
+
+        let (moniker, protocol) =
+            fuzzy_search_accessors("example:ArchiveAccessor", &realm_query).await.unwrap();
+        assert_eq!(moniker, Moniker::parse_str("example/component").unwrap());
+        assert_eq!(protocol, "fuchsia.diagnostics.ArchiveAccessor");
+    }
+
+    #[fuchsia::test]
+    async fn test_fuzzy_search_accessors_moniker_with_colon() {
+        let fake_realm_query = Rc::new(MockRealmQuery::default());
+        let realm_query = Rc::clone(&fake_realm_query).get_proxy().await;
+
+        let (moniker, protocol) =
+            fuzzy_search_accessors("thing:instance:feedback", &realm_query).await.unwrap();
+        assert_eq!(moniker, Moniker::parse_str("foo/bar/thing:instance").unwrap());
+        assert_eq!(protocol, "fuchsia.diagnostics.ArchiveAccessor.feedback");
+    }
+
+    #[fuchsia::test]
+    async fn test_fuzzy_search_accessors_disambiguation_by_exact_moniker() {
+        let fake_realm_query = Rc::new(
+            MockRealmQueryBuilder::new()
+                .when("example/component")
+                .moniker("./example/component")
+                .accessors(&["fuchsia.diagnostics.ArchiveAccessor"])
+                .add()
+                .when("example/component/subcomponent")
+                .moniker("./example/component/subcomponent")
+                .accessors(&["fuchsia.diagnostics.ArchiveAccessor"])
+                .add()
+                .build(),
+        );
+        let realm_query = Rc::clone(&fake_realm_query).get_proxy().await;
+
+        let (moniker, protocol) = fuzzy_search_accessors(
+            "example/component:fuchsia.diagnostics.ArchiveAccessor",
+            &realm_query,
+        )
+        .await
+        .unwrap();
+        assert_eq!(moniker, Moniker::parse_str("example/component").unwrap());
+        assert_eq!(protocol, "fuchsia.diagnostics.ArchiveAccessor");
+
+        let (moniker, protocol) =
+            fuzzy_search_accessors("example/component:ArchiveAccessor", &realm_query)
+                .await
+                .unwrap();
+        assert_eq!(moniker, Moniker::parse_str("example/component").unwrap());
+        assert_eq!(protocol, "fuchsia.diagnostics.ArchiveAccessor");
+    }
+
+    #[fuchsia::test]
+    async fn test_fuzzy_search_accessors_disambiguation_by_exact_protocol() {
+        let fake_realm_query = Rc::new(MockRealmQuery::default());
+        let realm_query = Rc::clone(&fake_realm_query).get_proxy().await;
+
+        // MockRealmQuery::default() uses `MockRealmQueryBuilder::prefilled()` as the source of
+        // truth, which sets up the following monikers and protocols:
+        // - `example/component`: `fuchsia.diagnostics.ArchiveAccessor`
+        // - `other/component`: `fuchsia.io.SomeOtherThing`, `fuchsia.io.MagicStuff`
+        // - `foo/component`: `fuchsia.diagnostics.ArchiveAccessor.feedback`
+        // - `foo/bar/thing:instance`: `fuchsia.diagnostics.ArchiveAccessor.feedback`
+        //
+        // Both "example/component" and "foo/component" match the moniker query "component",
+        // but only "example/component" exposes the exact protocol "fuchsia.diagnostics.ArchiveAccessor"
+        // ("foo/component" exposes "fuchsia.diagnostics.ArchiveAccessor.feedback").
+        let (moniker, protocol) =
+            fuzzy_search_accessors("component:fuchsia.diagnostics.ArchiveAccessor", &realm_query)
+                .await
+                .unwrap();
+        assert_eq!(moniker, Moniker::parse_str("example/component").unwrap());
+        assert_eq!(protocol, "fuchsia.diagnostics.ArchiveAccessor");
+    }
+
+    #[fuchsia::test]
+    async fn test_fuzzy_search_accessors_disambiguation_by_both_exact_moniker_and_protocol() {
+        let fake_realm_query = Rc::new(
+            MockRealmQueryBuilder::new()
+                .when("example/component")
+                .moniker("./example/component")
+                .accessors(&[
+                    "fuchsia.diagnostics.ArchiveAccessor",
+                    "fuchsia.diagnostics.ArchiveAccessor.feedback",
+                ])
+                .add()
+                .when("example/component/subcomponent")
+                .moniker("./example/component/subcomponent")
+                .accessors(&[
+                    "fuchsia.diagnostics.ArchiveAccessor",
+                    "fuchsia.diagnostics.ArchiveAccessor.feedback",
+                ])
+                .add()
+                .build(),
+        );
+        let realm_query = Rc::clone(&fake_realm_query).get_proxy().await;
+
+        let (moniker, protocol) = fuzzy_search_accessors(
+            "example/component:fuchsia.diagnostics.ArchiveAccessor",
+            &realm_query,
+        )
+        .await
+        .unwrap();
+        assert_eq!(moniker, Moniker::parse_str("example/component").unwrap());
+        assert_eq!(protocol, "fuchsia.diagnostics.ArchiveAccessor");
+    }
+
+    #[fuchsia::test]
+    async fn test_fuzzy_search_accessors_no_protocol_single_accessor() {
+        let fake_realm_query = Rc::new(MockRealmQuery::default());
+        let realm_query = Rc::clone(&fake_realm_query).get_proxy().await;
+
+        let (moniker, protocol) =
+            fuzzy_search_accessors("example/component", &realm_query).await.unwrap();
+        assert_eq!(moniker, Moniker::parse_str("example/component").unwrap());
+        assert_eq!(protocol, "fuchsia.diagnostics.ArchiveAccessor");
+    }
+
+    #[fuchsia::test]
+    async fn test_fuzzy_search_accessors_no_protocol_multiple_accessors() {
+        let fake_realm_query = Rc::new(
+            MockRealmQueryBuilder::new()
+                .when("example/component")
+                .moniker("./example/component")
+                .accessors(&[
+                    "fuchsia.diagnostics.ArchiveAccessor",
+                    "fuchsia.diagnostics.ArchiveAccessor.feedback",
+                ])
+                .add()
+                .build(),
+        );
+        let realm_query = Rc::clone(&fake_realm_query).get_proxy().await;
+
+        let res = fuzzy_search_accessors("example/component", &realm_query).await;
+        assert_matches!(
+            res,
+            Err(Error::FuzzyMatchTooManyMatches(matches)) if matches.0 == [
+                "example/component:fuchsia.diagnostics.ArchiveAccessor",
+                "example/component:fuchsia.diagnostics.ArchiveAccessor.feedback",
+            ]
+        );
+    }
+
+    #[fuchsia::test]
+    async fn test_fuzzy_search_accessors_moniker_not_found() {
+        let fake_realm_query = Rc::new(MockRealmQuery::default());
+        let realm_query = Rc::clone(&fake_realm_query).get_proxy().await;
+
+        let res = fuzzy_search_accessors("nonexistent:ArchiveAccessor", &realm_query).await;
+        assert_matches!(res, Err(Error::SearchParameterNotFound(query)) if query == "nonexistent:ArchiveAccessor");
+    }
+
+    #[fuchsia::test]
+    async fn test_fuzzy_search_accessors_protocol_not_found() {
+        let fake_realm_query = Rc::new(MockRealmQuery::default());
+        let realm_query = Rc::clone(&fake_realm_query).get_proxy().await;
+
+        let res = fuzzy_search_accessors("example:nonexistent", &realm_query).await;
+        assert_matches!(res, Err(Error::SearchParameterNotFound(query)) if query == "example:nonexistent");
+    }
+
+    #[fuchsia::test]
+    async fn test_fuzzy_search_accessors_too_many_matches_fuzzy_protocol() {
+        let fake_realm_query = Rc::new(MockRealmQuery::default());
+        let realm_query = Rc::clone(&fake_realm_query).get_proxy().await;
+
+        let res = fuzzy_search_accessors("foo:feedback", &realm_query).await;
+        assert_matches!(
+            res,
+            Err(Error::FuzzyMatchTooManyMatches(matches)) if matches.0 == [
+                "foo/bar/thing:instance:fuchsia.diagnostics.ArchiveAccessor.feedback",
+                "foo/component:fuchsia.diagnostics.ArchiveAccessor.feedback",
+            ]
+        );
+    }
+
+    #[fuchsia::test]
+    async fn test_fuzzy_search_accessors_too_many_matches_exact_protocol() {
+        let fake_realm_query = Rc::new(MockRealmQuery::default());
+        let realm_query = Rc::clone(&fake_realm_query).get_proxy().await;
+
+        let res = fuzzy_search_accessors(
+            "foo:fuchsia.diagnostics.ArchiveAccessor.feedback",
+            &realm_query,
+        )
+        .await;
+        assert_matches!(
+            res,
+            Err(Error::FuzzyMatchTooManyMatches(matches)) if matches.0 == [
+                "foo/bar/thing:instance:fuchsia.diagnostics.ArchiveAccessor.feedback",
+                "foo/component:fuchsia.diagnostics.ArchiveAccessor.feedback",
+            ]
+        );
     }
 }

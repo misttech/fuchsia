@@ -98,8 +98,8 @@ pub enum Error {
     WrongNumberOfSearchQueriesForDataFlag,
 }
 
-#[derive(Debug)]
-pub struct FuzzyMatchErrorWrapper(Vec<String>);
+#[derive(Debug, PartialEq, Eq)]
+pub struct FuzzyMatchErrorWrapper(pub Vec<String>);
 
 impl std::iter::FromIterator<String> for FuzzyMatchErrorWrapper {
     fn from_iter<I: IntoIterator<Item = String>>(iter: I) -> Self {

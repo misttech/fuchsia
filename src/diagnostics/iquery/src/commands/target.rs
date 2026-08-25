@@ -50,7 +50,9 @@ impl DiagnosticsProvider for ArchiveAccessorProvider {
 }
 
 /// Connect to `fuchsia.diagnostics.*ArchivistAccessor` with the provided selector string.
-/// The selector string should be in the form of "<moniker>:<service_name>".
+/// The selector string can be in the form of "<moniker>:<service_name>" or "<moniker>", and it
+/// performs fuzzy matching on both. See `commands::utils::fuzzy_search_accessors` for more
+/// information.
 /// If no selector string is provided, it will try to connect to
 /// `bootstrap/archivist:fuchsia.diagnostics.ArchiveAccessor`.
 pub async fn connect_to_accessor_selector(
@@ -59,13 +61,9 @@ pub async fn connect_to_accessor_selector(
 ) -> Result<ArchiveAccessorProxy, Error> {
     match selector {
         Some(s) => {
-            let Some((component, accessor_name)) = s.rsplit_once(":") else {
-                return Err(Error::invalid_accessor(s));
-            };
-            let Ok(moniker) = Moniker::try_from(component) else {
-                return Err(Error::invalid_accessor(s));
-            };
-            connect_accessor::<ArchiveAccessorMarker>(&moniker, accessor_name, query_proxy).await
+            // try to fuzzy search for the moniker and protocol
+            let (moniker, protocol) = fuzzy_search_accessors(s, query_proxy).await?;
+            connect_accessor::<ArchiveAccessorMarker>(&moniker, &protocol, query_proxy).await
         }
         None => {
             let moniker = Moniker::try_from(ROOT_ARCHIVIST).unwrap();

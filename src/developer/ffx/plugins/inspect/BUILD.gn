@@ -56,7 +56,6 @@ rustc_library("ffx_inspect") {
     "//src/lib/diagnostics/hierarchy/rust",
     "//src/lib/diagnostics/selectors",
     "//src/lib/fdomain/client",
-    "//src/sys/lib/moniker",
     "//third_party/rust_crates:anyhow",
     "//third_party/rust_crates:async-trait",
     "//third_party/rust_crates:difference",
