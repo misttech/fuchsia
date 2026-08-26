@@ -26,9 +26,7 @@ pub struct SerializableHierarchyFields<'a, Key> {
     pub moniker: Option<&'a str>,
 }
 
-fn get_name<'a, K: AsRef<str>>(
-    a: Either<&'a Property<K>, &'a DiagnosticsHierarchy<K>>,
-) -> &'a str {
+fn get_name<'a, K: AsRef<str>>(a: Either<&'a Property<K>, &'a DiagnosticsHierarchy<K>>) -> &'a str {
     match a {
         Either::Left(property) => property.name(),
         Either::Right(node) => &node.name,
@@ -59,7 +57,8 @@ where
             };
 
             if is_duplicate {
-                log::warn!(
+                // TODO(520049138): debug rather than warning until serial spam is resolved.
+                log::debug!(
                     item_name:? = name,
                     emitting_component:? = self.moniker;
                     "Encountered duplicate names while serializing Inspect"
