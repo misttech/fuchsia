@@ -653,36 +653,45 @@ license_files = ["LICENSE-APACHE"]
 
 [gn.package.sapphire-async."0.1.0"]
 uses_fuchsia_license = true
+tests = true
 
 [gn.package.sapphire-buffer."0.1.0"]
 uses_fuchsia_license = true
+tests = true
 
 [gn.package.sapphire-collections."0.1.0"]
 uses_fuchsia_license = true
+tests = true
 
 [gn.package.sapphire-common."0.1.0"]
 uses_fuchsia_license = true
+tests = true
 
 [gn.package.sapphire-emboss."0.1.0"]
 existing_gn_target = "//src/connectivity/bluetooth/sunstone/sapphire-emboss"
 
 [gn.package.sapphire-gap."0.1.0"]
 uses_fuchsia_license = true
+tests = true
 
 [gn.package.sapphire-gatt."0.1.0"]
 uses_fuchsia_license = true
+tests = true
 
 [gn.package.sapphire-hci."0.1.0"]
 uses_fuchsia_license = true
+tests = true
 
 [gn.package.sapphire-host."0.1.0"]
 uses_fuchsia_license = true
+tests = true
 
 [gn.package.sapphire-rpc-macro."0.1.0"]
 uses_fuchsia_license = true
 
 [gn.package.sapphire-sync."0.1.0"]
 uses_fuchsia_license = true
+tests = true
 
 [gn.package.figment."0.10.19"]
 rustflags = []

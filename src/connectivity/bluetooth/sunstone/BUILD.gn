@@ -5,177 +5,6 @@
 import("//build/rust/rustc_test.gni")
 
 if (is_host) {
-  rustc_test("sapphire_buffer_test") {
-    edition = "2024"
-    source_root = "sapphire-buffer/src/lib.rs"
-    sources = [
-      "sapphire-buffer/src/allocated.rs",
-      "sapphire-buffer/src/buffer.rs",
-      "sapphire-buffer/src/lib.rs",
-      "sapphire-buffer/src/multibuf.rs",
-      "sapphire-buffer/src/storage.rs",
-    ]
-    features = [
-      "alloc",
-      "std",
-    ]
-    deps = [
-      "//third_party/rust_crates:proptest",
-      "//third_party/rust_crates:sapphire-collections",
-    ]
-  }
-
-  rustc_test("sapphire_collections_test") {
-    edition = "2024"
-    source_root = "sapphire-collections/src/lib.rs"
-    sources = [
-      "sapphire-collections/src/deque.rs",
-      "sapphire-collections/src/lib.rs",
-      "sapphire-collections/src/storage.rs",
-      "sapphire-collections/src/storage/storages.rs",
-      "sapphire-collections/src/storage/storages/allocated.rs",
-      "sapphire-collections/src/storage/storages/inline.rs",
-      "sapphire-collections/src/vec.rs",
-      "sapphire-collections/src/vec/raw_vec.rs",
-    ]
-    features = [ "std" ]
-    deps = [ "//third_party/rust_crates:proptest" ]
-  }
-
-  rustc_test("sapphire_common_test") {
-    edition = "2024"
-    source_root = "sapphire-common/src/lib.rs"
-    sources = [
-      "sapphire-common/src/address.rs",
-      "sapphire-common/src/lib.rs",
-      "sapphire-common/src/peer_id.rs",
-      "sapphire-common/src/uuid.rs",
-    ]
-    features = [ "testing" ]
-    deps = [ "//third_party/rust_crates:proptest" ]
-  }
-
-  rustc_test("sapphire_host_test") {
-    edition = "2024"
-    source_root = "sapphire-host/src/lib.rs"
-    sources = [ "sapphire-host/src/lib.rs" ]
-  }
-
-  rustc_test("sapphire_gap_test") {
-    edition = "2024"
-    source_root = "sapphire-gap/src/lib.rs"
-    sources = [
-      "sapphire-gap/src/lib.rs",
-      "sapphire-gap/src/peer_cache.rs",
-    ]
-    features = []
-    deps = [
-      "//third_party/rust_crates:rand_core",
-      "//third_party/rust_crates:sapphire-collections",
-      "//third_party/rust_crates:sapphire-common",
-    ]
-  }
-
-  rustc_test("sapphire_gatt_test") {
-    edition = "2024"
-    source_root = "sapphire-gatt/src/lib.rs"
-    sources = [
-      "sapphire-gatt/src/att.rs",
-      "sapphire-gatt/src/att/attribute.rs",
-      "sapphire-gatt/src/att/attribute/testing.rs",
-      "sapphire-gatt/src/att/bearer.rs",
-      "sapphire-gatt/src/att/client.rs",
-      "sapphire-gatt/src/att/database.rs",
-      "sapphire-gatt/src/att/database/testing.rs",
-      "sapphire-gatt/src/att/l2cap.rs",
-      "sapphire-gatt/src/att/l2cap/cid.rs",
-      "sapphire-gatt/src/att/l2cap/mock.rs",
-      "sapphire-gatt/src/att/pdu.rs",
-      "sapphire-gatt/src/att/router.rs",
-      "sapphire-gatt/src/att/server.rs",
-      "sapphire-gatt/src/gatt.rs",
-      "sapphire-gatt/src/gatt/client.rs",
-      "sapphire-gatt/src/gatt/server.rs",
-      "sapphire-gatt/src/lib.rs",
-    ]
-    features = []
-    deps = [
-      "sapphire-emboss",
-      "//third_party/rust_crates:futures",
-      "//third_party/rust_crates:proptest",
-      "//third_party/rust_crates:sapphire-async",
-      "//third_party/rust_crates:sapphire-collections",
-      "//third_party/rust_crates:sapphire-common",
-      "//third_party/rust_crates:sapphire-sync",
-      "//third_party/rust_crates:thiserror",
-      "//third_party/rust_crates:zerocopy",
-    ]
-  }
-
-  rustc_test("sapphire_sync_test") {
-    edition = "2024"
-    source_root = "sapphire-sync/src/lib.rs"
-    sources = [
-      "sapphire-sync/src/lib.rs",
-      "sapphire-sync/src/mutex.rs",
-      "sapphire-sync/src/mutex/raw.rs",
-      "sapphire-sync/src/mutex/raw/single_thread.rs",
-      "sapphire-sync/src/mutex/raw/spin.rs",
-      "sapphire-sync/src/mutex/raw/std.rs",
-    ]
-    features = [ "std" ]
-    deps = [ "//third_party/rust_crates:parking_lot" ]
-  }
-
-  rustc_test("sapphire_async_test") {
-    edition = "2024"
-    source_root = "sapphire-async/src/lib.rs"
-    sources = [
-      "sapphire-async/src/broadcast.rs",
-      "sapphire-async/src/broadcast/filtered.rs",
-      "sapphire-async/src/broadcast/unfiltered.rs",
-      "sapphire-async/src/condition.rs",
-      "sapphire-async/src/executor.rs",
-      "sapphire-async/src/global_index.rs",
-      "sapphire-async/src/lib.rs",
-      "sapphire-async/src/mpsc.rs",
-      "sapphire-async/src/mutex.rs",
-      "sapphire-async/src/notification.rs",
-      "sapphire-async/src/notification/intrusive_list.rs",
-      "sapphire-async/src/rpc.rs",
-      "sapphire-async/src/semaphore.rs",
-      "sapphire-async/src/testing.rs",
-      "sapphire-async/src/testing/executor.rs",
-      "sapphire-async/src/testing/executor/waker.rs",
-    ]
-    features = [
-      "std",
-      "testing",
-    ]
-    deps = [
-      "//third_party/rust_crates:futures",
-      "//third_party/rust_crates:proptest",
-      "//third_party/rust_crates:sapphire-collections",
-      "//third_party/rust_crates:sapphire-sync",
-      "//third_party/rust_crates:thiserror",
-    ]
-  }
-
-  rustc_test("sapphire_hci_test") {
-    edition = "2024"
-    source_root = "sapphire-hci/src/lib.rs"
-    sources = [ "sapphire-hci/src/lib.rs" ]
-    features = []
-    deps = [
-      "//third_party/rust_crates:futures",
-      "//third_party/rust_crates:sapphire-async",
-      "//third_party/rust_crates:sapphire-collections",
-      "//third_party/rust_crates:sapphire-rpc-macro",
-      "//third_party/rust_crates:sapphire-sync",
-      "//third_party/rust_crates:thiserror",
-    ]
-  }
-
   rustc_test("sapphire_rpc_macro_test") {
     edition = "2024"
     source_root = "sapphire-rpc-macro/tests/test_rpc_macro.rs"
@@ -187,26 +16,21 @@ if (is_host) {
       "//third_party/rust_crates:sapphire-sync",
     ]
   }
-
-  group("sapphire_emboss_test") {
-    testonly = true
-    public_deps = [ "sapphire-emboss:tests" ]
-  }
 }
 
 group("tests") {
   testonly = true
   deps = [
-    ":sapphire_async_test($host_toolchain)",
-    ":sapphire_buffer_test($host_toolchain)",
-    ":sapphire_collections_test($host_toolchain)",
-    ":sapphire_common_test($host_toolchain)",
-    ":sapphire_emboss_test($host_toolchain)",
-    ":sapphire_gap_test($host_toolchain)",
-    ":sapphire_gatt_test($host_toolchain)",
-    ":sapphire_hci_test($host_toolchain)",
-    ":sapphire_host_test($host_toolchain)",
     ":sapphire_rpc_macro_test($host_toolchain)",
-    ":sapphire_sync_test($host_toolchain)",
+    "sapphire-emboss:tests",
+    "//third_party/rust_crates:sapphire-async.test($host_toolchain)",
+    "//third_party/rust_crates:sapphire-buffer.test($host_toolchain)",
+    "//third_party/rust_crates:sapphire-collections.test($host_toolchain)",
+    "//third_party/rust_crates:sapphire-common.test($host_toolchain)",
+    "//third_party/rust_crates:sapphire-gap.test($host_toolchain)",
+    "//third_party/rust_crates:sapphire-gatt.test($host_toolchain)",
+    "//third_party/rust_crates:sapphire-hci.test($host_toolchain)",
+    "//third_party/rust_crates:sapphire-host.test($host_toolchain)",
+    "//third_party/rust_crates:sapphire-sync.test($host_toolchain)",
   ]
 }

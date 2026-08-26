@@ -1907,12 +1907,22 @@ group("sapphire-async") {
   public_deps = [ ":sapphire-async-v0_1_0" ]
 }
 
+group("sapphire-async.test") {
+  public_deps = [ ":sapphire-async-v0_1_0.test" ]
+  testonly = true
+}
+
 group("sapphire-async-0.1.0") {
   public_deps = [ ":sapphire-async-v0_1_0" ]
 }
 
 group("sapphire-buffer") {
   public_deps = [ ":sapphire-buffer-v0_1_0" ]
+}
+
+group("sapphire-buffer.test") {
+  public_deps = [ ":sapphire-buffer-v0_1_0.test" ]
+  testonly = true
 }
 
 group("sapphire-buffer-0.1.0") {
@@ -1923,12 +1933,22 @@ group("sapphire-collections") {
   public_deps = [ ":sapphire-collections-v0_1_0" ]
 }
 
+group("sapphire-collections.test") {
+  public_deps = [ ":sapphire-collections-v0_1_0.test" ]
+  testonly = true
+}
+
 group("sapphire-collections-0.1.0") {
   public_deps = [ ":sapphire-collections-v0_1_0" ]
 }
 
 group("sapphire-common") {
   public_deps = [ ":sapphire-common-v0_1_0" ]
+}
+
+group("sapphire-common.test") {
+  public_deps = [ ":sapphire-common-v0_1_0.test" ]
+  testonly = true
 }
 
 group("sapphire-common-0.1.0") {
@@ -1947,12 +1967,22 @@ group("sapphire-gap") {
   public_deps = [ ":sapphire-gap-v0_1_0" ]
 }
 
+group("sapphire-gap.test") {
+  public_deps = [ ":sapphire-gap-v0_1_0.test" ]
+  testonly = true
+}
+
 group("sapphire-gap-0.1.0") {
   public_deps = [ ":sapphire-gap-v0_1_0" ]
 }
 
 group("sapphire-gatt") {
   public_deps = [ ":sapphire-gatt-v0_1_0" ]
+}
+
+group("sapphire-gatt.test") {
+  public_deps = [ ":sapphire-gatt-v0_1_0.test" ]
+  testonly = true
 }
 
 group("sapphire-gatt-0.1.0") {
@@ -1963,12 +1993,22 @@ group("sapphire-hci") {
   public_deps = [ ":sapphire-hci-v0_1_0" ]
 }
 
+group("sapphire-hci.test") {
+  public_deps = [ ":sapphire-hci-v0_1_0.test" ]
+  testonly = true
+}
+
 group("sapphire-hci-0.1.0") {
   public_deps = [ ":sapphire-hci-v0_1_0" ]
 }
 
 group("sapphire-host") {
   public_deps = [ ":sapphire-host-v0_1_0" ]
+}
+
+group("sapphire-host.test") {
+  public_deps = [ ":sapphire-host-v0_1_0.test" ]
+  testonly = true
 }
 
 group("sapphire-host-0.1.0") {
@@ -1985,6 +2025,11 @@ group("sapphire-rpc-macro-0.1.0") {
 
 group("sapphire-sync") {
   public_deps = [ ":sapphire-sync-v0_1_0" ]
+}
+
+group("sapphire-sync.test") {
+  public_deps = [ ":sapphire-sync-v0_1_0.test" ]
+  testonly = true
 }
 
 group("sapphire-sync-0.1.0") {
@@ -19787,6 +19832,41 @@ rustc_library("sapphire-async-v0_1_0") {
   applicable_licenses = [ "//build/licenses:fuchsia_license" ]
 }
 
+rustc_test("sapphire-async-v0_1_0.test") {
+  crate_name = "sapphire_async"
+  source_root =
+      "//src/connectivity/bluetooth/sunstone/sapphire-async/src/lib.rs"
+  output_name = "sapphire_async-fe594d0ce9d1dac8.test"
+  edition = "2024"
+  disable_clippy = true
+  enforce_source_listing = false
+  configs -= [ "//build/config/rust:2018_idioms" ]
+
+  deps = []
+  deps += [ ":sapphire-async-v0_1_0" ]
+  deps += [ ":sapphire-collections-v0_1_0" ]
+  deps += [ ":sapphire-sync-v0_1_0" ]
+  deps += [ ":futures-v0_3_31" ]
+  deps += [ ":proptest-v1_11_0" ]
+  deps += [ ":thiserror-v2_0_20" ]
+
+  rustenv = []
+
+  rustflags = [
+    "--cap-lints=allow",
+    "-Cmetadata=fe594d0ce9d1dac8",
+    "-Cextra-filename=-fe594d0ce9d1dac8",
+    "--cfg=feature=\"default\"",
+    "--cfg=feature=\"std\"",
+    "--cfg=feature=\"testing\"",
+  ]
+
+  visibility = [ ":*" ]
+
+  testonly = true
+  applicable_licenses = [ "//build/licenses:fuchsia_license" ]
+}
+
 rustc_library("sapphire-buffer-v0_1_0") {
   crate_name = "sapphire_buffer"
   source_root =
@@ -19813,6 +19893,37 @@ rustc_library("sapphire-buffer-v0_1_0") {
 
   visibility = [ ":*" ]
 
+  applicable_licenses = [ "//build/licenses:fuchsia_license" ]
+}
+
+rustc_test("sapphire-buffer-v0_1_0.test") {
+  crate_name = "sapphire_buffer"
+  source_root =
+      "//src/connectivity/bluetooth/sunstone/sapphire-buffer/src/lib.rs"
+  output_name = "sapphire_buffer-d1c678db79e67a8.test"
+  edition = "2024"
+  disable_clippy = true
+  enforce_source_listing = false
+  configs -= [ "//build/config/rust:2018_idioms" ]
+
+  deps = []
+  deps += [ ":sapphire-collections-v0_1_0" ]
+  deps += [ ":proptest-v1_11_0" ]
+
+  rustenv = []
+
+  rustflags = [
+    "--cap-lints=allow",
+    "-Cmetadata=d1c678db79e67a8",
+    "-Cextra-filename=-d1c678db79e67a8",
+    "--cfg=feature=\"alloc\"",
+    "--cfg=feature=\"default\"",
+    "--cfg=feature=\"std\"",
+  ]
+
+  visibility = [ ":*" ]
+
+  testonly = true
   applicable_licenses = [ "//build/licenses:fuchsia_license" ]
 }
 
@@ -19843,6 +19954,36 @@ rustc_library("sapphire-collections-v0_1_0") {
   applicable_licenses = [ "//build/licenses:fuchsia_license" ]
 }
 
+rustc_test("sapphire-collections-v0_1_0.test") {
+  crate_name = "sapphire_collections"
+  source_root =
+      "//src/connectivity/bluetooth/sunstone/sapphire-collections/src/lib.rs"
+  output_name = "sapphire_collections-8795358b52a39395.test"
+  edition = "2024"
+  disable_clippy = true
+  enforce_source_listing = false
+  configs -= [ "//build/config/rust:2018_idioms" ]
+
+  deps = []
+  deps += [ ":sapphire-collections-v0_1_0" ]
+  deps += [ ":proptest-v1_11_0" ]
+
+  rustenv = []
+
+  rustflags = [
+    "--cap-lints=allow",
+    "-Cmetadata=8795358b52a39395",
+    "-Cextra-filename=-8795358b52a39395",
+    "--cfg=feature=\"default\"",
+    "--cfg=feature=\"std\"",
+  ]
+
+  visibility = [ ":*" ]
+
+  testonly = true
+  applicable_licenses = [ "//build/licenses:fuchsia_license" ]
+}
+
 rustc_library("sapphire-common-v0_1_0") {
   crate_name = "sapphire_common"
   source_root =
@@ -19865,6 +20006,34 @@ rustc_library("sapphire-common-v0_1_0") {
 
   visibility = [ ":*" ]
 
+  applicable_licenses = [ "//build/licenses:fuchsia_license" ]
+}
+
+rustc_test("sapphire-common-v0_1_0.test") {
+  crate_name = "sapphire_common"
+  source_root =
+      "//src/connectivity/bluetooth/sunstone/sapphire-common/src/lib.rs"
+  output_name = "sapphire_common-8ffba2aecc74f25c.test"
+  edition = "2024"
+  disable_clippy = true
+  enforce_source_listing = false
+  configs -= [ "//build/config/rust:2018_idioms" ]
+
+  deps = []
+  deps += [ ":sapphire-common-v0_1_0" ]
+  deps += [ ":proptest-v1_11_0" ]
+
+  rustenv = []
+
+  rustflags = [
+    "--cap-lints=allow",
+    "-Cmetadata=8ffba2aecc74f25c",
+    "-Cextra-filename=-8ffba2aecc74f25c",
+  ]
+
+  visibility = [ ":*" ]
+
+  testonly = true
   applicable_licenses = [ "//build/licenses:fuchsia_license" ]
 }
 
@@ -19896,6 +20065,34 @@ rustc_library("sapphire-gap-v0_1_0") {
 
   visibility = [ ":*" ]
 
+  applicable_licenses = [ "//build/licenses:fuchsia_license" ]
+}
+
+rustc_test("sapphire-gap-v0_1_0.test") {
+  crate_name = "sapphire_gap"
+  source_root = "//src/connectivity/bluetooth/sunstone/sapphire-gap/src/lib.rs"
+  output_name = "sapphire_gap-ef5e8557744a7dc5.test"
+  edition = "2024"
+  disable_clippy = true
+  enforce_source_listing = false
+  configs -= [ "//build/config/rust:2018_idioms" ]
+
+  deps = []
+  deps += [ ":sapphire-collections-v0_1_0" ]
+  deps += [ ":sapphire-common-v0_1_0" ]
+  deps += [ ":rand_core-v0_10_1" ]
+
+  rustenv = []
+
+  rustflags = [
+    "--cap-lints=allow",
+    "-Cmetadata=ef5e8557744a7dc5",
+    "-Cextra-filename=-ef5e8557744a7dc5",
+  ]
+
+  visibility = [ ":*" ]
+
+  testonly = true
   applicable_licenses = [ "//build/licenses:fuchsia_license" ]
 }
 
@@ -19931,6 +20128,40 @@ rustc_library("sapphire-gatt-v0_1_0") {
   applicable_licenses = [ "//build/licenses:fuchsia_license" ]
 }
 
+rustc_test("sapphire-gatt-v0_1_0.test") {
+  crate_name = "sapphire_gatt"
+  source_root = "//src/connectivity/bluetooth/sunstone/sapphire-gatt/src/lib.rs"
+  output_name = "sapphire_gatt-3cfcf673d85d3aa8.test"
+  edition = "2024"
+  disable_clippy = true
+  enforce_source_listing = false
+  configs -= [ "//build/config/rust:2018_idioms" ]
+
+  deps = []
+  deps += [ ":sapphire-async-v0_1_0" ]
+  deps += [ ":sapphire-collections-v0_1_0" ]
+  deps += [ ":sapphire-common-v0_1_0" ]
+  deps += [ ":sapphire-emboss-v0_1_0" ]
+  deps += [ ":sapphire-sync-v0_1_0" ]
+  deps += [ ":futures-v0_3_31" ]
+  deps += [ ":proptest-v1_11_0" ]
+  deps += [ ":thiserror-v2_0_20" ]
+  deps += [ ":zerocopy-v0_8_48" ]
+
+  rustenv = []
+
+  rustflags = [
+    "--cap-lints=allow",
+    "-Cmetadata=3cfcf673d85d3aa8",
+    "-Cextra-filename=-3cfcf673d85d3aa8",
+  ]
+
+  visibility = [ ":*" ]
+
+  testonly = true
+  applicable_licenses = [ "//build/licenses:fuchsia_license" ]
+}
+
 rustc_library("sapphire-hci-v0_1_0") {
   crate_name = "sapphire_hci"
   source_root = "//src/connectivity/bluetooth/sunstone/sapphire-hci/src/lib.rs"
@@ -19961,6 +20192,37 @@ rustc_library("sapphire-hci-v0_1_0") {
   applicable_licenses = [ "//build/licenses:fuchsia_license" ]
 }
 
+rustc_test("sapphire-hci-v0_1_0.test") {
+  crate_name = "sapphire_hci"
+  source_root = "//src/connectivity/bluetooth/sunstone/sapphire-hci/src/lib.rs"
+  output_name = "sapphire_hci-816f5afb0ef5dcef.test"
+  edition = "2024"
+  disable_clippy = true
+  enforce_source_listing = false
+  configs -= [ "//build/config/rust:2018_idioms" ]
+
+  deps = []
+  deps += [ ":sapphire-async-v0_1_0" ]
+  deps += [ ":sapphire-collections-v0_1_0" ]
+  deps += [ ":sapphire-rpc-macro-v0_1_0($host_toolchain)" ]
+  deps += [ ":sapphire-sync-v0_1_0" ]
+  deps += [ ":futures-v0_3_31" ]
+  deps += [ ":thiserror-v2_0_20" ]
+
+  rustenv = []
+
+  rustflags = [
+    "--cap-lints=allow",
+    "-Cmetadata=816f5afb0ef5dcef",
+    "-Cextra-filename=-816f5afb0ef5dcef",
+  ]
+
+  visibility = [ ":*" ]
+
+  testonly = true
+  applicable_licenses = [ "//build/licenses:fuchsia_license" ]
+}
+
 rustc_library("sapphire-host-v0_1_0") {
   crate_name = "sapphire_host"
   source_root = "//src/connectivity/bluetooth/sunstone/sapphire-host/src/lib.rs"
@@ -19982,6 +20244,31 @@ rustc_library("sapphire-host-v0_1_0") {
 
   visibility = [ ":*" ]
 
+  applicable_licenses = [ "//build/licenses:fuchsia_license" ]
+}
+
+rustc_test("sapphire-host-v0_1_0.test") {
+  crate_name = "sapphire_host"
+  source_root = "//src/connectivity/bluetooth/sunstone/sapphire-host/src/lib.rs"
+  output_name = "sapphire_host-5c6a150bb14ae2db.test"
+  edition = "2024"
+  disable_clippy = true
+  enforce_source_listing = false
+  configs -= [ "//build/config/rust:2018_idioms" ]
+
+  deps = []
+
+  rustenv = []
+
+  rustflags = [
+    "--cap-lints=allow",
+    "-Cmetadata=5c6a150bb14ae2db",
+    "-Cextra-filename=-5c6a150bb14ae2db",
+  ]
+
+  visibility = [ ":*" ]
+
+  testonly = true
   applicable_licenses = [ "//build/licenses:fuchsia_license" ]
 }
 
@@ -20037,6 +20324,34 @@ rustc_library("sapphire-sync-v0_1_0") {
 
   visibility = [ ":*" ]
 
+  applicable_licenses = [ "//build/licenses:fuchsia_license" ]
+}
+
+rustc_test("sapphire-sync-v0_1_0.test") {
+  crate_name = "sapphire_sync"
+  source_root = "//src/connectivity/bluetooth/sunstone/sapphire-sync/src/lib.rs"
+  output_name = "sapphire_sync-6c8d7c5759e4a7d6.test"
+  edition = "2024"
+  disable_clippy = true
+  enforce_source_listing = false
+  configs -= [ "//build/config/rust:2018_idioms" ]
+
+  deps = []
+  deps += [ ":parking_lot-v0_12_5" ]
+
+  rustenv = []
+
+  rustflags = [
+    "--cap-lints=allow",
+    "-Cmetadata=6c8d7c5759e4a7d6",
+    "-Cextra-filename=-6c8d7c5759e4a7d6",
+    "--cfg=feature=\"default\"",
+    "--cfg=feature=\"std\"",
+  ]
+
+  visibility = [ ":*" ]
+
+  testonly = true
   applicable_licenses = [ "//build/licenses:fuchsia_license" ]
 }
 
