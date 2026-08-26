@@ -133,7 +133,6 @@ bazel2gn_verification_targets = [
   "//tools/botanist:verify_bazel2gn",
   "//tools/build:verify_bazel2gn",
   "//tools/cargo-gnaw:verify_bazel2gn",
-  "//tools/create:verify_bazel2gn",
   "//tools/debug/covargs:verify_bazel2gn",
   "//tools/debug/elflib:verify_bazel2gn",
   "//tools/debug/symbolize:verify_bazel2gn",

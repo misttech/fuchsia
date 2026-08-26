@@ -81,9 +81,10 @@ _has_lsan = _tags + [ "lsan" ] - [ "lsan" ] != _tags
 _has_tsan = _tags + [ "tsan" ] - [ "tsan" ] != _tags
 _has_msan = _tags + [ "msan" ] - [ "msan" ] != _tags
 
-# Only clang toolchain has coverage support in Bazel at the moment.
 _has_coverage_clang =
     _tags + [ "coverage_clang" ] - [ "coverage_clang" ] != _tags
+_has_host_coverage_rust =
+    is_host && _tags + [ "coverage_rust" ] - [ "coverage_rust" ] != _tags
 
 # The hwasan variants also set the 'asan' and 'lsan' tags, but using
 # both features result in Clang errors, which doesn't support both
@@ -115,6 +116,9 @@ if (_has_ubsan) {
 }
 if (_has_coverage_clang) {
   _build_args += [ "--features=coverage" ]
+}
+if (_has_host_coverage_rust) {
+  _build_args += [ "--config=host_rust_coverage" ]
 }
 
 if (is_profile) {

@@ -107,6 +107,8 @@ rust_toolchain(
     # and strip_level controls whether they are removed during linking.
     debug_info = _HOST_DEBUG_INFO,
     strip_level = _HOST_STRIP_LEVEL,
+    llvm_cov = "@fuchsia_clang//:bin/llvm-cov",
+    llvm_profdata = "@fuchsia_clang//:bin/llvm-profdata",
 )
 
 toolchain(
@@ -154,6 +156,8 @@ rust_toolchain(
     # and strip_level controls whether they are removed during linking.
     debug_info = _HOST_DEBUG_INFO,
     strip_level = _HOST_STRIP_LEVEL,
+    llvm_cov = "@fuchsia_clang//:bin/llvm-cov",
+    llvm_profdata = "@fuchsia_clang//:bin/llvm-profdata",
 )
 
 toolchain(
@@ -192,6 +196,8 @@ rust_toolchain(
     exec_triple = "x86_64-unknown-fuchsia",
     target_triple = "x86_64-unknown-fuchsia",
     extra_rustc_flags = _DEFAULT_TARGET_RUST_FLAGS,
+    llvm_cov = "@fuchsia_clang//:bin/llvm-cov",
+    llvm_profdata = "@fuchsia_clang//:bin/llvm-profdata",
 )
 
 toolchain(
@@ -238,6 +244,8 @@ rust_toolchain(
         "-Zsanitizer=shadow-call-stack",
         "-Zfixed-x18",
     ],
+    llvm_cov = "@fuchsia_clang//:bin/llvm-cov",
+    llvm_profdata = "@fuchsia_clang//:bin/llvm-profdata",
 )
 
 toolchain(
@@ -288,6 +296,8 @@ rust_toolchain(
         # TODO(https://fxbug.dev/501183733) remove once rustc's frontend does this automatically
         "-Ctarget-feature=+v",
     ],
+    llvm_cov = "@fuchsia_clang//:bin/llvm-cov",
+    llvm_profdata = "@fuchsia_clang//:bin/llvm-profdata",
 )
 
 toolchain(

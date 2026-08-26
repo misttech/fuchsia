@@ -22,6 +22,7 @@ test_suite(
         "//tools/bundle_fetcher:bundle_fetcher_main_tests",
         "//tools/bundle_fetcher:bundler_lib_tests",
         "//tools/check-licenses:tests",
+        "//tools/create:create_bin_test",
         "//tools/dart_test_parser:dart_test_parser_lib_tests",
         "//tools/debug/debugsyms:debugsyms_tests",
         "//tools/debug/generate_breakpad:generate_breakpad_tests",
