@@ -1228,74 +1228,67 @@ fn add_query_stats_inspect(
         async move {
             let past_queries = &*stats.inner.lock().await;
             let node = fuchsia_inspect::Inspector::default();
-            for (
-                i,
-                QueryWindow {
-                    start,
-                    success_count,
-                    failure_count,
-                    success_elapsed_time,
-                    failure_elapsed_time,
-                    failure_stats,
-                    address_counts_histogram,
-                },
-            ) in past_queries.iter().enumerate()
-            {
+            for (i, query_window) in past_queries.iter().enumerate() {
                 let child = node.root().create_child(format!("window {}", i + 1));
-
-                match u64::try_from(start.into_nanos()) {
-                    Ok(nanos) => {
-                        child.record_uint("start_time_nanos", nanos);
-                    },
-                    Err(e) => warn!(
-                        "error computing `start_time_nanos`: {:?}.into_nanos() from i64 -> u64 failed: {}",
-                        start, e
-                    ),
-                }
-                child.record_uint("successful_queries", *success_count);
-                child.record_uint("failed_queries", *failure_count);
-                let record_average = |name: &str, total: zx::MonotonicDuration, count: u64| {
-                    // Don't record an average if there are no stats.
-                    if count == 0 {
-                        return;
-                    }
-                    match u64::try_from(total.into_micros()) {
-                        Ok(micros) => child.record_uint(name, micros / count),
-                        Err(e) => warn!(
-                            "error computing `{}`: {:?}.into_micros() from i64 -> u64 failed: {}",
-                            name, success_elapsed_time, e
-                        ),
-                    }
-                };
-                record_average(
-                    "average_success_duration_micros",
-                    *success_elapsed_time,
-                    *success_count,
-                );
-                record_average(
-                    "average_failure_duration_micros",
-                    *failure_elapsed_time,
-                    *failure_count,
-                );
-
-                let errors = child.create_child("errors");
-                failure_stats.populate_inspect_node(&errors);
-                child.record(errors);
-
-                let address_counts_node = child.create_child("address_counts");
-                for (count, occurrences) in address_counts_histogram {
-                    let child = address_counts_node.create_child(count.to_string());
-                    child.record_uint("count", *occurrences);
-                    address_counts_node.record(child);
-                }
-                child.record(address_counts_node);
-
+                record_single_query_stats_node(&child, query_window);
                 node.root().record(child);
             }
             Ok(node)
         }
         .boxed()
     })
+}
+
+fn record_single_query_stats_node(
+    node: &fuchsia_inspect::Node,
+    QueryWindow {
+        start,
+        success_count,
+        failure_count,
+        success_elapsed_time,
+        failure_elapsed_time,
+        failure_stats,
+        address_counts_histogram,
+    }: &QueryWindow,
+) {
+    match u64::try_from(start.into_nanos()) {
+        Ok(nanos) => {
+            node.record_uint("start_time_nanos", nanos);
+        }
+        Err(e) => warn!(
+            "error computing `start_time_nanos`: {:?}.into_nanos() from i64 -> u64 failed: {}",
+            start, e
+        ),
+    }
+    node.record_uint("successful_queries", *success_count);
+    node.record_uint("failed_queries", *failure_count);
+    let record_average = |name: &str, total: zx::MonotonicDuration, count: u64| {
+        // Don't record an average if there are no stats.
+        if count == 0 {
+            return;
+        }
+        match u64::try_from(total.into_micros()) {
+            Ok(micros) => node.record_uint(name, micros / count),
+            Err(e) => warn!(
+                "error computing `{}`: {:?}.into_micros() from i64 -> u64 failed: {}",
+                name, success_elapsed_time, e
+            ),
+        }
+    };
+    record_average("average_success_duration_micros", *success_elapsed_time, *success_count);
+    record_average("average_failure_duration_micros", *failure_elapsed_time, *failure_count);
+
+    node.record_child("errors", |errors| {
+        failure_stats.populate_inspect_node(&errors);
+    });
+
+    node.record_child("address_counts", |address_counts_node| {
+        for (count, occurrences) in address_counts_histogram {
+            address_counts_node.record_child(count.to_string(), |child| {
+                child.record_uint("count", *occurrences);
+            });
+        }
+    });
 }
 
 // NB: We manually set tags so logs from trust-dns crates also get the same
