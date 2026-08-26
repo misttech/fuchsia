@@ -459,20 +459,26 @@ impl ArchiveReader<Logs> {
 
     /// Connects to the ArchiveAccessor and returns data matching provided selectors.
     pub async fn snapshot(&self) -> Result<Vec<Data<Logs>>, Error> {
-        loop {
-            let iterator = self.batch_iterator::<Logs>(StreamMode::Snapshot, self.format())?;
-            let result = drain_batch_iterator_for_logs(Arc::new(iterator), Some(self.format()))
-                .filter_map(|value| ready(value.ok()))
-                .collect::<Vec<_>>()
-                .await;
-            if self.retry_config.should_retry(result.len()) {
-                fasync::Timer::new(fasync::MonotonicInstant::after(
-                    zx::MonotonicDuration::from_millis(RETRY_DELAY_MS),
-                ))
-                .await;
-            } else {
-                return Ok(result);
+        let fut = async {
+            loop {
+                let iterator = self.batch_iterator::<Logs>(StreamMode::Snapshot, self.format())?;
+                let result = drain_batch_iterator_for_logs(Arc::new(iterator), Some(self.format()))
+                    .filter_map(|value| ready(value.ok()))
+                    .collect::<Vec<_>>()
+                    .await;
+                if self.retry_config.should_retry(result.len()) {
+                    fasync::Timer::new(fasync::MonotonicInstant::after(
+                        zx::MonotonicDuration::from_millis(RETRY_DELAY_MS),
+                    ))
+                    .await;
+                } else {
+                    return Ok(result);
+                }
             }
+        };
+        match self.timeout {
+            Some(timeout) => fut.on_timeout(timeout.after_now(), || Ok(Vec::new())).await,
+            None => fut.await,
         }
     }
 
