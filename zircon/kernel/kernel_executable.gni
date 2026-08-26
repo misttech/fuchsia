@@ -146,6 +146,14 @@ template("kernel_executable") {
       args += [ rsp.switch + rebase_path(_rsp_outputs[0], root_build_dir) ]
     }
 
+    if (clippy_cause_failure) {
+      args += [ "--fail" ]
+    }
+
+    if (clippy_ignore_rustc) {
+      args += [ "--clippy-only" ]
+    }
+
     args += [
       "--",
       "env",
