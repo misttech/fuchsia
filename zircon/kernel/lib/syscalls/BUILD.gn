@@ -41,7 +41,6 @@ source_set("impl") {
     "futex.cc",
     "handle_ops.cc",
     "hypervisor.cc",
-    "iob.cc",
     "membarrier_ffi.cc",
     "object.cc",
     "object_info_ffi.cc",
@@ -132,6 +131,7 @@ kernel_rust_mod("syscalls-rs") {
     "debuglog.rs",
     "event.rs",
     "fifo.rs",
+    "iob.rs",
     "iommu.rs",
     "job.rs",
     "lib.rs",
@@ -153,6 +153,7 @@ kernel_rust_mod("syscalls-rs") {
     "thread.rs",
     "ticks.rs",
     "timer.rs",
+    "vmar.rs",
   ]
   deps = [
     "macros:syscalls-macro",

@@ -7,48 +7,49 @@
 #ifndef ZIRCON_KERNEL_OBJECT_INCLUDE_OBJECT_IO_BUFFER_SHARED_REGION_DISPATCHER_H_
 #define ZIRCON_KERNEL_OBJECT_INCLUDE_OBJECT_IO_BUFFER_SHARED_REGION_DISPATCHER_H_
 
+#include <lib/object-constants.h>
 #include <zircon/rights.h>
 #include <zircon/types.h>
 
-#include <ktl/byte.h>
+#include <fbl/ref_ptr.h>
+#include <kernel/ffi.h>
 #include <object/dispatcher.h>
-#include <vm/vm_address_region.h>
-#include <vm/vm_object.h>
+#include <object/handle.h>
+#include <object/opaque_storage.h>
 
-class IoBufferSharedRegionDispatcher
-    : public SoloDispatcher<IoBufferSharedRegionDispatcher, ZX_DEFAULT_IOB_SHARED_REGION_RIGHTS> {
+class VmMapping;
+class VmObjectPaged;
+class IoBufferSharedRegionDispatcher;
+
+extern "C" {
+zx_status_t cpp_io_buffer_shared_region_dispatcher_create(
+    const fbl::RefPtr<VmObjectPaged>& vmo, const fbl::RefPtr<VmMapping>& mapping, vaddr_t base,
+    ffi::Uninitialized<KernelHandle<IoBufferSharedRegionDispatcher>>* handle_out);
+}
+
+class IoBufferSharedRegionDispatcher final : public Dispatcher {
  public:
-  static zx_status_t Create(uint64_t size, KernelHandle<IoBufferSharedRegionDispatcher>* handle,
-                            zx_rights_t* rights);
+  explicit IoBufferSharedRegionDispatcher(const fbl::RefPtr<VmObjectPaged>& vmo,
+                                          const fbl::RefPtr<VmMapping>& mapping, vaddr_t base);
+  ~IoBufferSharedRegionDispatcher() override;
 
-  ~IoBufferSharedRegionDispatcher() { mapping_->Destroy(); }
-
-  // SoloDispatcher implementation.
   zx_obj_type_t get_type() const final { return ZX_OBJ_TYPE_IOB_SHARED_REGION; }
+  zx_koid_t get_related_koid() const final { return ZX_KOID_INVALID; }
+  bool is_waitable() const final { return true; }
 
-  // May block on page requests and must be called without locks held.
-  zx::result<> Write(uint64_t tag, user_in_iovec_t message);
-
-  const fbl::RefPtr<VmObjectPaged>& vmo() const { return vmo_; }
-
- private:
-  // The header used with the mediated write ring buffer discipline.
-  struct Header {
-    ktl::atomic<uint64_t> head;
-    ktl::atomic<uint64_t> tail;
-  };
-
-  IoBufferSharedRegionDispatcher(fbl::RefPtr<VmObjectPaged> vmo, fbl::RefPtr<VmMapping> mapping,
-                                 zx_vaddr_t base)
-      : vmo_(ktl::move(vmo)), mapping_(ktl::move(mapping)), base_(base) {
-    vmo_->set_user_id(get_koid());
+  zx_status_t user_signal_self(uint32_t clear_mask, uint32_t set_mask) final {
+    return UserSignalSelfSolo(this, clear_mask, set_mask, 0);
+  }
+  zx_status_t user_signal_peer(uint32_t clear_mask, uint32_t set_mask) final {
+    return ZX_ERR_NOT_SUPPORTED;
   }
 
-  Header* GetHeader() const { return reinterpret_cast<Header*>(base_); }
+ protected:
+  Lock<CriticalMutex>* get_lock() const final;
 
-  fbl::RefPtr<VmObjectPaged> vmo_;
-  fbl::RefPtr<VmMapping> mapping_;
-  zx_vaddr_t base_;
+ private:
+  OpaqueStorage<kIoBufferSharedRegionDispatcherStateSize, kIoBufferSharedRegionDispatcherStateAlign>
+      opaque_storage_;
 };
 
 #endif  // ZIRCON_KERNEL_OBJECT_INCLUDE_OBJECT_IO_BUFFER_SHARED_REGION_DISPATCHER_H_

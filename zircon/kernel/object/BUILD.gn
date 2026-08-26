@@ -37,6 +37,7 @@ source_set("object") {
     "interrupt_dispatcher.cc",
     "interrupt_event_dispatcher.cc",
     "io_buffer_dispatcher.cc",
+    "io_buffer_dispatcher_ffi.cc",
     "io_buffer_shared_region_dispatcher.cc",
     "iommu_dispatcher.cc",
     "iommu_dispatcher_ffi.cc",
@@ -164,7 +165,6 @@ source_set("tests") {
     "test/exceptionate_tests.cc",
     "test/handle_tests.cc",
     "test/interrupt_event_dispatcher_tests.cc",
-    "test/io_buffer_dispatcher_tests.cc",
     "test/job_dispatcher_tests.cc",
     "test/job_policy_tests.cc",
     "test/message_packet_tests.cc",
@@ -203,6 +203,9 @@ kernel_rust_mod("object-rs") {
     "fifo_dispatcher.rs",
     "fifo_dispatcher_ffi.rs",
     "handle.rs",
+    "io_buffer_dispatcher.rs",
+    "io_buffer_dispatcher_ffi.rs",
+    "io_buffer_shared_region_dispatcher.rs",
     "iommu.rs",
     "iommu_dispatcher.rs",
     "iommu_dispatcher_ffi.rs",
@@ -240,6 +243,7 @@ kernel_rust_mod("object-rs") {
   ]
 
   deps = [
+    "//sdk/rust/iob",
     "//sdk/rust/zx-status",
     "//sdk/rust/zx-types",
     "//src/lib/kalloc",
@@ -251,6 +255,7 @@ kernel_rust_mod("object-rs") {
     "//third_party/rust_crates:zerocopy",
     "//zircon/kernel/lib/counters:counters-rs",
     "//zircon/kernel/lib/object-constants:object-constants-rs",
+    "//zircon/kernel/lib/page:page-rs",
     "//zircon/kernel/lib/relaxed_atomic:relaxed_atomic-rs",
     "//zircon/system/ulib/fbl/rust:fbl",
   ]

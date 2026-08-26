@@ -17,7 +17,6 @@
 #include <fbl/ref_ptr.h>
 #include <object/clock_dispatcher.h>
 #include <object/handle.h>
-#include <object/io_buffer_dispatcher.h>
 #include <object/process_dispatcher.h>
 #include <object/vm_address_region_dispatcher.h>
 #include <object/vm_object_dispatcher.h>
@@ -316,39 +315,14 @@ zx_status_t sys_vmar_op_range(zx_handle_t handle, uint32_t op, zx_vaddr_t addr, 
   return vmar->RangeOp(op, addr, len, vmar_rights, _buffer, buffer_size);
 }
 
-// zx_status_t zx_vmar_map_iob
-zx_status_t sys_vmar_map_iob(zx_handle_t handle, zx_vm_option_t options, size_t vmar_offset,
-                             zx_handle_t ep, uint32_t region_index, size_t region_offset,
-                             size_t region_length, user_out_ptr<vaddr_t> mapped_addr) {
-  auto* up = ProcessDispatcher::GetCurrent();
-
-  // Lookup the VMAR dispatcher from handle.
-  fbl::RefPtr<VmAddressRegionDispatcher> vmar;
-  zx_rights_t vmar_rights;
-  zx_status_t status = up->handle_table().GetDispatcherAndRights(*up, handle, &vmar, &vmar_rights);
-  if (status != ZX_OK) {
-    return status;
-  }
-
-  // Lookup the iob dispatcher from handle.
-  fbl::RefPtr<IoBufferDispatcher> iobuffer_disp;
-  zx_rights_t iobuffer_rights;
-  status = up->handle_table().GetDispatcherAndRights(*up, ep, &iobuffer_disp, &iobuffer_rights);
-  if (status != ZX_OK) {
-    return status;
-  }
-
-  if (region_index >= iobuffer_disp->RegionCount()) {
-    return ZX_ERR_OUT_OF_RANGE;
-  }
-
-  zx::result<fbl::RefPtr<VmObject>> vmo = iobuffer_disp->CreateMappableVmoForRegion(region_index);
-  if (vmo.is_error()) {
-    return vmo.status_value();
-  }
-  zx_rights_t region_rights = iobuffer_disp->GetMapRights(iobuffer_rights, region_index);
-  return vmar_map_common(options, ktl::move(vmar), vmar_offset, vmar_rights, ktl::move(*vmo),
-                         region_offset, region_rights, region_length, mapped_addr);
+extern "C" zx_status_t cpp_vmar_map_common(zx_vm_option_t options, VmAddressRegionDispatcher* vmar,
+                                           uint64_t vmar_offset, zx_rights_t vmar_rights,
+                                           VmObject* vmo, uint64_t vmo_offset,
+                                           zx_rights_t vmo_rights, uint64_t len,
+                                           zx_vaddr_t* mapped_addr) {
+  return vmar_map_common(options, fbl::ImportFromRawPtr(vmar), vmar_offset, vmar_rights,
+                         fbl::ImportFromRawPtr(vmo), vmo_offset, vmo_rights, len,
+                         make_user_out_ptr(mapped_addr));
 }
 
 zx_status_t sys_vmar_map_clock(zx_handle_t handle, zx_vm_option_t options, uint64_t vmar_offset,
