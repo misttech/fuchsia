@@ -77,12 +77,6 @@ func (c *testSuiteFailureReasonCheck) FailureReason() string {
 // FailureReasonChecks returns checks to detect bad strings in failure reasons of test suites.
 func FailureReasonChecks() []FailureModeCheck {
 	return []FailureModeCheck{
-		// For b/502668022
-		&testSuiteFailureReasonCheck{
-			String:         "[DeviceDidNotSuspendError] Starnix/Android did not suspend during idle.",
-			isExoneration:  true,
-			targetTestName: "suspend_resume",
-		},
 		// For b/502668022 (staging verification)
 		&testSuiteFailureReasonCheck{
 			String:         "[DeviceDidNotSuspendError] Dummy exception raised to demonstrate test exoneration in tefmocheck. 8d3d922a-8c8c-44bb-bc8c-f09c7a72d733",
