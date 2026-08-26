@@ -145,7 +145,7 @@ pub fn deserialize_saved_networks(
     let data: WlanConfigDump =
         serde_json::from_str(&json).map_err(|e| format_err!("Failed to parse config: {}", e))?;
     let networks: Vec<wlan_policy::NetworkConfig> =
-        data.data.iter().map(|network| wlan_policy::NetworkConfig::from(network.clone())).collect();
+        data.data.into_iter().map(wlan_policy::NetworkConfig::from).collect();
     Ok(networks)
 }
 

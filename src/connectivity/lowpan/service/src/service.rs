@@ -55,7 +55,7 @@ impl<S> LowpanService<S> {
 
     pub fn get_devices(&self) -> Vec<String> {
         let devices = self.devices.lock();
-        devices.keys().into_iter().map(|x| x.to_string()).collect()
+        devices.keys().cloned().collect()
     }
 }
 
