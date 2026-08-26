@@ -2,39 +2,18 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import("//src/connectivity/wlan/tests/core/test_lists.gni")
+import("//src/connectivity/wlan/tests/wlancfg/test_lists.gni")
+
 assert(is_host, "antlion tests only supported for host testing")
 
 group("e2e_tests") {
   testonly = true
-  public_deps = [
-    "wlan:e2e_tests",
-
-    # As tests are migrated out of the antlion directory, add them to this
-    # group to ensure they are still included in the e2e test suite for
-    # release testing.
-    "//src/connectivity/wlan/tests/core:wlan_scan_test",
-    "//src/connectivity/wlan/tests/wlancfg:beacon_loss_test",
-    "//src/connectivity/wlan/tests/wlancfg:channel_switch_test_with_soft_ap",
-    "//src/connectivity/wlan/tests/wlancfg:channel_switch_test_without_soft_ap",
-    "//src/connectivity/wlan/tests/wlancfg:connection_stress_test",
-    "//src/connectivity/wlan/tests/wlancfg:hidden_networks_test",
-    "//src/connectivity/wlan/tests/wlancfg:ping_test",
-    "//src/connectivity/wlan/tests/wlancfg:policy_scan_test",
-    "//src/connectivity/wlan/tests/wlancfg:reboot_ap_open_test",
-    "//src/connectivity/wlan/tests/wlancfg:reboot_ap_test_quick",
-    "//src/connectivity/wlan/tests/wlancfg:reboot_ap_wpa2_test",
-    "//src/connectivity/wlan/tests/wlancfg:reboot_ap_wpa3_test",
-    "//src/connectivity/wlan/tests/wlancfg:reboot_dut_open_test",
-    "//src/connectivity/wlan/tests/wlancfg:reboot_dut_test_quick",
-    "//src/connectivity/wlan/tests/wlancfg:reboot_dut_wpa2_test",
-    "//src/connectivity/wlan/tests/wlancfg:reboot_dut_wpa3_test",
-    "//src/connectivity/wlan/tests/wlancfg:regulatory_recovery_test",
-    "//src/connectivity/wlan/tests/wlancfg:saved_networks_test",
-    "//src/connectivity/wlan/tests/wlancfg:start_stop_client_connections_test",
-    "//src/connectivity/wlan/tests/wlancfg:vape_interop_test",
-    "//src/connectivity/wlan/tests/wlancfg:wlan_bss_transition_management_test",
-    "//src/connectivity/wlan/tests/wlancfg:wlan_misc_scenario_test",
-    "//src/connectivity/wlan/tests/wlancfg:wlan_target_security_test",
-    "//src/connectivity/wlan/tests/wlancfg:wlan_wireless_network_management_test",
-  ]
+  public_deps = [ "wlan:e2e_tests" ] +
+                # As tests are migrated out of the antlion directory, add them
+                # to this group to ensure they are still included in the e2e
+                # test suite for release testing.
+                wlancfg_tests_for_presubmit + wlancfg_tests_for_wlan_presubmit +
+                wlancfg_tests_for_postsubmit + wlancfg_tests_for_fyi +
+                wlancfg_tests_for_fyi_long
 }
