@@ -56,20 +56,20 @@ zx_status_t BaseCaptureStrategy::OnNewProcess(OS& os, Process process, zx::handl
     }
     num_vmos = result.value();
   }
-  std::unordered_map<zx_koid_t, const zx_info_vmo_t&> unique_vmos;
+  std::unordered_map<zx_koid_t, const zx_info_vmo_t*> unique_vmos;
   {
     TRACE_DURATION("memory_metrics", "BaseCaptureStrategy::OnNewProcess::UniqueProcessVMOs");
     unique_vmos.reserve(num_vmos);
     for (size_t i = 0; i < num_vmos; i++) {
       const auto& vmo_info = vmos_[i];
-      unique_vmos.try_emplace(vmo_info.koid, vmo_info);
+      unique_vmos.try_emplace(vmo_info.koid, &vmo_info);
     }
   }
   {
     TRACE_DURATION("memory_metrics", "BaseCaptureStrategy::OnNewProcess::UniqueVMOs");
     process.vmos.reserve(unique_vmos.size());
     for (const auto& [vmo_koid, vmo] : unique_vmos) {
-      koid_to_vmo_.try_emplace(vmo_koid, vmo);
+      koid_to_vmo_.try_emplace(vmo_koid, *vmo);
       process.vmos.push_back(vmo_koid);
     }
   }
