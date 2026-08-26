@@ -115,7 +115,7 @@ macro_rules! hierarchy {
     ($key:tt: $($rest:tt)+) => {{
         let key : &'static str = $key;
         let key = key.to_string();
-        $crate::tree_assertion!(var key: $($rest)+)
+        $crate::hierarchy!(var key: $($rest)+)
     }};
 }
 
@@ -344,6 +344,23 @@ mod tests {
                     vec![Property::String(Field::Foo, "baz".to_string())],
                     vec![]
                 )],
+            )
+        );
+    }
+
+    #[fuchsia::test]
+    fn test_string_literal_root_key() {
+        let result = hierarchy! {
+            "root": {
+                foo: 1u64,
+            }
+        };
+        assert_eq!(
+            result,
+            DiagnosticsHierarchy::new(
+                "root",
+                vec![Property::Uint("foo".to_string(), 1u64)],
+                vec![]
             )
         );
     }
