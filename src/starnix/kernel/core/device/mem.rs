@@ -174,6 +174,27 @@ impl FileOps for DevFull {
     }
 }
 
+struct ZeroOnDropBuffer {
+    buf: Vec<u8>,
+}
+
+impl ZeroOnDropBuffer {
+    fn new(size: usize) -> Self {
+        Self { buf: vec![0u8; size] }
+    }
+}
+
+impl Drop for ZeroOnDropBuffer {
+    fn drop(&mut self) {
+        // SAFETY: The pointers constructed here are bounded by the lifetime of self.buf.
+        unsafe {
+            for i in 0..self.buf.len() {
+                std::ptr::write_volatile(self.buf.as_mut_ptr().add(i), 0);
+            }
+        }
+    }
+}
+
 #[derive(Default)]
 pub struct DevRandom;
 impl FileOps for DevRandom {
@@ -197,9 +218,11 @@ impl FileOps for DevRandom {
         _offset: usize,
         data: &mut dyn OutputBuffer,
     ) -> Result<usize, Errno> {
-        let mut rdm = vec![0u8; data.available()];
-        starnix_crypto::cprng_draw(&mut rdm);
-        data.write(&rdm)
+        // Zero out the memory where we stored the random values as they may be used to seed keys
+        // or other cryptographic data structures and we do not want to accidentally leak the data.
+        let mut rdm = ZeroOnDropBuffer::new(data.available());
+        starnix_crypto::cprng_draw(&mut rdm.buf);
+        data.write(&rdm.buf)
     }
 
     fn ioctl(
