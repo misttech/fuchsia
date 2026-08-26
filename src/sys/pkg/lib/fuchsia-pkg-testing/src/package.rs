@@ -78,7 +78,7 @@ impl Package {
     }
 
     /// The pinned fuchsia-pkg url of the package on fuchsia.com.
-    pub fn fuchsia_url(&self) -> PinnedAbsolutePackageUrl {
+    pub fn pinned_fuchsia_url(&self) -> PinnedAbsolutePackageUrl {
         let unpinned = format!("fuchsia-pkg://fuchsia.com/{}", self.name).parse().unwrap();
         PinnedAbsolutePackageUrl::from_unpinned(unpinned, self.meta_far_merkle)
     }

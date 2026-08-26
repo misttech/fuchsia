@@ -33,8 +33,13 @@ closed protocol Authority {
         /// The repository indicated by `package_url` does not contain the indicated package.
         PACKAGE_NOT_FOUND = 4;
 
+        /// This `Authority` failed to communicate with an upstream authority of its own, so this
+        /// `Authority` does not know if it has the package. Clients may attempt to fallback to a
+        /// different authority.
+        UPSTREAM_CONNECTION = 5;
+
         /// There was an error with the configuration or operation of this `Authority` or its
         /// dependencies.
-        INTERNAL = 5;
+        INTERNAL = 6;
     };
 };

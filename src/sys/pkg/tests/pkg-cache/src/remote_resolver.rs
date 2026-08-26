@@ -677,8 +677,10 @@ async fn download_blob_body_timeout() {
     );
 }
 
+#[test_case::test_case(blobfs_ramdisk::Implementation::CppBlobfs; "blobfs")]
+#[test_case::test_case(blobfs_ramdisk::Implementation::Fxblob; "fxblob")]
 #[fuchsia::test]
-async fn does_not_fetch_up_to_date_blobs() {
+async fn does_not_fetch_up_to_date_blobs(blobfs_impl: blobfs_ramdisk::Implementation) {
     let subpackage = fuchsia_pkg_testing::PackageBuilder::new("subpackage")
         .add_resource_at("subpackage-blob", "subpackage-blob-contents".as_bytes())
         .build()
@@ -705,6 +707,7 @@ async fn does_not_fetch_up_to_date_blobs() {
             &repo_config,
             &[&superpackage],
         ))
+        .blobfs_impl(blobfs_impl)
         .build()
         .await;
 

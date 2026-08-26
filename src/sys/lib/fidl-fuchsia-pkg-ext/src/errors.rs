@@ -42,8 +42,8 @@ pub enum ResolveError {
 
 impl From<fidl_fuchsia_pkg::ResolveError> for ResolveError {
     fn from(e: fidl_fuchsia_pkg::ResolveError) -> Self {
-        use fidl_fuchsia_pkg::ResolveError as ferror;
         use ResolveError::*;
+        use fidl_fuchsia_pkg::ResolveError as ferror;
         match e {
             ferror::Internal => Internal,
             ferror::AccessDenied => AccessDenied,
@@ -62,8 +62,8 @@ impl From<fidl_fuchsia_pkg::ResolveError> for ResolveError {
 
 impl From<ResolveError> for fidl_fuchsia_pkg::ResolveError {
     fn from(e: ResolveError) -> Self {
-        use fidl_fuchsia_pkg::ResolveError as ferror;
         use ResolveError::*;
+        use fidl_fuchsia_pkg::ResolveError as ferror;
         match e {
             Internal => ferror::Internal,
             AccessDenied => ferror::AccessDenied,
@@ -164,4 +164,19 @@ pub enum CupMissingField {
     Nonce,
     #[error("CupData signature field")]
     Signature,
+}
+
+pub fn authority_to_resolve_err(
+    err: &fidl_fuchsia_pkg::AuthorityLookupError,
+) -> fidl_fuchsia_pkg::ResolveError {
+    use fidl_fuchsia_pkg::AuthorityLookupError::*;
+    use fidl_fuchsia_pkg::ResolveError as Err;
+    match err {
+        InvalidUrl => Err::InvalidUrl,
+        PinnedUrlNotAllowed => Err::Internal,
+        RepositoryNotFound => Err::RepoNotFound,
+        PackageNotFound => Err::PackageNotFound,
+        UpstreamConnection => Err::Io,
+        Internal => Err::Internal,
+    }
 }

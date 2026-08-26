@@ -49,6 +49,7 @@ impl QueuedResolver {
         blobfs_client: blobfs::Client,
         blob_fetcher: crate::blob_fetcher::BlobFetcher,
         root_dir_factory: crate::root_dir::RootDirFactory,
+        open_packages: crate::RootDirCache,
     ) -> (impl Future<Output = ()>, Self) {
         let (queue, sender) = work_queue::work_queue(
             max_concurrency,
@@ -57,6 +58,7 @@ impl QueuedResolver {
                 let blobfs_client = blobfs_client.clone();
                 let blob_fetcher = blob_fetcher.clone();
                 let root_dir_factory = root_dir_factory.clone();
+                let open_packages = open_packages.clone();
                 async move {
                     resolve(
                         pkg_id,
@@ -66,6 +68,7 @@ impl QueuedResolver {
                         &blobfs_client,
                         &blob_fetcher,
                         &root_dir_factory,
+                        &open_packages,
                     )
                     .await
                 }
@@ -95,9 +98,8 @@ async fn resolve(
     blobfs_client: &blobfs::Client,
     blob_fetcher: &crate::blob_fetcher::BlobFetcher,
     root_dir_factory: &crate::root_dir::RootDirFactory,
+    open_packages: &crate::RootDirCache,
 ) -> Result<Arc<crate::RootDir>, Arc<Error>> {
-    // TODO(https://fxbug.dev/542381507): Support open package tracking.
-    std::assert_matches!(gc_protection, fpkg::GcProtection::Retained);
     let gc_guard = package_index.write().await.start_writing(pkg_id, gc_protection);
     let resolve_ret = resolve_impl(
         pkg_id,
@@ -107,6 +109,7 @@ async fn resolve(
         blobfs_client,
         blob_fetcher,
         root_dir_factory,
+        open_packages,
     )
     .await;
     let stop_ret = package_index.write().await.stop_writing(gc_guard);
@@ -128,6 +131,7 @@ async fn resolve_impl(
     blobfs_client: &blobfs::Client,
     blob_fetcher: &crate::blob_fetcher::BlobFetcher,
     root_dir_factory: &crate::root_dir::RootDirFactory,
+    open_packages: &crate::RootDirCache,
 ) -> Result<Arc<crate::RootDir>, Error> {
     let mut queue = std::collections::VecDeque::from([pkg_id]);
     let mut queued = HashSet::from([pkg_id]);
@@ -186,7 +190,14 @@ async fn resolve_impl(
         }
         ret.get_or_insert(root_dir);
     }
-    Ok(Arc::new(ret.expect("queue starts with an entry")))
+    let root_dir = ret.expect("queue starts with an entry");
+    Ok(match gc_protection {
+        fpkg::GcProtection::Retained => Arc::new(root_dir),
+        fpkg::GcProtection::OpenPackageTracking => open_packages
+            .get_or_insert(pkg_id, Some(root_dir))
+            .await
+            .map_err(Error::CreatingTrackedRootDir)?,
+    })
 }
 
 #[derive(thiserror::Error, Debug)]
@@ -214,6 +225,9 @@ pub(crate) enum Error {
     #[error("adding blobs to package index")]
     ProtectBlobs(#[source] crate::index::AddBlobsError),
 
+    #[error("creating root dir with open package tracking")]
+    CreatingTrackedRootDir(#[source] package_directory::Error),
+
     #[error("clearing the writing index after resolve complete")]
     ClearWritingIndex(#[source] crate::index::StopError),
 
@@ -238,6 +252,7 @@ impl From<&Error> for fpkg::ResolveError {
             CreatingRootDir { .. } => Err::Io,
             ReadingSubpackages { .. } => Err::Io,
             ProtectBlobs(_) => Err::Internal,
+            CreatingTrackedRootDir(_) => Err::Io,
             ClearWritingIndex(_) => Err::Internal,
             ResolveAndClearFailed { source, .. } => (&**source).into(),
             PushQueue(_) => Err::Internal,

@@ -15,7 +15,7 @@ pub use crate::repo::{
     RepositoryStorageType, RepositoryTarget, RepositoryUrl,
 };
 
-mod errors;
+pub mod errors;
 pub use crate::errors::{
     BlobIdParseError, CupMissingField, MirrorConfigError, RepositoryParseError,
     ResolutionContextError, ResolveError,

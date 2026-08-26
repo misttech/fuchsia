@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::upgradable_packages::UpgradablePackages;
 use anyhow::Context as _;
 use fidl::endpoints::Proxy as _;
 use fidl_fuchsia_component_decl as fcomponent_decl;
@@ -21,7 +20,6 @@ pub(crate) async fn serve_request_stream(
     authenticator: context_authenticator::ContextAuthenticator,
     open_packages: crate::RootDirCache,
     scope: package_directory::ExecutionScope,
-    upgradable_packages: Option<Arc<UpgradablePackages>>,
 ) -> anyhow::Result<()> {
     while let Some(request) =
         stream.try_next().await.context("failed to read request from FIDL stream")?
@@ -36,13 +34,12 @@ pub(crate) async fn serve_request_stream(
                             authenticator.clone(),
                             &open_packages,
                             scope.clone(),
-                            &upgradable_packages,
                         )
                         .await
                         .map_err(|e| {
                             let fidl_err = (&e).into();
                             error!(
-                                "failed to resolve component {}: {:#}",
+                                "base component resolver failed to resolve {}: {:#}",
                                 component_url,
                                 anyhow::anyhow!(e)
                             );
@@ -65,13 +62,12 @@ pub(crate) async fn serve_request_stream(
                             authenticator.clone(),
                             &open_packages,
                             scope.clone(),
-                            &upgradable_packages,
                         )
                         .await
                         .map_err(|e| {
                             let fidl_err = (&e).into();
                             error!(
-                                "failed to resolve with context component {}: {:#}",
+                                "base component resolver failed to resolve with context {}: {:#}",
                                 component_url,
                                 anyhow::anyhow!(e)
                             );
@@ -96,11 +92,10 @@ async fn resolve(
     authenticator: context_authenticator::ContextAuthenticator,
     open_packages: &crate::RootDirCache,
     scope: package_directory::ExecutionScope,
-    upgradable_packages: &Option<Arc<UpgradablePackages>>,
 ) -> Result<fcomponent_resolution::Component, Error> {
     let url = ComponentUrl::parse(url)?;
     let (package, server_end) = fidl::endpoints::create_proxy();
-    let context = super::package::resolve_impl(
+    let context = super::package::resolve_and_serve(
         match url.package_url() {
             PackageUrl::Absolute(url) => url,
             PackageUrl::Relative(_) => Err(Error::AbsoluteUrlRequired)?,
@@ -110,7 +105,6 @@ async fn resolve(
         authenticator,
         open_packages,
         scope,
-        upgradable_packages,
     )
     .await
     .map_err(Error::PackageResolve)?;
@@ -125,11 +119,10 @@ async fn resolve_with_context(
     authenticator: context_authenticator::ContextAuthenticator,
     open_packages: &crate::RootDirCache,
     scope: package_directory::ExecutionScope,
-    upgradable_packages: &Option<Arc<UpgradablePackages>>,
 ) -> Result<fcomponent_resolution::Component, Error> {
     let url = ComponentUrl::parse(url)?;
     let (package, server_end) = fidl::endpoints::create_proxy();
-    let context = super::package::resolve_with_context_impl(
+    let context = super::package::resolve_with_context(
         url.package_url(),
         fpkg::ResolutionContext { bytes: context.bytes },
         server_end,
@@ -137,7 +130,6 @@ async fn resolve_with_context(
         authenticator,
         open_packages,
         scope,
-        upgradable_packages,
     )
     .await
     .map_err(Error::PackageResolve)?;
@@ -166,6 +158,7 @@ async fn load_config(
     ))
 }
 
+// TODO(https://fxbug.dev/548131664): Read manifest, etc. directly from the root_dir, not the proxy.
 async fn resolve_from_package(
     url: &ComponentUrl,
     package: fio::DirectoryProxy,
@@ -284,7 +277,6 @@ mod tests {
                 context_authenticator::ContextAuthenticator::new(),
                 &crate::root_dir::new_test(blobfs::Client::new_test().0).await.1,
                 package_directory::ExecutionScope::new(),
-                &None,
             )
             .await,
             Err(Error::AbsoluteUrlRequired)

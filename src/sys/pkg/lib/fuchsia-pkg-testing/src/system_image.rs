@@ -59,7 +59,8 @@ impl SystemImageBuilder {
     /// calling [`Self::cache_package`].
     pub fn cache_packages(mut self, cache_packages: &[&Package]) -> Self {
         assert_eq!(self.cache_packages, None);
-        self.cache_packages = Some(cache_packages.iter().map(|pkg| pkg.fuchsia_url()).collect());
+        self.cache_packages =
+            Some(cache_packages.iter().map(|pkg| pkg.pinned_fuchsia_url()).collect());
         self
     }
 

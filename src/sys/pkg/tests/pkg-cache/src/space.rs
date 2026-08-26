@@ -512,13 +512,7 @@ async fn upgradable_packages_protected_from_gc() {
         &pkg0,
     )
     .await;
-    assert_matches!(
-        env.proxies
-            .package_cache
-            .set_upgradable_urls(&[fpkg::PackageUrl { url: pkg0.fuchsia_url().to_string() }])
-            .await,
-        Ok(Ok(()))
-    );
+    let () = env.set_upgradable_urls([pkg0.pinned_fuchsia_url()]).await.unwrap();
     // Sometime after the connection to dir0 closes, open package tracking stops protecting pkg0's
     // blobs. This occurs asynchronously, when pkg-cache's VFS task serving the package directory
     // notices that the client end of the channel was closed and then finishes, which drops the
@@ -549,13 +543,7 @@ async fn upgradable_packages_protected_from_gc() {
         &pkg1,
     )
     .await;
-    assert_matches!(
-        env.proxies
-            .package_cache
-            .set_upgradable_urls(&[fpkg::PackageUrl { url: pkg1.fuchsia_url().to_string() }])
-            .await,
-        Ok(Ok(()))
-    );
+    let () = env.set_upgradable_urls([pkg1.pinned_fuchsia_url()]).await.unwrap();
     drop(dir1);
     let () = env.wait_for_package_to_close(pkg1.hash()).await;
     assert_matches!(env.proxies.space_manager.gc().await, Ok(Ok(())));

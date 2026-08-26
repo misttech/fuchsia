@@ -73,7 +73,7 @@ impl From<&LookupError> for fpkg::AuthorityLookupError {
                 use crate::repository_manager::GetPackageHashError::*;
                 match e {
                     RepoNotFound { .. } => Err::RepositoryNotFound,
-                    OpenRepo { .. } => Err::Internal,
+                    OpenRepo { .. } => Err::UpstreamConnection,
                     MerkleFor(e) => {
                         use crate::cache::MerkleForError::*;
                         match e {
@@ -82,11 +82,11 @@ impl From<&LookupError> for fpkg::AuthorityLookupError {
                             | FetchTargetDescription { .. }
                             | InvalidTargetPath { .. }
                             | NoCustomMetadata
-                            | SerdeError { .. } => Err::Internal,
+                            | SerdeError { .. } => Err::UpstreamConnection,
                         }
                     }
-                    NoMirrors { .. } => Err::Internal,
-                    BlobUrl { .. } => Err::Internal,
+                    NoMirrors { .. } => Err::UpstreamConnection,
+                    BlobUrl { .. } => Err::UpstreamConnection,
                 }
             }
         }

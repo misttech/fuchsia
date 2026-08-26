@@ -303,8 +303,6 @@ async fn pinned_merkle_resolution() {
 }
 
 // TODO(https://fxbug.dev/542690944): Covered by PkgAuthority variant.
-// TODO(https://fxbug.dev/542381507): Test that the full resolver handles variant when falling back
-//     to base or cache.
 #[fuchsia::test]
 async fn variant_resolution() {
     let env = TestEnvBuilder::new().build().await;
@@ -503,7 +501,6 @@ async fn handles_429_responses() {
 }
 
 // TODO(https://fxbug.dev/542690944): Covered by PkgAuthority happy-path.
-// TODO(https://fxbug.dev/542381507): Test that the full resolver uses cache fallback.
 #[fuchsia::test]
 async fn use_cached_package() {
     let env = TestEnvBuilder::new().build().await;

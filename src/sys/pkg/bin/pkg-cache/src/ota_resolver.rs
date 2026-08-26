@@ -6,6 +6,7 @@ use anyhow::{Context as _, anyhow};
 use fidl::endpoints::ServerEnd;
 use fidl_fuchsia_io as fio;
 use fidl_fuchsia_pkg as fpkg;
+use fidl_fuchsia_pkg_ext as fpkg_ext;
 use fuchsia_url::fuchsia_pkg::{AbsolutePackageUrl, PackageUrl};
 use futures::stream::TryStreamExt as _;
 use log::error;
@@ -279,7 +280,7 @@ impl From<&Error> for fpkg::ResolveError {
             InvalidUrl(_) => Err::InvalidUrl,
             ContextWithAbsoluteUrl => Err::InvalidContext,
             AuthorityFidl(_) => Err::Io,
-            Authority(e) => authority_to_resolve_err(e),
+            Authority(e) => fpkg_ext::errors::authority_to_resolve_err(e),
             InvalidBlobDirUri(_) => Err::Internal,
             QueuedResolve(source) => source.as_ref().into(),
             ContextAuthenticator(_) => Err::InvalidContext,
@@ -288,17 +289,5 @@ impl From<&Error> for fpkg::ResolveError {
             SubpackageNotFound { .. } => Err::PackageNotFound,
             CreatingSubpackageRootDir { .. } => Err::Io,
         }
-    }
-}
-
-fn authority_to_resolve_err(err: &fpkg::AuthorityLookupError) -> fpkg::ResolveError {
-    use fpkg::AuthorityLookupError::*;
-    use fpkg::ResolveError as Err;
-    match err {
-        InvalidUrl => Err::InvalidUrl,
-        PinnedUrlNotAllowed => Err::Internal,
-        RepositoryNotFound => Err::RepoNotFound,
-        PackageNotFound => Err::PackageNotFound,
-        Internal => Err::Internal,
     }
 }

@@ -36,12 +36,13 @@ use mock_paver::{MockPaverService, MockPaverServiceBuilder};
 use std::collections::HashMap;
 use std::sync::Arc;
 use vfs::directory::helper::DirectlyMutable as _;
-use zx::{self as zx, Status};
 
 mod base_pkg_index;
 mod cache_pkg_index;
 mod cobalt;
 mod executability_enforcement;
+mod full_resolver;
+mod full_resolver_upgradable;
 mod get;
 mod inspect;
 mod ota_resolver;
@@ -256,7 +257,7 @@ async fn verify_package_cached(
             needed_blobs_server_end,
             dir_server_end,
         )
-        .map_ok(|res| res.map_err(Status::err_from_raw));
+        .map_ok(|res| res.map_err(zx::Status::err_from_raw));
 
     // If the package is in base, cache, or currently open, the server will send a `ZX_OK` epitaph
     // and then close the channel.
@@ -907,6 +908,10 @@ where
                         "{}-ota",
                         fpkg::PackageResolverMarker::PROTOCOL_NAME
                     )))
+                    .capability(Capability::protocol_by_name(format!(
+                        "{}-full",
+                        fpkg::PackageResolverMarker::PROTOCOL_NAME
+                    )))
                     .capability(Capability::protocol::<fpkg::PackageCacheMarker>())
                     .capability(Capability::protocol::<fpkg::RetainedPackagesMarker>())
                     .capability(Capability::protocol::<fpkg::RetainedBlobsMarker>())
@@ -924,41 +929,47 @@ where
 
         let realm_instance = builder.build().await.unwrap();
 
-        let proxies = Proxies {
-            commit_status_provider: realm_instance
-                .root
-                .connect_to_protocol_at_exposed_dir()
-                .expect("connect to commit status provider"),
-            space_manager: realm_instance
-                .root
-                .connect_to_protocol_at_exposed_dir()
-                .expect("connect to space manager"),
-            package_cache: realm_instance
-                .root
-                .connect_to_protocol_at_exposed_dir()
-                .expect("connect to package cache"),
-            retained_packages: realm_instance
-                .root
-                .connect_to_protocol_at_exposed_dir()
-                .expect("connect to retained packages"),
-            retained_blobs: realm_instance
-                .root
-                .connect_to_protocol_at_exposed_dir()
-                .expect("connect to retained blobs"),
-            ota_package_resolver: realm_instance
-                .root
-                .connect_to_named_protocol_at_exposed_dir::<fpkg::PackageResolverMarker>(&format!(
-                    "{}-ota",
-                    fpkg::PackageResolverMarker::PROTOCOL_NAME
-                ))
-                .expect("connect to OTA package resolver"),
-            pkgfs: fuchsia_fs::directory::open_directory_async(
-                realm_instance.root.get_exposed_dir(),
-                "pkgfs",
-                fio::PERM_READABLE | fio::PERM_EXECUTABLE,
-            )
-            .expect("open pkgfs"),
-        };
+        let proxies =
+            Proxies {
+                commit_status_provider: realm_instance
+                    .root
+                    .connect_to_protocol_at_exposed_dir()
+                    .expect("connect to commit status provider"),
+                space_manager: realm_instance
+                    .root
+                    .connect_to_protocol_at_exposed_dir()
+                    .expect("connect to space manager"),
+                package_cache: realm_instance
+                    .root
+                    .connect_to_protocol_at_exposed_dir()
+                    .expect("connect to package cache"),
+                retained_packages: realm_instance
+                    .root
+                    .connect_to_protocol_at_exposed_dir()
+                    .expect("connect to retained packages"),
+                retained_blobs: realm_instance
+                    .root
+                    .connect_to_protocol_at_exposed_dir()
+                    .expect("connect to retained blobs"),
+                ota_package_resolver: realm_instance
+                    .root
+                    .connect_to_named_protocol_at_exposed_dir::<fpkg::PackageResolverMarker>(
+                        &format!("{}-ota", fpkg::PackageResolverMarker::PROTOCOL_NAME),
+                    )
+                    .expect("connect to OTA package resolver"),
+                full_package_resolver: realm_instance
+                    .root
+                    .connect_to_named_protocol_at_exposed_dir::<fpkg::PackageResolverMarker>(
+                        &format!("{}-full", fpkg::PackageResolverMarker::PROTOCOL_NAME),
+                    )
+                    .expect("connect to full package resolver"),
+                pkgfs: fuchsia_fs::directory::open_directory_async(
+                    realm_instance.root.get_exposed_dir(),
+                    "pkgfs",
+                    fio::PERM_READABLE | fio::PERM_EXECUTABLE,
+                )
+                .expect("open pkgfs"),
+            };
 
         TestEnv {
             apps: Apps { realm_instance },
@@ -969,7 +980,7 @@ where
                 logger_factory,
                 _paver_service: paver_service,
                 _verifier_service: verifier_service,
-                _pkg_authority: pkg_authority,
+                pkg_authority,
             },
         }
     }
@@ -982,6 +993,7 @@ struct Proxies {
     retained_packages: fpkg::RetainedPackagesProxy,
     retained_blobs: fpkg::RetainedBlobsProxy,
     ota_package_resolver: fpkg::PackageResolverProxy,
+    full_package_resolver: fpkg::PackageResolverProxy,
     pkgfs: fio::DirectoryProxy,
 }
 
@@ -989,7 +1001,7 @@ pub struct Mocks {
     pub logger_factory: Arc<MockMetricEventLoggerFactory>,
     _paver_service: Arc<MockPaverService>,
     _verifier_service: Arc<MockHealthVerificationService>,
-    _pkg_authority: Arc<MockPkgAuthority>,
+    pkg_authority: Arc<MockPkgAuthority>,
 }
 
 struct Apps {
@@ -1148,11 +1160,61 @@ impl<B: Blobfs> TestEnv<B> {
             .unwrap()
             .map(|context| (package, context))
     }
+
+    pub async fn resolve_full(
+        &self,
+        url: &str,
+    ) -> Result<(fio::DirectoryProxy, fpkg::ResolutionContext), fpkg::ResolveError> {
+        let (package, package_server_end) = fidl::endpoints::create_proxy();
+        self.proxies
+            .full_package_resolver
+            .resolve(url, package_server_end)
+            .await
+            .unwrap()
+            .map(|context| (package, context))
+    }
+
+    pub async fn resolve_with_context_full(
+        &self,
+        url: &str,
+        context: &fpkg::ResolutionContext,
+    ) -> Result<(fio::DirectoryProxy, fpkg::ResolutionContext), fpkg::ResolveError> {
+        let (package, package_server_end) = fidl::endpoints::create_proxy();
+        self.proxies
+            .full_package_resolver
+            .resolve_with_context(url, context, package_server_end)
+            .await
+            .unwrap()
+            .map(|context| (package, context))
+    }
+
+    pub async fn get_hash_full(
+        &self,
+        url: impl Into<String>,
+    ) -> Result<fuchsia_hash::Hash, zx::Status> {
+        self.proxies
+            .full_package_resolver
+            .get_hash(&fpkg::PackageUrl { url: url.into() })
+            .await
+            .unwrap()
+            .map(|fpkg::BlobId { merkle_root }| merkle_root.into())
+            .map_err(|i| zx::Status::try_from_raw(i).unwrap())
+    }
+
+    async fn set_upgradable_urls(
+        &self,
+        urls: impl IntoIterator<Item = impl std::fmt::Display>,
+    ) -> Result<(), fpkg::SetUpgradableUrlsError> {
+        let urls: Vec<_> =
+            urls.into_iter().map(|url| fpkg::PackageUrl { url: url.to_string() }).collect();
+        self.proxies.package_cache.set_upgradable_urls(&urls).await.unwrap()
+    }
 }
 
 #[derive(Debug)]
 struct MockPkgAuthority {
     index: HashMap<String, Result<(fuchsia_hash::Hash, String), fpkg::AuthorityLookupError>>,
+    lookup_call_history: Mutex<Vec<String>>,
 }
 
 impl MockPkgAuthority {
@@ -1161,7 +1223,7 @@ impl MockPkgAuthority {
     fn new(
         index: HashMap<String, Result<(fuchsia_hash::Hash, String), fpkg::AuthorityLookupError>>,
     ) -> Self {
-        Self { index }
+        Self { index, lookup_call_history: Mutex::new(vec![]) }
     }
 
     fn from_repo_config_and_packages(
@@ -1180,12 +1242,24 @@ impl MockPkgAuthority {
         Self::new(index)
     }
 
+    fn add_lookup_response(
+        mut self,
+        url: impl Into<String>,
+        result: Result<(fuchsia_hash::Hash, String), fpkg::AuthorityLookupError>,
+    ) -> Self {
+        std::assert_matches!(self.index.insert(url.into(), result), None);
+        self
+    }
+
     async fn serve_stream(self: Arc<Self>, stream: fpkg::AuthorityRequestStream) {
         let () = stream
             .for_each(|request| async {
                 match request.unwrap() {
                     fpkg::AuthorityRequest::Lookup { package_url, responder } => {
-                        match self.index.get(&package_url.url).unwrap() {
+                        self.lookup_call_history.lock().push(package_url.url.clone());
+                        match self.index.get(&package_url.url).unwrap_or_else(|| {
+                            panic!("MockPkgAuthority url not in index {}", package_url.url)
+                        }) {
                             Ok((merkle_root, url)) => {
                                 let () = responder
                                     .send(Ok((
@@ -1202,5 +1276,9 @@ impl MockPkgAuthority {
                 }
             })
             .await;
+    }
+
+    fn get_history_clone(&self) -> Vec<String> {
+        self.lookup_call_history.lock().clone()
     }
 }

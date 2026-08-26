@@ -30,7 +30,6 @@ const OUT_DIR_FLAGS: fio::Flags =
 struct TestEnvBuilder {
     blobfs: BlobfsRamdisk,
     system_image_builder: fuchsia_pkg_testing::SystemImageBuilder,
-    enable_upgradable_packages: Option<bool>,
 }
 
 impl TestEnvBuilder {
@@ -42,13 +41,7 @@ impl TestEnvBuilder {
                 .await
                 .unwrap(),
             system_image_builder: fuchsia_pkg_testing::SystemImageBuilder::new(),
-            enable_upgradable_packages: None,
         }
-    }
-
-    fn enable_upgradable_packages(self, enable_upgradable_packages: bool) -> Self {
-        assert_eq!(self.enable_upgradable_packages, None);
-        Self { enable_upgradable_packages: Some(enable_upgradable_packages), ..self }
     }
 
     async fn static_packages(self, static_packages: &[&fuchsia_pkg_testing::Package]) -> Self {
@@ -57,16 +50,6 @@ impl TestEnvBuilder {
         }
         Self {
             system_image_builder: self.system_image_builder.static_packages(static_packages),
-            ..self
-        }
-    }
-
-    async fn cache_packages(self, cache_packages: &[&fuchsia_pkg_testing::Package]) -> Self {
-        for pkg in cache_packages {
-            let () = pkg.write_to_blobfs(&self.blobfs).await;
-        }
-        Self {
-            system_image_builder: self.system_image_builder.cache_packages(cache_packages),
             ..self
         }
     }
@@ -108,11 +91,21 @@ impl TestEnvBuilder {
             }))
             .await
             .unwrap();
+        builder
+            .add_capability(cm_rust::CapabilityDecl::Config(cm_rust::ConfigurationDecl {
+                name: "fuchsia.pkgcache.EnableUpgradablePackages".parse().unwrap(),
+                value: false.into(),
+            }))
+            .await
+            .unwrap();
 
         builder
             .add_route(
                 Route::new()
                     .capability(Capability::configuration("fuchsia.zircon.system.pkgfs.cmd"))
+                    .capability(Capability::configuration(
+                        "fuchsia.pkgcache.EnableUpgradablePackages",
+                    ))
                     .from(Ref::self_())
                     .to(&pkg_cache),
             )
@@ -134,31 +127,6 @@ impl TestEnvBuilder {
                         "fuchsia.pkgcache.BlobDownloadResumptionAttemptsLimit",
                     ))
                     .from(Ref::void())
-                    .to(&pkg_cache),
-            )
-            .await
-            .unwrap();
-
-        if let Some(enable_upgradable_packages) = self.enable_upgradable_packages {
-            builder
-                .add_capability(cm_rust::CapabilityDecl::Config(cm_rust::ConfigurationDecl {
-                    name: "fuchsia.pkgcache.EnableUpgradablePackages".parse().unwrap(),
-                    value: enable_upgradable_packages.into(),
-                }))
-                .await
-                .unwrap();
-        }
-        builder
-            .add_route(
-                Route::new()
-                    .capability(Capability::configuration(
-                        "fuchsia.pkgcache.EnableUpgradablePackages",
-                    ))
-                    .from(if self.enable_upgradable_packages.is_some() {
-                        Ref::self_()
-                    } else {
-                        (&pkg_cache_config).into()
-                    })
                     .to(&pkg_cache),
             )
             .await
@@ -276,13 +244,13 @@ impl TestEnvBuilder {
             .await
             .unwrap();
 
-        TestEnv { realm_instance: builder.build().await.unwrap(), blobfs }
+        TestEnv { realm_instance: builder.build().await.unwrap(), _blobfs: blobfs }
     }
 }
 
 struct TestEnv {
     realm_instance: RealmInstance,
-    blobfs: BlobfsRamdisk,
+    _blobfs: BlobfsRamdisk,
 }
 
 impl TestEnv {
@@ -338,19 +306,6 @@ impl TestEnv {
         context: fcomponent_resolution::Context,
     ) -> Result<fcomponent_resolution::Component, fcomponent_resolution::ResolverError> {
         self.component_resolver().resolve_with_context(url, &context).await.unwrap()
-    }
-
-    fn package_cache(&self) -> fpkg::PackageCacheProxy {
-        self.realm_instance.root.connect_to_protocol_at_exposed_dir().unwrap()
-    }
-
-    async fn set_upgradable_urls(
-        &self,
-        urls: impl IntoIterator<Item = impl std::fmt::Display>,
-    ) -> Result<(), fpkg::SetUpgradableUrlsError> {
-        let urls: Vec<_> =
-            urls.into_iter().map(|url| fpkg::PackageUrl { url: url.to_string() }).collect();
-        self.package_cache().set_upgradable_urls(&urls).await.unwrap()
     }
 }
 
@@ -551,84 +506,4 @@ async fn resolve_with_context_component() {
     assert_eq!(config_values, None);
     assert!(resolution_context.is_some());
     assert_eq!(abi_revision, Some(0xeccea2f70acd6fc0));
-}
-
-#[fuchsia::test]
-async fn resolve_upgradable_package() {
-    let upgradable_pkg =
-        fuchsia_pkg_testing::PackageBuilder::new("upgradable-package").build().await.unwrap();
-    let upgradable_pkg2 =
-        fuchsia_pkg_testing::PackageBuilder::new("upgradable-package2").build().await.unwrap();
-    let env = TestEnvBuilder::new()
-        .await
-        .enable_upgradable_packages(true)
-        .cache_packages(&[&upgradable_pkg, &upgradable_pkg2])
-        .await
-        .build()
-        .await;
-
-    let persisted_upgradable_pkg = fuchsia_pkg_testing::PackageBuilder::new("upgradable-package")
-        .add_resource_at("blob", &b"content"[..])
-        .build()
-        .await
-        .unwrap();
-    let () = persisted_upgradable_pkg.write_to_blobfs(&env.blobfs).await;
-
-    let () = env.set_upgradable_urls([persisted_upgradable_pkg.fuchsia_url()]).await.unwrap();
-    let () = env.resolve_and_verify_package(&persisted_upgradable_pkg).await;
-    // cache fallback
-    let () = env.resolve_and_verify_package(&upgradable_pkg2).await;
-
-    let new_upgradable_pkg2 = fuchsia_pkg_testing::PackageBuilder::new("upgradable-package2")
-        .add_resource_at("blob2", &b"content2"[..])
-        .build()
-        .await
-        .unwrap();
-    let () = new_upgradable_pkg2.write_to_blobfs(&env.blobfs).await;
-    let () = env.set_upgradable_urls([new_upgradable_pkg2.fuchsia_url()]).await.unwrap();
-    let () = env.resolve_and_verify_package(&new_upgradable_pkg2).await;
-}
-
-#[fuchsia::test]
-async fn set_upgradable_urls_does_not_block_base_packages() {
-    let base_pkg =
-        fuchsia_pkg_testing::PackageBuilder::new("a-base-package").build().await.unwrap();
-    let env = TestEnvBuilder::new()
-        .await
-        .enable_upgradable_packages(true)
-        .static_packages(&[&base_pkg])
-        .await
-        .build()
-        .await;
-    // base packages can be resolved before `set_upgradable_urls` is called
-    let () = env.resolve_and_verify_package(&base_pkg).await;
-}
-
-#[fuchsia::test]
-async fn set_upgradable_urls_ignore_base_packages_and_invalid_urls() {
-    let base_pkg =
-        fuchsia_pkg_testing::PackageBuilder::new("a-base-package").build().await.unwrap();
-    let upgradable_pkg =
-        fuchsia_pkg_testing::PackageBuilder::new("upgradable-package").build().await.unwrap();
-    let env = TestEnvBuilder::new()
-        .await
-        .enable_upgradable_packages(true)
-        .static_packages(&[&base_pkg])
-        .await
-        .cache_packages(&[&upgradable_pkg])
-        .await
-        .build()
-        .await;
-    assert_matches!(
-        env.set_upgradable_urls([
-            base_pkg.fuchsia_url().to_string(),
-            "".into(),
-            "http://fuchsia.com/wrong-scheme".into(),
-            "fuchsia-pkg://fuchsia.com/unpinned".into()
-        ])
-        .await,
-        Err(fpkg::SetUpgradableUrlsError::PartialSet)
-    );
-    // resolving upgradable packages are unblocked even if set_upgradable_urls returned an error
-    let () = env.resolve_and_verify_package(&upgradable_pkg).await;
 }
