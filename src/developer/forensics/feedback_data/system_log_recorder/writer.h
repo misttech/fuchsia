@@ -5,7 +5,6 @@
 #ifndef SRC_DEVELOPER_FORENSICS_FEEDBACK_DATA_SYSTEM_LOG_RECORDER_WRITER_H_
 #define SRC_DEVELOPER_FORENSICS_FEEDBACK_DATA_SYSTEM_LOG_RECORDER_WRITER_H_
 
-#include <lib/fit/function.h>
 #include <lib/fit/result.h>
 #include <lib/zx/time.h>
 #include <lib/zx/vmo.h>
@@ -42,8 +41,6 @@ class SystemLogWriter {
     std::optional<zx::time_boot> last_timestamp;
   };
 
-  using FlushAndReadLogsCallback = ::fit::callback<void(::fit::result<WriterError, Logs>)>;
-
   static constexpr size_t kFirstFileNumber = 0u;
 
   SystemLogWriter(const std::string& logs_dir, size_t max_num_files,
@@ -60,10 +57,9 @@ class SystemLogWriter {
   // Deletes all logs from disk.
   void DeleteLogs();
 
-  // Flushes the given consume result to disk, reads all persisted logs and metadata, then passes
-  // the data to |callback|.
-  void FlushAndReadLogs(const LogMessageStore::ConsumeResult& result,
-                        FlushAndReadLogsCallback callback);
+  // Flushes the given consume result to disk, reads all persisted logs and metadata, and returns
+  // the result.
+  ::fit::result<WriterError, Logs> FlushAndReadLogs(const LogMessageStore::ConsumeResult& result);
 
  private:
   // Truncates the first file to start anew.

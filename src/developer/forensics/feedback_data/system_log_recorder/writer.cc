@@ -121,8 +121,8 @@ void SystemLogWriter::DeleteLogs() {
   metadata_.Clear();
 }
 
-void SystemLogWriter::FlushAndReadLogs(const LogMessageStore::ConsumeResult& result,
-                                       FlushAndReadLogsCallback callback) {
+fit::result<SystemLogWriter::WriterError, SystemLogWriter::Logs> SystemLogWriter::FlushAndReadLogs(
+    const LogMessageStore::ConsumeResult& result) {
   Write(result);
 
   float compression_ratio;
@@ -132,11 +132,9 @@ void SystemLogWriter::FlushAndReadLogs(const LogMessageStore::ConsumeResult& res
   if (uncompressed_log.is_error()) {
     switch (uncompressed_log.error_value()) {
       case ReaderError::kIoError:
-        callback(fit::error(WriterError::kIoError));
-        return;
+        return fit::error(WriterError::kIoError);
       case ReaderError::kDecompressionError:
-        callback(fit::error(WriterError::kDecompressionError));
-        return;
+        return fit::error(WriterError::kDecompressionError);
     }
   }
 
@@ -146,22 +144,20 @@ void SystemLogWriter::FlushAndReadLogs(const LogMessageStore::ConsumeResult& res
   zx_status_t status = zx::vmo::create(log_str.size(), /*options=*/0, &vmo);
   if (status != ZX_OK) {
     FX_PLOGS(WARNING, status) << "Failed to create VMO of size " << log_str.size();
-    callback(fit::error(WriterError::kVmoError));
-    return;
+    return fit::error(WriterError::kVmoError);
   }
 
   status = vmo.write(log_str.data(), /*offset=*/0, log_str.size());
   if (status != ZX_OK) {
     FX_PLOGS(WARNING, status) << "Failed to write logs to VMO";
-    callback(fit::error(WriterError::kVmoError));
-    return;
+    return fit::error(WriterError::kVmoError);
   }
 
-  callback(fit::ok(Logs{
+  return fit::ok(Logs{
       .vmo = std::move(vmo),
       .first_timestamp = metadata_.FirstTimestamp(),
       .last_timestamp = metadata_.LastTimestamp(),
-  }));
+  });
 }
 
 std::string SystemLogWriter::Path(const size_t file_num) const {

@@ -672,15 +672,11 @@ TEST_F(WriterTest, FlushAndReadLogs) {
   EXPECT_TRUE(store.Add(BuildLogMessage(FUCHSIA_LOG_INFO, "line 0", zx::msec(100))));
   EXPECT_TRUE(store.Add(BuildLogMessage(FUCHSIA_LOG_INFO, "line 1", zx::msec(200))));
 
-  std::optional<fit::result<SystemLogWriter::WriterError, SystemLogWriter::Logs>> result;
-  writer.FlushAndReadLogs(
-      store.Consume(), [&](fit::result<SystemLogWriter::WriterError, SystemLogWriter::Logs> res) {
-        result = std::move(res);
-      });
+  fit::result<SystemLogWriter::WriterError, SystemLogWriter::Logs> result =
+      writer.FlushAndReadLogs(store.Consume());
 
-  ASSERT_TRUE(result.has_value());
-  ASSERT_TRUE(result->is_ok());
-  SystemLogWriter::Logs logs = std::move(result->value());
+  ASSERT_TRUE(result.is_ok());
+  SystemLogWriter::Logs logs = std::move(result.value());
   ASSERT_TRUE(logs.vmo.is_valid());
 
   uint64_t size;
@@ -711,15 +707,11 @@ TEST_F(WriterTest, FlushAndReadLogsEmptyLogs) {
   SystemLogWriter writer(kWriteDirectory, /*max_num_files=*/2u, std::make_unique<IdentityDecoder>(),
                          metadata_path);
 
-  std::optional<fit::result<SystemLogWriter::WriterError, SystemLogWriter::Logs>> result;
-  writer.FlushAndReadLogs(
-      store.Consume(), [&](fit::result<SystemLogWriter::WriterError, SystemLogWriter::Logs> res) {
-        result = std::move(res);
-      });
+  const fit::result<SystemLogWriter::WriterError, SystemLogWriter::Logs> result =
+      writer.FlushAndReadLogs(store.Consume());
 
-  ASSERT_TRUE(result.has_value());
-  EXPECT_TRUE(result->is_error());
-  EXPECT_EQ(result->error_value(), SystemLogWriter::WriterError::kIoError);
+  ASSERT_TRUE(result.is_error());
+  EXPECT_EQ(result.error_value(), SystemLogWriter::WriterError::kIoError);
 }
 
 }  // namespace

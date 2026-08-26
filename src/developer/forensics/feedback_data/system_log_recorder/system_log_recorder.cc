@@ -112,35 +112,44 @@ void SystemLogRecorder::OnWriteComplete(bool success) {
 
 void SystemLogRecorder::GetCurrentBootLogs(GetCurrentBootLogsCompleter::Sync& completer) {
   LogMessageStore::ConsumeResult result = store_.Consume();
-  writer_.AsyncCall(
-      &SystemLogWriter::FlushAndReadLogs, std::move(result),
-      [completer = completer.ToAsync()](
-          fit::result<SystemLogWriter::WriterError, SystemLogWriter::Logs> result) mutable {
-        if (result.is_error()) {
-          switch (result.error_value()) {
-            case SystemLogWriter::WriterError::kIoError:
-              completer.Reply(fit::error(fuchsia_feedback_internal::RecorderError::kIoError));
-              return;
-            case SystemLogWriter::WriterError::kDecompressionError:
-              completer.Reply(
-                  fit::error(fuchsia_feedback_internal::RecorderError::kDecompressionError));
-              return;
-            case SystemLogWriter::WriterError::kVmoError:
-              completer.Reply(fit::error(fuchsia_feedback_internal::RecorderError::kVmoError));
-              return;
-          }
-        }
+  current_boot_logs_completers_.push(completer.ToAsync());
+  writer_.AsyncCall(&SystemLogWriter::FlushAndReadLogs, std::move(result))
+      .Then(receiver_.Once(&SystemLogRecorder::OnFlushAndReadLogsComplete));
+}
 
-        fuchsia_feedback_internal::SystemLogMetadata metadata;
-        metadata.first_timestamp(result->first_timestamp);
-        metadata.last_timestamp(result->last_timestamp);
+void SystemLogRecorder::OnFlushAndReadLogsComplete(
+    fit::result<SystemLogWriter::WriterError, SystemLogWriter::Logs> result) {
+  if (current_boot_logs_completers_.empty()) {
+    FX_LOGS(ERROR) << "current_boot_logs_completers_ empty";
+    return;
+  }
 
-        fuchsia_feedback_internal::SystemLogRecorderGetCurrentBootLogsResponse response;
-        response.logs(std::move(result->vmo));
-        response.metadata(std::move(metadata));
+  GetCurrentBootLogsCompleter::Async completer = std::move(current_boot_logs_completers_.front());
+  current_boot_logs_completers_.pop();
 
-        completer.Reply(fit::ok(std::move(response)));
-      });
+  if (result.is_error()) {
+    switch (result.error_value()) {
+      case SystemLogWriter::WriterError::kIoError:
+        completer.Reply(fit::error(fuchsia_feedback_internal::RecorderError::kIoError));
+        return;
+      case SystemLogWriter::WriterError::kDecompressionError:
+        completer.Reply(fit::error(fuchsia_feedback_internal::RecorderError::kDecompressionError));
+        return;
+      case SystemLogWriter::WriterError::kVmoError:
+        completer.Reply(fit::error(fuchsia_feedback_internal::RecorderError::kVmoError));
+        return;
+    }
+  }
+
+  fuchsia_feedback_internal::SystemLogMetadata metadata;
+  metadata.first_timestamp(result->first_timestamp);
+  metadata.last_timestamp(result->last_timestamp);
+
+  fuchsia_feedback_internal::SystemLogRecorderGetCurrentBootLogsResponse response;
+  response.logs(std::move(result->vmo));
+  response.metadata(std::move(metadata));
+
+  completer.Reply(fit::ok(std::move(response)));
 }
 
 }  // namespace system_log_recorder

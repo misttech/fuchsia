@@ -61,6 +61,8 @@ class SystemLogRecorder : public fidl::Server<fuchsia_feedback_internal::SystemL
   void PeriodicWriteTask();
   void OnWriteComplete(bool success);
   void OnFlushComplete(bool success);
+  void OnFlushAndReadLogsComplete(
+      fit::result<SystemLogWriter::WriterError, SystemLogWriter::Logs> result);
 
   async_dispatcher_t* archive_dispatcher_;
   const zx::duration write_period_;
@@ -71,6 +73,7 @@ class SystemLogRecorder : public fidl::Server<fuchsia_feedback_internal::SystemL
   async_patterns::DispatcherBound<SystemLogWriter> writer_;
   async_patterns::Receiver<SystemLogRecorder> receiver_;
   std::queue<::fit::callback<void()>> flush_callbacks_;
+  std::queue<GetCurrentBootLogsCompleter::Async> current_boot_logs_completers_;
 
   async::TaskClosureMethod<SystemLogRecorder, &SystemLogRecorder::PeriodicWriteTask>
       periodic_write_task_{this};
