@@ -127,18 +127,16 @@ impl<T: StringSelector> ValidateStringSelectorExt for T {
     }
 }
 
-/// Checks if the `target` string contains the `forbidden` string without the
-/// character `/` preceding the `forbidden` string.
+/// Checks if the `target` string contains the `forbidden` string without an unescaped
+/// preceding backslash.
 fn contains_unescaped(target: &str, forbidden: &str) -> bool {
-    if target.len() < forbidden.len() {
-        return false;
-    }
-    if target.starts_with(forbidden) {
+    if forbidden.is_empty() {
         return true;
     }
-    let flen = forbidden.len();
-    for i in 1..(target.len() - flen + 1) {
-        if &target[i..i + flen] == forbidden && !target[i - 1..i + flen].starts_with("\\") {
+    for (idx, _) in target.match_indices(forbidden) {
+        let preceding = &target[..idx];
+        let backslash_count = preceding.chars().rev().take_while(|&c| c == '\\').count();
+        if backslash_count % 2 == 0 {
             return true;
         }
     }
@@ -377,5 +375,15 @@ mod tests {
                 "Failed to validate component selector: {component_selector:?}"
             );
         }
+    }
+
+    #[fuchsia::test]
+    fn test_contains_unescaped() {
+        assert!(contains_unescaped("foo**bar", "**"));
+        assert!(!contains_unescaped("foo\\**bar", "**"));
+        assert!(contains_unescaped("foo\\\\**bar", "**"));
+        assert!(!contains_unescaped("foo\\\\\\**bar", "**"));
+        assert!(contains_unescaped("🦀**", "**"));
+        assert!(!contains_unescaped("🦀\\**", "**"));
     }
 }
