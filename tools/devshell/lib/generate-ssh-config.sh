@@ -7,6 +7,7 @@ function generate-ssh-config {
   # $1 is private key #2 is the location to write the file.
   priv_key="$1"
   sshconfig="$2"
+  identities_only="${3:-no}"
 
   mkdir -p "$(dirname "$sshconfig")"
 
@@ -18,6 +19,7 @@ Host ::1
   Port 8022
 
 Host *
+  IdentitiesOnly $identities_only
   CheckHostIP no
   StrictHostKeyChecking no
   ForwardAgent no

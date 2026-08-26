@@ -19,6 +19,7 @@ const SSH_CONTROLMASTER_DIR: &str = "ssh.controlmaster.dir";
 pub const KEEPALIVE_TIMEOUT_CONFIG: &str = "ssh.keepalive_timeout";
 pub const CONNECT_TIMEOUT_CONFIG: &str = "ssh.connect_timeout";
 pub const CONNECTION_ATTEMPTS_CONFIG: &str = "ssh.connection_attempts";
+pub const IDENTITIES_ONLY_CONFIG: &str = "ssh.identities_only";
 
 #[derive(Error, Debug)]
 pub enum SshCommandError {
@@ -371,6 +372,12 @@ async fn build_ssh_command_with_ssh_config_and_env(
         env.query(CONNECTION_ATTEMPTS_CONFIG).build().get::<Option<u64>>(env)?
     {
         config.set("ConnectionAttempts", connection_attempts.to_string())?;
+    }
+    if let Some(identities_only) =
+        env.query(IDENTITIES_ONLY_CONFIG).build().get::<Option<bool>>(env)?
+    {
+        let val = if identities_only { "yes" } else { "no" };
+        config.set("IdentitiesOnly", val.to_string())?;
     }
 
     // Okay there are two ways we can get here

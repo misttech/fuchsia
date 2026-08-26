@@ -846,8 +846,19 @@ function get-ssh-authkeys {
 function check-ssh-config {
   privkey="$(get-ssh-privkey)"
   conffile="${FUCHSIA_BUILD_DIR}/ssh-keys/ssh_config"
-  if [[ ! -f "${conffile}" ]] || ! grep -q "IdentityFile\s*$privkey" "$conffile"; then
-    generate-ssh-config "$privkey" "$conffile"
+
+  local identities_only
+  identities_only="$(fx-command-run ffx config get ssh.identities_only 2>/dev/null || echo "false")"
+  if [[ "$identities_only" != "true" ]]; then
+    identities_only="false"
+  fi
+  local identities_only_mapped="no"
+  if [[ "$identities_only" == "true" ]]; then
+    identities_only_mapped="yes"
+  fi
+
+  if [[ ! -f "${conffile}" ]] || ! grep -q "IdentityFile\s*$privkey" "$conffile" || ! grep -q "IdentitiesOnly $identities_only_mapped" "$conffile"; then
+    generate-ssh-config "$privkey" "$conffile" "$identities_only_mapped"
     if [[ $? -ne 0 || ! -f "${conffile}" ]] || ! grep -q "IdentityFile\s*$privkey" "$conffile"; then
       fx-error "Unexpected error, cannot generate ssh_config: ${conffile}"
       exit 1
