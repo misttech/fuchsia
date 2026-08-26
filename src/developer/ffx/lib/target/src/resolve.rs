@@ -13,7 +13,7 @@ use ffx_diagnostics_analytics::ResultExt;
 use ffx_diagnostics_formatting::TargetInfoQueryExt;
 use fidl_fuchsia_developer_ffx::{self as ffx};
 use fuchsia_async::TimeoutExt;
-use futures::future::LocalBoxFuture;
+use futures::future::{BoxFuture, LocalBoxFuture};
 use futures::{FutureExt, Stream, StreamExt, pin_mut};
 use netext::IsLocalAddr;
 use std::cmp::Ordering;
@@ -385,7 +385,7 @@ pub(crate) fn build_discovery_builder(
 ) -> DiscoveryBuilder {
     let mut builder = DiscoveryBuilder::default()
         .set_source(sources)
-        .with_timeout_msecs(ctx.get(ffx_config::keys::LOCAL_DISCOVERY_TIMEOUT).ok());
+        .with_timeout_msecs(ctx.get(ffx_config::keys::DISCOVERY_TIMEOUT_MS).ok());
 
     if sources.contains(DiscoverySources::EMULATOR) {
         // If there is an error getting the config option, it is ignored to prevent
@@ -598,6 +598,7 @@ enum ResolutionTarget {
     Usb(u32),
     Vsock(u32),
     TestMock(Box<dyn Fn() -> Result<Connection> + Send + Sync>),
+    TestMockAsync(Box<dyn Fn() -> BoxFuture<'static, Result<Connection>> + Send + Sync>),
 }
 
 impl Debug for ResolutionTarget {
@@ -607,6 +608,7 @@ impl Debug for ResolutionTarget {
             Self::Usb(arg0) => f.debug_tuple("Usb").field(arg0).finish(),
             Self::Vsock(arg0) => f.debug_tuple("Vsock").field(arg0).finish(),
             Self::TestMock(_) => f.debug_tuple("TestMock").field(&"..").finish(),
+            Self::TestMockAsync(_) => f.debug_tuple("TestMockAsync").field(&"..").finish(),
         }
     }
 }
@@ -711,7 +713,7 @@ impl ResolutionTarget {
             ResolutionTarget::Vsock(cid) => {
                 format!("vsock:cid:{cid}")
             }
-            ResolutionTarget::TestMock(_) => {
+            ResolutionTarget::TestMock(_) | ResolutionTarget::TestMockAsync(_) => {
                 format!("mock_target")
             }
         }
@@ -788,6 +790,14 @@ impl Resolution {
 
     pub fn mock(f: impl Fn() -> Result<Connection> + Send + Sync + 'static) -> Self {
         Self::from_target(ResolutionTarget::TestMock(Box::new(f)))
+    }
+
+    pub fn mock_async<F, Fut>(f: F) -> Self
+    where
+        F: Fn() -> Fut + Send + Sync + 'static,
+        Fut: Future<Output = Result<Connection>> + Send + 'static,
+    {
+        Self::from_target(ResolutionTarget::TestMockAsync(Box::new(move || Box::pin(f()))))
     }
 
     pub async fn set_connection_for_test(&self, connection: Option<Connection>) {
@@ -932,6 +942,7 @@ impl Resolution {
                     })?
                 }
                 ResolutionTarget::TestMock(f) => f()?,
+                ResolutionTarget::TestMockAsync(f) => f().await?,
             };
 
         Ok(Arc::new(conn))
@@ -1443,7 +1454,7 @@ mod test {
     #[fuchsia::test]
     async fn test_build_discovery_from_config_reads_timeout_from_config() {
         let test_env = ffx_config::test_env()
-            .user_config(ffx_config::keys::LOCAL_DISCOVERY_TIMEOUT, 2500)
+            .user_config(ffx_config::keys::DISCOVERY_TIMEOUT_MS, 2500)
             .build()
             .unwrap();
         let discovery = build_discovery_from_config(&test_env.context);
@@ -1459,7 +1470,7 @@ mod test {
     #[fuchsia::test]
     async fn test_build_discovery_from_config_maybe_indef() {
         let test_env = ffx_config::test_env()
-            .user_config(ffx_config::keys::LOCAL_DISCOVERY_TIMEOUT, 2500)
+            .user_config(ffx_config::keys::DISCOVERY_TIMEOUT_MS, 2500)
             .build()
             .unwrap();
         let discovery = build_discovery_builder_common(&test_env.context)

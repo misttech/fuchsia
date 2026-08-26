@@ -10,6 +10,7 @@ use ffx_list_args::ListCommand;
 use ffx_target::{TargetInfo, TargetInfoQuery};
 use ffx_writer::{ToolIO as _, VerifiedMachineWriter};
 use fho::{FfxError, FfxMain, FfxTool};
+use fuchsia_async::TimeoutExt as _;
 use target_behavior::{ConnectionBehavior, target_interface};
 use target_formatter::{JsonTarget, JsonTargetFormatter, TargetFormatter};
 use thiserror::Error;
@@ -58,10 +59,6 @@ pub enum ListError {
     #[user]
     #[error("Failed to resolve target address: {0}")]
     TargetResolution(#[from] target_behavior::TargetResolutionError),
-
-    #[unexpected]
-    #[error("Failed to get target info: {0}")]
-    GetTargetInfo(#[source] anyhow::Error),
 
     #[user]
     #[error("Failed to list targets: {0}")]
@@ -156,10 +153,25 @@ impl ListTool {
                     let behavior = target_env.init_connection_behavior(&context).await?;
                     let ConnectionBehavior::Direct(ref connector) = *behavior;
                     let resolution = connector.resolution().await?;
+                    let discovery_timeout = std::time::Duration::from_millis(
+                        context.get(ffx_config::keys::DISCOVERY_TIMEOUT_MS).unwrap_or(2000),
+                    );
                     let target_info = resolution
                         .get_target_info(addr, &context)
+                        .on_timeout(discovery_timeout, || {
+                            Err(anyhow::anyhow!("Connection timed out"))
+                        })
                         .await
-                        .map_err(ListError::GetTargetInfo)?;
+                        .unwrap_or_else(|e| {
+                            log::debug!("Failed to get target info for {addr:?}: {e:?}");
+                            TargetInfo {
+                                nodename: self.cmd.nodename.clone(),
+                                addresses: vec![addr],
+                                rcs_state: ffx_target::info::RemoteControlState::Down,
+                                target_state: ffx_target::info::TargetState::Unknown,
+                                ..Default::default()
+                            }
+                        });
                     vec![target_info]
                 } else {
                     // Short-circuit: We have the address, and were told not to probe (or format is addresses and we decided not to probe).
@@ -328,10 +340,39 @@ mod test {
 
         let query = TargetInfoQuery::Addr("127.0.0.1:8022".parse().unwrap());
 
-        let res = tool.list_targets_direct(query).await;
+        let res = tool.list_targets_direct(query).await.unwrap();
 
-        assert!(res.is_err());
-        assert!(res.unwrap_err().to_string().contains("MockConnectionError"));
+        assert_eq!(res.len(), 1);
+        assert_eq!(res[0].addresses, vec!["127.0.0.1:8022".parse::<TargetAddr>().unwrap()]);
+        assert_eq!(res[0].rcs_state, RemoteControlState::Down);
+    }
+
+    #[fuchsia::test]
+    async fn test_list_direct_timeout() {
+        let env = ffx_config::test_env()
+            .user_config(ffx_config::keys::DISCOVERY_TIMEOUT_MS, 100)
+            .build()
+            .unwrap();
+        let ffx_cmd_line = FfxCommandLine::default();
+        let fho_env = fho::FhoEnvironment::new(&env.context, &ffx_cmd_line);
+
+        let behavior =
+            ConnectionBehavior::fake_direct_connector(ffx_target::Resolution::mock_async(|| {
+                std::future::pending()
+            }));
+        let target_env = target_interface(&fho_env);
+        target_env.set_behavior_for_test(behavior);
+
+        let list_cmd = ListCommand::default();
+        let tool = build_list_tool(list_cmd, &env, fho_env).await;
+
+        let query = TargetInfoQuery::Addr("127.0.0.1:8022".parse().unwrap());
+
+        let res = tool.list_targets_direct(query).await.unwrap();
+
+        assert_eq!(res.len(), 1);
+        assert_eq!(res[0].addresses, vec!["127.0.0.1:8022".parse::<TargetAddr>().unwrap()]);
+        assert_eq!(res[0].rcs_state, RemoteControlState::Down);
     }
 
     #[fuchsia::test]

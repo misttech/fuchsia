@@ -340,7 +340,8 @@ async fn wait_for_device_inner(
                     };
                     anyhow::anyhow!(msg).into()
                 } else {
-                    let discovery_timeout_ms = env.get::<u64, _>(ffx_config::keys::LOCAL_DISCOVERY_TIMEOUT).unwrap_or(2000);
+                    let discovery_timeout_ms =
+                        env.get::<u64, _>(ffx_config::keys::DISCOVERY_TIMEOUT_MS).unwrap_or(2000);
                     let wait_timeout_ms = wait_timeout.map(|d| d.as_millis() as u64).unwrap_or(u64::MAX);
 
                     if wait_timeout_ms < discovery_timeout_ms {
@@ -774,7 +775,7 @@ mod test {
         mock.expect_knock_rcs().returning(|_, _| Box::pin(pending()));
 
         let env = ffx_config::test_env()
-            .user_config(ffx_config::keys::LOCAL_DISCOVERY_TIMEOUT, 2000)
+            .user_config(ffx_config::keys::DISCOVERY_TIMEOUT_MS, 2000)
             .build()
             .unwrap();
 

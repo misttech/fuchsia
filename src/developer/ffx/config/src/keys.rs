@@ -15,8 +15,8 @@ pub const PROXY_TIMEOUT: &'static str = "proxy.timeout_secs";
 /// The timeout used before giving up on uploading metrics in fractional seconds.
 pub const METRICS_UPLOAD_TIMEOUT_KEY: &'static str = "metrics.upload_timeout";
 
-/// The timeout, in milliseconds, when using the local discovery lib to locate a device.
-pub const LOCAL_DISCOVERY_TIMEOUT: &str = "discovery.timeout";
+/// The timeout, in milliseconds, when discovering a device.
+pub const DISCOVERY_TIMEOUT_MS: &str = "discovery.timeout";
 
 /// This is a bit of a special case: the upload default timeout could potentially
 /// be inaccessible due to not being able to initialize an `EnvironmentContext` correctly, so there
