@@ -750,8 +750,16 @@ impl Subscription {
         let _drain_task = fasync::Task::spawn(async move {
             while let Some(result) = self.next().await {
                 match result {
-                    Ok(value) => results_sender.send(value).await.ok(),
-                    Err(e) => errors_sender.send(e).await.ok(),
+                    Ok(value) => {
+                        if results_sender.send(value).await.is_err() {
+                            break;
+                        }
+                    }
+                    Err(e) => {
+                        // Use try_send so that if the error receiver is full or unpolled,
+                        // data stream processing does not deadlock.
+                        let _ = errors_sender.try_send(e);
+                    }
                 };
             }
         });
