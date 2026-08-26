@@ -43,8 +43,8 @@ use starnix_uapi::signals::{
 };
 use starnix_uapi::user_address::UserAddress;
 use starnix_uapi::{
-    ITIMER_PROF, ITIMER_REAL, ITIMER_VIRTUAL, SI_TKILL, SI_USER, SIG_IGN, errno, error, itimerval,
-    pid_t, rlimit, tid_t, uid_t,
+    ITIMER_PROF, ITIMER_REAL, ITIMER_VIRTUAL, SA_NOCLDWAIT, SI_TKILL, SI_USER, SIG_IGN, errno,
+    error, itimerval, pid_t, rlimit, tid_t, uid_t,
 };
 use std::collections::BTreeMap;
 use std::fmt;
@@ -663,7 +663,7 @@ impl ZombieNotification {
     /// Acquires [`ThreadGroup`] state locks.
     pub fn deliver(self, pids: &mut PidTable) {
         if let Some(parent) = self.recipient.upgrade() {
-            parent.do_zombie_notifications(self.zombie);
+            parent.do_zombie_notifications(self.zombie, pids);
         } else {
             log_warn!("Zombie {} reaped silently", self.zombie.pid());
             self.zombie.release(pids);
@@ -1029,7 +1029,7 @@ impl ThreadGroup {
                 };
 
                 if let Some(zombie) = maybe_zombie {
-                    parent.do_zombie_notifications(zombie);
+                    parent.do_zombie_notifications(zombie, &mut pids);
                 }
             } else {
                 zombie.release(&mut pids);
@@ -1074,7 +1074,7 @@ impl ThreadGroup {
         }
     }
 
-    pub fn do_zombie_notifications(&self, zombie: OwnedRef<ZombieProcess>) {
+    pub fn do_zombie_notifications(&self, zombie: OwnedRef<ZombieProcess>, pids: &mut PidTable) {
         let mut state = self.write();
 
         state.children.remove(&zombie.pid());
@@ -1085,7 +1085,27 @@ impl ThreadGroup {
         let exit_signal = zombie.exit_info.exit_signal;
         let mut signal_info = zombie.to_wait_result().as_signal_info();
 
-        state.zombie_children.push(zombie);
+        // From https://man7.org/linux/man-pages/man2/sigaction.2.html
+        //
+        // > SA_NOCLDWAIT (since Linux 2.6)
+        // >
+        // >     If signum is SIGCHLD, do not transform children into
+        // >     zombies when they terminate.  See also waitpid(2).  This
+        // >     flag is meaningful only when establishing a handler for
+        // >     SIGCHLD, or when setting that signal's disposition to
+        // >     SIG_DFL.
+        let should_make_zombie = if exit_signal == Some(SIGCHLD) {
+            let action = self.signal_actions.get(SIGCHLD);
+            action.sa_handler != SIG_IGN && (action.sa_flags & SA_NOCLDWAIT as u64) == 0
+        } else {
+            true
+        };
+        if should_make_zombie {
+            state.zombie_children.push(zombie);
+        } else {
+            state.reap_zombie(zombie, pids);
+        }
+
         state.lifecycle_waiters.notify_value(ThreadGroupLifecycleWaitValue::ChildStatus);
 
         // Send signals
@@ -1652,7 +1672,7 @@ impl ThreadGroup {
             Some((zombie, Some((tg, z)))) => {
                 if let Some(tg) = tg.upgrade() {
                     if Arc::as_ptr(&tg) != self as *const Self {
-                        tg.do_zombie_notifications(z);
+                        tg.do_zombie_notifications(z, pids);
                     } else {
                         {
                             let mut state = tg.write();
@@ -2126,6 +2146,12 @@ impl ThreadGroupMutableState<Base = ThreadGroup> {
         disassociation
     }
 
+    /// Reaps the given zombie, making its PID available for reuse.
+    fn reap_zombie(&mut self, zombie: OwnedRef<ZombieProcess>, pids: &mut PidTable) {
+        self.children_time_stats += zombie.time_stats;
+        zombie.release(pids);
+    }
+
     /// Indicates whether the thread group is waitable via waitid and waitpid for
     /// either WSTOPPED or WCONTINUED.
     pub fn is_waitable(&self) -> bool {
@@ -2153,9 +2179,8 @@ impl ThreadGroupMutableState<Base = ThreadGroup> {
                 zombie_list(self)[position].to_wait_result()
             } else {
                 let zombie = zombie_list(self).remove(position);
-                self.children_time_stats += zombie.time_stats;
                 let result = zombie.to_wait_result();
-                zombie.release(pids);
+                self.reap_zombie(zombie, pids);
                 result
             }
         })

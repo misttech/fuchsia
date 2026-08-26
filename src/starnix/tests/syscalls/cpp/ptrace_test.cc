@@ -1065,7 +1065,8 @@ TEST(PtraceTest, GrandchildWithSigsuspend) {
 
     sigset_t empty_mask;
     ASSERT_EQ(0, sigemptyset(&empty_mask));
-    struct sigaction sa, oldact;
+    struct sigaction sa = {};
+    struct sigaction oldact = {};
     sa.sa_sigaction = GrandchildWithSigsuspendSigaction;
     sa.sa_mask = empty_mask;
     ASSERT_EQ(0, sigaction(SIGCHLD, &sa, &oldact));

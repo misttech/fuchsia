@@ -11,6 +11,7 @@
 
 #include <gtest/gtest.h>
 
+#include "src/starnix/tests/syscalls/cpp/syscall_matchers.h"
 #include "src/starnix/tests/syscalls/cpp/test_helper.h"
 
 namespace {
@@ -178,4 +179,57 @@ TEST_F(WaitpidFlagsTest, waitPidStopContinue) {
     ;
 
   ASSERT_EQ(0, kill(grandchild_pid, SIGCONT));
+}
+
+TEST_F(WaitpidFlagsTest, WaitpidFailsWithEchildWhenSaNocldwaitIsSet) {
+  test_helper::ForkHelper helper;
+  helper.RunInForkedProcess([] {
+    struct sigaction sa;
+    memset(&sa, 0, sizeof(sa));
+    sa.sa_handler = SIG_DFL;
+    sa.sa_flags = SA_NOCLDWAIT;
+    ASSERT_THAT(sigaction(SIGCHLD, &sa, nullptr), SyscallSucceeds());
+
+    test_helper::ScopedPipe pipe;
+    test_helper::ForkHelper helper;
+    pid_t pid = helper.RunInForkedProcess([&pipe] {
+      pipe.ReadSide().reset();
+      // Child exits immediately, closing write-end automatically.
+    });
+    ASSERT_GE(pid, 0);
+
+    pipe.WriteSide().reset();
+
+    char buf;
+    ASSERT_EQ(read(pipe.ReadSide().get(), &buf, 1), 0);
+
+    int status = 0;
+    EXPECT_THAT(waitpid(pid, &status, 0), SyscallFailsWithErrno(ECHILD));
+  });
+}
+
+TEST_F(WaitpidFlagsTest, WaitpidFailsWithEchildWhenSigchldIsIgnored) {
+  test_helper::ForkHelper helper;
+  helper.RunInForkedProcess([] {
+    struct sigaction sa;
+    memset(&sa, 0, sizeof(sa));
+    sa.sa_handler = SIG_IGN;
+    ASSERT_THAT(sigaction(SIGCHLD, &sa, nullptr), SyscallSucceeds());
+
+    test_helper::ScopedPipe pipe;
+    test_helper::ForkHelper helper;
+    pid_t pid = helper.RunInForkedProcess([&pipe] {
+      pipe.ReadSide().reset();
+      // Child exits immediately, closing write-end automatically.
+    });
+    ASSERT_GE(pid, 0);
+
+    pipe.WriteSide().reset();
+
+    char buf;
+    ASSERT_EQ(read(pipe.ReadSide().get(), &buf, 1), 0);
+
+    int status = 0;
+    EXPECT_THAT(waitpid(pid, &status, 0), SyscallFailsWithErrno(ECHILD));
+  });
 }
