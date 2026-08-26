@@ -604,7 +604,7 @@ service Service {
     device client_end:CombinedDevice;
 };
 
-@available(added=HEAD)
+@available(added=NEXT)
 service TrustedService {
     device client_end:CombinedDevice;
 };
