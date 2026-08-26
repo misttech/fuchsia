@@ -27,6 +27,7 @@ from honeydew.affordances import location
 from honeydew.affordances.connectivity.bluetooth.avrcp import avrcp_using_sl4f
 from honeydew.affordances.connectivity.bluetooth.gap import gap_using_fc
 from honeydew.affordances.connectivity.wlan import wlan_policy
+from honeydew.affordances.drivers.fake_battery import fake_battery_using_ffx
 from honeydew.affordances.power.system_power_state_controller import (
     system_power_state_controller_using_starnix,
 )
@@ -508,6 +509,20 @@ class FuchsiaDeviceTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsInstance(
             self.fd_fc_obj.screenshot,
             screenshot_using_ffx.ScreenshotUsingFfx,
+        )
+
+    @mock.patch.object(
+        ffx.FFX,
+        "run",
+        return_value="test.hardwarepowercontrol.Service",
+        autospec=True,
+    )
+    def test_fake_battery(self, mock_ffx_run: mock.Mock) -> None:
+        """Test case to make sure fuchsia_device supports fake_battery
+        affordance implemented using FFX"""
+        self.assertIsInstance(
+            self.fd_fc_obj.fake_battery,
+            fake_battery_using_ffx.FakeBatteryUsingFfx,
         )
 
     @mock.patch.object(

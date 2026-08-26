@@ -20,6 +20,11 @@ from honeydew.affordances.drivers.battery.utils.errors import (
 from honeydew.affordances.drivers.battery.utils.types import (
     BatterySpec,
     BatteryStatus,
+    ChargeStatus,
+    HealthStatus,
+    PowerSourceSpec,
+    PowerSourceStatus,
+    PowerSourceType,
 )
 from honeydew.transports.ffx import ffx as ffx_transport
 from honeydew.transports.ffx import types as ffx_types
@@ -34,6 +39,20 @@ _LOGGER: logging.Logger = logging.getLogger(__name__)
 _BATTERY_MONIKER = "bootstrap/base-drivers:fake-battery"
 _BATTERY_CAPABILITY = "fuchsia.hardware.power.battery.Service/default/battery"
 _REQUIRED_CAPABILITIES = ["fuchsia.hardware.power.battery.Service"]
+
+__all__ = [
+    "Battery",
+    "BatteryDeviceNotFoundError",
+    "BatteryRequestError",
+    "BatterySpec",
+    "BatteryStatus",
+    "ChargeStatus",
+    "HealthStatus",
+    "HoneydewBatteryError",
+    "PowerSourceSpec",
+    "PowerSourceStatus",
+    "PowerSourceType",
+]
 
 
 class Battery(AsyncLazyReady):
