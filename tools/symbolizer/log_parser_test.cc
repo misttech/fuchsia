@@ -363,9 +363,26 @@ TEST_F(LogParserTest, OutputRawWithPendingBuffer) {
   // Output is buffered waiting for cb1.
   EXPECT_EQ(output_.str(), "");
 
-  // Invoking cb1 flushes cb1 output followed by raw lines in order.
+  // Invoking cb1 and destroying it flushes cb1 output followed by raw lines in order.
   cb1("frame_0_symbolized");
+  cb1 = nullptr;
   EXPECT_EQ(output_.str(), "line1 frame_0_symbolized\nraw line 1\nraw line 2\n");
+}
+
+TEST_F(LogParserTest, MultipleFramesPerCallback) {
+  EXPECT_CALL(symbolizer_,
+              Backtrace(0, 0x1000, debug_ipc::StackFrame::AddressType::kUnknown, "", _))
+      .WillOnce([](uint64_t frame_id, uint64_t address, debug_ipc::StackFrame::AddressType type,
+                   std::string_view message, Symbolizer::StringOutputFn output) {
+        output("frame_0_inline_1");
+        output("frame_0_inline_2");
+        output("frame_0_physical");
+      });
+  ProcessOneLine("prefix {{{bt:0:0x1000}}} suffix");
+  EXPECT_EQ(output_.str(),
+            "prefix frame_0_inline_1 suffix\n"
+            "prefix frame_0_inline_2 suffix\n"
+            "prefix frame_0_physical suffix\n");
 }
 
 TEST_F(LogParserTest, DroppedCallback) {
@@ -392,8 +409,9 @@ TEST_F(LogParserTest, DroppedCallback) {
   // cb1 dropped, so queue advances to cb2, which is still pending.
   EXPECT_EQ(output_.str(), "");
 
-  // cb2 is invoked.
+  // cb2 is invoked and destroyed.
   cb2("frame_1_symbolized");
+  cb2 = nullptr;
   EXPECT_EQ(output_.str(), "line2 frame_1_symbolized\n");
 }
 

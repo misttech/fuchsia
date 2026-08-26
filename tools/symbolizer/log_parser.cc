@@ -369,20 +369,18 @@ LogParser::CreateOutputFn(std::string_view prefix, std::string_view suffix) {
   auto on_drop = fit::defer([this, entry]() {
     if (entry->state == OutputEntry::State::kPending) {
       entry->state = OutputEntry::State::kDropped;
-      entry->ready = true;
-      FlushOutputBuffers();
     }
+    entry->ready = true;
+    FlushOutputBuffers();
   });
 
-  auto output = [this, prefix = std::string(prefix), suffix = std::string(suffix), entry,
+  auto output = [prefix = std::string(prefix), suffix = std::string(suffix), entry,
                  on_drop = std::move(on_drop)](std::string_view content) {
     entry->state = OutputEntry::State::kInvoked;
     entry->text += prefix;
     entry->text += content;
     entry->text += suffix;
     entry->text += '\n';
-    entry->ready = true;
-    FlushOutputBuffers();
   };
 
   return {std::move(output), entry};
