@@ -850,11 +850,6 @@ impl Client {
         )
     }
 
-    /// Create a channel from a handle ID allocated by the connected FDomain.
-    pub fn channel_from_handle_id(self: &Arc<Self>, id: proto::HandleId) -> Channel {
-        Channel(Handle { id: id.id, client: Arc::downgrade(self) })
-    }
-
     /// Creates client and server endpoints connected to by a channel.
     pub fn create_endpoints<F: crate::fidl::ProtocolMarker>(
         self: &Arc<Self>,

@@ -14,6 +14,5 @@ group("tests") {
     "container:tests",
     "example:fdomain-example",
     "example_next:fdomain-example-next",
-    "local:tests",
   ]
 }

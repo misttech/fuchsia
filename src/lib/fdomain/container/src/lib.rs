@@ -828,18 +828,13 @@ impl CloseAction {
     }
 }
 
-enum Namespace {
-    Native(Box<dyn Fn() -> Result<ClientEnd<fio::DirectoryMarker>, fidl::Status> + Send>),
-    Channel(Box<dyn Fn(proto::HandleId) + Send>),
-}
-
 /// This is a container of handles that is manipulable via the FDomain protocol.
 /// See [RFC-0228].
 ///
 /// Most of the methods simply handle FIDL requests from the FDomain protocol.
 #[pin_project::pin_project]
 pub struct FDomain {
-    namespace: Namespace,
+    namespace: Box<dyn Fn() -> Result<ClientEnd<fio::DirectoryMarker>, fidl::Status> + Send>,
     handles: HashMap<proto::HandleId, HandleState>,
     closing_handles: Vec<ClosingHandle>,
     event_queue: VecDeque<UnprocessedFDomainEvent>,
@@ -858,20 +853,7 @@ impl FDomain {
         namespace: impl Fn() -> Result<ClientEnd<fio::DirectoryMarker>, fidl::Status> + Send + 'static,
     ) -> Self {
         FDomain {
-            namespace: Namespace::Native(Box::new(namespace)),
-            handles: HashMap::new(),
-            closing_handles: Vec::new(),
-            event_queue: VecDeque::new(),
-            waker: None,
-        }
-    }
-
-    /// Create a new FDomain with a callback that receives a channel handle ID to serve.
-    pub fn new_with_namespace_channel(
-        namespace: impl Fn(proto::HandleId) + Send + 'static,
-    ) -> Self {
-        FDomain {
-            namespace: Namespace::Channel(Box::new(namespace)),
+            namespace: Box::new(namespace),
             handles: HashMap::new(),
             closing_handles: Vec::new(),
             event_queue: VecDeque::new(),
@@ -1001,26 +983,12 @@ impl FDomain {
     }
 
     pub fn get_namespace(&mut self, request: proto::FDomainGetNamespaceRequest) -> Result<()> {
-        match &self.namespace {
-            Namespace::Native(namespace) => {
-                let endpoint = namespace();
-                match endpoint {
-                    Ok(endpoint) => self.alloc_client_handles(
-                        [request.new_handle],
-                        [AnyHandle::Channel(endpoint.into_channel())],
-                    ),
-                    Err(e) => Err(proto::Error::TargetError(e.into_raw())),
-                }
-            }
-            Namespace::Channel(_) => {
-                let (client_chan, server_chan) = fidl::Channel::create();
-                self.alloc_client_handles([request.new_handle], [AnyHandle::Channel(client_chan)])?;
-                let server_hid = self.alloc_fdomain_handle(AnyHandle::Channel(server_chan))?;
-                if let Namespace::Channel(callback) = &self.namespace {
-                    callback(server_hid);
-                }
-                Ok(())
-            }
+        match (self.namespace)() {
+            Ok(endpoint) => self.alloc_client_handles(
+                [request.new_handle],
+                [AnyHandle::Channel(endpoint.into_channel())],
+            ),
+            Err(e) => Err(proto::Error::TargetError(e.into_raw())),
         }
     }
 

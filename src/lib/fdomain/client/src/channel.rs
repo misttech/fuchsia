@@ -107,17 +107,6 @@ impl AnyHandle {
         AnyHandle::Unknown(Handle::invalid(), fidl::ObjectType::NONE)
     }
 
-    /// Check whether this handle is valid.
-    pub fn is_invalid(&self) -> bool {
-        match self {
-            AnyHandle::Channel(h) => h.is_invalid(),
-            AnyHandle::Socket(h) => h.is_invalid(),
-            AnyHandle::Event(h) => h.is_invalid(),
-            AnyHandle::EventPair(h) => h.is_invalid(),
-            AnyHandle::Unknown(h, _) => h.is_invalid(),
-        }
-    }
-
     /// Get the object type for a handle.
     pub fn object_type(&self) -> fidl::ObjectType {
         match self {

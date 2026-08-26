@@ -488,16 +488,6 @@ impl<T: ProtocolMarker> ClientEnd<T> {
     pub fn into_channel(self) -> Channel {
         self.inner
     }
-
-    /// Create an invalid client end.
-    pub fn invalid() -> Self {
-        ClientEnd { inner: Channel::invalid(), phantom: PhantomData }
-    }
-
-    /// Check whether this handle is valid.
-    pub fn is_invalid(&self) -> bool {
-        self.inner.is_invalid()
-    }
 }
 
 impl<'c, T: ProtocolMarker> ClientEnd<T> {
@@ -622,16 +612,6 @@ impl<T: ProtocolMarker> ServerEnd<T> {
         status: impl Into<Result<(), fidl::Status>>,
     ) -> Result<(), fidl::Error> {
         self.inner.close_with_epitaph(status)
-    }
-
-    /// Create an invalid server end.
-    pub fn invalid() -> Self {
-        ServerEnd { inner: Channel::invalid(), phantom: PhantomData }
-    }
-
-    /// Check whether this handle is valid.
-    pub fn is_invalid(&self) -> bool {
-        self.inner.is_invalid()
     }
 }
 
