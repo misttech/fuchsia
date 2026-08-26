@@ -6,7 +6,6 @@ use super::edge::WeakEdgeRef;
 use super::{Edge, EdgeMetadata, VertexId};
 use fuchsia_inspect as inspect;
 use std::collections::BTreeMap;
-use std::sync::atomic::{AtomicU64, Ordering};
 
 /// A vertex of the graph. When this is dropped, all the outgoing edges and metadata fields will
 /// removed from Inspect.
@@ -18,7 +17,6 @@ pub struct Vertex<M: VertexMetadata> {
     incoming_edges: BTreeMap<u64, WeakEdgeRef<M::EdgeMeta>>,
     outgoing_edges: BTreeMap<u64, WeakEdgeRef<M::EdgeMeta>>,
     pub(crate) outgoing_edges_node: inspect::Node,
-    internal_id: u64,
 }
 
 /// Trait implemented by types that hold a vertex metadata.
@@ -26,8 +24,6 @@ pub trait VertexMetadata {
     type Id: VertexId;
     type EdgeMeta: EdgeMetadata;
 }
-
-static NEXT_ID: AtomicU64 = AtomicU64::new(0);
 
 impl<M: VertexMetadata> Vertex<M>
 where
@@ -38,7 +34,6 @@ where
         parent: &inspect::Node,
         init_metadata: impl FnOnce(inspect::Node) -> M,
     ) -> Self {
-        let internal_id = NEXT_ID.fetch_add(1, Ordering::Relaxed);
         parent.atomic_update(|parent| {
             let id_str = id.get_id();
             let node = parent.create_child(id_str.as_ref());
@@ -46,7 +41,6 @@ where
             let metadata = init_metadata(node.create_child("meta"));
             Vertex {
                 id,
-                internal_id,
                 _node: node,
                 outgoing_edges_node,
                 metadata,
@@ -66,12 +60,13 @@ where
         let edge = Edge::new(self, to, init_metadata);
 
         let weak_ref = edge.weak_ref();
+        let edge_id = edge.id();
 
-        self.incoming_edges.retain(|_, n| n.is_valid());
-        to.outgoing_edges.retain(|_, n| n.is_valid());
+        self.outgoing_edges.retain(|_, n| n.is_valid());
+        to.incoming_edges.retain(|_, n| n.is_valid());
 
-        to.incoming_edges.insert(self.internal_id, weak_ref.clone());
-        self.outgoing_edges.insert(to.internal_id, weak_ref);
+        to.incoming_edges.insert(edge_id, weak_ref.clone());
+        self.outgoing_edges.insert(edge_id, weak_ref);
         edge
     }
 

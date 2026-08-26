@@ -560,6 +560,43 @@ mod tests {
         assert_eq!(after_blocks, expected);
     }
 
+    #[fuchsia::test]
+    async fn test_multiple_edges_between_vertices_drop() {
+        let inspector = inspect::Inspector::default();
+        let graph = Digraph::new(inspector.root(), DigraphOpts::default());
+        let mut vertex_a = graph.add_vertex("a", |meta| BasicMeta { meta });
+        let mut vertex_b = graph.add_vertex("b", |meta| BasicMeta { meta });
+
+        let edge1 = vertex_a.add_edge(&mut vertex_b, |meta| BasicMeta { meta });
+        let edge2 = vertex_a.add_edge(&mut vertex_b, |meta| BasicMeta { meta });
+
+        let mut updated1 = false;
+        edge1.maybe_update_meta(|_| {
+            updated1 = true;
+        });
+        assert!(updated1);
+
+        let mut updated2 = false;
+        edge2.maybe_update_meta(|_| {
+            updated2 = true;
+        });
+        assert!(updated2);
+
+        drop(vertex_a);
+
+        let mut updated1_after = false;
+        edge1.maybe_update_meta(|_| {
+            updated1_after = true;
+        });
+        assert!(!updated1_after);
+
+        let mut updated2_after = false;
+        edge2.maybe_update_meta(|_| {
+            updated2_after = true;
+        });
+        assert!(!updated2_after);
+    }
+
     fn non_free_blocks(inspector: &Inspector) -> BTreeSet<(BlockIndex, BlockType)> {
         let snapshot = Snapshot::try_from(inspector).unwrap();
         snapshot
