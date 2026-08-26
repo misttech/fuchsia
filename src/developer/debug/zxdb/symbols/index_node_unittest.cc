@@ -19,32 +19,32 @@ TEST(IndexNode, DeDupeType) {
   IndexNode node(Kind::kType);
 
   // Type forward declaration should get appended.
-  const uint32_t kFwdDecl1Offset = 20;
+  constexpr DwarfDieRef kFwdDecl1Ref = DwarfDieRef::Main(20);
   node.AddDie(SymbolRef(IndexNode::SymbolRef::kDwarfDeclaration, IndexNode::SymbolRef::kMainBinary,
-                        kFwdDecl1Offset));
+                        kFwdDecl1Ref));
   ASSERT_EQ(1u, node.dies().size());
-  EXPECT_EQ(kFwdDecl1Offset, node.dies()[0].offset());
+  EXPECT_EQ(kFwdDecl1Ref, node.dies()[0].die_ref());
 
   // Another forward declaration should be ignored in favor of the old one.
-  const uint32_t kFwdDecl2Offset = 30;
+  constexpr DwarfDieRef kFwdDecl2Ref = DwarfDieRef::Main(30);
   node.AddDie(SymbolRef(IndexNode::SymbolRef::kDwarfDeclaration, IndexNode::SymbolRef::kMainBinary,
-                        kFwdDecl2Offset));
+                        kFwdDecl2Ref));
   ASSERT_EQ(1u, node.dies().size());
-  EXPECT_EQ(kFwdDecl1Offset, node.dies()[0].offset());
+  EXPECT_EQ(kFwdDecl1Ref, node.dies()[0].die_ref());
 
   // A full type definition should overwrite the forward declaration.
-  const uint32_t kType1Offset = 40;
+  constexpr DwarfDieRef kType1Ref = DwarfDieRef::Main(40);
   node.AddDie(
-      SymbolRef(IndexNode::SymbolRef::kDwarf, IndexNode::SymbolRef::kMainBinary, kType1Offset));
+      SymbolRef(IndexNode::SymbolRef::kDwarf, IndexNode::SymbolRef::kMainBinary, kType1Ref));
   ASSERT_EQ(1u, node.dies().size());
-  EXPECT_EQ(kType1Offset, node.dies()[0].offset());
+  EXPECT_EQ(kType1Ref, node.dies()[0].die_ref());
 
   // A duplicate full type definition should be ignored in favor of the old one.
-  const uint32_t kType2Offset = 50;
+  constexpr DwarfDieRef kType2Ref = DwarfDieRef::Main(50);
   node.AddDie(
-      SymbolRef(IndexNode::SymbolRef::kDwarf, IndexNode::SymbolRef::kMainBinary, kType2Offset));
+      SymbolRef(IndexNode::SymbolRef::kDwarf, IndexNode::SymbolRef::kMainBinary, kType2Ref));
   ASSERT_EQ(1u, node.dies().size());
-  EXPECT_EQ(kType1Offset, node.dies()[0].offset());
+  EXPECT_EQ(kType1Ref, node.dies()[0].die_ref());
 }
 
 TEST(IndexNode, DeDupeNamespace) {
@@ -55,16 +55,16 @@ TEST(IndexNode, DeDupeNamespace) {
   // Add a namespace, it should be appended but no DIE stored (we don't bother storing DIEs for
   // namespaces).
   const uint32_t kNSOffset = 60;
-  root.AddChild(
-      Kind::kNamespace, kName,
-      SymbolRef(IndexNode::SymbolRef::kDwarf, IndexNode::SymbolRef::kMainBinary, kNSOffset));
+  root.AddChild(Kind::kNamespace, kName,
+                SymbolRef(IndexNode::SymbolRef::kDwarf, IndexNode::SymbolRef::kMainBinary,
+                          DwarfDieRef::Main(kNSOffset)));
   ASSERT_EQ(1u, root.namespaces().size());
   EXPECT_TRUE(root.namespaces().begin()->second.dies().empty());
 
   // A duplicate namespace.
-  root.AddChild(
-      Kind::kNamespace, kName,
-      SymbolRef(IndexNode::SymbolRef::kDwarf, IndexNode::SymbolRef::kMainBinary, kNSOffset));
+  root.AddChild(Kind::kNamespace, kName,
+                SymbolRef(IndexNode::SymbolRef::kDwarf, IndexNode::SymbolRef::kMainBinary,
+                          DwarfDieRef::Main(kNSOffset)));
   ASSERT_EQ(1u, root.namespaces().size());
   EXPECT_TRUE(root.namespaces().begin()->second.dies().empty());
 }
@@ -76,19 +76,21 @@ TEST(IndexNode, MergeFrom) {
   // ----------
 
   // Add a namespace.
-  IndexNode* dest_ns = dest.AddChild(
-      Kind::kNamespace, "ns",
-      SymbolRef(IndexNode::SymbolRef::kDwarf, IndexNode::SymbolRef::kMainBinary, 0x100));
+  IndexNode* dest_ns =
+      dest.AddChild(Kind::kNamespace, "ns",
+                    SymbolRef(IndexNode::SymbolRef::kDwarf, IndexNode::SymbolRef::kMainBinary,
+                              DwarfDieRef::Main(0x100)));
 
   // Type inside the namespace
-  IndexNode* dest_ns_type = dest_ns->AddChild(
-      Kind::kType, "MyClass",
-      SymbolRef(IndexNode::SymbolRef::kDwarf, IndexNode::SymbolRef::kMainBinary, 0x200));
+  IndexNode* dest_ns_type =
+      dest_ns->AddChild(Kind::kType, "MyClass",
+                        SymbolRef(IndexNode::SymbolRef::kDwarf, IndexNode::SymbolRef::kMainBinary,
+                                  DwarfDieRef::Main(0x200)));
 
   // Function inside the type.
-  dest_ns_type->AddChild(
-      Kind::kFunction, "Func",
-      SymbolRef(IndexNode::SymbolRef::kDwarf, IndexNode::SymbolRef::kMainBinary, 0x300));
+  dest_ns_type->AddChild(Kind::kFunction, "Func",
+                         SymbolRef(IndexNode::SymbolRef::kDwarf, IndexNode::SymbolRef::kMainBinary,
+                                   DwarfDieRef::Main(0x300)));
 
   // Source setup
   // ------------
@@ -97,28 +99,32 @@ TEST(IndexNode, MergeFrom) {
   IndexNode src(Kind::kRoot);
 
   // Duplicate namespace as in dest.
-  IndexNode* src_ns = src.AddChild(
-      Kind::kNamespace, "ns",
-      SymbolRef(IndexNode::SymbolRef::kDwarf, IndexNode::SymbolRef::kMainBinary, 0x1100));
+  IndexNode* src_ns =
+      src.AddChild(Kind::kNamespace, "ns",
+                   SymbolRef(IndexNode::SymbolRef::kDwarf, IndexNode::SymbolRef::kMainBinary,
+                             DwarfDieRef::Main(0x1100)));
 
   // Duplicate type as in dest.
-  IndexNode* src_ns_type = src_ns->AddChild(
-      Kind::kType, "MyClass",
-      SymbolRef(IndexNode::SymbolRef::kDwarf, IndexNode::SymbolRef::kMainBinary, 0x1200));
+  IndexNode* src_ns_type =
+      src_ns->AddChild(Kind::kType, "MyClass",
+                       SymbolRef(IndexNode::SymbolRef::kDwarf, IndexNode::SymbolRef::kMainBinary,
+                                 DwarfDieRef::Main(0x1200)));
 
   // A new and a duplicate function in the type.
-  src_ns_type->AddChild(
-      Kind::kFunction, "Func",
-      SymbolRef(IndexNode::SymbolRef::kDwarf, IndexNode::SymbolRef::kMainBinary, 0x1300));
-  src_ns_type->AddChild(
-      Kind::kFunction, "Func2",
-      SymbolRef(IndexNode::SymbolRef::kDwarf, IndexNode::SymbolRef::kMainBinary, 0x1400));
+  src_ns_type->AddChild(Kind::kFunction, "Func",
+                        SymbolRef(IndexNode::SymbolRef::kDwarf, IndexNode::SymbolRef::kMainBinary,
+                                  DwarfDieRef::Main(0x1300)));
+  src_ns_type->AddChild(Kind::kFunction, "Func2",
+                        SymbolRef(IndexNode::SymbolRef::kDwarf, IndexNode::SymbolRef::kMainBinary,
+                                  DwarfDieRef::Main(0x1400)));
 
   // New type and variable the toplevel.
   src.AddChild(Kind::kType, "NewType",
-               SymbolRef(IndexNode::SymbolRef::kDwarf, IndexNode::SymbolRef::kMainBinary, 0x1500));
+               SymbolRef(IndexNode::SymbolRef::kDwarf, IndexNode::SymbolRef::kMainBinary,
+                         DwarfDieRef::Main(0x1500)));
   src.AddChild(Kind::kVar, "Var",
-               SymbolRef(IndexNode::SymbolRef::kDwarf, IndexNode::SymbolRef::kMainBinary, 0x1600));
+               SymbolRef(IndexNode::SymbolRef::kDwarf, IndexNode::SymbolRef::kMainBinary,
+                         DwarfDieRef::Main(0x1600)));
 
   // Merging
   // -------

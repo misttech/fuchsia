@@ -7,6 +7,7 @@
 
 #include <gtest/gtest.h>
 
+#include "src/developer/debug/zxdb/symbols/dwarf_die_ref.h"
 #include "src/developer/debug/zxdb/symbols/function.h"
 #include "src/developer/debug/zxdb/symbols/index.h"
 #include "src/developer/debug/zxdb/symbols/module_symbols_impl.h"
@@ -42,7 +43,7 @@ TEST(Index, CrossUnitInline) {
   EXPECT_EQ(1u, refs.size());
 
   // The resolved symbol should be a function.
-  LazySymbol lazy = setup.symbols()->symbol_factory()->MakeLazy(refs[0].offset());
+  LazySymbol lazy = setup.symbols()->symbol_factory()->MakeLazy(refs[0].die_ref());
   const Symbol* symbol = lazy.Get();
   const Function* function = symbol->As<Function>();
   ASSERT_TRUE(function);

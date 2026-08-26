@@ -22,6 +22,7 @@
 #include "src/developer/debug/zxdb/symbols/collection.h"
 #include "src/developer/debug/zxdb/symbols/compile_unit.h"
 #include "src/developer/debug/zxdb/symbols/data_member.h"
+#include "src/developer/debug/zxdb/symbols/dwarf_die_ref.h"
 #include "src/developer/debug/zxdb/symbols/dwarf_expr_eval.h"
 #include "src/developer/debug/zxdb/symbols/elf_symbol.h"
 #include "src/developer/debug/zxdb/symbols/function.h"
@@ -279,9 +280,9 @@ OutputBuffer FormatVariableLocation(int indent, const std::string& title,
 
 std::string FormatDieTagAndOffset(const Symbol* symbol) {
   std::string out = DwarfTagToString(symbol->tag(), true);
-  if (uint64_t die_offset = symbol->GetDieOffset()) {
+  if (DwarfDieRef die_ref = symbol->GetDieRef()) {
     out.append(" @ offset ");
-    out.append(to_hex_string(die_offset));
+    out.append(to_hex_string(die_ref.offset()));
   } else {
     out.append(" (synthetic symbol)");
   }

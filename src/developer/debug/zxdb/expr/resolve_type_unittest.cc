@@ -8,6 +8,7 @@
 
 #include "src/developer/debug/zxdb/expr/find_name.h"
 #include "src/developer/debug/zxdb/symbols/collection.h"
+#include "src/developer/debug/zxdb/symbols/dwarf_die_ref.h"
 #include "src/developer/debug/zxdb/symbols/dwarf_tag.h"
 #include "src/developer/debug/zxdb/symbols/index_test_support.h"
 #include "src/developer/debug/zxdb/symbols/mock_symbol_factory.h"
@@ -76,12 +77,12 @@ TEST(ResolveType, TypedefCycle) {
   forward_decl->set_is_declaration(true);
   // We need to set the lazy "this" member on the symbol so it has a valid DIE offset which is used
   // for cycle checking.
-  forward_decl->set_lazy_this(UncachedLazySymbol(factory.factory_ref(), 1234));
+  forward_decl->set_lazy_this(UncachedLazySymbol(factory.factory_ref(), DwarfDieRef::Main(1234)));
 
   // Create the typedef and index it. Also needs a unique DIE offset.
   auto typedef_decl = fxl::MakeRefCounted<ModifiedType>(DwarfTag::kTypedef, forward_decl);
   typedef_decl->set_assigned_name(kStructName);
-  typedef_decl->set_lazy_this(UncachedLazySymbol(factory.factory_ref(), 5678));
+  typedef_decl->set_lazy_this(UncachedLazySymbol(factory.factory_ref(), DwarfDieRef::Main(5678)));
   TestIndexedSymbol indexed_typedef(module_symbols, &module_symbols->index().root(), kStructName,
                                     typedef_decl);
 

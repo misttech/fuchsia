@@ -5,6 +5,7 @@
 #include "src/developer/debug/zxdb/symbols/dwo_info.h"
 
 #include "src/developer/debug/zxdb/symbols/compile_unit.h"
+#include "src/developer/debug/zxdb/symbols/dwarf_die_ref.h"
 #include "src/developer/debug/zxdb/symbols/module_symbols.h"
 #include "src/developer/debug/zxdb/symbols/symbol.h"
 #include "src/developer/debug/zxdb/symbols/symbol_factory.h"
@@ -27,8 +28,8 @@ CompileUnit* DwoInfo::GetSkeletonCompileUnit() {
     // factory to create it, not our symbol_factory_ (for the .dwo file).
     //
     // This must not be a temporary because it will own the pointers for the duration of this fn.
-    LazySymbol lazy_skeleton =
-        module_symbols_->GetSymbolFactory()->MakeLazy(skeleton_.skeleton_die_offset);
+    LazySymbol lazy_skeleton = module_symbols_->GetSymbolFactory()->MakeLazy(
+        DwarfDieRef::Main(skeleton_.skeleton_die_offset));
     if (const CompileUnit* unit = lazy_skeleton.Get()->As<CompileUnit>()) {
       skeleton_unit_ = RefPtrTo<CompileUnit>(unit);
     }

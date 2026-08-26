@@ -13,6 +13,7 @@
 #include "src/developer/debug/zxdb/common/file_util.h"
 #include "src/developer/debug/zxdb/symbols/dwarf_binary_impl.h"
 #include "src/developer/debug/zxdb/symbols/dwarf_die_decoder.h"
+#include "src/developer/debug/zxdb/symbols/dwarf_die_ref.h"
 #include "src/developer/debug/zxdb/symbols/dwarf_die_scanner.h"
 #include "src/developer/debug/zxdb/symbols/dwarf_tag.h"
 #include "src/developer/debug/zxdb/symbols/dwarf_unit.h"
@@ -31,9 +32,9 @@ class NamedSymbolRef : public IndexNode::SymbolRef {
   NamedSymbolRef() = default;
 
   // Creates a SymbolRef we should index. The pointed-to string must outlive this class.
-  NamedSymbolRef(SymbolRef::Kind kind, int32_t dwo_index, uint64_t offset, IndexNode::Kind k,
+  NamedSymbolRef(SymbolRef::Kind kind, int32_t dwo_index, DwarfDieRef die_ref, IndexNode::Kind k,
                  const char* name, uint64_t decl_offset, bool has_abstract_origin)
-      : SymbolRef(kind, dwo_index, offset),
+      : SymbolRef(kind, dwo_index, die_ref),
         kind_(k),
         name_(name),
         decl_offset_(decl_offset),
@@ -344,12 +345,13 @@ void UnitIndexer::Scan(std::vector<IndexNode::SymbolRef>* main_functions) {
                                                       : IndexNode::SymbolRef::kDwarf;
 
     indexable_[scanner_.die_index()] =
-        NamedSymbolRef(ref_kind, dwo_index_, die->getOffset(), kind, name ? *name : "", decl_offset,
-                       has_abstract_origin);
+        NamedSymbolRef(ref_kind, dwo_index_, DwarfDieRef::Main(die->getOffset()), kind,
+                       name ? *name : "", decl_offset, has_abstract_origin);
 
     // Check for "main" function annotation.
     if (kind == IndexNode::Kind::kFunction && is_main_subprogram && *is_main_subprogram)
-      main_functions->emplace_back(IndexNode::SymbolRef::kDwarf, dwo_index_, die->getOffset());
+      main_functions->emplace_back(IndexNode::SymbolRef::kDwarf, dwo_index_,
+                                   DwarfDieRef::Main(die->getOffset()));
   }
 }
 
@@ -545,7 +547,7 @@ void UnitIndexer::AddStandaloneEntryToIndex(uint32_t index_me, IndexNode* index_
   } else {
     // When there's no declaration, the name will already have been filled in (if present) to the
     // named_ref.
-    die = unit_.GetBinary()->GetLLVMDieAtOffset(named_ref.offset());
+    die = unit_.GetBinary()->GetLLVMDieAtOffset(named_ref.die_ref().offset());
   }
 
   if (name.empty())
@@ -592,7 +594,7 @@ void UnitIndexer::AddStandaloneEntryToIndex(uint32_t index_me, IndexNode* index_
 }
 
 bool UnitIndexer::GetAbstractOriginIndex(uint32_t source, uint32_t* abstract_origin_index) const {
-  llvm::DWARFDie die = unit_.GetLLVMDieAtOffset(indexable_[source].offset());
+  llvm::DWARFDie die = unit_.GetLLVMDieAtOffset(indexable_[source].die_ref().offset());
   if (!die)
     return false;  // Internal error, maybe symbols corrupt.
 

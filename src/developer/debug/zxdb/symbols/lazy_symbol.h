@@ -10,6 +10,7 @@
 #include <memory>
 #include <tuple>
 
+#include "src/developer/debug/zxdb/symbols/dwarf_die_ref.h"
 #include "src/lib/fxl/memory/ref_ptr.h"
 
 namespace zxdb {
@@ -29,7 +30,7 @@ class LazySymbolBase {
   LazySymbolBase(const LazySymbolBase& other);
   LazySymbolBase(LazySymbolBase&& other);
 
-  LazySymbolBase(fxl::RefPtr<const SymbolFactory> factory, uint64_t die_offset);
+  LazySymbolBase(fxl::RefPtr<const SymbolFactory> factory, DwarfDieRef die_ref);
 
   ~LazySymbolBase();
 
@@ -39,12 +40,12 @@ class LazySymbolBase {
   // LazySymbols have an identity and can be compared for insertion into e.g. sets. These comparison
   // operations assume that the factory pointer is unique for the module.
   bool operator==(const LazySymbolBase& other) const {
-    return factory_.get() == other.factory_.get() && die_offset_ == other.die_offset_;
+    return factory_.get() == other.factory_.get() && die_ref_ == other.die_ref_;
   }
   bool operator!=(const LazySymbolBase& other) const { return !operator==(other); }
   bool operator<(const LazySymbolBase& other) const {
-    return std::make_tuple(factory_.get(), die_offset_) <
-           std::make_tuple(other.factory_.get(), other.die_offset_);
+    return std::make_tuple(factory_.get(), die_ref_) <
+           std::make_tuple(other.factory_.get(), other.die_ref_);
   }
 
   // Returns the DIE offset of the symbol that will be created. This will be 0 for invalid or
@@ -56,7 +57,7 @@ class LazySymbolBase {
   //
   // Otherwise, the main use of this can be for comparing symbol identity without decoding them in
   // cases where you know the symbols aren't synthetic.
-  uint64_t die_offset() const { return die_offset_; }
+  DwarfDieRef die_ref() const { return die_ref_; }
 
  protected:
   // Validity tests both for the factory and the symbol since non-lazy ones don't need a factory.
@@ -74,8 +75,8 @@ class LazySymbolBase {
   // May be null if this contains no type reference.
   fxl::RefPtr<const SymbolFactory> factory_;
 
-  // Offset of the DIE for this symbol.
-  uint64_t die_offset_ = 0;
+  // Reference to the DIE for this symbol.
+  DwarfDieRef die_ref_;
 };
 
 // Use for references from a parent symbol object to its children.
@@ -89,9 +90,9 @@ class LazySymbol : public LazySymbolBase {
   // If the value of the cached object is known at creation time, it can be provided as the
   // pre_cached parameter. Otherwise it is fine to leave this empty (it is an optimization to
   // prevent re-decoding).
-  LazySymbol(fxl::RefPtr<const SymbolFactory> factory, uint64_t die_offset,
+  LazySymbol(fxl::RefPtr<const SymbolFactory> factory, DwarfDieRef die_ref,
              fxl::RefPtr<Symbol> pre_cached);
-  LazySymbol(fxl::RefPtr<const SymbolFactory> factory, uint64_t die_offset);
+  LazySymbol(fxl::RefPtr<const SymbolFactory> factory, DwarfDieRef die_ref);
 
   // Implicitly creates a non-lazy one with a pre-cooked object, mostly for tests.
   //
@@ -131,7 +132,7 @@ class UncachedLazySymbol : public LazySymbolBase {
   UncachedLazySymbol(const UncachedLazySymbol& other);
   UncachedLazySymbol(UncachedLazySymbol&& other);
 
-  UncachedLazySymbol(fxl::RefPtr<const SymbolFactory> factory, uint64_t die_offset);
+  UncachedLazySymbol(fxl::RefPtr<const SymbolFactory> factory, DwarfDieRef die_ref);
 
   ~UncachedLazySymbol();
 

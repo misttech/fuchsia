@@ -53,7 +53,7 @@ class DwarfSymbolFactory : public SymbolFactory {
   };
 
   // SymbolFactory implementation.
-  fxl::RefPtr<Symbol> CreateSymbol(uint64_t die_offset) const override;
+  fxl::RefPtr<Symbol> CreateSymbol(DwarfDieRef die_ref) const override;
 
   using SymbolFactory::MakeLazy;
   using SymbolFactory::MakeUncachedLazy;

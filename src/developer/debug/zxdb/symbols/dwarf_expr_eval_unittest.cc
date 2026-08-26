@@ -11,6 +11,7 @@
 #include "src/developer/debug/zxdb/common/test_with_loop.h"
 #include "src/developer/debug/zxdb/symbols/arch.h"
 #include "src/developer/debug/zxdb/symbols/compile_unit.h"
+#include "src/developer/debug/zxdb/symbols/dwarf_die_ref.h"
 #include "src/developer/debug/zxdb/symbols/mock_module_symbols.h"
 #include "src/developer/debug/zxdb/symbols/mock_symbol_data_provider.h"
 #include "src/developer/debug/zxdb/symbols/mock_symbol_factory.h"
@@ -32,13 +33,13 @@ constexpr TargetPointer kModuleBase = 0x78000000;
 // Offset of the compilation unit DIE corresponding to the DIE referencing the evaluated expression
 // in the symbols. This is used by the UnitSymbolFactory when there are DIE references in an
 // expression.
-constexpr uint64_t kUnitOffset = 0x2000000;
+constexpr DwarfDieRef kUnitRef = DwarfDieRef::Main(0x2000000);
 
 class DwarfExprEvalTest : public TestWithLoop {
  public:
   DwarfExprEvalTest()
       : provider_(fxl::MakeRefCounted<MockSymbolDataProvider>()),
-        eval_(UnitSymbolFactory(symbol_factory_.factory_ref(), kUnitOffset), provider_,
+        eval_(UnitSymbolFactory(symbol_factory_.factory_ref(), kUnitRef), provider_,
               symbol_context_) {}
 
   DwarfExprEval& eval() { return eval_; }
@@ -1007,9 +1008,9 @@ TEST_F(DwarfExprEvalTest, DerefSizeAndType) {
   // clang-format on
 
   // Set up the type info for the character type.
-  constexpr uint64_t kDieLoc = kUnitOffset + kDieOffset;
+  constexpr DwarfDieRef kDieRef = kUnitRef + kDieOffset;
   auto char_type = MakeSignedChar8Type();
-  symbol_factory().SetMockSymbol(kDieLoc, char_type);
+  symbol_factory().SetMockSymbol(kDieRef, char_type);
 
   DoEvalTest(
       program_type, true, DwarfExprEval::Completion::kAsync,
@@ -1310,10 +1311,10 @@ TEST_F(DwarfExprEvalTest, EntryValue) {
 
 TEST_F(DwarfExprEvalTest, ConstType) {
   constexpr uint8_t kDieOffset = 0x29;  // Offset from unit (<7 bits to avoid LEB encoding).
-  constexpr uint64_t kDieLoc = kUnitOffset + kDieOffset;
+  constexpr DwarfDieRef kDieRef = kUnitRef + kDieOffset;
 
   auto uint32_type = MakeUint32Type();
-  symbol_factory().SetMockSymbol(kDieLoc, uint32_type);
+  symbol_factory().SetMockSymbol(kDieRef, uint32_type);
 
   // Normal typed expression.
   std::vector<uint8_t> expr1{llvm::dwarf::DW_OP_const_type,
@@ -1376,12 +1377,13 @@ TEST_F(DwarfExprEvalTest, ConstTypeUnitZeroOffset) {
   constexpr uint64_t kDieLoc = kZeroUnitOffset + kDieOffset;
 
   auto uint32_type = MakeUint32Type();
-  symbol_factory().SetMockSymbol(kDieLoc, uint32_type);
+  symbol_factory().SetMockSymbol(DwarfDieRef::Main(kDieLoc), uint32_type);
 
   // Build our own DwarfExprEval with a Unit Offset of 0, which will be the case for the first unit
   // header in the .debug_info (or .debug_types) sections.
-  DwarfExprEval eval(UnitSymbolFactory(symbol_factory().factory_ref(), kZeroUnitOffset), provider(),
-                     symbol_context());
+  DwarfExprEval eval(
+      UnitSymbolFactory(symbol_factory().factory_ref(), DwarfDieRef::Main(kZeroUnitOffset)),
+      provider(), symbol_context());
 
   // Normal typed expression.
   std::vector<uint8_t> expr1{llvm::dwarf::DW_OP_const_type,
@@ -1440,14 +1442,14 @@ TEST_F(DwarfExprEvalTest, ConstTypeUnitZeroOffset) {
 
 TEST_F(DwarfExprEvalTest, RegvalType) {
   constexpr uint8_t kIntDieOffset = 0x29;  // Offset from unit (<7 bits to avoid LEB encoding).
-  constexpr uint64_t kIntDieLoc = kUnitOffset + kIntDieOffset;
+  constexpr DwarfDieRef kIntDieRef = kUnitRef + kIntDieOffset;
   constexpr uint8_t kFloatDieOffset = 0x37;
-  constexpr uint64_t kFloatDieLoc = kUnitOffset + kFloatDieOffset;
+  constexpr DwarfDieRef kFloatDieRef = kUnitRef + kFloatDieOffset;
 
   auto int64_type = MakeInt64Type();
-  symbol_factory().SetMockSymbol(kIntDieLoc, int64_type);
+  symbol_factory().SetMockSymbol(kIntDieRef, int64_type);
   auto float_type = MakeFloatType();
-  symbol_factory().SetMockSymbol(kFloatDieLoc, float_type);
+  symbol_factory().SetMockSymbol(kFloatDieRef, float_type);
 
   provider()->AddRegisterValue(kDWARFReg0ID, true, 100);
 
@@ -1477,24 +1479,24 @@ TEST_F(DwarfExprEvalTest, RegvalType) {
 TEST_F(DwarfExprEvalTest, Casts) {
   // Die offsets all uses <= 7 bits so we don't have to use multibyte LEB encoding.
   constexpr uint8_t kInt64DieOffset = 0x29;
-  constexpr uint64_t kInt64DieLoc = kUnitOffset + kInt64DieOffset;
+  constexpr DwarfDieRef kInt64DieRef = kUnitRef + kInt64DieOffset;
   auto int64_type = MakeInt64Type();
-  symbol_factory().SetMockSymbol(kInt64DieLoc, int64_type);
+  symbol_factory().SetMockSymbol(kInt64DieRef, int64_type);
 
   constexpr uint8_t kUint32DieOffset = 0x31;
-  constexpr uint64_t kUint32DieLoc = kUnitOffset + kUint32DieOffset;
+  constexpr DwarfDieRef kUint32DieRef = kUnitRef + kUint32DieOffset;
   auto uint32_type = MakeUint32Type();
-  symbol_factory().SetMockSymbol(kUint32DieLoc, uint32_type);
+  symbol_factory().SetMockSymbol(kUint32DieRef, uint32_type);
 
   constexpr uint8_t kFloatDieOffset = 0x33;
-  constexpr uint64_t kFloatDieLoc = kUnitOffset + kFloatDieOffset;
+  constexpr DwarfDieRef kFloatDieRef = kUnitRef + kFloatDieOffset;
   auto float_type = MakeFloatType();
-  symbol_factory().SetMockSymbol(kFloatDieLoc, float_type);
+  symbol_factory().SetMockSymbol(kFloatDieRef, float_type);
 
   constexpr uint8_t kDoubleDieOffset = 0x35;
-  constexpr uint64_t kDoubleDieLoc = kUnitOffset + kDoubleDieOffset;
+  constexpr DwarfDieRef kDoubleDieRef = kUnitRef + kDoubleDieOffset;
   auto double_type = MakeDoubleType();
-  symbol_factory().SetMockSymbol(kDoubleDieLoc, double_type);
+  symbol_factory().SetMockSymbol(kDoubleDieRef, double_type);
 
   // Program fragment that adds a typed double to the stack.
   constexpr double kDoubleSource = 3.1415926535;

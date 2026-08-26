@@ -49,11 +49,11 @@ LazySymbol DwarfUnitImpl::FunctionForRelativeAddress(uint64_t relative_address) 
     EnsureFuncAddrMap();
     uint64_t offset = func_addr_to_die_offset_.Lookup(relative_address);
     if (offset)
-      return binary_->GetSymbolFactory()->MakeLazy(offset);
+      return binary_->GetSymbolFactory()->MakeLazy(DwarfDieRef::Main(offset));
   } else {
     auto die = unit_->getSubroutineForAddress(relative_address);
     if (die.isValid())
-      return binary_->GetSymbolFactory()->MakeLazy(die.getOffset());
+      return binary_->GetSymbolFactory()->MakeLazy(DwarfDieRef::Main(die.getOffset()));
   }
 
   return LazySymbol();
@@ -121,7 +121,7 @@ void DwarfUnitImpl::AddDieToFuncAddr(const DwarfBinary& binary, const llvm::DWAR
   // Add all functions and inlines to the map.
   llvm::dwarf::Tag tag = die.getTag();
   if (tag == llvm::dwarf::DW_TAG_subprogram || tag == llvm::dwarf::DW_TAG_inlined_subroutine) {
-    auto lazy_func = binary.GetSymbolFactory()->MakeLazy(die.getOffset());
+    auto lazy_func = binary.GetSymbolFactory()->MakeLazy(DwarfDieRef::Main(die.getOffset()));
     if (const Function* func = lazy_func.Get()->As<Function>()) {
       builder.AddRanges(func->code_ranges(), die.getOffset());
     }

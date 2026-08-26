@@ -102,6 +102,12 @@ bool IsAddrXForm(llvm::dwarf::Form form) {
          form == llvm::dwarf::DW_FORM_addrx4 || form == llvm::dwarf::DW_FORM_GNU_addr_index;
 }
 
+DwarfDieRef GetDieRef(const llvm::DWARFDie& die) {
+  if (!die.isValid())
+    return DwarfDieRef();
+  return DwarfDieRef::Main(die.getOffset());
+}
+
 }  // namespace
 
 DwarfSymbolFactory::DwarfSymbolFactory(fxl::WeakPtr<DwarfBinaryImpl> binary,
@@ -109,8 +115,8 @@ DwarfSymbolFactory::DwarfSymbolFactory(fxl::WeakPtr<DwarfBinaryImpl> binary,
     : binary_(std::move(binary)), delegate_(std::move(delegate)), file_type_(file_type) {}
 DwarfSymbolFactory::~DwarfSymbolFactory() = default;
 
-fxl::RefPtr<Symbol> DwarfSymbolFactory::CreateSymbol(uint64_t die_offset) const {
-  if (!binary_ || !delegate_)
+fxl::RefPtr<Symbol> DwarfSymbolFactory::CreateSymbol(DwarfDieRef die_ref) const {
+  if (!binary_ || !delegate_ || !die_ref.is_valid())
     return fxl::MakeRefCounted<Symbol>();
 
   // LLVMContext::getDIEForOffset() only works for normal (non-DWO) units so we have to look up
@@ -119,11 +125,12 @@ fxl::RefPtr<Symbol> DwarfSymbolFactory::CreateSymbol(uint64_t die_offset) const 
   const llvm::DWARFUnitVector& unit_vector = file_type_ == kDWO
                                                  ? GetLLVMContext()->getDWOUnitsVector()
                                                  : GetLLVMContext()->getNormalUnitsVector();
-  llvm::DWARFUnit* unit = unit_vector.getUnitForOffset(die_offset);
+  llvm::DWARFUnit* unit = unit_vector.getUnitForOffset(die_ref.offset());
   if (!unit)
     return fxl::MakeRefCounted<Symbol>();
 
-  llvm::DWARFDie die = unit->getDIEForOffset(die_offset);
+  llvm::DWARFDie die = unit->getDIEForOffset(die_ref.offset());
+
   if (!die.isValid())
     return fxl::MakeRefCounted<Symbol>();
 
@@ -230,11 +237,11 @@ fxl::RefPtr<Symbol> DwarfSymbolFactory::DecodeSymbol(const llvm::DWARFDie& die) 
 }
 
 LazySymbol DwarfSymbolFactory::MakeLazy(const llvm::DWARFDie& die) const {
-  return MakeLazy(die.getOffset());
+  return MakeLazy(GetDieRef(die));
 }
 
 UncachedLazySymbol DwarfSymbolFactory::MakeUncachedLazy(const llvm::DWARFDie& die) const {
-  return MakeUncachedLazy(die.getOffset());
+  return MakeUncachedLazy(GetDieRef(die));
 }
 
 fxl::RefPtr<Symbol> DwarfSymbolFactory::DecodeFunction(const llvm::DWARFDie& die, DwarfTag tag,

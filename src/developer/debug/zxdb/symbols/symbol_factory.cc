@@ -9,12 +9,12 @@
 
 namespace zxdb {
 
-LazySymbol SymbolFactory::MakeLazy(uint64_t die_offset) const {
-  return LazySymbol(fxl::RefPtr<const SymbolFactory>(this), die_offset);
+LazySymbol SymbolFactory::MakeLazy(DwarfDieRef die_ref) const {
+  return LazySymbol(fxl::RefPtr<const SymbolFactory>(this), die_ref);
 }
 
-UncachedLazySymbol SymbolFactory::MakeUncachedLazy(uint64_t die_offset) const {
-  return UncachedLazySymbol(fxl::RefPtr<const SymbolFactory>(this), die_offset);
+UncachedLazySymbol SymbolFactory::MakeUncachedLazy(DwarfDieRef die_ref) const {
+  return UncachedLazySymbol(fxl::RefPtr<const SymbolFactory>(this), die_ref);
 }
 
 }  // namespace zxdb

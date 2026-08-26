@@ -7,6 +7,7 @@
 #include <gtest/gtest.h>
 
 #include "src/developer/debug/zxdb/symbols/compile_unit.h"
+#include "src/developer/debug/zxdb/symbols/dwarf_die_ref.h"
 #include "src/developer/debug/zxdb/symbols/function.h"
 #include "src/developer/debug/zxdb/symbols/mock_module_symbols.h"
 #include "src/developer/debug/zxdb/symbols/mock_symbol_factory.h"
@@ -63,12 +64,12 @@ TEST(Symbol, LazyThis) {
 
   // Now provide a real DIE offset for it.
   MockSymbolFactory symbol_factory;
-  uint64_t kMockOffset = 0x12345;
+  DwarfDieRef kMockOffset = DwarfDieRef::Main(0x12345);
   symbol_factory.SetMockSymbol(kMockOffset, fn);
   lazy_fn = fn->GetLazySymbol();
 
   // The MockSymbolFactory should set the lazy_this to have the proper offset.
-  ASSERT_EQ(kMockOffset, lazy_fn.die_offset());
+  ASSERT_EQ(kMockOffset, lazy_fn.die_ref());
 
   // Round-trip the symbol request back to the object.
   fn_out = lazy_fn.Get()->As<Function>();

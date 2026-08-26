@@ -40,7 +40,7 @@ void MockModuleSymbols::AddLineDetails(uint64_t address, LineDetails details) {
 }
 
 void MockModuleSymbols::AddSymbolRef(const IndexNode::SymbolRef& die, fxl::RefPtr<Symbol> symbol) {
-  die_refs_[die.offset()] = std::move(symbol);
+  die_refs_[die.die_ref()] = std::move(symbol);
 }
 
 void MockModuleSymbols::AddFileName(const std::string& file_name) { files_.push_back(file_name); }
@@ -64,9 +64,9 @@ std::vector<Location> MockModuleSymbols::ResolveInputLocation(const SymbolContex
   std::vector<Location> result;
   switch (input_location.type) {
     case InputLocation::Type::kAddress:
-      std::ignore = std::upper_bound(
-          addr_symbols_.begin(), addr_symbols_.end(), input_location.address,
-          [](uint64_t addr, const auto& sym) mutable { return addr < sym.first; });
+      std::ignore =
+          std::upper_bound(addr_symbols_.begin(), addr_symbols_.end(), input_location.address,
+                           [](uint64_t addr, const auto& sym) mutable { return addr < sym.first; });
       if (auto found = addr_symbols_.find(input_location.address); found != addr_symbols_.end()) {
         result = found->second;
       } else {
@@ -136,7 +136,7 @@ std::vector<fxl::RefPtr<Function>> MockModuleSymbols::GetMainFunctions() const {
 const Index& MockModuleSymbols::GetIndex() const { return index_; }
 
 LazySymbol MockModuleSymbols::IndexSymbolRefToSymbol(const IndexNode::SymbolRef& die_ref) const {
-  auto found = die_refs_.find(die_ref.offset());
+  auto found = die_refs_.find(die_ref.die_ref());
   if (found == die_refs_.end())
     return LazySymbol();
   return found->second;

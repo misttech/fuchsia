@@ -26,10 +26,10 @@ LazySymbol Symbol::GetLazySymbol() const {
   return LazySymbol(RefPtrTo(this));
 }
 
-uint64_t Symbol::GetDieOffset() const {
+DwarfDieRef Symbol::GetDieRef() const {
   if (lazy_this_.is_valid())
-    return lazy_this_.die_offset();
-  return 0;
+    return lazy_this_.die_ref();
+  return DwarfDieRef();
 }
 
 const std::string& Symbol::GetAssignedName() const {

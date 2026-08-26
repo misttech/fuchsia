@@ -9,6 +9,7 @@
 
 #include "src/developer/debug/zxdb/expr/find_name.h"
 #include "src/developer/debug/zxdb/expr/found_name.h"
+#include "src/developer/debug/zxdb/symbols/dwarf_die_ref.h"
 #include "src/developer/debug/zxdb/symbols/lazy_symbol.h"
 #include "src/developer/debug/zxdb/symbols/type.h"
 
@@ -29,16 +30,16 @@ fxl::RefPtr<Type> GetConcreteType(const FindNameContext& find_name_context, cons
   //
   // This is a vector because we expect a maximum path in the single digits and brute-force is
   // more efficient than heap-allocating a bunch of nodes for a set.
-  std::vector<uint64_t> checked_dies;
+  std::vector<DwarfDieRef> checked_dies;
 
   // Iteratively strip C-V qualifications, follow typedefs, and follow forward declarations.
   fxl::RefPtr<Type> cur = RefPtrTo(type);
   do {
-    if (uint64_t die_offset = cur->GetDieOffset()) {
+    if (DwarfDieRef die_ref = cur->GetDieRef()) {
       // Non-synthetic symbol.
-      if (std::find(checked_dies.begin(), checked_dies.end(), die_offset) != checked_dies.end())
+      if (std::find(checked_dies.begin(), checked_dies.end(), die_ref) != checked_dies.end())
         break;  // Already visited.
-      checked_dies.push_back(die_offset);
+      checked_dies.push_back(die_ref);
     }
 
     // Follow forward declarations.

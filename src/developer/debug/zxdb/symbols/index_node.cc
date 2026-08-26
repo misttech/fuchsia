@@ -8,6 +8,7 @@
 
 #include <sstream>
 
+#include "src/developer/debug/zxdb/symbols/dwarf_die_ref.h"
 #include "src/developer/debug/zxdb/symbols/function.h"
 #include "src/developer/debug/zxdb/symbols/symbol_factory.h"
 
@@ -130,14 +131,14 @@ void IndexNode::Dump(const std::string& name, std::ostream& out,
       out << separator;
       separator = ", ";
 
-      LazySymbol lazy = factory_for_loc->MakeLazy(die_ref.offset());
+      LazySymbol lazy = factory_for_loc->MakeLazy(die_ref.die_ref());
       const Symbol* symbol = lazy.Get();
       if (const Function* function = symbol->As<Function>()) {
         out << function->code_ranges().ToString();
       } else {
         // Everything else just gets the DIE offset so we can identify it. This can be customized
         // in the future if needed.
-        out << std::hex << "0x" << die_ref.offset();
+        out << std::hex << "0x" << die_ref.die_ref().offset();
       }
     }
   }

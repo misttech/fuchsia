@@ -5,6 +5,7 @@
 #include "src/developer/debug/zxdb/symbols/index_test_support.h"
 
 #include "src/developer/debug/zxdb/symbols/base_type.h"
+#include "src/developer/debug/zxdb/symbols/dwarf_die_ref.h"
 #include "src/developer/debug/zxdb/symbols/type_test_support.h"
 #include "src/developer/debug/zxdb/symbols/variable_test_support.h"
 
@@ -32,7 +33,8 @@ int TestIndexedSymbol::next_die_ref = 1;
 
 TestIndexedSymbol::TestIndexedSymbol(MockModuleSymbols* mod_sym, IndexNode* index_parent,
                                      const std::string& name, fxl::RefPtr<Symbol> sym)
-    : die_ref(IndexNode::SymbolRef::kDwarf, IndexNode::SymbolRef::kMainBinary, next_die_ref++),
+    : die_ref(IndexNode::SymbolRef::kDwarf, IndexNode::SymbolRef::kMainBinary,
+              DwarfDieRef::Main(next_die_ref++)),
       index_node(index_parent->AddChild(KindForSymbol(sym), name.c_str(), die_ref)),
       symbol(std::move(sym)) {
   mod_sym->AddSymbolRef(die_ref, symbol);

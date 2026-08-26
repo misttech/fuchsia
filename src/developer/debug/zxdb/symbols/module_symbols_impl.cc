@@ -20,6 +20,7 @@
 #include "src/developer/debug/zxdb/common/file_util.h"
 #include "src/developer/debug/zxdb/symbols/compile_unit.h"
 #include "src/developer/debug/zxdb/symbols/dwarf_binary_impl.h"
+#include "src/developer/debug/zxdb/symbols/dwarf_die_ref.h"
 #include "src/developer/debug/zxdb/symbols/dwarf_expr_eval.h"
 #include "src/developer/debug/zxdb/symbols/dwarf_symbol_factory.h"
 #include "src/developer/debug/zxdb/symbols/dwo_info.h"
@@ -371,7 +372,7 @@ LazySymbol ModuleSymbolsImpl::IndexSymbolRefToSymbol(const IndexNode::SymbolRef&
     case IndexNode::SymbolRef::kDwarfDeclaration:
       // Handled by the DWARF symbol factory.
       if (ref.dwo_index() == IndexNode::SymbolRef::kMainBinary) {
-        return GetSymbolFactory()->MakeLazy(ref.offset());
+        return GetSymbolFactory()->MakeLazy(ref.die_ref());
       } else {
         // The dwo_index is set: it is a reference into our dwos_ array.
         FX_CHECK(ref.dwo_index() >= 0 && ref.dwo_index() < static_cast<int32_t>(dwos_.size()));
@@ -380,7 +381,7 @@ LazySymbol ModuleSymbolsImpl::IndexSymbolRefToSymbol(const IndexNode::SymbolRef&
         // shouldn't have any index references into it. So all input .dwo indices should be valid
         // pointers.
         FX_CHECK(dwos_[ref.dwo_index()]);
-        return dwos_[ref.dwo_index()]->symbol_factory()->MakeLazy(ref.offset());
+        return dwos_[ref.dwo_index()]->symbol_factory()->MakeLazy(ref.die_ref());
       }
   }
   return LazySymbol();
@@ -909,7 +910,7 @@ void ModuleSymbolsImpl::ResolveLineInputLocationForFile(const SymbolContext& sym
       // same thing back since we've inserted our current function's DIE offset in the map but
       // not checked it yet.
       auto containing_fn = fn->GetContainingFunction(Function::kPhysicalOnly);
-      if (fn->GetDieOffset() != containing_fn->GetDieOffset() &&
+      if (fn->GetDieRef() != containing_fn->GetDieRef() &&
           checked_functions.find(fn->GetLazySymbol()) != checked_functions.end()) {
         continue;  // Already checked this toplevel function.
       }

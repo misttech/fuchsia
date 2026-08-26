@@ -9,6 +9,7 @@
 
 #include <memory>
 
+#include "src/developer/debug/zxdb/symbols/dwarf_die_ref.h"
 #include "src/lib/fxl/memory/ref_counted.h"
 
 namespace zxdb {
@@ -34,11 +35,11 @@ class SymbolFactory : public fxl::RefCountedThreadSafe<SymbolFactory> {
  public:
   // This function should never return null. To indicate failure, return a new default-constructed
   // Symbol object.
-  virtual fxl::RefPtr<Symbol> CreateSymbol(uint64_t die_offset) const = 0;
+  virtual fxl::RefPtr<Symbol> CreateSymbol(DwarfDieRef die_ref) const = 0;
 
   // Returns a LazySymbol referencing the given DIE or DIE offset.
-  LazySymbol MakeLazy(uint64_t die_offset) const;
-  UncachedLazySymbol MakeUncachedLazy(uint64_t die_offset) const;
+  LazySymbol MakeLazy(DwarfDieRef die_ref) const;
+  UncachedLazySymbol MakeUncachedLazy(DwarfDieRef die_ref) const;
 
  protected:
   FRIEND_REF_COUNTED_THREAD_SAFE(SymbolFactory);

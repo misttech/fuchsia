@@ -112,7 +112,7 @@ class MockModuleSymbols : public ModuleSymbols {
   std::map<uint64_t, LineDetails> lines_;
 
   // Maps manually-aded SymbolRefs offsets to symbols.
-  std::map<uint64_t, fxl::RefPtr<Symbol>> die_refs_;
+  std::map<DwarfDieRef, fxl::RefPtr<Symbol>> die_refs_;
 
   std::vector<std::string> files_;
 

@@ -10,6 +10,8 @@
 #include <string>
 #include <vector>
 
+#include "src/developer/debug/zxdb/symbols/dwarf_die_ref.h"
+
 namespace zxdb {
 
 class SymbolFactory;
@@ -57,8 +59,8 @@ class IndexNode {
     static constexpr int32_t kMainBinary = -1;
 
     SymbolRef() = default;
-    SymbolRef(Kind kind, int32_t dwo_index, uint64_t offset)
-        : kind_(kind), dwo_index_(dwo_index), offset_(offset) {}
+    SymbolRef(Kind kind, int32_t dwo_index, DwarfDieRef die_ref)
+        : kind_(kind), dwo_index_(dwo_index), die_ref_(die_ref) {}
 
     Kind kind() const { return kind_; }
     bool is_declaration() const { return kind_ == kDwarfDeclaration; }
@@ -69,12 +71,12 @@ class IndexNode {
     int32_t dwo_index() const { return dwo_index_; }
     bool is_main_binary() const { return dwo_index_ == kMainBinary; }
 
-    uint64_t offset() const { return offset_; }
+    DwarfDieRef die_ref() const { return die_ref_; }
 
    private:
     Kind kind_ = kNull;
     int32_t dwo_index_ = kMainBinary;
-    uint64_t offset_ = 0;
+    DwarfDieRef die_ref_;
   };
 
   explicit IndexNode(Kind kind) : kind_(kind) {}

@@ -118,7 +118,7 @@ class Symbol : public fxl::RefCountedThreadSafe<Symbol> {
   // This is mostly useful when doing low-level symbol operations and interacting with LLVM.
   //
   // This offset is set by set_lazy_this().
-  uint64_t GetDieOffset() const;
+  DwarfDieRef GetDieRef() const;
 
   DwarfTag tag() const { return tag_; }
 

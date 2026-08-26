@@ -9,6 +9,7 @@
 #include "src/developer/debug/zxdb/symbols/call_site.h"
 #include "src/developer/debug/zxdb/symbols/call_site_parameter.h"
 #include "src/developer/debug/zxdb/symbols/data_member.h"
+#include "src/developer/debug/zxdb/symbols/dwarf_die_ref.h"
 #include "src/developer/debug/zxdb/symbols/inherited_from.h"
 #include "src/developer/debug/zxdb/symbols/mock_symbol_factory.h"
 #include "src/developer/debug/zxdb/symbols/modified_type.h"
@@ -36,7 +37,7 @@ TEST(FormatSymbol, Variable) {
   // Provide a DIE offset of this symbol so we can test its output. The MockSymbolFactory will
   // set this on the symbol in SetMockSymbol to the requested offset.
   MockSymbolFactory symbol_factory;
-  symbol_factory.SetMockSymbol(0x12345, var);
+  symbol_factory.SetMockSymbol(DwarfDieRef::Main(0x12345), var);
 
   FormatSymbolOptions opts;
   opts.arch = debug::Arch::kX64;

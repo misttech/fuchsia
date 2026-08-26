@@ -8,6 +8,7 @@
 
 #include "src/developer/debug/zxdb/common/address_range.h"
 #include "src/developer/debug/zxdb/common/string_util.h"
+#include "src/developer/debug/zxdb/symbols/dwarf_die_ref.h"
 #include "src/developer/debug/zxdb/symbols/dwarf_tag.h"
 #include "src/developer/debug/zxdb/symbols/function.h"
 #include "src/developer/debug/zxdb/symbols/mock_line_table.h"
@@ -19,7 +20,7 @@ namespace zxdb {
 // For outputting error messages for LineMatch.
 std::ostream& operator<<(std::ostream& out, const LazySymbol& s) {
   // This test only cares about the DIE offsets, the symbol factories are the same.
-  return out << to_hex_string(s.die_offset());
+  return out << s.die_ref();
 }
 std::ostream& operator<<(std::ostream& out, const LineMatch& m) {
   return out << "LineMatch(" << to_hex_string(m.address) << ", " << m.line << ", " << m.function
@@ -53,12 +54,12 @@ TEST(FindLine, GetAllLineTableMatchesInUnit) {
   constexpr uint64_t kFnEnd = 0x2000;
   auto fn1 = fxl::MakeRefCounted<Function>(DwarfTag::kSubprogram);
   fn1->set_code_ranges(AddressRanges(AddressRange(kFnBegin, kFnEnd)));
-  symbol_factory.SetMockSymbol(0x12345678, fn1);
+  symbol_factory.SetMockSymbol(DwarfDieRef::Main(0x12345678), fn1);
   table.SetSymbolForRow(rows[0], fn1);
 
   auto fn2 = fxl::MakeRefCounted<Function>(DwarfTag::kSubprogram);
   fn2->set_code_ranges(AddressRanges(AddressRange(kFnBegin + 100, kFnEnd + 100)));
-  symbol_factory.SetMockSymbol(0x12345778, fn2);
+  symbol_factory.SetMockSymbol(DwarfDieRef::Main(0x12345778), fn2);
   table.SetSymbolForRow(rows[3], fn2);
 
   // There are two exact matches for line 1.
@@ -69,12 +70,12 @@ TEST(FindLine, GetAllLineTableMatchesInUnit) {
 
   auto fn3 = fxl::MakeRefCounted<Function>(DwarfTag::kSubprogram);
   fn3->set_code_ranges(AddressRanges(AddressRange(kFnBegin + 200, kFnEnd + 200)));
-  symbol_factory.SetMockSymbol(0x12345878, fn3);
+  symbol_factory.SetMockSymbol(DwarfDieRef::Main(0x12345878), fn3);
   table.SetSymbolForRow(rows[5], fn3);
 
   auto fn4 = fxl::MakeRefCounted<Function>(DwarfTag::kSubprogram);
   fn4->set_code_ranges(AddressRanges(AddressRange(kFnBegin + 300, kFnEnd + 300)));
-  symbol_factory.SetMockSymbol(0x12345978, fn4);
+  symbol_factory.SetMockSymbol(DwarfDieRef::Main(0x12345978), fn4);
   table.SetSymbolForRow(rows[7], fn4);
 
   // Searching for line 99 should catch both the 90->100 and the 95->100 transitions.
@@ -108,7 +109,7 @@ TEST(FindLine, GetAllLineTableMatchesInUnit_Reverse) {
   constexpr uint64_t kFnEnd = 0x2000;
   auto fn1 = fxl::MakeRefCounted<Function>(DwarfTag::kSubprogram);
   fn1->set_code_ranges(AddressRanges(AddressRange(kFnBegin, kFnEnd)));
-  symbol_factory.SetMockSymbol(0x12345678, fn1);
+  symbol_factory.SetMockSymbol(DwarfDieRef::Main(0x12345678), fn1);
   table.SetSymbolForRow(rows[1], fn1);
 
   auto out = GetAllLineTableMatchesInUnit(table, "file1.cc", 100);
@@ -134,7 +135,7 @@ TEST(FindLine, GetAllLineTableMatchesInUnitIgnoreInvalidFunctions) {
   constexpr uint64_t kFnEnd = 0x2000;
   auto fn1 = fxl::MakeRefCounted<Function>(DwarfTag::kSubprogram);
   fn1->set_code_ranges(AddressRanges(AddressRange(kFnBegin, kFnEnd)));
-  symbol_factory.SetMockSymbol(0x12345678, fn1);
+  symbol_factory.SetMockSymbol(DwarfDieRef::Main(0x12345678), fn1);
   table.SetSymbolForRow(rows[0], fn1);
 
   // We will only have one match, because only one row has a valid function symbol.
@@ -161,7 +162,7 @@ TEST(FindLine, GetAllLineTableMatchesInUnitIgnoreInvalidFunctions_Reverse) {
   constexpr uint64_t kFnEnd = 0x2000;
   auto fn1 = fxl::MakeRefCounted<Function>(DwarfTag::kSubprogram);
   fn1->set_code_ranges(AddressRanges(AddressRange(kFnBegin, kFnEnd)));
-  symbol_factory.SetMockSymbol(0x12345678, fn1);
+  symbol_factory.SetMockSymbol(DwarfDieRef::Main(0x12345678), fn1);
   table.SetSymbolForRow(rows[2], fn1);
 
   // We will only have one match, because only one row has a valid function symbol.
@@ -189,7 +190,7 @@ TEST(FindLine, AppendLineMatchesForInlineCalls) {
   constexpr uint64_t kFnEnd = 0x2000;
   auto outer_fn = fxl::MakeRefCounted<Function>(DwarfTag::kSubprogram);
   outer_fn->set_code_ranges(AddressRanges(AddressRange(kFnBegin, kFnEnd)));
-  symbol_factory.SetMockSymbol(0x8642345, outer_fn);
+  symbol_factory.SetMockSymbol(DwarfDieRef::Main(0x8642345), outer_fn);
 
   // This block covers the whole function (just to check recursive logic).
   auto outer_block = fxl::MakeRefCounted<CodeBlock>(DwarfTag::kLexicalBlock);
@@ -201,7 +202,7 @@ TEST(FindLine, AppendLineMatchesForInlineCalls) {
   auto inline_call1 = fxl::MakeRefCounted<Function>(DwarfTag::kInlinedSubroutine);
   inline_call1->set_code_ranges(AddressRanges(AddressRange(kInlineCall1Begin, kInlineCall1End)));
   inline_call1->set_call_line(FileLine(kFilename, kLine - 1));
-  symbol_factory.SetMockSymbol(0x71283123, inline_call1);
+  symbol_factory.SetMockSymbol(DwarfDieRef::Main(0x71283123), inline_call1);
 
   // This inlined function is called at the line in question.
   constexpr uint64_t kInlineCall2Begin = kFnBegin + 0x200;
@@ -209,7 +210,7 @@ TEST(FindLine, AppendLineMatchesForInlineCalls) {
   auto inline_call2 = fxl::MakeRefCounted<Function>(DwarfTag::kInlinedSubroutine);
   inline_call2->set_code_ranges(AddressRanges(AddressRange(kInlineCall2Begin, kInlineCall2End)));
   inline_call2->set_call_line(FileLine(kFilename, kLine));
-  symbol_factory.SetMockSymbol(0x973641, inline_call2);
+  symbol_factory.SetMockSymbol(DwarfDieRef::Main(0x973641), inline_call2);
 
   // This inlined function is called after the line in question.
   constexpr uint64_t kInlineCall3Begin = kFnBegin + 0x300;
@@ -217,7 +218,7 @@ TEST(FindLine, AppendLineMatchesForInlineCalls) {
   auto inline_call3 = fxl::MakeRefCounted<Function>(DwarfTag::kInlinedSubroutine);
   inline_call3->set_code_ranges(AddressRanges(AddressRange(kInlineCall3Begin, kInlineCall3End)));
   inline_call3->set_call_line(FileLine(kFilename, kLine + 1));
-  symbol_factory.SetMockSymbol(0x123612935, inline_call3);
+  symbol_factory.SetMockSymbol(DwarfDieRef::Main(0x123612935), inline_call3);
 
   // Hook up the hierarchy.
   SymbolTestParentSetter call1_parent_setter(inline_call1, outer_block);
@@ -268,7 +269,7 @@ TEST(FindLine, AppendLineMatchesForInlineCalls_Multiple) {
   constexpr uint64_t kFnEnd = 0x2000;
   auto outer_fn = fxl::MakeRefCounted<Function>(DwarfTag::kSubprogram);
   outer_fn->set_code_ranges(AddressRanges(AddressRange(kFnBegin, kFnEnd)));
-  symbol_factory.SetMockSymbol(0x8642345, outer_fn);
+  symbol_factory.SetMockSymbol(DwarfDieRef::Main(0x8642345), outer_fn);
 
   // First level of inline functions
   constexpr uint64_t kInline1Call1Begin = kFnBegin + 0x100;
@@ -276,14 +277,14 @@ TEST(FindLine, AppendLineMatchesForInlineCalls_Multiple) {
   auto inline1_call1 = fxl::MakeRefCounted<Function>(DwarfTag::kInlinedSubroutine);
   inline1_call1->set_code_ranges(AddressRanges(AddressRange(kInline1Call1Begin, kInline1Call1End)));
   inline1_call1->set_call_line(FileLine(kFilename, kLine - 50));
-  symbol_factory.SetMockSymbol(0x71283123, inline1_call1);
+  symbol_factory.SetMockSymbol(DwarfDieRef::Main(0x71283123), inline1_call1);
 
   constexpr uint64_t kInline1Call2Begin = kFnBegin + 0x200;
   constexpr uint64_t kInline1Call2End = kFnBegin + 0x300;
   auto inline1_call2 = fxl::MakeRefCounted<Function>(DwarfTag::kInlinedSubroutine);
   inline1_call2->set_code_ranges(AddressRanges(AddressRange(kInline1Call2Begin, kInline1Call2End)));
   inline1_call2->set_call_line(FileLine(kFilename, kLine + 300));
-  symbol_factory.SetMockSymbol(0x973641, inline1_call2);
+  symbol_factory.SetMockSymbol(DwarfDieRef::Main(0x973641), inline1_call2);
 
   // Second level of inlined functions (called at the query line).
   constexpr uint64_t kInline2Call1Begin = kInline1Call1Begin + 0x10;
@@ -291,14 +292,14 @@ TEST(FindLine, AppendLineMatchesForInlineCalls_Multiple) {
   auto inline2_call1 = fxl::MakeRefCounted<Function>(DwarfTag::kInlinedSubroutine);
   inline2_call1->set_code_ranges(AddressRanges(AddressRange(kInline2Call1Begin, kInline2Call1End)));
   inline2_call1->set_call_line(FileLine(kFilename, kLine));
-  symbol_factory.SetMockSymbol(0x123612935, inline2_call1);
+  symbol_factory.SetMockSymbol(DwarfDieRef::Main(0x123612935), inline2_call1);
 
   constexpr uint64_t kInline2Call2Begin = kInline1Call2Begin + 0x10;
   constexpr uint64_t kInline2Call2End = kInline2Call2Begin + 0x20;
   auto inline2_call2 = fxl::MakeRefCounted<Function>(DwarfTag::kInlinedSubroutine);
   inline2_call2->set_code_ranges(AddressRanges(AddressRange(kInline2Call2Begin, kInline2Call2End)));
   inline2_call2->set_call_line(FileLine(kFilename, kLine));
-  symbol_factory.SetMockSymbol(0x123612935, inline2_call2);
+  symbol_factory.SetMockSymbol(DwarfDieRef::Main(0x123612935), inline2_call2);
 
   // Hook up the hierarchy.
   SymbolTestParentSetter call11_parent_setter(inline1_call1, outer_fn);
@@ -344,11 +345,11 @@ TEST(FindLine, GetBestLineMatches) {
   // Set up some functions for the lines below.
   MockSymbolFactory symbol_factory;
   auto fn1 = fxl::MakeRefCounted<Function>(DwarfTag::kSubprogram);
-  symbol_factory.SetMockSymbol(0x2000, fn1);
+  symbol_factory.SetMockSymbol(DwarfDieRef::Main(0x2000), fn1);
   auto fn2 = fxl::MakeRefCounted<Function>(DwarfTag::kSubprogram);
-  symbol_factory.SetMockSymbol(0x3000, fn2);
+  symbol_factory.SetMockSymbol(DwarfDieRef::Main(0x3000), fn2);
   auto fn3 = fxl::MakeRefCounted<Function>(DwarfTag::kSubprogram);
-  symbol_factory.SetMockSymbol(0x4000, fn3);
+  symbol_factory.SetMockSymbol(DwarfDieRef::Main(0x4000), fn3);
 
   // When the smallest match has dupes, all should be returned assuming the functions are different.
   out = GetBestLineMatches({LineMatch(0x1000, 10, fn_null), LineMatch(0x1001, 20, fn1),
@@ -360,7 +361,7 @@ TEST(FindLine, GetBestLineMatches) {
   // When a non-inlined function has multiple matches across the same line we will match all unique
   // CodeBlocks returned from GetMostSpecificChild for each match.
   auto fn4 = fxl::MakeRefCounted<Function>(DwarfTag::kSubprogram);
-  symbol_factory.SetMockSymbol(0x5000, fn4);
+  symbol_factory.SetMockSymbol(DwarfDieRef::Main(0x5000), fn4);
 
   // The existence of multiple matches for the same function on the same line at different addresses
   // implies that it's been broken up into multiple CodeBlocks that correspond to this line, we

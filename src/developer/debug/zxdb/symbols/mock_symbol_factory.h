@@ -8,6 +8,7 @@
 #include <map>
 
 #include "src/developer/debug/zxdb/common/ref_ptr_to.h"
+#include "src/developer/debug/zxdb/symbols/dwarf_die_ref.h"
 #include "src/developer/debug/zxdb/symbols/lazy_symbol.h"
 #include "src/developer/debug/zxdb/symbols/symbol.h"
 #include "src/developer/debug/zxdb/symbols/symbol_factory.h"
@@ -33,16 +34,16 @@ class MockSymbolFactory {
   SymbolFactory* factory() { return factory_.get(); }
   const SymbolFactory* factory() const { return factory_.get(); }
 
-  void SetMockSymbol(uint64_t die_offset, fxl::RefPtr<Symbol> symbol) {
-    factory_->SetMockSymbol(die_offset, symbol);
+  void SetMockSymbol(DwarfDieRef die_ref, fxl::RefPtr<Symbol> symbol) {
+    factory_->SetMockSymbol(die_ref, symbol);
   }
 
  private:
   class FactoryImpl : public SymbolFactory {
    public:
     // SymbolFactory implementation:
-    fxl::RefPtr<Symbol> CreateSymbol(uint64_t die_offset) const override {
-      if (auto found = symbols_.find(die_offset); found != symbols_.end())
+    fxl::RefPtr<Symbol> CreateSymbol(DwarfDieRef die_ref) const override {
+      if (auto found = symbols_.find(die_ref); found != symbols_.end())
         return found->second;
 
       // Never return null on failure, error is indicated by a default-constructed Symbol.
@@ -53,16 +54,16 @@ class MockSymbolFactory {
     //
     // This also updates the symbol's UncachedLazySymbol to point to this factory so round-trip
     // queries will work. This creates a reference cycle as mentioned at the top of the file.
-    void SetMockSymbol(uint64_t die_offset, fxl::RefPtr<Symbol> symbol) {
-      symbol->set_lazy_this(UncachedLazySymbol(RefPtrTo(this), die_offset));
-      symbols_[die_offset] = std::move(symbol);
+    void SetMockSymbol(DwarfDieRef die_ref, fxl::RefPtr<Symbol> symbol) {
+      symbol->set_lazy_this(UncachedLazySymbol(RefPtrTo(this), die_ref));
+      symbols_[die_ref] = std::move(symbol);
     }
 
     // Releases all references to mock symbols.
     void ClearSymbols() { symbols_.clear(); }
 
    private:
-    std::map<uint64_t, fxl::RefPtr<Symbol>> symbols_;
+    std::map<DwarfDieRef, fxl::RefPtr<Symbol>> symbols_;
   };
 
   fxl::RefPtr<FactoryImpl> factory_ = fxl::MakeRefCounted<FactoryImpl>();
