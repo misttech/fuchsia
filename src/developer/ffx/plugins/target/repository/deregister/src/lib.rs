@@ -8,13 +8,21 @@ use fdomain_fuchsia_pkg_rewrite::EngineProxy;
 use fdomain_fuchsia_pkg_rewrite_ext::{Rule, do_transaction};
 use ffx_config::EnvironmentContext;
 use ffx_target_repository_deregister_args::DeregisterCommand;
-use ffx_writer::SimpleWriter;
+use ffx_writer::{ToolIO as _, VerifiedMachineWriter};
 use fho::{FfxMain, FfxTool, Result, bug, return_bug, return_user_error, user_error};
 use pkg::{PkgServerInstanceInfo as _, PkgServerInstances};
+use schemars::JsonSchema;
+use serde::Serialize;
 use target_holders::toolbox;
 use zx_status::Status;
 
 const REPOSITORY_URL_PREFIX: &str = "fuchsia-pkg://";
+
+#[derive(Serialize, JsonSchema)]
+#[serde(tag = "type", content = "data", rename_all = "snake_case")]
+pub enum RepoDeregisterOutput {
+    Ok,
+}
 
 #[derive(FfxTool)]
 pub struct DeregisterTool {
@@ -31,11 +39,11 @@ fho::embedded_plugin!(DeregisterTool);
 
 #[async_trait(?Send)]
 impl FfxMain for DeregisterTool {
-    type Writer = SimpleWriter;
+    type Writer = VerifiedMachineWriter<RepoDeregisterOutput>;
 
     type Error = ::fho::Error;
 
-    async fn main(self, _writer: Self::Writer) -> fho::Result<()> {
+    async fn main(self, mut writer: Self::Writer) -> fho::Result<()> {
         // Get the repository that should be registered.
         let instance_root = self
             .context
@@ -50,7 +58,7 @@ impl FfxMain for DeregisterTool {
                 Some(name.to_string())
             }
         } else {
-            pkg::config::get_default_repository(&self.context).map_err(ffx_config::macro_deps::anyhow::Error::from)?
+            pkg::config::get_default_repository(&self.context).map_err(|e| bug!(e))?
         }
         .ok_or_else(|| {
             user_error!(
@@ -60,14 +68,16 @@ impl FfxMain for DeregisterTool {
         })?;
         let repo_port = self.cmd.port;
 
-        let pkg_server_info = mgr
-            .get_instance(repo_name.clone(), repo_port)
-            .map_err(ffx_config::macro_deps::anyhow::Error::from)?;
+        let pkg_server_info =
+            mgr.get_instance(repo_name.clone(), repo_port).map_err(|e| bug!(e))?;
 
         if let Some(server_info) = pkg_server_info {
             deregister_standalone(&server_info.name, self.repo_proxy, self.engine_proxy).await?
         } else {
             deregister_standalone(&repo_name, self.repo_proxy, self.engine_proxy).await?
+        }
+        if writer.is_machine() {
+            writer.machine(&RepoDeregisterOutput::Ok).map_err(|e| bug!(e))?;
         }
         Ok(())
     }
@@ -198,7 +208,7 @@ mod test {
             pid: process::id(),
             repo_config,
         })
-        .map_err(ffx_config::macro_deps::anyhow::Error::from)?;
+        .map_err(|e| bug!(e))?;
         Ok(())
     }
 
@@ -287,7 +297,7 @@ mod test {
         };
 
         let buffers = TestBuffers::default();
-        let writer = SimpleWriter::new_test(&buffers);
+        let writer = VerifiedMachineWriter::new_test(None, &buffers);
 
         let res = tool.main(writer).await;
         assert!(res.is_ok(), "Expected result to be OK. Got: {res:?}");
@@ -322,7 +332,7 @@ mod test {
         };
 
         let buffers = TestBuffers::default();
-        let writer = SimpleWriter::new_test(&buffers);
+        let writer = VerifiedMachineWriter::new_test(None, &buffers);
 
         let res = tool.main(writer).await;
         assert!(res.is_ok(), "Expected result to be OK. Got: {res:?}");
@@ -357,9 +367,42 @@ mod test {
         };
 
         let buffers = TestBuffers::default();
-        let writer = SimpleWriter::new_test(&buffers);
+        let writer = VerifiedMachineWriter::new_test(None, &buffers);
 
         let res = tool.main(writer).await;
         assert!(res.is_err());
+    }
+
+    #[fuchsia::test]
+    async fn test_deregister_machine() {
+        let client = fdomain_local::local_client_empty();
+        let default_repo_name = "default-repo";
+        let mut builder = ffx_config::test_env();
+        let isolate_root = builder.isolate_root();
+        let env = builder
+            .user_config("repository.default", default_repo_name)
+            .user_config(TARGET_DEFAULT_KEY, "some-target")
+            .user_config("repository.process_dir", isolate_root.to_string_lossy())
+            .build()
+            .unwrap();
+
+        let (repo_mgr, _) = setup_fake_repo_manager_server(Arc::clone(&client)).await;
+
+        make_server_instance(ServerMode::Foreground, default_repo_name.to_string(), &env.context)
+            .expect("creating test server");
+
+        let tool = DeregisterTool {
+            cmd: DeregisterCommand { repository: None, port: None },
+            context: env.context.clone(),
+            repo_proxy: repo_mgr,
+            engine_proxy: setup_fake_engine_server(Arc::clone(&client)),
+        };
+
+        let buffers = TestBuffers::default();
+        let writer = VerifiedMachineWriter::new_test(Some(ffx_writer::Format::Json), &buffers);
+
+        let res = tool.main(writer).await;
+        assert!(res.is_ok(), "Expected result to be OK. Got: {res:?}");
+        assert_eq!(buffers.into_stdout_str(), "{\"type\":\"ok\"}\n");
     }
 }
