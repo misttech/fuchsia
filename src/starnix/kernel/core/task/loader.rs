@@ -269,18 +269,22 @@ enum LoadElfUsage {
     Interpreter,
 }
 
+fn parse_elf_headers(vmo: &zx::Vmo) -> Result<elf_parse::Elf64Headers, Errno> {
+    if cfg!(target_arch = "aarch64") {
+        elf_parse::Elf64Headers::from_vmo_with_arch32(vmo).map_err(elf_parse_error_to_errno)
+    } else {
+        elf_parse::Elf64Headers::from_vmo(vmo).map_err(elf_parse_error_to_errno)
+    }
+}
+
 fn load_elf(
     elf_file: Arc<FileMapping>,
     elf_memory: Arc<MemoryObject>,
+    headers: elf_parse::Elf64Headers,
     mm: &Arc<MemoryManager>,
     usage: LoadElfUsage,
 ) -> Result<LoadedElf, Errno> {
     let vmo = elf_memory.as_vmo().ok_or_else(|| errno!(EINVAL))?;
-    let headers = if cfg!(target_arch = "aarch64") {
-        elf_parse::Elf64Headers::from_vmo_with_arch32(vmo).map_err(elf_parse_error_to_errno)?
-    } else {
-        elf_parse::Elf64Headers::from_vmo(vmo).map_err(elf_parse_error_to_errno)?
-    };
     let arch_width = get_arch_width(&headers);
     let elf_info = elf_load::loaded_elf_info(&headers);
     let length = elf_info.high - elf_info.low;
@@ -318,6 +322,8 @@ pub struct ResolvedElf {
     pub file: Arc<FileMapping>,
     /// A VMO to the resolved ELF executable.
     pub memory: Arc<MemoryObject>,
+    /// Parsed ELF headers for the resolved executable.
+    pub headers: elf_parse::Elf64Headers,
     /// An ELF interpreter, if specified in the ELF executable header.
     pub interp: Option<ResolvedInterpElf>,
     /// Arguments to be passed to the new process.
@@ -481,36 +487,59 @@ fn resolve_elf(
     environ: Vec<CString>,
 ) -> Result<ResolvedElf, Errno> {
     let vmo = memory.as_vmo().ok_or_else(|| errno!(EINVAL))?;
-    let elf_headers = if cfg!(target_arch = "aarch64") {
-        elf_parse::Elf64Headers::from_vmo_with_arch32(vmo).map_err(elf_parse_error_to_errno)?
-    } else {
-        elf_parse::Elf64Headers::from_vmo(vmo).map_err(elf_parse_error_to_errno)?
-    };
-    let interp = if let Some(interp_hdr) = elf_headers
+    let headers = parse_elf_headers(vmo)?;
+    let file = file.name.clone().into_mapping(Some(FileWriteGuardMode::ExecMapping))?;
+    let arch_width = get_arch_width(&headers);
+    let creds = Credentials::clone(&current_task.current_creds());
+    let secure_exec = false;
+    Ok(ResolvedElf {
+        file,
+        memory,
+        headers,
+        interp: None,
+        argv,
+        environ,
+        creds,
+        secure_exec,
+        arch_width,
+    })
+}
+
+/// Resolves and loads the ELF dynamic linker (PT_INTERP) for a `ResolvedElf`, if present,
+/// using the post-transition target credentials in `resolved_elf.creds`.
+pub fn resolve_elf_interpreter(
+    current_task: &CurrentTask,
+    resolved_elf: &mut ResolvedElf,
+) -> Result<(), Errno> {
+    if let Some(interp_hdr) = resolved_elf
+        .headers
         .program_header_with_type(elf_parse::SegmentType::Interp)
         .map_err(|_| errno!(EINVAL))?
     {
-        // The ELF header specified an ELF interpreter.
-        // Read the path and load this ELF as well.
-        let interp = memory
+        let interp = resolved_elf
+            .memory
             .read_to_vec(interp_hdr.offset as u64, interp_hdr.filesz)
             .map_err(|status| from_status_like_fdio!(status))?;
         let interp = CStr::from_bytes_until_nul(&interp).map_err(|_| errno!(EINVAL))?;
-        let interp_file = current_task.open_file(interp.to_bytes().into(), OpenFlags::RDONLY)?;
-        let interp_memory = interp_file
-            .get_memory(current_task, None, ProtectionFlags::READ | ProtectionFlags::EXEC)
-            .map_err(|e| if e.code.error_code() == ENODEV { errno!(ENOEXEC) } else { e })?;
-        let interp_file =
-            interp_file.name.clone().into_mapping(Some(FileWriteGuardMode::ExecMapping))?;
-        Some(ResolvedInterpElf { file: interp_file, memory: interp_memory })
-    } else {
-        None
-    };
-    let file = file.name.clone().into_mapping(Some(FileWriteGuardMode::ExecMapping))?;
-    let arch_width = get_arch_width(&elf_headers);
-    let creds = Credentials::clone(&current_task.current_creds());
-    let secure_exec = false;
-    Ok(ResolvedElf { file, memory, interp, argv, environ, creds, secure_exec, arch_width })
+
+        let interp_resolved = current_task.override_creds(
+            Arc::new(resolved_elf.creds.clone()),
+            || -> Result<ResolvedInterpElf, Errno> {
+                let interp_file =
+                    current_task.open_file(interp.to_bytes().into(), OpenFlags::RDONLY)?;
+                let interp_memory = interp_file
+                    .get_memory(current_task, None, ProtectionFlags::READ | ProtectionFlags::EXEC)
+                    .map_err(|e| if e.code.error_code() == ENODEV { errno!(ENOEXEC) } else { e })?;
+                let interp_file =
+                    interp_file.name.clone().into_mapping(Some(FileWriteGuardMode::ExecMapping))?;
+                Ok(ResolvedInterpElf { file: interp_file, memory: interp_memory })
+            },
+        )?;
+
+        resolved_elf.interp = Some(interp_resolved);
+    }
+
+    Ok(())
 }
 
 /// Loads a resolved ELF into memory, along with an interpreter if one is defined, and initializes
@@ -521,7 +550,13 @@ pub fn load_executable(
     original_path: &CStr,
 ) -> Result<ThreadStartInfo, Errno> {
     let mm = current_task.mm()?;
-    let main_elf = load_elf(resolved_elf.file, resolved_elf.memory, &mm, LoadElfUsage::MainElf)?;
+    let main_elf = load_elf(
+        resolved_elf.file,
+        resolved_elf.memory,
+        resolved_elf.headers,
+        &mm,
+        LoadElfUsage::MainElf,
+    )?;
     mm.initialize_brk_origin(
         main_elf.arch_width,
         UserAddress::from_ptr(main_elf.file_base)
@@ -530,7 +565,11 @@ pub fn load_executable(
     )?;
     let interp_elf = resolved_elf
         .interp
-        .map(|interp| load_elf(interp.file, interp.memory, &mm, LoadElfUsage::Interpreter))
+        .map(|interp| {
+            let vmo = interp.memory.as_vmo().ok_or_else(|| errno!(EINVAL))?;
+            let headers = parse_elf_headers(vmo)?;
+            load_elf(interp.file, interp.memory, headers, &mm, LoadElfUsage::Interpreter)
+        })
         .transpose()?;
 
     let entry_elf = interp_elf.as_ref().unwrap_or(&main_elf);

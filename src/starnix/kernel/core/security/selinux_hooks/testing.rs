@@ -113,6 +113,7 @@ pub(in crate::security) fn make_resolved_elf(
     ResolvedElf {
         file: file_mapping,
         memory,
+        headers: elf_parse::Elf64Headers::new_for_test(&Default::default(), None),
         interp: None,
         argv: vec![],
         environ: vec![],
