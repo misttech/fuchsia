@@ -640,3 +640,24 @@ fn test_from_structured() {
         MessageError::ParseError { .. }
     );
 }
+
+#[fuchsia::test]
+fn from_extended_record_out_of_bounds() {
+    let record = Record {
+        timestamp: zx::BootInstant::from_nanos(72),
+        severity: Severity::Error as u8,
+        arguments: vec![],
+    };
+    let mut buffer = Cursor::new(vec![0u8; MAX_DATAGRAM_LEN]);
+    let mut encoder = Encoder::new(&mut buffer, EncoderOpts::default());
+    encoder.write_record(record).unwrap();
+    let pos = buffer.position() as usize;
+
+    let mut extended = buffer.get_ref()[..pos].to_vec();
+    extended.extend_from_slice(&1000u32.to_le_bytes());
+    extended.extend_from_slice(&1000u32.to_le_bytes());
+    extended.extend_from_slice(&0u64.to_le_bytes());
+    extended.extend_from_slice(b"short");
+
+    assert_matches!(crate::from_extended_record(&extended).unwrap_err(), MessageError::OutOfBounds);
+}

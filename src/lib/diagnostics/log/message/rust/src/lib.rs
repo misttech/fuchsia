@@ -328,7 +328,7 @@ impl MessageParser {
 }
 
 /// Constructs a `LogsData` from the provided bytes, assuming the bytes
-/// are a a single FXT log record with a potentially extended metadata section.
+/// are a single FXT log record with a potentially extended metadata section.
 /// [log encoding] https://fuchsia.dev/fuchsia-src/reference/platform-spec/diagnostics/logs-encoding
 pub fn from_extended_record(bytes: &[u8]) -> Result<(LogsData, &[u8]), MessageError> {
     let (input, remaining) = diagnostics_log_encoding::parse::parse_record(bytes)?;
@@ -337,11 +337,22 @@ pub fn from_extended_record(bytes: &[u8]) -> Result<(LogsData, &[u8]), MessageEr
         let component_url_len = u32::from_le_bytes(remaining[4..8].try_into().unwrap()) as usize;
         let rolled_out_logs = u64::from_le_bytes(remaining[8..16].try_into().unwrap());
         let mut offset = 16;
-        let moniker = str::from_utf8(&remaining[offset..offset + moniker_len])?;
+
+        // NOTE: In the extended metadata format, string fields (moniker and URL) are
+        // 8-byte word aligned with trailing zero padding.
+        // `(len + 7) & !7` rounds up `len` to the nearest multiple of 8.
+        // This arithmetic is overflow-safe on 64-bit platforms because moniker_len and
+        // component_url_len are originally 32-bit integers (u32).
         let moniker_padded_len = (moniker_len + 7) & !7;
+        let component_url_padded_len = (component_url_len + 7) & !7;
+        let moniker_padded_end = offset + moniker_padded_len;
+        let url_padded_end = moniker_padded_end + component_url_padded_len;
+        if url_padded_end > remaining.len() {
+            return Err(MessageError::OutOfBounds);
+        }
+        let moniker = str::from_utf8(&remaining[offset..offset + moniker_len])?;
         offset += moniker_padded_len;
         let url = str::from_utf8(&remaining[offset..offset + component_url_len])?;
-        let component_url_padded_len = (component_url_len + 7) & !7;
         offset += component_url_padded_len;
         (
             Some(ExtendedMetadata {
