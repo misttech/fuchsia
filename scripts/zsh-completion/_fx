@@ -105,18 +105,20 @@ _fx() {
 
   # list of commands based on //tools/devshell/
   # each file is read to find the description line (starts with "### ").
-  local -a commands lines
+  local -aU commands
+  local -a lines
   local -a command_dirs=(
     "${fuchsia_dir}/tools/devshell"
     "${fuchsia_dir}/tools/devshell/contrib"
     ${fuchsia_dir}/vendor/*/scripts/devshell(/N)
   )
-  local desc command dir
+  local desc command dir cmd_name
   for dir in ${command_dirs[*]}; do
-    for command in ${dir}/*(*); do
+    for command in ${dir}/*(N.*) ${dir}/*.fx(N.); do
       lines=("${(f)$(<${command})}")
       desc=${${lines[${lines[(i)\#\#\# *]}]}#????}
-      commands+=("${command#*${dir}/}:${desc}")
+      cmd_name="${command#*${dir}/}"
+      commands+=("${cmd_name%.fx}:${desc}")
     done
   done
   commands+=("gn:invoke the gn command")
@@ -158,7 +160,10 @@ _fx() {
   local f
   f=_fx_$words[1]
   if [[ -e ${fuchsia_dir}/scripts/zsh-completion/$f ]]; then
-    autoload $f; $f
+    if [[ -z "${fpath[(r)${fuchsia_dir}/scripts/zsh-completion]}" ]]; then
+      fpath=( "${fuchsia_dir}/scripts/zsh-completion" $fpath )
+    fi
+    autoload -Uz $f; $f
   else
     _normal
   fi

@@ -186,3 +186,36 @@ class WorktreePool:
             cmd.append("-force")
         cmd.append(str(wt_path))
         run_jiri(self.jiri_root, cmd, check=True)
+
+    def get_completion_choices(self, filter_type: str) -> list[str]:
+        matches = []
+        if filter_type in ("all", "leased"):
+            if self.worktrees_dir.exists() and self.worktrees_dir.is_dir():
+                for entry in self.worktrees_dir.iterdir():
+                    if entry.is_symlink():
+                        try:
+                            target = entry.readlink()
+                            if not target.is_absolute():
+                                target = (self.worktrees_dir / target).resolve()
+                            if target.is_dir():
+                                matches.append(entry.name)
+                        except OSError:
+                            pass
+
+        if filter_type != "leased":
+            for wt in self.get_worktrees():
+                is_leased = wt.get_state() == WorktreeState.LEASED
+                if filter_type == "physical_free" and not is_leased:
+                    matches.append(wt.name)
+                elif filter_type == "physical_leased" and is_leased:
+                    matches.append(wt.name)
+                elif filter_type in ("physical_all", "all"):
+                    matches.append(wt.name)
+
+        seen = set()
+        unique_matches = []
+        for m in matches:
+            if m not in seen:
+                seen.add(m)
+                unique_matches.append(m)
+        return unique_matches

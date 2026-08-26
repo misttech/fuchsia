@@ -92,7 +92,7 @@ class TestWorktreePool(unittest.TestCase):
         self.assertIn(noun, NOUNS)
 
 
-class TestActiveAddSubcommand(unittest.TestCase):
+class TestAddSubcommand(unittest.TestCase):
     def setUp(self) -> None:
         self.temp_dir = tempfile.TemporaryDirectory()
         self.fuchsia_dir = Path(self.temp_dir.name)
@@ -400,6 +400,66 @@ class TestWorktreeSelectedBuildDir(unittest.TestCase):
                     output = mock_out.getvalue()
 
         self.assertEqual(output, "test-wt\n")
+
+
+class TestCompletionChoices(unittest.TestCase):
+    def setUp(self) -> None:
+        self.temp_dir = tempfile.TemporaryDirectory()
+        self.fuchsia_dir = Path(self.temp_dir.name)
+        self.jiri_root = self.fuchsia_dir / ".jiri_root"
+        self.jiri_root.mkdir(parents=True, exist_ok=True)
+        self.pool = WorktreePool(fuchsia_dir=str(self.fuchsia_dir))
+
+        # Create physical worktree dirs
+        self.wt1_path = self.pool.worktrees_dir / "wt1"
+        self.wt2_path = self.pool.worktrees_dir / "wt2"
+        self.wt3_path = self.pool.worktrees_dir / "wt3"
+
+        self.wt1_path.mkdir(parents=True, exist_ok=True)
+        self.wt2_path.mkdir(parents=True, exist_ok=True)
+        self.wt3_path.mkdir(parents=True, exist_ok=True)
+
+        # Register them
+        with open(self.pool.registry_file, "w") as f:
+            f.write(f"{self.wt1_path}\n")
+            f.write(f"{self.wt2_path}\n")
+            f.write(f"{self.wt3_path}\n")
+
+        # wt1 is free
+        # wt2 is leased
+        wt2 = self.pool.get_worktree_by_name("wt2")
+        wt2.acquire_lease(task_id="task-wt2")
+
+        # wt3 is leased but also has leased symlink with different name
+        wt3 = self.pool.get_worktree_by_name("wt3")
+        wt3.acquire_lease(task_id="task-wt3")
+
+        # Create leased symlink for task-wt3
+        self.leased_link = self.pool.worktrees_dir / "task-wt3"
+        self.leased_link.symlink_to("wt3")
+
+    def tearDown(self) -> None:
+        self.temp_dir.cleanup()
+
+    def test_filter_physical_all(self) -> None:
+        choices = self.pool.get_completion_choices("physical_all")
+        self.assertEqual(sorted(choices), ["wt1", "wt2", "wt3"])
+
+    def test_filter_physical_free(self) -> None:
+        choices = self.pool.get_completion_choices("physical_free")
+        self.assertEqual(choices, ["wt1"])
+
+    def test_filter_physical_leased(self) -> None:
+        choices = self.pool.get_completion_choices("physical_leased")
+        self.assertEqual(sorted(choices), ["wt2", "wt3"])
+
+    def test_filter_leased(self) -> None:
+        choices = self.pool.get_completion_choices("leased")
+        self.assertEqual(choices, ["task-wt3"])
+
+    def test_filter_all(self) -> None:
+        choices = self.pool.get_completion_choices("all")
+        self.assertEqual(sorted(choices), ["task-wt3", "wt1", "wt2", "wt3"])
 
 
 if __name__ == "__main__":

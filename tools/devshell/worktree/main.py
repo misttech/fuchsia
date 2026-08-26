@@ -90,14 +90,14 @@ def main() -> None:
     # Subcommand 'list'
     subparsers.add_parser(
         "list",
-        help="List all active worktrees",
-        description="List all active worktrees and their git branches.",
+        help="List all leased worktrees",
+        description="List all leased worktrees and their git branches.",
     )
 
     # Subcommand 'add'
     parser_add = subparsers.add_parser(
         "add",
-        help="Add an active worktree checkout for development",
+        help="Add a leased worktree checkout for development",
     )
     parser_add.add_argument("name", help="Name of worktree / branch")
     parser_add.add_argument(
@@ -111,9 +111,25 @@ def main() -> None:
     # Subcommand 'remove'
     parser_remove = subparsers.add_parser(
         "remove",
-        help="Remove an active worktree and return it to the pool",
+        help="Remove a leased worktree and return it to the pool",
     )
     parser_remove.add_argument("name", help="Name of worktree to remove")
+
+    # Internal subcommand '_complete' for shell completion
+    parser_complete = subparsers.add_parser(
+        "_complete",
+        help="Internal completion helper",
+    )
+    parser_complete.add_argument(
+        "filter",
+        choices=[
+            "physical_free",
+            "physical_leased",
+            "physical_all",
+            "leased",
+            "all",
+        ],
+    )
 
     args = parser.parse_args()
     pool = WorktreePool()
@@ -134,6 +150,8 @@ def main() -> None:
             add_cmd.run(args, pool)
         elif args.subcommand == "remove":
             remove_cmd.run(args, pool)
+        elif args.subcommand == "_complete":
+            print(" ".join(pool.get_completion_choices(args.filter)))
         else:
             print(f"Unknown subcommand: {args.subcommand}", file=sys.stderr)
             sys.exit(1)

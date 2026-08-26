@@ -175,6 +175,48 @@ function __fx_env_main() {
           fi
           ;;
 
+        worktree)
+          if [[ ${COMP_CWORD} -eq 2 ]]; then
+            COMPREPLY=($(compgen -W "pool locate list add remove" -- "${cur}"))
+          elif [[ ${COMP_CWORD} -ge 3 ]]; then
+            local subcmd="${COMP_WORDS[2]}"
+            case "${subcmd}" in
+              pool)
+                if [[ ${COMP_CWORD} -eq 3 ]]; then
+                  COMPREPLY=($(compgen -W "list add remove" -- "${cur}"))
+                elif [[ ${COMP_CWORD} -ge 4 ]]; then
+                  local pool_subcmd="${COMP_WORDS[3]}"
+                  case "${pool_subcmd}" in
+                    add)
+                      if [[ "${prev}" == "--set" ]]; then
+                        :
+                      else
+                        COMPREPLY=($(compgen -W "--set" -- "${cur}"))
+                      fi
+                      ;;
+                    remove)
+                      COMPREPLY=($(compgen -W "--force $(__fx_worktree_names_filtered physical_all)" -- "${cur}"))
+                      ;;
+                  esac
+                fi
+                ;;
+              locate)
+                COMPREPLY=($(compgen -W "$(__fx_worktree_names_filtered all)" -- "${cur}"))
+                ;;
+              add)
+                if [[ "${prev}" == "--pool-name" ]]; then
+                  COMPREPLY=($(compgen -W "$(__fx_worktree_names_filtered physical_free)" -- "${cur}"))
+                else
+                  COMPREPLY=($(compgen -W "--sync --pool-name --json" -- "${cur}"))
+                fi
+                ;;
+              remove)
+                COMPREPLY=($(compgen -W "$(__fx_worktree_names_filtered leased)" -- "${cur}"))
+                ;;
+            esac
+          fi
+          ;;
+
         build)
           if [[ ${COMP_CWORD} -eq 2 ]]; then
             __fx_complete_build "${cur}"
@@ -242,7 +284,7 @@ function __fx_env_main() {
           files+=("${fuchsia_tools_dir}"/"${cmd}"*)
         fi
         for file in "${files[@]}"; do
-          if [[ "${file}" =~ .fx$ || -x "${file}" ]]; then
+          if [[ "${file}" =~ .fx$ || ( -f "${file}" && -x "${file}" ) ]]; then
             file="${file%%.fx}"
             COMPREPLY+=("${file##*/}")
           fi
@@ -253,7 +295,21 @@ function __fx_env_main() {
     }
     complete -o default -F __fx fx
   fi
+
+  # Helper function to generate filtered lists of worktree names for completion in Bash.
+  # Supported filters:
+  #   - physical_free:   Only physical worktree slots that are not currently leased.
+  #   - physical_leased: Only physical worktree slots that are currently leased.
+  #   - physical_all:    All physical worktree slots.
+  #   - leased:          Only leased task names (symlinks).
+  #   - all:             Both physical worktree slots and leased task names (symlinks).
+
+  function __fx_worktree_names_filtered {
+    "${FUCHSIA_DIR}/scripts/fuchsia-vendored-python" "${FUCHSIA_DIR}/tools/devshell/worktree/main.py" _complete "$1"
+  }
+
 }
+
 
 # __fx_env_main uses function names that are non-compliant with POSIX, so
 # if this script is running in posix-compliant bash mode, we need to turn
