@@ -36,7 +36,6 @@ rustc_library("id-allocator-rs") {
   deps = [
     "//sdk/rust/zx-status",
     "//src/lib/ksync",
-    "//third_party/rust_crates:num-traits",
     "//third_party/rust_crates:pin-init",
     "//zircon/system/ulib/bitmap/rust:bitmap",
   ]

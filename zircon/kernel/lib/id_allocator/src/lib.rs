@@ -8,7 +8,6 @@
 
 use bitmap::{Bitmap, FixedStorage, RawBitmapGeneric};
 use ksync::{KMutex, guarded, lock};
-use num_traits::{AsPrimitive, Bounded, FromPrimitive, Unsigned};
 use pin_init::{PinInit, pin_init};
 use zx_status::Status;
 
@@ -23,7 +22,7 @@ use zx_status::Status;
 // `generic_const_exprs` feature.
 #[guarded]
 pub struct IdAllocator<
-    T: Copy + Ord + Unsigned + Bounded + FromPrimitive + AsPrimitive<usize> + 'static,
+    T: Copy + Ord + TryFrom<usize> + TryInto<usize> + 'static,
     const MAX_ID: usize,
     const MIN_ID: usize,
     const N: usize,
@@ -31,15 +30,17 @@ pub struct IdAllocator<
     #[mutex]
     mutex: KMutex,
 
+    /// Hint for where the next search starts.  Held as a `usize` because it is
+    /// only ever a bitmap index; the C++ holds a `T` and widens it implicitly.
     #[guarded_by(mutex)]
-    next: T,
+    next: usize,
 
     #[guarded_by(mutex)]
     bitmap: RawBitmapGeneric<FixedStorage<N>>,
 }
 
 impl<
-    T: Copy + Ord + Unsigned + Bounded + FromPrimitive + AsPrimitive<usize> + 'static,
+    T: Copy + Ord + TryFrom<usize> + TryInto<usize> + 'static,
     const MAX_ID: usize,
     const MIN_ID: usize,
     const N: usize,
@@ -56,18 +57,21 @@ impl<
     };
 
     pub fn init() -> impl PinInit<Self, Status> {
-        let _ = Self::_STATIC_ASSERT;
+        let () = Self::_STATIC_ASSERT;
         pin_init!(Self {
             mutex <- KMutex::init(),
-            next: T::from_usize(MIN_ID).ok_or(Status::OUT_OF_RANGE)?.into(),
+            next: MIN_ID.into(),
             bitmap: {
                 let mut bitmap = RawBitmapGeneric::default();
                 bitmap.reset(MAX_ID)?;
                 bitmap
             }.into(),
             _: {
-                // Runtime check that MAX_ID fits in T
-                if MAX_ID > T::max_value().as_() {
+                // Runtime check that every allocatable id fits in T.  MAX_ID is an
+                // exclusive bound, so the largest id ever handed out is MAX_ID - 1;
+                // requiring MAX_ID itself to fit would reject a full-width range
+                // (e.g. T = u16 with MAX_ID = 65536).
+                if T::try_from(MAX_ID - 1).is_err() {
                     return Err(Status::OUT_OF_RANGE);
                 }
             }
@@ -75,7 +79,7 @@ impl<
     }
 
     pub fn reset(&self, max_id: T) -> Result<(), Status> {
-        let max_id_usize = max_id.as_();
+        let max_id_usize = max_id.try_into().map_err(|_| Status::OUT_OF_RANGE)?;
         if max_id_usize <= MIN_ID || max_id_usize > MAX_ID {
             return Err(Status::OUT_OF_RANGE);
         }
@@ -86,7 +90,7 @@ impl<
     pub fn try_alloc(&self) -> Result<T, Status> {
         lock!(let mut guard = self.lock_mutex());
         let fields = guard.as_mut().fields_mut();
-        let next_usize = (*fields.next).as_();
+        let next_usize = *fields.next;
 
         let mut get_result = fields.bitmap.get(next_usize, MAX_ID);
         if get_result.all_set {
@@ -97,20 +101,22 @@ impl<
         }
 
         let first_unset = get_result.first_unset;
+        // The bitmap returned this index as unset, so this should not fail.
         fields.bitmap.set_one(first_unset)?;
-        let val = T::from_usize(first_unset).ok_or(Status::OUT_OF_RANGE)?;
+        // Unreachable: `first_unset` is below `MAX_ID` and `init()` checked that
+        // `MAX_ID - 1` fits in `T`.  The C++ uses an infallible `static_cast`.
+        let val = T::try_from(first_unset).map_err(|_| Status::OUT_OF_RANGE)?;
 
         // Update next
         let next_val_usize = (first_unset + 1) % MAX_ID;
-        let next_val_usize = if next_val_usize == 0 { MIN_ID } else { next_val_usize };
-        *fields.next = T::from_usize(next_val_usize).ok_or(Status::OUT_OF_RANGE)?;
+        *fields.next = if next_val_usize == 0 { MIN_ID } else { next_val_usize };
 
         Ok(val)
     }
 
     pub fn free(&self, id: T) -> Result<(), Status> {
         lock!(let mut guard = self.lock_mutex());
-        let id_usize = id.as_();
+        let id_usize = id.try_into().map_err(|_| Status::INVALID_ARGS)?;
         if !guard.bitmap().get_one(id_usize) {
             return Err(Status::INVALID_ARGS);
         }
