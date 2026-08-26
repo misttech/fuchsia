@@ -13,10 +13,14 @@ python_mobly_test("battery_test_fc") {
     "//src/testing/end_to_end/honeydew",
     "//src/testing/end_to_end/mobly_base_tests/fuchsia_base_test",
   ]
+  package_deps = [ "//src/power/testing/fake-battery/tool:package" ]
   environments = [ iris_env ]
 }
 
 group("e2e_battery_test") {
   testonly = true
-  public_deps = [ ":battery_test_fc($host_toolchain)" ]
+  public_deps = [
+    ":battery_test_fc($host_toolchain)",
+    "//src/power/testing/fake-battery/tool:package",
+  ]
 }
