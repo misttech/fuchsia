@@ -6,6 +6,7 @@ use crate::eval::{EvalOutcome, ExecutionContext, ShellState, eval_command};
 use crate::parser::ast::ASTBuilder;
 use crate::parser::{parse_script, tokenize};
 use bstr::BStr;
+use zx::Task;
 
 fn eval_str(script: &str, state: &mut ShellState, ctx: &mut ExecutionContext) -> EvalOutcome {
     let mut builder = ASTBuilder::new();
@@ -204,6 +205,13 @@ fn test_control_flow_background() {
     let res = try_eval_str("A=1 &", &mut state, &mut ctx);
     // Background execution attempts process spawn; verify it runs without crashing.
     assert!(res.is_ok() || res.is_err());
+
+    let res_while = try_eval_str("while true; do true; done &", &mut state, &mut ctx);
+    assert!(res_while.is_ok() || res_while.is_err());
+
+    for job in &state.bg_jobs {
+        let _ = job.process.kill();
+    }
 }
 
 #[test]

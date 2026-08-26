@@ -57,6 +57,16 @@ fn test_fmt_arith() {
 }
 
 #[test]
+fn test_fmt_while() {
+    assert_eq!(parse_cmd("while true; do true; done"), "while true; do true; done");
+}
+
+#[test]
+fn test_fmt_while_bg() {
+    assert_eq!(parse_cmd("while true; do true; done &"), "while true; do true; done &");
+}
+
+#[test]
 #[should_panic(expected = "invalid CommandTag: 99")]
 fn test_fallback_command_tag() {
     let mut builder = ASTBuilder::new();

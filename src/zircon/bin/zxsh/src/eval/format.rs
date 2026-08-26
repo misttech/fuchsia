@@ -42,6 +42,14 @@ pub fn command_to_bstring(command: &Command, buffer: &relative::Buffer) -> BStri
             formatted.extend_from_slice(&command_to_bstring(command.left.as_ref(buffer), buffer));
             formatted.push_str(" &");
         }
+        CommandTag::WHILE => {
+            formatted.push_str("while ");
+            formatted.extend_from_slice(&command_to_bstring(command.cond.as_ref(buffer), buffer));
+            formatted.push_str("; do ");
+            formatted
+                .extend_from_slice(&command_to_bstring(command.then_branch.as_ref(buffer), buffer));
+            formatted.push_str("; done");
+        }
         _ => unreachable!("invalid CommandTag: {}", command.tag.0),
     }
     formatted
