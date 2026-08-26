@@ -2,6 +2,27 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+//! This module defines the communication protocol over the VMOs shared between the filesystem
+//! (Fxfs), the block driver (`block_server`), and the client/verifier (e.g., `pkg-cache`). The
+//! two VMOs (mapping queue and delivery queue) are provided to
+//! `fuchsia.storage.block/Mapper.OpenSession` to initialize a session.
+//!
+//! Two main channels of communication exist for paging:
+//!
+//! 1. **Mapping Queue (`RawMappingCommand`)**:
+//!    Direction: Filesystem (Fxfs) -> Driver (Established via the client during initialization)
+//!    Purpose: The filesystem informs the driver of where a file resides on the storage device
+//!    (its extents). When the driver receives a page fault from the kernel for a specific `key`,
+//!    it consults this mapping to know which blocks to read from disk.
+//!
+//! 2. **Delivery Queue (`RawDeliveryCommand`)**:
+//!    Direction: Driver -> Client/Verifier (e.g., `pkg-cache`, which also acts as the Pager)
+//!    Purpose: After the driver reads (and decompresses) the requested blocks, it writes the
+//!    data into the delivery queue VMO and sends a delivery command. The verifier receives this
+//!    command, cryptographically verifies the payload against the Merkle tree, and then supplies
+//!    it to the kernel pager (`zx_pager_supply_pages`). The blob's Merkle leaf data is also
+//!    transported via the delivery queue when the driver fetches and caches the metadata.
+
 use anyhow::{Error, anyhow};
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
 
@@ -97,6 +118,104 @@ impl TryFrom<RawMappingCommand> for MappingCommand {
                 blob_count: cmd.blob_count,
             }),
             CLOSE_BLOB_COMMAND => Ok(MappingCommand::CloseBlob { key: cmd.key }),
+            _ => Err(anyhow!("Unknown opcode: {}", cmd.opcode)),
+        }
+    }
+}
+
+pub const DELIVERY_DATA_COMMAND: u32 = 1;
+pub const DELIVERY_REGISTER_BLOB_COMMAND: u32 = 2;
+
+// The Delivery Queue ring buffer holds `RawDeliveryCommand` structures, which are 32 bytes each.
+// If we establish an 8MB (8,388,608 bytes) VMO with a capacity of 256 pending delivery commands,
+// the struct sizes and capacities stack dynamically bounding to the exact VMO wall, aligning
+// the payload naturally to a 4KB hardware page boundary for zero-copy kernel transfers:
+//
+// Offsets: 0        64            8,256                   12,288                          8,388,608
+// Layout:  | Header |  Cmd Slots  |  Padding to 4KB page  | Payload (Data & Merkle leaves)|
+// Sizes:   |  64 B  |  8,192 B    |       4,032 B         |         8,376,320 B           |
+//
+// At an 8MB VMO size, the payload space allows for an average of ~32KB per chunk/leaf block
+// in-flight for 256 outstanding commands.
+pub const DELIVERY_VMO_SIZE: u64 = 8 * 1024 * 1024;
+pub const PENDING_DELIVERY_COMMANDS_CAPACITY: u32 = 256;
+
+/// A command packet used by the driver to deliver merkle leaves and data chunks for verification.
+#[derive(FromBytes, IntoBytes, KnownLayout, Immutable, Copy, Clone, Debug, PartialEq)]
+#[repr(C)]
+pub struct RawDeliveryCommand {
+    pub opcode: u32,
+    pub _padding: u32,
+    pub key: u64,
+    pub target_offset: u64,
+    pub length: u32,
+    pub offset: u32,
+}
+
+#[derive(Copy, Clone, Debug, PartialEq)]
+pub enum DeliveryCommand {
+    /// Informs the verifier that data has been read and decompressed into the delivery queue VMO,
+    /// ready for verification.
+    Data {
+        /// Identifies the blob.
+        key: u64,
+        /// The logical byte offset of this data chunk in the target VMO.
+        target_offset: u64,
+        /// The length of the data chunk.
+        length: u32,
+        /// The offset in this delivery queue where this data chunk resides.
+        offset: u32,
+    },
+    /// Informs the verifier that the blob's Merkle tree metadata has been transferred to the queue.
+    RegisterBlob {
+        /// Identifies the blob.
+        key: u64,
+        /// The offset in this delivery queue where the Merkle leaves reside.
+        offset: u32,
+        /// The length of the Merkle leaf data in bytes.
+        length: u32,
+    },
+}
+
+impl From<DeliveryCommand> for RawDeliveryCommand {
+    fn from(cmd: DeliveryCommand) -> Self {
+        match cmd {
+            DeliveryCommand::Data { key, target_offset, length, offset } => RawDeliveryCommand {
+                opcode: DELIVERY_DATA_COMMAND,
+                _padding: 0,
+                key,
+                target_offset,
+                length,
+                offset,
+            },
+            DeliveryCommand::RegisterBlob { key, offset, length } => RawDeliveryCommand {
+                opcode: DELIVERY_REGISTER_BLOB_COMMAND,
+                _padding: 0,
+                key,
+                target_offset: 0,
+                length,
+                offset,
+            },
+        }
+    }
+}
+
+impl TryFrom<RawDeliveryCommand> for DeliveryCommand {
+    type Error = Error;
+
+    fn try_from(cmd: RawDeliveryCommand) -> Result<Self, Self::Error> {
+        match cmd.opcode {
+            DELIVERY_DATA_COMMAND => Ok(DeliveryCommand::Data {
+                key: cmd.key,
+                target_offset: cmd.target_offset,
+                length: cmd.length,
+                offset: cmd.offset,
+            }),
+            DELIVERY_REGISTER_BLOB_COMMAND => Ok(DeliveryCommand::RegisterBlob {
+                key: cmd.key,
+                offset: cmd.offset,
+                length: cmd.length,
+            }),
             _ => Err(anyhow!("Unknown opcode: {}", cmd.opcode)),
         }
     }
