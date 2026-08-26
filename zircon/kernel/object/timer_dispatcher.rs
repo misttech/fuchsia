@@ -16,9 +16,11 @@ use zx_types::{
     zx_rights_t, zx_time_t,
 };
 
+use crate::kernel::deadline::{Deadline, SlackMode, TimerSlack};
 use crate::kernel::timer::Timer;
-use crate::kernel::types::{Deadline, SlackMode, TimerSlack};
-use crate::platform_rs::timer::{current_boot_time, current_mono_time};
+use crate::platform_rs::timer::{
+    DurationUnknown, InstantUnknown, current_boot_time, current_mono_time,
+};
 
 use super::timer_dispatcher_ffi::{
     cpp_timer_dispatcher_create, cpp_timer_dispatcher_init_dpc, timer_irq_callback,
@@ -276,8 +278,8 @@ impl TimerDispatcher {
             other => panic!("Unknown options: {other:#x}"),
         };
 
-        let slack = TimerSlack { amount: *fields.slack_amount, mode: slack_mode };
-        let slack_deadline = Deadline { when: *fields.deadline, slack };
+        let slack = TimerSlack::new(DurationUnknown(*fields.slack_amount), slack_mode);
+        let slack_deadline = Deadline::new(InstantUnknown(*fields.deadline), slack);
 
         let dpc_ptr = self.state().dpc.as_void_ptr();
 

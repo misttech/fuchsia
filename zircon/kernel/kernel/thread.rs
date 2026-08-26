@@ -38,7 +38,7 @@ unsafe extern "C" {
     fn cpp_thread_preempt();
     fn cpp_thread_current_sleep_relative(duration: DurationMono) -> zx_status_t;
     fn cpp_thread_current_sleep_etc(
-        deadline: *const crate::kernel::types::Deadline,
+        deadline: *const crate::kernel::deadline::Deadline,
         interruptible: Interruptible,
         now: zx_instant_mono_t,
     ) -> zx_status_t;
@@ -353,7 +353,7 @@ pub fn sleep_relative(duration: DurationMono) -> Result<(), Status> {
 
 /// Sleeps the current thread until the specified deadline with timer slack.
 pub fn sleep_etc(
-    deadline: &crate::kernel::types::Deadline,
+    deadline: &crate::kernel::deadline::Deadline,
     interruptible: Interruptible,
     now: zx_instant_mono_t,
 ) -> Result<(), Status> {

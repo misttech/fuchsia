@@ -4,11 +4,13 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
+use crate::kernel::deadline::Deadline;
+use crate::kernel::event::Event;
 use crate::kernel::thread::Interruptible;
-use crate::kernel::types::Deadline;
 use crate::object::{
     AutoBlocked, Blocked, HandleTableReadGuard, HandleValue, ProcessDispatcher, WaitSignalObserver,
 };
+use crate::platform_rs::timer::InstantUnknown;
 use crate::user_copy::{UserInOutPtr, UserOutPtr};
 use debug::ltracef;
 use fbl::InlineArray;
@@ -32,7 +34,7 @@ pub fn sys_object_wait_one(
 ) -> Result<(), Status> {
     ltracef!("handle {:?}\n", handle_value);
 
-    pin_init::stack_pin_init!(let event = ksync::KEvent::init_unsignaled());
+    pin_init::stack_pin_init!(let event = Event::init_unsignaled());
     let mut wait_signal_observer = WaitSignalObserver::new();
 
     let slack_deadline = ProcessDispatcher::with_current(|up| {
@@ -46,7 +48,7 @@ pub fn sys_object_wait_one(
         wait_signal_observer.begin(&guard, event.as_ref().get_ref(), &handle, signals)?;
 
         let slack = up.get_timer_slack_policy();
-        Ok(Deadline::new(deadline, slack))
+        Ok(Deadline::new(InstantUnknown(deadline), slack))
     })?;
 
     // Event::Wait() will return ZX_OK if already signaled,
@@ -55,7 +57,7 @@ pub fn sys_object_wait_one(
     // signaled.
     let wait_result = {
         let _blocked = AutoBlocked::new(Blocked::WAIT_ONE);
-        event.wait_deadline(&slack_deadline)
+        event.wait(&slack_deadline)
     };
 
     // Regardless of wait outcome, we must call End().
@@ -81,7 +83,7 @@ pub fn sys_object_wait_many(
     ltracef!("count {}\n", count);
 
     let slack = ProcessDispatcher::with_current(|up| up.get_timer_slack_policy());
-    let slack_deadline = Deadline::new(deadline, slack);
+    let slack_deadline = Deadline::new(InstantUnknown(deadline), slack);
 
     if count == 0 {
         let now = crate::platform_rs::timer::current_mono_time();
@@ -109,7 +111,7 @@ pub fn sys_object_wait_many(
     let mut observers = InlineArray::<WaitSignalObserver, MAX_INLINE_OBSERVERS>::try_new(count)
         .map_err(|_| Status::NO_MEMORY)?;
 
-    pin_init::stack_pin_init!(let event = ksync::KEvent::init_unsignaled());
+    pin_init::stack_pin_init!(let event = Event::init_unsignaled());
 
     // We may need to unwind (which can be done outside the lock).
     let mut num_added = 0;
@@ -142,7 +144,7 @@ pub fn sys_object_wait_many(
     // signaled.
     let wait_result = {
         let _blocked = AutoBlocked::new(Blocked::WAIT_MANY);
-        event.wait_deadline(&slack_deadline)
+        event.wait(&slack_deadline)
     };
 
     // Regardless of wait outcome, we must call End().

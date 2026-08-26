@@ -5,6 +5,8 @@
 // https://opensource.org/licenses/MIT
 
 pub mod bits;
+pub mod deadline;
+pub mod event;
 pub mod koid;
 pub mod mp;
 pub mod relaxed_atomic;

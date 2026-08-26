@@ -6,9 +6,11 @@
 //
 // Ported from zircon/kernel/dev/hw_watchdog/generic32/hw_watchdog.cc
 
+use crate::kernel::deadline::{Deadline, SlackMode, TimerSlack};
 use crate::kernel::timer::{Timer, ZX_CLOCK_BOOT};
-use crate::kernel::types::{Deadline, SlackMode, TimerSlack};
-use crate::platform_rs::timer::{DurationBoot, InstantBoot, current_boot_time};
+use crate::platform_rs::timer::{
+    DurationBoot, DurationUnknown, InstantBoot, InstantUnknown, current_boot_time,
+};
 use core::ptr::with_exposed_provenance_mut;
 use debug::dprintf;
 use regio::{Mmio, MmioPtr, RwSafe};
@@ -114,10 +116,10 @@ impl GenericWatchdog32Inner {
                 unsafe {
                     let mut timer =
                         core::pin::Pin::new_unchecked(&mut *self.pet_timer.as_mut_ptr());
-                    let deadline = Deadline {
-                        when: next_pet_time,
-                        slack: TimerSlack { amount: slack, mode: SlackMode::Early },
-                    };
+                    let deadline = Deadline::new(
+                        InstantUnknown(next_pet_time),
+                        TimerSlack::new(DurationUnknown(slack), SlackMode::Early),
+                    );
                     timer.as_mut().set_deadline(
                         &deadline,
                         watchdog_timer_cb,

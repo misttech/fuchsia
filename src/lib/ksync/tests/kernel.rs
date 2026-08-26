@@ -7,7 +7,7 @@
 /// Tests for Rust ksync bindings
 mod ksync_tests {
     use pin_init::{pin_data, pin_init, stack_pin_init};
-    use unittest::{assert_true, expect_false, expect_ok, expect_true};
+    use unittest::{assert_true, expect_true};
 
     #[ksync::guarded]
     #[fbl::ref_counted]
@@ -293,20 +293,6 @@ mod ksync_tests {
             ksync::lock!(let guard = real_obj.lock_mu());
             expect_true!(*guard.value() == 99);
         }
-    }
-
-    /// test Rust KEvent
-    #[test]
-    fn event() {
-        stack_pin_init!(let event = ksync::KEvent::init_unsignaled());
-        expect_false!(event.wait_deadline(&ksync::Deadline::no_slack(0)).is_ok());
-        event.signal();
-        expect_ok!(event.wait_deadline(&ksync::Deadline::no_slack(0)));
-        event.unsignal();
-        expect_false!(event.wait_deadline(&ksync::Deadline::no_slack(0)).is_ok());
-
-        stack_pin_init!(let signaled_event = ksync::KEvent::init_signaled());
-        expect_ok!(signaled_event.wait_deadline(&ksync::Deadline::no_slack(0)));
     }
 
     /// test Rust BrwLockPi

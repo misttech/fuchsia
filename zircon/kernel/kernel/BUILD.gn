@@ -4,7 +4,10 @@
 # license that can be found in the LICENSE file or at
 # https://opensource.org/licenses/MIT
 
+import("//build/zircon/zircon_cpu.gni")
+import("//zircon/kernel/kernel_bindgen_crate.gni")
 import("//zircon/kernel/kernel_rust_mod.gni")
+import("//zircon/kernel/params.gni")
 
 source_set("kernel") {
   sources = [
@@ -15,6 +18,7 @@ source_set("kernel") {
     "debug.cc",
     "dpc.cc",
     "event.cc",
+    "event_ffi.cc",
     "idle_power_thread.cc",
     "init.cc",
     "koid_ffi.cc",
@@ -110,11 +114,88 @@ group("kernel-tests") {
   deps = [ ":tests" ]
 }
 
+group("bindgen_common_deps") {
+  public_configs = [
+    "//zircon/kernel/switch:headers",
+    "//zircon/kernel/switch:kernel_config",
+    "//build/config/fuchsia:compiler_fuchsia_api_level",
+  ]
+  public_deps = [
+    "//src/performance/lib/fxt:headers",
+    "//zircon/kernel/lib/backtrace:headers",
+    "//zircon/kernel/lib/fbl:headers",
+    "//zircon/kernel/lib/heap:headers",
+    "//zircon/kernel/lib/kconcurrent:headers",
+    "//zircon/kernel/lib/ktl:headers",
+    "//zircon/kernel/lib/libc:headers",
+    "//zircon/kernel/lib/lockup_detector:headers",
+    "//zircon/kernel/lib/mmu_rcu:headers",
+    "//zircon/kernel/lib/page-map:headers",
+    "//zircon/kernel/lib/percpu_writer:headers",
+    "//zircon/kernel/lib/power-management:headers",
+    "//zircon/kernel/lib/sched:headers",
+    "//zircon/kernel/lib/spsc_buffer:headers",
+    "//zircon/kernel/lib/stall:headers",
+    "//zircon/kernel/lib/wake-vector:headers",
+    "//zircon/kernel/object:headers",
+    "//zircon/system/ulib/page_tables:headers",
+  ]
+}
+
+kernel_bindgen_crate("event-bindings") {
+  visibility = [ ":*" ]
+  headers = [ "//zircon/kernel/include/kernel/event_ffi.h" ]
+  non_rust_deps = [ ":bindgen_common_deps" ]
+  output_name = "event_bindings.rs"
+  cpp = true
+
+  edition = "2024"
+  notice_year = 2026
+  function_allowlist = [
+    "cpp_event_.*",
+    "cpp_autounsignal_event_.*",
+  ]
+  type_allowlist = [
+    "Event",
+    "AutounsignalEvent",
+  ]
+  type_blocklist = [
+    "Deadline",
+    "Interruptible",
+    "OwnedWaitQueue",
+    "zx_instant_mono_t",
+    "zx_status_t",
+  ]
+  opaque_types = [
+    "Event",
+    "AutounsignalEvent",
+  ]
+  function_blocklist = [
+    "Event_.*",
+    "AutounsignalEvent_.*",
+  ]
+  additional_bindgen_flags = [ "--no-recursive-allowlist" ]
+  deps = [ "//sdk/rust/zx-types" ]
+  expect_lints = [
+    "non_camel_case_types",
+    "non_upper_case_globals",
+  ]
+  raw_lines = [
+    "#![no_std]",
+    "pub use zx_types::{zx_instant_mono_t, zx_status_t};",
+    "pub type Deadline = core::ffi::c_void;",
+    "pub type Interruptible = bool;",
+    "pub type OwnedWaitQueue = core::ffi::c_void;",
+  ]
+}
+
 kernel_rust_mod("kernel-rs") {
   output_name = "kernel"
   source_root = "mod.rs"
   sources = [
     "bits.rs",
+    "deadline.rs",
+    "event.rs",
     "koid.rs",
     "mod.rs",
     "mp.rs",
@@ -127,6 +208,7 @@ kernel_rust_mod("kernel-rs") {
     "types.rs",
   ]
   deps = [
+    ":event-bindings",
     "//sdk/rust/zx-status",
     "//sdk/rust/zx-types",
     "//src/lib/kalloc",

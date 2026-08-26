@@ -184,8 +184,8 @@ impl ProcessDispatcher {
     }
 
     /// Returns the timer slack policy for this process.
-    pub fn get_timer_slack_policy(&self) -> crate::kernel::types::TimerSlack {
-        let mut slack = crate::kernel::types::TimerSlack::none();
+    pub fn get_timer_slack_policy(&self) -> crate::kernel::deadline::TimerSlack {
+        let mut slack = crate::kernel::deadline::TimerSlack::none();
         // SAFETY: `self` is a valid `ProcessDispatcher` reference and `slack` points to valid memory.
         unsafe {
             super::process_dispatcher_ffi::cpp_process_dispatcher_get_timer_slack_policy(

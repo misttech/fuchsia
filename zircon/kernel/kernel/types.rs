@@ -51,5 +51,3 @@ pub type cpu_num_t = u32;
 
 pub const INVALID_CPU: cpu_num_t = u32::MAX;
 pub const CPU_MASK_ALL: cpu_mask_t = u32::MAX;
-
-pub use ksync::{Deadline, SlackMode, TimerSlack};

@@ -4,6 +4,8 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
+use crate::kernel::deadline::Deadline;
+use crate::kernel::event::Event;
 use core::ptr::NonNull;
 use pin_init::PinInit;
 use zx_status::Status;
@@ -34,7 +36,7 @@ pub struct Cbuf {
     buf: Option<NonNull<u8>>,
 
     #[pin]
-    event: ksync::KEvent,
+    event: Event,
 
     #[mutex]
     lock: ksync::KMutex<ksync::RawSpinlock>,
@@ -56,7 +58,7 @@ impl Cbuf {
             tail: 0.into(),
             len_pow2: 0.into(),
             buf: None.into(),
-            event <- ksync::KEvent::init_unsignaled(),
+            event <- Event::init_unsignaled(),
             lock <- ksync::KMutex::init(),
         })
     }
@@ -138,7 +140,7 @@ impl Cbuf {
 
                     inc_pointer(fields.tail, 1, *fields.len_pow2);
                     if *fields.tail == *fields.head {
-                        self.event.unsignal();
+                        let _ = self.event.unsignal();
                     }
                     return Ok(ReadContext { c, transitioned_from_full });
                 }
@@ -146,14 +148,14 @@ impl Cbuf {
                 // Because the signal state does not 100% match the buffer state, it is critical
                 // that the event is unsignaled when the buffer is found to be empty (not just when
                 // it *transitions* to empty).
-                self.event.unsignal();
+                let _ = self.event.unsignal();
             }
 
             if !block {
                 return Err(Status::SHOULD_WAIT);
             }
 
-            self.event.wait()?;
+            self.event.wait(&Deadline::infinite())?;
         }
     }
 

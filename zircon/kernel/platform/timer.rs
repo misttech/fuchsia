@@ -53,6 +53,21 @@ pub struct DurationBoot(pub i64);
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct DurationBootTicks(pub i64);
 
+// TODO(https://fxbug.dev/319935985): Not all locations are migrated to using specific timeline
+// types, and some types (such as Deadline) are dangerously allowed to be instantiated on different
+// timelines without capturing it in the type. For the moment we allow such behavior with these
+// explicitly untyped types.
+
+/// Instant in nanoseconds on an unknown timeline.
+#[repr(transparent)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct InstantUnknown(pub i64);
+
+/// Duration in nanoseconds on an unknown timeline.
+#[repr(transparent)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct DurationUnknown(pub i64);
+
 unsafe extern "C" {
     fn cpp_timer_current_mono_ticks() -> InstantMonoTicks;
     fn cpp_timer_current_boot_ticks() -> InstantBootTicks;

@@ -28,7 +28,6 @@ rustc_library("ksync") {
     "src/lock_token.rs",
     "src/phantom_mutex.rs",
     "src/raw_kernel_brwlock.rs",
-    "src/raw_kernel_event.rs",
     "src/raw_kernel_mutex.rs",
     "src/raw_lock.rs",
     "src/raw_spin_lock.rs",
@@ -59,8 +58,6 @@ rustc_library("ksync") {
       features += [ "lock_name_tracing" ]
     }
     deps += [
-      "//sdk/rust/zx-status",
-      "//sdk/rust/zx-types",
       "//src/lib/zr",
       "//zircon/kernel/lib/ksync",
     ]

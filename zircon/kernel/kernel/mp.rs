@@ -6,7 +6,7 @@
 
 //! MP (multiprocessor) subsystem interface.
 
-use super::types::Deadline;
+use super::deadline::Deadline;
 
 pub use super::types::{cpu_mask_t, cpu_num_t};
 use zx_status::Status;
@@ -269,6 +269,7 @@ mod tests {
     use super::{
         Deadline, MpIpiTarget, get_online_mask, is_cpu_online, sync_exec, wait_for_all_cpus_ready,
     };
+    use crate::platform_rs::timer::InstantUnknown;
     use core::sync::atomic::{AtomicU32, Ordering};
 
     /// Verifies querying online CPU mask and per-CPU online status.
@@ -307,7 +308,7 @@ mod tests {
     /// Verifies waiting for all CPUs to be ready during kernel test execution.
     #[test]
     fn test_mp_ready() {
-        let status = wait_for_all_cpus_ready(Deadline::no_slack(0));
+        let status = wait_for_all_cpus_ready(Deadline::no_slack(InstantUnknown(0)));
         unittest::expect_ok!(status);
     }
 }

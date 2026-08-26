@@ -12,7 +12,7 @@ use zr::ToMutPtr;
 use zx_status::Status;
 use zx_types::zx_signals_t;
 
-use ksync::KEvent;
+use crate::kernel::event::Event;
 
 use super::dispatcher::Dispatcher;
 use super::{HandleRef, HandleTableReadGuard};
@@ -33,7 +33,7 @@ zr::static_assert_size_and_align!(
 #[repr(C, align(8))]
 pub struct WaitSignalObserverState {
     canary: Canary<{ fbl::magic(b"WTSO") }>,
-    event: *const KEvent,
+    event: *const Event,
     dispatcher: Option<RefPtr<Dispatcher>>,
     final_signal_state: AtomicU32,
 }
@@ -44,7 +44,7 @@ impl WaitSignalObserverState {
         self.canary.assert();
         // Save the signal state, and wake our waiter.
         self.final_signal_state.store(signals, Ordering::Release);
-        // SAFETY: `self.event` is a valid KEvent pointer set during begin().
+        // SAFETY: `self.event` is a valid Event pointer set during begin().
         unsafe {
             (*self.event).signal_etc(Ok(()), queue_to_own);
         }
@@ -56,7 +56,7 @@ impl WaitSignalObserverState {
         // Save the signal state, and wake our waiter.
         self.final_signal_state
             .store(signals | zx_types::ZX_SIGNAL_HANDLE_CLOSED, Ordering::Release);
-        // SAFETY: `self.event` is a valid KEvent pointer set during begin().
+        // SAFETY: `self.event` is a valid Event pointer set during begin().
         unsafe {
             (*self.event).signal_etc(Status::CANCELED, core::ptr::null_mut());
         }
@@ -213,7 +213,7 @@ impl WaitSignalObserver {
     pub fn begin(
         &mut self,
         _guard: &HandleTableReadGuard<'_>,
-        event: &KEvent,
+        event: &Event,
         handle: &HandleRef<'_>,
         watched_signals: zx_signals_t,
     ) -> Result<(), Status> {
@@ -222,7 +222,7 @@ impl WaitSignalObserver {
         state.canary.assert();
         debug_assert!(state.dispatcher.is_none());
 
-        state.event = event as *const KEvent;
+        state.event = event as *const Event;
         let dispatcher = handle.dispatcher();
 
         // Wait for one of `watched_signals` to become active.

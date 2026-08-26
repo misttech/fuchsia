@@ -23,7 +23,8 @@ unsafe extern "C" {
 pub const ZX_CLOCK_MONOTONIC: u32 = 0;
 pub const ZX_CLOCK_BOOT: u32 = 1;
 
-use super::types::Deadline;
+use super::deadline::Deadline;
+use crate::platform_rs::timer::InstantUnknown;
 
 pub type Callback = unsafe extern "C" fn(timer: *mut Timer, now: i64, arg: *mut core::ffi::c_void);
 
@@ -73,7 +74,7 @@ impl Timer {
         callback: Callback,
         arg: *mut core::ffi::c_void,
     ) {
-        let dl = Deadline::no_slack(deadline);
+        let dl = Deadline::no_slack(InstantUnknown(deadline));
         // SAFETY: The caller guarantees the safety of callback and arg.
         unsafe {
             self.as_mut().set_deadline(&dl, callback, arg);

@@ -49,8 +49,6 @@ mod singleton;
 mod raw_userspace_mutex;
 
 #[cfg(feature = "kernel")]
-mod raw_kernel_event;
-#[cfg(feature = "kernel")]
 mod raw_kernel_mutex;
 #[cfg(feature = "kernel")]
 mod raw_spin_lock;
@@ -80,8 +78,6 @@ pub use raw_userspace_mutex::RawMutex;
 #[cfg(not(feature = "kernel"))]
 pub type LockEntryStorage = ();
 
-#[cfg(feature = "kernel")]
-pub use raw_kernel_event::{Deadline, KEvent, RawEvent, SlackMode, TimerSlack};
 #[cfg(feature = "kernel")]
 pub use raw_spin_lock::{InterruptSavedState, IrqSavePolicy, NoIrqSavePolicy, RawSpinlock};
 #[cfg(feature = "kernel")]
