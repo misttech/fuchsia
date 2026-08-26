@@ -183,7 +183,7 @@ TEST(DebugLogTest, DrainAndSignal) {
   zx_status_t status = zx_debuglog_read(log_handle, 0, buf, sizeof(buf));
   ASSERT_GT(status, 0);
   zx_log_record_t* record = reinterpret_cast<zx_log_record_t*>(buf);
-  EXPECT_EQ(record->datalen, sizeof(kMsg));
+  ASSERT_EQ(record->datalen, sizeof(kMsg));
   EXPECT_BYTES_EQ(record->data, kMsg, record->datalen);
 
   // Drain again to clear signal.
