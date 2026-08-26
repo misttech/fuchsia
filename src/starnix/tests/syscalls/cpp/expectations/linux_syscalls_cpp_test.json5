@@ -118,6 +118,9 @@
                 // TODO(https://fxbug.dev/436908596)
                 "Mmap.FixedAddressTooLow",
 
+                // TODO(https://fxbug.dev/479841754): Machina guest Linux kernel is compiled without CONFIG_EROFS_FS.
+                "MountTest.ErofsReadOnlySmokeTest",
+
                 // TODO(https://fxbug.dev/437153843): I believe the tests / Starnix is incorrect.
                 "NetlinkSocket.RecvMsg",
                 "NetlinkSocket.NlctrlFamily",

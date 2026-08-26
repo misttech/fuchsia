@@ -685,7 +685,7 @@ impl Mount {
             old_mount
                 .mount
                 .relations
-                .set_mountpoint(guard, Some((Arc::downgrade(&mount), Arc::clone(dir))));
+                .set_mountpoint(guard, Some((Arc::downgrade(&mount), Arc::clone(&mount.root))));
             let new_old_submount =
                 mount.kernel().mounts.register_mount(&mount.root, old_mount.mount.clone());
             mount.relations.insert_submount(

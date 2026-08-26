@@ -171,6 +171,10 @@ syscall_tests_etc = [
     }
   },
   {
+    name = "mount_test"
+    includes = [ "//src/starnix/tests/syscalls/cpp/meta/mount_test.shard.cml" ]
+  },
+  {
     name = "time_test"
     container_config = {
       enable_utc_time_adjustment = true
@@ -274,6 +278,7 @@ syscall_tests_migrated_to_machina = [
   "membarrier_test",
   "memfd_test",
   "mmap_test",
+  "mount_test",
   "netlink_test",
   "overlayfs_test",
   "pidfd_test",
@@ -451,10 +456,6 @@ resource("simple_erofs_image") {
     "//src/storage/erofs/testing/data/simple/file1",
   ]
   outputs = [ "data/tests/deps/{{source_file_part}}" ]
-}
-
-syscall_test("mount_test") {
-  includes = [ "//src/starnix/tests/syscalls/cpp/meta/mount_test.shard.cml" ]
 }
 
 config("march") {
@@ -703,12 +704,8 @@ fuchsia_test_package("starnix_syscalls_cpp_tests") {
   test_components = [
     ":crash_test",
     ":ext4_write_test",
-    ":mount_test",
   ]
-  deps = [
-    ":mount_test_config",
-    "//src/storage/erofs/component:erofs_component",
-  ]
+  deps = [ "//src/storage/erofs/component:erofs_component" ]
   foreach(test_name, all_test_names) {
     test_components += [ ":${test_name}" ]
     deps += [ ":${test_name}_config" ]
@@ -748,7 +745,7 @@ fuchsia_test_package("starnix_syscalls_cpp_tests") {
 if (current_cpu == "arm64") {
   fuchsia_test_package("starnix_arch32_syscalls_cpp_tests") {
     test_components = []
-    deps = []
+    deps = [ "//src/storage/erofs/component:erofs_component" ]
     foreach(test_name, all_test_names) {
       test_components += [ ":${test_name}_arch32" ]
       deps += [ ":${test_name}_config" ]

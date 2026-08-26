@@ -272,6 +272,35 @@ TEST_F(MountTest, PropagateUnmount) {
   ASSERT_FALSE(FileExists("a/1/2"));
 }
 
+TEST_F(MountTest, PropagateOvermount) {
+  // Set up shared mount "a" and slave mount "b".
+  ASSERT_SUCCESS(MakeDir("a"));
+  ASSERT_SUCCESS(Mount("1", "a", MS_BIND));
+  ASSERT_SUCCESS(Mount(nullptr, "a", MS_SHARED));
+  ASSERT_SUCCESS(MakeDir("b"));
+  ASSERT_SUCCESS(Mount("a", "b", MS_BIND));
+  ASSERT_SUCCESS(Mount(nullptr, "b", MS_SLAVE));
+
+  // Mount "2" at "b/1". Since "b" is a slave, this does not propagate to "a".
+  ASSERT_SUCCESS(Mount("2", "b/1", MS_BIND));
+  ASSERT_TRUE(FileExists("b/1/2"));
+  ASSERT_FALSE(FileExists("a/1/2"));
+
+  // Mount "1" at "a/1". This propagates from "a" to "b" at "b/1", overmounting the existing "2"
+  // mount and reparenting it onto the propagated mount's root.
+  ASSERT_SUCCESS(Mount("1", "a/1", MS_BIND));
+  ASSERT_TRUE(FileExists("a/1/1"));
+  ASSERT_TRUE(FileExists("b/1/2"));
+
+  // Unmounting "b/1" should unmount the top (displaced) mount "2".
+  ASSERT_SUCCESS(Unmount("b/1", 0));
+  ASSERT_FALSE(FileExists("b/1/2"));
+  ASSERT_TRUE(FileExists("b/1/1"));
+
+  // Unmounting "b/1" again should unmount the propagated "1" mount.
+  ASSERT_SUCCESS(Unmount("b/1", 0));
+}
+
 // TODO(tbodt): write more tests:
 // - A and B are shared, make B downstream, make A private, should now both be private
 
