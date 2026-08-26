@@ -8,7 +8,10 @@
 #[cfg(ktest)]
 #[unittest::suite(name = "user_copy_rust")]
 mod tests {
-    use crate::user_copy::{UserInIovec, UserInOutPtr, UserInPtr, UserOutPtr, UserStringView};
+    use crate::user_copy::{
+        UserInIovec, UserInOutIovec, UserInOutPtr, UserInPtr, UserOutIovec, UserOutPtr,
+        UserStringView,
+    };
     use unittest::{UserMemory, assert_eq, assert_nonnull, assert_null, assert_true, unwrap_ok};
     use zx_status::Status;
     use zx_types::zx_iovec_t;
@@ -230,5 +233,57 @@ mod tests {
         // Buffer too small should return INVALID_ARGS
         let mut small_buf = [core::mem::MaybeUninit::uninit(); 5];
         assert_true!(sv.copy_slice_from_user(&mut small_buf).err() == Some(Status::INVALID_ARGS));
+    }
+
+    /// Test IovecCopyToSlice.
+    #[test]
+    fn iovec_copy_to_slice() {
+        let mut user = UserMemory::create(4096).unwrap();
+        unwrap_ok!(user.commit_and_map(4096));
+
+        let vec = [
+            zx_iovec_t { buffer: 0x1234 as *const u8, capacity: 100 },
+            zx_iovec_t { buffer: 0x5678 as *const u8, capacity: 200 },
+        ];
+
+        let bytes = unsafe {
+            core::slice::from_raw_parts(vec.as_ptr() as *const u8, core::mem::size_of_val(&vec))
+        };
+        unwrap_ok!(user.vmo_write(bytes, 0));
+
+        let in_ptr = UserInPtr::<zx_iovec_t>::new(user.base() as *const zx_iovec_t);
+        let iovec = UserInIovec::new(in_ptr, 2);
+
+        let mut out = [core::mem::MaybeUninit::uninit(); 2];
+        let out_slice = unwrap_ok!(iovec.copy_to_slice(&mut out));
+        assert_eq!(out_slice.len(), 2);
+        assert_eq!(out_slice[0].data.as_ptr(), 0x1234 as *const u8);
+        assert_eq!(out_slice[0].len, 100);
+        assert_eq!(out_slice[1].data.as_ptr(), 0x5678 as *const u8);
+        assert_eq!(out_slice[1].len, 200);
+
+        // UserOutIovec copy_to_slice test
+        let out_iovec = UserOutIovec::new(in_ptr, 2);
+        let mut out_buf = [core::mem::MaybeUninit::uninit(); 2];
+        let out_vec = unwrap_ok!(out_iovec.copy_to_slice(&mut out_buf));
+        assert_eq!(out_vec.len(), 2);
+        assert_eq!(out_vec[0].data.as_ptr(), 0x1234 as *mut u8);
+        assert_eq!(out_vec[0].len, 100);
+        assert_eq!(out_vec[1].data.as_ptr(), 0x5678 as *mut u8);
+        assert_eq!(out_vec[1].len, 200);
+
+        // UserInOutIovec copy_to_slice test
+        let inout_iovec = UserInOutIovec::new(in_ptr, 2);
+        let mut inout_buf = [core::mem::MaybeUninit::uninit(); 2];
+        let inout_vec = unwrap_ok!(inout_iovec.copy_to_slice(&mut inout_buf));
+        assert_eq!(inout_vec.len(), 2);
+        assert_eq!(inout_vec[0].data.as_ptr(), 0x1234 as *mut u8);
+        assert_eq!(inout_vec[0].len, 100);
+        assert_eq!(inout_vec[1].data.as_ptr(), 0x5678 as *mut u8);
+        assert_eq!(inout_vec[1].len, 200);
+
+        // Destination slice too small should return INVALID_ARGS
+        let mut small_out = [core::mem::MaybeUninit::uninit(); 1];
+        assert_true!(iovec.copy_to_slice(&mut small_out).err() == Some(Status::INVALID_ARGS));
     }
 }

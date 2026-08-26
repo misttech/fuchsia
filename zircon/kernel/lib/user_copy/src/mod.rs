@@ -9,7 +9,9 @@ mod user_ptr;
 mod user_string_view;
 
 #[allow(unused_imports)]
-pub use user_iovec::{UserInIovec, UserInOutIovec, UserOutIovec};
+pub use user_iovec::{
+    UserInIovec, UserInOutIovec, UserInOutVector, UserInVector, UserOutIovec, UserOutVector,
+};
 #[allow(unused_imports)]
 pub use user_ptr::{UserInOutPtr, UserInPtr, UserOutPtr};
 #[allow(unused_imports)]

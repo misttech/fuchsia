@@ -11,7 +11,7 @@ use zx_status::Status;
 
 /// A wrapper around a const pointer to user memory.
 #[repr(transparent)]
-#[derive(Debug, Copy, Clone, Default)]
+#[derive(Debug, Copy, Clone, Default, PartialEq, Eq)]
 pub struct UserInPtr<T> {
     ptr: *const T,
 }
@@ -110,7 +110,7 @@ impl<T> UserInPtr<T> {
 
 /// A wrapper around a mutable pointer to user memory (write-only).
 #[repr(transparent)]
-#[derive(Debug, Copy, Clone, Default)]
+#[derive(Debug, Copy, Clone, Default, PartialEq, Eq)]
 pub struct UserOutPtr<T> {
     ptr: *mut T,
 }
@@ -196,7 +196,7 @@ impl<T> UserOutPtr<T> {
 
 /// A wrapper around a mutable pointer to user memory (read-write).
 #[repr(transparent)]
-#[derive(Debug, Copy, Clone, Default)]
+#[derive(Debug, Copy, Clone, Default, PartialEq, Eq)]
 pub struct UserInOutPtr<T> {
     ptr: *mut T,
 }
