@@ -12,3 +12,5 @@ toc:
   path: /docs/development/build/bazel_concepts/build_outputs.md
 - title: "Build configurations"
   path: /docs/development/build/bazel_concepts/build_configurations.md
+- title: "Tests"
+  path: /docs/development/build/bazel_concepts/tests.md

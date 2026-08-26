@@ -9,7 +9,8 @@
 # ensure that the Bazel tests they reference appear in `tests.json` and thus are
 # visible to `fx test` and infra builders.
 #
-# See //build/bazel/host_tests/README.md for details. In a nutshell:
+# See //docs/development/build/bazel_concepts/tests.md for details. In a
+# nutshell:
 #
 # - Add a GN bazel_test_suite() target referencing the Bazel tests.
 # - Ensure it is reachable from the //:bazel_test_suites target, e.g. by
