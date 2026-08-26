@@ -23,7 +23,7 @@ import (
 	fvdpb "go.fuchsia.dev/fuchsia/tools/virtual_device/proto"
 )
 
-var zbiPathFlag = flag.String("zbi-path", "", "Path to the custom ZBI")
+var productBundleDirFlag = flag.String("product-bundle-dir", "", "Path to the product bundle directory")
 
 const NETWORK_TEST_REALM_COMPONENT_NAME = "net-test-realm-controller"
 
@@ -57,7 +57,10 @@ func TestEmulatorWorksWithFfx(t *testing.T) {
 		"host-tools",
 	)
 
-	initrd := "network-conformance-base"
+	if *productBundleDirFlag == "" {
+		t.Fatal("-product-bundle-dir flag is required")
+	}
+
 	nodename := "TestEmulatorWorksWithFfx-Nodename"
 
 	tempDir := t.TempDir()
@@ -113,11 +116,10 @@ func TestEmulatorWorksWithFfx(t *testing.T) {
 	i, err := NewQemuInstance(ctx,
 		ssh_auth_keys,
 		QemuInstanceArgs{
-			Nodename:       nodename,
-			Initrd:         initrd,
-			HostX64Path:    hostOutDir,
-			NetworkDevices: netdevs,
-			ZBIPath:        *zbiPathFlag,
+			Nodename:         nodename,
+			HostX64Path:      hostOutDir,
+			NetworkDevices:   netdevs,
+			ProductBundleDir: *productBundleDirFlag,
 		})
 	if err != nil {
 		t.Fatal(err)

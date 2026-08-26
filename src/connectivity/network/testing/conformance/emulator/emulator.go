@@ -33,6 +33,8 @@ type QemuInstanceArgs struct {
 	NetworkDevices []*fvdpb.Netdev
 	// The path to the custom ZBI image.
 	ZBIPath string
+	// The path to the product bundle directory.
+	ProductBundleDir string
 }
 
 // The relative path from the root of the fuchsia checkout to this file. This is used to namespace
@@ -53,7 +55,8 @@ func NewQemuInstance(
 	distro, err := emulator.UnpackFrom(
 		filepath.Join(args.HostX64Path, HostPathTestDataDirForQemuDistro),
 		emulator.DistributionParams{
-			Emulator: emulator.Qemu,
+			Emulator:          emulator.Qemu,
+			ProductBundlePath: args.ProductBundleDir,
 		},
 	)
 	if err != nil {
@@ -68,8 +71,10 @@ func NewQemuInstance(
 		if err := distro.OverrideImage(args.Initrd, "zbi", absZbiPath); err != nil {
 			return nil, fmt.Errorf("couldn't register custom initrd image: %w", err)
 		}
-	} else if _, err := distro.FindImageByName(args.Initrd, "zbi"); err != nil {
-		return nil, fmt.Errorf("initrd %q not found in distro and no ZbiPath provided: %w", args.Initrd, err)
+	} else if args.Initrd != "" {
+		if _, err := distro.FindImageByName(args.Initrd, "zbi"); err != nil {
+			return nil, fmt.Errorf("initrd %q not found in distro and no ZbiPath provided: %w", args.Initrd, err)
+		}
 	}
 
 	// We don't need the distro after we've created and started the emulator Instance.
@@ -83,7 +88,9 @@ func NewQemuInstance(
 	}
 
 	device := emulator.DefaultVirtualDevice(string(arch))
-	device.Initrd = args.Initrd
+	if args.Initrd != "" {
+		device.Initrd = args.Initrd
+	}
 	device.KernelArgs = append(device.KernelArgs,
 		fmt.Sprintf("zircon.nodename=%s", args.Nodename))
 	device.Hw.NetworkDevices = args.NetworkDevices
