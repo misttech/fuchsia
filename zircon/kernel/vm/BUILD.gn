@@ -109,27 +109,10 @@ source_set("vm") {
   configs += [ ":suppress-nonheap-warning" ]
 }
 
-config("bindgen_common_config") {
-  cflags = [ "-ffreestanding" ]
-  defines = [
-    "SMP_MAX_CPUS=$smp_max_cpus",
-    "_KERNEL",
-    "LK",
-    "ZIRCON_TOOLCHAIN",
-  ]
-  include_dirs = [
-    "//zircon/kernel/include",
-    "//zircon/kernel/arch/$zircon_cpu/include",
-    "//zircon/system/ulib/page_tables/include",
-  ]
-  if (current_cpu == "x64") {
-    include_dirs += [ "//zircon/kernel/arch/x86/page_tables/include" ]
-  }
-}
-
 group("bindgen_common_deps") {
   public_configs = [
-    ":bindgen_common_config",
+    "//zircon/kernel/switch:headers",
+    "//zircon/kernel/switch:kernel_config",
     "//build/config/fuchsia:compiler_fuchsia_api_level",
   ]
   public_deps = [
@@ -156,7 +139,7 @@ group("bindgen_common_deps") {
 kernel_bindgen_crate("scanner-bindings") {
   visibility = [ ":*" ]
   headers = [ "include/vm/scanner_ffi.h" ]
-  non_rust_deps = [ ":headers" ]
+  non_rust_deps = [ ":bindgen_common_deps" ]
   output_name = "scanner_bindings.rs"
   cpp = true
 
@@ -264,11 +247,7 @@ kernel_bindgen_crate("vm-constants-rs") {
   headers = [ "include/vm/vm_constants.h" ]
   cpp = true
 
-  non_rust_deps = [ ":headers" ]
-
-  if (enable_lock_dep) {
-    additional_clang_flags = [ "-DWITH_LOCK_DEP=1" ]
-  }
+  non_rust_deps = [ ":bindgen_common_deps" ]
 
   notice_year = 2026
   var_allowlist = [
