@@ -339,7 +339,7 @@ in args.gn.
 
 **Current value (from the default):** `[]`
 
-From //build/bazel/bazel_root_targets_list.gni:129
+From //build/bazel/bazel_root_targets_list.gni:138
 
 ### bazel_upload_build_events
 
@@ -946,12 +946,12 @@ This should never be set as a build argument.
 }
   static = {
   clang_rt = "lib/clang/24/lib/armv7-unknown-linux-gnueabihf/libclang_rt.lsan.a"
-  clang_rt_cxx = "../../../../out/not-default/libclang_rt.lsan_cxx.a"
+  clang_rt_cxx = ""
 }
 }
   tsan = {
   shared = {
-  clang_rt = ""
+  clang_rt = "../../../../out/not-default/libclang_rt.tsan.so"
 }
   static = {
   clang_rt = "../../../../out/not-default/libclang_rt.tsan.a"
@@ -2347,6 +2347,14 @@ From //build/config/compiler.gni:82
   install_host_tool = true
   ninja_name = "clang_doc_filter"
 }, {
+  bazel_label = "//sdk/ctf/plasa/plasa_test_coverage_report:plasa_test_coverage_report"
+  copy_outputs = [{
+  bazel = "{{BAZEL_TARGET_OUT_DIR}}/plasa_test_coverage_report_/plasa_test_coverage_report"
+  ninja = "plasa_test_coverage_report"
+}]
+  install_host_tool = true
+  ninja_name = "plasa_test_coverage_report"
+}, {
   bazel_label = "//tools/check-licenses:check-licenses"
   copy_outputs = [{
   bazel = "{{BAZEL_TARGET_OUT_DIR}}/check-licenses_/check-licenses"
@@ -2419,6 +2427,12 @@ From //build/config/compiler.gni:82
   copy_outputs = [{
   bazel = "{{BAZEL_TARGET_OUT_DIR}}/bazel2gn_/bazel2gn"
   ninja = "bazel2gn"
+}]
+}, {
+  bazel_label = "//build/tools/tarmaker:tarmaker"
+  copy_outputs = [{
+  bazel = "{{BAZEL_TARGET_OUT_DIR}}/tarmaker_/tarmaker"
+  ninja = "tarmaker"
 }]
 }]
 ```
