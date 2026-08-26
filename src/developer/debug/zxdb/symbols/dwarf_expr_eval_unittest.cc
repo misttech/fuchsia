@@ -16,6 +16,7 @@
 #include "src/developer/debug/zxdb/symbols/mock_symbol_factory.h"
 #include "src/developer/debug/zxdb/symbols/symbol_test_parent_setter.h"
 #include "src/developer/debug/zxdb/symbols/type_test_support.h"
+#include "src/developer/debug/zxdb/symbols/unit_symbol_factory.h"
 #include "src/developer/debug/zxdb/symbols/variable.h"
 #include "src/lib/fxl/memory/weak_ptr.h"
 
@@ -69,6 +70,12 @@ class DwarfExprEvalTest : public TestWithLoop {
                   DwarfExprEval::ResultType expected_result_type, const char* expected_string,
                   const char* expected_message = nullptr);
 
+  void DoEvalTest(DwarfExprEval& eval, DwarfExpr expr, bool expected_success,
+                  DwarfExprEval::Completion expected_completion,
+                  const DwarfStackEntry& expected_result,
+                  DwarfExprEval::ResultType expected_result_type, const char* expected_string,
+                  const char* expected_message = nullptr);
+
   // Just does the evaluation part of the eval test. This does not check the stringified version
   // of the expression, and does not clear any previous state of the evaluator.
   //
@@ -76,6 +83,11 @@ class DwarfExprEvalTest : public TestWithLoop {
   // expression based on those.
   void DoEval(DwarfExpr expr, bool expected_success, DwarfExprEval::Completion expected_completion,
               const DwarfStackEntry& expected_result,
+              DwarfExprEval::ResultType expected_result_type,
+              const char* expected_message = nullptr);
+
+  void DoEval(DwarfExprEval& eval, DwarfExpr expr, bool expected_success,
+              DwarfExprEval::Completion expected_completion, const DwarfStackEntry& expected_result,
               DwarfExprEval::ResultType expected_result_type,
               const char* expected_message = nullptr);
 
@@ -100,14 +112,23 @@ void DwarfExprEvalTest::DoEvalTest(DwarfExpr expr, bool expected_success,
                                    const DwarfStackEntry& expected_result,
                                    DwarfExprEval::ResultType expected_result_type,
                                    const char* expected_string, const char* expected_message) {
+  DoEvalTest(eval_, expr, expected_success, expected_completion, expected_result,
+             expected_result_type, expected_string, expected_message);
+}
+
+void DwarfExprEvalTest::DoEvalTest(DwarfExprEval& eval, DwarfExpr expr, bool expected_success,
+                                   DwarfExprEval::Completion expected_completion,
+                                   const DwarfStackEntry& expected_result,
+                                   DwarfExprEval::ResultType expected_result_type,
+                                   const char* expected_string, const char* expected_message) {
   // Check string-ification. Do this first because it won't set up the complete state of the
   // DwarfExprEval and some tests want to validate this after the DoEvalTest call.
-  eval_.Clear();
-  std::string stringified = eval_.ToString(expr, false);
+  eval.Clear();
+  std::string stringified = eval.ToString(expr, false);
   EXPECT_EQ(expected_string, stringified);
 
-  eval_.Clear();
-  DoEval(expr, expected_success, expected_completion, expected_result, expected_result_type,
+  eval.Clear();
+  DoEval(eval, expr, expected_success, expected_completion, expected_result, expected_result_type,
          expected_message);
 }
 
@@ -116,17 +137,26 @@ void DwarfExprEvalTest::DoEval(DwarfExpr expr, bool expected_success,
                                const DwarfStackEntry& expected_result,
                                DwarfExprEval::ResultType expected_result_type,
                                const char* expected_message) {
+  DoEval(eval_, expr, expected_success, expected_completion, expected_result, expected_result_type,
+         expected_message);
+}
+
+void DwarfExprEvalTest::DoEval(DwarfExprEval& eval, DwarfExpr expr, bool expected_success,
+                               DwarfExprEval::Completion expected_completion,
+                               const DwarfStackEntry& expected_result,
+                               DwarfExprEval::ResultType expected_result_type,
+                               const char* expected_message) {
   bool callback_issued = false;
   EXPECT_EQ(
       expected_completion,
-      eval_.Eval(expr, [&callback_issued, expected_success, expected_result, expected_result_type,
-                        expected_message](DwarfExprEval* eval, const Err& err) {
-        EXPECT_TRUE(eval->is_complete());
+      eval.Eval(expr, [&callback_issued, expected_success, expected_result, expected_result_type,
+                       expected_message](DwarfExprEval* completed_eval, const Err& err) {
+        EXPECT_TRUE(completed_eval->is_complete());
         EXPECT_EQ(expected_success, !err.has_error()) << err.msg();
         if (err.ok()) {
-          EXPECT_EQ(expected_result_type, eval->GetResultType());
+          EXPECT_EQ(expected_result_type, completed_eval->GetResultType());
           if (expected_result_type != DwarfExprEval::ResultType::kData)
-            EXPECT_EQ(expected_result, eval->GetResult());
+            EXPECT_EQ(expected_result, completed_eval->GetResult());
         } else if (expected_message) {
           EXPECT_EQ(expected_message, err.msg());
         }
@@ -135,14 +165,14 @@ void DwarfExprEvalTest::DoEval(DwarfExpr expr, bool expected_success,
 
   if (expected_completion == DwarfExprEval::Completion::kAsync) {
     // In the async case the message loop needs to be run to get the result.
-    EXPECT_FALSE(eval_.is_complete());
+    EXPECT_FALSE(eval.is_complete());
     EXPECT_FALSE(callback_issued);
 
     // Ensure the callback was made after running the loop.
     loop().RunUntilNoTasks();
   }
 
-  EXPECT_TRUE(eval_.is_complete());
+  EXPECT_TRUE(eval.is_complete());
   EXPECT_TRUE(callback_issued);
 }
 
@@ -1333,6 +1363,76 @@ TEST_F(DwarfExprEvalTest, ConstType) {
   // clang-format on
   DoEvalTest(
       expr4, false, DwarfExprEval::Completion::kSync, DwarfStackEntry(0),
+      DwarfExprEval::ResultType::kPointer,
+      "DW_OP_const_type(die_offset=0x29, data_size=20, data_bytes=0x00 0x00 0x00 0x00 0x00 0x00 "
+      "0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00), DW_OP_stack_value");
+}
+
+// This is the same test as above, but ensures that the special case unit offset of 0 is exercised,
+// which will be the case of the first unit in the debug_info section.
+TEST_F(DwarfExprEvalTest, ConstTypeUnitZeroOffset) {
+  constexpr uint8_t kDieOffset = 0x29;  // Offset from unit (<7 bits to avoid LEB encoding).
+  constexpr uint64_t kZeroUnitOffset = 0;
+  constexpr uint64_t kDieLoc = kZeroUnitOffset + kDieOffset;
+
+  auto uint32_type = MakeUint32Type();
+  symbol_factory().SetMockSymbol(kDieLoc, uint32_type);
+
+  // Build our own DwarfExprEval with a Unit Offset of 0, which will be the case for the first unit
+  // header in the .debug_info (or .debug_types) sections.
+  DwarfExprEval eval(UnitSymbolFactory(symbol_factory().factory_ref(), kZeroUnitOffset), provider(),
+                     symbol_context());
+
+  // Normal typed expression.
+  std::vector<uint8_t> expr1{llvm::dwarf::DW_OP_const_type,
+                             kDieOffset,  // 1st param: ULEB unit-relative DIE offset.
+                             4,           // 2nd param: (1 byte) data size.
+                             0x22,
+                             0x33,
+                             0x44,
+                             0x55,  // 3rd param: data.
+                             llvm::dwarf::DW_OP_stack_value};
+
+  DoEvalTest(eval, DwarfExpr(expr1), true, DwarfExprEval::Completion::kSync,
+             DwarfStackEntry(uint32_type, DwarfStackEntry::UnsignedType(0x55443322u)),
+             DwarfExprEval::ResultType::kValue,
+             "DW_OP_const_type(die_offset=0x29, data_size=4, data_bytes=0x22 0x33 0x44 0x55), "
+             "DW_OP_stack_value");
+
+  // Invalid DIE offset.
+  std::vector<uint8_t> expr2{llvm::dwarf::DW_OP_const_type,
+                             2,  // 1st param: ULEB unit-relative DIE offset.
+                             4,  // 2nd param: (1 byte) data size.
+                             0x22,
+                             0x33,
+                             0x44,
+                             0x55};  // 3rd param: data.
+  DoEvalTest(eval, DwarfExpr(expr2), false, DwarfExprEval::Completion::kSync, DwarfStackEntry(0),
+             DwarfExprEval::ResultType::kPointer,
+             "DW_OP_const_type(die_offset=0x2, data_size=4, data_bytes=0x22 0x33 0x44 0x55)");
+
+  // 0 data bytes.
+  std::vector<uint8_t> expr3{llvm::dwarf::DW_OP_const_type,
+                             kDieOffset,  // 1st param: ULEB unit-relative DIE offset.
+                             0,           // 2nd param: (1 byte) data size.
+                                          // 3rd param: no data.
+                             llvm::dwarf::DW_OP_stack_value};
+  DoEvalTest(eval, DwarfExpr(expr3), false, DwarfExprEval::Completion::kSync, DwarfStackEntry(0),
+             DwarfExprEval::ResultType::kPointer,
+             "DW_OP_const_type(die_offset=0x29, data_size=0, data_bytes=), DW_OP_stack_value");
+
+  // Too many data bytes.
+  // clang-format off
+  std::vector<uint8_t> expr4{llvm::dwarf::DW_OP_const_type,
+                             kDieOffset,  // 1st param: ULEB unit-relative DIE offset.
+                             20,          // 2nd param: (1 byte) data size.
+                             0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                             0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                             llvm::dwarf::DW_OP_stack_value};
+  // clang-format on
+
+  DoEvalTest(
+      eval, DwarfExpr(expr4), false, DwarfExprEval::Completion::kSync, DwarfStackEntry(0),
       DwarfExprEval::ResultType::kPointer,
       "DW_OP_const_type(die_offset=0x29, data_size=20, data_bytes=0x00 0x00 0x00 0x00 0x00 0x00 "
       "0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00), DW_OP_stack_value");
