@@ -20,6 +20,10 @@ readonly script_dir="${script%/*}"  # dirname
 
 source "$script_dir"/common-setup.sh
 
+function msg() {
+  echo >&2 "[${script##*/}] $*"
+}
+
 readonly PREBUILT_OS="$_FUCHSIA_RBE_CACHE_VAR_host_os"
 readonly PREBUILT_ARCH="$_FUCHSIA_RBE_CACHE_VAR_host_arch"
 
@@ -407,7 +411,50 @@ test "$BUILD_METRICS_ENABLED" = 0 || {
   _timetrace "Authenticating for metrics upload (done)"
 }
 
+# Wait for a process to finish, even if wait is interrupted by signals.
+# Returns the exit code of the process.
+function wait_for_process_exit() {
+  local target_pid="$1"
+  local exit_code=0
+  # Loop indefinitely to keep waiting for the process to fully exit even if individual
+  # wait calls are interrupted by incoming/forwarded signals. Waiting indefinitely
+  # is correct because it behaves identically to standard 'wait', ensuring the wrapper
+  # does not exit prematurely and leave orphaned zombie/running subprocesses.
+  # If the user wishes to terminate forcefully, they can send a second SIGINT (Ctrl-C)
+  # which propagates down to the child process group.
+  while true; do
+    # Try to wait for the child process.
+    if wait "${target_pid}"; then
+      # If wait succeeded (returned 0), the process exited successfully.
+      exit_code=0
+      break
+    fi
+    # If wait returned non-zero, it could be because the child failed or
+    # because the wait itself was interrupted by a signal.
+    exit_code=$?
+
+    # Verify if the process is actually still alive.
+    if ! kill -0 "${target_pid}" 2>/dev/null; then
+      # If the child process is no longer running, wait one last time to reap
+      # the zombie process and retrieve its actual exit status.
+      wait "${target_pid}" && exit_code=0 || exit_code=$?
+      break
+    fi
+    # If the process is still running, the signal merely interrupted our wait
+    # call. Loop back and continue waiting.
+  done
+  return "${exit_code}"
+}
+
 function shutdown() {
+  # If the wrapped command is still running, wait for it to exit before we
+  # shut down reproxy. This is critical to prevent tearing down the RBE daemon
+  # underneath active compile/link processes.
+  if [[ -n "${WRAPPED_PID:-}" ]] && kill -0 "${WRAPPED_PID}" 2>/dev/null; then
+    _timetrace "WARNING: wrapped command (PID: ${WRAPPED_PID}) is still running during shutdown. Waiting for it..."
+    wait_for_process_exit "${WRAPPED_PID}" || true
+  fi
+
   _timetrace "Shutting down reproxy"
   # b/188923283 -- added --cfg to shut down properly
   shutdown_status=0
@@ -466,6 +513,7 @@ function handle_signal() {
   timetrace "Received ${signal_name}, forwarding per policy: ${SIGNAL_POLICY}..."
 
   if [[ -n "${WRAPPED_PID:-}" ]] && kill -0 "${WRAPPED_PID}" 2>/dev/null; then
+    msg "Received ${signal_name}. Waiting for wrapped command (PID: ${WRAPPED_PID}) to exit cleanly..."
     case "${SIGNAL_POLICY}" in
       relay | relay-group)
         # Forward to the entire process group.
@@ -480,8 +528,9 @@ function handle_signal() {
     esac
 
     local exit_code=0
-    # Wait for the process to terminate.
-    wait "${WRAPPED_PID}" || exit_code=$?
+    # Wait for the process to terminate, ensuring we wait even if the wait
+    # is interrupted by further signals.
+    wait_for_process_exit "${WRAPPED_PID}" && exit_code=0 || exit_code=$?
     timetrace "Wrapped command exited with status ${exit_code} after receiving ${signal_name}."
     # Exit this script with the same status code.
     # The EXIT trap will handle the rest of the cleanup.
@@ -516,6 +565,7 @@ case "${SIGNAL_POLICY}" in
   "relay" | "relay-group") set +m ;;
 esac
 
-# Wait for the wrapped command to finish.
-wait "${WRAPPED_PID}"
+# Wait for the wrapped command to finish, ensuring we wait even if the wait
+# is interrupted by trapped signals.
+wait_for_process_exit "${WRAPPED_PID}"
 _timetrace "Running wrapped command (done)"

@@ -28,6 +28,11 @@ function die {
   exit 1
 }
 
+function msg {
+  # identify using basename of this script
+  echo >&2 "[${BASH_SOURCE[0]##*/}] $*"
+}
+
 # Read the configuration file. This should define the following variables:
 #
 # _BAZEL_BIN: Path to Bazel launcher script.
@@ -381,6 +386,41 @@ if [[ "${FUCHSIA_BAZEL_PRINT_COMMANDS}" == "1" ]]; then
   echo >&2 "${_BAZEL_COMMAND_PREFIX} ${_bazel_command[*]}"
 fi
 
+# Wait for a process to finish, even if wait is interrupted by signals.
+# Returns the exit code of the process.
+function wait_for_process_exit() {
+  local target_pid="$1"
+  local exit_code=0
+  # Loop indefinitely to keep waiting for the process to fully exit even if individual
+  # wait calls are interrupted by incoming/forwarded signals. Waiting indefinitely
+  # is correct because it behaves identically to standard 'wait', ensuring the wrapper
+  # does not exit prematurely and leave orphaned zombie/running subprocesses.
+  # If the user wishes to terminate forcefully, they can send a second SIGINT (Ctrl-C)
+  # which propagates down to the child process group.
+  while true; do
+    # Try to wait for the child process.
+    if wait "${target_pid}"; then
+      # If wait succeeded (returned 0), the process exited successfully.
+      exit_code=0
+      break
+    fi
+    # If wait returned non-zero, it could be because the child failed or
+    # because the wait itself was interrupted by a signal.
+    exit_code=$?
+
+    # Verify if the process is actually still alive.
+    if ! kill -0 "${target_pid}" 2>/dev/null; then
+      # If the child process is no longer running, wait one last time to reap
+      # the zombie process and retrieve its actual exit status.
+      wait "${target_pid}" && exit_code=0 || exit_code=$?
+      break
+    fi
+    # If the process is still running, the signal merely interrupted our wait
+    # call. Loop back and continue waiting.
+  done
+  return "${exit_code}"
+}
+
 # Wait for a command while ignoring signals to ensure the parent outlives the child.
 # This prevents the shell from exiting prematurely and orphaning backgrounded
 # subprocesses during a signal (like Ctrl-C).
@@ -394,9 +434,9 @@ function wait-ignoring-signals {
     sig_count=$((sig_count + 1))
 
     if [[ $sig_count -eq 1 ]]; then
-      echo >&2 "[bazel-wrapper] Received ${sig}. Forwarding to child and waiting for graceful shutdown..."
+      msg "Received ${sig}. Forwarding to child and waiting for graceful shutdown..."
     else
-      echo >&2 "[bazel-wrapper] Received ${sig} again (${sig_count}). Still waiting for cleanup..."
+      msg "Received ${sig} again (${sig_count}). Still waiting for cleanup..."
     fi
 
     if [[ -n "${child_pid}" ]]; then
@@ -418,7 +458,7 @@ function wait-ignoring-signals {
   set +m
 
   local status=0
-  wait "${child_pid}" || status=$?
+  wait_for_process_exit "${child_pid}" && status=0 || status=$?
 
   trap - INT TERM HUP
   return "$status"

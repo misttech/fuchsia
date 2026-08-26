@@ -134,7 +134,29 @@ function wait-ignoring-signals {
   set +m
 
   local status=0
-  wait "${child_pid}" || status=$?
+  # Wait for the child process to finish, even if individual wait calls are
+  # interrupted by trapped signals (such as SIGINT from Ctrl-C).
+  while true; do
+    # Try to wait for the child process.
+    if wait "${child_pid}"; then
+      # If wait succeeded (returned 0), the process exited successfully.
+      status=0
+      break
+    fi
+    # If wait returned non-zero, it could be because the child failed or
+    # because the wait itself was interrupted by a signal.
+    status=$?
+
+    # Query the OS to see if the child process is still running.
+    if ! kill -0 "${child_pid}" 2>/dev/null; then
+      # If the child process is no longer running, wait one last time to reap
+      # the zombie process and retrieve its actual exit status.
+      wait "${child_pid}" && status=0 || status=$?
+      break
+    fi
+    # If the process is still running, the signal merely interrupted our wait
+    # call. Loop back and continue waiting.
+  done
 
   trap - INT TERM HUP
   return "$status"
