@@ -246,12 +246,12 @@ TEST_F(ServerTest, WriteAttribute) {
 
 TEST_F(ServerTest, UicCommandDmeGet) {
   zx::result result = driver_test().RunOnBackgroundDispatcherSync([client_end = GetClient()]() {
-    auto uic_arg_mib_sel = [](uint16_t attr, uint16_t sel) {
-      return (((attr) & 0xFFFF) << 16) | ((sel) & 0xFFFF);
+    auto uic_arg_attr_sel = [](uint16_t attr, uint16_t sel) {
+      return (static_cast<uint32_t>(attr) << 16) | static_cast<uint32_t>(sel);
     };
 
-    fidl::Array<uint32_t, fuchsia_hardware_ufs::kUicCommandArgumentCount> args;
-    args[0] = uic_arg_mib_sel(PA_MaxRxHSGear, 0);
+    fidl::Array<uint32_t, fuchsia_hardware_ufs::kUicCommandArgumentCount> args{};
+    args[0] = uic_arg_attr_sel(PA_MaxRxHSGear, 0);
     const fidl::WireResult result =
         fidl::WireCall(client_end)
             ->SendUicCommand(fuchsia_hardware_ufs::UicCommandOpcode::kDmeGet, args);
@@ -266,12 +266,12 @@ TEST_F(ServerTest, UicCommandDmeGet) {
 
 TEST_F(ServerTest, UicCommandDmeSet) {
   zx::result result = driver_test().RunOnBackgroundDispatcherSync([client_end = GetClient()]() {
-    auto uic_arg_mib_sel = [](uint16_t attr, uint16_t sel) {
-      return (((attr) & 0xFFFF) << 16) | ((sel) & 0xFFFF);
+    auto uic_arg_attr_sel = [](uint16_t attr, uint16_t sel) {
+      return (static_cast<uint32_t>(attr) << 16) | static_cast<uint32_t>(sel);
     };
 
-    fidl::Array<uint32_t, fuchsia_hardware_ufs::kUicCommandArgumentCount> args;
-    args[0] = uic_arg_mib_sel(PA_MaxRxHSGear, 0);
+    fidl::Array<uint32_t, fuchsia_hardware_ufs::kUicCommandArgumentCount> args{};
+    args[0] = uic_arg_attr_sel(PA_Granularity, 0);
     const fidl::WireResult result =
         fidl::WireCall(client_end)
             ->SendUicCommand(fuchsia_hardware_ufs::UicCommandOpcode::kDmeSet, args);
@@ -286,12 +286,12 @@ TEST_F(ServerTest, UicCommandDmeSet) {
 
 TEST_F(ServerTest, UicCommandDmePeerGet) {
   zx::result result = driver_test().RunOnBackgroundDispatcherSync([client_end = GetClient()]() {
-    auto uic_arg_mib_sel = [](uint16_t attr, uint16_t sel) {
-      return (((attr) & 0xFFFF) << 16) | ((sel) & 0xFFFF);
+    auto uic_arg_attr_sel = [](uint16_t attr, uint16_t sel) {
+      return (static_cast<uint32_t>(attr) << 16) | static_cast<uint32_t>(sel);
     };
 
-    fidl::Array<uint32_t, fuchsia_hardware_ufs::kUicCommandArgumentCount> args;
-    args[0] = uic_arg_mib_sel(PA_TActivate, 0);
+    fidl::Array<uint32_t, fuchsia_hardware_ufs::kUicCommandArgumentCount> args{};
+    args[0] = uic_arg_attr_sel(PA_TActivate, 0);
     const fidl::WireResult result =
         fidl::WireCall(client_end)
             ->SendUicCommand(fuchsia_hardware_ufs::UicCommandOpcode::kDmePeerGet, args);
@@ -305,12 +305,12 @@ TEST_F(ServerTest, UicCommandDmePeerGet) {
 
 TEST_F(ServerTest, UicCommandDmePeerSet) {
   zx::result result = driver_test().RunOnBackgroundDispatcherSync([client_end = GetClient()]() {
-    auto uic_arg_mib_sel = [](uint16_t attr, uint16_t sel) {
-      return (((attr) & 0xFFFF) << 16) | ((sel) & 0xFFFF);
+    auto uic_arg_attr_sel = [](uint16_t attr, uint16_t sel) {
+      return (static_cast<uint32_t>(attr) << 16) | static_cast<uint32_t>(sel);
     };
 
-    fidl::Array<uint32_t, fuchsia_hardware_ufs::kUicCommandArgumentCount> args;
-    args[0] = uic_arg_mib_sel(PA_TActivate, 0);
+    fidl::Array<uint32_t, fuchsia_hardware_ufs::kUicCommandArgumentCount> args{};
+    args[0] = uic_arg_attr_sel(PA_TActivate, 0);
     const fidl::WireResult result =
         fidl::WireCall(client_end)
             ->SendUicCommand(fuchsia_hardware_ufs::UicCommandOpcode::kDmePeerSet, args);
@@ -318,6 +318,90 @@ TEST_F(ServerTest, UicCommandDmePeerSet) {
     const fit::result response = result.value();
     ASSERT_TRUE(response.is_ok());
     ASSERT_EQ(response->result, 0U);
+  });
+  ASSERT_OK(result.status_value());
+}
+
+TEST_F(ServerTest, SendUicCommandRejectsNonAllowlistedAttribute) {
+  zx::result result = driver_test().RunOnBackgroundDispatcherSync([client_end = GetClient()]() {
+    auto uic_arg_attr_sel = [](uint16_t attr, uint16_t sel) {
+      return (static_cast<uint32_t>(attr) << 16) | static_cast<uint32_t>(sel);
+    };
+
+    // DME_SET with non-allowlisted attribute (PA_MaxRxHSGear = 0x1587 or 0xD0FE)
+    {
+      fidl::Array<uint32_t, fuchsia_hardware_ufs::kUicCommandArgumentCount> args{};
+      args[0] = uic_arg_attr_sel(0xD0FE, 0);
+      const fidl::WireResult r =
+          fidl::WireCall(client_end)
+              ->SendUicCommand(fuchsia_hardware_ufs::UicCommandOpcode::kDmeSet, args);
+      ASSERT_TRUE(r.ok());
+      ASSERT_TRUE(r.value().is_error());
+      EXPECT_EQ(r.value().error_value(), ZX_ERR_NOT_SUPPORTED);
+    }
+
+    // DME_PEER_SET with non-allowlisted attribute
+    {
+      fidl::Array<uint32_t, fuchsia_hardware_ufs::kUicCommandArgumentCount> args{};
+      args[0] = uic_arg_attr_sel(PA_MaxRxHSGear, 0);
+      const fidl::WireResult r =
+          fidl::WireCall(client_end)
+              ->SendUicCommand(fuchsia_hardware_ufs::UicCommandOpcode::kDmePeerSet, args);
+      ASSERT_TRUE(r.ok());
+      ASSERT_TRUE(r.value().is_error());
+      EXPECT_EQ(r.value().error_value(), ZX_ERR_NOT_SUPPORTED);
+    }
+  });
+  ASSERT_OK(result.status_value());
+}
+
+TEST_F(ServerTest, SendUicCommandRejectsNonVolatileAttrSetType) {
+  zx::result result = driver_test().RunOnBackgroundDispatcherSync([client_end = GetClient()]() {
+    auto uic_arg_attr_sel = [](uint16_t attr, uint16_t sel) {
+      return (static_cast<uint32_t>(attr) << 16) | static_cast<uint32_t>(sel);
+    };
+    auto uic_arg_attr_set_type = [](uint8_t set_type) {
+      return static_cast<uint32_t>(set_type) << 16;
+    };
+
+    // DME_SET with static attr_set_type (1)
+    {
+      fidl::Array<uint32_t, fuchsia_hardware_ufs::kUicCommandArgumentCount> args{};
+      args[0] = uic_arg_attr_sel(PA_Granularity, 0);
+      args[1] = uic_arg_attr_set_type(static_cast<uint8_t>(AttrSetType::kStatic));
+      const fidl::WireResult r =
+          fidl::WireCall(client_end)
+              ->SendUicCommand(fuchsia_hardware_ufs::UicCommandOpcode::kDmeSet, args);
+      ASSERT_TRUE(r.ok());
+      ASSERT_TRUE(r.value().is_error());
+      EXPECT_EQ(r.value().error_value(), ZX_ERR_NOT_SUPPORTED);
+    }
+
+    // DME_SET with invalid attr_set_type (0xFF)
+    {
+      fidl::Array<uint32_t, fuchsia_hardware_ufs::kUicCommandArgumentCount> args{};
+      args[0] = uic_arg_attr_sel(PA_Granularity, 0);
+      args[1] = uic_arg_attr_set_type(0xFF);
+      const fidl::WireResult r =
+          fidl::WireCall(client_end)
+              ->SendUicCommand(fuchsia_hardware_ufs::UicCommandOpcode::kDmeSet, args);
+      ASSERT_TRUE(r.ok());
+      ASSERT_TRUE(r.value().is_error());
+      EXPECT_EQ(r.value().error_value(), ZX_ERR_NOT_SUPPORTED);
+    }
+
+    // DME_PEER_SET with static attr_set_type (1)
+    {
+      fidl::Array<uint32_t, fuchsia_hardware_ufs::kUicCommandArgumentCount> args{};
+      args[0] = uic_arg_attr_sel(PA_TActivate, 0);
+      args[1] = uic_arg_attr_set_type(static_cast<uint8_t>(AttrSetType::kStatic));
+      const fidl::WireResult r =
+          fidl::WireCall(client_end)
+              ->SendUicCommand(fuchsia_hardware_ufs::UicCommandOpcode::kDmePeerSet, args);
+      ASSERT_TRUE(r.ok());
+      ASSERT_TRUE(r.value().is_error());
+      EXPECT_EQ(r.value().error_value(), ZX_ERR_NOT_SUPPORTED);
+    }
   });
   ASSERT_OK(result.status_value());
 }

@@ -73,6 +73,11 @@ enum class UicCommandOpcode {
   kDmeTestMode = 0x1a,
 };
 
+enum class AttrSetType : uint8_t {
+  kVolatile = 0,
+  kStatic = 1,
+};
+
 class Ufs;
 
 // UFS Specification Version 3.1, section 9.4 "UniPro/UFS Control Interface (Control Plane)".
@@ -138,7 +143,7 @@ class DmeGetUicCommand : public UicCommand {
 class DmeSetUicCommand : public UicCommand {
  public:
   explicit DmeSetUicCommand(Ufs &ufs, uint16_t mib_attribute, uint16_t gen_selector_index,
-                            uint8_t attr_set_type, uint32_t value)
+                            AttrSetType attr_set_type, uint32_t value)
       : UicCommand(ufs, UicCommandOpcode::kDmeSet, mib_attribute, gen_selector_index),
         attr_set_type_(attr_set_type),
         value_(value) {}
@@ -147,7 +152,7 @@ class DmeSetUicCommand : public UicCommand {
   std::tuple<uint32_t, uint32_t, uint32_t> Arguments() const override;
 
  private:
-  uint8_t attr_set_type_;
+  AttrSetType attr_set_type_;
   uint32_t value_;
 };
 
@@ -164,7 +169,7 @@ class DmePeerGetUicCommand : public UicCommand {
 class DmePeerSetUicCommand : public UicCommand {
  public:
   explicit DmePeerSetUicCommand(Ufs &ufs, uint16_t mib_attribute, uint16_t gen_selector_index,
-                                uint8_t attr_set_type, uint32_t value)
+                                AttrSetType attr_set_type, uint32_t value)
       : UicCommand(ufs, UicCommandOpcode::kDmePeerSet, mib_attribute, gen_selector_index),
         attr_set_type_(attr_set_type),
         value_(value) {}
@@ -173,7 +178,7 @@ class DmePeerSetUicCommand : public UicCommand {
   std::tuple<uint32_t, uint32_t, uint32_t> Arguments() const override;
 
  private:
-  uint8_t attr_set_type_;
+  AttrSetType attr_set_type_;
   uint32_t value_;
 };
 

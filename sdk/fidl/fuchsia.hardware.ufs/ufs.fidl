@@ -70,6 +70,9 @@ closed protocol Ufs {
     }) -> () error QueryErrorCode;
 
     /// Sends a UIC command to the UFS device.
+    ///
+    /// For DME_SET and DME_PEER_SET commands, only volatile attributes (attr_set_type = 0)
+    /// in the driver's diagnostic allowlist are supported.
     strict SendUicCommand(UicCommand) -> (struct {
         result uint32;
     }) error zx.Status;

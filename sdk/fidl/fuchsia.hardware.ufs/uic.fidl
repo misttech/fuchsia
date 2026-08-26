@@ -26,6 +26,21 @@ type UicCommandOpcode = flexible enum : uint8 {
 type UicCommand = struct {
     /// Opcode of the UIC command to be dispatched to the local UIC layer.
     opcode UicCommandOpcode;
-    /// Parameters (input and output) of the UIC command.
+    /// Input parameters of the UIC command mapped to UFSHCI 3.0 UIC Command Argument
+    /// Registers (Section 5.6):
+    /// - `argument[0]`: UICCMDARG1 (Offset 94h)
+    ///     - Bits [31:16]: Attribute ID (MIBattribute)
+    ///     - Bits [15:0]:  General Selector Index (GenSelectorIndex)
+    /// - `argument[1]`: UICCMDARG2 (Offset 98h)
+    ///     - Bits [23:16]: Attribute Set Type (AttrSetType: 0 = volatile, 1 = static)
+    /// - `argument[2]`: UICCMDARG3 (Offset 9Ch)
+    ///     - Bits [31:0]:  Value (write value for DME_SET/DME_PEER_SET)
+    ///
+    /// For DME_SET and DME_PEER_SET commands, only the volatile attribute set type (0)
+    /// and allowlisted diagnostic attributes are supported. Static configuration (1)
+    /// or non-allowlisted attributes will result in ZX_ERR_NOT_SUPPORTED.
+    ///
+    /// For DME_GET and DME_PEER_GET commands, the read attribute value is returned in the
+    /// method response payload.
     argument array<uint32, UIC_COMMAND_ARGUMENT_COUNT>;
 };

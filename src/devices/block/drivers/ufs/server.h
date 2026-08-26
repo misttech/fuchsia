@@ -43,8 +43,8 @@ class UfsServer : public fidl::WireServer<fuchsia_hardware_ufs::Ufs> {
   template <typename ResponseUpiu>
   fit::result<fuchsia_hardware_ufs::wire::QueryErrorCode, ResponseUpiu> HandleQueryRequestUpiu(
       QueryRequestUpiu &request);
-  std::unique_ptr<UicCommand> CreateUicCommand(UicCommandOpcode opcode,
-                                               SendUicCommandRequestView request);
+  zx::result<std::optional<uint32_t>> DispatchUicCommand(UicCommandOpcode opcode,
+                                                         SendUicCommandRequestView request);
 
   void ProcessQueryRequestUpiu(const RequestRequestView &request,
                                RequestCompleter::Sync &completer);

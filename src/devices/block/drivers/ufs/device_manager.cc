@@ -195,7 +195,7 @@ zx::result<uint32_t> DeviceManager::DmePeerGet(uint16_t mib_attribute) {
 }
 
 zx::result<> DeviceManager::DmeSet(uint16_t mib_attribute, uint32_t value) {
-  DmeSetUicCommand dme_set_command(controller_, mib_attribute, 0, 0, value);
+  DmeSetUicCommand dme_set_command(controller_, mib_attribute, 0, AttrSetType::kVolatile, value);
   if (auto result = dme_set_command.SendCommand(); result.is_error()) {
     return result.take_error();
   }
@@ -644,8 +644,8 @@ zx::result<> DeviceManager::InitUniproAttributes(inspect::Node &unipro_node) {
 
   if (controller_.intel_quirk()) {
     // Intel Lake-field UFSHCI has a quirk. We need to add 200us to the PEER's PA_TActivate.
-    DmePeerSetUicCommand dme_peer_set_t_activate(controller_, PA_TActivate, 0, 0,
-                                                 host_t_activate.value() + 2);
+    DmePeerSetUicCommand dme_peer_set_t_activate(
+        controller_, PA_TActivate, 0, AttrSetType::kVolatile, host_t_activate.value() + 2);
     if (auto result = dme_peer_set_t_activate.SendCommand(); result.is_error()) {
       return result.take_error();
     }

@@ -181,8 +181,8 @@ void UfsPdev::StopUfshciServer() {
 }
 
 void UfsPdev::DmeSet(DmeSetRequest& request, DmeSetCompleter::Sync& completer) {
-  DmeSetUicCommand dme_set(*this, request.mib_attribute(), request.gen_selector_index(), 0,
-                           request.value());
+  DmeSetUicCommand dme_set(*this, request.mib_attribute(), request.gen_selector_index(),
+                           AttrSetType::kVolatile, request.value());
   auto result = dme_set.SendCommand();
   if (result.is_error()) {
     fdf::error("DME_SET 0x{:x} failed: {}", request.mib_attribute(), result);

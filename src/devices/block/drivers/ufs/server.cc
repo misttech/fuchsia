@@ -6,6 +6,7 @@
 
 #include <lib/driver/logging/cpp/logger.h>
 
+#include "src/devices/block/drivers/ufs/registers.h"
 #include "src/devices/block/drivers/ufs/uic/uic_commands.h"
 #include "src/devices/block/drivers/ufs/upiu/attributes.h"
 #include "src/devices/block/drivers/ufs/upiu/descriptors.h"
@@ -240,45 +241,87 @@ void UfsServer::WriteAttribute(WriteAttributeRequestView request,
 
 void UfsServer::SendUicCommand(SendUicCommandRequestView request,
                                SendUicCommandCompleter::Sync& completer) {
-  UicCommandOpcode opcode = static_cast<UicCommandOpcode>(fidl::ToUnderlying(request->opcode));
+  const auto opcode = static_cast<UicCommandOpcode>(fidl::ToUnderlying(request->opcode));
 
-  std::unique_ptr<UicCommand> command = CreateUicCommand(opcode, request);
-
-  if (!command) {
-    fdf::error("Unsupported UIC command opcode: 0x{:x}", static_cast<uint32_t>(opcode));
-    completer.ReplyError(ZX_ERR_NOT_SUPPORTED);
-    return;
-  }
-
-  auto result = command->SendCommand();
+  zx::result<std::optional<uint32_t>> result = DispatchUicCommand(opcode, request);
   if (result.is_error()) {
     fdf::error("Failed to send UicCommand Opcode: 0x{:x}", static_cast<uint32_t>(opcode));
     completer.ReplyError(result.error_value());
     return;
   }
-  uint32_t response = result.value().value_or(0);
-  completer.ReplySuccess(response);
+  completer.ReplySuccess(result.value().value_or(0));
 }
 
-std::unique_ptr<UicCommand> UfsServer::CreateUicCommand(UicCommandOpcode opcode,
-                                                        SendUicCommandRequestView request) {
-  uint16_t mib_attribute = (request->argument[0] >> 16) & 0xFFFF;
-  uint16_t gen_selector_index = request->argument[0] & 0xFFFF;
-  uint8_t attr_set_type = (request->argument[1] >> 16) & 0xFF;
+namespace {
+// External clients are non-driver components (paver, console-launcher) and must
+// not be able to drive arbitrary UniPro/M-PHY attributes. Restrict DME_SET /
+// DME_PEER_SET to a minimal read-mostly diagnostic allowlist; everything
+// else is rejected. Power-mode / lane / gear attributes are intentionally
+// excluded -- those must go through DeviceManager's UFSHCI 7.4 sequence.
+constexpr bool IsClientSettableAttribute(uint16_t attribute) {
+  constexpr uint16_t kAllowedAttributes[] = {PA_TActivate, PA_Granularity};
+  for (uint16_t allowed : kAllowedAttributes) {
+    if (attribute == allowed) {
+      return true;
+    }
+  }
+  return false;
+}
+
+zx::result<> ValidateSetCommand(uint16_t attribute, AttrSetType attr_set_type,
+                                std::string_view command_name) {
+  if (!IsClientSettableAttribute(attribute)) {
+    fdf::error("SendUicCommand: {} attribute 0x{:x} not in allowlist", command_name, attribute);
+    return zx::error(ZX_ERR_NOT_SUPPORTED);
+  }
+  if (attr_set_type != AttrSetType::kVolatile) {
+    fdf::error("SendUicCommand: {} attr_set_type 0x{:x} not supported (only volatile is allowed)",
+               command_name, static_cast<uint8_t>(attr_set_type));
+    return zx::error(ZX_ERR_NOT_SUPPORTED);
+  }
+  return zx::ok();
+}
+}  // namespace
+
+zx::result<std::optional<uint32_t>> UfsServer::DispatchUicCommand(
+    UicCommandOpcode opcode, SendUicCommandRequestView request) {
+  const auto arg1 = UicCommandArgument1Reg::Get().FromValue(request->argument[0]);
+  const auto arg2 = UicCommandArgument2Reg::Get().FromValue(request->argument[1]);
+  const auto attribute = static_cast<uint16_t>(arg1.mib_attribute());
+  const auto gen_selector_index = static_cast<uint16_t>(arg1.gen_selector_index());
+  const AttrSetType attr_set_type = arg2.attr_set_type();
+  const uint32_t value = request->argument[2];
+
   switch (opcode) {
-    case UicCommandOpcode::kDmeGet:
-      return std::make_unique<DmeGetUicCommand>(*controller_, mib_attribute, gen_selector_index);
-    case UicCommandOpcode::kDmeSet:
-      return std::make_unique<DmeSetUicCommand>(*controller_, mib_attribute, gen_selector_index,
-                                                attr_set_type, request->argument[2]);
-    case UicCommandOpcode::kDmePeerGet:
-      return std::make_unique<DmePeerGetUicCommand>(*controller_, mib_attribute,
-                                                    gen_selector_index);
-    case UicCommandOpcode::kDmePeerSet:
-      return std::make_unique<DmePeerSetUicCommand>(*controller_, mib_attribute, gen_selector_index,
-                                                    attr_set_type, request->argument[2]);
+    case UicCommandOpcode::kDmeGet: {
+      DmeGetUicCommand command(*controller_, attribute, gen_selector_index);
+      return command.SendCommand();
+    }
+    case UicCommandOpcode::kDmePeerGet: {
+      DmePeerGetUicCommand command(*controller_, attribute, gen_selector_index);
+      return command.SendCommand();
+    }
+    case UicCommandOpcode::kDmeSet: {
+      if (zx::result status = ValidateSetCommand(attribute, attr_set_type, "DME_SET");
+          status.is_error()) {
+        return status.take_error();
+      }
+      DmeSetUicCommand command(*controller_, attribute, gen_selector_index, AttrSetType::kVolatile,
+                               value);
+      return command.SendCommand();
+    }
+    case UicCommandOpcode::kDmePeerSet: {
+      if (zx::result status = ValidateSetCommand(attribute, attr_set_type, "DME_PEER_SET");
+          status.is_error()) {
+        return status.take_error();
+      }
+      DmePeerSetUicCommand command(*controller_, attribute, gen_selector_index,
+                                   AttrSetType::kVolatile, value);
+      return command.SendCommand();
+    }
     default:
-      return nullptr;
+      fdf::error("Unsupported UIC command opcode: 0x{:x}", static_cast<uint32_t>(opcode));
+      return zx::error(ZX_ERR_NOT_SUPPORTED);
   }
 }
 

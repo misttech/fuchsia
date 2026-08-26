@@ -9,7 +9,7 @@
 
 #include <hwreg/bitfields.h>
 
-#include "uic/uic_commands.h"
+#include "src/devices/block/drivers/ufs/uic/uic_commands.h"
 
 namespace ufs {
 
@@ -413,7 +413,7 @@ class UicCommandArgument2Reg
     kFailure = 1,
   };
 
-  DEF_FIELD(23, 16, attr_set_type);
+  DEF_ENUM_FIELD(AttrSetType, 23, 16, attr_set_type);
   // Bits 7 to 1 are reserved. |result_code| is also used as a ConfigResultCode, but currently has
   // no use, so we only use it as a GenericErrorCode.
   DEF_ENUM_FIELD(GenericErrorCode, 7, 0, result_code);
