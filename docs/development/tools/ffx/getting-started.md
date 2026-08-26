@@ -53,7 +53,6 @@ Options:
 Commands:
   component         Discover and manage components
   config            View and switch default and user configurations
-  daemon            Interact with/control the ffx daemon
   diagnostic        Run diagnostic tests on Fuchsia targets
   docs              View suite of docs for ffx and for Fuchsia
   doctor            Run common checks for the ffx tool and host environment
@@ -510,8 +509,7 @@ ffx doctor
 If you file a bug that involves a target device, we'll typically ask for the
 output from `ffx doctor` to provide information about where the problem is.
 
-The `ffx doctor` command attempts to communicate with the ffx daemon, killing
-and restarting it if needed. If this is successful, it attempts to SSH into
+The `ffx doctor` command inspects host environment configuration. If this is successful, it attempts to SSH into
 a target device and start the Remote Control Service.
 
 If you run `ffx doctor` under normal circumstances, you should see output

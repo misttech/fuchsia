@@ -37,22 +37,12 @@ ffx config set discovery.mdns.enabled false
 # Don't discover fastboot devices connected via USB:
 ffx config set fastboot.usb.disabled true
 # Require manual process management for the daemon:
-ffx config set daemon.autostart false
-
-# If needed, start daemon:
-# ffx outputs log files under $FUCHSIA_TEST_OUTDIR/ffx_logs by default.
-LOG_DIR = "$FUCHSIA_TEST_OUTDIR/ffx_logs"
-# Redirect stdout and stderr to the log file
-ffx daemon start > "$LOG_DIR/ffx.daemon.log" 2> "$LOG_DIR/ffx.daemon.log" &
-
 # If interacting with a device:
 ffx target add "$FUCHSIA_DEVICE_ADDR"
 export FUCHSIA_NODENAME="$FUCHSIA_DEVICE_ADDR"
 ```
 
-When the test is completed, the test author needs to clean up the isolate directory. Deleting
-the directory shuts down the daemon; `ffx daemon stop` is recommended but not required. Killing
-the daemon process is not recommended as it may leave out information in the log file.
+When the test is completed, the test author needs to clean up the isolate directory.
 
 ## In-tree Rust isolate library
 
@@ -118,18 +108,6 @@ so it must live for the entire test.
             .await
             .expect("create isolate");
 ```
-
-### Starting the ffx daemon
-
-The `ffx` daemon must be started manually via the `Isolate::start_daemon()` method. Not
-all commands depend on the daemon, and some commands (like `ffx config set`) may need to
-be run before starting the daemon.
-
-```rust
-let _ = isolate.start_daemon().await?;
-```
-
-NOTE: Running `ffx daemon start` directly will not start a functional daemon.
 
 ### Running ffx commands
 

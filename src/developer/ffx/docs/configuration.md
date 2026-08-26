@@ -51,13 +51,6 @@ ffx config env get
     |                                         | used to communicate with the USB   |
     |                                         | driver. Defaults to                |
     |                                         | `$XDG_RUNTIME_DIR/ffx_usb.sock`.   |
-    | `daemon.autostart`                      | Determines if the daemon should    |
-    |                                         | start automatically when a subtool |
-    |                                         | that requires the daemon is        |
-    |                                         | invoked.  Defaults to `true`.      |
-    | `daemon.host_pipe_ssh_timeout`          | Time the daemon waits for an       |
-    |                                         | initial response from ssh on the   |
-    |                                         | target. Defaults to `50` seconds.  |
     | `discovery.cache_dir`                   | Specifies the location of the      |
     |                                         | discovery cache directory, in      |
     |                                         | which the cache and pid files will |
@@ -147,10 +140,6 @@ ffx config env get
     | `fidl.ir.path`                          | The path for looking up FIDL IR    |
     |                                         | encoding/decoding FIDL messages.   |
     |                                         | Default is unset                   |
-    | `ffx.daemon_timeout`                    | How long to wait in milliseconds   |
-    |                                         | when attempting to connect to the  |
-    |                                         | daemon. Defaults to `15000`        |
-    |                                         | Defaults to `false`                |
     | `ffx.isolated`                          | "Alias" for encapsulation of       |
     |                                         | config options used to request     |
     |                                         | isolation. Currently affects:      |
@@ -176,7 +165,7 @@ ffx config env get
     |                                         | invoker.                           |
     | `fuzzer.output`                         | Output directory when using `ffx   |
     |                                         | fuzz`. No default.                 |
-    | `log.dir`                               | Location for ffx and daemon logs   |
+    | `log.dir`                               | Location for ffx logs              |
     |                                         | Defaults to first available of:    |
     |                                         |   `$FFX_LOG_DIR`                   |
     |                                         |   `$FUCHSIA_TEST_OUTDIR/ffx_logs`  |
@@ -290,8 +279,3 @@ ffx config env get
     | `tunnels`                               | Contains the list of tunnels as    |
     |                                         | specified by Tunnel::ForwardPort   |
     |                                         | requests. Default: empty           |
-    | `watchdogs.host_pipe.enabled`           | Specifies whether to run           |
-    |                                         | "watchdogs" on daemon host-pipes,  |
-    |                                         | in order to debug whether ssh      |
-    |                                         | failures are due to the Rust       |
-    |                                         | executor getting stuck.            |

@@ -12,7 +12,7 @@ from the third (Agis) layer.
 *Host*
 
   1. AGI application
-  2. ffx plug-in / ffx daemon
+  2. ffx plug-in
 
 ---
 

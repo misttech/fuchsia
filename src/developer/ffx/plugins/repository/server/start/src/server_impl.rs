@@ -11,7 +11,7 @@ use ffx_config::EnvironmentContext;
 use ffx_config::environment::EnvironmentKind;
 use ffx_repository_server_start_args::{StartCommand, default_address, default_tunnel_addr};
 use ffx_ssh::parse::HostAddr;
-use ffx_target::LocalRcsKnockerImpl;
+use ffx_target::RcsKnockerImpl;
 use fho::{Deferred, FfxError};
 use fuchsia_async as fasync;
 use fuchsia_repo::manager::RepositoryManager;
@@ -600,7 +600,8 @@ pub async fn serve_impl(
         let repo_url = fuchsia_url::RepositoryUrl::parse_host(repo_name.clone())
             .map_err(|e| anyhow!("{e}"))?;
         let url = format!("http://{server_addr}/{repo_name}");
-        let mirror_url = url.clone()
+        let mirror_url = url
+            .clone()
             .parse()
             .map_err(|e: http::uri::InvalidUri| anyhow!("{e}"))
             // Lower layers do not print the URL, so expose it here to clarify
@@ -689,7 +690,7 @@ pub async fn serve_impl(
         let tunnel_addr = cmd.tunnel_addr.clone().unwrap_or_else(|| default_tunnel_addr());
         let host_address: Option<HostAddr> = host_address.await?.into();
         let host_address = host_address.map(|t| t.0);
-        let knocker = LocalRcsKnockerImpl {
+        let knocker = RcsKnockerImpl {
             ever_found: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
             use_cache: false,
         };

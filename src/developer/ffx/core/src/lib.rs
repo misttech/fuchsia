@@ -14,7 +14,13 @@ use thiserror::Error;
 /// Exports used in macros
 #[doc(hidden)]
 pub mod macro_deps {
-    pub use {anyhow, errors, fidl, fidl_fuchsia_developer_ffx, fuchsia_async, futures, rcs};
+    pub use anyhow;
+    pub use errors;
+    pub use fidl;
+    pub use fidl_fuchsia_developer_ffx;
+    pub use fuchsia_async;
+    pub use futures;
+    pub use rcs;
 }
 
 #[derive(Error, Debug)]
@@ -40,9 +46,11 @@ pub fn downcast_injector_error<T>(res: Result<T, anyhow::Error>) -> Result<T, Ff
 
 #[async_trait(?Send)]
 pub trait Injector {
+    /// Creates the daemon proxy (retained for legacy transition compatibility).
+    #[deprecated(note = "Daemon is removed; retained for legacy transition compatibility.")]
     async fn daemon_factory(&self) -> Result<DaemonProxy, FfxInjectorError>;
-    /// Creates the daemon, ignoring autostart. This should generally not be used
-    /// unless you're running `ffx daemon start`.
+    /// Creates the daemon proxy (retained for legacy transition compatibility).
+    #[deprecated(note = "Daemon is removed; retained for legacy transition compatibility.")]
     async fn daemon_factory_force_autostart(&self) -> Result<DaemonProxy, FfxInjectorError>;
     async fn remote_factory(&self) -> Result<RemoteControlProxy>;
     async fn remote_factory_fdomain(&self) -> Result<FRemoteControlProxy>;

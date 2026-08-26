@@ -24,7 +24,6 @@ import (
 	"go.fuchsia.dev/fuchsia/tools/lib/ffxutil/constants"
 	"go.fuchsia.dev/fuchsia/tools/lib/jsonutil"
 	"go.fuchsia.dev/fuchsia/tools/lib/logger"
-	"go.fuchsia.dev/fuchsia/tools/lib/retry"
 	"go.fuchsia.dev/fuchsia/tools/lib/subprocess"
 )
 
@@ -302,8 +301,7 @@ type ProductImagePath struct {
 }
 
 // FFXWithTarget returns a copy of the provided ffx instance associated with
-// the provided target. This copy should use the same ffx daemon but run
-// commands with the new target.
+// the provided target. This copy will run commands with the new target.
 func FFXWithTarget(ffx *FFXInstance, target string) *FFXInstance {
 	return &FFXInstance{
 		ctx:            ffx.ctx,
@@ -834,33 +832,12 @@ func (f *FFXInstance) StartDaemon(ctx context.Context, daemonLog *os.File) *exec
 	return cmd
 }
 
-// WaitForDaemon tries a few times to check that the daemon is up
-// and returns an error if it fails to respond.
+// Deprecated: No-op as the daemon has been removed.
 func (f *FFXInstance) WaitForDaemon(ctx context.Context) error {
-	// Discard the stderr since it'll return a string caught by
-	// tefmocheck if the daemon isn't ready yet.
-	origStderr := f.stderr
-	var output bytes.Buffer
-	f.stderr = &output
-	defer func() {
-		f.stderr = origStderr
-	}()
-	// Normally trying 10 times would be overkill, but we know that the arm64 emulator sometimes
-	// has delays (b/330228364), so let's keep trying for 10 seconds instead of just 3, in order
-	// to address an occasional failure when the daemon doesn't respond quickly (b/316626057)
-	err := retry.Retry(ctx, retry.WithMaxAttempts(retry.NewConstantBackoff(time.Second), 10), func() error {
-		// "ffx daemon echo" _does_ support "--machine json", but when it is specified, the error comes
-		// on stdout, so tefmo catches it despite the redirection of stderr. To preserve the redirection,
-		// we'll tell the invoker not to use "--machine".
-		return f.invoker([]string{"daemon", "echo"}).setTimeout(0).setMachineFormat(MachineNone).run(ctx)
-	}, nil)
-	if err != nil {
-		logger.Warningf(ctx, "failed to echo daemon: %s", output.String())
-	}
-	return err
+	return nil
 }
 
-// Stop stops the daemon.
+// Deprecated: No-op as the daemon has been removed.
 func (f *FFXInstance) Stop() error {
 	return nil
 }

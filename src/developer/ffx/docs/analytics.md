@@ -5,14 +5,12 @@ The `ffx` tool emits various analytics events for diagnostic and quality trackin
 ## Core Events
 
 * **`invoke`**: Emitted when an `ffx` command is executed. It captures information about the command invocation, including execution time, exit code, any error message, and the underlying subcommand. Depending on the user's opt-in level for enhanced analytics, command arguments may be fully redacted or partially included.
-* **`ffx_daemon`**: Emitted by the `ffx` background daemon process to track its lifecycle and activity (e.g., when the daemon is started).
 
 ## Target and Connection Events
 
 * **`ffx_target_list_devices`**: Emitted when the `ffx target list` command executes. Records the number of devices discovered (as the `devices` dimension) along with the type of query used (e.g., no filter, or by nodename).
 * **`ffx_target_connection`**: Emitted when establishing a connection to a Fuchsia target. The action parameter indicates the type of connection being attempted.
 * **`ffx_connection_mode`**: Emitted concurrently with connection establishment to track the specific connectivity mode or strategy used for interacting with the target.
-* **`ffx_daemon_host_pipe`**: Emitted when the daemon initiates a host pipe connection (such as SSH) to communicate with a target device. The action specifies the connection type or state being tracked.
 * **`ffx_rcs_proxy`**: Emitted when `ffx` constructs an Overnet connection to a target's Remote Control Service (RCS). The action specifies the proxy connection strategy employed (e.g., mdns vs target).
 
 ## Flashing and Hardware Events

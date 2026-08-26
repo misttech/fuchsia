@@ -119,7 +119,7 @@ type SSHConnector struct {
 	reconnectInterval time.Duration
 
 	// This tempdir is used for storing the local filesystem cache described
-	// above, as well as the `ffxIsolateDir` supporting the ffx daemon for this
+	// above, as well as the `ffxIsolateDir` supporting ffx for this
 	// instance. It shares a lifetime with the enclosing Instance (created on
 	// first ffx connection, deleted on `stop_instance`).
 	TmpDir string
@@ -180,7 +180,6 @@ func (c *SSHConnector) initializeFfx() (returnErr error) {
 	// directory.
 	defer func() {
 		if returnErr != nil {
-			// This will kill the daemon once it sees its socket deleted
 			os.RemoveAll(c.ffxIsolateDir)
 		}
 	}()
@@ -189,9 +188,8 @@ func (c *SSHConnector) initializeFfx() (returnErr error) {
 		return fmt.Errorf("error making isolate dir: %s", err)
 	}
 
-	// Add the target to the daemon (auto-starting it)
-	// Note: The SSH private key config needs to be provided on the first call
-	// to a daemon.
+	// Add the target to ffx
+	// Note: The SSH private key is configured here and stored in the isolate directory for subsequent ffx calls.
 	addr := net.JoinHostPort(c.Host, strconv.Itoa(c.Port))
 	if _, err := c.FfxRun("", "-c", "ssh.priv="+c.Key, "target", "add", addr); err != nil {
 		return fmt.Errorf("error adding target to ffx: %s", err)
@@ -690,13 +688,6 @@ func (c *SSHConnector) Cleanup() {
 	if c.TmpDir == "" {
 		return
 	}
-	// Best-effort at cleanly shutting down the daemon. Even if this fails,
-	// it should self-cleanup once it sees we've removed the isolate dir.
-	ffxIsolateDir := filepath.Join(c.TmpDir, "ffx-isolate")
-	if fileExists(ffxIsolateDir) {
-		c.FfxRun("", "daemon", "stop")
-	}
-
 	if err := os.RemoveAll(c.TmpDir); err != nil {
 		glog.Warningf("failed to remove temp dir: %s", err)
 	}

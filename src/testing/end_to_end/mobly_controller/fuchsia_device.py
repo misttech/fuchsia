@@ -77,7 +77,7 @@ async def create(
     # don't want to miss those FFX logs
 
     # Note - As of now same FFX Config is used across all fuchsia devices.
-    # This means we will have one FFX daemon running which will talk to all
+    # This means we will use a single FFX configuration to interact with all
     # fuchsia devices in the testbed.
     # This is okay for in-tree use cases but may not work for OOT cases where
     # each fuchsia device may be running different build that require different
@@ -137,8 +137,10 @@ async def destroy(
     for fuchsia_device in fuchsia_devices:
         await fuchsia_device.close()
 
+    # TODO: b/552006166 - Remove this method and other isolate dir cleanup,
+    # as it is no longer necessary with `ffx --strict`.
     # Call `FfxConfig.close` manually even though it's already registered for
-    # clean up in `FfxConfig.setup` in order to minimize chance of FFX daemon
+    # clean up in `FfxConfig.setup` in order to minimize chance of FFX resource
     # leak in the event that SIGKILL/SIGTERM is received between `destroy` and
     # test program exit.
     _FFX_CONFIG_OBJ.close()

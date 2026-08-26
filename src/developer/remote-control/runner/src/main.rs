@@ -169,8 +169,8 @@ struct Args {
 #[fuchsia::main(logging_tags = ["remote_control_runner"])]
 async fn main() -> Result<()> {
     let args: Args = argh::from_env();
-    // Perform the compatibility checking between the caller (the ffx daemon or
-    // a standalone ffx command) and the platform (this program).
+    // Perform the compatibility checking between the caller (an ffx command)
+    // and the platform (this program).
     let rcs_proxy = connect_to_protocol::<ConnectorMarker>()?;
     let (local_socket, remote_socket) = fidl::Socket::create_stream();
 

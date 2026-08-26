@@ -68,5 +68,5 @@ if value.is_null() {
 
 To guarantee optimal user ergonomics, all error text blocks should follow the imperative style guide rules:
 *   **Context First**: Explicitly detail *what* operation failed before naming the low-level trigger.
-*   **Actionable Hints**: Provide explicit instructions or alternative parameters commands if possible (e.g., `"Run ffx doctor --restart-daemon to reset connection state."`).
+*   **Actionable Hints**: Provide explicit instructions or alternative parameters commands if possible (e.g., `"Run ffx doctor to diagnose connection state."`).
 *   **No Engineering Traces**: Keep raw logs, stack dumps, and module path identifiers inside the background file logging layers (`ffx.log`), preserving clean streams for the user console.

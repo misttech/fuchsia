@@ -235,7 +235,7 @@ func (f *FfxInstance) CloseWith(killDaemon bool) error {
 
 	if errors.Is(err, context.DeadlineExceeded) {
 		// ffxutil sometimes returns a context.DeadlineExceeded error when stopping an FFXInstance when
-		// the ffx daemon takes too long to shut down. This isn't really an actionable error, so it
+		// ffx takes too long to shut down. This isn't really an actionable error, so it
 		// makes sense to swallow it here.
 		return nil
 	}

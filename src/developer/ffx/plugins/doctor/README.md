@@ -2,7 +2,7 @@
 
 `ffx doctor` is a tool to diagnose issues with the `ffx` development environment.
 
-It performs a series of checks on the host environment, the ffx daemon, and target devices to identify common configuration and operational problems.
+It performs a series of checks on the host environment and target devices to identify common configuration and operational problems.
 
 ## Code Structure
 
@@ -10,7 +10,6 @@ The plugin is organized into several modular files:
 
 - **[lib.rs](src/lib.rs)**: Contains the main tool entry point (`DoctorTool`), the plugin orchestration logic (`doctor`), and the integration tests.
 - **[types.rs](src/types.rs)**: Shared types, enums (e.g., `StepType`), and traits (e.g., `DoctorStepHandler`).
-- **[daemon.rs](src/daemon.rs)**: Checks related to the `ffx` daemon (status, restart, PID verification).
 - **[environment.rs](src/environment.rs)**: Environment-related checks (SSH keys, inotify watches, lock files, emulator instances).
 - **[target.rs](src/target.rs)**: Target discovery, collection, and individual target diagnostics.
 - **[usb.rs](src/usb.rs)**: Checks for the `ffx-usb-driver`.

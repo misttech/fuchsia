@@ -207,9 +207,7 @@ function unmount_repo() {
   if findmnt --raw --noheadings --output 'SOURCE' --mountpoint "$MOUNTPOINT" >/dev/null; then
     echo "Trying to unmount $MOUNTPOINT" >&2
     if ! sudo umount "$MOUNTPOINT" ; then
-      echo "Stopping ffx daemon" >&2
       (cd "$MOUNTPOINT" && ./scripts/fx ffx emu stop --all)
-      (cd "$MOUNTPOINT" && ./scripts/fx ffx daemon stop)
       echo "Stopping bazel" >&2
       (cd "$MOUNTPOINT" && ./scripts/fx bazel shutdown)
       echo "Unmounting $MOUNTPOINT" >&2

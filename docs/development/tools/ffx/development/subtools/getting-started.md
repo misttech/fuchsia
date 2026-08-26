@@ -117,8 +117,7 @@ subcommand, it should have this declaration on it to discourage people from rely
 on it before it's ready for wider use.
 
 ##### Direct Connections
-FFX subtools by default communicate through the FFX daemon. If a subtool
-requires a direct connection to a target, it can add a declaration:
+Target connections are direct by default. The `#[target(direct)]` declaration may be added for explicit subtool declaration:
 ```rust
 #[derive(FfxTool)]
 #[target(direct)]

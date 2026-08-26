@@ -764,17 +764,17 @@ foo-stop, foo-reset`; instead have `foo` that accepts commands
 
 <table>
   <tr>
-   <td><code>ffx daemon start</code>
+   <td><code>ffx emu start</code>
 <p>
-<code>ffx daemon stop</code>
+<code>ffx emu stop</code>
 <p>
 <code>ffx package archive add</code>
 <p>
 <code>ffx package archive remove</code>
    </td>
-   <td><code>ffx daemon launch</code>
+   <td><code>ffx emu launch</code>
 <p>
-<code>ffx daemon halt</code>
+<code>ffx emu halt</code>
 <p>
 <code>ffx package archive create-new</code>
 <p>
@@ -1091,7 +1091,7 @@ command's name to explain what it does.
   <tr>
    <td><code>doctor - Run common checks for the ffx tool and host environment</code>
    </td>
-   <td><code>daemon - Interact with the ffx daemon</code>
+   <td><code>target - Interact with the target</code>
    </td>
   </tr>
   <tr>

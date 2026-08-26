@@ -203,7 +203,7 @@ impl Router {
             proxied_streams: Mutex::new(HashMap::new()),
             pending_transfers: Mutex::new(PendingTransferMap::new()),
             task: Mutex::new(None),
-            // Default is to route all clients to each other. Ffx daemon disabled client routing.
+            // Default is to route all clients to each other.
             ascendd_client_routing: AtomicBool::new(true),
             circuit_node,
         });

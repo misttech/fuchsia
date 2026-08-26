@@ -337,10 +337,6 @@ class TestEnvironment:
         raise Exception(f"Unrecognized host architecture {machine}")
 
     @property
-    def ffx_daemon_log_path(self):
-        return self.tmp_dir().joinpath("ffx_daemon_log")
-
-    @property
     def ffx_isolate_dir(self):
         return self.tmp_dir().joinpath("ffx_isolate")
 
@@ -355,23 +351,6 @@ class TestEnvironment:
 
         ffx_path = self.tool_path("ffx")
         ffx_env = self.ffx_cmd_env()
-
-        # Start ffx daemon
-        # We want this to be a long-running process that persists after the script finishes
-        # pylint: disable=consider-using-with
-        with open(
-            self.ffx_daemon_log_path, "w", encoding="utf-8"
-        ) as ffx_daemon_log_file:
-            subprocess.Popen(
-                [
-                    ffx_path,
-                    "daemon",
-                    "start",
-                ],
-                env=ffx_env,
-                stdout=ffx_daemon_log_file,
-                stderr=ffx_daemon_log_file,
-            )
 
         # Disable analytics
         check_call_with_logging(
@@ -417,18 +396,6 @@ class TestEnvironment:
             "TMPDIR": self.tmp_dir(),
             "TEMPDIR": self.tmp_dir(),
         }
-
-    def stop_ffx_isolation(self):
-        check_call_with_logging(
-            [
-                self.tool_path("ffx"),
-                "daemon",
-                "stop",
-            ],
-            env=self.ffx_cmd_env(),
-            stdout_handler=self.subprocess_logger.debug,
-            stderr_handler=self.subprocess_logger.debug,
-        )
 
     def start(self):
         """Sets up the testing environment and prepares to run tests.
@@ -1055,14 +1022,6 @@ class TestEnvironment:
         else:
             self.env_logger.debug("No package server log found")
 
-        # Print the ffx daemon log
-        self.env_logger.debug("\n---- ffx daemon log ----\n")
-        if os.path.exists(self.ffx_daemon_log_path):
-            with open(self.ffx_daemon_log_path, encoding="utf-8") as log:
-                self.env_logger.debug(log.read())
-        else:
-            self.env_logger.debug("No ffx daemon log found")
-
         # Shut down the emulator
         self.env_logger.info("Stopping emulator...")
         check_call_with_logging(
@@ -1090,10 +1049,6 @@ class TestEnvironment:
             stdout_handler=self.subprocess_logger.debug,
             stderr_handler=self.subprocess_logger.debug,
         )
-
-        # Stop ffx isolation
-        self.env_logger.info("Stopping ffx isolation...")
-        self.stop_ffx_isolation()
 
     def cleanup(self):
         # Remove temporary files

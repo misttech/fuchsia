@@ -408,7 +408,7 @@ pub async fn discovery_loop(config: DiscoveryConfig, checker: impl MdnsEnabledCh
     // In order to manually reproduce these conditions on a macOS
     // system, open Network.prefpane, and for each connection in the
     // list select Advanced... > TCP/IP > Configure IPv6 > Link-local
-    // only. Click apply, then restart the ffx daemon.
+    // only. Click apply, then restart ffx.
     let mut should_log_v4_listen_error = true;
     let mut should_log_v6_listen_error = true;
 

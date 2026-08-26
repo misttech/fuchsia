@@ -169,7 +169,6 @@ mod tests {
     /// Built-in Commands:
     ///
     /// config            View and switch default and user configurations
-    /// daemon            Interact with/control the ffx daemon
     /// <....>
     ///
     /// Workspace Commands:

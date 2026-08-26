@@ -289,7 +289,7 @@ async fn wait_for_target(isolate: &Isolate, emu: &Emu, timeout: i32) -> anyhow::
 }
 
 #[macro_export]
-/// Waits for an emulator to show up in the isolate's daemon by invoking
+/// Waits for an emulator to show up in the isolate by invoking
 /// ffx target wait and looking for a successful command.
 macro_rules! wait_for_target {
     ($isolate: ident, $emu: ident, $timeout: expr) => {

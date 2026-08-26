@@ -113,7 +113,7 @@ pub struct Opt {
     #[argh(option, long = "client-routing", default = "true")]
     /// route Ascendd clients to each other. Can be turned off to avoid scaling issues
     /// when multiple ffxs are run concurrently, with no requirement to have
-    /// them interact. (Normally set to false iff run as ffx daemon.)
+    /// them interact.
     pub client_routing: bool,
 
     #[argh(option)]

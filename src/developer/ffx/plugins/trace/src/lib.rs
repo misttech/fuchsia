@@ -808,7 +808,7 @@ package is missing from the device's system image."
         }
         RecordingError::DisconnectedTarget => {
             format!(
-                "The string '{}' didn't match a valid target connected to the ffx daemon.",
+                "The string '{}' didn't match a valid target.",
                 target_spec.as_deref().unwrap_or("")
             )
         }

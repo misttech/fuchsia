@@ -3,12 +3,12 @@
 // found in the LICENSE file.
 library fuchsia.developer.ffx;
 
-/// Internal testing functionality for the underlying FFX daemon.
+/// Internal testing functionality for the host process.
 @discoverable
 closed protocol Testing {
-    /// Causes the daemon to hang (pausing all execution indefinitely).
+    /// Causes the host process to hang, pausing all execution indefinitely.
     strict Hang() -> ();
 
-    /// Crashes the daemon by intentionally invoking a rust panic.
+    /// Crashes the host process by intentionally invoking a Rust panic.
     strict Crash() -> ();
 };

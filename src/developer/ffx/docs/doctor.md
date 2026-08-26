@@ -6,7 +6,7 @@
 
 The `ffx doctor` subcommand is a comprehensive diagnostic utility designed to inspect, validate, and troubleshoot the local Fuchsia host development environment and its communication channels with target devices or virtual emulators.
 
-If you experience communication hiccups, daemon stalls, or target discovery failures, running `ffx doctor` is the recommended initial triage workflow step.
+If you experience communication hiccups or target discovery failures, running `ffx doctor` is the recommended initial triage workflow step.
 
 ## Usage Syntax
 
@@ -19,9 +19,7 @@ ffx doctor
 ### Common Command-Line Options
 
 *   `-v, --verbose`: Enables granular verbose reporting, printing all hidden informational blocks (such as full API levels and ABI revisions details).
-*   `--restart-daemon`: Forcefully terminates the running background `ffx` daemon process and automatically seeds a clean background daemon instance before running checks. Use this if the daemon is completely unresponsive.
 *   `--record`: Captures diagnostic logs and doctor output into a bundle for bug reports and debugging environment issues.
-*   `--retry-count <N>`: Configures the maximum number of connection retry loops when attempting to establish hooks onto target capabilities.
 
 ## What FFX Doctor Checks
 
@@ -39,11 +37,7 @@ The diagnostic checklist sequentially evaluates the following environment layers
 *   **Inotify Watches Bounds**: (Linux only) Checks filesystem watcher limits to ensure the kernel has sufficient allocation handles to trace file changes during large build operations.
 *   **FFX USB Driver Sockets**: Validates the operational status of the FFX USB host driver socket binds, ensuring they listen on the expected path locations.
 
-### 3. Background Daemon Health
-*   **Daemon Discovery**: Assesses whether a background daemon is running and logs its process identifiers (PIDs).
-*   **RCS Channel Connection**: Attaches a client stream channel onto the target device's **Remote Control Service (RCS)** via the daemon proxy, ensuring full two-way transport bridge communication health.
-
-### 4. Network and Target Verification Checks
+### 3. Network and Target Verification Checks
 *   **Target Discovery Loop**: Scans the local network map and prints the aggregate number of discovered target devices.
 *   **Target Communication and RCS Health**: Performs detailed protocol binding checks against individual targets, reporting compatibility state parameters.
 
@@ -54,14 +48,3 @@ Every checklist node prints an explicit status symbol:
 *   `[i]`: **Informational**. Neutral advisory data points (e.g., active binary paths, version tags).
 *   `[!]`: **Warning**. Soft advisory anomalies encountered (e.g., unconfigured features, minor socket paths mismatches) that do not instantly break basic workflows.
 *   `[✗]`: **Failure**. Critical configuration block faults detected that require immediate human manual remediation.
-
-## Troubleshooting Scenarios
-
-### Stalled Daemon Recovery
-If `ffx target list` hangs or reports communication failures, execute a full daemon cycle restart pass:
-
-```posix-terminal
-ffx doctor --restart-daemon
-```
-
-This will terminate the background daemon safely, flush lingering socket file handles, and generate a fresh daemon layer automatically.

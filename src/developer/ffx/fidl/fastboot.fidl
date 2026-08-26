@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 library fuchsia.developer.ffx;
 
-// Covers the FFX Daemon Fastboot protocol. For information about how the fastboot
+// Covers the FFX Fastboot protocol. For information about how the fastboot
 // protocol works, see:
 // https://android.googlesource.com/platform/system/core/+/HEAD/fastboot/
 // for the most up-to-date information.

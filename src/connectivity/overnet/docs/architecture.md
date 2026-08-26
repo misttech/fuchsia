@@ -197,7 +197,7 @@ That emulation is in-process only, and to provide inter-process exchange of thes
 As such, each binary on host embeds Overnet with a single link protocol to connect to ascendd.
 Ascendd is a binary that provides a unix domain socket server for other binaries to connect to.
 It also provides link protocols to reach Overnet instances off device.
-Ascendd is again embeddable - ffx does this to co-host ascendd and the ffx daemon for instance.
+Ascendd is again embeddable - ffx does this to co-host ascendd for instance.
 
 ## Protocol evolvability touchpoints
 

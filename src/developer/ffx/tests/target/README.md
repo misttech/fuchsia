@@ -67,6 +67,6 @@ pkill -HUP qemu
 
 ## Infra Diagnosis
 
-Other than stdout and stderr the task outputs contain three important log files: `ffx.log`, `ffx.daemon.log`, and `emulator.serial.log`
+Other than stdout and stderr the task outputs contain two important log files: `ffx.log` and `emulator.serial.log`
 
 Issues typically happen between host & target. Check `emulator.serial.log` first.

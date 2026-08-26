@@ -78,8 +78,7 @@ type TraceOptions = table {
     /// runtime terminating likely a few dozen milliseconds longer.
     ///
     /// If this is not set, a trace will run indefinitely and must be stopped
-    /// using `StopRecording`. Or by cleanly shutting down the daemon via
-    /// `ffx daemon stop` or by using the Deamon proxy itself.
+    /// using `StopRecording`.
     1: duration_ns zx.Duration;
 
     /// The triggers to run against this trace.

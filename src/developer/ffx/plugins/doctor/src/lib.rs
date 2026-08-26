@@ -190,10 +190,8 @@ pub async fn doctor_cmd_impl<
                     &mut writer,
                     "ffx doctor will proceed, but if you want to enable logs, you can do so by running:"
                 )?;
-                writeln!(&mut writer, "  ffx config set log.enabled true")?;
-                writeln!(&mut writer, "You will then need to restart the ffx daemon:")?;
-                writeln!(&mut writer, "  ffx doctor --force-restart\n\n")?;
-                fuchsia_async::Timer::new(Duration::from_millis(10000)).await;
+                writeln!(&mut writer, "  ffx config set log.enabled true\n\n")?;
+                fuchsia_async::Timer::new(Duration::from_secs(3)).await;
             }
 
             log_root = Some(context.get("log.dir")?);

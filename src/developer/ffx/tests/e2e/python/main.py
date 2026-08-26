@@ -62,8 +62,8 @@ class FfxTest(ffxtestcase.FfxTestCase):
     #                 f"First ping didn't succeed: {line}",
     #             )
     #             # XXX somehow disconnect from RCS.
-    #             # We used to stop the daemon, but these days the daemon doesn't
-    #             # run in Lacewing. We could reboot the device, but that doesn't
+    #             # We used to stop the daemon, but the daemon has been removed.
+    #             # We could reboot the device, but that doesn't
     #             # play well with Infra. Maybe a Fuchsia Controller request of
     #             # some sort?
     #             while True:

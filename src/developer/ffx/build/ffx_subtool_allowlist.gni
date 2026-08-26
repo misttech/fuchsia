@@ -73,7 +73,7 @@ ffx_subtool_fidl_allowlist = [
   # used by ffx repository add-from-pm
   "//sdk/fidl/fuchsia.pkg:fuchsia.pkg",
 
-  # used by ffx daemon
+  # used by ffx target repository
   "//sdk/fidl/fuchsia.pkg.rewrite:fuchsia.pkg.rewrite",
 
   # used by ffx profile

@@ -50,7 +50,7 @@ type ffxAddress struct {
 	SSHPort int    `json:"ssh_port"`
 }
 
-// deviceInfo represents targets that the ffx daemon currently has in memory.
+// deviceInfo represents targets that ffx currently has in memory.
 type deviceInfo struct {
 	Nodename    string       `json:"nodename"`
 	RCSState    string       `json:"rcs_state"`

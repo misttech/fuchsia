@@ -842,7 +842,7 @@ failure_mode_checks:
   log_types: ["swarmingOutputType"]
 
 # For https://fxbug.dev/350541791
-# This is most often caused by an ffx daemon delay due to
+# This is most often caused by a delay in ffx due to
 # I/O contention on the Cavium
 - kind: "string_in_log"
   string: "Failed to create remote control proxy"

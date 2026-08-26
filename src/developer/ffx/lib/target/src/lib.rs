@@ -148,7 +148,7 @@ pub async fn wait_for_device(
         WaitFor::DeviceOnline | WaitFor::DeviceOffline => {
             let ever_found = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
             let use_cache = behavior == WaitFor::DeviceOffline;
-            let knocker = LocalRcsKnockerImpl { ever_found: ever_found.clone(), use_cache };
+            let knocker = RcsKnockerImpl { ever_found: ever_found.clone(), use_cache };
             wait_for_device_inner(knocker, wait_timeout, env, target_spec, behavior, ever_found)
                 .await
         }
@@ -369,8 +369,8 @@ pub trait RcsKnocker {
     ) -> impl Future<Output = Result<(), KnockError>>;
 }
 
-///  Knocks RCS without calling the ffx daemon.
-pub struct LocalRcsKnockerImpl {
+///  Knocks RCS.
+pub struct RcsKnockerImpl {
     pub ever_found: std::sync::Arc<std::sync::atomic::AtomicBool>,
     pub use_cache: bool,
 }
@@ -385,7 +385,7 @@ impl<T: RcsKnocker + ?Sized> RcsKnocker for Box<T> {
     }
 }
 
-impl RcsKnocker for LocalRcsKnockerImpl {
+impl RcsKnocker for RcsKnockerImpl {
     async fn knock_rcs(
         &self,
         target_spec: &TargetInfoQuery,

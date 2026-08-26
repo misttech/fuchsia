@@ -186,10 +186,6 @@ func TestDoProcessMock(t *testing.T) {
 				out = fmt.Sprintf("invalid ffx config command: %s", args)
 				exitCode = 1
 			}
-		case "daemon":
-			if args[0] != "stop" {
-				t.Fatalf("invalid ffx daemon command: %s", args)
-			}
 		case "target":
 			if args[0] != "add" && args[0] != "remove" {
 				t.Fatalf("invalid ffx target command: %s", args)
