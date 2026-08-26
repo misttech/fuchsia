@@ -15,12 +15,12 @@ use std::collections::{HashMap, HashSet};
 use std::hash::{Hash, Hasher};
 use std::num::NonZeroU64;
 use std::panic::Location;
-use std::sync::LazyLock;
+use std::sync::{Arc, LazyLock};
 
 static STUB_COUNTS: LazyLock<Mutex<HashMap<Invocation, Counts>>> =
     LazyLock::new(|| Mutex::new(HashMap::new()));
 
-static CONTEXT_NAME_CALLBACK: Mutex<Option<Box<dyn Fn() -> FlyByteStr + Send + Sync>>> =
+static CONTEXT_NAME_CALLBACK: Mutex<Option<Arc<dyn Fn() -> FlyByteStr + Send + Sync>>> =
     Mutex::new(None);
 
 /// Tracks a stubbed implementation.
@@ -191,13 +191,18 @@ pub fn __track_stub_inner_with_level(
     flags: Option<u64>,
     location: &'static Location<'static>,
 ) -> u64 {
+    let current_context = {
+        let cb = CONTEXT_NAME_CALLBACK.lock().clone();
+        cb.as_ref().map(|cb| cb())
+    };
+
     let mut counts = STUB_COUNTS.lock();
     let key = InvocationKey { location, message, bug };
 
     if let Some(message_counts) = counts.get_mut(&key as &dyn InvocationLookup) {
         let context_count = message_counts.by_flags.entry(flags).or_default();
-        if let Some(current_context) = CONTEXT_NAME_CALLBACK.lock().as_ref().map(|cb| cb()) {
-            message_counts.contexts_seen.insert(current_context);
+        if let Some(ref current_context) = current_context {
+            message_counts.contexts_seen.insert(current_context.clone());
         }
         if *context_count == 0 {
             match flags {
@@ -223,7 +228,7 @@ pub fn __track_stub_inner_with_level(
     }
 
     let mut message_counts = Counts::default();
-    if let Some(current_context) = CONTEXT_NAME_CALLBACK.lock().as_ref().map(|cb| cb()) {
+    if let Some(current_context) = current_context {
         message_counts.contexts_seen.insert(current_context);
     }
     message_counts.by_flags.insert(flags, 1);
@@ -234,7 +239,7 @@ pub fn __track_stub_inner_with_level(
 /// Provide a callback to retrieve the current context name, for example the name of the current
 /// Starnix process.
 pub fn register_context_name_callback(cb: impl Fn() -> FlyByteStr + Send + Sync + 'static) {
-    *CONTEXT_NAME_CALLBACK.lock() = Some(Box::new(cb));
+    *CONTEXT_NAME_CALLBACK.lock() = Some(Arc::new(cb));
 }
 
 /// Returns a future that resolves to an `Inspector` containing stub information.
@@ -545,5 +550,19 @@ mod tests {
                 }
             }
         });
+    }
+
+    #[fuchsia::test]
+    async fn test_track_stub_reentrant_context_callback() {
+        let entered = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let entered_clone = entered.clone();
+        register_context_name_callback(move || {
+            if !entered_clone.swap(true, std::sync::atomic::Ordering::SeqCst) {
+                track_stub!(TODO("https://fxbug.dev/9991"), "nested stub");
+            }
+            FlyByteStr::from("reentrant_ctx")
+        });
+
+        track_stub!(TODO("https://fxbug.dev/9992"), "outer stub");
     }
 }
