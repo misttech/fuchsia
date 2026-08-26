@@ -69,10 +69,6 @@
                     from: "#starnix_unit_test_runner",
                 },
                 {
-                    runner: "inspect_test_runner",
-                    from: "#inspect_test_runner",
-                },
-                {
                     runner: "go_test_runner",
                     from: "#go_test_runner",
                 },

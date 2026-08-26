@@ -120,7 +120,7 @@ pub static SHUTDOWN_TIMEOUT: std::time::Duration = std::time::Duration::from_sec
 // LINT.IfChange
 /// Set the size of the inspect VMO to be 350 KiB.
 pub const INSPECTOR_SIZE: usize = 350 * 1024;
-// LINT.ThenChange(/src/tests/diagnostics/meta/component_manager_status_tests.cml)
+// LINT.ThenChange(/src/tests/end_to_end/diagnostics/diagnostics_test.py)
 
 pub struct BuiltinEnvironmentBuilder {
     // TODO(60804): Make component manager's namespace injectable here.
