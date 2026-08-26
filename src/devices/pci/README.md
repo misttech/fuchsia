@@ -8,7 +8,7 @@ The PCI bus driver provides management of the PCI bus in applicable systems and 
 
 ### Location
 
-* [`//src/devices/bus/drivers/pci`](https://cs.opensource.google/fuchsia/fuchsia/+/main:src/devices/bus/drivers/pci/)
+* [`//src/devices/pci/drivers/pci`](https://cs.opensource.google/fuchsia/fuchsia/+/main:src/devices/pci/drivers/pci/)
 
 ### Organization
 
@@ -16,7 +16,7 @@ Bus level operations are handled in `bus.cc`. Device specific operations are in 
 
 ### Build Targets
 
-* [`//src/devices/bus/drivers/pci:bus-pci`](https://cs.opensource.google/fuchsia/fuchsia/+/main:src/devices/bus/drivers/pci/BUILD.gn;l=86) for the driver.
+* [`//src/devices/pci/drivers/pci:bus-pci`](https://cs.opensource.google/fuchsia/fuchsia/+/main:src/devices/pci/drivers/pci/BUILD.gn;l=86) for the driver.
 
 ## FIDL
 
@@ -43,7 +43,7 @@ The PCI bus driver binds to [`fuchsia.hardware.pciroot/Pciroot`](https://cs.open
 
 ## Tests
 
-* [`//src/devices/bus/drivers/pci:tests`](https://cs.opensource.google/fuchsia/fuchsia/+/main:src/devices/bus/drivers/pci/BUILD.gn;l=151)
+* [`//src/devices/pci/drivers/pci:tests`](https://cs.opensource.google/fuchsia/fuchsia/+/main:src/devices/pci/drivers/pci/BUILD.gn;l=117)
   * `pci-driver-test`
   * `pci-unit-test`
   * `pci-unit-test-fake_ddk`
@@ -54,7 +54,7 @@ The PCI bus driver binds to [`fuchsia.hardware.pciroot/Pciroot`](https://cs.open
 
 ## Fakes
 
-Fakes exist for most major classes in the PCI bus driver and can be found in [`//src/devices/bus/drivers/pci/test/fakes/`](https://cs.opensource.google/fuchsia/fuchsia/+/main:src/devices/bus/drivers/pci/test/fakes/)
+Fakes exist for most major classes in the PCI bus driver and can be found in [`//src/devices/pci/drivers/pci/test/fakes/`](https://cs.opensource.google/fuchsia/fuchsia/+/main:src/devices/pci/drivers/pci/test/fakes/)
 
 # Debugging
 

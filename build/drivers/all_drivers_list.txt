@@ -115,9 +115,6 @@
 //src/devices/board/drivers/sherlock:sherlock-factory-driver
 //src/devices/board/drivers/vim3-devicetree:bazel_package.bazel_build
 //src/devices/board/drivers/vim3-dml:vim3-dml-driver
-//src/devices/bus/drivers/pci/test:pci_fake-driver
-//src/devices/bus/drivers/pci/test:pci_protocol_test_driver-driver
-//src/devices/bus/drivers/pci:bus-pci-driver
 //src/devices/bus/drivers/platform/test/power-integration-test:test-power-child-driver
 //src/devices/bus/drivers/platform/test/power-integration-test:test-power-integration-board-driver
 //src/devices/bus/drivers/platform/test/power-integration-test:test-power-parent-driver
@@ -168,6 +165,9 @@
 //src/devices/nand/drivers/nandpart:nandpart-driver
 //src/devices/nand/drivers/ram-nand:ram-nand-driver
 //src/devices/nand/drivers/skip-block:driver
+//src/devices/pci/drivers/pci/test:pci_fake-driver
+//src/devices/pci/drivers/pci/test:pci_protocol_test_driver-driver
+//src/devices/pci/drivers/pci:bus-pci-driver
 //src/devices/power/drivers/aml-meson-power:aml-meson-power-driver
 //src/devices/power/drivers/aml-pwm-regulator:aml-pwm-regulator-driver
 //src/devices/power/drivers/fusb302:fusb302-driver

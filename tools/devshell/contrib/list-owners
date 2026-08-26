@@ -7,7 +7,7 @@
 ### Finds the nearest OWNERS file corresponding to the provided path, or the
 ### current working directory.
 
-## usage: fx list-owners src/devices/bus/drivers/pci/bus.cc
+## usage: fx list-owners src/devices/pci/drivers/pci/bus.cc
 ##        fx list-owners src/connectivity
 ##        fx list-owners (. is implied)
 ##

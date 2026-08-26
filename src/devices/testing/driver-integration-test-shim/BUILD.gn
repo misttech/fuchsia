@@ -18,7 +18,7 @@ library_headers("driver-integration-test-shim-headers") {
   visibility = [
     ":*",
     "//src/devices/block/drivers/ftl/tests:*",
-    "//src/devices/bus/drivers/pci/test:*",
+    "//src/devices/pci/drivers/pci/test:*",
     "//src/devices/tests/ddk-fallback-test:*",
     "//src/devices/tests/ddk-fidl-test:*",
     "//src/devices/tests/ddk-lifecycle:*",
@@ -60,7 +60,7 @@ source_set("driver-integration-test-shim") {
   visibility = [
     ":*",
     "//src/devices/block/drivers/ftl/tests:*",
-    "//src/devices/bus/drivers/pci/test:*",
+    "//src/devices/pci/drivers/pci/test:*",
     "//src/devices/tests/ddk-fallback-test:*",
     "//src/devices/tests/ddk-fidl-test:*",
     "//src/devices/tests/ddk-lifecycle:*",

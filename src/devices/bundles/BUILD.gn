@@ -25,6 +25,7 @@ group("drivers") {
     "//src/devices/misc:drivers",
     "//src/devices/ml:drivers",
     "//src/devices/nand:drivers",
+    "//src/devices/pci:drivers",
     "//src/devices/power:drivers",
     "//src/devices/pwm:drivers",
     "//src/devices/ram:drivers",

@@ -710,7 +710,7 @@ assembly_input_bundle(
     drivers = [
         {
             "set": "bootfs",
-            "package_target": "//bundles/assembly/bazel_inputs/src/devices/bus/drivers/pci:bus-pci-package",
+            "package_target": "//bundles/assembly/bazel_inputs/src/devices/pci/drivers/pci:bus-pci-package",
             "driver_components": ["meta/bus-pci.cm"],
         },
     ],
