@@ -67,12 +67,19 @@
                 // TODO(https://fxbug.dev/351037863)
                 "AshmemTest.SetNameOverflow",
 
-                // TODO(https://fxbug.dev/527579086)
-                "FsCasefold/FsCasefoldTest.OpenCaseVariantTargetAfterUnlink/*",
-                "FsCasefold/FsCasefoldTest.CaseOnlyRenameUpdatesOnDiskCasing/*",
+                // TODO(https://fxbug.dev/527579086): Starnix VFS casefold dentry cache coherence & flag inheritance.
+                "FsCasefold/FsCasefoldTest.UnlinkInvalidatesAllCaseVariants/fxfs",
+                "FsCasefold/FsCasefoldTest.DirectoryChildInheritsCasefoldFlag/fxfs",
+                "FsCasefold/FsCasefoldTest.RenameRemovesSourceCaseVariants/fxfs",
+                "FsCasefold/FsCasefoldTest.RenameOverwritesDestinationCaseVariant/fxfs",
+                "FsCasefold/FsCasefoldTest.RenameCrossCasefoldBoundary/fxfs",
+                "FsCasefold/FsCasefoldTest.RenameExchangeSwapsEntriesAcrossCaseVariants/fxfs",
 
-                // TODO(https://fxbug.dev/544902575)
-                "FsCasefold/FsCasefoldTest.NonUtf8OpaqueFallback/*",
+                // TODO(https://fxbug.dev/544902575): Non-UTF-8 and Unicode normalization support in remotefs/fxfs.
+                "FsCasefold/FsCasefoldTest.NonUtf8NameMatchesExactOpaqueBytes/fxfs",
+                "FsCasefold/FsCasefoldTest.NonUtf8BytesSuppressCasefoldingForName/fxfs",
+                "FsCasefold/FsCasefoldTest.UnicodeUnlinkRemovesAllCanonicalEquivalenceVariants/fxfs",
+                "FsCasefold/FsCasefoldTest.UnicodeLookupGivenNameExceedingNameMaxMatchesNormalizedName/fxfs",
 
                 // TODO(https://fxbug.dev/507966123): Check fd access mode in BPF_MAP_* subcommands.
                 "BpfMapTest.CannotUpdatePinnedMapWithReadOnlyFd",

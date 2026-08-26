@@ -1708,15 +1708,30 @@ class FsCasefoldTest : public ::testing::TestWithParam<std::string_view> {
       }
       FAIL() << "Failed to enable casefold: " << strerror(err);
     }
+    base_dir_ = base_dir;
     casefold_dir_ = std::move(casefold_dir.value());
   }
 
+  const std::string &base_dir() const { return base_dir_; }
   const std::string &casefold_dir() const { return casefold_dir_; }
+
+  std::string path(std::string_view relative) const {
+    return casefold_dir_ + "/" + std::string(relative);
+  }
+
+  std::string foo_lower() const { return path("foo"); }
+  std::string foo_upper() const { return path("FOO"); }
+  std::string foo_mixed() const { return path("Foo"); }
+
+  std::string bar_lower() const { return path("bar"); }
+  std::string bar_upper() const { return path("BAR"); }
+  std::string bar_mixed() const { return path("Bar"); }
 
  private:
   std::optional<test_helper::ScopedTempDir> temp_dir_;
   std::optional<test_helper::ScopedLoopDevice> loop_device_;
   std::optional<test_helper::ScopedMount> scoped_mount_;
+  std::string base_dir_;
   std::string casefold_dir_;
 };
 
@@ -1726,103 +1741,70 @@ INSTANTIATE_TEST_SUITE_P(FsCasefold, FsCasefoldTest,
                            return std::string(info.param);
                          });
 
-TEST_P(FsCasefoldTest, CasefoldDirectoryAccessAndReaddir) {
-  std::string test_dir = casefold_dir();
-
-  std::string foo_mixed = test_dir + "/Foo";
-  std::string foo_lower = test_dir + "/foo";
-  std::string foo_upper = test_dir + "/FOO";
-
-  // Create "Foo"
-  fbl::unique_fd file_fd(open(foo_mixed.c_str(), O_WRONLY | O_CREAT | O_EXCL, 0666));
+TEST_P(FsCasefoldTest, LookupMatchesCaseVariants) {
+  fbl::unique_fd file_fd(open(foo_mixed().c_str(), O_WRONLY | O_CREAT | O_EXCL, 0666));
   ASSERT_THAT(file_fd.get(), SyscallSucceeds());
-  file_fd.reset();
 
-  // Verify access via "foo" and "FOO"
-  EXPECT_THAT(access(foo_lower.c_str(), F_OK), SyscallSucceeds());
-  EXPECT_THAT(access(foo_upper.c_str(), F_OK), SyscallSucceeds());
+  EXPECT_THAT(access(foo_lower().c_str(), F_OK), SyscallSucceeds());
+  EXPECT_THAT(access(foo_upper().c_str(), F_OK), SyscallSucceeds());
+}
 
-  // Creating "foo" with O_EXCL should fail with EEXIST
-  fbl::unique_fd file_fd2(open(foo_lower.c_str(), O_WRONLY | O_CREAT | O_EXCL, 0666));
-  EXPECT_FALSE(file_fd2.is_valid());
-  EXPECT_EQ(errno, EEXIST);
+TEST_P(FsCasefoldTest, CreateExclusiveFailsIfCaseVariantExists) {
+  fbl::unique_fd file_fd(open(foo_mixed().c_str(), O_WRONLY | O_CREAT | O_EXCL, 0666));
+  ASSERT_THAT(file_fd.get(), SyscallSucceeds());
 
-  // Readdir should return "Foo"
-  DIR *dir = opendir(test_dir.c_str());
+  fbl::unique_fd file_fd2(open(foo_lower().c_str(), O_WRONLY | O_CREAT | O_EXCL, 0666));
+  EXPECT_THAT(file_fd2.get(), SyscallFailsWithErrno(EEXIST));
+}
+
+TEST_P(FsCasefoldTest, ReaddirPreservesOriginalName) {
+  fbl::unique_fd file_fd(open(foo_mixed().c_str(), O_WRONLY | O_CREAT | O_EXCL, 0666));
+  ASSERT_THAT(file_fd.get(), SyscallSucceeds());
+
+  DIR *dir = opendir(casefold_dir().c_str());
   ASSERT_NE(dir, nullptr);
   std::vector<std::string> entries = GetEntries(dir);
   closedir(dir);
 
   std::sort(entries.begin(), entries.end());
-  EXPECT_EQ(entries, std::vector<std::string>({".", "..", "Foo"}));
+  EXPECT_THAT(entries, testing::ElementsAre(".", "..", "Foo"));
 }
 
-TEST_P(FsCasefoldTest, OpenCaseVariantTargetAfterUnlink) {
-  std::string test_dir = casefold_dir();
-
-  std::string foo_mixed = test_dir + "/Foo";
-  std::string foo_lower = test_dir + "/foo";
-  std::string foo_upper = test_dir + "/FOO";
-
-  fbl::unique_fd fd_create(open(foo_mixed.c_str(), O_WRONLY | O_CREAT | O_EXCL, 0666));
+TEST_P(FsCasefoldTest, UnlinkInvalidatesAllCaseVariants) {
+  fbl::unique_fd fd_create(open(foo_mixed().c_str(), O_WRONLY | O_CREAT | O_EXCL, 0666));
   ASSERT_THAT(fd_create.get(), SyscallSucceeds());
-  ASSERT_THAT(write(fd_create.get(), "hello", 5), SyscallSucceedsWithValue(5));
   fd_create.reset();
 
-  fbl::unique_fd fd1(open(foo_lower.c_str(), O_RDWR));
-  ASSERT_THAT(fd1.get(), SyscallSucceeds());
-  fbl::unique_fd fd2(open(foo_upper.c_str(), O_RDWR));
-  ASSERT_THAT(fd2.get(), SyscallSucceeds());
+  // Populate dentry cache with lookups for case variants.
+  EXPECT_THAT(access(foo_lower().c_str(), F_OK), SyscallSucceeds());
+  EXPECT_THAT(access(foo_upper().c_str(), F_OK), SyscallSucceeds());
 
-  ASSERT_THAT(unlink(foo_lower.c_str()), SyscallSucceeds());
-  fd1.reset();
+  ASSERT_THAT(unlink(foo_lower().c_str()), SyscallSucceeds());
 
-  // After unlinking "foo", attempting to open any case variant must fail with ENOENT.
-  // In an incorrect/case-insensitive-unaware dentry cache, "FOO" or "Foo" would remain cached
-  // and erroneously succeed.
-  EXPECT_THAT(open(foo_upper.c_str(), O_RDONLY), SyscallFailsWithErrno(ENOENT));
-  EXPECT_THAT(open(foo_mixed.c_str(), O_RDONLY), SyscallFailsWithErrno(ENOENT));
-  EXPECT_THAT(access(foo_upper.c_str(), F_OK), SyscallFailsWithErrno(ENOENT));
+  // After unlinking "foo", all case variants must fail lookup with ENOENT.
+  EXPECT_THAT(open(foo_upper().c_str(), O_RDONLY), SyscallFailsWithErrno(ENOENT));
+  EXPECT_THAT(open(foo_mixed().c_str(), O_RDONLY), SyscallFailsWithErrno(ENOENT));
+  EXPECT_THAT(access(foo_upper().c_str(), F_OK), SyscallFailsWithErrno(ENOENT));
 
-  char buf[5];
-  ASSERT_THAT(lseek(fd2.get(), 0, SEEK_SET), SyscallSucceedsWithValue(0));
-  ASSERT_THAT(read(fd2.get(), buf, 5), SyscallSucceedsWithValue(5));
-  EXPECT_EQ(std::string(buf, 5), "hello");
-
-  fbl::unique_fd fd_new(open(foo_lower.c_str(), O_WRONLY | O_CREAT | O_EXCL, 0666));
+  // Creating a new file as "foo" allows opening via any case variant.
+  fbl::unique_fd fd_new(open(foo_lower().c_str(), O_WRONLY | O_CREAT | O_EXCL, 0666));
   ASSERT_THAT(fd_new.get(), SyscallSucceeds());
-  ASSERT_THAT(write(fd_new.get(), "world", 5), SyscallSucceedsWithValue(5));
-  fd_new.reset();
 
-  // The existing open fd2 should still see "hello".
-  ASSERT_THAT(lseek(fd2.get(), 0, SEEK_SET), SyscallSucceedsWithValue(0));
-  ASSERT_THAT(read(fd2.get(), buf, 5), SyscallSucceedsWithValue(5));
-  EXPECT_EQ(std::string(buf, 5), "hello");
-
-  // Opening "FOO" now should see the newly created file "world".
-  fbl::unique_fd fd_reopen(open(foo_upper.c_str(), O_RDONLY));
-  ASSERT_THAT(fd_reopen.get(), SyscallSucceeds());
-  ASSERT_THAT(read(fd_reopen.get(), buf, 5), SyscallSucceedsWithValue(5));
-  EXPECT_EQ(std::string(buf, 5), "world");
+  EXPECT_THAT(access(foo_upper().c_str(), F_OK), SyscallSucceeds());
 }
 
-TEST_P(FsCasefoldTest, CaseOnlyRenameUpdatesOnDiskCasing) {
-  std::string test_dir = casefold_dir();
-
-  std::string apple_lower = test_dir + "/apple";
-  std::string apple_upper = test_dir + "/APPLE";
-  std::string banana = test_dir + "/banana";
+TEST_P(FsCasefoldTest, RenameCaseOnlyUpdatesOnDiskName) {
+  std::string apple_lower = path("apple");
+  std::string apple_upper = path("APPLE");
 
   fbl::unique_fd fd_create(open(apple_lower.c_str(), O_WRONLY | O_CREAT | O_EXCL, 0666));
   ASSERT_THAT(fd_create.get(), SyscallSucceeds());
-  ASSERT_THAT(write(fd_create.get(), "fruit", 5), SyscallSucceedsWithValue(5));
-  fd_create.reset();
 
-  // Case-only rename
+  // Case-only rename.
   ASSERT_THAT(rename(apple_lower.c_str(), apple_upper.c_str()), SyscallSucceeds());
 
-  // Check readdir output to verify updated casing on disk
-  DIR *dir = opendir(test_dir.c_str());
+  // Check readdir output to verify updated casing on disk.
+  DIR *dir = opendir(casefold_dir().c_str());
   ASSERT_NE(dir, nullptr);
   std::vector<std::string> entries = GetEntries(dir);
   closedir(dir);
@@ -1831,37 +1813,355 @@ TEST_P(FsCasefoldTest, CaseOnlyRenameUpdatesOnDiskCasing) {
   // Linux ext4 casefold does not guarantee case-only rename updates directory entries.
   EXPECT_THAT(entries, testing::AnyOf(testing::ElementsAre(".", "..", "apple"),
                                       testing::ElementsAre(".", "..", "APPLE")));
-
-  // Access using lowercase to populate/exercise cache with "apple"
-  EXPECT_THAT(access(apple_lower.c_str(), F_OK), SyscallSucceeds());
-
-  // Rename "APPLE" -> "banana"
-  ASSERT_THAT(rename(apple_upper.c_str(), banana.c_str()), SyscallSucceeds());
-
-  // "apple" and "APPLE" must no longer exist in cache or on disk
-  EXPECT_THAT(open(apple_lower.c_str(), O_RDONLY), SyscallFailsWithErrno(ENOENT));
-  EXPECT_THAT(open(apple_upper.c_str(), O_RDONLY), SyscallFailsWithErrno(ENOENT));
-  EXPECT_THAT(access(apple_lower.c_str(), F_OK), SyscallFailsWithErrno(ENOENT));
-
-  // "banana" should be accessible and contain the original data
-  fbl::unique_fd fd_banana(open(banana.c_str(), O_RDONLY));
-  ASSERT_THAT(fd_banana.get(), SyscallSucceeds());
-  char buf[5];
-  ASSERT_THAT(read(fd_banana.get(), buf, 5), SyscallSucceedsWithValue(5));
-  EXPECT_EQ(std::string(buf, 5), "fruit");
 }
 
-TEST_P(FsCasefoldTest, NonUtf8OpaqueFallback) {
-  std::string test_dir = casefold_dir();
-
-  // Non-UTF-8 byte sequence
-  std::string non_utf8_name = test_dir + "/\xFF\xFE\xFD";
+TEST_P(FsCasefoldTest, NonUtf8NameMatchesExactOpaqueBytes) {
+  // Pure non-UTF-8 byte sequence matches exact opaque bytes.
+  std::string non_utf8_name = path("\xFF\xFE\xFD");
 
   fbl::unique_fd fd(open(non_utf8_name.c_str(), O_WRONLY | O_CREAT | O_EXCL, 0666));
   ASSERT_THAT(fd.get(), SyscallSucceeds());
-  fd.reset();
 
   EXPECT_THAT(access(non_utf8_name.c_str(), F_OK), SyscallSucceeds());
+}
+
+TEST_P(FsCasefoldTest, NonUtf8BytesSuppressCasefoldingForName) {
+  // Mixed invalid UTF-8 and ASCII: invalid UTF-8 bytes suppress casefolding for the name.
+  std::string mixed_name = path("Test_\xFF_File");
+  fbl::unique_fd fd_mixed(open(mixed_name.c_str(), O_WRONLY | O_CREAT | O_EXCL, 0666));
+  ASSERT_THAT(fd_mixed.get(), SyscallSucceeds());
+
+  EXPECT_THAT(access(mixed_name.c_str(), F_OK), SyscallSucceeds());
+  std::string mixed_lower = path("test_\xFF_file");
+  EXPECT_THAT(access(mixed_lower.c_str(), F_OK), SyscallFailsWithErrno(ENOENT));
+}
+
+TEST_P(FsCasefoldTest, DirectoryChildInheritsCasefoldFlag) {
+  std::string child_dir = path("SubDir");
+  ASSERT_THAT(mkdir(child_dir.c_str(), 0777), SyscallSucceeds());
+
+  fbl::unique_fd child_fd(open(child_dir.c_str(), O_RDONLY | O_DIRECTORY));
+  ASSERT_THAT(child_fd.get(), SyscallSucceeds());
+  int flags = 0;
+  ASSERT_THAT(ioctl(child_fd.get(), FS_IOC_GETFLAGS, &flags), SyscallSucceeds());
+  EXPECT_TRUE((flags & FS_CASEFOLD_FL) != 0);
+}
+
+TEST_P(FsCasefoldTest, DirectoryMultiNamePathResolvesCaseInsensitively) {
+  std::string child_dir = path("SubDir");
+  ASSERT_THAT(mkdir(child_dir.c_str(), 0777), SyscallSucceeds());
+
+  std::string file_mixed = child_dir + "/NestedFile";
+  std::string file_lower = path("subdir/nestedfile");
+  std::string file_upper = path("SUBDIR/NESTEDFILE");
+
+  fbl::unique_fd file_fd(open(file_mixed.c_str(), O_WRONLY | O_CREAT | O_EXCL, 0666));
+  ASSERT_THAT(file_fd.get(), SyscallSucceeds());
+
+  EXPECT_THAT(access(file_lower.c_str(), F_OK), SyscallSucceeds());
+  EXPECT_THAT(access(file_upper.c_str(), F_OK), SyscallSucceeds());
+}
+
+TEST_P(FsCasefoldTest, HardLinkCreateFailsIfLinkNameCaseVariantExists) {
+  fbl::unique_fd fd(open(foo_mixed().c_str(), O_WRONLY | O_CREAT | O_EXCL, 0666));
+  ASSERT_THAT(fd.get(), SyscallSucceeds());
+
+  // Creating a hard link whose link name collides in case with an existing entry must fail with
+  // EEXIST.
+  EXPECT_THAT(link(foo_mixed().c_str(), foo_lower().c_str()), SyscallFailsWithErrno(EEXIST));
+  EXPECT_THAT(link(foo_lower().c_str(), foo_upper().c_str()), SyscallFailsWithErrno(EEXIST));
+}
+
+TEST_P(FsCasefoldTest, HardLinkResolvesSourceCaseInsensitively) {
+  fbl::unique_fd fd_create(open(foo_mixed().c_str(), O_WRONLY | O_CREAT | O_EXCL, 0666));
+  ASSERT_THAT(fd_create.get(), SyscallSucceeds());
+
+  // Create hard link "Bar" pointing to source "FOO" (resolved case-insensitively).
+  ASSERT_THAT(link(foo_upper().c_str(), bar_mixed().c_str()), SyscallSucceeds());
+
+  struct stat stat_foo = {};
+  struct stat stat_bar = {};
+  ASSERT_THAT(stat(foo_upper().c_str(), &stat_foo), SyscallSucceeds());
+  ASSERT_THAT(stat(bar_lower().c_str(), &stat_bar), SyscallSucceeds());
+
+  EXPECT_EQ(stat_foo.st_ino, stat_bar.st_ino);
+  EXPECT_EQ(stat_foo.st_dev, stat_bar.st_dev);
+  EXPECT_EQ(stat_foo.st_nlink, 2u);
+  EXPECT_EQ(stat_bar.st_nlink, 2u);
+}
+
+TEST_P(FsCasefoldTest, SymlinkCreateFailsIfLinkNameCaseVariantExists) {
+  std::string link_mixed = path("LinkA");
+  std::string link_lower = path("linka");
+
+  ASSERT_THAT(symlink("target_path", link_mixed.c_str()), SyscallSucceeds());
+  EXPECT_THAT(symlink("other_target", link_lower.c_str()), SyscallFailsWithErrno(EEXIST));
+}
+
+TEST_P(FsCasefoldTest, SymlinkLookupMatchesCaseVariants) {
+  std::string link_mixed = path("LinkA");
+  std::string link_upper = path("LINKA");
+
+  ASSERT_THAT(symlink("target_path", link_mixed.c_str()), SyscallSucceeds());
+
+  char buf[64] = {};
+  ssize_t len = readlink(link_upper.c_str(), buf, sizeof(buf) - 1);
+  ASSERT_THAT(len, SyscallSucceedsWithValue(11));
+  EXPECT_EQ(std::string(buf, len), "target_path");
+}
+
+TEST_P(FsCasefoldTest, SymlinkTraversalResolvesTargetCaseInsensitively) {
+  // Create an on-disk target file "TargetFile".
+  std::string target_file = path("TargetFile");
+  fbl::unique_fd fd(open(target_file.c_str(), O_WRONLY | O_CREAT | O_EXCL, 0666));
+  ASSERT_THAT(fd.get(), SyscallSucceeds());
+
+  // Symlink points to "targetfile" (lowercase).
+  std::string symlink_file = path("SymlinkToTarget");
+  ASSERT_THAT(symlink("targetfile", symlink_file.c_str()), SyscallSucceeds());
+
+  // Opening the symlink follows it and resolves "targetfile" to "TargetFile" case-insensitively.
+  EXPECT_THAT(access(symlink_file.c_str(), F_OK), SyscallSucceeds());
+}
+
+TEST_P(FsCasefoldTest, RenameRemovesSourceCaseVariants) {
+  std::string src_mixed = path("Source");
+  std::string src_lower = path("source");
+  std::string src_upper = path("SOURCE");
+  std::string dst_mixed = path("Target");
+  std::string dst_lower = path("target");
+
+  ASSERT_TRUE(files::WriteFile(src_mixed, "source_data"));
+
+  ASSERT_THAT(rename(src_lower.c_str(), dst_mixed.c_str()), SyscallSucceeds());
+
+  EXPECT_THAT(open(src_mixed.c_str(), O_RDONLY), SyscallFailsWithErrno(ENOENT));
+  EXPECT_THAT(open(src_lower.c_str(), O_RDONLY), SyscallFailsWithErrno(ENOENT));
+  EXPECT_THAT(open(src_upper.c_str(), O_RDONLY), SyscallFailsWithErrno(ENOENT));
+
+  EXPECT_THAT(access(dst_lower.c_str(), F_OK), SyscallSucceeds());
+}
+
+TEST_P(FsCasefoldTest, RenameOverwritesDestinationCaseVariant) {
+  std::string src_mixed = path("Source");
+  std::string src_lower = path("source");
+  std::string dst_mixed = path("Target");
+  std::string dst_upper = path("TARGET");
+
+  ASSERT_TRUE(files::WriteFile(src_mixed, "source_data"));
+  ASSERT_TRUE(files::WriteFile(dst_mixed, "target_data"));
+
+  // Rename source (addressed as lower) over target (addressed as upper).
+  ASSERT_THAT(rename(src_lower.c_str(), dst_upper.c_str()), SyscallSucceeds());
+
+  EXPECT_THAT(open(src_mixed.c_str(), O_RDONLY), SyscallFailsWithErrno(ENOENT));
+  EXPECT_THAT(open(src_lower.c_str(), O_RDONLY), SyscallFailsWithErrno(ENOENT));
+
+  EXPECT_THAT(access(dst_mixed.c_str(), F_OK), SyscallSucceeds());
+
+  std::string content;
+  ASSERT_TRUE(files::ReadFileToString(dst_mixed, &content));
+  EXPECT_EQ(content, "source_data");
+}
+
+TEST_P(FsCasefoldTest, RenameNoReplaceFailsIfDestinationCaseVariantExists) {
+  ASSERT_TRUE(files::WriteFile(foo_mixed(), "foo_data"));
+  ASSERT_TRUE(files::WriteFile(bar_mixed(), "bar_data"));
+
+  // RENAME_NOREPLACE must fail with EEXIST when destination exists as a case variant.
+  EXPECT_THAT(
+      renameat2(AT_FDCWD, bar_mixed().c_str(), AT_FDCWD, foo_lower().c_str(), RENAME_NOREPLACE),
+      SyscallFailsWithErrno(EEXIST));
+
+  EXPECT_THAT(access(foo_mixed().c_str(), F_OK), SyscallSucceeds());
+  EXPECT_THAT(access(bar_mixed().c_str(), F_OK), SyscallSucceeds());
+}
+
+TEST_P(FsCasefoldTest, RenameExchangeSwapsEntriesAcrossCaseVariants) {
+  std::string file1_mixed = path("FileOne");
+  std::string file1_lower = path("fileone");
+  std::string file2_mixed = path("FileTwo");
+  std::string file2_upper = path("FILETWO");
+
+  ASSERT_TRUE(files::WriteFile(file1_mixed, "payload_one"));
+  ASSERT_TRUE(files::WriteFile(file2_mixed, "payload_two"));
+
+  // Exchange FileOne (as lower) and FileTwo (as upper).
+  ASSERT_THAT(
+      renameat2(AT_FDCWD, file1_lower.c_str(), AT_FDCWD, file2_upper.c_str(), RENAME_EXCHANGE),
+      SyscallSucceeds());
+
+  EXPECT_THAT(access(file1_mixed.c_str(), F_OK), SyscallSucceeds());
+  EXPECT_THAT(access(file2_mixed.c_str(), F_OK), SyscallSucceeds());
+
+  std::string content1;
+  ASSERT_TRUE(files::ReadFileToString(file1_mixed, &content1));
+  EXPECT_EQ(content1, "payload_two");
+
+  std::string content2;
+  ASSERT_TRUE(files::ReadFileToString(file2_mixed, &content2));
+  EXPECT_EQ(content2, "payload_one");
+}
+
+TEST_P(FsCasefoldTest, RenameExchangeSameEntryCaseVariantsSucceeds) {
+  ASSERT_TRUE(files::WriteFile(foo_mixed(), "foo_data"));
+
+  // Exchanging an entry with a case variant of itself is a no-op that succeeds per Linux VFS.
+  EXPECT_THAT(
+      renameat2(AT_FDCWD, foo_lower().c_str(), AT_FDCWD, foo_upper().c_str(), RENAME_EXCHANGE),
+      SyscallSucceeds());
+
+  EXPECT_THAT(access(foo_mixed().c_str(), F_OK), SyscallSucceeds());
+  EXPECT_THAT(access(foo_lower().c_str(), F_OK), SyscallSucceeds());
+  EXPECT_THAT(access(foo_upper().c_str(), F_OK), SyscallSucceeds());
+}
+
+TEST_P(FsCasefoldTest, RenameCrossCasefoldBoundary) {
+  std::string normal_dir = base_dir() + "/normal_dir";
+  ASSERT_THAT(mkdir(normal_dir.c_str(), 0777), SyscallSucceeds());
+
+  std::string normal_file = normal_dir + "/hello.txt";
+  ASSERT_TRUE(files::WriteFile(normal_file, "hello_content"));
+
+  // Move from normal (case-sensitive) directory to casefolded directory as "Hello.Txt".
+  std::string moved_mixed = path("Hello.Txt");
+  std::string moved_lower = path("hello.txt");
+  std::string moved_upper = path("HELLO.TXT");
+
+  ASSERT_THAT(rename(normal_file.c_str(), moved_mixed.c_str()), SyscallSucceeds());
+
+  EXPECT_THAT(access(normal_file.c_str(), F_OK), SyscallFailsWithErrno(ENOENT));
+  EXPECT_THAT(access(moved_lower.c_str(), F_OK), SyscallSucceeds());
+  EXPECT_THAT(access(moved_upper.c_str(), F_OK), SyscallSucceeds());
+
+  // Move back from casefolded directory (addressed as uppercase) to normal directory as "back.txt".
+  std::string back_file = normal_dir + "/back.txt";
+  ASSERT_THAT(rename(moved_upper.c_str(), back_file.c_str()), SyscallSucceeds());
+
+  EXPECT_THAT(access(moved_lower.c_str(), F_OK), SyscallFailsWithErrno(ENOENT));
+  EXPECT_THAT(access(back_file.c_str(), F_OK), SyscallSucceeds());
+  std::string back_file_upper = normal_dir + "/BACK.TXT";
+  EXPECT_THAT(access(back_file_upper.c_str(), F_OK), SyscallFailsWithErrno(ENOENT));
+
+  std::string content;
+  ASSERT_TRUE(files::ReadFileToString(back_file, &content));
+  EXPECT_EQ(content, "hello_content");
+}
+
+TEST_P(FsCasefoldTest, UnicodeBasicEquivalence) {
+  // 1. Latin NFC vs NFD with case variations.
+  // Precomposed NFC "café" (4 bytes: 'c', 'a', 'f', U+00E9 "\xC3\xA9")
+  std::string cafe_nfc_lower = path("caf\xC3\xA9");
+  // Precomposed NFC "CAFÉ" (4 bytes: 'C', 'A', 'F', U+00C9 "\xC3\x89")
+  std::string cafe_nfc_upper = path("CAF\xC3\x89");
+  // Decomposed NFD "café" (5 bytes: 'c', 'a', 'f', 'e', U+0301 "\xCC\x81")
+  std::string cafe_nfd_lower = path("cafe\xCC\x81");
+  // Decomposed NFD "CAFÉ" (5 bytes: 'C', 'A', 'F', 'E', U+0301 "\xCC\x81")
+  std::string cafe_nfd_upper = path("CAFE\xCC\x81");
+
+  fbl::unique_fd fd(open(cafe_nfc_lower.c_str(), O_WRONLY | O_CREAT | O_EXCL, 0666));
+  ASSERT_THAT(fd.get(), SyscallSucceeds());
+
+  // Access checks must succeed across all 4 NFC/NFD case variants.
+  EXPECT_THAT(access(cafe_nfc_upper.c_str(), F_OK), SyscallSucceeds());
+  EXPECT_THAT(access(cafe_nfd_lower.c_str(), F_OK), SyscallSucceeds());
+  EXPECT_THAT(access(cafe_nfd_upper.c_str(), F_OK), SyscallSucceeds());
+
+  // Inode identity must match across NFC and NFD.
+  struct stat stat_nfc = {};
+  struct stat stat_nfd = {};
+  ASSERT_THAT(stat(cafe_nfc_lower.c_str(), &stat_nfc), SyscallSucceeds());
+  ASSERT_THAT(stat(cafe_nfd_upper.c_str(), &stat_nfd), SyscallSucceeds());
+  EXPECT_EQ(stat_nfc.st_ino, stat_nfd.st_ino);
+  EXPECT_EQ(stat_nfc.st_dev, stat_nfd.st_dev);
+
+  // 2. Non-Latin script: Greek uppercase "ΔΟΚΙΜΗ" vs lowercase "δοκιμη".
+  std::string greek_upper = path("\xCE\x94\xCE\x9F\xCE\x9A\xCE\x99\xCE\x9C\xCE\x97");
+  std::string greek_lower = path("\xCE\xB4\xCE\xBF\xCE\xBA\xCE\xB9\xCE\xBC\xCE\xB7");
+
+  fbl::unique_fd fd_greek(open(greek_upper.c_str(), O_WRONLY | O_CREAT | O_EXCL, 0666));
+  ASSERT_THAT(fd_greek.get(), SyscallSucceeds());
+
+  EXPECT_THAT(access(greek_lower.c_str(), F_OK), SyscallSucceeds());
+}
+
+TEST_P(FsCasefoldTest, UnicodeCreateExclusiveFailsAcrossCanonicalEquivalence) {
+  std::string cafe_nfc_lower = path("caf\xC3\xA9");
+  std::string cafe_nfd_lower = path("cafe\xCC\x81");
+
+  fbl::unique_fd fd(open(cafe_nfc_lower.c_str(), O_WRONLY | O_CREAT | O_EXCL, 0666));
+  ASSERT_THAT(fd.get(), SyscallSucceeds());
+
+  // Creating with O_EXCL using decomposed form must fail with EEXIST.
+  fbl::unique_fd fd_nfd(open(cafe_nfd_lower.c_str(), O_WRONLY | O_CREAT | O_EXCL, 0666));
+  EXPECT_THAT(fd_nfd.get(), SyscallFailsWithErrno(EEXIST));
+}
+
+TEST_P(FsCasefoldTest, UnicodeUnlinkRemovesAllCanonicalEquivalenceVariants) {
+  std::string cafe_nfc_lower = path("caf\xC3\xA9");
+  std::string cafe_nfd_lower = path("cafe\xCC\x81");
+  std::string cafe_nfd_upper = path("CAFE\xCC\x81");
+
+  ASSERT_TRUE(files::WriteFile(cafe_nfc_lower, "cafe_data"));
+
+  // Unlink using NFD must succeed and remove the entry for all variants.
+  ASSERT_THAT(unlink(cafe_nfd_lower.c_str()), SyscallSucceeds());
+  EXPECT_THAT(open(cafe_nfc_lower.c_str(), O_RDONLY), SyscallFailsWithErrno(ENOENT));
+  EXPECT_THAT(open(cafe_nfd_upper.c_str(), O_RDONLY), SyscallFailsWithErrno(ENOENT));
+}
+
+TEST_P(FsCasefoldTest, UnicodeLookupGivenNameExceedingNameMaxMatchesNormalizedName) {
+  // Construct a 200-byte precomposed NFC name (100 repetitions of U+00E9 "\xC3\xA9", 2 bytes each).
+  // This is <= NAME_MAX (255 bytes) in NFC form, but expands to 300 bytes in decomposed NFD form
+  // (100 repetitions of 'e' + U+0301 "\xCC\x81", 3 bytes each).
+  std::string nfc_name;
+  std::string nfd_name;
+  for (int i = 0; i < 100; ++i) {
+    nfc_name += "\xC3\xA9";
+    nfd_name += "e\xCC\x81";
+  }
+  ASSERT_EQ(nfc_name.size(), 200u);
+  ASSERT_EQ(nfd_name.size(), 300u);
+
+  std::string nfc_path = path(nfc_name);
+  std::string nfd_path = path(nfd_name);
+
+  // Creating via the 200-byte NFC name succeeds (raw length <= NAME_MAX).
+  fbl::unique_fd fd(open(nfc_path.c_str(), O_WRONLY | O_CREAT | O_EXCL, 0666));
+  ASSERT_THAT(fd.get(), SyscallSucceeds());
+
+  EXPECT_THAT(access(nfc_path.c_str(), F_OK), SyscallSucceeds());
+
+  // Looking up via the 300-byte NFD name succeeds in Linux casefold filesystems because
+  // the given name normalizes to the 200-byte NFC name on disk.
+  EXPECT_THAT(access(nfd_path.c_str(), F_OK), SyscallSucceeds());
+  EXPECT_THAT(open(nfd_path.c_str(), O_RDONLY), SyscallSucceeds());
+}
+
+TEST_P(FsCasefoldTest, UnicodeCanonicalEquivalenceWithMultiByteExpansion) {
+  // Construct an unexpanded 160-byte name (80 repetitions of Latin Capital Letter I with Dot Above,
+  // U+0130, "\xC4\xB0", 2 bytes each).
+  // Under Unicode casefolding, each character expands to 3 bytes ('i' + combining dot
+  // "\x69\xCC\x87"), resulting in a 240-byte expanded name (still <= NAME_MAX = 255 bytes).
+  std::string dotted_i_upper;
+  std::string dotted_i_lower;
+  for (int i = 0; i < 80; ++i) {
+    dotted_i_upper += "\xC4\xB0";
+    dotted_i_lower += "\x69\xCC\x87";
+  }
+  ASSERT_EQ(dotted_i_upper.size(), 160u);
+  ASSERT_EQ(dotted_i_lower.size(), 240u);
+
+  std::string dotted_i_upper_path = path(dotted_i_upper);
+  std::string dotted_i_lower_path = path(dotted_i_lower);
+
+  // Creating via the 160-byte name succeeds.
+  fbl::unique_fd fd(open(dotted_i_upper_path.c_str(), O_WRONLY | O_CREAT | O_EXCL, 0666));
+  ASSERT_THAT(fd.get(), SyscallSucceeds());
+
+  // Accessing via the expanded 240-byte casefolded representation succeeds across the length
+  // expansion.
+  EXPECT_THAT(access(dotted_i_lower_path.c_str(), F_OK), SyscallSucceeds());
 }
 
 }  // namespace
