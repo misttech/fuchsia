@@ -1567,6 +1567,9 @@ group("tool_paths.metadata") {
 
     rbe_metrics_summary_script,
 
+    # Unified python build orchestrator
+    "//build/scripts/main_build.py",
+
     # drop-in replacement for ninja that is wrapped with rsproxy for ResultStore
     "//build/resultstore/rs-sub-ninja.sh",
 
