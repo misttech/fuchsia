@@ -471,6 +471,7 @@ async fn reboot_target_to_bootloader_and_rediscover(
     ctx: &EnvironmentContext,
     device_proxy: DeviceProxy,
     power_proxy: AdminProxy,
+    node_name: &Option<String>,
 ) -> fho::Result<TargetHandle> {
     // Wait to allow the Target to fully cycle to the bootloader
     writeln!(writer, "Waiting for Target to reboot...")
@@ -498,12 +499,10 @@ async fn reboot_target_to_bootloader_and_rediscover(
         Err(e) => handle_fidl_connection_err(e)?,
     };
 
-    // When rebooting from Product mode to Fastboot mode, the target will no longer advertise
-    // its Fuchsia nodename. We query by serial number if one is available; otherwise, we fall
-    // back to TargetInfoQuery::First to rediscover the fastboot target.
-    let query = match info.serial_number.filter(|sn| !sn.is_empty()) {
-        Some(sn) => TargetInfoQuery::Id(sn),
-        None => TargetInfoQuery::First,
+    let query = match (info.serial_number, node_name) {
+        (Some(sn), _) => TargetInfoQuery::Id(sn),
+        (None, Some(nn)) => TargetInfoQuery::NodenameOrId(nn.clone()),
+        (None, None) => TargetInfoQuery::First,
     };
     ffx_target::discover_fastboot_target(&ctx, query, Some(100000)).await.map_err(|e| e.into())
 }
@@ -541,6 +540,7 @@ Reboot the Target to the bootloader and re-run this command."
                     &self.ctx,
                     device_proxy,
                     power_proxy,
+                    &handle.node_name,
                 )
                 .await?
             }
