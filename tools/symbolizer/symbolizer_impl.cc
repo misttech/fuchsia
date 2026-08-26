@@ -17,6 +17,7 @@
 #include <rapidjson/rapidjson.h>
 
 #include "lib/fit/defer.h"
+#include "src/developer/debug/ipc/automation_instruction.h"
 #include "src/developer/debug/ipc/records.h"
 #include "src/developer/debug/zxdb/client/client_object.h"
 #include "src/developer/debug/zxdb/client/frame.h"
@@ -331,7 +332,8 @@ void SymbolizerImpl::MMap(uint64_t address, uint64_t size, uint64_t module_id,
   }
 }
 
-SymbolizerImpl::BacktraceStatus SymbolizerImpl::Backtrace(uint64_t address, AddressType type,
+SymbolizerImpl::BacktraceStatus SymbolizerImpl::Backtrace(uint64_t address,
+                                                          debug_ipc::StackFrame::AddressType type,
                                                           LocationOutputFn output) {
   FX_LOGS(TRACE) << "Symbolizing backtrace for address 0x" << std::hex << address;
   InitProcess();
@@ -373,7 +375,7 @@ SymbolizerImpl::BacktraceStatus SymbolizerImpl::Backtrace(uint64_t address, Addr
   }
   // Substracts 1 from the address if it's a return address or unknown. It shouldn't be an issue
   // for unknown addresses as most instructions are more than 1 byte.
-  if (type != AddressType::kProgramCounter) {
+  if (type != debug_ipc::StackFrame::AddressType::kExact) {
     call_address -= 1;
   }
 
@@ -426,8 +428,9 @@ SymbolizerImpl::BacktraceStatus SymbolizerImpl::Backtrace(uint64_t address, Addr
   return BacktraceStatus::kOk;
 }
 
-void SymbolizerImpl::Backtrace(uint64_t frame_id, uint64_t address, AddressType type,
-                               std::string_view message, StringOutputFn output) {
+void SymbolizerImpl::Backtrace(uint64_t frame_id, uint64_t address,
+                               debug_ipc::StackFrame::AddressType type, std::string_view message,
+                               StringOutputFn output) {
   if (prettify_enabled_ && in_batch_mode_) {
     if (frame_id < frames_in_batch_mode_.size()) {
       OutputBatchedBacktrace();
@@ -489,8 +492,11 @@ void SymbolizerImpl::OutputBatchedBacktrace() {
   std::vector<debug_ipc::StackFrame> input_frames;
   input_frames.reserve(frames_in_batch_mode_.size());
   for (auto& frame : frames_in_batch_mode_) {
-    // TODO(https://fxbug.dev/42081121): type is not used.
-    input_frames.emplace_back(frame.address, 0);
+    input_frames.emplace_back(frame.address,
+                              /*sp*/ 0,
+                              /*cfa*/ 0, debug_ipc::StackFrame::Trust::kUnknown,
+                              /*pc_is_return_address*/ frame.type,
+                              std::vector<debug::RegisterValue>{});
   }
   zxdb::Stack& stack = target_->GetProcess()->GetThreads()[0]->GetStack();
   stack.SetFrames(debug_ipc::ThreadRecord::StackAmount::kFull, input_frames);

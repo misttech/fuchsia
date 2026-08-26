@@ -10,6 +10,7 @@
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
+#include "src/developer/debug/ipc/records.h"
 #include "tools/symbolizer/symbolizer.h"
 
 namespace symbolizer {
@@ -28,8 +29,8 @@ class MockSymbolizer : public Symbolizer {
                uint64_t module_offset, StringOutputFn output),
               (override));
   MOCK_METHOD(void, Backtrace,
-              (uint64_t frame_id, uint64_t address, AddressType type, std::string_view message,
-               StringOutputFn output),
+              (uint64_t frame_id, uint64_t address, debug_ipc::StackFrame::AddressType type,
+               std::string_view message, StringOutputFn output),
               (override));
   MOCK_METHOD(void, DumpFile, (std::string_view type, std::string_view name), (override));
 };
@@ -89,15 +90,16 @@ TEST_F(LogParserTest, MMap) {
 }
 
 TEST_F(LogParserTest, Backtrace) {
-  EXPECT_CALL(symbolizer_, Backtrace(1, 0xbb57d370b0, Symbolizer::AddressType::kUnknown, "", _));
-  ProcessOneLine("{{{bt:1:0xbb57d370b0}}}");
   EXPECT_CALL(symbolizer_,
-              Backtrace(1, 0xbb57d370b0, Symbolizer::AddressType::kUnknown, "sp 0x3f540e65ef0", _));
+              Backtrace(1, 0xbb57d370b0, debug_ipc::StackFrame::AddressType::kUnknown, "", _));
+  ProcessOneLine("{{{bt:1:0xbb57d370b0}}}");
+  EXPECT_CALL(symbolizer_, Backtrace(1, 0xbb57d370b0, debug_ipc::StackFrame::AddressType::kUnknown,
+                                     "sp 0x3f540e65ef0", _));
   ProcessOneLine("{{{bt:1:0xbb57d370b0:sp 0x3f540e65ef0}}}");
   EXPECT_CALL(symbolizer_,
-              Backtrace(1, 0xbb57d370b0, Symbolizer::AddressType::kProgramCounter, "", _));
+              Backtrace(1, 0xbb57d370b0, debug_ipc::StackFrame::AddressType::kExact, "", _));
   ProcessOneLine("{{{bt:1:0xbb57d370b0:pc}}}");
-  EXPECT_CALL(symbolizer_, Backtrace(1, 0xbb57d370b0, Symbolizer::AddressType::kProgramCounter,
+  EXPECT_CALL(symbolizer_, Backtrace(1, 0xbb57d370b0, debug_ipc::StackFrame::AddressType::kExact,
                                      "sp 0x3f540e65ef0", _));
   ProcessOneLine("{{{bt:1:0xbb57d370b0:pc:sp 0x3f540e65ef0}}}");
   ASSERT_EQ(output_.str(), "");
@@ -110,12 +112,14 @@ TEST_F(LogParserTest, DumpFile) {
 
 TEST_F(LogParserTest, MultipleMarkup) {
   // Multiple bt tags on the same line.
-  EXPECT_CALL(symbolizer_, Backtrace(0, 0x1000, Symbolizer::AddressType::kUnknown, "", _))
-      .WillOnce([](uint64_t frame_id, uint64_t address, Symbolizer::AddressType type,
+  EXPECT_CALL(symbolizer_,
+              Backtrace(0, 0x1000, debug_ipc::StackFrame::AddressType::kUnknown, "", _))
+      .WillOnce([](uint64_t frame_id, uint64_t address, debug_ipc::StackFrame::AddressType type,
                    std::string_view message,
                    Symbolizer::StringOutputFn output) { output("frame_0_symbolized"); });
-  EXPECT_CALL(symbolizer_, Backtrace(1, 0x2000, Symbolizer::AddressType::kUnknown, "", _))
-      .WillOnce([](uint64_t frame_id, uint64_t address, Symbolizer::AddressType type,
+  EXPECT_CALL(symbolizer_,
+              Backtrace(1, 0x2000, debug_ipc::StackFrame::AddressType::kUnknown, "", _))
+      .WillOnce([](uint64_t frame_id, uint64_t address, debug_ipc::StackFrame::AddressType type,
                    std::string_view message,
                    Symbolizer::StringOutputFn output) { output("frame_1_symbolized"); });
   ProcessOneLine("prefix {{{bt:0:0x1000}}} middle {{{bt:1:0x2000}}} suffix");
@@ -125,8 +129,9 @@ TEST_F(LogParserTest, MultipleMarkup) {
 
   // module + bt tags on the same line.
   EXPECT_CALL(symbolizer_, Module(0, "libc.so", "8ce60b"));
-  EXPECT_CALL(symbolizer_, Backtrace(0, 0x3000, Symbolizer::AddressType::kUnknown, "", _))
-      .WillOnce([](uint64_t frame_id, uint64_t address, Symbolizer::AddressType type,
+  EXPECT_CALL(symbolizer_,
+              Backtrace(0, 0x3000, debug_ipc::StackFrame::AddressType::kUnknown, "", _))
+      .WillOnce([](uint64_t frame_id, uint64_t address, debug_ipc::StackFrame::AddressType type,
                    std::string_view message,
                    Symbolizer::StringOutputFn output) { output("frame_bt_symbolized"); });
   ProcessOneLine(
@@ -136,8 +141,9 @@ TEST_F(LogParserTest, MultipleMarkup) {
   output_.clear();
 
   // Invalid tags intermingled with valid tags.
-  EXPECT_CALL(symbolizer_, Backtrace(0, 0x4000, Symbolizer::AddressType::kUnknown, "", _))
-      .WillOnce([](uint64_t frame_id, uint64_t address, Symbolizer::AddressType type,
+  EXPECT_CALL(symbolizer_,
+              Backtrace(0, 0x4000, debug_ipc::StackFrame::AddressType::kUnknown, "", _))
+      .WillOnce([](uint64_t frame_id, uint64_t address, debug_ipc::StackFrame::AddressType type,
                    std::string_view message,
                    Symbolizer::StringOutputFn output) { output("frame_valid_symbolized"); });
   ProcessOneLine("foo {{{invalid:tag}}} bar {{{bt:0:0x4000}}} baz {{{unclosed:tag");
@@ -147,8 +153,9 @@ TEST_F(LogParserTest, MultipleMarkup) {
   output_.clear();
 
   // Zero-length prefix and suffix logic.
-  EXPECT_CALL(symbolizer_, Backtrace(0, 0x5000, Symbolizer::AddressType::kUnknown, "", _))
-      .WillOnce([](uint64_t frame_id, uint64_t address, Symbolizer::AddressType type,
+  EXPECT_CALL(symbolizer_,
+              Backtrace(0, 0x5000, debug_ipc::StackFrame::AddressType::kUnknown, "", _))
+      .WillOnce([](uint64_t frame_id, uint64_t address, debug_ipc::StackFrame::AddressType type,
                    std::string_view message,
                    Symbolizer::StringOutputFn output) { output("frame_zero_len"); });
   ProcessOneLine("{{{bt:0:0x5000}}}");
@@ -157,35 +164,45 @@ TEST_F(LogParserTest, MultipleMarkup) {
   output_.clear();
 
   // 10+ consecutive tags on a single line.
-  EXPECT_CALL(symbolizer_, Backtrace(0, 0x1000, Symbolizer::AddressType::kUnknown, "", _))
-      .WillOnce([](uint64_t frame_id, uint64_t address, Symbolizer::AddressType type,
+  EXPECT_CALL(symbolizer_,
+              Backtrace(0, 0x1000, debug_ipc::StackFrame::AddressType::kUnknown, "", _))
+      .WillOnce([](uint64_t frame_id, uint64_t address, debug_ipc::StackFrame::AddressType type,
                    std::string_view message, Symbolizer::StringOutputFn output) { output("f0"); });
-  EXPECT_CALL(symbolizer_, Backtrace(1, 0x2000, Symbolizer::AddressType::kUnknown, "", _))
-      .WillOnce([](uint64_t frame_id, uint64_t address, Symbolizer::AddressType type,
+  EXPECT_CALL(symbolizer_,
+              Backtrace(1, 0x2000, debug_ipc::StackFrame::AddressType::kUnknown, "", _))
+      .WillOnce([](uint64_t frame_id, uint64_t address, debug_ipc::StackFrame::AddressType type,
                    std::string_view message, Symbolizer::StringOutputFn output) { output("f1"); });
-  EXPECT_CALL(symbolizer_, Backtrace(2, 0x3000, Symbolizer::AddressType::kUnknown, "", _))
-      .WillOnce([](uint64_t frame_id, uint64_t address, Symbolizer::AddressType type,
+  EXPECT_CALL(symbolizer_,
+              Backtrace(2, 0x3000, debug_ipc::StackFrame::AddressType::kUnknown, "", _))
+      .WillOnce([](uint64_t frame_id, uint64_t address, debug_ipc::StackFrame::AddressType type,
                    std::string_view message, Symbolizer::StringOutputFn output) { output("f2"); });
-  EXPECT_CALL(symbolizer_, Backtrace(3, 0x4000, Symbolizer::AddressType::kUnknown, "", _))
-      .WillOnce([](uint64_t frame_id, uint64_t address, Symbolizer::AddressType type,
+  EXPECT_CALL(symbolizer_,
+              Backtrace(3, 0x4000, debug_ipc::StackFrame::AddressType::kUnknown, "", _))
+      .WillOnce([](uint64_t frame_id, uint64_t address, debug_ipc::StackFrame::AddressType type,
                    std::string_view message, Symbolizer::StringOutputFn output) { output("f3"); });
-  EXPECT_CALL(symbolizer_, Backtrace(4, 0x5000, Symbolizer::AddressType::kUnknown, "", _))
-      .WillOnce([](uint64_t frame_id, uint64_t address, Symbolizer::AddressType type,
+  EXPECT_CALL(symbolizer_,
+              Backtrace(4, 0x5000, debug_ipc::StackFrame::AddressType::kUnknown, "", _))
+      .WillOnce([](uint64_t frame_id, uint64_t address, debug_ipc::StackFrame::AddressType type,
                    std::string_view message, Symbolizer::StringOutputFn output) { output("f4"); });
-  EXPECT_CALL(symbolizer_, Backtrace(5, 0x6000, Symbolizer::AddressType::kUnknown, "", _))
-      .WillOnce([](uint64_t frame_id, uint64_t address, Symbolizer::AddressType type,
+  EXPECT_CALL(symbolizer_,
+              Backtrace(5, 0x6000, debug_ipc::StackFrame::AddressType::kUnknown, "", _))
+      .WillOnce([](uint64_t frame_id, uint64_t address, debug_ipc::StackFrame::AddressType type,
                    std::string_view message, Symbolizer::StringOutputFn output) { output("f5"); });
-  EXPECT_CALL(symbolizer_, Backtrace(6, 0x7000, Symbolizer::AddressType::kUnknown, "", _))
-      .WillOnce([](uint64_t frame_id, uint64_t address, Symbolizer::AddressType type,
+  EXPECT_CALL(symbolizer_,
+              Backtrace(6, 0x7000, debug_ipc::StackFrame::AddressType::kUnknown, "", _))
+      .WillOnce([](uint64_t frame_id, uint64_t address, debug_ipc::StackFrame::AddressType type,
                    std::string_view message, Symbolizer::StringOutputFn output) { output("f6"); });
-  EXPECT_CALL(symbolizer_, Backtrace(7, 0x8000, Symbolizer::AddressType::kUnknown, "", _))
-      .WillOnce([](uint64_t frame_id, uint64_t address, Symbolizer::AddressType type,
+  EXPECT_CALL(symbolizer_,
+              Backtrace(7, 0x8000, debug_ipc::StackFrame::AddressType::kUnknown, "", _))
+      .WillOnce([](uint64_t frame_id, uint64_t address, debug_ipc::StackFrame::AddressType type,
                    std::string_view message, Symbolizer::StringOutputFn output) { output("f7"); });
-  EXPECT_CALL(symbolizer_, Backtrace(8, 0x9000, Symbolizer::AddressType::kUnknown, "", _))
-      .WillOnce([](uint64_t frame_id, uint64_t address, Symbolizer::AddressType type,
+  EXPECT_CALL(symbolizer_,
+              Backtrace(8, 0x9000, debug_ipc::StackFrame::AddressType::kUnknown, "", _))
+      .WillOnce([](uint64_t frame_id, uint64_t address, debug_ipc::StackFrame::AddressType type,
                    std::string_view message, Symbolizer::StringOutputFn output) { output("f8"); });
-  EXPECT_CALL(symbolizer_, Backtrace(9, 0xa000, Symbolizer::AddressType::kUnknown, "", _))
-      .WillOnce([](uint64_t frame_id, uint64_t address, Symbolizer::AddressType type,
+  EXPECT_CALL(symbolizer_,
+              Backtrace(9, 0xa000, debug_ipc::StackFrame::AddressType::kUnknown, "", _))
+      .WillOnce([](uint64_t frame_id, uint64_t address, debug_ipc::StackFrame::AddressType type,
                    std::string_view message, Symbolizer::StringOutputFn output) { output("f9"); });
   ProcessOneLine(
       "{{{bt:0:0x1000}}}{{{bt:1:0x2000}}}{{{bt:2:0x3000}}}{{{bt:3:0x4000}}}{{{bt:4:0x5000}}}{{{"
@@ -197,13 +214,15 @@ TEST_F(LogParserTest, MultipleMarkup) {
   // Intermingled valid backtraces, module resets, and arbitrary text.
   EXPECT_CALL(symbolizer_, Module(0, "libc.so", "8ce60b"));
   EXPECT_CALL(symbolizer_, Reset(false, Symbolizer::ResetType::kUnknown));
-  EXPECT_CALL(symbolizer_, Backtrace(0, 0x1000, Symbolizer::AddressType::kUnknown, "", _))
-      .WillOnce([](uint64_t frame_id, uint64_t address, Symbolizer::AddressType type,
+  EXPECT_CALL(symbolizer_,
+              Backtrace(0, 0x1000, debug_ipc::StackFrame::AddressType::kUnknown, "", _))
+      .WillOnce([](uint64_t frame_id, uint64_t address, debug_ipc::StackFrame::AddressType type,
                    std::string_view message,
                    Symbolizer::StringOutputFn output) { output("frame_0"); });
   EXPECT_CALL(symbolizer_, DumpFile("type", "name"));
-  EXPECT_CALL(symbolizer_, Backtrace(1, 0x2000, Symbolizer::AddressType::kUnknown, "", _))
-      .WillOnce([](uint64_t frame_id, uint64_t address, Symbolizer::AddressType type,
+  EXPECT_CALL(symbolizer_,
+              Backtrace(1, 0x2000, debug_ipc::StackFrame::AddressType::kUnknown, "", _))
+      .WillOnce([](uint64_t frame_id, uint64_t address, debug_ipc::StackFrame::AddressType type,
                    std::string_view message,
                    Symbolizer::StringOutputFn output) { output("frame_1"); });
 
@@ -214,8 +233,8 @@ TEST_F(LogParserTest, MultipleMarkup) {
 }
 
 TEST_F(LogParserTest, MalformedAndUnclosedTagsMixed) {
-  EXPECT_CALL(symbolizer_, Backtrace(0, 0x100, Symbolizer::AddressType::kUnknown, "", _))
-      .WillOnce([](uint64_t frame_id, uint64_t address, Symbolizer::AddressType type,
+  EXPECT_CALL(symbolizer_, Backtrace(0, 0x100, debug_ipc::StackFrame::AddressType::kUnknown, "", _))
+      .WillOnce([](uint64_t frame_id, uint64_t address, debug_ipc::StackFrame::AddressType type,
                    std::string_view message,
                    Symbolizer::StringOutputFn output) { output("frame_0"); });
   EXPECT_CALL(symbolizer_, Reset(false, Symbolizer::ResetType::kUnknown)).Times(1);
@@ -224,8 +243,9 @@ TEST_F(LogParserTest, MalformedAndUnclosedTagsMixed) {
   output_.str("");
   output_.clear();
 
-  EXPECT_CALL(symbolizer_, Backtrace(0, 0x1000, Symbolizer::AddressType::kUnknown, "", _))
-      .WillOnce([](uint64_t frame_id, uint64_t address, Symbolizer::AddressType type,
+  EXPECT_CALL(symbolizer_,
+              Backtrace(0, 0x1000, debug_ipc::StackFrame::AddressType::kUnknown, "", _))
+      .WillOnce([](uint64_t frame_id, uint64_t address, debug_ipc::StackFrame::AddressType type,
                    std::string_view message,
                    Symbolizer::StringOutputFn output) { output("frame_valid"); });
   ProcessOneLine("prefix {{{bt:0:0x1000}}} middle {{{unclosed_tag_without_end");
@@ -239,12 +259,14 @@ TEST_F(LogParserTest, InvalidTagWithValidNonPrintingTag) {
 }
 
 TEST_F(LogParserTest, ZeroLengthPrefixesAndSuffixes) {
-  EXPECT_CALL(symbolizer_, Backtrace(0, 0x1000, Symbolizer::AddressType::kUnknown, "", _))
-      .WillOnce([](uint64_t frame_id, uint64_t address, Symbolizer::AddressType type,
+  EXPECT_CALL(symbolizer_,
+              Backtrace(0, 0x1000, debug_ipc::StackFrame::AddressType::kUnknown, "", _))
+      .WillOnce([](uint64_t frame_id, uint64_t address, debug_ipc::StackFrame::AddressType type,
                    std::string_view message,
                    Symbolizer::StringOutputFn output) { output("frame_0"); });
-  EXPECT_CALL(symbolizer_, Backtrace(1, 0x2000, Symbolizer::AddressType::kUnknown, "", _))
-      .WillOnce([](uint64_t frame_id, uint64_t address, Symbolizer::AddressType type,
+  EXPECT_CALL(symbolizer_,
+              Backtrace(1, 0x2000, debug_ipc::StackFrame::AddressType::kUnknown, "", _))
+      .WillOnce([](uint64_t frame_id, uint64_t address, debug_ipc::StackFrame::AddressType type,
                    std::string_view message,
                    Symbolizer::StringOutputFn output) { output("frame_1"); });
   ProcessOneLine("{{{bt:0:0x1000}}}{{{bt:1:0x2000}}}");
@@ -253,9 +275,9 @@ TEST_F(LogParserTest, ZeroLengthPrefixesAndSuffixes) {
 
 TEST_F(LogParserTest, TenPlusConsecutiveTagsOnSingleLine) {
   for (uint64_t i = 0; i < 12; ++i) {
-    EXPECT_CALL(symbolizer_,
-                Backtrace(i, 0x1000 + i * 0x10, Symbolizer::AddressType::kUnknown, "", _))
-        .WillOnce([i](uint64_t frame_id, uint64_t address, Symbolizer::AddressType type,
+    EXPECT_CALL(symbolizer_, Backtrace(i, 0x1000 + i * 0x10,
+                                       debug_ipc::StackFrame::AddressType::kUnknown, "", _))
+        .WillOnce([i](uint64_t frame_id, uint64_t address, debug_ipc::StackFrame::AddressType type,
                       std::string_view message,
                       Symbolizer::StringOutputFn output) { output("frame_" + std::to_string(i)); });
   }
@@ -271,13 +293,15 @@ TEST_F(LogParserTest, TenPlusConsecutiveTagsOnSingleLine) {
 TEST_F(LogParserTest, IntermingledTagsAndArbitraryText) {
   EXPECT_CALL(symbolizer_, Module(0, "libc.so", "8ce60b"));
   EXPECT_CALL(symbolizer_, Reset(false, Symbolizer::ResetType::kUnknown));
-  EXPECT_CALL(symbolizer_, Backtrace(0, 0x1000, Symbolizer::AddressType::kUnknown, "", _))
-      .WillOnce([](uint64_t frame_id, uint64_t address, Symbolizer::AddressType type,
+  EXPECT_CALL(symbolizer_,
+              Backtrace(0, 0x1000, debug_ipc::StackFrame::AddressType::kUnknown, "", _))
+      .WillOnce([](uint64_t frame_id, uint64_t address, debug_ipc::StackFrame::AddressType type,
                    std::string_view message,
                    Symbolizer::StringOutputFn output) { output("frame_0"); });
   EXPECT_CALL(symbolizer_, DumpFile("type", "name"));
-  EXPECT_CALL(symbolizer_, Backtrace(1, 0x2000, Symbolizer::AddressType::kUnknown, "", _))
-      .WillOnce([](uint64_t frame_id, uint64_t address, Symbolizer::AddressType type,
+  EXPECT_CALL(symbolizer_,
+              Backtrace(1, 0x2000, debug_ipc::StackFrame::AddressType::kUnknown, "", _))
+      .WillOnce([](uint64_t frame_id, uint64_t address, debug_ipc::StackFrame::AddressType type,
                    std::string_view message,
                    Symbolizer::StringOutputFn output) { output("frame_1"); });
 
@@ -291,12 +315,14 @@ TEST_F(LogParserTest, OutputBufferQueueLifecycle) {
   Symbolizer::StringOutputFn cb1;
   Symbolizer::StringOutputFn cb2;
 
-  EXPECT_CALL(symbolizer_, Backtrace(0, 0x1000, Symbolizer::AddressType::kUnknown, "", _))
-      .WillOnce([&cb1](uint64_t frame_id, uint64_t address, Symbolizer::AddressType type,
+  EXPECT_CALL(symbolizer_,
+              Backtrace(0, 0x1000, debug_ipc::StackFrame::AddressType::kUnknown, "", _))
+      .WillOnce([&cb1](uint64_t frame_id, uint64_t address, debug_ipc::StackFrame::AddressType type,
                        std::string_view message,
                        Symbolizer::StringOutputFn output) { cb1 = std::move(output); });
-  EXPECT_CALL(symbolizer_, Backtrace(1, 0x2000, Symbolizer::AddressType::kUnknown, "", _))
-      .WillOnce([&cb2](uint64_t frame_id, uint64_t address, Symbolizer::AddressType type,
+  EXPECT_CALL(symbolizer_,
+              Backtrace(1, 0x2000, debug_ipc::StackFrame::AddressType::kUnknown, "", _))
+      .WillOnce([&cb2](uint64_t frame_id, uint64_t address, debug_ipc::StackFrame::AddressType type,
                        std::string_view message,
                        Symbolizer::StringOutputFn output) { cb2 = std::move(output); });
 
@@ -324,8 +350,9 @@ TEST_F(LogParserTest, OutputBufferQueueLifecycle) {
 TEST_F(LogParserTest, OutputRawWithPendingBuffer) {
   Symbolizer::StringOutputFn cb1;
 
-  EXPECT_CALL(symbolizer_, Backtrace(0, 0x1000, Symbolizer::AddressType::kUnknown, "", _))
-      .WillOnce([&cb1](uint64_t frame_id, uint64_t address, Symbolizer::AddressType type,
+  EXPECT_CALL(symbolizer_,
+              Backtrace(0, 0x1000, debug_ipc::StackFrame::AddressType::kUnknown, "", _))
+      .WillOnce([&cb1](uint64_t frame_id, uint64_t address, debug_ipc::StackFrame::AddressType type,
                        std::string_view message,
                        Symbolizer::StringOutputFn output) { cb1 = std::move(output); });
 
@@ -345,12 +372,14 @@ TEST_F(LogParserTest, DroppedCallback) {
   Symbolizer::StringOutputFn cb1;
   Symbolizer::StringOutputFn cb2;
 
-  EXPECT_CALL(symbolizer_, Backtrace(0, 0x1000, Symbolizer::AddressType::kUnknown, "", _))
-      .WillOnce([&cb1](uint64_t frame_id, uint64_t address, Symbolizer::AddressType type,
+  EXPECT_CALL(symbolizer_,
+              Backtrace(0, 0x1000, debug_ipc::StackFrame::AddressType::kUnknown, "", _))
+      .WillOnce([&cb1](uint64_t frame_id, uint64_t address, debug_ipc::StackFrame::AddressType type,
                        std::string_view message,
                        Symbolizer::StringOutputFn output) { cb1 = std::move(output); });
-  EXPECT_CALL(symbolizer_, Backtrace(1, 0x2000, Symbolizer::AddressType::kUnknown, "", _))
-      .WillOnce([&cb2](uint64_t frame_id, uint64_t address, Symbolizer::AddressType type,
+  EXPECT_CALL(symbolizer_,
+              Backtrace(1, 0x2000, debug_ipc::StackFrame::AddressType::kUnknown, "", _))
+      .WillOnce([&cb2](uint64_t frame_id, uint64_t address, debug_ipc::StackFrame::AddressType type,
                        std::string_view message,
                        Symbolizer::StringOutputFn output) { cb2 = std::move(output); });
 
@@ -369,8 +398,9 @@ TEST_F(LogParserTest, DroppedCallback) {
 }
 
 TEST_F(LogParserTest, StrayOpenDelimiters) {
-  EXPECT_CALL(symbolizer_, Backtrace(0, 0x1000, Symbolizer::AddressType::kUnknown, "", _))
-      .WillOnce([](uint64_t frame_id, uint64_t address, Symbolizer::AddressType type,
+  EXPECT_CALL(symbolizer_,
+              Backtrace(0, 0x1000, debug_ipc::StackFrame::AddressType::kUnknown, "", _))
+      .WillOnce([](uint64_t frame_id, uint64_t address, debug_ipc::StackFrame::AddressType type,
                    std::string_view message,
                    Symbolizer::StringOutputFn output) { output("frame_0"); });
   ProcessOneLine("random {{{ text {{{bt:0:0x1000}}}");
@@ -378,8 +408,9 @@ TEST_F(LogParserTest, StrayOpenDelimiters) {
   output_.str("");
   output_.clear();
 
-  EXPECT_CALL(symbolizer_, Backtrace(0, 0x2000, Symbolizer::AddressType::kUnknown, "", _))
-      .WillOnce([](uint64_t frame_id, uint64_t address, Symbolizer::AddressType type,
+  EXPECT_CALL(symbolizer_,
+              Backtrace(0, 0x2000, debug_ipc::StackFrame::AddressType::kUnknown, "", _))
+      .WillOnce([](uint64_t frame_id, uint64_t address, debug_ipc::StackFrame::AddressType type,
                    std::string_view message,
                    Symbolizer::StringOutputFn output) { output("frame_nested"); });
   ProcessOneLine("{{{ {{{ {{{bt:0:0x2000}}} suffix");
@@ -387,8 +418,9 @@ TEST_F(LogParserTest, StrayOpenDelimiters) {
 }
 
 TEST_F(LogParserTest, StrayCloseDelimiters) {
-  EXPECT_CALL(symbolizer_, Backtrace(0, 0x1000, Symbolizer::AddressType::kUnknown, "", _))
-      .WillOnce([](uint64_t frame_id, uint64_t address, Symbolizer::AddressType type,
+  EXPECT_CALL(symbolizer_,
+              Backtrace(0, 0x1000, debug_ipc::StackFrame::AddressType::kUnknown, "", _))
+      .WillOnce([](uint64_t frame_id, uint64_t address, debug_ipc::StackFrame::AddressType type,
                    std::string_view message,
                    Symbolizer::StringOutputFn output) { output("frame_0"); });
   ProcessOneLine("foo }}} bar {{{bt:0:0x1000}}}");
@@ -421,8 +453,8 @@ TEST_F(LogParserTest, Dart) {
   EXPECT_FALSE(output_.str().empty());
   output_.clear();
   {
-    EXPECT_CALL(symbolizer_,
-                Backtrace(0, 0x0000000f2fbb51c7, Symbolizer::AddressType::kUnknown, "", _));
+    EXPECT_CALL(symbolizer_, Backtrace(0, 0x0000000f2fbb51c7,
+                                       debug_ipc::StackFrame::AddressType::kUnknown, "", _));
     ProcessOneLine(
         "#00 abs 0000000f2fbb51c7 virt 00000000016ed1c7 "
         "_kDartIsolateSnapshotInstructions+0x1bc367");

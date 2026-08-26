@@ -15,6 +15,7 @@
 #include <string_view>
 #include <utility>
 
+#include "src/developer/debug/ipc/records.h"
 #include "src/lib/fxl/strings/split_string.h"
 #include "src/lib/fxl/strings/trim.h"
 #include "tools/symbolizer/symbolizer.h"
@@ -278,7 +279,7 @@ bool LogParser::ProcessMarkup(std::string_view markup, Symbolizer::StringOutputF
 
     int frame_id;
     uint64_t address;
-    Symbolizer::AddressType type = Symbolizer::AddressType::kUnknown;
+    debug_ipc::StackFrame::AddressType type = debug_ipc::StackFrame::AddressType::kUnknown;
     std::string_view message;
 
     if (!ParseInt(splitted[1], frame_id) || !ParseInt(splitted[2], address))
@@ -287,9 +288,9 @@ bool LogParser::ProcessMarkup(std::string_view markup, Symbolizer::StringOutputF
     // Optional suffix(es).
     if (splitted.size() >= 4) {
       if (splitted[3] == "ra") {
-        type = Symbolizer::AddressType::kReturnAddress;
+        type = debug_ipc::StackFrame::AddressType::kReturn;
       } else if (splitted[3] == "pc") {
-        type = Symbolizer::AddressType::kProgramCounter;
+        type = debug_ipc::StackFrame::AddressType::kExact;
       } else {
         message = splitted[3];
       }
@@ -348,7 +349,7 @@ bool LogParser::ProcessDart(std::string_view line, Symbolizer::StringOutputFn ou
     if (!ParseInt(splitted[2], address, 16)) {
       return false;
     }
-    symbolizer_->Backtrace(frame_id, address, Symbolizer::AddressType::kUnknown, "",
+    symbolizer_->Backtrace(frame_id, address, debug_ipc::StackFrame::AddressType::kUnknown, "",
                            std::move(output));
     return true;
   } else {

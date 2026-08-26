@@ -10,17 +10,14 @@
 #include <iostream>
 #include <string_view>
 
+#include "src/developer/debug/ipc/records.h"
+
 namespace symbolizer {
 
 // This is the core logic of the symbolizer. The implementation is separated from the interface here
 // for better testing.
 class Symbolizer {
  public:
-  enum class AddressType {
-    kUnknown,
-    kReturnAddress,   // :ra suffix
-    kProgramCounter,  // :pc suffix
-  };
   enum class ResetType {
     kUnknown,
     kBegin,  // :begin suffix
@@ -52,8 +49,9 @@ class Symbolizer {
 
   // {{{bt:%u:%p}}}, {{{bt:%u:%p:ra}}}, {{{bt:%u:%p:pc}}}
   // Represents one frame in the backtrace. We'll output the symbolized content for each frame.
-  virtual void Backtrace(uint64_t frame_id, uint64_t address, AddressType type,
-                         std::string_view message, StringOutputFn output) = 0;
+  virtual void Backtrace(uint64_t frame_id, uint64_t address,
+                         debug_ipc::StackFrame::AddressType type, std::string_view message,
+                         StringOutputFn output) = 0;
 
   // {{{dumpfile:%s:%s}}}
   // Dumps the current modules and mmaps to a json file.

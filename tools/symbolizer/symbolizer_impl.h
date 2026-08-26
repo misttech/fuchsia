@@ -13,6 +13,7 @@
 
 #include <rapidjson/document.h>
 
+#include "src/developer/debug/ipc/records.h"
 #include "src/developer/debug/shared/message_loop_poll.h"
 #include "src/developer/debug/zxdb/client/download_observer.h"
 #include "src/developer/debug/zxdb/client/pretty_stack_manager.h"
@@ -78,15 +79,16 @@ class SymbolizerImpl : public Symbolizer,
   // outputs.
   MMapStatus MMap(uint64_t address, uint64_t size, uint64_t module_id, std::string_view flags,
                   uint64_t module_offset);
-  BacktraceStatus Backtrace(uint64_t address, AddressType type, LocationOutputFn output);
+  BacktraceStatus Backtrace(uint64_t address, debug_ipc::StackFrame::AddressType type,
+                            LocationOutputFn output);
 
   // |Symbolizer| implementation.
   void Reset(bool symbolizing_dart, ResetType type) override;
   void Module(uint64_t id, std::string_view name, std::string_view build_id) override;
   void MMap(uint64_t address, uint64_t size, uint64_t module_id, std::string_view flags,
             uint64_t module_offset, StringOutputFn output) override;
-  void Backtrace(uint64_t frame_id, uint64_t address, AddressType type, std::string_view message,
-                 StringOutputFn output) override;
+  void Backtrace(uint64_t frame_id, uint64_t address, debug_ipc::StackFrame::AddressType type,
+                 std::string_view message, StringOutputFn output) override;
   void DumpFile(std::string_view type, std::string_view name) override;
 
   // |DownloadObserver| implementation.
@@ -212,7 +214,7 @@ class SymbolizerImpl : public Symbolizer,
   // The frames cached if we're in batch mode.
   struct Frame {
     uint64_t address;
-    AddressType type;
+    debug_ipc::StackFrame::AddressType type;
     StringOutputFn output;
   };
   std::deque<Frame> frames_in_batch_mode_;

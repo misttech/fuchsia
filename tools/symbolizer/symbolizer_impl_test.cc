@@ -70,11 +70,11 @@ TEST_F(SymbolizerImplTest, Backtrace) {
   symbolizer_.MMap(0x1000, 0x2000, 0, "r", 0x0, GetOutputFn());
 
   ss_.str("");
-  symbolizer_.Backtrace(0, 0x1004, Symbolizer::AddressType::kProgramCounter, "", GetOutputFn());
+  symbolizer_.Backtrace(0, 0x1004, debug_ipc::StackFrame::AddressType::kExact, "", GetOutputFn());
   ASSERT_EQ(ss_.str(), "   #0    0x0000000000001004 in <some_module>+0x4\n");
 
   ss_.str("");
-  symbolizer_.Backtrace(1, 0x5000, Symbolizer::AddressType::kUnknown, "", GetOutputFn());
+  symbolizer_.Backtrace(1, 0x5000, debug_ipc::StackFrame::AddressType::kUnknown, "", GetOutputFn());
   ASSERT_EQ(ss_.str(), "   #1    0x0000000000005000 is not covered by any module\n");
 }
 
@@ -151,8 +151,8 @@ TEST(SymbolizerImpl, Analytics) {
   symbolizer.Reset(false, Symbolizer::ResetType::kUnknown);
   symbolizer.Module(0, "some_module", "deadbeef");
   symbolizer.MMap(0x1000, 0x2000, 0, "r", 0x0, output);
-  symbolizer.Backtrace(0, 0x1010, Symbolizer::AddressType::kUnknown, "", output);
-  symbolizer.Backtrace(1, 0x7010, Symbolizer::AddressType::kUnknown, "", output);
+  symbolizer.Backtrace(0, 0x1010, debug_ipc::StackFrame::AddressType::kUnknown, "", output);
+  symbolizer.Backtrace(1, 0x7010, debug_ipc::StackFrame::AddressType::kUnknown, "", output);
   symbolizer.Reset(false, Symbolizer::ResetType::kUnknown);
 
   rapidjson::Document measurement;

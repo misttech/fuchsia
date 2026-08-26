@@ -4,6 +4,7 @@
 
 #include "src/developer/ffx/lib/symbolize/sys/wrapper.h"
 
+#include "src/developer/debug/ipc/records.h"
 #include "src/developer/debug/zxdb/common/curl.h"
 #include "src/developer/debug/zxdb/format/format_name.h"
 #include "tools/symbolizer/command_line_options.h"
@@ -50,7 +51,7 @@ ResolveAddressStatus symbolizer_resolve_address(symbolizer::SymbolizerImpl* symb
                                                 uint64_t address, location_callback output,
                                                 void* output_context) {
   symbolizer::SymbolizerImpl::BacktraceStatus status = symbolizer->Backtrace(
-      address, symbolizer::Symbolizer::AddressType::kUnknown,
+      address, debug_ipc::StackFrame::AddressType::kUnknown,
       [address, output, output_context](auto inline_index, auto& location, auto& module) {
         symbolizer_location_t output_location;
 
