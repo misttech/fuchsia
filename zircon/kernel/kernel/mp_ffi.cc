@@ -7,6 +7,7 @@
 #include <assert.h>
 #include <zircon/types.h>
 
+#include <arch/mp_unplug_event.h>
 #include <kernel/cpu.h>
 #include <kernel/deadline.h>
 #include <kernel/ffi.h>
@@ -45,8 +46,12 @@ void cpp_mp_sync_exec(mp_ipi_target target, cpu_mask_t mask, mp_sync_task_t task
 zx_status_t cpp_mp_hotplug_cpu_mask(cpu_mask_t mask);
 zx_status_t cpp_mp_hotplug_cpu(cpu_num_t cpu);
 void cpp_mp_unplug_current_cpu();
+void cpp_mp_unplug_event_signal(MpUnplugEvent* event);
 zx_status_t cpp_mp_unplug_cpu_mask(cpu_mask_t mask, zx_instant_mono_t deadline);
 zx_status_t cpp_mp_unplug_cpu(cpu_num_t cpu);
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE void cpp_mp_unplug_event_signal(MpUnplugEvent* event) { event->Signal(); }
 
 // TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
 FFI_ALWAYS_INLINE void cpp_mp_set_cpu_online(cpu_num_t cpu, bool online) {

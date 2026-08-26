@@ -15,6 +15,23 @@ use zx_types::zx_instant_mono_t;
 pub const INVALID_CPU: cpu_num_t = super::types::INVALID_CPU;
 pub const CPU_MASK_ALL: cpu_mask_t = super::types::CPU_MASK_ALL;
 
+/// C++ `MpUnplugEvent`, opaque here.  An unplugging CPU is handed one and signals
+/// it once its state is flushed.
+#[repr(C)]
+pub struct MpUnplugEvent {
+    _opaque: [u8; 0],
+}
+
+/// Signals `event`, releasing the CPU that requested this CPU's unplug.
+///
+/// # Safety
+///
+/// `event` must be the pointer handed to `arch_flush_state_and_halt()`.
+pub unsafe fn unplug_event_signal(event: *mut MpUnplugEvent) {
+    // SAFETY: forwarded to `MpUnplugEvent::Signal()` with a caller-verified pointer.
+    unsafe { cpp_mp_unplug_event_signal(event) };
+}
+
 unsafe extern "C" {
     fn cpp_mp_set_cpu_online(cpu: cpu_num_t, online: bool);
     fn cpp_mp_set_curr_cpu_online(online: bool);
@@ -27,6 +44,8 @@ unsafe extern "C" {
     fn cpp_mp_reschedule(mask: cpu_mask_t, flags: u32);
     fn cpp_mp_reschedule_self();
     fn cpp_mp_interrupt(target: MpIpiTarget, mask: cpu_mask_t);
+
+    fn cpp_mp_unplug_event_signal(event: *mut MpUnplugEvent);
 
     fn cpp_mp_mbx_generic_irq();
     fn cpp_mp_mbx_reschedule_irq();
