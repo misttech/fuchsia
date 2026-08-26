@@ -769,7 +769,7 @@ async def _console_event_loop(
                 lines_to_print.append(
                     statusinfo.ellipsize(
                         statusinfo.green_highlight(
-                            f"> fx build {out_dir_string}{' '.join(next_event.payload.build_targets)}",
+                            f"> fx {out_dir_string}build {' '.join(next_event.payload.build_targets)}",
                             style=flags.style,
                         ),
                         width=80 * 5,  # Approximately 5 lines
