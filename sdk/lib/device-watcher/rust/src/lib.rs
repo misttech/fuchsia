@@ -160,8 +160,13 @@ where
 /// the path and returns once it has waited on the final component in the path. If the path
 /// never appears this function will wait forever.
 pub async fn recursive_wait(dir: &fio::DirectoryProxy, name: &str) -> Result<()> {
-    recursive_wait_and_open_with_flags(Clone::clone(dir), name, fio::Flags::empty(), |_, _, _| ())
-        .await
+    recursive_wait_and_open_with_flags(
+        Clone::clone(dir),
+        name,
+        fuchsia_fs::PERM_READABLE,
+        |_, _, _| (),
+    )
+    .await
 }
 
 /// Open the path `name` within `dir`. This function waits for each directory to
@@ -191,7 +196,7 @@ pub async fn recursive_wait_and_open<P: fidl::endpoints::ProtocolMarker>(
     recursive_wait_and_open_with_flags(
         Clone::clone(dir),
         name,
-        fio::Flags::empty(),
+        fuchsia_fs::PERM_READABLE,
         |dir, path, _flags| {
             // Cannot open services with other flags.
             fuchsia_fs::directory::open_async::<P>(dir, path, fio::Flags::PROTOCOL_SERVICE)
