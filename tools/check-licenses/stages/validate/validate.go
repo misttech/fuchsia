@@ -167,11 +167,18 @@ func (v *Validator) Run(ctx context.Context, in <-chan pipeline.ClassifiedFile) 
 						relProjRoot, _ := filepath.Rel(v.FuchsiaDir, cf.ProjectRoot)
 						if !v.isAllowedLicense(match.SPDXID, relPath, relProjRoot, cf.ProjectRoot) {
 							metrics.ValidationErrors.Inc("UnapprovedLicenseUsage")
+							startLine := match.StartLine
+							endLine := match.EndLine
+							if startLine > 0 && endLine < startLine {
+								endLine = startLine
+							}
 							err := pipeline.ComplianceError{
 								CheckName: CheckPatternApproval,
 								LicenseID: match.SPDXID,
 								Project:   cf.ProjectRoot,
 								FilePath:  cf.Path,
+								StartLine: startLine,
+								EndLine:   endLine,
 								Issue:     fmt.Sprintf("File was not approved to use license pattern %s (Type: %s). To allow this project to use this license, run:\n    fx check-licenses allowlist add -bug <BugID> %s %s", match.SPDXID, match.MatchType, match.SPDXID, relProjRoot),
 							}
 							select {
@@ -200,10 +207,14 @@ func (v *Validator) Run(ctx context.Context, in <-chan pipeline.ClassifiedFile) 
 				relProjRoot, _ := filepath.Rel(v.FuchsiaDir, proj)
 				if !v.isPolicyExceptionAllowed(PolicyNoLicense, relProjRoot) {
 					metrics.ValidationErrors.Inc(PolicyNoLicense)
+					targetFile := ""
+					if projectHasReadme[proj] {
+						targetFile = filepath.Join(proj, "README.fuchsia")
+					}
 					err := pipeline.ComplianceError{
 						CheckName: PolicyNoLicense,
 						Project:   proj,
-						FilePath:  "",
+						FilePath:  targetFile,
 						Issue:     fmt.Sprintf("Project has no recognized license files. Every third-party project must contain a license file. If this project is an exception, allow it by running:\n    fx check-licenses policy add -bug <BugID> AllProjectsMustHaveALicense %s", relProjRoot),
 					}
 					select {

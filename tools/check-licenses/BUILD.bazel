@@ -73,6 +73,7 @@ go_library(
     srcs = [
         "stages/report/allowlist_renderer.go",
         "stages/report/console_errors.go",
+        "stages/report/findings.go",
         "stages/report/fixer.go",
         "stages/report/metrics_printer.go",
         "stages/report/notice.go",
@@ -222,6 +223,7 @@ host_go_test(
     srcs = [
         "stages/report/allowlist_renderer_test.go",
         "stages/report/console_errors_test.go",
+        "stages/report/findings_test.go",
         "stages/report/fixer_test.go",
         "stages/report/metrics_printer_test.go",
         "stages/report/notice_test.go",

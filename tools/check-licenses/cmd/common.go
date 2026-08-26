@@ -282,12 +282,12 @@ func LoadTargets(fileList, fuchsiaDir string, args []string) ([]string, error) {
 
 // getLogWriters configures destination io.Writers for logging based on the specified level and output directory.
 // Log == 0: discard all output
-// Log == 1: save logs to the outDir folder
+// Log == 1: print to stdout only
 // Log == 2: save logs to the outDir folder AND print to stdout
 func getLogWriters(logLevel int, outDir string) (io.Writer, error) {
 	logTargets := []io.Writer{}
 
-	if logLevel == 1 || logLevel == 2 {
+	if logLevel >= 2 {
 		if outDir != "" {
 			if _, err := os.Stat(outDir); os.IsNotExist(err) {
 				err := os.MkdirAll(outDir, 0755)
@@ -304,10 +304,10 @@ func getLogWriters(logLevel int, outDir string) (io.Writer, error) {
 		}
 	}
 
-	switch logLevel {
-	case 0:
+	switch {
+	case logLevel <= 0:
 		logTargets = append(logTargets, io.Discard)
-	case 2:
+	case logLevel >= 1:
 		logTargets = append(logTargets, os.Stdout)
 	}
 

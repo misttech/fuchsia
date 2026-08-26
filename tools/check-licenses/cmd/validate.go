@@ -28,6 +28,7 @@ import (
 type ValidateCommand struct {
 	fuchsiaDir        string
 	outDir            string
+	findingsFile      string
 	logLevel          int
 	filesInReadmeOnly bool
 }
@@ -48,7 +49,8 @@ func (*ValidateCommand) Usage() string {
 func (p *ValidateCommand) SetFlags(f *flag.FlagSet) {
 	f.StringVar(&p.fuchsiaDir, "fuchsia_dir", os.Getenv("FUCHSIA_DIR"), "Location of the fuchsia root directory (//).")
 	f.StringVar(&p.outDir, "out_dir", "/tmp/check-licenses", "Directory to write logs.")
-	f.IntVar(&p.logLevel, "log_level", 2, "Log level. 0: none, 1: file, 2: stdout+file.")
+	f.StringVar(&p.findingsFile, "findings_file", "", "Path to write structured JSON findings for shac / static analysis.")
+	f.IntVar(&p.logLevel, "log_level", 1, "Log level. 0: none, 1: stdout, 2: stdout+file.")
 	f.BoolVar(&p.filesInReadmeOnly, "files_in_readme_only", false, "Only classify files explicitly listed in README.fuchsia files (fast mode).")
 }
 
@@ -100,12 +102,19 @@ func (p *ValidateCommand) Execute(ctx context.Context, f *flag.FlagSet, _ ...int
 	}
 
 	validator := v2validate.NewValidator(fuchsiaDir, config.Validate)
+	metricsOutDir := ""
+	if p.logLevel >= 2 {
+		metricsOutDir = p.outDir
+	}
 	renderers := v2pipeline.MultiRenderer{
 		// TODO: Re-enable README.fuchsia verification.
 		// v2report.NewReadmeVerifier(fuchsiaDir),
-		v2report.NewMetricsRenderer(p.outDir),
-		v2report.NewConsoleErrorReporter(fuchsiaDir),
+		v2report.NewMetricsRenderer(metricsOutDir),
 	}
+	if p.findingsFile != "" {
+		renderers = append(renderers, v2report.NewFindingsReporter(fuchsiaDir, p.findingsFile))
+	}
+	renderers = append(renderers, v2report.NewConsoleErrorReporter(fuchsiaDir))
 
 	orchestrator := v2pipeline.NewOrchestrator(discoverer, grouper, pruner, classifier, validator, renderers)
 

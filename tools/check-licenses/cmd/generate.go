@@ -76,7 +76,7 @@ func (p *GenerateCommand) SetFlags(f *flag.FlagSet) {
 	f.BoolVar(&p.outputLicenseFile, "output_license_file", true, "Flag for enabling template expansions.")
 	f.BoolVar(&p.runAnalysis, "run_analysis", true, "Flag for enabling license analysis and 'result' package tests.")
 
-	f.IntVar(&p.logLevel, "log_level", 2, "Log level. Set to 0 for no logs, 1 to log to a file, 2 to log to stdout.")
+	f.IntVar(&p.logLevel, "log_level", 1, "Log level. Set to 0 for no logs, 1 to log to stdout, 2 to log to stdout+file.")
 
 	f.BoolVar(&p.runV2, "v2", true, "Run the experimental v2 pipeline architecture.")
 	f.BoolVar(&p.verifyReadmes, "verify_readmes", false, "Flag for verifying if README.fuchsia files accurately reflect project licenses in v2 pipeline.")
@@ -276,8 +276,12 @@ func (p *GenerateCommand) executeV2Pipeline(ctx context.Context, target string) 
 			report.NewSpdxRenderer(p.outDir),
 		)
 	}
+	metricsOutDir := ""
+	if p.logLevel >= 2 {
+		metricsOutDir = p.outDir
+	}
 	renderers = append(renderers,
-		report.NewMetricsRenderer(p.outDir),
+		report.NewMetricsRenderer(metricsOutDir),
 		report.NewConsoleErrorReporter(p.fuchsiaDir),
 	)
 

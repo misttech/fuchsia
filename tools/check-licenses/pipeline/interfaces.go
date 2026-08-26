@@ -158,6 +158,8 @@ type ComplianceError struct {
 	LicenseID string
 	Project   string
 	FilePath  string
+	StartLine int
+	EndLine   int
 	Issue     string
 }
 
@@ -200,12 +202,13 @@ type Renderer interface {
 type MultiRenderer []Renderer
 
 func (mr MultiRenderer) Run(ctx context.Context, projects []*Project, errors []ComplianceError) error {
+	var firstErr error
 	for _, r := range mr {
-		if err := r.Run(ctx, projects, errors); err != nil {
-			return err
+		if err := r.Run(ctx, projects, errors); err != nil && firstErr == nil {
+			firstErr = err
 		}
 	}
-	return nil
+	return firstErr
 }
 
 // RenderFunc allows standard functions to satisfy the Renderer interface.
