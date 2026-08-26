@@ -9,7 +9,11 @@ import("//build/rust/rustc_test.gni")
 
 group("tests") {
   testonly = true
-  deps = [ ":simple-dt-eval-test" ]
+  deps = [
+    ":gpio-dt-eval-test",
+    ":i2c-dt-eval-test",
+    ":simple-dt-eval-test",
+  ]
 }
 
 group("drivers") {
@@ -83,4 +87,14 @@ template("dt_eval_test_package") {
 dt_eval_test_package("simple-dt-eval-test") {
   dts = "devicetrees/simple.dts"
   golden = "devicetrees/simple.golden.dts"
+}
+
+dt_eval_test_package("gpio-dt-eval-test") {
+  dts = "devicetrees/gpio.dts"
+  golden = "devicetrees/gpio.golden.dts"
+}
+
+dt_eval_test_package("i2c-dt-eval-test") {
+  dts = "devicetrees/i2c.dts"
+  golden = "devicetrees/i2c.golden.dts"
 }
