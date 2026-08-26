@@ -62,6 +62,7 @@ pub(crate) async fn package_server_task(
     context: EnvironmentContext,
     product_bundle: PathBuf,
     repo_port: u16,
+    should_register_repo: bool,
 ) -> Result<PackageServerTask> {
     log::info!("starting package server for {product_bundle:?}");
 
@@ -92,19 +93,20 @@ pub(crate) async fn package_server_task(
         alias: vec![],
         storage_type: None,
         port_path: None,
-        no_device: false,
+        no_device: !should_register_repo,
         refresh_metadata: false,
         auto_publish: None,
         tunnel_addr: None,
     };
 
     // Check that there is not an update source that has the same exact name (which includes the process ID).
-    if Box::pin(is_server_registered(
-        &repo_name,
-        rcs_proxy_connector.clone(),
-        Duration::from_secs(60),
-    ))
-    .await?
+    if should_register_repo
+        && Box::pin(is_server_registered(
+            &repo_name,
+            rcs_proxy_connector.clone(),
+            Duration::from_secs(60),
+        ))
+        .await?
     {
         return_user_error!(
             "Product bundle repository server name collision detected (unlikely host PID reuse suspected). \
@@ -463,6 +465,7 @@ pub(crate) mod tests {
     };
     use futures::channel::mpsc;
     use futures::{SinkExt as _, StreamExt as _, TryStreamExt as _};
+    use std::assert_matches;
     use std::sync::{Arc, Mutex};
     use target_behavior::ConnectionBehavior;
     use target_holders::{HostAddrHolder, RemoteControlProxyHolder};
@@ -709,16 +712,37 @@ pub(crate) mod tests {
 
         let product_bundle = PathBuf::from("/path/to/product_bundle");
 
-        let result = Box::pin(package_server_task(
+        Box::pin(package_server_task(
             fake_env.target_spec,
             fake_env.rcs_proxy_connector,
             fake_env.host_address,
             fake_env.context,
             product_bundle,
             0,
+            true,
         ))
-        .await;
-        assert!(result.is_ok(), "got {:?}", result.err());
+        .await
+        .unwrap();
+    }
+
+    #[fuchsia::test]
+    async fn test_package_server_task_packageless() {
+        let test_env = ffx_config::test_init().expect("test env");
+        let fake_env = FakeTestEnv::new(&test_env).await;
+
+        let product_bundle = PathBuf::from("/path/to/product_bundle");
+
+        Box::pin(package_server_task(
+            fake_env.target_spec,
+            fake_env.rcs_proxy_connector,
+            fake_env.host_address,
+            fake_env.context,
+            product_bundle,
+            0,
+            false,
+        ))
+        .await
+        .unwrap();
     }
     #[fuchsia::test]
     async fn test_wait_for_device_task() {
@@ -727,18 +751,16 @@ pub(crate) mod tests {
 
         let repo_name = "registered_test_repo".into();
 
-        let result = Box::pin(wait_for_device_task(repo_name, fake_env.rcs_proxy_connector)).await;
-        assert!(result.is_ok(), "got {:?}", result.err());
+        Box::pin(wait_for_device_task(repo_name, fake_env.rcs_proxy_connector)).await.unwrap();
     }
     #[fuchsia::test]
     async fn test_unregister_pb_repo_server() {
         let test_env = ffx_config::test_init().expect("test env");
         let fake_env = FakeTestEnv::new(&test_env).await;
 
-        let result =
-            Box::pin(unregister_pb_repo_server("repo_name_prefix", fake_env.rcs_proxy_connector))
-                .await;
-        assert!(result.is_ok(), "got {:?}", result.err());
+        Box::pin(unregister_pb_repo_server("repo_name_prefix", fake_env.rcs_proxy_connector))
+            .await
+            .unwrap();
     }
     #[fuchsia::test]
     async fn test_is_server_registered() {
@@ -754,24 +776,15 @@ pub(crate) mod tests {
             time_to_wait,
         ))
         .await;
-        match &result {
-            Ok(is_registered) => {
-                assert!(is_registered, "Expected server to be registered, but it was not")
-            }
-            Err(e) => assert!(result.is_ok(), "got {e:?}"),
-        };
+        assert_matches!(result, Ok(true));
+
         let result = Box::pin(is_server_registered(
             "unregistered_repo",
             fake_env.rcs_proxy_connector,
             time_to_wait,
         ))
         .await;
-        match &result {
-            Ok(is_registered) => {
-                assert!(!is_registered, "Expected server NOT to be registered, but it was")
-            }
-            Err(e) => assert!(result.is_ok(), "got {e:?}"),
-        };
+        assert_matches!(result, Ok(false));
     }
 
     #[fuchsia::test]
@@ -779,12 +792,12 @@ pub(crate) mod tests {
         let test_env = ffx_config::test_init().expect("test env");
         let fake_env = FakeTestEnv::new(&test_env).await;
 
-        let result = Box::pin(deregister_standalone(
+        Box::pin(deregister_standalone(
             "repo_name",
             fake_env.rcs_proxy_connector,
             Duration::from_secs(30),
         ))
-        .await;
-        assert!(result.is_ok(), "got {:?}", result.err());
+        .await
+        .unwrap();
     }
 }

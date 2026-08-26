@@ -4,7 +4,7 @@
 
 //! Target related functions used by the repository server.
 
-use anyhow::{Context, anyhow};
+use anyhow::{Context as _, anyhow};
 use camino::Utf8Path;
 use fdomain_fuchsia_developer_remotecontrol::RemoteControlProxy;
 use fdomain_fuchsia_pkg::{RepositoryManagerMarker, RepositoryManagerProxy};
@@ -49,21 +49,11 @@ async fn connect_to_target(
     rcs_proxy: &RemoteControlProxy,
     alias_conflict_mode: RepositoryRegistrationAliasConflictMode,
     tunnel_addr: SocketAddr,
+    should_register_repo: bool,
 ) -> Result<(String, impl Stream<Item = anyhow::Result<TargetTcpStream>>), anyhow::Error> {
-    let repo_proxy: RepositoryManagerProxy = rcs_fdomain::toolbox::connect_with_timeout::<
-        RepositoryManagerMarker,
-    >(&rcs_proxy, connect_timeout)
-    .await
-    .with_context(|| format!("connecting to repository manager on {:?}", target_spec))?;
-
-    let engine_proxy: EngineProxy =
-        rcs_fdomain::toolbox::connect_with_timeout::<EngineMarker>(&rcs_proxy, connect_timeout)
-            .await
-            .with_context(|| format!("binding engine to stream on {:?}", target_spec))?;
-
     let port_forward = SocketProvider::new_with_rcs(connect_timeout, &rcs_proxy)
         .await
-        .with_context(|| format!("connecting to socket provider protocols {:?}", target_spec))?;
+        .context("connecting to socket provider protocols")?;
 
     let (repo_host, forwarding_stream) = repo::create_repo_host_and_listener(
         repo_server_listen_addr,
@@ -72,35 +62,48 @@ async fn connect_to_target(
         tunnel_addr,
     )
     .await
-    .with_context(|| format!("resolving repository host on {:?}", target_spec))?;
+    .context("resolving repository host")?;
 
-    for (repo_name, repo) in repo_manager.repositories() {
-        let repo_spec = repo.read().await.spec();
-        let repo_target = RepositoryTarget {
-            repo_name: repo_name.clone(),
-            target_identifier: target_spec.clone(),
-            aliases: if aliases.is_empty() {
-                Some(repo_spec.aliases().iter().map(ToString::to_string).collect())
-            } else {
-                Some(BTreeSet::from_iter(aliases.iter().map(|a| a.clone())))
-            },
-            storage_type: storage_type.clone(),
-        };
-
-        // Construct RepositoryTarget from same args as `ffx target repository register`
-        let repo_target_info = RepositoryTarget::try_from(repo_target)
-            .map_err(|e| anyhow!("Failed to build RepositoryTarget: {:?}", e))?;
-
-        repo::register_target_with_fidl_proxies(
-            repo_proxy.clone(),
-            engine_proxy.clone(),
-            &repo_target_info,
-            &repo_host,
-            &repo,
-            alias_conflict_mode.clone(),
-        )
+    if should_register_repo {
+        let repo_proxy: RepositoryManagerProxy = rcs_fdomain::toolbox::connect_with_timeout::<
+            RepositoryManagerMarker,
+        >(&rcs_proxy, connect_timeout)
         .await
-        .map_err(|e| anyhow!("Failed to register repository: {:?}", e))?;
+        .context("connecting to repository manager")?;
+
+        let engine_proxy: EngineProxy =
+            rcs_fdomain::toolbox::connect_with_timeout::<EngineMarker>(&rcs_proxy, connect_timeout)
+                .await
+                .context("binding engine to stream")?;
+
+        for (repo_name, repo) in repo_manager.repositories() {
+            let repo_spec = repo.read().await.spec();
+            let repo_target = RepositoryTarget {
+                repo_name,
+                target_identifier: target_spec.clone(),
+                aliases: if aliases.is_empty() {
+                    Some(repo_spec.aliases().iter().map(ToString::to_string).collect())
+                } else {
+                    Some(BTreeSet::from_iter(aliases.iter().map(|a| a.clone())))
+                },
+                storage_type: storage_type.clone(),
+            };
+
+            // Construct RepositoryTarget from same args as `ffx target repository register`
+            let repo_target_info =
+                RepositoryTarget::try_from(repo_target).context("build RepositoryTarget")?;
+
+            repo::register_target_with_fidl_proxies(
+                repo_proxy.clone(),
+                engine_proxy.clone(),
+                &repo_target_info,
+                &repo_host,
+                &repo,
+                alias_conflict_mode.clone(),
+            )
+            .await
+            .context("register repository")?;
+        }
     }
     Ok((
         repo_host,
@@ -166,8 +169,10 @@ async fn inner_connect_loop(
         &rcs_proxy,
         cmd.alias_conflict_mode.clone(),
         tunnel_addr,
+        !cmd.no_device,
     )
-    .await;
+    .await
+    .with_context(|| format!("connect to target {target_spec:?}"));
     match connection {
         Ok((repo_host, proxy_stream)) => {
             if let Some(tx) = repo_host_tx {

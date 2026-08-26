@@ -601,7 +601,6 @@ pub async fn serve_impl(
             .map_err(|e| anyhow!("{e}"))?;
         let url = format!("http://{server_addr}/{repo_name}");
         let mirror_url = url
-            .clone()
             .parse()
             .map_err(|e: http::uri::InvalidUri| anyhow!("{e}"))
             // Lower layers do not print the URL, so expose it here to clarify
@@ -675,7 +674,7 @@ pub async fn serve_impl(
         auto_publisher.detach();
     }
 
-    let result = if cmd.no_device {
+    let result = if cmd.no_device && repo_host_tx.is_none() {
         if let Err(e) = tx
             .send(crate::target::ConnectEvent::StartServe {
                 repo_path: repo_path.to_string(),

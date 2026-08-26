@@ -263,6 +263,7 @@ impl UpdateTool {
                     self.context.clone(),
                     product_path,
                     repo_port,
+                    true,
                 ))
                 .await?,
             )
@@ -382,6 +383,7 @@ impl UpdateTool {
                         self.context.clone(),
                         product_path,
                         repo_port,
+                        !cmd.packageless,
                     ))
                     .await?,
                 ),
@@ -495,11 +497,14 @@ impl UpdateTool {
                     }
                 }
                 update_task_result =  install_task => {
-                    if cmd.reboot {
-                        Timer::new(Duration::from_secs(15)).await;
+                    if !cmd.packageless {
+                        if cmd.reboot {
+                            Timer::new(Duration::from_secs(15)).await;
+                        }
+                        Box::pin(server::unregister_pb_repo_server(&repo_name, self.rcs_proxy_connector.clone())).await?;
                     }
-                    Box::pin(server::unregister_pb_repo_server(&repo_name, self.rcs_proxy_connector.clone())).await?;
-                    return update_task_result}
+                    return update_task_result;
+                }
             );
         } else {
             Self::force_install(update_url, cmd.reboot, installer_proxy, writer).await
@@ -1378,12 +1383,8 @@ mod tests {
         let fake_installer_proxy =
             Arc::clone(&mock_installer).spawn_installer_service(Arc::clone(&client));
 
-        let fake_update_manager_proxy = fake_proxy(Arc::clone(&client), move |req| match req {
-            fdomain_fuchsia_update::ManagerRequest::CheckNow { responder, options: _, .. } => {
-                responder.send(Ok(())).unwrap();
-            }
-            _ => panic!("Unexpected request: {req:?}"),
-        });
+        let fake_update_manager_proxy =
+            fake_proxy(Arc::clone(&client), move |req| panic!("Unexpected request: {req:?}"));
         let fake_channel_provider_proxy =
             fake_proxy(Arc::clone(&client), move |req| panic!("Unexpected request: {req:?}"));
         let fake_channel_control_proxy =
