@@ -1989,7 +1989,9 @@ async fn dns_name_server_stats_failure_inspect<N: Netstack>(name: &str) {
                     IoErrorCounts: {},
                     ProtoErrorCounts: {},
                     NoRecordsFoundResponseCodeCounts: {
-                        ServFail: 1u64,
+                        ServFail: {
+                            count: 1u64,
+                        }
                     },
                     UnhandledResolveErrorKindCounts: {},
                 }

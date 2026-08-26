@@ -296,25 +296,34 @@ impl FailureStats {
 
         let io_error_codes = node.create_child("IoErrorCounts");
         for (kind, count) in io {
-            io_error_codes.record_uint(format!("{kind:?}"), *count);
+            let child = io_error_codes.create_child(format!("{kind:?}"));
+            child.record_uint("count", *count);
+            io_error_codes.record(child);
         }
         node.record(io_error_codes);
 
         let proto_error_codes = node.create_child("ProtoErrorCounts");
         for (kind, count) in proto {
-            proto_error_codes.record_uint(kind, *count);
+            let child = proto_error_codes.create_child(kind);
+            child.record_uint("count", *count);
+            proto_error_codes.record(child);
         }
         node.record(proto_error_codes);
 
         let no_records_found_response_codes = node.create_child("NoRecordsFoundResponseCodeCounts");
         for (HashableResponseCode { response_code }, count) in response_code_counts {
-            no_records_found_response_codes.record_uint(format!("{:?}", response_code), *count);
+            let child =
+                no_records_found_response_codes.create_child(format!("{:?}", response_code));
+            child.record_uint("count", *count);
+            no_records_found_response_codes.record(child);
         }
         node.record(no_records_found_response_codes);
 
         let unhandled_resolve_error_kinds = node.create_child("UnhandledResolveErrorKindCounts");
         for (error_kind, count) in unhandled_resolve_error_kind {
-            unhandled_resolve_error_kinds.record_uint(error_kind, *count);
+            let child = unhandled_resolve_error_kinds.create_child(error_kind);
+            child.record_uint("count", *count);
+            unhandled_resolve_error_kinds.record(child);
         }
         node.record(unhandled_resolve_error_kinds);
     }
@@ -1275,7 +1284,9 @@ fn add_query_stats_inspect(
 
                 let address_counts_node = child.create_child("address_counts");
                 for (count, occurrences) in address_counts_histogram {
-                    address_counts_node.record_uint(count.to_string(), *occurrences);
+                    let child = address_counts_node.create_child(count.to_string());
+                    child.record_uint("count", *occurrences);
+                    address_counts_node.record(child);
                 }
                 child.record(address_counts_node);
 
@@ -1361,7 +1372,9 @@ mod tests {
     use std::str::FromStr;
 
     use assert_matches::assert_matches;
-    use diagnostics_assertions::{NonZeroUintProperty, assert_data_tree, tree_assertion};
+    use diagnostics_assertions::{
+        NonZeroUintProperty, TreeAssertion, assert_data_tree, tree_assertion,
+    };
     use dns::DEFAULT_PORT;
     use dns::test_util::*;
     use itertools::Itertools as _;
@@ -2252,7 +2265,9 @@ mod tests {
                         Message: 0u64,
                         NoConnections: 0u64,
                         NoRecordsFoundResponseCodeCounts: {
-                            NoError: 1u64,
+                            NoError: {
+                                count: 1u64
+                            },
                         },
                         IoErrorCounts: {},
                         ProtoErrorCounts: {},
@@ -2260,7 +2275,9 @@ mod tests {
                         UnhandledResolveErrorKindCounts: {},
                     },
                     address_counts: {
-                        "1": 1u64,
+                        "1": {
+                            count: 1u64,
+                        }
                     },
                 },
             }
@@ -2334,7 +2351,9 @@ mod tests {
                     UnhandledResolveErrorKindCounts: {},
                 },
                 address_counts: {
-                    "1": 2u64,
+                    "1": {
+                        count: 2u64,
+                    }
                 },
             });
             expected.add_child_assertion(child);
@@ -2440,10 +2459,18 @@ mod tests {
                         Message: 0u64,
                         NoConnections: 0u64,
                         NoRecordsFoundResponseCodeCounts: {
-                          NXDomain: FAILED_QUERY_COUNT,
-                          Refused: FAILED_QUERY_COUNT,
-                          "Unknown(4096)": FAILED_QUERY_COUNT,
-                          "Unknown(4097)": FAILED_QUERY_COUNT,
+                            NXDomain: {
+                                count: FAILED_QUERY_COUNT
+                            },
+                            Refused: {
+                                count: FAILED_QUERY_COUNT
+                            },
+                            "Unknown(4096)": {
+                                count: FAILED_QUERY_COUNT
+                            },
+                            "Unknown(4097)": {
+                                count: FAILED_QUERY_COUNT
+                            },
                         },
                         IoErrorCounts: {},
                         ProtoErrorCounts: {},
@@ -2486,8 +2513,9 @@ mod tests {
 
         let mut expected_address_counts = tree_assertion!(address_counts: {});
         for (count, occurrences) in address_counts.iter() {
-            expected_address_counts
-                .add_property_assertion(&count.to_string(), Arc::new(*occurrences));
+            let mut child = TreeAssertion::new(&count.to_string(), true);
+            child.add_property_assertion("count", Arc::new(*occurrences));
+            expected_address_counts.add_child_assertion(child);
         }
         assert_data_tree!(@executor exec, inspector, root: {
             query_stats: {
@@ -2561,7 +2589,9 @@ mod tests {
                     UnhandledResolveErrorKindCounts: {},
                 },
                 address_counts: {
-                    "1": 1u64,
+                    "1": {
+                        count: 1u64
+                    },
                 },
             });
             expected.add_child_assertion(child);
