@@ -152,6 +152,17 @@ impl PageQueues {
         if is_reclaim { Some(QueueAge(age)) } else { None }
     }
 
+    /// Records that `page` was accessed, moving it to the most-recently-used
+    /// reclaim queue.
+    ///
+    /// A page that is not in a reclaim queue is ignored, so this is safe to call
+    /// for any page with a `vm_page_t`.
+    pub fn mark_accessed(&self, page: VmPagePtr) {
+        // SAFETY: `self.as_raw()` returns a valid `PageQueues` pointer and `page`
+        // is a valid page.
+        unsafe { bindings::cpp_page_queues_mark_accessed(self.as_raw(), page.as_ffi()) }
+    }
+
     /// Rotates the reclaim queues.
     pub fn rotate_reclaim_queues(&self) {
         // SAFETY: `self.as_raw()` returns a valid `PageQueues` pointer.

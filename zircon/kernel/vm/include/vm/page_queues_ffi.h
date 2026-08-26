@@ -22,6 +22,7 @@ bool cpp_page_queues_debug_page_is_pager_backed_dirty(const PageQueues* queues,
                                                       const vm_page_t* page);
 bool cpp_page_queues_debug_page_is_reclaim_isolate(const PageQueues* queues, const vm_page_t* page);
 void cpp_page_queues_rotate_reclaim_queues(PageQueues* queues);
+void cpp_page_queues_mark_accessed(PageQueues* queues, vm_page_t* page);
 bool cpp_page_queues_is_page_reclaimable(const vm_page_t* page);
 void cpp_page_queues_move_to_reclaim_dont_need(PageQueues* queues, vm_page_t* page);
 void cpp_page_queues_queue_counts(const PageQueues* queues, PageQueues::Counts* out_counts);

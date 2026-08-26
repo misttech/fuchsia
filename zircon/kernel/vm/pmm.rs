@@ -6,8 +6,9 @@
 
 use super::pmm_node::PmmNode;
 use crate::kernel::types::PAddr;
-use crate::vm::page::VmPagePtr;
+use crate::vm::page::{VmPage, VmPagePtr};
 use crate::vm::page_queues::PageQueues;
+use fbl::DoublyLinkedList;
 use pmm_bindings as bindings;
 use zx_status::Status;
 
@@ -41,6 +42,23 @@ pub fn alloc_page(flags: u32) -> Result<(VmPagePtr, PAddr), Status> {
 pub unsafe fn free_page(page: VmPagePtr) {
     // SAFETY: Caller guarantees `page` is a valid allocated PMM page.
     unsafe { bindings::cpp_pmm_free_page(page.as_ffi()) };
+}
+
+/// Frees every page on `list` back to the PMM, emptying the list.  The PMM lock
+/// is taken once for the whole list rather than once per page.
+///
+/// # Safety
+///
+/// Caller must ensure every page on the list is a valid allocated PMM page that
+/// has not already been freed.
+pub unsafe fn free_list(list: &mut DoublyLinkedList<*mut VmPage>) {
+    if list.is_empty() {
+        return;
+    }
+    // SAFETY: `DoublyLinkedList` is `repr(C)` and mirrors `VmPageDoublyLinkedList`
+    // -- a bare head pointer with the same sentinel encoding -- so C++ can drain it
+    // in place.  The caller guarantees the pages.
+    unsafe { bindings::cpp_pmm_free_list((list as *mut DoublyLinkedList<*mut VmPage>).cast()) };
 }
 
 /// Converts a physical address to a `VmPagePtr`.

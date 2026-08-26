@@ -46,6 +46,10 @@ FFI_ALWAYS_INLINE void cpp_page_queues_rotate_reclaim_queues(PageQueues* queues)
   queues->RotateReclaimQueues();
 }
 
+FFI_ALWAYS_INLINE void cpp_page_queues_mark_accessed(PageQueues* queues, vm_page_t* page) {
+  queues->MarkAccessed(page);
+}
+
 FFI_ALWAYS_INLINE bool cpp_page_queues_is_page_reclaimable(const vm_page_t* page) {
   return PageQueues::IsPageReclaimable(page);
 }

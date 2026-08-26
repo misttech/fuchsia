@@ -33,4 +33,6 @@ FFI_ALWAYS_INLINE zx_status_t cpp_pmm_alloc_page(uint32_t flags, vm_page_t** out
 
 FFI_ALWAYS_INLINE void cpp_pmm_free_page(vm_page_t* page) { pmm_free_page(page); }
 
+FFI_ALWAYS_INLINE void cpp_pmm_free_list(VmPageDoublyLinkedList* list) { pmm_free(list); }
+
 }  // extern "C"

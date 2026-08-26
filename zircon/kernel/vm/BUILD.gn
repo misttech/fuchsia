@@ -319,6 +319,7 @@ kernel_bindgen_crate("pmm-bindings") {
     "cpp_pmm_page_queues",
     "cpp_pmm_alloc_page",
     "cpp_pmm_free_page",
+    "cpp_pmm_free_list",
     "cpp_paddr_to_vm_page",
   ]
   type_allowlist = []
@@ -452,6 +453,7 @@ kernel_bindgen_crate("page-queues-bindings") {
     "cpp_page_queues_debug_page_is_pager_backed_dirty",
     "cpp_page_queues_debug_page_is_reclaim_isolate",
     "cpp_page_queues_debug_page_is_anonymous",
+    "cpp_page_queues_mark_accessed",
     "cpp_page_queues_rotate_reclaim_queues",
     "cpp_page_queues_reclaim_is_only_pager_backed",
     "cpp_page_queues_is_page_reclaimable",
