@@ -24,3 +24,18 @@ rustc_bindgen_crate("my-bindings") {
     deps = [ "//src/lib/stdbind:stdbind-rs" ]
 }
 ```
+
+## ABI Specification
+
+### `optional`
+
+The fixed-ABI adapters in C++ and Rust are `stdbind::optional<T>` and
+`stdbind::Optional<T>`, respectively.
+
+- **Discriminant Tag**: An 8-byte `uint64_t` / `u64` located at offset 0.
+  - `0`: indicates absence
+  - `1`: indicates presence
+- **Padding**: Sufficient padding bytes after the tag to satisfy `alignof(T)`
+  when `alignof(T) > 8`.
+- **Payload**: The value of type `T` placed immediately following the tag (at
+  offset 8 for types with alignment <= 8).
