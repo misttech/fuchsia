@@ -66,7 +66,9 @@ pub fn format_log_message(data: &Data<Logs>) -> String {
 fn include_tag_prefix(tag: &str, tags: &HashSet<String>) -> bool {
     if tag.contains("::") {
         tags.iter().any(|t| {
-            tag.len() > t.len() + 2 && &tag[t.len()..t.len() + 2] == "::" && tag.starts_with(t)
+            tag.strip_prefix(t.as_str())
+                .map(|rest| rest.starts_with("::") && rest.len() > 2)
+                .unwrap_or(false)
         })
     } else {
         false
@@ -236,5 +238,17 @@ mod test {
             fdiagnostics_types::Severity::Fatal.into_primitive() + 1,
             fdiagnostics_types::Severity::Fatal.into_primitive()
         );
+    }
+
+    #[fuchsia::test]
+    fn test_include_tag_prefix_unicode() {
+        let mut tags = HashSet::new();
+        tags.insert("foo".to_string());
+        tags.insert("🦀".to_string());
+
+        assert!(!include_tag_prefix("🦀::bar", &["foo".to_string()].into_iter().collect()));
+        assert!(include_tag_prefix("🦀::bar", &tags));
+        assert!(!include_tag_prefix("🦀::", &tags));
+        assert!(include_tag_prefix("foo::bar", &tags));
     }
 }
