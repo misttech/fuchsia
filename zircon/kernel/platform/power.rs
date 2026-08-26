@@ -65,10 +65,19 @@ pub enum ZirconCrashReason {
 
 unsafe extern "C" {
     fn cpp_platform_halt(action: u32, reason: u32) -> !;
+    fn cpp_platform_panic_start();
 }
 
 /// Halts the platform.
 #[inline]
 pub fn platform_halt(action: PlatformHaltAction, reason: ZirconCrashReason) -> ! {
     unsafe { cpp_platform_halt(action as u32, reason as u32) }
+}
+
+/// Prepares the platform to print a panic: stops the other CPUs and switches the
+/// console to a mode that works without them.
+#[inline]
+pub fn platform_panic_start() {
+    // SAFETY: no preconditions; safe to call from any CPU at any time.
+    unsafe { cpp_platform_panic_start() }
 }
