@@ -99,6 +99,10 @@ type SaeFeature = table {
     /// with the SAE_HASH_TO_ELEMENT status code.
     @available(added=30)
     3: hash_to_element_supported bool;
+    /// Indicates whether the driver enables PMKSA caching during SAE, in which
+    /// case it will append a new PMKID to the RSNE in the association request.
+    @available(added=NEXT)
+    4: pmksa_caching_supported bool;
 };
 
 /// Management Frame Protection.

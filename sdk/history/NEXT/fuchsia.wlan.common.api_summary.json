@@ -306,6 +306,12 @@
     },
     {
         "kind": "table/member",
+        "name": "fuchsia.wlan.common/SaeFeature.pmksa_caching_supported",
+        "ordinal": "4",
+        "type": "bool"
+    },
+    {
+        "kind": "table/member",
         "name": "fuchsia.wlan.common/SaeFeature.sme_handler_supported",
         "ordinal": "2",
         "type": "bool"
