@@ -11,7 +11,7 @@ use super::handle::KernelHandle;
 use crate::arch_rs::{UserCopyCaptureFaultsError, arch_copy_from_user_capture_faults};
 use crate::kernel::thread::soft_fault;
 use crate::kernel::types::VAddr;
-use crate::user_copy::{UserInIovec, UserInPtr};
+use crate::user_copy::{UserInIovec, UserInPtr, UserInVector};
 use crate::vm::arch_vm_aspace::{ARCH_MMU_FLAG_PERM_READ, ARCH_MMU_FLAG_PERM_WRITE};
 use crate::vm::pmm::{ALLOC_FLAG_ANY, ALLOC_FLAG_CAN_WAIT};
 use crate::vm::vm_aspace::VmAspace;
@@ -61,13 +61,6 @@ struct Header {
 // 8 bytes for the tag, plus 8 bytes for the length.
 const HEADER_SIZE: usize = 16;
 const _: () = assert!(HEADER_SIZE == size_of::<Header>());
-
-/// A copy of a user-provided `zx_iovec_t` vector entry (user buffer pointer and length).
-#[derive(Copy, Clone, Default)]
-struct Vector {
-    data: UserInPtr<u8>,
-    len: usize,
-}
 
 #[guarded]
 #[pin_data(PinnedDrop)]
@@ -207,22 +200,18 @@ impl IoBufferSharedRegionDispatcher {
             return Err(Status::INVALID_ARGS);
         }
 
-        let mut vectors = [Vector::default(); MAX_VECTORS];
+        let mut vectors = [MaybeUninit::<UserInVector>::uninit(); MAX_VECTORS];
         let mut message_size = 0usize;
-        let mut count = 0;
 
         // Copy the vectors to our stack copy so we can compute the message size and have access to
         // the vectors below once we have taken the lock.
-        UserInIovec::new(vector, vector_count).for_each(|ptr, capacity| {
-            if MAX_MESSAGE_SIZE - message_size < capacity {
+        let vectors = UserInIovec::new(vector, vector_count).copy_to_slice(&mut vectors)?;
+        for vec in &*vectors {
+            if MAX_MESSAGE_SIZE - message_size < vec.len {
                 return Err(Status::INVALID_ARGS);
             }
-            let slot = vectors.get_mut(count).ok_or(Status::INVALID_ARGS)?;
-            message_size += capacity;
-            *slot = Vector { data: ptr, len: capacity };
-            count += 1;
-            Ok(())
-        })?;
+            message_size += vec.len;
+        }
 
         let rounded_message_size = (message_size + HEADER_SIZE).next_multiple_of(8);
         let buffer_size = (self.state().vmo.size() as usize) - page::SIZE;
@@ -273,7 +262,7 @@ impl IoBufferSharedRegionDispatcher {
                 write_u64(message_size as u64);
 
                 let mut copy_vectors = || {
-                    for vec in &vectors[..count] {
+                    for vec in &*vectors {
                         let mut data = vec.data;
                         let mut len = vec.len;
 
