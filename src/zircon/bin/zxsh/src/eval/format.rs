@@ -30,11 +30,8 @@ pub fn command_to_bstring(command: &Command, buffer: &relative::Buffer) -> BStri
             formatted.extend_from_slice(&command_to_bstring(command.right.as_ref(buffer), buffer));
         }
         CommandTag::REDIRECT => {
-            let inner = command.left.as_ref(buffer);
-            formatted.extend_from_slice(&command_to_bstring(inner, buffer));
-            if inner.tag == CommandTag::SIMPLE {
-                formatted.push_str(" <redirection>");
-            }
+            formatted.extend_from_slice(&command_to_bstring(command.left.as_ref(buffer), buffer));
+            formatted.push_str(" <redirection>");
         }
         CommandTag::SUBSHELL => {
             formatted.push_str("( ");

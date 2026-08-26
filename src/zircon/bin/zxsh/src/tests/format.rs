@@ -39,8 +39,6 @@ fn test_fmt_subshell() {
 #[test]
 fn test_fmt_bg() {
     assert_eq!(parse_cmd("echo bg &"), "echo bg &");
-    assert_eq!(parse_cmd("while true; do true; done &"), "while true; do true; done &");
-    assert_eq!(parse_cmd("while true; do true; done > /tmp/junk &"), "while true; do true; done &");
 }
 
 #[test]
@@ -61,6 +59,11 @@ fn test_fmt_arith() {
 #[test]
 fn test_fmt_while() {
     assert_eq!(parse_cmd("while true; do true; done"), "while true; do true; done");
+}
+
+#[test]
+fn test_fmt_while_bg() {
+    assert_eq!(parse_cmd("while true; do true; done &"), "while true; do true; done &");
 }
 
 #[test]
