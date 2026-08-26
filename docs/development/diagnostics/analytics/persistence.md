@@ -1,169 +1,173 @@
 # Diagnostics Persistence: Saving Inspect across reboot
 
-Diagnostics Persistence is a service that stores specific Inspect data on device
-across one or more reboots. If you need to track failure states, historical
-metrics, or other telemetry that must survive a restart, configure this service
-to save your data automatically.
+Diagnostics Persistence automatically captures and stores Inspect data across
+device reboots. This can be used to preserve anything that can be written to
+Inspect.
 
-## Behavior and use cases
+## Overview {#overview}
 
-Persistence is particularly useful for recovering diagnostic data after:
+*   **Automatic collection in development**: On `eng` and `userdebug` builds,
+    all Inspect data across the system is automatically persisted across
+    reboots. No configuration required.
 
-- **Unexpected reboots:** Persistence saves data periodically based on your
-  configured frequency and survives device restarts.
-- **Component crashes:** Persistence never drops a value once it has been
-  saved. For example, if your component publishes data in the first sample, but
-  drops that data or crashes prior to the next sample, Persistence retains the
-  original data in the persistence file.
+*   **Production (`user`) builds require privacy configuration**: On production
+    devices, persisted Inspect data must be explicitly allowlisted in a
+    product's `previous_boot` pipeline (for example, in go/previous-boot-pipeline)
+    and undergo privacy review.
 
-## Quickstart guide
+*   **Available in Feedback & Crash Reports**: Persisted Inspect data is
+    automatically ingested by Feedback and included in snapshot archives
+    (as `inspect.previous_boot.json`) when generating feedback or crash reports.
 
-To configure Persistence to save your component's Inspect data, follow these
-steps:
+## Field collection on user builds {#field-collection-on-user-builds}
 
-- [Identify your Inspect data](#identify-your-inspect-data)
-- [Create a configuration file](#create-a-configuration-file)
-- [Estimate `max_bytes`](#estimate-max_bytes)
-- [Update the build](#update-the-build)
+On production (`user`) builds, diagnostic data exfiltration is restricted for
+user privacy. To persist specific Inspect properties or trees on production
+devices, you must add your selectors to the product's `previous_boot` pipeline
+and complete a privacy review.
 
-### 1. Identify your Inspect data {#identify-your-inspect-data}
+The privacy requirements for Persistence are functionally identical to
+go/tq-feedback-privacy.
 
-Select the specific data you need to save. You will need the exact `INSPECT:`
-selector for your component's data
-(e.g., `INSPECT:core/pkg-resolver:root/resolver_service/active_package_resolves:*`).
+### 1. Identify Inspect selectors {#identify-inspect-selectors}
 
-### 2. Create a configuration file {#create-a-configuration-file}
+Determine the exact Inspect selectors for the properties or nodes you need.
+You can inspect your component on a running device or emulator using
+`ffx inspect`.
 
-Create a new `.persist` file in either `//src/diagnostics/config/persistence`
-or `//vendor/*/diagnostics/config/persistence`.
+### 2. Add selectors to the previous_boot pipeline {#add-selectors-to-pipeline}
 
-The file uses JSON5. Define the parameters for the data you wish to persist:
+Create or update the selector configuration for your component in the product
+repository's pipeline directory:
 
-```json5
-[
-  {
-    tag: "cache-fallbacks", // Unique name
-    service_name: "pkg-resolver", // Grouping for tags
-    max_bytes: 500, // Max size of the persisted data
-    min_seconds_between_fetch: 3600, // How frequently to sample the data
-    selectors: [
-      "INSPECT:core/pkg-resolver:root/resolver_service:cache_fallbacks_due_to_not_found",
-      "INSPECT:core/pkg-resolver:root/resolver_service/active_package_resolves:*",
-    ],
-  },
-]
+1.  Create a component directory under the product's `previous_boot` pipeline:
+
+    ```none
+    //vendor/*/privacy/pipelines/previous_boot/<component_name>/inspect/
+    ```
+
+2.  Add a `.cfg` file (e.g. `<component_name>.cfg`) containing the exact
+    selectors to persist:
+
+    ```none
+    core/my_component:root/my_node:error_count
+    core/my_component:root/my_node:last_failure_reason
+    ```
+
+3.  Update the corresponding `BUILD.bazel` or pipeline list to include your
+    new configuration.
+
+### 3. Submit for privacy review {#submit-for-privacy-review}
+
+Refer to go/tq-feedback-privacy.
+
+## Accessing persisted data {#accessing-persisted-data}
+
+### Feedback reports and snapshots {#feedback-reports-and-snapshots}
+
+When a feedback report or crash snapshot is taken after a reboot, Feedback
+automatically retrieves the previous boot's Inspect data from Persistence.
+The resulting snapshot contains:
+
+*   `inspect.previous_boot.json`: The complete or filtered Inspect JSON tree
+    from the prior boot.
+
+## Technical architecture and behavior {#technical-architecture-and-behavior}
+
+Under the hood, Diagnostics Persistence operates as a scheduled and
+event-driven pipeline snapshotting service:
+
+```none {:.devsite-disable-click-to-copy}
+┌───────────────────────────┐
+│ Archivist                 │
+│ ArchiveAccessor           │
+│ .previous_boot pipeline   │
+└─────────────┬─────────────┘
+              │ Snapshot query
+              ▼
+┌───────────────────────────┐   writes active snapshot
+│ Diagnostics Persistence   ├───► /cache/active/active.json
+│                           │     /cache/active/metadata.json
+│ • Periodic (every 300s)   │
+│ • Low battery trigger     │   on reboot: rotate
+│ • Wait for update check   ├───► /cache/previous_boot/active.json
+└─────────────┬─────────────┘     /cache/previous_boot/metadata.json
+              │ Serves via FIDL
+              ▼
+┌───────────────────────────┐
+│ PreviousBootDataProvider  │
+│ (e.g. Feedback component) │
+└───────────────────────────┘
 ```
 
-### 3. Estimate `max_bytes` {#estimate-max_bytes}
+### 1. Archivist previous_boot pipeline {#archivist-previous-boot-pipeline}
 
-The size of the persisted data is enforced at runtime. If your selectors fetch
-more data than `max_bytes`, all of the saved data for this tag will be
-permanently dropped and replaced with a single error string instead.
+Persistence connects to `fuchsia.diagnostics.ArchiveAccessor.previous_boot`.
+Archivist dynamically applies the allowlist selectors configured for the
+pipeline, or bypasses filtering when `DISABLE_FILTERING.txt` is present (such
+as in `eng` and `userdebug` builds).
 
-To estimate the correct `max_bytes` limit:
+### 2. Snapshot triggers {#snapshot-triggers}
 
-1.  Run your component on a device and populate the Inspect data you wish to
-    persist. For more information on populating Inspect data, see
-    [Codelab: Using Inspect](/docs/development/diagnostics/inspect/codelab.md).
-2.  Run `ffx inspect show` locally with your exact selectors, and pipe the
-    output through `jq` to strip away un-persisted data. Finally, count the bytes
-    using `wc -c`. For example:
+Persistence records active system snapshots using two triggers:
 
-```bash
-ffx --machine json inspect show \
-    'core/pkg-resolver:root/resolver_service:cache_fallbacks_due_to_not_found' \
-    'core/pkg-resolver:root/resolver_service/active_package_resolves:*' \
-    | jq -c '.[] | pick(.moniker, .payload.root)' \
-    | wc -c
-```
+*   **Periodic Interval**: Runs every $N$ seconds (configured by
+    `fuchsia.diagnostics.persist.PersistencePeriodSeconds`, default 300 seconds).
 
-3.  Add a generous buffer (e.g., 20-50%) to this total to account for string
-    length variations, future field additions, and JSON formatting overhead.
+*   **Low-Battery Trigger**: Connects to
+    `fuchsia.power.battery.BatteryManager` to monitor battery status. If
+    battery drops to or below
+    `fuchsia.diagnostics.persist.LowBatteryThresholdPercent` (default 10%), an
+    immediate snapshot is captured to preserve state prior to impending
+    shutdown.
 
-### 4. Update the build {#update-the-build}
+### 3. Active-to-previous boot rotation {#active-to-previous-boot-rotation}
 
-Add your new configuration file to the build by adding it to the `diagnostics-persistence`
-package configuration in `//bundles/assembly/BUILD.gn`.
+*   Active snapshots and metadata are saved to `/cache/active/active.json` and
+    `/cache/active/metadata.json`.
 
-Find the `package_name = "diagnostics-persistence"` block and add your `.persist` file
-to the `files` list:
+*   On startup, Persistence atomically cleans `/cache/previous_boot` and moves
+    `/cache/active` to `/cache/previous_boot`.
 
-```gn {:.devsite-disable-click-to-copy}
-      package_name = "diagnostics-persistence"
-      files = [
-        {
-          source = "//src/diagnostics/config/persistence/netstack.persist"
-          destination = "netstack.persist"
-        },
-+       {
-+         source = "//src/sys/pkg/bin/pkg-resolver/pkg-resolver.persist"
-+         destination = "pkg-resolver.persist"
-+       },
-      ]
-```
+*   Persisted data is retained strictly for the single previous boot cycle.
 
-## Reading persisted data
+### 4. Software update check gating {#software-update-check-gating}
 
-On the next boot (after the software update check completes), the saved data is
-re-published into Inspect.
+To protect against persistent crash loops across updates, Persistence
+registers with `fuchsia.update.Listener` and withholds serving previous boot
+data until the first post-boot software update check completes. On `eng` and
+`userdebug` builds, this check can be skipped (`skip_update_check: true`).
 
-The data is hosted by the `diagnostics-persistence` component. The original path
-is prefixed with your configured `service_name` and `tag`.
+## Assembly configuration {#assembly-configuration}
 
-```bash
-$ ffx inspect show core/diagnostics/persistence
-core/diagnostics/persistence:
-  root:
-    persist:
-      pkg-resolver:
-        cache-fallbacks:
-          core/pkg-resolver:
-            resolver_service:
-              cache_fallbacks_due_to_not_found: 2
-```
+Persistence parameters can be customized in product assembly configuration
+under the `diagnostics.persistence` section:
 
-## Configuration reference
+*   `persistence_period_seconds` (integer, default: `300`):
+    Duration in seconds between periodic snapshots on
+    `ArchiveAccessor.previous_boot`.
 
-The `.persist` JSON5 file format expects an array of objects, where each object
-defines a Persistence Tag. Each tag accepts the following fields:
+*   `low_battery_threshold_percent` (integer, default: `10`):
+    Battery percentage threshold that triggers an immediate active snapshot.
 
-| Field                           | Type                      | Description                                                                                                                                                     |
-| ------------------------------- | ------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **`tag`**                       | string                    | The unique identifier for this data collection within the `service_name`. Must be lowercase and hyphens only (e.g., `"my-feature-stats"`).                      |
-| **`service_name`**              | string                    | A grouping identifier for related tags. Must be lowercase and hyphens only (e.g., `"my-service"`).                                                              |
-| **`selectors`**                 | []string                  | A list of exact `INSPECT:` selectors to harvest and save.                                                                                                       |
-| **`max_bytes`**                 | integer                   | The maximum allowed size of the fetched Inspect payload in bytes. If the sampled data exceeds this limit, the saved data will be replaced with an error string. |
-| **`min_seconds_between_fetch`** | integer                   | How frequently Archivist should sample these selectors.                                                                                                         |
-| **`persist_across_boot`**       | boolean (default `false`) | If `true`, saved data is not cleared on the next boot and will continue to accumulate historical boot data.                                                     |
+*   `skip_update_check` (boolean, default: `false` on user, `true` on
+    userdebug/eng):
+    If `true`, does not wait for the post-boot update check before publishing
+    previous boot data. Always `false` on user builds.
 
-## Privacy considerations
+## FAQ {#faq}
 
-Persistence is a powerful tool for debugging, but it can also be a privacy risk
-if not used carefully.
+### Does Persistence work with Lazy Nodes? {#lazy-nodes}
 
-- **Cross-boot linkage**: Enabling `persist_across_boot` preserves saved data
-  across boots, accumulating historical data. This creates a long-term record of
-  device usage, which could be used to track users across multiple boots. This
-  can also violate other privacy safeguards, such as fingerprinting a device or
-  user across a time-limited pseudonymous ID.
+Yes. Because Persistence requests a snapshot from Archivist via
+`ArchiveAccessor`, Archivist actively evaluates all Lazy Nodes that match the
+pipeline's active selectors at the time of each snapshot.
 
-- **Data retention**: Persistence data is stored on the device and can be
-  accessed by anyone with physical access to the device. It is important to
-  consider the sensitivity of the data you are persisting and whether it should
-  be protected with additional security measures.
+### Where did .persist configuration files go? {#legacy-config-files}
 
-- **Data minimization**: Only persist the data that you need to debug your
-  component. Avoid persisting unnecessary data, as this can increase the privacy
-  risk.
+Legacy `.persist` files and per-tag fetch scheduling have been replaced by the
+Archivist `previous_boot` pipeline. Components no longer publish separate
+`.persist` files or re-export persisted data in the live Inspect hierarchy
+under `core/diagnostics/persistence:root/persist`. All previous boot Inspect
+is unified into a single snapshot file served directly to Feedback.
 
-## FAQ
-
-### Does Persistence work with Lazy Nodes?
-
-Yes. Persistence provides built-in support for Inspect [Lazy Nodes][lazy-nodes-link].
-Persistence registers its required selectors and fetch frequencies with the
-Archivist. At each interval, the Archivist actively queries the component's
-selectors, which triggers the evaluation of any Lazy Nodes, allowing the system
-to save their dynamically generated data.
-
-[lazy-nodes-link]: /docs/development/diagnostics/inspect/quickstart.md#dynamic-values
