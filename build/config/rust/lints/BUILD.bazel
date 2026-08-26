@@ -62,6 +62,7 @@ _RUSTC_LINT_CONFIGS = {
     "mismatched_lifetime_syntaxes": "allow",
     "non_local_definitions": "allow",
     "renamed_and_removed_lints": "allow",
+    "rustdoc::redundant_explicit_links": "allow",
     # LINT.ThenChange(//build/config/rust/lints/BUILD.gn:rustc_toolchain_roll_exceptions)
 }
 

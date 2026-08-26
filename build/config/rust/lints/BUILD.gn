@@ -157,6 +157,9 @@ config("toolchain_roll_exceptions") {
 
     # TODO(https://fxbug.dev/365108268) Remove blanket allow once lint is actionable.
     "-Amismatched_lifetime_syntaxes",
+
+    # TODO(https://fxbug.dev/552992008) Avoid rustdoc ICE on local macro doclinks.
+    "-Arustdoc::redundant_explicit_links",
   ]
   # LINT.ThenChange(//build/config/rust/lints/BUILD.bazel:rustc_toolchain_roll_exceptions)
 }
