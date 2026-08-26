@@ -256,6 +256,11 @@ pub trait HandleBased: AsHandleRef + From<Handle> + Into<Handle> {
 
     /// Drop ownership of this handle and make it invalid, without closing the handle.
     fn invalidate(&mut self);
+
+    /// Check whether this handle is valid.
+    fn is_invalid(&self) -> bool {
+        self.as_handle_ref().is_invalid()
+    }
 }
 
 impl HandleBased for Handle {
@@ -370,6 +375,18 @@ impl Drop for Handle {
 
 macro_rules! handle_type {
     ($name:ident $objtype:ident) => {
+        impl $name {
+            /// Get an invalid handle of this type.
+            pub fn invalid() -> Self {
+                $name($crate::Handle::invalid())
+            }
+
+            /// Check whether this handle is valid.
+            pub fn is_invalid(&self) -> bool {
+                self.0.is_invalid()
+            }
+        }
+
         impl From<$name> for Handle {
             fn from(other: $name) -> Handle {
                 other.0
