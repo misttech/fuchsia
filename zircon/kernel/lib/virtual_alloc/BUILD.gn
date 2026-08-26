@@ -28,6 +28,7 @@ source_set("virtual_alloc") {
   deps = [
     "//sdk/lib/fit",
     "//zircon/kernel/lib/page",
+    "//zircon/kernel/vm:headers",
     "//zircon/system/ulib/fbl",
   ]
 

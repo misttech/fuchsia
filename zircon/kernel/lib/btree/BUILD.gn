@@ -16,6 +16,7 @@ source_set("btree") {
     deps = [
       "//zircon/kernel/lib/init",
       "//zircon/kernel/lib/page",
+      "//zircon/kernel/vm:headers",
       "//zircon/system/ulib/lazy_init",
     ]
   }

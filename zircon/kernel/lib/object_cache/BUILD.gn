@@ -20,6 +20,9 @@ library_headers("headers") {
 
     # <lib/object_cache.h> has #include <lib/page/size.h>
     "//zircon/kernel/lib/page:headers",
+
+    # <lib/object_cache.h> has #include <vm/pmm.h>.
+    "//zircon/kernel/vm:headers",
   ]
 }
 
