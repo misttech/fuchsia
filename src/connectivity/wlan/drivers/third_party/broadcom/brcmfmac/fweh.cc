@@ -206,6 +206,10 @@ void brcmf_fweh_handle_if_event(struct brcmf_pub* drvr, struct brcmf_event_msg* 
     BRCMF_ERR("invalid interface index: %u", ifevent->ifidx);
     return;
   }
+  if (ifevent->bsscfgidx >= BRCMF_MAX_IFS) {
+    BRCMF_ERR("invalid bsscfgidx: %u", ifevent->bsscfgidx);
+    return;
+  }
 
   ifp = drvr->iflist[ifevent->bsscfgidx];
 
