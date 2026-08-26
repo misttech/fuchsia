@@ -2737,8 +2737,10 @@ def _emit_build_failure(
     output: command.CommandOutput | None,
 ) -> str:
     """Emit compiler diagnostics from a failed build and format error message."""
-    if output is not None and (msg := (output.stderr or output.stdout)):
-        recorder.emit_verbatim_message(msg)
+    if output is not None:
+        msg = "\n".join(filter(None, [output.stdout, output.stderr]))
+        if msg:
+            recorder.emit_verbatim_message(msg)
     rc = output.return_code if output is not None else -1
     return f"Build returned non-zero exit code {rc}"
 

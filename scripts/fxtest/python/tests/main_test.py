@@ -3618,6 +3618,53 @@ class TestMainIntegration(unittest.IsolatedAsyncioTestCase):
         )
 
     @mock.patch("main.run_build_with_suspended_output")
+    async def test_do_build_failure_outputs_stdout_and_stderr(
+        self, mock_build: mock.AsyncMock
+    ) -> None:
+        """Test that build failure concatenates compiler stdout and stderr diagnostics."""
+        mock_build.return_value = mock.MagicMock(
+            return_code=1,
+            stdout="../../src/foo.cc:1: error: expected ';'",
+            stderr="Hint: run `fx build` with --log",
+        )
+
+        app = main.AsyncMain.__new__(main.AsyncMain)
+        recorder = mock.MagicMock()
+        app._recorder = recorder
+        app._flags = args.parse_args(["--simple"])
+        app._exec_env = environment.ExecutionEnvironment.initialize_from_args(
+            app._flags
+        )
+        app._end_execution_request_event = asyncio.Event()
+
+        mock_test = test_list_file.Test(
+            build=tests_json_file.TestEntry(
+                test=tests_json_file.TestSection(
+                    name="my_host_test",
+                    label="//src:my_host_test(//build/toolchain:host_x64)",
+                    os="linux",
+                )
+            )
+        )
+
+        selections = selection_types.TestSelections(
+            selected=[mock_test],
+            selected_but_not_run=[],
+            best_score={},
+            group_matches=[],
+            fuzzy_distance_threshold=0,
+        )
+
+        res = await app._do_build(selections)
+        self.assertFalse(res)
+        recorder.emit_verbatim_message.assert_called_with(
+            "../../src/foo.cc:1: error: expected ';'\nHint: run `fx build` with --log"
+        )
+        recorder.emit_end.assert_called_with(
+            "Build returned non-zero exit code 1", id=mock.ANY
+        )
+
+    @mock.patch("main.run_build_with_suspended_output")
     async def test_do_build_aborted(self, mock_build: mock.AsyncMock) -> None:
         """Test that _do_build handles build abort (None return value)."""
         mock_build.return_value = None
