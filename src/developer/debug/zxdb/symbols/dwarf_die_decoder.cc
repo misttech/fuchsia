@@ -8,6 +8,7 @@
 
 #include "llvm/DebugInfo/DWARF/DWARFContext.h"
 #include "llvm/DebugInfo/DWARF/DWARFFormValue.h"
+#include "llvm/DebugInfo/DWARF/DWARFTypeUnit.h"
 #include "src/developer/debug/zxdb/common/file_util.h"
 #include "src/developer/debug/zxdb/symbols/const_value.h"
 #include "src/developer/debug/zxdb/symbols/dwarf_binary.h"
@@ -20,11 +21,34 @@ namespace {
 // before givin up. Prevents blowing out the stack for corrupt symbols.
 constexpr int kMaxAbstractOriginRefsToFollow = 8;
 
+llvm::DWARFDie GetDIEForSignature(llvm::DWARFContext* context, uint64_t signature) {
+  if (!context)
+    return llvm::DWARFDie();
+
+  auto search_units = [signature](const llvm::DWARFUnitVector& units) -> llvm::DWARFDie {
+    for (const std::unique_ptr<llvm::DWARFUnit>& unit : units) {
+      if (!unit->isTypeUnit())
+        continue;
+      auto* type_unit = static_cast<llvm::DWARFTypeUnit*>(unit.get());
+      if (type_unit->getTypeHash() != signature)
+        continue;
+      uint64_t die_offset = unit->getOffset() + type_unit->getTypeOffset();
+      return unit->getDIEForOffset(die_offset);
+    }
+    return llvm::DWARFDie();
+  };
+
+  if (llvm::DWARFDie die = search_units(context->getNormalUnitsVector()))
+    return die;
+  return search_units(context->getDWOUnitsVector());
+}
+
 }  // namespace
 
 DwarfDieDecoder::DwarfDieDecoder(llvm::DWARFContext* context) : context_(context) {}
 
-DwarfDieDecoder::DwarfDieDecoder(DwarfBinary& binary) : context_(binary.GetLLVMContext()) {}
+DwarfDieDecoder::DwarfDieDecoder(DwarfBinary& binary)
+    : context_(binary.GetLLVMContext()), binary_(&binary) {}
 
 DwarfDieDecoder::~DwarfDieDecoder() = default;
 
@@ -321,13 +345,25 @@ llvm::DWARFDie DwarfDieDecoder::DecodeReference(llvm::DWARFUnit* unit,
         return context_->getDIEForOffset(*ref_value);
       break;
     }
+    case llvm::dwarf::DW_FORM_ref_sig8: {
+      auto ref_value = form.getAsReferenceUVal();
+      if (ref_value) {
+        if (binary_) {
+          // Prefer fast O(log N) cached signature lookup and section-aware DIE resolution
+          // via DwarfBinary.
+          if (DwarfDieRef die_ref = binary_->GetDieRefForSignature(*ref_value)) {
+            return binary_->GetLLVMDieAtOffset(die_ref);
+          }
+        } else {
+          // Fallback for tests or contexts where only a bare llvm::DWARFContext* was provided.
+          return GetDIEForSignature(context_, *ref_value);
+        }
+      }
+      break;
+    }
     default:
-      // Note that we don't handle DW_FORM_ref_sig8, DW_FORM_ref_sup4, or
-      // DW_FORM_ref_sup8. The "sig8" one requries a different type encoding
-      // that our Clang toolchain doesn't seem to generate. The "sup4/8" ones
-      // require a shared separate symbol file we don't use.
-      //
-      // TODO(https://fxbug.dev/42179610): Support DW_AT_signature and DW_FORM_ref_sig8.
+      // Note that we don't handle DW_FORM_ref_sup4, or DW_FORM_ref_sup8.
+      // The "sup4/8" ones require a shared separate symbol file we don't use.
       break;
   }
   return llvm::DWARFDie();

@@ -87,13 +87,6 @@ std::optional<size_t> ReadArraySubrange(llvm::DWARFContext* context,
   return static_cast<size_t>(*upper_bound);
 }
 
-void DisplayDebugTypesSectionWarning() {
-  FX_FIRST_N(1, LOGS(Warn))
-      << "Separated .debug_types section is not supported yet. Please consider to remove "
-         "`-fdebug-types-section` from the compiler flags or add `-fno-debug-types-section` if "
-         "it's enabled by default. (https://fxbug.dev/42179610)";
-}
-
 // Returns true if the form uses any of the addr "x" encodings (relocatable references to the
 // address table).
 bool IsAddrXForm(llvm::dwarf::Form form) {
@@ -165,6 +158,7 @@ fxl::RefPtr<Symbol> DwarfSymbolFactory::DecodeSymbol(const llvm::DWARFDie& die) 
       break;
     case DwarfTag::kCompileUnit:
     case DwarfTag::kSkeletonUnit:
+    case DwarfTag::kTypeUnit:
       symbol = DecodeCompileUnit(die, tag);
       break;
     case DwarfTag::kEnumerationType:
@@ -528,10 +522,11 @@ fxl::RefPtr<Symbol> DwarfSymbolFactory::DecodeCollection(const llvm::DWARFDie& d
   llvm::DWARFDie parent;
   decoder.AddAbstractParent(&parent);
 
-  // TODO(https://fxbug.dev/42179610): Support DW_AT_signature.
-  bool has_signature = false;
+  std::optional<uint64_t> signature;
   decoder.AddCustom(llvm::dwarf::DW_AT_signature,
-                    [&has_signature](auto, auto) { has_signature = true; });
+                    [&signature](llvm::DWARFUnit*, const llvm::DWARFFormValue& val) {
+                      signature = val.getAsReferenceUVal();
+                    });
 
   std::optional<const char*> name;
   decoder.AddCString(llvm::dwarf::DW_AT_name, &name);
@@ -545,11 +540,17 @@ fxl::RefPtr<Symbol> DwarfSymbolFactory::DecodeCollection(const llvm::DWARFDie& d
   std::optional<uint64_t> calling_convention;
   decoder.AddUnsignedConstant(llvm::dwarf::DW_AT_calling_convention, &calling_convention);
 
-  if (has_signature)
-    DisplayDebugTypesSectionWarning();
-
-  if (!decoder.Decode(die) || has_signature)
+  if (!decoder.Decode(die))
     return fxl::MakeRefCounted<Symbol>();
+
+  if (signature) {
+    if (binary_) {
+      if (DwarfDieRef sig_ref = binary_->GetDieRefForSignature(*signature)) {
+        return CreateSymbol(sig_ref);
+      }
+    }
+    return fxl::MakeRefCounted<Symbol>();
+  }
 
   auto result = fxl::MakeRefCounted<Collection>(static_cast<DwarfTag>(die.getTag()));
   if (name)
@@ -714,10 +715,11 @@ fxl::RefPtr<Symbol> DwarfSymbolFactory::DecodeEnum(const llvm::DWARFDie& die) co
   llvm::DWARFDie parent;
   main_decoder.AddAbstractParent(&parent);
 
-  // TODO(https://fxbug.dev/42179610): Support DW_AT_signature.
-  bool has_signature = false;
+  std::optional<uint64_t> signature;
   main_decoder.AddCustom(llvm::dwarf::DW_AT_signature,
-                         [&has_signature](auto, auto) { has_signature = true; });
+                         [&signature](llvm::DWARFUnit*, const llvm::DWARFFormValue& val) {
+                           signature = val.getAsReferenceUVal();
+                         });
 
   // Name is optional (enums can be anonymous).
   std::optional<const char*> type_name;
@@ -763,11 +765,17 @@ fxl::RefPtr<Symbol> DwarfSymbolFactory::DecodeEnum(const llvm::DWARFDie& die) co
         }
       });
 
-  if (has_signature)
-    DisplayDebugTypesSectionWarning();
-
-  if (!main_decoder.Decode(die) || has_signature)
+  if (!main_decoder.Decode(die))
     return fxl::MakeRefCounted<Symbol>();
+
+  if (signature) {
+    if (binary_) {
+      if (DwarfDieRef sig_ref = binary_->GetDieRefForSignature(*signature)) {
+        return CreateSymbol(sig_ref);
+      }
+    }
+    return fxl::MakeRefCounted<Symbol>();
+  }
 
   FX_CHECK(byte_size.has_value());
 

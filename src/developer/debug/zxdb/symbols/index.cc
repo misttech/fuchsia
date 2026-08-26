@@ -440,7 +440,8 @@ void UnitIndexer::AddEntryToIndex(uint32_t index_me, IndexNode* root) {
     //
     // 99% of all declarations are within the same unit so look up in the current unit first. If
     // the current unit doesn't cover the offset, getDIEForOffset will return a null DIE.
-    llvm::DWARFDie die = unit_.GetLLVMDieAtOffset(indexable_[index_me].decl_offset());
+    llvm::DWARFDie die =
+        unit_.GetLLVMDieAtOffset(DwarfDieRef::Main(indexable_[index_me].decl_offset()));
     if (!die) {
       // DIE not found in this unit, try adding it to the index using the slow path which allows
       // cross-unit references.
@@ -535,7 +536,7 @@ void UnitIndexer::AddStandaloneEntryToIndex(uint32_t index_me, IndexNode* index_
   llvm::DWARFDie die;
   if (named_ref.decl_offset()) {
     // When there's a separate declaration, its parent encodes the scope information.
-    die = unit_.GetBinary()->GetLLVMDieAtOffset(named_ref.decl_offset());
+    die = unit_.GetBinary()->GetLLVMDieAtOffset(DwarfDieRef::Main(named_ref.decl_offset()));
     if (!die)
       return;  // Invalid decl offset, skip indexing.
     if (name.empty()) {
@@ -547,7 +548,7 @@ void UnitIndexer::AddStandaloneEntryToIndex(uint32_t index_me, IndexNode* index_
   } else {
     // When there's no declaration, the name will already have been filled in (if present) to the
     // named_ref.
-    die = unit_.GetBinary()->GetLLVMDieAtOffset(named_ref.die_ref().offset());
+    die = unit_.GetBinary()->GetLLVMDieAtOffset(named_ref.die_ref());
   }
 
   if (name.empty())
@@ -594,7 +595,7 @@ void UnitIndexer::AddStandaloneEntryToIndex(uint32_t index_me, IndexNode* index_
 }
 
 bool UnitIndexer::GetAbstractOriginIndex(uint32_t source, uint32_t* abstract_origin_index) const {
-  llvm::DWARFDie die = unit_.GetLLVMDieAtOffset(indexable_[source].die_ref().offset());
+  llvm::DWARFDie die = unit_.GetLLVMDieAtOffset(indexable_[source].die_ref());
   if (!die)
     return false;  // Internal error, maybe symbols corrupt.
 

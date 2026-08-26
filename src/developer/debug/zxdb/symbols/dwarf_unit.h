@@ -9,6 +9,7 @@
 
 #include "llvm/DebugInfo/DWARF/DWARFDebugLine.h"
 #include "src/developer/debug/zxdb/symbols/arch.h"
+#include "src/developer/debug/zxdb/symbols/dwarf_die_ref.h"
 #include "src/developer/debug/zxdb/symbols/symbol_context.h"
 #include "src/lib/fxl/memory/ref_counted.h"
 #include "src/lib/fxl/memory/weak_ptr.h"
@@ -93,7 +94,7 @@ class DwarfUnit : public fxl::RefCountedThreadSafe<DwarfUnit> {
   // this unit (LLVM does a binary search in the unit's DIE array for the DIE with the given
   // offset). See DwarfBinary::GetLLVMDieAtOffset() to query across units.
   virtual llvm::DWARFDie GetLLVMDieAtIndex(uint64_t index) const = 0;
-  virtual llvm::DWARFDie GetLLVMDieAtOffset(uint64_t offset) const = 0;
+  virtual llvm::DWARFDie GetLLVMDieAtOffset(DwarfDieRef die_ref) const = 0;
 
   // Back-computes the index for the given DIE in this unit. The DIE must be part of this unit or
   // the returned value will be incorrect (it just does a simple offset conversion).

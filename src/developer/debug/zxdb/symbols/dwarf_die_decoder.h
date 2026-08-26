@@ -138,6 +138,7 @@ class DwarfDieDecoder {
   llvm::DWARFDie DecodeReference(llvm::DWARFUnit* unit, const llvm::DWARFFormValue& form);
 
   llvm::DWARFContext* context_;
+  const DwarfBinary* binary_ = nullptr;
 
   // Normally there will be few attributes and a brute-force search through a contiguous array will
   // be faster than a map lookup.

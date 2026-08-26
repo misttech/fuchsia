@@ -6,6 +6,7 @@
 #define SRC_DEVELOPER_DEBUG_ZXDB_SYMBOLS_DWARF_BINARY_H_
 
 #include "llvm/BinaryFormat/ELF.h"
+#include "src/developer/debug/zxdb/symbols/dwarf_die_ref.h"
 #include "src/developer/debug/zxdb/symbols/dwarf_unit.h"
 #include "src/developer/debug/zxdb/symbols/symbol_context.h"
 #include "src/developer/debug/zxdb/symbols/unit_index.h"
@@ -101,8 +102,12 @@ class DwarfBinary {
   // returns the first DWO unit.
   fxl::RefPtr<DwarfUnit> GetDwoUnit() { return GetUnitAtIndex(UnitIndex(true, 0)); }
 
-  // Looks up a DIE by offset. This DIE can be in any unit.
-  virtual llvm::DWARFDie GetLLVMDieAtOffset(uint64_t offset) const = 0;
+  // Looks up a DIE across units by its DIE reference.
+  virtual llvm::DWARFDie GetLLVMDieAtOffset(DwarfDieRef die_ref) const = 0;
+
+  // Looks up a DIE reference by its 64-bit DWARF type signature (DW_FORM_ref_sig8 /
+  // DW_AT_signature).
+  virtual DwarfDieRef GetDieRefForSignature(uint64_t signature) const = 0;
 
   virtual void ClearLLVMCache() = 0;
 };

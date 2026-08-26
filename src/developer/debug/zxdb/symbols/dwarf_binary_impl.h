@@ -6,6 +6,7 @@
 #define SRC_DEVELOPER_DEBUG_ZXDB_SYMBOLS_DWARF_BINARY_IMPL_H_
 
 #include <map>
+#include <optional>
 
 #include "llvm/DebugInfo/DWARF/DWARFUnit.h"
 #include "src/developer/debug/zxdb/common/err.h"
@@ -55,13 +56,17 @@ class DwarfBinaryImpl final : public DwarfBinary {
   fxl::RefPtr<DwarfUnit> GetUnitAtIndex(UnitIndex i) override;
   fxl::RefPtr<DwarfUnit> UnitForRelativeAddress(uint64_t relative_address) override;
   std::optional<uint64_t> GetDebugAddrEntry(uint64_t addr_base, uint64_t index) const override;
-  llvm::DWARFDie GetLLVMDieAtOffset(uint64_t offset) const override;
+  llvm::DWARFDie GetLLVMDieAtOffset(DwarfDieRef die_ref) const override;
+  DwarfDieRef GetDieRefForSignature(uint64_t signature) const override;
   void ClearLLVMCache() override;
 
  private:
   // Lazily creates a unit for us and returns it. This can handle null input pointers, which will
   // result in a null output pointer.
   fxl::RefPtr<DwarfUnit> FromLLVMUnit(llvm::DWARFUnit* llvm_unit);
+
+  // Call every time before using signature_to_die_ to make sure it's lazily populated.
+  void EnsureSignatureMap() const;
 
   const std::string name_;
   const std::string binary_name_;
@@ -83,6 +88,10 @@ class DwarfBinaryImpl final : public DwarfBinary {
 
   // Holds the mapping between LLVM units and our cached unit wrappers that reference them.
   mutable std::map<const llvm::DWARFUnit*, fxl::RefPtr<DwarfUnit>> unit_map_;
+
+  // Maps 64-bit type unit signatures to their DIE references. Computed lazily by
+  // EnsureSignatureMap() by scanning all type units in both normal and DWO unit vectors.
+  mutable std::optional<std::map<uint64_t, DwarfDieRef>> signature_to_die_;
 
   uint64_t mapped_length_ = 0;
 

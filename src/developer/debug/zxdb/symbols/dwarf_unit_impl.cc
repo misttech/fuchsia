@@ -99,8 +99,10 @@ llvm::DWARFDie DwarfUnitImpl::GetLLVMDieAtIndex(uint64_t index) const {
   return unit_->getDIEAtIndex(index);
 }
 
-llvm::DWARFDie DwarfUnitImpl::GetLLVMDieAtOffset(uint64_t offset) const {
-  return unit_->getDIEForOffset(offset);
+llvm::DWARFDie DwarfUnitImpl::GetLLVMDieAtOffset(DwarfDieRef die_ref) const {
+  if (!die_ref.is_valid())
+    return llvm::DWARFDie();
+  return unit_->getDIEForOffset(die_ref.offset());
 }
 
 uint64_t DwarfUnitImpl::GetIndexForLLVMDie(const llvm::DWARFDie& die) const {

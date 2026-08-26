@@ -41,7 +41,7 @@ class DwarfUnitImpl : public DwarfUnit {
   const llvm::DWARFDebugLine::LineTable* GetLLVMLineTable() const override;
   uint64_t GetDieCount() const override;
   llvm::DWARFDie GetLLVMDieAtIndex(uint64_t index) const override;
-  llvm::DWARFDie GetLLVMDieAtOffset(uint64_t offset) const override;
+  llvm::DWARFDie GetLLVMDieAtOffset(DwarfDieRef die_ref) const override;
   uint64_t GetIndexForLLVMDie(const llvm::DWARFDie& die) const override;
 
  private:

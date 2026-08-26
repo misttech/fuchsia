@@ -16,6 +16,7 @@
 #include <llvm/DebugInfo/DWARF/DWARFCompileUnit.h>
 #include <llvm/DebugInfo/DWARF/DWARFContext.h>
 #include <llvm/DebugInfo/DWARF/DWARFDebugArangeSet.h>
+#include <llvm/DebugInfo/DWARF/DWARFTypeUnit.h>
 #include <llvm/DebugInfo/DWARF/DWARFUnit.h>
 #include <llvm/Object/Binary.h>
 #include <llvm/Object/ELFObjectFile.h>
@@ -250,17 +251,19 @@ uint32_t DwarfBinaryImpl::GetNormalUnitCount() const {
 }
 
 uint32_t DwarfBinaryImpl::GetDWOUnitCount() const {
-  auto unit_range = context_->dwo_info_section_units();
+  auto unit_range = context_->dwo_units();
   return unit_range.end() - unit_range.begin();
 }
 
 fxl::RefPtr<DwarfUnit> DwarfBinaryImpl::GetUnitAtIndex(UnitIndex i) {
   llvm::DWARFUnit* unit = nullptr;
+  // LLVM's DWARFContext stores compile units followed by type units in a single unified
+  // unit vector. The total unit count across both sections is NumCompileUnits + NumTypeUnits.
   if (i.is_dwo) {
-    FX_DCHECK(i.index < context_->getNumDWOCompileUnits());
+    FX_DCHECK(i.index < context_->getNumDWOCompileUnits() + context_->getNumDWOTypeUnits());
     unit = context_->getDWOUnitAtIndex(i.index);
   } else {
-    FX_DCHECK(i.index < context_->getNumCompileUnits());
+    FX_DCHECK(i.index < context_->getNumCompileUnits() + context_->getNumTypeUnits());
     unit = context_->getUnitAtIndex(i.index);
   }
   return FromLLVMUnit(unit);
@@ -309,11 +312,39 @@ std::optional<uint64_t> DwarfBinaryImpl::GetDebugAddrEntry(uint64_t addr_base,
   return result;
 }
 
-llvm::DWARFDie DwarfBinaryImpl::GetLLVMDieAtOffset(uint64_t offset) const {
-  return context_->getDIEForOffset(offset);
+llvm::DWARFDie DwarfBinaryImpl::GetLLVMDieAtOffset(DwarfDieRef die_ref) const {
+  return context_->getDIEForOffset(die_ref.offset());
+}
+
+void DwarfBinaryImpl::EnsureSignatureMap() const {
+  if (signature_to_die_.has_value() || !context_)
+    return;
+
+  auto& map = signature_to_die_.emplace();
+  auto add_units = [&map](const llvm::DWARFUnitVector& units) {
+    for (const std::unique_ptr<llvm::DWARFUnit>& unit : units) {
+      if (!unit->isTypeUnit())
+        continue;
+      auto* type_unit = static_cast<llvm::DWARFTypeUnit*>(unit.get());
+      uint64_t die_offset = unit->getOffset() + type_unit->getTypeOffset();
+      map[type_unit->getTypeHash()] = DwarfDieRef::Main(die_offset);
+    }
+  };
+
+  add_units(context_->getNormalUnitsVector());
+  add_units(context_->getDWOUnitsVector());
+}
+
+DwarfDieRef DwarfBinaryImpl::GetDieRefForSignature(uint64_t signature) const {
+  EnsureSignatureMap();
+  auto found = signature_to_die_->find(signature);
+  if (found == signature_to_die_->end())
+    return DwarfDieRef();
+  return found->second;
 }
 
 void DwarfBinaryImpl::ClearLLVMCache() {
+  signature_to_die_.reset();
   for (size_t i = 0; i < GetNormalUnitCount(); i++) {
     auto llvm_unit = GetUnitAtIndex(UnitIndex(false, i))->GetLLVMUnit();
     context_->clearLineTableForUnit(llvm_unit);
