@@ -95,6 +95,175 @@ TEST_F(UnmanagedTestFixture, PlatformExtensionBypass) {
   EXPECT_EQ(ZX_OK, dut_.StopDriver().status_value());
 }
 
+TEST_F(UnmanagedTestFixture, ConnectResetsHardwareWithoutPlatformExtension) {
+  auto reset_count = std::make_shared<std::atomic<uint32_t>>(0);
+  dut_.RunInEnvironmentTypeContext([this, reset_count](Environment& env) {
+    auto& dctl_reg = env.reg_region()[DCTL::Get().addr()];
+    dctl_reg.SetWriteCallback([this, reset_count](uint64_t val) {
+      if (DCTL::Get().FromValue(static_cast<uint32_t>(val)).CSFTRST() == 1) {
+        (*reset_count)++;
+      }
+      Write_DCTL(static_cast<uint32_t>(val));
+    });
+  });
+
+  zx::result start = dut_.StartDriverWithCustomStartArgs([](fdf::DriverStartArgs& args) {
+    dwc3_config::Config cfg;
+    cfg.enable_suspend() = false;
+    cfg.bypass_platform_extension() = true;
+    args.config(cfg.ToVmo());
+  });
+  ASSERT_TRUE(start.is_ok());
+
+  dut_.runtime().RunUntilIdle();
+  EXPECT_EQ(ZX_OK, WaitForPhy());
+
+  // Init() performs 1 reset at boot, and initial disconnected event performs 1 reset (total 2).
+  EXPECT_EQ(2u, reset_count->load());
+
+  dut_.RunInEnvironmentTypeContext([](Environment& env) { env.usb_phy().completion()->Reset(); });
+
+  // Trigger connect event: should trigger ResetHw() when transitioning from !power_on_
+  dut_.RunInEnvironmentTypeContext([](Environment& env) { env.usb_phy().TriggerConnection(true); });
+  dut_.runtime().RunUntilIdle();
+  EXPECT_EQ(ZX_OK, WaitForPhy());
+  EXPECT_EQ(3u, reset_count->load());
+
+  EXPECT_EQ(ZX_OK, dut_.StopDriver().status_value());
+}
+
+TEST_F(UnmanagedTestFixture, RedundantConnectSkipsHardwareResetWithoutPlatformExtension) {
+  auto reset_count = std::make_shared<std::atomic<uint32_t>>(0);
+  dut_.RunInEnvironmentTypeContext([this, reset_count](Environment& env) {
+    env.usb_phy().set_initial_connected(true);
+    auto& dctl_reg = env.reg_region()[DCTL::Get().addr()];
+    dctl_reg.SetWriteCallback([this, reset_count](uint64_t val) {
+      if (DCTL::Get().FromValue(static_cast<uint32_t>(val)).CSFTRST() == 1) {
+        (*reset_count)++;
+      }
+      Write_DCTL(static_cast<uint32_t>(val));
+    });
+  });
+
+  zx::result start = dut_.StartDriverWithCustomStartArgs([](fdf::DriverStartArgs& args) {
+    dwc3_config::Config cfg;
+    cfg.enable_suspend() = false;
+    cfg.bypass_platform_extension() = true;
+    args.config(cfg.ToVmo());
+  });
+  ASSERT_TRUE(start.is_ok());
+
+  dut_.runtime().RunUntilIdle();
+  EXPECT_EQ(ZX_OK, WaitForPhy());
+
+  // Init() performs 1 reset; initial connected event skips reset since power_on_ is already true.
+  EXPECT_EQ(1u, reset_count->load());
+
+  dut_.RunInEnvironmentTypeContext([](Environment& env) { env.usb_phy().completion()->Reset(); });
+
+  // A redundant connect event while already in powered state should not trigger a hardware reset.
+  dut_.RunInEnvironmentTypeContext([](Environment& env) { env.usb_phy().TriggerConnection(true); });
+  dut_.runtime().RunUntilIdle();
+  EXPECT_EQ(ZX_OK, WaitForPhy());
+  EXPECT_EQ(1u, reset_count->load());
+
+  EXPECT_EQ(ZX_OK, dut_.StopDriver().status_value());
+}
+
+TEST_F(UnmanagedTestFixture, DisconnectResetsHardwareWithoutPlatformExtension) {
+  auto reset_count = std::make_shared<std::atomic<uint32_t>>(0);
+  dut_.RunInEnvironmentTypeContext([this, reset_count](Environment& env) {
+    env.usb_phy().set_initial_connected(true);
+    auto& dctl_reg = env.reg_region()[DCTL::Get().addr()];
+    dctl_reg.SetWriteCallback([this, reset_count](uint64_t val) {
+      if (DCTL::Get().FromValue(static_cast<uint32_t>(val)).CSFTRST() == 1) {
+        (*reset_count)++;
+      }
+      Write_DCTL(static_cast<uint32_t>(val));
+    });
+  });
+
+  zx::result start = dut_.StartDriverWithCustomStartArgs([](fdf::DriverStartArgs& args) {
+    dwc3_config::Config cfg;
+    cfg.enable_suspend() = false;
+    cfg.bypass_platform_extension() = true;
+    args.config(cfg.ToVmo());
+  });
+  ASSERT_TRUE(start.is_ok());
+
+  dut_.runtime().RunUntilIdle();
+  EXPECT_EQ(ZX_OK, WaitForPhy());
+
+  // Init() performs 1 reset; initial connected event skips redundant reset since power_on_ is
+  // already true.
+  EXPECT_EQ(1u, reset_count->load());
+
+  dut_.RunInEnvironmentTypeContext([](Environment& env) { env.usb_phy().completion()->Reset(); });
+
+  // Trigger disconnect event: should trigger ResetHw() on disconnect
+  dut_.RunInEnvironmentTypeContext(
+      [](Environment& env) { env.usb_phy().TriggerConnection(false); });
+  dut_.runtime().RunUntilIdle();
+  EXPECT_EQ(ZX_OK, WaitForPhy());
+  EXPECT_EQ(2u, reset_count->load());
+
+  EXPECT_EQ(ZX_OK, dut_.StopDriver().status_value());
+}
+
+TEST_F(UnmanagedTestFixture, HotplugCycleResetsHardwareWithoutPlatformExtension) {
+  auto reset_count = std::make_shared<std::atomic<uint32_t>>(0);
+  dut_.RunInEnvironmentTypeContext([this, reset_count](Environment& env) {
+    auto& dctl_reg = env.reg_region()[DCTL::Get().addr()];
+    dctl_reg.SetWriteCallback([this, reset_count](uint64_t val) {
+      if (DCTL::Get().FromValue(static_cast<uint32_t>(val)).CSFTRST() == 1) {
+        (*reset_count)++;
+      }
+      Write_DCTL(static_cast<uint32_t>(val));
+    });
+  });
+
+  zx::result start = dut_.StartDriverWithCustomStartArgs([](fdf::DriverStartArgs& args) {
+    dwc3_config::Config cfg;
+    cfg.enable_suspend() = false;
+    cfg.bypass_platform_extension() = true;
+    args.config(cfg.ToVmo());
+  });
+  ASSERT_TRUE(start.is_ok());
+
+  dut_.runtime().RunUntilIdle();
+  EXPECT_EQ(ZX_OK, WaitForPhy());
+
+  // Init() reset (1) + initial disconnected reset (1) = 2.
+  EXPECT_EQ(2u, reset_count->load());
+
+  dut_.RunInEnvironmentTypeContext([](Environment& env) { env.usb_phy().completion()->Reset(); });
+
+  // 1. Initial connect
+  dut_.RunInEnvironmentTypeContext([](Environment& env) { env.usb_phy().TriggerConnection(true); });
+  dut_.runtime().RunUntilIdle();
+  EXPECT_EQ(ZX_OK, WaitForPhy());
+  EXPECT_EQ(3u, reset_count->load());
+
+  dut_.RunInEnvironmentTypeContext([](Environment& env) { env.usb_phy().completion()->Reset(); });
+
+  // 2. Disconnect (unplug)
+  dut_.RunInEnvironmentTypeContext(
+      [](Environment& env) { env.usb_phy().TriggerConnection(false); });
+  dut_.runtime().RunUntilIdle();
+  EXPECT_EQ(ZX_OK, WaitForPhy());
+  EXPECT_EQ(4u, reset_count->load());
+
+  dut_.RunInEnvironmentTypeContext([](Environment& env) { env.usb_phy().completion()->Reset(); });
+
+  // 3. Reconnect (replug)
+  dut_.RunInEnvironmentTypeContext([](Environment& env) { env.usb_phy().TriggerConnection(true); });
+  dut_.runtime().RunUntilIdle();
+  EXPECT_EQ(ZX_OK, WaitForPhy());
+  EXPECT_EQ(5u, reset_count->load());
+
+  EXPECT_EQ(ZX_OK, dut_.StopDriver().status_value());
+}
+
 TEST_F(UnmanagedTestFixture, Dfv2HwResetTimeout) {
   stuck_reset_test_ = true;
   zx::result start = dut_.StartDriverWithCustomStartArgs([](fdf::DriverStartArgs& args) {

@@ -1634,6 +1634,14 @@ void Dwc3::OnConnectStatusChanged(
       if (zx::result result = platform_extension_->Resume(); result.is_error()) {
         return;
       }
+    } else if (!power_on_) {
+      // For platforms without a platform extension, perform a software core reset (CSFTRST)
+      // when transitioning from powered-off to ensure the controller state machine and internal
+      // FIFOs start in a clean state.
+      if (zx_status_t status = ResetHw(); status != ZX_OK) {
+        fdf::error("Failed to reset hardware on connect: {}", zx_status_get_string(status));
+        return;
+      }
     }
     power_on_ = true;
     metrics_.RecordEvent("Power On / Resume (PHY Resumed)");
@@ -1665,6 +1673,13 @@ void Dwc3::OnConnectStatusChanged(
     if (platform_extension_) {
       if (zx::result result = platform_extension_->Suspend(); result.is_error()) {
         return;
+      }
+    } else if (power_on_) {
+      // For platforms without a platform extension, perform a software core reset on disconnect
+      // while still powered to safely halt active DMA transfers and deassert level-triggered
+      // interrupts.
+      if (zx_status_t status = ResetHw(); status != ZX_OK) {
+        fdf::warn("Failed to reset hardware on disconnect: {}", zx_status_get_string(status));
       }
     }
     power_on_ = false;
