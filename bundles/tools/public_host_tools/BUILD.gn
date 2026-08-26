@@ -1,0 +1,22 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+# Host tools that are continuously built and published to CIPD by the
+# `host_prebuilts` builders.
+group("public_host_tools") {
+  deps = [
+    "//build/bazel/host:bazel_root_host_tools.buildstats.host_tool",
+    "//build/bazel/host:bazel_root_host_tools.bundle_fetcher.host_tool",
+    "//build/bazel/host:bazel_root_host_tools.debugsyms.host_tool",
+    "//build/bazel/host:bazel_root_host_tools.gndoc.host_tool",
+    "//build/bazel/host:bazel_root_host_tools.ninjatrace.host_tool",
+    "//build/bazel/host:bazel_root_host_tools.orchestrate.host_tool",
+    "//src/developer/ffx:host",
+    "//src/diagnostics/triage:install",
+    "//src/storage/tools/blobfs-compression",
+    "//tools/debug/buildidtool",
+    "//tools/funnel:host",
+    "//tools/vboot_reference",
+  ]
+}
