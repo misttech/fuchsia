@@ -10,8 +10,12 @@ use anyhow::Result;
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use serde_yaml::Value;
+use std::collections::{HashMap, HashSet};
 use std::fmt::{self, Debug, Display};
 use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex};
+
+pub type ReachabilityGraph = Arc<Mutex<HashMap<PathBuf, HashSet<PathBuf>>>>;
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Ord, PartialOrd, Serialize)]
 pub enum ErrorLevel {

@@ -7,7 +7,7 @@
 
 use crate::md_element::{CowStr, Element, LinkType};
 use crate::path_ext::normalize_path;
-use crate::{DocCheck, DocCheckError, DocCheckerArgs, DocLine};
+use crate::{DocCheck, DocCheckError, DocCheckerArgs, DocLine, ReachabilityGraph};
 use anyhow::{Result, bail};
 use async_trait::async_trait;
 use fuchsia_hyper::{HttpsClient, TcpOptions, new_https_client_from_tcp_options};
@@ -95,6 +95,7 @@ struct LinkChecker {
     pub check_remote_links: bool,
     pub allow_fuchsia_src_links: bool,
     links: Vec<LinkReference>,
+    reachability_graph: ReachabilityGraph,
 }
 
 impl LinkChecker {
@@ -340,14 +341,25 @@ impl DocCheck for LinkChecker {
                 let root_dir = self.root_dir.display().to_string();
                 match is_intree_link(&self.project, &root_dir, &self.docs_folder, &link_to_check) {
                     Ok(Some(in_tree_path)) => {
-                        if let Err(link_error) = do_in_tree_check(
+                        match do_in_tree_check(
                             &element.doc_line(),
                             &self.root_dir,
                             &self.docs_folder,
                             &link_to_check,
                             &in_tree_path,
                         ) {
-                            errors.push(link_error);
+                            Ok(target_file) => {
+                                let current_file = element.doc_line().file_name.clone();
+                                self.reachability_graph
+                                    .lock()
+                                    .unwrap()
+                                    .entry(current_file)
+                                    .or_default()
+                                    .insert(target_file);
+                            }
+                            Err(link_error) => {
+                                errors.push(link_error);
+                            }
                         }
                     }
                     Ok(None) => {
@@ -874,7 +886,10 @@ fn tcp_options() -> TcpOptions {
 }
 
 /// Called from main to register all the checks to preform which are implemented in this module.
-pub(crate) fn register_markdown_checks(opt: &DocCheckerArgs) -> Result<Vec<Box<dyn DocCheck>>> {
+pub(crate) fn register_markdown_checks(
+    opt: &DocCheckerArgs,
+    reachability_graph: ReachabilityGraph,
+) -> Result<Vec<Box<dyn DocCheck>>> {
     let checker = LinkChecker {
         root_dir: opt.root.clone(),
         project: opt.project.clone(),
@@ -882,6 +897,7 @@ pub(crate) fn register_markdown_checks(opt: &DocCheckerArgs) -> Result<Vec<Box<d
         check_remote_links: opt.check_external_links,
         links: vec![],
         allow_fuchsia_src_links: opt.allow_fuchsia_src_links,
+        reachability_graph,
     };
     Ok(vec![Box::new(checker)])
 }
@@ -900,6 +916,7 @@ mod tests {
             check_remote_links: false,
             links: vec![],
             allow_fuchsia_src_links: false,
+            reachability_graph: Default::default(),
         };
         let filename = PathBuf::from("/my/root/fuchsia/docs/index.md");
 
@@ -958,7 +975,7 @@ mod tests {
             skip_link_check: false,
         };
 
-        let mut checks = register_markdown_checks(&opt)?;
+        let mut checks = register_markdown_checks(&opt, Default::default())?;
         assert_eq!(checks.len(), 1);
 
         let file = PathBuf::from("/docs/README.md");
@@ -1034,7 +1051,7 @@ mod tests {
             skip_link_check: false,
         };
 
-        let mut checks = register_markdown_checks(&opt)?;
+        let mut checks = register_markdown_checks(&opt, Default::default())?;
         assert_eq!(checks.len(), 1);
 
         let test_data: Vec<(PathBuf, &str, Option<Vec<DocCheckError>>)> = vec![
@@ -1208,7 +1225,7 @@ mod tests {
             skip_link_check: false,
         };
 
-        let mut checks = register_markdown_checks(&opt)?;
+        let mut checks = register_markdown_checks(&opt, Default::default())?;
         assert_eq!(checks.len(), 1);
 
         let test_data: Vec<(PathBuf, &str, Option<Vec<DocCheckError>>)> = vec![
@@ -1301,7 +1318,7 @@ mod tests {
             skip_link_check: false,
         };
 
-        let mut checks = register_markdown_checks(&opt)?;
+        let mut checks = register_markdown_checks(&opt, Default::default())?;
         assert_eq!(checks.len(), 1);
 
         let test_data: Vec<(PathBuf, &str, Option<Vec<DocCheckError>>)> = vec![(

@@ -5,7 +5,9 @@
 //! doc_checker is a CLI tool to check markdown files for correctness in
 //! the Fuchsia project.
 
-pub(crate) use crate::checker::{DocCheck, DocCheckError, DocLine, DocYamlCheck, ErrorLevel};
+pub(crate) use crate::checker::{
+    DocCheck, DocCheckError, DocLine, DocYamlCheck, ErrorLevel, ReachabilityGraph,
+};
 pub(crate) use crate::md_element::DocContext;
 pub(crate) use crate::path_ext::DocPathExt;
 use anyhow::{Context, Result, bail};
@@ -230,12 +232,14 @@ async fn do_main(opt: &DocCheckerArgs) -> Result<Option<Vec<DocCheckError>>> {
     let mut markdown_checks: Vec<Box<dyn DocCheck>> = vec![];
     let mut errors: Vec<DocCheckError> = vec![];
 
-    let mut checks = link_checker::register_markdown_checks(&opt)?;
+    let reachability_graph: ReachabilityGraph = Default::default();
+
+    let mut checks = link_checker::register_markdown_checks(&opt, reachability_graph.clone())?;
     for c in checks {
         markdown_checks.push(c);
     }
 
-    checks = include_checker::register_markdown_checks(&opt)?;
+    checks = include_checker::register_markdown_checks(&opt, reachability_graph.clone())?;
     for c in checks {
         markdown_checks.push(c);
     }

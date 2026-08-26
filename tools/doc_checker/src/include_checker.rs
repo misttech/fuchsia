@@ -6,7 +6,7 @@
 //! files included using the << >> or {% include %} elements.
 
 use crate::DocCheckerArgs;
-use crate::checker::{DocCheck, DocCheckError, DocLine};
+use crate::checker::{DocCheck, DocCheckError, DocLine, ReachabilityGraph};
 use crate::md_element::Element;
 use crate::path_ext::normalize_and_validate_path;
 use anyhow::Result;
@@ -46,13 +46,19 @@ pub(crate) struct IncludeChecker {
     full_docs_dir: PathBuf,
     /// The name of the documents directory as a String (e.g. "docs").
     docs_dir_name: String,
+    /// Shared graph representing file reachability via includes.
+    reachability_graph: ReachabilityGraph,
     /// Maps included files to the list of files and lines that include them, deferred for post-check validation.
     pending_existence_checks:
         std::sync::Mutex<std::collections::HashMap<PathBuf, Vec<(PathBuf, usize)>>>,
 }
 
 impl IncludeChecker {
-    pub fn new(root_dir: PathBuf, docs_dir: PathBuf) -> Result<Self> {
+    pub fn new(
+        root_dir: PathBuf,
+        docs_dir: PathBuf,
+        reachability_graph: ReachabilityGraph,
+    ) -> Result<Self> {
         let full_docs_dir = root_dir.join(&docs_dir);
         if !path_helper::is_dir(&full_docs_dir) {
             anyhow::bail!(
@@ -70,6 +76,7 @@ impl IncludeChecker {
             docs_dir,
             full_docs_dir,
             docs_dir_name,
+            reachability_graph,
             pending_existence_checks: Default::default(),
         })
     }
@@ -157,6 +164,13 @@ impl IncludeChecker {
         match self.resolve_include_path(path_str, referencing_file) {
             Ok(target_file) => match normalize_and_validate_path(&target_file, &self.root_dir) {
                 Ok(normalized) => {
+                    self.reachability_graph
+                        .lock()
+                        .unwrap()
+                        .entry(referencing_file.to_path_buf())
+                        .or_default()
+                        .insert(normalized.clone());
+
                     let mut pending = self.pending_existence_checks.lock().unwrap();
                     pending
                         .entry(normalized)
@@ -306,9 +320,12 @@ impl DocCheck for IncludeChecker {
 }
 
 /// Called from main to register all the checks to preform which are implemented in this module.
-pub(crate) fn register_markdown_checks(opt: &DocCheckerArgs) -> Result<Vec<Box<dyn DocCheck>>> {
+pub(crate) fn register_markdown_checks(
+    opt: &DocCheckerArgs,
+    reachability_graph: ReachabilityGraph,
+) -> Result<Vec<Box<dyn DocCheck>>> {
     let clean_root = opt.root.clone();
-    let checker = IncludeChecker::new(clean_root, opt.docs_folder.clone())?;
+    let checker = IncludeChecker::new(clean_root, opt.docs_folder.clone(), reachability_graph)?;
     Ok(vec![Box::new(checker)])
 }
 
@@ -343,7 +360,8 @@ mod tests {
 
         for (file, input) in data {
             let mut checker =
-                IncludeChecker::new(PathBuf::from("/"), PathBuf::from("docs")).unwrap();
+                IncludeChecker::new(PathBuf::from("/"), PathBuf::from("docs"), Default::default())
+                    .unwrap();
             let callback = &mut |broken_link: pulldown_cmark::BrokenLink<'_>| {
                 DocContext::handle_broken_link(broken_link, input)
             };
@@ -402,7 +420,8 @@ mod tests {
 
         for (file, input, expected) in data {
             let mut checker =
-                IncludeChecker::new(PathBuf::from("/"), PathBuf::from("docs")).unwrap();
+                IncludeChecker::new(PathBuf::from("/"), PathBuf::from("docs"), Default::default())
+                    .unwrap();
             let callback = &mut |broken_link: pulldown_cmark::BrokenLink<'_>| {
                 DocContext::handle_broken_link(broken_link, input)
             };
@@ -425,6 +444,43 @@ mod tests {
                 }
             }
         }
+        Ok(())
+    }
+
+    #[fuchsia::test]
+    fn test_reachability_graph_and_prefixes() -> Result<()> {
+        let reachability_graph = ReachabilityGraph::default();
+        let mut checker = IncludeChecker::new(
+            PathBuf::from("/"),
+            PathBuf::from("docs"),
+            reachability_graph.clone(),
+        )
+        .unwrap();
+
+        // Current file is at /docs/sub/README.md
+        let file = PathBuf::from("/docs/sub/README.md");
+        let input = "include with prefix {% include \"docs/sub/file.md\" %}\n\
+                     include with fuchsia-src {% include \"fuchsia-src/sub/fuchsia_file.md\" %}\n\
+                     relative include <<_common/relative_file.md>>";
+        let callback = &mut |broken_link: pulldown_cmark::BrokenLink<'_>| {
+            DocContext::handle_broken_link(broken_link, input)
+        };
+        let ctx = DocContext::new(file.clone(), input, Some(callback));
+        for ele in ctx {
+            let errors = checker.check(&ele)?;
+            assert!(errors.is_none(), "Expected no errors, got {:?}", errors);
+        }
+        if let Some(post_errs) = futures::executor::block_on(checker.post_check())? {
+            let actual_errors: Vec<DocCheckError> = post_errs;
+            assert!(actual_errors.is_empty(), "Expected no post errors, got {:?}", actual_errors);
+        }
+
+        let graph = reachability_graph.lock().unwrap();
+        assert!(graph.contains_key(&file));
+        let targets = graph.get(&file).unwrap();
+        assert!(targets.contains(&PathBuf::from("/docs/sub/file.md")));
+        assert!(targets.contains(&PathBuf::from("/docs/sub/fuchsia_file.md")));
+        assert!(targets.contains(&PathBuf::from("/docs/sub/_common/relative_file.md")));
         Ok(())
     }
 }
