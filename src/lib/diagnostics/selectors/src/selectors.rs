@@ -718,7 +718,7 @@ fn match_pattern(pattern: &str, target: &str) -> bool {
 #[derive(Debug)]
 enum TokenBuilder<'a> {
     Init(&'a str),
-    Slice { string: &'a str, start: usize, end: Option<usize> },
+    Slice { string: &'a str, start: usize, end: usize },
     String(String),
 }
 
@@ -731,25 +731,19 @@ impl<'a> TokenBuilder<'a> {
         let Self::Init(s) = self else {
             return;
         };
-        *self = Self::Slice { string: s, start: start_index, end: None };
+        *self = Self::Slice { string: s, start: start_index, end: start_index };
     }
 
     fn turn_into_string(&mut self) {
         if let Self::Slice { string, start, end } = self {
-            if let Some(end) = end {
-                *self = Self::String(string[*start..=*end].to_string());
-            } else {
-                // if this is called before the first character is pushed (eg for '*abc'),
-                // `end` is None, but the state should still become `Self::String`
-                *self = Self::String(String::new());
-            }
+            *self = Self::String(string[*start..*end].to_string());
         }
     }
 
     fn push(&mut self, c: char, index: usize) {
         match self {
             Self::Slice { end, .. } => {
-                *end = Some(index);
+                *end = index + c.len_utf8();
             }
             Self::String(s) => s.push(c),
             Self::Init(_) => unreachable!(),
@@ -758,8 +752,7 @@ impl<'a> TokenBuilder<'a> {
 
     fn take(self) -> Cow<'a, str> {
         match self {
-            Self::Slice { string, start, end: Some(end) } => Cow::Borrowed(&string[start..=end]),
-            Self::Slice { string, start, end: None } => Cow::Borrowed(&string[start..start]),
+            Self::Slice { string, start, end } => Cow::Borrowed(&string[start..end]),
             Self::String(s) => Cow::Owned(s),
             Self::Init(_) => unreachable!(),
         }
@@ -767,8 +760,7 @@ impl<'a> TokenBuilder<'a> {
 
     fn is_empty(&self) -> bool {
         match self {
-            Self::Slice { start, end: Some(end), .. } => start > end,
-            Self::Slice { end: None, .. } => true,
+            Self::Slice { start, end, .. } => start >= end,
             Self::String(s) => s.is_empty(),
             Self::Init(_) => true,
         }
@@ -1507,6 +1499,17 @@ foo:baz
                 .match_against_selectors_and_tree_name("root", selectors.iter())
                 .collect::<Vec<_>>();
             assert_eq!(actual, vec![&selectors[5]]);
+        }
+
+        {
+            let sanitized = sanitize_string_for_selectors("🦀:test");
+            assert_eq!(sanitized, "🦀\\:test");
+
+            let sanitized_no_special = sanitize_string_for_selectors("🦀🦀🦀");
+            assert_eq!(sanitized_no_special, "🦀🦀🦀");
+
+            assert!(match_pattern("🦀*", "🦀test"));
+            assert!(!match_pattern("🦀*", "test"));
         }
     }
 }
