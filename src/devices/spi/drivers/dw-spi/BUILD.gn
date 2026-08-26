@@ -27,6 +27,8 @@ fuchsia_rust_driver("dw-spi-driver") {
   output_name = "dw-spi"
   with_unit_tests = true
 
+  configs += [ "//build/config/rust:bootfs" ]
+
   sources = [
     "src/lib.rs",
     "src/spi_device.rs",
