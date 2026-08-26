@@ -15,9 +15,25 @@ namespace zxdb {
 
 class DwarfDieRef {
  public:
+  enum class Section : uint8_t {
+    kMain,  // .debug_info
+    kType,  // .debug_types
+  };
+
   constexpr DwarfDieRef() = default;
 
-  static constexpr DwarfDieRef Main(uint64_t off) { return DwarfDieRef(off); }
+  static constexpr DwarfDieRef Main(uint64_t off) { return DwarfDieRef(off, Section::kMain); }
+  static constexpr DwarfDieRef Type(uint64_t off) { return DwarfDieRef(off, Section::kType); }
+
+  // Returns a DwarfDieRef for a DIE inside a type unit of the given DWARF version.
+  // DWARF 4 places type units in .debug_types (Section::kType), while DWARF 5
+  // places type units directly in .debug_info (Section::kMain).
+  static constexpr DwarfDieRef ForTypeUnit(int dwarf_version, uint64_t off) {
+    if (dwarf_version < 5) {
+      return Type(off);
+    }
+    return Main(off);
+  }
 
   constexpr bool is_valid() const { return offset_.has_value(); }
   constexpr explicit operator bool() const { return is_valid(); }
@@ -26,6 +42,7 @@ class DwarfDieRef {
     FX_DCHECK(is_valid());
     return *offset_;
   }
+  constexpr Section section() const { return section_; }
 
   constexpr auto operator<=>(const DwarfDieRef& other) const = default;
 
@@ -33,12 +50,14 @@ class DwarfDieRef {
     if (!is_valid()) {
       return DwarfDieRef();
     }
-    return DwarfDieRef(*offset_ + addend);
+    return DwarfDieRef(*offset_ + addend, section_);
   }
 
  private:
-  constexpr explicit DwarfDieRef(uint64_t off) : offset_(off) {}
+  constexpr explicit DwarfDieRef(uint64_t off, Section sec = Section::kMain)
+      : section_(sec), offset_(off) {}
 
+  Section section_ = Section::kMain;
   std::optional<uint64_t> offset_;
 };
 
@@ -46,7 +65,11 @@ inline std::ostream& operator<<(std::ostream& out, const DwarfDieRef& ref) {
   if (!ref.is_valid()) {
     return out << "<invalid>";
   }
-  return out << "offset 0x" << std::hex << ref.offset();
+  out << "offset 0x" << std::hex << ref.offset();
+  if (ref.section() == DwarfDieRef::Section::kType) {
+    out << " (.debug_types)";
+  }
+  return out;
 }
 
 }  // namespace zxdb

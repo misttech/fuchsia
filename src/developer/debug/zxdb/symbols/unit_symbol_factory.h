@@ -43,7 +43,7 @@ class UnitSymbolFactory {
       return;
 
     symbol_factory_ = fxl::RefPtr<const SymbolFactory>(weak_mod->GetSymbolFactory());
-    unit_ref_ = DwarfDieRef::Main(unit->GetOffset());
+    unit_ref_ = unit->GetDieRef();
   }
 
   // Constructs a lazy symbol given a unit-relative DIE offset.

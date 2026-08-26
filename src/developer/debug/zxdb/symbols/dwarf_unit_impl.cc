@@ -49,11 +49,11 @@ LazySymbol DwarfUnitImpl::FunctionForRelativeAddress(uint64_t relative_address) 
     EnsureFuncAddrMap();
     uint64_t offset = func_addr_to_die_offset_.Lookup(relative_address);
     if (offset)
-      return binary_->GetSymbolFactory()->MakeLazy(DwarfDieRef::Main(offset));
+      return binary_->GetSymbolFactory()->MakeLazy(GetDieRef(offset));
   } else {
     auto die = unit_->getSubroutineForAddress(relative_address);
     if (die.isValid())
-      return binary_->GetSymbolFactory()->MakeLazy(DwarfDieRef::Main(die.getOffset()));
+      return binary_->GetSymbolFactory()->MakeLazy(GetDieRef(die.getOffset()));
   }
 
   return LazySymbol();
@@ -109,6 +109,31 @@ uint64_t DwarfUnitImpl::GetIndexForLLVMDie(const llvm::DWARFDie& die) const {
   return unit_->getDIEIndex(die);
 }
 
+DwarfDieRef DwarfUnitImpl::GetDieRef(uint64_t offset) const {
+  if (unit_ && unit_->isTypeUnit())
+    return DwarfDieRef::ForTypeUnit(unit_->getVersion(), offset);
+  return DwarfDieRef::Main(offset);
+}
+
+DwarfDieRef DwarfUnitImpl::GetDieRef(const llvm::DWARFDie& die) const {
+  return GetDieRef(die.getOffset());
+}
+
+llvm::DWARFUnit* GetUnitForOffset(const llvm::DWARFUnitVector& unit_vector, DwarfDieRef die_ref) {
+  if (die_ref.section() == DwarfDieRef::Section::kMain)
+    return unit_vector.getUnitForOffset(die_ref.offset());
+
+  auto begin = unit_vector.begin() + unit_vector.getNumInfoUnits();
+  auto end = unit_vector.end();
+  auto it = std::upper_bound(begin, end, die_ref.offset(),
+                             [](uint64_t offset, const std::unique_ptr<llvm::DWARFUnit>& unit) {
+                               return offset < unit->getNextUnitOffset();
+                             });
+  if (it != end && (*it)->getOffset() <= die_ref.offset())
+    return it->get();
+  return nullptr;
+}
+
 void DwarfUnitImpl::EnsureFuncAddrMap() const {
   if (binary_ && func_addr_to_die_offset_.empty()) {
     // Recursively collect all DIEs and their begin ranges.
@@ -123,7 +148,7 @@ void DwarfUnitImpl::AddDieToFuncAddr(const DwarfBinary& binary, const llvm::DWAR
   // Add all functions and inlines to the map.
   llvm::dwarf::Tag tag = die.getTag();
   if (tag == llvm::dwarf::DW_TAG_subprogram || tag == llvm::dwarf::DW_TAG_inlined_subroutine) {
-    auto lazy_func = binary.GetSymbolFactory()->MakeLazy(DwarfDieRef::Main(die.getOffset()));
+    auto lazy_func = binary.GetSymbolFactory()->MakeLazy(GetDieRef(die.getOffset()));
     if (const Function* func = lazy_func.Get()->As<Function>()) {
       builder.AddRanges(func->code_ranges(), die.getOffset());
     }

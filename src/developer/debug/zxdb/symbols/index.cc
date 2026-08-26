@@ -345,13 +345,13 @@ void UnitIndexer::Scan(std::vector<IndexNode::SymbolRef>* main_functions) {
                                                       : IndexNode::SymbolRef::kDwarf;
 
     indexable_[scanner_.die_index()] =
-        NamedSymbolRef(ref_kind, dwo_index_, DwarfDieRef::Main(die->getOffset()), kind,
+        NamedSymbolRef(ref_kind, dwo_index_, unit_.GetDieRef(die->getOffset()), kind,
                        name ? *name : "", decl_offset, has_abstract_origin);
 
     // Check for "main" function annotation.
     if (kind == IndexNode::Kind::kFunction && is_main_subprogram && *is_main_subprogram)
       main_functions->emplace_back(IndexNode::SymbolRef::kDwarf, dwo_index_,
-                                   DwarfDieRef::Main(die->getOffset()));
+                                   unit_.GetDieRef(die->getOffset()));
   }
 }
 

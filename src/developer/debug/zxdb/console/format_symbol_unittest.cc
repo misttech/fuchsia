@@ -90,6 +90,20 @@ TEST(FormatSymbol, BaseType) {
   EXPECT_EQ(kExpected, out.AsString());
 }
 
+TEST(FormatSymbol, TypeInDebugTypes) {
+  auto int32_type = MakeInt32Type();
+  MockSymbolFactory symbol_factory;
+  symbol_factory.SetMockSymbol(DwarfDieRef::Type(0x5678), int32_type);
+
+  OutputBuffer out = FormatSymbol(nullptr, int32_type.get(), FormatSymbolOptions());
+  const char kExpected[] =
+      "Type: int32_t\n"
+      "  DWARF tag: DW_TAG_base_type (0x24) @ offset 0x5678 (.debug_types)\n"
+      "  Byte size: 4\n"
+      "  DWARF base type: DW_ATE_signed (0x05)\n";
+  EXPECT_EQ(kExpected, out.AsString());
+}
+
 TEST(FormatSymbol, Collection) {
   auto int32_type = MakeInt32Type();
 

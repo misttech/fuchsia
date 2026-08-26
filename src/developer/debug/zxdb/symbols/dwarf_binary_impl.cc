@@ -313,7 +313,14 @@ std::optional<uint64_t> DwarfBinaryImpl::GetDebugAddrEntry(uint64_t addr_base,
 }
 
 llvm::DWARFDie DwarfBinaryImpl::GetLLVMDieAtOffset(DwarfDieRef die_ref) const {
-  return context_->getDIEForOffset(die_ref.offset());
+  if (!die_ref.is_valid() || !context_)
+    return llvm::DWARFDie();
+
+  if (llvm::DWARFUnit* unit = GetUnitForOffset(context_->getNormalUnitsVector(), die_ref))
+    return unit->getDIEForOffset(die_ref.offset());
+  if (llvm::DWARFUnit* unit = GetUnitForOffset(context_->getDWOUnitsVector(), die_ref))
+    return unit->getDIEForOffset(die_ref.offset());
+  return llvm::DWARFDie();
 }
 
 void DwarfBinaryImpl::EnsureSignatureMap() const {
@@ -327,7 +334,7 @@ void DwarfBinaryImpl::EnsureSignatureMap() const {
         continue;
       auto* type_unit = static_cast<llvm::DWARFTypeUnit*>(unit.get());
       uint64_t die_offset = unit->getOffset() + type_unit->getTypeOffset();
-      map[type_unit->getTypeHash()] = DwarfDieRef::Main(die_offset);
+      map[type_unit->getTypeHash()] = DwarfDieRef::ForTypeUnit(unit->getVersion(), die_offset);
     }
   };
 

@@ -15,6 +15,7 @@
 namespace llvm {
 class DWARFDie;
 class DWARFUnit;
+class DWARFUnitVector;
 }  // namespace llvm
 
 namespace zxdb {
@@ -43,6 +44,8 @@ class DwarfUnitImpl : public DwarfUnit {
   llvm::DWARFDie GetLLVMDieAtIndex(uint64_t index) const override;
   llvm::DWARFDie GetLLVMDieAtOffset(DwarfDieRef die_ref) const override;
   uint64_t GetIndexForLLVMDie(const llvm::DWARFDie& die) const override;
+  DwarfDieRef GetDieRef(uint64_t offset) const override;
+  DwarfDieRef GetDieRef(const llvm::DWARFDie& die) const override;
 
  private:
   FRIEND_REF_COUNTED_THREAD_SAFE(DwarfUnitImpl);
@@ -79,6 +82,8 @@ class DwarfUnitImpl : public DwarfUnit {
   // The line table. Computed lazily.
   mutable std::optional<LineTableImpl> line_table_;
 };
+
+llvm::DWARFUnit* GetUnitForOffset(const llvm::DWARFUnitVector& unit_vector, DwarfDieRef die_ref);
 
 }  // namespace zxdb
 

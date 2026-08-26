@@ -98,6 +98,9 @@ bool IsAddrXForm(llvm::dwarf::Form form) {
 DwarfDieRef GetDieRef(const llvm::DWARFDie& die) {
   if (!die.isValid())
     return DwarfDieRef();
+  llvm::DWARFUnit* unit = die.getDwarfUnit();
+  if (unit && unit->isTypeUnit() && unit->getVersion() < 5)
+    return DwarfDieRef::Type(die.getOffset());
   return DwarfDieRef::Main(die.getOffset());
 }
 
@@ -118,7 +121,7 @@ fxl::RefPtr<Symbol> DwarfSymbolFactory::CreateSymbol(DwarfDieRef die_ref) const 
   const llvm::DWARFUnitVector& unit_vector = file_type_ == kDWO
                                                  ? GetLLVMContext()->getDWOUnitsVector()
                                                  : GetLLVMContext()->getNormalUnitsVector();
-  llvm::DWARFUnit* unit = unit_vector.getUnitForOffset(die_ref.offset());
+  llvm::DWARFUnit* unit = GetUnitForOffset(unit_vector, die_ref);
   if (!unit)
     return fxl::MakeRefCounted<Symbol>();
 

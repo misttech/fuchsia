@@ -283,6 +283,9 @@ std::string FormatDieTagAndOffset(const Symbol* symbol) {
   if (DwarfDieRef die_ref = symbol->GetDieRef()) {
     out.append(" @ offset ");
     out.append(to_hex_string(die_ref.offset()));
+    if (die_ref.section() == DwarfDieRef::Section::kType) {
+      out.append(" (.debug_types)");
+    }
   } else {
     out.append(" (synthetic symbol)");
   }

@@ -139,6 +139,9 @@ void IndexNode::Dump(const std::string& name, std::ostream& out,
         // Everything else just gets the DIE offset so we can identify it. This can be customized
         // in the future if needed.
         out << std::hex << "0x" << die_ref.die_ref().offset();
+        if (die_ref.die_ref().section() == DwarfDieRef::Section::kType) {
+          out << " (.debug_types)";
+        }
       }
     }
   }

@@ -100,6 +100,11 @@ class DwarfUnit : public fxl::RefCountedThreadSafe<DwarfUnit> {
   // the returned value will be incorrect (it just does a simple offset conversion).
   virtual uint64_t GetIndexForLLVMDie(const llvm::DWARFDie& die) const = 0;
 
+  // Returns a DwarfDieRef for this unit itself, or for an offset or LLVM DIE in this unit.
+  DwarfDieRef GetDieRef() const { return GetDieRef(GetOffset()); }
+  virtual DwarfDieRef GetDieRef(uint64_t offset) const = 0;
+  virtual DwarfDieRef GetDieRef(const llvm::DWARFDie& die) const = 0;
+
  protected:
   FRIEND_REF_COUNTED_THREAD_SAFE(DwarfUnit);
 
