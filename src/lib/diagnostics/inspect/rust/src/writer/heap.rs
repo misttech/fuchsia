@@ -140,6 +140,10 @@ impl<T: ReadBytes + WriteBytes> Heap<T> {
 
     #[inline]
     fn possible_to_merge(&self, buddy_index: BlockIndex, block_index: BlockIndex) -> bool {
+        let max_block_index = self.current_size_bytes / constants::MIN_ORDER_SIZE;
+        if *buddy_index as usize >= max_block_index {
+            return false;
+        }
         self.container
             .maybe_block_at::<Free>(buddy_index)
             .map(|buddy_block| {
@@ -276,6 +280,15 @@ mod tests {
             assert_eq!(result.index, expected[i].index);
             assert_eq!(result.order, expected[i].order);
         }
+    }
+
+    #[fuchsia::test]
+    fn test_possible_to_merge_out_of_bounds() {
+        let (container, _storage) = Container::read_and_write(4096).unwrap();
+        let heap = Heap::empty(container).unwrap();
+        let oob_buddy = BlockIndex::from_offset(8192);
+        let block_idx = BlockIndex::from(0);
+        assert!(!heap.possible_to_merge(oob_buddy, block_idx));
     }
 
     #[fuchsia::test]
