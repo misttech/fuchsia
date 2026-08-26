@@ -10,17 +10,13 @@ use crate::object::{
 };
 use debug::ltracef;
 use syscalls_macro::syscall;
-use zx_status::ErrorStatus;
+use zx_status::Status;
 use zx_types::{ZX_RIGHT_MAP, ZX_RSRC_KIND_SYSTEM, ZX_RSRC_SYSTEM_MSI_BASE};
 
 const LOCAL_TRACE: u32 = 0;
 
 #[syscall]
-pub fn sys_msi_allocate(
-    msi: HandleValue,
-    count: u32,
-    out: &mut HandleValue,
-) -> Result<(), ErrorStatus> {
+pub fn sys_msi_allocate(msi: HandleValue, count: u32, out: &mut HandleValue) -> Result<(), Status> {
     ltracef!("msi handle {:#x}, count {}\n", msi.raw_value(), count);
 
     validate_resource_kind_base(msi, ZX_RSRC_KIND_SYSTEM, ZX_RSRC_SYSTEM_MSI_BASE)?;
@@ -39,7 +35,7 @@ pub fn sys_msi_create(
     vmo: HandleValue,
     vmo_offset: usize,
     out: &mut HandleValue,
-) -> Result<(), ErrorStatus> {
+) -> Result<(), Status> {
     ltracef!(
         "msi_alloc handle {:#x}, options {:#x}, msi_id {}, vmo handle {:#x}, vmo_offset {:#x}\n",
         msi_alloc.raw_value(),

@@ -221,7 +221,7 @@ func rustKernelReturnType(syscall zither.Syscall) string {
 	}
 	typ := rust.DescribeType(*syscall.ReturnType, rust.CaseStyleSyscall)
 	if typ == "zx_status_t" {
-		return "Result<(), ErrorStatus>"
+		return "Result<(), Status>"
 	}
 	return typ
 }

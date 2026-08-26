@@ -13,7 +13,7 @@ use crate::object::{
 use crate::user_copy::UserOutPtr;
 use debug::ltracef;
 use syscalls_macro::syscall;
-use zx_status::{ErrorStatus, Status};
+use zx_status::Status;
 use zx_types::{ZX_POL_NEW_VMO, ZX_RIGHT_MANAGE_THREAD, zx_exception_report_t};
 
 // Disable local tracing by default for this file.
@@ -24,7 +24,7 @@ pub fn sys_restricted_enter(
     options: u32,
     vector_table_ptr: usize,
     context: usize,
-) -> Result<(), ErrorStatus> {
+) -> Result<(), Status> {
     ltracef!("options {:#x} vector {:#x} context {:#x}\n", options, vector_table_ptr, context);
 
     // Reject invalid option bits.
@@ -40,7 +40,7 @@ pub fn sys_restricted_bind_state(
     options: u32,
     out: &mut HandleValue,
     out_exception: UserOutPtr<zx_exception_report_t>,
-) -> Result<(), ErrorStatus> {
+) -> Result<(), Status> {
     ltracef!("options {:#x}\n", options);
 
     // No options allowed.
@@ -78,7 +78,7 @@ pub fn sys_restricted_bind_state(
 }
 
 #[syscall]
-pub fn sys_restricted_unbind_state(options: u32) -> Result<(), ErrorStatus> {
+pub fn sys_restricted_unbind_state(options: u32) -> Result<(), Status> {
     ltracef!("options {:#x}\n", options);
 
     // No options allowed.
@@ -91,7 +91,7 @@ pub fn sys_restricted_unbind_state(options: u32) -> Result<(), ErrorStatus> {
 }
 
 #[syscall]
-pub fn sys_restricted_kick(handle: HandleValue, options: u32) -> Result<(), ErrorStatus> {
+pub fn sys_restricted_kick(handle: HandleValue, options: u32) -> Result<(), Status> {
     ltracef!("options {:#x}\n", options);
 
     // No options allowed.

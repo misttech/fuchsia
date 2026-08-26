@@ -9,7 +9,7 @@ use core::ffi::c_char;
 use boot_options::BootOptions;
 use debug::ltracef;
 use syscalls_macro::syscall;
-use zx_status::{ErrorStatus, Status};
+use zx_status::Status;
 use zx_types::{ZX_RSRC_SYSTEM_DEBUG_BASE, ZX_RSRC_SYSTEM_TRACING_BASE, zx_status_t};
 
 use crate::object::{HandleValue, validate_system_resource};
@@ -41,7 +41,7 @@ pub fn sys_debug_read(
     ptr: UserOutPtr<u8>,
     max_len: usize,
     len: UserOutPtr<usize>,
-) -> Result<(), ErrorStatus> {
+) -> Result<(), Status> {
     ltracef!("ptr {:p}\n", ptr.as_ptr());
 
     if BootOptions::get().enable_serial_syscalls != boot_options::SerialDebugSyscalls::Enabled {
@@ -80,7 +80,7 @@ pub fn sys_debug_read(
 }
 
 #[syscall]
-pub fn sys_debug_write(ptr: UserInPtr<u8>, mut len: usize) -> Result<(), ErrorStatus> {
+pub fn sys_debug_write(ptr: UserInPtr<u8>, mut len: usize) -> Result<(), Status> {
     ltracef!("ptr {:p}, len {}\n", ptr.as_ptr(), len);
 
     let enable_serial = BootOptions::get().enable_serial_syscalls;
@@ -119,7 +119,7 @@ pub fn sys_debug_send_command(
     resource: HandleValue,
     ptr: UserInPtr<u8>,
     len: usize,
-) -> Result<(), ErrorStatus> {
+) -> Result<(), Status> {
     ltracef!("ptr {:p}, len {}\n", ptr.as_ptr(), len);
 
     if !BootOptions::get().enable_debugging_syscalls {
@@ -151,7 +151,7 @@ pub fn sys_ktrace_read(
     offset: u32,
     len: usize,
     out_actual: UserOutPtr<usize>,
-) -> Result<(), ErrorStatus> {
+) -> Result<(), Status> {
     validate_system_resource(handle, ZX_RSRC_SYSTEM_TRACING_BASE)?;
 
     let mut actual: usize = 0;
@@ -169,7 +169,7 @@ pub fn sys_ktrace_control(
     action: u32,
     options: u32,
     _ptr: UserInOutPtr<u8>,
-) -> Result<(), ErrorStatus> {
+) -> Result<(), Status> {
     validate_system_resource(handle, ZX_RSRC_SYSTEM_TRACING_BASE)?;
 
     // SAFETY: Calling C++ helper to perform ktrace control operation.

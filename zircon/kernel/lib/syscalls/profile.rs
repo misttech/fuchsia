@@ -12,7 +12,7 @@ use crate::user_copy::UserInPtr;
 use counters_rs::define_kcounter;
 use debug::ltracef;
 use syscalls_macro::syscall;
-use zx_status::{ErrorStatus, Status};
+use zx_status::Status;
 use zx_types::{
     ZX_POL_NEW_PROFILE, ZX_RIGHT_APPLY_PROFILE, ZX_RIGHT_MANAGE_THREAD, ZX_RIGHT_OP_CHILDREN,
     ZX_RSRC_KIND_SYSTEM, ZX_RSRC_SYSTEM_PROFILE_BASE, zx_profile_info_t,
@@ -29,7 +29,7 @@ pub fn sys_profile_create(
     options: u32,
     user_profile_info: UserInPtr<zx_profile_info_t>,
     out: &mut HandleValue,
-) -> Result<(), ErrorStatus> {
+) -> Result<(), Status> {
     ltracef!("profile_rsrc {:#x}, options {:#x}\n", profile_rsrc.raw_value(), options);
 
     ProcessDispatcher::with_current(|up| {
@@ -70,7 +70,7 @@ pub fn sys_object_set_profile(
     handle: HandleValue,
     profile_handle: HandleValue,
     options: u32,
-) -> Result<(), ErrorStatus> {
+) -> Result<(), Status> {
     ltracef!(
         "handle {:#x}, profile_handle {:#x}, options {:#x}\n",
         handle.raw_value(),

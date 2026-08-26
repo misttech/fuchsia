@@ -7,7 +7,7 @@
 use crate::object::HandleValue;
 use crate::user_copy::{UserInPtr, UserOutPtr};
 use syscalls_macro::syscall;
-use zx_status::{ErrorStatus, Status};
+use zx_status::Status;
 use zx_types::{zx_handle_t, zx_status_t};
 
 const LOCAL_TRACE: u32 = 0;
@@ -34,7 +34,7 @@ pub fn sys_object_get_property(
     property: u32,
     value: UserOutPtr<u8>,
     size: usize,
-) -> Result<(), ErrorStatus> {
+) -> Result<(), Status> {
     // SAFETY: Calling C++ implementation.
     let status = unsafe {
         cpp_object_get_property(
@@ -53,7 +53,7 @@ pub fn sys_object_set_property(
     property: u32,
     value: UserInPtr<u8>,
     size: usize,
-) -> Result<(), ErrorStatus> {
+) -> Result<(), Status> {
     // SAFETY: Calling C++ implementation.
     let status = unsafe {
         cpp_object_set_property(

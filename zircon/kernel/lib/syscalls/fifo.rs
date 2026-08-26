@@ -8,7 +8,7 @@ use crate::object::{Dispatcher, FifoDispatcher, HandleValue, ProcessDispatcher};
 use crate::user_copy::{UserInPtr, UserOutPtr};
 use debug::ltracef;
 use syscalls_macro::syscall;
-use zx_status::{ErrorStatus, Status};
+use zx_status::Status;
 use zx_types::{ZX_POL_NEW_FIFO, ZX_RIGHT_READ, ZX_RIGHT_WRITE};
 
 const LOCAL_TRACE: u32 = 0;
@@ -20,7 +20,7 @@ pub fn sys_fifo_create(
     options: u32,
     out0: &mut HandleValue,
     out1: &mut HandleValue,
-) -> Result<(), ErrorStatus> {
+) -> Result<(), Status> {
     ltracef!("elem_count {elem_count}, elem_size {elem_size}, options {options:#x}\n");
 
     if options != 0 {
@@ -44,7 +44,7 @@ pub fn sys_fifo_write(
     data: UserInPtr<u8>,
     count: usize,
     actual_count: UserOutPtr<usize>,
-) -> Result<(), ErrorStatus> {
+) -> Result<(), Status> {
     ltracef!("handle {handle:?}, elem_size {elem_size}, count {count}\n");
 
     let fifo = Dispatcher::get_with_rights::<FifoDispatcher>(handle, ZX_RIGHT_WRITE)?;
@@ -64,7 +64,7 @@ pub fn sys_fifo_read(
     data: UserOutPtr<u8>,
     count: usize,
     actual_count: UserOutPtr<usize>,
-) -> Result<(), ErrorStatus> {
+) -> Result<(), Status> {
     ltracef!("handle {handle:?}, elem_size {elem_size}, count {count}\n");
 
     let fifo = Dispatcher::get_with_rights::<FifoDispatcher>(handle, ZX_RIGHT_READ)?;

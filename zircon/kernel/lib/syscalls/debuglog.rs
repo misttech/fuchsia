@@ -9,7 +9,7 @@ use crate::object::{Dispatcher, HandleValue, LogDispatcher, validate_resource_ki
 use crate::user_copy::{UserInPtr, UserOutPtr};
 use debug::ltracef;
 use syscalls_macro::syscall;
-use zx_status::{ErrorStatus, Status};
+use zx_status::Status;
 use zx_types::{
     DEBUGLOG_INFO, ZX_HANDLE_INVALID, ZX_LOG_FLAG_READABLE, ZX_RIGHT_READ, ZX_RIGHT_WRITE,
     ZX_RSRC_KIND_SYSTEM, ZX_RSRC_SYSTEM_DEBUGLOG_BASE, zx_log_record_header_t,
@@ -22,7 +22,7 @@ pub fn sys_debuglog_create(
     rsrc: HandleValue,
     options: u32,
     out_handle: &mut HandleValue,
-) -> Result<(), ErrorStatus> {
+) -> Result<(), Status> {
     ltracef!("options {:#x}\n", options);
 
     // To support allowing the libc dynamic linker to emit log messages even
@@ -51,7 +51,7 @@ pub fn sys_debuglog_write(
     options: u32,
     ptr: UserInPtr<u8>,
     len: usize,
-) -> Result<(), ErrorStatus> {
+) -> Result<(), Status> {
     ltracef!("handle {:#x}, options {:#x}, len {}\n", log_handle.raw_value(), options, len);
 
     let len = core::cmp::min(len, DLOG_MAX_DATA);
@@ -123,7 +123,7 @@ pub fn sys_debuglog_read(
     options: u32,
     ptr: UserOutPtr<u8>,
     len: usize,
-) -> Result<(), ErrorStatus> {
+) -> Result<(), Status> {
     ltracef!("handle {:#x}, options {:#x}, len {}\n", log_handle.raw_value(), options, len);
 
     if options != 0 {
@@ -137,5 +137,5 @@ pub fn sys_debuglog_read(
     log.read(options, &mut record, &mut actual)?;
 
     let copied = copy_out_log_record(&record, ptr, len)?;
-    ErrorStatus::ok(copied as zx_types::zx_status_t)
+    Status::ok(copied as zx_types::zx_status_t)
 }

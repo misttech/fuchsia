@@ -12,7 +12,7 @@ use crate::user_copy::UserOutPtr;
 use debug::ltracef;
 use syscalls_macro::syscall;
 use zerocopy::{FromBytes, Immutable, IntoBytes};
-use zx_status::{ErrorStatus, Status};
+use zx_status::Status;
 use zx_types::*;
 
 const LOCAL_TRACE: u32 = 0;
@@ -176,7 +176,7 @@ pub fn sys_object_get_info(
     buffer_size: usize,
     actual: UserOutPtr<usize>,
     avail: UserOutPtr<usize>,
-) -> Result<(), ErrorStatus> {
+) -> Result<(), Status> {
     ltracef!("handle {:?} topic {}\n", handle, topic);
 
     /// Helper macro for single-record topic queries that obtain a typed dispatcher with

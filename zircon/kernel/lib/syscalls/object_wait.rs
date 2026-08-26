@@ -13,7 +13,7 @@ use crate::user_copy::{UserInOutPtr, UserOutPtr};
 use debug::ltracef;
 use fbl::InlineArray;
 use syscalls_macro::syscall;
-use zx_status::{ErrorStatus, Status};
+use zx_status::Status;
 use zx_types::{
     ZX_RIGHT_WAIT, ZX_SIGNAL_HANDLE_CLOSED, ZX_WAIT_MANY_MAX_ITEMS, zx_instant_mono_t,
     zx_signals_t, zx_wait_item_t,
@@ -29,7 +29,7 @@ pub fn sys_object_wait_one(
     signals: zx_signals_t,
     deadline: zx_instant_mono_t,
     observed: UserOutPtr<zx_signals_t>,
-) -> Result<(), ErrorStatus> {
+) -> Result<(), Status> {
     ltracef!("handle {:?}\n", handle_value);
 
     pin_init::stack_pin_init!(let event = ksync::KEvent::init_unsignaled());
@@ -77,7 +77,7 @@ pub fn sys_object_wait_many(
     user_items: UserInOutPtr<zx_wait_item_t>,
     count: usize,
     deadline: zx_instant_mono_t,
-) -> Result<(), ErrorStatus> {
+) -> Result<(), Status> {
     ltracef!("count {}\n", count);
 
     let slack = ProcessDispatcher::with_current(|up| up.get_timer_slack_policy());

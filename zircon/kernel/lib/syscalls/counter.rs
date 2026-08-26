@@ -7,11 +7,11 @@
 use crate::object::{CounterDispatcher, Dispatcher, HandleValue};
 use crate::user_copy::UserOutPtr;
 use syscalls_macro::syscall;
-use zx_status::{ErrorStatus, Status};
+use zx_status::Status;
 use zx_types::{ZX_RIGHT_READ, ZX_RIGHT_WRITE};
 
 #[syscall]
-pub fn sys_counter_create(options: u32, out: &mut HandleValue) -> Result<(), ErrorStatus> {
+pub fn sys_counter_create(options: u32, out: &mut HandleValue) -> Result<(), Status> {
     if options != 0 {
         return Err(Status::INVALID_ARGS);
     }
@@ -24,7 +24,7 @@ pub fn sys_counter_create(options: u32, out: &mut HandleValue) -> Result<(), Err
 }
 
 #[syscall]
-pub fn sys_counter_add(handle: HandleValue, value: i64) -> Result<(), ErrorStatus> {
+pub fn sys_counter_add(handle: HandleValue, value: i64) -> Result<(), Status> {
     // Both read and write rights are required for add because the resulting signal state and error
     // code can be used to determine the counter's value.
     let counter =
@@ -35,10 +35,7 @@ pub fn sys_counter_add(handle: HandleValue, value: i64) -> Result<(), ErrorStatu
 }
 
 #[syscall]
-pub fn sys_counter_read(
-    handle: HandleValue,
-    value_out: UserOutPtr<i64>,
-) -> Result<(), ErrorStatus> {
+pub fn sys_counter_read(handle: HandleValue, value_out: UserOutPtr<i64>) -> Result<(), Status> {
     if value_out.is_null() {
         return Err(Status::INVALID_ARGS);
     }
@@ -50,7 +47,7 @@ pub fn sys_counter_read(
 }
 
 #[syscall]
-pub fn sys_counter_write(handle: HandleValue, value: i64) -> Result<(), ErrorStatus> {
+pub fn sys_counter_write(handle: HandleValue, value: i64) -> Result<(), Status> {
     let counter = Dispatcher::get_with_rights::<CounterDispatcher>(handle, ZX_RIGHT_WRITE)?;
     counter.set_value(value);
     Ok(())

@@ -12,7 +12,7 @@ use boot_options::BootOptions;
 use core::mem::MaybeUninit;
 use debug::{ltrace_entry, ltracef};
 use syscalls_macro::syscall;
-use zx_status::{ErrorStatus, Status};
+use zx_status::Status;
 use zx_types::{
     ZX_HANDLE_INVALID, ZX_MAX_NAME_LEN, ZX_RIGHT_DUPLICATE, ZX_RIGHT_MANAGE_THREAD, ZX_RIGHT_READ,
     ZX_RIGHT_WRITE, ZX_THREAD_STATE_DEBUG_REGS, zx_exception_context_t, zx_excp_type_t, zx_rseq_t,
@@ -44,7 +44,7 @@ pub fn sys_thread_create(
     name_len: usize,
     options: u32,
     out: &mut HandleValue,
-) -> Result<(), ErrorStatus> {
+) -> Result<(), Status> {
     ltracef!("process handle {:#x}, options {:#x}\n", process_handle.raw_value(), options);
 
     // currently, the only valid option value is 0
@@ -91,7 +91,7 @@ pub fn sys_thread_start_regs(
     arg2: u64,
     tp: u64,
     abi_reg: u64,
-) -> Result<(), ErrorStatus> {
+) -> Result<(), Status> {
     ltracef!(
         "handle {:#x}, entry {:#x}, sp {:#x}, arg1 {:#x}, arg2 {:#x}\n",
         handle.raw_value(),
@@ -127,7 +127,7 @@ pub fn sys_thread_read_state(
     kind: u32,
     buffer: UserOutPtr<u8>,
     buffer_size: usize,
-) -> Result<(), ErrorStatus> {
+) -> Result<(), Status> {
     ltracef!("handle {:#x}, kind {}\n", handle.raw_value(), kind);
 
     // TODO(https://fxbug.dev/42105831): debug rights
@@ -142,7 +142,7 @@ pub fn sys_thread_write_state(
     kind: u32,
     buffer: UserInPtr<u8>,
     buffer_size: usize,
-) -> Result<(), ErrorStatus> {
+) -> Result<(), Status> {
     ltracef!("handle {:#x}, kind {}\n", handle.raw_value(), kind);
 
     if (kind & ZX_THREAD_STATE_DEBUG_REGS) != 0 && !BootOptions::get().enable_debugging_syscalls {
@@ -160,7 +160,7 @@ pub fn sys_thread_raise_exception(
     options: u32,
     exception_type: zx_excp_type_t,
     user_context_ptr: UserInPtr<zx_exception_context_t>,
-) -> Result<(), ErrorStatus> {
+) -> Result<(), Status> {
     ltracef!("options {:#x}, exception type {:#x}\n", options, exception_type);
 
     if user_context_ptr.is_null() {
@@ -175,11 +175,7 @@ pub fn sys_thread_raise_exception(
 }
 
 #[syscall]
-pub fn sys_thread_set_rseq(
-    vmo_handle: HandleValue,
-    offset: u64,
-    size: u64,
-) -> Result<(), ErrorStatus> {
+pub fn sys_thread_set_rseq(vmo_handle: HandleValue, offset: u64, size: u64) -> Result<(), Status> {
     ltracef!("vmo handle {:#x}, offset {}, size {}\n", vmo_handle.raw_value(), offset, size);
 
     // Is this an "unregister" operation?
@@ -216,7 +212,7 @@ pub fn sys_thread_set_rseq(
 }
 
 #[syscall]
-pub fn sys_thread_legacy_yield(options: u32) -> Result<(), ErrorStatus> {
+pub fn sys_thread_legacy_yield(options: u32) -> Result<(), Status> {
     ltracef!("options {:#x}\n", options);
 
     ThreadDispatcher::legacy_yield(options)?;

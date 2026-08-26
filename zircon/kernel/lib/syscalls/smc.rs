@@ -7,7 +7,7 @@
 use crate::object::HandleValue;
 use crate::user_copy::{UserInPtr, UserOutPtr};
 use syscalls_macro::syscall;
-use zx_status::{ErrorStatus, Status};
+use zx_status::Status;
 use zx_types::{zx_smc_parameters_t, zx_smc_result_t};
 
 const ARM_SMC_SERVICE_CALL_NUM_MASK: u32 = 0x3F;
@@ -180,7 +180,7 @@ pub fn sys_smc_call(
     handle: HandleValue,
     parameters: UserInPtr<zx_smc_parameters_t>,
     out_smc_result: UserOutPtr<zx_smc_result_t>,
-) -> Result<(), ErrorStatus> {
+) -> Result<(), Status> {
     if parameters.is_null() || out_smc_result.is_null() {
         return Err(Status::INVALID_ARGS);
     }

@@ -7,7 +7,7 @@
 use core::mem::MaybeUninit;
 use debug::ltracef;
 use syscalls_macro::syscall;
-use zx_status::{ErrorStatus, Status};
+use zx_status::Status;
 use zx_types::{
     ZX_JOB_CRITICAL_PROCESS_RETCODE_NONZERO, ZX_JOB_POL_ABSOLUTE, ZX_JOB_POL_RELATIVE,
     ZX_RIGHT_DESTROY, ZX_RIGHT_MANAGE_JOB, ZX_RIGHT_SET_POLICY, ZX_RIGHT_WAIT,
@@ -25,7 +25,7 @@ fn job_set_policy_basic_v1(
     options: u32,
     policy_ptr: UserInPtr<u8>,
     count: u32,
-) -> Result<(), ErrorStatus> {
+) -> Result<(), Status> {
     if options != ZX_JOB_POL_RELATIVE && options != ZX_JOB_POL_ABSOLUTE {
         return Err(Status::INVALID_ARGS);
     }
@@ -50,7 +50,7 @@ fn job_set_policy_basic_v2(
     options: u32,
     policy_ptr: UserInPtr<u8>,
     count: u32,
-) -> Result<(), ErrorStatus> {
+) -> Result<(), Status> {
     if options != ZX_JOB_POL_RELATIVE && options != ZX_JOB_POL_ABSOLUTE {
         return Err(Status::INVALID_ARGS);
     }
@@ -75,7 +75,7 @@ fn job_set_policy_timer_slack(
     options: u32,
     policy_ptr: UserInPtr<u8>,
     count: u32,
-) -> Result<(), ErrorStatus> {
+) -> Result<(), Status> {
     if options != ZX_JOB_POL_RELATIVE {
         return Err(Status::INVALID_ARGS);
     }
@@ -99,7 +99,7 @@ pub fn sys_job_create(
     parent_job: HandleValue,
     options: u32,
     out: &mut HandleValue,
-) -> Result<(), ErrorStatus> {
+) -> Result<(), Status> {
     ltracef!("parent: {:#x}\n", parent_job.raw_value());
 
     if options != 0 {
@@ -119,7 +119,7 @@ pub fn sys_job_set_policy(
     topic: u32,
     policy_ptr: UserInPtr<u8>,
     count: u32,
-) -> Result<(), ErrorStatus> {
+) -> Result<(), Status> {
     ltracef!("handle {:#x}, options {}, topic {}\n", handle.raw_value(), options, topic);
 
     match topic {
@@ -141,7 +141,7 @@ pub fn sys_job_set_critical(
     job_handle: HandleValue,
     options: u32,
     process_handle: HandleValue,
-) -> Result<(), ErrorStatus> {
+) -> Result<(), Status> {
     ltracef!(
         "job_handle {:#x}, options {}, process_handle {:#x}\n",
         job_handle.raw_value(),

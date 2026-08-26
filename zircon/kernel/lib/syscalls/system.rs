@@ -13,7 +13,7 @@ use crate::object::{
 use crate::user_copy::{UserInPtr, UserOutPtr};
 use boot_options::BootOptions;
 use syscalls_macro::syscall;
-use zx_status::{ErrorStatus, Status};
+use zx_status::Status;
 use zx_types::*;
 
 const ZX_DEFAULT_SYSTEM_EVENT_LOW_MEMORY_RIGHTS: zx_rights_t =
@@ -87,7 +87,7 @@ pub fn sys_system_mexec_payload_get(
     resource: HandleValue,
     user_buffer: UserOutPtr<u8>,
     buffer_size: usize,
-) -> Result<(), ErrorStatus> {
+) -> Result<(), Status> {
     if !BootOptions::get().enable_debugging_syscalls {
         return Err(Status::NOT_SUPPORTED);
     }
@@ -119,7 +119,7 @@ pub fn sys_system_mexec(
     resource: HandleValue,
     kernel_vmo: HandleValue,
     data_zbi_vmo: HandleValue,
-) -> Result<(), ErrorStatus> {
+) -> Result<(), Status> {
     if !BootOptions::get().enable_debugging_syscalls {
         return Err(Status::NOT_SUPPORTED);
     }
@@ -142,7 +142,7 @@ pub fn sys_system_get_event(
     root_job: HandleValue,
     kind: u32,
     out: &mut HandleValue,
-) -> Result<(), ErrorStatus> {
+) -> Result<(), Status> {
     let rights = if kind == ZX_SYSTEM_EVENT_OUT_OF_MEMORY {
         ZX_RIGHT_MANAGE_PROCESS
     } else {
@@ -181,7 +181,7 @@ pub fn sys_system_watch_memory_stall(
     threshold: zx_duration_mono_t,
     window: zx_duration_mono_t,
     out: &mut HandleValue,
-) -> Result<(), ErrorStatus> {
+) -> Result<(), Status> {
     *out = ProcessDispatcher::with_current(|up| {
         up.enforce_basic_policy(ZX_POL_NEW_EVENT)?;
 
@@ -202,7 +202,7 @@ pub fn sys_system_set_performance_info(
     topic: u32,
     info_void: UserInPtr<u8>,
     count: usize,
-) -> Result<(), ErrorStatus> {
+) -> Result<(), Status> {
     validate_system_resource(resource, ZX_RSRC_SYSTEM_CPU_BASE)?;
 
     // SAFETY: Getting processor count from percpu has no preconditions.
@@ -279,7 +279,7 @@ pub fn sys_system_get_performance_info(
     info_count: usize,
     info_void: UserOutPtr<u8>,
     output_count: UserOutPtr<usize>,
-) -> Result<(), ErrorStatus> {
+) -> Result<(), Status> {
     validate_system_resource(resource, ZX_RSRC_SYSTEM_CPU_BASE)?;
 
     // SAFETY: Getting processor count from percpu has no preconditions.
@@ -330,7 +330,7 @@ pub fn sys_system_powerctl(
     power_rsrc: HandleValue,
     cmd: u32,
     raw_arg: UserInPtr<zx_system_powerctl_arg_t>,
-) -> Result<(), ErrorStatus> {
+) -> Result<(), Status> {
     validate_system_resource(power_rsrc, ZX_RSRC_SYSTEM_POWER_BASE)?;
 
     #[cfg(not(target_arch = "x86_64"))]
@@ -400,7 +400,7 @@ pub fn sys_system_suspend_enter(
     out_entries: UserOutPtr<zx_wake_source_report_entry_t>,
     num_entries: u32,
     actual_entries: UserOutPtr<u32>,
-) -> Result<(), ErrorStatus> {
+) -> Result<(), Status> {
     validate_system_resource(resource, ZX_RSRC_SYSTEM_CPU_BASE)?;
 
     // Make sure that any flags passed by the user are defined.

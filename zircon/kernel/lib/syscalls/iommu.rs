@@ -8,7 +8,7 @@ use crate::object::{HandleValue, IommuDispatcher, validate_resource_kind_base};
 use crate::user_copy::UserInPtr;
 use debug::ltracef;
 use syscalls_macro::syscall;
-use zx_status::{ErrorStatus, Status};
+use zx_status::Status;
 use zx_types::{ZX_IOMMU_MAX_DESC_LEN, ZX_RSRC_KIND_SYSTEM, ZX_RSRC_SYSTEM_IOMMU_BASE};
 
 const LOCAL_TRACE: u32 = 0;
@@ -20,7 +20,7 @@ pub fn sys_iommu_create(
     desc: UserInPtr<u8>,
     desc_size: usize,
     out: &mut HandleValue,
-) -> Result<(), ErrorStatus> {
+) -> Result<(), Status> {
     ltracef!(
         "resource {:#x}, type {}, desc_size {}\n",
         resource.raw_value(),

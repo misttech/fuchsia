@@ -7,13 +7,13 @@
 use crate::object::{EventDispatcher, EventPairDispatcher, HandleValue, ProcessDispatcher};
 use debug::ltracef;
 use syscalls_macro::syscall;
-use zx_status::{ErrorStatus, Status};
+use zx_status::Status;
 use zx_types::{ZX_POL_NEW_EVENT, ZX_POL_NEW_EVENTPAIR};
 
 const LOCAL_TRACE: u32 = 0;
 
 #[syscall]
-pub fn sys_event_create(options: u32, out: &mut HandleValue) -> Result<(), ErrorStatus> {
+pub fn sys_event_create(options: u32, out: &mut HandleValue) -> Result<(), Status> {
     ltracef!("options {:#x}\n", options);
 
     if options != 0 {
@@ -33,7 +33,7 @@ pub fn sys_eventpair_create(
     options: u32,
     out0: &mut HandleValue,
     out1: &mut HandleValue,
-) -> Result<(), ErrorStatus> {
+) -> Result<(), Status> {
     ltracef!("options {:#x}\n", options);
 
     if options != 0 {

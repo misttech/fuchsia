@@ -10,7 +10,7 @@ use crate::object::{
 use crate::user_copy::{UserInPtr, UserOutPtr};
 use debug::ltracef;
 use syscalls_macro::syscall;
-use zx_status::{ErrorStatus, Status};
+use zx_status::Status;
 use zx_types::{ZX_POL_NEW_SOCKET, ZX_RIGHT_MANAGE_SOCKET, ZX_RIGHT_READ, ZX_RIGHT_WRITE};
 
 pub const ZX_SOCKET_PEEK: u32 = 1 << 3;
@@ -22,7 +22,7 @@ pub fn sys_socket_create(
     options: u32,
     out0: &mut HandleValue,
     out1: &mut HandleValue,
-) -> Result<(), ErrorStatus> {
+) -> Result<(), Status> {
     ProcessDispatcher::with_current(|up| up.enforce_basic_policy(ZX_POL_NEW_SOCKET))?;
 
     let (handle0, handle1, rights) = SocketDispatcher::create(options)?;
@@ -40,7 +40,7 @@ pub fn sys_socket_write(
     buffer: UserInPtr<u8>,
     size: usize,
     actual: UserOutPtr<usize>,
-) -> Result<(), ErrorStatus> {
+) -> Result<(), Status> {
     ltracef!("handle {handle:?}\n");
 
     if size > 0 && buffer.is_null() {
@@ -67,7 +67,7 @@ pub fn sys_socket_read(
     buffer: UserOutPtr<u8>,
     size: usize,
     actual: UserOutPtr<usize>,
-) -> Result<(), ErrorStatus> {
+) -> Result<(), Status> {
     ltracef!("handle {handle:?}\n");
 
     if buffer.is_null() && size > 0 {
@@ -95,7 +95,7 @@ pub fn sys_socket_set_disposition(
     handle: HandleValue,
     disposition: u32,
     disposition_peer: u32,
-) -> Result<(), ErrorStatus> {
+) -> Result<(), Status> {
     let disp = Disposition::try_from(disposition)?;
     let disp_peer = Disposition::try_from(disposition_peer)?;
 

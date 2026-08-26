@@ -7,7 +7,7 @@
 use crate::object::{Dispatcher, HandleValue, ProcessDispatcher, TimerDispatcher};
 use debug::ltracef;
 use syscalls_macro::syscall;
-use zx_status::{ErrorStatus, Status};
+use zx_status::Status;
 use zx_types::{
     ZX_CLOCK_BOOT, ZX_CLOCK_MONOTONIC, ZX_POL_NEW_TIMER, ZX_RIGHT_WRITE, zx_clock_t, zx_duration_t,
     zx_time_t,
@@ -20,7 +20,7 @@ pub fn sys_timer_create(
     options: u32,
     clock_id: zx_clock_t,
     out: &mut HandleValue,
-) -> Result<(), ErrorStatus> {
+) -> Result<(), Status> {
     ltracef!("options {:#x} clock_id {}\n", options, clock_id);
 
     if clock_id != ZX_CLOCK_MONOTONIC && clock_id != ZX_CLOCK_BOOT {
@@ -40,7 +40,7 @@ pub fn sys_timer_set(
     handle: HandleValue,
     deadline: zx_time_t,
     slack: zx_duration_t,
-) -> Result<(), ErrorStatus> {
+) -> Result<(), Status> {
     ltracef!("handle {:?} deadline {} slack {}\n", handle, deadline, slack);
 
     if slack < 0 {
@@ -57,7 +57,7 @@ pub fn sys_timer_set(
 }
 
 #[syscall]
-pub fn sys_timer_cancel(handle: HandleValue) -> Result<(), ErrorStatus> {
+pub fn sys_timer_cancel(handle: HandleValue) -> Result<(), Status> {
     ltracef!("handle {:?}\n", handle);
 
     let timer = Dispatcher::get_with_rights::<TimerDispatcher>(handle, ZX_RIGHT_WRITE)?;

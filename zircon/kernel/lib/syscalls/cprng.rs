@@ -6,7 +6,7 @@
 
 use crate::user_copy::{UserInPtr, UserOutPtr};
 use syscalls_macro::syscall;
-use zx_status::{ErrorStatus, Status};
+use zx_status::Status;
 use zx_types::{ZX_CPRNG_ADD_ENTROPY_MAX_LEN, ZX_CPRNG_DRAW_MAX_LEN};
 
 const MAX_CPRNG_DRAW: usize = ZX_CPRNG_DRAW_MAX_LEN;
@@ -46,7 +46,7 @@ impl<'a, T> Drop for ZeroOnDrop<'a, T> {
 }
 
 #[syscall]
-pub fn sys_cprng_draw_once(buffer: UserOutPtr<u8>, len: usize) -> Result<(), ErrorStatus> {
+pub fn sys_cprng_draw_once(buffer: UserOutPtr<u8>, len: usize) -> Result<(), Status> {
     if len > MAX_CPRNG_DRAW {
         return Err(Status::INVALID_ARGS);
     }
@@ -65,7 +65,7 @@ pub fn sys_cprng_draw_once(buffer: UserOutPtr<u8>, len: usize) -> Result<(), Err
 }
 
 #[syscall]
-pub fn sys_cprng_add_entropy(buffer: UserInPtr<u8>, buffer_size: usize) -> Result<(), ErrorStatus> {
+pub fn sys_cprng_add_entropy(buffer: UserInPtr<u8>, buffer_size: usize) -> Result<(), Status> {
     if buffer_size > MAX_CPRNG_SEED {
         return Err(Status::INVALID_ARGS);
     }

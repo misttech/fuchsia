@@ -353,8 +353,6 @@ impl From<core::convert::Infallible> for Status {
     }
 }
 
-pub type ErrorStatus = Status;
-
 #[cfg(test)]
 mod test {
     extern crate std;

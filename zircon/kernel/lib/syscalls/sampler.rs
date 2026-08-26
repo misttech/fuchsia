@@ -7,7 +7,7 @@
 use boot_options::BootOptions;
 use debug::ltracef;
 use syscalls_macro::syscall;
-use zx_status::{ErrorStatus, Status};
+use zx_status::Status;
 use zx_types::{
     ZX_POL_NEW_SAMPLER, ZX_RSRC_KIND_SYSTEM, ZX_RSRC_SYSTEM_SAMPLING_BASE,
     ZX_SAMPLER_MAX_BUFFER_SIZE, ZX_SAMPLER_MIN_PERIOD, zx_sampler_config_t,
@@ -33,7 +33,7 @@ pub fn sys_sampler_create(
     options: u64,
     config_ptr: UserInPtr<zx_sampler_config_t>,
     out_handle: &mut HandleValue,
-) -> Result<(), ErrorStatus> {
+) -> Result<(), Status> {
     ltracef!("options {:#x}\n", options);
 
     if options != 0 {
@@ -72,7 +72,7 @@ pub fn sys_sampler_create(
 }
 
 #[syscall]
-pub fn sys_sampler_start(sampler_handle: HandleValue) -> Result<(), ErrorStatus> {
+pub fn sys_sampler_start(sampler_handle: HandleValue) -> Result<(), Status> {
     ltracef!("handle {:#x}\n", sampler_handle.raw_value());
 
     check_sampler_supported()?;
@@ -83,7 +83,7 @@ pub fn sys_sampler_start(sampler_handle: HandleValue) -> Result<(), ErrorStatus>
 }
 
 #[syscall]
-pub fn sys_sampler_stop(sampler_handle: HandleValue) -> Result<(), ErrorStatus> {
+pub fn sys_sampler_stop(sampler_handle: HandleValue) -> Result<(), Status> {
     ltracef!("handle {:#x}\n", sampler_handle.raw_value());
 
     check_sampler_supported()?;
@@ -99,7 +99,7 @@ pub fn sys_sampler_read(
     data: UserOutPtr<u8>,
     len: usize,
     actual: UserOutPtr<usize>,
-) -> Result<(), ErrorStatus> {
+) -> Result<(), Status> {
     ltracef!("handle {:#x}, len {}\n", sampler_handle.raw_value(), len);
 
     check_sampler_supported()?;

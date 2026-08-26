@@ -10,7 +10,7 @@ use crate::userabi::VDso;
 use boot_options::BootOptions;
 use debug::ltracef;
 use syscalls_macro::syscall;
-use zx_status::{ErrorStatus, Status};
+use zx_status::Status;
 use zx_types::{
     ZX_HANDLE_INVALID, ZX_MAX_NAME_LEN, ZX_OBJ_TYPE_PROCESS, ZX_POL_NEW_PROCESS, ZX_PROCESS_SHARED,
     ZX_RIGHT_GET_PROPERTY, ZX_RIGHT_MANAGE_PROCESS, ZX_RIGHT_READ, ZX_RIGHT_WRITE,
@@ -53,7 +53,7 @@ pub fn sys_process_create(
     options: u32,
     proc_handle: &mut HandleValue,
     vmar_handle: &mut HandleValue,
-) -> Result<(), ErrorStatus> {
+) -> Result<(), Status> {
     ltracef!("job handle {:#x}, options {:#x}\n", job_handle.raw_value(), options);
 
     // currently, the only valid option values are 0 or ZX_PROCESS_SHARED
@@ -107,7 +107,7 @@ pub fn sys_process_create_shared(
     name_len: usize,
     proc_handle: &mut HandleValue,
     restricted_vmar_handle: &mut HandleValue,
-) -> Result<(), ErrorStatus> {
+) -> Result<(), Status> {
     ltracef!("shared_proc {:#x}, options {:#x}\n", shared_proc_handle.raw_value(), options);
 
     // currently, the only valid option value is 0
@@ -172,7 +172,7 @@ pub fn sys_process_start(
     stack: usize,
     arg1_handle: HandleValue,
     arg2: usize,
-) -> Result<(), ErrorStatus> {
+) -> Result<(), Status> {
     ltracef!(
         "phandle {:#x}, thandle {:#x}, entry {:#x}, stack {:#x}, arg1 {:#x}, arg2 {:#x}\n",
         process_handle.raw_value(),
@@ -228,7 +228,7 @@ pub fn sys_process_read_memory(
     buffer: UserOutPtr<u8>,
     buffer_size: usize,
     actual: UserOutPtr<usize>,
-) -> Result<(), ErrorStatus> {
+) -> Result<(), Status> {
     ltracef!("vaddr {:#x}, size {}\n", vaddr, buffer_size);
 
     if buffer.is_null() || buffer_size == 0 || buffer_size > MAX_DEBUG_READ_BLOCK {
@@ -268,7 +268,7 @@ pub fn sys_process_write_memory(
     buffer: UserInPtr<u8>,
     buffer_size: usize,
     actual: UserOutPtr<usize>,
-) -> Result<(), ErrorStatus> {
+) -> Result<(), Status> {
     ltracef!("vaddr {:#x}, size {}\n", vaddr, buffer_size);
 
     if !BootOptions::get().enable_debugging_syscalls {

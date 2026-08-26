@@ -9,7 +9,7 @@ use crate::platform_rs::timer::current_mono_time;
 use counters_rs::define_kcounter;
 use debug::ltracef;
 use syscalls_macro::syscall;
-use zx_status::{ErrorStatus, Status};
+use zx_status::Status;
 use zx_types::{zx_duration_mono_t, zx_instant_mono_t};
 
 const LOCAL_TRACE: u32 = 0;
@@ -26,7 +26,7 @@ unsafe extern "C" {
 }
 
 #[syscall]
-pub fn sys_nanosleep(deadline: zx_instant_mono_t) -> Result<(), ErrorStatus> {
+pub fn sys_nanosleep(deadline: zx_instant_mono_t) -> Result<(), Status> {
     ltracef!("nseconds {}\n", deadline);
     SYSCALLS_ZX_NANOSLEEP.add(1);
 
