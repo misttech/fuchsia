@@ -109,6 +109,21 @@ impl<T> From<*const T> for PtrKey<T> {
         Self(ptr)
     }
 }
+impl<T> From<&T> for PtrKey<T> {
+    fn from(r: &T) -> Self {
+        Self(r as *const T)
+    }
+}
+impl<T> From<&Arc<T>> for PtrKey<T> {
+    fn from(arc: &Arc<T>) -> Self {
+        Self(Arc::as_ptr(arc))
+    }
+}
+impl<T> From<&ArcKey<T>> for PtrKey<T> {
+    fn from(arc_key: &ArcKey<T>) -> Self {
+        Self(Arc::as_ptr(&arc_key.0))
+    }
+}
 impl<T> Clone for PtrKey<T> {
     fn clone(&self) -> Self {
         Self(self.0)

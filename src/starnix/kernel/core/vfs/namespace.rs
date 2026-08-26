@@ -21,11 +21,11 @@ use crate::vfs::{
 };
 use fuchsia_rcu::{RcuBox, RcuDroppable, RcuReadScope};
 use fuchsia_rcu_collections::rcu_raw_hash_map::RcuRawHashMap;
-use ref_cast::RefCast;
+use fuchsia_sync::Mutex;
 use starnix_logging::log_warn;
 use starnix_rcu::RcuHashMap;
 use starnix_sync::{LockDepMutex, NamespaceFlagsLock};
-use starnix_uapi::arc_key::{ArcKey, PtrKey, WeakKey};
+use starnix_uapi::arc_key::{PtrKey, WeakKey};
 use starnix_uapi::auth::Credentials;
 use starnix_uapi::device_id::DeviceId;
 use starnix_uapi::errors::Errno;
@@ -38,8 +38,7 @@ use starnix_uapi::open_flags::OpenFlags;
 use starnix_uapi::unmount_flags::UnmountFlags;
 use starnix_uapi::vfs::{FdEvents, ResolveFlags};
 use starnix_uapi::{NAME_MAX, errno, error};
-use std::borrow::Borrow;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::fmt;
 use std::hash::{Hash, Hasher};
 use std::ops::{Deref, DerefMut};
@@ -103,13 +102,12 @@ impl Namespace {
 
         // Follow the same path in the new namespace
         let scope = RcuReadScope::new();
-        let mut mount = &new_ns.root_mount;
+        let mut mount = Arc::clone(&new_ns.root_mount);
         for mountpoint in mountpoints.iter().rev() {
-            let next_mount =
-                &mount.relations.get_submount(&scope, ArcKey::ref_cast(mountpoint))?.mount;
+            let next_mount = mount.relations.get_submount(&scope, &PtrKey::from(mountpoint))?;
             mount = next_mount;
         }
-        node.mount = Some(Arc::clone(mount)).into();
+        node.mount = Some(mount).into();
         Some(node)
     }
 }
@@ -180,9 +178,6 @@ pub struct Mount {
     // "parent", and then you can traverse up to the top of the tree.
 }
 
-// TODO(b/525158773): Temporary impl to allow incremental RCU safety refactoring.
-// SAFETY: We wait for an RCU grace period before returning from syscalls so side effects are guaranteed to be visible.
-unsafe impl RcuDroppable for Mount {}
 type MountHandle = Arc<Mount>;
 
 /// Public representation of the mount options.
@@ -256,9 +251,11 @@ impl Into<MountInfo> for Option<MountHandle> {
 #[derive(Default)]
 struct MountRelations {
     /// The parent mount and the directory entry in the parent where this mount is mounted.
-    mountpoint: RcuBox<Option<(Weak<Mount>, DirEntryHandle)>>,
+    mountpoint: RcuBox<Option<(Weak<Mount>, Weak<DirEntry>)>>,
     /// The active submounts, keyed by the directory entry in this mount where they are mounted.
-    submounts: RcuRawHashMap<ArcKey<DirEntry>, Arc<Submount>>,
+    submounts: Mutex<HashMap<PtrKey<DirEntry>, Submount>>,
+    /// A lock-free RCU friendly view of [submounts].
+    submount_lookup: RcuRawHashMap<WeakKey<DirEntry>, Weak<Mount>>,
     /// The membership of this mount in its peer group.
     peer_group: RcuBox<Option<(Arc<PeerGroup>, PtrKey<Mount>)>>,
     /// The membership of this mount in a PeerGroup's downstream.
@@ -266,36 +263,37 @@ struct MountRelations {
 }
 
 impl MountRelations {
-    fn get_submount<'a>(
-        &'a self,
-        scope: &'a starnix_rcu::RcuReadScope,
-        key: &ArcKey<DirEntry>,
-    ) -> Option<&'a Arc<Submount>> {
-        self.submounts.get(scope, key)
+    fn get_submount(
+        &self,
+        scope: &starnix_rcu::RcuReadScope,
+        key: &PtrKey<DirEntry>,
+    ) -> Option<MountHandle> {
+        self.submount_lookup.get(scope, key).and_then(|weak| weak.upgrade())
     }
 
     fn insert_submount(
         &self,
         _guard: &MountsWriteToken,
-        key: ArcKey<DirEntry>,
-        value: Arc<Submount>,
-    ) -> Option<Arc<Submount>> {
+        key: WeakKey<DirEntry>,
+        value: Weak<Mount>,
+        submount: Submount,
+    ) -> Option<Submount> {
+        let ptr_key = PtrKey::from(key.0.as_ptr());
+        let old_submount = self.submounts.lock().insert(ptr_key, submount);
         let scope = starnix_rcu::RcuReadScope::new();
         // SAFETY: The MountsWriteToken proves we have exclusive write access.
-        let result = unsafe { self.submounts.insert(&scope, key, value) };
-        match result {
-            fuchsia_rcu_collections::rcu_raw_hash_map::InsertionResult::Inserted(_) => None,
-            fuchsia_rcu_collections::rcu_raw_hash_map::InsertionResult::Updated(old) => Some(old),
-        }
+        unsafe { self.submount_lookup.insert(&scope, key, value) };
+        old_submount
     }
 
     fn remove_submount(
         &self,
         guard: &MountsWriteToken,
-        key: &ArcKey<DirEntry>,
+        key: &PtrKey<DirEntry>,
     ) -> Result<(), Errno> {
         // SAFETY: The MountsWriteToken proves we have exclusive write access.
-        let submount = unsafe { self.submounts.remove(key) };
+        let _ = unsafe { self.submount_lookup.remove(key) };
+        let submount = self.submounts.lock().remove(key);
         let submount = scopeguard::guard(submount, |submount| guard.defer_drop(submount));
         if submount.is_some() { Ok(()) } else { error!(EINVAL) }
     }
@@ -303,8 +301,8 @@ impl MountRelations {
     fn iter_submounts<'a>(
         &'a self,
         scope: &'a starnix_rcu::RcuReadScope,
-    ) -> impl Iterator<Item = (&'a ArcKey<DirEntry>, &'a Arc<Submount>)> {
-        let mut cursor = self.submounts.cursor(scope);
+    ) -> impl Iterator<Item = (&'a WeakKey<DirEntry>, &'a Weak<Mount>)> {
+        let mut cursor = self.submount_lookup.cursor(scope);
         std::iter::from_fn(move || {
             let current = cursor.current();
             if current.is_some() {
@@ -315,13 +313,13 @@ impl MountRelations {
     }
 
     fn submounts_len(&self) -> usize {
-        self.submounts.len()
+        self.submount_lookup.len()
     }
 
     fn set_mountpoint(
         &self,
         _guard: &MountsWriteToken,
-        mountpoint: Option<(Weak<Mount>, DirEntryHandle)>,
+        mountpoint: Option<(Weak<Mount>, Weak<DirEntry>)>,
     ) {
         self.mountpoint.update(mountpoint);
     }
@@ -329,7 +327,7 @@ impl MountRelations {
     fn mountpoint<'a>(
         &'a self,
         scope: &'a starnix_rcu::RcuReadScope,
-    ) -> Option<&'a (Weak<Mount>, DirEntryHandle)> {
+    ) -> Option<&'a (Weak<Mount>, Weak<DirEntry>)> {
         self.mountpoint.as_ref(scope).as_ref()
     }
 
@@ -453,7 +451,7 @@ impl Mount {
     fn remove_submount(
         self: &MountHandle,
         mounts_guard: &MountsWriteToken,
-        mount_hash_key: &ArcKey<DirEntry>,
+        mount_hash_key: &PtrKey<DirEntry>,
     ) -> Result<(), Errno> {
         // create_submount explains why we need to make a copy of peers.
         let peers = self.peer_group().map(|g| g.copy_propagation_targets()).unwrap_or_default();
@@ -467,8 +465,8 @@ impl Mount {
             // mounts that receive propagation from mount B and do not have submounts under them are
             // unmounted.
             let scope = RcuReadScope::new();
-            if let Some(submount) = peer.relations.submounts.get(&scope, mount_hash_key) {
-                if submount.mount.relations.submounts_len() != 0 {
+            if let Some(submount) = peer.relations.get_submount(&scope, mount_hash_key) {
+                if submount.relations.submounts_len() != 0 {
                     continue;
                 }
             }
@@ -501,7 +499,7 @@ impl Mount {
                 return error!(EINVAL);
             }
             source_parent
-                .remove_submount_internal(&mounts_guard, source_mountpoint.mount_hash_key())?;
+                .remove_submount_internal(&mounts_guard, &source_mountpoint.mount_hash_key())?;
             source_mount.relations.set_mountpoint(&mounts_guard, None);
         }
 
@@ -528,8 +526,10 @@ impl Mount {
 
         if flags.contains(MountFlags::REC) {
             for (dir, submount) in self.relations.iter_submounts(&RcuReadScope::new()) {
-                let submount = submount.mount.clone_mount_recursive(mounts_guard);
-                clone.add_submount_internal(mounts_guard, dir, submount);
+                if let (Some(dir), Some(submount)) = (dir.0.upgrade(), submount.upgrade()) {
+                    let submount = submount.clone_mount_recursive(mounts_guard);
+                    clone.add_submount_internal(mounts_guard, &dir, submount);
+                }
             }
         }
 
@@ -565,7 +565,9 @@ impl Mount {
 
         if recursive {
             for (_, submount) in self.relations.iter_submounts(&starnix_rcu::RcuReadScope::new()) {
-                submount.mount.change_propagation(mounts_guard, flag, recursive);
+                if let Some(submount) = submount.upgrade() {
+                    submount.change_propagation(mounts_guard, flag, recursive);
+                }
             }
         }
     }
@@ -620,7 +622,7 @@ impl Mount {
 
         let mountpoint = self.mountpoint().ok_or_else(|| errno!(EINVAL))?;
         let parent_mount = mountpoint.mount.as_ref().expect("a mountpoint must be part of a mount");
-        parent_mount.remove_submount(mounts_guard, mountpoint.mount_hash_key())
+        parent_mount.remove_submount(mounts_guard, &mountpoint.mount_hash_key())
     }
 
     /// Returns the security state of the fs.
@@ -645,14 +647,14 @@ impl Mount {
     /// Returns true if there is a submount on top of `dir_entry`.
     pub fn has_submount(&self, dir_entry: &DirEntryHandle) -> bool {
         let scope = RcuReadScope::new();
-        self.relations.get_submount(&scope, ArcKey::ref_cast(dir_entry)).is_some()
+        self.relations.get_submount(&scope, &PtrKey::from(dir_entry)).is_some()
     }
 
     /// The NamespaceNode on which this Mount is mounted.
     pub fn mountpoint(&self) -> Option<NamespaceNode> {
         let scope = RcuReadScope::new();
         let (mount, entry) = self.relations.mountpoint(&scope)?;
-        Some(NamespaceNode::new(mount.upgrade()?, entry.clone()))
+        Some(NamespaceNode::new(mount.upgrade()?, entry.upgrade()?))
     }
 
     /// Add a child mount *without propagating it to the peer group*. For internal use only.
@@ -672,26 +674,28 @@ impl Mount {
             let scope = RcuReadScope::new();
             mount.relations.mountpoint(&scope).map(|x| x.clone())
         };
-        mount.relations.set_mountpoint(guard, Some((Arc::downgrade(self), Arc::clone(dir))));
+        mount.relations.set_mountpoint(guard, Some((Arc::downgrade(self), Arc::downgrade(dir))));
         assert!(old_mountpoint.is_none(), "add_submount can only take a newly created mount");
 
         let old_mount = self.relations.insert_submount(
             guard,
-            ArcKey::ref_cast(dir).clone(),
-            Arc::new(submount),
+            WeakKey::from(dir),
+            Arc::downgrade(&mount),
+            submount,
         );
 
         if let Some(old_mount) = old_mount {
             old_mount
                 .mount
                 .relations
-                .set_mountpoint(guard, Some((Arc::downgrade(&mount), Arc::clone(&mount.root))));
+                .set_mountpoint(guard, Some((Arc::downgrade(&mount), Arc::downgrade(&mount.root))));
             let new_old_submount =
                 mount.kernel().mounts.register_mount(&mount.root, old_mount.mount.clone());
             mount.relations.insert_submount(
                 guard,
-                ArcKey(mount.root.clone()),
-                Arc::new(new_old_submount),
+                WeakKey::from(&mount.root),
+                Arc::downgrade(&old_mount.mount),
+                new_old_submount,
             );
         }
     }
@@ -699,7 +703,7 @@ impl Mount {
     pub fn remove_submount_internal(
         self: &MountHandle,
         guard: &MountsWriteToken,
-        mount_hash_key: &ArcKey<DirEntry>,
+        mount_hash_key: &PtrKey<DirEntry>,
     ) -> Result<(), Errno> {
         self.relations.remove_submount(guard, mount_hash_key)
     }
@@ -914,7 +918,7 @@ impl DynamicFileSource for ProcMountsFileSource {
         // Also has the benefit of correct (i.e. chronological) ordering. But then we have to do
         // extra work to maintain it.
         let task = Task::from_weak(&self.0)?;
-        let task_fs = task.running_state()?.fs.read();
+        let task_fs = task.running_state()?.fs();
         let root = task_fs.root();
         let ns = task_fs.namespace();
         for_each_mount(&ns.root_mount, &mut |mount| {
@@ -1012,7 +1016,7 @@ impl DynamicFileSource for ProcMountinfoFile {
         // Also has the benefit of correct (i.e. chronological) ordering. But then we have to do
         // extra work to maintain it.
         let task = Task::from_weak(&self.0)?;
-        let task_fs = task.running_state()?.fs.read();
+        let task_fs = task.running_state()?.fs();
         let root = task_fs.root();
         let ns = task_fs.namespace();
         for_each_mount(&ns.root_mount, &mut |mount| {
@@ -1059,7 +1063,9 @@ fn for_each_mount<E>(
 ) -> Result<(), E> {
     callback(mount)?;
     for (_, s) in mount.relations.iter_submounts(&RcuReadScope::new()) {
-        for_each_mount(&s.mount, callback)?;
+        if let Some(submount) = s.upgrade() {
+            for_each_mount(&submount, callback)?;
+        }
     }
     Ok(())
 }
@@ -1607,9 +1613,9 @@ impl NamespaceNode {
     fn enter_one_mount(&self) -> Option<NamespaceNode> {
         if let Some(mount) = self.mount.deref() {
             if let Some(submount) =
-                mount.relations.get_submount(&RcuReadScope::new(), ArcKey::ref_cast(&self.entry))
+                mount.relations.get_submount(&RcuReadScope::new(), &PtrKey::from(&self.entry))
             {
-                return Some(submount.mount.root());
+                return Some(submount.root());
             }
         }
         None
@@ -1818,8 +1824,8 @@ impl NamespaceNode {
         Self { mount: self.mount.clone(), entry }
     }
 
-    fn mount_hash_key(&self) -> &ArcKey<DirEntry> {
-        ArcKey::ref_cast(&self.entry)
+    fn mount_hash_key(&self) -> PtrKey<DirEntry> {
+        PtrKey::from(&self.entry)
     }
 
     pub fn apply_suid_and_sgid(&self, creds: &mut Credentials) {
@@ -1972,7 +1978,7 @@ impl Drop for FileMapping {
 
 /// Tracks all mounts, keyed by mount point.
 pub struct Mounts {
-    mounts: RcuHashMap<WeakKey<DirEntry>, Vec<ArcKey<Mount>>>,
+    mounts: RcuHashMap<WeakKey<DirEntry>, Vec<WeakKey<Mount>>>,
 }
 
 impl Mounts {
@@ -1981,24 +1987,24 @@ impl Mounts {
     }
 
     /// Registers the mount in the global mounts map.
-    fn register_mount(&self, dir_entry: &Arc<DirEntry>, mount: MountHandle) -> Submount {
+    fn register_mount(&self, dir_entry: &DirEntryHandle, mount: MountHandle) -> Submount {
         let mut mounts = self.mounts.lock();
         let key = WeakKey::from(dir_entry);
         let mut vec = mounts.get(&key).unwrap_or_else(|| {
             dir_entry.set_has_mounts(true);
             Vec::new()
         });
-        vec.push(ArcKey(mount.clone()));
+        vec.push(WeakKey::from(&mount));
         mounts.insert(key, vec);
-        Submount { dir: ArcKey(dir_entry.clone()), mount }
+        Submount { dir: dir_entry.clone(), mount }
     }
 
     /// Unregisters the mount. This is called by `Submount::drop`.
-    fn unregister_mount(&self, dir_entry: &Arc<DirEntry>, mount: &MountHandle) {
+    fn unregister_mount(&self, dir_entry: &DirEntryHandle, mount: &MountHandle) {
         let mut mounts = self.mounts.lock();
         let key = WeakKey::from(dir_entry);
         if let Some(mut vec) = mounts.get(&key) {
-            let index = vec.iter().position(|e| e == ArcKey::ref_cast(mount)).unwrap();
+            let index = vec.iter().position(|e| e == &WeakKey::from(mount)).unwrap();
             if vec.len() == 1 {
                 mounts.remove(&key);
                 dir_entry.set_has_mounts(false);
@@ -2013,11 +2019,12 @@ impl Mounts {
     /// unlinked (which would normally result in EBUSY, but not if it isn't mounted in the local
     /// namespace).
     pub fn unmount(&self, dir_entry: &DirEntry) {
-        let mounts = self.mounts.lock().remove(&PtrKey::from(dir_entry as *const _));
+        let mounts = self.mounts.lock().remove(&PtrKey::from(dir_entry));
         if let Some(mounts) = mounts {
-            if let Some(kernel) = mounts.get(0).map(|m| m.kernel()) {
+            let upgraded: Vec<_> = mounts.iter().filter_map(|m| m.0.upgrade()).collect();
+            if let Some(kernel) = upgraded.first().map(|m| m.kernel()) {
                 let mounts_guard = kernel.mounts_lock();
-                let mounts = scopeguard::guard(mounts, |mounts| mounts_guard.defer_drop(mounts));
+                let mounts = scopeguard::guard(upgraded, |mounts| mounts_guard.defer_drop(mounts));
                 for mount in &*mounts {
                     // Ignore errors.
                     let _ = mount.unmount(&mounts_guard, UnmountFlags::DETACH);
@@ -2032,7 +2039,9 @@ impl Mounts {
     pub fn clear(&self) {
         for (_dir_entry, mounts) in self.mounts.lock().drain() {
             for mount in mounts {
-                mount.fs.force_unmount_ops();
+                if let Some(mount) = mount.0.upgrade() {
+                    mount.fs.force_unmount_ops();
+                }
             }
         }
     }
@@ -2044,8 +2053,10 @@ impl Mounts {
             let mut seen = HashSet::new();
             for (_dir_entry, m_list) in self.mounts.iter(&scope) {
                 for m in m_list {
-                    if seen.insert(Arc::as_ptr(&m.fs)) {
-                        filesystems.push(m.fs.clone());
+                    if let Some(mount) = m.0.upgrade() {
+                        if seen.insert(Arc::as_ptr(&mount.fs)) {
+                            filesystems.push(mount.fs.clone());
+                        }
                     }
                 }
             }
@@ -2085,7 +2096,14 @@ impl fmt::Debug for Mount {
             .field("id", &(self as *const Mount))
             .field("root", &self.root)
             .field("mountpoint", &self.relations.mountpoint(&scope))
-            .field("submounts", &self.relations.iter_submounts(&scope).collect::<Vec<_>>())
+            .field(
+                "submounts",
+                &self
+                    .relations
+                    .iter_submounts(&scope)
+                    .filter_map(|(_, m)| m.upgrade())
+                    .collect::<Vec<_>>(),
+            )
             .finish()
     }
 }
@@ -2093,36 +2111,13 @@ impl fmt::Debug for Mount {
 /// A RAII object that unregisters a mount when dropped.
 #[derive(Debug)]
 struct Submount {
-    dir: ArcKey<DirEntry>,
+    dir: DirEntryHandle,
     mount: MountHandle,
 }
-
-// TODO(b/525158773): Temporary impl to allow incremental RCU safety refactoring.
-// SAFETY: We wait for an RCU grace period before returning from syscalls so side effects are guaranteed to be visible.
-unsafe impl RcuDroppable for Submount {}
 
 impl Drop for Submount {
     fn drop(&mut self) {
         self.mount.kernel().mounts.unregister_mount(&self.dir, &self.mount)
-    }
-}
-
-/// Submount is stored in a mount's submounts hash set, which is keyed by the mountpoint.
-impl Eq for Submount {}
-impl PartialEq<Self> for Submount {
-    fn eq(&self, other: &Self) -> bool {
-        self.dir == other.dir
-    }
-}
-impl Hash for Submount {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        self.dir.hash(state)
-    }
-}
-
-impl Borrow<ArcKey<DirEntry>> for Submount {
-    fn borrow(&self) -> &ArcKey<DirEntry> {
-        &self.dir
     }
 }
 
