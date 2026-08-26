@@ -294,38 +294,40 @@ impl FailureStats {
         node.record_uint("NoConnections", *no_connections);
         node.record_uint("Timeout", *timeout);
 
-        let io_error_codes = node.create_child("IoErrorCounts");
-        for (kind, count) in io {
-            let child = io_error_codes.create_child(format!("{kind:?}"));
-            child.record_uint("count", *count);
-            io_error_codes.record(child);
-        }
-        node.record(io_error_codes);
+        node.record_child("IoErrorCounts", |io_error_codes| {
+            for (kind, count) in io {
+                io_error_codes.record_child(format!("{kind:?}"), |child| {
+                    child.record_uint("count", *count);
+                });
+            }
+        });
 
-        let proto_error_codes = node.create_child("ProtoErrorCounts");
-        for (kind, count) in proto {
-            let child = proto_error_codes.create_child(kind);
-            child.record_uint("count", *count);
-            proto_error_codes.record(child);
-        }
-        node.record(proto_error_codes);
+        node.record_child("ProtoErrorCounts", |proto_error_codes| {
+            for (kind, count) in proto {
+                proto_error_codes.record_child(kind, |child| {
+                    child.record_uint("count", *count);
+                });
+            }
+        });
 
-        let no_records_found_response_codes = node.create_child("NoRecordsFoundResponseCodeCounts");
-        for (HashableResponseCode { response_code }, count) in response_code_counts {
-            let child =
-                no_records_found_response_codes.create_child(format!("{:?}", response_code));
-            child.record_uint("count", *count);
-            no_records_found_response_codes.record(child);
-        }
-        node.record(no_records_found_response_codes);
+        node.record_child("NoRecordsFoundResponseCodeCounts", |no_records_found_response_codes| {
+            for (HashableResponseCode { response_code }, count) in response_code_counts {
+                no_records_found_response_codes.record_child(
+                    format!("{:?}", response_code),
+                    |child| {
+                        child.record_uint("count", *count);
+                    },
+                );
+            }
+        });
 
-        let unhandled_resolve_error_kinds = node.create_child("UnhandledResolveErrorKindCounts");
-        for (error_kind, count) in unhandled_resolve_error_kind {
-            let child = unhandled_resolve_error_kinds.create_child(error_kind);
-            child.record_uint("count", *count);
-            unhandled_resolve_error_kinds.record(child);
-        }
-        node.record(unhandled_resolve_error_kinds);
+        node.record_child("UnhandledResolveErrorKindCounts", |unhandled_resolve_error_kinds| {
+            for (error_kind, count) in unhandled_resolve_error_kind {
+                unhandled_resolve_error_kinds.record_child(error_kind, |child| {
+                    child.record_uint("count", *count);
+                });
+            }
+        });
     }
 }
 
@@ -1166,10 +1168,10 @@ fn add_config_state_inspect(
             let srv = fuchsia_inspect::Inspector::default();
             let server_list = config_state.servers();
             for (i, server) in server_list.into_iter().enumerate() {
-                let child = srv.root().create_child(format!("{}", i));
-                let net_ext::SocketAddress(addr) = server.into();
-                child.record_string("address", format!("{}", addr));
-                srv.root().record(child);
+                srv.root().record_child(format!("{}", i), |child| {
+                    let net_ext::SocketAddress(addr) = server.into();
+                    child.record_string("address", format!("{}", addr));
+                });
             }
             Ok(srv)
         }
@@ -1194,23 +1196,22 @@ where
                 NameServerStats { addr, proto, failures, successes, recent_errors, success_streak },
             ) in shared_resolver.name_server_stats().into_iter().enumerate()
             {
-                let child = inspector.root().create_child(format!("{i}"));
-                child.record_string("address", format!("{addr}"));
-                child.record_string("protocol", format!("{proto:?}"));
-                child.record_uint("successful_queries", successes as u64);
-                child.record_uint("failed_queries", failures as u64);
-                child.record_uint("success_streak", success_streak as u64);
+                inspector.root().record_child(format!("{i}"), |child| {
+                    child.record_string("address", format!("{addr}"));
+                    child.record_string("protocol", format!("{proto:?}"));
+                    child.record_uint("successful_queries", successes as u64);
+                    child.record_uint("failed_queries", failures as u64);
+                    child.record_uint("success_streak", success_streak as u64);
 
-                let failure_stats =
-                    recent_errors.iter().fold(FailureStats::default(), |mut stats, error| {
-                        stats.increment(error);
-                        stats
+                    let failure_stats =
+                        recent_errors.iter().fold(FailureStats::default(), |mut stats, error| {
+                            stats.increment(error);
+                            stats
+                        });
+                    child.record_child("errors", |errors| {
+                        failure_stats.populate_inspect_node(&errors);
                     });
-                let errors = child.create_child("errors");
-                failure_stats.populate_inspect_node(&errors);
-                child.record(errors);
-
-                inspector.root().record(child);
+                });
             }
             Ok(inspector)
         }
@@ -1229,9 +1230,9 @@ fn add_query_stats_inspect(
             let past_queries = &*stats.inner.lock().await;
             let node = fuchsia_inspect::Inspector::default();
             for (i, query_window) in past_queries.iter().enumerate() {
-                let child = node.root().create_child(format!("window {}", i + 1));
-                record_single_query_stats_node(&child, query_window);
-                node.root().record(child);
+                node.root().record_child(format!("window {}", i + 1), |child| {
+                    record_single_query_stats_node(child, query_window)
+                });
             }
             Ok(node)
         }
