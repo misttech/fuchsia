@@ -1,1 +1,1 @@
-This directory contains code used to evaluate Gemini's ability to write drivers.
+This directory contains code used to evaluate agents' ability to write drivers.

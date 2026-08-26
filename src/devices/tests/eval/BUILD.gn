@@ -6,6 +6,7 @@ group("drivers") {
   testonly = true
   deps = [
     "devicetree:drivers",
+    "probe_gpio_driver:component",
     "serve-fidl:drivers",
   ]
 }
