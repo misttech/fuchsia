@@ -147,8 +147,8 @@ impl Snapshot {
     ) -> Result<String, ReaderError> {
         let mut data = block.inline_data()?.to_vec();
         let total_length = block.total_length();
-        if data.len() == total_length {
-            return Ok(String::from_utf8_lossy(&data).to_string());
+        if total_length <= data.len() {
+            return Ok(String::from_utf8_lossy(&data[..total_length]).to_string());
         }
 
         let extent_index = block.next_extent();
@@ -518,6 +518,32 @@ mod tests {
             let slice = $container.get_slice($container.len()).unwrap().to_vec();
             Snapshot::try_from_with_callback(&slice, $callback)
         }};
+    }
+
+    #[fuchsia::test]
+    fn test_string_reference_short_total_length() -> Result<(), Error> {
+        let size = 4096;
+        let (mut container, storage) = Container::read_and_write(size).unwrap();
+        let _ = Block::free(
+            &mut container,
+            BlockIndex::HEADER,
+            constants::HEADER_ORDER,
+            BlockIndex::EMPTY,
+        )?
+        .become_reserved()
+        .become_header(size)?;
+
+        let mut str_block = Block::free(&mut container, 2.into(), 0, BlockIndex::EMPTY)?
+            .become_reserved()
+            .become_string_reference();
+        str_block.write_inline(b"hello");
+        str_block.set_total_length(0);
+
+        let snapshot = get_snapshot!(container, storage, || {})?;
+        let name = snapshot.get_name(2.into());
+        assert_eq!(name, Some("".to_string()));
+
+        Ok(())
     }
 
     #[fuchsia::test]
