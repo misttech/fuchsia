@@ -65,6 +65,7 @@ class SystemLogRecorder : public fidl::Server<fuchsia_feedback_internal::SystemL
       fit::result<SystemLogWriter::WriterError, SystemLogWriter::Logs> result);
 
   async_dispatcher_t* archive_dispatcher_;
+  std::unique_ptr<RedactorBase> redactor_;
   const zx::duration write_period_;
   bool is_running_;
 

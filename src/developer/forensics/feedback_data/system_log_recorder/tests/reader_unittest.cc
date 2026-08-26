@@ -47,10 +47,6 @@ std::unique_ptr<Encoder> MakeIdentityEncoder() {
   return std::unique_ptr<Encoder>(new IdentityEncoder());
 }
 
-std::unique_ptr<RedactorBase> MakeIdentityRedactor() {
-  return std::unique_ptr<RedactorBase>(new IdentityRedactor(inspect::BoolProperty()));
-}
-
 std::string MakeLogFilePath(files::ScopedTempDir& temp_dir, const size_t file_num) {
   return files::JoinPath(temp_dir.path(), std::to_string(file_num));
 }
@@ -140,8 +136,9 @@ TEST(ReaderTest, SortsMessagesMixed) {
 TEST(ReaderTest, SortsMessages) {
   files::ScopedTempDir temp_dir;
 
-  LogMessageStore store(StorageSize::Kilobytes(8), StorageSize::Kilobytes(8),
-                        MakeIdentityRedactor(), MakeIdentityEncoder());
+  IdentityRedactor redactor(inspect::BoolProperty{});
+  LogMessageStore store(StorageSize::Kilobytes(8), StorageSize::Kilobytes(8), &redactor,
+                        MakeIdentityEncoder());
   SystemLogWriter writer(temp_dir.path(), 1u, std::make_unique<IdentityDecoder>());
 
   EXPECT_TRUE(store.Add(BuildLogMessage(FUCHSIA_LOG_INFO, "line 0", zx::msec(0))));
@@ -207,8 +204,8 @@ TEST(ReaderTest, SortsMessagesMultipleFiles) {
   files::ScopedTempDir temp_dir;
 
   // Set the block and buffer to both hold 4 log messages.
-  LogMessageStore store(kMaxLogLineSize * 4, kMaxLogLineSize * 4, MakeIdentityRedactor(),
-                        MakeIdentityEncoder());
+  IdentityRedactor redactor(inspect::BoolProperty{});
+  LogMessageStore store(kMaxLogLineSize * 4, kMaxLogLineSize * 4, &redactor, MakeIdentityEncoder());
   SystemLogWriter writer(temp_dir.path(), 8u, std::make_unique<IdentityDecoder>());
 
   EXPECT_TRUE(store.Add(BuildLogMessage(FUCHSIA_LOG_INFO, "line 0", zx::msec(0))));

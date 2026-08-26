@@ -47,7 +47,7 @@ class LogMessageStore : public LogSink {
   };
 
   LogMessageStore(StorageSize max_block_capacity, StorageSize max_buffer_capacity,
-                  std::unique_ptr<RedactorBase> redactor, std::unique_ptr<Encoder> encoder);
+                  RedactorBase* redactor, std::unique_ptr<Encoder> encoder);
 
   // May add the encoded log message to the store:
   // * The message is dropped if the store has reached its maximum capacity, returning false.
@@ -115,7 +115,7 @@ class LogMessageStore : public LogSink {
   size_t repeat_buffer_count_ = 0;
   std::optional<std::string> to_append_ = std::nullopt;
 
-  std::unique_ptr<RedactorBase> redactor_;
+  RedactorBase* redactor_;
   std::unique_ptr<Encoder> encoder_;
 };
 
