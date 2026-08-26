@@ -4,9 +4,6 @@
 
 #include <fuchsia/hardware/pciroot/cpp/banjo.h>
 #include <lib/driver/mmio/testing/cpp/test-helper.h>
-#include <lib/inspect/cpp/hierarchy.h>
-#include <lib/inspect/cpp/vmo/types.h>
-#include <lib/inspect/testing/cpp/inspect.h>
 #include <lib/pci/constants.h>
 #include <lib/zx/vmo.h>
 #include <zircon/limits.h>

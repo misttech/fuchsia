@@ -32,7 +32,6 @@ test("pci-unit") {
     "//sdk/lib/component/outgoing/cpp",
     "//sdk/lib/driver/metadata/cpp",
     "//sdk/lib/driver/mmio/testing/cpp",
-    "//sdk/lib/inspect/testing/cpp",
     "//src/devices/testing/fake-bti",
     "//src/devices/testing/fake-msi",
     "//src/devices/testing/mock-ddk",
@@ -40,7 +39,6 @@ test("pci-unit") {
     "//src/lib/testing/loop_fixture",
     "//src/lib/testing/predicates",
     "//third_party/googletest:gtest",
-    "//zircon/system/ulib/inspect",
   ]
 
   public_deps = [ "//src/devices/testing/fake-resource" ]

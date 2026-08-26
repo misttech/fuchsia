@@ -83,9 +83,7 @@ zx_status_t pci_bus_bind(void* ctx, zx_device_t* parent) {
 }
 
 zx_status_t Bus::Initialize() {
-  zx_status_t status = DdkAdd(ddk::DeviceAddArgs("bus")
-                                  .set_flags(DEVICE_ADD_NON_BINDABLE)
-                                  .set_inspect_vmo(GetInspectVmo()));
+  zx_status_t status = DdkAdd(ddk::DeviceAddArgs("bus").set_flags(DEVICE_ADD_NON_BINDABLE));
   if (status != ZX_OK) {
     zxlogf(ERROR, "failed to add bus driver: %s", zx_status_get_string(status));
     return status;
@@ -124,9 +122,6 @@ zx_status_t Bus::Initialize() {
   irqs_ = cpp20::span<const pci_legacy_irq>(info_.legacy_irqs_list, info_.legacy_irqs_count);
   irq_routing_entries_ =
       cpp20::span<const pci_irq_routing_entry_t>(info_.irq_routing_list, info_.irq_routing_count);
-
-  InspectInit();
-  InspectRecordPlatformInformation();
 
   // Begin our bus scan starting at our root
   ScanDownstream();
@@ -241,14 +236,13 @@ void Bus::ScanBus(BusScanEntry entry, std::list<BusScanEntry>* scan_list) {
              (is_bridge) ? "bridge" : "device", bus_id, dev_id, func_id,
              config->Read(Config::kVendorId), config->Read(Config::kDeviceId));
 
-      inspect::Node node = devices_node_.CreateChild(config->addr());
       // If we found a bridge, add it to our bridge list and initialize /
       // enumerate it after we finish scanning this bus
       if (is_bridge) {
         fbl::RefPtr<Bridge> bridge;
         uint8_t mbus_id = config->Read(Config::kSecondaryBusId);
-        zx_status_t status = Bridge::Create(zxdev(), std::move(config.value()), upstream, this,
-                                            std::move(node), mbus_id, &bridge);
+        zx_status_t status =
+            Bridge::Create(zxdev(), std::move(config.value()), upstream, this, mbus_id, &bridge);
         if (status != ZX_OK) {
           zxlogf(ERROR, "failed to create Bridge at %s: %s", config->addr(),
                  zx_status_get_string(status));
@@ -283,7 +277,7 @@ void Bus::ScanBus(BusScanEntry entry, std::list<BusScanEntry>* scan_list) {
       char addr[ZX_MAX_NAME_LEN];
       strncpy(addr, config->addr(), sizeof(addr));
       zx_status_t status =
-          pci::Device::Create(zxdev(), std::move(config.value()), upstream, this, std::move(node),
+          pci::Device::Create(zxdev(), std::move(config.value()), upstream, this,
                               /*has_acpi=*/DeviceHasAcpi(config->bdf()),
                               /*has_devicetree=*/DeviceHasDevicetree(config->bdf()));
       if (status != ZX_OK) {

@@ -10,7 +10,6 @@
 #include <inttypes.h>
 #include <lib/ddk/binding_driver.h>
 #include <lib/fit/defer.h>
-#include <lib/inspect/cpp/inspector.h>
 #include <lib/pci/constants.h>
 #include <lib/pci/hw.h>
 #include <lib/zx/interrupt.h>
@@ -45,8 +44,8 @@ namespace {  // anon namespace.  Externals do not need to know about DeviceImpl
 class DeviceImpl : public Device {
  public:
   static zx_status_t Create(zx_device_t* parent, std::unique_ptr<Config>&& cfg,
-                            UpstreamNode* upstream, BusDeviceInterface* bdi, inspect::Node node,
-                            bool has_acpi, bool has_devicetree);
+                            UpstreamNode* upstream, BusDeviceInterface* bdi, bool has_acpi,
+                            bool has_devicetree);
 
   // Implement ref counting, do not let derived classes override.
   PCI_IMPLEMENT_REFCOUNTED;
@@ -56,17 +55,17 @@ class DeviceImpl : public Device {
 
  protected:
   DeviceImpl(zx_device_t* parent, std::unique_ptr<Config>&& cfg, UpstreamNode* upstream,
-             BusDeviceInterface* bdi, inspect::Node node, bool has_acpi, bool has_devicetree)
-      : Device(parent, std::move(cfg), upstream, bdi, std::move(node), /*is_bridge=*/false,
-               has_acpi, has_devicetree) {}
+             BusDeviceInterface* bdi, bool has_acpi, bool has_devicetree)
+      : Device(parent, std::move(cfg), upstream, bdi, /*is_bridge=*/false, has_acpi,
+               has_devicetree) {}
 };
 
 zx_status_t DeviceImpl::Create(zx_device_t* parent, std::unique_ptr<Config>&& cfg,
-                               UpstreamNode* upstream, BusDeviceInterface* bdi, inspect::Node node,
-                               bool has_acpi, bool has_devicetree) {
+                               UpstreamNode* upstream, BusDeviceInterface* bdi, bool has_acpi,
+                               bool has_devicetree) {
   fbl::AllocChecker ac;
-  auto raw_dev = new (&ac)
-      DeviceImpl(parent, std::move(cfg), upstream, bdi, std::move(node), has_acpi, has_devicetree);
+  auto raw_dev =
+      new (&ac) DeviceImpl(parent, std::move(cfg), upstream, bdi, has_acpi, has_devicetree);
   if (!ac.check()) {
     zxlogf(ERROR, "[%s] Out of memory attemping to create PCIe device.", cfg->addr());
     return ZX_ERR_NO_MEMORY;
@@ -87,8 +86,7 @@ zx_status_t DeviceImpl::Create(zx_device_t* parent, std::unique_ptr<Config>&& cf
 }  // namespace
 
 Device::Device(zx_device_t* parent, std::unique_ptr<Config>&& config, UpstreamNode* upstream,
-               BusDeviceInterface* bdi, inspect::Node node, bool is_bridge, bool has_acpi,
-               bool has_devicetree)
+               BusDeviceInterface* bdi, bool is_bridge, bool has_acpi, bool has_devicetree)
     : cfg_(std::move(config)),
       upstream_(upstream),
       bdi_(bdi),
@@ -96,8 +94,7 @@ Device::Device(zx_device_t* parent, std::unique_ptr<Config>&& config, UpstreamNo
       is_bridge_(is_bridge),
       has_acpi_(has_acpi),
       has_devicetree_(has_devicetree),
-      parent_(parent),
-      inspect_(std::move(node))
+      parent_(parent)
 
 {}
 
@@ -116,10 +113,9 @@ Device::~Device() {
 }
 
 zx_status_t Device::Create(zx_device_t* parent, std::unique_ptr<Config>&& config,
-                           UpstreamNode* upstream, BusDeviceInterface* bdi, inspect::Node node,
-                           bool has_acpi, bool has_devicetree) {
-  return DeviceImpl::Create(parent, std::move(config), upstream, bdi, std::move(node), has_acpi,
-                            has_devicetree);
+                           UpstreamNode* upstream, BusDeviceInterface* bdi, bool has_acpi,
+                           bool has_devicetree) {
+  return DeviceImpl::Create(parent, std::move(config), upstream, bdi, has_acpi, has_devicetree);
 }
 
 zx_status_t Device::Init() {
@@ -374,8 +370,6 @@ zx::result<> Device::ProbeBar(uint8_t bar_id) {
     // then they should be removed from the size mask before incrementing it.
     size_mask &= UINT16_MAX;
   }
-  InspectRecordBarInitialState(bar_id, bar.address);
-
   // No matter what configuration we've found, |size_mask| should contain a
   // mask representing all the valid bits that can be set in the address.
   bar.size = size_mask + 1;
@@ -384,7 +378,6 @@ zx::result<> Device::ProbeBar(uint8_t bar_id) {
   // access mode now that probing is complete.
   WriteBarInformation(bar);
 
-  InspectRecordBarProbedState(bar_id, bar);
   bars_[bar_id] = std::move(bar);
   return zx::ok();
 }
@@ -465,9 +458,6 @@ zx::result<> Device::AllocateBar(uint8_t bar_id) {
   zx::result<std::unique_ptr<PciAllocation>> result;
   if (bar.address) {
     result = AllocateFromUpstream(bar, bar.address);
-    if (!result.is_ok()) {
-      InspectRecordBarFailure(bar_id, {bar.address, bar.size});
-    }
   }
 
   // If the previous allocation failed, or result has been unused, then try to
@@ -480,11 +470,9 @@ zx::result<> Device::AllocateBar(uint8_t bar_id) {
     return zx::error(ZX_ERR_NOT_FOUND);
   }
 
-  InspectRecordBarAllocation(bar_id, {result.value()->base(), result.value()->size()});
   bar.allocation = std::move(result.value());
   bar.address = bar.allocation->base();
   WriteBarInformation(bar);
-  InspectRecordBarConfiguredState(bar_id, cfg_->Read(Config::kBar(bar_id)));
 
   return zx::ok();
 }

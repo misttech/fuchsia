@@ -12,8 +12,6 @@
 #include <lib/ddk/device.h>
 #include <lib/driver/mmio/cpp/mmio.h>
 #include <lib/fidl/cpp/wire/channel.h>
-#include <lib/inspect/cpp/inspector.h>
-#include <lib/inspect/cpp/vmo/types.h>
 #include <lib/stdcompat/span.h>
 #include <lib/zx/interrupt.h>
 #include <lib/zx/msi.h>
@@ -61,24 +59,6 @@ using LegacyIrqs = std::unordered_map<uint32_t, pci_legacy_irq>;
 using SharedIrqMap = std::unordered_map<uint32_t, std::unique_ptr<SharedVector>>;
 namespace PciFidl = fuchsia_hardware_pci;
 
-class BusInspect {
- public:
-  static constexpr std::string_view kBus = "Bus";
-  static constexpr std::string_view kDevices = "Devices";
-  static constexpr std::string_view kAcpiDevices = "acpi devices";
-  static constexpr std::string_view kName = "name";
-  static constexpr std::string_view kBusStart = "bus start";
-  static constexpr std::string_view kBusEnd = "bus end";
-  static constexpr std::string_view kSegmentGroup = "segment group";
-  static constexpr std::string_view kEcam = "ecam";
-  static constexpr std::string_view kVectors = "vectors";
-  static constexpr std::string_view kIrqRoutingEntries = "irq routing entries";
-  static constexpr std::string_view kPortDeviceId = "port device id";
-  static constexpr std::string_view kPortFunctionId = "port function id";
-  static constexpr std::string_view kDeviceId = "device id";
-  static constexpr std::string_view kPins = "pins";
-};
-
 // A tree of all pci Device objects in the bus topology.
 using DeviceTree =
     fbl::WAVLTree<pci_bdf_t, fbl::RefPtr<pci::Device>, pci::Device::KeyTraitsSortByBdf>;
@@ -87,8 +67,7 @@ class Bus;
 using PciBusType = ddk::Device<Bus, ddk::Messageable<PciFidl::Bus>::Mixin>;
 class Bus : public PciBusType,
             public ddk::EmptyProtocol<ZX_PROTOCOL_PCI>,
-            public BusDeviceInterface,
-            public BusInspect {
+            public BusDeviceInterface {
  public:
   static zx_status_t Create(zx_device_t* parent);
   Bus(zx_device_t* parent, const pciroot_protocol_t* pciroot, pci_platform_info_t info,
@@ -122,8 +101,6 @@ class Bus : public PciBusType,
   void GetDevices(GetDevicesCompleter::Sync& completer) final;
   void GetHostBridgeInfo(GetHostBridgeInfoCompleter::Sync& completer) final;
   void ReadBar(ReadBarRequestView request, ReadBarCompleter::Sync& completer) final;
-
-  zx::vmo GetInspectVmo() { return inspector_.DuplicateVmo(); }
 
  protected:
   // These are used by the derived TestBus class.
@@ -165,10 +142,6 @@ class Bus : public PciBusType,
   // Queues a packet informing the IRQ worker that it should exit.
   zx_status_t StopIrqWorker();
 
-  // Diagnostic methods
-  void InspectInit();
-  void InspectRecordPlatformInformation();
-
   // members
   ddk::PcirootProtocolClient pciroot_;
   const pci_platform_info_t info_;
@@ -193,11 +166,6 @@ class Bus : public PciBusType,
   LegacyIrqs legacy_irqs_;
   SharedIrqMap shared_irqs_ __TA_GUARDED(devices_lock_);
 
-  // Diagnostics.
-  inspect::Inspector inspector_;
-  inspect::Node bus_node_;
-  inspect::Node devices_node_;
-  inspect::StringArray acpi_node_;
   fidl::ServerBindingGroup<fuchsia_hardware_pci::Bus> bindings_;
 };
 

@@ -103,9 +103,6 @@ zx_status_t Device::SetIrqMode(fpci::InterruptMode mode, uint32_t irq_cnt) {
       break;
   }
 
-  if (status == ZX_OK) {
-    InspectUpdateInterrupts();
-  }
   return status;
 }
 
@@ -197,7 +194,6 @@ zx::result<zx::interrupt> Device::MapInterrupt(uint32_t which_irq) {
 }
 
 zx_status_t Device::SignalLegacyIrq(zx_instant_boot_t timestamp) {
-  InspectIncrementLegacySignalCount();
   return irqs_.legacy.trigger(/*options=*/0, zx::time_boot(timestamp));
 }
 
@@ -206,7 +202,6 @@ zx_status_t Device::AckLegacyIrq() {
     return ZX_ERR_BAD_STATE;
   }
 
-  InspectIncrementLegacyAckCount();
   EnableLegacyIrq();
   return ZX_OK;
 }

@@ -11,7 +11,6 @@
 #include <lib/component/outgoing/cpp/outgoing_directory.h>
 #include <lib/driver/mmio/cpp/mmio.h>
 #include <lib/fidl/cpp/wire/channel.h>
-#include <lib/inspect/testing/cpp/inspect.h>
 #include <lib/pci/hw.h>
 #include <lib/zx/bti.h>
 #include <lib/zx/clock.h>
@@ -34,7 +33,6 @@
 #include "src/devices/testing/mock-ddk/mock-device.h"
 #include "src/lib/testing/loop_fixture/test_loop_fixture.h"
 #include "src/lib/testing/predicates/status.h"
-#include "test_helpers.h"
 
 namespace pci {
 
@@ -166,7 +164,7 @@ void PciBusTests::SetBoardConfiguration(fuchsia_hardware_pci::BoardConfiguration
 }
 
 // An encapsulated pci::Bus to allow inspection of some internal state.
-class TestBus : public ::pci_testing::InspectHelper, public pci::Bus {
+class TestBus : public pci::Bus {
  public:
   TestBus(zx_device_t* parent, const pciroot_protocol_t* pciroot, const pci_platform_info_t info,
           std::optional<fdf::MmioBuffer> ecam)
@@ -495,36 +493,6 @@ TEST_F(PciBusTests, NonDevicetreeDeviceAddsCompositeSpec) {
   auto* bus = owned_bus.release();
   ASSERT_EQ(bus->GetDeviceCount(), 1u);
   EXPECT_EQ(g_pci_composite_spec_add_count, 1);
-}
-
-TEST_F(PciBusTests, Inspect) {
-  // Ensure that the Bus has at least one entry in every inspect category by setting up IRQs
-  pciroot().acpi_devices().push_back({0x0, 0x0, 0x1});
-  uint8_t vector = 0x10;
-  [[maybe_unused]] zx::interrupt bus_interrupt = AddLegacyIrqToBus(vector);
-  AddRoutingEntryToBus(/*p_dev=*/std::nullopt, /*p_func=*/std::nullopt, /*dev_id=*/0,
-                       /*a=*/vector,
-                       /*b=*/0, /*c=*/0, /*d=*/0);
-  auto owned_bus = std::make_unique<TestBus>(parent(), pciroot().proto(), pciroot().info(),
-                                             pciroot().ecam().mmio());
-  ASSERT_OK(owned_bus->Initialize());
-  ASSERT_NO_FATAL_FAILURE(owned_bus->ReadInspect(owned_bus->GetInspectVmo()));
-
-  [[maybe_unused]] auto bus_node = owned_bus->hierarchy().GetByPath({BusInspect::kBus.data()});
-  ASSERT_NE(bus_node, nullptr);
-  EXPECT_NE(bus_node->node().get_property<inspect::StringPropertyValue>(BusInspect::kName.data()),
-            nullptr);
-  EXPECT_NE(
-      bus_node->node().get_property<inspect::StringPropertyValue>(BusInspect::kBusStart.data()),
-      nullptr);
-  EXPECT_NE(bus_node->node().get_property<inspect::StringPropertyValue>(BusInspect::kBusEnd.data()),
-            nullptr);
-  EXPECT_NE(
-      bus_node->node().get_property<inspect::StringPropertyValue>(BusInspect::kSegmentGroup.data()),
-      nullptr);
-  EXPECT_NE(bus_node->node().get_property<inspect::StringPropertyValue>(BusInspect::kEcam.data()),
-            nullptr);
-  [[maybe_unused]] auto* bus = owned_bus.release();
 }
 
 TEST_F(PciBusTests, MetadataEmpty) {

@@ -4,8 +4,6 @@
 #ifndef SRC_DEVICES_PCI_DRIVERS_PCI_TEST_DRIVER_FAKE_BUS_DRIVER_H_
 #define SRC_DEVICES_PCI_DRIVERS_PCI_TEST_DRIVER_FAKE_BUS_DRIVER_H_
 
-#include <lib/inspect/cpp/inspector.h>
-
 #include <ddktl/device.h>
 
 #include "src/devices/pci/drivers/pci/test/driver/driver_tests.h"
@@ -45,7 +43,6 @@ class FakeBusDriver : public FakeBusDriverType {
   FakeUpstreamNode upstream_;
   FakeBus bus_;
   const pci_bdf_t test_bdf_ = {PCI_TEST_BUS_ID, PCI_TEST_DEV_ID, PCI_TEST_FUNC_ID};
-  inspect::Inspector inspector_;
 };
 }  // namespace pci
 
