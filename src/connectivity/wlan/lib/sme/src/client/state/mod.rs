@@ -2877,8 +2877,9 @@ mod tests {
         // (mlme->sme) Send a ConnectConf as a response
         // For the test, it doesn't matter what update we put in here, but in a normal happy path,
         // the PMK would be derived by the supplicant on connect conf.
-        suppl_mock
-            .set_on_owe_public_key_rx_updates(vec![SecAssocUpdate::Key(Key::Pmk(vec![0xbb; 32]))]);
+        suppl_mock.set_on_owe_public_key_rx_updates(vec![SecAssocUpdate::Key(Key::Pmk(
+            vec![0xbb; 32].into(),
+        ))]);
         suppl_mock
             .set_start_updates(vec![SecAssocUpdate::Status(SecAssocStatus::PmkSaEstablished)]);
         let connect_conf = create_connect_conf_with_ies(

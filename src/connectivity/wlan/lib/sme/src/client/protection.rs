@@ -277,6 +277,7 @@ impl<'a> TryFrom<SecurityContext<'a, OweAuthenticator>> for Protection {
                     ProtectionInfo::Rsne(s_rsne),
                     context.bss.bssid.into(),
                     ProtectionInfo::Rsne(a_rsne),
+                    false,
                 )
                 .map_err(|error| format_err!("Failed to create ESS-SA: {:?}", error))?;
                 Ok(Protection::Rsna(Rsna {
@@ -319,6 +320,7 @@ impl<'a> TryFrom<SecurityContext<'a, wpa::Wpa1Credentials>> for Protection {
                     ProtectionInfo::LegacyWpa(s_wpa_ie),
                     context.bss.bssid.into(),
                     ProtectionInfo::LegacyWpa(a_wpa_ie),
+                    false,
                 )
                 .map_err(|error| format_err!("Failed to create ESS-SA: {:?}", error))?;
                 Ok(Protection::LegacyWpa(Rsna {
@@ -351,6 +353,7 @@ impl<'a> TryFrom<SecurityContext<'a, wpa::Wpa2PersonalCredentials>> for Protecti
                     ProtectionInfo::Rsne(s_rsne),
                     context.bss.bssid.into(),
                     ProtectionInfo::Rsne(a_rsne),
+                    false,
                 )
                 .map_err(|error| format_err!("Failed to creat ESS-SA: {:?}", error))?;
                 Ok(Protection::Rsna(Rsna {
@@ -379,6 +382,12 @@ impl<'a> TryFrom<SecurityContext<'a, wpa::Wpa3PersonalCredentials>> for Protecti
                 }
                 let (a_rsne, s_rsne) = context.authenticator_supplicant_rsne()?;
                 let negotiated_protection = NegotiatedProtection::from_rsne(&s_rsne)?;
+                let pmksa_caching_supported = context
+                    .security_support
+                    .sae
+                    .as_ref()
+                    .and_then(|sae| sae.pmksa_caching_supported)
+                    .unwrap_or(false);
                 let supplicant = wlan_rsn::Supplicant::new_wpa_personal(
                     NonceReader::new(&sta_addr)?,
                     context.authentication_config()?,
@@ -386,6 +395,7 @@ impl<'a> TryFrom<SecurityContext<'a, wpa::Wpa3PersonalCredentials>> for Protecti
                     ProtectionInfo::Rsne(s_rsne),
                     context.bss.bssid.into(),
                     ProtectionInfo::Rsne(a_rsne),
+                    pmksa_caching_supported,
                 )
                 .map_err(|error| format_err!("Failed to create ESS-SA: {:?}", error))?;
                 Ok(Protection::Rsna(Rsna {
@@ -848,7 +858,7 @@ mod tests {
             bss: &bss,
         };
         assert!(context.authenticator_supplicant_rsne().is_ok());
-        assert!(matches!(context.authentication_config(), Ok(auth::Config::DriverSae { .. })));
+        assert_matches!(context.authentication_config(), Ok(auth::Config::DriverSae { .. }));
 
         let protection = Protection::try_from(context).unwrap();
         assert_matches!(protection, Protection::Rsna(rsna) => {

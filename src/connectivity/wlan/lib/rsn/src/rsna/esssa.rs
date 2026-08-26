@@ -2,16 +2,17 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use crate::Error;
 use crate::key::exchange::handshake::fourway::Fourway;
 use crate::key::exchange::handshake::group_key::GroupKey;
 use crate::key::exchange::{self, Key};
 use crate::key::gtk::Gtk;
 use crate::key::igtk::Igtk;
+use crate::key::pmk::Pmk;
 use crate::key::ptk::Ptk;
 use crate::rsna::{
     Dot11VerifiedKeyFrame, NegotiatedProtection, Role, SecAssocStatus, SecAssocUpdate, UpdateSink,
 };
+use crate::{Error, ProtectionInfo};
 use fidl_fuchsia_wlan_mlme::EapolResultCode;
 use log::{error, info};
 use std::collections::HashSet;
@@ -23,8 +24,8 @@ const MAX_KEY_FRAME_RETRIES: u32 = 3;
 
 #[derive(Debug)]
 enum Pmksa {
-    Initialized { pmk: Option<Vec<u8>> },
-    Established { pmk: Vec<u8> },
+    Initialized { pmk: Option<Pmk> },
+    Established { pmk: Pmk },
 }
 
 impl Pmksa {
@@ -46,11 +47,18 @@ enum Ptksa {
 }
 
 impl Ptksa {
-    fn initialize(self, pmk: Vec<u8>) -> Self {
+    fn initialize(self, pmk: Pmk) -> Self {
         match self {
             Ptksa::Uninitialized { cfg } => match cfg {
-                exchange::Config::FourWayHandshake(method_cfg) => {
-                    match Fourway::new(method_cfg.clone(), pmk) {
+                exchange::Config::FourWayHandshake(mut method_cfg) => {
+                    if method_cfg.pmksa_caching_supported {
+                        if let Some(ref pmkid) = pmk.pmkid {
+                            if let ProtectionInfo::Rsne(ref mut s_rsne) = method_cfg.s_protection {
+                                s_rsne.pmkids = vec![bytes::Bytes::copy_from_slice(pmkid)];
+                            }
+                        }
+                    }
+                    match Fourway::new(method_cfg.clone(), pmk.pmk) {
                         Err(e) => {
                             error!("error creating 4-Way Handshake from config: {}", e);
                             Ptksa::Uninitialized {
@@ -183,7 +191,7 @@ pub(crate) struct EssSa {
 impl EssSa {
     pub fn new(
         role: Role,
-        pmk: Option<Vec<u8>>,
+        pmk: Option<Pmk>,
         negotiated_protection: NegotiatedProtection,
         ptk_exch_cfg: exchange::Config,
         gtk_exch_cfg: Option<exchange::Config>,
@@ -364,7 +372,7 @@ impl EssSa {
     pub fn on_pmk_available(
         &mut self,
         update_sink: &mut UpdateSink,
-        pmk: Vec<u8>,
+        pmk: Pmk,
     ) -> Result<(), Error> {
         let mut new_updates = UpdateSink::default();
         let result = self.on_key_confirmed(&mut new_updates, Key::Pmk(pmk));

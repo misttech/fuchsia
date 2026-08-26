@@ -5,6 +5,7 @@
 pub mod psk;
 
 use crate::Error;
+use crate::key::Pmk;
 use crate::key::exchange::Key;
 use crate::rsna::{
     AuthRejectedReason, AuthStatus, Dot11VerifiedKeyFrame, SecAssocUpdate, UpdateSink,
@@ -169,7 +170,10 @@ impl Method {
         match self {
             Method::DriverSae(key) => {
                 key.replace(sae::Key { pmk: pmk.to_vec(), pmkid: pmkid.to_vec() });
-                assoc_update_sink.push(SecAssocUpdate::Key(Key::Pmk(pmk.to_vec())));
+                assoc_update_sink.push(SecAssocUpdate::Key(Key::Pmk(Pmk::new(
+                    pmk.to_vec(),
+                    Some(pmkid.to_vec()),
+                ))));
                 Ok(())
             }
             _ => Err(AuthError::UnexpectedSaeEvent),
@@ -287,7 +291,8 @@ fn process_sae_updates(
             }
             sae::SaeUpdate::Success(key) => {
                 sae_data.pmk.replace(key.clone());
-                assoc_update_sink.push(SecAssocUpdate::Key(Key::Pmk(key.pmk)));
+                assoc_update_sink
+                    .push(SecAssocUpdate::Key(Key::Pmk(Pmk::new(key.pmk, Some(key.pmkid)))));
                 assoc_update_sink.push(SecAssocUpdate::SaeAuthStatus(AuthStatus::Success));
             }
             sae::SaeUpdate::Reject(reason) => {
@@ -341,7 +346,7 @@ fn process_owe_updates(
             }
             owe::OweUpdate::Success { key } => {
                 owe_data.pmk.replace(key.clone());
-                assoc_update_sink.push(SecAssocUpdate::Key(Key::Pmk(key)));
+                assoc_update_sink.push(SecAssocUpdate::Key(Key::Pmk(Pmk::from_pmk(key))));
             }
         }
     }
@@ -561,7 +566,8 @@ mod test {
             .expect("Driver SAE should handle on_pmk_available");
         assert_eq!(sink.len(), 1);
         let pmk = assert_matches!(sink.get(0), Some(SecAssocUpdate::Key(Key::Pmk(pmk))) => pmk);
-        assert_eq!(*pmk, vec![0xcc; 8]);
+        assert_eq!(pmk.pmk, vec![0xcc; 8]);
+        assert_eq!(pmk.pmkid, Some(vec![0xdd; 8]));
     }
 
     #[test]
@@ -604,6 +610,7 @@ mod test {
             .expect("OWE handshake should handle public key");
         assert_eq!(sink.len(), 1);
         let pmk = assert_matches!(sink.remove(0), SecAssocUpdate::Key(Key::Pmk(pmk)) => pmk);
-        assert!(!pmk.is_empty());
+        assert!(!pmk.pmk.is_empty());
+        assert_eq!(pmk.pmkid, None);
     }
 }

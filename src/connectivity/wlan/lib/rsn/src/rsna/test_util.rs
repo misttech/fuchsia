@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 use super::*;
+use crate::key::Pmk;
 use crate::key::exchange::handshake::fourway::{self, Fourway, SupplicantKeyReplayCounter};
 use crate::key::exchange::{compute_mic, compute_mic_from_buf};
 use crate::key::gtk::{Gtk, GtkProvider};
@@ -52,6 +53,7 @@ pub fn get_wpa2_supplicant() -> Supplicant {
         ProtectionInfo::Rsne(fake_wpa2_s_rsne()),
         *A_ADDR,
         ProtectionInfo::Rsne(fake_wpa2_a_rsne()),
+        false,
     )
     .expect("could not create Supplicant")
 }
@@ -89,6 +91,7 @@ pub fn get_wpa3_supplicant() -> Supplicant {
         ProtectionInfo::Rsne(fake_wpa3_s_rsne()),
         *A_ADDR,
         ProtectionInfo::Rsne(fake_wpa3_a_rsne()),
+        false,
     )
     .expect("could not create Supplicant")
 }
@@ -124,11 +127,16 @@ pub fn get_owe_supplicant() -> Supplicant {
         ProtectionInfo::Rsne(Rsne::common_owe_rsne()),
         *A_ADDR,
         ProtectionInfo::Rsne(Rsne::common_owe_rsne()),
+        false,
     )
     .expect("could not create Supplicant")
 }
 
 pub fn get_driver_sae_supplicant() -> Supplicant {
+    get_driver_sae_supplicant_with_pmksa_caching(true)
+}
+
+pub fn get_driver_sae_supplicant_with_pmksa_caching(pmksa_caching_supported: bool) -> Supplicant {
     let nonce_rdr = NonceReader::new(&S_ADDR).expect("error creating Reader");
     Supplicant::new_wpa_personal(
         nonce_rdr,
@@ -137,6 +145,7 @@ pub fn get_driver_sae_supplicant() -> Supplicant {
         ProtectionInfo::Rsne(fake_wpa3_s_rsne()),
         *A_ADDR,
         ProtectionInfo::Rsne(fake_wpa3_a_rsne()),
+        pmksa_caching_supported,
     )
     .expect("could not create Supplicant")
 }
@@ -474,6 +483,7 @@ fn make_fourway_cfg(
         nonce_rdr,
         gtk_provider,
         igtk_provider,
+        false,
     )
     .expect("could not construct PTK exchange method")
 }
@@ -574,7 +584,7 @@ pub fn expect_sae_frame_vec(updates: &[SecAssocUpdate]) -> Vec<SaeFrame> {
     sae_frame_vec
 }
 
-pub fn get_reported_pmk(updates: &[SecAssocUpdate]) -> Option<Vec<u8>> {
+pub fn get_reported_pmk(updates: &[SecAssocUpdate]) -> Option<Pmk> {
     updates
         .iter()
         .filter_map(|u| match u {
@@ -582,10 +592,10 @@ pub fn get_reported_pmk(updates: &[SecAssocUpdate]) -> Option<Vec<u8>> {
             _ => None,
         })
         .next()
-        .map(|x| x.clone())
+        .cloned()
 }
 
-pub fn expect_reported_pmk(updates: &[SecAssocUpdate]) -> Vec<u8> {
+pub fn expect_reported_pmk(updates: &[SecAssocUpdate]) -> Pmk {
     get_reported_pmk(updates).expect("updates do not contain PMK")
 }
 

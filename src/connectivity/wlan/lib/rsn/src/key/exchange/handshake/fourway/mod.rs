@@ -219,6 +219,7 @@ pub struct Config {
     pub nonce_rdr: Arc<NonceReader>,
     pub gtk_provider: Option<Arc<Mutex<GtkProvider>>>,
     pub igtk_provider: Option<Arc<Mutex<IgtkProvider>>>,
+    pub pmksa_caching_supported: bool,
 
     // Private field to ensure Config can only be created by one of Config's
     // associated functions.
@@ -236,6 +237,7 @@ impl Config {
         nonce_rdr: Arc<NonceReader>,
         gtk_provider: Option<Arc<Mutex<GtkProvider>>>,
         igtk_provider: Option<Arc<Mutex<IgtkProvider>>>,
+        pmksa_caching_supported: bool,
     ) -> Result<Config, Error> {
         // Check that the supplicant protection is a subset of the authenticator protection.
         match (&s_protection, &a_protection) {
@@ -300,6 +302,7 @@ impl Config {
             nonce_rdr,
             gtk_provider,
             igtk_provider,
+            pmksa_caching_supported,
             _private: (),
         })
     }
@@ -312,6 +315,7 @@ impl PartialEq for Config {
             && self.s_protection == other.s_protection
             && self.a_addr == other.a_addr
             && self.a_protection == other.a_protection
+            && self.pmksa_caching_supported == other.pmksa_caching_supported
     }
 }
 

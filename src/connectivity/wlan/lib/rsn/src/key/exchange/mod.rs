@@ -9,13 +9,14 @@ use self::handshake::group_key::{self, GroupKey};
 use crate::Error;
 use crate::key::gtk::Gtk;
 use crate::key::igtk::Igtk;
+use crate::key::pmk::Pmk;
 use crate::key::ptk::Ptk;
 use crate::rsna::{Dot11VerifiedKeyFrame, NegotiatedProtection, UpdateSink};
 use zerocopy::SplitByteSlice;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Key {
-    Pmk(Vec<u8>),
+    Pmk(Pmk),
     Ptk(Ptk),
     Gtk(Gtk),
     Igtk(Igtk),

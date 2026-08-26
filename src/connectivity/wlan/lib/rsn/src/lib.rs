@@ -34,6 +34,7 @@ use wlan_common::ie::wpa::WpaIe;
 use zerocopy::SplitByteSlice;
 
 pub use crate::auth::psk;
+pub use crate::key::Pmk;
 pub use crate::key::gtk::{self, GtkProvider};
 pub use crate::key::igtk::{self, IgtkProvider};
 pub use crate::rsna::NegotiatedProtection;
@@ -53,7 +54,7 @@ pub enum ProtectionInfo {
     LegacyWpa(WpaIe),
 }
 
-fn extract_pmk_helper(update_sink: &UpdateSink) -> Option<Vec<u8>> {
+fn extract_pmk_helper(update_sink: &UpdateSink) -> Option<Pmk> {
     for update in &update_sink[..] {
         if let rsna::SecAssocUpdate::Key(key::exchange::Key::Pmk(pmk)) = update {
             return Some(pmk.clone());
@@ -71,6 +72,7 @@ impl Supplicant {
         s_protection: ProtectionInfo,
         a_addr: MacAddr,
         a_protection: ProtectionInfo,
+        pmksa_caching_supported: bool,
     ) -> Result<Supplicant, anyhow::Error> {
         let negotiated_protection = NegotiatedProtection::from_protection(&s_protection)?;
         let gtk_exch_cfg = Some(exchange::Config::GroupKeyHandshake(group_key::Config {
@@ -80,7 +82,7 @@ impl Supplicant {
 
         let auth_method = auth::Method::from_config(auth_cfg.clone())?;
         let pmk = match auth_cfg.clone() {
-            auth::Config::ComputedPsk(psk) => Some(psk.to_vec()),
+            auth::Config::ComputedPsk(psk) => Some(Pmk::from_pmk(psk.to_vec())),
             _ => None,
         };
         let esssa = EssSa::new(
@@ -96,6 +98,7 @@ impl Supplicant {
                 nonce_rdr,
                 None,
                 None,
+                pmksa_caching_supported,
             )?),
             gtk_exch_cfg,
         )?;
@@ -237,7 +240,7 @@ impl Authenticator {
         let auth_method = auth::Method::from_config(auth_cfg.clone())?;
         let esssa = EssSa::new(
             Role::Authenticator,
-            Some(psk.to_vec()),
+            Some(Pmk::from_pmk(psk.to_vec())),
             negotiated_protection,
             exchange::Config::FourWayHandshake(fourway::Config::new(
                 Role::Authenticator,
@@ -248,6 +251,7 @@ impl Authenticator {
                 nonce_rdr,
                 Some(gtk_provider),
                 None,
+                false,
             )?),
             // Group-Key Handshake does not support Authenticator role yet.
             None,
@@ -292,6 +296,7 @@ impl Authenticator {
                 nonce_rdr,
                 Some(gtk_provider),
                 Some(igtk_provider),
+                false,
             )?),
             // Group-Key Handshake does not support Authenticator role yet.
             None,
@@ -612,6 +617,7 @@ impl From<rsne::Error> for Error {
 mod tests {
     use crate::key::exchange::Key;
     use crate::rsna::{SecAssocStatus, SecAssocUpdate, test_util};
+    use crate::{Pmk, key_data};
     use assert_matches::assert_matches;
     use test_case::test_case;
 
@@ -620,7 +626,7 @@ mod tests {
         let mut supplicant = test_util::get_wpa3_supplicant();
         let mut dummy_update_sink = vec![
             SecAssocUpdate::ScheduleSaeTimeout(123),
-            SecAssocUpdate::Key(Key::Pmk(vec![1, 2, 3, 4, 5, 6, 7, 8])),
+            SecAssocUpdate::Key(Key::Pmk(vec![1, 2, 3, 4, 5, 6, 7, 8].into())),
         ];
         supplicant.extract_sae_key(&mut dummy_update_sink).expect("Failed to extract key");
         // ESSSA should register the new PMK and report this.
@@ -628,7 +634,7 @@ mod tests {
             dummy_update_sink,
             vec![
                 SecAssocUpdate::ScheduleSaeTimeout(123),
-                SecAssocUpdate::Key(Key::Pmk(vec![1, 2, 3, 4, 5, 6, 7, 8])),
+                SecAssocUpdate::Key(Key::Pmk(vec![1, 2, 3, 4, 5, 6, 7, 8].into())),
                 SecAssocUpdate::Status(SecAssocStatus::PmkSaEstablished),
             ]
         );
@@ -648,7 +654,7 @@ mod tests {
         let mut authenticator = test_util::get_wpa3_authenticator();
         let mut dummy_update_sink = vec![
             SecAssocUpdate::ScheduleSaeTimeout(123),
-            SecAssocUpdate::Key(Key::Pmk(vec![1, 2, 3, 4, 5, 6, 7, 8])),
+            SecAssocUpdate::Key(Key::Pmk(vec![1, 2, 3, 4, 5, 6, 7, 8].into())),
         ];
         authenticator.extract_sae_key(&mut dummy_update_sink).expect("Failed to extract key");
         // ESSSA should register the new PMK and report this.
@@ -656,7 +662,7 @@ mod tests {
             &dummy_update_sink[0..3],
             vec![
                 SecAssocUpdate::ScheduleSaeTimeout(123),
-                SecAssocUpdate::Key(Key::Pmk(vec![1, 2, 3, 4, 5, 6, 7, 8])),
+                SecAssocUpdate::Key(Key::Pmk(vec![1, 2, 3, 4, 5, 6, 7, 8].into())),
                 SecAssocUpdate::Status(SecAssocStatus::PmkSaEstablished),
             ]
             .as_slice(),
@@ -697,7 +703,7 @@ mod tests {
         // notify the ESSSA.
         assert_eq!(update_sink.len(), 2);
         let pmk = assert_matches!(update_sink.remove(0), SecAssocUpdate::Key(Key::Pmk(pmk)) => pmk);
-        assert!(!pmk.is_empty());
+        assert!(!pmk.pmk.is_empty());
         assert_eq!(update_sink.remove(0), SecAssocUpdate::Status(SecAssocStatus::PmkSaEstablished));
     }
 
@@ -729,9 +735,12 @@ mod tests {
             .expect_err("Should fail due to invalid public key");
     }
 
-    #[test]
-    fn supplicant_driver_sae_on_pmk_available() {
-        let mut supplicant = test_util::get_driver_sae_supplicant();
+    #[test_case(true; "pmksa caching supported")]
+    #[test_case(false; "pmksa caching not supported")]
+    #[fuchsia::test(add_test_attr = false)]
+    fn supplicant_driver_sae_on_pmk_available(pmksa_caching_supported: bool) {
+        let mut supplicant =
+            test_util::get_driver_sae_supplicant_with_pmksa_caching(pmksa_caching_supported);
         let mut update_sink = vec![];
         let pmk = vec![0x11; 32];
         let pmkid = vec![0x22; 16];
@@ -739,7 +748,34 @@ mod tests {
             .on_pmk_available(&mut update_sink, &pmk, &pmkid)
             .expect("Failed to process OnPmkAvailable");
         assert_eq!(update_sink.len(), 2);
-        assert_eq!(update_sink.remove(0), SecAssocUpdate::Key(Key::Pmk(pmk)));
+        assert_eq!(
+            update_sink.remove(0),
+            SecAssocUpdate::Key(Key::Pmk(Pmk::new(pmk, Some(pmkid.clone()))))
+        );
         assert_eq!(update_sink.remove(0), SecAssocUpdate::Status(SecAssocStatus::PmkSaEstablished));
+
+        let anonce = [0xaa; 32];
+        let msg1 = test_util::get_wpa3_4whs_msg1(&anonce[..]);
+        let msg1_frame = eapol::Frame::Key(msg1.keyframe());
+        supplicant
+            .on_eapol_frame(&mut update_sink, msg1_frame)
+            .expect("Failed to process EAPOL Msg 1");
+        let msg2 = test_util::expect_eapol_resp(&update_sink[..]);
+        let raw_key_data = &msg2.keyframe().key_data[..];
+        let elements =
+            key_data::extract_elements(raw_key_data).expect("Failed to extract key data");
+        let rsne = elements
+            .into_iter()
+            .find_map(|e| match e {
+                key_data::Element::Rsne(rsne) => Some(rsne),
+                _ => None,
+            })
+            .expect("RSNE missing in Msg 2");
+        let expected_pmkids = if pmksa_caching_supported {
+            vec![bytes::Bytes::copy_from_slice(&pmkid)]
+        } else {
+            vec![]
+        };
+        assert_eq!(rsne.pmkids, expected_pmkids);
     }
 }

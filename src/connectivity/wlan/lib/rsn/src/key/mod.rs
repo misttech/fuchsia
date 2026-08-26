@@ -5,7 +5,10 @@
 pub mod exchange;
 pub mod gtk;
 pub mod igtk;
+pub mod pmk;
 pub mod ptk;
+
+pub use pmk::Pmk;
 
 use mundane::bytes;
 
