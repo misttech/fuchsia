@@ -115,23 +115,8 @@ async fn main_helper(command: Command) -> Result<i32, anyhow::Error> {
             println!("Package on disk: yes");
             Ok(0)
         }
-        Command::Open(OpenCommand { meta_far_blob_id }) => {
-            let cache = pkg::cache::Client::from_proxy(
-                connect_to_protocol::<fpkg::PackageCacheMarker>()
-                    .context("Failed to connect to cache service")?,
-            );
-            println!("opening {meta_far_blob_id}");
-
-            let dir = cache.get_already_cached(meta_far_blob_id).await?.into_proxy();
-            let entries = fuchsia_fs::directory::readdir_recursive(&dir, /*timeout=*/ None)
-                .try_collect::<Vec<_>>()
-                .await?;
-            println!("package contents:");
-            for entry in entries {
-                println!("/{}", entry.name);
-            }
-
-            Ok(0)
+        Command::Open(OpenCommand { meta_far_blob_id: _ }) => {
+            anyhow::bail!("`pkgctl open` is being deleted, https://fxbug.dev/552670958");
         }
         Command::Repo(RepoCommand { verbose, subcommand }) => {
             let repo_manager = connect_to_protocol::<fpkg::RepositoryManagerMarker>()
