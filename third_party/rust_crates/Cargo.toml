@@ -267,6 +267,7 @@ unicode-segmentation = "1.13.2"
 unicode-width = "0.2.2"
 unicode-xid = "0.2.6"
 untrusted = "0.9"
+uom = "0.36.0"
 url = { version = "2.5.8", features = ["serde"] }
 utf8parse = "0.2.2"
 uuid = { version = "1.23.3", features = ["serde", "v4"] }

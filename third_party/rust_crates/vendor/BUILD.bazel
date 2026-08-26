@@ -3373,6 +3373,18 @@ alias(
 )
 
 alias(
+    name = "uom-0.36.0",
+    actual = "//third_party/rust_crates/vendor/uom-0.36.0:uom",
+    tags = ["manual"],
+)
+
+alias(
+    name = "uom",
+    actual = "//third_party/rust_crates/vendor/uom-0.36.0:uom",
+    tags = ["manual"],
+)
+
+alias(
     name = "url-2.5.8",
     actual = "//third_party/rust_crates/vendor/url-2.5.8:url",
     tags = ["manual"],

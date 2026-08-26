@@ -2592,6 +2592,14 @@ group("untrusted-0.9.0") {
   public_deps = [ ":untrusted-v0_9_0" ]
 }
 
+group("uom") {
+  public_deps = [ ":uom-v0_36_0" ]
+}
+
+group("uom-0.36.0") {
+  public_deps = [ ":uom-v0_36_0" ]
+}
+
 group("url") {
   public_deps = [ ":url-v2_5_8" ]
 }
@@ -24911,6 +24919,46 @@ rustc_library("untrusted-v0_9_0") {
   visibility = [ ":*" ]
 
   applicable_licenses = [ ":untrusted-v0_9_0.license" ]
+}
+
+license("uom-v0_36_0.license") {
+  public_package_name = "uom"
+  license_files = [
+    "//third_party/rust_crates/vendor/uom-0.36.0/LICENSE-APACHE",
+    "//third_party/rust_crates/vendor/uom-0.36.0/LICENSE-MIT",
+  ]
+}
+
+rustc_library("uom-v0_36_0") {
+  crate_name = "uom"
+  source_root = "//third_party/rust_crates/vendor/uom-0.36.0/src/lib.rs"
+  output_name = "uom-d1ce98c019b76a8b"
+  edition = "2018"
+  disable_clippy = true
+  enforce_source_listing = false
+  configs -= [ "//build/config/rust:2018_idioms" ]
+
+  deps = []
+  deps += [ ":num-traits-v0_2_19" ]
+  deps += [ ":typenum-v1_20_1" ]
+
+  rustenv = []
+
+  rustflags = [
+    "--cap-lints=allow",
+    "-Cmetadata=d1ce98c019b76a8b",
+    "-Cextra-filename=-d1ce98c019b76a8b",
+    "--cfg=feature=\"autoconvert\"",
+    "--cfg=feature=\"default\"",
+    "--cfg=feature=\"f32\"",
+    "--cfg=feature=\"f64\"",
+    "--cfg=feature=\"si\"",
+    "--cfg=feature=\"std\"",
+  ]
+
+  visibility = [ ":*" ]
+
+  applicable_licenses = [ ":uom-v0_36_0.license" ]
 }
 
 license("uritemplate-next-v0_2_0.license") {
