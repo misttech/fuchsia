@@ -163,8 +163,7 @@ impl Supplicant {
         pmk: &[u8],
         pmkid: &[u8],
     ) -> Result<(), Error> {
-        let mut updates = UpdateSink::new();
-        self.auth_method.on_pmk_available(pmk, pmkid, &mut updates)?;
+        self.auth_method.on_pmk_available(pmk, pmkid, update_sink).map_err(Error::AuthError)?;
         self.extract_sae_key(update_sink)
     }
 
@@ -728,5 +727,19 @@ mod tests {
         supplicant
             .on_owe_public_key_rx(&mut update_sink, group_id, public_key)
             .expect_err("Should fail due to invalid public key");
+    }
+
+    #[test]
+    fn supplicant_driver_sae_on_pmk_available() {
+        let mut supplicant = test_util::get_driver_sae_supplicant();
+        let mut update_sink = vec![];
+        let pmk = vec![0x11; 32];
+        let pmkid = vec![0x22; 16];
+        supplicant
+            .on_pmk_available(&mut update_sink, &pmk, &pmkid)
+            .expect("Failed to process OnPmkAvailable");
+        assert_eq!(update_sink.len(), 2);
+        assert_eq!(update_sink.remove(0), SecAssocUpdate::Key(Key::Pmk(pmk)));
+        assert_eq!(update_sink.remove(0), SecAssocUpdate::Status(SecAssocStatus::PmkSaEstablished));
     }
 }

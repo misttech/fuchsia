@@ -49,9 +49,7 @@ pub trait Supplicant: std::fmt::Debug + std::marker::Send {
     -> Result<(), Error>;
     fn on_rsna_response_timeout(&self) -> EstablishRsnaFailureReason;
     fn on_rsna_completion_timeout(&self) -> EstablishRsnaFailureReason;
-    // TODO(https://fxbug.dev/335283785): Remove or explain unused code.
     #[allow(clippy::result_large_err)] // TODO(https://fxbug.dev/401255153)
-    #[allow(dead_code)]
     fn on_pmk_available(
         &mut self,
         update_sink: &mut UpdateSink,

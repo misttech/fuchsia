@@ -599,6 +599,14 @@ impl Connecting {
         process_sae_frame_rx(&mut self.cmd.protection, frame, context)
     }
 
+    fn on_pmk_available(
+        &mut self,
+        info: fidl_mlme::PmkInfo,
+        context: &mut Context,
+    ) -> Result<(), anyhow::Error> {
+        process_pmk_available(&mut self.cmd.protection, self.cmd.bss.bssid.into(), info, context)
+    }
+
     #[allow(clippy::result_large_err)] // TODO(https://fxbug.dev/401255153)
     fn handle_timeout(
         mut self,
@@ -1113,6 +1121,14 @@ impl Roaming {
         process_sae_frame_rx(&mut self.cmd.protection, frame, context)
     }
 
+    fn on_pmk_available(
+        &mut self,
+        info: fidl_mlme::PmkInfo,
+        context: &mut Context,
+    ) -> Result<(), anyhow::Error> {
+        process_pmk_available(&mut self.cmd.protection, self.cmd.bss.bssid.into(), info, context)
+    }
+
     fn handle_timeout(
         mut self,
         event: Event,
@@ -1321,6 +1337,13 @@ impl ClientState {
                     }
                     transition.to(connecting).into()
                 }
+                MlmeEvent::OnPmkAvailable { info } => {
+                    let (transition, mut connecting) = state.release_data();
+                    if let Err(e) = connecting.on_pmk_available(info, context) {
+                        error!("Failed to process OnPmkAvailable: {:?}", e);
+                    }
+                    transition.to(connecting).into()
+                }
                 MlmeEvent::EapolInd { ind } => {
                     let (transition, mut connecting) = state.release_data();
                     connecting.eapol_cache.push(ind);
@@ -1412,6 +1435,13 @@ impl ClientState {
                     let (transition, mut roaming) = state.release_data();
                     if let Err(e) = roaming.on_sae_frame_rx(frame, context) {
                         error!("Failed to process SaeFrameRx: {:?}", e);
+                    }
+                    transition.to(roaming).into()
+                }
+                MlmeEvent::OnPmkAvailable { info } => {
+                    let (transition, mut roaming) = state.release_data();
+                    if let Err(e) = roaming.on_pmk_available(info, context) {
+                        error!("Failed to process OnPmkAvailable: {:?}", e);
                     }
                     transition.to(roaming).into()
                 }
@@ -2131,6 +2161,23 @@ fn process_sae_updates(updates: UpdateSink, peer_sta_address: MacAddr, context: 
     }
 }
 
+fn process_pmk_available(
+    protection: &mut Protection,
+    peer_sta_address: MacAddr,
+    info: fidl_mlme::PmkInfo,
+    context: &mut Context,
+) -> Result<(), anyhow::Error> {
+    let supplicant = match protection {
+        Protection::Rsna(rsna) => &mut rsna.supplicant,
+        _ => bail!("Unexpected PMK available"),
+    };
+
+    let mut updates = UpdateSink::default();
+    supplicant.on_pmk_available(&mut updates, &info.pmk, &info.pmkid)?;
+    process_sae_updates(updates, peer_sta_address, context);
+    Ok(())
+}
+
 fn process_sae_handshake_ind(
     protection: &mut Protection,
     ind: fidl_mlme::SaeHandshakeIndication,
@@ -2322,6 +2369,7 @@ fn now() -> zx::MonotonicInstant {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::client::test_utils::{PmkArgs, mock_driver_sae_supplicant};
     use anyhow::format_err;
     use assert_matches::assert_matches;
     use diagnostics_assertions::{
@@ -2506,6 +2554,67 @@ mod tests {
                     },
                 },
             },
+        });
+    }
+
+    #[test]
+    fn connect_happy_path_driver_sae() {
+        let mut h = TestHelper::new();
+        let (supplicant, suppl_mock) = mock_driver_sae_supplicant();
+
+        let state = idle_state();
+        let (command, mut connect_txn_stream) = connect_command_wpa3(supplicant);
+        let bss = (*command.bss).clone();
+
+        // Issue a "connect" command
+        let state = state.connect(command, &mut h.context);
+
+        // (sme->mlme) Expect a ConnectRequest with SAE auth type
+        assert_matches!(h.mlme_stream.try_next(), Ok(Some(MlmeRequest::Connect(req))) => {
+            assert_eq!(req.auth_type, fidl_mlme::AuthenticationTypes::Sae);
+        });
+
+        // Driver signals PMK available during connection
+        let info = fidl_mlme::PmkInfo { pmk: vec![0x11; 32], pmkid: vec![0x22; 16] };
+        let state =
+            state.on_mlme_event(MlmeEvent::OnPmkAvailable { info: info.clone() }, &mut h.context);
+        assert_eq!(
+            suppl_mock.get_on_pmk_available_args(),
+            Some(PmkArgs { pmk: info.pmk, pmkid: info.pmkid })
+        );
+
+        // (mlme->sme) Send a ConnectConf as a response. Since PMK was cached,
+        // starting supplicant succeeds and link state is initialized.
+        let connect_conf = create_connect_conf(bss.bssid, fidl_ieee80211::StatusCode::Success);
+        let state = state.on_mlme_event(connect_conf, &mut h.context);
+        assert!(suppl_mock.is_supplicant_started());
+
+        // (mlme->sme) Send an EapolInd, mock supplicant with key frame (Message 2)
+        let update = SecAssocUpdate::TxEapolKeyFrame {
+            frame: test_utils::eapol_key_frame(),
+            expect_response: true,
+        };
+        let state = on_eapol_ind(state, &mut h, bss.bssid, &suppl_mock, vec![update]);
+
+        expect_eapol_req(&mut h.mlme_stream, bss.bssid);
+
+        // (mlme->sme) Send an EapolInd, mock supplicant with keys
+        let ptk = SecAssocUpdate::Key(Key::Ptk(test_utils::ptk()));
+        let gtk = SecAssocUpdate::Key(Key::Gtk(test_utils::gtk()));
+        let state = on_eapol_ind(state, &mut h, bss.bssid, &suppl_mock, vec![ptk, gtk]);
+
+        expect_set_ptk(&mut h.mlme_stream, bss.bssid);
+        expect_set_gtk(&mut h.mlme_stream);
+
+        let state = on_set_keys_conf(state, &mut h, vec![0, 2]);
+
+        // (mlme->sme) Send an EapolInd, mock supplicant with completion status
+        let update = SecAssocUpdate::Status(SecAssocStatus::EssSaEstablished);
+        let _state = on_eapol_ind(state, &mut h, bss.bssid, &suppl_mock, vec![update]);
+
+        expect_set_ctrl_port(&mut h.mlme_stream, bss.bssid, fidl_mlme::ControlledPortState::Open);
+        assert_matches!(connect_txn_stream.try_next(), Ok(Some(ConnectTransactionEvent::OnConnectResult { result, is_reconnect: false })) => {
+            assert_eq!(result, ConnectResult::Success);
         });
     }
 
@@ -5539,6 +5648,39 @@ mod tests {
         let state = connecting_state(cmd);
         let end_state = test_sae_frame_ind_resp(suppl_mock, state);
         assert_matches!(end_state, ClientState::Connecting(_))
+    }
+
+    #[test]
+    fn driver_sae_pmk_available_in_connecting() {
+        let (supplicant, suppl_mock) = mock_driver_sae_supplicant();
+        let (cmd, _connect_txn_stream) = connect_command_wpa3(supplicant);
+        let state = connecting_state(cmd);
+        let mut h = TestHelper::new();
+        let info = fidl_mlme::PmkInfo { pmk: vec![0x11; 32], pmkid: vec![0x22; 16] };
+        let end_state =
+            state.on_mlme_event(MlmeEvent::OnPmkAvailable { info: info.clone() }, &mut h.context);
+        assert_matches!(end_state, ClientState::Connecting(_));
+        assert_eq!(
+            suppl_mock.get_on_pmk_available_args(),
+            Some(PmkArgs { pmk: info.pmk, pmkid: info.pmkid })
+        );
+    }
+
+    #[test]
+    fn driver_sae_pmk_available_in_roaming() {
+        let (supplicant, suppl_mock) = mock_driver_sae_supplicant();
+        let (cmd, _connect_txn_stream) = connect_command_wpa3(supplicant);
+        let selected_bssid = cmd.bss.bssid;
+        let state = roaming_state(cmd, selected_bssid);
+        let mut h = TestHelper::new();
+        let info = fidl_mlme::PmkInfo { pmk: vec![0x33; 32], pmkid: vec![0x44; 16] };
+        let end_state =
+            state.on_mlme_event(MlmeEvent::OnPmkAvailable { info: info.clone() }, &mut h.context);
+        assert_matches!(end_state, ClientState::Roaming(_));
+        assert_eq!(
+            suppl_mock.get_on_pmk_available_args(),
+            Some(PmkArgs { pmk: info.pmk, pmkid: info.pmkid })
+        );
     }
 
     fn test_sae_timeout(

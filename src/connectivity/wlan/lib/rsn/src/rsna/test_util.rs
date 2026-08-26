@@ -128,6 +128,19 @@ pub fn get_owe_supplicant() -> Supplicant {
     .expect("could not create Supplicant")
 }
 
+pub fn get_driver_sae_supplicant() -> Supplicant {
+    let nonce_rdr = NonceReader::new(&S_ADDR).expect("error creating Reader");
+    Supplicant::new_wpa_personal(
+        nonce_rdr,
+        auth::Config::DriverSae { password: "ThisIsAPassword".as_bytes().to_vec() },
+        *S_ADDR,
+        ProtectionInfo::Rsne(fake_wpa3_s_rsne()),
+        *A_ADDR,
+        ProtectionInfo::Rsne(fake_wpa3_a_rsne()),
+    )
+    .expect("could not create Supplicant")
+}
+
 pub fn get_wpa1_protection() -> NegotiatedProtection {
     NegotiatedProtection::from_legacy_wpa(&fake_wpa_ie())
         .expect("error creating WPA1 NegotiatedProtection")

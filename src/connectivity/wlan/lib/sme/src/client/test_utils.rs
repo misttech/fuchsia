@@ -150,6 +150,8 @@ fn mock_supplicant(auth_cfg: auth::Config) -> (MockSupplicant, MockSupplicantCon
     let on_rsna_retransmission_timeout = Arc::new(Mutex::new(Ok(UpdateSink::default())));
     let on_rsna_response_timeout = Arc::new(Mutex::new(None));
     let on_rsna_completion_timeout = Arc::new(Mutex::new(None));
+    let on_pmk_available_sink = Arc::new(Mutex::new(Ok(UpdateSink::default())));
+    let on_pmk_available_args = Arc::new(Mutex::new(None));
     let on_sae_handshake_ind_sink = Arc::new(Mutex::new(Ok(UpdateSink::default())));
     let on_sae_frame_rx_sink = Arc::new(Mutex::new(Ok(UpdateSink::default())));
     let on_sae_timeout_sink = Arc::new(Mutex::new(Ok(UpdateSink::default())));
@@ -164,6 +166,8 @@ fn mock_supplicant(auth_cfg: auth::Config) -> (MockSupplicant, MockSupplicantCon
         on_rsna_retransmission_timeout: on_rsna_retransmission_timeout.clone(),
         on_rsna_response_timeout: on_rsna_response_timeout.clone(),
         on_rsna_completion_timeout: on_rsna_completion_timeout.clone(),
+        on_pmk_available: on_pmk_available_sink.clone(),
+        on_pmk_available_args: on_pmk_available_args.clone(),
         on_eapol_frame_cb: on_eapol_frame_cb.clone(),
         on_sae_handshake_ind: on_sae_handshake_ind_sink.clone(),
         on_sae_frame_rx: on_sae_frame_rx_sink.clone(),
@@ -180,6 +184,8 @@ fn mock_supplicant(auth_cfg: auth::Config) -> (MockSupplicant, MockSupplicantCon
         mock_on_rsna_retransmission_timeout: on_rsna_retransmission_timeout,
         mock_on_rsna_response_timeout: on_rsna_response_timeout,
         mock_on_rsna_completion_timeout: on_rsna_completion_timeout,
+        mock_on_pmk_available: on_pmk_available_sink,
+        on_pmk_available_args,
         mock_on_sae_handshake_ind: on_sae_handshake_ind_sink,
         mock_on_sae_frame_rx: on_sae_frame_rx_sink,
         mock_on_sae_timeout: on_sae_timeout_sink,
@@ -211,11 +217,21 @@ pub fn mock_sae_supplicant() -> (MockSupplicant, MockSupplicantController) {
     mock_supplicant(config)
 }
 
+pub fn mock_driver_sae_supplicant() -> (MockSupplicant, MockSupplicantController) {
+    mock_supplicant(auth::Config::DriverSae { password: MOCK_PASS.as_bytes().to_vec() })
+}
+
 pub fn mock_owe_supplicant() -> (MockSupplicant, MockSupplicantController) {
     mock_supplicant(auth::Config::Owe)
 }
 
 type Cb = dyn Fn() + Send + 'static;
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct PmkArgs {
+    pub pmk: Vec<u8>,
+    pub pmkid: Vec<u8>,
+}
 
 pub struct MockSupplicant {
     started: Arc<AtomicBool>,
@@ -226,6 +242,8 @@ pub struct MockSupplicant {
     on_rsna_retransmission_timeout: Arc<Mutex<Result<UpdateSink, anyhow::Error>>>,
     on_rsna_response_timeout: Arc<Mutex<Option<EstablishRsnaFailureReason>>>,
     on_rsna_completion_timeout: Arc<Mutex<Option<EstablishRsnaFailureReason>>>,
+    on_pmk_available: Arc<Mutex<Result<UpdateSink, anyhow::Error>>>,
+    on_pmk_available_args: Arc<Mutex<Option<PmkArgs>>>,
     on_sae_handshake_ind: Arc<Mutex<Result<UpdateSink, anyhow::Error>>>,
     on_sae_frame_rx: Arc<Mutex<Result<UpdateSink, anyhow::Error>>>,
     on_sae_timeout: Arc<Mutex<Result<UpdateSink, anyhow::Error>>>,
@@ -300,11 +318,13 @@ impl Supplicant for MockSupplicant {
 
     fn on_pmk_available(
         &mut self,
-        _update_sink: &mut UpdateSink,
-        _pmk: &[u8],
-        _pmkid: &[u8],
+        update_sink: &mut UpdateSink,
+        pmk: &[u8],
+        pmkid: &[u8],
     ) -> Result<(), Error> {
-        unimplemented!()
+        *self.on_pmk_available_args.lock() =
+            Some(PmkArgs { pmk: pmk.to_vec(), pmkid: pmkid.to_vec() });
+        populate_update_sink(update_sink, &self.on_pmk_available)
     }
 
     fn on_sae_handshake_ind(&mut self, update_sink: &mut UpdateSink) -> Result<(), Error> {
@@ -357,6 +377,8 @@ pub struct MockSupplicantController {
     mock_on_rsna_retransmission_timeout: Arc<Mutex<Result<UpdateSink, anyhow::Error>>>,
     mock_on_rsna_response_timeout: Arc<Mutex<Option<EstablishRsnaFailureReason>>>,
     mock_on_rsna_completion_timeout: Arc<Mutex<Option<EstablishRsnaFailureReason>>>,
+    mock_on_pmk_available: Arc<Mutex<Result<UpdateSink, anyhow::Error>>>,
+    on_pmk_available_args: Arc<Mutex<Option<PmkArgs>>>,
     mock_on_sae_handshake_ind: Arc<Mutex<Result<UpdateSink, anyhow::Error>>>,
     mock_on_sae_frame_rx: Arc<Mutex<Result<UpdateSink, anyhow::Error>>>,
     mock_on_sae_timeout: Arc<Mutex<Result<UpdateSink, anyhow::Error>>>,
@@ -396,6 +418,14 @@ impl MockSupplicantController {
 
     pub fn set_on_rsna_completion_timeout(&self, error: EstablishRsnaFailureReason) {
         *self.mock_on_rsna_completion_timeout.lock() = Some(error);
+    }
+
+    pub fn set_on_pmk_available_updates(&self, updates: UpdateSink) {
+        *self.mock_on_pmk_available.lock() = Ok(updates);
+    }
+
+    pub fn get_on_pmk_available_args(&self) -> Option<PmkArgs> {
+        self.on_pmk_available_args.lock().clone()
     }
 
     pub fn set_on_sae_handshake_ind_updates(&self, updates: UpdateSink) {
