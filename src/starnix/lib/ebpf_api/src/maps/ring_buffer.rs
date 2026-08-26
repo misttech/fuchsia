@@ -288,7 +288,7 @@ impl RingBuffer {
     pub unsafe fn submit(addr: u64, flags: RingBufferWakeupPolicy) {
         let addr = addr as usize;
         #[allow(clippy::undocumented_unsafe_blocks, reason = "2024 edition migration")]
-        let (ringbuf_storage, header) = unsafe { Self::get_ringbug_and_header_by_addr(addr) };
+        let (ringbuf_storage, header) = unsafe { Self::get_ringbuf_and_header_by_addr(addr) };
         ringbuf_storage.commit(header, flags, false);
     }
 
@@ -301,7 +301,7 @@ impl RingBuffer {
     pub unsafe fn discard(addr: u64, flags: RingBufferWakeupPolicy) {
         let addr = addr as usize;
         #[allow(clippy::undocumented_unsafe_blocks, reason = "2024 edition migration")]
-        let (ringbuf_storage, header) = unsafe { Self::get_ringbug_and_header_by_addr(addr) };
+        let (ringbuf_storage, header) = unsafe { Self::get_ringbuf_and_header_by_addr(addr) };
         ringbuf_storage.commit(header, flags, true);
     }
 
@@ -311,7 +311,7 @@ impl RingBuffer {
     ///
     /// `addr` must be the value returned from a previous call to `ringbuf_reserve` on a `Map` that
     /// has not been dropped and is kept alive as long as the returned value are used.
-    unsafe fn get_ringbug_and_header_by_addr(
+    unsafe fn get_ringbuf_and_header_by_addr(
         addr: usize,
     ) -> (&'static RingBuffer, &'static RingBufferRecordHeader) {
         let page_size = *MapBuffer::PAGE_SIZE;
