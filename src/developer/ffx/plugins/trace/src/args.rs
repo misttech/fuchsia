@@ -97,7 +97,7 @@ pub struct Symbolize {
     pub retain_raw_fidl: bool,
 }
 
-#[derive(ArgsInfo, FromArgs, PartialEq, Clone, Debug)]
+#[derive(ArgsInfo, FromArgs, PartialEq, Clone, Debug, Default)]
 /// Stops an active running trace.
 #[argh(subcommand, name = "stop")]
 pub struct Stop {
@@ -133,6 +133,18 @@ pub struct Stop {
     /// stop the currently running background trace session. Discard the trace data. Defaults to false.
     #[argh(switch)]
     pub abort: bool,
+
+    /// upload the trace file to GCS and display the Perfetto Trace Viewer URL. Defaults to false.
+    #[argh(switch)]
+    pub upload: bool,
+
+    /// upload an existing trace file to GCS and display the Perfetto Trace Viewer URL.
+    #[argh(option)]
+    pub reupload: Option<String>,
+
+    /// GCS bucket to upload the trace file to.
+    #[argh(option)]
+    pub bucket: Option<String>,
 }
 
 #[derive(ArgsInfo, FromArgs, PartialEq, Clone, Debug)]
@@ -286,6 +298,36 @@ pub struct Start {
     /// disable zstd compression during transfer. Defaults to false.
     #[argh(switch)]
     pub nocompress: bool,
+
+    /// upload the trace file to GCS and display the Perfetto Trace Viewer URL. Defaults to false.
+    #[argh(switch)]
+    pub upload: bool,
+
+    /// GCS bucket to upload the trace file to.
+    #[argh(option)]
+    pub bucket: Option<String>,
+}
+
+impl Default for Start {
+    fn default() -> Self {
+        Self {
+            buffering_mode: BufferingMode::Oneshot,
+            buffer_size: 4,
+            categories: vec![String::from("#default")],
+            duration: None,
+            output: None,
+            background: false,
+            verbose: false,
+            on_boot: false,
+            trigger: vec![],
+            no_symbolize: false,
+            no_verify_trace: false,
+            retain_raw_fidl: false,
+            nocompress: false,
+            upload: false,
+            bucket: None,
+        }
+    }
 }
 
 fn try_string_to_action(s: &str) -> Result<Action, String> {
@@ -397,5 +439,33 @@ mod tests {
                 ..Default::default()
             },
         );
+    }
+
+    #[test]
+    fn test_stop_args_upload_and_bucket() {
+        let stop = Stop::from_args(&["stop"], &["--upload", "--bucket", "test-bucket"]).unwrap();
+        assert!(stop.upload);
+        assert_eq!(stop.bucket.as_deref(), Some("test-bucket"));
+
+        let default_stop = Stop::from_args(&["stop"], &[]).unwrap();
+        assert!(!default_stop.upload);
+        assert_eq!(default_stop.bucket, None);
+    }
+
+    #[test]
+    fn test_stop_args_reupload() {
+        let stop = Stop::from_args(&["stop"], &["--reupload", "some/path/trace.fxt"]).unwrap();
+        assert_eq!(stop.reupload.as_deref(), Some("some/path/trace.fxt"));
+    }
+
+    #[test]
+    fn test_start_args_upload_and_bucket() {
+        let start = Start::from_args(&["start"], &["--upload", "--bucket", "test-bucket"]).unwrap();
+        assert!(start.upload);
+        assert_eq!(start.bucket.as_deref(), Some("test-bucket"));
+
+        let default_start = Start::from_args(&["start"], &[]).unwrap();
+        assert!(!default_start.upload);
+        assert_eq!(default_start.bucket, None);
     }
 }

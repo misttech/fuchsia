@@ -21,18 +21,17 @@ use prettytable::{Table, row};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::io::{Stdin, stdin};
-use std::path::{Component, PathBuf};
+use std::path::{Component, Path, PathBuf};
 use std::time::Duration;
 use target_holders::moniker;
 use term_grid::Grid;
-#[cfg_attr(test, allow(unused))]
-use termion::terminal_size;
 use termion::{color, style};
 
 mod direct;
 mod process;
 mod progress_reader;
-use process::*;
+mod upload;
+use crate::process::process_trace_file;
 
 // LineWaiter abstracts waiting for the user to press enter.  It is needed
 // to unit test interactive mode.
@@ -266,7 +265,7 @@ fn print_grid(writer: &mut Writer, values: Vec<String>) -> Result<()> {
     }
 
     #[cfg(not(test))]
-    let terminal_width = terminal_size().unwrap_or((80, 80)).0;
+    let terminal_width = termion::terminal_size().unwrap_or((80, 80)).0;
     #[cfg(test)]
     let terminal_width = 80usize;
     let formatted_values = match grid.fit_into_width(terminal_width.into()) {
@@ -421,10 +420,37 @@ impl TraceTool {
     }
 
     async fn trace_start(self, opts: &Start, mut writer: Writer) -> fho::Result<()> {
-        if opts.background && opts.output.is_some() {
-            ffx_bail!(
-                "The option '--output' cannot be used with background tracing. Use `ffx trace stop --output` instead."
-            );
+        match (
+            opts.background,
+            opts.on_boot,
+            opts.output.is_some(),
+            opts.upload,
+            opts.bucket.is_some(),
+        ) {
+            (_, _, _, false, true) => {
+                ffx_bail!("The option '--bucket' can only be used with '--upload'.");
+            }
+            (true, _, true, _, _) => {
+                ffx_bail!(
+                    "The option '--output' cannot be used with background tracing. Use `ffx trace stop --output` instead."
+                );
+            }
+            (true, _, _, true, _) => {
+                ffx_bail!(
+                    "The switch '--upload' cannot be used with background tracing. Use `ffx trace stop --upload` instead."
+                );
+            }
+            (_, true, _, true, _) => {
+                ffx_bail!(
+                    "The switch '--upload' cannot be used with on-boot tracing. Use `ffx trace stop --upload` instead."
+                );
+            }
+            (_, true, true, _, _) => {
+                ffx_bail!(
+                    "The option '--output' cannot be used with on-boot tracing. Use `ffx trace stop --output` instead."
+                );
+            }
+            _ => {}
         }
         let triggers = if opts.trigger.is_empty() { None } else { Some(opts.trigger.clone()) };
         if triggers.is_some() && !opts.background {
@@ -462,6 +488,26 @@ impl TraceTool {
             ..Default::default()
         };
         writer.line(format!("Tracing categories: [{}]...", expanded_categories.join(","),))?;
+
+        if opts.on_boot {
+            return match trace_proxy {
+                SessionManagerProxyType::Provisioner(_) => {
+                    ffx_bail!(
+                        "Trace on boot is not supported with devices that do not support SessionManagerProxy"
+                    );
+                }
+                SessionManagerProxyType::SessionManager(_) => {
+                    let trace_config = TraceConfig {
+                        categories: Some(expanded_categories.clone()),
+                        ..trace_config
+                    };
+                    configure_on_boot_trace(trace_proxy, options, trace_config, &mut writer)
+                        .await
+                        .map_err(Into::into)
+                }
+            };
+        }
+
         // For the background we need a background task, so still use the daemon.
         // Otherwise use a direct connection.
         if opts.background {
@@ -477,25 +523,6 @@ impl TraceTool {
                         ..trace_config
                     };
                     background_trace(trace_proxy, options, trace_config, &mut writer)
-                        .await
-                        .map_err(Into::into)
-                }
-            };
-        }
-
-        if opts.on_boot {
-            return match trace_proxy {
-                SessionManagerProxyType::Provisioner(_) => {
-                    ffx_bail!(
-                        "Trace on boot is not supported with devices that do not support SessionManagerProxy"
-                    );
-                }
-                SessionManagerProxyType::SessionManager(_) => {
-                    let trace_config = TraceConfig {
-                        categories: Some(expanded_categories.clone()),
-                        ..trace_config
-                    };
-                    configure_on_boot_trace(trace_proxy, options, trace_config, &mut writer)
                         .await
                         .map_err(Into::into)
                 }
@@ -524,15 +551,76 @@ impl TraceTool {
                 no_symbolize: opts.no_symbolize,
                 no_verify_trace: opts.no_verify_trace,
                 retain_raw_fidl: opts.retain_raw_fidl,
-                abort: false,
+                upload: opts.upload,
+                bucket: opts.bucket.clone(),
+                ..Default::default()
             },
             writer,
-        )?;
+        )
+        .await?;
         Ok(())
     }
 
     async fn trace_stop(self, opts: &Stop, mut writer: Writer) -> fho::Result<()> {
         let context = self.context.clone();
+
+        match (
+            opts.abort,
+            opts.reupload.is_some(),
+            opts.upload,
+            opts.output.is_some(),
+            opts.bucket.is_some(),
+            opts.no_symbolize,
+            opts.no_verify_trace,
+            opts.retain_raw_fidl,
+        ) {
+            (true, _, true, _, _, _, _, _) => {
+                ffx_bail!("The switch '--upload' cannot be used with '--abort'.");
+            }
+            (true, true, _, _, _, _, _, _) => {
+                ffx_bail!("The option '--reupload' cannot be used with '--abort'.");
+            }
+            (true, _, _, true, _, _, _, _) => {
+                ffx_bail!("The option '--output' cannot be used with '--abort'.");
+            }
+            (true, _, _, _, true, _, _, _) => {
+                ffx_bail!("The option '--bucket' cannot be used with '--abort'.");
+            }
+            (true, _, _, _, _, true, _, _) => {
+                ffx_bail!("The switch '--no-symbolize' cannot be used with '--abort'.");
+            }
+            (true, _, _, _, _, _, true, _) => {
+                ffx_bail!("The switch '--no-verify-trace' cannot be used with '--abort'.");
+            }
+            (true, _, _, _, _, _, _, true) => {
+                ffx_bail!("The switch '--retain-raw-fidl' cannot be used with '--abort'.");
+            }
+            (_, true, true, _, _, _, _, _) => {
+                ffx_bail!("The switch '--upload' cannot be used with '--reupload'.");
+            }
+            (_, true, _, true, _, _, _, _) => {
+                ffx_bail!("The option '--output' cannot be used with '--reupload'.");
+            }
+            (_, true, _, _, _, true, _, _) => {
+                ffx_bail!("The switch '--no-symbolize' cannot be used with '--reupload'.");
+            }
+            (_, true, _, _, _, _, true, _) => {
+                ffx_bail!("The switch '--no-verify-trace' cannot be used with '--reupload'.");
+            }
+            (_, true, _, _, _, _, _, true) => {
+                ffx_bail!("The switch '--retain-raw-fidl' cannot be used with '--reupload'.");
+            }
+            (_, false, false, _, true, _, _, _) => {
+                ffx_bail!(
+                    "The option '--bucket' can only be used with '--upload' or '--reupload'."
+                );
+            }
+            _ => {}
+        }
+
+        if let Some(ref fxt_path) = opts.reupload {
+            return reupload_trace(&self.context, fxt_path, opts, writer).await.map_err(Into::into);
+        }
         let trace_proxy = self.get_trace_proxy().await?;
         let output = canonical_path(opts.output.clone().unwrap_or_else(|| "trace.fxt".to_owned()))?;
 
@@ -553,7 +641,7 @@ impl TraceTool {
             }
         };
 
-        finalize_trace(&context, trace_data, opts, writer).map_err(Into::into)
+        finalize_trace(&context, trace_data, opts, writer).await.map_err(Into::into)
     }
 
     async fn trace_status(self, mut writer: Writer) -> fho::Result<()> {
@@ -571,6 +659,24 @@ impl TraceTool {
         }
     }
     async fn symbolize(self, opts: &Symbolize, mut writer: Writer) -> fho::Result<()> {
+        match (
+            opts.fxt.is_some(),
+            opts.ordinal.is_some(),
+            opts.outfile.is_some(),
+            !opts.ir_path.is_empty(),
+        ) {
+            (true, true, _, _) => {
+                ffx_bail!("The options '--ordinal' and '--fxt' cannot be used together.");
+            }
+            (_, true, true, _) => {
+                ffx_bail!("The option '--outfile' cannot be used with '--ordinal'.");
+            }
+            (true, _, _, true) => {
+                ffx_bail!("The option '--ir-path' cannot be used with '--fxt'.");
+            }
+            _ => {}
+        }
+
         if let Some(ref trace_file) = opts.fxt {
             let outfile = opts.outfile.as_ref().unwrap_or(trace_file);
             for warning in process_trace_file(
@@ -606,12 +712,35 @@ impl TraceTool {
 
 /// Does the final steps of capturing the trace such as, dumping the provider stats, post_processing
 /// and letting the user know the file name of the trace data.
-fn finalize_trace(
+async fn finalize_trace(
+    context: &EnvironmentContext,
+    trace_data: TraceData,
+    opts: &Stop,
+    writer: Writer,
+) -> Result<()> {
+    finalize_trace_impl(context, trace_data, opts, writer, |path, bucket, viewer| async move {
+        upload::upload_trace(&path, &bucket, &viewer).await
+    })
+    .await
+}
+
+/// Implementation of [`finalize_trace`] parameterized over an `uploader` closure to allow
+/// dependency injection in tests.
+///
+/// This decouples trace finalization (stats formatting, post-processing, verification, configuration
+/// resolution, and error reporting) from network I/O and interactive GCS authentication, enabling
+/// hermetic unit tests to verify behavior without external cloud dependencies.
+async fn finalize_trace_impl<F, Fut>(
     context: &EnvironmentContext,
     trace_data: TraceData,
     opts: &Stop,
     mut writer: Writer,
-) -> Result<()> {
+    uploader: F,
+) -> Result<()>
+where
+    F: FnOnce(PathBuf, String, String) -> Fut,
+    Fut: Future<Output = Result<String>>,
+{
     let verify_trace = !opts.no_verify_trace;
 
     for line in
@@ -630,10 +759,75 @@ fn finalize_trace(
             &mut writer,
         )?;
     }
-    // TODO(https://fxbug.dev/431754465): Make a clickable link that auto-uploads the trace file if possible.
     writer.line(format!("Results written to {}", trace_data.output_file))?;
-    writer.line("Upload to https://ui.perfetto.dev/#!/ to view.")?;
+    if opts.upload {
+        upload_and_print(
+            context,
+            Path::new(&trace_data.output_file),
+            opts.bucket.as_deref(),
+            &mut writer,
+            uploader,
+        )
+        .await?;
+    } else {
+        writer.line("Upload to https://ui.perfetto.dev/#!/ to view.")?;
+    }
     Ok(())
+}
+
+async fn upload_and_print<F, Fut>(
+    context: &EnvironmentContext,
+    file_path: &Path,
+    cli_bucket: Option<&str>,
+    writer: &mut Writer,
+    uploader: F,
+) -> Result<()>
+where
+    F: FnOnce(PathBuf, String, String) -> Fut,
+    Fut: Future<Output = Result<String>>,
+{
+    let bucket = upload::resolve_bucket(cli_bucket, context);
+    let viewer_base = upload::resolve_viewer_url(context);
+    writer.line(format!("Uploading trace to gs://{}...", bucket))?;
+    match uploader(file_path.to_path_buf(), bucket, viewer_base).await {
+        Ok(url) => {
+            writer.line("Trace uploaded successfully!")?;
+            writer.line("")?;
+            writer.line("View in Perfetto Trace Viewer:")?;
+            writer.line(format!("  {}", url))?;
+        }
+        Err(e) => {
+            writer.line(format!("Warning: Failed to upload trace to GCS: {e:#}"))?;
+        }
+    }
+    Ok(())
+}
+
+async fn reupload_trace(
+    context: &EnvironmentContext,
+    fxt_path: &str,
+    opts: &Stop,
+    writer: Writer,
+) -> Result<()> {
+    reupload_trace_impl(context, fxt_path, opts, writer, |path, bucket, viewer| async move {
+        upload::upload_trace(&path, &bucket, &viewer).await
+    })
+    .await
+}
+
+async fn reupload_trace_impl<F, Fut>(
+    context: &EnvironmentContext,
+    fxt_path: &str,
+    opts: &Stop,
+    mut writer: Writer,
+    uploader: F,
+) -> Result<()>
+where
+    F: FnOnce(PathBuf, String, String) -> Fut,
+    Fut: Future<Output = Result<String>>,
+{
+    upload_and_print(context, Path::new(fxt_path), opts.bucket.as_deref(), &mut writer, uploader)
+        .await
 }
 
 /// Do some quick verification that the trace file
@@ -953,6 +1147,13 @@ mod tests {
             } => {
                 responder.send(Ok(123)).expect("should respond");
             }
+            tracing_controller::SessionManagerRequest::StartTraceSessionOnBoot {
+                config: _,
+                options: _,
+                responder,
+            } => {
+                responder.send(Ok(())).expect("should respond");
+            }
             tracing_controller::SessionManagerRequest::EndTraceSession {
                 task_id: _,
                 output: _,
@@ -1174,6 +1375,7 @@ mod tests {
             on_boot: false,
             retain_raw_fidl: false,
             nocompress: false,
+            ..Default::default()
         };
 
         let tool = TraceTool {
@@ -1343,6 +1545,7 @@ mod tests {
             on_boot: false,
             retain_raw_fidl: false,
             nocompress: false,
+            ..Default::default()
         };
 
         let tool = TraceTool {
@@ -1410,6 +1613,7 @@ Triggers:
             no_verify_trace: true,
             retain_raw_fidl: false,
             abort: false,
+            ..Default::default()
         };
 
         let tool = TraceTool {
@@ -1425,6 +1629,290 @@ Triggers:
             "Results written to /([^/]+/)+?foo.txt\nUpload to https://ui.perfetto.dev/#!/ to view.";
         let want = Regex::new(regex_str).unwrap();
         assert!(want.is_match(&output), "\"{}\" didn't match regex /{}/", output, regex_str);
+    }
+
+    #[fuchsia::test]
+    async fn test_stop_upload() {
+        let client = fdomain_local::local_client_empty();
+        let env = ffx_config::test_init().unwrap();
+        let test_buffers = TestBuffers::default();
+        let writer = Writer::new_test(None, &test_buffers);
+
+        let stop_opts = Stop {
+            output: Some("foo_upload.txt".to_string()),
+            verbose: false,
+            no_symbolize: false,
+            no_verify_trace: true,
+            retain_raw_fidl: false,
+            abort: false,
+            upload: true,
+            bucket: Some("test-upload-bucket".to_string()),
+            ..Default::default()
+        };
+
+        let tool = TraceTool {
+            provisioner: Deferred::from_output(Err(fho::user_error!("not found"))),
+            session_manager: setup_fake_session_manager(client),
+            context: env.context.clone(),
+            cmd: TraceCommand { sub_cmd: TraceSubCommand::Stop(stop_opts.clone()) },
+        };
+
+        // Even though upload to GCS fails in a test environment (no network/credentials),
+        // trace_stop must return Ok(()) (non-blocking failure as per requirement R3).
+        tool.trace_stop(&stop_opts, writer).await.unwrap();
+        let output = test_buffers.into_stdout_str();
+        let regex_str = "Results written to /([^/]+/)+?foo_upload.txt\nUploading trace to gs://test-upload-bucket\\.\\.\\.\nWarning: Failed to upload trace to GCS: .*";
+        let want = Regex::new(regex_str).unwrap();
+        assert!(want.is_match(&output), "\"{}\" didn't match regex /{}/", output, regex_str);
+    }
+
+    #[fuchsia::test]
+    async fn test_stop_upload_with_config() {
+        let client = fdomain_local::local_client_empty();
+        let env = ffx_config::test_env()
+            .user_config("trace.gcs_bucket", "my-config-bucket")
+            .build()
+            .unwrap();
+        let test_buffers = TestBuffers::default();
+        let writer = Writer::new_test(None, &test_buffers);
+
+        let stop_opts = Stop {
+            output: Some("foo_upload_cfg.txt".to_string()),
+            upload: true,
+            bucket: None,
+            no_verify_trace: true,
+            ..Default::default()
+        };
+
+        let tool = TraceTool {
+            provisioner: Deferred::from_output(Err(fho::user_error!("not found"))),
+            session_manager: setup_fake_session_manager(client),
+            context: env.context.clone(),
+            cmd: TraceCommand { sub_cmd: TraceSubCommand::Stop(stop_opts.clone()) },
+        };
+
+        tool.trace_stop(&stop_opts, writer).await.unwrap();
+        let output = test_buffers.into_stdout_str();
+        let regex_str = "Results written to /([^/]+/)+?foo_upload_cfg.txt\nUploading trace to gs://my-config-bucket\\.\\.\\.\nWarning: Failed to upload trace to GCS: .*";
+        let want = Regex::new(regex_str).unwrap();
+        assert!(want.is_match(&output), "\"{}\" didn't match regex /{}/", output, regex_str);
+    }
+
+    #[fuchsia::test]
+    async fn test_finalize_trace_upload_success() {
+        let env = ffx_config::test_init().unwrap();
+        let test_buffers = TestBuffers::default();
+        let writer = Writer::new_test(None, &test_buffers);
+
+        let stop_opts = Stop {
+            upload: true,
+            bucket: Some("my-bucket".to_string()),
+            no_verify_trace: true,
+            ..Default::default()
+        };
+
+        let trace_data = TraceData {
+            output_file: "test_output.fxt".to_string(),
+            categories: vec![],
+            stop_result: StopResult::default(),
+        };
+
+        let expected_url = "https://fuchsia-trace-viewer.corp.goog/trace/b94d27b9";
+        finalize_trace_impl(
+            &env.context,
+            trace_data,
+            &stop_opts,
+            writer,
+            |_path, _bucket, _viewer| async { Ok(expected_url.to_string()) },
+        )
+        .await
+        .unwrap();
+
+        let output = test_buffers.into_stdout_str();
+        let expected_output = format!(
+            "Results written to test_output.fxt\nUploading trace to gs://my-bucket...\nTrace uploaded successfully!\n\nView in Perfetto Trace Viewer:\n  {}\n",
+            expected_url
+        );
+        assert_eq!(output, expected_output);
+    }
+
+    #[fuchsia::test]
+    async fn test_finalize_trace_upload_failure_non_blocking() {
+        let env = ffx_config::test_init().unwrap();
+        let test_buffers = TestBuffers::default();
+        let writer = Writer::new_test(None, &test_buffers);
+
+        let stop_opts = Stop {
+            upload: true,
+            bucket: Some("my-bucket".to_string()),
+            no_verify_trace: true,
+            ..Default::default()
+        };
+
+        let trace_data = TraceData {
+            output_file: "test_output.fxt".to_string(),
+            categories: vec![],
+            stop_result: StopResult::default(),
+        };
+
+        let res = finalize_trace_impl(
+            &env.context,
+            trace_data,
+            &stop_opts,
+            writer,
+            |_path, _bucket, _viewer| async { Err(anyhow!("simulated upload failure")) },
+        )
+        .await;
+
+        assert!(res.is_ok());
+        let output = test_buffers.into_stdout_str();
+        let expected_output = "Results written to test_output.fxt\nUploading trace to gs://my-bucket...\nWarning: Failed to upload trace to GCS: simulated upload failure\n";
+        assert_eq!(output, expected_output);
+    }
+
+    #[fuchsia::test]
+    async fn test_finalize_trace_upload_cli_override_config() {
+        let env = ffx_config::test_env()
+            .user_config("trace.gcs_bucket", "config-default-bucket")
+            .build()
+            .unwrap();
+        let test_buffers = TestBuffers::default();
+        let writer = Writer::new_test(None, &test_buffers);
+
+        let stop_opts = Stop {
+            upload: true,
+            bucket: Some("cli-override-bucket".to_string()),
+            no_verify_trace: true,
+            ..Default::default()
+        };
+
+        let trace_data = TraceData {
+            output_file: "test_output.fxt".to_string(),
+            categories: vec![],
+            stop_result: StopResult::default(),
+        };
+
+        let expected_url = "https://fuchsia-trace-viewer.corp.goog/trace/12345678";
+        finalize_trace_impl(
+            &env.context,
+            trace_data,
+            &stop_opts,
+            writer,
+            |_path, bucket, _viewer| async move {
+                assert_eq!(bucket, "cli-override-bucket");
+                Ok(expected_url.to_string())
+            },
+        )
+        .await
+        .unwrap();
+
+        let output = test_buffers.into_stdout_str();
+        let expected_output = format!(
+            "Results written to test_output.fxt\nUploading trace to gs://cli-override-bucket...\nTrace uploaded successfully!\n\nView in Perfetto Trace Viewer:\n  {}\n",
+            expected_url
+        );
+        assert_eq!(output, expected_output);
+    }
+
+    #[fuchsia::test]
+    async fn test_finalize_trace_upload_viewer_url_config() {
+        let env = ffx_config::test_env()
+            .user_config("trace.viewer_url", "https://custom-viewer.corp.goog/")
+            .build()
+            .unwrap();
+        let test_buffers = TestBuffers::default();
+        let writer = Writer::new_test(None, &test_buffers);
+
+        let stop_opts = Stop { upload: true, no_verify_trace: true, ..Default::default() };
+
+        let trace_data = TraceData {
+            output_file: "test_output.fxt".to_string(),
+            categories: vec![],
+            stop_result: StopResult::default(),
+        };
+
+        let expected_url = "https://custom-viewer.corp.goog/trace/12345678";
+        finalize_trace_impl(
+            &env.context,
+            trace_data,
+            &stop_opts,
+            writer,
+            |_path, _bucket, viewer| async move {
+                assert_eq!(viewer, "https://custom-viewer.corp.goog");
+                Ok(expected_url.to_string())
+            },
+        )
+        .await
+        .unwrap();
+
+        let output = test_buffers.into_stdout_str();
+        let expected_output = format!(
+            "Results written to test_output.fxt\nUploading trace to gs://fuchsia-trace-viewer-traces...\nTrace uploaded successfully!\n\nView in Perfetto Trace Viewer:\n  {}\n",
+            expected_url
+        );
+        assert_eq!(output, expected_output);
+    }
+
+    #[fuchsia::test]
+    async fn test_reupload_trace_success() {
+        let env = ffx_config::test_init().unwrap();
+        let test_buffers = TestBuffers::default();
+        let writer = Writer::new_test(None, &test_buffers);
+
+        let stop_opts = Stop {
+            reupload: Some("existing_trace.fxt".to_string()),
+            bucket: Some("reupload-bucket".to_string()),
+            ..Default::default()
+        };
+
+        let expected_url = "https://fuchsia-trace-viewer.corp.goog/trace/abcdef12";
+        reupload_trace_impl(
+            &env.context,
+            "existing_trace.fxt",
+            &stop_opts,
+            writer,
+            |path, bucket, _viewer| async move {
+                assert_eq!(path, PathBuf::from("existing_trace.fxt"));
+                assert_eq!(bucket, "reupload-bucket");
+                Ok(expected_url.to_string())
+            },
+        )
+        .await
+        .unwrap();
+
+        let output = test_buffers.into_stdout_str();
+        let expected_output = format!(
+            "Uploading trace to gs://reupload-bucket...\nTrace uploaded successfully!\n\nView in Perfetto Trace Viewer:\n  {}\n",
+            expected_url
+        );
+        assert_eq!(output, expected_output);
+    }
+
+    #[fuchsia::test]
+    async fn test_reupload_trace_failure_non_blocking() {
+        let env = ffx_config::test_init().unwrap();
+        let test_buffers = TestBuffers::default();
+        let writer = Writer::new_test(None, &test_buffers);
+
+        let stop_opts = Stop {
+            reupload: Some("existing_trace.fxt".to_string()),
+            bucket: Some("reupload-bucket".to_string()),
+            ..Default::default()
+        };
+
+        let res = reupload_trace_impl(
+            &env.context,
+            "existing_trace.fxt",
+            &stop_opts,
+            writer,
+            |_path, _bucket, _viewer| async { Err(anyhow!("simulated reupload failure")) },
+        )
+        .await;
+
+        assert!(res.is_ok());
+        let output = test_buffers.into_stdout_str();
+        let expected_output = "Uploading trace to gs://reupload-bucket...\nWarning: Failed to upload trace to GCS: simulated reupload failure\n";
+        assert_eq!(output, expected_output);
     }
 
     #[fuchsia::test]
@@ -1446,14 +1934,7 @@ Triggers:
                 _ => panic!("unsupported req"),
             })));
 
-        let stop_opts = Stop {
-            output: Some("foo.txt".to_string()),
-            verbose: false,
-            abort: true,
-            no_symbolize: false,
-            no_verify_trace: true,
-            retain_raw_fidl: false,
-        };
+        let stop_opts = Stop { abort: true, ..Default::default() };
         let tool = TraceTool {
             provisioner: Deferred::from_output(Err(fho::user_error!("not found"))),
             session_manager,
@@ -1485,6 +1966,7 @@ Triggers:
             no_verify_trace: true,
             retain_raw_fidl: false,
             abort: false,
+            ..Default::default()
         };
         let tool = TraceTool {
             provisioner: Deferred::from_output(Err(fho::user_error!("not found"))),
@@ -1521,6 +2003,7 @@ Triggers:
             on_boot: false,
             retain_raw_fidl: false,
             nocompress: false,
+            ..Default::default()
         };
         let tool = TraceTool {
             provisioner: Deferred::from_output(Err(fho::user_error!("not found"))),
@@ -1561,6 +2044,7 @@ Triggers:
             no_verify_trace: true,
             retain_raw_fidl: false,
             abort: false,
+            ..Default::default()
         };
         let tool = TraceTool {
             provisioner: Deferred::from_output(Err(fho::user_error!("not found"))),
@@ -1608,6 +2092,7 @@ Triggers:
             on_boot: false,
             retain_raw_fidl: false,
             nocompress: false,
+            ..Default::default()
         };
 
         let tool = TraceTool {
@@ -1645,6 +2130,7 @@ Triggers:
             on_boot: false,
             retain_raw_fidl: false,
             nocompress: false,
+            ..Default::default()
         };
 
         let tool = TraceTool {
@@ -1684,6 +2170,7 @@ Triggers:
             on_boot: false,
             retain_raw_fidl: false,
             nocompress: false,
+            ..Default::default()
         };
 
         let tool = TraceTool {
@@ -1702,6 +2189,379 @@ Triggers:
             Upload to https://ui.perfetto.dev/#!/ to view.";
         let want = Regex::new(regex_str).unwrap();
         assert!(want.is_match(&output), "\"{}\" didn't match regex /{}/", output, regex_str);
+    }
+
+    #[fuchsia::test]
+    async fn test_start_upload() {
+        let client = fdomain_local::local_client_empty();
+        let env = ffx_config::test_init().unwrap();
+        let test_buffers = TestBuffers::default();
+        let writer = Writer::new_test(None, &test_buffers);
+        let start_opts = Start {
+            buffer_size: 2,
+            categories: vec![],
+            duration: Some(1),
+            buffering_mode: tracing::BufferingMode::Oneshot,
+            output: Some("foo_upload.fxt".to_owned()),
+            background: false,
+            verbose: false,
+            trigger: vec![],
+            no_symbolize: false,
+            no_verify_trace: true,
+            on_boot: false,
+            retain_raw_fidl: false,
+            nocompress: false,
+            upload: true,
+            bucket: Some("test-upload-bucket".to_string()),
+        };
+
+        let tool = TraceTool {
+            provisioner: Deferred::from_output(Err(fho::user_error!("not found"))),
+            session_manager: setup_fake_session_manager(client),
+            context: env.context.clone(),
+            cmd: TraceCommand { sub_cmd: TraceSubCommand::Start(start_opts.clone()) },
+        };
+
+        tool.trace_start(&start_opts, writer).await.unwrap();
+        let output = test_buffers.into_stdout_str();
+        let regex_str = "Tracing categories: \\[\\]...\n\
+            Trace completed! Copying trace from device...\n\
+            Results written to /([^/]+/)+?foo_upload.fxt\n\
+            Uploading trace to gs://test-upload-bucket\\.\\.\\.\n\
+            Warning: Failed to upload trace to GCS: .*";
+        let want = Regex::new(regex_str).unwrap();
+        assert!(want.is_match(&output), "\"{}\" didn't match regex /{}/", output, regex_str);
+    }
+
+    #[fuchsia::test]
+    async fn test_start_background_upload_error() {
+        let client = fdomain_local::local_client_empty();
+        let env = ffx_config::test_init().unwrap();
+        let test_buffers = TestBuffers::default();
+        let writer = Writer::new_test(None, &test_buffers);
+        let start_opts = Start { background: true, upload: true, ..Default::default() };
+
+        let tool = TraceTool {
+            provisioner: Deferred::from_output(Err(fho::user_error!("not found"))),
+            session_manager: setup_fake_session_manager(client),
+            context: env.context.clone(),
+            cmd: TraceCommand { sub_cmd: TraceSubCommand::Start(start_opts.clone()) },
+        };
+
+        let res = tool.trace_start(&start_opts, writer).await;
+        assert!(res.is_err());
+        assert!(
+            res.unwrap_err()
+                .to_string()
+                .contains("The switch '--upload' cannot be used with background tracing")
+        );
+    }
+
+    #[fuchsia::test]
+    async fn test_start_on_boot_upload_error() {
+        let client = fdomain_local::local_client_empty();
+        let env = ffx_config::test_init().unwrap();
+        let test_buffers = TestBuffers::default();
+        let writer = Writer::new_test(None, &test_buffers);
+        let start_opts = Start { on_boot: true, upload: true, ..Default::default() };
+
+        let tool = TraceTool {
+            provisioner: Deferred::from_output(Err(fho::user_error!("not found"))),
+            session_manager: setup_fake_session_manager(client),
+            context: env.context.clone(),
+            cmd: TraceCommand { sub_cmd: TraceSubCommand::Start(start_opts.clone()) },
+        };
+
+        let res = tool.trace_start(&start_opts, writer).await;
+        assert!(res.is_err());
+        assert!(
+            res.unwrap_err()
+                .to_string()
+                .contains("The switch '--upload' cannot be used with on-boot tracing")
+        );
+    }
+
+    #[fuchsia::test]
+    async fn test_start_on_boot_with_background() {
+        let client = fdomain_local::local_client_empty();
+        let env = ffx_config::test_init().unwrap();
+        let test_buffers = TestBuffers::default();
+        let writer = Writer::new_test(None, &test_buffers);
+        let start_opts = Start { on_boot: true, background: true, ..Default::default() };
+
+        let tool = TraceTool {
+            provisioner: Deferred::from_output(Err(fho::user_error!("not found"))),
+            session_manager: setup_fake_session_manager(client),
+            context: env.context.clone(),
+            cmd: TraceCommand { sub_cmd: TraceSubCommand::Start(start_opts.clone()) },
+        };
+
+        let res = tool.trace_start(&start_opts, writer).await;
+        assert!(res.is_ok());
+        let output = test_buffers.into_stdout_str();
+        assert!(
+            output.contains("Once the device is rebooted, stop the trace using `ffx trace stop`")
+        );
+    }
+
+    #[fuchsia::test]
+    async fn test_stop_abort_exclusive_options() {
+        let client = fdomain_local::local_client_empty();
+        let env = ffx_config::test_init().unwrap();
+
+        let cases = vec![
+            (
+                Stop { abort: true, upload: true, ..Default::default() },
+                "The switch '--upload' cannot be used with '--abort'",
+            ),
+            (
+                Stop { abort: true, reupload: Some("trace.fxt".to_string()), ..Default::default() },
+                "The option '--reupload' cannot be used with '--abort'",
+            ),
+            (
+                Stop { abort: true, output: Some("trace.fxt".to_string()), ..Default::default() },
+                "The option '--output' cannot be used with '--abort'",
+            ),
+            (
+                Stop { abort: true, bucket: Some("bucket".to_string()), ..Default::default() },
+                "The option '--bucket' cannot be used with '--abort'",
+            ),
+            (
+                Stop { abort: true, no_symbolize: true, ..Default::default() },
+                "The switch '--no-symbolize' cannot be used with '--abort'",
+            ),
+            (
+                Stop { abort: true, no_verify_trace: true, ..Default::default() },
+                "The switch '--no-verify-trace' cannot be used with '--abort'",
+            ),
+            (
+                Stop { abort: true, retain_raw_fidl: true, ..Default::default() },
+                "The switch '--retain-raw-fidl' cannot be used with '--abort'",
+            ),
+        ];
+
+        for (opts, expected_err) in cases {
+            let test_buffers = TestBuffers::default();
+            let writer = Writer::new_test(None, &test_buffers);
+            let tool = TraceTool {
+                provisioner: Deferred::from_output(Err(fho::user_error!("not found"))),
+                session_manager: setup_fake_session_manager(client.clone()),
+                context: env.context.clone(),
+                cmd: TraceCommand { sub_cmd: TraceSubCommand::Stop(opts.clone()) },
+            };
+            let res = tool.trace_stop(&opts, writer).await;
+            assert!(res.is_err(), "Expected error for opts: {:?}", opts);
+            let err_msg = res.unwrap_err().to_string();
+            assert!(
+                err_msg.contains(expected_err),
+                "Error \"{}\" did not contain \"{}\"",
+                err_msg,
+                expected_err
+            );
+        }
+    }
+
+    #[fuchsia::test]
+    async fn test_stop_reupload_exclusive_options() {
+        let client = fdomain_local::local_client_empty();
+        let env = ffx_config::test_init().unwrap();
+
+        let cases = vec![
+            (
+                Stop {
+                    reupload: Some("trace.fxt".to_string()),
+                    upload: true,
+                    ..Default::default()
+                },
+                "The switch '--upload' cannot be used with '--reupload'",
+            ),
+            (
+                Stop {
+                    reupload: Some("trace.fxt".to_string()),
+                    output: Some("trace.fxt".to_string()),
+                    ..Default::default()
+                },
+                "The option '--output' cannot be used with '--reupload'",
+            ),
+            (
+                Stop {
+                    reupload: Some("trace.fxt".to_string()),
+                    no_symbolize: true,
+                    ..Default::default()
+                },
+                "The switch '--no-symbolize' cannot be used with '--reupload'",
+            ),
+            (
+                Stop {
+                    reupload: Some("trace.fxt".to_string()),
+                    no_verify_trace: true,
+                    ..Default::default()
+                },
+                "The switch '--no-verify-trace' cannot be used with '--reupload'",
+            ),
+            (
+                Stop {
+                    reupload: Some("trace.fxt".to_string()),
+                    retain_raw_fidl: true,
+                    ..Default::default()
+                },
+                "The switch '--retain-raw-fidl' cannot be used with '--reupload'",
+            ),
+        ];
+
+        for (opts, expected_err) in cases {
+            let test_buffers = TestBuffers::default();
+            let writer = Writer::new_test(None, &test_buffers);
+            let tool = TraceTool {
+                provisioner: Deferred::from_output(Err(fho::user_error!("not found"))),
+                session_manager: setup_fake_session_manager(client.clone()),
+                context: env.context.clone(),
+                cmd: TraceCommand { sub_cmd: TraceSubCommand::Stop(opts.clone()) },
+            };
+            let res = tool.trace_stop(&opts, writer).await;
+            assert!(res.is_err(), "Expected error for opts: {:?}", opts);
+            let err_msg = res.unwrap_err().to_string();
+            assert!(
+                err_msg.contains(expected_err),
+                "Error \"{}\" did not contain \"{}\"",
+                err_msg,
+                expected_err
+            );
+        }
+    }
+
+    #[fuchsia::test]
+    async fn test_stop_bucket_exclusive_options() {
+        let client = fdomain_local::local_client_empty();
+        let env = ffx_config::test_init().unwrap();
+        let test_buffers = TestBuffers::default();
+        let writer = Writer::new_test(None, &test_buffers);
+        let opts = Stop { bucket: Some("my-bucket".to_string()), ..Default::default() };
+        let tool = TraceTool {
+            provisioner: Deferred::from_output(Err(fho::user_error!("not found"))),
+            session_manager: setup_fake_session_manager(client),
+            context: env.context.clone(),
+            cmd: TraceCommand { sub_cmd: TraceSubCommand::Stop(opts.clone()) },
+        };
+        let res = tool.trace_stop(&opts, writer).await;
+        assert!(res.is_err());
+        assert!(
+            res.unwrap_err()
+                .to_string()
+                .contains("The option '--bucket' can only be used with '--upload' or '--reupload'")
+        );
+    }
+
+    #[fuchsia::test]
+    async fn test_start_exclusive_options() {
+        let client = fdomain_local::local_client_empty();
+        let env = ffx_config::test_init().unwrap();
+
+        let cases = vec![
+            (
+                Start {
+                    on_boot: true,
+                    output: Some("trace.fxt".to_string()),
+                    ..Default::default()
+                },
+                "The option '--output' cannot be used with on-boot tracing",
+            ),
+            (
+                Start {
+                    background: true,
+                    bucket: Some("bucket".to_string()),
+                    ..Default::default()
+                },
+                "The option '--bucket' can only be used with '--upload'",
+            ),
+            (
+                Start { on_boot: true, bucket: Some("bucket".to_string()), ..Default::default() },
+                "The option '--bucket' can only be used with '--upload'",
+            ),
+            (
+                Start { bucket: Some("bucket".to_string()), upload: false, ..Default::default() },
+                "The option '--bucket' can only be used with '--upload'",
+            ),
+        ];
+
+        for (opts, expected_err) in cases {
+            let test_buffers = TestBuffers::default();
+            let writer = Writer::new_test(None, &test_buffers);
+            let tool = TraceTool {
+                provisioner: Deferred::from_output(Err(fho::user_error!("not found"))),
+                session_manager: setup_fake_session_manager(client.clone()),
+                context: env.context.clone(),
+                cmd: TraceCommand { sub_cmd: TraceSubCommand::Start(opts.clone()) },
+            };
+            let res = tool.trace_start(&opts, writer).await;
+            assert!(res.is_err(), "Expected error for opts: {:?}", opts);
+            let err_msg = res.unwrap_err().to_string();
+            assert!(
+                err_msg.contains(expected_err),
+                "Error \"{}\" did not contain \"{}\"",
+                err_msg,
+                expected_err
+            );
+        }
+    }
+
+    #[fuchsia::test]
+    async fn test_symbolize_exclusive_options() {
+        let client = fdomain_local::local_client_empty();
+        let env = ffx_config::test_init().unwrap();
+
+        let cases = vec![
+            (
+                Symbolize {
+                    ordinal: Some(12345),
+                    fxt: Some("trace.fxt".to_string()),
+                    outfile: None,
+                    ir_path: vec![],
+                    retain_raw_fidl: false,
+                },
+                "The options '--ordinal' and '--fxt' cannot be used together",
+            ),
+            (
+                Symbolize {
+                    ordinal: Some(12345),
+                    fxt: None,
+                    outfile: Some("out.txt".to_string()),
+                    ir_path: vec![],
+                    retain_raw_fidl: false,
+                },
+                "The option '--outfile' cannot be used with '--ordinal'",
+            ),
+            (
+                Symbolize {
+                    ordinal: None,
+                    fxt: Some("trace.fxt".to_string()),
+                    outfile: None,
+                    ir_path: vec!["some/ir.json".to_string()],
+                    retain_raw_fidl: false,
+                },
+                "The option '--ir-path' cannot be used with '--fxt'",
+            ),
+        ];
+
+        for (opts, expected_err) in cases {
+            let test_buffers = TestBuffers::default();
+            let writer = Writer::new_test(None, &test_buffers);
+            let tool = TraceTool {
+                provisioner: Deferred::from_output(Err(fho::user_error!("not found"))),
+                session_manager: setup_fake_session_manager(client.clone()),
+                context: env.context.clone(),
+                cmd: TraceCommand { sub_cmd: TraceSubCommand::Symbolize(opts.clone()) },
+            };
+            let res = tool.symbolize(&opts, writer).await;
+            assert!(res.is_err(), "Expected error for opts: {:?}", opts);
+            let err_msg = res.unwrap_err().to_string();
+            assert!(
+                err_msg.contains(expected_err),
+                "Error \"{}\" did not contain \"{}\"",
+                err_msg,
+                expected_err
+            );
+        }
     }
 
     #[fuchsia::test]
@@ -1724,6 +2584,7 @@ Triggers:
             on_boot: false,
             retain_raw_fidl: false,
             nocompress: false,
+            ..Default::default()
         };
 
         let tool = TraceTool {

@@ -140,6 +140,26 @@
       "short": null,
       "description": "disable zstd compression during transfer. Defaults to false.",
       "hidden": false
+    },
+    {
+      "kind": "Switch",
+      "optionality": "optional",
+      "long": "--upload",
+      "short": null,
+      "description": "upload the trace file to GCS and display the Perfetto Trace Viewer URL. Defaults to false.",
+      "hidden": false
+    },
+    {
+      "kind": {
+        "Option": {
+          "arg_name": "bucket"
+        }
+      },
+      "optionality": "optional",
+      "long": "--bucket",
+      "short": null,
+      "description": "GCS bucket to upload the trace file to.",
+      "hidden": false
     }
   ],
   "notes": [

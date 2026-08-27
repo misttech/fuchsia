@@ -62,6 +62,38 @@
       "short": null,
       "description": "stop the currently running background trace session. Discard the trace data. Defaults to false.",
       "hidden": false
+    },
+    {
+      "kind": "Switch",
+      "optionality": "optional",
+      "long": "--upload",
+      "short": null,
+      "description": "upload the trace file to GCS and display the Perfetto Trace Viewer URL. Defaults to false.",
+      "hidden": false
+    },
+    {
+      "kind": {
+        "Option": {
+          "arg_name": "reupload"
+        }
+      },
+      "optionality": "optional",
+      "long": "--reupload",
+      "short": null,
+      "description": "upload an existing trace file to GCS and display the Perfetto Trace Viewer URL.",
+      "hidden": false
+    },
+    {
+      "kind": {
+        "Option": {
+          "arg_name": "bucket"
+        }
+      },
+      "optionality": "optional",
+      "long": "--bucket",
+      "short": null,
+      "description": "GCS bucket to upload the trace file to.",
+      "hidden": false
     }
   ],
   "notes": [],

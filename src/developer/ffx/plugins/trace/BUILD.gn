@@ -21,6 +21,7 @@ if (is_host) {
       "src/lib.rs",
       "src/process.rs",
       "src/progress_reader.rs",
+      "src/upload.rs",
     ]
 
     deps = [
@@ -29,6 +30,7 @@ if (is_host) {
       "//src/developer/ffx/config:lib",
       "//src/developer/ffx/lib/errors:lib",
       "//src/developer/ffx/lib/fho:lib",
+      "//src/developer/ffx/lib/pbms:lib",
       "//src/developer/ffx/lib/target:lib",
       "//src/developer/ffx/lib/target/behavior:lib",
       "//src/developer/ffx/lib/target/holders:lib",
@@ -37,6 +39,8 @@ if (is_host) {
       "//src/lib/fdomain/client",
       "//src/lib/fidl/rust/fidl",
       "//src/lib/fuchsia-async",
+      "//src/lib/gcs",
+      "//src/lib/structured_ui",
       "//src/performance/lib/fxt/rust",
       "//src/performance/trace_task:trace_task_fdomain",
       "//third_party/rust_crates:anyhow",
@@ -44,9 +48,11 @@ if (is_host) {
       "//third_party/rust_crates:async-trait",
       "//third_party/rust_crates:blocking",
       "//third_party/rust_crates:futures",
+      "//third_party/rust_crates:hex",
       "//third_party/rust_crates:log",
       "//third_party/rust_crates:prettytable-rs",
       "//third_party/rust_crates:serde",
+      "//third_party/rust_crates:sha2",
       "//third_party/rust_crates:term_grid",
       "//third_party/rust_crates:termion",
       "//third_party/rust_crates:zstd",
