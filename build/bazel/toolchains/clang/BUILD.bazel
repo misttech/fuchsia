@@ -2,8 +2,16 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+load("@fuchsia_rules_common//debug_symbols:debug_symbols.bzl", "fuchsia_debug_symbols")
 load(":toolchains.bzl", "define_fuchsia_api_level_info")
 
 package(default_applicable_licenses = ["//:license"])
 
 define_fuchsia_api_level_info(name = "_fuchsia_api_level_info")
+
+fuchsia_debug_symbols(
+    name = "debug_symbols",
+    build_id_dirs = ["@fuchsia_clang//:lib/debug/.build-id"],
+    source_search_root = "@fuchsia_clang//:BUILD.bazel",
+    visibility = ["//:__subpackages__"],
+)

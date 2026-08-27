@@ -499,3 +499,31 @@ fuchsia_unstripped_binary = rule(
         ),
     },
 )
+
+def _fuchsia_debug_symbols_impl(ctx):
+    return [
+        FuchsiaDebugSymbolInfo(build_id_dirs_mapping = {
+            ctx.file.source_search_root: depset(ctx.files.build_id_dirs),
+        }),
+    ]
+
+# NOTE: fuchsia_debug_symbols() is part of the public Bazel SDK API.
+# If changes to the implementation are needed for in-tree use cases, they
+# should be done in a way that doesn't break this public API, or a separate
+# internal rule (e.g., fx_debug_symbols()) should be introduced instead.
+fuchsia_debug_symbols = rule(
+    doc = """Rule-based constructor for FuchsiaDebugSymbolInfo.""",
+    implementation = _fuchsia_debug_symbols_impl,
+    attrs = {
+        "build_id_dirs": attr.label_list(
+            doc = "A list of build-id directory files.",
+            allow_files = True,
+            mandatory = True,
+        ),
+        "source_search_root": attr.label(
+            doc = "A label to a file in the directory where sources can be found.",
+            allow_single_file = True,
+            mandatory = True,
+        ),
+    },
+)
