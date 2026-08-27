@@ -739,6 +739,7 @@ pub struct NetCfg<'a> {
     // Manages the lifetime of NDP-learned DNS servers.
     ndp_dns_expiry_tracker: dns::NdpDnsExpiryTracker,
 
+    telemetry_node: fuchsia_inspect::Node,
     inspector: fuchsia_inspect::Inspector,
 }
 
@@ -983,6 +984,8 @@ enum ProvisioningEvent {
 // case of looping."
 const DHCP_CLIENT_RESTART_WAIT_TIME: std::time::Duration = std::time::Duration::from_secs(10);
 
+const TELEMETRY_INSPECT_NODE_NAME: &str = "telemetry";
+
 impl<'a> NetCfg<'a> {
     async fn new(
         filter_enabled_interface_types: HashSet<InterfaceType>,
@@ -1060,7 +1063,10 @@ impl<'a> NetCfg<'a> {
         };
         let interface_naming_config =
             interface::InterfaceNamingConfig::from_naming_rules(interface_naming_policy);
-        let netpol_networks_service = network::NetpolNetworksService::default();
+        let telemetry_node = inspector.root().create_child(TELEMETRY_INSPECT_NODE_NAME);
+        let netpol_networks_service = network::NetpolNetworksService::default()
+            .with_inspect(&telemetry_node, "operations")
+            .context("failed to initialize network registry inspect")?;
 
         Ok(NetCfg {
             stack,
@@ -1091,6 +1097,7 @@ impl<'a> NetCfg<'a> {
             netpol_networks_service,
             ndp_dns_servers: Default::default(),
             ndp_dns_expiry_tracker: dns::NdpDnsExpiryTracker::new(),
+            telemetry_node,
             inspector,
         })
     }
@@ -1330,8 +1337,10 @@ impl<'a> NetCfg<'a> {
         let mut dns_server_watcher_incoming_requests =
             dns::DnsServerWatcherRequestStreams::default();
 
-        let inspector = self.inspector.clone();
-        let (telemetry_sender, telemetry_fut) = crate::telemetry::serve_telemetry(&inspector);
+        let (telemetry_sender, telemetry_fut) = crate::telemetry::serve_telemetry(
+            self.telemetry_node.clone_weak(),
+            &format!("root/{TELEMETRY_INSPECT_NODE_NAME}"),
+        );
         let telemetry_fut = telemetry_fut.fuse();
         let mut telemetry_fut = pin!(telemetry_fut);
         self.netpol_networks_service.set_telemetry(telemetry_sender);
@@ -4250,6 +4259,7 @@ mod tests {
                 netpol_networks_service: Default::default(),
                 ndp_dns_servers: Default::default(),
                 ndp_dns_expiry_tracker: dns::NdpDnsExpiryTracker::new(),
+                telemetry_node: Default::default(),
                 inspector: fuchsia_inspect::Inspector::default(),
             },
             ServerEnds {

@@ -7,7 +7,6 @@ pub mod processors;
 use crate::telemetry::processors::network_properties::NetworkPropertiesProcessor;
 use anyhow::Error;
 use fidl_fuchsia_net_policy_socketproxy as fnp_socketproxy;
-use fuchsia_inspect::Inspector;
 use fuchsia_sync::Mutex;
 use futures::channel::mpsc;
 use futures::{Future, StreamExt};
@@ -74,17 +73,15 @@ impl TelemetrySender {
 const TELEMETRY_EVENT_BUFFER_SIZE: usize = 100;
 
 pub fn serve_telemetry(
-    inspector: &Inspector,
-) -> (TelemetrySender, impl Future<Output = Result<(), Error>>) {
-    let inspect_node = inspector.root();
-    let telemetry_node = inspect_node.create_child("telemetry");
+    telemetry_node: fuchsia_inspect::Node,
+    telemetry_path: &str,
+) -> (TelemetrySender, impl Future<Output = Result<(), Error>> + use<>) {
     let time_series_node = telemetry_node.create_child("time_series");
     let client =
         windowed_stats::experimental::inspect::TimeMatrixClient::new(time_series_node.clone_weak());
 
-    let processor = NetworkPropertiesProcessor::new(&telemetry_node, "root/telemetry", &client);
-    inspect_node.record(time_series_node);
-    inspect_node.record(telemetry_node);
+    let processor = NetworkPropertiesProcessor::new(&telemetry_node, telemetry_path, &client);
+    telemetry_node.record(time_series_node);
 
     let (sender, mut receiver) = mpsc::channel::<TelemetryEvent>(TELEMETRY_EVENT_BUFFER_SIZE);
     let sender = TelemetrySender::new(sender);

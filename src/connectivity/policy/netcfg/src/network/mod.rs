@@ -23,6 +23,7 @@ use fidl_fuchsia_net_name as fnet_name;
 use fidl_fuchsia_net_policy_properties as fnp_properties;
 use fidl_fuchsia_net_policy_socketproxy as fnp_socketproxy;
 use fidl_fuchsia_posix_socket as fposix_socket;
+use fuchsia_inspect_derive::{IValue, Inspect, Unit, WithInspect as _};
 
 // The id for each network, separated by network source.
 //
@@ -219,7 +220,7 @@ impl RegisteredNetworks {
 
     fn apply(&mut self, update: NetworkRegistryUpdate) -> RegistryUpdateResult {
         match update {
-            NetworkRegistryUpdate::LoseDefaultNetwork => {
+            NetworkRegistryUpdate::UnsetDefaultNetwork => {
                 // Handle Starnix unsetting its default network.
                 self.starnix_default = None;
                 RegistryUpdateResult {
@@ -557,14 +558,14 @@ enum UpdateApplied {
 
 #[derive(Debug, Clone)]
 pub enum NetworkRegistryUpdate {
-    LoseDefaultNetwork,
+    UnsetDefaultNetwork,
     ChangeNetwork(NetworkId, NetworkUpdate),
     UpdateDns(Vec<fnet_name::DnsServer_>),
 }
 
 impl NetworkRegistryUpdate {
-    pub fn default_network_lost() -> Self {
-        NetworkRegistryUpdate::LoseDefaultNetwork
+    pub fn unset_default() -> Self {
+        NetworkRegistryUpdate::UnsetDefaultNetwork
     }
 
     pub fn dns(dns_servers: &DnsServers) -> Self {
@@ -792,6 +793,67 @@ impl futures::stream::FusedStream for NetpolNetworksService {
     }
 }
 
+#[derive(Unit, Debug, Default, Clone)]
+struct MethodInspect {
+    successes: u32,
+    errors: u32,
+}
+
+#[derive(Unit, Debug, Default, Clone)]
+struct RegistryMetrics {
+    default_network_id: Option<u32>,
+    adds: MethodInspect,
+    removes: MethodInspect,
+    /// Counts invocations of the `SetDefault` FIDL method. Both setting a
+    /// default network ID and unsetting the default network are
+    /// valid operations that count as successes.
+    set_defaults: MethodInspect,
+    updates: MethodInspect,
+}
+
+#[derive(Inspect, Default)]
+struct OperationsMetrics {
+    delegated: IValue<RegistryMetrics>,
+    inspect_node: fuchsia_inspect::Node,
+}
+
+impl OperationsMetrics {
+    fn record_set_default(
+        &mut self,
+        result: &Result<(), fnp_socketproxy::NetworkRegistrySetDefaultError>,
+    ) {
+        let mut delegated = self.delegated.as_mut();
+        match result {
+            Ok(()) => delegated.set_defaults.successes += 1,
+            Err(_) => delegated.set_defaults.errors += 1,
+        }
+    }
+
+    fn record_add(&mut self, result: &Result<(), fnp_socketproxy::NetworkRegistryAddError>) {
+        let mut delegated = self.delegated.as_mut();
+        match result {
+            Ok(()) => delegated.adds.successes += 1,
+            Err(_) => delegated.adds.errors += 1,
+        }
+    }
+
+    fn record_update(&mut self, result: &Result<(), fnp_socketproxy::NetworkRegistryUpdateError>) {
+        let mut delegated = self.delegated.as_mut();
+        match result {
+            Ok(()) => delegated.updates.successes += 1,
+            Err(_) => delegated.updates.errors += 1,
+        }
+    }
+
+    fn record_remove(&mut self, result: &Result<(), fnp_socketproxy::NetworkRegistryRemoveError>) {
+        let mut delegated = self.delegated.as_mut();
+        match result {
+            Ok(()) => delegated.removes.successes += 1,
+            Err(_) => delegated.removes.errors += 1,
+        }
+    }
+}
+
 #[derive(Default)]
 pub struct NetpolNetworksService {
     // The current generation
@@ -813,9 +875,21 @@ pub struct NetpolNetworksService {
     next_watcher_id: PropertyWatcherConnectionId,
     // The multiplexed stream of events handled by the eventloop
     streams: futures::stream::SelectAll<NetworkRequestStreamInner>,
+
+    // Inspect metrics for operations
+    metrics: OperationsMetrics,
 }
 
 impl NetpolNetworksService {
+    pub fn with_inspect(
+        mut self,
+        parent: &fuchsia_inspect::Node,
+        name: impl AsRef<str>,
+    ) -> Result<Self, fuchsia_inspect_derive::AttachError> {
+        self.metrics = OperationsMetrics::default().with_inspect(parent, name)?;
+        Ok(self)
+    }
+
     pub fn set_telemetry(&mut self, telemetry: TelemetrySender) {
         self.telemetry = Some(telemetry);
     }
@@ -1125,10 +1199,12 @@ impl NetpolNetworksService {
                         }
                     }
                     fposix_socket::OptionalUint32::Unset(_) => {
-                        self.update(NetworkRegistryUpdate::default_network_lost()).await;
+                        self.update(NetworkRegistryUpdate::unset_default()).await;
                         Ok(())
                     }
                 };
+
+                self.metrics.record_set_default(&set_default_result);
 
                 self.respond_to_delegated_network_update(
                     set_default_result,
@@ -1160,6 +1236,8 @@ impl NetpolNetworksService {
                     Err(e) => Err(e),
                 };
 
+                self.metrics.record_add(&add_result);
+
                 self.respond_to_delegated_network_update(
                     add_result,
                     |reply| responder.send(reply),
@@ -1190,6 +1268,8 @@ impl NetpolNetworksService {
                     Err(e) => Err(e),
                 };
 
+                self.metrics.record_update(&update_result);
+
                 self.respond_to_delegated_network_update(
                     update_result,
                     |reply| responder.send(reply),
@@ -1215,6 +1295,8 @@ impl NetpolNetworksService {
                     }
                     Err(_) => Err(NetworkRegistryRemoveError::NotFound),
                 };
+
+                self.metrics.record_remove(&remove_result);
 
                 self.respond_to_delegated_network_update(
                     remove_result,
@@ -1378,6 +1460,11 @@ impl NetpolNetworksService {
 
     pub async fn update(&mut self, update: NetworkRegistryUpdate) {
         let RegistryUpdateResult { event, default_changed } = self.network_registry.apply(update);
+
+        if default_changed.is_some() {
+            self.metrics.delegated.as_mut().default_network_id =
+                self.network_registry.starnix_default.map(|id| id.get().get() as u32);
+        }
 
         if let UpdateApplied::None = event {
             if default_changed.is_none() {
@@ -1638,6 +1725,7 @@ impl<Stream: futures::Stream + Unpin> futures::stream::FusedStream for Connectio
 mod tests {
     use super::*;
     use assert_matches::assert_matches;
+    use diagnostics_assertions::assert_data_tree;
     use fnp_socketproxy::{
         NetworkInfo, NetworkRegistryAddError, NetworkRegistryMarker, NetworkRegistryRemoveError,
         NetworkRegistrySetDefaultError, NetworkRegistryUpdateError, StarnixNetworkInfo,
@@ -1971,7 +2059,7 @@ mod tests {
 
         // Unset the default delegated network prior to removal.
         assert_eq!(
-            networks.apply(NetworkRegistryUpdate::LoseDefaultNetwork),
+            networks.apply(NetworkRegistryUpdate::UnsetDefaultNetwork),
             RegistryUpdateResult {
                 event: UpdateApplied::None,
                 default_changed: Some(DefaultChangedEvent {
@@ -2519,7 +2607,7 @@ mod tests {
         assert_matches!(initial_fut.await, Ok(Ok(_)));
 
         // Client has no pending watch calls. Unset the default network.
-        service.update(NetworkRegistryUpdate::default_network_lost()).await;
+        service.update(NetworkRegistryUpdate::unset_default()).await;
 
         // Idle watcher calls watch() after default network change and receives NetworkGone.
         let idle_watch_fut = watcher.watch();
@@ -2696,5 +2784,236 @@ mod tests {
 
         // Once unset from default, removing the network succeeds.
         assert_eq!(process_fidl_request(&mut service, proxy.remove(NETWORK_ID_1)).await, Ok(()));
+    }
+
+    #[fuchsia::test]
+    async fn test_inspect_metrics() {
+        let inspector = fuchsia_inspect::Inspector::default();
+        let telemetry_node = inspector.root().create_child("telemetry");
+        let mut service = NetpolNetworksService::default()
+            .with_inspect(&telemetry_node, "operations")
+            .expect("failed to initialize inspect");
+        inspector.root().record(telemetry_node);
+
+        let (proxy, stream) = fidl::endpoints::create_proxy_and_stream::<NetworkRegistryMarker>();
+        service.add_stream(stream);
+
+        let make_network = |id: u32, mark: u32| fnp_socketproxy::Network {
+            network_id: Some(id),
+            info: Some(NetworkInfo::Starnix(StarnixNetworkInfo {
+                mark: Some(mark),
+                ..Default::default()
+            })),
+            name: Some("wlan0".to_string()),
+            network_type: Some(fnp_socketproxy::NetworkType::Wifi),
+            connectivity: Some(fnp_socketproxy::ConnectivityState::FullConnectivity),
+            ..Default::default()
+        };
+
+        // Initial check - all values should be default.
+        let hierarchy = fuchsia_inspect::reader::read(&inspector).await.unwrap();
+        assert_data_tree!(
+            hierarchy,
+            root: contains {
+                telemetry: contains {
+                    operations: contains {
+                        delegated: contains {
+                            adds: contains { successes: 0u64, errors: 0u64 },
+                            removes: contains { successes: 0u64, errors: 0u64 },
+                            set_defaults: contains {
+                                successes: 0u64,
+                                errors: 0u64,
+                            },
+                            updates: contains {
+                                successes: 0u64,
+                                errors: 0u64,
+                            },
+                        }
+                    }
+                }
+            }
+        );
+
+        // Add valid network 1.
+        assert_eq!(
+            process_fidl_request(&mut service, proxy.add(&make_network(1, 100))).await,
+            Ok(())
+        );
+
+        let hierarchy = fuchsia_inspect::reader::read(&inspector).await.unwrap();
+        assert_data_tree!(
+            hierarchy,
+            root: contains {
+                telemetry: contains {
+                    operations: contains {
+                        delegated: contains {
+                            adds: contains { successes: 1u64, errors: 0u64 },
+                        }
+                    }
+                }
+            }
+        );
+
+        // Add duplicate network 1 -> error.
+        assert_eq!(
+            process_fidl_request(&mut service, proxy.add(&make_network(1, 100))).await,
+            Err(NetworkRegistryAddError::DuplicateNetworkId)
+        );
+
+        let hierarchy = fuchsia_inspect::reader::read(&inspector).await.unwrap();
+        assert_data_tree!(
+            hierarchy,
+            root: contains {
+                telemetry: contains {
+                    operations: contains {
+                        delegated: contains {
+                            adds: contains { successes: 1u64, errors: 1u64 },
+                        }
+                    }
+                }
+            }
+        );
+
+        // Update network 1 properties.
+        assert_eq!(
+            process_fidl_request(&mut service, proxy.update(&make_network(1, 150))).await,
+            Ok(())
+        );
+
+        let hierarchy = fuchsia_inspect::reader::read(&inspector).await.unwrap();
+        assert_data_tree!(
+            hierarchy,
+            root: contains {
+                telemetry: contains {
+                    operations: contains {
+                        delegated: contains {
+                            updates: contains {
+                                successes: 1u64,
+                                errors: 0u64,
+                            },
+                        }
+                    }
+                }
+            }
+        );
+
+        // Make network 1 default.
+        assert_eq!(
+            process_fidl_request(
+                &mut service,
+                proxy.set_default(&fposix_socket::OptionalUint32::Value(1)),
+            )
+            .await,
+            Ok(())
+        );
+
+        let hierarchy = fuchsia_inspect::reader::read(&inspector).await.unwrap();
+        assert_data_tree!(
+            hierarchy,
+            root: contains {
+                telemetry: contains {
+                    operations: contains {
+                        delegated: contains {
+                            set_defaults: contains {
+                                successes: 1u64,
+                                errors: 0u64,
+                            },
+                            default_network_id: 1u64,
+                        }
+                    }
+                }
+            }
+        );
+
+        // Make non-existent network 2 default -> error.
+        assert_eq!(
+            process_fidl_request(
+                &mut service,
+                proxy.set_default(&fposix_socket::OptionalUint32::Value(2)),
+            )
+            .await,
+            Err(NetworkRegistrySetDefaultError::NotFound)
+        );
+
+        let hierarchy = fuchsia_inspect::reader::read(&inspector).await.unwrap();
+        assert_data_tree!(
+            hierarchy,
+            root: contains {
+                telemetry: contains {
+                    operations: contains {
+                        delegated: contains {
+                            set_defaults: contains {
+                                successes: 1u64,
+                                errors: 1u64,
+                            },
+                        }
+                    }
+                }
+            }
+        );
+
+        // Try removing default network 1 -> error.
+        assert_eq!(
+            process_fidl_request(&mut service, proxy.remove(1)).await,
+            Err(NetworkRegistryRemoveError::CannotRemoveDefaultNetwork)
+        );
+
+        let hierarchy = fuchsia_inspect::reader::read(&inspector).await.unwrap();
+        assert_data_tree!(
+            hierarchy,
+            root: contains {
+                telemetry: contains {
+                    operations: contains {
+                        delegated: contains {
+                            removes: contains { successes: 0u64, errors: 1u64 },
+                        }
+                    }
+                }
+            }
+        );
+
+        // Unset default.
+        assert_eq!(
+            process_fidl_request(
+                &mut service,
+                proxy.set_default(&fposix_socket::OptionalUint32::Unset(fposix_socket::Empty)),
+            )
+            .await,
+            Ok(())
+        );
+
+        let hierarchy = fuchsia_inspect::reader::read(&inspector).await.unwrap();
+        assert_data_tree!(
+            hierarchy,
+            root: contains {
+                telemetry: contains {
+                    operations: contains {
+                        delegated: contains {
+                            set_defaults: contains {
+                                successes: 2u64,
+                                errors: 1u64,
+                            },
+                        }
+                    }
+                }
+            }
+        );
+
+        // Remove network 1 -> success.
+        assert_eq!(process_fidl_request(&mut service, proxy.remove(1)).await, Ok(()));
+
+        let hierarchy = fuchsia_inspect::reader::read(&inspector).await.unwrap();
+        assert_data_tree!(
+            hierarchy,
+            root: contains {
+                telemetry: contains {
+                    operations: contains {
+                        delegated: contains {
+                            removes: contains { successes: 1u64, errors: 1u64 },
+                        }
+                    }
+                }
+            }
+        );
     }
 }
