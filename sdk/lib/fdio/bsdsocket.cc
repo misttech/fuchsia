@@ -626,7 +626,7 @@ struct if_nameindex* if_nameindex(void) {
     auto* nameindex = result + i;
     auto& iface = response->interfaces[i];
     nameindex->if_index = static_cast<unsigned int>(iface.id());
-    nameindex->if_name = strdup(iface.name().data());
+    nameindex->if_name = strndup(iface.name().data(), iface.name().size());
   }
 
   return result;

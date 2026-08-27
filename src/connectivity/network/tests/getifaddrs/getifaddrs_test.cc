@@ -57,9 +57,10 @@ TEST(GetIfAddrsTest, GetIfAddrsTest) {
 
   if (kIsFuchsia) {
     want_ifaddrs.push_back(std::make_tuple("ep1", "192.168.0.1", 20, 0, IFF_UP | IFF_RUNNING));
-    want_ifaddrs.push_back(std::make_tuple("ep2", "192.168.0.2", 15, 0, IFF_UP | IFF_RUNNING));
+    want_ifaddrs.push_back(std::make_tuple("ethernet", "192.168.0.2", 15, 0, IFF_UP | IFF_RUNNING));
     want_ifaddrs.push_back(std::make_tuple("ep3", "fe80::1", 64, 4, IFF_UP | IFF_RUNNING));
-    want_ifaddrs.push_back(std::make_tuple("ep4", "1234::5:6:7:8", 120, 0, IFF_UP | IFF_RUNNING));
+    want_ifaddrs.push_back(
+        std::make_tuple("if_max_length15", "1234::5:6:7:8", 120, 0, IFF_UP | IFF_RUNNING));
   }
 
   std::vector<InterfaceAddress> seek_addrs;
@@ -157,7 +158,7 @@ TEST(GetIfAddrsTest, IfNameIndex) {
   EXPECT_TRUE(names.find("lo") != names.end());
 
   if (kIsFuchsia) {
-    std::set<std::string> expected_names = {"lo", "ep1", "ep2", "ep3", "ep4"};
+    std::set<std::string> expected_names = {"ep1", "ep3", "ethernet", "if_max_length15", "lo"};
     EXPECT_EQ(names, expected_names);
   }
 }

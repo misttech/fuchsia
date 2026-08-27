@@ -13,9 +13,12 @@
                 name: "net",
                 endpoints: [
                     { name: "ep1" },
-                    { name: "ep2" },
+
+                    // An 8-byte name (len % 8 == 0) has 0 padding bytes in FIDL wire format;
+                    // guards against regressions in StringView null-termination.
+                    { name: "ethernet" },
                     { name: "ep3" },
-                    { name: "ep4" },
+                    { name: "if_max_length15" },
                 ],
             },
         ],
@@ -28,7 +31,7 @@
                         static_ips: [ "192.168.0.1/20" ],
                     },
                     {
-                        name: "ep2",
+                        name: "ethernet",
                         static_ips: [ "192.168.0.2/15" ],
                     },
                     {
@@ -36,7 +39,7 @@
                         static_ips: [ "fe80::1/64" ],
                     },
                     {
-                        name: "ep4",
+                        name: "if_max_length15",
                         static_ips: [ "1234::5:6:7:8/120" ],
                     },
                 ],
