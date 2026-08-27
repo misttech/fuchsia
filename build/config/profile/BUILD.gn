@@ -95,6 +95,13 @@ group("runtime-deps") {
 
 variant("coverage") {
   configs = [ ":variant-libprefix" ]
+
+  # TODO(https://fxbug.dev/414673148): In the current experiment, Rust coverage
+  # is enabled alongside C/C++ in the unified coverage variant. The long-term
+  # plan is to remove the coverage-rust variant and fold its implementation
+  # directly into this variant.
+  configs += [ ":coverage-rust" ]
+
   deps = [ ":runtime-deps" ]
 
   c_family_flags = _coverage_c_family_flags
