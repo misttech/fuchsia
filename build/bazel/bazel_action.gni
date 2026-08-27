@@ -845,10 +845,6 @@ template("bazel_action") {
       # actions so they can be run together, and exclusively)
       pool = "//build/config:local($default_toolchain)"
 
-      # This action definitely cannot be hermetic. Callers should add
-      # themselves to the //build:non_hermetic_deps visibility list.
-      hermetic_deps = false
-
       # The build events log contains absolute paths written by Bazel!
       check_for_output_dir_leaks = false
     }

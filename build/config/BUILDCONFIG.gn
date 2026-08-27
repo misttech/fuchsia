@@ -2050,6 +2050,9 @@ foreach(_target_type,
           # delete all the files in them, and those files aren't listed in the
           # generated depfile.
           "//build/copy_tree.py",
+
+          # Bazel actions take care of their own hermeticity
+          "//build/bazel/scripts/bazel_ninja_delayed_actions.py",
         ]
 
         ignored_script =
