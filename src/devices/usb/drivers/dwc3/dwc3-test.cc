@@ -43,7 +43,7 @@ namespace dwc3 {
 
 TEST_F(ManagedTestFixture, Dfv2Lifecycle) {
   dut_.RunInNodeContext(
-      [&](fdf_testing::TestNode& node) { EXPECT_EQ(1UL, node.children().size()); });
+      [&](fdf_testing::TestNode& node) { EXPECT_EQ(node.children().size(), 1UL); });
 }
 
 TEST_F(UnmanagedTestFixture, ResourcesManagedInStart) {
@@ -70,9 +70,9 @@ TEST_F(UnmanagedTestFixture, ResourcesManagedInStart) {
   });
 
   dut_.runtime().RunUntilIdle();
-  EXPECT_EQ(ZX_OK, WaitForPhy());
+  EXPECT_EQ(WaitForPhy(), ZX_OK);
 
-  EXPECT_EQ(ZX_OK, dut_.StopDriver().status_value());
+  EXPECT_EQ(dut_.StopDriver().status_value(), ZX_OK);
 }
 
 TEST_F(UnmanagedTestFixture, PlatformExtensionBypass) {
@@ -92,7 +92,7 @@ TEST_F(UnmanagedTestFixture, PlatformExtensionBypass) {
   dut_.RunInDriverContext(
       [this](Dwc3& drv) { EXPECT_EQ(this->GetPlatformExtension(drv), nullptr); });
 
-  EXPECT_EQ(ZX_OK, dut_.StopDriver().status_value());
+  EXPECT_EQ(dut_.StopDriver().status_value(), ZX_OK);
 }
 
 TEST_F(UnmanagedTestFixture, ConnectResetsHardwareWithoutPlatformExtension) {
@@ -480,10 +480,10 @@ TEST_F(UnmanagedTestFixture, Dfv2HwResetTimeout) {
     args.config(cfg.ToVmo());
   });
   ASSERT_TRUE(start.is_error());
-  ASSERT_EQ(ZX_ERR_TIMED_OUT, start.error_value());
+  ASSERT_EQ(start.error_value(), ZX_ERR_TIMED_OUT);
 
   dut_.RunInNodeContext(
-      [&](fdf_testing::TestNode& node) { EXPECT_EQ(0UL, node.children().size()); });
+      [&](fdf_testing::TestNode& node) { EXPECT_EQ(node.children().size(), 0UL); });
 
   // The dfv2 driver did not start, nothing to stop.
 }
@@ -591,7 +591,7 @@ TEST_F(ManagedTestFixture, TestInspectMetrics) {
   inspect::Hierarchy pending_hierarchy;
   dut_.RunInDriverContext([&](Dwc3& drv) {
     auto& uep = GetUserEndpoint(drv, ep_num);
-    EXPECT_EQ(1u, uep.fifo.GetActiveCount());
+    EXPECT_EQ(uep.fifo.GetActiveCount(), 1u);
 
     // Assign hardware Resource ID 1 to the active transfer to prevent teardown panics.
     TriggerEpTransferStarted(drv, ep_num, 1);
@@ -602,29 +602,29 @@ TEST_F(ManagedTestFixture, TestInspectMetrics) {
   });
 
   const auto* pending_dwc3 = pending_hierarchy.GetByPath({"dwc3"});
-  ASSERT_NE(nullptr, pending_dwc3)
+  ASSERT_NE(pending_dwc3, nullptr)
       << "Inspect root node 'dwc3' was not found in pending hierarchy!";
 
   std::string ep_node_name = std::format("endpoint-0x{:02x}", ep_num);
 
   const auto* pending_active_trbs =
       pending_dwc3->GetByPath({"endpoints", ep_node_name, "trb_fifo", "active_trbs"});
-  ASSERT_NE(nullptr, pending_active_trbs) << "Active TRBs node was not found in pending hierarchy!";
+  ASSERT_NE(pending_active_trbs, nullptr) << "Active TRBs node was not found in pending hierarchy!";
   const auto* trb0 = pending_active_trbs->GetByPath({"0"});
-  ASSERT_NE(nullptr, trb0) << "Pending TRB at index 0 was not found!";
+  ASSERT_NE(trb0, nullptr) << "Pending TRB at index 0 was not found!";
 
   // Assert existence of TRB fields and check value of hardware_owned.
   const auto* ptr_low = trb0->node().get_property<inspect::UintPropertyValue>("ptr_low");
-  ASSERT_NE(nullptr, ptr_low) << "Pending TRB field 'ptr_low' was not found!";
+  ASSERT_NE(ptr_low, nullptr) << "Pending TRB field 'ptr_low' was not found!";
   const auto* ptr_high = trb0->node().get_property<inspect::UintPropertyValue>("ptr_high");
-  ASSERT_NE(nullptr, ptr_high) << "Pending TRB field 'ptr_high' was not found!";
+  ASSERT_NE(ptr_high, nullptr) << "Pending TRB field 'ptr_high' was not found!";
   const auto* status = trb0->node().get_property<inspect::UintPropertyValue>("status");
-  ASSERT_NE(nullptr, status) << "Pending TRB field 'status' was not found!";
+  ASSERT_NE(status, nullptr) << "Pending TRB field 'status' was not found!";
   const auto* control = trb0->node().get_property<inspect::UintPropertyValue>("control");
-  ASSERT_NE(nullptr, control) << "Pending TRB field 'control' was not found!";
+  ASSERT_NE(control, nullptr) << "Pending TRB field 'control' was not found!";
 
   const auto* hwo = trb0->node().get_property<inspect::BoolPropertyValue>("hardware_owned");
-  ASSERT_NE(nullptr, hwo) << "Pending TRB field 'hardware_owned' was not found!";
+  ASSERT_NE(hwo, nullptr) << "Pending TRB field 'hardware_owned' was not found!";
   EXPECT_TRUE(hwo->value());
 
   // Complete the transfer and evaluate final metrics.
@@ -638,13 +638,13 @@ TEST_F(ManagedTestFixture, TestInspectMetrics) {
   dut_.runtime().RunUntilIdle();
 
   const auto* dwc3_node = completed_hierarchy.GetByPath({"dwc3"});
-  ASSERT_NE(nullptr, dwc3_node) << "Inspect root node 'dwc3' was not found in completed hierarchy!";
+  ASSERT_NE(dwc3_node, nullptr) << "Inspect root node 'dwc3' was not found in completed hierarchy!";
 
   const auto* time_start = dwc3_node->node().get_property<inspect::UintPropertyValue>("time_start");
-  ASSERT_NE(nullptr, time_start) << "Root node property 'time_start' was not found!";
+  ASSERT_NE(time_start, nullptr) << "Root node property 'time_start' was not found!";
 
   const auto* history_node = dwc3_node->GetByPath({"event_history"});
-  ASSERT_NE(nullptr, history_node) << "Inspect node 'event_history' was not found!";
+  ASSERT_NE(history_node, nullptr) << "Inspect node 'event_history' was not found!";
 
   bool found_real_event = false;
   for (const auto& child : history_node->children()) {
@@ -658,39 +658,39 @@ TEST_F(ManagedTestFixture, TestInspectMetrics) {
   EXPECT_TRUE(found_real_event);
 
   const auto* endpoints_node = dwc3_node->GetByPath({"endpoints"});
-  ASSERT_NE(nullptr, endpoints_node) << "Inspect node 'endpoints' was not found!";
+  ASSERT_NE(endpoints_node, nullptr) << "Inspect node 'endpoints' was not found!";
 
   const auto* ep2_out = endpoints_node->GetByPath({ep_node_name});
-  ASSERT_NE(nullptr, ep2_out) << "Endpoint node '" << ep_node_name
+  ASSERT_NE(ep2_out, nullptr) << "Endpoint node '" << ep_node_name
                               << "' was not found in completed hierarchy!";
 
   const auto* type = ep2_out->node().get_property<inspect::UintPropertyValue>("type");
-  ASSERT_NE(nullptr, type) << "Endpoint 'type' property was not found!";
-  EXPECT_EQ(static_cast<uint64_t>(fdescriptor::EndpointType::kBulk), type->value());
+  ASSERT_NE(type, nullptr) << "Endpoint 'type' property was not found!";
+  EXPECT_EQ(type->value(), static_cast<uint64_t>(fdescriptor::EndpointType::kBulk));
 
   const auto* enabled = ep2_out->node().get_property<inspect::BoolPropertyValue>("enabled");
-  ASSERT_NE(nullptr, enabled) << "Endpoint 'enabled' property was not found!";
+  ASSERT_NE(enabled, nullptr) << "Endpoint 'enabled' property was not found!";
   EXPECT_TRUE(enabled->value());
 
   const auto* transfers =
       ep2_out->node().get_property<inspect::UintPropertyValue>("total_transfers");
-  ASSERT_NE(nullptr, transfers) << "Endpoint 'total_transfers' property was not found!";
-  EXPECT_EQ(1u, transfers->value());
+  ASSERT_NE(transfers, nullptr) << "Endpoint 'total_transfers' property was not found!";
+  EXPECT_EQ(transfers->value(), 1u);
 
   const auto* bytes = ep2_out->node().get_property<inspect::UintPropertyValue>("total_bytes");
-  ASSERT_NE(nullptr, bytes) << "Endpoint 'total_bytes' property was not found!";
-  EXPECT_EQ(1024u, bytes->value());
+  ASSERT_NE(bytes, nullptr) << "Endpoint 'total_bytes' property was not found!";
+  EXPECT_EQ(bytes->value(), 1024u);
 
   const auto* fifo_node = ep2_out->GetByPath({"trb_fifo"});
-  ASSERT_NE(nullptr, fifo_node) << "TRB FIFO inspect node 'trb_fifo' was not found!";
+  ASSERT_NE(fifo_node, nullptr) << "TRB FIFO inspect node 'trb_fifo' was not found!";
 
   const auto* total_slots =
       fifo_node->node().get_property<inspect::UintPropertyValue>("total_slots");
-  ASSERT_NE(nullptr, total_slots) << "FIFO property 'total_slots' was not found!";
+  ASSERT_NE(total_slots, nullptr) << "FIFO property 'total_slots' was not found!";
   EXPECT_GT(total_slots->value(), 0u);
 
   const auto* active_trbs = fifo_node->GetByPath({"active_trbs"});
-  EXPECT_EQ(nullptr, active_trbs);
+  EXPECT_EQ(active_trbs, nullptr);
 }
 
 TEST_F(ManagedTestFixture, TestStopEventsMasksInterrupts) {
@@ -1034,14 +1034,14 @@ TEST_P(Parameterized, TestHwVersion) {
     args.config(cfg.ToVmo());
   });
 
-  ASSERT_EQ(p.should_start, start.is_ok());
+  ASSERT_EQ(start.is_ok(), p.should_start);
 
   dut_.runtime().RunUntilIdle();
-  EXPECT_EQ(ZX_OK, WaitForPhy());
+  EXPECT_EQ(WaitForPhy(), ZX_OK);
 
   if (p.should_start) {
-    dut_.RunInDriverContext([&](Dwc3& drv) { EXPECT_EQ(p.poll_end_xfer, drv.poll_end_xfer()); });
-    EXPECT_EQ(ZX_OK, dut_.StopDriver().status_value());
+    dut_.RunInDriverContext([&](Dwc3& drv) { EXPECT_EQ(drv.poll_end_xfer(), p.poll_end_xfer); });
+    EXPECT_EQ(dut_.StopDriver().status_value(), ZX_OK);
   }
 }
 

@@ -748,7 +748,7 @@ class TestFixture : public gtest_base {
                         args.config(cfg.ToVmo());
                       })
                       .is_ok());
-      ASSERT_EQ(ZX_OK, WaitForPhy());
+      ASSERT_EQ(WaitForPhy(), ZX_OK);
     }
   }
 
@@ -758,8 +758,8 @@ class TestFixture : public gtest_base {
 
     dut_.runtime().RunUntilIdle();
     if (manage_lifetime) {
-      EXPECT_EQ(ZX_OK, WaitForPhy());
-      EXPECT_EQ(ZX_OK, dut_.StopDriver().status_value());
+      EXPECT_EQ(WaitForPhy(), ZX_OK);
+      EXPECT_EQ(dut_.StopDriver().status_value(), ZX_OK);
     }
 
     // Explicitly reset mock hardware state and sync the environment dispatcher.
@@ -1014,7 +1014,7 @@ class UnmanagedTestFixture : public TestFixture<false> {
       Dwc3TestHelper::SetEpRsrcId(drv, 0, 2);
       Dwc3TestHelper::SetEpRsrcId(drv, 1, 2);
     });
-    EXPECT_EQ(ZX_OK, dut_.StopDriver().status_value());
+    EXPECT_EQ(dut_.StopDriver().status_value(), ZX_OK);
   }
 
   void BindDciInterfaceWithoutServer() {

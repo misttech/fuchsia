@@ -29,33 +29,33 @@ TEST(Dwc3MetricsTest, InitResetsAndRecordsCorrectly) {
 
   // 1. Check root level properties
   const auto* time_start = hierarchy.node().get_property<inspect::UintPropertyValue>("time_start");
-  ASSERT_NE(nullptr, time_start);
+  ASSERT_NE(time_start, nullptr);
   EXPECT_GT(time_start->value(), 0u);
 
   const auto* time_stats = hierarchy.node().get_property<inspect::UintPropertyValue>("time_stats");
-  ASSERT_NE(nullptr, time_stats);
+  ASSERT_NE(time_stats, nullptr);
   EXPECT_GE(time_stats->value(), time_start->value());
 
   // 2. Check event_counts node
   const auto* event_counts = hierarchy.GetByPath({"event_counts"});
-  ASSERT_NE(nullptr, event_counts);
+  ASSERT_NE(event_counts, nullptr);
 
   // Verify disconnect count is 2
   const auto* disconnect =
       event_counts->node().get_property<inspect::UintPropertyValue>("DEVT_DISCONNECT");
-  ASSERT_NE(nullptr, disconnect);
-  EXPECT_EQ(2u, disconnect->value());
+  ASSERT_NE(disconnect, nullptr);
+  EXPECT_EQ(disconnect->value(), 2u);
 
   // Verify usb reset count is 1
   const auto* usb_reset =
       event_counts->node().get_property<inspect::UintPropertyValue>("DEVT_USB_RESET");
-  ASSERT_NE(nullptr, usb_reset);
-  EXPECT_EQ(1u, usb_reset->value());
+  ASSERT_NE(usb_reset, nullptr);
+  EXPECT_EQ(usb_reset->value(), 1u);
 
   // Verify other event types are initialized to 0
   const auto* sof = event_counts->node().get_property<inspect::UintPropertyValue>("DEVT_SOF");
-  ASSERT_NE(nullptr, sof);
-  EXPECT_EQ(0u, sof->value());
+  ASSERT_NE(sof, nullptr);
+  EXPECT_EQ(sof->value(), 0u);
 }
 
 // Verifies that recording Inspect metrics when the driver pointer is null safely populates

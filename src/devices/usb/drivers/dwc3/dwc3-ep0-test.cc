@@ -30,7 +30,7 @@ TEST_F(UnmanagedTestFixture, Ep0Lifecycle) {
   });
 
   dut_.RunInNodeContext(
-      [&](fdf_testing::TestNode& node) { EXPECT_EQ(1UL, node.children().size()); });
+      [&](fdf_testing::TestNode& node) { EXPECT_EQ(node.children().size(), 1UL); });
 
   TearDownAndPowerOffDriver();
 }
@@ -78,7 +78,7 @@ TEST_F(UnmanagedTestFixture, NoPrematureWritesOnGetDescriptor) {
     Dwc3TestHelper::HandleEp0TransferCompleteEvent(drv, 0);  // 0 is kEp0Out
   });
 
-  ASSERT_EQ(ZX_OK, data_phase_started.Wait(zx::sec(5)));
+  ASSERT_EQ(data_phase_started.Wait(zx::sec(5)), ZX_OK);
 
   dut_.RunInDriverContext([&](Dwc3& drv) { EXPECT_FALSE(write_detected); });
 
@@ -974,7 +974,7 @@ TEST_F(UnmanagedTestFixture, ControlReadParseGetDescriptor) {
     Dwc3TestHelper::HandleEp0TransferCompleteEvent(drv, 0);  // 0 is kEp0Out
   });
 
-  ASSERT_EQ(ZX_OK, data_phase_started.Wait(zx::sec(5)));
+  ASSERT_EQ(data_phase_started.Wait(zx::sec(5)), ZX_OK);
   dut_.RunInDriverContext([&](Dwc3& drv) {
     auto state = Dwc3TestHelper::GetEp0State(drv);
     EXPECT_TRUE(state == Dwc3TestHelper::State::DataIn || state == Dwc3TestHelper::State::Setup);
@@ -1015,7 +1015,7 @@ TEST_F(UnmanagedTestFixture, ControlReadCompleteGetDescriptor) {
     Dwc3TestHelper::HandleEp0TransferCompleteEvent(drv, 0);  // 0 is kEp0Out
   });
 
-  ASSERT_EQ(ZX_OK, control_called.Wait(zx::sec(5)));
+  ASSERT_EQ(control_called.Wait(zx::sec(5)), ZX_OK);
 
   if (binding.has_value()) {
     binding->Unbind();
@@ -1151,7 +1151,7 @@ TEST_F(UnmanagedTestFixture, DISABLED_ControlWriteComplete) {
     Dwc3TestHelper::ClearSharedFifo(drv);
   });
 
-  ASSERT_EQ(ZX_OK, control_called.Wait(zx::sec(5)));
+  ASSERT_EQ(control_called.Wait(zx::sec(5)), ZX_OK);
 
   if (binding.has_value()) {
     binding->Unbind();

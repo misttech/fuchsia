@@ -102,7 +102,7 @@ TEST_F(Dwc3EventsTest, HandleDisconnectEvent) {
     dut_.runtime().RunUntilIdle();
   }
 
-  EXPECT_EQ(ZX_OK, dut_.StopDriver().status_value());
+  EXPECT_EQ(dut_.StopDriver().status_value(), ZX_OK);
 }
 
 // Verifies behavior on a simulated USB reset event.
@@ -153,7 +153,7 @@ TEST_F(Dwc3EventsTest, HandleResetEvent) {
   EXPECT_TRUE(dcfg_written.load());
   EXPECT_EQ(DCFG::Get().FromValue(dcfg_val.load()).DEVADDR(), 0u);
 
-  EXPECT_EQ(ZX_OK, dut_.StopDriver().status_value());
+  EXPECT_EQ(dut_.StopDriver().status_value(), ZX_OK);
   dut_.runtime().RunUntilIdle();
 }
 
@@ -232,7 +232,7 @@ TEST_F(Dwc3EventsTest, HandleConnectionDoneEvent) {
     dut_.runtime().RunUntilIdle();
   }
 
-  EXPECT_EQ(ZX_OK, dut_.StopDriver().status_value());
+  EXPECT_EQ(dut_.StopDriver().status_value(), ZX_OK);
   dut_.runtime().RunUntilIdle();
 }
 
@@ -247,7 +247,7 @@ TEST_F(Dwc3EventsTest, HandleUnknownEvent) {
     Dwc3TestHelper::HandleEvent(drv, event);
   });
   // Verify that it doesn't crash!
-  EXPECT_EQ(ZX_OK, dut_.StopDriver().status_value());
+  EXPECT_EQ(dut_.StopDriver().status_value(), ZX_OK);
 }
 
 // TODO(https://fxbug.dev/538237092): Re-enable once UsbDciInterface::Reset() is added.
@@ -295,7 +295,7 @@ TEST_F(Dwc3EventsTest, DISABLED_VerifySetConnectedIsNotCalledOnHandleResetEvent)
     dut_.runtime().RunUntilIdle();
   }
 
-  EXPECT_EQ(ZX_OK, dut_.StopDriver().status_value());
+  EXPECT_EQ(dut_.StopDriver().status_value(), ZX_OK);
 }
 
 }  // namespace dwc3
