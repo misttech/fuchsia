@@ -13,7 +13,7 @@ use crate::superblock::{
 };
 use anyhow::{Error, anyhow, bail, ensure};
 use async_trait::async_trait;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use storage_device::Device;
 use storage_device::buffer::Buffer;
@@ -64,6 +64,7 @@ pub struct F2fsReader {
     checkpoint: CheckpointPack, // pair of a/b segments (alternating versions)
     cp_start_block: u32,        // Start block of the active checkpoint
     nat: Nat,
+    orphan_inodes: HashSet<u32>,
 
     // A simple key store.
     keys: HashMap<[u8; 16], [u8; 64]>,
@@ -106,12 +107,29 @@ impl F2fsReader {
                 checkpoint,
                 cp_start_block,
                 nat: Nat::new(0, vec![], HashMap::new()),
+                orphan_inodes: HashSet::new(),
                 keys: HashMap::with_capacity(16),
                 cache: BlockCache::new(1024, BLOCK_SIZE),
             };
 
-            match this.read_nat_journal().await {
-                Ok(nat_journal) => {
+            let nat_journal = match this.read_nat_journal().await {
+                Ok(j) => j,
+                Err(e) => {
+                    let ver = this.checkpoint.header.checkpoint_ver;
+                    log::warn!(
+                        "Failed to initialize NAT journal from checkpoint (Ver {} at {}): {}. Trying next.",
+                        ver,
+                        cp_start_block,
+                        e
+                    );
+                    last_error = e;
+                    continue;
+                }
+            };
+
+            match this.read_orphan_inodes().await {
+                Ok(orphans) => {
+                    this.orphan_inodes = orphans;
                     this.nat = Nat::new(
                         this.superblock.nat_blkaddr,
                         this.checkpoint.nat_bitmap.clone(),
@@ -122,13 +140,13 @@ impl F2fsReader {
                 Err(e) => {
                     let ver = this.checkpoint.header.checkpoint_ver;
                     log::warn!(
-                        "Failed to initialize from checkpoint (Ver {} at {}): {}. Trying next.",
+                        "Failed to read orphan inodes from checkpoint (Ver {} at {}): {}. Trying next.",
                         ver,
                         cp_start_block,
                         e
                     );
                     last_error = e;
-                    // Continue loop to try next checkpoint
+                    continue;
                 }
             }
         }
@@ -148,10 +166,16 @@ impl F2fsReader {
         let mut checkpoints = Vec::new();
 
         // Read both checkpoints and collect valid ones with their block addresses
-        if let Ok(cp) = CheckpointPack::read_from_device(device, checkpoint_a_offset).await {
+        if let Ok(cp) =
+            CheckpointPack::read_from_device(device, checkpoint_a_offset, superblock.cp_payload)
+                .await
+        {
             checkpoints.push((cp, checkpoint_addr));
         }
-        if let Ok(cp) = CheckpointPack::read_from_device(device, checkpoint_b_offset).await {
+        if let Ok(cp) =
+            CheckpointPack::read_from_device(device, checkpoint_b_offset, superblock.cp_payload)
+                .await
+        {
             checkpoints.push((cp, checkpoint_addr + BLOCKS_PER_SEGMENT as u32));
         }
 
@@ -197,15 +221,8 @@ impl F2fsReader {
         &self.nat
     }
     /// Returns the absolute block address of the summary block (default or compact).
-    /// handles CP_ORPHAN_PRESENT_FLAG for compact summaries.
     pub fn summary_block_addr(&self) -> u32 {
-        let mut offset = self.checkpoint.header.cp_pack_start_sum;
-        if self.checkpoint.header.ckpt_flags & CP_ORPHAN_PRESENT_FLAG != 0 {
-            // If orphans are present, they occupy the block at `cp_pack_start_sum`.
-            // The actual summary block follows it.
-            offset += 1;
-        }
-        self.checkpoint_start_addr() + offset
+        self.checkpoint_start_addr() + self.checkpoint.header.cp_pack_start_sum
     }
 
     async fn read_nat_journal(&mut self) -> Result<HashMap<u32, RawNatEntry>, Error> {
@@ -271,6 +288,66 @@ impl F2fsReader {
             }
             Ok(out)
         }
+    }
+
+    async fn read_orphan_inodes(&mut self) -> Result<HashSet<u32>, Error> {
+        let mut orphans = HashSet::new();
+        if self.checkpoint.header.ckpt_flags & CP_ORPHAN_PRESENT_FLAG != 0 {
+            let start_blk = self.checkpoint_start_addr() + 1 + self.superblock.cp_payload;
+            let end_blk = self.summary_block_addr();
+            ensure!(start_blk < end_blk, "CP_ORPHAN_PRESENT_FLAG set with zero orphan blocks");
+            let total_orphan_blocks = (end_blk - start_blk) as u16;
+            let root_ino = self.superblock.root_ino;
+            for blk_addr in start_blk..end_blk {
+                let block = self.read_raw_block(blk_addr).await?;
+                let orphan_block = block
+                    .as_ptr_slice()
+                    .read::<OrphanBlock>()
+                    .ok_or_else(|| anyhow!("Block size too small for OrphanBlock"))?;
+                let blk_index = (blk_addr - start_blk + 1) as u16;
+                let blk_addr_val = orphan_block.blk_addr;
+                let blk_count_val = orphan_block.blk_count;
+                ensure!(
+                    blk_addr_val == blk_index,
+                    "Invalid orphan block blk_addr: {blk_addr_val} != {blk_index}"
+                );
+                ensure!(
+                    blk_count_val == total_orphan_blocks,
+                    "Invalid orphan block blk_count: {blk_count_val} != {total_orphan_blocks}"
+                );
+                #[cfg(not(fuzz))]
+                if orphan_block.check_sum != 0 {
+                    let data = block.to_vec();
+                    let expected_crc = orphan_block.check_sum;
+                    let actual_crc = f2fs_crc32(F2FS_MAGIC, &data[..BLOCK_SIZE - 4]);
+                    ensure!(
+                        actual_crc == expected_crc,
+                        "Bad OrphanBlock checksum ({actual_crc:08x} != {expected_crc:08x})"
+                    );
+                }
+                let entry_count = orphan_block.entry_count as usize;
+                ensure!(
+                    entry_count <= ORPHANS_PER_BLOCK,
+                    "Invalid orphan entry count: {entry_count} > {ORPHANS_PER_BLOCK}"
+                );
+                for i in 0..entry_count {
+                    let ino = orphan_block.ino[i];
+                    ensure!(ino >= root_ino && ino != NEW_ADDR, "Invalid orphan ino {ino}");
+                    orphans.insert(ino);
+                }
+            }
+        }
+        Ok(orphans)
+    }
+
+    /// Returns the set of orphan inode numbers recorded in the active checkpoint.
+    pub fn orphan_inodes(&self) -> &HashSet<u32> {
+        &self.orphan_inodes
+    }
+
+    /// Returns true if the specified inode number is recorded as an orphan.
+    pub fn is_orphan(&self, ino: u32) -> bool {
+        self.orphan_inodes.contains(&ino)
     }
 
     pub fn root_ino(&self) -> u32 {
@@ -691,22 +768,25 @@ mod test {
         //   $ ls /mnt/fscrypt -lR
 
         // /fscrypt/<a>/<b>/<symlink>
-        let str_a = "2ll82QAAAADywluz1Ule7OVNBxUfa5Mw";
-        let str_b = "sttckQAAAADLBOCVVgjrZ-CXNkj5E6Cr";
-        let str_symlink = "zHAtQgAAAACRNPQYvCKuQo5F8rQUORg3";
-        let bytes_symlink_content = b"AAAAAAAAAADUsYZ_qNiiouF7e40xm65S";
+        let str_a = "AlHTPgAAAAATu-OD4ljvFNw4Xpas_OeI";
+        let str_b = "GeiwsgAAAADc8JQtaJ7UbZ0GcT5yeHTZ";
+        let str_symlink = "QL5PAgAAAAAZjFRhVvAC80KXi6rlzmfr";
+        let bytes_symlink_content = b"AAAAAAAAAACavudfzv7yT0fMluSoe0NC";
 
-        let mut expected : HashSet<_> = [ // files in fscrypt/ dir.
-            "2ll82QAAAADywluz1Ule7OVNBxUfa5Mw",
-            "65OSUQAAAADqOiZJcQ1El2dpVdYMy84l",
-            "7vcnbgAAAAAOWdQfi4wK46uRGQBD0YSy",
-            "9Gsv9QAAAADjTeJ_9WdCxZMVTiSWhsWR",
-            "FAqGXAAAAAD1jOLXaZN-o8X9PoS67GI7",
-            "Rq5qZAAAAAA3y2lvAqesYDnVJWMklWnj",
-            "S93sdgAAAABo-YmXNPKtv4wxQCcUslTu",
-            "VP8QBwAAAAATw6Ozex0N2gMYrnDsB2aH",
-            "xUNjwgAAAADB0pEx5ovwx-AS02L0d1j7VMBRXzM4YnBri2pbasOqbFLhtegXr9kDGNcYd_hyk2mOkQIqu8hk7eARlFl-bq1yLhikhIT9HVC3FMrI7vQ-ewncEjXLDP3KK6RtH3r34S89AlzJZ4DVfXrr_Q5N5mANBbGTzeO70aJHL0Ms-MgkKwjHcbIxXLwcjE2B-mssLAvXam58pSD-aazxS_J2hrxOHGoUYiVJ-rXHozmKxBdWAO6OUW65",
-        ].into_iter().collect();
+        let mut expected: HashSet<_> = [
+            // files in fscrypt/ dir.
+            "0KaBCgAAAADG-AqRst0R8y9D-kCCD14F",
+            "9g1xNQAAAAC2nhbquKF00IMYQ7Rbv25_",
+            "a5gOXwAAAADZWT1MUGPQdgNHBaXlkhT7",
+            "AlHTPgAAAAATu-OD4ljvFNw4Xpas_OeI",
+            "Jn1pZAAAAAB3bJB-bzY1dlQxj0NSkyU_u0-fevU6zycmvnjbTtHRwm3od3n2wl621OGeZhjQSYn2HlSwshPGwIzUQVeCv0Zb247T_qPD0EiM4PcaKLrr6gSt7-PrSVC2R9EsCKj8yAnwvi2bJKJvnghFE8wLV6pLN11nmbOI9q6yDB1ELRj2l2yke4iH_9zOSD-8PvBySzdx3L-h-V79-T0EFAOvlVLlqVfMIR9xgsXwe_xpjgHsFculb9Le",
+            "qHmmggAAAAAwObeaSgYbdMa0L9iXDYIN",
+            "UJqOTwAAAACAFLttEsV6RiVStfTM6q94",
+            "VERkwQAAAADytl0b_Ou0EoBXyYA9e_qI",
+            "WPM5KgAAAACfvfszUbrR943loZZ-__gO",
+        ]
+        .into_iter()
+        .collect();
 
         let device = open_test_image("/pkg/testdata/f2fs.img.zst");
 
@@ -778,12 +858,34 @@ mod test {
         let base = f2fs.checkpoint_start_addr();
         assert_eq!(f2fs.summary_block_addr(), base + 100);
 
-        // Case 2: With Orphan Flag
+        // Case 2: With Orphan Flag (cp_pack_start_sum already points to summary block)
         f2fs.checkpoint.header.ckpt_flags = CP_ORPHAN_PRESENT_FLAG;
-        assert_eq!(f2fs.summary_block_addr(), base + 100 + 1);
+        assert_eq!(f2fs.summary_block_addr(), base + 100);
 
-        // Case 3: Compact Summary + Orphan (Real crash case)
+        // Case 3: Compact Summary + Orphan
         f2fs.checkpoint.header.ckpt_flags = CP_ORPHAN_PRESENT_FLAG | CKPT_FLAG_COMPACT_SUMMARY;
-        assert_eq!(f2fs.summary_block_addr(), base + 100 + 1);
+        assert_eq!(f2fs.summary_block_addr(), base + 100);
+    }
+
+    #[fuchsia::test]
+    async fn test_orphan_inodes() {
+        let device = open_test_image("/pkg/testdata/f2fs.img.zst");
+        let f2fs = F2fsReader::open_device(Arc::new(device)).await.expect("open ok");
+        assert_eq!(f2fs.orphan_inodes().len(), 3);
+        for &ino in f2fs.orphan_inodes() {
+            assert!(f2fs.is_orphan(ino));
+        }
+        assert!(!f2fs.is_orphan(f2fs.root_ino()));
+        assert!(!f2fs.is_orphan(99999));
+
+        // Invariant: Orphan files are unlinked and therefore must not appear in directory dentries.
+        let entries = f2fs.readdir(f2fs.root_ino()).await.expect("readdir ok");
+        for entry in entries {
+            assert!(
+                !f2fs.is_orphan(entry.ino),
+                "Orphan inode {} unexpectedly found in root dentry",
+                entry.ino
+            );
+        }
     }
 }

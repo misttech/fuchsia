@@ -1,6 +1,7 @@
 // Copyright 2025 The Fuchsia Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
+use crate::checkpoint::MAX_BITMAP_BYTES;
 use anyhow::{Error, anyhow, ensure};
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
 
@@ -149,6 +150,26 @@ impl SuperBlock {
             if charset_encoding_flags != NO_COMPAT_FALLBACK {
                 log::warn!("Unsupported charset_encoding_flags {charset_encoding_flags:04x}");
             }
+        }
+
+        let cp_payload = superblock.cp_payload as usize;
+        let sit_ver_bitmap_bytesize = (((superblock.segment_count_sit as u64 / 2)
+            << superblock.log_blocks_per_seg)
+            / 8) as usize;
+        let nat_ver_bitmap_bytesize = (((superblock.segment_count_nat as u64 / 2)
+            << superblock.log_blocks_per_seg)
+            / 8) as usize;
+        if cp_payload == 0 {
+            ensure!(
+                sit_ver_bitmap_bytesize + nat_ver_bitmap_bytesize <= MAX_BITMAP_BYTES,
+                "SIT and NAT bitmaps exceed checkpoint capacity"
+            );
+        } else {
+            ensure!(
+                sit_ver_bitmap_bytesize <= cp_payload * BLOCK_SIZE
+                    && nat_ver_bitmap_bytesize <= MAX_BITMAP_BYTES,
+                "SIT or NAT bitmap exceeds capacity"
+            );
         }
 
         Ok(superblock)

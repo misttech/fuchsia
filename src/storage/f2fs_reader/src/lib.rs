@@ -12,7 +12,10 @@ mod reader;
 mod superblock;
 mod xattr;
 
-pub use checkpoint::CheckpointHeader;
+pub use checkpoint::{
+    CKPT_FLAG_COMPACT_SUMMARY, CP_ORPHAN_PRESENT_FLAG, CheckpointHeader, ORPHANS_PER_BLOCK,
+    OrphanBlock,
+};
 pub use dir::{DirEntry, FileType};
 pub use fsverity::FsVerityDescriptor;
 pub use inode::{AdviseFlags, Flags, InlineFlags, Inode, Mode};

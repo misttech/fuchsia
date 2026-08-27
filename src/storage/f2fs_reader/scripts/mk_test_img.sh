@@ -20,14 +20,26 @@ PATH=${PATH}:/usr/local/bin/
 # Prerequisites.
 apt-get install f2fs-tools zstd fsverity
 modprobe f2fs
-rm -f /tmp/f2fs.img ../testdata/f2fs.img.zst
+rm -f /tmp/f2fs.img /tmp/f2fs_snapshot.img ../testdata/f2fs.img.zst
+
+MOUNT_PATH=/tmp/f2fs_mnt
+
+cleanup() {
+  exec 3<&- 2>/dev/null || true
+  exec 4<&- 2>/dev/null || true
+  exec 5<&- 2>/dev/null || true
+  if mountpoint -q "${MOUNT_PATH}"; then
+    umount "${MOUNT_PATH}" 2>/dev/null || true
+  fi
+  rm -f /tmp/f2fs.img /tmp/f2fs_snapshot.img
+}
+trap cleanup EXIT
 
 # Build empty image.
 dd if=/dev/zero bs=4096 count=65536 of=/tmp/f2fs.img
 mkfs.f2fs -f -O encrypt,verity -l testimage /tmp/f2fs.img
 
 # Mount and populate.
-MOUNT_PATH=/tmp/f2fs_mnt
 mkdir -p ${MOUNT_PATH}
 mount -o loop -t f2fs /tmp/f2fs.img ${MOUNT_PATH}
 
@@ -199,7 +211,18 @@ do
 	echo "\"$(basename $f)\"",
 done
 
-umount ${MOUNT_PATH}
-zstd /tmp/f2fs.img -o ../testdata/f2fs.img.zst
+# Create orphan files (files unlinked while held open by a process)
+touch ${MOUNT_PATH}/orphan1 ${MOUNT_PATH}/orphan2 ${MOUNT_PATH}/orphan3
+exec 3< ${MOUNT_PATH}/orphan1
+exec 4< ${MOUNT_PATH}/orphan2
+exec 5< ${MOUNT_PATH}/orphan3
+rm -f ${MOUNT_PATH}/orphan1 ${MOUNT_PATH}/orphan2 ${MOUNT_PATH}/orphan3
+sync
+
+# Snapshot image while files are still open as orphans (clean unmount would purge them).
+cp /tmp/f2fs.img /tmp/f2fs_snapshot.img
+
+zstd -f /tmp/f2fs_snapshot.img -o ../testdata/f2fs.img.zst
 
 echo "Done!"
+
