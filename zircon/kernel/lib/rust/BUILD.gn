@@ -82,6 +82,8 @@ custom_target_relpath = "lib/rustlib/$custom_target"
 # must be disabled for building the empty pseudo-crates.
 rust_instrumentation_configs = [
   "//build/config/profile:coverage",
+
+  # TODO(https://fxbug.dev/414673148): Remove when coverage-rust is removed.
   "//build/config/profile:coverage-rust",
   "//build/config/profile:profile-rust",
 ]
