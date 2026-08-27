@@ -123,8 +123,8 @@ impl BlobMappingSession {
             let offset_in_vmo = payload.offset();
 
             for (mut chunk, val_res) in payload.data().chunks_mut(std::mem::size_of::<u64>()).zip(
-                Extents::encode_extents_iter(&extents.data)
-                    .chain(Extents::encode_extents_iter(&extents.merkle)),
+                Extents::encode_extents(&extents.data)
+                    .chain(Extents::encode_extents(&extents.merkle)),
             ) {
                 chunk.copy_from_slice(&val_res.to_le_bytes());
             }
@@ -280,8 +280,8 @@ mod tests {
             let buffer = cmd1_raw.payload_slice(cmd1_offset, total_extents * 8).to_vec();
 
             let mut expected_payload = Vec::new();
-            for val in Extents::encode_extents_iter(&data_extents)
-                .chain(Extents::encode_extents_iter(&merkle_extents))
+            for val in Extents::encode_extents(&data_extents)
+                .chain(Extents::encode_extents(&merkle_extents))
             {
                 expected_payload.extend_from_slice(&val.to_le_bytes());
             }

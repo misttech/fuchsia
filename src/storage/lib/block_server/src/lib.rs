@@ -4404,8 +4404,8 @@ mod tests {
         let mapping_vmo = zx::Vmo::create(65536).unwrap();
         let delivery_queue = zx::Vmo::create(4096).unwrap();
 
-        let data_extent_words =
-            mapping::Extents::encode_extents(&[mapping::Extent::new(0..4096, Some(0))]);
+        let data_extent_words: Vec<u64> =
+            mapping::Extents::encode_extents([mapping::Extent::new(0..4096, Some(0))]).collect();
         let mut payload_bytes = Vec::new();
         for w in &data_extent_words {
             payload_bytes.extend_from_slice(&w.to_le_bytes());
@@ -4488,8 +4488,8 @@ mod tests {
         // Register partition in root session at key 500:
         // Logical 0..8192 maps to physical device offset 4096..12288.
         let partition_key = 500u64;
-        let partition_extents =
-            mapping::Extents::encode_extents(&[mapping::Extent::new(0..8192, Some(4096))]);
+        let partition_extents: Vec<u64> =
+            mapping::Extents::encode_extents([mapping::Extent::new(0..8192, Some(4096))]).collect();
         let mut payload_bytes = Vec::new();
         for w in &partition_extents {
             payload_bytes.extend_from_slice(&w.to_le_bytes());
@@ -4527,8 +4527,8 @@ mod tests {
         let child_mapping_vmo = zx::Vmo::create(65536).unwrap();
         let delivery_queue = zx::Vmo::create(4096).unwrap();
 
-        let child_extents =
-            mapping::Extents::encode_extents(&[mapping::Extent::new(0..4096, Some(0))]);
+        let child_extents: Vec<u64> =
+            mapping::Extents::encode_extents([mapping::Extent::new(0..4096, Some(0))]).collect();
         let mut child_payload_bytes = Vec::new();
         for w in &child_extents {
             child_payload_bytes.extend_from_slice(&w.to_le_bytes());
@@ -4614,8 +4614,8 @@ mod tests {
         let root_mapping_vmo = zx::Vmo::create(65536).unwrap();
 
         let partition_key = 500u64;
-        let partition_extents =
-            mapping::Extents::encode_extents(&[mapping::Extent::new(0..8192, Some(4096))]);
+        let partition_extents: Vec<u64> =
+            mapping::Extents::encode_extents([mapping::Extent::new(0..8192, Some(4096))]).collect();
         let mut payload_bytes = Vec::new();
         for w in &partition_extents {
             payload_bytes.extend_from_slice(&w.to_le_bytes());

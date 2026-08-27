@@ -83,13 +83,15 @@ impl PartitionsDirectoryEntry {
         gpt_index: usize,
     ) -> Self {
         let scope = fasync::Scope::new();
+        let has_mapper = gpt_manager.upgrade().is_some_and(|m| m.has_mapper());
         let node = vfs::directory::immutable::simple();
+        let volume_server = block_server.clone();
         node.add_entry(
             "volume",
             vfs::service::endpoint({
                 let scope = scope.to_handle();
                 move |_scope, channel| {
-                    let server = block_server.clone();
+                    let server = volume_server.clone();
                     let requests = fblock::BlockRequestStream::from_channel(channel);
                     scope.spawn(async move {
                         if let Some(server) = server.upgrade() {
@@ -122,6 +124,27 @@ impl PartitionsDirectoryEntry {
             }),
         )
         .unwrap();
+        if has_mapper {
+            let mapper_server = block_server;
+            node.add_entry(
+                "mapper",
+                vfs::service::endpoint({
+                    let scope = scope.to_handle();
+                    move |_scope, channel| {
+                        let server = mapper_server.clone();
+                        let requests = fblock::MapperRequestStream::from_channel(channel);
+                        scope.spawn(async move {
+                            if let Some(server) = server.upgrade() {
+                                if let Err(err) = server.handle_mapper_requests(requests).await {
+                                    log::error!(err:?; "Error handling mapper requests");
+                                }
+                            }
+                        });
+                    }
+                }),
+            )
+            .unwrap();
+        }
 
         Self { scope, node }
     }
@@ -132,13 +155,15 @@ impl PartitionsDirectoryEntry {
         gpt_indexes: Vec<usize>,
     ) -> Self {
         let scope = fasync::Scope::new();
+        let has_mapper = gpt_manager.upgrade().is_some_and(|m| m.has_mapper());
         let node = vfs::directory::immutable::simple();
+        let volume_server = block_server.clone();
         node.add_entry(
             "volume",
             vfs::service::endpoint({
                 let scope = scope.to_handle();
                 move |_scope, channel| {
-                    let server = block_server.clone();
+                    let server = volume_server.clone();
                     let requests = fblock::BlockRequestStream::from_channel(channel);
                     scope.spawn(async move {
                         if let Some(server) = server.upgrade() {
@@ -174,6 +199,27 @@ impl PartitionsDirectoryEntry {
             }),
         )
         .unwrap();
+        if has_mapper {
+            let mapper_server = block_server;
+            node.add_entry(
+                "mapper",
+                vfs::service::endpoint({
+                    let scope = scope.to_handle();
+                    move |_scope, channel| {
+                        let server = mapper_server.clone();
+                        let requests = fblock::MapperRequestStream::from_channel(channel);
+                        scope.spawn(async move {
+                            if let Some(server) = server.upgrade() {
+                                if let Err(err) = server.handle_mapper_requests(requests).await {
+                                    log::error!(err:?; "Error handling mapper requests");
+                                }
+                            }
+                        });
+                    }
+                }),
+            )
+            .unwrap();
+        }
 
         Self { scope, node }
     }

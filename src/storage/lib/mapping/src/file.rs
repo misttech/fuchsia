@@ -9,6 +9,7 @@ use blob_metadata::{BlobFormat, BlobMetadata};
 use byteorder::{LittleEndian, ReadBytesExt};
 use delivery_blob::compression::{CompressionAlgorithm, CompressionInfo, StreamingDecompressor};
 use fuchsia_sync::Mutex;
+use futures::channel::oneshot;
 use std::cmp::min;
 use std::collections::hash_map::{Entry, HashMap};
 use std::ops::{ControlFlow, Range};
@@ -138,12 +139,25 @@ impl File {
 }
 
 struct LoadingSlot<R> {
-    requests: Mutex<Vec<R>>,
+    requests: Vec<R>,
+    waiters: Vec<oneshot::Sender<Arc<File>>>,
+}
+
+impl<R> Default for LoadingSlot<R> {
+    fn default() -> Self {
+        Self { requests: Vec::new(), waiters: Vec::new() }
+    }
 }
 
 enum FileEntry<R> {
-    Loading(Arc<LoadingSlot<R>>),
+    Loading(LoadingSlot<R>),
     Loaded(Arc<File>),
+}
+
+impl<R> Default for FileEntry<R> {
+    fn default() -> Self {
+        Self::Loading(LoadingSlot::default())
+    }
 }
 
 /// A thread-safe registry of active [`File`] instances indexed by their Zircon pager port key.
@@ -175,14 +189,14 @@ impl<S: BlockService + ?Sized, R: PageRequest, F: Fn(u64, Range<u64>) -> R + Sen
         let req = (self.request_factory)(key, range);
         let mut map = self.map.lock();
         match map.entry(key) {
-            Entry::Occupied(entry) => match entry.get() {
+            Entry::Occupied(mut entry) => match entry.get_mut() {
                 FileEntry::Loaded(file) => {
                     let file = Arc::clone(file);
                     drop(map);
                     file.read_range(self.service.as_ref(), req);
                 }
                 FileEntry::Loading(slot) => {
-                    slot.requests.lock().push(req);
+                    slot.requests.push(req);
                 }
             },
             Entry::Vacant(entry) => {
@@ -193,8 +207,10 @@ impl<S: BlockService + ?Sized, R: PageRequest, F: Fn(u64, Range<u64>) -> R + Sen
                 // Potential weakness: Unknown keys are unbounded. If an invalid or bogus page
                 // request arrives for a key that is never mapped, this entry will remain in
                 // memory until the session is dropped.
-                let slot = Arc::new(LoadingSlot { requests: Mutex::new(vec![req]) });
-                entry.insert(FileEntry::Loading(slot));
+                entry.insert(FileEntry::Loading(LoadingSlot {
+                    requests: vec![req],
+                    waiters: Vec::new(),
+                }));
             }
         }
     }
@@ -202,23 +218,24 @@ impl<S: BlockService + ?Sized, R: PageRequest, F: Fn(u64, Range<u64>) -> R + Sen
     /// Marks `key` as currently loading metadata, preserving any page requests that arrived
     /// prior to the mapping command.
     pub fn begin_loading(&self, key: u64) {
-        let mut map = self.map.lock();
-        map.entry(key).or_insert_with(|| {
-            FileEntry::Loading(Arc::new(LoadingSlot { requests: Mutex::new(Vec::new()) }))
-        });
+        self.map.lock().entry(key).or_default();
     }
 
     /// Inserts a file into the registry under `key`, immediately draining and servicing any
     /// page requests that arrived while metadata was loading.
     fn insert(&self, key: u64, file: Arc<File>) {
-        let reqs = {
+        let (reqs, waiters) = {
             let mut map = self.map.lock();
             let prev = map.insert(key, FileEntry::Loaded(file.clone()));
             match prev {
-                Some(FileEntry::Loading(slot)) => std::mem::take(&mut *slot.requests.lock()),
-                _ => Vec::new(),
+                Some(FileEntry::Loading(slot)) => (slot.requests, slot.waiters),
+                _ => (Vec::new(), Vec::new()),
             }
         };
+
+        for waiter in waiters {
+            let _ = waiter.send(file.clone());
+        }
 
         for req in reqs {
             file.read_range(self.service.as_ref(), req);
@@ -232,6 +249,34 @@ impl<S: BlockService + ?Sized, R: PageRequest, F: Fn(u64, Range<u64>) -> R + Sen
             Some(FileEntry::Loaded(file)) => Some(file.clone()),
             _ => None,
         }
+    }
+
+    /// Returns a future that completes with the loaded [`File`] registered under `key`,
+    /// waiting asynchronously if the file is currently loading or hasn't arrived yet.
+    pub async fn wait_for_file(&self, key: u64) -> Result<Arc<File>, Error> {
+        let receiver = {
+            let mut map = self.map.lock();
+            match map.entry(key) {
+                Entry::Occupied(mut entry) => match entry.get_mut() {
+                    FileEntry::Loaded(file) => return Ok(file.clone()),
+                    FileEntry::Loading(slot) => {
+                        let (sender, receiver) = oneshot::channel();
+                        slot.waiters.push(sender);
+                        receiver
+                    }
+                },
+                Entry::Vacant(entry) => {
+                    let (sender, receiver) = oneshot::channel();
+                    entry.insert(FileEntry::Loading(LoadingSlot {
+                        requests: Vec::new(),
+                        waiters: vec![sender],
+                    }));
+                    receiver
+                }
+            }
+        };
+
+        receiver.await.map_err(|_| anyhow!("File loading cancelled"))
     }
 
     /// Removes the file registered under `key`.
@@ -475,6 +520,7 @@ mod tests {
     use bincode::Options;
     use byteorder::WriteBytesExt;
     use delivery_blob::compression::{ChunkedArchiveOptions, CompressionAlgorithm};
+    use fuchsia_async as fasync;
     use std::sync::Arc;
 
     fn serialize_metadata(metadata: &BlobMetadata) -> Vec<u8> {
@@ -496,7 +542,7 @@ mod tests {
         }
         let service = FakeBlockService::new(expected_data.clone());
 
-        let extents = Extents::encode_extents(&[Extent::new(0..(8 * BLOCK_SIZE), Some(0))]);
+        let extents = Extents::encode_extents([Extent::new(0..(8 * BLOCK_SIZE), Some(0))]);
         let extents = Extents::from_encoded(extents).unwrap();
         let file = Arc::new(File::new(extents, 8 * BLOCK_SIZE, None));
 
@@ -536,7 +582,7 @@ mod tests {
         let service = FakeBlockService::new(device_data);
 
         let extents =
-            Extents::encode_extents(&[Extent::new(0..(stored_blocks * BLOCK_SIZE), Some(0))]);
+            Extents::encode_extents([Extent::new(0..(stored_blocks * BLOCK_SIZE), Some(0))]);
         let extents = Extents::from_encoded(extents).unwrap();
         let compression_info = CompressionInfo::new(
             chunk_size as u64,
@@ -595,7 +641,7 @@ mod tests {
         let service = FakeBlockService::new_with_cap(device_data, Some(4096));
 
         let extents =
-            Extents::encode_extents(&[Extent::new(0..(stored_blocks * BLOCK_SIZE), Some(0))]);
+            Extents::encode_extents([Extent::new(0..(stored_blocks * BLOCK_SIZE), Some(0))]);
         let extents = Extents::from_encoded(extents).unwrap();
         let compression_info = CompressionInfo::new(
             chunk_size as u64,
@@ -616,7 +662,7 @@ mod tests {
     #[test]
     fn test_read_range_invalid_range_noop() {
         let service = FakeBlockService::new(vec![0u8; 8192]);
-        let extents = Extents::encode_extents(&[Extent::new(0..8192, Some(0))]);
+        let extents = Extents::encode_extents([Extent::new(0..8192, Some(0))]);
         let extents = Extents::from_encoded(extents).unwrap();
         let file = Arc::new(File::new(extents, 8192, None));
 
@@ -628,7 +674,8 @@ mod tests {
 
     #[test]
     fn test_file_getters() {
-        let extents_raw = Extents::encode_extents(&[Extent::new(0..8192, Some(0))]);
+        let extents_raw: Vec<u64> =
+            Extents::encode_extents([Extent::new(0..8192, Some(0))]).collect();
         let extents = Extents::from_encoded(extents_raw.clone()).unwrap();
         let uncompressed_size = 8192u64;
 
@@ -665,7 +712,7 @@ mod tests {
             }
         }
 
-        let extents = Extents::encode_extents(&[Extent::new(0..8192, Some(0))]);
+        let extents = Extents::encode_extents([Extent::new(0..8192, Some(0))]);
         let extents = Extents::from_encoded(extents).unwrap();
         let file = File::new(extents, 8192, None);
 
@@ -687,7 +734,7 @@ mod tests {
         let service = FakeBlockService::new_with_cap(expected_data.clone(), Some(4096));
 
         let extents =
-            Extents::encode_extents(&[Extent::new(0..(block_count * BLOCK_SIZE), Some(0))]);
+            Extents::encode_extents([Extent::new(0..(block_count * BLOCK_SIZE), Some(0))]);
         let extents = Extents::from_encoded(extents).unwrap();
         let file = File::new(extents, block_count * BLOCK_SIZE, None);
 
@@ -707,7 +754,7 @@ mod tests {
         }
         let service = FakeBlockService::new(expected_data.clone());
 
-        let extents = Extents::encode_extents(&[Extent::new(0..8192, Some(0))]);
+        let extents = Extents::encode_extents([Extent::new(0..8192, Some(0))]);
         let extents = Extents::from_encoded(extents).unwrap();
         let file = File::new(extents, uncompressed_size, None);
 
@@ -728,7 +775,7 @@ mod tests {
         let service = FakeBlockService::new(expected_data.clone());
 
         let extents =
-            Extents::encode_extents(&[Extent::new(0..(total_blocks * BLOCK_SIZE), Some(0))]);
+            Extents::encode_extents([Extent::new(0..(total_blocks * BLOCK_SIZE), Some(0))]);
         let extents = Extents::from_encoded(extents).unwrap();
         let file = File::new(extents, total_blocks * BLOCK_SIZE, None);
 
@@ -753,7 +800,7 @@ mod tests {
         let service = FakeBlockService::new(expected_data.clone());
 
         let extents =
-            Extents::encode_extents(&[Extent::new(0..(total_blocks * BLOCK_SIZE), Some(0))]);
+            Extents::encode_extents([Extent::new(0..(total_blocks * BLOCK_SIZE), Some(0))]);
         let extents = Extents::from_encoded(extents).unwrap();
         let file = File::new(extents, total_blocks * BLOCK_SIZE, None);
 
@@ -780,7 +827,7 @@ mod tests {
         let service = FakeBlockService::new(expected_data.clone());
 
         let extents =
-            Extents::encode_extents(&[Extent::new(0..(total_blocks * BLOCK_SIZE), Some(0))]);
+            Extents::encode_extents([Extent::new(0..(total_blocks * BLOCK_SIZE), Some(0))]);
         let extents = Extents::from_encoded(extents).unwrap();
         let file = File::new(extents, uncompressed_size, None);
 
@@ -834,7 +881,7 @@ mod tests {
         let service = FakeBlockService::new(device_data);
 
         let extents =
-            Extents::encode_extents(&[Extent::new(0..(stored_blocks * BLOCK_SIZE), Some(0))]);
+            Extents::encode_extents([Extent::new(0..(stored_blocks * BLOCK_SIZE), Some(0))]);
         let extents = Extents::from_encoded(extents).unwrap();
         let compression_info = CompressionInfo::new(
             chunk_size as u64,
@@ -891,7 +938,7 @@ mod tests {
         let service = FakeBlockService::new(device_data);
 
         let extents =
-            Extents::encode_extents(&[Extent::new(0..(stored_blocks * BLOCK_SIZE), Some(0))]);
+            Extents::encode_extents([Extent::new(0..(stored_blocks * BLOCK_SIZE), Some(0))]);
         let extents = Extents::from_encoded(extents).unwrap();
         let compression_info = CompressionInfo::new(
             chunk_size as u64,
@@ -915,7 +962,7 @@ mod tests {
 
     #[test]
     fn test_files_registry() {
-        let extents = Extents::encode_extents(&[Extent::new(0..4096, Some(0))]);
+        let extents = Extents::encode_extents([Extent::new(0..4096, Some(0))]);
         let extents = Extents::from_encoded(extents).unwrap();
         let file = Arc::new(File::new(extents, 4096, None));
         let service = Arc::new(FakeBlockService::new(vec![0u8; 4096]));
@@ -933,7 +980,7 @@ mod tests {
 
     #[test]
     fn test_files_new_without_pager() {
-        let extents = Extents::encode_extents(&[Extent::new(0..4096, Some(0))]);
+        let extents = Extents::encode_extents([Extent::new(0..4096, Some(0))]);
         let extents = Extents::from_encoded(extents).unwrap();
         let file = Arc::new(File::new(extents, 4096, None));
         let service = Arc::new(FakeBlockService::new(vec![0u8; 4096]));
@@ -1095,11 +1142,11 @@ mod tests {
         let service = DelayedBlockService::new(device_data);
         let files = Arc::new(Files::new(service.clone(), |_k, _r| TestVecBuffer::new(4096).0));
 
-        let data_extent_words = Extents::encode_extents(&[Extent::new(0..BLOCK_SIZE, Some(0))]);
+        let data_extent_words = Extents::encode_extents([Extent::new(0..BLOCK_SIZE, Some(0))]);
         let meta_extent_words =
-            Extents::encode_extents(&[Extent::new(0..BLOCK_SIZE, Some(BLOCK_SIZE))]);
+            Extents::encode_extents([Extent::new(0..BLOCK_SIZE, Some(BLOCK_SIZE))]);
         let mut payload_bytes = Vec::new();
-        for w in data_extent_words.iter().chain(meta_extent_words.iter()) {
+        for w in data_extent_words.chain(meta_extent_words) {
             payload_bytes.extend_from_slice(&w.to_le_bytes());
         }
 
@@ -1191,11 +1238,11 @@ mod tests {
             dropped: dropped_clone.clone(),
         }));
 
-        let data_extent_words = Extents::encode_extents(&[Extent::new(0..BLOCK_SIZE, Some(0))]);
+        let data_extent_words = Extents::encode_extents([Extent::new(0..BLOCK_SIZE, Some(0))]);
         let meta_extent_words =
-            Extents::encode_extents(&[Extent::new(0..BLOCK_SIZE, Some(BLOCK_SIZE))]);
+            Extents::encode_extents([Extent::new(0..BLOCK_SIZE, Some(BLOCK_SIZE))]);
         let mut payload_bytes = Vec::new();
-        for w in data_extent_words.iter().chain(meta_extent_words.iter()) {
+        for w in data_extent_words.chain(meta_extent_words) {
             payload_bytes.extend_from_slice(&w.to_le_bytes());
         }
 
@@ -1271,11 +1318,11 @@ mod tests {
         let vmo_blob_clone = vmo_blob.duplicate_handle(Rights::SAME_RIGHTS).unwrap();
 
         // Encode mapping command with 1 data extent and 1 metadata extent
-        let data_extent_words = Extents::encode_extents(&[Extent::new(0..BLOCK_SIZE, Some(0))]);
+        let data_extent_words = Extents::encode_extents([Extent::new(0..BLOCK_SIZE, Some(0))]);
         let meta_extent_words =
-            Extents::encode_extents(&[Extent::new(0..BLOCK_SIZE, Some(BLOCK_SIZE))]);
+            Extents::encode_extents([Extent::new(0..BLOCK_SIZE, Some(BLOCK_SIZE))]);
         let mut payload_bytes = Vec::new();
-        for w in data_extent_words.iter().chain(meta_extent_words.iter()) {
+        for w in data_extent_words.chain(meta_extent_words) {
             payload_bytes.extend_from_slice(&w.to_le_bytes());
         }
 
@@ -1366,11 +1413,11 @@ mod tests {
         let vmo_blob_clone = vmo_blob.duplicate_handle(Rights::SAME_RIGHTS).unwrap();
 
         // Encode mapping command with 1 data extent and 1 metadata extent
-        let data_extent_words = Extents::encode_extents(&[Extent::new(0..BLOCK_SIZE, Some(0))]);
+        let data_extent_words = Extents::encode_extents([Extent::new(0..BLOCK_SIZE, Some(0))]);
         let meta_extent_words =
-            Extents::encode_extents(&[Extent::new(0..BLOCK_SIZE, Some(BLOCK_SIZE))]);
+            Extents::encode_extents([Extent::new(0..BLOCK_SIZE, Some(BLOCK_SIZE))]);
         let mut payload_bytes = Vec::new();
-        for w in data_extent_words.iter().chain(meta_extent_words.iter()) {
+        for w in data_extent_words.chain(meta_extent_words) {
             payload_bytes.extend_from_slice(&w.to_le_bytes());
         }
 
@@ -1436,9 +1483,9 @@ mod tests {
         .unwrap();
 
         // 1. Send Mappings command with 0 metadata extents (uncompressed file, loads immediately).
-        let data_extent_words = Extents::encode_extents(&[Extent::new(0..BLOCK_SIZE, Some(0))]);
+        let data_extent_words = Extents::encode_extents([Extent::new(0..BLOCK_SIZE, Some(0))]);
         let mut payload_bytes = Vec::new();
-        for w in &data_extent_words {
+        for w in data_extent_words {
             payload_bytes.extend_from_slice(&w.to_le_bytes());
         }
         let mut payload_buf = sender.reserve_payload(payload_bytes.len()).unwrap();
@@ -1512,5 +1559,30 @@ mod tests {
         let mut old_version_bytes = bytes.clone();
         (&mut old_version_bytes[..4]).write_u32::<LittleEndian>(52).unwrap();
         assert!(deserialize_blob_metadata(&old_version_bytes).is_err());
+    }
+
+    #[fuchsia::test]
+    async fn test_wait_for_file_before_and_after_insert() {
+        let service = Arc::new(FakeBlockService::new(vec![]));
+        let files = Arc::new(Files::new_without_pager(service));
+
+        let extents = Extents::encode_extents([Extent::new(0..BLOCK_SIZE, Some(0))]);
+        let extents = Extents::from_encoded(extents).unwrap();
+        let file = Arc::new(File::new(extents, BLOCK_SIZE, None));
+
+        // Wait before insert.
+        let files_clone = files.clone();
+        let file_clone = file.clone();
+        let wait_task =
+            fasync::Task::spawn(async move { files_clone.wait_for_file(42).await.unwrap() });
+
+        // Insert the file.
+        files.insert(42, file_clone);
+        let loaded_file = wait_task.await;
+        assert_eq!(loaded_file.uncompressed_size(), BLOCK_SIZE);
+
+        // Wait after insert.
+        let loaded_file2 = files.wait_for_file(42).await.unwrap();
+        assert_eq!(loaded_file2.uncompressed_size(), BLOCK_SIZE);
     }
 }

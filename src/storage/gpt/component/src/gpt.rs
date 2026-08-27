@@ -24,8 +24,8 @@ use fuchsia_sync::Mutex;
 use futures::stream::TryStreamExt as _;
 use std::collections::BTreeMap;
 use std::num::NonZero;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Weak};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::{Arc, OnceLock, Weak};
 
 fn partition_directory_entry_name(index: u32) -> String {
     format!("part-{:03}", index)
@@ -132,6 +132,11 @@ impl GptPartition {
                 log::warn!(error:?; "Failed to send session epitaph");
             }
         }
+    }
+
+    /// Returns the parent [`GptManager`] if it is still running.
+    pub fn gpt(&self) -> Option<Arc<GptManager>> {
+        self.gpt.upgrade()
     }
 
     pub fn get_info(&self) -> block_server::DeviceInfo {
@@ -410,10 +415,44 @@ impl Inner {
     }
 }
 
+/// Encodes partition `offset_map` into raw extent bytes for the mapping VMO FIFO.
+///
+/// Returns the encoded payload bytes, total uncompressed size, and extent count.
+fn offset_map_to_extents(offset_map: &OffsetMap, block_size: u32) -> (Vec<u8>, u64, u32) {
+    let mappings: Vec<fblock::BlockOffsetMapping> = offset_map.into();
+    let block_size = block_size as u64;
+    let mut running_logical = 0u64;
+    let extents = mappings.iter().map(|m| {
+        let len_bytes = m.length * block_size;
+        let dev_offset_bytes = m.target_block_offset * block_size;
+        let extent = mapping::Extent::new(
+            running_logical..running_logical + len_bytes,
+            Some(dev_offset_bytes),
+        );
+        running_logical += len_bytes;
+        extent
+    });
+    let mut payload_bytes = Vec::new();
+    let mut blob_count = 0u32;
+    for w in mapping::Extents::encode_extents(extents) {
+        payload_bytes.extend_from_slice(&w.to_le_bytes());
+        blob_count += 1;
+    }
+    (payload_bytes, running_logical, blob_count)
+}
+
+struct MapperSessionState {
+    session_proxy: fblock::MapperSessionProxy,
+    sender: futures::lock::Mutex<vmo_fifo::AsyncSender<mapping::RawMappingCommand>>,
+}
+
 /// Runs a GPT device.
 pub struct GptManager {
     config: Config,
     block_proxy: fblock::BlockProxy,
+    mapper_proxy: Option<fblock::MapperProxy>,
+    mapper_session: OnceLock<MapperSessionState>,
+    next_partition_key: AtomicU64,
     block_size: u32,
     block_count: u64,
     inner: futures::lock::Mutex<Inner>,
@@ -437,8 +476,33 @@ impl GptManager {
         Self::new_with_config(block_proxy, partitions_dir, Config::default()).await
     }
 
+    /// Creates a new [`GptManager`] with an optional mapper proxy and default configuration.
+    pub async fn new_with_mapper(
+        block_proxy: fblock::BlockProxy,
+        mapper_proxy: Option<fblock::MapperProxy>,
+        partitions_dir: Arc<vfs::directory::immutable::Simple>,
+    ) -> Result<Arc<Self>, Error> {
+        Self::new_with_config_and_mapper(
+            block_proxy,
+            mapper_proxy,
+            partitions_dir,
+            Config::default(),
+        )
+        .await
+    }
+
     pub async fn new_with_config(
         block_proxy: fblock::BlockProxy,
+        partitions_dir: Arc<vfs::directory::immutable::Simple>,
+        config: Config,
+    ) -> Result<Arc<Self>, Error> {
+        Self::new_with_config_and_mapper(block_proxy, None, partitions_dir, config).await
+    }
+
+    /// Creates a new [`GptManager`] with custom config and an optional mapper proxy.
+    pub async fn new_with_config_and_mapper(
+        block_proxy: fblock::BlockProxy,
+        mapper_proxy: Option<fblock::MapperProxy>,
         partitions_dir: Arc<vfs::directory::immutable::Simple>,
         config: Config,
     ) -> Result<Arc<Self>, Error> {
@@ -451,6 +515,9 @@ impl GptManager {
         let this = Arc::new(Self {
             config,
             block_proxy,
+            mapper_proxy,
+            mapper_session: OnceLock::new(),
+            next_partition_key: AtomicU64::new(1),
             block_size,
             block_count,
             inner: futures::lock::Mutex::new(Inner {
@@ -465,6 +532,94 @@ impl GptManager {
         this.inner.lock().await.bind_all_partitions(&this).await?;
         log::info!("Starting all partitions OK!");
         Ok(this)
+    }
+
+    /// Returns the initialized [`MapperSessionState`] for the parent device's mapper session,
+    /// lazily opening the session on first access.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the parent device was not configured with a mapper proxy.
+    async fn mapper_state(&self) -> &MapperSessionState {
+        let mapper_proxy = self.mapper_proxy.as_ref().unwrap();
+
+        let mut init_server = None;
+        let state = self.mapper_session.get_or_init(|| {
+            let (session_proxy, session_server) =
+                fidl::endpoints::create_proxy::<fblock::MapperSessionMarker>();
+            let parent_mapping_vmo = zx::Vmo::create(mapping::MAPPING_VMO_SIZE).unwrap();
+            let sender = vmo_fifo::AsyncSender::<mapping::RawMappingCommand>::new(
+                parent_mapping_vmo.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap(),
+                1024,
+                mapping::PENDING_COMMANDS_CAPACITY,
+            )
+            .unwrap();
+            init_server = Some((session_server, parent_mapping_vmo));
+            MapperSessionState { session_proxy, sender: futures::lock::Mutex::new(sender) }
+        });
+        // Note: A concurrent caller may see `self.mapper_session` as already initialized and
+        // return `state` while the initializing thread is still awaiting `open_session`. This is
+        // fine because FIDL channel message ordering ensures subsequent requests on `session_proxy`
+        // are processed after the session is opened, and any failure will close the channel.
+        if let Some((session_server, parent_mapping_vmo)) = init_server {
+            match mapper_proxy.open_session(session_server, parent_mapping_vmo, None, None).await {
+                Ok(Err(status)) => {
+                    log::warn!(
+                        status:? = zx::Status::err_from_raw(status);
+                        "Failed to open mapper session on parent device"
+                    );
+                }
+                Err(error) => {
+                    log::warn!(error:?; "FIDL error calling Mapper.OpenSession on parent device");
+                }
+                Ok(Ok(())) => {}
+            }
+        }
+        state
+    }
+
+    /// Returns a reference to the parent device's [`fblock::MapperSessionProxy`].
+    ///
+    /// # Panics
+    ///
+    /// Panics if the parent device was not configured with a mapper proxy.
+    pub async fn mapper_session_proxy(&self) -> &fblock::MapperSessionProxy {
+        &self.mapper_state().await.session_proxy
+    }
+
+    /// Allocates and returns the next unique partition key for mapper sessions.
+    pub fn next_partition_key(&self) -> u64 {
+        self.next_partition_key.fetch_add(1, Ordering::Relaxed)
+    }
+
+    /// Registers the extent mapping for a partition under `key` with the parent mapper session.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the parent device was not configured with a mapper proxy.
+    pub async fn register_mappings(&self, key: u64, offset_map: &OffsetMap) -> Result<(), Error> {
+        let state = self.mapper_state().await;
+        let mut sender = state.sender.lock().await;
+
+        let (payload_bytes, stored_size, blob_count) =
+            offset_map_to_extents(offset_map, self.block_size);
+        let mut payload_buf = sender.reserve_payload(payload_bytes.len()).await?;
+        let cmd = mapping::RawMappingCommand {
+            opcode: mapping::MAPPINGS_COMMAND,
+            offset: payload_buf.offset(),
+            key,
+            stored_size,
+            metadata_count: 0,
+            blob_count,
+        };
+        payload_buf.data().copy_from_slice(&payload_bytes);
+        payload_buf.commit(cmd).await?;
+        Ok(())
+    }
+
+    /// Returns `true` if this GPT instance was configured with a mapper proxy.
+    pub fn has_mapper(&self) -> bool {
+        self.mapper_proxy.is_some()
     }
 
     pub fn block_size(&self) -> u32 {
@@ -706,6 +861,9 @@ impl GptManager {
         inner.partitions_dir.clear().await;
         inner.partitions.clear();
         inner.composite_partitions.clear();
+        if let Some(state) = self.mapper_session.get() {
+            let _ = state.session_proxy.close().await;
+        }
         self.shutdown.store(true, Ordering::Relaxed);
         log::info!("Shutting down gpt OK");
     }
@@ -730,6 +888,7 @@ mod tests {
     use fidl_fuchsia_storage_partitions as fpartitions;
     use fuchsia_async as fasync;
     use fuchsia_component::client::connect_to_named_protocol_at_dir_root;
+    use futures::StreamExt as _;
     use gpt::{Gpt, Guid, PartitionInfo};
     use std::num::NonZero;
     use std::sync::Arc;
@@ -2180,6 +2339,61 @@ mod tests {
     }
 
     #[fuchsia::test]
+    async fn test_mapper_passthrough_on_partition() {
+        const PART_TYPE_GUID: [u8; 16] = [2u8; 16];
+        const PART_INSTANCE_GUID: [u8; 16] = [2u8; 16];
+        const PART_NAME: &str = "super";
+
+        let (block_device, partitions_dir) = setup(
+            512,
+            64,
+            vec![PartitionInfo {
+                label: PART_NAME.to_string(),
+                type_guid: Guid::from_bytes(PART_TYPE_GUID),
+                instance_guid: Guid::from_bytes(PART_INSTANCE_GUID),
+                start_block: 8,
+                num_blocks: 16,
+                flags: 0,
+            }],
+        )
+        .await;
+
+        let mapper_proxy = block_device.connect_mapper();
+        let partitions_dir_clone = partitions_dir.clone();
+        let runner = GptManager::new_with_mapper(
+            block_device.connect(),
+            Some(mapper_proxy),
+            partitions_dir_clone,
+        )
+        .await
+        .expect("load should succeed");
+
+        let part_dir = vfs::serve_directory(
+            partitions_dir.clone(),
+            vfs::path::Path::validate_and_split("part-000").unwrap(),
+            vfs::execution_scope::ExecutionScope::new(),
+            fio::PERM_READABLE,
+        );
+        let part_mapper =
+            connect_to_named_protocol_at_dir_root::<fblock::MapperMarker>(&part_dir, "mapper")
+                .expect("Failed to open Mapper service");
+
+        let (_session_proxy, session_server_end) =
+            fidl::endpoints::create_proxy::<fblock::MapperSessionMarker>();
+        let mapping_vmo = zx::Vmo::create(4096).unwrap();
+        let port = zx::Port::create();
+        let delivery_queue = zx::Vmo::create(4096).unwrap();
+
+        part_mapper
+            .open_session(session_server_end, mapping_vmo, Some(port), Some(delivery_queue))
+            .await
+            .expect("FIDL open_session failed")
+            .expect("open_session returned error");
+
+        runner.shutdown().await;
+    }
+
+    #[fuchsia::test]
     async fn reset_partition_table_severs_passthrough_connections() {
         const PART_TYPE_GUID: [u8; 16] = [2u8; 16];
         const PART_1_INSTANCE_GUID: [u8; 16] = [2u8; 16];
@@ -2263,6 +2477,127 @@ mod tests {
             .write_at(BufferSlice::Memory(&buf[..]), 0)
             .await
             .expect_err("write_at on stale client should fail");
+
+        runner.shutdown().await;
+    }
+
+    #[fuchsia::test]
+    async fn test_mapper_passthrough_on_composite_partition() {
+        let (block_device, partitions_dir) = setup(
+            512,
+            64,
+            vec![
+                PartitionInfo {
+                    label: "super".to_string(),
+                    type_guid: Guid::from_bytes([1u8; 16]),
+                    instance_guid: Guid::from_bytes([2u8; 16]),
+                    start_block: 8,
+                    num_blocks: 8,
+                    flags: 0,
+                },
+                PartitionInfo {
+                    label: "userdata".to_string(),
+                    type_guid: Guid::from_bytes([1u8; 16]),
+                    instance_guid: Guid::from_bytes([3u8; 16]),
+                    start_block: 16,
+                    num_blocks: 8,
+                    flags: 0,
+                },
+            ],
+        )
+        .await;
+
+        let mapper_proxy = block_device.connect_mapper();
+        let partitions_dir_clone = partitions_dir.clone();
+        let config = crate::config::Config { merge_super_and_userdata: true, ..Default::default() };
+        let runner = GptManager::new_with_config_and_mapper(
+            block_device.connect(),
+            Some(mapper_proxy),
+            partitions_dir_clone,
+            config,
+        )
+        .await
+        .expect("load should succeed");
+
+        let part_dir = vfs::serve_directory(
+            partitions_dir.clone(),
+            vfs::path::Path::validate_and_split("part-000").unwrap(),
+            vfs::execution_scope::ExecutionScope::new(),
+            fio::PERM_READABLE,
+        );
+        let part_mapper =
+            connect_to_named_protocol_at_dir_root::<fblock::MapperMarker>(&part_dir, "mapper")
+                .expect("Failed to open Mapper service");
+
+        let (_session_proxy, session_server_end) =
+            fidl::endpoints::create_proxy::<fblock::MapperSessionMarker>();
+        let mapping_vmo = zx::Vmo::create(4096).unwrap();
+        let port = zx::Port::create();
+        let delivery_queue = zx::Vmo::create(4096).unwrap();
+
+        part_mapper
+            .open_session(session_server_end, mapping_vmo, Some(port), Some(delivery_queue))
+            .await
+            .expect("FIDL open_session failed")
+            .expect("open_session returned error");
+
+        runner.shutdown().await;
+    }
+
+    #[fuchsia::test]
+    async fn test_register_mappings_payload_offset() {
+        let (block_device, partitions_dir) = setup(512, 64, vec![]).await;
+
+        let (mapper_proxy, mut mapper_stream) =
+            fidl::endpoints::create_proxy_and_stream::<fblock::MapperMarker>();
+
+        let (commands_tx, mut commands_rx) = futures::channel::mpsc::unbounded();
+        let _mapper_task = fasync::Task::spawn(async move {
+            if let Some(Ok(fblock::MapperRequest::OpenSession { mapping_vmo, responder, .. })) =
+                mapper_stream.next().await
+            {
+                let vmo_dup = mapping_vmo.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap();
+                let _receiver_thread = std::thread::spawn(move || {
+                    let mut receiver = vmo_fifo::Receiver::<mapping::RawMappingCommand>::new(
+                        vmo_dup,
+                        mapping::PENDING_COMMANDS_CAPACITY,
+                    )
+                    .unwrap();
+                    while let Ok(msg) = receiver.peek() {
+                        let cmd = *msg;
+                        commands_tx.unbounded_send(cmd).unwrap();
+                        let _ = msg.pop();
+                    }
+                });
+                responder.send(Ok(())).unwrap();
+            }
+        });
+
+        let runner =
+            GptManager::new_with_mapper(block_device.connect(), Some(mapper_proxy), partitions_dir)
+                .await
+                .expect("load should succeed");
+
+        let offset_map1 = block_server::OffsetMap::new(vec![block_server::BlockOffsetMapping {
+            target_block_offset: 0,
+            length: 8,
+        }])
+        .unwrap();
+        let offset_map2 = block_server::OffsetMap::new(vec![block_server::BlockOffsetMapping {
+            target_block_offset: 8,
+            length: 8,
+        }])
+        .unwrap();
+        runner.register_mappings(1, &offset_map1).await.expect("register 1 failed");
+        runner.register_mappings(2, &offset_map2).await.expect("register 2 failed");
+
+        let cmd1 = commands_rx.next().await.expect("expected first command");
+        let cmd2 = commands_rx.next().await.expect("expected second command");
+
+        assert_eq!(cmd1.key, 1);
+        assert_eq!(cmd1.offset, 0);
+        assert_eq!(cmd2.key, 2);
+        assert_ne!(cmd2.offset, 0);
 
         runner.shutdown().await;
     }

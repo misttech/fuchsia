@@ -4,6 +4,7 @@
 
 use crate::BLOCK_SIZE;
 use anyhow::{Error, anyhow};
+use std::borrow::Borrow;
 use std::ops::Range;
 
 const TYPE_MASK: u64 = 0xc0000000_00000000;
@@ -159,14 +160,14 @@ pub struct Extents {
 }
 
 impl Extents {
-    /// Encodes a slice of `Extent`s into 64-bit mapping descriptors.
-    pub fn encode_extents(extents: &[Extent]) -> Vec<u64> {
-        Self::encode_extents_iter(extents).collect()
-    }
-
-    /// Returns an iterator of 64-bit mapping descriptors from a slice of `Extent`s.
-    pub fn encode_extents_iter<'a>(extents: &'a [Extent]) -> impl Iterator<Item = u64> + 'a {
-        extents.iter().map(|extent| {
+    /// Encodes an iterator of `Extent`s into 64-bit mapping descriptors.
+    pub fn encode_extents<I>(extents: I) -> impl Iterator<Item = u64>
+    where
+        I: IntoIterator,
+        I::Item: std::borrow::Borrow<Extent>,
+    {
+        extents.into_iter().map(|extent| {
+            let extent = extent.borrow();
             let length_blocks = extent.len() / BLOCK_SIZE;
             match extent.device_offset() {
                 Some(dev_offset) => {
@@ -278,10 +279,8 @@ mod tests {
             Extent::new(0..(4 * BLOCK_SIZE), Some(10 * BLOCK_SIZE)),
             Extent::new((4 * BLOCK_SIZE)..(6 * BLOCK_SIZE), Some(100 * BLOCK_SIZE)),
         ];
-        let encoded = Extents::encode_extents(&extents);
-        assert_eq!(encoded.len(), 2);
-
-        let extents_container = Extents::from_encoded(encoded).expect("from_encoded failed");
+        let extents_container =
+            Extents::from_encoded(Extents::encode_extents(extents)).expect("from_encoded failed");
 
         let decoded = extents_container.mappings();
         assert_eq!(decoded.len(), 2);
@@ -300,9 +299,8 @@ mod tests {
             Extent::new((2 * BLOCK_SIZE)..(5 * BLOCK_SIZE), None),
             Extent::new((5 * BLOCK_SIZE)..(6 * BLOCK_SIZE), Some(200 * BLOCK_SIZE)),
         ];
-        let encoded = Extents::encode_extents(&extents);
-
-        let extents_container = Extents::from_encoded(encoded).expect("from_encoded failed");
+        let extents_container =
+            Extents::from_encoded(Extents::encode_extents(extents)).expect("from_encoded failed");
 
         let decoded = extents_container.mappings();
         assert_eq!(decoded.len(), 3);
@@ -324,8 +322,8 @@ mod tests {
             Extent::new((10 * BLOCK_SIZE)..(20 * BLOCK_SIZE), Some(200 * BLOCK_SIZE)),
             Extent::new((20 * BLOCK_SIZE)..(30 * BLOCK_SIZE), Some(300 * BLOCK_SIZE)),
         ];
-        let encoded = Extents::encode_extents(&extents);
-        let extents_container = Extents::from_encoded(encoded).expect("from_encoded failed");
+        let extents_container =
+            Extents::from_encoded(Extents::encode_extents(extents)).expect("from_encoded failed");
 
         let mapped = extents_container.map(0).expect("should map at offset 0");
         assert_eq!(mapped.logical_range, 0..(10 * BLOCK_SIZE));

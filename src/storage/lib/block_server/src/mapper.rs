@@ -51,7 +51,7 @@ impl MapperVmoThread {
             std::thread::spawn(
                 move || match vmo_fifo::Receiver::<mapping::RawMappingCommand>::new(
                     mapping_vmo_dup,
-                    256,
+                    mapping::PENDING_COMMANDS_CAPACITY,
                 ) {
                     Ok(mut receiver) => {
                         while let Ok(msg) = receiver.peek() {
@@ -108,33 +108,35 @@ async fn run_mapper_session_loop<
                 delivery_queue,
                 responder,
             } => {
-                if let Some(parent_file) = files.get_file(parent_key) {
-                    let child_service = Arc::new(mapping::reader::ChildBlockService::new(
-                        service.clone(),
-                        parent_file,
-                    ));
-                    match serve_mapper_session(
-                        handler.clone(),
-                        child_service,
-                        session,
-                        mapping_vmo,
-                        port,
-                        delivery_queue,
-                    ) {
-                        Ok(child_fut) => {
-                            scope.spawn(async move {
-                                if let Err(e) = child_fut.await {
-                                    log::warn!(e:?; "Child mapper session failed");
-                                }
-                            });
-                            responder.send(Ok(()))?;
-                        }
-                        Err(status) => {
-                            responder.send(Err(status.into_raw()))?;
-                        }
+                let parent_file = match files.wait_for_file(parent_key).await {
+                    Ok(file) => file,
+                    Err(error) => {
+                        log::warn!(error:?; "Failed to load parent file for key {parent_key}");
+                        responder.send(Err(zx::Status::NOT_FOUND.into_raw()))?;
+                        continue;
                     }
-                } else {
-                    responder.send(Err(zx::Status::NOT_FOUND.into_raw()))?;
+                };
+                let child_service =
+                    Arc::new(mapping::reader::ChildBlockService::new(service.clone(), parent_file));
+                match serve_mapper_session(
+                    handler.clone(),
+                    child_service,
+                    session,
+                    mapping_vmo,
+                    port,
+                    delivery_queue,
+                ) {
+                    Ok(child_fut) => {
+                        scope.spawn(async move {
+                            if let Err(e) = child_fut.await {
+                                log::warn!(e:?; "Child mapper session failed");
+                            }
+                        });
+                        responder.send(Ok(()))?;
+                    }
+                    Err(status) => {
+                        responder.send(Err(status.into_raw()))?;
+                    }
                 }
             }
             fblock::MapperSessionRequest::Close { responder } => {

@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 use crate::gpt::GptPartition;
-use anyhow::Error;
+use anyhow::{Context as _, Error};
 use block_client::{ReadOptions, VmoId, WriteOptions};
 use block_server::async_interface::{PassthroughSession, SessionManager};
 use block_server::{DeviceInfo, OffsetMap};
@@ -13,8 +13,9 @@ use fuchsia_async as fasync;
 use fuchsia_sync::Mutex;
 use std::borrow::Cow;
 use std::collections::BTreeMap;
+use std::future::Future;
 use std::num::NonZero;
-use std::sync::{Arc, Weak};
+use std::sync::{Arc, OnceLock, Weak};
 
 /// A wrapper around a VmoId which keeps it active until all requests which use the Vmoid are
 /// complete.  Strong references are held by ongoing requests.
@@ -53,6 +54,7 @@ pub struct PartitionBackend {
     partition: Arc<GptPartition>,
     vmo_keys_to_vmoids_map: Mutex<BTreeMap<usize, Arc<VmoIdWrapper>>>,
     offset_map: block_server::OffsetMap,
+    mapper_key: OnceLock<u64>,
 }
 
 impl block_server::async_interface::Interface for PartitionBackend {
@@ -82,6 +84,48 @@ impl block_server::async_interface::Interface for PartitionBackend {
         self.partition.open_passthrough_session(server_end, &self.offset_map);
         let passthrough = PassthroughSession::new(proxy);
         passthrough.serve(stream).await
+    }
+
+    fn open_mapper_session(
+        session_manager: Arc<SessionManager<Self>>,
+        session: fidl::endpoints::ServerEnd<fblock::MapperSessionMarker>,
+        mapping_vmo: zx::Vmo,
+        _block_size: u32,
+        port: Option<zx::Port>,
+        delivery_queue: Option<zx::Vmo>,
+    ) -> Result<impl Future<Output = Result<(), Error>> + Send + 'static, zx::Status> {
+        if session_manager.interface().offset_map.is_empty() {
+            return Err(zx::Status::NOT_SUPPORTED);
+        }
+        let this = session_manager.interface().clone();
+        Ok(async move {
+            let Some(gpt) = this.partition.gpt() else {
+                let _ = session.close_with_epitaph(zx::Status::BAD_STATE);
+                anyhow::bail!("GPT is no longer running");
+            };
+            let mut init = false;
+            let key = *this.mapper_key.get_or_init(|| {
+                init = true;
+                gpt.next_partition_key()
+            });
+            // This is thread-safe because `open_child_session` in the server waits for mappings if
+            // they arrive late.
+            if init {
+                gpt.register_mappings(key, &this.offset_map).await?;
+            }
+            let session_proxy = gpt.mapper_session_proxy().await;
+            session_proxy
+                .open_child_session(session, mapping_vmo, key, port, delivery_queue)
+                .await
+                .context("FIDL error calling OpenChildSession on mapper session")?
+                .map_err(|status| {
+                    anyhow::anyhow!(
+                        "OpenChildSession failed: {:?}",
+                        zx::Status::err_from_raw(status)
+                    )
+                })?;
+            Ok(())
+        })
     }
 
     async fn on_attach_vmo(&self, vmo: &zx::Vmo) -> Result<(), zx::Status> {
@@ -170,6 +214,7 @@ impl PartitionBackend {
             partition,
             offset_map,
             vmo_keys_to_vmoids_map: Mutex::new(BTreeMap::new()),
+            mapper_key: OnceLock::new(),
         })
     }
 

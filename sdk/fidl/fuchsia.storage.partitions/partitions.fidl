@@ -116,6 +116,8 @@ closed protocol PartitionsAdmin {
 service PartitionService {
     /// Always present.
     volume client_end:fuchsia.storage.block.Block;
+    /// Present when the underlying block device supports mapping.
+    mapper client_end:fuchsia.storage.block.Mapper;
     /// Present for partitions which are actual GPT partitions.
     partition client_end:Partition;
     /// Present for partitions which are overlays (i.e. a logical merge of several contiguous
