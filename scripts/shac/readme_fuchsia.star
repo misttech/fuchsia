@@ -1,6 +1,7 @@
 # Copyright 2026 The Fuchsia Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
+"""SHAC check for README.fuchsia validity."""
 
 load("./common.star", "compiled_tool_path", "os_exec")
 
@@ -24,25 +25,40 @@ def _readme_fuchsia_required_fields(ctx):
     """
     exe = compiled_tool_path(ctx, "readme_fuchsia")
 
+    files = _filter_readme_fuchsia_files(ctx, ctx.scm.affected_files(glob = "README.fuchsia"))
+    if not files:
+        return
+
     procs = []
-    for f in _filter_readme_fuchsia_files(ctx, ctx.scm.affected_files(glob = "README.fuchsia")):
-        args = [exe, "validate"]
+    for f in files:
+        findings_file = ctx.io.tempfile("")
+        args = [exe, "validate", "-findings_file", findings_file, f]
+        procs.append((f, findings_file, os_exec(ctx, args, ok_retcodes = (0, 1))))
 
-        args.append(f)
-        procs.append((f, os_exec(ctx, args, ok_retcodes = (0, 1))))
-
-    for f, proc in procs:
+    for f, findings_file, proc in procs:
         res = proc.wait()
-        if res.retcode != 0:
-            lines = [line.strip() for line in res.stderr.strip().split("\n") if line.strip()]
-            if len(lines) > 1:
-                lines = lines[1:]
-            for line in lines:
+        raw_findings = str(ctx.io.read_file(findings_file)).strip()
+        if raw_findings:
+            for item in json.decode(raw_findings) or []:
                 ctx.emit.finding(
-                    level = "error",
-                    message = line,
-                    filepath = f,
+                    level = item.get("level", "error"),
+                    message = item.get("message", ""),
+                    filepath = item.get("filepath", f),
+                    line = item.get("line"),
+                    end_line = item.get("end_line"),
+                    col = item.get("col"),
+                    end_col = item.get("end_col"),
+                    replacements = item.get("replacements"),
                 )
+        elif res.retcode != 0:
+            message = res.stderr.strip() or res.stdout.strip()
+            if not message:
+                message = "readme_fuchsia validate failed"
+            ctx.emit.finding(
+                level = "error",
+                message = message,
+                filepath = f,
+            )
 
 def register_readme_fuchsia_checks():
     shac.register_check(shac.check(_readme_fuchsia_required_fields, name = "readme_fuchsia_required_fields"))
