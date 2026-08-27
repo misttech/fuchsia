@@ -51,7 +51,7 @@ GOOD_TEMPLATE = (
 
 # Regexes used to find insertion locations.
 REGEX_INDEX_ENTRY = r"^<<error-catalog/_fi-(\d+)\.md>>"
-REGEX_REDIRECT_ENTRY = r"^- from: /fuchsia-src/error/fi-(\d+)"
+REGEX_REDIRECT_ENTRY = r"^- from: /docs/error/fi-(\d+)"
 REGEX_ERRCAT_TXT_LINE = r"^_fi-(\d+)\.md$"
 REGEX_FIDL_TXT_LINE = r"^fi-(\d+)(?:-[a-z])?(?:\.noformat)?\.test.fidl$"
 REGEX_GOOD_TEST = r"TEST\(ErrcatGoodTests, Good(\d+)"
@@ -210,7 +210,7 @@ def perform_change(args) -> Change:
         REDIRECT_FILE,
         REGEX_REDIRECT_ENTRY,
         n,
-        f"- from: /fuchsia-src/error/fi-{ns}\n  to: /fuchsia-src/reference/fidl/language/errcat.md#fi-{ns}",
+        f"- from: /docs/error/fi-{ns}\n  to: /docs/reference/fidl/language/errcat.md#fi-{ns}",
         after_offset=2,
     )
 
