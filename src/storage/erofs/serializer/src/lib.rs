@@ -17,6 +17,8 @@ pub enum SerializerNode {
     Directory { name: String, entries: Vec<SerializerNode> },
     /// A file with byte contents.
     File { name: String, data: Vec<u8> },
+    /// A symlink pointing to a target.
+    Symlink { name: String, target: Vec<u8> },
 }
 
 impl SerializerNode {
@@ -24,13 +26,21 @@ impl SerializerNode {
         match self {
             Self::Directory { name, .. } => name,
             Self::File { name, .. } => name,
+            Self::Symlink { name, .. } => name,
         }
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum NodeType {
+    Dir,
+    File,
+    Symlink,
+}
+
 struct FlatNode {
     nid: u64,
-    is_dir: bool,
+    node_type: NodeType,
     contents: FlatNodeContents,
     data_block: u32,
     size: u64,
@@ -38,11 +48,14 @@ struct FlatNode {
 
 enum FlatNodeContents {
     Directory {
-        // (name, nid, is_dir)
-        entries: Vec<(String, u64, bool)>,
+        // (name, nid, node_type)
+        entries: Vec<(String, u64, NodeType)>,
     },
     File {
         data: Vec<u8>,
+    },
+    Symlink {
+        target: Vec<u8>,
     },
 }
 
@@ -53,21 +66,21 @@ fn add_node(node: &SerializerNode, nodes: &mut Vec<FlatNode>, parent_nid: u64) -
             // Push placeholder
             nodes.push(FlatNode {
                 nid,
-                is_dir: true,
+                node_type: NodeType::Dir,
                 contents: FlatNodeContents::Directory { entries: Vec::new() },
                 data_block: 0,
                 size: 0,
             });
 
             let mut child_entries = Vec::new();
-            child_entries.push((".".to_string(), nid, true));
-            child_entries.push(("..".to_string(), parent_nid, true));
+            child_entries.push((".".to_string(), nid, NodeType::Dir));
+            child_entries.push(("..".to_string(), parent_nid, NodeType::Dir));
 
             for child in entries {
                 let child_name = child.name().to_string();
                 let child_nid = add_node(child, nodes, nid);
-                let child_is_dir = nodes[child_nid as usize].is_dir;
-                child_entries.push((child_name, child_nid, child_is_dir));
+                let child_type = nodes[child_nid as usize].node_type;
+                child_entries.push((child_name, child_nid, child_type));
             }
 
             child_entries.sort_by(|a, b| a.0.cmp(&b.0));
@@ -76,8 +89,17 @@ fn add_node(node: &SerializerNode, nodes: &mut Vec<FlatNode>, parent_nid: u64) -
         SerializerNode::File { name: _, data } => {
             nodes.push(FlatNode {
                 nid,
-                is_dir: false,
+                node_type: NodeType::File,
                 contents: FlatNodeContents::File { data: data.clone() },
+                data_block: 0,
+                size: 0,
+            });
+        }
+        SerializerNode::Symlink { name: _, target } => {
+            nodes.push(FlatNode {
+                nid,
+                node_type: NodeType::Symlink,
+                contents: FlatNodeContents::Symlink { target: target.clone() },
                 data_block: 0,
                 size: 0,
             });
@@ -95,28 +117,28 @@ pub fn serialize(root_entries: &[SerializerNode]) -> Vec<u8> {
     // Create root directory at NID 0
     nodes.push(FlatNode {
         nid: 0,
-        is_dir: true,
+        node_type: NodeType::Dir,
         contents: FlatNodeContents::Directory { entries: Vec::new() },
         data_block: 0,
         size: 0,
     });
 
     let mut root_child_entries = Vec::new();
-    root_child_entries.push((".".to_string(), 0, true));
-    root_child_entries.push(("..".to_string(), 0, true));
+    root_child_entries.push((".".to_string(), 0, NodeType::Dir));
+    root_child_entries.push(("..".to_string(), 0, NodeType::Dir));
 
     for child in root_entries {
         let child_name = child.name().to_string();
         let child_nid = add_node(child, &mut nodes, 0);
-        let child_is_dir = nodes[child_nid as usize].is_dir;
-        root_child_entries.push((child_name, child_nid, child_is_dir));
+        let child_type = nodes[child_nid as usize].node_type;
+        root_child_entries.push((child_name, child_nid, child_type));
     }
 
     root_child_entries.sort_by(|a, b| a.0.cmp(&b.0));
     nodes[0].contents = FlatNodeContents::Directory { entries: root_child_entries };
 
     // Allocate blocks
-    let inode_blocks = ((nodes.len() * 32) + 4095) / 4096;
+    let inode_blocks = (nodes.len() * 32).div_ceil(4096);
     let mut next_free_block = 1 + inode_blocks as u32;
 
     for i in 0..nodes.len() {
@@ -131,7 +153,18 @@ pub fn serialize(root_entries: &[SerializerNode]) -> Vec<u8> {
                 nodes[i].size = len;
                 if len > 0 {
                     nodes[i].data_block = next_free_block;
-                    let blocks_needed = (len + 4095) / 4096;
+                    let blocks_needed = len.div_ceil(4096);
+                    next_free_block += blocks_needed as u32;
+                } else {
+                    nodes[i].data_block = 0;
+                }
+            }
+            FlatNodeContents::Symlink { target } => {
+                let len = target.len() as u64;
+                nodes[i].size = len;
+                if len > 0 {
+                    nodes[i].data_block = next_free_block;
+                    let blocks_needed = len.div_ceil(4096);
                     next_free_block += blocks_needed as u32;
                 } else {
                     nodes[i].data_block = 0;
@@ -169,13 +202,13 @@ pub fn serialize(root_entries: &[SerializerNode]) -> Vec<u8> {
 
     // 2. Write Inodes
     for i in 0..nodes.len() {
-        let mode = if nodes[i].is_dir {
-            0o040000 | 0o755 // S_IFDIR | rwxr-xr-x
-        } else {
-            0o100000 | 0o644 // S_IFREG | rw-r--r--
+        let mode = match nodes[i].node_type {
+            NodeType::Dir => 0o040000 | 0o755,     // S_IFDIR | rwxr-xr-x
+            NodeType::File => 0o100000 | 0o644,    // S_IFREG | rw-r--r--
+            NodeType::Symlink => 0o120000 | 0o777, // S_IFLNK | rwxrwxrwx
         };
 
-        let link_count = if nodes[i].is_dir { 2 } else { 1 };
+        let link_count = if nodes[i].node_type == NodeType::Dir { 2 } else { 1 };
         let i_u = nodes[i].data_block.to_le_bytes();
 
         let inode = format::InodeCompact {
@@ -206,8 +239,12 @@ pub fn serialize(root_entries: &[SerializerNode]) -> Vec<u8> {
                 let mut dirents = Vec::new();
                 let mut name_bytes = Vec::new();
 
-                for (name, nid, is_dir) in entries {
-                    let file_type = if *is_dir { 2 } else { 1 };
+                for (name, nid, node_type) in entries {
+                    let file_type = match node_type {
+                        NodeType::Dir => 2,
+                        NodeType::File => 1,
+                        NodeType::Symlink => 7,
+                    };
                     dirents.push(format::Dirent {
                         nid: LEU64::new(*nid),
                         nameoff: LEU16::new(current_nameoff),
@@ -232,6 +269,12 @@ pub fn serialize(root_entries: &[SerializerNode]) -> Vec<u8> {
                 if !data.is_empty() {
                     let offset = nodes[i].data_block as usize * 4096;
                     image[offset..offset + data.len()].copy_from_slice(data);
+                }
+            }
+            FlatNodeContents::Symlink { target } => {
+                if !target.is_empty() {
+                    let offset = nodes[i].data_block as usize * 4096;
+                    image[offset..offset + target.len()].copy_from_slice(target);
                 }
             }
         }
@@ -288,6 +331,15 @@ mod tests {
                     fs.read_file_range(&actual_child_file, 0, &mut file_buf).unwrap();
                     assert_eq!(&file_buf, data);
                 }
+                SerializerNode::Symlink { target, .. } => {
+                    let actual_child_symlink = match child_node {
+                        Node::Symlink(s) => s,
+                        _ => panic!("Expected symlink node for {}", expected_node.name()),
+                    };
+                    assert_eq!(actual_child_symlink.size(), target.len() as u64);
+                    let actual_target = fs.read_symlink(&actual_child_symlink).unwrap();
+                    assert_eq!(&actual_target, target);
+                }
             }
         }
     }
@@ -296,6 +348,7 @@ mod tests {
     fn test_serialize_and_parse() {
         let tree = vec![
             SerializerNode::File { name: "file1".to_string(), data: b"hello world".to_vec() },
+            SerializerNode::Symlink { name: "symlink1".to_string(), target: b"file1".to_vec() },
             SerializerNode::Directory {
                 name: "dir1".to_string(),
                 entries: vec![
@@ -305,10 +358,16 @@ mod tests {
                     },
                     SerializerNode::Directory {
                         name: "subdir".to_string(),
-                        entries: vec![SerializerNode::File {
-                            name: "file3".to_string(),
-                            data: b"nested file".to_vec(),
-                        }],
+                        entries: vec![
+                            SerializerNode::File {
+                                name: "file3".to_string(),
+                                data: b"nested file".to_vec(),
+                            },
+                            SerializerNode::Symlink {
+                                name: "nested_symlink".to_string(),
+                                target: b"../../file1".to_vec(),
+                            },
+                        ],
                     },
                 ],
             },

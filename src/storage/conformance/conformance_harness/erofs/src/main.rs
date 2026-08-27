@@ -30,6 +30,9 @@ fn convert_entry(entry: io_test::DirectoryEntry) -> Result<SerializerNode, Error
         io_test::DirectoryEntry::File(io_test::File { name, contents, .. }) => {
             Ok(SerializerNode::File { name, data: contents })
         }
+        io_test::DirectoryEntry::Symlink(io_test::Symlink { name, target, .. }) => {
+            Ok(SerializerNode::Symlink { name, target })
+        }
         other => {
             anyhow::bail!("Unsupported entry type: {:?}", other);
         }
@@ -56,6 +59,7 @@ async fn run(mut stream: TestHarnessRequestStream, pager: Arc<ErofsPager>) -> Re
                         | fio::NodeAttributesQuery::MODIFICATION_TIME
                         | fio::NodeAttributesQuery::ACCESS_TIME
                         | fio::NodeAttributesQuery::CHANGE_TIME,
+                    supports_symlinks: true,
                     // Unsupported options:
                     supports_executable_file: false,
                     supports_remote_dir: false,
@@ -69,7 +73,6 @@ async fn run(mut stream: TestHarnessRequestStream, pager: Arc<ErofsPager>) -> Re
                     supports_unnamed_temporary_file: false,
                     // TODO(https://fxbug.dev/479841115): support xattrs in erofs
                     supports_xattrs: false,
-                    supports_symlinks: false,
                 };
                 responder.send(&config)?;
             }
