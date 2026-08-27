@@ -19,10 +19,9 @@ use fuchsia_inspect_derive::{Inspect, WithInspect as _};
 use futures::StreamExt as _;
 use futures::channel::mpsc;
 use futures::lock::Mutex;
-use log::error;
+use log::{error, info};
 use std::sync::Arc;
 
-mod mark_watcher;
 pub mod registry;
 mod socket_provider;
 
@@ -118,7 +117,6 @@ pub async fn run() -> Result<(), anyhow::Error> {
     // this indicates more significant system issues.
     let (forwarder_tx, forwarder_rx) = mpsc::channel(50);
     let mut request_forwarder = registry::RequestForwarder::new(forwarder_rx)?;
-
     let proxy = Arc::new(SocketProxy::new(forwarder_tx)?.with_inspect(inspector.root(), "root")?);
 
     let mut fs = ServiceFs::new_local();
@@ -133,9 +131,8 @@ pub async fn run() -> Result<(), anyhow::Error> {
 
     fuchsia_inspect::component::health().set_ok();
 
-    let proxy_for_service = Arc::clone(&proxy);
     let service_fut = fs.for_each_concurrent(100, move |service| {
-        let proxy = Arc::clone(&proxy_for_service);
+        let proxy = Arc::clone(&proxy);
         async move {
             match service {
                 IncomingService::StarnixNetworks(stream) => {
@@ -157,12 +154,7 @@ pub async fn run() -> Result<(), anyhow::Error> {
 
     let _ = scope.spawn_local(async move {
         let res = request_forwarder.run().await;
-        error!("RequestForwarder future has terminated: {res:?}");
-    });
-
-    let proxy_clone = Arc::clone(&proxy);
-    let _ = scope.spawn_local(async move {
-        mark_watcher::watch_properties(proxy_clone).await;
+        info!("RequestForwarder future has terminated: {res:?}");
     });
 
     let _ = scope.spawn_local(async move {

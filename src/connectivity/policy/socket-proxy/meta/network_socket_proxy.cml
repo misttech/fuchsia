@@ -24,7 +24,6 @@
     use: [
         {
             protocol: [
-                "fuchsia.net.policy.properties.Networks",
                 "fuchsia.net.policy.socketproxy.NetworkRegistry",
                 "fuchsia.posix.socket.Provider",
                 "fuchsia.posix.socket.raw.Provider",

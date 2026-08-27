@@ -45,10 +45,7 @@
         },
         {
             // TODO(https://fxbug.dev/475916525): Remove once NetworkRegistry is moved to netcfg.
-            protocol: [
-                "fuchsia.net.policy.properties.Networks",
-                "fuchsia.net.policy.socketproxy.NetworkRegistry",
-            ],
+            protocol: [ "fuchsia.net.policy.socketproxy.NetworkRegistry" ],
             from: "#netcfg",
             to: "#socket-proxy",
             dependency: "weak",
