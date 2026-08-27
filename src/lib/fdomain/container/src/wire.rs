@@ -166,6 +166,50 @@ impl FDomainCodec {
                 let result = self.fdomain.get_koid(request);
                 self.send_response(tx_id, header.ordinal, result)?;
             }
+            ordinals::CREATE_VMO => {
+                let request =
+                    fidl_message::decode_message::<proto::VmoCreateVmoRequest>(header, rest)?;
+                let result = self.fdomain.create_vmo(request);
+                self.send_response(tx_id, header.ordinal, result)?;
+            }
+            ordinals::READ_VMO => {
+                let request =
+                    fidl_message::decode_message::<proto::VmoReadVmoRequest>(header, rest)?;
+                let result = self.fdomain.read_vmo(request);
+                self.send_response(tx_id, header.ordinal, result)?;
+            }
+            ordinals::WRITE_VMO => {
+                let request =
+                    fidl_message::decode_message::<proto::VmoWriteVmoRequest>(header, rest)?;
+                let result = self.fdomain.write_vmo(request);
+                self.send_response(tx_id, header.ordinal, result)?;
+            }
+            ordinals::GET_VMO_SIZE => {
+                let request =
+                    fidl_message::decode_message::<proto::VmoGetVmoSizeRequest>(header, rest)?;
+                let result = self.fdomain.get_vmo_size(request);
+                self.send_response(tx_id, header.ordinal, result)?;
+            }
+            ordinals::SET_VMO_SIZE => {
+                let request =
+                    fidl_message::decode_message::<proto::VmoSetVmoSizeRequest>(header, rest)?;
+                let result = self.fdomain.set_vmo_size(request);
+                self.send_response(tx_id, header.ordinal, result)?;
+            }
+            ordinals::GET_VMO_STREAM_SIZE => {
+                let request = fidl_message::decode_message::<proto::VmoGetVmoStreamSizeRequest>(
+                    header, rest,
+                )?;
+                let result = self.fdomain.get_vmo_stream_size(request);
+                self.send_response(tx_id, header.ordinal, result)?;
+            }
+            ordinals::SET_VMO_STREAM_SIZE => {
+                let request = fidl_message::decode_message::<proto::VmoSetVmoStreamSizeRequest>(
+                    header, rest,
+                )?;
+                let result = self.fdomain.set_vmo_stream_size(request);
+                self.send_response(tx_id, header.ordinal, result)?;
+            }
             unknown if header.dynamic_flags().contains(fidl_message::DynamicFlags::FLEXIBLE) => {
                 if header.tx_id != 0 {
                     let header = fidl_message::TransactionHeader::new(
@@ -211,7 +255,7 @@ where
         fidl::encoding::Encode<T::MarkerInResultUnion, fidl::encoding::NoHandleResourceDialect>,
     for<'a> <<E as fidl_message::ErrorType>::Marker as fidl::encoding::ValueTypeMarker>::Borrowed<'a>:
         fidl::encoding::Encode<E::Marker, fidl::encoding::NoHandleResourceDialect>,
-    {
+{
         let header = fidl_message::TransactionHeader::new(
             tx_id.into(),
             ordinal,

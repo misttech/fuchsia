@@ -246,6 +246,7 @@ impl ShuttingDownHandle {
                             ),
                             AnyHandle::EventPair(_)
                             | AnyHandle::Event(_)
+                            | AnyHandle::Vmo(_)
                             | AnyHandle::Unknown(_) => unreachable!(),
                         }
                     }
@@ -907,6 +908,7 @@ impl FDomain {
                         AnyHandle::EventPair(fidl::EventPair::from(info.handle))
                     }
                     fidl::ObjectType::EVENT => AnyHandle::Event(fidl::Event::from(info.handle)),
+                    fidl::ObjectType::VMO => AnyHandle::Vmo(fidl::Vmo::from(info.handle)),
                     _ => AnyHandle::Unknown(handles::Unknown(info.handle, info.object_type)),
                 };
 
@@ -1055,6 +1057,82 @@ impl FDomain {
     pub fn create_event(&mut self, request: proto::EventCreateEventRequest) -> Result<()> {
         let a = fidl::Event::create();
         self.alloc_client_handles([request.handle], [AnyHandle::Event(a)])
+    }
+
+    #[cfg(target_os = "fuchsia")]
+    pub fn create_vmo(&mut self, request: proto::VmoCreateVmoRequest) -> Result<()> {
+        let opts = zx::VmoOptions::from_bits_truncate(request.options.bits());
+        let a = zx::Vmo::create_with_opts(opts, request.size)
+            .map_err(|e| proto::Error::TargetError(e.into_raw()))?;
+        self.alloc_client_handles([request.handle], [AnyHandle::Vmo(a.into())])
+    }
+
+    #[cfg(not(target_os = "fuchsia"))]
+    pub fn create_vmo(&mut self, _request: proto::VmoCreateVmoRequest) -> Result<()> {
+        Err(proto::Error::TargetError(fidl::Status::NOT_SUPPORTED.into_raw()))
+    }
+
+    pub fn read_vmo(
+        &mut self,
+        request: proto::VmoReadVmoRequest,
+    ) -> Result<proto::VmoReadVmoResponse> {
+        let handle = self
+            .handles
+            .get(&request.handle)
+            .ok_or(proto::Error::BadHandleId(proto::BadHandleId { id: request.handle.id }))?;
+        let data = handle.handle.read_vmo(request.offset, request.size)?;
+        Ok(proto::VmoReadVmoResponse { data })
+    }
+
+    pub fn write_vmo(&mut self, request: proto::VmoWriteVmoRequest) -> Result<()> {
+        let handle = self
+            .handles
+            .get(&request.handle)
+            .ok_or(proto::Error::BadHandleId(proto::BadHandleId { id: request.handle.id }))?;
+        handle.handle.write_vmo(request.offset, &request.data)
+    }
+
+    pub fn get_vmo_size(
+        &mut self,
+        request: proto::VmoGetVmoSizeRequest,
+    ) -> Result<proto::VmoGetVmoSizeResponse> {
+        let handle = self
+            .handles
+            .get(&request.handle)
+            .ok_or(proto::Error::BadHandleId(proto::BadHandleId { id: request.handle.id }))?;
+        let size = handle.handle.get_vmo_size()?;
+        Ok(proto::VmoGetVmoSizeResponse { size })
+    }
+
+    pub fn set_vmo_size(&mut self, request: proto::VmoSetVmoSizeRequest) -> Result<()> {
+        let handle = self
+            .handles
+            .get(&request.handle)
+            .ok_or(proto::Error::BadHandleId(proto::BadHandleId { id: request.handle.id }))?;
+        handle.handle.set_vmo_size(request.size)
+    }
+
+    pub fn get_vmo_stream_size(
+        &mut self,
+        request: proto::VmoGetVmoStreamSizeRequest,
+    ) -> Result<proto::VmoGetVmoStreamSizeResponse> {
+        let handle = self
+            .handles
+            .get(&request.handle)
+            .ok_or(proto::Error::BadHandleId(proto::BadHandleId { id: request.handle.id }))?;
+        let size = handle.handle.get_vmo_stream_size()?;
+        Ok(proto::VmoGetVmoStreamSizeResponse { size })
+    }
+
+    pub fn set_vmo_stream_size(
+        &mut self,
+        request: proto::VmoSetVmoStreamSizeRequest,
+    ) -> Result<()> {
+        let handle = self
+            .handles
+            .get(&request.handle)
+            .ok_or(proto::Error::BadHandleId(proto::BadHandleId { id: request.handle.id }))?;
+        handle.handle.set_vmo_stream_size(request.size)
     }
 
     pub fn set_socket_disposition(

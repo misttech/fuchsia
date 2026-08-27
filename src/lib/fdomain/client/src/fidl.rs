@@ -308,6 +308,10 @@ impl ::fidl::encoding::EncodableAsHandle for crate::Channel {
     type Dialect = FDomainResourceDialect;
 }
 
+impl ::fidl::encoding::EncodableAsHandle for crate::Vmo {
+    type Dialect = FDomainResourceDialect;
+}
+
 impl ::fidl::encoding::EncodableAsHandle for crate::Handle {
     type Dialect = FDomainResourceDialect;
 }

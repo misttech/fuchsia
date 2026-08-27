@@ -253,3 +253,45 @@ to select stream or datagram semantics for the new socket.
 
 `SetSocketDisposition` changes the disposition of the socket associated with the
 `Hid`, and the disposition of that socket's peer.
+
+## VMOs
+
+The FDomain protocol composes a `Vmo` sub-protocol for dealing with Virtual
+Memory Object (VMO) handles.
+
+The `Vmo` protocol has the following methods:
+
+### `CreateVmo`
+
+`CreateVmo` takes a `size`, `options` (`VmoOptions` bits: `RESIZABLE`, `TRAP_DIRTY`, `UNBOUNDED`),
+and a `NewHid`. It creates a new VMO of the given size with the requested options in the FDomain
+and associates it with the `NewHid`.
+
+### `ReadVmo`
+
+`ReadVmo` takes a `Hid`, an `offset`, and a `size`. It reads `size` bytes from the
+VMO at `offset` and returns the data read.
+
+### `WriteVmo`
+
+`WriteVmo` takes a `Hid`, an `offset`, and a `data` byte vector. It writes the data
+to the VMO at `offset`.
+
+### `GetVmoSize`
+
+`GetVmoSize` takes a `Hid` and returns the size of the VMO in bytes.
+
+### `SetVmoSize`
+
+`SetVmoSize` takes a `Hid` and a `size`. It sets the size of the VMO to the given
+value.
+
+### `GetVmoStreamSize`
+
+`GetVmoStreamSize` takes a `Hid` and returns the stream size of the VMO in bytes.
+
+### `SetVmoStreamSize`
+
+`SetVmoStreamSize` takes a `Hid` and a `size`. It sets the stream size of the VMO
+to the given value.
+

@@ -61,6 +61,36 @@ pub trait HandleType:
             self.expected_type(fidl::ObjectType::CHANNEL).unwrap_err(),
         )))
     }
+
+    /// Implements reading from a VMO.
+    fn read_vmo(&self, _offset: u64, _size: u64) -> Result<Vec<u8>, proto::Error> {
+        Err(self.expected_type(fidl::ObjectType::VMO).unwrap_err())
+    }
+
+    /// Implements writing to a VMO.
+    fn write_vmo(&self, _offset: u64, _data: &[u8]) -> Result<(), proto::Error> {
+        self.expected_type(fidl::ObjectType::VMO)
+    }
+
+    /// Implements getting the size of a VMO.
+    fn get_vmo_size(&self) -> Result<u64, proto::Error> {
+        Err(self.expected_type(fidl::ObjectType::VMO).unwrap_err())
+    }
+
+    /// Implements setting the size of a VMO.
+    fn set_vmo_size(&self, _size: u64) -> Result<(), proto::Error> {
+        self.expected_type(fidl::ObjectType::VMO)
+    }
+
+    /// Implements getting the stream size of a VMO.
+    fn get_vmo_stream_size(&self) -> Result<u64, proto::Error> {
+        Err(self.expected_type(fidl::ObjectType::VMO).unwrap_err())
+    }
+
+    /// Implements setting the stream size of a VMO.
+    fn set_vmo_stream_size(&self, _size: u64) -> Result<(), proto::Error> {
+        self.expected_type(fidl::ObjectType::VMO)
+    }
 }
 
 impl HandleType for fidl::Socket {
@@ -213,6 +243,72 @@ impl HandleType for fidl::Event {
     }
 }
 
+impl HandleType for fidl::Vmo {
+    fn object_type(&self) -> fidl::ObjectType {
+        fidl::ObjectType::VMO
+    }
+
+    #[cfg(target_os = "fuchsia")]
+    fn read_vmo(&self, offset: u64, size: u64) -> Result<Vec<u8>, proto::Error> {
+        self.read_to_vec::<u8>(offset, size).map_err(|e| proto::Error::TargetError(e.into_raw()))
+    }
+
+    #[cfg(not(target_os = "fuchsia"))]
+    fn read_vmo(&self, _offset: u64, _size: u64) -> Result<Vec<u8>, proto::Error> {
+        Err(proto::Error::TargetError(fidl::Status::NOT_SUPPORTED.into_raw()))
+    }
+
+    #[cfg(target_os = "fuchsia")]
+    fn write_vmo(&self, offset: u64, data: &[u8]) -> Result<(), proto::Error> {
+        self.write(data, offset).map_err(|e| proto::Error::TargetError(e.into_raw()))
+    }
+
+    #[cfg(not(target_os = "fuchsia"))]
+    fn write_vmo(&self, _offset: u64, _data: &[u8]) -> Result<(), proto::Error> {
+        Err(proto::Error::TargetError(fidl::Status::NOT_SUPPORTED.into_raw()))
+    }
+
+    #[cfg(target_os = "fuchsia")]
+    fn get_vmo_size(&self) -> Result<u64, proto::Error> {
+        self.get_size().map_err(|e| proto::Error::TargetError(e.into_raw()))
+    }
+
+    #[cfg(not(target_os = "fuchsia"))]
+    fn get_vmo_size(&self) -> Result<u64, proto::Error> {
+        Err(proto::Error::TargetError(fidl::Status::NOT_SUPPORTED.into_raw()))
+    }
+
+    #[cfg(target_os = "fuchsia")]
+    fn set_vmo_size(&self, size: u64) -> Result<(), proto::Error> {
+        self.set_size(size).map_err(|e| proto::Error::TargetError(e.into_raw()))
+    }
+
+    #[cfg(not(target_os = "fuchsia"))]
+    fn set_vmo_size(&self, _size: u64) -> Result<(), proto::Error> {
+        Err(proto::Error::TargetError(fidl::Status::NOT_SUPPORTED.into_raw()))
+    }
+
+    #[cfg(target_os = "fuchsia")]
+    fn get_vmo_stream_size(&self) -> Result<u64, proto::Error> {
+        self.get_stream_size().map_err(|e| proto::Error::TargetError(e.into_raw()))
+    }
+
+    #[cfg(not(target_os = "fuchsia"))]
+    fn get_vmo_stream_size(&self) -> Result<u64, proto::Error> {
+        Err(proto::Error::TargetError(fidl::Status::NOT_SUPPORTED.into_raw()))
+    }
+
+    #[cfg(target_os = "fuchsia")]
+    fn set_vmo_stream_size(&self, size: u64) -> Result<(), proto::Error> {
+        self.set_stream_size(size).map_err(|e| proto::Error::TargetError(e.into_raw()))
+    }
+
+    #[cfg(not(target_os = "fuchsia"))]
+    fn set_vmo_stream_size(&self, _size: u64) -> Result<(), proto::Error> {
+        Err(proto::Error::TargetError(fidl::Status::NOT_SUPPORTED.into_raw()))
+    }
+}
+
 pub struct Unknown(pub fidl::NullableHandle, pub fidl::ObjectType);
 
 impl Into<fidl::NullableHandle> for Unknown {
@@ -238,6 +334,7 @@ pub enum AnyHandle {
     EventPair(fidl::EventPair),
     Event(fidl::Event),
     Channel(fidl::Channel),
+    Vmo(fidl::Vmo),
     Unknown(Unknown),
 }
 
@@ -307,6 +404,7 @@ impl AnyHandle {
             AnyHandle::EventPair(_) => AnyHandle::EventPair(fidl::EventPair::from(handle)),
             AnyHandle::Event(_) => AnyHandle::Event(fidl::Event::from(handle)),
             AnyHandle::Channel(_) => AnyHandle::Channel(fidl::Channel::from(handle)),
+            AnyHandle::Vmo(_) => AnyHandle::Vmo(fidl::Vmo::from(handle)),
             AnyHandle::Unknown(Unknown(_, ty)) => AnyHandle::Unknown(Unknown(handle, *ty)),
         })
     }
@@ -333,6 +431,9 @@ impl AnyHandle {
             AnyHandle::Channel(h) => AnyHandle::Channel(
                 h.replace_handle(rights).map_err(|e| proto::Error::TargetError(e.into_raw()))?,
             ),
+            AnyHandle::Vmo(h) => AnyHandle::Vmo(
+                h.replace_handle(rights).map_err(|e| proto::Error::TargetError(e.into_raw()))?,
+            ),
             AnyHandle::Unknown(Unknown(h, ty)) => AnyHandle::Unknown(Unknown(
                 h.replace_handle(rights).map_err(|e| proto::Error::TargetError(e.into_raw()))?,
                 ty,
@@ -346,6 +447,7 @@ impl AnyHandle {
             AnyHandle::EventPair(e) => e.signal(clear, set),
             AnyHandle::Event(e) => e.signal(clear, set),
             AnyHandle::Channel(c) => c.signal(clear, set),
+            AnyHandle::Vmo(v) => v.as_handle_ref().signal(clear, set),
             AnyHandle::Unknown(u) => u.0.signal(clear, set),
         }
         .map_err(|e| proto::Error::TargetError(e.into_raw()))
@@ -366,6 +468,7 @@ impl AnyHandle {
             AnyHandle::EventPair(h) => h.signal_peer(clear, set),
             AnyHandle::Event(_) => Err(fidl::Status::INVALID_ARGS),
             AnyHandle::Channel(h) => h.signal_peer(clear, set),
+            AnyHandle::Vmo(_) => Err(fidl::Status::INVALID_ARGS),
             AnyHandle::Unknown(_) => Err(fidl::Status::INVALID_ARGS),
         }
         .map_err(|e| proto::Error::TargetError(e.into_raw()))
@@ -396,6 +499,12 @@ impl From<fidl::Event> for AnyHandle {
     }
 }
 
+impl From<fidl::Vmo> for AnyHandle {
+    fn from(other: fidl::Vmo) -> AnyHandle {
+        AnyHandle::Vmo(other)
+    }
+}
+
 macro_rules! impl_method {
     ($this:ident => $h:ident . $meth:ident ( $($args:tt)* )) => {
         match $this {
@@ -403,6 +512,7 @@ macro_rules! impl_method {
             AnyHandle::EventPair($h) => $h.$meth($($args)*),
             AnyHandle::Event($h) => $h.$meth($($args)*),
             AnyHandle::Channel($h) => $h.$meth($($args)*),
+            AnyHandle::Vmo($h) => $h.$meth($($args)*),
             AnyHandle::Unknown($h) => $h.$meth($($args)*),
         }
     };
@@ -439,6 +549,30 @@ impl HandleType for AnyHandle {
         handles: &mut Vec<fidl::HandleDisposition<'static>>,
     ) -> Option<Result<(), proto::WriteChannelError>> {
         impl_method!(self => h.write_channel(data, handles))
+    }
+
+    fn read_vmo(&self, offset: u64, size: u64) -> Result<Vec<u8>, proto::Error> {
+        impl_method!(self => h.read_vmo(offset, size))
+    }
+
+    fn write_vmo(&self, offset: u64, data: &[u8]) -> Result<(), proto::Error> {
+        impl_method!(self => h.write_vmo(offset, data))
+    }
+
+    fn get_vmo_size(&self) -> Result<u64, proto::Error> {
+        impl_method!(self => h.get_vmo_size())
+    }
+
+    fn set_vmo_size(&self, size: u64) -> Result<(), proto::Error> {
+        impl_method!(self => h.set_vmo_size(size))
+    }
+
+    fn get_vmo_stream_size(&self) -> Result<u64, proto::Error> {
+        impl_method!(self => h.get_vmo_stream_size())
+    }
+
+    fn set_vmo_stream_size(&self, size: u64) -> Result<(), proto::Error> {
+        impl_method!(self => h.set_vmo_stream_size(size))
     }
 }
 

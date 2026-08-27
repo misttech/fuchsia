@@ -40,6 +40,7 @@ fidl("fuchsia.fdomain") {
     "event_pair.fidl",
     "protocol.fidl",
     "socket.fidl",
+    "vmo.fidl",
   ]
   sdk_area = "Developer"
   sdk_category = "host_tool"

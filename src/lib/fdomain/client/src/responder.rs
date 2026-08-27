@@ -18,6 +18,13 @@ pub(crate) enum Responder {
     CreateSocket(Sender<Result<(), Error>>),
     CreateEventPair(Sender<Result<(), Error>>),
     CreateEvent(Sender<Result<(), Error>>),
+    CreateVmo(Sender<Result<(), Error>>),
+    ReadVmo(Sender<Result<proto::VmoReadVmoResponse, Error>>),
+    WriteVmo(Sender<Result<(), Error>>),
+    GetVmoSize(Sender<Result<proto::VmoGetVmoSizeResponse, Error>>),
+    SetVmoSize(Sender<Result<(), Error>>),
+    GetVmoStreamSize(Sender<Result<proto::VmoGetVmoStreamSizeResponse, Error>>),
+    SetVmoStreamSize(Sender<Result<(), Error>>),
     SetSocketDisposition(Sender<Result<(), Error>>),
     WriteSocket(Sender<Result<proto::SocketWriteSocketResponse, Error>>),
     WriteChannel(Sender<Result<(), Error>>),
@@ -74,6 +81,33 @@ impl Responder {
             Responder::CreateEvent(sender) => {
                 Responder::dispatch_handle("create_event", ordinals::CREATE_EVENT, sender, result)
             }
+            Responder::CreateVmo(sender) => {
+                Responder::dispatch_handle("create_vmo", ordinals::CREATE_VMO, sender, result)
+            }
+            Responder::ReadVmo(sender) => {
+                Responder::dispatch_handle("read_vmo", ordinals::READ_VMO, sender, result)
+            }
+            Responder::WriteVmo(sender) => {
+                Responder::dispatch_handle("write_vmo", ordinals::WRITE_VMO, sender, result)
+            }
+            Responder::GetVmoSize(sender) => {
+                Responder::dispatch_handle("get_vmo_size", ordinals::GET_VMO_SIZE, sender, result)
+            }
+            Responder::SetVmoSize(sender) => {
+                Responder::dispatch_handle("set_vmo_size", ordinals::SET_VMO_SIZE, sender, result)
+            }
+            Responder::GetVmoStreamSize(sender) => Responder::dispatch_handle(
+                "get_vmo_stream_size",
+                ordinals::GET_VMO_STREAM_SIZE,
+                sender,
+                result,
+            ),
+            Responder::SetVmoStreamSize(sender) => Responder::dispatch_handle(
+                "set_vmo_stream_size",
+                ordinals::SET_VMO_STREAM_SIZE,
+                sender,
+                result,
+            ),
             Responder::SetSocketDisposition(sender) => Responder::dispatch_handle(
                 "set_socket_disposition",
                 ordinals::SET_SOCKET_DISPOSITION,

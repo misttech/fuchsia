@@ -14,6 +14,7 @@ fidl_library(
         "event_pair.fidl",
         "protocol.fidl",
         "socket.fidl",
+        "vmo.fidl",
     ],
     api_area = "Developer",
     category = "host_tool",

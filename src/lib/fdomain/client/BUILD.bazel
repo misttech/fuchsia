@@ -25,6 +25,7 @@ rustc_library(
         "src/responder.rs",
         "src/socket.rs",
         "src/test.rs",
+        "src/vmo.rs",
     ],
     crate_name = "fdomain_client",
     edition = "2024",

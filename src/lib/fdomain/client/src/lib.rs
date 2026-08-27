@@ -22,6 +22,7 @@ mod event_pair;
 mod handle;
 mod responder;
 mod socket;
+mod vmo;
 
 #[cfg(test)]
 mod test;
@@ -40,8 +41,9 @@ pub use handle::unowned::Unowned;
 pub use handle::{
     AsHandleRef, Handle, HandleBased, HandleRef, NullableHandle, OnFDomainSignals, Peered,
 };
-pub use proto::{Error as FDomainError, WriteChannelError, WriteSocketError};
+pub use proto::{Error as FDomainError, VmoOptions, WriteChannelError, WriteSocketError};
 pub use socket::{Socket, SocketDisposition, SocketReadStream, SocketWriter};
+pub use vmo::Vmo;
 
 // Unsupported handle types.
 #[rustfmt::skip]
@@ -64,8 +66,6 @@ pub use Handle as Stream;
 pub use Handle as Thread;
 #[rustfmt::skip]
 pub use Handle as Vmar;
-#[rustfmt::skip]
-pub use Handle as Vmo;
 #[rustfmt::skip]
 pub use Handle as Counter;
 #[rustfmt::skip]
@@ -962,6 +962,25 @@ impl Client {
         .detach();
 
         Event(Handle { id: id.id, client: Arc::downgrade(self) })
+    }
+
+    /// Create a new VMO in the connected FDomain with the given options.
+    pub fn create_vmo(self: &Arc<Self>, options: proto::VmoOptions, size: u64) -> Vmo {
+        let id = self.new_hid();
+        let fut = self.transaction(
+            ordinals::CREATE_VMO,
+            proto::VmoCreateVmoRequest { handle: id, size, options },
+            Responder::CreateVmo,
+        );
+
+        fuchsia_async::Task::spawn(async move {
+            if let Err(e) = fut.await {
+                log::debug!("FDomain vmo creation failed: {e}");
+            }
+        })
+        .detach();
+
+        Vmo(Handle { id: id.id, client: Arc::downgrade(self) })
     }
 
     /// Allocate a new HID, which should be suitable for use with the connected FDomain.

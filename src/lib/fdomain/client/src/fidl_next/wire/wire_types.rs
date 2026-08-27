@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use crate::fidl_next::{HandleEncoder, wire};
-use crate::{Channel, Event, EventPair, Handle, HandleBased, Socket};
+use crate::{Channel, Event, EventPair, Handle, HandleBased, Socket, Vmo};
 use fidl_next_codec::{Encode, EncodeError, EncodeOption, FromWire, FromWireOption};
 use std::mem::MaybeUninit;
 
@@ -54,3 +54,4 @@ handle_type!(Channel);
 handle_type!(Event);
 handle_type!(EventPair);
 handle_type!(Socket);
+handle_type!(Vmo);

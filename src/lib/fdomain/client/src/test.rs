@@ -5,6 +5,7 @@
 use crate::channel::HandleOp;
 use crate::{
     AnyHandle, AsHandleRef, Client, Error, FDomainTransport, HandleBased, OnFDomainSignals, Socket,
+    VmoOptions,
 };
 use fdomain_container::FDomain;
 use fdomain_container::wire::FDomainCodec;
@@ -811,4 +812,55 @@ async fn handle_lifecycle_tracking() {
     // Explicit close a -> removes last handle
     a.close().await.unwrap();
     assert_eq!(client.0.lock().handles.len(), 0);
+}
+
+#[fuchsia::test]
+async fn vmo_basic() {
+    let (client, _) = TestFDomain::new_client();
+    let vmo = client.create_vmo(VmoOptions::RESIZABLE, 4096);
+
+    assert_eq!(vmo.get_size().await.unwrap(), 4096);
+
+    vmo.write(b"Hello VMO", 0).await.unwrap();
+
+    let data = vmo.read(0, 9).await.unwrap();
+    assert_eq!(data, b"Hello VMO");
+
+    let mut buf = [0u8; 9];
+    vmo.read_slice(&mut buf, 0).await.unwrap();
+    assert_eq!(&buf, b"Hello VMO");
+
+    vmo.set_size(8192).await.unwrap();
+    assert_eq!(vmo.get_size().await.unwrap(), 8192);
+
+    assert_eq!(vmo.get_stream_size().await.unwrap(), 8192);
+    vmo.set_stream_size(128).await.unwrap();
+    assert_eq!(vmo.get_stream_size().await.unwrap(), 128);
+
+    // Non-resizable VMO
+    let non_resizable_vmo = client.create_vmo(VmoOptions::empty(), 4096);
+    assert_eq!(non_resizable_vmo.get_size().await.unwrap(), 4096);
+    assert!(non_resizable_vmo.set_size(8192).await.is_err());
+}
+
+#[fuchsia::test]
+async fn vmo_over_channel() {
+    let (client, _) = TestFDomain::new_client();
+    let (a, b) = client.create_channel();
+    let vmo = client.create_vmo(VmoOptions::RESIZABLE, 512);
+    vmo.write(b"Data in VMO", 0).await.unwrap();
+
+    a.fdomain_write(b"msg", vec![vmo.into()]).await.unwrap();
+
+    let mut msg = b.recv_msg().await.unwrap();
+    assert_eq!(msg.bytes.as_slice(), b"msg");
+    assert_eq!(msg.handles.len(), 1);
+
+    let handle_info = msg.handles.pop().unwrap();
+    let AnyHandle::Vmo(vmo_received) = handle_info.handle else {
+        panic!("Expected Vmo handle");
+    };
+
+    let data = vmo_received.read(0, 11).await.unwrap();
+    assert_eq!(data, b"Data in VMO");
 }

@@ -1550,3 +1550,76 @@ async fn datagram_socket() {
     assert_eq!(tid_read, got_tid);
     assert_eq!(data_compare, got_data);
 }
+
+#[fuchsia::test]
+async fn vmo() {
+    let mut fdomain = FDomain::new_empty();
+
+    let hid_vmo = 10;
+
+    assert!(
+        fdomain
+            .create_vmo(proto::VmoCreateVmoRequest {
+                size: 4096,
+                options: proto::VmoOptions::RESIZABLE,
+                handle: proto::NewHandleId { id: hid_vmo },
+            })
+            .is_ok()
+    );
+
+    let size_resp = fdomain
+        .get_vmo_size(proto::VmoGetVmoSizeRequest { handle: proto::HandleId { id: hid_vmo } })
+        .unwrap();
+    assert_eq!(size_resp.size, 4096);
+
+    let data = b"Hello, VMO!".to_vec();
+    fdomain
+        .write_vmo(proto::VmoWriteVmoRequest {
+            handle: proto::HandleId { id: hid_vmo },
+            offset: 0,
+            data: data.clone(),
+        })
+        .unwrap();
+
+    let read_resp = fdomain
+        .read_vmo(proto::VmoReadVmoRequest {
+            handle: proto::HandleId { id: hid_vmo },
+            offset: 0,
+            size: data.len() as u64,
+        })
+        .unwrap();
+    assert_eq!(read_resp.data, data);
+
+    fdomain
+        .set_vmo_size(proto::VmoSetVmoSizeRequest {
+            handle: proto::HandleId { id: hid_vmo },
+            size: 8192,
+        })
+        .unwrap();
+
+    let size_resp2 = fdomain
+        .get_vmo_size(proto::VmoGetVmoSizeRequest { handle: proto::HandleId { id: hid_vmo } })
+        .unwrap();
+    assert_eq!(size_resp2.size, 8192);
+
+    let stream_size_resp = fdomain
+        .get_vmo_stream_size(proto::VmoGetVmoStreamSizeRequest {
+            handle: proto::HandleId { id: hid_vmo },
+        })
+        .unwrap();
+    assert_eq!(stream_size_resp.size, 8192);
+
+    fdomain
+        .set_vmo_stream_size(proto::VmoSetVmoStreamSizeRequest {
+            handle: proto::HandleId { id: hid_vmo },
+            size: 512,
+        })
+        .unwrap();
+
+    let stream_size_resp2 = fdomain
+        .get_vmo_stream_size(proto::VmoGetVmoStreamSizeRequest {
+            handle: proto::HandleId { id: hid_vmo },
+        })
+        .unwrap();
+    assert_eq!(stream_size_resp2.size, 512);
+}

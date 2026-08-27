@@ -4,7 +4,7 @@
 
 use crate::handle::handle_type;
 use crate::responder::Responder;
-use crate::{Error, Event, EventPair, Handle, OnFDomainSignals, Socket, ordinals};
+use crate::{Error, Event, EventPair, Handle, OnFDomainSignals, Socket, Vmo, ordinals};
 use fidl_fuchsia_fdomain as proto;
 use futures::future::Either;
 use futures::stream::Stream;
@@ -87,6 +87,7 @@ pub enum AnyHandle {
     Socket(Socket),
     Event(Event),
     EventPair(EventPair),
+    Vmo(Vmo),
     Unknown(Handle, fidl::ObjectType),
 }
 
@@ -98,6 +99,7 @@ impl AnyHandle {
             fidl::ObjectType::SOCKET => AnyHandle::Socket(Socket(handle)),
             fidl::ObjectType::EVENT => AnyHandle::Event(Event(handle)),
             fidl::ObjectType::EVENTPAIR => AnyHandle::EventPair(EventPair(handle)),
+            fidl::ObjectType::VMO => AnyHandle::Vmo(Vmo(handle)),
             _ => AnyHandle::Unknown(handle, ty),
         }
     }
@@ -114,6 +116,7 @@ impl AnyHandle {
             AnyHandle::Socket(h) => h.is_invalid(),
             AnyHandle::Event(h) => h.is_invalid(),
             AnyHandle::EventPair(h) => h.is_invalid(),
+            AnyHandle::Vmo(h) => h.is_invalid(),
             AnyHandle::Unknown(h, _) => h.is_invalid(),
         }
     }
@@ -125,6 +128,7 @@ impl AnyHandle {
             AnyHandle::Socket(_) => fidl::ObjectType::SOCKET,
             AnyHandle::Event(_) => fidl::ObjectType::EVENT,
             AnyHandle::EventPair(_) => fidl::ObjectType::EVENTPAIR,
+            AnyHandle::Vmo(_) => fidl::ObjectType::VMO,
             AnyHandle::Unknown(_, t) => *t,
         }
     }
@@ -137,6 +141,7 @@ impl From<AnyHandle> for Handle {
             AnyHandle::Socket(h) => h.into(),
             AnyHandle::Event(h) => h.into(),
             AnyHandle::EventPair(h) => h.into(),
+            AnyHandle::Vmo(h) => h.into(),
             AnyHandle::Unknown(h, _) => h,
         }
     }
