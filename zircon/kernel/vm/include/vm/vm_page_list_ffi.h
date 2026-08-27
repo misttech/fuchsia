@@ -17,6 +17,7 @@ __BEGIN_CDECLS
 
 void cpp_vm_page_splice_list_construct(VmPageSpliceList* list);
 void cpp_vm_page_splice_list_destroy(VmPageSpliceList* list);
+bool cpp_vm_page_splice_list_is_processed(const VmPageSpliceList* list);
 
 __END_CDECLS
 

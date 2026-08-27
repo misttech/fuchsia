@@ -40,6 +40,16 @@ pub fn total_bytes(counts: &AttributionCounts) -> u64 {
     (counts.uncompressed_bytes + counts.compressed_bytes) as u64
 }
 
+/// Returns the sum of private uncompressed and private compressed bytes.
+pub fn total_private_bytes(counts: &AttributionCounts) -> u64 {
+    (counts.private_uncompressed_bytes + counts.private_compressed_bytes) as u64
+}
+
+/// Returns the sum of scaled uncompressed and scaled compressed bytes.
+pub fn total_scaled_bytes(counts: &AttributionCounts) -> FractionalBytes {
+    fractional_bytes_add(counts.scaled_uncompressed_bytes, counts.scaled_compressed_bytes)
+}
+
 /// Creates a `FractionalBytes` representing the given number of whole bytes.
 pub fn fractional_bytes_from_whole(whole_bytes: u64) -> FractionalBytes {
     let mut out = MaybeUninit::uninit();

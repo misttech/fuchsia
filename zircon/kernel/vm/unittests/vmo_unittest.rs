@@ -3895,6 +3895,221 @@ mod vmo_rs {
         }
     }
 
+    /// Tests supplying pages to a pager-backed VMO and its clones.
+    #[test]
+    fn vmo_pager_supply_test() {
+        let _scanner_disable = AutoVmScannerDisable::new();
+
+        const NUM_PAGES: usize = 4;
+        let alloc_size = (NUM_PAGES as u64) * PAGE_SIZE;
+        let half_size = alloc_size / 2;
+        let alloc_size_usize = NUM_PAGES * PAGE_SIZE_USIZE;
+        let half_size_usize = alloc_size_usize / 2;
+
+        // Aux VMO.
+        let aux_vmo = unwrap_ok!(VmObjectPaged::create(
+            pmm::ALLOC_FLAG_ANY,
+            VmObjectPaged::RESIZABLE,
+            alloc_size,
+        ));
+
+        // Pager-backed VMO.
+        let vmo = unwrap_ok!(make_uncommitted_pager_vmo(
+            NUM_PAGES, /*trap_dirty=*/ false, /*resizable=*/ false,
+        ));
+        vmo.set_user_id(0x42);
+
+        // Supply pager VMO with 2 pages of random data.
+        let mut buf_rand1 = Vector::<MaybeUninit<u8>>::new();
+        assert_true!(buf_rand1.resize_with(half_size_usize, MaybeUninit::uninit).is_ok());
+        let buf_rand1 = fill_region(0x77, &mut buf_rand1[..half_size_usize]);
+        assert_ok!(aux_vmo.write(0, &buf_rand1[..half_size_usize]));
+
+        stack_pin_init!(let sl = VmPageSpliceList::new());
+        expect_ok!(aux_vmo.take_pages(0, half_size, sl.as_mut()));
+        assert_ok!(vmo.supply_pages(0, half_size, sl.as_mut(), SupplyOptions::PagerSupply));
+        debug_assert!(sl.is_processed());
+
+        // Change data in aux vmo.
+        let mut buf_rand2 = Vector::<MaybeUninit<u8>>::new();
+        assert_true!(buf_rand2.resize_with(alloc_size_usize, MaybeUninit::uninit).is_ok());
+        let buf_rand2 = fill_region(0x88, &mut buf_rand2[..alloc_size_usize]);
+        expect_ok!(aux_vmo.write(0, &buf_rand2[..alloc_size_usize]));
+
+        // Supply 4 pages of new data to the VMO.
+        stack_pin_init!(let sl2 = VmPageSpliceList::new());
+        expect_ok!(aux_vmo.take_pages(0, alloc_size, sl2.as_mut()));
+        assert_ok!(vmo.supply_pages(0, alloc_size, sl2.as_mut(), SupplyOptions::PagerSupply));
+        debug_assert!(sl2.is_processed());
+
+        let mut buf_check = Vector::<MaybeUninit<u8>>::new();
+        assert_true!(buf_check.resize_with(alloc_size_usize, MaybeUninit::uninit).is_ok());
+        let buf_check_init = unwrap_ok!(vmo.read(0, &mut buf_check[..alloc_size_usize]));
+
+        // First two shouldn't have been overwritten.
+        let mut cmpres = buf_rand1[..half_size_usize] == buf_check_init[..half_size_usize];
+        expect_true!(cmpres);
+
+        // Second 2 pages should have new data.
+        cmpres = buf_rand2[half_size_usize..half_size_usize + half_size_usize]
+            == buf_check_init[half_size_usize..half_size_usize + half_size_usize];
+        expect_true!(cmpres);
+
+        // VMO should have 4 attributed pages.
+        expect_true!(
+            vmo.get_attributed_memory() == make_private_attribution_counts(4 * PAGE_SIZE, 0)
+        );
+
+        // Clone pager-backed VMO.
+        let clone = unwrap_ok!(vmo.create_clone(
+            Resizability::NonResizable,
+            SnapshotType::Modified,
+            0,
+            alloc_size,
+            true,
+        ));
+        clone.set_user_id(0x43);
+
+        // Vmo is attributed all pages
+        expect_true!(
+            vmo.get_attributed_memory() == make_private_attribution_counts(4 * PAGE_SIZE, 0)
+        );
+        expect_true!(clone.get_attributed_memory() == make_private_attribution_counts(0, 0));
+
+        // New random data in aux_vmo.
+        let mut buf_rand3 = Vector::<MaybeUninit<u8>>::new();
+        assert_true!(buf_rand3.resize_with(alloc_size_usize, MaybeUninit::uninit).is_ok());
+        let buf_rand3 = fill_region(0x99, &mut buf_rand3[..alloc_size_usize]);
+        expect_ok!(aux_vmo.write(0, &buf_rand3[..alloc_size_usize]));
+
+        // Supply 2 pages into the middle of the clone.
+        stack_pin_init!(let sl3 = VmPageSpliceList::new());
+        expect_ok!(aux_vmo.take_pages(PAGE_SIZE, half_size, sl3.as_mut()));
+        assert_ok!(clone.supply_pages(
+            PAGE_SIZE,
+            half_size,
+            sl3.as_mut(),
+            SupplyOptions::TransferData
+        ));
+        debug_assert!(sl3.is_processed());
+
+        // Clone is attributed both pages, VMO is unchanged.
+        expect_true!(
+            clone.get_attributed_memory() == make_private_attribution_counts(2 * PAGE_SIZE, 0)
+        );
+        expect_true!(
+            vmo.get_attributed_memory() == make_private_attribution_counts(4 * PAGE_SIZE, 0)
+        );
+
+        let buf_check_init = unwrap_ok!(clone.read(0, &mut buf_check[..alloc_size_usize]));
+
+        // First and last page in clone should be read from parent.
+        cmpres = buf_rand1[..PAGE_SIZE_USIZE] == buf_check_init[..PAGE_SIZE_USIZE];
+        expect_true!(cmpres);
+        cmpres = buf_rand2[(alloc_size_usize - PAGE_SIZE_USIZE)
+            ..(alloc_size_usize - PAGE_SIZE_USIZE) + PAGE_SIZE_USIZE]
+            == buf_check_init[(alloc_size_usize - PAGE_SIZE_USIZE)
+                ..(alloc_size_usize - PAGE_SIZE_USIZE) + PAGE_SIZE_USIZE];
+        expect_true!(cmpres);
+
+        // Middle pages should be new.
+        cmpres = buf_rand3[PAGE_SIZE_USIZE..PAGE_SIZE_USIZE + half_size_usize]
+            == buf_check_init[PAGE_SIZE_USIZE..PAGE_SIZE_USIZE + half_size_usize];
+        expect_true!(cmpres);
+
+        // Parent should be unchanged.
+        let buf_check_init = unwrap_ok!(vmo.read(0, &mut buf_check[..alloc_size_usize]));
+        cmpres = buf_rand1[..half_size_usize] == buf_check_init[..half_size_usize];
+        expect_true!(cmpres);
+        cmpres = buf_rand2[half_size_usize..half_size_usize + half_size_usize]
+            == buf_check_init[half_size_usize..half_size_usize + half_size_usize];
+        expect_true!(cmpres);
+
+        // New random data in aux_vmo.
+        let mut buf_rand4 = Vector::<MaybeUninit<u8>>::new();
+        assert_true!(buf_rand4.resize_with(alloc_size_usize, MaybeUninit::uninit).is_ok());
+        let buf_rand4 = fill_region(0x99, &mut buf_rand4[..alloc_size_usize]);
+        expect_ok!(aux_vmo.write(0, &buf_rand4[..alloc_size_usize]));
+
+        // Supply new data to all pages of clone.
+        stack_pin_init!(let sl4 = VmPageSpliceList::new());
+        expect_ok!(aux_vmo.take_pages(0, alloc_size, sl4.as_mut()));
+        assert_ok!(clone.supply_pages(0, alloc_size, sl4.as_mut(), SupplyOptions::TransferData));
+        debug_assert!(sl4.is_processed());
+
+        // Clone should have new data.
+        let buf_check_init = unwrap_ok!(clone.read(0, &mut buf_check[..alloc_size_usize]));
+        cmpres = buf_rand4[..alloc_size_usize] == buf_check_init[..alloc_size_usize];
+        expect_true!(cmpres);
+
+        // Parent should be unchanged.
+        let buf_check_init = unwrap_ok!(vmo.read(0, &mut buf_check[..alloc_size_usize]));
+        cmpres = buf_rand1[..half_size_usize] == buf_check_init[..half_size_usize];
+        expect_true!(cmpres);
+        cmpres = buf_rand2[half_size_usize..half_size_usize + half_size_usize]
+            == buf_check_init[half_size_usize..half_size_usize + half_size_usize];
+        expect_true!(cmpres);
+
+        // Each have 4 attributed pages.
+        expect_true!(
+            clone.get_attributed_memory() == make_private_attribution_counts(4 * PAGE_SIZE, 0)
+        );
+        expect_true!(
+            vmo.get_attributed_memory() == make_private_attribution_counts(4 * PAGE_SIZE, 0)
+        );
+
+        // Clone the clone, which should create a hidden node.
+        let clone2 = unwrap_ok!(clone.create_clone(
+            Resizability::NonResizable,
+            SnapshotType::Modified,
+            0,
+            alloc_size,
+            true,
+        ));
+        clone2.set_user_id(0x44);
+
+        // Private attribution counts 0 because pages were moved into hidden node.
+        expect_true!(attribution::total_private_bytes(&clone.get_attributed_memory()) == 0);
+        expect_true!(attribution::total_private_bytes(&clone2.get_attributed_memory()) == 0);
+
+        // Each clone has 2 pages of scaled bytes, as they share 4 pages.
+        expect_true!(
+            attribution::total_scaled_bytes(&clone.get_attributed_memory())
+                == attribution::fractional_bytes_from_whole(2 * PAGE_SIZE)
+        );
+        expect_true!(
+            attribution::total_scaled_bytes(&clone2.get_attributed_memory())
+                == attribution::fractional_bytes_from_whole(2 * PAGE_SIZE)
+        );
+
+        // Change data in aux VMO.
+        let mut buf_rand5 = Vector::<MaybeUninit<u8>>::new();
+        assert_true!(buf_rand5.resize_with(alloc_size_usize, MaybeUninit::uninit).is_ok());
+        let buf_rand5 = fill_region(0xaa, &mut buf_rand5[..alloc_size_usize]);
+        expect_ok!(aux_vmo.write(0, &buf_rand5[..alloc_size_usize]));
+
+        // Supply 2 pages to Clone2.
+        stack_pin_init!(let sl5 = VmPageSpliceList::new());
+        expect_ok!(aux_vmo.take_pages(0, half_size, sl5.as_mut()));
+        assert_ok!(clone2.supply_pages(0, half_size, sl5.as_mut(), SupplyOptions::TransferData));
+        debug_assert!(sl5.is_processed());
+
+        // Clone2 should have the two private pages and 3 scaled pages.
+        expect_true!(
+            attribution::total_private_bytes(&clone2.get_attributed_memory()) == 2 * PAGE_SIZE
+        );
+        expect_true!(
+            attribution::total_scaled_bytes(&clone2.get_attributed_memory())
+                == attribution::fractional_bytes_from_whole(3 * PAGE_SIZE)
+        );
+
+        // Clone should now have 3 scaled pages as two are no longer seen by clone2.
+        expect_true!(
+            attribution::total_scaled_bytes(&clone.get_attributed_memory())
+                == attribution::fractional_bytes_from_whole(3 * PAGE_SIZE)
+        );
+    }
+
     /// Test that unmaps propagated to copy-on-write children are not applied to kernel mappings.
     #[test]
     fn vmo_apply_unmap_to_child_with_kernel_mapping_test() {

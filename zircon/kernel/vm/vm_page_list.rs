@@ -615,6 +615,12 @@ impl VmPageSpliceList {
         pin_init_ffi!(init_shim)
     }
 
+    /// Returns true after the whole collection has been processed by Pop.
+    pub fn is_processed(&self) -> bool {
+        // SAFETY: `self.opaque` holds a valid `VmPageSpliceList`.
+        unsafe { bindings::cpp_vm_page_splice_list_is_processed(self.opaque.get()) }
+    }
+
     /// Returns a raw pointer to the underlying C++ `VmPageSpliceList`.
     ///
     /// Callers must not use the returned raw pointer to move the object in memory.

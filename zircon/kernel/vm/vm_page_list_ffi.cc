@@ -22,4 +22,8 @@ FFI_ALWAYS_INLINE void cpp_vm_page_splice_list_destroy(VmPageSpliceList* list) {
   ktl::destroy_at(list);
 }
 
+FFI_ALWAYS_INLINE bool cpp_vm_page_splice_list_is_processed(const VmPageSpliceList* list) {
+  return list->IsProcessed();
+}
+
 }  // extern "C"
