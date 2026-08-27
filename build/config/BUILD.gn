@@ -985,7 +985,7 @@ config("Wno-vla-cxx-extension") {
     "//src/graphics/lib/magma/src/libmagma_virt:*",
     "//src/media/audio/examples/effects:*",
     "//src/media/drivers/amlogic_decoder:*",
-    "//src/performance/experimental/profiler:*",
+    "//src/performance/cpu_profiler:*",
     "//src/performance/lib/gperftools:*",
     "//src/performance/lib/trace_converters:*",
     "//src/starnix/tests/syscalls/cpp:*",

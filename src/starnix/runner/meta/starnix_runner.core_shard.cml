@@ -331,7 +331,7 @@
         },
         {
             protocol: [ "fuchsia.cpu.profiler.Session" ],
-            from: "#profiler",
+            from: "#cpu_profiler",
             to: "#starnix_runner",
             availability: "optional",
             source_availability: "unknown",

@@ -62,9 +62,9 @@ impl fmt::Display for ShowCpuProfilerCmd {
 type Writer = MachineWriter<ShowCpuProfilerCmd>;
 #[derive(FfxTool)]
 pub struct ProfilerTool {
-    #[with(deferred(moniker("/core/profiler")))]
+    #[with(deferred(moniker("/core/cpu_profiler")))]
     controller: fho::Deferred<profiler::SessionProxy>,
-    #[with(deferred(moniker("/core/profiler/profiler_session_manager")))]
+    #[with(deferred(moniker("/core/cpu_profiler/profiler_session_manager")))]
     session_manager: fho::Deferred<profiler::SessionManagerProxy>,
     #[command]
     cmd: ProfilerCommand,

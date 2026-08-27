@@ -3130,13 +3130,13 @@ assembly_input_bundle(
         "//bundles/assembly/bazel_inputs/src/sys/fuzzing/fuzzctl",
         "//bundles/assembly/bazel_inputs/src/sys/run_test_suite:run_test_suite",
         # CPU profiler
-        "//bundles/assembly/bazel_inputs/src/performance/experimental/profiler",
+        "//bundles/assembly/bazel_inputs/src/performance/cpu_profiler",
     ],
     root_shards = [
         "//src/sys/testing:meta/test_realm.root_shard.cml",
     ],
     core_shards = [
-        "//src/performance/experimental/profiler:meta/profiler.core_shard.cml",
+        "//src/performance/cpu_profiler:meta/cpu_profiler.core_shard.cml",
         "//src/sys/test_manager:meta/test_manager.core_shard.cml",
         "//src/sys/fuzzing:meta/fuzzing.core-shard.cml",
         "//src/sys/testing:meta/test_realm.core_shard.cml",

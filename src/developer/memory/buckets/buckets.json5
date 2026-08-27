@@ -190,7 +190,7 @@
     },
     {
         name: "EngTools",
-        process: "/boot/bin/sh|/pkg/bin/sshd|console\\.cm|console-launcher\\.cm|debug-dash-launcher\\.cm|developer-console\\.cm|fdomain_runner|fs_realm\\.cm|gtest-runner\\.cm|kernel_debug_broker\\.cm|ktrace_provider\\.cm|lib_loader_runner_cache\\.cm|overnetstack\\.cm|ptysvc\\.cm|realm_builder_server\\.cm|remote.*|sh:console|sshd-host\\.cm|sshd-[0-9]+|test_manager\\.cm|trace_manager\\.cm|sl4f\\.cm|profiler\\.cm",
+        process: "/boot/bin/sh|/pkg/bin/sshd|console\\.cm|console-launcher\\.cm|debug-dash-launcher\\.cm|developer-console\\.cm|fdomain_runner|fs_realm\\.cm|gtest-runner\\.cm|kernel_debug_broker\\.cm|ktrace_provider\\.cm|lib_loader_runner_cache\\.cm|overnetstack\\.cm|ptysvc\\.cm|realm_builder_server\\.cm|remote.*|sh:console|sshd-host\\.cm|sshd-[0-9]+|test_manager\\.cm|trace_manager\\.cm|sl4f\\.cm|cpu_profiler\\.cm",
         vmo: "",
         event_code: 64,
     },

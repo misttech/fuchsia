@@ -33,7 +33,7 @@
                 source_name: "fuchsia.kernel.SamplingResource",
                 capability: "protocol",
                 target_monikers: [
-                    "/core/profiler",
+                    "/core/cpu_profiler",
                 ],
             },
             {

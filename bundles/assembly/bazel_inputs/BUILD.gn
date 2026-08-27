@@ -1064,7 +1064,7 @@ group("testing_support") {
     ":testing_support.bootfs_files_package.bazel_input",
     "//bundles/assembly/bazel_inputs/src/connectivity/network/testing/netemul/runner:package",
     "//bundles/assembly/bazel_inputs/src/lib/fuchsia-component-test/realm_builder_server:pkg",
-    "//bundles/assembly/bazel_inputs/src/performance/experimental/profiler",
+    "//bundles/assembly/bazel_inputs/src/performance/cpu_profiler",
     "//bundles/assembly/bazel_inputs/src/sys/fuzzing:fuzz-manager",
     "//bundles/assembly/bazel_inputs/src/sys/fuzzing:fuzz-registry",
     "//bundles/assembly/bazel_inputs/src/sys/fuzzing/fuzzctl",
