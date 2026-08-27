@@ -18,7 +18,7 @@ namespace netdev = fuchsia_hardware_network;
 
 class MacAddrDeviceInterface {
  public:
-  using OnCreated = fit::callback<void(zx::result<std::unique_ptr<MacAddrDeviceInterface>>)>;
+  using OnCreated = fit::callback<void(zx::result<std::shared_ptr<MacAddrDeviceInterface>>)>;
 
   virtual ~MacAddrDeviceInterface() = default;
 

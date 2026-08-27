@@ -29,7 +29,7 @@ fdf::ClientEnd<fuchsia_hardware_network_driver::MacAddr> FakeMacDeviceImpl::Bind
   return std::move(endpoints->client);
 }
 
-zx::result<std::unique_ptr<MacAddrDeviceInterface>> FakeMacDeviceImpl::CreateChild(
+zx::result<std::shared_ptr<MacAddrDeviceInterface>> FakeMacDeviceImpl::CreateChild(
     fdf_dispatcher_t* dispatcher) {
   auto endpoints = fdf::CreateEndpoints<fuchsia_hardware_network_driver::MacAddr>();
   if (endpoints.is_error()) {
@@ -38,10 +38,10 @@ zx::result<std::unique_ptr<MacAddrDeviceInterface>> FakeMacDeviceImpl::CreateChi
 
   binding_ = fdf::BindServer(dispatcher, std::move(endpoints->server), this);
   libsync::Completion completion;
-  std::unique_ptr<MacAddrDeviceInterface> mac;
+  std::shared_ptr<MacAddrDeviceInterface> mac;
   zx_status_t status = ZX_ERR_BAD_STATE;
   MacAddrDeviceInterface::Create(std::move(endpoints->client), dispatcher,
-                                 [&](zx::result<std::unique_ptr<MacAddrDeviceInterface>> result) {
+                                 [&](zx::result<std::shared_ptr<MacAddrDeviceInterface>> result) {
                                    status = result.status_value();
                                    if (result.is_ok()) {
                                      mac = std::move(result.value());

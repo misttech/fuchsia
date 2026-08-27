@@ -33,7 +33,7 @@ MacInterface::~MacInterface() {
 void MacInterface::Create(fdf::ClientEnd<fuchsia_hardware_network_driver::MacAddr> parent,
                           fdf_dispatcher_t* dispatcher, OnCreated&& on_created) {
   fbl::AllocChecker ac;
-  std::unique_ptr<MacInterface> mac(new (&ac) MacInterface());
+  std::shared_ptr<MacInterface> mac(new (&ac) MacInterface());
   if (!ac.check()) {
     LOGF_ERROR("Could not allocate MacInterface");
     on_created(zx::error(ZX_ERR_NO_MEMORY));
@@ -90,7 +90,7 @@ void MacInterface::Init(fit::callback<void(zx_status_t)>&& on_complete) {
 zx_status_t MacInterface::Bind(async_dispatcher_t* dispatcher,
                                fidl::ServerEnd<netdev::MacAddressing> req) {
   fbl::AutoLock lock(&lock_);
-  if (teardown_callback_) {
+  if (teardown_callback_ || impl_torn_down_) {
     // Don't allow new bindings if we're tearing down.
     return ZX_ERR_BAD_STATE;
   }
@@ -106,6 +106,17 @@ zx_status_t MacInterface::Bind(async_dispatcher_t* dispatcher,
   }
 
   clients_.push_back(std::move(client_instance));
+  // TODO(https://fxbug.dev/42051219): Improve communication with parent driver.
+  // MacInterface relies heavily on synchronous communication which can be
+  // problematic and cause lock inversions with the parent driver. We need a
+  // better strategy here that is going to be more compatible with DFv2. For
+  // now, dispatching to do the work eliminates known deadlocks.
+  async::PostTask(dispatcher, [weak_this = weak_from_this()] {
+    if (std::shared_ptr<MacInterface> mac_interface = weak_this.lock()) {
+      mac_interface->lock_.Acquire();
+      mac_interface->Consolidate([](zx_status_t /*unused*/) {});
+    }
+  });
   return ZX_OK;
 }
 
@@ -368,11 +379,6 @@ void MacClientInstance::RemoveMulticastAddress(RemoveMulticastAddressRequestView
   }
 }
 
-void MacClientInstance::Consolidate() {
-  parent_->lock_.Acquire();
-  parent_->Consolidate([](zx_status_t /*unused*/) {});
-}
-
 MacClientInstance::MacClientInstance(MacInterface* parent, netdev::wire::MacFilterMode default_mode)
     : parent_(parent), state_(default_mode) {}
 
@@ -382,15 +388,8 @@ zx_status_t MacClientInstance::Bind(async_dispatcher_t* dispatcher,
       fidl::BindServer(dispatcher, std::move(req), this,
                        [](MacClientInstance* client_instance, fidl::UnbindInfo /*unused*/,
                           fidl::ServerEnd<fuchsia_hardware_network::MacAddressing> /*unused*/) {
-                         client_instance->consolidate_task_.Cancel();
                          client_instance->parent_->CloseClient(client_instance);
                        });
-  // TODO(https://fxbug.dev/42051219): Improve communication with parent driver.
-  // MacInterface relies heavily on synchronous communication which can be
-  // problematic and cause lock inversions with the parent driver. We need a
-  // better strategy here that is going to be more compatible with DFv2. For
-  // now, dispatching to do the work eliminates known deadlocks.
-  consolidate_task_.Post(dispatcher);
   return ZX_OK;
 }
 

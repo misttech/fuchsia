@@ -131,7 +131,7 @@ class DevicePort : public fidl::WireServer<netdev::Port> {
   const netdev::wire::PortId id_;
   fdf::WireSharedClient<fuchsia_hardware_network_driver::NetworkPort> port_;
   Counters counters_;
-  std::unique_ptr<MacAddrDeviceInterface> mac_ __TA_GUARDED(lock_);
+  std::shared_ptr<MacAddrDeviceInterface> mac_ __TA_GUARDED(lock_);
   BindingList bindings_ __TA_GUARDED(lock_);
   zx::event id_event_;
 

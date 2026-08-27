@@ -12,6 +12,7 @@
 #include <lib/async/dispatcher.h>
 #include <lib/fidl/cpp/wire/server.h>
 
+#include <memory>
 #include <unordered_set>
 
 #include <fbl/auto_lock.h>
@@ -34,7 +35,8 @@ namespace internal {
 
 class MacClientInstance;
 
-class MacInterface : public ::network::MacAddrDeviceInterface {
+class MacInterface : public ::network::MacAddrDeviceInterface,
+                     public std::enable_shared_from_this<MacInterface> {
  public:
   static void Create(fdf::ClientEnd<netdriver::MacAddr> parent, fdf_dispatcher_t* dispatcher,
                      OnCreated&& on_created);
@@ -142,14 +144,9 @@ class MacClientInstance : public fidl::WireServer<netdev::MacAddressing>,
   const ClientState& state() const { return state_; }
 
  private:
-  // Triggers consolidation on `parent_`.
-  void Consolidate();
-
   // Pointer to parent MacInterface, not owned.
   MacInterface* const parent_;
   ClientState state_ __TA_GUARDED(parent_->lock_);
-  async::TaskClosureMethod<MacClientInstance, &MacClientInstance::Consolidate> consolidate_task_{
-      this};
   std::optional<fidl::ServerBindingRef<netdev::MacAddressing>> binding_;
 };
 

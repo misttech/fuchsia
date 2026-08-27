@@ -133,7 +133,7 @@ void DevicePort::CreateMacInterface(::fdf::ClientEnd<netdriver::MacAddr>&& clien
   MacAddrDeviceInterface::Create(
       std::move(client_end), mac_dispatcher,
       [this, on_complete = std::move(on_complete)](
-          zx::result<std::unique_ptr<MacAddrDeviceInterface>> result) mutable {
+          zx::result<std::shared_ptr<MacAddrDeviceInterface>> result) mutable {
         if (result.is_error()) {
           on_complete(result.status_value());
           return;

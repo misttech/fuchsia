@@ -29,7 +29,7 @@ class FakeMacDeviceImpl : public fdf::WireServer<fuchsia_hardware_network_driver
  public:
   FakeMacDeviceImpl();
 
-  zx::result<std::unique_ptr<MacAddrDeviceInterface>> CreateChild(fdf_dispatcher_t* dispatcher);
+  zx::result<std::shared_ptr<MacAddrDeviceInterface>> CreateChild(fdf_dispatcher_t* dispatcher);
   fdf::ClientEnd<fuchsia_hardware_network_driver::MacAddr> Bind(fdf_dispatcher_t* dispatcher);
 
   void GetFeatures(fdf::Arena& arena, GetFeaturesCompleter::Sync& completer) override;

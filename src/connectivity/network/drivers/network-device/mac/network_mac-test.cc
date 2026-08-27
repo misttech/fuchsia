@@ -73,7 +73,7 @@ class MacDeviceTest : public ::testing::Test {
   // The loop is created lazily in `OpenInstance` to avoid spawning threads on tests that do not
   // instantiate clients.
   std::unique_ptr<async::Loop> loop_;
-  std::unique_ptr<MacAddrDeviceInterface> device_;
+  std::shared_ptr<MacAddrDeviceInterface> device_;
   fdf::Dispatcher dispatcher_;
   libsync::Completion dispatcher_shutdown_;
 };
