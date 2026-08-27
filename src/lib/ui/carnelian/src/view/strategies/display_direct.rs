@@ -189,7 +189,12 @@ pub(crate) struct DisplayDirectViewStrategy {
     pub collection_id: BufferCollectionId,
     render_frame_count: usize,
     last_config_stamp: u64,
-    presented: Option<u64>,
+
+    /// ID of the framebuffer that has been prepared for presentation.
+    prepared: Option<ImageId>,
+
+    /// ID of the framebuffer submitted in the most recent present call.
+    presented: Option<ImageId>,
 }
 
 impl DisplayDirectViewStrategy {
@@ -247,6 +252,7 @@ impl DisplayDirectViewStrategy {
             collection_id,
             render_frame_count,
             last_config_stamp: INVALID_CONFIG_STAMP_VALUE,
+            prepared: None,
             presented: None,
         }))
     }
@@ -429,7 +435,7 @@ impl DisplayDirectViewStrategy {
             wait_events.insert(image_id as ImageId, (event, event_id));
         }
 
-        let frame_set = FrameSet::new(collection_id, image_ids);
+        let frame_set = FrameSet::new(image_ids);
 
         display.coordinator.set_layer_primary_config(&display.layer_id.into(), &image_metadata)?;
 
@@ -451,6 +457,7 @@ impl DisplayDirectViewStrategy {
                 "" => ""
             );
             self.collection_id = next_collection_id();
+            self.prepared = None;
             self.presented = None;
             self.display_resources = Some(
                 Self::allocate_display_resources(
@@ -537,7 +544,7 @@ impl ViewStrategy for DisplayDirectViewStrategy {
     }
 
     fn setup(&mut self, view_details: &ViewDetails, view_assistant: &mut ViewAssistantPtr) {
-        if let Some(available) = self.display_resources().frame_set.get_available_image() {
+        if let Some(available) = self.display_resources().frame_set.take_image() {
             let direct_context = self.make_context(view_details, Some(available));
             view_assistant
                 .setup(&direct_context)
@@ -555,36 +562,33 @@ impl ViewStrategy for DisplayDirectViewStrategy {
         self.maybe_reallocate_display_resources()
             .await
             .expect("maybe_reallocate_display_resources");
-        if let Some(available) = self.display_resources().frame_set.get_available_image() {
-            self.update_image(view_details, view_assistant, available);
-            self.display_resources().frame_set.mark_prepared(available);
+
+        let prepared_image: Option<ImageId> =
+            self.display_resources().frame_set.take_image().or_else(|| {
+                // If there is only one render framebuffer, we always use that
+                // framebuffer, even if it's being presented.
+                if self.render_frame_count == 1 { self.presented } else { None }
+            });
+
+        if let Some(prepared_image) = prepared_image {
+            self.update_image(view_details, view_assistant, prepared_image);
+            self.prepared = Some(prepared_image);
             true
         } else {
-            if self.render_frame_count == 1 {
-                if let Some(presented) = self.presented {
-                    self.update_image(view_details, view_assistant, presented);
-                    true
-                } else {
-                    false
-                }
-            } else {
-                false
-            }
+            false
         }
     }
 
     fn present(&mut self, view_details: &ViewDetails) {
         duration!("gfx", "DisplayDirectViewStrategy::present");
 
-        if self.render_frame_count == 1 && self.presented.is_some() {
-            return;
-        }
-        if let Some(prepared) = self.display_resources().frame_set.prepared {
+        let image_to_present = self.prepared.take();
+        if let Some(image_to_present) = image_to_present {
             instant!(
                 c"gfx",
                 c"DisplayDirectViewStrategy::present",
                 fuchsia_trace::Scope::Process,
-                "prepared" => format!("{}", prepared).as_str()
+                "image_to_present" => format!("{}", image_to_present).as_str()
             );
             let collection_id = self.collection_id;
             let view_key = view_details.key;
@@ -604,9 +608,9 @@ impl ViewStrategy for DisplayDirectViewStrategy {
                 .expect("set_display_layers");
 
             let (_, wait_event_id) =
-                *self.display_resources().wait_events.get(&prepared).expect("wait event");
+                *self.display_resources().wait_events.get(&image_to_present).expect("wait event");
 
-            let image_id = DisplayImageId(prepared);
+            let image_id = DisplayImageId(image_to_present);
             self.display
                 .coordinator
                 .set_layer_image2(
@@ -622,15 +626,15 @@ impl ViewStrategy for DisplayDirectViewStrategy {
 
             self.display.coordinator.commit_config(req).expect("Frame::present() commit_config");
 
-            self.display_resources().busy_images.push_back(BusyImage {
-                stamp,
-                view_key,
-                image_id,
-                collection_id,
-            });
-
-            self.display_resources().frame_set.mark_presented(prepared);
-            self.presented = Some(prepared);
+            if self.render_frame_count > 1 {
+                self.display_resources().busy_images.push_back(BusyImage {
+                    stamp,
+                    view_key,
+                    image_id,
+                    collection_id,
+                });
+            }
+            self.presented = Some(image_to_present);
         }
     }
 
@@ -675,7 +679,7 @@ impl ViewStrategy for DisplayDirectViewStrategy {
                 "image_freed" => format!("{}", image_id).as_str()
             );
             if let Some(display_resources) = self.display_resources.as_mut() {
-                display_resources.frame_set.mark_done_presenting(image_id);
+                display_resources.frame_set.return_image(image_id);
             }
         }
     }
@@ -707,6 +711,8 @@ impl ViewStrategy for DisplayDirectViewStrategy {
                 fuchsia_trace::Scope::Process,
                 "" => ""
             );
+            self.prepared = None;
+            self.presented = None;
             self.display_resources = None;
         }
     }

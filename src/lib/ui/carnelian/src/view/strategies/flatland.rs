@@ -14,7 +14,6 @@ use crate::view::{UserInputMessage, ViewAssistantContext, ViewAssistantPtr, View
 use anyhow::{Context, Error, Result, ensure};
 use async_trait::async_trait;
 use async_utils::hanging_get::client::HangingGetStream;
-use display_utils::BufferCollectionId as DisplayBufferCollectionId;
 use euclid::size2;
 use fidl::endpoints::{create_endpoints, create_proxy, create_request_stream};
 use fidl_fuchsia_images2::PixelFormat;
@@ -172,7 +171,7 @@ impl Plumber {
             context.get_image(index as u32);
         }
 
-        let frame_set = FrameSet::new(DisplayBufferCollectionId(collection_id as u64), image_ids);
+        let frame_set = FrameSet::new(image_ids);
         Ok(Plumber { size, collection_id, frame_set, image_indexes, context })
     }
 
@@ -595,7 +594,7 @@ impl FlatlandViewStrategy {
     ) -> bool {
         let presentation_time = self.next_presentation_time();
         let plumber = self.plumber.as_mut().expect("plumber");
-        if let Some(available) = plumber.frame_set.get_available_image() {
+        if let Some(available) = plumber.frame_set.take_image() {
             duration!("gfx", "FlatlandViewStrategy::render.render_to_image");
             let available_index = plumber.image_indexes.get(&available).expect("index for image");
             let render_context = Self::make_view_assistant_context_with_time(
@@ -609,7 +608,6 @@ impl FlatlandViewStrategy {
             view_assistant
                 .render(&mut plumber.context, buffer_ready_event, &render_context)
                 .unwrap_or_else(|e| panic!("Update error: {:?}", e));
-            plumber.frame_set.mark_prepared(available);
             let key = view_details.key;
             let collection_id = plumber.collection_id;
             let release_event = Event::create();
@@ -630,7 +628,6 @@ impl FlatlandViewStrategy {
             self.flatland.set_content(&TRANSFORM_ID, &image_id).expect("fidl error");
 
             // Image is guaranteed to be presented at this point.
-            plumber.frame_set.mark_presented(available);
             true
         } else {
             instant!(
@@ -860,14 +857,14 @@ impl ViewStrategy for FlatlandViewStrategy {
 
         if let Some(plumber) = self.plumber.as_mut() {
             if plumber.collection_id == collection_id {
-                plumber.frame_set.mark_done_presenting(image_id);
+                plumber.frame_set.return_image(image_id);
                 return;
             }
         }
 
         for retired_plumber in &mut self.retiring_plumbers {
             if retired_plumber.collection_id == collection_id {
-                retired_plumber.frame_set.mark_done_presenting(image_id);
+                retired_plumber.frame_set.return_image(image_id);
                 if retired_plumber.frame_set.no_images_in_use() {
                     retired_plumber.enter_retirement(&self.flatland);
                 }

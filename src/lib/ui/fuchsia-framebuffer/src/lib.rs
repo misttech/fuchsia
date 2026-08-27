@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use display_utils::BufferCollectionId;
 use std::collections::BTreeSet;
 
 pub mod sysmem;
@@ -13,26 +12,17 @@ use std::ops::Range;
 // TODO(https://fxbug.dev/42080389): Use display_utils structs instead.
 pub type ImageId = u64;
 
+/// A pool of reusable framebuffer image IDs allocated for a buffer collection.
 #[derive(Debug)]
 pub struct FrameSet {
-    // TODO(https://fxbug.dev/42165549)
-    #[allow(unused)]
-    collection_id: BufferCollectionId,
     image_count: usize,
     available: BTreeSet<ImageId>,
-    pub prepared: Option<ImageId>,
-    presented: BTreeSet<ImageId>,
+    taken: BTreeSet<ImageId>,
 }
 
 impl FrameSet {
-    pub fn new(collection_id: BufferCollectionId, available: BTreeSet<ImageId>) -> FrameSet {
-        FrameSet {
-            collection_id,
-            image_count: available.len(),
-            available,
-            prepared: None,
-            presented: BTreeSet::new(),
-        }
+    pub fn new(available: BTreeSet<ImageId>) -> FrameSet {
+        FrameSet { image_count: available.len(), available, taken: BTreeSet::new() }
     }
 
     #[cfg(test)]
@@ -41,99 +31,130 @@ impl FrameSet {
         for image_id in r {
             available.insert(image_id);
         }
-        Self::new(BufferCollectionId(0), available)
+        Self::new(available)
     }
 
-    pub fn mark_presented(&mut self, image_id: ImageId) {
-        assert!(
-            !self.presented.contains(&image_id),
-            "Attempted to mark as presented image {} which was already in the presented image set",
-            image_id
-        );
-        self.presented.insert(image_id);
-        self.prepared = None;
-    }
-
-    pub fn mark_done_presenting(&mut self, image_id: ImageId) {
-        assert!(
-            self.presented.remove(&image_id),
-            "Attempted to mark as freed image {} which was not the presented image",
-            image_id
-        );
-        self.available.insert(image_id);
-    }
-
-    pub fn mark_prepared(&mut self, image_id: ImageId) {
-        assert!(self.prepared.is_none(), "Trying to mark image {} as prepared when image {} is prepared and has not been presented", image_id, self.prepared.unwrap());
-        self.prepared.replace(image_id);
-        self.available.remove(&image_id);
-    }
-
-    pub fn get_available_image(&mut self) -> Option<ImageId> {
-        let first = self.available.iter().next().map(|a| *a);
-        if let Some(first) = first {
-            self.available.remove(&first);
+    /// Removes and returns the first available image ID, or `None` if empty.
+    pub fn take_image(&mut self) -> Option<ImageId> {
+        if let Some(first) = self.available.pop_first() {
+            self.taken.insert(first);
+            Some(first)
+        } else {
+            None
         }
-        first
     }
 
+    /// Inserts the returned image ID back into `self.available`.
+    ///
+    /// `image_id` must be one of the IDs previously returned by `take_image`.
     pub fn return_image(&mut self, image_id: ImageId) {
+        assert!(
+            self.taken.remove(&image_id),
+            "Attempted to return image {} which was not currently taken",
+            image_id
+        );
         self.available.insert(image_id);
     }
 
+    /// Returns `true` if all images allocated for this pool are available.
     pub fn no_images_in_use(&self) -> bool {
-        self.available.len() == self.image_count
+        self.taken.is_empty()
+    }
+
+    /// Returns the total number of images in the pool.
+    pub fn image_count_for_testing(&self) -> usize {
+        self.image_count
+    }
+
+    /// Returns the number of currently available images in the pool.
+    pub fn available_count_for_testing(&self) -> usize {
+        self.available.len()
     }
 }
 
 #[cfg(test)]
 mod frameset_tests {
     use crate::{FrameSet, ImageId};
+    use std::collections::BTreeSet;
     use std::ops::Range;
 
-    const IMAGE_RANGE: Range<ImageId> = 200..202;
+    const IMAGE_RANGE: Range<ImageId> = 200..203;
 
     #[fuchsia::test]
-    #[should_panic]
-    fn test_double_prepare() {
-        let mut fs = FrameSet::new_with_range(IMAGE_RANGE);
-
-        fs.mark_prepared(100);
-        fs.mark_prepared(200);
+    fn test_initial_state() {
+        let fs = FrameSet::new_with_range(IMAGE_RANGE);
+        assert_eq!(fs.image_count_for_testing(), 3);
+        assert_eq!(fs.available_count_for_testing(), 3);
+        assert!(fs.no_images_in_use());
     }
 
     #[fuchsia::test]
-    #[should_panic]
-    fn test_not_presented() {
+    fn test_take_and_return_image() {
         let mut fs = FrameSet::new_with_range(IMAGE_RANGE);
-        fs.mark_done_presenting(100);
+
+        let img1 = fs.take_image();
+        assert_eq!(img1, Some(200));
+        assert_eq!(fs.available_count_for_testing(), 2);
+        assert!(!fs.no_images_in_use());
+
+        let img2 = fs.take_image();
+        assert_eq!(img2, Some(201));
+        assert_eq!(fs.available_count_for_testing(), 1);
+
+        fs.return_image(img1.unwrap());
+        assert_eq!(fs.available_count_for_testing(), 2);
+        assert!(!fs.no_images_in_use());
+
+        fs.return_image(img2.unwrap());
+        assert_eq!(fs.available_count_for_testing(), 3);
+        assert!(fs.no_images_in_use());
     }
 
     #[fuchsia::test]
-    #[should_panic]
-    fn test_already_presented() {
+    #[should_panic(expected = "Attempted to return image 100 which was not currently taken")]
+    fn test_return_untracked_image_panics() {
         let mut fs = FrameSet::new_with_range(IMAGE_RANGE);
-        fs.mark_presented(100);
-        fs.mark_presented(100);
+        fs.return_image(100);
     }
 
     #[fuchsia::test]
-    fn test_basic_use() {
+    #[should_panic(expected = "Attempted to return image 200 which was not currently taken")]
+    fn test_return_already_available_image_panics() {
         let mut fs = FrameSet::new_with_range(IMAGE_RANGE);
-        let avail = fs.get_available_image();
-        assert!(avail.is_some());
-        let avail = avail.unwrap();
-        assert!(!fs.available.contains(&avail));
-        assert!(!fs.presented.contains(&avail));
-        fs.mark_prepared(avail);
-        assert_eq!(fs.prepared.unwrap(), avail);
-        fs.mark_presented(avail);
-        assert!(fs.prepared.is_none());
-        assert!(!fs.available.contains(&avail));
-        assert!(fs.presented.contains(&avail));
-        fs.mark_done_presenting(avail);
-        assert!(fs.available.contains(&avail));
-        assert!(!fs.presented.contains(&avail));
+        // Image 200 is available, not taken. Returning it should panic.
+        fs.return_image(200);
+    }
+
+    #[fuchsia::test]
+    #[should_panic(expected = "Attempted to return image 200 which was not currently taken")]
+    fn test_double_return_panics() {
+        let mut fs = FrameSet::new_with_range(IMAGE_RANGE);
+        let img = fs.take_image().expect("image");
+        fs.return_image(img);
+        fs.return_image(img);
+    }
+
+    #[fuchsia::test]
+    fn test_take_image_from_empty_pool() {
+        let mut fs = FrameSet::new_with_range(200..201);
+
+        let img = fs.take_image();
+        assert_eq!(img, Some(200));
+        // Pool is empty now.
+        assert_eq!(fs.take_image(), None);
+
+        fs.return_image(img.unwrap());
+        let img_again = fs.take_image();
+        assert_eq!(img_again, Some(200));
+    }
+
+    #[fuchsia::test]
+    fn test_empty_initial_set() {
+        let mut fs = FrameSet::new(BTreeSet::new());
+        assert_eq!(fs.image_count_for_testing(), 0);
+        assert_eq!(fs.available_count_for_testing(), 0);
+        assert!(fs.no_images_in_use());
+        assert_eq!(fs.take_image(), None);
     }
 }
 
