@@ -130,6 +130,8 @@ unsafe impl<T: RcuDroppable + Sync> RcuDroppable for crate::RcuOptionArc<T> {}
 unsafe impl<T: RcuDroppable + Sync> RcuDroppable for crate::RcuOptionBox<T> {}
 // SAFETY: RcuWeak holds a non owning reference and won't deallocate T on rcu_drop.
 unsafe impl<T: Send + Sync + 'static> RcuDroppable for crate::RcuWeak<T> {}
+// SAFETY: rcu_drop of an RcuUpgradeArc will rcu_drop T which is safe since T: RcuDroppable.
+unsafe impl<T: RcuDroppable + Sync> RcuDroppable for crate::RcuUpgradeArc<T> {}
 
 // Synchronization primitives
 // SAFETY: Mutex drops its inner value T, which is RcuDroppable.

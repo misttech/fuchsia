@@ -10,6 +10,7 @@ mod rcu_option_arc;
 mod rcu_option_box;
 mod rcu_ptr;
 mod rcu_read_scope;
+mod rcu_upgrade_arc;
 mod rcu_weak;
 mod read_counters;
 mod state_machine;
@@ -22,6 +23,7 @@ pub use rcu_option_arc::RcuOptionArc;
 pub use rcu_option_box::RcuOptionBox;
 pub use rcu_ptr::RcuReadGuard;
 pub use rcu_read_scope::RcuReadScope;
+pub use rcu_upgrade_arc::RcuUpgradeArc;
 pub use rcu_weak::RcuWeak;
 pub use state_machine::{rcu_drop, rcu_run_callbacks, rcu_synchronize, with_thread_block_counters};
 
