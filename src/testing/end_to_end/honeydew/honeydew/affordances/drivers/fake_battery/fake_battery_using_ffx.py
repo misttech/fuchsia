@@ -8,7 +8,7 @@ from __future__ import annotations
 import logging
 
 from honeydew import errors
-from honeydew.affordances.drivers.battery.utils import types
+from honeydew.affordances.drivers.battery_manager.utils import types
 from honeydew.affordances.drivers.fake_battery import (
     errors as fake_battery_errors,
 )

@@ -8,7 +8,7 @@ from __future__ import annotations
 import abc
 
 from honeydew.affordances import affordance
-from honeydew.affordances.drivers.battery.utils import types
+from honeydew.affordances.drivers.battery_manager.utils import types
 
 
 class FakeBattery(affordance.Affordance):

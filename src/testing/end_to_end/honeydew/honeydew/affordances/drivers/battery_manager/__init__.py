@@ -12,12 +12,12 @@ import fidl_fuchsia_hardware_power_source as f_power_source
 from fuchsia_controller_py import FcTransportStatus, ZxStatus
 from honeydew import affordances_capable, errors
 from honeydew.affordances.affordance import AsyncLazyReady, ensure_ready
-from honeydew.affordances.drivers.battery.utils.errors import (
+from honeydew.affordances.drivers.battery_manager.utils.errors import (
     BatteryDeviceNotFoundError,
     BatteryRequestError,
     HoneydewBatteryError,
 )
-from honeydew.affordances.drivers.battery.utils.types import (
+from honeydew.affordances.drivers.battery_manager.utils.types import (
     BatterySpec,
     BatteryStatus,
     ChargeStatus,

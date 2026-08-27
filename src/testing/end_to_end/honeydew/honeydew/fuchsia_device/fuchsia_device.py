@@ -41,7 +41,7 @@ from honeydew.affordances.connectivity.bluetooth.utils import (
 )
 from honeydew.affordances.connectivity.wlan import wlan_policy, wlan_policy_ap
 from honeydew.affordances.device_knobs import device_knobs
-from honeydew.affordances.drivers import battery
+from honeydew.affordances.drivers import battery_manager
 from honeydew.affordances.drivers.fake_battery import (
     fake_battery,
     fake_battery_using_ffx,
@@ -705,19 +705,28 @@ class FuchsiaDevice(
         )
 
     @properties.Affordance
-    def battery(self) -> battery.Battery:
+    def battery(self) -> battery_manager.Battery:
         """Returns a battery affordance object.
 
         Returns:
-            battery.Battery object
+            battery_manager.Battery object
         """
-        return battery.Battery(
+        return battery_manager.Battery(
             device_name=self.device_name,
             ffx=self.ffx,
             fuchsia_controller=self.fuchsia_controller,
             reboot_affordance=self,
             fuchsia_device_close=self,
         )
+
+    @properties.Affordance
+    def battery_manager(self) -> battery_manager.Battery:
+        """Returns a battery_manager affordance object.
+
+        Returns:
+            battery_manager.Battery object
+        """
+        return self.battery
 
     @properties.Affordance
     def fake_battery(self) -> fake_battery.FakeBattery:

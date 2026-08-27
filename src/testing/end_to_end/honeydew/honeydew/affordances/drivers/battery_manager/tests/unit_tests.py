@@ -12,8 +12,8 @@ import fidl_fuchsia_hardware_power_battery as f_battery
 import fidl_fuchsia_hardware_power_source as f_power_source
 from fidl import GlobalHandleWaker
 from honeydew import affordances_capable, errors
-from honeydew.affordances.drivers.battery import Battery
-from honeydew.affordances.drivers.battery.utils.errors import (
+from honeydew.affordances.drivers.battery_manager import Battery
+from honeydew.affordances.drivers.battery_manager.utils.errors import (
     BatteryRequestError,
 )
 from honeydew.transports.ffx import ffx as ffx_transport

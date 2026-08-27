@@ -9,7 +9,7 @@ import unittest
 from unittest import mock
 
 from honeydew import errors
-from honeydew.affordances.drivers.battery.utils.types import (
+from honeydew.affordances.drivers.battery_manager.utils.types import (
     ChargeStatus,
     HealthStatus,
     PowerSourceType,
