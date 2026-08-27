@@ -219,31 +219,31 @@ template("_kernel_rust_mod_impl") {
           rust_sources += rebase_path(invoker.inputs, root_build_dir)
         }
 
-        # `lk_debug_level_2` (`vmzircon.with-tests`) is selected as the default
-        # kernel toolchain target for Clippy and IDE analysis because it is the
-        # primary development and testing configuration. It includes kernel test
-        # commands and test modules (`ktest`), ensuring full code coverage
-        # during IDE type analysis and diagnostic checks.
         _toolchain_name = get_label_info(current_toolchain, "name")
-        _is_default_kernel_toolchain =
+        _is_test_kernel =
             string_replace(_toolchain_name, "lk_debug_level_2", "") !=
             _toolchain_name
+        if (_is_test_kernel) {
+          _kernel_bin_name = "vmzircon.with-tests"
+        } else {
+          _kernel_bin_name = "vmzircon"
+        }
         rust_target_mapping = [
           {
             disable_rustdoc = true
-            disable_clippy = !_is_default_kernel_toolchain
+            disable_clippy = false
             clippy_label =
-                get_label_info("//zircon/kernel/bin:vmzircon.with-tests.clippy",
+                get_label_info("//zircon/kernel/bin:${_kernel_bin_name}.clippy",
                                "label_with_toolchain")
             actual_label =
-                get_label_info("//zircon/kernel/bin:vmzircon.with-tests",
+                get_label_info("//zircon/kernel/bin:${_kernel_bin_name}",
                                "label_with_toolchain")
             original_label =
                 get_label_info(":$target_name", "label_with_toolchain")
             target_is_fuchsia = is_fuchsia
             target = current_target_tuple
             clippy_output = rebase_path(
-                    "$root_gen_dir/zircon/kernel/bin/vmzircon.with-tests.clippy",
+                    "$root_gen_dir/zircon/kernel/bin/${_kernel_bin_name}.clippy",
                     root_build_dir)
             src = rust_sources
           },
