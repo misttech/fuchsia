@@ -6,6 +6,7 @@
         {
             name: "erofs",
             url: "fuchsia-pkg://fuchsia.com/erofs#meta/erofs.cm",
+            environment: "#core-env",
         },
     ],
 }

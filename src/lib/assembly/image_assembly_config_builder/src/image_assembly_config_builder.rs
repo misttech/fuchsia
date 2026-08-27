@@ -44,13 +44,18 @@ use assembly_util::{DuplicateKeyError, InsertAllUniqueExt, InsertUniqueExt, Name
 use assembly_validate_package::{PackageValidationError, validate_component, validate_package};
 use assembly_validate_util::{BootfsContents, PkgNamespace};
 use camino::{Utf8Path, Utf8PathBuf};
+use fidl::unpersist;
+use fidl_fuchsia_component_decl::Component;
+use fuchsia_archive::Utf8Reader;
 use fuchsia_pkg::PackageManifest;
+use fuchsia_url::fuchsia_pkg::AbsoluteComponentUrl;
 use image_assembly_config::{BoardDriverArguments, ImageAssemblyConfig, KernelConfig};
 use itertools::Itertools;
 use product_input_bundle::ProductInputBundle;
 use rayon::iter::{ParallelBridge, ParallelIterator};
 use serde::Serialize;
 use std::collections::{BTreeMap, BTreeSet};
+use std::fs::File;
 use util::MapEntry;
 
 #[derive(Debug, Serialize)]
@@ -1481,12 +1486,87 @@ impl Validator {
         .collect();
 
         // validate the contents of bootfs
-        match validate_bootfs(&product.bootfs_files) {
-            Ok(()) if packages.is_empty() => Ok(()),
-            Ok(()) => Err(ProductValidationError { bootfs: Default::default(), packages }),
-            Err(bootfs) => Err(ProductValidationError { bootfs: Some(bootfs), packages }),
+        let bootfs = match validate_bootfs(&product.bootfs_files) {
+            Ok(()) => None,
+            Err(e) => Some(e),
+        };
+
+        let cache_package_environments =
+            validate_cache_package_environments(product).err().unwrap_or_default();
+
+        if packages.is_empty() && bootfs.is_none() && cache_package_environments.is_empty() {
+            Ok(())
+        } else {
+            Err(ProductValidationError { bootfs, packages, cache_package_environments })
         }
     }
+}
+
+/// Read the `core.cm` component declaration from the `core` package in `base_packages` if present.
+fn read_core_component_decl(base_packages: &[Utf8PathBuf]) -> Result<Option<Component>> {
+    for manifest_path in base_packages {
+        let Ok(manifest) = PackageManifest::try_load_from(manifest_path) else {
+            continue;
+        };
+        if manifest.name().as_ref() != "core" {
+            continue;
+        }
+        let Some(meta_far_info) = manifest.blobs().iter().find(|b| b.path == "meta/") else {
+            continue;
+        };
+        let meta_far = File::open(&meta_far_info.source_path)?;
+        let mut reader = Utf8Reader::new(meta_far)?;
+        let bytes = reader.read_file("meta/core.cm")?;
+        let decl = unpersist::<Component>(&bytes)?;
+        return Ok(Some(decl));
+    }
+    Ok(None)
+}
+
+/// Validate that static children in base packages (such as `core`) that refer to packages in
+/// `cache_packages` explicitly specify an environment (such as `#core-env`). Without an
+/// environment, children inherit the parent's environment (base-resolver), which cannot resolve
+/// cache packages.
+fn validate_cache_package_environments(product: &ImageAssemblyConfig) -> Result<(), Vec<String>> {
+    let cache_package_names: BTreeSet<String> = product
+        .cache
+        .iter()
+        .filter_map(|path| PackageManifest::try_load_from(path).ok())
+        .map(|manifest| manifest.name().to_string())
+        .collect();
+
+    if cache_package_names.is_empty() {
+        return Ok(());
+    }
+
+    let Ok(Some(decl)) = read_core_component_decl(&product.base) else {
+        return Ok(());
+    };
+    let Some(children) = decl.children else {
+        return Ok(());
+    };
+
+    let mut errors = Vec::new();
+    for child in children {
+        let (Some(child_name), Some(url)) = (child.name, child.url) else {
+            continue;
+        };
+        let Ok(component_url) = AbsoluteComponentUrl::parse(&url) else {
+            continue;
+        };
+        let package_name = component_url.package_url().name().as_ref();
+        if !cache_package_names.contains(package_name) {
+            continue;
+        }
+        if child.environment.is_some() {
+            continue;
+        }
+        errors.push(format!(
+            "Child '{child_name}' with url '{url}' in 'core/meta/core.cm' is in cache_packages, but does not specify an environment (such as '#core-env'). Components in cache packages must use an environment that resolves via full-resolver."
+        ));
+    }
+
+    if errors.is_empty() { Ok(()) } else { Err(errors) }
 }
 
 /// Validate the contents of bootfs.
@@ -1515,6 +1595,8 @@ pub struct ProductValidationError {
     bootfs: Option<BootfsValidationError>,
     /// Packages which failed validation.
     packages: BTreeMap<Utf8PathBuf, PackageValidationError>,
+    /// Cache packages referenced as children without an environment.
+    cache_package_environments: Vec<String>,
 }
 
 impl From<ProductValidationError> for anyhow::Error {
@@ -1533,6 +1615,10 @@ impl std::fmt::Display for ProductValidationError {
         for (package, error) in &self.packages {
             let error_msg = textwrap::indent(&error.to_string(), "        ");
             write!(f, "    └── {}: {}", package, error_msg)?;
+        }
+        for err in &self.cache_package_environments {
+            let error_msg = textwrap::indent(err, "        ");
+            write!(f, "    └── {}", error_msg)?;
         }
         Ok(())
     }
@@ -2804,5 +2890,114 @@ mod tests {
 
         assert!(builder.base_drivers.contains_key("fuchsia-pkg://fuchsia.com/my_driver_base"));
         assert!(builder.boot_drivers.contains_key("fuchsia-boot:///my_driver_boot"));
+    }
+
+    #[test]
+    fn test_validate_cache_package_environments() {
+        let vars = TempdirPathsForTest::new();
+
+        // 1. Create a cache package
+        let cache_pkg_path = write_empty_pkg(&vars.outdir, "my_cache_pkg", None);
+
+        // 2. Create a core package containing core.cm with a child pointing to my_cache_pkg without environment
+        let mut core_pkg_builder = PackageBuilder::new_platform_internal_package("core");
+        let core_manifest_path = vars.outdir.join("core");
+        core_pkg_builder.manifest_path(&core_manifest_path);
+        core_pkg_builder.repository("fuchsia.com");
+
+        let core_cm_decl = Component {
+            children: Some(vec![fidl_fuchsia_component_decl::Child {
+                name: Some("my_cache_child".into()),
+                url: Some("fuchsia-pkg://fuchsia.com/my_cache_pkg#meta/my_cache_pkg.cm".into()),
+                startup: Some(fidl_fuchsia_component_decl::StartupMode::Lazy),
+                environment: None,
+                ..Default::default()
+            }]),
+            ..Default::default()
+        };
+        let core_cm_bytes = fidl::persist(&core_cm_decl).unwrap();
+        let core_cm_path = vars.outdir.join("core.cm");
+        std::fs::write(&core_cm_path, &core_cm_bytes).unwrap();
+        core_pkg_builder.add_file_to_far("meta/core.cm", &core_cm_path).unwrap();
+        core_pkg_builder.build(&vars.outdir, vars.outdir.join("core_meta.far")).unwrap();
+
+        let product_failing = ImageAssemblyConfig {
+            base: vec![core_manifest_path.clone().into()],
+            cache: vec![cache_pkg_path.clone().into()],
+            system: vec![],
+            anchored_automatic: vec![],
+            anchored_on_demand: vec![],
+            bootfs_packages: vec![],
+            on_demand: vec![],
+            kernel: KernelConfig { path: vars.outdir.join("kernel"), args: vec![] },
+            qemu_kernel: vars.outdir.join("qemu_kernel"),
+            boot_args: vec![],
+            bootfs_files: vec![],
+            images_config: Default::default(),
+            board_name: "test_board".into(),
+            partitions_config: None,
+            board_driver_arguments: Default::default(),
+            zbi_extra_items: None,
+            devicetree: None,
+            devicetree_overlay: None,
+            system_release_info: Default::default(),
+            image_mode: FilesystemImageMode::default(),
+            build_type: BuildType::Eng,
+        };
+
+        let result = validate_cache_package_environments(&product_failing);
+        assert!(result.is_err(), "Expected error for cache package without environment");
+        let errs = result.unwrap_err();
+        assert_eq!(errs.len(), 1);
+        assert!(errs[0].contains("my_cache_child"));
+        assert!(errs[0].contains("my_cache_pkg"));
+
+        // 3. Now create a core package where child HAS an environment
+        let mut core_pkg_builder_ok = PackageBuilder::new_platform_internal_package("core");
+        let core_manifest_path_ok = vars.outdir.join("core_ok");
+        core_pkg_builder_ok.manifest_path(&core_manifest_path_ok);
+        core_pkg_builder_ok.repository("fuchsia.com");
+
+        let core_cm_decl_ok = Component {
+            children: Some(vec![fidl_fuchsia_component_decl::Child {
+                name: Some("my_cache_child".into()),
+                url: Some("fuchsia-pkg://fuchsia.com/my_cache_pkg#meta/my_cache_pkg.cm".into()),
+                startup: Some(fidl_fuchsia_component_decl::StartupMode::Lazy),
+                environment: Some("#core-env".into()),
+                ..Default::default()
+            }]),
+            ..Default::default()
+        };
+        let core_cm_bytes_ok = fidl::persist(&core_cm_decl_ok).unwrap();
+        let core_cm_path_ok = vars.outdir.join("core_ok.cm");
+        std::fs::write(&core_cm_path_ok, &core_cm_bytes_ok).unwrap();
+        core_pkg_builder_ok.add_file_to_far("meta/core.cm", &core_cm_path_ok).unwrap();
+        core_pkg_builder_ok.build(&vars.outdir, vars.outdir.join("core_ok_meta.far")).unwrap();
+
+        let product_passing = ImageAssemblyConfig {
+            base: vec![core_manifest_path_ok.into()],
+            cache: vec![cache_pkg_path.into()],
+            system: vec![],
+            anchored_automatic: vec![],
+            anchored_on_demand: vec![],
+            bootfs_packages: vec![],
+            on_demand: vec![],
+            kernel: KernelConfig { path: vars.outdir.join("kernel"), args: vec![] },
+            qemu_kernel: vars.outdir.join("qemu_kernel"),
+            boot_args: vec![],
+            bootfs_files: vec![],
+            images_config: Default::default(),
+            board_name: "test_board".into(),
+            partitions_config: None,
+            board_driver_arguments: Default::default(),
+            zbi_extra_items: None,
+            devicetree: None,
+            devicetree_overlay: None,
+            system_release_info: Default::default(),
+            image_mode: FilesystemImageMode::default(),
+            build_type: BuildType::Eng,
+        };
+
+        assert!(validate_cache_package_environments(&product_passing).is_ok());
     }
 }
