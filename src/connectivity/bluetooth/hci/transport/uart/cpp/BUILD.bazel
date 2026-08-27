@@ -2,12 +2,17 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+load("@rules_fuchsia//fuchsia:assembly.bzl", "fuchsia_prebuilt_package")
+
 package(
     default_applicable_licenses = ["//:license"],
     default_visibility = ["//visibility:public"],
 )
 
-alias(
+fuchsia_prebuilt_package(
     name = "uart",
-    actual = "//src/connectivity/bluetooth/hci/transport/uart/cpp:uart",
+    archive = "@gn_targets//src/connectivity/bluetooth/hci/transport/uart/cpp:uart",
+    drivers = [
+        "meta/bt-transport-uart.cm",
+    ],
 )

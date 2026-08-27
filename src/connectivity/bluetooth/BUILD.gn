@@ -24,7 +24,7 @@ group("drivers") {
   testonly = true
   deps = [
     "hci/passthrough:driver",
-    "hci/transport/uart:bt-transport-uart",
+    "hci/transport/uart/cpp:bt-transport-uart",
     "hci/transport/usb:bt-transport-usb",
     "hci/vendor/broadcom:bt-hci-broadcom",
     "hci/vendor/intel:driver",

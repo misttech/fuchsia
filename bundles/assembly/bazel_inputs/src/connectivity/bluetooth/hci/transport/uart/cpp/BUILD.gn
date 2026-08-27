@@ -5,5 +5,5 @@
 import("//build/bazel/export_fuchsia_package_to_bazel.gni")
 
 export_fuchsia_package_to_bazel("uart") {
-  package = "//src/connectivity/bluetooth/hci/transport/uart:uart"
+  package = "//src/connectivity/bluetooth/hci/transport/uart/cpp:uart"
 }

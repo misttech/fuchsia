@@ -11,5 +11,5 @@ package(
 
 prebuilt_package(
     name = "uart",
-    archive = "@gn_targets//bundles/assembly/bazel_inputs/src/connectivity/bluetooth/hci/transport/uart:uart",
+    archive = "@gn_targets//bundles/assembly/bazel_inputs/src/connectivity/bluetooth/hci/transport/uart/cpp:uart",
 )

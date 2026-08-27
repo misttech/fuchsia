@@ -23,7 +23,7 @@
 #include <bind/fuchsia/serial/cpp/bind.h>
 
 #include "lib/driver/component/cpp/node_add_args.h"
-#include "src/connectivity/bluetooth/hci/transport/uart/bt_transport_uart_config.h"
+#include "src/connectivity/bluetooth/hci/transport/uart/cpp/bt_transport_uart_config.h"
 
 namespace bt_transport_uart {
 

@@ -1035,7 +1035,7 @@ config("Wno-conversion") {
   # To trim this list:
   # $ scripts/gn/trim_visibility.py --target="//build/config:Wno-conversion"
   visibility = [
-    "//src/connectivity/bluetooth/hci/transport/uart:*",
+    "//src/connectivity/bluetooth/hci/transport/uart/cpp:*",
     "//src/connectivity/bluetooth/hci/vendor/broadcom:*",
     "//src/connectivity/bluetooth/hci/vendor/intel:*",
     "//src/connectivity/network/tools/nc/third_party/openbsd-netcat:*",

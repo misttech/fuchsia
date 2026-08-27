@@ -15,7 +15,7 @@ group("tests") {
   testonly = true
   deps = [
     "passthrough:tests",
-    "transport/uart:tests",
+    "transport/uart/cpp:tests",
     "transport/usb:tests",
     "vendor:tests",
   ]

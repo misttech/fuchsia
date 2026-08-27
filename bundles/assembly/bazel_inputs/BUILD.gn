@@ -339,7 +339,7 @@ group("embeddable_eng") {
 }
 
 group("bt_transport_uart_driver") {
-  deps = [ "//bundles/assembly/bazel_inputs/src/connectivity/bluetooth/hci/transport/uart" ]
+  deps = [ "//bundles/assembly/bazel_inputs/src/connectivity/bluetooth/hci/transport/uart/cpp:uart" ]
 }
 
 group("bus_pci_driver") {

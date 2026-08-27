@@ -37,9 +37,9 @@ As of Q1 2025, the following guidelines apply:
   [here][fuchsia_prebuilt_package_example]{:.external}).
 
 [fuchsia_driver_package_export_to_bazel]: https://cs.opensource.google/fuchsia/fuchsia/+/main:build/drivers/fuchsia_driver_package.gni;drc=82da562a4ef932e58704b61093bf80d564ac042f;l=42
-[fuchsia_driver_package_export_example]: http://cs/h/fuchsia/fuchsia/+/main:src/connectivity/bluetooth/hci/transport/uart/BUILD.gn?l=67
+[fuchsia_driver_package_export_example]: http://cs/h/fuchsia/fuchsia/+/main:src/connectivity/bluetooth/hci/transport/uart/cpp/BUILD.gn?l=79
 [fuchsia_prebuilt_package]: https://cs.opensource.google/fuchsia/fuchsia/+/main:build/bazel_sdk/bazel_rules_fuchsia/fuchsia/private/fuchsia_prebuilt_package.bzl;drc=f48ae8ee65b68615d40b684fa9779fff7d413f44;l=326
-[fuchsia_prebuilt_package_example]: http://cs/h/fuchsia/fuchsia/+/main:src/connectivity/bluetooth/hci/transport/uart/BUILD.bazel?l=9
+[fuchsia_prebuilt_package_example]: http://cs/h/fuchsia/fuchsia/+/main:src/connectivity/bluetooth/hci/transport/uart/cpp/BUILD.bazel?l=12
 
 - Bazel-based driver packages *must only* depend on platform libraries that are
   exposed through the `@fuchsia_sdk` and `@internal_sdk` repositories.

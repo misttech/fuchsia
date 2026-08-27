@@ -697,7 +697,7 @@ assembly_input_bundle(
     drivers = [
         {
             "set": "base",
-            "package_target": "//bundles/assembly/bazel_inputs/src/connectivity/bluetooth/hci/transport/uart:uart",
+            "package_target": "//bundles/assembly/bazel_inputs/src/connectivity/bluetooth/hci/transport/uart/cpp:uart",
             "driver_components": ["meta/bt-transport-uart.cm"],
         },
     ],

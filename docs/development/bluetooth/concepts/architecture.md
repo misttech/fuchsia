@@ -38,7 +38,7 @@ devices. On an x86 platform this hierarchy may look like the following:
 Generic HCI transport functionality is provided by the `bt-transport` protocol.
 Fuchsia provides drivers that implement the HCI transport over
 [USB](/src/connectivity/bluetooth/hci/transport/usb/)
-and [UART](/src/connectivity/bluetooth/hci/transport/uart/).
+and [UART](/src/connectivity/bluetooth/hci/transport/uart/cpp/).
 The transport protocol abstracts the HCI control, ACL, and SCO
 channels (currently as Zircon [channels](/docs/reference/kernel_objects/channel.md)).
 

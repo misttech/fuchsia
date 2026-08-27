@@ -37,7 +37,7 @@ shared_library("driver") {
     "//src/camera/drivers/sensors/imx227:*",
     "//src/camera/drivers/usb_video:*",
     "//src/connectivity/bluetooth/hci/passthrough:*",
-    "//src/connectivity/bluetooth/hci/transport/uart:*",
+    "//src/connectivity/bluetooth/hci/transport/uart/cpp:*",
     "//src/connectivity/bluetooth/hci/transport/usb:*",
     "//src/connectivity/bluetooth/hci/vendor/atheros:*",
     "//src/connectivity/bluetooth/hci/vendor/broadcom:*",

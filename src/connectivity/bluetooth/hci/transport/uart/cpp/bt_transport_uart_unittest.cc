@@ -13,7 +13,7 @@
 
 #include <gtest/gtest.h>
 
-#include "src/connectivity/bluetooth/hci/transport/uart/bt_transport_uart_config.h"
+#include "src/connectivity/bluetooth/hci/transport/uart/cpp/bt_transport_uart_config.h"
 
 namespace bt_transport_uart {
 namespace fhbt = fuchsia_hardware_bluetooth;
