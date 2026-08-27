@@ -194,11 +194,8 @@ template("sestarnix_test_policy") {
          "sestarnix_test_policy($target_name) must have at least one fragment")
 
   action(target_name) {
-    forward_variables_from(invoker,
-                           [
-                             "testonly",
-                             "visibility",
-                           ])
+    forward_variables_from(invoker, [ "visibility" ])
+    testonly = true
     script = "//src/starnix/lib/selinux/scripts/verify_or_compile_policy.py"
 
     out_policy = "$target_out_dir/$prebuilt_policy"

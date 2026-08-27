@@ -94,7 +94,7 @@ def extract_statements(content: str) -> list[str]:
     2. Any `else` blocks start with the closing brace of the previous block.
     """
     statements = []
-    current_block = []
+    current_block: list[str] = []
     brace_count = 0
 
     for line in content.splitlines():
@@ -123,12 +123,14 @@ def extract_statements(content: str) -> list[str]:
     return statements
 
 
-def _filter_lines(lines: Collection[str], pattern: re.Pattern) -> Sequence[str]:
+def _filter_lines(
+    lines: Collection[str], pattern: re.Pattern[str]
+) -> Sequence[str]:
     return tuple(line for line in lines if pattern.match(line) is not None)
 
 
 def _negative_filter_lines(
-    lines: Collection[str], pattern: re.Pattern
+    lines: Collection[str], pattern: re.Pattern[str]
 ) -> Sequence[str]:
     return tuple(line for line in lines if pattern.match(line) is None)
 
@@ -180,7 +182,7 @@ def merge_text_policies(
     # Accumulate input lines grouped according to which statement pattern
     # they match. This step is required to ensure that `checkpolicy` will
     # compile the combined policy statements from all `input_file_paths`.
-    policy_lines_from_input_files = []
+    policy_lines_from_input_files: list[str] = []
     for regex, matcher in _ORDERED_POLICY_STATEMENT_PATTERNS:
         matched_input_lines = _filter_lines(input_lines, matcher)
 

@@ -25,7 +25,6 @@ if (is_host) {
   }
 
   python_host_test("merge_policies_test") {
-    enable_mypy = false
     main_source = "merge_policies_test.py"
     sources = [ "merge_policies.py" ]
     main_callable = "main"
@@ -39,9 +38,20 @@ if (is_host) {
       rebase_path(testdata_dir, root_build_dir),
     ]
   }
+
+  python_host_test("verify_or_compile_policy_test") {
+    main_source = "verify_or_compile_policy_test.py"
+    sources = [
+      "merge_policies.py",
+      "verify_or_compile_policy.py",
+    ]
+  }
 }
 
 group("tests") {
   testonly = true
-  public_deps = [ ":merge_policies_test($host_toolchain)" ]
+  public_deps = [
+    ":merge_policies_test($host_toolchain)",
+    ":verify_or_compile_policy_test($host_toolchain)",
+  ]
 }

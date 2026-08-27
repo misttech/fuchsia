@@ -257,6 +257,7 @@ micro_policies = [
 
 foreach(name, micro_policies) {
   selinux_policy("micro_$name") {
+    testonly = true
     source = "micro_policies/$name.conf"
     prebuilt = "micro_policies/$name"
     output_name = name
@@ -264,6 +265,7 @@ foreach(name, micro_policies) {
 }
 
 group("test_policies") {
+  testonly = true
   deps = [
     ":allow_fork_policy",
     ":anon_inode_policy",

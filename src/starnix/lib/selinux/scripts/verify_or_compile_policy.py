@@ -9,6 +9,7 @@ import os
 import shutil
 import sys
 import tempfile
+from collections.abc import Sequence
 from pathlib import Path
 
 import merge_policies
@@ -42,6 +43,18 @@ def _compute_policy_hash(
     return merged_content, hasher.hexdigest()
 
 
+def _get_fuchsia_dir() -> str:
+    """Returns the Fuchsia source root directory."""
+    return os.environ.get(
+        "FUCHSIA_DIR",
+        os.path.abspath(
+            os.path.join(
+                os.path.dirname(__file__), "..", "..", "..", "..", ".."
+            )
+        ),
+    )
+
+
 def _find_checkpolicy(explicit_path: str | None) -> str | None:
     """Locates a checkpolicy binary from arguments, environment, in-tree local, or PATH."""
     if (
@@ -57,20 +70,12 @@ def _find_checkpolicy(explicit_path: str | None) -> str | None:
     ):
         return checkpolicy_path
     # Check default //local/checkpolicy in Fuchsia checkout
-    fuchsia_dir = os.environ.get(
-        "FUCHSIA_DIR",
-        os.path.abspath(
-            os.path.join(
-                os.path.dirname(__file__), "..", "..", "..", "..", ".."
-            )
-        ),
-    )
-    if fuchsia_dir is not None:
-        local_checkpolicy = os.path.join(fuchsia_dir, "local", "checkpolicy")
-        if os.path.isfile(local_checkpolicy) and os.access(
-            local_checkpolicy, os.X_OK
-        ):
-            return local_checkpolicy
+    fuchsia_dir = _get_fuchsia_dir()
+    local_checkpolicy = os.path.join(fuchsia_dir, "local", "checkpolicy")
+    if os.path.isfile(local_checkpolicy) and os.access(
+        local_checkpolicy, os.X_OK
+    ):
+        return local_checkpolicy
     return shutil.which("checkpolicy")
 
 
@@ -138,7 +143,7 @@ def _verify_prebuilt(
 ) -> bool:
     """Compares the compiled binary and source hash against checked-in golden prebuilts."""
     if not os.path.exists(prebuilt_path):
-        print(f"\n" + "=" * 70, file=sys.stderr)
+        print("\n" + "=" * 70, file=sys.stderr)
         print(
             f"ERROR: Prebuilt '{_to_source_rel(prebuilt_path, source_root)}' does not exist.\n\n"
             f"To acknowledge this change, run:\n"
@@ -154,7 +159,7 @@ def _verify_prebuilt(
         candidate_bytes = f_out.read()
         prebuilt_bytes = f_pre.read()
         if candidate_bytes != prebuilt_bytes or stored_hash != current_hash:
-            print(f"\n" + "=" * 70, file=sys.stderr)
+            print("\n" + "=" * 70, file=sys.stderr)
             print(
                 f"ERROR: SELinux policy '{policy_name}' source fragments have been modified.\n"
                 f"The compiled binary policy or hash does not match the checked-in prebuilt:\n"
@@ -172,7 +177,62 @@ def _verify_prebuilt(
     return True
 
 
-def main() -> int:
+def _read_stored_hash(hash_file: str) -> str | None:
+    if os.path.exists(hash_file):
+        with open(hash_file, "rt", encoding="utf-8") as f:
+            return f.read().strip()
+    return None
+
+
+def _report_missing_checkpolicy(
+    policy_name: str, stored_hash: str | None, current_hash: str
+) -> None:
+    print("\n" + "=" * 70, file=sys.stderr)
+    print(
+        f"ERROR: SELinux policy '{policy_name}' source fragments have changed,",
+        file=sys.stderr,
+    )
+    print(
+        "but 'checkpolicy' is not available in the build environment.",
+        file=sys.stderr,
+    )
+    print(f"Checked-in hash: {stored_hash}", file=sys.stderr)
+    print(f"Calculated hash: {current_hash}", file=sys.stderr)
+    print(
+        "\nPlease place a valid checkpolicy executable at //local/checkpolicy or",
+        file=sys.stderr,
+    )
+    print(
+        f"revert local changes to '{policy_name}' fragments.",
+        file=sys.stderr,
+    )
+    print("=" * 70 + "\n", file=sys.stderr)
+
+
+def _bless_prebuilt(
+    output_path: str, prebuilt_path: str, hash_file_path: str, policy_name: str
+) -> None:
+    os.makedirs(os.path.dirname(prebuilt_path), exist_ok=True)
+    shutil.copyfile(output_path, prebuilt_path)
+    shutil.copyfile(output_path + ".hash", hash_file_path)
+    print(f"Blessed '{policy_name}': updated prebuilt and hash.")
+
+
+def _record_success(
+    stamp: str | None,
+    depfile: str | None,
+    target: str,
+    hash_file: str,
+    prebuilt: str,
+    initial_sids: str | None,
+    inputs: list[str],
+) -> None:
+    if stamp is not None:
+        Path(stamp).touch()
+    _write_depfile(depfile, target, hash_file, prebuilt, initial_sids, inputs)
+
+
+def _parse_args(argv: Sequence[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Verify or compile an SELinux policy."
     )
@@ -210,23 +270,20 @@ def main() -> int:
         "--stamp", help="Optional stamp file to write on success"
     )
     parser.add_argument("--depfile", help="Path at which to write the depfile")
+    return parser.parse_args(argv)
 
-    args = parser.parse_args()
 
+def main(argv: Sequence[str]) -> int:
+    args = _parse_args(argv)
     target = args.stamp if args.stamp is not None else args.output
 
-    # 1. Compute current source hash
+    # 1. Compute current source hash and read stored hash
     merged_text, current_hash = _compute_policy_hash(
         args.initial_sids, args.inputs, args.handle_unknown
     )
+    stored_hash = _read_stored_hash(args.hash_file)
 
-    # 2. Read stored hash
-    stored_hash = None
-    if os.path.exists(args.hash_file):
-        with open(args.hash_file, "rt", encoding="utf-8") as f:
-            stored_hash = f.read().strip()
-
-    # 3. Fast path: sources unchanged & prebuilt exists
+    # 2. Fast path: sources unchanged & prebuilt exists
     if (
         stored_hash is not None
         and stored_hash == current_hash
@@ -234,9 +291,8 @@ def main() -> int:
     ):
         os.makedirs(os.path.dirname(args.output), exist_ok=True)
         shutil.copyfile(args.prebuilt, args.output)
-        if args.stamp is not None:
-            Path(args.stamp).touch()
-        _write_depfile(
+        _record_success(
+            args.stamp,
             args.depfile,
             target,
             args.hash_file,
@@ -246,32 +302,13 @@ def main() -> int:
         )
         return 0
 
-    # 4. Sources changed or prebuilt missing: Look for checkpolicy
+    # 3. Sources changed or prebuilt missing: Look for checkpolicy
     checkpolicy_bin = _find_checkpolicy(args.checkpolicy)
     if checkpolicy_bin is None:
-        print(f"\n" + "=" * 70, file=sys.stderr)
-        print(
-            f"ERROR: SELinux policy '{args.policy_name}' source fragments have changed,",
-            file=sys.stderr,
-        )
-        print(
-            f"but 'checkpolicy' is not available in the build environment.",
-            file=sys.stderr,
-        )
-        print(f"Checked-in hash: {stored_hash}", file=sys.stderr)
-        print(f"Calculated hash: {current_hash}", file=sys.stderr)
-        print(
-            f"\nPlease place a valid checkpolicy executable at //local/checkpolicy or",
-            file=sys.stderr,
-        )
-        print(
-            f"revert local changes to '{args.policy_name}' fragments.",
-            file=sys.stderr,
-        )
-        print("=" * 70 + "\n", file=sys.stderr)
+        _report_missing_checkpolicy(args.policy_name, stored_hash, current_hash)
         return 1
 
-    # 5. Compile candidate binary in out-dir
+    # 4. Compile candidate binary in out-dir
     _compile_policy(
         checkpolicy_bin,
         args.policy_name,
@@ -284,47 +321,26 @@ def main() -> int:
     with open(args.output + ".hash", "wt", encoding="utf-8") as f:
         f.write(f"{current_hash}\n")
 
-    source_root = os.environ.get(
-        "FUCHSIA_DIR",
-        os.path.abspath(
-            os.path.join(
-                os.path.dirname(__file__), "..", "..", "..", "..", ".."
-            )
-        ),
-    )
-
-    # 6. Bless or verify
+    # 5. Bless or verify
     if args.bless:
-        os.makedirs(os.path.dirname(args.prebuilt), exist_ok=True)
-        shutil.copyfile(args.output, args.prebuilt)
-        shutil.copyfile(args.output + ".hash", args.hash_file)
-        print(f"Blessed '{args.policy_name}': updated prebuilt and hash.")
-        if args.stamp is not None:
-            Path(args.stamp).touch()
-        _write_depfile(
-            args.depfile,
-            target,
-            args.hash_file,
-            args.prebuilt,
-            args.initial_sids,
-            args.inputs,
+        _bless_prebuilt(
+            args.output, args.prebuilt, args.hash_file, args.policy_name
         )
-        return 0
+    else:
+        source_root = _get_fuchsia_dir()
+        if not _verify_prebuilt(
+            args.policy_name,
+            args.output,
+            args.prebuilt,
+            args.hash_file,
+            stored_hash,
+            current_hash,
+            source_root,
+        ):
+            return 1
 
-    if not _verify_prebuilt(
-        args.policy_name,
-        args.output,
-        args.prebuilt,
-        args.hash_file,
-        stored_hash,
-        current_hash,
-        source_root,
-    ):
-        return 1
-
-    if args.stamp is not None:
-        Path(args.stamp).touch()
-    _write_depfile(
+    _record_success(
+        args.stamp,
         args.depfile,
         target,
         args.hash_file,
@@ -336,4 +352,4 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    sys.exit(main(sys.argv[1:]))
