@@ -993,12 +993,11 @@ mod tests {
         data: Vec<u8>,
         block_size: u32,
         read_count: AtomicU64,
-        verifier: Mutex<Option<Arc<Verifier>>>,
     }
 
     impl FakeInterface {
         fn new(data: Vec<u8>, block_size: u32) -> Self {
-            Self { data, block_size, read_count: AtomicU64::new(0), verifier: Mutex::new(None) }
+            Self { data, block_size, read_count: AtomicU64::new(0) }
         }
     }
 
@@ -1008,9 +1007,7 @@ mod tests {
             _mapping_vmo: &zx::Vmo,
             delivery_queue: zx::Vmo,
         ) -> Result<Arc<Verifier>, zx::Status> {
-            let verifier = Arc::new(Verifier::new(delivery_queue));
-            *self.verifier.lock() = Some(verifier.clone());
-            Ok(verifier)
+            Ok(Arc::new(Verifier::new(delivery_queue)))
         }
 
         fn get_info(&self) -> Cow<'_, DeviceInfo> {
@@ -1222,7 +1219,24 @@ mod tests {
         let paged_vmo = pager.create_vmo(zx::VmoOptions::empty(), &port, child_key, 4096).unwrap();
 
         let child_mapping_vmo = zx::Vmo::create(65536).unwrap();
-        let delivery_queue = zx::Vmo::create(4096).unwrap();
+        let delivery_queue = zx::Vmo::create(65536).unwrap();
+        let vmo_provider = Arc::new(blob_pager_and_verifier::TestVmoProvider::new(
+            pager.clone(),
+            delivery_queue.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap(),
+        ));
+        vmo_provider
+            .register_vmo(child_key, paged_vmo.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap());
+        let receiver = vmo_fifo::Receiver::<mapping::RawDeliveryCommand>::new(
+            delivery_queue.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap(),
+            mapping::PENDING_DELIVERY_COMMANDS_CAPACITY,
+        )
+        .unwrap();
+        let _delivery_processor = blob_pager_and_verifier::DeliveryQueueProcessor::spawn(
+            receiver,
+            vmo_provider,
+            delivery_queue.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap(),
+        )
+        .unwrap();
 
         let child_extents: Vec<u64> =
             mapping::Extents::encode_extents([mapping::Extent::new(0..4096, Some(0))]).collect();
@@ -1270,11 +1284,6 @@ mod tests {
             fasync::Timer::new(std::time::Duration::from_millis(10)).await;
         }
         assert!(child_session.is_some());
-
-        let verifier = interface.verifier.lock().as_ref().unwrap().clone();
-        verifier.set_pager(pager);
-        verifier
-            .register_vmo(child_key, paged_vmo.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap());
 
         let (tx, rx) = futures::channel::oneshot::channel();
         std::thread::spawn(move || {

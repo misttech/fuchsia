@@ -13,11 +13,11 @@ rustc_library("blob_pager_and_verifier") {
     "//sdk/fidl/fuchsia.storage.block:fuchsia.storage.block_rust",
     "//sdk/rust/zx",
     "//src/lib/fidl/rust/fidl",
-    "//src/lib/fuchsia",
     "//src/lib/fuchsia-async",
     "//src/lib/fuchsia-sync",
     "//src/storage/fidl/fuchsia.storage.mapping:fuchsia.storage.mapping_rust",
     "//src/storage/lib/mapping",
+    "//src/storage/lib/ptr_slice",
     "//src/storage/lib/vmo-fifo",
     "//src/sys/pkg/lib/fuchsia-hash",
     "//src/sys/pkg/lib/fuchsia-merkle",
@@ -26,6 +26,7 @@ rustc_library("blob_pager_and_verifier") {
     "//third_party/rust_crates:log",
   ]
   test_deps = [
+    "//src/lib/fuchsia",
     "//src/lib/fuchsia-async",
     "//third_party/rust_crates:futures",
   ]

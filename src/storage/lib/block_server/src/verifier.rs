@@ -4,46 +4,32 @@
 
 use delivery_blob::compression::{ChunkedArchiveError, DataBuffer};
 use fuchsia_sync::Mutex;
-use mapping::PageRequest;
-use std::collections::HashMap;
+use mapping::{
+    DELIVERY_DATA_COMMAND, PENDING_DELIVERY_COMMANDS_CAPACITY, PageRequest, RawDeliveryCommand,
+};
 use std::ops::Range;
 use std::sync::Arc;
 use storage_ptr_slice::MutPtrByteSlice;
+use vmo_fifo::SyncSender;
 
 /// Manages data verification and page supply via the delivery queue VMO.
 pub struct Verifier {
-    _delivery_queue: zx::Vmo,
-    pager: Mutex<Option<Arc<zx::Pager>>>,
-    vmos: Mutex<HashMap<u64, zx::Vmo>>,
+    sender: Mutex<Option<SyncSender<RawDeliveryCommand>>>,
 }
 
 impl Verifier {
     pub fn new(delivery_queue: zx::Vmo) -> Self {
-        Self {
-            _delivery_queue: delivery_queue,
-            pager: Mutex::new(None),
-            vmos: Mutex::new(HashMap::new()),
-        }
-    }
-
-    pub fn new_with_pager(delivery_queue: zx::Vmo, pager: Arc<zx::Pager>) -> Self {
-        Self {
-            _delivery_queue: delivery_queue,
-            pager: Mutex::new(Some(pager)),
-            vmos: Mutex::new(HashMap::new()),
-        }
-    }
-
-    pub fn set_pager(&self, pager: Arc<zx::Pager>) {
-        *self.pager.lock() = Some(pager);
-    }
-
-    pub fn register_vmo(&self, key: u64, vmo: zx::Vmo) {
-        self.vmos.lock().insert(key, vmo);
-    }
-
-    pub fn unregister_vmo(&self, key: u64) {
-        self.vmos.lock().remove(&key);
+        let sender = if delivery_queue.get_size().unwrap_or(0) > 0 {
+            SyncSender::<RawDeliveryCommand>::new(
+                delivery_queue,
+                1024,
+                PENDING_DELIVERY_COMMANDS_CAPACITY,
+            )
+            .ok()
+        } else {
+            None
+        };
+        Self { sender: Mutex::new(sender) }
     }
 
     /// Returns a [`PageRequest`] implementation for delivering page-in data.
@@ -51,25 +37,21 @@ impl Verifier {
         Buffer {
             verifier: Arc::clone(self),
             key,
-            original_range: original_range.clone(),
             read_range: original_range,
             committed_len: 0,
-            transfer_vmo: None,
-            vaddr: 0,
+            data: Vec::new(),
         }
     }
 }
 
-/// Implementation of [`PageRequest`] for verifier deliveries that supplies
-/// pages to the kernel.
+/// Implementation of [`PageRequest`] for verifier deliveries that forwards
+/// unverified chunks via the delivery queue.
 pub struct Buffer {
     verifier: Arc<Verifier>,
     key: u64,
-    original_range: Range<u64>,
     read_range: Range<u64>,
     committed_len: usize,
-    transfer_vmo: Option<zx::Vmo>,
-    vaddr: usize,
+    data: Vec<u8>,
 }
 
 impl DataBuffer for Buffer {
@@ -83,36 +65,32 @@ impl DataBuffer for Buffer {
     ///
     /// Panics if `prepare()` has not been called prior to accessing this method.
     fn mut_ptr_slice(&mut self) -> MutPtrByteSlice<'_> {
-        let total_len = (self.read_range.end - self.read_range.start) as usize;
-        let remaining = total_len.saturating_sub(self.committed_len);
-        if remaining > 0 {
-            assert!(self.vaddr != 0, "prepare must be called before accessing mut_ptr_slice");
-        }
-        // SAFETY: `self.vaddr` is mapped for `total_len` bytes by `prepare()`,
-        // and `self.committed_len + remaining` is bounded by `total_len`.
-        unsafe {
-            MutPtrByteSlice::from(std::slice::from_raw_parts_mut(
-                (self.vaddr + self.committed_len) as *mut u8,
-                remaining,
-            ))
-        }
+        assert!(!self.data.is_empty(), "prepare must be called before accessing mut_ptr_slice");
+        MutPtrByteSlice::from(&mut self.data[self.committed_len..])
     }
 
     fn commit(&mut self, size: usize) -> Result<(), ChunkedArchiveError> {
-        // TODO(https://fxbug.dev/530494057): Add support for verification later.
-        let pager = self.verifier.pager.lock().as_ref().map(Arc::clone);
-        let vmos_guard = self.verifier.vmos.lock();
-        if let (Some(pager), Some(target_vmo)) = (pager, vmos_guard.get(&self.key)) {
-            let offset = self.read_range.start + self.committed_len as u64;
-            pager
-                .supply_pages(
-                    target_vmo,
-                    offset..offset + size as u64,
-                    self.transfer_vmo.as_ref().unwrap(),
-                    self.committed_len as u64,
-                )
-                .map_err(|_| ChunkedArchiveError::IntegrityError)?;
+        // TODO(https://fxbug.dev/530494057): Add support for verification and optimize buffer
+        // management / payload reservations.
+        let chunk_data = &self.data[self.committed_len..self.committed_len + size];
+        let offset = self.read_range.start + self.committed_len as u64;
+
+        let mut sender_guard = self.verifier.sender.lock();
+        if let Some(sender) = sender_guard.as_mut() {
+            let mut payload =
+                sender.reserve_payload(size).map_err(|_| ChunkedArchiveError::IntegrityError)?;
+            payload.data().copy_from_slice(chunk_data);
+            let cmd = RawDeliveryCommand {
+                opcode: DELIVERY_DATA_COMMAND,
+                _padding: 0,
+                key: self.key,
+                target_offset: offset,
+                length: size as u32,
+                offset: payload.offset(),
+            };
+            payload.commit(cmd).map_err(|_| ChunkedArchiveError::IntegrityError)?;
         }
+
         self.committed_len += size;
         Ok(())
     }
@@ -120,45 +98,11 @@ impl DataBuffer for Buffer {
 
 impl PageRequest for Buffer {
     fn prepare(&mut self, read_range: Range<u64>) -> Result<(), ChunkedArchiveError> {
-        assert_eq!(self.vaddr, 0, "prepare must only be called once");
+        assert!(self.data.is_empty(), "prepare must only be called once");
         self.read_range = read_range;
         let len = (self.read_range.end - self.read_range.start) as usize;
-        let transfer_vmo =
-            zx::Vmo::create(len as u64).map_err(|_| ChunkedArchiveError::IntegrityError)?;
-        let vaddr = fuchsia_runtime::vmar_root_self()
-            .map(0, &transfer_vmo, 0, len, zx::VmarFlags::PERM_READ | zx::VmarFlags::PERM_WRITE)
-            .map_err(|_| ChunkedArchiveError::IntegrityError)?;
-
-        self.transfer_vmo = Some(transfer_vmo);
-        self.vaddr = vaddr;
+        self.data = vec![0u8; len];
         Ok(())
-    }
-}
-
-impl Drop for Buffer {
-    fn drop(&mut self) {
-        let uncommitted_start = std::cmp::max(
-            self.original_range.start,
-            self.read_range.start + self.committed_len as u64,
-        );
-        if uncommitted_start < self.original_range.end {
-            let pager = self.verifier.pager.lock().as_ref().map(Arc::clone);
-            let vmos_guard = self.verifier.vmos.lock();
-            if let (Some(pager), Some(target_vmo)) = (pager, vmos_guard.get(&self.key)) {
-                let _ = pager.op_range(
-                    zx::PagerOp::Fail(zx::Status::IO),
-                    target_vmo,
-                    uncommitted_start..self.original_range.end,
-                );
-            }
-        }
-        if self.vaddr != 0 {
-            let len = (self.read_range.end - self.read_range.start) as usize;
-            // SAFETY: `self.vaddr` was mapped in `prepare` with `len` bytes in the root VMAR.
-            unsafe {
-                let _ = fuchsia_runtime::vmar_root_self().unmap(self.vaddr, len);
-            }
-        }
     }
 }
 
@@ -168,15 +112,15 @@ mod tests {
 
     #[fuchsia::test]
     fn test_verifier_buffer_incremental_commit() {
-        let delivery_queue = zx::Vmo::create(4096).unwrap();
-        let pager = Arc::new(zx::Pager::create(zx::PagerOptions::empty()).unwrap());
-        let verifier = Arc::new(Verifier::new_with_pager(delivery_queue, pager.clone()));
+        let delivery_queue = zx::Vmo::create(65536).unwrap();
+        let mut receiver = vmo_fifo::Receiver::<RawDeliveryCommand>::new(
+            delivery_queue.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap(),
+            PENDING_DELIVERY_COMMANDS_CAPACITY,
+        )
+        .unwrap();
 
+        let verifier = Arc::new(Verifier::new(delivery_queue));
         let key = 42u64;
-        let port = zx::Port::create();
-        let paged_vmo = pager.create_vmo(zx::VmoOptions::empty(), &port, key, 8192).unwrap();
-
-        verifier.register_vmo(key, paged_vmo.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap());
 
         let mut request = verifier.get_page_request(key, 0..8192);
         request.prepare(0..8192).expect("prepare");
@@ -197,24 +141,39 @@ mod tests {
         // Verify remaining space is 0
         assert_eq!(request.mut_ptr_slice().len(), 0);
 
-        // Verify data in paged_vmo
-        let mut read_buf = vec![0u8; 8192];
-        paged_vmo.read(&mut read_buf, 0).expect("read paged_vmo");
-        assert_eq!(&read_buf[..4096], &page1_data[..]);
-        assert_eq!(&read_buf[4096..8192], &page2_data[..]);
+        // Check messages delivered on queue
+        let msg1 = receiver.peek().expect("msg1");
+        assert_eq!(msg1.opcode, DELIVERY_DATA_COMMAND);
+        assert_eq!(msg1.key, key);
+        assert_eq!(msg1.length, 4096);
+        assert_eq!(msg1.target_offset, 0);
+        let mut buf1 = vec![0u8; 4096];
+        msg1.payload_slice(msg1.offset, msg1.length).copy_to_slice(&mut buf1);
+        assert_eq!(buf1, page1_data);
+        msg1.pop().expect("pop msg1");
+
+        let msg2 = receiver.peek().expect("msg2");
+        assert_eq!(msg2.opcode, DELIVERY_DATA_COMMAND);
+        assert_eq!(msg2.key, key);
+        assert_eq!(msg2.length, 4096);
+        assert_eq!(msg2.target_offset, 4096);
+        let mut buf2 = vec![0u8; 4096];
+        msg2.payload_slice(msg2.offset, msg2.length).copy_to_slice(&mut buf2);
+        assert_eq!(buf2, page2_data);
+        msg2.pop().expect("pop msg2");
     }
 
     #[fuchsia::test]
     fn test_verifier_buffer_page_aligned_commits() {
-        let delivery_queue = zx::Vmo::create(4096).unwrap();
-        let pager = Arc::new(zx::Pager::create(zx::PagerOptions::empty()).unwrap());
-        let verifier = Arc::new(Verifier::new_with_pager(delivery_queue, pager.clone()));
+        let delivery_queue = zx::Vmo::create(65536).unwrap();
+        let mut receiver = vmo_fifo::Receiver::<RawDeliveryCommand>::new(
+            delivery_queue.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap(),
+            PENDING_DELIVERY_COMMANDS_CAPACITY,
+        )
+        .unwrap();
 
+        let verifier = Arc::new(Verifier::new(delivery_queue));
         let key = 43u64;
-        let port = zx::Port::create();
-        let paged_vmo = pager.create_vmo(zx::VmoOptions::empty(), &port, key, 8192).unwrap();
-
-        verifier.register_vmo(key, paged_vmo.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap());
 
         let mut request = verifier.get_page_request(key, 0..8192);
         request.prepare(0..8192).expect("prepare");
@@ -230,99 +189,74 @@ mod tests {
         request.mut_ptr_slice().subslice_mut(0..4096).copy_from_slice(&data[4096..8192]);
         request.commit(4096).expect("commit 4096 bytes");
 
-        // Verify data in paged_vmo
-        let mut read_buf = vec![0u8; 8192];
-        paged_vmo.read(&mut read_buf, 0).expect("read paged_vmo");
-        assert_eq!(&read_buf[..], &data[..]);
-    }
+        let msg1 = receiver.peek().expect("msg1");
+        assert_eq!(msg1.target_offset, 0);
+        let mut buf1 = vec![0u8; 4096];
+        msg1.payload_slice(msg1.offset, msg1.length).copy_to_slice(&mut buf1);
+        assert_eq!(&buf1[..], &data[..4096]);
+        msg1.pop().expect("pop msg1");
 
-    #[fuchsia::test]
-    fn test_verifier_buffer_drop_fails_uncommitted_range() {
-        let delivery_queue = zx::Vmo::create(4096).unwrap();
-        let pager = Arc::new(zx::Pager::create(zx::PagerOptions::empty()).unwrap());
-        let verifier = Arc::new(Verifier::new_with_pager(delivery_queue, pager.clone()));
-
-        let key = 44u64;
-        let port = zx::Port::create();
-        let paged_vmo = pager.create_vmo(zx::VmoOptions::empty(), &port, key, 8192).unwrap();
-        let paged_vmo_clone = paged_vmo.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap();
-
-        verifier.register_vmo(key, paged_vmo.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap());
-
-        // Spawn a background thread to attempt reading from the paged VMO, which blocks
-        // on page fault.
-        let reader_thread = std::thread::spawn(move || {
-            let mut read_buf = vec![0u8; 8192];
-            paged_vmo_clone.read(&mut read_buf, 0)
-        });
-
-        // Wait for page request packet to arrive on port.
-        let packet = port.wait(zx::MonotonicInstant::INFINITE).expect("port wait");
-        assert_eq!(packet.key(), key);
-
-        let mut request = verifier.get_page_request(key, 0..8192);
-        request.prepare(0..8192).expect("prepare");
-        // Dropping uncommitted buffer triggers pager.op_range(Fail) on 0..8192.
-        drop(request);
-
-        // The background reader should unblock and return an IO error.
-        assert_eq!(reader_thread.join().unwrap(), Err(zx::Status::IO));
-    }
-
-    #[fuchsia::test]
-    fn test_verifier_buffer_drop_fails_partial_uncommitted_range() {
-        let delivery_queue = zx::Vmo::create(4096).unwrap();
-        let pager = Arc::new(zx::Pager::create(zx::PagerOptions::empty()).unwrap());
-        let verifier = Arc::new(Verifier::new_with_pager(delivery_queue, pager.clone()));
-
-        let key = 45u64;
-        let port = zx::Port::create();
-        let paged_vmo = pager.create_vmo(zx::VmoOptions::empty(), &port, key, 8192).unwrap();
-        let paged_vmo_clone = paged_vmo.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap();
-
-        verifier.register_vmo(key, paged_vmo.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap());
-
-        let mut request = verifier.get_page_request(key, 0..8192);
-        request.prepare(0..8192).expect("prepare");
-
-        // Commit first page (4096 bytes)
-        let page1_data = vec![0xAAu8; 4096];
-        request.mut_ptr_slice().subslice_mut(0..4096).copy_from_slice(&page1_data);
-        request.commit(4096).expect("commit page 1");
-
-        // First page should be readable immediately.
-        let mut read_buf = vec![0u8; 4096];
-        paged_vmo.read(&mut read_buf, 0).expect("read paged_vmo page 1");
-        assert_eq!(&read_buf[..], &page1_data[..]);
-
-        // Attempt reading page 2 in a background thread; it blocks on page fault.
-        let reader_thread = std::thread::spawn(move || {
-            let mut read_buf = vec![0u8; 4096];
-            paged_vmo_clone.read(&mut read_buf, 4096)
-        });
-
-        // Wait for page request packet on port.
-        let packet = port.wait(zx::MonotonicInstant::INFINITE).expect("port wait");
-        assert_eq!(packet.key(), key);
-
-        // Drop buffer before committing page 2.
-        // Should fail 4096..8192.
-        drop(request);
-
-        // Background reader on page 2 should unblock and return an IO error.
-        assert_eq!(reader_thread.join().unwrap(), Err(zx::Status::IO));
+        let msg2 = receiver.peek().expect("msg2");
+        assert_eq!(msg2.target_offset, 4096);
+        let mut buf2 = vec![0u8; 4096];
+        msg2.payload_slice(msg2.offset, msg2.length).copy_to_slice(&mut buf2);
+        assert_eq!(&buf2[..], &data[4096..8192]);
+        msg2.pop().expect("pop msg2");
     }
 
     #[fuchsia::test]
     #[should_panic(expected = "prepare must only be called once")]
     fn test_verifier_buffer_prepare_multiple_times_panics() {
         let delivery_queue = zx::Vmo::create(4096).unwrap();
-        let pager = Arc::new(zx::Pager::create(zx::PagerOptions::empty()).unwrap());
-        let verifier = Arc::new(Verifier::new_with_pager(delivery_queue, pager.clone()));
+        let verifier = Arc::new(Verifier::new(delivery_queue));
 
         let key = 46u64;
         let mut request = verifier.get_page_request(key, 0..8192);
         request.prepare(0..4096).expect("first prepare");
         let _ = request.prepare(0..8192);
+    }
+
+    #[fuchsia::test]
+    fn test_verifier_buffer_supplies_pages_via_delivery_receiver() {
+        let pager = Arc::new(zx::Pager::create(zx::PagerOptions::empty()).unwrap());
+        let port = zx::Port::create();
+        let key = 44u64;
+        let paged_vmo = pager.create_vmo(zx::VmoOptions::empty(), &port, key, 8192).unwrap();
+
+        let delivery_queue = zx::Vmo::create(65536).unwrap();
+        let vmo_provider = Arc::new(blob_pager_and_verifier::TestVmoProvider::new(
+            pager.clone(),
+            delivery_queue.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap(),
+        ));
+        vmo_provider
+            .register_vmo(key, paged_vmo.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap());
+        let receiver = vmo_fifo::Receiver::<RawDeliveryCommand>::new(
+            delivery_queue.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap(),
+            PENDING_DELIVERY_COMMANDS_CAPACITY,
+        )
+        .unwrap();
+        let _processor = blob_pager_and_verifier::DeliveryQueueProcessor::spawn(
+            receiver,
+            vmo_provider,
+            delivery_queue.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap(),
+        )
+        .unwrap();
+
+        let verifier = Arc::new(Verifier::new(delivery_queue));
+        let mut request = verifier.get_page_request(key, 0..8192);
+        request.prepare(0..8192).expect("prepare");
+
+        let page1_data = vec![0xAAu8; 4096];
+        request.mut_ptr_slice().subslice_mut(0..4096).copy_from_slice(&page1_data);
+        request.commit(4096).expect("commit page 1");
+
+        let page2_data = vec![0xBBu8; 4096];
+        request.mut_ptr_slice().subslice_mut(0..4096).copy_from_slice(&page2_data);
+        request.commit(4096).expect("commit page 2");
+
+        let mut read_buf = vec![0u8; 8192];
+        paged_vmo.read(&mut read_buf, 0).expect("read paged_vmo");
+        assert_eq!(&read_buf[..4096], &page1_data[..]);
+        assert_eq!(&read_buf[4096..8192], &page2_data[..]);
     }
 }

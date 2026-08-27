@@ -4383,6 +4383,12 @@ mod tests {
         let sm_completer = session_manager.clone();
         std::thread::spawn(move || {
             while let Ok(req) = rx.recv() {
+                if let Operation::Read { vmo_offset, block_count, .. } = req.operation {
+                    if let Some(vmo) = req.vmo {
+                        let data = vec![0xABu8; (block_count * 512) as usize];
+                        vmo.write(&data, vmo_offset).unwrap();
+                    }
+                }
                 sm_completer.complete_request(req.request_id, Ok(()));
             }
         });
@@ -4402,7 +4408,24 @@ mod tests {
         let (_mapper_session_proxy, mapper_session_server) =
             fidl::endpoints::create_proxy::<fblock::MapperSessionMarker>();
         let mapping_vmo = zx::Vmo::create(65536).unwrap();
-        let delivery_queue = zx::Vmo::create(4096).unwrap();
+        let delivery_queue = zx::Vmo::create(65536).unwrap();
+        let vmo_provider = Arc::new(blob_pager_and_verifier::TestVmoProvider::new(
+            pager.clone(),
+            delivery_queue.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap(),
+        ));
+        vmo_provider
+            .register_vmo(key, paged_vmo.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap());
+        let receiver = vmo_fifo::Receiver::<mapping::RawDeliveryCommand>::new(
+            delivery_queue.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap(),
+            mapping::PENDING_DELIVERY_COMMANDS_CAPACITY,
+        )
+        .unwrap();
+        let _delivery_processor = blob_pager_and_verifier::DeliveryQueueProcessor::spawn(
+            receiver,
+            vmo_provider,
+            delivery_queue.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap(),
+        )
+        .unwrap();
 
         let data_extent_words: Vec<u64> =
             mapping::Extents::encode_extents([mapping::Extent::new(0..4096, Some(0))]).collect();
@@ -4436,10 +4459,6 @@ mod tests {
             .unwrap();
         assert_matches!(res, Ok(()));
 
-        let verifier = interface.verifier.lock().as_ref().unwrap().clone();
-        verifier.set_pager(pager);
-        verifier.register_vmo(key, paged_vmo.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap());
-
         let reader_thread = std::thread::spawn(move || {
             let mut buf = [0u8; 4096];
             paged_vmo.read(&mut buf, 0).expect("paged vmo read failed");
@@ -4448,6 +4467,7 @@ mod tests {
 
         let read_bytes = reader_thread.join().unwrap();
         assert_eq!(read_bytes.len(), 4096);
+        assert_eq!(read_bytes, [0xABu8; 4096]);
     }
 
     #[fuchsia::test]
@@ -4525,7 +4545,24 @@ mod tests {
         let paged_vmo = pager.create_vmo(zx::VmoOptions::empty(), &port, child_key, 4096).unwrap();
 
         let child_mapping_vmo = zx::Vmo::create(65536).unwrap();
-        let delivery_queue = zx::Vmo::create(4096).unwrap();
+        let delivery_queue = zx::Vmo::create(65536).unwrap();
+        let vmo_provider = Arc::new(blob_pager_and_verifier::TestVmoProvider::new(
+            pager.clone(),
+            delivery_queue.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap(),
+        ));
+        vmo_provider
+            .register_vmo(child_key, paged_vmo.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap());
+        let receiver = vmo_fifo::Receiver::<mapping::RawDeliveryCommand>::new(
+            delivery_queue.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap(),
+            mapping::PENDING_DELIVERY_COMMANDS_CAPACITY,
+        )
+        .unwrap();
+        let _delivery_processor = blob_pager_and_verifier::DeliveryQueueProcessor::spawn(
+            receiver,
+            vmo_provider,
+            delivery_queue.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap(),
+        )
+        .unwrap();
 
         let child_extents: Vec<u64> =
             mapping::Extents::encode_extents([mapping::Extent::new(0..4096, Some(0))]).collect();
@@ -4573,11 +4610,6 @@ mod tests {
             fasync::Timer::new(std::time::Duration::from_millis(10)).await;
         }
         assert_matches!(child_res, Ok(()));
-
-        let verifier = interface.verifier.lock().as_ref().unwrap().clone();
-        verifier.set_pager(pager);
-        verifier
-            .register_vmo(child_key, paged_vmo.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap());
 
         let reader_thread = std::thread::spawn(move || {
             let mut buf = [0u8; 4096];

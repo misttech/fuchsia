@@ -24,18 +24,21 @@
 
 mod delivery;
 
-pub use delivery::DELIVERY_DATA_SIZE;
+pub use delivery::{
+    DELIVERY_DATA_SIZE, DeliveryQueueProcessor, DeliveryQueueProvider, TestVmoProvider,
+};
 
-use anyhow::{Context, Error, anyhow};
+use anyhow::{Context, Error, anyhow, bail};
 use event_listener as _;
 use fidl_fuchsia_storage_block as fblock;
 use fidl_fuchsia_storage_mapping as fmapping;
 use fuchsia_async as fasync;
-use fuchsia_merkle::ReadSizedMerkleVerifier;
+use fuchsia_hash::{HASH_SIZE, Hash};
+use fuchsia_merkle::{MerkleVerifier, ReadSizedMerkleVerifier};
 use fuchsia_sync::Mutex;
-use futures::TryStreamExt;
 use std::collections::{HashMap, hash_map};
 use std::sync::{Arc, Weak};
+use storage_ptr_slice::PtrByteSlice;
 use zx;
 
 // A `fuchsia_async::PacketReceiver` that watches for a VMO to reach zero children and drops the
@@ -56,7 +59,7 @@ impl fasync::PacketReceiver for ZeroChildrenReceiver {
                 // it acquires the map lock first and then attempts to acquire `strong_blob_ref`.
                 // Holding `strong_blob_ref` and then trying to acquire the map lock creates an
                 // AB-BA deadlock.
-                let _cached_blob_to_drop;
+                let mut cached_blob_to_drop = None;
                 {
                     let mut strong_ref = self.strong_blob_ref.lock();
                     if let Some(cached_blob) = &*strong_ref {
@@ -64,7 +67,7 @@ impl fasync::PacketReceiver for ZeroChildrenReceiver {
                             if info.num_children == 0 {
                                 // Overwrite `strong_blob_ref` to None and extract the Arc.
                                 // We bring it out to the outer scope to drop it safely.
-                                _cached_blob_to_drop = strong_ref.take();
+                                cached_blob_to_drop = strong_ref.take();
                             } else {
                                 // If info.num_children != 0, a concurrent client requested the blob
                                 // and created a new child VMO before we could process this packet.
@@ -74,6 +77,7 @@ impl fasync::PacketReceiver for ZeroChildrenReceiver {
                         }
                     }
                 }
+                drop(cached_blob_to_drop);
             }
         }
     }
@@ -193,15 +197,27 @@ struct PagerVmoCache {
     map: Mutex<HashMap<[u8; 32], BlobState>>,
     blobs_by_key: Mutex<HashMap<u32, Weak<CachedBlob>>>,
     mapping_session: fmapping::MappingSessionProxy,
+    pager: Arc<zx::Pager>,
+    delivery_vmo: zx::Vmo,
 }
 
 impl PagerVmoCache {
-    fn new(mapping_session: fmapping::MappingSessionProxy) -> Self {
+    fn new(
+        mapping_session: fmapping::MappingSessionProxy,
+        pager: Arc<zx::Pager>,
+        delivery_vmo: zx::Vmo,
+    ) -> Self {
         Self {
             map: Mutex::new(HashMap::new()),
             blobs_by_key: Mutex::new(HashMap::new()),
             mapping_session,
+            pager,
+            delivery_vmo,
         }
+    }
+
+    fn delivery_vmo(&self) -> &zx::Vmo {
+        &self.delivery_vmo
     }
 
     fn get_by_key(&self, key: u32) -> Option<Arc<CachedBlob>> {
@@ -236,7 +252,7 @@ impl PagerVmoCache {
                     Ok(CacheLookup::Ready(arc_blob))
                 } else {
                     let completion_event = Arc::new(event_listener::Event::new());
-                    map.insert(*identifier, BlobState::Pending(completion_event.clone()));
+                    map.insert(*identifier, BlobState::Pending(completion_event));
                     Ok(CacheLookup::Missing(PendingCacheEntryGuard {
                         cache: self.clone(),
                         identifier: Some(*identifier),
@@ -248,7 +264,7 @@ impl PagerVmoCache {
             }
             None => {
                 let completion_event = Arc::new(event_listener::Event::new());
-                map.insert(*identifier, BlobState::Pending(completion_event.clone()));
+                map.insert(*identifier, BlobState::Pending(completion_event));
                 Ok(CacheLookup::Missing(PendingCacheEntryGuard {
                     cache: self.clone(),
                     identifier: Some(*identifier),
@@ -281,6 +297,72 @@ impl PagerVmoCache {
     }
 }
 
+impl delivery::DeliveryQueueProvider for PagerVmoCache {
+    fn deliver_pages(
+        &self,
+        key: u64,
+        target_offset: u64,
+        length: u64,
+        delivery_offset: u64,
+    ) -> Result<(), Error> {
+        let cached_blob = self.get_by_key(key as u32);
+        if let Some(blob) = cached_blob {
+            // TODO(https://fxbug.dev/535489428): Cryptographically verify payload against
+            // blob.merkle_verifier.
+            self.pager.supply_pages(
+                &blob.vmo,
+                target_offset..target_offset + length,
+                &self.delivery_vmo,
+                delivery_offset,
+            )?;
+            Ok(())
+        } else {
+            bail!("Unknown or expired key {key} in deliver_pages");
+        }
+    }
+
+    fn register_blob(&self, key: u64, leaf_data: PtrByteSlice<'_>) -> Result<(), Error> {
+        let cached_blob = self.get_by_key(key as u32);
+
+        if let Some(blob) = cached_blob {
+            if blob.merkle_verifier.get().is_some() {
+                log::warn!("RegisterBlob received for blob {key} but it is already initialized");
+                return Ok(());
+            }
+
+            if leaf_data.len() % HASH_SIZE != 0 {
+                bail!("RegisterBlob invalid leaf length");
+            }
+
+            let hashes: Vec<Hash> = (0..(leaf_data.len() / HASH_SIZE))
+                .map(|i| {
+                    let chunk = leaf_data.subslice(i * HASH_SIZE..(i + 1) * HASH_SIZE);
+                    let mut hash_bytes = [0u8; HASH_SIZE];
+                    chunk.copy_to_slice(&mut hash_bytes);
+                    Hash::from(hash_bytes)
+                })
+                .collect();
+
+            match MerkleVerifier::new(Hash::from(blob.identifier), hashes.into_boxed_slice()) {
+                Ok(verifier) => {
+                    let sized_verifier =
+                        ReadSizedMerkleVerifier::new(verifier, delivery::DELIVERY_DATA_SIZE)
+                            .map_err(|e| {
+                                anyhow!("Failed to create ReadSizedMerkleVerifier: {e:?}")
+                            })?;
+                    let _ = blob.merkle_verifier.set(sized_verifier);
+                }
+                Err(e) => {
+                    bail!("Failed to verify merkle leaves for key {key}: {e:?}");
+                }
+            }
+        } else {
+            bail!("Unknown or expired key {key} in RegisterBlob");
+        }
+        Ok(())
+    }
+}
+
 /// Coordinates between FxBlob, the block driver, and the kernel to manage pager-backed blobs such
 /// that page requests can be handled at the driver instead of the filesystem layer.
 ///
@@ -294,11 +376,16 @@ pub struct BlobPagerAndVerifier {
     // Ties the lifetime of the block driver's mapper session to the `BlobPagerAndVerifier`.
     _mapper_session: fblock::MapperSessionProxy,
     port: zx::Port,
-    pager: zx::Pager,
+    pager: Arc<zx::Pager>,
     vmo_cache: Arc<PagerVmoCache>,
 }
 
 impl BlobPagerAndVerifier {
+    /// Returns a reference to the shared delivery queue VMO.
+    pub fn delivery_vmo(&self) -> &zx::Vmo {
+        self.vmo_cache.delivery_vmo()
+    }
+
     /// Creates a new BlobPagerAndVerifier.
     ///
     /// Establishes a mapping_provider session with FxBlob to receive a shared VMO that will be used
@@ -323,18 +410,18 @@ impl BlobPagerAndVerifier {
         let port = zx::Port::create();
         let delivery_queue = zx::Vmo::create(mapping::DELIVERY_VMO_SIZE)
             .context("Failed to create delivery queue VMO")?;
-        let delivery_vmo = delivery_queue
+        let delivery_vmo: zx::Vmo = delivery_queue
             .duplicate_handle(zx::Rights::SAME_RIGHTS)
-            .context("Failed to duplicate delivery queue VMO")?
-            .into();
+            .context("Failed to duplicate delivery queue VMO")?;
         let delivery_queue_dup = delivery_queue.duplicate_handle(zx::Rights::SAME_RIGHTS)?;
         let receiver = vmo_fifo::Receiver::<mapping::RawDeliveryCommand>::new(
             delivery_queue,
             mapping::PENDING_DELIVERY_COMMANDS_CAPACITY,
         )
         .context("Failed to create delivery queue receiver")?;
-        let pager =
-            zx::Pager::create(zx::PagerOptions::empty()).context("Failed to create pager")?;
+        let pager = Arc::new(
+            zx::Pager::create(zx::PagerOptions::empty()).context("Failed to create pager")?,
+        );
         let port_dup = port.duplicate_handle(zx::Rights::SAME_RIGHTS)?;
         let (mapper_session, mapper_session_server) =
             fidl::endpoints::create_proxy::<fblock::MapperSessionMarker>();
@@ -349,9 +436,13 @@ impl BlobPagerAndVerifier {
             .context("FIDL error calling Mapper.OpenSession")?
             .map_err(|e| anyhow!("Mapper.OpenSession failed: {e:?}"))?;
 
-        let vmo_cache = Arc::new(PagerVmoCache::new(mapping_session));
+        let vmo_cache = Arc::new(PagerVmoCache::new(
+            mapping_session,
+            pager.clone(),
+            delivery_vmo.duplicate_handle(zx::Rights::SAME_RIGHTS)?,
+        ));
         let _delivery_processor =
-            delivery::DeliveryQueueProcessor::spawn(receiver, &vmo_cache, delivery_vmo)?;
+            delivery::DeliveryQueueProcessor::spawn(receiver, vmo_cache.clone(), delivery_vmo)?;
 
         Ok(Self { _mapper_session: mapper_session, port, pager, vmo_cache, _delivery_processor })
     }
@@ -447,6 +538,7 @@ impl BlobPagerAndVerifier {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use futures::TryStreamExt;
     use mapping::{DeliveryCommand, RawDeliveryCommand};
     use vmo_fifo::SyncSender;
     const TEST_VMO_SIZE: u64 = 8192;
@@ -898,6 +990,44 @@ mod tests {
         assert!(blob.merkle_verifier.get().is_none());
 
         drop(_paged_vmo);
+        env.teardown().await;
+    }
+
+    #[fuchsia::test]
+    async fn test_delivery_data_supplies_pages() {
+        let env = TestEnv::new().await;
+
+        let paged_vmo =
+            env.pager_and_verifier.create_vmo(&env.valid_root).await.expect("create_vmo failed");
+
+        let mut sender = SyncSender::<RawDeliveryCommand>::new(
+            env.delivery_vmo
+                .duplicate_handle(zx::Rights::SAME_RIGHTS)
+                .expect("duplicate_handle failed"),
+            std::mem::align_of::<RawDeliveryCommand>(),
+            mapping::PENDING_DELIVERY_COMMANDS_CAPACITY,
+        )
+        .expect("SyncSender::new failed");
+
+        let test_payload = vec![0x42u8; 4096];
+        let mut payload =
+            sender.reserve_payload(test_payload.len()).expect("reserve_payload failed");
+        payload.data().copy_from_slice(&test_payload);
+
+        let cmd: RawDeliveryCommand = DeliveryCommand::Data {
+            key: TEST_VMO_KEY as u64,
+            target_offset: 0,
+            length: test_payload.len() as u32,
+            offset: payload.offset(),
+        }
+        .into();
+        payload.commit(cmd).expect("commit failed");
+
+        let mut read_buf = vec![0u8; 4096];
+        paged_vmo.read(&mut read_buf, 0).expect("read paged_vmo failed");
+        assert_eq!(read_buf, test_payload);
+
+        drop(paged_vmo);
         env.teardown().await;
     }
 }

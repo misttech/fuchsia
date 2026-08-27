@@ -726,6 +726,10 @@ impl<'a, T: FromBytes + IntoBytes + KnownLayout + Copy + Debug> Debug for Messag
 }
 
 impl<'a, T: FromBytes + IntoBytes + KnownLayout + Copy> Message<'a, T> {
+    pub fn payload_region_offset(&self) -> usize {
+        self.receiver.payload_region_offset()
+    }
+
     pub fn payload_slice(&self, vmo_offset: u32, len: u32) -> PtrByteSlice<'_> {
         self.receiver.payload_slice(vmo_offset, len)
     }
@@ -793,6 +797,10 @@ impl<T: FromBytes + IntoBytes + KnownLayout + Copy> Receiver<T> {
 
     pub fn vmo(&self) -> &zx::Vmo {
         self.inner.vmo()
+    }
+
+    pub fn payload_region_offset(&self) -> usize {
+        self.inner.payload_region_offset()
     }
 
     /// Peek at the next message without incrementing the read index.

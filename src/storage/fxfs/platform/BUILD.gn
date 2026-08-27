@@ -134,6 +134,7 @@ fxfs_platform_library("platform") {
     "//src/storage/fxfs:lib",
     "//src/storage/fxfs/crypto/insecure",
     "//src/storage/fxfs/make-blob-image",
+    "//src/storage/lib/blob_pager_and_verifier",
     "//src/storage/lib/blob_writer:blob-writer",
     "//src/storage/lib/block_protocol",
     "//src/storage/lib/block_server",

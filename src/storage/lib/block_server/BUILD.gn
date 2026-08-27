@@ -49,6 +49,7 @@ rustc_library("block_server") {
   deps = block_server_deps
   test_deps = [
     "//src/lib/fuchsia",
+    "//src/storage/lib/blob_pager_and_verifier",
     "//third_party/rust_crates:assert_matches",
     "//third_party/rust_crates:event-listener",
     "//third_party/rust_crates:rand",

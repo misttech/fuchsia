@@ -558,14 +558,26 @@ mod tests {
             Arc::new(DeviceBlockService { device });
 
         let port = zx::Port::create();
-        // TODO(https://fxbug.dev/384784948): The 4 KiB delivery_queue VMO size will need to be
-        // changed when we plumb it through.
-        let delivery_queue = zx::Vmo::create(4096).expect("Failed to create delivery_queue VMO");
+        let delivery_queue = zx::Vmo::create(mapping::DELIVERY_VMO_SIZE)
+            .expect("Failed to create delivery_queue VMO");
+        let pager = Arc::new(zx::Pager::create(zx::PagerOptions::empty()).unwrap());
+        let vmo_provider = Arc::new(blob_pager_and_verifier::TestVmoProvider::new(
+            pager.clone(),
+            delivery_queue.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap(),
+        ));
+        let delivery_receiver = vmo_fifo::Receiver::<mapping::RawDeliveryCommand>::new(
+            delivery_queue.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap(),
+            mapping::PENDING_DELIVERY_COMMANDS_CAPACITY,
+        )
+        .unwrap();
+        let _delivery_processor = blob_pager_and_verifier::DeliveryQueueProcessor::spawn(
+            delivery_receiver,
+            vmo_provider.clone(),
+            delivery_queue.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap(),
+        )
+        .unwrap();
 
         let verifier = Arc::new(block_server::verifier::Verifier::new(delivery_queue));
-        let pager = Arc::new(zx::Pager::create(zx::PagerOptions::empty()).unwrap());
-        verifier.set_pager(pager.clone());
-
         let verifier_clone = verifier.clone();
         let files = Arc::new(mapping::Files::new(service, move |key, range| {
             verifier_clone.get_page_request(key, range)
@@ -599,7 +611,8 @@ mod tests {
 
         let key = blob_key as u64;
         let paged_vmo = pager.create_vmo(zx::VmoOptions::empty(), &port, key, blob_size).unwrap();
-        verifier.register_vmo(key, paged_vmo.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap());
+        vmo_provider
+            .register_vmo(key, paged_vmo.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap());
 
         let _pager_thread = mapping::PagerThread::spawn(port, files.clone());
 

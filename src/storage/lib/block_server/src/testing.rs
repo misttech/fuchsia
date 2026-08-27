@@ -5,18 +5,16 @@
 use crate::callback_interface::{Interface, Request, Session, SessionManager};
 use crate::verifier::Verifier;
 use crate::{BlockInfo, DeviceInfo};
-use fuchsia_sync::Mutex;
 use std::borrow::Cow;
 use std::sync::Arc;
 
 pub struct MockInterface {
     pub request_sender: std::sync::mpsc::Sender<Request>,
-    pub verifier: Mutex<Option<Arc<Verifier>>>,
 }
 
 impl MockInterface {
     pub fn new(request_sender: std::sync::mpsc::Sender<Request>) -> Self {
-        Self { request_sender, verifier: Mutex::new(None) }
+        Self { request_sender }
     }
 }
 
@@ -44,8 +42,6 @@ impl Interface for MockInterface {
         _mapping_vmo: &zx::Vmo,
         delivery_queue: zx::Vmo,
     ) -> Result<Arc<Verifier>, zx::Status> {
-        let verifier = Arc::new(Verifier::new(delivery_queue));
-        *self.verifier.lock() = Some(verifier.clone());
-        Ok(verifier)
+        Ok(Arc::new(Verifier::new(delivery_queue)))
     }
 }
