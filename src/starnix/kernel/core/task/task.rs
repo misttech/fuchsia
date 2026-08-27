@@ -20,7 +20,7 @@ use crate::task::{
 };
 use crate::vfs::{FdTable, FsContext, FsString, SharedFdTable};
 use atomic_bitflags::atomic_bitflags;
-use fuchsia_rcu::{RcuDroppable, RcuDroppableArc, RcuReadGuard, RcuReadScope, RcuUpgradeArc};
+use fuchsia_rcu::{RcuArc, RcuDroppable, RcuDroppableArc, RcuReadGuard, RcuReadScope};
 use macro_rules_attribute::apply;
 use starnix_logging::{log_warn, set_zx_name};
 use starnix_registers::HeapRegs;
@@ -928,7 +928,7 @@ pub struct Task {
     /// The running state of the task.
     ///
     /// This is `None` for exited tasks.
-    pub running_state: RcuUpgradeArc<TaskRunningState>,
+    pub running_state: RcuArc<TaskRunningState>,
 
     /// The stop state of the task, distinct from the stop state of the thread group.
     ///
@@ -1112,11 +1112,11 @@ impl Task {
                 thread_group_key: thread_group_key.clone(),
                 kernel: Arc::clone(&thread_group.kernel),
                 thread_group,
-                running_state: RcuUpgradeArc::new(Some(Arc::new(TaskRunningState {
+                running_state: RcuArc::new(Some(Arc::new(TaskRunningState {
                     thread: Default::default(),
                     files: Some(files).into(),
-                    mm: RcuUpgradeArc::new(mm),
-                    fs: RcuUpgradeArc::new(Some(fs)),
+                    mm: RcuArc::new(mm),
+                    fs: RcuArc::new(Some(fs)),
                     abstract_socket_namespace,
                     abstract_vsock_namespace,
                     proc_pid_directory_cache: Default::default(),

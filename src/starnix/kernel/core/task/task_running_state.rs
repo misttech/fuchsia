@@ -5,7 +5,7 @@
 use crate::mm::MemoryManager;
 use crate::task::{AbstractUnixSocketNamespace, AbstractVsockSocketNamespace, CurrentTask};
 use crate::vfs::{FdTable, FsContext, FsNodeHandle, SharedFdTable};
-use fuchsia_rcu::RcuUpgradeArc;
+use fuchsia_rcu::RcuArc;
 use starnix_sync::{LockDepMutex, TaskFilesLock};
 use starnix_uapi::errno;
 use starnix_uapi::errors::Errno;
@@ -31,10 +31,10 @@ pub struct TaskRunningState {
     pub files: LockDepMutex<Option<SharedFdTable>, TaskFilesLock>,
 
     /// The memory manager for this task.  This is `None` only for system tasks.
-    pub mm: RcuUpgradeArc<MemoryManager>,
+    pub mm: RcuArc<MemoryManager>,
 
     /// The file system for this task.
-    pub fs: RcuUpgradeArc<FsContext>,
+    pub fs: RcuArc<FsContext>,
 
     /// The namespace for abstract AF_UNIX sockets for this task.
     pub abstract_socket_namespace: Arc<AbstractUnixSocketNamespace>,

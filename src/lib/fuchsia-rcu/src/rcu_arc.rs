@@ -11,7 +11,7 @@ use std::sync::Arc;
 /// A version of [crate::RcuOptionArc] which does not require `T: RcuDroppable` in exchange for
 /// some extra atomic checking on reads.
 ///
-/// RcuUpgradeArc allows arbitrary types to be used with RCU by separating `Drop`ing the type,
+/// RcuArc allows arbitrary types to be used with RCU by separating `Drop`ing the type,
 /// which may not be safe to do on the RCU advancer thread, and freeing the allocation for the
 /// type, which is safe to do, once an RCU grace period has elapsed.
 ///
@@ -24,17 +24,17 @@ use std::sync::Arc;
 /// RcuReadScope, readers must verify the memory is safe to read. Readers safely do this by using a
 /// Weak::upgrade, which serializes with a compare_exchange loop on the strong count.
 #[derive(Debug)]
-pub struct RcuUpgradeArc<T: Send + Sync + 'static> {
+pub struct RcuArc<T: Send + Sync + 'static> {
     ptr: RcuPtr<T>,
 }
 
-impl<T: Send + Sync + 'static> RcuUpgradeArc<T> {
-    /// Create a new RcuUpgradeArc from an `Option<Arc<T>>`.
+impl<T: Send + Sync + 'static> RcuArc<T> {
+    /// Create a new RcuArc from an `Option<Arc<T>>`.
     pub fn new(data: impl Into<Option<Arc<T>>>) -> Self {
         Self { ptr: RcuPtr::new(Self::into_ptr(data.into())) }
     }
 
-    /// Read the contents of the RcuUpgradeArc.
+    /// Read the contents of the RcuArc.
     ///
     /// Returns `None` if the wrapped Arc is `None` or is no longer valid.
     pub fn upgrade(&self) -> Option<Arc<T>> {
@@ -57,7 +57,7 @@ impl<T: Send + Sync + 'static> RcuUpgradeArc<T> {
         }
     }
 
-    /// Write a new `Option<Arc<T>>` to the RcuUpgradeArc.
+    /// Write a new `Option<Arc<T>>` to the RcuArc.
     ///
     /// The old `Arc<T>` (if any) is dropped on the caller's thread, running `T::drop()`
     /// synchronously if it was the last strong reference.
@@ -85,7 +85,7 @@ impl<T: Send + Sync + 'static> RcuUpgradeArc<T> {
         }
     }
 
-    /// Replace the pointer in the `RcuUpgradeArc` with a new pointer.
+    /// Replace the pointer in the `RcuArc` with a new pointer.
     ///
     /// # Safety
     ///
@@ -103,32 +103,32 @@ impl<T: Send + Sync + 'static> RcuUpgradeArc<T> {
     }
 }
 
-impl<T: Send + Sync + 'static> Drop for RcuUpgradeArc<T> {
+impl<T: Send + Sync + 'static> Drop for RcuArc<T> {
     fn drop(&mut self) {
         // SAFETY: We can pass `std::ptr::null_mut`.
         unsafe { self.replace(std::ptr::null_mut()) };
     }
 }
 
-impl<T: Send + Sync + 'static> Clone for RcuUpgradeArc<T> {
+impl<T: Send + Sync + 'static> Clone for RcuArc<T> {
     fn clone(&self) -> Self {
         Self::new(self.upgrade())
     }
 }
 
-impl<T: Send + Sync + 'static> From<Option<Arc<T>>> for RcuUpgradeArc<T> {
+impl<T: Send + Sync + 'static> From<Option<Arc<T>>> for RcuArc<T> {
     fn from(data: Option<Arc<T>>) -> Self {
         Self::new(data)
     }
 }
 
-impl<T: Send + Sync + 'static> From<Arc<T>> for RcuUpgradeArc<T> {
+impl<T: Send + Sync + 'static> From<Arc<T>> for RcuArc<T> {
     fn from(data: Arc<T>) -> Self {
         Self::new(Some(data))
     }
 }
 
-impl<T: Send + Sync + 'static> Default for RcuUpgradeArc<T> {
+impl<T: Send + Sync + 'static> Default for RcuArc<T> {
     fn default() -> Self {
         Self::new(None)
     }
@@ -159,10 +159,10 @@ mod tests {
     }
 
     #[test]
-    fn test_upgrade_arc_update_and_synchronous_drop() {
+    fn test_arc_update_and_synchronous_drop() {
         // We should see the Drop handler trigger before rcu_synchronize.
         let drops = Arc::new(AtomicUsize::new(0));
-        let arc = RcuUpgradeArc::new(Some(DropCounter::new(42, drops.clone())));
+        let arc = RcuArc::new(Some(DropCounter::new(42, drops.clone())));
 
         assert!(arc.is_some());
         assert_eq!(arc.upgrade().unwrap().value, 42);
@@ -181,16 +181,16 @@ mod tests {
     }
 
     #[test]
-    fn test_upgrade_arc_default() {
-        let arc = RcuUpgradeArc::<DropCounter>::default();
+    fn test_arc_default() {
+        let arc = RcuArc::<DropCounter>::default();
         assert!(arc.is_none());
         assert!(arc.upgrade().is_none());
     }
 
     #[test]
-    fn test_upgrade_arc_clone() {
+    fn test_arc_clone() {
         let drops = Arc::new(AtomicUsize::new(0));
-        let arc1 = RcuUpgradeArc::new(Some(DropCounter::new(100, drops.clone())));
+        let arc1 = RcuArc::new(Some(DropCounter::new(100, drops.clone())));
         let arc2 = arc1.clone();
 
         assert_eq!(arc1.upgrade().unwrap().value, 100);
