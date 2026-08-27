@@ -6,8 +6,10 @@ use anyhow::{Context, Error, Result, anyhow};
 use capability_source::CapabilitySource;
 use cm_fidl_analyzer::component_model::{AnalyzerModelError, ComponentModelForAnalyzer};
 use cm_fidl_analyzer::route::VerifyRouteResult;
+use cm_fidl_analyzer::{PkgUrlMatch, match_absolute_component_urls};
 use cm_rust::{CapabilityDecl, CapabilityTypeName, ComponentDecl, SourceName as _, UseDecl};
-use cm_types::{HandleType, Name, Path};
+use cm_types::{HandleType, Name, Path, Url};
+use fuchsia_url::fuchsia_pkg::AbsoluteComponentUrl;
 use futures::FutureExt;
 use moniker::Moniker;
 use routing::component_instance::ComponentInstanceInterface;
@@ -336,6 +338,23 @@ fn gather_routes<'a>(
     }
 }
 
+fn match_component_url(
+    instance_url: &Url,
+    parsed_instance_pkg_url: Option<&AbsoluteComponentUrl>,
+    component_url: &Url,
+) -> bool {
+    if instance_url == component_url {
+        return true;
+    }
+    if let (Some(instance_pkg_url), Ok(component_pkg_url)) =
+        (parsed_instance_pkg_url, AbsoluteComponentUrl::parse(component_url.as_str()))
+    {
+        return match_absolute_component_urls(&component_pkg_url, instance_pkg_url)
+            != PkgUrlMatch::NoMatch;
+    }
+    false
+}
+
 fn check_pkg_source(
     using_node: &Moniker,
     component_model: &Arc<ComponentModelForAnalyzer>,
@@ -345,8 +364,13 @@ fn check_pkg_source(
         .get_instance(using_node)
         .map_err(|_e| RouteSourceError::MonikerNotFoundInTree(using_node.clone()))?;
 
-    let matches: Vec<&Component> =
-        components.iter().filter(|component| component.url == *instance.url()).collect();
+    let parsed_instance_pkg_url = AbsoluteComponentUrl::parse(instance.url().as_str()).ok();
+    let matches: Vec<&Component> = components
+        .iter()
+        .filter(|component| {
+            match_component_url(instance.url(), parsed_instance_pkg_url.as_ref(), &component.url)
+        })
+        .collect();
     if matches.len() == 0 {
         return Err(RouteSourceError::ComponentInstanceLookupByUrlFailed(
             instance.url().to_string(),
@@ -480,9 +504,9 @@ impl RouteSourcesController {
 #[cfg(test)]
 mod tests {
     use super::{
-        MISSING_TARGET_INSTANCE, Matches, ROUTE_LISTS_INCOMPLETE, ROUTE_LISTS_OVERLAP, RouteMatch,
-        RouteSourcesConfig, RouteSourcesController, RouteSourcesSpec, SourceDeclSpec, SourceSpec,
-        UseSpec,
+        AbsoluteComponentUrl, MISSING_TARGET_INSTANCE, Matches, ROUTE_LISTS_INCOMPLETE,
+        ROUTE_LISTS_OVERLAP, RouteMatch, RouteSourcesConfig, RouteSourcesController,
+        RouteSourcesSpec, SourceDeclSpec, SourceSpec, UseSpec, match_component_url,
     };
     use crate::verify::route_sources::{RouteSourceError, Source, VerifyRouteSourcesResult};
     use anyhow::Result;
@@ -2142,5 +2166,123 @@ mod tests {
         );
 
         Ok(())
+    }
+
+    #[fuchsia::test]
+    fn test_verify_pinned_component_matches_unpinned_instance() -> Result<()> {
+        let data_model = fake_data_model();
+        let hash = Hash::from([0u8; HASH_SIZE]);
+        let pinned_url = Url::new(
+            "fuchsia-pkg://test.fuchsia.com/two_dir_user/0?hash=0000000000000000000000000000000000000000000000000000000000000000#meta/two_dir_user.cm",
+        )
+        .unwrap();
+        let components = vec![
+            create_component(&*DEFAULT_ROOT_URL, ComponentSource::ZbiBootfs),
+            create_component(&pinned_url, ComponentSource::StaticPackage(hash)),
+            create_component(
+                &make_test_url("one_dir_provider"),
+                ComponentSource::StaticPackage(Hash::from([1u8; HASH_SIZE])),
+            ),
+        ];
+        data_model.set(Components { entries: components })?;
+        let data_model = valid_two_instance_two_dir_tree_model(Some(data_model))?;
+
+        let component_model = &data_model.get::<V2ComponentModel>()?.component_model;
+        let components = &data_model.get::<Components>()?.entries;
+        let config = RouteSourcesConfig {
+            component_routes: vec![RouteSourcesSpec {
+                target_node_path: Moniker::parse_str("two_dir_user").unwrap(),
+                skip_if_target_node_missing: false,
+                routes_to_skip: vec![UseSpec {
+                    type_name: CapabilityTypeName::Directory,
+                    path: Some(Path::from_str("/data/from/provider").unwrap()),
+                    name: None,
+                    source_name: None,
+                    numbered_handle: None,
+                }],
+                routes_to_verify: vec![RouteMatch {
+                    target: UseSpec {
+                        type_name: CapabilityTypeName::Directory,
+                        path: Some(Path::from_str("/data/from/root").unwrap()),
+                        name: None,
+                        source_name: None,
+                        numbered_handle: None,
+                    },
+                    source: SourceSpec {
+                        moniker: Moniker::root(),
+                        capability: SourceDeclSpec {
+                            path_prefix: Some(
+                                Path::from_str("/data/to/user/root_subdir/user_subdir").unwrap(),
+                            ),
+                            name: Some("root_dir".parse().unwrap()),
+                        },
+                    },
+                }],
+            }],
+        };
+        let result = ok_unwrap!(RouteSourcesController::run(component_model, components, &config));
+
+        assert_eq!(
+            result,
+            hashmap! {
+                "two_dir_user".to_string() => vec![
+                    VerifyRouteSourcesResult{
+                        query: config.component_routes[0].routes_to_verify[0].clone(),
+                        result: Ok(Source {
+                            moniker: config.component_routes[0].routes_to_verify[0].source.moniker.clone(),
+                            capability: DirectoryDecl{
+                                name: "root_dir".parse().unwrap(),
+                                source_path: Some(Path::from_str("/data/to/user").unwrap()),
+                                rights: fio::Operations::CONNECT,
+                            }.into(),
+                        }),
+                    },
+                ],
+            }
+        );
+
+        Ok(())
+    }
+
+    #[fuchsia::test]
+    fn test_match_component_url_schemes() {
+        let unpinned_pkg_url =
+            Url::new("fuchsia-pkg://fuchsia.com/my-pkg#meta/my-component.cm").unwrap();
+        let pinned_pkg_url = Url::new(
+            "fuchsia-pkg://fuchsia.com/my-pkg/0?hash=0000000000000000000000000000000000000000000000000000000000000000#meta/my-component.cm",
+        )
+        .unwrap();
+        let other_pkg_url = Url::new(
+            "fuchsia-pkg://fuchsia.com/other-pkg/0?hash=0000000000000000000000000000000000000000000000000000000000000000#meta/my-component.cm",
+        )
+        .unwrap();
+        let boot_url = Url::new("fuchsia-boot:///my-component#meta/my-component.cm").unwrap();
+        let other_boot_url = Url::new("fuchsia-boot:///other#meta/other.cm").unwrap();
+
+        let parsed_unpinned_pkg = AbsoluteComponentUrl::parse(unpinned_pkg_url.as_str()).ok();
+        let parsed_boot = AbsoluteComponentUrl::parse(boot_url.as_str()).ok();
+        assert!(parsed_boot.is_none());
+
+        // Pinned pkg component matches unpinned pkg instance.
+        assert!(match_component_url(
+            &unpinned_pkg_url,
+            parsed_unpinned_pkg.as_ref(),
+            &pinned_pkg_url
+        ));
+        // Different pkg component does not match unpinned pkg instance.
+        assert!(!match_component_url(
+            &unpinned_pkg_url,
+            parsed_unpinned_pkg.as_ref(),
+            &other_pkg_url
+        ));
+        // Bootfs component does not match pkg instance.
+        assert!(!match_component_url(&unpinned_pkg_url, parsed_unpinned_pkg.as_ref(), &boot_url));
+
+        // Exact bootfs component matches bootfs instance.
+        assert!(match_component_url(&boot_url, parsed_boot.as_ref(), &boot_url));
+        // Different bootfs component does not match bootfs instance.
+        assert!(!match_component_url(&boot_url, parsed_boot.as_ref(), &other_boot_url));
+        // Pkg component does not match bootfs instance.
+        assert!(!match_component_url(&boot_url, parsed_boot.as_ref(), &pinned_pkg_url));
     }
 }
