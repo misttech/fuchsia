@@ -207,12 +207,37 @@ function test_bazel_rbe() {
   )
 }
 
+function check_credential_helper_latency() {
+  # Defensive check that access to the bazel credential helper
+  # on SrcFS is not unreasonably slow.
+  if [[ "$(get_loas_cert_type_for_bazel)" != "unrestricted" ]]; then
+    # SrcFS is only accessible with unrestricted LOAS creds.
+    # The credshelper is not used with restricted LOAS.
+    return 0
+  fi
+  local -r cred_helper="/google/src/head/depot/google3/devtools/blaze/bazel/credhelper/credhelper"
+  if [[ -x "$cred_helper" ]]; then
+    local -r start_time=$SECONDS
+    # Run the helper (which prints 'invalid arguments' and exits with 1)
+    "$cred_helper" >/dev/null 2>&1 || :
+    local -r duration=$((SECONDS - start_time))
+
+    if [[ $duration -ge 2 ]]; then
+      style::echo --warning "Access to the Bazel credential helper on SrcFS is extremely slow ($duration seconds startup latency)."
+      style::echo --warning "This is likely causing Bazel's Capabilities check or credential retrieval to timeout."
+      style::echo --warning "We recommend checking SrcFS/Citc mount health or warming the cache by running:"
+      style::echo --warning "  ls -l $cred_helper"
+    fi
+  fi
+}
+
 function bazel_auth_test() {
   cat <<EOF
 Testing a small remote-enabled bazel build end-to-end.
 If the first build attempt fails, follow the authentication prompts.
 It will retry twice before reporting failure.
 EOF
+  check_credential_helper_latency
   for tries in 1 2 3; do
       printf "\n=== Attempt $tries/3 =====================\n"
       if test_bazel_rbe; then
