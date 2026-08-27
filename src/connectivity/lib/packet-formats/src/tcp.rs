@@ -1667,7 +1667,7 @@ mod tests {
         OPTION_LEN_TIMESTAMP, TcpOptions, TcpSackBlock, TimestampOption,
     };
     use crate::testutil::*;
-    use crate::{compute_transport_checksum, update_transport_checksum_pseudo_header};
+    use crate::{add_transport_pseudo_header_checksum, compute_transport_checksum};
 
     const TEST_SRC_IPV4: Ipv4Addr = Ipv4Addr::new([1, 2, 3, 4]);
     const TEST_DST_IPV4: Ipv4Addr = Ipv4Addr::new([5, 6, 7, 8]);
@@ -1902,7 +1902,7 @@ mod tests {
 
         // Create checksum over pseudo-header.
         let mut c = internet_checksum::Checksum::new();
-        update_transport_checksum_pseudo_header::<Ipv4>(
+        add_transport_pseudo_header_checksum::<Ipv4>(
             &mut c,
             TEST_SRC_IPV4,
             TEST_DST_IPV4,

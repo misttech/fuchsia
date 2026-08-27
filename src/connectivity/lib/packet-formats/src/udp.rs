@@ -751,11 +751,11 @@ mod tests {
     use test_case::test_case;
 
     use super::*;
+    use crate::add_transport_pseudo_header_checksum;
     use crate::ethernet::{EthernetFrame, EthernetFrameLengthCheck};
     use crate::ipv4::{Ipv4Header, Ipv4Packet};
     use crate::ipv6::{Ipv6Header, Ipv6Packet};
     use crate::testutil::*;
-    use crate::update_transport_checksum_pseudo_header;
     use packet::NoOpSerializationContext;
 
     const TEST_SRC_IPV4: Ipv4Addr = Ipv4Addr::new([1, 2, 3, 4]);
@@ -1088,7 +1088,7 @@ mod tests {
 
         // Create checksum over pseudo-header.
         let mut c = internet_checksum::Checksum::new();
-        update_transport_checksum_pseudo_header::<Ipv4>(
+        add_transport_pseudo_header_checksum::<Ipv4>(
             &mut c,
             TEST_SRC_IPV4,
             TEST_DST_IPV4,

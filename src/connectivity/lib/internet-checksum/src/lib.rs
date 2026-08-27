@@ -54,23 +54,19 @@ pub fn checksum(bytes: &[u8]) -> [u8; 2] {
 /// Updates bytes in an existing checksum.
 ///
 /// `update` updates a checksum to reflect that the already-checksummed bytes
-/// `old` have been updated to contain the values in `new`. It implements the
-/// algorithm described in Equation 3 in [RFC 1624]. The first byte must be at
-/// an even number offset in the original input. If an odd number offset byte
-/// needs to be updated, the caller should simply include the preceding byte as
-/// well. If an odd number of bytes is given, it is assumed that these are the
-/// last bytes of the input. If an odd number of bytes in the middle of the
-/// input needs to be updated, the preceding or following byte of the input
-/// should be added to make an even number of bytes.
-///
-/// # Panics
-///
-/// `update` panics if `old.len() != new.len()`.
+/// `old` have been removed and replaced with the bytes in `new`, which may not
+/// have the same length as `old`. It implements the algorithm described in
+/// Equation 3 in [RFC 1624]. The first byte must be at an even number offset in
+/// the original input. If an odd number offset byte needs to be updated, the
+/// caller should simply include the preceding byte as well. If an odd number of
+/// bytes is given, it is assumed that these are the last bytes of the input. If
+/// an odd number of bytes in the middle of the input needs to be updated, the
+/// preceding or following byte of the input should be added to make an even
+/// number of bytes.
 ///
 /// [RFC 1624]: https://tools.ietf.org/html/rfc1624
 #[inline]
-pub fn update(checksum: [u8; 2], old: &[u8], new: &[u8]) -> [u8; 2] {
-    assert_eq!(old.len(), new.len());
+fn update_internal(checksum: [u8; 2], old: &[u8], new: &[u8]) -> [u8; 2] {
     // We compute on the sum, not the one's complement of the sum. checksum
     // is the one's complement of the sum, so we need to get back to the
     // sum. Thus, we negate checksum.
@@ -94,6 +90,59 @@ pub fn update(checksum: [u8; 2], old: &[u8], new: &[u8]) -> [u8; 2] {
     sum = adc_u16(sum, !c2.checksum_inner());
     // HC' = ~HC.
     (!sum).to_ne_bytes()
+}
+
+/// Updates bytes in an existing checksum.
+///
+/// `update` updates a checksum to reflect that the already-checksummed bytes
+/// `old` have been updated to contain the values in `new`. It implements the
+/// algorithm described in Equation 3 in [RFC 1624]. The first byte must be at
+/// an even number offset in the original input. If an odd number offset byte
+/// needs to be updated, the caller should simply include the preceding byte as
+/// well. If an odd number of bytes is given, it is assumed that these are the
+/// last bytes of the input. If an odd number of bytes in the middle of the
+/// input needs to be updated, the preceding or following byte of the input
+/// should be added to make an even number of bytes.
+///
+/// # Panics
+///
+/// `update` panics if `old.len() != new.len()`.
+///
+/// [RFC 1624]: https://tools.ietf.org/html/rfc1624
+#[inline]
+pub fn update(checksum: [u8; 2], old: &[u8], new: &[u8]) -> [u8; 2] {
+    assert_eq!(old.len(), new.len());
+    update_internal(checksum, old, new)
+}
+
+/// Updates a checksum to reflect that the already-checksummed bytes `bytes`
+/// have been removed.
+///
+/// `remove` implements the algorithm described in [RFC 1624 Eqn. 3] for the
+/// special case where the replacement data is all zeroes. The first byte must
+/// be at an even number offset in the original input. If an odd number offset
+/// byte needs to be removed, the caller should include a preceding zero byte.
+/// If an odd number of bytes in the middle of the input needs to be removed, a
+/// preceding or following zero byte should be added to make an even number of
+/// bytes.
+///
+/// [RFC 1624]: https://tools.ietf.org/html/rfc1624
+#[inline]
+pub fn remove(checksum: [u8; 2], bytes: &[u8]) -> [u8; 2] {
+    update_internal(checksum, bytes, &[])
+}
+
+/// Updates a checksum to reflect that the bytes `bytes` have been added.
+///
+/// `add` implements the algorithm described in [RFC 1624 Eqn. 3] for the
+/// special case where the previous data was all zeroes. The first byte must be
+/// at an even number offset in the checksummed data, or else a zero byte must
+/// be prepended.
+///
+/// [RFC 1624]: https://tools.ietf.org/html/rfc1624
+#[inline]
+pub fn add(checksum: [u8; 2], bytes: &[u8]) -> [u8; 2] {
+    update_internal(checksum, &[], bytes)
 }
 
 /// RFC 1071 "internet checksum" computation.
@@ -366,6 +415,46 @@ mod tests {
                 c.checksum()
             };
             assert_eq!(updated, from_scratch);
+        }
+    }
+
+    #[test]
+    fn test_remove() {
+        for b in IPV4_HEADERS {
+            let mut buf = Vec::new();
+            buf.extend_from_slice(b);
+
+            let mut c = Checksum::new();
+            c.add_bytes(&buf);
+            let original_csum = c.checksum();
+
+            let removed = remove(original_csum, &buf[16..]);
+
+            let mut c2 = Checksum::new();
+            c2.add_bytes(&buf[..16]);
+            let expected_csum = c2.checksum();
+            assert_eq!(removed, expected_csum);
+        }
+    }
+
+    #[test]
+    fn test_add() {
+        for b in IPV4_HEADERS {
+            let mut buf = Vec::new();
+            buf.extend_from_slice(b);
+
+            let mut c = Checksum::new();
+            c.add_bytes(&buf);
+            let original_csum = c.checksum();
+
+            let new_bytes = [127, 0, 0, 1];
+            let added = add(original_csum, &new_bytes);
+
+            let mut c2 = Checksum::new();
+            c2.add_bytes(&buf);
+            c2.add_bytes(&new_bytes);
+            let expected_csum = c2.checksum();
+            assert_eq!(added, expected_csum);
         }
     }
 
