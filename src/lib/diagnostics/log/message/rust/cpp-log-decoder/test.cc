@@ -49,6 +49,15 @@ TEST(LogDecoder, DecodesCorrectly) {
   fuchsia_free_decoded_log_message(const_cast<char*>(json));
 }
 
+TEST(LogDecoder, DecodeInvalidBytesReturnsNull) {
+  const uint8_t invalid_bytes[] = {0x01, 0x02, 0x03, 0x04};
+  const char* json = fuchsia_decode_log_message_to_json(invalid_bytes, sizeof(invalid_bytes));
+  EXPECT_EQ(json, nullptr);
+
+  const char* json_null = fuchsia_decode_log_message_to_json(nullptr, 0);
+  EXPECT_EQ(json_null, nullptr);
+}
+
 TEST(LogDecoder, DecodesArchivistArguments) {
   constexpr char kTestMoniker[] = "some_moniker";
   constexpr char kTestUrl[] = "fuchsia-pkg://fuchsia.com/test#test.cm";

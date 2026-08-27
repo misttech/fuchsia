@@ -27,14 +27,24 @@ pub unsafe extern "C" fn fuchsia_decode_log_message_to_json(
     msg: *const u8,
     size: usize,
 ) -> *mut c_char {
+    if msg.is_null() || size == 0 {
+        return std::ptr::null_mut();
+    }
+    // SAFETY: caller guarantees msg is valid for reads of size bytes.
     let managed_ptr = unsafe { std::slice::from_raw_parts(msg, size) };
-    let data = &message::from_structured(
+    let Ok(data) = message::from_structured(
         MonikerWithUrl { moniker: "test_moniker".try_into().unwrap(), url: "".into() },
         managed_ptr,
-    )
-    .unwrap();
-    let item = serde_json::to_string(&data).unwrap();
-    CString::new(format!("[{}]", item)).unwrap().into_raw()
+    ) else {
+        return std::ptr::null_mut();
+    };
+    let Ok(item) = serde_json::to_string(&data) else {
+        return std::ptr::null_mut();
+    };
+    let Ok(c_string) = CString::new(format!("[{}]", item)) else {
+        return std::ptr::null_mut();
+    };
+    c_string.into_raw()
 }
 
 /// LogMessages struct containing log messages
