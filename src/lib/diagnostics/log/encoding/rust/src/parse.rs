@@ -150,7 +150,15 @@ fn string_ref(
         let name = std::str::from_utf8(name)?;
         Cow::Borrowed(name)
     };
-    let (_padding, after_padding) = after_name.split_at(after_name.len() % 8);
+    // In Fuchsia Trace Format (FXT), inline string contents are padded with zeroes up to the next
+    // 8-byte word boundary:
+    // 1. `name_len % 8` calculates how many bytes exist in the final partial 8-byte word (0..=7).
+    // 2. `8 - (name_len % 8)` determines the distance to the next 8-byte boundary (1..=8).
+    // 3. The outer `% 8` converts 8 back to 0 when `name_len` is already a multiple of 8.
+    let padding_len = (8 - (name_len % 8)) % 8;
+    let Some((_padding, after_padding)) = after_name.split_at_checked(padding_len) else {
+        return Err(ParseError::ValueOutOfValidRange);
+    };
     Ok((parsed, after_padding))
 }
 
@@ -240,5 +248,15 @@ mod tests {
         let (result_record, rem) = parse_record(encoded).unwrap();
         assert_eq!(rem.len(), 3);
         assert_eq!(record, result_record);
+    }
+
+    #[fuchsia::test]
+    fn test_string_ref_padding() {
+        let mut buf = vec![b'f', b'o', b'o', 0, 0, 0, 0, 0];
+        buf.extend_from_slice(b"extra");
+        let ref_mask = (1 << 15) | 3;
+        let (parsed, remaining) = string_ref(ref_mask, &buf, false).unwrap();
+        assert_eq!(parsed, "foo");
+        assert_eq!(remaining, b"extra");
     }
 }
