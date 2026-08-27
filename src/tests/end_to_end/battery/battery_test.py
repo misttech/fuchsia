@@ -7,7 +7,11 @@
 import logging
 
 import fuchsia_base_test
-from honeydew.affordances.drivers.battery import ChargeStatus
+from honeydew.affordances.drivers.battery import (
+    BatterySpec,
+    ChargeStatus,
+    PowerSourceSpec,
+)
 from mobly import asserts, test_runner
 
 _LOGGER: logging.Logger = logging.getLogger(__name__)
@@ -29,6 +33,29 @@ class BatteryTest(fuchsia_base_test.FuchsiaBaseTest):
                 "Failed to reset fake battery state in teardown: %s", err
             )
         await super().teardown_test()
+
+    async def test_battery_get_spec(self) -> None:
+        """Verify reading battery specification via get_spec and checking source_spec."""
+        _LOGGER.info("Calling get_spec on %s", self.dut.device_name)
+        spec = await self.battery.get_spec()
+        _LOGGER.info("Battery spec received: %s", spec)
+        asserts.assert_is_not_none(spec, msg="Battery spec should not be None")
+        asserts.assert_is_instance(
+            spec,
+            BatterySpec,
+            f"Expected BatterySpec, got {type(spec)}",
+        )
+
+        _LOGGER.info(
+            "Accessing source_spec from battery spec: %s", spec.source_spec
+        )
+        if spec.source_spec is not None:
+            asserts.assert_is_instance(
+                spec.source_spec,
+                PowerSourceSpec,
+                f"Expected PowerSourceSpec, got {type(spec.source_spec)}",
+            )
+            _LOGGER.info("Power source type: %s", spec.source_spec.type)
 
     async def test_get_status(self) -> None:
         """Verify reading battery telemetry status via get_status."""
@@ -57,6 +84,36 @@ class BatteryTest(fuchsia_base_test.FuchsiaBaseTest):
             status.charge_status,
             ChargeStatus.DISCHARGING,
             f"Expected battery charge status to be DISCHARGING, got {status.charge_status}",
+        )
+
+    async def test_battery_status_across_reboot(self) -> None:
+        """Verify reading battery status before and after a device reboot."""
+        _LOGGER.info(
+            "Verifying initial battery status on %s", self.dut.device_name
+        )
+        status_before = await self.battery.get_status()
+        _LOGGER.info("Battery status before reboot: %s", status_before)
+        asserts.assert_is_not_none(
+            status_before, msg="Battery status before reboot should not be None"
+        )
+
+        _LOGGER.info("Rebooting device %s...", self.dut.device_name)
+        await self.dut.reboot()
+        _LOGGER.info("Device reboot completed successfully")
+
+        _LOGGER.info(
+            "Verifying battery status after reboot on %s", self.dut.device_name
+        )
+        status_after = await self.battery.get_status()
+        _LOGGER.info("Battery status after reboot: %s", status_after)
+        asserts.assert_is_not_none(
+            status_after, msg="Battery status after reboot should not be None"
+        )
+        asserts.assert_equal(
+            status_before,
+            status_after,
+            f"Expected battery status to be equal before and after reboot, "
+            f"before: {status_before}, after: {status_after}",
         )
 
 
