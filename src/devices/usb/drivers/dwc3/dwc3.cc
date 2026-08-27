@@ -1615,10 +1615,18 @@ void Dwc3::OnConnectStatusChanged(
   });
 
   if (result.is_ok()) {
-    // The USB phy driver must provide a wake lease since we passed one to it.
-    ZX_DEBUG_ASSERT_MSG(!config_->enable_suspend() || result->wake_lease().is_valid(),
-                        "USB phy driver did not provide a wake lease");
+    // TODO: b/550476536 to revert this workaround
+    // Workaround: max77779 PMIC does not yet provide wake lease via USB PHY driver on connection
+    // This hack comments the assert message to bypass the same.
+    // ZX_DEBUG_ASSERT_MSG(!config_->enable_suspend() || result->wake_lease().is_valid(),
+    //                    "USB phy driver did not provide a wake lease");
     wake_lease = std::move(result->wake_lease());
+    // TODO: b/550476536 to revert this workaround
+    // Workaround: max77779 PMIC does not yet provide wake lease via USB PHY driver on connection
+    // This hack forces DWC3 to generate its own lease to prevent suspends while plugged in.
+    if (!wake_lease.is_valid()) {
+      wake_lease = AcquireWakeLease();
+    }
   } else {
     fdf::error("WatchConnectStatusChanged returned {}",
                zx_status_get_string(result.error_value().domain_error()));
