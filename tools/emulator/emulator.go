@@ -10,6 +10,7 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -288,13 +289,13 @@ func (d *Distribution) buildCommandLine(
 	return b.Build()
 }
 
-// NewInstance creates an instance of the emulator with the given parameters,
-// passing through ctx to the underlying exec.Cmd.
+// NewInstance creates an instance of the emulator, passing through ctx to the
+// underlying exec.Cmd.
 func (d *Distribution) NewInstance(
 	ctx context.Context,
 	fvd *fvdpb.VirtualDevice,
 ) (*Instance, error) {
-	return d.NewInstanceWithAuthorizedKeys(ctx, fvd, "", "")
+	return d.InstanceBuilder(ctx, fvd).Build()
 }
 
 // NewInstanceWithAuthorizedKeys creates an instance of the emulator, passing through ctx to the
@@ -305,29 +306,89 @@ func (d *Distribution) NewInstanceWithAuthorizedKeys(
 	fvd *fvdpb.VirtualDevice,
 	hostPathZbiBinary, hostPathAuthorizedKeys string,
 ) (*Instance, error) {
-	pb, err := d.loadProductBundle()
+	return d.InstanceBuilder(ctx, fvd).WithAuthorizedKeys(hostPathZbiBinary, hostPathAuthorizedKeys).Build()
+}
+
+// InstanceBuilder constructs an Instance with custom options.
+type InstanceBuilder struct {
+	distro                 *Distribution
+	ctx                    context.Context
+	fvd                    *fvdpb.VirtualDevice
+	extraArgs              []string
+	hostPathZbiBinary      string
+	hostPathAuthorizedKeys string
+	imageOverrides         virtual_device.ImageOverrides
+}
+
+// InstanceBuilder returns a builder for creating an emulator instance with custom configuration.
+func (d *Distribution) InstanceBuilder(ctx context.Context, fvd *fvdpb.VirtualDevice) *InstanceBuilder {
+	return &InstanceBuilder{
+		distro: d,
+		ctx:    ctx,
+		fvd:    fvd,
+	}
+}
+
+// WithArgs appends extra command-line arguments to the emulator invocation.
+func (b *InstanceBuilder) WithArgs(args ...string) *InstanceBuilder {
+	b.extraArgs = append(b.extraArgs, args...)
+	return b
+}
+
+// WithAuthorizedKeys configures the emulator to update the virtual device's initrd
+// to contain the specified authorized keys using the provided zbi binary.
+func (b *InstanceBuilder) WithAuthorizedKeys(hostPathZbiBinary, hostPathAuthorizedKeys string) *InstanceBuilder {
+	b.hostPathZbiBinary = hostPathZbiBinary
+	b.hostPathAuthorizedKeys = hostPathAuthorizedKeys
+	return b
+}
+
+// WithImageOverride configures the emulator to override an image file.
+func (b *InstanceBuilder) WithImageOverride(name, typ, path string) *InstanceBuilder {
+	if b.imageOverrides == nil {
+		b.imageOverrides = make(virtual_device.ImageOverrides)
+	}
+	b.imageOverrides[virtual_device.ImageKey{Name: name, Type: typ}] = path
+	return b
+}
+
+// Build creates and returns the configured emulator Instance without starting it.
+func (b *InstanceBuilder) Build() (*Instance, error) {
+	if b.distro == nil {
+		return nil, fmt.Errorf("distribution must not be nil")
+	}
+	if b.fvd == nil || b.fvd.Hw == nil {
+		return nil, fmt.Errorf("virtual device and hardware configuration must not be nil")
+	}
+	if (b.hostPathZbiBinary != "") != (b.hostPathAuthorizedKeys != "") {
+		return nil, fmt.Errorf("both hostPathZbiBinary and hostPathAuthorizedKeys must be specified together")
+	}
+	pb, err := b.distro.loadProductBundle()
 	if err != nil {
 		return nil, err
 	}
 
 	overrides := make(virtual_device.ImageOverrides)
-	for k, v := range d.imageOverrides {
+	for k, v := range b.distro.imageOverrides {
+		overrides[k] = v
+	}
+	for k, v := range b.imageOverrides {
 		overrides[k] = v
 	}
 
-	if hostPathZbiBinary != "" && hostPathAuthorizedKeys != "" {
-		// This will get cleaned up by d.Delete().
-		root, err := os.MkdirTemp(d.unpackedPath, "zbi-tmp-dir-*")
+	if b.hostPathZbiBinary != "" && b.hostPathAuthorizedKeys != "" {
+		// This will get cleaned up by b.distro.Delete().
+		root, err := os.MkdirTemp(b.distro.unpackedPath, "zbi-tmp-dir-*")
 		if err != nil {
 			return nil, fmt.Errorf(
 				"error making temp directory in %s: %w",
-				d.unpackedPath,
+				b.distro.unpackedPath,
 				err,
 			)
 		}
 
 		newZBIPath := filepath.Join(root, "a.zbi")
-		oldZBIPath, err := virtual_device.ResolveImage(pb, overrides, fvd.Initrd, "zbi")
+		oldZBIPath, err := virtual_device.ResolveImage(pb, overrides, b.fvd.Initrd, "zbi")
 		if err != nil {
 			if rmErr := os.RemoveAll(root); rmErr != nil {
 				log.Println(rmErr)
@@ -335,29 +396,33 @@ func (d *Distribution) NewInstanceWithAuthorizedKeys(
 			return nil, err
 		}
 
-		if err := runZbi(hostPathZbiBinary, oldZBIPath, newZBIPath, []string{
+		if err := runZbi(b.hostPathZbiBinary, oldZBIPath, newZBIPath, []string{
 			"--entry",
-			fmt.Sprintf("data/ssh/authorized_keys=%s", hostPathAuthorizedKeys),
+			fmt.Sprintf("data/ssh/authorized_keys=%s", b.hostPathAuthorizedKeys),
 		}); err != nil {
 			if rmErr := os.RemoveAll(root); rmErr != nil {
 				log.Println(rmErr)
 			}
 			return nil, err
 		}
-		key := virtual_device.ImageKey{Name: fvd.Initrd, Type: "zbi"}
+		key := virtual_device.ImageKey{Name: b.fvd.Initrd, Type: "zbi"}
 		overrides[key] = newZBIPath
 	}
 
-	args, err := d.buildCommandLine(fvd, pb, overrides)
+	args, err := b.distro.buildCommandLine(b.fvd, pb, overrides)
 	if err != nil {
 		return nil, err
 	}
+	args = append(args, b.extraArgs...)
 
-	fmt.Printf("Running %s %s\n", args[0], args[1:])
+	ctx := b.ctx
+	if ctx == nil {
+		ctx = context.Background()
+	}
 
 	i := &Instance{
 		cmd:            exec.CommandContext(ctx, args[0], args[1:]...),
-		emulator:       d.Emulator,
+		emulator:       b.distro.Emulator,
 		logDestination: os.Stdout,
 	}
 	// QEMU looks in the cwd for some specially named files, in particular
@@ -683,6 +748,25 @@ func (d *Distribution) loadProductBundle() (*productbundle.ProductBundle, error)
 	}
 	d.pb = pb
 	return d.pb, nil
+}
+
+// Kill stops the emulator process and any piped helper process.
+func (i *Instance) Kill() error {
+	var errs []error
+	if i.piped != nil && i.piped.Process != nil {
+		if err := i.piped.Process.Kill(); err != nil && !errors.Is(err, os.ErrProcessDone) {
+			errs = append(errs, err)
+		}
+	}
+	if i.cmd != nil && i.cmd.Process != nil {
+		if err := i.cmd.Process.Kill(); err != nil && !errors.Is(err, os.ErrProcessDone) {
+			errs = append(errs, err)
+		}
+	}
+	if len(errs) > 0 {
+		return errors.Join(errs...)
+	}
+	return nil
 }
 
 // Start the emulator instance.
