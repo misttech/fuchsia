@@ -4,12 +4,13 @@
 //
 // Entry point for the TRF Codegen CLI. Orchestrates parsing, linting, and artifact generation.
 
-// mod consistency_checker;
+mod consistency_checker;
 // mod generator;
 mod parser;
 
 use anyhow::{Context, Result};
 use argh::FromArgs;
+use consistency_checker::{ComponentManifest, check_consistency};
 use parser::parse_source;
 use std::io::{self, Read};
 
@@ -78,11 +79,23 @@ struct CodeGenInputs<'a> {
 }
 
 fn process_pipeline(inputs: CodeGenInputs<'_>) -> Result<()> {
-    let _parse_result = parse_source(inputs.source_code, inputs.mock_sources)
+    let parse_result = parse_source(inputs.source_code, inputs.mock_sources)
         .map_err(|err| anyhow::anyhow!("Failed to parse TRF AST annotations: {}", err))?;
 
+    let manifest = inputs
+        .manifest_content
+        .map(|content| {
+            serde_json::from_str::<ComponentManifest>(content)
+                .context("Failed to parse component manifest JSON")
+        })
+        .transpose()?;
+
+    let _auto_routes = check_consistency(&parse_result, manifest.as_ref()).map_err(|errors| {
+        let error_messages: Vec<String> = errors.iter().map(|e| e.to_string()).collect();
+        anyhow::anyhow!("Manifest linting errors:\n{}", error_messages.join("\n"))
+    })?;
+
     // Suppress unused variable warnings for the fields that are only used in later CLs.
-    let _ = inputs.manifest_content;
     let _ = inputs.target_name;
     let _ = inputs.cut_component_name;
     let _ = inputs.mock_paths;
@@ -94,12 +107,15 @@ fn run_pipeline(args: Args) -> Result<()> {
     let source_code = load_primary_source(args.source.as_ref())?;
     let mock_sources = load_mock_sources(&args.mock)?;
 
-    let manifest_content = if let Some(path) = args.manifest.as_ref().or(args.manifest_pos.as_ref())
-    {
-        std::fs::read_to_string(path).ok()
-    } else {
-        None
-    };
+    let manifest_content = args
+        .manifest
+        .as_ref()
+        .or(args.manifest_pos.as_ref())
+        .map(|path| {
+            std::fs::read_to_string(path)
+                .with_context(|| format!("Failed to read manifest file at {}", path))
+        })
+        .transpose()?;
 
     let inputs = CodeGenInputs {
         source_code: &source_code,
