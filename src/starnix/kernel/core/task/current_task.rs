@@ -643,6 +643,73 @@ impl CurrentTask {
         )
     }
 
+    /// Opens an executable or interpreter file for binary execution.
+    ///
+    /// This method is intended for opening initial executables, script interpreters (`#!`),
+    /// and ELF dynamic linkers (`PT_INTERP`).
+    ///
+    /// Resolves the target [`NamespaceNode`] and verifies that it is a regular file before opening
+    /// it, avoiding unintended driver initialization on device nodes or blocking on FIFOs. Returns
+    /// [`EACCES`] if the target is not a regular file, or [`ELOOP`] if [`OpenFlags::NOFOLLOW`] was
+    /// specified and the target is a symbolic link.
+    ///
+    /// The opened [`FileHandle`] is checked for [`Access::EXEC`], verifying DAC execute permissions
+    /// and filesystem mount `MS_NOEXEC`.
+    ///
+    /// Returns a [`FileHandle`] without installing it into the task's [`FdTable`].
+    pub fn open_file_for_exec(
+        &self,
+        dir_fd: FdNumber,
+        path: &FsStr,
+        flags: OpenFlags,
+    ) -> Result<FileHandle, Errno> {
+        debug_assert!(
+            (flags & !(OpenFlags::RDONLY | OpenFlags::NOFOLLOW)).is_empty(),
+            "unexpected flags passed to open_file_for_exec: {flags:?}"
+        );
+        if !(flags & !(OpenFlags::RDONLY | OpenFlags::NOFOLLOW)).is_empty() {
+            return error!(EINVAL);
+        }
+        if path.is_empty() {
+            return error!(ENOENT);
+        }
+
+        let (dir, path) = self.resolve_dir_fd(dir_fd, path, ResolveFlags::empty())?;
+        let nofollow = flags.contains(OpenFlags::NOFOLLOW);
+        let mut context =
+            LookupContext::new(if nofollow { SymlinkMode::NoFollow } else { SymlinkMode::Follow });
+        context.update_for_path(path);
+        let name = self.lookup_path(&mut context, dir, path)?;
+
+        // From <https://man7.org/linux/man-pages/man2/execveat.2.html>:
+        //
+        //   ELOOP  flags includes AT_SYMLINK_NOFOLLOW and the file identified by
+        //          dirfd and pathname is a symbolic link.
+        if nofollow && name.entry.node.info().mode.is_lnk() {
+            return error!(ELOOP);
+        }
+
+        // From <https://man7.org/linux/man-pages/man2/execve.2.html>:
+        //
+        //   EACCES The file or a script interpreter is not a regular file.
+        if !name.entry.node.is_reg() {
+            return error!(EACCES);
+        }
+
+        // From <https://man7.org/linux/man-pages/man2/execve.2.html>:
+        //
+        //   EACCES Execute permission is denied for the file or a script or ELF
+        //          interpreter.
+        //
+        //   EACCES The filesystem is mounted noexec.
+        //
+        // We must check permissions with CheckAccessReason::Exec, which open() does not
+        // support, so we perform the check explicitly and skip access checks on open().
+        name.check_access(self, Access::EXEC, CheckAccessReason::Exec)?;
+
+        name.open(self, OpenFlags::RDONLY, AccessCheck::skip())
+    }
+
     /// Resolves a path for open.
     ///
     /// If the final path component points to a symlink, the symlink is followed (as long as
@@ -993,21 +1060,7 @@ impl CurrentTask {
         argv: Vec<CString>,
         environ: Vec<CString>,
     ) -> Result<(), Errno> {
-        // From <https://man7.org/linux/man-pages/man2/execve.2.html>:
-        //
-        //   EACCES: The file or a script interpreter is not a regular file.
-        if !executable.name.entry.node.is_reg() {
-            return error!(EACCES);
-        }
-
-        // From <https://man7.org/linux/man-pages/man2/execve.2.html>:
-        //
-        //   EACCES: Execute permission is denied for the file or a script or
-        //   ELF interpreter.
-        executable.name.check_access(self, Access::EXEC, CheckAccessReason::Exec)?;
-
-        // Resolve the executable (and any interpreter) into a `ResolvedElf`.
-        // TODO(https://fxbug.dev/483368940): Split initial resolution from interpreter resolution.
+        // Resolve the executable (and any script interpreter) into a [`ResolvedElf`].
         let mut resolved_elf =
             resolve_executable(self, executable.clone(), path.clone(), argv, environ)?;
 

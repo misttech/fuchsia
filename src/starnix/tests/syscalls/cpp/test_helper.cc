@@ -5,10 +5,12 @@
 #include "src/starnix/tests/syscalls/cpp/test_helper.h"
 
 #include <dirent.h>
+#include <elf.h>
 #include <fcntl.h>
 #include <lib/fit/function.h>
 #include <lib/stdcompat/string_view.h>
 #include <limits.h>
+#include <link.h>
 #include <poll.h>
 #include <sched.h>
 #include <signal.h>
@@ -354,6 +356,38 @@ std::string get_tmp_path() {
     return tmp;
   }();
   return tmp_path;
+}
+
+std::string GetSystemDynamicLinkerPath() {
+  fbl::unique_fd fd(open("/proc/self/exe", O_RDONLY));
+  if (!fd) {
+    return "";
+  }
+  ElfW(Ehdr) ehdr;
+  if (read(fd.get(), &ehdr, sizeof(ehdr)) != sizeof(ehdr)) {
+    return "";
+  }
+  if (memcmp(ehdr.e_ident, ELFMAG, SELFMAG) != 0) {
+    return "";
+  }
+  std::vector<ElfW(Phdr)> phdrs(ehdr.e_phnum);
+  if (pread(fd.get(), phdrs.data(), ehdr.e_phnum * sizeof(ElfW(Phdr)), ehdr.e_phoff) !=
+      static_cast<ssize_t>(ehdr.e_phnum * sizeof(ElfW(Phdr)))) {
+    return "";
+  }
+  for (const auto &phdr : phdrs) {
+    if (phdr.p_type == PT_INTERP) {
+      std::string interp(phdr.p_filesz, '\0');
+      if (pread(fd.get(), interp.data(), phdr.p_filesz, phdr.p_offset) ==
+          static_cast<ssize_t>(phdr.p_filesz)) {
+        if (!interp.empty() && interp.back() == '\0') {
+          interp.pop_back();
+        }
+        return interp;
+      }
+    }
+  }
+  return "";
 }
 
 std::string GetTestResourcePath(const std::string &resource) {

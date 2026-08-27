@@ -15,8 +15,8 @@ use crate::task::{
     SyslogAccess, Task, ThreadGroup, max_priority_for_sched_policy, min_priority_for_sched_policy,
 };
 use crate::vfs::{
-    FdNumber, FileHandle, MountNamespaceFile, PidFdFileObject, UserBuffersOutputBuffer,
-    VecOutputBuffer,
+    CheckAccessReason, FdNumber, FileHandle, MountNamespaceFile, PidFdFileObject,
+    UserBuffersOutputBuffer, VecOutputBuffer,
 };
 use starnix_logging::{log_error, log_info, log_trace, track_stub};
 use starnix_syscalls::SyscallResult;
@@ -27,7 +27,7 @@ use starnix_uapi::auth::{
     CAP_SYS_TTY_CONFIG, Capabilities, Credentials, PTRACE_MODE_READ_REALCREDS, SecureBits,
 };
 use starnix_uapi::errors::{ENAMETOOLONG, Errno};
-use starnix_uapi::file_mode::{Access, AccessCheck, FileMode};
+use starnix_uapi::file_mode::{Access, AccessCheck};
 use starnix_uapi::kcmp::KcmpResource;
 use starnix_uapi::open_flags::OpenFlags;
 use starnix_uapi::resource_limits::Resource;
@@ -37,7 +37,6 @@ use starnix_uapi::user_address::{
     ArchSpecific, MappingMultiArchUserRef, MultiArchUserRef, UserAddress, UserCString,
     UserCStringPtr, UserRef,
 };
-use starnix_uapi::vfs::ResolveFlags;
 use starnix_uapi::{
     __user_cap_data_struct, __user_cap_header_struct, _LINUX_CAPABILITY_VERSION_1,
     _LINUX_CAPABILITY_VERSION_2, _LINUX_CAPABILITY_VERSION_3, AT_EMPTY_PATH, AT_SYMLINK_NOFOLLOW,
@@ -238,7 +237,7 @@ pub fn sys_execveat(
 
     log_trace!(argv:?, environ:?, flags:?; "execveat({dir_fd}, {path})");
 
-    let mut open_flags = OpenFlags::RDONLY;
+    let mut open_flags = OpenFlags::empty();
 
     if flags & AT_SYMLINK_NOFOLLOW != 0 {
         open_flags |= OpenFlags::NOFOLLOW;
@@ -270,16 +269,27 @@ pub fn sys_execveat(
         // for that file, which is undesirable here.
         //
         // See https://man7.org/linux/man-pages/man3/fexecve.3.html#DESCRIPTION
-        file.name.open(current_task, OpenFlags::RDONLY, AccessCheck::check_for(Access::EXEC))?
+
+        // From <https://man7.org/linux/man-pages/man2/execve.2.html>:
+        //
+        //   EACCES The file or a script interpreter is not a regular file.
+        if !file.name.entry.node.is_reg() {
+            return error!(EACCES);
+        }
+
+        // From <https://man7.org/linux/man-pages/man2/execve.2.html>:
+        //
+        //   EACCES Execute permission is denied for the file or a script or ELF
+        //          interpreter.
+        //
+        //   EACCES The filesystem is mounted noexec.
+        //
+        // We must check permissions with CheckAccessReason::Exec, which open() does not
+        // support, so we perform the check explicitly and skip access checks on open().
+        file.name.check_access(current_task, Access::EXEC, CheckAccessReason::Exec)?;
+        file.name.open(current_task, OpenFlags::RDONLY, AccessCheck::skip())?
     } else {
-        current_task.open_file_at(
-            dir_fd,
-            path.as_ref(),
-            open_flags,
-            FileMode::default(),
-            ResolveFlags::empty(),
-            AccessCheck::check_for(Access::EXEC),
-        )?
+        current_task.open_file_for_exec(dir_fd, path.as_ref(), open_flags)?
     };
 
     // This path can affect script resolution (the path is appended to the script args)

@@ -20,10 +20,9 @@ use starnix_types::time::SCHEDULER_CLOCK_HZ;
 use starnix_uapi::AT_PLATFORM;
 use starnix_uapi::auth::Credentials;
 use starnix_uapi::errors::Errno;
-use starnix_uapi::file_mode::{Access, AccessCheck, FileMode};
+use starnix_uapi::file_mode::Access;
 use starnix_uapi::open_flags::OpenFlags;
 use starnix_uapi::user_address::{ArchSpecific, UserAddress};
-use starnix_uapi::vfs::ResolveFlags;
 use starnix_uapi::{
     AT_BASE, AT_CLKTCK, AT_EGID, AT_ENTRY, AT_EUID, AT_EXECFN, AT_GID, AT_HWCAP, AT_HWCAP2,
     AT_NULL, AT_PAGESZ, AT_PHDR, AT_PHENT, AT_PHNUM, AT_RANDOM, AT_SECURE, AT_SYSINFO_EHDR, AT_UID,
@@ -413,13 +412,10 @@ fn resolve_script(
     };
 
     let mut args = parse_interpreter_line(&buffer)?;
-    let interpreter = current_task.open_file_at(
+    let interpreter = current_task.open_file_for_exec(
         FdNumber::AT_FDCWD,
         args[0].as_bytes().into(),
-        OpenFlags::RDONLY,
-        FileMode::default(),
-        ResolveFlags::empty(),
-        AccessCheck::check_for(Access::EXEC),
+        OpenFlags::empty(),
     )?;
 
     // Append the original script executable path as an argument.
@@ -525,8 +521,11 @@ pub fn resolve_elf_interpreter(
         let interp_resolved = current_task.override_creds(
             Arc::new(resolved_elf.creds.clone()),
             || -> Result<ResolvedInterpElf, Errno> {
-                let interp_file =
-                    current_task.open_file(interp.to_bytes().into(), OpenFlags::RDONLY)?;
+                let interp_file = current_task.open_file_for_exec(
+                    FdNumber::AT_FDCWD,
+                    interp.to_bytes().into(),
+                    OpenFlags::empty(),
+                )?;
                 let interp_memory = interp_file
                     .get_memory(current_task, None, ProtectionFlags::READ | ProtectionFlags::EXEC)
                     .map_err(|e| if e.code.error_code() == ENODEV { errno!(ENOEXEC) } else { e })?;
@@ -858,7 +857,11 @@ mod tests {
 
     fn exec_hello_starnix(current_task: &mut CurrentTask) -> Result<(), Errno> {
         let argv = vec![CString::new("data/tests/hello_starnix").unwrap()];
-        let executable = current_task.open_file(argv[0].as_bytes().into(), OpenFlags::RDONLY)?;
+        let executable = current_task.open_file_for_exec(
+            FdNumber::AT_FDCWD,
+            argv[0].as_bytes().into(),
+            OpenFlags::empty(),
+        )?;
         current_task.exec(executable, argv[0].clone(), argv, vec![])?;
         Ok(())
     }

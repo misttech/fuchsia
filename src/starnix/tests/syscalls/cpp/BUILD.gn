@@ -40,6 +40,7 @@ syscall_tests_executables = [
   ":signal_handling_test_exec_child",
   ":syscall_test_exec_child",
   "test_programs:clone_exec_helper",
+  "test_programs:custom_pt_interp_child",
   "test_programs:exit_zero",
   "test_programs:print_helper",
   "test_programs:signal_handling_test_exec_parent_after_exit",

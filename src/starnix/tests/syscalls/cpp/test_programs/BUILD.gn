@@ -50,6 +50,22 @@ if (is_linux) {
     deps = [ ":exit_zero" ]
   }
 
+  executable("custom_pt_interp_child") {
+    testonly = true
+    emit_tool_path = false
+    sources = [ "exit_zero.cc" ]
+    ldflags = [ "-Wl,--dynamic-linker=./test_interp" ]
+
+    exclude_toolchain_tags = [ "coverage" ]
+  }
+
+  resource("custom_pt_interp_child_resource") {
+    testonly = true
+    sources = [ "$root_out_dir/custom_pt_interp_child" ]
+    outputs = [ "data/tests/deps/custom_pt_interp_child" ]
+    deps = [ ":custom_pt_interp_child" ]
+  }
+
   executable("signal_handling_test_exec_parent_before_exit") {
     testonly = true
     emit_tool_path = false

@@ -32,6 +32,7 @@
 
 #include "src/lib/files/directory.h"
 #include "src/lib/files/file.h"
+#include "src/lib/files/path.h"
 #include "src/lib/fxl/strings/split_string.h"
 #include "src/lib/fxl/strings/string_number_conversions.h"
 #include "src/lib/fxl/strings/string_printf.h"
@@ -1283,10 +1284,10 @@ TEST_F(CloneAndExecTest, ExecveRequiresCallerCanExecuteScriptAndInterp) {
 
   // Create good (executable) and bad (not executable) "interpreter" binaries by copying the
   // exit_zero helper.
-  const std::string bad_interpreter_path = temp_dir.path() + "/interpreter";
+  const std::string bad_interpreter_path = temp_dir.path() + "/bad_interpreter";
   ASSERT_TRUE(files::WriteFile(bad_interpreter_path, exit_zero_content));
   ASSERT_THAT(chmod(bad_interpreter_path.c_str(), 0644), SyscallSucceeds());
-  const std::string good_interpreter_path = temp_dir.path() + "/interpreter";
+  const std::string good_interpreter_path = temp_dir.path() + "/good_interpreter";
   ASSERT_TRUE(files::WriteFile(good_interpreter_path, exit_zero_content));
   ASSERT_THAT(chmod(good_interpreter_path.c_str(), 0744), SyscallSucceeds());
 
@@ -1305,7 +1306,7 @@ TEST_F(CloneAndExecTest, ExecveRequiresCallerCanExecuteScriptAndInterp) {
   ASSERT_TRUE(helper.WaitForChildren());
 
   // Verify that an executable script using a non-executable interpreter cannot be executed.
-  const std::string bad_interp_script_path = temp_dir.path() + "/good_script";
+  const std::string bad_interp_script_path = temp_dir.path() + "/bad_interp_script";
   const std::string bad_interp_script = "#!" + bad_interpreter_path + "\n";
   ASSERT_TRUE(files::WriteFile(bad_interp_script_path, bad_interp_script));
   ASSERT_THAT(chmod(bad_interp_script_path.c_str(), 0744), SyscallSucceeds());
@@ -1325,6 +1326,218 @@ TEST_F(CloneAndExecTest, ExecveRequiresCallerCanExecuteScriptAndInterp) {
     char* const argv[] = {const_cast<char*>(good_script_path.c_str()), nullptr};
     char* const envp[] = {nullptr};
     EXPECT_THAT(execve(good_script_path.c_str(), argv, envp), SyscallSucceeds());
+  });
+  ASSERT_TRUE(helper.WaitForChildren());
+}
+
+TEST_F(CloneAndExecTest, ExecveFailsIfScriptInterpIsNotRegularFile) {
+  test_helper::ScopedTempDir temp_dir;
+
+  // 1. Directory interpreter
+  const std::string dir_interp_path = temp_dir.path() + "/dir_interp";
+  ASSERT_THAT(mkdir(dir_interp_path.c_str(), 0755), SyscallSucceeds());
+
+  const std::string script1_path = temp_dir.path() + "/script_with_dir_interp";
+  const std::string script1_content = "#!" + dir_interp_path + "\n";
+  ASSERT_TRUE(files::WriteFile(script1_path, script1_content));
+  ASSERT_THAT(chmod(script1_path.c_str(), 0744), SyscallSucceeds());
+
+  // 2. FIFO interpreter
+  const std::string fifo_interp_path = temp_dir.path() + "/fifo_interp";
+  ASSERT_THAT(mkfifo(fifo_interp_path.c_str(), 0755), SyscallSucceeds());
+
+  const std::string script2_path = temp_dir.path() + "/script_with_fifo_interp";
+  const std::string script2_content = "#!" + fifo_interp_path + "\n";
+  ASSERT_TRUE(files::WriteFile(script2_path, script2_content));
+  ASSERT_THAT(chmod(script2_path.c_str(), 0744), SyscallSucceeds());
+
+  test_helper::ForkHelper helper;
+  helper.RunInForkedProcess([&] {
+    char* const argv1[] = {const_cast<char*>(script1_path.c_str()), nullptr};
+    char* const envp[] = {nullptr};
+    EXPECT_THAT(execve(script1_path.c_str(), argv1, envp), SyscallFailsWithErrno(EACCES));
+
+    char* const argv2[] = {const_cast<char*>(script2_path.c_str()), nullptr};
+    EXPECT_THAT(execve(script2_path.c_str(), argv2, envp), SyscallFailsWithErrno(EACCES));
+  });
+  ASSERT_TRUE(helper.WaitForChildren());
+}
+
+TEST_F(CloneAndExecTest, ExecveChainedScriptRequiresAllCanBeExecuted) {
+  test_helper::ScopedTempDir temp_dir;
+
+  const std::string exit_zero_path = test_helper::GetTestResourcePath("exit_zero");
+  std::string exit_zero_content;
+  ASSERT_TRUE(files::ReadFileToString(exit_zero_path, &exit_zero_content)) << exit_zero_path;
+
+  const std::string interp_path = temp_dir.path() + "/interpreter";
+  ASSERT_TRUE(files::WriteFile(interp_path, exit_zero_content));
+  ASSERT_THAT(chmod(interp_path.c_str(), 0755), SyscallSucceeds());
+
+  // Intermediate script2 pointing to interpreter, without execute permission (0644).
+  const std::string bad_script2_path = temp_dir.path() + "/bad_script2";
+  const std::string script2_content = "#!" + interp_path + "\n";
+  ASSERT_TRUE(files::WriteFile(bad_script2_path, script2_content));
+  ASSERT_THAT(chmod(bad_script2_path.c_str(), 0644), SyscallSucceeds());
+
+  // Outer script1 pointing to bad_script2, with execute permission (0755).
+  const std::string script1_path = temp_dir.path() + "/script1";
+  const std::string script1_content = "#!" + bad_script2_path + "\n";
+  ASSERT_TRUE(files::WriteFile(script1_path, script1_content));
+  ASSERT_THAT(chmod(script1_path.c_str(), 0755), SyscallSucceeds());
+
+  test_helper::ForkHelper helper;
+  helper.RunInForkedProcess([&] {
+    char* const argv[] = {const_cast<char*>(script1_path.c_str()), nullptr};
+    char* const envp[] = {nullptr};
+    EXPECT_THAT(execve(script1_path.c_str(), argv, envp), SyscallFailsWithErrno(EACCES));
+  });
+  ASSERT_TRUE(helper.WaitForChildren());
+}
+
+TEST_F(CloneAndExecTest, ExecveChainedScriptRecursionLimit) {
+  test_helper::ScopedTempDir temp_dir;
+
+  // Create mutually recursive scripts: script_a -> script_b -> script_a
+  const std::string script_a_path = temp_dir.path() + "/script_a";
+  const std::string script_b_path = temp_dir.path() + "/script_b";
+  ASSERT_TRUE(files::WriteFile(script_a_path, "#!" + script_b_path + "\n"));
+  ASSERT_TRUE(files::WriteFile(script_b_path, "#!" + script_a_path + "\n"));
+  ASSERT_THAT(chmod(script_a_path.c_str(), 0755), SyscallSucceeds());
+  ASSERT_THAT(chmod(script_b_path.c_str(), 0755), SyscallSucceeds());
+
+  test_helper::ForkHelper helper;
+  helper.RunInForkedProcess([&] {
+    char* const argv[] = {const_cast<char*>(script_a_path.c_str()), nullptr};
+    char* const envp[] = {nullptr};
+    EXPECT_THAT(execve(script_a_path.c_str(), argv, envp), SyscallFailsWithErrno(ELOOP));
+  });
+  ASSERT_TRUE(helper.WaitForChildren());
+}
+
+TEST(Task, ExecveFailsIfPtInterpLacksExecutePermission) {
+  test_helper::ScopedTempDir temp_dir;
+
+  const std::string dynamic_linker_path = test_helper::GetSystemDynamicLinkerPath();
+  ASSERT_FALSE(dynamic_linker_path.empty());
+  std::string dynamic_linker_content;
+  ASSERT_TRUE(files::ReadFileToString(dynamic_linker_path, &dynamic_linker_content))
+      << dynamic_linker_path;
+
+  // Create ./test_interp in temp_dir without execute permission (0644).
+  const std::string interp_path = temp_dir.path() + "/test_interp";
+  ASSERT_TRUE(files::WriteFile(interp_path, dynamic_linker_content));
+  ASSERT_THAT(chmod(interp_path.c_str(), 0644), SyscallSucceeds());
+
+  const std::string custom_pt_interp_child =
+      files::AbsolutePath(test_helper::GetTestResourcePath("custom_pt_interp_child"));
+
+  test_helper::ForkHelper helper;
+  helper.RunInForkedProcess([&] {
+    SAFE_SYSCALL(chdir(temp_dir.path().c_str()));
+    char* const argv[] = {const_cast<char*>(custom_pt_interp_child.c_str()), nullptr};
+    char* const envp[] = {nullptr};
+    EXPECT_THAT(execve(custom_pt_interp_child.c_str(), argv, envp), SyscallFailsWithErrno(EACCES));
+  });
+  ASSERT_TRUE(helper.WaitForChildren());
+}
+
+TEST(Task, ExecveFailsIfPtInterpIsNotRegularFile) {
+  test_helper::ScopedTempDir temp_dir;
+
+  // 1. Directory as ./test_interp
+  const std::string dir_path = temp_dir.path() + "/dir_interp";
+  ASSERT_THAT(mkdir(dir_path.c_str(), 0755), SyscallSucceeds());
+  ASSERT_THAT(mkdir((dir_path + "/test_interp").c_str(), 0755), SyscallSucceeds());
+
+  // 2. FIFO as ./test_interp
+  const std::string fifo_path = temp_dir.path() + "/fifo_interp";
+  ASSERT_THAT(mkdir(fifo_path.c_str(), 0755), SyscallSucceeds());
+  ASSERT_THAT(mkfifo((fifo_path + "/test_interp").c_str(), 0755), SyscallSucceeds());
+
+  const std::string custom_pt_interp_child =
+      files::AbsolutePath(test_helper::GetTestResourcePath("custom_pt_interp_child"));
+
+  test_helper::ForkHelper helper;
+  helper.RunInForkedProcess([&] {
+    SAFE_SYSCALL(chdir(dir_path.c_str()));
+    char* const argv[] = {const_cast<char*>(custom_pt_interp_child.c_str()), nullptr};
+    char* const envp[] = {nullptr};
+    EXPECT_THAT(execve(custom_pt_interp_child.c_str(), argv, envp), SyscallFailsWithErrno(EACCES));
+  });
+  ASSERT_TRUE(helper.WaitForChildren());
+
+  test_helper::ForkHelper helper2;
+  helper2.RunInForkedProcess([&] {
+    SAFE_SYSCALL(chdir(fifo_path.c_str()));
+    char* const argv[] = {const_cast<char*>(custom_pt_interp_child.c_str()), nullptr};
+    char* const envp[] = {nullptr};
+    EXPECT_THAT(execve(custom_pt_interp_child.c_str(), argv, envp), SyscallFailsWithErrno(EACCES));
+  });
+  ASSERT_TRUE(helper2.WaitForChildren());
+}
+
+TEST(Task, ExecveatFailsWithEloopIfSymlinkNoFollow) {
+  test_helper::ScopedTempDir temp_dir;
+
+  const std::string exit_zero_path = test_helper::GetTestResourcePath("exit_zero");
+  const std::string symlink_path = temp_dir.path() + "/symlink_to_bin";
+  ASSERT_THAT(symlink(exit_zero_path.c_str(), symlink_path.c_str()), SyscallSucceeds());
+
+  test_helper::ForkHelper helper;
+  helper.RunInForkedProcess([&] {
+    char* const argv[] = {const_cast<char*>(symlink_path.c_str()), nullptr};
+    char* const envp[] = {nullptr};
+    EXPECT_THAT(
+        syscall(SYS_execveat, AT_FDCWD, symlink_path.c_str(), argv, envp, AT_SYMLINK_NOFOLLOW),
+        SyscallFailsWithErrno(ELOOP));
+  });
+  ASSERT_TRUE(helper.WaitForChildren());
+}
+
+TEST(Task, ExecveSucceedsWithExecutablePtInterp) {
+  test_helper::ScopedTempDir temp_dir;
+
+  const std::string dynamic_linker_path = test_helper::GetSystemDynamicLinkerPath();
+  ASSERT_FALSE(dynamic_linker_path.empty());
+  std::string dynamic_linker_content;
+  ASSERT_TRUE(files::ReadFileToString(dynamic_linker_path, &dynamic_linker_content))
+      << dynamic_linker_path;
+
+  const std::string interp_path = temp_dir.path() + "/test_interp";
+  ASSERT_TRUE(files::WriteFile(interp_path, dynamic_linker_content));
+  ASSERT_THAT(chmod(interp_path.c_str(), 0755), SyscallSucceeds());
+
+  const std::string custom_pt_interp_child =
+      files::AbsolutePath(test_helper::GetTestResourcePath("custom_pt_interp_child"));
+
+  test_helper::ForkHelper helper;
+  helper.RunInForkedProcess([&] {
+    SAFE_SYSCALL(chdir(temp_dir.path().c_str()));
+    char* const argv[] = {const_cast<char*>(custom_pt_interp_child.c_str()), nullptr};
+    char* const envp[] = {nullptr};
+    EXPECT_THAT(execve(custom_pt_interp_child.c_str(), argv, envp), SyscallSucceeds());
+  });
+  ASSERT_TRUE(helper.WaitForChildren());
+}
+
+TEST(Task, ExecveSucceedsForExecuteOnlyBinary) {
+  test_helper::ScopedTempDir temp_dir;
+
+  const std::string exit_zero_path = test_helper::GetTestResourcePath("exit_zero");
+  std::string binary_content;
+  ASSERT_TRUE(files::ReadFileToString(exit_zero_path, &binary_content)) << exit_zero_path;
+
+  const std::string exec_only_path = temp_dir.path() + "/exec_only_bin";
+  ASSERT_TRUE(files::WriteFile(exec_only_path, binary_content));
+  // Mode 0111: execute permission only, no read permission.
+  ASSERT_THAT(chmod(exec_only_path.c_str(), 0111), SyscallSucceeds());
+
+  test_helper::ForkHelper helper;
+  helper.RunInForkedProcess([&] {
+    char* const argv[] = {const_cast<char*>(exec_only_path.c_str()), nullptr};
+    char* const envp[] = {nullptr};
+    EXPECT_THAT(execve(exec_only_path.c_str(), argv, envp), SyscallSucceeds());
   });
   ASSERT_TRUE(helper.WaitForChildren());
 }

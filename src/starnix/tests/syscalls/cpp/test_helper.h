@@ -224,9 +224,11 @@ void waitForChildFails(unsigned int waitFlag, int cloneFlags, int (*childRunFunc
 
 std::string get_tmp_path();
 
-// Returns the path to a test resource.
-//
-// Looks for the resource under "data/tests/deps" first. If not found, looks for it in the same
+// Returns the path to the system dynamic linker requested by /proc/self/exe.
+std::string GetSystemDynamicLinkerPath();
+
+// Returns the path to a test resource named `resource`, which should either be in
+// "data/tests/deps" relative to the current working directory, or in the same
 // directory as the current executable.
 std::string GetTestResourcePath(const std::string &resource);
 

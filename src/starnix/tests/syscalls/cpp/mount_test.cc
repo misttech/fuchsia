@@ -26,6 +26,7 @@
 #include <linux/loop.h>
 
 #include "src/lib/files/file.h"
+#include "src/lib/files/path.h"
 #include "src/lib/fxl/strings/split_string.h"
 #include "src/starnix/tests/syscalls/cpp/proc_test_base.h"
 #include "src/starnix/tests/syscalls/cpp/syscall_matchers.h"
@@ -687,6 +688,110 @@ TEST_F(MountTest, CannotExecFromNoexecMount) {
   ASSERT_TRUE(helper.WaitForChildren());
 
   ASSERT_THAT(umount(dir.c_str()), SyscallSucceeds());
+}
+
+TEST_F(MountTest, CannotExecScriptFromNoexecMount) {
+  if (!test_helper::HasSysAdmin()) {
+    GTEST_SKIP() << "Not running with sysadmin capabilities, skipping.";
+  }
+  ASSERT_SUCCESS(MakeDir("noexec_mount"));
+  auto noexec_dir = TestPath("noexec_mount");
+  ASSERT_THAT(mount(nullptr, noexec_dir.c_str(), "tmpfs", MS_NOEXEC, nullptr), SyscallSucceeds());
+
+  const std::string exit_zero_path = test_helper::GetTestResourcePath("exit_zero");
+  std::string exit_zero_content;
+  ASSERT_TRUE(files::ReadFileToString(exit_zero_path, &exit_zero_content)) << exit_zero_path;
+
+  // Regular interpreter on normal filesystem
+  ASSERT_SUCCESS(MakeDir("exec_mount"));
+  auto exec_dir = TestPath("exec_mount");
+  const std::string interp_path = exec_dir + "/interpreter";
+  ASSERT_TRUE(files::WriteFile(interp_path, exit_zero_content));
+  ASSERT_THAT(chmod(interp_path.c_str(), 0755), SyscallSucceeds());
+
+  // Script on noexec mount
+  const std::string script_path = noexec_dir + "/script";
+  ASSERT_TRUE(files::WriteFile(script_path, "#!" + interp_path + "\n"));
+  ASSERT_THAT(chmod(script_path.c_str(), 0755), SyscallSucceeds());
+
+  test_helper::ForkHelper helper;
+  helper.RunInForkedProcess([&] {
+    char *const argv[] = {const_cast<char *>(script_path.c_str()), nullptr};
+    char *const envp[] = {nullptr};
+    EXPECT_THAT(execve(script_path.c_str(), argv, envp), SyscallFailsWithErrno(EACCES));
+  });
+  ASSERT_TRUE(helper.WaitForChildren());
+
+  ASSERT_THAT(umount(noexec_dir.c_str()), SyscallSucceeds());
+}
+
+TEST_F(MountTest, CannotExecScriptWithInterpFromNoexecMount) {
+  if (!test_helper::HasSysAdmin()) {
+    GTEST_SKIP() << "Not running with sysadmin capabilities, skipping.";
+  }
+  ASSERT_SUCCESS(MakeDir("noexec_mount"));
+  auto noexec_dir = TestPath("noexec_mount");
+  ASSERT_THAT(mount(nullptr, noexec_dir.c_str(), "tmpfs", MS_NOEXEC, nullptr), SyscallSucceeds());
+
+  const std::string exit_zero_path = test_helper::GetTestResourcePath("exit_zero");
+  std::string exit_zero_content;
+  ASSERT_TRUE(files::ReadFileToString(exit_zero_path, &exit_zero_content)) << exit_zero_path;
+
+  // Interpreter on noexec mount
+  const std::string interp_path = noexec_dir + "/interpreter";
+  ASSERT_TRUE(files::WriteFile(interp_path, exit_zero_content));
+  ASSERT_THAT(chmod(interp_path.c_str(), 0755), SyscallSucceeds());
+
+  // Script on normal filesystem
+  ASSERT_SUCCESS(MakeDir("exec_mount"));
+  auto exec_dir = TestPath("exec_mount");
+  const std::string script_path = exec_dir + "/script";
+  ASSERT_TRUE(files::WriteFile(script_path, "#!" + interp_path + "\n"));
+  ASSERT_THAT(chmod(script_path.c_str(), 0755), SyscallSucceeds());
+
+  test_helper::ForkHelper helper;
+  helper.RunInForkedProcess([&] {
+    char *const argv[] = {const_cast<char *>(script_path.c_str()), nullptr};
+    char *const envp[] = {nullptr};
+    EXPECT_THAT(execve(script_path.c_str(), argv, envp), SyscallFailsWithErrno(EACCES));
+  });
+  ASSERT_TRUE(helper.WaitForChildren());
+
+  ASSERT_THAT(umount(noexec_dir.c_str()), SyscallSucceeds());
+}
+
+TEST_F(MountTest, CannotExecElfWithPtInterpFromNoexecMount) {
+  if (!test_helper::HasSysAdmin()) {
+    GTEST_SKIP() << "Not running with sysadmin capabilities, skipping.";
+  }
+  ASSERT_SUCCESS(MakeDir("noexec_mount"));
+  auto noexec_dir = TestPath("noexec_mount");
+  ASSERT_THAT(mount(nullptr, noexec_dir.c_str(), "tmpfs", MS_NOEXEC, nullptr), SyscallSucceeds());
+
+  const std::string dynamic_linker_path = test_helper::GetSystemDynamicLinkerPath();
+  ASSERT_FALSE(dynamic_linker_path.empty());
+  std::string dynamic_linker_content;
+  ASSERT_TRUE(files::ReadFileToString(dynamic_linker_path, &dynamic_linker_content))
+      << dynamic_linker_path;
+
+  // Interpreter on noexec mount at ./test_interp
+  const std::string interp_path = noexec_dir + "/test_interp";
+  ASSERT_TRUE(files::WriteFile(interp_path, dynamic_linker_content));
+  ASSERT_THAT(chmod(interp_path.c_str(), 0755), SyscallSucceeds());
+
+  const std::string custom_pt_interp_child =
+      files::AbsolutePath(test_helper::GetTestResourcePath("custom_pt_interp_child"));
+
+  test_helper::ForkHelper helper;
+  helper.RunInForkedProcess([&] {
+    SAFE_SYSCALL(chdir(noexec_dir.c_str()));
+    char *const argv[] = {const_cast<char *>(custom_pt_interp_child.c_str()), nullptr};
+    char *const envp[] = {nullptr};
+    EXPECT_THAT(execve(custom_pt_interp_child.c_str(), argv, envp), SyscallFailsWithErrno(EACCES));
+  });
+  ASSERT_TRUE(helper.WaitForChildren());
+
+  ASSERT_THAT(umount(noexec_dir.c_str()), SyscallSucceeds());
 }
 
 TEST_F(MountTest, UmountIsNotRecursive) {

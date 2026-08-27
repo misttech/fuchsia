@@ -114,8 +114,11 @@ async fn spawn_console(
         let pty = execute_task_with_prerun_result(
             current_task,
             move |current_task| {
-                let executable =
-                    current_task.open_file(binary_path.as_bytes().into(), OpenFlags::RDONLY)?;
+                let executable = current_task.open_file_for_exec(
+                    starnix_core::vfs::FdNumber::AT_FDCWD,
+                    binary_path.as_bytes().into(),
+                    OpenFlags::empty(),
+                )?;
                 current_task.exec(executable, binary_path, argv, environ)?;
                 let (pty, pts) = create_main_and_replica(&current_task, window_size)?;
                 let fd_flags = FdFlags::empty();

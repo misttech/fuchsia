@@ -815,7 +815,11 @@ async fn create_container(
 
     log_info!("Opening start_info file.");
     let executable = system_task
-        .open_file(argv[0].as_bytes().into(), OpenFlags::RDONLY)
+        .open_file_for_exec(
+            starnix_core::vfs::FdNumber::AT_FDCWD,
+            argv[0].as_bytes().into(),
+            OpenFlags::empty(),
+        )
         .with_source_context(|| format!("opening init: {:?}", argv[0]))?;
 
     let initial_name = if start_info.program.init.is_empty() {

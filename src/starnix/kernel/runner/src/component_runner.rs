@@ -277,8 +277,11 @@ pub async fn start_component(
                             environ.push(CString::new(env).map_err(|_| errno!(EINVAL))?);
                         }
 
-                        let executable = current_task
-                            .open_file(program.binary.as_bytes().into(), OpenFlags::RDONLY)?;
+                        let executable = current_task.open_file_for_exec(
+                            FdNumber::AT_FDCWD,
+                            program.binary.as_bytes().into(),
+                            OpenFlags::empty(),
+                        )?;
                         current_task.exec(executable, program.binary, argv, environ)?;
 
                         Ok(Arc::downgrade(&current_task.task))
