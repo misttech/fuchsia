@@ -382,7 +382,6 @@ mod tests {
                 partition_type: "bl_type".into(),
                 name: Some("bootloader".into()),
                 image: Utf8Path::from_path(fake_bootloader.path()).unwrap().to_path_buf(),
-                condition_json: None,
             }],
             partitions: vec![
                 Partition::ZBI { name: "zircon_a".into(), slot: PartitionSlot::A, size: None },
@@ -556,7 +555,6 @@ mod tests {
                 partition_type: "bl_type".into(),
                 name: Some("bootloader".into()),
                 image: Utf8Path::from_path(fake_bootloader.path()).unwrap().to_path_buf(),
-                condition_json: None,
             }],
             partitions: vec![
                 Partition::ZBI { name: "zircon_a".into(), slot: PartitionSlot::A, size: None },
@@ -637,13 +635,11 @@ mod tests {
                     partition_type: "bl_type".into(),
                     name: Some("bootloader_a".into()),
                     image: Utf8Path::from_path(fake_bootloader.path()).unwrap().to_path_buf(),
-                    condition_json: None,
                 },
                 BootloaderPartition {
                     partition_type: "bl_type".into(),
                     name: Some("bootloader_b".into()),
                     image: Utf8Path::from_path(fake_bootloader.path()).unwrap().to_path_buf(),
-                    condition_json: None,
                 },
             ],
             partitions: vec![],

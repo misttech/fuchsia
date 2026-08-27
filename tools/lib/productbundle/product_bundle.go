@@ -18,10 +18,9 @@ import (
 )
 
 type BootloaderPartition struct {
-	Type          string  `json:"type"`
-	Name          string  `json:"name"`
-	Image         string  `json:"image"`
-	ConditionJSON *string `json:"condition_json,omitempty"`
+	Type  string `json:"type"`
+	Name  string `json:"name"`
+	Image string `json:"image"`
 }
 
 type BootstrapCondition struct {
@@ -30,10 +29,9 @@ type BootstrapCondition struct {
 }
 
 type BootstrapPartition struct {
-	Name          string              `json:"name"`
-	Image         string              `json:"image"`
-	Condition     *BootstrapCondition `json:"condition,omitempty"`
-	ConditionJSON *string             `json:"condition_json,omitempty"`
+	Name      string              `json:"name"`
+	Image     string              `json:"image"`
+	Condition *BootstrapCondition `json:"condition,omitempty"`
 }
 
 type Partition struct {

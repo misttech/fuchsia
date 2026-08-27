@@ -77,17 +77,6 @@ impl fastboot::InfoListener for VariableListener {
     }
 }
 
-#[derive(Default, Debug)]
-struct InfoCollector(std::sync::Mutex<Vec<String>>);
-
-#[async_trait]
-impl fastboot::InfoListener for InfoCollector {
-    async fn on_info(&self, info: String) -> Result<(), fastboot::ReadError> {
-        self.0.lock().unwrap().push(info);
-        Ok(())
-    }
-}
-
 #[derive(Debug)]
 struct ProgressListener<'a>(&'a Sender<UploadProgress>);
 
@@ -589,24 +578,18 @@ impl<T: AsyncRead + AsyncWrite + Unpin + Debug + Send> Fastboot for FastbootProx
         }
     }
 
-    async fn oem(&mut self, command: &str) -> Result<(String, Vec<String>), FastbootError> {
+    async fn oem(&mut self, command: &str) -> Result<(), FastbootError> {
         let command = Command::Oem(command.to_string());
-        let listener = InfoCollector::default();
-        let reply = send_with_listener(
-            self.ctx.clone(),
-            command.clone(),
-            self.interface().await?,
-            &listener,
-        )
-        .await?;
-        let info = listener.0.into_inner().unwrap();
-        match reply {
-            Reply::Okay(message) => {
+        match send(self.ctx.clone(), command.clone(), self.interface().await?).await? {
+            Reply::Okay(_) => {
                 log::debug!("Successfully sent oem command \"{}\"", command);
-                Ok((message, info))
+                Ok(())
             }
             Reply::Fail(message) => {
-                Err(FastbootError::OemCommandFailed { command: command.to_string(), message })
+                return Err(FastbootError::OemCommandFailed {
+                    command: command.to_string(),
+                    message,
+                });
             }
             r @ _ => Err(FastbootError::UnexpectedReply {
                 method: command.to_string(),
@@ -809,7 +792,6 @@ mod test {
     #[fuchsia::test]
     async fn test_oem_ok() -> Result<()> {
         let mut test_transport = TestTransport::new();
-        test_transport.push(Reply::Info("info line 1".to_string()));
         test_transport.push(Reply::Okay("done".to_string()));
         let mut fastboot_client = FastbootProxy::<TestTransport> {
             target_id: "foo".to_string(),
@@ -819,9 +801,7 @@ mod test {
         };
 
         assert_eq!(fastboot_client.target_id, "foo");
-        let (msg, info) = fastboot_client.oem("version").await?;
-        assert_eq!(msg, "done");
-        assert_eq!(info, vec!["info line 1".to_string()]);
+        fastboot_client.oem("version").await?;
         Ok(())
     }
     #[fuchsia::test]

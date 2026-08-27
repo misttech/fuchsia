@@ -438,7 +438,6 @@ mod tests {
                     partition_type: "efi-shell".into(),
                     name: Some("some-efi-shell.fatfs".into()),
                     image: "partitions/bootloaders/some-efi-shell.fat".into(),
-                    condition_json: None,
                 }],
                 hardware_revision: "x64".into(),
                 ..Default::default()

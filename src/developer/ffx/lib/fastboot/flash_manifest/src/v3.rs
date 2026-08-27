@@ -5,7 +5,6 @@
 use crate::OemFile;
 use crate::v1::{FlashManifest as FlashManifestV1, Partition as PartitionV1, Product as ProductV1};
 use crate::v2::FlashManifest as FlashManifestV2;
-use assembly_partitions_config::BootstrapCondition;
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
@@ -38,20 +37,12 @@ pub struct Partition {
     pub path: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub condition: Option<Condition>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub condition_json: Option<String>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct Condition {
     pub variable: String,
     pub value: String,
-}
-
-impl From<&BootstrapCondition> for Condition {
-    fn from(val: &BootstrapCondition) -> Self {
-        Self { variable: val.variable.clone(), value: val.value.clone() }
-    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -68,12 +59,11 @@ impl From<&ExplicitOemFile> for OemFile {
 
 impl From<&Partition> for PartitionV1 {
     fn from(p: &Partition) -> PartitionV1 {
-        PartitionV1::new_with_condition_json(
+        PartitionV1::new(
             p.name.clone(),
             p.path.clone(),
             p.condition.as_ref().map(|c| c.variable.clone()),
             p.condition.as_ref().map(|c| c.value.clone()),
-            p.condition_json.clone(),
         )
     }
 }

@@ -15,7 +15,7 @@ pub mod test {
     use super::stream::StreamCommand;
     use async_trait::async_trait;
     use chrono::Duration;
-    use std::collections::{HashMap, VecDeque};
+    use std::collections::HashMap;
     use std::default::Default;
     use std::sync::{Arc, Mutex};
     use tokio::sync::mpsc::Sender;
@@ -28,35 +28,27 @@ pub mod test {
         pub oem_commands: Vec<String>,
         pub bootloader_reboots: usize,
         pub boots: usize,
-        /// Variable => (Result<Value, ErrorMessage>, Call Count)
-        variables: HashMap<String, (Result<String, String>, u32)>,
-        /// OEM Command => Queue of Result<(OkayMessage, InfoMessages), ErrorMessage>
-        oem_responses: HashMap<String, VecDeque<Result<(String, Vec<String>), String>>>,
+        /// Variable => (Option(Value), Call Count)
+        variables: HashMap<String, (Option<String>, u32)>,
     }
 
     impl FakeServiceCommands {
-        /// Sets the provided variable to return a result (Ok value or Err message)
-        /// preserving the past call count.
-        pub fn set_var_res(&mut self, var: String, res: Result<String, String>) {
-            match self.variables.get_mut(&var) {
-                Some((old_val, _)) => *old_val = res,
-                None => {
-                    self.variables.insert(var, (res, 0));
-                }
-            }
-        }
-
         /// Sets the provided variable to the given value preserving the past
         /// call count.
         pub fn set_var(&mut self, var: String, value: String) {
-            self.set_var_res(var, Ok(value));
+            match self.variables.get_mut(&var) {
+                Some((old_val, _)) => *old_val = Some(value),
+                None => {
+                    self.variables.insert(var, (Some(value), 0));
+                }
+            }
         }
 
         /// Returns (variable_set, call_count)
         pub fn get_var_call_count(&self, var: impl Into<String>) -> (bool, u32) {
             self.variables
                 .get(&var.into())
-                .map(|(val, count)| (val.is_ok(), *count))
+                .map(|(val, count)| (val.is_some(), *count))
                 .unwrap_or((false, 0))
         }
 
@@ -66,16 +58,6 @@ pub mod test {
             vars: impl IntoIterator<Item = (impl Into<String>, impl Into<String>)>,
         ) {
             vars.into_iter().for_each(|(var, val)| self.set_var(var.into(), val.into()))
-        }
-
-        /// Pushes an OEM command response to the queue for `cmd`. Responses will be popped in
-        /// FIFO order.
-        pub fn push_oem_res(
-            &mut self,
-            cmd: impl Into<String>,
-            res: Result<(String, Vec<String>), String>,
-        ) {
-            self.oem_responses.entry(cmd.into()).or_default().push_back(res);
         }
     }
 
@@ -97,21 +79,19 @@ pub mod test {
         async fn get_var(&mut self, name: &str) -> Result<String, FastbootError> {
             let mut state = self.state.lock().unwrap();
             match state.variables.get_mut(name) {
-                Some((Ok(val), count)) => {
+                Some((Some(val), count)) => {
                     *count += 1;
                     Ok(val.clone())
                 }
-                Some((Err(msg), count)) => {
+                Some((None, count)) => {
                     *count += 1;
                     Err(FastbootError::GetVariableError {
                         variable: name.to_string(),
-                        message: msg.clone(),
+                        message: "Variable not found".to_string(),
                     })
                 }
                 None => {
-                    state
-                        .variables
-                        .insert(name.to_string(), (Err("Variable not found".to_string()), 1));
+                    state.variables.insert(name.to_string(), (None, 1));
                     Err(FastbootError::GetVariableError {
                         variable: name.to_string(),
                         message: "Variable not found".to_string(),
@@ -196,18 +176,10 @@ pub mod test {
             Ok(())
         }
 
-        async fn oem(&mut self, command: &str) -> Result<(String, Vec<String>), FastbootError> {
+        async fn oem(&mut self, command: &str) -> Result<(), FastbootError> {
             let mut state = self.state.lock().unwrap();
             state.oem_commands.push(format!("oem {}", command));
-            let clean_cmd = command.strip_prefix("oem ").unwrap_or(command);
-            match state.oem_responses.get_mut(clean_cmd).and_then(|q| q.pop_front()) {
-                Some(Ok(res)) => Ok(res),
-                Some(Err(msg)) => Err(FastbootError::OemCommandFailed {
-                    command: format!("oem {}", command),
-                    message: msg,
-                }),
-                None => Ok(("".to_string(), vec![])),
-            }
+            Ok(())
         }
 
         async fn stream<'a>(

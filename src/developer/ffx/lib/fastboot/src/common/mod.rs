@@ -18,16 +18,13 @@ use assembly_partitions_config::UploadMethod;
 use async_trait::async_trait;
 use chrono::{Duration, Utc};
 use ffx_config::EnvironmentContext;
-use ffx_fastboot_interface::fastboot_interface::{
-    FastbootError, FastbootInterface, RebootEvent, UploadProgress,
-};
+use ffx_fastboot_interface::fastboot_interface::{FastbootInterface, RebootEvent, UploadProgress};
 use ffx_fastboot_interface::stream::{SparseStreamIterator, StreamCommand, generate_command_list};
 use ffx_fastboot_interface::util::{U32_SIZE, convert_log_err};
 use ffx_flash_manifest::{ManifestParams, OemFile, SSH_OEM_COMMAND};
 use futures::prelude::*;
 use futures::try_join;
 use pbms::is_local_product_bundle;
-use regex::Regex;
 use sdk::SdkVersion;
 use sparse::reader::SparseReader;
 use sparse::{build_sparse_files, resparse_sparse_img};
@@ -50,9 +47,6 @@ pub trait Partition {
     fn file(&self) -> &str;
     fn variable(&self) -> Option<&str>;
     fn variable_value(&self) -> Option<&str>;
-    fn condition_json(&self) -> Option<&str> {
-        None
-    }
 }
 
 pub trait Product<P> {
@@ -572,186 +566,6 @@ pub async fn verify_variable_value(
     Ok(fastboot_interface.get_var(var).await.map(|res| res == value)?)
 }
 
-#[derive(Clone, Debug, serde::Deserialize, PartialEq)]
-#[serde(untagged)]
-pub enum FastbootCondition {
-    And {
-        and: Vec<FastbootCondition>,
-    },
-    Or {
-        or: Vec<FastbootCondition>,
-    },
-    Not {
-        not: Box<FastbootCondition>,
-    },
-    Base {
-        cmd: String,
-        #[serde(default)]
-        match_result_regex: Option<String>,
-        #[serde(default)]
-        match_info: Option<InfoCondition>,
-    },
-}
-
-#[derive(Clone, Debug, serde::Deserialize, PartialEq)]
-#[serde(untagged)]
-pub enum InfoCondition {
-    And { and: Vec<InfoCondition> },
-    Or { or: Vec<InfoCondition> },
-    Not { not: Box<InfoCondition> },
-    String(String),
-}
-
-fn verify_info(info_str: &str, cond: &InfoCondition) -> Result<bool> {
-    match cond {
-        InfoCondition::And { and } => {
-            for sub in and {
-                if !verify_info(info_str, sub)? {
-                    log::debug!("InfoCondition::And sub-condition failed");
-                    return Ok(false);
-                }
-            }
-            log::debug!("InfoCondition::And satisfied");
-            Ok(true)
-        }
-        InfoCondition::Or { or } => {
-            for sub in or {
-                if verify_info(info_str, sub)? {
-                    log::debug!("InfoCondition::Or sub-condition satisfied");
-                    return Ok(true);
-                }
-            }
-            log::debug!("InfoCondition::Or: no sub-conditions satisfied");
-            Ok(false)
-        }
-        InfoCondition::Not { not } => {
-            let res = verify_info(info_str, not)?;
-            log::debug!("InfoCondition::Not evaluated to: {}", !res);
-            Ok(!res)
-        }
-        InfoCondition::String(regex) => {
-            let re = Regex::new(regex).map_err(|e| {
-                FfxFastbootError::FastbootConditionError(format!(
-                    "Invalid regex pattern '{regex}': {e}"
-                ))
-            })?;
-            let matched = re.is_match(info_str);
-            log::debug!(
-                "Matching info regex \"{}\" against info \"{}\" -> {}",
-                regex,
-                info_str,
-                matched
-            );
-            Ok(matched)
-        }
-    }
-}
-
-pub async fn verify_condition(
-    condition: &FastbootCondition,
-    fastboot_interface: &mut (impl FastbootInterface + Send),
-) -> Result<bool> {
-    log::debug!("Evaluating condition: {:?}", condition);
-    match condition {
-        FastbootCondition::And { and } => {
-            for sub in and {
-                if !Box::pin(verify_condition(sub, fastboot_interface)).await? {
-                    log::debug!("AND condition branch failed");
-                    return Ok(false);
-                }
-            }
-            log::debug!("AND condition satisfied");
-            Ok(true)
-        }
-        FastbootCondition::Or { or } => {
-            for sub in or {
-                if Box::pin(verify_condition(sub, fastboot_interface)).await? {
-                    log::debug!("OR condition branch satisfied");
-                    return Ok(true);
-                }
-            }
-            log::debug!("OR condition: no branches satisfied");
-            Ok(false)
-        }
-        FastbootCondition::Not { not } => {
-            let res = Box::pin(verify_condition(not, fastboot_interface)).await?;
-            log::debug!("NOT condition evaluated to: {}", !res);
-            Ok(!res)
-        }
-        FastbootCondition::Base { cmd, match_result_regex, match_info } => {
-            log::debug!("Executing condition command: \"{}\"", cmd);
-            let (res, info) = if let Some(var) = cmd.strip_prefix("getvar ") {
-                match fastboot_interface.get_var(var).await {
-                    Err(FastbootError::GetVariableError { message, .. }) => (Err(message), vec![]),
-                    v => (Ok(v?), vec![]),
-                }
-            } else if let Some(oem) = cmd.strip_prefix("oem ") {
-                match fastboot_interface.oem(oem).await {
-                    Err(FastbootError::OemCommandFailed { message, .. }) => (Err(message), vec![]),
-                    Ok((msg, info)) => (Ok(msg), info),
-                    Err(e) => return Err(e.into()),
-                }
-            } else {
-                return Err(FfxFastbootError::FastbootConditionError(
-                    "Only getvar and oem are supported".to_string(),
-                ));
-            };
-            let actual = match res {
-                Ok(msg) => format!("OKAY{msg}"),
-                Err(msg) => format!("FAIL{msg}"),
-            };
-            log::debug!(
-                "Command \"{}\" returned response: \"{}\", info lines: {:?}",
-                cmd,
-                actual,
-                info
-            );
-
-            let raw_pattern = match_result_regex.as_deref().unwrap_or("OKAY.*");
-            let stripped = raw_pattern.strip_prefix('^').unwrap_or(raw_pattern);
-            let pattern_slice = stripped.strip_suffix('$').unwrap_or(stripped);
-            let pattern = format!("^(?:{pattern_slice})$");
-            let re = Regex::new(&pattern).map_err(|e| {
-                FfxFastbootError::FastbootConditionError(format!(
-                    "Invalid regex pattern '{pattern}': {e}"
-                ))
-            })?;
-            let res_matched = re.is_match(&actual);
-            log::debug!(
-                "Matching actual response \"{}\" against pattern \"{}\" -> {}",
-                actual,
-                pattern,
-                res_matched
-            );
-            if !res_matched {
-                return Ok(false);
-            }
-
-            if let Some(info_cond) = match_info {
-                let info_joined = info.join("\n");
-                log::debug!("Evaluating match_info on info string: \"{}\"", info_joined);
-                if !verify_info(&info_joined, info_cond)? {
-                    log::debug!("match_info condition failed for command \"{}\"", cmd);
-                    return Ok(false);
-                }
-            }
-
-            log::debug!("Base condition \"{}\" satisfied", cmd);
-            Ok(true)
-        }
-    }
-}
-
-pub async fn verify_condition_json(
-    cond_str: &str,
-    fastboot_interface: &mut impl FastbootInterface,
-) -> Result<bool> {
-    log::debug!("Verifying condition JSON: {}", cond_str);
-    let parsed = serde_json::from_str::<FastbootCondition>(cond_str)
-        .map_err(|e| FfxFastbootError::FastbootConditionError(e.to_string()))?;
-    verify_condition(&parsed, fastboot_interface).await
-}
-
 pub async fn reboot_bootloader<F: FastbootInterface>(
     messenger: &Sender<Event>,
     fastboot_interface: &mut F,
@@ -906,26 +720,33 @@ pub async fn flash_partitions<F: FileResolver + Sync, P: Partition, T: FastbootI
     flash_timeout_rate_mb_per_second: f64,
 ) -> Result<()> {
     for partition in partitions {
-        let should_flash = if let Some(cond_str) = partition.condition_json() {
-            verify_condition_json(cond_str, fastboot_interface).await?
-        } else if let (Some(var), Some(value)) = (partition.variable(), partition.variable_value())
-        {
-            verify_variable_value(var, value, fastboot_interface).await?
-        } else {
-            true
-        };
-
-        if should_flash {
-            flash_partition(
-                messenger.clone(),
-                file_resolver,
-                partition.name(),
-                partition.file(),
-                fastboot_interface,
-                min_timeout_secs,
-                flash_timeout_rate_mb_per_second,
-            )
-            .await?;
+        match (partition.variable(), partition.variable_value()) {
+            (Some(var), Some(value)) => {
+                if verify_variable_value(var, value, fastboot_interface).await? {
+                    flash_partition(
+                        messenger.clone(),
+                        file_resolver,
+                        partition.name(),
+                        partition.file(),
+                        fastboot_interface,
+                        min_timeout_secs,
+                        flash_timeout_rate_mb_per_second,
+                    )
+                    .await?;
+                }
+            }
+            _ => {
+                flash_partition(
+                    messenger.clone(),
+                    file_resolver,
+                    partition.name(),
+                    partition.file(),
+                    fastboot_interface,
+                    min_timeout_secs,
+                    flash_timeout_rate_mb_per_second,
+                )
+                .await?
+            }
         }
     }
     Ok(())
@@ -1585,309 +1406,6 @@ mod test {
         ];
 
         assert_eq!(&server_actual, server_expected);
-        Ok(())
-    }
-
-    #[fuchsia::test]
-    async fn test_verify_condition_base_getvar() -> Result<()> {
-        let (state, mut proxy) = ffx_fastboot_interface::test::setup();
-        {
-            let mut state = state.lock().unwrap();
-            state.set_var("dpm".to_string(), "true".to_string());
-            state.set_var("hw_rev".to_string(), "rev_b1".to_string());
-        }
-
-        let base_json = r#"{
-            "cmd": "getvar dpm",
-            "match_result_regex": "^OKAY.*$"
-        }"#;
-        assert!(verify_condition_json(base_json, &mut proxy).await?);
-
-        // Default match_result_regex matches any OKAY response
-        let default_match_json = r#"{
-            "cmd": "getvar dpm"
-        }"#;
-        assert!(verify_condition_json(default_match_json, &mut proxy).await?);
-
-        // Exact match succeeds
-        let base_exact_json = r#"{
-            "cmd": "getvar dpm",
-            "match_result_regex": "OKAYtrue"
-        }"#;
-        assert!(verify_condition_json(base_exact_json, &mut proxy).await?);
-
-        // Partial match without wildcard fails due to full-string ($) anchoring:
-        // "OKAYrev_b" does NOT match "OKAYrev_b1"
-        let base_partial_fail_json = r#"{
-            "cmd": "getvar hw_rev",
-            "match_result_regex": "OKAYrev_b"
-        }"#;
-        assert!(!verify_condition_json(base_partial_fail_json, &mut proxy).await?);
-
-        // Explicit prefix match with wildcard succeeds
-        let base_prefix_wildcard_json = r#"{
-            "cmd": "getvar hw_rev",
-            "match_result_regex": "OKAYrev_b.*"
-        }"#;
-        assert!(verify_condition_json(base_prefix_wildcard_json, &mut proxy).await?);
-
-        // Suffix match with wildcard succeeds
-        let base_suffix_wildcard_json = r#"{
-            "cmd": "getvar hw_rev",
-            "match_result_regex": ".*rev_b1"
-        }"#;
-        assert!(verify_condition_json(base_suffix_wildcard_json, &mut proxy).await?);
-
-        // Substring / anywhere match with wildcard succeeds
-        let base_anywhere_wildcard_json = r#"{
-            "cmd": "getvar hw_rev",
-            "match_result_regex": ".*_b.*"
-        }"#;
-        assert!(verify_condition_json(base_anywhere_wildcard_json, &mut proxy).await?);
-
-        let base_fail_json = r#"{
-            "cmd": "getvar dpm",
-            "match_result_regex": "OKAYfalse"
-        }"#;
-        assert!(!verify_condition_json(base_fail_json, &mut proxy).await?);
-
-        Ok(())
-    }
-
-    #[fuchsia::test]
-    async fn test_verify_condition_base_oem() -> Result<()> {
-        let (state, mut proxy) = ffx_fastboot_interface::test::setup();
-        {
-            let mut state = state.lock().unwrap();
-            state.push_oem_res("status", Ok(("unlocked".to_string(), vec!["slot:a".to_string()])));
-            state.push_oem_res("feature_check", Err("unsupported command".to_string()));
-        }
-
-        let oem_json = r#"{
-            "cmd": "oem status",
-            "match_result_regex": "^OKAYunlocked$"
-        }"#;
-        assert!(verify_condition_json(oem_json, &mut proxy).await?);
-
-        let oem_fail_json = r#"{
-            "cmd": "oem feature_check",
-            "match_result_regex": "^FAILunsupported command$"
-        }"#;
-        assert!(verify_condition_json(oem_fail_json, &mut proxy).await?);
-
-        Ok(())
-    }
-
-    #[fuchsia::test]
-    async fn test_verify_condition_and() -> Result<()> {
-        let (state, mut proxy) = ffx_fastboot_interface::test::setup();
-        {
-            let mut state = state.lock().unwrap();
-            state.set_var("dpm".to_string(), "true".to_string());
-            state.set_var("hw_rev".to_string(), "rev_b1".to_string());
-        }
-
-        let and_json = r#"{
-            "and": [
-                { "cmd": "getvar dpm", "match_result_regex": "^OKAY(true|1)$" },
-                { "cmd": "getvar hw_rev", "match_result_regex": "OKAY.*rev_b[0-9]" }
-            ]
-        }"#;
-        assert!(verify_condition_json(and_json, &mut proxy).await?);
-
-        let and_fail_json = r#"{
-            "and": [
-                { "cmd": "getvar dpm", "match_result_regex": "OKAYtrue" },
-                { "cmd": "getvar hw_rev", "match_result_regex": "^OKAYrev_a.*" }
-            ]
-        }"#;
-        assert!(!verify_condition_json(and_fail_json, &mut proxy).await?);
-
-        Ok(())
-    }
-
-    #[fuchsia::test]
-    async fn test_verify_condition_or() -> Result<()> {
-        let (state, mut proxy) = ffx_fastboot_interface::test::setup();
-        {
-            let mut state = state.lock().unwrap();
-            state.set_var("dpm".to_string(), "true".to_string());
-            state.set_var("hw_rev".to_string(), "rev_b1".to_string());
-        }
-
-        let or_json = r#"{
-            "or": [
-                { "cmd": "getvar hw_rev", "match_result_regex": "OKAYrev_a0" },
-                { "cmd": "getvar dpm", "match_result_regex": "OKAYt.ue" }
-            ]
-        }"#;
-        assert!(verify_condition_json(or_json, &mut proxy).await?);
-
-        let or_fail_json = r#"{
-            "or": [
-                { "cmd": "getvar hw_rev", "match_result_regex": "OKAYrev_a0" },
-                { "cmd": "getvar dpm", "match_result_regex": "OKAYfalse" }
-            ]
-        }"#;
-        assert!(!verify_condition_json(or_fail_json, &mut proxy).await?);
-
-        Ok(())
-    }
-
-    #[fuchsia::test]
-    async fn test_verify_condition_not() -> Result<()> {
-        let (state, mut proxy) = ffx_fastboot_interface::test::setup();
-        {
-            let mut state = state.lock().unwrap();
-            state.set_var("dpm".to_string(), "true".to_string());
-            state.set_var("hw_rev".to_string(), "rev_b1".to_string());
-        }
-
-        let not_json = r#"{
-            "not": { "cmd": "getvar dpm", "match_result_regex": "OKAYfalse" }
-        }"#;
-        assert!(verify_condition_json(not_json, &mut proxy).await?);
-
-        let not_fail_json = r#"{
-            "not": { "cmd": "getvar dpm", "match_result_regex": "OKAYtrue" }
-        }"#;
-        assert!(!verify_condition_json(not_fail_json, &mut proxy).await?);
-
-        let not_nested_json = r#"{
-            "not": {
-                "and": [
-                    { "cmd": "getvar dpm", "match_result_regex": "OKAYtrue" },
-                    { "cmd": "getvar hw_rev", "match_result_regex": "OKAYrev_a0" }
-                ]
-            }
-        }"#;
-        assert!(verify_condition_json(not_nested_json, &mut proxy).await?);
-
-        Ok(())
-    }
-
-    #[fuchsia::test]
-    async fn test_verify_condition_nested() -> Result<()> {
-        let (state, mut proxy) = ffx_fastboot_interface::test::setup();
-        {
-            let mut state = state.lock().unwrap();
-            state.set_var("dpm".to_string(), "true".to_string());
-            state.set_var("hw_rev".to_string(), "rev_b1".to_string());
-        }
-
-        let nested_json = r#"{
-            "or": [
-                {
-                    "and": [
-                        { "cmd": "getvar dpm", "match_result_regex": "OKAYtrue" },
-                        { "cmd": "getvar hw_rev", "match_result_regex": "OKAYrev_b[0-9]" }
-                    ]
-                },
-                { "cmd": "getvar dpm", "match_result_regex": "OKAYfalse" }
-            ]
-        }"#;
-        assert!(verify_condition_json(nested_json, &mut proxy).await?);
-
-        let nested_fail_json = r#"{
-            "and": [
-                {
-                    "or": [
-                        { "cmd": "getvar hw_rev", "match_result_regex": "OKAYrev_a0" },
-                        { "cmd": "getvar dpm", "match_result_regex": "OKAYtrue" }
-                    ]
-                },
-                { "cmd": "getvar hw_rev", "match_result_regex": "^FAIL" }
-            ]
-        }"#;
-        assert!(!verify_condition_json(nested_fail_json, &mut proxy).await?);
-
-        Ok(())
-    }
-
-    #[fuchsia::test]
-    async fn test_verify_condition_match_info() -> Result<()> {
-        let (state, mut proxy) = ffx_fastboot_interface::test::setup();
-        {
-            let mut state = state.lock().unwrap();
-            let multiline_info = vec![
-                "slot: a".to_string(),
-                "battery: 95%".to_string(),
-                "secure_boot: enabled".to_string(),
-            ];
-            for _ in 0..10 {
-                state.push_oem_res("status", Ok(("unlocked".to_string(), multiline_info.clone())));
-            }
-        }
-
-        // Match substring on first INFO line
-        let match_info_str_json = r#"{
-            "cmd": "oem status",
-            "match_result_regex": "^OKAYunlocked$",
-            "match_info": "slot: a"
-        }"#;
-        assert!(verify_condition_json(match_info_str_json, &mut proxy).await?);
-
-        // Match substring on a middle INFO line
-        let match_info_middle_json = r#"{
-            "cmd": "oem status",
-            "match_info": "battery: [0-9]+%"
-        }"#;
-        assert!(verify_condition_json(match_info_middle_json, &mut proxy).await?);
-
-        // Match substring on the last INFO line
-        let match_info_last_json = r#"{
-            "cmd": "oem status",
-            "match_info": "secure_boot: enabled"
-        }"#;
-        assert!(verify_condition_json(match_info_last_json, &mut proxy).await?);
-
-        // Multiline sequence match across multiple lines using (?s)
-        let match_info_seq_json = r#"{
-            "cmd": "oem status",
-            "match_info": "(?s)slot: a.*battery: 95%.*secure_boot"
-        }"#;
-        assert!(verify_condition_json(match_info_seq_json, &mut proxy).await?);
-
-        // Multiline line-anchored match using (?m)
-        let match_info_line_anchor_json = r#"{
-            "cmd": "oem status",
-            "match_info": "(?m)^battery: 95%$"
-        }"#;
-        assert!(verify_condition_json(match_info_line_anchor_json, &mut proxy).await?);
-
-        // Match info with AND / NOT condition
-        let match_info_and_not_json = r#"{
-            "cmd": "oem status",
-            "match_info": {
-                "and": [
-                    "slot: a",
-                    "battery: 95%",
-                    { "not": "slot: b" }
-                ]
-            }
-        }"#;
-        assert!(verify_condition_json(match_info_and_not_json, &mut proxy).await?);
-
-        // Match info with OR condition
-        let match_info_or_json = r#"{
-            "cmd": "oem status",
-            "match_info": {
-                "or": [
-                    "slot: b",
-                    "slot: a"
-                ]
-            }
-        }"#;
-        assert!(verify_condition_json(match_info_or_json, &mut proxy).await?);
-
-        // Failing match_info causes condition to evaluate to false
-        let match_info_fail_json = r#"{
-            "cmd": "oem status",
-            "match_result_regex": "^OKAYunlocked$",
-            "match_info": "slot: b"
-        }"#;
-        assert!(!verify_condition_json(match_info_fail_json, &mut proxy).await?);
-
         Ok(())
     }
 }

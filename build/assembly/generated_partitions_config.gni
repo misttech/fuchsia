@@ -23,7 +23,6 @@ import("//build/compiled_action.gni")
 #         image = "path/to/image"
 #         type = "bl2"
 #         name = "boot1"
-#         condition_json = "..." (optional)
 #       }
 #
 #     If a name is not provided, then the bootloader will not be flashed, but
@@ -34,16 +33,14 @@ import("//build/compiled_action.gni")
 #       ffx target flash --product fuchsia
 #
 #     Each entry will have the following format. A file is only flashed to the
-#     partition if the conditional fastboot arg equals the specified value, or
-#     if the condition_json evaluates to true.
+#     partition if the conditional fastboot arg equals the specified value.
 #       {
 #         path = "path/to/image"
 #         partition = "partition"
 #         condition = {
 #           variable = "variable"
-#           value = "value"
+#           value = "value
 #         }
-#         condition_json = "..." (optional)
 #       }
 #
 #   unlock_credentials (optional)
@@ -96,32 +93,35 @@ template("generated_partitions_config") {
 
       path = rebase_path(part.image, root_build_dir)
 
-      part_entry = {
-        image = path
-        type = part.type
-      }
       if (defined(part.name)) {
-        part_entry.name = part.name
+        bootloaders += [
+          {
+            image = path
+            type = part.type
+            name = part.name
+          },
+        ]
+      } else {
+        bootloaders += [
+          {
+            image = path
+            type = part.type
+          },
+        ]
       }
-      if (defined(part.condition_json)) {
-        part_entry.condition_json = part.condition_json
-      }
-      bootloaders += [ part_entry ]
     }
   }
 
   bootstraps = []
   if (defined(invoker.bootstrap_partitions)) {
     foreach(part, invoker.bootstrap_partitions) {
-      bootstrap_entry = {
-        image = rebase_path(part.path, root_build_dir)
-        name = part.partition
-        condition = part.condition
-      }
-      if (defined(part.condition_json)) {
-        bootstrap_entry.condition_json = part.condition_json
-      }
-      bootstraps += [ bootstrap_entry ]
+      bootstraps += [
+        {
+          image = rebase_path(part.path, root_build_dir)
+          name = part.partition
+          condition = part.condition
+        },
+      ]
     }
   }
 

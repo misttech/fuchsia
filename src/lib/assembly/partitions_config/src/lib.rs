@@ -12,6 +12,6 @@ mod partitions_config;
 
 pub use partition_image_mapper::{ImageType, PartitionAndImage, PartitionImageMapper};
 pub use partitions_config::{
-    BootloaderPartition, BootstrapCondition, BootstrapPartition, Partition, PartitionsConfig,
-    RecoveryStyle, Slot, UploadMethod,
+    BootloaderPartition, BootstrapPartition, Partition, PartitionsConfig, RecoveryStyle, Slot,
+    UploadMethod,
 };
