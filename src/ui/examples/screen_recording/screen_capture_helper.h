@@ -5,41 +5,30 @@
 #ifndef SRC_UI_EXAMPLES_SCREEN_RECORDING_SCREEN_CAPTURE_HELPER_H_
 #define SRC_UI_EXAMPLES_SCREEN_RECORDING_SCREEN_CAPTURE_HELPER_H_
 
-#include <fuchsia/ui/composition/cpp/fidl.h>
-#include <lib/ui/scenic/cpp/buffer_collection_import_export_tokens.h>
-
-#include "src/ui/scenic/lib/allocation/allocator.h"
+#include <fidl/fuchsia.images2/cpp/fidl.h>
+#include <fidl/fuchsia.sysmem2/cpp/fidl.h>
+#include <fidl/fuchsia.sysmem2/cpp/wire.h>
+#include <fidl/fuchsia.ui.composition/cpp/fidl.h>
 
 namespace screen_recording_example {
 
-using fuchsia::math::SizeU;
-using fuchsia::math::Vec;
-using fuchsia::ui::composition::ChildViewWatcher;
-using fuchsia::ui::composition::ContentId;
-using fuchsia::ui::composition::ParentViewportWatcher;
-using fuchsia::ui::composition::RegisterBufferCollectionUsages;
-using fuchsia::ui::composition::TransformId;
-using fuchsia::ui::composition::ViewportProperties;
+using fuchsia_ui_composition::RegisterBufferCollectionUsages;
 
-uint32_t GetPixelsPerRow(const fuchsia::sysmem2::SingleBufferSettings& settings,
-                         uint32_t bytes_per_pixel, uint32_t image_width);
+// Returns default buffer collection constraints for allocating `buffer_count` image buffers of the
+// specified `width`, `height`, and `format` (defaulting to B8G8R8A8).
+fuchsia_sysmem2::BufferCollectionConstraints CreateDefaultConstraints(
+    uint32_t buffer_count, uint32_t width, uint32_t height,
+    fuchsia_images2::PixelFormat format = fuchsia_images2::PixelFormat::kB8G8R8A8);
 
-void WriteToSysmemBuffer(const std::vector<uint8_t>& write_values,
-                         fuchsia::sysmem2::BufferCollectionInfo& buffer_collection_info,
-                         uint32_t buffer_collection_idx, uint32_t kBytesPerPixel,
-                         uint32_t image_width, uint32_t image_height);
-
-fuchsia::sysmem2::BufferCollectionInfo CreateBufferCollectionInfoWithConstraints(
-    fuchsia::sysmem2::BufferCollectionConstraints constraints,
-    fuchsia::ui::composition::BufferCollectionExportToken export_token,
-    fuchsia::ui::composition::Allocator_Sync* flatland_allocator,
+// Registers a shared Sysmem buffer collection with Flatland's Allocator and sets client
+// constraints to allocate the buffers. This blocks until all participants have set their
+// constraints and Sysmem has allocated the buffers.
+void AllocateBufferCollection(
+    fuchsia_sysmem2::BufferCollectionConstraints constraints,
+    fuchsia_ui_composition::BufferCollectionExportToken export_token,
+    fidl::SyncClient<fuchsia_ui_composition::Allocator>& flatland_allocator,
     fidl::WireClient<fuchsia_sysmem2::Allocator>& sysmem_allocator,
     RegisterBufferCollectionUsages usage);
-
-// This function returns a linear buffer of pixels of size width * height.
-std::vector<uint8_t> ExtractScreenCapture(
-    uint32_t buffer_id, fuchsia::sysmem2::BufferCollectionInfo& buffer_collection_info,
-    uint32_t kBytesPerPixel, uint32_t render_target_width, uint32_t render_target_height);
 
 }  // namespace screen_recording_example
 

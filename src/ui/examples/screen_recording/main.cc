@@ -4,7 +4,7 @@
 
 #include <lib/async-loop/cpp/loop.h>
 #include <lib/async-loop/default.h>
-#include <lib/sys/cpp/component_context.h>
+#include <lib/component/outgoing/cpp/outgoing_directory.h>
 #include <lib/syslog/cpp/macros.h>
 #include <lib/trace-provider/provider.h>
 
@@ -20,10 +20,15 @@ int main(int argc, const char** argv) {
   async::Loop loop(&kAsyncLoopConfigAttachToCurrentThread);
   trace::TraceProviderWithFdio trace_provider(loop.dispatcher());
 
-  auto context = sys::ComponentContext::Create();
+  component::OutgoingDirectory outgoing(loop.dispatcher());
   auto screen_recording_view =
-      std::make_unique<screen_recording_example::ViewProviderImpl>(context.get());
-  context->outgoing()->ServeFromStartupInfo();
+      std::make_unique<screen_recording_example::ViewProviderImpl>(outgoing, loop.dispatcher());
+
+  zx::result result = outgoing.ServeFromStartupInfo();
+  if (result.is_error()) {
+    FX_LOGS(ERROR) << "Failed to serve outgoing directory: " << result.status_string();
+    return 1;
+  }
 
   return loop.Run();
 }

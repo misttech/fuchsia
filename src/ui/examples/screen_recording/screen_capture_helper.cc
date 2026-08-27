@@ -4,65 +4,85 @@
 
 #include "src/ui/examples/screen_recording/screen_capture_helper.h"
 
-#include "fuchsia/sysmem2/cpp/fidl.h"
-#include "src/ui/scenic/lib/flatland/buffers/util.h"
+#include <fidl/fuchsia.images2/cpp/fidl.h>
+#include <fidl/fuchsia.sysmem2/cpp/fidl.h>
+#include <fidl/fuchsia.ui.composition/cpp/fidl.h>
+#include <lib/syslog/cpp/macros.h>
+
+#include "src/ui/scenic/lib/utils/helpers.h"
 
 namespace screen_recording_example {
 
-using flatland::MapHostPointer;
-using fuchsia::ui::composition::RegisterBufferCollectionArgs;
-using fuchsia::ui::composition::RegisterBufferCollectionUsages;
+using fuchsia_ui_composition::RegisterBufferCollectionArgs;
+using fuchsia_ui_composition::RegisterBufferCollectionUsages;
 
-fuchsia::sysmem2::BufferCollectionInfo CreateBufferCollectionInfoWithConstraints(
-    fuchsia::sysmem2::BufferCollectionConstraints constraints,
-    fuchsia::ui::composition::BufferCollectionExportToken export_token,
-    fuchsia::ui::composition::Allocator_Sync* flatland_allocator,
+fuchsia_sysmem2::BufferCollectionConstraints CreateDefaultConstraints(
+    uint32_t buffer_count, uint32_t width, uint32_t height, fuchsia_images2::PixelFormat format) {
+  fuchsia_sysmem2::BufferCollectionConstraints constraints;
+  constraints.min_buffer_count(buffer_count);
+  fuchsia_sysmem2::BufferUsage usage;
+  usage.none(fuchsia_sysmem2::kNoneUsage);
+  constraints.usage(std::move(usage));
+
+  fuchsia_sysmem2::BufferMemoryConstraints mem_constraints;
+  mem_constraints.ram_domain_supported(true);
+  mem_constraints.cpu_domain_supported(true);
+  constraints.buffer_memory_constraints(std::move(mem_constraints));
+
+  fuchsia_sysmem2::ImageFormatConstraints image_constraints;
+  image_constraints.pixel_format(format);
+  image_constraints.pixel_format_modifier(fuchsia_images2::PixelFormatModifier::kLinear);
+  image_constraints.color_spaces({{fuchsia_images2::ColorSpace::kSrgb}});
+  image_constraints.min_size(fuchsia_math::SizeU(width, height));
+  image_constraints.max_size(fuchsia_math::SizeU(width, height));
+  constraints.image_format_constraints({{std::move(image_constraints)}});
+  return constraints;
+}
+
+void AllocateBufferCollection(
+    fuchsia_sysmem2::BufferCollectionConstraints constraints,
+    fuchsia_ui_composition::BufferCollectionExportToken export_token,
+    fidl::SyncClient<fuchsia_ui_composition::Allocator>& flatland_allocator,
     fidl::WireClient<fuchsia_sysmem2::Allocator>& sysmem_allocator,
     RegisterBufferCollectionUsages usage) {
-  FX_DCHECK(flatland_allocator);
-  FX_DCHECK(sysmem_allocator);
+  FX_DCHECK(flatland_allocator.is_valid());
+  FX_DCHECK(sysmem_allocator.is_valid());
 
   // Create Sysmem tokens.
-  auto [local_token, dup_token] = flatland::SysmemTokens::Create(sysmem_allocator);
+  auto [local_token, dup_token] = utils::SysmemTokens::Create(sysmem_allocator);
 
-  fuchsia::sysmem2::BufferCollectionSyncPtr buffer_collection;
+  auto [collection_client, collection_server] =
+      fidl::Endpoints<fuchsia_sysmem2::BufferCollection>::Create();
+  fidl::SyncClient buffer_collection(std::move(collection_client));
+
   fidl::Arena arena;
   fidl::OneWayStatus result = sysmem_allocator->BindSharedCollection(
       fuchsia_sysmem2::wire::AllocatorBindSharedCollectionRequest::Builder(arena)
           .token(std::move(local_token))
-          .buffer_collection_request(fidl::ServerEnd<fuchsia_sysmem2::BufferCollection>(
-              buffer_collection.NewRequest().TakeChannel()))
+          .buffer_collection_request(std::move(collection_server))
           .Build());
   FX_DCHECK(result.ok());
 
-  fuchsia::sysmem2::BufferCollectionSetConstraintsRequest constraints_request;
-  constraints_request.set_constraints(std::move(constraints));
-  zx_status_t status = buffer_collection->SetConstraints(std::move(constraints_request));
-  FX_DCHECK(status == ZX_OK);
+  fuchsia_sysmem2::BufferCollectionSetConstraintsRequest constraints_request;
+  constraints_request.constraints(std::move(constraints));
+  auto set_res = buffer_collection->SetConstraints(std::move(constraints_request));
+  FX_CHECK(set_res.is_ok());
 
-  RegisterBufferCollectionArgs rbc_args = {};
-  rbc_args.set_export_token(std::move(export_token));
-  // BufferCollectionToken zircon handles are interchangeable between fuchsia::sysmem2
-  // and fuchsia::sysmem(1).
-  rbc_args.set_buffer_collection_token2(
-      fidl::InterfaceHandle<::fuchsia::sysmem2::BufferCollectionToken>(dup_token.TakeChannel()));
-  rbc_args.set_usages(usage);
-  fuchsia::ui::composition::Allocator_RegisterBufferCollection_Result register_result;
-  flatland_allocator->RegisterBufferCollection(std::move(rbc_args), &register_result);
-  FX_DCHECK(!register_result.is_err());
+  RegisterBufferCollectionArgs rbc_args;
+  rbc_args.export_token(std::move(export_token));
+  rbc_args.buffer_collection_token2(std::move(dup_token));
+  rbc_args.usages(usage);
+  fuchsia_ui_composition::AllocatorRegisterBufferCollectionRequest reg_req;
+  reg_req.args(std::move(rbc_args));
+  auto register_result = flatland_allocator->RegisterBufferCollection(std::move(reg_req));
+  FX_CHECK(register_result.is_ok());
 
   // Wait for allocation.
-  zx_status_t allocation_status = ZX_OK;
-  fuchsia::sysmem2::BufferCollection_WaitForAllBuffersAllocated_Result wait_result;
-  status = buffer_collection->WaitForAllBuffersAllocated(&wait_result);
-  FX_DCHECK(ZX_OK == status);
-  FX_DCHECK(ZX_OK == allocation_status);
-  FX_DCHECK(wait_result.is_response());
-  FX_DCHECK(constraints.min_buffer_count() ==
-            wait_result.response().buffer_collection_info().buffers().size());
+  auto wait_result = buffer_collection->WaitForAllBuffersAllocated();
+  FX_CHECK(wait_result.is_ok());
 
-  buffer_collection->Release();
-  return std::move(*wait_result.response().mutable_buffer_collection_info());
+  auto rel_res = buffer_collection->Release();
+  FX_CHECK(rel_res.is_ok());
 }
 
 }  // namespace screen_recording_example
