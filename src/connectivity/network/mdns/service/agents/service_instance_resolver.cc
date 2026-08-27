@@ -64,7 +64,7 @@ void ServiceInstanceResolver::EndOfMessage() {
     return;
   }
 
-  if (port_.is_valid() && instance_.has_ipv6_endpoint()) {
+  if (port_.is_valid() && instance_.has_ipv6_endpoint() && instance_.has_text_strings()) {
     callback_(std::move(instance_));
     callback_ = nullptr;
     PostTaskForTime([this]() { RemoveSelf(); }, now());
@@ -161,7 +161,7 @@ void ServiceInstanceResolver::ReceiveResource(const DnsResource& resource,
       }
       break;
     case DnsType::kTxt:
-      if (resource.name_ == target_full_name_) {
+      if (resource.name_ == service_instance_) {
         instance_.set_text(fidl::To<std::vector<std::string>>(resource.txt_.strings_));
         instance_.set_text_strings(fidl::Clone(resource.txt_.strings_));
       }

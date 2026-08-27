@@ -73,6 +73,33 @@ class InstanceResolverTest : public AgentTest {
 
     under_test.EndOfMessage();
   }
+
+  void ReceiveSrvAndAddress(ServiceInstanceResolver& under_test, const DnsName& host_full_name,
+                            const DnsName& service_name, const DnsLabel& instance_name,
+                            inet::IpPort port, ReplyAddress sender_address) {
+    auto instance_full_name = MdnsNames::InstanceFullName(instance_name, service_name);
+
+    DnsResource srv_resource(instance_full_name, DnsType::kSrv);
+    srv_resource.srv_.port_ = port;
+    srv_resource.srv_.target_ = host_full_name;
+    under_test.ReceiveResource(srv_resource, MdnsResourceSection::kAnswer, sender_address);
+
+    DnsResource a_resource(host_full_name, sender_address.socket_address().address());
+    under_test.ReceiveResource(a_resource, MdnsResourceSection::kAnswer, sender_address);
+
+    under_test.EndOfMessage();
+  }
+
+  void ReceiveTxt(ServiceInstanceResolver& under_test, const DnsName& service_name,
+                  const DnsLabel& instance_name, const std::vector<std::vector<uint8_t>>& text,
+                  ReplyAddress sender_address) {
+    auto instance_full_name = MdnsNames::InstanceFullName(instance_name, service_name);
+    DnsResource txt_resource(instance_full_name, DnsType::kTxt);
+    txt_resource.txt_.strings_ = text;
+    under_test.ReceiveResource(txt_resource, MdnsResourceSection::kAnswer, sender_address);
+
+    under_test.EndOfMessage();
+  }
 };
 
 const DnsName kHostName("test2host");
@@ -82,6 +109,8 @@ const DnsLabel kInstanceName("testinstance");
 const inet::IpPort kPort = inet::IpPort::From_uint16_t(1234);
 const std::vector<std::vector<uint8_t>> kText = fidl::To<std::vector<std::vector<uint8_t>>>(
     std::vector<std::string>{"color=red", "shape=round"});
+const std::vector<std::vector<uint8_t>> kEmptyText =
+    fidl::To<std::vector<std::vector<uint8_t>>>(std::vector<std::string>{});
 constexpr bool kIncludeLocal = true;
 constexpr bool kExcludeLocal = false;
 constexpr bool kIncludeLocalProxies = true;
@@ -262,6 +291,59 @@ TEST_F(InstanceResolverTest, ResponseWithoutAaaa) {
   ReceiveAddress(under_test, kHostFullName, sender_address);
   ExpectPostTaskForTime(zx::sec(0), zx::sec(0));
   ExpectNoOther();
+
+  EXPECT_TRUE(callback_called);
+  EXPECT_EQ(kServiceName.to_string(), instance_from_callback.service());
+  EXPECT_EQ(kInstanceName, instance_from_callback.instance());
+  EXPECT_EQ(kHostName.to_string(), instance_from_callback.target());
+  EXPECT_EQ(kText, instance_from_callback.text_strings());
+}
+
+TEST_F(InstanceResolverTest, WaitsForTxtRecord) {
+  fuchsia::net::mdns::ServiceInstance instance_from_callback;
+  bool callback_called = false;
+
+  ServiceInstanceResolver under_test(
+      this, kServiceName, kInstanceName, now(), Media::kBoth, IpVersions::kBoth, kExcludeLocal,
+      kIncludeLocalProxies,
+      [&instance_from_callback, &callback_called](fuchsia::net::mdns::ServiceInstance instance) {
+        instance_from_callback = std::move(instance);
+        callback_called = true;
+      });
+
+  SetAgent(under_test);
+
+  under_test.Start(kLocalHostFullName);
+
+  // Expect SRV & TXT questions on start.
+  ExpectQueryCall(DnsType::kSrv, MdnsNames::InstanceFullName(kInstanceName, kServiceName),
+                  Media::kBoth, IpVersions::kBoth, now(), kAdditionalInterval,
+                  kAdditionalIntervalMultiplier, kAdditionalMaxQueries, true);
+  ExpectQueryCall(DnsType::kTxt, MdnsNames::InstanceFullName(kInstanceName, kServiceName),
+                  Media::kBoth, IpVersions::kBoth, now(), kAdditionalInterval,
+                  kAdditionalIntervalMultiplier, kAdditionalMaxQueries, true);
+  ExpectPostTaskForTime(zx::sec(0), zx::sec(0));
+  ExpectNoOther();
+
+  // Receive SRV and AAAA first (without TXT).
+  ReplyAddress sender_address(inet::SocketAddress(0xfe80, 1, inet::IpPort::From_uint16_t(5353)),
+                              inet::IpAddress(0xfe80, 100), 1, Media::kWireless, IpVersions::kV6);
+  ReceiveSrvAndAddress(under_test, kHostFullName, kServiceName, kInstanceName, kPort,
+                       sender_address);
+
+  // Callback should not be called yet because TXT record has not been received.
+  EXPECT_FALSE(callback_called);
+
+  // Now receive TXT record in a separate message.
+  ReceiveTxt(under_test, kServiceName, kInstanceName, kText, sender_address);
+  ExpectPostTaskForTime(zx::sec(0), zx::sec(0));
+  ExpectNoOther();
+
+  EXPECT_TRUE(callback_called);
+  EXPECT_EQ(kServiceName.to_string(), instance_from_callback.service());
+  EXPECT_EQ(kInstanceName, instance_from_callback.instance());
+  EXPECT_EQ(kHostName.to_string(), instance_from_callback.target());
+  EXPECT_EQ(kText, instance_from_callback.text_strings());
 }
 
 TEST_F(InstanceResolverTest, DuplicateAddressesEliminated) {
@@ -280,16 +362,127 @@ TEST_F(InstanceResolverTest, DuplicateAddressesEliminated) {
 
   under_test.Start(kLocalHostFullName);
 
+  // Expect SRV & TXT questions on start.
+  ExpectQueryCall(DnsType::kSrv, MdnsNames::InstanceFullName(kInstanceName, kServiceName),
+                  Media::kBoth, IpVersions::kBoth, now(), kAdditionalInterval,
+                  kAdditionalIntervalMultiplier, kAdditionalMaxQueries, true);
+  ExpectQueryCall(DnsType::kTxt, MdnsNames::InstanceFullName(kInstanceName, kServiceName),
+                  Media::kBoth, IpVersions::kBoth, now(), kAdditionalInterval,
+                  kAdditionalIntervalMultiplier, kAdditionalMaxQueries, true);
+  ExpectPostTaskForTime(zx::sec(0), zx::sec(0));
+  ExpectNoOther();
+
   ReplyAddress sender_address(inet::SocketAddress(0xfe80, 1, inet::IpPort::From_uint16_t(5353)),
                               inet::IpAddress(0xfe80, 100), 1, Media::kWireless, IpVersions::kV6);
-  ReceivePublication(under_test, kHostFullName, kServiceName, kInstanceName, kPort, kText,
-                     sender_address, false);
+  // Receive SRV and first AAAA address.
+  ReceiveSrvAndAddress(under_test, kHostFullName, kServiceName, kInstanceName, kPort,
+                       sender_address);
 
+  // Receive duplicate AAAA address before TXT.
   ReceiveAddress(under_test, kHostFullName, sender_address);
-  ReceiveAddress(under_test, kHostFullName, sender_address);
-  auto service_instance = under_test.GetInstance();
-  // there shuold only be 1 address
-  ASSERT_EQ(service_instance.addresses().size(), 1UL);
+
+  EXPECT_FALSE(callback_called);
+
+  // Now receive TXT record, completing resolution.
+  ReceiveTxt(under_test, kServiceName, kInstanceName, kText, sender_address);
+  ExpectPostTaskForTime(zx::sec(0), zx::sec(0));
+  ExpectNoOther();
+
+  EXPECT_TRUE(callback_called);
+  ASSERT_EQ(instance_from_callback.addresses().size(), 1UL);
+}
+
+TEST_F(InstanceResolverTest, EmptyTxtRecord) {
+  fuchsia::net::mdns::ServiceInstance instance_from_callback;
+  bool callback_called = false;
+
+  ServiceInstanceResolver under_test(
+      this, kServiceName, kInstanceName, now(), Media::kBoth, IpVersions::kBoth, kExcludeLocal,
+      kIncludeLocalProxies,
+      [&instance_from_callback, &callback_called](fuchsia::net::mdns::ServiceInstance instance) {
+        instance_from_callback = std::move(instance);
+        callback_called = true;
+      });
+
+  SetAgent(under_test);
+
+  under_test.Start(kLocalHostFullName);
+
+  // Expect SRV & TXT questions on start.
+  ExpectQueryCall(DnsType::kSrv, MdnsNames::InstanceFullName(kInstanceName, kServiceName),
+                  Media::kBoth, IpVersions::kBoth, now(), kAdditionalInterval,
+                  kAdditionalIntervalMultiplier, kAdditionalMaxQueries, true);
+  ExpectQueryCall(DnsType::kTxt, MdnsNames::InstanceFullName(kInstanceName, kServiceName),
+                  Media::kBoth, IpVersions::kBoth, now(), kAdditionalInterval,
+                  kAdditionalIntervalMultiplier, kAdditionalMaxQueries, true);
+  ExpectPostTaskForTime(zx::sec(0), zx::sec(0));
+  ExpectNoOther();
+
+  ReplyAddress sender_address(inet::SocketAddress(0xfe80, 1, inet::IpPort::From_uint16_t(5353)),
+                              inet::IpAddress(0xfe80, 100), 1, Media::kWireless, IpVersions::kV6);
+  // Receive publication with empty text strings.
+  ReceivePublication(under_test, kHostFullName, kServiceName, kInstanceName, kPort, kEmptyText,
+                     sender_address, true);
+  ExpectPostTaskForTime(zx::sec(0), zx::sec(0));
+  ExpectNoOther();
+
+  EXPECT_TRUE(callback_called);
+  EXPECT_EQ(kServiceName.to_string(), instance_from_callback.service());
+  EXPECT_EQ(kInstanceName, instance_from_callback.instance());
+  EXPECT_EQ(kHostName.to_string(), instance_from_callback.target());
+  EXPECT_TRUE(instance_from_callback.has_text_strings());
+  EXPECT_TRUE(instance_from_callback.text_strings().empty());
+}
+
+TEST_F(InstanceResolverTest, NoTxtRecordTimesOut) {
+  fuchsia::net::mdns::ServiceInstance instance_from_callback;
+  bool callback_called = false;
+  zx::duration timeout = zx::sec(10);
+
+  auto under_test = std::make_shared<ServiceInstanceResolver>(
+      this, kServiceName, kInstanceName, now() + timeout, Media::kBoth, IpVersions::kBoth,
+      kExcludeLocal, kIncludeLocalProxies,
+      [&instance_from_callback, &callback_called](fuchsia::net::mdns::ServiceInstance instance) {
+        instance_from_callback = std::move(instance);
+        callback_called = true;
+      });
+
+  SetAgent(*under_test);
+
+  under_test->Start(kLocalHostFullName);
+
+  // Expect SRV & TXT questions on start.
+  ExpectQueryCall(DnsType::kSrv, MdnsNames::InstanceFullName(kInstanceName, kServiceName),
+                  Media::kBoth, IpVersions::kBoth, now(), kAdditionalInterval,
+                  kAdditionalIntervalMultiplier, kAdditionalMaxQueries, true);
+  ExpectQueryCall(DnsType::kTxt, MdnsNames::InstanceFullName(kInstanceName, kServiceName),
+                  Media::kBoth, IpVersions::kBoth, now(), kAdditionalInterval,
+                  kAdditionalIntervalMultiplier, kAdditionalMaxQueries, true);
+  // Start() posts the timeout task for timeout.
+  auto [timeout_task, scheduled_time] = ExpectPostTaskForTime(timeout, timeout);
+  ExpectNoOther();
+
+  ReplyAddress sender_address(inet::SocketAddress(0xfe80, 1, inet::IpPort::From_uint16_t(5353)),
+                              inet::IpAddress(0xfe80, 100), 1, Media::kWireless, IpVersions::kV6);
+  // Receive SRV and AAAA without TXT.
+  ReceiveSrvAndAddress(*under_test, kHostFullName, kServiceName, kInstanceName, kPort,
+                       sender_address);
+
+  // Callback should not be called yet because no TXT record was received.
+  EXPECT_FALSE(callback_called);
+
+  // Advance time and invoke the timeout task.
+  AdvanceTo(scheduled_time);
+  timeout_task();
+  ExpectRemoveAgentCall();
+  ExpectNoOther();
+
+  // Resolution completes on timeout and delivers whatever records were received.
+  EXPECT_TRUE(callback_called);
+  EXPECT_EQ(kServiceName.to_string(), instance_from_callback.service());
+  EXPECT_EQ(kInstanceName, instance_from_callback.instance());
+  EXPECT_EQ(kHostName.to_string(), instance_from_callback.target());
+  EXPECT_FALSE(instance_from_callback.has_text_strings());
 }
 
 }  // namespace test
