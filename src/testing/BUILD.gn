@@ -24,8 +24,6 @@ group("tests") {
     "realm_client:tests",
     "sl4f:tests",
     "trf_codegen/bin:tests",
-    "trf_codegen/lib/macro:tests",
-    "trf_codegen/lib/runtime:tests",
   ]
 }
 

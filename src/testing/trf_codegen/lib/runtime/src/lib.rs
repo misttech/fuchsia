@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-//! This library provides a runtime harness for the TRF (Test Runner Framework) codegen tool.
+//! This library provides a runtime harness for the TRF (Test Realm Factory) codegen tool.
 //! It offers utilities for interacting with test realms, connecting to mock control
 //! proxies, and managing component lifecycle events in test environments.
 
