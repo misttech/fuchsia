@@ -283,11 +283,12 @@ zx_status_t CreateFifoThread(zx::fifo server_end, zx::vmo compressed_vmo,
   thrd_t handler_thread;
   std::unique_ptr<FifoInfo> info = std::make_unique<FifoInfo>();
   *info = {std::move(server_end), std::move(compressed_mapper), std::move(decompressed_mapper)};
-  if (thrd_create_with_name(&handler_thread, WatchFifoWrapper, info.release(),
+  if (thrd_create_with_name(&handler_thread, WatchFifoWrapper, info.get(),
                             "decompressor-fifo-thread") != thrd_success) {
     FX_LOGS(ERROR) << "Failed to create decompressor FIFO thread!";
     return ZX_ERR_INTERNAL;
   }
+  info.release();
   SetDeadlineProfile(handler_thread);
 
   thrd_detach(handler_thread);
