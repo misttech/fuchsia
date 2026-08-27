@@ -646,6 +646,7 @@
                 "ProcNetIfInet6.Format",
                 "ProcNetSymlinkTarget.FileMode",
                 "ProcNetSymlink.Contents",
+                "ProcSysNetIpv6.FilesExist",
                 "ProcSysNetIpv4Sack.Exists",
                 "ProcNetSnmp.TcpReset",
                 "ProcNetSnmp.TcpEstab",
@@ -842,6 +843,20 @@
                 "AllUnixDomainSockets/UnixSocketPeerCredTest.PeerCredAfterListen/0",
                 "AllUnixDomainSockets/UnixSocketPeerCredTest.PeerCredAfterListen/6",
 
+                // socket_unix_stream_test
+                "AllUnixDomainSockets/StreamUnixSocketPairTest.PeerShutdownWakesHangupOnlyPoller/0",
+                "AllUnixDomainSockets/StreamUnixSocketPairTest.PeerShutdownWakesHangupOnlyPoller/1",
+                "AllUnixDomainSockets/StreamUnixSocketPairTest.PeerShutdownWakesHangupOnlyPoller/2",
+                "AllUnixDomainSockets/StreamUnixSocketPairTest.PeerShutdownWakesHangupOnlyPoller/3",
+                "AllUnixDomainSockets/StreamUnixSocketPairTest.PeerShutdownWakesHangupOnlyPoller/4",
+                "AllUnixDomainSockets/StreamUnixSocketPairTest.PeerShutdownWakesHangupOnlyPoller/5",
+                "AllUnixDomainSockets/StreamUnixSocketPairTest.PeerShutdownWakesHangupOnlyPoller/6",
+                "AllUnixDomainSockets/StreamUnixSocketPairTest.PeerShutdownWakesHangupOnlyPoller/7",
+                "AllUnixDomainSockets/StreamUnixSocketPairTest.PeerShutdownWakesHangupOnlyPoller/8",
+                "AllUnixDomainSockets/StreamUnixSocketPairTest.PeerShutdownWakesHangupOnlyPoller/9",
+                "AllUnixDomainSockets/StreamUnixSocketPairTest.PeerShutdownWakesHangupOnlyPoller/10",
+                "AllUnixDomainSockets/StreamUnixSocketPairTest.PeerShutdownWakesHangupOnlyPoller/11",
+
                 // stat_test
                 "StatTest.StatxMntId",
 
@@ -984,6 +999,25 @@
 
                 // Passes on arm64, fails on x64.
                 "SysretTest.BadRsp",
+
+                // madvise_test
+                "MadviseDontforkTest.AddressLength",
+                "MadviseDontforkTest.DontforkAnonPrivate",
+                "MadviseDontforkTest.DontforkShared",
+                "MadviseDontneedHugePageSubrangeTest.OneHugePagePartial",
+                "MadviseDontneedHugePageSubrangeTest.OneHugePageWhole",
+                "MadviseDontneedHugePageSubrangeTest.ThreeHugePagesPartialEnd",
+                "MadviseDontneedHugePageSubrangeTest.ThreeHugePagesPartialStart",
+                "MadviseDontneedHugePageSubrangeTest.ThreeHugePagesPartialStartAndEnd",
+                "MadviseDontneedHugePageSubrangeTest.TwoHugePagesPartialEnd",
+                "MadviseDontneedHugePageSubrangeTest.TwoHugePagesPartialStart",
+                "MadviseDontneedHugePageSubrangeTest.TwoHugePagesPartialStartAndEnd",
+                "MadviseDontneedTest.CleansPrivateFileHugePageSubrange",
+                "MadviseDontneedTest.DoesNotModifySharedAnonPage",
+                "MadviseDontneedTest.DoesNotModifySharedFilePage",
+                "MadviseDontneedTest.IgnoresPermissions",
+                "MadviseDontneedTest.ZerosCOWAnonPageInCallerOnly",
+                "MadviseDontneedTest.ZerosPrivateAnonPage",
 
                 // These tests hang.
                 "Syscall32Bit.Sysenter",
