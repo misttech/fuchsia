@@ -9,12 +9,10 @@ composite buttons;
 using fuchsia;
 
 primary parent "pdev" {
-  if fuchsia.COMPATIBLE == "fuchsia,gpio-buttons" {
-      true;
-  } else if fuchsia.BIND_PLATFORM_DEV_DID == fuchsia.platform.BIND_PLATFORM_DEV_DID.BUTTONS {
-      true;
+  if fuchsia.BIND_PLATFORM_DEV_DID == fuchsia.platform.BIND_PLATFORM_DEV_DID.DEVICETREE {
+    fuchsia.COMPATIBLE == "fuchsia,gpio-buttons";
   } else {
-      false;
+    fuchsia.BIND_PLATFORM_DEV_DID == fuchsia.platform.BIND_PLATFORM_DEV_DID.BUTTONS;
   }
 }
 

@@ -7,13 +7,8 @@ import("//build/components.gni")
 import("//build/drivers.gni")
 import("//build/test.gni")
 
-fuchsia_driver_dml("network-device-dml") {
-  dml = "meta/network-device.dml"
-  driver_name = "network-device"
-}
-
 driver_bind_rules("network-device_bind") {
-  dml_label = ":network-device-dml"
+  rules = "meta/network-device.bind"
   bind_output = "network-device.bindbc"
   tests = "meta/bind-tests.json"
   deps = [
@@ -55,12 +50,9 @@ fuchsia_driver_component("network-device") {
     "//src/connectivity/wlan/tests/helpers/realm-factory:*",
   ]
   component_name = "network-device"
-  dml_label = ":network-device-dml"
-  deps = [
-    ":network-device-driver",
-    ":network-device_bind",
-  ]
+  deps = [ ":network-device-driver" ]
   info = "meta/network-device-info.json"
+  manifest = "meta/network-device.cml"
 }
 
 fuchsia_driver_package("package") {

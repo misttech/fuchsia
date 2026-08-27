@@ -16,14 +16,8 @@ group("tests") {
   ]
 }
 
-fuchsia_driver_dml("gdc-dml") {
-  dml = "meta/gdc.dml"
-  driver_name = "gdc"
-}
-
 driver_bind_rules("gdc_bind") {
-  dml_label = ":gdc-dml"
-  bind_output = "gdc.bindbc"
+  rules = "meta/gdc.bind"
   tests = "meta/bind_tests.json"
   deps = [
     "//src/devices/bind/fuchsia",
@@ -78,12 +72,9 @@ fuchsia_cc_driver("fuchsia_driver") {
 
 fuchsia_driver_component("driver") {
   component_name = "gdc"
-  dml_label = ":gdc-dml"
-  deps = [
-    ":fuchsia_driver",
-    ":gdc_bind",
-  ]
+  deps = [ ":fuchsia_driver" ]
   info = "meta/driver-info.json"
+  manifest = "meta/gdc.cml"
 }
 
 fuchsia_driver_package("gdc") {

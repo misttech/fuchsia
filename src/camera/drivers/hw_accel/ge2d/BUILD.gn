@@ -15,14 +15,8 @@ group("tests") {
   ]
 }
 
-fuchsia_driver_dml("ge2d-dml") {
-  dml = "meta/ge2d.dml"
-  driver_name = "ge2d"
-}
-
 driver_bind_rules("ge2d_bind") {
-  dml_label = ":ge2d-dml"
-  bind_output = "ge2d.bindbc"
+  rules = "meta/ge2d.bind"
   tests = "meta/bind_tests.json"
   deps = [
     "//src/devices/bind/fuchsia",
@@ -77,12 +71,9 @@ fuchsia_cc_driver("ge2d-driver-driver") {
 
 fuchsia_driver_component("ge2d-driver") {
   component_name = "ge2d"
-  dml_label = ":ge2d-dml"
-  deps = [
-    ":ge2d-driver-driver",
-    ":ge2d_bind",
-  ]
+  deps = [ ":ge2d-driver-driver" ]
   info = "meta/ge2d-driver-info.json"
+  manifest = "meta/ge2d.cml"
 }
 
 fuchsia_driver_package("ge2d") {

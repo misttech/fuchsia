@@ -15,14 +15,8 @@ group("tests") {
   ]
 }
 
-fuchsia_driver_dml("aml_mipicsi-dml") {
-  dml = "meta/aml_mipicsi.dml"
-  driver_name = "aml_mipicsi"
-}
-
 driver_bind_rules("aml_mipi_bind") {
-  dml_label = ":aml_mipicsi-dml"
-  bind_output = "aml_mipicsi.bindbc"
+  rules = "meta/aml_mipicsi.bind"
   tests = "meta/bind_tests.json"
   deps = [
     "//src/devices/bind/fuchsia",
@@ -64,12 +58,9 @@ fuchsia_cc_driver("aml_mipicsi_driver-driver") {
 
 fuchsia_driver_component("aml_mipicsi_driver") {
   component_name = "aml_mipicsi"
-  dml_label = ":aml_mipicsi-dml"
-  deps = [
-    ":aml_mipi_bind",
-    ":aml_mipicsi_driver-driver",
-  ]
+  deps = [ ":aml_mipicsi_driver-driver" ]
   info = "meta/aml_mipicsi_driver-info.json"
+  manifest = "meta/aml_mipicsi.cml"
 }
 
 fuchsia_driver_package("driver_package") {
