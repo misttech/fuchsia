@@ -7,7 +7,7 @@
 import logging
 
 import fuchsia_base_test
-from honeydew.affordances.drivers.battery import (
+from honeydew.affordances.drivers.battery_manager import (
     BatterySpec,
     ChargeStatus,
     PowerSourceSpec,
