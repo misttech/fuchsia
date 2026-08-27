@@ -61,7 +61,7 @@ pub struct TaskInfo<T: RuntimeStatsSource + Debug> {
     koid: zx_sys::zx_koid_t,
     pub(crate) task: Arc<Mutex<TaskState<T>>>,
     pub(crate) time_source: Arc<dyn TimeSource + Sync + Send>,
-    histogram: Option<UintLinearHistogramProperty>,
+    histogram: Option<Arc<UintLinearHistogramProperty>>,
     cpu_cores: i64,
     sample_period: std::time::Duration,
     _terminated_task: fasync::Task<()>,
@@ -76,7 +76,7 @@ impl<T: 'static + RuntimeStatsSource + Debug + Send + Sync> TaskInfo<T> {
     // generic type given a collision with the blanket implementation.
     pub fn try_from(
         task: T,
-        histogram: Option<UintLinearHistogramProperty>,
+        histogram: Option<Arc<UintLinearHistogramProperty>>,
         time_source: Arc<dyn TimeSource + Sync + Send>,
     ) -> Result<Self, zx::Status> {
         Self::try_from_internal(task, histogram, time_source, CPU_SAMPLE_PERIOD, num_cpus())
@@ -87,7 +87,7 @@ impl<T: 'static + RuntimeStatsSource + Debug + Send + Sync> TaskInfo<T> {
     // Injects a couple of test dependencies
     fn try_from_internal(
         task: T,
-        histogram: Option<UintLinearHistogramProperty>,
+        histogram: Option<Arc<UintLinearHistogramProperty>>,
         time_source: Arc<dyn TimeSource + Sync + Send>,
         sample_period: std::time::Duration,
         cpu_cores: i64,
@@ -671,7 +671,7 @@ mod tests {
         //assert_data_tree!(            inspector,            root: {});
         let task = TaskInfo::try_from_internal(
             readings,
-            Some(histogram),
+            Some(Arc::new(histogram)),
             Arc::new(clock.clone()),
             std::time::Duration::from_nanos(1000),
             1, /* cores */
@@ -731,7 +731,7 @@ mod tests {
             create_cpu_histogram(&inspector.root(), &ExtendedMoniker::parse_str("foo").unwrap());
         let task = TaskInfo::try_from_internal(
             readings,
-            Some(histogram),
+            Some(Arc::new(histogram)),
             Arc::new(clock.clone()),
             std::time::Duration::from_nanos(1000),
             1, /* cores */
@@ -771,7 +771,7 @@ mod tests {
             create_cpu_histogram(&inspector.root(), &ExtendedMoniker::parse_str("foo").unwrap());
         let task = TaskInfo::try_from_internal(
             readings,
-            Some(histogram),
+            Some(Arc::new(histogram)),
             Arc::new(clock.clone()),
             std::time::Duration::from_nanos(1000),
             4, /* cores */

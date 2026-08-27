@@ -12,12 +12,17 @@ use std::sync::Arc;
 /// Tracks the tasks associated to some component and provides utilities for measuring them.
 pub struct ComponentStats<T: RuntimeStatsSource + Debug> {
     tasks: Vec<Arc<TaskInfo<T>>>,
+    histogram: Arc<inspect::UintLinearHistogramProperty>,
 }
 
 impl<T: 'static + RuntimeStatsSource + Debug + Send + Sync> ComponentStats<T> {
     /// Creates a new `ComponentStats` and starts taking measurements.
-    pub fn new() -> Self {
-        Self { tasks: vec![] }
+    pub fn new(histogram: inspect::UintLinearHistogramProperty) -> Self {
+        Self { tasks: vec![], histogram: Arc::new(histogram) }
+    }
+
+    pub fn histogram(&self) -> Arc<inspect::UintLinearHistogramProperty> {
+        self.histogram.clone()
     }
 
     /// Associate a task with this component.
@@ -128,6 +133,11 @@ impl<T: 'static + RuntimeStatsSource + Debug + Send + Sync> ComponentStats<T> {
             sum += task.total_measurements();
         }
         sum
+    }
+
+    #[cfg(test)]
+    pub fn tasks(&self) -> &[Arc<TaskInfo<T>>] {
+        &self.tasks
     }
 
     #[cfg(test)]

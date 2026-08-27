@@ -183,18 +183,24 @@ impl<T: 'static + RuntimeStatsSource + Debug + Send + Sync> ComponentTreeStats<T
 
     /// Initializes a new component stats with the given task.
     fn track_ready(&self, moniker: ExtendedMoniker, task: T) {
-        let histogram = create_cpu_histogram(&self.histograms_node, &moniker);
+        let stats = {
+            let mut tree_guard = self.tree.lock();
+            tree_guard
+                .entry(moniker.clone())
+                .or_insert_with(|| {
+                    let histogram = create_cpu_histogram(&self.histograms_node, &moniker);
+                    Arc::new(Mutex::new(ComponentStats::new(histogram)))
+                })
+                .clone()
+        };
+
+        let histogram = stats.lock().histogram();
 
         if let Ok(task_info) = TaskInfo::try_from(task, Some(histogram), self.time_source.clone()) {
             let koid = task_info.koid();
             let arc_task_info = Arc::new(task_info);
 
-            let mut tree_guard = self.tree.lock();
             let mut tasks_guard = self.tasks.lock();
-
-            let stats = tree_guard
-                .entry(moniker)
-                .or_insert_with(|| Arc::new(Mutex::new(ComponentStats::new())));
 
             stats.lock().add_task(arc_task_info.clone());
 
@@ -389,7 +395,8 @@ impl<T: 'static + RuntimeStatsSource + Debug + Send + Sync> ComponentTreeStats<T
             if let Some(stats) = tree_lock.get(&moniker) {
                 stats.clone()
             } else {
-                let stats = Arc::new(Mutex::new(ComponentStats::new()));
+                let histogram = create_cpu_histogram(&this.histograms_node, &moniker);
+                let stats = Arc::new(Mutex::new(ComponentStats::new(histogram)));
                 tree_lock.insert(moniker.clone(), stats.clone());
                 stats
             }
@@ -397,7 +404,7 @@ impl<T: 'static + RuntimeStatsSource + Debug + Send + Sync> ComponentTreeStats<T
 
         let task = maybe_return!(source.take_component_task());
 
-        let histogram = create_cpu_histogram(&this.histograms_node, &moniker);
+        let histogram = stats.lock().histogram();
         let task_info =
             maybe_return!(TaskInfo::try_from(task, Some(histogram), this.time_source.clone()).ok());
 
@@ -1353,5 +1360,83 @@ mod tests {
             .expect("timestamps are ints")
             .raw_values();
         (timestamps.into_owned(), cpu_times.into_owned(), queue_times.into_owned())
+    }
+
+    #[fuchsia::test]
+    async fn component_restart_shares_cpu_histogram() {
+        let inspector = inspect::Inspector::default();
+        let clock = Arc::new(FakeTime::new());
+        let stats = Arc::new(ComponentTreeStats::new_with_timesource(
+            inspector.root().create_child("stats"),
+            clock.clone(),
+        ));
+
+        let moniker = Moniker::try_from(["restarting-component"]).unwrap();
+        let ext_moniker: ExtendedMoniker = moniker.clone().into();
+
+        // 1. Start first instance of the component.
+        let task1 = FakeTask::new(1, create_measurements_vec_for_fake_task(10, 1, 1));
+        let fake_runtime1 =
+            Box::new(FakeRuntime::new(FakeDiagnosticsContainer::new(task1.clone(), None)));
+        stats.on_component_started(&moniker, &*fake_runtime1);
+
+        loop {
+            if stats.tree.lock().len() == 1 {
+                break;
+            }
+            fasync::Timer::new(fasync::MonotonicInstant::after(
+                zx::MonotonicDuration::from_millis(10),
+            ))
+            .await;
+        }
+
+        clock.add_ticks(CPU_SAMPLE_PERIOD.as_nanos() as i64);
+        stats.measure();
+
+        // 2. Terminate first instance.
+        task1.terminate();
+        clock.add_ticks(1);
+
+        // 3. Start second instance (restart) before task 1 is expired/pruned.
+        let task2 = FakeTask::new(2, create_measurements_vec_for_fake_task(10, 1, 1));
+        let fake_runtime2 =
+            Box::new(FakeRuntime::new(FakeDiagnosticsContainer::new(task2.clone(), None)));
+        stats.on_component_started(&moniker, &*fake_runtime2);
+
+        loop {
+            let tree_guard = stats.tree.lock();
+            if let Some(comp_stats) = tree_guard.get(&ext_moniker) {
+                if comp_stats.lock().tasks().len() == 2 {
+                    break;
+                }
+            }
+            drop(tree_guard);
+            fasync::Timer::new(fasync::MonotonicInstant::after(
+                zx::MonotonicDuration::from_millis(10),
+            ))
+            .await;
+        }
+
+        clock.add_ticks(CPU_SAMPLE_PERIOD.as_nanos() as i64);
+        stats.measure();
+
+        // 4. Verify Inspect hierarchy contains exactly ONE histogram property for this moniker.
+        let hierarchy = inspector.get_diagnostics_hierarchy().await;
+        let histograms_node = hierarchy
+            .get_child_by_path(&vec!["stats", "histograms"])
+            .expect("found histograms node");
+
+        let matching_props: Vec<_> = histograms_node
+            .properties
+            .iter()
+            .filter(|p| p.name() == "restarting-component")
+            .collect();
+
+        assert_eq!(
+            matching_props.len(),
+            1,
+            "Expected exactly 1 histogram property for moniker, found {}",
+            matching_props.len()
+        );
     }
 }
