@@ -223,6 +223,11 @@ impl FileSystem {
         matches!(self.dcache, DirEntryCache::Permanent(_))
     }
 
+    /// Returns whether this filesystem supports casefolded directory lookups.
+    pub fn has_casefold_support(&self) -> bool {
+        self.ops.has_casefold_support()
+    }
+
     /// Returns the `FsLockDepType` of this filesystem, delegated from `FileSystemOps`.
     pub fn fs_lockdep_type(&self) -> FsLockDepType {
         self.ops.fs_lockdep_type()
@@ -542,6 +547,11 @@ pub trait FileSystemOps: AsAny + Send + Sync + 'static {
     /// If this is true, then the file system is responsible for assigning node IDs to its nodes.
     /// Otherwise, the VFS will assign node IDs to the nodes.
     fn uses_external_node_ids(&self) -> bool {
+        false
+    }
+
+    /// Returns whether this filesystem supports casefolded directory lookups.
+    fn has_casefold_support(&self) -> bool {
         false
     }
 

@@ -223,6 +223,10 @@ impl FileSystemOps for RemoteFs {
         self.use_remote_ids
     }
 
+    fn has_casefold_support(&self) -> bool {
+        self.casefold
+    }
+
     fn rename(
         &self,
         _fs: &FileSystem,
@@ -1238,10 +1242,6 @@ impl FsNodeOps for RemoteNode {
             })
             .map(|r| r.map_err(|status| from_status_like_fdio!(status)).flatten())
             .collect()
-    }
-
-    fn has_casefold_support(&self, node: &FsNode) -> bool {
-        RemoteFs::from_fs(&node.fs()).casefold
     }
 
     fn truncate(
@@ -4779,7 +4779,7 @@ mod test {
             let ns = Namespace::new(fs);
             let root = ns.root();
 
-            assert!(!root.entry.node.ops().has_casefold_support(&root.entry.node));
+            assert!(!root.entry.node.fs().has_casefold_support());
             assert_eq!(
                 root.entry.node.update_attributes(&current_task, |info| {
                     info.casefold = true;
@@ -4787,6 +4787,7 @@ mod test {
                 }),
                 error!(ENOTSUP)
             );
+            assert_eq!(root.entry.set_casefold(&current_task, true), error!(ENOTSUP));
         })
         .await;
     }
@@ -4810,7 +4811,21 @@ mod test {
             let ns = Namespace::new(fs);
             let root = ns.root();
 
-            assert!(root.entry.node.ops().has_casefold_support(&root.entry.node));
+            assert!(root.entry.node.fs().has_casefold_support());
+
+            // Casefold can be enabled on an empty directory.
+            assert_eq!(root.entry.set_casefold(&current_task, true), Ok(()));
+            assert!(root.entry.node.info().casefold);
+
+            // Enabling casefold when already enabled is idempotent.
+            assert_eq!(root.entry.set_casefold(&current_task, true), Ok(()));
+
+            // Adding a child makes the directory non-empty.
+            root.create_node(&current_task, "child".into(), FileMode::IFREG, DeviceId::NONE)
+                .expect("create child");
+
+            // Toggling casefold on a non-empty directory returns ENOTEMPTY.
+            assert_eq!(root.entry.set_casefold(&current_task, false), error!(ENOTEMPTY));
         })
         .await;
 

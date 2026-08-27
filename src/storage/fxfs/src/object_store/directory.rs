@@ -204,7 +204,7 @@ impl<S: HandleOwner> Directory<S> {
                 Options::default(),
             )
             .await?;
-        ensure!(!self.has_children().await?, FxfsError::InvalidArgs);
+        ensure!(!self.has_children().await?, FxfsError::NotEmpty);
         let mut mutation =
             self.store().txn_get_object_mutation(&transaction, self.object_id()).await?;
         if let ObjectValue::Object {

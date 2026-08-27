@@ -241,6 +241,46 @@ impl DirEntry {
         DirEntryLockedChildren { entry: self, children: self.children.write() }
     }
 
+    /// Sets whether this directory is casefolded.
+    ///
+    /// # Errors
+    ///
+    /// * [`ENOTDIR`]: If this entry is not a directory.
+    /// * [`ENOTSUP`]: If enabling casefolding on a filesystem without casefold support.
+    /// * [`ENOTEMPTY`]: If the directory is not empty.
+    /// * Propagates errors from [`FsNode::update_attributes`].
+    pub fn set_casefold(&self, current_task: &CurrentTask, casefold: bool) -> Result<(), Errno> {
+        if self.node.info().casefold == casefold {
+            return Ok(());
+        }
+        if !self.node.is_dir() {
+            return error!(ENOTDIR);
+        }
+        if casefold && !self.node.fs().has_casefold_support() {
+            return error!(ENOTSUP);
+        }
+
+        // It is important that the `children` write lock is held across the call to
+        // `update_attributes` below because it acts as the guard preventing the directory's
+        // case-sensitivity from changing concurrently. Elsewhere, we make decisions based on the
+        // state of `children` to determine whether a directory is case-folded or not.
+        let children = self.children.write();
+        if self.node.info().casefold == casefold {
+            return Ok(());
+        }
+
+        // Verify that the in-memory cache is empty. On disk-backed filesystems, on-disk emptiness
+        // is checked by `update_attributes`.
+        if !children.is_empty() {
+            return error!(ENOTEMPTY);
+        }
+
+        self.node.update_attributes(current_task, |info| {
+            info.casefold = casefold;
+            Ok(())
+        })
+    }
+
     /// The parent DirEntry.
     pub fn parent(&self) -> Option<DirEntryHandle> {
         self.parent.to_option_arc()

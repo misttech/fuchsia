@@ -615,11 +615,6 @@ pub trait FsNodeOps: Send + Sync + AsAny + 'static {
         panic!("has_lookup_pipelined should be false");
     }
 
-    /// Returns whether this node supports casefolded filenames.
-    fn has_casefold_support(&self, _node: &FsNode) -> bool {
-        false
-    }
-
     /// Create and return the given child node.
     ///
     /// The mode field of the FsNodeInfo indicates what kind of child to
@@ -778,6 +773,9 @@ pub trait FsNodeOps: Send + Sync + AsAny + 'static {
     }
 
     /// Update node attributes persistently.
+    ///
+    /// Implementations must enforce prerequisites for attribute changes (for example,
+    /// enabling casefold on a non-empty directory must return [`ENOTEMPTY`]).
     fn update_attributes(
         &self,
         _node: &FsNode,
@@ -1923,6 +1921,11 @@ impl FsNode {
         assert!(self.ensure_rare_data().bound_socket.set(socket).is_ok());
     }
 
+    /// Updates node attributes and persists changes via [`FsNodeOps::update_attributes`].
+    ///
+    /// For directory-level attributes like `casefold` and `wrapping_key_id`, callers should
+    /// use directory helpers (such as [`DirEntry::set_casefold`]) to synchronize child caches
+    /// and directory locks.
     pub fn update_attributes<F>(&self, current_task: &CurrentTask, mutator: F) -> Result<(), Errno>
     where
         F: FnOnce(&mut FsNodeInfo) -> Result<(), Errno>,
@@ -1961,7 +1964,7 @@ impl FsNode {
         has.casefold = info.casefold != new_info.casefold;
         has.wrapping_key_id = info.wrapping_key_id != new_info.wrapping_key_id;
 
-        if has.casefold && !self.ops().has_casefold_support(self) {
+        if has.casefold && !self.fs().has_casefold_support() {
             return error!(ENOTSUP);
         }
         security::check_fs_node_setattr_access(current_task, &self, &has)?;
@@ -2913,22 +2916,35 @@ mod tests {
     #[fuchsia::test]
     async fn test_casefold_not_supported_by_default() {
         spawn_kernel_and_run(async |current_task| {
-            let node = &current_task
+            let file_node = &current_task
                 .fs()
                 .root()
                 .create_node(&current_task, "foo".into(), FileMode::IFREG, DeviceId::NONE)
                 .expect("create_node")
-                .entry
-                .node;
+                .entry;
 
-            assert!(!node.ops().has_casefold_support(node));
+            assert!(!file_node.node.fs().has_casefold_support());
             assert_eq!(
-                node.update_attributes(&current_task, |info| {
+                file_node.node.update_attributes(&current_task, |info| {
                     info.casefold = true;
                     Ok(())
                 }),
                 error!(ENOTSUP)
             );
+            // Calling set_casefold on a regular file returns Ok(()) when casefold is already false,
+            // and ENOTDIR when attempting to enable casefolding.
+            assert_eq!(file_node.set_casefold(&current_task, false), Ok(()));
+            assert_eq!(file_node.set_casefold(&current_task, true), error!(ENOTDIR));
+
+            // Calling set_casefold on a directory in an unsupported filesystem returns ENOTSUP.
+            let dir_entry = &current_task
+                .fs()
+                .root()
+                .create_node(&current_task, "dir".into(), FileMode::IFDIR, DeviceId::NONE)
+                .expect("create_dir")
+                .entry;
+            assert_eq!(dir_entry.set_casefold(&current_task, true), error!(ENOTSUP));
+            assert_eq!(dir_entry.set_casefold(&current_task, false), Ok(()));
         })
         .await;
     }

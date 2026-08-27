@@ -50,6 +50,10 @@ impl FileSystemOps for RemoteVolume {
         self.remotefs.uses_external_node_ids()
     }
 
+    fn has_casefold_support(&self) -> bool {
+        self.remotefs.has_casefold_support()
+    }
+
     fn rename(
         &self,
         fs: &FileSystem,

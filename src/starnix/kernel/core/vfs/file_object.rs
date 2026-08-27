@@ -882,12 +882,15 @@ pub fn default_vfs_ioctl(
         }
         uapi::FS_IOC_SETFLAGS => {
             track_stub!(TODO("https://fxbug.dev/322875367"), "FS_IOC_SETFLAGS");
+            // In Linux, FS_IOC_SETFLAGS operates on the mount and inode ownership rather than
+            // requiring an FD opened for writing (directories can only be opened O_RDONLY) or
+            // checking DAC write permissions on the file mode.
+            file.name.mount.check_readonly_filesystem()?;
             let arg = UserRef::<u32>::from(arg);
             let flags: u32 = current_task.read_object(arg)?;
-            file.node().update_attributes(current_task, |info| {
-                info.casefold = flags & FS_CASEFOLD_FL != 0;
-                Ok(())
-            })?;
+            let new_casefold = flags & FS_CASEFOLD_FL != 0;
+            file.name.entry.set_casefold(current_task, new_casefold)?;
+
             Ok(Some(SUCCESS))
         }
         FS_IOC_ENABLE_VERITY => {
