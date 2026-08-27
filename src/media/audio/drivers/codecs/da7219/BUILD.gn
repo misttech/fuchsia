@@ -52,11 +52,11 @@ source_set("common-dfv1") {
     "//sdk/fidl/fuchsia.hardware.audio:fuchsia.hardware.audio_cpp",
     "//sdk/fidl/fuchsia.hardware.i2c:fuchsia.hardware.i2c_cpp",
     "//src/devices/bind/fuchsia:fuchsia_cpp",
+    "//src/devices/i2c/lib/hwreg-i2c",
     "//src/devices/lib/acpi",
     "//src/devices/lib/driver",
     "//src/devices/lib/driver:driver_runtime",
     "//src/lib/ddktl",
-    "//zircon/system/ulib/hwreg-i2c",
     "//zircon/system/ulib/zx",
   ]
 }
@@ -126,8 +126,8 @@ source_set("common-dfv2") {
     "//sdk/lib/driver/compat/cpp",
     "//sdk/lib/driver/component/cpp",
     "//sdk/lib/driver/devfs/cpp",
+    "//src/devices/i2c/lib/hwreg-i2c",
     "//src/devices/lib/driver:driver_runtime",
-    "//zircon/system/ulib/hwreg-i2c",
   ]
 }
 

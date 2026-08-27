@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef HWREG_I2C_H_
-#define HWREG_I2C_H_
+#ifndef SRC_DEVICES_I2C_LIB_HWREG_I2C_INCLUDE_HWREG_I2C_H_
+#define SRC_DEVICES_I2C_LIB_HWREG_I2C_INCLUDE_HWREG_I2C_H_
 
 #include <endian.h>
 #include <fidl/fuchsia.hardware.i2c/cpp/wire.h>
@@ -194,4 +194,4 @@ class I2cRegisterAddr : public RegisterAddr<RegType> {
 };
 }  // namespace hwreg
 
-#endif  // HWREG_I2C_H_
+#endif  // SRC_DEVICES_I2C_LIB_HWREG_I2C_INCLUDE_HWREG_I2C_H_
