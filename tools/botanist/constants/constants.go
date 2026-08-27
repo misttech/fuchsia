@@ -29,6 +29,7 @@ const (
 	DeviceTypeEnvKey = "FUCHSIA_DEVICE_TYPE" // Not set by botanist directly, but part of the host-target interaction API
 	IPv4AddrEnvKey   = "FUCHSIA_IPV4_ADDR"
 	IPv6AddrEnvKey   = "FUCHSIA_IPV6_ADDR"
+	HostToolsEnvKey  = "FUCHSIA_HOST_TOOLS" // Path to host tools dir
 	PkgSrvPortKey    = "FUCHSIA_PACKAGE_SERVER_PORT"
 	// LINT.IfChange
 	TestbedConfigEnvKey = "FUCHSIA_TESTBED_CONFIG"

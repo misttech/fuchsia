@@ -725,6 +725,13 @@ func (r *RunCommand) runAgainstTarget(ctx context.Context, t targets.FuchsiaTarg
 		testrunnerEnv[constants.DeviceAddrEnvKey] = addr.String()
 		testrunnerEnv[constants.IPv4AddrEnvKey] = ipv4.String()
 		testrunnerEnv[constants.IPv6AddrEnvKey] = ipv6.String()
+
+		// FUCHSIA_HOST_TOOLS is used to allow test-pilot to find runtime dependencies
+		// when the test is being run. Those dependencies must reside in the same
+		// directory as ffx. bundles/infra/test/BUILD.gn adds the dependencies, and
+		// tools/integration/testsharder/task_requests.go registers the tools with
+		// test_sharder.
+		testrunnerEnv[constants.HostToolsEnvKey] = filepath.Dir(r.ffxPath)
 	}
 
 	// One would assume this should only be provisioned when paving, but
