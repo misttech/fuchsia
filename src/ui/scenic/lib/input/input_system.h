@@ -44,9 +44,17 @@ class InputSystem {
       fidl::InterfaceRequest<fuchsia::ui::pointer::TouchSource> touch_source_request,
       zx_koid_t client_view_ref_koid);
 
+  void RegisterTouchSourceV2(
+      fidl::ServerEnd<fuchsia_ui_pointer::TouchSourceV2> touch_source_server_end,
+      zx_koid_t client_view_ref_koid);
+
   // Delegates to `mouse_system_`.
   void RegisterMouseSource(
       fidl::InterfaceRequest<fuchsia::ui::pointer::MouseSource> mouse_source_request,
+      zx_koid_t client_view_ref_koid);
+
+  void RegisterMouseSourceV2(
+      fidl::ServerEnd<fuchsia_ui_pointer::MouseSourceV2> mouse_source_server_end,
       zx_koid_t client_view_ref_koid);
 
 #if !defined(FUCHSIA_DSO)

@@ -57,8 +57,6 @@ class TouchSource : public TouchSourceBase, public fidl::Server<fuchsia_ui_point
  protected:
   // |TouchSourceBase|
   void CloseChannel(zx_status_t epitaph) override;
-  void Augment(const view_tree::Snapshot& snapshot, AugmentedTouchEvent&,
-               const InternalTouchEvent&) override;
 
  private:
   fidl::ServerBinding<fuchsia_ui_pointer::TouchSource> binding_;

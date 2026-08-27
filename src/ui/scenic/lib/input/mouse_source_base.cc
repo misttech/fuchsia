@@ -12,9 +12,7 @@ namespace scenic_impl::input {
 
 using fuchsia::ui::pointer::MouseEvent;
 
-namespace {
-
-MouseEvent NewMouseEvent(const InternalMouseEvent& event) {
+MouseEvent MouseSourceBase::NewMouseEvent(const InternalMouseEvent& event) {
   MouseEvent new_event;
   new_event.set_timestamp(event.timestamp);
   new_event.set_trace_flow_id(TRACE_NONCE());
@@ -22,7 +20,7 @@ MouseEvent NewMouseEvent(const InternalMouseEvent& event) {
   return new_event;
 }
 
-void AddDeviceInfoToEvent(MouseEvent& out_event, const InternalMouseEvent& event) {
+void MouseSourceBase::AddDeviceInfoToEvent(MouseEvent& out_event, const InternalMouseEvent& event) {
   fuchsia::ui::pointer::MouseDeviceInfo device_info;
   device_info.set_id(event.device_id);
   if (event.scroll_v.has_value()) {
@@ -44,16 +42,16 @@ void AddDeviceInfoToEvent(MouseEvent& out_event, const InternalMouseEvent& event
   out_event.set_device_info(std::move(device_info));
 }
 
-void AddStreamInfoToEvent(MouseEvent& out_event, const InternalMouseEvent& event,
-                          bool view_entered) {
+void MouseSourceBase::AddStreamInfoToEvent(MouseEvent& out_event, const InternalMouseEvent& event,
+                                           bool view_entered) {
   out_event.set_stream_info({.device_id = event.device_id,
                              .status = view_entered
                                            ? fuchsia::ui::pointer::MouseViewStatus::ENTERED
                                            : fuchsia::ui::pointer::MouseViewStatus::EXITED});
 }
 
-void AddViewParametersToEvent(MouseEvent& out_event, const Viewport& viewport,
-                              const view_tree::BoundingBox& view_bounds) {
+void MouseSourceBase::AddViewParametersToEvent(MouseEvent& out_event, const Viewport& viewport,
+                                               const view_tree::BoundingBox& view_bounds) {
   out_event.set_view_parameters(fuchsia::ui::pointer::ViewParameters{
       .view = fuchsia::ui::pointer::Rectangle{.min = view_bounds.min, .max = view_bounds.max},
       .viewport =
@@ -64,7 +62,7 @@ void AddViewParametersToEvent(MouseEvent& out_event, const Viewport& viewport,
   });
 }
 
-MouseEvent NewViewExitEvent(const InternalMouseEvent& event) {
+MouseEvent MouseSourceBase::NewViewExitEvent(const InternalMouseEvent& event) {
   MouseEvent new_event;
   new_event.set_timestamp(event.timestamp);
   new_event.set_trace_flow_id(TRACE_NONCE());
@@ -72,8 +70,6 @@ MouseEvent NewViewExitEvent(const InternalMouseEvent& event) {
       {.device_id = event.device_id, .status = fuchsia::ui::pointer::MouseViewStatus::EXITED});
   return new_event;
 }
-
-}  // namespace
 
 void MouseSourceBase::WatchBase(fit::function<void(std::vector<MouseEvent>)> callback) {
   TRACE_DURATION("input", "MouseSourceBase::Watch");
@@ -124,8 +120,13 @@ void MouseSourceBase::UpdateStream(const StreamId stream_id, InternalMouseEvent 
   if (view_exit) {
     const auto erased = tracked_streams_.erase(stream_id);
     FX_DCHECK(erased == 1) << "First event of a stream can't have MouseViewStatus::EXITED";
-    pending_events_.push(NewViewExitEvent(event));
-    SendPendingIfWaiting();
+    if (erased == 1) {
+      fuchsia::ui::pointer::MouseEvent exit_event = NewViewExitEvent(event);
+      if (event.wake_lease) {
+        exit_event.set_wake_lease(std::move(event.wake_lease));
+      }
+      PushEvent(std::move(exit_event));
+    }
     return;
   }
 
@@ -154,7 +155,11 @@ void MouseSourceBase::UpdateStream(const StreamId stream_id, InternalMouseEvent 
     out_event.set_wake_lease(std::move(event.wake_lease));
   }
 
-  pending_events_.push(std::move(out_event));
+  PushEvent(std::move(out_event));
+}
+
+void MouseSourceBase::PushEvent(fuchsia::ui::pointer::MouseEvent event) {
+  pending_events_.push(std::move(event));
   SendPendingIfWaiting();
 }
 

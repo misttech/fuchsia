@@ -87,6 +87,10 @@ class Flatland : public fidl::Server<fuchsia_ui_composition::Flatland>,
           register_touch_source,
       fit::function<void(fidl::ServerEnd<fuchsia_ui_pointer::MouseSource>, zx_koid_t)>
           register_mouse_source,
+      fit::function<void(fidl::ServerEnd<fuchsia_ui_pointer::TouchSourceV2>, zx_koid_t)>
+          register_touch_source_v2,
+      fit::function<void(fidl::ServerEnd<fuchsia_ui_pointer::MouseSourceV2>, zx_koid_t)>
+          register_mouse_source_v2,
       const FlatlandConfig& config);
 
   // Because this object captures its "this" pointer in internal closures, it is unsafe to copy or
@@ -400,6 +404,10 @@ class Flatland : public fidl::Server<fuchsia_ui_composition::Flatland>,
                register_touch_source,
            fit::function<void(fidl::ServerEnd<fuchsia_ui_pointer::MouseSource>, zx_koid_t)>
                register_mouse_source,
+           fit::function<void(fidl::ServerEnd<fuchsia_ui_pointer::TouchSourceV2>, zx_koid_t)>
+               register_touch_source_v2,
+           fit::function<void(fidl::ServerEnd<fuchsia_ui_pointer::MouseSourceV2>, zx_koid_t)>
+               register_mouse_source_v2,
            const FlatlandConfig& config);
 
   // `Flatland::New()` dispatches a task to invoke this.
@@ -682,6 +690,10 @@ class Flatland : public fidl::Server<fuchsia_ui_composition::Flatland>,
       register_touch_source_;
   fit::function<void(fidl::ServerEnd<fuchsia_ui_pointer::MouseSource>, zx_koid_t)>
       register_mouse_source_;
+  fit::function<void(fidl::ServerEnd<fuchsia_ui_pointer::TouchSourceV2>, zx_koid_t)>
+      register_touch_source_v2_;
+  fit::function<void(fidl::ServerEnd<fuchsia_ui_pointer::MouseSourceV2>, zx_koid_t)>
+      register_mouse_source_v2_;
 
   // The configuration for this Flatland instance.
   const FlatlandConfig config_;

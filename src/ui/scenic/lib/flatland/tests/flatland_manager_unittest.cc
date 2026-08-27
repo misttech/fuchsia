@@ -134,7 +134,9 @@ class FlatlandManagerTest : public LoggingEventLoop, public ::testing::Test {
         /*register_view_focuser*/ [this](auto...) { view_focuser_registered_ = true; },
         /*register_view_ref_focused*/ [this](auto...) { view_ref_focused_registered_ = true; },
         /*register_touch_source*/ [this](auto...) { touch_source_registered_ = true; },
-        /*register_mouse_source*/ [this](auto...) { mouse_source_registered_ = true; });
+        /*register_mouse_source*/ [this](auto...) { mouse_source_registered_ = true; },
+        /*register_touch_source_v2*/ [this](auto...) { touch_source_v2_registered_ = true; },
+        /*register_mouse_source_v2*/ [this](auto...) { mouse_source_v2_registered_ = true; });
   }
 
   void TearDown() override {
@@ -247,6 +249,8 @@ class FlatlandManagerTest : public LoggingEventLoop, public ::testing::Test {
   bool view_ref_focused_registered_ = false;
   bool touch_source_registered_ = false;
   bool mouse_source_registered_ = false;
+  bool touch_source_v2_registered_ = false;
+  bool mouse_source_v2_registered_ = false;
 };
 
 }  // namespace
@@ -939,6 +943,40 @@ TEST_F(FlatlandManagerTest, ViewBoundProtocolsAreRegistered) {
   RunLoopUntil([this] {
     return view_focuser_registered_ && view_ref_focused_registered_ && touch_source_registered_ &&
            mouse_source_registered_;
+  });
+}
+
+TEST_F(FlatlandManagerTest, ViewBoundProtocolsV2AreRegistered) {
+  fuchsia::ui::views::ViewportCreationToken parent_token;
+  fuchsia::ui::views::ViewCreationToken child_token;
+  ASSERT_EQ(ZX_OK, zx::channel::create(0, &parent_token.value, &child_token.value));
+  fidl::InterfacePtr<fuchsia::ui::composition::Flatland> parent = CreateFlatland();
+  const fuchsia::ui::composition::ContentId kLinkId = {1};
+  fidl::InterfacePtr<fuchsia::ui::composition::ChildViewWatcher> child_view_watcher;
+  fuchsia::ui::composition::ViewportProperties properties;
+  properties.set_logical_size({1, 2});
+  parent->CreateViewport(kLinkId, std::move(parent_token), std::move(properties),
+                         child_view_watcher.NewRequest());
+
+  fidl::InterfacePtr<fuchsia::ui::composition::Flatland> child = CreateFlatland();
+
+  fidl::InterfacePtr<fuchsia::ui::views::Focuser> view_focuser_ptr;
+  fidl::InterfacePtr<fuchsia::ui::views::ViewRefFocused> view_ref_focused_ptr;
+  fidl::InterfacePtr<fuchsia::ui::pointer::TouchSourceV2> touch_source_v2_ptr;
+  fidl::InterfacePtr<fuchsia::ui::pointer::MouseSourceV2> mouse_source_v2_ptr;
+
+  fidl::InterfacePtr<fuchsia::ui::composition::ParentViewportWatcher> parent_viewport_watcher;
+  fuchsia::ui::composition::ViewBoundProtocols protocols;
+  protocols.set_view_focuser(view_focuser_ptr.NewRequest())
+      .set_view_ref_focused(view_ref_focused_ptr.NewRequest())
+      .set_touch_source_v2(touch_source_v2_ptr.NewRequest())
+      .set_mouse_source_v2(mouse_source_v2_ptr.NewRequest());
+  child->CreateView2(std::move(child_token), scenic::NewViewIdentityOnCreation(),
+                     std::move(protocols), parent_viewport_watcher.NewRequest());
+
+  RunLoopUntil([this] {
+    return view_focuser_registered_ && view_ref_focused_registered_ &&
+           touch_source_v2_registered_ && mouse_source_v2_registered_;
   });
 }
 

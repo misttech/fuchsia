@@ -55,9 +55,17 @@ class InputManager {
   void RegisterTouchSource(fidl::ServerEnd<fuchsia_ui_pointer::TouchSource> touch_source,
                            zx_koid_t view_ref_koid);
 
+  // Registers a TouchSourceV2 server endpoint to deliver touch events targeted to the view.
+  void RegisterTouchSourceV2(fidl::ServerEnd<fuchsia_ui_pointer::TouchSourceV2> touch_source,
+                             zx_koid_t view_ref_koid);
+
   // Registers a MouseSource server endpoint to deliver mouse events targeted to the view.
   void RegisterMouseSource(fidl::ServerEnd<fuchsia_ui_pointer::MouseSource> mouse_source,
                            zx_koid_t view_ref_koid);
+
+  // Registers a MouseSourceV2 server endpoint to deliver mouse events targeted to the view.
+  void RegisterMouseSourceV2(fidl::ServerEnd<fuchsia_ui_pointer::MouseSourceV2> mouse_source,
+                             zx_koid_t view_ref_koid);
 
   // Dispatches a newly generated, consistent scene graph snapshot to all input subsystems.
   void OnNewViewTreeSnapshot();

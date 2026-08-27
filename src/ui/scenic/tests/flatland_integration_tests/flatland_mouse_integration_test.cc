@@ -48,6 +48,8 @@ using FocusState = fuchsia::ui::views::FocusState;
 using MouseEvent = fuchsia::ui::pointer::MouseEvent;
 using MouseSource = fuchsia::ui::pointer::MouseSource;
 using MouseSourcePtr = fuchsia::ui::pointer::MouseSourcePtr;
+using MouseSourceV2 = fuchsia::ui::pointer::MouseSourceV2;
+using MouseSourceV2Ptr = fuchsia::ui::pointer::MouseSourceV2Ptr;
 using MouseViewStatus = fuchsia::ui::pointer::MouseViewStatus;
 using Config = fuchsia::ui::pointerinjector::Config;
 using DispatchPolicy = fuchsia::ui::pointerinjector::DispatchPolicy;
@@ -342,6 +344,54 @@ class FlatlandMouseIntegrationTest : public ScenicCtfHlcppTest {
     BlockingPresent(this, child_instance);
 
     return child_view_ref;
+  }
+
+  ViewRef CreateAndAddChildViewV2(
+      FlatlandPtr& parent_instance, TransformId viewport_transform_id,
+      TransformId parent_of_viewport_transform, ContentId parent_content_id,
+      FlatlandPtr& child_instance,
+      fidl::InterfaceRequest<MouseSourceV2> child_mouse_source_v2 = nullptr,
+      fidl::InterfaceRequest<ViewRefFocused> child_focused = nullptr) {
+    child_instance = ConnectAsyncIntoRealm<Flatland>();
+
+    // Set up the child view watcher.
+    fidl::InterfacePtr<ChildViewWatcher> child_view_watcher;
+    auto [child_token, parent_token] = scenic::ViewCreationTokenPair::New();
+    ViewportProperties properties;
+    properties.set_logical_size({.width = kDefaultSize, .height = kDefaultSize});
+
+    parent_instance->CreateTransform(viewport_transform_id);
+    parent_instance->CreateViewport(parent_content_id, std::move(parent_token),
+                                    std::move(properties), child_view_watcher.NewRequest());
+    parent_instance->SetContent(viewport_transform_id, parent_content_id);
+    parent_instance->AddChild(parent_of_viewport_transform, viewport_transform_id);
+
+    BlockingPresent(this, parent_instance);
+
+    // Set up the child view along with its MouseSourceV2 and ViewRefFocused channel.
+    fidl::InterfacePtr<ParentViewportWatcher> parent_viewport_watcher;
+    auto identity = scenic::NewViewIdentityOnCreation();
+    auto child_view_ref = fidl::Clone(identity.view_ref);
+    ViewBoundProtocols protocols;
+    if (child_mouse_source_v2)
+      protocols.set_mouse_source_v2(std::move(child_mouse_source_v2));
+    if (child_focused)
+      protocols.set_view_ref_focused(std::move(child_focused));
+    child_instance->CreateView2(std::move(child_token), std::move(identity), std::move(protocols),
+                                parent_viewport_watcher.NewRequest());
+    child_instance->CreateTransform(kRootTransform);
+    child_instance->SetRootTransform(kRootTransform);
+    BlockingPresent(this, child_instance);
+
+    return child_view_ref;
+  }
+
+  void StartListenerV2(MouseSourceV2Ptr& mouse_source, std::vector<MouseEvent>& out_events) {
+    mouse_source.events().OnMouseEvents =
+        [&mouse_source, &out_events](std::vector<MouseEvent> events, uint64_t last_event_stamp) {
+          std::ranges::move(events, std::back_inserter(out_events));
+          mouse_source->AcknowledgeEvents(last_event_stamp);
+        };
   }
 
   std::array<std::array<float, 2>, 2> FullScreenExtents() const {
@@ -1834,6 +1884,51 @@ TEST_F(FlatlandMouseIntegrationTest, AnonymousSubtree) {
   RunLoopUntil([&parent_events] { return parent_events.size() == 1u; });
   EXPECT_TRUE(parent_events[0].has_pointer_sample());
   EXPECT_TRUE(grandchild_events.empty());
+}
+
+TEST_F(FlatlandMouseIntegrationTest, MouseSourceV2_BasicInputTest) {
+  FlatlandPtr child_instance;
+  MouseSourceV2Ptr child_mouse_source;
+
+  child_instance.set_error_handler([](zx_status_t status) {
+    FAIL("Lost connection to Scenic: %s", zx_status_get_string(status));
+  });
+  child_mouse_source.set_error_handler([](zx_status_t status) {
+    FAIL("Mouse source closed with status: %s", zx_status_get_string(status));
+  });
+
+  auto child_view_ref = CreateAndAddChildViewV2(root_instance_,
+                                                /*viewport_transform_id*/ {.value = 2},
+                                                /*parent_of_viewport_transform*/ kRootTransform,
+                                                /*parent_content_id*/ {.value = 1}, child_instance,
+                                                child_mouse_source.NewRequest());
+
+  // Listen for input events.
+  std::vector<MouseEvent> child_events;
+  StartListenerV2(child_mouse_source, child_events);
+
+  const std::vector<uint8_t> button_vec = {1};
+  RegisterInjector(fidl::Clone(root_view_ref_), fidl::Clone(child_view_ref),
+                   DispatchPolicy::MOUSE_HOVER_AND_LATCH_IN_TARGET, button_vec, kIdentityMatrix);
+
+  // Inject mouse move at (0, 0).
+  Inject(0, 0, EventPhase::ADD);
+  RunLoopUntil([&child_events] { return !child_events.empty(); });
+
+  EXPECT_EQ(child_events.size(), 1u);
+  ASSERT_TRUE(child_events[0].has_pointer_sample());
+  ASSERT_TRUE(child_events[0].has_stream_info());
+  EXPECT_EQ(child_events[0].stream_info().status, MouseViewStatus::ENTERED);
+  EXPECT_EQ_POINTER(child_events[0].pointer_sample(), kIdentityMatrix, 0, 0);
+
+  // Inject mouse press with button 1.
+  Inject(0, 0, EventPhase::CHANGE, button_vec);
+  RunLoopUntil([&child_events] { return child_events.size() == 2u; });
+
+  EXPECT_EQ(child_events.size(), 2u);
+  ASSERT_TRUE(child_events[1].has_pointer_sample());
+  EXPECT_EQ_POINTER_WITH_BUTTONS(child_events[1].pointer_sample(), kIdentityMatrix, 0, 0,
+                                 button_vec);
 }
 
 }  // namespace integration_tests

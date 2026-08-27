@@ -252,6 +252,8 @@ source_set("mouse") {
     "mouse_source.h",
     "mouse_source_base.cc",
     "mouse_source_base.h",
+    "mouse_source_v2.cc",
+    "mouse_source_v2.h",
     "mouse_system.cc",
     "mouse_system.h",
   ]
@@ -266,7 +268,11 @@ source_set("mouse") {
     "//zircon/system/ulib/trace",
   ]
 
-  public_deps = [ "//sdk/fidl/fuchsia.ui.pointer:fuchsia.ui.pointer_hlcpp" ]
+  public_deps = [
+    "//sdk/fidl/fuchsia.ui.pointer:fuchsia.ui.pointer_cpp",
+    "//sdk/fidl/fuchsia.ui.pointer:fuchsia.ui.pointer_cpp_hlcpp_conversion",
+    "//sdk/fidl/fuchsia.ui.pointer:fuchsia.ui.pointer_hlcpp",
+  ]
 }
 
 source_set("touch") {
@@ -277,6 +283,8 @@ source_set("touch") {
     "touch_source.h",
     "touch_source_base.cc",
     "touch_source_base.h",
+    "touch_source_v2.cc",
+    "touch_source_v2.h",
     "touch_source_with_local_hit.cc",
     "touch_source_with_local_hit.h",
     "touch_system.cc",

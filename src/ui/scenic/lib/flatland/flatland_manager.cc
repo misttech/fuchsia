@@ -34,7 +34,11 @@ FlatlandManager::FlatlandManager(
     std::function<void(fidl::ServerEnd<fuchsia_ui_pointer::TouchSource>, zx_koid_t)>
         register_touch_source,
     std::function<void(fidl::ServerEnd<fuchsia_ui_pointer::MouseSource>, zx_koid_t)>
-        register_mouse_source)
+        register_mouse_source,
+    std::function<void(fidl::ServerEnd<fuchsia_ui_pointer::TouchSourceV2>, zx_koid_t)>
+        register_touch_source_v2,
+    std::function<void(fidl::ServerEnd<fuchsia_ui_pointer::MouseSourceV2>, zx_koid_t)>
+        register_mouse_source_v2)
     : flatland_presenter_(flatland_presenter),
       uber_struct_system_(uber_struct_system),
       link_system_(link_system),
@@ -44,6 +48,8 @@ FlatlandManager::FlatlandManager(
       register_view_ref_focused_(std::move(register_view_ref_focused)),
       register_touch_source_(std::move(register_touch_source)),
       register_mouse_source_(std::move(register_mouse_source)),
+      register_touch_source_v2_(std::move(register_touch_source_v2)),
+      register_mouse_source_v2_(std::move(register_mouse_source_v2)),
       cleanup_loop_(&kAsyncLoopConfigNoAttachToCurrentThread),
       executor_(dispatcher) {
   FX_DCHECK(dispatcher);
@@ -54,6 +60,8 @@ FlatlandManager::FlatlandManager(
   FX_DCHECK(register_view_ref_focused_);
   FX_DCHECK(register_touch_source_);
   FX_DCHECK(register_mouse_source_);
+  FX_DCHECK(register_touch_source_v2_);
+  FX_DCHECK(register_mouse_source_v2_);
 #ifndef NDEBUG
   for (auto& buffer_collection_importer : buffer_collection_importers_) {
     FX_DCHECK(buffer_collection_importer);
@@ -197,7 +205,9 @@ std::shared_ptr<Flatland> FlatlandManager::NewFlatland(
                        /*register_view_focuser*/ register_view_focuser_,
                        /*register_view_ref_focused*/ register_view_ref_focused_,
                        /*register_touch_source*/ register_touch_source_,
-                       /*register_mouse_source*/ register_mouse_source_, config);
+                       /*register_mouse_source*/ register_mouse_source_,
+                       /*register_touch_source_v2*/ register_touch_source_v2_,
+                       /*register_mouse_source_v2*/ register_mouse_source_v2_, config);
 }
 
 void FlatlandManager::CreateFlatlandDisplay(

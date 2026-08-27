@@ -52,6 +52,10 @@ class TouchSystem : public fuchsia::ui::pointer::augment::LocalHit {
   void RegisterTouchSource(fidl::ServerEnd<fuchsia_ui_pointer::TouchSource> touch_source_server_end,
                            zx_koid_t client_view_ref_koid);
 
+  void RegisterTouchSourceV2(
+      fidl::ServerEnd<fuchsia_ui_pointer::TouchSourceV2> touch_source_server_end,
+      zx_koid_t client_view_ref_koid);
+
   // |fuchsia::ui::pointer::augment::LocalHit|
   void Upgrade(fidl::InterfaceHandle<fuchsia::ui::pointer::TouchSource> original,
                fuchsia::ui::pointer::augment::LocalHit::UpgradeCallback callback) override;
@@ -106,6 +110,7 @@ class TouchSystem : public fuchsia::ui::pointer::augment::LocalHit {
   std::vector<zx_koid_t> GetAncestorChainTopToBottom(const view_tree::Snapshot& snapshot,
                                                      zx_koid_t bottom, zx_koid_t top) const;
 
+  async_dispatcher_t* input_dispatcher_ = nullptr;
   HitTester& hit_tester_;
 
   // An inspector that tracks all GestureContenders, so data can persist past contender lifetimes.

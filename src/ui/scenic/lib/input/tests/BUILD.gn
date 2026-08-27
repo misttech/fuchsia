@@ -17,9 +17,11 @@ cc_test_executable("unittests") {
     "helper_unittest.cc",
     "injector_unittest.cc",
     "mouse_source_test.cc",
+    "mouse_source_v2_test.cc",
     "mouse_test.cc",
     "pointerinjector_registry_unittest.cc",
     "touch_source_test.cc",
+    "touch_source_v2_test.cc",
   ]
   deps = [
     "//sdk/fidl/fuchsia.ui.input.accessibility:fuchsia.ui.input.accessibility_hlcpp",

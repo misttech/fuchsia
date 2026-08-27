@@ -474,6 +474,18 @@ void App::InitializeGraphics(std::shared_ptr<display::Display> display) {
                zx_koid_t view_ref_koid) {
           input_manager_.AsyncCall(&input::InputManager::RegisterMouseSource,
                                    std::move(mouse_source), view_ref_koid);
+        },
+        /*register_touch_source_v2*/
+        [this](fidl::ServerEnd<fuchsia_ui_pointer::TouchSourceV2> touch_source_v2,
+               zx_koid_t view_ref_koid) {
+          input_manager_.AsyncCall(&input::InputManager::RegisterTouchSourceV2,
+                                   std::move(touch_source_v2), view_ref_koid);
+        },
+        /*register_mouse_source_v2*/
+        [this](fidl::ServerEnd<fuchsia_ui_pointer::MouseSourceV2> mouse_source_v2,
+               zx_koid_t view_ref_koid) {
+          input_manager_.AsyncCall(&input::InputManager::RegisterMouseSourceV2,
+                                   std::move(mouse_source_v2), view_ref_koid);
         });
 
     // TODO(https://fxbug.dev/42146099): these should be moved into FlatlandManager.

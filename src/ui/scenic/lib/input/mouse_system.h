@@ -5,6 +5,7 @@
 #ifndef SRC_UI_SCENIC_LIB_INPUT_MOUSE_SYSTEM_H_
 #define SRC_UI_SCENIC_LIB_INPUT_MOUSE_SYSTEM_H_
 
+#include <fidl/fuchsia.ui.pointer/cpp/fidl.h>
 #include <lib/sys/cpp/component_context.h>
 #include <lib/syslog/cpp/macros.h>
 
@@ -32,6 +33,10 @@ class MouseSystem {
 
   void RegisterMouseSource(
       fidl::InterfaceRequest<fuchsia::ui::pointer::MouseSource> mouse_source_request,
+      zx_koid_t client_view_ref_koid);
+
+  void RegisterMouseSourceV2(
+      fidl::ServerEnd<fuchsia_ui_pointer::MouseSourceV2> mouse_source_server_end,
       zx_koid_t client_view_ref_koid);
 
   // Injects a mouse event directly to the View with koid |event.target|.

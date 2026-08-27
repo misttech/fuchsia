@@ -39,6 +39,18 @@ class TouchSourceBase : public GestureContender {
 
   zx_koid_t channel_koid() const override { return channel_koid_; }
 
+  static fuchsia::ui::pointer::EventPhase ConvertToEventPhase(Phase phase);
+  static fuchsia::ui::pointer::TouchEvent NewTouchEvent(StreamId stream_id,
+                                                        const InternalTouchEvent& event);
+  static void AddInteractionResultsToEvent(fuchsia::ui::pointer::TouchEvent& event,
+                                           StreamId stream_id, uint32_t device_id,
+                                           uint32_t pointer_id, bool awarded_win);
+  static fuchsia::ui::pointer::TouchEvent NewEndEvent(StreamId stream_id, uint32_t device_id,
+                                                      uint32_t pointer_id, bool awarded_win);
+  static void AddViewParametersToEvent(fuchsia::ui::pointer::TouchEvent& event,
+                                       const Viewport& viewport,
+                                       view_tree::BoundingBox view_bounds);
+
  protected:
   // Augmentation data for f.u.p.augment.TouchEventWithLocalHit.
   struct LocalHit {
@@ -67,6 +79,10 @@ class TouchSourceBase : public GestureContender {
                           fuchsia::ui::pointer::TouchResponse response,
                           fit::function<void()> callback);
 
+  // Pushes an event to be sent to the client. Default implementation queues the event for V1
+  // hanging-get Watch() calls. Subclasses can override this to implement other delivery mechanisms.
+  virtual void PushEvent(StreamId stream_id, AugmentedTouchEvent event);
+
   // TODO(https://fxbug.dev/42159133): Implement ANR.
 
   // Closes the FIDL channel. This triggers the destruction of the TouchSourceBase object through
@@ -75,8 +91,12 @@ class TouchSourceBase : public GestureContender {
   virtual void CloseChannel(zx_status_t epitaph) = 0;
 
   // Allows subtypes to add augmentations to each event.
-  virtual void Augment(const view_tree::Snapshot& snapshot, AugmentedTouchEvent&,
-                       const InternalTouchEvent&) = 0;
+  virtual void Augment(const view_tree::Snapshot& snapshot, AugmentedTouchEvent& out_event,
+                       const InternalTouchEvent& in_event) {}
+
+  const zx_koid_t channel_koid_;
+  const fit::function<void(StreamId, const std::vector<GestureResponse>&)> respond_;
+  GestureContenderInspector& inspector_;
 
  private:
   struct StreamData {
@@ -111,7 +131,6 @@ class TouchSourceBase : public GestureContender {
       const fuchsia::ui::pointer::TouchResponse& response,
       const std::unordered_map<StreamId, StreamData>& ongoing_streams);
 
-  const zx_koid_t channel_koid_;
   bool is_first_event_ = true;
   Viewport current_viewport_;
   view_tree::BoundingBox current_view_bounds_;
@@ -123,8 +142,6 @@ class TouchSourceBase : public GestureContender {
   // contain responses matching the previous set of events. |return_tickets_| tracks the expected
   // responses for the previous set of events.
   std::vector<ReturnTicket> return_tickets_;
-
-  const fit::function<void(StreamId, const std::vector<GestureResponse>&)> respond_;
 
   // Tracks all streams that have had at least one event passed into UpdateStream(), and that
   // haven't either "been won and has ended", or "haven't been lost".
@@ -140,9 +157,6 @@ class TouchSourceBase : public GestureContender {
   std::unordered_set<StreamId> won_streams_awaiting_first_message_;
 
   fit::function<void(std::vector<AugmentedTouchEvent>)> pending_callback_ = nullptr;
-
-  // Saved by reference since |inspector_| is guaranteed to outlive the contender.
-  GestureContenderInspector& inspector_;
 };
 
 }  // namespace scenic_impl::input

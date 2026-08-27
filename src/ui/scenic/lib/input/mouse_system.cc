@@ -10,6 +10,7 @@
 #include "src/lib/fsl/handles/object_info.h"
 #include "src/ui/scenic/lib/input/internal_pointer_event.h"
 #include "src/ui/scenic/lib/input/mouse_source.h"
+#include "src/ui/scenic/lib/input/mouse_source_v2.h"
 #include "src/ui/scenic/lib/utils/check_is_on_thread.h"
 #include "src/ui/scenic/lib/utils/helpers.h"
 #include "src/ui/scenic/lib/utils/math.h"
@@ -32,6 +33,20 @@ void MouseSystem::RegisterMouseSource(
                                     /*error_handler*/ [this, client_view_ref_koid] {
                                       mouse_sources_.erase(client_view_ref_koid);
                                     }));
+  FX_DCHECK(success);
+}
+
+void MouseSystem::RegisterMouseSourceV2(
+    fidl::ServerEnd<fuchsia_ui_pointer::MouseSourceV2> mouse_source_server_end,
+    zx_koid_t client_view_ref_koid) {
+  TRACE_DURATION("input", "MouseSystem::RegisterMouseSourceV2");
+  utils::CheckIsOnInputThread();
+  const auto [it, success] = mouse_sources_.emplace(
+      client_view_ref_koid,
+      std::make_unique<MouseSourceV2>(std::move(mouse_source_server_end),
+                                      /*error_handler*/ [this, client_view_ref_koid] {
+                                        mouse_sources_.erase(client_view_ref_koid);
+                                      }));
   FX_DCHECK(success);
 }
 

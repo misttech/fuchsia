@@ -60,6 +60,8 @@ using fuchsia::ui::pointer::EventPhase;
 using fuchsia::ui::pointer::TouchEvent;
 using fuchsia::ui::pointer::TouchResponse;
 using fuchsia::ui::pointer::TouchResponseType;
+using fuchsia::ui::pointer::TouchSourceV2;
+using fuchsia::ui::pointer::TouchSourceV2Ptr;
 using fuchsia::ui::views::ViewportCreationToken;
 using fuchsia::ui::views::ViewRef;
 
@@ -217,6 +219,14 @@ class FlatlandTouchIntegrationTest : public ScenicCtfHlcppTest {
     touch_source->Watch({}, watch_loops_.at(index));
   }
 
+  void StartListenerV2(TouchSourceV2Ptr& touch_source, std::vector<TouchEvent>& out_events) {
+    touch_source.events().OnTouchEvents =
+        [&touch_source, &out_events](std::vector<TouchEvent> events, uint64_t last_event_stamp) {
+          std::ranges::move(events, std::back_inserter(out_events));
+          touch_source->AcknowledgeEvents(last_event_stamp);
+        };
+  }
+
   void ConnectChildView(fuchsia::ui::composition::FlatlandPtr& flatland,
                         ViewportCreationToken&& token, fuchsia::math::SizeU size,
                         TransformId transform_id, ContentId content_id) {
@@ -338,6 +348,63 @@ TEST_F(FlatlandTouchIntegrationTest, BasicInputTest) {
   // Listen for input events.
   std::vector<TouchEvent> child_events;
   StartWatchLoop(child_touch_source, child_events);
+
+  // Scene is now set up, send in the input. One event for each corner of the view.
+  RegisterInjector(fidl::Clone(root_view_ref_), fidl::Clone(child_view_ref),
+                   DispatchPolicy::TOP_HIT_AND_ANCESTORS_IN_TARGET);
+
+  Inject(display_width_, display_height_, fupi_EventPhase::ADD);
+  Inject(display_width_, 0, fupi_EventPhase::CHANGE);
+  Inject(0, 0, fupi_EventPhase::CHANGE);
+  Inject(0, display_height_, fupi_EventPhase::REMOVE);
+
+  RunLoopUntil([&child_events] { return child_events.size() == 4u; });  // Succeeds or times out.
+
+  // Target should receive identical events to injected, since their coordinate spaces are the same.
+  {
+    const auto& viewport_to_view_transform =
+        child_events[0].view_parameters().viewport_to_view_transform;
+    EXPECT_EQ_POINTER(child_events[0].pointer_sample(), viewport_to_view_transform, EventPhase::ADD,
+                      display_width_, display_height_);
+    EXPECT_EQ_POINTER(child_events[1].pointer_sample(), viewport_to_view_transform,
+                      EventPhase::CHANGE, display_width_, 0.f);
+    EXPECT_EQ_POINTER(child_events[2].pointer_sample(), viewport_to_view_transform,
+                      EventPhase::CHANGE, 0.f, 0.f);
+    EXPECT_EQ_POINTER(child_events[3].pointer_sample(), viewport_to_view_transform,
+                      EventPhase::REMOVE, 0.f, display_height_);
+  }
+}
+
+TEST_F(FlatlandTouchIntegrationTest, TouchSourceV2_BasicInputTest) {
+  fuchsia::ui::composition::FlatlandPtr child_session;
+  TouchSourceV2Ptr child_touch_source;
+  child_session = ConnectAsyncIntoRealm<fuchsia::ui::composition::Flatland>();
+  child_touch_source.set_error_handler([](zx_status_t status) {
+    FAIL("Touch source closed with status: %s", zx_status_get_string(status));
+  });
+
+  // Set up the root graph.
+  auto [child_token, parent_token] = scenic::ViewCreationTokenPair::New();
+  TransformId kTransformId = {.value = 2};
+  ConnectChildView(root_session_, std::move(parent_token), FullscreenSize(), kTransformId,
+                   kRootContentId);
+
+  // Set up the child view and its TouchSourceV2 channel.
+  fidl::InterfacePtr<ParentViewportWatcher> parent_viewport_watcher;
+  auto identity = scenic::NewViewIdentityOnCreation();
+  auto child_view_ref = fidl::Clone(identity.view_ref);
+  fuchsia::ui::composition::ViewBoundProtocols protocols;
+  protocols.set_touch_source_v2(child_touch_source.NewRequest());
+  child_session->CreateView2(std::move(child_token), std::move(identity), std::move(protocols),
+                             parent_viewport_watcher.NewRequest());
+  const TransformId kTransform{.value = 42};
+  child_session->CreateTransform(kTransform);
+  child_session->SetRootTransform(kTransform);
+  BlockingPresent(this, child_session);
+
+  // Listen for input events.
+  std::vector<TouchEvent> child_events;
+  StartListenerV2(child_touch_source, child_events);
 
   // Scene is now set up, send in the input. One event for each corner of the view.
   RegisterInjector(fidl::Clone(root_view_ref_), fidl::Clone(child_view_ref),

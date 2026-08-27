@@ -46,7 +46,11 @@ class FlatlandManager {
                   std::function<void(fidl::ServerEnd<fuchsia_ui_pointer::TouchSource>, zx_koid_t)>
                       register_touch_source,
                   std::function<void(fidl::ServerEnd<fuchsia_ui_pointer::MouseSource>, zx_koid_t)>
-                      register_mouse_source);
+                      register_mouse_source,
+                  std::function<void(fidl::ServerEnd<fuchsia_ui_pointer::TouchSourceV2>, zx_koid_t)>
+                      register_touch_source_v2,
+                  std::function<void(fidl::ServerEnd<fuchsia_ui_pointer::MouseSourceV2>, zx_koid_t)>
+                      register_mouse_source_v2);
   ~FlatlandManager();
 
   std::optional<scheduling::SessionId> CreateFlatland(
@@ -191,6 +195,10 @@ class FlatlandManager {
       register_touch_source_;
   std::function<void(fidl::ServerEnd<fuchsia_ui_pointer::MouseSource>, zx_koid_t)>
       register_mouse_source_;
+  std::function<void(fidl::ServerEnd<fuchsia_ui_pointer::TouchSourceV2>, zx_koid_t)>
+      register_touch_source_v2_;
+  std::function<void(fidl::ServerEnd<fuchsia_ui_pointer::MouseSourceV2>, zx_koid_t)>
+      register_mouse_source_v2_;
 
   // This loop executes tasks related to shutting down Flatland sessions and FlatlandDisplays.
   // It avoids potential jank that might be caused by executing these on the main thread, and

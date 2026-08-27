@@ -1510,6 +1510,58 @@ TEST_F(FlatlandTest, CreateViewSuccceedsAfterReleaseView) {
   Present(flatland, true);
 }
 
+TEST_F(FlatlandTest, RegisterViewBoundProtocols_BothTouchSources_ReturnsBadOperation) {
+  std::shared_ptr<Flatland> flatland = CreateFlatland();
+
+  auto creation_tokens = scenic::ViewCreationTokenPair::New();
+
+  auto [parent_viewport_watcher_client_end, parent_viewport_watcher_server_end] =
+      fidl::Endpoints<ParentViewportWatcher>::Create();
+
+  auto [touch_source_client_end, touch_source_server_end] =
+      fidl::Endpoints<fuchsia_ui_pointer::TouchSource>::Create();
+  auto [touch_source_v2_client_end, touch_source_v2_server_end] =
+      fidl::Endpoints<fuchsia_ui_pointer::TouchSourceV2>::Create();
+
+  fuchsia_ui_composition::ViewBoundProtocols protocols;
+  protocols.touch_source(std::move(touch_source_server_end));
+  protocols.touch_source_v2(std::move(touch_source_v2_server_end));
+
+  flatland->CreateView2(fidl::HLCPPToNatural(std::move(creation_tokens.view_token)),
+                        fidl::HLCPPToNatural(scenic::NewViewIdentityOnCreation()),
+                        std::move(protocols), std::move(parent_viewport_watcher_server_end));
+
+  RunLoopUntilIdle();
+
+  EXPECT_EQ(GetFlatlandError(flatland->GetSessionId()), FlatlandError::kBadOperation);
+}
+
+TEST_F(FlatlandTest, RegisterViewBoundProtocols_BothMouseSources_ReturnsBadOperation) {
+  std::shared_ptr<Flatland> flatland = CreateFlatland();
+
+  auto creation_tokens = scenic::ViewCreationTokenPair::New();
+
+  auto [parent_viewport_watcher_client_end, parent_viewport_watcher_server_end] =
+      fidl::Endpoints<ParentViewportWatcher>::Create();
+
+  auto [mouse_source_client_end, mouse_source_server_end] =
+      fidl::Endpoints<fuchsia_ui_pointer::MouseSource>::Create();
+  auto [mouse_source_v2_client_end, mouse_source_v2_server_end] =
+      fidl::Endpoints<fuchsia_ui_pointer::MouseSourceV2>::Create();
+
+  fuchsia_ui_composition::ViewBoundProtocols protocols;
+  protocols.mouse_source(std::move(mouse_source_server_end));
+  protocols.mouse_source_v2(std::move(mouse_source_v2_server_end));
+
+  flatland->CreateView2(fidl::HLCPPToNatural(std::move(creation_tokens.view_token)),
+                        fidl::HLCPPToNatural(scenic::NewViewIdentityOnCreation()),
+                        std::move(protocols), std::move(parent_viewport_watcher_server_end));
+
+  RunLoopUntilIdle();
+
+  EXPECT_EQ(GetFlatlandError(flatland->GetSessionId()), FlatlandError::kBadOperation);
+}
+
 TEST_F(FlatlandTest, ChildViewWatcherUnbindsOnChildDeath) {
   std::shared_ptr<Flatland> flatland = CreateFlatland();
 
@@ -4836,7 +4888,7 @@ TEST_F(FlatlandTest, ImageImportPassesAndFailsOnDifferentImportersTest) {
       std::move(flatland_server_end), session_id,
       /*destroy_instance_functon=*/[]() {}, flatland_presenter_, link_system_,
       uber_struct_system_->AllocateQueueForSession(session_id), importers, [](auto...) {},
-      [](auto...) {}, [](auto...) {}, [](auto...) {},
+      [](auto...) {}, [](auto...) {}, [](auto...) {}, [](auto...) {}, [](auto...) {},
       FlatlandConfig{.use_trusted_flatland_api = true});
   // Wait for Bind() to occur within Flatland::New().
   RunLoopUntilIdle();
@@ -5304,7 +5356,7 @@ TEST_F(FlatlandTest, MultithreadedLinkResolution) {
         child_flatland_thread_loop_holder, std::move(child_flatland_server_end), session_id,
         [](auto...) {}, flatland_presenter_, link_system_,
         uber_struct_system_->AllocateQueueForSession(session_id), importers, [](auto...) {},
-        [](auto...) {}, [](auto...) {}, [](auto...) {},
+        [](auto...) {}, [](auto...) {}, [](auto...) {}, [](auto...) {}, [](auto...) {},
         FlatlandConfig{.use_trusted_flatland_api = true});
 
     auto status = child_flatland_thread_loop.StartThread();
@@ -5408,8 +5460,8 @@ TEST_F(FlatlandTest, NoDoubleDestroyRequest) {
         ++destroy_instance_function_invocation_count;
       },
       flatland_presenter_, link_system_, uber_struct_system_->AllocateQueueForSession(session_id),
-      no_importers, [](auto...) {}, [](auto...) {}, [](auto...) {}, [](auto...) {},
-      FlatlandConfig{.use_trusted_flatland_api = true});
+      no_importers, [](auto...) {}, [](auto...) {}, [](auto...) {}, [](auto...) {}, [](auto...) {},
+      [](auto...) {}, FlatlandConfig{.use_trusted_flatland_api = true});
 
   // Wait for server channel to be bound; see `Flatland::Bind()`.
   RunLoopUntilIdle();

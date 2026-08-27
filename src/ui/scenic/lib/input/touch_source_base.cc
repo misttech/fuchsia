@@ -42,7 +42,29 @@ GestureResponse ConvertToGestureResponse(fuchsia::ui::pointer::TouchResponseType
   }
 }
 
-fuchsia::ui::pointer::EventPhase ConvertToEventPhase(Phase phase) {
+bool IsHold(GestureResponse response) {
+  switch (response) {
+    case GestureResponse::kHold:
+    case GestureResponse::kHoldSuppress:
+      return true;
+    default:
+      return false;
+  }
+}
+
+bool IsHold(fuchsia::ui::pointer::TouchResponseType response) {
+  switch (response) {
+    case fuchsia::ui::pointer::TouchResponseType::HOLD:
+    case fuchsia::ui::pointer::TouchResponseType::HOLD_SUPPRESS:
+      return true;
+    default:
+      return false;
+  }
+}
+
+}  // namespace
+
+fuchsia::ui::pointer::EventPhase TouchSourceBase::ConvertToEventPhase(Phase phase) {
   switch (phase) {
     case Phase::kAdd:
       return fuchsia::ui::pointer::EventPhase::ADD;
@@ -54,13 +76,13 @@ fuchsia::ui::pointer::EventPhase ConvertToEventPhase(Phase phase) {
       return fuchsia::ui::pointer::EventPhase::CANCEL;
     default:
       // Never reached.
-      FX_CHECK(false) << "Unknown phase: " << phase;
+      FX_CHECK(false) << "Unknown phase: " << static_cast<int>(phase);
       return fuchsia::ui::pointer::EventPhase::CANCEL;
   }
 }
 
-fuchsia::ui::pointer::TouchEvent NewTouchEvent(StreamId stream_id, const InternalTouchEvent& event,
-                                               bool is_end_of_stream) {
+fuchsia::ui::pointer::TouchEvent TouchSourceBase::NewTouchEvent(StreamId stream_id,
+                                                                const InternalTouchEvent& event) {
   fuchsia::ui::pointer::TouchEvent new_event;
   new_event.set_timestamp(event.timestamp);
   if (event.trace_flow_id.has_value()) {
@@ -86,8 +108,9 @@ fuchsia::ui::pointer::TouchEvent NewTouchEvent(StreamId stream_id, const Interna
   return new_event;
 }
 
-void AddInteractionResultsToEvent(fuchsia::ui::pointer::TouchEvent& event, StreamId stream_id,
-                                  uint32_t device_id, uint32_t pointer_id, const bool awarded_win) {
+void TouchSourceBase::AddInteractionResultsToEvent(fuchsia::ui::pointer::TouchEvent& event,
+                                                   StreamId stream_id, uint32_t device_id,
+                                                   uint32_t pointer_id, const bool awarded_win) {
   event.set_interaction_result(fuchsia::ui::pointer::TouchInteractionResult{
       .interaction =
           fuchsia::ui::pointer::TouchInteractionId{
@@ -101,8 +124,10 @@ void AddInteractionResultsToEvent(fuchsia::ui::pointer::TouchEvent& event, Strea
                             : fuchsia::ui::pointer::TouchInteractionStatus::DENIED});
 }
 
-fuchsia::ui::pointer::TouchEvent NewEndEvent(StreamId stream_id, uint32_t device_id,
-                                             uint32_t pointer_id, bool awarded_win) {
+fuchsia::ui::pointer::TouchEvent TouchSourceBase::NewEndEvent(StreamId stream_id,
+                                                              uint32_t device_id,
+                                                              uint32_t pointer_id,
+                                                              bool awarded_win) {
   fuchsia::ui::pointer::TouchEvent new_event;
   new_event.set_timestamp(async::Now(async_get_default_dispatcher()).get());
   new_event.set_trace_flow_id(TRACE_NONCE());
@@ -110,8 +135,9 @@ fuchsia::ui::pointer::TouchEvent NewEndEvent(StreamId stream_id, uint32_t device
   return new_event;
 }
 
-void AddViewParametersToEvent(fuchsia::ui::pointer::TouchEvent& event, const Viewport& viewport,
-                              view_tree::BoundingBox view_bounds) {
+void TouchSourceBase::AddViewParametersToEvent(fuchsia::ui::pointer::TouchEvent& event,
+                                               const Viewport& viewport,
+                                               view_tree::BoundingBox view_bounds) {
   const auto& [extents, _, receiver_from_viewport_transform] = viewport;
   FX_DCHECK(receiver_from_viewport_transform.has_value());
   event.set_view_parameters(fuchsia::ui::pointer::ViewParameters{
@@ -121,28 +147,6 @@ void AddViewParametersToEvent(fuchsia::ui::pointer::TouchEvent& event, const Vie
       .viewport_to_view_transform = receiver_from_viewport_transform.value(),
   });
 }
-
-bool IsHold(GestureResponse response) {
-  switch (response) {
-    case GestureResponse::kHold:
-    case GestureResponse::kHoldSuppress:
-      return true;
-    default:
-      return false;
-  }
-}
-
-bool IsHold(fuchsia::ui::pointer::TouchResponseType response) {
-  switch (response) {
-    case fuchsia::ui::pointer::TouchResponseType::HOLD:
-    case fuchsia::ui::pointer::TouchResponseType::HOLD_SUPPRESS:
-      return true;
-    default:
-      return false;
-  }
-}
-
-}  // namespace
 
 TouchSourceBase::TouchSourceBase(
     zx_koid_t channel_koid, zx_koid_t view_ref_koid,
@@ -175,7 +179,7 @@ void TouchSourceBase::UpdateStream(const view_tree::Snapshot& snapshot, StreamId
   {  // Build the event.
     AugmentedTouchEvent out_event;
     {
-      out_event.touch_event = NewTouchEvent(stream_id, event, is_end_of_stream);
+      out_event.touch_event = NewTouchEvent(stream_id, event);
       auto& touch_event = out_event.touch_event;
 
       FX_DCHECK(!(won_streams_awaiting_first_message_.contains(stream_id) && !is_new_stream))
@@ -219,11 +223,10 @@ void TouchSourceBase::UpdateStream(const view_tree::Snapshot& snapshot, StreamId
     if (event.wake_lease) {
       out_event.touch_event.set_wake_lease(std::move(event.wake_lease));
     }
-    pending_events_.push({.stream_id = stream_id, .event = std::move(out_event)});
+    PushEvent(stream_id, std::move(out_event));
   }
 
   stream.stream_has_ended = is_end_of_stream;
-  SendPendingIfWaiting();
 
   // Cleanup complete stream.
   if (is_end_of_stream && stream.was_won) {
@@ -253,12 +256,16 @@ void TouchSourceBase::EndContest(StreamId stream_id, bool awarded_win) {
   stream.was_won = awarded_win;
   AugmentedTouchEvent event{
       .touch_event = NewEndEvent(stream_id, stream.device_id, stream.pointer_id, awarded_win)};
-  pending_events_.push({.stream_id = stream_id, .event = std::move(event)});
-  SendPendingIfWaiting();
+  PushEvent(stream_id, std::move(event));
 
-  if (!awarded_win) {
+  if (!awarded_win || stream.stream_has_ended) {
     ongoing_streams_.erase(stream_id);
   }
+}
+
+void TouchSourceBase::PushEvent(StreamId stream_id, AugmentedTouchEvent event) {
+  pending_events_.push({.stream_id = stream_id, .event = std::move(event)});
+  SendPendingIfWaiting();
 }
 
 zx_status_t TouchSourceBase::ValidateResponses(

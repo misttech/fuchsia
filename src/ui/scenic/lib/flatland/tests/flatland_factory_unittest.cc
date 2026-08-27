@@ -45,7 +45,9 @@ class FlatlandFactoryTest : public LoggingEventLoop, public ::testing::Test {
         /*register_view_focuser*/ [](auto...) {},
         /*register_view_ref_focused*/ [](auto...) {},
         /*register_touch_source*/ [](auto...) {},
-        /*register_mouse_source*/ [](auto...) {});
+        /*register_mouse_source*/ [](auto...) {},
+        /*register_touch_source_v2*/ [](auto...) {},
+        /*register_mouse_source_v2*/ [](auto...) {});
 
     factory_ = std::make_unique<FlatlandFactoryImpl>(flatland_manager_);
   }

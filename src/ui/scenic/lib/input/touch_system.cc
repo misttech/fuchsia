@@ -18,6 +18,7 @@
 #include "src/ui/scenic/lib/input/constants.h"
 #include "src/ui/scenic/lib/input/internal_pointer_event.h"
 #include "src/ui/scenic/lib/input/touch_source.h"
+#include "src/ui/scenic/lib/input/touch_source_v2.h"
 #include "src/ui/scenic/lib/input/touch_source_with_local_hit.h"
 #include "src/ui/scenic/lib/utils/check_is_on_thread.h"
 #include "src/ui/scenic/lib/utils/helpers.h"
@@ -72,7 +73,9 @@ glm::vec2 GetViewportNDCPoint(const InternalTouchEvent& internal_event) {
 
 TouchSystem::TouchSystem(async_dispatcher_t* input_dispatcher, HitTester& hit_tester,
                          inspect::Node& parent_node)
-    : hit_tester_(hit_tester), contender_inspector_(parent_node.CreateChild("GestureContenders")) {
+    : input_dispatcher_(input_dispatcher),
+      hit_tester_(hit_tester),
+      contender_inspector_(parent_node.CreateChild("GestureContenders")) {
   a11y_pointer_event_registry_.emplace(
       input_dispatcher,
       /*on_register=*/
@@ -269,6 +272,38 @@ void TouchSystem::RegisterTouchSource(
   }
   {
     const auto [_, success] =
+        viewrefs_to_contender_ids_.emplace(client_view_ref_koid, contender_id);
+    FX_DCHECK(success);
+  }
+}
+
+void TouchSystem::RegisterTouchSourceV2(
+    fidl::ServerEnd<fuchsia_ui_pointer::TouchSourceV2> touch_source_server_end,
+    zx_koid_t client_view_ref_koid) {
+  TRACE_DURATION("input", "TouchSystem::RegisterTouchSourceV2");
+  utils::CheckIsOnInputThread();
+  FX_DCHECK(client_view_ref_koid != ZX_KOID_INVALID);
+  const ContenderId contender_id = next_contender_id_++;
+
+  {
+    const auto [it, success] = contenders_.emplace(
+        contender_id,
+        std::make_unique<TouchSourceV2>(
+            input_dispatcher_, client_view_ref_koid, std::move(touch_source_server_end),
+            /*respond*/
+            [this, contender_id](StreamId stream_id,
+                                 const std::vector<GestureResponse>& responses) {
+              RecordGestureDisambiguationResponse(stream_id, contender_id, responses);
+            },
+            /*error_handler*/
+            [this, contender_id, client_view_ref_koid] {
+              EraseContender(contender_id, client_view_ref_koid);
+            },
+            contender_inspector_));
+    FX_DCHECK(success);
+  }
+  {
+    const auto [it, success] =
         viewrefs_to_contender_ids_.emplace(client_view_ref_koid, contender_id);
     FX_DCHECK(success);
   }

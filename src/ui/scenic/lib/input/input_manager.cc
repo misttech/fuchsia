@@ -57,9 +57,19 @@ void InputManager::RegisterTouchSource(
   input_.RegisterTouchSource(fidl::NaturalToHLCPP(std::move(touch_source)), view_ref_koid);
 }
 
+void InputManager::RegisterTouchSourceV2(
+    fidl::ServerEnd<fuchsia_ui_pointer::TouchSourceV2> touch_source, zx_koid_t view_ref_koid) {
+  input_.RegisterTouchSourceV2(std::move(touch_source), view_ref_koid);
+}
+
 void InputManager::RegisterMouseSource(
     fidl::ServerEnd<fuchsia_ui_pointer::MouseSource> mouse_source, zx_koid_t view_ref_koid) {
   input_.RegisterMouseSource(fidl::NaturalToHLCPP(std::move(mouse_source)), view_ref_koid);
+}
+
+void InputManager::RegisterMouseSourceV2(
+    fidl::ServerEnd<fuchsia_ui_pointer::MouseSourceV2> mouse_source, zx_koid_t view_ref_koid) {
+  input_.RegisterMouseSourceV2(std::move(mouse_source), view_ref_koid);
 }
 
 void InputManager::OnNewViewTreeSnapshot() {

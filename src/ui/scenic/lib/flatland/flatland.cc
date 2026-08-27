@@ -129,6 +129,10 @@ std::shared_ptr<Flatland> Flatland::New(
         register_touch_source,
     fit::function<void(fidl::ServerEnd<fuchsia_ui_pointer::MouseSource>, zx_koid_t)>
         register_mouse_source,
+    fit::function<void(fidl::ServerEnd<fuchsia_ui_pointer::TouchSourceV2>, zx_koid_t)>
+        register_touch_source_v2,
+    fit::function<void(fidl::ServerEnd<fuchsia_ui_pointer::MouseSourceV2>, zx_koid_t)>
+        register_mouse_source_v2,
     const FlatlandConfig& config) {
   // clang-format off
   auto flatland = std::shared_ptr<Flatland>(new Flatland(
@@ -142,6 +146,8 @@ std::shared_ptr<Flatland> Flatland::New(
       std::move(register_view_ref_focused),
       std::move(register_touch_source),
       std::move(register_mouse_source),
+      std::move(register_touch_source_v2),
+      std::move(register_mouse_source_v2),
       config));
   // clang-format on
 
@@ -155,22 +161,25 @@ std::shared_ptr<Flatland> Flatland::New(
   return flatland;
 }
 
-Flatland::Flatland(std::shared_ptr<utils::DispatcherHolder> dispatcher_holder,
-                   scheduling::SessionId session_id,
-                   std::shared_ptr<FlatlandPresenter> flatland_presenter,
-                   std::shared_ptr<LinkSystem> link_system,
-                   std::shared_ptr<UberStructSystem::UberStructQueue> uber_struct_queue,
-                   const std::vector<std::shared_ptr<allocation::BufferCollectionImporter>>&
-                       buffer_collection_importers,
-                   fit::function<void(fidl::ServerEnd<fuchsia_ui_views::Focuser>, zx_koid_t)>
-                       register_view_focuser,
-                   fit::function<void(fidl::ServerEnd<fuchsia_ui_views::ViewRefFocused>, zx_koid_t)>
-                       register_view_ref_focused,
-                   fit::function<void(fidl::ServerEnd<fuchsia_ui_pointer::TouchSource>, zx_koid_t)>
-                       register_touch_source,
-                   fit::function<void(fidl::ServerEnd<fuchsia_ui_pointer::MouseSource>, zx_koid_t)>
-                       register_mouse_source,
-                   const FlatlandConfig& config)
+Flatland::Flatland(
+    std::shared_ptr<utils::DispatcherHolder> dispatcher_holder, scheduling::SessionId session_id,
+    std::shared_ptr<FlatlandPresenter> flatland_presenter, std::shared_ptr<LinkSystem> link_system,
+    std::shared_ptr<UberStructSystem::UberStructQueue> uber_struct_queue,
+    const std::vector<std::shared_ptr<allocation::BufferCollectionImporter>>&
+        buffer_collection_importers,
+    fit::function<void(fidl::ServerEnd<fuchsia_ui_views::Focuser>, zx_koid_t)>
+        register_view_focuser,
+    fit::function<void(fidl::ServerEnd<fuchsia_ui_views::ViewRefFocused>, zx_koid_t)>
+        register_view_ref_focused,
+    fit::function<void(fidl::ServerEnd<fuchsia_ui_pointer::TouchSource>, zx_koid_t)>
+        register_touch_source,
+    fit::function<void(fidl::ServerEnd<fuchsia_ui_pointer::MouseSource>, zx_koid_t)>
+        register_mouse_source,
+    fit::function<void(fidl::ServerEnd<fuchsia_ui_pointer::TouchSourceV2>, zx_koid_t)>
+        register_touch_source_v2,
+    fit::function<void(fidl::ServerEnd<fuchsia_ui_pointer::MouseSourceV2>, zx_koid_t)>
+        register_mouse_source_v2,
+    const FlatlandConfig& config)
     : dispatcher_holder_(std::move(dispatcher_holder)),
       session_id_(session_id),
       present2_helper_([this](fuchsia_scenic_scheduling::FramePresentedInfo info) {
@@ -205,6 +214,8 @@ Flatland::Flatland(std::shared_ptr<utils::DispatcherHolder> dispatcher_holder,
       register_view_ref_focused_(std::move(register_view_ref_focused)),
       register_touch_source_(std::move(register_touch_source)),
       register_mouse_source_(std::move(register_mouse_source)),
+      register_touch_source_v2_(std::move(register_touch_source_v2)),
+      register_mouse_source_v2_(std::move(register_mouse_source_v2)),
       config_(config),
       executor_(dispatcher_holder_->dispatcher()) {
   FX_DCHECK(flatland_presenter_);
@@ -774,6 +785,20 @@ void Flatland::RegisterViewBoundProtocols(fuchsia_ui_composition::ViewBoundProto
   FX_DCHECK(register_view_ref_focused_);
   FX_DCHECK(register_touch_source_);
   FX_DCHECK(register_mouse_source_);
+  FX_DCHECK(register_touch_source_v2_);
+  FX_DCHECK(register_mouse_source_v2_);
+
+  if (protocols.touch_source().has_value() && protocols.touch_source_v2().has_value()) {
+    error_reporter_->ERROR() << "Cannot register both TouchSource and TouchSourceV2";
+    CloseConnection(fuchsia_ui_composition::FlatlandError::kBadOperation);
+    return;
+  }
+
+  if (protocols.mouse_source().has_value() && protocols.mouse_source_v2().has_value()) {
+    error_reporter_->ERROR() << "Cannot register both MouseSource and MouseSourceV2";
+    CloseConnection(fuchsia_ui_composition::FlatlandError::kBadOperation);
+    return;
+  }
 
   if (protocols.view_focuser().has_value()) {
     register_view_focuser_(std::move(*protocols.view_focuser()), view_ref_koid);
@@ -787,8 +812,16 @@ void Flatland::RegisterViewBoundProtocols(fuchsia_ui_composition::ViewBoundProto
     register_touch_source_(std::move(*protocols.touch_source()), view_ref_koid);
   }
 
+  if (protocols.touch_source_v2().has_value()) {
+    register_touch_source_v2_(std::move(*protocols.touch_source_v2()), view_ref_koid);
+  }
+
   if (protocols.mouse_source().has_value()) {
     register_mouse_source_(std::move(*protocols.mouse_source()), view_ref_koid);
+  }
+
+  if (protocols.mouse_source_v2().has_value()) {
+    register_mouse_source_v2_(std::move(*protocols.mouse_source_v2()), view_ref_koid);
   }
 }
 

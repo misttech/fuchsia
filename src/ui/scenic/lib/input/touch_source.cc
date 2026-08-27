@@ -35,7 +35,4 @@ void TouchSource::CloseChannel(zx_status_t epitaph) {
   binding_.Close(epitaph);
 }
 
-void TouchSource::Augment(const view_tree::Snapshot&, AugmentedTouchEvent&,
-                          const InternalTouchEvent&) {}
-
 }  // namespace scenic_impl::input

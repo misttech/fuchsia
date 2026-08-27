@@ -114,11 +114,25 @@ void InputSystem::RegisterTouchSource(
   touch_system_.RegisterTouchSource(std::move(touch_source_request), client_view_ref_koid);
 }
 
+void InputSystem::RegisterTouchSourceV2(
+    fidl::ServerEnd<fuchsia_ui_pointer::TouchSourceV2> touch_source_server_end,
+    zx_koid_t client_view_ref_koid) {
+  utils::CheckIsOnInputThread();
+  touch_system_.RegisterTouchSourceV2(std::move(touch_source_server_end), client_view_ref_koid);
+}
+
 void InputSystem::RegisterMouseSource(
     fidl::InterfaceRequest<fuchsia::ui::pointer::MouseSource> mouse_source_request,
     zx_koid_t client_view_ref_koid) {
   utils::CheckIsOnInputThread();
   mouse_system_.RegisterMouseSource(std::move(mouse_source_request), client_view_ref_koid);
+}
+
+void InputSystem::RegisterMouseSourceV2(
+    fidl::ServerEnd<fuchsia_ui_pointer::MouseSourceV2> mouse_source_server_end,
+    zx_koid_t client_view_ref_koid) {
+  utils::CheckIsOnInputThread();
+  mouse_system_.RegisterMouseSourceV2(std::move(mouse_source_server_end), client_view_ref_koid);
 }
 
 }  // namespace scenic_impl::input

@@ -26,15 +26,28 @@ class MouseSourceBase {
 
   virtual ~MouseSourceBase() = default;
 
-  void UpdateStream(StreamId stream_id, InternalMouseEvent event,
-                    view_tree::BoundingBox view_bounds, bool view_exit);
+  virtual void UpdateStream(StreamId stream_id, InternalMouseEvent event,
+                            view_tree::BoundingBox view_bounds, bool view_exit);
 
   static fuchsia::ui::pointer::MousePointerSample NewPointerSample(const InternalMouseEvent& event);
+  static fuchsia::ui::pointer::MouseEvent NewMouseEvent(const InternalMouseEvent& event);
+  static void AddDeviceInfoToEvent(fuchsia::ui::pointer::MouseEvent& out_event,
+                                   const InternalMouseEvent& event);
+  static void AddStreamInfoToEvent(fuchsia::ui::pointer::MouseEvent& out_event,
+                                   const InternalMouseEvent& event, bool view_entered);
+  static void AddViewParametersToEvent(fuchsia::ui::pointer::MouseEvent& out_event,
+                                       const Viewport& viewport,
+                                       const view_tree::BoundingBox& view_bounds);
+  static fuchsia::ui::pointer::MouseEvent NewViewExitEvent(const InternalMouseEvent& event);
 
   zx_koid_t channel_koid() const { return channel_koid_; }
 
  protected:
   void WatchBase(fit::function<void(std::vector<fuchsia::ui::pointer::MouseEvent>)> callback);
+
+  // Pushes an event to be sent to the client. Default implementation queues the event for V1
+  // hanging-get Watch() calls. Subclasses can override this to implement other delivery mechanisms.
+  virtual void PushEvent(fuchsia::ui::pointer::MouseEvent event);
 
   // TODO(https://fxbug.dev/42149398): Add clean up methods for when streams end or devices go away.
   // When we know exactly what that will look like.

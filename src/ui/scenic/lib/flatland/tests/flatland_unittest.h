@@ -243,8 +243,8 @@ class FlatlandTest : public LoggingEventLoop, public ::testing::Test {
         session_id,
         /*destroy_instance_functon=*/[this, session_id]() { flatland_errors_.erase(session_id); },
         flatland_presenter_, link_system_, uber_struct_system_->AllocateQueueForSession(session_id),
-        importers, [](auto...) {}, [](auto...) {}, [](auto...) {}, [](auto...) {},
-        std::move(config));
+        importers, [](auto...) {}, [](auto...) {}, [](auto...) {}, [](auto...) {}, [](auto...) {},
+        [](auto...) {}, std::move(config));
 
     // Wait for server channel to be bound; see `Flatland::Bind()`.
     RunLoopUntilIdle();
@@ -278,7 +278,7 @@ class FlatlandTest : public LoggingEventLoop, public ::testing::Test {
           /*destroy_instance_function=*/[]() {}, std::move(presenter), std::move(link_system),
           uber_struct_system->AllocateQueueForSession(session_id),
           /*buffer_collection_importers=*/{}, [](auto...) {}, [](auto...) {}, [](auto...) {},
-          [](auto...) {}, FlatlandConfig{});
+          [](auto...) {}, [](auto...) {}, [](auto...) {}, FlatlandConfig{});
 
       libsync::Completion completion;
       async::PostTask(client_loop_.dispatcher(), [&, dispatcher = client_loop_.dispatcher()]() {
