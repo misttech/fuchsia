@@ -5,10 +5,8 @@
 use crate::realm::{
     GetAllInstancesError, GetDeclarationError, get_all_instances, get_resolved_declaration,
 };
-use cm_rust::offer::{OfferDecl, OfferDeclCommon};
-use cm_rust::{
-    CapabilityDecl, ComponentDecl, ExposeDecl, ExposeDeclCommon, SourceName, UseDecl, UseDeclCommon,
-};
+use cm_rust::offer::OfferDecl;
+use cm_rust::{CapabilityDecl, ComponentDecl, ExposeDecl, SourceName, UseDecl};
 use flex_fuchsia_sys2 as fsys;
 use futures::StreamExt;
 use futures::stream::FuturesUnordered;
@@ -50,44 +48,6 @@ pub enum RouteSegment {
     DeclareBy { moniker: Moniker, capability: CapabilityDecl },
 }
 
-impl std::fmt::Display for RouteSegment {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::UseBy { moniker, capability } => {
-                write!(
-                    f,
-                    "`{}` used `{}` from {}",
-                    moniker,
-                    capability.source_name(),
-                    capability.source()
-                )
-            }
-            Self::OfferBy { moniker, capability } => {
-                write!(
-                    f,
-                    "`{}` offered `{}` from {} to {}",
-                    moniker,
-                    capability.source_name(),
-                    capability.source(),
-                    capability.target()
-                )
-            }
-            Self::ExposeBy { moniker, capability } => {
-                write!(
-                    f,
-                    "`{}` exposed `{}` from {} to {}",
-                    moniker,
-                    capability.source_name(),
-                    capability.source(),
-                    capability.target()
-                )
-            }
-            Self::DeclareBy { moniker, capability } => {
-                write!(f, "`{}` declared capability `{}`", moniker, capability.name())
-            }
-        }
-    }
-}
 /// Find components that reference a capability matching the given |query|.
 pub async fn get_all_route_segments(
     query: String,
