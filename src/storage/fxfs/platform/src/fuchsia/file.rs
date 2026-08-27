@@ -315,6 +315,7 @@ impl FxFile {
         if old.is_dirty() {
             if self.handle.needs_flush() {
                 warn!("File {} was forcibly marked clean; data may be lost", self.object_id(),);
+                self.handle.forget_dirty_pages();
             }
             // SAFETY: The IS_DIRTY bit means we took a reference.
             unsafe {
@@ -3395,6 +3396,72 @@ mod tests {
 
         assert_eq!(mutable_attributes.wrapping_key_id, Some(WRAPPING_KEY_ID));
 
+        fixture.close().await;
+    }
+
+    #[fuchsia::test(threads = 3)]
+    async fn test_teardown_with_pending_shrink_and_commit_failure() {
+        use fxfs::errors::FxfsError;
+
+        let fail = Arc::new(AtomicBool::new(false));
+        let fail_clone = fail.clone();
+        let (mut hooks, fs_hooks) = fxfs::hooks::Hooks::new();
+        hooks.set_pre_commit(move |_| {
+            if fail_clone.load(std::sync::atomic::Ordering::Relaxed) {
+                Err(FxfsError::Unavailable.into())
+            } else {
+                Ok(())
+            }
+        });
+        let fixture = TestFixture::open(
+            DeviceHolder::new(FakeDevice::new(16384, 512)),
+            TestFixtureOptions { encrypted: false, hooks: Some(fs_hooks), ..Default::default() },
+        )
+        .await;
+
+        let root = fixture.root();
+        let file = open_file_checked(
+            &root,
+            "test_file",
+            fio::Flags::FLAG_MAYBE_CREATE
+                | fio::Flags::PROTOCOL_FILE
+                | fio::PERM_READABLE
+                | fio::PERM_WRITABLE,
+            &fio::Options::default(),
+        )
+        .await;
+
+        let page_size = zx::system_get_page_size() as u64;
+
+        // Grow the file to 4 pages and sync so the on-disk size is 4 pages.
+        file.resize(page_size * 4).await.unwrap().expect("resize failed");
+        file.sync().await.unwrap().expect("sync failed");
+
+        // Now cause commits to fail. All changes will be pending on the handle.
+        fail.store(true, std::sync::atomic::Ordering::Relaxed);
+
+        // Dirty the first 2 pages.
+        let stream = file.describe().await.unwrap().stream.unwrap();
+        unblock(move || {
+            for i in 0..2 {
+                stream
+                    .write_at(zx::StreamWriteOptions::empty(), i * page_size, &[1u8])
+                    .expect("write_at failed");
+            }
+        })
+        .await;
+
+        // Shrink the file to 2 pages so that a pending shrink is recorded on the handle.
+        file.resize(page_size * 2).await.unwrap().expect("resize failed");
+
+        // Close the client-side file connection and drop object reference so only the
+        // volume's IS_DIRTY raw Arc keeps the file alive.
+        drop(file);
+
+        // Closing the fixture terminates the volume, which attempts a LastChance flush on all files.
+        // When that fails, we want to make sure that all the dirty pages still get returned to the
+        // dirty page tracking and allocator. There is an assert in the `PagedObjectHandle::drop`
+        // that will otherwise trigger.
         fixture.close().await;
     }
 }
