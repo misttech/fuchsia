@@ -60,11 +60,19 @@ struct TestParams {
     output: Option<&'static str>,
     skip_download: bool,
     expected_stop_error: Option<&'static str>,
+    payloads: Vec<Vec<u8>>,
 }
 
 async fn run_lifecycle_test(params: TestParams) {
-    let TestParams { start_name, stop_name, interface, output, skip_download, expected_stop_error } =
-        params;
+    let TestParams {
+        start_name,
+        stop_name,
+        interface,
+        output,
+        skip_download,
+        expected_stop_error,
+        payloads,
+    } = params;
 
     let sandbox = TestSandbox::new().expect("failed to create sandbox");
     let realm = sandbox
@@ -93,10 +101,11 @@ async fn run_lifecycle_test(params: TestParams) {
 
     // Generate some traffic to capture.
     const PORT: u16 = 12345;
-    const PAYLOAD: [u8; 4] = [1, 2, 3, 4];
     let bind_addr =
         std::net::SocketAddr::new(std::net::IpAddr::V4(std::net::Ipv4Addr::LOCALHOST), PORT);
-    pcap_helper::send_udp_to_self_and_recv(&realm, bind_addr, &PAYLOAD).await;
+    for payload in &payloads {
+        pcap_helper::send_udp_to_self_and_recv(&realm, bind_addr, payload).await;
+    }
 
     // 2. Stop the rolling capture
     let stop_args = ["capture", "stop-rolling"]
@@ -143,15 +152,19 @@ async fn run_lifecycle_test(params: TestParams) {
         assert!(!pcap_data.is_empty());
 
         let cap = pcap::parse_pcapng(&pcap_data).expect("failed to parse pcapng");
-        pcap_helper::assert_udp_packets(
-            cap.packet_blocks(),
-            &[pcap_helper::ExpectedUdpPacket {
+        let expected_packets = payloads
+            .iter()
+            .map(|payload| pcap_helper::ExpectedUdpPacket {
                 src_ip: net_declare::net_ip_v4!("127.0.0.1"),
                 dst_ip: net_declare::net_ip_v4!("127.0.0.1"),
                 src_port: PORT,
                 dst_port: PORT,
-                payload: &PAYLOAD,
-            }],
+                payload: payload.as_slice(),
+            })
+            .collect::<Vec<_>>();
+        pcap_helper::assert_udp_packets(
+            cap.packet_blocks(),
+            &expected_packets,
             true, /* force_skip_checksum_validation */
         );
     }
@@ -169,6 +182,7 @@ async fn test_interface_resolution(interface: &'static str) {
         output: None,
         skip_download: false,
         expected_stop_error: None,
+        payloads: vec![vec![1, 2, 3, 4]],
     })
     .await;
 }
@@ -182,6 +196,7 @@ async fn test_skip_download() {
         output: None,
         skip_download: true,
         expected_stop_error: None,
+        payloads: vec![vec![1, 2, 3, 4]],
     })
     .await;
 }
@@ -195,6 +210,7 @@ async fn test_skip_download_with_output_error() {
         output: Some("custom_path"),
         skip_download: true,
         expected_stop_error: Some("Cannot specify both"),
+        payloads: vec![vec![1, 2, 3, 4]],
     })
     .await;
 }
@@ -214,6 +230,31 @@ async fn test_name_and_output_path(
         output,
         skip_download: false,
         expected_stop_error: None,
+        payloads: vec![vec![1, 2, 3, 4]],
+    })
+    .await;
+}
+
+#[fasync::run_singlethreaded(test)]
+async fn test_large_packet_capture() {
+    const PAYLOAD_SIZE: usize = 65000;
+    // Generate 3 large packets with distinct repeating byte sequences to ensure
+    // that the capture file exceeds both the 8 KiB FIDL read buffer (fio::MAX_BUF)
+    // and the 16 concurrent in-flight reads queue (16 * 8 KiB = 128 KiB).
+    let payloads = (0..3)
+        .map(|seed| {
+            std::iter::once(seed).chain((0..=255u8).cycle()).take(PAYLOAD_SIZE).collect::<Vec<u8>>()
+        })
+        .collect();
+
+    run_lifecycle_test(TestParams {
+        start_name: None,
+        stop_name: None,
+        interface: "name:lo",
+        output: None,
+        skip_download: false,
+        expected_stop_error: None,
+        payloads,
     })
     .await;
 }

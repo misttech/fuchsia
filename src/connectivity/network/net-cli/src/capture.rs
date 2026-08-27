@@ -8,6 +8,9 @@ use std::io::Write as _;
 use std::path::PathBuf;
 use std::str::FromStr as _;
 
+use futures::StreamExt as _;
+use futures::stream::FuturesOrdered;
+
 use flex_client::ProxyHasDomain;
 use flex_fuchsia_ebpf as febpf;
 use flex_fuchsia_io as fio;
@@ -245,19 +248,51 @@ where
             ))
         })?;
 
+        let (_mutable_attributes, immutable_attributes) = file_proxy
+            .get_attributes(fio::NodeAttributesQuery::CONTENT_SIZE)
+            .await
+            .context("Failed get_attributes wire call")?
+            .map_err(zx_status::Status::err_from_raw)
+            .context("Failed to get attributes of file")?;
+        let content_size = immutable_attributes
+            .content_size
+            .ok_or_else(|| anyhow::anyhow!("Failed to get content size of file"))?;
+
+        let mut queue = FuturesOrdered::new();
+        const CONCURRENT_READS: usize = 16;
+
+        for _ in 0..CONCURRENT_READS {
+            queue.push_back(file_proxy.read(fio::MAX_BUF));
+        }
+
+        let mut bytes_written = 0;
         loop {
-            let data = file_proxy
-                .read(fio::MAX_BUF)
+            let data = queue
+                .next()
                 .await
+                .expect("read queue should never exhaust")
                 .context("FIDL error reading packet capture")?
                 .map_err(zx_status::Status::err_from_raw)
                 .context("Failed to read packet capture")?;
             if data.is_empty() {
                 file.flush().context("Failed to flush packet capture to file")?;
-                return Ok(());
+                break;
             }
             file.write_all(&data).context("Failed to write packet capture to file")?;
+            bytes_written += data.len();
+            queue.push_back(file_proxy.read(fio::MAX_BUF));
         }
+
+        if u64::try_from(bytes_written).expect("bytes written does not fit into u64")
+            != content_size
+        {
+            return Err(anyhow::anyhow!(
+                "Download mismatch: Expected {} bytes, but instead read {} bytes",
+                content_size,
+                bytes_written
+            ));
+        }
+        Ok(())
     }
     .await;
 
