@@ -5,7 +5,7 @@
 # buildifier: disable=module-docstring
 load("@bazel_skylib//lib:unittest.bzl", "analysistest", "asserts")
 load("@rules_fuchsia//fuchsia:defs.bzl", "fuchsia_find_all_package_resources", "fuchsia_package_resource", "fuchsia_package_resource_collection")
-load("@rules_fuchsia//fuchsia/private:providers.bzl", "FuchsiaCollectedPackageResourcesInfo", "FuchsiaPackageResourcesInfo")
+load("@rules_fuchsia//fuchsia:private_defs.bzl", "FuchsiaCollectedPackageResourcesInfo", "FuchsiaPackageResourcesInfo")
 
 ## Provider Tests
 

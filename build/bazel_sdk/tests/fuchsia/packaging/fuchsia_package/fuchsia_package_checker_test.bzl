@@ -6,18 +6,12 @@
 load("@bazel_skylib//lib:paths.bzl", "paths")
 load("@bazel_skylib//lib:unittest.bzl", "analysistest")
 load(
-    "@rules_fuchsia//fuchsia/private:fuchsia_api_level.bzl",
+    "@rules_fuchsia//fuchsia:private_defs.bzl",
     "FUCHSIA_API_LEVEL_TARGET",
-    "REPOSITORY_DEFAULT_FUCHSIA_API_LEVEL_TARGET",
-)
-load(
-    "@rules_fuchsia//fuchsia/private:fuchsia_toolchains.bzl",
     "FUCHSIA_TOOLCHAIN_DEFINITION",
-    "get_fuchsia_sdk_toolchain",
-)
-load(
-    "@rules_fuchsia//fuchsia_rules_common/packages:providers.bzl",
     "FuchsiaPackageInfo",
+    "REPOSITORY_DEFAULT_FUCHSIA_API_LEVEL_TARGET",
+    "get_fuchsia_sdk_toolchain",
 )
 load(
     "//test_utils:py_test_utils.bzl",
