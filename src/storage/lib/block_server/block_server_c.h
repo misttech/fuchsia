@@ -221,6 +221,13 @@ void block_server_delete_async(const BlockServer *block_server, ShutdownCallback
 /// `block_server` and `handle` must be valid.
 void block_server_serve(const BlockServer *block_server, zx_handle_t handle);
 
+/// Serves the Mapper protocol for this server.  `handle` is consumed.
+///
+/// # Safety
+///
+/// `block_server` and `handle` must be valid.
+void block_server_serve_mapper(const BlockServer *block_server, zx_handle_t handle);
+
 /// # Safety
 ///
 /// `session` must be valid.

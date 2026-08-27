@@ -139,6 +139,13 @@ void BlockDevice::ServeRequests(fidl::ServerEnd<fuchsia_storage_block::Block> se
   }
 }
 
+void BlockDevice::ServeMapperRequests(fidl::ServerEnd<fuchsia_storage_block::Mapper> server_end) {
+  std::lock_guard lock(block_server_lock_);
+  if (block_server_) {
+    block_server_->ServeMapper(std::move(server_end));
+  }
+}
+
 BlockDevice::BlockDevice(zx::bti bti, std::unique_ptr<Backend> backend, fdf::Logger& logger)
     : virtio::Device(std::move(bti), std::move(backend)), logger_(logger) {
   for (auto& time : blk_req_start_timestamps_) {
@@ -759,6 +766,10 @@ zx::result<> BlockDriver::Start(fdf::DriverContext context) {
               .volume =
                   [this](fidl::ServerEnd<fuchsia_storage_block::Block> server_end) {
                     block_device_->ServeRequests(std::move(server_end));
+                  },
+              .mapper =
+                  [this](fidl::ServerEnd<fuchsia_storage_block::Mapper> server_end) {
+                    block_device_->ServeMapperRequests(std::move(server_end));
                   },
               .token =
                   [this](fidl::ServerEnd<fuchsia_driver_token::NodeToken> server_end) {

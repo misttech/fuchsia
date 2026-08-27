@@ -409,12 +409,34 @@ pub unsafe extern "C" fn block_server_delete_async(
 /// `block_server` and `handle` must be valid.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn block_server_serve(block_server: *const BlockServer, handle: zx_handle_t) {
-    let block_server = unsafe { &*block_server };
-    let handle = unsafe { zx::NullableHandle::from_raw(handle) };
+    // SAFETY: The caller ensures that `block_server` and `handle` are valid.
+    let (block_server, handle) = unsafe { (&*block_server, zx::NullableHandle::from_raw(handle)) };
     block_server.scope.spawn(async move {
         let _ = block_server
             .server
             .handle_requests(fblock::BlockRequestStream::from_channel(
+                fasync::Channel::from_channel(handle.into()),
+            ))
+            .await;
+    });
+}
+
+/// Serves the Mapper protocol for this server.  `handle` is consumed.
+///
+/// # Safety
+///
+/// `block_server` and `handle` must be valid.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn block_server_serve_mapper(
+    block_server: *const BlockServer,
+    handle: zx_handle_t,
+) {
+    // SAFETY: The caller ensures that `block_server` and `handle` are valid.
+    let (block_server, handle) = unsafe { (&*block_server, zx::NullableHandle::from_raw(handle)) };
+    block_server.scope.spawn(async move {
+        let _ = block_server
+            .server
+            .handle_mapper_requests(fblock::MapperRequestStream::from_channel(
                 fasync::Channel::from_channel(handle.into()),
             ))
             .await;

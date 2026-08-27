@@ -72,6 +72,7 @@ class BlockDevice : public virtio::Device, public block_server::DriverInterface 
   fdf::Logger& logger() const final { return logger_; }
 
   void ServeRequests(fidl::ServerEnd<fuchsia_storage_block::Block>);
+  void ServeMapperRequests(fidl::ServerEnd<fuchsia_storage_block::Mapper>);
 
  private:
   static constexpr uint16_t kRingSize = 128;  // 128 matches legacy pci.

@@ -347,6 +347,25 @@ impl Driver for CqhciDriver {
                                     error!("Invalid partition {partition_name}");
                                 }
                             }
+                            fvolume::ServiceRequest::Mapper(requests) => {
+                                let partition =
+                                    partitions_clone.lock().get(&partition_name).cloned();
+                                if let Some(partition_server) = partition {
+                                    if let Err(error) = partition_server
+                                        .server
+                                        .handle_mapper_requests(requests)
+                                        .await
+                                    {
+                                        error!(
+                                            error:?;
+                                            "Failed to handle mapper requests \
+                                             for part {partition_name}"
+                                        );
+                                    }
+                                } else {
+                                    error!("Invalid partition {partition_name}");
+                                }
+                            }
                             fvolume::ServiceRequest::InlineEncryption(requests) => {
                                 if let Some(inline_crypto) = inline_crypto_clone.clone() {
                                     if let Err(error) =

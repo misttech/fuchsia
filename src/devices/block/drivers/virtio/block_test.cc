@@ -4,6 +4,7 @@
 
 #include "block.h"
 
+#include <fidl/fuchsia.storage.block/cpp/fidl.h>
 #include <lib/driver/component/cpp/driver_export2.h>
 #include <lib/driver/logging/cpp/logger.h>
 #include <lib/driver/testing/cpp/driver_test.h>
@@ -561,6 +562,27 @@ TEST_F(BlockDriverTest, UnalignedVmoOffset) {
   EXPECT_OK(client.value()->FifoTransaction(&request, 1));
 
   EXPECT_EQ(FakeBackendForBlock::last_data_offset_, 1024ul);
+}
+
+TEST_F(BlockDriverTest, MapperService) {
+  StartDriver();
+
+  zx::result connect_result =
+      driver_test().Connect<fuchsia_hardware_block_volume::Service::Mapper>();
+  ASSERT_OK(connect_result);
+
+  fidl::SyncClient<fuchsia_storage_block::Mapper> client(std::move(connect_result.value()));
+  auto [session_client, session_server] =
+      fidl::Endpoints<fuchsia_storage_block::MapperSession>::Create();
+
+  zx::vmo mapping_vmo;
+  ASSERT_OK(zx::vmo::create(512 * 1024, 0, &mapping_vmo));
+
+  fuchsia_storage_block::MapperOpenSessionRequest request;
+  request.session(std::move(session_server));
+  request.mapping_vmo(std::move(mapping_vmo));
+  auto open_result = client->OpenSession(std::move(request));
+  ASSERT_OK(open_result);
 }
 
 FUCHSIA_DRIVER_EXPORT2(TestBlockDriver);

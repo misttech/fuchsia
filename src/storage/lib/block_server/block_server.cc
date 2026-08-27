@@ -80,6 +80,14 @@ void BlockServer::Serve(fidl::ServerEnd<fuchsia_storage_block::Block> server_end
   block_server_serve(server_, server_end.TakeChannel().release());
 }
 
+void BlockServer::ServeMapper(fidl::ServerEnd<fuchsia_storage_block::Mapper> server_end) {
+  std::lock_guard<std::mutex> lock(mutex_);
+  if (shutdown_ || !server_) {
+    return;
+  }
+  block_server_serve_mapper(server_, server_end.TakeChannel().release());
+}
+
 void BlockServer::SendReply(RequestId request_id, zx::result<> result) const {
   std::lock_guard<std::mutex> lock(mutex_);
   if (server_) {

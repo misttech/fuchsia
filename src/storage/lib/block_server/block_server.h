@@ -188,6 +188,7 @@ class BlockServer {
 
   // Serves a new connection.  The FIDL handling is multiplexed onto a single per-server thread.
   void Serve(fidl::ServerEnd<fuchsia_storage_block::Block>);
+  void ServeMapper(fidl::ServerEnd<fuchsia_storage_block::Mapper>);
 
   void SendReply(RequestId, zx::result<>) const;
 
