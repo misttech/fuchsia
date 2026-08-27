@@ -10,10 +10,6 @@
             // chain.
             routes_to_skip: [
                 {
-                    use_type: "protocol",
-                    use_path: "/svc/fuchsia.paver.Paver",
-                },
-                {
                     use_type: "storage",
                     use_path: "/data",
                 },
@@ -43,10 +39,6 @@
                 {
                     use_type: "protocol",
                     use_path: "/svc/fuchsia.pkg.http.Client",
-                },
-                {
-                    use_type: "protocol",
-                    use_path: "/svc/fuchsia.pkg.LocalMirror",
                 },
                 {
                     use_type: "protocol",
@@ -106,40 +98,6 @@
                 //        source_node_path: "/bootstrap/pkg-cache",
                 //        source_path_prefix: "/pkgfs/packages/root_ssl_certificates/0/data",
                 //    },
-            ],
-        },
-        {
-            // TODO(fxbug.dev/42072443) remove once pkg_cache_resolver is removed.
-            // pkg_cache_resolver should access blobfs from the fshost child component blobfs.
-            target_node_path: "/bootstrap/pkg_cache_resolver",
-            skip_if_target_node_missing: true,
-            routes_to_skip: [
-                {
-                    use_type: "protocol",
-                    use_path: "/svc/fuchsia.boot.Arguments",
-                },
-                {
-                    use_type: "protocol",
-                    use_path: "/svc/fuchsia.logger.LogSink",
-                },
-                {
-                    use_type: "protocol",
-                    source_name: "fuchsia.logger.LogSink",
-
-                    // PA_LOG_SINK
-                    use_numbered_handle: 0x3D,
-                },
-            ],
-
-            // Assumption: The system's blobfs is served out of:
-            //    -   /bootstrap/fshost/blobfs:/root
-            routes_to_verify: [
-                {
-                    use_type: "directory",
-                    use_path: "/blob",
-                    source_node_path: "/bootstrap/fshost/blobfs",
-                    source_path_prefix: "/root",
-                },
             ],
         },
 
