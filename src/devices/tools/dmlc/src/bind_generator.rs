@@ -124,7 +124,18 @@ fn generate_simple_bind_statements_excluding(
         let mut sorted_rules: Vec<_> = rules.iter().collect();
         sorted_rules.sort_unstable_by_key(|&(key, _)| key);
         for (key, val) in sorted_rules {
-            content.push_str(&format!("{} == {};\n", key, format_bind_val(val)?));
+            match val {
+                Value::Array(arr) => {
+                    content.push_str(&format!("accept {} {{\n", key));
+                    for v in arr {
+                        content.push_str(&format!("  {},\n", format_bind_val(v)?));
+                    }
+                    content.push_str("}\n");
+                }
+                _ => {
+                    content.push_str(&format!("{} == {};\n", key, format_bind_val(val)?));
+                }
+            }
         }
     }
     Ok(content)
@@ -265,129 +276,33 @@ pub fn generate_bind_file(
             content.push_str(&format!("primary parent \"{}\" {{\n", primary.node));
 
             if let Some(alternatives) = &primary.one_of {
-                for (i, alt) in alternatives.iter().enumerate() {
-                    let is_last = i == alternatives.len() - 1;
-                    if i == 0 {
-                        content.push_str("  if ");
-                    } else if is_last {
-                        content.push_str("  } else {");
-                    } else {
-                        content.push_str("  } else if ");
-                    }
-                    let cond = if alt.compat.is_some() {
-                        "fuchsia.BIND_PLATFORM_DEV_DID == fuchsia.platform.BIND_PLATFORM_DEV_DID.DEVICETREE".to_string()
-                    } else if let Some(svc) = &alt.service {
-                        format!("fuchsia.Service == \"{}\"", svc)
-                    } else if let Some(proto) = &alt.protocol {
-                        format!("fuchsia.BIND_PROTOCOL == {}", proto)
-                    } else {
-                        "true".to_string()
-                    };
-                    if !is_last {
-                        content.push_str(&format!("{} {{\n", cond));
-                    } else {
-                        content.push_str("\n");
-                    }
-
-                    if is_last {
-                        if alt.compat.is_some() {
-                            content.push_str("    fuchsia.BIND_PLATFORM_DEV_DID == fuchsia.platform.BIND_PLATFORM_DEV_DID.DEVICETREE;\n");
-                        } else if let Some(svc) = &alt.service {
-                            content.push_str(&format!("    fuchsia.Service == \"{}\";\n", svc));
-                        } else if let Some(proto) = &alt.protocol {
-                            content.push_str(&format!("    fuchsia.BIND_PROTOCOL == {};\n", proto));
-                        }
-                    }
-
-                    if let Some(compat) = &alt.compat {
-                        match compat {
-                            Value::Array(arr) => {
-                                content.push_str("    accept fuchsia.COMPATIBLE {\n");
-                                for v in arr {
-                                    if let Some(s) = v.as_str() {
-                                        content.push_str(&format!("      \"{}\",\n", s));
-                                    }
-                                }
-                                content.push_str("    }\n");
-                            }
-                            Value::String(s) => {
-                                content
-                                    .push_str(&format!("    fuchsia.COMPATIBLE == \"{}\";\n", s));
-                            }
-                            _ => {}
-                        }
-                    }
-
-                    if let Some(pci_class) = &alt.pci_class {
-                        content
-                            .push_str(&format!("    fuchsia.BIND_PCI_CLASS == {};\n", pci_class));
-                    }
-                    if let Some(pci_subclass) = &alt.pci_subclass {
-                        content.push_str(&format!(
-                            "    fuchsia.BIND_PCI_SUBCLASS == {};\n",
-                            pci_subclass
-                        ));
-                    }
-                    if let Some(pci_interface) = &alt.pci_interface {
-                        content.push_str(&format!(
-                            "    fuchsia.BIND_PCI_INTERFACE == {};\n",
-                            pci_interface
-                        ));
-                    }
-
-                    if let Some(vid) = &alt.vid {
-                        match vid {
-                            Value::Array(arr) => {
-                                content.push_str("    accept fuchsia.BIND_PLATFORM_DEV_VID {\n");
-                                for v in arr {
-                                    content.push_str(&format!("      {},\n", format_bind_val(v)?));
-                                }
-                                content.push_str("    }\n");
-                            }
-                            _ => {
-                                content.push_str(&format!(
-                                    "    fuchsia.BIND_PLATFORM_DEV_VID == {};\n",
-                                    format_bind_val(vid)?
-                                ));
-                            }
-                        }
-                    }
-                    if let Some(pid) = &alt.pid {
-                        match pid {
-                            Value::Array(arr) => {
-                                content.push_str("    accept fuchsia.BIND_PLATFORM_DEV_PID {\n");
-                                for v in arr {
-                                    content.push_str(&format!("      {},\n", format_bind_val(v)?));
-                                }
-                                content.push_str("    }\n");
-                            }
-                            _ => {
-                                content.push_str(&format!(
-                                    "    fuchsia.BIND_PLATFORM_DEV_PID == {};\n",
-                                    format_bind_val(pid)?
-                                ));
-                            }
-                        }
-                    }
-                    if let Some(did) = &alt.did {
-                        match did {
-                            Value::Array(arr) => {
-                                content.push_str("    accept fuchsia.BIND_PLATFORM_DEV_DID {\n");
-                                for v in arr {
-                                    content.push_str(&format!("      {},\n", format_bind_val(v)?));
-                                }
-                                content.push_str("    }\n");
-                            }
-                            _ => {
-                                content.push_str(&format!(
-                                    "    fuchsia.BIND_PLATFORM_DEV_DID == {};\n",
-                                    format_bind_val(did)?
-                                ));
-                            }
-                        }
+                let bind_rules = DmlBind {
+                    one_of: Some(
+                        alternatives
+                            .iter()
+                            .map(|alt| DmlBind {
+                                compat: alt.compat.clone(),
+                                vid: alt.vid.clone(),
+                                pid: alt.pid.clone(),
+                                did: alt.did.clone(),
+                                protocol: alt.protocol.clone(),
+                                pci_class: alt.pci_class.clone(),
+                                pci_subclass: alt.pci_subclass.clone(),
+                                pci_interface: alt.pci_interface.clone(),
+                                service: alt.service.clone(),
+                                transport: alt.transport.clone(),
+                                ..Default::default()
+                            })
+                            .collect(),
+                    ),
+                    ..Default::default()
+                };
+                let rules_str = generate_simple_bind_rules(&bind_rules)?;
+                for line in rules_str.lines() {
+                    if !line.trim().is_empty() {
+                        content.push_str(&format!("  {}\n", line));
                     }
                 }
-                content.push_str("  }\n");
             } else {
                 let mut rules = Vec::new();
                 if let Some(vid) = &primary.vid {
@@ -474,7 +389,7 @@ pub fn generate_bind_file(
                     crate::workarounds::try_generate_init_step_bind_rule(&service_name)
                 {
                     content.push_str(&rule);
-                } else {
+                } else if !service_name.contains(".BIND_PROTOCOL.") {
                     content.push_str(&format!("  fuchsia.Service == \"{}\";\n", service_name));
                 }
             }

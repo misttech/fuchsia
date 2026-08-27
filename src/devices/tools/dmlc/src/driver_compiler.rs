@@ -141,7 +141,12 @@ pub fn compile_driver(args: &CompileDriverArgs, year: &str) -> Result<(), anyhow
                 .and_then(|v| v.as_str())
                 .map(|s| crate::workarounds::try_generate_init_step_bind_rule(s).is_some())
                 .unwrap_or(false);
-            if !is_init_step {
+            let is_bind_protocol = obj
+                .get("protocol")
+                .and_then(|v| v.as_str())
+                .map(|s| s.contains(".BIND_PROTOCOL."))
+                .unwrap_or(false);
+            if !is_init_step && !is_bind_protocol {
                 cleaned_use_entries.push(entry);
             }
         } else {

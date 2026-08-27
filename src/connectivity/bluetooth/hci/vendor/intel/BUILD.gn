@@ -11,8 +11,14 @@ import("//build/testing/cc_test_executable.gni")
 import("//build_overrides/pigweed.gni")
 import("$dir_pigweed/third_party/emboss/build_defs.gni")
 
+fuchsia_driver_dml("intel-dml") {
+  dml = "meta/intel.dml"
+  driver_name = "intel"
+}
+
 driver_bind_rules("bt_hci_intel_bind") {
-  rules = "meta/intel.bind"
+  dml_label = ":intel-dml"
+  bind_output = "intel.bindbc"
   tests = "meta/bind_tests.json"
   deps = [
     "//src/devices/bind/fuchsia.bluetooth",
@@ -72,9 +78,12 @@ fuchsia_cc_driver("fuchsia_driver") {
 
 fuchsia_driver_component("driver") {
   component_name = "bt-hci-intel"
-  deps = [ ":fuchsia_driver" ]
+  dml_label = ":intel-dml"
+  deps = [
+    ":bt_hci_intel_bind",
+    ":fuchsia_driver",
+  ]
   info = "meta/driver-info.json"
-  manifest = "meta/intel.cml"
 }
 
 if (internal_access) {
