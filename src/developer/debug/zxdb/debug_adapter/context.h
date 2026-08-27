@@ -77,6 +77,9 @@ class DebugAdapterContext : public ThreadObserver,
   // Notification about the stream.
   void OnStreamReadable();
 
+  void OnProcessPaused(Process* process);
+  void OnThreadPaused(Thread* thread);
+
   // Callback to delete the connection and hence this context. This callback will be posted on
   // message loop.
   void set_destroy_connection_callback(DestroyConnectionCallback cb) {

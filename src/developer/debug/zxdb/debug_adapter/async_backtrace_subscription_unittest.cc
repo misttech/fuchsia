@@ -365,7 +365,7 @@ TEST_F(AsyncBacktraceSubscriptionTest, ConcurrentBacktracesSameThread) {
   EXPECT_EQ(updates[0].tasks.value()[0].name, "task_2");
 }
 
-TEST_F(AsyncBacktraceSubscriptionTest, ConcurrentBacktracesSeparateThreads) {
+TEST_F(AsyncBacktraceSubscriptionTest, GateBacktraceOnProcessStop) {
   InitializeDebugging();
 
   std::vector<dap::AsyncBacktraceUpdate> updates;
@@ -397,7 +397,154 @@ TEST_F(AsyncBacktraceSubscriptionTest, ConcurrentBacktracesSeparateThreads) {
   SymbolTestParentSetter parent_setter(func, cu);
   Location loc(0x1234, FileLine(), 0, SymbolContext::ForRelativeAddresses(), func);
 
-  // Triggering updates from different threads shouldn't affect each other.
+  // Triggering updates should only occur when all threads in the process are stopped.
+  // Stopping thread1 while thread2 is running should skip collection.
+  std::vector<std::unique_ptr<Frame>> frames1;
+  frames1.push_back(std::make_unique<MockFrame>(&session(), thread1, loc, 0));
+  InjectExceptionWithStack(kProcessKoid, kThreadKoid1, debug_ipc::ExceptionType::kSingleStep,
+                           std::move(frames1), true);
+
+  context().OnStreamReadable();
+  loop().RunUntilNoTasks();
+  RunPendingClientCalls();
+
+  ASSERT_EQ(provider_ptr->callbacks_.size(), 0u);
+
+  // Stopping thread2 brings all threads in the process to a stopped state, triggering collection.
+  std::vector<std::unique_ptr<Frame>> frames2;
+  frames2.push_back(std::make_unique<MockFrame>(&session(), thread2, loc, 0));
+  InjectExceptionWithStack(kProcessKoid, kThreadKoid2, debug_ipc::ExceptionType::kSingleStep,
+                           std::move(frames2), true);
+
+  context().OnStreamReadable();
+  loop().RunUntilNoTasks();
+  RunPendingClientCalls();
+
+  ASSERT_EQ(provider_ptr->callbacks_.size(), 2u);
+
+  // Execute the callbacks and expect updates for both stopped threads.
+  auto cb1 = std::move(provider_ptr->callbacks_[0]);
+  std::vector<std::unique_ptr<AsyncTask>> tasks1;
+  tasks1.push_back(std::make_unique<FakeAsyncTask>(cb1.session, 101, "task_1"));
+  cb1.cb(Err(), std::move(tasks1));
+
+  auto cb2 = std::move(provider_ptr->callbacks_[1]);
+  std::vector<std::unique_ptr<AsyncTask>> tasks2;
+  tasks2.push_back(std::make_unique<FakeAsyncTask>(cb2.session, 102, "task_2"));
+  cb2.cb(Err(), std::move(tasks2));
+
+  context().OnStreamReadable();
+  loop().RunUntilNoTasks();
+  RunPendingClientCalls();
+
+  ASSERT_EQ(updates.size(), 2u);
+  EXPECT_EQ(updates[0].processId, static_cast<dap::integer>(kProcessKoid));
+  EXPECT_TRUE(updates[0].tasks.has_value());
+  EXPECT_EQ(updates[0].tasks.value().size(), 1u);
+  ASSERT_TRUE(updates[0].tasks.value()[0].id.has_value());
+  EXPECT_EQ(updates[0].tasks.value()[0].id.value(), "0x65");
+  EXPECT_EQ(updates[0].tasks.value()[0].name, "task_1");
+
+  EXPECT_EQ(updates[1].processId, static_cast<dap::integer>(kProcessKoid));
+  EXPECT_TRUE(updates[1].tasks.has_value());
+  EXPECT_EQ(updates[1].tasks.value().size(), 1u);
+  ASSERT_TRUE(updates[1].tasks.value()[0].id.has_value());
+  EXPECT_EQ(updates[1].tasks.value()[0].id.value(), "0x66");
+  EXPECT_EQ(updates[1].tasks.value()[0].name, "task_2");
+}
+
+TEST_F(AsyncBacktraceSubscriptionTest, DestroyingRunningThreadTriggersCollectionForStoppedThread) {
+  InitializeDebugging();
+
+  std::vector<dap::AsyncBacktraceUpdate> updates;
+  client().registerHandler(
+      [&](const dap::AsyncBacktraceUpdate& event) { updates.push_back(event); });
+
+  Process* process = InjectProcessWithModule(kProcessKoid, 0x1000);
+  auto provider = std::make_unique<RaceConditionAsyncTaskProvider>();
+  auto* provider_ptr = provider.get();
+  process->AddAsyncTaskProviderForTesting(ExprLanguage::kRust, std::move(provider));
+
+  constexpr uint64_t kThreadKoid1 = kThreadKoid;
+  constexpr uint64_t kThreadKoid2 = kThreadKoid + 1;
+
+  Thread* thread1 = InjectThread(kProcessKoid, kThreadKoid1);
+  std::ignore = InjectThread(kProcessKoid, kThreadKoid2);
+
+  context().OnStreamReadable();
+  loop().RunUntilNoTasks();
+  RunPendingClientCalls();
+
+  updates.clear();
+
+  auto cu = fxl::MakeRefCounted<CompileUnit>(DwarfTag::kCompileUnit, fxl::WeakPtr<ModuleSymbols>(),
+                                             fxl::RefPtr<DwarfUnit>(), DwarfLang::kRust, "test.rs",
+                                             std::optional<uint64_t>());
+  auto func = fxl::MakeRefCounted<Function>(DwarfTag::kSubprogram);
+  func->set_assigned_name("executor");
+  SymbolTestParentSetter parent_setter(func, cu);
+  Location loc(0x1234, FileLine(), 0, SymbolContext::ForRelativeAddresses(), func);
+
+  // Stop thread1 while thread2 is running.
+  std::vector<std::unique_ptr<Frame>> frames1;
+  frames1.push_back(std::make_unique<MockFrame>(&session(), thread1, loc, 0));
+  InjectExceptionWithStack(kProcessKoid, kThreadKoid1, debug_ipc::ExceptionType::kSingleStep,
+                           std::move(frames1), true);
+
+  context().OnStreamReadable();
+  loop().RunUntilNoTasks();
+  RunPendingClientCalls();
+
+  // Collection shouldn't trigger yet because thread2 is running.
+  ASSERT_EQ(provider_ptr->callbacks_.size(), 0u);
+
+  // Destroy running thread2. Now thread1 is the only thread left and it is stopped.
+  debug_ipc::NotifyThreadExiting notify_exit;
+  notify_exit.record.id = {.process = kProcessKoid, .thread = kThreadKoid2};
+  notify_exit.record.state = debug_ipc::ThreadRecord::State::kDead;
+  session().DispatchNotifyThreadExiting(notify_exit);
+
+  context().OnStreamReadable();
+  loop().RunUntilNoTasks();
+  RunPendingClientCalls();
+
+  // Destroying thread2 should trigger collection for surviving stopped thread1.
+  ASSERT_EQ(provider_ptr->callbacks_.size(), 1u);
+}
+
+TEST_F(AsyncBacktraceSubscriptionTest, ResumingThreadCancelsPendingBacktracesForProcess) {
+  InitializeDebugging();
+
+  std::vector<dap::AsyncBacktraceUpdate> updates;
+  client().registerHandler(
+      [&](const dap::AsyncBacktraceUpdate& event) { updates.push_back(event); });
+
+  Process* process = InjectProcessWithModule(kProcessKoid, 0x1000);
+  auto provider = std::make_unique<RaceConditionAsyncTaskProvider>();
+  auto* provider_ptr = provider.get();
+  process->AddAsyncTaskProviderForTesting(ExprLanguage::kRust, std::move(provider));
+
+  constexpr uint64_t kThreadKoid1 = kThreadKoid;
+  constexpr uint64_t kThreadKoid2 = kThreadKoid + 1;
+
+  Thread* thread1 = InjectThread(kProcessKoid, kThreadKoid1);
+  Thread* thread2 = InjectThread(kProcessKoid, kThreadKoid2);
+
+  context().OnStreamReadable();
+  loop().RunUntilNoTasks();
+  RunPendingClientCalls();
+
+  updates.clear();
+
+  auto cu = fxl::MakeRefCounted<CompileUnit>(DwarfTag::kCompileUnit, fxl::WeakPtr<ModuleSymbols>(),
+                                             fxl::RefPtr<DwarfUnit>(), DwarfLang::kRust, "test.rs",
+                                             std::optional<uint64_t>());
+  auto func = fxl::MakeRefCounted<Function>(DwarfTag::kSubprogram);
+  func->set_assigned_name("executor");
+  SymbolTestParentSetter parent_setter(func, cu);
+  Location loc(0x1234, FileLine(), 0, SymbolContext::ForRelativeAddresses(), func);
+
+  // Stop both threads so collection triggers for both.
   std::vector<std::unique_ptr<Frame>> frames1;
   frames1.push_back(std::make_unique<MockFrame>(&session(), thread1, loc, 0));
   InjectExceptionWithStack(kProcessKoid, kThreadKoid1, debug_ipc::ExceptionType::kSingleStep,
@@ -414,27 +561,17 @@ TEST_F(AsyncBacktraceSubscriptionTest, ConcurrentBacktracesSeparateThreads) {
 
   ASSERT_EQ(provider_ptr->callbacks_.size(), 2u);
 
-  // Execute the first callback. It should emit an update, since the second (concurrent)
-  // `ThreadObserver::OnThreadStopped` event is for a different thread.
-  auto cb1 = std::move(provider_ptr->callbacks_[0]);
-  std::vector<std::unique_ptr<AsyncTask>> tasks1;
-  tasks1.push_back(std::make_unique<FakeAsyncTask>(cb1.session, 101, "task_1"));
-  cb1.cb(Err(), std::move(tasks1));
+  // Resume thread1. This should cancel pending backtraces for all threads in the process.
+  thread1->Continue(false);
 
-  context().OnStreamReadable();
   loop().RunUntilNoTasks();
   RunPendingClientCalls();
 
-  ASSERT_EQ(updates.size(), 1u);
-  EXPECT_TRUE(updates[0].tasks.has_value());
-  EXPECT_EQ(updates[0].tasks.value().size(), 1u);
-  ASSERT_TRUE(updates[0].tasks.value()[0].id.has_value());
-  EXPECT_EQ(updates[0].tasks.value()[0].id.value(), "0x65");
-  EXPECT_EQ(updates[0].tasks.value()[0].name, "task_1");
+  EXPECT_FALSE(thread1->CurrentStopSupportsFrames());
 
   updates.clear();
 
-  // Execute the second callback and expect an update.
+  // Executing the pending callback for thread2 should NOT emit an async backtrace update.
   auto cb2 = std::move(provider_ptr->callbacks_[1]);
   std::vector<std::unique_ptr<AsyncTask>> tasks2;
   tasks2.push_back(std::make_unique<FakeAsyncTask>(cb2.session, 102, "task_2"));
@@ -444,12 +581,7 @@ TEST_F(AsyncBacktraceSubscriptionTest, ConcurrentBacktracesSeparateThreads) {
   loop().RunUntilNoTasks();
   RunPendingClientCalls();
 
-  ASSERT_EQ(updates.size(), 1u);
-  EXPECT_TRUE(updates[0].tasks.has_value());
-  EXPECT_EQ(updates[0].tasks.value().size(), 1u);
-  ASSERT_TRUE(updates[0].tasks.value()[0].id.has_value());
-  EXPECT_EQ(updates[0].tasks.value()[0].id.value(), "0x66");
-  EXPECT_EQ(updates[0].tasks.value()[0].name, "task_2");
+  EXPECT_EQ(updates.size(), 0u);
 }
 
 }  // namespace zxdb

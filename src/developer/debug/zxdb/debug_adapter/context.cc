@@ -435,6 +435,18 @@ void DebugAdapterContext::OnThreadStopped(Thread* thread, const StopInfo& info) 
   dap_->send(event);
 }
 
+void DebugAdapterContext::OnProcessPaused(Process* process) {
+  if (async_backtrace_subscription_) {
+    async_backtrace_subscription_->OnProcessStopped(process);
+  }
+}
+
+void DebugAdapterContext::OnThreadPaused(Thread* thread) {
+  if (async_backtrace_subscription_) {
+    async_backtrace_subscription_->OnThreadStopped(thread, StopInfo());
+  }
+}
+
 void DebugAdapterContext::DidUpdateStackFrames(Thread* thread) { DeleteFrameIdsForThread(thread); }
 
 void DebugAdapterContext::DidCreateProcess(Process* process, uint64_t timestamp) {

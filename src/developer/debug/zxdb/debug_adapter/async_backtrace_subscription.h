@@ -50,6 +50,7 @@ struct AsyncBacktraceUpdate : Event {
   integer id;
   string name;
 
+  integer processId;
   optional<array<AsyncTaskNode>> tasks;
 };
 
@@ -60,6 +61,7 @@ DAP_DECLARE_STRUCT_TYPEINFO(AsyncBacktraceUpdate);
 namespace zxdb {
 
 class Session;
+class Process;
 class Err;
 class Frame;
 
@@ -71,6 +73,7 @@ class AsyncBacktraceSubscription : public ThreadObserver {
 
   void DidCreateThread(Thread* thread) override;
   void OnThreadStopped(Thread* thread, const StopInfo& info) override;
+  void OnProcessStopped(Process* process);
   // TODO(https://fxbug.dev/493935127): Switch to `OnThreadResumed` once it's available.
   void DidUpdateStackFrames(Thread* thread) override;
   void WillDestroyThread(Thread* thread) override;

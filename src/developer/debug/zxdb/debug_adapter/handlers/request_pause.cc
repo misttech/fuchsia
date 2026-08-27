@@ -67,6 +67,8 @@ void OnRequestPause(DebugAdapterContext* ctx, const dap::PauseRequestZxdb& reque
         }
       }
       weak_ctx->dap().send(event);
+
+      weak_ctx->OnProcessPaused(weak_process.get());
     });
     callback(dap::PauseResponseZxdb());
     return;
@@ -89,6 +91,7 @@ void OnRequestPause(DebugAdapterContext* ctx, const dap::PauseRequestZxdb& reque
     event.reason = "pause";
     event.threadId = weak_thread->GetKoid();
     weak_ctx->dap().send(event);
+    weak_ctx->OnThreadPaused(weak_thread.get());
   });
   callback(dap::PauseResponseZxdb());
 }
