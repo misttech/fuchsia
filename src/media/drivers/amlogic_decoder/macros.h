@@ -5,8 +5,8 @@
 #ifndef SRC_MEDIA_DRIVERS_AMLOGIC_DECODER_MACROS_H_
 #define SRC_MEDIA_DRIVERS_AMLOGIC_DECODER_MACROS_H_
 
-#include <assert.h>
 #include <lib/ddk/debug.h>
+#include <zircon/assert.h>
 #include <zircon/syscalls.h>
 
 #include <chrono>
@@ -44,7 +44,7 @@ namespace amlogic_decoder {
   } while (0)
 
 inline uint32_t truncate_to_32(uint64_t input) {
-  assert(!(input & 0xffffffff00000000ul));
+  ZX_ASSERT(!(input & 0xffffffff00000000ul));
   return static_cast<uint32_t>(input);
 }
 
