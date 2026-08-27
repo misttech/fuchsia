@@ -94,10 +94,7 @@ group("runtime-deps") {
 }
 
 variant("coverage") {
-  configs = [
-    ":variant-libprefix",
-    ":coverage-rust",
-  ]
+  configs = [ ":variant-libprefix" ]
   deps = [ ":runtime-deps" ]
 
   c_family_flags = _coverage_c_family_flags
