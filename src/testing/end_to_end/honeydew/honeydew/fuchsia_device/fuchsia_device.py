@@ -46,6 +46,7 @@ from honeydew.affordances.drivers.fake_battery import (
     fake_battery,
     fake_battery_using_ffx,
 )
+from honeydew.affordances.drivers.hardware import power as hardware_power
 from honeydew.affordances.hello_world import hello_world, hello_world_using_ffx
 from honeydew.affordances.media import media, media_using_fc
 from honeydew.affordances.power.system_power_state_controller import (
@@ -738,6 +739,21 @@ class FuchsiaDevice(
         return fake_battery_using_ffx.FakeBatteryUsingFfx(
             device_name=self.device_name,
             ffx=self.ffx,
+        )
+
+    @properties.Affordance
+    def power_source(self) -> hardware_power.PowerSource:
+        """Returns a power_source affordance object.
+
+        Returns:
+            hardware_power.PowerSource object
+        """
+        return hardware_power.PowerSource(
+            device_name=self.device_name,
+            ffx=self.ffx,
+            fuchsia_controller=self.fuchsia_controller,
+            reboot_affordance=self,
+            fuchsia_device_close=self,
         )
 
     @properties.Affordance
