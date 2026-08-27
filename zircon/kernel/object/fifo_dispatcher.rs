@@ -274,8 +274,8 @@ impl FifoDispatcher {
             // and `src` is a user pointer of length `copy_bytes`.
             let res = unsafe {
                 arch_copy_from_user_capture_faults(
-                    data_ptr.add(byte_offset) as *mut core::ffi::c_void,
-                    src.as_ptr() as *const core::ffi::c_void,
+                    data_ptr.add(byte_offset).cast(),
+                    src.as_ptr().cast(),
                     copy_bytes,
                 )
             };
@@ -398,8 +398,8 @@ impl FifoDispatcher {
             // and `dst` is a user pointer of length `copy_bytes`.
             let res = unsafe {
                 arch_copy_to_user_capture_faults(
-                    dst.as_ptr() as *mut core::ffi::c_void,
-                    data_ptr.add(byte_offset) as *const core::ffi::c_void,
+                    dst.as_ptr().cast(),
+                    data_ptr.add(byte_offset).cast(),
                     copy_bytes,
                 )
             };

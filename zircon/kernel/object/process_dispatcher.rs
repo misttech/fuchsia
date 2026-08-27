@@ -271,7 +271,7 @@ impl ProcessDispatcher {
         let status = unsafe {
             super::process_dispatcher_ffi::cpp_process_dispatcher_create(
                 fbl::RefPtr::into_raw(job) as *mut _,
-                name.as_ptr() as *const core::ffi::c_char,
+                name.as_ptr().cast(),
                 name.len(),
                 flags,
                 proc_handle.as_mut_ptr(),
@@ -310,7 +310,7 @@ impl ProcessDispatcher {
         let status = unsafe {
             super::process_dispatcher_ffi::cpp_process_dispatcher_create_shared(
                 fbl::RefPtr::into_raw(shared_proc) as *mut _,
-                name.as_ptr() as *const core::ffi::c_char,
+                name.as_ptr().cast(),
                 name.len(),
                 flags,
                 proc_handle.as_mut_ptr(),

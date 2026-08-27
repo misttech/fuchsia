@@ -86,7 +86,7 @@ impl ThreadDispatcher {
             cpp_thread_dispatcher_create(
                 process_raw,
                 flags,
-                name.as_ptr() as *const _,
+                name.as_ptr().cast(),
                 name.len(),
                 handle.as_mut_ptr(),
                 rights.as_mut_ptr(),

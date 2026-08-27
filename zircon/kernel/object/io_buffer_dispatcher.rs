@@ -994,7 +994,7 @@ mod tests {
         let mut mem = UserMemory::create(alloc_size)?;
         mem.commit_and_map(alloc_size).ok()?;
         if !iovecs.is_empty() {
-            let bytes = unsafe { slice::from_raw_parts(iovecs.as_ptr() as *const u8, size) };
+            let bytes = unsafe { slice::from_raw_parts(iovecs.as_ptr().cast(), size) };
             mem.vmo_write(bytes, 0).ok()?;
         }
         let ptr = UserInPtr::new(mem.base() as *const zx_iovec_t);
@@ -1446,7 +1446,7 @@ mod tests {
         ));
 
         // Calling write on ID allocator discipline -> WRONG_TYPE
-        let iovec = zx_iovec_t { buffer: ptr.as_ptr() as *mut _, capacity: blob_data.len() };
+        let iovec = zx_iovec_t { buffer: ptr.as_ptr().cast_mut(), capacity: blob_data.len() };
         let (_vec_mem, vec_ptr) = make_user_in_iovec(&[iovec]).expect("user vec mem");
         expect_true!(matches!(
             variant.write(IobEndpointId::Ep0, vec_ptr, 1),
@@ -1487,7 +1487,7 @@ mod tests {
         // Perform write through variant (assert_no_locks_held runs inside shared_region.write)
         let msg_data = [42u8; 8];
         let (_msg_mem, msg_ptr) = make_user_in(&msg_data).expect("user msg mem");
-        let iovec = zx_iovec_t { buffer: msg_ptr.as_ptr() as *mut _, capacity: msg_data.len() };
+        let iovec = zx_iovec_t { buffer: msg_ptr.as_ptr().cast_mut(), capacity: msg_data.len() };
         let (_vec_mem, vec_ptr) = make_user_in_iovec(&[iovec]).expect("user vec mem");
         expect_ok!(variant.write(IobEndpointId::Ep0, vec_ptr, 1));
 
