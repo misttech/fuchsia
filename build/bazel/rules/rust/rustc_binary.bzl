@@ -31,29 +31,31 @@ def _rustc_binary_impl(
 
     kwargs["rustc_flags"] = with_fuchsia_rustc_flags(rustc_flags)
 
-    kwargs = wrap_rust_macro_args_with_build_flags(
-        kwargs,
-        name,
-        "rust_binary",
-        build_flags,
-        "executable",
+    binary_kwargs = wrap_rust_macro_args_with_build_flags(
+        kwargs = kwargs,
+        name = name,
+        rust_rule_name = "rust_binary",
+        build_flags = build_flags,
+        target_type = "executable",
     )
 
     rust_binary(
         name = name,
         lint_config = lint_config,
         visibility = visibility,
-        **kwargs
+        **binary_kwargs
     )
 
     if with_host_unit_tests or with_unit_tests:
+        test_kwargs = dict(binary_kwargs)
+
         # The following values are set for rust_binary() but are not supported by rust_test()
         # so remove them from kwargs to avoid Bazel error messages.
-        kwargs.pop("output_licenses", None)
-        kwargs.pop("crate_type", None)
-        kwargs.pop("linker_script", None)
-        kwargs.pop("binary_name", None)
-        kwargs.pop("out_binary", None)
+        test_kwargs.pop("output_licenses", None)
+        test_kwargs.pop("crate_type", None)
+        test_kwargs.pop("linker_script", None)
+        test_kwargs.pop("binary_name", None)
+        test_kwargs.pop("out_binary", None)
 
         generate_unit_tests(
             name = name,
@@ -62,7 +64,7 @@ def _rustc_binary_impl(
             test_deps = test_deps,
             lint_config = test_lint_config,
             visibility = visibility,
-            **kwargs
+            **test_kwargs
         )
 
 rustc_binary = macro(

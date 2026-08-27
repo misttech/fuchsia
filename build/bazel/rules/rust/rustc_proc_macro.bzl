@@ -31,7 +31,7 @@ def _rustc_proc_macro_impl(
 
     kwargs["rustc_flags"] = with_fuchsia_rustc_flags(rustc_flags)
 
-    kwargs = wrap_rust_macro_args_with_build_flags(
+    proc_macro_kwargs = wrap_rust_macro_args_with_build_flags(
         kwargs = kwargs,
         name = name,
         rust_rule_name = "rust_proc_macro",
@@ -43,10 +43,17 @@ def _rustc_proc_macro_impl(
         name = name,
         lint_config = lint_config,
         visibility = visibility,
-        **kwargs
+        **proc_macro_kwargs
     )
 
     if with_host_unit_tests or with_unit_tests:
+        test_kwargs = wrap_rust_macro_args_with_build_flags(
+            kwargs = kwargs,
+            name = "{}_test".format(name),
+            rust_rule_name = "rust_test",
+            build_flags = build_flags,
+            target_type = "executable",
+        )
         generate_unit_tests(
             name = name,
             with_host_unit_tests = with_host_unit_tests,
@@ -54,7 +61,7 @@ def _rustc_proc_macro_impl(
             test_deps = test_deps,
             lint_config = test_lint_config,
             visibility = visibility,
-            **kwargs
+            **test_kwargs
         )
 
 rustc_proc_macro = macro(

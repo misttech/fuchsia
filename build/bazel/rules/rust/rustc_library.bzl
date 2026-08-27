@@ -31,7 +31,7 @@ def _rustc_library_impl(
 
     kwargs["rustc_flags"] = with_fuchsia_rustc_flags(rustc_flags)
 
-    kwargs = wrap_rust_macro_args_with_build_flags(
+    library_kwargs = wrap_rust_macro_args_with_build_flags(
         kwargs = kwargs,
         name = name,
         rust_rule_name = "rust_library",
@@ -43,15 +43,23 @@ def _rustc_library_impl(
         name = name,
         lint_config = lint_config,
         visibility = visibility,
-        **kwargs
+        **library_kwargs
     )
 
     if with_host_unit_tests or with_unit_tests:
+        test_kwargs = wrap_rust_macro_args_with_build_flags(
+            kwargs = kwargs,
+            name = "{}_test".format(name),
+            rust_rule_name = "rust_test",
+            build_flags = build_flags,
+            target_type = "executable",
+        )
+
         # Even when not set in the parent rustc_library() call, these values appear
         # in kwargs with a value of None due to the way inherit_attrs works.
         # Unfortunately, they are not supported by rust_test(), so remove them to
         # avoid Bazel error messages.
-        kwargs.pop("disable_pipelining", None)
+        test_kwargs.pop("disable_pipelining", None)
 
         generate_unit_tests(
             name = name,
@@ -60,7 +68,7 @@ def _rustc_library_impl(
             test_deps = test_deps,
             lint_config = test_lint_config,
             visibility = visibility,
-            **kwargs
+            **test_kwargs
         )
 
 rustc_library = macro(
