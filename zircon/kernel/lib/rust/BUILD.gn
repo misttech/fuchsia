@@ -81,6 +81,7 @@ custom_target_relpath = "lib/rustlib/$custom_target"
 # These are configs that might be in the toolchain / variant's default list but
 # must be disabled for building the empty pseudo-crates.
 rust_instrumentation_configs = [
+  "//build/config/profile:coverage",
   "//build/config/profile:coverage-rust",
   "//build/config/profile:profile-rust",
 ]
