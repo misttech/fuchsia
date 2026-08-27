@@ -12,6 +12,7 @@ from datetime import timedelta
 from tempfile import NamedTemporaryFile
 from typing import Any, NoReturn, Optional
 
+import logging_utils
 from libs.exception_utils import unroll_and_raise
 from mobly_driver.api import api_infra
 from mobly_driver.driver import base
@@ -94,6 +95,8 @@ def _execute_test(
     test_env = os.environ.copy()
     # Set line-buffering for Mobly tests to flush output immediately.
     test_env["PYTHONUNBUFFERED"] = "1"
+    if logging_utils.supports_color():
+        test_env["FORCE_COLOR"] = "1"
 
     with NamedTemporaryFile(mode="w") as tmp_config:
         config = driver.generate_test_config()

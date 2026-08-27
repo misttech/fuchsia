@@ -14,6 +14,7 @@ import typing
 from typing import Any, Dict, ParamSpec, TypeVar, Union
 
 import fuchsia_async_extension
+import mobly_logger_extension
 from honeydew import errors
 from honeydew.auxiliary_devices.power_switch import (
     power_switch,

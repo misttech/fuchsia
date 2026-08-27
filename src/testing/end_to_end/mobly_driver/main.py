@@ -13,6 +13,7 @@ import traceback
 from datetime import timedelta
 from typing import Any
 
+import logging_utils
 import mobly_driver
 from mobly_driver import driver_factory
 
@@ -141,9 +142,15 @@ def main() -> None:
     based on the execution environment, and uses the Mobly Driver to run the
     underlying Mobly test.
     """
+    handler = logging.StreamHandler(sys.stdout)
+    handler.setFormatter(
+        logging_utils.ColoredFormatter(
+            "[Mobly Driver] %(asctime)s %(levelname)s %(message)s",
+        )
+    )
     logging.basicConfig(
         level=logging.INFO,
-        format="[Mobly Driver] %(asctime)s %(levelname)s %(message)s",
+        handlers=[handler],
     )
 
     factory = driver_factory.DriverFactory(

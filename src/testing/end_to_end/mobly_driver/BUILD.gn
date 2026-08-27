@@ -24,6 +24,7 @@ if (is_host) {
       "driver_factory.py",
     ]
     library_deps = [
+      "//scripts/lib/logging_utils",
       "//src/testing/end_to_end/libs",
       "//third_party/mobly:mobly_no_testonly",
     ]
