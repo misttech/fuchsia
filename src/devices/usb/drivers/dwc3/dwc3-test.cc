@@ -264,6 +264,213 @@ TEST_F(UnmanagedTestFixture, HotplugCycleResetsHardwareWithoutPlatformExtension)
   EXPECT_EQ(ZX_OK, dut_.StopDriver().status_value());
 }
 
+// Verifies that when the device is disconnected and no client has started the controller,
+// evaluating Inspect lazy nodes avoids accessing hardware MMIO registers (which may be
+// unpowered or clock-gated) and omits hardware register nodes from the Inspect tree.
+TEST_F(UnmanagedTestFixture, InspectSkipsMmioWhenPowerOffAndControllerStopped) {
+  auto gctl_read_count = InterceptGctlReads();
+
+  ASSERT_OK(StartDriverWithoutPlatformExtension());
+
+  dut_.runtime().RunUntilIdle();
+  EXPECT_EQ(ZX_OK, WaitForPhy());
+
+  // Combination 1: power_on_ = false, controller_started_ = false.
+  dut_.RunInEnvironmentTypeContext([](Environment& env) {
+    env.usb_phy().completion()->Reset();
+    env.usb_phy().TriggerConnection(false);
+  });
+  dut_.runtime().RunUntilIdle();
+  EXPECT_EQ(ZX_OK, WaitForPhy());
+
+  gctl_read_count->store(0);
+
+  inspect::Hierarchy hierarchy;
+  dut_.RunInDriverContext([&](Dwc3& drv) {
+    hierarchy =
+        fpromise::run_single_threaded(inspect::ReadFromInspector(drv.inspector().inspector()))
+            .take_value();
+  });
+  dut_.runtime().RunUntilIdle();
+
+  const auto* dwc3_node = hierarchy.GetByPath({"dwc3"});
+  ASSERT_NE(nullptr, dwc3_node);
+  EXPECT_NE(nullptr, dwc3_node->node().get_property<inspect::UintPropertyValue>("time_start"));
+
+  const auto* hw_state =
+      dwc3_node->node().get_property<inspect::StringPropertyValue>("hardware_state");
+  ASSERT_NE(nullptr, hw_state);
+  EXPECT_EQ("powered_off", hw_state->value());
+
+  EXPECT_EQ(nullptr, dwc3_node->GetByPath({"GCTL"}));
+  EXPECT_EQ(nullptr, dwc3_node->GetByPath({"GSTS"}));
+  EXPECT_EQ(nullptr, dwc3_node->GetByPath({"DCFG"}));
+  EXPECT_EQ(nullptr, dwc3_node->GetByPath({"DCTL"}));
+  EXPECT_EQ(nullptr, dwc3_node->GetByPath({"DSTS"}));
+  EXPECT_EQ(0u, gctl_read_count->load());
+
+  EXPECT_EQ(ZX_OK, dut_.StopDriver().status_value());
+}
+
+// Verifies that when PHY power is on (e.g. cable attached or default startup state) but no
+// client has started the controller (e.g. peripheral function drivers are not bound),
+// Inspect queries skip reading hardware registers to prevent bus faults on idle systems.
+TEST_F(UnmanagedTestFixture, InspectSkipsMmioWhenPowerOnAndControllerStopped) {
+  auto gctl_read_count = InterceptGctlReads();
+
+  ASSERT_OK(StartDriverWithoutPlatformExtension());
+
+  dut_.runtime().RunUntilIdle();
+  EXPECT_EQ(ZX_OK, WaitForPhy());
+
+  // Combination 2: power_on_ = true, controller_started_ = false.
+  dut_.RunInEnvironmentTypeContext([](Environment& env) {
+    env.usb_phy().completion()->Reset();
+    env.usb_phy().TriggerConnection(true);
+  });
+  dut_.runtime().RunUntilIdle();
+  EXPECT_EQ(ZX_OK, WaitForPhy());
+
+  gctl_read_count->store(0);
+
+  inspect::Hierarchy hierarchy;
+  dut_.RunInDriverContext([&](Dwc3& drv) {
+    hierarchy =
+        fpromise::run_single_threaded(inspect::ReadFromInspector(drv.inspector().inspector()))
+            .take_value();
+  });
+  dut_.runtime().RunUntilIdle();
+
+  const auto* dwc3_node = hierarchy.GetByPath({"dwc3"});
+  ASSERT_NE(nullptr, dwc3_node);
+  EXPECT_NE(nullptr, dwc3_node->node().get_property<inspect::UintPropertyValue>("time_start"));
+
+  const auto* hw_state =
+      dwc3_node->node().get_property<inspect::StringPropertyValue>("hardware_state");
+  ASSERT_NE(nullptr, hw_state);
+  EXPECT_EQ("inactive", hw_state->value());
+
+  EXPECT_EQ(nullptr, dwc3_node->GetByPath({"GCTL"}));
+  EXPECT_EQ(nullptr, dwc3_node->GetByPath({"GSTS"}));
+  EXPECT_EQ(nullptr, dwc3_node->GetByPath({"DCFG"}));
+  EXPECT_EQ(nullptr, dwc3_node->GetByPath({"DCTL"}));
+  EXPECT_EQ(nullptr, dwc3_node->GetByPath({"DSTS"}));
+  EXPECT_EQ(0u, gctl_read_count->load());
+
+  EXPECT_EQ(ZX_OK, dut_.StopDriver().status_value());
+}
+
+// Verifies that when the controller was previously started by a client but the cable has
+// been unplugged (PHY power off), Inspect queries skip hardware MMIO reads to protect against
+// accessing unpowered or halted controller registers.
+TEST_F(UnmanagedTestFixture, InspectSkipsMmioWhenPowerOffAndControllerStarted) {
+  auto gctl_read_count = InterceptGctlReads();
+
+  ASSERT_OK(StartDriverWithoutPlatformExtension());
+
+  dut_.runtime().RunUntilIdle();
+  EXPECT_EQ(ZX_OK, WaitForPhy());
+
+  auto dci_service = dut_.Connect<fuchsia_hardware_usb_dci::UsbDciService::Device>();
+  ASSERT_TRUE(dci_service.is_ok()) << dci_service.status_string();
+  fidl::WireSyncClient<fuchsia_hardware_usb_dci::UsbDci> dci{std::move(*dci_service)};
+  ASSERT_OK(dci->StartController().status());
+
+  // Trigger plug in first:
+  dut_.RunInEnvironmentTypeContext([](Environment& env) {
+    env.usb_phy().completion()->Reset();
+    env.usb_phy().TriggerConnection(true);
+  });
+  dut_.runtime().RunUntilIdle();
+  EXPECT_EQ(ZX_OK, WaitForPhy());
+
+  // Combination 3: power_on_ = false, controller_started_ = true.
+  dut_.RunInEnvironmentTypeContext([](Environment& env) {
+    env.usb_phy().completion()->Reset();
+    env.usb_phy().TriggerConnection(false);
+  });
+  dut_.runtime().RunUntilIdle();
+  EXPECT_EQ(ZX_OK, WaitForPhy());
+
+  // Reset counter to observe only the subsequent Inspect query.
+  gctl_read_count->store(0);
+
+  inspect::Hierarchy hierarchy;
+  dut_.RunInDriverContext([&](Dwc3& drv) {
+    hierarchy =
+        fpromise::run_single_threaded(inspect::ReadFromInspector(drv.inspector().inspector()))
+            .take_value();
+  });
+  dut_.runtime().RunUntilIdle();
+
+  const auto* dwc3_node = hierarchy.GetByPath({"dwc3"});
+  ASSERT_NE(nullptr, dwc3_node);
+  EXPECT_NE(nullptr, dwc3_node->node().get_property<inspect::UintPropertyValue>("time_start"));
+
+  const auto* hw_state =
+      dwc3_node->node().get_property<inspect::StringPropertyValue>("hardware_state");
+  ASSERT_NE(nullptr, hw_state);
+  EXPECT_EQ("powered_off", hw_state->value());
+
+  EXPECT_EQ(nullptr, dwc3_node->GetByPath({"GCTL"}));
+  EXPECT_EQ(nullptr, dwc3_node->GetByPath({"GSTS"}));
+  EXPECT_EQ(nullptr, dwc3_node->GetByPath({"DCFG"}));
+  EXPECT_EQ(nullptr, dwc3_node->GetByPath({"DCTL"}));
+  EXPECT_EQ(nullptr, dwc3_node->GetByPath({"DSTS"}));
+  EXPECT_EQ(0u, gctl_read_count->load());
+
+  EXPECT_EQ(ZX_OK, dut_.StopDriver().status_value());
+}
+
+// Verifies that when the controller is actively running in peripheral mode with PHY power on
+// and a client started, Inspect queries successfully sample hardware registers (GCTL, GSTS,
+// DCFG) and record their decoded fields into the Inspect hierarchy.
+TEST_F(UnmanagedTestFixture, InspectSamplesMmioWhenPowerOnAndControllerStarted) {
+  auto gctl_read_count = InterceptGctlReads();
+
+  ASSERT_OK(StartDriverWithoutPlatformExtension());
+
+  dut_.runtime().RunUntilIdle();
+  EXPECT_EQ(ZX_OK, WaitForPhy());
+
+  auto dci_service = dut_.Connect<fuchsia_hardware_usb_dci::UsbDciService::Device>();
+  ASSERT_TRUE(dci_service.is_ok()) << dci_service.status_string();
+  fidl::WireSyncClient<fuchsia_hardware_usb_dci::UsbDci> dci{std::move(*dci_service)};
+  ASSERT_OK(dci->StartController().status());
+
+  // Combination 4: power_on_ = true, controller_started_ = true.
+  dut_.RunInEnvironmentTypeContext([](Environment& env) {
+    env.usb_phy().completion()->Reset();
+    env.usb_phy().TriggerConnection(true);
+  });
+  dut_.runtime().RunUntilIdle();
+  EXPECT_EQ(ZX_OK, WaitForPhy());
+
+  gctl_read_count->store(0);
+
+  inspect::Hierarchy hierarchy;
+  dut_.RunInDriverContext([&](Dwc3& drv) {
+    hierarchy =
+        fpromise::run_single_threaded(inspect::ReadFromInspector(drv.inspector().inspector()))
+            .take_value();
+  });
+  dut_.runtime().RunUntilIdle();
+
+  const auto* dwc3_node = hierarchy.GetByPath({"dwc3"});
+  ASSERT_NE(nullptr, dwc3_node);
+  EXPECT_NE(nullptr, dwc3_node->node().get_property<inspect::UintPropertyValue>("time_start"));
+  EXPECT_EQ(nullptr,
+            dwc3_node->node().get_property<inspect::StringPropertyValue>("hardware_state"));
+  EXPECT_NE(nullptr, dwc3_node->GetByPath({"GCTL"}));
+  EXPECT_NE(nullptr, dwc3_node->GetByPath({"GSTS"}));
+  EXPECT_NE(nullptr, dwc3_node->GetByPath({"DCFG"}));
+  EXPECT_NE(nullptr, dwc3_node->GetByPath({"DCTL"}));
+  EXPECT_NE(nullptr, dwc3_node->GetByPath({"DSTS"}));
+  EXPECT_GT(gctl_read_count->load(), 0u);
+
+  EXPECT_EQ(ZX_OK, dut_.StopDriver().status_value());
+}
+
 TEST_F(UnmanagedTestFixture, Dfv2HwResetTimeout) {
   stuck_reset_test_ = true;
   zx::result start = dut_.StartDriverWithCustomStartArgs([](fdf::DriverStartArgs& args) {

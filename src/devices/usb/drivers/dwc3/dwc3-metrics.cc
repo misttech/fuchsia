@@ -59,8 +59,15 @@ inspect::Inspector Dwc3Metrics::RecordMetrics(fdf::MmioBuffer* mmio, Dwc3* dwc3)
     root.Record(std::move(history_node));
   }
 
-  // mmio and dwc3 can be null in tests.
-  if (mmio && dwc3 && dwc3->power_on()) {
+  // Hardware registers should only be sampled when the controller is actively running
+  // in peripheral mode (both PHY power is on and the controller is started). Reading
+  // MMIO registers while the controller is idle, disconnected, or unpowered can cause
+  // hardware bus faults. Note that mmio and dwc3 can be null in tests.
+  if (!dwc3 || !dwc3->power_on()) {
+    root.RecordString("hardware_state", "powered_off");
+  } else if (!dwc3->is_active()) {
+    root.RecordString("hardware_state", "inactive");
+  } else if (mmio) {
     // Read and decode core hardware registers
     auto gctl = GCTL::Get().ReadFrom(mmio);
     auto gctl_node = root.CreateChild("GCTL");
@@ -103,8 +110,6 @@ inspect::Inspector Dwc3Metrics::RecordMetrics(fdf::MmioBuffer* mmio, Dwc3* dwc3)
     dsts_node.RecordUint("CONNECTSPD", dsts.CONNECTSPD());
     dsts_node.RecordUint("SOFFN", dsts.SOFFN());
     root.Record(std::move(dsts_node));
-  } else {
-    root.RecordString("hardware_state", "powered_off");
   }
 
   if (dwc3) {

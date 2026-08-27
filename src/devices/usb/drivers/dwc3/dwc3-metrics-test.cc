@@ -58,4 +58,32 @@ TEST(Dwc3MetricsTest, InitResetsAndRecordsCorrectly) {
   EXPECT_EQ(0u, sof->value());
 }
 
+// Verifies that recording Inspect metrics when the driver pointer is null safely populates
+// software-only metrics (e.g. timestamps and event counters) from memory without attempting
+// any hardware MMIO accesses or creating hardware register inspect nodes.
+TEST(Dwc3MetricsTest, NullControllerSkipsMmioSampling) {
+  Dwc3Metrics metrics;
+  metrics.Init();
+
+  // Passing null driver and mmio pointers must not crash or read MMIO.
+  inspect::Inspector inspector = metrics.RecordMetrics(nullptr, nullptr);
+  auto hierarchy = inspect::ReadFromVmo(inspector.DuplicateVmo()).take_value();
+
+  // Root properties and software event counts should be present.
+  EXPECT_NE(nullptr, hierarchy.node().get_property<inspect::UintPropertyValue>("time_start"));
+  EXPECT_NE(nullptr, hierarchy.GetByPath({"event_counts"}));
+
+  const auto* hw_state =
+      hierarchy.node().get_property<inspect::StringPropertyValue>("hardware_state");
+  ASSERT_NE(nullptr, hw_state);
+  EXPECT_EQ("powered_off", hw_state->value());
+
+  // Hardware register nodes must not exist when controller is null.
+  EXPECT_EQ(nullptr, hierarchy.GetByPath({"GCTL"}));
+  EXPECT_EQ(nullptr, hierarchy.GetByPath({"GSTS"}));
+  EXPECT_EQ(nullptr, hierarchy.GetByPath({"DCFG"}));
+  EXPECT_EQ(nullptr, hierarchy.GetByPath({"DCTL"}));
+  EXPECT_EQ(nullptr, hierarchy.GetByPath({"DSTS"}));
+}
+
 }  // namespace dwc3

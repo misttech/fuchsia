@@ -988,6 +988,27 @@ class UnmanagedTestFixture : public TestFixture<false> {
         zx::sec(10)));
   }
 
+  zx::result<> StartDriverWithoutPlatformExtension() {
+    return dut_.StartDriverWithCustomStartArgs([](fdf::DriverStartArgs& args) {
+      dwc3_config::Config cfg;
+      cfg.enable_suspend() = false;
+      cfg.bypass_platform_extension() = true;
+      args.config(cfg.ToVmo());
+    });
+  }
+
+  std::shared_ptr<std::atomic<uint32_t>> InterceptGctlReads() {
+    auto count = std::make_shared<std::atomic<uint32_t>>(0);
+    dut_.RunInEnvironmentTypeContext([count](Environment& env) {
+      auto& gctl_reg = env.reg_region()[GCTL::Get().addr()];
+      gctl_reg.SetReadCallback([count]() -> uint64_t {
+        (*count)++;
+        return GCTL::Get().FromValue(0).set_PWRDNSCALE(2).reg_value();
+      });
+    });
+    return count;
+  }
+
   void TearDownAndPowerOffDriver() {
     dut_.RunInDriverContext([&](Dwc3& drv) {
       Dwc3TestHelper::SetEpRsrcId(drv, 0, 2);
