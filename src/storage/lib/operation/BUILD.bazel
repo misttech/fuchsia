@@ -17,6 +17,7 @@ cc_library(
     ],
     hdrs = [
         "operation.h",
+        "operation_tree.h",
         "unbuffered_operation.h",
         "unbuffered_operations_builder.h",
     ],

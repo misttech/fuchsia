@@ -50,7 +50,6 @@ static_library("journal") {
       "journal.cc",
       "journal_writer.cc",
       "replay.cc",
-      "replay_tree.cc",
       "replay_tree.h",
       "superblock.cc",
     ]

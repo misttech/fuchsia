@@ -15,6 +15,7 @@
 #include <utility>
 #include <vector>
 
+#include "src/storage/lib/operation/operation_tree.h"
 #include "src/storage/lib/operation/unbuffered_operation.h"
 
 namespace storage {
@@ -25,7 +26,7 @@ namespace storage {
 // This class is thread-compatible.
 class UnbufferedOperationsBuilder {
  public:
-  UnbufferedOperationsBuilder() : block_count_(0) {}
+  UnbufferedOperationsBuilder() = default;
   UnbufferedOperationsBuilder(const UnbufferedOperationsBuilder&) = delete;
   UnbufferedOperationsBuilder& operator=(const UnbufferedOperationsBuilder&) = delete;
   UnbufferedOperationsBuilder(UnbufferedOperationsBuilder&&) = default;
@@ -33,9 +34,9 @@ class UnbufferedOperationsBuilder {
   ~UnbufferedOperationsBuilder();
 
   // Returns the total number of blocks in all requests.
-  uint64_t BlockCount() const { return block_count_; }
+  uint64_t BlockCount() const;
 
-  // Adds a UnbufferedOperation to the list of requests.
+  // Adds an UnbufferedOperation to the list of requests.
   //
   // Empty requests are dropped.
   void Add(const UnbufferedOperation& operation);
@@ -45,8 +46,7 @@ class UnbufferedOperationsBuilder {
   std::vector<UnbufferedOperation> TakeOperations();
 
  private:
-  std::vector<UnbufferedOperation> operations_;
-  uint64_t block_count_;
+  OperationTree<UnbufferedOperation> tree_;
 };
 
 }  // namespace storage

@@ -53,7 +53,7 @@ TEST(ReplayTreeTest, ContiguousOperationsMerge) {
   tree.insert(operation_b);
 
   ASSERT_EQ(tree.size(), 1ul);
-  ExpectOperationsEqual(operation_merged, tree.begin()->second.container().operation);
+  ExpectOperationsEqual(operation_merged, tree.begin()->second.container().operation());
 }
 
 // Vmo offset: Contiguous
@@ -70,9 +70,9 @@ TEST(ReplayTreeTest, NonContiguousDevOffsetsStaySeparate) {
 
   ASSERT_EQ(tree.size(), 2ul);
   auto iter = tree.begin();
-  ExpectOperationsEqual(operation_a, iter->second.container().operation);
+  ExpectOperationsEqual(operation_a, iter->second.container().operation());
   iter++;
-  ExpectOperationsEqual(operation_b, iter->second.container().operation);
+  ExpectOperationsEqual(operation_b, iter->second.container().operation());
 }
 
 // Vmo offset: Not contiguous
@@ -89,9 +89,9 @@ TEST(ReplayTreeTest, NonContiguousVmoOffsetsStaySeparate) {
 
   ASSERT_EQ(tree.size(), 2ul);
   auto iter = tree.begin();
-  ExpectOperationsEqual(operation_a, iter->second.container().operation);
+  ExpectOperationsEqual(operation_a, iter->second.container().operation());
   iter++;
-  ExpectOperationsEqual(operation_b, iter->second.container().operation);
+  ExpectOperationsEqual(operation_b, iter->second.container().operation());
 }
 
 // Vmo offset: Different
@@ -107,7 +107,7 @@ TEST(ReplayTreeTest, OverlappingDevOffsetTakesLatest) {
   tree.insert(operation_b);
 
   ASSERT_EQ(tree.size(), 1ul);
-  ExpectOperationsEqual(operation_b, tree.begin()->second.container().operation);
+  ExpectOperationsEqual(operation_b, tree.begin()->second.container().operation());
 }
 
 // Vmo offset: Different
@@ -123,9 +123,9 @@ TEST(ReplayTreeTest, NonContiguousVmoOffsetUpdateBreaksMergedOperations) {
   tree.insert(o3);
   ASSERT_EQ(tree.size(), 2ul);
   auto iter = tree.begin();
-  ExpectOperationsEqual(o3, iter->second.container().operation);
+  ExpectOperationsEqual(o3, iter->second.container().operation());
   iter++;
-  ExpectOperationsEqual(o2, iter->second.container().operation);
+  ExpectOperationsEqual(o2, iter->second.container().operation());
   iter++;
 }
 

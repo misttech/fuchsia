@@ -3,10 +3,16 @@
 # found in the LICENSE file.
 
 source_set("operation") {
-  public = [ "operation.h" ]
+  public = [
+    "operation.h",
+    "operation_tree.h",
+  ]
   sources = [ "operation.cc" ]
-  public_deps = [ "//sdk/lib/stdcompat" ]
-  deps = [ "//zircon/third_party/ulib/safemath" ]
+  public_deps = [
+    "//sdk/lib/stdcompat",
+    "//src/storage/lib/range",
+    "//zircon/third_party/ulib/safemath",
+  ]
 
   if (is_fuchsia) {
     public += [
@@ -15,10 +21,9 @@ source_set("operation") {
     ]
     sources += [ "unbuffered_operations_builder.cc" ]
     public_deps += [ "//zircon/system/ulib/zx" ]
-    deps += [
+    deps = [
       "//sdk/lib/fdio",
       "//sdk/lib/fit",
-      "//src/storage/lib/range",
       "//zircon/system/ulib/zx",
     ]
   }

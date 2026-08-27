@@ -153,7 +153,7 @@ zx_status_t ParseJournalEntries(const JournalSuperblock* info, storage::VmoBuffe
   *out_start = entry_start;
 
   for (const auto& [_, range] : operation_tree) {
-    operations->push_back(range.container().operation);
+    operations->push_back(range.container().operation());
   }
 
   return ZX_OK;
