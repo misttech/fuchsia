@@ -624,6 +624,31 @@ class Daemon:
         self.processes.clear()
         self.threads.clear()
 
+    def update_resumed_threads(
+        self,
+        thread_id: int | None,
+        single_thread: bool = False,
+    ) -> None:
+        """Updates thread stopped state when execution resumes."""
+
+        # |thread_id| cannot be None if |single_thread| is True.
+        if single_thread is True and thread_id is None:
+            raise ValueError(
+                "Single thread resumed without providing thread_id!"
+            )
+
+        thread = self.threads.get(thread_id) if thread_id is not None else None
+        if single_thread:
+            if thread is not None:
+                thread.resume()
+        else:
+            # When |single_thread| is False, it means that all threads in the system were resumed
+            # via a Continue request. For now the default behavior of all thread control DAP
+            # commands in zxdb's DAP server will always set single_thread to True, so this case is
+            # only relevant for Continue.
+            for p in self.processes.values():
+                p.resume()
+
     # TODO(https://fxbug.dev/545555364): Support event validation in this _process_events function.
     async def _process_events(self) -> None:
         allowed_events = {

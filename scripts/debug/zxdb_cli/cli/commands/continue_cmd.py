@@ -19,6 +19,10 @@ class Command(BaseCommand):
         continue_parser.add_argument(
             "thread_id", type=int, help="Thread ID to resume"
         )
+
+        # Note that unlike other thread control commands (step_in, step_out, etc), this is respected
+        # in zxdb's backend, and so therefore doesn't need anything additional here to reflect that
+        # behavior in the rest of the system.
         continue_parser.add_argument(
             "--single-thread",
             action="store_true",

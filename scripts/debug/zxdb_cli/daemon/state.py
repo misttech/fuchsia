@@ -14,6 +14,10 @@ class Thread:
     is_stopped: bool = field(default=False, compare=False)
     process: "Process | None" = field(default=None, repr=False, compare=False)
 
+    def resume(self) -> None:
+        """Marks the thread as resumed (is_stopped = False)."""
+        self.is_stopped = False
+
 
 @dataclass
 class Process:
@@ -24,6 +28,11 @@ class Process:
     threads: dict[int, Thread] = field(
         default_factory=dict, repr=False, compare=False
     )
+
+    def resume(self) -> None:
+        """Marks all threads in the process as resumed."""
+        for t in self.threads.values():
+            t.resume()
 
     @property
     def all_threads_stopped(self) -> bool:

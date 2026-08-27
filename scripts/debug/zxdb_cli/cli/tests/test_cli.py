@@ -134,6 +134,15 @@ class TestCLI(unittest.IsolatedAsyncioTestCase):
             )
 
     @patch("cli.cli.send_command")
+    async def test_finish_command_single_thread(self, mock_send: Mock) -> None:
+        mock_send.return_value = 0
+        exit_code = await main(["finish", "1", "--single-thread"])
+        self.assertEqual(exit_code, 0)
+        mock_send.assert_called_once_with(
+            FinishRequest(command="finish", thread_id=1, single_thread=True)
+        )
+
+    @patch("cli.cli.send_command")
     async def test_json_option_finish(self, mock_send: Mock) -> None:
         mock_send.return_value = 0
         exit_code = await main(
@@ -630,6 +639,15 @@ class TestCLI(unittest.IsolatedAsyncioTestCase):
             exit_code = await main([alias, "1"])
             self.assertEqual(exit_code, 0)
             mock_send.assert_called_once_with(StepInRequest(thread_id=1))
+
+    @patch("cli.cli.send_command")
+    async def test_step_in_command_single_thread(self, mock_send: Mock) -> None:
+        mock_send.return_value = 0
+        exit_code = await main(["step-in", "1", "--single-thread"])
+        self.assertEqual(exit_code, 0)
+        mock_send.assert_called_once_with(
+            StepInRequest(thread_id=1, single_thread=True)
+        )
 
     @patch("cli.cli.send_command")
     async def test_json_option_step_in(self, mock_send: Mock) -> None:

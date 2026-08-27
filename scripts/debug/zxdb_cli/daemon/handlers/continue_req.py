@@ -31,6 +31,10 @@ async def handle(daemon: Daemon, req: ContinueRequest) -> Response:
 
     try:
         resp = await daemon.dap_client.continue_thread(args)
+        all_threads_continued = resp.body.all_threads_continued in (None, True)
+        daemon.update_resumed_threads(
+            req.thread_id, single_thread=not all_threads_continued
+        )
         return Response(success=True, body=resp.dump_dap())
     except Exception as e:
         return Response(success=False, message=f"Failed to continue: {e}")
