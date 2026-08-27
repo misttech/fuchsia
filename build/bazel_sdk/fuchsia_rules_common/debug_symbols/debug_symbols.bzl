@@ -196,7 +196,7 @@ def _convert_fuchsia_unstripped_binary_info(binary_info):
     if source_search_root == None:
         source_search_root = "BUILD_WORKSPACE_DIRECTORY"
     return FuchsiaCollectedUnstrippedBinariesInfo(
-        source_search_root_to_unstripped_binary = {
+        source_search_root_to_unstripped_binaries = {
             source_search_root: depset([
                 struct(
                     dest = binary_info.dest,
@@ -229,14 +229,14 @@ def _merge_unstripped_binaries_infos(*targets_or_providers):
     """
 
     # A `Map { source_search_root -> list[depset[struct(dest, unstripped_file, stripped_file)]] }`.
-    # This is used to populate the `source_search_root_to_unstripped_binary`
+    # This is used to populate the `source_search_root_to_unstripped_binaries`
     # field in the returned provider.
     source_search_root_map = {}
 
     for target_or_provider in flatten(targets_or_providers):
         if type(target_or_provider) == "struct":
             provider = target_or_provider
-            if hasattr(provider, "source_search_root_to_unstripped_binary"):
+            if hasattr(provider, "source_search_root_to_unstripped_binaries"):
                 # `target_or_provider` *is* a `FuchsiaCollectedUnstrippedBinariesInfo` provider instance.
                 collected_info = provider
             elif hasattr(provider, "unstripped_file") and hasattr(provider, "dest"):
@@ -267,13 +267,13 @@ def _merge_unstripped_binaries_infos(*targets_or_providers):
                 repr(target_or_provider),
             ))
 
-        for source_search_root, binary_info_depset in collected_info.source_search_root_to_unstripped_binary.items():
+        for source_search_root, binary_info_depset in collected_info.source_search_root_to_unstripped_binaries.items():
             if source_search_root not in source_search_root_map:
                 source_search_root_map[source_search_root] = []
             source_search_root_map[source_search_root].append(binary_info_depset)
 
     return FuchsiaCollectedUnstrippedBinariesInfo(
-        source_search_root_to_unstripped_binary = {
+        source_search_root_to_unstripped_binaries = {
             source_search_root: depset(transitive = binary_info_depsets)
             for source_search_root, binary_info_depsets in source_search_root_map.items()
         },
@@ -335,7 +335,7 @@ def _find_and_process_unstripped_binaries_impl(ctx):
     # list[FuchsiaDebugSymbolInfo] covering the symbols of all stripped binaries.
     stripped_debug_symbol_infos = []
 
-    for source_search_root, unstripped_depset in all_collected_unstripped_binaries_info.source_search_root_to_unstripped_binary.items():
+    for source_search_root, unstripped_depset in all_collected_unstripped_binaries_info.source_search_root_to_unstripped_binaries.items():
         resources_to_strip = []
 
         for unstripped in unstripped_depset.to_list():

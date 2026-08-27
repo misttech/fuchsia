@@ -73,7 +73,7 @@ FuchsiaUnstrippedBinaryInfo, make_fuchsia_unstripped_binary_info = provider(
 FuchsiaCollectedUnstrippedBinariesInfo = provider(
     doc = "Contains information about a set of unstripped ELF binaries.",
     fields = {
-        "source_search_root_to_unstripped_binary": """
+        "source_search_root_to_unstripped_binaries": """
             A { source_search_root -> depset[struct(dest, unstripped_file, stripped_file)] } dictionary,
             Where 'unstripped_file' is a source File value for the unstripped file,
             where 'stripped_file' is either None, or a source File value for the corresponding
