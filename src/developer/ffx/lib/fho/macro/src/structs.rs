@@ -46,8 +46,8 @@ impl ToTokens for TryFromEnvInvocation<'_> {
         use TryFromEnvInvocation::*;
         match self {
             Normal(ty) => {
-                let ty_span = ty.span();
-                tokens.extend(quote_spanned! {ty_span=>
+                let span = Span::call_site().located_at(ty.span());
+                tokens.extend(quote_spanned! {span=>
                     fho::macro_deps::futures::future::TryFutureExt::map_err(
                         <#ty as fho::TryFromEnv>::try_from_env(&_env),
                         |e| fho::macro_deps::fho::Error::from(fho::macro_deps::anyhow::Error::new(e))
@@ -55,8 +55,8 @@ impl ToTokens for TryFromEnvInvocation<'_> {
                 });
             }
             Decorated(expr) => {
-                let expr_span = expr.span();
-                tokens.extend(quote_spanned! {expr_span=>
+                let span = Span::call_site().located_at(expr.span());
+                tokens.extend(quote_spanned! {span=>
                     fho::macro_deps::futures::future::TryFutureExt::map_err(
                         fho::TryFromEnvWith::try_from_env_with(#expr, &_env),
                         |e| fho::macro_deps::fho::Error::from(fho::macro_deps::anyhow::Error::new(e))
@@ -76,8 +76,8 @@ impl ToTokens for CommandFieldTypeDecl<'_> {
     fn to_tokens(&self, tokens: &mut TokenStream) {
         let command_field = &self.0;
         let ty = command_field.field_ty;
-        let ty_span = ty.span();
-        tokens.extend(quote_spanned! {ty_span=>
+        let span = Span::call_site().located_at(ty.span());
+        tokens.extend(quote_spanned! {span=>
             type Command = #ty;
         })
     }
@@ -171,7 +171,7 @@ struct CheckCollection(Vec<ExprCall>);
 impl ToTokens for CheckCollection {
     fn to_tokens(&self, tokens: &mut TokenStream) {
         for check in &self.0 {
-            let check_span = check.span();
+            let check_span = Span::call_site().located_at(check.span());
             tokens.extend(quote_spanned! { check_span =>
                 fho::CheckEnv::check_env(#check, &_env).await?;
             })
