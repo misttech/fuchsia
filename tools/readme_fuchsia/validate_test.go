@@ -161,3 +161,64 @@ func TestValidate_FirstParty_Success(t *testing.T) {
 		t.Fatalf("expected validation success for minimal FirstParty, got: %v", minimalErrs)
 	}
 }
+
+func TestValidate_LineSpansAndReplacements(t *testing.T) {
+	tmpDir := t.TempDir()
+	readmeContent := `Name: sample_lib
+URL: https://example.com
+Revision: 1234
+Security Critical: false
+License: MIT
+License File: NONEXISTENT_LICENSE
+Unknown Directive: value
+`
+	readmePath := filepath.Join(tmpDir, "README.fuchsia")
+	if err := os.WriteFile(readmePath, []byte(readmeContent), 0644); err != nil {
+		t.Fatalf("failed to write test file: %v", err)
+	}
+
+	readmes, err := ParseFile(readmePath)
+	if err != nil {
+		t.Fatalf("failed to parse file: %v", err)
+	}
+
+	errs := Validate(tmpDir, readmes)
+	if len(errs) != 3 {
+		t.Fatalf("expected 3 validation errors, got %d: %v", len(errs), errs)
+	}
+
+	var foundSecurityCritical, foundLicenseFile, foundUnknownField bool
+	for _, err := range errs {
+		f, ok := err.(Finding)
+		if !ok {
+			t.Fatalf("expected error to be of type Finding, got %T", err)
+		}
+		if f.FilePath != readmePath {
+			t.Errorf("expected FilePath %q, got %q", readmePath, f.FilePath)
+		}
+
+		if strings.Contains(f.Message, "Security Critical") {
+			foundSecurityCritical = true
+			if f.Line != 4 || f.EndLine != 4 {
+				t.Errorf("expected Security Critical line span 4-4, got %d-%d", f.Line, f.EndLine)
+			}
+			if len(f.Replacements) == 0 || f.Replacements[0] != "Security Critical: no" {
+				t.Errorf("expected replacement 'Security Critical: no', got %v", f.Replacements)
+			}
+		} else if strings.Contains(f.Message, "License File does not exist") {
+			foundLicenseFile = true
+			if f.Line != 6 || f.EndLine != 6 {
+				t.Errorf("expected License File line span 6-6, got %d-%d", f.Line, f.EndLine)
+			}
+		} else if strings.Contains(f.Message, "Found unknown/invalid fields") {
+			foundUnknownField = true
+			if f.Line != 7 || f.EndLine != 7 {
+				t.Errorf("expected Unknown Directive line span 7-7, got %d-%d", f.Line, f.EndLine)
+			}
+		}
+	}
+
+	if !foundSecurityCritical || !foundLicenseFile || !foundUnknownField {
+		t.Errorf("missing expected errors: sec_crit=%v, lic_file=%v, unknown=%v", foundSecurityCritical, foundLicenseFile, foundUnknownField)
+	}
+}

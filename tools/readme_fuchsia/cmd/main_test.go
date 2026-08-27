@@ -6,10 +6,13 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"go.fuchsia.dev/fuchsia/tools/readme_fuchsia"
 )
 
 func TestRunValidate_FailureMessage(t *testing.T) {
@@ -192,5 +195,66 @@ func TestResolveReadmePath(t *testing.T) {
 	relPath := "some/local/README.fuchsia"
 	if got := resolveReadmePath(relPath); got != relPath {
 		t.Errorf("resolveReadmePath(%q) = %q, want %q", relPath, got, relPath)
+	}
+}
+
+func TestRunValidate_FindingsFile(t *testing.T) {
+	tmpDir := t.TempDir()
+	readmePath := filepath.Join(tmpDir, "README.fuchsia")
+	findingsPath := filepath.Join(tmpDir, "findings.json")
+
+	content := `Name: test_lib
+URL: https://example.com
+Revision: 12345
+Security Critical: false
+License: MIT
+License File: LICENSE
+`
+	if err := os.WriteFile(readmePath, []byte(content), 0644); err != nil {
+		t.Fatalf("failed to write test file: %v", err)
+	}
+	licensePath := filepath.Join(tmpDir, "LICENSE")
+	if err := os.WriteFile(licensePath, []byte("MIT License"), 0644); err != nil {
+		t.Fatalf("failed to write license file: %v", err)
+	}
+
+	oldStderr := os.Stderr
+	r, w, _ := os.Pipe()
+	os.Stderr = w
+
+	err := runValidate([]string{"--findings_file", findingsPath, readmePath})
+	w.Close()
+	os.Stderr = oldStderr
+
+	var buf bytes.Buffer
+	buf.ReadFrom(r)
+
+	if err == nil {
+		t.Fatal("expected validation error, got nil")
+	}
+
+	data, err := os.ReadFile(findingsPath)
+	if err != nil {
+		t.Fatalf("failed to read findings file: %v", err)
+	}
+
+	var findings []readme_fuchsia.Finding
+	if err := json.Unmarshal(data, &findings); err != nil {
+		t.Fatalf("failed to unmarshal findings JSON: %v", err)
+	}
+
+	if len(findings) != 1 {
+		t.Fatalf("expected 1 finding, got %d: %+v", len(findings), findings)
+	}
+
+	f := findings[0]
+	if f.Line != 4 || f.EndLine != 4 {
+		t.Errorf("expected finding on line 4, got %d-%d", f.Line, f.EndLine)
+	}
+	if len(f.Replacements) == 0 || f.Replacements[0] != "Security Critical: no" {
+		t.Errorf("expected replacement 'Security Critical: no', got %v", f.Replacements)
+	}
+	if f.Level != "error" {
+		t.Errorf("expected level 'error', got %q", f.Level)
 	}
 }

@@ -58,7 +58,14 @@ func ParseFile(path string) ([]*Readme, error) {
 	if err != nil {
 		return nil, err
 	}
-	return Parse(data)
+	readmes, err := Parse(data)
+	if err != nil {
+		return nil, err
+	}
+	for _, r := range readmes {
+		r.FilePath = path
+	}
+	return readmes, nil
 }
 
 // deduplicateAndSort takes a slice of strings, trims whitespace, removes empties and duplicates, and sorts them.
@@ -81,108 +88,133 @@ func deduplicateAndSort(items []string) []string {
 func Parse(data []byte) ([]*Readme, error) {
 	var readmes []*Readme
 
-	blocks := bytes.Split(data, []byte(dependencyDivider))
+	newReadme := func(blockIdx, startLine int) (*Readme, reflect.Value) {
+		r := &Readme{
+			BlockIndex: blockIdx,
+			BlockSpan:  LineSpan{StartLine: startLine, EndLine: startLine},
+			Spans:      make(map[string]LineSpan),
+		}
+		return r, reflect.ValueOf(r).Elem()
+	}
 
-	for i, block := range blocks {
-		if i > 0 && len(bytes.TrimSpace(block)) == 0 {
+	readme, readmeVal := newReadme(0, 1)
+	readmes = append(readmes, readme)
+
+	var currentKey string
+	var currentKeyStartLine int
+	var currentValue strings.Builder
+	lineNum := 0
+
+	scanner := bufio.NewScanner(bytes.NewReader(data))
+	for scanner.Scan() {
+		lineNum++
+		line := scanner.Text()
+		trimmed := strings.TrimSpace(line)
+
+		// Check for dependency divider
+		if trimmed == dependencyDivider {
+			readme.BlockSpan.EndLine = lineNum - 1
+			currentKey = ""
+			currentValue.Reset()
+			readme, readmeVal = newReadme(len(readmes), lineNum)
+			readmes = append(readmes, readme)
 			continue
 		}
-		readme := &Readme{}
-		readmeVal := reflect.ValueOf(readme).Elem()
 
-		var currentKey string
-		var currentValue strings.Builder
+		readme.BlockSpan.EndLine = lineNum
 
-		scanner := bufio.NewScanner(bytes.NewReader(block))
-		for scanner.Scan() {
-			line := scanner.Text()
-			trimmed := strings.TrimSpace(line)
-
-			// Check if we are currently inside a multi-line field
-			inMultiline := false
-			if currentKey != "" {
-				if meta, ok := directiveMap[currentKey]; ok && meta.Multiline {
-					inMultiline = true
-				}
+		// Check if we are currently inside a multi-line field
+		inMultiline := false
+		if currentKey != "" {
+			if meta, ok := directiveMap[currentKey]; ok && meta.Multiline {
+				inMultiline = true
 			}
+		}
 
-			// Skip empty lines or comments ONLY if we are not actively parsing a multi-line field.
-			if (trimmed == "" || strings.HasPrefix(trimmed, "#")) && !inMultiline {
+		// Skip empty lines or comments ONLY if we are not actively parsing a multi-line field.
+		if (trimmed == "" || strings.HasPrefix(trimmed, "#")) && !inMultiline {
+			continue
+		}
+
+		isRootDirective := false
+		cleanLine := strings.TrimLeft(line, " \t->")
+		parts := strings.SplitN(cleanLine, ":", 2)
+
+		if len(parts) == 2 {
+			key := strings.TrimSpace(parts[0])
+			value := strings.TrimSpace(parts[1])
+
+			if meta, ok := directiveMap[key]; ok {
+				isRootDirective = true
+				fieldVal := readmeVal.Field(meta.Index)
+
+				if meta.IsSlice {
+					// Split by separator (usually comma)
+					items := strings.Split(value, meta.Separator)
+					for _, item := range items {
+						itemStr := strings.TrimSpace(item)
+						if itemStr != "" {
+							fieldVal.Set(reflect.Append(fieldVal, reflect.ValueOf(itemStr)))
+							readme.Spans[itemStr] = LineSpan{StartLine: lineNum, EndLine: lineNum}
+						}
+					}
+					readme.Spans[key] = LineSpan{StartLine: lineNum, EndLine: lineNum}
+					currentKey = ""
+				} else {
+					currentKey = key
+					currentKeyStartLine = lineNum
+					currentValue.Reset()
+					currentValue.WriteString(value)
+					fieldVal.SetString(currentValue.String())
+					readme.Spans[key] = LineSpan{StartLine: lineNum, EndLine: lineNum}
+				}
+				continue
+			} else if !inMultiline {
+				// We hit a Key: Value pair, it's not a known directive, and we are NOT
+				// currently inside a multi-line field. This is an unknown field.
+				// We only record it if it's not a legacy ignored field.
+				if key != "License Type" && key != "License File URL" && key != "License Reference" && key != "Non-License File Explanation" && key != "Notes" {
+					readme.UnknownFields = append(readme.UnknownFields, UnknownField{
+						Key:   key,
+						Value: value,
+						Span:  LineSpan{StartLine: lineNum, EndLine: lineNum},
+					})
+				}
+				currentKey = ""
+				isRootDirective = true
 				continue
 			}
-
-			isRootDirective := false
-			cleanLine := strings.TrimLeft(line, " \t->")
-			parts := strings.SplitN(cleanLine, ":", 2)
-
-			if len(parts) == 2 {
-				key := strings.TrimSpace(parts[0])
-				value := strings.TrimSpace(parts[1])
-
-				if meta, ok := directiveMap[key]; ok {
-					isRootDirective = true
-					fieldVal := readmeVal.Field(meta.Index)
-
-					if meta.IsSlice {
-						// Split by separator (usually comma)
-						items := strings.Split(value, meta.Separator)
-						for _, item := range items {
-							itemStr := strings.TrimSpace(item)
-							if itemStr != "" {
-								fieldVal.Set(reflect.Append(fieldVal, reflect.ValueOf(itemStr)))
-							}
-						}
-						currentKey = ""
-					} else {
-						currentKey = key
-						currentValue.Reset()
-						currentValue.WriteString(value)
-						fieldVal.SetString(currentValue.String())
-					}
-					continue
-				} else if !inMultiline {
-					// We hit a Key: Value pair, it's not a known directive, and we are NOT
-					// currently inside a multi-line field. This is an unknown field.
-					// We only record it if it's not a legacy ignored field.
-					if key != "License Type" && key != "License File URL" && key != "License Reference" && key != "Non-License File Explanation" && key != "Notes" {
-						readme.UnknownFields = append(readme.UnknownFields, UnknownField{
-							Key:   key,
-							Value: value,
-						})
-					}
-					currentKey = ""
-					isRootDirective = true
-					continue
-				}
-			}
-
-			// Continuation of a multi-line value
-			if !isRootDirective && inMultiline {
-				if trimmed == "" {
-					currentValue.WriteString("\n")
-				} else {
-					// Strip up to 2 spaces of indentation from continuation lines
-					unindented := line
-					if strings.HasPrefix(unindented, "  ") {
-						unindented = unindented[2:]
-					} else if strings.HasPrefix(unindented, " ") {
-						unindented = unindented[1:]
-					}
-					currentValue.WriteString("\n" + strings.TrimRight(unindented, " \t\r\n"))
-				}
-				readmeVal.Field(directiveMap[currentKey].Index).SetString(currentValue.String())
-			}
 		}
 
-		if err := scanner.Err(); err != nil {
-			return nil, fmt.Errorf("error scanning README bytes: %w", err)
+		// Continuation of a multi-line value
+		if !isRootDirective && inMultiline {
+			if trimmed == "" {
+				currentValue.WriteString("\n")
+			} else {
+				// Strip up to 2 spaces of indentation from continuation lines
+				unindented := line
+				if strings.HasPrefix(unindented, "  ") {
+					unindented = unindented[2:]
+				} else if strings.HasPrefix(unindented, " ") {
+					unindented = unindented[1:]
+				}
+				currentValue.WriteString("\n" + strings.TrimRight(unindented, " \t\r\n"))
+			}
+			readmeVal.Field(directiveMap[currentKey].Index).SetString(currentValue.String())
+			readme.Spans[currentKey] = LineSpan{StartLine: currentKeyStartLine, EndLine: lineNum}
 		}
+	}
 
-		// Deduplicate and sort all list fields (e.g., License Files) dynamically.
-		// We use reflection to find any field of type []string (except UnknownFields).
-		for i := 0; i < readmeVal.NumField(); i++ {
-			f := readmeVal.Field(i)
-			if f.Kind() == reflect.Slice && f.Type().Elem().Kind() == reflect.String && readmeVal.Type().Field(i).Name != "UnknownFields" {
+	if err := scanner.Err(); err != nil {
+		return nil, fmt.Errorf("error scanning README bytes: %w", err)
+	}
+
+	// Deduplicate and sort all list fields (e.g., License Files) dynamically.
+	for _, r := range readmes {
+		rVal := reflect.ValueOf(r).Elem()
+		for i := 0; i < rVal.NumField(); i++ {
+			f := rVal.Field(i)
+			if f.Kind() == reflect.Slice && f.Type().Elem().Kind() == reflect.String && rVal.Type().Field(i).Name != "UnknownFields" {
 				if f.Len() > 0 {
 					var strSlice []string
 					for j := 0; j < f.Len(); j++ {
@@ -196,8 +228,6 @@ func Parse(data []byte) ([]*Readme, error) {
 				}
 			}
 		}
-
-		readmes = append(readmes, readme)
 	}
 
 	return readmes, nil

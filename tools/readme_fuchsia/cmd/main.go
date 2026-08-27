@@ -5,6 +5,7 @@
 package main
 
 import (
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -124,11 +125,13 @@ func runValidate(args []string) error {
 	fs := flag.NewFlagSet("validate", flag.ExitOnError)
 	projectRoot := fs.String("project-root", "", "Optional override for the project's physical location")
 	allowMissingLicense := fs.Bool("allow-missing-license", false, "Allow missing license/license file")
+	findingsFile := fs.String("findings_file", "", "Optional path to write structured JSON findings")
+	fs.StringVar(findingsFile, "findings-file", "", "Alias for -findings_file")
 
 	fs.Parse(args)
 
 	if fs.NArg() != 1 {
-		return fmt.Errorf("usage: validate [--project-root <dir>] [--allow-missing-license] <path/to/README.fuchsia>")
+		return fmt.Errorf("usage: validate [--project-root <dir>] [--allow-missing-license] [--findings_file <path>] <path/to/README.fuchsia>")
 	}
 
 	readmePath := resolveReadmePath(fs.Arg(0))
@@ -162,6 +165,38 @@ func runValidate(args []string) error {
 		}
 		errs = filteredErrs
 	}
+
+	if *findingsFile != "" {
+		findings := []readme_fuchsia.Finding{}
+		for _, err := range errs {
+			if f, ok := err.(readme_fuchsia.Finding); ok {
+				if f.FilePath == "" {
+					f.FilePath = readmePath
+				}
+				findings = append(findings, f)
+			} else {
+				findings = append(findings, readme_fuchsia.Finding{
+					FilePath: readmePath,
+					Level:    "error",
+					Message:  err.Error(),
+				})
+			}
+		}
+
+		data, marshalErr := json.MarshalIndent(findings, "", "  ")
+		if marshalErr != nil {
+			return fmt.Errorf("failed to marshal findings: %w", marshalErr)
+		}
+		if dir := filepath.Dir(*findingsFile); dir != "" && dir != "." {
+			if err := os.MkdirAll(dir, 0755); err != nil {
+				return fmt.Errorf("failed to create directory for findings file: %w", err)
+			}
+		}
+		if err := os.WriteFile(*findingsFile, append(data, '\n'), 0644); err != nil {
+			return fmt.Errorf("failed to write findings file: %w", err)
+		}
+	}
+
 	if len(errs) > 0 {
 		fmt.Fprintf(os.Stderr, "validation failed for %s\n", readmePath)
 		for _, err := range errs {
