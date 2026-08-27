@@ -5,7 +5,7 @@
 """Tests for the utils.bzl file"""
 
 load("@bazel_skylib//lib:unittest.bzl", "asserts", "unittest")
-load("@rules_fuchsia//fuchsia:private_defs.bzl", "append_suffix_to_label")
+load("@rules_fuchsia//fuchsia/private:utils.bzl", "append_suffix_to_label")
 
 def _append_suffix_to_label_test(ctx):
     env = unittest.begin(ctx)

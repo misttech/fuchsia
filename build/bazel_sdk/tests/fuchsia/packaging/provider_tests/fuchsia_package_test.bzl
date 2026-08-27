@@ -17,10 +17,13 @@ load(
     "get_driver_component_manifests",
 )
 load(
-    "@rules_fuchsia//fuchsia:private_defs.bzl",
+    "@rules_fuchsia//fuchsia/private:fuchsia_api_level.bzl",
     "FUCHSIA_API_LEVEL_TARGET",
-    "FuchsiaPackageInfo",
     "REPOSITORY_DEFAULT_FUCHSIA_API_LEVEL_TARGET",
+)
+load(
+    "@rules_fuchsia//fuchsia_rules_common/packages:providers.bzl",
+    "FuchsiaPackageInfo",
 )
 load(
     "//fuchsia/packaging:common_utils.bzl",
