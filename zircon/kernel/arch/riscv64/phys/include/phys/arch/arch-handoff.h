@@ -11,6 +11,7 @@
 // expected to be compiled in the userboot toolchain.
 
 #include <lib/arch/riscv64/feature.h>
+#include <lib/stdbind/optional.h>
 #include <lib/zbi-format/driver-config.h>
 #include <zircon/tls.h>
 
@@ -43,10 +44,10 @@ struct ArchPhysHandoff {
   arch::RiscvFeatures cpu_features;
 
   // (ZBI_TYPE_KERNEL_DRIVER, ZBI_KERNEL_DRIVER_RISCV_PLIC) payload.
-  std::optional<zbi_dcfg_riscv_plic_driver_t> plic_driver;
+  stdbind::optional<zbi_dcfg_riscv_plic_driver_t> plic_driver;
 
   // (ZBI_TYPE_KERNEL_DRIVER, ZBI_KERNEL_DRIVER_RISCV_GENERIC_TIMER) payload.
-  std::optional<zbi_dcfg_riscv_generic_timer_driver_t> generic_timer_driver;
+  stdbind::optional<zbi_dcfg_riscv_generic_timer_driver_t> generic_timer_driver;
 };
 
 #endif  // ZIRCON_KERNEL_ARCH_RISCV64_PHYS_INCLUDE_PHYS_ARCH_ARCH_HANDOFF_H_

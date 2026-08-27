@@ -18,22 +18,22 @@
 
 void PlatformDriverHandoffEarly(const ArchPhysHandoff& arch_handoff) {
   if (arch_handoff.plic_driver) {
-    plic_init_early(arch_handoff.plic_driver.value());
+    plic_init_early(*arch_handoff.plic_driver.to_std());
   }
 
   if (arch_handoff.generic_timer_driver) {
-    riscv_generic_timer_init_early(arch_handoff.generic_timer_driver.value());
+    riscv_generic_timer_init_early(*arch_handoff.generic_timer_driver.to_std());
   }
 }
 
 void PlatformDriverHandoffPostVm(const ArchPhysHandoff& arch_handoff) {
   if (arch_handoff.plic_driver) {
-    plic_init_post_vm(arch_handoff.plic_driver.value());
+    plic_init_post_vm(*arch_handoff.plic_driver.to_std());
   }
 }
 
 void PlatformDriverHandoffLate(const ArchPhysHandoff& arch_handoff) {
   if (arch_handoff.plic_driver) {
-    plic_init_late(arch_handoff.plic_driver.value());
+    plic_init_late(*arch_handoff.plic_driver.to_std());
   }
 }

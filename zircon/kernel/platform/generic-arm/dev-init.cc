@@ -45,17 +45,17 @@ void PlatformDriverHandoffEarly(const ArchPhysHandoff& arch_handoff) {
   ktl::visit([](const auto& config) { ArmGicInitEarly(config); }, arch_handoff.gic_driver);
 
   if (arch_handoff.generic32_watchdog_driver) {
-    generic_32bit_watchdog_early_init(arch_handoff.generic32_watchdog_driver.value());
+    generic_32bit_watchdog_early_init(*arch_handoff.generic32_watchdog_driver.to_std());
   }
 
   if (arch_handoff.generic_timer_driver) {
-    ArmGenericTimerInit(arch_handoff.generic_timer_driver.value());
+    ArmGenericTimerInit(*arch_handoff.generic_timer_driver.to_std());
   }
 
   // Initialize psci before the other power drivers, as they may decide to
   // override the psci's power registration.
   if (arch_handoff.psci_driver) {
-    PsciInit(arch_handoff.psci_driver.value(), arch_handoff.psci_cpu_suspend_driver.get());
+    PsciInit(*arch_handoff.psci_driver.to_std(), arch_handoff.psci_cpu_suspend_driver.get());
   }
 
   if (arch_handoff.motmot_power_driver) {
@@ -82,11 +82,11 @@ void PlatformDriverHandoffPostVm(const ArchPhysHandoff& arch_handoff) {
   ktl::visit([](const auto& config) { ArmGicInitPostVm(config); }, arch_handoff.gic_driver);
 
   if (arch_handoff.generic_timer_driver) {
-    ArmGenericTimerInitPostVm(arch_handoff.generic_timer_driver.value());
+    ArmGenericTimerInitPostVm(*arch_handoff.generic_timer_driver.to_std());
   }
 
   if (arch_handoff.generic32_watchdog_driver) {
-    generic_32bit_watchdog_init_post_vm(arch_handoff.generic32_watchdog_driver.value());
+    generic_32bit_watchdog_init_post_vm(*arch_handoff.generic32_watchdog_driver.to_std());
   }
 }
 
@@ -98,7 +98,7 @@ void PlatformDriverHandoffLate(const ArchPhysHandoff& arch_handoff) {
   // boot because we currently use the heap in the driver.  Consider moving to
   // static allocation so we can init early instead.
   if (arch_handoff.generic_timer_mmio_driver) {
-    Armv7MmioTimer::Init(arch_handoff.generic_timer_mmio_driver.value());
+    Armv7MmioTimer::Init(*arch_handoff.generic_timer_mmio_driver.to_std());
   }
 
   // If we have any SMMU descriptions in the ZBI, check the kernel.arm-smmu-mode
@@ -121,15 +121,15 @@ void PlatformDriverHandoffLate(const ArchPhysHandoff& arch_handoff) {
   }
 
   if (arch_handoff.amlogic_hdcp_driver) {
-    AmlogicS912HdcpInit(arch_handoff.amlogic_hdcp_driver.value());
+    AmlogicS912HdcpInit(*arch_handoff.amlogic_hdcp_driver.to_std());
   }
 
   if (arch_handoff.amlogic_rng_driver) {
-    AmlogicRngInit(arch_handoff.amlogic_rng_driver.value());
+    AmlogicRngInit(*arch_handoff.amlogic_rng_driver.to_std());
   }
 
   if (arch_handoff.qcom_rng_driver) {
-    QcomRngInit(arch_handoff.qcom_rng_driver.value());
+    QcomRngInit(*arch_handoff.qcom_rng_driver.to_std());
   }
 
   if (arch_handoff.generic32_watchdog_driver) {

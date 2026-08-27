@@ -289,8 +289,8 @@ static void init_topology(uint level) {
   if (result != ZX_OK) {
     // Only attempt to use the SBI fallback if our global allow define is set and we're
     // running on QEMU.
-    if (ENABLE_SBI_TOPOLOGY_DETECT_FALLBACK && gPhysHandoff->platform_id.has_value() &&
-        strcmp(gPhysHandoff->platform_id->board_name, "qemu-riscv64") == 0) {
+    if (ENABLE_SBI_TOPOLOGY_DETECT_FALLBACK && gPhysHandoff->platform_id &&
+        strcmp(gPhysHandoff->platform_id.to_std()->board_name, "qemu-riscv64") == 0) {
       printf(
           "SMP: Failed to initialize system topolgy from handoff data, probing for secondary cpus via SBI\n");
 

@@ -17,6 +17,7 @@
 #include <lib/crypto/entropy_pool.h>
 #include <lib/elfldltl/layout.h>
 #include <lib/memalloc/range.h>
+#include <lib/stdbind/optional.h>
 #include <lib/uart/all.h>
 #include <lib/zbi-format/board.h>
 #include <lib/zbi-format/cpu.h>
@@ -402,15 +403,15 @@ struct PhysHandoff {
   PhysHandoffPhysicalSpan<std::byte> nvram;
 
   // ZBI_TYPE_PLATFORM_ID payload.
-  std::optional<zbi_platform_id_t> platform_id;
+  stdbind::optional<zbi_platform_id_t> platform_id;
 
   // ZBI_TYPE_ACPI_RSDP payload.
   // Physical address of the ACPI RSDP (Root System Descriptor Pointer).
-  std::optional<uint64_t> acpi_rsdp;
+  stdbind::optional<uint64_t> acpi_rsdp;
 
   // ZBI_TYPE_SMBIOS payload.
   // Physical address of the SMBIOS tables.
-  std::optional<uint64_t> smbios_phys;
+  stdbind::optional<uint64_t> smbios_phys;
 
   // ZBI_TYPE_EFI_MEMORY_ATTRIBUTES_TABLE payload.
   // EFI memory attributes table.
@@ -418,7 +419,7 @@ struct PhysHandoff {
 
   // ZBI_TYPE_EFI_SYSTEM_TABLE payload.
   // Physical address of the EFI system table.
-  std::optional<uint64_t> efi_system_table;
+  stdbind::optional<uint64_t> efi_system_table;
 
   // Initialized UART to be used by the kernel, if any.
   uart::all::Driver uart;

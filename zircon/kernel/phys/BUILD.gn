@@ -870,6 +870,9 @@ source_set("handoff") {
 
     # handoff.h has #include <lib/elfldltl/layout.h>.
     "//src/lib/elfldltl",
+
+    # handoff.h has #include <lib/stdbind/optional.h>.
+    "//src/lib/stdbind:headers",
   ]
 
   if (toolchain_environment == "kernel") {

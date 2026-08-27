@@ -36,7 +36,7 @@ fbl::RefPtr<VmAspace> efi_aspace;
 void EfiInitHook(uint level) {
   // Attempt to initialize EFI.
   if (gPhysHandoff->efi_system_table) {
-    zx_status_t status = InitEfiServices(gPhysHandoff->efi_system_table.value());
+    zx_status_t status = InitEfiServices(*gPhysHandoff->efi_system_table.to_std());
     if (status != ZX_OK) {
       dprintf(INFO, "Unable to initialize EFI services: %d\n", status);
       return;
