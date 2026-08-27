@@ -60,15 +60,6 @@ static VIM3_PARSER_CONFIG: DmlParserConfig = DmlParserConfig {
             }],
             ..DEFAULT_SERVICE_BIND_CONFIG
         },
-        "fuchsia.hardware.usb.phy.Service" => ServiceBindConfig {
-            rules: &[PropertyRule {
-                bind_key: "fuchsia.BIND_PLATFORM_DEV_DID",
-                sources: &[ValueSource::ConstraintKey("did")],
-                value_type: RuleValueType::Integer,
-                destination: Destination::Both,
-            }],
-            ..DEFAULT_SERVICE_BIND_CONFIG
-        },
         "fuchsia.hardware.gpu.mali.Service" => ServiceBindConfig {
             transport: TransportType::Driver,
             ..DEFAULT_SERVICE_BIND_CONFIG

@@ -30,10 +30,7 @@
     },
     {
       service: "fuchsia.hardware.usb.phy.Service",
-      name: "dwc2-phy",
-      bind: {
-        did: "fuchsia.platform.BIND_PLATFORM_DEV_DID.USB_DWC2"
-      }
+      name: "dwc2-phy"
     },
     {
       service: "fuchsia.boot.metadata.MacAddressMetadata",
