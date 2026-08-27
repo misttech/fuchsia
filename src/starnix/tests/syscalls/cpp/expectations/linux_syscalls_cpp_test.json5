@@ -36,6 +36,10 @@
                 "PerfEventOpenTest.MmapMetadataPageIsValid",
                 "PerfEventOpenTest.InvalidDataTailIgnoredByKernel",
 
+                // TODO(https://fxbug.dev/436914153): This is flakey.
+                "Pty.EchoFlags",
+                "Pty.EchoModes",
+
                 // TODO(https://fxbug.dev/437153843): These tests seem to behave erratically across
                 // environments, yet consistently within that environment. For example, they pass
                 // on my local machine (150 iterations), yet fail on CQ, yet again pass in CI.
