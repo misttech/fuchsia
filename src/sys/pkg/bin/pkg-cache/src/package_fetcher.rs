@@ -6,11 +6,10 @@ use fidl_fuchsia_pkg as fpkg;
 use std::collections::HashSet;
 use std::sync::Arc;
 
-/// Work-queue based package resolver. When all clones of
-/// [`QueuedResolver`] are dropped, the queue will resolve all remaining
-/// packages and terminate its output stream.
+/// Work-queue based package fetcher. When all clones of [`PackageFetcher`] are dropped, the queue
+/// will fetch all remaining packages and terminate its output stream.
 #[derive(Clone, Debug)]
-pub struct QueuedResolver {
+pub struct PackageFetcher {
     sender: work_queue::WorkSender<
         fuchsia_hash::Hash,
         QueueContext,
@@ -38,8 +37,8 @@ impl work_queue::TryMerge for QueueContext {
     }
 }
 
-impl QueuedResolver {
-    /// Creates an unbounded queue that will resolve up to `max_concurrency` packages at once.
+impl PackageFetcher {
+    /// Creates an unbounded queue that will fetch up to `max_concurrency` packages at once.
     /// Returns:
     ///   1. a Future to be awaited that processes the queue
     ///   2. a Self that enables pushing work onto the queue
@@ -60,7 +59,7 @@ impl QueuedResolver {
                 let root_dir_factory = root_dir_factory.clone();
                 let open_packages = open_packages.clone();
                 async move {
-                    resolve(
+                    fetch(
                         pkg_id,
                         context.blob_source,
                         context.gc_protection,
@@ -77,7 +76,7 @@ impl QueuedResolver {
         (queue.into_future(), Self { sender })
     }
 
-    pub(crate) async fn resolve(
+    pub(crate) async fn fetch(
         &self,
         pkg_id: fuchsia_hash::Hash,
         blob_source: http::Uri,
@@ -90,7 +89,7 @@ impl QueuedResolver {
     }
 }
 
-async fn resolve(
+async fn fetch(
     pkg_id: fuchsia_hash::Hash,
     blob_source: http::Uri,
     gc_protection: fpkg::GcProtection,
@@ -101,7 +100,7 @@ async fn resolve(
     open_packages: &crate::RootDirCache,
 ) -> Result<Arc<crate::RootDir>, Arc<Error>> {
     let gc_guard = package_index.write().await.start_writing(pkg_id, gc_protection);
-    let resolve_ret = resolve_impl(
+    let fetch_ret = fetch_impl(
         pkg_id,
         blob_source,
         package_index,
@@ -113,17 +112,17 @@ async fn resolve(
     )
     .await;
     let stop_ret = package_index.write().await.stop_writing(gc_guard);
-    match (resolve_ret, stop_ret) {
-        (resolve_ret, Ok(())) => resolve_ret,
+    match (fetch_ret, stop_ret) {
+        (fetch_ret, Ok(())) => fetch_ret,
         (Ok(_), Err(e)) => Err(Error::ClearWritingIndex(e)),
-        (Err(resolve_err), Err(stop_err)) => {
-            Err(Error::ResolveAndClearFailed { source: Box::new(resolve_err), stop_err })
+        (Err(fetch_err), Err(stop_err)) => {
+            Err(Error::FetchAndClearFailed { source: Box::new(fetch_err), stop_err })
         }
     }
     .map_err(Arc::new)
 }
 
-async fn resolve_impl(
+async fn fetch_impl(
     pkg_id: fuchsia_merkle::Hash,
     blob_source: http::Uri,
     package_index: &async_lock::RwLock<crate::index::PackageIndex>,
@@ -138,8 +137,8 @@ async fn resolve_impl(
     let context = crate::blob_fetcher::QueueContext::new(blob_source);
     let mut ret = None;
     while let Some(blob_id) = queue.pop_front() {
-        // The blob fetcher performs this check as well, but check here to avoid blocking the
-        // resolve of an already cached package on a full blob fetch queue.
+        // The blob fetcher performs this check as well, but check here to avoid blocking the fetch
+        // of an already cached package on a full blob fetch queue.
         if !blobfs_client.blob_present_and_up_to_date(&blob_id).await {
             let () = blob_fetcher
                 .push(blob_id.into(), context.clone())
@@ -228,11 +227,11 @@ pub(crate) enum Error {
     #[error("creating root dir with open package tracking")]
     CreatingTrackedRootDir(#[source] package_directory::Error),
 
-    #[error("clearing the writing index after resolve complete")]
+    #[error("clearing the writing index after fetch complete")]
     ClearWritingIndex(#[source] crate::index::StopError),
 
-    #[error("clearing the writing index failed {stop_err:?} after the resolve failed")]
-    ResolveAndClearFailed {
+    #[error("clearing the writing index failed {stop_err:?} after the fetch failed")]
+    FetchAndClearFailed {
         #[source]
         source: Box<Error>,
         stop_err: crate::index::StopError,
@@ -254,7 +253,7 @@ impl From<&Error> for fpkg::ResolveError {
             ProtectBlobs(_) => Err::Internal,
             CreatingTrackedRootDir(_) => Err::Io,
             ClearWritingIndex(_) => Err::Internal,
-            ResolveAndClearFailed { source, .. } => (&**source).into(),
+            FetchAndClearFailed { source, .. } => (&**source).into(),
             PushQueue(_) => Err::Internal,
         }
     }

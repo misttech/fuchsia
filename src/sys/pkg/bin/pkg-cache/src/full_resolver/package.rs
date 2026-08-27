@@ -32,7 +32,7 @@ pub(crate) async fn serve_request_stream(
     upgradable_packages: Option<Arc<UpgradablePackages>>,
     tuf_authority: fpkg::AuthorityProxy,
     cache_index: Arc<crate::CacheIndex>,
-    queued_resolver: crate::queued_resolver::QueuedResolver,
+    package_fetcher: crate::package_fetcher::PackageFetcher,
     authenticator: context_authenticator::ContextAuthenticator,
     open_packages: crate::RootDirCache,
     executability_restrictions: system_image::ExecutabilityRestrictions,
@@ -50,7 +50,7 @@ pub(crate) async fn serve_request_stream(
                         upgradable_packages.as_deref(),
                         &tuf_authority,
                         cache_index.as_ref(),
-                        &queued_resolver,
+                        &package_fetcher,
                         authenticator.clone(),
                         &open_packages,
                         executability_restrictions,
@@ -84,7 +84,7 @@ pub(crate) async fn serve_request_stream(
                     upgradable_packages.as_deref(),
                     &tuf_authority,
                     cache_index.as_ref(),
-                    &queued_resolver,
+                    &package_fetcher,
                     authenticator.clone(),
                     &open_packages,
                     executability_restrictions,
@@ -142,7 +142,7 @@ async fn resolve_with_context_unparsed(
     upgradable_packages: Option<&UpgradablePackages>,
     tuf_authority: &fpkg::AuthorityProxy,
     cache_index: &crate::CacheIndex,
-    queued_resolver: &crate::queued_resolver::QueuedResolver,
+    package_fetcher: &crate::package_fetcher::PackageFetcher,
     authenticator: context_authenticator::ContextAuthenticator,
     open_packages: &crate::RootDirCache,
     executability_restrictions: system_image::ExecutabilityRestrictions,
@@ -156,7 +156,7 @@ async fn resolve_with_context_unparsed(
         upgradable_packages,
         tuf_authority,
         cache_index,
-        queued_resolver,
+        package_fetcher,
         authenticator,
         open_packages,
         executability_restrictions,
@@ -173,7 +173,7 @@ async fn resolve_with_context(
     upgradable_packages: Option<&UpgradablePackages>,
     tuf_authority: &fpkg::AuthorityProxy,
     cache_index: &crate::CacheIndex,
-    queued_resolver: &crate::queued_resolver::QueuedResolver,
+    package_fetcher: &crate::package_fetcher::PackageFetcher,
     authenticator: context_authenticator::ContextAuthenticator,
     open_packages: &crate::RootDirCache,
     executability_restrictions: system_image::ExecutabilityRestrictions,
@@ -190,7 +190,7 @@ async fn resolve_with_context(
                 upgradable_packages,
                 tuf_authority,
                 cache_index,
-                queued_resolver,
+                package_fetcher,
                 open_packages,
             )
             .await
@@ -212,7 +212,7 @@ async fn resolve_unparsed_and_serve(
     upgradable_packages: Option<&UpgradablePackages>,
     tuf_authority: &fpkg::AuthorityProxy,
     cache_index: &crate::CacheIndex,
-    queued_resolver: &crate::queued_resolver::QueuedResolver,
+    package_fetcher: &crate::package_fetcher::PackageFetcher,
     authenticator: context_authenticator::ContextAuthenticator,
     open_packages: &crate::RootDirCache,
     executability_restrictions: system_image::ExecutabilityRestrictions,
@@ -224,7 +224,7 @@ async fn resolve_unparsed_and_serve(
         upgradable_packages,
         tuf_authority,
         cache_index,
-        queued_resolver,
+        package_fetcher,
         open_packages,
     )
     .await?;
@@ -240,7 +240,7 @@ pub(crate) async fn resolve(
     upgradable_packages: Option<&UpgradablePackages>,
     tuf_authority: &fpkg::AuthorityProxy,
     cache_index: &crate::CacheIndex,
-    queued_resolver: &crate::queued_resolver::QueuedResolver,
+    package_fetcher: &crate::package_fetcher::PackageFetcher,
     open_packages: &crate::RootDirCache,
 ) -> Result<Arc<crate::root_dir::RootDir>, Error> {
     let (pkg_id, blob_source) =
@@ -249,10 +249,10 @@ pub(crate) async fn resolve(
         return Ok(root_dir);
     }
     if let Some(blob_source) = blob_source {
-        return queued_resolver
-            .resolve(pkg_id, blob_source, fpkg::GcProtection::OpenPackageTracking)
+        return package_fetcher
+            .fetch(pkg_id, blob_source, fpkg::GcProtection::OpenPackageTracking)
             .await
-            .map_err(Error::QueuedResolver);
+            .map_err(Error::PackageFetcher);
     }
     open_packages
         .get_or_insert(pkg_id, None)
@@ -472,8 +472,8 @@ pub(crate) enum Error {
     #[error("invalid blob dir URI")]
     InvalidBlobDirUri(#[source] http::uri::InvalidUri),
 
-    #[error("forwarding to queued tuf resolver")]
-    QueuedResolver(#[source] Arc<crate::queued_resolver::Error>),
+    #[error("forwarding to package fetcher")]
+    PackageFetcher(#[source] Arc<crate::package_fetcher::Error>),
 
     #[error("creating root dir")]
     CreatingRootDir {
@@ -523,7 +523,7 @@ impl From<&Error> for fpkg::ResolveError {
             Authority(e) => fpkg_ext::errors::authority_to_resolve_err(e),
             InvalidBlobDirUri(_) => Err::Internal,
             CreatingRootDir { .. } => Err::Io,
-            QueuedResolver(source) => source.as_ref().into(),
+            PackageFetcher(source) => source.as_ref().into(),
             ContextAuthenticator(_) => Err::InvalidContext,
             SuperpackageNotOpen { .. } => Err::Internal,
             ReadingSubpackages(_) => Err::Io,

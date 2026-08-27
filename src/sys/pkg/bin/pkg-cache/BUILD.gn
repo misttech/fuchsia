@@ -108,7 +108,7 @@ rustc_binary("bin") {
     "src/index/writing.rs",
     "src/main.rs",
     "src/ota_resolver.rs",
-    "src/queued_resolver.rs",
+    "src/package_fetcher.rs",
     "src/required_blobs.rs",
     "src/retained_packages_service.rs",
     "src/root_dir.rs",

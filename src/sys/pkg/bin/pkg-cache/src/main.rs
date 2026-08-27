@@ -43,7 +43,7 @@ mod full_resolver;
 mod gc_service;
 mod index;
 mod ota_resolver;
-mod queued_resolver;
+mod package_fetcher;
 mod required_blobs;
 mod retained_packages_service;
 mod root_dir;
@@ -55,7 +55,7 @@ use root_dir::{RootDir, RootDirCache, RootDirFactory};
 mod test_utils;
 
 const COBALT_CONNECTOR_BUFFER_SIZE: usize = 1000;
-const MAX_CONCURRENT_TUF_RESOLVES: usize = 5;
+const MAX_CONCURRENT_PACKAGE_FETCHES: usize = 5;
 
 struct CobaltConnectedService;
 impl ConnectedProtocol for CobaltConnectedService {
@@ -384,7 +384,7 @@ async fn main_inner() -> Result<(), Error> {
             )
             .context("adding fuchsia.component.resolution/Resolver to /svc")?;
     }
-    let (fetch_queue_fut, blob_fetcher) = blob_fetcher::BlobFetcher::new(
+    let (blob_fetcher_fut, blob_fetcher) = blob_fetcher::BlobFetcher::new(
         blob_fetch_concurrency_limit.into(),
         blob_fetcher::Params::builder()
             .header_network_timeout(zx::BootDuration::from_seconds(
@@ -399,21 +399,21 @@ async fn main_inner() -> Result<(), Error> {
         fuchsia_component::client::connect_to_protocol::<fpkg_http::ClientMarker>()
             .context("error connecting to fuchsia.pkg.http/Client")?,
     );
-    let fetch_queue_fut = Task::spawn(fetch_queue_fut);
-    let (resolve_queue_fut, queued_resolver) = queued_resolver::QueuedResolver::new(
-        MAX_CONCURRENT_TUF_RESOLVES,
+    let blob_fetcher_fut = Task::spawn(blob_fetcher_fut);
+    let (package_fetcher_fut, package_fetcher) = package_fetcher::PackageFetcher::new(
+        MAX_CONCURRENT_PACKAGE_FETCHES,
         package_index.clone(),
         blobfs.clone(),
         blob_fetcher,
         root_dir_factory.clone(),
         open_packages.clone(),
     );
-    let resolve_queue_fut = Task::spawn(resolve_queue_fut);
+    let package_fetcher_fut = Task::spawn(package_fetcher_fut);
     let tuf_authority = fuchsia_component::client::connect_to_protocol::<fpkg::AuthorityMarker>()
         .context("error connecting to fuchsia.pkg/Authority")?;
     {
         let tuf_authority = tuf_authority.clone();
-        let queued_resolver = queued_resolver.clone();
+        let package_fetcher = package_fetcher.clone();
         let authenticator = authenticator.clone();
         let root_dir_factory = root_dir_factory.clone();
         let scope = scope.clone();
@@ -424,7 +424,7 @@ async fn main_inner() -> Result<(), Error> {
                     ota_resolver::serve_request_stream(
                         stream,
                         tuf_authority.clone(),
-                        queued_resolver.clone(),
+                        package_fetcher.clone(),
                         authenticator.clone(),
                         root_dir_factory.clone(),
                         scope.clone(),
@@ -440,7 +440,7 @@ async fn main_inner() -> Result<(), Error> {
         let base_index = Arc::clone(&base_index);
         let upgradable_packages = upgradable_packages.clone();
         let cache_index = Arc::clone(&cache_index);
-        let queued_resolver = queued_resolver.clone();
+        let package_fetcher = package_fetcher.clone();
         let authenticator = authenticator.clone();
         let open_packages = open_packages.clone();
         let scope = scope.clone();
@@ -454,7 +454,7 @@ async fn main_inner() -> Result<(), Error> {
                         upgradable_packages.clone(),
                         tuf_authority.clone(),
                         Arc::clone(&cache_index),
-                        queued_resolver.clone(),
+                        package_fetcher.clone(),
                         authenticator.clone(),
                         open_packages.clone(),
                         executability_restrictions,
@@ -511,8 +511,8 @@ async fn main_inner() -> Result<(), Error> {
         ServerEnd::new(handle.into()),
     );
     let () = scope.wait().await;
-    let () = fetch_queue_fut.await;
-    let () = resolve_queue_fut.await;
+    let () = blob_fetcher_fut.await;
+    let () = package_fetcher_fut.await;
     let () = cobalt_fut.await;
 
     Ok(())

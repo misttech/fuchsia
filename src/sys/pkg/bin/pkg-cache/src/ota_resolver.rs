@@ -25,7 +25,7 @@ const FLAGS: fio::Flags = fio::PERM_READABLE;
 pub(crate) async fn serve_request_stream(
     stream: fpkg::PackageResolverRequestStream,
     authority: fpkg::AuthorityProxy,
-    queued_resolver: crate::queued_resolver::QueuedResolver,
+    package_fetcher: crate::package_fetcher::PackageFetcher,
     authenticator: context_authenticator::ContextAuthenticator,
     root_dir_factory: crate::root_dir::RootDirFactory,
     scope: package_directory::ExecutionScope,
@@ -39,7 +39,7 @@ pub(crate) async fn serve_request_stream(
                         &package_url,
                         dir,
                         &authority,
-                        &queued_resolver,
+                        &package_fetcher,
                         authenticator.clone(),
                         scope.clone(),
                     )
@@ -68,7 +68,7 @@ pub(crate) async fn serve_request_stream(
                     context,
                     dir,
                     &authority,
-                    &queued_resolver,
+                    &package_fetcher,
                     authenticator.clone(),
                     &root_dir_factory,
                     scope.clone(),
@@ -106,7 +106,7 @@ async fn resolve_with_context(
     context: fpkg::ResolutionContext,
     dir: ServerEnd<fio::DirectoryMarker>,
     authority: &fpkg::AuthorityProxy,
-    queued_resolver: &crate::queued_resolver::QueuedResolver,
+    package_fetcher: &crate::package_fetcher::PackageFetcher,
     authenticator: context_authenticator::ContextAuthenticator,
     root_dir_factory: &crate::root_dir::RootDirFactory,
     scope: package_directory::ExecutionScope,
@@ -116,7 +116,7 @@ async fn resolve_with_context(
         context,
         dir,
         authority,
-        queued_resolver,
+        package_fetcher,
         authenticator,
         root_dir_factory,
         scope,
@@ -129,7 +129,7 @@ async fn resolve_with_context_impl(
     context: fpkg::ResolutionContext,
     dir: ServerEnd<fio::DirectoryMarker>,
     authority: &fpkg::AuthorityProxy,
-    queued_resolver: &crate::queued_resolver::QueuedResolver,
+    package_fetcher: &crate::package_fetcher::PackageFetcher,
     authenticator: context_authenticator::ContextAuthenticator,
     root_dir_factory: &crate::root_dir::RootDirFactory,
     scope: package_directory::ExecutionScope,
@@ -139,7 +139,7 @@ async fn resolve_with_context_impl(
             if !context.bytes.is_empty() {
                 return Err(Error::ContextWithAbsoluteUrl);
             }
-            resolve_impl(url, dir, authority, queued_resolver, authenticator, scope).await
+            resolve_impl(url, dir, authority, package_fetcher, authenticator, scope).await
         }
         PackageUrl::Relative(url) => {
             resolve_subpackage(url, context, dir, authenticator, root_dir_factory, scope).await
@@ -151,7 +151,7 @@ async fn resolve(
     url: &str,
     dir: ServerEnd<fio::DirectoryMarker>,
     authority: &fpkg::AuthorityProxy,
-    queued_resolver: &crate::queued_resolver::QueuedResolver,
+    package_fetcher: &crate::package_fetcher::PackageFetcher,
     authenticator: context_authenticator::ContextAuthenticator,
     scope: package_directory::ExecutionScope,
 ) -> Result<fpkg::ResolutionContext, Error> {
@@ -159,7 +159,7 @@ async fn resolve(
         &url.parse().map_err(Error::InvalidUrl)?,
         dir,
         authority,
-        queued_resolver,
+        package_fetcher,
         authenticator,
         scope,
     )
@@ -170,7 +170,7 @@ pub(crate) async fn resolve_impl(
     url: &AbsolutePackageUrl,
     dir: ServerEnd<fio::DirectoryMarker>,
     authority: &fpkg::AuthorityProxy,
-    queued_resolver: &crate::queued_resolver::QueuedResolver,
+    package_fetcher: &crate::package_fetcher::PackageFetcher,
     authenticator: context_authenticator::ContextAuthenticator,
     scope: package_directory::ExecutionScope,
 ) -> Result<fpkg::ResolutionContext, Error> {
@@ -181,14 +181,14 @@ pub(crate) async fn resolve_impl(
         .map_err(Error::Authority)?;
     // TODO(https://fxbug.dev/519687989): Stop allowing pinned URLs to override authorities.
     let pkg_id = url.hash().unwrap_or_else(|| merkle_root.into());
-    let root_dir = queued_resolver
-        .resolve(
+    let root_dir = package_fetcher
+        .fetch(
             pkg_id,
             http_blob_dir.parse().map_err(Error::InvalidBlobDirUri)?,
             fpkg::GcProtection::Retained,
         )
         .await
-        .map_err(Error::QueuedResolve)?;
+        .map_err(Error::PackageFetcher)?;
     let hash = *root_dir.hash();
     vfs::directory::serve_on(root_dir, FLAGS, scope, dir);
     Ok(authenticator.create(&hash))
@@ -242,8 +242,8 @@ pub(crate) enum Error {
     #[error("invalid blob dir URI")]
     InvalidBlobDirUri(#[source] http::uri::InvalidUri),
 
-    #[error("forwarding to the queued resolver")]
-    QueuedResolve(#[source] Arc<crate::queued_resolver::Error>),
+    #[error("forwarding to the package fetcher")]
+    PackageFetcher(#[source] Arc<crate::package_fetcher::Error>),
 
     #[error("authenticating context")]
     ContextAuthenticator(#[source] context_authenticator::ContextAuthenticatorError),
@@ -282,7 +282,7 @@ impl From<&Error> for fpkg::ResolveError {
             AuthorityFidl(_) => Err::Io,
             Authority(e) => fpkg_ext::errors::authority_to_resolve_err(e),
             InvalidBlobDirUri(_) => Err::Internal,
-            QueuedResolve(source) => source.as_ref().into(),
+            PackageFetcher(source) => source.as_ref().into(),
             ContextAuthenticator(_) => Err::InvalidContext,
             CreatingSuperpackageRootDir { .. } => Err::Io,
             ReadingSubpackages(_) => Err::Io,
