@@ -106,9 +106,8 @@ impl FidlPipe {
                 .await
             {
                 Ok(TargetConnection::Overnet(o)) => break (Some(o), None),
-                Ok(TargetConnection::Both(f, o)) => break (Some(o), Some(f)),
-                Err(TargetConnectionError::Fatal(e)) => return Err(e),
                 Ok(TargetConnection::FDomain(f)) => break (None, Some(f)),
+                Err(TargetConnectionError::Fatal(e)) => return Err(e),
                 Err(TargetConnectionError::NonFatal(e)) => e,
             };
 
@@ -174,7 +173,7 @@ impl FidlPipe {
         let is_terminated = Arc::new(AtomicBool::new(false));
         let is_terminated_clone = Arc::clone(&is_terminated);
         let main_task = match (overnet_task, fdomain_task) {
-            (None, None) => unreachable!(),
+            (None, None) | (Some(_), Some(_)) => unreachable!(),
             (Some(o), None) => Task::local(async move {
                 o.await;
                 is_terminated_clone.store(true, Ordering::Release);
@@ -183,12 +182,6 @@ impl FidlPipe {
             }),
             (None, Some(f)) => Task::local(async move {
                 f.await;
-                is_terminated_clone.store(true, Ordering::Release);
-                // Explicit drop to force the struct into the closure.
-                drop(connector);
-            }),
-            (Some(o), Some(f)) => Task::local(async move {
-                futures::future::join(o, f).await;
                 is_terminated_clone.store(true, Ordering::Release);
                 // Explicit drop to force the struct into the closure.
                 drop(connector);
@@ -264,7 +257,7 @@ impl Drop for FidlPipe {
 mod test {
     use super::*;
 
-    use crate::target_connector::{FDomainConnection, OvernetConnection, TargetConnection};
+    use crate::target_connector::{FDomainConnection, TargetConnection};
     use std::fmt::Debug;
     use tokio::io::BufReader;
 
@@ -286,19 +279,6 @@ mod test {
             let sock2 = fidl::AsyncSocket::from_socket(sock2);
             let (_error_tx, error_rx) = async_channel::unbounded();
             let error_task = Task::local(async move {});
-            let overnet = OvernetConnection {
-                output: Box::new(BufReader::new(sock1)),
-                input: Box::new(sock2),
-                errors: error_rx,
-                main_task: Some(error_task),
-                ssh_host_address: None,
-            };
-
-            let (sock1, sock2) = fidl::Socket::create_stream();
-            let sock1 = fidl::AsyncSocket::from_socket(sock1);
-            let sock2 = fidl::AsyncSocket::from_socket(sock2);
-            let (_error_tx, error_rx) = async_channel::unbounded();
-            let error_task = Task::local(async move {});
             let fdomain = FDomainConnection {
                 output: Box::new(BufReader::new(sock1)),
                 input: Box::new(sock2),
@@ -307,7 +287,7 @@ mod test {
                 ssh_host_address: None,
             };
 
-            Ok(TargetConnection::Both(fdomain, overnet))
+            Ok(TargetConnection::FDomain(fdomain))
         }
     }
 
@@ -325,22 +305,6 @@ mod test {
                 let _ =
                     error_tx.send(ConnectionStreamError::Forwarded(anyhow::anyhow!("boom"))).await;
             });
-            let overnet = OvernetConnection {
-                output: Box::new(BufReader::new(sock1)),
-                input: Box::new(sock2),
-                errors: error_rx,
-                main_task: Some(error_task),
-                ssh_host_address: None,
-            };
-
-            let (sock1, sock2) = fidl::Socket::create_stream();
-            let sock1 = fidl::AsyncSocket::from_socket(sock1);
-            let sock2 = fidl::AsyncSocket::from_socket(sock2);
-            let (error_tx, error_rx) = async_channel::unbounded();
-            let error_task = Task::local(async move {
-                let _ =
-                    error_tx.send(ConnectionStreamError::Forwarded(anyhow::anyhow!("boom"))).await;
-            });
             let fdomain = FDomainConnection {
                 output: Box::new(BufReader::new(sock1)),
                 input: Box::new(sock2),
@@ -349,7 +313,7 @@ mod test {
                 ssh_host_address: None,
             };
 
-            Ok(TargetConnection::Both(fdomain, overnet))
+            Ok(TargetConnection::FDomain(fdomain))
         }
     }
 
@@ -364,19 +328,6 @@ mod test {
             let sock2 = fidl::AsyncSocket::from_socket(sock2);
             let (_error_tx, error_rx) = async_channel::unbounded();
             let error_task = Task::local(async move {});
-            let overnet = OvernetConnection {
-                output: Box::new(BufReader::new(sock1)),
-                input: Box::new(sock2),
-                errors: error_rx,
-                main_task: Some(error_task),
-                ssh_host_address: None,
-            };
-
-            let (sock1, sock2) = fidl::Socket::create_stream();
-            let sock1 = fidl::AsyncSocket::from_socket(sock1);
-            let sock2 = fidl::AsyncSocket::from_socket(sock2);
-            let (_error_tx, error_rx) = async_channel::unbounded();
-            let error_task = Task::local(async move {});
             let fdomain = FDomainConnection {
                 output: Box::new(BufReader::new(sock1)),
                 input: Box::new(sock2),
@@ -385,7 +336,7 @@ mod test {
                 ssh_host_address: None,
             };
 
-            Ok(TargetConnection::Both(fdomain, overnet))
+            Ok(TargetConnection::FDomain(fdomain))
         }
     }
 

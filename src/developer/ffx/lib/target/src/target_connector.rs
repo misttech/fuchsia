@@ -43,7 +43,6 @@ pub enum ConnectionStreamError {
 pub enum TargetConnection {
     Overnet(OvernetConnection),
     FDomain(FDomainConnection),
-    Both(FDomainConnection, OvernetConnection),
 }
 
 pub trait TargetConnector: Debug {

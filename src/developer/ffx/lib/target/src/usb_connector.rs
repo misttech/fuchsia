@@ -101,27 +101,16 @@ impl TargetConnector for UsbConnector {
     const CONNECTION_TYPE: &'static str = "USB VSOCK";
 
     async fn connect(&mut self) -> Result<TargetConnection, TargetConnectionError> {
-        let fdomain = match self.connect_fdomain().await {
-            Ok(f) => Some(f),
+        match self.connect_fdomain().await {
+            Ok(fdomain) => Ok(TargetConnection::FDomain(fdomain)),
             Err(e) => {
                 // Eventually we should just return the error here, making
                 // FDomain authoritative about whether the device is
                 // connectable. For now we'll fall through because it's less
                 // likely to cause breakages prior to migration.
                 log::warn!("Connecting with FDomain encountered error {e:?}");
-                None
+                self.connect_overnet().await.map(TargetConnection::Overnet)
             }
-        };
-        let overnet = self.connect_overnet().await;
-
-        if let Some(fdomain) = fdomain {
-            if let Some(overnet) = overnet.ok() {
-                Ok(TargetConnection::Both(fdomain, overnet))
-            } else {
-                Ok(TargetConnection::FDomain(fdomain))
-            }
-        } else {
-            overnet.map(TargetConnection::Overnet)
         }
     }
 }

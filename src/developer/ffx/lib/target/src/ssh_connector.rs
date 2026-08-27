@@ -235,6 +235,9 @@ impl SshConnector {
                 if e.kind() == ErrorKind::UnexpectedEof {
                     let _ = stderr.read_to_string(&mut stderr_content).await;
                 }
+                if let Some(cmd) = self.fdomain_cmd.take() {
+                    let _ = try_ssh_cmd_cleanup(cmd).await;
+                }
 
                 if stderr_content.is_empty() {
                     return Err(FDomainConnectionError::ConnectionError(
@@ -259,6 +262,9 @@ impl SshConnector {
         }
 
         if ack != *b"OK\n" {
+            if let Some(cmd) = self.fdomain_cmd.take() {
+                let _ = try_ssh_cmd_cleanup(cmd).await;
+            }
             return Err(FDomainConnectionError::ConnectionError(
                 ffx_ssh::ssh::SshError::Unknown(format!("Unknown Ack string {ack:?}")).into(),
             ));
@@ -399,23 +405,12 @@ impl TargetConnector for SshConnector {
     const CONNECTION_TYPE: &'static str = "ssh";
 
     async fn connect(&mut self) -> Result<TargetConnection, TargetConnectionError> {
-        let fdomain = match self.connect_fdomain().await {
-            Ok(f) => Some(f),
-            Err(FDomainConnectionError::NotSupported) => None,
-            Err(FDomainConnectionError::ConnectionError(other)) => {
-                return Err(other);
+        match self.connect_fdomain().await {
+            Ok(fdomain) => Ok(TargetConnection::FDomain(fdomain)),
+            Err(FDomainConnectionError::NotSupported) => {
+                self.connect_overnet().await.map(TargetConnection::Overnet)
             }
-        };
-        let overnet = self.connect_overnet().await;
-
-        if let Some(fdomain) = fdomain {
-            if let Some(overnet) = overnet.ok() {
-                Ok(TargetConnection::Both(fdomain, overnet))
-            } else {
-                Ok(TargetConnection::FDomain(fdomain))
-            }
-        } else {
-            overnet.map(TargetConnection::Overnet)
+            Err(FDomainConnectionError::ConnectionError(other)) => Err(other),
         }
     }
 
@@ -697,6 +692,46 @@ fi
         assert!(
             matches!(conn, TargetConnection::Overnet(_)),
             "Expected Overnet connection, got {:?}",
+            conn
+        );
+    }
+
+    #[fuchsia::test]
+    async fn test_connect_fdomain_success_does_not_connect_overnet() {
+        let tmp = tempfile::tempdir().unwrap();
+        let mock_ssh_script = r#"#!/bin/bash
+for arg in "$@"; do
+  if [[ "$arg" == "fdomain_runner" ]]; then
+    printf "OK\n"
+    sleep 3600
+  fi
+  if [[ "$arg" == "remote_control_runner" ]]; then
+    echo "Overnet should not be called!" >&2
+    exit 1
+  fi
+done
+"#;
+        let ssh_path = write_mock_ssh(&tmp, mock_ssh_script);
+        let priv_key_path = tmp.path().join("fake_key");
+        File::create(&priv_key_path).unwrap();
+
+        let test_env = TestEnvBuilder::default()
+            .user_config("ssh.path", ssh_path.to_str().unwrap())
+            .user_config("ssh.priv", priv_key_path.to_str().unwrap())
+            .user_config("ssh.controlmaster.mode", "none")
+            .build()
+            .unwrap();
+
+        let target_addr: SocketAddr = "127.0.0.1:2201".parse().unwrap();
+        let scoped_addr = ScopedSocketAddr::from_socket_addr(target_addr).unwrap();
+        let mut connector = SshConnector::new(scoped_addr, &test_env.context).unwrap();
+
+        let res = connector.connect().await;
+        assert!(res.is_ok(), "Expected Ok for fdomain success, got {:?}", res);
+        let conn = res.unwrap();
+        assert!(
+            matches!(conn, TargetConnection::FDomain(_)),
+            "Expected FDomain connection, got {:?}",
             conn
         );
     }
