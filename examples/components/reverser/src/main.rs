@@ -3,7 +3,8 @@
 // found in the LICENSE file.
 
 use anyhow::Context;
-use fidl_fuchsia_examples_reverser::{ReverserRequest, ReverserRequestStream};
+use fidl_fuchsia_examples_reverser::{ReplacerMarker, ReverserRequest, ReverserRequestStream};
+use fuchsia_component::client::connect_to_protocol;
 use fuchsia_component::server::ServiceFs;
 use futures::prelude::*;
 use reverser_config::Config;
@@ -33,7 +34,17 @@ async fn main() -> Result<(), anyhow::Error> {
 
 async fn handle_reverser_request(mut stream: ReverserRequestStream, config: &Config) {
     while let Some(event) = stream.try_next().await.expect("failed to serve reverser service") {
-        let ReverserRequest::Reverse { value: processed_input, responder } = event;
+        let ReverserRequest::Reverse { value, responder } = event;
+
+        let processed_input = if config.use_replacer {
+            if let Ok(replacer) = connect_to_protocol::<ReplacerMarker>() {
+                replacer.replace(&value).await.unwrap_or(value)
+            } else {
+                value
+            }
+        } else {
+            value
+        };
 
         let mut reversed = String::with_capacity(processed_input.len());
         if config.switch_case {

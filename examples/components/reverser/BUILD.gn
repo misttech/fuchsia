@@ -18,6 +18,7 @@ fuchsia_structured_config_values("reverser_config_default_values") {
   cm_label = ":reverser_manifest"
   values = {
     switch_case = false
+    use_replacer = false
   }
 }
 

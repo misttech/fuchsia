@@ -14,3 +14,12 @@ closed protocol Reverser {
         response string:MAX_STRING_LENGTH;
     });
 };
+
+@discoverable
+closed protocol Replacer {
+    strict Replace(struct {
+        value string:MAX_STRING_LENGTH;
+    }) -> (struct {
+        response string:MAX_STRING_LENGTH;
+    });
+};

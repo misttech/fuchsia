@@ -10,7 +10,12 @@
     capabilities: [
         { protocol: "fuchsia.examples.reverser.Reverser" },
     ],
-    use: [],
+    use: [
+        {
+            protocol: "fuchsia.examples.reverser.Replacer",
+            availability: "optional",
+        },
+    ],
     expose: [
         {
             protocol: "fuchsia.examples.reverser.Reverser",
@@ -18,6 +23,13 @@
         },
     ],
     config: {
-        switch_case: { type: "bool" },
+        switch_case: {
+            type: "bool",
+            mutability: [ "parent" ],
+        },
+        use_replacer: {
+            type: "bool",
+            mutability: [ "parent" ],
+        },
     },
 }
