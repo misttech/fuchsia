@@ -49,17 +49,15 @@ type CommonPacketCaptureParams = resource table {
 
 /// The minimum buffer size.
 const MIN_BUFFER_SIZE uint32 = DEFAULT_SNAP_LEN;
-/// The maximum buffer size.
-const MAX_BUFFER_SIZE uint32 = 16777216;
-/// The default buffer size, same value as chosen by tcpdump.
-const DEFAULT_BUFFER_SIZE uint32 = 2097152;
 
 /// Parameters specific to rolling packet captures.
 type RollingPacketCaptureParams = table {
     /// The size in bytes the rolling capture should be. The value must be
-    /// between [`MIN_BUFFER_SIZE`] and [`MAX_BUFFER_SIZE`].
+    /// between [`MIN_BUFFER_SIZE`] and the netstack configured maximum
+    /// `max_rolling_capture_buffer_size`.
     ///
-    /// Optional, [`DEFAULT_BUFFER_SIZE`] is used if absent or 0 is passed.
+    /// Optional, the netstack configured maximum
+    /// `max_rolling_capture_buffer_size` is used if absent or 0 is passed.
     1: capture_size uint32;
 };
 

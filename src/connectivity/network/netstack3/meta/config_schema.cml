@@ -24,5 +24,8 @@
         // TODO(https://fxbug.dev/438527741): Remove this flag when enabled by
         // default.
         multi_vmo: { type: "bool" },
+
+        // Maximum size of the rolling packet capture buffer in bytes.
+        max_rolling_capture_buffer_size: { type: "uint32" },
     },
 }

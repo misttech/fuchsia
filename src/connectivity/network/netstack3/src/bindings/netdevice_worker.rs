@@ -170,8 +170,12 @@ impl NetdeviceWorker {
     ) -> Result<Self, Error> {
         let device = netdevice_client::Client::new(device.into_proxy());
         // Enable rx lease watching when suspension is enabled.
-        let GlobalConfig { suspend_enabled, multi_vmo, sampled_stats_enabled: _ } =
-            &ctx.bindings_ctx().config;
+        let GlobalConfig {
+            suspend_enabled,
+            multi_vmo,
+            sampled_stats_enabled: _,
+            max_rolling_capture_buffer_size: _,
+        } = &ctx.bindings_ctx().config;
         let watch_rx_leases = *suspend_enabled;
         let (session, task) = device
             .new_session_with_derivable_config(

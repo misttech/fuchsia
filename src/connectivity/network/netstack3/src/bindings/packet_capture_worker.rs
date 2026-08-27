@@ -590,12 +590,11 @@ fn handle_start_rolling(
         RollingCaptureState::Empty => {}
     }
 
+    let max_buffer_size = ctx.bindings_ctx().config.max_rolling_capture_buffer_size;
     let capture_size = match capture_size {
-        None | Some(0) => fnet_debug::DEFAULT_BUFFER_SIZE,
+        None | Some(0) => max_buffer_size,
         Some(capture_size) => {
-            if capture_size < fnet_debug::MIN_BUFFER_SIZE
-                || capture_size > fnet_debug::MAX_BUFFER_SIZE
-            {
+            if capture_size < fnet_debug::MIN_BUFFER_SIZE || capture_size > max_buffer_size {
                 return Err(fnet_debug::PacketCaptureStartError::InvalidBufferSize);
             }
             capture_size

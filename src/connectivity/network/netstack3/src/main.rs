@@ -17,13 +17,21 @@ use fuchsia_async as fasync;
 use fuchsia_async::SendExecutorBuilder;
 use fuchsia_component::server::{ServiceFs, ServiceFsDir};
 use futures::{Future, StreamExt as _};
-use log::{error, info};
+use log::{error, info, warn};
 
 use bindings::{GlobalConfig, InspectPublisher, InterfaceConfigDefaults, NetstackSeed, Service};
 
 /// Runs Netstack3.
 pub fn main() {
-    let config = ns3_config::Config::take_from_startup_handle();
+    let mut config = ns3_config::Config::take_from_startup_handle();
+    if config.max_rolling_capture_buffer_size < fidl_fuchsia_net_debug::MIN_BUFFER_SIZE {
+        warn!(
+            "max rolling capture buffer size configured as {} will be clamped to the minimum {}",
+            config.max_rolling_capture_buffer_size,
+            fidl_fuchsia_net_debug::MIN_BUFFER_SIZE,
+        );
+        config.max_rolling_capture_buffer_size = fidl_fuchsia_net_debug::MIN_BUFFER_SIZE;
+    };
     let ns3_config::Config {
         num_threads,
         debug_logs,
@@ -31,6 +39,7 @@ pub fn main() {
         suspend_enabled,
         sampled_stats_enabled,
         multi_vmo,
+        max_rolling_capture_buffer_size,
     } = &config;
     let num_threads = NonZeroU8::new(*num_threads).expect("invalid 0 thread count value");
     let mut executor = SendExecutorBuilder::new().num_threads(num_threads.get().into()).build();
@@ -110,6 +119,7 @@ pub fn main() {
             suspend_enabled: *suspend_enabled,
             sampled_stats_enabled: *sampled_stats_enabled,
             multi_vmo: *multi_vmo,
+            max_rolling_capture_buffer_size: *max_rolling_capture_buffer_size,
         },
         &InterfaceConfigDefaults { opaque_iids: *opaque_iids },
     );

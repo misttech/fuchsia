@@ -400,11 +400,23 @@ const DEFAULT_INTERFACE_METRIC: u32 = 100;
 const LOOPBACK_INTERFACE_METRIC: u32 = 1000;
 
 /// Global stack configuration.
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub(crate) struct GlobalConfig {
     pub(crate) suspend_enabled: bool,
     pub(crate) sampled_stats_enabled: bool,
     pub(crate) multi_vmo: bool,
+    pub(crate) max_rolling_capture_buffer_size: u32,
+}
+
+impl Default for GlobalConfig {
+    fn default() -> Self {
+        Self {
+            suspend_enabled: false,
+            sampled_stats_enabled: false,
+            multi_vmo: false,
+            max_rolling_capture_buffer_size: 16777216,
+        }
+    }
 }
 
 pub(crate) struct BindingsCtxInner {

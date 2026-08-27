@@ -187,9 +187,16 @@ impl DefineSubsystemConfiguration<PlatformConnectivityConfig> for ConnectivitySu
                     builder.platform_bundle(maybe_gub_bundle("netstack3_packages").as_ref())?;
                 }
                 (false, NetstackVersion::Netstack2) => {
+                    if connectivity_config.network.max_rolling_capture_buffer_size.is_some() {
+                        anyhow::bail!(
+                            "max_rolling_capture_buffer_size only affects Netstack3, \
+                             but Netstack2 was selected"
+                        );
+                    }
                     if connectivity_config.network.netstack_thread_count.is_some() {
                         anyhow::bail!(
-                            "netstack_thread_count only affects Netstack3, but Netstack2 was selected"
+                            "netstack_thread_count only affects Netstack3, \
+                             but Netstack2 was selected"
                         );
                     }
 
@@ -225,6 +232,13 @@ impl DefineSubsystemConfiguration<PlatformConnectivityConfig> for ConnectivitySu
                         matches!(context.build_type, BuildType::Eng | BuildType::UserDebug),
                     )?
                     .field("multi_vmo", connectivity_config.network.netstack_multi_vmo)?
+                    .field(
+                        "max_rolling_capture_buffer_size",
+                        connectivity_config
+                            .network
+                            .max_rolling_capture_buffer_size
+                            .unwrap_or(16777216),
+                    )?
                     // Routed from fuchsia.power.SuspendEnabled capability.
                     //
                     // TODO(https://fxbug.dev/368386068): This should not be

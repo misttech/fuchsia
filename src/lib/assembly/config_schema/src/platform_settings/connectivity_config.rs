@@ -103,6 +103,12 @@ pub struct PlatformNetworkConfig {
     // TODO(https://fxbug.dev/545307151): Remove this flag.
     #[serde(skip_serializing_if = "crate::common::is_default")]
     pub netstack_multi_vmo: bool,
+
+    /// Maximum size of the rolling packet capture buffer in bytes.
+    ///
+    /// Platform default (16MB) will be used if unspecified.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub max_rolling_capture_buffer_size: Option<u32>,
 }
 
 #[derive(Debug, Serialize, Copy, Clone, Deserialize, JsonSchema, PartialEq)]
