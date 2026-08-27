@@ -1007,21 +1007,11 @@ pub struct zx_channel_call_etc_args_t {
 }
 
 #[repr(C)]
-#[derive(Debug, Copy, Clone, Eq, PartialEq)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Default)]
 pub struct zx_channel_iovec_t {
     pub buffer: *const u8,
     pub capacity: u32,
     padding1: [PadByte; 4],
-}
-
-impl Default for zx_channel_iovec_t {
-    fn default() -> Self {
-        Self {
-            buffer: core::ptr::null(),
-            capacity: Default::default(),
-            padding1: Default::default(),
-        }
-    }
 }
 
 #[repr(C)]
