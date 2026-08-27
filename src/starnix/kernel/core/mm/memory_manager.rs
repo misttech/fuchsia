@@ -23,7 +23,6 @@ use crate::vfs::{FsString, NamespaceNode};
 use anyhow::{Error, anyhow};
 use bitflags::bitflags;
 use flyweights::FlyByteStr;
-use fuchsia_rcu::RcuDroppable;
 use linux_uapi::BUS_ADRERR;
 use memory_pinning::PinnedMapping;
 use range_map::RangeMap;
@@ -3153,10 +3152,6 @@ pub struct MemoryManager {
     pub arch_width: ArchWidth,
 }
 
-// TODO(b/525158773): Temporary impl to allow incremental RCU safety refactoring.
-// SAFETY: We wait for an RCU grace period before returning from syscalls so side effects are guaranteed to be visible.
-unsafe impl RcuDroppable for MemoryManager {}
-
 impl ArchSpecific for MemoryManager {
     fn is_arch32(&self) -> bool {
         self.arch_width.is_arch32()
@@ -5037,7 +5032,7 @@ mod tests {
             let node = current_task.lookup_path_from_root("/".into()).unwrap();
             let new_mm = MemoryManager::exec(
                 current_task.thread_group().root_vmar.unowned(),
-                current_task.running_state().mm.to_option_arc(),
+                current_task.running_state().mm.upgrade(),
                 node,
                 ArchWidth::Arch64,
             )

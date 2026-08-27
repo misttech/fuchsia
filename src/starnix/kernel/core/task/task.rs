@@ -20,7 +20,7 @@ use crate::task::{
 };
 use crate::vfs::{FdTable, FsContext, FsString, SharedFdTable};
 use atomic_bitflags::atomic_bitflags;
-use fuchsia_rcu::{RcuArc, RcuDroppable, RcuOptionArc, RcuReadGuard, RcuReadScope};
+use fuchsia_rcu::{RcuArc, RcuDroppable, RcuReadGuard, RcuReadScope, RcuUpgradeArc};
 use macro_rules_attribute::apply;
 use starnix_logging::{log_warn, set_zx_name};
 use starnix_registers::HeapRegs;
@@ -928,7 +928,7 @@ pub struct Task {
     /// The running state of the task.
     ///
     /// This is `None` for exited tasks.
-    pub running_state: RcuOptionArc<TaskRunningState>,
+    pub running_state: RcuUpgradeArc<TaskRunningState>,
 
     /// The stop state of the task, distinct from the stop state of the thread group.
     ///
@@ -1112,11 +1112,11 @@ impl Task {
                 thread_group_key: thread_group_key.clone(),
                 kernel: Arc::clone(&thread_group.kernel),
                 thread_group,
-                running_state: RcuOptionArc::new(Some(Arc::new(TaskRunningState {
+                running_state: RcuUpgradeArc::new(Some(Arc::new(TaskRunningState {
                     thread: Default::default(),
                     files: Some(files).into(),
-                    mm: RcuOptionArc::new(mm),
-                    fs: RcuArc::new(fs),
+                    mm: RcuUpgradeArc::new(mm),
+                    fs: RcuUpgradeArc::new(Some(fs)),
                     abstract_socket_namespace,
                     abstract_vsock_namespace,
                     proc_pid_directory_cache: Default::default(),
@@ -1194,7 +1194,7 @@ impl Task {
     ///
     /// The task may exit immediately after `is_running()` returns `true`.
     pub fn is_running(&self) -> bool {
-        self.running_state.read().is_some()
+        self.running_state.is_some()
     }
 
     /// Returns the running state of the task, if it exists.
@@ -1205,7 +1205,7 @@ impl Task {
     /// resources have been dropped.
     #[track_caller]
     pub fn running_state(&self) -> Result<Arc<TaskRunningState>, Errno> {
-        self.running_state.to_option_arc().ok_or_else(|| errno!(ESRCH))
+        self.running_state.upgrade().ok_or_else(|| errno!(ESRCH))
     }
 
     /// Returns the file descriptor table of the task, if it exists.
@@ -1231,9 +1231,9 @@ impl Task {
     #[track_caller]
     pub fn mm(&self) -> Result<Arc<MemoryManager>, Errno> {
         // Retain an RCU read scope for the entire operation. This allows self.running_state() and
-        // mm.to_option_arc() to use cheaper nested RCU read locks.
+        // mm.upgrade() to use cheaper nested RCU read locks.
         let _scope = RcuReadScope::new();
-        self.running_state()?.mm.to_option_arc().ok_or_else(|| errno!(EINVAL))
+        self.running_state()?.mm.upgrade().ok_or_else(|| errno!(EINVAL))
     }
 
     /// Modify the given elements of the scheduler state with new values and update the
@@ -1575,7 +1575,7 @@ impl Task {
 
 impl Drop for Task {
     fn drop(&mut self) {
-        debug_assert!(self.running_state.read().is_none());
+        debug_assert!(self.running_state.is_none());
     }
 }
 

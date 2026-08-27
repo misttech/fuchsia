@@ -373,8 +373,8 @@ pub fn create_kernel_thread(
     let abstract_vsock_namespace;
     {
         let running_state = system_task.running_state()?;
-        mm = running_state.mm.to_option_arc();
-        fs = running_state.fs.to_arc();
+        mm = running_state.mm.upgrade();
+        fs = running_state.fs();
         abstract_socket_namespace = running_state.abstract_socket_namespace.clone();
         abstract_vsock_namespace = running_state.abstract_vsock_namespace.clone();
     }
