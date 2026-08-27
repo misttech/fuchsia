@@ -20,7 +20,7 @@ use crate::task::{
 };
 use crate::vfs::{FdTable, FsContext, FsString, SharedFdTable};
 use atomic_bitflags::atomic_bitflags;
-use fuchsia_rcu::{RcuArc, RcuDroppable, RcuReadGuard, RcuReadScope, RcuUpgradeArc};
+use fuchsia_rcu::{RcuDroppable, RcuDroppableArc, RcuReadGuard, RcuReadScope, RcuUpgradeArc};
 use macro_rules_attribute::apply;
 use starnix_logging::{log_warn, set_zx_name};
 use starnix_registers::HeapRegs;
@@ -752,7 +752,7 @@ pub struct TaskPersistentInfoState {
 
     /// The security credentials for this task. These are only set when the task is the CurrentTask,
     /// or on task creation.
-    creds: RcuArc<Credentials>,
+    creds: RcuDroppableArc<Credentials>,
 
     // A lock for the security credentials. Writers must take the lock, readers that need to ensure
     // that the task state does not change may take the lock.
@@ -777,7 +777,7 @@ impl<'a> Deref for CredentialsReadGuard<'a> {
 ///  exist.
 pub struct CredentialsWriteGuard<'a> {
     _lock: LockDepWriteGuard<'a, ()>,
-    creds: &'a RcuArc<Credentials>,
+    creds: &'a RcuDroppableArc<Credentials>,
 }
 
 impl<'a> CredentialsWriteGuard<'a> {
@@ -797,7 +797,7 @@ impl TaskPersistentInfoState {
             tid,
             thread_group_key,
             command: command.into(),
-            creds: RcuArc::new(creds),
+            creds: RcuDroppableArc::new(creds),
             creds_lock: Default::default(),
         })
     }

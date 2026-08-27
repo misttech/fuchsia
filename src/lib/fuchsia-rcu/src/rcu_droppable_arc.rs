@@ -10,16 +10,16 @@ use std::sync::Arc;
 
 use crate::rcu_droppable::RcuDroppable;
 
-/// An RCU (Read-Copy-Update) wrapper around an `Arc`.
+/// An RCU (Read-Copy-Update) wrapper around an `Arc` for types implementing [`RcuDroppable`].
 ///
 /// The Arc can be dereferenced from multiple threads concurrently without blocking.
 /// When the Arc is replaced, reads may continue to see the old Arc pointer for some period of time.
 #[derive(Debug)]
-pub struct RcuArc<T: RcuDroppable + Sync> {
+pub struct RcuDroppableArc<T: RcuDroppable + Sync> {
     ptr: RcuPtr<T>,
 }
 
-impl<T: RcuDroppable + Sync> RcuArc<T> {
+impl<T: RcuDroppable + Sync> RcuDroppableArc<T> {
     /// Create a new RCU wrapper around an `Arc`.
     pub fn new(data: Arc<T>) -> Self {
         Self { ptr: RcuPtr::new(Self::into_ptr(data)) }
@@ -108,26 +108,26 @@ impl<T: RcuDroppable + Sync> RcuArc<T> {
     }
 }
 
-impl<T: RcuDroppable + Sync> Drop for RcuArc<T> {
+impl<T: RcuDroppable + Sync> Drop for RcuDroppableArc<T> {
     fn drop(&mut self) {
         // SAFETY: We can pass `std::ptr::null_mut`.
         unsafe { self.replace(std::ptr::null_mut()) };
     }
 }
 
-impl<T: RcuDroppable + Sync> Clone for RcuArc<T> {
+impl<T: RcuDroppable + Sync> Clone for RcuDroppableArc<T> {
     fn clone(&self) -> Self {
         Self::new(self.to_arc())
     }
 }
 
-impl<T: RcuDroppable + Sync> From<Arc<T>> for RcuArc<T> {
+impl<T: RcuDroppable + Sync> From<Arc<T>> for RcuDroppableArc<T> {
     fn from(data: Arc<T>) -> Self {
         Self::new(data)
     }
 }
 
-impl<T: Default + RcuDroppable + Sync> Default for RcuArc<T> {
+impl<T: Default + RcuDroppable + Sync> Default for RcuDroppableArc<T> {
     fn default() -> Self {
         Self::new(Arc::new(T::default()))
     }
@@ -199,11 +199,11 @@ mod tests {
     }
 
     #[test]
-    fn test_rcu_arc_update() {
+    fn test_rcu_droppable_arc_update() {
         let object = DropCounter::new(42);
         let drops = object.drops.clone();
 
-        let arc = RcuArc::from(object);
+        let arc = RcuDroppableArc::from(object);
         assert_eq!(arc.read().value, 42);
         assert_eq!(drops.load(Ordering::Relaxed), 0);
         arc.update(DropCounter::new(43));
@@ -215,11 +215,11 @@ mod tests {
     }
 
     #[test]
-    fn test_rcu_arc_update_swap() {
+    fn test_rcu_droppable_arc_update_swap() {
         let object = DropCounter::new(42);
         let drops = object.drops.clone();
 
-        let arc = RcuArc::from(object);
+        let arc = RcuDroppableArc::from(object);
         {
             let scope = RcuReadScope::new();
             let old_object = arc.update_swap(&scope, DropCounter::new(43));

@@ -33,7 +33,7 @@ impl<T: Send + Sync + 'static> RcuWeak<T> {
         let ptr = self.ptr.read(&scope);
         // SAFETY: We can pass `ptr` to `rcu_ptr_upgrade` because it was obtained from
         // `Weak::into_raw`.
-        unsafe { crate::rcu_arc::rcu_ptr_upgrade(ptr) }
+        unsafe { crate::subtle::rcu_ptr_upgrade(ptr) }
     }
 
     /// Create a new [`Weak`] pointer to the object referenced by the wrapped Weak pointer.

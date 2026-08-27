@@ -120,8 +120,8 @@ unsafe impl<T: RcuDroppable> RcuDroppable for std::ops::RangeTo<T> {}
 unsafe impl<T: RcuDroppable> RcuDroppable for std::ops::RangeToInclusive<T> {}
 
 // RCU containers
-// SAFETY: RcuArc drops its inner type with rcu_drop which is safe if T: RcuDroppable
-unsafe impl<T: RcuDroppable + Sync> RcuDroppable for crate::RcuArc<T> {}
+// SAFETY: RcuDroppableArc drops its inner type with rcu_drop which is safe if T: RcuDroppable
+unsafe impl<T: RcuDroppable + Sync> RcuDroppable for crate::RcuDroppableArc<T> {}
 // SAFETY: RcuBox drops its inner type with rcu_drop which is safe if T: RcuDroppable
 unsafe impl<T: RcuDroppable + Sync> RcuDroppable for crate::RcuBox<T> {}
 // SAFETY: RcuOptionArc drops its inner type with rcu_drop which is safe if T: RcuDroppable
@@ -185,7 +185,7 @@ mod tests {
         non_zero: std::num::NonZeroU32,
         mutex: fuchsia_sync::Mutex<u32>,
         rwlock: fuchsia_sync::RwLock<String>,
-        rcu_arc: crate::RcuArc<u32>,
+        rcu_droppable_arc: crate::RcuDroppableArc<u32>,
         weak: std::sync::Weak<u32>,
     }
 

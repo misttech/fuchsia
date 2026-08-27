@@ -8,11 +8,11 @@ mod tests {
     #[test]
     fn rcu_arc_example() {
         // [START rcu_arc_example]
-        use fuchsia_rcu::RcuArc;
+        use fuchsia_rcu::RcuDroppableArc;
         use std::sync::Arc;
 
-        // Initialize an RcuArc with an initial value.
-        let rcu_arc = RcuArc::new(Arc::new(42));
+        // Initialize an RcuDroppableArc with an initial value.
+        let rcu_arc = RcuDroppableArc::new(Arc::new(42));
 
         // Access the current value.
         // The returned guard dereferences to the inner type T.

@@ -64,17 +64,17 @@ with an internal mutex. For example:
    adjust_indentation="auto" %}
 ```
 
-### `RcuArc` and `RcuOptionArc`
+### `RcuDroppableArc` and `RcuOptionArc`
 
-RCU also provides [`RcuArc`][rcu-arc] and [`RcuOptionArc`][rcu-option-arc],
+RCU also provides [`RcuDroppableArc`][rcu-droppable-arc] and [`RcuOptionArc`][rcu-option-arc],
 which allow an `Arc` to be read and mutated concurrently with high efficiency.
 These data structures are particularly efficient because they introduce no
 additional storage overhead beyond the `Arc` itself. They should generally be
 used as a replacement for wrapping an `Arc` in a `Mutex` or `RwLock`.
 
-#### Example: Using `RcuArc`
+#### Example: Using `RcuDroppableArc`
 
-`RcuArc` enables atomic updates to an `Arc`, allowing existing readers to
+`RcuDroppableArc` enables atomic updates to an `Arc`, allowing existing readers to
 continue accessing the old value while a writer publishes a new one.
 
 ```rust
@@ -108,6 +108,6 @@ Starnix will be able to leverage these performance benefits.
 
 [rcu-hash-map]: /src/starnix/lib/starnix_rcu/src/rcu_hash_map.rs
 [rcu-cache]: /src/starnix/lib/starnix_rcu/src/rcu_cache.rs
-[rcu-arc]: /src/lib/fuchsia-rcu/src/rcu_arc.rs
+[rcu-droppable-arc]: /src/lib/fuchsia-rcu/src/rcu_droppable_arc.rs
 [rcu-option-arc]: /src/lib/fuchsia-rcu/src/rcu_option_arc.rs
 [delayed_release]: /src/starnix/kernel/core/task/delayed_release.rs
