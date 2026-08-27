@@ -810,6 +810,8 @@ async fn test_get_hash_failure() {
     }]);
 }
 
+// TODO(https://fxbug.dev/552675412): Delete the pkg-status subcommand.
+#[ignore]
 #[fuchsia::test]
 async fn test_pkg_status_success() {
     let hash: fidl_fuchsia_pkg::BlobId =
@@ -836,6 +838,8 @@ async fn test_pkg_status_success() {
     );
 }
 
+// TODO(https://fxbug.dev/552675412): Delete the pkg-status subcommand.
+#[ignore]
 #[fuchsia::test]
 async fn test_pkg_status_fail_pkg_in_tuf_repo_but_not_on_disk() {
     let hash: fidl_fuchsia_pkg::BlobId =
@@ -863,6 +867,8 @@ async fn test_pkg_status_fail_pkg_in_tuf_repo_but_not_on_disk() {
     );
 }
 
+// TODO(https://fxbug.dev/552675412): Delete the pkg-status subcommand.
+#[ignore]
 #[fuchsia::test]
 async fn test_pkg_status_fail_pkg_not_in_tuf_repo() {
     let env = TestEnv::new();

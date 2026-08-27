@@ -11,7 +11,7 @@ use crate::args::{
     RuleDumpDynamicCommand, RuleListCommand, RuleReplaceCommand, RuleReplaceFileCommand,
     RuleReplaceJsonCommand, RuleReplaceSubCommand, RuleSubCommand,
 };
-use anyhow::{Context as _, bail, format_err};
+use anyhow::{Context as _, format_err};
 use fetch_url::fetch_url;
 use fidl_fuchsia_pkg as fpkg;
 use fidl_fuchsia_pkg_ext as pkg;
@@ -73,47 +73,8 @@ async fn main_helper(command: Command) -> Result<i32, anyhow::Error> {
             println!("{}", pkg::BlobId::from(blob_id));
             Ok(0)
         }
-        Command::PkgStatus(PkgStatusCommand { pkg_url }) => {
-            let resolver = connect_to_protocol::<fpkg::PackageResolverMarker>()
-                .context("Failed to connect to resolver service")?;
-            let blob_id = match resolver.get_hash(&fpkg::PackageUrl { url: pkg_url }).await? {
-                Ok(blob_id) => pkg::BlobId::from(blob_id),
-                Err(status) => match zx::Status::err_from_raw(status) {
-                    zx::Status::NOT_FOUND => {
-                        println!("Package in registered TUF repo: no");
-                        println!("Package on disk: unknown (did not check since not in tuf repo)");
-                        return Ok(3);
-                    }
-                    other_failure_status => {
-                        bail!(
-                            "Cannot determine pkg status. Failed fuchsia.pkg.PackageResolver.GetHash with unexpected status: {:?}",
-                            other_failure_status
-                        );
-                    }
-                },
-            };
-            println!("Package in registered TUF repo: yes (merkle={blob_id})");
-
-            let cache = pkg::cache::Client::from_proxy(
-                connect_to_protocol::<fpkg::PackageCacheMarker>()
-                    .context("Failed to connect to cache service")?,
-            );
-
-            match cache.get_already_cached(blob_id).await {
-                Ok(_) => {}
-                Err(e) if e.was_not_cached() => {
-                    println!("Package on disk: no");
-                    return Ok(2);
-                }
-                Err(e) => {
-                    bail!(
-                        "Cannot determine pkg status. Failed fuchsia.pkg.PackageCache.Get: {:?}",
-                        e
-                    );
-                }
-            }
-            println!("Package on disk: yes");
-            Ok(0)
+        Command::PkgStatus(PkgStatusCommand { pkg_url: _ }) => {
+            anyhow::bail!("`pkgctl pkg-status` is being deleted, https://fxbug.dev/552675412");
         }
         Command::Open(OpenCommand { meta_far_blob_id: _ }) => {
             anyhow::bail!("`pkgctl open` is being deleted, https://fxbug.dev/552670958");
