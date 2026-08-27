@@ -5,6 +5,8 @@
 # found in the LICENSE file.
 
 
+import fuchsia_async_extension
+import honeydew.affordances.connectivity.wlan.core as wlan_core
 from antlion.controllers.access_point import AccessPoint, setup_ap
 from antlion.controllers.ap_lib import hostapd_constants
 from antlion.controllers.ap_lib.hostapd_security import SecurityMode
@@ -53,6 +55,54 @@ class WlanPhyComplianceABGTest(base_test.WifiBaseTest):
 
     access_point: AccessPoint | None = None
     openwrt_ap: OpenWrtAP | None = None
+    _client_iface: wlan_core.ClientIface | None = None
+
+    async def _get_client_iface(self) -> wlan_core.ClientIface:
+        if self._client_iface is None:
+            phy = (
+                await self.dut.device.honeydew_fd.wlan_core.ensure_single_phy()
+            )
+            client_ifaces = await phy.get_client_ifaces()
+            if client_ifaces:
+                self._client_iface = client_ifaces[0]
+            else:
+                self._client_iface = await phy.create_client_iface()
+        return self._client_iface
+
+    def _connect_and_validate_channel(
+        self,
+        target_ssid: str,
+        target_security: SecurityMode,
+        target_channel: int,
+        target_pwd: str | None = None,
+    ) -> None:
+        async def _connect_and_validate() -> None:
+            await self.dut.device.honeydew_fd.wlan_policy.save_network(
+                target_ssid,
+                target_security.fuchsia_security_type(),
+                target_pwd=target_pwd,
+            )
+            await self.dut.device.honeydew_fd.wlan_policy.connect(
+                target_ssid,
+                target_security.fuchsia_security_type(),
+            )
+            iface = await self._get_client_iface()
+            status = await iface.status()
+            if status.connected is None:
+                raise signals.TestFailure(
+                    f"Expected connected status, got: {status}"
+                )
+            got_channel = status.connected.primary.number
+            asserts.assert_equal(
+                got_channel,
+                target_channel,
+                f"Connected to wrong channel. Expected channel {target_channel}, "
+                f"got {got_channel}.",
+            )
+
+        fuchsia_async_extension.get_loop().run_until_complete(
+            _connect_and_validate()
+        )
 
     def setup_class(self) -> None:
         super().setup_class()
@@ -210,9 +260,8 @@ class WlanPhyComplianceABGTest(base_test.WifiBaseTest):
                 hidden=hidden,
             )
 
-        asserts.assert_true(
-            self.dut.associate(ssid, SecurityMode.OPEN),
-            "Failed to associate.",
+        self._connect_and_validate_channel(
+            ssid, SecurityMode.OPEN, target_channel=channel
         )
 
     def test_associate_11b_only_long_preamble(self) -> None:
