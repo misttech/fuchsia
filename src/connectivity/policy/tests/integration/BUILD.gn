@@ -7,12 +7,14 @@ import(
     "//src/lib/testing/expectation/fuchsia_test_component_with_expectations.gni")
 import(
     "//src/lib/testing/expectation/fuchsia_test_with_expectations_package.gni")
+import("//src/lib/testing/sharding/fuchsia_sharded_test_package.gni")
 
 tests = [ "reachability" ]
 
 tests_with_err_logs = [
   {
     label = "management"
+    long = true
   },
 ]
 
@@ -22,14 +24,6 @@ foreach(test, tests) {
     expectations = "expects/${name}.json5"
     manifest = "meta/${name}.cml"
     deps = [ test ]
-  }
-}
-
-foreach(test, tests_with_err_logs) {
-  name = "policy-${test.label}-integration-test"
-  fuchsia_test_component(name) {
-    manifest = "meta/${name}.cml"
-    deps = [ test.label ]
   }
 }
 
@@ -96,31 +90,87 @@ fuchsia_test_package("policy-integration-tests") {
 
 err_log_package_deps = []
 foreach(test, tests_with_err_logs) {
-  name = "policy-${test.label}-integration-test"
-  no_err_logs_package_name = "${name}-no-err-logs"
-  fuchsia_test_with_expectations_package(no_err_logs_package_name) {
-    test_components = [ ":${name}" ]
-    expectations = "expects/${name}.json5"
-    treatment_of_cases_with_error_logs = "SKIP_CASES_WITH_ERROR_LOGS"
-    deps = package_deps_for_tests +
-           [ "//src/lib/testing/expectation:expectation_comparer" ]
+  _long = false
+  if (defined(test.long)) {
+    _long = test.long
   }
-  with_err_logs_package_name = "${name}-with-err-logs"
-  fuchsia_test_with_expectations_package(with_err_logs_package_name) {
-    test_components = [ ":${name}" ]
-    expectations = "expects/${name}.json5"
-    treatment_of_cases_with_error_logs = "RUN_ONLY_CASES_WITH_ERROR_LOGS"
-    deps = package_deps_for_tests +
-           [ "//src/lib/testing/expectation:expectation_comparer" ]
-    test_specs = {
-      log_settings = {
-        max_severity = "ERROR"
+  _name = "policy-${test.label}-integration-test"
+  _no_err_logs_name = "${_name}-no-err-logs"
+  _with_err_logs_name = "${_name}-with-err-logs"
+
+  if (_long) {
+    _component_attributes = {
+    }
+    _component_attributes = {
+      manifest = "meta/${_name}.cml"
+      deps = [ test.label ]
+      expectations = "expects/${_name}.json5"
+      num_shards = 10
+
+      # Matches the first `::`-delimited section of the test case name,
+      # or the whole name if there are no `::` delimiters.
+      shard_part_regex = "([^::]+)(?:::.*)?"
+    }
+
+    fuchsia_sharded_test_package(_no_err_logs_name) {
+      test_components = [
+        {
+          forward_variables_from(_component_attributes, "*")
+          name = _no_err_logs_name
+          treatment_of_cases_with_error_logs = "SKIP_CASES_WITH_ERROR_LOGS"
+        },
+      ]
+      deps = package_deps_for_tests +
+             [ "//src/lib/testing/expectation:expectation_comparer" ]
+    }
+    fuchsia_sharded_test_package(_with_err_logs_name) {
+      test_components = [
+        {
+          forward_variables_from(_component_attributes, "*")
+          name = _with_err_logs_name
+          treatment_of_cases_with_error_logs = "RUN_ONLY_CASES_WITH_ERROR_LOGS"
+        },
+      ]
+      deps = package_deps_for_tests +
+             [ "//src/lib/testing/expectation:expectation_comparer" ]
+      test_specs = {
+        log_settings = {
+          max_severity = "ERROR"
+        }
+      }
+    }
+  } else {
+    _component_label = "${_name}"
+    fuchsia_test_component(_component_label) {
+      component_name = _name
+      manifest = "meta/${_name}.cml"
+      deps = [ test.label ]
+    }
+
+    fuchsia_test_with_expectations_package(_no_err_logs_name) {
+      test_components = [ ":${_component_label}" ]
+      expectations = "expects/${_name}.json5"
+      treatment_of_cases_with_error_logs = "SKIP_CASES_WITH_ERROR_LOGS"
+      deps = package_deps_for_tests +
+             [ "//src/lib/testing/expectation:expectation_comparer" ]
+    }
+    fuchsia_test_with_expectations_package(_with_err_logs_name) {
+      test_components = [ ":${_component_label}" ]
+      expectations = "expects/${_name}.json5"
+      treatment_of_cases_with_error_logs = "RUN_ONLY_CASES_WITH_ERROR_LOGS"
+      deps = package_deps_for_tests +
+             [ "//src/lib/testing/expectation:expectation_comparer" ]
+      test_specs = {
+        log_settings = {
+          max_severity = "ERROR"
+        }
       }
     }
   }
+
   err_log_package_deps += [
-    ":${no_err_logs_package_name}",
-    ":${with_err_logs_package_name}",
+    ":${_no_err_logs_name}",
+    ":${_with_err_logs_name}",
   ]
 }
 
