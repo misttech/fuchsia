@@ -25,6 +25,7 @@
 #include "src/developer/forensics/testing/unit_test_fixture.h"
 #include "src/developer/forensics/utils/log_format.h"
 #include "src/developer/forensics/utils/redact/redactor.h"
+#include "src/developer/forensics/utils/vmo.h"
 #include "src/lib/files/directory.h"
 #include "src/lib/files/file.h"
 #include "src/lib/files/path.h"
@@ -683,12 +684,10 @@ TEST_F(WriterTest, FlushAndReadLogs) {
   SystemLogWriter::Logs logs = std::move(result.value());
   ASSERT_TRUE(logs.vmo.is_valid());
 
-  uint64_t size;
-  ASSERT_EQ(logs.vmo.get_stream_size(&size), ZX_OK);
-  std::string contents(size, '\0');
-  ASSERT_EQ(logs.vmo.read(contents.data(), 0, size), ZX_OK);
+  const zx::result<std::string> contents = StringFromVmo(logs.vmo);
+  ASSERT_TRUE(contents.is_ok());
 
-  EXPECT_EQ(contents, R"([15604.100][07559][07687][] INFO: line 0
+  EXPECT_EQ(*contents, R"([15604.100][07559][07687][] INFO: line 0
 [15604.200][07559][07687][] INFO: line 1
 )");
   ASSERT_TRUE(logs.first_timestamp.has_value());

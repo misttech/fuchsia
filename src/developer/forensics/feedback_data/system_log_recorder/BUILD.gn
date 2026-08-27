@@ -71,6 +71,7 @@ source_set("src") {
     "//sdk/lib/syslog/cpp",
     "//src/developer/forensics/feedback_data:constants",
     "//src/developer/forensics/utils:purge_memory",
+    "//src/developer/forensics/utils:vmo",
     "//src/developer/forensics/utils/cobalt",
     "//src/lib/diagnostics/accessor2logger",
     "//src/lib/files",

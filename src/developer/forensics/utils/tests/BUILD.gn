@@ -226,6 +226,20 @@ cc_test_executable("utc_time_provider_unittest_exe") {
   ]
 }
 
+cc_test_executable("vmo_unittest_exe") {
+  testonly = true
+
+  sources = [ "vmo_unittest.cc" ]
+
+  deps = [
+    "//src/developer/forensics/testing:gtest_with_syslog_main",
+    "//src/developer/forensics/utils:vmo",
+    "//third_party/googletest:gmock",
+    "//third_party/googletest:gtest",
+    "//zircon/system/ulib/zx",
+  ]
+}
+
 ###############################################################################
 # RESOURCES
 ###############################################################################
@@ -315,6 +329,10 @@ fuchsia_component("utc_time_provider_unittest") {
   deps = [ ":utc_time_provider_unittest_exe" ]
 }
 
+fuchsia_unittest_component("vmo_unittest") {
+  deps = [ ":vmo_unittest_exe" ]
+}
+
 ###############################################################################
 # PACKAGES
 ###############################################################################
@@ -334,6 +352,7 @@ fuchsia_test_package("feedback-utils-tests") {
     ":time_unittest",
     ":utc_clock_ready_watcher_unittest",
     ":utc_time_provider_unittest",
+    ":vmo_unittest",
   ]
   test_specs = {
     log_settings = {

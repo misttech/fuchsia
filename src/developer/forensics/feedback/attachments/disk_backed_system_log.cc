@@ -17,6 +17,7 @@
 
 #include "src/developer/forensics/feedback_data/constants.h"
 #include "src/developer/forensics/utils/errors.h"
+#include "src/developer/forensics/utils/vmo.h"
 
 namespace forensics::feedback {
 namespace {
@@ -151,28 +152,20 @@ void DiskBackedSystemLog::handle_unknown_event(
 
         const zx::vmo vmo = std::move(*result->logs());
 
-        size_t size;
-        if (const zx_status_t status = vmo.get_stream_size(&size); status != ZX_OK) {
-          FX_PLOGS(ERROR, status) << "Failed to get VMO content size";
+        zx::result<std::string> contents = StringFromVmo(vmo);
+        if (contents.is_error()) {
           complete_error(Error::kBadValue);
           return;
         }
 
-        std::string contents(size, '\0');
-        if (const zx_status_t status = vmo.read(contents.data(), 0, size); status != ZX_OK) {
-          FX_PLOGS(ERROR, status) << "Failed to read VMO";
-          complete_error(Error::kBadValue);
-          return;
-        }
+        redactor->Redact(*contents);
 
-        redactor->Redact(contents);
-
-        if (contents.empty()) {
+        if (contents->empty()) {
           complete_error(Error::kMissingValue);
           return;
         }
 
-        log_data.contents = std::move(contents);
+        log_data.contents = std::move(*contents);
         complete_ok(std::move(log_data));
       });
 

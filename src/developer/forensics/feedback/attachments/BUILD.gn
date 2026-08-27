@@ -57,6 +57,7 @@ source_set("disk_backed_system_log") {
     "//sdk/lib/syslog/cpp",
     "//src/developer/forensics/feedback_data:constants",
     "//src/developer/forensics/utils:errors",
+    "//src/developer/forensics/utils:vmo",
   ]
 }
 

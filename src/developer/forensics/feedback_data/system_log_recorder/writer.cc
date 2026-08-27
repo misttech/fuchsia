@@ -14,6 +14,7 @@
 
 #include "src/developer/forensics/feedback_data/system_log_recorder/disk_backed_logs_metadata.h"
 #include "src/developer/forensics/feedback_data/system_log_recorder/reader.h"
+#include "src/developer/forensics/utils/vmo.h"
 #include "src/lib/files/directory.h"
 #include "src/lib/files/path.h"
 #include "src/lib/fxl/strings/string_number_conversions.h"
@@ -140,21 +141,13 @@ fit::result<SystemLogWriter::WriterError, SystemLogWriter::Logs> SystemLogWriter
 
   const std::string& log_str = *uncompressed_log;
 
-  zx::vmo vmo;
-  zx_status_t status = zx::vmo::create(log_str.size(), /*options=*/0, &vmo);
-  if (status != ZX_OK) {
-    FX_PLOGS(WARNING, status) << "Failed to create VMO of size " << log_str.size();
-    return fit::error(WriterError::kVmoError);
-  }
-
-  status = vmo.write(log_str.data(), /*offset=*/0, log_str.size());
-  if (status != ZX_OK) {
-    FX_PLOGS(WARNING, status) << "Failed to write logs to VMO";
+  zx::result<zx::vmo> vmo = VmoFromString(log_str);
+  if (vmo.is_error()) {
     return fit::error(WriterError::kVmoError);
   }
 
   return fit::ok(Logs{
-      .vmo = std::move(vmo),
+      .vmo = std::move(*vmo),
       .first_timestamp = metadata_.FirstTimestamp(),
       .last_timestamp = metadata_.LastTimestamp(),
   });

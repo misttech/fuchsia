@@ -23,7 +23,7 @@
 #include "src/developer/forensics/testing/stubs/diagnostics_archive.h"
 #include "src/developer/forensics/testing/stubs/diagnostics_batch_iterator.h"
 #include "src/developer/forensics/testing/unit_test_fixture.h"
-#include "src/lib/files/file.h"
+#include "src/developer/forensics/utils/vmo.h"
 #include "src/lib/files/path.h"
 #include "src/lib/files/scoped_temp_dir.h"
 #include "src/lib/fxl/strings/string_printf.h"
@@ -673,13 +673,11 @@ TEST_F(SystemLogRecorderTest, MultipleDispatchersGetCurrentBootLogs) {
   ASSERT_TRUE(response.logs().has_value());
   zx::vmo vmo = std::move(*response.logs());
 
-  uint64_t size;
-  ASSERT_EQ(vmo.get_stream_size(&size), ZX_OK);
-  std::string contents(size, '\0');
-  ASSERT_EQ(vmo.read(contents.data(), 0, size), ZX_OK);
+  const zx::result<std::string> contents = StringFromVmo(vmo);
+  ASSERT_TRUE(contents.is_ok());
 
-  EXPECT_THAT(contents, HasSubstr("line 0"));
-  EXPECT_THAT(contents, HasSubstr("line 1"));
+  EXPECT_THAT(*contents, HasSubstr("line 0"));
+  EXPECT_THAT(*contents, HasSubstr("line 1"));
   ASSERT_TRUE(response.metadata().has_value());
   ASSERT_TRUE(response.metadata()->first_timestamp().has_value());
   ASSERT_TRUE(response.metadata()->last_timestamp().has_value());

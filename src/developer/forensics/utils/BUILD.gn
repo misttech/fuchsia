@@ -198,3 +198,14 @@ source_set("utc_clock_ready_watcher") {
     "//sdk/lib/syslog/cpp",
   ]
 }
+
+source_set("vmo") {
+  sources = [
+    "vmo.cc",
+    "vmo.h",
+  ]
+
+  public_deps = [ "//zircon/system/ulib/zx" ]
+
+  deps = [ "//sdk/lib/syslog/cpp" ]
+}
