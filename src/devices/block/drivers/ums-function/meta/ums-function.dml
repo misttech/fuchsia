@@ -1,0 +1,34 @@
+// Copyright 2026 The Fuchsia Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
+
+{
+  name: "ums-function",
+  program: {
+    colocate: "true",
+    default_dispatcher_opts: [ "allow_sync_calls" ],
+    bind: {
+      protocol: "fuchsia.usb.BIND_PROTOCOL.FUNCTION",
+      rules: {
+        "fuchsia.BIND_USB_CLASS": "fuchsia.usb.BIND_USB_CLASS.MASS_STORAGE",
+        "fuchsia.BIND_USB_PROTOCOL": "fuchsia.usb.massstorage.BIND_USB_PROTOCOL.BULK_ONLY",
+        "fuchsia.BIND_USB_SUBCLASS": "fuchsia.usb.massstorage.BIND_USB_SUBCLASS.SCSI",
+      },
+    },
+  },
+  use: [
+    {
+      protocol: "fuchsia.hardware.usb.endpoint.Endpoint",
+    },
+    {
+      service: "fuchsia.driver.compat.Service",
+      name: "default",
+      generate_bind_rule: false,
+    },
+    {
+      service: "fuchsia.hardware.usb.function.UsbFunctionService",
+      name: "default",
+      generate_bind_rule: false,
+    },
+  ],
+}

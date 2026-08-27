@@ -1,0 +1,28 @@
+// Copyright 2026 The Fuchsia Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
+
+{
+  name: "block.core",
+  include: [ "//sdk/lib/driver/compat/compat.shard.cml" ],
+  program: {
+    colocate: "true",
+    compat: "driver/block.core.so",
+    default_dispatcher_opts: [ "allow_sync_calls" ],
+    allowed_scheduler_roles: [ "fuchsia.devices.block.drivers.core.block-server" ],
+    bind: {
+      protocol: "fuchsia.block.BIND_PROTOCOL.BLOCK_IMPL",
+    },
+  },
+  use: [
+    {
+      protocol: "fuchsia.scheduler.RoleManager",
+      availability: "optional",
+    },
+    {
+      service: "fuchsia.boot.metadata.PartitionMap",
+      name: "default",
+      generate_bind_rule: false,
+    },
+  ],
+}

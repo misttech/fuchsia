@@ -7,8 +7,13 @@ import("//build/components.gni")
 import("//build/drivers.gni")
 import("//build/test.gni")
 
+fuchsia_driver_dml("rndis-function-dml") {
+  dml = "meta/rndis-function.dml"
+  driver_name = "rndis-function"
+}
+
 driver_bind_rules("rndis_function_bind") {
-  rules = "meta/rndis-function.bind"
+  dml_label = ":rndis-function-dml"
   bind_output = "rndis-function.bindbc"
   tests = "meta/bind-tests.json"
   deps = [
@@ -64,9 +69,9 @@ fuchsia_cc_driver("rndis-function-driver") {
 
 fuchsia_driver_component("rndis-function") {
   component_name = "rndis-function"
+  dml_label = ":rndis-function-dml"
   deps = [ ":rndis-function-driver" ]
   info = "meta/rndis-function-info.json"
-  manifest = "meta/rndis-function.cml"
 }
 
 fuchsia_driver_package("package") {

@@ -8,8 +8,13 @@ import("//build/drivers.gni")
 import("//build/fidl/fidl.gni")
 import("//build/test.gni")
 
+fuchsia_driver_dml("asix-88179-dml") {
+  dml = "meta/asix-88179.dml"
+  driver_name = "asix-88179"
+}
+
 driver_bind_rules("ethernet_ax88179_bind") {
-  rules = "meta/asix-88179.bind"
+  dml_label = ":asix-88179-dml"
   bind_output = "asix-88179.bindbc"
   tests = "meta/ethernet_ax88179-bind-tests.json"
   deps = [ "//src/devices/bind/fuchsia.usb" ]
@@ -57,9 +62,9 @@ fuchsia_driver_component("asix-88179") {
     "//src/connectivity/ethernet:drivers",
   ]
   component_name = "asix-88179"
+  dml_label = ":asix-88179-dml"
   deps = [ ":asix-88179-driver" ]
   info = "meta/asix-88179-info.json"
-  manifest = "meta/asix-88179.cml"
 }
 
 fuchsia_driver_package("package") {

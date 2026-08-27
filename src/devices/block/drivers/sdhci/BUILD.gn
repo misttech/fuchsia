@@ -22,8 +22,14 @@ source_set("dma-descriptor-builder") {
   ]
 }
 
+fuchsia_driver_dml("sdhci-dml") {
+  dml = "meta/sdhci.dml"
+  driver_name = "sdhci"
+}
+
 driver_bind_rules("sdhci-bind") {
-  rules = "meta/sdhci.bind"
+  dml_label = ":sdhci-dml"
+  bind_output = "sdhci.bindbc"
   tests = "meta/sdhci-bind-test.json"
   deps = [ "//src/devices/bind/fuchsia" ]
 }
@@ -83,12 +89,12 @@ fuchsia_cc_driver("sdhci-driver") {
 
 fuchsia_driver_component("sdhci") {
   component_name = "sdhci"
+  dml_label = ":sdhci-dml"
   deps = [
     ":sdhci-bind",
     ":sdhci-driver",
   ]
   info = "meta/sdhci-info.json"
-  cm_label = ":sdhci-manifest"
 }
 
 fuchsia_driver_package("package") {

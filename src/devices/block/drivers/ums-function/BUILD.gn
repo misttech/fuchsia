@@ -5,8 +5,13 @@
 import("//build/bind/bind.gni")
 import("//build/drivers.gni")
 
+fuchsia_driver_dml("ums-function-dml") {
+  dml = "meta/ums-function.dml"
+  driver_name = "ums-function"
+}
+
 driver_bind_rules("usb_ums_bind") {
-  rules = "meta/ums-function.bind"
+  dml_label = ":ums-function-dml"
   bind_output = "ums-function.bindbc"
   tests = "meta/bind_tests.json"
   deps = [
@@ -48,9 +53,9 @@ fuchsia_cc_driver("ums-function-driver") {
 
 fuchsia_driver_component("ums-function") {
   component_name = "ums-function"
+  dml_label = ":ums-function-dml"
   deps = [ ":ums-function-driver" ]
   info = "meta/ums-function-info.json"
-  manifest = "meta/ums-function.cml"
 }
 
 fuchsia_driver_package("package") {

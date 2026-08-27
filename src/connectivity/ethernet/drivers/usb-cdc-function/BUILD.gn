@@ -7,8 +7,13 @@ import("//build/components.gni")
 import("//build/drivers.gni")
 import("//build/test.gni")
 
+fuchsia_driver_dml("usb-cdc-function-dml") {
+  dml = "meta/usb-cdc-function.dml"
+  driver_name = "usb-cdc-function"
+}
+
 driver_bind_rules("usb_cdc_bind") {
-  rules = "meta/usb-cdc-function.bind"
+  dml_label = ":usb-cdc-function-dml"
   bind_output = "usb-cdc-function.bindbc"
   tests = "meta/bind-tests.json"
   deps = [
@@ -58,11 +63,12 @@ fuchsia_cc_driver("usb-cdc-function-driver") {
 fuchsia_driver_component("usb-cdc-function") {
   # LINT.IfChange(cdc_driver_component_name_tefmo)
   component_name = "usb-cdc-function"
-  deps = [ ":usb-cdc-function-driver" ]
-  info = "meta/usb-cdc-function-info.json"
-  manifest = "meta/usb-cdc-function.cml"
 
   # LINT.ThenChange(//tools/testing/tefmocheck/cdc_ethernet_state_check.go:cdc_driver_component_name_tefmo)
+
+  dml_label = ":usb-cdc-function-dml"
+  deps = [ ":usb-cdc-function-driver" ]
+  info = "meta/usb-cdc-function-info.json"
 }
 
 fuchsia_driver_package("package") {

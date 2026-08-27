@@ -8,8 +8,13 @@ import("//build/drivers.gni")
 import("//build/test.gni")
 import("//tools/power_config/build/config.gni")
 
+fuchsia_driver_dml("sdmmc-dml") {
+  dml = "meta/sdmmc.dml"
+  driver_name = "sdmmc"
+}
+
 driver_bind_rules("sdmmc-bind") {
-  rules = "meta/sdmmc.bind"
+  dml_label = ":sdmmc-dml"
   bind_output = "sdmmc.bindbc"
   tests = "meta/sdmmc-bind-test.json"
   deps = [
@@ -111,7 +116,7 @@ fuchsia_driver_component("sdmmc") {
     ":*",
     "//src/devices/block:drivers",
   ]
-  cm_label = ":sdmmc-manifest"
+  dml_label = ":sdmmc-dml"
   deps = [
     ":sdmmc-bind",
     ":sdmmc-driver",

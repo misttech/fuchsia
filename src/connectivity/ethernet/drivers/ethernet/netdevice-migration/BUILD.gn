@@ -12,8 +12,14 @@ group("tests") {
   deps = [ ":netdevice-migration-tests" ]
 }
 
+fuchsia_driver_dml("netdevice-migration-dml") {
+  dml = "meta/netdevice-migration.dml"
+  driver_name = "netdevice-migration"
+}
+
 driver_bind_rules("netdevice-migration-bind") {
-  rules = "meta/netdevice-migration.bind"
+  dml_label = ":netdevice-migration-dml"
+  bind_output = "netdevice-migration.bindbc"
   tests = "meta/bind-tests.json"
   deps = [ "//src/devices/bind/fuchsia.ethernet" ]
 }

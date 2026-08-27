@@ -8,6 +8,13 @@ import("//build/drivers.gni")
 import("//build/test.gni")
 import("//src/storage/testing/driver_test_realm.gni")
 
+fuchsia_driver_dml("core-dml") {
+  dml = "meta/core.dml"
+  driver_name = "block.core"
+  golden_bind = "meta/core.bind"
+  golden_cml = "meta/core.cml"
+}
+
 fuchsia_cc_driver("core-driver") {
   legacy = true
   output_name = "block.core"
@@ -36,9 +43,9 @@ fuchsia_driver_component("core") {
     "//src/storage/testing:storage_drivers",
   ]
   component_name = "block.core"
+  dml_label = ":core-dml"
   deps = [ ":core-driver" ]
   info = "meta/core-info.json"
-  manifest = "meta/core.cml"
 }
 
 fuchsia_driver_package("package") {
@@ -82,8 +89,8 @@ fuchsia_unittest_package("core-unittest") {
 }
 
 driver_bind_rules("block-core-bind") {
-  rules = "meta/core.bind"
-  bind_output = "block.bindbc"
+  dml_label = ":core-dml"
+  bind_output = "block.core.bindbc"
   tests = "meta/bind-tests.json"
   deps = [ "//src/devices/bind/fuchsia.block" ]
 }

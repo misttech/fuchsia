@@ -6,8 +6,13 @@ import("//build/bind/bind.gni")
 import("//build/components.gni")
 import("//build/drivers.gni")
 
+fuchsia_driver_dml("cqhci-dml") {
+  dml = "meta/cqhci.dml"
+  driver_name = "cqhci"
+}
+
 driver_bind_rules("bind") {
-  rules = "meta/cqhci.bind"
+  dml_label = ":cqhci-dml"
   bind_output = "cqhci.bindbc"
   deps = [
     "//src/devices/bind/fuchsia",
@@ -94,7 +99,7 @@ fuchsia_unittest_package("cqhci-test") {
 
 fuchsia_driver_component("cqhci") {
   component_name = "cqhci"
-  cm_label = ":cqhci_manifest"
+  dml_label = ":cqhci-dml"
   info = "meta/cqhci-info.json"
   deps = [
     ":bind",

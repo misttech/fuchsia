@@ -13,8 +13,13 @@ bazel_driver_package("aml-sdmmc-no-banjo-bazel-package") {
   package_name = "aml-sdmmc"
 }
 
+fuchsia_driver_dml("aml-sdmmc-dml") {
+  dml = "meta/aml-sdmmc.dml"
+  driver_name = "aml-sdmmc"
+}
+
 driver_bind_rules("aml-sdmmc-bind") {
-  rules = "meta/aml-sdmmc.bind"
+  dml_label = ":aml-sdmmc-dml"
   bind_output = "aml-sdmmc.bindbc"
   tests = "meta/aml-sdmmc-bind-test.json"
   deps = [
@@ -86,7 +91,7 @@ fuchsia_component_manifest("aml-sdmmc-manifest") {
 }
 
 fuchsia_driver_component("aml-sdmmc") {
-  cm_label = ":aml-sdmmc-manifest"
+  dml_label = ":aml-sdmmc-dml"
   deps = [
     ":aml-sdmmc-bind",
     ":aml-sdmmc-driver",

@@ -7,8 +7,13 @@ import("//build/components.gni")
 import("//build/drivers.gni")
 import("//build/test.gni")
 
+fuchsia_driver_dml("usb-mass-storage-dml") {
+  dml = "meta/usb-mass-storage.dml"
+  driver_name = "usb-mass-storage"
+}
+
 driver_bind_rules("usb_mass_storage_bind") {
-  rules = "meta/usb-mass-storage.bind"
+  dml_label = ":usb-mass-storage-dml"
   bind_output = "usb-mass-storage.bindbc"
   tests = "meta/bind_tests.json"
   deps = [
@@ -51,9 +56,9 @@ fuchsia_driver_component("usb-mass-storage") {
     "//src/devices/block:drivers",
   ]
   component_name = "usb-mass-storage"
+  dml_label = ":usb-mass-storage-dml"
   deps = [ ":usb-mass-storage-driver" ]
   info = "meta/usb-mass-storage-info.json"
-  manifest = "meta/usb-mass-storage.cml"
 }
 
 fuchsia_driver_package("package") {

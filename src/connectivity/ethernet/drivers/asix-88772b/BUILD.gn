@@ -5,8 +5,13 @@
 import("//build/bind/bind.gni")
 import("//build/drivers.gni")
 
+fuchsia_driver_dml("asix-88772b-dml") {
+  dml = "meta/asix-88772b.dml"
+  driver_name = "asix-88772b"
+}
+
 driver_bind_rules("ethernet_ax88772b_bind") {
-  rules = "meta/asix-88772b.bind"
+  dml_label = ":asix-88772b-dml"
   bind_output = "asix-88772b.bindbc"
   tests = "meta/bind-tests.json"
   deps = [ "//src/devices/bind/fuchsia.usb" ]
