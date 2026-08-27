@@ -339,6 +339,14 @@ INSTANTIATE_TEST_SUITE_P(WithVariousReasons, FinalShutdownInfoGracefulTest,
                                   /*expected_crash_program_name=*/"system",
                               },
                               {
+                                  "CriticalDriverFailure",
+                                  {GracefulShutdownReason::kCriticalDriverFailure},
+                                  cobalt::LastRebootReason::kCriticalDriverFailure,
+                                  fuchsia::feedback::RebootReason::CRITICAL_DRIVER_FAILURE,
+                                  "fuchsia-critical-driver-failure",
+                                  /*expected_crash_program_name=*/"system",
+                              },
+                              {
                                   "RetrySystemUpdate",
                                   {GracefulShutdownReason::kRetrySystemUpdate},
                                   cobalt::LastRebootReason::kRetrySystemUpdate,
@@ -544,6 +552,7 @@ TEST(FinalShutdownInfoTest, AllReasonsParseable) {
       case FinalShutdownReason::kUserRequestDeviceStuck:
       case FinalShutdownReason::kSuspensionFailure:
       case FinalShutdownReason::kBatteryDrained:
+      case FinalShutdownReason::kCriticalDriverFailure:
         const FinalShutdownInfo info(reason);
         const std::string json = info.ToJson();
         EXPECT_EQ(info.ToRebootReasonString(),

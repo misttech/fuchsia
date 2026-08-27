@@ -68,4 +68,8 @@ type ShutdownReason = flexible enum {
     /// The system failed to suspend or resume within the expected time.
     @available(added=32)
     SUSPENSION_FAILURE = 18;
+
+    /// A critical driver has failed.
+    @available(added=HEAD)
+    CRITICAL_DRIVER_FAILURE = 19;
 };

@@ -111,6 +111,8 @@ enum class LastRebootReason {
   kUserHardReset = cobalt_registry::LastRebootUptimeMigratedMetricDimensionReason::UserHardReset,
   kSuspensionFailure =
       cobalt_registry::LastRebootUptimeMigratedMetricDimensionReason::SuspensionFailure,
+  kCriticalDriverFailure =
+      cobalt_registry::LastRebootUptimeMigratedMetricDimensionReason::CriticalDriverFailure,
 };
 
 enum class PreviousBootEncodingVersion {

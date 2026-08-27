@@ -1407,7 +1407,7 @@ void DriverRunner::RebootSystem() {
 
   fpower::ShutdownOptions options{{
       .action = fpower::ShutdownAction::kReboot,
-      .reasons = {{fpower::ShutdownReason::kCriticalComponentFailure}},
+      .reasons = {{fpower::ShutdownReason::kCriticalDriverFailure}},
   }};
 
   statecontrol_admin_->Shutdown(std::move(options))

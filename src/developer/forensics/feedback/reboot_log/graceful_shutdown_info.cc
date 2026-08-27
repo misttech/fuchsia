@@ -51,6 +51,7 @@ constexpr char kDeveloperRequest[] = "DEVELOPER REQUEST";
 constexpr char kReasonUserRequestDeviceStuck[] = "USER REQUEST DEVICE STUCK";
 constexpr char kReasonSuspensionFailure[] = "SUSPENSION FAILURE";
 constexpr char kReasonBatteryDrained[] = "BATTERY DRAINED";
+constexpr char kReasonCriticalDriverFailure[] = "CRITICAL DRIVER FAILURE";
 
 // Used to separate multiple `GracefulShutdownReasons` when written to file.
 constexpr char kDeliminator[] = ",";
@@ -150,6 +151,8 @@ GracefulShutdownReason GracefulShutdownReasonFromString(const std::string_view r
     return GracefulShutdownReason::kSuspensionFailure;
   } else if (reason == kReasonBatteryDrained) {
     return GracefulShutdownReason::kBatteryDrained;
+  } else if (reason == kReasonCriticalDriverFailure) {
+    return GracefulShutdownReason::kCriticalDriverFailure;
   } else if (reason == kNotSupported) {
     return GracefulShutdownReason::kNotSupported;
   } else if (reason == kOutOfMemory) {
@@ -176,6 +179,8 @@ GracefulShutdownReason FromReason(
       return GracefulShutdownReason::kSessionFailure;
     case ShutdownReason::CRITICAL_COMPONENT_FAILURE:
       return GracefulShutdownReason::kCriticalComponentFailure;
+    case ShutdownReason::CRITICAL_DRIVER_FAILURE:
+      return GracefulShutdownReason::kCriticalDriverFailure;
     case ShutdownReason::FACTORY_DATA_RESET:
       return GracefulShutdownReason::kFdr;
     case ShutdownReason::ZBI_SWAP:
@@ -288,6 +293,8 @@ std::string ToString(const GracefulShutdownReason reason) {
       return kReasonSuspensionFailure;
     case GracefulShutdownReason::kBatteryDrained:
       return kReasonBatteryDrained;
+    case GracefulShutdownReason::kCriticalDriverFailure:
+      return kReasonCriticalDriverFailure;
     case GracefulShutdownReason::kNotSupported:
       return kNotSupported;
     case GracefulShutdownReason::kNotParseable:
@@ -325,6 +332,7 @@ std::vector<std::string> ToReasonStrings(const std::vector<GracefulShutdownReaso
       case GracefulShutdownReason::kSessionFailure:
       case GracefulShutdownReason::kSysmgrFailure:
       case GracefulShutdownReason::kCriticalComponentFailure:
+      case GracefulShutdownReason::kCriticalDriverFailure:
       case GracefulShutdownReason::kFdr:
       case GracefulShutdownReason::kZbiSwap:
       case GracefulShutdownReason::kOutOfMemory:

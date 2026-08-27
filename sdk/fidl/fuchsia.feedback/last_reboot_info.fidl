@@ -163,6 +163,10 @@ type RebootReason = strict(removed=9) flexible(added=9) enum : uint16 {
     @available(added=32)
     SUSPENSION_FAILURE = 29;
 
+    /// The device rebooted because a critical driver has failed.
+    @available(added=HEAD)
+    CRITICAL_DRIVER_FAILURE = 30;
+
     // ///////////////////////////////////////////////////////////////////////////////////////////
     // Planned reboot reasons
     // |planned| has a value of true in LastReboot above.

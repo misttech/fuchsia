@@ -111,6 +111,7 @@ TEST(GracefulShutdownInfoTest, VerifyContentConversion) {
       GracefulShutdownReason::kUserRequestDeviceStuck,
       GracefulShutdownReason::kBatteryDrained,
       GracefulShutdownReason::kSuspensionFailure,
+      GracefulShutdownReason::kCriticalDriverFailure,
   };
 
   for (const GracefulShutdownReason reason : reasons) {
@@ -142,6 +143,7 @@ TEST(GracefulShutdownInfoTest, VerifyContentConversionWithMultipleReasons) {
       GracefulShutdownReason::kUserRequestDeviceStuck,
       GracefulShutdownReason::kBatteryDrained,
       GracefulShutdownReason::kSuspensionFailure,
+      GracefulShutdownReason::kCriticalDriverFailure,
   };
 
   // Verify all reasons at once.
@@ -353,6 +355,11 @@ INSTANTIATE_TEST_SUITE_P(WithVariousShutdownReasons, WriteGracefulShutdownReason
                                  "CriticalComponentFailure",
                                  GracefulShutdownReason::kCriticalComponentFailure,
                                  "CRITICAL COMPONENT FAILURE",
+                             },
+                             {
+                                 "CriticalDriverFailure",
+                                 GracefulShutdownReason::kCriticalDriverFailure,
+                                 "CRITICAL DRIVER FAILURE",
                              },
                              {
                                  "FactoryDataReset",

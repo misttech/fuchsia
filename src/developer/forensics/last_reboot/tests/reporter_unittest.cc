@@ -593,6 +593,18 @@ INSTANTIATE_TEST_SUITE_P(
             "REBOOT",
         },
         {
+            "CriticalDriverFailure",
+            ToJson(GracefulShutdownAction::kReboot,
+                   {GracefulShutdownReason::kCriticalDriverFailure}),
+            {GracefulShutdownReason::kCriticalDriverFailure},
+            "FINAL REBOOT REASON (CRITICAL DRIVER FAILURE)",
+            "fuchsia-critical-driver-failure",
+            zx::msec(65487494),
+            zx::msec(64208920),
+            cobalt::LastRebootReason::kCriticalDriverFailure,
+            "REBOOT",
+        },
+        {
             "RetrySystemUpdate",
             ToJson(GracefulShutdownAction::kReboot, {GracefulShutdownReason::kRetrySystemUpdate}),
             {GracefulShutdownReason::kRetrySystemUpdate},

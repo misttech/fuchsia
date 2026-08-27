@@ -134,6 +134,9 @@ FinalShutdownReason FromRebootReasonString(const std::string& reason) {
   if (reason == "BATTERY DRAINED") {
     return FinalShutdownReason::kBatteryDrained;
   }
+  if (reason == "CRITICAL DRIVER FAILURE") {
+    return FinalShutdownReason::kCriticalDriverFailure;
+  }
 
   return FinalShutdownReason::kNotParseable;
 }
@@ -206,6 +209,7 @@ bool FinalShutdownInfo::IsCrash() const {
     case FinalShutdownReason::kSessionFailure:
     case FinalShutdownReason::kSysmgrFailure:
     case FinalShutdownReason::kCriticalComponentFailure:
+    case FinalShutdownReason::kCriticalDriverFailure:
     case FinalShutdownReason::kAndroidUnexpectedReason:
     case FinalShutdownReason::kAndroidRescueParty:
     case FinalShutdownReason::kAndroidCriticalProcessFailure:
@@ -248,6 +252,7 @@ std::optional<bool> FinalShutdownInfo::OptionallyGraceful() const {
     case FinalShutdownReason::kSessionFailure:
     case FinalShutdownReason::kSysmgrFailure:
     case FinalShutdownReason::kCriticalComponentFailure:
+    case FinalShutdownReason::kCriticalDriverFailure:
     case FinalShutdownReason::kFdr:
     case FinalShutdownReason::kZbiSwap:
     case FinalShutdownReason::kNetstackMigration:
@@ -282,6 +287,7 @@ std::optional<bool> FinalShutdownInfo::OptionallyPlanned() const {
     case FinalShutdownReason::kSessionFailure:
     case FinalShutdownReason::kSysmgrFailure:
     case FinalShutdownReason::kCriticalComponentFailure:
+    case FinalShutdownReason::kCriticalDriverFailure:
     case FinalShutdownReason::kFdr:
     case FinalShutdownReason::kZbiSwap:
     case FinalShutdownReason::kAndroidUnexpectedReason:
@@ -367,6 +373,8 @@ std::string FinalShutdownInfo::ToRebootReasonString() const {
       return "SUSPENSION FAILURE";
     case FinalShutdownReason::kBatteryDrained:
       return "BATTERY DRAINED";
+    case FinalShutdownReason::kCriticalDriverFailure:
+      return "CRITICAL DRIVER FAILURE";
   }
 }
 
@@ -410,6 +418,8 @@ std::optional<fuchsia::feedback::RebootReason> FinalShutdownInfo::ToFidlRebootRe
       return fuchsia::feedback::RebootReason::SYSMGR_FAILURE;
     case FinalShutdownReason::kCriticalComponentFailure:
       return fuchsia::feedback::RebootReason::CRITICAL_COMPONENT_FAILURE;
+    case FinalShutdownReason::kCriticalDriverFailure:
+      return fuchsia::feedback::RebootReason::CRITICAL_DRIVER_FAILURE;
     case FinalShutdownReason::kFdr:
       return fuchsia::feedback::RebootReason::FACTORY_DATA_RESET;
     case FinalShutdownReason::kZbiSwap:
@@ -473,6 +483,8 @@ cobalt::LastRebootReason FinalShutdownInfo::ToCobaltLastRebootReason() const {
       return cobalt::LastRebootReason::kSysmgrFailure;
     case FinalShutdownReason::kCriticalComponentFailure:
       return cobalt::LastRebootReason::kCriticalComponentFailure;
+    case FinalShutdownReason::kCriticalDriverFailure:
+      return cobalt::LastRebootReason::kCriticalDriverFailure;
     case FinalShutdownReason::kFdr:
       return cobalt::LastRebootReason::kFactoryDataReset;
     case FinalShutdownReason::kZbiSwap:
@@ -519,6 +531,7 @@ std::string FinalShutdownInfo::ToCrashProgramName() const {
     case FinalShutdownReason::kSessionFailure:
     case FinalShutdownReason::kSysmgrFailure:
     case FinalShutdownReason::kCriticalComponentFailure:
+    case FinalShutdownReason::kCriticalDriverFailure:
     case FinalShutdownReason::kUserRequestDeviceStuck:
     case FinalShutdownReason::kSuspensionFailure:
       return "system";
@@ -574,6 +587,8 @@ std::string FinalShutdownInfo::ToCrashSignature(
       return "fuchsia-sysmgr-failure";
     case FinalShutdownReason::kCriticalComponentFailure:
       return "fuchsia-critical-component-failure";
+    case FinalShutdownReason::kCriticalDriverFailure:
+      return "fuchsia-critical-driver-failure";
     case FinalShutdownReason::kAndroidUnexpectedReason:
       return "fuchsia-shutdown-android-unexpected-reason";
     case FinalShutdownReason::kAndroidRescueParty:
@@ -654,6 +669,8 @@ FinalShutdownReason ConsolidateGracefulShutdownReasons(
         return FinalShutdownReason::kSuspensionFailure;
       case GracefulShutdownReason::kBatteryDrained:
         return FinalShutdownReason::kBatteryDrained;
+      case GracefulShutdownReason::kCriticalDriverFailure:
+        return FinalShutdownReason::kCriticalDriverFailure;
       case GracefulShutdownReason::kNotSet:
         FX_LOGS(FATAL) << "Graceful shutdown reason must be set";
         return FinalShutdownReason::kUnexpectedReasonGraceful;
@@ -794,6 +811,8 @@ std::string FinalShutdownInfo::ToSnapshotAnnotationReason(
       return "fatal sysmgr failure";
     case FinalShutdownReason::kCriticalComponentFailure:
       return "fatal critical component failure";
+    case FinalShutdownReason::kCriticalDriverFailure:
+      return "fatal critical driver failure";
     case FinalShutdownReason::kFdr:
       return "factory data reset";
     case FinalShutdownReason::kRootJobTermination:

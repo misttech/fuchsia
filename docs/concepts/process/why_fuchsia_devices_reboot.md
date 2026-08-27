@@ -105,6 +105,10 @@ determines it has failed in an unrecoverable manner, the device reboots.
 
 If a component marked `"on_terminate": "reboot"` crashed, the device reboots.
 
+### Critical driver failure
+
+If a critical driver crashed, the device reboots.
+
 ### Factory data reset
 
 Following a data reset to the factory defaults, the device reboots.
@@ -156,6 +160,7 @@ ZBI swap                     | `ZBI_SWAP`                   | `ZbiSwap`         
 High temperature             | `HIGH_TEMPERATURE`           | `HighTemperature`          | `fuchsia-reboot-high-temperature`
 Session failure              | `SESSION_FAILURE`            | `SessionFailure`           | `fuchsia-session-failure`
 Critical component failure   | `CRITICAL_COMPONENT_FAILURE` | `CriticalComponentFailure` | `fuchsia-critical-component-failure` or `fuchsia-reboot-$CULPRIT-terminated`
+Critical driver failure      | `CRITICAL_DRIVER_FAILURE`    | `CriticalDriverFailure`    | `fuchsia-critical-driver-failure`
 Factory data reset           | `FACTORY_DATA_RESET`         | `FactoryDataReset`         | N/A\*
 Root job termination         | `ROOT_JOB_TERMINATION        | `RootJobTermination`       | `fuchsia-root-job-termination` or `fuchsia-reboot-$CULPRIT-terminated`
 Generic graceful             | *graceful* field set to true | `GenericGraceful`          | `fuchsia-undetermined-userspace-reboot`

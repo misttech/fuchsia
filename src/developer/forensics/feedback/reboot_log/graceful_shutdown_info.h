@@ -41,6 +41,7 @@ enum class GracefulShutdownReason {
   kUserRequestDeviceStuck,
   kSuspensionFailure,
   kBatteryDrained,
+  kCriticalDriverFailure,
   kNotSupported,
   kNotParseable,
 };
