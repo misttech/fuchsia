@@ -7,9 +7,14 @@ import("//build/components.gni")
 import("//build/drivers.gni")
 import("//build/test.gni")
 
+fuchsia_driver_dml("leaf-dml") {
+  dml = "meta/leaf.dml"
+  driver_name = "leaf"
+}
+
 driver_bind_rules("bind") {
   testonly = true
-  rules = "meta/leaf.bind"
+  dml_label = ":leaf-dml"
   bind_output = "leaf.bindbc"
   deps = [ "//src/devices/tests/v2/compat-runtime-v1/bind:fuchsia.compat" ]
 }
@@ -36,7 +41,7 @@ fuchsia_cc_driver("driver") {
 fuchsia_driver_component("component") {
   testonly = true
   component_name = "leaf"
+  dml_label = ":leaf-dml"
   deps = [ ":driver" ]
   info = "meta/leaf-info.json"
-  manifest = "meta/leaf.cml"
 }

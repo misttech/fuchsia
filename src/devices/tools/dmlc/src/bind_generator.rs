@@ -489,7 +489,12 @@ pub fn generate_bind_file(
             content.push_str("}\n\n");
         }
     } else {
-        content.push_str(&generate_simple_bind_rules(bind)?);
+        let rules_str = generate_simple_bind_rules(bind)?;
+        if rules_str.trim().is_empty() {
+            content.push_str("true;\n");
+        } else {
+            content.push_str(&rules_str);
+        }
     }
     let mut header = format!(
         r#"// Copyright {} The Fuchsia Authors. All rights reserved.
@@ -607,5 +612,13 @@ mod tests {
         assert!(content.contains("// Copyright 2026 The Fuchsia Authors. All rights reserved."));
         let expected = "if fuchsia.BIND_PLATFORM_DEV_VID == 125 {\n    true;\n} else {\n    accept fuchsia.COMPATIBLE {\n      \"fuchsia,my-compat\",\n    }\n}";
         assert!(content.contains(expected), "Expected:\n{}\n\nGot:\n{}", expected, content);
+    }
+
+    #[test]
+    fn test_generate_bind_file_empty_bind() {
+        let bind = DmlBind::default();
+        let content = generate_bind_file("driver_serve_fidl", &bind, &[], "2026").unwrap();
+        assert!(content.contains("// Copyright 2026 The Fuchsia Authors. All rights reserved."));
+        assert!(content.contains("true;\n"), "Expected true; in content:\n{}", content);
     }
 }

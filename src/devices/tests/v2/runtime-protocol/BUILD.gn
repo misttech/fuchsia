@@ -56,8 +56,13 @@ fuchsia_driver_component("root") {
   info = "meta/root-info.json"
 }
 
+fuchsia_driver_dml("leaf-dml") {
+  dml = "meta/leaf.dml"
+  driver_name = "leaf"
+}
+
 driver_bind_rules("runtime-protocol-leaf-bind") {
-  rules = "meta/leaf.bind"
+  dml_label = ":leaf-dml"
   bind_output = "leaf.bindbc"
   tests = "meta/leaf.bind-tests.json"
   deps = [ "//src/devices/bind/fuchsia.test" ]
@@ -82,7 +87,8 @@ fuchsia_cc_driver("leaf-driver") {
 
 fuchsia_driver_component("leaf") {
   testonly = true
-  manifest = "meta/leaf.cml"
+  component_name = "leaf"
+  dml_label = ":leaf-dml"
   deps = [ ":leaf-driver" ]
   info = "meta/leaf-info.json"
 }

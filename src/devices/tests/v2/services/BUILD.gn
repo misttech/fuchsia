@@ -37,8 +37,13 @@ fuchsia_cc_driver("root_driver") {
   ]
 }
 
+fuchsia_driver_dml("v1_driver-dml") {
+  dml = "meta/v1_driver.dml"
+  driver_name = "v1_driver"
+}
+
 driver_bind_rules("v1_driver_bind") {
-  rules = "meta/v1_driver.bind"
+  dml_label = ":v1_driver-dml"
   bind_output = "v1_driver.bindbc"
   deps = [ "//src/devices/bind/fuchsia.test" ]
 }
@@ -64,9 +69,9 @@ fuchsia_cc_driver("v1_driver") {
 fuchsia_driver_component("v1_driver_component") {
   testonly = true
   component_name = "v1_driver"
+  dml_label = ":v1_driver-dml"
   deps = [ ":v1_driver" ]
   info = "meta/v1-driver-info.json"
-  manifest = "meta/v1_driver.cml"
 }
 
 fuchsia_driver_component("root") {

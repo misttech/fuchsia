@@ -14,9 +14,14 @@ fidl("fuchsia.rebind.test") {
   public_deps = [ "//zircon/vdso/zx" ]
 }
 
+fuchsia_driver_dml("rebind_child-dml") {
+  dml = "meta/rebind_child.dml"
+  driver_name = "rebind_child"
+}
+
 driver_bind_rules("child_bind") {
   testonly = true
-  rules = "meta/rebind_child.bind"
+  dml_label = ":rebind_child-dml"
   bind_output = "rebind_child.bindbc"
 }
 
@@ -39,14 +44,19 @@ fuchsia_cc_driver("child_driver") {
 fuchsia_driver_component("child_driver_component") {
   testonly = true
   component_name = "rebind_child"
-  manifest = "meta/rebind_child.cml"
+  dml_label = ":rebind_child-dml"
   deps = [ ":child_driver" ]
   info = "meta/component-info.json"
 }
 
+fuchsia_driver_dml("rebind_parent-dml") {
+  dml = "meta/rebind_parent.dml"
+  driver_name = "rebind_parent"
+}
+
 driver_bind_rules("parent_bind") {
   testonly = true
-  rules = "meta/rebind_parent.bind"
+  dml_label = ":rebind_parent-dml"
   bind_output = "rebind_parent.bindbc"
   deps = [ "//src/devices/bind/fuchsia.test" ]
 }
@@ -72,7 +82,7 @@ fuchsia_cc_driver("parent_driver") {
 fuchsia_driver_component("parent_driver_component") {
   testonly = true
   component_name = "rebind_parent"
-  manifest = "meta/rebind_parent.cml"
+  dml_label = ":rebind_parent-dml"
   deps = [ ":parent_driver" ]
   info = "meta/component-info.json"
 }

@@ -7,9 +7,14 @@ import("//build/components.gni")
 import("//build/drivers.gni")
 import("//build/test.gni")
 
+fuchsia_driver_dml("root-dml") {
+  dml = "meta/root.dml"
+  driver_name = "root"
+}
+
 driver_bind_rules("bind") {
   testonly = true
-  rules = "meta/root.bind"
+  dml_label = ":root-dml"
   bind_output = "root.bindbc"
   deps = [ "//src/devices/bind/fuchsia.test" ]
 }
@@ -39,7 +44,7 @@ fuchsia_cc_driver("driver") {
 fuchsia_driver_component("component") {
   testonly = true
   component_name = "root"
+  dml_label = ":root-dml"
   deps = [ ":driver" ]
   info = "meta/root-info.json"
-  manifest = "meta/root.cml"
 }

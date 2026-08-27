@@ -6,13 +6,14 @@ import("//build/bind/bind.gni")
 import("//build/components.gni")
 import("//build/drivers.gni")
 
+fuchsia_driver_dml("driver-serve-fidl-dml") {
+  dml = "meta/driver-serve-fidl.dml"
+  driver_name = "driver-serve-fidl"
+}
+
 driver_bind_rules("bind") {
-  rules = "meta/driver-serve-fidl.bind"
+  dml_label = ":driver-serve-fidl-dml"
   bind_output = "driver-serve-fidl.bindbc"
-  deps = [
-    "//src/devices/bind/fuchsia",
-    "//src/devices/bind/fuchsia.test",
-  ]
 }
 
 fuchsia_cc_driver("driver") {
@@ -29,7 +30,7 @@ fuchsia_cc_driver("driver") {
 fuchsia_driver_component("component") {
   testonly = true
   component_name = "eval_driver_serve_fidl"
-  manifest = "meta/driver-serve-fidl.cml"
+  dml_label = ":driver-serve-fidl-dml"
   deps = [
     ":bind",
     ":driver",

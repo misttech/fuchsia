@@ -1,0 +1,26 @@
+// Copyright 2026 The Fuchsia Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
+
+{
+  name: "leaf",
+  program: {
+    binary: "driver/runtime-protocol-leaf.so",
+    colocate: "true",
+    bind: {
+      protocol: "fuchsia.test.BIND_PROTOCOL.DEVICE",
+    },
+  },
+  use: [
+    {
+      protocol: "fuchsia.runtime.test.Waiter",
+      name: "waiter",
+      generate_bind_rule: false,
+    },
+    {
+      service: "fuchsia.runtime.test.Service",
+      name: "service",
+      generate_bind_rule: false,
+    },
+  ],
+}

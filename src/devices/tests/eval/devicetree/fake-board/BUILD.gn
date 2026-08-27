@@ -5,8 +5,14 @@
 import("//build/bind/bind.gni")
 import("//build/drivers.gni")
 
+fuchsia_driver_dml("fake-board-dml") {
+  dml = "meta/fake-board.dml"
+  driver_name = "fake-board"
+}
+
 driver_bind_rules("fake-board-bind") {
-  rules = "meta/fake-board.bind"
+  bind_output = "fake-board.bindbc"
+  dml_label = ":fake-board-dml"
   deps = [
     "//src/devices/bind/fuchsia",
     "//src/devices/bind/fuchsia.test.platform",
@@ -32,7 +38,7 @@ fuchsia_cc_driver("fake-board-driver") {
 
 fuchsia_driver_component("fake-board-component") {
   component_name = "fake-board"
-  manifest = "meta/fake-board.cml"
+  dml_label = ":fake-board-dml"
   deps = [ ":fake-board-driver" ]
   info = "meta/fake-board-info.json"
 }
