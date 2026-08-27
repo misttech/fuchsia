@@ -53,6 +53,9 @@ pub struct GenericWatchdog32Inner {
     pub is_enabled: bool,
     /// Whether watchdog petting is currently suppressed (e.g., during panic/crashlog generation).
     pub is_petting_suppressed: bool,
+    /// The `GenericWatchdog32` owning this state, which the pet timer callback runs
+    /// against. `None` for a free-standing instance (unit tests), which never arms.
+    owner: Option<&'static GenericWatchdog32>,
 }
 
 impl GenericWatchdog32Inner {
@@ -72,6 +75,7 @@ impl GenericWatchdog32Inner {
             pet_timer_initialized: false,
             is_enabled: false,
             is_petting_suppressed: false,
+            owner: None,
         }
     }
 
@@ -104,29 +108,35 @@ impl GenericWatchdog32Inner {
         now
     }
 
+    /// Pets the watchdog and re-arms the pet timer for half a period from now.
     fn handle_pet_timer_locked(&mut self) {
-        if self.is_enabled {
-            let last_pet = self.pet_locked();
-            let timeout = self.cfg.watchdog_period_nsec;
-            let next_pet_time = last_pet.0.saturating_add(timeout / 2);
-            let slack = timeout / 4;
-            if self.pet_timer_initialized {
-                // SAFETY: G_WATCHDOG is a global static, so pet_timer is in a stable location
-                // and we can safely create a Pin<&mut Timer>.
-                unsafe {
-                    let mut timer =
-                        core::pin::Pin::new_unchecked(&mut *self.pet_timer.as_mut_ptr());
-                    let deadline = Deadline::new(
-                        InstantUnknown(next_pet_time),
-                        TimerSlack::new(DurationUnknown(slack), SlackMode::Early),
-                    );
-                    timer.as_mut().set_deadline(
-                        &deadline,
-                        watchdog_timer_cb,
-                        core::ptr::addr_of!(*G_WATCHDOG).cast_mut().cast(),
-                    );
-                }
-            }
+        if !self.is_enabled {
+            return;
+        }
+        let last_pet = self.pet_locked();
+        if !self.pet_timer_initialized {
+            return;
+        }
+        // The callback runs against the owner, so only an owned instance may arm.
+        let Some(owner) = self.owner else {
+            return;
+        };
+        let timeout = self.cfg.watchdog_period_nsec;
+        let next_pet_time = last_pet.0.saturating_add(timeout / 2);
+        let slack = timeout / 4;
+        let deadline = Deadline::new(
+            InstantUnknown(next_pet_time),
+            TimerSlack::new(DurationUnknown(slack), SlackMode::Early),
+        );
+        // SAFETY: `owner` is a `'static` reference, so `pet_timer` is in a stable location
+        // and we can safely create a Pin<&mut Timer>.
+        unsafe {
+            let mut timer = core::pin::Pin::new_unchecked(&mut *self.pet_timer.as_mut_ptr());
+            timer.as_mut().set_deadline(
+                &deadline,
+                watchdog_timer_cb,
+                core::ptr::from_ref(owner).cast_mut().cast(),
+            );
         }
     }
 
@@ -300,7 +310,8 @@ impl core::ops::Deref for WatchdogHolder {
 /// `arg` must be a pointer to `GenericWatchdog32`.
 #[unsafe(no_mangle)]
 unsafe extern "C" fn rust_watchdog_on_pet_timer(arg: *mut core::ffi::c_void) {
-    // SAFETY: `arg` is verified upon timer registration (`cpp_watchdog_timer_set`) to be a pointer to `G_WATCHDOG`.
+    // SAFETY: `arg` is the `owner` recorded at early init, so it points to a live
+    // `GenericWatchdog32` in static storage.
     let watchdog = unsafe { &*(arg as *const GenericWatchdog32) };
     ksync::lock!(let mut guard = watchdog.lock_lock());
     guard.as_mut().fields_mut().inner.handle_pet_timer_locked();
@@ -363,6 +374,7 @@ pub unsafe extern "C" fn generic_32bit_watchdog_early_init(config: *const DcfgGe
         ksync::lock!(let mut guard = G_WATCHDOG.lock_lock());
         // SAFETY: `config` is checked to be non-null and guaranteed by caller to point to a valid `DcfgGeneric32Watchdog`.
         let inner = guard.as_mut().fields_mut().inner;
+        inner.owner = Some(&G_WATCHDOG);
         inner.init_early(unsafe { &*config });
         inner.early_init_result.is_ok()
     };
