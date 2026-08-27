@@ -2,10 +2,12 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import("//build/config/compiler_config.gni")
+
 # Platform baseline.
 # This tracks the minimum hardware requirements for aarch32 on starnix.
 # Practically, this should see minimal to no use.
-config("arm") {
+compiler_config("arm") {
   cflags = [
     "-march=armv7-a",
     "-mhwdiv=arm,thumb",
@@ -20,7 +22,7 @@ config("arm") {
 }
 
 # Copied from aarch64
-config("cortex-a53") {
+compiler_config("cortex-a53") {
   cflags = [ "-mcpu=cortex-a53" ]
   ldflags = cflags
   asmflags = cflags
@@ -33,11 +35,4 @@ config("cortex-a53") {
   # The CPU doesn't support the new atomics, so don't pay conditionalization
   # overhead at runtime.
   configs = [ ":no-outline-atomics" ]
-}
-
-# The compiler default for aarch64 targets uses outcalls to compiler-rt
-# (libgcc) functions that can do runtime switching between old and new atomic
-# insns.  This needs to be disabled when the standard runtime is not available.
-config("no-outline-atomics") {
-  cflags = [ "-mno-outline-atomics" ]
 }

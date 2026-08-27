@@ -205,9 +205,9 @@ config("no-libc++-include") {
   }
 }
 
-config("cpu_baseline") {
+compiler_config("cpu_baseline") {
   if (current_cpu != "wasm32") {
-    configs = [ "//build/config/$current_cpu" ]
+    compiler_configs = [ "//build/config/$current_cpu" ]
   }
 }
 

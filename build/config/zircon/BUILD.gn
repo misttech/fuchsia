@@ -25,11 +25,7 @@ import("//build/toolchain/zircon/gcc.gni")
 #    are never used to build host binaries).
 
 compiler_config("compiler") {
-  # Per CPU targeting policy we always target the baseline when building the
-  # kernel, rather than using board_configs. This is done to reduce binary
-  # diversity. See: TODO RFC LINK HERE
-  configs = [ "//build/config:cpu_baseline" ]
-
+  configs = []
   c_family_flags = []
   cflags_cc = []
   defines = []
@@ -72,6 +68,10 @@ compiler_config("compiler") {
 
   # This is the default already on Fuchsia and maybe others, but never hurts.
   cflags = [ "-fno-common" ]
+
+  if (toolchain_environment != "kernel") {
+    configs += [ "//build/config:cpu_baseline" ]
+  }
 
   configs += [
     "//build/config:color_diagnostics",

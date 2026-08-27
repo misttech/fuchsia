@@ -301,6 +301,7 @@ config("instrumented-stack-size") {
 # to roll up the compiler_config() instructions for the custom Rust target.
 compiler_config("abi") {
   compiler_configs = [
+    "//build/config:cpu_baseline",
     "//zircon/kernel/arch/$zircon_cpu:abi",
     ":standalone",
   ]

@@ -6,7 +6,7 @@ import("//build/config/compiler_config.gni")
 
 # Platform baseline.
 # This tracks the minimum hardware requirements for Fuchsia on x86-64.
-config("x64") {
+compiler_config("x64") {
   cflags = [
     "-march=x86-64-v2",
     "-mtune=generic",

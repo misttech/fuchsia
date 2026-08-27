@@ -6,7 +6,7 @@ import("//build/config/compiler_config.gni")
 
 # Platform baseline.
 # This tracks the minimum hardware requirements for Fuchsia on AArch64.
-config("arm64") {
+compiler_config("arm64") {
   cflags = [ "-mtune=generic" ]
 
   if (toolchain_environment != "kernel") {
@@ -27,7 +27,7 @@ config("arm64") {
   asmflags = cflags
 }
 
-config("cortex-a53") {
+compiler_config("cortex-a53") {
   cflags = [ "-mcpu=cortex-a53" ]
   ldflags = cflags
   asmflags = cflags
