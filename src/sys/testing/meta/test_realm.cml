@@ -20,6 +20,7 @@
 
         // Optional: Include optional runners.
         "//src/sys/testing/meta/runners/fuzz-test-runner.shard.cml",
+        "//src/sys/testing/meta/runners/inspect-test-runner.shard.cml",
         "//src/sys/testing/meta/runners/netemul-test-runner.shard.cml",
         "//src/sys/testing/meta/runners/standard-test-runners.shard.cml",
         "//src/sys/testing/meta/runners/starnix-test-runner.shard.cml",
@@ -105,6 +106,10 @@
                 {
                     runner: "starnix_unit_test_runner",
                     from: "#starnix_test_runners",
+                },
+                {
+                    runner: "inspect_test_runner",
+                    from: "#inspect_test_runner",
                 },
                 {
                     runner: "go_test_runner",

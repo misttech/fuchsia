@@ -89,6 +89,10 @@
             url: "go-test-runner#meta/go-test-runner.cm",
         },
         {
+            name: "inspect_test_runner",
+            url: "inspect-test-runner#meta/inspect-test-runner.cm",
+        },
+        {
             name: "stress_test_runner",
             url: "stress-test-runner#meta/stress-test-runner.cm",
         },
@@ -406,6 +410,11 @@
             ],
             from: "parent/diagnostics",
             to: "#system-tests",
+        },
+        {
+            dictionary: "diagnostics-accessors",
+            from: "parent",
+            to: [ "#inspect_test_runner" ],
         },
         {
             storage: "memfs_data",

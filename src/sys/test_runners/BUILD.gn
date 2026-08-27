@@ -155,6 +155,7 @@ group("tests") {
     "fuzz:tests",
     "gtest:tests",
     "gunit:tests",
+    "inspect:tests",
     "lib_loader_cache:tests",
     "rust:tests",
     "starnix:tests",
