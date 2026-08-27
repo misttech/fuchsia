@@ -109,10 +109,7 @@ compiler_config("standalone") {
             {
               key = flavor
               action = "erase"
-              value = [
-                "-z",
-                "--fix-cortex-a53-843419",
-              ]
+              value = [ "--fix-cortex-a53-843419" ]
             },
           ]
         }
