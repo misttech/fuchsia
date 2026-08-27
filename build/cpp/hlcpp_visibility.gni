@@ -185,7 +185,6 @@ hlcpp_visibility = [
   "//src/lib/metrics_buffer:*",
   "//src/lib/process:*",
   "//src/lib/test-suite:*",
-  "//src/lib/ui/input-synthesis:*",
   "//src/lib/ui/scenic/cpp:*",
   "//src/lib/vulkan/flatland_view:*",
   "//src/lib/vulkan/swapchain:*",
