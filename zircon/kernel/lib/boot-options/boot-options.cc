@@ -367,7 +367,7 @@ bool BootOptions::Parse(std::string_view value, AutoOr<uint64_t> BootOptions::* 
 
 void BootOptions::PrintValue(const AutoOr<uint64_t>& value, FILE* out) {
   if (value) {
-    PrintValue(*value, out);
+    PrintValue(*value.to_std(), out);
   } else {
     fprintf(out, "auto");
   }
@@ -478,7 +478,7 @@ void BootOptions::PrintValue(const CompressionStorageStrategy& value, FILE* out)
 }
 
 bool BootOptions::Parse(std::string_view value,
-                        std::optional<RamReservation> BootOptions::* member) {
+                        stdbind::optional<RamReservation> BootOptions::* member) {
   if (value.empty()) {
     this->*member = std::nullopt;
   } else if (auto size = ParseInt(value, &value); !size) {
@@ -500,11 +500,12 @@ bool BootOptions::Parse(std::string_view value,
   return true;
 }
 
-void BootOptions::PrintValue(const std::optional<RamReservation>& value, FILE* out) {
+void BootOptions::PrintValue(const stdbind::optional<RamReservation>& value, FILE* out) {
   if (value) {
-    fprintf(out, "%#" PRIx64, value->size);
-    if (value->paddr) {
-      fprintf(out, ",%#" PRIx64, *value->paddr);
+    auto ram = value.to_std();
+    fprintf(out, "%#" PRIx64, ram->size);
+    if (ram->paddr) {
+      fprintf(out, ",%#" PRIx64, *ram->paddr.to_std());
     }
   }
 }

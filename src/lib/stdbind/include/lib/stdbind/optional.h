@@ -24,10 +24,11 @@ class optional {
                 "stdbind::optional<T> requires a trivially copyable type");
 
   constexpr optional() noexcept : tag_(Tag::kNone), empty_{} {}
-  explicit constexpr optional(std::nullopt_t) noexcept : tag_(Tag::kNone), empty_{} {}
+  constexpr optional(std::nullopt_t) noexcept : tag_(Tag::kNone), empty_{} {}
 
-  explicit constexpr optional(const T& val) noexcept : tag_(Tag::kSome), value_(val) {}
-  explicit constexpr optional(T&& val) noexcept : tag_(Tag::kSome), value_(std::move(val)) {}
+  template <typename U = T>
+    requires std::is_constructible_v<T, U>
+  constexpr optional(U&& val) noexcept : tag_(Tag::kSome), value_(std::forward<U>(val)) {}
 
   explicit constexpr optional(const std::optional<T>& opt) noexcept {
     if (opt.has_value()) {

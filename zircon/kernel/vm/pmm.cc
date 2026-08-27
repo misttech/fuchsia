@@ -224,7 +224,7 @@ void pmm_checker_init_from_cmdline() {
       break;
   }
   if (enabled) {
-    size_t fill_size = BootOptions::Get()->pmm_checker_fill_size.value_or(kPageSize);
+    size_t fill_size = BootOptions::Get()->pmm_checker_fill_size.to_std().value_or(kPageSize);
     if (!PmmChecker::IsValidFillSize(fill_size)) {
       printf("PMM: value from %s is invalid (%lu), using kPageSize instead\n",
              kPmmCheckerFillSizeName.data(), fill_size);

@@ -12,6 +12,7 @@
 // boot option documentation.
 #define BOOT_OPTIONS_TESTONLY_OPTIONS !BOOT_OPTIONS_GENERATOR
 
+#include <lib/stdbind/optional.h>
 #include <lib/uart/all.h>
 #include <stdio.h>
 #include <zircon/assert.h>
@@ -123,7 +124,7 @@ struct BootOptions {
   OPTION_TYPE(CompressionStorageStrategy);
   OPTION_TYPE(CheckFailAction);
   OPTION_TYPE(CheckerEnable);
-  OPTION_TYPE(std::optional<RamReservation>);
+  OPTION_TYPE(stdbind::optional<RamReservation>);
 #if BOOT_OPTIONS_TESTONLY_OPTIONS
   OPTION_TYPE(TestEnum);
   OPTION_TYPE(TestStruct);

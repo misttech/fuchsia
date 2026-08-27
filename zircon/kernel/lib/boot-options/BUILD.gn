@@ -66,7 +66,10 @@ static_library("boot-options") {
 
 library_headers("headers") {
   headers = []
-  public_deps = [ "//zircon/system/ulib/uart:headers" ]
+  public_deps = [
+    "//src/lib/stdbind:headers",
+    "//zircon/system/ulib/uart:headers",
+  ]
   if (is_kernel) {
     public_deps += [ "//zircon/kernel/lib/ktl:headers" ]
   }
@@ -80,6 +83,7 @@ kernel_bindgen_crate("boot-options-rs") {
   cpp = true
   headers = [ "include/lib/boot-options/boot-options.h" ]
   non_rust_deps = [ ":boot-options" ]
+  deps = [ "//src/lib/stdbind:stdbind-rs" ]
 
   # The layout of BootOptions is compilation-dependent and very load-bearing,
   # so these tests represent an important regression stop against drift.
@@ -93,12 +97,12 @@ kernel_bindgen_crate("boot-options-rs") {
 
   type_allowlist = [ "BootOptions" ]
   type_blocklist = [
-    # Not needed.
-    "BootOptions_WordResult",
+    "BootOptions_WordResult",  # Not needed.
+    "stdbind::optional",  # Ready-made bindings swapped in instead
+    "AutoOr",  # Aliased in raw_lines.
   ]
 
   opaque_types = [
-    "AutoOr",
     "std::.*",
     "uart::.*",
   ]
@@ -111,7 +115,12 @@ kernel_bindgen_crate("boot-options-rs") {
     "non_upper_case_globals",
   ]
 
-  raw_lines = [ "#![no_std]" ]
+  raw_lines = [
+    "#![no_std]",
+    "use stdbind::Optional as stdbind_optional;",
+    "",
+    "pub type AutoOr<T> = stdbind::Optional<T>;",
+  ]
 
   if (is_kernel) {
     raw_lines += [

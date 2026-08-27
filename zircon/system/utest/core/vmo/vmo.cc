@@ -906,14 +906,14 @@ TEST(VmoTestCase, PhysicalVmoInvalidInitialSize) {
   size_t mmio_size;
   {
     const BootOptions *boot_options = maybe_standalone::GetBootOptions();
-    if (!boot_options || !boot_options->test_ram_reserve.has_value()) {
+    if (!boot_options || !boot_options->test_ram_reserve) {
       printf("Ram reservation not available, skipping\n");
       return;
     }
-    const RamReservation ram = boot_options->test_ram_reserve.value();
+    const RamReservation ram = boot_options->test_ram_reserve.to_std().value();
     // The kernel should have filled in the value by now.
-    ASSERT_TRUE(ram.paddr.has_value());
-    mmio_base = ram.paddr.value();
+    ASSERT_TRUE(ram.paddr);
+    mmio_base = *ram.paddr.to_std();
     mmio_size = ram.size;
   }
 
@@ -944,14 +944,14 @@ TEST(VmoTestCase, PhysicalVmoOobMapping) {
   size_t mmio_size;
   {
     const BootOptions *boot_options = maybe_standalone::GetBootOptions();
-    if (!boot_options || !boot_options->test_ram_reserve.has_value()) {
+    if (!boot_options || !boot_options->test_ram_reserve) {
       printf("Ram reservation not available, skipping\n");
       return;
     }
-    const RamReservation ram = boot_options->test_ram_reserve.value();
+    const RamReservation ram = boot_options->test_ram_reserve.to_std().value();
     // The kernel should have filled in the value by now.
-    ASSERT_TRUE(ram.paddr.has_value());
-    mmio_base = ram.paddr.value();
+    ASSERT_TRUE(ram.paddr);
+    mmio_base = *ram.paddr.to_std();
     mmio_size = ram.size;
   }
 

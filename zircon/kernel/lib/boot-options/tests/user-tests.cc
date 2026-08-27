@@ -62,7 +62,8 @@ AutoOr<uint64_t> GetValue<AutoOr<uint64_t>>(const BootOptions& options) {
 }
 
 template <>
-std::optional<RamReservation> GetValue<std::optional<RamReservation>>(const BootOptions& options) {
+stdbind::optional<RamReservation> GetValue<stdbind::optional<RamReservation>>(
+    const BootOptions& options) {
   return options.test_ram_reserve;
 }
 
@@ -113,8 +114,8 @@ void SetManyValue<AutoOr<uint64_t>>(BootOptions* options, AutoOr<uint64_t> value
 }
 
 template <>
-void SetManyValue<std::optional<RamReservation>>(BootOptions* options,
-                                                 std::optional<RamReservation> value) {
+void SetManyValue<stdbind::optional<RamReservation>>(BootOptions* options,
+                                                     stdbind::optional<RamReservation> value) {
   options->test_ram_reserve = value;
 }
 
@@ -133,14 +134,16 @@ void CompareValues<SmallString>(const SmallString& lhs, const SmallString& rhs) 
 }
 
 template <>
-void CompareValues<std::optional<RamReservation>>(const std::optional<RamReservation>& lhs,
-                                                  const std::optional<RamReservation>& rhs) {
+void CompareValues<stdbind::optional<RamReservation>>(
+    const stdbind::optional<RamReservation>& lhs, const stdbind::optional<RamReservation>& rhs) {
   ASSERT_EQ(lhs.has_value(), rhs.has_value());
   if (lhs.has_value()) {
-    EXPECT_EQ(lhs->size, rhs->size);
-    ASSERT_EQ(lhs->paddr.has_value(), rhs->paddr.has_value());
-    if (lhs->paddr.has_value()) {
-      EXPECT_EQ(*lhs->paddr, *rhs->paddr);
+    std::optional lhs_std = lhs.to_std();
+    std::optional rhs_std = rhs.to_std();
+    EXPECT_EQ(lhs_std->size, rhs_std->size);
+    ASSERT_EQ(lhs_std->paddr.has_value(), rhs_std->paddr.has_value());
+    if (lhs_std->paddr.has_value()) {
+      EXPECT_EQ(*lhs_std->paddr.to_std(), *rhs_std->paddr.to_std());
     }
   }
 }
@@ -563,13 +566,14 @@ TEST(BootOptionTests, StringSanitization) {
 }
 
 TEST(ParsingTests, EmptyRamReservation) {
-  ASSERT_NO_FATAL_FAILURE(TestParsing<std::optional<RamReservation>>(
-      "kernel.test.ram.reserve", "kernel.test.ram.reserve=", std::nullopt));
+  ASSERT_NO_FATAL_FAILURE(TestParsing<stdbind::optional<RamReservation>>(
+      "kernel.test.ram.reserve", "kernel.test.ram.reserve=", stdbind::optional<RamReservation>{}));
 }
 
 TEST(UnparsingTests, EmptyRamReservation) {
-  ASSERT_NO_FATAL_FAILURE(TestUnparsing<std::optional<RamReservation>>(
-      "kernel.test.ram.reserve", std::nullopt, "kernel.test.ram.reserve=\n"));
+  ASSERT_NO_FATAL_FAILURE(TestUnparsing<stdbind::optional<RamReservation>>(
+      "kernel.test.ram.reserve", stdbind::optional<RamReservation>{},
+      "kernel.test.ram.reserve=\n"));
 }
 
 constexpr RamReservation kTestRamReservation = {.size = 0x8000};
@@ -579,24 +583,26 @@ constexpr RamReservation kTestRamReservationWithPaddr = {
 };
 
 TEST(ParsingTests, RamReservation) {
-  ASSERT_NO_FATAL_FAILURE(TestParsing<std::optional<RamReservation>>(
-      "kernel.test.ram.reserve", "kernel.test.ram.reserve=0x8000", kTestRamReservation));
+  ASSERT_NO_FATAL_FAILURE(TestParsing<stdbind::optional<RamReservation>>(
+      "kernel.test.ram.reserve", "kernel.test.ram.reserve=0x8000",
+      stdbind::optional<RamReservation>{kTestRamReservation}));
 }
 
 TEST(UnparsingTests, RamReservation) {
-  ASSERT_NO_FATAL_FAILURE(TestUnparsing<std::optional<RamReservation>>(
-      "kernel.test.ram.reserve", kTestRamReservation, "kernel.test.ram.reserve=0x8000\n"));
+  ASSERT_NO_FATAL_FAILURE(TestUnparsing<stdbind::optional<RamReservation>>(
+      "kernel.test.ram.reserve", stdbind::optional<RamReservation>{kTestRamReservation},
+      "kernel.test.ram.reserve=0x8000\n"));
 }
 
 TEST(ParsingTests, RamReservationWithPaddr) {
-  ASSERT_NO_FATAL_FAILURE(TestParsing<std::optional<RamReservation>>(
+  ASSERT_NO_FATAL_FAILURE(TestParsing<stdbind::optional<RamReservation>>(
       "kernel.test.ram.reserve", "kernel.test.ram.reserve=0x8000,0x1234000",
-      kTestRamReservationWithPaddr));
+      stdbind::optional<RamReservation>{kTestRamReservationWithPaddr}));
 }
 
 TEST(UnparsingTests, RamReservationWithPaddr) {
-  ASSERT_NO_FATAL_FAILURE(TestUnparsing<std::optional<RamReservation>>(
-      "kernel.test.ram.reserve", kTestRamReservationWithPaddr,
+  ASSERT_NO_FATAL_FAILURE(TestUnparsing<stdbind::optional<RamReservation>>(
+      "kernel.test.ram.reserve", stdbind::optional<RamReservation>{kTestRamReservationWithPaddr},
       "kernel.test.ram.reserve=0x8000,0x1234000\n"));
 }
 

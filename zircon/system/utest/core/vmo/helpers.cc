@@ -39,13 +39,13 @@ zx::result<PhysVmo> GetTestPhysVmo(size_t size) {
   RamReservation ram;
   const BootOptions* boot_options = maybe_standalone::GetBootOptions();
   EXPECT_TRUE(boot_options->test_ram_reserve);
-  ram = *boot_options->test_ram_reserve;
-  EXPECT_TRUE(ram.paddr.has_value());
+  ram = boot_options->test_ram_reserve.to_std().value();
+  EXPECT_TRUE(ram.paddr);
   if (!ram.paddr) {
     return zx::error_result(ZX_ERR_NO_RESOURCES);
   }
 
-  PhysVmo ret = {.addr = *ram.paddr, .size = ram.size};
+  PhysVmo ret = {.addr = *ram.paddr.to_std(), .size = ram.size};
   if (size > 0) {
     if (size > ret.size) {
       return zx::error_result(ZX_ERR_INVALID_ARGS);

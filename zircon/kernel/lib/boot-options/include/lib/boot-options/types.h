@@ -7,10 +7,10 @@
 #ifndef ZIRCON_KERNEL_LIB_BOOT_OPTIONS_INCLUDE_LIB_BOOT_OPTIONS_TYPES_H_
 #define ZIRCON_KERNEL_LIB_BOOT_OPTIONS_INCLUDE_LIB_BOOT_OPTIONS_TYPES_H_
 
+#include <lib/stdbind/optional.h>
 #include <zircon/limits.h>
 
 #include <array>
-#include <optional>
 #include <string_view>
 
 // This declares special types used for BootOptions members.  These, as well
@@ -60,9 +60,9 @@ struct RedactedHex {
 // A thin wrapper around std::optional<T> for which "auto" parses as the
 // wrapped std::nullopt value, indicating some context-defined default value.
 template <typename T>
-class AutoOr : public std::optional<T> {
+class AutoOr : public stdbind::optional<T> {
  public:
-  using Base = std::optional<T>;
+  using Base = stdbind::optional<T>;
   using Base::Base;
 
   constexpr bool operator<=>(const AutoOr<T>&) const = default;
@@ -123,7 +123,7 @@ enum class CompressionStorageStrategy : uint8_t {
 
 // See kernel.test.ram.reserve.
 struct RamReservation {
-  std::optional<uint64_t> paddr;
+  stdbind::optional<uint64_t> paddr;
   uint64_t size;
 };
 

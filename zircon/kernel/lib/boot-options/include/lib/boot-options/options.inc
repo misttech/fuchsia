@@ -886,7 +886,7 @@ DEFINE_OPTION("kernel.smp.ht", bool, smp_ht_enabled, {true}, R"""(
 This option specifies whether the HyperThreading (HT) logical CPUs should be enabled or not.
 )""")
 
-DEFINE_OPTION("kernel.test.ram.reserve", std::optional<RamReservation>, test_ram_reserve, {}, R"""(
+DEFINE_OPTION("kernel.test.ram.reserve", stdbind::optional<RamReservation>, test_ram_reserve, {}, R"""(
 Specifies a range of physical RAM to be reserved for testing purposes.
 This should be written as just SIZE (an integer byte quantity, which should
 be page-aligned) but will be read back as SIZE,ADDRESS after the kernel

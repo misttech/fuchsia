@@ -1025,7 +1025,7 @@ with arguments, and `;` characters can separate commands in the script.
 
 This option specifies whether the HyperThreading (HT) logical CPUs should be enabled or not.
 
-### kernel.test.ram.reserve=\<std::optional<RamReservation>>
+### kernel.test.ram.reserve=\<stdbind::optional<RamReservation>>
 
 
 Specifies a range of physical RAM to be reserved for testing purposes.
