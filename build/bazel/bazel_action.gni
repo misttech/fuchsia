@@ -825,10 +825,6 @@ template("bazel_action") {
         # This dependency exists to ensure that this manifest is generated
         # at `gn gen` time
         ":${_gn_targets_repository_manifest_target}",
-
-        # In addition to checking whether the action is allowed, this dependency
-        # ensures that the template is being used on the default toolchain.
-        "//build/bazel:bazel_action_allowlist",
       ]
 
       if (!_no_sdk) {
