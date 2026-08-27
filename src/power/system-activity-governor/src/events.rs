@@ -84,13 +84,40 @@ struct SagWakeLeaseEvent {
     event_info: SagEvent, // The event itself
 }
 
+#[derive(Debug)]
+struct SagEventBuffer {
+    events: VecDeque<SagWakeLeaseEvent>,
+    event_number: u64,
+    max_events: usize,
+}
+
+impl SagEventBuffer {
+    fn new(max_events: usize) -> Self {
+        Self { events: VecDeque::with_capacity(max_events), event_number: 0, max_events }
+    }
+
+    fn push(&mut self, event_log_time: i64, event_info: SagEvent) {
+        if self.max_events == 0 {
+            return;
+        }
+        if self.events.len() == self.max_events {
+            self.events.pop_front();
+        }
+        self.events.push_back(SagWakeLeaseEvent {
+            event_number: self.event_number,
+            event_log_time,
+            event_info,
+        });
+        self.event_number += 1;
+    }
+}
+
 /// A logger for SagEvent objects that inserts the event into a circular buffer
 /// in inspect.
 #[derive(Clone, Debug)]
 pub struct SagEventLogger {
     /// Internal ring buffer for event logging
-    internal_event_log: Arc<Mutex<VecDeque<SagWakeLeaseEvent>>>,
-    internal_event_number: Arc<Mutex<u64>>,
+    event_buffer: Arc<Mutex<SagEventBuffer>>,
 
     /// Inspect node that tracks wall-time history duration.
     /// Schema follows Power Broker's topology stats:
@@ -108,25 +135,20 @@ pub struct SagEventLogger {
 
     /// State recorder for `SystemSuspendState`.
     system_suspend_state: Arc<Mutex<EnumStateRecorder<SystemSuspendState>>>,
-
-    /// The number of events to keep in the internal ring buffer.
-    max_suspend_events_to_log: usize,
 }
 
 impl SagEventLogger {
     pub fn new(node: &INode, max_suspend_events_to_log: usize) -> Self {
-        let internal_event_log = Arc::new(Mutex::new(
-            VecDeque::<SagWakeLeaseEvent>::with_capacity(max_suspend_events_to_log),
-        ));
+        let event_buffer = Arc::new(Mutex::new(SagEventBuffer::new(max_suspend_events_to_log)));
 
-        let weak_arc_of_internal_event_log = Arc::downgrade(&internal_event_log);
+        let weak_event_buffer = Arc::downgrade(&event_buffer);
 
         // Create inspect node for logging suspend events. Events are stored in an internal ring
         // buffer and lazily converted/logged to Inspect to reduce Inspect memory usage.
-        let value = weak_arc_of_internal_event_log.clone();
+        let value = weak_event_buffer.clone();
         let internal_event_log_stats =
             node.create_lazy_child(fobs::SUSPEND_EVENTS_NODE, move || {
-                let weak_internal_log = value.clone();
+                let weak_buffer = value.clone();
 
                 async move {
                     let lazy_inspect_config = fuchsia_inspect::InspectorConfig::default()
@@ -136,10 +158,10 @@ impl SagEventLogger {
                     inspector.record_lazy_stats();
 
                     // Convert internally-logged events into Inspect nodes
-                    if let Some(internal_event_log) = weak_internal_log.upgrade() {
-                        let events = internal_event_log.lock();
+                    if let Some(event_buffer) = weak_buffer.upgrade() {
+                        let buffer = event_buffer.lock();
 
-                        for internal_event in events.iter() {
+                        for internal_event in buffer.events.iter() {
                             let time = internal_event.event_log_time;
                             let event = internal_event.event_info.clone();
 
@@ -241,25 +263,25 @@ impl SagEventLogger {
 
         // Create Inspect node for suspend event stats
         let event_log_stats = node.create_lazy_child("suspend_events_stats", move || {
-            let weak_internal_log = weak_arc_of_internal_event_log.clone();
+            let weak_buffer = weak_event_buffer.clone();
 
             async move {
                 let inspector = fuchsia_inspect::Inspector::default();
                 let root = inspector.root();
 
-                root.record_uint(INSPECT_FIELD_EVENT_CAPACITY, max_suspend_events_to_log as u64);
+                if let Some(event_buffer) = weak_buffer.upgrade() {
+                    let buffer = event_buffer.lock();
 
-                if let Some(internal_event_log) = weak_internal_log.upgrade() {
-                    let timestamps = internal_event_log.lock();
+                    root.record_uint(INSPECT_FIELD_EVENT_CAPACITY, buffer.max_events as u64);
 
-                    if !timestamps.is_empty() {
-                        let head_ns = timestamps.front().unwrap().event_log_time;
-                        let tail_ns = timestamps.back().unwrap().event_log_time;
+                    if !buffer.events.is_empty() {
+                        let head_ns = buffer.events.front().unwrap().event_log_time;
+                        let tail_ns = buffer.events.back().unwrap().event_log_time;
                         let duration =
                             zx::BootDuration::from_nanos(tail_ns - head_ns).into_seconds();
                         root.record_int(INSPECT_FIELD_HISTORY_DURATION, duration);
 
-                        if timestamps.len() == max_suspend_events_to_log {
+                        if buffer.events.len() == buffer.max_events {
                             root.record_int(INSPECT_FIELD_HISTORY_DURATION_WHEN_FULL, duration);
                         }
                     } else {
@@ -285,13 +307,11 @@ impl SagEventLogger {
         system_suspend_state.lock().record(SystemSuspendState::Active);
 
         Self {
-            internal_event_log,
-            internal_event_number: Arc::new(Mutex::new(0u64)),
+            event_buffer,
             _internal_event_log_stats: Rc::new(RefCell::new(internal_event_log_stats)),
             _event_log_stats: Rc::new(RefCell::new(event_log_stats)),
             cumulative_suspend_duration: Arc::new(AtomicI64::new(0)),
             system_suspend_state,
-            max_suspend_events_to_log,
         }
     }
 
@@ -306,19 +326,7 @@ impl SagEventLogger {
         // Log event to internal ring buffer
         {
             let time = zx::BootInstant::get().into_nanos();
-            let mut internal_events = self.internal_event_log.lock();
-            let mut event_number = self.internal_event_number.lock();
-
-            if internal_events.len() == self.max_suspend_events_to_log {
-                internal_events.pop_front();
-            }
-            internal_events.push_back(SagWakeLeaseEvent {
-                event_number: *event_number,
-                event_log_time: time,
-                event_info: event.clone(),
-            });
-
-            *event_number += 1;
+            self.event_buffer.lock().push(time, event.clone());
         }
 
         // For Suspend events, additionally update the logged suspend state
