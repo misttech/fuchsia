@@ -3,8 +3,7 @@
 // found in the LICENSE file.
 
 use ffx_e2e_emu::IsolatedEmulator;
-use ffx_target_net::socket_provider_fdomain::{SocketProvider, TargetTcpStream};
-use ffx_target_net::{Bidirectional, Counters, PortForwarder};
+use ffx_target_net::{Bidirectional, Counters, PortForwarder, SocketProvider, TargetTcpStream};
 use fho::TryFromEnv as _;
 use futures::{AsyncReadExt as _, AsyncWriteExt as _, FutureExt as _, StreamExt as _};
 use log::info;

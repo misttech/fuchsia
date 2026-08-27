@@ -734,27 +734,27 @@ mod test {
     use crate::{CommandStatus, ServerStartTool};
     use assert_matches::assert_matches;
     use discovery::query::TargetInfoQuery;
+    use fdomain_client::fidl::DiscoverableProtocolMarker;
+    use fdomain_fuchsia_developer_remotecontrol as frcs;
+    use fdomain_fuchsia_io as fio;
+    use fdomain_fuchsia_pkg::{
+        MirrorConfig, RepositoryConfig, RepositoryManagerMarker, RepositoryManagerRequest,
+        RepositoryManagerRequestStream,
+    };
+    use fdomain_fuchsia_pkg_rewrite::{
+        EditTransactionRequest, EngineMarker, EngineRequest, EngineRequestStream,
+        RuleIteratorRequest,
+    };
     use fdomain_fuchsia_pkg_rewrite_ext::Rule;
+    use fdomain_fuchsia_posix_socket as fsock;
     use ffx_command_error::bug;
     use ffx_config::TestEnv;
     use ffx_config::keys::TARGET_DEFAULT_KEY;
     use ffx_target_net_testutil::FakeNetstack;
     use ffx_writer::{Format, TestBuffers, VerifiedMachineWriter};
     use fho::{FfxMain, FhoEnvironment, TryFromEnv, user_error};
-    use fidl::endpoints::{DiscoverableProtocolMarker, Proxy};
-    use fidl_fuchsia_developer_remotecontrol as frcs;
-    use fidl_fuchsia_io as fio;
-
-    use fidl_fuchsia_pkg::{
-        MirrorConfig, RepositoryConfig, RepositoryManagerMarker, RepositoryManagerRequest,
-        RepositoryManagerRequestStream,
-    };
     use fidl_fuchsia_pkg_ext::{
         RepositoryConfigBuilder, RepositoryRegistrationAliasConflictMode, RepositoryStorageType,
-    };
-    use fidl_fuchsia_pkg_rewrite::{
-        EditTransactionRequest, EngineMarker, EngineRequest, EngineRequestStream,
-        RuleIteratorRequest,
     };
     use fuchsia_repo::repo_builder::RepoBuilder;
     use fuchsia_repo::repo_keys::RepoKeys;
@@ -763,7 +763,7 @@ mod test {
     use futures::TryStreamExt;
     use futures::channel::mpsc;
     use std::collections::BTreeSet;
-    use std::sync::Mutex;
+    use std::sync::{Arc, Mutex, OnceLock};
     use std::time;
     use target_behavior::{ConnectionBehavior, target_interface};
     use target_connector::Connector;
@@ -799,7 +799,7 @@ mod test {
             netstack: Arc<FakeNetstack>,
             stream: frcs::RemoteControlRequestStream,
         ) {
-            fasync::Task::local(async move {
+            fasync::Task::spawn(async move {
                 let mut stream = stream;
                 while let Some(Ok(req)) = stream.next().await {
                     match req {
@@ -815,21 +815,23 @@ mod test {
                                 .unwrap_or(capability_name.as_str());
                             match capability_name {
                                 RepositoryManagerMarker::PROTOCOL_NAME => repo_manager.spawn(
-                                    fidl::endpoints::ServerEnd::<RepositoryManagerMarker>::new(
+                                    fdomain_client::fidl::ServerEnd::<RepositoryManagerMarker>::new(
                                         server_channel,
                                     )
                                     .into_stream(),
                                 ),
                                 EngineMarker::PROTOCOL_NAME => engine.spawn(
-                                    fidl::endpoints::ServerEnd::<EngineMarker>::new(server_channel)
-                                        .into_stream(),
+                                    fdomain_client::fidl::ServerEnd::<EngineMarker>::new(
+                                        server_channel,
+                                    )
+                                    .into_stream(),
                                 ),
-                                fidl_fuchsia_posix_socket::ProviderMarker::PROTOCOL_NAME => {
-                                    netstack.connect_socket_provider(fidl::endpoints::ServerEnd::<
-                                        fidl_fuchsia_posix_socket::ProviderMarker,
-                                    >::new(
-                                        server_channel
-                                    ))
+                                fsock::ProviderMarker::PROTOCOL_NAME => {
+                                    netstack.connect_socket_provider(
+                                        fdomain_client::fidl::ServerEnd::<
+                                            fsock::ProviderMarker,
+                                        >::new(server_channel),
+                                    )
                                 }
                                 p => {
                                     unimplemented!("unimplemented protocol {p}");
@@ -849,20 +851,20 @@ mod test {
         repo_manager: FakeRepositoryManager,
         engine: FakeEngine,
         netstack: Arc<FakeNetstack>,
-    ) -> fidl::endpoints::ClientEnd<fio::DirectoryMarker> {
-        let (directory_proxy, mut stream) =
-            fidl::endpoints::create_proxy_and_stream::<fio::DirectoryMarker>();
-
-        fasync::Task::local(async move {
+        channel: fdomain_client::Channel,
+    ) {
+        fasync::Task::spawn(async move {
+            let mut stream =
+                fdomain_client::fidl::ServerEnd::<fio::DirectoryMarker>::new(channel).into_stream();
             while let Some(Ok(req)) = stream.next().await {
                 match req {
                     fio::DirectoryRequest::Open { path, object, .. } => {
-                        let path = path.strip_prefix("svc/").unwrap_or(&path);
+                        let path = path.strip_prefix("./").unwrap_or(&path);
+                        let path = path.strip_prefix("svc/").unwrap_or(path);
                         if path == frcs::RemoteControlMarker::PROTOCOL_NAME {
-                            let server_end =
-                                fidl::endpoints::ServerEnd::<frcs::RemoteControlMarker>::new(
-                                    object,
-                                );
+                            let server_end = fdomain_client::fidl::ServerEnd::<
+                                frcs::RemoteControlMarker,
+                            >::new(object);
                             FakeRcs::spawn(
                                 repo_manager.clone(),
                                 engine.clone(),
@@ -876,8 +878,25 @@ mod test {
             }
         })
         .detach();
+    }
 
-        directory_proxy.into_channel().unwrap().into_zx_channel().into()
+    fn setup_fake_target(
+        fake_repo: FakeRepositoryManager,
+        fake_engine: FakeEngine,
+    ) -> (Arc<fdomain_client::Client>, Arc<FakeNetstack>) {
+        let netstack_holder = Arc::new(OnceLock::<Arc<FakeNetstack>>::new());
+        let netstack_holder_clone = netstack_holder.clone();
+
+        let fdomain_client = fdomain_local::local_client_fdomain(move |channel| {
+            let fake_repo = fake_repo.clone();
+            let fake_engine = fake_engine.clone();
+            let fake_netstack = netstack_holder_clone.get().unwrap().clone();
+            make_fake_directory(fake_repo, fake_engine, fake_netstack, channel);
+        });
+
+        let fake_netstack = Arc::new(FakeNetstack::new(fdomain_client.clone()));
+        let _ = netstack_holder.set(fake_netstack.clone());
+        (fdomain_client, fake_netstack)
     }
 
     #[derive(Debug, PartialEq)]
@@ -903,14 +922,14 @@ mod test {
             let sender = self.sender.clone();
             let events_closure = Arc::clone(&self.events);
 
-            fasync::Task::local(async move {
+            fasync::Task::spawn(async move {
                 while let Some(Ok(req)) = stream.next().await {
                     match req {
                         RepositoryManagerRequest::Add { repo, responder } => {
                             let mut sender = sender.clone();
                             let events_closure = events_closure.clone();
 
-                            fasync::Task::local(async move {
+                            fasync::Task::spawn(async move {
                                 events_closure
                                     .lock()
                                     .unwrap()
@@ -960,7 +979,7 @@ mod test {
             let sender = self.sender.clone();
             let events_closure = Arc::clone(&self.events);
 
-            fasync::Task::local(async move {
+            fasync::Task::spawn(async move {
                 while let Some(Ok(req)) = stream.next().await {
                     match req {
                         EngineRequest::StartEditTransaction { transaction, control_handle: _ } => {
@@ -968,7 +987,7 @@ mod test {
                             let rules = Arc::clone(&rules);
                             let events_closure = Arc::clone(&events_closure);
 
-                            fasync::Task::local(async move {
+                            fasync::Task::spawn(async move {
                                 let mut stream = transaction.into_stream();
                                 while let Some(request) = stream.next().await {
                                     let request = request.unwrap();
@@ -1058,17 +1077,7 @@ mod test {
     ) -> Connector<RemoteControlProxyHolder> {
         let (fake_repo, _) = FakeRepositoryManager::new();
         let (fake_engine, _content) = FakeEngine::new();
-
-        let frc = fake_repo.clone();
-        let fec = fake_engine.clone();
-        let fake_netstack = Arc::new(FakeNetstack::new());
-
-        let fdomain_client = fdomain_local::local_client(move || {
-            let fake_repo = frc.clone();
-            let fake_engine = fec.clone();
-            let fake_netstack = fake_netstack.clone();
-            Ok(make_fake_directory(fake_repo, fake_engine, fake_netstack))
-        });
+        let (fdomain_client, _) = setup_fake_target(fake_repo, fake_engine);
 
         let behavior = make_direct_connector_behavior(fdomain_client);
 
@@ -1620,16 +1629,7 @@ mod test {
         let (fake_repo, mut fake_repo_rx) = FakeRepositoryManager::new();
         let (fake_engine, mut fake_engine_rx) = FakeEngine::new();
 
-        let frc = fake_repo.clone();
-        let fec = fake_engine.clone();
-        let fake_netstack = Arc::new(FakeNetstack::new());
-
-        let fdomain_client = fdomain_local::local_client(move || {
-            let fake_repo = frc.clone();
-            let fake_engine = fec.clone();
-            let fake_netstack = fake_netstack.clone();
-            Ok(make_fake_directory(fake_repo, fake_engine, fake_netstack))
-        });
+        let (fdomain_client, _) = setup_fake_target(fake_repo.clone(), fake_engine.clone());
 
         let behavior = make_direct_connector_behavior(fdomain_client);
 
@@ -1776,16 +1776,7 @@ mod test {
         // Meanwhile, the mocked DirectConnector behavior bypasses resolution and successfully returns a
         // connection to the target, allowing the loop to reconnect and testing the auto-reconnect logic.
 
-        let frc = fake_repo.clone();
-        let fec = fake_engine.clone();
-        let fake_netstack = Arc::new(FakeNetstack::new());
-
-        let fdomain_client = fdomain_local::local_client(move || {
-            let fake_repo = frc.clone();
-            let fake_engine = fec.clone();
-            let fake_netstack = fake_netstack.clone();
-            Ok(make_fake_directory(fake_repo, fake_engine, fake_netstack))
-        });
+        let (fdomain_client, _) = setup_fake_target(fake_repo.clone(), fake_engine.clone());
 
         let behavior = make_direct_connector_behavior(fdomain_client);
 
@@ -2087,17 +2078,9 @@ mod test {
 
         let (fake_repo, mut fake_repo_rx) = FakeRepositoryManager::new();
         let (fake_engine, _fake_engine_rx) = FakeEngine::new();
-        let frc = fake_repo.clone();
-        let fec = fake_engine.clone();
-        let fake_netstack = Arc::new(FakeNetstack::new());
+        let (fdomain_client, fake_netstack) =
+            setup_fake_target(fake_repo.clone(), fake_engine.clone());
         let socket_provider = fake_netstack.new_socket_provider();
-
-        let fdomain_client = fdomain_local::local_client(move || {
-            let fake_repo = frc.clone();
-            let fake_engine = fec.clone();
-            let fake_netstack = fake_netstack.clone();
-            Ok(make_fake_directory(fake_repo, fake_engine, fake_netstack))
-        });
 
         let behavior = make_direct_connector_behavior(fdomain_client);
 
@@ -2292,16 +2275,7 @@ mod test {
         let (fake_repo, _fake_repo_rx) = FakeRepositoryManager::new();
         let (fake_engine, _fake_engine_rx) = FakeEngine::new();
 
-        let frc = fake_repo.clone();
-        let fec = fake_engine.clone();
-        let fake_netstack = Arc::new(FakeNetstack::new());
-
-        let fdomain_client = fdomain_local::local_client(move || {
-            let fake_repo = frc.clone();
-            let fake_engine = fec.clone();
-            let fake_netstack = fake_netstack.clone();
-            Ok(make_fake_directory(fake_repo, fake_engine, fake_netstack))
-        });
+        let (fdomain_client, _) = setup_fake_target(fake_repo.clone(), fake_engine.clone());
 
         let behavior = make_direct_connector_behavior(fdomain_client);
 
@@ -2370,16 +2344,7 @@ mod test {
         let (fake_repo, _fake_repo_rx) = FakeRepositoryManager::new();
         let (fake_engine, _fake_engine_rx) = FakeEngine::new();
 
-        let frc = fake_repo.clone();
-        let fec = fake_engine.clone();
-        let fake_netstack = Arc::new(FakeNetstack::new());
-
-        let fdomain_client = fdomain_local::local_client(move || {
-            let fake_repo = frc.clone();
-            let fake_engine = fec.clone();
-            let fake_netstack = fake_netstack.clone();
-            Ok(make_fake_directory(fake_repo, fake_engine, fake_netstack))
-        });
+        let (fdomain_client, _) = setup_fake_target(fake_repo.clone(), fake_engine.clone());
 
         let behavior = make_direct_connector_behavior(fdomain_client);
 

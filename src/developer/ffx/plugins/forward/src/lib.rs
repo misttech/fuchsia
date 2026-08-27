@@ -522,7 +522,7 @@ mod tests {
 
     use assert_matches::assert_matches;
     use ffx_forward_args::{Direction, ForwardSpec, ProtoSpec};
-    use ffx_target_net_testutil::fdomain::FakeNetstack;
+    use ffx_target_net_testutil::FakeNetstack;
     use ffx_writer::{Format, TestBuffers};
     use itertools::Itertools;
     use net_declare::{std_ip_v4, std_socket_addr};

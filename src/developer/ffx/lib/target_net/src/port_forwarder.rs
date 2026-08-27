@@ -12,9 +12,7 @@ use std::time::Duration;
 use tokio::net::TcpListener;
 
 use crate::Error;
-use crate::socket_provider_fdomain::{SocketProvider, TargetTcpListener, TargetTcpStream};
-
-pub mod overnet;
+use crate::socket_provider::{SocketProvider, TargetTcpListener, TargetTcpStream};
 
 #[derive(Clone)]
 pub struct PortForwarder {

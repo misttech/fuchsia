@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use fdomain_fuchsia_developer_remotecontrol as frcs;
-use fidl_fuchsia_posix as fposix;
+use fdomain_fuchsia_posix as fposix;
 use thiserror::Error;
 
 /// Errors emitted by the `ffx_target_net` crate.
@@ -17,12 +17,8 @@ pub enum Error {
     Hangup,
     #[error("unexpected error clearing signals: {0}")]
     ClearingSignal(fdomain_client::Error),
-    #[error("unexpected error clearing signals: {0}")]
-    ClearingSignalOvernet(fidl::Status),
     #[error("unexpected error waiting on signals: {0}")]
     WaitingSignal(fdomain_client::Error),
-    #[error("unexpected error waiting on signals: {0}")]
-    WaitingSignalOvernet(fidl::Status),
     #[error("could not open protocol: {0}")]
     OpenProtocol(#[source] anyhow::Error),
     #[error("create socket error: {0:?}")]

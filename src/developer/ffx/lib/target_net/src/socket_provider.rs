@@ -2,11 +2,11 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use fidl_fuchsia_developer_remotecontrol::RemoteControlProxy;
-use fidl_fuchsia_net_ext::SocketAddress as SocketAddressExt;
-use fidl_fuchsia_posix as fposix;
-use fidl_fuchsia_posix_socket as fsock;
-use fuchsia_async as fasync;
+use fdomain_client::{AsHandleRef, Socket as AsyncSocket, Socket};
+use fdomain_fuchsia_developer_remotecontrol as frcs;
+use fdomain_fuchsia_net as fnet;
+use fdomain_fuchsia_posix as fposix;
+use fdomain_fuchsia_posix_socket as fsock;
 use futures::{AsyncRead, AsyncWrite, Stream};
 use std::fmt;
 use std::fmt::Debug;
@@ -20,7 +20,7 @@ use crate::{Error, Result};
 /// A connected TCP socket opened on the target that can be controlled from the
 /// host.
 pub struct TargetTcpStream {
-    socket: fasync::Socket,
+    socket: AsyncSocket,
     addr: SocketAddr,
     peer: SocketAddr,
     fidl: fsock::StreamSocketProxy,
@@ -62,15 +62,15 @@ impl AsyncWrite for TargetTcpStream {
         cx: &mut Context<'_>,
         buf: &[u8],
     ) -> Poll<std::io::Result<usize>> {
-        AsyncWrite::poll_write(Pin::new(&mut self.socket), cx, buf)
+        Pin::new(&mut self.socket).poll_write(cx, buf)
     }
 
     fn poll_flush(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<std::io::Result<()>> {
-        AsyncWrite::poll_flush(Pin::new(&mut self.socket), cx)
+        Pin::new(&mut self.socket).poll_flush(cx)
     }
 
     fn poll_close(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<std::io::Result<()>> {
-        AsyncWrite::poll_close(Pin::new(&mut self.socket), cx)
+        Pin::new(&mut self.socket).poll_close(cx)
     }
 }
 
@@ -80,13 +80,13 @@ impl AsyncRead for TargetTcpStream {
         cx: &mut Context<'_>,
         buf: &mut [u8],
     ) -> Poll<std::io::Result<usize>> {
-        AsyncRead::poll_read(Pin::new(&mut self.socket), cx, buf)
+        Pin::new(&mut self.socket).poll_read(cx, buf)
     }
 }
 
 /// A listening TCP socket on the target that can be controlled from the host.
 pub struct TargetTcpListener {
-    socket: fidl::Socket,
+    socket: Socket,
     fidl: fsock::StreamSocketProxy,
     addr: SocketAddr,
 }
@@ -114,16 +114,14 @@ impl TargetTcpListener {
             match fidl.accept(true).await? {
                 Ok((addr, got_socket)) => {
                     let addr = addr.ok_or_else(|| Error::MissingField("accept address"))?;
-                    let SocketAddressExt(addr) = (*addr).into();
+                    let addr = to_std_addr(*addr);
                     let fidl = got_socket.into_proxy();
-                    let socket = fidl.describe().await?;
-                    let socket = socket.socket.ok_or_else(|| Error::MissingField("describe"))?;
-                    return Ok(TargetTcpStream {
-                        socket: fasync::Socket::from_socket(socket),
-                        addr: *listen_addr,
-                        peer: addr,
-                        fidl,
-                    });
+                    let socket = fidl
+                        .describe()
+                        .await?
+                        .socket
+                        .ok_or_else(|| Error::MissingField("describe"))?;
+                    return Ok(TargetTcpStream { socket, addr: *listen_addr, peer: addr, fidl });
                 }
                 // Fallback into waiting.
                 Err(fposix::Errno::Eagain) => (),
@@ -131,18 +129,20 @@ impl TargetTcpListener {
             }
 
             let incoming_signal = fidl::Signals::from_bits(fsock::SIGNAL_STREAM_INCOMING).unwrap();
-            let signals = fasync::OnSignalsRef::new(
-                socket,
+            let signals = fdomain_client::OnFDomainSignals::new(
+                &socket.as_handle_ref(),
                 incoming_signal | fidl::Signals::OBJECT_PEER_CLOSED,
             )
             .await
-            .map_err(Error::WaitingSignalOvernet)?;
+            .map_err(Error::WaitingSignal)?;
             if !signals.contains(incoming_signal) {
                 return Err(Error::Hangup);
             }
             socket
+                .as_handle_ref()
                 .signal(incoming_signal, fidl::Signals::empty())
-                .map_err(Error::ClearingSignalOvernet)?;
+                .await
+                .map_err(Error::ClearingSignal)?;
         }
     }
 
@@ -178,12 +178,14 @@ impl SocketProvider {
     /// Creates a new [`SocketProvider`] from a [`RemoteControlProxy`].
     pub async fn new_with_rcs(
         connect_timeout: Duration,
-        rcs_proxy: &RemoteControlProxy,
+        rcs_proxy: &frcs::RemoteControlProxy,
     ) -> Result<Self> {
-        let socket_provider =
-            rcs::toolbox::connect_with_timeout::<fsock::ProviderMarker>(rcs_proxy, connect_timeout)
-                .await
-                .map_err(Error::OpenProtocol)?;
+        let socket_provider = rcs_fdomain::toolbox::connect_with_timeout::<fsock::ProviderMarker>(
+            rcs_proxy,
+            connect_timeout,
+        )
+        .await
+        .map_err(Error::OpenProtocol)?;
         Ok(Self { socket_provider })
     }
 
@@ -207,7 +209,7 @@ impl SocketProvider {
             .ok_or_else(|| Error::MissingField("socket describe"))?;
 
         loop {
-            match socket_fidl.connect(&SocketAddressExt(peer).into()).await? {
+            match socket_fidl.connect(&to_fidl_sockaddr(peer)).await? {
                 Ok(()) => break,
                 Err(fposix::Errno::Einprogress) => {}
                 Err(e) => return Err(Error::Connect(e)),
@@ -215,29 +217,26 @@ impl SocketProvider {
 
             let connected_signal =
                 fidl::Signals::from_bits(fsock::SIGNAL_STREAM_CONNECTED).unwrap();
-            let signals = fasync::OnSignalsRef::new(
-                &socket,
+            let signals = fdomain_client::OnFDomainSignals::new(
+                &socket.as_handle_ref(),
                 connected_signal | fidl::Signals::OBJECT_PEER_CLOSED,
             )
             .await
-            .map_err(Error::WaitingSignalOvernet)?;
+            .map_err(Error::WaitingSignal)?;
             if !signals.contains(connected_signal) {
                 return Err(Error::Hangup);
             }
             socket
+                .as_handle_ref()
                 .signal(connected_signal, fidl::Signals::empty())
-                .map_err(Error::ClearingSignalOvernet)?;
+                .await
+                .map_err(Error::ClearingSignal)?;
         }
 
-        let SocketAddressExt(addr) =
-            socket_fidl.get_sock_name().await?.map_err(Error::GetSockName)?.into();
+        let addr = socket_fidl.get_sock_name().await?.map_err(Error::GetSockName)?;
+        let addr = to_std_addr(addr);
 
-        Ok(TargetTcpStream {
-            socket: fasync::Socket::from_socket(socket),
-            addr,
-            peer,
-            fidl: socket_fidl,
-        })
+        Ok(TargetTcpStream { socket, addr, peer, fidl: socket_fidl })
     }
 
     /// Creates a [`TargetTcpListener`] on `listen_addr` on the target.
@@ -259,7 +258,7 @@ impl SocketProvider {
             .await?
             .map_err(Error::CreateSocket)?;
         let listen_socket = listen_socket.into_proxy();
-        listen_socket.bind(&SocketAddressExt(listen_addr).into()).await?.map_err(Error::Bind)?;
+        listen_socket.bind(&to_fidl_sockaddr(listen_addr)).await?.map_err(Error::Bind)?;
 
         listen_socket
             .listen(conn_backlog.unwrap_or(Self::DEFAULT_BACKLOG).try_into().unwrap_or(i16::MAX))
@@ -267,10 +266,11 @@ impl SocketProvider {
             .map_err(Error::Listen)?;
 
         let sockaddr = listen_socket.get_sock_name().await?.map_err(Error::GetSockName)?;
-        let sockaddr = SocketAddressExt::from(sockaddr).0;
+        let sockaddr = to_std_addr(sockaddr);
 
-        let listen_socket_fidl_socket = listen_socket.describe().await?;
-        let listen_socket_fidl_socket = listen_socket_fidl_socket
+        let listen_socket_fidl_socket = listen_socket
+            .describe()
+            .await?
             .socket
             .ok_or_else(|| Error::MissingField("socket describe"))?;
 
@@ -279,5 +279,34 @@ impl SocketProvider {
             fidl: listen_socket,
             addr: sockaddr,
         })
+    }
+}
+
+fn to_fidl_sockaddr(addr: SocketAddr) -> fnet::SocketAddress {
+    match addr {
+        SocketAddr::V4(v4) => fnet::SocketAddress::Ipv4(fnet::Ipv4SocketAddress {
+            address: fnet::Ipv4Address { addr: v4.ip().octets() },
+            port: v4.port(),
+        }),
+        SocketAddr::V6(v6) => fnet::SocketAddress::Ipv6(fnet::Ipv6SocketAddress {
+            address: fnet::Ipv6Address { addr: v6.ip().octets() },
+            port: v6.port(),
+            zone_index: v6.scope_id() as u64,
+        }),
+    }
+}
+
+fn to_std_addr(addr: fnet::SocketAddress) -> SocketAddr {
+    match addr {
+        fnet::SocketAddress::Ipv4(v4) => SocketAddr::V4(std::net::SocketAddrV4::new(
+            std::net::Ipv4Addr::from(v4.address.addr),
+            v4.port,
+        )),
+        fnet::SocketAddress::Ipv6(v6) => SocketAddr::V6(std::net::SocketAddrV6::new(
+            std::net::Ipv6Addr::from(v6.address.addr),
+            v6.port,
+            0,
+            v6.zone_index as u32,
+        )),
     }
 }

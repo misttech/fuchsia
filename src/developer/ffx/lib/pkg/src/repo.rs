@@ -6,9 +6,6 @@ use crate::PkgServerInfo;
 use async_lock::RwLock;
 #[cfg(feature = "fdomain")]
 use fdomain_fuchsia_pkg_rewrite_ext::{Rule, do_transaction};
-#[cfg(feature = "fdomain")]
-use ffx_target_net::socket_provider_fdomain::{SocketProvider, TargetTcpListener};
-#[cfg(not(feature = "fdomain"))]
 use ffx_target_net::{SocketProvider, TargetTcpListener};
 use fidl_fuchsia_pkg_ext::{
     MirrorConfigBuilder, RepositoryConfigBuilder, RepositoryError,

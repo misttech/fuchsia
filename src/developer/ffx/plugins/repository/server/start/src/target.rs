@@ -13,7 +13,7 @@ use ffx_command_error::Result;
 use ffx_config::EnvironmentContext;
 use ffx_repository_server_start_args::StartCommand;
 use ffx_target::{KnockError, RcsKnocker, TargetInfoQuery};
-use ffx_target_net::socket_provider_fdomain::{SocketProvider, TargetTcpStream};
+use ffx_target_net::{SocketProvider, TargetTcpStream};
 use fidl_fuchsia_pkg_ext::{
     RepositoryRegistrationAliasConflictMode, RepositoryStorageType, RepositoryTarget,
 };
@@ -222,7 +222,7 @@ async fn inner_connect_loop(
             );
             let mut proxy_drive = pin!(
                 proxy_stream
-                    .map(|t| Ok(t.map(ConnectionStream::TargetFdomainTcp)))
+                    .map(|t| Ok(t.map(ConnectionStream::TargetTcp)))
                     .forward(
                         connection_sink.sink_map_err(|e| anyhow!("connection sink error: {e:?}")),
                     )
