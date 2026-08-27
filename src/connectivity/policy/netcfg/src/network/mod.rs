@@ -574,6 +574,74 @@ impl NetworkRegistryUpdate {
     }
 }
 
+/// A validated copy of [`fnp_socketproxy::Network`] ensuring required fields
+/// are present for delegated (Starnix) networks.
+///
+/// Netcfg discovers native Fuchsia networks internally from Netstack, so
+/// external `NetworkRegistry` requests handled by this type are strictly
+/// delegated networks registered by runtimes like Starnix.
+struct ValidatedNetwork {
+    network_id: NetworkId,
+    marks: fnet::Marks,
+    dns_servers: Vec<fnet_name::DnsServer_>,
+    connectivity: Option<fnp_socketproxy::ConnectivityState>,
+    name: Option<String>,
+    network_type: Option<fnp_socketproxy::NetworkType>,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+enum NetworkValidationError {
+    MissingNetworkId,
+    MissingNetworkInfo,
+}
+
+impl From<NetworkValidationError> for fnp_socketproxy::NetworkRegistryAddError {
+    fn from(error: NetworkValidationError) -> Self {
+        match error {
+            NetworkValidationError::MissingNetworkId => Self::MissingNetworkId,
+            NetworkValidationError::MissingNetworkInfo => Self::MissingNetworkInfo,
+        }
+    }
+}
+
+impl From<NetworkValidationError> for fnp_socketproxy::NetworkRegistryUpdateError {
+    fn from(error: NetworkValidationError) -> Self {
+        match error {
+            NetworkValidationError::MissingNetworkId => Self::MissingNetworkId,
+            NetworkValidationError::MissingNetworkInfo => Self::MissingNetworkInfo,
+        }
+    }
+}
+
+impl TryFrom<fnp_socketproxy::Network> for ValidatedNetwork {
+    type Error = NetworkValidationError;
+
+    fn try_from(network: fnp_socketproxy::Network) -> Result<Self, Self::Error> {
+        let raw_network_id = network.network_id.ok_or(NetworkValidationError::MissingNetworkId)?;
+        let network_id = InterfaceId::try_from(raw_network_id)
+            .map(NetworkId::delegated)
+            .map_err(|_| NetworkValidationError::MissingNetworkId)?;
+        let Some(fnp_socketproxy::NetworkInfo::Starnix(info)) = network.info else {
+            return Err(NetworkValidationError::MissingNetworkInfo);
+        };
+
+        let mut marks = fnet::Marks::default();
+        marks.set_mark(fnet::MARK_DOMAIN_SO_MARK, info.mark);
+
+        let dns_servers =
+            NetpolNetworksService::extract_dns_servers(&network.dns_servers, raw_network_id.into());
+
+        Ok(Self {
+            network_id,
+            marks,
+            dns_servers,
+            connectivity: network.connectivity,
+            name: network.name,
+            network_type: network.network_type,
+        })
+    }
+}
+
 /// The result of a delegated network update.
 ///
 /// Returned to the main event loop to propagate system-wide configuration
@@ -1024,30 +1092,34 @@ impl NetpolNetworksService {
         update: Result<fnp_socketproxy::NetworkRegistryRequest, fidl::Error>,
     ) -> Result<DelegatedNetworkUpdateResult, anyhow::Error> {
         use fnp_socketproxy::{
-            NetworkInfo, NetworkRegistryAddError, NetworkRegistryRemoveError,
-            NetworkRegistryRequest, NetworkRegistrySetDefaultError, NetworkRegistryUpdateError,
+            NetworkRegistryAddError, NetworkRegistryRemoveError, NetworkRegistryRequest,
+            NetworkRegistrySetDefaultError, NetworkRegistryUpdateError,
         };
 
         let action_result = match update {
             Err(e) => {
                 error!(
                     "Encountered error watching for delegated network \
-                                    updates: {e:?}"
+                     updates: {e:?}"
                 );
                 return Err(anyhow::anyhow!(e));
             }
             Ok(NetworkRegistryRequest::SetDefault { network_id, responder }) => {
-                let update_result = match network_id {
+                let set_default_result = match network_id {
                     fposix_socket::OptionalUint32::Value(interface_id) => {
                         match InterfaceId::try_from(interface_id) {
                             Ok(id) => {
                                 let delegated_id = NetworkId::delegated(id);
-                                self.update(NetworkRegistryUpdate::ChangeNetwork(
-                                    delegated_id,
-                                    NetworkUpdate::MakeDefault,
-                                ))
-                                .await;
-                                Ok(())
+                                if self.network_registry.networks.contains_key(&delegated_id) {
+                                    self.update(NetworkRegistryUpdate::ChangeNetwork(
+                                        delegated_id,
+                                        NetworkUpdate::MakeDefault,
+                                    ))
+                                    .await;
+                                    Ok(())
+                                } else {
+                                    Err(NetworkRegistrySetDefaultError::NotFound)
+                                }
                             }
                             Err(_) => Err(NetworkRegistrySetDefaultError::NotFound),
                         }
@@ -1059,95 +1131,61 @@ impl NetpolNetworksService {
                 };
 
                 self.respond_to_delegated_network_update(
-                    update_result,
+                    set_default_result,
                     |reply| responder.send(reply),
                     "failed to send SetDefault result",
                 )
             }
             Ok(NetworkRegistryRequest::Add { network, responder }) => {
-                let extracted_properties = (|| {
-                    let raw_network_id =
-                        network.network_id.ok_or(NetworkRegistryAddError::MissingNetworkId)?;
-                    let network_id = InterfaceId::try_from(raw_network_id)
-                        .map(|id| NetworkId::delegated(id))
-                        .map_err(|_| NetworkRegistryAddError::MissingNetworkId)?;
-                    let NetworkInfo::Starnix(info) =
-                        network.info.ok_or(NetworkRegistryAddError::MissingNetworkInfo)?
-                    else {
-                        return Err(NetworkRegistryAddError::MissingNetworkInfo);
-                    };
-
-                    let mut marks = fnet::Marks::default();
-                    marks.set_mark(fnet::MARK_DOMAIN_SO_MARK, info.mark);
-
-                    let dns_servers =
-                        Self::extract_dns_servers(&network.dns_servers, raw_network_id.into());
-
-                    Ok((network_id, marks, dns_servers))
-                })();
-
-                let update_result = match extracted_properties {
-                    Ok((network_id, marks, dns_servers)) => {
-                        self.update(NetworkRegistryUpdate::ChangeNetwork(
-                            network_id,
-                            NetworkUpdate::Properties(NetworkPropertiesChange {
-                                added: true,
-                                marks: Some(marks),
-                                dns_servers: Some(dns_servers.clone()),
-                                connectivity_state: network.connectivity,
-                                name: network.name,
-                                network_type: network.network_type,
-                            }),
-                        ))
-                        .await;
-                        Ok(())
+                let add_result = match ValidatedNetwork::try_from(network).map_err(Into::into) {
+                    Ok(valid) => {
+                        if self.network_registry.networks.contains_key(&valid.network_id) {
+                            Err(NetworkRegistryAddError::DuplicateNetworkId)
+                        } else {
+                            self.update(NetworkRegistryUpdate::ChangeNetwork(
+                                valid.network_id,
+                                NetworkUpdate::Properties(NetworkPropertiesChange {
+                                    added: true,
+                                    marks: Some(valid.marks),
+                                    dns_servers: Some(valid.dns_servers),
+                                    connectivity_state: valid.connectivity,
+                                    name: valid.name,
+                                    network_type: valid.network_type,
+                                }),
+                            ))
+                            .await;
+                            Ok(())
+                        }
                     }
                     Err(e) => Err(e),
                 };
 
                 self.respond_to_delegated_network_update(
-                    update_result,
+                    add_result,
                     |reply| responder.send(reply),
                     "failed to send Add result",
                 )
             }
             Ok(NetworkRegistryRequest::Update { network, responder }) => {
-                let extracted_properties = (|| {
-                    let raw_network_id =
-                        network.network_id.ok_or(NetworkRegistryUpdateError::MissingNetworkId)?;
-                    let network_id = InterfaceId::try_from(raw_network_id)
-                        .map(|id| NetworkId::delegated(id))
-                        .map_err(|_| NetworkRegistryUpdateError::MissingNetworkId)?;
-                    let NetworkInfo::Starnix(info) =
-                        network.info.ok_or(NetworkRegistryUpdateError::MissingNetworkInfo)?
-                    else {
-                        return Err(NetworkRegistryUpdateError::MissingNetworkInfo);
-                    };
-
-                    let mut marks = fnet::Marks::default();
-                    marks.set_mark(fnet::MARK_DOMAIN_SO_MARK, info.mark);
-
-                    let dns_servers =
-                        Self::extract_dns_servers(&network.dns_servers, raw_network_id.into());
-
-                    Ok((network_id, marks, dns_servers))
-                })();
-
-                let update_result = match extracted_properties {
-                    Ok((network_id, marks, dns_servers)) => {
-                        self.update(NetworkRegistryUpdate::ChangeNetwork(
-                            network_id,
-                            NetworkUpdate::Properties(NetworkPropertiesChange {
-                                added: false,
-                                marks: Some(marks),
-                                dns_servers: Some(dns_servers.clone()),
-                                connectivity_state: network.connectivity,
-                                name: network.name,
-                                network_type: network.network_type,
-                            }),
-                        ))
-                        .await;
-                        Ok(())
+                let update_result = match ValidatedNetwork::try_from(network).map_err(Into::into) {
+                    Ok(valid) => {
+                        if !self.network_registry.networks.contains_key(&valid.network_id) {
+                            Err(NetworkRegistryUpdateError::NotFound)
+                        } else {
+                            self.update(NetworkRegistryUpdate::ChangeNetwork(
+                                valid.network_id,
+                                NetworkUpdate::Properties(NetworkPropertiesChange {
+                                    added: false,
+                                    marks: Some(valid.marks),
+                                    dns_servers: Some(valid.dns_servers),
+                                    connectivity_state: valid.connectivity,
+                                    name: valid.name,
+                                    network_type: valid.network_type,
+                                }),
+                            ))
+                            .await;
+                            Ok(())
+                        }
                     }
                     Err(e) => Err(e),
                 };
@@ -1159,21 +1197,27 @@ impl NetpolNetworksService {
                 )
             }
             Ok(NetworkRegistryRequest::Remove { network_id, responder }) => {
-                let update_result = match InterfaceId::try_from(network_id) {
+                let remove_result = match InterfaceId::try_from(network_id) {
                     Ok(id) => {
                         let delegated_id = NetworkId::delegated(id);
-                        self.update(NetworkRegistryUpdate::ChangeNetwork(
-                            delegated_id,
-                            NetworkUpdate::Remove,
-                        ))
-                        .await;
-                        Ok(())
+                        if self.network_registry.starnix_default == Some(delegated_id) {
+                            Err(NetworkRegistryRemoveError::CannotRemoveDefaultNetwork)
+                        } else if !self.network_registry.networks.contains_key(&delegated_id) {
+                            Err(NetworkRegistryRemoveError::NotFound)
+                        } else {
+                            self.update(NetworkRegistryUpdate::ChangeNetwork(
+                                delegated_id,
+                                NetworkUpdate::Remove,
+                            ))
+                            .await;
+                            Ok(())
+                        }
                     }
                     Err(_) => Err(NetworkRegistryRemoveError::NotFound),
                 };
 
                 self.respond_to_delegated_network_update(
-                    update_result,
+                    remove_result,
                     |reply| responder.send(reply),
                     "failed to send Remove result",
                 )
@@ -1594,6 +1638,10 @@ impl<Stream: futures::Stream + Unpin> futures::stream::FusedStream for Connectio
 mod tests {
     use super::*;
     use assert_matches::assert_matches;
+    use fnp_socketproxy::{
+        NetworkInfo, NetworkRegistryAddError, NetworkRegistryMarker, NetworkRegistryRemoveError,
+        NetworkRegistrySetDefaultError, NetworkRegistryUpdateError, StarnixNetworkInfo,
+    };
     use futures::FutureExt as _;
     use std::num::NonZeroU64;
     use test_case::test_case;
@@ -2484,5 +2532,169 @@ mod tests {
             idle_watch_fut.await,
             Ok(Err(fnp_properties::PropertyWatcherError::NetworkGone))
         );
+    }
+
+    #[test_case(
+        None,
+        Some(fnp_socketproxy::NetworkInfo::Starnix(
+            fnp_socketproxy::StarnixNetworkInfo {
+                mark: Some(123),
+                ..Default::default()
+            }
+        )),
+        Err(NetworkValidationError::MissingNetworkId);
+        "missing network_id"
+    )]
+    #[test_case(
+        Some(0),
+        Some(fnp_socketproxy::NetworkInfo::Starnix(
+            fnp_socketproxy::StarnixNetworkInfo {
+                mark: Some(123),
+                ..Default::default()
+            }
+        )),
+        Err(NetworkValidationError::MissingNetworkId);
+        "zero network_id"
+    )]
+    #[test_case(
+        Some(1),
+        None,
+        Err(NetworkValidationError::MissingNetworkInfo);
+        "missing network_info"
+    )]
+    #[test_case(
+        Some(1),
+        Some(fnp_socketproxy::NetworkInfo::Fuchsia(Default::default())),
+        Err(NetworkValidationError::MissingNetworkInfo);
+        "fuchsia network_info"
+    )]
+    #[test_case(
+        Some(1),
+        Some(fnp_socketproxy::NetworkInfo::Starnix(
+            fnp_socketproxy::StarnixNetworkInfo {
+                mark: Some(123),
+                ..Default::default()
+            }
+        )),
+        Ok(NetworkId::delegated(InterfaceId::new(1).unwrap()));
+        "valid starnix network"
+    )]
+    fn test_validated_network_validation(
+        network_id: Option<u32>,
+        info: Option<fnp_socketproxy::NetworkInfo>,
+        expected: Result<NetworkId, NetworkValidationError>,
+    ) {
+        let net = fnp_socketproxy::Network { network_id, info, ..Default::default() };
+        let result = ValidatedNetwork::try_from(net).map(|v| v.network_id);
+        assert_eq!(result, expected);
+    }
+
+    fn starnix_network_payload(id: u32, mark: u32) -> fnp_socketproxy::Network {
+        fnp_socketproxy::Network {
+            network_id: Some(id),
+            info: Some(NetworkInfo::Starnix(StarnixNetworkInfo {
+                mark: Some(mark),
+                ..Default::default()
+            })),
+            ..Default::default()
+        }
+    }
+
+    async fn process_fidl_request<E>(
+        service: &mut NetpolNetworksService,
+        request_future: impl Future<Output = Result<Result<(), E>, fidl::Error>>,
+    ) -> Result<(), E> {
+        let event = service.select_next_some().await;
+        let update_result = service.handle_event(event).await.expect("failed to handle event");
+        let client_result = request_future.await.expect("FIDL call failed");
+        assert_eq!(update_result.dns_servers.is_some(), client_result.is_ok());
+        client_result
+    }
+
+    #[fuchsia::test]
+    async fn test_delegated_networks_fidl_errors() {
+        let mut service = NetpolNetworksService::default();
+        let (proxy, stream) = fidl::endpoints::create_proxy_and_stream::<NetworkRegistryMarker>();
+        service.add_stream(stream);
+
+        const NETWORK_ID_1: u32 = 1;
+        const NETWORK_ID_2: u32 = 2;
+        const SOCKET_MARK: u32 = 100;
+
+        // Updating a network before it has been added returns NotFound.
+        assert_eq!(
+            process_fidl_request(
+                &mut service,
+                proxy.update(&starnix_network_payload(NETWORK_ID_1, SOCKET_MARK,)),
+            )
+            .await,
+            Err(NetworkRegistryUpdateError::NotFound)
+        );
+
+        // Adding a valid network succeeds.
+        assert_eq!(
+            process_fidl_request(
+                &mut service,
+                proxy.add(&starnix_network_payload(NETWORK_ID_1, SOCKET_MARK)),
+            )
+            .await,
+            Ok(())
+        );
+
+        // Adding a duplicate network ID returns DuplicateNetworkId.
+        assert_eq!(
+            process_fidl_request(
+                &mut service,
+                proxy.add(&starnix_network_payload(NETWORK_ID_1, SOCKET_MARK)),
+            )
+            .await,
+            Err(NetworkRegistryAddError::DuplicateNetworkId)
+        );
+
+        // Removing a non-existent network returns NotFound.
+        assert_eq!(
+            process_fidl_request(&mut service, proxy.remove(NETWORK_ID_2)).await,
+            Err(NetworkRegistryRemoveError::NotFound)
+        );
+
+        // Setting a non-existent network as default returns NotFound.
+        assert_eq!(
+            process_fidl_request(
+                &mut service,
+                proxy.set_default(&fposix_socket::OptionalUint32::Value(NETWORK_ID_2,)),
+            )
+            .await,
+            Err(NetworkRegistrySetDefaultError::NotFound)
+        );
+
+        // Setting an existing network as default succeeds.
+        assert_eq!(
+            process_fidl_request(
+                &mut service,
+                proxy.set_default(&fposix_socket::OptionalUint32::Value(NETWORK_ID_1,)),
+            )
+            .await,
+            Ok(())
+        );
+
+        // Attempting to remove the active default network returns
+        // CannotRemoveDefaultNetwork.
+        assert_eq!(
+            process_fidl_request(&mut service, proxy.remove(NETWORK_ID_1)).await,
+            Err(NetworkRegistryRemoveError::CannotRemoveDefaultNetwork)
+        );
+
+        // Unsetting the default network succeeds.
+        assert_eq!(
+            process_fidl_request(
+                &mut service,
+                proxy.set_default(&fposix_socket::OptionalUint32::Unset(fposix_socket::Empty)),
+            )
+            .await,
+            Ok(())
+        );
+
+        // Once unset from default, removing the network succeeds.
+        assert_eq!(process_fidl_request(&mut service, proxy.remove(NETWORK_ID_1)).await, Ok(()));
     }
 }
