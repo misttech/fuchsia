@@ -4,25 +4,28 @@
 
 import("//build/components.gni")
 import("//build/cpp/cpp_fuzzer.gni")
+import("//build/cpp/sdk_cpp_test.gni")
+import("//build/cpp/sdk_cpp_unittest_package.gni")
 import("//build/cpp/sdk_source_set.gni")
 import("//build/fuzz.gni")
 import("//build/test.gni")
 import("//build/testing/cc_test_executable.gni")
 
-cc_test_executable("unit-tests-bin") {
+sdk_cpp_test("unit-tests-bin") {
   testonly = true
   sources = [ "tests/unit-tests.cc" ]
 
   deps = [
     ":utf-utils",
-    "//zircon/system/ulib/zxtest",
+    "//src/lib/fxl/test:gtest_main",
+    "//third_party/googletest:gtest",
   ]
 
   configs += [ ":enable-vector-extensions" ]
 }
 
-fuchsia_unittest_package("utf-utils-unit-tests") {
-  deps = [ ":unit-tests-bin" ]
+sdk_cpp_unittest_package("utf-utils-unit-tests") {
+  sdk_cpp_test_deps = [ ":unit-tests-bin" ]
 }
 
 cpp_fuzzer("simple-compare-fuzzer") {

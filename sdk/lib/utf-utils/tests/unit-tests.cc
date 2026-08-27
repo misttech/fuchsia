@@ -7,7 +7,7 @@
 #include <iostream>
 #include <string>
 
-#include <zxtest/zxtest.h>
+#include <gtest/gtest.h>
 
 #include "sdk/lib/utf-utils/internal/arm-neon.h"
 #include "sdk/lib/utf-utils/internal/generic-simd.h"
@@ -24,7 +24,7 @@ bool TestUtf8(const char* data, size_t size) {
   bool validate_result = ValidateFn(data, size);
   bool copy_result = ValidateAndCopyFn(data, tmp.get(), size);
   if (copy_result && size > 0) {
-    EXPECT_BYTES_EQ(data, tmp.get(), size);
+    EXPECT_EQ(std::string_view(data, size), std::string_view(tmp.get(), size));
   }
 
   EXPECT_EQ(validate_result, copy_result);
@@ -101,13 +101,13 @@ constexpr size_t kTestVectorBoundaries[] = {7, 13, 14, 15, 29, 30, 31, 61, 62, 6
     EXPECT_TRUE(TestUtf8Avx2((bytes), (num_bytes), true));     \
   }
 
-#define EXPECT_INVALID_STRING_HELPER(bytes, num_bytes, explanation)          \
-  {                                                                          \
-    EXPECT_FALSE(utfutils_is_valid_utf8((bytes), (num_bytes)), explanation); \
-    EXPECT_FALSE(TestUtf8Scalar((bytes), (num_bytes)), explanation);         \
-    EXPECT_FALSE(TestUtf8Neon((bytes), (num_bytes), false), explanation);    \
-    EXPECT_FALSE(TestUtf8Ssse3((bytes), (num_bytes), false), explanation);   \
-    EXPECT_FALSE(TestUtf8Avx2((bytes), (num_bytes), false), explanation);    \
+#define EXPECT_INVALID_STRING_HELPER(bytes, num_bytes, explanation)              \
+  {                                                                              \
+    EXPECT_FALSE(utfutils_is_valid_utf8((bytes), (num_bytes))) << (explanation); \
+    EXPECT_FALSE(TestUtf8Scalar((bytes), (num_bytes))) << (explanation);         \
+    EXPECT_FALSE(TestUtf8Neon((bytes), (num_bytes), false)) << (explanation);    \
+    EXPECT_FALSE(TestUtf8Ssse3((bytes), (num_bytes), false)) << (explanation);   \
+    EXPECT_FALSE(TestUtf8Avx2((bytes), (num_bytes), false)) << (explanation);    \
   }
 
 #define EXPECT_VALID_STRING(input)                                                          \
