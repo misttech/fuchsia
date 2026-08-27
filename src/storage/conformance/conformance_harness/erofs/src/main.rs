@@ -69,6 +69,7 @@ async fn run(mut stream: TestHarnessRequestStream, pager: Arc<ErofsPager>) -> Re
                     supports_unnamed_temporary_file: false,
                     // TODO(https://fxbug.dev/479841115): support xattrs in erofs
                     supports_xattrs: false,
+                    supports_symlinks: false,
                 };
                 responder.send(&config)?;
             }

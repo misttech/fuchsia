@@ -25,6 +25,9 @@ pub struct TestHarness {
 
     /// All [`io_test::ExecutableFile`] rights supported by the filesystem.
     pub executable_file_rights: Rights,
+
+    /// All [`io_test::Symlink`] rights supported by the filesystem.
+    pub symlink_rights: Rights,
 }
 
 impl TestHarness {
@@ -54,8 +57,16 @@ impl TestHarness {
         let dir_rights = Rights::new(get_supported_dir_rights(&config));
         let file_rights = Rights::new(get_supported_file_rights(&config));
         let executable_file_rights = Rights::new(fio::Rights::READ_BYTES | fio::Rights::EXECUTE);
+        let symlink_rights = Rights::new(get_supported_symlink_rights(&config));
 
-        TestHarness { proxy, config, dir_rights, file_rights, executable_file_rights }
+        TestHarness {
+            proxy,
+            config,
+            dir_rights,
+            file_rights,
+            executable_file_rights,
+            symlink_rights,
+        }
     }
 
     /// Creates a [`fio::DirectoryProxy`] with the given root directory structure.
@@ -104,6 +115,15 @@ impl TestHarness {
         } else {
             fio::Abilities::GET_ATTRIBUTES | fio::Abilities::ENUMERATE | fio::Abilities::TRAVERSE
         }
+    }
+
+    /// Returns the abilities [`io_test::Symlink`] objects should have for the harness.
+    pub fn supported_symlink_abilities(&self) -> fio::Abilities {
+        let mut abilities = fio::Abilities::GET_ATTRIBUTES;
+        if self.supports_mutable_attrs() {
+            abilities |= fio::Abilities::UPDATE_ATTRIBUTES;
+        }
+        abilities
     }
 
     /// Returns true if the harness supports at least one mutable attribute, false otherwise.
@@ -159,6 +179,22 @@ fn get_supported_file_rights(config: &io_test::HarnessConfig) -> fio::Rights {
     }
     if supports_mutable_attrs(&config) {
         rights |= fio::Rights::WRITE_BYTES;
+    }
+    rights
+}
+
+// Returns the aggregate of all rights that are supported for [`io_test::Symlink`] objects.
+// Note that rights are specific to a connection (abilities are properties of the node).
+fn get_supported_symlink_rights(config: &io_test::HarnessConfig) -> fio::Rights {
+    let mut rights = fio::Rights::GET_ATTRIBUTES | fio::Rights::READ_BYTES;
+    if config.supports_mutable_file {
+        rights |= fio::Rights::WRITE_BYTES;
+    }
+    if supports_mutable_attrs(&config) {
+        rights |= fio::Rights::WRITE_BYTES;
+    }
+    if config.supports_executable_file {
+        rights |= fio::Rights::EXECUTE;
     }
     rights
 }

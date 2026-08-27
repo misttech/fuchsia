@@ -68,6 +68,9 @@ void AddEntry(const fio_test::DirectoryEntry& entry, memfs::VnodeDir& dir) {
     case fio_test::DirectoryEntry::Tag::kExecutableFile:
       ZX_PANIC("Executable files are not supported");
       break;
+    case fio_test::DirectoryEntry::Tag::kSymlink:
+      ZX_PANIC("Symlinks are not supported");
+      break;
   }
 }
 
@@ -89,6 +92,7 @@ class TestHarness : public fidl::Server<fio_test::TestHarness> {
     config.supports_modify_directory(true);
     config.supports_mutable_file(true);
     config.supports_xattrs(false);
+    config.supports_symlinks(false);
     config.supported_attributes(
         fio::NodeAttributesQuery::kCreationTime | fio::NodeAttributesQuery::kModificationTime |
         fio::NodeAttributesQuery::kContentSize | fio::NodeAttributesQuery::kStorageSize |

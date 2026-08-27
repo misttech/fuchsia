@@ -25,6 +25,12 @@ pub const TEST_FILE: &str = "testing.txt";
 /// A common set of file contents to write into a test file in a conformance test.
 pub const TEST_FILE_CONTENTS: &[u8] = "abcdef".as_bytes();
 
+/// A common name for a symlink to create in a conformance test.
+pub const TEST_SYMLINK: &str = "testing_symlink";
+
+/// A common symlink target path to use in a conformance test.
+pub const TEST_SYMLINK_TARGET: &[u8] = b"symlink_target_path";
+
 /// A default value for NodeAttributes, with zeros set for all fields.
 pub const EMPTY_NODE_ATTRS: fio::NodeAttributes = fio::NodeAttributes {
     mode: 0,
@@ -69,6 +75,7 @@ pub fn get_directory_entry_name(dir_entry: &io_test::DirectoryEntry) -> String {
         DirectoryEntry::Directory(entry) => &entry.name,
         DirectoryEntry::RemoteDirectory(entry) => &entry.name,
         DirectoryEntry::File(entry) => &entry.name,
+        DirectoryEntry::Symlink(entry) => &entry.name,
         DirectoryEntry::ExecutableFile(entry) => &entry.name,
     }
     .clone()
@@ -152,6 +159,14 @@ pub fn file(name: &str, contents: Vec<u8>) -> io_test::DirectoryEntry {
 /// Makes an executable file to be placed in the test directory.
 pub fn executable_file(name: &str) -> io_test::DirectoryEntry {
     io_test::DirectoryEntry::ExecutableFile(io_test::ExecutableFile { name: name.to_string() })
+}
+
+/// Makes a symlink to be placed in the test directory.
+pub fn symlink(name: &str, target: &[u8]) -> io_test::DirectoryEntry {
+    io_test::DirectoryEntry::Symlink(io_test::Symlink {
+        name: name.to_string(),
+        target: target.to_vec(),
+    })
 }
 
 /// Extension trait for [`fio::DirectoryProxy`] to make interactions with the fuchsia.io protocol

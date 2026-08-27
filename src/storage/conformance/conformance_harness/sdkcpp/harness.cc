@@ -50,6 +50,7 @@ class SdkCppHarness : public fidl::Server<fio_test::TestHarness> {
     config.supports_mutable_file(true);
     config.supports_services(true);
     config.supports_xattrs(false);
+    config.supports_symlinks(false);
     config.supported_attributes(fio::NodeAttributesQuery::kContentSize |
                                 fio::NodeAttributesQuery::kStorageSize);
 
@@ -126,6 +127,9 @@ class SdkCppHarness : public fidl::Server<fio_test::TestHarness> {
       }
       case fio_test::DirectoryEntry::Tag::kExecutableFile:
         ZX_PANIC("Executable files are not supported!");
+        break;
+      case fio_test::DirectoryEntry::Tag::kSymlink:
+        ZX_PANIC("Symlinks are not supported!");
         break;
     }
   }

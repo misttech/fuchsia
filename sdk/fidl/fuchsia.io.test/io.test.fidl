@@ -69,6 +69,9 @@ type HarnessConfig = struct {
 
     /// Supports extended attributes (xattrs).
     supports_xattrs bool;
+
+    /// Symlink objects are supported.
+    supports_symlinks bool;
 };
 
 /// Directory entries should support opening with any combination of read/write/execute rights.
@@ -90,6 +93,12 @@ type File = struct {
     contents vector<uint8>:MAX;
 };
 
+/// Symlink object pointing to a target path.
+type Symlink = struct {
+    name fuchsia.io.Name;
+    target fuchsia.io.SymlinkTarget;
+};
+
 /// Adds an executable file that supports opening as readable + executable. The file has a non-zero
 /// size, but the contents are otherwise unspecified.
 ///
@@ -103,6 +112,7 @@ type DirectoryEntry = strict resource union {
     1: directory Directory;
     2: remote_directory RemoteDirectory;
     3: file File;
+    4: symlink Symlink;
     5: executable_file ExecutableFile;
 };
 

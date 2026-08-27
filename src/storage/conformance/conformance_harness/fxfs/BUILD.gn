@@ -12,6 +12,7 @@ rustc_binary("bin") {
   deps = [
     "//sdk/fidl/fuchsia.io:fuchsia.io_rust",
     "//sdk/fidl/fuchsia.io.test:fuchsia.io.test_rust",
+    "//sdk/rust/zx",
     "//src/lib/fuchsia",
     "//src/lib/fuchsia-component",
     "//src/lib/fuchsia-fs",

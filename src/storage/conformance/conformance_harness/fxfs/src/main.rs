@@ -55,6 +55,13 @@ async fn add_entries(
                             .context(format!("failed to write contents for {name}"))?;
                     }
                 }
+                io_test::DirectoryEntry::Symlink(io_test::Symlink { name, target, .. }) => {
+                    dest.create_symlink(&name, &target, None)
+                        .await
+                        .context(format!("failed to create symlink {name}"))?
+                        .map_err(zx::Status::err_from_raw)
+                        .context(format!("failed to create symlink {name}"))?;
+                }
                 _ => panic!("Not supported"),
             }
         }
@@ -97,6 +104,7 @@ async fn run(mut stream: TestHarnessRequestStream, fixture: &TestFixture) -> Res
                         | fio::NodeAttributesQuery::PENDING_ACCESS_TIME_UPDATE,
                     supports_services: false,
                     supports_xattrs: true,
+                    supports_symlinks: true,
                 })?;
             }
             TestHarnessRequest::CreateDirectory {

@@ -63,6 +63,9 @@ fn add_entry(entry: io_test::DirectoryEntry, dest: &Arc<Simple>) -> Result<(), E
             let executable_file = new_executable_file()?;
             dest.add_entry(name, executable_file)?;
         }
+        io_test::DirectoryEntry::Symlink(_) => {
+            panic!("Symlinks are not supported");
+        }
     }
     Ok(())
 }
@@ -91,6 +94,7 @@ async fn run(mut stream: TestHarnessRequestStream) -> Result<(), Error> {
                     supports_mutable_file: false,
                     supports_unnamed_temporary_file: false,
                     supports_xattrs: false,
+                    supports_symlinks: false,
                 };
                 responder.send(&config)?;
             }

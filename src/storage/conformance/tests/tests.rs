@@ -11,4 +11,5 @@ mod node;
 mod query;
 mod remote;
 mod service;
+mod symlink;
 mod unnamed_temporary_file;
