@@ -64,7 +64,7 @@ if (is_linux) {
     _zbi_target = ":cprng-draw-zbi($default_toolchain)"
     _zbi_out_dir = get_label_info(_zbi_target, "target_out_dir")
     args = [
-      "-product-bundle",
+      "--emulator.pb-path",
       rebase_path("$_zbi_out_dir/cprng-draw-zbi.product_bundle",
                   root_build_dir),
     ]

@@ -33,8 +33,6 @@ type QemuInstanceArgs struct {
 	NetworkDevices []*fvdpb.Netdev
 	// The path to the custom ZBI image.
 	ZBIPath string
-	// The path to the product bundle directory.
-	ProductBundleDir string
 }
 
 // The relative path from the root of the fuchsia checkout to this file. This is used to namespace
@@ -55,8 +53,7 @@ func NewQemuInstance(
 	distro, err := emulator.UnpackFrom(
 		filepath.Join(args.HostX64Path, HostPathTestDataDirForQemuDistro),
 		emulator.DistributionParams{
-			Emulator:          emulator.Qemu,
-			ProductBundlePath: args.ProductBundleDir,
+			Emulator: emulator.Qemu,
 		},
 	)
 	if err != nil {

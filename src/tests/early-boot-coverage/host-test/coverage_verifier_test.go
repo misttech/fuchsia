@@ -54,10 +54,9 @@ type Expectations struct {
 }
 
 type TestInfo struct {
-	Path              string `json:"path"`
-	Name              string `json:"name"`
-	ProductBundlePath string `json:"product_bundle_path"`
-	BlockImage        string `json:"block_image"`
+	Path       string `json:"path"`
+	Name       string `json:"name"`
+	BlockImage string `json:"block_image"`
 }
 
 type Config struct {
@@ -89,10 +88,8 @@ func ParseConfiguration(t *testing.T) Config {
 
 func GetCoverageDataFromTest(t *testing.T, outDir string, config *Config) []string {
 	exDir := execDir(t)
-	pbPath := filepath.Join(exDir, "..", config.Test.ProductBundlePath)
 	distro := emulatortest.UnpackFrom(t, filepath.Join(exDir, "test_data"), emulator.DistributionParams{
-		Emulator:          emulator.Qemu,
-		ProductBundlePath: pbPath,
+		Emulator: emulator.Qemu,
 	})
 	arch := distro.TargetCPU()
 	device := emulator.DefaultVirtualDevice(string(arch))

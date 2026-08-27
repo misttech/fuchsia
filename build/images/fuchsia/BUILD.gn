@@ -8,9 +8,11 @@ if (is_host) {
   import("//build/testing/host_test_data.gni")
 
   host_test_data("default_product_bundle_for_emulator.go") {
-    # No tests should be assuming this product bundle target, but
-    # //tools/emulator/emulator.go uses this product bundle by default for its
-    # tests.
+    # No tests should be assuming the default product bundle because it varies
+    # depending on the build configuration, but many tests that use
+    # //tools/emulator/emulator.go use it.
+    # TODO(https://fxbug.dev/552542769): Every test that uses emulator.go should
+    # declare its own product bundle.
     visibility = [
       "//src/devices/block/drivers/ufs/test/e2e:*",
       "//src/recovery/simulator:*",
@@ -22,6 +24,7 @@ if (is_host) {
       "//src/tests/kernel_crashlog:*",
       "//src/tests/kernel_lockup_detector:*",
       "//src/tests/kernel_panic:*",
+      "//src/tests/limited_netsvc:*",
       "//src/tests/oom:*",
       "//src/tests/reboot:*",
       "//src/tests/shutdown:*",

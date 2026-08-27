@@ -8,7 +8,6 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	"flag"
 	"io"
 	"os"
 	"os/exec"
@@ -22,8 +21,6 @@ import (
 	ffxlib "go.fuchsia.dev/fuchsia/src/connectivity/network/testing/conformance/ffx"
 	fvdpb "go.fuchsia.dev/fuchsia/tools/virtual_device/proto"
 )
-
-var productBundleDirFlag = flag.String("product-bundle-dir", "", "Path to the product bundle directory")
 
 const NETWORK_TEST_REALM_COMPONENT_NAME = "net-test-realm-controller"
 
@@ -56,10 +53,6 @@ func TestEmulatorWorksWithFfx(t *testing.T) {
 		"..",
 		"host-tools",
 	)
-
-	if *productBundleDirFlag == "" {
-		t.Fatal("-product-bundle-dir flag is required")
-	}
 
 	nodename := "TestEmulatorWorksWithFfx-Nodename"
 
@@ -116,10 +109,9 @@ func TestEmulatorWorksWithFfx(t *testing.T) {
 	i, err := NewQemuInstance(ctx,
 		ssh_auth_keys,
 		QemuInstanceArgs{
-			Nodename:         nodename,
-			HostX64Path:      hostOutDir,
-			NetworkDevices:   netdevs,
-			ProductBundleDir: *productBundleDirFlag,
+			Nodename:       nodename,
+			HostX64Path:    hostOutDir,
+			NetworkDevices: netdevs,
 		})
 	if err != nil {
 		t.Fatal(err)

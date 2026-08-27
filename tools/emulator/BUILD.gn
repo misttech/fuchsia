@@ -4,7 +4,6 @@
 
 import("//build/go/go_library.gni")
 import("//build/go/go_test.gni")
-import("//build/images/paths.gni")
 import("//build/testing/host_test_data.gni")
 import("//zircon/kernel/phys/qemu.gni")
 
@@ -83,16 +82,7 @@ if (is_linux) {
 
     generated_file("buildinfo.ini") {
       testonly = true
-      contents = [
-        # The path to the product bundle directory relative to the test data
-        # directory. This must be relative the test data directory specifically,
-        # rather than the build directory because the build directory is not
-        # guaranteed to exist at runtime, especially on CI.
-        "product_bundle_path=" +
-            rebase_path(files.product_bundle_dir,
-                        "$root_out_dir/test_data/emulator"),
-        "target_cpu=$target_cpu",
-      ]
+      contents = [ "target_cpu=$target_cpu" ]
       outputs = [ "$root_out_dir/test_data/emulator/buildinfo.ini" ]
     }
 

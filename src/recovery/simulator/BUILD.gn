@@ -4,6 +4,7 @@
 
 import("//build/go/go_library.gni")
 import("//build/go/go_test.gni")
+import("//build/images/paths.gni")
 import("//build/testing/host_test_data.gni")
 
 group("tests") {
@@ -47,6 +48,8 @@ if (is_linux) {
       args = [
         "-zbi-path",
         rebase_path(_outputs[0], root_build_dir),
+        "--emulator.pb-path",
+        rebase_path(files.product_bundle_dir, root_build_dir),
       ]
       non_go_deps = [
         ":recovery_test_data",

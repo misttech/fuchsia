@@ -45,7 +45,7 @@ if (is_linux && has_board) {
     _pb_out_dir = get_label_info(_pb_target, "target_out_dir")
     _pb_name = get_label_info(_pb_target, "name")
     args = [
-      "-product-bundle-dir",
+      "--emulator.pb-path",
       rebase_path("$_pb_out_dir/$_pb_name", root_build_dir),
     ]
     non_go_deps = [

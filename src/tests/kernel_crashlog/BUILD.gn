@@ -4,6 +4,7 @@
 
 import("//build/go/go_library.gni")
 import("//build/go/go_test.gni")
+import("//build/images/paths.gni")
 
 group("tests") {
   testonly = true
@@ -26,6 +27,10 @@ if (is_linux) {
 
   go_test("kernel_crashlog_tests") {
     embed = [ ":lib" ]
+    args = [
+      "--emulator.pb-path",
+      rebase_path(files.product_bundle_dir, root_build_dir),
+    ]
     deps = [
       "//tools/virtual_device",
       "//tools/virtual_device:proto",

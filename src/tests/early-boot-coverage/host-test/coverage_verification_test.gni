@@ -109,7 +109,6 @@ template("coverage_verification_test") {
     test = {
       path = instrumented_binary_rebased_path
       name = invoker.test_uri
-      product_bundle_path = rebase_path(product_bundle_dir, root_build_dir)
       block_image = _block_image
     }
 
@@ -152,6 +151,8 @@ template("coverage_verification_test") {
                     "//src/tests/early-boot-coverage/host-test:zbi",
                   ] + extra_deps
     args = [
+      "--emulator.pb-path",
+      rebase_path(product_bundle_dir, root_build_dir),
       "-config",
       rebase_path(output_config, root_build_dir),
     ]

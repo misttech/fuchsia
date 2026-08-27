@@ -4,6 +4,7 @@
 
 import("//build/go/go_library.gni")
 import("//build/go/go_test.gni")
+import("//build/images/paths.gni")
 
 group("tests") {
   testonly = true
@@ -18,6 +19,10 @@ group("tests") {
 if (is_host) {
   go_test("oom_tests") {
     sources = [ "oom_test.go" ]
+    args = [
+      "--emulator.pb-path",
+      rebase_path(files.product_bundle_dir, root_build_dir),
+    ]
     deps = [ "//tools/emulator/emulatortest" ]
     non_go_deps =
         [ "//build/images/fuchsia:default_product_bundle_for_emulator.go" ]

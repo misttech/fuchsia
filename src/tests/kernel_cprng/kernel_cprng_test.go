@@ -7,7 +7,6 @@ package main
 import (
 	"context"
 	"encoding/hex"
-	"flag"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -17,8 +16,6 @@ import (
 	"go.fuchsia.dev/fuchsia/tools/emulator"
 	"go.fuchsia.dev/fuchsia/tools/emulator/emulatortest"
 )
-
-var customPbPath = flag.String("product-bundle", "", "Path to the custom product bundle")
 
 var cmdline = []string{
 	"kernel.halt-on-panic=true",
@@ -49,17 +46,9 @@ func removeCmdlineEntropy(args []string) []string {
 }
 
 func unpackDistro(t *testing.T) *emulatortest.Distribution {
-	if *customPbPath == "" {
-		t.Fatal("-product-bundle flag is required")
-	}
-	absPbPath, err := filepath.Abs(*customPbPath)
-	if err != nil {
-		t.Fatal(err)
-	}
 	exDir := execDir(t)
 	return emulatortest.UnpackFrom(t, filepath.Join(exDir, "test_data"), emulator.DistributionParams{
-		Emulator:          emulator.Qemu,
-		ProductBundlePath: absPbPath,
+		Emulator: emulator.Qemu,
 	})
 }
 

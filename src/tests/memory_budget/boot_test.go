@@ -6,7 +6,6 @@ package main
 
 import (
 	"context"
-	"flag"
 	"os"
 	"path/filepath"
 	"testing"
@@ -18,12 +17,12 @@ import (
 	fvdpb "go.fuchsia.dev/fuchsia/tools/virtual_device/proto"
 )
 
-var customPbPath = flag.String("product-bundle", "", "path to product bundle")
-
 var cmdlineCommon = []string{"kernel.oom.behavior=reboot", "kernel.oom.reboot-timeout-ms=0x000a"}
 
-const hostTestDataDir = "test_data"
-const sessionStartedBreadCrumb = "Session started."
+const (
+	hostTestDataDir          = "test_data"
+	sessionStartedBreadCrumb = "Session started."
+)
 
 // Determines if the VM boots successfully.
 func TestBoot(t *testing.T) {
@@ -32,17 +31,8 @@ func TestBoot(t *testing.T) {
 	simg2img := filepath.Join(testDataPath, "storage", "sparse", "simg2img")
 	vmConfigPath := filepath.Join(testDataPath, "config", "vm_config.json")
 
-	if *customPbPath == "" {
-		t.Fatal("-product-bundle flag is required")
-	}
-	pbPath, err := filepath.Abs(*customPbPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-
 	distro := emulatortest.UnpackFrom(t, testDataPath, emulator.DistributionParams{
-		Emulator:          emulator.Qemu,
-		ProductBundlePath: pbPath,
+		Emulator: emulator.Qemu,
 	})
 
 	vmConfig := struct {
