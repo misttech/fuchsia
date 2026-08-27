@@ -349,10 +349,10 @@ impl Inner {
         )
     }
 
-    fn bind_all_partitions(&mut self, parent: &Arc<GptManager>) -> Result<(), Error> {
+    async fn bind_all_partitions(&mut self, parent: &Arc<GptManager>) -> Result<(), Error> {
         self.partitions.clear();
         self.composite_partitions.clear();
-        self.partitions_dir.clear();
+        self.partitions_dir.clear().await;
 
         let mut partitions = self.gpt.partitions().clone();
         if parent.config.merge_super_and_userdata {
@@ -462,7 +462,7 @@ impl GptManager {
             }),
             shutdown: AtomicBool::new(false),
         });
-        this.inner.lock().await.bind_all_partitions(&this)?;
+        this.inner.lock().await.bind_all_partitions(&this).await?;
         log::info!("Starting all partitions OK!");
         Ok(this)
     }
@@ -681,12 +681,18 @@ impl GptManager {
             return Err(zx::Status::BAD_STATE);
         }
 
+        // Sever all connections and clear existing partitions before writing the new partition
+        // table.
+        inner.partitions.clear();
+        inner.composite_partitions.clear();
+        inner.partitions_dir.clear().await;
+
         log::info!("Resetting gpt.  Expect data loss!!!");
         let mut transaction = inner.gpt.create_transaction().unwrap();
         transaction.partitions = partitions;
         inner.gpt.commit_transaction(transaction).await?;
 
-        if let Err(error) = inner.bind_all_partitions(&self) {
+        if let Err(error) = inner.bind_all_partitions(&self).await {
             log::error!(error:?; "Failed to rebind partitions");
             return Err(zx::Status::BAD_STATE);
         }
@@ -697,7 +703,7 @@ impl GptManager {
     pub async fn shutdown(self: Arc<Self>) {
         log::info!("Shutting down gpt");
         let mut inner = self.inner.lock().await;
-        inner.partitions_dir.clear();
+        inner.partitions_dir.clear().await;
         inner.partitions.clear();
         inner.composite_partitions.clear();
         self.shutdown.store(true, Ordering::Relaxed);
@@ -2064,5 +2070,200 @@ mod tests {
             }
             runner.shutdown().await;
         }
+    }
+
+    #[fuchsia::test]
+    async fn reset_partition_table_severs_existing_connections() {
+        const PART_TYPE_GUID: [u8; 16] = [2u8; 16];
+        const PART_1_INSTANCE_GUID: [u8; 16] = [2u8; 16];
+        const PART_1_NAME: &str = "part";
+
+        let (block_device, partitions_dir) = setup(
+            512,
+            1048576 / 512,
+            vec![PartitionInfo {
+                label: PART_1_NAME.to_string(),
+                type_guid: Guid::from_bytes(PART_TYPE_GUID),
+                instance_guid: Guid::from_bytes(PART_1_INSTANCE_GUID),
+                start_block: 4,
+                num_blocks: 10,
+                flags: 0,
+            }],
+        )
+        .await;
+
+        let runner = GptManager::new(block_device.connect(), partitions_dir.clone())
+            .await
+            .expect("load should succeed");
+
+        let part_0_dir = vfs::serve_directory(
+            partitions_dir.clone(),
+            vfs::path::Path::validate_and_split("part-000").unwrap(),
+            vfs::execution_scope::ExecutionScope::new(),
+            fio::PERM_READABLE,
+        );
+
+        let part_0_block =
+            connect_to_named_protocol_at_dir_root::<fblock::BlockMarker>(&part_0_dir, "volume")
+                .expect("Failed to open Volume service");
+        let part_0_partition =
+            connect_to_named_protocol_at_dir_root::<fpartitions::PartitionMarker>(
+                &part_0_dir,
+                "partition",
+            )
+            .expect("Failed to open Partition service");
+
+        let (part_0_block_clone, server_end) =
+            fidl::endpoints::create_proxy::<fblock::BlockMarker>();
+        part_0_dir
+            .open(
+                "volume",
+                fio::Flags::PROTOCOL_SERVICE,
+                &fio::Options::default(),
+                server_end.into_channel(),
+            )
+            .expect("Failed to open volume");
+
+        let client =
+            RemoteBlockClient::new(part_0_block).await.expect("Failed to create block client");
+
+        let buf = vec![0xabu8; 512];
+        client.write_at(BufferSlice::Memory(&buf[..]), 0).await.expect("write_at failed");
+
+        let nil_entry = PartitionInfo {
+            label: "".to_string(),
+            type_guid: Guid::from_bytes([0u8; 16]),
+            instance_guid: Guid::from_bytes([0u8; 16]),
+            start_block: 0,
+            num_blocks: 0,
+            flags: 0,
+        };
+        let mut new_partitions = vec![nil_entry; 128];
+        new_partitions[0] = PartitionInfo {
+            label: "part_new".to_string(),
+            type_guid: Guid::from_bytes(PART_TYPE_GUID),
+            instance_guid: Guid::from_bytes([1u8; 16]),
+            start_block: 64,
+            num_blocks: 2,
+            flags: 0,
+        };
+
+        runner.reset_partition_table(new_partitions).await.expect("reset_partition_table failed");
+
+        // The old partition connection should be severed.
+        let transaction = runner.create_transaction().await.expect("Failed to create transaction");
+        part_0_partition
+            .update_metadata(fpartitions::PartitionUpdateMetadataRequest {
+                transaction: Some(transaction),
+                flags: Some(1234),
+                ..Default::default()
+            })
+            .await
+            .expect_err(
+                "update_metadata on stale partition connection should fail with PEER_CLOSED",
+            );
+
+        // The old block connection should be severed (get_name should fail with PEER_CLOSED).
+        part_0_block_clone
+            .get_name()
+            .await
+            .expect_err("get_name on stale block connection should fail");
+
+        // Subsequent writes on the old client should fail because the session/connection was
+        // severed.
+        client
+            .write_at(BufferSlice::Memory(&buf[..]), 0)
+            .await
+            .expect_err("write_at on stale client should fail");
+
+        runner.shutdown().await;
+    }
+
+    #[fuchsia::test]
+    async fn reset_partition_table_severs_passthrough_connections() {
+        const PART_TYPE_GUID: [u8; 16] = [2u8; 16];
+        const PART_1_INSTANCE_GUID: [u8; 16] = [2u8; 16];
+        const PART_1_NAME: &str = "fvm";
+
+        let (block_device, partitions_dir) = setup(
+            512,
+            1048576 / 512,
+            vec![PartitionInfo {
+                label: PART_1_NAME.to_string(),
+                type_guid: Guid::from_bytes(PART_TYPE_GUID),
+                instance_guid: Guid::from_bytes(PART_1_INSTANCE_GUID),
+                start_block: 4,
+                num_blocks: 10,
+                flags: 0,
+            }],
+        )
+        .await;
+
+        let runner = GptManager::new(block_device.connect(), partitions_dir.clone())
+            .await
+            .expect("load should succeed");
+
+        let part_0_dir = vfs::serve_directory(
+            partitions_dir.clone(),
+            vfs::path::Path::validate_and_split("part-000").unwrap(),
+            vfs::execution_scope::ExecutionScope::new(),
+            fio::PERM_READABLE,
+        );
+
+        let part_0_block =
+            connect_to_named_protocol_at_dir_root::<fblock::BlockMarker>(&part_0_dir, "volume")
+                .expect("Failed to open Volume service");
+
+        let (part_0_block_clone, server_end) =
+            fidl::endpoints::create_proxy::<fblock::BlockMarker>();
+        part_0_dir
+            .open(
+                "volume",
+                fio::Flags::PROTOCOL_SERVICE,
+                &fio::Options::default(),
+                server_end.into_channel(),
+            )
+            .expect("Failed to open volume");
+
+        let client =
+            RemoteBlockClient::new(part_0_block).await.expect("Failed to create block client");
+
+        let buf = vec![0xabu8; 512];
+        client.write_at(BufferSlice::Memory(&buf[..]), 0).await.expect("write_at failed");
+
+        let nil_entry = PartitionInfo {
+            label: "".to_string(),
+            type_guid: Guid::from_bytes([0u8; 16]),
+            instance_guid: Guid::from_bytes([0u8; 16]),
+            start_block: 0,
+            num_blocks: 0,
+            flags: 0,
+        };
+        let mut new_partitions = vec![nil_entry; 128];
+        new_partitions[0] = PartitionInfo {
+            label: "part_new".to_string(),
+            type_guid: Guid::from_bytes(PART_TYPE_GUID),
+            instance_guid: Guid::from_bytes([1u8; 16]),
+            start_block: 64,
+            num_blocks: 2,
+            flags: 0,
+        };
+
+        runner.reset_partition_table(new_partitions).await.expect("reset_partition_table failed");
+
+        // The old block connection should be severed (get_name should fail with PEER_CLOSED).
+        part_0_block_clone
+            .get_name()
+            .await
+            .expect_err("get_name on stale block connection should fail");
+
+        // Subsequent writes on the old client should fail because the session/connection was
+        // severed.
+        client
+            .write_at(BufferSlice::Memory(&buf[..]), 0)
+            .await
+            .expect_err("write_at on stale client should fail");
+
+        runner.shutdown().await;
     }
 }

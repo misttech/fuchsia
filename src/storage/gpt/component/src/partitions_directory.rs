@@ -4,7 +4,12 @@
 
 use crate::gpt::GptManager;
 use block_server::{BlockServer, SessionManager};
+use fidl::endpoints::RequestStream as _;
+use fidl_fuchsia_storage_block as fblock;
+use fidl_fuchsia_storage_partitions as fpartitions;
+use fuchsia_async as fasync;
 use fuchsia_sync::Mutex;
+use futures::future::join_all;
 use std::collections::BTreeMap;
 use std::sync::{Arc, Weak};
 use vfs::directory::helper::DirectlyMutable as _;
@@ -26,9 +31,10 @@ impl PartitionsDirectory {
         Self { node, entries: Default::default() }
     }
 
-    pub fn clear(&self) {
+    pub async fn clear(&self) {
         self.node.remove_all_entries();
-        self.entries.lock().clear();
+        let entries = std::mem::take(&mut *self.entries.lock());
+        join_all(entries.into_values().map(|entry| entry.scope.cancel())).await;
     }
 
     /// Adds an entry for a GPT partition.  Serves the "volume" and "partition" protocols.
@@ -60,6 +66,7 @@ impl PartitionsDirectory {
 
 /// A node which hosts an instance of fuchsia.storage.partitions.PartitionService.
 pub struct PartitionsDirectoryEntry {
+    scope: fasync::Scope,
     node: Arc<vfs::directory::immutable::Simple>,
 }
 
@@ -75,39 +82,48 @@ impl PartitionsDirectoryEntry {
         gpt_manager: Weak<GptManager>,
         gpt_index: usize,
     ) -> Self {
+        let scope = fasync::Scope::new();
         let node = vfs::directory::immutable::simple();
         node.add_entry(
             "volume",
-            vfs::service::host(move |requests| {
-                let server = block_server.clone();
-                async move {
-                    if let Some(server) = server.upgrade() {
-                        if let Err(err) = server.handle_requests(requests).await {
-                            log::error!(err:?; "Error handling requests");
+            vfs::service::endpoint({
+                let scope = scope.to_handle();
+                move |_scope, channel| {
+                    let server = block_server.clone();
+                    let requests = fblock::BlockRequestStream::from_channel(channel);
+                    scope.spawn(async move {
+                        if let Some(server) = server.upgrade() {
+                            if let Err(err) = server.handle_requests(requests).await {
+                                log::error!(err:?; "Error handling requests");
+                            }
                         }
-                    }
+                    });
                 }
             }),
         )
         .unwrap();
         node.add_entry(
             "partition",
-            vfs::service::host(move |requests| {
-                let manager = gpt_manager.clone();
-                async move {
-                    if let Some(manager) = manager.upgrade() {
-                        if let Err(err) =
-                            manager.handle_partitions_requests(gpt_index, requests).await
-                        {
-                            log::error!(err:?; "Error handling requests");
+            vfs::service::endpoint({
+                let scope = scope.to_handle();
+                move |_scope, channel| {
+                    let manager = gpt_manager.clone();
+                    let requests = fpartitions::PartitionRequestStream::from_channel(channel);
+                    scope.spawn(async move {
+                        if let Some(manager) = manager.upgrade() {
+                            if let Err(err) =
+                                manager.handle_partitions_requests(gpt_index, requests).await
+                            {
+                                log::error!(err:?; "Error handling requests");
+                            }
                         }
-                    }
+                    });
                 }
             }),
         )
         .unwrap();
 
-        Self { node }
+        Self { scope, node }
     }
 
     fn new_composite<SM: SessionManager + Send + Sync + 'static>(
@@ -115,40 +131,50 @@ impl PartitionsDirectoryEntry {
         gpt_manager: Weak<GptManager>,
         gpt_indexes: Vec<usize>,
     ) -> Self {
+        let scope = fasync::Scope::new();
         let node = vfs::directory::immutable::simple();
         node.add_entry(
             "volume",
-            vfs::service::host(move |requests| {
-                let server = block_server.clone();
-                async move {
-                    if let Some(server) = server.upgrade() {
-                        if let Err(err) = server.handle_requests(requests).await {
-                            log::error!(err:?; "Error handling requests");
+            vfs::service::endpoint({
+                let scope = scope.to_handle();
+                move |_scope, channel| {
+                    let server = block_server.clone();
+                    let requests = fblock::BlockRequestStream::from_channel(channel);
+                    scope.spawn(async move {
+                        if let Some(server) = server.upgrade() {
+                            if let Err(err) = server.handle_requests(requests).await {
+                                log::error!(err:?; "Error handling requests");
+                            }
                         }
-                    }
+                    });
                 }
             }),
         )
         .unwrap();
         node.add_entry(
             "overlay",
-            vfs::service::host(move |requests| {
-                let manager = gpt_manager.clone();
-                let gpt_indexes = gpt_indexes.clone();
-                async move {
-                    if let Some(manager) = manager.upgrade() {
-                        if let Err(err) = manager
-                            .handle_composite_partitions_requests(gpt_indexes, requests)
-                            .await
-                        {
-                            log::error!(err:?; "Error handling requests");
+            vfs::service::endpoint({
+                let scope = scope.to_handle();
+                move |_scope, channel| {
+                    let manager = gpt_manager.clone();
+                    let gpt_indexes = gpt_indexes.clone();
+                    let requests =
+                        fpartitions::OverlayPartitionRequestStream::from_channel(channel);
+                    scope.spawn(async move {
+                        if let Some(manager) = manager.upgrade() {
+                            if let Err(err) = manager
+                                .handle_composite_partitions_requests(gpt_indexes, requests)
+                                .await
+                            {
+                                log::error!(err:?; "Error handling requests");
+                            }
                         }
-                    }
+                    });
                 }
             }),
         )
         .unwrap();
 
-        Self { node }
+        Self { scope, node }
     }
 }
