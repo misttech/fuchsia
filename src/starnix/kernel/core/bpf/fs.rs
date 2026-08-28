@@ -8,7 +8,7 @@
 use crate::bpf::syscalls::BpfTypeFormat;
 use crate::bpf::{BpfMapHandle, ProgramHandle};
 use crate::mm::memory::MemoryObject;
-use crate::mm::{DesiredAddress, MappingOptions, PAGE_SIZE, ProtectionFlags};
+use crate::mm::{DesiredAddress, MappingOptions, ProtectionFlags};
 use crate::security::{self, PermissionFlags};
 use crate::task::{
     CurrentTask, EventHandler, SignalHandler, SignalHandlerInner, Task, WaitCanceler, Waiter,
@@ -22,22 +22,17 @@ use crate::vfs::{
     fs_node_impl_xattr_delegate,
 };
 use bstr::BStr;
-use ebpf::{MapFlags, MapSchema};
-use ebpf_api::{RINGBUF_SIGNAL, compute_map_storage_size};
+use ebpf_api::RINGBUF_SIGNAL;
 use starnix_logging::track_stub;
 use starnix_types::vfs::default_statfs;
 use starnix_uapi::auth::FsCred;
 use starnix_uapi::device_id::DeviceId;
 use starnix_uapi::errors::Errno;
 use starnix_uapi::file_mode::{FileMode, mode};
-use starnix_uapi::math::round_up_to_increment;
 use starnix_uapi::open_flags::OpenFlags;
 use starnix_uapi::user_address::UserAddress;
 use starnix_uapi::vfs::FdEvents;
-use starnix_uapi::{
-    BPF_FS_MAGIC, bpf_map_type_BPF_MAP_TYPE_ARRAY, bpf_map_type_BPF_MAP_TYPE_RINGBUF, errno, error,
-    statfs,
-};
+use starnix_uapi::{BPF_FS_MAGIC, bpf_map_type_BPF_MAP_TYPE_RINGBUF, errno, error, statfs};
 use std::sync::Arc;
 
 /// A reference to a BPF object that can be stored in either an FD or an entry in the /sys/fs/bpf
@@ -71,14 +66,6 @@ impl BpfHandle {
         match self {
             Self::Program(program) => Ok(program),
             _ => error!(EINVAL),
-        }
-    }
-
-    // Returns VMO and schema if this handle references a map.
-    fn get_map_vmo(&self) -> Result<(&Arc<zx::Vmo>, MapSchema), Errno> {
-        match self {
-            Self::Map(map) => Ok((map.vmo(), map.schema)),
-            _ => error!(ENODEV),
         }
     }
 
@@ -161,8 +148,6 @@ impl FileOps for BpfHandle {
         length: Option<usize>,
         prot: ProtectionFlags,
     ) -> Result<Arc<MemoryObject>, Errno> {
-        let (vmo, schema) = self.get_map_vmo()?;
-
         // Because of the specific condition needed to map this object, the size must be known.
         let length = length.ok_or_else(|| errno!(EINVAL))?;
 
@@ -171,63 +156,7 @@ impl FileOps for BpfHandle {
             return error!(EPERM);
         }
 
-        match schema.map_type {
-            bpf_map_type_BPF_MAP_TYPE_RINGBUF => {
-                let page_size = *PAGE_SIZE as usize;
-                // Starting from the second page, this cannot be mapped writable.
-                if length > page_size {
-                    if prot.contains(ProtectionFlags::WRITE) {
-                        return error!(EPERM);
-                    }
-                    // This cannot be mapped outside of the 2 control pages and the 2 data sections.
-                    if length > 2 * page_size + 2 * schema.max_entries as usize {
-                        return error!(EINVAL);
-                    }
-                }
-
-                self.as_map()?.get_memory(|| {
-                    // The first page of the ring buffer VMO is not visible to
-                    // user-space processes. Return a VMO slice that doesn't
-                    // include the first page.
-                    let clone_size = 2 * page_size + schema.max_entries as usize;
-                    let vmo_dup = vmo
-                        .create_child(
-                            zx::VmoChildOptions::SLICE,
-                            page_size as u64,
-                            clone_size as u64,
-                        )
-                        .map_err(|_| errno!(EIO))?
-                        .into();
-                    Ok(Arc::new(MemoryObject::RingBuf(vmo_dup)))
-                })
-            }
-
-            bpf_map_type_BPF_MAP_TYPE_ARRAY => {
-                if !schema.flags.contains(MapFlags::Mmapable) {
-                    return error!(EPERM);
-                }
-
-                let array_size = round_up_to_increment(
-                    compute_map_storage_size(&schema).map_err(|_| errno!(EINVAL))?,
-                    *PAGE_SIZE as usize,
-                )?;
-                if length > array_size {
-                    return error!(EINVAL);
-                }
-
-                self.as_map()?.get_memory(|| {
-                    let vmo_dup: zx::Vmo = vmo
-                        .as_handle_ref()
-                        .duplicate_handle(zx::Rights::SAME_RIGHTS)
-                        .map_err(|_| errno!(EIO))?
-                        .into();
-                    Ok(Arc::new(MemoryObject::from(vmo_dup)))
-                })
-            }
-
-            // Other maps cannot be mmap'ed.
-            _ => error!(ENODEV),
-        }
+        self.as_map()?.get_memory(length, prot)
     }
 
     fn mmap(
@@ -260,10 +189,12 @@ impl FileOps for BpfHandle {
         events: FdEvents,
         handler: EventHandler,
     ) -> Option<WaitCanceler> {
-        let (vmo, schema) = self.get_map_vmo().ok()?;
+        let BpfHandle::Map(bpf_map) = self else {
+            return None;
+        };
 
         // Only ringbuffers can be polled for POLLIN.
-        if schema.map_type != bpf_map_type_BPF_MAP_TYPE_RINGBUF
+        if bpf_map.schema.map_type != bpf_map_type_BPF_MAP_TYPE_RINGBUF
             || !events.contains(FdEvents::POLLIN)
         {
             return Some(WaitCanceler::new_noop());
@@ -279,12 +210,14 @@ impl FileOps for BpfHandle {
 
         // Reset the signal before waiting. The case when the ring buffer already has some data
         // is handled by the caller: it should call `query_events` after starting the waiter.
-        vmo.as_handle_ref()
+        bpf_map
+            .vmo()
+            .as_handle_ref()
             .signal(RINGBUF_SIGNAL, zx::Signals::empty())
             .expect("Failed to set signal or a ring buffer VMO");
 
         let canceler = waiter
-            .wake_on_zircon_signals(&vmo.as_handle_ref(), RINGBUF_SIGNAL, handler)
+            .wake_on_zircon_signals(&bpf_map.vmo().as_handle_ref(), RINGBUF_SIGNAL, handler)
             .expect("Failed to wait for signals on ringbuf VMO");
         Some(WaitCanceler::new_port(canceler))
     }

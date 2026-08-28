@@ -6,23 +6,26 @@
 #![allow(non_upper_case_globals)]
 
 use crate::mm::memory::MemoryObject;
+use crate::mm::{PAGE_SIZE, ProtectionFlags};
 use crate::security;
 use crate::task::{CurrentTask, Kernel, register_delayed_release};
-use ebpf::MapSchema;
-use ebpf_api::{Map, MapError, PinnedMap};
+use ebpf::{MapFlags, MapSchema};
+use ebpf_api::{Map, MapError, PinnedMap, compute_map_storage_size};
 use starnix_lifecycle::{ObjectReleaser, ReleaserAction};
 use starnix_sync::{EbpfMapStateLevel, LockDepGuard, LockDepMutex};
 use starnix_types::ownership::{Releasable, ReleaseGuard};
 use starnix_uapi::auth::{CAP_BPF, CAP_NET_ADMIN, CAP_PERFMON, CAP_SYS_ADMIN};
 use starnix_uapi::errors::Errno;
+use starnix_uapi::math::round_up_to_increment;
 use starnix_uapi::{
-    bpf_map_type_BPF_MAP_TYPE_ARRAY_OF_MAPS, bpf_map_type_BPF_MAP_TYPE_BLOOM_FILTER,
-    bpf_map_type_BPF_MAP_TYPE_CGROUP_STORAGE, bpf_map_type_BPF_MAP_TYPE_CGRP_STORAGE,
-    bpf_map_type_BPF_MAP_TYPE_CPUMAP, bpf_map_type_BPF_MAP_TYPE_DEVMAP,
-    bpf_map_type_BPF_MAP_TYPE_DEVMAP_HASH, bpf_map_type_BPF_MAP_TYPE_HASH_OF_MAPS,
-    bpf_map_type_BPF_MAP_TYPE_INODE_STORAGE, bpf_map_type_BPF_MAP_TYPE_LPM_TRIE,
-    bpf_map_type_BPF_MAP_TYPE_LRU_HASH, bpf_map_type_BPF_MAP_TYPE_LRU_PERCPU_HASH,
-    bpf_map_type_BPF_MAP_TYPE_PERCPU_CGROUP_STORAGE, bpf_map_type_BPF_MAP_TYPE_QUEUE,
+    bpf_map_type_BPF_MAP_TYPE_ARRAY, bpf_map_type_BPF_MAP_TYPE_ARRAY_OF_MAPS,
+    bpf_map_type_BPF_MAP_TYPE_BLOOM_FILTER, bpf_map_type_BPF_MAP_TYPE_CGROUP_STORAGE,
+    bpf_map_type_BPF_MAP_TYPE_CGRP_STORAGE, bpf_map_type_BPF_MAP_TYPE_CPUMAP,
+    bpf_map_type_BPF_MAP_TYPE_DEVMAP, bpf_map_type_BPF_MAP_TYPE_DEVMAP_HASH,
+    bpf_map_type_BPF_MAP_TYPE_HASH_OF_MAPS, bpf_map_type_BPF_MAP_TYPE_INODE_STORAGE,
+    bpf_map_type_BPF_MAP_TYPE_LPM_TRIE, bpf_map_type_BPF_MAP_TYPE_LRU_HASH,
+    bpf_map_type_BPF_MAP_TYPE_LRU_PERCPU_HASH, bpf_map_type_BPF_MAP_TYPE_PERCPU_CGROUP_STORAGE,
+    bpf_map_type_BPF_MAP_TYPE_QUEUE, bpf_map_type_BPF_MAP_TYPE_RINGBUF,
     bpf_map_type_BPF_MAP_TYPE_SK_STORAGE, bpf_map_type_BPF_MAP_TYPE_SOCKHASH,
     bpf_map_type_BPF_MAP_TYPE_SOCKMAP, bpf_map_type_BPF_MAP_TYPE_STACK,
     bpf_map_type_BPF_MAP_TYPE_STACK_TRACE, bpf_map_type_BPF_MAP_TYPE_STRUCT_OPS,
@@ -101,6 +104,7 @@ fn check_map_create_access(current_task: &CurrentTask, schema: &MapSchema) -> Re
 #[derive(Debug, Default)]
 struct BpfMapState {
     memory_object: Option<Arc<MemoryObject>>,
+    readonly_memory_object: Option<Arc<MemoryObject>>,
     is_frozen: bool,
 }
 
@@ -181,20 +185,80 @@ impl BpfMap {
         self.map.clone()
     }
 
-    pub(crate) fn get_memory<F>(&self, factory: F) -> Result<Arc<MemoryObject>, Errno>
-    where
-        F: FnOnce() -> Result<Arc<MemoryObject>, Errno>,
-    {
+    pub(crate) fn get_memory(
+        &self,
+        length: usize,
+        prot: ProtectionFlags,
+    ) -> Result<Arc<MemoryObject>, Errno> {
         let mut state = self.state.lock();
         if state.is_frozen {
             return error!(EPERM);
         }
-        if let Some(memory) = state.memory_object.as_ref() {
-            return Ok(memory.clone());
+
+        let page_size = *PAGE_SIZE as usize;
+        match self.schema.map_type {
+            bpf_map_type_BPF_MAP_TYPE_RINGBUF => {
+                // Only the first page of a ring buffer can be mapped as writable.
+                if length > page_size && prot.contains(ProtectionFlags::WRITE) {
+                    return error!(EPERM);
+                }
+                if length > 2 * page_size + 2 * self.schema.max_entries as usize {
+                    return error!(EINVAL);
+                }
+                if state.memory_object.is_none() {
+                    let clone_size = 2 * page_size + self.schema.max_entries as usize;
+                    let user_vmo = self
+                        .vmo()
+                        .create_child(
+                            zx::VmoChildOptions::SLICE,
+                            page_size as u64,
+                            clone_size as u64,
+                        )
+                        .map_err(|_| errno!(EIO))?;
+                    let rights =
+                        user_vmo.basic_info().map_err(|_| errno!(EIO))?.rights - zx::Rights::WRITE;
+                    let readonly_vmo =
+                        user_vmo.duplicate_handle(rights).map_err(|_| errno!(EIO))?;
+                    state.memory_object = Some(Arc::new(MemoryObject::from(user_vmo)));
+                    state.readonly_memory_object =
+                        Some(Arc::new(MemoryObject::RingBuf(readonly_vmo.into())));
+                }
+                if length <= page_size && prot.contains(ProtectionFlags::WRITE) {
+                    Ok(state.memory_object.as_ref().unwrap().clone())
+                } else {
+                    Ok(state.readonly_memory_object.as_ref().unwrap().clone())
+                }
+            }
+
+            bpf_map_type_BPF_MAP_TYPE_ARRAY => {
+                if !self.schema.flags.contains(MapFlags::Mmapable) {
+                    return error!(EPERM);
+                }
+
+                let array_size = round_up_to_increment(
+                    compute_map_storage_size(&self.schema).map_err(|_| errno!(EINVAL))?,
+                    page_size,
+                )?;
+                if length > array_size {
+                    return error!(EINVAL);
+                }
+
+                if let Some(memory) = state.memory_object.as_ref() {
+                    return Ok(memory.clone());
+                }
+                let vmo_dup: zx::Vmo = self
+                    .vmo()
+                    .as_handle_ref()
+                    .duplicate_handle(zx::Rights::SAME_RIGHTS)
+                    .map_err(|_| errno!(EIO))?
+                    .into();
+                let memory = Arc::new(MemoryObject::from(vmo_dup));
+                state.memory_object = Some(memory.clone());
+                Ok(memory)
+            }
+
+            _ => error!(ENODEV),
         }
-        let memory = factory()?;
-        state.memory_object = Some(memory.clone());
-        Ok(memory)
     }
 }
 

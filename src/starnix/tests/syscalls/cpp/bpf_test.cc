@@ -791,16 +791,42 @@ TEST_F(BpfMapTest, MMapRingBufTest) {
       nullptr, getpagesize(), PROT_READ | PROT_WRITE, MAP_SHARED, ringbuf_fd(), getpagesize());
   ASSERT_TRUE(mmap_2nd_page_rw_result.is_error());
   EXPECT_EQ(mmap_2nd_page_rw_result.error_value(), EPERM);
-  // Cannot mmap the second page, 3rd and 4th page RO
+  // Cannot mmap the 3rd or 4th page of the ringbuffer R/W
+  auto mmap_3rd_page_rw_result = test_helper::ScopedMMap::MMap(
+      nullptr, getpagesize(), PROT_READ | PROT_WRITE, MAP_SHARED, ringbuf_fd(), 2 * getpagesize());
+  ASSERT_TRUE(mmap_3rd_page_rw_result.is_error());
+  EXPECT_EQ(mmap_3rd_page_rw_result.error_value(), EPERM);
+  // Cannot mmap multiple pages starting from 0 R/W
+  auto mmap_2_pages_rw_result = test_helper::ScopedMMap::MMap(
+      nullptr, 2 * getpagesize(), PROT_READ | PROT_WRITE, MAP_SHARED, ringbuf_fd(), 0);
+  ASSERT_TRUE(mmap_2_pages_rw_result.is_error());
+  EXPECT_EQ(mmap_2_pages_rw_result.error_value(), EPERM);
+
+  // Can mmap the second page, 3rd and 4th page RO
   for (int i = 0; i < 3; ++i) {
-    ASSERT_TRUE(test_helper::ScopedMMap::MMap(nullptr, getpagesize(), PROT_READ, MAP_SHARED,
-                                              ringbuf_fd(), (i + 1) * getpagesize())
-                    .is_ok());
+    auto mmap_ro = ASSERT_RESULT_SUCCESS_AND_RETURN(test_helper::ScopedMMap::MMap(
+        nullptr, getpagesize(), PROT_READ, MAP_SHARED, ringbuf_fd(), (i + 1) * getpagesize()));
+    // Cannot elevate permissions of read-only pages to R/W with mprotect
+    EXPECT_EQ(mprotect(mmap_ro.mapping(), getpagesize(), PROT_READ | PROT_WRITE), -1);
+    EXPECT_EQ(errno, EACCES);
   }
-  // Can mmap the 4 pages in a single mapping.
-  ASSERT_TRUE(test_helper::ScopedMMap::MMap(nullptr, 4 * getpagesize(), PROT_READ, MAP_SHARED,
-                                            ringbuf_fd(), 0)
-                  .is_ok());
+
+  // The full ringbuffer (consumer + producer + double-mapped data pages) can be
+  // mapped read-only. mprotect(PROT_WRITE) is rejected  with EACCES for the
+  // entire mapping as well as for individual pages, including page 0.
+  auto mmap_4_pages_ro = ASSERT_RESULT_SUCCESS_AND_RETURN(test_helper::ScopedMMap::MMap(
+      nullptr, 4 * getpagesize(), PROT_READ, MAP_SHARED, ringbuf_fd(), 0));
+  EXPECT_EQ(mprotect(mmap_4_pages_ro.mapping(), getpagesize(), PROT_READ | PROT_WRITE), -1);
+  EXPECT_EQ(errno, EACCES);
+  EXPECT_EQ(mprotect(mmap_4_pages_ro.mapping(), 4 * getpagesize(), PROT_READ | PROT_WRITE), -1);
+  EXPECT_EQ(errno, EACCES);
+
+  // If page 0 is mapped as RO from the start, it cannot be elevated to RW via mprotect.
+  auto mmap_page0_ro = ASSERT_RESULT_SUCCESS_AND_RETURN(test_helper::ScopedMMap::MMap(
+      nullptr, getpagesize(), PROT_READ, MAP_SHARED, ringbuf_fd(), 0));
+  EXPECT_EQ(mprotect(mmap_page0_ro.mapping(), getpagesize(), PROT_READ | PROT_WRITE), -1);
+  EXPECT_EQ(errno, EACCES);
+
   // Cannot mmap 5 pages.
   auto mmap_5_pages_ro_result = test_helper::ScopedMMap::MMap(nullptr, 5 * getpagesize(), PROT_READ,
                                                               MAP_SHARED, ringbuf_fd(), 0);
