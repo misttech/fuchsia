@@ -63,7 +63,7 @@ for all supported CPUs, not just $target_cpu.
 
 **Current value (from the default):** `false`
 
-From //zircon/kernel/phys/BUILD.gn:25
+From //zircon/kernel/phys/BUILD.gn:26
 
 ### all_font_file_paths
 
@@ -697,7 +697,7 @@ a local debugging feature and is not intended for production use.
 
 **Current value (from the default):** `false`
 
-From //zircon/kernel/params.gni:128
+From //zircon/kernel/params.gni:124
 
 ### check_output_dir_leaks
 
@@ -951,7 +951,7 @@ This should never be set as a build argument.
 }
   tsan = {
   shared = {
-  clang_rt = "../../../../out/not-default/libclang_rt.tsan.so"
+  clang_rt = ""
 }
   static = {
   clang_rt = "../../../../out/not-default/libclang_rt.tsan.a"
@@ -3959,7 +3959,7 @@ disabled.
 
 **Current value (from the default):** `false`
 
-From //zircon/kernel/params.gni:142
+From //zircon/kernel/params.gni:138
 
 ### enable_mdns_trace
 
@@ -4333,7 +4333,7 @@ mark.
 
 **Current value (from the default):** `false`
 
-From //zircon/kernel/params.gni:116
+From //zircon/kernel/params.gni:112
 
 ### experimental_cxx_version
 
@@ -4386,7 +4386,7 @@ when unblocking once we solve races higher in the stack.
 
 **Current value (from the default):** `false`
 
-From //zircon/kernel/params.gni:124
+From //zircon/kernel/params.gni:120
 
 ### experimental_mem_enabled
 
@@ -4397,15 +4397,6 @@ enabled.
 **Current value (from the default):** `false`
 
 From //build/assembly/tools/assembly/BUILD.gn:21
-
-### experimental_thread_sampler_enabled
-
-Include a mechanism for the kernel to sample threads and write the results
-to a buffer
-
-**Current value (from the default):** `true`
-
-From //zircon/kernel/params.gni:112
 
 ### export_bazel_tests
 
@@ -5280,7 +5271,7 @@ assignments on Iris are tuned.
 
 **Current value (from the default):** `false`
 
-From //zircon/kernel/params.gni:134
+From //zircon/kernel/params.gni:130
 
 ### is_analysis
 
