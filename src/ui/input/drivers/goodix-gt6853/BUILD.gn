@@ -99,15 +99,23 @@ fuchsia_rust_driver("driver-rust") {
   output_name = "goodix-gt6853-rust"
   with_unit_tests = true
   sources = [
-    "rust/src/driver.rs",
+    "rust/src/data_types.rs",
+    "rust/src/data_types/traits.rs",
     "rust/src/lib.rs",
+    "rust/src/registers.rs",
+    "rust/src/registers/commands.rs",
+    "rust/src/registers/control.rs",
+    "rust/src/registers/product_info.rs",
+    "rust/src/registers/status.rs",
   ]
   deps = [
     ":goodix-gt6853-bind",
     "//sdk/fidl/fuchsia.driver.framework:fuchsia.driver.framework_rust",
     "//sdk/lib/driver/component/rust",
     "//sdk/rust/zx",
+    "//third_party/rust_crates:bitfield",
     "//third_party/rust_crates:log",
+    "//third_party/rust_crates:zerocopy",
   ]
 }
 
