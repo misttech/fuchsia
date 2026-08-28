@@ -2545,7 +2545,7 @@ mod tests {
     }
 
     #[fuchsia::test]
-    async fn test_register_mappings_payload_offset() {
+    async fn test_register_mappings_payload_preserved() {
         let (block_device, partitions_dir) = setup(512, 64, vec![]).await;
 
         let (mapper_proxy, mut mapper_stream) =
@@ -2565,7 +2565,11 @@ mod tests {
                     .unwrap();
                     while let Ok(msg) = receiver.peek() {
                         let cmd = *msg;
-                        commands_tx.unbounded_send(cmd).unwrap();
+                        let payload_len = cmd.blob_count as u32 * 8;
+                        let payload_slice = msg.payload_slice(cmd.offset, payload_len);
+                        let mut payload = vec![0u8; payload_len as usize];
+                        payload_slice.copy_to_slice(&mut payload);
+                        commands_tx.unbounded_send((cmd, payload)).unwrap();
                         let _ = msg.pop();
                     }
                 });
@@ -2591,13 +2595,18 @@ mod tests {
         runner.register_mappings(1, &offset_map1).await.expect("register 1 failed");
         runner.register_mappings(2, &offset_map2).await.expect("register 2 failed");
 
-        let cmd1 = commands_rx.next().await.expect("expected first command");
-        let cmd2 = commands_rx.next().await.expect("expected second command");
+        let (cmd1, payload1) = commands_rx.next().await.expect("expected first command");
+        let (cmd2, payload2) = commands_rx.next().await.expect("expected second command");
 
         assert_eq!(cmd1.key, 1);
-        assert_eq!(cmd1.offset, 0);
         assert_eq!(cmd2.key, 2);
-        assert_ne!(cmd2.offset, 0);
+
+        let (expected_payload1, _, _) =
+            super::offset_map_to_extents(&offset_map1, runner.block_size());
+        let (expected_payload2, _, _) =
+            super::offset_map_to_extents(&offset_map2, runner.block_size());
+        assert_eq!(payload1, expected_payload1);
+        assert_eq!(payload2, expected_payload2);
 
         runner.shutdown().await;
     }
