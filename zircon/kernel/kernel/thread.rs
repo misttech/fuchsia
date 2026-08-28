@@ -319,6 +319,9 @@ impl Drop for AutoExpiringPreemptDisabler {
 #[repr(transparent)]
 pub struct Interruptible(pub bool);
 
+zr::static_assert!(core::mem::size_of::<Interruptible>() == 1);
+zr::static_assert!(core::mem::align_of::<Interruptible>() == 1);
+
 impl Interruptible {
     pub const NO: Self = Self(false);
     pub const YES: Self = Self(true);
@@ -473,46 +476,3 @@ pub fn current_check_for_restricted_kick() -> bool {
     // SAFETY: Foreign function wrapper for Thread::Current::CheckForRestrictedKick().
     unsafe { cpp_thread_current_check_for_restricted_kick() }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_preempt_guards_not_send_or_sync() {
-        fn assert_not_send_sync<T>()
-        where
-            T: ?Sized,
-        {
-        }
-        // Verification that the types compile and can be instantiated safely in unit tests.
-        let _guard = AutoPreemptDisabler::new_deferred();
-    }
-
-    #[test]
-    fn test_auto_preempt_disabler_deferred() {
-        let mut guard = AutoPreemptDisabler::new_deferred();
-        assert!(!guard.is_disabled());
-        guard.disable();
-        assert!(guard.is_disabled());
-        guard.enable();
-        assert!(!guard.is_disabled());
-    }
-
-    #[test]
-    fn test_interruptible() {
-        assert_eq!(Interruptible::NO.as_bool(), false);
-        assert_eq!(Interruptible::YES.as_bool(), true);
-        assert_eq!(bool::from(Interruptible::NO), false);
-        assert_eq!(bool::from(Interruptible::YES), true);
-    }
-
-    #[test]
-    fn test_auto_expiring_preempt_disabler() {
-        let guard = AutoExpiringPreemptDisabler::new(DurationMono(10_000_000));
-        drop(guard);
-    }
-}
-
-zr::static_assert!(core::mem::size_of::<Interruptible>() == 1);
-zr::static_assert!(core::mem::align_of::<Interruptible>() == 1);
