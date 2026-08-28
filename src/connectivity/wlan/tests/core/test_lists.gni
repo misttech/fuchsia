@@ -33,7 +33,8 @@ core_tests_for_presubmit_no_shield_box = [
 # tryjob on any CL with "wlan" in a file path. Tests which exercise WLAN
 # code that changes frequently or tests that provide broad WLAN code coverage
 # should go here, but most tests should likely go into `tests_for_postsubmit`.
-core_tests_for_wlan_presubmit = []
+core_tests_for_wlan_presubmit =
+    [ "//src/connectivity/wlan/tests/core:wlan_driver_restart_test" ]
 
 # These tests run in blocking CI (~once per hour).
 core_tests_for_postsubmit = [
@@ -48,10 +49,8 @@ core_tests_for_postsubmit = [
 # FYI don't cause any alerting if they break, so having the test here doesn't
 # provide much of a safety net. Consider moving it to one of the blocking groups
 # above.
-core_tests_for_fyi = [
-  "//src/connectivity/wlan/tests/core:roam_request_test_should_succeed",
-  "//src/connectivity/wlan/tests/core:wlan_driver_restart_test",
-]
+core_tests_for_fyi =
+    [ "//src/connectivity/wlan/tests/core:roam_request_test_should_succeed" ]
 
 # FYI Tests that require an iperf server
 core_tests_for_fyi_iperf =
