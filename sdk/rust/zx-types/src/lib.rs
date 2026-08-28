@@ -424,6 +424,9 @@ multiconst!(zx_status_t, [
     ZX_ERR_CONNECTION_RESET       = -75;
     /// The connection was aborted.
     ZX_ERR_CONNECTION_ABORTED     = -76;
+    /// A task was killed during an operation. This is a private error that should
+    /// not be seen outside of the VDSO.
+    ZX_ERR_INTERNAL_INTR_KILLED   = -502;
 ]);
 // LINT.ThenChange(//zircon/vdso/errors.fidl)
 
