@@ -3099,6 +3099,170 @@ TEST_P(Dwc3EndpointsTest, DISABLED_VerifyBulkOutTrbFormatting) {
   });
 }
 
+// Tests continuous multi-request streaming on ongoing Bulk endpoints, verifying that
+// TransferInProgress events safely complete individual requests in FIFO order while
+// the transfer state remains kActiveOngoing.
+TEST_P(Dwc3EndpointsTest, OngoingBulk_MultiRequestStreamingAndTransferInProgress) {
+  const bool enqueue_many = GetParam();
+  if (!enqueue_many) {
+    GTEST_SKIP() << "Ongoing transfers are only applicable for enqueue_many mode.";
+  }
+  TriggerConnection();
+
+  const uint8_t ep_address = 0x02;
+  const uint8_t ep_num = UsbAddressToEpNum(ep_address);
+
+  SetupEndpoint(ep_address, fdescriptor::EndpointType::kBulk, 512);
+  RegisterVmo(1, 4096);
+
+  // Host sends Not Ready event.
+  dut_.RunInDriverContext([&](Dwc3& drv) { TriggerEpTransferNotReady(drv, ep_num, 0); });
+  dut_.runtime().RunUntilIdle();
+
+  // Queue 3 requests with distinct sizes (multiples of max packet size for OUT endpoints)
+  // to strictly verify FIFO retirement ordering.
+  QueueRequest(1, 0, 512, fdescriptor::EndpointType::kBulk);
+  QueueRequest(1, 512, 1024, fdescriptor::EndpointType::kBulk);
+  QueueRequest(1, 1536, 1536, fdescriptor::EndpointType::kBulk);
+
+  WaitForState(ep_num, TransferState::kStartingOngoing);
+  WaitForQueuedCount(ep_num, 2u);
+  dut_.RunInDriverContext([&](Dwc3& drv) { TriggerEpTransferStarted(drv, ep_num, kResourceId); });
+  WaitForState(ep_num, TransferState::kActiveOngoing);
+  WaitForActiveCount(ep_num, 3u);
+
+  // Complete first request via TransferInProgress.
+  dut_.RunInDriverContext([&](Dwc3& drv) { TriggerEpTransferInProgress(drv, ep_num); });
+  WaitForActiveCount(ep_num, 2u);
+
+  dut_.RunInDriverContext([&](Dwc3& drv) {
+    auto& uep = GetUserEndpoint(drv, ep_num);
+    EXPECT_EQ(uep.ep.transfer_state, TransferState::kActiveOngoing);
+    EXPECT_EQ(uep.ep.rsrc_id, kResourceId);
+    EXPECT_EQ(uep.fifo.GetActiveCount(), 2u);
+    EXPECT_EQ(uep.server->active_reqs.size(), 2u);
+    EXPECT_TRUE(uep.server->queued_reqs.empty());
+  });
+
+  std::vector<CompletionResult> completions1 = event_handler_.WaitForCompletions(1);
+  ASSERT_EQ(completions1.size(), 1u);
+  EXPECT_OK(completions1[0].status);
+  EXPECT_EQ(completions1[0].transfer_size, 512u);
+
+  // Complete remaining 2 requests.
+  dut_.RunInDriverContext([&](Dwc3& drv) { TriggerEpTransferInProgress(drv, ep_num); });
+  WaitForActiveCount(ep_num, 1u);
+  dut_.RunInDriverContext([&](Dwc3& drv) { TriggerEpTransferInProgress(drv, ep_num); });
+  WaitForActiveCount(ep_num, 0u);
+
+  std::vector<CompletionResult> completions2 = event_handler_.WaitForCompletions(2);
+  ASSERT_EQ(completions2.size(), 2u);
+  EXPECT_OK(completions2[0].status);
+  EXPECT_EQ(completions2[0].transfer_size, 1024u);
+  EXPECT_OK(completions2[1].status);
+  EXPECT_EQ(completions2[1].transfer_size, 1536u);
+
+  // State remains kActiveOngoing and resource ID is preserved even when active queue drains to 0.
+  dut_.RunInDriverContext([&](Dwc3& drv) {
+    auto& uep = GetUserEndpoint(drv, ep_num);
+    EXPECT_EQ(uep.ep.transfer_state, TransferState::kActiveOngoing);
+    EXPECT_EQ(uep.ep.rsrc_id, kResourceId);
+    EXPECT_EQ(uep.fifo.GetActiveCount(), 0u);
+    EXPECT_TRUE(uep.server->active_reqs.empty());
+    EXPECT_TRUE(uep.server->queued_reqs.empty());
+  });
+}
+
+// Tests that when active requests in an ongoing Bulk transfer drain to 0, subsequent requests
+// are queued and updated via CmdEpUpdateTransfer without resetting to kIdle or re-starting.
+TEST_P(Dwc3EndpointsTest, OngoingBulk_ActiveQueueDrainThenRequeueWithUpdateTransfer) {
+  const bool enqueue_many = GetParam();
+  if (!enqueue_many) {
+    GTEST_SKIP() << "Ongoing transfers are only applicable for enqueue_many mode.";
+  }
+  TriggerConnection();
+
+  const uint8_t ep_address = 0x02;
+  const uint8_t ep_num = UsbAddressToEpNum(ep_address);
+
+  SetupEndpoint(ep_address, fdescriptor::EndpointType::kBulk, 512);
+  RegisterVmo(1, 4096);
+
+  // Host sends Not Ready event.
+  dut_.RunInDriverContext([&](Dwc3& drv) { TriggerEpTransferNotReady(drv, ep_num, 0); });
+  dut_.runtime().RunUntilIdle();
+
+  QueueRequest(1, 0, 512, fdescriptor::EndpointType::kBulk);
+  WaitForState(ep_num, TransferState::kStartingOngoing);
+  dut_.RunInDriverContext([&](Dwc3& drv) { TriggerEpTransferStarted(drv, ep_num, kResourceId); });
+  WaitForState(ep_num, TransferState::kActiveOngoing);
+  WaitForActiveCount(ep_num, 1u);
+
+  // Drain active queue to 0.
+  dut_.RunInDriverContext([&](Dwc3& drv) { TriggerEpTransferInProgress(drv, ep_num); });
+  WaitForActiveCount(ep_num, 0u);
+
+  std::vector<CompletionResult> completions1 = event_handler_.WaitForCompletions(1);
+  ASSERT_EQ(completions1.size(), 1u);
+  EXPECT_OK(completions1[0].status);
+  EXPECT_EQ(completions1[0].transfer_size, 512u);
+
+  dut_.RunInDriverContext([&](Dwc3& drv) {
+    auto& uep = GetUserEndpoint(drv, ep_num);
+    EXPECT_EQ(uep.ep.transfer_state, TransferState::kActiveOngoing);
+    EXPECT_EQ(uep.ep.rsrc_id, kResourceId);
+    EXPECT_EQ(uep.fifo.GetActiveCount(), 0u);
+    EXPECT_TRUE(uep.server->active_reqs.empty());
+    EXPECT_TRUE(uep.server->queued_reqs.empty());
+  });
+
+  auto update_transfer_called = std::make_shared<std::atomic<bool>>(false);
+  auto cleanup_callbacks = DeferClearDepcmdCallbacks(ep_num);
+
+  dut_.RunInEnvironmentTypeContext([ep_num, update_transfer_called](Environment& env) {
+    auto& depcmd = env.reg_region()[DEPCMD::Get(ep_num).addr()];
+    depcmd.SetWriteCallback([ep_num, update_transfer_called](uint64_t val_raw) {
+      uint32_t val = static_cast<uint32_t>(val_raw);
+      if (DEPCMD::Get(ep_num).FromValue(val).CMDTYP() == DEPCMD::DEPUPDXFER) {
+        update_transfer_called->store(true);
+      }
+    });
+  });
+
+  // Re-queue new request while endpoint is still active.
+  QueueRequest(1, 512, 512, fdescriptor::EndpointType::kBulk);
+  WaitForActiveCount(ep_num, 1u);
+  EXPECT_TRUE(update_transfer_called->load());
+
+  dut_.RunInDriverContext([&](Dwc3& drv) {
+    auto& uep = GetUserEndpoint(drv, ep_num);
+    EXPECT_EQ(uep.ep.transfer_state, TransferState::kActiveOngoing);
+    EXPECT_EQ(uep.ep.rsrc_id, kResourceId);
+    EXPECT_EQ(uep.fifo.GetActiveCount(), 1u);
+    EXPECT_EQ(uep.server->active_reqs.size(), 1u);
+    EXPECT_TRUE(uep.server->queued_reqs.empty());
+  });
+
+  // Complete re-queued request.
+  dut_.RunInDriverContext([&](Dwc3& drv) { TriggerEpTransferInProgress(drv, ep_num); });
+  WaitForActiveCount(ep_num, 0u);
+
+  std::vector<CompletionResult> completions2 = event_handler_.WaitForCompletions(1);
+  ASSERT_EQ(completions2.size(), 1u);
+  EXPECT_OK(completions2[0].status);
+  EXPECT_EQ(completions2[0].transfer_size, 512u);
+
+  // Verify that the endpoint remains in kActiveOngoing with clean queues at the end.
+  dut_.RunInDriverContext([&](Dwc3& drv) {
+    auto& uep = GetUserEndpoint(drv, ep_num);
+    EXPECT_EQ(uep.ep.transfer_state, TransferState::kActiveOngoing);
+    EXPECT_EQ(uep.ep.rsrc_id, kResourceId);
+    EXPECT_EQ(uep.fifo.GetActiveCount(), 0u);
+    EXPECT_TRUE(uep.server->active_reqs.empty());
+    EXPECT_TRUE(uep.server->queued_reqs.empty());
+  });
+}
+
 namespace {
 INSTANTIATE_TEST_SUITE_P(Dwc3EndpointsTestCases, Dwc3EndpointsTest, testing::Bool());
 }  // namespace
