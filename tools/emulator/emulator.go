@@ -128,6 +128,10 @@ type Instance struct {
 // DistributionParams is passed to UnpackFrom().
 type DistributionParams struct {
 	Emulator Emulator
+	// ProductBundlePath is the path to the product bundle to use to start the
+	// emulator. If unset, the value of the --emulator.pb-path flag passed to
+	// the executable will be used.
+	ProductBundlePath string
 }
 
 // buildInfo carries information about the Fuchsia build.
@@ -189,9 +193,14 @@ func UnpackFrom(path string, distroParams DistributionParams) (*Distribution, er
 		imageOverrides: make(virtual_device.ImageOverrides),
 	}
 
-	pbPathStr := *pbPathFlag
-	if pbPathStr == "" {
-		return nil, fmt.Errorf("-emulator.pb-path is required")
+	if (distroParams.ProductBundlePath == "") == (*pbPathFlag == "") {
+		return nil, fmt.Errorf("exactly one of DistributionParams.ProductBundlePath or the -emulator.pb-path flag must be set")
+	}
+	var pbPathStr string
+	if distroParams.ProductBundlePath != "" {
+		pbPathStr = distroParams.ProductBundlePath
+	} else {
+		pbPathStr = *pbPathFlag
 	}
 	pbPathStr, err = filepath.Abs(pbPathStr)
 	if err != nil {
