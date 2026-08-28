@@ -9,8 +9,8 @@ import("//build/test.gni")
 # This is an SDK C++ test executable for each supported C++ version.
 #
 # It will generate multiple targets, each named
-# `${target_name}-cxx${cxx_version}`. It does not create a target for
-# `${target_name}`.
+# `${target_name}-cxx${cxx_version}`. Then it will create a group depending on
+# those targets named `${target_name}`.
 #
 # Parameters
 #
@@ -24,8 +24,10 @@ import("//build/test.gni")
 # target.
 #
 template("sdk_cpp_test") {
+  _test_deps = []
   foreach(cxx_version, invoker.cxx_versions) {
     _test_target = "${target_name}-cxx${cxx_version}"
+    _test_deps += [ ":${_test_target}" ]
     test(_test_target) {
       forward_variables_from(invoker,
                              "*",
@@ -35,6 +37,11 @@ template("sdk_cpp_test") {
 
       configs += [ "//build/config:c++${cxx_version}" ]
     }
+  }
+
+  group(target_name) {
+    testonly = true
+    deps = _test_deps
   }
 }
 

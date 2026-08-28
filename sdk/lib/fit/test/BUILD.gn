@@ -3,6 +3,9 @@
 # found in the LICENSE file.
 
 import("//build/components.gni")
+import("//build/config/fuchsia_cxx_version.gni")
+import("//build/cpp/sdk_cpp_test.gni")
+import("//build/cpp/sdk_cpp_unittest_package.gni")
 import("//build/test.gni")
 
 group("tests") {
@@ -13,7 +16,7 @@ group("tests") {
   ]
 }
 
-test("fit") {
+sdk_cpp_test("fit") {
   sources = [
     "defer_tests.cc",
     "examples/function_example1.cc",
@@ -37,7 +40,7 @@ test("fit") {
   configs += [ "//build/config:test_exercising_sdk_headers" ]
 }
 
-fuchsia_unittest_package("fit-test-pkg") {
+sdk_cpp_unittest_package("fit-test-pkg") {
   package_name = "fit"
-  deps = [ ":fit" ]
+  sdk_cpp_test_deps = [ ":fit" ]
 }
