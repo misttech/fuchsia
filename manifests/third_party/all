@@ -175,7 +175,7 @@
              path="third_party/gflags/src"
              remote="https://fuchsia.googlesource.com/third_party/gflags"
              gerrithost="https://fuchsia-review.googlesource.com"
-             revision="e482d90905743e36c97060d1afbc0ca9fccc4b25"/>
+             revision="82db04bce8cc07e0e2da70b0d6175e537c6e88ae"/>
     <project name="third_party/glfw"
              path="third_party/glfw"
              remote="https://fuchsia.googlesource.com/third_party/glfw"
