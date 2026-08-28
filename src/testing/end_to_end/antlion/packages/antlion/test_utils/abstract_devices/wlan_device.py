@@ -34,17 +34,13 @@ class FuchsiaWlanDevice:
     def __init__(self, fuchsia_device: FuchsiaDevice):
         self.device = fuchsia_device
         self.device.configure_wlan()
-        self._client_iface: wlan_core.ClientIface | None = None
 
     async def _get_client_iface(self) -> wlan_core.ClientIface:
-        if self._client_iface is None:
-            phy = await self.device.honeydew_fd.wlan_core.ensure_single_phy()
-            client_ifaces = await phy.get_client_ifaces()
-            if client_ifaces:
-                self._client_iface = client_ifaces[0]
-            else:
-                self._client_iface = await phy.create_client_iface()
-        return self._client_iface
+        phy = await self.device.honeydew_fd.wlan_core.ensure_single_phy()
+        client_ifaces = await phy.get_client_ifaces()
+        if client_ifaces:
+            return client_ifaces[0]
+        return await phy.create_client_iface()
 
     @property
     def identifier(self) -> str:
