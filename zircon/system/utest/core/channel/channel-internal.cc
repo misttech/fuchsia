@@ -40,6 +40,14 @@ zx_status_t zx_channel_call_finish(zx_instant_mono_t deadline, const zx_channel_
   return (*(__typeof(zx_channel_call_finish)*)fnptr)(deadline, args, actual_bytes, actual_handles);
 }
 
+zx_status_t zx_channel_call_etc_finish(zx_instant_mono_t deadline, zx_channel_call_etc_args_t* args,
+                                       uint32_t* actual_bytes, uint32_t* actual_handles) {
+  uintptr_t vdso_base = (uintptr_t)&zx_handle_close - VDSO_SYSCALL_zx_handle_close;
+  uintptr_t fnptr = vdso_base + VDSO_SYSCALL_zx_channel_call_etc_finish;
+  return (*(__typeof(zx_channel_call_etc_finish)*)fnptr)(deadline, args, actual_bytes,
+                                                         actual_handles);
+}
+
 TEST(ChannelInternalTest, CallFinishWithoutPreviouslyCallingCallReturnsBadState) {
   char msg[8] = {
       0,
@@ -62,6 +70,28 @@ TEST(ChannelInternalTest, CallFinishWithoutPreviouslyCallingCallReturnsBadState)
   // Call channel_call_finish without having had a channel call interrupted
   ASSERT_EQ(ZX_ERR_BAD_STATE, zx_channel_call_finish(zx_deadline_after(ZX_MSEC(1000)), &args,
                                                      &act_bytes, &act_handles));
+}
+
+TEST(ChannelInternalTest, CallEtcFinishWithoutPreviouslyCallingCallReturnsBadState) {
+  char msg[8] = {0};
+
+  zx_channel_call_etc_args_t args = {
+      .wr_bytes = msg,
+      .wr_handles = nullptr,
+      .rd_bytes = nullptr,
+      .rd_handles = nullptr,
+      .wr_num_bytes = sizeof(msg),
+      .wr_num_handles = 0,
+      .rd_num_bytes = 0,
+      .rd_num_handles = 0,
+  };
+
+  uint32_t act_bytes = 0xffffffff;
+  uint32_t act_handles = 0xffffffff;
+
+  // Call channel_call_etc_finish without having had a channel call interrupted
+  ASSERT_EQ(ZX_ERR_BAD_STATE, zx_channel_call_etc_finish(zx_deadline_after(ZX_MSEC(1000)), &args,
+                                                         &act_bytes, &act_handles));
 }
 
 void WaitForThreadState(zx_handle_t thread_handle, zx_thread_state_t state) {
