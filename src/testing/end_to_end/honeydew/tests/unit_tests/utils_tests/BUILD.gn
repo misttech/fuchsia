@@ -25,6 +25,16 @@ if (is_host) {
     extra_args = [ "-v" ]
   }
 
+  python_host_test("decorators_test") {
+    main_source = "decorators_test.py"
+    libraries = [
+      "//src/testing/end_to_end/honeydew",
+      "//third_party/parameterized",
+    ]
+    main_callable = "unittest.main"
+    extra_args = [ "-v" ]
+  }
+
   python_host_test("host_shell_test") {
     main_source = "host_shell_test.py"
     libraries = [
@@ -40,6 +50,7 @@ group("tests") {
   testonly = true
   public_deps = [
     ":common_utils_test($host_toolchain)",
+    ":decorators_test($host_toolchain)",
     ":host_shell_test($host_toolchain)",
     ":http_utils_test($host_toolchain)",
   ]
