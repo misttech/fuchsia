@@ -565,7 +565,7 @@ class VmPageListNode final {
 
   DISALLOW_COPY_ASSIGN_AND_MOVE(VmPageListNode);
 
-  static constexpr size_t kPageFanOut = 16;
+  static constexpr size_t kPageFanOut = kVmPageListFanOut;
 
   // Creates a new VmPageListNode. Must be deleted using the specified deleter.
   static VmPlnOwner Create();

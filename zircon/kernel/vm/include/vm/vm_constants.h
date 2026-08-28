@@ -60,4 +60,7 @@ constexpr uint32_t kVmPageListIntervalTypeBits = 2;
 constexpr uint32_t kVmPageListIntervalBits =
     kVmPageListTypeBits + kVmPageListIntervalSentinelBits + kVmPageListIntervalTypeBits;
 
+// Fanout of a single VmPageListNode (number of page slots in a node).
+constexpr size_t kVmPageListFanOut = 16;
+
 #endif  // ZIRCON_KERNEL_VM_INCLUDE_VM_VM_CONSTANTS_H_

@@ -10,10 +10,10 @@ use core::ops::Deref;
 use core::pin::Pin;
 use pin_init::pin_data;
 use vm_constants_rs::{
-    kPmmNodeIndexZeroBits, kVmPageListIntervalBits, kVmPageListIntervalSentinelBits,
-    kVmPageListIntervalType, kVmPageListIntervalTypeBits, kVmPageListPageType,
-    kVmPageListParentContentType, kVmPageListReferenceType, kVmPageListTypeBits,
-    kVmPageListZeroMarkerType,
+    kPmmNodeIndexZeroBits, kVmPageListFanOut, kVmPageListIntervalBits,
+    kVmPageListIntervalSentinelBits, kVmPageListIntervalType, kVmPageListIntervalTypeBits,
+    kVmPageListPageType, kVmPageListParentContentType, kVmPageListReferenceType,
+    kVmPageListTypeBits, kVmPageListZeroMarkerType,
 };
 use vm_page_list_bindings as bindings;
 use zr::{Opaque, pin_init_ffi, unsafe_pinned_drop_ffi};
@@ -657,6 +657,119 @@ impl<'a> Deref for VmPageOrMarkerRef<'a> {
     }
 }
 
+/// Node in a `VmPageList` representing a contiguous 64 KiB span (16 pages) of a VMO.
+#[repr(C)]
+pub struct VmPageListNode {
+    pages: [VmPageOrMarker; kVmPageListFanOut],
+}
+
+impl VmPageListNode {
+    /// Number of page slots in a node.
+    const PAGE_FAN_OUT: usize = kVmPageListFanOut;
+
+    /// Total size in bytes of the address range covered by a single `VmPageListNode` (64 KiB).
+    const NODE_SPAN_BYTES: u64 = (Self::PAGE_FAN_OUT as u64) * (page::SIZE as u64);
+
+    /// Creates a new empty `VmPageListNode`.
+    pub fn new() -> Self {
+        Self { pages: core::array::from_fn(|_| VmPageOrMarker::empty()) }
+    }
+
+    /// Computes the end offset for a node starting at `base_offset`.
+    pub fn end_offset(base_offset: u64) -> u64 {
+        debug_assert_eq!(Self::node_offset(base_offset), base_offset);
+        let end = base_offset + Self::NODE_SPAN_BYTES;
+        // By construction the node cannot overflow, but the compiler does not know this. By
+        // explicitly telling it, some checks can be avoided as the compiler does not have to
+        // consider the case where end wrapped.
+        if end <= base_offset {
+            // SAFETY: `base_offset` is aligned to `NODE_SPAN_BYTES` and cannot wrap past
+            // `u64::MAX`.
+            unsafe { core::hint::unreachable_unchecked() };
+        }
+        end
+    }
+
+    /// Lookup the page or marker at the specified index.
+    pub fn lookup(&self, index: usize) -> &VmPageOrMarker {
+        debug_assert!(index < Self::PAGE_FAN_OUT);
+        &self.pages[index]
+    }
+
+    /// Lookup the mutable page or marker at the specified index.
+    pub fn lookup_mut(&mut self, index: usize) -> &mut VmPageOrMarker {
+        debug_assert!(index < Self::PAGE_FAN_OUT);
+        &mut self.pages[index]
+    }
+
+    /// A node is empty if it contains no pages, page interval sentinels, references, or markers.
+    pub fn is_empty(&self) -> bool {
+        for p in &self.pages {
+            if !p.is_empty() {
+                return false;
+            }
+        }
+        true
+    }
+
+    /// Returns true if there are no pages or references owned by this node. Meant to check whether
+    /// the node has any resource that needs to be returned.
+    pub fn has_no_page_or_ref(&self) -> bool {
+        for p in &self.pages {
+            if p.is_page_or_ref() {
+                return false;
+            }
+        }
+        true
+    }
+
+    /// Returns true if there are no pages, references or markers owned by this node. Meant to check
+    /// whether the node has any resource that needs to be returned.
+    pub fn has_no_page_ref_or_marker(&self) -> bool {
+        for p in &self.pages {
+            if p.is_page_or_ref() || p.is_marker() {
+                return false;
+            }
+        }
+        true
+    }
+
+    /// Returns true if there are no interval sentinels owned by this node.
+    pub fn has_no_interval_sentinel(&self) -> bool {
+        for p in &self.pages {
+            if p.is_interval() {
+                return false;
+            }
+        }
+        true
+    }
+
+    /// Converts the supplied offset into a VmPageListNode base offset.
+    pub const fn node_offset(offset: u64) -> u64 {
+        offset & !(Self::NODE_SPAN_BYTES - 1)
+    }
+
+    /// Converts the supplied offset into a VmPageListNode index.
+    pub const fn node_index(offset: u64) -> usize {
+        ((offset >> (page::SHIFT as u32)) % (Self::PAGE_FAN_OUT as u64)) as usize
+    }
+}
+
+impl Default for VmPageListNode {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl Drop for VmPageListNode {
+    fn drop(&mut self) {
+        debug_assert!(
+            self.has_no_page_or_ref(),
+            "VmPageListNode dropped while containing page or ref"
+        );
+    }
+}
+
 /// Class which holds the list of vm_page structs removed from a VmPageList
 /// by AddPagesFrom. The list include information about uncommitted pages and markers.
 /// Every splice list is expected to go through the following series of states:
@@ -707,7 +820,8 @@ impl VmPageSpliceList {
 /// Unit tests for VmPageOrMarker.
 mod vm_page_list_rs {
     use super::{
-        ReferenceValue, SentinelType, VmPageOrMarker, VmPageOrMarkerRef, ZeroRangeDirtyState,
+        ReferenceValue, SentinelType, VmPageListNode, VmPageOrMarker, VmPageOrMarkerRef,
+        ZeroRangeDirtyState,
     };
     use unittest::{expect_eq, expect_false, expect_true};
 
@@ -938,5 +1052,32 @@ mod vm_page_list_rs {
             dirty_ref.set_zero_interval_awaiting_clean_length(8192);
             expect_eq!(dirty_ref.zero_interval_awaiting_clean_length(), 8192);
         }
+    }
+
+    /// Tests VmPageListNode layout size, offset/index math, and slot lookups.
+    #[test]
+    fn test_node_basic() {
+        let mut node = VmPageListNode::new();
+        expect_eq!(core::mem::size_of::<VmPageListNode>(), 64);
+        expect_eq!(VmPageListNode::PAGE_FAN_OUT, 16);
+        expect_eq!(VmPageListNode::NODE_SPAN_BYTES, 65536);
+        expect_true!(node.is_empty());
+        expect_true!(node.has_no_page_or_ref());
+        expect_true!(node.has_no_page_ref_or_marker());
+        expect_true!(node.has_no_interval_sentinel());
+
+        expect_eq!(VmPageListNode::node_offset(4096), 0);
+        expect_eq!(VmPageListNode::node_offset(65536), 65536);
+        expect_eq!(VmPageListNode::node_index(4096), 1);
+        expect_eq!(VmPageListNode::end_offset(0), 65536);
+
+        *node.lookup_mut(3) = VmPageOrMarker::marker();
+        expect_false!(node.is_empty());
+        expect_true!(node.has_no_page_or_ref());
+        expect_false!(node.has_no_page_ref_or_marker());
+        expect_true!(node.has_no_interval_sentinel());
+        expect_true!(node.lookup(3).is_marker());
+        *node.lookup_mut(3) = VmPageOrMarker::empty();
+        expect_true!(node.is_empty());
     }
 }
