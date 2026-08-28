@@ -946,12 +946,12 @@ This should never be set as a build argument.
 }
   static = {
   clang_rt = "lib/clang/24/lib/armv7-unknown-linux-gnueabihf/libclang_rt.lsan.a"
-  clang_rt_cxx = "../../../../out/not-default/libclang_rt.lsan_cxx.a"
+  clang_rt_cxx = ""
 }
 }
   tsan = {
   shared = {
-  clang_rt = ""
+  clang_rt = "../../../../out/not-default/libclang_rt.tsan.so"
 }
   static = {
   clang_rt = "../../../../out/not-default/libclang_rt.tsan.a"
@@ -1823,7 +1823,7 @@ Enable compression of debug sections.
 
 **Current value (from the default):** `"zstd"`
 
-From //build/config/compiler.gni:117
+From //build/config/compiler.gni:123
 
 ### config_example_cpp_greeting
 
@@ -2031,7 +2031,7 @@ Set to true to use a fast, minimalist wrapper, that lacks features
 of the python-based wrapper, and is close to a bare call to rewrapper.
 This flag is only meaningful when `cxx_rbe_enable` is true.
 
-**Current value (from the default):** `true`
+**Current value (from the default):** `false`
 
 From //build/toolchain/rbe.gni:169
 
@@ -2053,7 +2053,7 @@ From //src/storage/fshost/generated_fshost_config.gni:12
 
 **Current value (from the default):** `"debug"`
 
-From //build/config/compiler.gni:82
+From //build/config/compiler.gni:88
 
 ### default_bazel_root_host_targets
 
@@ -2197,7 +2197,6 @@ From //build/config/compiler.gni:82
   bazel = "{{BAZEL_TARGET_OUT_DIR}}/rfcmeta_/rfcmeta"
   ninja = "rfcmeta"
 }]
-  install_host_tool = true
 }, {
   bazel_label = "//tools/debug/covargs:covargs"
   copy_outputs = [{
@@ -3844,7 +3843,7 @@ Explicitly specify DWARF version used.
 
 **Current value (from the default):** `5`
 
-From //build/config/compiler.gni:96
+From //build/config/compiler.gni:102
 
 ### e2e_test_labels
 
