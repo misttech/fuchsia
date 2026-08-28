@@ -94,20 +94,17 @@ int skb_test_prog(struct __sk_buff* skb) {
 
   *entry = skb->len;
 
-  // Try calling `bpf_sk_fullsock`.
-  struct bpf_sock* fullsock = skb->sk ? bpf_sk_fullsock(skb->sk) : 0;
-  if (fullsock) {
-    *entry += fullsock->protocol;
-  }
-
   struct test_result result = {
       .ether_type = skb->protocol,
       .ifindex = skb->ifindex,
   };
-  if (skb->sk) {
-    result.sk_type = skb->sk->type;
-    result.sk_protocol = skb->sk->protocol;
-    result.sk_family = skb->sk->family;
+
+  // Try calling `bpf_sk_fullsock`.
+  struct bpf_sock* fullsock = skb->sk ? bpf_sk_fullsock(skb->sk) : 0;
+  if (fullsock) {
+    result.sk_type = fullsock->type;
+    result.sk_protocol = fullsock->protocol;
+    result.sk_family = fullsock->family;
   }
   bpf_map_update_elem(&test_result, &zero, &result, 0);
 

@@ -582,14 +582,13 @@ fn bpf_sk_storage_get<'a, C: SkStorageProgramContext + MapsProgramContext>(
 
 fn bpf_sk_fullsock<C: EbpfProgramContext>(
     _context: &mut C::RunContext<'_>,
-    _: BpfValue,
+    sk: BpfValue,
     _: BpfValue,
     _: BpfValue,
     _: BpfValue,
     _: BpfValue,
 ) -> BpfValue {
-    track_stub!(TODO("https://fxbug.dev/534355421"), "bpf_sk_fullsock");
-    0.into()
+    sk
 }
 
 pub trait ReturnValueContext {
