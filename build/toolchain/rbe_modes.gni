@@ -60,7 +60,7 @@ _all_modes_defaults = {
   # cxx defaults
   cxx_exec_strategy = "remote_local_fallback"
   cxx_download_objects = true
-  cxx_minimalist_wrapper = true
+  cxx_minimalist_wrapper = false
 
   # link defaults
   link_exec_strategy = "remote_local_fallback"

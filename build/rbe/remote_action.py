@@ -80,6 +80,10 @@ _RETRIABLE_REWRAPPER_STATUSES = {
 _MAX_CONCURRENT_DOWNLOADS = 4
 
 
+class FileSizeMismatchError(RuntimeError):
+    pass
+
+
 def init_from_main_once() -> int:
     # Support parallel downloads using forkserver method.
     multiprocessing.set_start_method("forkserver")
@@ -1726,6 +1730,16 @@ exec "${{cmd[@]}}"
             # where the first hex string is the digest, and the second is the file's
             # length.
             digest = xattr_value[:64]
+            expected_length = int(xattr_value[65:])
+            actual_length = os.stat(output_file).st_size
+            if actual_length != expected_length:
+                raise FileSizeMismatchError(
+                    str(output_file)
+                    + ": expected "
+                    + str(expected_length)
+                    + ", got "
+                    + str(actual_length)
+                )
         else:
             # RBE ran the action locally, so we'll need to hash it ourselves to produce
             # the above string.
@@ -1952,11 +1966,30 @@ exec "${{cmd[@]}}"
             self._process_download_stubs()
 
         if self._use_xattr:
+            file_size_mismatches: list[str] = []
             for output_file in self.output_files_relative_to_working_dir:
                 if output_file.suffix != ".d" and output_file.exists():
                     # Declared outputs are not guaranteed to be produced
                     # by the remote action.
-                    self._write_output_file_hash_xattrs(output_file)
+                    try:
+                        self._write_output_file_hash_xattrs(output_file)
+                    except FileSizeMismatchError as e:
+                        file_size_mismatches.append(str(e))
+
+            if file_size_mismatches:
+                print("\n\n", file=sys.stderr)
+                print(
+                    "ERROR: Invalid file downloaded from RBE:",
+                    file=sys.stderr,
+                )
+                for mismatch in file_size_mismatches:
+                    print(f"  {mismatch}", file=sys.stderr)
+                print("\nRetry your build to continue.\n\n", file=sys.stderr)
+                # Remove _all_ the outputs and then fail the action.
+                for output_file in self.output_files_relative_to_working_dir:
+                    if os.path.exists(output_file):
+                        os.unlink(output_file)
+                sys.exit(1)
 
         # Possibly transform some of the remote outputs.
         # It is important that transformations are applied before
