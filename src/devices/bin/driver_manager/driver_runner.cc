@@ -624,12 +624,9 @@ void DriverRunner::AddSpecToDriverIndex(fuchsia_driver_framework::wire::Composit
       });
 }
 
-// TODO(https://fxbug.dev/42072971): Add information for composite node specs.
 fpromise::promise<inspect::Inspector> DriverRunner::Inspect() const {
   // Create our inspector.
-  // The default maximum size was too small, and so this is double the default size.
-  // If a device loads too much inspect data, this can be increased in the future.
-  inspect::Inspector inspector(inspect::InspectSettings{.maximum_size = 2 * 256 * 1024});
+  inspect::Inspector inspector(inspect::InspectSettings{.maximum_size = 4 * 256 * 1024});
 
   // Make the device tree inspect nodes.
   auto device_tree = inspector.GetRoot().CreateChild("node_topology");
@@ -640,6 +637,7 @@ fpromise::promise<inspect::Inspector> DriverRunner::Inspect() const {
   inspector.GetRoot().Record(std::move(device_tree));
 
   bind_manager_.RecordInspect(inspector);
+  composite_node_spec_manager_.RecordInspect(inspector);
 
   return fpromise::make_ok_promise(inspector);
 }

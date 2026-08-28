@@ -2011,7 +2011,7 @@ TEST_P(DriverRunnerTest, StartAndInspect) {
 
   auto hierarchy = Inspect();
   ASSERT_EQ("root", hierarchy.node().name());
-  ASSERT_EQ(2ul, hierarchy.children().size());
+  ASSERT_EQ(3ul, hierarchy.children().size());
 
   ASSERT_NO_FATAL_FAILURE(CheckNode(hierarchy, {
                                                    .node_name = {"node_topology"},
@@ -2035,6 +2035,9 @@ TEST_P(DriverRunnerTest, StartAndInspect) {
 
   ASSERT_NO_FATAL_FAILURE(CheckNode(hierarchy, {
                                                    .node_name = {"orphan_nodes"},
+                                               }));
+  ASSERT_NO_FATAL_FAILURE(CheckNode(hierarchy, {
+                                                   .node_name = {"composite_node_specs"},
                                                }));
 
   StopDriverComponent(std::move(root_driver->controller));

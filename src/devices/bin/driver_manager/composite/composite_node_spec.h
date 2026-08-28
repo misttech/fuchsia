@@ -7,6 +7,7 @@
 
 #include <fidl/fuchsia.driver.development/cpp/wire.h>
 #include <fidl/fuchsia.driver.index/cpp/fidl.h>
+#include <lib/inspect/cpp/inspector.h>
 
 #include "src/devices/bin/driver_manager/composite/parent_set_collector.h"
 #include "src/devices/bin/driver_manager/resource.h"
@@ -44,6 +45,8 @@ class CompositeNodeSpec {
 
   virtual fuchsia_driver_development::wire::CompositeNodeInfo GetCompositeInfo(
       fidl::AnyArena& arena) const;
+
+  void RecordInspect(inspect::Node& spec_inspect_node) const;
 
   // Remove the underlying composite node and unmatch all of its parents. Called for
   // rebind. Virtual for testing.

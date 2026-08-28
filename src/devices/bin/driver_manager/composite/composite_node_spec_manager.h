@@ -6,6 +6,7 @@
 #define SRC_DEVICES_BIN_DRIVER_MANAGER_COMPOSITE_COMPOSITE_NODE_SPEC_MANAGER_H_
 
 #include <fidl/fuchsia.driver.framework/cpp/wire.h>
+#include <lib/inspect/cpp/inspector.h>
 #include <lib/zx/result.h>
 
 #include <unordered_map>
@@ -55,6 +56,8 @@ class CompositeNodeSpecManager {
 
   std::vector<fuchsia_driver_development::wire::CompositeNodeInfo> GetCompositeInfo(
       fidl::AnyArena& arena) const;
+
+  void RecordInspect(inspect::Inspector& inspector) const;
 
   // Exposed for testing only.
   const CompositeNodeSpecMap& specs() const { return specs_; }

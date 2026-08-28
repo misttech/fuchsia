@@ -204,6 +204,18 @@ std::vector<fdd::wire::CompositeNodeInfo> CompositeNodeSpecManager::GetComposite
   return composites;
 }
 
+void CompositeNodeSpecManager::RecordInspect(inspect::Inspector& inspector) const {
+  auto composite_specs = inspector.GetRoot().CreateChild("composite_node_specs");
+  for (const auto& [name, spec] : specs_) {
+    if (spec) {
+      auto spec_node = composite_specs.CreateChild(name);
+      spec->RecordInspect(spec_node);
+      composite_specs.Record(std::move(spec_node));
+    }
+  }
+  inspector.GetRoot().Record(std::move(composite_specs));
+}
+
 void CompositeNodeSpecManager::OnRequestRebindComplete(
     std::string spec_name, fit::callback<void(zx::result<>)> rebind_spec_completer) {
   specs_[spec_name]->Remove(

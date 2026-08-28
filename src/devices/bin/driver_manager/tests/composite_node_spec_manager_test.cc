@@ -9,6 +9,7 @@
 #include <lib/driver/component/cpp/composite_node_spec.h>
 #include <lib/driver/component/cpp/node_add_args.h>
 #include <lib/fit/defer.h>
+#include <lib/inspect/cpp/reader.h>
 
 #include <memory>
 #include <utility>
@@ -539,4 +540,29 @@ TEST_F(CompositeNodeSpecManagerTest, TestRebindRequestWithMatch) {
                                        });
   ASSERT_TRUE(is_callback_success);
   VerifyRemoveInvokedForSpec(true, spec_name);
+}
+
+TEST_F(CompositeNodeSpecManagerTest, TestRecordInspect) {
+  fidl::Arena allocator;
+  std::vector<fdf::ParentSpec2> parents{
+      MakeParentSpec({fdf::MakeAcceptBindRule("a", 10u)}, {fdf::MakeProperty2("a", 1u)}),
+      MakeParentSpec({fdf::MakeAcceptBindRule("b", 1u)}, {fdf::MakeProperty2("b", 1u)}),
+  };
+
+  std::string spec_name = "test_spec";
+  ASSERT_TRUE(AddSpec(allocator, spec_name, std::move(parents)).is_ok());
+
+  inspect::Inspector inspector;
+  composite_node_spec_manager_->RecordInspect(inspector);
+
+  auto hierarchy_result = inspect::ReadFromVmo(inspector.DuplicateVmo());
+  ASSERT_TRUE(hierarchy_result.is_ok());
+  auto hierarchy = hierarchy_result.take_value();
+  ASSERT_EQ(1ul, hierarchy.children().size());
+  EXPECT_EQ("composite_node_specs", hierarchy.children()[0].node().name());
+  ASSERT_EQ(1ul, hierarchy.children()[0].children().size());
+  EXPECT_EQ(spec_name, hierarchy.children()[0].children()[0].node().name());
+  EXPECT_EQ(1ul, hierarchy.children()[0].children()[0].children().size());
+  EXPECT_EQ("parents", hierarchy.children()[0].children()[0].children()[0].node().name());
+  EXPECT_EQ(2ul, hierarchy.children()[0].children()[0].children()[0].children().size());
 }
