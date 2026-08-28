@@ -21,6 +21,7 @@
 #include <fidl/fuchsia.wlan.common/cpp/wire.h>
 #include <fidl/fuchsia.wlan.ieee80211/cpp/fidl.h>
 #include <fidl/fuchsia.wlan.ieee80211/cpp/wire.h>
+#include <lib/zx/result.h>
 #include <zircon/types.h>
 
 #include "third_party/bcmdhd/crossdriver/bcmwifi_channels.h"
@@ -185,19 +186,12 @@ fuchsia_wlan_ieee80211::wire::ChannelBandwidth chanspec_to_channel_bandwidth(
 fuchsia_wlan_ieee80211::wire::ChannelNumber chanspec_to_secondary80(const brcmu_d11inf* d11_inf,
                                                                     uint16_t chanspec);
 
-fuchsia_wlan_ieee80211::wire::ChannelBandwidth enforce_bandwidth_limitations(
-    const fuchsia_wlan_ieee80211::wire::ChannelNumber& primary,
-    fuchsia_wlan_ieee80211::wire::ChannelBandwidth cbw);
 fuchsia_wlan_ieee80211::ChannelBandwidth enforce_bandwidth_limitations(
-    const fuchsia_wlan_ieee80211::ChannelNumber& primary,
+    uint8_t primary, fuchsia_wlan_ieee80211::WlanBand band,
     fuchsia_wlan_ieee80211::ChannelBandwidth cbw);
 
-uint16_t channel_to_chanspec(const brcmu_d11inf* d11inf,
-                             const fuchsia_wlan_ieee80211::wire::ChannelNumber& channel,
-                             fuchsia_wlan_ieee80211::wire::ChannelBandwidth cbw);
-
-uint16_t channel_to_chanspec(const brcmu_d11inf* d11inf,
-                             const fuchsia_wlan_ieee80211::ChannelNumber& channel,
-                             fuchsia_wlan_ieee80211::ChannelBandwidth cbw);
+zx::result<chanspec_t> channel_to_chanspec(const brcmu_d11inf* d11inf, uint8_t channel,
+                                           fuchsia_wlan_ieee80211::WlanBand band,
+                                           fuchsia_wlan_ieee80211::ChannelBandwidth cbw);
 
 #endif  // SRC_CONNECTIVITY_WLAN_DRIVERS_THIRD_PARTY_BROADCOM_BRCMFMAC_BRCMU_D11_H_

@@ -208,68 +208,89 @@ static void brcmu_d11ac_decchspec(struct brcmu_chan* ch) {
   }
 }
 
-uint16_t channel_to_chanspec(const brcmu_d11inf* d11inf,
-                             const fuchsia_wlan_ieee80211::ChannelNumber& channel,
-                             fuchsia_wlan_ieee80211::ChannelBandwidth cbw) {
-  struct brcmu_chan ch_inf = {.chnum = channel.number()};
-
-  switch (cbw) {
-    case fuchsia_wlan_ieee80211::ChannelBandwidth::kCbw20:
-      ch_inf.bw = BRCMU_CHAN_BW_20;
-      ch_inf.sb = BRCMU_CHAN_SB_NONE;
-      break;
-    case fuchsia_wlan_ieee80211::ChannelBandwidth::kCbw40:
-      ch_inf.bw = BRCMU_CHAN_BW_40;
-      ch_inf.sb = BRCMU_CHAN_SB_L;
-      break;
-    case fuchsia_wlan_ieee80211::ChannelBandwidth::kCbw40Below:
-      ch_inf.bw = BRCMU_CHAN_BW_40;
-      ch_inf.sb = BRCMU_CHAN_SB_U;
-      break;
-    case fuchsia_wlan_ieee80211::ChannelBandwidth::kCbw80:
-    case fuchsia_wlan_ieee80211::ChannelBandwidth::kCbw160:
-    case fuchsia_wlan_ieee80211::ChannelBandwidth::kCbw80P80:
-    default:
-      BRCMF_ERR("unsupported channel width: %u", static_cast<uint32_t>(cbw));
-      break;
+// Construct chanspec manually for 2.4 GHz 40 MHz channels.
+// Note: bcmdhd functions do not handle this case correctly, hence this function.
+static zx_status_t chanspec_2g_bw40(uint8_t primary, fuchsia_wlan_ieee80211::ChannelBandwidth cbw,
+                                    chanspec_t* chanspec) {
+  if (primary > CH_MAX_2G_CHANNEL) {
+    return ZX_ERR_INVALID_ARGS;
   }
+  *chanspec = WL_CHANSPEC_BAND_2G;
 
-  // ch_info.band is handled by encchspec
-  d11inf->encchspec(&ch_inf);
+  using fuchsia_wlan_ieee80211::ChannelBandwidth;
 
-  return ch_inf.chspec;
+  uint8_t center_channel = primary;
+
+  chanspec_t sb = WL_CHANSPEC_CTL_SB_NONE;
+  if (cbw == ChannelBandwidth::kCbw40) {
+    center_channel += 2;
+    sb = WL_CHANSPEC_CTL_SB_LOWER;
+  } else if (cbw == ChannelBandwidth::kCbw40Below) {
+    center_channel -= 2;
+    sb = WL_CHANSPEC_CTL_SB_UPPER;
+  } else {
+    return ZX_ERR_INVALID_ARGS;
+  }
+  *chanspec |= WL_CHANSPEC_BW_40;
+  *chanspec |= center_channel;
+  *chanspec |= sb;
+  if (chspec_malformed(*chanspec)) {
+    return ZX_ERR_INTERNAL;
+  }
+  return ZX_OK;
 }
 
-uint16_t channel_to_chanspec(const brcmu_d11inf* d11inf,
-                             const fuchsia_wlan_ieee80211::wire::ChannelNumber& channel,
-                             fuchsia_wlan_ieee80211::wire::ChannelBandwidth cbw) {
-  struct brcmu_chan ch_inf = {.chnum = channel.number};
+zx::result<chanspec_t> channel_to_chanspec(const brcmu_d11inf* d11inf, uint8_t channel,
+                                           fuchsia_wlan_ieee80211::WlanBand band,
+                                           fuchsia_wlan_ieee80211::ChannelBandwidth cbw) {
+  using fuchsia_wlan_ieee80211::ChannelBandwidth;
+  using fuchsia_wlan_ieee80211::WlanBand;
 
-  switch (cbw) {
-    case fuchsia_wlan_ieee80211::wire::ChannelBandwidth::kCbw20:
-      ch_inf.bw = BRCMU_CHAN_BW_20;
-      ch_inf.sb = BRCMU_CHAN_SB_NONE;
+  // Some scenarios require specific bandwidth overrides.
+  const auto cbw_override = enforce_bandwidth_limitations(channel, band, cbw);
+
+  chanspec_t bandwidth;
+  switch (cbw_override) {
+    case ChannelBandwidth::kCbw20:
+      bandwidth = WL_CHANSPEC_BW_20;
       break;
-    case fuchsia_wlan_ieee80211::wire::ChannelBandwidth::kCbw40:
-      ch_inf.bw = BRCMU_CHAN_BW_40;
-      ch_inf.sb = BRCMU_CHAN_SB_L;
+    case ChannelBandwidth::kCbw40:
+      [[fallthrough]];
+    case ChannelBandwidth::kCbw40Below:
+      bandwidth = WL_CHANSPEC_BW_40;
+      // Special case for 2.4 GHz 40 MHz channel, because channel2chanspec doesn't support it.
+      if (band == WlanBand::kTwoGhz) {
+        chanspec_t chspec = INVCHANSPEC;
+        const zx_status_t status = chanspec_2g_bw40(channel, cbw_override, &chspec);
+        if (status != ZX_OK) {
+          return zx::error(status);
+        }
+        return zx::ok(chspec);
+      }
       break;
-    case fuchsia_wlan_ieee80211::wire::ChannelBandwidth::kCbw40Below:
-      ch_inf.bw = BRCMU_CHAN_BW_40;
-      ch_inf.sb = BRCMU_CHAN_SB_U;
+    case ChannelBandwidth::kCbw80:
+      bandwidth = WL_CHANSPEC_BW_80;
       break;
-    case fuchsia_wlan_ieee80211::wire::ChannelBandwidth::kCbw80:
-    case fuchsia_wlan_ieee80211::wire::ChannelBandwidth::kCbw160:
-    case fuchsia_wlan_ieee80211::wire::ChannelBandwidth::kCbw80P80:
+    case ChannelBandwidth::kCbw160:
+      bandwidth = WL_CHANSPEC_BW_160;
+      break;
+    case ChannelBandwidth::kCbw80P80:
+      bandwidth = WL_CHANSPEC_BW_8080;
+      break;
     default:
-      BRCMF_ERR("unsupported channel width: %u", static_cast<uint32_t>(cbw));
-      break;
+      BRCMF_ERR("Unsupported channel bandwidth");
+      return zx::error(ZX_ERR_NOT_SUPPORTED);
   }
 
-  // ch_info.band is handled by encchspec
-  d11inf->encchspec(&ch_inf);
-
-  return ch_inf.chspec;
+  chanspec_t chanspec;
+  const auto chanspec_status = channel2chspec(channel, bandwidth, &chanspec);
+  if (chanspec_status != ZX_OK) {
+    return zx::error(chanspec_status);
+  }
+  if (chspec_malformed(chanspec)) {
+    return zx::error(ZX_ERR_INTERNAL);
+  }
+  return zx::ok(chanspec);
 }
 
 fuchsia_wlan_ieee80211::wire::ChannelNumber chanspec_to_operating_channel_number(
@@ -347,10 +368,11 @@ void brcmu_d11_attach(struct brcmu_d11inf* d11inf) {
   }
 }
 
-fuchsia_wlan_ieee80211::wire::ChannelBandwidth enforce_bandwidth_limitations(
-    const fuchsia_wlan_ieee80211::wire::ChannelNumber& primary,
-    fuchsia_wlan_ieee80211::wire::ChannelBandwidth cbw) {
-  using fuchsia_wlan_ieee80211::wire::ChannelBandwidth;
+fuchsia_wlan_ieee80211::ChannelBandwidth enforce_bandwidth_limitations(
+    uint8_t primary, fuchsia_wlan_ieee80211::WlanBand band,
+    fuchsia_wlan_ieee80211::ChannelBandwidth cbw) {
+  using fuchsia_wlan_ieee80211::ChannelBandwidth;
+  using fuchsia_wlan_ieee80211::WlanBand;
   if (cbw == ChannelBandwidth::kCbw80P80) {
     // Override the channel bandwidth with 20Mhz because `channel2chanspec` doesn't support
     // encoding 80+80 Mhz, and we have always overridden to 20Mhz in this case.
@@ -359,17 +381,9 @@ fuchsia_wlan_ieee80211::wire::ChannelBandwidth enforce_bandwidth_limitations(
   }
 
   // Connecting to channels >= 165 with bandwidths > 20MHz is not supported per fxrev.dev/1446009.
-  if (primary.band == fuchsia_wlan_ieee80211::wire::WlanBand::kFiveGhz && primary.number >= 165 &&
-      cbw != ChannelBandwidth::kCbw20) {
+  if (band == WlanBand::kFiveGhz && primary >= 165 && cbw != ChannelBandwidth::kCbw20) {
     return ChannelBandwidth::kCbw20;
   }
 
   return cbw;
-}
-
-fuchsia_wlan_ieee80211::ChannelBandwidth enforce_bandwidth_limitations(
-    const fuchsia_wlan_ieee80211::ChannelNumber& primary,
-    fuchsia_wlan_ieee80211::ChannelBandwidth cbw) {
-  fidl::Arena arena;
-  return enforce_bandwidth_limitations(fidl::ToWire(arena, primary), cbw);
 }

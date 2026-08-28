@@ -1224,8 +1224,10 @@ void SimFirmware::AssocInit(std::unique_ptr<AssocOpts> assoc_opts,
   assoc_state_.opts = std::move(assoc_opts);
   assoc_state_.num_attempts = 0;
 
-  uint16_t chanspec = channel_to_chanspec(&d11_inf_, channel, cbw);
-  SetIFChanspec(kClientIfidx, chanspec);
+  const auto chanspec = channel_to_chanspec(&d11_inf_, channel.number, channel.band, cbw);
+  ZX_ASSERT_MSG(chanspec.is_ok(), "Failed to convert channel to chanspec: %s",
+                chanspec.status_string());
+  SetIFChanspec(kClientIfidx, chanspec.value());
   hw_.SetChannel(channel, cbw, secondary80);
   hw_.EnableRx();
 }
@@ -2233,8 +2235,10 @@ void SimFirmware::ReassocInit(std::unique_ptr<ReassocOpts> reassoc_opts,
 
   SetAssocState(AssocState::REASSOCIATING);
 
-  const uint16_t chanspec = channel_to_chanspec(&d11_inf_, channel, cbw);
-  SetIFChanspec(kClientIfidx, chanspec);
+  const auto chanspec = channel_to_chanspec(&d11_inf_, channel.number, channel.band, cbw);
+  ZX_ASSERT_MSG(chanspec.is_ok(), "Failed to convert channel to chanspec: %s",
+                chanspec.status_string());
+  SetIFChanspec(kClientIfidx, chanspec.value());
   hw_.SetChannel(channel, cbw, secondary80);
   const auto kRoamPrepEventDelay = zx::msec(15);
 
@@ -3450,13 +3454,13 @@ void SimFirmware::ConductChannelSwitch(
     const fuchsia_wlan_ieee80211::wire::ChannelNumber& dst_channel,
     fuchsia_wlan_ieee80211::wire::ChannelBandwidth cbw,
     fuchsia_wlan_ieee80211::wire::ChannelNumber secondary80, uint8_t mode) {
-  // Change fw and hw channel
-  uint16_t chanspec;
   ZX_ASSERT_MSG(iface_tbl_[kClientIfidx].allocated, "No client found!");
 
   hw_.SetChannel(dst_channel, cbw, secondary80);
-  chanspec = channel_to_chanspec(&d11_inf_, dst_channel, cbw);
-  SetIFChanspec(kClientIfidx, chanspec);
+  const auto chanspec = channel_to_chanspec(&d11_inf_, dst_channel.number, dst_channel.band, cbw);
+  ZX_ASSERT_MSG(chanspec.is_ok(), "Failed to convert channel to chanspec: %s",
+                chanspec.status_string());
+  SetIFChanspec(kClientIfidx, chanspec.value());
 
   // Send up CSA event to driver
   auto buf = std::make_unique<std::vector<uint8_t>>(sizeof(uint8_t));
@@ -3627,7 +3631,11 @@ void SimFirmware::EscanResultSeen(const ScanResult& result_in) {
   // length of this record (includes IEs)
   bss_info->length = roundup(sizeof(brcmf_bss_info_le) + ie_buf.size(), 4);
   // channel
-  bss_info->chanspec = channel_to_chanspec(&d11_inf_, result_in.primary, result_in.bandwidth);
+  const auto chanspec = channel_to_chanspec(&d11_inf_, result_in.primary.number,
+                                            result_in.primary.band, result_in.bandwidth);
+  ZX_ASSERT_MSG(chanspec.is_ok(), "Failed to convert channel to chanspec: %s",
+                chanspec.status_string());
+  bss_info->chanspec = chanspec.value();
   // capability
   bss_info->capability = result_in.bss_capability.val();
 
