@@ -32,6 +32,9 @@ Tracing involves three high-level steps:
 * [Use trace events][use-trace-events]: This document explains the various types
   of tracing events that Fuchsia supports and how to use them in your
   components.
+* [Analyze traces with PerfettoSQL and fx perf-analyze][analyze-traces-with-sql]:
+  Query trace data with SQL, perform automated triage, and calculate performance
+  metrics using `fx perf-analyze` and Perfetto Trace Processor.
 
 Fuchsia recommends that you use the [Perfetto UI][perfetto-ui] to view the
 traces that you collect from Fuchsia components. For more information on using
@@ -58,6 +61,7 @@ of tracing in Fuchsia:
 [fuchsia-tracing-system]: /docs/concepts/kernel/tracing-system.md
 [tracing-tutorial]: /docs/development/tracing/tutorial/README.md
 [use-trace-events]: /docs/development/tracing/trace_events.md
+[analyze-traces-with-sql]: /docs/development/tracing/analyze-traces-with-sql.md
 [perfetto-ui]: https://ui.perfetto.dev/
 [perfetto-docs]: https://perfetto.dev/docs/
 [fuchsia-profiling]: /docs/development/profiling/profiling-cpu-usage.md

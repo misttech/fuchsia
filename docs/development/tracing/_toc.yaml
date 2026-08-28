@@ -8,6 +8,8 @@
 toc:
 - title: "Overview"
   path: /docs/development/tracing
+- title: "Analyze traces with SQL"
+  path: /docs/development/tracing/analyze-traces-with-sql.md
 - title: "Use trace events"
   path: /docs/development/tracing/trace_events.md
 - title: "Tutorial"

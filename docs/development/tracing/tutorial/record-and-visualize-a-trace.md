@@ -58,8 +58,9 @@ Do the following:
 2. Click **Open trace file** on the navigation bar.
 3. Select your `.fxt` file from the host machine.
 
-This viewer also allows you to use SQL to
-[query the trace data][perfetto-trace-processor]{:.external}.
+This viewer also allows you to query the trace data using SQL. For practical
+query recipes and automated triage tools, see
+[Analyze traces with PerfettoSQL and fx perf-analyze][analyze-traces-with-sql].
 
 ## Categories
 
@@ -115,7 +116,8 @@ Perfetto Viewer"){: width="600"}
 [record-traces]: /docs/development/tools/ffx/workflows/record-traces.md
 [fuchsia-trace-format]: /docs/reference/tracing/trace-format.md
 [perfetto-viewer]: https://ui.perfetto.dev
-[perfetto-trace-processor]: https://www.perfetto.dev/#/trace-processor.md
+[analyze-traces-with-sql]: /docs/development/tracing/analyze-traces-with-sql.md
+[perfetto-trace-processor]: https://perfetto.dev/docs/analysis/trace-processor
 [chromium-trace-viewer]: https://github.com/catapult-project/catapult/tree/HEAD/tracing
 [chrome]: https://google.com/chrome
 [trace-event-profileing-tool]: https://www.chromium.org/developers/how-tos/trace-event-profiling-tool

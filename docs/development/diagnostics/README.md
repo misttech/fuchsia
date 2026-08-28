@@ -133,6 +133,7 @@ You can also follow the diagnostics codelabs:
 You can also follow the tracing tutorials and guides:
 
 * [Use ffx trace to record and visualize a trace][tracing-codelab]
+* [Analyze traces with PerfettoSQL and fx perf-analyze][analyze-traces-with-sql]
 * [Implement asynchronous tracing][tracing-async-guide]
 
 [`sdk/lib/syslog/cpp`]: /sdk/lib/syslog/cpp
@@ -154,6 +155,7 @@ You can also follow the tracing tutorials and guides:
 [logging-docs]: /docs/development/diagnostics/logs/README.md
 [tracing-docs]: /docs/concepts/kernel/tracing-system.md
 [tracing-codelab]: /docs/development/tracing/tutorial/README.md
+[analyze-traces-with-sql]: /docs/development/tracing/analyze-traces-with-sql.md
 [tracing-async-guide]: /docs/development/tracing/advanced/tracing-asynchronously.md
 [perfetto-docs]: https://perfetto.dev/docs/
 [perfetto-ui]: https://ui.perfetto.dev/
