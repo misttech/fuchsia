@@ -343,6 +343,8 @@ impl RecordsImpl for Ipv6ExtensionHeaderImpl {
                 Ok(ParsedRecord::Done)
             }
             Ipv6ExtHdrType::Other(_) => {
+                // TODO(https://fxbug.dev/553060282): Ignore unknown options and
+                // continue parsing.
                 Err(Ipv6ExtensionHeaderParsingError::UnrecognizedNextHeader {
                     pointer: context.next_header_offset as u32,
                     must_send_icmp: false,
