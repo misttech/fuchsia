@@ -16,8 +16,8 @@ use scrutiny_utils::bootfs::{BootfsFileIndex, BootfsPackageIndex, BootfsReader};
 use scrutiny_utils::key_value::parse_key_value;
 use scrutiny_utils::package::PackageIndexContents;
 use scrutiny_utils::url::from_package_name_variant_path;
-use scrutiny_utils::zbi::ZbiReader;
-use std::collections::HashMap;
+use scrutiny_utils::zbi::{ZbiReader, ZbiSection};
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use std::sync::Arc;
@@ -79,19 +79,26 @@ fn extract_zbi_from_update_package(
     let zbi_data = artifact_reader.read_bytes(&Path::new(&zbi_hash.to_string()))?;
     let mut zbi_reader = ZbiReader::new(zbi_data);
     let sections = zbi_reader.parse()?;
-    let mut bootfs_files = HashMap::new();
+
+    let mut deps = artifact_reader.get_deps();
+    deps.extend(package_reader.get_deps());
+    parse_zbi_payload(sections, deps)
+}
+
+fn parse_zbi_payload(sections: Vec<ZbiSection>, deps: HashSet<PathBuf>) -> Result<Zbi> {
+    let mut bootfs_files = None;
     let mut cmdline_map = HashMap::new(); // Key to setting
     info!(total = sections.len(); "Extracted sections from the ZBI");
     for section in sections.iter() {
         info!(section_type:? = section.section_type; "Extracted sections");
         if section.section_type == zbi::Type::StorageBootfs {
-            let mut bootfs_reader = BootfsReader::new(section.buffer.clone());
-            let bootfs_result = bootfs_reader.parse();
-            if let Err(err) = bootfs_result {
-                warn!(err:%; "Bootfs parse failed");
+            if bootfs_files.is_none() {
+                let mut bootfs_reader = BootfsReader::new(section.buffer.clone());
+                let files = bootfs_reader.parse().context("Failed to parse bootfs from ZBI")?;
+                info!(total = files.len(); "Bootfs found files");
+                bootfs_files = Some(files);
             } else {
-                bootfs_files = bootfs_result.unwrap();
-                info!(total = bootfs_files.len(); "Bootfs found files");
+                warn!("Multiple StorageBootfs sections found in ZBI; ignoring subsequent section");
             }
         } else if section.section_type == zbi::Type::Cmdline {
             let mut cmd_buffer = section.buffer.clone();
@@ -104,6 +111,8 @@ fn extract_zbi_from_update_package(
     }
     let mut cmdline: Vec<String> = cmdline_map.into_values().collect();
     cmdline.sort();
+
+    let bootfs_files = bootfs_files.unwrap_or_default();
 
     // Find the bootfs package index
     let bootfs_pkg_contents = bootfs_files.iter().find_map(|(file_name, data)| {
@@ -132,8 +141,6 @@ fn extract_zbi_from_update_package(
     });
     let bootfs_files = BootfsFileIndex { bootfs_files };
     let bootfs_packages = BootfsPackageIndex { bootfs_pkgs: bootfs_packages.transpose()? };
-    let mut deps = artifact_reader.get_deps();
-    deps.extend(package_reader.get_deps());
     Ok(Zbi { deps, sections, bootfs_files, bootfs_packages, cmdline })
 }
 
@@ -281,5 +288,94 @@ mod tests {
         assert_eq!(map.len(), 2);
         assert_eq!(map.get("foo"), Some(&"foo=baz".to_string()));
         assert_eq!(map.get("baz"), Some(&"baz=qux".to_string()));
+    }
+
+    fn make_bootfs_bytes(files: &[(&str, &[u8])]) -> Vec<u8> {
+        use scrutiny_utils::bootfs::BOOTFS_MAGIC;
+
+        let mut dir_entries = Vec::new();
+        let mut file_payloads = Vec::new();
+
+        for (name, data) in files {
+            let name_bytes = name.as_bytes();
+            let name_len = name_bytes.len() as u32;
+            let data_len = data.len() as u32;
+            let entry_start = dir_entries.len();
+            dir_entries.extend_from_slice(&name_len.to_le_bytes());
+            dir_entries.extend_from_slice(&data_len.to_le_bytes());
+            dir_entries.extend_from_slice(&0u32.to_le_bytes());
+            dir_entries.extend_from_slice(name_bytes);
+            let entry_len = dir_entries.len() - entry_start;
+            if entry_len % 4 != 0 {
+                let padding = 4 - (entry_len % 4);
+                dir_entries.resize(dir_entries.len() + padding, 0);
+            }
+            file_payloads.push(*data);
+        }
+
+        let header_size: u32 = 16;
+        let dir_size = dir_entries.len() as u32;
+        let mut offset = header_size + dir_size;
+
+        let mut cursor = 0;
+        for (i, (_, data)) in files.iter().enumerate() {
+            let name_len = files[i].0.as_bytes().len() as u32;
+            dir_entries[cursor + 8..cursor + 12].copy_from_slice(&offset.to_le_bytes());
+            offset += data.len() as u32;
+            let mut entry_len = 12 + name_len as usize;
+            if entry_len % 4 != 0 {
+                entry_len += 4 - (entry_len % 4);
+            }
+            cursor += entry_len;
+        }
+
+        let mut result = Vec::new();
+        result.extend_from_slice(&BOOTFS_MAGIC.to_le_bytes());
+        result.extend_from_slice(&dir_size.to_le_bytes());
+        result.extend_from_slice(&0u32.to_le_bytes());
+        result.extend_from_slice(&0u32.to_le_bytes());
+        result.extend_from_slice(&dir_entries);
+        for payload in file_payloads {
+            result.extend_from_slice(payload);
+        }
+        result
+    }
+
+    #[test]
+    fn test_multiple_storage_bootfs_uses_first_section() {
+        use super::parse_zbi_payload;
+        use scrutiny_utils::zbi::ZbiSection;
+        use std::collections::HashSet;
+
+        let bootfs1 = make_bootfs_bytes(&[("bin/first", b"first_content")]);
+        let bootfs2 = make_bootfs_bytes(&[("bin/second", b"second_content")]);
+
+        let sections = vec![
+            ZbiSection { section_type: zbi::Type::StorageBootfs, buffer: bootfs1 },
+            ZbiSection { section_type: zbi::Type::StorageBootfs, buffer: bootfs2 },
+        ];
+
+        let zbi = parse_zbi_payload(sections, HashSet::new()).unwrap();
+        assert!(zbi.bootfs_files.bootfs_files.contains_key("bin/first"));
+        assert_eq!(zbi.bootfs_files.bootfs_files.get("bin/first").unwrap(), b"first_content");
+        assert!(!zbi.bootfs_files.bootfs_files.contains_key("bin/second"));
+    }
+
+    #[test]
+    fn test_multiple_storage_bootfs_first_corrupted_fails_and_does_not_fallback() {
+        use super::parse_zbi_payload;
+        use scrutiny_utils::zbi::ZbiSection;
+        use std::collections::HashSet;
+
+        let corrupted_bootfs = vec![0u8; 32];
+        let bootfs2 = make_bootfs_bytes(&[("bin/second", b"second_content")]);
+
+        let sections = vec![
+            ZbiSection { section_type: zbi::Type::StorageBootfs, buffer: corrupted_bootfs },
+            ZbiSection { section_type: zbi::Type::StorageBootfs, buffer: bootfs2 },
+        ];
+
+        let result = parse_zbi_payload(sections, HashSet::new());
+        assert!(result.is_err());
     }
 }

@@ -38,40 +38,39 @@ fn load_additional_boot_args<P1: AsRef<Path>, P2: AsRef<Path>>(
         })?;
     let update_package_path_ref = update_package_path.as_ref();
     let zbi = model.get::<Zbi>().unwrap();
-    for section in zbi.sections.iter() {
-        if section.section_type == zbi::Type::StorageBootfs {
-            let mut bootfs_reader = BootfsReader::new(section.buffer.clone());
-            let bootfs_data = bootfs_reader.parse().map_err(|bootfs_error| {
-                AdditionalBootConfigError::FailedToParseBootfs {
-                    update_package_path: update_package_path_ref.to_path_buf(),
-                    bootfs_error: bootfs_error.to_string(),
-                }
-            })?;
-            for (file, data) in bootfs_data.iter() {
-                if file == additional_boot_args_path_str {
-                    let additional_boot_args = parse_additional_boot_args_contents(
-                        from_utf8(&data).map_err(|utf8_error| {
-                            AdditionalBootConfigError::FailedToParseUtf8AdditionalBootConfig {
-                                update_package_path: update_package_path_ref.to_path_buf(),
-                                additional_boot_args_path: additional_boot_args_path_ref
-                                    .to_path_buf(),
-                                utf8_error: utf8_error.to_string(),
-                            }
-                        })?,
-                    )
-                    .map_err(|parse_error| {
-                        AdditionalBootConfigError::FailedToParseAdditionalBootConfigFormat {
+    // `userboot` only mounts the first StorageBootfs section, so only inspect the first one.
+    if let Some(section) = zbi.sections.iter().find(|s| s.section_type == zbi::Type::StorageBootfs)
+    {
+        let mut bootfs_reader = BootfsReader::new(section.buffer.clone());
+        let bootfs_data = bootfs_reader.parse().map_err(|bootfs_error| {
+            AdditionalBootConfigError::FailedToParseBootfs {
+                update_package_path: update_package_path_ref.to_path_buf(),
+                bootfs_error: bootfs_error.to_string(),
+            }
+        })?;
+        for (file, data) in bootfs_data.iter() {
+            if file == additional_boot_args_path_str {
+                let additional_boot_args = parse_additional_boot_args_contents(
+                    from_utf8(&data).map_err(|utf8_error| {
+                        AdditionalBootConfigError::FailedToParseUtf8AdditionalBootConfig {
                             update_package_path: update_package_path_ref.to_path_buf(),
                             additional_boot_args_path: additional_boot_args_path_ref.to_path_buf(),
-                            parse_error,
+                            utf8_error: utf8_error.to_string(),
                         }
-                    })?;
-                    return Ok(AdditionalBootConfigCollection {
-                        deps: zbi.deps.clone(),
-                        additional_boot_args: Some(additional_boot_args),
-                        errors: vec![],
-                    });
-                }
+                    })?,
+                )
+                .map_err(|parse_error| {
+                    AdditionalBootConfigError::FailedToParseAdditionalBootConfigFormat {
+                        update_package_path: update_package_path_ref.to_path_buf(),
+                        additional_boot_args_path: additional_boot_args_path_ref.to_path_buf(),
+                        parse_error,
+                    }
+                })?;
+                return Ok(AdditionalBootConfigCollection {
+                    deps: zbi.deps.clone(),
+                    additional_boot_args: Some(additional_boot_args),
+                    errors: vec![],
+                });
             }
         }
     }

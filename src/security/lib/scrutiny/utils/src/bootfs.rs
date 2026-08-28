@@ -15,7 +15,7 @@ use std::io::{Cursor, Read, Seek, SeekFrom};
 use thiserror::Error;
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
 
-pub(crate) const BOOTFS_MAGIC: u32 = 0xa56d3ff9;
+pub const BOOTFS_MAGIC: u32 = 0xa56d3ff9;
 
 #[allow(dead_code)]
 #[derive(Debug, Clone, Copy, FromBytes, IntoBytes, Immutable, KnownLayout)]

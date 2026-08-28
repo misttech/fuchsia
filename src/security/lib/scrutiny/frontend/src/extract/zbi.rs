@@ -27,10 +27,10 @@ impl ZbiExtractController {
         let zbi_sections = reader.parse()?;
 
         fs::create_dir_all(&output)?;
-        let mut sections_dir = output.clone();
-        sections_dir.push("sections");
+        let sections_dir = output.join("sections");
         fs::create_dir_all(&sections_dir)?;
         let mut section_count = HashMap::new();
+        let mut extracted_bootfs = false;
         for section in zbi_sections.iter() {
             let section_str = format!("{:?}", section.section_type).to_lowercase();
             let section_name = if let Some(count) = section_count.get_mut(&section.section_type) {
@@ -40,35 +40,34 @@ impl ZbiExtractController {
                 section_count.insert(section.section_type, 0);
                 format!("{}.blk", section_str)
             };
-            let mut path = sections_dir.clone();
-            path.push(section_name);
+            let path = sections_dir.join(section_name);
             let mut file = File::create(path)?;
             file.write_all(&section.buffer)?;
 
             // Expand bootfs into its own folder as well.
             if section.section_type == zbi::Type::StorageBootfs {
-                let mut bootfs_dir = output.clone();
-                bootfs_dir.push("bootfs");
-                fs::create_dir_all(bootfs_dir.clone())?;
-                let mut bootfs_reader = BootfsReader::new(section.buffer.clone());
-                let bootfs_files = bootfs_reader.parse()?;
-                for (file_name, data) in bootfs_files.iter() {
-                    let mut bootfs_file_path = bootfs_dir.clone();
-                    bootfs_file_path.push(file_name);
-                    if let Some(parent_dir) = bootfs_file_path.as_path().parent() {
-                        fs::create_dir_all(parent_dir)?;
+                if !extracted_bootfs {
+                    extracted_bootfs = true;
+                    let bootfs_dir = output.join("bootfs");
+                    fs::create_dir_all(&bootfs_dir)?;
+                    let mut bootfs_reader = BootfsReader::new(section.buffer.clone());
+                    let bootfs_files = bootfs_reader.parse()?;
+                    for (file_name, data) in bootfs_files.iter() {
+                        let bootfs_file_path = bootfs_dir.join(file_name);
+                        if let Some(parent_dir) = bootfs_file_path.as_path().parent() {
+                            fs::create_dir_all(parent_dir)?;
+                        }
+                        let mut bootfs_file = File::create(bootfs_file_path)?;
+                        bootfs_file.write_all(&data)?;
                     }
-                    let mut bootfs_file = File::create(bootfs_file_path)?;
-                    bootfs_file.write_all(&data)?;
                 }
             } else if section.section_type == zbi::Type::StorageRamdisk {
                 info!("Attempting to load FvmPartitions");
                 let mut fvm_reader = FvmReader::new(section.buffer.clone());
                 if let Ok(fvm_partitions) = fvm_reader.parse() {
                     info!(total = fvm_partitions.len(); "Extracting Partitions in StorageRamdisk");
-                    let mut fvm_dir = output.clone();
-                    fvm_dir.push("fvm");
-                    fs::create_dir_all(fvm_dir.clone())?;
+                    let fvm_dir = output.join("fvm");
+                    fs::create_dir_all(&fvm_dir)?;
 
                     let mut partition_count = HashMap::<FvmPartitionType, u64>::new();
                     for partition in fvm_partitions.iter() {
@@ -81,8 +80,7 @@ impl ZbiExtractController {
                             section_count.insert(section.section_type, 0);
                             format!("{}.blk", partition.partition_type)
                         };
-                        let mut fvm_partition_path = fvm_dir.clone();
-                        fvm_partition_path.push(&file_name);
+                        let fvm_partition_path = fvm_dir.join(&file_name);
                         let mut fvm_file = File::create(&fvm_partition_path)?;
                         for slice_data in &partition.buffer {
                             fvm_file.seek(SeekFrom::Start(slice_data.offset()))?;
