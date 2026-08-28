@@ -52,6 +52,9 @@ type MapFlags = flexible bits : uint32 {
 
     /// The map can be mapped in a Starnix process's address space.
     MMAPABLE = 8;
+
+    /// Clones the storage when the parent socket is cloned. Equivalent to `BPF_F_CLONE`.
+    CLONE = 16;
 };
 
 /// Schema of an eBPF map.

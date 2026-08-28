@@ -77,7 +77,8 @@ pub enum MapError {
 const SUPPORTED_FLAGS: MapFlags = MapFlags::NoPrealloc
     .union(MapFlags::SyscallReadOnly)
     .union(MapFlags::SyscallWriteOnly)
-    .union(MapFlags::Mmapable);
+    .union(MapFlags::Mmapable)
+    .union(MapFlags::Clone);
 
 fn map_flags_from_fidl(flags: febpf::MapFlags) -> MapFlags {
     let mut r = MapFlags::empty();
@@ -92,6 +93,9 @@ fn map_flags_from_fidl(flags: febpf::MapFlags) -> MapFlags {
     }
     if flags.contains(febpf::MapFlags::MMAPABLE) {
         r = r | MapFlags::Mmapable;
+    }
+    if flags.contains(febpf::MapFlags::CLONE) {
+        r = r | MapFlags::Clone;
     }
     r
 }
@@ -114,6 +118,9 @@ fn map_flags_to_fidl(flags: MapFlags) -> Result<febpf::MapFlags, MapError> {
     if flags.contains(MapFlags::Mmapable) {
         r = r | febpf::MapFlags::MMAPABLE;
     }
+    if flags.contains(MapFlags::Clone) {
+        r = r | febpf::MapFlags::CLONE;
+    }
     Ok(r)
 }
 
@@ -130,6 +137,11 @@ fn validate_map_flags(schema: &MapSchema) -> Result<(), MapError> {
 
     // `MMAPABLE` is valid only for arrays.
     if flags.contains(MapFlags::Mmapable) && schema.map_type != bpf_map_type_BPF_MAP_TYPE_ARRAY {
+        return Err(MapError::InvalidParam);
+    }
+
+    // `CLONE` is valid only for socket storage maps.
+    if flags.contains(MapFlags::Clone) && schema.map_type != bpf_map_type_BPF_MAP_TYPE_SK_STORAGE {
         return Err(MapError::InvalidParam);
     }
 
@@ -353,10 +365,7 @@ fn create_map_impl(
         bpf_map_type_BPF_MAP_TYPE_RINGBUF => Ok(ring_buffer::RingBuffer::new(schema, vmo)?),
         bpf_map_type_BPF_MAP_TYPE_LPM_TRIE => Ok(Box::pin(lpm_trie::LpmTrie::new(schema, vmo)?)),
         bpf_map_type_BPF_MAP_TYPE_SK_STORAGE => {
-            if schema.key_size != 4
-                || schema.max_entries != 0
-                || schema.flags != MapFlags::NoPrealloc
-            {
+            if schema.key_size != 4 || schema.max_entries != 0 {
                 return Err(MapError::InvalidParam);
             }
 
