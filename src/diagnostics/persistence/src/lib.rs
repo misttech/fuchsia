@@ -17,11 +17,13 @@ use fuchsia_async as fasync;
 use fuchsia_component::client::{connect_to_protocol, connect_to_protocol_at_path};
 use fuchsia_component::server::ServiceFs;
 use fuchsia_inspect::health::Reporter;
+use futures::lock::Mutex;
 use futures::{FutureExt, StreamExt, TryStreamExt};
 use log::*;
 use persistence_build_config::Config;
 use serde::{Deserialize, Serialize};
-use std::path::Path;
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use zx::{BootInstant, MonotonicDuration, MonotonicInstant};
 
 /// The name of the subcommand and the logs-tag, used by launcher
@@ -103,17 +105,19 @@ pub async fn main(_args: CommandLine) -> Result<(), Error> {
         "/svc/fuchsia.diagnostics.ArchiveAccessor.previous_boot",
     )?;
 
+    let mut reader = ArchiveReader::inspect();
+    reader.with_archive(proxy);
+    let collector = Arc::new(Mutex::new(SnapshotCollector::new(reader, cache_dir.to_path_buf())));
+
     let period = MonotonicDuration::from_seconds(config.persistence_period_seconds);
-    let proxy_periodic = proxy.clone();
+    let collector_periodic = collector.clone();
     scope.spawn(async move {
-        let mut reader = ArchiveReader::inspect();
-        reader.with_archive(proxy_periodic);
-        if let Err(e) = collect_active_snapshot(&mut reader, cache_dir).await {
+        if let Err(e) = collector_periodic.lock().await.collect_active_snapshot().await {
             error!(e:?; "Error collecting initial active inspect snapshot");
         }
         let mut interval = fasync::Interval::new(period);
         while let Some(()) = interval.next().await {
-            if let Err(e) = collect_active_snapshot(&mut reader, cache_dir).await {
+            if let Err(e) = collector_periodic.lock().await.collect_active_snapshot().await {
                 error!(e:?; "Error collecting active inspect snapshot");
             }
         }
@@ -121,12 +125,10 @@ pub async fn main(_args: CommandLine) -> Result<(), Error> {
 
     if let Ok(battery_manager) = connect_to_protocol::<fbattery::BatteryManagerMarker>() {
         let threshold = config.low_battery_threshold_percent as f32;
-        let proxy_battery = proxy.clone();
-        let cache_dir_buf = cache_dir.to_path_buf();
+        let collector_battery = collector.clone();
         scope.spawn(async move {
             if let Err(e) =
-                listen_for_low_battery(battery_manager, threshold, proxy_battery, &cache_dir_buf)
-                    .await
+                listen_for_low_battery(battery_manager, threshold, collector_battery).await
             {
                 warn!(e:?; "BatteryManager watcher task terminated");
             }
@@ -142,15 +144,12 @@ pub async fn main(_args: CommandLine) -> Result<(), Error> {
 async fn listen_for_low_battery(
     battery_manager: fbattery::BatteryManagerProxy,
     threshold_percent: f32,
-    proxy: fdiagnostics::ArchiveAccessorProxy,
-    cache_dir: &Path,
+    collector: Arc<Mutex<SnapshotCollector>>,
 ) -> Result<(), Error> {
     let (watcher_client, mut request_stream) =
         fidl::endpoints::create_request_stream::<fbattery::BatteryInfoWatcherMarker>();
     battery_manager.watch(watcher_client)?;
 
-    let mut reader = ArchiveReader::inspect();
-    reader.with_archive(proxy);
     let mut triggered = false;
 
     while let Some(request) = request_stream.try_next().await? {
@@ -174,7 +173,7 @@ async fn listen_for_low_battery(
                             level_status:?;
                             "Low battery threshold reached, collecting active snapshot"
                         );
-                        if let Err(e) = collect_active_snapshot(&mut reader, cache_dir).await {
+                        if let Err(e) = collector.lock().await.collect_active_snapshot().await {
                             error!(e:?; "Error collecting active snapshot on low battery");
                         }
                         triggered = true;
@@ -246,40 +245,48 @@ pub fn maybe_get_utc_timestamp() -> Option<i64> {
     maybe_get_utc_timestamp_from_clock(clock.as_ref())
 }
 
-async fn collect_active_snapshot(
-    reader: &mut InspectArchiveReader,
-    cache_dir: &Path,
-) -> Result<(), Error> {
-    info!("Collecting active snapshot...");
-    let inspect_data = match reader.snapshot().await {
-        Ok(v) => v,
-        Err(e) => {
-            error!(e:?; "ArchiveReader snapshot failed");
-            return Err(e.into());
-        }
-    };
-    let active_dir = cache_dir.join("active");
-    std::fs::create_dir_all(&active_dir)?;
+struct SnapshotCollector {
+    reader: InspectArchiveReader,
+    cache_dir: PathBuf,
+}
 
-    let active_json_data = serde_json::to_vec(&inspect_data)?;
-    let tmp_file = active_dir.join("active.json.tmp");
-    let final_file = active_dir.join("active.json");
-    std::fs::write(&tmp_file, active_json_data)?;
-    std::fs::rename(&tmp_file, &final_file)?;
+impl SnapshotCollector {
+    fn new(reader: InspectArchiveReader, cache_dir: PathBuf) -> Self {
+        Self { reader, cache_dir }
+    }
 
-    let metadata = Metadata {
-        monotonic_timestamp: MonotonicInstant::get().into_nanos(),
-        boot_timestamp: BootInstant::get().into_nanos(),
-        utc_timestamp_ns: maybe_get_utc_timestamp(),
-    };
+    async fn collect_active_snapshot(&mut self) -> Result<(), Error> {
+        info!("Collecting active snapshot...");
+        let inspect_data = match self.reader.snapshot().await {
+            Ok(v) => v,
+            Err(e) => {
+                error!(e:?; "ArchiveReader snapshot failed");
+                return Err(e.into());
+            }
+        };
+        let active_dir = self.cache_dir.join("active");
+        std::fs::create_dir_all(&active_dir)?;
 
-    let meta_json_data = serde_json::to_vec(&metadata)?;
-    let tmp_meta = active_dir.join("metadata.json.tmp");
-    let final_meta = active_dir.join("metadata.json");
-    std::fs::write(&tmp_meta, meta_json_data)?;
-    std::fs::rename(&tmp_meta, &final_meta)?;
+        let active_json_data = serde_json::to_vec(&inspect_data)?;
+        let tmp_file = active_dir.join("active.json.tmp");
+        let final_file = active_dir.join("active.json");
+        std::fs::write(&tmp_file, active_json_data)?;
+        std::fs::rename(&tmp_file, &final_file)?;
 
-    Ok(())
+        let metadata = Metadata {
+            monotonic_timestamp: MonotonicInstant::get().into_nanos(),
+            boot_timestamp: BootInstant::get().into_nanos(),
+            utc_timestamp_ns: maybe_get_utc_timestamp(),
+        };
+
+        let meta_json_data = serde_json::to_vec(&metadata)?;
+        let tmp_meta = active_dir.join("metadata.json.tmp");
+        let final_meta = active_dir.join("metadata.json");
+        std::fs::write(&tmp_meta, meta_json_data)?;
+        std::fs::rename(&tmp_meta, &final_meta)?;
+
+        Ok(())
+    }
 }
 
 async fn handle_previous_boot_data_provider(
