@@ -54,3 +54,31 @@ pub async fn test_reverser_trf_greeting(realm: &TestRealm) -> Result<(), Error> 
 
     Ok(())
 }
+
+/// Test using TRF lifecycle capabilities to stop and restart mock components.
+#[trf::test(config(switch_case = false, use_replacer = true), mocks(MockReplacer))]
+pub async fn test_reverser_trf_lifecycle(realm: &TestRealm) -> Result<(), Error> {
+    realm.set_replacement("TRF".to_string(), "Lifecycle".to_string()).await?;
+
+    let client = realm.connect_to_protocol::<freverser::ReverserMarker>().await?;
+
+    let input = "Hello Fuchsia TRF!";
+    let output = client.reverse(input).await?;
+    assert_eq!(output, "!elcycefiL aishcuF olleH"); // Lifecycle reversed
+
+    let mut events = realm.subscribe_to_lifecycle().expect("Failed to subscribe");
+    realm.stop_component("mock_MockReplacer").await.expect("Failed to stop component");
+
+    assert_eq!(
+        events.next_event().await,
+        Some(trf_generated_realm::LifecycleEvent::Stopped("mock_MockReplacer".to_string()))
+    );
+
+    let output2 = client.reverse(input).await?;
+    assert_eq!(output2, "!FRT aishcuF olleH"); // Back to default because state was lost on restart
+
+    // Verify it implicitly started
+    assert!(realm.is_running("mock_MockReplacer").await.expect("Failed to check"));
+
+    Ok(())
+}

@@ -160,7 +160,21 @@ impl TestRealm {
             .stop_instance(&format!("./{}", name))
             .await?
             .map_err(|e| anyhow::format_err!("{:?}", e))?;
+        self.emit_lifecycle_event(LifecycleEvent::Stopped(name.to_string()));
         Ok(())
+    }
+
+    pub async fn is_running(&self, name: &str) -> Result<bool, anyhow::Error> {
+        let query = self.connect_to_protocol::<fidl_fuchsia_sys2::RealmQueryMarker>().await?;
+        let info = query
+            .get_instance(&format!("./{}", name))
+            .await?
+            .map_err(|e| anyhow::format_err!("{:?}", e))?;
+        if let Some(resolved) = info.resolved_info {
+            Ok(resolved.execution_info.is_some())
+        } else {
+            Ok(false)
+        }
     }
 
     pub async fn start_component(&self, name: &str) -> Result<(), anyhow::Error> {
@@ -171,6 +185,7 @@ impl TestRealm {
             .start_instance(&format!("./{}", name), binder)
             .await?
             .map_err(|e| anyhow::format_err!("{:?}", e))?;
+        self.emit_lifecycle_event(LifecycleEvent::Started(name.to_string()));
         Ok(())
     }
 }

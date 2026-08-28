@@ -361,7 +361,7 @@ async fn run_{{struct_name}}() -> Result<(), Error> {
 fn generate_realm_builder_rs(ast: &ParsedAstResult, target_name: Option<&str>) -> Result<String> {
     let suffix = target_name.unwrap_or("test").replace("_", "").replace("-", "");
     let template = format!(
-        "// Auto-generated RealmBuilder wrapper for TD\n\n#![allow(unused_imports, unused_crate_dependencies, non_camel_case_types, non_snake_case)]\nuse anyhow::Result;\nuse fidl_fuchsia_trf_factory::{{ConfigOverride, ConfigValue}};\nuse fidl_fuchsia_trf_mockcontrol_{} as trf_mc;\n\n",
+        "// Auto-generated RealmBuilder wrapper for TD\n\n#![allow(unused_imports, unused_crate_dependencies, non_camel_case_types, non_snake_case)]\nuse anyhow::Result;\nuse fidl_fuchsia_trf_factory::{{ConfigOverride, ConfigValue}};\nuse fidl_fuchsia_trf_mockcontrol_{} as trf_mc;\npub use trf_codegen_runtime::LifecycleEvent;\n\n",
         suffix
     ) + r##"
 
@@ -620,6 +620,16 @@ async fn create_realm(
             fuchsia_component_test::Route::new()
                 .capability(fuchsia_component_test::Capability::protocol_by_name(
                     "fuchsia.sys2.LifecycleController",
+                ))
+                .from(fuchsia_component_test::Ref::framework())
+                .to(fuchsia_component_test::Ref::parent()),
+        )
+        .await?;
+    builder
+        .add_route(
+            fuchsia_component_test::Route::new()
+                .capability(fuchsia_component_test::Capability::protocol_by_name(
+                    "fuchsia.sys2.RealmQuery",
                 ))
                 .from(fuchsia_component_test::Ref::framework())
                 .to(fuchsia_component_test::Ref::parent()),
