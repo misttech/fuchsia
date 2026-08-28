@@ -12,11 +12,11 @@ use fidl_fuchsia_net_policy_socketproxy as fnp_socketproxy;
 use fidl_fuchsia_posix as fposix;
 use fidl_fuchsia_posix_socket::{self as fposix_socket, OptionalUint32};
 use fidl_fuchsia_posix_socket_raw as fposix_socket_raw;
-use fuchsia_async as fasync;
-use fuchsia_async::DurationExt as _;
+use fuchsia_async as _;
+use fuchsia_component::client as fclient;
 use fuchsia_component::server::ServiceFs;
 use fuchsia_component_test::{
-    Capability, ChildOptions, LocalComponentHandles, RealmBuilder, Ref, Route,
+    Capability, ChildOptions, LocalComponentHandles, RealmBuilder, RealmInstance, Ref, Route,
 };
 use futures::lock::Mutex;
 use futures::{StreamExt as _, TryStreamExt as _};
@@ -24,6 +24,7 @@ use pretty_assertions::assert_eq;
 use socket_proxy::registry::NetworkRegistryRequest;
 use std::sync::Arc;
 use test_case::test_case;
+use zx as _;
 
 enum IncomingService {
     Provider(fposix_socket::ProviderRequestStream),
@@ -409,16 +410,55 @@ async fn inner_provider_mock(
     Ok(())
 }
 
+#[derive(Default)]
+struct MockNetcfgState {
+    forwarded_requests: Vec<NetworkRegistryRequest>,
+    notifier: Vec<futures::channel::oneshot::Sender<()>>,
+}
+
+impl MockNetcfgState {
+    fn notify_waiters(&mut self) {
+        for sender in self.notifier.drain(..) {
+            sender.send(()).expect("notify waiter");
+        }
+    }
+}
+
+#[derive(Clone, Default)]
+struct MockNetcfg {
+    state: Arc<Mutex<MockNetcfgState>>,
+}
+
+impl MockNetcfg {
+    async fn wait_for_change(&self) {
+        let (tx, rx) = futures::channel::oneshot::channel();
+        self.state.lock().await.notifier.push(tx);
+        let () = rx.await.expect("wait for change notification");
+    }
+
+    /// Awaits until the forwarded requests received from socket-proxy match `expected`.
+    async fn wait_for_forwarded_requests(&self, expected: &[NetworkRegistryRequest]) {
+        loop {
+            {
+                let state = self.state.lock().await;
+                if state.forwarded_requests.as_slice() == expected {
+                    break;
+                }
+            }
+            self.wait_for_change().await;
+        }
+    }
+}
+
 enum NetcfgService {
     DelegatedNetworks(fnp_socketproxy::NetworkRegistryRequestStream),
 }
-async fn netcfg_mock(
-    handles: LocalComponentHandles,
-    default_network_updates: Arc<Mutex<Vec<NetworkRegistryRequest>>>,
-) -> Result<(), Error> {
+
+/// Simulates Netcfg's registry server to verify request forwarding in integration tests.
+async fn netcfg_mock(handles: LocalComponentHandles, mock_netcfg: MockNetcfg) -> Result<(), Error> {
     let mut fs = ServiceFs::new();
-    let _ = fs.dir("svc").add_fidl_service(NetcfgService::DelegatedNetworks);
-    let _ = fs.serve_connection(handles.outgoing_dir)?;
+    let _svc_dir = fs.dir("svc").add_fidl_service(NetcfgService::DelegatedNetworks);
+    let _fs = fs.serve_connection(handles.outgoing_dir)?;
 
     fs.map(Ok)
         .try_for_each_concurrent(0, |req| async {
@@ -427,26 +467,31 @@ async fn netcfg_mock(
                     use fnp_socketproxy::NetworkRegistryRequest;
                     stream
                         .map(|i| i.context("fidl error"))
-                        .try_for_each(|req| async {
-                            let request = (&req).into();
-                            match req {
-                                NetworkRegistryRequest::SetDefault { responder, .. } => {
-                                    responder.send(Ok(()))?;
+                        .try_for_each(|req| {
+                            let mock_netcfg = mock_netcfg.clone();
+                            async move {
+                                let request = (&req).into();
+                                match req {
+                                    NetworkRegistryRequest::SetDefault { responder, .. } => {
+                                        responder.send(Ok(())).expect("send response");
+                                    }
+                                    NetworkRegistryRequest::Add { responder, .. } => {
+                                        responder.send(Ok(())).expect("send response");
+                                    }
+                                    NetworkRegistryRequest::Update { responder, .. } => {
+                                        responder.send(Ok(())).expect("send response");
+                                    }
+                                    NetworkRegistryRequest::Remove { responder, .. } => {
+                                        responder.send(Ok(())).expect("send response");
+                                    }
                                 }
-                                NetworkRegistryRequest::Add { responder, .. } => {
-                                    responder.send(Ok(()))?;
+                                {
+                                    let mut state = mock_netcfg.state.lock().await;
+                                    state.forwarded_requests.push(request);
+                                    state.notify_waiters();
                                 }
-                                NetworkRegistryRequest::Update { responder, .. } => {
-                                    responder.send(Ok(()))?;
-                                }
-                                NetworkRegistryRequest::Remove { responder, .. } => {
-                                    responder.send(Ok(()))?;
-                                }
+                                Ok(())
                             }
-                            // Update this vector after sending the response so that the client of
-                            // this protocol avoids a PEER_CLOSED message.
-                            default_network_updates.lock().await.push(request);
-                            Ok(())
                         })
                         .await?;
                 }
@@ -479,99 +524,102 @@ fn create_fuchsia_network(id: u32) -> fnp_socketproxy::Network {
     }
 }
 
-async fn check_until<T, GetT, GetFut>(timeout: fasync::MonotonicInstant, get_a: GetT, b: T)
-where
-    GetT: Fn() -> GetFut,
-    GetFut: Future<Output = T>,
-    T: std::cmp::PartialEq<T> + std::fmt::Debug,
-{
-    while fasync::MonotonicInstant::now() < timeout {
-        let a = get_a().await;
-        if a == b {
-            break;
-        }
-        fuchsia_async::Timer::new(zx::MonotonicDuration::from_millis(100).after_now()).await;
+/// Integration test fixture encapsulating the component realm and mock dependencies.
+struct TestRealm {
+    /// The running component test realm.
+    realm: RealmInstance,
+    /// Controller for the mock Netcfg component.
+    mock_netcfg: MockNetcfg,
+    /// Chronological list of (Mark1, Mark2) values for each socket created by the
+    /// mocked socket provider.
+    marks: Arc<Mutex<Vec<(Arc<Mutex<OptionalUint32>>, Arc<Mutex<OptionalUint32>>)>>>,
+}
+
+impl TestRealm {
+    async fn new() -> Result<Self, Error> {
+        let mock_netcfg = MockNetcfg::default();
+        let marks = Arc::new(Mutex::new(Vec::new()));
+        let builder = RealmBuilder::new().await?;
+        let inner_provider = builder
+            .add_local_child(
+                "inner_provider",
+                {
+                    let marks = marks.clone();
+                    move |handles: LocalComponentHandles| {
+                        Box::pin(inner_provider_mock(handles, marks.clone()))
+                    }
+                },
+                ChildOptions::new(),
+            )
+            .await?;
+        let netcfg = builder
+            .add_local_child(
+                "netcfg",
+                {
+                    let mock_netcfg = mock_netcfg.clone();
+                    move |handles: LocalComponentHandles| {
+                        Box::pin(netcfg_mock(handles, mock_netcfg.clone()))
+                    }
+                },
+                ChildOptions::new().eager(),
+            )
+            .await?;
+        let socket_proxy = builder
+            .add_child("socket_proxy", "#meta/network-socket-proxy.cm", ChildOptions::new().eager())
+            .await?;
+        builder
+            .add_route(
+                Route::new()
+                    .capability(Capability::protocol::<fposix_socket::ProviderMarker>())
+                    .capability(Capability::protocol::<fposix_socket_raw::ProviderMarker>())
+                    .from(&inner_provider)
+                    .to(&socket_proxy),
+            )
+            .await?;
+
+        builder
+            .add_route(
+                Route::new()
+                    .capability(Capability::protocol::<fnp_socketproxy::NetworkRegistryMarker>())
+                    .from(&netcfg)
+                    .to(&socket_proxy),
+            )
+            .await?;
+
+        builder
+            .add_route(
+                Route::new()
+                    .capability(Capability::protocol::<fposix_socket::ProviderMarker>())
+                    .capability(Capability::protocol::<fposix_socket_raw::ProviderMarker>())
+                    .capability(Capability::protocol::<fnp_socketproxy::StarnixNetworksMarker>())
+                    .capability(Capability::protocol::<fnp_socketproxy::FuchsiaNetworksMarker>())
+                    .from(&socket_proxy)
+                    .to(Ref::parent()),
+            )
+            .await?;
+
+        let realm = builder.build().await?;
+        Ok(Self { realm, mock_netcfg, marks })
     }
 
-    assert_eq!(get_a().await, b);
+    fn connect_to_protocol<P: fclient::Connect>(&self) -> Result<P, Error> {
+        self.realm.root.connect_to_protocol_at_exposed_dir::<P>().context("connect to protocol")
+    }
 }
 
 #[test_case(false, OptionalUint32::Value(0); "default unset")]
 #[test_case(true, OptionalUint32::Value(123); "default set")]
 #[fuchsia::test]
 /// Test making every possible type of socket and check that the socket mark is
-// set as expected. Starnix and Fuchsia registries have the same handling
-// logic, so use the Starnix registry to confirm this behavior.
+/// set as expected. Starnix and Fuchsia registries have the same handling
+/// logic, so use the Starnix registry to confirm this behavior.
 async fn integration(should_set_default: bool, expected_mark: OptionalUint32) -> Result<(), Error> {
-    let default_network_updates = Arc::new(Mutex::new(Vec::new()));
-    let marks = Arc::new(Mutex::new(Vec::new()));
-    let builder = RealmBuilder::new().await?;
-    let inner_provider = builder
-        .add_local_child(
-            "inner_provider",
-            {
-                let marks = marks.clone();
-                move |handles: LocalComponentHandles| {
-                    Box::pin(inner_provider_mock(handles, marks.clone()))
-                }
-            },
-            ChildOptions::new(),
-        )
-        .await?;
-    let netcfg = builder
-        .add_local_child(
-            "netcfg",
-            {
-                let default_network_updates = default_network_updates.clone();
-                move |handles: LocalComponentHandles| {
-                    Box::pin(netcfg_mock(handles, default_network_updates.clone()))
-                }
-            },
-            ChildOptions::new().eager(),
-        )
-        .await?;
-    let socket_proxy = builder
-        .add_child("socket_proxy", "#meta/network-socket-proxy.cm", ChildOptions::new().eager())
-        .await?;
-    builder
-        .add_route(
-            Route::new()
-                .capability(Capability::protocol::<fposix_socket::ProviderMarker>())
-                .capability(Capability::protocol::<fposix_socket_raw::ProviderMarker>())
-                .from(&inner_provider)
-                .to(&socket_proxy),
-        )
-        .await?;
-
-    builder
-        .add_route(
-            Route::new()
-                .capability(Capability::protocol::<fnp_socketproxy::NetworkRegistryMarker>())
-                .from(&netcfg)
-                .to(&socket_proxy),
-        )
-        .await?;
-
-    builder
-        .add_route(
-            Route::new()
-                .capability(Capability::protocol::<fposix_socket::ProviderMarker>())
-                .capability(Capability::protocol::<fposix_socket_raw::ProviderMarker>())
-                .capability(Capability::protocol::<fnp_socketproxy::StarnixNetworksMarker>())
-                .from(&socket_proxy)
-                .to(Ref::parent()),
-        )
-        .await?;
-
-    let realm = builder.build().await?;
-
-    let posix_socket: fposix_socket::ProviderProxy =
-        realm.root.connect_to_protocol_at_exposed_dir().context("While connecting to provider")?;
-
-    let posix_socket_raw: fposix_socket_raw::ProviderProxy = realm
-        .root
-        .connect_to_protocol_at_exposed_dir()
-        .context("While connecting to raw provider")?;
+    let test_realm = TestRealm::new().await?;
+    let marks = test_realm.marks.clone();
+    let posix_socket: fposix_socket::ProviderProxy = test_realm.connect_to_protocol()?;
+    let posix_socket_raw: fposix_socket_raw::ProviderProxy = test_realm.connect_to_protocol()?;
+    let starnix_networks: fnp_socketproxy::StarnixNetworksProxy =
+        test_realm.connect_to_protocol()?;
 
     {
         let socket = posix_socket
@@ -590,11 +638,6 @@ async fn integration(should_set_default: bool, expected_mark: OptionalUint32) ->
         let first_mark = locked_marks[0].0.lock().await;
         assert_eq!(*first_mark, OptionalUint32::Unset(fposix_socket::Empty));
     }
-
-    let starnix_networks: fnp_socketproxy::StarnixNetworksProxy = realm
-        .root
-        .connect_to_protocol_at_exposed_dir()
-        .context("while connecting to StarnixNetworks")?;
 
     starnix_networks
         .add(&create_starnix_network(1 /* id */, 123 /* mark */))
@@ -622,7 +665,7 @@ async fn integration(should_set_default: bool, expected_mark: OptionalUint32) ->
         let locked_marks = marks.lock().await;
         assert_eq!(locked_marks.len(), 2);
         let first_mark = locked_marks[1].0.lock().await;
-        assert_eq!(*first_mark, expected_mark)
+        assert_eq!(*first_mark, expected_mark);
     }
 
     {
@@ -640,7 +683,7 @@ async fn integration(should_set_default: bool, expected_mark: OptionalUint32) ->
         let locked_marks = marks.lock().await;
         assert_eq!(locked_marks.len(), 3);
         let first_mark = locked_marks[2].0.lock().await;
-        assert_eq!(*first_mark, expected_mark)
+        assert_eq!(*first_mark, expected_mark);
     }
 
     {
@@ -652,13 +695,10 @@ async fn integration(should_set_default: bool, expected_mark: OptionalUint32) ->
             .await?
             .map_err(|e| anyhow!("Could not get socket: {e:?}"))?;
 
-        let socket = if let fposix_socket::ProviderDatagramSocketResponse::DatagramSocket(socket) =
-            response
-        {
-            socket
-        } else {
-            panic!("Expected DatagramSocket response");
-        }
+        let socket = assert_matches!(
+            response,
+            fposix_socket::ProviderDatagramSocketResponse::DatagramSocket(socket) => socket
+        )
         .into_proxy();
 
         // With a registered network, the mark should be set to the expected mark.
@@ -666,7 +706,7 @@ async fn integration(should_set_default: bool, expected_mark: OptionalUint32) ->
         let locked_marks = marks.lock().await;
         assert_eq!(locked_marks.len(), 4);
         let first_mark = locked_marks[3].0.lock().await;
-        assert_eq!(*first_mark, expected_mark)
+        assert_eq!(*first_mark, expected_mark);
     }
 
     {
@@ -678,23 +718,18 @@ async fn integration(should_set_default: bool, expected_mark: OptionalUint32) ->
             .await?
             .map_err(|e| anyhow!("Could not get socket: {e:?}"))?;
 
-        let socket =
-            if let fposix_socket::ProviderDatagramSocketResponse::SynchronousDatagramSocket(
-                socket,
-            ) = response
-            {
-                socket
-            } else {
-                panic!("Expected SynchronousDatagramSocket response");
-            }
-            .into_proxy();
+        let socket = assert_matches!(
+            response,
+            fposix_socket::ProviderDatagramSocketResponse::SynchronousDatagramSocket(socket) => socket
+        )
+        .into_proxy();
 
         // With a registered network, the mark should be set to the expected mark.
         assert_eq!(socket.get_mark(MarkDomain::Mark1).await?, Ok(expected_mark));
         let locked_marks = marks.lock().await;
         assert_eq!(locked_marks.len(), 5);
         let first_mark = locked_marks[4].0.lock().await;
-        assert_eq!(*first_mark, expected_mark)
+        assert_eq!(*first_mark, expected_mark);
     }
 
     {
@@ -712,7 +747,7 @@ async fn integration(should_set_default: bool, expected_mark: OptionalUint32) ->
         let locked_marks = marks.lock().await;
         assert_eq!(locked_marks.len(), 6);
         let first_mark = locked_marks[5].0.lock().await;
-        assert_eq!(*first_mark, expected_mark)
+        assert_eq!(*first_mark, expected_mark);
     }
 
     // When the network is set as default, it must be unset as default prior to
@@ -744,51 +779,23 @@ async fn integration(should_set_default: bool, expected_mark: OptionalUint32) ->
     }
 
     if should_set_default {
-        check_until(
-            zx::MonotonicDuration::from_seconds(1).after_now(),
-            || async { default_network_updates.lock().await.clone() },
-            vec![
-                NetworkRegistryRequest::Add {
-                    network: fnp_socketproxy::Network {
-                        network_id: Some(1),
-                        info: Some(fnp_socketproxy::NetworkInfo::Starnix(
-                            fnp_socketproxy::StarnixNetworkInfo {
-                                mark: Some(123),
-                                ..Default::default()
-                            },
-                        )),
-                        dns_servers: Some(Default::default()),
-                        ..Default::default()
-                    },
-                },
+        test_realm
+            .mock_netcfg
+            .wait_for_forwarded_requests(&[
+                NetworkRegistryRequest::Add { network: create_starnix_network(1, 123) },
                 NetworkRegistryRequest::SetDefault { network_id: Some(1) },
                 NetworkRegistryRequest::SetDefault { network_id: None },
                 NetworkRegistryRequest::Remove { network_id: 1 },
-            ],
-        )
-        .await;
+            ])
+            .await;
     } else {
-        check_until(
-            zx::MonotonicDuration::from_seconds(1).after_now(),
-            || async { default_network_updates.lock().await.clone() },
-            vec![
-                NetworkRegistryRequest::Add {
-                    network: fnp_socketproxy::Network {
-                        network_id: Some(1),
-                        info: Some(fnp_socketproxy::NetworkInfo::Starnix(
-                            fnp_socketproxy::StarnixNetworkInfo {
-                                mark: Some(123),
-                                ..Default::default()
-                            },
-                        )),
-                        dns_servers: Some(Default::default()),
-                        ..Default::default()
-                    },
-                },
+        test_realm
+            .mock_netcfg
+            .wait_for_forwarded_requests(&[
+                NetworkRegistryRequest::Add { network: create_starnix_network(1, 123) },
                 NetworkRegistryRequest::Remove { network_id: 1 },
-            ],
-        )
-        .await;
+            ])
+            .await;
     }
 
     Ok(())
@@ -800,69 +807,13 @@ async fn integration_across_registries() -> Result<(), Error> {
     const STARNIX_NETWORK_MARK: u32 = 123;
     const FUCHSIA_NETWORK_ID: u32 = 2;
 
-    let default_network_updates = Arc::new(Mutex::new(Vec::new()));
-    let marks = Arc::new(Mutex::new(Vec::new()));
-    let builder = RealmBuilder::new().await?;
-    let inner_provider = builder
-        .add_local_child(
-            "inner_provider",
-            {
-                let marks = marks.clone();
-                move |handles: LocalComponentHandles| {
-                    Box::pin(inner_provider_mock(handles, marks.clone()))
-                }
-            },
-            ChildOptions::new(),
-        )
-        .await?;
-    let netcfg = builder
-        .add_local_child(
-            "netcfg",
-            {
-                let default_network_updates = default_network_updates.clone();
-                move |handles: LocalComponentHandles| {
-                    Box::pin(netcfg_mock(handles, default_network_updates.clone()))
-                }
-            },
-            ChildOptions::new().eager(),
-        )
-        .await?;
-    let socket_proxy = builder
-        .add_child("socket_proxy", "#meta/network-socket-proxy.cm", ChildOptions::new().eager())
-        .await?;
-    builder
-        .add_route(
-            Route::new()
-                .capability(Capability::protocol::<fposix_socket::ProviderMarker>())
-                .from(&inner_provider)
-                .to(&socket_proxy),
-        )
-        .await?;
-
-    builder
-        .add_route(
-            Route::new()
-                .capability(Capability::protocol::<fnp_socketproxy::NetworkRegistryMarker>())
-                .from(&netcfg)
-                .to(&socket_proxy),
-        )
-        .await?;
-
-    builder
-        .add_route(
-            Route::new()
-                .capability(Capability::protocol::<fposix_socket::ProviderMarker>())
-                .capability(Capability::protocol::<fnp_socketproxy::StarnixNetworksMarker>())
-                .capability(Capability::protocol::<fnp_socketproxy::FuchsiaNetworksMarker>())
-                .from(&socket_proxy)
-                .to(Ref::parent()),
-        )
-        .await?;
-
-    let realm = builder.build().await?;
-
-    let posix_socket: fposix_socket::ProviderProxy =
-        realm.root.connect_to_protocol_at_exposed_dir().context("While connecting to provider")?;
+    let test_realm = TestRealm::new().await?;
+    let marks = test_realm.marks.clone();
+    let posix_socket: fposix_socket::ProviderProxy = test_realm.connect_to_protocol()?;
+    let starnix_networks: fnp_socketproxy::StarnixNetworksProxy =
+        test_realm.connect_to_protocol()?;
+    let fuchsia_networks: fnp_socketproxy::FuchsiaNetworksProxy =
+        test_realm.connect_to_protocol()?;
 
     {
         let socket = posix_socket
@@ -881,15 +832,6 @@ async fn integration_across_registries() -> Result<(), Error> {
         let first_mark = locked_marks[0].0.lock().await;
         assert_eq!(*first_mark, OptionalUint32::Unset(fposix_socket::Empty));
     }
-
-    let starnix_networks: fnp_socketproxy::StarnixNetworksProxy = realm
-        .root
-        .connect_to_protocol_at_exposed_dir()
-        .context("while connecting to StarnixNetworks")?;
-    let fuchsia_networks: fnp_socketproxy::FuchsiaNetworksProxy = realm
-        .root
-        .connect_to_protocol_at_exposed_dir()
-        .context("while connecting to FuchsiaNetworks")?;
 
     // Add a network to the Starnix and Fuchsia registries.
     starnix_networks
@@ -924,7 +866,7 @@ async fn integration_across_registries() -> Result<(), Error> {
         let locked_marks = marks.lock().await;
         assert_eq!(locked_marks.len(), 2);
         let first_mark = locked_marks[1].0.lock().await;
-        assert_eq!(*first_mark, OptionalUint32::Value(STARNIX_NETWORK_MARK))
+        assert_eq!(*first_mark, OptionalUint32::Value(STARNIX_NETWORK_MARK));
     }
 
     // Set the Fuchsia network as default in the Fuchsia registry to use the
@@ -951,7 +893,7 @@ async fn integration_across_registries() -> Result<(), Error> {
         let locked_marks = marks.lock().await;
         assert_eq!(locked_marks.len(), 3);
         let first_mark = locked_marks[2].0.lock().await;
-        assert_eq!(*first_mark, OptionalUint32::Unset(fposix_socket::Empty))
+        assert_eq!(*first_mark, OptionalUint32::Unset(fposix_socket::Empty));
     }
 
     // When the Fuchsia network is unset, the mark should fallback to the
@@ -979,90 +921,45 @@ async fn integration_across_registries() -> Result<(), Error> {
         assert_eq!(*first_mark, OptionalUint32::Value(STARNIX_NETWORK_MARK));
     }
 
-    check_until(
-        zx::MonotonicDuration::from_seconds(1).after_now(),
-        || async { default_network_updates.lock().await.clone() },
-        vec![
+    test_realm
+        .mock_netcfg
+        .wait_for_forwarded_requests(&[
             NetworkRegistryRequest::Add {
-                network: fnp_socketproxy::Network {
-                    network_id: Some(STARNIX_NETWORK_ID.into()),
-                    info: Some(fnp_socketproxy::NetworkInfo::Starnix(
-                        fnp_socketproxy::StarnixNetworkInfo {
-                            mark: Some(STARNIX_NETWORK_MARK),
-                            ..Default::default()
-                        },
-                    )),
-                    dns_servers: Some(Default::default()),
-                    ..Default::default()
-                },
+                network: create_starnix_network(STARNIX_NETWORK_ID, STARNIX_NETWORK_MARK),
             },
-            NetworkRegistryRequest::SetDefault { network_id: Some(STARNIX_NETWORK_ID.into()) },
-        ],
-    )
-    .await;
+            NetworkRegistryRequest::SetDefault { network_id: Some(STARNIX_NETWORK_ID) },
+        ])
+        .await;
 
     Ok(())
 }
 
 #[fuchsia::test]
 async fn test_socket_proxy_no_double_connect() -> Result<(), Error> {
-    let builder = RealmBuilder::new().await?;
-    let netcfg = builder
-        .add_local_child(
-            "netcfg",
-            {
-                let default_network_updates = Arc::new(Mutex::new(Vec::new()));
-                move |handles: LocalComponentHandles| {
-                    Box::pin(netcfg_mock(handles, default_network_updates.clone()))
-                }
-            },
-            ChildOptions::new().eager(),
-        )
-        .await?;
-    let socket_proxy = builder
-        .add_child("socket_proxy", "#meta/network-socket-proxy.cm", ChildOptions::new().eager())
-        .await?;
-
-    builder
-        .add_route(
-            Route::new()
-                .capability(Capability::protocol::<fnp_socketproxy::NetworkRegistryMarker>())
-                .from(&netcfg)
-                .to(&socket_proxy),
-        )
-        .await?;
-    builder
-        .add_route(
-            Route::new()
-                .capability(Capability::protocol::<fnp_socketproxy::StarnixNetworksMarker>())
-                .from(&socket_proxy)
-                .to(Ref::parent()),
-        )
-        .await?;
-
-    let realm = builder.build().await?;
+    let test_realm = TestRealm::new().await?;
 
     // Make two simultaneous connections to StarnixNetworksMarker
-    let starnix_networks: fnp_socketproxy::StarnixNetworksProxy = realm
-        .root
-        .connect_to_protocol_at_exposed_dir()
-        .context("While connecting to StarnixNetworks 1")?;
+    let starnix_networks: fnp_socketproxy::StarnixNetworksProxy =
+        test_realm.connect_to_protocol()?;
     // The first connection should work fine
     assert_eq!(
         starnix_networks.remove(1).await?,
         Err(fnp_socketproxy::NetworkRegistryRemoveError::NotFound)
     );
 
-    let starnix_networks2: fnp_socketproxy::StarnixNetworksProxy = realm
-        .root
-        .connect_to_protocol_at_exposed_dir()
-        .context("While connecting to StarnixNetworks 2")?;
+    let starnix_networks2: fnp_socketproxy::StarnixNetworksProxy =
+        test_realm.connect_to_protocol()?;
     // The second connection should fail
     assert_matches!(
         starnix_networks2.remove(1).await,
         Err(fidl::Error::ClientChannelClosed { epitaph, .. })
             if epitaph == fidl::Status::ACCESS_DENIED
     );
+
+    test_realm
+        .mock_netcfg
+        .wait_for_forwarded_requests(&[NetworkRegistryRequest::Remove { network_id: 1 }])
+        .await;
 
     Ok(())
 }
