@@ -84,6 +84,8 @@ mod tests {
         assert_eq!(current_level, expect_level);
     }
 
+    /// Verifies that attempting to add an element without providing an `element_runner` channel
+    /// returns an `AddElementError::Invalid` error.
     #[fuchsia::test]
     fn test_element_runner_invalid() -> Result<()> {
         let mut executor = fasync::TestExecutor::new();
@@ -109,6 +111,9 @@ mod tests {
         Ok(())
     }
 
+    /// Verifies direct parent-child dependency handling: leasing a child powers up its parent
+    /// first, then powers up the child to satisfy the lease, and dropping the lease steps both down
+    /// in reverse order.
     #[fuchsia::test]
     fn test_direct() -> Result<()> {
         let mut executor = fasync::TestExecutor::new();
@@ -334,6 +339,8 @@ mod tests {
         Ok(())
     }
 
+    /// Verifies dynamically adding dependencies to an element: inactive dependencies take no
+    /// immediate effect, while active dependencies power up the required element before completing.
     #[fuchsia::test]
     fn test_add_dependency() -> Result<()> {
         let mut executor = fasync::TestExecutor::new();
@@ -497,6 +504,8 @@ mod tests {
         Ok(())
     }
 
+    /// Verifies that `Topology.Lease` blocks until the requested lease dependencies are satisfied
+    /// when `should_return_pending_lease` is false.
     #[fuchsia::test]
     fn test_topology_lease_wait_for_satisfied() -> Result<()> {
         let mut executor = fasync::TestExecutor::new();
@@ -578,6 +587,8 @@ mod tests {
         Ok(())
     }
 
+    /// Verifies that `Topology.Lease` returns immediately with a pending lease when
+    /// `should_return_pending_lease` is true, and signals satisfaction once dependencies are met.
     #[fuchsia::test]
     fn test_topology_lease_return_pending() -> Result<()> {
         let mut executor = fasync::TestExecutor::new();
@@ -667,6 +678,9 @@ mod tests {
         Ok(())
     }
 
+    /// Verifies transitive dependency propagation across a multi-element chain (A <- B <- C):
+    /// elements power up sequentially from root to leaf and step down in reverse order when the
+    /// lease is dropped.
     #[fuchsia::test]
     fn test_transitive() -> Result<()> {
         let mut executor = fasync::TestExecutor::new();
@@ -1035,6 +1049,9 @@ mod tests {
         Ok(())
     }
 
+    /// Verifies a shared parent/grandparent dependency hierarchy with multiple child elements
+    /// requiring different levels, ensuring intermediate and root elements scale to the maximum
+    /// required level and step down appropriately as leases are dropped.
     #[fuchsia::test]
     fn test_shared() -> Result<()> {
         // Create a topology of two child elements (C1 & C2) with a shared
@@ -1528,6 +1545,8 @@ mod tests {
         Ok(())
     }
 
+    /// Verifies validation and error handling when adding elements, including unauthorized
+    /// dependency tokens and invalid required power levels.
     #[fuchsia::test]
     async fn test_add_element_errors() -> Result<(), Error> {
         let realm = build_power_broker_realm().await?;
@@ -1637,6 +1656,8 @@ mod tests {
         Ok(())
     }
 
+    /// Verifies that dropping an element's `ElementControl` channel removes the element and closes
+    /// any associated `Status` channels.
     #[fuchsia::test]
     async fn test_closing_element_control_closes_status() -> Result<(), Error> {
         let realm = build_power_broker_realm().await?;
@@ -1671,6 +1692,8 @@ mod tests {
         Ok(())
     }
 
+    /// Verifies that `Status.WatchPowerLevel` accurately observes power level changes as leases
+    /// are acquired and dropped.
     #[fuchsia::test]
     fn test_status_watch_power_level() -> Result<(), Error> {
         let mut executor = fasync::TestExecutor::new();
@@ -1761,6 +1784,8 @@ mod tests {
         Ok(())
     }
 
+    /// Verifies that an element added with an `initial_lease_token` acquires a pending initial
+    /// lease that becomes satisfied once its dependencies and own power level are satisfied.
     #[fuchsia::test]
     fn test_add_element_initial_lease() -> Result<()> {
         let mut executor = fasync::TestExecutor::new();
@@ -1900,6 +1925,9 @@ mod tests {
         Ok(())
     }
 
+    /// Verifies `remove_with_required_element` dependency behavior: when a parent element is
+    /// removed, removable dependent leases remain satisfied while unremovable dependent leases
+    /// transition to pending.
     #[fuchsia::test]
     fn test_dependency_removal() -> Result<()> {
         let mut executor = fasync::TestExecutor::new();
@@ -2258,6 +2286,804 @@ mod tests {
                 lease_default_unremovable.watch_status(LeaseStatus::Unknown).await.unwrap(),
                 LeaseStatus::Pending
             );
+        });
+
+        Ok(())
+    }
+
+    /// Verifies that higher levels implicitly requiring multiple lower-level dependencies
+    /// correctly activate all of them.
+    #[fuchsia::test]
+    fn test_cumulative_implicit_dependencies() -> Result<()> {
+        let mut executor = fasync::TestExecutor::new();
+        let realm = executor.run_singlethreaded(async { build_power_broker_realm().await })?;
+        let topology: TopologyProxy = realm.root.connect_to_protocol_at_exposed_dir()?;
+
+        // Element B: valid levels [0, 1]
+        let element_b_token = zx::Event::create();
+        let (b_runner_client, b_runner_server) = create_endpoints::<ElementRunnerMarker>();
+        let mut b_runner = b_runner_server.into_stream();
+        let (b_control, b_control_server) = create_proxy::<ElementControlMarker>();
+
+        // Element C: valid levels [0, 1]
+        let element_c_token = zx::Event::create();
+        let (c_runner_client, c_runner_server) = create_endpoints::<ElementRunnerMarker>();
+        let mut c_runner = c_runner_server.into_stream();
+        let (c_control, c_control_server) = create_proxy::<ElementControlMarker>();
+
+        // Element A: valid levels [0, 1, 2], A(1) -> B(1), A(2) -> C(1)
+        let (a_runner_client, a_runner_server) = create_endpoints::<ElementRunnerMarker>();
+        let mut a_runner = a_runner_server.into_stream();
+        let (a_lessor, a_lessor_server) = create_proxy::<LessorMarker>();
+        let (a_control, a_control_server) = create_proxy::<ElementControlMarker>();
+
+        executor.run_singlethreaded(async {
+            topology
+                .add_element(ElementSchema {
+                    element_name: Some("B".into()),
+                    initial_current_level: Some(0),
+                    valid_levels: Some(vec![0, 1]),
+                    element_control: Some(b_control_server),
+                    element_runner: Some(b_runner_client),
+                    ..Default::default()
+                })
+                .await
+                .unwrap()
+                .unwrap();
+            b_control
+                .register_dependency_token(
+                    element_b_token.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap(),
+                )
+                .await
+                .unwrap()
+                .unwrap();
+
+            topology
+                .add_element(ElementSchema {
+                    element_name: Some("C".into()),
+                    initial_current_level: Some(0),
+                    valid_levels: Some(vec![0, 1]),
+                    element_control: Some(c_control_server),
+                    element_runner: Some(c_runner_client),
+                    ..Default::default()
+                })
+                .await
+                .unwrap()
+                .unwrap();
+            c_control
+                .register_dependency_token(
+                    element_c_token.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap(),
+                )
+                .await
+                .unwrap()
+                .unwrap();
+
+            topology
+                .add_element(ElementSchema {
+                    element_name: Some("A".into()),
+                    initial_current_level: Some(0),
+                    valid_levels: Some(vec![0, 1, 2]),
+                    dependencies: Some(vec![
+                        LevelDependency {
+                            dependent_level: Some(1),
+                            requires_token: Some(
+                                element_b_token.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap(),
+                            ),
+                            requires_level_by_preference: Some(vec![1]),
+                            ..Default::default()
+                        },
+                        LevelDependency {
+                            dependent_level: Some(2),
+                            requires_token: Some(
+                                element_c_token.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap(),
+                            ),
+                            requires_level_by_preference: Some(vec![1]),
+                            ..Default::default()
+                        },
+                    ]),
+                    lessor_channel: Some(a_lessor_server),
+                    element_control: Some(a_control_server),
+                    element_runner: Some(a_runner_client),
+                    ..Default::default()
+                })
+                .await
+                .unwrap()
+                .unwrap();
+        });
+
+        let b_status = {
+            let (client, server) = create_proxy::<StatusMarker>();
+            b_control.open_status_channel(server).unwrap();
+            client
+        };
+        let c_status = {
+            let (client, server) = create_proxy::<StatusMarker>();
+            c_control.open_status_channel(server).unwrap();
+            client
+        };
+        let a_status = {
+            let (client, server) = create_proxy::<StatusMarker>();
+            a_control.open_status_channel(server).unwrap();
+            client
+        };
+
+        // Initialize levels to 0.
+        executor.run_singlethreaded(async {
+            let b_init =
+                assert_set_level_required_eq_and_return_responder(b_runner.try_next(), 0).await;
+            let c_init =
+                assert_set_level_required_eq_and_return_responder(c_runner.try_next(), 0).await;
+            let a_init =
+                assert_set_level_required_eq_and_return_responder(a_runner.try_next(), 0).await;
+            b_init.send().unwrap();
+            c_init.send().unwrap();
+            a_init.send().unwrap();
+            assert_eq!(b_status.watch_power_level().await.unwrap(), Ok(0));
+            assert_eq!(c_status.watch_power_level().await.unwrap(), Ok(0));
+            assert_eq!(a_status.watch_power_level().await.unwrap(), Ok(0));
+        });
+
+        // Acquire lease for A at level 2.
+        // A@2 implies A@1, so BOTH B@1 and C@1 must be requested.
+        let lease_a2 = executor
+            .run_singlethreaded(async { a_lessor.lease(2).await.unwrap().unwrap().into_proxy() });
+
+        let b_resp = executor.run_singlethreaded(async {
+            assert_set_level_required_eq_and_return_responder(b_runner.try_next(), 1).await
+        });
+        let c_resp = executor.run_singlethreaded(async {
+            assert_set_level_required_eq_and_return_responder(c_runner.try_next(), 1).await
+        });
+        let mut a_runner_next = a_runner.try_next();
+        assert!(executor.run_until_stalled(&mut a_runner_next).is_pending());
+
+        // Update B and C to 1.
+        executor.run_singlethreaded(async {
+            b_resp.send().unwrap();
+            c_resp.send().unwrap();
+            assert_eq!(b_status.watch_power_level().await.unwrap(), Ok(1));
+            assert_eq!(c_status.watch_power_level().await.unwrap(), Ok(1));
+        });
+
+        // Now A should receive SetLevel(2).
+        let a_resp = executor.run_singlethreaded(async {
+            assert_set_level_required_eq_and_return_responder(a_runner_next, 2).await
+        });
+        executor.run_singlethreaded(async {
+            a_resp.send().unwrap();
+            assert_eq!(a_status.watch_power_level().await.unwrap(), Ok(2));
+            assert_eq!(
+                lease_a2.watch_status(LeaseStatus::Unknown).await.unwrap(),
+                LeaseStatus::Satisfied
+            );
+        });
+
+        // Acquire lease for A at level 1, and drop lease for level 2.
+        let lease_a1 = executor
+            .run_singlethreaded(async { a_lessor.lease(1).await.unwrap().unwrap().into_proxy() });
+        drop(lease_a2);
+
+        // A should receive SetLevel(1), C should receive SetLevel(0) (once A is at 1),
+        // but B must remain at 1!
+        let a_resp = executor.run_singlethreaded(async {
+            assert_set_level_required_eq_and_return_responder(a_runner.try_next(), 1).await
+        });
+        executor.run_singlethreaded(async {
+            a_resp.send().unwrap();
+            assert_eq!(a_status.watch_power_level().await.unwrap(), Ok(1));
+            assert_eq!(
+                lease_a1.watch_status(LeaseStatus::Unknown).await.unwrap(),
+                LeaseStatus::Satisfied
+            );
+        });
+
+        // Now C should step down to 0 because A is at 1 (which only requires B).
+        let c_resp = executor.run_singlethreaded(async {
+            assert_set_level_required_eq_and_return_responder(c_runner.try_next(), 0).await
+        });
+        executor.run_singlethreaded(async {
+            c_resp.send().unwrap();
+            assert_eq!(c_status.watch_power_level().await.unwrap(), Ok(0));
+        });
+
+        // B should still be at 1.
+        let mut b_runner_next = b_runner.try_next();
+        assert!(executor.run_until_stalled(&mut b_runner_next).is_pending());
+
+        // Finally, drop lease_a1.
+        drop(lease_a1);
+        let a_resp = executor.run_singlethreaded(async {
+            assert_set_level_required_eq_and_return_responder(a_runner.try_next(), 0).await
+        });
+        executor.run_singlethreaded(async {
+            a_resp.send().unwrap();
+            assert_eq!(a_status.watch_power_level().await.unwrap(), Ok(0));
+        });
+
+        // B should step down to 0 now that A is at 0.
+        let b_resp = executor.run_singlethreaded(async {
+            assert_set_level_required_eq_and_return_responder(b_runner.try_next(), 0).await
+        });
+        executor.run_singlethreaded(async {
+            b_resp.send().unwrap();
+            assert_eq!(b_status.watch_power_level().await.unwrap(), Ok(0));
+        });
+
+        Ok(())
+    }
+
+    /// Verifies that dropping an intermediate element in a dependency chain correctly transitions
+    /// dependent leases to pending and steps down active elements.
+    #[fuchsia::test]
+    fn test_transitive_intermediate_element_removal() -> Result<()> {
+        let mut executor = fasync::TestExecutor::new();
+        let realm = executor.run_singlethreaded(async { build_power_broker_realm().await })?;
+        let topology: TopologyProxy = realm.root.connect_to_protocol_at_exposed_dir()?;
+
+        // A <- B <- C
+        let element_a_token = zx::Event::create();
+        let (a_runner_client, a_runner_server) = create_endpoints::<ElementRunnerMarker>();
+        let mut a_runner = a_runner_server.into_stream();
+        let (a_control, a_control_server) = create_proxy::<ElementControlMarker>();
+
+        let element_b_token = zx::Event::create();
+        let (b_runner_client, b_runner_server) = create_endpoints::<ElementRunnerMarker>();
+        let mut b_runner = b_runner_server.into_stream();
+        let (b_control, b_control_server) = create_proxy::<ElementControlMarker>();
+
+        let (c_runner_client, c_runner_server) = create_endpoints::<ElementRunnerMarker>();
+        let mut c_runner = c_runner_server.into_stream();
+        let (c_lessor, c_lessor_server) = create_proxy::<LessorMarker>();
+        let (c_control, c_control_server) = create_proxy::<ElementControlMarker>();
+
+        executor.run_singlethreaded(async {
+            topology
+                .add_element(ElementSchema {
+                    element_name: Some("A".into()),
+                    initial_current_level: Some(0),
+                    valid_levels: Some(vec![0, 1]),
+                    element_control: Some(a_control_server),
+                    element_runner: Some(a_runner_client),
+                    ..Default::default()
+                })
+                .await
+                .unwrap()
+                .unwrap();
+            a_control
+                .register_dependency_token(
+                    element_a_token.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap(),
+                )
+                .await
+                .unwrap()
+                .unwrap();
+
+            topology
+                .add_element(ElementSchema {
+                    element_name: Some("B".into()),
+                    initial_current_level: Some(0),
+                    valid_levels: Some(vec![0, 1]),
+                    dependencies: Some(vec![LevelDependency {
+                        dependent_level: Some(1),
+                        requires_token: Some(
+                            element_a_token.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap(),
+                        ),
+                        requires_level_by_preference: Some(vec![1]),
+                        ..Default::default()
+                    }]),
+                    element_control: Some(b_control_server),
+                    element_runner: Some(b_runner_client),
+                    ..Default::default()
+                })
+                .await
+                .unwrap()
+                .unwrap();
+            b_control
+                .register_dependency_token(
+                    element_b_token.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap(),
+                )
+                .await
+                .unwrap()
+                .unwrap();
+
+            topology
+                .add_element(ElementSchema {
+                    element_name: Some("C".into()),
+                    initial_current_level: Some(0),
+                    valid_levels: Some(vec![0, 1]),
+                    dependencies: Some(vec![LevelDependency {
+                        dependent_level: Some(1),
+                        requires_token: Some(
+                            element_b_token.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap(),
+                        ),
+                        requires_level_by_preference: Some(vec![1]),
+                        ..Default::default()
+                    }]),
+                    lessor_channel: Some(c_lessor_server),
+                    element_control: Some(c_control_server),
+                    element_runner: Some(c_runner_client),
+                    ..Default::default()
+                })
+                .await
+                .unwrap()
+                .unwrap();
+        });
+
+        let a_status = {
+            let (client, server) = create_proxy::<StatusMarker>();
+            a_control.open_status_channel(server).unwrap();
+            client
+        };
+        let b_status = {
+            let (client, server) = create_proxy::<StatusMarker>();
+            b_control.open_status_channel(server).unwrap();
+            client
+        };
+        let c_status = {
+            let (client, server) = create_proxy::<StatusMarker>();
+            c_control.open_status_channel(server).unwrap();
+            client
+        };
+
+        // Initialize levels to 0.
+        executor.run_singlethreaded(async {
+            let a_init =
+                assert_set_level_required_eq_and_return_responder(a_runner.try_next(), 0).await;
+            let b_init =
+                assert_set_level_required_eq_and_return_responder(b_runner.try_next(), 0).await;
+            let c_init =
+                assert_set_level_required_eq_and_return_responder(c_runner.try_next(), 0).await;
+            a_init.send().unwrap();
+            b_init.send().unwrap();
+            c_init.send().unwrap();
+            assert_eq!(a_status.watch_power_level().await.unwrap(), Ok(0));
+            assert_eq!(b_status.watch_power_level().await.unwrap(), Ok(0));
+            assert_eq!(c_status.watch_power_level().await.unwrap(), Ok(0));
+        });
+
+        // Lease C at 1.
+        let lease = executor
+            .run_singlethreaded(async { c_lessor.lease(1).await.unwrap().unwrap().into_proxy() });
+
+        // Power up A -> B -> C.
+        let a_resp = executor.run_singlethreaded(async {
+            assert_set_level_required_eq_and_return_responder(a_runner.try_next(), 1).await
+        });
+        executor.run_singlethreaded(async {
+            a_resp.send().unwrap();
+            assert_eq!(a_status.watch_power_level().await.unwrap(), Ok(1));
+        });
+
+        let b_resp = executor.run_singlethreaded(async {
+            assert_set_level_required_eq_and_return_responder(b_runner.try_next(), 1).await
+        });
+        executor.run_singlethreaded(async {
+            b_resp.send().unwrap();
+            assert_eq!(b_status.watch_power_level().await.unwrap(), Ok(1));
+        });
+
+        let c_resp = executor.run_singlethreaded(async {
+            assert_set_level_required_eq_and_return_responder(c_runner.try_next(), 1).await
+        });
+        executor.run_singlethreaded(async {
+            c_resp.send().unwrap();
+            assert_eq!(c_status.watch_power_level().await.unwrap(), Ok(1));
+            assert_eq!(
+                lease.watch_status(LeaseStatus::Unknown).await.unwrap(),
+                LeaseStatus::Satisfied
+            );
+        });
+
+        // Now remove intermediate element B by dropping b_control.
+        drop(b_control);
+
+        // B's status channel closes.
+        executor.run_singlethreaded(async {
+            b_status.as_channel().on_closed().await.unwrap();
+        });
+
+        // C's lease should become Pending because B is gone.
+        executor.run_singlethreaded(async {
+            assert_eq!(
+                lease.watch_status(LeaseStatus::Satisfied).await.unwrap(),
+                LeaseStatus::Pending
+            );
+        });
+
+        // C receives SetLevel(0) and steps down.
+        let c_resp = executor.run_singlethreaded(async {
+            assert_set_level_required_eq_and_return_responder(c_runner.try_next(), 0).await
+        });
+        executor.run_singlethreaded(async {
+            c_resp.send().unwrap();
+            assert_eq!(c_status.watch_power_level().await.unwrap(), Ok(0));
+        });
+
+        // A receives SetLevel(0) and steps down because B is no longer requiring A.
+        let a_resp = executor.run_singlethreaded(async {
+            assert_set_level_required_eq_and_return_responder(a_runner.try_next(), 0).await
+        });
+        executor.run_singlethreaded(async {
+            a_resp.send().unwrap();
+            assert_eq!(a_status.watch_power_level().await.unwrap(), Ok(0));
+        });
+
+        Ok(())
+    }
+
+    /// Verifies that a lease requiring multiple elements is only satisfied when all requirements
+    /// are met.
+    #[fuchsia::test]
+    fn test_direct_multi_element_lease() -> Result<()> {
+        let mut executor = fasync::TestExecutor::new();
+        let realm = executor.run_singlethreaded(async { build_power_broker_realm().await })?;
+        let topology: TopologyProxy = realm.root.connect_to_protocol_at_exposed_dir()?;
+
+        let token_a = zx::Event::create();
+        let (a_runner_client, a_runner_server) = create_endpoints::<ElementRunnerMarker>();
+        let mut a_runner = a_runner_server.into_stream();
+        let (a_control, a_control_server) = create_proxy::<ElementControlMarker>();
+
+        let token_b = zx::Event::create();
+        let (b_runner_client, b_runner_server) = create_endpoints::<ElementRunnerMarker>();
+        let mut b_runner = b_runner_server.into_stream();
+        let (b_control, b_control_server) = create_proxy::<ElementControlMarker>();
+
+        executor.run_singlethreaded(async {
+            topology
+                .add_element(ElementSchema {
+                    element_name: Some("A".into()),
+                    initial_current_level: Some(0),
+                    valid_levels: Some(vec![0, 1]),
+                    element_control: Some(a_control_server),
+                    element_runner: Some(a_runner_client),
+                    ..Default::default()
+                })
+                .await
+                .unwrap()
+                .unwrap();
+            a_control
+                .register_dependency_token(
+                    token_a.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap(),
+                )
+                .await
+                .unwrap()
+                .unwrap();
+
+            topology
+                .add_element(ElementSchema {
+                    element_name: Some("B".into()),
+                    initial_current_level: Some(0),
+                    valid_levels: Some(vec![0, 1]),
+                    element_control: Some(b_control_server),
+                    element_runner: Some(b_runner_client),
+                    ..Default::default()
+                })
+                .await
+                .unwrap()
+                .unwrap();
+            b_control
+                .register_dependency_token(
+                    token_b.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap(),
+                )
+                .await
+                .unwrap()
+                .unwrap();
+        });
+
+        // Initialize levels to 0.
+        executor.run_singlethreaded(async {
+            let a_init =
+                assert_set_level_required_eq_and_return_responder(a_runner.try_next(), 0).await;
+            let b_init =
+                assert_set_level_required_eq_and_return_responder(b_runner.try_next(), 0).await;
+            a_init.send().unwrap();
+            b_init.send().unwrap();
+        });
+
+        let (lease_token_client, lease_token_server) = zx::EventPair::create();
+
+        // Acquire direct lease with multiple requirements: A@1 and B@1.
+        executor.run_singlethreaded(async {
+            topology
+                .lease(fpb::LeaseSchema {
+                    lease_token: Some(lease_token_server),
+                    lease_name: Some("multi_lease".into()),
+                    dependencies: Some(vec![
+                        fpb::LeaseDependency {
+                            requires_token: Some(token_a),
+                            requires_level: Some(1),
+                            ..Default::default()
+                        },
+                        fpb::LeaseDependency {
+                            requires_token: Some(token_b),
+                            requires_level: Some(1),
+                            ..Default::default()
+                        },
+                    ]),
+                    should_return_pending_lease: Some(true),
+                    ..Default::default()
+                })
+                .await
+                .unwrap()
+                .unwrap();
+        });
+
+        // Lease is pending (not yet satisfied).
+        assert_matches!(
+            lease_token_client.wait_one(
+                zx::Signals::from_bits_truncate(fpb::LEASE_SIGNAL_SATISFIED),
+                zx::MonotonicInstant::INFINITE_PAST,
+            ),
+            zx::WaitResult::TimedOut(_)
+        );
+
+        // A receives SetLevel(1). Update A to 1.
+        let a_resp = executor.run_singlethreaded(async {
+            assert_set_level_required_eq_and_return_responder(a_runner.try_next(), 1).await
+        });
+        a_resp.send().unwrap();
+
+        // Lease is still NOT satisfied because B is not yet 1.
+        assert_matches!(
+            lease_token_client.wait_one(
+                zx::Signals::from_bits_truncate(fpb::LEASE_SIGNAL_SATISFIED),
+                zx::MonotonicInstant::INFINITE_PAST,
+            ),
+            zx::WaitResult::TimedOut(_)
+        );
+
+        // B receives SetLevel(1). Update B to 1.
+        let b_resp = executor.run_singlethreaded(async {
+            assert_set_level_required_eq_and_return_responder(b_runner.try_next(), 1).await
+        });
+        b_resp.send().unwrap();
+
+        // Now the lease should be satisfied!
+        executor.run_singlethreaded(async {
+            fasync::OnSignals::new(
+                &lease_token_client,
+                zx::Signals::from_bits_truncate(fpb::LEASE_SIGNAL_SATISFIED),
+            )
+            .await
+            .unwrap();
+        });
+
+        // Close the lease token to drop the lease.
+        drop(lease_token_client);
+
+        // Both A and B should step down to 0.
+        let a_resp = executor.run_singlethreaded(async {
+            assert_set_level_required_eq_and_return_responder(a_runner.try_next(), 0).await
+        });
+        let b_resp = executor.run_singlethreaded(async {
+            assert_set_level_required_eq_and_return_responder(b_runner.try_next(), 0).await
+        });
+        a_resp.send().unwrap();
+        b_resp.send().unwrap();
+
+        Ok(())
+    }
+
+    /// Verifies that a shared dependency scales to the maximum required level of its active
+    /// dependents and scales down correctly.
+    #[fuchsia::test]
+    fn test_shared_element_different_required_levels() -> Result<()> {
+        let mut executor = fasync::TestExecutor::new();
+        let realm = executor.run_singlethreaded(async { build_power_broker_realm().await })?;
+        let topology: TopologyProxy = realm.root.connect_to_protocol_at_exposed_dir()?;
+
+        // Shared element S with levels [0, 1, 2]
+        let token_s = zx::Event::create();
+        let (s_runner_client, s_runner_server) = create_endpoints::<ElementRunnerMarker>();
+        let mut s_runner = s_runner_server.into_stream();
+        let (s_control, s_control_server) = create_proxy::<ElementControlMarker>();
+
+        // Child C1 with levels [0, 1], C1(1) requires S(1)
+        let (c1_runner_client, c1_runner_server) = create_endpoints::<ElementRunnerMarker>();
+        let mut c1_runner = c1_runner_server.into_stream();
+        let (c1_lessor, c1_lessor_server) = create_proxy::<LessorMarker>();
+        let (c1_control, c1_control_server) = create_proxy::<ElementControlMarker>();
+
+        // Child C2 with levels [0, 1], C2(1) requires S(2)
+        let (c2_runner_client, c2_runner_server) = create_endpoints::<ElementRunnerMarker>();
+        let mut c2_runner = c2_runner_server.into_stream();
+        let (c2_lessor, c2_lessor_server) = create_proxy::<LessorMarker>();
+        let (c2_control, c2_control_server) = create_proxy::<ElementControlMarker>();
+
+        executor.run_singlethreaded(async {
+            topology
+                .add_element(ElementSchema {
+                    element_name: Some("S".into()),
+                    initial_current_level: Some(0),
+                    valid_levels: Some(vec![0, 1, 2]),
+                    element_control: Some(s_control_server),
+                    element_runner: Some(s_runner_client),
+                    ..Default::default()
+                })
+                .await
+                .unwrap()
+                .unwrap();
+            s_control
+                .register_dependency_token(
+                    token_s.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap(),
+                )
+                .await
+                .unwrap()
+                .unwrap();
+
+            topology
+                .add_element(ElementSchema {
+                    element_name: Some("C1".into()),
+                    initial_current_level: Some(0),
+                    valid_levels: Some(vec![0, 1]),
+                    dependencies: Some(vec![LevelDependency {
+                        dependent_level: Some(1),
+                        requires_token: Some(
+                            token_s.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap(),
+                        ),
+                        requires_level_by_preference: Some(vec![1]),
+                        ..Default::default()
+                    }]),
+                    lessor_channel: Some(c1_lessor_server),
+                    element_control: Some(c1_control_server),
+                    element_runner: Some(c1_runner_client),
+                    ..Default::default()
+                })
+                .await
+                .unwrap()
+                .unwrap();
+
+            topology
+                .add_element(ElementSchema {
+                    element_name: Some("C2".into()),
+                    initial_current_level: Some(0),
+                    valid_levels: Some(vec![0, 1]),
+                    dependencies: Some(vec![LevelDependency {
+                        dependent_level: Some(1),
+                        requires_token: Some(
+                            token_s.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap(),
+                        ),
+                        requires_level_by_preference: Some(vec![2]),
+                        ..Default::default()
+                    }]),
+                    lessor_channel: Some(c2_lessor_server),
+                    element_control: Some(c2_control_server),
+                    element_runner: Some(c2_runner_client),
+                    ..Default::default()
+                })
+                .await
+                .unwrap()
+                .unwrap();
+        });
+
+        let s_status = {
+            let (client, server) = create_proxy::<StatusMarker>();
+            s_control.open_status_channel(server).unwrap();
+            client
+        };
+        let c1_status = {
+            let (client, server) = create_proxy::<StatusMarker>();
+            c1_control.open_status_channel(server).unwrap();
+            client
+        };
+        let c2_status = {
+            let (client, server) = create_proxy::<StatusMarker>();
+            c2_control.open_status_channel(server).unwrap();
+            client
+        };
+
+        // Initialize levels to 0.
+        executor.run_singlethreaded(async {
+            let s_init =
+                assert_set_level_required_eq_and_return_responder(s_runner.try_next(), 0).await;
+            let c1_init =
+                assert_set_level_required_eq_and_return_responder(c1_runner.try_next(), 0).await;
+            let c2_init =
+                assert_set_level_required_eq_and_return_responder(c2_runner.try_next(), 0).await;
+            s_init.send().unwrap();
+            c1_init.send().unwrap();
+            c2_init.send().unwrap();
+            assert_eq!(s_status.watch_power_level().await.unwrap(), Ok(0));
+            assert_eq!(c1_status.watch_power_level().await.unwrap(), Ok(0));
+            assert_eq!(c2_status.watch_power_level().await.unwrap(), Ok(0));
+        });
+
+        // Lease C1 at 1. S should receive SetLevel(1).
+        let lease_c1 = executor
+            .run_singlethreaded(async { c1_lessor.lease(1).await.unwrap().unwrap().into_proxy() });
+        let s_resp = executor.run_singlethreaded(async {
+            assert_set_level_required_eq_and_return_responder(s_runner.try_next(), 1).await
+        });
+        executor.run_singlethreaded(async {
+            s_resp.send().unwrap();
+            assert_eq!(s_status.watch_power_level().await.unwrap(), Ok(1));
+        });
+
+        // C1 receives SetLevel(1).
+        let c1_resp = executor.run_singlethreaded(async {
+            assert_set_level_required_eq_and_return_responder(c1_runner.try_next(), 1).await
+        });
+        executor.run_singlethreaded(async {
+            c1_resp.send().unwrap();
+            assert_eq!(c1_status.watch_power_level().await.unwrap(), Ok(1));
+            assert_eq!(
+                lease_c1.watch_status(LeaseStatus::Unknown).await.unwrap(),
+                LeaseStatus::Satisfied
+            );
+        });
+
+        // Now lease C2 at 1. Since C2(1) requires S(2), S should receive SetLevel(2).
+        let lease_c2 = executor
+            .run_singlethreaded(async { c2_lessor.lease(1).await.unwrap().unwrap().into_proxy() });
+        let s_resp = executor.run_singlethreaded(async {
+            assert_set_level_required_eq_and_return_responder(s_runner.try_next(), 2).await
+        });
+        executor.run_singlethreaded(async {
+            s_resp.send().unwrap();
+            assert_eq!(s_status.watch_power_level().await.unwrap(), Ok(2));
+        });
+
+        // C2 receives SetLevel(1).
+        let c2_resp = executor.run_singlethreaded(async {
+            assert_set_level_required_eq_and_return_responder(c2_runner.try_next(), 1).await
+        });
+        executor.run_singlethreaded(async {
+            c2_resp.send().unwrap();
+            assert_eq!(c2_status.watch_power_level().await.unwrap(), Ok(1));
+            assert_eq!(
+                lease_c2.watch_status(LeaseStatus::Unknown).await.unwrap(),
+                LeaseStatus::Satisfied
+            );
+        });
+
+        // Drop Lease C2.
+        drop(lease_c2);
+
+        // C2 steps down to 0.
+        let c2_resp = executor.run_singlethreaded(async {
+            assert_set_level_required_eq_and_return_responder(c2_runner.try_next(), 0).await
+        });
+        executor.run_singlethreaded(async {
+            c2_resp.send().unwrap();
+            assert_eq!(c2_status.watch_power_level().await.unwrap(), Ok(0));
+        });
+
+        // S should step down from 2 to 1 (not to 0, because C1 is still leased).
+        let s_resp = executor.run_singlethreaded(async {
+            assert_set_level_required_eq_and_return_responder(s_runner.try_next(), 1).await
+        });
+        executor.run_singlethreaded(async {
+            s_resp.send().unwrap();
+            assert_eq!(s_status.watch_power_level().await.unwrap(), Ok(1));
+        });
+
+        // Lease C1 is still Satisfied.
+        executor.run_singlethreaded(async {
+            assert_eq!(
+                lease_c1.watch_status(LeaseStatus::Unknown).await.unwrap(),
+                LeaseStatus::Satisfied
+            );
+        });
+
+        // Drop Lease C1.
+        drop(lease_c1);
+
+        // C1 steps down to 0.
+        let c1_resp = executor.run_singlethreaded(async {
+            assert_set_level_required_eq_and_return_responder(c1_runner.try_next(), 0).await
+        });
+        executor.run_singlethreaded(async {
+            c1_resp.send().unwrap();
+            assert_eq!(c1_status.watch_power_level().await.unwrap(), Ok(0));
+        });
+
+        // S steps down from 1 to 0.
+        let s_resp = executor.run_singlethreaded(async {
+            assert_set_level_required_eq_and_return_responder(s_runner.try_next(), 0).await
+        });
+        executor.run_singlethreaded(async {
+            s_resp.send().unwrap();
+            assert_eq!(s_status.watch_power_level().await.unwrap(), Ok(0));
         });
 
         Ok(())

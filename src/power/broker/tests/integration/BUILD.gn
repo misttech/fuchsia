@@ -9,7 +9,7 @@ import("//build/rust/rustc_binary.gni")
 
 group("integration") {
   testonly = true
-  deps = [ ":power_broker-test" ]
+  deps = [ ":power-broker-integration-test" ]
 }
 
 group("tests") {
@@ -42,7 +42,7 @@ fuchsia_component("test-root") {
   deps = [ ":bin" ]
 }
 
-fuchsia_test_package("power_broker-test") {
+fuchsia_test_package("power-broker-integration-test") {
   test_components = [ ":test-root" ]
   subpackages = [ "//src/power/broker:package" ]
 }
