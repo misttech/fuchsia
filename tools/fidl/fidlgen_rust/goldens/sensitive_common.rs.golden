@@ -36,7 +36,7 @@ impl fidl::Persistable for NonSensitiveStruct {}
 impl std::fmt::Debug for NonSensitiveStruct {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("NonSensitiveStruct")
-            .field("sensitive_field", &fidl::marker::RedactedDebug)
+            .field("sensitive_field", &fidl::marker::SensitiveDebug(&self.sensitive_field))
             .field("sensitive_struct_field", &self.sensitive_struct_field)
             .finish()
     }
@@ -51,7 +51,9 @@ pub struct SensitiveStruct {
 impl fidl::Persistable for SensitiveStruct {}
 impl std::fmt::Debug for SensitiveStruct {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "<REDACTED>")
+        f.write_str("SENSITIVE{")?;
+        f.debug_struct("SensitiveStruct").field("field", &self.field).finish()?;
+        f.write_str("}")
     }
 }
 
@@ -71,7 +73,7 @@ impl std::fmt::Debug for NonSensitiveTable {
         f.debug_struct("NonSensitiveTable")
             .field(
                 "sensitive_field",
-                &self.sensitive_field.as_ref().map(|_| fidl::marker::RedactedDebug),
+                &self.sensitive_field.as_ref().map(fidl::marker::SensitiveDebug),
             )
             .field("sensitive_struct_field", &self.sensitive_struct_field)
             .field("__source_breaking", &self.__source_breaking)
@@ -91,7 +93,12 @@ impl fidl::Persistable for SensitiveTable {}
 
 impl std::fmt::Debug for SensitiveTable {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "<REDACTED>")
+        f.write_str("SENSITIVE{")?;
+        f.debug_struct("SensitiveTable")
+            .field("field", &self.field)
+            .field("__source_breaking", &self.__source_breaking)
+            .finish()?;
+        f.write_str("}")
     }
 }
 
@@ -117,8 +124,8 @@ impl fidl::Persistable for NonSensitiveUnion {}
 impl std::fmt::Debug for NonSensitiveUnion {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::SensitiveField(_) => {
-                f.debug_tuple("SensitiveField").field(&fidl::marker::RedactedDebug).finish()
+            Self::SensitiveField(x) => {
+                f.debug_tuple("SensitiveField").field(&fidl::marker::SensitiveDebug(x)).finish()
             }
             Self::SensitiveStructField(x) => {
                 f.debug_tuple("SensitiveStructField").field(x).finish()
@@ -146,7 +153,11 @@ impl fidl::Persistable for SensitiveUnion {}
 
 impl std::fmt::Debug for SensitiveUnion {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "<REDACTED>")
+        f.write_str("SENSITIVE{")?;
+        match self {
+            Self::Field(x) => f.debug_tuple("Field").field(x).finish()?,
+        }
+        f.write_str("}")
     }
 }
 

@@ -222,9 +222,9 @@ or an individual member/field within a layout as containing sensitive or confide
 information (such as credentials or PII).
 
 When placed on a declaration or member, language backends and auditing tools use
-this annotation to redact sensitive values in debugging and diagnostic output
-(such as `Debug` implementations and stream formatting operators) and prevent
-accidental leaks into system logs.
+this annotation to decorate sensitive values with `SENSITIVE{...}` in debugging
+and diagnostic output (such as `Debug` implementations and stream formatting operators)
+to facilitate automated log redaction and auditing.
 
 ## `@transitional` {#transitional}
 

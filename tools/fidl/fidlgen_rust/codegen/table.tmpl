@@ -37,12 +37,19 @@ impl fidl::Serializable for {{ .Name }} {
 impl std::fmt::Debug for {{ .Name }} {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         {{- if .Sensitive }}
-        write!(f, "<REDACTED>")
+        f.write_str("SENSITIVE{")?;
+        f.debug_struct("{{ .Name }}")
+        {{- range .Members }}
+            .field("{{ .Name }}", &self.{{ .Name }})
+        {{- end }}
+            .field("__source_breaking", &self.__source_breaking)
+            .finish()?;
+        f.write_str("}")
         {{- else }}
         f.debug_struct("{{ .Name }}")
         {{- range .Members }}
         {{- if .Sensitive }}
-            .field("{{ .Name }}", &self.{{ .Name }}.as_ref().map(|_| fidl::marker::RedactedDebug))
+            .field("{{ .Name }}", &self.{{ .Name }}.as_ref().map(fidl::marker::SensitiveDebug))
         {{- else }}
             .field("{{ .Name }}", &self.{{ .Name }})
         {{- end }}
