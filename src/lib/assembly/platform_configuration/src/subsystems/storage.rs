@@ -84,18 +84,30 @@ impl DefineSubsystemConfiguration<(&StorageConfig, &StorageToolsConfig, &Recover
         // The filename "zxcrypt" is used for legacy reasons.
         let data_encryption_config_path = gendir.join("zxcrypt");
 
-        if context.board_config.filesystems.keymint_enabled {
+        // Use "null" encryption if:
+        // 1. The filesystem image runs entirely out of an ephemeral ramdisk (such as
+        //    recovery.zbi), where data only exists in volatile RAM and hardware keys
+        //    must not be allocated or sealed.
+        // 2. The feature set level is not Standard (e.g. Utility/Bootstrap/Embeddable),
+        //    because non-Standard builds do not include the userland KeyMint service
+        //    stack or TEE realm in `#core` (see `tee.rs`).
+        let policy = if storage_config.filesystems.image_mode == FilesystemImageMode::Ramdisk
+            || *context.feature_set_level != FeatureSetLevel::Standard
+        {
+            "null"
+        } else if context.board_config.filesystems.keymint_enabled {
             ensure!(
                 context.board_config.provides_feature(BoardFeature::Keymint),
                 "fuchsia::keymint is not provided by the board, can't use keymint."
             );
-            std::fs::write(&data_encryption_config_path, "keymint")
+            "keymint"
         } else if context.board_config.provides_feature(BoardFeature::KeysafeTa) {
-            std::fs::write(&data_encryption_config_path, "tee")
+            "tee"
         } else {
-            std::fs::write(&data_encryption_config_path, "null")
-        }
-        .context("Could not write data encryption configuration")?;
+            "null"
+        };
+        std::fs::write(&data_encryption_config_path, policy)
+            .context("Could not write data encryption configuration")?;
 
         let inline_crypto = Config::new_bool(
             context.board_config.provides_feature(BoardFeature::StorageInlineCrypto),
@@ -429,5 +441,99 @@ mod tests {
                 .to_string()
                 .contains("fuchsia::keymint is not provided by the board")
         );
+    }
+
+    #[test]
+    fn test_keymint_ramdisk_image_uses_null_encryption() {
+        let board_config = BoardConfig {
+            provided_features: vec![BoardFeature::Keymint.as_ref().to_string()],
+            filesystems: BoardFilesystemConfig { keymint_enabled: true, ..Default::default() },
+            ..Default::default()
+        };
+        let gendir = tempdir().unwrap();
+        let gendir_path = Utf8Path::from_path(gendir.path()).unwrap();
+        let context = setup_test_context(&board_config, gendir_path);
+        let mut storage_config = StorageConfig::default();
+        storage_config.filesystems.image_mode = FilesystemImageMode::Ramdisk;
+        let mut builder: ConfigurationBuilderImpl = Default::default();
+
+        let result = StorageSubsystemConfig::define_configuration(
+            &context,
+            &(&storage_config, &StorageToolsConfig::default(), &RecoveryConfig::default()),
+            &mut builder,
+        );
+        assert!(result.is_ok());
+        let zxcrypt_content = std::fs::read_to_string(gendir_path.join("zxcrypt")).unwrap();
+        assert_eq!(zxcrypt_content, "null");
+    }
+
+    #[test]
+    fn test_tee_ramdisk_image_uses_null_encryption() {
+        let board_config = BoardConfig {
+            provided_features: vec![BoardFeature::KeysafeTa.as_ref().to_string()],
+            ..Default::default()
+        };
+        let gendir = tempdir().unwrap();
+        let gendir_path = Utf8Path::from_path(gendir.path()).unwrap();
+        let context = setup_test_context(&board_config, gendir_path);
+        let mut storage_config = StorageConfig::default();
+        storage_config.filesystems.image_mode = FilesystemImageMode::Ramdisk;
+        let mut builder: ConfigurationBuilderImpl = Default::default();
+
+        let result = StorageSubsystemConfig::define_configuration(
+            &context,
+            &(&storage_config, &StorageToolsConfig::default(), &RecoveryConfig::default()),
+            &mut builder,
+        );
+        assert!(result.is_ok());
+        let zxcrypt_content = std::fs::read_to_string(gendir_path.join("zxcrypt")).unwrap();
+        assert_eq!(zxcrypt_content, "null");
+    }
+
+    #[test]
+    fn test_keymint_utility_feature_set_level_uses_null_encryption() {
+        let board_config = BoardConfig {
+            provided_features: vec![BoardFeature::Keymint.as_ref().to_string()],
+            filesystems: BoardFilesystemConfig { keymint_enabled: true, ..Default::default() },
+            ..Default::default()
+        };
+        let gendir = tempdir().unwrap();
+        let gendir_path = Utf8Path::from_path(gendir.path()).unwrap();
+        let mut context = setup_test_context(&board_config, gendir_path);
+        context.feature_set_level = &FeatureSetLevel::Utility;
+        let storage_config = StorageConfig::default();
+        let mut builder: ConfigurationBuilderImpl = Default::default();
+
+        let result = StorageSubsystemConfig::define_configuration(
+            &context,
+            &(&storage_config, &StorageToolsConfig::default(), &RecoveryConfig::default()),
+            &mut builder,
+        );
+        assert!(result.is_ok());
+        let zxcrypt_content = std::fs::read_to_string(gendir_path.join("zxcrypt")).unwrap();
+        assert_eq!(zxcrypt_content, "null");
+    }
+
+    #[test]
+    fn test_tee_utility_feature_set_level_uses_null_encryption() {
+        let board_config = BoardConfig {
+            provided_features: vec![BoardFeature::KeysafeTa.as_ref().to_string()],
+            ..Default::default()
+        };
+        let gendir = tempdir().unwrap();
+        let gendir_path = Utf8Path::from_path(gendir.path()).unwrap();
+        let mut context = setup_test_context(&board_config, gendir_path);
+        context.feature_set_level = &FeatureSetLevel::Utility;
+        let storage_config = StorageConfig::default();
+        let mut builder: ConfigurationBuilderImpl = Default::default();
+
+        let result = StorageSubsystemConfig::define_configuration(
+            &context,
+            &(&storage_config, &StorageToolsConfig::default(), &RecoveryConfig::default()),
+            &mut builder,
+        );
+        assert!(result.is_ok());
+        let zxcrypt_content = std::fs::read_to_string(gendir_path.join("zxcrypt")).unwrap();
+        assert_eq!(zxcrypt_content, "null");
     }
 }
