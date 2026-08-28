@@ -45,6 +45,67 @@ pub struct InstantBootTicks(pub i64);
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct DurationMono(pub i64);
 
+impl DurationMono {
+    /// Returns the number of nanoseconds contained by this `Duration`.
+    pub const fn into_nanos(self) -> i64 {
+        self.0
+    }
+
+    /// Returns the total number of whole microseconds contained by this `Duration`.
+    pub const fn into_micros(self) -> i64 {
+        self.0 / 1_000
+    }
+
+    /// Returns the total number of whole milliseconds contained by this `Duration`.
+    pub const fn into_millis(self) -> i64 {
+        self.into_micros() / 1_000
+    }
+
+    /// Returns the total number of whole seconds contained by this `Duration`.
+    pub const fn into_seconds(self) -> i64 {
+        self.into_millis() / 1_000
+    }
+
+    /// Returns the duration as a floating-point value in seconds.
+    pub fn into_seconds_f64(self) -> f64 {
+        self.into_nanos() as f64 / 1_000_000_000f64
+    }
+
+    /// Returns the total number of whole minutes contained by this `Duration`.
+    pub const fn into_minutes(self) -> i64 {
+        self.into_seconds() / 60
+    }
+
+    /// Returns the total number of whole hours contained by this `Duration`.
+    pub const fn into_hours(self) -> i64 {
+        self.into_minutes() / 60
+    }
+
+    pub const fn from_nanos(nanos: i64) -> Self {
+        Self(nanos)
+    }
+
+    pub const fn from_micros(micros: i64) -> Self {
+        Self(micros.saturating_mul(1_000))
+    }
+
+    pub const fn from_millis(millis: i64) -> Self {
+        Self::from_micros(millis.saturating_mul(1_000))
+    }
+
+    pub const fn from_seconds(secs: i64) -> Self {
+        Self::from_millis(secs.saturating_mul(1_000))
+    }
+
+    pub const fn from_minutes(min: i64) -> Self {
+        Self::from_seconds(min.saturating_mul(60))
+    }
+
+    pub const fn from_hours(hours: i64) -> Self {
+        Self::from_minutes(hours.saturating_mul(60))
+    }
+}
+
 /// Monotonic timeline duration in ticks.
 #[repr(transparent)]
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
