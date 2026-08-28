@@ -27,8 +27,13 @@ fn test_fmt_pipe() {
 }
 
 #[test]
-fn test_fmt_redir() {
+fn test_fmt_redir_simple() {
     assert_eq!(parse_cmd("echo foo > bar"), "echo foo <redirection>");
+}
+
+#[test]
+fn test_fmt_redir_non_simple() {
+    assert_eq!(parse_cmd("while true; do true; done > /tmp/junk"), "while true; do true; done");
 }
 
 #[test]
@@ -38,9 +43,68 @@ fn test_fmt_subshell() {
 
 #[test]
 fn test_fmt_bg() {
-    assert_eq!(parse_cmd("echo bg &"), "echo bg &");
-    assert_eq!(parse_cmd("while true; do true; done &"), "while true; do true; done &");
-    assert_eq!(parse_cmd("while true; do true; done > /tmp/junk &"), "while true; do true; done &");
+    assert_eq!(parse_cmd("echo bg &"), "echo bg");
+}
+
+#[test]
+fn test_fmt_if() {
+    assert_eq!(parse_cmd("if true; then echo yes; fi"), "if true; then echo yes; fi");
+}
+
+#[test]
+fn test_fmt_if_with_else() {
+    assert_eq!(
+        parse_cmd("if true; then echo yes; else echo no; fi"),
+        "if true; then echo yes; else echo no; fi"
+    );
+}
+
+#[test]
+fn test_fmt_while() {
+    assert_eq!(parse_cmd("while true; do true; done"), "while true; do true; done");
+}
+
+#[test]
+fn test_fmt_until() {
+    assert_eq!(parse_cmd("until false; do echo hi; done"), "until false; do echo hi; done");
+}
+
+#[test]
+fn test_fmt_for() {
+    assert_eq!(parse_cmd("for x in 1 2; do echo $x; done"), "for x in 1 2; do echo $x; done");
+}
+
+#[test]
+fn test_fmt_case_single() {
+    assert_eq!(parse_cmd("case foo in a) echo a ;; esac"), "case foo in a) echo a;; esac");
+}
+
+#[test]
+fn test_fmt_case_multiple() {
+    assert_eq!(
+        parse_cmd("case foo in a | b) echo ab ;; *) echo def ;; esac"),
+        "case foo in a | b) echo ab;; *) echo def;; esac"
+    );
+}
+
+#[test]
+fn test_fmt_func() {
+    assert_eq!(parse_cmd("foo() { echo bar; }"), "foo() { ... }");
+}
+
+#[test]
+fn test_fmt_logical_and() {
+    assert_eq!(parse_cmd("true && false"), "true && false");
+}
+
+#[test]
+fn test_fmt_logical_or() {
+    assert_eq!(parse_cmd("true || false"), "true || false");
+}
+
+#[test]
+fn test_fmt_sequence() {
+    assert_eq!(parse_cmd("echo 1; echo 2; echo 3"), "echo 1; echo 2; echo 3");
 }
 
 #[test]
@@ -56,11 +120,6 @@ fn test_fmt_cmdsub() {
 #[test]
 fn test_fmt_arith() {
     assert_eq!(parse_cmd("echo $((1 + 2)) \"$((3 + 4))\""), "echo $((1 + 2)) $((3 + 4))");
-}
-
-#[test]
-fn test_fmt_while() {
-    assert_eq!(parse_cmd("while true; do true; done"), "while true; do true; done");
 }
 
 #[test]

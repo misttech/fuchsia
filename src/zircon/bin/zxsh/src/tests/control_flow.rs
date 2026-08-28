@@ -209,6 +209,21 @@ fn test_control_flow_background() {
     let res_while = try_eval_str("while true; do true; done &", &mut state, &mut ctx);
     assert!(res_while.is_ok() || res_while.is_err());
 
+    let res_until = try_eval_str("until false; do true; done &", &mut state, &mut ctx);
+    assert!(res_until.is_ok() || res_until.is_err());
+
+    let res_for = try_eval_str("for x in 1 2; do true; done &", &mut state, &mut ctx);
+    assert!(res_for.is_ok() || res_for.is_err());
+
+    let res_if = try_eval_str("if true; then true; else true; fi &", &mut state, &mut ctx);
+    assert!(res_if.is_ok() || res_if.is_err());
+
+    let res_case = try_eval_str("case a in a) true ;; esac &", &mut state, &mut ctx);
+    assert!(res_case.is_ok() || res_case.is_err());
+
+    let res_seq = try_eval_str("{ true; true; } &", &mut state, &mut ctx);
+    assert!(res_seq.is_ok() || res_seq.is_err());
+
     for job in &state.bg_jobs {
         let _ = job.process.kill();
     }

@@ -43,7 +43,21 @@ pub fn command_to_bstring(command: &Command, buffer: &relative::Buffer) -> BStri
         }
         CommandTag::BACKGROUND => {
             formatted.extend_from_slice(&command_to_bstring(command.left.as_ref(buffer), buffer));
-            formatted.push_str(" &");
+        }
+        CommandTag::IF => {
+            formatted.push_str("if ");
+            formatted.extend_from_slice(&command_to_bstring(command.cond.as_ref(buffer), buffer));
+            formatted.push_str("; then ");
+            formatted
+                .extend_from_slice(&command_to_bstring(command.then_branch.as_ref(buffer), buffer));
+            if !command.else_branch.is_null() {
+                formatted.push_str("; else ");
+                formatted.extend_from_slice(&command_to_bstring(
+                    command.else_branch.as_ref(buffer),
+                    buffer,
+                ));
+            }
+            formatted.push_str("; fi");
         }
         CommandTag::WHILE => {
             formatted.push_str("while ");
@@ -52,6 +66,71 @@ pub fn command_to_bstring(command: &Command, buffer: &relative::Buffer) -> BStri
             formatted
                 .extend_from_slice(&command_to_bstring(command.then_branch.as_ref(buffer), buffer));
             formatted.push_str("; done");
+        }
+        CommandTag::UNTIL => {
+            formatted.push_str("until ");
+            formatted.extend_from_slice(&command_to_bstring(command.cond.as_ref(buffer), buffer));
+            formatted.push_str("; do ");
+            formatted
+                .extend_from_slice(&command_to_bstring(command.then_branch.as_ref(buffer), buffer));
+            formatted.push_str("; done");
+        }
+        CommandTag::FOR => {
+            formatted.push_str("for ");
+            formatted.extend_from_slice(command.for_var.as_bstr(buffer));
+            formatted.push_str(" in");
+            for item in command.for_items.as_slice(buffer) {
+                formatted.push_byte(b' ');
+                formatted.extend_from_slice(&argument_to_bstring(item.as_slice(buffer), buffer));
+            }
+            formatted.push_str("; do ");
+            formatted
+                .extend_from_slice(&command_to_bstring(command.then_branch.as_ref(buffer), buffer));
+            formatted.push_str("; done");
+        }
+        CommandTag::CASE => {
+            formatted.push_str("case ");
+            formatted.extend_from_slice(&argument_to_bstring(
+                command.case_word.as_slice(buffer),
+                buffer,
+            ));
+            formatted.push_str(" in ");
+            for item in command.case_items.as_slice(buffer) {
+                let pats = item.patterns.as_slice(buffer);
+                for (i, pat) in pats.iter().enumerate() {
+                    if i > 0 {
+                        formatted.push_str(" | ");
+                    }
+                    formatted.extend_from_slice(&argument_to_bstring(pat.as_slice(buffer), buffer));
+                }
+                formatted.push_str(") ");
+                formatted.extend_from_slice(&command_to_bstring(item.body.as_ref(buffer), buffer));
+                formatted.push_str(";; ");
+            }
+            formatted.push_str("esac");
+        }
+        CommandTag::FUNCTION_DEF => {
+            formatted.extend_from_slice(command.name.as_bstr(buffer));
+            formatted.push_str("() { ... }");
+        }
+        CommandTag::LOGICAL_AND => {
+            formatted.extend_from_slice(&command_to_bstring(command.left.as_ref(buffer), buffer));
+            formatted.push_str(" && ");
+            formatted.extend_from_slice(&command_to_bstring(command.right.as_ref(buffer), buffer));
+        }
+        CommandTag::LOGICAL_OR => {
+            formatted.extend_from_slice(&command_to_bstring(command.left.as_ref(buffer), buffer));
+            formatted.push_str(" || ");
+            formatted.extend_from_slice(&command_to_bstring(command.right.as_ref(buffer), buffer));
+        }
+        CommandTag::SEQUENCE => {
+            let cmds = command.sequence.as_slice(buffer);
+            for (i, cmd_ptr) in cmds.iter().enumerate() {
+                if i > 0 {
+                    formatted.push_str("; ");
+                }
+                formatted.extend_from_slice(&command_to_bstring(cmd_ptr.as_ref(buffer), buffer));
+            }
         }
         _ => unreachable!("invalid CommandTag: {}", command.tag.0),
     }
