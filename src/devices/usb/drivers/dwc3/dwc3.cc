@@ -573,8 +573,6 @@ zx::result<> Dwc3::Start(fdf::DriverContext context) {
       fdf::MakeProperty2(bind_fuchsia::PLATFORM_DEV_DID,
                          bind_fuchsia_designware_platform::BIND_PLATFORM_DEV_DID_DWC3),
       fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.usb.dci.UsbDciService"),
-      fdf::MakeProperty2("fuchsia.hardware.usb.dci.UsbDciService",
-                         "fuchsia.hardware.usb.dci.UsbDciService.ZirconTransport"),
   };
 
   std::vector offers = {

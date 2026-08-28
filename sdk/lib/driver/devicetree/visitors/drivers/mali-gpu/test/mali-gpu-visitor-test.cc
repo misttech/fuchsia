@@ -10,7 +10,6 @@
 #include <lib/driver/devicetree/visitors/default/bind-property/bind-property.h>
 #include <lib/driver/devicetree/visitors/registry.h>
 
-#include <bind/fuchsia/arm/platform/cpp/bind.h>
 #include <bind/fuchsia/cpp/bind.h>
 #include <gtest/gtest.h>
 namespace mali_gpu_dt {

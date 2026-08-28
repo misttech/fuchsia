@@ -610,8 +610,6 @@ zx::result<> AmlPwmDriver::Start(fdf::DriverContext context) {
 
   const std::vector<fuchsia_driver_framework::NodeProperty2> properties = {
       fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.pwmimpl.Service"),
-      fdf::MakeProperty2("fuchsia.hardware.pwmimpl.Service",
-                         "fuchsia.hardware.pwmimpl.Service.DriverTransport"),
   };
 
   zx::result child = AddChild(kChildNodeName, properties, offers);

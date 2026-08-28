@@ -92,8 +92,8 @@ Driver   : unbound
 [ 1/  5] : Key fuchsia.BIND_ACPI_ID           Value 0x000004
 [ 2/  5] : Key "fuchsia.acpi.HID"             Value "PNP0B00"
 [ 3/  5] : Key fuchsia.BIND_PROTOCOL          Value 0x00001e
-[ 4/  5] : Key "fuchsia.driver.compat.Service" Value "fuchsia.driver.compat.Service.ZirconTransport"
-[ 5/  5] : Key "fuchsia.hardware.acpi.Service" Value "fuchsia.hardware.acpi.Service.ZirconTransport"
+[ 4/  5] : Key "fuchsia.Service"              Value "fuchsia.driver.compat.Service"
+[ 5/  5] : Key "fuchsia.Service"              Value "fuchsia.hardware.acpi.Service"
 2 Offers
 Service: fuchsia.driver.compat.Service
   Source: board
@@ -130,18 +130,18 @@ Node 0    : "acpi" (Primary)
   [ 3/ 3] : Key "fuchsia.acpi.HID"             Value "PNP0501"
 Node 1    : "sysmem"
   1 Bind Rules
-  [ 1/ 1] : Accept "fuchsia.hardware.sysmem.Service" { "fuchsia.hardware.sysmem.Service.ZirconTransport" }
+  [ 1/ 1] : Accept "fuchsia.Service" { "fuchsia.hardware.sysmem.Service" }
   1 Properties
-  [ 1/ 1] : Key "fuchsia.hardware.sysmem.Service" Value "fuchsia.hardware.sysmem.Service.ZirconTransport"
+  [ 1/ 1] : Key "fuchsia.Service"              Value "fuchsia.hardware.sysmem.Service"
 Node 2    : "irq000"
   3 Bind Rules
   [ 1/ 3] : Accept "fuchsia.BIND_ACPI_ID" { 0x000007 }
   [ 2/ 3] : Accept "fuchsia.BIND_PLATFORM_DEV_INTERRUPT_ID" { 0x000001 }
-  [ 3/ 3] : Accept "fuchsia.hardware.interrupt.Service" { "fuchsia.hardware.interrupt.Service.ZirconTransport" }
+  [ 3/ 3] : Accept "fuchsia.Service" { "fuchsia.hardware.interrupt.Service" }
   3 Properties
   [ 1/ 3] : Key "fuchsia.BIND_ACPI_ID"         Value 0x000007
   [ 2/ 3] : Key "fuchsia.BIND_PLATFORM_DEV_INTERRUPT_ID" Value 0x000001
-  [ 3/ 3] : Key "fuchsia.hardware.interrupt.Service" Value "fuchsia.hardware.interrupt.Service.ZirconTransport"
+  [ 3/ 3] : Key "fuchsia.Service"              Value "fuchsia.hardware.interrupt.Service"
 ```
 
 The composite driver is not matched to the spec, the `Driver` field will say
@@ -156,7 +156,7 @@ an offer to the child so that the FIDL-based property is included.
 For example, let's say the bind rules specify the following condition:
 
 ```none {:.devsite-disable-click-to-copy}
-fuchsia.examples.gizmo.Service == fuchsia.examples.gizmo.Service.ZirconTransport;
+fuchsia.Service == "fuchsia.examples.gizmo.Service";
 ```
 
 Then the parent driver of the target node need to add the following offer to
@@ -247,10 +247,9 @@ composite mali;
 
 using fuchsia.arm.platform;
 using fuchsia.platform;
-using fuchsia.hardware.gpu.mali;
 
 primary parent "mali" {
-  fuchsia.hardware.gpu.mali.Service == fuchsia.hardware.gpu.mali.Service.DriverTransport;
+  fuchsia.Service == "fuchsia.hardware.gpu.mali.Service";
 }
 
 parent "pdev" {
@@ -372,7 +371,7 @@ each node, for example:
 
   Node Properties:  Key                            Value
                     fuchsia.BIND_PROTOCOL          76
-                    fuchsia.driver.compat.Service  fuchsia.driver.compat.Service.ZirconTransport
+                    fuchsia.Service                fuchsia.driver.compat.Service
 
   Node Offers:  Service                        Source                    Instances
                 fuchsia.driver.compat.Service  PCI0.bus.00_01_0.00_01_0  default

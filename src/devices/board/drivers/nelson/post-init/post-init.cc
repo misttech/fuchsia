@@ -351,8 +351,6 @@ zx::result<> PostInit::AddSelinaCompositeNode(const fdf::Namespace& incoming) {
 
   const std::vector<fuchsia_driver_framework::NodeProperty2> spi_properties{
       fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.spi.Service"),
-      fdf::MakeProperty2("fuchsia.hardware.spi.Service",
-                         "fuchsia.hardware.spi.Service.ZirconTransport"),
       fdf::MakeProperty2(bind_fuchsia::PLATFORM_DEV_VID,
                          bind_fuchsia_infineon_platform::BIND_PLATFORM_DEV_VID_INFINEON),
       fdf::MakeProperty2(bind_fuchsia::PLATFORM_DEV_PID,

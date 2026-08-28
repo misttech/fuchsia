@@ -54,8 +54,6 @@ zx::result<> I2cBusVisitor::AddChildNodeSpec(fdf_devicetree::ChildNode& child, u
       .properties =
           {
               fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.i2c.Service"),
-              fdf::MakeProperty2("fuchsia.hardware.i2c.Service",
-                                 "fuchsia.hardware.i2c.Service.ZirconTransport"),
               fdf::MakeProperty2(bind_fuchsia::I2C_ADDRESS, address),
           },
   }};

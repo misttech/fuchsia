@@ -26,10 +26,8 @@ devicetree_visitor("gpt-visitor") {
     "//sdk/lib/driver/logging/cpp",
   ]
   public_deps = [ "//sdk/lib/driver/devicetree/visitors:driver-visitor" ]
-  non_sdk_deps = [
-    "//src/devices/bind/fuchsia:fuchsia_cpp",
-    "//src/devices/bind/fuchsia.block.gpt:fuchsia.block.gpt_cpp",
-  ]
+  non_sdk_deps =
+      [ "//src/devices/bind/fuchsia.block.gpt:fuchsia.block.gpt_cpp" ]
 }
 
 test("gpt-visitor-test-bin") {

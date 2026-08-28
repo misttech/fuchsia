@@ -134,8 +134,6 @@ zx::result<> PwmChannel::Init(std::shared_ptr<fdf::OutgoingDirectory>& outgoing,
   std::vector<fuchsia_driver_framework::NodeProperty2> properties = {
       fdf::MakeProperty2(bind_fuchsia::ID, id_),
       fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.pwm.Service"),
-      fdf::MakeProperty2("fuchsia.hardware.pwm.Service",
-                         "fuchsia.hardware.pwm.Service.ZirconTransport"),
   };
   if (global_id_.has_value()) {
     properties.push_back(fdf::MakeProperty2(bind_fuchsia::ID, *global_id_));

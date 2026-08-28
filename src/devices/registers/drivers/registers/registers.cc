@@ -196,8 +196,6 @@ zx::result<> RegistersDevice::CreateNode(Register<T>& reg) {
   auto properties = std::vector{
       fdf::MakeProperty2(arena, bind_fuchsia::NAME, reg.id()),
       fdf::MakeProperty2(arena, bind_fuchsia::SERVICE, "fuchsia.hardware.registers.Service"),
-      fdf::MakeProperty2(arena, "fuchsia.hardware.registers.Service",
-                         "fuchsia.hardware.registers.Service.ZirconTransport"),
   };
   auto args = fuchsia_driver_framework::wire::NodeAddArgs::Builder(arena)
                   .name(arena, "register-" + reg.id())

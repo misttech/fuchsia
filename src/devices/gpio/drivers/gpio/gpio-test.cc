@@ -814,7 +814,7 @@ TEST_F(GpioTest, ControllerId) {
               .at(std::string{"gpio-"} + pin.name().value())
               .GetProperties();
 
-      ASSERT_EQ(properties.size(), 4ul);
+      ASSERT_EQ(properties.size(), 3ul);
 
       EXPECT_EQ(properties[0].key(), bind_fuchsia::GPIO_PIN);
 
@@ -830,11 +830,6 @@ TEST_F(GpioTest, ControllerId) {
       ASSERT_TRUE(properties[2].value().string_value().has_value());
       EXPECT_EQ(properties[2].value().string_value().value(), fuchsia_hardware_gpio::Service::Name);
 
-      EXPECT_EQ(properties[3].key(), fuchsia_hardware_gpio::Service::Name);
-      ASSERT_TRUE(properties[3].value().string_value().has_value());
-      EXPECT_EQ(properties[3].value().string_value().value(),
-                std::string(fuchsia_hardware_gpio::Service::Name) + ".ZirconTransport");
-
       std::vector<fuchsia_driver_framework::NodeProperty2> pin_properties =
           node.children()
               .at("gpio")
@@ -842,7 +837,7 @@ TEST_F(GpioTest, ControllerId) {
               .at(std::string{"gpio-"} + pin.name().value() + "-pin")
               .GetProperties();
 
-      ASSERT_EQ(pin_properties.size(), 4ul);
+      ASSERT_EQ(pin_properties.size(), 3ul);
       EXPECT_EQ(pin_properties[0].key(), bind_fuchsia::GPIO_PIN);
       ASSERT_TRUE(pin_properties[0].value().int_value().has_value());
       EXPECT_EQ(pin_properties[0].value().int_value().value(), pin.pin().value());
@@ -853,11 +848,6 @@ TEST_F(GpioTest, ControllerId) {
       ASSERT_TRUE(pin_properties[2].value().string_value().has_value());
       EXPECT_EQ(pin_properties[2].value().string_value().value(),
                 fuchsia_hardware_pin::Service::Name);
-
-      EXPECT_EQ(pin_properties[3].key(), fuchsia_hardware_pin::Service::Name);
-      ASSERT_TRUE(pin_properties[3].value().string_value().has_value());
-      EXPECT_EQ(pin_properties[3].value().string_value().value(),
-                std::string(fuchsia_hardware_pin::Service::Name) + ".ZirconTransport");
     });
   }
 
@@ -1501,21 +1491,21 @@ TEST_F(GpioTest, GenericMetadataTest) {
   driver_test().RunInNodeContext([](fdf_testing::TestNode& node) {
     std::vector<fuchsia_driver_framework::NodeProperty2> properties =
         node.children().at("gpio").children().at("gpio-1").GetProperties();
-    ASSERT_EQ(properties.size(), 5ul);
-    EXPECT_EQ(properties[4].key(), bind_fuchsia::ID);
-    ASSERT_TRUE(properties[4].value().int_value().has_value());
-    EXPECT_EQ(properties[4].value().int_value().value(), 42ul);
+    ASSERT_EQ(properties.size(), 4ul);
+    EXPECT_EQ(properties[3].key(), bind_fuchsia::ID);
+    ASSERT_TRUE(properties[3].value().int_value().has_value());
+    EXPECT_EQ(properties[3].value().int_value().value(), 42ul);
 
     std::vector<fuchsia_driver_framework::NodeProperty2> pin_properties =
         node.children().at("gpio").children().at("gpio-1-pin").GetProperties();
-    ASSERT_EQ(pin_properties.size(), 5ul);
-    EXPECT_EQ(pin_properties[4].key(), bind_fuchsia::ID);
-    ASSERT_TRUE(pin_properties[4].value().int_value().has_value());
-    EXPECT_EQ(pin_properties[4].value().int_value().value(), 42ul);
+    ASSERT_EQ(pin_properties.size(), 4ul);
+    EXPECT_EQ(pin_properties[3].key(), bind_fuchsia::ID);
+    ASSERT_TRUE(pin_properties[3].value().int_value().has_value());
+    EXPECT_EQ(pin_properties[3].value().int_value().value(), 42ul);
 
     std::vector<fuchsia_driver_framework::NodeProperty2> pin2_properties =
         node.children().at("gpio").children().at("gpio-2").GetProperties();
-    ASSERT_EQ(pin2_properties.size(), 4ul);
+    ASSERT_EQ(pin2_properties.size(), 3ul);
   });
 
   EXPECT_TRUE(driver_test().StopDriver().is_ok());

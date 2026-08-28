@@ -63,8 +63,6 @@ const std::vector<fuchsia_driver_framework::BindRule2> kCanvasRules = std::vecto
 
 const std::vector<fuchsia_driver_framework::NodeProperty2> kCanvasProperties = std::vector{
     fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.amlogiccanvas.Service"),
-    fdf::MakeProperty2("fuchsia.hardware.amlogiccanvas.Service",
-                       "fuchsia.hardware.amlogiccanvas.Service.ZirconTransport"),
 };
 
 const std::vector<fuchsia_driver_framework::BindRule2> kClkDosHCodecRules = std::vector{
@@ -73,8 +71,6 @@ const std::vector<fuchsia_driver_framework::BindRule2> kClkDosHCodecRules = std:
 };
 const std::vector<fuchsia_driver_framework::NodeProperty2> kClkDosHCodecProperties = std::vector{
     fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.clock.Service"),
-    fdf::MakeProperty2("fuchsia.hardware.clock.Service",
-                       "fuchsia.hardware.clock.Service.ZirconTransport"),
     fdf::MakeProperty2(bind_fuchsia::NAME, "clock-dos-hcodec"),
 };
 
@@ -84,8 +80,6 @@ const std::vector<fuchsia_driver_framework::BindRule2> kClkDosRules = std::vecto
 };
 const std::vector<fuchsia_driver_framework::NodeProperty2> kClkDosProperties = std::vector{
     fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.clock.Service"),
-    fdf::MakeProperty2("fuchsia.hardware.clock.Service",
-                       "fuchsia.hardware.clock.Service.ZirconTransport"),
     fdf::MakeProperty2(bind_fuchsia::NAME, "clock-dos"),
 };
 

@@ -57,7 +57,7 @@ Driver   : fuchsia-pkg://fuchsia.com/banjo_transport#meta/banjo_transport_child.
 3 Properties
 [ 1/  3] : Key fuchsia.BIND_PROTOCOL          Value 0x00001c
 [ 2/  3] : Key "gizmo.example.TEST_NODE_ID"   Value "banjo_child"
-[ 3/  3] : Key "fuchsia.driver.compat.Service" Value "fuchsia.driver.compat.Service.ZirconTransport"
+[ 3/  3] : Key "fuchsia.Service"              Value "fuchsia.driver.compat.Service"
 1 Offers
 Service: fuchsia.driver.compat.Service
   Source: dev.banjo_transport_parent

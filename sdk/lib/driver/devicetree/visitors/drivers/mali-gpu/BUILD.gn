@@ -26,7 +26,6 @@ devicetree_visitor("mali-gpu-visitor") {
   ]
   non_sdk_deps = [
     "//src/devices/bind/fuchsia:fuchsia_cpp",
-    "//src/devices/bind/fuchsia.arm.platform:fuchsia.arm.platform_cpp",
     "//src/lib/ddk",
   ]
 }
@@ -39,7 +38,6 @@ test("mali-gpu-visitor-test-bin") {
     "//sdk/lib/driver/devicetree/visitors:registry",
     "//sdk/lib/driver/devicetree/visitors/default/bind-property",
     "//src/devices/bind/fuchsia:fuchsia_cpp",
-    "//src/devices/bind/fuchsia.arm.platform:fuchsia.arm.platform_cpp",
     "//src/lib/fxl/test:gtest_main",
   ]
 }

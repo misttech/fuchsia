@@ -229,8 +229,6 @@ TEST(GpioImplVisitorTest, TestGpiosProperty) {
   // 2nd parent is GPIO PIN1.
   EXPECT_TRUE(fdf_devicetree::testing::CheckHasProperties(
       {{fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.gpio.Service"),
-        fdf::MakeProperty2("fuchsia.hardware.gpio.Service",
-                           "fuchsia.hardware.gpio.Service.ZirconTransport"),
         fdf::MakeProperty2(bind_fuchsia::NAME, std::string(PIN1_NAME))}},
       (*mgr_request_audio.parents2())[1].properties(), false));
   EXPECT_TRUE(fdf_devicetree::testing::CheckHasBindRules(
@@ -242,8 +240,6 @@ TEST(GpioImplVisitorTest, TestGpiosProperty) {
   // 3rd parent is GPIO PIN2.
   EXPECT_TRUE(fdf_devicetree::testing::CheckHasProperties(
       {{fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.gpio.Service"),
-        fdf::MakeProperty2("fuchsia.hardware.gpio.Service",
-                           "fuchsia.hardware.gpio.Service.ZirconTransport"),
         fdf::MakeProperty2(bind_fuchsia::NAME, std::string(PIN2_NAME))}},
       (*mgr_request_audio.parents2())[2].properties(), false));
   EXPECT_TRUE(fdf_devicetree::testing::CheckHasBindRules(
@@ -255,8 +251,6 @@ TEST(GpioImplVisitorTest, TestGpiosProperty) {
   // 4th parent is PIN STATES.
   EXPECT_TRUE(fdf_devicetree::testing::CheckHasProperties(
       {{fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.pin.PinStatesService"),
-        fdf::MakeProperty2("fuchsia.hardware.pin.PinStatesService",
-                           "fuchsia.hardware.pin.PinStatesService.ZirconTransport"),
         fdf::MakeProperty2(bind_fuchsia_pin::CONTROLLER, static_cast<uint32_t>(0))}},
       (*mgr_request_audio.parents2())[3].properties(), false));
   EXPECT_TRUE(fdf_devicetree::testing::CheckHasBindRules(

@@ -55,7 +55,7 @@ Moniker  : dev.simple_node_v1.simple_child
 Driver   : unbound
 2 Properties
 [ 1/  2] : Key "fuchsia.test.TEST_CHILD"      Value "simple"
-[ 2/  2] : Key "fuchsia.driver.compat.Service" Value "fuchsia.driver.compat.Service.ZirconTransport"
+[ 2/  2] : Key "fuchsia.Service"              Value "fuchsia.driver.compat.Service"
 1 Offers
 Service: fuchsia.driver.compat.Service
   Source: dev.simple_node_v1

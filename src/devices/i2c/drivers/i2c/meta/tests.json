@@ -8,7 +8,7 @@
     },
     {
         "device": {
-            "fuchsia.BIND_PROTOCOL": "fuchsia.i2c.BIND_PROTOCOL.IMPL"
+            "fuchsia.Service": "\"fuchsia.hardware.i2cimpl.Service\""
         },
         "expected": "match",
         "name": "i2c"

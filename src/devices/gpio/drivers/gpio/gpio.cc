@@ -332,16 +332,12 @@ zx::result<> GpioDevice::AddDevice(fidl::UnownedClientEnd<fuchsia_driver_framewo
       fdf::MakeProperty2(bind_fuchsia::GPIO_PIN, pin_),
       fdf::MakeProperty2(bind_fuchsia::GPIO_CONTROLLER, controller_id_),
       fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.gpio.Service"),
-      fdf::MakeProperty2("fuchsia.hardware.gpio.Service",
-                         "fuchsia.hardware.gpio.Service.ZirconTransport"),
   };
 
   std::vector<fuchsia_driver_framework::NodeProperty2> pin_props{
       fdf::MakeProperty2(bind_fuchsia::GPIO_PIN, pin_),
       fdf::MakeProperty2(bind_fuchsia::GPIO_CONTROLLER, controller_id_),
       fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.pin.Service"),
-      fdf::MakeProperty2("fuchsia.hardware.pin.Service",
-                         "fuchsia.hardware.pin.Service.ZirconTransport"),
   };
 
   if (id_.has_value()) {
@@ -427,8 +423,6 @@ zx::result<> PinStatesDevice::AddDevice(
       fdf::MakeProperty2(bind_fuchsia_pin::CONTROLLER, controller_id_),
       fdf::MakeProperty2(bind_fuchsia::NAME, pin_states_.name()),
       fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.pin.PinStatesService"),
-      fdf::MakeProperty2("fuchsia.hardware.pin.PinStatesService",
-                         "fuchsia.hardware.pin.PinStatesService.ZirconTransport"),
   };
 
   zx::result<fidl::ClientEnd<fuchsia_driver_framework::NodeController>> result =

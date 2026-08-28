@@ -427,8 +427,6 @@ zx_status_t Sherlock::CameraInit() {
       .properties =
           {
               fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.amlogiccanvas.Service"),
-              fdf::MakeProperty2("fuchsia.hardware.amlogiccanvas.Service",
-                                 "fuchsia.hardware.amlogiccanvas.Service.ZirconTransport"),
           },
   }};
 
@@ -473,8 +471,6 @@ zx_status_t Sherlock::CameraInit() {
       .properties =
           {
               fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.registers.Service"),
-              fdf::MakeProperty2("fuchsia.hardware.registers.Service",
-                                 "fuchsia.hardware.registers.Service.ZirconTransport"),
               fdf::MakeProperty2(bind_fuchsia::NAME, "register-reset"),
           },
   }};

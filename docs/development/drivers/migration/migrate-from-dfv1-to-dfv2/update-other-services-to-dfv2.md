@@ -398,18 +398,13 @@ offers from their parents.
 
 For instance, in the [Parent Driver (The Server)][parent-driver-the-server]
 example, the parent driver adds a node called `"parent"` with a service
-offer for `fidl.examples.EchoService`. In DFv2, a driver that binds to this
+offer for `fidl.examples.echo.EchoService`. In DFv2, a driver that binds to this
 node can have a bind rule for that FIDL service node property, for example:
 
 ```none
-using fidl.examples.echo;
-
-fidl.examples.echo.Echo == fidl.examples.echo.Echo.ZirconTransport;
+fuchsia.Service == "fidl.examples.echo.EchoService";
 ```
 
-For more information, see the
-[Generated bind libraries][generate-bind-libraries] section of the FIDL
-tutorial page.
 
 ## Update unit tests to DFv2 {:#update-unit-tests-to-dfv2}
 
@@ -507,8 +502,6 @@ All the **documentation pages** mentioned in this section:
   (from _Device driver lifecycle_)
 - [Parent Driver (The Server)][parent-driver-the-server]
   (from _FIDL tutorial_)
-- [Generated bind libraries][generate-bind-libraries]
-  (from _FIDL tutorial_)
 
 <!-- Reference links -->
 
@@ -546,7 +539,6 @@ All the **documentation pages** mentioned in this section:
 [load-firmware]: https://cs.opensource.google/fuchsia/fuchsia/+/main:src/lib/ddk/include/lib/ddk/driver.h;l=408
 [gc-pcie-iwlwifi-driver]: https://fuchsia-review.git.corp.google.com/c/fuchsia/+/692243/47/src/connectivity/wlan/drivers/third_party/intel/iwlwifi/platform/pcie-iwlwifi-driver.cc#60
 [parent-driver-the-server]: /docs/development/drivers/tutorials/fidl-tutorial.md#parent_driver_the_server
-[generate-bind-libraries]: /docs/development/drivers/tutorials/fidl-tutorial.md#generated-bind-libraries
 [mock-ddk]: /docs/contribute/open_projects/graduated/mock_ddk_migration.md
 [raii]: https://en.wikipedia.org/wiki/Resource_acquisition_is_initialization
 [driver-testing-runtime]: https://cs.opensource.google/fuchsia/fuchsia/+/main:sdk/lib/driver/testing/cpp/driver_runtime.h

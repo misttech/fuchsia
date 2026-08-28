@@ -121,8 +121,6 @@ zx::result<std::unique_ptr<AdcDevice>> AdcDevice::Create(
   auto properties = std::vector{
       fdf::MakeProperty2(bind_fuchsia_adc::CHANNEL, dev->channel_),
       fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.adc.Service"),
-      fdf::MakeProperty2("fuchsia.hardware.adc.Service",
-                         "fuchsia.hardware.adc.Service.ZirconTransport"),
       fdf::MakeProperty2(bind_fuchsia::NAME, dev->name_),
   };
   if (channel.id().has_value()) {

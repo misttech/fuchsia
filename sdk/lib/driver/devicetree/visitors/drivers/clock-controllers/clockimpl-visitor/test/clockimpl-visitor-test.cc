@@ -141,8 +141,6 @@ TEST(ClockImplVisitorTest, TestClocksProperty) {
   // 1st parent is pdev. Skipping that.
   EXPECT_TRUE(fdf_devicetree::testing::CheckHasProperties(
       {{fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.clock.Service"),
-        fdf::MakeProperty2("fuchsia.hardware.clock.Service",
-                           "fuchsia.hardware.clock.Service.ZirconTransport"),
         fdf::MakeProperty2(bind_fuchsia::NAME, std::string(CLK1_NAME))}},
       (*mgr_request_video.parents2())[1].properties(), false));
   EXPECT_TRUE(fdf_devicetree::testing::CheckHasBindRules(
@@ -153,8 +151,6 @@ TEST(ClockImplVisitorTest, TestClocksProperty) {
 
   EXPECT_TRUE(fdf_devicetree::testing::CheckHasProperties(
       {{fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.clock.Service"),
-        fdf::MakeProperty2("fuchsia.hardware.clock.Service",
-                           "fuchsia.hardware.clock.Service.ZirconTransport"),
         fdf::MakeProperty2(bind_fuchsia::NAME, std::string(CLK2_NAME))}},
       (*mgr_request_video.parents2())[2].properties(), false));
   EXPECT_TRUE(fdf_devicetree::testing::CheckHasBindRules(
@@ -174,9 +170,7 @@ TEST(ClockImplVisitorTest, TestClocksProperty) {
 
   // 2nd is the clock impl parent.
   EXPECT_TRUE(fdf_devicetree::testing::CheckHasProperties(
-      {{fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.clock.Service"),
-        fdf::MakeProperty2("fuchsia.hardware.clock.Service",
-                           "fuchsia.hardware.clock.Service.ZirconTransport")}},
+      {{fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.clock.Service")}},
       (*mgr_request_audio.parents2())[1].properties(), false));
   EXPECT_TRUE(fdf_devicetree::testing::CheckHasBindRules(
       {{fdf::MakeAcceptBindRule(bind_fuchsia::SERVICE, "fuchsia.hardware.clock.Service"),

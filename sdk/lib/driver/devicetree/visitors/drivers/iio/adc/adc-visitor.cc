@@ -78,8 +78,6 @@ zx::result<> AdcVisitor::AddChildNodeSpec(fdf_devicetree::Node& child, uint32_t 
       .properties =
           {
               fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.adc.Service"),
-              fdf::MakeProperty2("fuchsia.hardware.adc.Service",
-                                 "fuchsia.hardware.adc.Service.ZirconTransport"),
               fdf::MakeProperty2(bind_fuchsia_adc::CHANNEL, chan_id),
           },
   }};

@@ -99,8 +99,6 @@ TEST(AdcVisitorTester, TestAdcsProperty) {
   // 2nd parent is ADC CHAN1.
   EXPECT_TRUE(fdf_devicetree::testing::CheckHasProperties(
       {{fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.adc.Service"),
-        fdf::MakeProperty2("fuchsia.hardware.adc.Service",
-                           "fuchsia.hardware.adc.Service.ZirconTransport"),
         fdf::MakeProperty2(bind_fuchsia_adc::CHANNEL, static_cast<uint32_t>(ADC_CHAN1))}},
       (*mgr_request_audio.parents2())[1].properties(), false));
   EXPECT_TRUE(fdf_devicetree::testing::CheckHasBindRules(
@@ -111,8 +109,6 @@ TEST(AdcVisitorTester, TestAdcsProperty) {
   // 3rd parent is ADC CHAN2.
   EXPECT_TRUE(fdf_devicetree::testing::CheckHasProperties(
       {{fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.adc.Service"),
-        fdf::MakeProperty2("fuchsia.hardware.adc.Service",
-                           "fuchsia.hardware.adc.Service.ZirconTransport"),
         fdf::MakeProperty2(bind_fuchsia_adc::CHANNEL, static_cast<uint32_t>(ADC_CHAN2))}},
       (*mgr_request_audio.parents2())[2].properties(), false));
   EXPECT_TRUE(fdf_devicetree::testing::CheckHasBindRules(
@@ -130,8 +126,6 @@ TEST(AdcVisitorTester, TestAdcsProperty) {
   // 2nd parent is ADC CHAN3.
   EXPECT_TRUE(fdf_devicetree::testing::CheckHasProperties(
       {{fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.adc.Service"),
-        fdf::MakeProperty2("fuchsia.hardware.adc.Service",
-                           "fuchsia.hardware.adc.Service.ZirconTransport"),
         fdf::MakeProperty2(bind_fuchsia_adc::CHANNEL, static_cast<uint32_t>(ADC_CHAN3))}},
       (*mgr_request_video.parents2())[1].properties(), false));
   EXPECT_TRUE(fdf_devicetree::testing::CheckHasBindRules(

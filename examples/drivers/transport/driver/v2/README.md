@@ -55,7 +55,7 @@ Name     : driver_transport_child
 Moniker  : dev.driver_transport_parent.driver_transport_child
 Driver   : fuchsia-pkg://fuchsia.com/driver_transport#meta/driver_transport_child.cm
 1 Properties
-[ 1/  1] : Key "fuchsia.hardware.i2cimpl.Service" Value "fuchsia.hardware.i2cimpl.Service.DriverTransport"
+[ 1/  1] : Key "fuchsia.Service"              Value "fuchsia.hardware.i2cimpl.Service"
 1 Offers
 Service: fuchsia.hardware.i2cimpl.Service
   Source: dev.driver_transport_parent

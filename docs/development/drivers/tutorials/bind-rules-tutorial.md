@@ -242,7 +242,7 @@ The bind language supports branching via if statements with some restrictions.
 If statements must have else blocks and are terminal. This restriction increases readability by making explicit the branches of execution. Since no statement may follow an if statement, it is easy to trace a path through the bind rules.
 
 ```
-if fuchsia.hardware.tee.Service == fuchsia.hardware.tee.Service.ZirconTransport {
+if fuchsia.Service == "fuchsia.hardware.tee.Service" {
   fuchsia.BIND_PLATFORM_DEV_VID == fuchsia.platform.BIND_PLATFORM_DEV_VID.GENERIC;
 } else {
   fuchsia.BIND_PLATFORM_DEV_VID == fuchsia.platform.BIND_PLATFORM_DEV_VID.QEMU;

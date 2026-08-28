@@ -25,9 +25,6 @@
 #include <bind/fuchsia/gpio/cpp/bind.h>
 #include <bind/fuchsia/pin/cpp/bind.h>
 
-// TODO(https://fxbug.dev/494450198): Re-add this once the Bazel dependency issue is resolved.
-// #include <bind/fuchsia/hardware/gpio/cpp/bind.h>
-
 namespace gpio_impl_dt {
 
 namespace {
@@ -302,8 +299,6 @@ zx::result<> GpioImplVisitor::AddChildNodeSpec(fdf_devicetree::Node& child, uint
       .properties =
           {
               fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.gpio.Service"),
-              fdf::MakeProperty2("fuchsia.hardware.gpio.Service",
-                                 "fuchsia.hardware.gpio.Service.ZirconTransport"),
               fdf::MakeProperty2(bind_fuchsia::NAME, gpio_name),
           },
   }};
@@ -345,8 +340,6 @@ zx::result<> GpioImplVisitor::AddPinStatesNodeSpec(fdf_devicetree::Node& child,
       .properties =
           {
               fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.pin.PinStatesService"),
-              fdf::MakeProperty2("fuchsia.hardware.pin.PinStatesService",
-                                 "fuchsia.hardware.pin.PinStatesService.ZirconTransport"),
               fdf::MakeProperty2(bind_fuchsia_pin::CONTROLLER, controller_index),
           },
   }};

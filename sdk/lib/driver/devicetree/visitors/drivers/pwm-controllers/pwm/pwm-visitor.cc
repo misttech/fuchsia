@@ -16,7 +16,6 @@
 #include <vector>
 
 #include <bind/fuchsia/cpp/bind.h>
-#include <bind/fuchsia/pwm/cpp/bind.h>
 
 namespace {
 using fuchsia_hardware_pwm::PwmChannelInfo;
@@ -149,8 +148,6 @@ zx::result<> PwmVisitor::AddChildNodeSpec(fdf_devicetree::Node& child, uint32_t 
       .properties =
           {
               fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.pwm.Service"),
-              fdf::MakeProperty2("fuchsia.hardware.pwm.Service",
-                                 "fuchsia.hardware.pwm.Service.ZirconTransport"),
           },
   }};
 

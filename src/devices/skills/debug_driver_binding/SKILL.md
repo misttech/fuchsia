@@ -51,13 +51,11 @@ The node was either not added or properties don't align.
 Identify how the node is added by checking the code. Try these three common
 patterns:
 
-##### 1. FIDL Capability (Service + Transport)
-Check if bind rules specify a Service capability (e.g.
-`Key(fuchsia.hardware.display.engine.Service)`).
+##### 1. FIDL Capability (Service)
+Check if bind rules specify a Service capability (e.g. `fuchsia.Service ==
+"fuchsia.hardware.display.engine.Service"`).
 
 * Search `.cml` for the service offer (`capabilities` + `expose`).
-* Check `.fidl` for transport. Look for `@transport("Driver")` (absence means
-  `ZirconTransport`).
 * Verify parent code creates and provides the offer.
 * Check if the parent is bound (recurse).
 

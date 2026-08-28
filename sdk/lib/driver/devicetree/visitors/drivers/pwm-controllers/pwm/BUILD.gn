@@ -31,7 +31,6 @@ devicetree_visitor("pwm-visitor") {
   non_sdk_deps = [
     "//sdk/fidl/fuchsia.hardware.pwm:fuchsia.hardware.pwm_cpp",
     "//src/devices/bind/fuchsia:fuchsia_cpp",
-    "//src/devices/bind/fuchsia.pwm:fuchsia.pwm_cpp",
     "//src/lib/ddk:ddk_metadata",
   ]
 }
@@ -46,7 +45,6 @@ test("pwm-visitor-test-bin") {
     "//sdk/lib/driver/devicetree/visitors/default/bind-property",
     "//sdk/lib/driver/devicetree/visitors/default/mmio",
     "//src/devices/bind/fuchsia:fuchsia_cpp",
-    "//src/devices/bind/fuchsia.pwm:fuchsia.pwm_cpp",
     "//src/lib/fxl/test:gtest_main",
   ]
 }

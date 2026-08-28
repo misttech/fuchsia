@@ -41,8 +41,6 @@ ddk::CompositeNodeSpec CreateCompositeNodeSpec(const CompositeInfo& info) {
   };
 
   const device_bind_prop_t kPciProperties[] = {
-      ddk::MakeProperty("fuchsia.hardware.pci.Service",
-                        "fuchsia.hardware.pci.Service.ZirconTransport"),
       ddk::MakeProperty(bind_fuchsia::SERVICE, "fuchsia.hardware.pci.Service"),
       ddk::MakeProperty(bind_fuchsia::PCI_VID, info.vendor_id),
       ddk::MakeProperty(bind_fuchsia::PCI_DID, info.device_id),

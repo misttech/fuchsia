@@ -12,7 +12,6 @@
 
 #include <vector>
 
-#include <bind/fuchsia/arm/platform/cpp/bind.h>
 #include <bind/fuchsia/cpp/bind.h>
 
 namespace mali_gpu_dt {

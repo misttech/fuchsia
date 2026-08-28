@@ -16,7 +16,6 @@
 #include <vector>
 
 #include <bind/fuchsia/cpp/bind.h>
-#include <bind/fuchsia/pwm/cpp/bind.h>
 #include <gtest/gtest.h>
 
 #include "dts/pwm.h"
@@ -101,8 +100,6 @@ TEST(PwmVisitorTest, TestMetadataAndBindProperty) {
     EXPECT_TRUE(fdf_devicetree::testing::CheckHasProperties(
         {{
             fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.pwm.Service"),
-            fdf::MakeProperty2("fuchsia.hardware.pwm.Service",
-                               "fuchsia.hardware.pwm.Service.ZirconTransport"),
             fdf::MakeProperty2(bind_fuchsia::NAME, std::string(PIN1_NAME)),
         }},
         (*mgr_request.parents2())[1].properties(), false));
@@ -117,8 +114,6 @@ TEST(PwmVisitorTest, TestMetadataAndBindProperty) {
     EXPECT_TRUE(fdf_devicetree::testing::CheckHasProperties(
         {{
             fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.pwm.Service"),
-            fdf::MakeProperty2("fuchsia.hardware.pwm.Service",
-                               "fuchsia.hardware.pwm.Service.ZirconTransport"),
             fdf::MakeProperty2(bind_fuchsia::NAME, std::string(PIN2_NAME)),
         }},
         (*mgr_request.parents2())[2].properties(), false));

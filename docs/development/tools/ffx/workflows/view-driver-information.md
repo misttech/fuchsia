@@ -415,7 +415,7 @@ $ ffx driver node show virtual-audio
                     fuchsia.resource.INTERRUPT_COUNT          0
                     fuchsia.resource.BTI_COUNT                0
                     fuchsia.resource.SMC_COUNT                0
-                    fuchsia.hardware.platform.device.Service  fuchsia.hardware.platform.device.Service.ZirconTransport
+                    fuchsia.Service                           fuchsia.hardware.platform.device.Service
 
   Node Offers:  Service                                   Source  Instances
                 fuchsia.hardware.platform.device.Service  dev     default

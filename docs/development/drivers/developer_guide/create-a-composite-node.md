@@ -141,11 +141,10 @@ For example, these bind rules are from a composite driver:
 composite focaltech_touch;
 
 using fuchsia.gpio;
-using fuchsia.hardware.i2c;
 using fuchsia.i2c;
 
 primary parent "i2c" {
-  fuchsia.hardware.i2c.Service == fuchsia.hardware.i2c.Service.ZirconTransport;
+  fuchsia.Service == "fuchsia.hardware.i2c.Service";
   fuchsia.BIND_I2C_ADDRESS == fuchsia.i2c.BIND_I2C_ADDRESS.FOCALTECH_TOUCH;
 }
 
@@ -174,11 +173,10 @@ successful if the following conditions are met:
   composite virtio_input;
 
   using fuchsia.acpi;
-  using fuchsia.hardware.pci;
   using fuchsia.pci;
 
   primary parent "pci" {
-      fuchsia.hardware.pci.Service == fuchsia.hardware.pci.Service.ZirconTransport;
+      fuchsia.Service == "fuchsia.hardware.pci.Service";
       fuchsia.BIND_PCI_VID == fuchsia.pci.BIND_PCI_VID.VIRTIO;
       fuchsia.BIND_PCI_DID == fuchsia.pci.BIND_PCI_DID.VIRTIO_DEV_TYPE_INPUT;
   }
@@ -274,16 +272,15 @@ Proto    : ZX_PROTOCOL_I2C (24)
 3 Properties
 [ 1/  3] : Key fuchsia.BIND_I2C_BUS_ID        Value 0x000001
 [ 2/  3] : Key fuchsia.BIND_I2C_ADDRESS       Value 0x000038
-[ 3/  3] : Key "fuchsia.hardware.i2c.Service" Value "fuchsia.hardware.i2c.Service.ZirconTransport"
+[ 3/  3] : Key "fuchsia.Service"              Value "fuchsia.hardware.i2c.Service"
 ```
 
 The example entry above shows the following node properties for the `i2c-1-56`
 node:
 
-- `fuchsia.I2C_BUS_ID` = `0x000001undefined`
+- `fuchsia.I2C_BUS_ID` = `0x000001`
 - `fuchsia.I2C_ADDRESS` = `0x000038`
-- `fuchsia.hardware.i2c.Service` =
-  `fuchsia.hardware.i2c.Service.ZirconTransport`
+- `fuchsia.Service` = `"fuchsia.hardware.i2c.Service"`
 
 To see which property values are acceptable, you can look up the bind libraries
 in the Fuchsia codebase (for example, in the [`src/devices/bind`][bind-dir]
@@ -310,19 +307,12 @@ extend uint fuchsia.BIND_I2C_ADDRESS {
 };
 ```
 
-In addition to the bind libraries in the Fuchsia codebase, you can also generate
-bind libraries from FIDL libraries. In the example above, this is where the
-property for the `fuchsia.hardware.i2c.Service` key and its value
-`fuchsia.hardware.i2c.Service.ZirconTransport` come from. (For more information,
-see [Generated bind libraries][generated-bing-libraries].)
-
 Using the property values found in the bind library, you can remap the node
 properties as shown below:
 
 - `fuchsia.BIND_I2C_BUS_ID` = `fuchsia.i2c.BIND_I2C_BUS_ID.I2C_2`
 - `fuchsia.BIND_I2C_ADDRESS` = `fuchsia.i2c.BIND_I2C_ADDRESS.FOCALTECH_TOUCH`
-- `fuchsia.hardware.i2c.Service` =
-  `fuchsia.hardware.i2c.Service.ZirconTransport`
+- `fuchsia.Service` = `"fuchsia.hardware.i2c.Service"`
 
 You can access these bind library values in your driver source code through its
 generated libraries. (For more information, see the
@@ -331,7 +321,7 @@ generated libraries. (For more information, see the
 The bind rules that match these properties are defined as shown below:
 
 ```none {:.devsite-disable-click-to-copy}
-accept fuchsia.hardware.i2c.Service { fuchsia.hardware.i2c.Service.ZirconTransport }
+accept fuchsia.Service { "fuchsia.hardware.i2c.Service" }
 accept BIND_I2C_BUS_ID { fuchsia.i2c.BIND_I2C_BUS_ID.I2C_2 }
 accept BIND_I2C_ADDRESS { fuchsia.i2c.BIND_I2C_ADDRESS.FOCALTECH_TOUCH }
 ```
@@ -347,8 +337,8 @@ following:
 
 ```none {:.devsite-disable-click-to-copy}
 const ddk::BindRule kI2cBindRules[] = {
-    ddk::MakeAcceptBindRule(bind_fuchsia_hardware_i2c::SERVICE,
-                            bind_fuchsia_hardware_i2c::SERVICE_ZIRCONTRANSPORT),
+    ddk::MakeAcceptBindRule(bind_fuchsia::SERVICE,
+                            "fuchsia.hardware.i2c.Service"),
     ddk::MakeAcceptBindRule(bind_fuchsia::I2C_BUS_ID,
                             bind_fuchsia_i2c::BIND_I2C_BUS_ID_I2C_2),
     ddk::MakeAcceptBindRule(bind_fuchsia::I2C_ADDRESS,
@@ -370,8 +360,8 @@ write the following:
 
 ```none {:.devsite-disable-click-to-copy}
 auto i2c_bind_rules = std::vector {
-    MakeAcceptBindRule(bind_fuchsia_hardware_i2c::SERVICE,
-                       bind_fuchsia_hardware_i2c::SERVICE_ZIRCONTRANSPORT),
+    MakeAcceptBindRule(bind_fuchsia::SERVICE,
+                       "fuchsia.hardware.i2c.Service"),
     MakeAcceptBindRule(bind_fuchsia::I2C_BUS_ID,
                        bind_fuchsia_i2c::BIND_I2C_BUS_ID_I2C_2),
     MakeAcceptBindRule(bind_fuchsia::I2C_ADDRESS,
@@ -400,8 +390,8 @@ shown below:
 
 ```none {:.devsite-disable-click-to-copy}
 const device_bind_prop_t kI2cProperties[] = {
-    ddk::MakeProperty(bind_fuchsia_hardware_i2c::SERVICE,
-                      bind_fuchsia_hardware_i2c::SERVICE_ZIRCONTRANSPORT),
+    ddk::MakeProperty(bind_fuchsia::SERVICE,
+                      "fuchsia.hardware.i2c.Service"),
     ddk::MakeProperty(bind_fuchsia::I2C_ADDRESS,
                       bind_fuchsia_focaltech_platform::BIND_I2C_ADDRESS_TOUCH),
 };
@@ -445,8 +435,8 @@ a `CompositeNodeSpec` object with an I2C parent specification as following:
 
 ```none {:.devsite-disable-click-to-copy}
 const ddk::BindRule kI2cBindRules[] = {
-    ddk::MakeAcceptBindRule(bind_fuchsia_hardware_i2c::SERVICE,
-                            bind_fuchsia_hardware_i2c::SERVICE_ZIRCONTRANSPORT),
+    ddk::MakeAcceptBindRule(bind_fuchsia::SERVICE,
+                            "fuchsia.hardware.i2c.Service"),
     ddk::MakeAcceptBindRule(bind_fuchsia::I2C_BUS_ID,
                             bind_fuchsia_i2c::BIND_I2C_BUS_ID_I2C_2),
     ddk::MakeAcceptBindRule(bind_fuchsia::I2C_ADDRESS,
@@ -454,8 +444,8 @@ const ddk::BindRule kI2cBindRules[] = {
 };
 
 const device_bind_prop_t kI2cProperties[] = {
-    ddk::MakeProperty(bind_fuchsia_hardware_i2c::SERVICE,
-                      bind_fuchsia_hardware_i2c::SERVICE_ZIRCONTRANSPORT),
+    ddk::MakeProperty(bind_fuchsia::SERVICE,
+                      "fuchsia.hardware.i2c.Service"),
     ddk::MakeProperty(bind_fuchsia::I2C_ADDRESS,
                       bind_fuchsia_focaltech_platform::BIND_I2C_ADDRESS_TOUCH),
 };
@@ -538,15 +528,15 @@ For example, say we defined the following composite node specification:
 
 ```cpp {:.devsite-disable-click-to-copy}
 std::vector<fuchsia_driver_framework::BindRule> bind_rules = {
-    fdf::MakeAcceptBindRule(bind_fuchsia_hardware_i2c::SERVICE,
-        bind_fuchsia_hardware_i2c::SERVICE_ZIRCONTRANSPORT),
+    fdf::MakeAcceptBindRule(bind_fuchsia::SERVICE,
+        "fuchsia.hardware.i2c.Service"),
     fdf::MakeAcceptBindRule(bind_fuchsia::I2C_ADDRESS,
         bind_fuchsia_i2c::BIND_I2C_ADDRESS_BACKLIGHT),
 };
 
-std::vector<fuchsia_driver_frameowork::Node> properties = {
-    fdf::MakeProperty(bind_fuchsia_hardware_i2c::SERVICE,
-        bind_fuchsia_hardware_i2c::SERVICE_ZIRCONTRANSPORT),
+std::vector<fuchsia_driver_framework::NodeProperty> properties = {
+    fdf::MakeProperty(bind_fuchsia::SERVICE,
+        "fuchsia.hardware.i2c.Service"),
     fdf::MakeProperty(bind_fuchsia::I2C_ADDRESS,
         bind_fuchsia_i2c::BIND_I2C_ADDRESS_BACKLIGHT),
 };
@@ -613,10 +603,10 @@ Node 0    : None
   [ 3/ 3] : Key "fuchsia.BIND_PLATFORM_DEV_DID"   Value 0x000001
 Node 1    : None
   2 Bind Rules
-  [ 1/ 2] : Accept "fuchsia.hardware.i2c.Service" { "fuchsia.hardware.i2c.Service.ZirconTransport" }
+  [ 1/ 2] : Accept "fuchsia.Service" { "fuchsia.hardware.i2c.Service" }
   [ 2/ 2] : Accept "fuchsia.BIND_I2C_ADDRESS"     { 0x00002C }
   2 Properties
-  [ 1/ 2] : Key "fuchsia.hardware.i2c.Service" Value "fuchsia.hardware.i2c.Service.ZirconTransport"
+  [ 1/ 2] : Key "fuchsia.Service"              Value "fuchsia.hardware.i2c.Service"
   [ 2/ 2] : Key "fuchsia.BIND_I2C_ADDRESS"     Value 0x00002C
 }
 ```
@@ -642,7 +632,7 @@ parent specifications:
 
 ```cpp {:.devsite-disable-click-to-copy}
 i2c parent specification properties {
-     fuchsia.hardware.i2c.Service: fuchsia.hardware.i2c.Service.ZirconTransport,
+     fuchsia.Service: "fuchsia.hardware.i2c.Service",
      fuchsia.BIND_I2C_ADDRESS: fuchsia.focaltech.platform.BIND_I2C_ADDRESS_TOUCH,
 }
 
@@ -660,11 +650,10 @@ specifications:
 composite focaltech_touch;
 
 using fuchsia.gpio;
-using fuchsia.hardware.i2c;
 using fuchsia.i2c;
 
 primary parent "i2c" {
-  fuchsia.hardware.i2c.Service == fuchsia.hardware.i2c.Service.ZirconTransport;
+  fuchsia.Service == "fuchsia.hardware.i2c.Service";
   fuchsia.BIND_I2C_ADDRESS == fuchsia.i2c.BIND_I2C_ADDRESS.FOCALTECH_TOUCH;
 }
 
@@ -701,11 +690,11 @@ Driver    : fuchsia-boot:///#meta/focaltech.cm
 Nodes     : 2
 Node 0    : "i2c" (Primary)
   3 Bind Rules
-  [ 1/ 3] : Accept "fuchsia.hardware.i2c.Service" { "fuchsia.hardware.i2c.Service.ZirconTransport" }
+  [ 1/ 3] : Accept "fuchsia.Service" { "fuchsia.hardware.i2c.Service" }
   [ 2/ 3] : Accept "fuchsia.BIND_I2C_BUS_ID" { 0x000001 }
   [ 3/ 3] : Accept "fuchsia.BIND_I2C_ADDRESS" { 0x000038 }
   2 Properties
-  [ 1/ 2] : Key "fuchsia.hardware.i2c.Service" Value "fuchsia.hardware.i2c.Service.ZirconTransport"
+  [ 1/ 2] : Key "fuchsia.Service"              Value "fuchsia.hardware.i2c.Service"
   [ 2/ 2] : Key "fuchsia.BIND_I2C_ADDRESS"     Value 0x000038
 Node 1    : "gpio-int"
   2 Bind Rules
@@ -725,11 +714,11 @@ Driver    : None
 Nodes     : 2
 Node 0    : None
   3 Bind Rules
-  [ 1/ 3] : Accept "fuchsia.hardware.i2c.Service" { "fuchsia.hardware.i2c.Service.ZirconTransport" }
+  [ 1/ 3] : Accept "fuchsia.Service" { "fuchsia.hardware.i2c.Service" }
   [ 2/ 3] : Accept "fuchsia.BIND_I2C_BUS_ID" { 0x000001 }
   [ 3/ 3] : Accept "fuchsia.BIND_I2C_ADDRESS" { 0x000038 }
-  1 Properties
-  [ 1/ 2] : Key "fuchsia.hardware.i2c.Service" Value "fuchsia.hardware.i2c.Service.ZirconTransport"
+  2 Properties
+  [ 1/ 2] : Key "fuchsia.Service"              Value "fuchsia.hardware.i2c.Service"
   [ 2/ 2] : Key "fuchsia.BIND_I2C_ADDRESS"     Value 0x000038
 Node 1    : None
   2 Bind Rules
@@ -760,7 +749,6 @@ For more information on the `ffx driver` command, see
 [bind-rules-tutorial]: /docs/development/drivers/tutorials/bind-rules-tutorial.md
 [bind-dir]: https://cs.opensource.google/fuchsia/fuchsia/+/main:/src/devices/bind/
 [fuchsia-i2c]: https://cs.opensource.google/fuchsia/fuchsia/+/main:src/devices/bind/fuchsia.i2c/
-[generated-bing-libraries]: /docs/development/drivers/tutorials/fidl-tutorial.md#generated-bind-libraries
 [bind-libraries-codegen-tutorial]: /docs/development/drivers/tutorials/bind-libraries-codegen.md
 [composite-node-spec-h]: https://cs.opensource.google/fuchsia/fuchsia/+/main:/src/lib/ddktl/include/ddktl/composite-node-spec.h
 [composite-node-spec-fidl]: https://cs.opensource.google/fuchsia/fuchsia/+/main:/sdk/fidl/fuchsia.driver.framework/composite_node_spec.fidl

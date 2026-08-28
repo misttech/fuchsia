@@ -57,7 +57,7 @@ Name     : zircon_transport_rust_next_child
 Moniker  : dev.zircon_transport_rust_next_parent.zircon_transport_rust_next_child
 Driver   : fuchsia-pkg://fuchsia.com/zircon_transport_rust_next#meta/zircon_transport_child.cm
 1 Properties
-[ 1/  1] : Key "fuchsia.hardware.i2c.Service" Value "fuchsia.hardware.i2c.Service.ZirconTransport"
+[ 1/  1] : Key "fuchsia.Service"              Value "fuchsia.hardware.i2c.Service"
 1 Offers
 Service: fuchsia.hardware.i2c.Service
   Source: dev.zircon_transport_rust_next_parent

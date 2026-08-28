@@ -44,14 +44,14 @@ Name     : i2c-child
 Moniker  : root.sys.platform.pt.acpi.FWCF.i2c-child
 Driver   : None
 2 Properties
-[ 1/  2] : Key "fuchsia.hardware.i2c.Service"  Value Enum(fuchsia.hardware.i2c.Service.ZirconTransport)
+[ 1/  2] : Key "fuchsia.Service"               Value String("fuchsia.hardware.i2c.Service")
 [ 2/  2] : Key fuchsia.BIND_I2C_ADDRESS        Value 0x0000ff
 ```
 
 The output above shows that the `i2c-child` node has the following node properties:
 
-*   Property key `fuchsia.hardware.i2c.Service` with an enum value of
-    `fuchsia.hardware.i2c.Service.ZirconTransport`.
+*   Property key `fuchsia.Service` with a string value of
+    `"fuchsia.hardware.i2c.Service"`.
 *   Property key `fuchsia.BIND_I2C_ADDRESS` with an integer value of `0xFF`.
 
 ### Look up the node properties in the driver source code {#look-up-the-driver-source-code}
@@ -72,8 +72,8 @@ child node:
 This code shows that the `i2c-child` node is created with the following bind
 properties:
 
-*   Property key `fuchsia.hardware.i2c.Service` with an enum value of
-    `fuchsia.hardware.i2c.Service.ZirconTransport`.
+*   Property key `fuchsia.Service` with a string value of
+    `"fuchsia.hardware.i2c.Service"`.
 *   Property key `fuchsia.BIND_I2C_ADDRESS` with an integer value of `0xFF`.
 
 Note: For more information on the `NodeAddArgs` struct used to pass the bind
@@ -88,8 +88,8 @@ language to write the bind rules for your driver.
 In the previous section, we’ve identified that the `i2c-child` node has the
 following node properties:
 
-*   Property key `fuchsia.hardware.i2c` with an enum value of
-    `fuchsia.hardware.i2c.Service.ZirconTransport`.
+*   Property key `fuchsia.Service` with a string value of
+    `"fuchsia.hardware.i2c.Service"`.
 *   Property key `fuchsia.BIND_I2C_ADDRESS` with an integer value of `0xFF`.
 
 To match these properties, the `i2c_temperature` driver declares the following

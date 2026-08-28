@@ -88,8 +88,6 @@ TEST(I2cBusVisitorTest, TestI2CChannels) {
       EXPECT_TRUE(fdf_devicetree::testing::CheckHasProperties(
           {
               fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.i2c.Service"),
-              fdf::MakeProperty2("fuchsia.hardware.i2c.Service",
-                                 "fuchsia.hardware.i2c.Service.ZirconTransport"),
               fdf::MakeProperty2(bind_fuchsia::I2C_ADDRESS, uint32_t{I2C_ADDRESS1}),
           },
           i2c_nodes[0].properties(), false));
@@ -107,8 +105,6 @@ TEST(I2cBusVisitorTest, TestI2CChannels) {
       EXPECT_TRUE(fdf_devicetree::testing::CheckHasProperties(
           {
               fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.i2c.Service"),
-              fdf::MakeProperty2("fuchsia.hardware.i2c.Service",
-                                 "fuchsia.hardware.i2c.Service.ZirconTransport"),
               fdf::MakeProperty2(bind_fuchsia::I2C_ADDRESS, uint32_t{I2C_ADDRESS1}),
           },
           i2c_nodes[0].properties(), false));
@@ -126,8 +122,6 @@ TEST(I2cBusVisitorTest, TestI2CChannels) {
       EXPECT_TRUE(fdf_devicetree::testing::CheckHasProperties(
           {
               fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.i2c.Service"),
-              fdf::MakeProperty2("fuchsia.hardware.i2c.Service",
-                                 "fuchsia.hardware.i2c.Service.ZirconTransport"),
               fdf::MakeProperty2(bind_fuchsia::I2C_ADDRESS, uint32_t{I2C_ADDRESS2}),
           },
           i2c_nodes[0].properties(), false));
@@ -146,8 +140,6 @@ TEST(I2cBusVisitorTest, TestI2CChannels) {
       EXPECT_TRUE(fdf_devicetree::testing::CheckHasProperties(
           {
               fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.i2c.Service"),
-              fdf::MakeProperty2("fuchsia.hardware.i2c.Service",
-                                 "fuchsia.hardware.i2c.Service.ZirconTransport"),
               fdf::MakeProperty2(bind_fuchsia::I2C_ADDRESS, uint32_t{I2C_ADDRESS3}),
           },
           i2c_nodes[0].properties(), false));
@@ -162,8 +154,6 @@ TEST(I2cBusVisitorTest, TestI2CChannels) {
       EXPECT_TRUE(fdf_devicetree::testing::CheckHasProperties(
           {
               fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.i2c.Service"),
-              fdf::MakeProperty2("fuchsia.hardware.i2c.Service",
-                                 "fuchsia.hardware.i2c.Service.ZirconTransport"),
               fdf::MakeProperty2(bind_fuchsia::I2C_ADDRESS, uint32_t{I2C_ADDRESS4}),
           },
           i2c_nodes[1].properties(), false));

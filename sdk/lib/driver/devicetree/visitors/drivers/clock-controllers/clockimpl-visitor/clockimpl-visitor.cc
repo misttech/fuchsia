@@ -165,8 +165,6 @@ zx::result<> ClockImplVisitor::AddChildNodeSpec(fdf_devicetree::Node& child, uin
       .properties =
           {
               fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.clock.Service"),
-              fdf::MakeProperty2("fuchsia.hardware.clock.Service",
-                                 "fuchsia.hardware.clock.Service.ZirconTransport"),
           },
   }};
 

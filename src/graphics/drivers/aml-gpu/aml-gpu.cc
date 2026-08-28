@@ -454,8 +454,6 @@ zx::result<> AmlGpu::Start(fdf::DriverContext context) {
 
   std::vector properties = {
       fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.gpu.mali.Service"),
-      fdf::MakeProperty2("fuchsia.hardware.gpu.mali.Service",
-                         "fuchsia.hardware.gpu.mali.Service.DriverTransport"),
   };
 
   zx::result child = AddChild("aml-gpu", properties, offers);

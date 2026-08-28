@@ -93,8 +93,6 @@ zx::result<fidl::ClientEnd<fuchsia_driver_framework::NodeController>> AmlCanvasD
 
   std::vector properties = {
       fdf::MakeProperty2(arena, bind_fuchsia::SERVICE, "fuchsia.hardware.amlogiccanvas.Service"),
-      fdf::MakeProperty2(arena, "fuchsia.hardware.amlogiccanvas.Service",
-                         "fuchsia.hardware.amlogiccanvas.Service.ZirconTransport"),
   };
 
   auto args = fuchsia_driver_framework::wire::NodeAddArgs::Builder(arena)
