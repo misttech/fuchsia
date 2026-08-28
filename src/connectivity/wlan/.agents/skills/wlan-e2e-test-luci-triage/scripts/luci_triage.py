@@ -13,9 +13,9 @@ from collections import defaultdict
 from typing import Any, Dict, List
 
 
-def check_prerequisites():
+def check_prerequisites() -> None:
     missing = []
-    for cmd in ("prpc", "rdb"):
+    for cmd in ("bb", "rdb", "prpc"):
         if shutil.which(cmd) is None:
             missing.append(cmd)
     if missing:
@@ -44,58 +44,47 @@ def run_cmd(cmd: List[str], input_data: str = None) -> str:
 def fetch_builds(builder: str, bucket: str, cutoff_date: str) -> List[str]:
     """Fetches relevant build IDs for a specific builder since the cutoff date, including SUCCESS to catch flaky runs."""
     print(f"Fetching builds for {builder} in {bucket} since {cutoff_date}...")
-    page_token = ""
     relevant_builds = []
 
-    while True:
-        payload = {
-            "predicate": {
-                "builder": {
-                    "project": "turquoise",
-                    "bucket": bucket,
-                    "builder": builder,
-                }
-            },
-            "pageSize": 50,
-            "mask": {"fields": "id,status,createTime,summaryMarkdown"},
-        }
-        if page_token:
-            payload["pageToken"] = page_token
+    cmd = [
+        "bb",
+        "ls",
+        f"turquoise/{bucket}/{builder}",
+        "-json",
+        "-nopage",
+    ]
+    try:
+        proc = subprocess.Popen(
+            cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
+        )
+        for line in proc.stdout:
+            if not line.strip():
+                continue
+            try:
+                build = json.loads(line)
+            except json.JSONDecodeError:
+                continue
 
-        cmd = [
-            "prpc",
-            "call",
-            "cr-buildbucket.appspot.com",
-            "buildbucket.v2.Builds.SearchBuilds",
-        ]
-        out = run_cmd(cmd, json.dumps(payload))
-        if not out:
-            break
-
-        data = json.loads(out)
-        builds = data.get("builds", [])
-        if not builds:
-            break
-
-        should_break = False
-        for build in builds:
             create_time = build.get("createTime", "")
             if create_time:
                 date_str = create_time[:10]
                 if date_str < cutoff_date:
-                    should_break = True
                     break
                 status = build.get("status")
                 summary = build.get("summaryMarkdown", "").lower()
                 if status == "FAILURE" or "flake" in summary:
                     relevant_builds.append(build["id"])
 
-        if should_break:
-            break
-
-        page_token = data.get("nextPageToken")
-        if not page_token:
-            break
+        # If we broke out early because the cutoff date was reached, terminate the
+        # background `bb ls` process to avoid leaving an orphaned task running.
+        if proc.poll() is None:
+            proc.terminate()
+            try:
+                proc.wait(timeout=2)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+    except Exception as e:
+        print(f"Error running {' '.join(cmd)}: {e}", file=sys.stderr)
 
     return relevant_builds
 
@@ -117,8 +106,16 @@ def fetch_results_with_bot_ids(
             "-json",
             "-tr-fields",
             "testId,status,name,failureReason,summaryHtml,tags",
-            f"build-{build_id}",
         ]
+        if test_pattern and test_pattern != ".*":
+            rdb_test_arg = test_pattern
+            if not rdb_test_arg.startswith(".*"):
+                rdb_test_arg = f".*{rdb_test_arg}"
+            if not rdb_test_arg.endswith(".*"):
+                rdb_test_arg = f"{rdb_test_arg}.*"
+            cmd.extend(["-test", rdb_test_arg])
+
+        cmd.append(f"build-{build_id}")
         out = run_cmd(cmd)
         if not out:
             continue
@@ -139,7 +136,7 @@ def fetch_results_with_bot_ids(
     return all_results
 
 
-def main():
+def main() -> None:
     check_prerequisites()
 
     parser = argparse.ArgumentParser(description="LUCI Triage Utility")
