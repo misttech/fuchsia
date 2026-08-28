@@ -1817,6 +1817,7 @@ fn receive_ip_packet_action_with_src_addr<I: IpExt + TestIpExt>(
 ) -> ReceivePacketAction<I, DeviceId<FakeBindingsCtx>> {
     let Ctx { core_ctx, bindings_ctx } = ctx;
     const FRAME_DST: Option<LocalFrameDestination> = None;
+    const MAX_FRAGMENT_LEN: Option<usize> = None;
     let buf = new_ip_packet_buf::<I>(src_addr, dst_addr);
     let mut buf_ref = buf.as_ref();
     let packet = buf_ref.parse::<I::Packet<_>>().expect("parse should succeed");
@@ -1835,6 +1836,7 @@ fn receive_ip_packet_action_with_src_addr<I: IpExt + TestIpExt>(
                 packet,
                 FRAME_DST,
                 &Default::default(),
+                MAX_FRAGMENT_LEN,
             ))
         },
         |(packet, IpInvariant((core_ctx, bindings_ctx, dev)))| {
@@ -1845,6 +1847,7 @@ fn receive_ip_packet_action_with_src_addr<I: IpExt + TestIpExt>(
                 packet,
                 FRAME_DST,
                 &Default::default(),
+                MAX_FRAGMENT_LEN,
             ))
         },
     );

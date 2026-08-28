@@ -45,7 +45,7 @@ use netstack3_base::{
     TimerBindingsTypes, TimerContext,
 };
 use netstack3_hashmap::hash_map::{Entry, HashMap};
-use packet::BufferViewMut;
+use packet::{BufferViewMut, ParsablePacket as _};
 use packet_formats::ip::{IpPacket, Ipv4Proto};
 use packet_formats::ipv4::{Ipv4Header, Ipv4Packet};
 use packet_formats::ipv6::Ipv6Packet;
@@ -177,6 +177,8 @@ pub trait FragmentHandler<I: ReassemblyIpExt, BC> {
     /// `reassemble_packet` as `buffer` where the packet will be reassembled
     /// into.
     ///
+    /// Returns the size of the largest fragment received for this packet.
+    ///
     /// # Panics
     ///
     /// Panics if the provided `buffer` does not have enough capacity for the
@@ -189,7 +191,7 @@ pub trait FragmentHandler<I: ReassemblyIpExt, BC> {
         bindings_ctx: &mut BC,
         key: &FragmentCacheKey<I>,
         buffer: BV,
-    ) -> Result<(), FragmentReassemblyError>;
+    ) -> Result<usize, FragmentReassemblyError>;
 }
 
 impl<I: IpExt + ReassemblyIpExt, BC: FragmentBindingsContext, CC: FragmentContext<I, BC>>
@@ -236,7 +238,7 @@ impl<I: IpExt + ReassemblyIpExt, BC: FragmentBindingsContext, CC: FragmentContex
         bindings_ctx: &mut BC,
         key: &FragmentCacheKey<I>,
         buffer: BV,
-    ) -> Result<(), FragmentReassemblyError> {
+    ) -> Result<usize, FragmentReassemblyError> {
         self.with_state_mut(|cache| {
             let res = cache.reassemble_packet(key, buffer);
 
@@ -267,8 +269,13 @@ impl<I: ReassemblyIpExt, BC: FragmentBindingsContext, CC: FragmentContext<I, BC>
             };
 
             // If a timer fired, the `key` must still exist in our fragment cache.
-            let FragmentCacheData { missing_blocks: _, body_fragments, header: _, total_size } =
-                assert_matches!(cache.remove_data(&key), Some(c) => c);
+            let FragmentCacheData {
+                missing_blocks: _,
+                body_fragments,
+                header: _,
+                total_size,
+                max_fragment_len: _,
+            } = assert_matches!(cache.remove_data(&key), Some(c) => c);
             debug!(
                 "reassembly for {key:?} \
                 timed out with {} fragments and {total_size} bytes",
@@ -427,6 +434,9 @@ struct FragmentCacheData {
     /// and sum the partial body sizes to calculate the reassembled packet's
     /// size.
     total_size: usize,
+
+    /// Size of the largest fragment received for this packet.
+    max_fragment_len: usize,
 }
 
 impl Default for FragmentCacheData {
@@ -436,6 +446,7 @@ impl Default for FragmentCacheData {
             body_fragments: BinaryHeap::new(),
             header: None,
             total_size: 0,
+            max_fragment_len: 0,
         }
     }
 }
@@ -766,6 +777,8 @@ impl<I: ReassemblyIpExt, BT: FragmentBindingsTypes> IpPacketFragmentCache<I, BT>
         }
 
         let mut added_bytes = 0;
+        let fragment_len = packet.parse_metadata().header_len() + packet.body().len();
+        fragment_data.max_fragment_len = fragment_data.max_fragment_len.max(fragment_len);
         // Get header buffer from `packet` if its fragment offset equals to 0.
         if offset == 0 {
             assert_eq!(fragment_data.header, None);
@@ -806,6 +819,8 @@ impl<I: ReassemblyIpExt, BT: FragmentBindingsTypes> IpPacketFragmentCache<I, BT>
     /// `reassemble_packet` as `buffer` where the packet will be reassembled
     /// into.
     ///
+    /// Returns the size of the largest fragment received for this packet.
+    ///
     /// # Panics
     ///
     /// Panics if the provided `buffer` does not have enough capacity for the
@@ -817,7 +832,7 @@ impl<I: ReassemblyIpExt, BT: FragmentBindingsTypes> IpPacketFragmentCache<I, BT>
         &mut self,
         key: &FragmentCacheKey<I>,
         buffer: BV,
-    ) -> Result<(), FragmentReassemblyError> {
+    ) -> Result<usize, FragmentReassemblyError> {
         let entry = match self.cache.entry(*key) {
             Entry::Occupied(entry) => entry,
             Entry::Vacant(_) => return Err(FragmentReassemblyError::InvalidKey),
@@ -840,7 +855,8 @@ impl<I: ReassemblyIpExt, BT: FragmentBindingsTypes> IpPacketFragmentCache<I, BT>
         let fragments = data.body_fragments.into_sorted_vec();
         let body_fragments = fragments.iter().map(|x| x.data.as_slice());
         I::Packet::reassemble_fragmented_packet(buffer, header.as_slice(), body_fragments)
-            .map_err(|_| FragmentReassemblyError::PacketParsingError)
+            .map_err(|_| FragmentReassemblyError::PacketParsingError)?;
+        Ok(data.max_fragment_len)
     }
 
     /// Gets or creates a new entry in the cache for a given `key`.
@@ -980,7 +996,7 @@ mod tests {
     use ip_test_macro::ip_test;
     use net_declare::{net_ip_v4, net_ip_v6};
     use net_types::Witness;
-    use net_types::ip::{Ipv4, Ipv4Addr, Ipv6, Ipv6Addr};
+    use net_types::ip::{IpVersion, Ipv4, Ipv4Addr, Ipv6, Ipv6Addr};
     use netstack3_base::testutil::{
         FakeBindingsCtx, FakeCoreCtx, FakeInstant, FakeTimerCtxExt, TEST_ADDRS_V4, TEST_ADDRS_V6,
         assert_empty,
@@ -989,6 +1005,7 @@ mod tests {
     use packet::{Buf, NestablePacketBuilder as _, ParsablePacket, ParseBuffer, Serializer};
     use packet_formats::ip::{FragmentOffset, IpProto, Ipv6Proto};
     use packet_formats::ipv4::Ipv4PacketBuilder;
+    use packet_formats::ipv6::ext_hdrs::IPV6_FRAGMENT_EXT_HDR_LEN;
     use packet_formats::ipv6::{Ipv6PacketBuilder, Ipv6PacketBuilderWithFragmentHeader};
     use test_case::test_case;
 
@@ -1235,6 +1252,14 @@ mod tests {
         }
     }
 
+    fn expected_max_fragment_len<I: TestIpExt>(num_blocks: u16) -> usize {
+        let mut len = I::HEADER_LENGTH + usize::from(num_blocks) * usize::from(FRAGMENT_BLOCK_SIZE);
+        if I::VERSION == IpVersion::V6 {
+            len += IPV6_FRAGMENT_EXT_HDR_LEN;
+        }
+        len
+    }
+
     /// Tries to reassemble the packet with the given fragment ID.
     ///
     /// `body_fragment_blocks` is in units of `FRAGMENT_BLOCK_SIZE`.
@@ -1247,6 +1272,7 @@ mod tests {
         bindings_ctx: &mut BC,
         fragment_id: u16,
         body_fragment_blocks: u16,
+        expected_max_fragment_len: usize,
     ) {
         let mut buffer: Vec<u8> = vec![
             0;
@@ -1256,8 +1282,9 @@ mod tests {
         ];
         let mut buffer = &mut buffer[..];
         let key = test_key(fragment_id);
-
-        FragmentHandler::reassemble_packet(core_ctx, bindings_ctx, &key, &mut buffer).unwrap();
+        let max_fragment_len =
+            FragmentHandler::reassemble_packet(core_ctx, bindings_ctx, &key, &mut buffer).unwrap();
+        assert_eq!(max_fragment_len, expected_max_fragment_len);
         let packet = I::Packet::parse_mut(&mut buffer, ()).unwrap();
 
         let expected_body = generate_body_fragment(
@@ -1381,7 +1408,13 @@ mod tests {
             ExpectedResult::Ready { body_fragment_blocks: 3 * size, key: test_key(id) },
         );
 
-        try_reassemble_ip_packet(&mut core_ctx, &mut bindings_ctx, id, 3 * size);
+        try_reassemble_ip_packet(
+            &mut core_ctx,
+            &mut bindings_ctx,
+            id,
+            3 * size,
+            expected_max_fragment_len::<I>(size),
+        );
     }
 
     #[test]
@@ -1445,8 +1478,10 @@ mod tests {
         );
         let mut buffer: Vec<u8> = vec![0; expected_packet_size::<Ipv4>(2)];
         let mut buffer = &mut buffer[..];
-        FragmentHandler::reassemble_packet(&mut core_ctx, &mut bindings_ctx, &KEY, &mut buffer)
-            .expect("reassembly should succeed");
+        let max_fragment_len =
+            FragmentHandler::reassemble_packet(&mut core_ctx, &mut bindings_ctx, &KEY, &mut buffer)
+                .expect("reassembly should succeed");
+        assert_eq!(max_fragment_len, expected_max_fragment_len::<Ipv4>(1));
         let _packet = Ipv4Packet::parse_mut(&mut buffer, ()).expect("parse should succeed");
     }
 
@@ -1507,8 +1542,10 @@ mod tests {
         );
         let mut buffer: Vec<u8> = vec![0; expected_packet_size::<Ipv6>(2)];
         let mut buffer = &mut buffer[..];
-        FragmentHandler::reassemble_packet(&mut core_ctx, &mut bindings_ctx, &KEY, &mut buffer)
-            .expect("reassembly should succeed");
+        let max_fragment_len =
+            FragmentHandler::reassemble_packet(&mut core_ctx, &mut bindings_ctx, &KEY, &mut buffer)
+                .expect("reassembly should succeed");
+        assert_eq!(max_fragment_len, expected_max_fragment_len::<Ipv6>(1));
         let _packet = Ipv6Packet::parse_mut(&mut buffer, ()).expect("parse should succeed");
     }
 
@@ -1551,8 +1588,10 @@ mod tests {
         );
         let mut buffer: Vec<u8> = vec![0; expected_packet_size::<Ipv6>(2)];
         let mut buffer = &mut buffer[..];
-        FragmentHandler::reassemble_packet(&mut core_ctx, &mut bindings_ctx, &KEY, &mut buffer)
-            .expect("reassembly should succeed");
+        let max_fragment_len =
+            FragmentHandler::reassemble_packet(&mut core_ctx, &mut bindings_ctx, &KEY, &mut buffer)
+                .expect("reassembly should succeed");
+        assert_eq!(max_fragment_len, expected_max_fragment_len::<Ipv6>(1));
         let packet = Ipv6Packet::parse_mut(&mut buffer, ()).expect("parse should succeed");
         assert_eq!(packet.proto(), PROTO1);
     }
@@ -1876,7 +1915,13 @@ mod tests {
             ExpectedResult::Ready { body_fragment_blocks: 2 * size, key: test_key(id) },
         );
 
-        try_reassemble_ip_packet(&mut core_ctx, &mut bindings_ctx, id, 2 * size);
+        try_reassemble_ip_packet(
+            &mut core_ctx,
+            &mut bindings_ctx,
+            id,
+            2 * size,
+            expected_max_fragment_len::<I>(size),
+        );
     }
 
     #[ip_test(I)]
@@ -1995,8 +2040,10 @@ mod tests {
         validate_size(&core_ctx.state.cache);
         let mut buffer: Vec<u8> = vec![0; packet_len];
         let mut buffer = &mut buffer[..];
-        FragmentHandler::reassemble_packet(&mut core_ctx, &mut bindings_ctx, &key, &mut buffer)
-            .unwrap();
+        let max_fragment_len =
+            FragmentHandler::reassemble_packet(&mut core_ctx, &mut bindings_ctx, &key, &mut buffer)
+                .unwrap();
+        assert_eq!(max_fragment_len, expected_max_fragment_len::<Ipv4>(1));
         let packet = Ipv4Packet::parse_mut(&mut buffer, ()).unwrap();
         let mut expected_body: Vec<u8> = Vec::new();
         expected_body.extend(0..15);
@@ -2070,8 +2117,10 @@ mod tests {
         validate_size(&core_ctx.state.cache);
         let mut buffer: Vec<u8> = vec![0; packet_len];
         let mut buffer = &mut buffer[..];
-        FragmentHandler::reassemble_packet(&mut core_ctx, &mut bindings_ctx, &key, &mut buffer)
-            .unwrap();
+        let max_fragment_len =
+            FragmentHandler::reassemble_packet(&mut core_ctx, &mut bindings_ctx, &key, &mut buffer)
+                .unwrap();
+        assert_eq!(max_fragment_len, expected_max_fragment_len::<Ipv6>(1));
         let packet = Ipv6Packet::parse_mut(&mut buffer, ()).unwrap();
         let mut expected_body: Vec<u8> = Vec::new();
         expected_body.extend(0..15);
@@ -2130,7 +2179,13 @@ mod tests {
             ExpectedResult::Ready { body_fragment_blocks: 3, key: test_key(id_0) },
         );
 
-        try_reassemble_ip_packet(&mut core_ctx, &mut bindings_ctx, id_0, 3);
+        try_reassemble_ip_packet(
+            &mut core_ctx,
+            &mut bindings_ctx,
+            id_0,
+            3,
+            expected_max_fragment_len::<I>(SIZE),
+        );
 
         // Process fragment #2 for packet #1
         I::process_ip_fragment(
@@ -2140,7 +2195,13 @@ mod tests {
             ExpectedResult::Ready { body_fragment_blocks: 3, key: test_key(id_1) },
         );
 
-        try_reassemble_ip_packet(&mut core_ctx, &mut bindings_ctx, id_1, 3);
+        try_reassemble_ip_packet(
+            &mut core_ctx,
+            &mut bindings_ctx,
+            id_1,
+            3,
+            expected_max_fragment_len::<I>(SIZE),
+        );
     }
 
     #[ip_test(I)]
@@ -2242,7 +2303,13 @@ mod tests {
             ExpectedResult::Ready { body_fragment_blocks: 3, key: test_key(id_0) },
         );
 
-        try_reassemble_ip_packet(&mut core_ctx, &mut bindings_ctx, id_0, 3);
+        try_reassemble_ip_packet(
+            &mut core_ctx,
+            &mut bindings_ctx,
+            id_0,
+            3,
+            expected_max_fragment_len::<I>(SIZE),
+        );
 
         // Advance time.
         assert_empty(
@@ -2266,7 +2333,13 @@ mod tests {
             ExpectedResult::Ready { body_fragment_blocks: 3, key: test_key(id_2) },
         );
 
-        try_reassemble_ip_packet(&mut core_ctx, &mut bindings_ctx, id_2, 3);
+        try_reassemble_ip_packet(
+            &mut core_ctx,
+            &mut bindings_ctx,
+            id_2,
+            3,
+            expected_max_fragment_len::<I>(SIZE),
+        );
 
         // Advance time to the timeout, triggering the timer for the reassembly
         // of packet #1
@@ -2414,6 +2487,48 @@ mod tests {
             FragmentSpec { id, offset: 1, size: 1, m_flag: false },
             get_ipv4_builder(),
             ExpectedResult::Invalid,
+        );
+    }
+
+    // Verify that the largest fragment size is tracked and returned.
+    #[ip_test(I)]
+    #[test_case(1)]
+    #[test_case(10)]
+    #[test_case(100)]
+    fn test_max_fragment_len<I: TestIpExt>(size: u16) {
+        let FakeCtxImpl { mut core_ctx, mut bindings_ctx } = new_context::<I>();
+        let id = 5;
+
+        // Process fragment #0 (small)
+        I::process_ip_fragment(
+            &mut core_ctx,
+            &mut bindings_ctx,
+            FragmentSpec { id, offset: 0, size: 1, m_flag: true },
+            ExpectedResult::NeedMore,
+        );
+
+        // Process fragment #1 (large)
+        I::process_ip_fragment(
+            &mut core_ctx,
+            &mut bindings_ctx,
+            FragmentSpec { id, offset: 1, size, m_flag: true },
+            ExpectedResult::NeedMore,
+        );
+
+        // Process fragment #2 (small)
+        I::process_ip_fragment(
+            &mut core_ctx,
+            &mut bindings_ctx,
+            FragmentSpec { id, offset: size + 1, size: 1, m_flag: false },
+            ExpectedResult::Ready { body_fragment_blocks: size + 2, key: test_key(id) },
+        );
+
+        try_reassemble_ip_packet(
+            &mut core_ctx,
+            &mut bindings_ctx,
+            id,
+            size + 2,
+            expected_max_fragment_len::<I>(size),
         );
     }
 }

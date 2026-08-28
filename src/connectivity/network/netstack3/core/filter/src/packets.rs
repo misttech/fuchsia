@@ -1251,6 +1251,8 @@ pub struct ForwardedPacket<I: IpExt, B> {
     protocol: I::Proto,
     transport_header_offset: usize,
     buffer: B,
+    /// Whether this packet was reassembled from fragments.
+    reassembled: bool,
 }
 
 impl<I: IpExt, B: BufferMut> ForwardedPacket<I, B> {
@@ -1266,10 +1268,16 @@ impl<I: IpExt, B: BufferMut> ForwardedPacket<I, B> {
         protocol: I::Proto,
         meta: ParseMetadata,
         mut buffer: B,
+        reassembled: bool,
     ) -> Self {
         let transport_header_offset = meta.header_len();
         buffer.undo_parse(meta);
-        Self { src_addr, dst_addr, protocol, transport_header_offset, buffer }
+        Self { src_addr, dst_addr, protocol, transport_header_offset, buffer, reassembled }
+    }
+
+    /// Returns whether this forwarded packet was reassembled from fragments.
+    pub fn reassembled(&self) -> bool {
+        self.reassembled
     }
 
     /// Discard the metadata carried by the [`ForwardedPacket`] and return the
@@ -1301,9 +1309,13 @@ impl<I: IpExt, B: BufferMut + NetworkSerializer> Serializer<NetworkSerialization
         constraints: packet::PacketConstraints,
         provider: P,
     ) -> Result<G, (packet::SerializeError<P::Error>, Self)> {
-        let Self { src_addr, dst_addr, protocol, transport_header_offset, buffer } = self;
+        let Self { src_addr, dst_addr, protocol, transport_header_offset, buffer, reassembled } =
+            self;
         buffer.serialize(context, constraints, provider).map_err(|(err, buffer)| {
-            (err, Self { src_addr, dst_addr, protocol, transport_header_offset, buffer })
+            (
+                err,
+                Self { src_addr, dst_addr, protocol, transport_header_offset, buffer, reassembled },
+            )
         })
     }
 
@@ -1432,8 +1444,14 @@ impl<I: FilterIpExt, B: BufferMut> IpPacket<I> for ForwardedPacket<I, B> {
     }
 
     fn transport_packet_mut(&mut self) -> Self::TransportPacketMut<'_> {
-        let ForwardedPacket { src_addr: _, dst_addr: _, protocol, buffer, transport_header_offset } =
-            self;
+        let ForwardedPacket {
+            src_addr: _,
+            dst_addr: _,
+            protocol,
+            buffer,
+            transport_header_offset,
+            reassembled: _,
+        } = self;
         ParsedTransportHeaderMut::<I>::parse_in_ip_packet(
             *protocol,
             SliceBufViewMut::new(&mut buffer.as_mut()[*transport_header_offset..]),
@@ -1445,8 +1463,14 @@ impl<I: FilterIpExt, B: BufferMut> IpPacket<I> for ForwardedPacket<I, B> {
     }
 
     fn icmp_error_mut<'a>(&'a mut self) -> Self::IcmpErrorMut<'a> {
-        let ForwardedPacket { src_addr, dst_addr, protocol, buffer, transport_header_offset } =
-            self;
+        let ForwardedPacket {
+            src_addr,
+            dst_addr,
+            protocol,
+            buffer,
+            transport_header_offset,
+            reassembled: _,
+        } = self;
 
         ParsedIcmpErrorMut::<I>::parse_in_ip_packet(
             *src_addr,
@@ -1459,8 +1483,14 @@ impl<I: FilterIpExt, B: BufferMut> IpPacket<I> for ForwardedPacket<I, B> {
 
 impl<I: IpExt, B: BufferMut> MaybeTransportPacket for ForwardedPacket<I, B> {
     fn transport_packet_data(&self) -> Option<TransportPacketData> {
-        let ForwardedPacket { protocol, buffer, src_addr, dst_addr, transport_header_offset } =
-            self;
+        let ForwardedPacket {
+            protocol,
+            buffer,
+            src_addr,
+            dst_addr,
+            transport_header_offset,
+            reassembled: _,
+        } = self;
         TransportPacketData::parse_in_ip_packet::<I, _>(
             *src_addr,
             *dst_addr,
@@ -1472,7 +1502,14 @@ impl<I: IpExt, B: BufferMut> MaybeTransportPacket for ForwardedPacket<I, B> {
 
 impl<I: IpExt, B: BufferMut> MaybeIcmpErrorPayload<I> for ForwardedPacket<I, B> {
     fn icmp_error_payload(&self) -> Option<ParsedIcmpErrorPayload<I>> {
-        let Self { src_addr: _, dst_addr: _, protocol, transport_header_offset, buffer } = self;
+        let Self {
+            src_addr: _,
+            dst_addr: _,
+            protocol,
+            transport_header_offset,
+            buffer,
+            reassembled: _,
+        } = self;
         ParsedIcmpErrorPayload::parse_in_outer_ip_packet(
             *protocol,
             Buf::new(&buffer.as_ref()[*transport_header_offset..], ..),
@@ -4382,15 +4419,27 @@ mod tests {
     ) {
         let mut buffer = ip_packet::<I, P>(I::SRC_IP, I::DST_IP);
         let meta = buffer.parse::<I::Packet<_>>().expect("parse IP packet").parse_metadata();
-        let mut packet =
-            ForwardedPacket::<I, _>::new(I::SRC_IP, I::DST_IP, P::proto::<I>(), meta, buffer);
+        let mut packet = ForwardedPacket::<I, _>::new(
+            I::SRC_IP,
+            I::DST_IP,
+            P::proto::<I>(),
+            meta,
+            buffer,
+            false,
+        );
         packet.set_src_addr(I::SRC_IP_2);
         packet.set_dst_addr(I::DST_IP_2);
 
         let mut buffer = ip_packet::<I, P>(I::SRC_IP_2, I::DST_IP_2);
         let meta = buffer.parse::<I::Packet<_>>().expect("parse IP packet").parse_metadata();
-        let equivalent =
-            ForwardedPacket::<I, _>::new(I::SRC_IP_2, I::DST_IP_2, P::proto::<I>(), meta, buffer);
+        let equivalent = ForwardedPacket::<I, _>::new(
+            I::SRC_IP_2,
+            I::DST_IP_2,
+            P::proto::<I>(),
+            meta,
+            buffer,
+            false,
+        );
 
         assert_eq!(equivalent, packet);
     }
@@ -5193,8 +5242,14 @@ mod tests {
         let mut packet_buf = ip_packet::<I, P>(I::SRC_IP, I::DST_IP);
         let packet_bytes = packet_buf.to_flattened_vec();
         let meta = packet_buf.parse::<I::Packet<_>>().expect("parse IP packet").parse_metadata();
-        let packet =
-            ForwardedPacket::<I, _>::new(I::SRC_IP, I::DST_IP, P::proto::<I>(), meta, packet_buf);
+        let packet = ForwardedPacket::<I, _>::new(
+            I::SRC_IP,
+            I::DST_IP,
+            P::proto::<I>(),
+            meta,
+            packet_buf,
+            false,
+        );
 
         let result = packet
             .partial_serialize(&mut NetworkSerializationContext::default(), packet::new_buf_vec)

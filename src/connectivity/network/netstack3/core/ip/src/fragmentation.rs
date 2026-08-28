@@ -361,7 +361,13 @@ where
                 );
                 Ok((Out(ForwardedIpv4PacketBuilder { builder, raw_options }), IpInvariant(body)))
             },
-            |_forwarded| Err(FragmentationError::NotAllowed),
+            |forwarded| {
+                // TODO(https://fxbug.dev/547062448): Allow fragmentation if the
+                // packet was reassembled on ingress
+                let _ = forwarded.reassembled();
+
+                Err(FragmentationError::NotAllowed)
+            },
         )
         .map(|(Out(builder), IpInvariant(body))| (builder, body))
     }
@@ -812,7 +818,7 @@ mod tests {
             let proto = packet.proto();
             let meta = packet.parse_metadata();
             drop(packet);
-            ForwardedPacket::new(src_addr, dst_addr, proto, meta, buffer)
+            ForwardedPacket::new(src_addr, dst_addr, proto, meta, buffer, false)
         }
         fn check_fragment(
             &self,

@@ -346,7 +346,7 @@ fn handle_pending_packets<I: IpLayerIpExt, CC, BC>(
     let dst_ip: SpecifiedAddr<I::Addr> = dst_addr.into();
     let src_ip: I::RecvSrcAddr = src_addr.into();
 
-    for QueuedPacket { device, packet, frame_dst } in packet_queue.into_iter() {
+    for QueuedPacket { device, packet, frame_dst, max_fragment_len } in packet_queue.into_iter() {
         let device = match device.upgrade() {
             // Short circuit if the device was removed while the packet was
             // pending.
@@ -402,6 +402,7 @@ fn handle_pending_packets<I: IpLayerIpExt, CC, BC>(
                         core_ctx,
                         bindings_ctx,
                         packet.into_inner(),
+                        max_fragment_len,
                     );
                 }
             }
@@ -516,6 +517,7 @@ mod tests {
         right_dev: bool,
     ) {
         const FRAME_DST: Option<LocalFrameDestination> = None;
+        const MAX_FRAGMENT_LEN: Option<usize> = None;
         const OUTPUT_DEV: MultipleDevicesId = MultipleDevicesId::C;
         let right_key = MulticastRouteKey::new(I::SRC1, I::DST1).unwrap();
         let wrong_key = MulticastRouteKey::new(I::SRC2, I::DST2).unwrap();
@@ -546,7 +548,8 @@ mod tests {
                     right_key.clone(),
                     &packet,
                     &actual_dev,
-                    FRAME_DST
+                    FRAME_DST,
+                    MAX_FRAGMENT_LEN,
                 ),
                 QueuePacketOutcome::QueuedInNewQueue,
             );

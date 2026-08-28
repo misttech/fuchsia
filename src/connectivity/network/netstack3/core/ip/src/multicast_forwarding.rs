@@ -195,6 +195,7 @@ pub(crate) fn lookup_multicast_route_or_stash_packet<I, B, CC, BC>(
     packet: &I::Packet<B>,
     dev: &CC::DeviceId,
     frame_dst: Option<LocalFrameDestination>,
+    max_fragment_len: Option<usize>,
 ) -> Option<MulticastRouteTargets<CC::DeviceId>>
 where
     I: IpLayerIpExt,
@@ -266,7 +267,14 @@ where
                 .pending_packets
                 .increment();
             match ctx.with_pending_table_mut(state, |pending_table| {
-                pending_table.try_queue_packet(bindings_ctx, key.clone(), packet, dev, frame_dst)
+                pending_table.try_queue_packet(
+                    bindings_ctx,
+                    key.clone(),
+                    packet,
+                    dev,
+                    frame_dst,
+                    max_fragment_len,
+                )
             }) {
                 QueuePacketOutcome::QueuedInNewQueue => {
                     bindings_ctx.on_event(
@@ -652,6 +660,7 @@ mod tests {
     fn lookup_route<I: TestIpExt>(test_case: LookupTestCase) -> bool {
         let LookupTestCase { enabled, dev_enabled, right_key, right_dev } = test_case;
         const FRAME_DST: Option<LocalFrameDestination> = None;
+        const MAX_FRAGMENT_LEN: Option<usize> = None;
         let mut api = testutil::new_api::<I>();
 
         let expected_key = MulticastRouteKey::new(I::SRC1, I::DST1).unwrap();
@@ -703,6 +712,7 @@ mod tests {
             &packet,
             &actual_dev,
             FRAME_DST,
+            MAX_FRAGMENT_LEN,
         );
 
         // Verify that multicast routing events are generated.

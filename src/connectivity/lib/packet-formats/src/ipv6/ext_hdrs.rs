@@ -28,7 +28,7 @@ use crate::ip::{FragmentOffset, IpProto, Ipv6ExtHdrType, Ipv6Proto};
 use crate::ipv6::{IPV6_FIXED_HDR_LEN, NEXT_HEADER_OFFSET};
 
 /// The length of an IPv6 Fragment Extension Header.
-pub(crate) const IPV6_FRAGMENT_EXT_HDR_LEN: usize = 8;
+pub const IPV6_FRAGMENT_EXT_HDR_LEN: usize = 8;
 
 /// An IPv6 Extension Header.
 #[allow(missing_docs)]

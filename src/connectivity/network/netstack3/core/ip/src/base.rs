@@ -2851,8 +2851,13 @@ where
     BC: IpLayerBindingsContext<I, D>,
 {
     // Forward the provided buffer as specified by this [`IpPacketForwarder`].
-    fn forward_with_buffer<CC, B>(self, core_ctx: &mut CC, bindings_ctx: &mut BC, buffer: B)
-    where
+    fn forward_with_buffer<CC, B>(
+        self,
+        core_ctx: &mut CC,
+        bindings_ctx: &mut BC,
+        buffer: B,
+        max_fragment_len: Option<usize>,
+    ) where
         B: BufferMut,
         CC: IpLayerForwardingContext<I, BC, DeviceId = D, WeakAddressId = A>,
     {
@@ -2868,7 +2873,17 @@ where
             frame_dst,
         } = self;
 
-        let packet = ForwardedPacket::new(src_ip.get(), dst_ip.get(), proto, parse_meta, buffer);
+        // TODO(https://fxbug.dev/547062448): limit the MTU when sending.
+        let was_reassembled = max_fragment_len.is_some();
+
+        let packet = ForwardedPacket::new(
+            src_ip.get(),
+            dst_ip.get(),
+            proto,
+            parse_meta,
+            buffer,
+            was_reassembled,
+        );
 
         trace!("forward_with_buffer: forwarding {} packet", I::NAME);
 
@@ -2968,6 +2983,7 @@ where
         core_ctx: &mut CC,
         bindings_ctx: &mut BC,
         buffer: B,
+        max_fragment_len: Option<usize>,
     ) where
         B: BufferMut,
         CC: IpLayerForwardingContext<I, BC, DeviceId = D, WeakAddressId = A>,
@@ -2975,7 +2991,7 @@ where
         match self {
             ForwardingAction::SilentlyDrop => {}
             ForwardingAction::Forward(forwarder) => {
-                forwarder.forward_with_buffer(core_ctx, bindings_ctx, buffer)
+                forwarder.forward_with_buffer(core_ctx, bindings_ctx, buffer, max_fragment_len)
             }
             ForwardingAction::DropWithIcmpError(icmp_sender) => {
                 icmp_sender.send(core_ctx, bindings_ctx, buffer)
@@ -3334,7 +3350,7 @@ enum ProcessFragmentResult<'a, I: IpLayerIpExt> {
 
     /// A packet was successfully reassembled into the provided buffer. If a
     /// parsed packet is needed, then the caller must perform that parsing.
-    Reassembled(Vec<u8>),
+    Reassembled { buffer: Vec<u8>, max_fragment_len: usize },
 }
 
 /// Process a fragment and reassemble if required.
@@ -3374,7 +3390,10 @@ where
                 buffer.buffer_view_mut(),
             ) {
                 // Successfully reassembled the packet, handle it.
-                Ok(()) => ProcessFragmentResult::Reassembled(buffer.into_inner()),
+                Ok(max_fragment_len) => ProcessFragmentResult::Reassembled {
+                    buffer: buffer.into_inner(),
+                    max_fragment_len,
+                },
                 Err(e) => {
                     core_ctx.increment_both(device, |c| &c.fragment_reassembly_error);
                     debug!("receive_ip_packet: fragmented, failed to reassemble: {:?}", e);
@@ -3549,23 +3568,24 @@ pub fn receive_ipv4_packet<
     // because the fragment data is in the fixed header so it is always present
     // (even if the fragment data has values that implies that the packet is not
     // fragmented).
-    let mut packet = match process_fragment(core_ctx, bindings_ctx, device, packet) {
-        ProcessFragmentResult::Done => return,
-        ProcessFragmentResult::NotNeeded(packet) => packet,
-        ProcessFragmentResult::Reassembled(buf) => {
-            let buf = Buf::new(buf, ..);
-            buffer = packet::Either::B(buf);
+    let (mut packet, max_fragment_len) =
+        match process_fragment(core_ctx, bindings_ctx, device, packet) {
+            ProcessFragmentResult::Done => return,
+            ProcessFragmentResult::NotNeeded(packet) => (packet, None),
+            ProcessFragmentResult::Reassembled { buffer: buf, max_fragment_len } => {
+                let buf = Buf::new(buf, ..);
+                buffer = packet::Either::B(buf);
 
-            match buffer.parse_mut() {
-                Ok(packet) => packet,
-                Err(err) => {
-                    core_ctx.increment_both(device, |c| &c.fragment_reassembly_error);
-                    debug!("receive_ip_packet: fragmented, failed to reassemble: {:?}", err);
-                    return;
+                match buffer.parse_mut() {
+                    Ok(packet) => (packet, Some(max_fragment_len)),
+                    Err(err) => {
+                        core_ctx.increment_both(device, |c| &c.fragment_reassembly_error);
+                        debug!("receive_ip_packet: fragmented, failed to reassemble: {:?}", err);
+                        return;
+                    }
                 }
             }
-        }
-    };
+        };
 
     // TODO(ghanan): Act upon options.
 
@@ -3640,6 +3660,7 @@ pub fn receive_ipv4_packet<
         &packet,
         frame_dst,
         &packet_metadata.marks,
+        max_fragment_len,
     );
     match action {
         ReceivePacketAction::MulticastForward { targets, address_status, dst_ip } => {
@@ -3666,7 +3687,12 @@ pub fn receive_ipv4_packet<
                     src_ip,
                     dst_ip,
                 )
-                .perform_action_with_buffer(core_ctx, bindings_ctx, copy_of_buffer);
+                .perform_action_with_buffer(
+                    core_ctx,
+                    bindings_ctx,
+                    copy_of_buffer,
+                    max_fragment_len,
+                );
             }
 
             // If we also have an interest in the packet, deliver it locally.
@@ -3747,7 +3773,12 @@ pub fn receive_ipv4_packet<
                 src_ip,
                 original_dst,
             )
-            .perform_action_with_buffer(core_ctx, bindings_ctx, buffer);
+            .perform_action_with_buffer(
+                core_ctx,
+                bindings_ctx,
+                buffer,
+                max_fragment_len,
+            );
         }
         ReceivePacketAction::SendNoRouteToDest { dst: dst_ip } => {
             debug!("received IPv4 packet with no known route to destination {}", dst_ip);
@@ -3969,7 +4000,7 @@ pub fn receive_ipv6_packet<
     // delivery_extension_header_action is used to prevent looking at the
     // extension headers twice when a non-fragmented packet is delivered
     // locally.
-    let (mut packet, delivery_extension_header_action) =
+    let (mut packet, delivery_extension_header_action, max_fragment_len) =
         match ipv6::handle_extension_headers(core_ctx, device, frame_dst, &packet, true) {
             Ipv6PacketAction::_Discard => {
                 core_ctx.increment_both(device, |c| &c.version_rx.extension_header_discard);
@@ -3978,7 +4009,7 @@ pub fn receive_ipv6_packet<
             }
             Ipv6PacketAction::Continue => {
                 trace!("receive_ipv6_packet: handled IPv6 extension headers: dispatching packet");
-                (packet, Some(Ipv6PacketAction::Continue))
+                (packet, Some(Ipv6PacketAction::Continue), None)
             }
             Ipv6PacketAction::ProcessFragment => {
                 trace!(
@@ -4014,14 +4045,14 @@ pub fn receive_ipv6_packet<
                         // In this case, we're not technically reassembling the
                         // packet, since, per the RFC, that would mean removing the
                         // Fragment header.
-                        (packet, Some(Ipv6PacketAction::Continue))
+                        (packet, Some(Ipv6PacketAction::Continue), None)
                     }
-                    ProcessFragmentResult::Reassembled(buf) => {
+                    ProcessFragmentResult::Reassembled { buffer: buf, max_fragment_len } => {
                         let buf = Buf::new(buf, ..);
                         buffer = packet::Either::B(buf);
 
                         match buffer.parse_mut() {
-                            Ok(packet) => (packet, None),
+                            Ok(packet) => (packet, None, Some(max_fragment_len)),
                             Err(err) => {
                                 core_ctx.increment_both(device, |c| &c.fragment_reassembly_error);
                                 debug!(
@@ -4105,6 +4136,7 @@ pub fn receive_ipv6_packet<
         &packet,
         frame_dst,
         &packet_metadata.marks,
+        max_fragment_len,
     ) {
         ReceivePacketAction::MulticastForward { targets, address_status, dst_ip } => {
             // TOOD(https://fxbug.dev/364242513): Support connection tracking of
@@ -4130,7 +4162,12 @@ pub fn receive_ipv6_packet<
                     src_ip,
                     dst_ip,
                 )
-                .perform_action_with_buffer(core_ctx, bindings_ctx, copy_of_buffer);
+                .perform_action_with_buffer(
+                    core_ctx,
+                    bindings_ctx,
+                    copy_of_buffer,
+                    max_fragment_len,
+                );
             }
 
             // If we also have an interest in the packet, deliver it locally.
@@ -4240,7 +4277,12 @@ pub fn receive_ipv6_packet<
                 src_ip,
                 original_dst,
             )
-            .perform_action_with_buffer(core_ctx, bindings_ctx, buffer);
+            .perform_action_with_buffer(
+                core_ctx,
+                bindings_ctx,
+                buffer,
+                max_fragment_len,
+            );
         }
         ReceivePacketAction::SendNoRouteToDest { dst: dst_ip } => {
             let (_, _, proto, meta): (Ipv6Addr, Ipv6Addr, _, _) =
@@ -4395,6 +4437,7 @@ pub fn receive_ipv4_packet_action<BC, CC, B>(
     packet: &Ipv4Packet<B>,
     frame_dst: Option<LocalFrameDestination>,
     marks: &Marks,
+    max_fragment_len: Option<usize>,
 ) -> ReceivePacketAction<Ipv4, CC::DeviceId>
 where
     BC: IpLayerBindingsContext<Ipv4, CC::DeviceId>,
@@ -4456,6 +4499,7 @@ where
                 Some(address_status),
                 dst_ip,
                 frame_dst,
+                max_fragment_len,
             )
         }
         Some(
@@ -4476,6 +4520,7 @@ where
             packet,
             frame_dst,
             marks,
+            max_fragment_len,
         ),
     }
 }
@@ -4488,6 +4533,7 @@ pub fn receive_ipv6_packet_action<BC, CC, B>(
     packet: &Ipv6Packet<B>,
     frame_dst: Option<LocalFrameDestination>,
     marks: &Marks,
+    max_fragment_len: Option<usize>,
 ) -> ReceivePacketAction<Ipv6, CC::DeviceId>
 where
     BC: IpLayerBindingsContext<Ipv6, CC::DeviceId>,
@@ -4529,6 +4575,7 @@ where
                 Some(address_status),
                 dst_ip,
                 frame_dst,
+                max_fragment_len,
             )
         }
         Some(address_status @ Ipv6PresentAddressStatus::UnicastAssigned) => {
@@ -4580,6 +4627,7 @@ where
             packet,
             frame_dst,
             marks,
+            max_fragment_len,
         ),
     }
 }
@@ -4599,6 +4647,7 @@ fn receive_ip_multicast_packet_action<
     address_status: Option<I::AddressStatus>,
     dst_ip: SpecifiedAddr<I::Addr>,
     frame_dst: Option<LocalFrameDestination>,
+    max_fragment_len: Option<usize>,
 ) -> ReceivePacketAction<I, CC::DeviceId> {
     let targets = multicast_forwarding::lookup_multicast_route_or_stash_packet(
         core_ctx,
@@ -4606,6 +4655,7 @@ fn receive_ip_multicast_packet_action<
         packet,
         device,
         frame_dst,
+        max_fragment_len,
     );
     match (targets, address_status) {
         (Some(targets), address_status) => {
@@ -4653,6 +4703,7 @@ fn receive_ip_packet_action_common<
     packet: &I::Packet<B>,
     frame_dst: Option<LocalFrameDestination>,
     marks: &Marks,
+    max_fragment_len: Option<usize>,
 ) -> ReceivePacketAction<I, CC::DeviceId> {
     if dst_ip.is_multicast() {
         return receive_ip_multicast_packet_action(
@@ -4663,6 +4714,7 @@ fn receive_ip_packet_action_common<
             None,
             dst_ip,
             frame_dst,
+            max_fragment_len,
         );
     }
 

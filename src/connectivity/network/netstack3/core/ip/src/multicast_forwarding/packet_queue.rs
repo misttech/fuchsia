@@ -102,20 +102,21 @@ impl<I: IpLayerIpExt, D: WeakDeviceIdentifier, BC: MulticastForwardingBindingsCo
         packet: &I::Packet<B>,
         dev: &D::Strong,
         frame_dst: Option<LocalFrameDestination>,
+        max_fragment_len: Option<usize>,
     ) -> QueuePacketOutcome
     where
         B: SplitByteSlice,
     {
         let was_empty = self.table.is_empty();
         let outcome = if let Some(queue) = self.table.get_mut(&key) {
-            match queue.try_push(|| QueuedPacket::new(dev, packet, frame_dst)) {
+            match queue.try_push(|| QueuedPacket::new(dev, packet, frame_dst, max_fragment_len)) {
                 Ok(()) => QueuePacketOutcome::QueuedInExistingQueue,
                 Err(PacketQueueFullError) => QueuePacketOutcome::ExistingQueueFull,
             }
         } else {
             let mut queue = PacketQueue::new(bindings_ctx);
             queue
-                .try_push(|| QueuedPacket::new(dev, packet, frame_dst))
+                .try_push(|| QueuedPacket::new(dev, packet, frame_dst, max_fragment_len))
                 .expect("newly instantiated queue must have capacity");
 
             let prev = self.table.insert(key, queue);
@@ -278,6 +279,9 @@ pub struct QueuedPacket<I: Ip, D: WeakDeviceIdentifier> {
     /// The link layer (L2) destination that the packet was sent to, or `None`
     /// if the packet arrived above the link layer (e.g. a Pure IP device).
     pub(crate) frame_dst: Option<LocalFrameDestination>,
+    /// The maximum size fragment that was used to reassemble this packet when
+    /// it ingressed the stack. None if IP reassembly was not performed.
+    pub(crate) max_fragment_len: Option<usize>,
 }
 
 impl<I: IpLayerIpExt, D: WeakDeviceIdentifier> QueuedPacket<I, D> {
@@ -285,11 +289,13 @@ impl<I: IpLayerIpExt, D: WeakDeviceIdentifier> QueuedPacket<I, D> {
         device: &D::Strong,
         packet: &I::Packet<B>,
         frame_dst: Option<LocalFrameDestination>,
+        max_fragment_len: Option<usize>,
     ) -> Self {
         QueuedPacket {
             device: device.downgrade(),
             packet: ValidIpPacketBuf::new(packet),
             frame_dst,
+            max_fragment_len,
         }
     }
 }
@@ -348,9 +354,14 @@ mod tests {
     };
 
     #[ip_test(I)]
-    #[test_case(None; "no_frame_dst")]
-    #[test_case(Some(LocalFrameDestination::Multicast); "some_frame_dst")]
-    fn queue_packet<I: TestIpExt>(frame_dst: Option<LocalFrameDestination>) {
+    #[test_case(None, None; "no_metadata")]
+    #[test_case(Some(LocalFrameDestination::Multicast), None; "some_frame_dst")]
+    #[test_case(None, Some(1400); "some_max_fragment_len")]
+    #[test_case(Some(LocalFrameDestination::Multicast), Some(1400); "some_all")]
+    fn queue_packet<I: TestIpExt>(
+        frame_dst: Option<LocalFrameDestination>,
+        max_fragment_len: Option<usize>,
+    ) {
         const DEV: MultipleDevicesId = MultipleDevicesId::A;
         let key1 = MulticastRouteKey::new(I::SRC1, I::DST1).unwrap();
         let key2 = MulticastRouteKey::new(I::SRC2, I::DST2).unwrap();
@@ -378,7 +389,8 @@ mod tests {
                 key1.clone(),
                 &packet,
                 &DEV,
-                frame_dst
+                frame_dst,
+                max_fragment_len,
             ),
             QueuePacketOutcome::QueuedInNewQueue
         );
@@ -390,7 +402,8 @@ mod tests {
                     key1.clone(),
                     &packet,
                     &DEV,
-                    frame_dst
+                    frame_dst,
+                    max_fragment_len,
                 ),
                 QueuePacketOutcome::QueuedInExistingQueue
             );
@@ -402,7 +415,8 @@ mod tests {
                 key1.clone(),
                 &packet,
                 &DEV,
-                frame_dst
+                frame_dst,
+                max_fragment_len,
             ),
             QueuePacketOutcome::ExistingQueueFull
         );
@@ -414,7 +428,8 @@ mod tests {
                 key2.clone(),
                 &packet,
                 &DEV,
-                frame_dst
+                frame_dst,
+                max_fragment_len,
             ),
             QueuePacketOutcome::QueuedInNewQueue
         );
@@ -422,7 +437,7 @@ mod tests {
         // Based on the calls above, `key1` should have a full queue, `key2`
         // should have a queue with only 1 packet, and `key3` shouldn't have
         // a queue.
-        let expected_packet = QueuedPacket::new(&DEV, &packet, frame_dst);
+        let expected_packet = QueuedPacket::new(&DEV, &packet, frame_dst, max_fragment_len);
         let queue =
             pending_table.remove(&key1, &mut bindings_ctx).expect("key1 should have a queue");
         assert_eq!(queue.queue.len(), PACKET_QUEUE_LEN);
@@ -455,13 +470,21 @@ mod tests {
         key: MulticastRouteKey<I>,
         dev: &MultipleDevicesId,
         frame_dst: Option<LocalFrameDestination>,
+        max_fragment_len: Option<usize>,
     ) -> QueuePacketOutcome {
         let buf =
             multicast_forwarding::testutil::new_ip_packet_buf::<I>(key.src_addr(), key.dst_addr());
         let mut buf_ref = buf.as_ref();
         let packet = buf_ref.parse::<I::Packet<_>>().expect("parse should succeed");
         multicast_forwarding::testutil::with_pending_table(core_ctx, |pending_table| {
-            pending_table.try_queue_packet(bindings_ctx, key, &packet, dev, frame_dst)
+            pending_table.try_queue_packet(
+                bindings_ctx,
+                key,
+                &packet,
+                dev,
+                frame_dst,
+                max_fragment_len,
+            )
         })
     }
 
@@ -493,6 +516,7 @@ mod tests {
     fn garbage_collection<I: TestIpExt>() {
         const DEV: MultipleDevicesId = MultipleDevicesId::A;
         const FRAME_DST: Option<LocalFrameDestination> = None;
+        const MAX_FRAGMENT_LEN: Option<usize> = None;
         let key1 = MulticastRouteKey::<I>::new(I::SRC1, I::DST1).unwrap();
         let key2 = MulticastRouteKey::<I>::new(I::SRC2, I::DST2).unwrap();
 
@@ -517,7 +541,14 @@ mod tests {
         // Queue a packet, and expect the GC to be scheduled.
         let expected_first_gc = bindings_ctx.now() + PENDING_ROUTE_GC_PERIOD;
         assert_eq!(
-            try_queue_packet(core_ctx, bindings_ctx, key1.clone(), &DEV, FRAME_DST),
+            try_queue_packet(
+                core_ctx,
+                bindings_ctx,
+                key1.clone(),
+                &DEV,
+                FRAME_DST,
+                MAX_FRAGMENT_LEN
+            ),
             QueuePacketOutcome::QueuedInNewQueue
         );
         assert_eq!(next_gc_time(core_ctx, bindings_ctx), Some(expected_first_gc));
@@ -527,7 +558,14 @@ mod tests {
         // instant.
         bindings_ctx.timers.instant.sleep(PENDING_ROUTE_GC_PERIOD);
         assert_eq!(
-            try_queue_packet(core_ctx, bindings_ctx, key2.clone(), &DEV, FRAME_DST),
+            try_queue_packet(
+                core_ctx,
+                bindings_ctx,
+                key2.clone(),
+                &DEV,
+                FRAME_DST,
+                MAX_FRAGMENT_LEN
+            ),
             QueuePacketOutcome::QueuedInNewQueue
         );
         assert_eq!(next_gc_time(core_ctx, bindings_ctx), Some(expected_first_gc));
@@ -552,7 +590,14 @@ mod tests {
         // Finally, verify that if the GC clears the table, it doesn't
         // reschedule itself.
         assert_eq!(
-            try_queue_packet(core_ctx, bindings_ctx, key1.clone(), &DEV, FRAME_DST),
+            try_queue_packet(
+                core_ctx,
+                bindings_ctx,
+                key1.clone(),
+                &DEV,
+                FRAME_DST,
+                MAX_FRAGMENT_LEN
+            ),
             QueuePacketOutcome::QueuedInNewQueue
         );
         assert_eq!(next_gc_time(core_ctx, bindings_ctx), Some(expected_second_gc));
