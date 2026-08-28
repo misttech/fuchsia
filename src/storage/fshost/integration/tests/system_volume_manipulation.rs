@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#![recursion_limit = "256"]
+
 //! Tests for fuchsia.fshost/Recovery methods that manipulate volumes in the system container.
 //! These methods are intended for use in recovery environments to enable fxblob-based products
 //! to apply a system update or flash a new system image.

@@ -2,10 +2,15 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#![recursion_limit = "256"]
+
 use anyhow::Error;
 use fidl::endpoints::{ControlHandle, RequestStream};
 use fidl::handle::AsyncChannel;
+use fidl_fuchsia_component_resolution as fresolution;
+use fidl_fuchsia_pkg as fpkg;
 use fidl_fuchsia_process_lifecycle::{LifecycleRequest, LifecycleRequestStream};
+use fuchsia_async as fasync;
 use fuchsia_component::client::connect_to_protocol;
 use fuchsia_component::server::ServiceFs;
 use fuchsia_runtime::{HandleInfo, HandleType};
@@ -13,11 +18,7 @@ use futures::StreamExt;
 use futures_util::stream::TryStreamExt;
 use log::{info, warn};
 use std::sync::Arc;
-use test_manager_lib::{constants, AboveRootCapabilitiesForTest, RootDiagnosticNode};
-use {
-    fidl_fuchsia_component_resolution as fresolution, fidl_fuchsia_pkg as fpkg,
-    fuchsia_async as fasync,
-};
+use test_manager_lib::{AboveRootCapabilitiesForTest, RootDiagnosticNode, constants};
 
 const DEFAULT_MANIFEST_NAME: &str = "test_manager.cm";
 

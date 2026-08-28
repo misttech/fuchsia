@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#![recursion_limit = "256"]
+
 use assert_matches::assert_matches;
 use fidl::endpoints::Proxy as _;
 use fidl_fuchsia_io as fio;

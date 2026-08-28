@@ -351,16 +351,12 @@ impl LogFilterCriteria {
             return false;
         }
 
-        if self.exclude_tags.iter().any(|excluded_tag| {
+        !self.exclude_tags.iter().any(|excluded_tag| {
             let has_tag = data.tags().map(|tag| tag.contains(excluded_tag)).unwrap_or(false);
             let moniker_has_tag =
                 moniker_contains_in_last_segment(&data.moniker, excluded_tag, self.case_sensitive);
             has_tag || moniker_has_tag
-        }) {
-            return false;
-        }
-
-        true
+        })
     }
 }
 

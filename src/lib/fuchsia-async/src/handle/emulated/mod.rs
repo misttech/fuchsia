@@ -1826,9 +1826,9 @@ struct Wakers {
 
 impl Wakers {
     fn for_signals_in(&mut self, signals: Signals, mut f: impl FnMut(&mut WakerSlot)) {
-        for i in 0..32 {
+        for (i, signal) in self.signals.iter_mut().enumerate() {
             if signals.bits() & (1 << i) != 0 {
-                f(&mut self.signals[i])
+                f(signal)
             }
         }
     }

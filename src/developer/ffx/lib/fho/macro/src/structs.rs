@@ -50,7 +50,13 @@ impl ToTokens for TryFromEnvInvocation<'_> {
                 tokens.extend(quote_spanned! {span=>
                     fho::macro_deps::futures::future::TryFutureExt::map_err(
                         <#ty as fho::TryFromEnv>::try_from_env(&_env),
-                        |e| fho::macro_deps::fho::Error::from(fho::macro_deps::anyhow::Error::new(e))
+                        // TryFromEnv associated error type may be Infallible
+                        // (e.g. for Result<T>, Deferred<T>, EnvironmentContext,
+                        // etc.). Evaluating an uninhabited type diverges,
+                        // making any subsequent code in the closure
+                        // unreachable.
+                        #[allow(unreachable_code)]
+                        |e| fho::macro_deps::fho::Error::from(fho::macro_deps::anyhow::Error::new(e)),
                     )
                 });
             }
@@ -59,7 +65,12 @@ impl ToTokens for TryFromEnvInvocation<'_> {
                 tokens.extend(quote_spanned! {span=>
                     fho::macro_deps::futures::future::TryFutureExt::map_err(
                         fho::TryFromEnvWith::try_from_env_with(#expr, &_env),
-                        |e| fho::macro_deps::fho::Error::from(fho::macro_deps::anyhow::Error::new(e))
+                        // TryFromEnvWith associated error type may be
+                        // Infallible. Evaluating an uninhabited type diverges,
+                        // making any subsequent code in the closure
+                        // unreachable.
+                        #[allow(unreachable_code)]
+                        |e| fho::macro_deps::fho::Error::from(fho::macro_deps::anyhow::Error::new(e)),
                     )
                 });
             }
@@ -304,12 +315,6 @@ impl ToTokens for NamedFieldStruct<'_> {
                     _env: fho::FhoEnvironment,
                     cmd: Self::Command,
                 ) -> Result<Self, fho::Error> {
-                    // Allow unused in the event that things don't compile (then
-                    // this will mark the error as coming from the span for the name of the
-                    // command).
-                    #[allow(unused)]
-                    use fho::TryFromEnv;
-
                     #checks
 
                     #connection_initialization
@@ -369,7 +374,17 @@ mod tests {
         let mut vcc = VariableCreationCollection::new();
         vcc.add_field(fields.remove(0)).expect("correct kind of field");
         assert_eq!(
-            quote! { let bar = fho::macro_deps::futures::future::TryFutureExt::map_err(<u32 as fho::TryFromEnv>::try_from_env(&_env), |e| fho::macro_deps::fho::Error::from(fho::macro_deps::anyhow::Error::new(e))).await?; }.to_string(),
+            quote! {
+                let bar = fho::macro_deps::futures::future::TryFutureExt::map_err(
+                    <u32 as fho::TryFromEnv>::try_from_env(&_env),
+                    // TryFromEnvWith associated error type may be Infallible.
+                    // Evaluating an uninhabited type diverges, making any
+                    // subsequent code in the closure unreachable.
+                    #[allow(unreachable_code)]
+                    |e| fho::macro_deps::fho::Error::from(fho::macro_deps::anyhow::Error::new(e)),
+                ).await?;
+            }
+            .to_string(),
             vcc.into_token_stream().to_string(),
         );
     }
@@ -397,7 +412,28 @@ mod tests {
         vcc.add_field(fields.remove(0)).expect("correct kind of field");
         vcc.add_field(fields.remove(0)).expect("correct kind of field");
         assert_eq!(
-            quote! { let (bar, baz) = fho::macro_deps::futures::try_join!(fho::macro_deps::futures::future::TryFutureExt::map_err(<u32 as fho::TryFromEnv>::try_from_env(&_env), |e| fho::macro_deps::fho::Error::from(fho::macro_deps::anyhow::Error::new(e))), fho::macro_deps::futures::future::TryFutureExt::map_err(<u8 as fho::TryFromEnv>::try_from_env(&_env), |e| fho::macro_deps::fho::Error::from(fho::macro_deps::anyhow::Error::new(e)))) ? ; }.to_string(),
+            quote! {
+                let (bar, baz) = fho::macro_deps::futures::try_join!(
+                    fho::macro_deps::futures::future::TryFutureExt::map_err(
+                        <u32 as fho::TryFromEnv>::try_from_env(&_env),
+                        // TryFromEnvWith associated error type may be
+                        // Infallible. Evaluating an uninhabited type diverges,
+                        // making any subsequent code in the closure
+                        // unreachable.
+                        #[allow(unreachable_code)]
+                        |e| fho::macro_deps::fho::Error::from(fho::macro_deps::anyhow::Error::new(e)),
+                    ),
+                    fho::macro_deps::futures::future::TryFutureExt::map_err(
+                        <u8 as fho::TryFromEnv>::try_from_env(&_env),
+                        // TryFromEnvWith associated error type may be
+                        // Infallible. Evaluating an uninhabited type diverges,
+                        // making any subsequent code in the closure
+                        // unreachable.
+                        #[allow(unreachable_code)]
+                        |e| fho::macro_deps::fho::Error::from(fho::macro_deps::anyhow::Error::new(e)),
+                    )
+                )?;
+            }.to_string(),
             vcc.into_token_stream().to_string(),
         );
     }
@@ -424,7 +460,17 @@ mod tests {
         let mut vcc = VariableCreationCollection::new();
         vcc.add_field(fields.remove(0)).expect("correct kind of field");
         assert_eq!(
-            quote! { let bar = fho::macro_deps::futures::future::TryFutureExt::map_err(fho::TryFromEnvWith::try_from_env_with(something("stuff"), &_env), |e| fho::macro_deps::fho::Error::from(fho::macro_deps::anyhow::Error::new(e))).await ? ; }.to_string(),
+            quote! {
+                let bar = fho::macro_deps::futures::future::TryFutureExt::map_err(
+                    fho::TryFromEnvWith::try_from_env_with(something("stuff"), &_env),
+                    // TryFromEnvWith associated error type may be Infallible.
+                    // Evaluating an uninhabited type diverges, making any
+                    // subsequent code in the closure unreachable.
+                    #[allow(unreachable_code)]
+                    |e| fho::macro_deps::fho::Error::from(fho::macro_deps::anyhow::Error::new(e)),
+                ).await?;
+            }
+            .to_string(),
             vcc.into_token_stream().to_string(),
         );
     }

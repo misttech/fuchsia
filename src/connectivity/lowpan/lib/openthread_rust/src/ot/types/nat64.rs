@@ -60,12 +60,8 @@ impl Debug for Ip4Cidr {
 
 impl PartialEq for Ip4Cidr {
     fn eq(&self, other: &Ip4Cidr) -> bool {
-        if (self.get_length() != other.get_length())
-            || (self.get_address_bytes() != other.get_address_bytes())
-        {
-            return false;
-        }
-        true
+        self.get_length() == other.get_length()
+            && self.get_address_bytes() == other.get_address_bytes()
     }
 }
 

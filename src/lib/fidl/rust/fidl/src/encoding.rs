@@ -1149,8 +1149,8 @@ impl<'a, D: ResourceDialect> Decoder<'a, D> {
     /// Generates an error for bad padding bytes at the end of a block.
     /// Assumes it is already known that there is a nonzero padding byte.
     fn end_of_block_padding_error(&self, start: usize, end: usize) -> Error {
-        for i in start..end {
-            if self.buf[i] != 0 {
+        for byte in &self.buf[start..end] {
+            if *byte != 0 {
                 return Error::NonZeroPadding { padding_start: start };
             }
         }

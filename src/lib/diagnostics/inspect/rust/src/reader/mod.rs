@@ -605,8 +605,8 @@ mod tests {
 
         let dh = read(&inspector).await.unwrap();
         assert_eq!(dh.properties.len(), 4);
-        for i in 0..dh.properties.len() {
-            match &dh.properties[i] {
+        for (i, property) in dh.properties.iter().enumerate() {
+            match property {
                 Property::Int(n, v) => {
                     assert_eq!(n, "foo");
                     assert_eq!(*v, i as i64);

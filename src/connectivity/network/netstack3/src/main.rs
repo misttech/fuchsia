@@ -5,7 +5,7 @@
 //! A networking stack.
 #![warn(clippy::unused_async)]
 #![warn(missing_docs, unreachable_patterns, unused)]
-#![recursion_limit = "256"]
+#![recursion_limit = "512"]
 
 mod bindings;
 

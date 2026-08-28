@@ -3418,11 +3418,7 @@ mod vmo_rs {
             }
             let _cleanup_mapping = DeferCleanupMapping(ptr);
 
-            if vmo.zero_range(0, 2 * PAGE_SIZE).is_err() {
-                return false;
-            }
-
-            true
+            vmo.zero_range(0, 2 * PAGE_SIZE).is_ok()
         };
 
         {

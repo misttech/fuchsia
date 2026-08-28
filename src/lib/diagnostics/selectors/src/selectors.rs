@@ -306,11 +306,7 @@ where
     }
 
     // We must have consumed all moniker segments.
-    if moniker_segments.next().is_some() {
-        return Ok(false);
-    }
-
-    Ok(true)
+    Ok(moniker_segments.next().is_none())
 }
 
 /// Checks whether or not a given selector matches a given moniker and if the given `tree_name` is

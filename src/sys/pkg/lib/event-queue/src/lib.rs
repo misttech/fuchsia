@@ -307,8 +307,8 @@ where
     // Figure out the actual client index based on the filtered index.
     fn find_client_index(&self, index: usize) -> usize {
         let mut j = 0;
-        for i in 0..self.clients.len() {
-            if self.clients[i].pending_event.is_none() {
+        for (i, client) in self.clients.iter().enumerate() {
+            if client.pending_event.is_none() {
                 continue;
             }
 

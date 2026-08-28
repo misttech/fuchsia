@@ -368,13 +368,10 @@ impl Credential {
     /// Returns:
     /// - an Open-Credential instance iff `bytes` is empty,
     /// - a Password-Credential in all other cases.
-    #[allow(clippy::doc_lazy_continuation, reason = "mass allow for https://fxbug.dev/381896734")]
+    ///
     /// This function does not support reading PSK from bytes because the PSK byte length overlaps
-    #[allow(clippy::doc_lazy_continuation, reason = "mass allow for https://fxbug.dev/381896734")]
     /// with a valid password length. This function should only be used to load legacy data, where
-    #[allow(clippy::doc_lazy_continuation, reason = "mass allow for https://fxbug.dev/381896734")]
     /// PSK was not supported.
-    #[allow(clippy::doc_lazy_continuation, reason = "mass allow for https://fxbug.dev/381896734")]
     /// Note: This function is of temporary nature to support legacy code.
     pub fn from_bytes(bytes: impl AsRef<[u8]> + Into<Vec<u8>>) -> Self {
         match bytes.as_ref().len() {

@@ -496,8 +496,14 @@ macro_rules! stack_pin_init {
         let mut $var = match $crate::__internal::StackInit::init($var, val) {
             Ok(res) => res,
             Err(x) => {
-                let x: ::core::convert::Infallible = x;
-                match x {}
+                #[expect(
+                    unreachable_code,
+                    reason = "StackInit error is Infallible, making this match arm unreachable"
+                )]
+                {
+                    let x: ::core::convert::Infallible = x;
+                    match x {}
+                }
             }
         };
     };

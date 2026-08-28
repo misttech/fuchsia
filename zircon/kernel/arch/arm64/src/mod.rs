@@ -156,6 +156,7 @@ pub fn validate_state_pre_restricted_entry(state: &zx_restricted_state_t) -> Res
 pub fn dump(state: &zx_restricted_state_t) {
     let mut w = KernelConsoleWriter;
     let _ = write!(w, "CPSR: {:#18x}\n  PC: {:#18x}\n", state.cpsr, state.pc);
+    #[allow(clippy::needless_range_loop)]
     for i in 0..31 {
         let _ = writeln!(w, " X{:02}: {:#18x}", i, state.r[i]);
     }

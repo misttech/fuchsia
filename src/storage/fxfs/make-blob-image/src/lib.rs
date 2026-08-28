@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#![recursion_limit = "256"]
+
 use anyhow::{Context, Error, anyhow};
 use delivery_blob::Type1Blob;
 pub use delivery_blob::compression::CompressionAlgorithm;

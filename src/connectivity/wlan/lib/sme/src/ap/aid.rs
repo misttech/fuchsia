@@ -83,8 +83,8 @@ mod tests {
     fn test_map_no_available_assoc_id() {
         let mut aid_map: Map = Default::default();
         // Set all the bits in the first 31 elements to 1's (so 64 * 31 = 1984 aids claimed)
-        for i in 0..31 {
-            aid_map.aids[i] = u64::MAX;
+        for aid in &mut aid_map.aids[0..31] {
+            *aid = u64::MAX;
         }
         // Set the remaining 24 aids in the last array positions
         for i in 0..24 {

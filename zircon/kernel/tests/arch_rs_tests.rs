@@ -15,10 +15,7 @@ pub extern "C" fn rust_arch_rs_tests_interrupt_ops() -> bool {
         return false;
     }
     crate::arch_rs::enable_ints();
-    if crate::arch_rs::ints_disabled() {
-        return false;
-    }
-    true
+    !crate::arch_rs::ints_disabled()
 }
 
 #[unsafe(no_mangle)]
