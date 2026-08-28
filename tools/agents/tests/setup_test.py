@@ -63,6 +63,42 @@ class SetupCommandTest(unittest.TestCase):
         self.assertEqual(grants["deny"], ["command(rm -rf)"])
         self.assertEqual(grants["ask"], ["command(reboot)"])
 
+    def test_run_with_command_expansion(self) -> None:
+        """Verify unformatted commands are expanded during run."""
+        config_path = self.mock_root / "config.json"
+
+        parser = argparse.ArgumentParser()
+        setup.add_arguments(parser)
+        args = parser.parse_args(
+            [
+                "--config",
+                str(config_path),
+                "-a",
+                "fx build",
+                "-d",
+                "git push --force",
+            ]
+        )
+
+        exit_code = setup.run(args)
+        self.assertEqual(exit_code, 0)
+
+        with config_path.open("r", encoding="utf-8") as fh:
+            data = json.load(fh)
+        grants = data["userSettings"]["globalPermissionGrants"]
+        self.assertTrue(
+            any(
+                g.startswith("command(regex:") and "fx" in g and "build" in g
+                for g in grants["allow"]
+            )
+        )
+        self.assertTrue(
+            any(
+                g.startswith("command(regex:") and "git" in g and "push" in g
+                for g in grants["deny"]
+            )
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

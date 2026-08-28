@@ -11,6 +11,7 @@ _agents_sources = [
   "commands/setup.py",
   "lib/__init__.py",
   "lib/config.py",
+  "lib/permissions.py",
   "main.py",
 ]
 
@@ -35,6 +36,11 @@ if (is_host) {
     main_source = "tests/config_test.py"
     libraries = [ ":agents_lib" ]
   }
+
+  python_host_test("permissions_test") {
+    main_source = "tests/permissions_test.py"
+    libraries = [ ":agents_lib" ]
+  }
 }
 
 group("tests") {
@@ -42,6 +48,7 @@ group("tests") {
   deps = [
     ":config_test($host_toolchain)",
     ":main_test($host_toolchain)",
+    ":permissions_test($host_toolchain)",
     ":setup_test($host_toolchain)",
   ]
 }

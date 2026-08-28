@@ -9,7 +9,7 @@ from __future__ import annotations
 import argparse
 import pathlib
 
-from agents.lib import config
+from agents.lib import config, permissions
 
 
 def register_subcommand(
@@ -65,11 +65,23 @@ def add_arguments(parser: argparse.ArgumentParser) -> None:
 def run(args: argparse.Namespace) -> int:
     """Execute setup with parsed arguments."""
     config_path = args.config or config.DEFAULT_CONFIG_PATH
+
+    allow_grants: list[str] = []
+    deny_grants: list[str] = []
+    ask_grants: list[str] = []
+
+    for cmd in args.allow or []:
+        allow_grants.extend(permissions.expand_command_variants(cmd))
+    for cmd in args.deny or []:
+        deny_grants.extend(permissions.expand_command_variants(cmd))
+    for cmd in args.ask or []:
+        ask_grants.extend(permissions.expand_command_variants(cmd))
+
     success = config.apply_grants(
         config_path=config_path,
-        allow=args.allow or [],
-        deny=args.deny or [],
-        ask=args.ask or [],
+        allow=allow_grants,
+        deny=deny_grants,
+        ask=ask_grants,
         dry_run=args.dry_run,
     )
     return 0 if success else 1
