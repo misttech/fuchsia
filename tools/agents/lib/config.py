@@ -6,13 +6,15 @@
 
 from __future__ import annotations
 
+import datetime
 import json
 import os
 import pathlib
-import shutil
 import sys
 from collections.abc import Sequence
 from typing import Any
+
+from agents.lib import permissions, state
 
 
 def get_default_config_path() -> pathlib.Path:
@@ -77,9 +79,16 @@ def apply_grants(
     deny: Sequence[str] = (),
     ask: Sequence[str] = (),
     dry_run: bool = False,
+    state_dir: pathlib.Path | None = None,
+    selected_profile: str = "",
 ) -> bool:
-    """Load config.json, merge allow/deny/ask grants, create backup, and write atomically."""
+    """Load config.json, reconcile allow/deny/ask grants, create backup, and update state journal."""
     config_path = config_path or get_default_config_path()
+    state_dir = state_dir or state.get_default_state_dir()
+    state_path = state_dir / "state.json"
+    backups_dir = state_dir / "backups"
+
+    journal = state.load_state(state_path)
     try:
         config_data = load_config(config_path)
     except json.JSONDecodeError as error:
@@ -90,42 +99,73 @@ def apply_grants(
         return False
 
     user_settings = config_data.setdefault("userSettings", {})
-    grants = user_settings.setdefault("globalPermissionGrants", {})
+    existing_grants = user_settings.setdefault("globalPermissionGrants", {})
 
-    categories = (
-        ("allow", allow),
-        ("deny", deny),
-        ("ask", ask),
+    target_grants = {"allow": allow, "deny": deny, "ask": ask}
+    final_grants, target_managed = state.reconcile_grants(
+        existing_grants=existing_grants,
+        prev_managed=journal.managed_grants,
+        target_managed=target_grants,
     )
 
     print("\n=== Permission Updates Summary ===")
-    total_added = 0
-    for category_name, new_rules in categories:
-        existing_rules = grants.get(category_name, [])
-        updated_rules, added_rules = merge_grants(existing_rules, new_rules)
-        grants[category_name] = updated_rules
-        total_added += len(added_rules)
-        if added_rules:
-            print(f"  + Added to [{category_name}] ({len(added_rules)}):")
-            for grant in added_rules:
+    total_changes = 0
+    for category_name in ("allow", "deny", "ask"):
+        new_rules = set(final_grants.get(category_name, []))
+        old_rules = set(existing_grants.get(category_name, []))
+        added = sorted(new_rules - old_rules)
+        removed = sorted(old_rules - new_rules)
+        total_changes += len(added) + len(removed)
+        if added:
+            print(f"  + Added to [{category_name}] ({len(added)}):")
+            for grant in added:
+                print(f"      - {grant}")
+        if removed:
+            print(f"  - Removed from [{category_name}] ({len(removed)}):")
+            for grant in removed:
                 print(f"      - {grant}")
 
-    if total_added == 0:
-        print(
-            "  (No new rules to add; all entries already present in config.json)"
-        )
+    if total_changes == 0:
+        print("  (No changes to rules; all entries up to date in config.json)")
+
+    user_settings["globalPermissionGrants"] = final_grants
 
     if dry_run:
         print(f"\n[DRY RUN] Would write updated config to: {config_path}")
+        print(f"[DRY RUN] Would update state journal at: {state_path}")
         if config_path.exists():
-            print(f"[DRY RUN] Would create backup at: {config_path}.bak")
+            print(f"[DRY RUN] Would create backup in: {backups_dir}")
         return True
 
+    # Create backup before modifying existing config
+    backup_path: pathlib.Path | None = None
     if config_path.exists():
-        backup_path = config_path.with_name(f"{config_path.name}.bak")
-        shutil.copy2(config_path, backup_path)
-        print(f"\nCreated backup of existing config at: {backup_path}")
+        backup_path = state.create_backup(config_path, backups_dir)
+        if backup_path:
+            print(f"\nCreated backup of existing config at: {backup_path}")
 
     save_config_atomic(config_path, config_data)
     print(f"\nSuccessfully wrote updated config to: {config_path}")
+
+    # Update state journal
+    now_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    try:
+        fuchsia_root_str = str(permissions.find_fuchsia_dir())
+    except RuntimeError:
+        fuchsia_root_str = ""
+    journal.schema_version = 1
+    journal.last_updated = now_str
+    journal.fuchsia_root = fuchsia_root_str
+    journal.active_profile = selected_profile
+    journal.managed_grants = target_managed
+    journal.history.append(
+        {
+            "timestamp": now_str,
+            "profile": selected_profile,
+            "backup_file": str(backup_path) if backup_path else None,
+            "managed_grants": target_managed,
+        }
+    )
+    state.save_state(journal, state_path)
+
     return True

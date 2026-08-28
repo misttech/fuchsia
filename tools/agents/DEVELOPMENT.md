@@ -2,7 +2,7 @@
 
 ## Overview
 
-`tools/agents` provides the backend implementation for `fx agents`, an extensible CLI tool managing AI coding agent configurations, permission profiles, command expansion regexes, and daemon services for Fuchsia developers.
+`tools/agents` provides the backend implementation for `fx agents`, an extensible CLI tool managing AI coding agent configurations, permission profiles, command expansion regexes, and environment lifecycle for Fuchsia developers.
 
 ---
 
@@ -21,14 +21,16 @@ tools/agents/
 │   ├── __init__.py
 │   ├── config.py                    # Atomic JSON I/O, .tmp swap, and backup creation
 │   ├── permissions.py               # Command regex generator, profile manifests loader
-│   └── services.py                  # Multi-repo daemon discovery and systemctl restart
+│   ├── services.py                  # Multi-repo daemon discovery and systemctl restart
+│   └── state.py                     # State journal, rolling backups, and 3-way reconciliation
 └── tests/
     ├── __init__.py
     ├── main_test.py                 # CLI dispatcher unit tests
     ├── setup_test.py                # Setup command integration unit tests
     ├── config_test.py               # Config I/O & atomic write unit tests
     ├── permissions_test.py          # Regex expansion & profile unit tests
-    └── services_test.py             # Daemon discovery & restart unit tests
+    ├── services_test.py             # Daemon discovery & restart unit tests
+    └── state_test.py                # State journal, rollback & reconciliation unit tests
 ```
 
 ---
@@ -41,14 +43,13 @@ tools/agents/
 - Routes execution to the selected subcommand handler (`args.func(args)`).
 
 ### 2. `commands/setup.py` (Setup Orchestrator)
-- Defines arguments for `--profile`, `--allow`, `--deny`, `--ask`, `--allow-list`, `--deny-list`, `--ask-list`, `--config`, and `--dry-run`.
-- Coordinates grant aggregation across profiles and ad-hoc flags, config persistence, and daemon service restarts.
+- Defines arguments for `--profile`, `--status`, `--rollback`, `--reset`, `--state-dir`, `--allow`, `--deny`, `--ask`, `--allow-list`, `--deny-list`, `--ask-list`, `--config`, and `--dry-run`.
+- Coordinates grant aggregation across profiles and ad-hoc flags, configuration persistence, and daemon service restarts.
 
 ### 3. `lib/config.py` (Atomic JSON Configuration Management)
 - **`load_config(path)`**: Safely loads JSON dictionaries, returning `{}` if missing or malformed.
 - **`save_config_atomic(path, data)`**: Writes to a hidden temporary file `.{name}.tmp` in the target directory, formats JSON with 2-space indentation and trailing newline, and atomically swaps it using `Path.replace`.
-- **`merge_grants(existing, to_add)`**: Merges new grants into existing lists while deduplicating and preserving order.
-- **`apply_grants(...)`**: Merges grants into `config.json`, creates pre-modification `.bak` backup, and writes atomically.
+- **`apply_grants(...)`**: Orchestrates three-way reconciliation, backup creation, atomic config persistence, and state journal logging.
 
 ### 4. `lib/permissions.py` (Command Expansion & Profile Engine)
 - Defines profile specifications (`read-only`, `local-changes`, `external-changes`, `full-access`).
@@ -63,6 +64,35 @@ tools/agents/
 - Discovers daemon service lists across public and vendor directories (`services.txt`).
 - Restarts running user daemons non-blockingly using `systemctl --user try-restart <service>`.
 
+### 6. `lib/state.py` (State Journal & Reconciliation Engine)
+- Manages `StateJournal` schema in `~/.local/share/Fuchsia/agents/setup/state.json` (adhering to `$XDG_STATE_HOME` / `$XDG_DATA_HOME`).
+- Implements timestamped rolling backups in `~/.local/share/Fuchsia/agents/setup/backups/` capped at `MAX_BACKUPS = 10`.
+- Executes three-way grant reconciliation, multi-step rollback (`rollback`), configuration reset (`reset`), and status reporting (`format_status`).
+
+---
+
+## Three-Way Set Reconciliation Mathematics
+
+To prevent configuration drift, lingering rule conflicts, or loss of developer-authored custom rules, `lib/state.py` implements a deterministic 3-way set reconciliation model:
+
+Let $\text{cat} \in \{\text{allow}, \text{deny}, \text{ask}\}$ represent the grant categories.
+
+### 1. User Custom Rule Extraction
+Let $E[\text{cat}]$ be the list of existing grants in `config.json`, and $M_{\text{prev}}[\text{cat}]$ be the grants recorded as managed by the previous setup transaction in `state.json`.
+The developer's custom rules $U[\text{cat}]$ are computed as:
+$$U[\text{cat}] = E[\text{cat}] \setminus M_{\text{prev}}[\text{cat}]$$
+
+### 2. Opposing Category Conflict Resolution
+When transitioning across profiles (e.g., from `read-only` where `local_changes.txt` is denied, to `local-changes` where it is allowed), rules moving into $M_{\text{target}}[\text{cat}]$ must not be blocked by lingering entries in opposing categories:
+$$\forall \text{cat} \in \{\text{allow}, \text{deny}, \text{ask}\}, \forall r \in M_{\text{target}}[\text{cat}], \forall \text{other} \neq \text{cat}: \quad U[\text{other}] \leftarrow U[\text{other}] \setminus \{r\}$$
+
+### 3. Obsolete Rule Pruning
+Rules previously managed that are no longer part of $M_{\text{target}}[\text{cat}]$ (i.e., $r \in M_{\text{prev}}[\text{cat}] \setminus M_{\text{target}}[\text{cat}]$) are automatically retired and excluded from the final grants.
+
+### 4. Final Grant Construction
+The final grant list $\text{final}[\text{cat}]$ combines user custom rules and target managed rules, preserving deterministic ordering:
+$$\text{final}[\text{cat}] = U[\text{cat}] \cup M_{\text{target}}[\text{cat}]$$
+
 ---
 
 ## Command Variant Expansion and Regex Generator Mechanics
@@ -72,38 +102,34 @@ Grant entries in `config.json` must reliably match how AI agents and developers 
 ### 1. Environment Variable Prefixes
 Commands frequently execute with leading environment variables (e.g. `GIT_PAGER=cat git status`). Regexes prepend `ENV_VARS_PREFIX_PATTERN`:
 ```python
-ENV_VARS_PREFIX_PATTERN = (
-    r"([A-Za-z_][A-Za-z0-9_]*=(\"([^\"]|\\.)*\"|'([^']|\\.)*'|\S+)\s+)*"
-)
+ENV_VARS_PREFIX_PATTERN = rf"([A-Za-z_][A-Za-z0-9_]*={_ARG_VALUE_PATTERN}\s+)*"
 ```
 
 ### 2. Git Global Flags & Force-Push Detection
 Git commands allow global flags before the subcommand (e.g. `git -C //src status`) and flags anywhere in the argument list (e.g. `git push origin main --force` vs `git push -f origin HEAD`):
 ```python
 GIT_GLOBAL_FLAGS_PATTERN = (
-    r"(\s+(-C\s+(\"([^\"]|\\.)*\"|'([^']|\\.)*'|\S+)"
-    r"|--no-pager|--no-color|--literal-pathspecs|--no-optional-locks|-c\s+\S+))*"
-)
-```
-When flags are present, the regex generator escapes individual flags and allows them anywhere in the trailing argument string:
-```python
-pattern = (
-    f"command(regex:{ENV_VARS_PREFIX_PATTERN}(\\S+/)?git"
-    f"{GIT_GLOBAL_FLAGS_PATTERN}\\s+{escaped_subcmd}"
-    f"(\\s+.*)?\\s+{flag_pattern}(\\s+.*)?)"
+    rf"(\s+(-C\s+{_ARG_VALUE_PATTERN}"
+    rf"|--no-pager|--no-color|--literal-pathspecs|--no-optional-locks|-c\s+{_ARG_VALUE_PATTERN}))*"
 )
 ```
 
-### 3. Sed In-Place Expansion
+### 3. Fuchsia Tool Global Flags & Chaining (fx, ffx, jiri)
+Fuchsia wrapper tools emit direct regexes matching any binary path (`fx`, `scripts/fx`, `/abs/path/fx`) and supported global flags:
+- **`fx`**: Handles `-t <target>`, `--dir <out_dir>`, `--enable=...`, `--disable=...`, `-x`, `-xx`, `-i`, `--`.
+- **`ffx`**: Handles standalone `ffx` as well as chained `fx [flags] ffx [flags]`, including `--machine json`, `-t <target>`, `-c <config>`, `-v`, and `--isolate-dir`.
+- **`jiri`**: Handles `-j <N>`, `-root <dir>`, `-color <mode>`, `-time`, `-v`, `-vv`, and `--show-progress`.
+
+### 4. Sed In-Place Expansion
 Sed in-place invocations (`-i`, `-i.bak`, `--in-place`) can execute with combined flags (e.g., `sed -Ei '...'`). The generator creates specialized regexes matching any `-i` flag variant:
 ```python
 pattern = (
-    f"command(regex:{ENV_VARS_PREFIX_PATTERN}(\\S+/)?sed"
-    f"(\\s+\\S+)*\\s+(-[a-zA-Z]*i\\S*|--in-place(\\S*)?)(\\s+.*)?)"
+    f"command(regex:{ENV_VARS_PREFIX_PATTERN}(\\S+/)?sed\\b"
+    f"(?:\\s+{_ARG_VALUE_PATTERN})*\\s+(-[a-zA-Z]*i\\S*|--in-place(\\S*)?)(?:\\s+.*)?)"
 )
 ```
 
-### 4. Binary PATH and System Aliases
+### 5. Binary PATH and System Aliases
 For general binaries (e.g. `grep`, `jq`):
 - Resolves full absolute path via `shutil.which`.
 - Generates mirrored `/usr/bin/` $\leftrightarrow$ `/bin/` aliases if both paths exist.
@@ -148,6 +174,7 @@ _agents_sources = [
   "lib/config.py",
   "lib/permissions.py",
   "lib/services.py",
+  "lib/state.py",
   "main.py",
 ]
 
@@ -166,13 +193,9 @@ if (is_host) {
 }
 ```
 
-### Static Typing & Style
-- Code must use Python 3 annotations with `from __future__ import annotations`.
-- Format code using `fx format-code`.
-
 ### Running Unit Tests
 ```bash
-fx test main_test setup_test config_test permissions_test services_test
+fx test main_test setup_test config_test permissions_test services_test state_test
 ```
 
 ---

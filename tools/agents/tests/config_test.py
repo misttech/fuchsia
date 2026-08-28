@@ -15,7 +15,7 @@ import tempfile
 import unittest
 from unittest import mock
 
-from agents.lib import config
+from agents.lib import config, permissions, state
 
 
 class ConfigTest(unittest.TestCase):
@@ -33,6 +33,14 @@ class ConfigTest(unittest.TestCase):
         self.temp_dir = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp_dir.cleanup)
         self.mock_root = pathlib.Path(self.temp_dir.name)
+        self.state_dir = self.mock_root / "state"
+
+        self.fuchsia_dir = self.mock_root / "fuchsia"
+        self.fuchsia_dir_patch = mock.patch.object(
+            permissions, "find_fuchsia_dir", return_value=self.fuchsia_dir
+        )
+        self.fuchsia_dir_patch.start()
+        self.addCleanup(self.fuchsia_dir_patch.stop)
 
     def test_get_default_config_path_fallback(self) -> None:
         """Verify default fallback to ~/.gemini/config/config.json when no env vars are set."""
@@ -117,7 +125,7 @@ class ConfigTest(unittest.TestCase):
         self.assertEqual(added, ["grant3", "grant4"])
 
     def test_apply_grants_new_file(self) -> None:
-        """Verify apply_grants creates new config atomically."""
+        """Verify apply_grants creates new config atomically and initializes state."""
         cfg_file = self.mock_root / "config.json"
         success = config.apply_grants(
             config_path=cfg_file,
@@ -125,6 +133,8 @@ class ConfigTest(unittest.TestCase):
             deny=["command(fx clean)"],
             ask=["command(fx reboot)"],
             dry_run=False,
+            state_dir=self.state_dir,
+            selected_profile="local-changes",
         )
         self.assertTrue(success)
         self.assertTrue(cfg_file.is_file())
@@ -135,8 +145,12 @@ class ConfigTest(unittest.TestCase):
         self.assertEqual(grants["deny"], ["command(fx clean)"])
         self.assertEqual(grants["ask"], ["command(fx reboot)"])
 
+        journal = state.load_state(self.state_dir / "state.json")
+        self.assertEqual(journal.active_profile, "local-changes")
+        self.assertEqual(len(journal.history), 1)
+
     def test_apply_grants_existing_file_and_backup(self) -> None:
-        """Verify preexisting config is backed up to .bak before modification."""
+        """Verify preexisting config is backed up to backups/ before modification."""
         cfg_file = self.mock_root / "config.json"
         initial_data = {
             "userSettings": {
@@ -158,12 +172,14 @@ class ConfigTest(unittest.TestCase):
             deny=["command(fx clean)"],
             ask=[],
             dry_run=False,
+            state_dir=self.state_dir,
+            selected_profile="local-changes",
         )
         self.assertTrue(success)
 
-        bak_file = cfg_file.with_name(f"{cfg_file.name}.bak")
-        self.assertTrue(bak_file.is_file())
-        self.assertEqual(bak_file.read_text(encoding="utf-8"), original_json)
+        backups = list((self.state_dir / "backups").glob("config_*.json"))
+        self.assertEqual(len(backups), 1)
+        self.assertEqual(backups[0].read_text(encoding="utf-8"), original_json)
 
         data = json.loads(cfg_file.read_text(encoding="utf-8"))
         self.assertEqual(data["rootField"], "foo")
@@ -183,9 +199,11 @@ class ConfigTest(unittest.TestCase):
             deny=[],
             ask=[],
             dry_run=True,
+            state_dir=self.state_dir,
         )
         self.assertTrue(success)
         self.assertFalse(cfg_file.exists())
+        self.assertFalse((self.state_dir / "state.json").exists())
 
     def test_apply_grants_invalid_json(self) -> None:
         """Verify invalid JSON in existing config.json is gracefully handled."""
@@ -198,6 +216,7 @@ class ConfigTest(unittest.TestCase):
             deny=[],
             ask=[],
             dry_run=False,
+            state_dir=self.state_dir,
         )
         self.assertFalse(success)
         self.assertIn("Error reading JSON from", self.mock_stderr.getvalue())

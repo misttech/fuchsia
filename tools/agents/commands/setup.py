@@ -13,6 +13,7 @@ from agents.lib import (
     config,
     permissions,
     services,
+    state,
 )
 
 DEFAULT_PROFILE = "local-changes"
@@ -38,7 +39,32 @@ def add_arguments(parser: argparse.ArgumentParser) -> None:
         "-p",
         "--profile",
         choices=list(permissions.PROFILE_DEFINITIONS.keys()),
-        help="Permission profile flavor (read-only, local-changes, external-changes, full-access)",
+        help="Permission profile flavor (read-only, local-changes, external-changes, full-access). Defaults to local-changes.",
+    )
+    parser.add_argument(
+        "--status",
+        action="store_true",
+        help="Display current agent configuration status, active profile, and rule counts.",
+    )
+    parser.add_argument(
+        "--rollback",
+        nargs="?",
+        const=1,
+        type=int,
+        default=None,
+        metavar="N",
+        help="Roll back configuration to N setups ago (default: 1).",
+    )
+    parser.add_argument(
+        "--reset",
+        action="store_true",
+        help="Purge all Fuchsia-managed rules from configuration while preserving user custom rules.",
+    )
+    parser.add_argument(
+        "--state-dir",
+        type=pathlib.Path,
+        default=None,
+        help="Custom path to state directory (default: ~/.local/share/Fuchsia/agents/setup).",
     )
     parser.add_argument(
         "-a",
@@ -95,10 +121,54 @@ def add_arguments(parser: argparse.ArgumentParser) -> None:
     )
 
 
+def _restart_daemons(fuchsia_dir: pathlib.Path, dry_run: bool) -> None:
+    """Discover and restart managed agent daemon services."""
+    daemon_services = services.find_daemon_services(fuchsia_dir)
+    services.restart_daemons(
+        service_names=daemon_services,
+        dry_run=dry_run,
+    )
+
+
 def run(args: argparse.Namespace) -> int:
     """Execute setup with parsed arguments."""
-    config_path = args.config or config.DEFAULT_CONFIG_PATH
     fuchsia_dir = permissions.find_fuchsia_dir()
+    state_dir = args.state_dir or state.get_default_state_dir()
+    config_path = args.config or config.get_default_config_path()
+
+    if args.status:
+        status_text = state.format_status(
+            config_path=config_path,
+            state_path=state_dir / "state.json",
+        )
+        print(status_text)
+        return 0
+
+    if args.rollback is not None:
+        steps = args.rollback
+        success = state.rollback(
+            config_path=config_path,
+            state_path=state_dir / "state.json",
+            backups_dir=state_dir / "backups",
+            steps=steps,
+            dry_run=args.dry_run,
+        )
+        if success:
+            _restart_daemons(fuchsia_dir, args.dry_run)
+        return 0 if success else 1
+
+    if args.reset:
+        success = state.reset(
+            config_path=config_path,
+            state_path=state_dir / "state.json",
+            backups_dir=state_dir / "backups",
+            dry_run=args.dry_run,
+        )
+        if success:
+            _restart_daemons(fuchsia_dir, args.dry_run)
+        return 0 if success else 1
+
+    journal = state.load_state(state_dir / "state.json")
 
     selected_profile = args.profile
     has_explicit_rules = bool(
@@ -110,8 +180,11 @@ def run(args: argparse.Namespace) -> int:
         or args.ask_list
     )
 
-    if not selected_profile and not has_explicit_rules:
-        selected_profile = DEFAULT_PROFILE
+    if not selected_profile:
+        if journal.active_profile:
+            selected_profile = journal.active_profile
+        elif not has_explicit_rules:
+            selected_profile = DEFAULT_PROFILE
 
     allow_grants: list[str] = []
     deny_grants: list[str] = []
@@ -145,13 +218,11 @@ def run(args: argparse.Namespace) -> int:
         deny=deny_grants,
         ask=ask_grants,
         dry_run=args.dry_run,
+        state_dir=state_dir,
+        selected_profile=selected_profile or "",
     )
     if not success:
         return 1
 
-    daemon_services = services.find_daemon_services(fuchsia_dir)
-    services.restart_daemons(
-        service_names=daemon_services,
-        dry_run=args.dry_run,
-    )
+    _restart_daemons(fuchsia_dir, args.dry_run)
     return 0

@@ -1,40 +1,39 @@
-# AI Coding Agent Setup (`fx agents`)
+# AI Coding Agent Tooling (`fx agents`)
 
 ## Overview
 
-`fx agents` is a Fuchsia developer workflow tool designed to manage configurations, permission grants, and developer tooling prerequisites for AI coding assistants (such as Gemini CLI, Claude, and IDE plugins) operating within the Fuchsia platform source tree.
+`fx agents` is a Fuchsia developer workflow tool designed to manage configurations, permission grants, and sidecar state for AI coding assistants (such as Gemini CLI, Claude, and IDE plugins) operating within the Fuchsia platform source tree.
 
-The tool provides an extensible subcommand architecture, starting with `fx agents setup`, which handles permission profiles, command regex expansion, atomic JSON configuration management, config backups, and daemon service restarts.
+The tool provides an extensible subcommand architecture, centered around `fx agents setup`, which handles:
+- **Permission Profile Management**: Declarative profiles matching security and autonomy tiers.
+- **Command Variant & Regex Expansion**: Translating commands into strictly anchored permission regexes and tool prefixes.
+- **Atomic Configuration Management**: Non-destructive JSON modifications, temporary file swaps, and mandatory backups.
+- **State Journaling & Three-Way Reconciliation**: Sidecar tracking in `~/.local/share/Fuchsia/agents/setup/state.json` (respecting `$XDG_STATE_HOME` / `$XDG_DATA_HOME`) preserving user custom rules across profile switches.
+- **Lifecycle Management**: Status inspection (`--status`), multi-step rollback (`--rollback [N]`), and configuration reset (`--reset`).
+- **Multi-Repo Daemon Orchestration**: Transparent discovery and restarting of developer background daemons.
 
 ---
 
-## What the Tool Does
+## Quickstart
 
-### 1. Permission Profiles
-The `setup` command provides four permission profiles to match developer security and autonomy needs:
+### Apply Default Permission Profile
+Run `fx agents setup` to configure the default `local-changes` profile:
+```bash
+fx agents setup
+```
 
-- **`read-only`**: Harmless workspace inspection and build/test commands (`git status`, `git diff`, `fx build`, `fx test`, `cat`, `grep`, `rg`, `fd`). Interactive prompts for device and cache operations.
-- **`local-changes` (Default)**: Read-only permissions plus local workspace mutations (`git commit`, `git checkout`, `git branch`, `git stash`, `git rebase`, `fx format-code`).
-- **`external-changes`**: Local changes plus remote upload and review interactions (`git push`, `jiri upload`, `fx gh pr ...`).
-- **`full-access`**: Unrestricted developer operations including device management (`fx ota`, `fx reboot`, `ffx target ...`) and cache destruction (`fx clean`).
+### Apply a Specific Profile
+```bash
+fx agents setup --profile read-only
+```
 
-### 2. Partitioned Permission Lists
-Rules are cleanly maintained in single-purpose text files under `.agents/config/permissions/` across both the public platform tree and vendor extensions:
-- **`read_only.txt`**: Safe inspection commands.
-- **`local_changes.txt`**: In-tree editing and local VCS operations.
-- **`external_changes.txt`**: Upstream pushing, CL uploads, and remote sync.
-- **`batch_execution.txt`**: Batch commands and traversal tools (`find`, `xargs`).
-- **`device_ops.txt`**: Device reboots, fastboot flashing, and OTA updates.
-- **`cache_destruction.txt`**: Build directory cleans and cache wipes.
-- **`never_allow.txt`**: Strictly prohibited destructive commands (e.g. `git reset --hard`, `git clean`).
+### Dry Run Mode
+Preview calculated grant modifications and daemon restarts without touching `config.json` or restarting services:
+```bash
+fx agents setup --profile full-access --dry-run
+```
 
-### 3. Regex & Command Variant Expansion
-Permissions are expanded into strictly anchored regex patterns (`command(regex:...)`) and shell alias variants:
-- **Git**: Matches environment variable prefixes (`GIT_PAGER=cat`), global flags (`git -C <dir>`), and subcommands with force-push protection anywhere in arguments.
-- **Fuchsia Tools**: Expands `fx`, `scripts/fx`, `./scripts/fx`, `tools/fx`, and `.jiri_root/bin/fx`.
-- **Python**: Expands `python`, `python3`, and `fuchsia-vendored-python` paths.
-- **Sed**: Detects `-i` and `--in-place` options and expands regexes matching in-place edits.
-- **System Binaries**: Expands `/usr/bin/` $\leftrightarrow$ `/bin/` aliases and resolves binary paths.
+---
 
 ## Permission Profiles
 
@@ -63,45 +62,74 @@ Rules are maintained in declarative single-purpose text files under `.agents/con
 
 1. **`never_allow.txt` Enforcement**: Destructive and unrecoverable operations are strictly placed in `deny` across every profile.
 2. **Force-Push Detection Anywhere in Arguments**: The regex expansion engine inspects all git push arguments to detect force-push flags (`--force`, `-f`, `+<ref>`) regardless of argument order or intervening flags.
-3. **Atomic Writes**: Safe replacement prevents corruption during interrupted writes.
-4. **Pre-Modification Backups**: Creates `.bak` backup before modifying pre-existing configurations.
+3. **Non-Destructive Set Reconciliation**: Custom grants previously configured in `config.json` that were not injected by Fuchsia setup are strictly preserved.
+4. **Atomic JSON Writes**: Modifications are written to `.config.json.tmp` and swapped via filesystem replacement to prevent file corruption.
+5. **Pre-Modification Backups**: Every write creates a timestamped backup in `~/.local/share/Fuchsia/agents/setup/backups/` before modifying existing configuration.
 
 ---
 
-## Usage Examples
+## Lifecycle Management Commands
 
-### Basic Setup
+### Status Inspection (`--status`)
+Inspect active configuration, rule counts, and history:
 ```bash
-# Configure default profile (local-changes)
-fx agents setup
+fx agents setup --status
+```
+Example output:
+```text
+=== AI Coding Agent Configuration Status ===
+Active Profile : local-changes
+Last Updated   : 2026-08-26 21:00:00
+Fuchsia Root   : /usr/local/google/home/username/fuchsia
+Config File    : /home/username/.gemini/config/config.json [exists]
+State File     : /home/username/.local/share/Fuchsia/agents/setup/state.json [exists]
 
-# Configure specific profile
-fx agents setup --profile read-only
-fx agents setup --profile local-changes
-fx agents setup --profile external-changes
-fx agents setup --profile full-access
+Rule Breakdown:
+  [ALLOW] :  58 total ( 55 managed,   3 custom)
+  [DENY ] :   8 total (  8 managed,   0 custom)
+  [ASK  ] :  12 total ( 12 managed,   0 custom)
 
-# Preview changes without modifying configuration
-fx agents setup --profile read-only --dry-run
+Profile History (Newest to Oldest):
+  1) 2026-08-26 21:00:00 -> [local-changes] (backup: config.20260826_210000.bak)
+  2) 2026-08-26 20:30:00 -> [read-only] (backup: config.20260826_203000.bak)
 ```
 
-### Custom Grants & Config Path
+### Multi-Step Rollback (`--rollback [N]`)
+Revert `config.json` to the state prior to N setup operations:
 ```bash
-# Add specific custom commands
-fx agents setup --allow "fx custom-tool" --deny "rm -rf /" --ask "fx ota"
+# Roll back to previous configuration (N=1)
+fx agents setup --rollback
 
-# Include custom rule list files
-fx agents setup --allow-list /path/to/extra_allow.txt --deny-list /path/to/extra_deny.txt
+# Roll back 3 setups prior
+fx agents setup --rollback 3
+```
 
-# Configure custom config output path
-fx agents setup --profile local-changes --config /path/to/config.json
+### Reset Configuration (`--reset`)
+Remove all permissions configured by `fx agents setup`, reverting to a clean baseline while preserving any custom developer-authored rules in `config.json`:
+```bash
+fx agents setup --reset
+```
+> **Note:** Unlike `--rollback` (which steps backward through previous profile changes using backup snapshots), `--reset` removes all Fuchsia-managed grants and clears the local state journal (`state.json`) without modifying custom permissions or non-permission IDE settings you manually configured.
+
+
+---
+
+## Ad-Hoc Grants and Custom Lists
+
+Add custom commands or additional grant lists on top of any profile:
+```bash
+fx agents setup \
+  --profile local-changes \
+  --allow "fx test //custom:target" \
+  --deny "git push upstream main" \
+  --allow-list path/to/extra_allowed.txt
 ```
 
 ---
 
-## Testing Quick Reference
+## Multi-Repository Overlays
 
-All Python host tests are hermetic and integrated into the Fuchsia build system:
-```bash
-fx test main_test setup_test config_test permissions_test services_test
-```
+In multi-repo setups (e.g. `//` with `//vendor/*`), `fx agents` automatically discovers and merges configuration:
+1. `.agents/config/permissions/` (Public Fuchsia tree)
+2. `vendor/*/.agents/config/permissions/` (Internal & vendor overlays)
+3. `services.txt` daemon declarations across all repository roots.
