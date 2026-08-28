@@ -10,8 +10,11 @@ use crate::vfs::{
 };
 use atomic_bitflags::atomic_bitflags;
 use bitflags::bitflags;
+use bstr::ByteSlice;
 use fuchsia_rcu::{RcuDroppable, RcuOptionArc, RcuReadScope};
 use fuchsia_sync::ResetDependencies;
+use fxfs_unicode::{CasefoldStr, utf8_bytes};
+use smallvec::SmallVec;
 use starnix_rcu::RcuString;
 use starnix_sync::{
     DirEntryChildrenLevel, DirEntryChildrenRecursiveLevel, DynamicLockDepRwLock,
@@ -24,7 +27,6 @@ use starnix_uapi::inotify_mask::InotifyMask;
 use starnix_uapi::open_flags::OpenFlags;
 use starnix_uapi::{NAME_MAX, RENAME_EXCHANGE, RENAME_NOREPLACE, RENAME_WHITEOUT, error};
 use std::collections::BTreeMap;
-use std::collections::btree_map::Entry;
 use std::fmt;
 use std::ops::Deref;
 use std::sync::atomic::Ordering;
@@ -146,9 +148,9 @@ pub struct DirEntry {
 }
 
 // TODO(b/525158773): Temporary impl to allow incremental RCU safety refactoring.
-// SAFETY: We wait for an RCU grace period before returning from syscalls so side effects are guaranteed to be visible.
+// SAFETY: We wait for an RCU grace period before returning from syscalls so side effects are
+// guaranteed to be visible.
 unsafe impl RcuDroppable for DirEntry {}
-type DirEntryChildren = BTreeMap<FsString, Weak<DirEntry>>;
 
 pub type DirEntryHandle = Arc<DirEntry>;
 
@@ -161,6 +163,8 @@ impl DirEntry {
     ) -> DirEntryHandle {
         let ops = node.create_dir_entry_ops();
         let fs_lockdep_type = node.fs().fs_lockdep_type();
+        let casefold = node.info().casefold;
+        let initial_children = DirEntryChildren::new(casefold);
         let result = Arc::new(DirEntry {
             node,
             ops,
@@ -169,13 +173,13 @@ impl DirEntry {
             local_name: local_name.into(),
             children: match fs_lockdep_type {
                 FsLockDepType::Normal => {
-                    DynamicLockDepRwLock::new::<DirEntryChildrenLevel>(Default::default())
+                    DynamicLockDepRwLock::new::<DirEntryChildrenLevel>(initial_children)
                 }
                 FsLockDepType::Recursive => {
-                    DynamicLockDepRwLock::new::<DirEntryChildrenRecursiveLevel>(Default::default())
+                    DynamicLockDepRwLock::new::<DirEntryChildrenRecursiveLevel>(initial_children)
                 }
                 FsLockDepType::Fuse => {
-                    DynamicLockDepRwLock::new::<FuseDirEntryChildrenLevel>(Default::default())
+                    DynamicLockDepRwLock::new::<FuseDirEntryChildrenLevel>(initial_children)
                 }
             },
         });
@@ -233,7 +237,7 @@ impl DirEntry {
         assert!(dir_entry_children.children.is_empty());
         for (name, child) in children.into_iter() {
             child.set_parent(self.clone());
-            dir_entry_children.children.insert(name, Arc::downgrade(&child));
+            dir_entry_children.children.insert(name.as_ref(), Arc::downgrade(&child));
         }
     }
 
@@ -264,21 +268,18 @@ impl DirEntry {
         // `update_attributes` below because it acts as the guard preventing the directory's
         // case-sensitivity from changing concurrently. Elsewhere, we make decisions based on the
         // state of `children` to determine whether a directory is case-folded or not.
-        let children = self.children.write();
-        if self.node.info().casefold == casefold {
+        let mut children = self.children.write();
+        if children.is_casefold() == casefold {
             return Ok(());
-        }
-
-        // Verify that the in-memory cache is empty. On disk-backed filesystems, on-disk emptiness
-        // is checked by `update_attributes`.
-        if !children.is_empty() {
-            return error!(ENOTEMPTY);
         }
 
         self.node.update_attributes(current_task, |info| {
             info.casefold = casefold;
             Ok(())
-        })
+        })?;
+
+        children.set_casefold(casefold);
+        Ok(())
     }
 
     /// The parent DirEntry.
@@ -652,6 +653,9 @@ impl DirEntry {
         // If the names and parents are the same, then there's nothing to do
         // and we can report success.
         if Arc::ptr_eq(&old_parent.node, &new_parent.node) && old_basename == new_basename {
+            if flags.contains(RenameFlags::NOREPLACE) {
+                return error!(EEXIST);
+            }
             return Ok(());
         }
 
@@ -769,16 +773,31 @@ impl DirEntry {
                     let replaced = maybe_replaced.insert(replaced.clone());
 
                     if flags.contains(RenameFlags::NOREPLACE) {
+                        // From <https://man7.org/linux/man-pages/man2/rename.2.html>:
+                        //
+                        //   RENAME_NOREPLACE
+                        //          Don't overwrite newpath of the rename. Return an error
+                        //          if newpath already exists.
                         return error!(EEXIST);
                     }
 
-                    // Sayeth https://man7.org/linux/man-pages/man2/rename.2.html:
-                    //
-                    // "If oldpath and newpath are existing hard links referring to the
-                    // same file, then rename() does nothing, and returns a success
-                    // status."
                     if Arc::ptr_eq(&renamed.node, &replaced.node) {
-                        return Ok(());
+                        if !Arc::ptr_eq(&renamed, &replaced) {
+                            // From <https://man7.org/linux/man-pages/man2/rename.2.html>:
+                            //
+                            // "If oldpath and newpath are existing hard links referring to the
+                            // same file, then rename() does nothing, and returns a success
+                            // status."
+                            return Ok(());
+                        }
+
+                        // Same DirEntry (e.g. case-only rename in a casefolded directory).
+                        // With EXCHANGE, swapping an entry with itself is a no-op that succeeds.
+                        // Without EXCHANGE, we must proceed to rename on the underlying filesystem
+                        // to update the on-disk casing.
+                        if flags.contains(RenameFlags::EXCHANGE) {
+                            return Ok(());
+                        }
                     }
 
                     // Sayeth https://man7.org/linux/man-pages/man2/rename.2.html:
@@ -847,6 +866,21 @@ impl DirEntry {
                 fs.rename(current_task, &mut state, old_basename, new_basename)?;
             }
 
+            if flags.contains(RenameFlags::EXCHANGE) {
+                // Reparent `replaced` when exchanging.
+                let replaced =
+                    maybe_replaced.as_ref().expect("replaced expected with RENAME_EXCHANGE");
+                replaced.set_parent(old_parent.clone());
+                replaced.local_name.update(old_basename.to_owned());
+                state.old_parent_children().children.insert(old_basename, Arc::downgrade(replaced));
+            } else {
+                // Remove the renamed child from the old_parent's child list.
+                // In casefolded directories, removing old_basename before inserting new_basename
+                // prevents removal from clobbering the freshly inserted entry when old and new
+                // names canonicalize to the same key.
+                state.old_parent_children().children.remove(old_basename);
+            }
+
             // We need to update the parent and local name for the DirEntry
             // we are renaming to reflect its new parent and its new name.
             renamed.set_parent(new_parent.clone());
@@ -855,10 +889,7 @@ impl DirEntry {
             // Actually add the renamed child to the new_parent's child list.
             // This operation implicitly removes the replaced child (if any)
             // from the child list.
-            state
-                .new_parent_children()
-                .children
-                .insert(new_basename.into(), Arc::downgrade(&renamed));
+            state.new_parent_children().children.insert(new_basename, Arc::downgrade(&renamed));
 
             // Lock ordering is enforced from parent-to-child, and therefore we need to
             // reset the lock ordering constraints when we reorder the tree nodes.
@@ -866,9 +897,15 @@ impl DirEntry {
             // This is safe because `fs.rename_mutex` is held during this operation, which
             // prevents the tree topology from changing concurrently. This allows us to safely
             // dynamically enforce a sound locking order (e.g. by memory address in `RenameGuard`)
-            // to avoid deadlocks. Clearing the graph prevents false-positive cycle panics from `tracing-mutex`
-            // after the node is reparented.
+            // to avoid deadlocks. Clearing the graph prevents false-positive cycle panics from
+            // `tracing-mutex` after the node is reparented.
             unsafe {
+                if let Some(replaced) =
+                    maybe_replaced.as_ref().filter(|_| flags.contains(RenameFlags::EXCHANGE))
+                {
+                    replaced.children.reset_dependencies();
+                    replaced.node.info_lock().reset_dependencies();
+                }
                 renamed.children.reset_dependencies();
                 renamed.node.info_lock().reset_dependencies();
                 old_parent.children.reset_dependencies();
@@ -876,35 +913,12 @@ impl DirEntry {
                 new_parent.children.reset_dependencies();
                 new_parent.node.info_lock().reset_dependencies();
             }
-
-            if flags.contains(RenameFlags::EXCHANGE) {
-                // Reparent `replaced` when exchanging.
-                let replaced =
-                    maybe_replaced.as_ref().expect("replaced expected with RENAME_EXCHANGE");
-                replaced.set_parent(old_parent.clone());
-                replaced.local_name.update(old_basename.to_owned());
-                state
-                    .old_parent_children()
-                    .children
-                    .insert(old_basename.into(), Arc::downgrade(replaced));
-
-                // Lock ordering is enforced from parent-to-child, and therefore we need to
-                // reset the lock ordering constraints when we reorder the tree nodes.
-                // SAFETY: See the comment above for `renamed` lock resetting.
-                unsafe {
-                    replaced.children.reset_dependencies();
-                    replaced.node.info_lock().reset_dependencies();
-                }
-            } else {
-                // Remove the renamed child from the old_parent's child list.
-                state.old_parent_children().children.remove(old_basename);
-            }
         };
 
         fs.purge_old_entries();
 
         if let Some(replaced) = maybe_replaced {
-            if !flags.contains(RenameFlags::EXCHANGE) {
+            if !flags.contains(RenameFlags::EXCHANGE) && !Arc::ptr_eq(&renamed, &replaced) {
                 replaced.destroy(&current_task.kernel().mounts);
             }
         }
@@ -925,7 +939,7 @@ impl DirEntry {
         Ok(())
     }
 
-    pub fn get_children<F, T>(&self, callback: F) -> T
+    pub(crate) fn get_children<F, T>(&self, callback: F) -> T
     where
         F: FnOnce(&DirEntryChildren) -> T,
     {
@@ -937,9 +951,8 @@ impl DirEntry {
     /// mounts.
     pub fn remove_child(&self, name: &FsStr, mounts: &Mounts) {
         let mut children = self.children.write();
-        let child = children.get(name).and_then(Weak::upgrade);
+        let child = children.remove(name).and_then(|weak| weak.upgrade());
         if let Some(child) = child {
-            children.remove(name);
             std::mem::drop(children);
             child.destroy(mounts);
         }
@@ -1016,25 +1029,14 @@ impl DirEntry {
     #[cfg(test)]
     pub fn copy_child_names(&self) -> Vec<FsString> {
         let scope = RcuReadScope::new();
-        self.children
-            .read()
-            .values()
-            .filter_map(|child| Weak::upgrade(child).map(|c| c.local_name.read(&scope).to_owned()))
-            .collect()
+        self.children.read().copy_child_names(&scope)
     }
 
     fn internal_remove_child(&self, child: &DirEntry) {
         let mut children = self.children.write();
         let scope = RcuReadScope::new();
         let local_name = child.local_name.read(&scope);
-        if let Some(weak_child) = children.get(local_name) {
-            // If this entry is occupied, we need to check whether child is
-            // the current occupant. If so, we should remove the entry
-            // because the child no longer exists.
-            if std::ptr::eq(weak_child.as_ptr(), child) {
-                children.remove(local_name);
-            }
-        }
+        children.remove_if_child_matches(local_name, child);
     }
 
     /// Notifies watchers on the current node and its parent about an event.
@@ -1126,6 +1128,126 @@ impl DirEntry {
     }
 }
 
+/// Canonicalizes a filename into its casefolded, NFD-normalized byte representation on the stack.
+/// Non-UTF-8 filenames are preserved as raw bytes.
+#[inline]
+fn canonicalize_name(name: impl AsRef<[u8]>) -> SmallVec<[u8; NAME_MAX as usize]> {
+    let name = name.as_ref();
+    match std::str::from_utf8(name) {
+        Ok(valid) => {
+            CasefoldStr::new(valid).casefold_normalized_chars().flat_map(utf8_bytes).collect()
+        }
+        Err(_) => SmallVec::from_slice(name),
+    }
+}
+
+/// A canonicalized key stored in the directory entry cache.
+///
+/// Stores pre-casefolded, NFD-normalized UTF-8 bytes (for casefolded directories) or raw bytes
+/// (for case-sensitive directories and non-UTF-8 filenames).
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub(crate) struct DirEntryChildKey(FsString);
+
+impl DirEntryChildKey {
+    pub fn new(name: &FsStr, casefold: bool) -> Self {
+        if casefold {
+            Self(canonicalize_name(name).into_vec().into())
+        } else {
+            Self(name.to_owned())
+        }
+    }
+}
+
+impl std::borrow::Borrow<FsStr> for DirEntryChildKey {
+    fn borrow(&self) -> &FsStr {
+        self.0.as_bstr()
+    }
+}
+
+/// The cached child directory entries of a directory.
+///
+/// Keys stored in this map are strictly internal to the VFS cache and are never exposed back to
+/// userspace. Directory listings (`readdir`) query the underlying filesystem directly for canonical
+/// on-disk names, while individual child entries track their associated lookup/creation name in
+/// [`DirEntry::local_name`].
+#[derive(Default, Debug)]
+pub(crate) struct DirEntryChildren {
+    entries: BTreeMap<DirEntryChildKey, Weak<DirEntry>>,
+    casefold: bool,
+}
+
+impl std::ops::Deref for DirEntryChildren {
+    type Target = BTreeMap<DirEntryChildKey, Weak<DirEntry>>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.entries
+    }
+}
+
+impl DirEntryChildren {
+    pub fn new(casefold: bool) -> Self {
+        Self { entries: BTreeMap::new(), casefold }
+    }
+
+    pub fn is_casefold(&self) -> bool {
+        self.casefold
+    }
+
+    pub fn set_casefold(&mut self, casefold: bool) {
+        self.entries.clear();
+        self.casefold = casefold;
+    }
+
+    /// Looks up a child entry by name.
+    pub fn get(&self, name: &FsStr) -> Option<&Weak<DirEntry>> {
+        if self.casefold {
+            let key = canonicalize_name(name);
+            self.entries.get(FsStr::new(&key))
+        } else {
+            self.entries.get(name)
+        }
+    }
+
+    /// Inserts a child into the directory cache under `name`, returning the weak reference
+    /// previously stored under this name, if any.
+    pub fn insert(&mut self, name: &FsStr, child: Weak<DirEntry>) -> Option<Weak<DirEntry>> {
+        self.entries.insert(DirEntryChildKey::new(name, self.casefold), child)
+    }
+
+    /// Removes a child from the directory cache by name, returning the weak reference
+    /// previously stored under this name, if any.
+    pub fn remove(&mut self, name: &FsStr) -> Option<Weak<DirEntry>> {
+        if self.casefold {
+            let key = canonicalize_name(name);
+            self.entries.remove(FsStr::new(&key))
+        } else {
+            self.entries.remove(name)
+        }
+    }
+
+    /// Removes a child entry if the cached weak reference matches `expected_child`.
+    /// Returns `true` if the entry was found and removed.
+    pub fn remove_if_child_matches(&mut self, name: &FsStr, expected_child: &DirEntry) -> bool {
+        if let Some(weak_child) = self.get(name) {
+            if std::ptr::eq(weak_child.as_ptr(), expected_child) {
+                let _ = self.remove(name);
+                return true;
+            }
+        }
+        false
+    }
+
+    #[cfg(test)]
+    /// Extracts a snapshot of all active child names, retaining the exact casing currently
+    /// stored on each child node and filtering out dropped entries.
+    fn copy_child_names(&self, scope: &RcuReadScope) -> Vec<FsString> {
+        self.entries
+            .values()
+            .filter_map(|child| Weak::upgrade(child).map(|c| c.local_name.read(scope).to_owned()))
+            .collect()
+    }
+}
+
 struct DirEntryLockedChildren<'a> {
     entry: &'a DirEntryHandle,
     children: LockDepWriteGuard<'a, DirEntryChildren>,
@@ -1185,35 +1307,19 @@ impl<'a> DirEntryLockedChildren<'a> {
             Ok((entry, create_result))
         };
 
-        let (child, create_result) = match self.children.entry(name.to_owned()) {
-            Entry::Vacant(entry) => {
-                let (child, create_result) = create_child(create_fn)?;
-                // Do not cache a child in a locked directory
-                if self.entry.node.fail_if_locked(current_task, &self.entry.node.info()).is_ok() {
-                    entry.insert(Arc::downgrade(&child));
-                }
-                (child, create_result)
+        if let Some(child) = self.children.get(name).and_then(Weak::upgrade) {
+            // Do not cache a child in a locked directory
+            if self.entry.node.fail_if_locked(current_task, &self.entry.node.info()).is_ok() {
+                child.node.fs().did_access_dir_entry(&child);
             }
-            Entry::Occupied(mut entry) => {
-                // It's possible that the upgrade will succeed this time around because we dropped
-                // the read lock before acquiring the write lock. Another thread might have
-                // populated this entry while we were not holding any locks.
-                if let Some(child) = Weak::upgrade(entry.get()) {
-                    // Do not cache a child in a locked directory
-                    if self.entry.node.fail_if_locked(current_task, &self.entry.node.info()).is_ok()
-                    {
-                        child.node.fs().did_access_dir_entry(&child);
-                    }
-                    return Ok((child, CreationResult::Existed { create_fn }));
-                }
-                let (child, create_result) = create_child(create_fn)?;
-                // Do not cache a child in a locked directory
-                if self.entry.node.fail_if_locked(current_task, &self.entry.node.info()).is_ok() {
-                    entry.insert(Arc::downgrade(&child));
-                }
-                (child, create_result)
-            }
-        };
+            return Ok((child, CreationResult::Existed { create_fn }));
+        }
+
+        let (child, create_result) = create_child(create_fn)?;
+        // Do not cache a child in a locked directory
+        if self.entry.node.fail_if_locked(current_task, &self.entry.node.info()).is_ok() {
+            self.children.insert(name, Arc::downgrade(&child));
+        }
 
         Ok((child, create_result))
     }
@@ -1471,5 +1577,81 @@ impl Drop for DirEntry {
         if let Some(parent) = maybe_parent {
             parent.internal_remove_child(self);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_canonicalize_name() {
+        let upper = canonicalize_name("FooBar.TXT");
+        let lower = canonicalize_name("foobar.txt");
+        let mixed = canonicalize_name("FOOBAR.TXT");
+        let diff = canonicalize_name("other.txt");
+
+        assert_eq!(upper.as_slice(), lower.as_slice());
+        assert_eq!(upper.as_slice(), mixed.as_slice());
+        assert_ne!(upper.as_slice(), diff.as_slice());
+
+        // Unicode decomposed vs composed
+        let composed = canonicalize_name("\u{03AA}");
+        let decomposed = canonicalize_name("\u{0399}\u{0308}");
+        assert_eq!(composed.as_slice(), decomposed.as_slice());
+
+        // Unicode accent folding (e\u{0301} vs \u{00c9})
+        let e_accent_lower = canonicalize_name("e\u{0301}");
+        let e_accent_upper = canonicalize_name("\u{00c9}");
+        assert_eq!(e_accent_lower.as_slice(), e_accent_upper.as_slice());
+
+        // Unicode German sharp S (straße vs STRASSE)
+        let strasse_lower = canonicalize_name("straße");
+        let strasse_upper = canonicalize_name("STRASSE");
+        assert_eq!(strasse_lower.as_slice(), strasse_upper.as_slice());
+
+        // Non-UTF-8 preserved as-is
+        let non_utf8 = canonicalize_name(b"foo\x80bar");
+        assert_eq!(non_utf8.as_slice(), b"foo\x80bar");
+    }
+
+    #[test]
+    fn test_dir_entry_children_casefold() {
+        let mut children = DirEntryChildren::new(true);
+        assert!(children.is_casefold());
+
+        // 1. Insert and lookup casefolded UTF-8
+        children.insert("FooBar.TXT".into(), Weak::new());
+        assert!(children.get("foobar.txt".into()).is_some());
+        assert!(children.get("FOOBAR.TXT".into()).is_some());
+        assert!(children.get("FooBar.TXT".into()).is_some());
+        assert!(children.get("other.txt".into()).is_none());
+
+        // 2. Insert valid Unicode with decomposed/composed characters
+        children.insert("\u{03AA}".into(), Weak::new());
+        assert!(children.get("\u{0399}\u{0308}".into()).is_some());
+
+        // 3. Insert non-UTF-8
+        children.insert(b"foo\x80bar".into(), Weak::new());
+        assert!(children.get(b"foo\x80bar".into()).is_some());
+        assert!(children.get(b"FOO\x80bar".into()).is_none());
+
+        // 4. Removal
+        assert!(children.remove("FOOBAR.TXT".into()).is_some());
+        assert!(children.get("foobar.txt".into()).is_none());
+        assert!(children.remove("\u{0399}\u{0308}".into()).is_some());
+        assert!(children.get("\u{03AA}".into()).is_none());
+        assert!(children.remove(b"foo\x80bar".into()).is_some());
+        assert!(children.get(b"foo\x80bar".into()).is_none());
+        assert!(children.is_empty());
+
+        // 5. Dynamic casefold toggling clears the cache
+        children.insert("Foo.TXT".into(), Weak::new());
+        assert!(!children.is_empty());
+        children.set_casefold(false);
+        assert!(!children.is_casefold());
+        assert!(children.is_empty());
+        children.set_casefold(true);
+        assert!(children.is_casefold());
     }
 }

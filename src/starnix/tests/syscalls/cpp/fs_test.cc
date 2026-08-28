@@ -36,6 +36,7 @@
 #include <gtest/gtest.h>
 #include <linux/capability.h>
 
+#include "src/lib/files/directory.h"
 #include "src/lib/files/file.h"
 #include "src/lib/files/path.h"
 #include "src/lib/fxl/strings/string_printf.h"
@@ -1761,13 +1762,9 @@ TEST_P(FsCasefoldTest, ReaddirPreservesOriginalName) {
   fbl::unique_fd file_fd(open(foo_mixed().c_str(), O_WRONLY | O_CREAT | O_EXCL, 0666));
   ASSERT_THAT(file_fd.get(), SyscallSucceeds());
 
-  DIR *dir = opendir(casefold_dir().c_str());
-  ASSERT_NE(dir, nullptr);
-  std::vector<std::string> entries = GetEntries(dir);
-  closedir(dir);
-
-  std::sort(entries.begin(), entries.end());
-  EXPECT_THAT(entries, testing::ElementsAre(".", "..", "Foo"));
+  std::vector<std::string> entries;
+  ASSERT_TRUE(files::ReadDirContents(casefold_dir(), &entries));
+  EXPECT_THAT(entries, testing::UnorderedElementsAre(".", "..", "Foo"));
 }
 
 TEST_P(FsCasefoldTest, UnlinkInvalidatesAllCaseVariants) {
@@ -1804,15 +1801,10 @@ TEST_P(FsCasefoldTest, RenameCaseOnlyUpdatesOnDiskName) {
   ASSERT_THAT(rename(apple_lower.c_str(), apple_upper.c_str()), SyscallSucceeds());
 
   // Check readdir output to verify updated casing on disk.
-  DIR *dir = opendir(casefold_dir().c_str());
-  ASSERT_NE(dir, nullptr);
-  std::vector<std::string> entries = GetEntries(dir);
-  closedir(dir);
-
-  std::sort(entries.begin(), entries.end());
+  std::vector<std::string> entries;
+  ASSERT_TRUE(files::ReadDirContents(casefold_dir(), &entries));
   // Linux ext4 casefold does not guarantee case-only rename updates directory entries.
-  EXPECT_THAT(entries, testing::AnyOf(testing::ElementsAre(".", "..", "apple"),
-                                      testing::ElementsAre(".", "..", "APPLE")));
+  EXPECT_THAT(entries, testing::UnorderedElementsAre(".", "..", testing::AnyOf("apple", "APPLE")));
 }
 
 TEST_P(FsCasefoldTest, NonUtf8NameMatchesExactOpaqueBytes) {
@@ -2014,6 +2006,11 @@ TEST_P(FsCasefoldTest, RenameExchangeSameEntryCaseVariantsSucceeds) {
   EXPECT_THAT(access(foo_mixed().c_str(), F_OK), SyscallSucceeds());
   EXPECT_THAT(access(foo_lower().c_str(), F_OK), SyscallSucceeds());
   EXPECT_THAT(access(foo_upper().c_str(), F_OK), SyscallSucceeds());
+
+  // Check readdir output to verify the original creation name is preserved.
+  std::vector<std::string> entries;
+  ASSERT_TRUE(files::ReadDirContents(casefold_dir(), &entries));
+  EXPECT_THAT(entries, testing::UnorderedElementsAre(".", "..", "Foo"));
 }
 
 TEST_P(FsCasefoldTest, RenameCrossCasefoldBoundary) {

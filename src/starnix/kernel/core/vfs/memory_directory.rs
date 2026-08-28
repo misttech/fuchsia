@@ -4,9 +4,10 @@
 
 use crate::task::CurrentTask;
 use crate::vfs::{
-    DirectoryEntryType, DirentSink, FileObject, FileOps, FsString, SeekTarget, default_seek,
-    fileops_impl_directory, fileops_impl_noop_sync,
+    DirEntryChildKey, DirectoryEntryType, DirentSink, FileObject, FileOps, SeekTarget,
+    default_seek, fileops_impl_directory, fileops_impl_noop_sync,
 };
+use fuchsia_rcu::RcuReadScope;
 use starnix_sync::{LockDepMutex, MemoryDirectoryReaddirPositionLock};
 use starnix_uapi::errors::Errno;
 use starnix_uapi::{error, off_t};
@@ -20,13 +21,13 @@ pub struct MemoryDirectoryFile {
     /// stopped.
     ///
     /// The state is actually recorded twice: once in the offset for this
-    /// FileObject and again here. Recovering the state from the offset is slow
-    /// because we would need to iterate through the keys of the BTree. Having
-    /// the FsString cached lets us search the keys of the BTree faster.
+    /// [`FileObject`] and again here. Recovering the state from the offset is slow
+    /// because we would need to iterate through the keys of the [`BTreeMap`]. Having
+    /// the [`DirEntryChildKey`] cached lets us search the keys of the [`BTreeMap`] faster.
     ///
     /// The initial "." and ".." entries are not recorded here. They are
-    /// represented only in the offset field in the FileObject.
-    readdir_position: LockDepMutex<Bound<FsString>, MemoryDirectoryReaddirPositionLock>,
+    /// represented only in the offset field in the [`FileObject`].
+    readdir_position: LockDepMutex<Bound<DirEntryChildKey>, MemoryDirectoryReaddirPositionLock>,
 }
 
 impl MemoryDirectoryFile {
@@ -99,6 +100,7 @@ impl FileOps for MemoryDirectoryFile {
         emit_dotdot(file, sink)?;
 
         let mut readdir_position = self.readdir_position.lock();
+        let scope = RcuReadScope::new();
         file.name.entry.get_children(|children| {
             for (name, maybe_entry) in children.range((readdir_position.clone(), Bound::Unbounded))
             {
@@ -107,7 +109,7 @@ impl FileOps for MemoryDirectoryFile {
                         entry.node.ino,
                         sink.offset() + 1,
                         DirectoryEntryType::from_mode(entry.node.info().mode),
-                        name.as_ref(),
+                        entry.local_name(&scope),
                     )?;
                     *readdir_position = Bound::Excluded(name.clone());
                 }
