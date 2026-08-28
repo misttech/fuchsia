@@ -108,8 +108,8 @@ class GestureDisambiguationTest : public gtest::TestLoopFixture {
       }
     }
 
-    snapshot->hit_testers.emplace_back([hits = std::move(hits)](auto...) mutable {
-      return view_tree::SubtreeHitTestResult{.hits = std::move(hits)};
+    snapshot->hit_testers.emplace_back([hits = std::move(hits)](auto...) {
+      return view_tree::SubtreeHitTestResult{.hits = hits};
     });
 
     return snapshot;
@@ -517,6 +517,52 @@ TEST_F(GestureDisambiguationTest, MidStreamChannelForcedClose_ShouldGrantStreamT
     EXPECT_EQ(received_events.front().interaction_result().status,
               fup_TouchInteractionStatus::GRANTED);
   }
+}
+
+TEST_F(GestureDisambiguationTest,
+       LoserDisconnectDuringContestResolution_MultipleStreams_ShouldNotCrash) {
+  OnNewViewTreeSnapshot(NewSnapshot(/*hits*/ {kClient2Koid},
+                                    /*hierarchy*/ {kContextKoid, kClient1Koid, kClient2Koid}));
+
+  // Inject two concurrent streams.
+  touch_system_.InjectTouchEventHitTested(PointerEventTemplate(kClient1Koid), kStream1Id,
+                                          *current_snapshot_);
+  touch_system_.InjectTouchEventHitTested(PointerEventTemplate(kClient1Koid), kStream2Id,
+                                          *current_snapshot_);
+
+  std::vector<fup_TouchEvent> received_events1;
+  std::vector<fup_TouchEvent> received_events2;
+
+  client1_ptr_->Watch({}, [&received_events1](auto events) {
+    std::move(events.begin(), events.end(), std::back_inserter(received_events1));
+  });
+  client2_ptr_->Watch({}, [&received_events2](auto events) {
+    std::move(events.begin(), events.end(), std::back_inserter(received_events2));
+  });
+  RunLoopUntilIdle();
+
+  ASSERT_EQ(received_events1.size(), 2u);
+  ASSERT_EQ(received_events2.size(), 2u);
+
+  // Client 2 unbinds its channel. When contest is resolved for stream 1, Client 2's EndContest
+  // will encounter unbind/error and trigger EraseContender, which synchronously resolves stream 2.
+  client2_ptr_.Unbind();
+
+  std::vector<fup_TouchResponse> responses1;
+  responses1.emplace_back(MakeTouchResponse(fup_TouchResponseType::YES_PRIORITIZE));
+  responses1.emplace_back(MakeTouchResponse(fup_TouchResponseType::YES_PRIORITIZE));
+
+  std::vector<fup_TouchEvent> win_events1;
+  client1_ptr_->Watch(std::move(responses1), [&win_events1](auto events) {
+    std::move(events.begin(), events.end(), std::back_inserter(win_events1));
+  });
+  RunLoopUntilIdle();
+
+  ASSERT_EQ(win_events1.size(), 2u);
+  ASSERT_TRUE(win_events1[0].has_interaction_result());
+  EXPECT_EQ(win_events1[0].interaction_result().status, fup_TouchInteractionStatus::GRANTED);
+  ASSERT_TRUE(win_events1[1].has_interaction_result());
+  EXPECT_EQ(win_events1[1].interaction_result().status, fup_TouchInteractionStatus::GRANTED);
 }
 
 }  // namespace input::test

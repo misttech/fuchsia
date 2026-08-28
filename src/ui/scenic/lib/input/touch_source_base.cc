@@ -233,6 +233,8 @@ void TouchSourceBase::UpdateStream(const view_tree::Snapshot& snapshot, StreamId
     ongoing_streams_.erase(stream_id);
     FX_DCHECK(!won_streams_awaiting_first_message_.contains(stream_id));
   }
+
+  SendPendingIfWaiting();
 }
 
 void TouchSourceBase::EndContest(StreamId stream_id, bool awarded_win) {
@@ -261,11 +263,12 @@ void TouchSourceBase::EndContest(StreamId stream_id, bool awarded_win) {
   if (!awarded_win || stream.stream_has_ended) {
     ongoing_streams_.erase(stream_id);
   }
+
+  SendPendingIfWaiting();
 }
 
 void TouchSourceBase::PushEvent(StreamId stream_id, AugmentedTouchEvent event) {
   pending_events_.push({.stream_id = stream_id, .event = std::move(event)});
-  SendPendingIfWaiting();
 }
 
 zx_status_t TouchSourceBase::ValidateResponses(
@@ -332,12 +335,13 @@ void TouchSourceBase::WatchBase(std::vector<fuchsia::ui::pointer::TouchResponse>
     stream.last_response = gd_response;
   }
 
+  return_tickets_.clear();
+
   for (const auto& [stream_id, gd_responses] : responses_per_stream) {
     respond_(stream_id, gd_responses);
   }
 
   pending_callback_ = std::move(callback);
-  return_tickets_.clear();
   SendPendingIfWaiting();
 }
 
