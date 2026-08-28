@@ -10,11 +10,17 @@ declare_args() {
   optimize = false
 }
 
+# Preserve the verbatim build argument for specialized logic to consult.
+optimize_build_argument = optimize
+
 # Compute the actual "optimize" value to use for each toolchain based on its
 # environment.
 
 # Kernel and related toolchains
-if (is_kernel) {
+if (toolchain_environment == "kernel") {
+  assert(optimize != false, "kernel_switchset() always sets optimize")
+  _optimize = optimize
+} else if (is_kernel) {
   _optimize = compilation_settings.kernel_optimize
 
   # Apply the global override for the optimization level to use, if set.

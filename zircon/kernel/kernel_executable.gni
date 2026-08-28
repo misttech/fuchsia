@@ -33,6 +33,9 @@ _clippy_rsp_inputs = [
   },
 ]
 
+_static_checks_toolchain =
+    "//zircon/kernel/switch/set/static-checks:kernel_$current_cpu.static-checks"
+
 # Represents a kernel executable (i.e., a kernel in ELF form) evaluated under
 # the current switchset.
 #
@@ -146,6 +149,14 @@ template("kernel_executable") {
       args += [ rsp.switch + rebase_path(_rsp_outputs[0], root_build_dir) ]
     }
 
+    if (clippy_cause_failure) {
+      args += [ "--fail" ]
+    }
+
+    if (clippy_ignore_rustc) {
+      args += [ "--clippy-only" ]
+    }
+
     args += [
       "--",
       "env",
@@ -164,7 +175,13 @@ template("kernel_executable") {
 
     validations = [
       ":$validate_symbols_target",
+
+      # Always do the Clippy checks to be sure that this exact configuration is
+      # fully checked, but some checks can be elided by optimization.  So also
+      # always do the Clippy checks in the static-checks switchset that uses
+      # flags tuned to maximize checking.
       ":$clippy_target",
+      ":$clippy_target($_static_checks_toolchain)",
     ]
   }
 

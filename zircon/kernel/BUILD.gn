@@ -157,9 +157,26 @@ kernel_cmdline("bypass-debuglog") {
 foreach(cpu, standard_fuchsia_cpus) {
   group("boot_tests.$cpu") {
     testonly = true
+    switchset = "switch/set/$default_test_kernel_switchset:kernel_$cpu.$default_test_kernel_switchset"
     deps = [
-      ":kernel-unittests-boot-test($default_test_kernel_switchset)",
+      ":kernel-unittests-boot-test($switchset)",
       "phys/test:$cpu",
     ]
+  }
+
+  group("static-checks.$cpu") {
+    validations = [ "bin:vmzircon.with-tests(switch/set/static-checks:kernel_$cpu.static-checks)" ]
+  }
+}
+
+group("static-checks") {
+  deps = [ ":static-checks.$current_cpu" ]
+}
+
+group("static-checks-all-cpus") {
+  testonly = true
+  deps = []
+  foreach(cpu, standard_fuchsia_cpus) {
+    deps += [ ":static-checks.$cpu" ]
   }
 }

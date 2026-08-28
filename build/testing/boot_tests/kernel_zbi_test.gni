@@ -26,7 +26,14 @@ declare_args() {
 }
 
 # The kernel switchset with the most development options enabled.
-default_test_kernel_switchset = "//zircon/kernel/switch/set/lk_debug_level_2:kernel_${current_cpu}.lk_debug_level_2"
+default_test_kernel_switchset = "lk_debug_level_2"
+
+# The full toolchain label of that switchset for $currnet_cpu.
+default_test_kernel_toolchain = "//zircon/kernel/switch/set/$default_test_kernel_switchset:kernel_$current_cpu.$default_test_kernel_switchset"
+
+# The default kernel_elf_binary() label of the kernel proper in that switchset.
+default_test_vmzircon_label =
+    "//zircon/kernel/bin:vmzircon.with-tests($default_test_kernel_toolchain)"
 
 # The kernel image with the most development options enabled.
 default_kernel_test_image = "eng"

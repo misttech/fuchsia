@@ -17,6 +17,7 @@ kernel_executable("vmzircon.with-tests") {
   testonly = true
   visibility = [
     "//src/bringup/lib/userboot/*",
+    "//zircon/kernel:*",
     "//zircon/kernel/image/*",
     "//zircon/kernel/lib/userabi/trivial-test-userboot:*",
   ]

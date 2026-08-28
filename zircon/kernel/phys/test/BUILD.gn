@@ -561,7 +561,7 @@ zbi("physboot-zbi-kernel-test-zircon") {
 
   deps = [
     ":physboot-zbi-kernel-test-data($phys_toolchain)",
-    "//zircon/kernel:zircon($default_test_kernel_switchset)",
+    default_test_vmzircon_label,
   ]
 }
 
