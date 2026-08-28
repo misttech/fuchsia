@@ -11,8 +11,7 @@ macro_rules! pin_init_ffi {
     ($ffi_fn:expr) => {
         unsafe {
             pin_init::pin_init_from_closure(|slot| {
-                let ptr = slot as *mut _ as *mut core::ffi::c_void;
-                $ffi_fn(ptr);
+                $ffi_fn(slot as *mut _);
                 Ok(())
             })
         }
@@ -20,8 +19,7 @@ macro_rules! pin_init_ffi {
     ($ffi_fn:expr, $($args:expr),+ $(,)?) => {
         unsafe {
             pin_init::pin_init_from_closure(move |slot| {
-                let ptr = slot as *mut _ as *mut core::ffi::c_void;
-                $ffi_fn(ptr, $($args),*);
+                $ffi_fn(slot as *mut _, $($args),*);
                 Ok(())
             })
         }
