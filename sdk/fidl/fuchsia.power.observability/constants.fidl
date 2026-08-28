@@ -154,6 +154,15 @@ const WAKE_LEASE_ITEM_STATUS_FAILED_SATISFACTION string = "failed";
 /// to be satisfied.
 const WAKE_LEASE_ITEM_ERROR string = "error";
 
+/// Timestamp in nanos for when a wake lease sample interval ended.
+const WAKE_LEASE_SAMPLE_END string = "sample_end_ns";
+
+/// Fraction of a wake lease sample interval during which the lease was active.
+const WAKE_LEASE_SAMPLE_ACTIVE_FRACTION string = "active_fraction";
+
+/// Duration of a wake lease sample interval in nanoseconds.
+const WAKE_LEASE_SAMPLE_DURATION string = "sample_duration_ns";
+
 // // SAG: Suspend callbacks
 
 /// Timestamp in nanos, for the start of suspend callback processing.

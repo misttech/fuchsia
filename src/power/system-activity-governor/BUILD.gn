@@ -62,7 +62,10 @@ rustc_binary("bin") {
 
   sources = sag_sources
   deps = sag_deps
-  test_deps = [ "//src/lib/diagnostics/testing/diagnostics-assertions/rust:diagnostics-assertions" ]
+  test_deps = [
+    "//src/lib/diagnostics/testing/diagnostics-assertions/rust:diagnostics-assertions",
+    "//src/lib/test_util",
+  ]
 }
 
 rustc_binary("bin_with_fake_time") {
