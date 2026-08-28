@@ -10,6 +10,8 @@ toc:
   path: /docs/development/drivers/driver_guides/display/README.md
 - title: "Display hardware overview"
   path: /docs/development/drivers/driver_guides/display/hardware.md
+- title: "Developing drivers for new display hardware"
+  path: /docs/development/drivers/driver_guides/display/new-driver-guide.md
 - title: "What does a display controller do?"
   path: /docs/development/drivers/driver_guides/display/hardware_concepts.md
 - title: "Display Coordinator terms for configuration states"
