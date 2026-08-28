@@ -7,12 +7,15 @@
 See README.md file for full technical details.
 """
 
+load("@rules_cc//cc:action_names.bzl", "ACTION_NAMES")
+load(
+    "@rules_cc//cc:cc_toolchain_config_lib.bzl",
+    "feature",
+    "flag_group",
+    "flag_set",
+)
 load("@rules_cc//cc/common:cc_common.bzl", "cc_common")
 load("@rules_cc//cc/common:cc_info.bzl", "CcInfo")
-load(
-    ":build_flags.bzl",
-    "compute_final_build_flags_from",
-)
 load(
     ":providers.bzl",
     "BuildFlagsInfo",
@@ -57,9 +60,42 @@ CC_ACTION_KINDS = [
 #####    _cc_response_file()
 #####
 
+def _final_cc_build_flags_impl(ctx):
+    # Compute the default build_flags + the target-specific ones first.
+    build_flags_infos = []
+    toolchain = ctx.toolchains["@fuchsia_rules_common//build_flags:toolchain_type"]
+    if toolchain:
+        target_type = ctx.attr.target_type
+        if target_type == "cxx_common":
+            build_flags_infos.extend(toolchain.default_flags.cxx_common_infos)
+        elif target_type == "cxx_executable":
+            build_flags_infos.extend(toolchain.default_flags.cxx_common_infos)
+            build_flags_infos.extend(toolchain.default_flags.cxx_executable_infos)
+        elif target_type == "cxx_shared_library":
+            build_flags_infos.extend(toolchain.default_flags.cxx_common_infos)
+            build_flags_infos.extend(toolchain.default_flags.cxx_shared_library_infos)
+        else:
+            # Should never happen due to the 'values' list for the "target_type" attribute definition.
+            fail("Invalid target_type {}".format(target_type))
+
+    build_flags_infos += [target[BuildFlagsInfo] for target in ctx.attr.build_flags]
+
+    # De-deduplicate and remove entries from disabled_build_flags
+    disabled_labels = [target[BuildFlagsInfo].label for target in ctx.attr.disable_build_flags]
+    known_labels = set(disabled_labels)
+
+    final_infos = []
+    for info in build_flags_infos:
+        if info.label not in known_labels:
+            known_labels.add(info.label)
+            final_infos.append(info)
+
+    return [BuildFlagsListInfo(infos = final_infos)]
+
 _final_cc_build_flags = rule(
+    implementation = _final_cc_build_flags_impl,
     doc = "Provides the final ordered list of BuildFlagsInfo values. This is used " +
-          "to generate response files for different action types.",
+          "to generate response files for different C++ action types.",
     provides = [BuildFlagsListInfo],
     attrs = {
         "target_type": attr.string(
@@ -68,14 +104,16 @@ _final_cc_build_flags = rule(
             values = list(BUILD_FLAGS_CC_TARGET_TYPES),
         ),
     } | BUILD_FLAGS_CC_ATTRS_KWARGS,
-    implementation = lambda ctx: [
-        # For now this basic implementation is enough. A future version
-        # will handle toolchain-specific default build flags too.
-        BuildFlagsListInfo(
-            infos = compute_final_build_flags_from(
-                [target[BuildFlagsInfo] for target in ctx.attr.build_flags],
-                [target[BuildFlagsInfo].label for target in ctx.attr.disable_build_flags],
-            ),
+
+    # Used to find the list of default build_flags() per target type.
+    # See @fuchsia_rules_common//build_flags:{host,fuchsia}_default_build_flags_toolchain
+    # for exact definitions. This must be optional because OOT SDK projects
+    # will not register these toolchains in their top-level MODULE.bazel file.
+    # This is ok, as build_flags() are only available within the Fuchsia source tree.
+    toolchains = [
+        config_common.toolchain_type(
+            "@fuchsia_rules_common//build_flags:toolchain_type",
+            mandatory = False,
         ),
     ],
 )
@@ -191,6 +229,12 @@ def _cc_response_file(target_name, action_kind, final_build_flags, testonly):
 #####    wrap_cc_macro_args_with_build_flags()
 #####
 
+# The name of a feature() that the C++ toolchain will use to add all flags
+# corresponding to the default build_flags() list. The feature will be disabled
+# explicitly by wrap_cc_macro_args_with_build_flags() to make 'without_build_flags'
+# work properly when it references a default build_flags() label.
+BUILD_FLAGS_FEATURE_NAME = "fuchsia_default_build_flags"
+
 def wrap_cc_macro_args_with_build_flags(
         *,
         kwargs,
@@ -295,6 +339,10 @@ def wrap_cc_macro_args_with_build_flags(
         ":" + conly_response_name,
     ]
 
+    # Ensure the special BUILD_FLAGS_FEATURE_NAME feature is disabled, since this wrapping
+    # will add all the default flags, while removing the disabled ones.
+    result["features"] = (kwargs.get("features") or []) + ["-{}".format(BUILD_FLAGS_FEATURE_NAME)]
+
     # Only generate and apply linker flags for targets that actually link (executables and shared libraries)
     if target_type != "cxx_common":
         link_response_name = _cc_response_file(
@@ -309,3 +357,102 @@ def wrap_cc_macro_args_with_build_flags(
         ]
 
     return result
+
+#############################################################################
+#############################################################################
+#####
+#####    compute_cc_toolchain_feature_for_default_build_flags()
+#####
+#####
+
+def compute_cc_toolchain_feature_for_default_build_flags(
+        default_flags_set):
+    """Compute a C++ toolchain feature() for default build_flags() labels.
+
+    Args:
+      default_flags_set: (DefaultBuildFlagsSetInfo) a set of lists of build flags by
+        target type.
+
+    Returns:
+      A new Bazel feature() object, enabled by default, which injects the appropriate
+      compiler and linker flags for different action types.
+    """
+
+    def define_flag_set(actions, flags):
+        """Return a flag_set() for a simple list of flags and set of actions.
+
+        Args:
+           actions: (list[str]) list of C++ action names.
+           flags: (list[str]) list of command-line flags. These are interpreted
+                verbatim without any type of Make variable expansion.
+        Returns:
+           A new flag_set() value.
+        """
+
+        # NOTE: Bazel complains when using 'flag_group(flags = [])' hence
+        # the need for the "... if flags else []" expression below.
+        return flag_set(
+            actions = actions,
+            flag_groups = [
+                flag_group(flags = flags),
+            ] if flags else [],
+        )
+
+    conly_compile_flags = _compute_build_flags_for_cc_action(
+        default_flags_set.cxx_common_infos,
+        ACTION_KIND_C_COMPILE,
+    )
+    conly_compile_actions = [
+        ACTION_NAMES.c_compile,
+        ACTION_NAMES.objc_compile,
+    ]
+    cxx_compile_flags = _compute_build_flags_for_cc_action(
+        default_flags_set.cxx_common_infos,
+        ACTION_KIND_CPP_COMPILE,
+    )
+    cxx_compile_actions = [
+        ACTION_NAMES.linkstamp_compile,
+        ACTION_NAMES.cpp_compile,
+        ACTION_NAMES.cpp_header_parsing,
+        ACTION_NAMES.cpp_module_compile,
+        ACTION_NAMES.cpp_module_codegen,
+        ACTION_NAMES.lto_backend,
+        ACTION_NAMES.clif_match,
+    ]
+
+    common_link_flags = _compute_build_flags_for_cc_action(
+        default_flags_set.cxx_common_infos,
+        ACTION_KIND_CPP_LINK,
+    )
+    shared_link_flags = common_link_flags + _compute_build_flags_for_cc_action(
+        default_flags_set.cxx_shared_library_infos,
+        ACTION_KIND_CPP_LINK,
+    )
+    shared_link_actions = [
+        ACTION_NAMES.cpp_link_dynamic_library,
+        ACTION_NAMES.cpp_link_nodeps_dynamic_library,
+    ]
+
+    exec_link_flags = common_link_flags + _compute_build_flags_for_cc_action(
+        default_flags_set.cxx_executable_infos,
+        ACTION_KIND_CPP_LINK,
+    )
+    exec_link_actions = [
+        ACTION_NAMES.cpp_link_executable,
+    ]
+
+    flag_sets = []
+    if conly_compile_flags:
+        flag_sets.append(define_flag_set(conly_compile_actions, conly_compile_flags))
+    if cxx_compile_flags:
+        flag_sets.append(define_flag_set(cxx_compile_actions, cxx_compile_flags))
+    if shared_link_flags:
+        flag_sets.append(define_flag_set(shared_link_actions, shared_link_flags))
+    if exec_link_flags:
+        flag_sets.append(define_flag_set(exec_link_actions, exec_link_flags))
+
+    return feature(
+        name = BUILD_FLAGS_FEATURE_NAME,
+        enabled = True,
+        flag_sets = flag_sets,
+    )

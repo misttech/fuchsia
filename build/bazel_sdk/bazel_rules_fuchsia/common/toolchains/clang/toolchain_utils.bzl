@@ -13,6 +13,10 @@ load(
     "tool_path",
     "with_feature_set",
 )
+load(
+    "@fuchsia_rules_common//build_flags:cc.bzl",
+    "compute_cc_toolchain_feature_for_default_build_flags",
+)
 load("@rules_cc//cc/common:cc_common.bzl", "cc_common")
 load("@rules_cc//cc/toolchains:cc_toolchain.bzl", "cc_toolchain")
 load(
@@ -37,7 +41,8 @@ def compute_clang_features(
         target_os,
         target_cpu,
         fuchsia_api_level,
-        sysroot = ""):
+        sysroot = "",
+        default_flags_set = None):
     """Compute list of C++ toolchain features required by Clang.
 
     Args:
@@ -47,6 +52,7 @@ def compute_clang_features(
       target_cpu: Target CPU, following Fuchsia conventions.
       fuchsia_api_level: Optional target Fuchsia API level.
       sysroot: Optional path to sysroot.
+      default_flags_set: Optional DefaultBuildFlagsSetInfo value.
 
     Returns:
       A list of feature() objects.
@@ -370,6 +376,13 @@ def compute_clang_features(
         ),
     )
 
+    if default_flags_set:
+        features.append(
+            compute_cc_toolchain_feature_for_default_build_flags(
+                default_flags_set = default_flags_set,
+            ),
+        )
+
     return features
 
 # buildifier: disable=unnamed-macro
@@ -520,6 +533,9 @@ def _prebuilt_clang_cc_toolchain_config_impl(ctx):
         # `copts` directly. See https://fxbug.dev/548409875.
         fuchsia_api_level = None
 
+    build_flags_toolchain = ctx.toolchains["@fuchsia_rules_common//build_flags:toolchain_type"]
+    default_flags_set = build_flags_toolchain.default_flags if build_flags_toolchain else None
+
     features = compute_clang_features(
         clang_info,
         ctx.attr.toolchain_repo_name,
@@ -527,6 +543,7 @@ def _prebuilt_clang_cc_toolchain_config_impl(ctx):
         to_fuchsia_cpu_name(ctx.attr.target_arch),
         fuchsia_api_level = fuchsia_api_level,
         sysroot = sysroot_path,
+        default_flags_set = default_flags_set,
     )
 
     return cc_common.create_cc_toolchain_config_info(
@@ -570,6 +587,12 @@ _prebuilt_clang_cc_toolchain_config = rule(
             providers = [FuchsiaApiLevelInfo],
         ),
     },
+    toolchains = [
+        config_common.toolchain_type(
+            "@fuchsia_rules_common//build_flags:toolchain_type",
+            mandatory = False,
+        ),
+    ],
 )
 
 def generate_clang_cc_toolchain(
