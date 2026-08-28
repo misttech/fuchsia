@@ -194,10 +194,7 @@ source_set("zxio") {
     "include/lib/zxio/zxio.h",
     "vector.h",
   ]
-  configs += [
-    "//build/config:Wno-vla-cxx-extension",
-    "//build/config:Wno-deprecated-pragma",
-  ]
+  configs += [ "//build/config:Wno-vla-cxx-extension" ]
   deps = [
     ":inception",
     ":udp_socket_private",

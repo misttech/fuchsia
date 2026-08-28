@@ -84,7 +84,6 @@ idk_cc_shared_library_zx(
     category = "partner",
     copts = [
         "-Wno-vla-cxx-extension",
-        "-Wno-deprecated-pragma",
     ],
     idk_name = "fdio",
     implementation_deps = [

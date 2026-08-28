@@ -165,10 +165,6 @@ template("syscall_test") {
       # TODO(b/307959737): Compile syscall test on target with the bionic
       # toolchain and then move this to the bionic toolchain.
       "//src/starnix/tests/syscalls/cpp:march",
-
-      # TODO(b/331282813): 'ENODATA' is deprecated in ISO C++, disable the
-      # warning for now.
-      "//build/config:Wno-deprecated-pragma",
     ]
 
     test(_test_binary_name) {

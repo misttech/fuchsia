@@ -806,10 +806,6 @@ config("default_warnings") {
   }
 
   configs = [
-    # TODO(https://fxbug.dev/331282813): Disable "-Wdeprecated-pragma" which
-    # warns for deprecated std::errc constants.
-    ":Wno-deprecated-pragma",
-
     # TODO(https://fxbug.dev/376323001): Disable "-Wnontrivial-memaccess" until
     # all instances are fixed.
     ":Wno-nontrivial-memaccess",
@@ -1560,14 +1556,6 @@ config("no-tlsdesc") {
     "WANT_TLSDESC=0",
     "HAVE_TLSDESC=$have_tlsdesc",
   ]
-}
-
-# TODO(https://fxbug.dev/331282813): Disable "-Wdeprecated-pragma" which
-# warns for deprecated std::errc constants.
-config("Wno-deprecated-pragma") {
-  if (!is_gcc) {
-    cflags = [ "-Wno-deprecated-pragma" ]
-  }
 }
 
 # TODO(https://fxbug.dev/376323001): Disable "-Wnontrivial-memaccess" until

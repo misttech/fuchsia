@@ -113,7 +113,6 @@ fx_cc_library(
     copts = [
         # TODO(https://fxbug.dev/42085293): delete the below and fix compiler warnings
         "-Wno-vla-cxx-extension",
-        "-Wno-deprecated-pragma",
     ],
     implementation_deps = [
         ":inception",

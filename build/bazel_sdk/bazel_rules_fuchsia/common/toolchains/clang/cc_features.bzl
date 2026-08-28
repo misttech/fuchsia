@@ -226,10 +226,6 @@ _flag_configs = struct(
             "-Wno-unknown-warning-option",
             "-Wno-missing-field-initializers",
 
-            # TODO(https://fxbug.dev/331282813): Disable "-Wdeprecated-pragma" which
-            # warns for deprecated std::errc constants.
-            "-Wno-deprecated-pragma",
-
             # TODO(https://fxbug.dev/376323001): Disable "-Wnontrivial-memaccess" until
             # all instances are fixed.
             "-Wno-nontrivial-memaccess",

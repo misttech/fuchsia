@@ -128,10 +128,7 @@ if (is_fuchsia) {
     ]
     sdk_area = "Kernel"
     sdk_publishable = "partner"
-    configs += [
-      "//build/config:Wno-vla-cxx-extension",
-      "//build/config:Wno-deprecated-pragma",
-    ]
+    configs += [ "//build/config:Wno-vla-cxx-extension" ]
     sdk_name = "fdio"
     deps = [
       ":cleanpath",
