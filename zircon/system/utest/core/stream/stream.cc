@@ -1685,4 +1685,120 @@ TEST(StreamTestCase, ZeroLengthVectors) {
   EXPECT_EQ(10u, seek_pos);
 }
 
+TEST(StreamTestCase, GetInfoReadOnly) {
+  zx::vmo vmo;
+  ASSERT_OK(zx::vmo::create(zx_system_get_page_size(), 0, &vmo));
+  ASSERT_OK(vmo.set_prop_content_size(100));
+
+  zx::stream ro_stream;
+  ASSERT_OK(zx::stream::create(ZX_STREAM_MODE_READ, vmo, 15, &ro_stream));
+
+  zx_info_stream_t info = {};
+  ASSERT_OK(ro_stream.get_info(ZX_INFO_STREAM, &info, sizeof(info), nullptr, nullptr));
+  EXPECT_EQ(ZX_STREAM_MODE_READ, info.options);
+  EXPECT_EQ(15u, info.seek);
+  EXPECT_EQ(100u, info.content_size);
+}
+
+TEST(StreamTestCase, VectorCapacityOverflow) {
+  zx::vmo vmo;
+  ASSERT_OK(zx::vmo::create(zx_system_get_page_size(), 0, &vmo));
+
+  zx::stream stream;
+  ASSERT_OK(zx::stream::create(ZX_STREAM_MODE_READ | ZX_STREAM_MODE_WRITE, vmo, 0, &stream));
+
+  char buf[8] = {};
+  size_t actual = 0;
+
+  // Multi-vector capacity sum overflow in GetTotalCapacity (returns ZX_ERR_INVALID_ARGS)
+  zx_iovec_t bad_overflow_vec[2] = {
+      {.buffer = buf, .capacity = SIZE_MAX},
+      {.buffer = buf, .capacity = 1},
+  };
+  EXPECT_EQ(ZX_ERR_INVALID_ARGS, stream.readv(0, bad_overflow_vec, 2, &actual));
+  EXPECT_EQ(ZX_ERR_INVALID_ARGS, stream.readv_at(0, 0, bad_overflow_vec, 2, &actual));
+  EXPECT_EQ(ZX_ERR_INVALID_ARGS, stream.writev(0, bad_overflow_vec, 2, &actual));
+  EXPECT_EQ(ZX_ERR_INVALID_ARGS, stream.writev_at(0, 0, bad_overflow_vec, 2, &actual));
+
+  // Offset + capacity overflow in CreateWriteOp (returns ZX_ERR_FILE_BIG)
+  zx_iovec_t overflow_vec = {
+      .buffer = buf,
+      .capacity = UINT64_MAX,
+  };
+  EXPECT_EQ(ZX_ERR_FILE_BIG, stream.writev_at(0, 100, &overflow_vec, 1, &actual));
+}
+
+TEST(StreamTestCase, PartialAppendAtVmoBoundary) {
+  const size_t page_size = zx_system_get_page_size();
+  zx::vmo vmo;
+  ASSERT_OK(zx::vmo::create(page_size, 0, &vmo));
+  ASSERT_OK(vmo.set_prop_content_size(page_size - 4));
+
+  zx::stream stream;
+  ASSERT_OK(zx::stream::create(ZX_STREAM_MODE_WRITE, vmo, 0, &stream));
+
+  char buf[] = "0123456789";
+  zx_iovec_t vec = {
+      .buffer = buf,
+      .capacity = 10,
+  };
+  size_t actual = 0;
+
+  // Partial append: requested 10 bytes, but non-resizable VMO only has 4 bytes capacity left.
+  // Shrinks the operation size to available capacity and commits 4 bytes.
+  ASSERT_OK(stream.writev(ZX_STREAM_APPEND, &vec, 1, &actual));
+  EXPECT_EQ(4u, actual);
+  EXPECT_EQ(page_size, GetContentSize(vmo));
+
+  // Verify seek position advanced to the end of the partial append.
+  zx_off_t seek_pos = 0;
+  EXPECT_OK(stream.seek(ZX_STREAM_SEEK_ORIGIN_CURRENT, 0, &seek_pos));
+  EXPECT_EQ(page_size, seek_pos);
+
+  // When VMO is completely full, append returns ZX_ERR_OUT_OF_RANGE.
+  EXPECT_EQ(ZX_ERR_OUT_OF_RANGE, stream.writev(ZX_STREAM_APPEND, &vec, 1, &actual));
+}
+
+TEST(StreamTestCase, WriteVectorUnmappedUserBufferCancelsOperation) {
+  const size_t page_size = zx_system_get_page_size();
+  zx::vmo vmo;
+  ASSERT_OK(zx::vmo::create(page_size, 0, &vmo));
+  ASSERT_OK(vmo.set_prop_content_size(0));
+
+  zx::stream stream;
+  ASSERT_OK(zx::stream::create(ZX_STREAM_MODE_READ | ZX_STREAM_MODE_WRITE, vmo, 0, &stream));
+
+  zx::vmar child_vmar;
+  zx_vaddr_t child_addr = 0;
+  ASSERT_OK(zx::vmar::root_self()->allocate(
+      ZX_VM_CAN_MAP_READ | ZX_VM_CAN_MAP_WRITE | ZX_VM_CAN_MAP_SPECIFIC, 0, page_size * 2,
+      &child_vmar, &child_addr));
+  auto destroy_vmar = fit::defer([&]() { child_vmar.destroy(); });
+
+  zx::vmo user_vmo;
+  ASSERT_OK(zx::vmo::create(page_size, 0, &user_vmo));
+
+  zx_vaddr_t mapped_addr = 0;
+  ASSERT_OK(child_vmar.map(ZX_VM_PERM_READ | ZX_VM_PERM_WRITE | ZX_VM_SPECIFIC, 0, user_vmo, 0,
+                           page_size, &mapped_addr));
+
+  // Buffer starts 4 bytes before end of mapped page, crossing into unmapped page.
+  zx_iovec_t partial_user_vec = {
+      .buffer = reinterpret_cast<void*>(mapped_addr + page_size - 4),
+      .capacity = 8,
+  };
+  size_t actual = 0;
+
+  // Failing user copy cancels the pending stream size operation and returns ZX_ERR_NOT_FOUND.
+  EXPECT_EQ(ZX_ERR_NOT_FOUND, stream.writev(0, &partial_user_vec, 1, &actual));
+  EXPECT_EQ(ZX_ERR_NOT_FOUND, stream.writev_at(0, 0, &partial_user_vec, 1, &actual));
+  EXPECT_EQ(ZX_ERR_NOT_FOUND, stream.writev(ZX_STREAM_APPEND, &partial_user_vec, 1, &actual));
+
+  // Verify stream seek and content size were not modified by the cancelled operations.
+  EXPECT_EQ(0u, GetContentSize(vmo));
+  zx_off_t seek_pos = 0;
+  EXPECT_OK(stream.seek(ZX_STREAM_SEEK_ORIGIN_CURRENT, 0, &seek_pos));
+  EXPECT_EQ(0u, seek_pos);
+}
+
 }  // namespace
