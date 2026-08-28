@@ -5,6 +5,7 @@
 // https://opensource.org/licenses/MIT
 
 use super::arch_vm_aspace::ArchMmuFlags;
+use super::vm_aspace::VmAspace;
 use super::vm_object::VmObject;
 use fbl::RefPtr;
 use zr::ToMutPtr;
@@ -14,6 +15,7 @@ unsafe extern "C" {
     fn cpp_vm_mapping_get_ref_counted(mapping: *mut VmMapping) -> *mut fbl::RefCounted;
     fn cpp_vm_mapping_free(mapping: *mut VmMapping);
     fn cpp_vm_mapping_destroy(mapping: *mut VmMapping) -> i32;
+    fn cpp_vm_mapping_aspace(mapping: *mut VmMapping) -> *const RefPtr<VmAspace>;
     fn cpp_vm_mapping_base(mapping: *mut VmMapping) -> usize;
     fn cpp_vm_mapping_size(mapping: *mut VmMapping) -> usize;
     fn cpp_vm_mapping_flags(mapping: *mut VmMapping) -> u32;
@@ -53,6 +55,13 @@ impl VmMapping {
     /// Destroys this mapping, unmapping all pages and removing dependencies on the underlying VMO.
     pub fn destroy(&self) -> Result<(), Status> {
         Status::ok(unsafe { cpp_vm_mapping_destroy(self.to_mut_ptr()) })
+    }
+
+    /// Returns a reference to the address space this mapping belongs to.
+    pub fn aspace(&self) -> &RefPtr<VmAspace> {
+        // SAFETY: `mapping->aspace()` returns a reference to `mapping->aspace_`, which is non-null
+        // and lives for the lifetime of `self`.
+        unsafe { &*cpp_vm_mapping_aspace(self.to_mut_ptr()) }
     }
 
     /// Returns the base virtual address of this mapping.

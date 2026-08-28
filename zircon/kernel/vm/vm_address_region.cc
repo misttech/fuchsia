@@ -1321,6 +1321,7 @@ VmMapping* cpp_vm_address_region_create_vm_mapping(
     VmAddressRegion* vmar, size_t mapping_offset, size_t size, uint8_t align_pow2,
     uint32_t vmar_flags, const VmObject* vmo, uint64_t vmo_offset, arch_mmu_flags_t arch_mmu_flags,
     const char* name, vaddr_t* out_base, zx_status_t* out_status);
+const fbl::RefPtr<VmAspace>* cpp_vm_address_region_aspace(VmAddressRegion* vmar);
 
 fbl::RefCounted<VmAddressRegionOrMapping>* cpp_vm_address_region_get_ref_counted(
     VmAddressRegion* vmar) {
@@ -1328,6 +1329,9 @@ fbl::RefCounted<VmAddressRegionOrMapping>* cpp_vm_address_region_get_ref_counted
 }
 void cpp_vm_address_region_free(VmAddressRegion* vmar) { delete vmar; }
 zx_status_t cpp_vm_address_region_destroy(VmAddressRegion* vmar) { return vmar->Destroy(); }
+const fbl::RefPtr<VmAspace>* cpp_vm_address_region_aspace(VmAddressRegion* vmar) {
+  return &vmar->aspace();
+}
 vaddr_t cpp_vm_address_region_base(VmAddressRegion* vmar) { return vmar->base(); }
 size_t cpp_vm_address_region_size(VmAddressRegion* vmar) { return vmar->size(); }
 uint32_t cpp_vm_address_region_flags(VmAddressRegion* vmar) { return vmar->flags(); }

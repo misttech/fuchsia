@@ -200,4 +200,9 @@ FFI_ALWAYS_INLINE bool cpp_thread_is_in_restricted_mode(Thread* thread) {
   return thread->in_restricted();
 }
 
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE VmAspace* cpp_thread_current_active_aspace() {
+  return Thread::Current::active_aspace();
+}
+
 }  // extern "C"

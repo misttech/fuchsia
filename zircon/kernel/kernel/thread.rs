@@ -12,6 +12,7 @@ use zx_status::Status;
 use zx_types::{zx_instant_mono_t, zx_status_t};
 
 use crate::kernel::restricted_state::RestrictedState;
+use crate::vm::vm_aspace::VmAspace;
 
 #[allow(improper_ctypes)]
 unsafe extern "C" {
@@ -31,6 +32,7 @@ unsafe extern "C" {
     fn cpp_thread_suspend(thread: *mut Thread) -> zx_status_t;
     fn cpp_thread_is_blocked(thread: *mut Thread) -> bool;
     fn cpp_thread_current_get() -> *mut Thread;
+    fn cpp_thread_current_active_aspace() -> *mut VmAspace;
     fn cpp_thread_fxt_ref(thread: *mut Thread) -> FxtRef;
     fn cpp_thread_preempt_set_timeslice_extension(duration: DurationMono) -> bool;
     fn cpp_thread_preempt_clear_timeslice_extension();
@@ -465,6 +467,19 @@ pub unsafe fn is_in_restricted_mode(thread: *mut Thread) -> bool {
 pub fn current_restricted_state() -> *mut RestrictedState {
     // SAFETY: Foreign function wrapper for Thread::Current::restricted_state().
     unsafe { cpp_thread_current_restricted_state() }
+}
+
+/// The current address space this thread is associated with. This can be None if this is a kernel
+/// thread.
+///
+/// # Safety
+///
+/// The caller must ensure that the returned address space reference remains valid for lifetime
+/// `'a`.
+pub unsafe fn current_active_aspace<'a>() -> Option<&'a VmAspace> {
+    // SAFETY: `cpp_thread_current_active_aspace` returns the active `VmAspace*` pointer, which
+    // is guaranteed by the caller to remain valid for `'a`.
+    unsafe { cpp_thread_current_active_aspace().as_ref() }
 }
 
 /// Sets the current thread's restricted mode state pointer.

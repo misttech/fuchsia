@@ -5,6 +5,7 @@
 // https://opensource.org/licenses/MIT
 
 use super::arch_vm_aspace::ArchMmuFlags;
+use super::vm_aspace::VmAspace;
 use super::vm_mapping::VmMapping;
 use super::vm_object::VmObject;
 use crate::kernel::types::VAddr;
@@ -86,6 +87,7 @@ unsafe extern "C" {
     fn cpp_vm_address_region_get_ref_counted(vmar: *mut VmAddressRegion) -> *mut fbl::RefCounted;
     fn cpp_vm_address_region_free(vmar: *mut VmAddressRegion);
     fn cpp_vm_address_region_destroy(vmar: *mut VmAddressRegion) -> i32;
+    fn cpp_vm_address_region_aspace(vmar: *mut VmAddressRegion) -> *const RefPtr<VmAspace>;
     fn cpp_vm_address_region_base(vmar: *mut VmAddressRegion) -> VAddr;
     fn cpp_vm_address_region_size(vmar: *mut VmAddressRegion) -> usize;
     fn cpp_vm_address_region_flags(vmar: *mut VmAddressRegion) -> u32;
@@ -213,6 +215,13 @@ impl VmAddressRegion {
     /// Destroys this region and recursively destroys child VMARs.
     pub fn destroy(&self) -> Result<(), Status> {
         Status::ok(unsafe { cpp_vm_address_region_destroy(self.to_mut_ptr()) })
+    }
+
+    /// Returns a reference to the address space this region belongs to.
+    pub fn aspace(&self) -> &RefPtr<VmAspace> {
+        // SAFETY: `vmar->aspace()` returns a reference to `vmar->aspace_`, which is non-null
+        // and lives for the lifetime of `self`.
+        unsafe { &*cpp_vm_address_region_aspace(self.to_mut_ptr()) }
     }
 
     /// Returns the base address of this region.

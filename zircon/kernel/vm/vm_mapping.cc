@@ -1872,6 +1872,7 @@ extern "C" {
 fbl::RefCounted<VmAddressRegionOrMapping>* cpp_vm_mapping_get_ref_counted(VmMapping* mapping);
 void cpp_vm_mapping_free(VmMapping* mapping);
 zx_status_t cpp_vm_mapping_destroy(VmMapping* mapping);
+const fbl::RefPtr<VmAspace>* cpp_vm_mapping_aspace(VmMapping* mapping);
 vaddr_t cpp_vm_mapping_base(VmMapping* mapping);
 size_t cpp_vm_mapping_size(VmMapping* mapping);
 uint32_t cpp_vm_mapping_flags(VmMapping* mapping);
@@ -1890,6 +1891,9 @@ fbl::RefCounted<VmAddressRegionOrMapping>* cpp_vm_mapping_get_ref_counted(VmMapp
 }
 void cpp_vm_mapping_free(VmMapping* mapping) { delete mapping; }
 zx_status_t cpp_vm_mapping_destroy(VmMapping* mapping) { return mapping->Destroy(); }
+const fbl::RefPtr<VmAspace>* cpp_vm_mapping_aspace(VmMapping* mapping) {
+  return &mapping->aspace();
+}
 vaddr_t cpp_vm_mapping_base(VmMapping* mapping) { return mapping->base(); }
 size_t cpp_vm_mapping_size(VmMapping* mapping) { return mapping->size(); }
 uint32_t cpp_vm_mapping_flags(VmMapping* mapping) { return mapping->flags(); }
