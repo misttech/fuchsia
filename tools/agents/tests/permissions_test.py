@@ -344,6 +344,99 @@ class PermissionsTest(unittest.TestCase):
             [],
         )
 
+    def test_find_config_dirs(self) -> None:
+        fuchsia_dir = self.mock_root
+        public_cfg = fuchsia_dir / ".agents" / "config"
+        public_cfg.mkdir(parents=True, exist_ok=True)
+        vendor_cfg = fuchsia_dir / "vendor" / "google" / ".agents" / "config"
+        vendor_cfg.mkdir(parents=True, exist_ok=True)
+
+        config_dirs = permissions.find_config_dirs(fuchsia_dir)
+        self.assertIn(public_cfg, config_dirs)
+        self.assertIn(vendor_cfg, config_dirs)
+
+    def test_load_profile_grants(self) -> None:
+        fuchsia_dir = self.mock_root
+        perm_dir = fuchsia_dir / ".agents" / "config" / "permissions"
+        perm_dir.mkdir(parents=True, exist_ok=True)
+        (perm_dir / "read_only.txt").write_text(
+            "git status\nfx status\n", encoding="utf-8"
+        )
+        (perm_dir / "local_changes.txt").write_text(
+            "git commit\n", encoding="utf-8"
+        )
+        (perm_dir / "never_allow.txt").write_text(
+            "git reset --hard\n", encoding="utf-8"
+        )
+        (perm_dir / "device_ops.txt").write_text("fx ota\n", encoding="utf-8")
+        (perm_dir / "cache_destruction.txt").write_text(
+            "fx clean\n", encoding="utf-8"
+        )
+        (perm_dir / "batch_execution.txt").write_text(
+            "find\n", encoding="utf-8"
+        )
+
+        grants = permissions.load_profile_grants(fuchsia_dir, "read-only")
+        self.assertTrue(any("git" in g and "status" in g for g in grants.allow))
+        self.assertTrue(any("git" in g and "commit" in g for g in grants.deny))
+        self.assertTrue(any("fx" in g and "ota" in g for g in grants.ask))
+        self.assertTrue(any("find" in g for g in grants.ask))
+
+        grants_local = permissions.load_profile_grants(
+            fuchsia_dir, "local-changes"
+        )
+        self.assertTrue(
+            any("git" in g and "commit" in g for g in grants_local.allow)
+        )
+        self.assertTrue(any("find" in g for g in grants_local.ask))
+
+        grants_ext = permissions.load_profile_grants(
+            fuchsia_dir, "external-changes"
+        )
+        self.assertTrue(any("find" in g for g in grants_ext.ask))
+
+    def test_find_fuchsia_dir_from_tree(self) -> None:
+        fake_root = self.mock_root / "workspace"
+        (fake_root / ".jiri_root").mkdir(parents=True)
+        sub_file = fake_root / "tools" / "agents" / "lib" / "permissions.py"
+        sub_file.parent.mkdir(parents=True)
+        sub_file.write_text("# placeholder", encoding="utf-8")
+
+        with mock.patch("agents.lib.permissions.__file__", str(sub_file)):
+            with mock.patch.dict(
+                "os.environ", {"FUCHSIA_DIR": "/different/root"}
+            ):
+                found = permissions.find_fuchsia_dir()
+                self.assertEqual(found, fake_root)
+
+    def test_find_fuchsia_dir_fallback_env(self) -> None:
+        outside_file = self.mock_root / "outside" / "script.py"
+        outside_file.parent.mkdir(parents=True)
+        outside_file.write_text("# placeholder", encoding="utf-8")
+        target_root = self.mock_root / "env_root"
+        target_root.mkdir(parents=True)
+
+        with mock.patch("agents.lib.permissions.__file__", str(outside_file)):
+            with mock.patch.dict(
+                "os.environ", {"FUCHSIA_DIR": str(target_root)}
+            ):
+                found = permissions.find_fuchsia_dir()
+                self.assertEqual(found, target_root)
+
+    def test_find_fuchsia_dir_not_found_raises(self) -> None:
+        outside_file = self.mock_root / "outside" / "script.py"
+        outside_file.parent.mkdir(parents=True)
+        outside_file.write_text("# placeholder", encoding="utf-8")
+
+        with mock.patch("agents.lib.permissions.__file__", str(outside_file)):
+            with mock.patch.dict("os.environ", {}, clear=True):
+                with self.assertRaises(RuntimeError) as ctx:
+                    permissions.find_fuchsia_dir()
+                self.assertIn(
+                    "Could not locate Fuchsia root directory",
+                    str(ctx.exception),
+                )
+
 
 if __name__ == "__main__":
     unittest.main()

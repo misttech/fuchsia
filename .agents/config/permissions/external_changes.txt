@@ -1,0 +1,20 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+# External Changes: Commands that mutate external state, remote git repos, or CI.
+
+# Upstream publishing
+git push
+jiri upload
+jj git fetch
+jj git push
+
+# LUCI Buildbucket build scheduling & mutation
+bb add
+bb batch
+bb cancel
+
+# LUCI CIPD package installations
+cipd ensure
+cipd install

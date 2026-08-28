@@ -1,0 +1,26 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+# Never Allow: Catastrophic / irrecoverable data loss actions.
+# ALWAYS hard-denied across all profiles (including Full Access).
+
+# Irrecoverable loss of uncommitted files
+git clean --force
+git clean -df
+git clean -f
+git clean -fd
+git clean -fdx
+git clean -fx
+git clean -xdf
+git clean -xf
+git reset --hard
+
+# Destructive force pushing
+git push --force
+git push -f
+
+# Destructive filesystem operations
+mkfs
+rm -rf /
+rm -rf ~

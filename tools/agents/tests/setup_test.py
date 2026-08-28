@@ -16,6 +16,7 @@ import unittest
 from unittest import mock
 
 from agents.commands import setup
+from agents.lib import permissions
 
 
 class SetupCommandTest(unittest.TestCase):
@@ -33,6 +34,35 @@ class SetupCommandTest(unittest.TestCase):
         self.temp_dir = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp_dir.cleanup)
         self.mock_root = pathlib.Path(self.temp_dir.name)
+
+        self.fuchsia_dir = self.mock_root / "fuchsia"
+        self.permissions_dir = (
+            self.fuchsia_dir / ".agents" / "config" / "permissions"
+        )
+        self.permissions_dir.mkdir(parents=True, exist_ok=True)
+        (self.permissions_dir / "read_only.txt").write_text(
+            "git status\nfx status\n",
+            encoding="utf-8",
+        )
+        (self.permissions_dir / "local_changes.txt").write_text(
+            "fx format-code\ngit checkout\n",
+            encoding="utf-8",
+        )
+        (self.permissions_dir / "external_changes.txt").write_text(
+            "git push\n", encoding="utf-8"
+        )
+        (self.permissions_dir / "never_allow.txt").write_text(
+            "git clean\n", encoding="utf-8"
+        )
+        (self.permissions_dir / "device_ops.txt").write_text(
+            "fx ota\n", encoding="utf-8"
+        )
+        (self.permissions_dir / "cache_destruction.txt").write_text(
+            "fx clean\n", encoding="utf-8"
+        )
+        (self.permissions_dir / "batch_execution.txt").write_text(
+            "find\n", encoding="utf-8"
+        )
 
     def test_run_with_custom_grants(self) -> None:
         """Verify run handler with ad-hoc grant arguments."""
@@ -53,7 +83,10 @@ class SetupCommandTest(unittest.TestCase):
             ]
         )
 
-        exit_code = setup.run(args)
+        with mock.patch.object(
+            permissions, "find_fuchsia_dir", return_value=self.fuchsia_dir
+        ):
+            exit_code = setup.run(args)
         self.assertEqual(exit_code, 0)
 
         with config_path.open("r", encoding="utf-8") as fh:
@@ -80,7 +113,10 @@ class SetupCommandTest(unittest.TestCase):
             ]
         )
 
-        exit_code = setup.run(args)
+        with mock.patch.object(
+            permissions, "find_fuchsia_dir", return_value=self.fuchsia_dir
+        ):
+            exit_code = setup.run(args)
         self.assertEqual(exit_code, 0)
 
         with config_path.open("r", encoding="utf-8") as fh:
@@ -98,6 +134,71 @@ class SetupCommandTest(unittest.TestCase):
                 for g in grants["deny"]
             )
         )
+
+    def test_run_with_profile(self) -> None:
+        """Verify profile application applies manifest rules."""
+        config_path = self.mock_root / "config.json"
+
+        parser = argparse.ArgumentParser()
+        setup.add_arguments(parser)
+        args = parser.parse_args(
+            [
+                "--config",
+                str(config_path),
+                "-p",
+                "read-only",
+            ]
+        )
+
+        with mock.patch.object(
+            permissions, "find_fuchsia_dir", return_value=self.fuchsia_dir
+        ):
+            exit_code = setup.run(args)
+        self.assertEqual(exit_code, 0)
+
+        with config_path.open("r", encoding="utf-8") as fh:
+            data = json.load(fh)
+        grants = data["userSettings"]["globalPermissionGrants"]
+        self.assertTrue(
+            any(
+                g.startswith("command(regex:") and "status" in g
+                for g in grants["allow"]
+            )
+        )
+        self.assertTrue(
+            any(
+                g.startswith("command(regex:") and "clean" in g
+                for g in grants["deny"]
+            )
+        )
+
+    def test_run_with_list_files(self) -> None:
+        """Verify reading extra list files."""
+        config_path = self.mock_root / "config.json"
+        list_file = self.mock_root / "extra_allow.txt"
+        list_file.write_text("my_custom_tool\n", encoding="utf-8")
+
+        parser = argparse.ArgumentParser()
+        setup.add_arguments(parser)
+        args = parser.parse_args(
+            [
+                "--config",
+                str(config_path),
+                "--allow-list",
+                str(list_file),
+            ]
+        )
+
+        with mock.patch.object(
+            permissions, "find_fuchsia_dir", return_value=self.fuchsia_dir
+        ):
+            exit_code = setup.run(args)
+        self.assertEqual(exit_code, 0)
+
+        with config_path.open("r", encoding="utf-8") as fh:
+            data = json.load(fh)
+        grants = data["userSettings"]["globalPermissionGrants"]
+        self.assertIn("command(my_custom_tool)", grants["allow"])
 
 
 if __name__ == "__main__":

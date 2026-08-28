@@ -1,0 +1,142 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+# Local Changes: Commands that mutate local workspace files, emulator state, or local git history.
+# Everything is strictly local to the machine; uncommitted edits are reversible via git restore.
+
+# Scratch file & directory operations
+cp
+mkdir
+mv
+rm
+sed -i
+touch
+
+# Archive creation & extraction
+gunzip
+gzip
+tar
+unxz
+unzip
+unzstd
+xz
+zip
+zstd
+
+# Code formatting & generation (mutates workspace source files)
+fx create
+fx dtsfmt
+fx format-code
+fx gen-cargo
+fx setup-go
+fx setup-jj
+
+# Workspace build configuration & target management (mutates args.gn / .fx-build-dir)
+fx add-host-test
+fx add-test
+fx args
+fx set
+fx use
+
+# Agent configuration & lifecycle
+fx agents
+
+# Emulator & component lifecycle (local execution)
+ffx component run
+ffx component stop
+ffx emu start
+ffx emu stop
+
+# Local Git operations (mutates working tree & local git history)
+git add
+git apply
+git branch
+git branch --copy
+git branch --move
+git branch --set-upstream-to
+git branch -C
+git branch -D
+git branch -M
+git branch -c
+git branch -d
+git branch -m
+git branch -u
+git checkout
+git cherry-pick
+git cherry-pick --abort
+git cherry-pick --continue
+git cherry-pick --skip
+git commit
+git commit --amend
+git merge
+git merge --abort
+git merge --continue
+git merge --quit
+git mv
+git notes
+git notes add
+git notes append
+git notes edit
+git notes prune
+git notes remove
+git notes show
+git rebase
+git rebase --abort
+git rebase --continue
+git rebase --quit
+git rebase --skip
+git rebase -i
+git reset
+git reset --keep
+git reset --merge
+git reset --mixed
+git reset --soft
+git restore
+git revert
+git revert --abort
+git revert --continue
+git rm
+git stash
+git stash apply
+git stash clear
+git stash drop
+git stash pop
+git stash push
+git stash save
+git switch
+git tag
+git tag -a
+git tag -d
+git tag -f
+git worktree
+git worktree add
+git worktree lock
+git worktree move
+git worktree prune
+git worktree remove
+git worktree unlock
+
+# Local Jujutsu operations (mutates working copy & local jj history)
+jj abandon
+jj bookmark
+jj bookmark create
+jj bookmark delete
+jj bookmark move
+jj bookmark rename
+jj bookmark set
+jj branch
+jj commit
+jj describe
+jj edit
+jj new
+jj rebase
+jj restore
+jj split
+jj squash
+jj undo
+
+# Jiri local synchronization & manifest editing
+jiri edit
+jiri runp
+jiri update

@@ -9,7 +9,13 @@ from __future__ import annotations
 import argparse
 import pathlib
 
-from agents.lib import config, permissions
+from agents.lib import (
+    config,
+    permissions,
+    services,
+)
+
+DEFAULT_PROFILE = "local-changes"
 
 
 def register_subcommand(
@@ -28,6 +34,12 @@ def register_subcommand(
 
 def add_arguments(parser: argparse.ArgumentParser) -> None:
     """Add arguments for setup command to parser."""
+    parser.add_argument(
+        "-p",
+        "--profile",
+        choices=list(permissions.PROFILE_DEFINITIONS.keys()),
+        help="Permission profile flavor (read-only, local-changes, external-changes, full-access)",
+    )
     parser.add_argument(
         "-a",
         "--allow",
@@ -50,6 +62,27 @@ def add_arguments(parser: argparse.ArgumentParser) -> None:
         help="Additional grant rule to ASK",
     )
     parser.add_argument(
+        "--allow-list",
+        action="append",
+        default=[],
+        type=pathlib.Path,
+        help="Extra allowed list file",
+    )
+    parser.add_argument(
+        "--deny-list",
+        action="append",
+        default=[],
+        type=pathlib.Path,
+        help="Extra denied list file",
+    )
+    parser.add_argument(
+        "--ask-list",
+        action="append",
+        default=[],
+        type=pathlib.Path,
+        help="Extra ask list file",
+    )
+    parser.add_argument(
         "--config",
         type=pathlib.Path,
         default=None,
@@ -65,17 +98,46 @@ def add_arguments(parser: argparse.ArgumentParser) -> None:
 def run(args: argparse.Namespace) -> int:
     """Execute setup with parsed arguments."""
     config_path = args.config or config.DEFAULT_CONFIG_PATH
+    fuchsia_dir = permissions.find_fuchsia_dir()
+
+    selected_profile = args.profile
+    has_explicit_rules = bool(
+        args.allow
+        or args.deny
+        or args.ask
+        or args.allow_list
+        or args.deny_list
+        or args.ask_list
+    )
+
+    if not selected_profile and not has_explicit_rules:
+        selected_profile = DEFAULT_PROFILE
 
     allow_grants: list[str] = []
     deny_grants: list[str] = []
     ask_grants: list[str] = []
 
+    if selected_profile:
+        print(f"\nApplying permission profile: [{selected_profile}]")
+        grants = permissions.load_profile_grants(fuchsia_dir, selected_profile)
+        allow_grants.extend(grants.allow)
+        deny_grants.extend(grants.deny)
+        ask_grants.extend(grants.ask)
+
     for cmd in args.allow or []:
         allow_grants.extend(permissions.expand_command_variants(cmd))
+    for f in args.allow_list or []:
+        allow_grants.extend(permissions.read_command_list_file(f))
+
     for cmd in args.deny or []:
         deny_grants.extend(permissions.expand_command_variants(cmd))
+    for f in args.deny_list or []:
+        deny_grants.extend(permissions.read_command_list_file(f))
+
     for cmd in args.ask or []:
         ask_grants.extend(permissions.expand_command_variants(cmd))
+    for f in args.ask_list or []:
+        ask_grants.extend(permissions.read_command_list_file(f))
 
     success = config.apply_grants(
         config_path=config_path,
@@ -84,4 +146,12 @@ def run(args: argparse.Namespace) -> int:
         ask=ask_grants,
         dry_run=args.dry_run,
     )
-    return 0 if success else 1
+    if not success:
+        return 1
+
+    daemon_services = services.find_daemon_services(fuchsia_dir)
+    services.restart_daemons(
+        service_names=daemon_services,
+        dry_run=args.dry_run,
+    )
+    return 0

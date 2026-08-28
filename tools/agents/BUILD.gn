@@ -12,6 +12,7 @@ _agents_sources = [
   "lib/__init__.py",
   "lib/config.py",
   "lib/permissions.py",
+  "lib/services.py",
   "main.py",
 ]
 
@@ -41,6 +42,11 @@ if (is_host) {
     main_source = "tests/permissions_test.py"
     libraries = [ ":agents_lib" ]
   }
+
+  python_host_test("services_test") {
+    main_source = "tests/services_test.py"
+    libraries = [ ":agents_lib" ]
+  }
 }
 
 group("tests") {
@@ -49,6 +55,7 @@ group("tests") {
     ":config_test($host_toolchain)",
     ":main_test($host_toolchain)",
     ":permissions_test($host_toolchain)",
+    ":services_test($host_toolchain)",
     ":setup_test($host_toolchain)",
   ]
 }

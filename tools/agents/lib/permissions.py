@@ -2,7 +2,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-"""Permission definitions, command list reading, and regex expansion."""
+"""Permission definitions, profile resolution, command list reading, and regex expansion."""
 
 from __future__ import annotations
 
@@ -12,6 +12,7 @@ import pathlib
 import re
 import shlex
 import shutil
+from collections.abc import Sequence
 
 _ARG_VALUE_PATTERN = r"""(?:[^\s"']*(?:"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*')+[^\s"']*|"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|\S+)"""
 
@@ -71,6 +72,131 @@ def _is_sed_inplace(arguments: str) -> bool:
             if re.match(r"^-[a-zA-Z]*i", token):
                 return True
     return False
+
+
+@dataclasses.dataclass(frozen=True)
+class ProfileDefinition:
+    """Definition of a permission profile flavor."""
+
+    description: str
+    allow: Sequence[str] = ()
+    deny: Sequence[str] = ()
+    ask: Sequence[str] = ()
+
+
+@dataclasses.dataclass(frozen=True)
+class PermissionGrants:
+    """Resolved collection of permission grants across allow, deny, and ask."""
+
+    allow: Sequence[str] = ()
+    deny: Sequence[str] = ()
+    ask: Sequence[str] = ()
+
+
+PROFILE_DEFINITIONS: dict[str, ProfileDefinition] = {
+    "read-only": ProfileDefinition(
+        description="Harmless inspection and build/test commands. Device, cache, and batch ops prompt.",
+        allow=("read_only.txt",),
+        deny=(
+            "never_allow.txt",
+            "local_changes.txt",
+            "external_changes.txt",
+        ),
+        ask=(
+            "device_ops.txt",
+            "cache_destruction.txt",
+            "batch_execution.txt",
+        ),
+    ),
+    "local-changes": ProfileDefinition(
+        description="Workspace edits, formatting, local commits, emulators, and device ops. Batch, external & cache ops prompt.",
+        allow=(
+            "read_only.txt",
+            "local_changes.txt",
+            "device_ops.txt",
+        ),
+        deny=("never_allow.txt",),
+        ask=(
+            "batch_execution.txt",
+            "cache_destruction.txt",
+            "external_changes.txt",
+        ),
+    ),
+    "external-changes": ProfileDefinition(
+        description="Local & device changes plus remote reviews, git push, and remote infra. Batch & cache ops prompt.",
+        allow=(
+            "read_only.txt",
+            "local_changes.txt",
+            "external_changes.txt",
+            "device_ops.txt",
+        ),
+        deny=("never_allow.txt",),
+        ask=(
+            "batch_execution.txt",
+            "cache_destruction.txt",
+        ),
+    ),
+    "full-access": ProfileDefinition(
+        description="Broad unprompted developer access across all local, external, device, and cache tools.",
+        allow=(
+            "read_only.txt",
+            "local_changes.txt",
+            "external_changes.txt",
+            "device_ops.txt",
+            "cache_destruction.txt",
+            "batch_execution.txt",
+        ),
+        deny=("never_allow.txt",),
+        ask=(),
+    ),
+}
+
+
+def find_fuchsia_dir() -> pathlib.Path:
+    """Locate the Fuchsia source root directory."""
+    current = pathlib.Path(__file__).resolve().parent
+    while current != current.parent:
+        if (current / ".jiri_root").is_dir() or (
+            current / ".fx-root"
+        ).is_file():
+            return current
+        current = current.parent
+
+    env_dir = os.environ.get("FUCHSIA_DIR")
+    if env_dir:
+        candidate = pathlib.Path(env_dir).resolve()
+        if candidate.is_dir():
+            return candidate
+
+    raise RuntimeError(
+        "Could not locate Fuchsia root directory. Run within a Fuchsia source checkout or set FUCHSIA_DIR."
+    )
+
+
+def find_config_dirs(fuchsia_dir: pathlib.Path) -> list[pathlib.Path]:
+    """Find all agent config directories (public root + vendor extensions)."""
+    candidates = [fuchsia_dir / ".agents" / "config"]
+    vendor_dir = fuchsia_dir / "vendor"
+    # Note: Assumes standard single-level vendor layout (vendor/<name>/.agents/config).
+    # If nested vendor repositories are introduced in the future, recursive search or manifest
+    # discovery can be considered.
+    if vendor_dir.is_dir():
+        for vendor_child in sorted(vendor_dir.iterdir()):
+            if vendor_child.is_dir():
+                cfg_dir = vendor_child / ".agents" / "config"
+                if cfg_dir.is_dir():
+                    candidates.append(cfg_dir)
+    return candidates
+
+
+def find_permission_dirs(fuchsia_dir: pathlib.Path) -> list[pathlib.Path]:
+    """Find all permission config directories (public root + vendor extensions)."""
+    candidates: list[pathlib.Path] = []
+    for cfg_dir in find_config_dirs(fuchsia_dir):
+        perm_dir = cfg_dir / "permissions"
+        if perm_dir.is_dir():
+            candidates.append(perm_dir)
+    return candidates
 
 
 @dataclasses.dataclass(frozen=True)
@@ -264,3 +390,30 @@ def read_command_list_file(file_path: pathlib.Path) -> list[str]:
         for line in file_handle:
             grants.extend(expand_command_variants(line))
     return grants
+
+
+def load_profile_grants(
+    fuchsia_dir: pathlib.Path, profile_name: str
+) -> PermissionGrants:
+    """Load and aggregate permission grants for a given profile."""
+    if profile_name not in PROFILE_DEFINITIONS:
+        raise ValueError(
+            f"Unknown profile '{profile_name}'. Valid: {list(PROFILE_DEFINITIONS.keys())}"
+        )
+
+    profile = PROFILE_DEFINITIONS[profile_name]
+    permission_dirs = find_permission_dirs(fuchsia_dir)
+
+    def _collect_rules(category_files: Sequence[str]) -> list[str]:
+        rules: list[str] = []
+        for filename in category_files:
+            for perm_dir in permission_dirs:
+                file_path = perm_dir / filename
+                rules.extend(read_command_list_file(file_path))
+        return list(dict.fromkeys(rules))
+
+    return PermissionGrants(
+        allow=_collect_rules(profile.allow),
+        deny=_collect_rules(profile.deny),
+        ask=_collect_rules(profile.ask),
+    )
