@@ -48,7 +48,8 @@ impl WpanFacade {
 
     /// Returns the thread rloc from the DeviceTest proxy service.
     pub async fn get_thread_rloc16(&self) -> Result<u16, Error> {
-        let thread_rloc16 = match self.device_test.read().as_ref() {
+        let device_test_proxy = self.device_test.read().clone();
+        let thread_rloc16 = match device_test_proxy {
             Some(device_test) => device_test.get_thread_rloc16().await?,
             _ => bail!("DeviceTest proxy is not set"),
         };
@@ -58,7 +59,8 @@ impl WpanFacade {
     /// Returns the current mac address (thread random mac address) from the DeviceTest
     /// proxy service.
     pub async fn get_ncp_mac_address(&self) -> Result<[u8; 8], Error> {
-        let current_mac_address = match self.device_test.read().as_ref() {
+        let device_test_proxy = self.device_test.read().clone();
+        let current_mac_address = match device_test_proxy {
             Some(device_test) => device_test.get_current_mac_address().await?,
             _ => bail!("DeviceTest proxy is not set"),
         };
@@ -67,7 +69,8 @@ impl WpanFacade {
 
     /// Returns the ncp channel from the DeviceTest proxy service.
     pub async fn get_ncp_channel(&self) -> Result<u16, Error> {
-        let current_channel = match self.device_test.read().as_ref() {
+        let device_test_proxy = self.device_test.read().clone();
+        let current_channel = match device_test_proxy {
             Some(device_test) => device_test.get_current_channel().await?,
             _ => bail!("DeviceTest proxy is not set"),
         };
@@ -76,7 +79,8 @@ impl WpanFacade {
 
     /// Returns the current rssi from the DeviceTest proxy service.
     pub async fn get_ncp_rssi(&self) -> Result<i32, Error> {
-        let ncp_rssi = match self.device_test.read().as_ref() {
+        let device_test_proxy = self.device_test.read().clone();
+        let ncp_rssi = match device_test_proxy {
             Some(device_test) => device_test.get_current_rssi().await?,
             _ => bail!("DeviceTest proxy is not set"),
         };
@@ -85,7 +89,8 @@ impl WpanFacade {
 
     /// Returns the factory mac address from the DeviceTest proxy service.
     pub async fn get_weave_node_id(&self) -> Result<[u8; 8], Error> {
-        let factory_mac_address = match self.device_test.read().as_ref() {
+        let device_test_proxy = self.device_test.read().clone();
+        let factory_mac_address = match device_test_proxy {
             Some(device_test) => device_test.get_factory_mac_address().await?,
             _ => bail!("DeviceTest proxy is not set"),
         };
@@ -94,7 +99,8 @@ impl WpanFacade {
 
     /// Returns the network name from the DeviceExtra proxy service.
     pub async fn get_network_name(&self) -> Result<Vec<u8>, Error> {
-        let raw_name = match self.device_extra.read().as_ref() {
+        let device_extra_proxy = self.device_extra.read().clone();
+        let raw_name = match device_extra_proxy {
             Some(device_extra) => device_extra.watch_identity().await?.raw_name,
             _ => bail!("DeviceExtra proxy is not set"),
         };
@@ -106,7 +112,8 @@ impl WpanFacade {
 
     /// Returns the partition id from the DeviceTest proxy service.
     pub async fn get_partition_id(&self) -> Result<u32, Error> {
-        let partition_id = match self.device_test.read().as_ref() {
+        let device_test_proxy = self.device_test.read().clone();
+        let partition_id = match device_test_proxy {
             Some(device_test) => device_test.get_partition_id().await?,
             _ => bail!("DeviceTest proxy is not set"),
         };
@@ -115,7 +122,8 @@ impl WpanFacade {
 
     /// Returns the thread router id from the DeviceTest proxy service.
     pub async fn get_thread_router_id(&self) -> Result<u8, Error> {
-        let router_id = match self.device_test.read().as_ref() {
+        let device_test_proxy = self.device_test.read().clone();
+        let router_id = match device_test_proxy {
             Some(device_test) => device_test.get_thread_router_id().await?,
             _ => bail!("DeviceTest proxy is not set"),
         };
@@ -124,7 +132,8 @@ impl WpanFacade {
 
     /// Returns the device state from the DeviceTest proxy service.
     pub async fn get_ncp_device_state(&self) -> Result<DeviceStateDto, Error> {
-        let device_state = match self.device.read().as_ref() {
+        let proxy_opt: Option<DeviceProxy> = self.device.read().clone();
+        let device_state = match proxy_opt {
             Some(device) => device.watch_device_state().await?,
             _ => bail!("DeviceTest proxy is not set"),
         };
@@ -133,7 +142,8 @@ impl WpanFacade {
 
     /// Returns the connectivity state from the DeviceTest proxy service.
     pub async fn get_ncp_state(&self) -> Result<ConnectivityState, Error> {
-        let device_state = match self.device.read().as_ref() {
+        let proxy_opt: Option<DeviceProxy> = self.device.read().clone();
+        let device_state = match proxy_opt {
             Some(device) => device.watch_device_state().await?.connectivity_state,
             _ => bail!("DeviceTest proxy is not set"),
         };
@@ -158,7 +168,8 @@ impl WpanFacade {
 
     /// Returns the panid from the DeviceExtra proxy service.
     pub async fn get_panid(&self) -> Result<u16, Error> {
-        match self.device_extra.read().as_ref() {
+        let proxy_opt = self.device_extra.read().clone();
+        match proxy_opt {
             Some(device_extra) => match device_extra.watch_identity().await?.panid {
                 Some(panid) => Ok(panid),
                 None => bail!("Pan id is not specified!"),
@@ -171,7 +182,8 @@ impl WpanFacade {
     pub async fn get_mac_address_filter_settings(
         &self,
     ) -> Result<MacAddressFilterSettingsDto, Error> {
-        let settings = match self.device_test.read().as_ref() {
+        let proxy_opt = self.device_test.read().clone();
+        let settings = match proxy_opt {
             Some(device_test) => device_test.get_mac_address_filter_settings().await?,
             _ => bail!("DeviceTest proxy is not set!"),
         };
@@ -183,7 +195,8 @@ impl WpanFacade {
         &self,
         settings: MacAddressFilterSettingsDto,
     ) -> Result<(), Error> {
-        match self.device_test.read().as_ref() {
+        let proxy_opt = self.device_test.read().clone();
+        match proxy_opt {
             Some(device_test) => {
                 device_test.replace_mac_address_filter_settings(&settings.into()).await?
             }
@@ -194,7 +207,8 @@ impl WpanFacade {
 
     ///Returns the thread neighbor table from the DeviceTest proxy service.
     pub async fn get_neighbor_table(&self) -> Result<Vec<NeighborInfoDto>, Error> {
-        let settings = match self.device_test.read().as_ref() {
+        let proxy_opt = self.device_test.read().clone();
+        let settings = match proxy_opt {
             Some(device_test) => device_test.get_neighbor_table().await?,
             _ => bail!("DeviceTest proxy is not set!"),
         };

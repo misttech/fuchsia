@@ -57,15 +57,22 @@ impl WlanPolicyFacade {
     /// Only one caller can have the control channel open at a time.
     pub async fn create_client_controller(&self) -> Result<(), Error> {
         let tag = "WlanPolicyFacade::create_client_controller";
-        let mut controller_guard = self.controller.write();
-        // Drop the controller if the facade has one, otherwise creating a controller will fail.
-        controller_guard.inner = None;
+
+        {
+            let mut controller_guard = self.controller.write();
+            controller_guard.inner = None;
+        }
 
         let (controller, update_stream) = Self::init_client_controller().await.map_err(|e| {
             info!(tag = &with_line!(tag); "Error getting client controller: {}", e);
             format_err!("Error getting client controller: {}", e)
         })?;
-        controller_guard.inner = Some(controller);
+
+        {
+            let mut controller_guard = self.controller.write();
+            controller_guard.inner = Some(controller);
+        }
+
         self.update_listener.set(Some(update_stream));
 
         Ok(())
@@ -124,10 +131,11 @@ impl WlanPolicyFacade {
 
     /// Request a scan and return the list of network names found, or an error if one occurs.
     pub async fn scan_for_networks(&self) -> Result<Vec<String>, Error> {
-        let controller_guard = self.controller.read();
-        let controller = controller_guard
+        let controller = self
+            .controller
+            .read()
             .inner
-            .as_ref()
+            .clone()
             .ok_or_else(|| format_err!("client controller has not been initialized"))?;
 
         // Policy will send results back through this iterator
@@ -166,10 +174,11 @@ impl WlanPolicyFacade {
         target_ssid: Vec<u8>,
         type_: fidl_policy::SecurityType,
     ) -> Result<String, Error> {
-        let controller_guard = self.controller.read();
-        let controller = controller_guard
+        let controller = self
+            .controller
+            .read()
             .inner
-            .as_ref()
+            .clone()
             .ok_or_else(|| format_err!("client controller has not been initialized"))?;
 
         let network_id = fidl_policy::NetworkIdentifier { ssid: target_ssid, type_ };
@@ -203,10 +212,11 @@ impl WlanPolicyFacade {
         target_ssid: Vec<u8>,
         type_: fidl_policy::SecurityType,
     ) -> Result<(), Error> {
-        let controller_guard = self.controller.read();
-        let controller = controller_guard
+        let controller = self
+            .controller
+            .read()
             .inner
-            .as_ref()
+            .clone()
             .ok_or_else(|| format_err!("client controller has not been initialized"))?;
         info!(
             tag = &with_line!("WlanPolicyFacade::remove_network");
@@ -225,10 +235,11 @@ impl WlanPolicyFacade {
 
     /// Remove all of the client's saved networks.
     pub async fn remove_all_networks(&self) -> Result<(), Error> {
-        let controller_guard = self.controller.read();
-        let controller = controller_guard
+        let controller = self
+            .controller
+            .read()
             .inner
-            .as_ref()
+            .clone()
             .ok_or_else(|| format_err!("client controller has not been initialized"))?;
 
         // Remove each saved network individually.
@@ -246,10 +257,11 @@ impl WlanPolicyFacade {
 
     /// Send the request to the policy layer to start making client connections.
     pub async fn start_client_connections(&self) -> Result<(), Error> {
-        let controller_guard = self.controller.read();
-        let controller = controller_guard
+        let controller = self
+            .controller
+            .read()
             .inner
-            .as_ref()
+            .clone()
             .ok_or_else(|| format_err!("client controller has not been initialized"))?;
 
         let req_status = controller.start_client_connections().await?;
@@ -297,10 +309,11 @@ impl WlanPolicyFacade {
 
     /// Send the request to the policy layer to stop making client connections.
     pub async fn stop_client_connections(&self) -> Result<(), Error> {
-        let controller_guard = self.controller.read();
-        let controller = controller_guard
+        let controller = self
+            .controller
+            .read()
             .inner
-            .as_ref()
+            .clone()
             .ok_or_else(|| format_err!("client controller has not been initialized"))?;
 
         let req_status = controller.stop_client_connections().await?;
@@ -324,10 +337,11 @@ impl WlanPolicyFacade {
         type_: fidl_policy::SecurityType,
         credential: fidl_policy::Credential,
     ) -> Result<(), Error> {
-        let controller_guard = self.controller.read();
-        let controller = controller_guard
+        let controller = self
+            .controller
+            .read()
             .inner
-            .as_ref()
+            .clone()
             .ok_or_else(|| format_err!("client controller has not been initialized"))?;
 
         let network_id = fidl_policy::NetworkIdentifier { ssid: target_ssid.clone(), type_: type_ };
@@ -351,10 +365,11 @@ impl WlanPolicyFacade {
     /// Get a list of the saved networks. Returns FIDL values to be used directly or converted to
     /// serializable values that can be passed through SL4F
     async fn get_saved_networks(&self) -> Result<Vec<fidl_policy::NetworkConfig>, Error> {
-        let controller_guard = self.controller.read();
-        let controller = controller_guard
+        let controller = self
+            .controller
+            .read()
             .inner
-            .as_ref()
+            .clone()
             .ok_or_else(|| format_err!("client controller has not been initialized"))?;
 
         // Policy will send configs back through this iterator

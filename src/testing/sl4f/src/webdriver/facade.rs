@@ -3,8 +3,8 @@
 // found in the LICENSE file.
 
 use crate::webdriver::types::{EnableDevToolsResult, GetDevToolsPortsResult};
-use anyhow::{format_err, Error};
-use fidl::endpoints::{create_request_stream, ServerEnd};
+use anyhow::{Error, format_err};
+use fidl::endpoints::{ServerEnd, create_request_stream};
 use fidl_fuchsia_web::{
     DevToolsListenerMarker, DevToolsListenerRequest, DevToolsListenerRequestStream,
     DevToolsPerContextListenerMarker, DevToolsPerContextListenerRequest,
@@ -37,10 +37,15 @@ impl WebdriverFacade {
     /// Configure WebDriver to start any future contexts in debug mode.  This
     /// allows contexts to be controlled remotely through ChromeDriver.
     pub async fn enable_dev_tools(&self) -> Result<EnableDevToolsResult, Error> {
+        if self.internal.lock().is_some() {
+            return Err(format_err!("DevTools already enabled."));
+        }
+        let initialized_internal = WebdriverFacadeInternal::new().await?;
+
         let mut internal = self.internal.lock();
+
         if internal.is_none() {
-            let initialized_internal = WebdriverFacadeInternal::new().await?;
-            internal.replace(initialized_internal);
+            *internal = Some(initialized_internal);
             Ok(EnableDevToolsResult::Success)
         } else {
             Err(format_err!("DevTools already enabled."))

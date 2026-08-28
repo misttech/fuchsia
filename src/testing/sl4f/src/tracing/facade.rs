@@ -6,8 +6,8 @@ use crate::tracing::types::{
     InitializeRequest, ResultsDestination, TerminateRequest, TerminateResponse,
 };
 use anyhow::Error;
-use base64::engine::general_purpose::STANDARD as BASE64_STANDARD;
 use base64::engine::Engine as _;
+use base64::engine::general_purpose::STANDARD as BASE64_STANDARD;
 use fidl_fuchsia_tracing_controller::{
     ProvisionerMarker, SessionMarker, SessionProxy, StartError, StartOptions, StopOptions,
     TraceConfig,
@@ -16,7 +16,7 @@ use fuchsia_component::{self as app};
 use fuchsia_sync::RwLock;
 
 use futures::io::AsyncReadExt;
-use serde_json::{from_value, to_value, Value};
+use serde_json::{Value, from_value, to_value};
 
 // This list should be kept in sync with //src/developer/ffx/plugins/trace/data/config.json which
 // is the source of truth for default categories.
@@ -120,10 +120,11 @@ impl TracingFacade {
     /// There must be a trace session initialized through this facade, otherwise an error is
     /// returned. Within a trace session, tracing may be started and stopped multiple times.
     pub async fn start(&self) -> Result<Value, Error> {
-        let status = self.status.read();
-        let trace_controller = status
+        let trace_controller = self
+            .status
+            .read()
             .controller
-            .as_ref()
+            .clone()
             .ok_or_else(|| format_err!("No trace session has been initialized"))?;
         let options = StartOptions::default();
         let response = trace_controller.start_tracing(&options).await?;
@@ -146,10 +147,11 @@ impl TracingFacade {
     /// There must be a trace session initialized through this facade, otherwise an error is
     /// returned. Within a trace session, tracing may be started and stopped multiple times.
     pub async fn stop(&self) -> Result<Value, Error> {
-        let status = self.status.read();
-        let trace_controller = status
+        let trace_controller = self
+            .status
+            .read()
             .controller
-            .as_ref()
+            .clone()
             .ok_or_else(|| format_err!("No trace session has been initialized"))?;
         let options = StopOptions::default();
         let _ = trace_controller.stop_tracing(&options).await?;
