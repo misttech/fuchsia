@@ -521,8 +521,8 @@ pub fn run_container_features(kernel: &Arc<Kernel>, features: &Features) -> Resu
         let (touch_source_client, touch_source_server) = fidl::endpoints::create_endpoints();
         let (mouse_source_client, mouse_source_server) = fidl::endpoints::create_endpoints();
         let view_bound_protocols = fuicomposition::ViewBoundProtocols {
-            touch_source: Some(touch_source_server),
-            mouse_source: Some(mouse_source_server),
+            touch_source_v2: Some(touch_source_server),
+            mouse_source_v2: Some(mouse_source_server),
             ..Default::default()
         };
         let view_identity = fuiviews::ViewIdentityOnCreation::from(

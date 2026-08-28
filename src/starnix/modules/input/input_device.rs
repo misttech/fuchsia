@@ -382,13 +382,13 @@ mod test {
     use anyhow::anyhow;
     use assert_matches::assert_matches;
     use diagnostics_assertions::{AnyProperty, assert_data_tree};
+    use fidl::endpoints::RequestStream as _;
     use fidl_fuchsia_ui_input::MediaButtonsEvent;
     use fidl_fuchsia_ui_input3 as fuiinput;
     use fidl_fuchsia_ui_pointer as fuipointer;
     use fidl_fuchsia_ui_policy as fuipolicy;
     use fuipointer::{
-        EventPhase, TouchEvent, TouchInteractionId, TouchPointerSample, TouchResponse,
-        TouchSourceMarker, TouchSourceRequest,
+        EventPhase, TouchEvent, TouchInteractionId, TouchPointerSample, TouchSourceV2Marker,
     };
     use futures::StreamExt as _;
     use pretty_assertions::assert_eq;
@@ -409,7 +409,7 @@ mod test {
 
     async fn start_touch_input(
         current_task: &CurrentTask,
-    ) -> (InputDevice, FileHandle, fuipointer::TouchSourceRequestStream) {
+    ) -> (InputDevice, FileHandle, fuipointer::TouchSourceV2RequestStream) {
         let inspector = fuchsia_inspect::Inspector::default();
         start_touch_input_inspect_and_dimensions(current_task, 700, 1200, &inspector).await
     }
@@ -417,7 +417,7 @@ mod test {
     async fn start_touch_input_inspect(
         current_task: &CurrentTask,
         inspector: &fuchsia_inspect::Inspector,
-    ) -> (InputDevice, FileHandle, fuipointer::TouchSourceRequestStream) {
+    ) -> (InputDevice, FileHandle, fuipointer::TouchSourceV2RequestStream) {
         start_touch_input_inspect_and_dimensions(current_task, 700, 1200, &inspector).await
     }
 
@@ -478,15 +478,15 @@ mod test {
         x_max: i32,
         y_max: i32,
         inspector: &fuchsia_inspect::Inspector,
-    ) -> (InputDevice, FileHandle, fuipointer::TouchSourceRequestStream) {
+    ) -> (InputDevice, FileHandle, fuipointer::TouchSourceV2RequestStream) {
         let input_device = InputDevice::new_touch(x_max, y_max, inspector.root());
         let input_file = input_device.open_test(current_task).expect("Failed to create input file");
 
         let (touch_source_client_end, touch_source_stream) =
-            fidl::endpoints::create_request_stream::<TouchSourceMarker>();
+            fidl::endpoints::create_request_stream::<TouchSourceV2Marker>();
 
         let (mouse_source_client_end, _mouse_source_stream) =
-            fidl::endpoints::create_request_stream::<fuipointer::MouseSourceMarker>();
+            fidl::endpoints::create_request_stream::<fuipointer::MouseSourceV2Marker>();
 
         let (keyboard_proxy, mut keyboard_stream) =
             fidl::endpoints::create_sync_proxy_and_stream::<fuiinput::KeyboardMarker>();
@@ -536,10 +536,10 @@ mod test {
             );
 
         let (touch_source_client_end, _touch_source_stream) =
-            fidl::endpoints::create_request_stream::<TouchSourceMarker>();
+            fidl::endpoints::create_request_stream::<TouchSourceV2Marker>();
 
         let (mouse_source_client_end, _mouse_source_stream) =
-            fidl::endpoints::create_request_stream::<fuipointer::MouseSourceMarker>();
+            fidl::endpoints::create_request_stream::<fuipointer::MouseSourceV2Marker>();
 
         let (relay, _relay_handle) = input_event_relay::new_input_relay();
         relay.start_relays(
@@ -582,9 +582,9 @@ mod test {
             );
 
         let (touch_source_client_end, _touch_source_stream) =
-            fidl::endpoints::create_request_stream::<TouchSourceMarker>();
+            fidl::endpoints::create_request_stream::<TouchSourceV2Marker>();
         let (mouse_source_client_end, _mouse_source_stream) =
-            fidl::endpoints::create_request_stream::<fuipointer::MouseSourceMarker>();
+            fidl::endpoints::create_request_stream::<fuipointer::MouseSourceV2Marker>();
         let (keyboard_proxy, mut keyboard_stream) =
             fidl::endpoints::create_sync_proxy_and_stream::<fuiinput::KeyboardMarker>();
         let view_ref_pair =
@@ -615,7 +615,7 @@ mod test {
 
     async fn start_mouse_input(
         current_task: &CurrentTask,
-    ) -> (InputDevice, FileHandle, fuipointer::MouseSourceRequestStream) {
+    ) -> (InputDevice, FileHandle, fuipointer::MouseSourceV2RequestStream) {
         let inspector = fuchsia_inspect::Inspector::default();
         start_mouse_input_inspect(current_task, &inspector).await
     }
@@ -623,15 +623,15 @@ mod test {
     async fn start_mouse_input_inspect(
         current_task: &CurrentTask,
         inspector: &fuchsia_inspect::Inspector,
-    ) -> (InputDevice, FileHandle, fuipointer::MouseSourceRequestStream) {
+    ) -> (InputDevice, FileHandle, fuipointer::MouseSourceV2RequestStream) {
         let input_device = InputDevice::new_mouse(inspector.root());
         let input_file = input_device.open_test(current_task).expect("Failed to create input file");
 
         let (touch_source_client_end, _touch_source_stream) =
-            fidl::endpoints::create_request_stream::<TouchSourceMarker>();
+            fidl::endpoints::create_request_stream::<TouchSourceV2Marker>();
 
         let (mouse_source_client_end, mouse_source_stream) =
-            fidl::endpoints::create_request_stream::<fuipointer::MouseSourceMarker>();
+            fidl::endpoints::create_request_stream::<fuipointer::MouseSourceV2Marker>();
 
         let (keyboard_proxy, mut keyboard_stream) =
             fidl::endpoints::create_sync_proxy_and_stream::<fuiinput::KeyboardMarker>();
@@ -773,92 +773,72 @@ mod test {
         .collect()
     }
 
-    // Waits for a `Watch()` request to arrive on `request_stream`, and responds with
-    // `touch_event`. Returns the arguments to the `Watch()` call.
+    // Sends `touch_events` to the client stream and waits for `AcknowledgeEvents`.
     async fn answer_next_touch_watch_request(
-        request_stream: &mut fuipointer::TouchSourceRequestStream,
+        request_stream: &mut fuipointer::TouchSourceV2RequestStream,
         touch_events: Vec<TouchEvent>,
-    ) -> Vec<TouchResponse> {
+    ) {
+        let control_handle = request_stream.control_handle();
+        control_handle
+            .send_on_touch_events(touch_events, 1)
+            .expect("failure sending OnTouchEvents");
         match request_stream.next().await {
-            Some(Ok(TouchSourceRequest::Watch { responses, responder })) => {
-                responder.send(touch_events).expect("failure sending Watch reply");
-                responses
-            }
+            Some(Ok(fuipointer::TouchSourceV2Request::AcknowledgeEvents { .. })) => {}
             unexpected_request => panic!("unexpected request {:?}", unexpected_request),
         }
     }
 
-    // Waits for a `Watch()` request to arrive on `request_stream`, and responds with
-    // `mouse_events`.
+    // Sends `mouse_events` to the client stream and waits for `AcknowledgeEvents`.
     async fn answer_next_mouse_watch_request(
-        request_stream: &mut fuipointer::MouseSourceRequestStream,
+        request_stream: &mut fuipointer::MouseSourceV2RequestStream,
         mouse_events: Vec<fuipointer::MouseEvent>,
     ) {
+        let control_handle = request_stream.control_handle();
+        control_handle
+            .send_on_mouse_events(mouse_events, 1)
+            .expect("failure sending OnMouseEvents");
         match request_stream.next().await {
-            Some(Ok(fuipointer::MouseSourceRequest::Watch { responder })) => {
-                responder.send(mouse_events).expect("failure sending Watch reply");
-            }
+            Some(Ok(fuipointer::MouseSourceV2Request::AcknowledgeEvents { .. })) => {}
             unexpected_request => panic!("unexpected request {:?}", unexpected_request),
         }
-    }
-
-    #[::fuchsia::test()]
-    async fn initial_watch_request_has_empty_responses_arg() {
-        spawn_kernel_and_run(async move |current_task| {
-            // Set up resources.
-            let (_input_device, _input_file, mut touch_source_stream) =
-                start_touch_input(&current_task).await;
-
-            // Verify that the watch request has empty `responses`.
-            assert_matches!(
-                touch_source_stream.next().await,
-                Some(Ok(TouchSourceRequest::Watch { responses, .. }))
-                    => assert_eq!(responses.as_slice(), [])
-            );
-        })
-        .await;
     }
 
     #[::fuchsia::test]
-    async fn later_watch_requests_have_responses_arg_matching_earlier_watch_replies() {
+    async fn touch_source_v2_acknowledges_events_with_matching_stamp() {
         spawn_kernel_and_run(async move |current_task| {
-            // Set up resources.
-
             let (_input_device, _input_file, mut touch_source_stream) =
                 start_touch_input(&current_task).await;
 
-            // Reply to first `Watch` with two `TouchEvent`s.
+            let control_handle = touch_source_stream.control_handle();
+            control_handle
+                .send_on_touch_events(vec![make_empty_touch_event(), make_empty_touch_event()], 10)
+                .expect("failure sending OnTouchEvents");
             match touch_source_stream.next().await {
-                Some(Ok(TouchSourceRequest::Watch { responder, .. })) => responder
-                    .send(vec![make_empty_touch_event(), make_empty_touch_event()])
-                    .expect("failure sending Watch reply"),
-                unexpected_request => panic!("unexpected request {:?}", unexpected_request),
+                Some(Ok(fuipointer::TouchSourceV2Request::AcknowledgeEvents {
+                    last_acknowledged_event_stamp,
+                    ..
+                })) => assert_eq!(last_acknowledged_event_stamp, 10),
+                unexpected => panic!("unexpected request {:?}", unexpected),
             }
 
-            // Verify second `Watch` has two elements in `responses`.
-            // Then reply with five `TouchEvent`s.
+            control_handle
+                .send_on_touch_events(
+                    vec![
+                        make_empty_touch_event(),
+                        make_empty_touch_event(),
+                        make_empty_touch_event(),
+                        make_empty_touch_event(),
+                        make_empty_touch_event(),
+                    ],
+                    20,
+                )
+                .expect("failure sending OnTouchEvents");
             match touch_source_stream.next().await {
-                Some(Ok(TouchSourceRequest::Watch { responses, responder })) => {
-                    assert_matches!(responses.as_slice(), [_, _]);
-                    responder
-                        .send(vec![
-                            make_empty_touch_event(),
-                            make_empty_touch_event(),
-                            make_empty_touch_event(),
-                            make_empty_touch_event(),
-                            make_empty_touch_event(),
-                        ])
-                        .expect("failure sending Watch reply")
-                }
-                unexpected_request => panic!("unexpected request {:?}", unexpected_request),
-            }
-
-            // Verify third `Watch` has five elements in `responses`.
-            match touch_source_stream.next().await {
-                Some(Ok(TouchSourceRequest::Watch { responses, .. })) => {
-                    assert_matches!(responses.as_slice(), [_, _, _, _, _]);
-                }
-                unexpected_request => panic!("unexpected request {:?}", unexpected_request),
+                Some(Ok(fuipointer::TouchSourceV2Request::AcknowledgeEvents {
+                    last_acknowledged_event_stamp,
+                    ..
+                })) => assert_eq!(last_acknowledged_event_stamp, 20),
+                unexpected => panic!("unexpected request {:?}", unexpected),
             }
         })
         .await;
@@ -1116,14 +1096,6 @@ mod test {
             )
             .await;
 
-            // Wait for another `Watch`.
-            match touch_source_stream.next().await {
-                Some(Ok(TouchSourceRequest::Watch { responses, .. })) => {
-                    assert_matches!(responses.as_slice(), [_])
-                }
-                unexpected_request => panic!("unexpected request {:?}", unexpected_request),
-            }
-
             let events = read_uapi_events(&input_file, &current_task);
             assert_eq!(events, vec![]);
             assert_data_tree!(inspector, root: {
@@ -1196,14 +1168,6 @@ mod test {
             // Reply to `Watch` request of given event. This should be counted as a received event and
             // an unexpected event.
             answer_next_touch_watch_request(&mut touch_source_stream, vec![event]).await;
-
-            // Wait for another `Watch`.
-            match touch_source_stream.next().await {
-                Some(Ok(TouchSourceRequest::Watch { responses, .. })) => {
-                    assert_matches!(responses.as_slice(), [_])
-                }
-                unexpected_request => panic!("unexpected request {:?}", unexpected_request),
-            }
 
             let events = read_uapi_events(&input_file, &current_task);
             assert_eq!(events, vec![]);
@@ -1635,41 +1599,25 @@ mod test {
         .await;
     }
 
-    // Per the FIDL documentation for `TouchSource::Watch()`:
-    //
-    // > non-sample events should return an empty |TouchResponse| table to the
-    // > server
-    #[test_case(
-        make_touch_event_with_phase(EventPhase::Add, 2)
-            => matches Some(TouchResponse { response_type: Some(_), ..});
-        "event_with_sample_yields_some_response_type")]
-    #[test_case(
-        TouchEvent::default() => matches Some(TouchResponse { response_type: None, ..});
-        "event_without_sample_yields_no_response_type")]
     #[::fuchsia::test]
-    async fn sends_appropriate_reply_to_touch_source_server(
-        event: TouchEvent,
-    ) -> Option<TouchResponse> {
+    async fn sends_appropriate_ack_to_touch_source_server() {
         spawn_kernel_and_run(async move |current_task| {
-            // Set up resources.
-
             let (_input_device, _input_file, mut touch_source_stream) =
                 start_touch_input(&current_task).await;
 
-            // Reply to first `Watch` request.
-            answer_next_touch_watch_request(&mut touch_source_stream, vec![event]).await;
-
-            // Get response to `event`.
-            let responses = answer_next_touch_watch_request(
-                &mut touch_source_stream,
-                vec![TouchEvent::default()],
-            )
-            .await;
-
-            // Return the value for `test_case` to match on.
-            responses.get(0).cloned()
+            let control_handle = touch_source_stream.control_handle();
+            control_handle
+                .send_on_touch_events(vec![make_touch_event_with_phase(EventPhase::Add, 2)], 42)
+                .expect("failure sending OnTouchEvents");
+            match touch_source_stream.next().await {
+                Some(Ok(fuipointer::TouchSourceV2Request::AcknowledgeEvents {
+                    last_acknowledged_event_stamp,
+                    ..
+                })) => assert_eq!(last_acknowledged_event_stamp, 42),
+                unexpected => panic!("unexpected request {:?}", unexpected),
+            }
         })
-        .await
+        .await;
     }
 
     #[test_case(fidl_fuchsia_input::Key::Escape, uapi::KEY_POWER; "Esc maps to Power")]
@@ -2045,66 +1993,67 @@ mod test {
 
             // Send 2 TouchEvents to proxy that should be counted as `received` by InputFile
             // A TouchEvent::default() has no pointer sample so these events should be discarded.
+            let control_handle = touch_source_stream.control_handle();
+            control_handle
+                .send_on_touch_events(vec![make_empty_touch_event(), make_empty_touch_event()], 2)
+                .expect("failure sending OnTouchEvents");
             match touch_source_stream.next().await {
-                Some(Ok(TouchSourceRequest::Watch { responder, .. })) => responder
-                    .send(vec![make_empty_touch_event(), make_empty_touch_event()])
-                    .expect("failure sending Watch reply"),
+                Some(Ok(fuipointer::TouchSourceV2Request::AcknowledgeEvents {
+                    last_acknowledged_event_stamp,
+                    ..
+                })) => assert_eq!(last_acknowledged_event_stamp, 2),
                 unexpected_request => panic!("unexpected request {:?}", unexpected_request),
             }
 
             // Send 5 TouchEvents with pointer sample to proxy, these should be received and converted
             // Add/Remove events generate 5 uapi events each. Change events generate 3 uapi events each.
+            control_handle
+                .send_on_touch_events(
+                    vec![
+                        make_touch_event_with_coords_phase_timestamp(
+                            0.0,
+                            0.0,
+                            EventPhase::Add,
+                            1,
+                            1000,
+                        ),
+                        make_touch_event_with_coords_phase_timestamp(
+                            1.0,
+                            1.0,
+                            EventPhase::Change,
+                            1,
+                            2000,
+                        ),
+                        make_touch_event_with_coords_phase_timestamp(
+                            2.0,
+                            2.0,
+                            EventPhase::Change,
+                            1,
+                            3000,
+                        ),
+                        make_touch_event_with_coords_phase_timestamp(
+                            3.0,
+                            3.0,
+                            EventPhase::Change,
+                            1,
+                            4000,
+                        ),
+                        make_touch_event_with_coords_phase_timestamp(
+                            3.0,
+                            3.0,
+                            EventPhase::Remove,
+                            1,
+                            5000,
+                        ),
+                    ],
+                    7,
+                )
+                .expect("failure sending OnTouchEvents");
             match touch_source_stream.next().await {
-                Some(Ok(TouchSourceRequest::Watch { responses, responder })) => {
-                    assert_matches!(responses.as_slice(), [_, _]);
-                    responder
-                        .send(vec![
-                            make_touch_event_with_coords_phase_timestamp(
-                                0.0,
-                                0.0,
-                                EventPhase::Add,
-                                1,
-                                1000,
-                            ),
-                            make_touch_event_with_coords_phase_timestamp(
-                                1.0,
-                                1.0,
-                                EventPhase::Change,
-                                1,
-                                2000,
-                            ),
-                            make_touch_event_with_coords_phase_timestamp(
-                                2.0,
-                                2.0,
-                                EventPhase::Change,
-                                1,
-                                3000,
-                            ),
-                            make_touch_event_with_coords_phase_timestamp(
-                                3.0,
-                                3.0,
-                                EventPhase::Change,
-                                1,
-                                4000,
-                            ),
-                            make_touch_event_with_coords_phase_timestamp(
-                                3.0,
-                                3.0,
-                                EventPhase::Remove,
-                                1,
-                                5000,
-                            ),
-                        ])
-                        .expect("failure sending Watch reply");
-                }
-                unexpected_request => panic!("unexpected request {:?}", unexpected_request),
-            }
-
-            // Wait for next `Watch` call and verify it has five elements in `responses`.
-            match touch_source_stream.next().await {
-                Some(Ok(TouchSourceRequest::Watch { responses, .. })) => {
-                    assert_matches!(responses.as_slice(), [_, _, _, _, _])
-                }
+                Some(Ok(fuipointer::TouchSourceV2Request::AcknowledgeEvents {
+                    last_acknowledged_event_stamp,
+                    ..
+                })) => assert_eq!(last_acknowledged_event_stamp, 7),
                 unexpected_request => panic!("unexpected request {:?}", unexpected_request),
             }
 
@@ -2151,9 +2100,9 @@ mod test {
                 input_device.open_test(&current_task).expect("Failed to create input file");
 
             let (touch_source_client_end, mut touch_source_stream) =
-                fidl::endpoints::create_request_stream::<TouchSourceMarker>();
+                fidl::endpoints::create_request_stream::<TouchSourceV2Marker>();
             let (mouse_source_client_end, _mouse_source_stream) =
-                fidl::endpoints::create_request_stream::<fuipointer::MouseSourceMarker>();
+                fidl::endpoints::create_request_stream::<fuipointer::MouseSourceV2Marker>();
             let (keyboard_proxy, mut keyboard_stream) =
                 fidl::endpoints::create_sync_proxy_and_stream::<fuiinput::KeyboardMarker>();
             let view_ref_pair =
@@ -2191,19 +2140,15 @@ mod test {
 
             // Send 2 TouchEvents to proxy that should be counted as `received` by InputFile
             // A TouchEvent::default() has no pointer sample so these events should be discarded.
+            let control_handle = touch_source_stream.control_handle();
+            control_handle
+                .send_on_touch_events(vec![make_empty_touch_event(), make_empty_touch_event()], 2)
+                .expect("failure sending OnTouchEvents");
             match touch_source_stream.next().await {
-                Some(Ok(TouchSourceRequest::Watch { responder, .. })) => responder
-                    .send(vec![make_empty_touch_event(), make_empty_touch_event()])
-                    .expect("failure sending Watch reply"),
-                unexpected_request => panic!("unexpected request {:?}", unexpected_request),
-            }
-
-            // Wait for next `Watch` call and verify it has two elements in `responses`.
-            match touch_source_stream.next().await {
-                Some(Ok(TouchSourceRequest::Watch { responses, responder })) => {
-                    assert_matches!(responses.as_slice(), [_, _]);
-                    responder.send(vec![]).expect("failure sending Watch reply");
-                }
+                Some(Ok(fuipointer::TouchSourceV2Request::AcknowledgeEvents {
+                    last_acknowledged_event_stamp,
+                    ..
+                })) => assert_eq!(last_acknowledged_event_stamp, 2),
                 unexpected_request => panic!("unexpected request {:?}", unexpected_request),
             }
 
@@ -2217,56 +2162,53 @@ mod test {
 
             // Send 5 TouchEvents with pointer sample to proxy, these should be received and converted
             // Add/Remove events generate 5 uapi events each. Change events generate 3 uapi events each.
+            control_handle
+                .send_on_touch_events(
+                    vec![
+                        make_touch_event_with_coords_phase_timestamp(
+                            0.0,
+                            0.0,
+                            EventPhase::Add,
+                            1,
+                            1000,
+                        ),
+                        make_touch_event_with_coords_phase_timestamp(
+                            1.0,
+                            1.0,
+                            EventPhase::Change,
+                            1,
+                            2000,
+                        ),
+                        make_touch_event_with_coords_phase_timestamp(
+                            2.0,
+                            2.0,
+                            EventPhase::Change,
+                            1,
+                            3000,
+                        ),
+                        make_touch_event_with_coords_phase_timestamp(
+                            3.0,
+                            3.0,
+                            EventPhase::Change,
+                            1,
+                            4000,
+                        ),
+                        make_touch_event_with_coords_phase_timestamp(
+                            3.0,
+                            3.0,
+                            EventPhase::Remove,
+                            1,
+                            5000,
+                        ),
+                    ],
+                    7,
+                )
+                .expect("failure sending OnTouchEvents");
             match touch_source_stream.next().await {
-                Some(Ok(TouchSourceRequest::Watch { responder, .. })) => {
-                    responder
-                        .send(vec![
-                            make_touch_event_with_coords_phase_timestamp(
-                                0.0,
-                                0.0,
-                                EventPhase::Add,
-                                1,
-                                1000,
-                            ),
-                            make_touch_event_with_coords_phase_timestamp(
-                                1.0,
-                                1.0,
-                                EventPhase::Change,
-                                1,
-                                2000,
-                            ),
-                            make_touch_event_with_coords_phase_timestamp(
-                                2.0,
-                                2.0,
-                                EventPhase::Change,
-                                1,
-                                3000,
-                            ),
-                            make_touch_event_with_coords_phase_timestamp(
-                                3.0,
-                                3.0,
-                                EventPhase::Change,
-                                1,
-                                4000,
-                            ),
-                            make_touch_event_with_coords_phase_timestamp(
-                                3.0,
-                                3.0,
-                                EventPhase::Remove,
-                                1,
-                                5000,
-                            ),
-                        ])
-                        .expect("failure sending Watch reply");
-                }
-                unexpected_request => panic!("unexpected request {:?}", unexpected_request),
-            }
-
-            // Wait for next `Watch` call and verify it has five elements in `responses`.
-            match touch_source_stream.next().await {
-                Some(Ok(TouchSourceRequest::Watch { responses, .. })) => {
-                    assert_matches!(responses.as_slice(), [_, _, _, _, _])
-                }
+                Some(Ok(fuipointer::TouchSourceV2Request::AcknowledgeEvents {
+                    last_acknowledged_event_stamp,
+                    ..
+                })) => assert_eq!(last_acknowledged_event_stamp, 7),
                 unexpected_request => panic!("unexpected request {:?}", unexpected_request),
             }
 
