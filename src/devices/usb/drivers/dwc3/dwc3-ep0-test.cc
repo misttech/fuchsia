@@ -38,7 +38,7 @@ TEST_F(UnmanagedTestFixture, Ep0Lifecycle) {
 TEST_F(UnmanagedTestFixture, NoPrematureWritesOnGetDescriptor) {
   SetUpAndPowerOnDriver();
 
-  bool write_detected = false;
+  auto write_detected = std::make_shared<std::atomic<bool>>(false);
   FakeUsbDciInterface fake_dci;
   auto binding = BindDciInterface(&fake_dci);
 
@@ -51,25 +51,34 @@ TEST_F(UnmanagedTestFixture, NoPrematureWritesOnGetDescriptor) {
     Dwc3TestHelper::WriteEp0Buffer(drv, &setup, 0, sizeof(setup));
   });
 
-  libsync::Completion data_phase_started;
+  auto data_phase_started = std::make_shared<libsync::Completion>();
 
-  dut_.RunInEnvironmentTypeContext([&](Environment& env) {
-    env.reg_region()[DCTL::Get().addr()].SetWriteCallback([&](uint64_t val_raw) {
-      [[maybe_unused]] uint32_t val = static_cast<uint32_t>(val_raw);
-      fdf::info("DCTL write: 0x{:x}", val);
-      write_detected = true;
+  // Use RAII guard to guarantee callback cleanup on scope exit regardless of assertions.
+  auto cleanup_dctl = DeferClearDctlCallback();
+  auto cleanup_depcmd = DeferClearDepcmdCallbacks(1);
+  auto cleanup_dcfg = fit::defer([this]() {
+    dut_.RunInEnvironmentTypeContext([](Environment& env) {
+      env.reg_region()[DCFG::Get().addr()].SetWriteCallback([](uint64_t) {});
     });
-    env.reg_region()[DCFG::Get().addr()].SetWriteCallback([&](uint64_t val_raw) {
+  });
+
+  SetDctlCallback([write_detected]() {
+    fdf::info("DCTL write detected");
+    write_detected->store(true);
+  });
+
+  auto called = std::make_shared<std::atomic<bool>>(false);
+  dut_.RunInEnvironmentTypeContext([write_detected, called, data_phase_started](Environment& env) {
+    env.reg_region()[DCFG::Get().addr()].SetWriteCallback([write_detected](uint64_t val_raw) {
       [[maybe_unused]] uint32_t val = static_cast<uint32_t>(val_raw);
       fdf::info("DCFG write: 0x{:x}", val);
-      write_detected = true;
+      write_detected->store(true);
     });
     env.reg_region()[DEPCMD::Get(1).addr()].SetWriteCallback(
-        [&, called = false](uint64_t val_raw) mutable {
+        [data_phase_started, called](uint64_t val_raw) {
           [[maybe_unused]] uint32_t val = static_cast<uint32_t>(val_raw);
-          if (!called) {
-            called = true;
-            data_phase_started.Signal();
+          if (!called->exchange(true)) {
+            data_phase_started->Signal();
           }
         });
   });
@@ -78,15 +87,9 @@ TEST_F(UnmanagedTestFixture, NoPrematureWritesOnGetDescriptor) {
     Dwc3TestHelper::HandleEp0TransferCompleteEvent(drv, 0);  // 0 is kEp0Out
   });
 
-  ASSERT_EQ(data_phase_started.Wait(zx::sec(5)), ZX_OK);
+  ASSERT_EQ(data_phase_started->Wait(zx::sec(5)), ZX_OK);
 
-  dut_.RunInDriverContext([&](Dwc3& drv) { EXPECT_FALSE(write_detected); });
-
-  dut_.RunInEnvironmentTypeContext([&](Environment& env) {
-    env.reg_region()[DCTL::Get().addr()].SetWriteCallback(nullptr);
-    env.reg_region()[DCFG::Get().addr()].SetWriteCallback(nullptr);
-    env.reg_region()[DEPCMD::Get(1).addr()].SetWriteCallback(nullptr);
-  });
+  dut_.RunInDriverContext([&](Dwc3& drv) { EXPECT_FALSE(write_detected->load()); });
 
   if (binding.has_value()) {
     binding->Unbind();
@@ -190,6 +193,14 @@ TEST_F(UnmanagedTestFixture, DISABLED_Ep0ResetForceAbortsOutstandingSetupTrb) {
 
   SetUpAndPowerOnDriver();
 
+  // Use RAII guard to guarantee callback cleanup on scope exit regardless of assertions.
+  auto cleanup_callbacks = fit::defer([&]() {
+    dut_.RunInEnvironmentTypeContext([](Environment& env) {
+      env.reg_region()[DEPCMD::Get(0).addr()].SetWriteCallback([](uint64_t) {});
+      env.reg_region()[DEPCMD::Get(1).addr()].SetWriteCallback([](uint64_t) {});
+    });
+  });
+
   dut_.RunInEnvironmentTypeContext([&, sequence_log](Environment& env) {
     // Mock DEPCMD for EP0 OUT to capture the force End Transfer write!
     env.reg_region()[DEPCMD::Get(0).addr()].SetWriteCallback([sequence_log](uint64_t val_raw) {
@@ -231,20 +242,23 @@ TEST_F(UnmanagedTestFixture, DISABLED_Ep0ResetForceAbortsOutstandingSetupTrb) {
 }
 
 TEST_F(UnmanagedTestFixture, EndTransferOnValidResource) {
-  bool depcmd_written = false;
-  uint32_t depcmd_val = 0;
+  auto depcmd_written = std::make_shared<std::atomic<bool>>(false);
+  auto depcmd_val = std::make_shared<std::atomic<uint32_t>>(0);
 
   SetUpAndPowerOnDriver();
 
+  auto cleanup_callbacks = DeferClearDepcmdCallbacks(0);
+
   dut_.RunInEnvironmentTypeContext([&](Environment& env) {
     // Mock DEPCMD for EP0 OUT to detect the "End Transfer" command!
-    env.reg_region()[DEPCMD::Get(0).addr()].SetWriteCallback([&](uint64_t val_raw) {
-      [[maybe_unused]] uint32_t val = static_cast<uint32_t>(val_raw);
-      if (DEPCMD::Get(0).FromValue(val).CMDTYP() == DEPCMD::DEPENDXFER) {
-        depcmd_written = true;
-        depcmd_val = val;
-      }
-    });
+    env.reg_region()[DEPCMD::Get(0).addr()].SetWriteCallback(
+        [depcmd_written, depcmd_val](uint64_t val_raw) {
+          [[maybe_unused]] uint32_t val = static_cast<uint32_t>(val_raw);
+          if (DEPCMD::Get(0).FromValue(val).CMDTYP() == DEPCMD::DEPENDXFER) {
+            depcmd_written->store(true);
+            depcmd_val->store(val);
+          }
+        });
   });
 
   dut_.RunInDriverContext([&](Dwc3& drv) {
@@ -263,39 +277,49 @@ TEST_F(UnmanagedTestFixture, EndTransferOnValidResource) {
   TearDownAndPowerOffDriver();
 
   // Verification: Driver should have written the End Transfer command to DEPCMD!
-  EXPECT_TRUE(depcmd_written);
+  EXPECT_TRUE(depcmd_written->load());
 }
 
 TEST_F(UnmanagedTestFixture, EndTransferOnBothEndpoints) {
-  bool ep0_out_end_transfer = false;
-  bool ep0_in_end_transfer = false;
+  auto ep0_out_end_transfer = std::make_shared<std::atomic<bool>>(false);
+  auto ep0_in_end_transfer = std::make_shared<std::atomic<bool>>(false);
 
   SetUpAndPowerOnDriver();
 
+  // Use RAII guard to guarantee callback cleanup on scope exit regardless of assertions.
+  auto cleanup_callbacks = fit::defer([&]() {
+    dut_.RunInEnvironmentTypeContext([](Environment& env) {
+      env.reg_region()[DEPCMD::Get(0).addr()].SetWriteCallback([](uint64_t) {});
+      env.reg_region()[DEPCMD::Get(1).addr()].SetWriteCallback([](uint64_t) {});
+    });
+  });
+
   dut_.RunInEnvironmentTypeContext([&](Environment& env) {
     // Mock DEPCMD for EP0 OUT (0) to detect End Transfer and assert COMMANDPARAM
-    env.reg_region()[DEPCMD::Get(0).addr()].SetWriteCallback([&](uint64_t val_raw) {
-      [[maybe_unused]] uint32_t val = static_cast<uint32_t>(val_raw);
-      if (DEPCMD::Get(0).FromValue(val).CMDTYP() == DEPCMD::DEPENDXFER) {
-        ep0_out_end_transfer = true;
-        const uint32_t param = DEPCMD::Get(0).FromValue(val).COMMANDPARAM();
-        if (param != 0) {
-          EXPECT_EQ(param, 2u);
-        }
-      }
-    });
+    env.reg_region()[DEPCMD::Get(0).addr()].SetWriteCallback(
+        [ep0_out_end_transfer](uint64_t val_raw) {
+          [[maybe_unused]] uint32_t val = static_cast<uint32_t>(val_raw);
+          if (DEPCMD::Get(0).FromValue(val).CMDTYP() == DEPCMD::DEPENDXFER) {
+            ep0_out_end_transfer->store(true);
+            const uint32_t param = DEPCMD::Get(0).FromValue(val).COMMANDPARAM();
+            if (param != 0) {
+              EXPECT_EQ(param, 2u);
+            }
+          }
+        });
 
     // Mock DEPCMD for EP0 IN (1) to detect End Transfer and assert COMMANDPARAM
-    env.reg_region()[DEPCMD::Get(1).addr()].SetWriteCallback([&](uint64_t val_raw) {
-      [[maybe_unused]] uint32_t val = static_cast<uint32_t>(val_raw);
-      if (DEPCMD::Get(1).FromValue(val).CMDTYP() == DEPCMD::DEPENDXFER) {
-        ep0_in_end_transfer = true;
-        const uint32_t param = DEPCMD::Get(1).FromValue(val).COMMANDPARAM();
-        if (param != 0) {
-          EXPECT_EQ(param, 2u);
-        }
-      }
-    });
+    env.reg_region()[DEPCMD::Get(1).addr()].SetWriteCallback(
+        [ep0_in_end_transfer](uint64_t val_raw) {
+          [[maybe_unused]] uint32_t val = static_cast<uint32_t>(val_raw);
+          if (DEPCMD::Get(1).FromValue(val).CMDTYP() == DEPCMD::DEPENDXFER) {
+            ep0_in_end_transfer->store(true);
+            const uint32_t param = DEPCMD::Get(1).FromValue(val).COMMANDPARAM();
+            if (param != 0) {
+              EXPECT_EQ(param, 2u);
+            }
+          }
+        });
   });
 
   dut_.runtime().RunUntilIdle();
@@ -322,8 +346,8 @@ TEST_F(UnmanagedTestFixture, EndTransferOnBothEndpoints) {
   TearDownAndPowerOffDriver();
 
   // Verification
-  EXPECT_TRUE(ep0_out_end_transfer);
-  EXPECT_TRUE(ep0_in_end_transfer);
+  EXPECT_TRUE(ep0_out_end_transfer->load());
+  EXPECT_TRUE(ep0_in_end_transfer->load());
 }
 
 TEST_F(UnmanagedTestFixture, FidlControlCallFailure) {
@@ -389,6 +413,8 @@ TEST_F(UnmanagedTestFixture, UsbBusResetDuringTransfer) {
 TEST_F(UnmanagedTestFixture, DISABLED_DisableEndpointDuringTransfer) {
   SetUpAndPowerOnDriver();
 
+  auto cleanup_callbacks = DeferClearDepcmdCallbacks(2);
+
   dut_.RunInEnvironmentTypeContext([](Environment& env) {
     // Mock DEPCMD for EP2 to return 0 (Command Complete)
     env.reg_region()[DEPCMD::Get(2).addr()].SetReadCallback([]() -> uint32_t { return 0; });
@@ -420,16 +446,25 @@ TEST_F(UnmanagedTestFixture, DISABLED_DisableEndpointDuringTransfer) {
 TEST_F(UnmanagedTestFixture, ControllerStoppedDuringTransfer) {
   SetUpAndPowerOnDriver();
 
-  bool gevntcount_read = false;
+  auto gevntcount_read = std::make_shared<std::atomic<bool>>(false);
   auto read_count = std::make_shared<std::atomic<int>>(0);
-  dut_.RunInEnvironmentTypeContext([&, read_count](Environment& env) {
-    env.reg_region()[GEVNTCOUNT::Get(0).addr()].SetReadCallback([&, read_count]() -> uint32_t {
-      gevntcount_read = true;
-      if (read_count->fetch_add(1) == 0) {
-        return 4;
-      }
-      return 0;
+
+  // Use RAII guard to guarantee callback cleanup on scope exit regardless of assertions.
+  auto cleanup_callbacks = fit::defer([&]() {
+    dut_.RunInEnvironmentTypeContext([](Environment& env) {
+      env.reg_region()[GEVNTCOUNT::Get(0).addr()].SetReadCallback([]() -> uint32_t { return 0; });
     });
+  });
+
+  dut_.RunInEnvironmentTypeContext([gevntcount_read, read_count](Environment& env) {
+    env.reg_region()[GEVNTCOUNT::Get(0).addr()].SetReadCallback(
+        [gevntcount_read, read_count]() -> uint32_t {
+          gevntcount_read->store(true);
+          if (read_count->fetch_add(1) == 0) {
+            return 4;
+          }
+          return 0;
+        });
   });
 
   dut_.RunInDriverContext([&](Dwc3& drv) {
@@ -442,7 +477,7 @@ TEST_F(UnmanagedTestFixture, ControllerStoppedDuringTransfer) {
   });
 
   // Verification: GEVNTCOUNT should NOT have been read!
-  EXPECT_FALSE(gevntcount_read);
+  EXPECT_FALSE(gevntcount_read->load());
 
   TearDownAndPowerOffDriver();
 }
@@ -454,11 +489,10 @@ TEST_F(UnmanagedTestFixture, ZeroLengthPacket) {
 
   SetUpAndPowerOnDriver();
 
-  std::atomic<bool> callback_executed{false};
+  auto callback_executed = std::make_shared<std::atomic<bool>>(false);
   fake_dci.SetControlCallback(
-      [&](fuchsia_hardware_usb_descriptor::wire::UsbSetup setup, cpp20::span<const uint8_t> data) {
-        callback_executed.store(true);
-      });
+      [callback_executed](fuchsia_hardware_usb_descriptor::wire::UsbSetup setup,
+                          cpp20::span<const uint8_t> data) { callback_executed->store(true); });
 
   auto binding = BindDciInterface(&fake_dci);
 
@@ -513,11 +547,10 @@ TEST_F(UnmanagedTestFixture, DISABLED_MaxBufferSizeTransfer) {
 
   SetUpAndPowerOnDriver();
 
-  std::atomic<size_t> received_length{0};
+  auto received_length = std::make_shared<std::atomic<size_t>>(0);
   fake_dci.SetControlCallback(
-      [&](fuchsia_hardware_usb_descriptor::wire::UsbSetup setup, cpp20::span<const uint8_t> data) {
-        received_length.store(data.size());
-      });
+      [received_length](fuchsia_hardware_usb_descriptor::wire::UsbSetup setup,
+                        cpp20::span<const uint8_t> data) { received_length->store(data.size()); });
 
   auto binding = BindDciInterface(&fake_dci);
 
@@ -888,7 +921,7 @@ TEST_F(UnmanagedTestFixture, SetInterfaceAlreadySet) {
 }
 
 // TODO(b/509735595): Re-enable once the production fixes are landed.
-TEST_F(UnmanagedTestFixture, DISABLED_SpuriousTransferCompleteWithHwoSetTriggersStallAbort) {
+TEST_F(UnmanagedTestFixture, DISABLED_TransferCompleteOnEmptyFifoIgnored) {
   SetUpAndPowerOnDriver();
   dut_.RunInDriverContext([&](Dwc3& drv) {
     Dwc3TestHelper::SetControllerStarted(drv, true);
@@ -940,22 +973,26 @@ TEST_F(UnmanagedTestFixture, ControlReadParseGetDescriptor) {
   SetUpAndPowerOnDriver();
 
   FakeUsbDciInterface fake_dci;
-  libsync::Completion control_called;
-  fake_dci.SetControlCallback([&](fuchsia_hardware_usb_descriptor::wire::UsbSetup setup,
-                                  cpp20::span<const uint8_t> data) { control_called.Signal(); });
+  auto control_called = std::make_shared<libsync::Completion>();
+  fake_dci.SetControlCallback(
+      [control_called](fuchsia_hardware_usb_descriptor::wire::UsbSetup setup,
+                       cpp20::span<const uint8_t> data) { control_called->Signal(); });
 
   std::vector<uint8_t> read_data(18, 0xAA);
   fake_dci.SetReadData(std::move(read_data));
 
-  libsync::Completion data_phase_started;
-  dut_.RunInEnvironmentTypeContext([&](Environment& env) {
+  auto data_phase_started = std::make_shared<libsync::Completion>();
+  auto called = std::make_shared<std::atomic<bool>>(false);
+
+  auto cleanup_callbacks = DeferClearDepcmdCallbacks(1);
+
+  dut_.RunInEnvironmentTypeContext([data_phase_started, called](Environment& env) {
     env.reg_region()[DEPCMD::Get(1).addr()].SetWriteCallback(
-        [&, called = false](uint64_t val_raw) mutable {
+        [data_phase_started, called](uint64_t val_raw) {
           [[maybe_unused]] uint32_t val = static_cast<uint32_t>(val_raw);
-          if (!called) {
-            called = true;
+          if (!called->exchange(true)) {
             fdf::info("DEPCMD write detected!");
-            data_phase_started.Signal();
+            data_phase_started->Signal();
           }
         });
   });
@@ -974,7 +1011,7 @@ TEST_F(UnmanagedTestFixture, ControlReadParseGetDescriptor) {
     Dwc3TestHelper::HandleEp0TransferCompleteEvent(drv, 0);  // 0 is kEp0Out
   });
 
-  ASSERT_EQ(data_phase_started.Wait(zx::sec(5)), ZX_OK);
+  ASSERT_EQ(data_phase_started->Wait(zx::sec(5)), ZX_OK);
   dut_.RunInDriverContext([&](Dwc3& drv) {
     auto state = Dwc3TestHelper::GetEp0State(drv);
     EXPECT_TRUE(state == Dwc3TestHelper::State::DataIn || state == Dwc3TestHelper::State::Setup);
@@ -993,9 +1030,10 @@ TEST_F(UnmanagedTestFixture, ControlReadCompleteGetDescriptor) {
   SetUpAndPowerOnDriver();
 
   FakeUsbDciInterface fake_dci;
-  libsync::Completion control_called;
-  fake_dci.SetControlCallback([&](fuchsia_hardware_usb_descriptor::wire::UsbSetup setup,
-                                  cpp20::span<const uint8_t> data) { control_called.Signal(); });
+  auto control_called = std::make_shared<libsync::Completion>();
+  fake_dci.SetControlCallback(
+      [control_called](fuchsia_hardware_usb_descriptor::wire::UsbSetup setup,
+                       cpp20::span<const uint8_t> data) { control_called->Signal(); });
 
   std::vector<uint8_t> read_data(18, 0xAA);
   fake_dci.SetReadData(std::move(read_data));
@@ -1015,7 +1053,7 @@ TEST_F(UnmanagedTestFixture, ControlReadCompleteGetDescriptor) {
     Dwc3TestHelper::HandleEp0TransferCompleteEvent(drv, 0);  // 0 is kEp0Out
   });
 
-  ASSERT_EQ(control_called.Wait(zx::sec(5)), ZX_OK);
+  ASSERT_EQ(control_called->Wait(zx::sec(5)), ZX_OK);
 
   if (binding.has_value()) {
     binding->Unbind();
@@ -1029,9 +1067,10 @@ TEST_F(UnmanagedTestFixture, ControlReadShortPacketDataIn) {
   SetUpAndPowerOnDriver();
 
   FakeUsbDciInterface fake_dci;
-  libsync::Completion control_called;
-  fake_dci.SetControlCallback([&](fuchsia_hardware_usb_descriptor::wire::UsbSetup setup,
-                                  cpp20::span<const uint8_t> data) { control_called.Signal(); });
+  auto control_called = std::make_shared<libsync::Completion>();
+  fake_dci.SetControlCallback(
+      [control_called](fuchsia_hardware_usb_descriptor::wire::UsbSetup setup,
+                       cpp20::span<const uint8_t> data) { control_called->Signal(); });
 
   std::vector<uint8_t> read_data(32, 0xAA);
   fake_dci.SetReadData(std::move(read_data));
@@ -1081,9 +1120,10 @@ TEST_F(UnmanagedTestFixture, DISABLED_ControlReadOversizedStallIn) {
   SetUpAndPowerOnDriver();
 
   FakeUsbDciInterface fake_dci;
-  libsync::Completion control_called;
-  fake_dci.SetControlCallback([&](fuchsia_hardware_usb_descriptor::wire::UsbSetup setup,
-                                  cpp20::span<const uint8_t> data) { control_called.Signal(); });
+  auto control_called = std::make_shared<libsync::Completion>();
+  fake_dci.SetControlCallback(
+      [control_called](fuchsia_hardware_usb_descriptor::wire::UsbSetup setup,
+                       cpp20::span<const uint8_t> data) { control_called->Signal(); });
 
   std::vector<uint8_t> read_data(65, 0xAA);
   fake_dci.SetReadData(std::move(read_data));
@@ -1125,15 +1165,16 @@ TEST_F(UnmanagedTestFixture, DISABLED_ControlWriteComplete) {
   SetUpAndPowerOnDriver();
 
   FakeUsbDciInterface fake_dci;
-  libsync::Completion control_called;
-  std::vector<uint8_t> received_data;
-  std::atomic<size_t> callback_received_len{0};
+  auto control_called = std::make_shared<libsync::Completion>();
+  auto received_data = std::make_shared<std::vector<uint8_t>>();
+  auto callback_received_len = std::make_shared<std::atomic<size_t>>(0);
 
   fake_dci.SetControlCallback(
-      [&](fuchsia_hardware_usb_descriptor::wire::UsbSetup setup, cpp20::span<const uint8_t> data) {
-        received_data.assign(data.begin(), data.end());
-        callback_received_len.store(data.size());
-        control_called.Signal();
+      [control_called, received_data, callback_received_len](
+          fuchsia_hardware_usb_descriptor::wire::UsbSetup setup, cpp20::span<const uint8_t> data) {
+        received_data->assign(data.begin(), data.end());
+        callback_received_len->store(data.size());
+        control_called->Signal();
       });
 
   auto binding = BindDciInterface(&fake_dci);
@@ -1151,7 +1192,7 @@ TEST_F(UnmanagedTestFixture, DISABLED_ControlWriteComplete) {
     Dwc3TestHelper::ClearSharedFifo(drv);
   });
 
-  ASSERT_EQ(control_called.Wait(zx::sec(5)), ZX_OK);
+  ASSERT_EQ(control_called->Wait(zx::sec(5)), ZX_OK);
 
   if (binding.has_value()) {
     binding->Unbind();
@@ -1165,15 +1206,16 @@ TEST_F(UnmanagedTestFixture, DISABLED_ControlWriteDataOutOverflow) {
   SetUpAndPowerOnDriver();
 
   FakeUsbDciInterface fake_dci;
-  libsync::Completion control_called;
-  std::vector<uint8_t> received_data;
-  std::atomic<size_t> callback_received_len{0};
+  auto control_called = std::make_shared<libsync::Completion>();
+  auto received_data = std::make_shared<std::vector<uint8_t>>();
+  auto callback_received_len = std::make_shared<std::atomic<size_t>>(0);
 
   fake_dci.SetControlCallback(
-      [&](fuchsia_hardware_usb_descriptor::wire::UsbSetup setup, cpp20::span<const uint8_t> data) {
-        received_data.assign(data.begin(), data.end());
-        callback_received_len.store(data.size());
-        control_called.Signal();
+      [control_called, received_data, callback_received_len](
+          fuchsia_hardware_usb_descriptor::wire::UsbSetup setup, cpp20::span<const uint8_t> data) {
+        received_data->assign(data.begin(), data.end());
+        callback_received_len->store(data.size());
+        control_called->Signal();
       });
 
   auto binding = BindDciInterface(&fake_dci);
@@ -1215,15 +1257,16 @@ TEST_F(UnmanagedTestFixture, ControlWriteShortPacketDataOut) {
   SetUpAndPowerOnDriver();
 
   FakeUsbDciInterface fake_dci;
-  libsync::Completion control_called;
-  std::vector<uint8_t> received_data;
-  std::atomic<size_t> callback_received_len{0};
+  auto control_called = std::make_shared<libsync::Completion>();
+  auto received_data = std::make_shared<std::vector<uint8_t>>();
+  auto callback_received_len = std::make_shared<std::atomic<size_t>>(0);
 
   fake_dci.SetControlCallback(
-      [&](fuchsia_hardware_usb_descriptor::wire::UsbSetup setup, cpp20::span<const uint8_t> data) {
-        received_data.assign(data.begin(), data.end());
-        callback_received_len.store(data.size());
-        control_called.Signal();
+      [control_called, received_data, callback_received_len](
+          fuchsia_hardware_usb_descriptor::wire::UsbSetup setup, cpp20::span<const uint8_t> data) {
+        received_data->assign(data.begin(), data.end());
+        callback_received_len->store(data.size());
+        control_called->Signal();
       });
 
   auto binding = BindDciInterface(&fake_dci);
@@ -1253,8 +1296,8 @@ TEST_F(UnmanagedTestFixture, ControlWriteShortPacketDataOut) {
 
   // Wait for callback to be executed deterministically
   EXPECT_TRUE(dut_.runtime().RunWithTimeoutOrUntil(
-      [&]() { return callback_received_len.load() != 0; }, zx::sec(10)));
-  EXPECT_EQ(callback_received_len.load(), 8u);
+      [&]() { return callback_received_len->load() != 0; }, zx::sec(10)));
+  EXPECT_EQ(callback_received_len->load(), 8u);
 
   if (binding.has_value()) {
     binding->Unbind();
@@ -1310,9 +1353,10 @@ TEST_F(UnmanagedTestFixture, DISABLED_ZlpOutTransferRequired) {
   SetUpAndPowerOnDriver();
 
   std::optional<fidl::ServerBindingRef<fuchsia_hardware_usb_dci::UsbDciInterface>> binding;
-  std::atomic<int> control_call_count = 0;
-  fake_dci.SetControlCallback([&](fuchsia_hardware_usb_descriptor::wire::UsbSetup setup,
-                                  cpp20::span<const uint8_t> data) { control_call_count++; });
+  auto control_call_count = std::make_shared<std::atomic<int>>(0);
+  fake_dci.SetControlCallback(
+      [control_call_count](fuchsia_hardware_usb_descriptor::wire::UsbSetup setup,
+                           cpp20::span<const uint8_t> data) { control_call_count->fetch_add(1); });
 
   binding = BindDciInterface(&fake_dci);
 
@@ -1346,11 +1390,11 @@ TEST_F(UnmanagedTestFixture, DISABLED_ZlpOutTransferRequired) {
   });
 
   // Wait for callback to be executed deterministically
-  dut_.runtime().RunUntil([&]() { return control_call_count.load() != 0; });
+  dut_.runtime().RunUntil([control_call_count]() { return control_call_count->load() != 0; });
 
   // Expect 1 call to Control (for the 64 bytes - wait, the driver chunks it but the test just
   // counts the callback)
-  EXPECT_EQ(control_call_count.load(), 1);
+  EXPECT_EQ(control_call_count->load(), 1);
 
   if (binding.has_value()) {
     binding->Unbind();
@@ -1371,12 +1415,13 @@ TEST_F(UnmanagedTestFixture, Ep0ControlInThenNextSetupPacket) {
   std::vector<uint8_t> read_data(32, 0xAA);
   fake_dci.SetReadData(std::move(read_data));
 
-  std::atomic<uint8_t> last_received_request{0};
-  std::atomic<int> control_call_count{0};
+  auto last_received_request = std::make_shared<std::atomic<uint8_t>>(0);
+  auto control_call_count = std::make_shared<std::atomic<int>>(0);
   fake_dci.SetControlCallback(
-      [&](fuchsia_hardware_usb_descriptor::wire::UsbSetup setup, cpp20::span<const uint8_t> data) {
-        last_received_request.store(setup.b_request);
-        control_call_count++;
+      [last_received_request, control_call_count](
+          fuchsia_hardware_usb_descriptor::wire::UsbSetup setup, cpp20::span<const uint8_t> data) {
+        last_received_request->store(setup.b_request);
+        control_call_count->fetch_add(1);
       });
 
   auto binding = BindDciInterface(&fake_dci);
@@ -1411,8 +1456,8 @@ TEST_F(UnmanagedTestFixture, Ep0ControlInThenNextSetupPacket) {
     EXPECT_EQ(Dwc3TestHelper::GetEp0State(drv), Dwc3TestHelper::State::Setup);
   });
 
-  EXPECT_EQ(control_call_count.load(), 1);
-  EXPECT_EQ(last_received_request.load(), 0x42);
+  EXPECT_EQ(control_call_count->load(), 1);
+  EXPECT_EQ(last_received_request->load(), 0x42);
 
   // 2. Immediately deliver the NEXT Setup packet (SET_CONFIGURATION request = 0x09)
   dut_.RunInDriverContext([&](Dwc3& drv) {
@@ -1460,9 +1505,10 @@ TEST_F(UnmanagedTestFixture, MultipleSequentialControlTransfers) {
   std::vector<uint8_t> read_data(64, 0x55);
   fake_dci.SetReadData(std::move(read_data));
 
-  std::atomic<int> control_call_count{0};
-  fake_dci.SetControlCallback([&](fuchsia_hardware_usb_descriptor::wire::UsbSetup setup,
-                                  cpp20::span<const uint8_t> data) { control_call_count++; });
+  auto control_call_count = std::make_shared<std::atomic<int>>(0);
+  fake_dci.SetControlCallback(
+      [control_call_count](fuchsia_hardware_usb_descriptor::wire::UsbSetup setup,
+                           cpp20::span<const uint8_t> data) { control_call_count->fetch_add(1); });
 
   auto binding = BindDciInterface(&fake_dci);
 
@@ -1510,7 +1556,7 @@ TEST_F(UnmanagedTestFixture, MultipleSequentialControlTransfers) {
     });
   }
 
-  EXPECT_EQ(control_call_count.load(), 5);
+  EXPECT_EQ(control_call_count->load(), 5);
 
   if (binding.has_value()) {
     binding->Unbind();
@@ -1526,10 +1572,11 @@ TEST_F(UnmanagedTestFixture, TwoStageControlOutThenNextSetupPacket) {
   FakeUsbDciInterface fake_dci;
   SetUpAndPowerOnDriver();
 
-  std::atomic<uint8_t> received_request{0};
+  auto received_request = std::make_shared<std::atomic<uint8_t>>(0);
   fake_dci.SetControlCallback(
-      [&](fuchsia_hardware_usb_descriptor::wire::UsbSetup setup, cpp20::span<const uint8_t> data) {
-        received_request.store(setup.b_request);
+      [received_request](fuchsia_hardware_usb_descriptor::wire::UsbSetup setup,
+                         cpp20::span<const uint8_t> data) {
+        received_request->store(setup.b_request);
       });
 
   auto binding = BindDciInterface(&fake_dci);
@@ -1556,8 +1603,8 @@ TEST_F(UnmanagedTestFixture, TwoStageControlOutThenNextSetupPacket) {
 
   // Verify that the driver decoded the next request
   EXPECT_TRUE(dut_.runtime().RunWithTimeoutOrUntil(
-      [&]() { return received_request.load() == USB_REQ_GET_DESCRIPTOR; }, zx::sec(10)));
-  EXPECT_EQ(received_request.load(), static_cast<uint8_t>(USB_REQ_GET_DESCRIPTOR));
+      [&]() { return received_request->load() == USB_REQ_GET_DESCRIPTOR; }, zx::sec(10)));
+  EXPECT_EQ(received_request->load(), static_cast<uint8_t>(USB_REQ_GET_DESCRIPTOR));
 
   if (binding.has_value()) {
     binding->Unbind();
@@ -1573,12 +1620,13 @@ TEST_F(UnmanagedTestFixture, ControlDataOutWithResidualBufferData) {
   FakeUsbDciInterface fake_dci;
   SetUpAndPowerOnDriver();
 
-  std::vector<uint8_t> received_payload;
-  libsync::Completion control_called;
+  auto received_payload = std::make_shared<std::vector<uint8_t>>();
+  auto control_called = std::make_shared<libsync::Completion>();
   fake_dci.SetControlCallback(
-      [&](fuchsia_hardware_usb_descriptor::wire::UsbSetup setup, cpp20::span<const uint8_t> data) {
-        received_payload.assign(data.begin(), data.end());
-        control_called.Signal();
+      [control_called, received_payload](fuchsia_hardware_usb_descriptor::wire::UsbSetup setup,
+                                         cpp20::span<const uint8_t> data) {
+        received_payload->assign(data.begin(), data.end());
+        control_called->Signal();
       });
 
   auto binding = BindDciInterface(&fake_dci);
@@ -1610,10 +1658,10 @@ TEST_F(UnmanagedTestFixture, ControlDataOutWithResidualBufferData) {
     Dwc3TestHelper::SimulateDataOutPhase(drv, 16);
   });
 
-  ASSERT_EQ(control_called.Wait(zx::sec(10)), ZX_OK);
-  ASSERT_EQ(received_payload.size(), 16u);
+  ASSERT_EQ(control_called->Wait(zx::sec(10)), ZX_OK);
+  ASSERT_EQ(received_payload->size(), 16u);
   for (size_t i = 0; i < 16; ++i) {
-    EXPECT_EQ(received_payload[i], 0x42);
+    EXPECT_EQ((*received_payload)[i], 0x42);
   }
 
   if (binding.has_value()) {
@@ -1634,11 +1682,12 @@ TEST_F(UnmanagedTestFixture, ControlInZlpThenNextSetupPacket) {
   std::vector<uint8_t> read_data(512, 0x77);
   fake_dci.SetReadData(std::move(read_data));
 
-  std::atomic<uint8_t> next_received_request{0};
+  auto next_received_request = std::make_shared<std::atomic<uint8_t>>(0);
   fake_dci.SetControlCallback(
-      [&](fuchsia_hardware_usb_descriptor::wire::UsbSetup setup, cpp20::span<const uint8_t> data) {
+      [next_received_request](fuchsia_hardware_usb_descriptor::wire::UsbSetup setup,
+                              cpp20::span<const uint8_t> data) {
         if (setup.b_request != 0x50) {
-          next_received_request.store(setup.b_request);
+          next_received_request->store(setup.b_request);
         }
       });
 
@@ -1680,8 +1729,8 @@ TEST_F(UnmanagedTestFixture, ControlInZlpThenNextSetupPacket) {
   });
 
   EXPECT_TRUE(dut_.runtime().RunWithTimeoutOrUntil(
-      [&]() { return next_received_request.load() == 0x51; }, zx::sec(10)));
-  EXPECT_EQ(next_received_request.load(), 0x51);
+      [&]() { return next_received_request->load() == 0x51; }, zx::sec(10)));
+  EXPECT_EQ(next_received_request->load(), 0x51);
 
   if (binding.has_value()) {
     binding->Unbind();
@@ -1701,10 +1750,11 @@ TEST_F(UnmanagedTestFixture, DISABLED_Ep0StallRecoveryLeavesCleanBufferForNextSe
   FakeUsbDciInterface fake_dci;
   SetUpAndPowerOnDriver();
 
-  std::atomic<uint8_t> next_received_request{0};
+  auto next_received_request = std::make_shared<std::atomic<uint8_t>>(0);
   fake_dci.SetControlCallback(
-      [&](fuchsia_hardware_usb_descriptor::wire::UsbSetup setup, cpp20::span<const uint8_t> data) {
-        next_received_request.store(setup.b_request);
+      [next_received_request](fuchsia_hardware_usb_descriptor::wire::UsbSetup setup,
+                              cpp20::span<const uint8_t> data) {
+        next_received_request->store(setup.b_request);
       });
 
   auto binding = BindDciInterface(&fake_dci);
@@ -1733,8 +1783,8 @@ TEST_F(UnmanagedTestFixture, DISABLED_Ep0StallRecoveryLeavesCleanBufferForNextSe
   });
 
   EXPECT_TRUE(dut_.runtime().RunWithTimeoutOrUntil(
-      [&]() { return next_received_request.load() == 0x60; }, zx::sec(10)));
-  EXPECT_EQ(next_received_request.load(), 0x60);
+      [&]() { return next_received_request->load() == 0x60; }, zx::sec(10)));
+  EXPECT_EQ(next_received_request->load(), 0x60);
 
   if (binding.has_value()) {
     binding->Unbind();

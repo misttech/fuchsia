@@ -37,14 +37,13 @@ void AssertZlpUnchainedControlBits(const std::vector<dwc3_trb_t>& trbs, bool enq
 }
 }  // namespace
 
-// Test fixture parameterized over whether enqueueing multiple TRBs is enabled.
-class Dwc3EndpointsTest : public TestFixture<true, testing::TestWithParam<bool>> {
+// Non-parameterized base fixture for DWC3 endpoint tests.
+class Dwc3EndpointsTestBase : public TestFixture<true> {
  public:
   static constexpr uint32_t kResourceId = 12;
 
   void SetUp() override {
     TestFixture::SetUp();
-    dut_.RunInDriverContext([&](Dwc3& drv) { drv.SetEnableEnqueueManyTrbs(GetParam()); });
     dut_.RunInEnvironmentTypeContext([&](Environment& env) {
       // Mock GHWPARAMS0 to return MDWIDTH = 2 (128-bit = 16 bytes).
       auto& ghwparams0 = env.reg_region()[GHWPARAMS0::Get().addr()];
@@ -65,10 +64,12 @@ class Dwc3EndpointsTest : public TestFixture<true, testing::TestWithParam<bool>>
     });
 
     // Start the client loop thread to process async callbacks.
-    ASSERT_EQ(client_loop_.StartThread("client-loop"), ZX_OK);
+    ASSERT_OK(client_loop_.StartThread("client-loop"));
   }
 
   void TearDown() override {
+    ep_client_ = {};
+    dci_ = {};
     client_loop_.Shutdown();
     TestFixture::TearDown();
   }
@@ -145,15 +146,15 @@ class Dwc3EndpointsTest : public TestFixture<true, testing::TestWithParam<bool>>
   void QueueRequests(size_t count, uint8_t vmo_id, uint64_t offset, uint64_t size,
                      fdescriptor::EndpointType ep_type, bool short_bit = false) {
     std::vector<frequest::Request> reqs;
+    reqs.reserve(count);
     for (size_t i = 0; i < count; i++) {
-      frequest::Buffer buffer = frequest::Buffer::WithVmoId(vmo_id);
-
       frequest::BufferRegion region;
-      region.buffer(std::move(buffer));
+      region.buffer(frequest::Buffer::WithVmoId(vmo_id));
       region.offset(offset + (size * i));
       region.size(size);
 
       std::vector<frequest::BufferRegion> regions;
+      regions.reserve(1);
       regions.push_back(std::move(region));
 
       frequest::RequestInfo req_info =
@@ -169,6 +170,8 @@ class Dwc3EndpointsTest : public TestFixture<true, testing::TestWithParam<bool>>
       reqs.push_back(std::move(req));
     }
 
+    // QueueRequests is a one-way (fire-and-forget) FIDL method; calling it on fidl::SharedClient
+    // synchronously writes to the channel and returns fit::result<fidl::Error>.
     fit::result result = ep_client_->QueueRequests({std::move(reqs)});
     ASSERT_TRUE(result.is_ok()) << "QueueRequests failed: "
                                 << result.error_value().FormatDescription();
@@ -176,7 +179,6 @@ class Dwc3EndpointsTest : public TestFixture<true, testing::TestWithParam<bool>>
 
   void WaitForState(uint8_t ep_num, TransferState expected_state) {
     dut_.runtime().RunUntil([&]() {
-      dut_.runtime().RunUntilIdle();
       return dut_.RunInDriverContext<bool>([&](Dwc3& drv) {
         return GetUserEndpoint(drv, ep_num).ep.transfer_state == expected_state;
       });
@@ -185,7 +187,6 @@ class Dwc3EndpointsTest : public TestFixture<true, testing::TestWithParam<bool>>
 
   void WaitForQueuedCount(uint8_t ep_num, size_t count) {
     dut_.runtime().RunUntil([&]() {
-      dut_.runtime().RunUntilIdle();
       return dut_.RunInDriverContext<bool>([&](Dwc3& drv) {
         return GetUserEndpoint(drv, ep_num).server->queued_reqs.size() == count;
       });
@@ -194,7 +195,6 @@ class Dwc3EndpointsTest : public TestFixture<true, testing::TestWithParam<bool>>
 
   void WaitForActiveCount(uint8_t ep_num, size_t count) {
     dut_.runtime().RunUntil([&]() {
-      dut_.runtime().RunUntilIdle();
       return dut_.RunInDriverContext<bool>([&](Dwc3& drv) {
         return GetUserEndpoint(drv, ep_num).server->active_reqs.size() == count;
       });
@@ -224,7 +224,15 @@ class Dwc3EndpointsTest : public TestFixture<true, testing::TestWithParam<bool>>
 
     std::vector<CompletionResult> WaitForCompletions(size_t count) {
       std::unique_lock<std::mutex> lock(mutex_);
-      completion_cond_.wait(lock, [&]() { return completions_.size() >= count; });
+      // Safety watchdog timeout: Under normal test execution, completions arrive
+      // near-instantaneously via dispatcher events. 5 seconds provides protection against hanging
+      // tests.
+      bool success = completion_cond_.wait_for(lock, std::chrono::seconds(5),
+                                               [&]() { return completions_.size() >= count; });
+      if (!success) {
+        ADD_FAILURE() << "WaitForCompletions timed out waiting for " << count << " completions";
+        return {};
+      }
 
       size_t take = std::min(count, completions_.size());
       std::vector<CompletionResult> res(std::make_move_iterator(completions_.begin()),
@@ -244,8 +252,21 @@ class Dwc3EndpointsTest : public TestFixture<true, testing::TestWithParam<bool>>
     std::vector<CompletionResult> completions_;
   };
 
+  void SetEnableEnqueueManyTrbs(bool enable) {
+    dut_.RunInDriverContext([&](Dwc3& drv) { drv.SetEnableEnqueueManyTrbs(enable); });
+  }
+
   EventHandler event_handler_;
   fidl::SharedClient<fendpoint::Endpoint> ep_client_;
+};
+
+// Parameterized fixture over whether enqueueing multiple TRBs is enabled.
+class Dwc3EndpointsTest : public Dwc3EndpointsTestBase, public ::testing::WithParamInterface<bool> {
+ public:
+  void SetUp() override {
+    Dwc3EndpointsTestBase::SetUp();
+    SetEnableEnqueueManyTrbs(GetParam());
+  }
 };
 
 TEST_P(Dwc3EndpointsTest, InterruptEndpointQueueAndComplete) {
@@ -267,7 +288,6 @@ TEST_P(Dwc3EndpointsTest, InterruptEndpointQueueAndComplete) {
 
   // Host sends Not Ready event.
   dut_.RunInDriverContext([&](Dwc3& drv) { TriggerEpTransferNotReady(drv, ep_num, 0); });
-  dut_.runtime().RunUntilIdle();
 
   dut_.RunInDriverContext([&](Dwc3& drv) {
     auto& uep = GetUserEndpoint(drv, ep_num);
@@ -318,7 +338,6 @@ TEST_P(Dwc3EndpointsTest, BulkEndpointQueueAndComplete) {
 
   // Host sends Not Ready event.
   dut_.RunInDriverContext([&](Dwc3& drv) { TriggerEpTransferNotReady(drv, ep_num, 0); });
-  dut_.runtime().RunUntilIdle();
 
   // Queue first request.
   QueueRequest(1, 0, 512, fdescriptor::EndpointType::kBulk);
@@ -459,15 +478,17 @@ TEST_P(Dwc3EndpointsTest, CancelAllRequests) {
   });
 
   // Cancel all requests via client asynchronously.
-  std::optional<fidl::Result<fendpoint::Endpoint::CancelAll>> cancel_result;
-  libsync::Completion cancel_completed;
-  ep_client_->CancelAll().Then([&](fidl::Result<fendpoint::Endpoint::CancelAll>& res) {
-    cancel_result = res;
-    cancel_completed.Signal();
-  });
+  auto cancel_result =
+      std::make_shared<std::optional<fidl::Result<fendpoint::Endpoint::CancelAll>>>();
+  auto cancel_completed = std::make_shared<libsync::Completion>();
+  ep_client_->CancelAll().Then(
+      [cancel_result, cancel_completed](fidl::Result<fendpoint::Endpoint::CancelAll>& res) {
+        *cancel_result = std::move(res);
+        cancel_completed->Signal();
+      });
 
   WaitForState(ep_num, TransferState::kCanceling);
-  EXPECT_FALSE(cancel_result.has_value());
+  EXPECT_FALSE(cancel_completed->signaled());
 
   // The state should be kCanceling, and active_reqs should not be empty yet.
   dut_.RunInDriverContext([&](Dwc3& drv) {
@@ -479,9 +500,9 @@ TEST_P(Dwc3EndpointsTest, CancelAllRequests) {
   dut_.RunInDriverContext([&](Dwc3& drv) { TriggerEpTransferEnded(drv, ep_num); });
   WaitForState(ep_num, TransferState::kIdle);
 
-  cancel_completed.Wait();
-  ASSERT_TRUE(cancel_result.has_value());
-  ASSERT_TRUE(cancel_result->is_ok());
+  ASSERT_OK(cancel_completed->Wait(zx::sec(5)));
+  ASSERT_TRUE(cancel_result->has_value());
+  ASSERT_TRUE((*cancel_result)->is_ok());
 
   // Now, active_reqs should be empty.
   dut_.RunInDriverContext([&](Dwc3& drv) {
@@ -572,16 +593,18 @@ TEST_P(Dwc3EndpointsTest, CancelAllRequestsWhenControllerStopped) {
   WaitForState(ep_num, TransferState::kIdle);
 
   // Cancel all requests via client. It should reply immediately because controller is stopped.
-  libsync::Completion cancel_completed;
-  std::optional<fidl::Result<fendpoint::Endpoint::CancelAll>> cancel_result;
-  ep_client_->CancelAll().Then([&](fidl::Result<fendpoint::Endpoint::CancelAll>& res) {
-    cancel_result = res;
-    cancel_completed.Signal();
-  });
+  auto cancel_result =
+      std::make_shared<std::optional<fidl::Result<fendpoint::Endpoint::CancelAll>>>();
+  auto cancel_completed = std::make_shared<libsync::Completion>();
+  ep_client_->CancelAll().Then(
+      [cancel_result, cancel_completed](fidl::Result<fendpoint::Endpoint::CancelAll>& res) {
+        *cancel_result = std::move(res);
+        cancel_completed->Signal();
+      });
 
-  cancel_completed.Wait();
-  ASSERT_TRUE(cancel_result.has_value());
-  ASSERT_TRUE(cancel_result->is_ok());
+  ASSERT_OK(cancel_completed->Wait(zx::sec(5)));
+  ASSERT_TRUE(cancel_result->has_value());
+  ASSERT_TRUE((*cancel_result)->is_ok());
 }
 
 TEST_P(Dwc3EndpointsTest, CancelAllRequestsWhenIdle) {
@@ -593,16 +616,18 @@ TEST_P(Dwc3EndpointsTest, CancelAllRequestsWhenIdle) {
 
   // Endpoint is idle (no requests queued).
   // Cancel all requests via client. It should reply immediately because endpoint is idle.
-  libsync::Completion cancel_completed;
-  std::optional<fidl::Result<fendpoint::Endpoint::CancelAll>> cancel_result;
-  ep_client_->CancelAll().Then([&](fidl::Result<fendpoint::Endpoint::CancelAll>& res) {
-    cancel_result = res;
-    cancel_completed.Signal();
-  });
+  auto cancel_result =
+      std::make_shared<std::optional<fidl::Result<fendpoint::Endpoint::CancelAll>>>();
+  auto cancel_completed = std::make_shared<libsync::Completion>();
+  ep_client_->CancelAll().Then(
+      [cancel_result, cancel_completed](fidl::Result<fendpoint::Endpoint::CancelAll>& res) {
+        *cancel_result = std::move(res);
+        cancel_completed->Signal();
+      });
 
-  cancel_completed.Wait();
-  ASSERT_TRUE(cancel_result.has_value());
-  ASSERT_TRUE(cancel_result->is_ok());
+  ASSERT_OK(cancel_completed->Wait(zx::sec(5)));
+  ASSERT_TRUE(cancel_result->has_value());
+  ASSERT_TRUE((*cancel_result)->is_ok());
 }
 
 TEST_P(Dwc3EndpointsTest, InputEndpointZlpComplete) {
@@ -654,9 +679,9 @@ TEST_P(Dwc3EndpointsTest, InputEndpointZlpComplete) {
   dut_.RunInDriverContext([&](Dwc3& drv) {
     auto& uep = GetUserEndpoint(drv, ep_num);
     EXPECT_EQ(uep.fifo.GetActiveCount(), 1u);
+    EXPECT_EQ(uep.server->active_reqs.size(), 1u);
   });
 
-  dut_.runtime().RunUntilIdle();
   // Verify that no completions are received.
   EXPECT_EQ(event_handler_.completion_count(), 0u);
 
@@ -683,10 +708,8 @@ TEST_P(Dwc3EndpointsTest, InputEndpointZlpComplete) {
   EXPECT_EQ(completions[0].transfer_size, 512UL);
 }
 
-TEST_P(Dwc3EndpointsTest, RingBufferWraparoundZlp) {
-  if (!GetParam()) {
-    return;
-  }
+TEST_F(Dwc3EndpointsTestBase, RingBufferWraparoundZlp) {
+  SetEnableEnqueueManyTrbs(true);
   TriggerConnection();
 
   const uint8_t ep_address = 0x82;  // IN endpoint
@@ -721,10 +744,7 @@ TEST_P(Dwc3EndpointsTest, RingBufferWraparoundZlp) {
     // Therefore index 254 (TotalSlots() - 1) is strictly the last usable entry before the wrap.
     ASSERT_LT(uep.fifo.WriteOffset(), uep.fifo.TotalSlots());
     size_t advance_count = uep.fifo.TotalSlots() - 1 - uep.fifo.WriteOffset();
-    for (size_t i = 0; i < advance_count; i++) {
-      uep.fifo.AdvanceWrite();
-      uep.fifo.AdvanceRead();
-    }
+    Dwc3TestHelper::AdvanceFifo(uep.fifo, advance_count);
     ASSERT_EQ(uep.fifo.GetActiveCount(), 0u);
     EXPECT_EQ(uep.fifo.WriteOffset(), uep.fifo.TotalSlots() - 1)
         << "Failed to advance write pointer to the wraparound boundary";
@@ -825,10 +845,8 @@ TEST_P(Dwc3EndpointsTest, InputEndpointMultiPacketZlpComplete) {
   EXPECT_EQ(completions[0].transfer_size, 4096UL);
 }
 
-TEST_P(Dwc3EndpointsTest, OutEndpointRingBufferWraparound) {
-  if (!GetParam()) {
-    return;
-  }
+TEST_F(Dwc3EndpointsTestBase, OutEndpointRingBufferWraparound) {
+  SetEnableEnqueueManyTrbs(true);
   TriggerConnection();
 
   const uint8_t ep_address = 0x02;  // OUT endpoint 2
@@ -856,10 +874,7 @@ TEST_P(Dwc3EndpointsTest, OutEndpointRingBufferWraparound) {
     auto& uep = GetUserEndpoint(drv, ep_num);
     ASSERT_LT(uep.fifo.WriteOffset(), uep.fifo.TotalSlots());
     size_t advance_count = uep.fifo.TotalSlots() - 1 - uep.fifo.WriteOffset();
-    for (size_t i = 0; i < advance_count; i++) {
-      uep.fifo.AdvanceWrite();
-      uep.fifo.AdvanceRead();
-    }
+    Dwc3TestHelper::AdvanceFifo(uep.fifo, advance_count);
     ASSERT_EQ(uep.fifo.GetActiveCount(), 0u);
     EXPECT_EQ(uep.fifo.WriteOffset(), uep.fifo.TotalSlots() - 1);
     EXPECT_EQ(uep.fifo.ReadOffset(), uep.fifo.TotalSlots() - 1);
@@ -882,13 +897,12 @@ TEST_P(Dwc3EndpointsTest, OutEndpointRingBufferWraparound) {
     EXPECT_LT(wrapped_read, initial_read);
   });
 }
-namespace {
-INSTANTIATE_TEST_SUITE_P(Dwc3EndpointsTestCases, Dwc3EndpointsTest, testing::Bool());
-}
 
-TEST_P(Dwc3EndpointsTest, EndpointStallAndClear) {
-  uint32_t last_depcmd = 0;
-  bool write_called = false;
+TEST_F(Dwc3EndpointsTestBase, EndpointStallAndClear) {
+  auto last_depcmd = std::make_shared<std::atomic<uint32_t>>(0);
+  auto write_called = std::make_shared<std::atomic<bool>>(false);
+
+  auto cleanup_callbacks = DeferClearDepcmdCallbacks(2);
 
   dut_.RunInDriverContext([&](Dwc3& drv) {
     auto* uep = Dwc3TestHelper::GetUserEndpoint(drv, 2);
@@ -900,12 +914,12 @@ TEST_P(Dwc3EndpointsTest, EndpointStallAndClear) {
     Dwc3TestHelper::EpSetConfig(drv, uep->ep, true);
   });
 
-  dut_.RunInEnvironmentTypeContext([&](Environment& env) {
+  dut_.RunInEnvironmentTypeContext([last_depcmd, write_called](Environment& env) {
     auto& depcmd = env.reg_region()[DEPCMD::Get(2).addr()];
-    depcmd.SetWriteCallback([&](uint64_t val_raw) {
+    depcmd.SetWriteCallback([last_depcmd, write_called](uint64_t val_raw) {
       uint32_t val = static_cast<uint32_t>(val_raw);
-      last_depcmd = val;
-      write_called = true;
+      last_depcmd->store(val);
+      write_called->store(true);
     });
   });
 
@@ -915,25 +929,32 @@ TEST_P(Dwc3EndpointsTest, EndpointStallAndClear) {
     Dwc3TestHelper::EpSetStall(drv, uep->ep, true);
   });
 
-  EXPECT_TRUE(write_called);
-  EXPECT_EQ(DEPCMD::Get(2).FromValue(last_depcmd).CMDTYP(), DEPCMD::DEPSSTALL);
+  EXPECT_TRUE(write_called->load());
+  EXPECT_EQ(DEPCMD::Get(2).FromValue(last_depcmd->load()).CMDTYP(), DEPCMD::DEPSSTALL);
 
-  write_called = false;
-  last_depcmd = 0;
+  write_called->store(false);
+  last_depcmd->store(0);
   dut_.RunInDriverContext([&](Dwc3& drv) {
     auto* uep = Dwc3TestHelper::GetUserEndpoint(drv, 2);
     EXPECT_TRUE(uep->ep.enabled);
     Dwc3TestHelper::EpSetStall(drv, uep->ep, false);
   });
 
-  EXPECT_TRUE(write_called);
-  EXPECT_EQ(DEPCMD::Get(2).FromValue(last_depcmd).CMDTYP(), DEPCMD::DEPCSTALL);
+  EXPECT_TRUE(write_called->load());
+  EXPECT_EQ(DEPCMD::Get(2).FromValue(last_depcmd->load()).CMDTYP(), DEPCMD::DEPCSTALL);
 }
 
-TEST_P(Dwc3EndpointsTest, EndpointConfiguration) {
-  bool depcfg_called = false;
-  bool depxfercfg_called = false;
-  bool dalepena_called = false;
+TEST_F(Dwc3EndpointsTestBase, EndpointConfiguration) {
+  auto depcfg_called = std::make_shared<std::atomic<bool>>(false);
+  auto depxfercfg_called = std::make_shared<std::atomic<bool>>(false);
+  auto dalepena_called = std::make_shared<std::atomic<bool>>(false);
+
+  auto cleanup_depcmd = DeferClearDepcmdCallbacks(2);
+  auto cleanup_dalepena = fit::defer([this]() {
+    dut_.RunInEnvironmentTypeContext([](Environment& env) {
+      env.reg_region()[DALEPENA::Get().addr()].SetWriteCallback([](uint64_t) {});
+    });
+  });
 
   dut_.RunInDriverContext([&](Dwc3& drv) {
     auto* uep = Dwc3TestHelper::GetUserEndpoint(drv, 2);
@@ -942,37 +963,45 @@ TEST_P(Dwc3EndpointsTest, EndpointConfiguration) {
     uep->ep.max_packet_size = 512;
   });
 
-  dut_.RunInEnvironmentTypeContext([&](Environment& env) {
-    auto& depcmd = env.reg_region()[DEPCMD::Get(2).addr()];
-    depcmd.SetWriteCallback([&](uint64_t val_raw) {
-      uint32_t val = static_cast<uint32_t>(val_raw);
-      auto cmd = DEPCMD::Get(2).FromValue(val);
-      if (cmd.CMDTYP() == DEPCMD::DEPCFG) {
-        depcfg_called = true;
-      } else if (cmd.CMDTYP() == DEPCMD::DEPXFERCFG) {
-        depxfercfg_called = true;
-      }
-    });
+  dut_.RunInEnvironmentTypeContext(
+      [depcfg_called, depxfercfg_called, dalepena_called](Environment& env) {
+        auto& depcmd = env.reg_region()[DEPCMD::Get(2).addr()];
+        depcmd.SetWriteCallback([depcfg_called, depxfercfg_called](uint64_t val_raw) {
+          uint32_t val = static_cast<uint32_t>(val_raw);
+          auto cmd = DEPCMD::Get(2).FromValue(val);
+          if (cmd.CMDTYP() == DEPCMD::DEPCFG) {
+            depcfg_called->store(true);
+          } else if (cmd.CMDTYP() == DEPCMD::DEPXFERCFG) {
+            depxfercfg_called->store(true);
+          }
+        });
 
-    auto& dalepena = env.reg_region()[DALEPENA::Get().addr()];
-    dalepena.SetWriteCallback([&](uint64_t val_raw) { dalepena_called = true; });
-  });
+        auto& dalepena = env.reg_region()[DALEPENA::Get().addr()];
+        dalepena.SetWriteCallback(
+            [dalepena_called](uint64_t val_raw) { dalepena_called->store(true); });
+      });
 
   dut_.RunInDriverContext([&](Dwc3& drv) {
     auto* uep = Dwc3TestHelper::GetUserEndpoint(drv, 2);
     Dwc3TestHelper::EpSetConfig(drv, uep->ep, true);
   });
 
-  EXPECT_TRUE(depcfg_called);
-  EXPECT_TRUE(depxfercfg_called);
-  EXPECT_TRUE(dalepena_called);
+  EXPECT_TRUE(depcfg_called->load());
+  EXPECT_TRUE(depxfercfg_called->load());
+  EXPECT_TRUE(dalepena_called->load());
 }
 
-TEST_P(Dwc3EndpointsTest, EndpointReset) {
-  bool dalepena_called = false;
-  uint32_t dalepena_val = 0;
+TEST_F(Dwc3EndpointsTestBase, EndpointReset) {
+  auto dalepena_called = std::make_shared<std::atomic<bool>>(false);
+  auto dalepena_val = std::make_shared<std::atomic<uint32_t>>(0);
 
   SetUpAndPowerOnEndpoints();
+
+  auto cleanup_callbacks = fit::defer([&]() {
+    dut_.RunInEnvironmentTypeContext([](Environment& env) {
+      env.reg_region()[DALEPENA::Get().addr()].SetWriteCallback([](uint64_t) {});
+    });
+  });
 
   dut_.RunInDriverContext([&](Dwc3& drv) {
     auto* uep = Dwc3TestHelper::GetUserEndpoint(drv, 2);
@@ -989,11 +1018,11 @@ TEST_P(Dwc3EndpointsTest, EndpointReset) {
     Dwc3TestHelper::SetEpTransferState(drv, 2, Dwc3TestHelper::TransferState::kActiveSingle);
   });
 
-  dut_.RunInEnvironmentTypeContext([&](Environment& env) {
+  dut_.RunInEnvironmentTypeContext([dalepena_called, dalepena_val](Environment& env) {
     auto& dalepena = env.reg_region()[DALEPENA::Get().addr()];
-    dalepena.SetWriteCallback([&](uint64_t val_raw) {
-      dalepena_called = true;
-      dalepena_val = static_cast<uint32_t>(val_raw);
+    dalepena.SetWriteCallback([dalepena_called, dalepena_val](uint64_t val_raw) {
+      dalepena_called->store(true);
+      dalepena_val->store(static_cast<uint32_t>(val_raw));
     });
   });
 
@@ -1005,8 +1034,8 @@ TEST_P(Dwc3EndpointsTest, EndpointReset) {
     EXPECT_FALSE(Dwc3TestHelper::GetGotNotReady(drv, 2));
   });
 
-  EXPECT_TRUE(dalepena_called);
-  EXPECT_EQ(dalepena_val & (1 << 2), 0u);
+  EXPECT_TRUE(dalepena_called->load());
+  EXPECT_EQ(dalepena_val->load() & (1 << 2), 0u);
 }
 
 struct EndpointTransferSweepParams {
@@ -1050,25 +1079,8 @@ TEST_P(Dwc3EndpointTransferSweepTest, DisconnectDuringActiveTransfer) {
   fidl::SyncClient<fuchsia_hardware_usb_endpoint::Endpoint> sync_client{
       std::move(endpoints->client)};
 
-  auto vmo_res = CreateVmoBuffer(sync_client, max_packet_size, max_packet_size);
-  auto requests = std::move(vmo_res.requests);
-
-  libsync::Completion completion;
-  dut_.RunInEnvironmentTypeContext([&](Environment& env) {
-    auto& depcmd = env.reg_region()[DEPCMD::Get(ep_addr).addr()];
-    depcmd.SetWriteCallback([&](uint64_t val_raw) {
-      uint32_t val = static_cast<uint32_t>(val_raw);
-      if (DEPCMD::Get(ep_addr).FromValue(val).CMDTYP() == DEPCMD::DEPSTRTXFER) {
-        completion.Signal();
-      }
-    });
-    depcmd.SetReadCallback([]() -> uint32_t { return 0; });
-  });
-
-  auto result = sync_client->QueueRequests({std::move(requests)});
-  ASSERT_TRUE(result.is_ok()) << "QueueRequests failed: " << result.error_value().status_string();
-
-  completion.Wait();
+  auto requests = CreateVmoBuffer(sync_client, max_packet_size, max_packet_size);
+  QueueRequestsAndWaitForStartTransfer(ep_addr, sync_client, std::move(requests));
 
   // Safe Barrier Fulfillment: Simulate missing hardware interrupt to release deferred command!
   dut_.RunInDriverContext([&](Dwc3& drv) {
@@ -1129,25 +1141,8 @@ TEST_P(Dwc3EndpointTransferSweepTest, StallDuringActiveTransfer) {
   fidl::SyncClient<fuchsia_hardware_usb_endpoint::Endpoint> sync_client{
       std::move(endpoints->client)};
 
-  auto vmo_res = CreateVmoBuffer(sync_client, max_packet_size, max_packet_size);
-  auto requests = std::move(vmo_res.requests);
-
-  libsync::Completion completion;
-  dut_.RunInEnvironmentTypeContext([&](Environment& env) {
-    auto& depcmd = env.reg_region()[DEPCMD::Get(ep_addr).addr()];
-    depcmd.SetWriteCallback([&](uint64_t val_raw) {
-      uint32_t val = static_cast<uint32_t>(val_raw);
-      if (DEPCMD::Get(ep_addr).FromValue(val).CMDTYP() == DEPCMD::DEPSTRTXFER) {
-        completion.Signal();
-      }
-    });
-    depcmd.SetReadCallback([]() -> uint32_t { return 0; });
-  });
-
-  auto result = sync_client->QueueRequests({std::move(requests)});
-  ASSERT_TRUE(result.is_ok()) << "QueueRequests failed: " << result.error_value().status_string();
-
-  completion.Wait();
+  auto requests = CreateVmoBuffer(sync_client, max_packet_size, max_packet_size);
+  QueueRequestsAndWaitForStartTransfer(ep_addr, sync_client, std::move(requests));
 
   // Stall endpoint
   dut_.RunInDriverContext([&](Dwc3& drv) {
@@ -1215,45 +1210,25 @@ TEST_P(Dwc3EndpointTransferSweepTest, DISABLED_CancelAllDuringActiveTransfer) {
   fidl::SyncClient<fuchsia_hardware_usb_endpoint::Endpoint> sync_client{
       std::move(endpoints->client)};
 
-  auto vmo_res = CreateVmoBuffer(sync_client, max_packet_size, max_packet_size);
-  auto requests = std::move(vmo_res.requests);
+  auto requests = CreateVmoBuffer(sync_client, max_packet_size, max_packet_size);
+  QueueRequestsAndWaitForStartTransfer(ep_addr, sync_client, std::move(requests));
 
-  libsync::Completion completion;
-  dut_.RunInEnvironmentTypeContext([&](Environment& env) {
-    auto& depcmd = env.reg_region()[DEPCMD::Get(ep_addr).addr()];
-    depcmd.SetWriteCallback([&](uint64_t val_raw) {
-      uint32_t val = static_cast<uint32_t>(val_raw);
-      if (DEPCMD::Get(ep_addr).FromValue(val).CMDTYP() == DEPCMD::DEPSTRTXFER) {
-        completion.Signal();
-      }
-    });
-    depcmd.SetReadCallback([]() -> uint32_t { return 0; });
-  });
-
-  auto result = sync_client->QueueRequests({std::move(requests)});
-  ASSERT_TRUE(result.is_ok()) << "QueueRequests failed: " << result.error_value().status_string();
-
-  completion.Wait();
-
-  // Call CancelAll
-  auto cancel_result = sync_client->CancelAll();
-  ASSERT_TRUE(cancel_result.is_ok());
-
-  // Safe Barrier Fulfillment: Simulate missing hardware interrupt to release deferred command!
+  // Deliver the started event to make the endpoint active with resource ID.
   dut_.RunInDriverContext([&](Dwc3& drv) {
     constexpr uint8_t kMockRsrcId = 5;
     Dwc3TestHelper::HandleEpTransferStartedEvent(drv, ep_addr, kMockRsrcId);
   });
 
-  if (ep_addr % 2 == 0) {
-    dut_.RunInDriverContext(
-        [&](Dwc3& drv) { Dwc3TestHelper::HandleEpTransferCompleteEvent(drv, ep_addr); });
-  }
+  // Call CancelAll via FIDL to cancel requests during an active transfer.
+  auto cancel_result = sync_client->CancelAll();
+  ASSERT_TRUE(cancel_result.is_ok())
+      << "CancelAll failed: " << cancel_result.error_value().FormatDescription();
 
-  // Wait for request completion
+  // Wait for request completion (EpServer::CancelAll completes cancelled requests with
+  // ZX_ERR_IO_NOT_PRESENT).
   ASSERT_TRUE(sync_client.HandleOneEvent(event_handler).ok());
   EXPECT_TRUE(completed);
-  EXPECT_EQ(completion_status, ZX_ERR_CANCELED);
+  EXPECT_EQ(completion_status, ZX_ERR_IO_NOT_PRESENT);
 
   sync_client = {};
 }
@@ -1290,51 +1265,42 @@ TEST_P(Dwc3EndpointTransferSweepTest, DISABLED_DisableDuringActiveTransfer) {
   fidl::SyncClient<fuchsia_hardware_usb_endpoint::Endpoint> sync_client{
       std::move(endpoints->client)};
 
-  auto vmo_res = CreateVmoBuffer(sync_client, max_packet_size, max_packet_size);
-  auto requests = std::move(vmo_res.requests);
+  auto requests = CreateVmoBuffer(sync_client, max_packet_size, max_packet_size);
+  QueueRequestsAndWaitForStartTransfer(ep_addr, sync_client, std::move(requests));
 
-  libsync::Completion completion;
-  dut_.RunInEnvironmentTypeContext([&](Environment& env) {
-    auto& depcmd = env.reg_region()[DEPCMD::Get(ep_addr).addr()];
-    depcmd.SetWriteCallback([&](uint64_t val_raw) {
-      uint32_t val = static_cast<uint32_t>(val_raw);
-      if (DEPCMD::Get(ep_addr).FromValue(val).CMDTYP() == DEPCMD::DEPSTRTXFER) {
-        completion.Signal();
-      }
-    });
-    depcmd.SetReadCallback([]() -> uint32_t { return 0; });
+  // Deliver the started event to make the endpoint active with resource ID.
+  dut_.RunInDriverContext([&](Dwc3& drv) {
+    constexpr uint8_t kMockRsrcId = 5;
+    Dwc3TestHelper::HandleEpTransferStartedEvent(drv, ep_addr, kMockRsrcId);
   });
 
-  auto result = sync_client->QueueRequests({std::move(requests)});
-  ASSERT_TRUE(result.is_ok()) << "QueueRequests failed: " << result.error_value().status_string();
-
-  completion.Wait();
-
   // Verify DEPENDXFER was NOT sent
-  bool dependxfer_sent = false;
-  dut_.RunInEnvironmentTypeContext([&](Environment& env) {
+  auto dependxfer_sent = std::make_shared<std::atomic<bool>>(false);
+  auto cleanup_callbacks = DeferClearDepcmdCallbacks(ep_addr);
+  dut_.RunInEnvironmentTypeContext([dependxfer_sent, ep_addr](Environment& env) {
     auto& depcmd = env.reg_region()[DEPCMD::Get(ep_addr).addr()];
-    depcmd.SetWriteCallback([&](uint64_t val_raw) {
+    depcmd.SetWriteCallback([dependxfer_sent, ep_addr](uint64_t val_raw) {
       uint32_t val = static_cast<uint32_t>(val_raw);
       if (DEPCMD::Get(ep_addr).FromValue(val).CMDTYP() == DEPCMD::DEPENDXFER) {
-        dependxfer_sent = true;
+        dependxfer_sent->store(true);
       }
     });
   });
 
-  // Call DisableEndpoint (via EpReset in test helper)
+  // Call DisableEndpoint (via UserEpReset in test helper)
   dut_.RunInDriverContext([&](Dwc3& drv) {
     auto* uep = Dwc3TestHelper::GetUserEndpoint(drv, ep_addr);
-    Dwc3TestHelper::EpReset(drv, uep->ep);
+    Dwc3TestHelper::UserEpReset(drv, *uep);
   });
 
   // Verify DEPENDXFER was NOT sent
-  EXPECT_FALSE(dependxfer_sent);
+  EXPECT_FALSE(dependxfer_sent->load());
 
-  // Explicitly dispatch the asynchronous request completion event from the sync client!
+  // Explicitly dispatch the asynchronous request completion event from the sync client.
+  // EpServer::CancelAll completes cancelled requests with ZX_ERR_IO_NOT_PRESENT upon disable.
   ASSERT_TRUE(sync_client.HandleOneEvent(event_handler).ok());
   EXPECT_TRUE(completed);
-  EXPECT_EQ(completion_status, ZX_ERR_CANCELED);
+  EXPECT_EQ(completion_status, ZX_ERR_IO_NOT_PRESENT);
 
   sync_client = {};
 }
@@ -1390,24 +1356,8 @@ TEST_P(Dwc3EndpointsTest, ShortPacketTransfer) {
   fidl::SyncClient<fuchsia_hardware_usb_endpoint::Endpoint> sync_client{
       std::move(endpoints->client)};
 
-  auto vmo_res = CreateVmoBuffer(sync_client, 512, 512, 1, false);
-  auto requests = std::move(vmo_res.requests);
-
-  libsync::Completion completion;
-  dut_.RunInEnvironmentTypeContext([&](Environment& env) {
-    auto& depcmd = env.reg_region()[DEPCMD::Get(2).addr()];
-    depcmd.SetWriteCallback([&](uint64_t val_raw) {
-      uint32_t val = static_cast<uint32_t>(val_raw);
-      if (DEPCMD::Get(2).FromValue(val).CMDTYP() == DEPCMD::DEPSTRTXFER) {
-        completion.Signal();
-      }
-    });
-  });
-
-  auto result = sync_client->QueueRequests({std::move(requests)});
-  ASSERT_TRUE(result.is_ok());
-
-  completion.Wait();
+  auto requests = CreateVmoBuffer(sync_client, 512, 512, 1);
+  QueueRequestsAndWaitForStartTransfer(2, sync_client, std::move(requests));
 
   // Simulate completion event with short packet (256 bytes)
   dut_.RunInDriverContext([&](Dwc3& drv) {
@@ -1455,24 +1405,8 @@ TEST_P(Dwc3EndpointsTest, DISABLED_ZeroLengthTransfer) {
   fidl::SyncClient<fuchsia_hardware_usb_endpoint::Endpoint> sync_client{
       std::move(endpoints->client)};
 
-  auto vmo_res = CreateVmoBuffer(sync_client, 512, 0, 1, false);
-  auto requests = std::move(vmo_res.requests);
-
-  libsync::Completion completion;
-  dut_.RunInEnvironmentTypeContext([&](Environment& env) {
-    auto& depcmd = env.reg_region()[DEPCMD::Get(3).addr()];  // Use IN endpoint 3
-    depcmd.SetWriteCallback([&](uint64_t val_raw) {
-      uint32_t val = static_cast<uint32_t>(val_raw);
-      if (DEPCMD::Get(3).FromValue(val).CMDTYP() == DEPCMD::DEPSTRTXFER) {
-        completion.Signal();
-      }
-    });
-  });
-
-  auto result = sync_client->QueueRequests({std::move(requests)});
-  ASSERT_TRUE(result.is_ok());
-
-  completion.Wait();
+  auto requests = CreateVmoBuffer(sync_client, 512, 0, 1);
+  QueueRequestsAndWaitForStartTransfer(3, sync_client, std::move(requests));
 
   // Verify TRB length is 0
   dut_.RunInDriverContext([&](Dwc3& drv) {
@@ -1486,7 +1420,7 @@ TEST_P(Dwc3EndpointsTest, DISABLED_ZeroLengthTransfer) {
     auto* uep = Dwc3TestHelper::GetUserEndpoint(drv, 3);  // Use IN endpoint 3
     dwc3_trb_t* trb = uep->fifo.current_read();
     trb->control &= ~TRB_HWO;
-    Dwc3TestHelper::HandleEpTransferCompleteEvent(drv, 3);  // Use IN endpoint 3
+    Dwc3TestHelper::HandleEpTransferCompleteEvent(drv, 3);
   });
 
   // Wait for request completion
@@ -1528,16 +1462,15 @@ TEST_P(Dwc3EndpointsTest, DISABLED_VerifySiliconBufferingDuringHandshakeReset) {
   fidl::SyncClient<fuchsia_hardware_usb_endpoint::Endpoint> sync_client{
       std::move(endpoints->client)};
 
-  auto vmo_res = CreateVmoBuffer(sync_client, 512, 512, 1, false);
-  auto requests = std::move(vmo_res.requests);
+  auto requests = CreateVmoBuffer(sync_client, 512, 512, 1);
 
-  // 4. Queue request while endpoint is disabled!
+  // 2. Queue request while endpoint is disabled!
   auto result = sync_client->QueueRequests({std::move(requests)});
   ASSERT_TRUE(result.is_ok()) << "QueueRequests failed: " << result.error_value().status_string();
 
   dut_.runtime().RunUntilIdle();
 
-  // 5. VERIFY SILICON BUFFERING:
+  // 3. VERIFY SILICON BUFFERING:
   // - Assert that the request has not completed (completed is false)
   // - Assert that Dwc3 has safely buffered the request in uep->server->queued_reqs!
   EXPECT_FALSE(completed);
@@ -1553,18 +1486,21 @@ TEST_P(Dwc3EndpointsTest, DISABLED_VerifySiliconBufferingDuringHandshakeReset) {
       [&](Dwc3& drv) { queued_size = Dwc3TestHelper::GetQueuedReqsSize(drv, 2); });
   EXPECT_EQ(queued_size, 1UL) << "Request was not buffered in queued_reqs!";
 
-  // 6. Simulate Host enabling the endpoint (e.g. SET_CONFIGURATION complete)
+  // 4. Simulate Host enabling the endpoint (e.g. SET_CONFIGURATION complete)
   // - Enable it in the driver and call UserEpQueueNext()
-  libsync::Completion completion;
-  dut_.RunInEnvironmentTypeContext([&](Environment& env) {
+  auto completion = std::make_shared<libsync::Completion>();
+  auto cleanup_callbacks = DeferClearDepcmdCallbacks(2);
+
+  dut_.RunInEnvironmentTypeContext([completion](Environment& env) {
     auto& depcmd = env.reg_region()[DEPCMD::Get(2).addr()];
-    depcmd.SetWriteCallback([&](uint64_t val_raw) {
+    depcmd.SetWriteCallback([completion](uint64_t val_raw) {
       uint32_t val = static_cast<uint32_t>(val_raw);
       if (DEPCMD::Get(2).FromValue(val).CMDTYP() ==
           DEPCMD::DEPSTRTXFER) {  // DEPSTRTXFER (DMA starts)
-        completion.Signal();
+        completion->Signal();
       }
     });
+    depcmd.SetReadCallback([]() -> uint32_t { return 0; });
   });
 
   dut_.RunInDriverContext([&](Dwc3& drv) {
@@ -1573,9 +1509,10 @@ TEST_P(Dwc3EndpointsTest, DISABLED_VerifySiliconBufferingDuringHandshakeReset) {
     Dwc3TestHelper::EpSetConfig(drv, uep->ep, true);
   });
 
-  // 7. VERIFY RESUMPTION:
+  // 5. VERIFY RESUMPTION:
   // - Assert that DMA successfully starts on the buffered request!
-  completion.Wait();
+  dut_.runtime().RunUntil([&]() { return completion->signaled(); });
+  ASSERT_TRUE(completion->signaled());
 
   // Simulate completion event
   dut_.RunInDriverContext([&](Dwc3& drv) {
@@ -1593,8 +1530,8 @@ TEST_P(Dwc3EndpointsTest, DISABLED_VerifySiliconBufferingDuringHandshakeReset) {
   sync_client = {};
 }
 
-// DeferredCancelDisableAccountingLeak requires deferred cancel logic which is not in production
-// yet.
+// Verifies that resetting an endpoint with an active cancel in progress completes outstanding
+// requests without leaking FIFO or resource tracking when a trailing completion event arrives.
 // TODO(b/509735595): Re-enable once the deferred cancel and reset logic production fixes land.
 TEST_P(Dwc3EndpointsTest, DISABLED_DeferredCancelDisableAccountingLeak) {
   SetUpAndPowerOnEndpoints();
@@ -1623,43 +1560,27 @@ TEST_P(Dwc3EndpointsTest, DISABLED_DeferredCancelDisableAccountingLeak) {
   fidl::SyncClient<fuchsia_hardware_usb_endpoint::Endpoint> sync_client{
       std::move(endpoints->client)};
 
-  auto vmo_res = CreateVmoBuffer(sync_client, 512, 512, 1, false);
-  auto requests = std::move(vmo_res.requests);
-
-  libsync::Completion completion;
-  dut_.RunInEnvironmentTypeContext([&](Environment& env) {
-    auto& depcmd = env.reg_region()[DEPCMD::Get(7).addr()];
-    depcmd.SetWriteCallback([&](uint64_t val_raw) {
-      uint32_t val = static_cast<uint32_t>(val_raw);
-      if (DEPCMD::Get(7).FromValue(val).CMDTYP() == DEPCMD::DEPSTRTXFER) {
-        completion.Signal();
-      }
-    });
-    depcmd.SetReadCallback([]() -> uint32_t { return 0; });
-  });
-
-  auto result = sync_client->QueueRequests({std::move(requests)});
-  ASSERT_TRUE(result.is_ok());
-
-  completion.Wait();
+  auto requests = CreateVmoBuffer(sync_client, 512, 512, 1);
+  QueueRequestsAndWaitForStartTransfer(7, sync_client, std::move(requests));
 
   // 2. Force an EndTransfer operation with a simulated busy hardware return to mark
   // ep->pending_cancel = true. This is done by calling CancelAll before
   // HandleEpTransferStartedEvent, which leaves ep.rsrc_id at kInvalidResourceId.
   auto cancel_result = sync_client->CancelAll();
-  ASSERT_TRUE(cancel_result.is_ok());
+  ASSERT_TRUE(cancel_result.is_ok())
+      << "CancelAll failed: " << cancel_result.error_value().FormatDescription();
 
-  // 3. Forcefully execute the endpoint clear/disable track (EpEnable(ep, false))
-  // which completes the request with ZX_ERR_CANCELED and wipes the tracking pointer.
+  // 3. Forcefully execute the endpoint clear/disable track (UserEpReset)
+  // which completes the request with ZX_ERR_IO_NOT_PRESENT and wipes the tracking pointer.
   dut_.RunInDriverContext([&](Dwc3& drv) {
     auto* uep = Dwc3TestHelper::GetUserEndpoint(drv, 7);
-    Dwc3TestHelper::EpEnable(drv, uep->ep, false);
+    Dwc3TestHelper::UserEpReset(drv, *uep);
   });
 
   // Flush completion events to event handler so we are 100% in sync
   ASSERT_TRUE(sync_client.HandleOneEvent(event_handler).ok());
   EXPECT_TRUE(completed);
-  EXPECT_EQ(completion_status, ZX_ERR_CANCELED);
+  EXPECT_EQ(completion_status, ZX_ERR_IO_NOT_PRESENT);
 
   // 4. Fire a mock trailing edge hardware event interrupt (DEPEVT_XFER_COMPLETE) against
   // Endpoint 7.
@@ -1698,12 +1619,13 @@ TEST_P(Dwc3EndpointsTest, CancelAllRequestsOnUnbound) {
   WaitForState(ep_num, active_state);
 
   // Cancel all requests via client asynchronously.
-  bool cancel_replied = false;
-  ep_client_->CancelAll().Then(
-      [&](fidl::Result<fendpoint::Endpoint::CancelAll>& res) { cancel_replied = true; });
+  auto cancel_replied = std::make_shared<std::atomic<bool>>(false);
+  ep_client_->CancelAll().Then([cancel_replied](fidl::Result<fendpoint::Endpoint::CancelAll>& res) {
+    cancel_replied->store(true);
+  });
 
   WaitForState(ep_num, TransferState::kCanceling);
-  EXPECT_FALSE(cancel_replied);
+  EXPECT_FALSE(cancel_replied->load());
 
   // Verify that cancel_completers has 1 pending completer in the server.
   dut_.RunInDriverContext([&](Dwc3& drv) {
@@ -1717,7 +1639,6 @@ TEST_P(Dwc3EndpointsTest, CancelAllRequestsOnUnbound) {
 
   // Wait for the driver dispatcher to process OnUnbound and flush completers.
   dut_.runtime().RunUntil([&]() {
-    dut_.runtime().RunUntilIdle();
     return dut_.RunInDriverContext<bool>([&](Dwc3& drv) {
       auto& uep = GetUserEndpoint(drv, ep_num);
       return uep.server.has_value() && uep.server->cancel_completers.empty();
@@ -1758,12 +1679,13 @@ TEST_P(Dwc3EndpointsTest, CancelAllTransferEndedBeforeUnbound) {
   WaitForState(ep_num, active_state);
 
   // Cancel all requests via client asynchronously.
-  bool cancel_replied = false;
-  ep_client_->CancelAll().Then(
-      [&](fidl::Result<fendpoint::Endpoint::CancelAll>& res) { cancel_replied = true; });
+  auto cancel_replied = std::make_shared<std::atomic<bool>>(false);
+  ep_client_->CancelAll().Then([cancel_replied](fidl::Result<fendpoint::Endpoint::CancelAll>& res) {
+    cancel_replied->store(true);
+  });
 
   WaitForState(ep_num, TransferState::kCanceling);
-  EXPECT_FALSE(cancel_replied);
+  EXPECT_FALSE(cancel_replied->load());
 
   // Verify that cancel_completers has 1 pending completer in the server.
   dut_.RunInDriverContext([&](Dwc3& drv) {
@@ -1987,22 +1909,23 @@ TEST_P(Dwc3EndpointsTest, Interrupt_CancelAllWhileTransferActive) {
   dut_.RunInDriverContext([&](Dwc3& drv) { TriggerEpTransferStarted(drv, ep_num, kResourceId); });
   WaitForState(ep_num, TransferState::kActiveSingle);
 
-  bool cancel_replied = false;
-  ep_client_->CancelAll().Then(
-      [&](fidl::Result<fendpoint::Endpoint::CancelAll>& res) { cancel_replied = true; });
+  auto cancel_replied = std::make_shared<std::atomic<bool>>(false);
+  ep_client_->CancelAll().Then([cancel_replied](fidl::Result<fendpoint::Endpoint::CancelAll>& res) {
+    cancel_replied->store(true);
+  });
 
   // Unstarted requests 2 & 3 should be completed immediately with IO_NOT_PRESENT.
   std::vector<CompletionResult> completions1 = event_handler_.WaitForCompletions(2);
   EXPECT_EQ(completions1.size(), 2u);
-  EXPECT_FALSE(cancel_replied);
+  EXPECT_FALSE(cancel_replied->load());
 
   WaitForState(ep_num, TransferState::kCanceling);
 
   // Trigger TransferEnded event for active Request 1.
   dut_.RunInDriverContext([&](Dwc3& drv) { TriggerEpTransferEnded(drv, ep_num); });
 
-  dut_.runtime().RunUntil([&]() { return cancel_replied; });
-  EXPECT_TRUE(cancel_replied);
+  dut_.runtime().RunUntil([&]() { return cancel_replied->load(); });
+  EXPECT_TRUE(cancel_replied->load());
   std::vector<CompletionResult> completions2 = event_handler_.WaitForCompletions(1);
   EXPECT_EQ(completions2.size(), 1u);
   WaitForState(ep_num, TransferState::kIdle);
@@ -2027,14 +1950,15 @@ TEST_P(Dwc3EndpointsTest, Interrupt_CancelAllWhileTransferStarting) {
 
   WaitForState(ep_num, TransferState::kStartingSingle);
 
-  bool cancel_replied = false;
-  ep_client_->CancelAll().Then(
-      [&](fidl::Result<fendpoint::Endpoint::CancelAll>& res) { cancel_replied = true; });
+  auto cancel_replied = std::make_shared<std::atomic<bool>>(false);
+  ep_client_->CancelAll().Then([cancel_replied](fidl::Result<fendpoint::Endpoint::CancelAll>& res) {
+    cancel_replied->store(true);
+  });
 
   std::vector<CompletionResult> completions1 = event_handler_.WaitForCompletions(1);
   EXPECT_EQ(completions1.size(), 1u);
   WaitForState(ep_num, TransferState::kPendingCancel);
-  EXPECT_FALSE(cancel_replied);
+  EXPECT_FALSE(cancel_replied->load());
 
   // When TransferStarted arrives, it should transition to kCanceling and issue EndTransfer.
   dut_.RunInDriverContext([&](Dwc3& drv) { TriggerEpTransferStarted(drv, ep_num, kResourceId); });
@@ -2042,8 +1966,8 @@ TEST_P(Dwc3EndpointsTest, Interrupt_CancelAllWhileTransferStarting) {
 
   // TransferEnded completes the cancellation.
   dut_.RunInDriverContext([&](Dwc3& drv) { TriggerEpTransferEnded(drv, ep_num); });
-  dut_.runtime().RunUntil([&]() { return cancel_replied; });
-  EXPECT_TRUE(cancel_replied);
+  dut_.runtime().RunUntil([&]() { return cancel_replied->load(); });
+  EXPECT_TRUE(cancel_replied->load());
   std::vector<CompletionResult> completions2 = event_handler_.WaitForCompletions(1);
   EXPECT_EQ(completions2.size(), 1u);
   WaitForState(ep_num, TransferState::kIdle);
@@ -2217,5 +2141,9 @@ TEST_P(Dwc3EndpointsTest, Interrupt_ReconfigureAltSettingTeardown) {
     EXPECT_FALSE(uep.ep.enabled);
   });
 }
+
+namespace {
+INSTANTIATE_TEST_SUITE_P(Dwc3EndpointsTestCases, Dwc3EndpointsTest, testing::Bool());
+}  // namespace
 
 }  // namespace dwc3

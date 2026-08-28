@@ -26,38 +26,32 @@ using Dwc3EventsTest = UnmanagedTestFixture;
 
 // Verifies behavior on a simulated disconnect event.
 TEST_F(Dwc3EventsTest, HandleDisconnectEvent) {
-  std::atomic<bool> cmd_written = false;
-  std::atomic<uint32_t> depcmd_val = 0;
+  auto cmd_written = std::make_shared<std::atomic<bool>>(false);
+  auto depcmd_val = std::make_shared<std::atomic<uint32_t>>(0);
 
   SetUpAndPowerOnDriver();
 
   FakeUsbDciInterface fake_dci;
-  std::atomic<bool> set_connected_called = false;
-  std::atomic<bool> is_connected_val = true;
-  fake_dci.SetSetConnectedCallback([&](bool connected) {
-    is_connected_val.store(connected);
-    set_connected_called.store(true);
+  auto set_connected_called = std::make_shared<std::atomic<bool>>(false);
+  auto is_connected_val = std::make_shared<std::atomic<bool>>(true);
+  fake_dci.SetSetConnectedCallback([set_connected_called, is_connected_val](bool connected) {
+    is_connected_val->store(connected);
+    set_connected_called->store(true);
   });
 
   auto endpoints = fidl::CreateEndpoints<fuchsia_hardware_usb_dci::UsbDciInterface>();
   ASSERT_TRUE(endpoints.is_ok());
 
-  // Use RAII guard to guarantee register callback cleanup on scope exit regardless of assertions.
-  auto cleanup_callbacks = fit::defer([&]() {
-    dut_.RunInEnvironmentTypeContext([&](Environment& env) {
-      env.reg_region()[DEPCMD::Get(2).addr()].SetReadCallback(nullptr);
-      env.reg_region()[DEPCMD::Get(2).addr()].SetWriteCallback(nullptr);
-    });
-  });
+  auto cleanup_callbacks = DeferClearDepcmdCallbacks(2);
 
-  dut_.RunInEnvironmentTypeContext([&](Environment& env) {
+  dut_.RunInEnvironmentTypeContext([depcmd_val, cmd_written](Environment& env) {
     auto& depcmd = env.reg_region()[DEPCMD::Get(2).addr()];
 
-    depcmd.SetReadCallback([&]() -> uint32_t { return depcmd_val.load(); });
-    depcmd.SetWriteCallback([&](uint64_t val_raw) {
+    depcmd.SetReadCallback([depcmd_val]() -> uint32_t { return depcmd_val->load(); });
+    depcmd.SetWriteCallback([depcmd_val, cmd_written](uint64_t val_raw) {
       uint32_t val = static_cast<uint32_t>(val_raw);
-      cmd_written.store(true);
-      depcmd_val.store(val & ~(1 << 10));
+      depcmd_val->store(val & ~(1 << 10));
+      cmd_written->store(true);
     });
   });
 
@@ -91,57 +85,57 @@ TEST_F(Dwc3EventsTest, HandleDisconnectEvent) {
     EXPECT_EQ(ep.rsrc_id, 1u);
   });
 
-  dut_.runtime().RunUntil([&]() { return set_connected_called.load(); });
+  dut_.runtime().RunUntil([set_connected_called]() { return set_connected_called->load(); });
 
-  EXPECT_TRUE(cmd_written.load());
-  EXPECT_TRUE(set_connected_called.load());
-  EXPECT_FALSE(is_connected_val.load());
+  EXPECT_TRUE(cmd_written->load());
+  EXPECT_TRUE(set_connected_called->load());
+  EXPECT_FALSE(is_connected_val->load());
 
   if (binding.has_value()) {
     binding->Unbind();
     dut_.runtime().RunUntilIdle();
   }
 
-  EXPECT_EQ(dut_.StopDriver().status_value(), ZX_OK);
+  TearDownAndPowerOffDriver();
 }
 
 // Verifies behavior on a simulated USB reset event.
 TEST_F(Dwc3EventsTest, HandleResetEvent) {
-  std::atomic<bool> depcmd_written = false;
-  std::atomic<bool> dcfg_written = false;
-  std::atomic<uint32_t> depcmd_val = 0;
-  std::atomic<uint32_t> dcfg_val = 0;
+  auto depcmd_written = std::make_shared<std::atomic<bool>>(false);
+  auto dcfg_written = std::make_shared<std::atomic<bool>>(false);
+  auto depcmd_val = std::make_shared<std::atomic<uint32_t>>(0);
+  auto dcfg_val = std::make_shared<std::atomic<uint32_t>>(0);
 
   SetUpAndPowerOnDriver();
 
   // Use RAII guard to guarantee register callback cleanup on scope exit regardless of assertions.
-  auto cleanup_callbacks = fit::defer([&]() {
-    dut_.RunInEnvironmentTypeContext([&](Environment& env) {
-      env.reg_region()[DEPCMD::Get(0).addr()].SetReadCallback(nullptr);
-      env.reg_region()[DEPCMD::Get(0).addr()].SetWriteCallback(nullptr);
-      env.reg_region()[DCFG::Get().addr()].SetReadCallback(nullptr);
-      env.reg_region()[DCFG::Get().addr()].SetWriteCallback(nullptr);
+  auto cleanup_depcmd = DeferClearDepcmdCallbacks(0);
+  auto cleanup_dcfg = fit::defer([this]() {
+    dut_.RunInEnvironmentTypeContext([](Environment& env) {
+      env.reg_region()[DCFG::Get().addr()].SetReadCallback([]() -> uint32_t { return 0; });
+      env.reg_region()[DCFG::Get().addr()].SetWriteCallback([](uint64_t) {});
     });
   });
 
-  dut_.RunInEnvironmentTypeContext([&](Environment& env) {
-    auto& depcmd = env.reg_region()[DEPCMD::Get(0).addr()];
-    auto& dcfg = env.reg_region()[DCFG::Get().addr()];
+  dut_.RunInEnvironmentTypeContext(
+      [depcmd_written, dcfg_written, depcmd_val, dcfg_val](Environment& env) {
+        auto& depcmd = env.reg_region()[DEPCMD::Get(0).addr()];
+        auto& dcfg = env.reg_region()[DCFG::Get().addr()];
 
-    depcmd.SetReadCallback([&]() -> uint32_t { return depcmd_val.load(); });
-    depcmd.SetWriteCallback([&](uint64_t val_raw) {
-      uint32_t val = static_cast<uint32_t>(val_raw);
-      depcmd_written.store(true);
-      depcmd_val.store(val & ~(1 << 10));
-    });
+        depcmd.SetReadCallback([depcmd_val]() -> uint32_t { return depcmd_val->load(); });
+        depcmd.SetWriteCallback([depcmd_written, depcmd_val](uint64_t val_raw) {
+          uint32_t val = static_cast<uint32_t>(val_raw);
+          depcmd_val->store(val & ~(1 << 10));
+          depcmd_written->store(true);
+        });
 
-    dcfg.SetReadCallback([&]() -> uint32_t { return dcfg_val.load(); });
-    dcfg.SetWriteCallback([&](uint64_t val_raw) {
-      uint32_t val = static_cast<uint32_t>(val_raw);
-      dcfg_written.store(true);
-      dcfg_val.store(val);
-    });
-  });
+        dcfg.SetReadCallback([dcfg_val]() -> uint32_t { return dcfg_val->load(); });
+        dcfg.SetWriteCallback([dcfg_written, dcfg_val](uint64_t val_raw) {
+          uint32_t val = static_cast<uint32_t>(val_raw);
+          dcfg_val->store(val);
+          dcfg_written->store(true);
+        });
+      });
 
   dut_.RunInDriverContext([&](Dwc3& drv) {
     // Simulate DEVT_USB_RESET event
@@ -149,43 +143,43 @@ TEST_F(Dwc3EventsTest, HandleResetEvent) {
     EXPECT_EQ(Dwc3TestHelper::GetEp0State(drv), Dwc3TestHelper::State::Setup);
   });
 
-  EXPECT_TRUE(depcmd_written.load());
-  EXPECT_TRUE(dcfg_written.load());
-  EXPECT_EQ(DCFG::Get().FromValue(dcfg_val.load()).DEVADDR(), 0u);
+  EXPECT_TRUE(depcmd_written->load());
+  EXPECT_TRUE(dcfg_written->load());
+  EXPECT_EQ(DCFG::Get().FromValue(dcfg_val->load()).DEVADDR(), 0u);
 
-  EXPECT_EQ(dut_.StopDriver().status_value(), ZX_OK);
-  dut_.runtime().RunUntilIdle();
+  TearDownAndPowerOffDriver();
 }
 
 // Verifies behavior on a simulated connection done event, including setting the speed.
 TEST_F(Dwc3EventsTest, HandleConnectionDoneEvent) {
-  std::atomic<bool> depcmd_written = false;
-  std::atomic<bool> setspeed_called = false;
-  std::atomic<uint32_t> depcmd_val = 0;
-  std::atomic<fuchsia_hardware_usb_descriptor::wire::UsbSpeed> speed_passed =
-      fuchsia_hardware_usb_descriptor::wire::UsbSpeed::kUndefined;
+  auto depcmd_written = std::make_shared<std::atomic<bool>>(false);
+  auto setspeed_called = std::make_shared<std::atomic<bool>>(false);
+  auto depcmd_val = std::make_shared<std::atomic<uint32_t>>(0);
+  auto speed_passed =
+      std::make_shared<std::atomic<fuchsia_hardware_usb_descriptor::wire::UsbSpeed>>(
+          fuchsia_hardware_usb_descriptor::wire::UsbSpeed::kUndefined);
 
   SetUpAndPowerOnDriver();
 
   FakeUsbDciInterface fake_dci;
-  fake_dci.SetSetSpeedCallback([&](fuchsia_hardware_usb_descriptor::wire::UsbSpeed speed) {
-    setspeed_called.store(true);
-    speed_passed.store(speed);
-  });
+  fake_dci.SetSetSpeedCallback(
+      [speed_passed, setspeed_called](fuchsia_hardware_usb_descriptor::wire::UsbSpeed speed) {
+        speed_passed->store(speed);
+        setspeed_called->store(true);
+      });
 
   auto endpoints = fidl::CreateEndpoints<fuchsia_hardware_usb_dci::UsbDciInterface>();
   ASSERT_TRUE(endpoints.is_ok());
 
   // Use RAII guard to guarantee register callback cleanup on scope exit regardless of assertions.
-  auto cleanup_callbacks = fit::defer([&]() {
-    dut_.RunInEnvironmentTypeContext([&](Environment& env) {
-      env.reg_region()[DSTS::Get().addr()].SetReadCallback(nullptr);
-      env.reg_region()[DEPCMD::Get(0).addr()].SetReadCallback(nullptr);
-      env.reg_region()[DEPCMD::Get(0).addr()].SetWriteCallback(nullptr);
+  auto cleanup_depcmd = DeferClearDepcmdCallbacks(0);
+  auto cleanup_dsts = fit::defer([this]() {
+    dut_.RunInEnvironmentTypeContext([](Environment& env) {
+      env.reg_region()[DSTS::Get().addr()].SetReadCallback([]() -> uint32_t { return 0; });
     });
   });
 
-  dut_.RunInEnvironmentTypeContext([&](Environment& env) {
+  dut_.RunInEnvironmentTypeContext([depcmd_written, depcmd_val](Environment& env) {
     auto& dsts = env.reg_region()[DSTS::Get().addr()];
     auto& depcmd = env.reg_region()[DEPCMD::Get(0).addr()];
 
@@ -199,11 +193,11 @@ TEST_F(Dwc3EventsTest, HandleConnectionDoneEvent) {
           .reg_value();
     });
 
-    depcmd.SetReadCallback([&]() -> uint32_t { return depcmd_val.load(); });
-    depcmd.SetWriteCallback([&](uint64_t val_raw) {
+    depcmd.SetReadCallback([depcmd_val]() -> uint32_t { return depcmd_val->load(); });
+    depcmd.SetWriteCallback([depcmd_written, depcmd_val](uint64_t val_raw) {
       uint32_t val = static_cast<uint32_t>(val_raw);
-      depcmd_written.store(true);
-      depcmd_val.store(val & ~(1 << 10));
+      depcmd_val->store(val & ~(1 << 10));
+      depcmd_written->store(true);
     });
   });
 
@@ -219,11 +213,11 @@ TEST_F(Dwc3EventsTest, HandleConnectionDoneEvent) {
     Dwc3TestHelper::HandleEvent(drv, kEvtConnectionDone);
   });
 
-  dut_.runtime().RunUntil([&]() { return setspeed_called.load(); });
+  dut_.runtime().RunUntil([setspeed_called]() { return setspeed_called->load(); });
 
-  EXPECT_TRUE(depcmd_written.load());
-  EXPECT_TRUE(setspeed_called.load());
-  EXPECT_EQ(speed_passed.load(), fuchsia_hardware_usb_descriptor::wire::UsbSpeed::kHigh);
+  EXPECT_TRUE(depcmd_written->load());
+  EXPECT_TRUE(setspeed_called->load());
+  EXPECT_EQ(speed_passed->load(), fuchsia_hardware_usb_descriptor::wire::UsbSpeed::kHigh);
 
   // Clean unbind: Zircon's BindServer automatically destroys the server unique_ptr on the
   // dispatcher thread post-unbind!
@@ -232,8 +226,7 @@ TEST_F(Dwc3EventsTest, HandleConnectionDoneEvent) {
     dut_.runtime().RunUntilIdle();
   }
 
-  EXPECT_EQ(dut_.StopDriver().status_value(), ZX_OK);
-  dut_.runtime().RunUntilIdle();
+  TearDownAndPowerOffDriver();
 }
 
 // Verifies that injecting an unknown event does not crash the driver.
@@ -247,7 +240,7 @@ TEST_F(Dwc3EventsTest, HandleUnknownEvent) {
     Dwc3TestHelper::HandleEvent(drv, event);
   });
   // Verify that it doesn't crash!
-  EXPECT_EQ(dut_.StopDriver().status_value(), ZX_OK);
+  TearDownAndPowerOffDriver();
 }
 
 // TODO(https://fxbug.dev/538237092): Re-enable once UsbDciInterface::Reset() is added.
@@ -295,7 +288,7 @@ TEST_F(Dwc3EventsTest, DISABLED_VerifySetConnectedIsNotCalledOnHandleResetEvent)
     dut_.runtime().RunUntilIdle();
   }
 
-  EXPECT_EQ(dut_.StopDriver().status_value(), ZX_OK);
+  TearDownAndPowerOffDriver();
 }
 
 }  // namespace dwc3

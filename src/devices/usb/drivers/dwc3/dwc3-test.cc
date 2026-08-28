@@ -472,7 +472,9 @@ TEST_F(UnmanagedTestFixture, InspectSamplesMmioWhenPowerOnAndControllerStarted) 
 }
 
 TEST_F(UnmanagedTestFixture, Dfv2HwResetTimeout) {
-  stuck_reset_test_ = true;
+  stuck_reset_test_.store(true);
+  dut_.RunInEnvironmentTypeContext(
+      [](Environment& env) { env.usb_phy().set_expect_connection_status_observer_call(false); });
   zx::result start = dut_.StartDriverWithCustomStartArgs([](fdf::DriverStartArgs& args) {
     dwc3_config::Config cfg;
     cfg.enable_suspend() = false;
@@ -694,29 +696,38 @@ TEST_F(ManagedTestFixture, TestInspectMetrics) {
 }
 
 TEST_F(ManagedTestFixture, TestStopEventsMasksInterrupts) {
-  auto evntintrptmask = std::make_shared<uint32_t>(0);
-  auto gevntcount = std::make_shared<uint32_t>(0);
-  auto gevntcount_reads = std::make_shared<uint32_t>(0);
+  auto evntintrptmask = std::make_shared<std::atomic<uint32_t>>(0);
+  auto gevntcount = std::make_shared<std::atomic<uint32_t>>(0);
+  auto gevntcount_reads = std::make_shared<std::atomic<uint32_t>>(0);
+
+  // Use RAII guard to guarantee register callback cleanup on scope exit regardless of assertions.
+  auto cleanup_callbacks = fit::defer([&]() {
+    dut_.RunInEnvironmentTypeContext([](Environment& env) {
+      env.reg_region()[GEVNTSIZ::Get(0).addr()].SetWriteCallback([](uint64_t) {});
+      env.reg_region()[GEVNTCOUNT::Get(0).addr()].SetReadCallback([]() -> uint32_t { return 0; });
+      env.reg_region()[GEVNTCOUNT::Get(0).addr()].SetWriteCallback([](uint64_t) {});
+    });
+  });
 
   dut_.RunInEnvironmentTypeContext(
       [evntintrptmask, gevntcount, gevntcount_reads](Environment& env) {
         auto& gevntsiz = env.reg_region()[GEVNTSIZ::Get(0).addr()];
         gevntsiz.SetWriteCallback([evntintrptmask](uint64_t val) {
-          *evntintrptmask = GEVNTSIZ::Get(0).FromValue(static_cast<uint32_t>(val)).EVNTINTRPTMASK();
+          evntintrptmask->store(
+              GEVNTSIZ::Get(0).FromValue(static_cast<uint32_t>(val)).EVNTINTRPTMASK());
         });
 
         auto& gevntcount_reg = env.reg_region()[GEVNTCOUNT::Get(0).addr()];
         gevntcount_reg.SetReadCallback([gevntcount_reads]() -> uint32_t {
           // Simulate 32 bytes of pending events.
-          if (*gevntcount_reads == 0) {
-            (*gevntcount_reads)++;
+          if (gevntcount_reads->fetch_add(1) == 0) {
             return 32;
           }
           return 0;  // Return 0 on subsequent reads to exit while loop.
         });
         gevntcount_reg.SetWriteCallback([gevntcount](uint64_t val) {
           // Capture the count that was written back to clear the pending events.
-          *gevntcount = GEVNTCOUNT::Get(0).FromValue(static_cast<uint32_t>(val)).EVNTCOUNT();
+          gevntcount->store(GEVNTCOUNT::Get(0).FromValue(static_cast<uint32_t>(val)).EVNTCOUNT());
         });
       });
 
@@ -734,8 +745,8 @@ TEST_F(ManagedTestFixture, TestStopEventsMasksInterrupts) {
   // Wait for the operations on the driver thread to finish
   dut_.runtime().RunUntilIdle();
 
-  EXPECT_EQ(*evntintrptmask, 1u);
-  EXPECT_EQ(*gevntcount, 32u);
+  EXPECT_EQ(evntintrptmask->load(), 1u);
+  EXPECT_EQ(gevntcount->load(), 32u);
 }
 
 TEST_F(ManagedTestFixture, ConfigureEndpoint_FifoTooSmall) {
@@ -1026,6 +1037,10 @@ TEST_P(Parameterized, TestHwVersion) {
   Param p{GetParam()};
 
   ver_number_ = p.version_register;
+  if (!p.should_start) {
+    dut_.RunInEnvironmentTypeContext(
+        [](Environment& env) { env.usb_phy().set_expect_connection_status_observer_call(false); });
+  }
 
   zx::result start = dut_.StartDriverWithCustomStartArgs([](fdf::DriverStartArgs& args) {
     dwc3_config::Config cfg;
@@ -1070,15 +1085,25 @@ TEST_P(InterruptModeration, Values) {
   namespace fdescriptor = fuchsia_hardware_usb_descriptor;
   const std::optional<uint32_t> interrupt_moderation_us = GetParam();
 
-  std::optional<uint32_t> devimod_written;
-  dut_.RunInEnvironmentTypeContext([&](Environment& env) {
-    env.usb_phy().set_expect_connection_status_observer_call(false);
+  auto devimod_written_flag = std::make_shared<std::atomic<bool>>(false);
+  auto devimod_written_val = std::make_shared<std::atomic<uint32_t>>(0);
+
+  // Use RAII guard to guarantee register callback cleanup on scope exit regardless of assertions.
+  auto cleanup_callbacks = fit::defer([&]() {
+    dut_.RunInEnvironmentTypeContext([](Environment& env) {
+      env.reg_region()[DEVIMOD::Get(0).addr()].SetWriteCallback([](uint64_t) {});
+    });
+  });
+
+  dut_.RunInEnvironmentTypeContext([interrupt_moderation_us, devimod_written_val,
+                                    devimod_written_flag](Environment& env) {
     if (interrupt_moderation_us.has_value()) {
       env.SetInterruptModerationUs(interrupt_moderation_us.value());
     }
     ddk_fake::FakeMmioReg& devimod = env.reg_region()[DEVIMOD::Get(0).addr()];
-    devimod.SetWriteCallback([&](uint64_t value) {
-      devimod_written = DEVIMOD::Get(0).FromValue(static_cast<uint32_t>(value)).IMODI();
+    devimod.SetWriteCallback([devimod_written_val, devimod_written_flag](uint64_t value) {
+      devimod_written_val->store(DEVIMOD::Get(0).FromValue(static_cast<uint32_t>(value)).IMODI());
+      devimod_written_flag->store(true);
     });
   });
   zx::result res = dut_.StartDriverWithCustomStartArgs([](fdf::DriverStartArgs& args) {
@@ -1090,6 +1115,8 @@ TEST_P(InterruptModeration, Values) {
   if (interrupt_moderation_us.has_value() &&
       static_cast<uint16_t>(interrupt_moderation_us.value()) >=
           std::numeric_limits<uint16_t>::max() / 4) {
+    dut_.RunInEnvironmentTypeContext(
+        [](Environment& env) { env.usb_phy().set_expect_connection_status_observer_call(false); });
     ASSERT_STATUS(res, ZX_ERR_OUT_OF_RANGE);
     return;
   }
@@ -1103,11 +1130,17 @@ TEST_P(InterruptModeration, Values) {
 
   TriggerConnectionPlugIn(fdescriptor::UsbSpeed::kSuper);
 
+  // Positively verify that StartPeripheralMode() completed its execution turn and became active.
+  dut_.runtime().RunUntil([&]() {
+    return dut_.RunInDriverContext<bool>(
+        [](Dwc3& drv) { return Dwc3TestHelper::GetPowerOn(drv) && Dwc3TestHelper::IsActive(drv); });
+  });
+
   if (interrupt_moderation_us.has_value() && interrupt_moderation_us.value() != 0) {
-    ASSERT_TRUE(devimod_written.has_value());
-    EXPECT_EQ(devimod_written.value(), interrupt_moderation_us.value() * 4);
+    EXPECT_TRUE(devimod_written_flag->load());
+    EXPECT_EQ(devimod_written_val->load(), interrupt_moderation_us.value() * 4);
   } else {
-    EXPECT_FALSE(devimod_written.has_value()) << devimod_written.value();
+    EXPECT_FALSE(devimod_written_flag->load()) << devimod_written_val->load();
   }
 
   EXPECT_OK(dut_.StopDriver().status_value());

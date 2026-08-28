@@ -21,6 +21,7 @@
 #include <lib/sync/cpp/completion.h>
 
 #include <algorithm>
+#include <mutex>
 #include <optional>
 
 #include <fake-mmio-reg/fake-mmio-reg.h>
@@ -122,6 +123,12 @@ class Dwc3TestHelper {
   static void HandleEpTransferStartedEvent(Dwc3& drv, uint8_t ep_num, uint32_t rsrc_id) {
     drv.HandleEpTransferStartedEvent(ep_num, rsrc_id);
   }
+  static void HandleEpTransferNotReadyEvent(Dwc3& drv, uint8_t ep_num, uint32_t stage) {
+    drv.HandleEpTransferNotReadyEvent(ep_num, stage);
+  }
+  static void HandleEpTransferEndedEvent(Dwc3& drv, uint8_t ep_num) {
+    drv.HandleEpTransferEndedEvent(ep_num);
+  }
   static void EpReset(Dwc3& drv, Dwc3::Endpoint& ep) { drv.EpReset(ep); }
   static zx_status_t ResetHw(Dwc3& drv, bool is_resume) {
     // Stubbed out: ResetHw in current production takes 0 arguments.
@@ -134,9 +141,12 @@ class Dwc3TestHelper {
     }
   }
   static bool GetPowerOn(Dwc3& drv) { return drv.power_on_; }
+  static bool IsActive(Dwc3& drv) { return drv.is_active(); }
   static zx_status_t EpSetStall(Dwc3& drv, Dwc3::Endpoint& ep, bool stall) {
     return drv.EpSetStall(ep, stall);
   }
+  static void UserEpQueueNext(Dwc3& drv, Dwc3::UserEndpoint& uep) { drv.UserEpQueueNext(uep); }
+  static void UserEpReset(Dwc3& drv, Dwc3::UserEndpoint& uep) { drv.UserEpReset(uep); }
   static void SetDeviceAddress(Dwc3& drv, uint32_t address) { drv.SetDeviceAddress(address); }
   static bool IsFifoEmpty(Dwc3& drv) { return drv.ep0_.shared_fifo.IsEmpty(); }
   static void SetEpTransferState(Dwc3& drv, uint8_t ep_num, TransferState state) {
@@ -158,12 +168,6 @@ class Dwc3TestHelper {
         uep->ep.rsrc_id = rsrc_id;
       }
     }
-  }
-  static void SetEpPendingCancel(Dwc3& drv, uint8_t ep_num, bool pending) {
-    // Stubbed out: pending_cancel is not in production yet.
-    (void)drv;
-    (void)ep_num;
-    (void)pending;
   }
 
   static bool GetGotNotReady(Dwc3& drv, uint8_t ep_num) {
@@ -193,13 +197,6 @@ class Dwc3TestHelper {
     return uep ? uep->ep.rsrc_id : UINT32_MAX;
   }
 
-  static bool GetEpPendingCancel(Dwc3& drv, uint8_t ep_num) {
-    // Stubbed out: pending_cancel is not in production yet.
-    (void)drv;
-    (void)ep_num;
-    return false;
-  }
-
   static bool IsXferIdle(Dwc3& drv, uint8_t ep_num) {
     if (ep_num < 2) {
       return ((ep_num == 0) ? drv.ep0_.out : drv.ep0_.in).transfer_state ==
@@ -211,6 +208,12 @@ class Dwc3TestHelper {
 
   static Dwc3::UserEndpoint* GetUserEndpoint(Dwc3& drv, uint8_t ep_num) {
     return drv.get_user_endpoint(ep_num);
+  }
+  static void AdvanceFifo(TrbFifo& fifo, size_t count) {
+    for (size_t i = 0; i < count; ++i) {
+      fifo.AdvanceWrite();
+      fifo.AdvanceRead();
+    }
   }
   static size_t GetQueuedReqsSize(Dwc3& drv, uint8_t ep_num) {
     auto* uep = drv.get_user_endpoint(ep_num);
@@ -342,6 +345,10 @@ class FakeUsbPhy : public fidl::Server<fphy::UsbPhy>, public fidl::Server<fphy::
   void set_expect_connection_status_observer_call(bool expect) {
     expect_connection_status_observer_call_ = expect;
   }
+  bool expect_connection_status_observer_call() const {
+    return expect_connection_status_observer_call_;
+  }
+  bool has_completer() const { return completer_.has_value(); }
 
   void TriggerConnection(bool connected) {
     ZX_ASSERT(completer_.has_value());
@@ -635,6 +642,14 @@ class TestFixture : public gtest_base {
  public:
   void TriggerConnectionPlugIn(fuchsia_hardware_usb_descriptor::UsbSpeed speed) {
     namespace fdescriptor = fuchsia_hardware_usb_descriptor;
+    // Wait for the mock PHY to establish connection observer registration.
+    // Relies on the test runtime's overarching test timeout to prevent flakiness under CI load.
+    dut_.runtime().RunUntil([&]() {
+      bool has_comp = false;
+      dut_.RunInEnvironmentTypeContext(
+          [&](Environment& env) { has_comp = env.usb_phy().has_completer(); });
+      return has_comp;
+    });
     dut_.RunInEnvironmentTypeContext([&](Environment& env) {
       auto& dsts_reg = env.reg_region()[DSTS::Get().addr()];
       dsts_reg.SetReadCallback([speed]() -> uint32_t {
@@ -652,20 +667,34 @@ class TestFixture : public gtest_base {
         [&]() { return dut_.RunInDriverContext<bool>([](Dwc3& drv) { return drv.power_on(); }); });
   }
 
-  struct VmoBufferResult {
-    std::vector<fuchsia_hardware_usb_request::Request> requests;
-    fit::deferred_action<fit::closure> unmap;
-    zx_vaddr_t mapped_addr = 0;
-  };
+  // Returns an RAII guard that restores DEPCMD register callbacks for the endpoint to their default
+  // no-op state on scope exit. Note: FakeMmioReg does not maintain internal storage and invokes
+  // its callbacks directly, so restoring the constructor defaults ([](){}) is required to avoid
+  // null fit::function invocations on subsequent register accesses.
+  [[nodiscard]] auto DeferClearDepcmdCallbacks(uint8_t ep_num) {
+    return fit::defer([this, ep_num]() {
+      dut_.RunInEnvironmentTypeContext([ep_num](Environment& env) {
+        env.reg_region()[DEPCMD::Get(ep_num).addr()].SetWriteCallback([](uint64_t) {});
+        env.reg_region()[DEPCMD::Get(ep_num).addr()].SetReadCallback(
+            []() -> uint32_t { return 0; });
+      });
+    });
+  }
 
-  VmoBufferResult CreateVmoBuffer(
+  // Returns an RAII guard that clears the DCTL callback on scope exit.
+  [[nodiscard]] auto DeferClearDctlCallback() {
+    return fit::defer([this]() { SetDctlCallback(nullptr); });
+  }
+
+  std::vector<fuchsia_hardware_usb_request::Request> CreateVmoBuffer(
       const fidl::SyncClient<fuchsia_hardware_usb_endpoint::Endpoint>& sync_client, size_t size,
-      size_t buffer_size, uint8_t vmo_id = 1, bool map = true) {
+      size_t buffer_size, uint8_t vmo_id = 1) {
     fuchsia_hardware_usb_endpoint::VmoInfo vmo_info;
     vmo_info.id(vmo_id);
     vmo_info.size(size);
 
     std::vector<fuchsia_hardware_usb_endpoint::VmoInfo> vmo_infos;
+    vmo_infos.reserve(1);
     vmo_infos.push_back(std::move(vmo_info));
 
     auto reg_result = sync_client->RegisterVmos({std::move(vmo_infos)});
@@ -673,41 +702,50 @@ class TestFixture : public gtest_base {
                   reg_result.error_value().status_string());
     ZX_ASSERT(reg_result->vmos().size() == 1UL);
 
-    fit::deferred_action<fit::closure> unmap;
-    zx_vaddr_t mapped_addr = 0;
-    if (map) {
-      zx::vmo vmo = std::move(*reg_result->vmos()[0].vmo());
-      zx_status_t status = zx::vmar::root_self()->map(ZX_VM_PERM_READ | ZX_VM_PERM_WRITE, 0, vmo, 0,
-                                                      size, &mapped_addr);
-      ZX_ASSERT_MSG(status == ZX_OK, "vmar map failed: %s", zx_status_get_string(status));
-      unmap = fit::defer(fit::closure([mapped_addr, size]() {
-        const size_t page_size = zx_system_get_page_size();
-        const size_t rounded_size = (size + page_size - 1) & ~(page_size - 1);
-        zx_status_t status = zx::vmar::root_self()->unmap(mapped_addr, rounded_size);
-        ZX_ASSERT_MSG(status == ZX_OK, "vmar unmap failed: %s", zx_status_get_string(status));
-      }));
-    }
-
     auto make_request = [](uint8_t id, size_t b_size) {
+      fuchsia_hardware_usb_request::BufferRegion region;
+      region.buffer(fuchsia_hardware_usb_request::Buffer::WithVmoId(id));
+      region.size(b_size);
+      region.offset(0);
+
       std::vector<fuchsia_hardware_usb_request::BufferRegion> regions;
-      regions.emplace_back(
-          std::move(fuchsia_hardware_usb_request::BufferRegion()
-                        .buffer(fuchsia_hardware_usb_request::Buffer::WithVmoId(id))
-                        .size(b_size)
-                        .offset(0)));
+      regions.reserve(1);
+      regions.push_back(std::move(region));
+
       fuchsia_hardware_usb_request::Request req;
       req.data(std::move(regions)).defer_completion(false);
       return req;
     };
 
     std::vector<fuchsia_hardware_usb_request::Request> requests;
-    requests.emplace_back(std::move(make_request(vmo_id, buffer_size)));
+    requests.reserve(1);
+    requests.push_back(make_request(vmo_id, buffer_size));
+    return requests;
+  }
 
-    return VmoBufferResult{
-        .requests = std::move(requests),
-        .unmap = std::move(unmap),
-        .mapped_addr = mapped_addr,
-    };
+  void QueueRequestsAndWaitForStartTransfer(
+      uint8_t ep_addr, const fidl::SyncClient<fuchsia_hardware_usb_endpoint::Endpoint>& sync_client,
+      std::vector<fuchsia_hardware_usb_request::Request> requests) {
+    auto completion = std::make_shared<libsync::Completion>();
+    auto cleanup_callbacks = DeferClearDepcmdCallbacks(ep_addr);
+
+    dut_.RunInEnvironmentTypeContext([ep_addr, completion](Environment& env) {
+      auto& depcmd = env.reg_region()[DEPCMD::Get(ep_addr).addr()];
+      depcmd.SetWriteCallback([ep_addr, completion](uint64_t val_raw) {
+        uint32_t val = static_cast<uint32_t>(val_raw);
+        if (DEPCMD::Get(ep_addr).FromValue(val).CMDTYP() == DEPCMD::DEPSTRTXFER) {
+          completion->Signal();
+        }
+      });
+      depcmd.SetReadCallback([]() -> uint32_t { return 0; });
+    });
+
+    auto result = sync_client->QueueRequests({std::move(requests)});
+    ZX_ASSERT_MSG(result.is_ok(), "QueueRequests failed: %s",
+                  result.error_value().FormatDescription().c_str());
+
+    dut_.runtime().RunUntil([&]() { return completion->signaled(); });
+    ZX_ASSERT_MSG(completion->signaled(), "Wait for StartTransfer timed out");
   }
 
   void SetUpAndPowerOnEndpoints() {
@@ -717,9 +755,9 @@ class TestFixture : public gtest_base {
   }
 
   void SetUp() override {
-    stuck_reset_test_ = false;
-    stuck_halt_test_ = false;
-    vbus_high_ = false;
+    stuck_reset_test_.store(false);
+    stuck_halt_test_.store(false);
+    vbus_high_.store(false);
 
     dut_.RunInEnvironmentTypeContext([&](Environment& env) {
       auto& hwparams3 = env.reg_region()[GHWPARAMS3::Get().addr()];
@@ -753,8 +791,8 @@ class TestFixture : public gtest_base {
   }
 
   void TearDown() override {
-    stuck_reset_test_ = false;
-    vbus_high_ = false;
+    stuck_reset_test_.store(false);
+    vbus_high_.store(false);
 
     dut_.runtime().RunUntilIdle();
     if (manage_lifetime) {
@@ -762,12 +800,13 @@ class TestFixture : public gtest_base {
       EXPECT_EQ(dut_.StopDriver().status_value(), ZX_OK);
     }
 
-    // Explicitly reset mock hardware state and sync the environment dispatcher.
-    // This fully destroys the mock VMOs and guarantees no leaked state
-    // across parallel test runs.
     dut_.RunInEnvironmentTypeContext([](Environment& env) { env.Reset(); });
-
     dut_.runtime().RunUntilIdle();
+  }
+
+  void SetDctlCallback(fit::function<void()> cb) {
+    std::lock_guard<std::mutex> lock(dctl_mutex_);
+    dctl_callback_ = std::move(cb);
   }
 
  protected:
@@ -787,7 +826,7 @@ class TestFixture : public gtest_base {
   // Section 1.4.2 of the DWC3 Programmer's guide
   uint32_t Read_DCTL() { return dctl_val_.load(); }
   void Write_DCTL(uint32_t val) {
-    if (DCTL::Get().FromValue(val).CSFTRST() == 1 && vbus_high_) {
+    if (DCTL::Get().FromValue(val).CSFTRST() == 1 && vbus_high_.load()) {
       ADD_FAILURE()
           << "BUG TRIPPED: CSFTRST asserted while physically connected to host! PMIC over-current crowbar spike imminent!";
     }
@@ -796,13 +835,20 @@ class TestFixture : public gtest_base {
         (1 << 29) | (1 << 17) | (1 << 16) | (1 << 15) | (1 << 14) | (1 << 13) | (1 << 0);
     uint32_t updated_val = static_cast<uint32_t>(val & ~kUnwriteableMask);
 
-    if (!stuck_reset_test_) {
+    if (!stuck_reset_test_.load()) {
       updated_val = DCTL::Get().FromValue(updated_val).set_CSFTRST(0).reg_value();
     }
     dctl_val_.store(updated_val);
 
+    {
+      std::lock_guard<std::mutex> lock(dctl_mutex_);
+      if (dctl_callback_) {
+        dctl_callback_();
+      }
+    }
+
     // Satisfy the categorical Spec conformance loop: When controller is halted, set DEVCTRLHLT.
-    if (!stuck_halt_test_) {
+    if (!stuck_halt_test_.load()) {
       uint32_t expected = dsts_val_.load();
       while (true) {
         uint32_t desired =
@@ -835,6 +881,8 @@ class TestFixture : public gtest_base {
   std::atomic<bool> stuck_reset_test_{false};
   std::atomic<bool> stuck_halt_test_{false};
   std::atomic<bool> vbus_high_{false};
+  std::mutex dctl_mutex_;
+  fit::function<void()> dctl_callback_;
 
   fdf_testing::BackgroundDriverTest<Config> dut_;
 
@@ -846,9 +894,22 @@ class TestFixture : public gtest_base {
   // will sometimes fail. To resolve this race, the foreground testing thread needs to be
   // synchronized against the environment thread and wait for the fakes to catch up.
   zx_status_t WaitForPhy() {
-    libsync::Completion* comp{nullptr};
-    dut_.RunInEnvironmentTypeContext([&](Environment& env) { comp = env.usb_phy().completion(); });
-    return comp->Wait(zx::min(1));
+    bool expect = true;
+    dut_.RunInEnvironmentTypeContext(
+        [&](Environment& env) { expect = env.usb_phy().expect_connection_status_observer_call(); });
+    if (!expect) {
+      return ZX_OK;
+    }
+    return dut_.runtime().RunWithTimeoutOrUntil(
+               [&]() {
+                 bool has_comp = false;
+                 dut_.RunInEnvironmentTypeContext(
+                     [&](Environment& env) { has_comp = env.usb_phy().has_completer(); });
+                 return has_comp;
+               },
+               zx::sec(5))
+               ? ZX_OK
+               : ZX_ERR_TIMED_OUT;
   }
 };
 
@@ -861,7 +922,6 @@ class TestEndpointEventHandler
       : completed_(completed), status_(status), length_(length) {}
   void OnCompletion(
       fidl::Event<fuchsia_hardware_usb_endpoint::Endpoint::OnCompletion>& event) override {
-    completed_ = true;
     if (!event.completion().empty()) {
       if (event.completion()[0].status().has_value()) {
         status_ = *event.completion()[0].status();
@@ -870,6 +930,7 @@ class TestEndpointEventHandler
         *length_ = *event.completion()[0].transfer_size();
       }
     }
+    completed_ = true;
   }
 
  private:
@@ -893,7 +954,7 @@ class FakeUsbDciInterface : public fidl::WireServer<fuchsia_hardware_usb_dci::Us
   void SetSetSpeedCallback(SetSpeedCallback cb) { set_speed_cb_ = std::move(cb); }
 
   void Control(ControlRequestView request, ControlCompleter::Sync& completer) override {
-    control_called_ = true;
+    control_called_.store(true);
 
     if (control_cb_) {
       control_cb_(request->setup,
@@ -915,7 +976,7 @@ class FakeUsbDciInterface : public fidl::WireServer<fuchsia_hardware_usb_dci::Us
 
   void SetConnected(SetConnectedRequestView request,
                     SetConnectedCompleter::Sync& completer) override {
-    set_connected_called_ = true;
+    set_connected_called_.store(true);
     if (set_connected_cb_) {
       set_connected_cb_(request->is_connected);
     }
@@ -923,7 +984,7 @@ class FakeUsbDciInterface : public fidl::WireServer<fuchsia_hardware_usb_dci::Us
   }
 
   void SetSpeed(SetSpeedRequestView request, SetSpeedCompleter::Sync& completer) override {
-    set_speed_called_ = true;
+    set_speed_called_.store(true);
     if (set_speed_cb_) {
       set_speed_cb_(request->speed);
     }
@@ -934,14 +995,14 @@ class FakeUsbDciInterface : public fidl::WireServer<fuchsia_hardware_usb_dci::Us
       fidl::UnknownMethodMetadata<fuchsia_hardware_usb_dci::UsbDciInterface> metadata,
       fidl::UnknownMethodCompleter::Sync& completer) override {}
 
-  bool control_called() const { return control_called_; }
-  bool set_connected_called() const { return set_connected_called_; }
-  bool set_speed_called() const { return set_speed_called_; }
+  bool control_called() const { return control_called_.load(); }
+  bool set_connected_called() const { return set_connected_called_.load(); }
+  bool set_speed_called() const { return set_speed_called_.load(); }
 
  private:
-  bool control_called_ = false;
-  bool set_connected_called_ = false;
-  bool set_speed_called_ = false;
+  std::atomic<bool> control_called_{false};
+  std::atomic<bool> set_connected_called_{false};
+  std::atomic<bool> set_speed_called_{false};
   ControlCallback control_cb_;
   SetConnectedCallback set_connected_cb_;
   SetSpeedCallback set_speed_cb_;
@@ -1014,7 +1075,9 @@ class UnmanagedTestFixture : public TestFixture<false> {
       Dwc3TestHelper::SetEpRsrcId(drv, 0, 2);
       Dwc3TestHelper::SetEpRsrcId(drv, 1, 2);
     });
+    EXPECT_EQ(WaitForPhy(), ZX_OK);
     EXPECT_EQ(dut_.StopDriver().status_value(), ZX_OK);
+    dut_.RunInEnvironmentTypeContext([](Environment& env) { env.Reset(); });
   }
 
   void BindDciInterfaceWithoutServer() {
