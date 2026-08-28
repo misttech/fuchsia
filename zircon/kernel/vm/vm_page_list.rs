@@ -6,6 +6,7 @@
 
 use super::pmm::node as pmm_node;
 use crate::kernel::types::PAddr;
+use core::ops::Deref;
 use core::pin::Pin;
 use pin_init::pin_data;
 use vm_constants_rs::{
@@ -585,6 +586,77 @@ impl Drop for VmPageOrMarker {
     }
 }
 
+/// Limited reference to a `VmPageOrMarker`. This reference provides unrestricted const access to
+/// the underlying `VmPageOrMarker`, but as it holds a non-const `VmPageOrMarker` pointer it has the
+/// ability to modify the underlying entry. However, the interface for modification is very limited.
+///
+/// This allows for the majority of `VmPageList` iterations that are not intended to allow for
+/// clearing entries to the Empty state to allow limited mutation (such as between different content
+/// states), without being completely mutable.
+pub struct VmPageOrMarkerRef<'a> {
+    slot: &'a mut VmPageOrMarker,
+}
+
+impl<'a> VmPageOrMarkerRef<'a> {
+    /// Creates a new `VmPageOrMarkerRef` wrapping `slot`.
+    pub fn new(slot: &'a mut VmPageOrMarker) -> Self {
+        Self { slot }
+    }
+
+    /// Changing the kind of content is an allowed mutation and this takes ownership of the provided
+    /// page and returns ownership of the previous reference.
+    pub fn swap_reference_for_page(&mut self, page: VmPagePtr) -> ReferenceValue {
+        self.slot.swap_reference_for_page(page)
+    }
+
+    /// Similar to `swap_reference_for_page`, but takes ownership of the ref and returns ownership
+    /// of the previous page.
+    pub fn swap_page_for_reference(&mut self, ref_val: ReferenceValue) -> VmPagePtr {
+        self.slot.swap_page_for_reference(ref_val)
+    }
+
+    /// Similar to `swap_reference_for_page`, but changes one reference for another.
+    pub fn swap_reference_for_reference(&mut self, ref_val: ReferenceValue) -> ReferenceValue {
+        self.slot.swap_reference_for_reference(ref_val)
+    }
+
+    /// Replaces the contents of this `VmPageOrMarker` with some non-empty contents, and returns
+    /// what was previously present. The previous content is allowed to be empty, but the provided
+    /// content must be non-empty.
+    pub fn swap_content(&mut self, other: VmPageOrMarker) -> VmPageOrMarker {
+        debug_assert!(!other.is_empty(), "swap_content requires non-empty content");
+        self.slot.swap(other)
+    }
+
+    /// Forward dirty state updates as an allowed mutation.
+    pub fn set_zero_interval_awaiting_clean_length(&mut self, len: u64) {
+        self.slot.set_zero_interval_awaiting_clean_length(len);
+    }
+
+    /// Returns the share count of this marker.
+    pub fn marker_share_count(&self) -> u32 {
+        self.slot.marker_share_count()
+    }
+
+    /// Increments the share count of this marker.
+    pub fn increment_marker_share_count(&mut self) {
+        self.slot.increment_marker_share_count();
+    }
+
+    /// Decrements the share count of this marker.
+    pub fn decrement_marker_share_count(&mut self) {
+        self.slot.decrement_marker_share_count();
+    }
+}
+
+impl<'a> Deref for VmPageOrMarkerRef<'a> {
+    type Target = VmPageOrMarker;
+
+    fn deref(&self) -> &Self::Target {
+        self.slot
+    }
+}
+
 /// Class which holds the list of vm_page structs removed from a VmPageList
 /// by AddPagesFrom. The list include information about uncommitted pages and markers.
 /// Every splice list is expected to go through the following series of states:
@@ -634,7 +706,9 @@ impl VmPageSpliceList {
 #[unittest::suite]
 /// Unit tests for VmPageOrMarker.
 mod vm_page_list_rs {
-    use super::{ReferenceValue, VmPageOrMarker};
+    use super::{
+        ReferenceValue, SentinelType, VmPageOrMarker, VmPageOrMarkerRef, ZeroRangeDirtyState,
+    };
     use unittest::{expect_eq, expect_false, expect_true};
 
     /// Tests empty state creation and predicate checks.
@@ -829,5 +903,40 @@ mod vm_page_list_rs {
 
         pm_dirty.set_zero_interval_awaiting_clean_length(8192);
         expect_eq!(pm_dirty.zero_interval_awaiting_clean_length(), 8192);
+    }
+
+    /// Tests VmPageOrMarkerRef deref, mutations, and swap_content.
+    #[test]
+    fn test_page_or_marker_ref() {
+        let mut marker = VmPageOrMarker::marker();
+        {
+            let mut marker_ref = VmPageOrMarkerRef::new(&mut marker);
+            expect_true!(marker_ref.is_marker());
+            marker_ref.increment_marker_share_count();
+            expect_eq!(marker_ref.marker_share_count(), 1);
+            marker_ref.decrement_marker_share_count();
+            expect_eq!(marker_ref.marker_share_count(), 0);
+        }
+
+        let mut slot = VmPageOrMarker::from_reference(ReferenceValue::new(0x1000));
+        {
+            let mut slot_ref = VmPageOrMarkerRef::new(&mut slot);
+            let prev_ref = slot_ref.swap_reference_for_reference(ReferenceValue::new(0x2000));
+            expect_eq!(prev_ref.value(), 0x1000);
+            expect_eq!(slot_ref.reference().value(), 0x2000);
+
+            let mut prev = slot_ref.swap_content(VmPageOrMarker::marker());
+            expect_true!(prev.is_reference());
+            expect_true!(slot_ref.is_marker());
+            let _ = prev.release_reference();
+        }
+
+        let mut dirty_zero =
+            VmPageOrMarker::zero_interval(SentinelType::Start, ZeroRangeDirtyState::Dirty);
+        {
+            let mut dirty_ref = VmPageOrMarkerRef::new(&mut dirty_zero);
+            dirty_ref.set_zero_interval_awaiting_clean_length(8192);
+            expect_eq!(dirty_ref.zero_interval_awaiting_clean_length(), 8192);
+        }
     }
 }
