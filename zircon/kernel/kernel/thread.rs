@@ -4,7 +4,7 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
-use crate::platform_rs::timer::DurationMono;
+use crate::platform_rs::timer::{DurationMono, InstantMono};
 use core::ffi::{c_char, c_void};
 use core::marker::PhantomData;
 use core::ptr::NonNull;
@@ -126,9 +126,9 @@ impl ThreadPtr {
     /// # Safety
     ///
     /// The caller must ensure that the thread has not been joined yet.
-    pub unsafe fn join(self, deadline: zx_instant_mono_t) -> Result<i32, Status> {
+    pub unsafe fn join(self, deadline: InstantMono) -> Result<i32, Status> {
         let mut retcode = 0;
-        let status = unsafe { cpp_thread_join(self.as_raw(), &mut retcode, deadline) };
+        let status = unsafe { cpp_thread_join(self.as_raw(), &mut retcode, deadline.0) };
         Status::ok(status).map(|_| retcode)
     }
 

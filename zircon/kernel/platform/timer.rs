@@ -4,6 +4,8 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
+use zx_types::{ZX_TIME_INFINITE, ZX_TIME_INFINITE_PAST};
+
 /// Monotonic timeline instant in nanoseconds.
 #[repr(transparent)]
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -16,6 +18,11 @@ impl core::ops::Add<i64> for InstantMono {
     fn add(self, rhs: i64) -> Self {
         Self(self.0 + rhs)
     }
+}
+
+impl InstantMono {
+    pub const INFINITE: Self = Self(ZX_TIME_INFINITE);
+    pub const INFINITE_PAST: Self = Self(ZX_TIME_INFINITE_PAST);
 }
 
 /// Monotonic timeline instant in ticks.

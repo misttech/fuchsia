@@ -189,12 +189,12 @@ fn is_full(head: u32, tail: u32, len_pow2: u32) -> bool {
 #[cfg(ktest)]
 #[unittest::suite(name = "cbuf_rust")]
 mod tests {
+    use crate::platform_rs::timer::InstantMono;
     use core::ffi::c_void;
     use core::sync::atomic::{AtomicU32, Ordering};
     use pin_init::stack_pin_init;
     use unittest::{assert_eq, assert_ok, assert_true, unwrap_ok};
     use zx_status::Status;
-    use zx_types::ZX_TIME_INFINITE;
 
     use crate::kernel::thread;
 
@@ -287,7 +287,7 @@ mod tests {
 
             thread.kill();
 
-            let ret = unwrap_ok!(thread.join(ZX_TIME_INFINITE));
+            let ret = unwrap_ok!(thread.join(InstantMono::INFINITE));
             assert_eq!(ret, ZX_ERR_INTERNAL_INTR_KILLED);
         }
     }
@@ -432,7 +432,7 @@ mod tests {
             }
 
             if state.load(Ordering::SeqCst) == 3 {
-                thread.join(ZX_TIME_INFINITE).ok();
+                thread.join(InstantMono::INFINITE).ok();
                 panic!("reader thread failed early");
             }
 
@@ -444,7 +444,7 @@ mod tests {
             assert_eq!(cbuf.write_char(b'X'), 1);
 
             // Wait for reader thread to complete.
-            let ret = unwrap_ok!(thread.join(ZX_TIME_INFINITE));
+            let ret = unwrap_ok!(thread.join(InstantMono::INFINITE));
 
             assert_ok!(Status::ok(ret));
             assert_eq!(state.load(Ordering::SeqCst), 2);

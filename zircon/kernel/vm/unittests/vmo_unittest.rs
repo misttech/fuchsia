@@ -10,6 +10,7 @@
 mod vmo_rs {
     use crate::kernel::thread::{self, ThreadPtr};
     use crate::kernel::types::PAddr;
+    use crate::platform_rs::timer::InstantMono;
     use crate::vm::arch_vm_aspace::{
         ARCH_MMU_FLAG_CACHE_MASK, ARCH_MMU_FLAG_PERM_READ, ARCH_MMU_FLAG_PERM_WRITE,
         ARCH_MMU_FLAG_UNCACHED, ARCH_MMU_FLAG_UNCACHED_DEVICE,
@@ -52,7 +53,7 @@ mod vmo_rs {
         unwrap_ok,
     };
     use zx_status::Status;
-    use zx_types::{ZX_KOID_KERNEL, ZX_TIME_INFINITE};
+    use zx_types::ZX_KOID_KERNEL;
 
     const PAGE_SIZE: u64 = PAGE_SIZE_USIZE as u64;
 
@@ -1999,7 +2000,7 @@ mod vmo_rs {
 
         for t in &threads {
             // SAFETY: `t` is a valid thread that has not yet been joined.
-            let ret = unwrap_ok!(unsafe { t.unwrap().join(ZX_TIME_INFINITE) });
+            let ret = unwrap_ok!(unsafe { t.unwrap().join(InstantMono::INFINITE) });
             expect_eq!(0, ret);
         }
 
@@ -3884,7 +3885,7 @@ mod vmo_rs {
 
             for thread in &threads {
                 // SAFETY: `thread` is a valid thread pointer and has not been joined yet.
-                let ret = unwrap_ok!(unsafe { thread.unwrap().join(ZX_TIME_INFINITE) });
+                let ret = unwrap_ok!(unsafe { thread.unwrap().join(InstantMono::INFINITE) });
                 expect_eq!(0, ret);
             }
 
