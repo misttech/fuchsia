@@ -246,4 +246,60 @@ unsafe extern "C" {
     /// `process` must point to a valid `ProcessDispatcher`.
     pub(crate) fn cpp_process_dispatcher_job(process: *mut ProcessDispatcher)
     -> *mut JobDispatcher;
+
+    /// Returns the debug address of `process`.
+    ///
+    /// # Safety
+    ///
+    /// `process` must point to a valid `ProcessDispatcher`.
+    pub(crate) fn cpp_process_dispatcher_get_debug_addr(process: *const ProcessDispatcher)
+    -> usize;
+
+    /// Sets the debug address of `process`.
+    ///
+    /// # Safety
+    ///
+    /// `process` must point to a valid `ProcessDispatcher`.
+    pub(crate) fn cpp_process_dispatcher_set_debug_addr(
+        process: *const ProcessDispatcher,
+        addr: usize,
+    ) -> zx_status_t;
+
+    /// Returns the dynamic break-on-load address of `process`.
+    ///
+    /// # Safety
+    ///
+    /// `process` must point to a valid `ProcessDispatcher`.
+    pub(crate) fn cpp_process_dispatcher_get_dyn_break_on_load(
+        process: *const ProcessDispatcher,
+    ) -> usize;
+
+    /// Sets the dynamic break-on-load address of `process`.
+    ///
+    /// # Safety
+    ///
+    /// `process` must point to a valid `ProcessDispatcher`.
+    pub(crate) fn cpp_process_dispatcher_set_dyn_break_on_load(
+        process: *const ProcessDispatcher,
+        break_on_load: usize,
+    ) -> zx_status_t;
+
+    /// Returns the vDSO base address of `process`.
+    ///
+    /// # Safety
+    ///
+    /// `process` must point to a valid `ProcessDispatcher`.
+    pub(crate) fn cpp_process_dispatcher_vdso_base_address(
+        process: *const ProcessDispatcher,
+    ) -> usize;
+
+    /// Returns the hardware trace context ID of `process`.
+    ///
+    /// # Safety
+    ///
+    /// `process` must point to a valid `ProcessDispatcher`.
+    #[cfg(target_arch = "x86_64")]
+    pub(crate) fn cpp_process_dispatcher_hw_trace_context_id(
+        process: *const ProcessDispatcher,
+    ) -> usize;
 }

@@ -10,13 +10,16 @@
 #include <stddef.h>
 #include <zircon/types.h>
 
+class Dispatcher;
+
 extern "C" {
 
-zx_status_t cpp_object_get_property(zx_handle_t handle_value, uint32_t property, void* raw_value,
-                                    size_t size);
+// C++ fallback handlers for property topics on dispatchers not yet ported to Rust.
+zx_status_t cpp_object_get_property_cpp_types(const Dispatcher* dispatcher, uint32_t property,
+                                              void* value, size_t size);
 
-zx_status_t cpp_object_set_property(zx_handle_t handle_value, uint32_t property,
-                                    const void* raw_value, size_t size);
+zx_status_t cpp_object_set_property_cpp_types(Dispatcher* dispatcher, uint32_t property,
+                                              const void* value, size_t size, zx_rights_t rights);
 
 }  // extern "C"
 

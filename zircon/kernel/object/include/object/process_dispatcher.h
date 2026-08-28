@@ -475,6 +475,16 @@ zx_status_t cpp_process_dispatcher_create_shared(
 JobDispatcher* cpp_process_dispatcher_job(ProcessDispatcher* process);
 
 VmAspace* cpp_process_dispatcher_aspace_at(ProcessDispatcher* process, zx_vaddr_t va);
+
+uintptr_t cpp_process_dispatcher_get_debug_addr(const ProcessDispatcher* process);
+zx_status_t cpp_process_dispatcher_set_debug_addr(ProcessDispatcher* process, uintptr_t addr);
+uintptr_t cpp_process_dispatcher_get_dyn_break_on_load(const ProcessDispatcher* process);
+zx_status_t cpp_process_dispatcher_set_dyn_break_on_load(ProcessDispatcher* process,
+                                                         uintptr_t break_on_load);
+uintptr_t cpp_process_dispatcher_vdso_base_address(ProcessDispatcher* process);
+#if ARCH_X86
+uintptr_t cpp_process_dispatcher_hw_trace_context_id(const ProcessDispatcher* process);
+#endif
 }
 
 #endif  // ZIRCON_KERNEL_OBJECT_INCLUDE_OBJECT_PROCESS_DISPATCHER_H_

@@ -7,12 +7,17 @@
 use super::dispatcher::DispatcherOps;
 use super::handle::{HandleOwner, HandleValue, KernelHandle};
 use super::job_dispatcher::JobDispatcher;
+#[cfg(target_arch = "x86_64")]
+use super::process_dispatcher_ffi::cpp_process_dispatcher_hw_trace_context_id;
 use super::process_dispatcher_ffi::{
     cpp_process_dispatcher_current, cpp_process_dispatcher_enforce_basic_policy,
+    cpp_process_dispatcher_get_debug_addr, cpp_process_dispatcher_get_dyn_break_on_load,
     cpp_process_dispatcher_get_info, cpp_process_dispatcher_is_current,
     cpp_process_dispatcher_kill, cpp_process_dispatcher_make_and_add_handle,
     cpp_process_dispatcher_resume, cpp_process_dispatcher_set_critical_to_job,
+    cpp_process_dispatcher_set_debug_addr, cpp_process_dispatcher_set_dyn_break_on_load,
     cpp_process_dispatcher_start, cpp_process_dispatcher_suspend,
+    cpp_process_dispatcher_vdso_base_address,
 };
 use super::thread_dispatcher::ThreadDispatcher;
 use super::vm_address_region_dispatcher::VmAddressRegionDispatcher;
@@ -358,6 +363,47 @@ impl ProcessDispatcher {
         };
         // SAFETY: `ptr` is exported via `fbl::ExportToRawPtr` with an acquired refcount.
         unsafe { fbl::RefPtr::try_from_raw(ptr) }
+    }
+
+    /// Returns the debug address of the dynamic loader (`_dl_debug_addr`) for this process.
+    pub fn get_debug_addr(&self) -> usize {
+        // SAFETY: `self` is a valid `ProcessDispatcher` reference.
+        unsafe { cpp_process_dispatcher_get_debug_addr(self as *const _) }
+    }
+
+    /// Sets the debug address of the dynamic loader (`_dl_debug_addr`) for this process.
+    pub fn set_debug_addr(&self, addr: usize) -> Result<(), Status> {
+        // SAFETY: `self` is a valid `ProcessDispatcher` reference.
+        let status = unsafe { cpp_process_dispatcher_set_debug_addr(self as *const _, addr) };
+        Status::ok(status)
+    }
+
+    /// Returns the dynamic break-on-load state for this process.
+    pub fn get_dyn_break_on_load(&self) -> usize {
+        // SAFETY: `self` is a valid `ProcessDispatcher` reference.
+        unsafe { cpp_process_dispatcher_get_dyn_break_on_load(self as *const _) }
+    }
+
+    /// Sets the dynamic break-on-load state for this process.
+    pub fn set_dyn_break_on_load(&self, break_on_load: usize) -> Result<(), Status> {
+        // SAFETY: `self` is a valid `ProcessDispatcher` reference.
+        let status = unsafe {
+            cpp_process_dispatcher_set_dyn_break_on_load(self as *const _, break_on_load)
+        };
+        Status::ok(status)
+    }
+
+    /// Returns the base address of the vDSO mapping for this process.
+    pub fn vdso_base_address(&self) -> usize {
+        // SAFETY: `self` is a valid `ProcessDispatcher` reference.
+        unsafe { cpp_process_dispatcher_vdso_base_address(self as *const _) }
+    }
+
+    /// Returns the hardware trace context ID for this process.
+    #[cfg(target_arch = "x86_64")]
+    pub fn hw_trace_context_id(&self) -> usize {
+        // SAFETY: `self` is a valid `ProcessDispatcher` reference.
+        unsafe { cpp_process_dispatcher_hw_trace_context_id(self as *const _) }
     }
 }
 

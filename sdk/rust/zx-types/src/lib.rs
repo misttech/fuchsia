@@ -612,6 +612,9 @@ multiconst!(u32, [
     // library, either initially or when running (e.g. dlopen).
     ZX_PROP_PROCESS_BREAK_ON_LOAD = 7;
 
+    // A context ID used for hardware tracing. Argument is a uintptr_t.
+    ZX_PROP_PROCESS_HW_TRACE_CONTEXT_ID = 8;
+
     // Argument is a size_t.
     ZX_PROP_SOCKET_RX_THRESHOLD       = 12;
     ZX_PROP_SOCKET_TX_THRESHOLD       = 13;

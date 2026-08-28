@@ -177,4 +177,41 @@ FFI_ALWAYS_INLINE VmAspace* cpp_process_dispatcher_aspace_at(ProcessDispatcher* 
   return process->aspace_at(va);
 }
 
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE uintptr_t
+cpp_process_dispatcher_get_debug_addr(const ProcessDispatcher* process) {
+  return process->get_debug_addr();
+}
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE zx_status_t cpp_process_dispatcher_set_debug_addr(ProcessDispatcher* process,
+                                                                    uintptr_t addr) {
+  return process->set_debug_addr(addr);
+}
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE uintptr_t
+cpp_process_dispatcher_get_dyn_break_on_load(const ProcessDispatcher* process) {
+  return process->get_dyn_break_on_load();
+}
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE zx_status_t
+cpp_process_dispatcher_set_dyn_break_on_load(ProcessDispatcher* process, uintptr_t break_on_load) {
+  return process->set_dyn_break_on_load(break_on_load);
+}
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE uintptr_t cpp_process_dispatcher_vdso_base_address(ProcessDispatcher* process) {
+  return process->vdso_base_address();
+}
+
+#if ARCH_X86
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE uintptr_t
+cpp_process_dispatcher_hw_trace_context_id(const ProcessDispatcher* process) {
+  return process->hw_trace_context_id();
+}
+#endif
+
 }  // extern "C"
