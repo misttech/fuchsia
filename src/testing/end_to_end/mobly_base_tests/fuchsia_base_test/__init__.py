@@ -346,9 +346,9 @@ class FuchsiaBaseTest(fuchsia_async_extension.AsyncBaseTestClass):
                     )
 
     def output_dir(self) -> pathlib.Path:
-        if hasattr(self, "test_case_path"):
+        if getattr(self, "test_case_path", None):
             return pathlib.Path(self.test_case_path)
-        elif hasattr(self, "log_path"):
+        elif getattr(self, "log_path", None):
             return pathlib.Path(self.log_path)
         else:
             raise RuntimeError(
