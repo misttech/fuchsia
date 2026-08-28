@@ -72,7 +72,6 @@ pub use resource_ffi::{
     validate_ranged_resource, validate_resource_kind_base, validate_system_resource,
 };
 pub use sampler_dispatcher::SamplerDispatcher;
-pub use sampler_dispatcher_ffi::*;
 pub use socket_dispatcher::{Disposition, ReadType, SocketDispatcher};
 pub use suspend_token_dispatcher::SuspendTokenDispatcher;
 pub use thread_dispatcher::{AutoBlocked, Blocked, ThreadDispatcher};

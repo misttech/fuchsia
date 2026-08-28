@@ -3,7 +3,6 @@
 # found in the LICENSE file.
 
 import("//build/components.gni")
-import("//zircon/kernel/params.gni")
 
 source_set("lib") {
   sources = [
@@ -65,9 +64,6 @@ executable("bin") {
     "//sdk/lib/syslog/cpp",
     "//src/lib/fsl",
     "//zircon/system/ulib/trace-provider",
-  ]
-  defines = [
-    "EXPERIMENTAL_THREAD_SAMPLER_ENABLED=$experimental_thread_sampler_enabled",
   ]
 }
 

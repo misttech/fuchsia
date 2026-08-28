@@ -44,12 +44,6 @@
 #include "test_component.h"
 #include "unowned_component.h"
 
-#ifdef EXPERIMENTAL_THREAD_SAMPLER_ENABLED
-constexpr bool kSamplerKernelSupport = EXPERIMENTAL_THREAD_SAMPLER_ENABLED;
-#else
-#error "EXPERIMENTAL_THREAD_SAMPLER_ENABLED should always be defined"
-#endif
-
 namespace {
 zx::result<> PopulateTargets(profiler::TargetTree& tree, TaskFinder::FoundTasks&& tasks,
                              elf_search::Searcher& searcher) {
@@ -471,16 +465,8 @@ void profiler::ProfilerControllerImpl::Start(StartRequest& request,
     sampler_ = fxl::MakeRefCounted<StackSampler>(dispatcher_, std::move(targets_),
                                                  std::move(sample_specs_), std::move(on_sample));
   } else if (strategy == fuchsia_cpu_profiler::CallgraphStrategy::kFramePointer) {
-    if constexpr (kSamplerKernelSupport) {
-      sampler_ = fxl::MakeRefCounted<KernelSampler>(dispatcher_, std::move(targets_),
-                                                    std::move(sample_specs_), std::move(on_sample));
-    } else {
-      FX_LOGS(WARNING)
-          << "Kernel assisted sampling is not enabled. Falling back to zx_process_read_memory based sampling.\n"
-          << "Set the build arg \"experimental_thread_sampler_enabled = true\" to enable kernel assisted sampling";
-      sampler_ = fxl::MakeRefCounted<Sampler>(dispatcher_, std::move(targets_),
-                                              std::move(sample_specs_), std::move(on_sample));
-    }
+    sampler_ = fxl::MakeRefCounted<KernelSampler>(dispatcher_, std::move(targets_),
+                                                  std::move(sample_specs_), std::move(on_sample));
   } else {
     FX_LOGS(ERROR) << "Unsupported callgraph strategy: "
                    << static_cast<int>(fidl::ToUnderlying(strategy));

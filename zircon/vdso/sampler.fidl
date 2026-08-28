@@ -100,8 +100,7 @@ closed protocol Sampler {
     /// ## Errors
     ///
     /// `ZX_ERR_NOT_SUPPORTED`  `kernel.enable-debugging-syscalls` is not set to `true`
-    /// on the kernel command line or the experimental_thread_sampler_enabled
-    /// build param is not set to true.
+    /// on the kernel command line.
     ///
     /// `ZX_ERR_PERMISION_DENIED` *rsrc* is not  resource kind
     /// `ZX_RSRC_KIND_SYSTEM` with base `ZX_RSRC_SYSTEM_DEBUG_BASE`.
@@ -159,8 +158,7 @@ closed protocol Sampler {
     /// ## Errors
     ///
     /// `ZX_ERR_NOT_SUPPORTED`  `kernel.enable-debugging-syscalls` is not set to `true`
-    /// on the kernel command line or the experimental_thread_sampler_enabled
-    /// build param is not set to true.
+    /// on the kernel command line.
     ///
     /// `ZX_ERR_PERMISION_DENIED` *iobuffer* is not an IOBuffer returned by zx_sampler_create.
     ///
@@ -202,8 +200,7 @@ closed protocol Sampler {
     /// ## Errors
     ///
     /// `ZX_ERR_NOT_SUPPORTED`  `kernel.enable-debugging-syscalls` is not set to `true`
-    /// on the kernel command line or the experimental_thread_sampler_enabled
-    /// build param is not set to true.
+    /// on the kernel command line.
     ///
     /// `ZX_ERR_PERMISION_DENIED` *iobuffer* is not an IOBuffer returned by zx_sampler_create.
     ///
@@ -253,8 +250,7 @@ closed protocol Sampler {
     /// ## Errors
     ///
     /// `ZX_ERR_NOT_SUPPORTED`  `kernel.enable-debugging-syscalls` is not set to `true`
-    /// on the kernel command line or the experimental_thread_sampler_enabled
-    /// build param is not set to true.
+    /// on the kernel command line.
     ///
     /// `ZX_ERR_PERMISION_DENIED` *sampler* is not a sampler returned by zx_sampler_create.
     ///

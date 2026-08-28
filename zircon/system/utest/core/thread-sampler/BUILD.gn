@@ -2,8 +2,6 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-import("//zircon/kernel/params.gni")
-
 source_set("thread-sampler") {
   testonly = true
   sources = [ "thread-sampler.cc" ]
@@ -16,12 +14,5 @@ source_set("thread-sampler") {
     "//src/zircon/testing/standalone-test",
     "//zircon/system/ulib/zx",
     "//zircon/system/ulib/zxtest",
-  ]
-  configs += [ ":include_experimental_thread_sampler" ]
-}
-
-config("include_experimental_thread_sampler") {
-  defines = [
-    "EXPERIMENTAL_THREAD_SAMPLER_ENABLED=$experimental_thread_sampler_enabled",
   ]
 }

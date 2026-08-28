@@ -29,15 +29,6 @@ unsafe extern "C" {
         len: usize,
         actual_out: *mut usize,
     ) -> zx_status_t;
-
-    /// Checks if thread sampling is enabled.
-    pub fn cpp_sampler_enabled() -> bool;
-}
-
-/// Returns whether thread sampler feature is enabled.
-pub fn sampler_enabled() -> bool {
-    // SAFETY: FFI query function reads global boot/feature option and has no side effects.
-    unsafe { cpp_sampler_enabled() }
 }
 
 // Trampolines from C++ into Rust SamplerDispatcherState

@@ -384,7 +384,6 @@ variant("kernel_config") {
     "VM_TRACING_LEVEL=$vm_tracing_level",
     "FUTEX_BLOCK_TRACING_ENABLED=$futex_block_tracing_enabled",
     "LOCK_NAME_TRACING_ENABLED=$lock_name_tracing_enabled",
-    "EXPERIMENTAL_THREAD_SAMPLER_ENABLED=$experimental_thread_sampler_enabled",
     "EXPERIMENTAL_FORCE_NEW_WAKEUP_ACCOUNTING=$experimental_force_enable_new_wakeup_accounting",
     "EXPERIMENTAL_CONTINUOUS_PER_VMO_ATTRIBUTION_ENABLED=$experimental_continuous_per_vmo_attribution_enabled",
     "CHANNEL_MESSAGE_BODY_TRACING_ENABLED=$channel_message_body_tracing_enabled",

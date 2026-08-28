@@ -27,12 +27,6 @@
 #include "../threads/test-thread.h"
 #include "../threads/thread-functions/thread-functions.h"
 
-#ifdef EXPERIMENTAL_THREAD_SAMPLER_ENABLED
-constexpr bool sampler_enabled = EXPERIMENTAL_THREAD_SAMPLER_ENABLED;
-#else
-constexpr bool sampler_enabled = false;
-#endif
-
 namespace {
 
 zx_koid_t GetTid(zx_handle_t thread) {
@@ -151,13 +145,7 @@ TEST(ThreadSampler, StartStop) {
   ASSERT_OK(result.status_value());
   zx::resource sampling_resource = std::move(result.value());
 
-  zx_status_t create_res = zx_sampler_create(sampling_resource.get(), 0, &config, &sampler);
-  if constexpr (!sampler_enabled) {
-    ASSERT_EQ(create_res, ZX_ERR_NOT_SUPPORTED);
-    return;
-  }
-
-  ASSERT_OK(create_res);
+  ASSERT_OK(zx_sampler_create(sampling_resource.get(), 0, &config, &sampler));
 
   zx::event event;
   ASSERT_EQ(zx::event::create(0, &event), ZX_OK);
@@ -196,12 +184,7 @@ TEST(ThreadSampler, SamplerLifetime) {
 
   {
     zx_handle_t sampler;
-    zx_status_t create_res = zx_sampler_create(sampling_resource.get(), 0, &config, &sampler);
-    if constexpr (!sampler_enabled) {
-      ASSERT_EQ(create_res, ZX_ERR_NOT_SUPPORTED);
-      return;
-    }
-    ASSERT_OK(create_res);
+    ASSERT_OK(zx_sampler_create(sampling_resource.get(), 0, &config, &sampler));
 
     zx_handle_t new_sampler;
     zx_status_t create_res_bad =
@@ -250,13 +233,7 @@ TEST(ThreadSampler, DroppedSampler) {
   ASSERT_OK(result.status_value());
   zx::resource sampling_resource = std::move(result.value());
 
-  zx_status_t create_res = zx_sampler_create(sampling_resource.get(), 0, &config, &sampler);
-  if constexpr (!sampler_enabled) {
-    ASSERT_EQ(create_res, ZX_ERR_NOT_SUPPORTED);
-    return;
-  }
-
-  ASSERT_OK(create_res);
+  ASSERT_OK(zx_sampler_create(sampling_resource.get(), 0, &config, &sampler));
 
   zx::event event;
   ASSERT_EQ(zx::event::create(0, &event), ZX_OK);
@@ -274,8 +251,7 @@ TEST(ThreadSampler, DroppedSampler) {
   ASSERT_OK(zx_handle_close(sampler));
 
   // And create a new one
-  create_res = zx_sampler_create(sampling_resource.get(), 0, &config, &sampler);
-  ASSERT_OK(create_res);
+  ASSERT_OK(zx_sampler_create(sampling_resource.get(), 0, &config, &sampler));
   ASSERT_OK(zx_sampler_start(sampler));
   ASSERT_OK(ReadNRecordsContainingTid(sampler, tid, 10).status_value());
   ASSERT_OK(zx_sampler_stop(sampler));
@@ -303,17 +279,11 @@ TEST(ThreadSampler, NonRunningThread) {
   zx::resource sampling_resource = std::move(result.value());
 
   // Create the thread, but defer starting the thread until after we've attached to it.
-  zx_status_t create_res = zx_sampler_create(sampling_resource.get(), 0, &config, &sampler);
-  if constexpr (!sampler_enabled) {
-    ASSERT_EQ(create_res, ZX_ERR_NOT_SUPPORTED);
-    return;
-  }
+  ASSERT_OK(zx_sampler_create(sampling_resource.get(), 0, &config, &sampler));
   TestThread test_thread;
   ASSERT_NO_FATAL_FAILURE(test_thread.Init("NonRunningThread"));
   zx_koid_t tid = GetTid(test_thread.thread().get());
   ASSERT_NE(tid, ZX_KOID_INVALID);
-
-  ASSERT_OK(create_res);
 
   zx::event event;
   ASSERT_EQ(zx::event::create(0, &event), ZX_OK);
@@ -353,13 +323,7 @@ TEST(ThreadSampler, HighFrequency) {
   ASSERT_OK(result.status_value());
   zx::resource sampling_resource = std::move(result.value());
 
-  zx_status_t create_res = zx_sampler_create(sampling_resource.get(), 0, &config, &sampler);
-  if constexpr (!sampler_enabled) {
-    ASSERT_EQ(create_res, ZX_ERR_NOT_SUPPORTED);
-    return;
-  }
-
-  ASSERT_OK(create_res);
+  ASSERT_OK(zx_sampler_create(sampling_resource.get(), 0, &config, &sampler));
 
   std::vector<zx::event> events;
   std::vector<std::thread> threads;

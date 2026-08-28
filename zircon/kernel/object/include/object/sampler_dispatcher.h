@@ -29,7 +29,6 @@ zx_status_t cpp_sampler_dispatcher_start(const SamplerDispatcher* dispatcher);
 zx_status_t cpp_sampler_dispatcher_stop(const SamplerDispatcher* dispatcher);
 zx_status_t cpp_sampler_dispatcher_read_user(const SamplerDispatcher* dispatcher, void* ptr,
                                              size_t len, size_t* actual_out);
-bool cpp_sampler_enabled();
 }
 
 // A Sampler manages sampling threads and writing the results out to per cpu buffers.

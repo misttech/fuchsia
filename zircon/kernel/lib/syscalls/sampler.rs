@@ -21,7 +21,7 @@ use crate::user_copy::{UserInPtr, UserOutPtr};
 const LOCAL_TRACE: u32 = 0;
 
 fn check_sampler_supported() -> Result<(), Status> {
-    if !crate::object::sampler_enabled() || !BootOptions::get().enable_debugging_syscalls {
+    if !BootOptions::get().enable_debugging_syscalls {
         return Err(Status::NOT_SUPPORTED);
     }
     Ok(())

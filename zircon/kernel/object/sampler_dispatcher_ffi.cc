@@ -15,13 +15,6 @@
 #include <object/handle.h>
 #include <object/sampler_dispatcher.h>
 
-#ifdef EXPERIMENTAL_THREAD_SAMPLER_ENABLED
-constexpr bool kSamplerEnabled = EXPERIMENTAL_THREAD_SAMPLER_ENABLED;
-#else
-// The build system should always define the macro.
-#error
-#endif
-
 extern "C" {
 
 zx_status_t cpp_sampler_dispatcher_create(
@@ -57,7 +50,5 @@ zx_status_t cpp_sampler_dispatcher_read_user(const SamplerDispatcher* dispatcher
   *actual_out = read;
   return status;
 }
-
-bool cpp_sampler_enabled() { return kSamplerEnabled; }
 
 }  // extern "C"
