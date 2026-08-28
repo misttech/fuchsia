@@ -6,6 +6,7 @@ assert(is_fuchsia, "These targets are only compiled in the fuchsia toolchain.")
 
 import("//build/components.gni")
 import("//build/rust/rustc_test.gni")
+import("//src/testing/trf_codegen/trf_test.gni")
 
 rustc_test("bin") {
   name = "reverser_integration_test_rust"
@@ -30,4 +31,11 @@ fuchsia_test_component("reverser_integration_test_component") {
 fuchsia_test_package("reverser_integration_test") {
   test_components = [ ":reverser_integration_test_component" ]
   deps = [ "//examples/components/reverser:reverser_component" ]
+}
+
+trf_test("reverser_trf_integration_test") {
+  source = "src/reverser_trf_tester.rs"
+  cut = [ "//examples/components/reverser" ]
+  deps =
+      [ "//examples/components/reverser/fidl:fuchsia.examples.reverser_rust" ]
 }
