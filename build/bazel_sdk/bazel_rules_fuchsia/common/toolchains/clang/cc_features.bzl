@@ -224,10 +224,6 @@ _flag_configs = struct(
             # between a function pointer and the target function.
             "-Wno-cast-function-type-mismatch",
             "-Wno-unknown-warning-option",
-
-            # TODO(https://fxbug.dev/344080745): After the issue is fixed,
-            # remove "-Wno-missing-template-arg-list-after-template-kw".
-            "-Wno-missing-template-arg-list-after-template-kw",
             "-Wno-missing-field-initializers",
 
             # TODO(https://fxbug.dev/331282813): Disable "-Wdeprecated-pragma" which
