@@ -646,13 +646,7 @@ TEST_P(Dwc3EndpointsTest, InputEndpointZlpComplete) {
   WaitForState(ep_num, expected_state);
 
   // Complete first TRB (data TRB).
-  dut_.RunInDriverContext([&](Dwc3& drv) {
-    if (enqueue_many) {
-      TriggerEpTransferInProgress(drv, ep_num);
-    } else {
-      TriggerEpTransferComplete(drv, ep_num);
-    }
-  });
+  dut_.RunInDriverContext([&](Dwc3& drv) { TriggerEpTransferInProgress(drv, ep_num); });
   dut_.runtime().RunUntilIdle();
 
   // The request should NOT be completed yet, because the ZLP TRB is still
@@ -801,13 +795,7 @@ TEST_P(Dwc3EndpointsTest, InputEndpointMultiPacketZlpComplete) {
   WaitForState(ep_num, expected_state);
 
   // Complete data TRB.
-  dut_.RunInDriverContext([&](Dwc3& drv) {
-    if (enqueue_many) {
-      TriggerEpTransferInProgress(drv, ep_num);
-    } else {
-      TriggerEpTransferComplete(drv, ep_num);
-    }
-  });
+  dut_.RunInDriverContext([&](Dwc3& drv) { TriggerEpTransferInProgress(drv, ep_num); });
   dut_.runtime().RunUntilIdle();
 
   // Request pending completion of ZLP TRB.
@@ -1802,11 +1790,9 @@ TEST_P(Dwc3EndpointsTest, CancelAllTransferEndedBeforeUnbound) {
   });
 }
 
-// Tests that completing a single-transfer request via TransferInProgress correctly
+// Tests that completing a single-transfer request via TransferComplete correctly
 // returns the endpoint state machine to kIdle and starts the next queued request.
-// DISABLED: Requires driver support for single-transfer state reset and next request dispatch
-// upon TransferInProgress.
-TEST_P(Dwc3EndpointsTest, DISABLED_SingleTransferInProgress_CompletesAndStartsNext) {
+TEST_P(Dwc3EndpointsTest, SingleTransfer_SequentialCompletionAndNextStart) {
   TriggerConnection();
 
   const uint8_t ep_address = 0x02;
@@ -1826,8 +1812,8 @@ TEST_P(Dwc3EndpointsTest, DISABLED_SingleTransferInProgress_CompletesAndStartsNe
   dut_.RunInDriverContext([&](Dwc3& drv) { TriggerEpTransferStarted(drv, ep_num, kResourceId); });
   WaitForState(ep_num, TransferState::kActiveSingle);
 
-  // Complete request 1 via TransferInProgress.
-  dut_.RunInDriverContext([&](Dwc3& drv) { TriggerEpTransferInProgress(drv, ep_num); });
+  // Complete request 1 via TransferComplete.
+  dut_.RunInDriverContext([&](Dwc3& drv) { TriggerEpTransferComplete(drv, ep_num); });
 
   // Verify that request 2 is dequeued and begins starting.
   WaitForState(ep_num, TransferState::kStartingSingle);
@@ -1838,22 +1824,20 @@ TEST_P(Dwc3EndpointsTest, DISABLED_SingleTransferInProgress_CompletesAndStartsNe
     EXPECT_EQ(uep.server->queued_reqs.size(), 0u);
   });
 
-  // Start and complete request 2 via TransferInProgress.
+  // Start and complete request 2 via TransferComplete.
   dut_.RunInDriverContext(
       [&](Dwc3& drv) { TriggerEpTransferStarted(drv, ep_num, kResourceId + 1); });
   WaitForState(ep_num, TransferState::kActiveSingle);
-  dut_.RunInDriverContext([&](Dwc3& drv) { TriggerEpTransferInProgress(drv, ep_num); });
+  dut_.RunInDriverContext([&](Dwc3& drv) { TriggerEpTransferComplete(drv, ep_num); });
 
   WaitForState(ep_num, TransferState::kIdle);
   std::vector<CompletionResult> completions = event_handler_.WaitForCompletions(2);
   EXPECT_EQ(completions.size(), 2u);
 }
 
-// Tests that when the active queue drains to 0 via TransferInProgress, the endpoint
+// Tests that when the active queue drains to 0 via TransferComplete, the endpoint
 // returns to kIdle and subsequent calls to QueueRequests start transfers cleanly.
-// DISABLED: Requires driver support for single-transfer idle state recovery upon active queue
-// exhaustion via TransferInProgress.
-TEST_P(Dwc3EndpointsTest, DISABLED_SingleTransferInProgress_ActiveQueueDrainThenRequeue) {
+TEST_P(Dwc3EndpointsTest, SingleTransfer_ActiveQueueDrainThenRequeue) {
   TriggerConnection();
 
   const uint8_t ep_address = 0x02;
@@ -1871,8 +1855,8 @@ TEST_P(Dwc3EndpointsTest, DISABLED_SingleTransferInProgress_ActiveQueueDrainThen
   dut_.RunInDriverContext([&](Dwc3& drv) { TriggerEpTransferStarted(drv, ep_num, kResourceId); });
   WaitForState(ep_num, TransferState::kActiveSingle);
 
-  // Complete request 1 via TransferInProgress so active count drains to 0.
-  dut_.RunInDriverContext([&](Dwc3& drv) { TriggerEpTransferInProgress(drv, ep_num); });
+  // Complete request 1 via TransferComplete so active count drains to 0.
+  dut_.RunInDriverContext([&](Dwc3& drv) { TriggerEpTransferComplete(drv, ep_num); });
 
   // State should return to kIdle once active requests drain.
   WaitForState(ep_num, TransferState::kIdle);
@@ -1893,7 +1877,8 @@ TEST_P(Dwc3EndpointsTest, DISABLED_SingleTransferInProgress_ActiveQueueDrainThen
 }
 
 // Tests that a 64-byte transfer on a 64-byte max-packet Interrupt IN endpoint with short_bit set
-// correctly enqueues and completes 2 TRBs (data TRB + ZLP TRB).
+// correctly enqueues and completes 2 TRBs (data TRB via TransferInProgress + ZLP TRB via
+// TransferComplete).
 TEST_P(Dwc3EndpointsTest, InterruptIn_ZlpTwoTrbCompletion) {
   TriggerConnection();
 
@@ -1922,12 +1907,20 @@ TEST_P(Dwc3EndpointsTest, InterruptIn_ZlpTwoTrbCompletion) {
   dut_.RunInDriverContext([&](Dwc3& drv) { TriggerEpTransferStarted(drv, ep_num, kResourceId); });
   WaitForState(ep_num, TransferState::kActiveSingle);
 
-  // Complete data TRB. Request should not complete yet because ZLP TRB is pending.
-  dut_.RunInDriverContext([&](Dwc3& drv) { TriggerEpTransferComplete(drv, ep_num); });
+  // Complete intermediate data TRB via TransferInProgress.
+  // Request should not complete yet and state remains kActiveSingle because ZLP TRB is pending.
+  dut_.RunInDriverContext([&](Dwc3& drv) { TriggerEpTransferInProgress(drv, ep_num); });
   dut_.runtime().RunUntilIdle();
   EXPECT_EQ(event_handler_.completion_count(), 0u);
+  dut_.RunInDriverContext([&](Dwc3& drv) {
+    auto& uep = GetUserEndpoint(drv, ep_num);
+    EXPECT_EQ(uep.ep.transfer_state, TransferState::kActiveSingle);
+    ASSERT_EQ(uep.server->active_reqs.size(), 1u);
+    EXPECT_EQ(uep.server->active_reqs.front().completed_trbs, 1u);
+    EXPECT_EQ(uep.server->active_reqs.front().completed_bytes, 64u);
+  });
 
-  // Complete ZLP TRB.
+  // Complete terminal ZLP TRB via TransferComplete.
   dut_.RunInDriverContext([&](Dwc3& drv) { TriggerEpTransferComplete(drv, ep_num); });
   WaitForState(ep_num, TransferState::kIdle);
 
