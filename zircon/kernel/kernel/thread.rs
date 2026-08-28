@@ -28,6 +28,7 @@ unsafe extern "C" {
     ) -> i32;
     fn cpp_thread_current_yield();
     fn cpp_thread_kill(thread: *mut Thread);
+    fn cpp_thread_suspend(thread: *mut Thread) -> zx_status_t;
     fn cpp_thread_is_blocked(thread: *mut Thread) -> bool;
     fn cpp_thread_current_get() -> *mut Thread;
     fn cpp_thread_fxt_ref(thread: *mut Thread) -> FxtRef;
@@ -139,6 +140,16 @@ impl ThreadPtr {
     /// The caller must ensure the thread is still valid.
     pub unsafe fn kill(self) {
         unsafe { cpp_thread_kill(self.as_raw()) }
+    }
+
+    /// Suspends execution of the thread.
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure the thread is still valid.
+    pub unsafe fn suspend(self) -> Result<(), Status> {
+        let status = unsafe { cpp_thread_suspend(self.as_raw()) };
+        Status::ok(status)
     }
 
     /// Checks if the thread is currently blocked.
