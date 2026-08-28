@@ -11,11 +11,8 @@
 #include <iostream>
 
 // PNG Imports
-#include <fuchsia/images/cpp/fidl.h>
 #include <lib/async/default.h>
 #include <png.h>
-
-#include <src/lib/fostr/fidl/fuchsia/images/formatting.h>
 
 #include "src/lib/fsl/vmo/sized_vmo.h"
 #include "src/lib/fsl/vmo/vector.h"
@@ -29,7 +26,7 @@ void ImageCompression::EncodePng(EncodePngRequest& request, EncodePngCompleter::
   // Ensure all required input fields exist.
   if (!request.raw_vmo() || !request.image_dimensions() || !request.png_vmo()) {
     async_completer.Reply(
-        fit::as_error(fuchsia::ui::compression::internal::ImageCompressionError::MISSING_ARGS));
+        fit::as_error(fuchsia_ui_compression_internal::ImageCompressionError::kMissingArgs));
     return;
   }
 
@@ -56,7 +53,7 @@ void ImageCompression::EncodePng(EncodePngRequest& request, EncodePngCompleter::
   if (raw_image_size > in_vmo_size) {
     FX_LOGS(WARNING) << "ImageCompression::EncodePng(): in_vmo is too small";
     async_completer.Reply(
-        fit::as_error(fuchsia::ui::compression::internal::ImageCompressionError::INVALID_ARGS));
+        fit::as_error(fuchsia_ui_compression_internal::ImageCompressionError::kInvalidArgs));
     return;
   }
 
@@ -65,7 +62,7 @@ void ImageCompression::EncodePng(EncodePngRequest& request, EncodePngCompleter::
   if (png_vmo_size < raw_image_size + zx_system_get_page_size()) {
     FX_LOGS(WARNING) << "ImageCompression::EncodePng(): png_vmo is too small";
     async_completer.Reply(
-        fit::as_error(fuchsia::ui::compression::internal::ImageCompressionError::INVALID_ARGS));
+        fit::as_error(fuchsia_ui_compression_internal::ImageCompressionError::kInvalidArgs));
     return;
   }
 
@@ -75,7 +72,7 @@ void ImageCompression::EncodePng(EncodePngRequest& request, EncodePngCompleter::
   png_structp png_ptr = png_create_write_struct(PNG_LIBPNG_VER_STRING, nullptr, nullptr, nullptr);
   if (!png_ptr) {
     async_completer.Reply(
-        fit::as_error(fuchsia::ui::compression::internal::ImageCompressionError::BAD_OPERATION));
+        fit::as_error(fuchsia_ui_compression_internal::ImageCompressionError::kBadOperation));
     return;
   }
 
@@ -84,7 +81,7 @@ void ImageCompression::EncodePng(EncodePngRequest& request, EncodePngCompleter::
     png_destroy_write_struct(&png_ptr, nullptr);
 
     async_completer.Reply(
-        fit::as_error(fuchsia::ui::compression::internal::ImageCompressionError::BAD_OPERATION));
+        fit::as_error(fuchsia_ui_compression_internal::ImageCompressionError::kBadOperation));
     return;
   }
 
@@ -92,7 +89,7 @@ void ImageCompression::EncodePng(EncodePngRequest& request, EncodePngCompleter::
   if (setjmp(png_jmpbuf(png_ptr))) {
     FX_LOGS(WARNING) << "ImageCompression::EncodePng(): Cannot set libpng error handler";
     async_completer.Reply(
-        fit::as_error(fuchsia::ui::compression::internal::ImageCompressionError::BAD_OPERATION));
+        fit::as_error(fuchsia_ui_compression_internal::ImageCompressionError::kBadOperation));
     return;
   }
 
@@ -106,7 +103,7 @@ void ImageCompression::EncodePng(EncodePngRequest& request, EncodePngCompleter::
   if (!fsl::VectorFromVmo(raw_image, &imgdata)) {
     FX_LOGS(WARNING) << "ImageCompression::EncodePng(): Cannot extract data from raw image VMO";
     async_completer.Reply(
-        fit::as_error(fuchsia::ui::compression::internal::ImageCompressionError::BAD_OPERATION));
+        fit::as_error(fuchsia_ui_compression_internal::ImageCompressionError::kBadOperation));
     return;
   }
 
@@ -133,6 +130,7 @@ void ImageCompression::EncodePng(EncodePngRequest& request, EncodePngCompleter::
 
   // This may fail if the client does not allow resizing - but that's okay as it's not necessary.
   request.png_vmo()->set_size(pixels.size());
+  request.png_vmo()->set_prop_content_size(pixels.size());
 
   // Success!
   request.png_vmo()->write(pixels.data(), 0, pixels.size() * sizeof(uint8_t));

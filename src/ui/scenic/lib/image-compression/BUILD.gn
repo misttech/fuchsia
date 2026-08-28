@@ -20,8 +20,6 @@ source_set("lib") {
 
   public_deps = [
     "//sdk/fidl/fuchsia.ui.compression.internal:fuchsia.ui.compression.internal_cpp",
-    "//sdk/fidl/fuchsia.ui.compression.internal:fuchsia.ui.compression.internal_cpp_hlcpp_conversion",
-    "//sdk/fidl/fuchsia.ui.compression.internal:fuchsia.ui.compression.internal_hlcpp",
     "//sdk/lib/async",
     "//sdk/lib/async:async-cpp",
     "//sdk/lib/inspect/component/cpp",
@@ -30,8 +28,6 @@ source_set("lib") {
   ]
 
   deps = [
-    "//sdk/fidl/fuchsia.images:fuchsia.images_hlcpp",
-    "//src/lib/fostr/fidl/fuchsia.images",
     "//src/lib/fsl",
     "//third_party/libpng",
   ]

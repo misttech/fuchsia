@@ -17,6 +17,7 @@ cc_test_executable("unittests") {
   sources = [ "image_compression_unittest.cc" ]
 
   deps = [
+    "//sdk/fidl/fuchsia.math:fuchsia.math_cpp",
     "//sdk/lib/async-default",
     "//sdk/lib/async-loop:async-loop-cpp",
     "//sdk/lib/async-loop:async-loop-default",

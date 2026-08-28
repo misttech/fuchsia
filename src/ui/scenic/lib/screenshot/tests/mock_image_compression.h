@@ -5,34 +5,33 @@
 #ifndef SRC_UI_SCENIC_LIB_SCREENSHOT_TESTS_MOCK_IMAGE_COMPRESSION_H_
 #define SRC_UI_SCENIC_LIB_SCREENSHOT_TESTS_MOCK_IMAGE_COMPRESSION_H_
 
-#include <fuchsia/ui/compression/internal/cpp/fidl.h>
-#include <fuchsia/ui/compression/internal/cpp/fidl_test_base.h>
-#include <lib/fidl/cpp/binding_set.h>
+#include <fidl/fuchsia.ui.compression.internal/cpp/fidl.h>
 #include <lib/syslog/cpp/macros.h>
 
 #include <gmock/gmock.h>
 
 namespace screenshot::test {
 
-// Mock class of BufferCollectionImporter for API testing.
-class MockImageCompression
-    : public fuchsia::ui::compression::internal::testing::ImageCompressor_TestBase {
+// Mock class of ImageCompressor for API testing.
+class MockImageCompression : public fidl::Server<fuchsia_ui_compression_internal::ImageCompressor> {
  public:
-  MockImageCompression() : binding_(this) {}
-  void NotImplemented_(const std::string& name) final {}
+  MockImageCompression() = default;
 
-  void Bind(zx::channel compressor_channel, async_dispatcher_t* dispatcher = nullptr) {
-    binding_.Bind(fidl::InterfaceRequest<fuchsia::ui::compression::internal::ImageCompressor>(
-                      std::move(compressor_channel)),
-                  dispatcher);
+  void Bind(fidl::ServerEnd<fuchsia_ui_compression_internal::ImageCompressor> server_end,
+            async_dispatcher_t* dispatcher) {
+    bindings_.AddBinding(dispatcher, std::move(server_end), this, fidl::kIgnoreBindingClosure);
   }
 
-  MOCK_METHOD(void, EncodePng,
-              (fuchsia::ui::compression::internal::ImageCompressorEncodePngRequest request,
-               EncodePngCallback callback));
+  void EncodePng(EncodePngRequest& request, EncodePngCompleter::Sync& completer) override {
+    EncodePngMock(request, completer);
+  }
+
+  MOCK_METHOD(void, EncodePngMock,
+              (fuchsia_ui_compression_internal::ImageCompressorEncodePngRequest & request,
+               EncodePngCompleter::Sync& completer));
 
  private:
-  fidl::Binding<fuchsia::ui::compression::internal::ImageCompressor> binding_;
+  fidl::ServerBindingGroup<fuchsia_ui_compression_internal::ImageCompressor> bindings_;
 };
 
 }  // namespace screenshot::test

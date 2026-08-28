@@ -29,7 +29,6 @@
 #include "src/ui/scenic/lib/utils/helpers.h"
 
 using allocation::BufferCollectionImporter;
-using fuchsia::ui::compression::internal::ImageCompressorEncodePngRequest;
 using fuchsia_ui_composition::ScreenshotFormat;
 using fuchsia_ui_composition::ScreenshotTakeFileResponse;
 using fuchsia_ui_composition::ScreenshotTakeResponse;
@@ -41,26 +40,27 @@ namespace test {
 constexpr auto kDisplayWidth = 100u;
 constexpr auto kDisplayHeight = 200u;
 
-constexpr auto kResolveEncodePng = [](ImageCompressorEncodePngRequest request,
-                                      MockImageCompression::EncodePngCallback callback) -> void {
-  fuchsia::ui::compression::internal::ImageCompressor_EncodePng_Result result;
-  if (!request.has_raw_vmo() || !request.has_png_vmo() || !request.has_image_dimensions()) {
-    result.set_err(fuchsia::ui::compression::internal::ImageCompressionError::MISSING_ARGS);
+constexpr auto kResolveEncodePng =
+    [](fuchsia_ui_compression_internal::ImageCompressorEncodePngRequest& request,
+       MockImageCompression::EncodePngCompleter::Sync& completer) -> void {
+  if (!request.raw_vmo().has_value() || !request.png_vmo().has_value() ||
+      !request.image_dimensions().has_value()) {
+    completer.Reply(
+        fit::as_error(fuchsia_ui_compression_internal::ImageCompressionError::kMissingArgs));
   } else {
     uint64_t in_vmo_size;
-    FX_CHECK(request.raw_vmo().get_size(&in_vmo_size) == ZX_OK);
-    fsl::SizedVmo raw_image = fsl::SizedVmo(std::move(*request.mutable_raw_vmo()), in_vmo_size);
+    FX_CHECK(request.raw_vmo()->get_size(&in_vmo_size) == ZX_OK);
+    fsl::SizedVmo raw_image = fsl::SizedVmo(std::move(*request.raw_vmo()), in_vmo_size);
     std::vector<uint8_t> imgdata;
     fsl::VectorFromVmo(raw_image, &imgdata);
 
     // Just dump raw image data into png_vmo. Don't actually compress, just want to ensure
     // Take() with PNG format makes a call to EncodePng().
-    FX_CHECK(request.png_vmo().write(imgdata.data(), 0, imgdata.size() * sizeof(uint8_t)) == ZX_OK);
+    FX_CHECK(request.png_vmo()->write(imgdata.data(), 0, imgdata.size() * sizeof(uint8_t)) ==
+             ZX_OK);
 
-    fuchsia::ui::compression::internal::ImageCompressor_EncodePng_Response value;
-    result.set_response(value);
+    completer.Reply(fit::ok());
   }
-  callback(std::move(result));
 };
 
 fidl::Endpoints<fuchsia_ui_compression_internal::ImageCompressor> CreateImageCompressorEndpoints() {
@@ -81,16 +81,19 @@ class FlatlandScreenshotTest : public gtest::RealLoopFixture,
     importer_ = std::make_shared<ScreenCaptureBufferCollectionImporter>(
         utils::CreateSysmemAllocatorClient(dispatcher(), "ScreenshotTest"), renderer_);
 
-    context_provider_.service_directory_provider()
-        ->AddService<fuchsia::ui::compression::internal::ImageCompressor>(
-            [this](fidl::InterfaceRequest<fuchsia::ui::compression::internal::ImageCompressor>
-                       request) { mock_compressor_.Bind(request.TakeChannel()); });
+    context_provider_.service_directory_provider()->AddService(
+        std::make_unique<vfs::Service>([this](zx::channel request, async_dispatcher_t* dispatcher) {
+          mock_compressor_.Bind(
+              fidl::ServerEnd<fuchsia_ui_compression_internal::ImageCompressor>(std::move(request)),
+              dispatcher);
+        }),
+        fidl::DiscoverableProtocolName<fuchsia_ui_compression_internal::ImageCompressor>);
 
     context_provider_.service_directory_provider()->AddService(
         std::make_unique<vfs::Service>([](zx::channel request, async_dispatcher_t* dispatcher) {
           fdio_service_connect("/svc/fuchsia.sysmem2.Allocator", request.release());
         }),
-        "fuchsia.sysmem2.Allocator");
+        fidl::DiscoverableProtocolName<fuchsia_sysmem2::Allocator>);
 
     std::vector<std::shared_ptr<BufferCollectionImporter>> screenshot_importers;
     screenshot_importers.push_back(importer_);
@@ -167,7 +170,7 @@ INSTANTIATE_TEST_SUITE_P(
 TEST_P(FlatlandScreenshotTest, SimpleTest) {
   const auto& [format, rotation] = GetParam();
   if (format == fuchsia_ui_composition::ScreenshotFormat::kPng) {
-    EXPECT_CALL(mock_compressor_, EncodePng(testing::_, testing::_))
+    EXPECT_CALL(mock_compressor_, EncodePngMock(testing::_, testing::_))
         .Times(1)
         .WillOnce(kResolveEncodePng);
   }
@@ -207,7 +210,7 @@ TEST_P(FlatlandScreenshotTest, SimpleTest) {
 TEST_P(FlatlandScreenshotTest, SimpleTakeFileTest) {
   const auto& [format, _] = GetParam();
   if (format == fuchsia_ui_composition::ScreenshotFormat::kPng) {
-    EXPECT_CALL(mock_compressor_, EncodePng(testing::_, testing::_))
+    EXPECT_CALL(mock_compressor_, EncodePngMock(testing::_, testing::_))
         .Times(1)
         .WillOnce(kResolveEncodePng);
   }
@@ -255,7 +258,7 @@ TEST_P(FlatlandScreenshotTest, SimpleTakeFileTest) {
 TEST_P(FlatlandScreenshotTest, GetMultipleScreenshotsViaChannel) {
   const auto& [format, _] = GetParam();
   if (format == fuchsia_ui_composition::ScreenshotFormat::kPng) {
-    EXPECT_CALL(mock_compressor_, EncodePng(testing::_, testing::_))
+    EXPECT_CALL(mock_compressor_, EncodePngMock(testing::_, testing::_))
         .Times(3)
         .WillRepeatedly(kResolveEncodePng);
   }
