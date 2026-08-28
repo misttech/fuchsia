@@ -1,5 +1,5 @@
 ---
-name: wlan-luci-triage
+name: wlan-e2e-test-luci-triage
 description: >
   Workflow to query LUCI APIs to triage Fuchsia WLAN E2E test failures, find patterns in recurring flakes, analyze network failure modes, check hardware correlations, and parse syslogs, test logs, and AP logs for triaging issues.
 ---
