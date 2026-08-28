@@ -113,14 +113,14 @@ zx::result<F2fs::FsyncInodeList> F2fs::FindFsyncDnodes() {
   return zx::ok(std::move(inode_list));
 }
 
-void F2fs::CheckIndexInPrevNodes(block_t blkaddr) {
+zx::result<> F2fs::CheckIndexInPrevNodes(block_t blkaddr) {
   uint32_t segno = segment_manager_->GetSegmentNumber(blkaddr);
   size_t blkoff =
       segment_manager_->GetSegOffFromSeg0(blkaddr) & (superblock_info_->GetBlocksPerSeg() - 1);
   Summary sum;
   const SegmentEntry &sentry = GetSegmentManager().GetSegmentEntry(segno);
   if (!sentry.cur_valid_map.GetOne(ToMsbFirst(blkoff))) {
-    return;
+    return zx::ok();
   }
 
   // Get the previous summary
@@ -135,7 +135,9 @@ void F2fs::CheckIndexInPrevNodes(block_t blkaddr) {
   }
   if (i > static_cast<int>(CursegType::kCursegColdData)) {
     LockedPage sum_page;
-    ZX_ASSERT(GetSegmentManager().GetSumPage(segno, &sum_page) == ZX_OK);
+    if (zx_status_t status = GetSegmentManager().GetSumPage(segno, &sum_page); status != ZX_OK) {
+      return zx::error(status);
+    }
     SummaryBlock *sum_node;
     sum_node = sum_page->GetAddress<SummaryBlock>();
     sum = sum_node->entries[blkoff];
@@ -144,21 +146,25 @@ void F2fs::CheckIndexInPrevNodes(block_t blkaddr) {
   // Get the node page
   LockedPage node_page;
   if (zx_status_t err = GetNodeManager().GetNodePage(LeToCpu(sum.nid), &node_page); err != ZX_OK) {
-    FX_LOGS(ERROR) << "F2fs::CheckIndexInPrevNodes, GetNodePage Error!!!";
-    return;
+    FX_LOGS(ERROR) << "F2fs::CheckIndexInPrevNodes, GetNodePage Error: "
+                   << zx_status_get_string(err);
+    return zx::error(err);
   }
   nid_t ino = node_page.GetPage<NodePage>().InoOfNode();
   zx::result vnode = GetVnode(ino);
   if (vnode.is_error()) {
     FX_LOGS(ERROR) << "F2fs::CheckIndexInPrevNodes, GetVnode error: " << vnode.status_string();
-    return;
+    return vnode.take_error();
   }
   size_t bidx = node_page.GetPage<NodePage>().StartBidxOfNode(vnode->GetAddrsPerInode()) +
                 LeToCpu(sum.ofs_in_node);
 
   node_page.reset();
   // Deallocate previous index in the node page
-  vnode->TruncateHole(bidx, bidx + 1);
+  if (zx_status_t status = vnode->TruncateHole(bidx, bidx + 1); status != ZX_OK) {
+    return zx::error(status);
+  }
+  return zx::ok();
 }
 
 void F2fs::DoRecoverData(VnodeF2fs &vnode, NodePage &page) {
@@ -201,23 +207,27 @@ void F2fs::DoRecoverData(VnodeF2fs &vnode, NodePage &page) {
     dest = page.GetBlockAddr(offset_in_dnode);
 
     if (src != dest && dest != kNewAddr && dest != kNullAddr) {
-      if (src == kNullAddr) {
-        ZX_ASSERT(vnode.ReserveNewBlock(*dnode_page, offset_in_dnode) == ZX_OK);
-        vnode.AddBlocks(1);
-      }
-
       // Check the previous node page having this index
-      CheckIndexInPrevNodes(dest);
+      if (zx::result result = CheckIndexInPrevNodes(dest); result.is_error()) {
+        FX_LOGS(WARNING) << "Failed to check and clear index in prev nodes for block " << dest
+                         << ": " << result.status_string();
+      } else {
+        if (src == kNullAddr) {
+          ZX_ASSERT(vnode.ReserveNewBlock(*dnode_page, offset_in_dnode) == ZX_OK);
+          vnode.AddBlocks(1);
+        }
 
-      SetSummary(&sum, (*dnode_page).GetPage<NodePage>().NidOfNode(), offset_in_dnode, ni.version);
+        SetSummary(&sum, (*dnode_page).GetPage<NodePage>().NidOfNode(), offset_in_dnode,
+                   ni.version);
 
-      // Write dummy data page
-      GetSegmentManager().RecoverDataPage(sum, src, dest);
-      dnode_page->WaitOnWriteback();
-      dnode_page.value().GetPage<NodePage>().SetDataBlkaddr(offset_in_dnode, dest);
-      dnode_page->SetDirty();
-      vnode.UpdateExtentCache(page.StartBidxOfNode(vnode.GetAddrsPerInode()) + offset_in_dnode,
-                              dest);
+        // Write dummy data page
+        GetSegmentManager().RecoverDataPage(sum, src, dest);
+        dnode_page->WaitOnWriteback();
+        dnode_page.value().GetPage<NodePage>().SetDataBlkaddr(offset_in_dnode, dest);
+        dnode_page->SetDirty();
+        vnode.UpdateExtentCache(page.StartBidxOfNode(vnode.GetAddrsPerInode()) + offset_in_dnode,
+                                dest);
+      }
     }
     ++offset_in_dnode;
   }

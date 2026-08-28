@@ -135,7 +135,7 @@ class F2fs final {
   zx_status_t RecoverDentry(NodePage &ipage, VnodeF2fs &vnode)
       __TA_REQUIRES_SHARED(f2fs::GetGlobalLock());
   zx::result<FsyncInodeList> FindFsyncDnodes() __TA_REQUIRES_SHARED(f2fs::GetGlobalLock());
-  void CheckIndexInPrevNodes(block_t blkaddr) __TA_REQUIRES(f2fs::GetGlobalLock());
+  zx::result<> CheckIndexInPrevNodes(block_t blkaddr) __TA_REQUIRES(f2fs::GetGlobalLock());
   void DoRecoverData(VnodeF2fs &vnode, NodePage &page) __TA_REQUIRES(f2fs::GetGlobalLock());
   void RecoverData(FsyncInodeList &inode_list) __TA_REQUIRES(f2fs::GetGlobalLock());
   void RecoverFsyncData() __TA_EXCLUDES(f2fs::GetGlobalLock());
@@ -252,7 +252,6 @@ inline zx::result<std::unique_ptr<f2fs::BcacheMapper>> F2fs::TakeBc() {
   }
   return zx::ok(std::move(bc_));
 }
-
 
 }  // namespace f2fs
 
