@@ -365,7 +365,7 @@ impl RegionAllocator {
 
     pub fn reset(&self) {
         lock!(let mut guard = self.lock_mu());
-        let mut fields = guard.as_mut().fields_mut();
+        let fields = guard.as_mut().fields_mut();
 
         debug_assert!(fields.allocated_regions_by_base.is_empty());
 
@@ -375,7 +375,7 @@ impl RegionAllocator {
             // the allocator's available trees.  It has been removed from `avail_regions_by_size`,
             // and `avail_regions_by_base` was cleared, so there are no other references to it.
             unsafe {
-                Self::destroy_region_raw(&mut fields.region_pool, region_ptr);
+                Self::destroy_region_raw(fields.region_pool, region_ptr);
             }
         }
     }
@@ -390,16 +390,16 @@ impl RegionAllocator {
         lock!(let mut guard = self.lock_mu());
         let mut fields = guard.as_mut().fields_mut();
 
-        self.add_subtract_sanity_check_locked_mut(&mut fields.allocated_regions_by_base, &region)?;
+        self.add_subtract_sanity_check_locked_mut(fields.allocated_regions_by_base, &region)?;
 
         if allow_overlap != AllowOverlap::Yes {
-            let intersects = self.intersects_locked(&mut fields.avail_regions_by_base, &region)?;
+            let intersects = self.intersects_locked(fields.avail_regions_by_base, &region)?;
             if intersects {
                 return Err(Status::INVALID_ARGS);
             }
         }
 
-        let region_ptr = self.create_region_raw(&mut fields.region_pool, region)?;
+        let region_ptr = self.create_region_raw(fields.region_pool, region)?;
 
         self.add_region_to_avail_locked(&mut fields, region_ptr, allow_overlap);
         Ok(())
@@ -414,12 +414,9 @@ impl RegionAllocator {
         let region_end = to_subtract.end()?;
 
         lock!(let mut guard = self.lock_mu());
-        let mut fields = guard.as_mut().fields_mut();
+        let fields = guard.as_mut().fields_mut();
 
-        self.add_subtract_sanity_check_locked_mut(
-            &mut fields.allocated_regions_by_base,
-            &to_subtract,
-        )?;
+        self.add_subtract_sanity_check_locked_mut(fields.allocated_regions_by_base, &to_subtract)?;
 
         let mut region = to_subtract;
 
@@ -452,7 +449,7 @@ impl RegionAllocator {
                     // SAFETY: `removed_ptr` has been removed from all indices and can be safely
                     // destroyed.
                     unsafe {
-                        Self::destroy_region_raw(&mut fields.region_pool, removed_ptr);
+                        Self::destroy_region_raw(fields.region_pool, removed_ptr);
                     }
                     return Ok(());
                 }
@@ -462,7 +459,7 @@ impl RegionAllocator {
                     // The allocator lock is held. We are creating a new region to hold the second
                     // half of the split.
                     let second_ptr = self.create_region_raw(
-                        &mut fields.region_pool,
+                        fields.region_pool,
                         RegionSpan { base: region_end, size: before_end - region_end },
                     )?;
                     let key = before.key_size;
@@ -558,7 +555,7 @@ impl RegionAllocator {
                         // SAFETY: `removed_ptr` has been removed from all indices and can be safely
                         // destroyed.
                         unsafe {
-                            Self::destroy_region_raw(&mut fields.region_pool, removed_ptr);
+                            Self::destroy_region_raw(fields.region_pool, removed_ptr);
                         }
                     } else {
                         let key = before.key_size;
@@ -628,7 +625,7 @@ impl RegionAllocator {
             region.size = region_end - region.base;
             // SAFETY: `trim_ptr` has been removed from all indices and can be safely destroyed.
             unsafe {
-                Self::destroy_region_raw(&mut fields.region_pool, trim_ptr);
+                Self::destroy_region_raw(fields.region_pool, trim_ptr);
             }
 
             if region.size == 0 {
@@ -727,10 +724,10 @@ impl RegionAllocator {
         which: TestRegionSet,
     ) -> Result<bool, Status> {
         lock!(let mut guard = self.lock_mu());
-        let mut fields = guard.as_mut().fields_mut();
+        let fields = guard.as_mut().fields_mut();
         let tree = match which {
-            TestRegionSet::Allocated => &mut fields.allocated_regions_by_base,
-            TestRegionSet::Available => &mut fields.avail_regions_by_base,
+            TestRegionSet::Allocated => fields.allocated_regions_by_base,
+            TestRegionSet::Available => fields.avail_regions_by_base,
         };
         self.intersects_locked(tree, &region)
     }
@@ -741,10 +738,10 @@ impl RegionAllocator {
         which: TestRegionSet,
     ) -> Result<bool, Status> {
         lock!(let mut guard = self.lock_mu());
-        let mut fields = guard.as_mut().fields_mut();
+        let fields = guard.as_mut().fields_mut();
         let tree = match which {
-            TestRegionSet::Allocated => &mut fields.allocated_regions_by_base,
-            TestRegionSet::Available => &mut fields.avail_regions_by_base,
+            TestRegionSet::Allocated => fields.allocated_regions_by_base,
+            TestRegionSet::Available => fields.avail_regions_by_base,
         };
         self.contained_by_locked(tree, &region)
     }
@@ -869,7 +866,7 @@ impl RegionAllocator {
                     // SAFETY: `removed_ptr` has been removed from all indices and is ready to be
                     // destroyed.
                     unsafe {
-                        Self::destroy_region_raw(&mut fields.region_pool, removed_ptr);
+                        Self::destroy_region_raw(fields.region_pool, removed_ptr);
                     }
                 }
             }
@@ -895,7 +892,7 @@ impl RegionAllocator {
             fields.avail_regions_by_size.erase(&key);
             // SAFETY: `removed_ptr` has been removed from all indices and is ready to be destroyed.
             unsafe {
-                Self::destroy_region_raw(&mut fields.region_pool, removed_ptr);
+                Self::destroy_region_raw(fields.region_pool, removed_ptr);
             }
 
             if allow_overlap != AllowOverlap::Yes {
@@ -958,10 +955,8 @@ impl RegionAllocator {
             fields.avail_regions_by_base.erase(&after_base);
 
             // The allocator lock is held. We allocate a new region raw.
-            let before_region_ptr = self.create_region_raw(
-                &mut fields.region_pool,
-                RegionSpan { base: after_base, size },
-            )?;
+            let before_region_ptr =
+                self.create_region_raw(fields.region_pool, RegionSpan { base: after_base, size })?;
 
             // SAFETY: `after_region_ptr` is a valid pointer to a `Region`. Exclusivity is
             // guaranteed because we have erased the region from both the size and base available
@@ -989,7 +984,7 @@ impl RegionAllocator {
 
             // The allocator lock is held. We allocate a new region raw.
             let after_region_ptr =
-                self.create_region_raw(&mut fields.region_pool, RegionSpan { base, size })?;
+                self.create_region_raw(fields.region_pool, RegionSpan { base, size })?;
 
             // SAFETY: `before_region_ptr` is a pointer to a valid `Region`. Exclusivity is
             // guaranteed because we hold the allocator lock, and although the region remains in
@@ -1022,11 +1017,11 @@ impl RegionAllocator {
 
             // The allocator lock is held. We allocate two new regions raw.
             let region_ptr = self.create_region_raw(
-                &mut fields.region_pool,
+                fields.region_pool,
                 RegionSpan { base: region_base, size: region_size },
             )?;
             let after_region_ptr = self.create_region_raw(
-                &mut fields.region_pool,
+                fields.region_pool,
                 RegionSpan { base: region_base + region_size, size: before_size - size - overhead },
             )?;
 
@@ -1064,17 +1059,17 @@ impl RegionAllocator {
         region.validate()?;
 
         let mut iter = tree.lower_bound(&region.base);
-        if let Some(current) = iter.get() {
-            if current.base() - region.base < region.size {
-                return Ok(true);
-            }
+        if let Some(current) = iter.get()
+            && current.base() - region.base < region.size
+        {
+            return Ok(true);
         }
 
         iter.move_prev();
-        if let Some(prev) = iter.get() {
-            if region.base - prev.base() < prev.size() {
-                return Ok(true);
-            }
+        if let Some(prev) = iter.get()
+            && region.base - prev.base() < prev.size()
+        {
+            return Ok(true);
         }
 
         Ok(false)
