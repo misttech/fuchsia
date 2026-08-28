@@ -89,3 +89,29 @@ BuildFlagsListInfo = provider(
         "infos": "A list of BuildFlagsInfo values.",
     },
 )
+
+#############################################################################
+#############################################################################
+#####
+#####    DefaultBuildFlagsSetInfo
+#####
+
+DefaultBuildFlagsSetInfo = provider(
+    doc = "A set of default build_flags() targets for different target types.",
+    fields = {
+        "cxx_common_infos": """
+            (list[BuildFlagsInfo]) list of build flags common to all C/C++ target types
+            (libraries, shared libraries and executables).""",
+        "cxx_shared_library_infos": """
+            (list[BuildFlagsInfo]) list of extra build flags used for C/C++ shared libraries.""",
+        "cxx_executable_infos": """
+            (list[BuildFlagsInfo]) list of extra build flags used for C/C++ executables.""",
+        "rust_common_infos": """
+            (list[BuildFlagsInfo]) list of build flags common to all Rust target types
+            (libraries, shared libraries and executables).""",
+        "rust_shared_library_infos": """
+            (list[BuildFlagsInfo]) list of extra build flags used for Rust shared libraries.""",
+        "rust_executable_infos": """
+            (list[BuildFlagsInfo]) list of extra build flags used for Rust executables.""",
+    },
+)

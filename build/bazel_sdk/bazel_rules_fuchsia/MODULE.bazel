@@ -67,3 +67,7 @@ fuchsia_clang_ext = use_extension("//fuchsia/workspace:fuchsia_clang_repository.
 use_repo(fuchsia_clang_ext, "fuchsia_clang")
 
 register_toolchains("@fuchsia_clang//:all")
+
+# NOTE: This will become @rules_fuchsia//fuchsia_rules_common/build_flags:all
+# after export processing.
+register_toolchains("@fuchsia_rules_common//build_flags:all")

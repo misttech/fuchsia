@@ -1,3 +1,58 @@
 # Copyright 2026 The Fuchsia Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
+
+load(":toolchain.bzl", "build_flags_toolchain_instance")
+
+# A toolchain type used to access the default build flags for the C++ and Rust toolchain.
+# See toolchain.bzl for details.
+toolchain_type(
+    name = "toolchain_type",
+    visibility = ["//visibility:public"],
+)
+
+# The default build_flags() labels that apply to Fuchsia C++ and Rust targets.
+# NOTE: All lists are intentionally empty. A future CL will auto-generate their
+# content from GN build configuration.
+build_flags_toolchain_instance(
+    name = "fuchsia_default_build_flags",
+    cxx_common_build_flags = [],
+    cxx_executable_build_flags = [],
+    cxx_shared_library_build_flags = [],
+    rust_common_build_flags = [],
+    rust_executable_build_flags = [],
+    rust_shared_library_build_flags = [],
+)
+
+toolchain(
+    name = "fuchsia_default_build_flags_toolchain",
+    target_compatible_with = ["@platforms//os:fuchsia"],
+    toolchain = ":fuchsia_default_build_flags",
+    toolchain_type = ":toolchain_type",
+)
+
+# The default build_flags() labels that apply to host C++ and Rust targets.
+# NOTE: All lists are intentionally empty. A future CL will auto-generate their
+# content from GN build configuration.
+build_flags_toolchain_instance(
+    name = "host_default_build_flags",
+    cxx_common_build_flags = [],
+    cxx_executable_build_flags = [],
+    cxx_shared_library_build_flags = [],
+    rust_common_build_flags = [],
+    rust_executable_build_flags = [],
+    rust_shared_library_build_flags = [],
+)
+
+toolchain(
+    name = "host_default_build_flags_toolchain",
+    target_compatible_with = ["@platforms//os:linux"],  # Fuchsia only builds on Linux
+    toolchain = ":host_default_build_flags",
+    toolchain_type = ":toolchain_type",
+)
+
+filegroup(
+    name = "bzl_srcs",
+    srcs = glob(["*.bzl"]),
+    visibility = ["//:__subpackages__"],
+)

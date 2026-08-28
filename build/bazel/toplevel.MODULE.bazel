@@ -347,6 +347,8 @@ generate_prebuilt_clang_toolchain_repository(
 
 register_toolchains("@prebuilt_clang//:all")
 
+register_toolchains("@fuchsia_rules_common//build_flags:all")
+
 generate_prebuilt_llvm_repository = use_repo_rule(
     "//build/bazel/toolchains/clang:repository_rules.bzl",
     "generate_prebuilt_llvm_repository",
