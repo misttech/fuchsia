@@ -259,7 +259,6 @@ tools_bazel_root_targets = [
         ninja = "debroot"
       },
     ]
-    install_host_tool = true
   },
   {
     bazel_label = "//tools/whereiscl:whereiscl"
