@@ -12,7 +12,6 @@ group("tools") {
 
   public_deps = [
     "//build/bazel/host:bazel_root_host_tools.buildstats.host_tool($host_toolchain)",
-    "//build/bazel/host:bazel_root_host_tools.gndoc.host_tool($host_toolchain)",
     "//build/bazel/host:bazel_root_host_tools.ninjatrace.host_tool($host_toolchain)",
   ]
 }
