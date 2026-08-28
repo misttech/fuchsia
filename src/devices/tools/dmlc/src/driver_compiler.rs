@@ -91,12 +91,13 @@ pub fn compile_driver(args: &CompileDriverArgs, year: &str) -> Result<(), anyhow
                         .get("service")
                         .or_else(|| obj.get("protocol"))
                         .and_then(|v| v.as_str())
-                        .map(|s| s.to_string())
-                        .ok_or_else(|| {
-                            anyhow::anyhow!(
-                                "use entry with 'name' or 'instance_name' must specify a 'service' or 'protocol'"
-                            )
-                        })?;
+                        .map(|s| s.to_string());
+
+                    if service_name.is_none() && bind_val.is_none() {
+                        return Err(anyhow::anyhow!(
+                            "use entry with 'name' or 'instance_name' must specify a 'service', 'protocol', or 'bind'"
+                        ));
+                    }
 
                     let transport = transport_val
                         .and_then(|t| t.as_str().map(|s| s.to_string()))
@@ -141,7 +142,27 @@ pub fn compile_driver(args: &CompileDriverArgs, year: &str) -> Result<(), anyhow
                 .and_then(|v| v.as_str())
                 .map(|s| crate::workarounds::try_generate_init_step_bind_rule(s).is_some())
                 .unwrap_or(false);
-            if !is_init_step {
+            let is_bind_protocol = obj
+                .get("protocol")
+                .or_else(|| obj.get("service"))
+                .and_then(|v| v.as_str())
+                .map(|s| s.contains(".BIND_PROTOCOL."))
+                .unwrap_or(false);
+            let has_cml_fields = obj.iter().any(|(k, _)| {
+                ![
+                    "availability",
+                    "bind",
+                    "requirements",
+                    "primary",
+                    "name",
+                    "instance_name",
+                    "transport",
+                    "generate_bind_rule",
+                    "generate_bind_rules",
+                ]
+                .contains(&k.as_str())
+            });
+            if !is_init_step && !is_bind_protocol && has_cml_fields && !obj.is_empty() {
                 cleaned_use_entries.push(entry);
             }
         } else {
@@ -150,10 +171,10 @@ pub fn compile_driver(args: &CompileDriverArgs, year: &str) -> Result<(), anyhow
     }
 
     if let Some((parent_name, service_or_proto, is_service, transport, bind)) = primary_use_entry {
-        let (service, protocol) = if is_service {
-            (Some(service_or_proto), None)
+        let (service, protocol) = if let Some(sop) = service_or_proto {
+            if is_service { (Some(sop), None) } else { (None, Some(sop)) }
         } else {
-            (None, Some(service_or_proto))
+            (None, None)
         };
 
         let mut primary_bind = BindPrimary {
@@ -169,26 +190,14 @@ pub fn compile_driver(args: &CompileDriverArgs, year: &str) -> Result<(), anyhow
         };
 
         if let Some(b) = bind {
+            if b.composite_name.is_some() {
+                bind_config.composite_name = b.composite_name.clone();
+            }
             primary_bind.compat = b.compat;
             primary_bind.vid = b.vid;
             primary_bind.pid = b.pid;
             primary_bind.did = b.did;
-            primary_bind.one_of = b.one_of.map(|alts| {
-                alts.into_iter()
-                    .map(|alt| BindPrimaryAlternative {
-                        compat: alt.compat,
-                        vid: alt.vid,
-                        pid: alt.pid,
-                        did: alt.did,
-                        protocol: alt.protocol,
-                        pci_class: alt.pci_class,
-                        pci_subclass: alt.pci_subclass,
-                        pci_interface: alt.pci_interface,
-                        service: alt.service,
-                        transport: alt.transport,
-                    })
-                    .collect()
-            });
+            primary_bind.one_of = b.one_of;
         }
 
         bind_config.primary = Some(primary_bind);
@@ -241,13 +250,18 @@ pub fn compile_driver(args: &CompileDriverArgs, year: &str) -> Result<(), anyhow
             vec!["inspect/client.shard.cml".to_string(), "syslog/client.shard.cml".to_string()];
         includes.extend(driver_dml.include.clone());
 
-        let cml = serde_json::json!({
+        let mut cml = serde_json::json!({
             "include": includes,
             "program": program_val,
             "capabilities": capabilities,
             "use": final_use_entries,
             "expose": expose
         });
+        if let Some(config) = &driver_dml.config {
+            if let Some(cml_obj) = cml.as_object_mut() {
+                cml_obj.insert("config".to_string(), config.clone());
+            }
+        }
 
         let cml_code = serde_json::to_string_pretty(&cml)?;
         let json5_code = crate::cml_generator::json_to_json5(&cml_code);
@@ -434,6 +448,54 @@ mod tests {
         let cml_content = std::fs::read_to_string(&cml_path).unwrap();
         assert!(!cml_content.contains("fuchsia.gpio.Init"));
         assert!(cml_content.contains("fuchsia.hardware.gpio.Service"));
+
+        let _ = std::fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn test_primary_use_entry_without_service_or_protocol() {
+        let temp_dir = std::env::temp_dir().join("test_temp_primary_no_service");
+        let _ = std::fs::remove_dir_all(&temp_dir);
+        std::fs::create_dir_all(&temp_dir).unwrap();
+
+        let dml_content = r#"{
+            name: "tas27xx_sample",
+            use: [
+                {
+                    name: "tas27xx",
+                    primary: true,
+                    bind: {
+                        compat: "ti,tas27xx",
+                    },
+                },
+                {
+                    service: "fuchsia.hardware.gpio.Service",
+                    name: "gpio-reset",
+                },
+            ],
+        }"#;
+
+        let dml_path = temp_dir.join("sample.dml");
+        std::fs::write(&dml_path, dml_content).unwrap();
+
+        let bind_path = temp_dir.join("sample.bind");
+        let cml_path = temp_dir.join("sample.cml");
+
+        let args = CompileDriverArgs {
+            input_file: dml_path.to_str().unwrap().to_string(),
+            h_output: None,
+            cc_output: None,
+            cml_output: Some(cml_path.to_str().unwrap().to_string()),
+            bind_output: Some(bind_path.to_str().unwrap().to_string()),
+            namespace: None,
+        };
+
+        compile_driver(&args, "2026").unwrap();
+
+        let bind_content = std::fs::read_to_string(&bind_path).unwrap();
+        assert!(bind_content.contains("primary parent \"tas27xx\""));
+        assert!(bind_content.contains("fuchsia.COMPATIBLE == \"ti,tas27xx\";"));
+        assert!(!bind_content.contains("fuchsia.BIND_PROTOCOL == ;"));
 
         let _ = std::fs::remove_dir_all(&temp_dir);
     }

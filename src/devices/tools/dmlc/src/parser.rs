@@ -10,23 +10,6 @@ use std::fs::File;
 use std::path::{Path, PathBuf};
 
 #[derive(Deserialize, Debug, Clone, PartialEq, Default)]
-pub struct BindPrimaryAlternative {
-    pub compat: Option<Value>,
-    pub vid: Option<Value>,
-    pub pid: Option<Value>,
-    pub did: Option<Value>,
-    pub protocol: Option<String>,
-    #[serde(rename = "pci_class")]
-    pub pci_class: Option<String>,
-    #[serde(rename = "pci_subclass")]
-    pub pci_subclass: Option<String>,
-    #[serde(rename = "pci_interface")]
-    pub pci_interface: Option<String>,
-    pub service: Option<String>,
-    pub transport: Option<String>,
-}
-
-#[derive(Deserialize, Debug, Clone, PartialEq, Default)]
 pub struct BindPrimary {
     pub node: String,
     pub compat: Option<Value>,
@@ -36,7 +19,7 @@ pub struct BindPrimary {
     pub protocol: Option<String>,
     pub service: Option<String>,
     pub transport: Option<String>,
-    pub one_of: Option<Vec<BindPrimaryAlternative>>,
+    pub one_of: Option<Vec<DmlBind>>,
 }
 
 #[derive(Deserialize, Debug, Clone, PartialEq, Default)]
@@ -57,6 +40,8 @@ pub struct DmlBind {
     pub pci_subclass: Option<String>,
     #[serde(rename = "pci_interface")]
     pub pci_interface: Option<String>,
+    #[serde(alias = "name")]
+    pub composite_name: Option<String>,
 }
 
 #[derive(Deserialize, Debug, Default, Clone)]
@@ -119,6 +104,8 @@ pub struct DriverDml {
     pub use_entries: Vec<Value>,
     #[serde(default)]
     pub expose: Vec<Value>,
+    #[serde(default)]
+    pub config: Option<Value>,
 }
 
 #[derive(Deserialize, Debug)]
