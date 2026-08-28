@@ -91,7 +91,6 @@ kernel_rust_mod("top_rust") {
   output_name = "top"
   source_root = "mod.rs"
   sources = [
-    "handoff.rs",
     "init.rs",
     "mod.rs",
   ]

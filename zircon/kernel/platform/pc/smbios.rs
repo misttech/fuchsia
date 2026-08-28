@@ -11,6 +11,7 @@ use crate::console_rust::console::{CMD_AVAIL_ALWAYS, CmdArgs, static_command};
 use crate::vm::arch_vm_aspace::{ARCH_MMU_FLAG_CACHED, ARCH_MMU_FLAG_PERM_READ};
 use crate::vm::vm_aspace::VmAspace;
 use core::ptr::NonNull;
+use handoff::PhysHandoff;
 use smbios::{
     BiosInformationStruct2_0, BiosInformationStruct2_4, EntryPoint, EntryPoint2_1,
     EntryPointVersion, Header, SMBIOS2_ANCHOR, SMBIOS3_ANCHOR, SpecVersion, StringTable,
@@ -87,7 +88,7 @@ fn map_range(paddr: u64, len: usize) -> Result<(NonNull<u8>, usize), Status> {
 
 /// Searches for and maps the SMBIOS entry point table, returning the mapped pointer and version.
 fn find_entry_point() -> Result<(NonNull<u8>, EntryPointVersion), Status> {
-    let smbios_phys = crate::top::handoff::smbios_phys().ok_or(Status::NOT_FOUND)?;
+    let smbios_phys = Option::from(PhysHandoff::get().smbios_phys).ok_or(Status::NOT_FOUND)?;
     let (ep_virt_ptr, ep_mapping_base) = map_range(smbios_phys, MAX_EP_SIZE)?;
 
     // SAFETY: `ep_virt_ptr` points to at least `MAX_EP_SIZE` (31) valid mapped bytes.

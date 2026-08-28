@@ -12,26 +12,9 @@
 extern "C" {
 
 // TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
-FFI_ALWAYS_INLINE bool cpp_physhandoff_get_smbios_phys(uint64_t* smbios_phys);
-// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
-FFI_ALWAYS_INLINE bool cpp_physhandoff_get_acpi_rsdp(uint64_t* acpi_rsdp);
+FFI_ALWAYS_INLINE const PhysHandoff* cpp_phys_handoff_get();
 
 // TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
-FFI_ALWAYS_INLINE bool cpp_physhandoff_get_smbios_phys(uint64_t* smbios_phys) {
-  if (gPhysHandoff && gPhysHandoff->smbios_phys) {
-    *smbios_phys = *gPhysHandoff->smbios_phys.to_std();
-    return true;
-  }
-  return false;
-}
-
-// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
-FFI_ALWAYS_INLINE bool cpp_physhandoff_get_acpi_rsdp(uint64_t* acpi_rsdp) {
-  if (gPhysHandoff && gPhysHandoff->acpi_rsdp) {
-    *acpi_rsdp = *gPhysHandoff->acpi_rsdp.to_std();
-    return true;
-  }
-  return false;
-}
+FFI_ALWAYS_INLINE const PhysHandoff* cpp_phys_handoff_get() { return gPhysHandoff; }
 
 }  // extern "C"

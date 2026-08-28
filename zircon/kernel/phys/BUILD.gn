@@ -12,6 +12,7 @@ import("//build/toolchain/toolchain_environment.gni")
 import("//build/toolchain/zircon/zircon_toolchain_suite.gni")
 import("//build/zbi/kernel_cmdline.gni")
 import("//build/zircon/zircon_cpu.gni")
+import("//zircon/kernel/kernel_bindgen_crate.gni")
 import("//zircon/kernel/kernel_package.gni")
 import("//zircon/kernel/params.gni")
 import("kernel_elf_binary.gni")
@@ -890,6 +891,76 @@ source_set("handoff") {
   }
 
   public_configs = [ ":includes" ]
+}
+
+kernel_bindgen_crate("handoff-rs") {
+  crate_name = "handoff"
+
+  notice_year = "2026"
+
+  cpp = true
+  headers = [ "include/phys/handoff.h" ]
+  non_rust_deps = [ ":handoff" ]
+  deps = [ "//src/lib/stdbind:stdbind-rs" ]
+
+  # The layout of PhysHandoff is compilation-dependent and very load-bearing,
+  # so these tests represent an important regression stop against drift.
+  layout_tests = true
+
+  # It's a big struct and so explicit padding can make it difficult to inspect.
+  explicit_padding = false
+
+  # No functions needed at this time.
+  function_blocklist = [ ".*" ]
+
+  type_allowlist = [ "PhysHandoff" ]
+  type_blocklist = [
+    "stdbind::optional",  # Ready-made bindings swapped in instead
+  ]
+
+  opaque_types = [
+    "std::.*",
+    "uart::.*",
+    "crypto::.*",
+    "elfldltl::.*",
+  ]
+
+  # Always better.
+  rustified_enum = [ ".*" ]
+
+  expect_lints = [
+    "non_camel_case_types",
+    "non_upper_case_globals",
+  ]
+
+  raw_lines = [
+    "#![no_std]",
+    "",
+    "use stdbind::Optional as stdbind_optional;",
+  ]
+
+  if (is_kernel) {
+    raw_lines += [
+      "",
+      "unsafe extern \"C\" { fn cpp_phys_handoff_get() -> *const PhysHandoff; }",
+      "",
+      "impl PhysHandoff {",
+      "    pub fn get() -> &'static Self { ",
+      "        // Safety: This pointer is set before the kernel proper boots.",
+      "        unsafe { cpp_phys_handoff_get().as_ref_unchecked() } ",
+      "    }",
+      "}",
+    ]
+  }
+
+  replacements = [
+    # Drop "k" prefixes since that's a C++-ism that doesn't help with
+    # readability on the Rust side.
+    [
+      "\bk([A-Z0-9])",
+      "\\1",
+    ],
+  ]
 }
 
 source_set("arch-heap") {

@@ -7,6 +7,7 @@
 //! ACPI initialization and global parser for PC platform.
 
 use core::mem::MaybeUninit;
+use handoff::PhysHandoff;
 
 #[cfg(console_enabled)]
 use crate::console_rust::console::{CMD_AVAIL_ALWAYS, CmdArgs, static_command};
@@ -18,7 +19,7 @@ static mut ACPI_INITIALIZED: bool = false;
 /// Initializes the system-wide ACPI parser.
 #[allow(static_mut_refs)]
 fn platform_init_acpi(_level: init::LkInitLevel) {
-    let rsdp_pa = crate::top::handoff::acpi_rsdp().unwrap_or(0);
+    let rsdp_pa: u64 = Option::from(PhysHandoff::get().acpi_rsdp).unwrap_or(0);
     // SAFETY: Early boot, single-threaded execution at LK_INIT_LEVEL_VM.
     let parser = match unsafe {
         crate::platform_pc::acpi_lite_zircon::acpi_parser_init(crate::kernel::types::PAddr(

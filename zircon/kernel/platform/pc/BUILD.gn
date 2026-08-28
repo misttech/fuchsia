@@ -105,6 +105,7 @@ kernel_rust_mod("platform_pc") {
     "//zircon/kernel/lib/acpi_lite/rust:acpi_lite",
     "//zircon/kernel/lib/acpi_lite/rust/zircon",
     "//zircon/kernel/lib/debug",
+    "//zircon/kernel/phys:handoff-rs",
     "//zircon/system/ulib/affine/rust:affine",
     "//zircon/system/ulib/bitmap/rust:bitmap",
     "//zircon/system/ulib/fbl/rust:fbl",

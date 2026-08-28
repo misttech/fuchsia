@@ -439,6 +439,8 @@ struct PhysHandoff {
 };
 static_assert(std::is_default_constructible_v<PhysHandoff>);
 
+extern "C" const PhysHandoff* cpp_phys_handoff_get();
+
 #endif  // __ASSEMBLER__
 
 #endif  // ZIRCON_KERNEL_PHYS_INCLUDE_PHYS_HANDOFF_H_
