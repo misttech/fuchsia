@@ -19,7 +19,7 @@ use explicit::ResultExt as _;
 use lock_order::lock::{OrderedLockAccess, OrderedLockRef};
 use log::{debug, trace};
 use net_types::ip::{
-    GenericOverIp, Ip, Ipv4, Ipv4Addr, Ipv6, Ipv6Addr, Ipv6SourceAddr, Mtu, Subnet,
+    GenericOverIp, Ip, IpVersion, Ipv4, Ipv4Addr, Ipv6, Ipv6Addr, Ipv6SourceAddr, Mtu, Subnet,
 };
 use net_types::{
     LinkLocalAddress, MulticastAddr, MulticastAddress, NonMappedAddr, NonMulticastAddr,
@@ -2873,8 +2873,67 @@ where
             frame_dst,
         } = self;
 
-        // TODO(https://fxbug.dev/547062448): limit the MTU when sending.
-        let was_reassembled = max_fragment_len.is_some();
+        let outbound_mtu = core_ctx.get_mtu(outbound_device);
+        let marks = packet_meta.marks;
+
+        let send_icmp_packet_too_big = |core_ctx: &mut CC, bindings_ctx: &mut BC, buffer: B| {
+            debug!("failed to forward {} packet: MTU exceeded", I::NAME);
+            core_ctx.increment_both(outbound_device, |c| &c.mtu_exceeded);
+            // NB: Ipv6 sends a PacketTooBig error. Ipv4 sends nothing.
+            let Some(err) = I::IcmpError::mtu_exceeded(outbound_mtu) else {
+                return;
+            };
+            // NB: Only send an ICMP error if the sender's src
+            // is specified.
+            let Some(src_ip) = I::received_source_as_icmp_source(src_ip) else {
+                return;
+            };
+
+            let Some(dst_ip) = SocketIpAddr::new(dst_ip.get()) else {
+                return;
+            };
+
+            // TODO(https://fxbug.dev/362489447): Increment the TTL since we
+            // just decremented it. The fact that we don't do this is
+            // technically a violation of the ICMP spec (we're not
+            // encapsulating the original packet that caused the
+            // issue, but a slightly modified version of it), but
+            // it's not that big of a deal because it won't affect
+            // the sender's ability to figure out the minimum path
+            // MTU. This may break other logic, though, so we should
+            // still fix it eventually.
+            core_ctx.send_icmp_error_message(
+                bindings_ctx,
+                Some(inbound_device),
+                frame_dst,
+                src_ip,
+                dst_ip,
+                buffer,
+                err,
+                parse_meta.header_len(),
+                proto,
+                &marks,
+            );
+        };
+
+        // If the packet was reassembled on ingress, we should refragment at
+        // the original MTU.
+        //
+        // For IPv6, if the maximum fragment was larger than the outbound
+        // interface's MTU, short circuit and send a `PacketTooBig` ICMP error.
+        let max_fragment_len = max_fragment_len
+            .map(|l| Mtu::new(u32::try_from(l).expect("fragment size must fit in u32")));
+        if I::VERSION == IpVersion::V6
+            && max_fragment_len.is_some_and(|max_fragment_len| max_fragment_len > outbound_mtu)
+        {
+            packet_meta.acknowledge_drop();
+            send_icmp_packet_too_big(core_ctx, bindings_ctx, buffer);
+            return;
+        }
+        let (was_reassembled, limit_mtu) = match max_fragment_len {
+            None => (false, Mtu::no_limit()),
+            Some(max_fragment_len) => (true, max_fragment_len),
+        };
 
         let packet = ForwardedPacket::new(
             src_ip.get(),
@@ -2887,7 +2946,6 @@ where
 
         trace!("forward_with_buffer: forwarding {} packet", I::NAME);
 
-        let marks = packet_meta.marks;
         match send_ip_frame(
             core_ctx,
             bindings_ctx,
@@ -2895,7 +2953,7 @@ where
             destination,
             packet,
             packet_meta,
-            Mtu::no_limit(),
+            limit_mtu,
         ) {
             Ok(()) => (),
             Err(IpSendFrameError { serializer, error }) => {
@@ -2903,44 +2961,7 @@ where
                     IpSendFrameErrorReason::Device(
                         SendFrameErrorReason::SizeConstraintsViolation,
                     ) => {
-                        debug!("failed to forward {} packet: MTU exceeded", I::NAME);
-                        core_ctx.increment_both(outbound_device, |c| &c.mtu_exceeded);
-                        let mtu = core_ctx.get_mtu(outbound_device);
-                        // NB: Ipv6 sends a PacketTooBig error. Ipv4 sends nothing.
-                        let Some(err) = I::IcmpError::mtu_exceeded(mtu) else {
-                            return;
-                        };
-                        // NB: Only send an ICMP error if the sender's src
-                        // is specified.
-                        let Some(src_ip) = I::received_source_as_icmp_source(src_ip) else {
-                            return;
-                        };
-
-                        let Some(dst_ip) = SocketIpAddr::new(dst_ip.get()) else {
-                            return;
-                        };
-
-                        // TODO(https://fxbug.dev/362489447): Increment the TTL since we
-                        // just decremented it. The fact that we don't do this is
-                        // technically a violation of the ICMP spec (we're not
-                        // encapsulating the original packet that caused the
-                        // issue, but a slightly modified version of it), but
-                        // it's not that big of a deal because it won't affect
-                        // the sender's ability to figure out the minimum path
-                        // MTU. This may break other logic, though, so we should
-                        // still fix it eventually.
-                        core_ctx.send_icmp_error_message(
-                            bindings_ctx,
-                            Some(inbound_device),
-                            frame_dst,
-                            src_ip,
-                            dst_ip,
-                            serializer.into_buffer(),
-                            err,
-                            parse_meta.header_len(),
-                            proto,
-                            &marks,
-                        );
+                        send_icmp_packet_too_big(core_ctx, bindings_ctx, serializer.into_buffer());
                     }
                     IpSendFrameErrorReason::Device(SendFrameErrorReason::QueueFull)
                     | IpSendFrameErrorReason::Device(SendFrameErrorReason::Alloc)

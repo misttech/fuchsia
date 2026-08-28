@@ -9,11 +9,8 @@ use core::fmt::Debug;
 
 use alloc::vec::Vec;
 
-use explicit::UnreachableExt;
 use net_types::ip::{GenericOverIp, Ip, IpInvariant, Ipv4, Ipv6, Mtu};
-use netstack3_base::{
-    Counter, NetworkSerializationContext, NetworkSerializer, RngContext, Uninstantiable,
-};
+use netstack3_base::{Counter, NetworkSerializationContext, NetworkSerializer, RngContext};
 use netstack3_filter::ForwardedPacket;
 use packet::{
     Buf, BufferMut, EmptyBuf, FragmentedBuffer as _, InnerPacketBuilder as _,
@@ -25,8 +22,10 @@ use packet_formats::ipv4::options::Ipv4Option;
 use packet_formats::ipv4::{
     Ipv4Header as _, Ipv4PacketBuilder, Ipv4PacketBuilderWithOptions, Ipv4PacketRaw,
 };
+use packet_formats::ipv6::ext_hdrs::IPV6_FRAGMENT_EXT_HDR_LEN;
 use packet_formats::ipv6::{
-    Ipv6PacketBuilder, Ipv6PacketBuilderBeforeFragment, Ipv6PacketBuilderWithFragmentHeader,
+    Ipv6Packet, Ipv6PacketBuilderBeforeFragment, Ipv6PacketBuilderWithFragmentHeader,
+    Ipv6PerFragmentHeaderBuilder,
 };
 use rand::Rng;
 
@@ -53,9 +52,7 @@ impl FragmentationIpExt for Ipv4 {
 }
 
 impl FragmentationIpExt for Ipv6 {
-    // IPv6 never fragments forwarded packets, only the source node may
-    // fragment.
-    type ForwardedFragmentBuilder = Uninstantiable;
+    type ForwardedFragmentBuilder = ForwardedIpv6PacketBuilder;
     type FragmentationId = u32;
 }
 
@@ -362,11 +359,25 @@ where
                 Ok((Out(ForwardedIpv4PacketBuilder { builder, raw_options }), IpInvariant(body)))
             },
             |forwarded| {
-                // TODO(https://fxbug.dev/547062448): Allow fragmentation if the
-                // packet was reassembled on ingress
-                let _ = forwarded.reassembled();
-
-                Err(FragmentationError::NotAllowed)
+                // Per RFC 8200 Section 4.5:
+                //   fragmentation in IPv6 is performed only by source nodes,
+                //   not by routers along a packet's delivery path.
+                // Therefore, in general, we should not fragment forwarded
+                // packets. However, during ingress we reassemble IP fragments
+                // prior to making a routing decision. In such cases, we have
+                // an obligation to re-fragment the packet back to the original
+                // MTU.
+                if !forwarded.reassembled() {
+                    return Err(FragmentationError::NotAllowed);
+                }
+                let mut buffer = forwarded.buffer().as_ref();
+                // NB: `Ipv6Packet::parse` must succeed, because
+                // `ForwardedPacket` has already been parsed by the IP stack.
+                let packet =
+                    Ipv6Packet::parse(&mut buffer, ()).expect("ForwardedPacket must be parseable");
+                let builder = packet.per_fragment_builder();
+                let body = Buf::new(&forwarded.buffer().as_ref()[builder.header_len()..], ..);
+                Ok((Out(ForwardedIpv6PacketBuilder(builder)), IpInvariant(body)))
             },
         )
         .map(|(Out(builder), IpInvariant(body))| (builder, body))
@@ -407,18 +418,26 @@ impl FragmentableIpPacketBuilder<Ipv4> for ForwardedIpv4PacketBuilder {
     }
 }
 
-impl<I: FragmentationIpExt> FragmentableIpPacketBuilder<I> for Uninstantiable {
+pub struct ForwardedIpv6PacketBuilder(Ipv6PerFragmentHeaderBuilder<Vec<u8>>);
+
+impl FragmentableIpPacketBuilder<Ipv6> for ForwardedIpv6PacketBuilder {
     fn header_sizes(&self) -> HeaderSizes {
-        self.uninstantiable_unreachable()
+        let size = self.0.header_len() + IPV6_FRAGMENT_EXT_HDR_LEN;
+        HeaderSizes { first: size, remaining: size }
     }
 
     fn builder_at(
         &self,
-        _offset: FragmentOffset,
-        _position: FragmentPosition,
-        _identifier: I::FragmentationId,
+        offset: FragmentOffset,
+        position: FragmentPosition,
+        identifier: u32,
     ) -> impl PacketBuilder<NetworkSerializationContext> + '_ {
-        self.uninstantiable_unreachable::<Ipv6PacketBuilder>()
+        Ipv6PacketBuilderWithFragmentHeader::new(
+            self.0.as_ref(),
+            offset,
+            position != FragmentPosition::Last,
+            identifier,
+        )
     }
 }
 
@@ -631,8 +650,10 @@ mod tests {
     use packet::{Buffer, BufferView, GrowBuffer, Serializer};
     use packet_formats::ip::IpProto;
     use packet_formats::ipv4::Ipv4Packet;
-    use packet_formats::ipv6::ext_hdrs::Ipv6ExtensionHeader;
-    use packet_formats::ipv6::{Ipv6Header, Ipv6Packet};
+    use packet_formats::ipv6::ext_hdrs::{
+        ExtensionHeaderOptionAction, HopByHopOption, HopByHopOptionData, Ipv6ExtensionHeader,
+    };
+    use packet_formats::ipv6::{Ipv6Header, Ipv6Packet, Ipv6PacketBuilder};
     use test_case::test_case;
 
     const TEST_MTU: Mtu = Ipv6::MINIMUM_LINK_MTU;
@@ -793,7 +814,21 @@ mod tests {
         }
     }
 
-    struct ForwardingTestEnv<E>(E);
+    struct ForwardingTestEnv<E> {
+        inner: E,
+        reassembled: bool,
+    }
+
+    impl<E> ForwardingTestEnv<E> {
+        fn new(inner: E) -> Self {
+            Self { inner, reassembled: false }
+        }
+
+        fn new_reassembled(inner: E) -> Self {
+            Self { inner, reassembled: true }
+        }
+    }
+
     impl<I: FragmentationIpExt + FilterIpExt, E: FragmentationTestEnv<I>> FragmentationTestEnv<I>
         for ForwardingTestEnv<E>
     {
@@ -802,7 +837,7 @@ mod tests {
             body: &'a [u8],
         ) -> impl FragmentableIpSerializer<I, Buffer: Buffer> + 'a {
             use packet_formats::ip::IpPacket as _;
-            let Self(inner) = self;
+            let Self { inner, reassembled } = self;
             let mut buffer = inner
                 .new_serializer(body)
                 .serialize_outer(
@@ -818,7 +853,7 @@ mod tests {
             let proto = packet.proto();
             let meta = packet.parse_metadata();
             drop(packet);
-            ForwardedPacket::new(src_addr, dst_addr, proto, meta, buffer, false)
+            ForwardedPacket::new(src_addr, dst_addr, proto, meta, buffer, *reassembled)
         }
         fn check_fragment(
             &self,
@@ -826,7 +861,7 @@ mod tests {
             position: FragmentPosition,
             offset: usize,
         ) {
-            let Self(inner) = self;
+            let Self { inner, reassembled: _ } = self;
             inner.check_fragment(fragment, position, offset)
         }
     }
@@ -873,6 +908,56 @@ mod tests {
         }
     }
 
+    #[derive(Default)]
+    struct Ipv6WithOptionsTestEnv;
+
+    impl FragmentationTestEnv<Ipv6> for Ipv6WithOptionsTestEnv {
+        fn new_serializer<'a>(
+            &self,
+            body: &'a [u8],
+        ) -> impl FragmentableIpSerializer<Ipv6, Buffer: Buffer> + 'a {
+            packet_formats::ipv6::Ipv6PacketBuilderWithHbhOptions::new(
+                Ipv6PacketBuilder::new(
+                    TEST_ADDRS_V6.local_ip,
+                    TEST_ADDRS_V6.remote_ip,
+                    1,
+                    IpProto::Udp.into(),
+                ),
+                // Add an arbitrary extension header to setup so that this
+                // environment tests fragmentation with extension headers.
+                &[HopByHopOption {
+                    action: ExtensionHeaderOptionAction::SkipAndContinue,
+                    mutable: false,
+                    data: HopByHopOptionData::RouterAlert { data: 0 },
+                }],
+            )
+            .unwrap()
+            .wrap_body(body.into_serializer())
+        }
+
+        fn check_fragment(
+            &self,
+            fragment: &mut Buf<Vec<u8>>,
+            position: FragmentPosition,
+            offset: usize,
+        ) {
+            let packet = Ipv6Packet::parse(fragment.buffer_view(), ()).unwrap();
+            assert_eq!(packet.src_ip(), TEST_ADDRS_V6.local_ip.get());
+            assert_eq!(packet.dst_ip(), TEST_ADDRS_V6.remote_ip.get());
+            assert_eq!(packet.hop_limit(), 1);
+            assert_eq!(packet.proto(), IpProto::Udp.into());
+            let ext_hdrs = packet.iter_extension_hdrs().collect::<Vec<_>>();
+            let (hbh, frag) = assert_matches!(&ext_hdrs[..], [hbh, frag] => (hbh, frag));
+            assert_matches!(hbh, Ipv6ExtensionHeader::HopByHopOptions { .. });
+            let fragment = assert_matches!(
+                frag, Ipv6ExtensionHeader::Fragment { fragment_data } => fragment_data
+            );
+            assert_eq!(fragment.identification(), IPV6_ID);
+            assert_eq!(usize::from(fragment.fragment_offset().into_bytes()), offset);
+            assert_eq!(fragment.m_flag(), position != FragmentPosition::Last);
+        }
+    }
+
     struct FixedIdContext;
     impl FragmentationIdGenContext for FixedIdContext {
         fn generate_id<I: FragmentationIpExt>(&mut self) -> I::FragmentationId {
@@ -886,9 +971,12 @@ mod tests {
         [
             Ipv4TestEnv::default(),
             Ipv4WithOptionsTestEnv::default(),
-            ForwardingTestEnv(Ipv4TestEnv::default()),
-            ForwardingTestEnv(Ipv4WithOptionsTestEnv::default()),
+            ForwardingTestEnv::new(Ipv4TestEnv::default()),
+            ForwardingTestEnv::new(Ipv4WithOptionsTestEnv::default()),
+            ForwardingTestEnv::new_reassembled(Ipv6TestEnv),
+            ForwardingTestEnv::new_reassembled(Ipv6WithOptionsTestEnv),
             Ipv6TestEnv,
+            Ipv6WithOptionsTestEnv,
         ],
         0..=2
     )]
@@ -932,8 +1020,9 @@ mod tests {
 
     #[test_case(Ipv4TestEnv::dont_frag())]
     #[test_case(Ipv4WithOptionsTestEnv(Ipv4TestEnv::dont_frag()))]
-    #[test_case(ForwardingTestEnv(Ipv4TestEnv::dont_frag()))]
-    #[test_case(ForwardingTestEnv(Ipv6TestEnv))]
+    #[test_case(ForwardingTestEnv::new(Ipv4TestEnv::dont_frag()))]
+    #[test_case(ForwardingTestEnv::new(Ipv6TestEnv))]
+    #[test_case(ForwardingTestEnv::new(Ipv6WithOptionsTestEnv))]
     fn not_allowed<I: FragmentationIpExt, E: FragmentationTestEnv<I>>(env: E) {
         let body = gen_body(usize::from(TEST_MTU));
         let serializer = env.new_serializer(&body[..]);
@@ -943,8 +1032,11 @@ mod tests {
 
     #[test_case(Ipv4TestEnv::default())]
     #[test_case(Ipv4WithOptionsTestEnv::default())]
-    #[test_case(ForwardingTestEnv(Ipv4TestEnv::default()))]
+    #[test_case(ForwardingTestEnv::new(Ipv4TestEnv::default()))]
+    #[test_case(ForwardingTestEnv::new_reassembled(Ipv6TestEnv))]
+    #[test_case(ForwardingTestEnv::new_reassembled(Ipv6WithOptionsTestEnv))]
     #[test_case(Ipv6TestEnv)]
+    #[test_case(Ipv6WithOptionsTestEnv)]
     fn mtu_too_small<I: FragmentationIpExt, E: FragmentationTestEnv<I>>(env: E) {
         let body = gen_body(usize::from(TEST_MTU));
         let serializer = env.new_serializer(&body[..]);
@@ -955,6 +1047,7 @@ mod tests {
     #[test_case(Ipv4TestEnv::default())]
     #[test_case(Ipv4WithOptionsTestEnv::default())]
     #[test_case(Ipv6TestEnv)]
+    #[test_case(Ipv6WithOptionsTestEnv)]
     fn body_too_long<I: FragmentationIpExt, E: FragmentationTestEnv<I>>(env: E) {
         let body = gen_body(MAX_FRAGMENT_OFFSET + usize::from(TEST_MTU));
         let serializer = env.new_serializer(&body[..]);

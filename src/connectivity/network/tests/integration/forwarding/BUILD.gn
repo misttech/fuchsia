@@ -13,11 +13,13 @@ rustc_test("forwarding") {
     "//sdk/fidl/fuchsia.net.filter:fuchsia.net.filter_rust",
     "//sdk/fidl/fuchsia.net.interfaces.admin:fuchsia.net.interfaces.admin_rust",
     "//sdk/fidl/fuchsia.posix.socket:fuchsia.posix.socket_rust",
+    "//sdk/fidl/fuchsia.posix.socket.packet:fuchsia.posix.socket.packet_rust",
     "//sdk/fidl/fuchsia.posix.socket.raw:fuchsia.posix.socket.raw_rust",
     "//src/connectivity/lib/net-declare",
     "//src/connectivity/lib/net-types",
     "//src/connectivity/lib/packet-formats",
     "//src/connectivity/lib/ping",
+    "//src/connectivity/network/lib/sockaddr",
     "//src/connectivity/network/testing/netemul/network-context/fidl:network_rust",
     "//src/connectivity/network/testing/netemul/rust:lib",
     "//src/connectivity/network/tests/integration/common:netstack_testing_common",
@@ -31,6 +33,7 @@ rustc_test("forwarding") {
     "//src/lib/network/packet",
     "//third_party/rust_crates:assert_matches",
     "//third_party/rust_crates:futures-util",
+    "//third_party/rust_crates:libc",
     "//third_party/rust_crates:test-case",
   ]
   configs += [ "//build/config/rust/lints:deny_unused_results" ]

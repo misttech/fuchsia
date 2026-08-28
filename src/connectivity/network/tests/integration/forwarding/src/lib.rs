@@ -12,11 +12,12 @@ use fidl_fuchsia_net_interfaces_ext as fnet_interfaces_ext;
 use fidl_fuchsia_net_matchers_ext as fnet_matchers_ext;
 use fidl_fuchsia_netemul_network as fnetemul_network;
 use fidl_fuchsia_posix_socket as fposix_socket;
+use fidl_fuchsia_posix_socket_packet as fposix_socket_packet;
 use fidl_fuchsia_posix_socket_raw as fposix_socket_raw;
 use fuchsia_async::{DurationExt, MonotonicDuration, TimeoutExt};
 use futures_util::{AsyncReadExt as _, AsyncWriteExt as _, FutureExt, SinkExt, StreamExt};
 use net_declare::{fidl_ip, fidl_subnet};
-use net_types::ip::{Ipv4, Ipv6};
+use net_types::ip::{Ip, IpVersion, Ipv4, Ipv6};
 use netemul::{RealmTcpListener as _, RealmTcpStream as _, RealmUdpSocket};
 use netstack_testing_common::interfaces::TestInterfaceExt;
 use netstack_testing_common::realms::{Netstack, Netstack3, TestSandboxExt as _};
@@ -24,13 +25,21 @@ use netstack_testing_common::{
     ASYNC_EVENT_NEGATIVE_CHECK_TIMEOUT, ASYNC_EVENT_POSITIVE_CHECK_TIMEOUT,
 };
 use netstack_testing_macros::netstack_test;
-use packet::ParsablePacket as _;
+use packet::{
+    InnerPacketBuilder as _, NestablePacketBuilder as _, NoOpSerializationContext,
+    ParsablePacket as _, Serializer as _,
+};
 use packet_formats::ethernet::ETHERNET_HDR_LEN_NO_TAG;
 use packet_formats::icmp::{IcmpParseArgs, Icmpv6Packet};
-use packet_formats::ip::Ipv6Proto;
-use packet_formats::ipv6::IPV6_FIXED_HDR_LEN;
+use packet_formats::ip::{FragmentOffset, IpProto, Ipv4Proto, Ipv6Proto};
+use packet_formats::ipv4::{Ipv4Header as _, Ipv4Packet, Ipv4PacketBuilder};
+use packet_formats::ipv6::ext_hdrs::Ipv6ExtensionHeader;
+use packet_formats::ipv6::{
+    IPV6_FIXED_HDR_LEN, Ipv6Packet, Ipv6PacketBuilder, Ipv6PacketBuilderWithFragmentHeader,
+};
 use packet_formats::udp::HEADER_BYTES as UDP_HDR_LEN;
 use ping::PingError;
+use sockaddr::{EthernetSockaddr, IntoSockAddr as _};
 use std::num::NonZeroU64;
 use test_case::test_case;
 
@@ -232,8 +241,8 @@ impl SetupConfig {
             client,
             server,
             router,
-            _client_iface: client_iface,
-            _server_iface: server_iface,
+            client_iface,
+            server_iface,
             router_client_iface,
             router_server_iface,
         }
@@ -244,10 +253,10 @@ impl SetupConfig {
 struct Setup<'a> {
     _client_net: netemul::TestNetwork<'a>,
     client: netemul::TestRealm<'a>,
-    _client_iface: netemul::TestInterface<'a>,
+    client_iface: netemul::TestInterface<'a>,
     _server_net: netemul::TestNetwork<'a>,
     server: netemul::TestRealm<'a>,
-    _server_iface: netemul::TestInterface<'a>,
+    server_iface: netemul::TestInterface<'a>,
     router: netemul::TestRealm<'a>,
     router_client_iface: netemul::TestInterface<'a>,
     router_server_iface: netemul::TestInterface<'a>,
@@ -725,6 +734,44 @@ async fn internal_forwarding_egress(setup_config: SetupConfig) {
     );
 }
 
+async fn create_icmpv6_raw_socket(
+    realm: &netemul::TestRealm<'_>,
+) -> fuchsia_async::net::DatagramSocket {
+    let recv_socket = realm
+        .raw_socket(
+            fposix_socket::Domain::Ipv6,
+            fposix_socket_raw::ProtocolAssociation::Associated(Ipv6Proto::Icmpv6.into()),
+        )
+        .await
+        .expect("create raw socket");
+    fuchsia_async::net::DatagramSocket::new_from_socket(recv_socket)
+        .expect("create async datagram socket")
+}
+
+async fn recv_icmpv6_packet_too_big(
+    recv_socket: &fuchsia_async::net::DatagramSocket,
+    router_ip: net_types::ip::Ipv6Addr,
+    client_ip: net_types::ip::Ipv6Addr,
+) -> u32 {
+    let mut buf = [0u8; 2048];
+    async {
+        loop {
+            let (read, _from) = recv_socket.recv_from(&mut buf).await.expect("recv_from");
+            let mut bv = &buf[..read];
+            let parse_args = IcmpParseArgs::new(router_ip, client_ip);
+            if let Ok(icmp_packet) = Icmpv6Packet::parse(&mut bv, parse_args) {
+                if let Icmpv6Packet::PacketTooBig(packet_too_big) = icmp_packet {
+                    return packet_too_big.message().mtu();
+                }
+            }
+        }
+    }
+    .on_timeout(ASYNC_EVENT_POSITIVE_CHECK_TIMEOUT.after_now(), || {
+        panic!("timed out waiting for PacketTooBig ICMPv6 error");
+    })
+    .await
+}
+
 /// The Netstack should generate an ICMPv6 PacketTooBig error when asked to
 /// forward a IPv6 packet that would exceed the egress interface's MTU.
 #[netstack_test]
@@ -759,17 +806,7 @@ async fn forwarding_packet_too_big(name: &str) {
     let sandbox = netemul::TestSandbox::new().expect("create sandbox");
     let setup = setup_config.build::<Netstack3>(name, &sandbox).await;
 
-    let recv_socket = setup
-        .client
-        .raw_socket(
-            fposix_socket::Domain::Ipv6,
-            fposix_socket_raw::ProtocolAssociation::Associated(Ipv6Proto::Icmpv6.into()),
-        )
-        .await
-        .expect("create raw socket");
-    let recv_socket = fuchsia_async::net::DatagramSocket::new_from_socket(recv_socket)
-        .expect("create async datagram socket");
-
+    let recv_socket = create_icmpv6_raw_socket(&setup.client).await;
     let send_socket = fuchsia_async::net::UdpSocket::bind_in_realm(&setup.client, client_sockaddr)
         .await
         .expect("bind send sock");
@@ -783,26 +820,306 @@ async fn forwarding_packet_too_big(name: &str) {
     let sent = send_socket.send_to(&payload, server_sockaddr.into()).await.expect("send_to failed");
     assert_eq!(sent, payload.len());
 
-    let mut buf = [0u8; 2048];
-    let mtu = async {
-        loop {
-            let (read, _from) = recv_socket.recv_from(&mut buf).await.expect("recv_from");
-            let mut bv = &buf[..read];
-            let parse_args = IcmpParseArgs::new(router_client_ipv6, client_ipv6);
-            if let Ok(icmp_packet) = Icmpv6Packet::parse(&mut bv, parse_args) {
-                match icmp_packet {
-                    Icmpv6Packet::PacketTooBig(packet_too_big) => {
-                        break packet_too_big.message().mtu();
-                    }
-                    _ => {}
-                }
+    let mtu = recv_icmpv6_packet_too_big(&recv_socket, router_client_ipv6, client_ipv6).await;
+    assert_eq!(mtu as usize, EGRESS_MTU as usize - ETHERNET_HDR_LEN_NO_TAG);
+}
+
+// Verify that UDP datagrams requiring fragmentation can be forwarded successfully.
+#[netstack_test]
+#[variant(N, Netstack)]
+#[test_case(SetupConfig::ipv4(ForwardingConfig::BothEnabled); "ipv4")]
+#[test_case(SetupConfig::ipv6(ForwardingConfig::BothEnabled); "ipv6")]
+async fn forwarding_fragmented_udp_datagram<N: Netstack>(name: &str, setup_config: SetupConfig) {
+    let client_sockaddr = std::net::SocketAddr::from((
+        fidl_fuchsia_net_ext::IpAddress::from(setup_config.client_subnet.addr).0,
+        PORT,
+    ));
+    let server_sockaddr = std::net::SocketAddr::from((
+        fidl_fuchsia_net_ext::IpAddress::from(setup_config.server_subnet.addr).0,
+        PORT,
+    ));
+
+    let sandbox = netemul::TestSandbox::new().expect("create sandbox");
+    let setup = setup_config.build::<N>(name, &sandbox).await;
+
+    let send_socket = fuchsia_async::net::UdpSocket::bind_in_realm(&setup.client, client_sockaddr)
+        .await
+        .expect("bind client socket");
+    let recv_socket = fuchsia_async::net::UdpSocket::bind_in_realm(&setup.server, server_sockaddr)
+        .await
+        .expect("bind server socket");
+
+    // Generate a datagram that's large enough to require IP fragmentation
+    // (will exceed MTU once the ETH + IP + UDP headers are applied).
+    let payload: Vec<u8> = (0..netemul::DEFAULT_MTU).map(|i| i as u8).collect();
+    let sent = send_socket.send_to(&payload, server_sockaddr).await.expect("send_to failed");
+    assert_eq!(sent, payload.len());
+
+    let mut buf = vec![0u8; 2048];
+    let (read, from) = recv_socket
+        .recv_from(&mut buf)
+        .on_timeout(ASYNC_EVENT_POSITIVE_CHECK_TIMEOUT.after_now(), || {
+            panic!("timed out waiting for fragmented UDP datagram on server");
+        })
+        .await
+        .expect("recv_from failed");
+
+    assert_eq!(read, payload.len());
+    assert_eq!(&buf[..read], &payload[..]);
+    assert_eq!(from, client_sockaddr);
+}
+
+async fn create_packet_socket<I: Ip>(
+    realm: &netemul::TestRealm<'_>,
+    iface_id: u64,
+) -> fuchsia_async::net::DatagramSocket {
+    let sock = realm
+        .packet_socket(fposix_socket_packet::Kind::Network)
+        .await
+        .expect("create packet socket");
+    let protocol = match I::VERSION {
+        IpVersion::V4 => packet_formats::ethernet::EtherType::Ipv4,
+        IpVersion::V6 => packet_formats::ethernet::EtherType::Ipv6,
+    };
+    let bind_addr = libc::sockaddr_ll::from(EthernetSockaddr {
+        interface_id: NonZeroU64::new(iface_id),
+        addr: net_types::ethernet::Mac::UNSPECIFIED,
+        protocol,
+    })
+    .into_sockaddr();
+    sock.bind(&bind_addr).expect("bind packet socket");
+    fuchsia_async::net::DatagramSocket::new_from_socket(sock).expect("create async datagram socket")
+}
+
+// Verify that if the netstack receives IPv4 fragments that are too large for
+// the egress interface, it will refragment and forward.
+#[netstack_test]
+async fn ipv4_will_refragment(name: &str) {
+    const INGRESS_MTU: u16 = 1500;
+    const EGRESS_MTU: u16 = 1400;
+    let setup_config = SetupConfig {
+        router_client_ep_config: netemul::new_endpoint_config(INGRESS_MTU, None),
+        router_server_ep_config: netemul::new_endpoint_config(EGRESS_MTU, None),
+        ..SetupConfig::ipv4(ForwardingConfig::BothEnabled)
+    };
+
+    let client_ipv4 = match setup_config.client_subnet.addr {
+        fnet::IpAddress::Ipv4(addr) => net_types::ip::Ipv4Addr::new(addr.addr),
+        fnet::IpAddress::Ipv6(_) => unreachable!(),
+    };
+    let server_ipv4 = match setup_config.server_subnet.addr {
+        fnet::IpAddress::Ipv4(addr) => net_types::ip::Ipv4Addr::new(addr.addr),
+        fnet::IpAddress::Ipv6(_) => unreachable!(),
+    };
+
+    let sandbox = netemul::TestSandbox::new().expect("create sandbox");
+    let setup = setup_config.build::<Netstack3>(name, &sandbox).await;
+
+    let router_client_mac = setup.router_client_iface.mac().await;
+    let client_send_to_addr = libc::sockaddr_ll::from(EthernetSockaddr {
+        interface_id: Some(NonZeroU64::new(setup.client_iface.id()).unwrap()),
+        addr: net_types::ethernet::Mac::new(router_client_mac.octets),
+        protocol: packet_formats::ethernet::EtherType::Ipv4,
+    })
+    .into_sockaddr();
+
+    // Client will send IP fragments on a packet socket. Server will receive
+    // IP fragments on a packet socket.
+    let client_send_sock =
+        create_packet_socket::<Ipv4>(&setup.client, setup.client_iface.id()).await;
+    let server_recv_sock =
+        create_packet_socket::<Ipv4>(&setup.server, setup.server_iface.id()).await;
+
+    // Setup and send two IPv4 fragments.
+    const TTL: u8 = 64;
+    const PROTOCOL: Ipv4Proto = Ipv4Proto::Proto(IpProto::Reserved);
+    const ID: u16 = 12345;
+    // NB: Set the fragment size such that, after applying the IPv4 & Ethernet
+    // headers, the packet size is < INGRESS MTU, but greater than EGRESS_MTU.
+    const FRAGMENT_SIZE: u16 = EGRESS_MTU;
+    let mut fragment1 = Ipv4PacketBuilder::new(client_ipv4, server_ipv4, TTL, PROTOCOL);
+    fragment1.id(ID);
+    fragment1.mf_flag(true);
+    fragment1.fragment_offset(FragmentOffset::ZERO);
+    let mut fragment2 = Ipv4PacketBuilder::new(client_ipv4, server_ipv4, TTL, PROTOCOL);
+    fragment2.id(ID);
+    fragment2.mf_flag(false);
+    fragment2.fragment_offset(
+        FragmentOffset::new_with_bytes(FRAGMENT_SIZE)
+            .expect("FRAGMENT_SIZE should be a multiple of 8"),
+    );
+    let fragment_body: Vec<u8> = (0..FRAGMENT_SIZE).map(|i| i as u8).collect();
+    let fragment1 = fragment1
+        .wrap_body((&fragment_body[..]).into_serializer())
+        .serialize_vec_outer(&mut NoOpSerializationContext)
+        .expect("serialization should succeed")
+        .unwrap_b()
+        .into_inner();
+    let fragment2 = fragment2
+        .wrap_body((&fragment_body[..]).into_serializer())
+        .serialize_vec_outer(&mut NoOpSerializationContext)
+        .expect("serialization should succeed")
+        .unwrap_b()
+        .into_inner();
+    assert_eq!(fragment1.len(), fragment2.len());
+    let len = fragment1.len();
+    assert!(len < usize::from(INGRESS_MTU) && len > usize::from(EGRESS_MTU));
+    assert_matches!(
+        client_send_sock.send_to(&fragment1, client_send_to_addr.clone()).await,
+        Ok(l) if l == len
+    );
+    assert_matches!(
+        client_send_sock.send_to(&fragment2, client_send_to_addr.clone()).await,
+        Ok(l) if l == len
+    );
+
+    // The server should receive the fragments. They should be resized to fit
+    // EGRESS_MTU.
+    let mut expected_body = Vec::with_capacity(usize::from(FRAGMENT_SIZE) * 2);
+    expected_body.extend_from_slice(&fragment_body);
+    expected_body.extend_from_slice(&fragment_body);
+
+    let reassembled_body = async {
+        let mut reassembled_body = vec![0u8; expected_body.len()];
+        let mut received_bytes = 0;
+        let mut seen_last_fragment = false;
+        let mut buf = [0u8; 2048];
+
+        while !seen_last_fragment || received_bytes < expected_body.len() {
+            let (len, _from) =
+                server_recv_sock.recv_from(&mut buf[..]).await.expect("recv_from shouldn't fail");
+            let mut data = &buf[..len];
+            let packet = Ipv4Packet::parse(&mut data, ()).expect("failed to parse IPv4 packet");
+            let offset = usize::from(packet.fragment_offset().into_bytes());
+            let body = packet.body();
+            let end = offset + body.len();
+
+            assert_eq!(packet.src_ip(), client_ipv4);
+            assert_eq!(packet.dst_ip(), server_ipv4);
+            assert_eq!(packet.proto(), PROTOCOL);
+            assert_eq!(packet.ttl(), TTL - 1);
+            assert!(len <= usize::from(EGRESS_MTU));
+            assert!(end <= expected_body.len());
+
+            reassembled_body[offset..end].copy_from_slice(body);
+            received_bytes += body.len();
+
+            if !packet.mf_flag() && end == expected_body.len() {
+                seen_last_fragment = true;
             }
         }
+
+        reassembled_body
     }
     .on_timeout(ASYNC_EVENT_POSITIVE_CHECK_TIMEOUT.after_now(), || {
-        panic!("timed out waiting for PacketTooBig ICMPv6 error");
+        panic!("timed out waiting for IPv4 fragments on server");
     })
     .await;
+    assert_eq!(reassembled_body, expected_body);
+}
 
+// Verify that if the netstack receives IPv6 fragments that are too large for
+// the egress interface, it will not refragment and will instead respond with
+// an ICMPv6 PacketTooBig error.
+#[netstack_test]
+async fn ipv6_will_not_refragment(name: &str) {
+    const INGRESS_MTU: u16 = 1500;
+    const EGRESS_MTU: u16 = 1400;
+    let setup_config = SetupConfig {
+        router_client_ep_config: netemul::new_endpoint_config(INGRESS_MTU, None),
+        router_server_ep_config: netemul::new_endpoint_config(EGRESS_MTU, None),
+        ..SetupConfig::ipv6(ForwardingConfig::BothEnabled)
+    };
+
+    let client_ipv6 = match setup_config.client_subnet.addr {
+        fnet::IpAddress::Ipv6(addr) => net_types::ip::Ipv6Addr::from_bytes(addr.addr),
+        fnet::IpAddress::Ipv4(_) => unreachable!(),
+    };
+    let server_ipv6 = match setup_config.server_subnet.addr {
+        fnet::IpAddress::Ipv6(addr) => net_types::ip::Ipv6Addr::from_bytes(addr.addr),
+        fnet::IpAddress::Ipv4(_) => unreachable!(),
+    };
+    let router_client_ipv6 = match setup_config.router_client_ip.addr {
+        fnet::IpAddress::Ipv6(addr) => net_types::ip::Ipv6Addr::from_bytes(addr.addr),
+        fnet::IpAddress::Ipv4(_) => unreachable!(),
+    };
+
+    let sandbox = netemul::TestSandbox::new().expect("create sandbox");
+    let setup = setup_config.build::<Netstack3>(name, &sandbox).await;
+
+    let router_client_mac = setup.router_client_iface.mac().await;
+    let client_send_to_addr = libc::sockaddr_ll::from(EthernetSockaddr {
+        interface_id: Some(NonZeroU64::new(setup.client_iface.id()).unwrap()),
+        addr: net_types::ethernet::Mac::new(router_client_mac.octets),
+        protocol: packet_formats::ethernet::EtherType::Ipv6,
+    })
+    .into_sockaddr();
+
+    // Client will send IP fragments on a packet socket, and receive
+    // PacketTooBig on an raw socket.
+    let client_send_sock =
+        create_packet_socket::<Ipv6>(&setup.client, setup.client_iface.id()).await;
+    let server_recv_sock =
+        create_packet_socket::<Ipv6>(&setup.server, setup.server_iface.id()).await;
+    let client_recv_sock = create_icmpv6_raw_socket(&setup.client).await;
+
+    // Setup and send two IPv6 fragments.
+    const HOP_LIMIT: u8 = 64;
+    const PROTOCOL: Ipv6Proto = Ipv6Proto::NoNextHeader;
+    const ID: u32 = 12345;
+    // NB: Set the fragment size such that, after applying the IPv6 & Ethernet
+    // headers, the packet size is < INGRESS MTU, but greater than EGRESS_MTU.
+    const FRAGMENT_SIZE: u16 = EGRESS_MTU;
+    let builder = Ipv6PacketBuilder::new(client_ipv6, server_ipv6, HOP_LIMIT, PROTOCOL);
+    let fragment1 =
+        Ipv6PacketBuilderWithFragmentHeader::new(builder.clone(), FragmentOffset::ZERO, true, ID);
+    let offset = FragmentOffset::new_with_bytes(FRAGMENT_SIZE)
+        .expect("FRAGMENT_SIZE should be a multiple of 8");
+    let fragment2 = Ipv6PacketBuilderWithFragmentHeader::new(builder, offset, false, ID);
+    let fragment_body: Vec<u8> = (0..FRAGMENT_SIZE).map(|i| i as u8).collect();
+    let fragment1 = fragment1
+        .wrap_body((&fragment_body[..]).into_serializer())
+        .serialize_vec_outer(&mut NoOpSerializationContext)
+        .expect("serialization should succeed")
+        .unwrap_b()
+        .into_inner();
+    let fragment2 = fragment2
+        .wrap_body((&fragment_body[..]).into_serializer())
+        .serialize_vec_outer(&mut NoOpSerializationContext)
+        .expect("serialization should succeed")
+        .unwrap_b()
+        .into_inner();
+    assert_eq!(fragment1.len(), fragment2.len());
+    let len = fragment1.len();
+    assert!(len < usize::from(INGRESS_MTU) && len > usize::from(EGRESS_MTU));
+    assert_matches!(
+        client_send_sock.send_to(&fragment1, client_send_to_addr.clone()).await,
+        Ok(l) if l == len
+    );
+    assert_matches!(
+        client_send_sock.send_to(&fragment2, client_send_to_addr.clone()).await,
+        Ok(l) if l == len
+    );
+
+    // The server should not receive the fragments, as they exceed `EGRESS_MTU`.
+    let received_fragment = futures_util::stream::unfold(vec![0u8; 2048], |mut buf| async {
+        let (_len, _from) =
+            server_recv_sock.recv_from(&mut buf[..]).await.expect("recv_from shouldn't fail");
+        let mut data = &buf[..len];
+        let matches_fragment = match Ipv6Packet::parse(&mut data, ()) {
+            Err(_) => false,
+            Ok(packet) => packet
+                .iter_extension_hdrs()
+                .any(|hdr| matches!(hdr, Ipv6ExtensionHeader::Fragment { .. })),
+        };
+        Some((matches_fragment, buf))
+    })
+    .any(|matches_fragment| futures_util::future::ready(matches_fragment))
+    .on_timeout(ASYNC_EVENT_NEGATIVE_CHECK_TIMEOUT.after_now(), || false)
+    .await;
+    assert!(!received_fragment);
+
+    // The client should receive a PacketTooBig error.
+    let mtu = recv_icmpv6_packet_too_big(&client_recv_sock, router_client_ipv6, client_ipv6).await;
     assert_eq!(mtu as usize, EGRESS_MTU as usize - ETHERNET_HDR_LEN_NO_TAG);
 }

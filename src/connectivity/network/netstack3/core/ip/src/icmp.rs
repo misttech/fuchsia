@@ -344,6 +344,8 @@ impl IcmpError for Icmpv4Error {
         Icmpv4Error::TtlExpired
     }
     fn mtu_exceeded(_mtu: Mtu) -> Option<Self> {
+        // TODO(https://fxbug.dev/552550972): Send ICMP Destination Unreachable
+        // error with "Fragmentation needed and DF Set" code.
         None
     }
 }

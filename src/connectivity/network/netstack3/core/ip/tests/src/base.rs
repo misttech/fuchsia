@@ -895,19 +895,29 @@ fn test_ip_reassembly_when_forwarding<I: TestIpExt + IpExt>() {
         process_ip_fragment::<I>(ctx, &alice_device_id, fragment_id, 2, 3, false);
     });
     // Now that the last fragment has arrived, Alice should have forwarded the
-    // reassembled packet.
+    // reassembled packet by re-fragmenting it.
     assert!(!net.step().is_idle());
     IpCounterExpectations::<I> {
         receive_ip_packet: 3,
         need_more_fragments: 2,
         forward: 1,
+        fragmentation: FragmentationCounters {
+            fragmentation_required: 1,
+            fragments: 3,
+            ..Default::default()
+        },
         ..Default::default()
     }
     .assert_counters(&net.context("alice").core_ctx(), &alice_device_id);
 
-    // Make sure the packet finally got dispatched once Bob received the whole packet.
-    IpCounterExpectations::<I>::expect_dispatched(1)
-        .assert_counters(&net.context("bob").core_ctx(), &bob_device_id);
+    // Make sure the packet finally got dispatched once Bob received all the
+    // fragments and reassembled them.
+    IpCounterExpectations::<I> {
+        receive_ip_packet: 3,
+        need_more_fragments: 2,
+        ..IpCounterExpectations::expect_dispatched(1)
+    }
+    .assert_counters(&net.context("bob").core_ctx(), &bob_device_id);
 
     // Make sure there are no more events.
     assert!(net.step().is_idle());
