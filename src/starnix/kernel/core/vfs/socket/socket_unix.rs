@@ -11,9 +11,9 @@ use crate::vfs::buffers::{
     AncillaryData, InputBuffer, MessageQueue, MessageReadInfo, OutputBuffer, UnixControlData,
 };
 use crate::vfs::socket::{
-    AcceptQueue, DEFAULT_LISTEN_BACKLOG, SockOptValue, Socket, SocketAddress, SocketDomain,
-    SocketFile, SocketHandle, SocketMessageFlags, SocketOps, SocketPeer, SocketProtocol,
-    SocketShutdownFlags, SocketType,
+    AcceptQueue, DEFAULT_LISTEN_BACKLOG, SockOptValue, Socket, SocketAddress, SocketBpfState,
+    SocketDomain, SocketFile, SocketHandle, SocketMessageFlags, SocketOps, SocketPeer,
+    SocketProtocol, SocketShutdownFlags, SocketType,
 };
 use crate::vfs::{
     CheckAccessReason, FdNumber, FileHandle, FileObject, FsNodeHandle, FsStr, LookupContext,
@@ -200,6 +200,8 @@ impl UnixSocket {
         downcast_socket_to_unix(&left).lock().credentials = Some(credentials.clone());
         downcast_socket_to_unix(&right).lock().state = UnixSocketState::Connected(left.clone());
         downcast_socket_to_unix(&right).lock().credentials = Some(credentials);
+        left.set_bpf_state(SocketBpfState::Established);
+        right.set_bpf_state(SocketBpfState::Established);
         let left = SocketFile::from_socket(
             current_task,
             left,

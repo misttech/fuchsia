@@ -657,6 +657,10 @@ impl Socket {
     pub fn bpf_state(&self) -> SocketBpfState {
         self.state.lock().bpf_state
     }
+
+    pub fn set_bpf_state(&self, state: SocketBpfState) {
+        self.state.lock().bpf_state = state;
+    }
 }
 
 impl DowncastedFile<'_, SocketFile> {
@@ -664,7 +668,7 @@ impl DowncastedFile<'_, SocketFile> {
         security::check_socket_connect_access(current_task, self, &peer)?;
         let res = self.socket.ops.connect(&self.socket, current_task, peer);
         if res.is_ok() || res == error!(EINPROGRESS) {
-            self.socket.state.lock().bpf_state = SocketBpfState::SynSent;
+            self.socket.state.lock().bpf_state = SocketBpfState::Established;
         }
         res
     }

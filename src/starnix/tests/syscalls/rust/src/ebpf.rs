@@ -710,7 +710,7 @@ mod tests {
         assert_eq!(test_result.sk_type, libc::SOCK_STREAM as u32);
         assert_eq!(test_result.sk_protocol, 0);
         assert_eq!(test_result.sk_family, libc::AF_UNIX as u32);
-        assert_eq!(test_result.sk_state, linux_uapi::BPF_TCP_CLOSE);
+        assert_eq!(test_result.sk_state, linux_uapi::BPF_TCP_ESTABLISHED);
 
         // Verify setsockopt on a listening TCP socket.
         let listener =
@@ -730,7 +730,7 @@ mod tests {
         assert_eq!(test_result.sk_type, libc::SOCK_STREAM as u32);
         assert_eq!(test_result.sk_protocol, libc::IPPROTO_TCP as u32);
         assert_eq!(test_result.sk_family, libc::AF_INET as u32);
-        assert_eq!(test_result.sk_state, linux_uapi::BPF_TCP_SYN_SENT);
+        assert!(test_result.sk_state == linux_uapi::BPF_TCP_ESTABLISHED);
 
         // Verify setsockopt on an accepted TCP socket.
         let (accepted_stream, _peer_addr) = listener.accept().expect("Failed to accept TCP stream");
@@ -812,7 +812,7 @@ mod tests {
         assert_eq!(test_result.sk_type, libc::SOCK_STREAM as u32);
         assert_eq!(test_result.sk_protocol, 0);
         assert_eq!(test_result.sk_family, libc::AF_UNIX as u32);
-        assert_eq!(test_result.sk_state, linux_uapi::BPF_TCP_CLOSE);
+        assert_eq!(test_result.sk_state, linux_uapi::BPF_TCP_ESTABLISHED);
 
         // The original error is still returned if the program returns 0.
         let err = get_test_sock_opt(3).expect_err("getsockopt expected to fail");
