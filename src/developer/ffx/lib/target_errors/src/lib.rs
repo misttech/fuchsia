@@ -191,6 +191,10 @@ impl Into<FfxError> for FfxTargetError {
 }
 
 impl TraceableError for FfxTargetError {
+    fn as_any(&self) -> &dyn ::std::any::Any {
+        self
+    }
+
     fn layer_code(&self) -> String {
         let variant_str = match self {
             Self::DaemonError { err, .. } => format!("DaemonError({:?})", err),

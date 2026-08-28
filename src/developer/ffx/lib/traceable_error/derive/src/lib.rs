@@ -218,6 +218,10 @@ pub fn derive_traceable_error(input: TokenStream) -> TokenStream {
 
     let expanded = quote! {
         impl ::traceable_error::TraceableError for #name {
+            fn as_any(&self) -> &dyn ::std::any::Any {
+                self
+            }
+
             fn layer_code(&self) -> String {
                 const CRATE_NAME: &str = match option_env!("CARGO_PKG_NAME") {
                     Some(name) => name,

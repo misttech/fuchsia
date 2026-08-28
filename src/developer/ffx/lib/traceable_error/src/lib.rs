@@ -29,7 +29,9 @@
 ///
 /// This structured layout facilitates highly readable failure trajectory reconstruction
 /// across distributed IPC boundaries and dynamic crate boundaries.
-pub trait TraceableError: std::fmt::Debug + std::fmt::Display {
+pub trait TraceableError: std::fmt::Debug + std::fmt::Display + 'static {
+    /// Downcasts this trait object to a concrete type.
+    fn as_any(&self) -> &dyn std::any::Any;
     /// Returns this specific layer's string identifier (format: CrateName::EnumName::EnumValue).
     fn layer_code(&self) -> String;
 
@@ -53,6 +55,10 @@ pub trait TraceableError: std::fmt::Debug + std::fmt::Display {
 }
 
 impl TraceableError for anyhow::Error {
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+
     fn layer_code(&self) -> String {
         if let Some(boxed) = self.downcast_ref::<TraceableBox>() {
             boxed.layer_code()
@@ -115,6 +121,10 @@ impl<E: TraceableError + Send + Sync + 'static> From<E> for TraceableBox {
 }
 
 impl TraceableBox {
+    pub fn as_any(&self) -> &dyn std::any::Any {
+        self.0.as_any()
+    }
+
     pub fn layer_code(&self) -> String {
         self.0.layer_code()
     }
@@ -152,6 +162,9 @@ mod tests {
         }
     }
     impl TraceableError for DummyError {
+        fn as_any(&self) -> &dyn std::any::Any {
+            self
+        }
         fn layer_code(&self) -> String {
             "DummyError".to_string()
         }
@@ -175,6 +188,9 @@ mod tests {
             }
         }
         impl TraceableError for InnerError {
+            fn as_any(&self) -> &dyn std::any::Any {
+                self
+            }
             fn layer_code(&self) -> String {
                 "Inner".to_string()
             }
@@ -191,6 +207,9 @@ mod tests {
             }
         }
         impl TraceableError for OuterError {
+            fn as_any(&self) -> &dyn std::any::Any {
+                self
+            }
             fn layer_code(&self) -> String {
                 "Outer".to_string()
             }

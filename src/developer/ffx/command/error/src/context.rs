@@ -117,7 +117,7 @@ where
 impl ResultExt for Error {
     fn ffx_error<'a>(&'a self) -> Option<&'a FfxError> {
         match self {
-            Error::User(err) => err.downcast_ref(),
+            Error::User(err) | Error::Unexpected(err) | Error::Config(err) => err.ffx_error(),
             _ => None,
         }
     }
@@ -128,9 +128,7 @@ impl IntoExitCode for Error {
         match self {
             Help { code, .. } | ExitWithCode(code) => *code,
             IoError(_) => 1,
-            Unexpected(err) | User(err) | Config(err) => {
-                err.ffx_error().map(FfxError::exit_code).unwrap_or(1)
-            }
+            Unexpected(err) | User(err) | Config(err) => err.exit_code(),
         }
     }
 }

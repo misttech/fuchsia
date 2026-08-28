@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use errors::FfxError;
+use errors::{FfxError, IntoExitCode};
 use traceable_error_derive::TraceableError;
 
 /// Represents a recoverable error. Intended to be embedded in `Error`.
@@ -148,7 +148,9 @@ impl From<anyhow::Error> for Error {
             // this is just a compatibility shim to extract information out of the way
             // we've traditionally divided user and unexpected errors.
             Err(error) => match error.downcast::<FfxError>() {
-                Ok(err) => Self::User(err.into()),
+                Ok(err) => {
+                    Self::User(anyhow::Error::from(traceable_error::TraceableBox::from(err)))
+                }
                 Err(err) => Self::Unexpected(err),
             },
         }
@@ -157,7 +159,7 @@ impl From<anyhow::Error> for Error {
 
 impl From<FfxError> for Error {
     fn from(error: FfxError) -> Self {
-        Error::User(error.into())
+        Error::User(anyhow::Error::from(traceable_error::TraceableBox::from(error)))
     }
 }
 
@@ -179,13 +181,7 @@ impl Error {
     /// Get the exit code this error should correspond to if it bubbles up to `main()`
     pub fn exit_code(&self) -> i32 {
         match self {
-            Error::User(err) => {
-                if let Some(FfxError::Error(_, code)) = err.downcast_ref() {
-                    *code
-                } else {
-                    1
-                }
-            }
+            Error::User(err) => err.exit_code(),
             Error::Help { code, .. } => *code,
             Error::ExitWithCode(code) => *code,
             _ => 1,

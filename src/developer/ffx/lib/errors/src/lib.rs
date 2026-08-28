@@ -145,16 +145,19 @@ pub trait ResultExt: IntoExitCode {
 
 impl ResultExt for anyhow::Error {
     fn ffx_error<'a>(&'a self) -> Option<&'a FfxError> {
-        self.downcast_ref()
+        if let Some(ffx_err) = self.downcast_ref::<FfxError>() {
+            Some(ffx_err)
+        } else if let Some(boxed) = self.downcast_ref::<traceable_error::TraceableBox>() {
+            boxed.as_any().downcast_ref::<FfxError>()
+        } else {
+            None
+        }
     }
 }
 
 impl IntoExitCode for anyhow::Error {
     fn exit_code(&self) -> i32 {
-        match self.downcast_ref() {
-            Some(FfxError::Error(_, code)) => *code,
-            _ => 1,
-        }
+        self.ffx_error().map(IntoExitCode::exit_code).unwrap_or(1)
     }
 }
 
@@ -236,5 +239,14 @@ mod test {
     fn test_result_ext_exit_code_arbitrary_error() {
         let err = Result::<(), _>::Err(anyhow!(ERR_STR));
         assert_eq!(err.exit_code(), 1);
+    }
+
+    #[test]
+    fn test_ffx_result_extension_with_traceable_box() {
+        let ffx_err = ffx_error_with_code!(42, FFX_STR);
+        let boxed = traceable_error::TraceableBox::from(ffx_err);
+        let err = anyhow::Error::from(boxed);
+        assert_matches!(err.ffx_error(), Some(FfxError::Error(_, 42)));
+        assert_eq!(err.exit_code(), 42);
     }
 }

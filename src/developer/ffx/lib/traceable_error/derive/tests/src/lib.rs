@@ -18,6 +18,9 @@ enum SimpleError {
 struct RootError;
 
 impl TraceableError for RootError {
+    fn as_any(&self) -> &dyn ::std::any::Any {
+        self
+    }
     fn layer_code(&self) -> String {
         "RootError".to_string()
     }
