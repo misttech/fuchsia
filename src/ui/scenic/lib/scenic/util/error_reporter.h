@@ -11,8 +11,6 @@
 #include <sstream>
 #include <string>
 
-#include "src/lib/fxl/macros.h"
-
 namespace scenic_impl {
 
 // Flexible error reporting with an ostream-like interface.  Subclasses must
@@ -26,6 +24,8 @@ class ErrorReporter {
   class Report {
    public:
     Report(Report&& report);
+    Report(const Report&) = delete;
+    Report& operator=(const Report&) = delete;
     ~Report();
 
     // Append the value to the output stream.
@@ -53,8 +53,6 @@ class ErrorReporter {
     ErrorReporter* owner_ = nullptr;
     fuchsia_logging::LogSeverity severity_;
     std::ostringstream stream_;
-
-    FXL_DISALLOW_COPY_AND_ASSIGN(Report);
   };
 
   // Create a new Report which will, upon destruction, invoke ReportError()

@@ -6,19 +6,10 @@ source_set("util") {
   sources = [
     "error_reporter.cc",
     "error_reporter.h",
-    "print_event.cc",
-    "print_event.h",
   ]
 
   public_deps = [
-    "//sdk/fidl/fuchsia.ui.gfx:fuchsia.ui.gfx_hlcpp",
-    "//sdk/lib/fdio",
     "//sdk/lib/syslog/cpp",
-    "//zircon/system/ulib/zx",
-  ]
-
-  deps = [
-    "//src/lib/fxl",
     "//zircon/system/ulib/zx",
   ]
 }
