@@ -7,17 +7,16 @@ use fidl::endpoints::create_endpoints;
 use fidl_fuchsia_hardware_vsock as vsock;
 use fidl_fuchsia_hardware_vsockbridge as vsockbridge;
 use fuchsia_async::scope::ScopeStream;
-use fuchsia_async::{Scope, Socket, TimeoutExt};
+use fuchsia_async::{Scope, Socket};
 use fuchsia_component::server::ServiceFs;
 use futures::channel::{mpsc, oneshot};
 use futures::future::{Either, select};
 use futures::io::{ReadHalf, WriteHalf};
 use futures::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, StreamExt, TryStreamExt};
 use log::{debug, error, info, warn};
-use std::io::{Error, ErrorKind};
+use std::io::Error;
 use std::pin::pin;
 use std::sync::Arc;
-use std::time::Duration;
 use usb_vsock::{
     CID_HOST, Connection, ConnectionRequest, Header, Packet, PacketType, ProtocolVersion,
     UsbPacketBuilder, VsockPacketIterator,
@@ -62,72 +61,6 @@ impl UsbConnection {
         );
         let (usb_socket_reader, usb_socket_writer) = Socket::from_socket(usb_socket).split();
         Self { vsock_service, usb_socket_reader, usb_socket_writer, connection_tx }
-    }
-
-    // TODO(406262417): this is only here because the host side has trouble with hanging
-    // gets and sending some data immediately after will help it clear and re-establish its state.
-    async fn clear_host_requests(&mut self, found_magic: &[u8]) -> Option<()> {
-        let mut data = [0; MTU];
-        for _ in 0..10 {
-            let header = &mut Header::new(PacketType::Echo);
-            header.payload_len.set(found_magic.len() as u32);
-            let packet = Packet { header, payload: &found_magic };
-            packet.write_to_unchecked(&mut data);
-            if let Err(err) = self.usb_socket_writer.write(&data[..packet.size()]).await {
-                error!("Error writing echo to the usb socket: {err:?}");
-                return None;
-            }
-            let next_packet = read_packet_stream(&mut self.usb_socket_reader, &mut data)
-                .on_timeout(Duration::from_millis(100), || Err(ErrorKind::TimedOut.into()))
-                .await;
-            let mut packets = match next_packet {
-                Ok(None) => {
-                    debug!("Usb socket closed");
-                    return None;
-                }
-                Err(err) if err.kind() == ErrorKind::TimedOut => {
-                    error!("Timed out waiting for matching packet, trying again");
-                    continue;
-                }
-                Err(err) => {
-                    error!("Unexpected error on usb socket: {err}");
-                    return None;
-                }
-                Ok(Some(packets)) => packets,
-            };
-
-            while let Some(packet) = packets.next() {
-                // note: we will deliberately warn and ignore for any vsock packets in the same
-                // usb packet as a sync packet, regardless of whether they were before or after.
-                match packet {
-                    Ok(Packet {
-                        header: Header { packet_type: PacketType::EchoReply, .. },
-                        payload,
-                    }) => {
-                        if payload == found_magic {
-                            debug!(
-                                "host replied to echo packet and it was received, continuing synchronization"
-                            );
-                            return Some(());
-                        } else {
-                            warn!("Got echo reply with incorrect payload, ignoring.")
-                        }
-                    }
-                    Ok(packet) => {
-                        warn!(
-                            "Got unexpected packet of type {:?} and length {} while waiting for sync packet. Ignoring.",
-                            packet.header.packet_type, packet.header.payload_len
-                        );
-                    }
-                    Err(err) => {
-                        warn!("Got invalid vsock packet while waiting for sync packet: {err:?}");
-                    }
-                }
-            }
-        }
-        // try and finish the connection anyways
-        warn!("Failed to receive echo response in time, giving up but still trying to connect");
-        Some(())
     }
 
     /// Waits for an [`PacketType::Sync`] packet and sends the reply back, and then returns the
@@ -178,11 +111,6 @@ impl UsbConnection {
 
         let incoming_version = ProtocolVersion::from_magic(&found_magic);
 
-        // send echo packets until we get back an expected reply
-        // TODO(406262417): this is only here because the host side has trouble with hanging
-        // gets and sending some data immediately after will help it clear and re-establish its state.
-        self.clear_host_requests(&found_magic).await?;
-
         let outgoing_version = if let Some(incoming_version) = incoming_version {
             let Some(outgoing_version) = ProtocolVersion::LATEST.negotiate(&incoming_version)
             else {
@@ -210,7 +138,7 @@ impl UsbConnection {
         header.payload_len = (outgoing_magic.len() as u32).into();
         header.device_cid.set(self.vsock_service.current_cid());
         header.host_cid.set(CID_HOST);
-        let packet = Packet { header: &header, payload: outgoing_magic };
+        let packet = Packet { header: &header, payload: &outgoing_magic };
         packet.write_to_unchecked(&mut data);
         if let Err(err) = self.usb_socket_writer.write(&data[..packet.size()]).await {
             error!("Error writing vsock bridge magic string to the usb socket: {err:?}");
@@ -494,6 +422,18 @@ mod tests {
             mpsc::Receiver<ConnectionRequest>,
         ),
     ) {
+        end_to_end_test_with_version(ProtocolVersion::V2(0x12345678), device_side, host_side).await;
+    }
+
+    async fn end_to_end_test_with_version(
+        version: ProtocolVersion,
+        device_side: impl AsyncFn(vsock_api::ConnectorProxy),
+        host_side: impl AsyncFn(
+            Arc<Connection<Vec<u8>, Socket>>,
+            u32,
+            mpsc::Receiver<ConnectionRequest>,
+        ),
+    ) {
         let scope = Scope::new();
         let (vsock_impl_client, vsock_impl_server) = create_endpoints::<vsock::DeviceMarker>();
         let (usb_callback_client, usb_callback_server) =
@@ -524,15 +464,15 @@ mod tests {
         usb_callback_client.new_link(usb_packet_server).await.unwrap();
 
         let (incoming_tx, incoming_rx) = mpsc::channel(1);
-        let host_connection = Arc::new(Connection::new(ProtocolVersion::LATEST, None, incoming_tx));
+        let host_connection = Arc::new(Connection::new(version, None, incoming_tx));
 
         // send the initial sync packet with
         let header = &mut Header::new(PacketType::Sync);
-        let payload = ProtocolVersion::LATEST.magic();
+        let payload = version.magic();
         header.host_cid.set(CID_HOST);
         header.device_cid.set(CID_ANY);
         header.payload_len.set(payload.len() as u32);
-        let sync_packet = Packet { header, payload };
+        let sync_packet = Packet { header, payload: &payload };
         let mut buf = [0; 1024];
         sync_packet.write_to_unchecked(&mut buf);
         assert_eq!(
@@ -540,48 +480,29 @@ mod tests {
             usb_packet_writer.write(&buf[..sync_packet.size()]).await.unwrap()
         );
 
-        // bounce back echoes until we receive a sync reply
+        // receive sync reply directly (no echoes)
         let mut buf = vec![0; 4096];
-        loop {
-            let packet = read_packet_stream(&mut usb_packet_reader, &mut buf)
-                .await
-                .unwrap()
-                .unwrap()
-                .next()
-                .unwrap()
-                .unwrap();
-            trace!("received packet {packet:?}");
-            match packet.header.packet_type {
-                PacketType::Sync => {
-                    assert_eq!(packet.payload, ProtocolVersion::LATEST.magic());
-                    assert_eq!(packet.header.device_cid.get(), 3);
-                    assert_eq!(packet.header.host_cid.get(), CID_HOST);
-                    break;
-                }
-                PacketType::Echo => {
-                    let header = &mut Header::new(PacketType::EchoReply);
-                    let payload = packet.payload;
-                    header.payload_len.set(payload.len() as u32);
-                    let sync_packet = Packet { header, payload };
-                    let mut buf = [0; 1024];
-                    sync_packet.write_to_unchecked(&mut buf);
-                    assert_eq!(
-                        sync_packet.size(),
-                        usb_packet_writer.write(&buf[..sync_packet.size()]).await.unwrap()
-                    );
-                }
-                other => panic!("Unexpected packet type while syncing {other:?}"),
-            }
-        }
+        let packet = read_packet_stream(&mut usb_packet_reader, &mut buf)
+            .await
+            .unwrap()
+            .unwrap()
+            .next()
+            .unwrap()
+            .unwrap();
+        trace!("received packet {packet:?}");
+        assert_eq!(packet.header.packet_type, PacketType::Sync);
+        assert_eq!(packet.payload, version.magic());
+        assert_eq!(packet.header.device_cid.get(), 3);
+        assert_eq!(packet.header.host_cid.get(), CID_HOST);
 
         // send back a different cid just to make sure that works
         let device_cid = 300;
         let header = &mut Header::new(PacketType::Sync);
-        let payload = ProtocolVersion::LATEST.magic();
+        let payload = version.magic();
         header.host_cid.set(CID_HOST);
         header.device_cid.set(device_cid);
         header.payload_len.set(payload.len() as u32);
-        let sync_packet = Packet { header, payload };
+        let sync_packet = Packet { header, payload: &payload };
         let mut buf = [0; 1024];
         sync_packet.write_to_unchecked(&mut buf);
         assert_eq!(
@@ -706,6 +627,41 @@ mod tests {
                 socket.read_exact(&mut buf).await.unwrap();
                 assert_eq!(&buf, b"zoom");
                 trace!("host fin");
+            },
+        )
+        .await;
+    }
+
+    #[fuchsia::test(allow_stalls = false)]
+    async fn test_downgrade_to_v1() {
+        end_to_end_test_with_version(
+            ProtocolVersion::V1,
+            async move |vsock_api_client| {
+                let (socket, data) = zx::Socket::create_stream();
+                let mut socket = Socket::from_socket(socket);
+                let (_con, con) = create_endpoints();
+                vsock_api_client
+                    .connect(CID_HOST, 200, vsock_api::ConnectionTransport { data, con })
+                    .await
+                    .unwrap()
+                    .map_err(Status::err_from_raw)
+                    .unwrap();
+                let mut buf = [0; 4];
+                socket.read_exact(&mut buf).await.unwrap();
+                assert_eq!(&buf, b"boom");
+                socket.write_all(b"zoom").await.unwrap();
+                assert_eq!(0, socket.read(&mut buf).await.unwrap());
+            },
+            async move |host_connection, _device_cid, mut incoming_rx| {
+                let incoming = incoming_rx.next().await.unwrap();
+                let (socket, other_end) = zx::Socket::create_stream();
+                let mut socket = Socket::from_socket(socket);
+                let _state =
+                    host_connection.accept(incoming, Socket::from_socket(other_end)).await.unwrap();
+                socket.write_all(b"boom").await.unwrap();
+                let mut buf = [0; 4];
+                socket.read_exact(&mut buf).await.unwrap();
+                assert_eq!(&buf, b"zoom");
             },
         )
         .await;

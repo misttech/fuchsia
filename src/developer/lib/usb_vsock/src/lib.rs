@@ -12,17 +12,19 @@ pub use packet::*;
 
 /// Protocol version. This can be extracted from the payload of the sync packet
 /// and will determine what features a connection supports.
-#[derive(Copy, Clone, PartialEq, Eq)]
+#[derive(Copy, Clone, PartialEq, Eq, Debug)]
 pub enum ProtocolVersion {
     /// Protocol version 0
     V0,
     /// Protocol version 1
     V1,
+    /// Protocol version 2 with a random 32-bit integer nonce
+    V2(u32),
 }
 
 impl ProtocolVersion {
     /// The latest protocol version.
-    pub const LATEST: ProtocolVersion = ProtocolVersion::V1;
+    pub const LATEST: ProtocolVersion = ProtocolVersion::V2(0);
 
     /// Magic sent in the sync packet of the USB protocol.
     ///
@@ -30,14 +32,18 @@ impl ProtocolVersion {
     /// protocol version 0, and we expect the reply sync packet to have the
     /// exact same contents. As we version the protocol this may increment.
     ///
+    /// In version 2, the format is `vsock:2:<nonce>` where `<nonce>` is a random
+    /// 32-bit unsigned integer (in hexadecimal).
+    ///
     /// To document the semantics, let's say this header were "vsock:3". The device
     /// could reply with a lower number, say "vsock:1". This is the device
     /// requesting a downgrade, and if we accept we send the final sync with
     /// "vsock:1". Otherwise we hang up.
-    pub fn magic(&self) -> &[u8] {
+    pub fn magic(&self) -> Vec<u8> {
         match self {
-            ProtocolVersion::V0 => b"vsock:0",
-            ProtocolVersion::V1 => b"vsock:1",
+            ProtocolVersion::V0 => b"vsock:0".to_vec(),
+            ProtocolVersion::V1 => b"vsock:1".to_vec(),
+            ProtocolVersion::V2(nonce) => format!("vsock:2:{nonce:x}").into_bytes(),
         }
     }
 
@@ -47,6 +53,10 @@ impl ProtocolVersion {
             Some(ProtocolVersion::V0)
         } else if magic == b"vsock:1" {
             Some(ProtocolVersion::V1)
+        } else if let Some(rest) = magic.strip_prefix(b"vsock:2:") {
+            let s = std::str::from_utf8(rest).ok()?;
+            let nonce = u32::from_str_radix(s, 16).ok()?;
+            Some(ProtocolVersion::V2(nonce))
         } else {
             None
         }
@@ -59,14 +69,19 @@ impl ProtocolVersion {
     /// down.
     pub fn negotiate(&self, host_version: &ProtocolVersion) -> Option<ProtocolVersion> {
         match (self, host_version) {
-            (ProtocolVersion::V1, ProtocolVersion::V1) => Some(ProtocolVersion::V1),
+            (ProtocolVersion::V2(_), ProtocolVersion::V2(nonce)) => {
+                Some(ProtocolVersion::V2(*nonce))
+            }
+            (ProtocolVersion::V2(_), ProtocolVersion::V1)
+            | (ProtocolVersion::V1, ProtocolVersion::V2(_))
+            | (ProtocolVersion::V1, ProtocolVersion::V1) => Some(ProtocolVersion::V1),
             (ProtocolVersion::V0, _) | (_, ProtocolVersion::V0) => Some(ProtocolVersion::V0),
         }
     }
 
     /// Whether we support the pause protocol message.
     pub(crate) fn has_pause_packets(&self) -> bool {
-        matches!(self, ProtocolVersion::V1)
+        matches!(self, ProtocolVersion::V1 | ProtocolVersion::V2(_))
     }
 }
 
@@ -75,6 +90,7 @@ impl std::fmt::Display for ProtocolVersion {
         match self {
             ProtocolVersion::V0 => write!(f, "0"),
             ProtocolVersion::V1 => write!(f, "1"),
+            ProtocolVersion::V2(nonce) => write!(f, "2:{nonce:x}"),
         }
     }
 }
@@ -131,5 +147,76 @@ impl From<&Header> for Address {
             device_port: header.device_port.get(),
             host_port: header.host_port.get(),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_protocol_version_magic_roundtrip() {
+        let v0 = ProtocolVersion::V0;
+        assert_eq!(v0.magic(), b"vsock:0");
+        assert_eq!(ProtocolVersion::from_magic(b"vsock:0"), Some(v0));
+
+        let v1 = ProtocolVersion::V1;
+        assert_eq!(v1.magic(), b"vsock:1");
+        assert_eq!(ProtocolVersion::from_magic(b"vsock:1"), Some(v1));
+
+        let v2_zero = ProtocolVersion::V2(0);
+        assert_eq!(v2_zero.magic(), b"vsock:2:0");
+        assert_eq!(ProtocolVersion::from_magic(b"vsock:2:0"), Some(v2_zero));
+
+        let v2 = ProtocolVersion::V2(0xdeadbeef);
+        assert_eq!(v2.magic(), b"vsock:2:deadbeef");
+        assert_eq!(ProtocolVersion::from_magic(b"vsock:2:deadbeef"), Some(v2));
+
+        // Also test parsing with upper case / padded hex
+        assert_eq!(
+            ProtocolVersion::from_magic(b"vsock:2:DEADBEEF"),
+            Some(ProtocolVersion::V2(0xdeadbeef))
+        );
+        assert_eq!(ProtocolVersion::from_magic(b"vsock:2:00000001"), Some(ProtocolVersion::V2(1)));
+
+        // Invalid magics
+        assert_eq!(ProtocolVersion::from_magic(b""), None);
+        assert_eq!(ProtocolVersion::from_magic(b"vsock"), None);
+        assert_eq!(ProtocolVersion::from_magic(b"vsock:3"), None);
+        assert_eq!(ProtocolVersion::from_magic(b"vsock:2:invalid"), None);
+    }
+
+    #[test]
+    fn test_protocol_version_negotiate() {
+        let target_v2 = ProtocolVersion::V2(0);
+        let host_v2 = ProtocolVersion::V2(0x12345678);
+        assert_eq!(target_v2.negotiate(&host_v2), Some(ProtocolVersion::V2(0x12345678)));
+        assert_eq!(target_v2.negotiate(&ProtocolVersion::V1), Some(ProtocolVersion::V1));
+        assert_eq!(target_v2.negotiate(&ProtocolVersion::V0), Some(ProtocolVersion::V0));
+
+        let target_v1 = ProtocolVersion::V1;
+        assert_eq!(target_v1.negotiate(&host_v2), Some(ProtocolVersion::V1));
+        assert_eq!(target_v1.negotiate(&ProtocolVersion::V1), Some(ProtocolVersion::V1));
+        assert_eq!(target_v1.negotiate(&ProtocolVersion::V0), Some(ProtocolVersion::V0));
+
+        let target_v0 = ProtocolVersion::V0;
+        assert_eq!(target_v0.negotiate(&host_v2), Some(ProtocolVersion::V0));
+        assert_eq!(target_v0.negotiate(&ProtocolVersion::V1), Some(ProtocolVersion::V0));
+        assert_eq!(target_v0.negotiate(&ProtocolVersion::V0), Some(ProtocolVersion::V0));
+    }
+
+    #[test]
+    fn test_protocol_version_features() {
+        assert!(!ProtocolVersion::V0.has_pause_packets());
+        assert!(ProtocolVersion::V1.has_pause_packets());
+        assert!(ProtocolVersion::V2(0).has_pause_packets());
+        assert!(ProtocolVersion::V2(0xabcdef).has_pause_packets());
+    }
+
+    #[test]
+    fn test_protocol_version_display() {
+        assert_eq!(format!("{}", ProtocolVersion::V0), "0");
+        assert_eq!(format!("{}", ProtocolVersion::V1), "1");
+        assert_eq!(format!("{}", ProtocolVersion::V2(0x1a2b)), "2:1a2b");
     }
 }

@@ -82,15 +82,15 @@ enum SyncError {
 }
 
 /// Creates a new magic packet used to synchronize a USB VSOCK connection.
-fn sync_packet() -> Vec<u8> {
-    let magic = ProtocolVersion::LATEST.magic();
+fn sync_packet(version: ProtocolVersion) -> Vec<u8> {
+    let magic = version.magic();
     let header = &mut Header::new(PacketType::Sync);
     header.payload_len = (magic.len() as u32).into();
     header.host_cid = CID_HOST.into();
     header.host_port = 0.into();
     header.device_cid = CID_ANY.into();
     header.device_port = 0.into();
-    let packet = Packet { header, payload: magic };
+    let packet = Packet { header, payload: &magic };
     let mut packet_storage = vec![0; header.packet_size()];
     packet.write_to_unchecked(&mut packet_storage);
     packet_storage
@@ -105,7 +105,7 @@ fn sync_ack_packet(cid: u32, version: ProtocolVersion) -> Vec<u8> {
     header.host_port = 0.into();
     header.device_cid = cid.into();
     header.device_port = 0.into();
-    let packet = Packet { header, payload: magic };
+    let packet = Packet { header, payload: &magic };
     let mut packet_storage = vec![0; header.packet_size()];
     packet.write_to_unchecked(&mut packet_storage);
     packet_storage
@@ -137,7 +137,12 @@ async fn wait_for_magic(
 ) -> Result<ConnectionInfo, SyncError> {
     let mut magic_timer = fasync::Timer::new(MAGIC_TIMEOUT);
     let mut buf = [0u8; MTU];
-    out_ep.write(&sync_packet(), usb_rs::ZeroPacket::Send).await.map_err(SyncError::Send)?;
+    let nonce = rand::random::<u32>();
+    let sent_version = ProtocolVersion::V2(nonce);
+    out_ep
+        .write(&sync_packet(sent_version), usb_rs::ZeroPacket::Send)
+        .await
+        .map_err(SyncError::Send)?;
     loop {
         let size = {
             log::trace!(device:? = debug_name; "Reading from in endpoint for magic string");
@@ -165,21 +170,33 @@ async fn wait_for_magic(
             match packet.header.packet_type {
                 PacketType::Sync => {
                     if let Some(protocol_version) = ProtocolVersion::from_magic(packet.payload) {
-                        return Ok(ConnectionInfo {
-                            protocol_version,
-                            requested_cid: packet.header.device_cid.get(),
-                        });
+                        if protocol_version == sent_version {
+                            return Ok(ConnectionInfo {
+                                protocol_version,
+                                requested_cid: packet.header.device_cid.get(),
+                            });
+                        }
+                        if matches!(protocol_version, ProtocolVersion::V1 | ProtocolVersion::V0) {
+                            log::info!(
+                                device:? = debug_name;
+                                "Target requested downgrade to protocol version {protocol_version}"
+                            );
+                            return Ok(ConnectionInfo {
+                                protocol_version,
+                                requested_cid: packet.header.device_cid.get(),
+                            });
+                        }
+                        log::warn!(
+                            device:? = debug_name;
+                            "Received sync packet with unexpected version or non-matching nonce: {protocol_version}, ignoring."
+                        );
+                    } else {
+                        log::warn!(
+                            device:? = debug_name;
+                            "Invalid USB magic string (len = {}) received, ignoring.",
+                            packet.header.payload_len
+                        );
                     }
-
-                    log::warn!(
-                        device:? = debug_name;
-                        "Invalid USB magic string (len = {}) received, ignoring and re-attempting sync",
-                        packet.header.payload_len
-                    );
-                    out_ep
-                        .write(&sync_packet(), usb_rs::ZeroPacket::Send)
-                        .await
-                        .map_err(SyncError::Send)?;
                 }
                 PacketType::Echo => {
                     log::debug!(
@@ -197,12 +214,8 @@ async fn wait_for_magic(
                 ty => {
                     log::warn!(
                         device:? = debug_name;
-                        "Unexpected packet type '{ty:?}' waiting for packet synchronization, ignoring and re-attempting sync"
+                        "Unexpected packet type '{ty:?}' waiting for packet synchronization, ignoring."
                     );
-                    out_ep
-                        .write(&sync_packet(), usb_rs::ZeroPacket::Send)
-                        .await
-                        .map_err(SyncError::Send)?;
                 }
             }
         }
@@ -1659,5 +1672,35 @@ mod test {
     #[fuchsia::test]
     async fn test_host_cid_loopback() {
         test_loopback_for_cid(CID_HOST).await;
+    }
+
+    #[fuchsia::test]
+    async fn test_sync_packet_generation() {
+        let version = ProtocolVersion::V2(0xabcdef01);
+        let raw = sync_packet(version);
+        let mut it = VsockPacketIterator::new(&raw);
+        let packet = it.next().unwrap().unwrap();
+        assert_eq!(packet.header.packet_type, PacketType::Sync);
+        assert_eq!(packet.header.host_cid.get(), CID_HOST);
+        assert_eq!(packet.header.device_cid.get(), CID_ANY);
+        assert_eq!(packet.payload, b"vsock:2:abcdef01");
+        assert_eq!(ProtocolVersion::from_magic(packet.payload), Some(version));
+    }
+
+    #[fuchsia::test]
+    async fn test_sync_ack_packet_downgrade() {
+        let ack_v2 = sync_ack_packet(42, ProtocolVersion::V2(0x1234));
+        let mut it = VsockPacketIterator::new(&ack_v2);
+        let packet = it.next().unwrap().unwrap();
+        assert_eq!(packet.header.packet_type, PacketType::Sync);
+        assert_eq!(packet.header.device_cid.get(), 42);
+        assert_eq!(packet.payload, b"vsock:2:1234");
+
+        let ack_v1 = sync_ack_packet(42, ProtocolVersion::V1);
+        let mut it = VsockPacketIterator::new(&ack_v1);
+        let packet = it.next().unwrap().unwrap();
+        assert_eq!(packet.header.packet_type, PacketType::Sync);
+        assert_eq!(packet.header.device_cid.get(), 42);
+        assert_eq!(packet.payload, b"vsock:1");
     }
 }
