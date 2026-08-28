@@ -2426,6 +2426,10 @@ impl ThreadGroupMutableState<Base = ThreadGroup> {
 
         let mut has_interrupted_task = false;
         for task in tasks.iter().flat_map(|t| t.upgrade()) {
+            if !task.is_running() {
+                continue;
+            }
+
             let mut task_state = task.write();
 
             if signal_info.signal == SIGKILL {
@@ -2446,9 +2450,15 @@ impl ThreadGroupMutableState<Base = ThreadGroup> {
             if is_queued {
                 task_state.notify_signal_waiters(&signal_info.signal);
 
-                if !is_masked && action.must_interrupt(Some(sigaction)) && !has_interrupted_task {
-                    // Only interrupt one task, and only interrupt if the signal was actually queued
-                    // and the action must interrupt.
+                let is_fatal = signal_info.signal == SIGKILL
+                    || (action == DeliveryAction::Terminate && !task_state.is_ptraced());
+
+                if !is_masked
+                    && action.must_interrupt(Some(sigaction))
+                    && (!has_interrupted_task || is_fatal)
+                {
+                    // Interrupt every task if the action is fatal (such as SIGKILL),
+                    // or only one task for catchable signals.
                     drop(task_state);
                     task.interrupt();
                     has_interrupted_task = true;
