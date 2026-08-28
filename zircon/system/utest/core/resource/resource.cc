@@ -6,6 +6,7 @@
 #include <lib/zbi-format/kernel.h>
 #include <lib/zbi-format/zbi.h>
 #include <lib/zbitl/item.h>
+#include <lib/zx/channel.h>
 #include <lib/zx/debuglog.h>
 #include <lib/zx/event.h>
 #include <lib/zx/interrupt.h>
@@ -672,4 +673,440 @@ TEST(Resource, ValidateRangedResourceWithWrongKindReturnsAccessDenied) {
   zx::resource out;
   EXPECT_STATUS(zx::resource::create(parent_mmio, ZX_RSRC_KIND_IOPORT, 0, 1, nullptr, 0, &out),
                 ZX_ERR_ACCESS_DENIED);
+}
+
+TEST(Resource, CreateArithmeticOverflow) {
+  zx::resource out;
+  // base + size overflows uint64_t.
+  EXPECT_STATUS(zx_resource_create(get_mmio()->get(), ZX_RSRC_KIND_MMIO, UINT64_MAX, 1, nullptr, 0,
+                                   out.reset_and_get_address()),
+                ZX_ERR_INVALID_ARGS);
+  EXPECT_STATUS(zx_resource_create(get_mmio()->get(), ZX_RSRC_KIND_MMIO, 1, UINT64_MAX, nullptr, 0,
+                                   out.reset_and_get_address()),
+                ZX_ERR_INVALID_ARGS);
+  EXPECT_STATUS(zx_resource_create(get_mmio()->get(), ZX_RSRC_KIND_MMIO, UINT64_MAX - 100, 101,
+                                   nullptr, 0, out.reset_and_get_address()),
+                ZX_ERR_INVALID_ARGS);
+  EXPECT_STATUS(zx_resource_create(get_mmio()->get(), ZX_RSRC_KIND_MMIO, 0x8000000000000000ULL,
+                                   0x8000000000000001ULL, nullptr, 0, out.reset_and_get_address()),
+                ZX_ERR_INVALID_ARGS);
+}
+
+TEST(Resource, CreateParentHandleValidation) {
+  zx::resource out;
+
+  // 1. Non-resource handles should return ZX_ERR_WRONG_TYPE.
+  zx::event event;
+  ASSERT_OK(zx::event::create(0, &event));
+  EXPECT_STATUS(zx_resource_create(event.get(), ZX_RSRC_KIND_MMIO, mmio_test_base, mmio_test_size,
+                                   nullptr, 0, out.reset_and_get_address()),
+                ZX_ERR_WRONG_TYPE);
+
+  zx::channel ch1, ch2;
+  ASSERT_OK(zx::channel::create(0, &ch1, &ch2));
+  EXPECT_STATUS(zx_resource_create(ch1.get(), ZX_RSRC_KIND_MMIO, mmio_test_base, mmio_test_size,
+                                   nullptr, 0, out.reset_and_get_address()),
+                ZX_ERR_WRONG_TYPE);
+
+  zx::vmo vmo;
+  ASSERT_OK(zx::vmo::create(zx_system_get_page_size(), 0, &vmo));
+  EXPECT_STATUS(zx_resource_create(vmo.get(), ZX_RSRC_KIND_MMIO, mmio_test_base, mmio_test_size,
+                                   nullptr, 0, out.reset_and_get_address()),
+                ZX_ERR_WRONG_TYPE);
+
+  // 2. Parent resource handle with ONLY ZX_RIGHT_WRITE should succeed.
+  zx::resource write_only_parent;
+  ASSERT_OK(get_mmio()->duplicate(ZX_RIGHT_WRITE, &write_only_parent));
+  EXPECT_OK(zx_resource_create(write_only_parent.get(), ZX_RSRC_KIND_MMIO, mmio_test_base,
+                               mmio_test_size, nullptr, 0, out.reset_and_get_address()));
+}
+
+TEST(Resource, CreateInvalidOptionsAndFlags) {
+  zx::resource out;
+
+  // Invalid kind values.
+  EXPECT_STATUS(zx_resource_create(get_mmio()->get(), ZX_RSRC_KIND_COUNT, mmio_test_base,
+                                   mmio_test_size, nullptr, 0, out.reset_and_get_address()),
+                ZX_ERR_INVALID_ARGS);
+  EXPECT_STATUS(zx_resource_create(get_mmio()->get(), ZX_RSRC_KIND_COUNT + 5, mmio_test_base,
+                                   mmio_test_size, nullptr, 0, out.reset_and_get_address()),
+                ZX_ERR_INVALID_ARGS);
+  EXPECT_STATUS(zx_resource_create(get_mmio()->get(), 0x0000FFFF, mmio_test_base, mmio_test_size,
+                                   nullptr, 0, out.reset_and_get_address()),
+                ZX_ERR_INVALID_ARGS);
+
+  // Invalid flag values outside ZX_RSRC_FLAGS_MASK (0x00010000).
+  EXPECT_STATUS(
+      zx_resource_create(get_mmio()->get(), ZX_RSRC_KIND_MMIO | 0x00020000, mmio_test_base,
+                         mmio_test_size, nullptr, 0, out.reset_and_get_address()),
+      ZX_ERR_INVALID_ARGS);
+  EXPECT_STATUS(
+      zx_resource_create(get_mmio()->get(), ZX_RSRC_KIND_MMIO | 0x00040000, mmio_test_base,
+                         mmio_test_size, nullptr, 0, out.reset_and_get_address()),
+      ZX_ERR_INVALID_ARGS);
+  EXPECT_STATUS(
+      zx_resource_create(get_mmio()->get(), ZX_RSRC_KIND_MMIO | 0x80000000, mmio_test_base,
+                         mmio_test_size, nullptr, 0, out.reset_and_get_address()),
+      ZX_ERR_INVALID_ARGS);
+
+  // Valid exclusive flag should succeed.
+  EXPECT_OK(zx_resource_create(get_mmio()->get(), ZX_RSRC_KIND_MMIO | ZX_RSRC_FLAG_EXCLUSIVE,
+                               mmio_test_base, mmio_test_size, nullptr, 0,
+                               out.reset_and_get_address()));
+}
+
+TEST(Resource, CreateNameHandlingAndTruncation) {
+  zx::resource out;
+  zx_info_resource_t info;
+  char prop_name[ZX_MAX_NAME_LEN];
+
+  // 1. name_size == 0 with nullptr name -> empty name.
+  ASSERT_OK(zx_resource_create(get_mmio()->get(), ZX_RSRC_KIND_MMIO, mmio_test_base, mmio_test_size,
+                               nullptr, 0, out.reset_and_get_address()));
+  ASSERT_OK(out.get_info(ZX_INFO_RESOURCE, &info, sizeof(info), nullptr, nullptr));
+  EXPECT_EQ(0, strcmp(info.name, ""));
+  ASSERT_OK(out.get_property(ZX_PROP_NAME, prop_name, sizeof(prop_name)));
+  EXPECT_EQ(0, strcmp(prop_name, ""));
+
+  // 2. name_size == 0 with non-null name -> empty name.
+  ASSERT_OK(zx_resource_create(get_mmio()->get(), ZX_RSRC_KIND_MMIO, mmio_test_base, mmio_test_size,
+                               "ignored", 0, out.reset_and_get_address()));
+  ASSERT_OK(out.get_info(ZX_INFO_RESOURCE, &info, sizeof(info), nullptr, nullptr));
+  EXPECT_EQ(0, strcmp(info.name, ""));
+
+  // 3. name_size > 0 with nullptr name -> ZX_ERR_INVALID_ARGS.
+  EXPECT_STATUS(zx_resource_create(get_mmio()->get(), ZX_RSRC_KIND_MMIO, mmio_test_base,
+                                   mmio_test_size, nullptr, 10, out.reset_and_get_address()),
+                ZX_ERR_INVALID_ARGS);
+
+  // 4. Exact 31-character name (ZX_MAX_NAME_LEN - 1).
+  const char name_31[] = "1234567890123456789012345678901";
+  static_assert(sizeof(name_31) - 1 == ZX_MAX_NAME_LEN - 1);
+  ASSERT_OK(zx_resource_create(get_mmio()->get(), ZX_RSRC_KIND_MMIO, mmio_test_base, mmio_test_size,
+                               name_31, sizeof(name_31) - 1, out.reset_and_get_address()));
+  ASSERT_OK(out.get_info(ZX_INFO_RESOURCE, &info, sizeof(info), nullptr, nullptr));
+  EXPECT_EQ(0, strcmp(info.name, name_31));
+  ASSERT_OK(out.get_property(ZX_PROP_NAME, prop_name, sizeof(prop_name)));
+  EXPECT_EQ(0, strcmp(prop_name, name_31));
+
+  // 5. Name longer than ZX_MAX_NAME_LEN is truncated to 31 chars.
+  const char long_name[] = "1234567890123456789012345678901_THIS_SHOULD_BE_TRUNCATED";
+  ASSERT_OK(zx_resource_create(get_mmio()->get(), ZX_RSRC_KIND_MMIO, mmio_test_base, mmio_test_size,
+                               long_name, sizeof(long_name), out.reset_and_get_address()));
+  ASSERT_OK(out.get_info(ZX_INFO_RESOURCE, &info, sizeof(info), nullptr, nullptr));
+  EXPECT_EQ(0, strncmp(info.name, long_name, ZX_MAX_NAME_LEN - 1));
+  EXPECT_EQ('\0', info.name[ZX_MAX_NAME_LEN - 1]);
+}
+
+TEST(Resource, CreatedHandlePropertiesAndRights) {
+  zx::resource res;
+  char name[] = "test_props";
+  ASSERT_OK(zx::resource::create(*get_mmio(), ZX_RSRC_KIND_MMIO, mmio_test_base, mmio_test_size,
+                                 name, sizeof(name), &res));
+
+  // Basic handle info checks.
+  zx_info_handle_basic_t basic_info;
+  ASSERT_OK(res.get_info(ZX_INFO_HANDLE_BASIC, &basic_info, sizeof(basic_info), nullptr, nullptr));
+  EXPECT_EQ(basic_info.type, ZX_OBJ_TYPE_RESOURCE);
+  EXPECT_EQ(basic_info.rights, ZX_DEFAULT_RESOURCE_RIGHTS);
+  EXPECT_NE(basic_info.koid, 0u);
+  EXPECT_EQ(basic_info.related_koid, 0u);
+
+  // Resources are not waitable and lack ZX_RIGHT_WAIT -> wait_one returns ZX_ERR_ACCESS_DENIED.
+  zx_signals_t pending = 0;
+  EXPECT_STATUS(res.wait_one(ZX_USER_SIGNAL_0, zx::time::infinite_past(), &pending),
+                ZX_ERR_ACCESS_DENIED);
+
+  // Getting ZX_PROP_NAME with sufficient buffer succeeds.
+  char prop_name[ZX_MAX_NAME_LEN];
+  ASSERT_OK(res.get_property(ZX_PROP_NAME, prop_name, sizeof(prop_name)));
+  EXPECT_EQ(0, strcmp(prop_name, name));
+
+  // Getting ZX_PROP_NAME with buffer smaller than ZX_MAX_NAME_LEN returns ZX_ERR_BUFFER_TOO_SMALL.
+  char small_buf[ZX_MAX_NAME_LEN - 1];
+  EXPECT_STATUS(res.get_property(ZX_PROP_NAME, small_buf, sizeof(small_buf)),
+                ZX_ERR_BUFFER_TOO_SMALL);
+
+  // Setting ZX_PROP_NAME fails with ZX_ERR_ACCESS_DENIED (resource handles lack
+  // ZX_RIGHT_SET_PROPERTY).
+  EXPECT_STATUS(res.set_property(ZX_PROP_NAME, "new_name", sizeof("new_name")),
+                ZX_ERR_ACCESS_DENIED);
+}
+
+TEST(Resource, GetInfoResourceValidation) {
+  zx::resource res;
+  char name[] = "info_test";
+  ASSERT_OK(zx::resource::create(*get_mmio(), ZX_RSRC_KIND_MMIO, mmio_test_base, mmio_test_size,
+                                 name, sizeof(name), &res));
+
+  // Full buffer returns full struct.
+  zx_info_resource_t info;
+  size_t actual = 0, avail = 0;
+  ASSERT_OK(res.get_info(ZX_INFO_RESOURCE, &info, sizeof(info), &actual, &avail));
+  EXPECT_EQ(actual, 1u);
+  EXPECT_EQ(avail, 1u);
+  EXPECT_EQ(info.kind, ZX_RSRC_KIND_MMIO);
+  EXPECT_EQ(info.flags, 0u);
+  EXPECT_EQ(info.base, mmio_test_base);
+  EXPECT_EQ(info.size, mmio_test_size);
+  EXPECT_EQ(0, strcmp(info.name, name));
+
+  // Buffer smaller than zx_info_resource_t returns ZX_ERR_BUFFER_TOO_SMALL.
+  uint8_t small_buf[sizeof(zx_info_resource_t) - 1];
+  EXPECT_STATUS(res.get_info(ZX_INFO_RESOURCE, small_buf, sizeof(small_buf), &actual, &avail),
+                ZX_ERR_BUFFER_TOO_SMALL);
+
+  // Resource handle without ZX_RIGHT_INSPECT returns ZX_ERR_ACCESS_DENIED.
+  zx::resource no_inspect;
+  ASSERT_OK(res.duplicate(ZX_DEFAULT_RESOURCE_RIGHTS & ~ZX_RIGHT_INSPECT, &no_inspect));
+  EXPECT_STATUS(no_inspect.get_info(ZX_INFO_RESOURCE, &info, sizeof(info), nullptr, nullptr),
+                ZX_ERR_ACCESS_DENIED);
+}
+
+TEST(Resource, CreateFromRangedRootKinds) {
+  // MMIO ranged root can create MMIO child.
+  zx::resource mmio_child;
+  EXPECT_OK(zx::resource::create(*get_mmio(), ZX_RSRC_KIND_MMIO, mmio_test_base, mmio_test_size,
+                                 nullptr, 0, &mmio_child));
+
+  // IRQ ranged root can create IRQ child.
+  zx::unowned_resource irq_root = standalone::GetIrqResource();
+  if (irq_root->is_valid()) {
+    zx::resource irq_child;
+    // Scan for a valid vector in the platform's IRQ allocator (e.g. 0 on x86, 32 on ARM GIC).
+    for (uint32_t vector = 0; vector < 1024; ++vector) {
+      if (zx::resource::create(*irq_root, ZX_RSRC_KIND_IRQ, vector, 1, nullptr, 0, &irq_child) ==
+          ZX_OK) {
+        break;
+      }
+    }
+    EXPECT_TRUE(irq_child.is_valid());
+  }
+
+  // SYSTEM ranged root can create SYSTEM child.
+  zx::unowned_resource sys_root = get_system();
+  if (sys_root->is_valid()) {
+    zx::resource sys_child;
+    EXPECT_OK(zx::resource::create(*sys_root, ZX_RSRC_KIND_SYSTEM, ZX_RSRC_SYSTEM_INFO_BASE, 1,
+                                   nullptr, 0, &sys_child));
+  }
+
+  // Cross-kind creation from ranged roots is denied.
+  zx::resource fail_child;
+  EXPECT_STATUS(zx::resource::create(*get_mmio(), ZX_RSRC_KIND_IRQ, 0, 1, nullptr, 0, &fail_child),
+                ZX_ERR_ACCESS_DENIED);
+  EXPECT_STATUS(
+      zx::resource::create(*get_mmio(), ZX_RSRC_KIND_SYSTEM, 0, 1, nullptr, 0, &fail_child),
+      ZX_ERR_ACCESS_DENIED);
+  EXPECT_STATUS(zx::resource::create(*get_mmio(), ZX_RSRC_KIND_ROOT, 0, 0, nullptr, 0, &fail_child),
+                ZX_ERR_ACCESS_DENIED);
+  EXPECT_STATUS(zx_resource_create(get_mmio()->get(), ZX_RSRC_KIND_ROOT, 100, 10, nullptr, 0,
+                                   fail_child.reset_and_get_address()),
+                ZX_ERR_ACCESS_DENIED);
+}
+
+TEST(Resource, HierarchySlicingBoundaries) {
+  const size_t page_size = zx_system_get_page_size();
+  zx::resource parent;
+  ASSERT_OK(zx::resource::create(*get_mmio(), ZX_RSRC_KIND_MMIO, mmio_test_base, page_size * 4,
+                                 nullptr, 0, &parent));
+
+  zx::resource child;
+  // Slicing exact range -> OK.
+  EXPECT_OK(zx::resource::create(parent, ZX_RSRC_KIND_MMIO, mmio_test_base, page_size * 4, nullptr,
+                                 0, &child));
+
+  // Sub-slice at start -> OK.
+  EXPECT_OK(zx::resource::create(parent, ZX_RSRC_KIND_MMIO, mmio_test_base, page_size, nullptr, 0,
+                                 &child));
+
+  // Sub-slice in middle -> OK.
+  EXPECT_OK(zx::resource::create(parent, ZX_RSRC_KIND_MMIO, mmio_test_base + page_size,
+                                 page_size * 2, nullptr, 0, &child));
+
+  // Sub-slice at end -> OK.
+  EXPECT_OK(zx::resource::create(parent, ZX_RSRC_KIND_MMIO, mmio_test_base + page_size * 3,
+                                 page_size, nullptr, 0, &child));
+
+  // Zero-sized slice of a non-root parent returns ZX_ERR_ACCESS_DENIED.
+  EXPECT_STATUS(
+      zx::resource::create(parent, ZX_RSRC_KIND_MMIO, mmio_test_base, 0, nullptr, 0, &child),
+      ZX_ERR_ACCESS_DENIED);
+  EXPECT_STATUS(zx::resource::create(parent, ZX_RSRC_KIND_MMIO, mmio_test_base + page_size * 4, 0,
+                                     nullptr, 0, &child),
+                ZX_ERR_ACCESS_DENIED);
+
+  // Multi-tier hierarchy: Parent -> Child -> Grandchild -> Great-Grandchild.
+  zx::resource tier1_child, tier2_grandchild, tier3_great_grandchild;
+  ASSERT_OK(zx::resource::create(parent, ZX_RSRC_KIND_MMIO, mmio_test_base + page_size,
+                                 page_size * 2, nullptr, 0, &tier1_child));
+
+  // Slice starting 1 byte before tier1_child -> ZX_ERR_ACCESS_DENIED.
+  // Using (mmio_test_base + page_size - 1) avoids uint64 underflow when mmio_test_base is 0.
+  EXPECT_STATUS(zx::resource::create(tier1_child, ZX_RSRC_KIND_MMIO, mmio_test_base + page_size - 1,
+                                     page_size, nullptr, 0, &child),
+                ZX_ERR_ACCESS_DENIED);
+
+  // Slice extending 1 byte past parent end -> ZX_ERR_ACCESS_DENIED.
+  EXPECT_STATUS(zx::resource::create(parent, ZX_RSRC_KIND_MMIO, mmio_test_base + page_size * 3,
+                                     page_size + 1, nullptr, 0, &child),
+                ZX_ERR_ACCESS_DENIED);
+
+  // Slice completely outside parent -> ZX_ERR_ACCESS_DENIED.
+  EXPECT_STATUS(zx::resource::create(parent, ZX_RSRC_KIND_MMIO, mmio_test_base + page_size * 10,
+                                     page_size, nullptr, 0, &child),
+                ZX_ERR_ACCESS_DENIED);
+
+  ASSERT_OK(zx::resource::create(tier1_child, ZX_RSRC_KIND_MMIO, mmio_test_base + page_size,
+                                 page_size, nullptr, 0, &tier2_grandchild));
+  ASSERT_OK(zx::resource::create(tier2_grandchild, ZX_RSRC_KIND_MMIO, mmio_test_base + page_size,
+                                 page_size / 2, nullptr, 0, &tier3_great_grandchild));
+
+  // Great-grandchild attempting to slice beyond grandchild bounds (even if within tier1_child)
+  // must fail.
+  zx::resource out_of_bounds;
+  EXPECT_STATUS(
+      zx::resource::create(tier3_great_grandchild, ZX_RSRC_KIND_MMIO, mmio_test_base + page_size,
+                           page_size, nullptr, 0, &out_of_bounds),
+      ZX_ERR_ACCESS_DENIED);
+}
+
+TEST(Resource, StrictMmioRangeValidation) {
+  const size_t page_size = zx_system_get_page_size();
+  // Create an unaligned parent MMIO slice covering [mmio_test_base + 0x200, mmio_test_base +
+  // 0x600).
+  zx::resource parent;
+  ASSERT_OK(zx::resource::create(*get_mmio(), ZX_RSRC_KIND_MMIO, mmio_test_base + 0x200, 0x400,
+                                 nullptr, 0, &parent));
+
+  // Strict validation on sys_resource_create rejects child outside [base, base + size) even if on
+  // the same page.
+  zx::resource child;
+  EXPECT_STATUS(
+      zx::resource::create(parent, ZX_RSRC_KIND_MMIO, mmio_test_base, 0x200, nullptr, 0, &child),
+      ZX_ERR_ACCESS_DENIED);
+
+  // Child strictly contained inside [mmio_test_base + 0x200, mmio_test_base + 0x600) succeeds.
+  EXPECT_OK(zx::resource::create(parent, ZX_RSRC_KIND_MMIO, mmio_test_base + 0x200, 0x200, nullptr,
+                                 0, &child));
+
+  // Non-strict validation in zx_vmo_create_physical allows mapping the page.
+  zx::vmo vmo;
+  EXPECT_OK(
+      zx_vmo_create_physical(parent.get(), mmio_test_base, page_size, vmo.reset_and_get_address()));
+}
+
+TEST(Resource, ExclusiveRegionReleaseLifecycle) {
+  const size_t page_size = zx_system_get_page_size();
+
+  // 1. Allocate exclusive region A.
+  zx::resource res_a;
+  ASSERT_OK(zx::resource::create(*get_mmio(), ZX_RSRC_KIND_MMIO | ZX_RSRC_FLAG_EXCLUSIVE,
+                                 mmio_test_base, page_size, nullptr, 0, &res_a));
+
+  // 2. Allocate adjacent disjoint exclusive region B -> OK.
+  zx::resource res_b;
+  EXPECT_OK(zx::resource::create(*get_mmio(), ZX_RSRC_KIND_MMIO | ZX_RSRC_FLAG_EXCLUSIVE,
+                                 mmio_test_base + page_size, page_size, nullptr, 0, &res_b));
+
+  // 3. Attempt to allocate overlapping exclusive region C -> ZX_ERR_NOT_FOUND.
+  zx::resource res_c;
+  EXPECT_STATUS(zx::resource::create(*get_mmio(), ZX_RSRC_KIND_MMIO | ZX_RSRC_FLAG_EXCLUSIVE,
+                                     mmio_test_base, page_size, nullptr, 0, &res_c),
+                ZX_ERR_NOT_FOUND);
+
+  // 4. Release region A by closing its handle.
+  res_a.reset();
+
+  // 5. Now allocating region C succeeds because region A was returned to the allocator.
+  EXPECT_OK(zx::resource::create(*get_mmio(), ZX_RSRC_KIND_MMIO | ZX_RSRC_FLAG_EXCLUSIVE,
+                                 mmio_test_base, page_size, nullptr, 0, &res_c));
+
+  // 6. Release region C.
+  res_c.reset();
+
+  // 7. Allocating shared region D in the same space succeeds.
+  zx::resource res_d;
+  EXPECT_OK(zx::resource::create(*get_mmio(), ZX_RSRC_KIND_MMIO, mmio_test_base, page_size, nullptr,
+                                 0, &res_d));
+}
+
+TEST(Resource, SystemResourceSubBasesAndSyscallValidation) {
+  const zx::unowned_resource system = get_system();
+  if (!system->is_valid()) {
+    ZXTEST_SKIP("System resource not available");
+  }
+
+  const zx_rsrc_system_base_t all_bases[] = {
+      ZX_RSRC_SYSTEM_HYPERVISOR_BASE, ZX_RSRC_SYSTEM_VMEX_BASE,        ZX_RSRC_SYSTEM_DEBUG_BASE,
+      ZX_RSRC_SYSTEM_INFO_BASE,       ZX_RSRC_SYSTEM_CPU_BASE,         ZX_RSRC_SYSTEM_POWER_BASE,
+      ZX_RSRC_SYSTEM_MEXEC_BASE,      ZX_RSRC_SYSTEM_ENERGY_INFO_BASE, ZX_RSRC_SYSTEM_IOMMU_BASE,
+      ZX_RSRC_SYSTEM_PROFILE_BASE,    ZX_RSRC_SYSTEM_MSI_BASE,         ZX_RSRC_SYSTEM_DEBUGLOG_BASE,
+      ZX_RSRC_SYSTEM_STALL_BASE,      ZX_RSRC_SYSTEM_TRACING_BASE,     ZX_RSRC_SYSTEM_SAMPLING_BASE,
+  };
+
+  for (zx_rsrc_system_base_t base : all_bases) {
+    zx::resource child;
+    ASSERT_OK(zx::resource::create(*system, ZX_RSRC_KIND_SYSTEM, base, 1, nullptr, 0, &child));
+
+    zx_info_resource_t info;
+    ASSERT_OK(child.get_info(ZX_INFO_RESOURCE, &info, sizeof(info), nullptr, nullptr));
+    EXPECT_EQ(info.kind, ZX_RSRC_KIND_SYSTEM);
+    EXPECT_EQ(info.base, base);
+    EXPECT_EQ(info.size, 1u);
+  }
+
+  // Verify syscall/topic enforcement with specific system resource sub-bases:
+  zx::resource debuglog_res, vmex_res, info_res, stall_res;
+  ASSERT_OK(zx::resource::create(*system, ZX_RSRC_KIND_SYSTEM, ZX_RSRC_SYSTEM_DEBUGLOG_BASE, 1,
+                                 nullptr, 0, &debuglog_res));
+  ASSERT_OK(zx::resource::create(*system, ZX_RSRC_KIND_SYSTEM, ZX_RSRC_SYSTEM_VMEX_BASE, 1, nullptr,
+                                 0, &vmex_res));
+  ASSERT_OK(zx::resource::create(*system, ZX_RSRC_KIND_SYSTEM, ZX_RSRC_SYSTEM_INFO_BASE, 1, nullptr,
+                                 0, &info_res));
+  ASSERT_OK(zx::resource::create(*system, ZX_RSRC_KIND_SYSTEM, ZX_RSRC_SYSTEM_STALL_BASE, 1,
+                                 nullptr, 0, &stall_res));
+
+  // 1. zx_debuglog_create uses validate_resource_kind_base: debuglog_res -> OK, vmex_res ->
+  // ZX_ERR_WRONG_TYPE.
+  zx::debuglog log;
+  EXPECT_OK(zx_debuglog_create(debuglog_res.get(), 0, log.reset_and_get_address()));
+  EXPECT_STATUS(zx_debuglog_create(vmex_res.get(), 0, log.reset_and_get_address()),
+                ZX_ERR_WRONG_TYPE);
+
+  // 2. zx_vmo_replace_as_executable uses validate_ranged_resource: vmex_res -> OK, debuglog_res
+  // (wrong base) -> ZX_ERR_OUT_OF_RANGE.
+  zx::vmo vmo, vmo_dup, exec_vmo;
+  ASSERT_OK(zx::vmo::create(zx_system_get_page_size(), 0, &vmo));
+  ASSERT_OK(vmo.duplicate(ZX_RIGHT_READ, &vmo_dup));
+  EXPECT_OK(zx_vmo_replace_as_executable(vmo_dup.release(), vmex_res.get(),
+                                         exec_vmo.reset_and_get_address()));
+  ASSERT_OK(vmo.duplicate(ZX_RIGHT_READ, &vmo_dup));
+  EXPECT_STATUS(zx_vmo_replace_as_executable(vmo_dup.release(), debuglog_res.get(),
+                                             exec_vmo.reset_and_get_address()),
+                ZX_ERR_OUT_OF_RANGE);
+
+  // 3. ZX_INFO_KMEM_STATS uses validate_ranged_resource: info_res -> OK, debuglog_res ->
+  // ZX_ERR_OUT_OF_RANGE.
+  zx_info_kmem_stats_t kmem_stats;
+  EXPECT_OK(
+      info_res.get_info(ZX_INFO_KMEM_STATS, &kmem_stats, sizeof(kmem_stats), nullptr, nullptr));
+  EXPECT_STATUS(
+      debuglog_res.get_info(ZX_INFO_KMEM_STATS, &kmem_stats, sizeof(kmem_stats), nullptr, nullptr),
+      ZX_ERR_OUT_OF_RANGE);
+
+  // 4. ZX_INFO_MEMORY_STALL uses validate_ranged_resource: stall_res -> OK, info_res ->
+  // ZX_ERR_OUT_OF_RANGE.
+  zx_info_memory_stall_t stall_stats;
+  EXPECT_OK(stall_res.get_info(ZX_INFO_MEMORY_STALL, &stall_stats, sizeof(stall_stats), nullptr,
+                               nullptr));
+  EXPECT_STATUS(
+      info_res.get_info(ZX_INFO_MEMORY_STALL, &stall_stats, sizeof(stall_stats), nullptr, nullptr),
+      ZX_ERR_OUT_OF_RANGE);
+
+  // 5. Passing a resource of the wrong kind (e.g. MMIO) to get_info topic expecting SYSTEM returns
+  // ZX_ERR_WRONG_TYPE.
+  EXPECT_STATUS(
+      get_mmio()->get_info(ZX_INFO_KMEM_STATS, &kmem_stats, sizeof(kmem_stats), nullptr, nullptr),
+      ZX_ERR_WRONG_TYPE);
 }
