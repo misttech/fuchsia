@@ -87,6 +87,9 @@ std::vector<fuchsia_hardware_power::PowerElementConfiguration> GetAllPowerConfig
   return std::vector<fuchsia_hardware_power::PowerElementConfiguration>{GetHardwarePowerConfig()};
 }
 
+constexpr std::string_view kIrqDispatcherRole = "fuchsia.devices.storage.ufs.irq";
+constexpr std::string_view kIoDispatcherRole = "fuchsia.devices.storage.ufs.worker";
+
 }  // namespace
 
 zx::result<fuchsia_power_broker::LeaseToken> Ufs::AcquireInitLease(
@@ -739,7 +742,7 @@ zx::result<> Ufs::InitController() {
   {
     auto irq_dispatcher = fdf::SynchronizedDispatcher::Create(
         fdf::SynchronizedDispatcher::Options::kAllowSyncCalls, "ufs-irq-worker",
-        [this](fdf_dispatcher_t*) { OnDispatcherShutdown(); });
+        [this](fdf_dispatcher_t*) { OnDispatcherShutdown(); }, kIrqDispatcherRole);
     if (irq_dispatcher.is_error()) {
       fdf::error("Failed to create IRQ dispatcher: {}",
                  zx_status_get_string(irq_dispatcher.status_value()));
@@ -814,7 +817,7 @@ zx::result<> Ufs::InitController() {
   {
     auto io_dispatcher = fdf::SynchronizedDispatcher::Create(
         fdf::SynchronizedDispatcher::Options::kAllowSyncCalls, "ufs-io-worker",
-        [this](fdf_dispatcher_t*) { OnDispatcherShutdown(); });
+        [this](fdf_dispatcher_t*) { OnDispatcherShutdown(); }, kIoDispatcherRole);
     if (io_dispatcher.is_error()) {
       fdf::error("Failed to create IO dispatcher: {}",
                  zx_status_get_string(io_dispatcher.status_value()));

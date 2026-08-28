@@ -12,6 +12,10 @@
         binary: "driver/ufs-pci.so",
         bind: "meta/bind/ufs-pci-bind.bindbc",
         default_dispatcher_opts: [ "allow_sync_calls" ],
+        allowed_scheduler_roles: [
+            "fuchsia.devices.storage.ufs.irq",
+            "fuchsia.devices.storage.ufs.worker",
+        ],
     },
     capabilities: [
         { service: "fuchsia.hardware.ufs.Service" },
@@ -28,6 +32,7 @@
             protocol: [
                 "fuchsia.power.system.ActivityGovernor",
                 "fuchsia.power.system.CpuElementManager",
+                "fuchsia.scheduler.RoleManager",
             ],
         },
         { service: "fuchsia.hardware.pci.Service" },

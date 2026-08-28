@@ -11,6 +11,10 @@
         bind: "meta/bind/ufs-pdev-bind.bindbc",
         service_connect_validation: "true",
         default_dispatcher_opts: [ "allow_sync_calls" ],
+        allowed_scheduler_roles: [
+            "fuchsia.devices.storage.ufs.irq",
+            "fuchsia.devices.storage.ufs.worker",
+        ],
     },
     capabilities: [
         { service: "fuchsia.hardware.ufs.Service" },
@@ -29,6 +33,7 @@
             protocol: [
                 "fuchsia.power.system.ActivityGovernor",
                 "fuchsia.power.system.CpuElementManager",
+                "fuchsia.scheduler.RoleManager",
             ],
         },
     ],
