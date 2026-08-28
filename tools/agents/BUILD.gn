@@ -7,6 +7,10 @@ import("//build/python/python_library.gni")
 
 _agents_sources = [
   "__init__.py",
+  "commands/__init__.py",
+  "commands/setup.py",
+  "lib/__init__.py",
+  "lib/config.py",
   "main.py",
 ]
 
@@ -21,9 +25,23 @@ if (is_host) {
     main_source = "tests/main_test.py"
     libraries = [ ":agents_lib" ]
   }
+
+  python_host_test("setup_test") {
+    main_source = "tests/setup_test.py"
+    libraries = [ ":agents_lib" ]
+  }
+
+  python_host_test("config_test") {
+    main_source = "tests/config_test.py"
+    libraries = [ ":agents_lib" ]
+  }
 }
 
 group("tests") {
   testonly = true
-  deps = [ ":main_test($host_toolchain)" ]
+  deps = [
+    ":config_test($host_toolchain)",
+    ":main_test($host_toolchain)",
+    ":setup_test($host_toolchain)",
+  ]
 }

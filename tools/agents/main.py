@@ -11,6 +11,8 @@ import argparse
 import sys
 from collections.abc import Sequence
 
+from agents.commands import setup
+
 
 def create_parser() -> argparse.ArgumentParser:
     """Create the top-level argument parser for `fx agents`."""
@@ -18,11 +20,12 @@ def create_parser() -> argparse.ArgumentParser:
         prog="fx agents",
         description="Manage AI coding agent configuration, permissions, and developer workflows.",
     )
-    parser.add_subparsers(
+    subparsers = parser.add_subparsers(
         dest="subcommand",
         metavar="COMMAND",
         help="Subcommand to execute.",
     )
+    setup.register_subcommand(subparsers)
     return parser
 
 

@@ -13,6 +13,7 @@ import unittest
 from unittest import mock
 
 from agents import main
+from agents.commands import setup
 
 
 class MainCliTest(unittest.TestCase):
@@ -43,6 +44,24 @@ class MainCliTest(unittest.TestCase):
             exit_code = main.main(["test"])
             self.assertEqual(exit_code, 42)
             mock_handler.assert_called_once()
+
+    def test_setup_help_flag(self) -> None:
+        parser = main.create_parser()
+        with (
+            mock.patch("sys.stdout", new_callable=io.StringIO),
+            self.assertRaises(SystemExit) as cm,
+        ):
+            parser.parse_args(["setup", "--help"])
+        self.assertEqual(cm.exception.code, 0)
+
+    def test_setup_subcommand_dispatch(self) -> None:
+        with mock.patch.object(setup, "run", return_value=0) as mock_run:
+            exit_code = main.main(["setup", "-a", "grant1", "--dry-run"])
+            self.assertEqual(exit_code, 0)
+            mock_run.assert_called_once()
+            args = mock_run.call_args[0][0]
+            self.assertEqual(args.allow, ["grant1"])
+            self.assertTrue(args.dry_run)
 
 
 if __name__ == "__main__":
