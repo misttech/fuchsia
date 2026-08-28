@@ -1954,7 +1954,7 @@ mod tests {
             networks.networks.get(&net.id).expect("network should be present"),
             &NetworkProperties {
                 socket_marks: updated_marks,
-                dns_servers: dns2.clone(),
+                dns_servers: dns2,
                 connectivity_state: Some(fnp_socketproxy::ConnectivityState::NoConnectivity),
                 name: Some(net.name.to_string()),
                 network_type: Some(net.network_type),
@@ -1974,6 +1974,7 @@ mod tests {
 
         // Add the network
         let event = NetworkPropertiesChange { marks: Some(marks.clone()), ..net.added(true) };
+
         assert_eq!(
             networks.handle_changed_network(net.id, event),
             net.applied(AppliedChanges { added: true, changed_marks: true, changed_dns: true }),

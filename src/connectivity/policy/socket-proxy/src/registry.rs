@@ -31,18 +31,25 @@ pub(crate) const DEFAULT_SOCKET_MARK: u32 = 0;
 
 pub(crate) struct RequestForwarder {
     forwarder_rx: mpsc::Receiver<NetworkRegistryRequest>,
-    registry: fnp_socketproxy::NetworkRegistryProxy,
+    registry: Option<fnp_socketproxy::NetworkRegistryProxy>,
 }
 
 impl RequestForwarder {
     pub(crate) fn new(
         forwarder_rx: mpsc::Receiver<NetworkRegistryRequest>,
     ) -> Result<Self, anyhow::Error> {
-        Ok(Self {
-            forwarder_rx,
-            registry: connect_to_protocol::<fnp_socketproxy::NetworkRegistryMarker>()
-                .context("error connecting to network registry")?,
-        })
+        Ok(Self { forwarder_rx, registry: None })
+    }
+
+    fn get_registry(&mut self) -> Result<&fnp_socketproxy::NetworkRegistryProxy, anyhow::Error> {
+        match &self.registry {
+            Some(registry) => Ok(registry),
+            None => {
+                let registry = connect_to_protocol::<fnp_socketproxy::NetworkRegistryMarker>()
+                    .context("error connecting to network registry")?;
+                Ok(self.registry.insert(registry))
+            }
+        }
     }
 
     pub(crate) async fn run(&mut self) -> Result<(), anyhow::Error> {
@@ -73,13 +80,13 @@ impl RequestForwarder {
     }
 
     async fn forward_request(
-        &self,
+        &mut self,
         request: NetworkRegistryRequest,
     ) -> Result<Result<(), NetworkRegistryError>, anyhow::Error> {
         info!("forwarding Starnix NetworkRegistry change to netcfg: {request:?}");
+        let registry = self.get_registry()?;
         let res = match request {
-            NetworkRegistryRequest::SetDefault { network_id } => self
-                .registry
+            NetworkRegistryRequest::SetDefault { network_id } => registry
                 .set_default(&match network_id {
                     Some(id) => fposix_socket::OptionalUint32::Value(id),
                     None => fposix_socket::OptionalUint32::Unset(fposix_socket::Empty),
@@ -87,20 +94,17 @@ impl RequestForwarder {
                 .await
                 .context("fidl error forwarding set_default")?
                 .map_err(|e| e.into()),
-            NetworkRegistryRequest::Add { network } => self
-                .registry
+            NetworkRegistryRequest::Add { network } => registry
                 .add(&network)
                 .await
                 .context("fidl error forwarding add")?
                 .map_err(|e| e.into()),
-            NetworkRegistryRequest::Update { network } => self
-                .registry
+            NetworkRegistryRequest::Update { network } => registry
                 .update(&network)
                 .await
                 .context("fidl error forwarding update")?
                 .map_err(|e| e.into()),
-            NetworkRegistryRequest::Remove { network_id } => self
-                .registry
+            NetworkRegistryRequest::Remove { network_id } => registry
                 .remove(network_id)
                 .await
                 .context("fidl error forwarding remove")?
@@ -469,16 +473,29 @@ impl RegisteredNetworks {
     }
 }
 
+/// The default network state reported by Netcfg via `Networks.WatchDefault`.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) enum NetcfgMarkState {
+    /// Netcfg has no default network; fall back to Starnix.
+    #[default]
+    NoDefault,
+    /// Netcfg has an active default network with the given mark (None = unmarked).
+    Default(Option<u32>),
+}
+
 #[derive(Inspect, Clone, Debug, Default)]
 pub struct NetworkRegistries {
     starnix: Arc<Mutex<NetworkRegistry>>,
     fuchsia: Arc<Mutex<NetworkRegistry>>,
+    #[inspect(skip)]
+    netcfg: Arc<Mutex<NetcfgMarkState>>,
 }
 
 impl NetworkRegistries {
-    // When Fuchsia has a default network, then prefer its mark
-    // over any existing mark. When it is unset, then fallback
-    // to the mark provided by Starnix.
+    // Precedence order for socket mark resolution during migration:
+    // 1. Legacy Fuchsia registry (if explicitly configured).
+    // 2. Netcfg `WatchDefault` property mark (the primary source of truth).
+    // 3. Starnix registry (fallback if Netcfg mark is unset).
     async fn current_mark(&self) -> Option<u32> {
         {
             let fuchsia = self.fuchsia.lock().await;
@@ -486,8 +503,14 @@ impl NetworkRegistries {
                 return fuchsia.current_mark();
             }
         }
-
-        return self.starnix.lock().await.networks.current_mark();
+        {
+            let netcfg = self.netcfg.lock().await;
+            match *netcfg {
+                NetcfgMarkState::Default(mark) => return mark,
+                NetcfgMarkState::NoDefault => {}
+            }
+        }
+        self.starnix.lock().await.current_mark()
     }
 }
 
@@ -598,7 +621,7 @@ impl Registry {
                         );
                     std::mem::drop(network_registry);
 
-                    self.handle_state_changed().await?;
+                    self.handle_state_changed().await;
                     send().context("error sending response")?;
                     Ok(())
                 }
@@ -635,7 +658,7 @@ impl Registry {
                         );
                     std::mem::drop(network_registry);
 
-                    self.handle_state_changed().await?;
+                    self.handle_state_changed().await;
                     send().context("error sending response")?;
                     Ok(())
                 }
@@ -643,12 +666,16 @@ impl Registry {
             .await
     }
 
-    async fn handle_state_changed(&self) -> Result<(), Error> {
+    pub(crate) async fn set_netcfg_mark(&self, state: NetcfgMarkState) {
+        *self.networks.netcfg.lock().await = state;
+        self.handle_state_changed().await;
+    }
+
+    pub(crate) async fn handle_state_changed(&self) {
         // Ensure the mark is updated prior to sending out the response
         // and dropping the registry.
         let mark = self.networks.current_mark().await;
         self.marks.lock().await.set_mark(fnet::MARK_DOMAIN_SO_MARK, mark);
-        Ok(())
     }
 }
 
@@ -769,7 +796,11 @@ mod test {
         let _ = fs.serve_connection(handles.outgoing_dir)?;
 
         let registry = Registry {
-            networks: NetworkRegistries { starnix: starnix_networks, fuchsia: fuchsia_networks },
+            networks: NetworkRegistries {
+                starnix: starnix_networks,
+                fuchsia: fuchsia_networks,
+                netcfg: Default::default(),
+            },
             marks,
             forwarder_tx,
             starnix_occupant: Default::default(),
@@ -976,5 +1007,56 @@ mod test {
         assert_eq!(expected_updates, seen_updates);
 
         Ok(())
+    }
+
+    #[fuchsia::test]
+    async fn test_mark_resolution_precedence() {
+        let starnix = Arc::new(Mutex::new(NetworkRegistry::default()));
+        let fuchsia = Arc::new(Mutex::new(NetworkRegistry::default()));
+        let netcfg = Arc::new(Mutex::new(NetcfgMarkState::NoDefault));
+
+        let registries = NetworkRegistries {
+            starnix: starnix.clone(),
+            fuchsia: fuchsia.clone(),
+            netcfg: netcfg.clone(),
+        };
+
+        // No networks registered.
+        assert_eq!(registries.current_mark().await, None);
+
+        // Starnix default network sets mark.
+        starnix
+            .lock()
+            .await
+            .networks
+            .as_mut()
+            .add_network(1.to_network(RegistryType::Starnix))
+            .unwrap();
+        starnix.lock().await.networks.as_mut().set_default_network(Some(1)).unwrap();
+        assert_eq!(registries.current_mark().await, Some(1));
+
+        // Active unmarked Netcfg default network overrides Starnix.
+        *netcfg.lock().await = NetcfgMarkState::Default(None);
+        assert_eq!(registries.current_mark().await, None);
+
+        // Active marked Netcfg default network overrides Starnix.
+        *netcfg.lock().await = NetcfgMarkState::Default(Some(456));
+        assert_eq!(registries.current_mark().await, Some(456));
+
+        // Netcfg loses default network; falls back to Starnix.
+        *netcfg.lock().await = NetcfgMarkState::NoDefault;
+        assert_eq!(registries.current_mark().await, Some(1));
+
+        // Legacy Fuchsia registry takes precedence when configured.
+        fuchsia
+            .lock()
+            .await
+            .networks
+            .as_mut()
+            .add_network(2.to_network(RegistryType::Fuchsia))
+            .unwrap();
+        fuchsia.lock().await.networks.as_mut().set_default_network(Some(2)).unwrap();
+        *netcfg.lock().await = NetcfgMarkState::Default(Some(456));
+        assert_eq!(registries.current_mark().await, None);
     }
 }

@@ -815,6 +815,12 @@ impl<'a> From<&'a KnownServiceProvider> for fnetemul::ChildDef {
                             constants::netcfg::COMPONENT_NAME,
                         )
                     }),
+                    fnetemul::Capability::ChildDep(fnetemul::ChildDep {
+                        is_weak: Some(true),
+                        ..protocol_dep::<fidl_fuchsia_net_policy_properties::NetworksMarker>(
+                            constants::netcfg::COMPONENT_NAME,
+                        )
+                    }),
                 ])),
                 ..Default::default()
             },

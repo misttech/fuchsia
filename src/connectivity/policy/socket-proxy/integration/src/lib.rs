@@ -8,11 +8,12 @@ use anyhow::{Context as _, Error, anyhow};
 use assert_matches::assert_matches;
 use fidl::endpoints::create_endpoints;
 use fidl_fuchsia_net::{self as fnet, MarkDomain};
+use fidl_fuchsia_net_policy_properties as fnp_properties;
 use fidl_fuchsia_net_policy_socketproxy as fnp_socketproxy;
 use fidl_fuchsia_posix as fposix;
 use fidl_fuchsia_posix_socket::{self as fposix_socket, OptionalUint32};
 use fidl_fuchsia_posix_socket_raw as fposix_socket_raw;
-use fuchsia_async as _;
+use fuchsia_async as fasync;
 use fuchsia_component::client as fclient;
 use fuchsia_component::server::ServiceFs;
 use fuchsia_component_test::{
@@ -24,7 +25,6 @@ use pretty_assertions::assert_eq;
 use socket_proxy::registry::NetworkRegistryRequest;
 use std::sync::Arc;
 use test_case::test_case;
-use zx as _;
 
 enum IncomingService {
     Provider(fposix_socket::ProviderRequestStream),
@@ -255,9 +255,13 @@ async fn inner_provider_mock(
                                             );
                                             responder
                                                 .send(Ok(DatagramSocket(client)))
-                                                .expect("could not respond to StreamSocket call");
-                                            run_stream_socket(server.into_stream(), mark_1, mark_2)
-                                                .await?;
+                                                .expect("could not respond to DatagramSocket call");
+                                            run_stream_socket(
+                                                server.into_stream(),
+                                                mark_1,
+                                                mark_2,
+                                            )
+                                            .await?;
                                         }
                                         fposix_socket::DatagramSocketProtocol::IcmpEcho => {
                                             let (client, server) = create_endpoints::<
@@ -266,9 +270,13 @@ async fn inner_provider_mock(
                                             );
                                             responder
                                                 .send(Ok(SynchronousDatagramSocket(client)))
-                                                .expect("could not respond to StreamSocket call");
-                                            run_stream_socket(server.into_stream(), mark_1, mark_2)
-                                                .await?;
+                                                .expect("could not respond to DatagramSocket call");
+                                            run_stream_socket(
+                                                server.into_stream(),
+                                                mark_1,
+                                                mark_2,
+                                            )
+                                            .await?;
                                         }
                                     }
                                 }
@@ -295,6 +303,7 @@ async fn inner_provider_mock(
                                     )
                                     .await?;
                                 }
+
                                 fposix_socket::ProviderRequest::DatagramSocketWithOptions {
                                     domain: _,
                                     proto,
@@ -412,8 +421,10 @@ async fn inner_provider_mock(
 
 #[derive(Default)]
 struct MockNetcfgState {
+    default_mark: Option<u32>,
     forwarded_requests: Vec<NetworkRegistryRequest>,
     notifier: Vec<futures::channel::oneshot::Sender<()>>,
+    sync_notify: Option<futures::channel::oneshot::Sender<()>>,
 }
 
 impl MockNetcfgState {
@@ -430,10 +441,31 @@ struct MockNetcfg {
 }
 
 impl MockNetcfg {
+    async fn sync(&self) {
+        let (tx, rx) = futures::channel::oneshot::channel();
+        self.state.lock().await.sync_notify = Some(tx);
+        self.state.lock().await.notify_waiters();
+        let () = rx.await.expect("wait for sync");
+    }
+
+    async fn set_default_mark(&self, mark: Option<u32>) {
+        {
+            let mut state = self.state.lock().await;
+            state.default_mark = mark;
+        }
+        self.sync().await;
+    }
+
     async fn wait_for_change(&self) {
         let (tx, rx) = futures::channel::oneshot::channel();
         self.state.lock().await.notifier.push(tx);
         let () = rx.await.expect("wait for change notification");
+    }
+
+    async fn notify_sync_if_pending(&self) {
+        if let Some(tx) = self.state.lock().await.sync_notify.take() {
+            tx.send(()).expect("notify sync waiter");
+        }
     }
 
     /// Awaits until the forwarded requests received from socket-proxy match `expected`.
@@ -452,12 +484,96 @@ impl MockNetcfg {
 
 enum NetcfgService {
     DelegatedNetworks(fnp_socketproxy::NetworkRegistryRequestStream),
+    Properties(fnp_properties::NetworksRequestStream),
 }
 
-/// Simulates Netcfg's registry server to verify request forwarding in integration tests.
+async fn handle_watch_default(
+    mock_netcfg: &MockNetcfg,
+    last_reported_has_default: &mut Option<bool>,
+    responder: fnp_properties::NetworksWatchDefaultResponder,
+) {
+    if *last_reported_has_default == Some(false)
+        && mock_netcfg.state.lock().await.default_mark.is_none()
+    {
+        mock_netcfg.notify_sync_if_pending().await;
+    }
+
+    loop {
+        let has_default = mock_netcfg.state.lock().await.default_mark.is_some();
+        if *last_reported_has_default != Some(has_default) {
+            *last_reported_has_default = Some(has_default);
+            let response = if has_default {
+                let (token_handle, _peer_token) = zx::EventPair::create();
+                fnp_properties::NetworksWatchDefaultResponse::Network(
+                    fnp_properties::NetworkToken { value: token_handle },
+                )
+            } else {
+                fnp_properties::NetworksWatchDefaultResponse::NoDefaultNetwork(
+                    fnp_properties::Empty,
+                )
+            };
+            responder.send(response).expect("send response");
+            break;
+        }
+
+        if *last_reported_has_default == Some(false)
+            && mock_netcfg.state.lock().await.default_mark.is_none()
+        {
+            mock_netcfg.notify_sync_if_pending().await;
+        }
+        mock_netcfg.wait_for_change().await;
+    }
+}
+
+fn spawn_property_watcher(
+    scope: &fasync::Scope,
+    mock_netcfg: MockNetcfg,
+    watcher: fidl::endpoints::ServerEnd<fnp_properties::PropertyWatcherMarker>,
+) {
+    let mut watcher_stream = watcher.into_stream();
+    let _watcher_task = scope.spawn(async move {
+        let mut last_reported_mark = None;
+        while let Some(fnp_properties::PropertyWatcherRequest::Watch { responder }) =
+            watcher_stream.try_next().await.expect("watcher request error")
+        {
+            let current = mock_netcfg.state.lock().await.default_mark;
+            if last_reported_mark.is_some() && last_reported_mark == current {
+                mock_netcfg.notify_sync_if_pending().await;
+            }
+
+            loop {
+                let current = mock_netcfg.state.lock().await.default_mark;
+                if let Some(mark) = current {
+                    if last_reported_mark != Some(mark) {
+                        last_reported_mark = Some(mark);
+                        let marks = fnet::Marks { mark_1: Some(mark), ..Default::default() };
+                        let update = fnp_properties::PropertyUpdate {
+                            socket_marks: Some(marks),
+                            ..Default::default()
+                        };
+                        responder.send(Ok(&update)).expect("send response");
+                        break;
+                    }
+                }
+                let current = mock_netcfg.state.lock().await.default_mark;
+                if last_reported_mark.is_some() && last_reported_mark == current {
+                    mock_netcfg.notify_sync_if_pending().await;
+                }
+                mock_netcfg.wait_for_change().await;
+            }
+        }
+    });
+}
+
+/// Simulates Netcfg's properties server and registry to verify request forwarding
+/// and mark updates in integration tests.
 async fn netcfg_mock(handles: LocalComponentHandles, mock_netcfg: MockNetcfg) -> Result<(), Error> {
+    let scope = fasync::Scope::new();
     let mut fs = ServiceFs::new();
-    let _svc_dir = fs.dir("svc").add_fidl_service(NetcfgService::DelegatedNetworks);
+    let _svc_dir = fs
+        .dir("svc")
+        .add_fidl_service(NetcfgService::DelegatedNetworks)
+        .add_fidl_service(NetcfgService::Properties);
     let _fs = fs.serve_connection(handles.outgoing_dir)?;
 
     fs.map(Ok)
@@ -494,6 +610,30 @@ async fn netcfg_mock(handles: LocalComponentHandles, mock_netcfg: MockNetcfg) ->
                             }
                         })
                         .await?;
+                }
+                NetcfgService::Properties(mut stream) => {
+                    let mut last_reported_has_default = None;
+                    while let Some(req) = stream.try_next().await? {
+                        match req {
+                            fnp_properties::NetworksRequest::WatchDefault { responder } => {
+                                handle_watch_default(
+                                    &mock_netcfg,
+                                    &mut last_reported_has_default,
+                                    responder,
+                                )
+                                .await;
+                            }
+                            fnp_properties::NetworksRequest::WatchProperties {
+                                payload,
+                                responder,
+                            } => {
+                                let watcher = payload.watcher.expect("watcher must be provided");
+                                responder.send(Ok(())).expect("send response");
+                                spawn_property_watcher(&scope, mock_netcfg.clone(), watcher);
+                            }
+                            fnp_properties::NetworksRequest::_UnknownMethod { .. } => {}
+                        }
+                    }
                 }
             }
             Ok(())
@@ -581,6 +721,7 @@ impl TestRealm {
             .add_route(
                 Route::new()
                     .capability(Capability::protocol::<fnp_socketproxy::NetworkRegistryMarker>())
+                    .capability(Capability::protocol::<fnp_properties::NetworksMarker>())
                     .from(&netcfg)
                     .to(&socket_proxy),
             )
@@ -930,6 +1071,128 @@ async fn integration_across_registries() -> Result<(), Error> {
             NetworkRegistryRequest::SetDefault { network_id: Some(STARNIX_NETWORK_ID) },
         ])
         .await;
+
+    Ok(())
+}
+
+#[fuchsia::test]
+async fn test_netcfg_starnix_mark_precedence_and_fallback() -> Result<(), Error> {
+    const STARNIX_NETWORK_ID: u32 = 1;
+    const STARNIX_NETWORK_MARK: u32 = 123;
+    const NETCFG_NETWORK_MARK: u32 = 456;
+
+    let test_realm = TestRealm::new().await?;
+    let posix_socket: fposix_socket::ProviderProxy = test_realm.connect_to_protocol()?;
+    let starnix_networks: fnp_socketproxy::StarnixNetworksProxy =
+        test_realm.connect_to_protocol()?;
+
+    // With no networks registered, socket mark is unset.
+    {
+        let socket = posix_socket
+            .stream_socket(fposix_socket::Domain::Ipv4, fposix_socket::StreamSocketProtocol::Tcp)
+            .await?
+            .map_err(|e| anyhow!("Could not get socket: {e:?}"))?
+            .into_proxy();
+        assert_eq!(
+            socket.get_mark(MarkDomain::Mark1).await?,
+            Ok(OptionalUint32::Unset(fposix_socket::Empty))
+        );
+    }
+
+    // Add Starnix network and set as default. Socket mark becomes Starnix mark.
+    starnix_networks
+        .add(&create_starnix_network(STARNIX_NETWORK_ID, STARNIX_NETWORK_MARK))
+        .await?
+        .map_err(|e| anyhow!("Could not add network: {e:?}"))?;
+    starnix_networks
+        .set_default(&OptionalUint32::Value(STARNIX_NETWORK_ID))
+        .await?
+        .map_err(|e| anyhow!("Could not set default network: {e:?}"))?;
+    test_realm
+        .mock_netcfg
+        .wait_for_forwarded_requests(&[
+            NetworkRegistryRequest::Add {
+                network: create_starnix_network(STARNIX_NETWORK_ID, STARNIX_NETWORK_MARK),
+            },
+            NetworkRegistryRequest::SetDefault { network_id: Some(STARNIX_NETWORK_ID) },
+        ])
+        .await;
+
+    {
+        let socket = posix_socket
+            .stream_socket(fposix_socket::Domain::Ipv4, fposix_socket::StreamSocketProtocol::Tcp)
+            .await?
+            .map_err(|e| anyhow!("Could not get socket: {e:?}"))?
+            .into_proxy();
+        assert_eq!(
+            socket.get_mark(MarkDomain::Mark1).await?,
+            Ok(OptionalUint32::Value(STARNIX_NETWORK_MARK))
+        );
+    }
+
+    // Set Netcfg default mark. Netcfg overrides Starnix default mark.
+    test_realm.mock_netcfg.set_default_mark(Some(NETCFG_NETWORK_MARK)).await;
+
+    {
+        let socket = posix_socket
+            .stream_socket(fposix_socket::Domain::Ipv4, fposix_socket::StreamSocketProtocol::Tcp)
+            .await?
+            .map_err(|e| anyhow!("Could not get socket: {e:?}"))?
+            .into_proxy();
+        assert_eq!(
+            socket.get_mark(MarkDomain::Mark1).await?,
+            Ok(OptionalUint32::Value(NETCFG_NETWORK_MARK))
+        );
+    }
+
+    // Clear Netcfg default network. Socket mark falls back to Starnix default mark.
+    test_realm.mock_netcfg.set_default_mark(None).await;
+
+    {
+        let socket = posix_socket
+            .stream_socket(fposix_socket::Domain::Ipv4, fposix_socket::StreamSocketProtocol::Tcp)
+            .await?
+            .map_err(|e| anyhow!("Could not get socket: {e:?}"))?
+            .into_proxy();
+        assert_eq!(
+            socket.get_mark(MarkDomain::Mark1).await?,
+            Ok(OptionalUint32::Value(STARNIX_NETWORK_MARK))
+        );
+    }
+
+    // Clean up Starnix default network. Socket mark becomes unset.
+    starnix_networks
+        .set_default(&OptionalUint32::Unset(fposix_socket::Empty))
+        .await?
+        .map_err(|e| anyhow!("Could not unset default network: {e:?}"))?;
+    starnix_networks
+        .remove(STARNIX_NETWORK_ID)
+        .await?
+        .map_err(|e| anyhow!("Could not remove network: {e:?}"))?;
+
+    test_realm
+        .mock_netcfg
+        .wait_for_forwarded_requests(&[
+            NetworkRegistryRequest::Add {
+                network: create_starnix_network(STARNIX_NETWORK_ID, STARNIX_NETWORK_MARK),
+            },
+            NetworkRegistryRequest::SetDefault { network_id: Some(STARNIX_NETWORK_ID) },
+            NetworkRegistryRequest::SetDefault { network_id: None },
+            NetworkRegistryRequest::Remove { network_id: STARNIX_NETWORK_ID },
+        ])
+        .await;
+
+    {
+        let socket = posix_socket
+            .stream_socket(fposix_socket::Domain::Ipv4, fposix_socket::StreamSocketProtocol::Tcp)
+            .await?
+            .map_err(|e| anyhow!("Could not get socket: {e:?}"))?
+            .into_proxy();
+        assert_eq!(
+            socket.get_mark(MarkDomain::Mark1).await?,
+            Ok(OptionalUint32::Unset(fposix_socket::Empty))
+        );
+    }
 
     Ok(())
 }
