@@ -9,7 +9,7 @@ appropriate.
 **Explanation:** Most driver writers come from a C / C++ background, where
 unsized signed integers are often used for arithmetic.
 
-**Guideline:** Use `std::num::NonZero` types when the constraint holds.
+**Guideline:** Use `std::num::NonZero<T>` types when the constraint holds.
 
 **Explanation:** Ensures we handle zero as a special case. Enables
 [Option representation optimizations][rust-option-representation].
@@ -98,9 +98,9 @@ creation.
 
 ## FIDL bindings
 
-**Guideline:** Exclusively use the fidl_next bindings.
+**Guideline:** Exclusively use the `fidl_next` bindings.
 
-**Explanation:** fidl_next bindings are required for the driver transport.
+**Explanation:** `fidl_next` bindings are required for the driver transport.
 Standardizing on them saves (human and AI) developers from context-switching
 between two bindings.
 
@@ -263,7 +263,7 @@ convention because register and ABI type names are likely to overlap Rust driver
 type names, as they cover the same domain. We reuse the practice in C++ drivers
 that gave us a good tradeoff between clarity and conciseness.
 
-**Guideline:** Alias each fidl_next binding module. Use the `fidl_` prefix for
+**Guideline:** Alias each `fidl_next` binding module. Use the `fidl_` prefix for
 all aliases. Use the alias to qualify access to both structs and functions.
 
 **Explanation:** Same reasoning as above. FIDL and Rust driver type names are
@@ -272,7 +272,7 @@ likely to overlap.
 **Guideline:** Bring the logging macros into scope directly.
 
 **Explanation:**
-[The Rust Book section on idiomatic use paths][rust-book-idiomatic-paths]
+[The Rust Programming Book section on idiomatic use paths][rust-book-idiomatic-paths]
 recommends module qualifiers on function calls, with an exception for common
 functions that are close to language-level features. Logging falls under the
 exception.
@@ -549,8 +549,8 @@ implement a single process.
 
 ## Field visibility
 
-**Guideline:** Fields on composite types must be all public - this means `pub`
-or `pub(crate)` or all private.
+**Guideline:** Fields on composite types must be all private, or all public.
+Public means `pub` or `pub(crate)`.
 
 **Explanation:** Public fields are not amenable to invariants.
 
