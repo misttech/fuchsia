@@ -54,9 +54,6 @@ class SystemLogWriter {
   // Returns true if successful.
   bool Fsync();
 
-  // Deletes all logs from disk.
-  void DeleteLogs();
-
   // Flushes the given consume result to disk, reads all persisted logs and metadata, and returns
   // the result.
   ::fit::result<WriterError, Logs> FlushAndReadLogs(const LogMessageStore::ConsumeResult& result);

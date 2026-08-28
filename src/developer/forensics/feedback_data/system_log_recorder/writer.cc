@@ -115,13 +115,6 @@ bool SystemLogWriter::Fsync() {
   return fsync(current_file_descriptor_.get()) == 0;
 }
 
-void SystemLogWriter::DeleteLogs() {
-  current_file_descriptor_.reset();
-  files::DeletePath(logs_dir_, /*recursive=*/true);
-  files::DeletePath(metadata_path_, /*recursive=*/true);
-  metadata_.Clear();
-}
-
 fit::result<SystemLogWriter::WriterError, SystemLogWriter::Logs> SystemLogWriter::FlushAndReadLogs(
     const LogMessageStore::ConsumeResult& result) {
   Write(result);

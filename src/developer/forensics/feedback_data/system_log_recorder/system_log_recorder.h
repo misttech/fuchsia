@@ -46,8 +46,6 @@ class SystemLogRecorder : public fidl::Server<fuchsia_feedback_internal::SystemL
   // Flushes cached logs to disk and calls |callback| when complete.
   void Flush(const std::optional<std::string>& message, ::fit::callback<void()> callback);
 
-  void StopAndDeleteLogs();
-
   // |fuchsia_feedback_internal::SystemLogRecorder|
   void GetCurrentBootLogs(GetCurrentBootLogsCompleter::Sync& completer) override;
 
@@ -67,7 +65,6 @@ class SystemLogRecorder : public fidl::Server<fuchsia_feedback_internal::SystemL
   async_dispatcher_t* archive_dispatcher_;
   std::unique_ptr<RedactorBase> redactor_;
   const zx::duration write_period_;
-  bool is_running_;
 
   LogMessageStore store_;
   LogSource log_source_;

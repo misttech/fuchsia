@@ -34,7 +34,6 @@ SystemLogRecorder::SystemLogRecorder(async_dispatcher_t* archive_dispatcher,
     : archive_dispatcher_(archive_dispatcher),
       redactor_(std::move(redactor)),
       write_period_(write_parameters.period),
-      is_running_(false),
       store_(write_parameters.total_log_size / write_parameters.max_num_files,
              write_parameters.max_write_size, redactor_.get(), std::move(encoder)),
       log_source_(archive_dispatcher, std::move(services), &store_),
@@ -43,7 +42,6 @@ SystemLogRecorder::SystemLogRecorder(async_dispatcher_t* archive_dispatcher,
       receiver_(this, archive_dispatcher) {}
 
 void SystemLogRecorder::Start() {
-  is_running_ = true;
   log_source_.Start();
   periodic_write_task_.Post(archive_dispatcher_);
 
@@ -83,20 +81,6 @@ void SystemLogRecorder::OnFlushComplete(bool) {
   }
 }
 
-void SystemLogRecorder::StopAndDeleteLogs() {
-  is_running_ = false;
-
-  // Stop collecting logs.
-  log_source_.Stop();
-  periodic_write_task_.Cancel();
-
-  // Consume the data currently in the store to clear the buffer.
-  std::ignore = store_.Consume();
-  writer_.AsyncCall(&SystemLogWriter::DeleteLogs);
-
-  FX_LOGS(INFO) << "Stopped log recording and flushed persisted logs";
-}
-
 void SystemLogRecorder::PeriodicWriteTask() {
   // Consume the data on the main thread to avoid thread safety issues in store_. Move the data to
   // the writer thread.
@@ -106,9 +90,7 @@ void SystemLogRecorder::PeriodicWriteTask() {
 }
 
 void SystemLogRecorder::OnWriteComplete(bool success) {
-  if (is_running_) {
-    periodic_write_task_.PostDelayed(archive_dispatcher_, write_period_);
-  }
+  periodic_write_task_.PostDelayed(archive_dispatcher_, write_period_);
 }
 
 void SystemLogRecorder::GetCurrentBootLogs(GetCurrentBootLogsCompleter::Sync& completer) {

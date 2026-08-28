@@ -5,9 +5,8 @@
 #ifndef SRC_DEVELOPER_FORENSICS_FEEDBACK_DATA_SYSTEM_LOG_RECORDER_CONTROLLER_H_
 #define SRC_DEVELOPER_FORENSICS_FEEDBACK_DATA_SYSTEM_LOG_RECORDER_CONTROLLER_H_
 
-#include <fuchsia/feedback/cpp/fidl.h>
 #include <fuchsia/process/lifecycle/cpp/fidl.h>
-#include <lib/async-loop/cpp/loop.h>
+#include <lib/fit/function.h>
 
 namespace forensics {
 namespace feedback_data {

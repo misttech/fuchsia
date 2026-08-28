@@ -648,17 +648,6 @@ TEST_F(WriterTest, RollsOutRestoredMetadataOnRotation) {
   }
 }
 
-TEST_F(WriterTest, DeleteLogs) {
-  testing::ScopedMemFsManager memfs_manager;
-  memfs_manager.Create(kRootDirectory);
-
-  SystemLogWriter writer(kWriteDirectory, /*max_num_files=*/2u,
-                         std::make_unique<IdentityDecoder>());
-  EXPECT_TRUE(files::IsDirectory(kWriteDirectory));
-  writer.DeleteLogs();
-  EXPECT_FALSE(files::IsDirectory(kWriteDirectory));
-}
-
 TEST_F(WriterTest, FlushAndReadLogs) {
   testing::ScopedMemFsManager memfs_manager;
   memfs_manager.Create(kRootDirectory);

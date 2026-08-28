@@ -51,9 +51,7 @@ source_set("src") {
   public_deps = [
     "encoding:encoder",
     "fidl:fuchsia.feedback.internal_cpp",
-    "//sdk/fidl/fuchsia.feedback:fuchsia.feedback_hlcpp",
     "//sdk/fidl/fuchsia.process.lifecycle:fuchsia.process.lifecycle_hlcpp",
-    "//sdk/lib/async-loop:async-loop-cpp",
     "//sdk/lib/async_patterns/cpp",
     "//sdk/lib/fit",
     "//sdk/lib/fit-promise",
