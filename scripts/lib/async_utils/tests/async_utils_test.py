@@ -311,6 +311,30 @@ class TestCommand(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(command.AsyncCommandError):
             await command.AsyncCommand.create("..........")
 
+    async def test_stdin_pipe_none_when_no_input(self) -> None:
+        """Test that stdin is not piped when input_bytes is not provided."""
+        cmd = await command.AsyncCommand.create("echo", "test")
+        self.assertIsNone(cmd._process.stdin)
+        await cmd.run_to_completion()
+
+    async def test_env_dict_not_mutated(self) -> None:
+        """Test that caller-provided env dict is not mutated in place."""
+        with tempfile.TemporaryDirectory() as td:
+            original_env = {"CWD": td, "CUSTOM_VAR": "VALUE"}
+            passed_env = original_env.copy()
+            cmd = await command.AsyncCommand.create("ls", ".", env=passed_env)
+            await cmd.run_to_completion()
+            self.assertEqual(passed_env, original_env)
+
+    async def test_signal_on_already_exited_process(self) -> None:
+        """Test that sending signals to an already-exited process does not raise."""
+        cmd = await command.AsyncCommand.create("true")
+        await cmd.run_to_completion()
+        # Should not raise ProcessLookupError
+        cmd.terminate()
+        cmd.kill()
+        cmd.send_signal(signal.SIGTERM)
+
 
 class TestSignals(unittest.TestCase):
     def test_async_signal_handler(self) -> None:

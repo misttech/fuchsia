@@ -184,6 +184,8 @@ class AsyncCommand:
         Raises:
             AsyncCommandError: If there is a problem executing the process.
         """
+        if env:
+            env = env.copy()
         cwd = env["CWD"] if env and "CWD" in env else None
         if cwd and env:
             env.pop("CWD")
@@ -216,7 +218,9 @@ class AsyncCommand:
                 )
 
             base_command = None
-            input_pipe = None if input is None else asyncio.subprocess.PIPE
+            input_pipe = (
+                None if input_bytes is None else asyncio.subprocess.PIPE
+            )
             input_writer: _InputWriter | None = None
             if symbolizer_args:
                 # Wrap the base command we want to run in another
@@ -268,11 +272,17 @@ class AsyncCommand:
         # We need to signal the entire process group we created, otherwise
         # we run the risk of signallying only a shell script and not
         # the processes run by that shell script (e.g. `fx`).
-        pg = os.getpgid(self._process.pid)
-        os.killpg(pg, sig)
-        if self._wrapped_process is not None:
-            pg = os.getpgid(self._wrapped_process.pid)
+        try:
+            pg = os.getpgid(self._process.pid)
             os.killpg(pg, sig)
+        except ProcessLookupError:
+            pass
+        if self._wrapped_process is not None:
+            try:
+                pg = os.getpgid(self._wrapped_process.pid)
+                os.killpg(pg, sig)
+            except ProcessLookupError:
+                pass
 
     def terminate(self) -> None:
         """Terminate the underlying process(es) by sending SIGTERM."""
