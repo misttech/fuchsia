@@ -27,6 +27,7 @@ source_set("kernel") {
     "mp_ffi.cc",
     "mutex.cc",
     "owned_wait_queue.cc",
+    "owned_wait_queue_ffi.cc",
     "owned_wait_queue_pool.cc",
     "percpu.cc",
     "recurring_callback.cc",
@@ -199,6 +200,7 @@ kernel_rust_mod("kernel-rs") {
     "koid.rs",
     "mod.rs",
     "mp.rs",
+    "owned_wait_queue.rs",
     "relaxed_atomic.rs",
     "restricted.rs",
     "restricted_state.rs",
@@ -217,6 +219,7 @@ kernel_rust_mod("kernel-rs") {
     "//third_party/rust_crates:paste",
     "//third_party/rust_crates:pin-init",
     "//zircon/kernel/lib/debug",
+    "//zircon/kernel/lib/object-constants:object-constants-rs",
     "//zircon/kernel/lib/page:page-rs",
     "//zircon/system/ulib/fbl/rust:fbl",
   ]

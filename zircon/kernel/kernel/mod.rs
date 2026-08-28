@@ -9,6 +9,7 @@ pub mod deadline;
 pub mod event;
 pub mod koid;
 pub mod mp;
+pub mod owned_wait_queue;
 pub mod relaxed_atomic;
 pub mod restricted;
 pub mod restricted_state;

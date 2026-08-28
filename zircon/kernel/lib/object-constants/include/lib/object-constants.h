@@ -105,4 +105,8 @@ constexpr size_t kWaitSignalObserverStorageSize = 32;
 constexpr size_t kWaitSignalObserverStorageAlign = 8;
 constexpr size_t kWaitSignalObserverStorageOffset = 40;
 
+// Size and alignment for OwnedWaitQueue.
+constexpr size_t kOwnedWaitQueueSize = 88;
+constexpr size_t kOwnedWaitQueueAlign = 8;
+
 #endif  // ZIRCON_KERNEL_LIB_OBJECT_CONSTANTS_INCLUDE_LIB_OBJECT_CONSTANTS_H_
