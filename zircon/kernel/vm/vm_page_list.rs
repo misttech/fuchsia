@@ -17,6 +17,7 @@ use vm_constants_rs::{
 };
 use vm_page_list_bindings as bindings;
 use zr::{Opaque, pin_init_ffi, unsafe_pinned_drop_ffi};
+use zx_status::Status;
 
 use crate::vm::page::VmPagePtr;
 
@@ -744,6 +745,161 @@ impl VmPageListNode {
         true
     }
 
+    /// For every page or marker in the node call the passed in function.
+    pub fn for_every_page<F>(&self, base: u64, func: F) -> Status
+    where
+        F: FnMut(&VmPageOrMarker, u64) -> Status,
+    {
+        self.for_every_page_in_range(base, base, Self::end_offset(base), func)
+    }
+
+    /// For every page or marker in the node call the passed in function.
+    pub fn for_every_page_ref<F>(&mut self, base: u64, func: F) -> Status
+    where
+        F: FnMut(VmPageOrMarkerRef<'_>, u64) -> Status,
+    {
+        self.for_every_page_in_range_ref(base, base, Self::end_offset(base), func)
+    }
+
+    /// For every page or marker in the node in the range call the passed in function. The range
+    /// is assumed to be within the node's object range.
+    pub fn for_every_page_in_range<F>(
+        &self,
+        base: u64,
+        start_offset: u64,
+        end_offset: u64,
+        mut func: F,
+    ) -> Status
+    where
+        F: FnMut(&VmPageOrMarker, u64) -> Status,
+    {
+        debug_assert!(end_offset >= start_offset);
+        debug_assert!(start_offset >= base);
+        debug_assert!(end_offset <= Self::end_offset(base));
+        let start = ((start_offset - base) / (page::SIZE as u64)) as usize;
+        let end = ((end_offset - base) / (page::SIZE as u64)) as usize;
+        for i in start..end {
+            if !self.pages[i].is_empty() {
+                let status = func(&self.pages[i], base + (i as u64) * (page::SIZE as u64));
+                if status != Status::NEXT {
+                    return status;
+                }
+            }
+        }
+        Status::NEXT
+    }
+
+    /// For every page or marker in the node in the range call the passed in function with a
+    /// [`VmPageOrMarkerRef`]. The range is assumed to be within the node's object range.
+    pub fn for_every_page_in_range_ref<F>(
+        &mut self,
+        base: u64,
+        start_offset: u64,
+        end_offset: u64,
+        mut func: F,
+    ) -> Status
+    where
+        F: FnMut(VmPageOrMarkerRef<'_>, u64) -> Status,
+    {
+        self.for_every_page_in_range_mut(base, start_offset, end_offset, |slot, offset| {
+            func(VmPageOrMarkerRef::new(slot), offset)
+        })
+    }
+
+    /// For every page or marker in the node in the range call the passed in function with
+    /// mutable access. The range is assumed to be within the node's object range.
+    pub fn for_every_page_in_range_mut<F>(
+        &mut self,
+        base: u64,
+        start_offset: u64,
+        end_offset: u64,
+        mut func: F,
+    ) -> Status
+    where
+        F: FnMut(&mut VmPageOrMarker, u64) -> Status,
+    {
+        debug_assert!(end_offset >= start_offset);
+        debug_assert!(start_offset >= base);
+        debug_assert!(end_offset <= Self::end_offset(base));
+        let start = ((start_offset - base) / (page::SIZE as u64)) as usize;
+        let end = ((end_offset - base) / (page::SIZE as u64)) as usize;
+        for i in start..end {
+            if !self.pages[i].is_empty() {
+                let status = func(&mut self.pages[i], base + (i as u64) * (page::SIZE as u64));
+                if status != Status::NEXT {
+                    return status;
+                }
+            }
+        }
+        Status::NEXT
+    }
+
+    /// Checks if the given offset is part of an interval involving this node. This method cannot
+    /// find the full interval, since that may require looking at an additional node, but can
+    /// determine if in an interval or not. Returns any interval sentinel found, otherwise `None`.
+    pub fn is_offset_in_interval(&self, obj_offset: u64, off: u64) -> Option<&VmPageOrMarker> {
+        debug_assert!(off >= obj_offset);
+        debug_assert!(off < Self::end_offset(obj_offset));
+        let index = ((off - obj_offset) / (page::SIZE as u64)) as usize;
+        // If the target slot is any kind of interval (start, end, individual slot), then we are in
+        // an interval.
+        if !self.pages[index].is_empty() {
+            return if self.pages[index].is_interval() { Some(&self.pages[index]) } else { None };
+        }
+        // Check if there is an interval end to the right, which would cause this to be in an
+        // interval. Finding anything else indicates we cannot be in an interval.
+        for i in (index + 1)..Self::PAGE_FAN_OUT {
+            if !self.pages[i].is_empty() {
+                return if self.pages[i].is_interval_end() { Some(&self.pages[i]) } else { None };
+            }
+        }
+        // Nothing to our right, so check for an interval start to our left.
+        for i in (0..index).rev() {
+            if !self.pages[i].is_empty() {
+                return if self.pages[i].is_interval_start() { Some(&self.pages[i]) } else { None };
+            }
+        }
+        panic!("Unexpected empty node");
+    }
+
+    /// Check if this node begins in an interval, that is if an interval start was in a preceding
+    /// node and this nodes contains the end. If the first non-empty slot is an interval end it is
+    /// returned, otherwise we cannot have started in an interval and `None` is returned.
+    pub fn node_starts_in_interval(&self) -> Option<&VmPageOrMarker> {
+        for p in &self.pages {
+            if !p.is_empty() {
+                return if p.is_interval_end() { Some(p) } else { None };
+            }
+        }
+        panic!("Unexpected empty node");
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn merge_range_onto<F>(
+        &mut self,
+        base: u64,
+        other_base: u64,
+        mut migrate_fn: F,
+        other: &mut VmPageListNode,
+        start_offset: u64,
+        end_offset: u64,
+        other_start_offset: u64,
+    ) where
+        F: FnMut(&mut VmPageOrMarker, &mut VmPageOrMarker, u64),
+    {
+        debug_assert!(other_start_offset >= other_base);
+        debug_assert!(
+            other_start_offset + (end_offset - start_offset) <= Self::end_offset(other_base)
+        );
+        let _ = self.for_every_page_in_range_mut(base, start_offset, end_offset, |slot, offset| {
+            let other_offset = offset - start_offset + other_start_offset;
+            debug_assert_eq!(Self::node_offset(other_offset), other_base);
+            let other_index = Self::node_index(other_offset);
+            migrate_fn(slot, &mut other.pages[other_index], other_offset);
+            Status::NEXT
+        });
+    }
+
     /// Converts the supplied offset into a VmPageListNode base offset.
     pub const fn node_offset(offset: u64) -> u64 {
         offset & !(Self::NODE_SPAN_BYTES - 1)
@@ -820,7 +976,7 @@ impl VmPageSpliceList {
 /// Unit tests for VmPageOrMarker.
 mod vm_page_list_rs {
     use super::{
-        ReferenceValue, SentinelType, VmPageListNode, VmPageOrMarker, VmPageOrMarkerRef,
+        ReferenceValue, SentinelType, Status, VmPageListNode, VmPageOrMarker, VmPageOrMarkerRef,
         ZeroRangeDirtyState,
     };
     use unittest::{expect_eq, expect_false, expect_true};
@@ -1079,5 +1235,69 @@ mod vm_page_list_rs {
         expect_true!(node.lookup(3).is_marker());
         *node.lookup_mut(3) = VmPageOrMarker::empty();
         expect_true!(node.is_empty());
+    }
+
+    /// Tests in-node interval queries.
+    #[test]
+    fn test_node_interval_queries() {
+        let mut node = VmPageListNode::new();
+        *node.lookup_mut(3) =
+            VmPageOrMarker::zero_interval(SentinelType::End, ZeroRangeDirtyState::Untracked);
+        expect_true!(node.node_starts_in_interval().is_some());
+        // slot 1 (before end)
+        expect_true!(node.is_offset_in_interval(0, 4096).is_some());
+        // slot 4 (after end)
+        expect_true!(node.is_offset_in_interval(0, 16384).is_none());
+
+        *node.lookup_mut(3) = VmPageOrMarker::empty();
+    }
+
+    /// Tests in-node range iteration and merge_range_onto helper.
+    #[test]
+    fn test_node_range_helpers() {
+        let mut node1 = VmPageListNode::new();
+        let mut node2 = VmPageListNode::new();
+        *node1.lookup_mut(1) = VmPageOrMarker::marker();
+
+        let mut visited_offset = 0;
+        let mut count = 0;
+        let _ = node1.for_every_page(0, |_slot, offset| {
+            visited_offset = offset;
+            count += 1;
+            Status::NEXT
+        });
+        expect_eq!(count, 1);
+        expect_eq!(visited_offset, 4096);
+
+        let mut ref_count = 0;
+        let mut ref_offset = 0;
+        let mut is_marker = false;
+        let mut share_count = 0;
+        let _ = node1.for_every_page_ref(0, |mut slot_ref, offset| {
+            ref_offset = offset;
+            is_marker = slot_ref.is_marker();
+            slot_ref.increment_marker_share_count();
+            share_count = slot_ref.marker_share_count();
+            ref_count += 1;
+            Status::NEXT
+        });
+        expect_eq!(ref_count, 1);
+        expect_eq!(ref_offset, 4096);
+        expect_true!(is_marker);
+        expect_eq!(share_count, 1);
+        expect_eq!(node1.lookup(1).marker_share_count(), 1);
+
+        node1.merge_range_onto(
+            0,
+            65536,
+            |src, dst, _off| *dst = src.swap(VmPageOrMarker::empty()),
+            &mut node2,
+            0,
+            65536,
+            65536,
+        );
+        expect_true!(node1.is_empty());
+        expect_true!(node2.lookup(1).is_marker());
+        *node2.lookup_mut(1) = VmPageOrMarker::empty();
     }
 }
