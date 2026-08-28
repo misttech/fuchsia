@@ -217,7 +217,7 @@ fuchsia_cc = rule(
 def data_for_features(features):
     data = [
         "@fuchsia_sdk//pkg/sysroot:dist",
-        "@fuchsia_clang//:runtime",
+        "@fuchsia_sdk//clang:sanitizer_resources",
     ]
 
     # Check to see if the user is requesting a static cpp compilation via our
@@ -235,7 +235,7 @@ def data_for_features(features):
     #
     # A future optimization would be to move the select into the dist target itself.
     if "static_cpp_standard_library" not in features:
-        data.append("@fuchsia_clang//:dist")
+        data.append("@fuchsia_sdk//clang:libcxx_resources")
 
     return data
 

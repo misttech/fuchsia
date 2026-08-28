@@ -82,8 +82,8 @@ def fuchsia_wrap_rust_binary(
         native_target = native_binary,
         data = [
             "%s//pkg/sysroot:dist" % sdk_root_label,
-            "%s//:dist" % clang_root_label,
-            "%s//:runtime" % clang_root_label,
+            "%s//clang:libcxx_resources" % sdk_root_label,
+            "%s//clang:sanitizer_resources" % sdk_root_label,
         ],
         **kwargs
     )

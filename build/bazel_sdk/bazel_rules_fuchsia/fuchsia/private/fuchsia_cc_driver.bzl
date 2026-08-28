@@ -114,9 +114,9 @@ def fuchsia_cc_driver(
 
     driver_data = [
         "@fuchsia_sdk//pkg/sysroot:dist",
-        "@fuchsia_clang//:runtime",
+        "@fuchsia_sdk//clang:sanitizer_resources",
     ] + select({
-        "@rules_fuchsia//fuchsia/select:dynamic_cpp_standard_library_for_drivers_enabled": ["@fuchsia_clang//:dist"],
+        "@rules_fuchsia//fuchsia/select:dynamic_cpp_standard_library_for_drivers_enabled": ["@fuchsia_sdk//clang:libcxx_resources"],
         "//conditions:default": [],
     })
 
