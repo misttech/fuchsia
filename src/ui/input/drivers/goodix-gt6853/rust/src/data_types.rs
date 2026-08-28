@@ -4,4 +4,6 @@
 
 //! Data types, traits, and common definitions for Goodix GT6853.
 
+pub mod hardware_limits;
+pub mod reports;
 pub mod traits;
