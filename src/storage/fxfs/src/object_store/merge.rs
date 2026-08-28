@@ -1142,6 +1142,10 @@ mod tests {
         .await;
     }
 
+    // Tests merging across three LSM tree layers (top, middle, base) with various overlapping
+    // combinations. `calculate_expected` constructs a 1-D point oracle where the newest layer
+    // (top = 1, middle = 2, base = 3) wins for each byte position, and aggregates continuous
+    // segments to verify against the merger iterator output and layer advance depths.
     #[fuchsia::test]
     async fn test_extent_complex_multi_layer() {
         use crate::lsm_tree::cache::NullCache;
@@ -1153,11 +1157,11 @@ mod tests {
         let object_id = 1;
         let attr_id = AttributeId::TEST_ID;
 
-        let top_options = vec![49..50, 50..51, 51..52, 98..99, 99..100, 100..101];
+        let top_options = vec![49..50, 50..51, 51..52, 98..99, 99..100, 100..101, 40..95];
 
         let middle_range = 50..100;
 
-        let base_options = vec![49..101, 49..100, 50..101, 48..102, 100..101, 100..102];
+        let base_options = vec![49..101, 49..100, 50..101, 48..102, 100..101, 100..102, 30..90];
 
         let calculate_expected = |top: std::ops::Range<u64>,
                                   middle: std::ops::Range<u64>,

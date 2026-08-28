@@ -275,8 +275,8 @@ pub enum Query<'a, K: Key + LayerKey + OrdLowerBound> {
     /// FullRange queries position the iterator to a starting key, and scans forward to the first
     /// key of a different type.  In this case, the existence filters are not used.  The key should
     /// be a search key (see `LayerKey::search_key`) (which, for extent based keys, would normally
-    /// be `0..start + 1`).  This kind of query will still used optimized merges if the keys found
-    /// support it.
+    /// be `start..start + 1`).  This kind of query will still use optimized merges if the keys
+    /// found support it.
     FullRange(&'a K),
 
     /// FullScan queries are intended to yield every record in the tree.  In this case, the
@@ -1383,11 +1383,11 @@ mod tests {
         }
 
         fn search_key(&self) -> Option<Self> {
-            Some(Self(0..self.0.start + 1))
+            Some(Self(self.0.start..self.0.start + 1))
         }
 
         fn is_search_key(&self) -> bool {
-            self.0.start == 0
+            self.0.end == self.0.start + 1
         }
 
         fn overlaps(&self, other: &Self) -> bool {
@@ -1403,7 +1403,7 @@ mod tests {
 
     impl OrdUpperBound for TestKeyWithFullMerge {
         fn cmp_upper_bound(&self, other: &TestKeyWithFullMerge) -> std::cmp::Ordering {
-            self.0.end.cmp(&other.0.end)
+            self.0.end.cmp(&other.0.end).then(other.0.start.cmp(&self.0.start))
         }
     }
 
@@ -1534,11 +1534,11 @@ mod tests {
     // Default layer key is using `MergeType::FullMerge` and returns None for `next_key()`.
     impl LayerKey for TestKeyWithDefaultLayerKey {
         fn search_key(&self) -> Option<Self> {
-            Some(Self(0..self.0.start + 1))
+            Some(Self(self.0.start..self.0.start + 1))
         }
 
         fn is_search_key(&self) -> bool {
-            self.0.start == 0
+            self.0.end == self.0.start + 1
         }
 
         fn overlaps(&self, other: &Self) -> bool {
@@ -1554,7 +1554,7 @@ mod tests {
 
     impl OrdUpperBound for TestKeyWithDefaultLayerKey {
         fn cmp_upper_bound(&self, other: &TestKeyWithDefaultLayerKey) -> std::cmp::Ordering {
-            self.0.end.cmp(&other.0.end)
+            self.0.end.cmp(&other.0.end).then(other.0.start.cmp(&self.0.start))
         }
     }
 

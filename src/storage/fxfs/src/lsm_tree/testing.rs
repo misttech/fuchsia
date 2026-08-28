@@ -20,7 +20,8 @@ use std::ops::Range;
 /// (like `Extent` in production).
 ///
 /// Invariants:
-/// - `cmp_upper_bound` compares `end` first, then `start` (total ordering).
+/// - `cmp_upper_bound` compares `end` first, then `start` descending (total ordering matching
+///   (end, len)).
 /// - `cmp_lower_bound` compares `start` only.
 /// - `SortByU64` returns `end` to align with `cmp_upper_bound`.
 #[derive(
@@ -53,15 +54,15 @@ impl LayerKey for TestKey {
     }
 
     fn next_key(&self) -> Option<Self> {
-        Some(TestKey(0..self.0.end + 1))
+        Some(TestKey(self.0.end..self.0.end + 1))
     }
 
     fn search_key(&self) -> Option<Self> {
-        Some(TestKey(0..self.0.start + 1))
+        Some(TestKey(self.0.start..self.0.start + 1))
     }
 
     fn is_search_key(&self) -> bool {
-        self.0.start == 0
+        self.0.end == self.0.start + 1
     }
 
     fn overlaps(&self, other: &Self) -> bool {
@@ -71,7 +72,7 @@ impl LayerKey for TestKey {
 
 impl OrdUpperBound for TestKey {
     fn cmp_upper_bound(&self, other: &TestKey) -> std::cmp::Ordering {
-        self.0.end.cmp(&other.0.end).then(self.0.start.cmp(&other.0.start))
+        self.0.end.cmp(&other.0.end).then(other.0.start.cmp(&self.0.start))
     }
 }
 

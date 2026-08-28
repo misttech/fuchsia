@@ -6,11 +6,13 @@ use crate::lsm_tree::types::{OrdLowerBound, OrdUpperBound};
 use crate::round::{round_down, round_up};
 use crate::serialized_types::serialized_key::{KeyDeserializer, KeySerializer, SerializeKey};
 use crate::serialized_types::varint::Buffer;
+use anyhow::Context as _;
 use fprint::TypeFingerprint;
 use serde::{Deserialize, Serialize};
 use std::cmp::{max, min};
 use std::hash::Hash;
 use std::ops::Range;
+use zx_status::Status;
 
 /// Extent represents a physical or logical range of bytes, aligned to a 512-byte boundary.
 #[derive(Clone, Debug, Eq, Hash, PartialEq, Serialize, Deserialize, TypeFingerprint)]
@@ -27,12 +29,12 @@ impl Extent {
         }
     }
 
-    /// Returns the search key for this extent; that is, a key which is <= this key under Ord and
-    /// OrdLowerBound.
+    /// Returns the search key for this extent; that is, a key which is <= this key under
+    /// OrdUpperBound.
     /// This would be used when searching for an extent with |find| (when we want to find any
     /// overlapping extent, which could include extents that start earlier).
     /// For example, if the tree has extents 50..150 and 150..200 and we wish to read 100..200,
-    /// we'd search for 0..101 which would set the iterator to 50..150.
+    /// we'd search for 100..101 which would set the iterator to 50..150.
     pub fn search_key(&self) -> Self {
         assert_ne!(self.start, self.end);
         Extent::search_key_from_offset(self.start)
@@ -41,17 +43,18 @@ impl Extent {
     /// Similar to previous, but from an offset.  Returns a search key that will find the first
     /// extent that touches offset..
     pub fn search_key_from_offset(offset: u64) -> Self {
-        Self(0..offset + 1)
+        Self(offset..offset + 1)
     }
 
     /// Returns the merge key for this extent; that is, a key which is <= this extent and any other
-    /// possibly overlapping extent, under Ord. This would be used to set the hint for |merge_into|.
+    /// possibly overlapping or touching extent, under OrdUpperBound. This is used to set the hint
+    /// for |merge_into|.
     ///
     /// For example, if the tree has extents 0..50, 50..150 and 150..200 and we wish to insert
-    /// 100..150, we'd use a merge hint of 0..100 which would set the iterator to 50..150 (the first
-    /// element > 100..150 under Ord).
+    /// 100..150, we'd use a merge hint of 100..100 which would set the iterator to 50..150
+    /// (the first element >= 100..100 under OrdUpperBound).
     pub fn key_for_merge_into(&self) -> Self {
-        Self(0..self.start)
+        Self(self.start..self.start)
     }
 
     /// Returns an iterator over the Extent partitions which overlap this key (see `FuzzyHash`).
@@ -61,6 +64,14 @@ impl Extent {
                 ..round_up(self.end, EXTENT_HASH_BUCKET_SIZE).unwrap_or(u64::MAX),
         }
     }
+
+    pub fn overlaps(&self, other: &Extent) -> bool {
+        self.start < other.end && self.end > other.start
+    }
+
+    pub fn is_search_key(&self) -> bool {
+        self.0.end == self.0.start + 1
+    }
 }
 
 impl SerializeKey for Extent {
@@ -68,14 +79,21 @@ impl SerializeKey for Extent {
         assert_eq!(self.0.end % 512, 0, "Extent end must be 512-byte aligned");
         assert_eq!(self.0.start % 512, 0, "Extent start must be 512-byte aligned");
         serializer.write_u64(self.0.end / 512);
-        serializer.write_u64(self.0.start / 512);
+        serializer.write_u64((self.0.end - self.0.start) / 512);
     }
 
     fn deserialize_key_from(deserializer: &mut KeyDeserializer<'_>) -> Result<Self, anyhow::Error> {
-        let end =
-            deserializer.read_u64()?.checked_mul(512).ok_or_else(|| anyhow::anyhow!("Overflow"))?;
-        let start =
-            deserializer.read_u64()?.checked_mul(512).ok_or_else(|| anyhow::anyhow!("Overflow"))?;
+        let end = deserializer
+            .read_u64()?
+            .checked_mul(512)
+            .ok_or(Status::IO_DATA_INTEGRITY)
+            .context("Overflow")?;
+        let len = deserializer
+            .read_u64()?
+            .checked_mul(512)
+            .ok_or(Status::IO_DATA_INTEGRITY)
+            .context("Overflow")?;
+        let start = end.checked_sub(len).ok_or(Status::IO_DATA_INTEGRITY).context("Underflow")?;
         Ok(Self(start..end))
     }
 }
@@ -139,24 +157,25 @@ impl Iterator for ExtentPartitionIterator {
 
 impl ExactSizeIterator for ExtentPartitionIterator {}
 
-// The normal comparison uses the end of the range before the start of the range. This makes
-// searching for records easier because it's easy to find K.. (where K is the key you are searching
-// for), which is what we want since our search routines find items with keys >= a search key.
-// OrdLowerBound orders by the start of an extent.
+// OrdUpperBound compares the end of the extent first, breaking ties by comparing the start
+// descending (i.e. shorter extents sort first). This matches the serialized (end, len) layout
+// and allows search routines to find overlapping extents using search_key().
 impl OrdUpperBound for Extent {
     fn cmp_upper_bound(&self, other: &Extent) -> std::cmp::Ordering {
         // The comparison uses the end of the range so that we can more easily do queries. Ties
-        // are broken by comparing the range start to provide a total ordering consistent with
-        // serialization. Since we do not support overlapping keys within the same layer, ties can
-        // always be broken using layer index. Insertions into the mutable layer should always be
-        // done using merge_into, which will ensure keys don't end up overlapping.
-        self.end.cmp(&other.end).then(self.start.cmp(&other.start))
+        // are broken by comparing the range start descending to match (end, len) layout.
+        // This prepares for key serialization where extents are encoded as (end, len) (enabling
+        // cheap varint length encoding) so byte-wise serialized comparisons match cmp_upper_bound.
+        //
+        // Well-formed layer files never contain overlapping extents, so ties on `end` never
+        // occur within a single layer, ensuring existing layer ordering is unaffected.
+        self.end.cmp(&other.end).then(other.start.cmp(&self.start))
     }
 }
 
 impl OrdLowerBound for Extent {
-    // Orders by the start of the range rather than the end, and doesn't include the end in the
-    // comparison. This is used when merging, where we want to merge keys in lower-bound order.
+    // Orders by the start of the range rather than the end. This is used exclusively by the
+    // merger min-heap to stream keys out in left-to-right (lower-bound) order.
     fn cmp_lower_bound(&self, other: &Extent) -> std::cmp::Ordering {
         self.start.cmp(&other.start)
     }
@@ -186,7 +205,7 @@ mod tests {
 
     #[test]
     fn test_extent_key_serialization() {
-        let key = Extent(1024..2048);
+        let key = Extent(512..2048);
         let mut buf = Vec::new();
 
         // Serialize
@@ -204,12 +223,12 @@ mod tests {
         assert_eq!(key, decoded_key);
 
         // Verify bytes:
-        // 2048 / 512 = 4.
-        // 1024 / 512 = 2.
+        // end = 2048 / 512 = 4.
+        // len = 1536 / 512 = 3.
         // Delta encoding applies to first field (end = 4). Base is 0. 4 - 0 = 4.
-        // Second field is start = 2. Base is None (taken). So writes 2.
-        // Buffer should be [0, 2, 4, 2].
-        assert_eq!(buf, vec![0, 2, 4, 2]);
+        // Second field is len = 3. Base is None (taken). So writes 3.
+        // Buffer should be [0, 2, 4, 3].
+        assert_eq!(buf, vec![0, 2, 4, 3]);
     }
 
     #[test]
@@ -227,6 +246,23 @@ mod tests {
         let result = Extent::deserialize_key_from(&mut deser);
         assert!(result.is_err());
         assert_eq!(result.unwrap_err().to_string(), "Overflow");
+    }
+
+    #[test]
+    fn test_extent_key_deserialization_underflow() {
+        let mut buf = Vec::new();
+        {
+            let mut ser =
+                crate::serialized_types::serialized_key::KeySerializer::new(&mut buf, None);
+            ser.write_u64(1); // end = 512
+            ser.write_u64(2); // len = 1024 (len > end)
+            ser.finalize();
+        }
+        let (mut deser, length) = KeyDeserializer::new(&buf, None).unwrap();
+        assert_eq!(length, buf.len());
+        let result = Extent::deserialize_key_from(&mut deser);
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err().to_string(), "Underflow");
     }
 
     #[test]
@@ -252,13 +288,13 @@ mod tests {
         let extent = Extent(100..150);
         assert_eq!(extent.cmp_upper_bound(&Extent(0..100)), Ordering::Greater);
         assert_eq!(extent.cmp_upper_bound(&Extent(0..110)), Ordering::Greater);
-        assert_eq!(extent.cmp_upper_bound(&Extent(0..150)), Ordering::Greater);
-        assert_eq!(extent.cmp_upper_bound(&Extent(99..150)), Ordering::Greater);
+        assert_eq!(extent.cmp_upper_bound(&Extent(0..150)), Ordering::Less);
+        assert_eq!(extent.cmp_upper_bound(&Extent(99..150)), Ordering::Less);
         assert_eq!(extent.cmp_upper_bound(&Extent(100..150)), Ordering::Equal);
         assert_eq!(extent.cmp_upper_bound(&Extent(0..151)), Ordering::Less);
         assert_eq!(extent.cmp_upper_bound(&Extent(100..151)), Ordering::Less);
         assert_eq!(extent.cmp_upper_bound(&Extent(150..1000)), Ordering::Less);
-        assert_eq!(extent.cmp_upper_bound(&Extent(101..150)), Ordering::Less);
+        assert_eq!(extent.cmp_upper_bound(&Extent(101..150)), Ordering::Greater);
     }
 
     #[test]
@@ -278,11 +314,49 @@ mod tests {
     #[test]
     fn test_extent_search_and_insertion_key() {
         let extent = Extent(100..150);
-        assert_eq!(extent.search_key(), Extent(0..101));
-        assert_eq!(extent.cmp_lower_bound(&extent.search_key()), Ordering::Greater);
+        assert!(!extent.is_search_key());
+        assert_eq!(extent.search_key(), Extent(100..101));
+        assert!(extent.search_key().is_search_key());
+        assert_eq!(extent.cmp_lower_bound(&extent.search_key()), Ordering::Equal);
         assert_eq!(extent.cmp_upper_bound(&extent.search_key()), Ordering::Greater);
-        assert_eq!(extent.key_for_merge_into(), Extent(0..100));
-        assert_eq!(extent.cmp_lower_bound(&extent.key_for_merge_into()), Ordering::Greater);
+        assert_eq!(extent.key_for_merge_into(), Extent(100..100));
+        assert_eq!(extent.cmp_lower_bound(&extent.key_for_merge_into()), Ordering::Equal);
+        assert_eq!(extent.cmp_upper_bound(&extent.key_for_merge_into()), Ordering::Greater);
+
+        // A search key must always be <= the key it came from under OrdUpperBound.
+        let extent = Extent(100..101);
+        assert!(extent.is_search_key());
+        assert_eq!(extent.search_key(), Extent(100..101));
+        assert_eq!(extent.cmp_lower_bound(&extent.search_key()), Ordering::Equal);
+        assert_eq!(extent.cmp_upper_bound(&extent.search_key()), Ordering::Equal);
+    }
+
+    #[test]
+    fn test_extent_cmp_same_end_descending_start() {
+        // If ends are identical, a higher start offset (shorter len) sorts BEFORE
+        // a lower start offset (longer len) to match the (end, len) serialization layout.
+        let short_extent = Extent(100 * 512..200 * 512);
+        let long_extent = Extent(50 * 512..200 * 512);
+        assert_eq!(short_extent.cmp_upper_bound(&long_extent), Ordering::Less);
+        assert_eq!(long_extent.cmp_upper_bound(&short_extent), Ordering::Greater);
+    }
+
+    #[test]
+    fn test_extent_serialization_compatibility() {
+        let extent = Extent(50 * 512..200 * 512);
+
+        let mut buf = Vec::new();
+        {
+            let mut ser =
+                crate::serialized_types::serialized_key::KeySerializer::new(&mut buf, None);
+            extent.serialize_key_to(&mut ser);
+            ser.finalize();
+        }
+
+        let (mut deser, length) = KeyDeserializer::new(&buf, None).unwrap();
+        assert_eq!(length, buf.len());
+        let decoded = Extent::deserialize_key_from(&mut deser).unwrap();
+        assert_eq!(extent, decoded);
     }
 
     #[test]

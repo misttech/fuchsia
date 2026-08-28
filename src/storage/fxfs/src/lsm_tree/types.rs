@@ -209,6 +209,9 @@ impl<'a, K, V> From<&'a Item<K, V>> for ItemRef<'a, K, V> {
 /// If your keys don't have overlapping ranges that need to be merged, then these can be the same as
 /// std::cmp::Ord (use the DefaultOrdUpperBound and DefaultOrdLowerBound traits).
 
+/// Trait for ordering keys by their upper bound (e.g. `end` for range-based keys).
+///
+/// This ordering is used within layer files and for positioning iterators via `search_key()`.
 pub trait OrdUpperBound {
     fn cmp_upper_bound(&self, other: &Self) -> std::cmp::Ordering;
 }
@@ -222,6 +225,11 @@ impl<T: DefaultOrdUpperBound> OrdUpperBound for T {
     }
 }
 
+/// Trait for ordering keys by their lower bound (e.g. `start` for range-based keys).
+///
+/// This ordering is used exclusively by the merger's min-heap to stream keys out in
+/// left-to-right order (by `start`). It is distinct from `OrdUpperBound` and is not used
+/// with search keys.
 pub trait OrdLowerBound {
     fn cmp_lower_bound(&self, other: &Self) -> std::cmp::Ordering;
 }
@@ -272,21 +280,22 @@ pub trait LayerKey: Clone {
     /// immediately follows the 0..100 key i.e. that there is no possible key, K, such that 0..100 <
     /// K < 100..200, the merger has to consult all other layers to check.  `next_key` should return
     /// a search key for an extent that immediately follows.  In practice, for extents, this should
-    /// be 0..end + 1.
+    /// be `end..end + 1`.
     ///
     /// This is purely an optimisation; the default None will be correct but not performant.
     fn next_key(&self) -> Option<Self> {
         None
     }
-    /// Returns the search key (S) for this key (K), such that when when searching for S in a layer
+    /// Returns the search key (S) for this key (K), such that when searching for S in a layer
     /// file, it returns the earliest possible key that might be relevant to K.  Searching in a
     /// layer file is done using `cmp_upper_bound` and the iterator will be positioned on a key that
     /// is greater than or equal to S.  Returning `None` here is the right thing to do for
     /// non-ranged based keys, in which case K is used to search for the key.  In practice, the
-    /// implementation should return `Some(0..start + 1)` for range based keys and `None` for
-    /// everything else.  As an example, if the tree has extents 50..150 and 150..200 and we wish to
-    /// search for 100..200, search_key would return 0..101 which would position the iterator on
-    /// 50..150.  If this method is overridden, `is_search_key` below should also be overridden.
+    /// implementation should return `Some(start..start + 1)` for range based keys and `None`
+    /// for everything else.  As an example, if the tree has extents 50..150 and 150..200 and we
+    /// wish to search for 100..200, search_key would return 100..101 which would position the
+    /// iterator on 50..150.  If this method is overridden, `is_search_key` below should also be
+    /// overridden.
     fn search_key(&self) -> Option<Self> {
         None
     }

@@ -375,6 +375,79 @@ mod tests {
     }
 
     #[fuchsia::test]
+    async fn test_merge_adjacent_in_mutable_layer() {
+        // Left-to-right insertion
+        {
+            let tree = LSMTree::new(merge, Box::new(NullCache {}));
+
+            let key1 = AllocatorKey { device_range: (4096..135168).into() };
+            let val1 = AllocatorValue::Abs { count: 1, owner_object_id: 3 };
+            tree.merge_into(
+                Item::new(key1.clone(), val1.clone()),
+                &key1.lower_bound_for_merge_into(),
+            );
+
+            let key2 = AllocatorKey { device_range: (135168..139264).into() };
+            let val2 = AllocatorValue::Abs { count: 1, owner_object_id: 3 };
+            tree.merge_into(
+                Item::new(key2.clone(), val2.clone()),
+                &key2.lower_bound_for_merge_into(),
+            );
+
+            // They should be merged into 4096..139264 in the mutable layer.
+            let layer_set = tree.layer_set();
+            let mut merger = layer_set.merger();
+            let mut iter = merger.query(Query::FullScan).await.expect("seek failed");
+
+            let ItemRef { key, value, .. } = iter.get().expect("get failed");
+            assert_eq!(
+                (key, value),
+                (
+                    &AllocatorKey { device_range: (4096..139264).into() },
+                    &AllocatorValue::Abs { count: 1, owner_object_id: 3 }
+                )
+            );
+            iter.advance().await.expect("advance failed");
+            assert!(iter.get().is_none());
+        }
+
+        // Right-to-left (reverse) insertion
+        {
+            let tree = LSMTree::new(merge, Box::new(NullCache {}));
+
+            let key2 = AllocatorKey { device_range: (135168..139264).into() };
+            let val2 = AllocatorValue::Abs { count: 1, owner_object_id: 3 };
+            tree.merge_into(
+                Item::new(key2.clone(), val2.clone()),
+                &key2.lower_bound_for_merge_into(),
+            );
+
+            let key1 = AllocatorKey { device_range: (4096..135168).into() };
+            let val1 = AllocatorValue::Abs { count: 1, owner_object_id: 3 };
+            tree.merge_into(
+                Item::new(key1.clone(), val1.clone()),
+                &key1.lower_bound_for_merge_into(),
+            );
+
+            // They should be merged into 4096..139264 in the mutable layer.
+            let layer_set = tree.layer_set();
+            let mut merger = layer_set.merger();
+            let mut iter = merger.query(Query::FullScan).await.expect("seek failed");
+
+            let ItemRef { key, value, .. } = iter.get().expect("get failed");
+            assert_eq!(
+                (key, value),
+                (
+                    &AllocatorKey { device_range: (4096..139264).into() },
+                    &AllocatorValue::Abs { count: 1, owner_object_id: 3 }
+                )
+            );
+            iter.advance().await.expect("advance failed");
+            assert!(iter.get().is_none());
+        }
+    }
+
+    #[fuchsia::test]
     async fn test_overlapping_boundaries() {
         let base = (50..100, AllocatorValue::Abs { count: 1, owner_object_id: 1 });
 

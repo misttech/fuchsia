@@ -390,13 +390,13 @@ impl LayerKey for ObjectKey {
         match &self.data {
             ObjectKeyData::Attribute(attr_id, AttributeKey::Extent(extent)) => {
                 // This key comes before (or is equal to) any extent starting at or after the
-                // end of `self`. Searching for its `search_key` finds extents that end after
+                // end of `self`. Searching for its `next_key` finds extents that end after
                 // the end of `self`.
                 Some(ObjectKey {
                     object_id: self.object_id,
                     data: ObjectKeyData::Attribute(
                         *attr_id,
-                        AttributeKey::Extent(Extent(0..extent.end + 1)),
+                        AttributeKey::Extent(Extent::search_key_from_offset(extent.end)),
                     ),
                 })
             }
@@ -418,7 +418,9 @@ impl LayerKey for ObjectKey {
 
     fn is_search_key(&self) -> bool {
         match self {
-            Self { data: ObjectKeyData::Attribute(_, AttributeKey::Extent(e)), .. } => e.start == 0,
+            Self { data: ObjectKeyData::Attribute(_, AttributeKey::Extent(e)), .. } => {
+                e.is_search_key()
+            }
             _ => true,
         }
     }
@@ -431,9 +433,7 @@ impl LayerKey for ObjectKey {
             (
                 ObjectKeyData::Attribute(left_attr_id, AttributeKey::Extent(left_key)),
                 ObjectKeyData::Attribute(right_attr_id, AttributeKey::Extent(right_key)),
-            ) if *left_attr_id == *right_attr_id => {
-                left_key.end > right_key.start && left_key.start < right_key.end
-            }
+            ) if *left_attr_id == *right_attr_id => left_key.overlaps(right_key),
             (a, b) => a == b,
         }
     }
@@ -1193,7 +1193,7 @@ mod tests {
     fn test_next_key() {
         assert_eq!(
             ObjectKey::extent(1, AttributeId::TEST_ID, 25..100).next_key().unwrap(),
-            ObjectKey::extent(1, AttributeId::TEST_ID, 0..101)
+            ObjectKey::extent(1, AttributeId::TEST_ID, 100..101)
         );
         assert_eq!(ObjectKey::object(100).next_key(), None);
     }

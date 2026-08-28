@@ -375,9 +375,22 @@ impl FuzzyHash for AllocatorKey {
 }
 
 impl AllocatorKey {
-    /// Returns a new key that is a lower bound suitable for use with merge_into.
-    pub fn lower_bound_for_merge_into(self: &AllocatorKey) -> AllocatorKey {
-        AllocatorKey { device_range: Extent(0..self.device_range.start) }
+    /// Returns a search key for `merge_into` that finds any touching predecessor to coalesce with.
+    ///
+    /// Extents in the tree are sorted by `cmp_upper_bound` as `(end, -start)`:
+    ///
+    /// ```text
+    /// Tree:       [  Predecessor  ) [ Key to insert )
+    /// Offsets:    X              10                20
+    ///
+    /// Search key:                 | (10..10)
+    /// ```
+    ///
+    /// Searching with `10..10` has end=10, len=0. Because shorter extents sort earlier when
+    /// ends match, `10..10` sorts before any valid extent `X..10` (len > 0). This positions the
+    /// iterator at `X..10` so it can be merged with `10..20`.
+    pub fn lower_bound_for_merge_into(&self) -> AllocatorKey {
+        AllocatorKey { device_range: self.device_range.key_for_merge_into() }
     }
 }
 
@@ -387,28 +400,27 @@ impl LayerKey for AllocatorKey {
     }
 
     fn next_key(&self) -> Option<Self> {
-        Some(Self { device_range: Extent(0..self.device_range.end + 1) })
+        Some(Self { device_range: Extent::search_key_from_offset(self.device_range.end) })
     }
 
     fn search_key(&self) -> Option<Self> {
-        Some(Self { device_range: Extent(0..self.device_range.start + 1) })
+        Some(Self { device_range: self.device_range.search_key() })
     }
 
     fn is_search_key(&self) -> bool {
-        self.device_range.start == 0
+        self.device_range.is_search_key()
     }
 
     fn overlaps(&self, other: &Self) -> bool {
-        self.device_range.overlap(&other.device_range).is_some()
+        self.device_range.overlaps(&other.device_range)
     }
 }
 
 impl OrdUpperBound for AllocatorKey {
     fn cmp_upper_bound(&self, other: &AllocatorKey) -> std::cmp::Ordering {
-        self.device_range
-            .end
-            .cmp(&other.device_range.end)
-            .then(self.device_range.start.cmp(&other.device_range.start))
+        // Defer to cmp_upper_bound ordering provided by Extent type which
+        // uses (end, len) to order ranges.
+        self.device_range.cmp_upper_bound(&other.device_range)
     }
 }
 
@@ -2197,7 +2209,7 @@ mod tests {
     use crate::fsck::fsck;
     use crate::lsm_tree::cache::NullCache;
     use crate::lsm_tree::skip_list_layer::SkipListLayer;
-    use crate::lsm_tree::types::{FuzzyHash as _, Item, ItemRef, LayerIterator};
+    use crate::lsm_tree::types::{FuzzyHash as _, Item, ItemRef, LayerIterator, LayerKey as _};
     use crate::lsm_tree::{LSMTree, Query};
     use crate::object_handle::ObjectHandle;
     use crate::object_store::allocator::merge::merge;
@@ -2251,6 +2263,15 @@ mod tests {
         assert_eq!(iter.len(), 0);
         assert_eq!(iter.size_hint(), (0, Some(0)));
         assert_eq!(iter.next(), None);
+    }
+
+    #[test]
+    fn test_allocator_key_search_key() {
+        let key = AllocatorKey { device_range: (100..200).into() };
+        assert!(!key.is_search_key());
+        let search_key = key.search_key().unwrap();
+        assert!(search_key.is_search_key());
+        assert_eq!(search_key.device_range, (100..101).into());
     }
 
     #[test]
