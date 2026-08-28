@@ -169,7 +169,11 @@ class Bindgen:
         # Clang arguments (after the "--").
         args += [
             "--",
-            "-DIS_BINDGEN=1",
+            # Define __BINDGEN__ so C/C++ headers can have an escape hatch in
+            # source when there are bindgen-unfriendly things that cannot be
+            # overrode on the command-line (e.g., to bypass visibility
+            # pragmas).
+            "-D__BINDGEN__=1",
         ]
 
         if self.args.clang_target:
@@ -185,7 +189,23 @@ class Bindgen:
         for i in self.args.include_dir:
             args += ["-I", i]
 
-        args += self.args.extra_clang_flags
+        # Drop "-gz*" debug compression flags as they might not be supported by
+        # the prebuilt libclang, and they do not matter for bindings generation
+        # in any case.
+        args += [
+            flag
+            for flag in self.args.extra_clang_flags
+            if not flag.startswith("-gz")
+        ]
+        args += [
+            # Override hidden symbol visibility from compiler configs so bindgen emits
+            # function bindings.
+            "-fvisibility=default",
+            # Suppress unused entity warnings from headers parsed in isolation.
+            "-Wno-unused-const-variable",
+            "-Wno-unused-function",
+            "-Wno-unused-variable",
+        ]
 
         subprocess.check_call(
             args,

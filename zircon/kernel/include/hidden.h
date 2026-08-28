@@ -4,11 +4,18 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
+#ifndef ZIRCON_KERNEL_INCLUDE_HIDDEN_H_
+#define ZIRCON_KERNEL_INCLUDE_HIDDEN_H_
+
+// Skip visibility pragmas during bindgen to ensure exported function bindings
+// are generated.
+#ifndef __BINDGEN__
 /*
  * Use a pragma to set all objects to hidden, the command-line option does not
  * apply to externs.
  */
 #pragma GCC visibility push(hidden)
+#endif
 
 #ifndef __clang__
 // With GCC, -fasynchronous-unwind-tables emits full .eh_frame and no
@@ -22,3 +29,5 @@
 // corresponding trick is done for assembly files).
 __asm__(".cfi_sections .debug_frame");
 #endif
+
+#endif  // ZIRCON_KERNEL_INCLUDE_HIDDEN_H_

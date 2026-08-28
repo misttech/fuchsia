@@ -1533,6 +1533,14 @@ if (zircon_toolchain == false) {
   default_executable_deps = []
 }
 
+default_common_source_deps = toolchain_variant.source_deps
+foreach(config,
+        toolchain_variant.configs + toolchain_variant.remove_common_configs -
+            toolchain_variant.remove_common_configs) {
+  config = get_label_info(config, "label_no_toolchain")
+  default_common_source_deps += [ "${config}_source_deps" ]
+}
+
 # Rust proc macros don't support (Thin)LTO, so always remove it.
 default_rust_proc_macro_configs = default_shared_library_configs + [
                                     "//build/config/lto",
@@ -2591,7 +2599,7 @@ template("_fuchsia_binary") {
                            ])
 
     # This is implicitly added to every kind of target that can have `sources`.
-    deps += toolchain_variant.source_deps
+    deps += default_common_source_deps
 
     # This is implicitly added to every kind of linking target.
     deps += toolchain_variant.link_deps
@@ -2602,10 +2610,7 @@ template("_fuchsia_binary") {
             toolchain_variant.remove_common_configs) {
       # Expand the label so it always has a `:name` part.
       config = get_label_info(config, "label_no_toolchain")
-      deps += [
-        "${config}_link_deps",
-        "${config}_source_deps",
-      ]
+      deps += [ "${config}_link_deps" ]
     }
 
     if (is_fuchsia && zircon_toolchain == false) {
@@ -4249,15 +4254,7 @@ template("source_set") {
                            ])
 
     # This is implicitly added to every kind of target that can have `sources`.
-    deps += toolchain_variant.source_deps
-    foreach(
-        config,
-        toolchain_variant.configs + toolchain_variant.remove_common_configs -
-            toolchain_variant.remove_common_configs) {
-      # Expand the label so it always has a `:name` part.
-      config = get_label_info(config, "label_no_toolchain")
-      deps += [ "${config}_source_deps" ]
-    }
+    deps += default_common_source_deps
   }
 }
 _built_in_target_types_without_public_wrapper -= [ "source_set" ]
@@ -4299,22 +4296,13 @@ template("static_library") {
                            ])
 
     # This is implicitly added to every kind of target that can have `sources`.
-    deps += toolchain_variant.source_deps
+    deps += default_common_source_deps
 
     if (_is_rust_target) {
       deps += [
         ":${target_name}.rust_compilation_deps",
         ":${target_name}.rust_sources",
       ]
-    }
-
-    foreach(
-        config,
-        toolchain_variant.configs + toolchain_variant.remove_common_configs -
-            toolchain_variant.remove_common_configs) {
-      # Expand the label so it always has a `:name` part.
-      config = get_label_info(config, "label_no_toolchain")
-      deps += [ "${config}_source_deps" ]
     }
 
     if (is_fuchsia && zircon_toolchain == false) {
@@ -4399,15 +4387,7 @@ template("rust_library") {
     ]
 
     # This is implicitly added to every kind of target that can have `sources`.
-    deps += toolchain_variant.source_deps
-    foreach(
-        config,
-        toolchain_variant.configs + toolchain_variant.remove_common_configs -
-            toolchain_variant.remove_common_configs) {
-      # Expand the label so it always has a `:name` part.
-      config = get_label_info(config, "label_no_toolchain")
-      deps += [ "${config}_source_deps" ]
-    }
+    deps += default_common_source_deps
 
     inputs += restat_rust_wrapper_inputs
 
