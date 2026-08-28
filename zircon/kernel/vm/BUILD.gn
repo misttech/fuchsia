@@ -705,6 +705,7 @@ kernel_bindgen_crate("vm-object-bindings") {
     "cpp_vm_object_get_ref_counted",
     "cpp_vm_object_is_resizable",
     "cpp_vm_object_is_contiguous",
+    "cpp_vm_object_is_stream_compatible",
     "cpp_vm_object_resize",
     "cpp_vm_object_set_name",
     "cpp_vm_object_get_name",

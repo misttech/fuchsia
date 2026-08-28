@@ -33,6 +33,7 @@ FFI_ALWAYS_INLINE zx_status_t cpp_vm_object_hint_range(VmObject* vmo, uint64_t o
 FFI_ALWAYS_INLINE uint64_t cpp_vm_object_size(const VmObject* vmo);
 FFI_ALWAYS_INLINE bool cpp_vm_object_is_resizable(const VmObject* vmo);
 FFI_ALWAYS_INLINE bool cpp_vm_object_is_contiguous(const VmObject* vmo);
+FFI_ALWAYS_INLINE bool cpp_vm_object_is_stream_compatible(const VmObject* vmo);
 FFI_ALWAYS_INLINE zx_status_t cpp_vm_object_resize(VmObject* vmo, uint64_t size);
 FFI_ALWAYS_INLINE zx_status_t cpp_vm_object_write(VmObject* vmo, const void* ptr, uint64_t offset,
                                                   size_t len);

@@ -615,3 +615,94 @@ extern "C" FFI_ALWAYS_INLINE zx_info_vmo_t
 cpp_vm_object_dispatcher_get_vmo_info(VmObjectDispatcher* vmo, zx_rights_t rights) {
   return vmo->GetVmoInfo(rights);
 }
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+extern "C" FFI_ALWAYS_INLINE zx_status_t cpp_vm_object_dispatcher_read(VmObjectDispatcher* disp,
+                                                                       char* user_data,
+                                                                       uint64_t offset,
+                                                                       size_t length) {
+  return disp->Read(make_user_out_ptr(user_data), offset, length).first;
+}
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+extern "C" FFI_ALWAYS_INLINE zx_status_t cpp_vm_object_dispatcher_write(VmObjectDispatcher* disp,
+                                                                        const char* user_data,
+                                                                        uint64_t offset,
+                                                                        size_t length) {
+  return disp->Write(make_user_in_ptr(user_data), offset, length).first;
+}
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+extern "C" FFI_ALWAYS_INLINE zx_status_t cpp_vm_object_dispatcher_get_size(VmObjectDispatcher* disp,
+                                                                           uint64_t* size) {
+  return disp->GetSize(size);
+}
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+extern "C" FFI_ALWAYS_INLINE uint64_t
+cpp_vm_object_dispatcher_get_stream_size(const VmObjectDispatcher* disp) {
+  return disp->GetStreamSize();
+}
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+extern "C" FFI_ALWAYS_INLINE zx_status_t cpp_vm_object_dispatcher_set_size(VmObjectDispatcher* disp,
+                                                                           uint64_t size) {
+  return disp->SetSize(size);
+}
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+extern "C" FFI_ALWAYS_INLINE zx_status_t
+cpp_vm_object_dispatcher_set_stream_size(VmObjectDispatcher* disp, uint64_t size) {
+  return disp->SetStreamSize(size);
+}
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+extern "C" FFI_ALWAYS_INLINE zx_status_t cpp_vm_object_dispatcher_range_op(
+    VmObjectDispatcher* disp, uint32_t op, uint64_t offset, uint64_t size, void* buffer,
+    size_t buffer_size, zx_rights_t rights) {
+  return disp->RangeOp(op, offset, size, make_user_inout_ptr(buffer), buffer_size, rights);
+}
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+extern "C" FFI_ALWAYS_INLINE zx_status_t
+cpp_vm_object_dispatcher_set_mapping_cache_policy(VmObjectDispatcher* disp, uint32_t cache_policy) {
+  return disp->SetMappingCachePolicy(static_cast<arch_mmu_flags_t>(cache_policy));
+}
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+extern "C" FFI_ALWAYS_INLINE zx_status_t cpp_vm_object_dispatcher_create_child(
+    VmObjectDispatcher* disp, uint32_t options, uint64_t offset, uint64_t size, bool copy_name,
+    ffi::Uninitialized<fbl::RefPtr<VmObject>>* out_child_vmo) {
+  fbl::RefPtr<VmObject> child_vmo;
+  zx_status_t status = disp->CreateChild(options, offset, size, copy_name, &child_vmo);
+  if (status != ZX_OK) {
+    return status;
+  }
+  out_child_vmo->Initialize(ktl::move(child_vmo));
+  return ZX_OK;
+}
+
+// Creates a child VmObjectDispatcher that shares the parent's StreamSizeManager.
+//
+// Reference children share their size and stream size with the parent VMO dispatcher.
+// This function obtains the parent's StreamSizeManager (allocating one if not yet
+// created) and attaches it to the child dispatcher via VmObjectDispatcher::CreateWithSsm.
+extern "C" zx_status_t cpp_vm_object_dispatcher_create_with_parent_stream_size(
+    VmObjectDispatcher* parent_disp, VmObject* raw_child_vmo, uint32_t raw_initial_mutability,
+    ffi::Uninitialized<KernelHandle<VmObjectDispatcher>>* out_handle, zx_rights_t* out_rights) {
+  fbl::RefPtr<VmObject> child_vmo(raw_child_vmo);
+  auto initial_mutability =
+      static_cast<VmObjectDispatcher::InitialMutability>(raw_initial_mutability);
+  auto ssm = parent_disp->stream_size_manager();
+  if (ssm.is_error()) {
+    return ssm.status_value();
+  }
+  KernelHandle<VmObjectDispatcher> kernel_handle;
+  zx_status_t status = VmObjectDispatcher::CreateWithSsm(
+      ktl::move(child_vmo), ktl::move(*ssm), initial_mutability, &kernel_handle, out_rights);
+  if (status != ZX_OK) {
+    return status;
+  }
+  out_handle->Initialize(ktl::move(kernel_handle));
+  return ZX_OK;
+}

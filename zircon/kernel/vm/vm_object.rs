@@ -19,6 +19,7 @@ use core::pin::Pin;
 use core::ptr::NonNull;
 use fbl::{HasRefCount, Recyclable, RefPtr};
 use kalloc::AllocError;
+use page;
 use vm_object_bindings as bindings;
 use zr::Opaque;
 use zx_status::Status;
@@ -46,6 +47,13 @@ pub struct VmObject {
 
 impl VmObject {
     pub const MAX_SIZE: u64 = bindings::VmObject_MAX_SIZE;
+
+    /// Helper to round to the VMO size multiple (which is `kPageSize`) without overflowing.
+    pub fn round_size(size: u64) -> Result<u64, Status> {
+        let mask = page::MASK as u64;
+        let rounded = size.checked_add(mask).ok_or(Status::OUT_OF_RANGE)? & !mask;
+        Ok(rounded)
+    }
 
     /// Domain-specific conversion: returns raw pointer for `VmObject`.
     pub fn as_raw(&self) -> *mut bindings::VmObject {
@@ -92,6 +100,12 @@ impl VmObject {
     pub fn is_contiguous(&self) -> bool {
         // SAFETY: `self.as_raw()` returns a valid `VmObject` pointer.
         unsafe { bindings::cpp_vm_object_is_contiguous(self.as_raw()) }
+    }
+
+    /// Returns whether the VMO is stream compatible.
+    pub fn is_stream_compatible(&self) -> bool {
+        // SAFETY: `self.as_raw()` returns a valid `VmObject` pointer.
+        unsafe { bindings::cpp_vm_object_is_stream_compatible(self.as_raw()) }
     }
 
     /// Resizes the VMO to the given size.
@@ -741,5 +755,25 @@ unsafe impl Recyclable for VmObject {
 
     fn allocate(_value: Self) -> Result<NonNull<Self>, AllocError> {
         Err(AllocError)
+    }
+}
+
+/// Kernel unit tests for `VmObject`.
+#[cfg(ktest)]
+#[unittest::suite(name = "vm_object_tests")]
+mod tests {
+    use super::VmObject;
+
+    /// Tests rounding sizes to page boundaries without overflowing.
+    #[test]
+    fn test_round_size() {
+        unittest::expect_eq!(VmObject::round_size(0).unwrap(), 0);
+        unittest::expect_eq!(VmObject::round_size(1).unwrap(), page::SIZE as u64);
+        unittest::expect_eq!(VmObject::round_size(page::SIZE as u64).unwrap(), page::SIZE as u64);
+        unittest::expect_eq!(
+            VmObject::round_size(page::SIZE as u64 + 1).unwrap(),
+            2 * page::SIZE as u64
+        );
+        unittest::expect_true!(VmObject::round_size(u64::MAX).is_err());
     }
 }

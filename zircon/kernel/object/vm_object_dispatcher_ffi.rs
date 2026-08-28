@@ -26,4 +26,57 @@ unsafe extern "C" {
         vmo: *mut VmObjectDispatcher,
         rights: zx_types::zx_rights_t,
     ) -> zx_types::zx_info_vmo_t;
+    pub(crate) fn cpp_vm_object_dispatcher_read(
+        disp: *mut VmObjectDispatcher,
+        user_data: *mut u8,
+        offset: u64,
+        length: usize,
+    ) -> zx_status_t;
+    pub(crate) fn cpp_vm_object_dispatcher_write(
+        disp: *mut VmObjectDispatcher,
+        user_data: *const u8,
+        offset: u64,
+        length: usize,
+    ) -> zx_status_t;
+    pub(crate) fn cpp_vm_object_dispatcher_get_size(
+        disp: *mut VmObjectDispatcher,
+        size: *mut u64,
+    ) -> zx_status_t;
+    pub(crate) fn cpp_vm_object_dispatcher_get_stream_size(disp: *const VmObjectDispatcher) -> u64;
+    pub(crate) fn cpp_vm_object_dispatcher_set_size(
+        disp: *mut VmObjectDispatcher,
+        size: u64,
+    ) -> zx_status_t;
+    pub(crate) fn cpp_vm_object_dispatcher_set_stream_size(
+        disp: *mut VmObjectDispatcher,
+        size: u64,
+    ) -> zx_status_t;
+    pub(crate) fn cpp_vm_object_dispatcher_range_op(
+        disp: *mut VmObjectDispatcher,
+        op: u32,
+        offset: u64,
+        size: u64,
+        buffer: *mut u8,
+        buffer_size: usize,
+        rights: zx_rights_t,
+    ) -> zx_status_t;
+    pub(crate) fn cpp_vm_object_dispatcher_set_mapping_cache_policy(
+        disp: *mut VmObjectDispatcher,
+        cache_policy: u32,
+    ) -> zx_status_t;
+    pub(crate) fn cpp_vm_object_dispatcher_create_child(
+        disp: *mut VmObjectDispatcher,
+        options: u32,
+        offset: u64,
+        size: u64,
+        copy_name: bool,
+        out_child_vmo: *mut MaybeUninit<RefPtr<VmObject>>,
+    ) -> zx_status_t;
+    pub(crate) fn cpp_vm_object_dispatcher_create_with_parent_stream_size(
+        parent_disp: *mut VmObjectDispatcher,
+        raw_child_vmo: *mut VmObject,
+        initial_mutability: InitialMutability,
+        out_handle: *mut MaybeUninit<KernelHandle<VmObjectDispatcher>>,
+        out_rights: *mut zx_rights_t,
+    ) -> zx_status_t;
 }

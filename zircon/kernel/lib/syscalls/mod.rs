@@ -33,3 +33,4 @@ mod thread;
 mod ticks;
 mod timer;
 mod vmar;
+mod vmo;

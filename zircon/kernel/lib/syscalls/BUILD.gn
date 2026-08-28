@@ -56,7 +56,6 @@ source_set("impl") {
     "test.cc",
     "thread_ffi.cc",
     "vmar.cc",
-    "vmo.cc",
   ]
   deps = [
     ":dispatch",
@@ -154,6 +153,7 @@ kernel_rust_mod("syscalls-rs") {
     "ticks.rs",
     "timer.rs",
     "vmar.rs",
+    "vmo.rs",
   ]
   deps = [
     "macros:syscalls-macro",
@@ -162,6 +162,7 @@ kernel_rust_mod("syscalls-rs") {
     "//src/lib/kalloc",
     "//src/lib/ksync",
     "//src/lib/zr",
+    "//third_party/rust_crates:pin-init",
     "//third_party/rust_crates:zerocopy",
     "//zircon/kernel/lib/boot-options:boot-options-rs",
     "//zircon/kernel/lib/counters:counters-rs",

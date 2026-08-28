@@ -497,11 +497,29 @@ impl Dispatcher {
     where
         T: DispatcherOps + fbl::HasRefCount + fbl::Recyclable,
     {
+        let (dispatcher, _actual_rights) = Self::get_with_rights_and_actual::<T>(handle, rights)?;
+        Ok(dispatcher)
+    }
+
+    /// Resolves a handle to a dispatcher of type T with required rights and returns its actual rights.
+    ///
+    /// # Errors
+    ///
+    /// - `ZX_ERR_BAD_HANDLE` if `handle` is not valid.
+    /// - `ZX_ERR_WRONG_TYPE` if the dispatcher's type does not match `T::TYPE`.
+    /// - `ZX_ERR_ACCESS_DENIED` if `handle` lacks the requested `rights`.
+    pub fn get_with_rights_and_actual<T>(
+        handle: HandleValue,
+        rights: zx_rights_t,
+    ) -> Result<(RefPtr<T>, zx_rights_t), Status>
+    where
+        T: DispatcherOps + fbl::HasRefCount + fbl::Recyclable,
+    {
         let (dispatcher, actual_rights) = Self::get_and_rights::<T>(handle)?;
         if (actual_rights & rights) != rights {
             return Err(Status::ACCESS_DENIED);
         }
-        Ok(dispatcher)
+        Ok((dispatcher, actual_rights))
     }
 
     /// Resolves a handle to a dispatcher of type T and returns its associated rights.

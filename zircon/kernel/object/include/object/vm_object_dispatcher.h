@@ -32,6 +32,32 @@ const fbl::RefPtr<VmObject>* cpp_vm_object_dispatcher_get_vmo(const VmObjectDisp
 zx_status_t cpp_vm_object_dispatcher_create(
     VmObject* raw_vmo, uint64_t stream_size, uint32_t initial_mutability,
     ffi::Uninitialized<KernelHandle<VmObjectDispatcher>>* out_handle, zx_rights_t* out_rights);
+zx_info_vmo_t cpp_vm_object_dispatcher_get_vmo_info(VmObjectDispatcher* vmo, zx_rights_t rights);
+zx_status_t cpp_vm_object_dispatcher_read(VmObjectDispatcher* disp, char* user_data,
+                                          uint64_t offset, size_t length);
+zx_status_t cpp_vm_object_dispatcher_write(VmObjectDispatcher* disp, const char* user_data,
+                                           uint64_t offset, size_t length);
+zx_status_t cpp_vm_object_dispatcher_get_size(VmObjectDispatcher* disp, uint64_t* size);
+uint64_t cpp_vm_object_dispatcher_get_stream_size(const VmObjectDispatcher* disp);
+zx_status_t cpp_vm_object_dispatcher_set_size(VmObjectDispatcher* disp, uint64_t size);
+zx_status_t cpp_vm_object_dispatcher_set_stream_size(VmObjectDispatcher* disp, uint64_t size);
+zx_status_t cpp_vm_object_dispatcher_range_op(VmObjectDispatcher* disp, uint32_t op,
+                                              uint64_t offset, uint64_t size, void* buffer,
+                                              size_t buffer_size, zx_rights_t rights);
+zx_status_t cpp_vm_object_dispatcher_set_mapping_cache_policy(VmObjectDispatcher* disp,
+                                                              uint32_t cache_policy);
+zx_status_t cpp_vm_object_dispatcher_create_child(
+    VmObjectDispatcher* disp, uint32_t options, uint64_t offset, uint64_t size, bool copy_name,
+    ffi::Uninitialized<fbl::RefPtr<VmObject>>* out_child_vmo);
+
+// Creates a child VmObjectDispatcher that shares the parent's StreamSizeManager.
+//
+// Reference children share their size and stream size with the parent VMO dispatcher.
+// This function obtains the parent's StreamSizeManager (allocating one if not yet
+// created) and attaches it to the child dispatcher via VmObjectDispatcher::CreateWithSsm.
+zx_status_t cpp_vm_object_dispatcher_create_with_parent_stream_size(
+    VmObjectDispatcher* parent_disp, VmObject* raw_child_vmo, uint32_t raw_initial_mutability,
+    ffi::Uninitialized<KernelHandle<VmObjectDispatcher>>* out_handle, zx_rights_t* out_rights);
 }
 
 class VmObjectDispatcher final : public SoloDispatcher<VmObjectDispatcher, ZX_DEFAULT_VMO_RIGHTS>,

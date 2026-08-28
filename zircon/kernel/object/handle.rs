@@ -128,6 +128,22 @@ impl HandleOwner {
     pub fn as_raw(&self) -> *mut core::ffi::c_void {
         self.ptr.as_ptr()
     }
+
+    /// Returns the rights associated with this handle.
+    pub fn rights(&self) -> zx_rights_t {
+        // SAFETY: `self.ptr` is guaranteed to be a valid non-null handle pointer.
+        unsafe { cpp_handle_get_rights(self.ptr.as_ptr()) }
+    }
+
+    /// Returns a reference-counted pointer to the handle's dispatcher.
+    pub fn dispatcher(&self) -> RefPtr<Dispatcher> {
+        let mut out = core::mem::MaybeUninit::<RefPtr<Dispatcher>>::uninit();
+        // SAFETY: `self.ptr` is guaranteed to be a valid non-null handle pointer.
+        unsafe {
+            cpp_handle_get_dispatcher(self.ptr.as_ptr(), &mut out);
+            out.assume_init()
+        }
+    }
 }
 
 impl Drop for HandleOwner {
@@ -190,4 +206,5 @@ unsafe extern "C" {
         handle: *const core::ffi::c_void,
         out_dispatcher: *mut core::mem::MaybeUninit<RefPtr<Dispatcher>>,
     );
+    fn cpp_handle_get_rights(handle: *const core::ffi::c_void) -> zx_rights_t;
 }

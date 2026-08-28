@@ -35,6 +35,10 @@ FFI_ALWAYS_INLINE bool cpp_vm_object_is_contiguous(const VmObject* vmo) {
   return vmo->is_contiguous();
 }
 
+FFI_ALWAYS_INLINE bool cpp_vm_object_is_stream_compatible(const VmObject* vmo) {
+  return vmo->is_stream_compatible();
+}
+
 FFI_ALWAYS_INLINE zx_status_t cpp_vm_object_resize(VmObject* vmo, uint64_t size) {
   return vmo->Resize(size);
 }
