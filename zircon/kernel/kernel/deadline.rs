@@ -99,13 +99,15 @@ impl Deadline {
     }
 
     /// Construct a monotonic deadline using relative duration measured from now.
-    pub const fn after_mono(_after: DurationMono, _slack: TimerSlack) -> Self {
-        unimplemented!()
+    pub fn after_mono(after: DurationMono, slack: TimerSlack) -> Self {
+        let now = crate::platform_rs::timer::current_mono_time();
+        Self { when: InstantUnknown(now.0.saturating_add(after.0)), slack }
     }
 
     /// Construct a boot deadline using relative duration measured from now.
-    pub const fn after_boot(_after: DurationBoot, _slack: TimerSlack) -> Self {
-        unimplemented!()
+    pub fn after_boot(after: DurationBoot, slack: TimerSlack) -> Self {
+        let now = crate::platform_rs::timer::current_boot_time();
+        Self { when: InstantUnknown(now.0.saturating_add(after.0)), slack }
     }
 
     /// Returns the earliest point in time at which this deadline may occur.
