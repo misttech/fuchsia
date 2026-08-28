@@ -179,7 +179,6 @@ tools_bazel_root_targets = [
         ninja = "rfcmeta"
       },
     ]
-    install_host_tool = true
   },
   {
     bazel_label = "//tools/debug/covargs:covargs"
@@ -189,6 +188,10 @@ tools_bazel_root_targets = [
         ninja = "covargs"
       },
     ]
+
+    # Although the commit adding the line below has been reverted,
+    # https://fxrev.dev/1647335 made changes that depend on it.
+    # TODO(https://fxbug.dev/553620187): Revert that CL and remove this line.
     install_host_tool = true  # Required by CI recipe
   },
   {

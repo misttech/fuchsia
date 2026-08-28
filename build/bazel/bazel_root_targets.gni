@@ -95,9 +95,32 @@ if (current_toolchain == host_toolchain) {
                          "target_out_dir") + "/${_root_target.ninja_name}"
 
       copy(_gn_target_name) {
-        outputs = [ "${host_out_dir}/${_root_target.ninja_name}" ]
+        _output_name = _root_target.ninja_name
+        _output_path = "${host_out_dir}/${_output_name}"
+
+        outputs = [ _output_path ]
         sources = [ _ninja_output ]
         deps = [ _root_target.gn_subtarget_label ]
+
+        metadata = {
+          # Avoid emitting tool_paths in non-base toolchains when variants
+          # are enabled, to avoid duplicate tool_paths entries in the
+          # //:tool_paths build API module.
+          if (current_toolchain == toolchain_variant.base) {
+            # Used by //:tool_paths build API module.
+            tool_paths_barrier = []
+            tool_paths = [
+              {
+                cpu = current_cpu
+                label = get_label_info(":${_gn_target_name}",
+                                       "label_with_toolchain")
+                name = _output_name
+                os = current_os
+                path = rebase_path(_output_path, root_build_dir)
+              },
+            ]
+          }
+        }
       }
       _all_deps += [ ":${_gn_target_name}" ]
 
@@ -109,28 +132,24 @@ if (current_toolchain == host_toolchain) {
           # when building tools for multiple host environments, so we only want
           # to do this copy in the base host toolchain to avoid multiple targets
           # generating the same output.
-          _output_name = _root_target.ninja_name
-          _output_path = "${host_tools_dir}/${_output_name}"
-
           copy(_host_tool_target) {
-            outputs = [ _output_path ]
+            outputs = [ "${host_tools_dir}/${_root_target.ninja_name}" ]
             sources = [ _ninja_output ]
-            deps = [ _root_target.gn_subtarget_label ]
+            deps = [
+              # Temporarily depend on the metadata-generating target since some
+              # targets and bots currently depend on this ".host_tool" target.
+              # TODO(https://fxbug.dev/553620187): Replace such dependencies
+              # with the suffixless target, and remove this entry once all such
+              # dependent targets have been replaced.
+              ":${_gn_target_name}",
 
-            metadata = {
-              # Used by //:tool_paths build API module.
-              tool_paths_barrier = []
-              tool_paths = [
-                {
-                  cpu = current_cpu
-                  label = get_label_info(":${_host_tool_target}",
-                                         "label_with_toolchain")
-                  name = _output_name
-                  os = current_os
-                  path = rebase_path(_output_path, root_build_dir)
-                },
-              ]
-            }
+              # TODO(https://fxbug.dev/553620187): Consider instead depending
+              # on and copying from `_gn_target_name`. This better matches the
+              # common pattern of `install_host_tools()` for GN-built tools and
+              # would ensure metadata and anything else that `_gn_target_name`
+              # might do is also done when depending on this target.
+              _root_target.gn_subtarget_label,
+            ]
           }
         } else {
           # Redirect to the base host_toolchain, where the copy rule above is.
