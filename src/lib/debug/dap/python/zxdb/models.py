@@ -80,3 +80,40 @@ class ZxdbThreadEvent(ThreadEvent):
     """Zxdb-specific thread event with processId in body."""
 
     body: ZxdbThreadEventBody
+
+
+class AsyncTaskNode(DapBaseModel):
+    """Represents a node in the async task tree."""
+
+    id: str | None = None
+    name: str | None = None
+    file: str | None = None
+    line: int | None = None
+    children: list["AsyncTaskNode"] = Field(default_factory=list)
+
+
+class AsyncBacktraceUpdateBody(DapBaseModel):
+    """Body of zxdb.updateAsyncBacktrace event.
+
+    Attributes:
+        thread_id: Thread KOID (aliased as 'id' in DAP wire protocol).
+        name: Name of the thread.
+        process_id: Process KOID.
+        tasks: Root list of async task nodes.
+    """
+
+    thread_id: int = Field(alias="id")
+    name: str | None = None
+    process_id: int
+    tasks: list[AsyncTaskNode] = Field(default_factory=list)
+
+
+class AsyncBacktraceUpdate(Event):
+    """Custom event for asynchronous backtrace updates."""
+
+    type: Literal["event"] = "event"
+    event: Literal["zxdb.updateAsyncBacktrace"] = "zxdb.updateAsyncBacktrace"
+    body: AsyncBacktraceUpdateBody
+
+
+AsyncTaskNode.model_rebuild()

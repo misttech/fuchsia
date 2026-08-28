@@ -11,6 +11,7 @@ from typing import Any
 from pydantic import ValidationError
 from pydap.client import DapError
 from zxdb_dap import (
+    AsyncBacktraceUpdate,
     ThreadEvent,
     ZxdbDapClient,
     ZxdbDetachArguments,
@@ -471,6 +472,99 @@ class TestZxdbDapMixin(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(event.body.process_id, 999)
         self.assertEqual(event.body.name, "my_process")
         self.assertEqual(event.body.threads, [1234, 5678])
+
+    def test_async_backtrace_update_event(self) -> None:
+        event_dict = {
+            "seq": 1,
+            "type": "event",
+            "event": "zxdb.updateAsyncBacktrace",
+            "body": {
+                "id": 1234,
+                "name": "main",
+                "processId": 5678,
+                "tasks": [
+                    {
+                        "id": "0x1",
+                        "name": "Task 1",
+                        "file": "foo.cc",
+                        "line": 42,
+                        "children": [
+                            {
+                                "id": "0x2",
+                                "name": "Task 2",
+                                "file": "bar.cc",
+                                "line": 24,
+                                "children": [],
+                            }
+                        ],
+                    }
+                ],
+            },
+        }
+        event = AsyncBacktraceUpdate.model_validate(event_dict)
+        self.assertEqual(event.event, "zxdb.updateAsyncBacktrace")
+        self.assertEqual(event.body.thread_id, 1234)
+        self.assertEqual(event.body.name, "main")
+        self.assertEqual(event.body.process_id, 5678)
+        self.assertEqual(len(event.body.tasks), 1)
+
+        task1 = event.body.tasks[0]
+        self.assertEqual(task1.id, "0x1")
+        self.assertEqual(task1.name, "Task 1")
+        self.assertEqual(task1.file, "foo.cc")
+        self.assertEqual(task1.line, 42)
+        self.assertEqual(len(task1.children), 1)
+
+        task2 = task1.children[0]
+        self.assertEqual(task2.id, "0x2")
+        self.assertEqual(task2.name, "Task 2")
+        self.assertEqual(task2.file, "bar.cc")
+        self.assertEqual(task2.line, 24)
+        self.assertEqual(len(task2.children), 0)
+
+    def test_async_backtrace_update_event_optional_defaults(self) -> None:
+        """Tests deserializing a payload with omitted optional fields."""
+        event_dict = {
+            "seq": 1,
+            "type": "event",
+            "event": "zxdb.updateAsyncBacktrace",
+            "body": {
+                "id": 1234,
+                "name": "main",
+                "processId": 5678,
+                "tasks": [
+                    {
+                        "name": "Task Minimal",
+                    }
+                ],
+            },
+        }
+        event = AsyncBacktraceUpdate.model_validate(event_dict)
+        self.assertEqual(event.body.thread_id, 1234)
+        self.assertEqual(event.body.process_id, 5678)
+        self.assertEqual(len(event.body.tasks), 1)
+
+        task = event.body.tasks[0]
+        self.assertIsNone(task.id)
+        self.assertEqual(task.name, "Task Minimal")
+        self.assertIsNone(task.file)
+        self.assertIsNone(task.line)
+        self.assertEqual(task.children, [])
+
+    def test_async_backtrace_update_event_invalid_event(self) -> None:
+        """Tests that mismatched event discriminators fail validation."""
+        event_dict = {
+            "seq": 1,
+            "type": "event",
+            "event": "invalid.event",
+            "body": {
+                "id": 1234,
+                "name": "main",
+                "tasks": [],
+            },
+        }
+        with self.assertRaises(ValidationError):
+            AsyncBacktraceUpdate.model_validate(event_dict)
 
 
 if __name__ == "__main__":

@@ -3,8 +3,10 @@
 # found in the LICENSE file.
 
 from pydap.client import DapClient
-from pydap.models import ThreadEvent, ThreadEventBody
+from pydap.models import ThreadEvent
 from zxdb_dap.models import (
+    AsyncBacktraceUpdate,
+    AsyncTaskNode,
     ZxdbPauseArguments,
     ZxdbProcessStoppedEvent,
     ZxdbProcessStoppedEventBody,
@@ -30,6 +32,10 @@ class ZxdbDapClient(ZxdbDapMixin, DapClient):
 
 
 __all__ = [
+    # keep-sorted start
+    "AsyncBacktraceUpdate",
+    "AsyncTaskNode",
+    "ThreadEvent",
     "ZxdbDapClient",
     "ZxdbDapMixin",
     "ZxdbDetachArguments",
@@ -41,10 +47,10 @@ __all__ = [
     "ZxdbProcessStoppedEvent",
     "ZxdbProcessStoppedEventBody",
     "ZxdbStackTraceArguments",
-    "ThreadEvent",
     "ZxdbThread",
     "ZxdbThreadEvent",
     "ZxdbThreadEventBody",
     "ZxdbThreadsResponse",
     "ZxdbThreadsResponseBody",
+    # keep-sorted end
 ]
