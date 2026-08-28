@@ -158,11 +158,18 @@ async fn run_tree_name_iterator_server(
                     match values_iter.peek() {
                         None => break,
                         Some(value) => {
-                            bytes_used += 16; // String overhead
-                            bytes_used += fidl::encoding::round_up_to_align(value.len(), 8);
-                            if bytes_used > ZX_CHANNEL_MAX_MSG_BYTES as usize {
+                            let next_bytes = bytes_used
+                                + 16 // String overhead
+                                + fidl::encoding::round_up_to_align(value.len(), 8);
+                            if next_bytes > ZX_CHANNEL_MAX_MSG_BYTES as usize {
+                                if result.is_empty() {
+                                    warn!("Dropping tree name that exceeds channel message size");
+                                    values_iter.next();
+                                    continue;
+                                }
                                 break;
                             }
+                            bytes_used = next_bytes;
                             result.push(values_iter.next().unwrap());
                         }
                     }
@@ -222,6 +229,23 @@ mod tests {
         let (name_iterator, server_end) = fidl::endpoints::create_proxy::<TreeNameIteratorMarker>();
         tree.list_child_names(server_end)?;
         verify_iterator(name_iterator, vec!["lazy-0".to_string()]).await?;
+        Ok(())
+    }
+
+    #[fuchsia::test]
+    async fn oversized_tree_name_is_dropped() -> Result<(), Error> {
+        let (name_iterator, server_end) = fidl::endpoints::create_proxy::<TreeNameIteratorMarker>();
+        let scope = fasync::Scope::new();
+        scope.spawn(async move {
+            let oversized = "a".repeat(ZX_CHANNEL_MAX_MSG_BYTES as usize);
+            run_tree_name_iterator_server(
+                vec![oversized, "normal".to_string()],
+                server_end.into_stream(),
+            )
+            .await
+            .unwrap();
+        });
+        verify_iterator(name_iterator, vec!["normal".to_string()]).await?;
         Ok(())
     }
 

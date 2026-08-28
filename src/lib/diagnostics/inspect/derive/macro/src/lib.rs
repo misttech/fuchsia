@@ -456,7 +456,7 @@ fn derive_inspect_inner(ast: DeriveInput) -> Result<TokenStream, Error> {
                 self,
                 parent: &::fuchsia_inspect_derive::InspectNode,
                 name: impl AsRef<str>
-            ) -> std::result::Result<(), fuchsia_inspect_derive::AttachError> {
+            ) -> std::result::Result<(), ::fuchsia_inspect_derive::AttachError> {
                 #node_setup_stmt
                 #(#iattach_stmts;)*
                 Ok(())

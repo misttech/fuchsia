@@ -18,7 +18,7 @@ pub struct LruCacheNode<T: Unit + Eq + Hash> {
 
 impl<T: Unit + Eq + Hash> LruCacheNode<T> {
     pub fn new(node: Node, capacity: usize) -> Self {
-        Self { node, items: LruCache::new(capacity) }
+        Self { node, items: LruCache::new(std::cmp::max(capacity, 1)) }
     }
 
     /// Insert |item| into `LruCacheNode`.
