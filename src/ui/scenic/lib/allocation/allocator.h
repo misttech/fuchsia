@@ -5,8 +5,8 @@
 #ifndef SRC_UI_SCENIC_LIB_ALLOCATION_ALLOCATOR_H_
 #define SRC_UI_SCENIC_LIB_ALLOCATION_ALLOCATOR_H_
 
+#include <fidl/fuchsia.sysmem2/cpp/wire.h>
 #include <fidl/fuchsia.ui.composition/cpp/fidl.h>
-#include <fuchsia/sysmem2/cpp/fidl.h>
 #include <lib/async/cpp/executor.h>
 #include <lib/inspect/cpp/inspect.h>
 #include <lib/sys/cpp/component_context.h>

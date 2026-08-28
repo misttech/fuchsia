@@ -5,8 +5,9 @@
 #ifndef SRC_UI_SCENIC_LIB_ALLOCATION_BUFFER_COLLECTION_IMPORTER_H_
 #define SRC_UI_SCENIC_LIB_ALLOCATION_BUFFER_COLLECTION_IMPORTER_H_
 
+#include <fidl/fuchsia.sysmem2/cpp/wire.h>
 #include <fidl/fuchsia.ui.composition/cpp/fidl.h>
-#include <fuchsia/sysmem/cpp/fidl.h>
+#include <fuchsia/math/cpp/fidl.h>
 #include <lib/fpromise/promise.h>
 
 #include "src/ui/scenic/lib/allocation/id.h"
