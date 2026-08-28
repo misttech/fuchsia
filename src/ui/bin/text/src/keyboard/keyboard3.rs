@@ -238,6 +238,10 @@ impl KeyboardService {
             {
                 // Get the store lock to make sure all data is modified exclusively.
                 let mut store = store.lock().await;
+                if store.subscribers.contains_key(&view_ref) {
+                    log::warn!("AddListener REJECTED: ViewRef already has a subscriber");
+                    continue;
+                }
                 store.add_new_subscriber(view_ref.clone(), listener.into_proxy());
                 let id = store.add_view_ref(view_ref);
                 view_ref_ids.push(id);

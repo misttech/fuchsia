@@ -32,6 +32,7 @@ impl Service {
     /// This method returns immediately without blocking.
     pub fn spawn_focus_controller(&self, mut stream: fidl_focus::ControllerRequestStream) {
         let keyboard3 = self.keyboard3.clone();
+        let text_manager = self.text_manager.clone();
         fuchsia_async::Task::spawn(
             async move {
                 while let Some(msg) = stream.try_next().await.context(concat!(
@@ -45,6 +46,7 @@ impl Service {
                             keyboard3
                                 .handle_focus_change(view_ref, zx::MonotonicInstant::get())
                                 .await;
+                            text_manager.clear_active_ime().await;
                             responder.send()?;
                         }
                     }

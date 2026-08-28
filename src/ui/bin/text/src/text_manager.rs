@@ -85,6 +85,10 @@ impl TextManager {
         self.state.lock().await.update_keyboard_visibility(false);
     }
 
+    pub async fn clear_active_ime(&self) {
+        self.state.lock().await.active_ime = None;
+    }
+
     /// This is called by the operating system when input from the physical keyboard comes in.
     /// It also is called by legacy onscreen keyboards that just simulate physical keyboard input.
     pub(crate) async fn inject_input(&mut self, event: KeyEvent) -> Result<(), Error> {
