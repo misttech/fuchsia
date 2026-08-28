@@ -427,21 +427,21 @@ macro_rules! assert_nonnull {
 }
 
 #[doc(hidden)]
-pub fn status_name_and_raw(res: Result<(), __Status>) -> (&'static str, core::ffi::c_int) {
+pub fn status_name_and_raw<T>(res: Result<T, __Status>) -> (&'static str, core::ffi::c_int) {
     match res {
-        Ok(()) => ("OK", __sys::ZX_OK),
+        Ok(_) => ("OK", __sys::ZX_OK),
         Err(err) => (err.as_str(), err.into_raw()),
     }
 }
 
 #[doc(hidden)]
-pub fn print_status_comparison_failure(
+pub fn print_status_comparison_failure<T>(
     file: &str,
     line: u32,
     expected: &str,
-    expected_status: Result<(), __Status>,
+    expected_status: Result<T, __Status>,
     actual: &str,
-    actual_status: Result<(), __Status>,
+    actual_status: Result<T, __Status>,
     msg: &str,
 ) {
     let (expected_name, expected_raw) = status_name_and_raw(expected_status);
@@ -522,10 +522,10 @@ macro_rules! expect_err {
         $crate::expect_err!($actual, $expected_err, "")
     };
     ($actual:expr, $expected_err:expr, $msg:expr) => {
-        let a: Result<(), ::unittest::__Status> = $actual.into();
+        let a: Result<_, ::unittest::__Status> = $actual.into();
         let e: ::unittest::__Status = $expected_err.into();
         $crate::check_status_comparison!(
-            a == Err(e),
+            a.as_ref().is_err_and(|err| *err == e),
             false,
             $expected_err,
             Err(e),
@@ -544,10 +544,10 @@ macro_rules! assert_err {
         $crate::assert_err!($actual, $expected_err, "")
     };
     ($actual:expr, $expected_err:expr, $msg:expr) => {
-        let a: Result<(), ::unittest::__Status> = $actual.into();
+        let a: Result<_, ::unittest::__Status> = $actual.into();
         let e: ::unittest::__Status = $expected_err.into();
         $crate::check_status_comparison!(
-            a == Err(e),
+            a.as_ref().is_err_and(|err| *err == e),
             true,
             $expected_err,
             Err(e),
