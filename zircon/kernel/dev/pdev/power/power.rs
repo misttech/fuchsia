@@ -132,6 +132,11 @@ unsafe extern "C" {
         domains: *const PowerDomainConfigFfi,
         domain_count: usize,
     ) -> Result<(), Status>;
+    fn cpp_power_management_set_rate_limits(
+        cpu_mask: u64,
+        min_rate: u64,
+        max_rate: u64,
+    ) -> Result<(), Status>;
 }
 
 /// Registers the provided power domain configurations and energy models with the kernel scheduler.
@@ -139,6 +144,22 @@ pub fn power_management_register_domains(domains: &[PowerDomainConfigFfi]) -> Re
     let ptr = if domains.is_empty() { core::ptr::null() } else { domains.as_ptr() };
     // SAFETY: `domains` is a valid slice of `PowerDomainConfigFfi`.
     unsafe { cpp_power_management_register_domains(ptr, domains.len()) }
+}
+
+/// Sets processing rate limits (min and max) for the CPU cores identified by `cpu_mask`.
+///
+/// # Arguments
+///
+/// * `cpu_mask` - Bitmask of logical CPU cores to update.
+/// * `min_rate` - Minimum processing rate (scaled to `PowerLevel::kUserProcessingRateScale` = 1000).
+/// * `max_rate` - Maximum processing rate.
+pub fn power_management_set_rate_limits(
+    cpu_mask: u64,
+    min_rate: u64,
+    max_rate: u64,
+) -> Result<(), Status> {
+    // SAFETY: Foreign FFI call to C++ kernel scheduler helper.
+    unsafe { cpp_power_management_set_rate_limits(cpu_mask, min_rate, max_rate) }
 }
 
 static DEFAULT_OPS: PdevPowerOps = PdevPowerOps {
@@ -316,9 +337,10 @@ pub unsafe extern "C" fn rust_power_opp_get_domain_count(
 mod tests {
     use crate::pdev_power::{
         PdevPowerOps, PowerCpuState, PowerRebootFlags, power_management_register_domains,
-        rust_pdev_swap_power_for_test, rust_power_cpu_off, rust_power_cpu_on,
-        rust_power_get_cpu_state, rust_power_opp_get, rust_power_opp_get_domain_count,
-        rust_power_opp_set, rust_power_reboot, rust_power_shutdown,
+        power_management_set_rate_limits, rust_pdev_swap_power_for_test, rust_power_cpu_off,
+        rust_power_cpu_on, rust_power_get_cpu_state, rust_power_opp_get,
+        rust_power_opp_get_domain_count, rust_power_opp_set, rust_power_reboot,
+        rust_power_shutdown,
     };
     use core::sync::atomic::{AtomicU32, AtomicU64, Ordering};
     use unittest::{assert_eq, assert_err, assert_ok};
@@ -521,6 +543,13 @@ mod tests {
     #[test]
     fn test_power_management_register_domains_empty() {
         let status = power_management_register_domains(&[]);
+        assert_ok!(status);
+    }
+
+    /// Tests setting rate limits with an empty CPU mask.
+    #[test]
+    fn test_power_management_set_rate_limits_empty_mask() {
+        let status = power_management_set_rate_limits(0, 0, 1000);
         assert_ok!(status);
     }
 }

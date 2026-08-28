@@ -595,6 +595,9 @@ static_assert(alignof(power_domain_config_ffi) == 8, "power_domain_config_ffi al
 zx_status_t cpp_power_management_register_domains(const power_domain_config_ffi* domains,
                                                   size_t domain_count);
 
+zx_status_t cpp_power_management_set_rate_limits(uint64_t cpu_mask, uint64_t min_rate,
+                                                 uint64_t max_rate);
+
 __END_CDECLS
 
 #endif  // ZIRCON_KERNEL_LIB_POWER_MANAGEMENT_INCLUDE_LIB_POWER_MANAGEMENT_ENERGY_MODEL_H_

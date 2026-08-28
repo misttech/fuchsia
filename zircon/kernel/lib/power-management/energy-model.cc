@@ -260,9 +260,44 @@ extern "C" zx_status_t cpp_power_management_register_domains(const power_domain_
   dprintf(INFO, "POWER: Registered power domains in scheduler\n");
   return ZX_OK;
 }
+
+extern "C" zx_status_t cpp_power_management_set_rate_limits(uint64_t cpu_mask_in, uint64_t min_rate,
+                                                            uint64_t max_rate) {
+  cpu_mask_t cpu_mask = static_cast<cpu_mask_t>(cpu_mask_in);
+  const size_t cpu_count = std::popcount(cpu_mask);
+  if (cpu_count == 0) {
+    return ZX_OK;
+  }
+
+  fbl::AllocChecker checker;
+  fbl::Array<zx_cpu_perf_limit_t> limits = fbl::MakeArray<zx_cpu_perf_limit_t>(&checker, cpu_count);
+  if (!checker.check()) {
+    return ZX_ERR_NO_MEMORY;
+  }
+
+  for (size_t i = 0; i < cpu_count; i++) {
+    const cpu_num_t cpu = remove_cpu_from_mask(cpu_mask);
+    DEBUG_ASSERT(cpu != INVALID_CPU);
+    limits[i] = {
+        .logical_cpu_number = cpu,
+        .limit_type = ZX_CPU_PERF_LIMIT_TYPE_RATE,
+        .min = min_rate,
+        .max = max_rate,
+    };
+  }
+  DEBUG_ASSERT(cpu_mask == 0);
+
+  Scheduler::UpdateProcessingLimits(ktl::span{limits.data(), limits.size()});
+  return ZX_OK;
+}
 #else
 extern "C" zx_status_t cpp_power_management_register_domains(const power_domain_config_ffi* domains,
                                                              size_t domain_count) {
+  return ZX_ERR_NOT_SUPPORTED;
+}
+
+extern "C" zx_status_t cpp_power_management_set_rate_limits(uint64_t cpu_mask, uint64_t min_rate,
+                                                            uint64_t max_rate) {
   return ZX_ERR_NOT_SUPPORTED;
 }
 #endif
