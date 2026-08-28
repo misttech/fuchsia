@@ -154,6 +154,7 @@ impl RamdiskControllerInner {
             }
         }
         let guard = scopeguard::guard(node_controller, move |nc| {
+            log::info!("Guard dropped for ramdisk {id}, shutting down scope");
             let _ = nc.remove();
             scope.shutdown();
         });
@@ -164,6 +165,7 @@ impl RamdiskControllerInner {
             let _guard = guard;
             let _instance = instance;
             let _ = fasync::OnSignals::new(&endpoint1, zx::Signals::EVENTPAIR_PEER_CLOSED).await;
+            log::info!("Lifeline peer closed signaled for ramdisk {id}");
             let _ = inner_clone.volume_svc_dir.remove_entry(id.to_string(), false);
             log::info!("Destroyed ramdisk {id}");
         });
