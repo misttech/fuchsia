@@ -6,7 +6,7 @@
 
 #include <cassert>
 
-#include <zxtest/zxtest.h>
+#include <gtest/gtest.h>
 
 // Test cases where the interface is not the first class in the object's
 // inheritance chain.

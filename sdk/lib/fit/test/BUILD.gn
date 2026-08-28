@@ -10,38 +10,10 @@ group("tests") {
   deps = [
     ":fit($host_toolchain)",
     ":fit-test-pkg",
-    ":fit-unittest($host_toolchain)",
-    ":fit-unittest-pkg",
   ]
 }
 
-test("fit-unittest") {
-  output_name = "fit-unittest-test"
-  if (is_fuchsia) {
-    fdio_config = [ "//build/config/fuchsia:fdio_config" ]
-    if (configs + fdio_config - fdio_config != configs) {
-      configs -= fdio_config
-    }
-  }
-  sources = [ "thread_checker_tests.cc" ]
-  deps = [
-    "//sdk/lib/fit",
-    "//zircon/system/ulib/zxtest",
-  ]
-  configs += [ "//build/config:test_exercising_sdk_headers" ]
-  if (is_fuchsia) {
-    deps += [ "//sdk/lib/fdio" ]
-  }
-}
-
-# TODO: Convert these to zxtest and move them into the test above.
 test("fit") {
-  if (is_fuchsia) {
-    fdio_config = [ "//build/config/fuchsia:fdio_config" ]
-    if (configs + fdio_config - fdio_config != configs) {
-      configs -= fdio_config
-    }
-  }
   sources = [
     "defer_tests.cc",
     "examples/function_example1.cc",
@@ -59,20 +31,13 @@ test("fit") {
   ]
   deps = [
     "//sdk/lib/fit",
-    "//zircon/system/ulib/zxtest",
+    "//src/lib/fxl/test:gtest_main",
+    "//src/sys/test_runners/gtest:death_test",
   ]
   configs += [ "//build/config:test_exercising_sdk_headers" ]
-  if (is_fuchsia) {
-    deps += [ "//sdk/lib/fdio" ]
-  }
 }
 
 fuchsia_unittest_package("fit-test-pkg") {
   package_name = "fit"
   deps = [ ":fit" ]
-}
-
-fuchsia_unittest_package("fit-unittest-pkg") {
-  package_name = "fit-unittest-test"
-  deps = [ ":fit-unittest" ]
 }

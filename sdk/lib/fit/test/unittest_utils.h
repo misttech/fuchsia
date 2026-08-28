@@ -7,7 +7,7 @@
 
 #include <stdlib.h>
 
-#include <zxtest/zxtest.h>
+#include <gtest/gtest.h>
 
 // Asserts that a condition is true.  If false, prints an error then
 // aborts the test run.

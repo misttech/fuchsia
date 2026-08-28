@@ -6,7 +6,7 @@
 
 #include <cassert>
 
-#include <zxtest/zxtest.h>
+#include <gtest/gtest.h>
 
 namespace {
 
@@ -64,22 +64,20 @@ TEST(InlineAny, Basic) {
   any = big_align{1};
 #endif
 
-#ifdef __Fuchsia__
-  ASSERT_DEATH([&] { any->a = 0; });
-  ASSERT_DEATH([&] { (void)any->a; });
-  ASSERT_DEATH([&] { any.as<derived>().b = 0; });
-  ASSERT_DEATH([&] { (void)any.as<derived>().b; });
-  ASSERT_DEATH([&] { any.visit([](base a) {}); });
-  ASSERT_DEATH([&] { any.visit([](base& a) {}); });
-  ASSERT_DEATH([&] { any.visit([](const base& a) {}); });
-  ASSERT_DEATH([&] { any.visit([](base* a) {}); });
-  ASSERT_DEATH([&] { any.visit([](const base* a) {}); });
-  ASSERT_DEATH([&] { any.visit_as<derived>([](derived a) {}); });
-  ASSERT_DEATH([&] { any.visit_as<derived>([](derived& a) {}); });
-  ASSERT_DEATH([&] { any.visit_as<derived>([](const derived& a) {}); });
-  ASSERT_DEATH([&] { any.visit_as<derived>([](derived* a) {}); });
-  ASSERT_DEATH([&] { any.visit_as<derived>([](const derived& a) {}); });
-#endif  // __Fuchsia__
+  ASSERT_DEATH(any->a = 0, "");
+  ASSERT_DEATH((void)any->a, "");
+  ASSERT_DEATH(any.as<derived>().b = 0, "");
+  ASSERT_DEATH((void)any.as<derived>().b, "");
+  ASSERT_DEATH(any.visit([](base a) {}), "");
+  ASSERT_DEATH(any.visit([](base& a) {}), "");
+  ASSERT_DEATH(any.visit([](const base& a) {}), "");
+  ASSERT_DEATH(any.visit([](base* a) {}), "");
+  ASSERT_DEATH(any.visit([](const base* a) {}), "");
+  ASSERT_DEATH(any.visit_as<derived>([](derived a) {}), "");
+  ASSERT_DEATH(any.visit_as<derived>([](derived& a) {}), "");
+  ASSERT_DEATH(any.visit_as<derived>([](const derived& a) {}), "");
+  ASSERT_DEATH(any.visit_as<derived>([](derived* a) {}), "");
+  ASSERT_DEATH(any.visit_as<derived>([](const derived& a) {}), "");
 
   any = base{10};
   EXPECT_TRUE(any.has_value());

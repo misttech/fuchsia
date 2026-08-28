@@ -4,7 +4,7 @@
 
 #include <lib/fit/internal/utility.h>
 
-#include <zxtest/zxtest.h>
+#include <gtest/gtest.h>
 
 namespace {
 
