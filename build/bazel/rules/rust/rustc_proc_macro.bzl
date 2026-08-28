@@ -36,7 +36,7 @@ def _rustc_proc_macro_impl(
         name = name,
         rust_rule_name = "rust_proc_macro",
         build_flags = build_flags,
-        target_type = "shared_library",
+        target_type = "rust_shared_library",
     )
 
     rust_proc_macro(
@@ -52,7 +52,7 @@ def _rustc_proc_macro_impl(
             name = "{}_test".format(name),
             rust_rule_name = "rust_test",
             build_flags = build_flags,
-            target_type = "executable",
+            target_type = "rust_executable",
         )
         generate_unit_tests(
             name = name,

@@ -7,7 +7,7 @@
 See README.md file for full technical details.
 """
 
-load(":providers.bzl", "BuildFlagsInfo", "BuildFlagsListInfo")
+load(":providers.bzl", "BuildFlagsInfo")
 
 #############################################################################
 #############################################################################
@@ -109,90 +109,35 @@ build_flags = rule(
     },
 )
 
-# Common attributes for all rules that support build_flags().
-BUILD_FLAGS_ATTRS_KWARGS = {
-    "build_flags": attr.label_list(
-        doc = "List of `build_flags()` targets.",
-        providers = [BuildFlagsInfo],
-        default = [],
-    ),
-    "disable_build_flags": attr.label_list(
-        doc = "List of `build_flags()` targets whose flags should be excluded.",
-        providers = [BuildFlagsInfo],
-        default = [],
-    ),
-}
-
 #############################################################################
 #############################################################################
 #####
-#####    compute_final_build_flags()
+#####    compute_final_build_flags_from()
 #####
 
-def _compute_final_build_flags_from(build_flags_infos, disable_build_flags_infos):
+def compute_final_build_flags_from(build_flags_infos, disabled_build_flags_labels):
     """Compute the final ordered list of BuildFlags for a given target.
 
+    Note that filtering and deduplication happen at the label level, e.g.
+    this does not remove duplicate flags in a given BuildFlagsInfo definition.
+
     Args:
-      build_flags_infos: A list of BuildFlagsInfo from a 'build_flags' target
+      build_flags_infos: A list of `BuildFlagsInfo` from a 'build_flags' target
         attribute.
-      disable_build_flags_infos: A list of BuildFlagsInfo from a 'disable_build_flags' target
-        attribute.
+      disabled_build_flags_labels: A list of labels to `disabled build_flags`
+        targets.
     Returns:
-      A list of BuildFlagsInfo values.
+      The input list, without duplicates, and without items whose label is in
+      `disable_build_flags_labels`.
     """
 
     # Remove duplicate labels. First label wins, so
     # ["//foo", "//bar", "//foo"] is equivalent to ["//foo", "//bar"]
     # and *not* ["//bar", "//foo"]. This is similar to GN.
-    known_labels_set = set()
-    for info in disable_build_flags_infos:
-        known_labels_set.add(info.label)
-    final_infos = []
+    known_labels = set(disabled_build_flags_labels)
+    result = []
     for info in build_flags_infos:
-        if info.label not in known_labels_set:
-            known_labels_set.add(info.label)
-            final_infos.append(info)
-    return final_infos
-
-compute_final_build_flags = rule(
-    doc = "Provides the final ordered list of BuildFlagsInfo values. This is used " +
-          "to generate response files for different action types.",
-    provides = [BuildFlagsListInfo],
-    attrs = BUILD_FLAGS_ATTRS_KWARGS | {
-        "target_type": attr.string(
-            doc = "The type of target being wrapped.",
-            mandatory = True,
-            values = ["common", "executable", "shared_library"],
-        ),
-    },
-    implementation = lambda ctx: [
-        BuildFlagsListInfo(
-            infos = _compute_final_build_flags_from(
-                [target[BuildFlagsInfo] for target in ctx.attr.build_flags],
-                [target[BuildFlagsInfo] for target in ctx.attr.disable_build_flags],
-            ),
-        ),
-    ],
-)
-
-# Constants used to identify the type of actions that require build flags.
-# These are NOT the @rules_cc//cc:action_names.bzl names.
-# LINT.IfChange(action_kinds)
-ACTION_KIND_CPP_COMPILE = "cpp_compile"
-ACTION_KIND_C_COMPILE = "c_compile"
-ACTION_KIND_CPP_LINK = "cpp_link"
-
-CC_ACTION_KINDS = [
-    ACTION_KIND_CPP_COMPILE,
-    ACTION_KIND_C_COMPILE,
-    ACTION_KIND_CPP_LINK,
-]
-
-ACTION_KIND_RUST_COMPILE = "rust_compile"
-
-RUST_ACTION_KINDS = [
-    ACTION_KIND_RUST_COMPILE,
-]
-
-ACTION_KINDS = CC_ACTION_KINDS + RUST_ACTION_KINDS
-# LINT.ThenChange(//build/bazel/scripts/bazel_build_args.py:action_kinds)
+        if info.label not in known_labels:
+            known_labels.add(info.label)
+            result.append(info)
+    return result

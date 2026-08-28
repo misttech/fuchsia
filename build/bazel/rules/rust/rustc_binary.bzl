@@ -36,7 +36,7 @@ def _rustc_binary_impl(
         name = name,
         rust_rule_name = "rust_binary",
         build_flags = build_flags,
-        target_type = "executable",
+        target_type = "rust_executable",
     )
 
     rust_binary(

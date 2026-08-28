@@ -4,7 +4,7 @@
 
 load(
     "@fuchsia_rules_common//build_flags:cc.bzl",
-    "BUILD_FLAGS_ATTRS_KWARGS",
+    "BUILD_FLAGS_CC_ATTRS_KWARGS",
     "wrap_cc_macro_args_with_build_flags",
 )
 load("@rules_cc//cc:defs.bzl", "cc_binary")
@@ -26,7 +26,7 @@ def _fx_cc_binary_impl(
 
         # cc_binary() produces a shared library if linkshared=True, or
         # an executable if it is False (the default).
-        target_type = "shared_library" if kwargs.get("linkshared") else "executable",
+        target_type = "cxx_shared_library" if kwargs.get("linkshared") else "cxx_executable",
     )
 
     cc_binary(
@@ -49,5 +49,5 @@ fx_cc_binary = macro(
             doc = "Unused in Bazel, for GN conversion only.",
             default = [],
         ),
-    } | BUILD_FLAGS_ATTRS_KWARGS,
+    } | BUILD_FLAGS_CC_ATTRS_KWARGS,
 )

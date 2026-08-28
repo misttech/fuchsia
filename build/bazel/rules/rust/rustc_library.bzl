@@ -36,7 +36,7 @@ def _rustc_library_impl(
         name = name,
         rust_rule_name = "rust_library",
         build_flags = build_flags,
-        target_type = "common",
+        target_type = "rust_common",
     )
 
     rust_library(
@@ -52,7 +52,7 @@ def _rustc_library_impl(
             name = "{}_test".format(name),
             rust_rule_name = "rust_test",
             build_flags = build_flags,
-            target_type = "executable",
+            target_type = "rust_executable",
         )
 
         # Even when not set in the parent rustc_library() call, these values appear

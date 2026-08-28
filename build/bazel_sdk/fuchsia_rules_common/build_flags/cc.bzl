@@ -11,30 +11,76 @@ load("@rules_cc//cc/common:cc_common.bzl", "cc_common")
 load("@rules_cc//cc/common:cc_info.bzl", "CcInfo")
 load(
     ":build_flags.bzl",
-    "ACTION_KIND_CPP_COMPILE",
-    "ACTION_KIND_CPP_LINK",
-    "ACTION_KIND_C_COMPILE",
-    "CC_ACTION_KINDS",
-    "compute_final_build_flags",
-    _BUILD_FLAGS_ATTRS_KWARGS = "BUILD_FLAGS_ATTRS_KWARGS",
+    "compute_final_build_flags_from",
 )
 load(
     ":providers.bzl",
+    "BuildFlagsInfo",
     "BuildFlagsListInfo",
 )
 
-# Re-export for callers' convenience.
-BUILD_FLAGS_ATTRS_KWARGS = _BUILD_FLAGS_ATTRS_KWARGS
+# Common attributes for all C++ rules that support build_flags().
+BUILD_FLAGS_CC_ATTRS_KWARGS = {
+    "build_flags": attr.label_list(
+        doc = "List of `build_flags()` targets.",
+        providers = [BuildFlagsInfo],
+        default = [],
+    ),
+    "disable_build_flags": attr.label_list(
+        doc = "List of `build_flags()` targets whose flags should be excluded.",
+        providers = [BuildFlagsInfo],
+        default = [],
+    ),
+}
+
+# The set of valid "target_type" values for wrap_cc_macro_args_with_build_flags()
+BUILD_FLAGS_CC_TARGET_TYPES = set(["cxx_common", "cxx_executable", "cxx_shared_library"])
+
+# Constants used to identify the type of actions that require build flags.
+# These are NOT the @rules_cc//cc:action_names.bzl names.
+# LINT.IfChange(cc_action_kinds)
+ACTION_KIND_CPP_COMPILE = "cpp_compile"
+ACTION_KIND_C_COMPILE = "c_compile"
+ACTION_KIND_CPP_LINK = "cpp_link"
+
+CC_ACTION_KINDS = [
+    ACTION_KIND_CPP_COMPILE,
+    ACTION_KIND_C_COMPILE,
+    ACTION_KIND_CPP_LINK,
+]
+# LINT.ThenChange(//build/bazel/scripts/bazel_build_args.py:cc_action_kinds)
 
 #############################################################################
 #############################################################################
 #####
-#####    compute_build_flags_for_cc_action() and _cc_response_file()
+#####    _final_cc_build_flags(), _compute_build_flags_for_cc_action() and
+#####    _cc_response_file()
 #####
 
-# NOTE: Intentionally public to make it usable by the Bazel C++ toolchain
-# feature() implementation.
-def compute_build_flags_for_cc_action(build_flags_infos, action_kind):
+_final_cc_build_flags = rule(
+    doc = "Provides the final ordered list of BuildFlagsInfo values. This is used " +
+          "to generate response files for different action types.",
+    provides = [BuildFlagsListInfo],
+    attrs = {
+        "target_type": attr.string(
+            doc = "The type of target being wrapped.",
+            mandatory = True,
+            values = list(BUILD_FLAGS_CC_TARGET_TYPES),
+        ),
+    } | BUILD_FLAGS_CC_ATTRS_KWARGS,
+    implementation = lambda ctx: [
+        # For now this basic implementation is enough. A future version
+        # will handle toolchain-specific default build flags too.
+        BuildFlagsListInfo(
+            infos = compute_final_build_flags_from(
+                [target[BuildFlagsInfo] for target in ctx.attr.build_flags],
+                [target[BuildFlagsInfo].label for target in ctx.attr.disable_build_flags],
+            ),
+        ),
+    ],
+)
+
+def _compute_build_flags_for_cc_action(build_flags_infos, action_kind):
     """Compute the list of build flags for a given action kind.
 
     Args:
@@ -81,7 +127,7 @@ def compute_build_flags_for_cc_action(build_flags_infos, action_kind):
 
 def _cc_response_file_internal_impl(ctx):
     build_flags_infos = ctx.attr.final_build_flags[BuildFlagsListInfo].infos
-    flags = compute_build_flags_for_cc_action(build_flags_infos, ctx.attr.action_kind)
+    flags = _compute_build_flags_for_cc_action(build_flags_infos, ctx.attr.action_kind)
     output = ctx.actions.declare_file(ctx.label.name)
     args = ctx.actions.args()
     args.set_param_file_format("shell")
@@ -111,7 +157,7 @@ _cc_response_file_internal = rule(
             values = CC_ACTION_KINDS,
         ),
         "final_build_flags": attr.label(
-            doc = "A _compute_final_build_flags() target label.",
+            doc = "A _final_cc_build_flags() target label.",
             mandatory = True,
             providers = [BuildFlagsListInfo],
         ),
@@ -124,7 +170,7 @@ def _cc_response_file(target_name, action_kind, final_build_flags, testonly):
     Args:
         target_name: Name of the wrapped target that will use the response file.
         action_kind: The kind of C++ action to generate a response file for.
-        final_build_flags: The label of a _compute_final_build_flags() target to use.
+        final_build_flags: The label of a _final_cc_build_flags() target to use.
         testonly: Whether the response file target should be testonly.
 
     Returns:
@@ -144,8 +190,6 @@ def _cc_response_file(target_name, action_kind, final_build_flags, testonly):
 #####
 #####    wrap_cc_macro_args_with_build_flags()
 #####
-
-_VALID_TARGET_TYPES = ["common", "executable", "shared_library"]
 
 def wrap_cc_macro_args_with_build_flags(
         *,
@@ -193,15 +237,15 @@ def wrap_cc_macro_args_with_build_flags(
        build_flags: (list[label]) List of build_flags() labels.
        disable_build_flags: (list[label]) List of build_flags() labels to disable.
        target_type: (string) The type of target being wrapped, must
-          be one of "common", "executable" or "shared_library".
+          be one of "cxx_common", "cxx_executable" or "cxx_shared_library".
     Returns:
        (dict) A new keyword-argument with updated values.
     """
 
-    if target_type not in _VALID_TARGET_TYPES:
+    if target_type not in BUILD_FLAGS_CC_TARGET_TYPES:
         fail("Invalid target_type value ({}), should be one of: {}".format(
             target_type,
-            ", ".join(_VALID_TARGET_TYPES),
+            ", ".join(BUILD_FLAGS_CC_TARGET_TYPES),
         ))
 
     # NOTE: The following is commented out because build_flags and disable_build_flags are
@@ -215,7 +259,7 @@ def wrap_cc_macro_args_with_build_flags(
 
     # Compute the final set of build flags for this target.
     final_build_flags_name = name + ".final_build_flags"
-    compute_final_build_flags(
+    _final_cc_build_flags(
         name = final_build_flags_name,
         build_flags = build_flags,
         disable_build_flags = disable_build_flags,
@@ -252,7 +296,7 @@ def wrap_cc_macro_args_with_build_flags(
     ]
 
     # Only generate and apply linker flags for targets that actually link (executables and shared libraries)
-    if target_type != "common":
+    if target_type != "cxx_common":
         link_response_name = _cc_response_file(
             target_name = name,
             action_kind = ACTION_KIND_CPP_LINK,

@@ -33,7 +33,7 @@ def build_flags_cc_binary_host_test(
         cc_rule_name = "cc_binary",
         build_flags = build_flags,
         disable_build_flags = disable_build_flags,
-        target_type = "executable",
+        target_type = "cxx_executable",
     )
 
     cc_binary(
@@ -65,7 +65,7 @@ def build_flags_cc_library(
         cc_rule_name = "cc_library",
         build_flags = build_flags,
         disable_build_flags = disable_build_flags,
-        target_type = "common",
+        target_type = "cxx_common",
     )
 
     cc_library(

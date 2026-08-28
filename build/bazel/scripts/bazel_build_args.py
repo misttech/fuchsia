@@ -158,19 +158,27 @@ def get_bazel_expanded_actions(
 #####
 
 # Constants used to identify the type of actions that require build_flags() response.
-# LINT.IfChange(action_kinds)
+# LINT.IfChange(cc_action_kinds)
 ACTION_KIND_CPP_COMPILE = "cpp_compile"
 ACTION_KIND_C_COMPILE = "c_compile"
 ACTION_KIND_CPP_LINK = "cpp_link"
-ACTION_KIND_RUST_COMPILE = "rust_compile"
 
-ACTION_KINDS = {
+CC_ACTION_KINDS = {
     ACTION_KIND_CPP_COMPILE,
     ACTION_KIND_C_COMPILE,
     ACTION_KIND_CPP_LINK,
+}
+# LINT.ThenChange(//build/bazel_sdk/fuchsia_rules_common/build_flags/cc.bzl:cc_action_kinds)
+
+# LINT.IfChange(rust_action_kinds)
+ACTION_KIND_RUST_COMPILE = "rust_compile"
+
+RUST_ACTION_KINDS = {
     ACTION_KIND_RUST_COMPILE,
 }
-# LINT.ThenChange(//build/bazel_sdk/fuchsia_rules_common/build_flags/build_flags.bzl:action_kinds)
+# LINT.ThenChange(//build/bazel_sdk/fuchsia_rules_common/build_flags/rust.bzl:rust_action_kinds)
+
+ACTION_KINDS = CC_ACTION_KINDS | RUST_ACTION_KINDS
 
 # A map from response file suffixes to their corresponding
 # action kind. See _generate_response_file() in build_flags.bzl.

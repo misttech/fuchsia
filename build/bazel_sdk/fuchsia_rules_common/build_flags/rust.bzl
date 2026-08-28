@@ -6,9 +6,7 @@ load("@rules_cc//cc/common:cc_common.bzl", "cc_common")
 load("@rules_cc//cc/common:cc_info.bzl", "CcInfo")
 load(
     ":build_flags.bzl",
-    "ACTION_KIND_RUST_COMPILE",
-    "RUST_ACTION_KINDS",
-    "compute_final_build_flags",
+    "compute_final_build_flags_from",
 )
 load(":providers.bzl", "BuildFlagsInfo", "BuildFlagsListInfo")
 
@@ -30,13 +28,51 @@ BUILD_FLAGS_RUST_ATTRS_KWARGS = {
     ),
 }
 
+# The set of valid Rust "target_type" values for wrap_rust_macro_args_with_build_flags()
+BUILD_FLAGS_RUST_TARGET_TYPES = set(["rust_common", "rust_executable", "rust_shared_library"])
+
+# LINT.IfChange(rust_action_kinds)
+ACTION_KIND_RUST_COMPILE = "rust_compile"
+
+RUST_ACTION_KINDS = [
+    ACTION_KIND_RUST_COMPILE,
+]
+# LINT.ThenChange(//build/bazel/scripts/bazel_build_args.py:rust_action_kinds)
+
 #############################################################################
 #############################################################################
 #####
 #####    wrap_rust_rule_with_build_flags()
 #####
 
-def compute_build_flags_for_rust_action(build_flags_infos, action_kind):
+_final_rust_build_flags = rule(
+    doc = "Provides the final ordered list of BuildFlagsInfo values. This is used " +
+          "to generate response files for different action types.",
+    provides = [BuildFlagsListInfo],
+    attrs = {
+        "build_flags": attr.label_list(
+            doc = "List of build_flags() target labels.",
+            providers = [BuildFlagsInfo],
+            default = [],
+        ),
+        "target_type": attr.string(
+            doc = "The type of target being wrapped.",
+            mandatory = True,
+            values = list(BUILD_FLAGS_RUST_TARGET_TYPES),
+        ),
+    },
+    implementation = lambda ctx: [
+        # For now this basic implementation is enough.
+        BuildFlagsListInfo(
+            infos = compute_final_build_flags_from(
+                [target[BuildFlagsInfo] for target in ctx.attr.build_flags],
+                [],  # no disable_build_flags support in Rust for now.
+            ),
+        ),
+    ],
+)
+
+def _compute_build_flags_for_rust_action(build_flags_infos, action_kind):
     """Compute the list of build flags for a given action kind.
 
     Args:
@@ -52,7 +88,7 @@ def compute_build_flags_for_rust_action(build_flags_infos, action_kind):
         for info in build_flags_infos:
             result.extend(info.rustflags)
         for info in build_flags_infos:
-            result.extend(["-Cnative={}".format(lib_dir) for lib_dir in info.lib_dirs])
+            result.extend(["-Lnative={}".format(lib_dir) for lib_dir in info.lib_dirs])
     else:
         fail("Unsupported Rust action kind {}, must be one of: {}".format(
             action_kind,
@@ -62,7 +98,7 @@ def compute_build_flags_for_rust_action(build_flags_infos, action_kind):
 
 def _rust_response_file_internal_impl(ctx):
     build_flags_infos = ctx.attr.final_build_flags[BuildFlagsListInfo].infos
-    flags = compute_build_flags_for_rust_action(build_flags_infos, ctx.attr.action_kind)
+    flags = _compute_build_flags_for_rust_action(build_flags_infos, ctx.attr.action_kind)
     output = ctx.actions.declare_file(ctx.label.name)
     args = ctx.actions.args()
     args.set_param_file_format("multiline")
@@ -91,7 +127,7 @@ _rust_response_file_internal = rule(
             values = RUST_ACTION_KINDS,
         ),
         "final_build_flags": attr.label(
-            doc = "A _compute_final_build_flags() target label.",
+            doc = "A _final_rust_build_flags() target label.",
             mandatory = True,
             providers = [BuildFlagsListInfo],
         ),
@@ -104,7 +140,7 @@ def _rust_response_file(target_name, action_kind, final_build_flags, testonly):
     Args:
         target_name: Name of the wrapped target that will use the response file.
         action_kind: The kind of Rust action to generate a response file for.
-        final_build_flags: The label of a _compute_final_build_flags() target to use.
+        final_build_flags: The label of a _final_rust_build_flags() target to use.
         testonly: Whether the response file target should be testonly.
 
     Returns:
@@ -137,7 +173,7 @@ _rustc_env_file_internal = rule(
     implementation = _rustc_env_file_internal_impl,
     attrs = {
         "final_build_flags": attr.label(
-            doc = "A _compute_final_build_flags() target label.",
+            doc = "A _final_rust_build_flags() target label.",
             mandatory = True,
             providers = [BuildFlagsListInfo],
         ),
@@ -187,10 +223,16 @@ def wrap_rust_macro_args_with_build_flags(
        rust_rule_name: (string) Name of wrapped rust_xxxx() rule.
        build_flags: (list[string]) List of build_flags() labels.
        target_type: (string) The type of target being wrapped, must
-           be one of "common", "executable" or "shared_library".
+           be one of "rust_common", "rust_executable" or "rust_shared_library".
     Returns:
        A new keyword-argument with updated values.
     """
+    if target_type not in BUILD_FLAGS_RUST_TARGET_TYPES:
+        fail("Invalid target_type value ({}), should be one of: {}".format(
+            target_type,
+            ", ".join(BUILD_FLAGS_RUST_TARGET_TYPES),
+        ))
+
     if not build_flags:
         # Note that this check will not work when the lists are empty
         # `select("//conditions/default": [])` values, which happens
@@ -206,10 +248,9 @@ def wrap_rust_macro_args_with_build_flags(
 
     # Compute the final set of build flags for this target.
     final_build_flags_name = name + ".final_build_flags"
-    compute_final_build_flags(
+    _final_rust_build_flags(
         name = final_build_flags_name,
         build_flags = build_flags,
-        disable_build_flags = [],
         target_type = target_type,
         testonly = testonly,
     )

@@ -34,7 +34,7 @@ def build_flags_rust_binary_host_test(
         name = name,
         rust_rule_name = "rust_binary",
         build_flags = build_flags,
-        target_type = "executable",
+        target_type = "rust_executable",
     )
 
     rust_binary(

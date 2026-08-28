@@ -4,7 +4,7 @@
 
 load(
     "@fuchsia_rules_common//build_flags:cc.bzl",
-    "BUILD_FLAGS_ATTRS_KWARGS",
+    "BUILD_FLAGS_CC_ATTRS_KWARGS",
     "wrap_cc_macro_args_with_build_flags",
 )
 load("@rules_cc//cc:defs.bzl", "cc_library")
@@ -24,7 +24,7 @@ def _fx_cc_library_impl(
         cc_rule_name = "cc_library",
         build_flags = build_flags,
         disable_build_flags = disable_build_flags,
-        target_type = "common",
+        target_type = "cxx_common",
     )
 
     cc_library(
@@ -51,5 +51,5 @@ fx_cc_library = macro(
             doc = "Unused in Bazel, for GN conversion only.",
             default = [],
         ),
-    } | BUILD_FLAGS_ATTRS_KWARGS,
+    } | BUILD_FLAGS_CC_ATTRS_KWARGS,
 )
