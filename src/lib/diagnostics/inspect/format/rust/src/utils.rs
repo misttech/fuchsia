@@ -7,6 +7,9 @@ use crate::constants;
 /// Returns the smallest order such that (MIN_ORDER_SHIFT << order) >= size.
 /// Size must be non zero.
 pub fn fit_order(size: usize) -> usize {
+    if size == 0 {
+        return 0;
+    }
     // Safety: `leading_zeros` returns a u32, so this is safe promotion
     (std::mem::size_of::<usize>() * 8 - (size - 1).leading_zeros() as usize)
         .saturating_sub(constants::MIN_ORDER_SHIFT)

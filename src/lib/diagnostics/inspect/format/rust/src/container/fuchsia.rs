@@ -111,7 +111,7 @@ impl BlockContainer for zx::Vmo {
 
     #[inline]
     fn len(&self) -> usize {
-        self.get_size().ok().unwrap() as usize
+        self.get_size().unwrap_or(0) as usize
     }
 }
 

@@ -189,10 +189,8 @@ impl Snapshot {
             Some(BlockType::IntValue) => {
                 let block = block.cast_array_unchecked::<Int>();
                 let values = value_indexes
-                    // Safety: in release mode, this can only error for index-out-of-bounds.
-                    // We check above that indexes are in-bounds.
-                    .map(|i| block.get(i).unwrap())
-                    .collect::<Vec<i64>>();
+                    .map(|i| block.get(i).ok_or(ReaderError::InvalidVmo))
+                    .collect::<Result<Vec<i64>, _>>()?;
                 Property::IntArray(
                     name,
                     // Safety: if the block is an array, it must have an array format.
@@ -203,10 +201,8 @@ impl Snapshot {
             Some(BlockType::UintValue) => {
                 let block = block.cast_array_unchecked::<Uint>();
                 let values = value_indexes
-                    // Safety: in release mode, this can only error for index-out-of-bounds.
-                    // We check above that indexes are in-bounds.
-                    .map(|i| block.get(i).unwrap())
-                    .collect::<Vec<u64>>();
+                    .map(|i| block.get(i).ok_or(ReaderError::InvalidVmo))
+                    .collect::<Result<Vec<u64>, _>>()?;
                 Property::UintArray(
                     name,
                     // Safety: if the block is an array, it must have an array format.
@@ -217,10 +213,8 @@ impl Snapshot {
             Some(BlockType::DoubleValue) => {
                 let block = block.cast_array_unchecked::<Double>();
                 let values = value_indexes
-                    // Safety: in release mode, this can only error for index-out-of-bounds.
-                    // We check above that indexes are in-bounds.
-                    .map(|i| block.get(i).unwrap())
-                    .collect::<Vec<f64>>();
+                    .map(|i| block.get(i).ok_or(ReaderError::InvalidVmo))
+                    .collect::<Result<Vec<f64>, _>>()?;
                 Property::DoubleArray(
                     name,
                     // Safety: if the block is an array, it must have an array format.
@@ -303,6 +297,9 @@ impl Snapshot {
         total_length: usize,
         first_extent: BlockIndex,
     ) -> Result<Vec<u8>, ReaderError> {
+        if total_length > self.buffer.len() {
+            return Err(ReaderError::InvalidVmo);
+        }
         let mut buffer = vec![0u8; total_length];
         let mut offset = 0;
         let mut extent_index = first_extent;
@@ -311,6 +308,9 @@ impl Snapshot {
                 .get_block(extent_index)
                 .and_then(|b| b.cast::<Extent>().ok_or(ReaderError::InvalidVmo))?;
             let content = extent.contents()?;
+            if content.is_empty() {
+                break;
+            }
             let extent_length = cmp::min(total_length - offset, content.len());
             buffer[offset..offset + extent_length].copy_from_slice(&content[..extent_length]);
             offset += extent_length;

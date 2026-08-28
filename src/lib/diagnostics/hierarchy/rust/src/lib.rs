@@ -148,6 +148,9 @@ pub enum MissingValueReason {
 
     /// There was a timeout while reading.
     Timeout,
+
+    /// Maximum link expansion depth was reached.
+    MaxDepthExceeded,
 }
 
 /// Compares the names of two properties or nodes. If both are unsigned integers, then it compares

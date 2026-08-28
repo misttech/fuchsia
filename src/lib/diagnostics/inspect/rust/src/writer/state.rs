@@ -1260,7 +1260,9 @@ impl InnerState {
                 self.free_extents(data_index)?;
             }
             Some(PropertyFormat::StringReference) => {
-                self.release_string_reference(data_index)?;
+                if data_index != BlockIndex::EMPTY {
+                    self.release_string_reference(data_index)?;
+                }
             }
             _ => {
                 return Err(Error::VmoFormat(FormatError::InvalidBufferFormat(
@@ -1494,6 +1496,13 @@ impl InnerState {
         block_index: BlockIndex,
         value: impl Into<Cow<'a, str>>,
     ) -> Result<(), Error> {
+        let format = self.heap.container.block_at_unchecked::<Buffer>(block_index).format();
+        if format != Some(PropertyFormat::StringReference) && format != Some(PropertyFormat::String)
+        {
+            return Err(Error::VmoFormat(FormatError::InvalidBufferFormat(
+                self.heap.container.block_at_unchecked(block_index).format_raw(),
+            )));
+        }
         let value = value.into();
         let old_string_ref_idx =
             self.heap.container.block_at_unchecked::<Buffer>(block_index).extent_index();
@@ -1521,6 +1530,12 @@ impl InnerState {
         block_index: BlockIndex,
         value: &[u8],
     ) -> Result<(), Error> {
+        let format = self.heap.container.block_at_unchecked::<Buffer>(block_index).format();
+        if format != Some(PropertyFormat::Bytes) {
+            return Err(Error::VmoFormat(FormatError::InvalidBufferFormat(
+                self.heap.container.block_at_unchecked(block_index).format_raw(),
+            )));
+        }
         self.free_extents(
             self.heap.container.block_at_unchecked::<Buffer>(block_index).extent_index(),
         )?;

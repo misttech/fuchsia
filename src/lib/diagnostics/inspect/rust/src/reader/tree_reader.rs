@@ -95,13 +95,29 @@ impl TryInto<DiagnosticsHierarchy> for SnapshotTree {
     }
 }
 
+const MAX_EXPAND_DEPTH: usize = 128;
+
 fn expand(
     partial: PartialNodeHierarchy,
     snapshot_children: &mut SnapshotTreeMap,
 ) -> DiagnosticsHierarchy {
-    // TODO(miguelfrde): remove recursion or limit depth.
-    let children =
-        partial.children.into_iter().map(|child| expand(child, snapshot_children)).collect();
+    expand_inner(partial, snapshot_children, 0)
+}
+
+fn expand_inner(
+    partial: PartialNodeHierarchy,
+    snapshot_children: &mut SnapshotTreeMap,
+    depth: usize,
+) -> DiagnosticsHierarchy {
+    let children = if depth >= MAX_EXPAND_DEPTH {
+        vec![]
+    } else {
+        partial
+            .children
+            .into_iter()
+            .map(|child| expand_inner(child, snapshot_children, depth + 1))
+            .collect()
+    };
     let mut hierarchy = DiagnosticsHierarchy::new(partial.name, partial.properties, children);
     for link_value in partial.links {
         let Some(result) = snapshot_children.remove(&link_value.content) else {
@@ -109,7 +125,11 @@ fn expand(
             continue;
         };
 
-        // TODO(miguelfrde): remove recursion or limit depth.
+        if depth >= MAX_EXPAND_DEPTH {
+            hierarchy.add_missing(MissingValueReason::MaxDepthExceeded, link_value.name);
+            continue;
+        }
+
         let result: Result<DiagnosticsHierarchy, ReaderError> =
             result.and_then(|snapshot_tree| snapshot_tree.try_into());
         match result {
@@ -421,6 +441,32 @@ mod tests {
         assert_eq!(hierarchy.missing[0].name, "missing");
         assert_data_tree!(hierarchy, root: {});
         Ok(())
+    }
+
+    #[fuchsia::test]
+    async fn missing_value_max_depth_exceeded() {
+        let partial = PartialNodeHierarchy {
+            name: "root".to_string(),
+            properties: vec![],
+            children: vec![],
+            links: vec![crate::reader::LinkValue {
+                name: "link".to_string(),
+                content: "link-content".to_string(),
+                disposition: LinkNodeDisposition::Child,
+            }],
+        };
+        let mut snapshot_children = SnapshotTreeMap::new();
+        snapshot_children.insert(
+            "link-content".to_string(),
+            Ok(SnapshotTree {
+                snapshot: Snapshot::try_from(&Inspector::default().vmo().await.unwrap()).unwrap(),
+                children: BTreeMap::new(),
+            }),
+        );
+        let hierarchy = expand_inner(partial, &mut snapshot_children, MAX_EXPAND_DEPTH);
+        assert_eq!(hierarchy.missing.len(), 1);
+        assert_eq!(hierarchy.missing[0].reason, MissingValueReason::MaxDepthExceeded);
+        assert_eq!(hierarchy.missing[0].name, "link");
     }
 
     fn test_inspector() -> Inspector {

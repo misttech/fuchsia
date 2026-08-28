@@ -81,6 +81,11 @@ pub fn inspector() -> &'static Inspector {
 
 /// Initializes and returns the singleton component inspector.
 pub fn init_inspector_with_size(max_size: usize) -> &'static Inspector {
+    if LazyLock::get(&INSPECTOR).is_some() {
+        log::warn!(
+            "init_inspector_with_size called after inspector singleton was already initialized"
+        );
+    }
     *INSPECTOR_SIZE.lock() = max_size;
     &INSPECTOR
 }

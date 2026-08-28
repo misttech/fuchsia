@@ -48,6 +48,7 @@ impl CopyBytes for Container {
 impl WriteBytes for Container {
     #[inline]
     fn get_slice_mut_at(&mut self, offset: usize, size: usize) -> Option<&mut [u8]> {
-        self.buffer.get_mut(offset..offset + size)
+        let end = offset.checked_add(size)?;
+        self.buffer.get_mut(offset..end)
     }
 }
