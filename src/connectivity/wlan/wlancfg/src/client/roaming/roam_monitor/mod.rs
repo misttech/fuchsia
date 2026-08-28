@@ -215,7 +215,8 @@ mod test {
         let _exec = TestExecutor::new();
         let (sender, mut receiver) = mpsc::channel(100);
         let mut roam_data_sender = RoamDataSender::new(sender);
-        let ind = fidl_internal::SignalReportIndication { rssi_dbm: -60, snr_db: 30 };
+        let ind =
+            fidl_internal::SignalReportIndication { rssi_dbm: -60, snr_db: 30, tx_rate_500kbps: 0 };
 
         roam_data_sender.send_signal_report_ind(ind).expect("error sending signal report");
 
@@ -262,6 +263,7 @@ mod test {
             .try_send(RoamTriggerData::SignalReportInd(fidl_internal::SignalReportIndication {
                 rssi_dbm: -40,
                 snr_db: 40,
+                tx_rate_500kbps: 0,
             }))
             .expect("failed to send");
 
@@ -337,6 +339,7 @@ mod test {
             .try_send(RoamTriggerData::SignalReportInd(fidl_internal::SignalReportIndication {
                 rssi_dbm: -40,
                 snr_db: 40,
+                tx_rate_500kbps: 0,
             }))
             .expect("failed to send");
 
@@ -458,6 +461,7 @@ mod test {
             .try_send(RoamTriggerData::SignalReportInd(fidl_internal::SignalReportIndication {
                 rssi_dbm: -40,
                 snr_db: 40,
+                tx_rate_500kbps: 0,
             }))
             .expect("failed to send");
 

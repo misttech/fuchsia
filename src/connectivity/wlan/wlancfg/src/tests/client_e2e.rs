@@ -2930,7 +2930,7 @@ fn solicit_roam_scan_weak_rssi(
         exec,
         test_values,
         existing_connection,
-        SignalReportIndication { rssi_dbm: -91, snr_db: 100 },
+        SignalReportIndication { rssi_dbm: -91, snr_db: 100, tx_rate_500kbps: 0 },
     )
 }
 

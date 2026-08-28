@@ -1912,7 +1912,8 @@ mod tests {
         assert_matches!(exec.run_until_stalled(&mut fut), Poll::Pending);
 
         // Send some unexpected response
-        let ind = fidl_internal::SignalReportIndication { rssi_dbm: -20, snr_db: 25 };
+        let ind =
+            fidl_internal::SignalReportIndication { rssi_dbm: -20, snr_db: 25, tx_rate_500kbps: 0 };
         request_handle.send_on_signal_report(&ind).unwrap();
 
         // Future should still be waiting for OnConnectResult event

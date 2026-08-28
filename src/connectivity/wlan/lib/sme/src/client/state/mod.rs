@@ -5549,7 +5549,8 @@ mod tests {
 
         let (cmd, mut connect_txn_stream) = connect_command_one();
         let state = link_up_state(cmd);
-        let input_ind = fidl_internal::SignalReportIndication { rssi_dbm: -42, snr_db: 20 };
+        let input_ind =
+            fidl_internal::SignalReportIndication { rssi_dbm: -42, snr_db: 20, tx_rate_500kbps: 0 };
         let state = state.on_mlme_event(MlmeEvent::SignalReport { ind: input_ind }, &mut h.context);
         let serving_ap_info = assert_matches!(state.status(),
                                                      ClientSmeStatus::Connected(serving_ap_info) =>
@@ -5567,7 +5568,8 @@ mod tests {
                                                  serving_ap_info.signal_report_time);
         assert!(signal_report_time < time_b);
 
-        let input_ind = fidl_internal::SignalReportIndication { rssi_dbm: -24, snr_db: 10 };
+        let input_ind =
+            fidl_internal::SignalReportIndication { rssi_dbm: -24, snr_db: 10, tx_rate_500kbps: 0 };
         let state = state.on_mlme_event(MlmeEvent::SignalReport { ind: input_ind }, &mut h.context);
         let serving_ap_info = assert_matches!(state.status(),
                                                      ClientSmeStatus::Connected(serving_ap_info) =>

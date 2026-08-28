@@ -57,7 +57,11 @@ mod test {
         assert_matches!(
             monitor
                 .handle_roam_trigger_data(RoamTriggerData::SignalReportInd(
-                    fidl_internal::SignalReportIndication { rssi_dbm: -100, snr_db: 0 },
+                    fidl_internal::SignalReportIndication {
+                        rssi_dbm: -100,
+                        snr_db: 0,
+                        tx_rate_500kbps: 0
+                    },
                 ))
                 .await,
             Ok(RoamTriggerDataOutcome::Noop)

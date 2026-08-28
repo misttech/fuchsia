@@ -689,7 +689,8 @@ mod tests {
         });
 
         // Test sending OnSignalReport
-        let input_ind = fidl_internal::SignalReportIndication { rssi_dbm: -40, snr_db: 30 };
+        let input_ind =
+            fidl_internal::SignalReportIndication { rssi_dbm: -40, snr_db: 30, tx_rate_500kbps: 0 };
         sme_proxy
             .unbounded_send(ConnectTransactionEvent::OnSignalReport { ind: input_ind })
             .expect("expect sending ConnectTransactionEvent to succeed");

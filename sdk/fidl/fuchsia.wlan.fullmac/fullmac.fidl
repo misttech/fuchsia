@@ -104,6 +104,9 @@ type EapolTxResult = flexible enum : uint8 {
 type WlanFullmacSignalReportIndication = struct {
     rssi_dbm int8;
     snr_db int8;
+    /// Tx rate in units of 500 kbit/s, which are the units used for
+    /// Supported Rates in IEEE Std 802.11-2024 9.4.2.3
+    tx_rate_500kbps uint32;
 };
 
 /// Describes parameters and capabilities for a single WlanBand.

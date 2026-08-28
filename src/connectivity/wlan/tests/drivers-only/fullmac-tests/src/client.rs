@@ -1109,11 +1109,13 @@ async fn test_signal_report() {
     for i in 0..10 {
         let expected_rssi_dbm = -40 + i;
         let expected_snr_db = 30 + i;
+        let expected_tx_rate = 100 + i as u32;
         fullmac_driver
             .ifc_proxy
             .signal_report(&fidl_fullmac::WlanFullmacSignalReportIndication {
                 rssi_dbm: expected_rssi_dbm,
                 snr_db: expected_snr_db,
+                tx_rate_500kbps: expected_tx_rate,
             })
             .await
             .expect("Could not send SignalReport");
@@ -1121,10 +1123,11 @@ async fn test_signal_report() {
         assert_matches!(
             connect_txn_event_stream.next().await,
             Some(Ok(fidl_sme::ConnectTransactionEvent::OnSignalReport {
-                ind: fidl_internal::SignalReportIndication { rssi_dbm, snr_db }
+                ind: fidl_internal::SignalReportIndication { rssi_dbm, snr_db, tx_rate_500kbps }
             })) => {
                 assert_eq!(rssi_dbm, expected_rssi_dbm);
                 assert_eq!(snr_db, expected_snr_db);
+                assert_eq!(tx_rate_500kbps, expected_tx_rate);
             }
         );
     }

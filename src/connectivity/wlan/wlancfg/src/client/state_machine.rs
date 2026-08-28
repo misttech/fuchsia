@@ -1491,6 +1491,7 @@ mod tests {
             .send_on_signal_report(&fidl_internal::SignalReportIndication {
                 rssi_dbm: -25,
                 snr_db: 30,
+                tx_rate_500kbps: 0,
             })
             .expect("failed to send singal report");
 
@@ -3087,7 +3088,7 @@ mod tests {
             let rssi_1 = -50;
             let snr_1 = 25;
             let fidl_signal_report =
-                fidl_internal::SignalReportIndication { rssi_dbm: rssi_1, snr_db: snr_1 };
+                fidl_internal::SignalReportIndication { rssi_dbm: rssi_1, snr_db: snr_1 , tx_rate_500kbps: 0};
             connect_txn_handle
                 .send_on_signal_report(&fidl_signal_report)
                 .expect("failed to send signal report");
@@ -3119,7 +3120,7 @@ mod tests {
             let rssi_2 = -30;
             let snr_2 = 35;
             let fidl_signal_report =
-                fidl_internal::SignalReportIndication { rssi_dbm: rssi_2, snr_db: snr_2 };
+                fidl_internal::SignalReportIndication { rssi_dbm: rssi_2, snr_db: snr_2 , tx_rate_500kbps: 0};
             connect_txn_handle
                 .send_on_signal_report(&fidl_signal_report)
                 .expect("failed to send signal report");

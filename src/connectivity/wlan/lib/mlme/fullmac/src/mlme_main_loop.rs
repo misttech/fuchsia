@@ -1988,8 +1988,11 @@ mod handle_driver_event_tests {
         let (mut h, mut test_fut) = TestHelper::set_up();
         assert_matches!(h.exec.run_until_stalled(&mut test_fut), Poll::Pending);
 
-        let signal_report_ind =
-            fidl_fullmac::WlanFullmacSignalReportIndication { rssi_dbm: 1, snr_db: 2 };
+        let signal_report_ind = fidl_fullmac::WlanFullmacSignalReportIndication {
+            rssi_dbm: 1,
+            snr_db: 2,
+            tx_rate_500kbps: 0,
+        };
         assert_matches!(
             h.exec.run_until_stalled(&mut h.fullmac_ifc_proxy.signal_report(&signal_report_ind)),
             Poll::Ready(Ok(()))
@@ -1998,7 +2001,10 @@ mod handle_driver_event_tests {
 
         let event = assert_matches!(h.mlme_event_receiver.try_next(), Ok(Some(ev)) => ev);
         let ind = assert_matches!(event, fidl_mlme::MlmeEvent::SignalReport { ind } => ind);
-        assert_eq!(ind, fidl_internal::SignalReportIndication { rssi_dbm: 1, snr_db: 2 });
+        assert_eq!(
+            ind,
+            fidl_internal::SignalReportIndication { rssi_dbm: 1, snr_db: 2, tx_rate_500kbps: 0 }
+        );
     }
 
     #[test]

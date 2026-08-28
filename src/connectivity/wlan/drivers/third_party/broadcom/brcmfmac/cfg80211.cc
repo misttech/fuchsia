@@ -2779,6 +2779,19 @@ static void cfg80211_signal_ind(net_device* ndev) {
     if (brcmf_get_rssi_snr(ndev, &rssi, &snr) == ZX_OK) {
       signal_ind.rssi_dbm = rssi;
       signal_ind.snr_db = snr;
+
+      // Get the negotiated rate
+      uint32_t rate = 0;
+      bcme_status_t fw_err = BCME_OK;
+      int status = brcmf_fil_cmd_data_get(ifp, BRCMF_C_GET_RATE, &rate, sizeof(rate), &fw_err);
+      if (status == ZX_OK) {
+        signal_ind.tx_rate_500kbps = rate;
+      } else {
+        BRCMF_INFO("Failed to get rate: %s, fw err %s", zx_status_get_string(status),
+                   brcmf_fil_get_errstr(fw_err));
+        signal_ind.tx_rate_500kbps = 0;
+      }
+
       // Store the value in ndev (dumped out when link goes down)
       ndev->last_known_rssi_dbm = rssi;
       ndev->last_known_snr_db = snr;

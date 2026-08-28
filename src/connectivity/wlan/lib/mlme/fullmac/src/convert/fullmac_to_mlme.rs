@@ -340,7 +340,11 @@ pub fn convert_channel_switch_info(
 pub fn convert_signal_report_indication(
     ind: fidl_fullmac::WlanFullmacSignalReportIndication,
 ) -> fidl_internal::SignalReportIndication {
-    fidl_internal::SignalReportIndication { rssi_dbm: ind.rssi_dbm, snr_db: ind.snr_db }
+    fidl_internal::SignalReportIndication {
+        rssi_dbm: ind.rssi_dbm,
+        snr_db: ind.snr_db,
+        tx_rate_500kbps: ind.tx_rate_500kbps,
+    }
 }
 pub fn convert_eapol_indication(
     ind: fidl_fullmac::WlanFullmacImplIfcEapolIndRequest,

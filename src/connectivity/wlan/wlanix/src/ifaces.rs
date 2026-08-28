@@ -3311,16 +3311,20 @@ mod tests {
         let test_values = setup_test_manager_with_iface();
 
         assert_matches!(test_values.iface.get_connected_network(), None);
-        test_values
-            .iface
-            .on_signal_report(fidl_internal::SignalReportIndication { rssi_dbm: -40, snr_db: 20 });
+        test_values.iface.on_signal_report(fidl_internal::SignalReportIndication {
+            rssi_dbm: -40,
+            snr_db: 20,
+            tx_rate_500kbps: 0,
+        });
         assert_matches!(test_values.iface.get_connected_network(), None);
 
         *test_values.iface.connected_network.lock() = Some(test_utils::fake_connected_network());
         assert_matches!(test_values.iface.get_connected_network().map(|n| n.rssi), Some(-35));
-        test_values
-            .iface
-            .on_signal_report(fidl_internal::SignalReportIndication { rssi_dbm: -40, snr_db: 20 });
+        test_values.iface.on_signal_report(fidl_internal::SignalReportIndication {
+            rssi_dbm: -40,
+            snr_db: 20,
+            tx_rate_500kbps: 0,
+        });
         assert_matches!(test_values.iface.get_connected_network().map(|n| n.rssi), Some(-40));
     }
 

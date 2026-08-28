@@ -239,7 +239,11 @@ mod tests {
         // Send some data via one of the roam monitor. Ensure that it doesn't error out, which means
         // a created roam monitor is holding the receiver end.
         roam_monitor_sender
-            .send_signal_report_ind(SignalReportIndication { rssi_dbm: -60, snr_db: 30 })
+            .send_signal_report_ind(SignalReportIndication {
+                rssi_dbm: -60,
+                snr_db: 30,
+                tx_rate_500kbps: 0,
+            })
             .expect("error sending data via roam monitor sender");
     }
 
@@ -273,7 +277,11 @@ mod tests {
         // Send some trigger data over a channel. Ensure that it doesn't error out, which means
         // a created roam monitor is holding the receiver end.
         roam_monitor_sender
-            .send_signal_report_ind(SignalReportIndication { rssi_dbm: -60, snr_db: 30 })
+            .send_signal_report_ind(SignalReportIndication {
+                rssi_dbm: -60,
+                snr_db: 30,
+                tx_rate_500kbps: 0,
+            })
             .expect("error sending data via roam monitor sender");
 
         assert_matches!(exec.run_until_stalled(&mut serve_fut), Poll::Pending);

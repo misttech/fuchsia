@@ -319,6 +319,7 @@ mod test {
             RoamTriggerData::SignalReportInd(fidl_internal::SignalReportIndication {
                 rssi_dbm: rssi,
                 snr_db: TEST_OK_SNR as i8,
+                tx_rate_500kbps: 0,
             });
         let result =
             run_handle_roam_trigger_data(&mut exec, &mut test_values.monitor, trigger_data.clone());
@@ -350,6 +351,7 @@ mod test {
             RoamTriggerData::SignalReportInd(fidl_internal::SignalReportIndication {
                 rssi_dbm: rssi as i8,
                 snr_db: TEST_OK_SNR as i8,
+                tx_rate_500kbps: 0,
             });
 
         // Advance the time so that we allow roam scanning
@@ -381,6 +383,7 @@ mod test {
             RoamTriggerData::SignalReportInd(fidl_internal::SignalReportIndication {
                 rssi_dbm: rssi as i8,
                 snr_db: TEST_OK_SNR as i8,
+                tx_rate_500kbps: 0,
             });
 
         // Advance the time less than the minimum scan backoff time.
@@ -423,6 +426,7 @@ mod test {
             RoamTriggerData::SignalReportInd(fidl_internal::SignalReportIndication {
                 rssi_dbm: rssi as i8,
                 snr_db: TEST_OK_SNR as i8,
+                tx_rate_500kbps: 0,
             });
         let mut test_values = setup_test_with_data(connection_data);
 
@@ -490,6 +494,7 @@ mod test {
             RoamTriggerData::SignalReportInd(fidl_internal::SignalReportIndication {
                 rssi_dbm: rssi as i8,
                 snr_db: TEST_OK_SNR as i8,
+                tx_rate_500kbps: 0,
             });
         let mut test_values = setup_test_with_data(connection_data);
 
@@ -544,6 +549,7 @@ mod test {
             RoamTriggerData::SignalReportInd(fidl_internal::SignalReportIndication {
                 rssi_dbm: rssi as i8,
                 snr_db: TEST_OK_SNR as i8,
+                tx_rate_500kbps: 0,
             });
         let mut test_values = setup_test_with_data(connection_data);
 
@@ -577,6 +583,7 @@ mod test {
             RoamTriggerData::SignalReportInd(fidl_internal::SignalReportIndication {
                 rssi_dbm: (rssi - MIN_RSSI_DROP_TO_RESET_BACKOFF) as i8,
                 snr_db: TEST_OK_SNR as i8,
+                tx_rate_500kbps: 0,
             });
         assert_matches!(
             run_handle_roam_trigger_data(&mut exec, &mut test_values.monitor, trigger_data.clone()),
@@ -678,6 +685,7 @@ mod test {
             RoamTriggerData::SignalReportInd(fidl_internal::SignalReportIndication {
                 rssi_dbm: -80,
                 snr_db: TEST_OK_SNR as i8,
+                tx_rate_500kbps: 0,
             });
         let _ =
             run_handle_roam_trigger_data(&mut exec, &mut test_values.monitor, trigger_data.clone());
@@ -712,6 +720,7 @@ mod test {
             RoamTriggerData::SignalReportInd(fidl_internal::SignalReportIndication {
                 rssi_dbm: rssi,
                 snr_db: TEST_OK_SNR as i8,
+                tx_rate_500kbps: 0,
             });
         let trigger_result =
             run_handle_roam_trigger_data(&mut exec, &mut test_values.monitor, trigger_data.clone());
@@ -743,6 +752,7 @@ mod test {
             RoamTriggerData::SignalReportInd(fidl_internal::SignalReportIndication {
                 rssi_dbm: rssi as i8,
                 snr_db: TEST_OK_SNR as i8,
+                tx_rate_500kbps: 0,
             });
 
         exec.set_fake_time(fasync::MonotonicInstant::after(
@@ -792,6 +802,7 @@ mod test {
             RoamTriggerData::SignalReportInd(fidl_internal::SignalReportIndication {
                 rssi_dbm: rssi as i8,
                 snr_db: TEST_OK_SNR as i8,
+                tx_rate_500kbps: 0,
             });
 
         // Advance time just enough to be after the last roam event.

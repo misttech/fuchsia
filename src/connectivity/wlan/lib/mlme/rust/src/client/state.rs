@@ -904,6 +904,7 @@ impl Associated {
             ind: fidl_internal::SignalReportIndication {
                 rssi_dbm: self.0.signal_strength_average.avg_dbm().0,
                 snr_db: 0,
+                tx_rate_500kbps: 0,
             },
         }) {
             error!("Error sending MLME-SignalReport: {}", e)

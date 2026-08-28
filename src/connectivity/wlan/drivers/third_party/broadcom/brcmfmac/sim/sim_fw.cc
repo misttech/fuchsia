@@ -486,6 +486,13 @@ zx_status_t SimFirmware::BusTxCtl(unsigned char* msg, unsigned int len) {
       }
       break;
     }
+    case BRCMF_C_GET_RATE: {
+      uint32_t rate = 130;  // 65 Mbps (130 * 500kbps)
+      if ((status = SIM_FW_CHK_CMD_LEN(dcmd->len, sizeof(rate))) == ZX_OK) {
+        std::memcpy(data, &rate, sizeof(rate));
+      }
+      break;
+    }
     case BRCMF_C_GET_GET_PKTCNTS: {
       if (!iface_tbl_[kClientIfidx].allocated) {
         BRCMF_ERR("Client iface has not been allocated.");

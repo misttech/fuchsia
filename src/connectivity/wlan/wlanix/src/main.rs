@@ -5061,7 +5061,7 @@ mod tests {
         establish_open_connection(&mut test_helper, &mut test_fut, &mut mcast_stream);
 
         let mocked_signal_report =
-            fidl_internal::SignalReportIndication { rssi_dbm: -35, snr_db: 20 };
+            fidl_internal::SignalReportIndication { rssi_dbm: -35, snr_db: 20, tx_rate_500kbps: 0 };
         {
             let client_iface = test_helper.iface_manager.get_client_iface();
             let transaction_handle = client_iface.transaction_handle.lock();
