@@ -77,12 +77,12 @@ pub mod device {
         TransmitQueueConfiguration, TxBufferAllocator,
     };
     pub use netstack3_device::{
-        ArpConfiguration, ArpConfigurationUpdate, DeviceBufferBindingsTypes, DeviceClassMatcher,
-        DeviceConfiguration, DeviceConfigurationUpdate, DeviceConfigurationUpdateError,
-        DeviceCounters, DeviceId, DeviceIdAndNameMatcher, DeviceLayerEventDispatcher,
-        DeviceLayerStateTypes, DeviceProvider, DeviceSendFrameError, GroInputItem, GroIter,
-        GroOutputItem, MaybeContiguousBuffer, NdpConfiguration, NdpConfigurationUpdate,
-        WeakDeviceId,
+        ArpConfiguration, ArpConfigurationUpdate, BufferSlice, DeviceBufferBindingsTypes,
+        DeviceClassMatcher, DeviceConfiguration, DeviceConfigurationUpdate,
+        DeviceConfigurationUpdateError, DeviceCounters, DeviceId, DeviceIdAndNameMatcher,
+        DeviceLayerEventDispatcher, DeviceLayerStateTypes, DeviceProvider, DeviceSendFrameError,
+        GroBufferStorage, GroInputItem, GroIter, GroOutputBuffers, GroOutputItem,
+        MaybeContiguousBuffer, NdpConfiguration, NdpConfigurationUpdate, WeakDeviceId,
     };
 }
 

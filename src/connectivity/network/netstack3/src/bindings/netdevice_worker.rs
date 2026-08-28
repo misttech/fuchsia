@@ -19,10 +19,10 @@ use net_types::ethernet::Mac;
 use net_types::ip::{Ip, IpVersion, Ipv4, Ipv6, Ipv6Addr, Mtu, Subnet};
 use net_types::{MulticastAddr, UnicastAddr};
 use netstack3_core::device::{
-    EthernetCreationProperties, EthernetDeviceId, EthernetLinkDevice, EthernetWeakDeviceId,
-    GroInputItem, GroIter, GroOutputItem, MaxEthernetFrameSize, MaybeContiguousBuffer,
-    PureIpDevice, PureIpDeviceCreationProperties, PureIpDeviceId, PureIpDeviceReceiveFrameMetadata,
-    PureIpWeakDeviceId, RecvEthernetFrameMeta,
+    BufferSlice, EthernetCreationProperties, EthernetDeviceId, EthernetLinkDevice,
+    EthernetWeakDeviceId, GroBufferStorage, GroInputItem, GroOutputItem, MaxEthernetFrameSize,
+    MaybeContiguousBuffer, PureIpDevice, PureIpDeviceCreationProperties, PureIpDeviceId,
+    PureIpDeviceReceiveFrameMetadata, PureIpWeakDeviceId, RecvEthernetFrameMeta,
 };
 use netstack3_core::routes::RawMetric;
 use netstack3_core::sync::RwLock as CoreRwLock;
@@ -51,18 +51,10 @@ enum NetdeviceId {
 struct RxBuffer(netdevice_client::Buffer<netdevice_client::Rx>);
 
 impl MaybeContiguousBuffer for RxBuffer {
-    fn len(&self) -> usize {
+    fn linearized<'a, 'b>(&'a mut self, vec: &'b mut Vec<u8>) -> BufferSlice<'a, 'b> {
         let Self(buf) = self;
-        buf.len()
-    }
-
-    fn linearized<'a>(&'a mut self, vec: &'a mut Vec<u8>) -> &'a mut [u8] {
-        let Self(buf) = self;
-        if buf.as_slice().is_some() {
-            // Ok to unwrap because either both or neither of `as_slice` and
-            // `as_slice_mut` return `Some`. Borrow checker limitations prevent
-            // us from just checking `if let Some(...) = buf.as_slice_mut() {`.
-            buf.as_slice_mut().unwrap()
+        if let Some(slice) = buf.as_slice_mut() {
+            BufferSlice::Contiguous(slice)
         } else {
             let frame_length = buf.len();
             if vec.len() < frame_length {
@@ -71,7 +63,7 @@ impl MaybeContiguousBuffer for RxBuffer {
             let slice = &mut vec[..frame_length];
             let read_len = buf.io().read_at(0, slice);
             debug_assert_eq!(read_len, frame_length);
-            slice
+            BufferSlice::Linearized(slice)
         }
     }
 }
@@ -237,10 +229,8 @@ impl NetdeviceWorker {
         };
 
         let mut rx_ready_storage = session.new_rx_ready_storage();
-        // Maintain persistent buffers for GRO coalescing and linearization of
-        // fragmented buffers to avoid repeated allocations.
-        let mut coalescing_buffer = Vec::new();
-        let mut linearization_buffer = Vec::new();
+        // Maintain persistent GRO buffer storage to avoid repeated allocations.
+        let mut gro_storage = GroBufferStorage::new();
         loop {
             let rx_buffers = futures::select! {
                 r = session.recv(&mut rx_ready_storage).fuse() => r.map_err(Error::Client)?,
@@ -253,17 +243,14 @@ impl NetdeviceWorker {
             // batch rather than once per buffer. This should not present a
             // significant problem since ports are seldom added or removed.
             let state = state.lock().await;
-            let mut gro = GroIter::new(
-                rx_buffers.map(build_gro_input),
-                &mut coalescing_buffer,
-                &mut linearization_buffer,
-            );
+            let mut gro = gro_storage.coalesce(rx_buffers.map(build_gro_input));
             while let Some(item) = gro.next() {
                 let GroOutputItem {
                     target: GroPortTarget { port, frame_type },
                     checksum_offload,
-                    slice,
+                    mut buffers,
                 } = item?;
+                let slice = buffers.slice_mut();
 
                 let Some(id) = state.get(&port) else {
                     debug!("dropping frame for port {:?}, no device mapping available", port);

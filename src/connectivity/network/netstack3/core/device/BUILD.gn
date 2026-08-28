@@ -36,15 +36,14 @@ rustc_library_with_features("netstack3-device") {
     "//src/connectivity/network/netstack3/core/hashmap",
     "//src/connectivity/network/netstack3/core/lock-order",
     "//src/lib/network/packet",
+    "//third_party/rust_crates:assert_matches",
     "//third_party/rust_crates:derivative",
     "//third_party/rust_crates:log",
     "//third_party/rust_crates:ref-cast",
   ]
 
-  _testutils_deps = [
-    "//src/connectivity/network/netstack3/core/macros:netstack3-macros",
-    "//third_party/rust_crates:assert_matches",
-  ]
+  _testutils_deps =
+      [ "//src/connectivity/network/netstack3/core/macros:netstack3-macros" ]
 
   configs += [ "//src/connectivity/network/netstack3:netstack3_configs" ]
 

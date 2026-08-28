@@ -127,7 +127,10 @@ pub use internal::config::{
     DeviceConfigurationUpdate, DeviceConfigurationUpdateError, NdpConfiguration,
     NdpConfigurationUpdate,
 };
-pub use internal::gro::{GroInputItem, GroIter, GroOutputItem, MaybeContiguousBuffer};
+pub use internal::gro::{
+    BufferSlice, GroBufferStorage, GroInputItem, GroIter, GroOutputBuffers, GroOutputItem,
+    MaybeContiguousBuffer,
+};
 pub use internal::id::{BaseDeviceId, DeviceId, DeviceProvider, WeakDeviceId};
 pub use internal::state::{
     DeviceStateSpec, DeviceTxOffloadSpecContext, IpLinkDeviceState, IpLinkDeviceStateInner,
