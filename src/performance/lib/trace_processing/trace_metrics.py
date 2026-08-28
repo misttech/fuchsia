@@ -4,9 +4,11 @@
 # found in the LICENSE file.
 """Metrics processing common code for trace models."""
 
+import abc
 import inspect as py_inspect
 import logging
-from typing import MutableSequence, Sequence
+from collections.abc import Collection, Sequence
+from typing import MutableSequence
 
 from reporting import metrics
 from trace_processing import trace_model
@@ -14,7 +16,7 @@ from trace_processing import trace_model
 _LOGGER: logging.Logger = logging.getLogger("Performance")
 
 
-class MetricsProcessor:
+class MetricsProcessor(metaclass=abc.ABCMeta):
     """MetricsProcessor converts a trace_model.Model into TestCaseResults.
 
     This base class is extended to implement various types of metrics.
@@ -101,9 +103,10 @@ class MetricsProcessor:
         """
         return []
 
+    @abc.abstractmethod
     def process_metrics(
         self, model: trace_model.Model
-    ) -> MutableSequence[metrics.TestCaseResult]:
+    ) -> Collection[metrics.TestCaseResult]:
         """Generates metrics from the given model.
 
         Args:
@@ -112,7 +115,7 @@ class MetricsProcessor:
         Returns:
             The generated metrics.
         """
-        return []
+        raise NotImplementedError()
 
     def process_freeform_metrics(
         self, model: trace_model.Model

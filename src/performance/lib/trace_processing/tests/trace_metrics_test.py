@@ -10,6 +10,7 @@ import os
 import pathlib
 import tempfile
 import unittest
+from collections.abc import Collection
 
 import trace_processing.metrics.app_render as app_render_metrics
 import trace_processing.metrics.cpu as cpu_metrics
@@ -321,6 +322,12 @@ class MetricProcessorsTest(unittest.TestCase):
 
     class TestMetricsProcessor(trace_metrics.MetricsProcessor):
         """TEST"""
+
+        def process_metrics(
+            self, model: trace_model.Model
+        ) -> Collection[metrics.TestCaseResult]:
+            # If ever called, this can be implemented.
+            raise NotImplementedError()
 
     def test_auto_doc(self) -> None:
         docs = self.TestMetricsProcessor().describe([])
