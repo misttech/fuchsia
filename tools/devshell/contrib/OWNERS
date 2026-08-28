@@ -1,5 +1,6 @@
 per-file add-host-test=crjohns@google.com
 per-file add-test=crjohns@google.com
+per-file agents = file: /tools/agents/OWNERS
 per-file arm-esr.fx=maniscalco@google.com
 per-file bazel2gn=jayzhuang@google.com
 per-file bindc = file: /src/devices/OWNERS
