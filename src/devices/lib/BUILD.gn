@@ -7,6 +7,7 @@ group("lib") {
     "dev-operation",
     "dma-buffer",
     "driver",
+    "parsed_board_dump",
     "synchronous-executor",
   ]
 }
@@ -23,6 +24,7 @@ group("tests") {
     "fragment-irq:tests",
     "goldfish/pipe_io:tests",
     "io-buffer:tests",
+    "parsed_board_dump:tests",
     "synchronous-executor:tests",
     "thermal:tests",
   ]
