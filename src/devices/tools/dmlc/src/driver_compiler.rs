@@ -71,6 +71,19 @@ pub fn compile_driver(args: &CompileDriverArgs, year: &str) -> Result<(), anyhow
     for entry_val in &driver_dml.use_entries {
         let mut entry = entry_val.clone();
         if let Some(obj) = entry.as_object_mut() {
+            for key in ["service", "protocol"] {
+                if let Some(name) = obj.get(key).and_then(|v| v.as_str()) {
+                    if name.contains(".BIND_PROTOCOL.") {
+                        return Err(anyhow::anyhow!(
+                            "Capability '{}' contains '.BIND_PROTOCOL.'. Use 'banjo: \"{}\"' instead of '{}'.",
+                            name,
+                            name,
+                            key
+                        ));
+                    }
+                }
+            }
+
             let optional = obj
                 .get("availability")
                 .and_then(|v| v.as_str())
@@ -84,6 +97,8 @@ pub fn compile_driver(args: &CompileDriverArgs, year: &str) -> Result<(), anyhow
                 .or_else(|| obj.remove("generate_bind_rules"))
                 .and_then(|v| v.as_bool())
                 .unwrap_or(true);
+            let banjo_name = obj.remove("banjo").and_then(|v| v.as_str().map(|s| s.to_string()));
+            let is_banjo = banjo_name.is_some();
             let parent_val = obj.remove("name").or_else(|| obj.remove("instance_name"));
             if let Some(parent_val) = parent_val {
                 if generate_bind_rule && let Some(parent_name) = parent_val.as_str() {
@@ -93,15 +108,23 @@ pub fn compile_driver(args: &CompileDriverArgs, year: &str) -> Result<(), anyhow
                         .and_then(|v| v.as_str())
                         .map(|s| s.to_string());
 
-                    if service_name.is_none() && bind_val.is_none() {
+                    if service_name.is_some() && is_banjo {
                         return Err(anyhow::anyhow!(
-                            "use entry with 'name' or 'instance_name' must specify a 'service', 'protocol', or 'bind'"
+                            "A single 'use' entry cannot specify both 'banjo' and 'service'/'protocol'. Define separate 'use' entries with the same 'name' instead."
+                        ));
+                    }
+
+                    if service_name.is_none() && !is_banjo && bind_val.is_none() {
+                        return Err(anyhow::anyhow!(
+                            "use entry with 'name' or 'instance_name' must specify a 'service', 'protocol', 'banjo', or 'bind'"
                         ));
                     }
 
                     let transport = transport_val
                         .and_then(|t| t.as_str().map(|s| s.to_string()))
-                        .unwrap_or_else(|| "Zircon".to_string());
+                        .unwrap_or_else(|| {
+                            if is_banjo { "Banjo".to_string() } else { "Zircon".to_string() }
+                        });
 
                     let bind = bind_val
                         .map(|v| serde_json::from_value::<DmlBind>(v))
@@ -122,6 +145,7 @@ pub fn compile_driver(args: &CompileDriverArgs, year: &str) -> Result<(), anyhow
                         primary_use_entry = Some((
                             parent_name.to_string(),
                             service_name.clone(),
+                            banjo_name.clone(),
                             obj.get("service").is_some(), // is_service
                             transport.clone(),
                             bind.clone(),
@@ -131,6 +155,7 @@ pub fn compile_driver(args: &CompileDriverArgs, year: &str) -> Result<(), anyhow
                     additional_parents.push(AdditionalParentInfo {
                         parent_name: parent_name.to_string(),
                         service_name,
+                        banjo_name,
                         transport,
                         optional,
                         bind,
@@ -141,12 +166,6 @@ pub fn compile_driver(args: &CompileDriverArgs, year: &str) -> Result<(), anyhow
                 .get("service")
                 .and_then(|v| v.as_str())
                 .map(|s| crate::workarounds::try_generate_init_step_bind_rule(s).is_some())
-                .unwrap_or(false);
-            let is_bind_protocol = obj
-                .get("protocol")
-                .or_else(|| obj.get("service"))
-                .and_then(|v| v.as_str())
-                .map(|s| s.contains(".BIND_PROTOCOL."))
                 .unwrap_or(false);
             let has_cml_fields = obj.iter().any(|(k, _)| {
                 ![
@@ -162,7 +181,7 @@ pub fn compile_driver(args: &CompileDriverArgs, year: &str) -> Result<(), anyhow
                 ]
                 .contains(&k.as_str())
             });
-            if !is_init_step && !is_bind_protocol && has_cml_fields && !obj.is_empty() {
+            if !is_init_step && !is_banjo && has_cml_fields && !obj.is_empty() {
                 cleaned_use_entries.push(entry);
             }
         } else {
@@ -170,7 +189,9 @@ pub fn compile_driver(args: &CompileDriverArgs, year: &str) -> Result<(), anyhow
         }
     }
 
-    if let Some((parent_name, service_or_proto, is_service, transport, bind)) = primary_use_entry {
+    if let Some((parent_name, service_or_proto, banjo_name, is_service, transport, bind)) =
+        primary_use_entry
+    {
         let (service, protocol) = if let Some(sop) = service_or_proto {
             if is_service { (Some(sop), None) } else { (None, Some(sop)) }
         } else {
@@ -185,6 +206,7 @@ pub fn compile_driver(args: &CompileDriverArgs, year: &str) -> Result<(), anyhow
             did: None,
             protocol,
             service,
+            banjo: banjo_name,
             transport: Some(transport),
             one_of: None,
         };
@@ -496,6 +518,103 @@ mod tests {
         assert!(bind_content.contains("primary parent \"tas27xx\""));
         assert!(bind_content.contains("fuchsia.COMPATIBLE == \"ti,tas27xx\";"));
         assert!(!bind_content.contains("fuchsia.BIND_PROTOCOL == ;"));
+
+        let _ = std::fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn test_banjo_parent_capability() {
+        let temp_dir = std::env::temp_dir().join("test_temp_banjo_capability");
+        let _ = std::fs::remove_dir_all(&temp_dir);
+        std::fs::create_dir_all(&temp_dir).unwrap();
+
+        let dml_content = r#"{
+            name: "sample_banjo_driver",
+            use: [
+                {
+                    banjo: "fuchsia.platform.BIND_PROTOCOL.DEVICE",
+                    name: "pdev",
+                    primary: true,
+                },
+                {
+                    banjo: "fuchsia.gpio.BIND_PROTOCOL.DEVICE",
+                    name: "gpio",
+                    availability: "optional",
+                },
+                {
+                    service: "fuchsia.hardware.i2c.Service",
+                    name: "i2c",
+                },
+            ],
+        }"#;
+
+        let dml_path = temp_dir.join("sample.dml");
+        std::fs::write(&dml_path, dml_content).unwrap();
+
+        let bind_path = temp_dir.join("sample.bind");
+        let cml_path = temp_dir.join("sample.cml");
+
+        let args = CompileDriverArgs {
+            input_file: dml_path.to_str().unwrap().to_string(),
+            h_output: None,
+            cc_output: None,
+            cml_output: Some(cml_path.to_str().unwrap().to_string()),
+            bind_output: Some(bind_path.to_str().unwrap().to_string()),
+            namespace: None,
+        };
+
+        compile_driver(&args, "2026").unwrap();
+
+        let bind_content = std::fs::read_to_string(&bind_path).unwrap();
+        assert!(bind_content.contains("primary parent \"pdev\" {\n  fuchsia.BIND_PROTOCOL == fuchsia.platform.BIND_PROTOCOL.DEVICE;\n}"));
+        assert!(bind_content.contains("optional parent \"gpio\" {\n  fuchsia.BIND_PROTOCOL == fuchsia.gpio.BIND_PROTOCOL.DEVICE;\n}"));
+        assert!(bind_content.contains(
+            "parent \"i2c\" {\n  fuchsia.Service == \"fuchsia.hardware.i2c.Service\";\n}"
+        ));
+
+        let cml_content = std::fs::read_to_string(&cml_path).unwrap();
+        assert!(!cml_content.contains("fuchsia.platform.BIND_PROTOCOL"));
+        assert!(!cml_content.contains("fuchsia.gpio.BIND_PROTOCOL"));
+        assert!(!cml_content.contains("banjo"));
+        assert!(cml_content.contains("fuchsia.hardware.i2c.Service"));
+
+        let _ = std::fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn test_service_with_bind_protocol_errors() {
+        let temp_dir = std::env::temp_dir().join("test_temp_service_bind_protocol_error");
+        let _ = std::fs::remove_dir_all(&temp_dir);
+        std::fs::create_dir_all(&temp_dir).unwrap();
+
+        let dml_content = r#"{
+            name: "sample_driver_err",
+            use: [
+                {
+                    service: "fuchsia.hardware.gpio.BIND_PROTOCOL.DEVICE",
+                    name: "gpio",
+                },
+            ],
+        }"#;
+
+        let dml_path = temp_dir.join("sample.dml");
+        std::fs::write(&dml_path, dml_content).unwrap();
+
+        let args = CompileDriverArgs {
+            input_file: dml_path.to_str().unwrap().to_string(),
+            h_output: None,
+            cc_output: None,
+            cml_output: None,
+            bind_output: None,
+            namespace: None,
+        };
+
+        let result = compile_driver(&args, "2026");
+        assert!(result.is_err());
+        let err_msg = result.unwrap_err().to_string();
+        assert!(
+            err_msg.contains("Use 'banjo: \"fuchsia.hardware.gpio.BIND_PROTOCOL.DEVICE\"' instead")
+        );
 
         let _ = std::fs::remove_dir_all(&temp_dir);
     }

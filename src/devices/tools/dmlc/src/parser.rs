@@ -18,6 +18,7 @@ pub struct BindPrimary {
     pub did: Option<Value>,
     pub protocol: Option<String>,
     pub service: Option<String>,
+    pub banjo: Option<String>,
     pub transport: Option<String>,
     pub one_of: Option<Vec<DmlBind>>,
 }
@@ -26,6 +27,7 @@ pub struct BindPrimary {
 pub struct DmlBind {
     pub protocol: Option<String>,
     pub service: Option<String>,
+    pub banjo: Option<String>,
     pub transport: Option<String>,
     pub vid: Option<Value>,
     pub pid: Option<Value>,

@@ -10,6 +10,7 @@ use serde_json::Value;
 pub struct AdditionalParentInfo {
     pub parent_name: String,
     pub service_name: Option<String>,
+    pub banjo_name: Option<String>,
     pub transport: String,
     pub optional: bool,
     pub bind: Option<DmlBind>,
@@ -46,6 +47,8 @@ fn generate_simple_bind_statements_excluding(
     if !exclude_protocol {
         if let Some(proto) = &bind.protocol {
             content.push_str(&format!("fuchsia.BIND_PROTOCOL == {};\n", proto));
+        } else if let Some(banjo) = &bind.banjo {
+            content.push_str(&format!("fuchsia.BIND_PROTOCOL == {};\n", banjo));
         }
     }
     if !exclude_service {
@@ -182,6 +185,8 @@ fn generate_simple_bind_statements(bind: &DmlBind) -> Result<String, anyhow::Err
 fn get_trigger(alt: &DmlBind) -> Result<Option<(String, Option<(String, Value)>)>, anyhow::Error> {
     if let Some(proto) = &alt.protocol {
         Ok(Some((format!("fuchsia.BIND_PROTOCOL == {}", proto), None)))
+    } else if let Some(banjo) = &alt.banjo {
+        Ok(Some((format!("fuchsia.BIND_PROTOCOL == {}", banjo), None)))
     } else if let Some(svc) = &alt.service {
         Ok(Some((format!("fuchsia.Service == \"{}\"", svc), None)))
     } else if let Some(compat) = &alt.compat
@@ -258,7 +263,7 @@ fn generate_simple_bind_rules(bind: &DmlBind) -> Result<String, anyhow::Error> {
                 let mut exclude_pid = false;
                 let mut exclude_did = false;
 
-                if alt.protocol.is_some() {
+                if alt.protocol.is_some() || alt.banjo.is_some() {
                     exclude_protocol = true;
                 } else if alt.service.is_some() {
                     exclude_service = true;
@@ -380,6 +385,8 @@ pub fn generate_bind_file(
                 }
                 if let Some(proto) = &primary.protocol {
                     rules.push(format!("fuchsia.BIND_PROTOCOL == {}", proto));
+                } else if let Some(banjo) = &primary.banjo {
+                    rules.push(format!("fuchsia.BIND_PROTOCOL == {}", banjo));
                 }
                 if let Some(svc) = &primary.service {
                     rules.push(format!("fuchsia.Service == \"{}\"", svc));
@@ -400,7 +407,7 @@ pub fn generate_bind_file(
         let primary_node_name = bind.primary.as_ref().map(|p| p.node.as_str());
         let mut grouped_parents = std::collections::BTreeMap::<
             String,
-            (Vec<(Option<String>, String)>, bool, Option<DmlBind>),
+            (Vec<(Option<String>, Option<String>, String)>, bool, Option<DmlBind>),
         >::new();
         for parent in additional_parents {
             if Some(parent.parent_name.as_str()) == primary_node_name {
@@ -409,7 +416,11 @@ pub fn generate_bind_file(
             let entry = grouped_parents
                 .entry(parent.parent_name.clone())
                 .or_insert_with(|| (Vec::new(), true, None));
-            entry.0.push((parent.service_name.clone(), parent.transport.clone()));
+            entry.0.push((
+                parent.service_name.clone(),
+                parent.banjo_name.clone(),
+                parent.transport.clone(),
+            ));
             entry.1 = entry.1 && parent.optional;
             if parent.bind.is_some() && entry.2.is_none() {
                 entry.2 = parent.bind.clone();
@@ -421,15 +432,15 @@ pub fn generate_bind_file(
             content.push_str(&format!("{}parent \"{}\" {{\n", prefix, parent_name));
             let mut sorted_capabilities: Vec<_> = capabilities.iter().collect();
             sorted_capabilities.sort_unstable();
-            for (service_name, _transport) in sorted_capabilities {
+            for (service_name, banjo_name, _transport) in sorted_capabilities {
+                if let Some(banjo_name) = banjo_name {
+                    content.push_str(&format!("  fuchsia.BIND_PROTOCOL == {};\n", banjo_name));
+                }
                 if let Some(service_name) = service_name {
                     if let Some(rule) =
                         crate::workarounds::try_generate_init_step_bind_rule(&service_name)
                     {
                         content.push_str(&rule);
-                    } else if service_name.contains(".BIND_PROTOCOL.") {
-                        content
-                            .push_str(&format!("  fuchsia.BIND_PROTOCOL == {};\n", service_name));
                     } else {
                         content.push_str(&format!("  fuchsia.Service == \"{}\";\n", service_name));
                     }
@@ -489,6 +500,7 @@ mod tests {
             AdditionalParentInfo {
                 parent_name: "gpio-init".to_string(),
                 service_name: Some("fuchsia.gpio.Init".to_string()),
+                banjo_name: None,
                 transport: "Driver".to_string(),
                 optional: false,
                 bind: None,
@@ -496,6 +508,7 @@ mod tests {
             AdditionalParentInfo {
                 parent_name: "gpio-init".to_string(),
                 service_name: Some("fuchsia.hardware.gpio.Service".to_string()),
+                banjo_name: None,
                 transport: "Driver".to_string(),
                 optional: true,
                 bind: None,
@@ -503,6 +516,7 @@ mod tests {
             AdditionalParentInfo {
                 parent_name: "pwm-init".to_string(),
                 service_name: Some("fuchsia.pwm.Init".to_string()),
+                banjo_name: None,
                 transport: "Driver".to_string(),
                 optional: true,
                 bind: None,
@@ -629,5 +643,31 @@ mod tests {
         let content = generate_bind_file("driver_serve_fidl", &bind, &[], "2026").unwrap();
         assert!(content.contains("// Copyright 2026 The Fuchsia Authors. All rights reserved."));
         assert!(content.contains("true;\n"), "Expected true; in content:\n{}", content);
+    }
+
+    #[test]
+    fn test_generate_bind_file_banjo_capability() {
+        let bind = DmlBind {
+            primary: Some(crate::parser::BindPrimary {
+                node: "pdev".to_string(),
+                banjo: Some("fuchsia.platform.BIND_PROTOCOL.DEVICE".to_string()),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        let additional = vec![AdditionalParentInfo {
+            parent_name: "gpio".to_string(),
+            service_name: None,
+            banjo_name: Some("fuchsia.gpio.BIND_PROTOCOL.DEVICE".to_string()),
+            transport: "Banjo".to_string(),
+            optional: false,
+            bind: None,
+        }];
+
+        let content = generate_bind_file("my_driver", &bind, &additional, "2026").unwrap();
+        assert!(content.contains("primary parent \"pdev\" {\n  fuchsia.BIND_PROTOCOL == fuchsia.platform.BIND_PROTOCOL.DEVICE;\n}"));
+        assert!(content.contains(
+            "parent \"gpio\" {\n  fuchsia.BIND_PROTOCOL == fuchsia.gpio.BIND_PROTOCOL.DEVICE;\n}"
+        ));
     }
 }
