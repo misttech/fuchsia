@@ -339,7 +339,7 @@ in args.gn.
 
 **Current value (from the default):** `[]`
 
-From //build/bazel/bazel_root_targets_list.gni:138
+From //build/bazel/bazel_root_targets_list.gni:137
 
 ### bazel_upload_build_events
 
@@ -937,7 +937,7 @@ This should never be set as a build argument.
 }
   static = {
   clang_rt = "../../../../out/not-default/libclang_rt.hwasan.a"
-  clang_rt_cxx = "../../../../out/not-default/libclang_rt.hwasan_cxx.a"
+  clang_rt_cxx = ""
 }
 }
   lsan = {
@@ -946,7 +946,7 @@ This should never be set as a build argument.
 }
   static = {
   clang_rt = "lib/clang/24/lib/armv7-unknown-linux-gnueabihf/libclang_rt.lsan.a"
-  clang_rt_cxx = ""
+  clang_rt_cxx = "../../../../out/not-default/libclang_rt.lsan_cxx.a"
 }
 }
   tsan = {
@@ -1029,7 +1029,7 @@ This should never be set as a build argument.
 }
   riscv64_unknown_linux_gnu = {
   libclang_rt_profile_a = "lib/clang/24/lib/riscv64-unknown-linux-gnu/libclang_rt.profile.a"
-  libunwind_so = "../../../../out/not-default/libunwind.so"
+  libunwind_so = ""
   resource_dir = "lib/clang/24"
   variants = {
   asan = {
@@ -2068,7 +2068,6 @@ From //build/config/compiler.gni:88
   bazel = "{{BAZEL_TARGET_OUT_DIR}}/orchestrate_/orchestrate"
   ninja = "orchestrate"
 }]
-  install_host_tool = true
 }, {
   bazel_label = "//build/beads/.agent/skills/migrating_host_tool_to_bazel/examples/go/after:go_example_bin_migrated"
   copy_outputs = [{
@@ -2203,7 +2202,6 @@ From //build/config/compiler.gni:88
   bazel = "{{BAZEL_TARGET_OUT_DIR}}/covargs_/covargs"
   ninja = "covargs"
 }]
-  install_host_tool = true
 }, {
   bazel_label = "//tools/debug/debugsyms:debugsyms"
   copy_outputs = [{
@@ -2229,7 +2227,6 @@ From //build/config/compiler.gni:88
   bazel = "{{BAZEL_TARGET_OUT_DIR}}/clang-format-wrapper_/clang-format-wrapper"
   ninja = "clang-format-wrapper"
 }]
-  install_host_tool = true
 }, {
   bazel_label = "//tools/pretty_serial"
   install_host_tool = true
@@ -2253,7 +2250,6 @@ From //build/config/compiler.gni:88
   bazel = "{{BAZEL_TARGET_OUT_DIR}}/debroot_/debroot"
   ninja = "debroot"
 }]
-  install_host_tool = true
 }, {
   bazel_label = "//tools/whereiscl:whereiscl"
   copy_outputs = [{
@@ -2307,7 +2303,6 @@ From //build/config/compiler.gni:88
   bazel = "{{BAZEL_TARGET_OUT_DIR}}/gndoc_/gndoc"
   ninja = "gndoc"
 }]
-  install_host_tool = true
 }, {
   bazel_label = "//tools/integration/testsharder:testsharder"
   copy_outputs = [{
@@ -2436,7 +2431,7 @@ From //build/config/compiler.gni:88
 }]
 ```
 
-From //build/bazel/bazel_root_targets_list.gni:66
+From //build/bazel/bazel_root_targets_list.gni:65
 
 ### default_configs
 
@@ -4075,7 +4070,7 @@ can take a couple of minutes).
 
 **Current value (from the default):** `false`
 
-From //third_party/perfetto/gn/perfetto.gni:470
+From //third_party/perfetto/gn/perfetto.gni:464
 
 ### enable_perfetto_pcre2
 
@@ -4115,17 +4110,6 @@ From //third_party/perfetto/gn/perfetto.gni:415
 **Current value (from the default):** `false`
 
 From //third_party/perfetto/gn/perfetto.gni:294
-
-### enable_perfetto_site
-
-Allows to build the perfetto.dev website.
-WARNING: if this flag is enabled, the build performs globbing at generation
-time. Incremental builds that add/remove files will not be supported without
-rerunning gn.
-
-**Current value (from the default):** `false`
-
-From //third_party/perfetto/gn/perfetto.gni:465
 
 ### enable_perfetto_sock_inotify
 
@@ -6535,7 +6519,7 @@ to off; the consumer opts in via perfetto_sdk_config.h (see build_config.h).
 
 **Current value (from the default):** `false`
 
-From //third_party/perfetto/gn/perfetto.gni:494
+From //third_party/perfetto/gn/perfetto.gni:496
 
 ### perfetto_build_with_android
 
@@ -6604,7 +6588,7 @@ Note: that if this is enabled `perfetto_use_system_protobuf` should be also.
 
 **Current value (from the default):** `false`
 
-From //third_party/perfetto/gn/perfetto.gni:480
+From //third_party/perfetto/gn/perfetto.gni:474
 
 ### perfetto_use_system_protobuf
 
@@ -6613,7 +6597,16 @@ from /usr/include instead of the hermetic one.
 
 **Current value (from the default):** `false`
 
-From //third_party/perfetto/gn/perfetto.gni:484
+From //third_party/perfetto/gn/perfetto.gni:478
+
+### perfetto_use_system_re2
+
+Used by NixOS system builds. Uses the system version of re2
+from pkg-config instead of the hermetic one.
+
+**Current value (from the default):** `false`
+
+From //third_party/perfetto/gn/perfetto.gni:482
 
 ### perfetto_use_system_sqlite
 
@@ -6622,13 +6615,22 @@ from /usr/include instead of the hermetic one.
 
 **Current value (from the default):** `false`
 
-From //third_party/perfetto/gn/perfetto.gni:488
+From //third_party/perfetto/gn/perfetto.gni:486
 
 ### perfetto_use_system_zlib
 
 **Current value (from the default):** `false`
 
-From //third_party/perfetto/gn/perfetto.gni:490
+From //third_party/perfetto/gn/perfetto.gni:488
+
+### perfetto_use_system_zstd
+
+Used by NixOS system builds. Uses the system version of zstd
+from pkg-config instead of the hermetic one.
+
+**Current value (from the default):** `false`
+
+From //third_party/perfetto/gn/perfetto.gni:492
 
 ### perfetto_verbose_logs_enabled
 
@@ -9120,7 +9122,6 @@ This is a separate because they can be cross-compiled on SDK builders.
   bazel = "{{BAZEL_TARGET_OUT_DIR}}/orchestrate_/orchestrate"
   ninja = "orchestrate"
 }]
-  install_host_tool = true
 }]
 ```
 
@@ -9367,7 +9368,7 @@ Skip buildtools dependency checks (needed for ChromeOS).
 
 **Current value (from the default):** `false`
 
-From //third_party/perfetto/gn/perfetto.gni:473
+From //third_party/perfetto/gn/perfetto.gni:467
 
 ### smp_max_cpus
 
