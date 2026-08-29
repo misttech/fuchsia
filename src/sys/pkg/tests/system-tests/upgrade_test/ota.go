@@ -59,11 +59,11 @@ func newOtas(
 		// blobs.
 		var blobFetchMode artifacts.BlobFetchMode
 
-		// If this isn't the first build, we'll want to modify it to
-		// make sure it's unique.
+		// If this isn't the first build, we may want to inject random data into
+		// the update package to make it unique.
 		var addRandomData bool
 
-		if i == 0 {
+		if i == 0 || !c.modifyUpdatePackage {
 			blobFetchMode = artifacts.LazilyFetchBlobs
 			addRandomData = false
 		} else {
@@ -89,6 +89,10 @@ func newOtas(
 		otas = append(otas, ota)
 	}
 
+	// Optionally add random data to the final OTA if we want to modify the
+	// update package.
+	addRandomData := c.modifyUpdatePackage
+
 	// Finally, redo the last build as our prime build.
 	ota, err := newOta(
 		ctx,
@@ -97,7 +101,7 @@ func newOtas(
 		builds[len(builds)-1].Build,
 		"N-prime",
 		artifacts.LazilyFetchBlobs,
-		true,
+		addRandomData,
 		ffxRunDir,
 		builds[len(builds)-1].Version,
 	)

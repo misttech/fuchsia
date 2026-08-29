@@ -34,6 +34,7 @@ type config struct {
 	checkABR                   bool
 	checkRebootReason          bool
 	logLevel                   logger.LogLevel
+	modifyUpdatePackage        bool
 }
 
 func newConfig(fs *flag.FlagSet) (*config, error) {
@@ -69,6 +70,7 @@ func newConfig(fs *flag.FlagSet) (*config, error) {
 	fs.BoolVar(&c.checkABR, "check-abr", true, "Check that the device booted into the expected ABR slot (default is true)")
 	fs.BoolVar(&c.checkRebootReason, "check-reboot-reason", false, "Verify the device reboot reason after OTA (default is false)")
 	fs.Var(&c.logLevel, "log-level", "log level (no, fatal, error, warning, info, debug, trace)")
+	fs.BoolVar(&c.modifyUpdatePackage, "modify-update-package", true, "modify update packages to make them unique (default is true)")
 
 	return c, nil
 }
