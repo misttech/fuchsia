@@ -374,8 +374,7 @@ impl ProcessDispatcher {
     /// Sets the debug address of the dynamic loader (`_dl_debug_addr`) for this process.
     pub fn set_debug_addr(&self, addr: usize) -> Result<(), Status> {
         // SAFETY: `self` is a valid `ProcessDispatcher` reference.
-        let status =
-            unsafe { cpp_process_dispatcher_set_debug_addr(self as *const _ as *mut _, addr) };
+        let status = unsafe { cpp_process_dispatcher_set_debug_addr(self as *const _, addr) };
         Status::ok(status)
     }
 
@@ -389,7 +388,7 @@ impl ProcessDispatcher {
     pub fn set_dyn_break_on_load(&self, break_on_load: usize) -> Result<(), Status> {
         // SAFETY: `self` is a valid `ProcessDispatcher` reference.
         let status = unsafe {
-            cpp_process_dispatcher_set_dyn_break_on_load(self as *const _ as *mut _, break_on_load)
+            cpp_process_dispatcher_set_dyn_break_on_load(self as *const _, break_on_load)
         };
         Status::ok(status)
     }
@@ -397,7 +396,7 @@ impl ProcessDispatcher {
     /// Returns the base address of the vDSO mapping for this process.
     pub fn vdso_base_address(&self) -> usize {
         // SAFETY: `self` is a valid `ProcessDispatcher` reference.
-        unsafe { cpp_process_dispatcher_vdso_base_address(self as *const _ as *mut _) }
+        unsafe { cpp_process_dispatcher_vdso_base_address(self as *const _) }
     }
 
     /// Returns the hardware trace context ID for this process.

@@ -261,7 +261,7 @@ unsafe extern "C" {
     ///
     /// `process` must point to a valid `ProcessDispatcher`.
     pub(crate) fn cpp_process_dispatcher_set_debug_addr(
-        process: *mut ProcessDispatcher,
+        process: *const ProcessDispatcher,
         addr: usize,
     ) -> zx_status_t;
 
@@ -280,7 +280,7 @@ unsafe extern "C" {
     ///
     /// `process` must point to a valid `ProcessDispatcher`.
     pub(crate) fn cpp_process_dispatcher_set_dyn_break_on_load(
-        process: *mut ProcessDispatcher,
+        process: *const ProcessDispatcher,
         break_on_load: usize,
     ) -> zx_status_t;
 
@@ -290,7 +290,7 @@ unsafe extern "C" {
     ///
     /// `process` must point to a valid `ProcessDispatcher`.
     pub(crate) fn cpp_process_dispatcher_vdso_base_address(
-        process: *mut ProcessDispatcher,
+        process: *const ProcessDispatcher,
     ) -> usize;
 
     /// Returns the hardware trace context ID of `process`.

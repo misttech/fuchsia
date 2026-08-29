@@ -15,7 +15,6 @@ use crate::user_copy::{UserInPtr, UserOutPtr};
 use boot_options::BootOptions;
 use core::mem::MaybeUninit;
 use syscalls_macro::syscall;
-use zerocopy::{FromBytes, Immutable, IntoBytes};
 use zx_status::Status;
 use zx_types::{
     ZX_MAX_NAME_LEN, ZX_PROP_JOB_KILL_ON_OOM, ZX_PROP_NAME, ZX_PROP_PROCESS_BREAK_ON_LOAD,
@@ -31,34 +30,6 @@ use crate::arch_rs::x86::registers::{X86_MSR_IA32_FS_BASE, X86_MSR_IA32_KERNEL_G
 
 #[cfg(target_arch = "x86_64")]
 use zx_types::{ZX_PROP_REGISTER_FS, ZX_PROP_REGISTER_GS};
-
-/// Copies a scalar value `val` of type `T` into the user buffer `value`.
-///
-/// # Errors
-///
-/// * [`Status::BUFFER_TOO_SMALL`]: If `size < core::mem::size_of::<T>()`.
-fn copy_scalar_to_user<T: IntoBytes + Immutable>(
-    value: UserOutPtr<u8>,
-    size: usize,
-    val: T,
-) -> Result<(), Status> {
-    if size < core::mem::size_of::<T>() {
-        return Err(Status::BUFFER_TOO_SMALL);
-    }
-    value.reinterpret::<T>().write(val)
-}
-
-/// Copies a scalar value of type `T` from the user buffer `value`.
-///
-/// # Errors
-///
-/// * [`Status::BUFFER_TOO_SMALL`]: If `size < core::mem::size_of::<T>()`.
-fn copy_scalar_from_user<T: FromBytes>(value: UserInPtr<u8>, size: usize) -> Result<T, Status> {
-    if size < core::mem::size_of::<T>() {
-        return Err(Status::BUFFER_TOO_SMALL);
-    }
-    value.reinterpret::<T>().read()
-}
 
 /// Validates that the given dispatcher refers to the currently executing thread.
 ///
@@ -107,13 +78,6 @@ pub fn sys_object_get_property(
     let dispatcher =
         Dispatcher::get_with_rights::<Dispatcher>(handle_value, ZX_RIGHT_GET_PROPERTY)?;
 
-    macro_rules! get_scalar_property {
-        ($type:ty, $getter:ident) => {{
-            let obj = dispatcher.downcast::<$type>().ok_or(Status::WRONG_TYPE)?;
-            copy_scalar_to_user(value, size, obj.$getter())
-        }};
-    }
-
     match property {
         ZX_PROP_NAME => {
             if size < ZX_MAX_NAME_LEN {
@@ -121,14 +85,35 @@ pub fn sys_object_get_property(
             }
             let mut name = [0u8; ZX_MAX_NAME_LEN];
             dispatcher.get_name(&mut name)?;
-            value.copy_slice_to_user(&name)
+            value.copy_slice_to_user(&name)?;
+            Ok(())
         }
-        ZX_PROP_PROCESS_DEBUG_ADDR => get_scalar_property!(ProcessDispatcher, get_debug_addr),
+        ZX_PROP_PROCESS_DEBUG_ADDR => {
+            if size < core::mem::size_of::<usize>() {
+                return Err(Status::BUFFER_TOO_SMALL);
+            }
+            let process = dispatcher.downcast::<ProcessDispatcher>().ok_or(Status::WRONG_TYPE)?;
+            let debug_addr = process.get_debug_addr();
+            value.reinterpret::<usize>().write(debug_addr)?;
+            Ok(())
+        }
         ZX_PROP_PROCESS_BREAK_ON_LOAD => {
-            get_scalar_property!(ProcessDispatcher, get_dyn_break_on_load)
+            if size < core::mem::size_of::<usize>() {
+                return Err(Status::BUFFER_TOO_SMALL);
+            }
+            let process = dispatcher.downcast::<ProcessDispatcher>().ok_or(Status::WRONG_TYPE)?;
+            let val = process.get_dyn_break_on_load();
+            value.reinterpret::<usize>().write(val)?;
+            Ok(())
         }
         ZX_PROP_PROCESS_VDSO_BASE_ADDRESS => {
-            get_scalar_property!(ProcessDispatcher, vdso_base_address)
+            if size < core::mem::size_of::<usize>() {
+                return Err(Status::BUFFER_TOO_SMALL);
+            }
+            let process = dispatcher.downcast::<ProcessDispatcher>().ok_or(Status::WRONG_TYPE)?;
+            let val = process.vdso_base_address();
+            value.reinterpret::<usize>().write(val)?;
+            Ok(())
         }
         ZX_PROP_PROCESS_HW_TRACE_CONTEXT_ID => {
             if !BootOptions::get().enable_debugging_syscalls {
@@ -136,17 +121,43 @@ pub fn sys_object_get_property(
             }
             #[cfg(target_arch = "x86_64")]
             {
-                get_scalar_property!(ProcessDispatcher, hw_trace_context_id)
+                if size < core::mem::size_of::<usize>() {
+                    return Err(Status::BUFFER_TOO_SMALL);
+                }
+                let process =
+                    dispatcher.downcast::<ProcessDispatcher>().ok_or(Status::WRONG_TYPE)?;
+                let val = process.hw_trace_context_id();
+                value.reinterpret::<usize>().write(val)?;
+                Ok(())
             }
             #[cfg(not(target_arch = "x86_64"))]
             {
                 Err(Status::NOT_SUPPORTED)
             }
         }
-        ZX_PROP_SOCKET_RX_THRESHOLD => get_scalar_property!(SocketDispatcher, get_read_threshold),
-        ZX_PROP_SOCKET_TX_THRESHOLD => get_scalar_property!(SocketDispatcher, get_write_threshold),
+        ZX_PROP_SOCKET_RX_THRESHOLD => {
+            if size < core::mem::size_of::<usize>() {
+                return Err(Status::BUFFER_TOO_SMALL);
+            }
+            let socket = dispatcher.downcast::<SocketDispatcher>().ok_or(Status::WRONG_TYPE)?;
+            let val = socket.get_read_threshold();
+            value.reinterpret::<usize>().write(val)?;
+            Ok(())
+        }
+        ZX_PROP_SOCKET_TX_THRESHOLD => {
+            if size < core::mem::size_of::<usize>() {
+                return Err(Status::BUFFER_TOO_SMALL);
+            }
+            let socket = dispatcher.downcast::<SocketDispatcher>().ok_or(Status::WRONG_TYPE)?;
+            let val = socket.get_write_threshold();
+            value.reinterpret::<usize>().write(val)?;
+            Ok(())
+        }
         #[cfg(target_arch = "x86_64")]
         ZX_PROP_REGISTER_FS | ZX_PROP_REGISTER_GS => {
+            if size < core::mem::size_of::<usize>() {
+                return Err(Status::BUFFER_TOO_SMALL);
+            }
             require_current_thread(&dispatcher)?;
             // SAFETY: Reading valid Model Specific Registers on x86_64 hardware.
             let val = if property == ZX_PROP_REGISTER_FS {
@@ -154,7 +165,8 @@ pub fn sys_object_get_property(
             } else {
                 unsafe { crate::arch_rs::x86::x86::read_msr(X86_MSR_IA32_KERNEL_GS_BASE) }
             };
-            copy_scalar_to_user(value, size, val as usize)
+            value.reinterpret::<usize>().write(val as usize)?;
+            Ok(())
         }
         // C++-only dispatchers (e.g. ExceptionDispatcher, StreamDispatcher, VmObjectDispatcher)
         _ => {
@@ -188,26 +200,22 @@ pub fn sys_object_set_property(
         return Err(Status::ACCESS_DENIED);
     }
 
-    macro_rules! set_scalar_property {
-        ($type:ty, $setter:ident) => {{
-            let obj = dispatcher.downcast::<$type>().ok_or(Status::WRONG_TYPE)?;
-            let val = copy_scalar_from_user(value, size)?;
-            obj.$setter(val)
-        }};
-    }
-
     match property {
         ZX_PROP_NAME => {
             let max_len = ZX_MAX_NAME_LEN - 1;
             let len = core::cmp::min(size, max_len);
             let mut name_buf = [MaybeUninit::uninit(); ZX_MAX_NAME_LEN - 1];
             let name_slice = value.copy_slice_from_user(&mut name_buf[..len])?;
-            dispatcher.set_name(name_slice)
+            dispatcher.set_name(name_slice)?;
+            Ok(())
         }
         #[cfg(target_arch = "x86_64")]
         ZX_PROP_REGISTER_FS | ZX_PROP_REGISTER_GS => {
+            if size < core::mem::size_of::<usize>() {
+                return Err(Status::BUFFER_TOO_SMALL);
+            }
             require_current_thread(&dispatcher)?;
-            let addr = copy_scalar_from_user::<usize>(value, size)?;
+            let addr = value.reinterpret::<usize>().read()?;
             if !crate::arch_rs::x86::is_vaddr_canonical(addr as u64) {
                 return Err(Status::INVALID_ARGS);
             }
@@ -222,20 +230,44 @@ pub fn sys_object_set_property(
             Ok(())
         }
         ZX_PROP_PROCESS_DEBUG_ADDR => {
-            set_scalar_property!(ProcessDispatcher, set_debug_addr)
+            if size < core::mem::size_of::<usize>() {
+                return Err(Status::BUFFER_TOO_SMALL);
+            }
+            let process = dispatcher.downcast::<ProcessDispatcher>().ok_or(Status::WRONG_TYPE)?;
+            let val = value.reinterpret::<usize>().read()?;
+            process.set_debug_addr(val)?;
+            Ok(())
         }
         ZX_PROP_PROCESS_BREAK_ON_LOAD => {
-            set_scalar_property!(ProcessDispatcher, set_dyn_break_on_load)
+            if size < core::mem::size_of::<usize>() {
+                return Err(Status::BUFFER_TOO_SMALL);
+            }
+            let process = dispatcher.downcast::<ProcessDispatcher>().ok_or(Status::WRONG_TYPE)?;
+            let val = value.reinterpret::<usize>().read()?;
+            process.set_dyn_break_on_load(val)?;
+            Ok(())
         }
         ZX_PROP_SOCKET_RX_THRESHOLD => {
-            set_scalar_property!(SocketDispatcher, set_read_threshold)
+            if size < core::mem::size_of::<usize>() {
+                return Err(Status::BUFFER_TOO_SMALL);
+            }
+            let socket = dispatcher.downcast::<SocketDispatcher>().ok_or(Status::WRONG_TYPE)?;
+            let val = value.reinterpret::<usize>().read()?;
+            socket.set_read_threshold(val)?;
+            Ok(())
         }
         ZX_PROP_SOCKET_TX_THRESHOLD => {
-            set_scalar_property!(SocketDispatcher, set_write_threshold)
+            if size < core::mem::size_of::<usize>() {
+                return Err(Status::BUFFER_TOO_SMALL);
+            }
+            let socket = dispatcher.downcast::<SocketDispatcher>().ok_or(Status::WRONG_TYPE)?;
+            let val = value.reinterpret::<usize>().read()?;
+            socket.set_write_threshold(val)?;
+            Ok(())
         }
         ZX_PROP_JOB_KILL_ON_OOM => {
             let job = dispatcher.downcast::<JobDispatcher>().ok_or(Status::WRONG_TYPE)?;
-            let val = copy_scalar_from_user::<usize>(value, size)?;
+            let val = value.reinterpret::<usize>().read()?;
             if val == 0 {
                 job.set_kill_on_oom(false);
             } else if val == 1 {
