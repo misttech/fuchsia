@@ -5,8 +5,11 @@
 // https://opensource.org/licenses/MIT
 
 use super::page::VmPagePtr;
+use super::stream_size_manager::StreamSizeManager;
 use super::vm_cow_pages::VmCowPages;
 use super::vm_object::VmObject;
+use super::vm_object_paged_ffi::*;
+use crate::user_copy::{UserInIovec, UserOutIovec};
 use core::marker::PhantomPinned;
 use core::mem::ManuallyDrop;
 use core::ops::Deref;
@@ -102,6 +105,162 @@ impl VmObjectPaged {
         // reference count is owned by `this`.
         unsafe { VmObject::from_raw(raw_base) }
             .expect("RefPtr guarantees this is non-null and valid")
+    }
+
+    /// Reads data from the VMO into user vectors.
+    pub fn read_user_vector(
+        &self,
+        user_data: UserOutIovec,
+        offset: u64,
+        length: usize,
+    ) -> Result<usize, Status> {
+        let mut actual = 0usize;
+        let status = unsafe {
+            cpp_vm_object_paged_read_user_vector(
+                self.as_raw(),
+                user_data.as_user_out_ptr(),
+                user_data.count(),
+                offset,
+                length,
+                &mut actual,
+            )
+        };
+        if actual > 0 {
+            Ok(actual)
+        } else {
+            Status::ok(status)?;
+            Ok(0)
+        }
+    }
+
+    /// Writes data from user vectors into the VMO.
+    pub fn write_user_vector(
+        &self,
+        user_data: UserInIovec,
+        offset: u64,
+        length: usize,
+    ) -> Result<usize, Status> {
+        let mut actual = 0usize;
+        let status = unsafe {
+            cpp_vm_object_paged_write_user_vector(
+                self.as_raw(),
+                user_data.vector(),
+                user_data.count(),
+                offset,
+                length,
+                &mut actual,
+            )
+        };
+        if actual > 0 {
+            Ok(actual)
+        } else {
+            Status::ok(status)?;
+            Ok(0)
+        }
+    }
+
+    /// Writes data from user vectors into the VMO with progress callback.
+    #[allow(clippy::too_many_arguments)]
+    pub fn write_user_vector_progress(
+        &self,
+        user_data: UserInIovec,
+        offset: u64,
+        length: usize,
+        prev_stream_size: u64,
+        cb: extern "C" fn(*mut core::ffi::c_void, u64, usize),
+        cookie: *mut core::ffi::c_void,
+    ) -> Result<usize, Status> {
+        let mut actual = 0usize;
+        let status = unsafe {
+            cpp_vm_object_paged_write_user_vector_progress(
+                self.as_raw(),
+                user_data.vector(),
+                user_data.count(),
+                offset,
+                length,
+                prev_stream_size,
+                &mut actual,
+                cb,
+                cookie,
+            )
+        };
+        if actual > 0 {
+            Ok(actual)
+        } else {
+            Status::ok(status)?;
+            Ok(0)
+        }
+    }
+
+    /// Zeroes a range of bytes in the VMO.
+    pub fn zero_range(&self, offset: u64, length: u64) -> Result<(), Status> {
+        if length == 0 {
+            return Ok(());
+        }
+        let status = unsafe { cpp_vm_object_paged_zero_range(self.as_raw(), offset, length) };
+        Status::ok(status)
+    }
+
+    /// Zeroes a range of bytes in the VMO without tracking.
+    pub fn zero_range_untracked(&self, offset: u64, length: u64) -> Result<(), Status> {
+        if length == 0 {
+            return Ok(());
+        }
+        let status =
+            unsafe { cpp_vm_object_paged_zero_range_untracked(self.as_raw(), offset, length) };
+        Status::ok(status)
+    }
+
+    /// Resizes the VMO.
+    pub fn resize(&self, size: u64) -> Result<(), Status> {
+        let status = unsafe { cpp_vm_object_paged_resize(self.as_raw(), size) };
+        Status::ok(status)
+    }
+
+    /// Unmaps pages in the given range and invokes `cb` atomically while holding the VMO lock.
+    pub fn unmap_pages_and_call<F: FnOnce()>(&self, offset: u64, length: u64, cb: F) {
+        struct Ctx<F: FnOnce()> {
+            cb: Option<F>,
+        }
+
+        unsafe extern "C" fn trampoline<F: FnOnce()>(ctx: *mut core::ffi::c_void) {
+            // SAFETY: `ctx` points to `Ctx<F>` on caller's stack.
+            let ctx = unsafe { &mut *ctx.cast::<Ctx<F>>() };
+            if let Some(cb) = ctx.cb.take() {
+                cb();
+            }
+        }
+
+        let mut ctx = Ctx { cb: Some(cb) };
+        let cookie = (&raw mut ctx).cast::<core::ffi::c_void>();
+        // SAFETY: `self.as_raw()` is a valid `VmObjectPaged`.
+        unsafe {
+            cpp_vm_object_paged_unmap_and_call(
+                self.as_raw(),
+                offset,
+                length,
+                Some(trampoline::<F>),
+                cookie,
+            );
+        }
+    }
+
+    /// Sets the user-defined stream size manager for this VMO.
+    pub fn set_user_stream_size(&self, ssm: RefPtr<StreamSizeManager>) {
+        let raw_ssm = RefPtr::into_raw(ssm).cast_mut();
+        // SAFETY: `self.as_raw()` and `raw_ssm` are valid pointers.
+        unsafe {
+            cpp_vm_object_paged_set_user_stream_size(self.as_raw(), raw_ssm.cast());
+        }
+    }
+
+    /// Returns the user stream size if set.
+    pub fn user_stream_size(&self) -> Option<u64> {
+        let mut stream_size = 0u64;
+        // SAFETY: `self.as_raw()` is a valid pointer.
+        let has_value =
+            unsafe { cpp_vm_object_paged_user_stream_size(self.as_raw(), &mut stream_size) };
+        if has_value { Some(stream_size) } else { None }
     }
 }
 

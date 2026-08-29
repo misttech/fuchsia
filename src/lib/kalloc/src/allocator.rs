@@ -19,6 +19,12 @@ impl core::fmt::Display for AllocError {
 
 impl core::error::Error for AllocError {}
 
+impl From<core::convert::Infallible> for AllocError {
+    fn from(never: core::convert::Infallible) -> Self {
+        match never {}
+    }
+}
+
 /// Trait for allocators used by Box and other collections.
 ///
 /// This trait mirrors the `core::alloc::Allocator` trait,

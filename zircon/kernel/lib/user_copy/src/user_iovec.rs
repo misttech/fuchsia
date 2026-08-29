@@ -110,6 +110,16 @@ impl UserInIovec {
         Self { vector, count }
     }
 
+    /// Returns the underlying pointer to the user `zx_iovec_t` array.
+    pub const fn vector(&self) -> UserInPtr<zx_iovec_t> {
+        self.vector
+    }
+
+    /// Returns the number of iovec structures in the array.
+    pub const fn count(&self) -> usize {
+        self.count
+    }
+
     /// Returns true if the underlying pointer is null.
     pub fn is_null(&self) -> bool {
         self.vector.is_null()
@@ -154,6 +164,21 @@ impl UserOutIovec {
         Self { vector, count }
     }
 
+    /// Returns the underlying pointer to the user `zx_iovec_t` array as a `UserOutPtr`.
+    pub fn as_user_out_ptr(&self) -> UserOutPtr<zx_iovec_t> {
+        UserOutPtr::new(self.vector.as_ptr() as *mut zx_iovec_t)
+    }
+
+    /// Returns the underlying pointer to the user `zx_iovec_t` array.
+    pub const fn vector(&self) -> UserInPtr<zx_iovec_t> {
+        self.vector
+    }
+
+    /// Returns the number of iovec structures in the array.
+    pub const fn count(&self) -> usize {
+        self.count
+    }
+
     /// Returns true if the underlying pointer is null.
     pub fn is_null(&self) -> bool {
         self.vector.is_null()
@@ -183,6 +208,16 @@ impl UserOutIovec {
             cb(UserOutPtr::new(buffer as *mut u8), capacity)
         })
     }
+}
+
+/// Constructs a `UserOutIovec` from a user out-pointer and count.
+pub fn make_user_out_iovec(vector: UserOutPtr<zx_iovec_t>, count: usize) -> UserOutIovec {
+    UserOutIovec::new(UserInPtr::new(vector.as_ptr() as *const zx_iovec_t), count)
+}
+
+/// Constructs a `UserInIovec` from a user in-pointer and count.
+pub fn make_user_in_iovec(vector: UserInPtr<zx_iovec_t>, count: usize) -> UserInIovec {
+    UserInIovec::new(vector, count)
 }
 
 /// A wrapper around a userspace array of `zx_iovec_t` for read-write operations.

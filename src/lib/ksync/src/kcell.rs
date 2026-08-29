@@ -86,6 +86,16 @@ impl<T, Class> KCell<T, Class> {
         unsafe { self.map_unchecked_mut(|s| s.get_inner_mut()) }
     }
 
+    /// Initializes a `KCell` with a `PinInit` initializer for its inner value.
+    pub fn pin_init<E>(init: impl pin_init::PinInit<T, E>) -> impl pin_init::PinInit<Self, E> {
+        // SAFETY: KCell<T, Class> has identical memory layout and alignment as T.
+        unsafe {
+            pin_init::pin_init_from_closure(move |slot: *mut Self| {
+                init.__pinned_init(slot.cast::<T>())
+            })
+        }
+    }
+
     /// Unwraps the cell, returning the inner value.
     #[inline]
     pub fn into_inner(self) -> T {

@@ -61,6 +61,8 @@ FFI_ALWAYS_INLINE void cpp_vm_object_set_child_observer(VmObject* vmo,
   vmo->SetChildObserver(child_observer);
 }
 
+FFI_ALWAYS_INLINE bool cpp_vm_object_is_paged(const VmObject* vmo) { return vmo->is_paged(); }
+
 FFI_ALWAYS_INLINE zx_status_t cpp_vm_object_decommit_range(VmObject* vmo, uint64_t offset,
                                                            uint64_t len) {
   return vmo->DecommitRange(offset, len);

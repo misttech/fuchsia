@@ -43,6 +43,8 @@ mod sampler_dispatcher;
 mod sampler_dispatcher_ffi;
 mod socket_dispatcher;
 mod socket_dispatcher_ffi;
+mod stream_dispatcher;
+mod stream_dispatcher_ffi;
 mod suspend_token_dispatcher;
 mod suspend_token_dispatcher_ffi;
 mod thread_dispatcher;
@@ -77,6 +79,7 @@ pub use resource_ffi::{
 };
 pub use sampler_dispatcher::SamplerDispatcher;
 pub use socket_dispatcher::{Disposition, ReadType, SocketDispatcher};
+pub use stream_dispatcher::*;
 pub use suspend_token_dispatcher::SuspendTokenDispatcher;
 pub use thread_dispatcher::{AutoBlocked, Blocked, ThreadDispatcher};
 pub use timer_dispatcher::TimerDispatcher;

@@ -27,6 +27,7 @@ mod restricted;
 mod sampler;
 mod smc;
 mod socket;
+mod stream;
 mod system;
 mod task;
 mod test;

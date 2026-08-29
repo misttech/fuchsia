@@ -106,6 +106,9 @@ zx_status_t cpp_vm_object_take_pages(VmObject* vmo, uint64_t offset, uint64_t le
 zx_status_t cpp_vm_object_supply_pages(VmObject* vmo, uint64_t offset, uint64_t len,
                                        VmPageSpliceList* pages, SupplyOptions options);
 
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+FFI_ALWAYS_INLINE bool cpp_vm_object_is_paged(const VmObject* vmo);
+
 __END_CDECLS
 
 #endif  // ZIRCON_KERNEL_VM_INCLUDE_VM_VM_OBJECT_FFI_H_

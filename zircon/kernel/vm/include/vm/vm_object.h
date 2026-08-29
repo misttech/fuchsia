@@ -33,11 +33,11 @@
 #include <ktl/utility.h>
 #include <vm/attribution.h>
 #include <vm/page.h>
-#include <vm/stream_size_manager.h>
 #include <vm/vm.h>
 #include <vm/vm_mapping_observer.h>
 #include <vm/vm_page_list.h>
 
+class StreamSizeManager;
 class VmMapping;
 class MultiPageRequest;
 class VmObjectPaged;

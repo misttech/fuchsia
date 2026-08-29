@@ -46,7 +46,7 @@ define_kcounter!(DISPATCHER_COUNTER_DESTROY_COUNT, "dispatcher.counter.destroy",
 #[pin_data(PinnedDrop)]
 #[repr(C)]
 pub struct CounterDispatcherState {
-    canary: Canary<{ fbl::magic(b"SOLO") }>,
+    canary: Canary<{ fbl::magic(b"CNTR") }>,
 
     #[guarded_by(lock)]
     value: i64,

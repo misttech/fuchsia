@@ -306,6 +306,27 @@ impl<'a, Class1: LockClass, Class2: LockClass, M1: RawLock, M2: RawLock, P: Lock
         (inner_pin.token_mut(), &mut me.token2)
     }
 
+    /// Returns a shared reference to the primary lock proof token (`Class1`).
+    #[inline]
+    pub fn token(&self) -> &LockToken<'a, Class1> {
+        self.inner.token()
+    }
+
+    /// Returns a mutable reference to the primary lock proof token (`Class1`).
+    #[inline]
+    pub fn token_mut(self: Pin<&mut Self>) -> &mut LockToken<'a, Class1> {
+        let me = unsafe { self.get_unchecked_mut() };
+        let inner_pin = unsafe { Pin::new_unchecked(&mut me.inner) };
+        inner_pin.token_mut()
+    }
+
+    /// Returns a pinned mutable reference to the primary inner `KMutexGuard`.
+    #[inline]
+    pub fn inner_guard(self: Pin<&mut Self>) -> Pin<&mut KMutexGuard<'a, Class1, M1, P>> {
+        let me = unsafe { self.get_unchecked_mut() };
+        unsafe { Pin::new_unchecked(&mut me.inner) }
+    }
+
     /// Temporarily releases the lock before executing the given callable `f` and then
     /// re-acquires the lock.
     #[inline]

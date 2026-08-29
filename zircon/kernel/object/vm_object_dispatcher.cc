@@ -197,36 +197,7 @@ zx_status_t VmObjectDispatcher::SetSize(uint64_t size) {
     return ssm.status_value();
   }
 
-  StreamSizeManager::Operation op((*ssm).get());
-  Guard<Mutex> guard{AliasedLock, ssm->lock(), op.lock()};
-
-  ssm->BeginSetStreamSizeLocked(size, &op, &guard);
-
-  uint64_t size_aligned = RoundUpPageSize(size);
-  // Check for overflow when rounding up.
-  if (size_aligned < size) {
-    op.CancelLocked();
-    return ZX_ERR_OUT_OF_RANGE;
-  }
-
-  zx_status_t status = vmo_->Resize(size_aligned);
-  if (status != ZX_OK) {
-    op.CancelLocked();
-    return status;
-  }
-
-  uint64_t remaining = size_aligned - size;
-  if (remaining > 0) {
-    // TODO(https://fxbug.dev/42053728): Determine whether failure to ZeroRange here should undo
-    // this operation.
-    //
-    // Dropping the lock here is fine, as an `Operation` only needs to be locked when initializing,
-    // committing, or cancelling.
-    guard.CallUnlocked([&] { vmo_->ZeroRange(size, remaining); });
-  }
-
-  op.CommitLocked();
-  return status;
+  return rust_vm_object_dispatcher_set_size(this, ssm.value().get(), size);
 }
 
 zx_status_t VmObjectDispatcher::GetSize(uint64_t* size) {
@@ -310,55 +281,7 @@ zx_status_t VmObjectDispatcher::SetStreamSize(uint64_t stream_size) {
     return ssm.status_value();
   }
 
-  StreamSizeManager::Operation op((*ssm).get());
-  Guard<Mutex> guard{AliasedLock, ssm->lock(), op.lock()};
-
-  uint64_t vmo_size = vmo_->size();
-  uint64_t old_stream_size = ssm->GetStreamSize();
-
-  if (stream_size == old_stream_size) {
-    return ZX_OK;
-  }
-
-  // can't resize the stream beyond the VMO size
-  if (stream_size > vmo_size) {
-    return ZX_ERR_OUT_OF_RANGE;
-  }
-
-  ssm->BeginSetStreamSizeLocked(stream_size, &op, &guard);
-
-  // Zero the range from min(stream size, old stream size) to the end of the VMO.
-  uint64_t zero_start = ktl::min(stream_size, old_stream_size);
-  uint64_t aligned_stream_size = RoundUpPageSize(stream_size);
-  DEBUG_ASSERT(aligned_stream_size >= stream_size);
-  // Dropping the lock here is fine, as an `Operation` only needs to be locked when initializing,
-  // committing, or cancelling.
-  zx_status_t status = ZX_OK;
-  guard.CallUnlocked([&] {
-    status = vmo_->ZeroRange(zero_start, aligned_stream_size - zero_start);
-    if (status == ZX_OK) {
-      status = vmo_->ZeroRangeUntracked(aligned_stream_size, vmo_size - aligned_stream_size);
-    }
-  });
-
-  // Undo this operation of ZeroRange fails.
-  if (status != ZX_OK) {
-    op.CancelLocked();
-    return status;
-  }
-
-  // Ensure pages between min(stream size, old stream size) and the end of the VMO are unmapped
-  // before before committing new stream size.
-  VmObjectPaged* paged = DownCastVmObject<VmObjectPaged>(vmo_.get());
-  DEBUG_ASSERT(paged);
-  {
-    Guard<CriticalMutex> vmo_guard{paged->lock()};
-    const uint64_t aligned_zero_start = RoundDownPageSize(zero_start);
-    paged->ForwardRangeChangeUpdateLocked(aligned_zero_start, vmo_size - aligned_zero_start,
-                                          VmCowPages::RangeChangeOp::Unmap);
-    op.CommitLocked();
-  }
-  return ZX_OK;
+  return rust_vm_object_dispatcher_set_stream_size(this, ssm.value().get(), stream_size);
 }
 
 uint64_t VmObjectDispatcher::GetStreamSize() const {

@@ -867,6 +867,8 @@ multiconst!(zx_stream_seek_origin_t, [
 pub const ZX_STREAM_MODE_READ: u32 = 1 << 0;
 pub const ZX_STREAM_MODE_WRITE: u32 = 1 << 1;
 pub const ZX_STREAM_MODE_APPEND: u32 = 1 << 2;
+pub const ZX_STREAM_CREATE_MASK: u32 =
+    ZX_STREAM_MODE_READ | ZX_STREAM_MODE_WRITE | ZX_STREAM_MODE_APPEND;
 
 pub const ZX_STREAM_APPEND: u32 = 1 << 0;
 
@@ -2181,6 +2183,20 @@ struct_decl_macro! {
 }
 
 zx_info_timer_t!(zx_info_timer_t);
+
+struct_decl_macro! {
+    #[repr(C)]
+    #[derive(Default, Debug, Copy, Clone, Eq, PartialEq)]
+    #[derive(zerocopy::FromBytes, zerocopy::IntoBytes, zerocopy::Immutable)]
+    pub struct <zx_info_stream_t> {
+        pub options: u32,
+        pub padding1: [u8; 4],
+        pub seek: zx_off_t,
+        pub content_size: u64,
+    }
+}
+
+zx_info_stream_t!(zx_info_stream_t);
 
 #[repr(C)]
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]

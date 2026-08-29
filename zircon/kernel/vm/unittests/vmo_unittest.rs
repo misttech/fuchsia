@@ -4456,4 +4456,25 @@ mod vmo_rs {
         // merged its pages into the clone.
         expect_eq!(PmmOptDelayReuse::Yes, c_cow.should_delay_reuse_on_free());
     }
+
+    /// Tests that setting user stream size on a VMO does not alter VMO size.
+    #[test]
+    fn vmo_user_stream_size_test() {
+        let _scanner_disable = AutoVmScannerDisable::new();
+
+        // 4 page VMO.
+        let vmo = unwrap_ok!(VmObjectPaged::create(ALLOC_FLAG_ANY, 0, 4 * PAGE_SIZE));
+
+        expect_eq!(vmo.size(), 4 * PAGE_SIZE);
+
+        // Give VMO a user-defined stream size of 2 pages.
+        let ssm =
+            unwrap_ok!(crate::vm::stream_size_manager::StreamSizeManager::create(2 * PAGE_SIZE));
+        vmo.set_user_stream_size(ssm.clone());
+
+        expect_eq!(ssm.get_stream_size(), 2 * PAGE_SIZE);
+
+        // VMO size should be unchanged.
+        expect_eq!(vmo.size(), 4 * PAGE_SIZE);
+    }
 }

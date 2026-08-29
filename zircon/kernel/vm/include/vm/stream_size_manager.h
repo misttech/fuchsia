@@ -8,259 +8,47 @@
 #define ZIRCON_KERNEL_VM_INCLUDE_VM_STREAM_SIZE_MANAGER_H_
 
 #include <lib/zx/result.h>
+#include <zircon/compiler.h>
+#include <zircon/types.h>
 
-#include <fbl/intrusive_container_utils.h>
-#include <fbl/intrusive_double_list.h>
+#include <fbl/recycler.h>
 #include <fbl/ref_counted.h>
-#include <kernel/event.h>
-#include <kernel/mutex.h>
-#include <ktl/algorithm.h>
-#include <ktl/atomic.h>
-#include <ktl/limits.h>
-#include <ktl/optional.h>
-#include <ktl/variant.h>
+#include <fbl/ref_ptr.h>
+#include <kernel/ffi.h>
 
-// `StreamSizeManager` is a class that helps coordinate multiple, potentially concurrent changes
-// to a VMO's stream size without needing to serialize the I/O of those operations. This is done by
-// maintaining queues of outstanding operations, allowing concurrent execution of the operations,
-// and then committing the stream size effects of those operations in a particular order. This idea
-// is similar to the re-order buffer in Tomasulo's algorithm.
-//
-// There are 2 ordering queues: the read queue and the write queue. Both queues hold their
-// respective namesake operations as well as shrink operations.
-//
-// Read operations are permitted to read up to the smallest outstanding stream size, which can be
-// found as the minimum of the current stream size and all shrink operations. Upon completion,
-// reads will always commit without blocking behind other operations.
-//
-// Write operations may extend stream size. Upon completion, a write will block until it is the
-// head of the write queue if the smallest outstanding stream size is less than its target size.
-//
-// Set size operations are treated differently, depending on whether the operation will expand or
-// shrink the stream size. When expanding, set size ops are treated as write operations of the same
-// target size (see above). When shrinking, set size ops are treated as shrink operations and will
-// block until it is the head if any read or write operations that operate beyond the target size
-// are queued in front of the set size.
-class StreamSizeManager : public fbl::RefCounted<StreamSizeManager> {
- private:
-  // Forward declarations
-  struct WriteQueueTag {};
-  struct ReadQueueTag {};
+class StreamSizeManager;
 
+__BEGIN_CDECLS
+
+zx_status_t rust_stream_size_manager_create(uint64_t stream_size, StreamSizeManager** out_ptr);
+void rust_stream_size_manager_recycle(StreamSizeManager* stream_size_manager);
+uint64_t rust_stream_size_manager_get_stream_size(const StreamSizeManager* stream_size_manager);
+
+__END_CDECLS
+
+class StreamSizeManager : public fbl::RefCounted<StreamSizeManager>,
+                          public fbl::Recyclable<StreamSizeManager> {
  public:
-  enum class OperationType {
-    Write,
-    Read,
-    SetSize,
-    Append,
-  };
-
-  // `StreamSizeManager::Operation` is a structure to ensure operations related to stream size are
-  // committed in order. `Operation` is intended to be used as a stack-allocated structure.
-  //
-  // Currently, an operation maps 1:1 with the thread it is executing on and thus, can be
-  // considered owned by that thread.
-  //
-  // Notes:
-  //  * The initialization, destruction, and immutable properties of this type are only
-  //    thread-compatible.
-  //  * The type must either be committed or cancelled before destruction. Otherwise, the destructor
-  //    will panic.
-  class Operation : public fbl::ContainableBaseClasses<
-                        fbl::TaggedDoublyLinkedListable<Operation*, WriteQueueTag>,
-                        fbl::TaggedDoublyLinkedListable<Operation*, ReadQueueTag>> {
-   public:
-    // An operation must be initialized with the StreamSizeManager it will later be used with.
-    // Passing this here allows for easier locking as AliasedLock acquisitions can be used to
-    // satisfy the analysis.
-    explicit Operation(StreamSizeManager* parent) : parent_(parent) {}
-
-    ~Operation() {
-      DEBUG_ASSERT_MSG(!IsValid(), "Operation destructed without cancelling or committing!");
+  // TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+  FFI_ALWAYS_INLINE static zx::result<fbl::RefPtr<StreamSizeManager>> Create(uint64_t stream_size) {
+    StreamSizeManager* ptr = nullptr;
+    zx_status_t status = rust_stream_size_manager_create(stream_size, &ptr);
+    if (status != ZX_OK) {
+      return zx::error(status);
     }
-
-    // Disallow copy and move
-    Operation(const Operation&) = delete;
-    Operation& operator=(const Operation&) = delete;
-    Operation(Operation&&) = delete;
-    Operation& operator=(Operation&&) = delete;
-
-    Lock<Mutex>* lock() const TA_RET_CAP(parent()->lock()) { return parent()->lock(); }
-
-    // Gets the stream size that the operation will expand to once it is completed.
-    //
-    // Note:
-    //  * This may only be called on a valid operation.
-    //  * This must only be called when holding the parent `StreamSizeManager` lock.
-    uint64_t GetSizeLocked() const TA_REQ(lock());
-
-    // Shrinks the size of the operation.
-    //
-    // Only size shrinks are allowed, since the concurrency of other operations are gated on the
-    // largest potential size of operations in front of it.
-    //
-    // Note:
-    //  * This may only be called on a valid operation.
-    //  * This must only be called when holding the parent `StreamSizeManager` lock.
-    //  * The `new_size` passed in must be greater than 0.
-    //  * The `new_size` passed in must be less than or equal to the current size.
-    //  * This must only be called for `OperationType::Append` and `OperationType::Write` ops.
-    void ShrinkSizeLocked(uint64_t new_size) TA_REQ(lock());
-
-    // Commits the operation's effects on the stream size.
-    //
-    // Note:
-    //  * This may only be called on a valid operation.
-    //  * This must only be called when holding the parent `StreamSizeManager` lock.
-    void CommitLocked() TA_REQ(lock());
-
-    // Cancels the operation and does not commit any changes to the stream size.
-    //
-    // Note:
-    //  * This may only be called on a valid operation.
-    //  * This must only be called when holding the parent `StreamSizeManager` lock.
-    void CancelLocked() TA_REQ(lock());
-
-    // Updates the stream size when progress is made from the operation. Once this has been called
-    // it is invalid to call CancelLocked or to call ShrinkSizeLocked with a size less than the
-    // stream size provided here.
-    //
-    // Note:
-    //  * This may only be called on a valid `Append` or `Write` operation.
-    //  * The stream size must be larger than the current stream size.
-    void UpdateStreamSizeFromProgress(uint64_t new_stream_size);
-
-   private:
-    friend class StreamSizeManager;
-
-    // Indicates whether the operation is valid.
-    bool IsValid() const { return valid_; }
-
-    // Resets validity of the operation. This operation is private as it is assumed to only be
-    // called when it is correct to do so by the StreamSizeManager.
-    void Reset() { valid_ = false; }
-
-    void Initialize(StreamSizeManager* parent, uint64_t size, OperationType type);
-
-    OperationType GetType() const { return type_; }
-
-    StreamSizeManager* parent() const { return parent_; }
-
-    // This function exists to satisfy Clang thread safety analysis since there are many
-    // circumstances where the parent lock is not acquired through the parent pointer
-    // (i.e. initialization). As of writing, Clang is unable to follow pointer aliasing.
-    void AssertParentLockHeld() const TA_ASSERT(parent()->lock()) {
-      DEBUG_ASSERT(IsValid());
-      parent()->lock()->capability().AssertHeld();
-    }
-
-    StreamSizeManager* const parent_ = nullptr;
-    bool valid_ = false;
-    OperationType type_;
-
-    // Holds the target size. For appends, this will only be valid once the operation is at the head
-    // of the queue.
-    uint64_t size_;
-
-    // Tracks any stream size updated this operation performed. This is used to ensure that an
-    // operation is not cancelled or shrunk beyond any published stream size updates.
-#if DEBUG_ASSERT_IMPLEMENTED
-    uint64_t committed_stream_size_ = 0;
-#endif
-
-    Event ready_event_;
-  };
-
-  // Create a StreamSizeManager with its initial stream size set to |stream_size|. Returns a
-  // RefPtr to the newly created StreamSizeManager in |stream_size_manager| on success.
-  static zx::result<fbl::RefPtr<StreamSizeManager>> Create(uint64_t stream_size);
-
-  Lock<Mutex>* lock() const TA_RET_CAP(lock_) { return &lock_; }
-
-  // Returns the current stream size.
-  uint64_t GetStreamSize() const {
-    // Loads from the operation the stream size must be ordered with the acquire ordering to ensure
-    // that all memory operations from the VMO (i.e. reads) after the load are not reordered before
-    // reading the stream size. Otherwise, reads from the VMO before acquiring stream size may not
-    // see data that was written to the VMO just before stream size was updated (via
-    // `SetStreamSize`).
-    return stream_size_.load(ktl::memory_order_acquire);
+    return zx::ok(fbl::ImportFromRawPtr(ptr));
   }
 
-  // Marks and registers the beginning of an append operation.
-  //
-  //
-  // Notes:
-  //  * This function may block until other conflicting operations complete.
-  //  * This function may drop and reacquire the lock guarded by `lock_guard`.
-  //  * `append_size` must be greater than 0.
-  zx_status_t BeginAppendLocked(uint64_t append_size, Guard<Mutex>* lock_guard, Operation* out_op)
-      TA_REQ(lock_);
+  // TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+  FFI_ALWAYS_INLINE void fbl_recycle() { rust_stream_size_manager_recycle(this); }
 
-  // Marks and registers the beginning of a write operation.
-  //
-  // If the write is results in an expansion of the stream size, returns the previous stream size
-  // from which the write expands in `out_prev_stream_size`. The gap from the previous stream size
-  // to where the write begins likely needs to be zeroed out.
-  //
-  // Notes:
-  //  * This function may block until other conflicting operations complete.
-  //  * This function may drop and reacquire the lock guarted by `lock_guard`.
-  void BeginWriteLocked(uint64_t target_size, Guard<Mutex>* lock_guard,
-                        ktl::optional<uint64_t>* out_prev_stream_size, Operation* out_op)
-      TA_REQ(lock_);
-
-  // Marks and registers the beginning of a read operation.
-  //
-  // Returns the maximum size of the stream that should be read in `out_stream_size_limit`.
-  void BeginReadLocked(uint64_t target_size, uint64_t* out_stream_size_limit, Operation* out_op)
-      TA_REQ(lock_);
-
-  // Marks and registers the beginning of an operation to set the stream size to a target size.
-  //
-  // Note that this function may drop and reacquire the lock guarded by `lock_guard`.
-  void BeginSetStreamSizeLocked(uint64_t target_size, Operation* out_op, Guard<Mutex>* lock_guard)
-      TA_REQ(lock_);
+  // TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+  FFI_ALWAYS_INLINE uint64_t GetStreamSize() const {
+    return rust_stream_size_manager_get_stream_size(this);
+  }
 
  private:
-  // Private constructor. External callers should use StreamSizeManager::Create.
-  explicit StreamSizeManager(uint64_t stream_size) : stream_size_(stream_size) {}
-  StreamSizeManager() = delete;
-
-  // Updates the stream size to a new value.
-  //
-  // Note that this function should only be called by internal functions, as stream size should
-  // only be modified by one operation at a time. This is enforced by the queues.
-  void SetStreamSize(uint64_t new_stream_size) {
-    // Stores to the stream size must be ordered with release ordering to ensure that all memory
-    // operations (i.e. writes) to the VMO are visible *before* updating stream size. Readers must
-    // see valid data in the VMO if the region being read is within stream size. See
-    // `GetStreamSize` as well.
-    stream_size_.store(new_stream_size, ktl::memory_order_release);
-  }
-
-  // Blocks until the provided operation is at the head of the queue.
-  //
-  // Note that this function will drop the lock guarded by `lock_guard` while blocking and
-  // reacquires the lock after.
-  void BlockUntilHeadLocked(Operation* op, Guard<Mutex>* lock_guard) TA_REQ(lock_);
-
-  void CommitAndDequeueOperationLocked(Operation* op) TA_REQ(lock_);
-
-  // Dequeues an `Operation`. This must only be called internally, once an `Operation` is committed
-  // or cancelled.
-  void DequeueOperationLocked(Operation* op) TA_REQ(lock_);
-
-  mutable DECLARE_MUTEX(StreamSizeManager) lock_;
-  // These queues are usually very shallow, unless stream clients call many operations concurrently.
-  fbl::DoublyLinkedList<Operation*, WriteQueueTag> write_q_ TA_GUARDED(lock_);
-  fbl::DoublyLinkedList<Operation*, ReadQueueTag> read_q_ TA_GUARDED(lock_);
-
-  // `stream_size_` is not guarded by a lock because the queues above maintains that only one
-  // operation can ever be mutating `stream_size_` at any given point.
-  //
-  // Accessing this value should be done via `GetStreamSize` and `SetStreamSize`.
-  ktl::atomic<uint64_t> stream_size_ = 0;
+  StreamSizeManager() = default;
 };
 
 #endif  // ZIRCON_KERNEL_VM_INCLUDE_VM_STREAM_SIZE_MANAGER_H_

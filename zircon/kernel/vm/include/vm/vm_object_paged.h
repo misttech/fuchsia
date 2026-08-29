@@ -25,6 +25,7 @@
 #include <kernel/range_check.h>
 #include <vm/page_source.h>
 #include <vm/pmm.h>
+#include <vm/stream_size_manager.h>
 #include <vm/vm.h>
 #include <vm/vm_aspace.h>
 #include <vm/vm_cow_pages.h>

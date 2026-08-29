@@ -96,6 +96,11 @@ impl VmObject {
         unsafe { bindings::cpp_vm_object_is_resizable(self.as_raw()) }
     }
 
+    /// Returns whether the VMO is paged.
+    pub fn is_paged(&self) -> bool {
+        // SAFETY: `self.as_raw()` returns a valid `VmObject` pointer.
+        unsafe { bindings::cpp_vm_object_is_paged(self.as_raw()) }
+    }
     /// Returns whether the VMO is contiguous.
     pub fn is_contiguous(&self) -> bool {
         // SAFETY: `self.as_raw()` returns a valid `VmObject` pointer.
@@ -344,6 +349,19 @@ impl VmObject {
             // SAFETY: `raw` points to a valid `VmObjectPaged` whose reference count is owned by
             // `this`.
             unsafe { VmObjectPaged::from_raw(raw) }
+        }
+    }
+
+    /// Downcasts a `&VmObject` into a `&VmObjectPaged` if it is a paged VMO.
+    pub fn as_paged(&self) -> Option<&VmObjectPaged> {
+        // SAFETY: `self.as_raw()` returns a valid `VmObject` pointer.
+        let raw =
+            unsafe { vm_object_paged_bindings::cpp_vm_object_as_vm_object_paged(self.as_raw()) };
+        if raw.is_null() {
+            None
+        } else {
+            // SAFETY: `raw` points to a valid `VmObjectPaged` whose lifetime matches `self`.
+            unsafe { Some(&*raw.cast::<VmObjectPaged>()) }
         }
     }
 

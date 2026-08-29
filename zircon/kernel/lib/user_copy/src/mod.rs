@@ -11,6 +11,7 @@ mod user_string_view;
 #[allow(unused_imports)]
 pub use user_iovec::{
     UserInIovec, UserInOutIovec, UserInOutVector, UserInVector, UserOutIovec, UserOutVector,
+    make_user_in_iovec, make_user_out_iovec,
 };
 #[allow(unused_imports)]
 pub use user_ptr::{UserInOutPtr, UserInPtr, UserOutPtr};

@@ -23,6 +23,7 @@ pub mod pmm_arena;
 pub mod pmm_checker;
 pub mod pmm_node;
 pub mod scanner;
+pub mod stream_size_manager;
 #[allow(clippy::module_inception)]
 pub mod vm;
 pub mod vm_address_region;
@@ -31,6 +32,7 @@ pub mod vm_cow_pages;
 pub mod vm_mapping;
 pub mod vm_object;
 pub mod vm_object_paged;
+pub mod vm_object_paged_ffi;
 pub mod vm_object_physical;
 pub mod vm_page_list;
 pub mod vmm;

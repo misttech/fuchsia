@@ -80,3 +80,39 @@ unsafe extern "C" {
         out_rights: *mut zx_rights_t,
     ) -> zx_status_t;
 }
+
+use crate::vm::stream_size_manager::StreamSizeManager;
+
+/// Sets the size of a `VmObjectDispatcher` from C++.
+///
+/// # Safety
+///
+/// `disp` and `stream_size_manager` must be non-null and point to valid objects.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rust_vm_object_dispatcher_set_size(
+    disp: &VmObjectDispatcher,
+    stream_size_manager: &StreamSizeManager,
+    size: u64,
+) -> zx_types::zx_status_t {
+    match disp.set_size_with_ssm(stream_size_manager, size) {
+        Ok(()) => zx_types::ZX_OK,
+        Err(status) => status.into_raw(),
+    }
+}
+
+/// Sets the stream size of a `VmObjectDispatcher` from C++.
+///
+/// # Safety
+///
+/// `disp` and `stream_size_manager` must be non-null and point to valid objects.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rust_vm_object_dispatcher_set_stream_size(
+    disp: &VmObjectDispatcher,
+    stream_size_manager: &StreamSizeManager,
+    stream_size: u64,
+) -> zx_types::zx_status_t {
+    match disp.set_stream_size_with_ssm(stream_size_manager, stream_size) {
+        Ok(()) => zx_types::ZX_OK,
+        Err(status) => status.into_raw(),
+    }
+}

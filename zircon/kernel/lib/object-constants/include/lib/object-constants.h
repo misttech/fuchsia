@@ -88,6 +88,11 @@ constexpr size_t kSocketDispatcherStateSize = 88;
 constexpr size_t kSocketDispatcherStateAlign = 8;
 constexpr size_t kSocketDispatcherStateOffset = 48;
 
+// Size and alignment for StreamDispatcherState.
+constexpr size_t kStreamDispatcherStateSize = 112;
+constexpr size_t kStreamDispatcherStateAlign = 8;
+constexpr size_t kStreamDispatcherStateOffset = 48;
+
 // Size and alignment for SchedulerState::BaseProfile.
 constexpr size_t kSchedulerStateBaseProfileSize = 32;
 constexpr size_t kSchedulerStateBaseProfileAlign = 8;

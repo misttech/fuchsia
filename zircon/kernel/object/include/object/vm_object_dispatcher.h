@@ -58,6 +58,13 @@ zx_status_t cpp_vm_object_dispatcher_create_child(
 zx_status_t cpp_vm_object_dispatcher_create_with_parent_stream_size(
     VmObjectDispatcher* parent_disp, VmObject* raw_child_vmo, uint32_t raw_initial_mutability,
     ffi::Uninitialized<KernelHandle<VmObjectDispatcher>>* out_handle, zx_rights_t* out_rights);
+
+zx_status_t rust_vm_object_dispatcher_set_size(const VmObjectDispatcher* disp,
+                                               const StreamSizeManager* stream_size_manager,
+                                               uint64_t size);
+zx_status_t rust_vm_object_dispatcher_set_stream_size(const VmObjectDispatcher* disp,
+                                                      const StreamSizeManager* stream_size_manager,
+                                                      uint64_t stream_size);
 }
 
 class VmObjectDispatcher final : public SoloDispatcher<VmObjectDispatcher, ZX_DEFAULT_VMO_RIGHTS>,

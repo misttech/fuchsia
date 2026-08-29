@@ -9,6 +9,7 @@ use super::vm_object_dispatcher_ffi::{
     cpp_vm_object_dispatcher_get_vmo, cpp_vm_object_dispatcher_get_vmo_info,
 };
 use crate::user_copy::{UserInOutPtr, UserInPtr, UserOutPtr};
+use crate::vm::stream_size_manager::{Operation as StreamSizeManagerOperation, StreamSizeManager};
 use crate::vm::vm_object::VmObject;
 use crate::vm::vm_object_paged::VmObjectPaged;
 use core::mem::MaybeUninit;
@@ -310,6 +311,117 @@ impl VmObjectDispatcher {
     fn as_ffi_mut(&self) -> *mut VmObjectDispatcher {
         self.as_ffi().cast_mut()
     }
+
+    /// Sets the stream size of the underlying VMO, coordinating with `StreamSizeManager`.
+    pub fn set_stream_size_with_ssm(
+        &self,
+        ssm: &StreamSizeManager,
+        target_size: u64,
+    ) -> Result<(), Status> {
+        let Some(paged) = self.vmo().as_paged() else {
+            return Err(Status::NOT_SUPPORTED);
+        };
+
+        pin_init::stack_pin_init!(let op = StreamSizeManagerOperation::init(ssm));
+        ksync::lock!(let mut guard = ksync::aliased_lock(ssm.lock(), op.lock()));
+
+        let vmo_size = paged.size();
+        let old_stream_size = ssm.get_stream_size();
+
+        if target_size == old_stream_size {
+            return Ok(());
+        }
+
+        // Can't resize the stream beyond the VMO size.
+        if target_size > vmo_size {
+            return Err(Status::OUT_OF_RANGE);
+        }
+
+        ssm.begin_set_stream_size_locked(&mut guard.as_mut().inner_guard(), target_size, &op);
+
+        // Zero the range from min(target size, old stream size) to the end of the VMO.
+        let zero_start = core::cmp::min(target_size, old_stream_size);
+        let Some(aligned_stream_size) = round_up_page_size(target_size) else {
+            let (_, op_token) = guard.as_mut().tokens_mut();
+            op.cancel_locked(op_token);
+            return Err(Status::OUT_OF_RANGE);
+        };
+        debug_assert!(aligned_stream_size >= target_size);
+
+        // Dropping the lock here is fine, as an Operation only needs to be locked when
+        // initializing, committing, or cancelling.
+        let res = guard.as_mut().call_unlocked(|| {
+            paged.zero_range(zero_start, aligned_stream_size - zero_start)?;
+            paged.zero_range_untracked(aligned_stream_size, vmo_size - aligned_stream_size)
+        });
+
+        if let Err(status) = res {
+            let (_, op_token) = guard.as_mut().tokens_mut();
+            op.cancel_locked(op_token);
+            return Err(status);
+        }
+
+        // Ensure pages between min(target size, old stream size) and the end of the VMO are
+        // unmapped before committing new stream size.
+        let aligned_zero_start = round_down_page_size(zero_start);
+        let (_, op_token) = guard.as_mut().tokens_mut();
+        paged.unmap_pages_and_call(aligned_zero_start, vmo_size - aligned_zero_start, || {
+            op.commit_locked(op_token);
+        });
+
+        Ok(())
+    }
+
+    /// Sets the size of the underlying VMO, coordinating with `StreamSizeManager`.
+    pub fn set_size_with_ssm(&self, ssm: &StreamSizeManager, size: u64) -> Result<(), Status> {
+        let Some(paged) = self.vmo().as_paged() else {
+            return Err(Status::UNAVAILABLE);
+        };
+
+        pin_init::stack_pin_init!(let op = StreamSizeManagerOperation::init(ssm));
+        ksync::lock!(let mut guard = ksync::aliased_lock(ssm.lock(), op.lock()));
+
+        ssm.begin_set_stream_size_locked(&mut guard.as_mut().inner_guard(), size, &op);
+
+        let Some(size_aligned) = round_up_page_size(size) else {
+            let (_, op_token) = guard.as_mut().tokens_mut();
+            op.cancel_locked(op_token);
+            return Err(Status::OUT_OF_RANGE);
+        };
+
+        if let Err(status) = paged.resize(size_aligned) {
+            let (_, op_token) = guard.as_mut().tokens_mut();
+            op.cancel_locked(op_token);
+            return Err(status);
+        }
+
+        let remaining = size_aligned - size;
+        if remaining > 0 {
+            // TODO(https://fxbug.dev/42053728): Determine whether failure to ZeroRange here should
+            // undo this operation.
+            //
+            // Dropping the lock here is fine, as an Operation only needs to be locked when
+            // initializing, committing, or cancelling.
+            let _ = guard.as_mut().call_unlocked(|| paged.zero_range(size, remaining));
+        }
+
+        let (_, op_token) = guard.as_mut().tokens_mut();
+        op.commit_locked(op_token);
+        Ok(())
+    }
+}
+
+const fn round_up_page_size(val: u64) -> Option<u64> {
+    const MASK: u64 = page::MASK as u64;
+    match val.checked_add(MASK) {
+        Some(v) => Some(v & !MASK),
+        None => None,
+    }
+}
+
+const fn round_down_page_size(val: u64) -> u64 {
+    const MASK: u64 = page::MASK as u64;
+    val & !MASK
 }
 
 /// Kernel unit tests for `VmObjectDispatcher`.
@@ -317,7 +429,9 @@ impl VmObjectDispatcher {
 #[unittest::suite(name = "vm_object_dispatcher_tests")]
 mod tests {
     use super::{InitialMutability, VmObjectDispatcher};
+    use crate::vm::stream_size_manager::StreamSizeManager;
     use crate::vm::vm_object_paged::VmObjectPaged;
+    use zx_status::Status;
 
     /// Tests creating a VmObjectDispatcher and accessing its underlying VMO.
     #[test]
@@ -418,5 +532,40 @@ mod tests {
             .expect("failed to create ref child dispatcher");
         unittest::expect_true!(ref_child_rights != 0);
         unittest::expect_eq!(ref_child_handle.dispatcher().vmo().size(), page::SIZE as u64);
+    }
+
+    /// Tests set_size and set_stream_size on VmObjectDispatcher.
+    #[test]
+    fn test_vm_object_dispatcher_set_size_and_stream_size() {
+        let paged_vmo = VmObjectPaged::create(0, VmObjectPaged::RESIZABLE, 8192)
+            .expect("failed to create paged VMO");
+        let ssm = StreamSizeManager::create(4096).expect("failed to create StreamSizeManager");
+        paged_vmo.set_user_stream_size(ssm.clone());
+
+        let (handle, _rights) =
+            VmObjectDispatcher::create(&paged_vmo, 4096, InitialMutability::Mutable)
+                .expect("failed to create VmObjectDispatcher");
+        let disp = handle.dispatcher();
+
+        unittest::assert_ok!(disp.set_stream_size_with_ssm(&ssm, 2048));
+        unittest::expect_eq!(ssm.get_stream_size(), 2048);
+
+        unittest::assert_ok!(disp.set_size_with_ssm(&ssm, 4096));
+        unittest::expect_eq!(disp.vmo().size(), 4096);
+    }
+
+    /// Tests that resizing a VMO to u64::MAX returns OUT_OF_RANGE without panicking.
+    #[test]
+    fn test_vm_object_dispatcher_set_size_overflow() {
+        let paged_vmo = VmObjectPaged::create(0, VmObjectPaged::RESIZABLE, 4096)
+            .expect("failed to create paged VMO");
+        let ssm = StreamSizeManager::create(4096).expect("failed to create StreamSizeManager");
+        let (handle, _rights) =
+            VmObjectDispatcher::create(&paged_vmo, 4096, InitialMutability::Mutable)
+                .expect("failed to create VmObjectDispatcher");
+        let disp = handle.dispatcher();
+
+        let res = disp.set_size_with_ssm(&ssm, u64::MAX);
+        unittest::expect_eq!(Status::result_into_raw(res), Status::OUT_OF_RANGE.into_raw());
     }
 }
