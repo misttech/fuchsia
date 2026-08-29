@@ -465,6 +465,8 @@ kernel_bindgen_crate("page-queues-bindings") {
   edition = "2024"
   notice_year = 2026
   function_allowlist = [
+    "cpp_page_queues_init",
+    "cpp_page_queues_destroy",
     "cpp_page_queues_debug_page_is_wired",
     "cpp_page_queues_debug_page_is_any_anonymous",
     "cpp_page_queues_debug_page_is_reclaim",

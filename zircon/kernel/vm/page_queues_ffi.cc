@@ -9,12 +9,19 @@
 #include <zircon/types.h>
 
 #include <kernel/ffi.h>
+#include <ktl/memory.h>
 
 #include "vm/page_queues.h"
 #include "vm/pmm.h"
 
 // TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
 extern "C" {
+
+FFI_ALWAYS_INLINE void cpp_page_queues_destroy(PageQueues* queues) { ktl::destroy_at(queues); }
+
+FFI_ALWAYS_INLINE void cpp_page_queues_init(ffi::Uninitialized<PageQueues>* queues) {
+  queues->Initialize();
+}
 
 FFI_ALWAYS_INLINE bool cpp_page_queues_debug_page_is_wired(const PageQueues* queues,
                                                            const vm_page_t* page) {

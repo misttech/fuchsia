@@ -7,6 +7,7 @@
 use crate::vm::page::VmPagePtr;
 use core::marker::{PhantomData, PhantomPinned};
 use page_queues_bindings as bindings;
+use pin_init::{PinInit, pin_data};
 use zr::Opaque;
 use zx_types::zx_duration_mono_t;
 
@@ -24,11 +25,14 @@ pub use bindings::PageQueues_Counts as Counts;
 #[derive(Debug)]
 pub struct QueueAge(pub usize);
 
+#[pin_data(PinnedDrop)]
 #[repr(C)]
 pub struct PageQueues {
     raw: Opaque<bindings::PageQueues>,
     phantom: PhantomData<PhantomPinned>,
 }
+
+zr::unsafe_pinned_drop_ffi!(PageQueues, bindings::cpp_page_queues_destroy);
 
 impl PageQueues {
     /// The number of reclamation queues is slightly arbitrary, but to be useful you want at least 3
@@ -81,6 +85,10 @@ impl PageQueues {
     /// prevent, aging.
     pub const DEFAULT_ACTIVE_RATIO_MULTIPLIER: u64 =
         bindings::PageQueues_kDefaultActiveRatioMultiplier;
+
+    pub fn init() -> impl PinInit<Self, core::convert::Infallible> {
+        zr::pin_init_ffi!(bindings::cpp_page_queues_init)
+    }
 
     /// Domain-specific conversion: returns raw pointer for `PageQueues`.
     pub fn as_raw(&self) -> *mut bindings::PageQueues {
