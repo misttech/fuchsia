@@ -52,6 +52,7 @@ source_set("vm-cpp") {
     "pmm.cc",
     "pmm_arena.cc",
     "pmm_checker.cc",
+    "pmm_checker_ffi.cc",
     "pmm_ffi.cc",
     "pmm_node.cc",
     "pmm_node_ffi.cc",
@@ -342,6 +343,30 @@ kernel_bindgen_crate("pmm-bindings") {
     "pub type PmmNode = pmm_node_bindings::PmmNode;",
     "pub type VmPageDoublyLinkedList = core::ffi::c_void;",
   ]
+  expect_lints = []
+}
+
+kernel_bindgen_crate("pmm-checker-bindings") {
+  visibility = [ ":*" ]
+  headers = [ "include/vm/pmm_checker_ffi.h" ]
+  non_rust_deps = [ ":vm-cpp" ]
+  output_name = "pmm_checker_bindings.rs"
+  cpp = true
+
+  edition = "2024"
+  notice_year = 2026
+
+  function_allowlist = [
+    "cpp_pmm_checker_destroy",
+    "cpp_pmm_checker_init",
+  ]
+  type_allowlist = [ "PmmChecker" ]
+  opaque_types = [ "PmmChecker" ]
+  function_blocklist = [ "PmmChecker_.*" ]
+  type_blocklist = [ "PmmChecker_.*" ]
+  additional_bindgen_flags = [ "--no-recursive-allowlist" ]
+
+  raw_lines = [ "#![no_std]" ]
   expect_lints = []
 }
 
@@ -1036,6 +1061,7 @@ kernel_rust_mod("vm-rs") {
     "pinned_vm_object.rs",
     "pmm.rs",
     "pmm_arena.rs",
+    "pmm_checker.rs",
     "pmm_node.rs",
     "scanner.rs",
     "vm.rs",
@@ -1062,6 +1088,7 @@ kernel_rust_mod("vm-rs") {
     ":physmap-bindings",
     ":pmm-arena-bindings",
     ":pmm-bindings",
+    ":pmm-checker-bindings",
     ":pmm-node-bindings",
     ":scanner-bindings",
     ":vm-address-region-bindings",
