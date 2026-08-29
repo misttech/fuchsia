@@ -488,7 +488,7 @@ impl LibraryCommand {
                         return;
                     }
                 };
-                let status = match handle.signal_handle(set_mask, clear_mask).await {
+                let status = match handle.signal_handle(clear_mask, set_mask).await {
                     Ok(_) => FcTransportStatus::OK,
                     Err(e) => {
                         lib.write_fdomain_err(calling_thread, &e);

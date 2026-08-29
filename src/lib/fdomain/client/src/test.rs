@@ -4,8 +4,8 @@
 
 use crate::channel::HandleOp;
 use crate::{
-    AnyHandle, AsHandleRef, Client, Error, FDomainTransport, HandleBased, OnFDomainSignals, Socket,
-    VmoOptions,
+    AnyHandle, AsHandleRef, Client, Error, FDomainTransport, HandleBased, OnFDomainSignals, Peered,
+    Socket, VmoOptions,
 };
 use fdomain_container::FDomain;
 use fdomain_container::wire::FDomainCodec;
@@ -813,7 +813,6 @@ async fn handle_lifecycle_tracking() {
     a.close().await.unwrap();
     assert_eq!(client.0.lock().handles.len(), 0);
 }
-
 #[fuchsia::test]
 async fn vmo_basic() {
     let (client, _) = TestFDomain::new_client();
@@ -863,4 +862,41 @@ async fn vmo_over_channel() {
 
     let data = vmo_received.read(0, 11).await.unwrap();
     assert_eq!(data, b"Data in VMO");
+}
+
+#[fuchsia::test]
+async fn test_signals() {
+    let (client, _) = TestFDomain::new_client();
+    let event = client.create_event();
+
+    // Signal USER_0: clear NONE, set USER_0
+    event.as_handle_ref().signal(fidl::Signals::NONE, fidl::Signals::USER_0).await.unwrap();
+
+    let signals =
+        OnFDomainSignals::new(&event.as_handle_ref(), fidl::Signals::USER_0).await.unwrap();
+    assert_eq!(signals, fidl::Signals::USER_0);
+
+    // Clear USER_0 and set USER_1 using signal_handle
+    event.signal_handle(fidl::Signals::USER_0, fidl::Signals::USER_1).await.unwrap();
+
+    let signals =
+        OnFDomainSignals::new(&event.as_handle_ref(), fidl::Signals::USER_1).await.unwrap();
+    assert_eq!(signals, fidl::Signals::USER_1);
+
+    // Clear USER_1 and set no signals using signal
+    event.as_handle_ref().signal(fidl::Signals::USER_1, fidl::Signals::NONE).await.unwrap();
+
+    let (a, b) = client.create_event_pair();
+
+    // Signal peer from a: clear NONE, set USER_2 on b
+    a.signal_peer(fidl::Signals::NONE, fidl::Signals::USER_2).await.unwrap();
+
+    let signals = OnFDomainSignals::new(&b.as_handle_ref(), fidl::Signals::USER_2).await.unwrap();
+    assert_eq!(signals, fidl::Signals::USER_2);
+
+    // Signal peer from b: clear NONE, set USER_3 on a
+    b.signal_peer(fidl::Signals::NONE, fidl::Signals::USER_3).await.unwrap();
+
+    let signals = OnFDomainSignals::new(&a.as_handle_ref(), fidl::Signals::USER_3).await.unwrap();
+    assert_eq!(signals, fidl::Signals::USER_3);
 }

@@ -134,8 +134,8 @@ impl HandleRef<'_> {
     /// Assert and deassert signals on this handle.
     pub fn signal(
         &self,
-        set: fidl::Signals,
         clear: fidl::Signals,
+        set: fidl::Signals,
     ) -> impl Future<Output = Result<(), Error>> + use<> {
         let handle = self.proto();
         let client = self.client();
@@ -172,10 +172,10 @@ pub trait AsHandleRef {
 
     fn signal_handle(
         &self,
-        set: fidl::Signals,
         clear: fidl::Signals,
+        set: fidl::Signals,
     ) -> impl Future<Output = Result<(), Error>> {
-        self.as_handle_ref().signal(set, clear)
+        self.as_handle_ref().signal(clear, set)
     }
 
     /// Get the client supporting this handle. See `fidl::Proxy::domain`.
