@@ -191,32 +191,6 @@ zx_status_t sys_ioports_release(zx_handle_t hrsrc, uint16_t io_addr, uint32_t le
 }
 #endif
 
-// zx_status_t zx_bti_create
-zx_status_t sys_bti_create(zx_handle_t iommu, uint32_t options, uint64_t bti_id, zx_handle_t* out) {
-  auto up = ProcessDispatcher::GetCurrent();
-
-  if (options != 0) {
-    return ZX_ERR_INVALID_ARGS;
-  }
-
-  fbl::RefPtr<IommuDispatcher> iommu_dispatcher;
-  // TODO(teisenbe): This should probably have a right on it.
-  zx_status_t status =
-      up->handle_table().GetDispatcherWithRights(*up, iommu, ZX_RIGHT_NONE, &iommu_dispatcher);
-  if (status != ZX_OK) {
-    return status;
-  }
-
-  KernelHandle<BusTransactionInitiatorDispatcher> handle;
-  zx_rights_t rights;
-  status = BusTransactionInitiatorDispatcher::Create(iommu_dispatcher->iommu(), bti_id, &handle,
-                                                     &rights);
-  if (status != ZX_OK) {
-    return status;
-  }
-  return up->MakeAndAddHandle(ktl::move(handle), rights, out);
-}
-
 // Helper for optimizing writing many small elements of user ptr array by allowing for a variable
 // amount of buffering.
 template <typename T, size_t Buf>
@@ -438,21 +412,6 @@ zx_status_t sys_bti_pin(zx_handle_t handle, uint32_t options, zx_handle_t vmo, u
   }
 
   return res;
-}
-
-// zx_status_t zx_bti_release_quarantine
-zx_status_t sys_bti_release_quarantine(zx_handle_t handle) {
-  auto up = ProcessDispatcher::GetCurrent();
-  fbl::RefPtr<BusTransactionInitiatorDispatcher> bti_dispatcher;
-
-  zx_status_t status =
-      up->handle_table().GetDispatcherWithRights(*up, handle, ZX_RIGHT_WRITE, &bti_dispatcher);
-  if (status != ZX_OK) {
-    return status;
-  }
-
-  bti_dispatcher->ReleaseQuarantine();
-  return ZX_OK;
 }
 
 // Having a single-purpose syscall like this is a bit of an anti-pattern in our

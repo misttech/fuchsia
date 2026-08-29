@@ -14,6 +14,11 @@
 // These values must match the exact size and alignment of their corresponding Rust structs,
 // which is enforced by static_asserts in both Rust and C++.
 
+// Size, alignment, and offset for BusTransactionInitiatorDispatcherState.
+constexpr size_t kBusTransactionInitiatorDispatcherStateSize = 56;
+constexpr size_t kBusTransactionInitiatorDispatcherStateAlign = 8;
+constexpr size_t kBusTransactionInitiatorDispatcherStateOffset = 48;
+
 // Size, alignment, and offset for CounterDispatcherState.
 constexpr size_t kCounterDispatcherStateSize = 64;
 constexpr size_t kCounterDispatcherStateAlign = 8;

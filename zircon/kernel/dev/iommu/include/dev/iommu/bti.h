@@ -10,6 +10,7 @@
 #include <lib/zx/result.h>
 #include <stdint.h>
 #include <sys/types.h>
+#include <zircon/types.h>
 
 #include <dev/iommu/common.h>
 #include <fbl/name.h>
@@ -23,6 +24,25 @@ namespace iommu {
 
 class Iommu;  // fwd decl; declared in <dev/iommu/iommu.h>.
 class Pmt;    // fwd decl; declared in <dev/iommu/pmt.h>.
+class Bti;
+
+}  // namespace iommu
+
+extern "C" {
+void cpp_bti_recycle(iommu::Bti* bti);
+void cpp_bti_release_quarantine(iommu::Bti* bti);
+void cpp_bti_on_dispatcher_zero_handles(iommu::Bti* bti);
+uint64_t cpp_bti_minimum_contiguity(const iommu::Bti* bti);
+uint64_t cpp_bti_aspace_size(const iommu::Bti* bti);
+uint64_t cpp_bti_pmo_count(const iommu::Bti* bti);
+uint64_t cpp_bti_quarantine_count(const iommu::Bti* bti);
+bool cpp_bti_in_fault_state(const iommu::Bti* bti);
+uint64_t cpp_bti_bti_id(const iommu::Bti* bti);
+zx_status_t cpp_bti_set_name(iommu::Bti* bti, const char* name, size_t len);
+zx_status_t cpp_bti_get_name(const iommu::Bti* bti, char out_name[ZX_MAX_NAME_LEN]);
+}
+
+namespace iommu {
 
 class Bti : public fbl::RefCounted<Bti> {
  public:
@@ -176,6 +196,7 @@ class Bti : public fbl::RefCounted<Bti> {
 
  protected:
   friend class fbl::RefPtr<Bti>;
+  friend void ::cpp_bti_recycle(iommu::Bti*);
 
   Bti(uint64_t bti_id) : bti_id_(bti_id) {}
   virtual ~Bti() = default;

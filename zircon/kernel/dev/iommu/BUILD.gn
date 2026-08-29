@@ -9,7 +9,10 @@ import("//build/cpp/library_headers.gni")
 static_library("iommu") {
   public_deps = [ ":headers" ]
 
-  sources = [ "bti.cc" ]
+  sources = [
+    "bti.cc",
+    "bti_ffi.cc",
+  ]
 
   deps = [
     "//zircon/kernel/lib/fbl",

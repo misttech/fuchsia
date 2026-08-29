@@ -13,6 +13,7 @@ source_set("object") {
   sources = [
     "buffer_chain.cc",
     "bus_transaction_initiator_dispatcher.cc",
+    "bus_transaction_initiator_dispatcher_ffi.cc",
     "channel_dispatcher.cc",
     "clock_dispatcher.cc",
     "counter_dispatcher.cc",
@@ -192,6 +193,9 @@ kernel_rust_mod("object-rs") {
   output_name = "object"
   source_root = "object.rs"
   sources = [
+    "bti.rs",
+    "bus_transaction_initiator_dispatcher.rs",
+    "bus_transaction_initiator_dispatcher_ffi.rs",
     "counter_dispatcher.rs",
     "counter_dispatcher_ffi.rs",
     "dispatcher.rs",

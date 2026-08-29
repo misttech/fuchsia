@@ -123,6 +123,7 @@ kernel_rust_mod("syscalls-rs") {
   output_name = "syscalls_rs"
   source_root = "mod.rs"
   sources = [
+    "bti.rs",
     "clock.rs",
     "counter.rs",
     "cprng.rs",

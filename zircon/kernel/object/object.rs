@@ -4,6 +4,9 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
+mod bti;
+mod bus_transaction_initiator_dispatcher;
+mod bus_transaction_initiator_dispatcher_ffi;
 mod counter_dispatcher;
 mod counter_dispatcher_ffi;
 mod dispatcher;
@@ -52,6 +55,7 @@ mod vm_object_dispatcher;
 mod vm_object_dispatcher_ffi;
 mod wait_signal_observer;
 
+pub use bus_transaction_initiator_dispatcher::BusTransactionInitiatorDispatcher;
 pub use counter_dispatcher::CounterDispatcher;
 pub use dispatcher::{Dispatcher, DispatcherOps};
 pub use event_dispatcher::EventDispatcher;

@@ -361,7 +361,6 @@ zx_status_t object_get_info_cpp(ProcessDispatcher* up, zx_handle_t handle,
   OB_GET_INFO_SR(ZX_INFO_KMEM_STATS_COMPRESSION, ZX_RSRC_SYSTEM_INFO_BASE, GetCompressionStats);
   OB_GET_INFO_SR(ZX_INFO_MEMORY_STALL, ZX_RSRC_SYSTEM_STALL_BASE, GetStallStats);
   OB_GET_INFO(ZX_INFO_RESOURCE, ResourceDispatcher, GetInfo);
-  OB_GET_INFO(ZX_INFO_BTI, BusTransactionInitiatorDispatcher, GetInfo);
   OB_GET_INFO(ZX_INFO_STREAM, StreamDispatcher, GetInfo);
   OB_GET_INFO(ZX_INFO_VCPU, VcpuDispatcher, GetInfo);
   OB_GET_INFO(ZX_INFO_IOB, IoBufferDispatcher, GetInfo);
@@ -596,8 +595,6 @@ zx_status_t cpp_object_get_info_cpp_types(zx_handle_t handle, uint32_t topic, vo
     case ZX_INFO_RESOURCE:
       return object_get_info_cpp<ZX_INFO_RESOURCE>(up, handle, dst_buffer, buffer_size, actual,
                                                    avail);
-    case ZX_INFO_BTI:
-      return object_get_info_cpp<ZX_INFO_BTI>(up, handle, dst_buffer, buffer_size, actual, avail);
     case ZX_INFO_STREAM:
       return object_get_info_cpp<ZX_INFO_STREAM>(up, handle, dst_buffer, buffer_size, actual,
                                                  avail);
