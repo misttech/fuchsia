@@ -144,7 +144,7 @@ group("bindgen_common_deps") {
 }
 
 kernel_bindgen_crate("event-bindings") {
-  visibility = [ ":*" ]
+  visibility = [ "//zircon/kernel/*" ]
   headers = [ "//zircon/kernel/include/kernel/event_ffi.h" ]
   non_rust_deps = [ ":bindgen_common_deps" ]
   output_name = "event_bindings.rs"

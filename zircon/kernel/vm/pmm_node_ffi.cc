@@ -9,11 +9,14 @@
 #include <zircon/types.h>
 
 #include <kernel/ffi.h>
+#include <vm/compression.h>
 
 #include "vm/pmm_node.h"
 
 // TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
 extern "C" {
+
+FFI_ALWAYS_INLINE void cpp_pmm_node_destroy(PmmNode* node) { node->~PmmNode(); }
 
 FFI_ALWAYS_INLINE uint32_t cpp_pmm_node_page_to_index(PmmNode* node, const vm_page_t* page) {
   return node->PageToIndex(page);

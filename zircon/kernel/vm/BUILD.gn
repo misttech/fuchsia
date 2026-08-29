@@ -384,36 +384,72 @@ kernel_bindgen_crate("pmm-node-bindings") {
     "cpp_pmm_node_index_to_page",
     "cpp_pmm_node_index_to_paddr",
     "cpp_pmm_node_add_free_pages",
+    "cpp_pmm_node_destroy",
   ]
   type_allowlist = [
     "PmmOptDelayReuse",
     "PmmNode",
+    "PmmNode_.*",
+    "ktl::atomic",
+    "std::atomic",
+    "FreeLoanedPagesHolder",
+    "FreeLoanedPagesHolder::Waiter",
   ]
   type_blocklist = [
-    "PageQueues",
-    "PmmNode_.*",
-    "VmPageDoublyLinkedList",
     "vm_page_t",
     "zx_paddr_t",
     "zx_status_t",
+    "PmmArena",
+    "PageQueues",
+    "Evictor",
+    "PmmChecker",
+    "AutounsignalEvent",
+    "Event",
+    "VmPageDoublyLInkedList",
   ]
-  opaque_types = [ "PmmNode" ]
-  function_blocklist = [ "PmmNode_.*" ]
+  opaque_types = [
+    "VmCompression",
+    "fbl::RefPtr",
+    "ktl::atomic",
+    "std::atomic",
+    "FreeLoanedPagesHolder::Waiter",
+  ]
+  function_blocklist = [
+    "PmmNode_.*",
+    "FreeLoanedPagesHolder_.*",
+  ]
   additional_bindgen_flags = [ "--no-recursive-allowlist" ]
-  rustified_enum = [ "PmmOptDelayReuse" ]
+  rustified_enum = [
+    "PmmOptDelayReuse",
+    "PmmNode_ShouldWaitState",
+    "PmmNode_AllocFailure_Type",
+  ]
   deps = [
+    ":evictor-bindings",
     ":page-bindings",
+    ":page-queues-bindings",
+    ":pmm-arena-bindings",
+    ":pmm-checker-bindings",
     "//sdk/rust/zx-types",
+    "//zircon/kernel/kernel:event-bindings",
   ]
   var_allowlist = [ "PMM_ALLOC_FLAG_.*" ]
   edition = "2024"
   raw_lines = [
     "#![no_std]",
-    "use page_bindings::vm_page_t;",
+    "pub use event_bindings::{AutounsignalEvent, Event};",
+    "pub use evictor_bindings::Evictor;",
+    "pub use page_bindings::vm_page_t;",
+    "pub use page_queues_bindings::PageQueues;",
+    "pub use pmm_arena_bindings::PmmArena;",
+    "pub use pmm_checker_bindings::PmmChecker;",
     "pub use zx_types::{zx_paddr_t, zx_status_t};",
-    "pub type VmPageDoublyLinkedList = core::ffi::c_void;",
+    "pub type VmPageDoublyLinkedList = usize;",
   ]
-  expect_lints = []
+  expect_lints = [
+    "non_camel_case_types",
+    "non_upper_case_globals",
+  ]
 }
 
 kernel_bindgen_crate("pmm-arena-bindings") {

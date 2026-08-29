@@ -16,6 +16,10 @@ use zx_status::Status;
 pub const ALLOC_FLAG_ANY: u32 = bindings::PMM_ALLOC_FLAG_ANY;
 pub const ALLOC_FLAG_CAN_WAIT: u32 = bindings::PMM_ALLOC_FLAG_CAN_WAIT;
 
+// One of the members of the PmmNode has a zero sized type, which is not FFI compliant, however we
+// are separately validating the equivalence of the final layout of the C++ and Rust objects so
+// this is okay.
+#[allow(improper_ctypes)]
 unsafe extern "C" {
     // C++ name mangled form of `PmmNode Pmm::node_`
     #[link_name = "_ZN3Pmm5node_E"]
