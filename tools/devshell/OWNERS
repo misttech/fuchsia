@@ -17,6 +17,8 @@ per-file             tests/subcommands/fx_build_test = file: /build/OWNERS
 
 per-file             format-code = olivernewman@google.com
 
+per-file             lint = jcecil@google.com
+
 per-file             repro = olivernewman@google.com
 
 per-file             sync-to = olivernewman@google.com
@@ -34,6 +36,9 @@ per-file cmc.fx = file: /tools/cmc/OWNERS
 per-file create.fx = file: /tools/create/OWNERS
 
 per-file tests/subcommands/fx_format_code_test = olivernewman@google.com
+
+per-file tests/subcommands/fx_lint_test = jcecil@google.com
+
 per-file tests/subcommands/fx_setup_go_test =  olivernewman@google.com
 
 per-file doc-checker.fx,mdlint.fx       = file: /tools/doc_checker/OWNERS
