@@ -1,6 +1,7 @@
 # Copyright 2023 The Fuchsia Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
+"""Defines SHAC checks for FIDL files."""
 
 load("./common.star", "FORMATTER_MSG", "compiled_tool_path", "os_exec")
 
@@ -111,7 +112,58 @@ def _fidl_comment_check(ctx):
                     line = num,
                 )
 
+def _fidl_lint(ctx):
+    """Runs fidl-lint on affected FIDL files."""
+    fidl_files = [
+        f
+        for f in ctx.scm.affected_files(glob = [
+            "*.fidl",
+            "!*.test.fidl",
+        ])
+        # Make sure the file itself ends with ".fidl" to exclude files in
+        # directories that end with ".fidl".
+        if f.endswith(".fidl")
+    ]
+    if not fidl_files:
+        return
+
+    exe = compiled_tool_path(ctx, "fidl-lint")
+    res = os_exec(
+        ctx,
+        [
+            exe,
+            "--format=json",
+        ] + fidl_files,
+        ok_retcodes = (0, 1),
+    ).wait()
+
+    if not res.stdout:
+        return
+
+    for finding in json.decode(res.stdout) or []:
+        replacements = [
+            r["replacement"]
+            for suggestion in finding.get("suggestions", [])
+            for r in suggestion.get("replacements", [])
+            if "replacement" in r
+        ]
+
+        start_col = finding.get("start_char")
+        end_col = finding.get("end_char")
+
+        ctx.emit.finding(
+            level = "warning",
+            message = "%s [%s]" % (finding.get("message", ""), finding.get("category", "")),
+            filepath = finding.get("path"),
+            line = finding.get("start_line"),
+            col = start_col + 1 if start_col != None else None,
+            end_line = finding.get("end_line"),
+            end_col = end_col + 1 if end_col != None else None,
+            replacements = replacements or None,
+        )
+
 def register_fidl_checks():
     shac.register_check(shac.check(_gidl_format, formatter = True))
     shac.register_check(shac.check(_fidl_format, formatter = True))
     shac.register_check(shac.check(_fidl_comment_check))
+    shac.register_check(shac.check(_fidl_lint))
