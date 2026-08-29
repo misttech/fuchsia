@@ -225,7 +225,6 @@ tools_bazel_root_targets = [
         ninja = "clang-format-wrapper"
       },
     ]
-    install_host_tool = true
   },
   {
     bazel_label = "//tools/pretty_serial"
