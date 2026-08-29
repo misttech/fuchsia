@@ -290,4 +290,33 @@ TEST(Timer, DISABLED_CoalesceTestEarly) {
 // Test is disabled, see |CheckCoalescing|.
 TEST(Timer, DISABLED_CoalesceTestLate) { ASSERT_NO_FAILURES(CheckCoalescing(ZX_TIMER_SLACK_LATE)); }
 
+TEST(Timer, UserSignal) {
+  zx::timer timer;
+  ASSERT_OK(zx::timer::create(0, ZX_CLOCK_MONOTONIC, &timer));
+
+  // Assert user signals.
+  EXPECT_OK(timer.signal(0, ZX_USER_SIGNAL_0));
+  zx_signals_t pending = 0;
+  EXPECT_OK(timer.wait_one(ZX_USER_SIGNAL_0, zx::time::infinite_past(), &pending));
+  EXPECT_EQ(pending, ZX_USER_SIGNAL_0);
+
+  // Clear user signals.
+  EXPECT_OK(timer.signal(ZX_USER_SIGNAL_0, 0));
+  EXPECT_EQ(timer.wait_one(ZX_USER_SIGNAL_0, zx::time::infinite_past(), &pending),
+            ZX_ERR_TIMED_OUT);
+  EXPECT_EQ(pending, 0u);
+}
+
+TEST(Timer, BasicInfo) {
+  zx::timer timer;
+  ASSERT_OK(zx::timer::create(0, ZX_CLOCK_MONOTONIC, &timer));
+
+  zx_info_handle_basic_t basic_info = {};
+  ASSERT_OK(
+      timer.get_info(ZX_INFO_HANDLE_BASIC, &basic_info, sizeof(basic_info), nullptr, nullptr));
+  EXPECT_EQ(basic_info.type, ZX_OBJ_TYPE_TIMER);
+  EXPECT_EQ(basic_info.related_koid, ZX_KOID_INVALID);
+  EXPECT_EQ(basic_info.rights, ZX_DEFAULT_TIMER_RIGHTS);
+}
+
 }  // anonymous namespace
