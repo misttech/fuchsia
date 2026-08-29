@@ -1797,10 +1797,7 @@ TEST_F(UnmanagedTestFixture, DISABLED_Ep0StallRecoveryLeavesCleanBufferForNextSe
 // Verifies that ep0_.buffer is allocated with caching disabled (uncached) to prevent
 // CPU cache line writeback hazards (Clean operations during CacheFlushInvalidate) from
 // clobbering incoming SETUP packets delivered directly to RAM via hardware DMA.
-// Disabled: ep0_.buffer is currently allocated as cached (kEnabled) in production dwc3.cc,
-// which creates dirty cache lines across status ACK / data phases that clobber RAM on
-// Ep0QueueSetup. Requires allocating ep0_.buffer as uncached (kDisabled).
-TEST_F(UnmanagedTestFixture, DISABLED_Ep0BufferIsUncachedToPreventDmaClobber) {
+TEST_F(UnmanagedTestFixture, Ep0BufferIsUncachedToPreventDmaClobber) {
   SetUpAndPowerOnDriver();
 
   dut_.RunInDriverContext([&](Dwc3& drv) {
@@ -1814,12 +1811,7 @@ TEST_F(UnmanagedTestFixture, DISABLED_Ep0BufferIsUncachedToPreventDmaClobber) {
 
 // Verifies that dirty cache lines from preceding data/status phases do not overwrite
 // incoming SETUP packets written to RAM by hardware DMA when Ep0QueueSetup executes.
-// Disabled: In production dwc3-ep0.cc, Ep0QueueSetup executes CacheFlushInvalidate on a cached
-// buffer, which performs an ARM64 Clean operation, flushing stale dirty bytes over the newly
-// arrived Setup packet. Requires allocating ep0_.buffer as uncached (kDisabled) or performing
-// pure cache invalidation without clean.
-TEST_F(UnmanagedTestFixture,
-       DISABLED_Ep0QueueSetupWithDirtyCacheDoesNotClobberIncomingDmaSetupPacket) {
+TEST_F(UnmanagedTestFixture, Ep0QueueSetupWithDirtyCacheDoesNotClobberIncomingDmaSetupPacket) {
   FakeUsbDciInterface fake_dci;
   SetUpAndPowerOnDriver();
 

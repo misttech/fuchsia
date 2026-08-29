@@ -349,10 +349,18 @@ void Dwc3::HandleEp0Setup(size_t length) {
   }
 
   fidl::Arena arena;
+  fidl::VectorView<uint8_t> out_payload;
+  if (is_out && length > 0) {
+    out_payload = fidl::VectorView<uint8_t>(arena, length);
+    if (auto status = ep0_.buffer->Read(0, length, out_payload.data()); status.is_error()) {
+      fdf::error("ep0 buffer Read failed: {}", status.status_string());
+      fail();
+      return;
+    }
+  }
+
   dci_intf_.buffer(arena)
-      ->Control(setup, is_out ? fidl::VectorView<uint8_t>::FromExternal(
-                                    reinterpret_cast<uint8_t*>(ep0_.buffer->virt()), length)
-                              : fidl::VectorView<uint8_t>::FromExternal(nullptr, 0))
+      ->Control(setup, out_payload)
       .Then([this, is_out, fail, length,
              setup](fidl::WireUnownedResult<fuchsia_hardware_usb_dci::UsbDciInterface::Control>&
                         result) {
