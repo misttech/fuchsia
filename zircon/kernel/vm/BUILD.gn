@@ -32,6 +32,7 @@ source_set("vm-cpp") {
     "discardable_vmo_tracker.cc",
     "discardable_vmo_tracker_ffi.cc",
     "evictor.cc",
+    "evictor_ffi.cc",
     "kstack.cc",
     "lz4_compressor.cc",
     "mem_command.cc",
@@ -180,6 +181,30 @@ kernel_bindgen_crate("discardable-vmo-tracker-bindings") {
 
   raw_lines = [ "#![no_std]" ]
   expect_lints = [ "non_camel_case_types" ]
+}
+
+kernel_bindgen_crate("evictor-bindings") {
+  visibility = [ ":*" ]
+  headers = [ "include/vm/evictor_ffi.h" ]
+  non_rust_deps = [ ":vm-cpp" ]
+  output_name = "evictor_bindings.rs"
+  cpp = true
+
+  edition = "2024"
+  notice_year = 2026
+
+  function_allowlist = [
+    "cpp_evictor_destroy",
+    "cpp_evictor_init",
+  ]
+  type_allowlist = [ "Evictor" ]
+  opaque_types = [ "Evictor" ]
+  function_blocklist = [ "Evictor_.*" ]
+  type_blocklist = [ "Evictor_.*" ]
+  additional_bindgen_flags = [ "--no-recursive-allowlist" ]
+
+  raw_lines = [ "#![no_std]" ]
+  expect_lints = []
 }
 
 library_headers("headers") {
@@ -999,6 +1024,7 @@ kernel_rust_mod("vm-rs") {
     "attribution.rs",
     "compressor.rs",
     "discardable_vmo_tracker.rs",
+    "evictor.rs",
     "fault.rs",
     "mod.rs",
     "page.rs",
@@ -1028,6 +1054,7 @@ kernel_rust_mod("vm-rs") {
     ":attribution-bindings",
     ":compressor-bindings",
     ":discardable-vmo-tracker-bindings",
+    ":evictor-bindings",
     ":page-bindings",
     ":page-queues-bindings",
     ":page-source-bindings",
