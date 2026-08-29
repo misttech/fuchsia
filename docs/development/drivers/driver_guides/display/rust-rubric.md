@@ -428,17 +428,37 @@ assuming correct driver operation.
 
 **Explanation:** Follows from RFC-0003.
 
+**Guideline:** Only use the INFO level to provide context for current
+investigations. Precede the logging statement with a comment that includes a
+link to the investigation's tracking issue.
+
+**Explanation:** Driver logs at INFO or above are included in the kernel serial
+log, which is used to assess overall device health.
+
+**Guideline:** Do not log at INFO or above on high-frequency code paths.
+Use [Inspect][inspect-readme] for data that changes often.
+
+**Explanation:** Same reasoning as above.
+
 Examples:
 
 ```rust
-use log::warn;
+use log::{debug, info, warn};
 use zx;
 
 /// Errors if the hardware returns an invalid version.
 ///
 /// All error conditions are logged.
 pub fn read_version() -> Result<u32, zx::Status> {
+    debug!("read_version()");
+
     let version_value: u32 = read_from_register();
+
+    // TODO(https://fxbug.dev/12345678): We suspect that the crashes are
+    // correlated with specific hardware versions. Reduce the log level to DEBUG
+    // after proving or disproving the hypothesis.
+    info!("Component version: {}", version_value);
+
     if version_value == 0 {
         warn!("Invalid version, device probably powered off: {}", version_value);
         // ...
@@ -576,6 +596,7 @@ Display drivers also follow the best practices below.
 - [The Rustonomicon][rustonomicon]{.external} (mostly informative, covers `unsafe` code)
 
 [google-cpp-style-integers]: https://google.github.io/styleguide/cppguide.html#Integer_Types
+[inspect-readme]: /docs/development/diagnostics/inspect/README.md
 [logging-rfc]: /docs/contribute/governance/rfcs/0003_logging.md
 [rust-analyzer]: https://rust-analyzer.github.io/
 [rust-api-guidelines]: https://rust-lang.github.io/api-guidelines/
