@@ -46,6 +46,14 @@
             to: "#driver-system-tests",
         },
         {
+            service: [
+                "fuchsia.hardware.temperature.Service",
+                "fuchsia.hardware.trippoint.Service",
+            ],
+            from: "parent",
+            to: "#driver-system-tests",
+        },
+        {
             service: [ "fuchsia.hardware.nfc.Service" ],
             from: "parent",
             to: "#driver-system-tests",
