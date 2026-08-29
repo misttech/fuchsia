@@ -25,6 +25,7 @@
 #include <ctime>
 #include <iterator>
 #include <limits>
+#include <thread>
 
 #include <fbl/algorithm.h>
 #include <zxtest/zxtest.h>
@@ -102,10 +103,12 @@ class TestThread {
   TestThread& operator=(TestThread&&) = delete;
   ~TestThread() { Shutdown(); }
 
-  void Start(zx_futex_t* futex, zx::duration timeout = zx::duration::infinite()) {
+  void Start(zx_futex_t* futex, zx::duration timeout = zx::duration::infinite(),
+             zx_handle_t owner = ZX_HANDLE_INVALID) {
     ASSERT_FALSE(thread_handle_.is_valid(), "Attempting to start already started thread.");
 
     futex_.store(futex);
+    owner_.store(owner);
     timeout_ = timeout;
     wait_result_.store(ZX_ERR_INTERNAL);
 
@@ -182,6 +185,16 @@ class TestThread {
   bool HasWaitReturned() const { return state() == State::kWaitReturned; }
   zx_status_t wait_result() const { return wait_result_.load(); }
 
+  zx::result<zx_koid_t> GetKoid() const {
+    zx_info_handle_basic_t info;
+    if (zx_status_t status =
+            thread_handle_.get_info(ZX_INFO_HANDLE_BASIC, &info, sizeof(info), nullptr, nullptr);
+        status != ZX_OK) {
+      return zx::error(status);
+    }
+    return zx::ok(info.koid);
+  }
+
  private:
   enum class State {
     kWaitingToStart = 100,
@@ -193,7 +206,7 @@ class TestThread {
     state_.store(State::kAboutToWait);
 
     zx::time deadline = zx::deadline_after(timeout_);
-    wait_result_.store(zx_futex_wait(futex(), *futex(), ZX_HANDLE_INVALID, deadline.get()));
+    wait_result_.store(zx_futex_wait(futex(), *futex(), owner_.load(), deadline.get()));
     state_.store(State::kWaitReturned);
     return 0;
   }
@@ -203,6 +216,7 @@ class TestThread {
 
   std::atomic<zx_status_t> wait_result_{ZX_ERR_INTERNAL};
   std::atomic<zx_futex_t*> futex_{nullptr};
+  std::atomic<zx_handle_t> owner_{ZX_HANDLE_INVALID};
   std::atomic<State> state_{State::kWaitingToStart};
   zx::duration timeout_ = zx::duration::infinite();
   zx::thread thread_handle_;
@@ -777,6 +791,103 @@ TEST(FutexTest, FutexRequeueTbiReturnsInvalidArgs) {
 #else
   ZXTEST_SKIP("TBI is only enabled on arm64");
 #endif
+}
+
+TEST(FutexTest, GetOwner) {
+  zx_futex_t futex = 1;
+  zx_koid_t koid = 0x12345;
+
+  // Invalid pointers.
+  EXPECT_EQ(zx_futex_get_owner(nullptr, &koid), ZX_ERR_INVALID_ARGS);
+  EXPECT_EQ(zx_futex_get_owner(&futex, nullptr), ZX_ERR_INVALID_ARGS);
+
+  // Misaligned pointer.
+  alignas(zx_futex_t) uint8_t buffer[sizeof(zx_futex_t) + 1] = {};
+  zx_futex_t* misaligned_futex = reinterpret_cast<zx_futex_t*>(buffer + 1);
+  EXPECT_EQ(zx_futex_get_owner(misaligned_futex, &koid), ZX_ERR_INVALID_ARGS);
+
+  // Futex with no waiters / no owner.
+  EXPECT_OK(zx_futex_get_owner(&futex, &koid));
+  EXPECT_EQ(koid, ZX_KOID_INVALID);
+
+  // Futex with a waiter and an owner assigned.
+  TestThread waiter;
+  Event shutdown_event;
+
+  std::thread owner_thread([&]() { shutdown_event.Wait(); });
+
+  auto join_owner = fit::defer([&]() {
+    shutdown_event.Signal();
+    owner_thread.join();
+  });
+
+  zx_handle_t owner_handle = native_thread_get_zx_handle(owner_thread.native_handle());
+  zx_info_handle_basic_t info;
+  ASSERT_OK(zx_object_get_info(owner_handle, ZX_INFO_HANDLE_BASIC, &info, sizeof(info), nullptr,
+                               nullptr));
+  zx_koid_t expected_koid = info.koid;
+
+  ASSERT_NO_FATAL_FAILURE(waiter.Start(&futex, zx::duration::infinite(), owner_handle));
+
+  EXPECT_OK(zx_futex_get_owner(&futex, &koid));
+  EXPECT_EQ(koid, expected_koid);
+
+  // Wake waiter, futex returns to no owner.
+  EXPECT_OK(zx_futex_wake(&futex, 1));
+  ASSERT_NO_FATAL_FAILURE(waiter.WaitUntilWoken());
+  waiter.Shutdown();
+
+  // Signal and join owner thread immediately.
+  join_owner.call();
+
+  EXPECT_OK(zx_futex_get_owner(&futex, &koid));
+  EXPECT_EQ(koid, ZX_KOID_INVALID);
+}
+
+TEST(FutexTest, RequeueSingleOwner) {
+  zx_futex_t futex1 = 100;
+  zx_futex_t futex2 = 200;
+
+  // Invalid arguments: bad pointers or same addr.
+  EXPECT_EQ(zx_futex_requeue_single_owner(nullptr, 100, &futex2, 1, ZX_HANDLE_INVALID),
+            ZX_ERR_INVALID_ARGS);
+  EXPECT_EQ(zx_futex_requeue_single_owner(&futex1, 100, nullptr, 1, ZX_HANDLE_INVALID),
+            ZX_ERR_INVALID_ARGS);
+  EXPECT_EQ(zx_futex_requeue_single_owner(&futex1, 100, &futex1, 1, ZX_HANDLE_INVALID),
+            ZX_ERR_INVALID_ARGS);
+
+  // Value mismatch.
+  EXPECT_EQ(zx_futex_requeue_single_owner(&futex1, 999, &futex2, 1, ZX_HANDLE_INVALID),
+            ZX_ERR_BAD_STATE);
+
+  TestThread threads[3];
+  auto cleanup = fit::defer([&]() {
+    zx_futex_wake(&futex1, kThreadWakeAllCount);
+    zx_futex_wake(&futex2, kThreadWakeAllCount);
+    for (auto& t : threads) {
+      t.Shutdown();
+    }
+  });
+
+  for (auto& t : threads) {
+    ASSERT_NO_FATAL_FAILURE(t.Start(&futex1));
+  }
+
+  // Requeue single owner: wake 1 thread, assign owner, requeue 2 threads to futex2.
+  ASSERT_OK(zx_futex_requeue_single_owner(&futex1, 100, &futex2, 2, ZX_HANDLE_INVALID));
+
+  // Exactly 1 thread was woken.
+  ASSERT_NO_FATAL_FAILURE(AssertWokeThreadCount(threads, std::size(threads), 1));
+
+  // Wake the requeued threads on futex2.
+  ASSERT_OK(zx_futex_wake(&futex2, kThreadWakeAllCount));
+  ASSERT_NO_FATAL_FAILURE(AssertWokeThreadCount(threads, std::size(threads), 3));
+
+  for (auto& t : threads) {
+    ASSERT_NO_FATAL_FAILURE(t.Shutdown());
+  }
+
+  cleanup.cancel();
 }
 
 #if defined(__aarch64__)
