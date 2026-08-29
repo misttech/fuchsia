@@ -193,7 +193,7 @@ impl From<fdiagnostics::Severity> for Severity {
             fdiagnostics::Severity::Error => Severity::Error,
             fdiagnostics::Severity::Fatal => Severity::Fatal,
             #[cfg(fuchsia_api_level_at_least = "27")]
-            other => panic!("unknown severity type: {other:?}"),
+            fdiagnostics::Severity::__SourceBreaking { .. } => Severity::Info,
         }
     }
 }
@@ -220,7 +220,6 @@ pub enum Error {
 
 impl FromStr for Severity {
     type Err = Error;
-
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let s = s.to_lowercase();
         match s.as_str() {
@@ -251,7 +250,58 @@ impl PartialEq<fdiagnostics::Severity> for Severity {
 
 impl PartialOrd<fdiagnostics::Severity> for Severity {
     fn partial_cmp(&self, other: &fdiagnostics::Severity) -> Option<cmp::Ordering> {
-        let other = Severity::from(*other);
+        let other = match other {
+            fdiagnostics::Severity::Trace => Severity::Trace,
+            fdiagnostics::Severity::Debug => Severity::Debug,
+            fdiagnostics::Severity::Info => Severity::Info,
+            fdiagnostics::Severity::Warn => Severity::Warn,
+            fdiagnostics::Severity::Error => Severity::Error,
+            fdiagnostics::Severity::Fatal => Severity::Fatal,
+            #[cfg(fuchsia_api_level_at_least = "27")]
+            fdiagnostics::Severity::__SourceBreaking { .. } => return None,
+        };
         self.partial_cmp(&other)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn from_fdiagnostics_severity() {
+        assert_eq!(Severity::from(fdiagnostics::Severity::Trace), Severity::Trace);
+        assert_eq!(Severity::from(fdiagnostics::Severity::Debug), Severity::Debug);
+        assert_eq!(Severity::from(fdiagnostics::Severity::Info), Severity::Info);
+        assert_eq!(Severity::from(fdiagnostics::Severity::Warn), Severity::Warn);
+        assert_eq!(Severity::from(fdiagnostics::Severity::Error), Severity::Error);
+        assert_eq!(Severity::from(fdiagnostics::Severity::Fatal), Severity::Fatal);
+        #[cfg(fuchsia_api_level_at_least = "27")]
+        assert_eq!(
+            Severity::from(fdiagnostics::Severity::__SourceBreaking { unknown_ordinal: 123 }),
+            Severity::Info
+        );
+    }
+
+    #[test]
+    fn partial_cmp_fdiagnostics_severity() {
+        assert_eq!(
+            Severity::Info.partial_cmp(&fdiagnostics::Severity::Warn),
+            Some(cmp::Ordering::Less)
+        );
+        assert_eq!(
+            Severity::Warn.partial_cmp(&fdiagnostics::Severity::Info),
+            Some(cmp::Ordering::Greater)
+        );
+        assert_eq!(
+            Severity::Info.partial_cmp(&fdiagnostics::Severity::Info),
+            Some(cmp::Ordering::Equal)
+        );
+        #[cfg(fuchsia_api_level_at_least = "27")]
+        assert_eq!(
+            Severity::Info
+                .partial_cmp(&fdiagnostics::Severity::__SourceBreaking { unknown_ordinal: 123 }),
+            None
+        );
     }
 }

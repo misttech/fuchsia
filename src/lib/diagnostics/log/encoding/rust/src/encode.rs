@@ -649,18 +649,16 @@ pub trait MutableBuffer {
     /// # Examples
     ///
     /// ```
-    /// use bytes::BufMut;
-    ///
-    /// let mut buf = vec![];
-    /// buf.put_i64_le(0x0102030405060708);
-    /// assert_eq!(buf, b"\x08\x07\x06\x05\x04\x03\x02\x01");
+    /// let mut buf = std::io::Cursor::new([0u8; 8]);
+    /// buf.put_f64(1.0).unwrap();
+    /// assert_eq!(buf.into_inner(), 1.0f64.to_le_bytes());
     /// ```
     ///
     /// # Panics
     ///
     /// This function panics if there is not enough remaining capacity in `self`.
     fn put_f64(&mut self, n: f64) -> Result<(), EncodingError> {
-        self.put_slice(&n.to_bits().to_ne_bytes())
+        self.put_slice(&n.to_bits().to_le_bytes())
     }
 }
 

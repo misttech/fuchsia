@@ -241,6 +241,9 @@ impl Queue {
 
     /// Returns false if there is no capacity.
     fn push(&self, data: &[u8]) -> bool {
+        if data.is_empty() {
+            return true;
+        }
         let mut len = self.len.load(Ordering::Relaxed);
         loop {
             if len + data.len() > self.capacity() {
@@ -261,7 +264,7 @@ impl Queue {
                             .as_mut_ptr()
                             .cast::<u8>()
                             .add(len)
-                            .copy_from_nonoverlapping(&data[0], data.len());
+                            .copy_from_nonoverlapping(data.as_ptr(), data.len());
                     }
                     return true;
                 }
