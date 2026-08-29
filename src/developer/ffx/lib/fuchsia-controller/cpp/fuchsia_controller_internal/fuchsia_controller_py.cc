@@ -160,7 +160,10 @@ class PythonHandle : public PythonObject {
       if (state == nullptr) {
         return;
       }
-      fc_status_t status = ffx_close_handle(state->ctx, handle_);
+      fc_status_t status;
+      Py_BEGIN_ALLOW_THREADS;
+      status = ffx_close_handle(state->ctx, handle_);
+      Py_END_ALLOW_THREADS;
       if (status != FC_OK) {
         mod::set_python_exception(status);
         return;
@@ -206,7 +209,10 @@ class PythonChannel : public PythonObject {
       if (state == nullptr) {
         return;
       }
-      fc_status_t status = ffx_close_handle(state->ctx, channel_);
+      fc_status_t status;
+      Py_BEGIN_ALLOW_THREADS;
+      status = ffx_close_handle(state->ctx, channel_);
+      Py_END_ALLOW_THREADS;
       if (status != FC_OK) {
         mod::set_python_exception(status);
         return;
@@ -239,7 +245,10 @@ class PythonSocket : public PythonObject {
       if (state == nullptr) {
         return;
       }
-      fc_status_t status = ffx_close_handle(state->ctx, handle_);
+      fc_status_t status;
+      Py_BEGIN_ALLOW_THREADS;
+      status = ffx_close_handle(state->ctx, handle_);
+      Py_END_ALLOW_THREADS;
       if (status != FC_OK) {
         mod::set_python_exception(status);
         return;
@@ -271,7 +280,10 @@ class PythonEvent : public PythonObject {
       if (state == nullptr) {
         return;
       }
-      fc_status_t status = ffx_close_handle(state->ctx, handle());
+      fc_status_t status;
+      Py_BEGIN_ALLOW_THREADS;
+      status = ffx_close_handle(state->ctx, handle());
+      Py_END_ALLOW_THREADS;
       if (status != FC_OK) {
         mod::set_python_exception(status);
         return;
