@@ -12,6 +12,7 @@ use std::io::Read;
 use walkdir::WalkDir;
 
 #[derive(FfxTool)]
+#[target(None)]
 pub struct FarCreateTool {
     #[command]
     pub cmd: CreateCommand,
@@ -40,7 +41,8 @@ impl FfxMain for FarCreateTool {
                     writer.stderr(),
                     "Not a regular file; ignoring: {}",
                     file.path().display()
-                ).bug()?;
+                )
+                .bug()?;
                 continue;
             }
 

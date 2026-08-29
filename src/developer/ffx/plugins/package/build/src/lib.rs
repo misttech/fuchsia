@@ -8,6 +8,7 @@ use fho::{FfxContext, FfxMain, FfxTool, Result};
 use package_tool::cmd_package_build;
 
 #[derive(FfxTool)]
+#[target(None)]
 pub struct PackageBuildTool {
     #[command]
     pub cmd: PackageBuildCommand,

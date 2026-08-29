@@ -37,6 +37,7 @@ const REPO_PATH_RELATIVE_TO_BUILD_DIR: &str = "amber-files";
 type PackagesWriter = MachineWriter<Vec<PackagesOutput>>;
 
 #[derive(FfxTool)]
+#[target(None)]
 pub struct PackagesTool {
     #[command]
     cmd: PackagesCommand,

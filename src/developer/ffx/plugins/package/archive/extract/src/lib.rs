@@ -8,6 +8,7 @@ use fho::{FfxContext, FfxMain, FfxTool};
 use package_tool::cmd_package_archive_extract;
 
 #[derive(FfxTool)]
+#[target(None)]
 pub struct ArchiveExtractTool {
     #[command]
     pub cmd: PackageArchiveExtractCommand,

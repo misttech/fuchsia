@@ -33,6 +33,7 @@ impl<'a> From<far::Entry<'a>> for FarEntry {
 }
 
 #[derive(FfxTool)]
+#[target(None)]
 pub struct FarListTool {
     #[command]
     pub cmd: ListCommand,

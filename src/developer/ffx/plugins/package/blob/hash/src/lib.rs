@@ -13,6 +13,7 @@ use std::fs::File;
 use std::io::prelude::*;
 
 #[derive(FfxTool)]
+#[target(None)]
 pub struct BlobHashTool {
     #[command]
     pub cmd: ffx_package_blob_hash_args::HashCommand,

@@ -11,6 +11,7 @@ use fho::{FfxContext, FfxMain, FfxTool, Result, return_user_error};
 use std::io::Write as _;
 
 #[derive(FfxTool)]
+#[target(None)]
 pub struct ArchiveCatTool {
     #[command]
     pub cmd: CatCommand,

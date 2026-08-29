@@ -14,6 +14,7 @@ use std::io::prelude::*;
 use std::path::PathBuf;
 
 #[derive(FfxTool)]
+#[target(None)]
 pub struct FileHashTool {
     #[command]
     pub cmd: FileHashCommand,

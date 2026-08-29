@@ -100,6 +100,7 @@ impl From<Blob> for BlobOutput {
 }
 
 #[derive(FfxTool)]
+#[target(None)]
 pub struct ShowTool {
     #[command]
     cmd: ShowCommand,

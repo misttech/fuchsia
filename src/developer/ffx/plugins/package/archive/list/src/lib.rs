@@ -12,6 +12,7 @@ use prettytable::format::FormatBuilder;
 use prettytable::{Row, Table, cell, row};
 
 #[derive(FfxTool)]
+#[target(None)]
 pub struct ArchiveListTool {
     #[command]
     pub cmd: ListCommand,

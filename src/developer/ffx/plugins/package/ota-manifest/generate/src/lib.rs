@@ -9,6 +9,7 @@ use fho::{FfxContext as _, FfxMain, FfxTool, Result};
 use update_package::manifest::{AssetType, Image, ImageType, Slot};
 
 #[derive(FfxTool)]
+#[target(None)]
 pub struct GenerateTool {
     #[command]
     pub cmd: GenerateCommand,

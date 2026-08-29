@@ -11,6 +11,7 @@ use std::fs::File;
 use std::io::Write as _;
 
 #[derive(FfxTool)]
+#[target(None)]
 pub struct FarCatTool {
     #[command]
     pub cmd: CatCommand,

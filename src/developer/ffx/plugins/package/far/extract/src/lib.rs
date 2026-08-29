@@ -16,6 +16,7 @@ pub struct ExtractResult {
 }
 
 #[derive(FfxTool)]
+#[target(None)]
 pub struct ExtractTool {
     #[command]
     pub cmd: ExtractCommand,
