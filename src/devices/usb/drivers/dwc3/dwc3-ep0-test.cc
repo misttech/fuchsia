@@ -1742,11 +1742,7 @@ TEST_F(UnmanagedTestFixture, ControlInZlpThenNextSetupPacket) {
 
 // Verifies that stall recovery after a protocol error cleanly flushes FIFO descriptors
 // and resets EP0 to State::Setup to safely accept subsequent Setup packets.
-// Disabled: In production dwc3-ep0.cc, Ep0EndAndStall unconditionally calls CmdEpEndTransfer
-// without checking whether rsrc_id != kInvalidResourceId, which trips a debug assert when
-// attempting to end a transfer before hardware assigns a resource ID.
-// Requires guarding CmdEpEndTransfer with a validity check on rsrc_id.
-TEST_F(UnmanagedTestFixture, DISABLED_Ep0StallRecoveryLeavesCleanBufferForNextSetup) {
+TEST_F(UnmanagedTestFixture, Ep0StallRecoveryLeavesCleanBufferForNextSetup) {
   FakeUsbDciInterface fake_dci;
   SetUpAndPowerOnDriver();
 

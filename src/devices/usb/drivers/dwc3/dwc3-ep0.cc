@@ -299,7 +299,9 @@ void Dwc3::HandleEp0TransferNotReadyEvent(uint8_t ep_num, uint32_t stage) {
 
 void Dwc3::Ep0EndAndStall(Endpoint& ep) {
   ep0_.shared_fifo.Clear();
-  CmdEpEndTransfer(ep);
+  if (ep.rsrc_id != Endpoint::kInvalidResourceId) {
+    CmdEpEndTransfer(ep);
+  }
   EpSetStall(ep, true);
 }
 
