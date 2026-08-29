@@ -979,7 +979,7 @@ mod tests {
 
     fn make_user_in(data: &[u8]) -> Option<(UserMemory, UserInPtr<u8>)> {
         let alloc_size = if data.is_empty() { 1 } else { data.len() };
-        let mut mem = UserMemory::create(alloc_size)?;
+        let mem = UserMemory::create(alloc_size)?;
         mem.commit_and_map(alloc_size).ok()?;
         if !data.is_empty() {
             mem.vmo_write(data, 0).ok()?;
@@ -991,7 +991,7 @@ mod tests {
     fn make_user_in_iovec(iovecs: &[zx_iovec_t]) -> Option<(UserMemory, UserInPtr<zx_iovec_t>)> {
         let size = mem::size_of_val(iovecs);
         let alloc_size = if size == 0 { 1 } else { size };
-        let mut mem = UserMemory::create(alloc_size)?;
+        let mem = UserMemory::create(alloc_size)?;
         mem.commit_and_map(alloc_size).ok()?;
         if !iovecs.is_empty() {
             let bytes = unsafe { slice::from_raw_parts(iovecs.as_ptr().cast(), size) };

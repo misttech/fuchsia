@@ -625,7 +625,7 @@ mod tests {
         pattern: impl Fn(usize) -> u8,
     ) -> Option<(UserMemory, UserInPtr<c_char>)> {
         let alloc_size = if size == 0 { 1 } else { size };
-        let mut mem = UserMemory::create(alloc_size)?;
+        let mem = UserMemory::create(alloc_size)?;
         mem.commit_and_map(alloc_size).ok()?;
         let mut chunk = [0u8; 512];
         let mut offset = 0;
@@ -647,13 +647,13 @@ mod tests {
 
     fn make_user_out(size: usize) -> Option<(UserMemory, UserOutPtr<c_char>)> {
         let alloc_size = if size == 0 { 1 } else { size };
-        let mut mem = UserMemory::create(alloc_size)?;
+        let mem = UserMemory::create(alloc_size)?;
         mem.commit_and_map(alloc_size).ok()?;
         let ptr = UserOutPtr::new(mem.base() as *mut c_char);
         Some((mem, ptr))
     }
 
-    fn read_user_mem(mem: &mut UserMemory, size: usize) -> Option<Box<[u8]>> {
+    fn read_user_mem(mem: &UserMemory, size: usize) -> Option<Box<[u8]>> {
         let buf = Box::try_new_zeroed_slice(size).ok()?;
         // SAFETY: We initialize the buffer immediately by reading `size` bytes from the VMO.
         let mut buf = unsafe { buf.assume_init() };
@@ -700,7 +700,7 @@ mod tests {
         expect_eq!(info1.rx_buf_available, SIZE);
 
         // Read out data from the peer byte-at-a-time; this is a stream socket, allowing that.
-        let (mut out_mem, out_ptr) = make_user_out(1).unwrap();
+        let (out_mem, out_ptr) = make_user_out(1).unwrap();
         let mut read_buffer = [0u8; SIZE];
         for (i, slot) in read_buffer.iter_mut().enumerate() {
             let bytes_read = d1.read(ReadType::Consume, out_ptr, 1).expect("failed to read");
@@ -797,10 +797,10 @@ mod tests {
         expect_eq!(info.rx_buf_size, msg1.len() + msg2.len() + 100);
 
         // Short peek on the first datagram: only peek part of msg1.
-        let (mut peek_mem, peek_ptr) = make_user_out(4).unwrap();
+        let (peek_mem, peek_ptr) = make_user_out(4).unwrap();
         let npeek = d1.read(ReadType::Peek, peek_ptr, 4).expect("peek short");
         expect_eq!(npeek, 4);
-        let b = read_user_mem(&mut peek_mem, 4).unwrap();
+        let b = read_user_mem(&peek_mem, 4).unwrap();
         expect_true!(*b == msg1[..4]);
 
         // Buffer info must remain unchanged after peek.
@@ -809,17 +809,17 @@ mod tests {
         expect_eq!(info.rx_buf_size, msg1.len() + msg2.len() + 100);
 
         // Full peek with larger buffer should only return the first datagram.
-        let (mut peek_large_mem, peek_large_ptr) = make_user_out(16).unwrap();
+        let (peek_large_mem, peek_large_ptr) = make_user_out(16).unwrap();
         let npeek_large = d1.read(ReadType::Peek, peek_large_ptr, 16).expect("peek large");
         expect_eq!(npeek_large, msg1.len());
-        let b = read_user_mem(&mut peek_large_mem, msg1.len()).unwrap();
+        let b = read_user_mem(&peek_large_mem, msg1.len()).unwrap();
         expect_true!(*b == *msg1);
 
         // Short consuming read should truncate and discard the rest of msg1.
-        let (mut read_trunc_mem, read_trunc_ptr) = make_user_out(3).unwrap();
+        let (read_trunc_mem, read_trunc_ptr) = make_user_out(3).unwrap();
         let nread_trunc = d1.read(ReadType::Consume, read_trunc_ptr, 3).expect("read truncate");
         expect_eq!(nread_trunc, 3);
-        let b = read_user_mem(&mut read_trunc_mem, 3).unwrap();
+        let b = read_user_mem(&read_trunc_mem, 3).unwrap();
         expect_true!(*b == msg1[..3]);
 
         // Next available datagram is msg2.
@@ -828,17 +828,17 @@ mod tests {
         expect_eq!(info.rx_buf_size, msg2.len() + 100);
 
         // Consume read msg2 completely.
-        let (mut read_msg2_mem, read_msg2_ptr) = make_user_out(6).unwrap();
+        let (read_msg2_mem, read_msg2_ptr) = make_user_out(6).unwrap();
         let nread2 = d1.read(ReadType::Consume, read_msg2_ptr, 6).expect("read msg2");
         expect_eq!(nread2, msg2.len());
-        let b = read_user_mem(&mut read_msg2_mem, 6).unwrap();
+        let b = read_user_mem(&read_msg2_mem, 6).unwrap();
         expect_true!(&*b == msg2);
 
         // Consume read msg3 with an oversized buffer.
-        let (mut read_msg3_mem, read_msg3_ptr) = make_user_out(128).unwrap();
+        let (read_msg3_mem, read_msg3_ptr) = make_user_out(128).unwrap();
         let nread3 = d1.read(ReadType::Consume, read_msg3_ptr, 128).expect("read msg3");
         expect_eq!(nread3, 100);
-        let b = read_user_mem(&mut read_msg3_mem, 100).unwrap();
+        let b = read_user_mem(&read_msg3_mem, 100).unwrap();
         for (i, &val) in b.iter().enumerate() {
             expect_eq!(val, (i & 0xff) as u8);
         }
@@ -1002,10 +1002,10 @@ mod tests {
         expect_eq!(info.tx_buf_size, 0);
 
         // Buffered data can still be read out completely.
-        let (mut r_mem, r_ptr) = make_user_out(16).unwrap();
+        let (r_mem, r_ptr) = make_user_out(16).unwrap();
         let nread = d1.read(ReadType::Consume, r_ptr, 16).expect("read remaining data");
         expect_eq!(nread, 16);
-        let b = read_user_mem(&mut r_mem, 16).unwrap();
+        let b = read_user_mem(&r_mem, 16).unwrap();
         expect_true!(*b == [42u8; 16]);
 
         // Once empty and peer is closed, reading returns PEER_CLOSED.
@@ -1188,11 +1188,11 @@ mod tests {
         expect_eq!(info1.rx_buf_available, MULTI_PAGE_PAYLOAD);
         expect_eq!(info1.rx_buf_size, MULTI_PAGE_PAYLOAD);
 
-        let (mut out_mem, out_ptr) = make_user_out(MULTI_PAGE_PAYLOAD).unwrap();
+        let (out_mem, out_ptr) = make_user_out(MULTI_PAGE_PAYLOAD).unwrap();
         let nread =
             d1.read(ReadType::Consume, out_ptr, MULTI_PAGE_PAYLOAD).expect("read multi-page");
         expect_eq!(nread, MULTI_PAGE_PAYLOAD);
-        let b = read_user_mem(&mut out_mem, MULTI_PAGE_PAYLOAD).unwrap();
+        let b = read_user_mem(&out_mem, MULTI_PAGE_PAYLOAD).unwrap();
         for (i, &val) in b.iter().enumerate() {
             expect_eq!(val, (i % 251) as u8);
         }
@@ -1207,7 +1207,7 @@ mod tests {
 
         const PAYLOAD: usize = 16 * 1024;
         let (_in_mem, in_ptr) = make_user_in_pattern(PAYLOAD, |i| (i & 0xff) as u8).unwrap();
-        let (mut out_mem, out_ptr) = make_user_out(PAYLOAD).unwrap();
+        let (out_mem, out_ptr) = make_user_out(PAYLOAD).unwrap();
 
         for _ in 0..5 {
             let w = d0.write(in_ptr, PAYLOAD).expect("write stream");
@@ -1223,7 +1223,7 @@ mod tests {
                 total_read += r;
             }
 
-            let b = read_user_mem(&mut out_mem, PAYLOAD).unwrap();
+            let b = read_user_mem(&out_mem, PAYLOAD).unwrap();
             for (i, &val) in b.iter().enumerate() {
                 expect_eq!(val, (i & 0xff) as u8);
             }

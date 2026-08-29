@@ -100,10 +100,10 @@ using testing::UserMemory;
 UserMemory* unittest_user_memory_create(size_t size);
 void unittest_user_memory_destroy(UserMemory* mem);
 vaddr_t unittest_user_memory_get_base(const UserMemory* mem);
-zx_status_t unittest_user_memory_commit_and_map(UserMemory* mem, size_t size);
-zx_status_t unittest_user_memory_vmo_write(UserMemory* mem, const void* ptr, uint64_t offset,
+zx_status_t unittest_user_memory_commit_and_map(const UserMemory* mem, size_t size);
+zx_status_t unittest_user_memory_vmo_write(const UserMemory* mem, const void* ptr, uint64_t offset,
                                            uint64_t len);
-zx_status_t unittest_user_memory_vmo_read(UserMemory* mem, void* ptr, uint64_t offset,
+zx_status_t unittest_user_memory_vmo_read(const UserMemory* mem, void* ptr, uint64_t offset,
                                           uint64_t len);
 
 UserMemory* unittest_user_memory_create(size_t size) {
@@ -115,16 +115,16 @@ void unittest_user_memory_destroy(UserMemory* mem) { ktl::unique_ptr<UserMemory>
 
 vaddr_t unittest_user_memory_get_base(const UserMemory* mem) { return mem->base(); }
 
-zx_status_t unittest_user_memory_commit_and_map(UserMemory* mem, size_t size) {
+zx_status_t unittest_user_memory_commit_and_map(const UserMemory* mem, size_t size) {
   return mem->CommitAndMap(size);
 }
 
-zx_status_t unittest_user_memory_vmo_write(UserMemory* mem, const void* ptr, uint64_t offset,
+zx_status_t unittest_user_memory_vmo_write(const UserMemory* mem, const void* ptr, uint64_t offset,
                                            uint64_t len) {
   return mem->VmoWrite(ptr, offset, len);
 }
 
-zx_status_t unittest_user_memory_vmo_read(UserMemory* mem, void* ptr, uint64_t offset,
+zx_status_t unittest_user_memory_vmo_read(const UserMemory* mem, void* ptr, uint64_t offset,
                                           uint64_t len) {
   return mem->VmoRead(ptr, offset, len);
 }

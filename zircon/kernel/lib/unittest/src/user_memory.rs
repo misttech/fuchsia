@@ -18,15 +18,15 @@ unsafe extern "C" {
     fn unittest_user_memory_create(size: usize) -> *mut RawUserMemory;
     fn unittest_user_memory_destroy(mem: *mut RawUserMemory);
     fn unittest_user_memory_get_base(mem: *const RawUserMemory) -> usize;
-    fn unittest_user_memory_commit_and_map(mem: *mut RawUserMemory, size: usize) -> i32;
+    fn unittest_user_memory_commit_and_map(mem: *const RawUserMemory, size: usize) -> i32;
     fn unittest_user_memory_vmo_write(
-        mem: *mut RawUserMemory,
+        mem: *const RawUserMemory,
         ptr: *const c_void,
         offset: u64,
         len: u64,
     ) -> i32;
     fn unittest_user_memory_vmo_read(
-        mem: *mut RawUserMemory,
+        mem: *const RawUserMemory,
         ptr: *mut c_void,
         offset: u64,
         len: u64,
@@ -36,7 +36,7 @@ unsafe extern "C" {
 /// UserMemory facilitates testing code that requires user memory.
 ///
 /// Example:
-///    let mut mem = UserMemory::create(size).unwrap();
+///    let mem = UserMemory::create(size).unwrap();
 ///    mem.commit_and_map(size).unwrap();
 ///    let out_ptr = UserOutPtr::<u32>::new(mem.base() as *mut u32);
 ///    out_ptr.write(value).unwrap();
@@ -55,13 +55,13 @@ impl UserMemory {
     }
 
     /// Ensures the mapping is committed and mapped such that usages will cause no faults.
-    pub fn commit_and_map(&mut self, size: usize) -> Result<(), Status> {
+    pub fn commit_and_map(&self, size: usize) -> Result<(), Status> {
         let status = unsafe { unittest_user_memory_commit_and_map(self.raw.as_ptr(), size) };
         Status::ok(status)
     }
 
     /// Write to the underlying VMO directly, bypassing the mapping.
-    pub fn vmo_write(&mut self, data: &[u8], offset: u64) -> Result<(), Status> {
+    pub fn vmo_write(&self, data: &[u8], offset: u64) -> Result<(), Status> {
         let status = unsafe {
             unittest_user_memory_vmo_write(
                 self.raw.as_ptr(),
@@ -74,7 +74,7 @@ impl UserMemory {
     }
 
     /// Read from the underlying VMO directly, bypassing the mapping.
-    pub fn vmo_read(&mut self, data: &mut [u8], offset: u64) -> Result<(), Status> {
+    pub fn vmo_read(&self, data: &mut [u8], offset: u64) -> Result<(), Status> {
         let status = unsafe {
             unittest_user_memory_vmo_read(
                 self.raw.as_ptr(),

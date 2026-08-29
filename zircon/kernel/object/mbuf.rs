@@ -568,7 +568,7 @@ mod tests {
         pattern: impl Fn(usize) -> u8,
     ) -> Option<(UserMemory, UserInPtr<c_char>)> {
         let alloc_size = if size == 0 { 1 } else { size };
-        let mut mem = UserMemory::create(alloc_size)?;
+        let mem = UserMemory::create(alloc_size)?;
         mem.commit_and_map(alloc_size).ok()?;
         let mut chunk = [0u8; 512];
         let mut offset = 0;
@@ -594,13 +594,13 @@ mod tests {
 
     fn make_user_out(size: usize) -> Option<(UserMemory, UserOutPtr<c_char>)> {
         let alloc_size = if size == 0 { 1 } else { size };
-        let mut mem = UserMemory::create(alloc_size)?;
+        let mem = UserMemory::create(alloc_size)?;
         mem.commit_and_map(alloc_size).ok()?;
         let ptr = UserOutPtr::new(mem.base() as *mut c_char);
         Some((mem, ptr))
     }
 
-    fn verify_user_mem(mem: &mut UserMemory, size: usize, pattern: impl Fn(usize) -> u8) -> bool {
+    fn verify_user_mem(mem: &UserMemory, size: usize, pattern: impl Fn(usize) -> u8) -> bool {
         let mut chunk = [0u8; 512];
         let mut offset = 0;
         while offset < size {
@@ -641,7 +641,7 @@ mod tests {
         read_type: ReadType,
         actual: &mut usize,
     ) -> Result<(), Status> {
-        let (mut mem, dst) = make_user_out(len).ok_or(Status::NO_MEMORY)?;
+        let (mem, dst) = make_user_out(len).ok_or(Status::NO_MEMORY)?;
         let (res, nread) = match (read_type, msg_type) {
             (ReadType::Read, MessageType::Datagram) => chain.as_mut().read_datagram(dst, len),
             (ReadType::Read, MessageType::Stream) => chain.as_mut().read_stream(dst, len),
@@ -718,7 +718,7 @@ mod tests {
         const TOTAL_LEN: usize = WRITE_LEN * NUM_WRITES;
         expect_eq!(chain.stream_size(), TOTAL_LEN);
 
-        let (mut mem_out, dst) = make_user_out(TOTAL_LEN).unwrap();
+        let (mem_out, dst) = make_user_out(TOTAL_LEN).unwrap();
         let (res, actual) = chain.as_mut().read_stream(dst, TOTAL_LEN);
         expect_ok!(res);
         expect_eq!(actual, TOTAL_LEN);
@@ -727,7 +727,7 @@ mod tests {
         expect_eq!(chain.stream_size(), 0);
 
         // Verify result.
-        expect_true!(verify_user_mem(&mut mem_out, TOTAL_LEN, |offset| {
+        expect_true!(verify_user_mem(&mem_out, TOTAL_LEN, |offset| {
             b'A' + ((offset / WRITE_LEN) as u8)
         }));
     }
@@ -1338,11 +1338,11 @@ mod tests {
 
         // Read only enough to span into the second buffer, leaving the third buffer untouched.
         const READ_LEN: usize = MBuf::PAYLOAD_SIZE + 20;
-        let (mut mem_out, dst) = make_user_out(READ_LEN).unwrap();
+        let (mem_out, dst) = make_user_out(READ_LEN).unwrap();
         let (res_r, actual) = chain.as_mut().read_datagram(dst, READ_LEN);
         expect_ok!(res_r);
         expect_eq!(actual, READ_LEN);
-        expect_true!(verify_user_mem(&mut mem_out, READ_LEN, |_| b'Z'));
+        expect_true!(verify_user_mem(&mem_out, READ_LEN, |_| b'Z'));
 
         // All remaining bytes (including continuation buffer 3) should have been discarded.
         expect_true!(chain.is_empty());
@@ -1371,13 +1371,11 @@ mod tests {
                 break;
             }
             let to_read = core::cmp::min(chunk, TOTAL_BYTES - total_read);
-            let (mut mem_out, dst) = make_user_out(to_read).unwrap();
+            let (mem_out, dst) = make_user_out(to_read).unwrap();
             let (res_r, actual) = chain.as_mut().read_stream(dst, to_read);
             expect_ok!(res_r);
             expect_eq!(actual, to_read);
-            expect_true!(verify_user_mem(&mut mem_out, actual, |i| {
-                ((total_read + i) % 251) as u8
-            }));
+            expect_true!(verify_user_mem(&mem_out, actual, |i| { ((total_read + i) % 251) as u8 }));
             total_read += actual;
             expect_eq!(chain.stream_size(), TOTAL_BYTES - total_read);
         }
@@ -1385,13 +1383,11 @@ mod tests {
         // Read the remaining bytes.
         if total_read < TOTAL_BYTES {
             let rem = TOTAL_BYTES - total_read;
-            let (mut mem_rem, rem_dst) = make_user_out(rem).unwrap();
+            let (mem_rem, rem_dst) = make_user_out(rem).unwrap();
             let (res_rem, actual) = chain.as_mut().read_stream(rem_dst, rem);
             expect_ok!(res_rem);
             expect_eq!(actual, rem);
-            expect_true!(verify_user_mem(&mut mem_rem, actual, |i| {
-                ((total_read + i) % 251) as u8
-            }));
+            expect_true!(verify_user_mem(&mem_rem, actual, |i| { ((total_read + i) % 251) as u8 }));
         }
 
         expect_true!(chain.is_empty());

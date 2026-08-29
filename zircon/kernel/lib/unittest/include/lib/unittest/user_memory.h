@@ -81,7 +81,7 @@ class UserMemory {
   }
 
   // Ensures the mapping is committed and mapped such that usages will cause no faults.
-  zx_status_t CommitAndMap(size_t size, uint64_t offset = 0) {
+  zx_status_t CommitAndMap(size_t size, uint64_t offset = 0) const {
     return mapping_->MapRange(offset, size, true);
   }
 
@@ -101,11 +101,11 @@ class UserMemory {
   zx_status_t MakeRX() { return Protect(ARCH_MMU_FLAG_PERM_READ | ARCH_MMU_FLAG_PERM_EXECUTE); }
 
   // Read or write to the underlying VMO directly, bypassing the mapping.
-  zx_status_t VmoRead(void* ptr, uint64_t offset, uint64_t len) {
+  zx_status_t VmoRead(void* ptr, uint64_t offset, uint64_t len) const {
     ASSERT(vmo_);
     return vmo_->Read(ptr, offset, len);
   }
-  zx_status_t VmoWrite(const void* ptr, uint64_t offset, uint64_t len) {
+  zx_status_t VmoWrite(const void* ptr, uint64_t offset, uint64_t len) const {
     ASSERT(vmo_);
     return vmo_->Write(ptr, offset, len);
   }

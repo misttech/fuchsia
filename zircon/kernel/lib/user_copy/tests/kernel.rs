@@ -72,7 +72,7 @@ mod tests {
     /// Test CopyOut.
     #[test]
     fn copy_out() {
-        let mut user = UserMemory::create(4096).unwrap();
+        let user = UserMemory::create(4096).unwrap();
         unwrap_ok!(user.commit_and_map(4096));
 
         let out_ptr = UserOutPtr::<u32>::new(user.base() as *mut u32);
@@ -88,7 +88,7 @@ mod tests {
     /// Test CopyIn.
     #[test]
     fn copy_in() {
-        let mut user = UserMemory::create(4096).unwrap();
+        let user = UserMemory::create(4096).unwrap();
         unwrap_ok!(user.commit_and_map(4096));
         unwrap_ok!(user.vmo_write(&0xDEADBEEF_u32.to_ne_bytes(), 0));
 
@@ -101,7 +101,7 @@ mod tests {
     /// Test CopyFromUser.
     #[test]
     fn copy_from_user() {
-        let mut user = UserMemory::create(4096).unwrap();
+        let user = UserMemory::create(4096).unwrap();
         unwrap_ok!(user.commit_and_map(4096));
         unwrap_ok!(user.vmo_write(&0xDEADBEEF_u32.to_ne_bytes(), 0));
 
@@ -115,7 +115,7 @@ mod tests {
     /// Test CopySliceFromUser.
     #[test]
     fn copy_slice_from_user() {
-        let mut user = UserMemory::create(4096).unwrap();
+        let user = UserMemory::create(4096).unwrap();
         unwrap_ok!(user.commit_and_map(4096));
         let vals = [10u32, 20u32, 30u32];
         let mut bytes = [0u8; 12];
@@ -163,7 +163,7 @@ mod tests {
     /// Test IovecCapacity.
     #[test]
     fn iovec_capacity() {
-        let mut user = UserMemory::create(4096).unwrap();
+        let user = UserMemory::create(4096).unwrap();
         unwrap_ok!(user.commit_and_map(4096));
 
         let vec = [
@@ -187,7 +187,7 @@ mod tests {
     /// Test IovecForeach.
     #[test]
     fn iovec_foreach() {
-        let mut user = UserMemory::create(4096).unwrap();
+        let user = UserMemory::create(4096).unwrap();
         unwrap_ok!(user.commit_and_map(4096));
 
         let vec = [
@@ -217,7 +217,7 @@ mod tests {
     /// Test StringView.
     #[test]
     fn string_view() {
-        let mut user = UserMemory::create(4096).unwrap();
+        let user = UserMemory::create(4096).unwrap();
         unwrap_ok!(user.commit_and_map(4096));
         let k_string = b"Hello, Fuchsia!\0";
         unwrap_ok!(user.vmo_write(k_string, 0));
@@ -238,7 +238,7 @@ mod tests {
     /// Test IovecCopyToSlice.
     #[test]
     fn iovec_copy_to_slice() {
-        let mut user = UserMemory::create(4096).unwrap();
+        let user = UserMemory::create(4096).unwrap();
         unwrap_ok!(user.commit_and_map(4096));
 
         let vec = [
