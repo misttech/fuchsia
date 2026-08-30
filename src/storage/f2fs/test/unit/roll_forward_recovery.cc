@@ -1359,5 +1359,77 @@ TEST(FsyncRecoveryTest, DoubleIndirectFsyncRecovery) {
   FileTester::Unmount(std::move(fs), &bc);
   EXPECT_EQ(Fsck(std::move(bc), FsckOptions{.repair = false}, &bc), ZX_OK);
 }
+
+TEST(RollForwardRecoveryTest, CorruptBlockAddressDuringRecovery) {
+  async::Loop loop(&kAsyncLoopConfigAttachToCurrentThread);
+  MountOptions options;
+  std::unique_ptr<BcacheMapper> bc;
+  FileTester::MkfsOnFakeDev(&bc);
+
+  std::unique_ptr<F2fs> fs;
+  FileTester::MountWithOptions(loop.dispatcher(), options, &bc, &fs);
+
+  fbl::RefPtr<VnodeF2fs> root;
+  FileTester::CreateRoot(fs.get(), &root);
+  fbl::RefPtr<Dir> root_dir = fbl::RefPtr<Dir>::Downcast(std::move(root));
+
+  // 1. Create file and write 2 blocks.
+  fbl::RefPtr<fs::Vnode> test_vnode;
+  FileTester::CreateChild(root_dir.get(), S_IFREG, "corrupt_file");
+  FileTester::Lookup(root_dir.get(), "corrupt_file", &test_vnode);
+  fbl::RefPtr<File> file = fbl::RefPtr<File>::Downcast(std::move(test_vnode));
+
+  char buf0[kBlockSize];
+  std::memset(buf0, 0xAA, sizeof(buf0));
+  char buf1[kBlockSize];
+  std::memset(buf1, 0xBB, sizeof(buf1));
+  size_t out;
+  ASSERT_EQ(FileTester::Write(file.get(), buf0, sizeof(buf0), 0, &out), ZX_OK);
+  ASSERT_EQ(FileTester::Write(file.get(), buf1, sizeof(buf1), kBlockSize, &out), ZX_OK);
+
+  // 2. Fsync file to write the warm node page with both data block pointers.
+  block_t fsync_node_blkaddr = fs->GetSegmentManager().NextFreeBlkAddr(CursegType::kCursegWarmNode);
+  ASSERT_EQ(file->SyncFile(false), ZX_OK);
+
+  ASSERT_EQ(file->Close(), ZX_OK);
+  file = nullptr;
+  ASSERT_EQ(root_dir->Close(), ZX_OK);
+  root_dir = nullptr;
+
+  // 3. Trigger SPO
+  FileTester::SuddenPowerOff(std::move(fs), &bc);
+
+  // 4. Corrupt block 0's address pointer with an out-of-bounds block address, leaving block 1
+  // valid.
+  BlockBuffer block;
+  bc->Readblk(fsync_node_blkaddr, &block);
+  Node *corrupt_node = block.get<Node>();
+  corrupt_node->i.i_addr[0] = CpuToLe(0xFFFFFFFEu);  // Out of bounds block address
+  bc->Writeblk(fsync_node_blkaddr, &block);
+
+  // 5. Remount with roll-forward recovery enabled. Must not crash or OOB access.
+  ASSERT_EQ(options.SetValue(MountOption::kDisableRollForward, 0), ZX_OK);
+  FileTester::MountWithOptions(loop.dispatcher(), options, &bc, &fs);
+
+  // 6. Verify that valid block 1 was recovered successfully despite block 0 being corrupted.
+  fbl::RefPtr<VnodeF2fs> recovered_root;
+  FileTester::CreateRoot(fs.get(), &recovered_root);
+  fbl::RefPtr<Dir> recovered_root_dir = fbl::RefPtr<Dir>::Downcast(std::move(recovered_root));
+  fbl::RefPtr<fs::Vnode> recovered_vn;
+  FileTester::Lookup(recovered_root_dir.get(), "corrupt_file", &recovered_vn);
+  File *recovered_file = static_cast<File *>(recovered_vn.get());
+
+  char read_buf[kBlockSize];
+  FileTester::ReadFromFile(recovered_file, read_buf, kBlockSize, kBlockSize);
+  EXPECT_EQ(std::memcmp(read_buf, buf1, kBlockSize), 0);
+
+  ASSERT_EQ(recovered_vn->Close(), ZX_OK);
+  recovered_vn = nullptr;
+  ASSERT_EQ(recovered_root_dir->Close(), ZX_OK);
+  recovered_root_dir = nullptr;
+
+  // 7. Unmount
+  FileTester::Unmount(std::move(fs), &bc);
+}
 }  // namespace
 }  // namespace f2fs

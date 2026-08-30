@@ -229,7 +229,8 @@ class SegmentManager {
   bool HasCursegSpace(CursegType type);
   block_t GetBlockAddrOnSegment(LockedPage &page, block_t old_blkaddr, Summary *sum,
                                 PageType p_type) __TA_EXCLUDES(sentry_lock_);
-  void RecoverDataPage(Summary &sum, block_t old_blkaddr, block_t new_blkaddr);
+  void RecoverDataPage(Summary &sum, block_t old_blkaddr, block_t new_blkaddr)
+      __TA_EXCLUDES(sentry_lock_);
 
   zx_status_t ReadCompactedSummaries() __TA_REQUIRES(sentry_lock_);
   zx_status_t ReadNormalSummaries(int type) __TA_REQUIRES(sentry_lock_);
@@ -267,6 +268,15 @@ class SegmentManager {
     const CursegInfo *curseg = CURSEG_I(type);
     return safemath::CheckAdd<block_t>(StartBlock(curseg->segno), curseg->next_blkoff).ValueOrDie();
   }
+  bool IsValidMainBlockAddress(block_t blk_addr) const {
+    if (blk_addr < main_blkaddr_) {
+      return false;
+    }
+    const uint64_t main_blocks =
+        safemath::CheckLsh<uint64_t>(main_segments_, superblock_info_.GetLogBlocksPerSeg())
+            .ValueOrDefault(0);
+    return (blk_addr - main_blkaddr_) < main_blocks;
+  }
   block_t GetSegOffFromSeg0(block_t blk_addr) const {
     ZX_ASSERT(blk_addr >= seg0_blkaddr_);
     return blk_addr - seg0_blkaddr_;
@@ -274,10 +284,11 @@ class SegmentManager {
   uint32_t GetSegNoFromSeg0(block_t blk_addr) const {
     return GetSegOffFromSeg0(blk_addr) >> superblock_info_.GetLogBlocksPerSeg();
   }
-  uint32_t GetSegmentNumber(block_t blk_addr) {
-    return ((blk_addr == kNullAddr) || (blk_addr == kNewAddr))
-               ? kNullSegNo
-               : GetL2RSegNo(GetSegNoFromSeg0(blk_addr));
+  uint32_t GetSegmentNumber(block_t blk_addr) const {
+    if (!IsValidMainBlockAddress(blk_addr)) {
+      return kNullSegNo;
+    }
+    return GetL2RSegNo(GetSegNoFromSeg0(blk_addr));
   }
   uint32_t GetSecNo(uint32_t segno) const { return segno / superblock_info_.GetSegsPerSec(); }
   uint32_t GetZoneNoFromSegNo(uint32_t segno) const {

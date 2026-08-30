@@ -1010,28 +1010,35 @@ block_t SegmentManager::GetBlockAddrOnSegment(LockedPage &page, block_t old_blka
 }
 
 void SegmentManager::RecoverDataPage(Summary &sum, block_t old_blkaddr, block_t new_blkaddr) {
-  CursegInfo *curseg;
-  uint32_t old_cursegno;
-  CursegType type;
+  if (!IsValidMainBlockAddress(new_blkaddr)) {
+    return;
+  }
   uint32_t segno = GetSegmentNumber(new_blkaddr);
-  ZX_ASSERT(IsValidSegmentNumber(segno));
+  if (!IsValidSegmentNumber(segno)) {
+    return;
+  }
   SegmentEntry &segment_entry = sit_info_->sentries[segno];
 
-  type = static_cast<CursegType>(segment_entry.type);
+  CursegType type = static_cast<CursegType>(segment_entry.type);
+  if (!IsValidSegmentType(type)) {
+    FX_LOGS(WARNING) << "Invalid segment type " << static_cast<uint32_t>(segment_entry.type)
+                     << " during recovery for segno " << segno;
+    return;
+  }
 
   if (segment_entry.valid_blocks == 0 && !IsCurSeg(segno)) {
-    if (old_blkaddr == kNullAddr) {
+    if (old_blkaddr == kNullAddr || !IsValidMainBlockAddress(old_blkaddr)) {
       type = CursegType::kCursegColdData;
     } else {
       type = CursegType::kCursegWarmData;
     }
   }
-  curseg = CURSEG_I(type);
+  CursegInfo *curseg = CURSEG_I(type);
 
   std::lock_guard curseg_lock(curseg->curseg_mutex);
   std::lock_guard sentry_lock(sentry_lock_);
 
-  old_cursegno = curseg->segno;
+  uint32_t old_cursegno = curseg->segno;
 
   // change the current segment
   if (segno != curseg->segno) {
@@ -1047,7 +1054,7 @@ void SegmentManager::RecoverDataPage(Summary &sum, block_t old_blkaddr, block_t 
 
   LocateDirtySegment(old_cursegno);
   LocateDirtySegment(GetSegmentNumber(old_blkaddr));
-  LocateDirtySegment(GetSegmentNumber(new_blkaddr));
+  LocateDirtySegment(segno);
 }
 
 zx_status_t SegmentManager::ReadCompactedSummaries() {

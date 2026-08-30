@@ -28,7 +28,7 @@ zx::result<F2fs::FsyncInodeList> F2fs::FindFsyncDnodes() {
   PageList inode_pages;
   FsyncInodeList inode_list;
 
-  while (true) {
+  while (segment_manager_->IsValidMainBlockAddress(blkaddr)) {
     bool new_entry = false;
     LockedPage page;
     // We cannot get fsync node pages from GetNodePage which can retrieve only checkpointed node
@@ -114,7 +114,15 @@ zx::result<F2fs::FsyncInodeList> F2fs::FindFsyncDnodes() {
 }
 
 zx::result<> F2fs::CheckIndexInPrevNodes(block_t blkaddr) {
+  if (!segment_manager_->IsValidMainBlockAddress(blkaddr)) {
+    FX_LOGS(ERROR) << "F2fs::CheckIndexInPrevNodes, IsValidMainBlockAddress Error: " << blkaddr;
+    return zx::error(ZX_ERR_INVALID_ARGS);
+  }
   uint32_t segno = segment_manager_->GetSegmentNumber(blkaddr);
+  if (!segment_manager_->IsValidSegmentNumber(segno)) {
+    FX_LOGS(ERROR) << "F2fs::CheckIndexInPrevNodes, IsValidSegmentNumber Error: " << segno;
+    return zx::error(ZX_ERR_INVALID_ARGS);
+  }
   size_t blkoff =
       segment_manager_->GetSegOffFromSeg0(blkaddr) & (superblock_info_->GetBlocksPerSeg() - 1);
   Summary sum;
@@ -200,20 +208,33 @@ void F2fs::DoRecoverData(VnodeF2fs &vnode, NodePage &page) {
 
   size_t offset_in_dnode = GetOfsInDnode(*path);
 
-  for (; start < end; ++start) {
+  for (; start < end; ++start, ++offset_in_dnode) {
     block_t src, dest;
 
     src = (*dnode_page).GetPage<NodePage>().GetBlockAddr(offset_in_dnode);
     dest = page.GetBlockAddr(offset_in_dnode);
 
     if (src != dest && dest != kNewAddr && dest != kNullAddr) {
+      if (!segment_manager_->IsValidMainBlockAddress(dest)) {
+        FX_LOGS(WARNING) << "Invalid destination block address " << dest << " during recovery";
+        continue;
+      }
+      if (src != kNullAddr && !segment_manager_->IsValidMainBlockAddress(src)) {
+        FX_LOGS(WARNING) << "Invalid source block address " << src << " during recovery";
+        src = kNullAddr;
+      }
+
       // Check the previous node page having this index
       if (zx::result result = CheckIndexInPrevNodes(dest); result.is_error()) {
         FX_LOGS(WARNING) << "Failed to check and clear index in prev nodes for block " << dest
                          << ": " << result.status_string();
       } else {
         if (src == kNullAddr) {
-          ZX_ASSERT(vnode.ReserveNewBlock(*dnode_page, offset_in_dnode) == ZX_OK);
+          if (zx_status_t status = vnode.ReserveNewBlock(*dnode_page, offset_in_dnode);
+              status != ZX_OK) {
+            FX_LOGS(WARNING) << "Failed to reserve new block: " << zx_status_get_string(status);
+            continue;
+          }
           vnode.AddBlocks(1);
         }
 
@@ -229,7 +250,6 @@ void F2fs::DoRecoverData(VnodeF2fs &vnode, NodePage &page) {
                                 dest);
       }
     }
-    ++offset_in_dnode;
   }
 
   dnode_page.value().GetPage<NodePage>().CopyNodeFooterFrom(page);
@@ -240,7 +260,7 @@ void F2fs::DoRecoverData(VnodeF2fs &vnode, NodePage &page) {
 void F2fs::RecoverData(FsyncInodeList &inode_list) {
   block_t blkaddr = segment_manager_->NextFreeBlkAddr(CursegType::kCursegWarmNode);
 
-  while (true) {
+  while (segment_manager_->IsValidMainBlockAddress(blkaddr)) {
     LockedPage page;
     // Eliminate duplicate node block reads using a meta inode cache.
     if (zx_status_t ret = GetMetaVnode().GrabLockedPage(blkaddr, &page); ret != ZX_OK) {
