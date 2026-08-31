@@ -161,6 +161,55 @@ pub trait WriteHandle: IoHandle {
     unsafe fn write_raw(&self, value: Self::Base);
 }
 
+/// Represents an abstracted means of atomic read-modify-write register I/O.
+//
+// TODO(https://github.com/rust-lang/rust/issues/132980): Consider generic
+// versions of the bit-set and bit-clear methods when we can consider const
+// generics of layout values.
+pub trait AtomicIoHandle: ReadHandle + WriteHandle {
+    /// Atomically swaps the contents of the register with the provided value,
+    /// returning the original contents.
+    ///
+    /// # Safety
+    ///
+    /// The caller must guarantee...
+    ///
+    /// * that the value-agnostic, implementation-specific preconditions for a
+    ///   sound write are met;
+    ///
+    /// * and further that the particular value will not cause undefined
+    ///   behaviour when written (in an implementation-specific way).
+    unsafe fn atomic_swap_raw(&self, value: Self::Base) -> Self::Base;
+
+    /// Atomically sets the provided bits on the contents of the register,
+    /// returning the original contents.
+    ///
+    /// # Safety
+    ///
+    /// The caller must guarantee...
+    ///
+    /// * that the value-agnostic, implementation-specific preconditions for a
+    ///   sound write are met;
+    ///
+    /// * and further that the particular value will not cause undefined
+    ///   behaviour when written (in an implementation-specific way).
+    unsafe fn atomic_set_bits_raw(&self, bits: Self::Base) -> Self::Base;
+
+    /// Atomically clears the provided bits on the contents of the register,
+    /// returning the original contents.
+    ///
+    /// # Safety
+    ///
+    /// The caller must guarantee...
+    ///
+    /// * that the value-agnostic, implementation-specific preconditions for a
+    ///   sound write are met;
+    ///
+    /// * and further that the particular value will not cause undefined
+    ///   behaviour when written (in an implementation-specific way).
+    unsafe fn atomic_clear_bits_raw(&self, bits: Self::Base) -> Self::Base;
+}
+
 /// `Register` represents a structured register layout, and its access
 /// interface and permissions. This is the core abstraction of the crate.
 ///
@@ -243,6 +292,69 @@ where
         // safeness/unsafeness of the write access in general.
         unsafe { self.io.write_raw(value.into()) }
     }
+
+    // Atomic swap subroutine consolidating the handle-specific safety
+    // justification of the access.
+    //
+    // # Safety
+    //
+    // The caller must guarantee that the particular value will not cause
+    // undefined behaviour when written.
+    #[inline(always)]
+    unsafe fn atomic_swap_impl(&self, value: Layout) -> Layout
+    where
+        Access: Readable + Writable,
+        Io: AtomicIoHandle,
+    {
+        // Safety: The I/O handle was attested as meeting the
+        // handle-specific preconditions for writing for our lifetime; the
+        // value-specific preconditions are left to the caller to justify in
+        // the case of unsafe-writability. Moreover, the caller attested to the
+        // safeness/unsafeness of the write access in general.
+        unsafe { self.io.atomic_swap_raw(value.into()).into() }
+    }
+
+    // Atomic bit-set subroutine consolidating the handle-specific safety
+    // justification of the access.
+    //
+    // # Safety
+    //
+    // The caller must guarantee that the particular value will not cause
+    // undefined behaviour when written.
+    #[inline(always)]
+    unsafe fn atomic_set_bits_impl(&self, value: Layout) -> Layout
+    where
+        Access: Readable + Writable,
+        Io: AtomicIoHandle,
+    {
+        // Safety: The I/O handle was attested as meeting the
+        // handle-specific preconditions for writing for our lifetime; the
+        // value-specific preconditions are left to the caller to justify in
+        // the case of unsafe-writability. Moreover, the caller attested to the
+        // safeness/unsafeness of the write access in general.
+        unsafe { self.io.atomic_set_bits_raw(value.into()).into() }
+    }
+
+    // Atomic bit-clear subroutine consolidating the handle-specific safety
+    // justification of the access.
+    //
+    // # Safety
+    //
+    // The caller must guarantee that the particular value will not cause
+    // undefined behaviour when written.
+    #[inline(always)]
+    unsafe fn atomic_clear_bits_impl(&self, value: Layout) -> Layout
+    where
+        Access: Readable + Writable,
+        Io: AtomicIoHandle,
+    {
+        // Safety: The I/O handle was attested as meeting the
+        // handle-specific preconditions for writing for our lifetime; the
+        // value-specific preconditions are left to the caller to justify in
+        // the case of unsafe-writability. Moreover, the caller attested to the
+        // safeness/unsafeness of the write access in general.
+        unsafe { self.io.atomic_clear_bits_raw(value.into()).into() }
+    }
 }
 
 // This will be used to stamp out write-related methods differing only in
@@ -291,7 +403,7 @@ macro_rules! impl_writable {
             #[inline]
             pub $($unsafe)? fn modify<ModifyFn, Ret>(&self, cb: ModifyFn) -> Ret
             where
-                (R, $write_kind): Readable + Writable,
+                (R, $write_kind): Readable,
                 Io: ReadHandle,
                 ModifyFn: FnOnce(&mut Layout) -> Ret,
             {
@@ -304,6 +416,54 @@ macro_rules! impl_writable {
                 #[allow(unused_unsafe)]
                 unsafe { self.write_impl(value) }
                 ret
+            }
+
+            /// Atomically swaps the contents of the register with the provided
+            /// value, returning the original contents.
+            $($(#[$safety_doc])*)?
+            #[inline]
+            pub $($unsafe)? fn atomic_swap(&self, value: Layout) -> Layout
+            where
+                (R, $write_kind): Readable,
+                Io: AtomicIoHandle,
+            {
+                // Safety: In the case of unsafe-writability, this method is
+                // unsafe and the caller themselves must provide the
+                // justification.
+                #[allow(unused_unsafe)]
+                unsafe { self.atomic_swap_impl(value) }
+            }
+
+            /// Atomically sets the provided bits on the contents of the
+            /// register, returning the original contents.
+            $($(#[$safety_doc])*)?
+            #[inline]
+            pub $($unsafe)? fn atomic_set_bits(&self, bits: Layout) -> Layout
+            where
+                (R, $write_kind): Readable,
+                Io: AtomicIoHandle,
+            {
+                // Safety: In the case of unsafe-writability, this method is
+                // unsafe and the caller themselves must provide the
+                // justification.
+                #[allow(unused_unsafe)]
+                unsafe { self.atomic_set_bits_impl(bits) }
+            }
+
+            /// Atomically clears the provided bits on the contents of the
+            /// register, returning the original contents.
+            $($(#[$safety_doc])*)?
+            #[inline]
+            pub $($unsafe)? fn atomic_clear_bits(&self, bits: Layout) -> Layout
+            where
+                (R, $write_kind): Readable,
+                Io: AtomicIoHandle,
+            {
+                // Safety: In the case of unsafe-writability, this method is
+                // unsafe and the caller themselves must provide the
+                // justification.
+                #[allow(unused_unsafe)]
+                unsafe { self.atomic_clear_bits_impl(bits) }
             }
         }
     };

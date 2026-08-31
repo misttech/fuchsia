@@ -104,7 +104,7 @@ mod riscv64_only {
     use core::arch::asm;
 
     use super::*;
-    use crate::{ReadHandle, Readable, Writable, WriteHandle};
+    use crate::{AtomicIoHandle, ReadHandle, Readable, Writable, WriteHandle};
 
     impl<Encoding: ControlAndStatusRegisterEncoding> ReadHandle for CsrIo<Encoding>
     where
@@ -140,6 +140,59 @@ mod riscv64_only {
                     options(nostack, preserves_flags),
                 )
             }
+        }
+    }
+
+    impl<Encoding: ControlAndStatusRegisterEncoding> AtomicIoHandle for CsrIo<Encoding>
+    where
+        Encoding::Access: Readable + Writable,
+    {
+        #[inline]
+        unsafe fn atomic_swap_raw(&self, value: u64) -> u64 {
+            let previous: u64;
+            unsafe {
+                asm!(
+                    "csrrw {previous}, {csr}, {value}",
+                    previous = out(reg) previous,
+                    value = in(reg) value,
+                    csr = const Encoding::VALUE,
+                    // TODO(https://fxbug.dev/525077555): Revisit using nomem here.
+                    options(nostack, preserves_flags),
+                )
+            };
+            previous
+        }
+
+        #[inline]
+        unsafe fn atomic_set_bits_raw(&self, bits: u64) -> u64 {
+            let previous: u64;
+            unsafe {
+                asm!(
+                    "csrrs {previous}, {csr}, {bits}",
+                    previous = out(reg) previous,
+                    bits = in(reg) bits,
+                    csr = const Encoding::VALUE,
+                    // TODO(https://fxbug.dev/525077555): Revisit using nomem here.
+                    options(nostack, preserves_flags),
+                )
+            };
+            previous
+        }
+
+        #[inline]
+        unsafe fn atomic_clear_bits_raw(&self, bits: u64) -> u64 {
+            let previous: u64;
+            unsafe {
+                asm!(
+                    "csrrc {previous}, {csr}, {bits}",
+                    previous = out(reg) previous,
+                    bits = in(reg) bits,
+                    csr = const Encoding::VALUE,
+                    // TODO(https://fxbug.dev/525077555): Revisit using nomem here.
+                    options(nostack, preserves_flags),
+                )
+            };
+            previous
         }
     }
 }
