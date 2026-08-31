@@ -220,9 +220,15 @@ if (is_host) {
   python_library("bazel_label_mapper") {
     sources = [ "bazel_label_mapper.py" ]
     library_deps = [
+      ":bazel_repository_utils",
       ":build_utils",
       ":workspace_utils",
     ]
+  }
+
+  python_build_time_tests("bazel_label_mapper_test") {
+    tests = [ "bazel_label_mapper_test.py" ]
+    deps = [ ":bazel_label_mapper" ]
   }
 
   python_library("bazel_repository_utils") {
@@ -242,6 +248,7 @@ group("tests") {
     ":bazel_action_utils_test($host_toolchain)",
     ":bazel_build_args_test($host_toolchain)",
     ":bazel_compdb_utils_test($host_toolchain)",
+    ":bazel_label_mapper_test($host_toolchain)",
     ":bazel_repository_utils_test($host_toolchain)",
     ":bazel_rust_analyzer_utils_test($host_toolchain)",
     ":bazel_source_path_mapper_test($host_toolchain)",
