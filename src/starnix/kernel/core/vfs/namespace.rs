@@ -13,11 +13,11 @@ use crate::vfs::pseudo::dynamic_file::{DynamicFile, DynamicFileBuf, DynamicFileS
 use crate::vfs::pseudo::simple_file::SimpleFileNode;
 use crate::vfs::socket::{SocketAddress, SocketHandle, UnixSocket};
 use crate::vfs::{
-    CheckAccessReason, DirEntry, DirEntryHandle, FileHandle, FileObject, FileOps, FileSystemHandle,
+    AccessCheck, DirEntry, DirEntryHandle, FileHandle, FileObject, FileOps, FileSystemHandle,
     FileSystemOptions, FileWriteGuardMode, FsContext, FsNode, FsNodeHandle, FsNodeOps, FsStr,
-    FsString, PathBuilder, RenameFlags, SymlinkTarget, UnlinkKind, fileops_impl_dataless,
-    fileops_impl_delegate_read_write_and_seek, fileops_impl_nonseekable, fileops_impl_noop_sync,
-    fs_node_impl_not_dir,
+    FsString, OpenAccessCheck, PathBuilder, RenameFlags, SymlinkTarget, UnlinkKind,
+    fileops_impl_dataless, fileops_impl_delegate_read_write_and_seek, fileops_impl_nonseekable,
+    fileops_impl_noop_sync, fs_node_impl_not_dir,
 };
 use fuchsia_rcu::{RcuBox, RcuDroppable, RcuReadScope};
 use fuchsia_rcu_collections::rcu_raw_hash_map::RcuRawHashMap;
@@ -29,7 +29,7 @@ use starnix_uapi::arc_key::{PtrKey, WeakKey};
 use starnix_uapi::auth::Credentials;
 use starnix_uapi::device_id::DeviceId;
 use starnix_uapi::errors::Errno;
-use starnix_uapi::file_mode::{AccessCheck, FileMode};
+use starnix_uapi::file_mode::FileMode;
 use starnix_uapi::inotify_mask::InotifyMask;
 use starnix_uapi::mount_flags::{
     AtomicMountpointFlags, FileSystemFlags, MountFlags, MountpointFlags,
@@ -1224,11 +1224,11 @@ impl NamespaceNode {
     pub fn open(
         &self,
         current_task: &CurrentTask,
-        flags: OpenFlags,
-        access_check: AccessCheck,
+        open_check: impl Into<OpenAccessCheck>,
     ) -> Result<FileHandle, Errno> {
-        let ops = self.entry.node.open(current_task, self, flags, access_check)?;
-        FileObject::new(current_task, ops, self.clone(), flags)
+        let open_check = open_check.into();
+        let ops = self.entry.node.open(current_task, self, open_check)?;
+        FileObject::new(current_task, ops, self.clone(), open_check.open_flags())
     }
 
     /// Create or open a node in the file system.
@@ -1868,10 +1868,15 @@ impl NamespaceNode {
     pub fn check_access(
         &self,
         current_task: &CurrentTask,
-        permission_flags: impl Into<security::PermissionFlags>,
-        reason: CheckAccessReason,
+        access_check: AccessCheck,
     ) -> Result<(), Errno> {
-        self.entry.node.check_access(current_task, &self.mount, permission_flags, reason, self)
+        self.entry.node.check_access(
+            current_task,
+            &self.mount,
+            access_check.permission_flags(),
+            access_check.reason(),
+            self,
+        )
     }
 
     /// Checks if O_NOATIME is allowed,

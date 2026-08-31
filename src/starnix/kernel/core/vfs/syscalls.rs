@@ -15,12 +15,11 @@ use crate::vfs::pidfd::new_pidfd;
 use crate::vfs::pipe::{PipeFileObject, new_pipe};
 use crate::vfs::timer::TimerFile;
 use crate::vfs::{
-    CheckAccessReason, DirentSink64, EpollFileObject, FallocMode, FdFlags, FdNumber,
-    FileAsyncOwner, FileHandle, FileSystemOptions, FlockOperation, FsStr, FsString, LookupContext,
-    Mount, NamespaceNode, PathWithReachability, RecordLockCommand, RenameFlags, SeekTarget,
-    StatxFlags, SymlinkMode, SymlinkTarget, TargetFdNumber, TimeUpdateType, UnlinkKind,
-    ValueOrSize, WhatToMount, XattrOp, checked_add_offset_and_length, new_memfd, new_zombie_pidfd,
-    splice,
+    AccessCheck, DirentSink64, EpollFileObject, FallocMode, FdFlags, FdNumber, FileAsyncOwner,
+    FileHandle, FileSystemOptions, FlockOperation, FsStr, FsString, LookupContext, Mount,
+    NamespaceNode, PathWithReachability, RecordLockCommand, RenameFlags, SeekTarget, StatxFlags,
+    SymlinkMode, SymlinkTarget, TargetFdNumber, TimeUpdateType, UnlinkKind, ValueOrSize,
+    WhatToMount, XattrOp, checked_add_offset_and_length, new_memfd, new_zombie_pidfd, splice,
 };
 use starnix_logging::{log_trace, track_stub};
 use starnix_sync::{EventHandlerReadyQueueLock, LockDepMutex};
@@ -38,7 +37,7 @@ use starnix_uapi::errors::{
     EFAULT, EINTR, ENAMETOOLONG, ENOTSUP, ETIMEDOUT, Errno, ErrnoResultExt,
 };
 use starnix_uapi::file_lease::FileLeaseType;
-use starnix_uapi::file_mode::{Access, AccessCheck, FileMode};
+use starnix_uapi::file_mode::{Access, FileMode};
 use starnix_uapi::inotify_mask::InotifyMask;
 use starnix_uapi::mount_flags::MountFlags;
 use starnix_uapi::open_flags::OpenFlags;
@@ -654,15 +653,9 @@ fn open_file_at(
     resolve_flags: ResolveFlags,
 ) -> Result<FileHandle, Errno> {
     let path = current_task.read_path(user_path)?;
+    let open_flags = OpenFlags::from_bits_truncate(flags);
     log_trace!(dir_fd:%, path:%; "open_file_at");
-    current_task.open_file_at(
-        dir_fd,
-        path.as_ref(),
-        OpenFlags::from_bits_truncate(flags),
-        mode,
-        resolve_flags,
-        AccessCheck::default(),
-    )
+    current_task.open_file_at(dir_fd, path.as_ref(), open_flags, mode, resolve_flags)
 }
 
 fn lookup_parent_at<T, F>(
@@ -864,7 +857,7 @@ pub fn sys_faccessat2(
         let mode = Access::try_from(mode)?;
         let lookup_flags = LookupFlags::from_bits(flags, AT_SYMLINK_NOFOLLOW | AT_EACCESS)?;
         let name = lookup_at(current_task, dir_fd, user_path, lookup_flags)?;
-        name.check_access(current_task, mode, CheckAccessReason::Access)
+        name.check_access(current_task, AccessCheck::for_access(mode))
     };
     // Unless `AT_ACCESS` is set, perform lookup & access-checking using real UID & GID.
     if flags & AT_EACCESS == 0 {
@@ -3477,7 +3470,6 @@ mod tests {
                     OpenFlags::RDWR | OpenFlags::CREAT,
                     FileMode::ALLOW_ALL,
                     ResolveFlags::empty(),
-                    AccessCheck::default(),
                 )
                 .unwrap();
 
@@ -3565,7 +3557,6 @@ mod tests {
                     OpenFlags::RDWR | OpenFlags::CREAT,
                     FileMode::ALLOW_ALL,
                     ResolveFlags::empty(),
-                    AccessCheck::default(),
                 )
                 .unwrap();
 
@@ -3584,7 +3575,6 @@ mod tests {
                     OpenFlags::RDWR | OpenFlags::CREAT,
                     FileMode::ALLOW_ALL,
                     ResolveFlags::empty(),
-                    AccessCheck::default(),
                 )
                 .unwrap();
 

@@ -18,9 +18,9 @@ use crate::task::{
     TaskFlags, TaskRunningState, ThreadState, Waiter,
 };
 use crate::vfs::{
-    CheckAccessReason, FdFlags, FdNumber, FdTable, FileHandle, FsContext, FsStr, LookupContext,
-    LookupVec, MAX_SYMLINK_FOLLOWS, NamespaceNode, ResolveBase, SymlinkMode, SymlinkTarget,
-    new_pidfd,
+    AccessCheck, FdFlags, FdNumber, FdTable, FileHandle, FsContext, FsStr, LookupContext,
+    LookupVec, MAX_SYMLINK_FOLLOWS, NamespaceNode, OpenAccessCheck, ResolveBase, SymlinkMode,
+    SymlinkTarget, new_pidfd,
 };
 use futures::FutureExt;
 use linux_uapi::CLONE_PIDFD;
@@ -39,7 +39,7 @@ use starnix_uapi::auth::{
 };
 use starnix_uapi::device_id::DeviceId;
 use starnix_uapi::errors::Errno;
-use starnix_uapi::file_mode::{Access, AccessCheck, FileMode};
+use starnix_uapi::file_mode::{Access, FileMode};
 use starnix_uapi::open_flags::OpenFlags;
 use starnix_uapi::signals::{
     SIGCHLD, SIGCONT, SIGILL, SIGKILL, SIGSEGV, SIGSYS, SIGTRAP, SigSet, Signal, UncheckedSignal,
@@ -618,7 +618,7 @@ impl CurrentTask {
             if !dir.entry.node.is_dir() {
                 return error!(ENOTDIR);
             }
-            dir.check_access(self, Access::EXEC, CheckAccessReason::InternalPermissionChecks)?;
+            dir.check_access(self, AccessCheck::for_internal(Access::EXEC))?;
         }
         Ok((dir, path.into()))
     }
@@ -639,7 +639,6 @@ impl CurrentTask {
             flags,
             FileMode::default(),
             ResolveFlags::empty(),
-            AccessCheck::default(),
         )
     }
 
@@ -702,12 +701,7 @@ impl CurrentTask {
         //          interpreter.
         //
         //   EACCES The filesystem is mounted noexec.
-        //
-        // We must check permissions with CheckAccessReason::Exec, which open() does not
-        // support, so we perform the check explicitly and skip access checks on open().
-        name.check_access(self, Access::EXEC, CheckAccessReason::Exec)?;
-
-        name.open(self, OpenFlags::RDONLY, AccessCheck::skip())
+        name.open(self, OpenAccessCheck::for_exec())
     }
 
     /// Resolves a path for open.
@@ -832,30 +826,29 @@ impl CurrentTask {
         &self,
         dir_fd: FdNumber,
         path: &FsStr,
-        flags: OpenFlags,
+        flags: impl Into<OpenAccessCheck>,
         mode: FileMode,
         resolve_flags: ResolveFlags,
-        access_check: AccessCheck,
     ) -> Result<FileHandle, Errno> {
         if path.is_empty() {
             return error!(ENOENT);
         }
 
         let (dir, path) = self.resolve_dir_fd(dir_fd, path, resolve_flags)?;
-        self.open_namespace_node_at(dir, path, flags, mode, resolve_flags, access_check)
+        self.open_namespace_node_at(dir, path, flags, mode, resolve_flags)
     }
 
     pub fn open_namespace_node_at(
         &self,
         dir: NamespaceNode,
         path: &FsStr,
-        flags: OpenFlags,
+        open_check: impl Into<OpenAccessCheck>,
         mode: FileMode,
         mut resolve_flags: ResolveFlags,
-        access_check: AccessCheck,
     ) -> Result<FileHandle, Errno> {
+        let open_check = open_check.into();
         // 64-bit kernels force the O_LARGEFILE flag to be on.
-        let mut flags = flags | OpenFlags::LARGEFILE;
+        let mut flags = open_check.open_flags() | OpenFlags::LARGEFILE;
         let opath = flags.contains(OpenFlags::PATH);
         if opath {
             // When O_PATH is specified in flags, flag bits other than O_CLOEXEC,
@@ -969,8 +962,11 @@ impl CurrentTask {
         // > Note that mode applies only to future accesses of the newly created file; the
         // > open() call that creates a read-only file may well return a  read/write  file
         // > descriptor.
-        let access_check = if created { AccessCheck::skip() } else { access_check };
-        let file = name.open(self, flags, access_check)?;
+        let file = if created {
+            name.open(self, OpenAccessCheck::skip(flags))?
+        } else {
+            name.open(self, OpenAccessCheck::new(flags, open_check.access_check()))?
+        };
 
         // If the new `FileHandle` represents an open file (rather than a handle to a location in
         // the virtual file system, as created with `O_PATH`), then LSM permission checks may be

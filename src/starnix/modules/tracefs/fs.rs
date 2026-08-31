@@ -279,9 +279,9 @@ mod tests {
     use super::*;
     use starnix_core::testing::spawn_kernel_and_run;
     use starnix_core::vfs::buffers::VecOutputBuffer;
-    use starnix_core::vfs::{FsNodeInfo, NamespaceNode};
+    use starnix_core::vfs::{FsNodeInfo, NamespaceNode, OpenAccessCheck};
     use starnix_uapi::auth::FsCred;
-    use starnix_uapi::file_mode::{AccessCheck, mode};
+    use starnix_uapi::file_mode::mode;
     use starnix_uapi::open_flags::OpenFlags;
 
     #[::fuchsia::test]
@@ -292,7 +292,7 @@ mod tests {
             let node = fs.create_node_and_allocate_node_id(EventsHeaderPage::new_node(), info);
             let ns_node = NamespaceNode::new_anonymous_unrooted(current_task, node);
             let file = ns_node
-                .open(current_task, OpenFlags::RDONLY, AccessCheck::skip())
+                .open(current_task, OpenAccessCheck::skip(OpenFlags::RDONLY))
                 .expect("open header_page node");
 
             let mut buffer = VecOutputBuffer::new(*PAGE_SIZE as usize);

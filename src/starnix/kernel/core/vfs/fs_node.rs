@@ -13,10 +13,10 @@ use crate::vfs::pipe::{Pipe, PipeHandle};
 use crate::vfs::rw_queue::{RwQueue, RwQueueReadGuard, RwQueueWriteGuard};
 use crate::vfs::socket::SocketHandle;
 use crate::vfs::{
-    DefaultDirEntryOps, DirEntryOps, FileObject, FileObjectState, FileOps, FileSystem,
-    FileSystemHandle, FileWriteGuardState, FsLockDepType, FsStr, FsString, MAX_LFS_FILESIZE,
-    MountInfo, NamespaceNode, OPathOps, RecordLockCommand, RecordLockOwner, RecordLocks,
-    WeakFileHandle, checked_add_offset_and_length, inotify_hook,
+    CheckAccessReason, DefaultDirEntryOps, DirEntryOps, FileObject, FileObjectState, FileOps,
+    FileSystem, FileSystemHandle, FileWriteGuardState, FsLockDepType, FsStr, FsString,
+    MAX_LFS_FILESIZE, MountInfo, NamespaceNode, OPathOps, OpenAccessCheck, RecordLockCommand,
+    RecordLockOwner, RecordLocks, WeakFileHandle, checked_add_offset_and_length, inotify_hook,
 };
 use bitflags::bitflags;
 use fuchsia_runtime::UtcInstant;
@@ -40,7 +40,7 @@ use starnix_uapi::auth::{
 };
 use starnix_uapi::device_id::DeviceId;
 use starnix_uapi::errors::{EACCES, ENOTSUP, EPERM, Errno};
-use starnix_uapi::file_mode::{Access, AccessCheck, FileMode};
+use starnix_uapi::file_mode::{Access, FileMode};
 use starnix_uapi::inotify_mask::InotifyMask;
 use starnix_uapi::mount_flags::MountFlags;
 use starnix_uapi::open_flags::OpenFlags;
@@ -538,16 +538,6 @@ impl FallocMode {
             None
         }
     }
-}
-
-#[derive(Debug, Copy, Clone, PartialEq)]
-pub enum CheckAccessReason {
-    Access,
-    Chdir,
-    Chroot,
-    Exec,
-    ChangeTimestamps { now: bool },
-    InternalPermissionChecks,
 }
 
 pub type LookupVec<T> = SmallVec<[T; 8]>;
@@ -1304,37 +1294,28 @@ impl FsNode {
         &self,
         current_task: &CurrentTask,
         namespace_node: &NamespaceNode,
-        flags: OpenFlags,
-        access_check: AccessCheck,
+        open_check: impl Into<OpenAccessCheck>,
     ) -> Result<Box<dyn FileOps>, Errno> {
+        let open_check = open_check.into();
+        let flags = open_check.open_flags();
         // If O_PATH is set, there is no need to create a real FileOps because
         // most file operations are disabled.
         if flags.contains(OpenFlags::PATH) {
             return Ok(Box::new(OPathOps::new()));
         }
 
-        let access = access_check.resolve(flags);
-        if access.is_nontrivial() {
+        let access_check = open_check.access_check();
+        let permission_flags = access_check.permission_flags();
+        if !permission_flags.is_empty() {
             if flags.contains(OpenFlags::NOATIME) {
                 self.check_o_noatime_allowed(current_task)?;
-            }
-
-            // `flags` doesn't contain any information about the EXEC permission. Instead the syscalls
-            // used to execute a file (`sys_execve` and `sys_execveat`) call `open()` with the EXEC
-            // permission request in `access`.
-            let mut permission_flags = PermissionFlags::from(access);
-
-            // The `APPEND` flag exists only in `flags`, to modify the behaviour of
-            // `PermissionFlags::WRITE`
-            if flags.contains(OpenFlags::APPEND) {
-                permission_flags |= security::PermissionFlags::APPEND;
             }
 
             self.check_access(
                 current_task,
                 &namespace_node.mount,
                 permission_flags,
-                CheckAccessReason::InternalPermissionChecks,
+                access_check.reason(),
                 namespace_node,
             )?;
         }

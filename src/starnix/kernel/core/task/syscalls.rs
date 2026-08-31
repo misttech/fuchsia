@@ -15,7 +15,7 @@ use crate::task::{
     SyslogAccess, Task, ThreadGroup, max_priority_for_sched_policy, min_priority_for_sched_policy,
 };
 use crate::vfs::{
-    CheckAccessReason, FdNumber, FileHandle, MountNamespaceFile, PidFdFileObject,
+    FdNumber, FileHandle, MountNamespaceFile, OpenAccessCheck, PidFdFileObject,
     UserBuffersOutputBuffer, VecOutputBuffer,
 };
 use starnix_logging::{log_error, log_info, log_trace, track_stub};
@@ -27,7 +27,6 @@ use starnix_uapi::auth::{
     CAP_SYS_TTY_CONFIG, Capabilities, Credentials, PTRACE_MODE_READ_REALCREDS, SecureBits,
 };
 use starnix_uapi::errors::{ENAMETOOLONG, Errno};
-use starnix_uapi::file_mode::{Access, AccessCheck};
 use starnix_uapi::kcmp::KcmpResource;
 use starnix_uapi::open_flags::OpenFlags;
 use starnix_uapi::resource_limits::Resource;
@@ -283,11 +282,7 @@ pub fn sys_execveat(
         //          interpreter.
         //
         //   EACCES The filesystem is mounted noexec.
-        //
-        // We must check permissions with CheckAccessReason::Exec, which open() does not
-        // support, so we perform the check explicitly and skip access checks on open().
-        file.name.check_access(current_task, Access::EXEC, CheckAccessReason::Exec)?;
-        file.name.open(current_task, OpenFlags::RDONLY, AccessCheck::skip())?
+        file.name.open(current_task, OpenAccessCheck::for_exec())?
     } else {
         current_task.open_file_for_exec(dir_fd, path.as_ref(), open_flags)?
     };

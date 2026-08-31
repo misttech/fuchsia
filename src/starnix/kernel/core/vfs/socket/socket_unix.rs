@@ -16,8 +16,8 @@ use crate::vfs::socket::{
     SocketProtocol, SocketShutdownFlags, SocketType,
 };
 use crate::vfs::{
-    CheckAccessReason, FdNumber, FileHandle, FileObject, FsNodeHandle, FsStr, LookupContext,
-    Message, UcredPtr,
+    AccessCheck, FdNumber, FileHandle, FileObject, FsNodeHandle, FsStr, LookupContext, Message,
+    UcredPtr,
 };
 use ebpf::{
     BpfProgramContext, BpfValue, CbpfConfig, DataWidth, EbpfProgram, Packet, ProgramArgument, Type,
@@ -1145,11 +1145,7 @@ pub fn resolve_unix_socket_address(
         let name = parent.lookup_child(current_task, &mut context, basename).map_err(|errno| {
             if matches!(errno.code, EACCES | EPERM | EINTR) { errno } else { errno!(ECONNREFUSED) }
         })?;
-        name.check_access(
-            current_task,
-            Access::WRITE,
-            CheckAccessReason::InternalPermissionChecks,
-        )?;
+        name.check_access(current_task, AccessCheck::for_internal(Access::WRITE))?;
         name.entry.node.bound_socket().map(|s| s.clone()).ok_or_else(|| errno!(ECONNREFUSED))
     }
 }

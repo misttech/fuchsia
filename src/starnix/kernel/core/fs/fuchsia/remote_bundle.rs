@@ -533,7 +533,7 @@ mod test {
     };
     use fidl_fuchsia_io as fio;
     use starnix_uapi::errors::Errno;
-    use starnix_uapi::file_mode::{AccessCheck, FileMode};
+    use starnix_uapi::file_mode::FileMode;
     use starnix_uapi::open_flags::OpenFlags;
     use starnix_uapi::{ino_t, off_t};
     use std::collections::{HashMap, HashSet};
@@ -564,7 +564,7 @@ mod test {
             let test_file = test_dir
                 .lookup_child(&current_task, &mut context, "file".into())
                 .expect("lookup failed")
-                .open(&current_task, OpenFlags::RDONLY, AccessCheck::default())
+                .open(&current_task, OpenFlags::RDONLY)
                 .expect("open failed");
 
             let mut buffer = VecOutputBuffer::new(64);
@@ -618,9 +618,7 @@ mod test {
                 panic!("unexpected symlink type");
             }
 
-            let opened_dir = test_dir
-                .open(&current_task, OpenFlags::RDONLY, AccessCheck::default())
-                .expect("open failed");
+            let opened_dir = test_dir.open(&current_task, OpenFlags::RDONLY).expect("open failed");
 
             struct Sink {
                 offset: off_t,

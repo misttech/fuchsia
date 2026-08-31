@@ -15,7 +15,7 @@ use crate::task::{
 };
 use crate::vfs::buffers::{InputBuffer, OutputBuffer};
 use crate::vfs::{
-    CacheMode, CheckAccessReason, FdNumber, FileObject, FileOps, FileSystem, FileSystemHandle,
+    AccessCheck, CacheMode, FdNumber, FileObject, FileOps, FileSystem, FileSystemHandle,
     FileSystemOps, FileSystemOptions, FsNode, FsNodeHandle, FsNodeInfo, FsNodeOps, FsStr,
     MemoryDirectoryFile, MemoryXattrStorage, NamespaceNode, RenameContext, XattrStorage as _,
     default_mmap, fileops_impl_nonseekable, fileops_impl_noop_sync, fs_node_impl_not_dir,
@@ -414,7 +414,7 @@ pub fn resolve_pinned_bpf_object(
     let node = current_task.lookup_path_from_root(path.as_ref())?;
 
     let permission_flags = PermissionFlags::from(open_flags);
-    node.check_access(current_task, permission_flags, CheckAccessReason::Access)?;
+    node.check_access(current_task, AccessCheck::for_access(permission_flags))?;
 
     let object = node.entry.node.downcast_ops::<BpfFsObject>().ok_or_else(|| errno!(EPERM))?;
     object.handle.security_check_open_fd(current_task, Some(permission_flags))?;

@@ -2378,7 +2378,7 @@ mod test {
     use starnix_sync::{FsNodeInfoLevel, Mutex};
     use starnix_uapi::auth::Credentials;
     use starnix_uapi::errors::EINVAL;
-    use starnix_uapi::file_mode::{AccessCheck, mode};
+    use starnix_uapi::file_mode::mode;
     use starnix_uapi::ino_t;
     use starnix_uapi::mount_flags::MountpointFlags;
     use starnix_uapi::open_flags::OpenFlags;
@@ -2439,7 +2439,7 @@ mod test {
             let _test_file = root
                 .lookup_child(&current_task, &mut context, "data/tests/hello_starnix".into())
                 .unwrap()
-                .open(&current_task, OpenFlags::RDONLY, AccessCheck::default())
+                .open(&current_task, OpenFlags::RDONLY)
                 .unwrap();
         })
         .await;
@@ -3216,9 +3216,7 @@ mod test {
                 .create_node(&current_task, "file".into(), MODE, DeviceId::NONE)
                 .expect("create_node failed");
             // Write to file (this should update mtime (time_modify))
-            let file = child
-                .open(&current_task, OpenFlags::RDWR, AccessCheck::default())
-                .expect("open failed");
+            let file = child.open(&current_task, OpenFlags::RDWR).expect("open failed");
             // Call `fetch_and_refresh_info(..)` to refresh `time_modify` with the time managed by the
             // underlying filesystem
             let time_before_write = child
@@ -3380,9 +3378,7 @@ mod test {
                 .root()
                 .create_node(&current_task, "file".into(), MODE, DeviceId::NONE)
                 .expect("create_node failed");
-            let file = child
-                .open(&current_task, OpenFlags::RDWR, AccessCheck::default())
-                .expect("open failed");
+            let file = child.open(&current_task, OpenFlags::RDWR).expect("open failed");
             // Call `fetch_and_refresh_info(..)` to refresh ctime and mtime with the time managed by the
             // underlying filesystem
             let (ctime_before_write, mtime_before_write) = {
@@ -3546,9 +3542,7 @@ mod test {
 
                 std::thread::sleep(std::time::Duration::from_micros(1));
 
-                let file_handle = child
-                    .open(&current_task, OpenFlags::RDWR, AccessCheck::default())
-                    .expect("open failed");
+                let file_handle = child.open(&current_task, OpenFlags::RDWR).expect("open failed");
 
                 file_handle
                     .read(&current_task, &mut VecOutputBuffer::new(10))
@@ -4253,7 +4247,7 @@ mod test {
 
             // 2. Open in append mode and write.
             let file_handle = file_node
-                .open(current_task, OpenFlags::RDWR | OpenFlags::APPEND, AccessCheck::default())
+                .open(current_task, OpenFlags::RDWR | OpenFlags::APPEND)
                 .expect("open failed");
 
             {
@@ -4418,9 +4412,7 @@ mod test {
                 .expect("lookup failed");
 
             // Open the file.
-            let file_handle = file_node
-                .open(current_task, OpenFlags::RDWR, AccessCheck::default())
-                .expect("open failed");
+            let file_handle = file_node.open(current_task, OpenFlags::RDWR).expect("open failed");
 
             // Set hook to stall the write response.
             let barrier = Arc::new(Barrier::new(2));
@@ -4664,8 +4656,7 @@ mod test {
             let node = root
                 .create_node(&current_task, "test_file".into(), mode!(IFREG, 0o666), DeviceId::NONE)
                 .expect("create_node");
-            let file_handle =
-                node.open(&current_task, OpenFlags::RDWR, AccessCheck::default()).expect("open");
+            let file_handle = node.open(&current_task, OpenFlags::RDWR).expect("open");
             let fd = current_task.add_file(file_handle, FdFlags::empty()).expect("add file");
 
             // Do mmap
@@ -4732,9 +4723,7 @@ mod test {
             let node = root
                 .create_node(&current_task, "file".into(), REG_MODE, DeviceId::NONE)
                 .expect("create_node failed");
-            let file = node
-                .open(&current_task, OpenFlags::RDWR, AccessCheck::default())
-                .expect("open failed");
+            let file = node.open(&current_task, OpenFlags::RDWR).expect("open failed");
 
             // Initial size should be 0.
             assert_eq!(node.entry.node.get_size(&current_task).expect("get_size failed"), 0);

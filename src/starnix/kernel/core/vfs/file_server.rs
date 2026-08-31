@@ -8,7 +8,7 @@ use crate::task::{CurrentTask, Kernel};
 use crate::vfs::buffers::{VecInputBuffer, VecOutputBuffer};
 use crate::vfs::{
     DirectoryEntryType, DirentSink, FileHandle, FileObject, FsStr, FsString, LookupContext,
-    NamespaceNode, RenameFlags, SeekTarget, UnlinkKind,
+    NamespaceNode, OpenAccessCheck, RenameFlags, SeekTarget, UnlinkKind,
 };
 use fidl::endpoints::{ClientEnd, ServerEnd};
 use fidl_fuchsia_io as fio;
@@ -22,7 +22,7 @@ use starnix_types::convert::IntoFidl as _;
 use starnix_uapi::auth::Credentials;
 use starnix_uapi::device_id::DeviceId;
 use starnix_uapi::errors::{ENOSPC, Errno};
-use starnix_uapi::file_mode::{AccessCheck, FileMode};
+use starnix_uapi::file_mode::FileMode;
 use starnix_uapi::open_flags::OpenFlags;
 use starnix_uapi::vfs::ResolveFlags;
 use starnix_uapi::{errno, error, from_status_like_fdio, ino_t, off_t};
@@ -239,7 +239,7 @@ async fn handle_file(
     current_task
         .override_creds_async(credentials.clone(), async || {
             // Reopen file object to not share state with the given FileObject.
-            let file = match file.name.open(current_task, file.flags(), AccessCheck::skip()) {
+            let file = match file.name.open(current_task, OpenAccessCheck::skip(file.flags())) {
                 Ok(file) => file,
                 Err(e) => {
                     log_error!("Unable to reopen file: {e:?}");
@@ -386,7 +386,7 @@ impl StarnixNodeConnection {
         let flags = to_open_flags(flags);
         let stats = self.stats.clone();
         self.spawn_task(async move |current_task, file| {
-            let file = file.name.open(current_task, flags, AccessCheck::default())?;
+            let file = file.name.open(current_task, flags)?;
             Ok(StarnixNodeConnection::new(&current_task.kernel(), file, credentials, stats))
         })
     }
@@ -557,7 +557,6 @@ impl StarnixNodeConnection {
                         open_flags,
                         FileMode::ALLOW_ALL,
                         ResolveFlags::empty(),
-                        AccessCheck::default(),
                     ) {
                         Err(e) if e == errno!(EISDIR) && create_directory => {
                             let mode = current_task
@@ -571,8 +570,9 @@ impl StarnixNodeConnection {
                             )?;
                             name.open(
                                 &current_task,
-                                open_flags & !(OpenFlags::CREAT | OpenFlags::EXCL),
-                                AccessCheck::skip(),
+                                OpenAccessCheck::skip(
+                                    open_flags & !(OpenFlags::CREAT | OpenFlags::EXCL),
+                                ),
                             )?
                         }
                         f => f?,
@@ -1114,7 +1114,7 @@ mod tests {
                 .expect("create_node");
 
             let file =
-                file_node.open(current_task, OpenFlags::RDWR, AccessCheck::skip()).expect("open");
+                file_node.open(current_task, OpenAccessCheck::skip(OpenFlags::RDWR)).expect("open");
             file.write(current_task, &mut VecInputBuffer::new(b"hello")).expect("write");
 
             // Reopen with O_TRUNC.
@@ -1122,10 +1122,9 @@ mod tests {
                 .open_namespace_node_at(
                     root,
                     b"test".into(),
-                    OpenFlags::RDWR | OpenFlags::TRUNC,
+                    OpenAccessCheck::skip(OpenFlags::RDWR | OpenFlags::TRUNC),
                     FileMode::default(),
                     ResolveFlags::default(),
-                    AccessCheck::skip(),
                 )
                 .expect("open O_TRUNC");
 
@@ -1175,7 +1174,7 @@ mod tests {
                 .expect("create_node");
 
             let file =
-                file_node.open(current_task, OpenFlags::RDWR, AccessCheck::skip()).expect("open");
+                file_node.open(current_task, OpenAccessCheck::skip(OpenFlags::RDWR)).expect("open");
             file.write(current_task, &mut VecInputBuffer::new(b"hello")).expect("write");
 
             // Serve the file as different user.

@@ -659,7 +659,7 @@ mod tests {
     use super::*;
     use crate::testing::spawn_kernel_with_selinux_and_run;
     use starnix_uapi::device_id::DeviceId;
-    use starnix_uapi::file_mode::{AccessCheck, FileMode};
+    use starnix_uapi::file_mode::FileMode;
     use starnix_uapi::open_flags::OpenFlags;
 
     fn open_file(current_task: &CurrentTask, name: &str) -> FileHandle {
@@ -668,7 +668,7 @@ mod tests {
             .root()
             .create_node(&current_task, name.into(), FileMode::IFREG, DeviceId::NONE)
             .expect("create_node")
-            .open(current_task, OpenFlags::RDWR, AccessCheck::default())
+            .open(current_task, OpenFlags::RDWR)
             .expect("open")
     }
 

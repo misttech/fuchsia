@@ -13,7 +13,7 @@ use starnix_core::vfs::{
 use starnix_logging::{impossible_error, log_error};
 
 use starnix_uapi::errors::Errno;
-use starnix_uapi::file_mode::{Access, AccessCheck, FileMode};
+use starnix_uapi::file_mode::FileMode;
 use starnix_uapi::open_flags::OpenFlags;
 use starnix_uapi::vfs::ResolveFlags;
 use starnix_uapi::{errno, error};
@@ -88,7 +88,6 @@ impl FileOps for NanohubFirmwareFile {
                 OpenFlags::RDONLY,
                 FileMode::default(),
                 ResolveFlags::empty(),
-                AccessCheck::check_for(Access::READ),
             );
             if firmware_open_result.is_err() {
                 continue;

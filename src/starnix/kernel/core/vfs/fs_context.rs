@@ -4,13 +4,13 @@
 
 use crate::security;
 use crate::task::{CurrentTask, MountsWriteToken};
-use crate::vfs::{ActiveNamespaceNode, CheckAccessReason, Namespace, NamespaceNode};
+use crate::vfs::{AccessCheck, ActiveNamespaceNode, Namespace, NamespaceNode};
 use starnix_logging::log_trace;
 use starnix_sync::LockDepRwLock;
 use starnix_uapi::auth::CAP_SYS_CHROOT;
 use starnix_uapi::errno;
 use starnix_uapi::errors::Errno;
-use starnix_uapi::file_mode::{Access, FileMode};
+use starnix_uapi::file_mode::FileMode;
 use std::sync::Arc;
 
 /// The mutable state for an FsContext.
@@ -107,7 +107,7 @@ impl FsContext {
 
     /// Change the current working directory.
     pub fn chdir(&self, current_task: &CurrentTask, name: NamespaceNode) -> Result<(), Errno> {
-        name.check_access(current_task, Access::EXEC, CheckAccessReason::Chdir)?;
+        name.check_access(current_task, AccessCheck::for_chdir())?;
         let mut state = self.state.write();
         state.cwd = name.into_active();
         Ok(())
@@ -115,8 +115,7 @@ impl FsContext {
 
     /// Change the root.
     pub fn chroot(&self, current_task: &CurrentTask, name: NamespaceNode) -> Result<(), Errno> {
-        name.check_access(current_task, Access::EXEC, CheckAccessReason::Chroot)
-            .map_err(|_| errno!(EACCES))?;
+        name.check_access(current_task, AccessCheck::for_chroot()).map_err(|_| errno!(EACCES))?;
         security::check_task_capable(current_task, CAP_SYS_CHROOT)?;
 
         let mut state = self.state.write();

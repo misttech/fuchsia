@@ -12,15 +12,15 @@ use crate::vfs::buffers::{InputBuffer, OutputBuffer};
 use crate::vfs::{
     AppendLockWriteGuard, DirEntry, FallocMode, FileHandle, FileObject, FileOps, FileSystemHandle,
     FsNode, FsNodeInfo, FsNodeLinkBehavior, FsNodeOps, FsString, MAX_LFS_FILESIZE,
-    MemoryXattrStorage, Mount, MountInfo, NamespaceNode, WhatToMount, XattrStorage as _,
-    fileops_impl_noop_sync, fs_node_impl_not_dir, fs_node_impl_xattr_delegate,
+    MemoryXattrStorage, Mount, MountInfo, NamespaceNode, OpenAccessCheck, WhatToMount,
+    XattrStorage as _, fileops_impl_noop_sync, fs_node_impl_not_dir, fs_node_impl_xattr_delegate,
 };
 use linux_uapi::{ASHMEM_GET_SIZE, ASHMEM_SET_SIZE};
 use starnix_logging::{impossible_error, track_stub};
 use starnix_syscalls::{SUCCESS, SyscallArg, SyscallResult};
 use starnix_types::math::round_up_to_system_page_size;
 use starnix_uapi::errors::{EFBIG, Errno};
-use starnix_uapi::file_mode::{AccessCheck, mode};
+use starnix_uapi::file_mode::mode;
 use starnix_uapi::open_flags::OpenFlags;
 use starnix_uapi::resource_limits::Resource;
 use starnix_uapi::seal_flags::SealFlags;
@@ -473,7 +473,7 @@ pub fn new_memfd(
     security::fs_node_init_with_dentry(current_task, &dir_entry)?;
 
     let name = NamespaceNode::new(fs.mount.clone(), dir_entry);
-    name.open(current_task, flags, AccessCheck::skip())
+    name.open(current_task, OpenAccessCheck::skip(flags))
 }
 
 /// Sets memory size to `min_size` rounded to whole pages. Returns the new size of the VMO in bytes.

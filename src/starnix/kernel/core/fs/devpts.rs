@@ -22,7 +22,7 @@ use starnix_types::vfs::default_statfs;
 use starnix_uapi::auth::FsCred;
 use starnix_uapi::device_id::{DeviceId, TTY_ALT_MAJOR};
 use starnix_uapi::errors::Errno;
-use starnix_uapi::file_mode::{AccessCheck, mode};
+use starnix_uapi::file_mode::mode;
 use starnix_uapi::mount_flags::MountFlags;
 use starnix_uapi::open_flags::OpenFlags;
 use starnix_uapi::signals::SIGWINCH;
@@ -460,8 +460,7 @@ impl FileOps for DevPtmxFile {
                 }
 
                 let flags = OpenFlags::from_bits_truncate(u32::from(arg));
-                let replica_file =
-                    replica_node.open(current_task, flags, AccessCheck::default())?;
+                let replica_file = replica_node.open(current_task, flags)?;
 
                 let fd_flags = if flags.contains(OpenFlags::CLOEXEC) {
                     FdFlags::CLOEXEC
@@ -917,9 +916,9 @@ mod tests {
     use crate::testing::*;
     use crate::vfs::buffers::{VecInputBuffer, VecOutputBuffer};
     use crate::vfs::fs_args::MountParams;
-    use crate::vfs::{MountInfo, NamespaceNode};
+    use crate::vfs::{MountInfo, NamespaceNode, OpenAccessCheck};
     use starnix_uapi::auth::Credentials;
-    use starnix_uapi::file_mode::{AccessCheck, FileMode};
+    use starnix_uapi::file_mode::FileMode;
     use starnix_uapi::signals::{SIGCHLD, SIGTTOU};
 
     fn new_pts_fs(kernel: &Kernel) -> FileSystemHandle {
@@ -967,7 +966,7 @@ mod tests {
         flags: OpenFlags,
     ) -> Result<FileHandle, Errno> {
         let node = lookup_node(current_task, fs, name)?;
-        node.open(current_task, flags, AccessCheck::default())
+        node.open(current_task, flags)
     }
 
     fn open_file(
@@ -1068,7 +1067,7 @@ mod tests {
                 })
                 .expect("custom_pts");
             let node = NamespaceNode::new_anonymous(pts.clone());
-            assert!(node.open(task, OpenFlags::RDONLY, AccessCheck::skip()).is_err());
+            assert!(node.open(task, OpenAccessCheck::skip(OpenFlags::RDONLY)).is_err());
         })
         .await;
     }
@@ -1147,10 +1146,7 @@ mod tests {
             let _ptmx_file = open_file(task, &fs, "ptmx".into()).expect("open file");
 
             let pts = lookup_node(task, &fs, "0".into()).expect("component_lookup");
-            assert_eq!(
-                pts.open(task, OpenFlags::RDONLY, AccessCheck::default()).map(|_| ()),
-                error!(EIO)
-            );
+            assert_eq!(pts.open(task, OpenFlags::RDONLY).map(|_| ()), error!(EIO));
         })
         .await;
     }
@@ -1167,17 +1163,14 @@ mod tests {
             // Check that the lock is not set.
             assert_eq!(ioctl::<i32>(task, &ptmx, TIOCGPTLCK, &0), Ok(0));
             // /dev/pts/0 can be opened
-            pts.open(task, OpenFlags::RDONLY, AccessCheck::default()).expect("open");
+            pts.open(task, OpenFlags::RDONLY).expect("open");
 
             // Lock the terminal
             ioctl::<i32>(task, &ptmx, TIOCSPTLCK, &42).expect("ioctl");
             // Check that the lock is set.
             assert_eq!(ioctl::<i32>(task, &ptmx, TIOCGPTLCK, &0), Ok(1));
             // /dev/pts/0 cannot be opened
-            assert_eq!(
-                pts.open(task, OpenFlags::RDONLY, AccessCheck::default()).map(|_| ()),
-                error!(EIO)
-            );
+            assert_eq!(pts.open(task, OpenFlags::RDONLY).map(|_| ()), error!(EIO));
         })
         .await;
     }

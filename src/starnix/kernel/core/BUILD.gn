@@ -165,6 +165,7 @@ _starnix_core_sources = [
   "time/utc.rs",
   "vdso/mod.rs",
   "vdso/vdso_loader.rs",
+  "vfs/access_check.rs",
   "vfs/aio.rs",
   "vfs/anon_node.rs",
   "vfs/buffers/io_buffers.rs",
