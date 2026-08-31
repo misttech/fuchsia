@@ -195,7 +195,6 @@ tools_bazel_root_targets = [
         ninja = "debugsyms"
       },
     ]
-    install_host_tool = true
   },
   {
     bazel_label = "//tools/debug/generate_breakpad:generate_breakpad"
