@@ -25,7 +25,7 @@ use sapphire_emboss::att::{
     AttReadByGroupTypeReqHeaderWriter, AttReadByTypeReqHeaderWriter, AttReadReqWriter,
     AttWriteCmdWriter,
 };
-use sapphire_emboss::{CheckComplete, InfallibleRead};
+use sapphire_emboss::{CheckComplete, CheckOk, InfallibleRead};
 
 use core::cmp::{max, min};
 use core::mem::{MaybeUninit, size_of};
@@ -109,7 +109,7 @@ where
             Ok(opcode) if opcode == expected_rsp_opcode => Ok(rx_packet),
             Ok(Opcode::ATT_ERROR_RSP) => {
                 let err = AttErrorRsp::new(rx_packet.as_bytes())
-                    .check_complete()
+                    .check_ok()
                     .map_err(|_| ClientError::InvalidIncomingData)?;
                 let err_req_op = err.request_opcode_in_error_uint().read();
                 let err_code = match err.error_code().read() {
@@ -163,7 +163,7 @@ where
         {
             Ok(rx_packet) => {
                 let rsp = AttExchangeMtuRsp::new(rx_packet.as_bytes())
-                    .check_complete()
+                    .check_ok()
                     .map_err(|_| ClientError::InvalidIncomingData)?;
                 let server_mtu = rsp.server_rx_mtu().read();
                 let negotiated_mtu = max(DEFAULT_STARTING_MTU, min(self.preferred_mtu, server_mtu));
@@ -213,7 +213,7 @@ where
             .await?;
 
         let header_view = AttFindInformationRspHeader::new(rx_packet.as_bytes())
-            .check_complete()
+            .check_ok()
             .map_err(|_| ClientError::InvalidIncomingData)?;
         let format = match header_view.format().read() {
             Ok(f) => f,

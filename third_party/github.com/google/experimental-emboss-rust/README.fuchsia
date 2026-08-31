@@ -1,6 +1,6 @@
 Name: github.com google emboss rust experiment
-URL: https://github.com/google/emboss/tree/rust_dev
-Revision: 22901718fda423ee45f9758b31fcff10a33de0a3
+URL: https://github.com/google/emboss/tree/rust_dev_typestates
+Revision: ad068c00e75c9b5706f2f7a9025d4153b9fdbc74
 Security Critical: yes
 
 License File: src/LICENSE

@@ -39,7 +39,7 @@ use sapphire_emboss::att::{
     AttPrepareWriteHeader, AttReadBlobReq, AttReadByGroupTypeReqHeader,
     AttReadByGroupTypeRspEntryHeaderWriter, AttReadByTypeReqHeader, AttReadReq, AttWriteCmd,
 };
-use sapphire_emboss::{CheckComplete, InfallibleRead};
+use sapphire_emboss::{CheckComplete, CheckOk, InfallibleRead};
 use sapphire_sync::mutex::raw::{RawMutex, SingleThreadMutex};
 use thiserror::Error;
 use zerocopy::{IntoBytes, TryFromBytes};
@@ -365,7 +365,7 @@ where
     ///
     /// see Bluetooth Core Spec v6.0 (Vol 3, Part F, Section 3.4.2.1) and (Vol 3, Part G, Section 5.2.1)
     async fn handle_exchange_mtu(&mut self, packet_bytes: &[u8]) -> Result<(), TransactionError> {
-        let req = AttExchangeMtuReq::new(packet_bytes).check_complete().map_err(|_| {
+        let req = AttExchangeMtuReq::new(packet_bytes).check_ok().map_err(|_| {
             TransactionError::InvalidPdu { request_opcode: Opcode::ATT_EXCHANGE_MTU_REQ }
         })?;
         let client_mtu = req.client_rx_mtu().read();
@@ -400,7 +400,7 @@ where
                 request_opcode: Opcode::ATT_FIND_INFORMATION_REQ,
             });
         }
-        let req = AttFindInformationReq::new(payload).check_complete().map_err(|_| {
+        let req = AttFindInformationReq::new(payload).check_ok().map_err(|_| {
             TransactionError::InvalidPdu { request_opcode: Opcode::ATT_FIND_INFORMATION_REQ }
         })?;
         let start = req.starting_handle().read();
@@ -501,7 +501,7 @@ where
                 request_opcode: Opcode::ATT_FIND_BY_TYPE_VALUE_REQ,
             });
         }
-        let header = AttFindByTypeValueReqHeader::new(payload).check_complete().map_err(|_| {
+        let header = AttFindByTypeValueReqHeader::new(payload).check_ok().map_err(|_| {
             TransactionError::InvalidPdu { request_opcode: Opcode::ATT_FIND_BY_TYPE_VALUE_REQ }
         })?;
         let start = header.starting_handle().read();
@@ -578,7 +578,7 @@ where
         }
         // Parse the incoming Read Request.
         let req = AttReadReq::new(data)
-            .check_complete()
+            .check_ok()
             .map_err(|_| TransactionError::InvalidPdu { request_opcode: Opcode::ATT_READ_REQ })?;
         let handle_val = req.attribute_handle().read();
 
@@ -613,7 +613,7 @@ where
             return Err(TransactionError::InvalidPdu { request_opcode: Opcode::ATT_READ_BLOB_REQ });
         }
         // Parse the incoming Read Blob Request.
-        let req = AttReadBlobReq::new(data).check_complete().map_err(|_| {
+        let req = AttReadBlobReq::new(data).check_ok().map_err(|_| {
             TransactionError::InvalidPdu { request_opcode: Opcode::ATT_READ_BLOB_REQ }
         })?;
         let handle_val = req.attribute_handle().read();
@@ -796,7 +796,7 @@ where
                 request_opcode: Opcode::ATT_READ_BY_TYPE_REQ,
             });
         }
-        let req = AttReadByTypeReqHeader::new(payload).check_complete().map_err(|_| {
+        let req = AttReadByTypeReqHeader::new(payload).check_ok().map_err(|_| {
             TransactionError::InvalidPdu { request_opcode: Opcode::ATT_READ_BY_TYPE_REQ }
         })?;
         let start_handle_val = req.starting_handle().read();
@@ -829,7 +829,7 @@ where
                 request_opcode: Opcode::ATT_READ_BY_GROUP_TYPE_REQ,
             });
         }
-        let req = AttReadByGroupTypeReqHeader::new(payload).check_complete().map_err(|_| {
+        let req = AttReadByGroupTypeReqHeader::new(payload).check_ok().map_err(|_| {
             TransactionError::InvalidPdu { request_opcode: Opcode::ATT_READ_BY_GROUP_TYPE_REQ }
         })?;
         let start_handle_val = req.starting_handle().read();
@@ -868,7 +868,7 @@ where
             return Err(TransactionError::InvalidPdu { request_opcode: Opcode::ATT_WRITE_REQ });
         }
         let req = AttWriteCmd::new(&payload[..ATT_WRITE_REQ_HEADER_SIZE])
-            .check_complete()
+            .check_ok()
             .map_err(|_| TransactionError::InvalidPdu { request_opcode: Opcode::ATT_WRITE_REQ })?;
         let handle_val = req.attribute_handle().read();
         let handle = to_handle(handle_val, Opcode::ATT_WRITE_REQ)?;
@@ -908,7 +908,7 @@ where
         if payload.len() < ATT_WRITE_CMD_HEADER_SIZE {
             return Ok(());
         }
-        let req = match AttWriteCmd::new(&payload[..ATT_WRITE_CMD_HEADER_SIZE]).check_complete() {
+        let req = match AttWriteCmd::new(&payload[..ATT_WRITE_CMD_HEADER_SIZE]).check_ok() {
             Ok(r) => r,
             Err(_) => return Ok(()),
         };
@@ -938,7 +938,7 @@ where
             });
         }
         let req = AttPrepareWriteHeader::new(&payload[..ATT_PREPARE_WRITE_HEADER_SIZE])
-            .check_complete()
+            .check_ok()
             .map_err(|_| TransactionError::InvalidPdu {
                 request_opcode: Opcode::ATT_PREPARE_WRITE_REQ,
             })?;
@@ -1009,7 +1009,7 @@ where
                 request_opcode: Opcode::ATT_EXECUTE_WRITE_REQ,
             });
         }
-        let req = AttExecuteWriteReq::new(payload).check_complete().map_err(|_| {
+        let req = AttExecuteWriteReq::new(payload).check_ok().map_err(|_| {
             TransactionError::InvalidPdu { request_opcode: Opcode::ATT_EXECUTE_WRITE_REQ }
         })?;
         let flags = match req.flags().read() {

@@ -9,8 +9,8 @@ pub use pw_bluetooth_hci_h4_emb as hci_h4;
 pub use pw_bluetooth_l2cap_frames_emb as l2cap_frames;
 
 pub use emboss_runtime::{
-    CheckComplete, CompleteState, Error, InfallibleRead, InfallibleWrite, IsComplete, State,
-    UncheckedState,
+    CheckComplete, CheckOk, CompleteState, Error, InfallibleRead, InfallibleWrite, IsComplete,
+    IsOk, OkState, State, UncheckedState,
 };
 
 #[cfg(test)]
@@ -39,7 +39,7 @@ mod tests {
             .write_attribute_handle(0x1234)
             .write_error_code(ErrorCode::READ_NOT_PERMITTED);
 
-        let read_view = AttErrorRsp::new(&buffer[..]).check_complete().unwrap();
+        let read_view = AttErrorRsp::new(&buffer[..]).check_ok().unwrap();
         assert_eq!(read_view.attribute_opcode().read(), Ok(AttOpcode::ATT_ERROR_RSP));
         assert_eq!(
             read_view.request_opcode_in_error_uint().read(),

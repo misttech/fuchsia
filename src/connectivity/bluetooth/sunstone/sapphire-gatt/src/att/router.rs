@@ -202,7 +202,7 @@ mod tests {
     use sapphire_async::executor::BoundedExecutor;
     use sapphire_async::testing::TestExecutor;
     use sapphire_emboss::att::{AttHandleValueNtfHeaderWriter, AttReadReq, AttReadReqWriter};
-    use sapphire_emboss::{CheckComplete, InfallibleRead};
+    use sapphire_emboss::{CheckComplete, CheckOk, InfallibleRead};
     use zerocopy::{IntoBytes, TryFromBytes};
 
     #[test]
@@ -329,7 +329,7 @@ mod tests {
                 let mut rx_buf = [MaybeUninit::uninit(); MAX_SUPPORTED_MTU];
                 let p = server_rx_handle.next_packet(&mut rx_buf).await.unwrap();
                 assert_eq!(p.opcode, Opcode::ATT_READ_REQ.into());
-                let req = AttReadReq::new(p.as_bytes()).check_complete().unwrap();
+                let req = AttReadReq::new(p.as_bytes()).check_ok().unwrap();
                 assert_eq!(req.attribute_handle().read(), 0x0001);
             });
 
