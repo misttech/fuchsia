@@ -78,3 +78,68 @@ build_flags_toolchain_instance = rule(
         ),
     },
 )
+
+#############################################################################
+#############################################################################
+#####
+#####    rust_toolchain_with_build_flags()
+#####
+#####    Wraps a rust_toolchain() target to append default build flags from
+#####    @fuchsia_rules_common//build_flags:toolchain_type.
+#####
+
+def _rust_toolchain_with_build_flags_impl(ctx):
+    base_info = ctx.attr.toolchain[platform_common.ToolchainInfo]
+    flags_toolchain = ctx.toolchains["@fuchsia_rules_common//build_flags:toolchain_type"]
+
+    extra_flags = []
+    if flags_toolchain:
+        # Only use the common_infos list for Rust targets, since the GN default configs
+        # for Rust do not change for executables or shared libraries.
+        for info in flags_toolchain.default_flags.rust_common_infos:
+            extra_flags.extend(info.rustflags)
+            for lib_dir in info.lib_dirs:
+                extra_flags.append("-Lnative=" + lib_dir)
+
+    raw_flags = extra_flags + ctx.attr.extra_rustc_flags + getattr(base_info, "extra_rustc_flags", [])
+    seen = {}
+    all_extra_flags = []
+    for flag in raw_flags:
+        if flag not in seen:
+            seen[flag] = True
+            all_extra_flags.append(flag)
+
+    fields = {}
+    for k in dir(base_info):
+        if k in ("to_json", "to_proto"):
+            continue
+        fields[k] = getattr(base_info, k)
+    fields["extra_rustc_flags"] = all_extra_flags
+
+    providers = [platform_common.ToolchainInfo(**fields)]
+    if platform_common.TemplateVariableInfo in ctx.attr.toolchain:
+        providers.append(ctx.attr.toolchain[platform_common.TemplateVariableInfo])
+
+    return providers
+
+rust_toolchain_with_build_flags = rule(
+    implementation = _rust_toolchain_with_build_flags_impl,
+    doc = "Wraps a rust_toolchain() target to append default build flags from @fuchsia_rules_common//build_flags:toolchain_type.",
+    attrs = {
+        "toolchain": attr.label(
+            doc = "The base rust_toolchain() target.",
+            mandatory = True,
+            providers = [platform_common.ToolchainInfo],
+        ),
+        "extra_rustc_flags": attr.string_list(
+            doc = "Extra flags to append after default build flags.",
+            default = [],
+        ),
+    },
+    toolchains = [
+        config_common.toolchain_type(
+            "@fuchsia_rules_common//build_flags:toolchain_type",
+            mandatory = False,
+        ),
+    ],
+)

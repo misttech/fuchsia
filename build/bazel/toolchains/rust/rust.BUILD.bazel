@@ -5,6 +5,7 @@
 """Top level BUILD.bazel in the @fuchsia_rust_toolchain repository."""
 
 load("@fuchsia_build_config//:defs.bzl", "build_config")
+load("@fuchsia_rules_common//build_flags:toolchain.bzl", "rust_toolchain_with_build_flags")
 load("@rules_rust//rust:toolchain.bzl", "rust_stdlib_filegroup", "rust_toolchain")
 
 host_os = build_config.host_os
@@ -59,11 +60,17 @@ _DEFAULT_COMMON_RUST_FLAGS = [
     "-Cdefault-linker-libraries",
 ]
 
-_DEFAULT_HOST_RUST_FLAGS = _DEFAULT_COMMON_RUST_FLAGS + [
+# TODO(https://fxbug.dev/529296820): Currently, using the "common" subset of default
+# build flags from @fuchsia_rules_common//build_flags:toolchain_type is sufficient
+# because the GN default config lists for Rust are identical for all crate types
+# (executables vs. shared libraries). If different flags per crate type become
+# necessary in the future, rust_toolchain_with_build_flags will need to populate
+# extra_rustc_flags_for_crate_types.
+_EXTRA_HOST_RUST_FLAGS = _DEFAULT_COMMON_RUST_FLAGS + [
     "-Clink-arg=-Wl,-mllvm=--stack-size-section",
 ]
 
-_DEFAULT_TARGET_RUST_FLAGS = _DEFAULT_COMMON_RUST_FLAGS + [
+_EXTRA_TARGET_RUST_FLAGS = _DEFAULT_COMMON_RUST_FLAGS + [
     "-Cforce-frame-pointers",
     "-Clink-arg=-mllvm=--stack-size-section",
 ]
@@ -84,7 +91,7 @@ rust_stdlib_filegroup(
 )
 
 rust_toolchain(
-    name = "rust_linux_x64_toolchain",
+    name = "rust_linux_x64_toolchain_base",
     rustc = "//:bin/rustc",
     rustc_lib = "//:rustc_lib",
     clippy_driver = "//:bin/clippy-driver",
@@ -97,7 +104,7 @@ rust_toolchain(
     stdlib_linkflags = ["-lpthread", "-ldl"],
     exec_triple = "x86_64-unknown-linux-gnu",
     target_triple = "x86_64-unknown-linux-gnu",
-    extra_rustc_flags = _DEFAULT_HOST_RUST_FLAGS,
+    extra_rustc_flags = _EXTRA_HOST_RUST_FLAGS,
 
     # Ensure debug symbols are preserved even with --compilation_mode is
     # set to 'fastbuild' or 'opt', as there are no separate actions to produce
@@ -109,6 +116,11 @@ rust_toolchain(
     strip_level = _HOST_STRIP_LEVEL,
     llvm_cov = "@fuchsia_clang//:bin/llvm-cov",
     llvm_profdata = "@fuchsia_clang//:bin/llvm-profdata",
+)
+
+rust_toolchain_with_build_flags(
+    name = "rust_linux_x64_toolchain",
+    toolchain = ":rust_linux_x64_toolchain_base",
 )
 
 toolchain(
@@ -133,7 +145,7 @@ rust_stdlib_filegroup(
 )
 
 rust_toolchain(
-    name = "rust_linux_arm64_toolchain",
+    name = "rust_linux_arm64_toolchain_base",
     rustc = "//:bin/rustc",
     rustc_lib = "//:rustc_lib",
     clippy_driver = "//:bin/clippy-driver",
@@ -146,7 +158,7 @@ rust_toolchain(
     stdlib_linkflags = ["-lpthread", "-ldl"],
     exec_triple = "aarch64-unknown-linux-gnu",
     target_triple = "aarch64-unknown-linux-gnu",
-    extra_rustc_flags = _DEFAULT_HOST_RUST_FLAGS,
+    extra_rustc_flags = _EXTRA_HOST_RUST_FLAGS,
 
     # Ensure debug symbols are preserved even with --compilation_mode is
     # set to 'fastbuild' or 'opt', as there are no separate actions to produce
@@ -158,6 +170,11 @@ rust_toolchain(
     strip_level = _HOST_STRIP_LEVEL,
     llvm_cov = "@fuchsia_clang//:bin/llvm-cov",
     llvm_profdata = "@fuchsia_clang//:bin/llvm-profdata",
+)
+
+rust_toolchain_with_build_flags(
+    name = "rust_linux_arm64_toolchain",
+    toolchain = ":rust_linux_arm64_toolchain_base",
 )
 
 toolchain(
@@ -182,7 +199,7 @@ rust_stdlib_filegroup(
 )
 
 rust_toolchain(
-    name = "rust_fuchsia_x64_toolchain",
+    name = "rust_fuchsia_x64_toolchain_base",
     rustc = "//:bin/rustc",
     rustc_lib = "//:rustc_lib",
     clippy_driver = "//:bin/clippy-driver",
@@ -195,9 +212,14 @@ rust_toolchain(
     stdlib_linkflags = [],
     exec_triple = "x86_64-unknown-fuchsia",
     target_triple = "x86_64-unknown-fuchsia",
-    extra_rustc_flags = _DEFAULT_TARGET_RUST_FLAGS,
+    extra_rustc_flags = _EXTRA_TARGET_RUST_FLAGS,
     llvm_cov = "@fuchsia_clang//:bin/llvm-cov",
     llvm_profdata = "@fuchsia_clang//:bin/llvm-profdata",
+)
+
+rust_toolchain_with_build_flags(
+    name = "rust_fuchsia_x64_toolchain",
+    toolchain = ":rust_fuchsia_x64_toolchain_base",
 )
 
 toolchain(
@@ -222,7 +244,7 @@ rust_stdlib_filegroup(
 )
 
 rust_toolchain(
-    name = "rust_fuchsia_arm64_toolchain",
+    name = "rust_fuchsia_arm64_toolchain_base",
     rustc = "//:bin/rustc",
     rustc_lib = "//:rustc_lib",
     clippy_driver = "//:bin/clippy-driver",
@@ -235,7 +257,7 @@ rust_toolchain(
     stdlib_linkflags = [],
     exec_triple = "aarch64-unknown-fuchsia",
     target_triple = "aarch64-unknown-fuchsia",
-    extra_rustc_flags = _DEFAULT_TARGET_RUST_FLAGS + [
+    extra_rustc_flags = _EXTRA_TARGET_RUST_FLAGS + [
         # See https://fuchsia.dev/fuchsia-src/concepts/kernel/shadow_call_stack#use_in_zircon_fuchsia
         # Rust compilers are detecting incompatible ABIs in rust builds. Any Rust
         # code that is targeted for ARM64 Fuchsia must be compiled with shadow
@@ -246,6 +268,11 @@ rust_toolchain(
     ],
     llvm_cov = "@fuchsia_clang//:bin/llvm-cov",
     llvm_profdata = "@fuchsia_clang//:bin/llvm-profdata",
+)
+
+rust_toolchain_with_build_flags(
+    name = "rust_fuchsia_arm64_toolchain",
+    toolchain = ":rust_fuchsia_arm64_toolchain_base",
 )
 
 toolchain(
@@ -273,7 +300,7 @@ rust_stdlib_filegroup(
 )
 
 rust_toolchain(
-    name = "rust_fuchsia_riscv64_toolchain",
+    name = "rust_fuchsia_riscv64_toolchain_base",
     rustc = "//:bin/rustc",
     rustc_lib = "//:rustc_lib",
     clippy_driver = "//:bin/clippy-driver",
@@ -286,7 +313,7 @@ rust_toolchain(
     stdlib_linkflags = [],
     exec_triple = "riscv64-unknown-fuchsia",
     target_triple = "riscv64-unknown-fuchsia",
-    extra_rustc_flags = _DEFAULT_TARGET_RUST_FLAGS + [
+    extra_rustc_flags = _EXTRA_TARGET_RUST_FLAGS + [
         # See https://fuchsia.dev/fuchsia-src/concepts/kernel/shadow_call_stack#use_in_zircon_fuchsia
         # Rust compilers are detecting incompatible ABIs in rust builds. Any Rust
         # code that is targeted for RISC-V64 Fuchsia must be compiled with shadow
@@ -298,6 +325,11 @@ rust_toolchain(
     ],
     llvm_cov = "@fuchsia_clang//:bin/llvm-cov",
     llvm_profdata = "@fuchsia_clang//:bin/llvm-profdata",
+)
+
+rust_toolchain_with_build_flags(
+    name = "rust_fuchsia_riscv64_toolchain",
+    toolchain = ":rust_fuchsia_riscv64_toolchain_base",
 )
 
 toolchain(
