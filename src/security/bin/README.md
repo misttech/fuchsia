@@ -8,10 +8,17 @@ of Fuchsia.
 - Integration tests should be placed in [//src/security/tests](//src/security/tests)
 
 ## Project Descriptions
-* [root\_ssl\_certificates](//src/security/bin/root_ssl_certificates): Fuchsia's
-  TLS root CA certificates (a.k.a. truststore). It serves as a resource package
-  for components that use TLS.
+* [root\_ssl\_certificates](//src/security/bin/root_ssl_certificates): Public Chrome
+  Root Store CA certificates. Serves as the general-purpose TLS trust store for
+  outbound web traffic and third-party services.
+* [google\_root\_ssl\_certificates](//src/security/bin/google_root_ssl_certificates):
+  Restricted Google-only TLS root CA certificates. Excludes commercial third-party CAs to
+  enforce least-privilege transport security for first-party Google services
+  (SWD, Feedback, Cobalt, Timekeeper).
+* [kms](//src/security/bin/kms): Key Management Service for hardware-backed key
+  storage and cryptographic operations.
 * [tee\_manager](//src/security/bin/tee_manager): Fuchsia - TEE communication
   stack. Marshals trusted application invocations; handles secure storage RPCs.
-* [syscall\_checker](//src/security/bin/syscall_checker): Prints whether certain
-  security sensitive system calls are enabled or disabled. Used in manual testing.
+* [syscall-check](//src/security/bin/syscall-check): Diagnostic utility to check
+  whether specific security-sensitive system calls are enabled or disabled.
+

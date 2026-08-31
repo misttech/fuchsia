@@ -1,13 +1,18 @@
 # root_ssl_certificates
 
-This directory contains the `root_ssl_certificates` package.
+This directory defines the `root_ssl_certificates` package, which provides
+Fuchsia's general-purpose public TLS trust store.
 
-The certificates file, `third_party/cert/cert.pem`, is automatically updated via
-a Copybara pipeline from google3 (`//security/cacerts/mozilla:roots.pem`).
-The pipeline runs on a weekly schedule and exports the compiled certificates
-directly to this repository.
+## Overview
 
-Manual updates are no longer required.
+* **Source**: The certificate bundle (`cert.pem`) represents the **Chrome Root Store**.
+* **Synchronization**: Automatically updated on a regular schedule via an automated
+  synchronization pipeline. Manual edits to `cert.pem` should not be made directly.
+* **Usage**:
+  * Offered to components via the `root-ssl-certificates` directory capability (mounted at `/config/ssl`).
+  * Used by web engines, general HTTP clients, and non-Google network services.
+* **Restricted Alternative**: First-party Google services (such as SWD, Feedback,
+  Cobalt, and Timekeeper) use
+  [google_root_ssl_certificates](//src/security/bin/google_root_ssl_certificates)
+  instead to restrict trust exclusively to Google CAs.
 
-The contents of `third_party/cert/cert.pem` are covered by the license file
-`third_party/cert/LICENSE.MPLv2`.
