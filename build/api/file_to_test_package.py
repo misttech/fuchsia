@@ -262,7 +262,13 @@ class FileToTestPackageFinder:
             / self.host_tag
             / "gn"
         )
-        cmd = [gn_path, "refs", self.build_dir, target, "--all"]
+        cmd: list[str | Path] = [
+            gn_path,
+            "refs",
+            self.build_dir,
+            target,
+            "--all",
+        ]
         result = self._command_runner.run_command(
             cmd, capture_output=True, check=False
         )

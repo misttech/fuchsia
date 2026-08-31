@@ -460,9 +460,9 @@ def generate_test_wrapper(
         host_test_data_map = test_data_manifest.generate_final_map(
             bazel_execroot
         )
-        for dest_path, source_path in host_test_data_map.items():
-            dest_path = output_runtime_dir / dest_path
-            make_runtime_symlink(dest_path, source_path)
+        for dest, source in host_test_data_map.items():
+            dest_path = output_runtime_dir / dest
+            make_runtime_symlink(dest_path, source)
             runtime_deps_paths.append(dest_path)
 
     # Generate the test_runtime_deps.json file.

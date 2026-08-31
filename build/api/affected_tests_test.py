@@ -350,7 +350,7 @@ class FindTestsAffectedByChangedFilesTest(unittest.TestCase):
 
         def new_bazel_query_command_filter(
             queries: list[tuple[str, str]],
-        ) -> T.Callable[[list[str]], tuple[int, str]]:
+        ) -> T.Callable[[list[str]], CommandResult]:
             """Create a command filter for bazel queries performed by affected_test.py
 
             Args:

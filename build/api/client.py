@@ -20,7 +20,6 @@ import os
 import sys
 import typing as T
 from pathlib import Path
-from typing import Optional
 
 _SCRIPT_FILE = Path(__file__)
 _SCRIPT_DIR = _SCRIPT_FILE.parent
@@ -1170,7 +1169,7 @@ class FileToTestPackageCache(object):
                 file=sys.stderr,
             )
 
-    def get(self, source_path: str) -> Optional[list[str]]:
+    def get(self, source_path: str) -> T.Optional[list[str]]:
         """Retrieves the list of test packages associated with a source file.
 
         Args:

@@ -8,6 +8,7 @@ import json
 import os
 import shutil
 import subprocess
+import sys
 import time
 import typing as T
 from pathlib import Path
@@ -224,8 +225,6 @@ class DebugSymbolsManifestParser(object):
                 # binaries.
                 build_id = self._resolve_entry_build_id(entry)
                 if not build_id:
-                    import sys
-
                     print(
                         f"MISSING build-id FOR {entry}",
                         file=sys.stderr,
