@@ -2,19 +2,18 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-import typing
-from typing import Annotated
+from typing import Annotated, Any
 
-from pydantic import Field, TypeAdapter
+from pydantic import Field, TypeAdapter, create_model
 from shared.protocol.attach import AttachRequest
 from shared.protocol.base import (
     PROTOCOL_VERSION,
     BaseRequest,
-    GetStateResponse,
     ProtocolRegistry,
     Response,
-    ThreadInfo,
+    T_Resp,
     deserialize_request,
+    deserialize_response,
     get_schema,
     make_request,
     serialize,
@@ -24,7 +23,11 @@ from shared.protocol.continue_request import ContinueRequest
 from shared.protocol.detach import DetachRequest
 from shared.protocol.evaluate import EvaluateRequest, EvaluateResponse
 from shared.protocol.finish import FinishRequest
-from shared.protocol.get_state import GetStateRequest
+from shared.protocol.get_state import (
+    GetStateRequest,
+    GetStateResponse,
+    ThreadInfo,
+)
 from shared.protocol.hello import HelloRequest
 from shared.protocol.next_request import NextRequest
 from shared.protocol.pause import PauseRequest
@@ -62,9 +65,19 @@ RequestType = Annotated[
     Field(discriminator="command"),
 ]
 
+ResponseType = (
+    GetStateResponse
+    | EvaluateResponse
+    | ThreadStackTraceResponse
+    | ProcessStackTraceResponse
+    | dict[str, Any]
+    | None
+)
+
 __all__ = [
     "BaseRequest",
     "Response",
+    "T_Resp",
     "ThreadInfo",
     "GetStateResponse",
     "ProcessStackTraceResponse",
@@ -74,8 +87,10 @@ __all__ = [
     "serialize",
     "make_request",
     "deserialize_request",
+    "deserialize_response",
     "get_schema",
     "RequestType",
+    "ResponseType",
     "AttachRequest",
     "BreakRequest",
     "ContinueRequest",
@@ -96,5 +111,15 @@ __all__ = [
     "WaitForEventRequest",
 ]
 
+_ResponseSchema = create_model(
+    "Response",
+    __base__=Response,
+    __doc__=Response.__doc__,
+    body=(ResponseType, None),
+)
+
 _request_adapter = TypeAdapter(RequestType)
 ProtocolRegistry.request_adapter = _request_adapter
+
+_response_adapter = TypeAdapter(_ResponseSchema)
+ProtocolRegistry.response_adapter = _response_adapter

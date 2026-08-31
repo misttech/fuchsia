@@ -2,14 +2,17 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-from typing import Any
+import functools
+from typing import Any, ClassVar, Generic, TypeVar
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, TypeAdapter
 
 PROTOCOL_VERSION = 15
 
+T_Resp = TypeVar("T_Resp")
 
-class BaseRequest(BaseModel):
+
+class BaseRequest(BaseModel, Generic[T_Resp]):
     """Base class for all requests, enforcing keyword-only instantiation."""
 
     model_config = ConfigDict(kw_only=True)
@@ -17,72 +20,62 @@ class BaseRequest(BaseModel):
     command: str
     last_seen_seq: int | None = None
     ack_seq: int | None = None
+    response_type: ClassVar[Any] = dict[str, Any]
 
 
-class ThreadInfo(BaseModel):
-    """Information about a single thread."""
-
-    id: int
-    name: str
-
-
-class GetStateResponse(BaseModel):
-    """Response for get-state command containing thread list, active
-    processes, and active breakpoints.
-    """
-
-    threads: list[ThreadInfo]
-    processes: dict[int, str] | None = None
-    breakpoints: dict[str, list[int]] | None = None
-
-
-from shared.protocol.evaluate import EvaluateResponse
-from shared.protocol.stack_trace import (
-    ProcessStackTraceResponse,
-    ThreadStackTraceResponse,
-)
-
-
-class Response(BaseModel):
+class Response(BaseModel, Generic[T_Resp]):
     """Standard response wrapper."""
 
     success: bool
     message: str | None = None
-    # TODO(https://fxbug.dev/531840329): Decouple command response models from base.py
-    # using dynamic registration in ProtocolRegistry.
-    body: (
-        GetStateResponse
-        | EvaluateResponse
-        | ThreadStackTraceResponse
-        | ProcessStackTraceResponse
-        | dict[str, Any]
-        | None
-    ) = None
+    body: T_Resp | None = None
     events: list[dict[str, Any]] | None = None
 
 
 class ProtocolRegistry:
-    request_adapter: Any = None
+    request_adapter: TypeAdapter[Any] | None = None
+    response_adapter: TypeAdapter[Any] | None = None
 
 
 def serialize(obj: BaseModel) -> str:
     return obj.model_dump_json() + "\n"
 
 
-def make_request(data: dict[str, Any]) -> BaseRequest:
+def make_request(data: dict[str, Any]) -> BaseRequest[Any]:
     if ProtocolRegistry.request_adapter is None:
         raise RuntimeError("ProtocolRegistry not initialized")
     return ProtocolRegistry.request_adapter.validate_python(data)
 
 
-def deserialize_request(line: str) -> BaseRequest:
+def deserialize_request(line: str) -> BaseRequest[Any]:
     if ProtocolRegistry.request_adapter is None:
         raise RuntimeError("ProtocolRegistry not initialized")
     return ProtocolRegistry.request_adapter.validate_json(line.strip())
 
 
+@functools.lru_cache(maxsize=32)
+def _get_response_adapter(resp_type: Any) -> TypeAdapter[Any]:
+    """Build and cache a TypeAdapter for the specialized Response[resp_type].
+
+    Constructing a TypeAdapter compiles Pydantic's core validation graph.
+    Caching by response_type allows reuse across responses.
+    """
+    target_cls: Any = Response[resp_type]
+    return TypeAdapter(target_cls)
+
+
+def deserialize_response(
+    line: str, req: BaseRequest[T_Resp]
+) -> Response[T_Resp]:
+    """Deserialize and validate a raw JSON response string against req's response_type."""
+    return _get_response_adapter(req.response_type).validate_json(line.strip())
+
+
 def get_schema() -> dict[str, Any]:
-    if ProtocolRegistry.request_adapter is None:
+    if (
+        ProtocolRegistry.request_adapter is None
+        or ProtocolRegistry.response_adapter is None
+    ):
         raise RuntimeError("ProtocolRegistry not initialized")
     return {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -93,5 +86,5 @@ def get_schema() -> dict[str, Any]:
         ),
         "version": PROTOCOL_VERSION,
         "requests": ProtocolRegistry.request_adapter.json_schema(),
-        "responses": Response.model_json_schema(),
+        "responses": ProtocolRegistry.response_adapter.json_schema(),
     }

@@ -20,7 +20,9 @@ if TYPE_CHECKING:
     from daemon.daemon import Daemon
 
 
-async def handle(daemon: Daemon, req: EvaluateRequest) -> Response:
+async def handle(
+    daemon: Daemon, req: EvaluateRequest
+) -> Response[EvaluateResponse]:
     if not daemon.zxdb_writer:
         return Response(
             success=False, message="Not connected to zxdb DAP server"

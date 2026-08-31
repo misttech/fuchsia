@@ -3,18 +3,34 @@
 # found in the LICENSE file.
 
 import unittest
+from typing import Any
 
 from pydantic import ValidationError
-from shared.protocol import PROTOCOL_VERSION, make_request
+from shared.protocol import (
+    PROTOCOL_VERSION,
+    deserialize_response,
+    make_request,
+)
 from shared.protocol.attach import AttachRequest
+from shared.protocol.break_request import BreakRequest
+from shared.protocol.continue_request import ContinueRequest
 from shared.protocol.detach import DetachRequest
+from shared.protocol.evaluate import EvaluateRequest, EvaluateResponse
 from shared.protocol.finish import FinishRequest
+from shared.protocol.get_state import GetStateRequest, GetStateResponse
 from shared.protocol.hello import HelloRequest
 from shared.protocol.next_request import NextRequest
-from shared.protocol.stack_trace import StackTraceRequest
+from shared.protocol.pause import PauseRequest
+from shared.protocol.stack_trace import (
+    ProcessStackTraceResponse,
+    StackTraceRequest,
+    ThreadStackTraceResponse,
+)
 from shared.protocol.start import StartRequest
 from shared.protocol.step_in import StepInRequest
 from shared.protocol.stop import StopRequest
+from shared.protocol.threads import ThreadsRequest
+from shared.protocol.variables import VariablesRequest
 from shared.protocol.wait_for_event import WaitForEventRequest
 
 
@@ -179,6 +195,97 @@ class TestPolymorphicParsing(unittest.TestCase):
         data = {"command": "unknown-cmd"}
         with self.assertRaises(ValidationError):
             make_request(data)
+
+
+class TestResponseTypeAndDeserialization(unittest.TestCase):
+    def test_response_types_defined(self) -> None:
+        self.assertEqual(GetStateRequest.response_type, GetStateResponse)
+        self.assertEqual(EvaluateRequest.response_type, EvaluateResponse)
+        self.assertEqual(
+            StackTraceRequest.response_type,
+            ThreadStackTraceResponse | ProcessStackTraceResponse,
+        )
+        self.assertEqual(AttachRequest.response_type, dict[str, Any])
+        self.assertEqual(BreakRequest.response_type, dict[str, Any])
+        self.assertEqual(ContinueRequest.response_type, dict[str, Any])
+        self.assertEqual(DetachRequest.response_type, dict[str, Any])
+        self.assertEqual(FinishRequest.response_type, dict[str, Any])
+        self.assertEqual(HelloRequest.response_type, dict[str, Any])
+        self.assertEqual(NextRequest.response_type, dict[str, Any])
+        self.assertEqual(PauseRequest.response_type, dict[str, Any])
+        self.assertEqual(StartRequest.response_type, dict[str, Any])
+        self.assertEqual(StepInRequest.response_type, dict[str, Any])
+        self.assertIsNone(StopRequest.response_type)
+        self.assertEqual(ThreadsRequest.response_type, dict[str, Any])
+        self.assertEqual(VariablesRequest.response_type, dict[str, Any])
+        self.assertIsNone(WaitForEventRequest.response_type)
+
+    def test_deserialize_typed_response(self) -> None:
+        req = GetStateRequest()
+        json_line = (
+            '{"success": true, "message": null, "events": null, "body": '
+            '{"threads": [{"id": 1, "name": "t1"}], "processes": null, "breakpoints": null}}'
+        )
+        resp = deserialize_response(json_line, req)
+        self.assertTrue(resp.success)
+        self.assertIsInstance(resp.body, GetStateResponse)
+        assert resp.body is not None
+        self.assertEqual(len(resp.body.threads), 1)
+        self.assertEqual(resp.body.threads[0].name, "t1")
+
+    def test_deserialize_dict_response(self) -> None:
+        req = ThreadsRequest()
+        json_line = (
+            '{"success": true, "message": null, "events": null, "body": '
+            '{"threads": [{"id": 1, "name": "t1"}]}}'
+        )
+        resp = deserialize_response(json_line, req)
+        self.assertTrue(resp.success)
+        self.assertIsInstance(resp.body, dict)
+        self.assertEqual(resp.body, {"threads": [{"id": 1, "name": "t1"}]})
+
+    def test_deserialize_none_response(self) -> None:
+        req = StopRequest()
+        json_line = '{"success": true, "message": "stopped", "events": null, "body": null}'
+        resp = deserialize_response(json_line, req)
+        self.assertTrue(resp.success)
+        self.assertIsNone(resp.body)
+        self.assertEqual(resp.message, "stopped")
+
+    def test_deserialize_union_response_thread_and_process(self) -> None:
+        req = StackTraceRequest(thread_id=1)
+        thread_line = (
+            '{"success": true, "message": null, "events": null, "body": '
+            '{"thread_id": 1, "stack_frames": [{"frame_index": 0, "name": "foo", "line": 10, "column": 1}], "total_frames": 1}}'
+        )
+        resp_thread = deserialize_response(thread_line, req)
+        self.assertTrue(resp_thread.success)
+        self.assertIsInstance(resp_thread.body, ThreadStackTraceResponse)
+
+        process_line = (
+            '{"success": true, "message": null, "events": null, "body": '
+            '{"process_id": 1234, "stacks": [{"thread_id": 1, "stack_frames": [], "total_frames": 0}]}}'
+        )
+        resp_proc = deserialize_response(process_line, req)
+        self.assertTrue(resp_proc.success)
+        self.assertIsInstance(resp_proc.body, ProcessStackTraceResponse)
+
+    def test_deserialize_error_response_typed_request(self) -> None:
+        req = GetStateRequest()
+        json_line = '{"success": false, "message": "Handler failed", "events": null, "body": null}'
+        resp = deserialize_response(json_line, req)
+        self.assertFalse(resp.success)
+        self.assertIsNone(resp.body)
+        self.assertEqual(resp.message, "Handler failed")
+
+    def test_deserialize_evaluate_forbid_extra(self) -> None:
+        req = EvaluateRequest(thread_id=1, expression="x")
+        json_line = (
+            '{"success": true, "message": null, "events": null, "body": '
+            '{"result": "123", "type": "int", "unknown_field": 42}}'
+        )
+        with self.assertRaises(ValidationError):
+            deserialize_response(json_line, req)
 
 
 if __name__ == "__main__":

@@ -4,7 +4,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from shared.protocol.base import PROTOCOL_VERSION, Response
 from shared.protocol.hello import (
@@ -18,7 +18,7 @@ if TYPE_CHECKING:
     from daemon.daemon import Daemon
 
 
-async def handle(daemon: Daemon, req: HelloRequest) -> Response:
+async def handle(daemon: Daemon, req: HelloRequest) -> Response[Any]:
     """Handles the hello handshake request.
 
     Verifies the protocol version.

@@ -6,10 +6,12 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from shared.protocol.base import GetStateResponse, Response, ThreadInfo
+from shared.protocol.base import Response
 from shared.protocol.get_state import (
     COMMAND_NAME,
     GetStateRequest,
+    GetStateResponse,
+    ThreadInfo,
 )
 
 __all__ = ["COMMAND_NAME", "handle"]
@@ -18,7 +20,9 @@ if TYPE_CHECKING:
     from daemon.daemon import Daemon
 
 
-async def handle(daemon: Daemon, _req: GetStateRequest) -> Response:
+async def handle(
+    daemon: Daemon, _req: GetStateRequest
+) -> Response[GetStateResponse]:
     """Queries the debug adapter for the current threads, active
     processes, and active breakpoints.
 

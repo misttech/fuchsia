@@ -2,7 +2,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-from typing import Final, Literal
+from typing import Any, ClassVar, Final, Literal
 
 from pydantic import BaseModel, model_validator
 from pydap.dap_types import Source
@@ -38,13 +38,18 @@ class ProcessStackTraceResponse(BaseModel):
 COMMAND_NAME: Final = "stack-trace"
 
 
-class StackTraceRequest(BaseRequest):
+class StackTraceRequest(
+    BaseRequest[ThreadStackTraceResponse | ProcessStackTraceResponse]
+):
     """Request stack trace for a thread or all threads in a process."""
 
     command: Literal["stack-trace"] = COMMAND_NAME
     thread_id: int | None = None
     pid: int | None = None
     raw: bool = False
+    response_type: ClassVar[Any] = (
+        ThreadStackTraceResponse | ProcessStackTraceResponse
+    )
 
     @model_validator(mode="after")
     def validate_targets(self) -> "StackTraceRequest":

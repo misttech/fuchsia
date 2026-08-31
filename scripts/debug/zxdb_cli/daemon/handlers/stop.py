@@ -4,7 +4,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from shared.protocol.base import Response
 from shared.protocol.stop import (
@@ -18,6 +18,6 @@ if TYPE_CHECKING:
     from daemon.daemon import Daemon
 
 
-async def handle(daemon: Daemon, _req: StopRequest) -> Response:
+async def handle(daemon: Daemon, _req: StopRequest) -> Response[Any]:
     daemon.stop_event.set()
     return Response(success=True, message="Daemon stopping")

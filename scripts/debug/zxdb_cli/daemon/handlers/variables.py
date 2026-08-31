@@ -4,7 +4,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from pydap.models import (
     ScopesArguments,
@@ -23,7 +23,7 @@ if TYPE_CHECKING:
     from daemon.daemon import Daemon
 
 
-async def handle(daemon: Daemon, req: VariablesRequest) -> Response:
+async def handle(daemon: Daemon, req: VariablesRequest) -> Response[Any]:
     if not daemon.zxdb_writer:
         return Response(
             success=False, message="Not connected to zxdb DAP server"

@@ -2,14 +2,15 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-from typing import Final, Literal
+from typing import Any, ClassVar, Final, Literal
 
 from shared.protocol.base import BaseRequest
 
 COMMAND_NAME: Final = "threads"
 
 
-class ThreadsRequest(BaseRequest):
+class ThreadsRequest(BaseRequest[dict[str, Any]]):
     """Request list of threads."""
 
     command: Literal["threads"] = COMMAND_NAME
+    response_type: ClassVar[Any] = dict[str, Any]

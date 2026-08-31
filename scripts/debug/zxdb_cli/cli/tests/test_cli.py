@@ -8,7 +8,7 @@ import unittest
 from io import StringIO
 from unittest.mock import AsyncMock, Mock, patch
 
-from cli.cli import main
+from cli.cli import main, send_command
 from cli.commands.break_cmd import resolve_path
 from daemon_manager.manager import (
     DaemonAlreadyRunningError,
@@ -808,6 +808,68 @@ class TestCLI(unittest.IsolatedAsyncioTestCase):
             mock_send.assert_called_once_with(
                 EvaluateRequest(thread_id=1, expression="x")
             )
+
+
+class TestSendCommand(unittest.IsolatedAsyncioTestCase):
+    @patch("cli.cli.UDS_PATH")
+    @patch("asyncio.open_unix_connection")
+    async def test_send_command_valid_response(
+        self, mock_open_conn: Mock, mock_uds_path: Mock
+    ) -> None:
+        mock_uds_path.exists.return_value = True
+        mock_reader = AsyncMock()
+        mock_writer = AsyncMock()
+        mock_reader.readline.return_value = (
+            b'{"success": true, "message": null, "events": null, "body": '
+            b'{"threads": [{"id": 1, "name": "t1"}], "processes": null, "breakpoints": null}}\n'
+        )
+        mock_open_conn.return_value = (mock_reader, mock_writer)
+
+        stdout = StringIO()
+        with patch("sys.stdout", stdout):
+            exit_code = await send_command(GetStateRequest())
+
+        self.assertEqual(exit_code, 0)
+        self.assertIn('"success":true', stdout.getvalue().replace(" ", ""))
+
+    @patch("cli.cli.UDS_PATH")
+    @patch("asyncio.open_unix_connection")
+    async def test_send_command_invalid_response(
+        self, mock_open_conn: Mock, mock_uds_path: Mock
+    ) -> None:
+        mock_uds_path.exists.return_value = True
+        mock_reader = AsyncMock()
+        mock_writer = AsyncMock()
+        mock_reader.readline.return_value = (
+            b'{"success": true, "message": null, "events": null, "body": '
+            b'{"threads": "invalid_threads_format"}}\n'
+        )
+        mock_open_conn.return_value = (mock_reader, mock_writer)
+
+        stderr = StringIO()
+        with patch("sys.stderr", stderr):
+            exit_code = await send_command(GetStateRequest())
+
+        self.assertEqual(exit_code, 1)
+        self.assertIn("Invalid response from daemon", stderr.getvalue())
+
+    @patch("cli.cli.UDS_PATH")
+    @patch("asyncio.open_unix_connection")
+    async def test_send_command_socket_eof(
+        self, mock_open_conn: Mock, mock_uds_path: Mock
+    ) -> None:
+        mock_uds_path.exists.return_value = True
+        mock_reader = AsyncMock()
+        mock_writer = AsyncMock()
+        mock_reader.readline.return_value = b""
+        mock_open_conn.return_value = (mock_reader, mock_writer)
+
+        stderr = StringIO()
+        with patch("sys.stderr", stderr):
+            exit_code = await send_command(GetStateRequest())
+
+        self.assertEqual(exit_code, 1)
+        self.assertIn("No response received from daemon", stderr.getvalue())
 
 
 if __name__ == "__main__":

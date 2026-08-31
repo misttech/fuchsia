@@ -5,7 +5,7 @@
 from __future__ import annotations
 
 import asyncio
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from shared.protocol.base import Response
 from shared.protocol.wait_for_event import (
@@ -19,7 +19,7 @@ if TYPE_CHECKING:
     from daemon.daemon import Daemon
 
 
-async def handle(daemon: Daemon, req: WaitForEventRequest) -> Response:
+async def handle(daemon: Daemon, req: WaitForEventRequest) -> Response[Any]:
     """Blocks until there are events with sequence number greater than
     last_seen_seq.
 

@@ -2,14 +2,14 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-from typing import Final, Literal
+from typing import Any, ClassVar, Final, Literal
 
 from shared.protocol.base import BaseRequest
 
 COMMAND_NAME: Final = "break"
 
 
-class BreakRequest(BaseRequest):
+class BreakRequest(BaseRequest[dict[str, Any]]):
     """Request to set or delete a breakpoint at a file and line.
 
     The file path must be fully qualified from the workspace root, an absolute
@@ -23,3 +23,4 @@ class BreakRequest(BaseRequest):
     file: str
     line: int
     delete: bool = False
+    response_type: ClassVar[Any] = dict[str, Any]

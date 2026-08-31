@@ -6,7 +6,7 @@ import argparse
 import asyncio
 import json
 import sys
-from typing import Final
+from typing import Any, Final
 
 from cli.commands import (
     attach,
@@ -32,6 +32,7 @@ from daemon_manager.manager import UDS_PATH
 from pydantic import ValidationError
 from shared.protocol import (
     BaseRequest,
+    deserialize_response,
     make_request,
     serialize,
 )
@@ -42,7 +43,7 @@ from shared.protocol import (
 DAEMON_STARTUP_TIMEOUT_SECS: Final[float] = 10.0
 
 
-def request_to_namespace(req: BaseRequest) -> argparse.Namespace:
+def request_to_namespace(req: BaseRequest[Any]) -> argparse.Namespace:
     """Converts a BaseRequest to argparse.Namespace for command executors."""
     return argparse.Namespace(**req.model_dump())
 
@@ -109,7 +110,7 @@ async def main(args: list[str]) -> int:
         )
         return 1
 
-    req: BaseRequest | None = None
+    req: BaseRequest[Any] | None = None
     if parsed_args.json:
         try:
             data = json.loads(parsed_args.json)
@@ -148,7 +149,7 @@ async def main(args: list[str]) -> int:
     return await send_command(req)
 
 
-async def send_command(req: BaseRequest) -> int:
+async def send_command(req: BaseRequest[Any]) -> int:
     if not UDS_PATH.exists():
         print(
             f"Daemon socket not found at {UDS_PATH}.\n\n"
@@ -181,7 +182,15 @@ async def send_command(req: BaseRequest) -> int:
             return 1
 
         if response_line:
-            print(response_line.decode("utf-8").strip())
+            try:
+                resp = deserialize_response(response_line.decode("utf-8"), req)
+                print(serialize(resp).strip())
+            except ValidationError as e:
+                print(
+                    f"Error: Invalid response from daemon: {e}",
+                    file=sys.stderr,
+                )
+                return 1
         else:
             print("No response received from daemon.", file=sys.stderr)
             return 1

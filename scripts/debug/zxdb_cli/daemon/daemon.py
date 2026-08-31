@@ -10,7 +10,7 @@ import os
 import signal
 import uuid
 from collections.abc import Awaitable, Callable, Generator
-from typing import Any, Final, TypeVar, cast, final
+from typing import Any, Final, final
 
 import package_server
 from async_utils.command import AsyncCommand
@@ -41,6 +41,7 @@ from pydap.models import InitializeArguments, PauseArguments
 from shared.protocol import (
     BaseRequest,
     Response,
+    T_Resp,
     deserialize_request,
     serialize,
 )
@@ -60,21 +61,19 @@ MAX_EVENT_HISTORY_SIZE: Final[int] = 100
 class CommandHandlerRegistry:
     def __init__(self) -> None:
         self.handlers: dict[
-            str, Callable[[BaseRequest], Awaitable[Response]]
+            str, Callable[[BaseRequest[Any]], Awaitable[Response[Any]]]
         ] = {}
-
-    RequestT = TypeVar("RequestT", bound=BaseRequest)
 
     def register(
         self,
         command: str,
-        handler: Callable[[RequestT], Awaitable[Response]],
+        handler: Callable[[BaseRequest[T_Resp]], Awaitable[Response[T_Resp]]],
     ) -> None:
-        self.handlers[command] = cast(
-            Callable[[BaseRequest], Awaitable[Response]], handler
-        )
+        self.handlers[command] = handler
 
-    async def handle(self, command: str, req: BaseRequest) -> Response:
+    async def handle(
+        self, command: str, req: BaseRequest[Any]
+    ) -> Response[Any]:
         if command in self.handlers:
             try:
                 return await self.handlers[command](req)
@@ -280,7 +279,7 @@ class Daemon:
             except asyncio.TimeoutError:
                 raise Exception(f"Timed out waiting for process {pid} to stop")
 
-    def _check_already_running(self, req: StartRequest) -> Response | None:
+    def _check_already_running(self, req: StartRequest) -> Response[Any] | None:
         if not self.dap_ready_event.is_set():
             return None
 
@@ -311,7 +310,7 @@ class Daemon:
             message="Daemon already started",
         )
 
-    async def _start_dap_server(self) -> Response | None:
+    async def _start_dap_server(self) -> Response[Any] | None:
         if not await package_server.is_running():
             self.repo_name = f"tmp-{uuid.uuid4()}"
             try:

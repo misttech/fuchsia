@@ -7,7 +7,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from pydap.models import StackTraceArguments
-from shared.protocol import Response
+from shared.protocol.base import Response
 from shared.protocol.stack_trace import (
     COMMAND_NAME,
     ProcessStackTraceResponse,
@@ -101,7 +101,9 @@ async def _fetch_thread_stack_trace(
     )
 
 
-async def handle(daemon: Daemon, req: StackTraceRequest) -> Response:
+async def handle(
+    daemon: Daemon, req: StackTraceRequest
+) -> Response[ThreadStackTraceResponse | ProcessStackTraceResponse]:
     if not daemon.zxdb_writer:
         return Response(
             success=False, message="Not connected to zxdb DAP server"

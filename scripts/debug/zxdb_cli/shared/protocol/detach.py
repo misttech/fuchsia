@@ -2,7 +2,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-from typing import Final, Literal
+from typing import Any, ClassVar, Final, Literal
 
 from pydantic import model_validator
 from shared.protocol.base import BaseRequest
@@ -10,12 +10,13 @@ from shared.protocol.base import BaseRequest
 COMMAND_NAME: Final = "detach"
 
 
-class DetachRequest(BaseRequest):
+class DetachRequest(BaseRequest[dict[str, Any]]):
     """Request to detach from a process."""
 
     command: Literal["detach"] = COMMAND_NAME
     pid: int | None = None
     all: bool = False
+    response_type: ClassVar[Any] = dict[str, Any]
 
     @model_validator(mode="after")
     def validate(self) -> "DetachRequest":

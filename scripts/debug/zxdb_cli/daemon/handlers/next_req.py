@@ -4,7 +4,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from pydap.models import NextArguments
 from shared.protocol.base import Response
@@ -19,7 +19,7 @@ if TYPE_CHECKING:
     from daemon.daemon import Daemon
 
 
-async def handle(daemon: Daemon, req: NextRequest) -> Response:
+async def handle(daemon: Daemon, req: NextRequest) -> Response[Any]:
     """Handles a next (step over) command request.
 
     Args:

@@ -40,13 +40,13 @@ class TestCommandHandlerRegistry(unittest.IsolatedAsyncioTestCase):
     async def test_register_and_handle(self) -> None:
         registry = CommandHandlerRegistry()
 
-        async def mock_handler(_req: BaseRequest) -> Response:
+        async def mock_handler(_req: BaseRequest[Any]) -> Response[Any]:
             return Response(success=True, body={"data": "handled"})
 
         registry.register("test_cmd", mock_handler)
 
         resp = await registry.handle(
-            "test_cmd", BaseRequest(command="test_cmd")
+            "test_cmd", BaseRequest[Any](command="test_cmd")
         )
 
         self.assertTrue(resp.success)
@@ -54,7 +54,9 @@ class TestCommandHandlerRegistry(unittest.IsolatedAsyncioTestCase):
 
     async def test_unknown_command(self) -> None:
         registry = CommandHandlerRegistry()
-        resp = await registry.handle("unknown", BaseRequest(command="unknown"))
+        resp = await registry.handle(
+            "unknown", BaseRequest[Any](command="unknown")
+        )
 
         self.assertFalse(resp.success)
         self.assertIsNotNone(resp.message)
@@ -174,7 +176,7 @@ class TestCommandHandlerRegistry(unittest.IsolatedAsyncioTestCase):
         daemon = Daemon(port=15678)
         daemon.zxdb_writer = Mock()
 
-        async def dispatch(cmd: str, req: Any) -> Response:
+        async def dispatch(cmd: str, req: Any) -> Response[Any]:
             async with daemon._command_lock:
                 return await daemon.registry.handle(cmd, req)
 
@@ -704,26 +706,12 @@ class TestCommandHandlerRegistry(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(resp.success)
         assert resp.body is not None
 
-        # Double-compatibility check:
-        # Pydantic v2 union coercion automatically parses the dictionary
-        # returned by handle_threads (which matches GetStateResponse's fields)
-        # into a typed GetStateResponse object at runtime.
-        # We check the type to support both strongly-typed GetStateResponse
-        # objects and raw dictionaries in mock testing.
-        if isinstance(resp.body, GetStateResponse):
-            threads = resp.body.threads
-            self.assertEqual(len(threads), 2)
-            self.assertEqual(threads[0].id, 1)
-            self.assertEqual(threads[0].name, "main")
-            self.assertEqual(threads[1].id, 2)
-            self.assertEqual(threads[1].name, "worker")
-        else:
-            threads = resp.body["threads"]
-            self.assertEqual(len(threads), 2)
-            self.assertEqual(threads[0]["id"], 1)
-            self.assertEqual(threads[0]["name"], "main")
-            self.assertEqual(threads[1]["id"], 2)
-            self.assertEqual(threads[1]["name"], "worker")
+        threads = resp.body["threads"]
+        self.assertEqual(len(threads), 2)
+        self.assertEqual(threads[0]["id"], 1)
+        self.assertEqual(threads[0]["name"], "main")
+        self.assertEqual(threads[1]["id"], 2)
+        self.assertEqual(threads[1]["name"], "worker")
 
         assert daemon.threads[1].process is not None
         assert daemon.threads[2].process is not None

@@ -2,7 +2,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-from typing import Final, Literal
+from typing import Any, ClassVar, Final, Literal
 
 from pydantic import model_validator
 from shared.protocol.base import BaseRequest
@@ -10,12 +10,13 @@ from shared.protocol.base import BaseRequest
 COMMAND_NAME: Final = "pause"
 
 
-class PauseRequest(BaseRequest):
+class PauseRequest(BaseRequest[dict[str, Any]]):
     """Request to pause execution of a thread or process."""
 
     command: Literal["pause"] = COMMAND_NAME
     thread_id: int | None = None
     pid: int | None = None
+    response_type: ClassVar[Any] = dict[str, Any]
 
     @model_validator(mode="after")
     def validate_target(self) -> "PauseRequest":

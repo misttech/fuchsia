@@ -4,7 +4,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from shared.protocol.base import Response
 from shared.protocol.threads import (
@@ -18,7 +18,7 @@ if TYPE_CHECKING:
     from daemon.daemon import Daemon
 
 
-async def handle(daemon: Daemon, _req: ThreadsRequest) -> Response:
+async def handle(daemon: Daemon, _req: ThreadsRequest) -> Response[Any]:
     if not daemon.zxdb_writer:
         return Response(
             success=False, message="Not connected to zxdb DAP server"

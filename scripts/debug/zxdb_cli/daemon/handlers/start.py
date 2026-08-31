@@ -4,7 +4,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import package_server
 from daemon.constants import DEFAULT_DAP_PORT, UDS_PATH
@@ -20,7 +20,7 @@ if TYPE_CHECKING:
     from daemon.daemon import Daemon
 
 
-async def handle(daemon: Daemon, req: StartRequest) -> Response:
+async def handle(daemon: Daemon, req: StartRequest) -> Response[Any]:
     if resp := daemon._check_already_running(req):
         return resp
 
