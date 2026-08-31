@@ -22,7 +22,7 @@ namespace {
 TEST(BootloaderFilesItemTest, ParsesAll) {
   std::array<std::byte, 1024> image_buffer;
   std::vector<void*> allocs;
-  zbitl::Image<cpp20::span<std::byte>> image(image_buffer);
+  zbitl::Image<std::span<std::byte>> image(image_buffer);
   ASSERT_TRUE(image.clear().is_ok());
   devicetree::ByteView fdt_blob(kChosenBootloaderFilesDtbStart, -1);
   devicetree::Devicetree fdt(fdt_blob);
@@ -60,7 +60,7 @@ TEST(BootloaderFilesItemTest, ParsesAll) {
 TEST(BootloaderFilesItemTest, NoBootloaderFiles) {
   std::array<std::byte, 1024> image_buffer;
   std::vector<void*> allocs;
-  zbitl::Image<cpp20::span<std::byte>> image(image_buffer);
+  zbitl::Image<std::span<std::byte>> image(image_buffer);
   ASSERT_TRUE(image.clear().is_ok());
   devicetree::ByteView fdt_blob(kChosenNoBootloaderFilesDtbStart, -1);
   devicetree::Devicetree fdt(fdt_blob);
@@ -78,7 +78,7 @@ TEST(BootloaderFilesItemTest, NoBootloaderFiles) {
 TEST(BootloaderFilesItemTest, UnalignedBuffer) {
   std::array<std::byte, 1024> image_buffer;
   std::vector<void*> allocs;
-  zbitl::Image<cpp20::span<std::byte>> image(image_buffer);
+  zbitl::Image<std::span<std::byte>> image(image_buffer);
   ASSERT_TRUE(image.clear().is_ok());
   devicetree::ByteView fdt_blob(kChosenBootloaderFilesDtbStart, -1);
   devicetree::Devicetree fdt(fdt_blob);
