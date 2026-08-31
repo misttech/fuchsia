@@ -30,6 +30,11 @@ pub enum UpdateState {
     Unchanged,
 }
 
+/// A trait for types that have an associated constant key for storage.
+pub trait StorageKey: Serialize + DeserializeOwned {
+    const KEY: &'static str;
+}
+
 /// A highly resilient, atomic JSON file store.
 /// Designed as a lightweight replacement for platform-wide persistence.
 pub struct AtomicJsonStorage {
@@ -56,7 +61,7 @@ impl CachedStorage {
             let file_proxy = fuchsia_fs::directory::open_file(
                 storage_dir,
                 &self.temp_file_path,
-                Flags::FLAG_MUST_CREATE
+                Flags::FLAG_MAYBE_CREATE
                     | Flags::FILE_TRUNCATE
                     | fuchsia_fs::PERM_READABLE
                     | fuchsia_fs::PERM_WRITABLE,
@@ -211,7 +216,12 @@ impl AtomicJsonStorage {
         self.debounce_writes = debounce;
     }
 
-    async fn inner_write(&self, key: &str, new_value: Vec<u8>) -> Result<UpdateState, Error> {
+    async fn inner_write(
+        &self,
+        key: &str,
+        new_value: Vec<u8>,
+        immediate: bool,
+    ) -> Result<UpdateState, Error> {
         let typed_storage = self
             .typed_storage_map
             .get(key)
@@ -247,7 +257,7 @@ impl AtomicJsonStorage {
 
         Ok(if cached_value.map(|c| *c != new_value).unwrap_or(true) {
             cached_storage.current_data = Some(new_value);
-            if !self.debounce_writes {
+            if immediate || !self.debounce_writes {
                 cached_storage
                     .sync(&self.storage_dir)
                     .await
@@ -271,13 +281,38 @@ impl AtomicJsonStorage {
     ) -> Result<UpdateState, Error> {
         let new_value_bytes =
             serde_json::to_vec(new_value).context("Failed to serialize to JSON")?;
-        self.inner_write(key, new_value_bytes).await
+        self.inner_write(key, new_value_bytes, false).await
+    }
+
+    /// Serializes and immediately writes a value to storage, bypassing any debounce interval.
+    pub async fn write_immediate<T: Serialize>(
+        &self,
+        key: &str,
+        new_value: &T,
+    ) -> Result<UpdateState, Error> {
+        let new_value_bytes =
+            serde_json::to_vec(new_value).context("Failed to serialize to JSON")?;
+        self.inner_write(key, new_value_bytes, true).await
+    }
+
+    /// Serializes and writes a value whose type implements [`StorageKey`].
+    pub async fn write_storable<T: StorageKey>(&self, new_value: &T) -> Result<UpdateState, Error> {
+        self.write(T::KEY, new_value).await
+    }
+
+    /// Serializes and immediately writes a value whose type implements [`StorageKey`], bypassing
+    /// any debounce interval.
+    pub async fn write_storable_immediate<T: StorageKey>(
+        &self,
+        new_value: &T,
+    ) -> Result<UpdateState, Error> {
+        self.write_immediate(T::KEY, new_value).await
     }
 
     /// Test-only method to write directly to disk without touching the cache. This is used for
     /// setting up data as if it existed on disk before the storage was constructed.
     pub async fn write_test_bytes(&self, key: &str, value: Vec<u8>) -> Result<(), Error> {
-        self.inner_write(key, value).await.map(|_| ())
+        self.inner_write(key, value, false).await.map(|_| ())
     }
 
     async fn get_inner(&self, key: &str) -> Result<MutexGuard<'_, CachedStorage>, Error> {
@@ -327,6 +362,11 @@ impl AtomicJsonStorage {
         }
     }
 
+    /// Reads a value whose type implements [`StorageKey`].
+    pub async fn get_storable<T: StorageKey>(&self) -> Result<Option<T>, Error> {
+        self.get::<T>(T::KEY).await
+    }
+
     /// Convenience wrapper that falls back to `T::default()` if the data is missing or corrupt.
     pub async fn get_or_default<T: DeserializeOwned + Default>(&self, key: &str) -> T {
         match self.get::<T>(key).await {
@@ -337,6 +377,84 @@ impl AtomicJsonStorage {
                 T::default()
             }
         }
+    }
+
+    /// Reads a value whose type implements [`StorageKey`], falling back to `T::default()` if
+    /// the data is missing or corrupt.
+    pub async fn get_storable_or_default<T: StorageKey + Default>(&self) -> T {
+        self.get_or_default::<T>(T::KEY).await
+    }
+
+    /// Convenience wrapper that falls back to evaluating `default_fn()` if the data is missing
+    /// or corrupt.
+    pub async fn get_or_else<T: DeserializeOwned, F: FnOnce() -> T>(
+        &self,
+        key: &str,
+        default_fn: F,
+    ) -> T {
+        match self.get::<T>(key).await {
+            Ok(Some(value)) => value,
+            Ok(None) => default_fn(),
+            Err(e) => {
+                log::error!("Error reading {}: {:?}. Falling back to default.", key, e);
+                default_fn()
+            }
+        }
+    }
+
+    /// Reads a value whose type implements [`StorageKey`], falling back to evaluating `default_fn()`
+    /// if the data is missing or corrupt.
+    pub async fn get_storable_or_else<T: StorageKey, F: FnOnce() -> T>(&self, default_fn: F) -> T {
+        self.get_or_else::<T, F>(T::KEY, default_fn).await
+    }
+
+    /// Deletes the stored value for a given key, removing the file from storage and clearing the
+    /// in-memory cache.
+    pub async fn delete(&self, key: &str) -> Result<UpdateState, Error> {
+        let typed_storage = self
+            .typed_storage_map
+            .get(key)
+            .ok_or_else(|| format_err!("Invalid storage key: {}", key))?;
+
+        let mut cached_storage = typed_storage.cached_storage.lock().await;
+        let had_data = cached_storage.current_data.is_some();
+        cached_storage.current_data = None;
+
+        let unlink_res = self
+            .storage_dir
+            .unlink(&cached_storage.file_path, &fidl_fuchsia_io::UnlinkOptions::default())
+            .await
+            .context("failed to send unlink request")?;
+
+        match unlink_res {
+            Ok(()) => {
+                self.storage_dir
+                    .sync()
+                    .await
+                    .context("failed to call sync on directory after unlink")?
+                    .map_err(zx::Status::err_from_raw)
+                    .or_else(|e| if let zx::Status::NOT_SUPPORTED = e { Ok(()) } else { Err(e) })
+                    .context("failed to sync unlink to directory")?;
+                Ok(UpdateState::Updated)
+            }
+            Err(s) if zx::Status::err_from_raw(s) == zx::Status::NOT_FOUND => {
+                if had_data {
+                    Ok(UpdateState::Updated)
+                } else {
+                    Ok(UpdateState::Unchanged)
+                }
+            }
+            Err(s) => bail!(
+                "failed to unlink file {:?}: {:?}",
+                cached_storage.file_path,
+                zx::Status::err_from_raw(s)
+            ),
+        }
+    }
+
+    /// Deletes the stored value for a type implementing [`StorageKey`].
+    pub async fn delete_storable<T: StorageKey>(&self) -> Result<UpdateState, Error> {
+        self.delete(T::KEY).await
     }
 }
 
@@ -468,7 +586,9 @@ mod tests {
                         object,
                         control_handle: _,
                     } => {
-                        let create = flags.intersects(fio::Flags::FLAG_MUST_CREATE);
+                        let create = flags.intersects(
+                            fio::Flags::FLAG_MAYBE_CREATE | fio::Flags::FLAG_MUST_CREATE,
+                        );
                         match (self.inner.lock().unwrap().open_interceptor)(&path, create) {
                             Some(status) => {
                                 object.close_with_epitaph(status).expect("failed to send epitaph");
@@ -495,6 +615,14 @@ mod tests {
                             .await
                             .expect("failed to forward Rename request");
                         responder.send(response).expect("failed to respond to Rename request");
+                    }
+                    fio::DirectoryRequest::Unlink { name, options, responder } => {
+                        let response = self
+                            .real_dir
+                            .unlink(&name, &options)
+                            .await
+                            .expect("failed to forward Unlink request");
+                        responder.send(response).expect("failed to respond to Unlink request");
                     }
                     fio::DirectoryRequest::GetToken { responder } => {
                         let response = self
@@ -812,5 +940,164 @@ mod tests {
 
         drop(sender);
         run_until_ready(&mut executor, task);
+    }
+
+    #[fuchsia::test]
+    async fn test_write_immediate() {
+        let tempdir = tempfile::tempdir().expect("failed to create tempdir");
+        let storage_dir = open_tempdir(&tempdir);
+
+        let (storage, sync_tasks) =
+            AtomicJsonStorage::new(vec![TEST_KEY], Clone::clone(&storage_dir))
+                .await
+                .expect("should be able to initialize storage");
+
+        for task in sync_tasks {
+            task.detach();
+        }
+
+        let value = TestStruct { value: VALUE2 };
+        let res = storage.write_immediate(TEST_KEY, &value).await;
+        assert_matches!(res, Ok(UpdateState::Updated));
+
+        // Directly verify file on disk is written immediately
+        let data = fuchsia_fs::directory::read_file(&storage_dir, &format!("{}.json", TEST_KEY))
+            .await
+            .expect("reading file");
+        let parsed = serde_json::from_slice::<TestStruct>(&data).expect("deserializing");
+        assert_eq!(parsed, value);
+    }
+
+    #[fuchsia::test]
+    async fn test_get_or_else() {
+        let tempdir = tempfile::tempdir().expect("failed to create tempdir");
+        let storage_dir = open_tempdir(&tempdir);
+
+        let (storage, sync_tasks) = AtomicJsonStorage::new(vec![TEST_KEY], storage_dir)
+            .await
+            .expect("should be able to initialize storage");
+
+        for task in sync_tasks {
+            task.detach();
+        }
+
+        // Key doesn't exist yet -> evaluates closure
+        let fallback_value = TestStruct { value: 999 };
+        let result = storage.get_or_else(TEST_KEY, || fallback_value.clone()).await;
+        assert_eq!(result, fallback_value);
+
+        // Now write a value
+        let stored_value = TestStruct { value: VALUE1 };
+        storage.write(TEST_KEY, &stored_value).await.unwrap();
+
+        // Key exists -> returns stored value, closure not used
+        let result = storage.get_or_else(TEST_KEY, || fallback_value).await;
+        assert_eq!(result, stored_value);
+    }
+
+    #[fuchsia::test]
+    async fn test_delete() {
+        let tempdir = tempfile::tempdir().expect("failed to create tempdir");
+        let storage_dir = open_tempdir(&tempdir);
+
+        let (storage, sync_tasks) =
+            AtomicJsonStorage::new(vec![TEST_KEY], Clone::clone(&storage_dir))
+                .await
+                .expect("should be able to initialize storage");
+
+        for task in sync_tasks {
+            task.detach();
+        }
+
+        let stored_value = TestStruct { value: VALUE1 };
+        storage.write_immediate(TEST_KEY, &stored_value).await.unwrap();
+        assert_eq!(storage.get::<TestStruct>(TEST_KEY).await.unwrap(), Some(stored_value));
+
+        // Delete the key
+        let del_res = storage.delete(TEST_KEY).await;
+        assert_matches!(del_res, Ok(UpdateState::Updated));
+
+        // In-memory cache and get() returns None
+        assert_eq!(storage.get::<TestStruct>(TEST_KEY).await.unwrap(), None);
+
+        // Disk file should not exist
+        let open_res = fuchsia_fs::directory::open_file(
+            &storage_dir,
+            &format!("{}.json", TEST_KEY),
+            fuchsia_fs::PERM_READABLE,
+        )
+        .await;
+        assert_matches!(open_res, Err(OpenError::OpenError(Status::NOT_FOUND)));
+
+        // Deleting already deleted key returns Unchanged
+        let del_res2 = storage.delete(TEST_KEY).await;
+        assert_matches!(del_res2, Ok(UpdateState::Unchanged));
+    }
+
+    impl StorageKey for TestStruct {
+        const KEY: &'static str = TEST_KEY;
+    }
+
+    #[fuchsia::test]
+    async fn test_storage_key_trait() {
+        let tempdir = tempfile::tempdir().expect("failed to create tempdir");
+        let storage_dir = open_tempdir(&tempdir);
+
+        let (storage, sync_tasks) =
+            AtomicJsonStorage::new(vec![TestStruct::KEY], Clone::clone(&storage_dir))
+                .await
+                .expect("should be able to initialize storage");
+
+        for task in sync_tasks {
+            task.detach();
+        }
+
+        // get_storable on empty store
+        assert_eq!(storage.get_storable::<TestStruct>().await.unwrap(), None);
+        assert_eq!(storage.get_storable_or_default::<TestStruct>().await, TestStruct::default());
+        assert_eq!(
+            storage.get_storable_or_else::<TestStruct, _>(|| TestStruct { value: 777 }).await,
+            TestStruct { value: 777 }
+        );
+
+        // write_storable_immediate
+        let val = TestStruct { value: VALUE2 };
+        let res = storage.write_storable_immediate(&val).await;
+        assert_matches!(res, Ok(UpdateState::Updated));
+
+        assert_eq!(storage.get_storable::<TestStruct>().await.unwrap(), Some(val.clone()));
+        assert_eq!(storage.get_storable_or_default::<TestStruct>().await, val.clone());
+
+        // delete_storable
+        let del_res = storage.delete_storable::<TestStruct>().await;
+        assert_matches!(del_res, Ok(UpdateState::Updated));
+        assert_eq!(storage.get_storable::<TestStruct>().await.unwrap(), None);
+    }
+
+    #[fuchsia::test]
+    async fn test_crash_recovery_temp_file_overwrite() {
+        let tempdir = tempfile::tempdir().expect("failed to create tempdir");
+
+        // Pre-create the _tmp.json file as if a crash happened before rename
+        let tmp_path = tempdir.path().join(format!("{}_tmp.json", TEST_KEY));
+        std::fs::write(tmp_path, b"corrupt partial data").expect("writing stale tmp file");
+
+        let storage_dir = open_tempdir(&tempdir);
+        let (storage, sync_tasks) =
+            AtomicJsonStorage::new(vec![TEST_KEY], Clone::clone(&storage_dir))
+                .await
+                .expect("should be able to initialize storage");
+
+        for task in sync_tasks {
+            task.detach();
+        }
+
+        // write_immediate should successfully overwrite the stale tmp file and finish rename
+        let value = TestStruct { value: VALUE1 };
+        let res = storage.write_immediate(TEST_KEY, &value).await;
+        assert_matches!(res, Ok(UpdateState::Updated));
+
+        let loaded = storage.get::<TestStruct>(TEST_KEY).await.unwrap();
+        assert_eq!(loaded, Some(value));
     }
 }
