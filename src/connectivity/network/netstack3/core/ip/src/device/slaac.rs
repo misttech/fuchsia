@@ -57,6 +57,11 @@ const REQUIRED_PREFIX_BITS: u8 = 64;
 /// giving up on address generation for that prefix.
 const MAX_LOCAL_REGEN_ATTEMPTS: u8 = 10;
 
+/// The maximum number of autoconfigured addresses per interface.
+///
+/// The value of 16 is inspired by Linux.
+const MAX_AUTOCONFIGURED_ADDRESSES: usize = 16;
+
 /// Internal SLAAC timer ID key for [`SlaacState`]'s `LocalTimerHeap`.
 #[derive(Copy, Clone, PartialEq, Eq, Debug, Hash)]
 #[allow(missing_docs)]
@@ -340,9 +345,11 @@ impl<BC: SlaacBindingsContext<CC::DeviceId>, CC: SlaacContext<BC>> SlaacHandler<
         self.with_slaac_addrs_mut_and_configs(device_id, |slaac_addrs, config, slaac_state| {
             let SlaacConfigAndState { config: device_config, dad_transmits, retrans_timer, .. } =
                 config;
+            let mut num_addresses = 0;
             // Apply the update to each existing address, stable or temporary, for the
             // prefix.
             slaac_addrs.for_each_addr_mut(|address_entry| {
+                num_addresses += 1;
                 let slaac_type = match apply_slaac_update_to_addr(
                     address_entry,
                     slaac_state,
@@ -418,6 +425,14 @@ impl<BC: SlaacBindingsContext<CC::DeviceId>, CC: SlaacContext<BC>> SlaacHandler<
                 }));
 
             for slaac_type in address_types_to_add {
+                if num_addresses >= MAX_AUTOCONFIGURED_ADDRESSES {
+                    debug!(
+                        "Not Adding {slaac_type:?} address: {subnet:?}. \
+                        Maximum number of autoconfigured addresses reached on {device_id:?}"
+                    );
+                    break;
+                }
+                num_addresses += 1;
                 add_slaac_addr_sub::<_, CC>(
                     bindings_ctx,
                     device_id,
@@ -3569,5 +3584,79 @@ mod tests {
         // side-effect of disabling temporary addresses, but we'll steer it away
         // from being used more.
         assert_eq!(preferred_lifetime, PreferredLifetime::Deprecated);
+    }
+
+    #[test]
+    fn max_autoconfigured_addresses() {
+        let CtxPair { mut core_ctx, mut bindings_ctx } = new_context(
+            SlaacConfiguration {
+                stable_address_configuration: StableSlaacAddressConfiguration::ENABLED_WITH_EUI64,
+                temporary_address_configuration:
+                    TemporarySlaacAddressConfiguration::enabled_with_rfc_defaults(),
+            },
+            Default::default(),
+            None,
+            DEFAULT_RETRANS_TIMER,
+        );
+
+        fn make_subnet(i: usize) -> Subnet<Ipv6Addr> {
+            let i = u8::try_from(i).expect("should fit in a u8");
+            let bytes = [0x20, 0x01, 0x0d, 0xb8, i, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+            Subnet::new(Ipv6Addr::from_bytes(bytes), REQUIRED_PREFIX_BITS)
+                .expect("should be a valid_subnet")
+        }
+
+        // Add addresses until we reach the limit.
+        // Each subnet generates 2 addresses (1 stable, 1 temporary).
+        for i in 0..MAX_AUTOCONFIGURED_ADDRESSES / 2 {
+            SlaacHandler::apply_slaac_update(
+                &mut core_ctx,
+                &mut bindings_ctx,
+                &FakeDeviceId,
+                make_subnet(i),
+                NonZeroNdpLifetime::from_u32_with_infinite(ONE_HOUR_AS_SECS),
+                NonZeroNdpLifetime::from_u32_with_infinite(TWO_HOURS_AS_SECS),
+            );
+        }
+        assert_eq!(core_ctx.state.iter_slaac_addrs().count(), MAX_AUTOCONFIGURED_ADDRESSES);
+
+        // Now that we're at the limit, an additional subnet will not add new
+        // addresses.
+        SlaacHandler::apply_slaac_update(
+            &mut core_ctx,
+            &mut bindings_ctx,
+            &FakeDeviceId,
+            make_subnet(MAX_AUTOCONFIGURED_ADDRESSES),
+            NonZeroNdpLifetime::from_u32_with_infinite(ONE_HOUR_AS_SECS),
+            NonZeroNdpLifetime::from_u32_with_infinite(TWO_HOURS_AS_SECS),
+        );
+        assert_eq!(core_ctx.state.iter_slaac_addrs().count(), MAX_AUTOCONFIGURED_ADDRESSES);
+
+        // Updating the lifetimes on existing addresses still works.
+        let updated_subnet = make_subnet(0);
+        SlaacHandler::apply_slaac_update(
+            &mut core_ctx,
+            &mut bindings_ctx,
+            &FakeDeviceId,
+            updated_subnet,
+            NonZeroNdpLifetime::from_u32_with_infinite(THREE_HOURS_AS_SECS),
+            NonZeroNdpLifetime::from_u32_with_infinite(FOUR_HOURS_AS_SECS),
+        );
+        assert_eq!(core_ctx.state.iter_slaac_addrs().count(), MAX_AUTOCONFIGURED_ADDRESSES);
+        assert!(core_ctx.state.iter_slaac_addrs().any(|addr| {
+            addr.addr_sub.subnet() == updated_subnet
+                && matches!(
+                    addr.config.inner, SlaacConfig::Stable { valid_until: Lifetime::Finite(i), ..}
+                    if i == bindings_ctx.now() + Duration::from_secs(FOUR_HOURS_AS_SECS.into())
+                )
+        }));
+        assert!(core_ctx.state.iter_slaac_addrs().any(|addr| {
+            addr.addr_sub.subnet() == updated_subnet
+                && matches!(
+                    addr.config.inner,
+                    SlaacConfig::Temporary(TemporarySlaacConfig{valid_until: i, ..})
+                    if i == bindings_ctx.now() + Duration::from_secs(FOUR_HOURS_AS_SECS.into())
+                )
+        }));
     }
 }
