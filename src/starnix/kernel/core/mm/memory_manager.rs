@@ -30,7 +30,7 @@ use smallvec::SmallVec;
 use starnix_ext::map_ext::EntryExt;
 use starnix_lifecycle::DropNotifier;
 use starnix_logging::{CATEGORY_STARNIX_MM, impossible_error, log_error, log_warn, track_stub};
-use starnix_sync::{LockDepMutex, MmDumpable, RwLock, RwLockWriteGuard, ordered_write_lock};
+use starnix_sync::{LockDepMutex, MmDumpable, Mutex, RwLock, RwLockWriteGuard, ordered_write_lock};
 use starnix_types::arch::ArchWidth;
 use starnix_types::futex_address::FutexAddress;
 use starnix_types::math::{round_down_to_system_page_size, round_up_to_system_page_size};
@@ -3150,6 +3150,9 @@ pub struct MemoryManager {
 
     /// The architecture width of the process.
     pub arch_width: ArchWidth,
+
+    /// Cached memory stats to avoid expensive Zircon VMAR walks on sequential reads.
+    pub cached_stats: Mutex<Option<(zx::MonotonicInstant, MemoryStats)>>,
 }
 
 impl ArchSpecific for MemoryManager {
@@ -3305,6 +3308,7 @@ impl MemoryManager {
             inflight_vmspliced_payloads: Default::default(),
             drop_notifier: DropNotifier::default(),
             arch_width,
+            cached_stats: Mutex::default(),
         }))
     }
 
@@ -4315,6 +4319,23 @@ impl MemoryManager {
     }
 
     pub fn get_stats(&self, current_task: &CurrentTask) -> MemoryStats {
+        // Acquiring stats is an intensive operation, so when diagnostic processes request
+        // stats of a process in fast succession, we return a short-lived cached value.
+        // However, if the process is inspecting itself, bypass the cache to ensure immediate
+        // causal consistency (e.g. after mmap, munmap, or memory writes).
+        let is_self_read =
+            current_task.mm().map_or(false, |mm| std::ptr::eq(Arc::as_ptr(&mm), self));
+        let now = zx::MonotonicInstant::get();
+        if !is_self_read {
+            const CACHE_TTL: zx::MonotonicDuration = zx::MonotonicDuration::from_millis(250);
+            let cached = self.cached_stats.lock();
+            if let Some((timestamp, stats)) = *cached {
+                if now - timestamp < CACHE_TTL {
+                    return stats;
+                }
+            }
+        }
+
         // Grab our state lock before reading zircon mappings so that the two are consistent.
         // Other Starnix threads should not make any changes to the Zircon mappings while we hold
         // a read lock to the memory manager state.
@@ -4376,6 +4397,7 @@ impl MemoryManager {
         // TODO(https://fxbug.dev/396221597): Placeholder for now. We need kernel support to track
         // the committed bytes high water mark.
         stats.vm_rss_hwm = STUB_VM_RSS_HWM;
+        *self.cached_stats.lock() = Some((now, stats));
         stats
     }
 
@@ -4626,7 +4648,7 @@ fn write_map(
     Ok(())
 }
 
-#[derive(Default)]
+#[derive(Clone, Copy, Debug, Default)]
 pub struct MemoryStats {
     pub vm_size: usize,
     pub vm_rss: usize,
