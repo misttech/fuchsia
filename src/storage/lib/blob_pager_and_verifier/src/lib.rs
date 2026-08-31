@@ -26,6 +26,7 @@ mod delivery;
 
 pub use delivery::{
     DELIVERY_DATA_SIZE, DeliveryQueueProcessor, DeliveryQueueProvider, TestVmoProvider,
+    UnverifiedPages,
 };
 
 use anyhow::{Context, Error, anyhow, bail};
@@ -37,6 +38,7 @@ use fuchsia_hash::{HASH_SIZE, Hash};
 use fuchsia_merkle::{MerkleVerifier, ReadSizedMerkleVerifier};
 use fuchsia_sync::Mutex;
 use std::collections::{HashMap, hash_map};
+use std::ops::Range;
 use std::sync::{Arc, Weak};
 use storage_ptr_slice::PtrByteSlice;
 use zx;
@@ -91,6 +93,7 @@ struct CachedBlob {
     // Hold a weak reference to avoid a circular reference as the cache holds `CachedBlob`.
     cache: Weak<PagerVmoCache>,
     vmo_key: u32,
+    len: u64,
     registration: fasync::ReceiverRegistration<ZeroChildrenReceiver>,
     merkle_verifier: std::sync::OnceLock<ReadSizedMerkleVerifier>,
 }
@@ -295,6 +298,31 @@ impl PagerVmoCache {
 
         event.notify(usize::MAX);
     }
+
+    fn report_pager_failure(&self, vmo: &zx::Vmo, range: Range<u64>, status: zx::Status) {
+        // Map to the set of statuses accepted by ZX_PAGER_OP_FAIL which are ZX_ERR_IO,
+        // ZX_ERR_IO_DATA_INTEGRITY, ZX_ERR_BAD_STATE, ZX_ERR_NO_SPACE, and ZX_ERR_BUFFER_TOO_SMALL.
+        let pager_status = match status {
+            zx::Status::IO_DATA_INTEGRITY => zx::Status::IO_DATA_INTEGRITY,
+            zx::Status::NO_SPACE => zx::Status::NO_SPACE,
+            zx::Status::BUFFER_TOO_SMALL | zx::Status::FILE_BIG => zx::Status::BUFFER_TOO_SMALL,
+            zx::Status::IO
+            | zx::Status::IO_DATA_LOSS
+            | zx::Status::IO_INVALID
+            | zx::Status::IO_MISSED_DEADLINE
+            | zx::Status::IO_NOT_PRESENT
+            | zx::Status::IO_OVERRUN
+            | zx::Status::IO_REFUSED
+            | zx::Status::PEER_CLOSED => zx::Status::IO,
+            _ => zx::Status::BAD_STATE,
+        };
+
+        // `ZX_PAGER_OP_FAIL` resolves pending page requests overlapping the specified range with
+        // the failure status. Pages that were already supplied remain accessible.
+        if let Err(error) = self.pager.op_range(zx::PagerOp::Fail(pager_status), vmo, range) {
+            log::error!(error:?; "Failed to report pager failure to kernel");
+        }
+    }
 }
 
 impl delivery::DeliveryQueueProvider for PagerVmoCache {
@@ -302,23 +330,65 @@ impl delivery::DeliveryQueueProvider for PagerVmoCache {
         &self,
         key: u64,
         target_offset: u64,
-        length: u64,
-        delivery_offset: u64,
+        unverified_pages: UnverifiedPages<'_>,
     ) -> Result<(), Error> {
-        let cached_blob = self.get_by_key(key as u32);
-        if let Some(blob) = cached_blob {
-            // TODO(https://fxbug.dev/535489428): Cryptographically verify payload against
-            // blob.merkle_verifier.
-            self.pager.supply_pages(
-                &blob.vmo,
-                target_offset..target_offset + length,
-                &self.delivery_vmo,
-                delivery_offset,
-            )?;
-            Ok(())
-        } else {
-            bail!("Unknown or expired key {key} in deliver_pages");
+        let cached_blob = self
+            .get_by_key(key as u32)
+            .ok_or_else(|| anyhow!("Unknown or expired key {key} in deliver_pages"))?;
+
+        let page_size = zx::system_get_page_size() as u64;
+        let page_aligned_size = cached_blob.len.div_ceil(page_size) * page_size;
+
+        let verifier = match cached_blob.merkle_verifier.get() {
+            Some(v) => v,
+            None => {
+                // If data arrives before `RegisterBlob` (or if registration failed), the blob has
+                // no cryptographic metadata, so no pages can ever be verified or supplied. Fail the
+                // entire page-aligned range of the VMO with `BAD_STATE` to unblock any waiting
+                // client threads on this blob.
+                self.report_pager_failure(
+                    &cached_blob.vmo,
+                    0..page_aligned_size,
+                    zx::Status::BAD_STATE,
+                );
+                bail!("Data received for uninitialized blob {}", key);
+            }
+        };
+
+        let chunk_len = unverified_pages.len_in_bytes() as u64;
+
+        // `zx_pager_supply_pages` and `zx_pager_op_range(Fail)` require the range to be within the
+        // page-aligned capacity of the VMO. If the range extends past the end of the VMO, the
+        // kernel fails the call with `ZX_ERR_OUT_OF_RANGE`. Clamp the range to the VMO's
+        // page-aligned limit.
+        let bounded_len = std::cmp::min(chunk_len, page_aligned_size.saturating_sub(target_offset));
+        let chunk_range = target_offset..target_offset + bounded_len;
+
+        // For the final chunk of an unaligned blob, the buffer passed to `verify_aligned` is
+        // page-aligned and zero-padded, but `verify_aligned` expects the remaining unaligned length
+        // of the valid data.
+        let remaining_in_blob = cached_blob.len.saturating_sub(target_offset);
+        let unaligned_len = std::cmp::min(chunk_len, remaining_in_blob) as usize;
+        if let Err(e) = verifier.verify_aligned(
+            target_offset as usize,
+            unverified_pages.as_ptr_byte_slice(),
+            unaligned_len,
+        ) {
+            self.report_pager_failure(&cached_blob.vmo, chunk_range, zx::Status::IO_DATA_INTEGRITY);
+            bail!("Failed to verify payload for blob {}: {:?}", key, e);
         }
+
+        if let Err(e) = self.pager.supply_pages(
+            &cached_blob.vmo,
+            chunk_range.clone(),
+            &self.delivery_vmo,
+            unverified_pages.delivery_offset(),
+        ) {
+            self.report_pager_failure(&cached_blob.vmo, chunk_range, e);
+            bail!("Failed to supply pages: {:?}", e);
+        }
+
+        Ok(())
     }
 
     fn register_blob(&self, key: u64, leaf_data: PtrByteSlice<'_>) -> Result<(), Error> {
@@ -459,7 +529,7 @@ impl BlobPagerAndVerifier {
                 CacheLookup::Missing(guard) => guard,
             };
 
-            let result: Result<(zx::Vmo, u32), Error> = async {
+            let result: Result<(zx::Vmo, u32, u64), Error> = async {
                 // Ask Fxfs to register the blob and write its extent mappings into the shared
                 // mapping VMO, returning a key that is used to generate the pager-backed VMO.
                 let (size, key) = self
@@ -473,7 +543,7 @@ impl BlobPagerAndVerifier {
                 let paged_vmo =
                     self.pager.create_vmo(zx::VmoOptions::empty(), &self.port, key as u64, size)?;
 
-                Ok((paged_vmo, key))
+                Ok((paged_vmo, key, size))
             }
             .await;
 
@@ -481,7 +551,7 @@ impl BlobPagerAndVerifier {
             guard.dismiss();
 
             match result {
-                Ok((vmo, key)) => {
+                Ok((vmo, key, size)) => {
                     // Create the initial child. We vend children of this VMO to clients so we can
                     // track when all children are dropped to evict the blob from cache.
                     let first_child = vmo
@@ -502,6 +572,7 @@ impl BlobPagerAndVerifier {
                         identifier: *identifier,
                         cache: Arc::downgrade(&self.vmo_cache),
                         vmo_key: key,
+                        len: size,
                         registration: zero_children_registration,
                         merkle_verifier: std::sync::OnceLock::new(),
                     });
@@ -538,10 +609,12 @@ impl BlobPagerAndVerifier {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::delivery::DELIVERY_DATA_SIZE;
     use futures::TryStreamExt;
     use mapping::{DeliveryCommand, RawDeliveryCommand};
     use vmo_fifo::SyncSender;
-    const TEST_VMO_SIZE: u64 = 8192;
+
+    const TEST_BLOB_SIZE: u64 = (DELIVERY_DATA_SIZE * 2) as u64;
     const TEST_VMO_KEY: u32 = 42;
 
     // Used for testing BlobPagerAndVerifier interactions.
@@ -556,11 +629,12 @@ mod tests {
         delivery_vmo: zx::Vmo,
         pub valid_root: [u8; 32],
         pub valid_leaves: Vec<u8>,
+        pub blob_data: Vec<u8>,
     }
 
     impl TestEnv {
-        async fn new() -> Self {
-            let blob_data = vec![0x42u8; 8192 * 4];
+        async fn new(blob_size: u64) -> Self {
+            let blob_data = vec![0x42u8; blob_size as usize];
             let (root, leaf_hashes) =
                 fuchsia_merkle::MerkleRootBuilder::new(Vec::new()).complete(&blob_data);
             let expected_hash: [u8; 32] = root.into();
@@ -570,13 +644,6 @@ mod tests {
                 flat_leaves.extend_from_slice(hash.as_bytes());
             }
 
-            let mut env = Self::new_with(expected_hash).await;
-            env.valid_root = expected_hash;
-            env.valid_leaves = flat_leaves;
-            env
-        }
-
-        async fn new_with(expected_hash: [u8; 32]) -> Self {
             let (mapping_proxy, mut mapping_stream) =
                 fidl::endpoints::create_proxy_and_stream::<fmapping::MappingProviderMarker>();
 
@@ -603,9 +670,7 @@ mod tests {
                                     open_calls, 1,
                                     "Open should only be called once per identifier"
                                 );
-                                responder
-                                    .send(Ok((TEST_VMO_SIZE, TEST_VMO_KEY)))
-                                    .expect("send failed");
+                                responder.send(Ok((blob_size, TEST_VMO_KEY))).expect("send failed");
                             }
                             fmapping::MappingSessionRequest::Close { key, responder } => {
                                 assert_eq!(key, TEST_VMO_KEY);
@@ -648,7 +713,8 @@ mod tests {
                     .expect("rx_delivery wait failed")
                     .expect("delivery_vmo was None"),
                 valid_root: expected_hash,
-                valid_leaves: vec![],
+                valid_leaves: flat_leaves,
+                blob_data,
             }
         }
 
@@ -659,16 +725,57 @@ mod tests {
         }
     }
 
+    struct ExpectedReadThread {
+        started_rx: Option<futures::channel::oneshot::Receiver<()>>,
+        done_rx: futures::channel::oneshot::Receiver<()>,
+        handle: std::thread::JoinHandle<()>,
+    }
+
+    impl ExpectedReadThread {
+        async fn wait_started(&mut self) {
+            if let Some(rx) = self.started_rx.take() {
+                rx.await.expect("reader thread failed to start");
+            }
+        }
+
+        async fn wait_and_verify(self) {
+            self.done_rx.await.expect("reader thread panicked or hung");
+            self.handle.join().expect("join failed");
+        }
+    }
+
+    fn spawn_reader_expect_error(
+        vmo: &zx::Vmo,
+        offset: u64,
+        size: usize,
+        expected_status: zx::Status,
+    ) -> ExpectedReadThread {
+        let vmo_clone =
+            vmo.duplicate_handle(zx::Rights::SAME_RIGHTS).expect("duplicate_handle failed");
+        let (started_tx, started_rx) = futures::channel::oneshot::channel();
+        let (done_tx, done_rx) = futures::channel::oneshot::channel();
+
+        let handle = std::thread::spawn(move || {
+            let mut buf = vec![0u8; size];
+            let _ = started_tx.send(());
+            let err = vmo_clone.read(&mut buf, offset).expect_err("read should fail");
+            assert_eq!(err, expected_status);
+            let _ = done_tx.send(());
+        });
+
+        ExpectedReadThread { started_rx: Some(started_rx), done_rx, handle }
+    }
+
     #[fuchsia::test]
     async fn test_create_vmo() {
-        let env = TestEnv::new().await;
+        let env = TestEnv::new(TEST_BLOB_SIZE).await;
         let vmo =
             env.pager_and_verifier.create_vmo(&env.valid_root).await.expect("Failed to create VMO");
         let size = vmo.get_size().expect("get_size failed");
 
         // Pager VMO sizes are rounded up to the nearest page boundary.
         let page_size = zx::system_get_page_size() as u64;
-        let expected_pages = (TEST_VMO_SIZE + page_size - 1) / page_size;
+        let expected_pages = (TEST_BLOB_SIZE + page_size - 1) / page_size;
         assert_eq!(size, expected_pages * page_size);
 
         // Explicitly drop the VMO so `ZX_VMO_ZERO_CHILDREN` fires and the mock mapping
@@ -681,7 +788,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_create_vmo_concurrent_access() {
-        let env = TestEnv::new().await;
+        let env = TestEnv::new(TEST_BLOB_SIZE).await;
         let mut futures = vec![];
         for _ in 0..10 {
             let verifier = env.pager_and_verifier.clone();
@@ -697,7 +804,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_zero_children_eviction() {
-        let mut env = TestEnv::new().await;
+        let mut env = TestEnv::new(TEST_BLOB_SIZE).await;
 
         let child_vmo =
             env.pager_and_verifier.create_vmo(&env.valid_root).await.expect("create_vmo failed");
@@ -768,7 +875,7 @@ mod tests {
                 .expect("BlobPagerAndVerifier::new failed"),
         );
 
-        let blob_data = vec![0x42u8; 8192 * 4];
+        let blob_data = vec![0x42u8; TEST_BLOB_SIZE as usize];
         let (root, _) = fuchsia_merkle::MerkleRootBuilder::new(Vec::new()).complete(&blob_data);
         let hash_val: [u8; 32] = root.into();
 
@@ -807,7 +914,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_cache_revival_race() {
-        let mut env = TestEnv::new().await;
+        let mut env = TestEnv::new(TEST_BLOB_SIZE).await;
 
         let child_vmo =
             env.pager_and_verifier.create_vmo(&env.valid_root).await.expect("create_vmo failed");
@@ -872,7 +979,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_delivery_register_blob_verification() {
-        let env = TestEnv::new().await;
+        let env = TestEnv::new(TEST_BLOB_SIZE).await;
 
         let _paged_vmo =
             env.pager_and_verifier.create_vmo(&env.valid_root).await.expect("create_vmo failed");
@@ -881,7 +988,7 @@ mod tests {
             env.delivery_vmo
                 .duplicate_handle(zx::Rights::SAME_RIGHTS)
                 .expect("duplicate_handle failed"),
-            std::mem::align_of::<RawDeliveryCommand>(),
+            zx::system_get_page_size() as usize, // alignment of payload
             mapping::PENDING_DELIVERY_COMMANDS_CAPACITY,
         )
         .expect("SyncSender::new failed");
@@ -934,7 +1041,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_register_blob_invalid_commands() {
-        let env = TestEnv::new().await;
+        let env = TestEnv::new(TEST_BLOB_SIZE).await;
 
         let _paged_vmo =
             env.pager_and_verifier.create_vmo(&env.valid_root).await.expect("create_vmo failed");
@@ -995,7 +1102,7 @@ mod tests {
 
     #[fuchsia::test]
     async fn test_delivery_data_supplies_pages() {
-        let env = TestEnv::new().await;
+        let env = TestEnv::new(TEST_BLOB_SIZE).await;
 
         let paged_vmo =
             env.pager_and_verifier.create_vmo(&env.valid_root).await.expect("create_vmo failed");
@@ -1004,12 +1111,30 @@ mod tests {
             env.delivery_vmo
                 .duplicate_handle(zx::Rights::SAME_RIGHTS)
                 .expect("duplicate_handle failed"),
-            std::mem::align_of::<RawDeliveryCommand>(),
+            zx::system_get_page_size() as usize, // alignment of payload
             mapping::PENDING_DELIVERY_COMMANDS_CAPACITY,
         )
         .expect("SyncSender::new failed");
 
-        let test_payload = vec![0x42u8; 4096];
+        let mut payload =
+            sender.reserve_payload(env.valid_leaves.len()).expect("reserve_payload failed");
+        payload.data().copy_from_slice(&env.valid_leaves);
+        let raw_cmd: RawDeliveryCommand = DeliveryCommand::RegisterBlob {
+            key: TEST_VMO_KEY as u64,
+            offset: payload.offset(),
+            length: env.valid_leaves.len() as u32,
+        }
+        .into();
+        payload.commit(raw_cmd).expect("commit failed");
+
+        let blob =
+            env.pager_and_verifier.vmo_cache.get_by_key(TEST_VMO_KEY).expect("get_by_key failed");
+        while blob.merkle_verifier.get().is_none() {
+            fasync::Timer::new(std::time::Duration::from_millis(5)).await;
+        }
+
+        let test_payload = &env.blob_data[..DELIVERY_DATA_SIZE];
+
         let mut payload =
             sender.reserve_payload(test_payload.len()).expect("reserve_payload failed");
         payload.data().copy_from_slice(&test_payload);
@@ -1023,9 +1148,482 @@ mod tests {
         .into();
         payload.commit(cmd).expect("commit failed");
 
-        let mut read_buf = vec![0u8; 4096];
+        let mut read_buf = vec![0u8; DELIVERY_DATA_SIZE];
         paged_vmo.read(&mut read_buf, 0).expect("read paged_vmo failed");
         assert_eq!(read_buf, test_payload);
+
+        drop(paged_vmo);
+        env.teardown().await;
+    }
+
+    #[fuchsia::test]
+    async fn test_delivery_data_corrupted() {
+        // Verify that when a delivered chunk fails verification, client threads waiting
+        // for data within that chunk receive `ZX_ERR_IO_DATA_INTEGRITY`.
+        let blob_size = DELIVERY_DATA_SIZE as u64;
+        let env = TestEnv::new(blob_size).await;
+
+        let paged_vmo =
+            env.pager_and_verifier.create_vmo(&env.valid_root).await.expect("create_vmo failed");
+
+        let mut sender = SyncSender::<RawDeliveryCommand>::new(
+            env.delivery_vmo
+                .duplicate_handle(zx::Rights::SAME_RIGHTS)
+                .expect("duplicate_handle failed"),
+            zx::system_get_page_size() as usize,
+            mapping::PENDING_DELIVERY_COMMANDS_CAPACITY,
+        )
+        .expect("SyncSender::new failed");
+
+        let mut payload =
+            sender.reserve_payload(env.valid_leaves.len()).expect("reserve_payload failed");
+        payload.data().copy_from_slice(&env.valid_leaves);
+        let raw_cmd: RawDeliveryCommand = DeliveryCommand::RegisterBlob {
+            key: TEST_VMO_KEY as u64,
+            offset: payload.offset(),
+            length: env.valid_leaves.len() as u32,
+        }
+        .into();
+        payload.commit(raw_cmd).expect("commit failed");
+
+        let blob =
+            env.pager_and_verifier.vmo_cache.get_by_key(TEST_VMO_KEY).expect("get_by_key failed");
+        while blob.merkle_verifier.get().is_none() {
+            fasync::Timer::new(std::time::Duration::from_millis(5)).await;
+        }
+
+        // Prepare a corrupted 128 KiB chunk (the entire blob data).
+        let mut corrupted_data = env.blob_data.clone();
+        corrupted_data[0] ^= 0xFF;
+
+        let mut payload =
+            sender.reserve_payload(corrupted_data.len()).expect("reserve_payload failed");
+        payload.data().copy_from_slice(&corrupted_data);
+        let raw_cmd: RawDeliveryCommand = DeliveryCommand::Data {
+            key: TEST_VMO_KEY as u64,
+            offset: payload.offset(),
+            length: corrupted_data.len() as u32,
+            target_offset: 0,
+        }
+        .into();
+
+        // Start client threads reading different pages within the delivery data chunk.
+        // When verification fails, all waiting threads must fail with `IO_DATA_INTEGRITY`.
+        let page_size = zx::system_get_page_size() as usize;
+        let mut reader1 =
+            spawn_reader_expect_error(&paged_vmo, 0, page_size, zx::Status::IO_DATA_INTEGRITY);
+        let mut reader2 = spawn_reader_expect_error(
+            &paged_vmo,
+            page_size as u64,
+            page_size,
+            zx::Status::IO_DATA_INTEGRITY,
+        );
+
+        // Wait for both client threads to start executing before giving them time to block on their
+        // page faults.
+        reader1.wait_started().await;
+        reader2.wait_started().await;
+        fasync::Timer::new(std::time::Duration::from_millis(5)).await;
+
+        // Commit the corrupt chunk. Verification will fail, causing the blocked `vmo.read()`
+        // calls for that chunk to return `IO_DATA_INTEGRITY`.
+        payload.commit(raw_cmd).expect("commit failed");
+
+        reader1.wait_and_verify().await;
+        reader2.wait_and_verify().await;
+
+        drop(paged_vmo);
+        env.teardown().await;
+    }
+
+    #[fuchsia::test]
+    async fn test_delivery_data_corrupted_chunk_preserves_supplied_pages() {
+        let chunk_size = DELIVERY_DATA_SIZE;
+        let blob_size = (chunk_size * 2) as u64;
+        let env = TestEnv::new(blob_size).await;
+
+        let paged_vmo =
+            env.pager_and_verifier.create_vmo(&env.valid_root).await.expect("create_vmo failed");
+
+        let mut sender = SyncSender::<RawDeliveryCommand>::new(
+            env.delivery_vmo
+                .duplicate_handle(zx::Rights::SAME_RIGHTS)
+                .expect("duplicate_handle failed"),
+            zx::system_get_page_size() as usize,
+            mapping::PENDING_DELIVERY_COMMANDS_CAPACITY,
+        )
+        .expect("SyncSender::new failed");
+
+        let mut payload =
+            sender.reserve_payload(env.valid_leaves.len()).expect("reserve_payload failed");
+        payload.data().copy_from_slice(&env.valid_leaves);
+        let raw_cmd: RawDeliveryCommand = DeliveryCommand::RegisterBlob {
+            key: TEST_VMO_KEY as u64,
+            offset: payload.offset(),
+            length: env.valid_leaves.len() as u32,
+        }
+        .into();
+        payload.commit(raw_cmd).expect("commit failed");
+
+        let blob =
+            env.pager_and_verifier.vmo_cache.get_by_key(TEST_VMO_KEY).expect("get_by_key failed");
+        while blob.merkle_verifier.get().is_none() {
+            fasync::Timer::new(std::time::Duration::from_millis(5)).await;
+        }
+
+        let page_size = zx::system_get_page_size() as usize;
+
+        // Chunk 1 test for successful page request.
+        // Start a reader on page 0 and deliver the valid first chunk (0..chunk_size).
+        let paged_vmo_clone1 =
+            paged_vmo.duplicate_handle(zx::Rights::SAME_RIGHTS).expect("duplicate_handle failed");
+        let (tx1, rx1) = futures::channel::oneshot::channel();
+        let expected_page0 = env.blob_data[..page_size].to_vec();
+        let thread1 = std::thread::spawn(move || {
+            let mut buf = vec![0u8; page_size];
+            paged_vmo_clone1.read(&mut buf, 0).expect("read should succeed");
+            assert_eq!(buf, expected_page0);
+            let _ = tx1.send(());
+        });
+        fasync::Timer::new(std::time::Duration::from_millis(5)).await;
+
+        let valid_chunk = &env.blob_data[..chunk_size];
+        let mut payload =
+            sender.reserve_payload(valid_chunk.len()).expect("reserve_payload failed");
+        payload.data().copy_from_slice(valid_chunk);
+        let raw_cmd: RawDeliveryCommand = DeliveryCommand::Data {
+            key: TEST_VMO_KEY as u64,
+            offset: payload.offset(),
+            length: valid_chunk.len() as u32,
+            target_offset: 0,
+        }
+        .into();
+        payload.commit(raw_cmd).expect("commit failed");
+
+        rx1.await.expect("thread1 panicked or hung");
+        thread1.join().expect("join failed");
+
+        // Test for failed page requests on the subsequent chunk.
+        let mut reader2 = spawn_reader_expect_error(
+            &paged_vmo,
+            chunk_size as u64,
+            page_size,
+            zx::Status::IO_DATA_INTEGRITY,
+        );
+        reader2.wait_started().await;
+        fasync::Timer::new(std::time::Duration::from_millis(5)).await;
+
+        // Deliver corrupted second chunk (chunk_size..chunk_size * 2).
+        let mut corrupted_chunk = env.blob_data[chunk_size..].to_vec();
+        corrupted_chunk[0] ^= 0xFF;
+
+        let mut payload =
+            sender.reserve_payload(corrupted_chunk.len()).expect("reserve_payload failed");
+        payload.data().copy_from_slice(&corrupted_chunk);
+        let raw_cmd: RawDeliveryCommand = DeliveryCommand::Data {
+            key: TEST_VMO_KEY as u64,
+            offset: payload.offset(),
+            length: corrupted_chunk.len() as u32,
+            target_offset: chunk_size as u64,
+        }
+        .into();
+        payload.commit(raw_cmd).expect("commit failed");
+
+        reader2.wait_and_verify().await;
+
+        // Verify that the previously supplied page 0 remains intact and readable.
+        let mut buf = vec![0u8; page_size];
+        paged_vmo.read(&mut buf, 0).expect("previously supplied page 0 must still be readable");
+        assert_eq!(buf, env.blob_data[..page_size]);
+
+        drop(paged_vmo);
+        env.teardown().await;
+    }
+
+    #[fuchsia::test]
+    async fn test_delivery_data_corrupted_multi_chunk_read() {
+        let chunk_size = DELIVERY_DATA_SIZE;
+        let blob_size = (chunk_size * 3) as u64;
+        let env = TestEnv::new(blob_size).await;
+
+        let paged_vmo =
+            env.pager_and_verifier.create_vmo(&env.valid_root).await.expect("create_vmo failed");
+
+        let mut sender = SyncSender::<RawDeliveryCommand>::new(
+            env.delivery_vmo
+                .duplicate_handle(zx::Rights::SAME_RIGHTS)
+                .expect("duplicate_handle failed"),
+            zx::system_get_page_size() as usize,
+            mapping::PENDING_DELIVERY_COMMANDS_CAPACITY,
+        )
+        .expect("SyncSender::new failed");
+
+        let mut payload =
+            sender.reserve_payload(env.valid_leaves.len()).expect("reserve_payload failed");
+        payload.data().copy_from_slice(&env.valid_leaves);
+        let raw_cmd: RawDeliveryCommand = DeliveryCommand::RegisterBlob {
+            key: TEST_VMO_KEY as u64,
+            offset: payload.offset(),
+            length: env.valid_leaves.len() as u32,
+        }
+        .into();
+        payload.commit(raw_cmd).expect("commit failed");
+
+        let blob =
+            env.pager_and_verifier.vmo_cache.get_by_key(TEST_VMO_KEY).expect("get_by_key failed");
+        while blob.merkle_verifier.get().is_none() {
+            fasync::Timer::new(std::time::Duration::from_millis(5)).await;
+        }
+
+        // A 384 KiB `vmo.read()` triggers a single page request spanning multiple pages.
+        // Chunk 1 (0..128 KiB) is valid, Chunk 2 (128..256 KiB) is corrupted, and Chunk 3 is not
+        // delivered because delivery stops on verification failure.
+        // Verify that when Chunk 2 fails verification, the page request fails and
+        // `vmo.read()` returns `IO_DATA_INTEGRITY`.
+        let mut reader = spawn_reader_expect_error(
+            &paged_vmo,
+            0,
+            blob_size as usize,
+            zx::Status::IO_DATA_INTEGRITY,
+        );
+        reader.wait_started().await;
+        fasync::Timer::new(std::time::Duration::from_millis(5)).await;
+
+        // Deliver Chunk 1 (0..128 KiB) valid.
+        let valid_chunk1 = &env.blob_data[..chunk_size];
+        let mut payload =
+            sender.reserve_payload(valid_chunk1.len()).expect("reserve_payload failed");
+        payload.data().copy_from_slice(valid_chunk1);
+        let raw_cmd: RawDeliveryCommand = DeliveryCommand::Data {
+            key: TEST_VMO_KEY as u64,
+            offset: payload.offset(),
+            length: valid_chunk1.len() as u32,
+            target_offset: 0,
+        }
+        .into();
+        payload.commit(raw_cmd).expect("commit failed");
+
+        // Allow the reader thread time to receive the supplied first chunk, copy it, and block on
+        // the second chunk's unpopulated pages.
+        fasync::Timer::new(std::time::Duration::from_millis(5)).await;
+
+        // Deliver Chunk 2 (128..256 KiB) corrupted.
+        let mut corrupted_chunk2 = env.blob_data[chunk_size..chunk_size * 2].to_vec();
+        corrupted_chunk2[0] ^= 0xFF;
+        let mut payload =
+            sender.reserve_payload(corrupted_chunk2.len()).expect("reserve_payload failed");
+        payload.data().copy_from_slice(&corrupted_chunk2);
+        let raw_cmd: RawDeliveryCommand = DeliveryCommand::Data {
+            key: TEST_VMO_KEY as u64,
+            offset: payload.offset(),
+            length: corrupted_chunk2.len() as u32,
+            target_offset: chunk_size as u64,
+        }
+        .into();
+        payload.commit(raw_cmd).expect("commit failed");
+
+        // Don't deliver chunk 3 since chunk 2 failed.
+
+        // The `vmo.read()` must fail with IO_DATA_INTEGRITY.
+        reader.wait_and_verify().await;
+
+        drop(paged_vmo);
+        env.teardown().await;
+    }
+
+    #[fuchsia::test]
+    async fn test_delivery_data_uninitialized() {
+        let env = TestEnv::new(TEST_BLOB_SIZE).await;
+
+        let paged_vmo =
+            env.pager_and_verifier.create_vmo(&env.valid_root).await.expect("create_vmo failed");
+
+        let mut sender = SyncSender::<RawDeliveryCommand>::new(
+            env.delivery_vmo
+                .duplicate_handle(zx::Rights::SAME_RIGHTS)
+                .expect("duplicate_handle failed"),
+            zx::system_get_page_size() as usize,
+            mapping::PENDING_DELIVERY_COMMANDS_CAPACITY,
+        )
+        .expect("SyncSender::new failed");
+
+        // Spawn reader thread to generate the initial page request
+        let mut reader = spawn_reader_expect_error(&paged_vmo, 0, 8192, zx::Status::BAD_STATE);
+        reader.wait_started().await;
+        fasync::Timer::new(std::time::Duration::from_millis(5)).await;
+
+        // Intentionally push a Data chunk without sending RegisterBlob first
+        let chunk = &env.blob_data[..8192];
+        let mut payload = sender.reserve_payload(chunk.len()).expect("reserve_payload failed");
+        payload.data().copy_from_slice(chunk);
+        let raw_cmd: RawDeliveryCommand = DeliveryCommand::Data {
+            key: TEST_VMO_KEY as u64,
+            offset: payload.offset(),
+            length: chunk.len() as u32,
+            target_offset: 0,
+        }
+        .into();
+        payload.commit(raw_cmd).expect("commit failed");
+
+        reader.wait_and_verify().await;
+
+        drop(paged_vmo);
+        env.teardown().await;
+    }
+
+    #[fuchsia::test]
+    async fn test_delivery_data_multiple_chunks() {
+        let env = TestEnv::new(TEST_BLOB_SIZE).await;
+
+        let paged_vmo =
+            env.pager_and_verifier.create_vmo(&env.valid_root).await.expect("create_vmo failed");
+
+        let mut sender = SyncSender::<RawDeliveryCommand>::new(
+            env.delivery_vmo
+                .duplicate_handle(zx::Rights::SAME_RIGHTS)
+                .expect("duplicate_handle failed"),
+            zx::system_get_page_size() as usize,
+            mapping::PENDING_DELIVERY_COMMANDS_CAPACITY,
+        )
+        .expect("SyncSender::new failed");
+
+        let mut payload =
+            sender.reserve_payload(env.valid_leaves.len()).expect("reserve_payload failed");
+        payload.data().copy_from_slice(&env.valid_leaves);
+        let raw_cmd: RawDeliveryCommand = DeliveryCommand::RegisterBlob {
+            key: TEST_VMO_KEY as u64,
+            offset: payload.offset(),
+            length: env.valid_leaves.len() as u32,
+        }
+        .into();
+        payload.commit(raw_cmd).expect("commit failed");
+
+        let blob =
+            env.pager_and_verifier.vmo_cache.get_by_key(TEST_VMO_KEY).expect("get_by_key failed");
+        while blob.merkle_verifier.get().is_none() {
+            fasync::Timer::new(std::time::Duration::from_millis(5)).await;
+        }
+
+        let expected_data = env.blob_data.clone();
+        let paged_vmo_clone =
+            paged_vmo.duplicate_handle(zx::Rights::SAME_RIGHTS).expect("duplicate_handle failed");
+
+        let (tx, rx) = futures::channel::oneshot::channel();
+        let thread = std::thread::spawn(move || {
+            let mut buf = vec![0u8; expected_data.len()];
+            paged_vmo_clone.read(&mut buf, 0).expect("failed to read from paged vmo");
+            assert_eq!(buf, expected_data);
+            let _ = tx.send(());
+        });
+
+        // Push incrementally - chunks must be a multiple of DELIVERY_DATA_SIZE
+        let chunk_size = DELIVERY_DATA_SIZE;
+        for (i, chunk) in env.blob_data.chunks(chunk_size).enumerate() {
+            let mut payload = sender.reserve_payload(chunk.len()).expect("reserve_payload failed");
+            payload.data().copy_from_slice(chunk);
+            let raw_cmd: RawDeliveryCommand = DeliveryCommand::Data {
+                key: TEST_VMO_KEY as u64,
+                offset: payload.offset(),
+                length: chunk.len() as u32,
+                target_offset: (i * chunk_size) as u64,
+            }
+            .into();
+            payload.commit(raw_cmd).expect("commit failed");
+        }
+
+        rx.await.expect("reading thread panicked or hung");
+        thread.join().expect("join failed");
+
+        drop(paged_vmo);
+        env.teardown().await;
+    }
+
+    #[fuchsia::test]
+    async fn test_delivery_data_unaligned_blob_size() {
+        let data_size = (DELIVERY_DATA_SIZE + 1024) as u64; // Blob with unaligned size
+        let env = TestEnv::new(data_size).await;
+
+        let paged_vmo =
+            env.pager_and_verifier.create_vmo(&env.valid_root).await.expect("Failed to create VMO");
+
+        let mut sender = SyncSender::<RawDeliveryCommand>::new(
+            env.delivery_vmo
+                .duplicate_handle(zx::Rights::SAME_RIGHTS)
+                .expect("duplicate_handle failed"),
+            zx::system_get_page_size() as usize, // alignment of payload
+            mapping::PENDING_DELIVERY_COMMANDS_CAPACITY,
+        )
+        .expect("SyncSender::new failed");
+
+        let mut payload =
+            sender.reserve_payload(env.valid_leaves.len()).expect("reserve_payload failed");
+        payload.data().copy_from_slice(&env.valid_leaves);
+        let raw_cmd: RawDeliveryCommand = DeliveryCommand::RegisterBlob {
+            key: TEST_VMO_KEY as u64,
+            offset: payload.offset(),
+            length: env.valid_leaves.len() as u32,
+        }
+        .into();
+        payload.commit(raw_cmd).expect("commit failed");
+
+        let blob =
+            env.pager_and_verifier.vmo_cache.get_by_key(TEST_VMO_KEY).expect("get_by_key failed");
+        while blob.merkle_verifier.get().is_none() {
+            fasync::Timer::new(std::time::Duration::from_millis(5)).await;
+        }
+
+        let test_payload = env.blob_data.clone();
+        assert_eq!(test_payload.len(), data_size as usize);
+
+        let chunk1 = &test_payload[..DELIVERY_DATA_SIZE];
+        let mut payload1 = sender.reserve_payload(chunk1.len()).expect("reserve_payload failed");
+        payload1.data().copy_from_slice(chunk1);
+        let off1 = payload1.offset();
+        payload1
+            .commit(
+                DeliveryCommand::Data {
+                    key: TEST_VMO_KEY as u64,
+                    target_offset: 0,
+                    length: chunk1.len() as u32,
+                    offset: off1,
+                }
+                .into(),
+            )
+            .expect("commit failed");
+
+        let chunk2 = &test_payload[DELIVERY_DATA_SIZE..];
+        let page_size = zx::system_get_page_size() as usize;
+        let chunk2_len_aligned = chunk2.len().div_ceil(page_size) * page_size;
+        let mut payload2 =
+            sender.reserve_payload(chunk2_len_aligned).expect("reserve_payload failed");
+        let payload2_data = payload2.data();
+        payload2_data.subslice_mut(0..chunk2.len()).copy_from_slice(chunk2);
+        payload2_data.subslice_mut(chunk2.len()..chunk2_len_aligned).fill(0);
+
+        let off2 = payload2.offset();
+        payload2
+            .commit(
+                DeliveryCommand::Data {
+                    key: TEST_VMO_KEY as u64,
+                    target_offset: DELIVERY_DATA_SIZE as u64,
+                    length: chunk2_len_aligned as u32,
+                    offset: off2,
+                }
+                .into(),
+            )
+            .expect("commit failed");
+
+        let mut read_buf = vec![0u8; data_size as usize];
+        paged_vmo.read(&mut read_buf, 0).expect("read paged_vmo failed");
+        assert_eq!(read_buf, test_payload);
+
+        let page_size = zx::system_get_page_size() as u64;
+        // Round the unaligned data size to the next page boundary
+        let out_of_bounds_offset = data_size.div_ceil(page_size) * page_size;
+        // Attempt to read from an out of bounds offset
+        let mut read_buf = vec![0u8; 1];
+        let res = paged_vmo.read(&mut read_buf, out_of_bounds_offset);
+        assert_eq!(res, Err(zx::Status::OUT_OF_RANGE));
 
         drop(paged_vmo);
         env.teardown().await;

@@ -58,7 +58,9 @@ impl RingAllocator {
     //
     // - `payload_capacity`: The total size of the payload region in bytes.
     // - `queue_capacity`: The maximum number of message slots in the SharedQueue.
-    // - `alignment`: The byte alignment boundaries required for allocations.
+    // - `alignment`: The byte alignment boundaries required for allocations. Modulo padding
+    //                is applied so that all payload offsets begin aligned to this size. Must be a
+    //                power of two.
     pub(crate) fn new(payload_capacity: usize, queue_capacity: usize, alignment: usize) -> Self {
         assert!(
             alignment > 0 && alignment.is_power_of_two(),

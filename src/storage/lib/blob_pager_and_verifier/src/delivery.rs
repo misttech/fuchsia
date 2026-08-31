@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{Error, bail};
+use anyhow::{Error, anyhow, bail};
 use fuchsia_sync::Mutex;
 use mapping::{DELIVERY_VMO_SIZE, DeliveryCommand, RawDeliveryCommand};
 use std::collections::HashMap;
@@ -18,6 +18,44 @@ use zx;
 /// when verifying reads.
 pub const DELIVERY_DATA_SIZE: usize = 128 * 1024;
 
+/// Unverified data pages delivered from the driver to be verified.
+#[derive(Copy, Clone)]
+pub struct UnverifiedPages<'a> {
+    slice: PtrByteSlice<'a>,
+    /// Byte offset within the shared delivery VMO.
+    delivery_offset: u64,
+}
+
+impl<'a> UnverifiedPages<'a> {
+    pub(crate) fn new(slice: PtrByteSlice<'a>, delivery_offset: u64) -> Result<Self, zx::Status> {
+        let page_size = zx::system_get_page_size() as usize;
+        if slice.len() % page_size != 0 || delivery_offset % (page_size as u64) != 0 {
+            return Err(zx::Status::INVALID_ARGS);
+        }
+        Ok(Self { slice, delivery_offset })
+    }
+
+    /// Returns the length of the payload in bytes.
+    pub fn len_in_bytes(&self) -> usize {
+        self.slice.len()
+    }
+
+    /// Returns the length of the payload in pages.
+    pub fn len_in_pages(&self) -> usize {
+        self.slice.len() / (zx::system_get_page_size() as usize)
+    }
+
+    /// Returns the byte offset within the shared delivery VMO.
+    pub fn delivery_offset(&self) -> u64 {
+        self.delivery_offset
+    }
+
+    /// Returns the underlying raw pointer byte slice to the unverified data.
+    pub fn as_ptr_byte_slice(&self) -> PtrByteSlice<'a> {
+        self.slice
+    }
+}
+
 /// Trait providing data delivery and blob metadata registration for incoming delivery commands.
 pub trait DeliveryQueueProvider: Send + Sync + 'static {
     /// Delivers data directly from the delivery VMO into the target blob.
@@ -25,8 +63,7 @@ pub trait DeliveryQueueProvider: Send + Sync + 'static {
         &self,
         key: u64,
         target_offset: u64,
-        length: u64,
-        delivery_offset: u64,
+        unverified_pages: UnverifiedPages<'_>,
     ) -> Result<(), Error>;
 
     /// Handles a RegisterBlob command using a pointer slice to shared memory.
@@ -66,16 +103,16 @@ impl DeliveryQueueProvider for TestVmoProvider {
         &self,
         key: u64,
         target_offset: u64,
-        length: u64,
-        delivery_offset: u64,
+        unverified_pages: UnverifiedPages<'_>,
     ) -> Result<(), Error> {
         let vmos = self.vmos.lock();
         if let Some(target_vmo) = vmos.get(&key) {
+            let length = unverified_pages.len_in_bytes() as u64;
             self.pager.supply_pages(
                 target_vmo,
                 target_offset..target_offset + length,
                 &self.delivery_vmo,
-                delivery_offset,
+                unverified_pages.delivery_offset(),
             )?;
             Ok(())
         } else {
@@ -143,7 +180,25 @@ impl DeliveryQueueProcessor {
                     bail!("Data payload out of bounds");
                 }
                 let vmo_offset = raw_msg.payload_region_offset() as u64 + offset as u64;
-                provider.deliver_pages(key, target_offset, length as u64, vmo_offset)?;
+                // The sender is expected to push page-aligned payloads. If the payload is the
+                // final chunk of a blob and the data does not end on a page boundary, the sender
+                // must extend `length` to the next page boundary and pad the trailing bytes with
+                // zeros. This is required because `fuchsia-merkle`'s `verify_aligned` expects
+                // the buffer length to be a multiple of the system page size.
+                let page_size = zx::system_get_page_size() as u32;
+                if offset % page_size != 0 {
+                    bail!("Delivery payload offset must be page aligned: {offset}");
+                }
+                if length % page_size != 0 {
+                    bail!("Delivery payload length must be page aligned: {length}");
+                }
+                if target_offset % (page_size as u64) != 0 {
+                    bail!("Delivery payload target_offset must be page aligned: {target_offset}");
+                }
+                let unverified_pages =
+                    UnverifiedPages::new(raw_msg.payload_slice(offset, length), vmo_offset)
+                        .map_err(|s| anyhow!("Invalid unverified pages: {s}"))?;
+                provider.deliver_pages(key, target_offset, unverified_pages)?;
             }
             DeliveryCommand::RegisterBlob { key, offset, length } => {
                 if offset.checked_add(length).unwrap_or(u32::MAX) > DELIVERY_VMO_SIZE as u32 {

@@ -435,6 +435,13 @@ impl<T> Drop for SenderInner<T> {
 /// The synchronous sender endpoint for a VMO-backed FIFO queue.
 pub struct SyncSender<T>(SenderInner<T>);
 impl<T: FromBytes + IntoBytes + KnownLayout + Copy> SyncSender<T> {
+    /// Creates a new `SyncSender`.
+    ///
+    /// * `vmo` - The shared VMO used for queue messages and payload buffers.
+    /// * `alignment` - The byte alignment boundaries required for allocations. Modulo padding
+    ///                 is applied so that all payload offsets begin aligned to this size. Must be a
+    ///                 power of two.
+    /// * `queue_capacity` - The maximum number of queue slots.
     pub fn new(vmo: zx::Vmo, alignment: usize, queue_capacity: u32) -> Result<Self, zx::Status> {
         SenderInner::new(vmo, alignment, queue_capacity).map(Self)
     }
@@ -527,6 +534,13 @@ impl<T: FromBytes + IntoBytes + KnownLayout + Copy> SyncSender<T> {
 /// The asynchronous sender endpoint for a VMO-backed FIFO queue.
 pub struct AsyncSender<T>(SenderInner<T>);
 impl<T: FromBytes + IntoBytes + KnownLayout + Copy> AsyncSender<T> {
+    /// Creates a new `AsyncSender`.
+    ///
+    /// * `vmo` - The shared VMO used for queue messages and payload buffers.
+    /// * `alignment` - The byte alignment boundaries required for allocations. Modulo padding
+    ///                 is applied so that all payload offsets begin aligned to this size. Must be a
+    ///                 power of two.
+    /// * `queue_capacity` - The maximum number of queue slots.
     pub fn new(vmo: zx::Vmo, alignment: usize, queue_capacity: u32) -> Result<Self, zx::Status> {
         SenderInner::new(vmo, alignment, queue_capacity).map(Self)
     }

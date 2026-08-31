@@ -20,9 +20,12 @@ pub struct Verifier {
 impl Verifier {
     pub fn new(delivery_queue: zx::Vmo) -> Self {
         let sender = if delivery_queue.get_size().unwrap_or(0) > 0 {
+            // Payloads in the delivery queue are transferred to the kernel pager via
+            // `zx_pager_supply_pages`, which requires the source offset to be page-aligned. Set
+            // the alignment of payload offsets to be page aligned.
             SyncSender::<RawDeliveryCommand>::new(
                 delivery_queue,
-                1024,
+                zx::system_get_page_size() as usize,
                 PENDING_DELIVERY_COMMANDS_CAPACITY,
             )
             .ok()
@@ -77,15 +80,21 @@ impl DataBuffer for Buffer {
 
         let mut sender_guard = self.verifier.sender.lock();
         if let Some(sender) = sender_guard.as_mut() {
-            let mut payload =
-                sender.reserve_payload(size).map_err(|_| ChunkedArchiveError::IntegrityError)?;
-            payload.data().copy_from_slice(chunk_data);
+            let page_size = zx::system_get_page_size() as usize;
+            let aligned_size = size.div_ceil(page_size) * page_size;
+            let mut payload = sender
+                .reserve_payload(aligned_size)
+                .map_err(|_| ChunkedArchiveError::IntegrityError)?;
+
+            let payload_data = payload.data();
+            payload_data.subslice_mut(0..size).copy_from_slice(chunk_data);
+            payload_data.subslice_mut(size..aligned_size).fill(0);
             let cmd = RawDeliveryCommand {
                 opcode: DELIVERY_DATA_COMMAND,
                 _padding: 0,
                 key: self.key,
                 target_offset: offset,
-                length: size as u32,
+                length: aligned_size as u32,
                 offset: payload.offset(),
             };
             payload.commit(cmd).map_err(|_| ChunkedArchiveError::IntegrityError)?;
