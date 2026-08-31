@@ -303,23 +303,12 @@ impl<B: SplitByteSlice> FromRaw<Ipv6PacketRaw<B>, ()> for Ipv6Packet<B> {
         };
         let extension_hdrs = extension_hdrs.map_err(|e| ext_hdr_err_fn(&fixed_hdr, e))?;
 
-        // Under RFC 8200 Section 4.5:
-        // - For non-initial fragments (offset > 0), the Next Header field is ignored during
-        //   reassembly.
-        // - For initial fragments (offset == 0), the Next Header field indicates the type of the
-        //   first header in the Fragmentable Part, which may be an extension header (e.g.
-        //   Destination Options) or an upper-layer protocol.
-        // In either case, upper-layer protocol validation is deferred until the packet is
-        // reassembled, so `proto` is only required to be a valid upper-layer protocol when no
-        // Fragment header is present.
+        // If extension headers parse successfully, then proto and a
+        // `MaybeParsed` body MUST be available, and the proto must be a valid
+        // next header for upper layers.
         let (body, proto) =
             raw.body_proto.expect("Unable to retrieve Ipv6Proto or MaybeParsed body from raw");
-        debug_assert!(
-            extension_hdrs
-                .iter()
-                .any(|ext_hdr| matches!(ext_hdr, Ipv6ExtensionHeader::Fragment { .. }))
-                || is_valid_next_header_upper_layer(proto.into())
-        );
+        debug_assert!(is_valid_next_header_upper_layer(proto.into()));
 
         let body = match body {
             MaybeParsed::Complete(b) => b,
@@ -390,11 +379,6 @@ where
 
 impl<B: SplitByteSlice> Ipv6Packet<B> {
     /// Returns an iterator over the extension headers.
-    ///
-    /// For fragmented packets, this will only yield extension headers up to and
-    /// including the Fragment header, as any headers following the Fragment
-    /// header are part of the Fragmentable Part and remain in the packet body
-    /// until reassembly.
     pub fn iter_extension_hdrs(&self) -> impl Iterator<Item = Ipv6ExtensionHeader<'_>> {
         self.extension_hdrs.iter()
     }
@@ -419,15 +403,7 @@ impl<B: SplitByteSlice> Ipv6Packet<B> {
     ///
     /// This is found in the fixed header's Next Header if there are no extension
     /// headers, or the Next Header value in the last extension header if there are.
-    /// This also uses the same codes, encoded by the Rust type `Ipv6Proto`.
-    ///
-    /// Note that for fragmented packets, this returns the Next Header value
-    /// from the Fragment header, which identifies the initial header type of the
-    /// Fragmentable Part of the original packet (which may be an extension header
-    /// such as Destination Options or an upper-layer protocol). For non-initial
-    /// fragments, this value describes the initial header type of the reassembled
-    /// packet and does not necessarily describe the data immediately following
-    /// in this fragment.
+    /// This also  uses the same codes, encoded by the Rust type `Ipv6Proto`.
     pub fn proto(&self) -> Ipv6Proto {
         self.proto
     }
@@ -460,9 +436,9 @@ impl<B: SplitByteSlice> Ipv6Packet<B> {
 
         bytes.extend_from_slice(Ref::bytes(&self.fixed_hdr));
 
-        // We cannot simply copy over the extension headers because we want to
-        // discard the first fragment header, so we iterate over our extension headers
-        // and find out where our fragment header starts at.
+        // We cannot simply copy over the extension headers because we want
+        // discard the first fragment header, so we iterate over our
+        // extension headers and find out where our fragment header starts at.
         let mut iter = self.extension_hdrs.iter();
 
         // This should never panic because we must only call this function
@@ -477,6 +453,9 @@ impl<B: SplitByteSlice> Ipv6Packet<B> {
             // Update the next header value in the fixed header within the buffer
             // to the next header value from the fragment header.
             bytes[6] = iter.context().next_header;
+
+            // Copy extension headers that appear after the fragment header
+            bytes.extend_from_slice(&self.extension_hdrs.bytes()[IPV6_FRAGMENT_EXT_HDR_LEN..]);
         } else {
             let mut ext_hdr = ext_hdr;
             let mut ext_hdr_start = IPV6_FIXED_HDR_LEN;
@@ -484,7 +463,7 @@ impl<B: SplitByteSlice> Ipv6Packet<B> {
 
             // Here we keep looping until `next_ext_hdr` points to the fragment header.
             // Once we find the fragment header, we update the next header value within
-            // the extension header preceding the fragment header, `ext_hdr`. Note,
+            // the extension header preceeding the fragment header, `ext_hdr`. Note,
             // we keep track of where in the extension header buffer the current `ext_hdr`
             // starts and ends so we can patch its next header value.
             loop {
@@ -499,17 +478,24 @@ impl<B: SplitByteSlice> Ipv6Packet<B> {
 
                 if let Ipv6ExtensionHeader::Fragment { .. } = next_ext_hdr {
                     // The next extension header is the fragment header
-                    // so we copy the buffer before the fragment header into `bytes`
-                    // and patch the next header value within the current extension
-                    // header in `bytes`.
+                    // so we copy the buffer before and after the extension header
+                    // into `bytes` and patch the next header value within the
+                    // current extension header in `bytes`.
 
                     // Header position relative to the extension header buffer.
                     let fragment_hdr_start = ext_hdr_end - IPV6_FIXED_HDR_LEN;
+
+                    // Size of the fragment header should be exactly `IPV6_FRAGMENT_EXT_HDR_LEN`.
+                    let fragment_hdr_end = fragment_hdr_start + IPV6_FRAGMENT_EXT_HDR_LEN;
+                    assert_eq!(fragment_hdr_end, iter.context().position - IPV6_FIXED_HDR_LEN);
 
                     let extension_hdr_bytes = self.extension_hdrs.bytes();
 
                     // Copy extension headers that appear before the fragment header
                     bytes.extend_from_slice(&extension_hdr_bytes[..fragment_hdr_start]);
+
+                    // Copy extension headers that appear after the fragment header
+                    bytes.extend_from_slice(&extension_hdr_bytes[fragment_hdr_end..]);
 
                     // Update the current `ext_hdr`'s next header value to the next
                     // header value within the fragment extension header.
@@ -1059,13 +1045,9 @@ impl<B: SplitByteSlice> ParsablePacket<B, ()> for Ipv6PacketRaw<B> {
                 // below.
 
                 // Extension header raw parsing only finishes when we have a
-                // valid next header that is meant for the upper layer, or when
-                // a fragment header was encountered. The assertion below
-                // enforces that contract.
-                assert!(
-                    extension_hdr_context.saw_fragment
-                        || is_valid_next_header_upper_layer(extension_hdr_context.next_header)
-                );
+                // valid next header that is meant for the upper layer. The
+                // assertion below enforces that contract.
+                assert!(is_valid_next_header_upper_layer(extension_hdr_context.next_header));
                 let proto = Ipv6Proto::from(extension_hdr_context.next_header);
                 let body = MaybeParsed::new_with_min_len(
                     buffer.into_rest(),
@@ -2740,7 +2722,7 @@ mod tests {
             0, 0,                    // Fragment Offset, Res, M (M_flag)
             1, 1, 1, 1,              // Identification
 
-            // Destination Options Extension Header (part of fragmentable payload)
+            // Destination Options Extension Header
             IpProto::Tcp.into(),    // Next Header
             1,                      // Hdr Ext Len (In 8-octet units, not including first 8 octets)
             0,                      // Pad1
@@ -2761,10 +2743,9 @@ mod tests {
         let copied_bytes = packet.copy_header_bytes_for_fragment();
         let mut expected_bytes = Vec::new();
         expected_bytes.extend_from_slice(&bytes[..IPV6_FIXED_HDR_LEN]);
-        expected_bytes[usize::from(NEXT_HEADER_OFFSET)] = Ipv6ExtHdrType::DestinationOptions.into();
+        expected_bytes.extend_from_slice(&bytes[IPV6_FIXED_HDR_LEN + 8..bytes.len() - 5]);
+        expected_bytes[6] = Ipv6ExtHdrType::DestinationOptions.into();
         assert_eq!(&copied_bytes[..], &expected_bytes[..]);
-        // The Destination Options header is in the packet's body.
-        assert_eq!(packet.body(), &bytes[IPV6_FIXED_HDR_LEN + IPV6_FRAGMENT_EXT_HDR_LEN..]);
 
         //
         // Fragment header before many extension headers (many = 2)
@@ -2782,7 +2763,7 @@ mod tests {
             0, 0,                    // Fragment Offset, Res, M (M_flag)
             1, 1, 1, 1,              // Identification
 
-            // Destination Options Extension Header (part of fragmentable payload)
+            // Destination Options Extension Header
             Ipv6ExtHdrType::Routing.into(),    // Next Header
             1,                      // Hdr Ext Len (In 8-octet units, not including first 8 octets)
             0,                      // Pad1
@@ -2790,7 +2771,7 @@ mod tests {
             1, 1, 0,                // Pad3
             1, 6, 0, 0, 0, 0, 0, 0, // Pad8
 
-            // Routing extension header (part of fragmentable payload)
+            // Routing extension header
             IpProto::Tcp.into(),                // Next Header
             4,                                  // Hdr Ext Len (In 8-octet units, not including first 8 octets)
             0,                                  // Routing Type (Deprecated as per RFC 5095)
@@ -2813,15 +2794,14 @@ mod tests {
         let copied_bytes = packet.copy_header_bytes_for_fragment();
         let mut expected_bytes = Vec::new();
         expected_bytes.extend_from_slice(&bytes[..IPV6_FIXED_HDR_LEN]);
-        expected_bytes[usize::from(NEXT_HEADER_OFFSET)] = Ipv6ExtHdrType::DestinationOptions.into();
+        expected_bytes.extend_from_slice(&bytes[IPV6_FIXED_HDR_LEN + 8..bytes.len() - 5]);
+        expected_bytes[6] = Ipv6ExtHdrType::DestinationOptions.into();
         assert_eq!(&copied_bytes[..], &expected_bytes[..]);
-        assert_eq!(packet.body(), &bytes[IPV6_FIXED_HDR_LEN + IPV6_FRAGMENT_EXT_HDR_LEN..]);
 
         //
         // Fragment header between extension headers
         //
 
-        const HBH_EXT_HDR_LEN: usize = 8;
         #[rustfmt::skip]
         let mut bytes = [
             // FixedHeader (will be replaced later)
@@ -2841,7 +2821,7 @@ mod tests {
             0, 0,                    // Fragment Offset, Res, M (M_flag)
             1, 1, 1, 1,              // Identification
 
-            // Destination Options Extension Header (part of fragmentable payload)
+            // Destination Options Extension Header
             IpProto::Tcp.into(),    // Next Header
             1,                      // Hdr Ext Len (In 8-octet units, not including first 8 octets)
             0,                      // Pad1
@@ -2861,13 +2841,10 @@ mod tests {
         let packet = buf.parse::<Ipv6Packet<_>>().unwrap();
         let copied_bytes = packet.copy_header_bytes_for_fragment();
         let mut expected_bytes = Vec::new();
-        expected_bytes.extend_from_slice(&bytes[..IPV6_FIXED_HDR_LEN + HBH_EXT_HDR_LEN]);
+        expected_bytes.extend_from_slice(&bytes[..IPV6_FIXED_HDR_LEN + 8]);
+        expected_bytes.extend_from_slice(&bytes[IPV6_FIXED_HDR_LEN + 16..bytes.len() - 5]);
         expected_bytes[IPV6_FIXED_HDR_LEN] = Ipv6ExtHdrType::DestinationOptions.into();
         assert_eq!(&copied_bytes[..], &expected_bytes[..]);
-        assert_eq!(
-            packet.body(),
-            &bytes[IPV6_FIXED_HDR_LEN + HBH_EXT_HDR_LEN + IPV6_FRAGMENT_EXT_HDR_LEN..]
-        );
 
         //
         // Multiple fragment extension headers
@@ -2885,7 +2862,7 @@ mod tests {
             0, 0,                    // Fragment Offset, Res, M (M_flag)
             1, 1, 1, 1,              // Identification
 
-            // Fragment Extension Header (part of fragmentable payload)
+            // Fragment Extension Header
             IpProto::Tcp.into(),     // Next Header
             0,                       // Hdr Ext Len (In 8-octet units, not including first 8 octets)
             0, 0,                    // Fragment Offset, Res, M (M_flag)
@@ -2904,9 +2881,8 @@ mod tests {
         let copied_bytes = packet.copy_header_bytes_for_fragment();
         let mut expected_bytes = Vec::new();
         expected_bytes.extend_from_slice(&bytes[..IPV6_FIXED_HDR_LEN]);
-        expected_bytes[usize::from(NEXT_HEADER_OFFSET)] = Ipv6ExtHdrType::Fragment.into();
+        expected_bytes.extend_from_slice(&bytes[IPV6_FIXED_HDR_LEN + 8..bytes.len() - 5]);
         assert_eq!(&copied_bytes[..], &expected_bytes[..]);
-        assert_eq!(packet.body(), &bytes[IPV6_FIXED_HDR_LEN + IPV6_FRAGMENT_EXT_HDR_LEN..]);
 
         //
         // Fragment header immediately following Routing header.
@@ -3401,114 +3377,5 @@ mod tests {
             Ok(PartialSerializeResult::NewBuffer { buffer, total_size: PACKET_LEN }) => buffer
         );
         assert_eq!(buf.as_ref(), PACKET_BYTES);
-    }
-
-    #[test]
-    fn test_fragmented_packet_with_destination_options_reassembly() {
-        const ID: u32 = 12345;
-        let tcp_payload_part0 = [1u8, 2, 3, 4, 5, 6, 7, 8];
-        // The first 8 bytes resemble a Destination Option header to test extension header
-        // parsing stopping at the Fragment header.
-        let tcp_payload_part1 =
-            [Ipv6ExtHdrType::DestinationOptions.into(), 0, 0, 0, 0, 0, 0, 0, 99, 100];
-
-        // Fragment #0 (offset 0, M=true):
-        // Fixed Header -> Fragment Header (Next Header = DestinationOptions) ->
-        // Destination Options (8 bytes) -> TCP payload (8 bytes).
-        let builder_0 = Ipv6PacketBuilder::new(
-            DEFAULT_SRC_IP,
-            DEFAULT_DST_IP,
-            64,
-            Ipv6Proto::Other(Ipv6ExtHdrType::DestinationOptions.into()),
-        );
-        let builder_0 = Ipv6PacketBuilderWithFragmentHeader::new(
-            builder_0,
-            FragmentOffset::ZERO,
-            /* more_fragments */ true,
-            ID,
-        );
-        // Destination Options (8 octets): Next Header = TCP, Hdr Ext Len = 0, Pad with 6 zeroes
-        // (Pad1).
-        let body_0: Vec<u8> = [IpProto::Tcp.into(), 0, 0, 0, 0, 0, 0, 0]
-            .into_iter()
-            .chain(tcp_payload_part0)
-            .collect();
-
-        let mut buf_0 = (&body_0[..])
-            .into_serializer()
-            .wrap_in(builder_0)
-            .serialize_vec_outer(&mut NoOpSerializationContext)
-            .unwrap();
-        let packet_0 = buf_0.parse::<Ipv6Packet<_>>().unwrap();
-
-        // Only the Fragment header should be in extension_hdrs.
-        assert_matches!(
-            &packet_0.iter_extension_hdrs().collect::<Vec<_>>()[..],
-            [Ipv6ExtensionHeader::Fragment { .. }]
-        );
-        // Proto should be DestinationOptions (Next Header from Fragment header).
-        assert_eq!(packet_0.proto(), Ipv6Proto::Other(Ipv6ExtHdrType::DestinationOptions.into()));
-
-        // Body must contain Destination Options AND the TCP data.
-        assert_eq!(packet_0.body(), &body_0[..]);
-
-        // Header bytes for fragment should strip the Fragment header and patch Next Header.
-        let header = packet_0.copy_header_bytes_for_fragment();
-        assert_eq!(header.len(), IPV6_FIXED_HDR_LEN);
-        assert_eq!(
-            header[usize::from(NEXT_HEADER_OFFSET)],
-            Ipv6ExtHdrType::DestinationOptions.into()
-        );
-
-        // Fragment #1 (offset 2 blocks = 16 bytes, M=false):
-        // Non-initial fragment whose payload in the middle of the TCP stream happens to
-        // start with bytes that match the Destination Options header format (Next Header = 60).
-        let builder_1 =
-            Ipv6PacketBuilder::new(DEFAULT_SRC_IP, DEFAULT_DST_IP, 64, IpProto::Tcp.into());
-        let builder_1 = Ipv6PacketBuilderWithFragmentHeader::new(
-            builder_1,
-            FragmentOffset::new(2).unwrap(),
-            /* more_fragments */ false,
-            ID,
-        );
-        let body_1 = tcp_payload_part1.to_vec();
-
-        let mut buf_1 = (&body_1[..])
-            .into_serializer()
-            .wrap_in(builder_1)
-            .serialize_vec_outer(&mut NoOpSerializationContext)
-            .unwrap();
-        let packet_1 = buf_1.parse::<Ipv6Packet<_>>().unwrap();
-
-        // Must only have the Fragment header.
-        assert_matches!(
-            &packet_1.iter_extension_hdrs().collect::<Vec<_>>()[..],
-            [Ipv6ExtensionHeader::Fragment { .. }]
-        );
-        // All payload bytes must be in packet_1.body() intact (not stripped as fake ext hdrs).
-        assert_eq!(packet_1.body(), &body_1[..]);
-
-        // Reassemble the packet.
-        let mut reassembled_buf =
-            vec![0u8; header.len() + packet_0.body().len() + packet_1.body().len()];
-        let mut reassembled_slice = &mut reassembled_buf[..];
-        reassemble_fragmented_packet(
-            &mut reassembled_slice,
-            &header,
-            [packet_0.body(), packet_1.body()].into_iter(),
-        )
-        .unwrap();
-
-        let mut reassembled_ref = &reassembled_buf[..];
-        let reassembled_packet = reassembled_ref.parse::<Ipv6Packet<_>>().unwrap();
-
-        assert_matches!(
-            &reassembled_packet.iter_extension_hdrs().collect::<Vec<_>>()[..],
-            [Ipv6ExtensionHeader::DestinationOptions { .. }]
-        );
-        assert_eq!(reassembled_packet.proto(), IpProto::Tcp.into());
-        let expected_reassembled_body: Vec<u8> =
-            tcp_payload_part0.into_iter().chain(tcp_payload_part1).collect();
-        assert_eq!(reassembled_packet.body(), &expected_reassembled_body[..]);
     }
 }
