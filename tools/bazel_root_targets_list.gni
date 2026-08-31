@@ -338,7 +338,6 @@ tools_bazel_root_targets = [
         ninja = "testsharder"
       },
     ]
-    install_host_tool = true
   },
   {
     bazel_label = "//tools/readme_fuchsia:readme_fuchsia_bin"

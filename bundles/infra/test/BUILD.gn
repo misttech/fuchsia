@@ -8,7 +8,7 @@ group("test") {
 
   # Tools that are only needed on the type of host that does the build.
   public_deps = [
-    "//build/bazel/host:bazel_root_host_tools.testsharder.host_tool($host_toolchain)",
+    "//build/bazel/host:bazel_root_host_tools.testsharder($host_toolchain)",
 
     # The symbolizer should only be needed on Linux x64, but cross-compilation
     # doesn't work for this tool and the Mac builders don't use it, so just
