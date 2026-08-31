@@ -101,6 +101,9 @@
                 "FsTest.CreateExistingFileInReadonlyFilesystemReturnsEEXIST",
                 "FsTest.DevZeroAndNullQuirks",
 
+                // TODO(https://fxbug.dev/527579086): Machina Linux guest kernel does not support tmpfs casefolding.
+                "FsCasefold/FsCasefoldTest.*/tmpfs",
+
                 // TODO(https://fxbug.dev/437164575): Test needs to be reworked.
                 "InputTest.DevicePropertiesMatchKeyboardProperties",
                 "InputTest.DevicePropertiesMatchTouchProperties",

@@ -67,6 +67,9 @@
                 // TODO(https://fxbug.dev/351037863)
                 "AshmemTest.SetNameOverflow",
 
+                // TODO(https://fxbug.dev/527579086): Starnix tmpfs does not support casefold.
+                "FsCasefold/FsCasefoldTest.*/tmpfs",
+
                 // TODO(https://fxbug.dev/527579086): Starnix VFS casefold dentry cache coherence & flag inheritance.
                 "FsCasefold/FsCasefoldTest.DirectoryChildInheritsCasefoldFlag/fxfs",
                 "FsCasefold/FsCasefoldTest.RenameExchangeSwapsEntriesAcrossCaseVariants/fxfs",

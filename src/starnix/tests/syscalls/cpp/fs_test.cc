@@ -1685,7 +1685,7 @@ class FsCasefoldTest : public ::testing::TestWithParam<std::string_view> {
       base_dir = temp_dir_->path() + "/mount";
 
       std::string source = "none";
-      if (fs_type == "ext4" || fs_type == "f2fs") {
+      if (fs_type != "tmpfs") {
         auto loop = CreateLoopDeviceForImage(temp_dir_->path() + "/fs.img", fs_type);
         if (loop.is_error()) {
           GTEST_SKIP() << "mkfs." << fs_type << " not available";
@@ -1700,15 +1700,9 @@ class FsCasefoldTest : public ::testing::TestWithParam<std::string_view> {
       scoped_mount_ = std::move(mount.value());
     }
 
-    auto casefold_dir = CreateCasefoldDir(base_dir + "/casefold_dir");
-    if (casefold_dir.is_error()) {
-      int err = casefold_dir.error_value();
-      if (err == ENOTTY || err == EOPNOTSUPP || err == ENOSYS || err == EINVAL) {
-        GTEST_SKIP() << "Casefold not supported by filesystem";
-      }
-      FAIL() << "Failed to enable casefold: " << strerror(err);
-    }
     base_dir_ = base_dir;
+    auto casefold_dir = CreateCasefoldDir(base_dir_ + "/casefold_dir");
+    ASSERT_THAT(casefold_dir, SyscallResultIsOk());
     casefold_dir_ = std::move(casefold_dir.value());
   }
 
