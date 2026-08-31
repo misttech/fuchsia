@@ -70,7 +70,7 @@ TEST_P(IoUringCmdTest, Cmd) {
 
   ASSERT_TRUE(RunSubprocessAs(param.security_context, [fd = std::move(fd), param] {
     auto io_uring_res = io_uring_helper::IoUring::Create(2);
-    ASSERT_TRUE(io_uring_res.is_ok()) << strerror(io_uring_res.error_value());
+    ASSERT_THAT(io_uring_res, SyscallResultIsOk());
     auto ring = std::move(io_uring_res.value());
     const auto& params = ring->params();
 
@@ -126,7 +126,7 @@ TEST_P(IoUringOverrideCredsTest, OverrideCreds) {
   ASSERT_TRUE(RunSubprocessAs(param.security_context, [&] {
     // Create the ring
     auto io_uring_res = io_uring_helper::IoUring::Create(2);
-    ASSERT_TRUE(io_uring_res.is_ok()) << strerror(io_uring_res.error_value());
+    ASSERT_THAT(io_uring_res, SyscallResultIsOk());
     auto ring = std::move(io_uring_res.value());
     const auto& params = ring->params();
 

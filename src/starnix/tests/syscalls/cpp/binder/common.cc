@@ -8,9 +8,11 @@
 
 #include <utility>
 
+#include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
 #include "src/starnix/tests/syscalls/cpp/binder_helper.h"
+#include "src/starnix/tests/syscalls/cpp/syscall_matchers.h"
 
 namespace starnix_binder {
 
@@ -21,7 +23,7 @@ FdAndMap OpenBinderAndMap(std::string_view dir) {
 
   auto mapping = test_helper::ScopedMMap::MMap(nullptr, kBinderMMapSize, PROT_READ, MAP_PRIVATE,
                                                binder_fd.get(), 0);
-  EXPECT_TRUE(mapping.is_ok()) << mapping.error_value();
+  EXPECT_THAT(mapping, SyscallResultIsOk());
 
   return {.fd_ = std::move(binder_fd), .mapping_ = std::move(mapping)};
 }

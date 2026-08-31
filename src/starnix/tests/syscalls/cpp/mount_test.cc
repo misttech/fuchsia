@@ -330,13 +330,13 @@ TEST_F(MountTest, Ext4ReadOnlySmokeTest) {
   fbl::unique_fd ext_image(open("data/tests/deps/simple_ext4.img", O_RDONLY));
   ASSERT_TRUE(ext_image.is_valid());
   auto loop_res = test_helper::ScopedLoopDevice::Create(ext_image.get());
-  ASSERT_TRUE(loop_res.is_ok());
+  ASSERT_THAT(loop_res, SyscallResultIsOk());
   auto scoped_loop_device = std::move(loop_res.value());
 
   ASSERT_SUCCESS(MakeDir("basic_ext4"));
   auto mount_res = test_helper::ScopedMount::Mount(
       scoped_loop_device.path(), TestPath("basic_ext4"), "ext4", MS_RDONLY, nullptr);
-  ASSERT_TRUE(mount_res.is_ok());
+  ASSERT_THAT(mount_res, SyscallResultIsOk());
   auto scoped_mount = std::move(mount_res.value());
 
   std::string observed_contents;
@@ -601,13 +601,13 @@ TEST_F(MountTest, Ext4ReadOnlyInMutableStorageSmokeTest) {
   fbl::unique_fd ext_image(open(image_in_mut_storage_path.c_str(), O_RDONLY));
   ASSERT_TRUE(ext_image.is_valid());
   auto loop_res = test_helper::ScopedLoopDevice::Create(ext_image.get());
-  ASSERT_TRUE(loop_res.is_ok());
+  ASSERT_THAT(loop_res, SyscallResultIsOk());
   auto scoped_loop_device = std::move(loop_res.value());
 
   ASSERT_SUCCESS(MakeDir("basic_ext4"));
   auto mount_res = test_helper::ScopedMount::Mount(
       scoped_loop_device.path(), TestPath("basic_ext4"), "ext4", MS_RDONLY, nullptr);
-  ASSERT_TRUE(mount_res.is_ok());
+  ASSERT_THAT(mount_res, SyscallResultIsOk());
   auto scoped_mount = std::move(mount_res.value());
 
   std::string observed_contents;
@@ -1069,7 +1069,7 @@ TEST_F(ProcMountsTest, RemoteBundleRemountReadOnlyToReadWrite) {
   std::string remote_bundle_path;
   {
     auto mounts = test_helper::ReadMountInfo();
-    ASSERT_TRUE(mounts.is_ok());
+    ASSERT_THAT(mounts, SyscallResultIsOk());
     for (const auto &info : mounts.value()) {
       remote_bundle_path = info.mount_point;
       break;

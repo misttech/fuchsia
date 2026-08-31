@@ -46,7 +46,7 @@ class RenameExchangeStickyTest : public ::testing::Test {
     sticky_dir_ = temp_dir_.path();
 
     auto mount_result = test_helper::ScopedMount::Mount("", sticky_dir_, "tmpfs", 0, "");
-    ASSERT_TRUE(mount_result.is_ok()) << "mount tmpfs failed";
+    ASSERT_THAT(mount_result, SyscallResultIsOk()) << "mount tmpfs failed";
     scoped_mount_ = std::move(mount_result.value());
 
     // Make the mount world-writable + sticky (mode 1777, like a real /tmp).

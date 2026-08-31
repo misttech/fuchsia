@@ -7,10 +7,12 @@
 #include <unistd.h>
 
 #include <fbl/unique_fd.h>
+#include <gmock/gmock.h>
 #include <gtest/gtest.h>
 #include <linux/io_uring.h>
 
 #include "src/starnix/tests/syscalls/cpp/io_uring_helper.h"
+#include "src/starnix/tests/syscalls/cpp/syscall_matchers.h"
 #include "src/starnix/tests/syscalls/cpp/test_helper.h"
 
 namespace {
@@ -27,7 +29,7 @@ TEST(IoUringTest, IoUringReadWrite) {
   ASSERT_TRUE(temp_fd.fd() >= 0);
 
   auto io_uring_res = io_uring_helper::IoUring::Create(2);
-  ASSERT_TRUE(io_uring_res.is_ok()) << strerror(io_uring_res.error_value());
+  ASSERT_THAT(io_uring_res, SyscallResultIsOk());
   auto ring = std::move(io_uring_res.value());
   const auto& params = ring->params();
 

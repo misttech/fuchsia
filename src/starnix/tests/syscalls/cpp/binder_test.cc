@@ -311,7 +311,7 @@ TEST_F(BinderTest, SendFdToExitingProcess) {
 
   auto binder_and_map = OpenBinderAndMap(TestPath("binderfs"));
   ASSERT_TRUE(binder_and_map.fd_);
-  ASSERT_TRUE(binder_and_map.mapping_.is_ok());
+  ASSERT_THAT(binder_and_map.mapping_, SyscallResultIsOk());
   const auto& binder = binder_and_map.fd_;
 
   // Prepare transaction with FD.

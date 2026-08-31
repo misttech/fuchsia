@@ -13,7 +13,10 @@
 #include <cstring>
 #include <thread>
 
+#include <gmock/gmock.h>
 #include <gtest/gtest.h>
+
+#include "src/starnix/tests/syscalls/cpp/syscall_matchers.h"
 
 namespace {
 
@@ -210,6 +213,33 @@ TEST(TestHelperTest, MultipleChildrenFailing) {
   for (const auto& result : results) {
     EXPECT_FALSE(result.determined_result);
   }
+}
+
+TEST(SyscallResultMatchersTest, SyscallResultIsOk) {
+  fit::result<int> ok_result = fit::ok();
+  EXPECT_THAT(ok_result, SyscallResultIsOk());
+
+  fit::result<int, std::string> ok_val_result = fit::ok("hello");
+  EXPECT_THAT(ok_val_result, SyscallResultIsOk());
+
+  fit::result<int> err_result = fit::error(ENOENT);
+  EXPECT_THAT(err_result, ::testing::Not(SyscallResultIsOk()));
+
+  fit::result<int, std::string> err_val_result = fit::error(EACCES);
+  EXPECT_THAT(err_val_result, ::testing::Not(SyscallResultIsOk()));
+}
+
+TEST(SyscallResultMatchersTest, SyscallResultIsErrno) {
+  fit::result<int> err_result = fit::error(ENOENT);
+  EXPECT_THAT(err_result, SyscallResultIsErrno(ENOENT));
+  EXPECT_THAT(err_result, ::testing::Not(SyscallResultIsErrno(EACCES)));
+
+  fit::result<int, std::string> err_val_result = fit::error(EEXIST);
+  EXPECT_THAT(err_val_result, SyscallResultIsErrno(EEXIST));
+  EXPECT_THAT(err_val_result, ::testing::Not(SyscallResultIsErrno(ENOENT)));
+
+  fit::result<int> ok_result = fit::ok();
+  EXPECT_THAT(ok_result, ::testing::Not(SyscallResultIsErrno(ENOENT)));
 }
 
 }  // namespace

@@ -24,6 +24,7 @@
 #include <thread>
 #include <vector>
 
+#include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
 #include "src/lib/files/file.h"
@@ -32,6 +33,7 @@
 #include "src/lib/fxl/strings/string_printf.h"
 #include "src/starnix/tests/syscalls/cpp/capabilities_helper.h"
 #include "src/starnix/tests/syscalls/cpp/proc_test_base.h"
+#include "src/starnix/tests/syscalls/cpp/syscall_matchers.h"
 #include "src/starnix/tests/syscalls/cpp/test_helper.h"
 
 constexpr size_t PAGE_SIZE = 0x1000;
@@ -1313,7 +1315,7 @@ TEST_P(MMapAllProtectionsTest, PrivateFileMappingAllowAllProtections) {
     ASSERT_TRUE(fd.is_valid());
     auto mapping =
         test_helper::ScopedMMap::MMap(nullptr, page_size, mmap_prot, MAP_PRIVATE, fd.get(), 0);
-    EXPECT_EQ(mapping.is_ok(), true) << mapping.error_value();
+    EXPECT_THAT(mapping, SyscallResultIsOk());
     if (mapping.is_ok()) {
       auto addr = mapping->mapping();
       EXPECT_EQ(mprotect(addr, page_size, mprotect_flag), 0)

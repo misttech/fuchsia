@@ -1696,8 +1696,7 @@ class FsCasefoldTest : public ::testing::TestWithParam<std::string_view> {
 
       auto mount =
           test_helper::ScopedMount::CreateDirAndMount(source, base_dir, std::string(fs_type));
-      ASSERT_TRUE(mount.is_ok()) << "Mount " << fs_type
-                                 << " failed: " << strerror(mount.error_value());
+      ASSERT_THAT(mount, SyscallResultIsOk()) << "Mount " << fs_type << " failed";
       scoped_mount_ = std::move(mount.value());
     }
 

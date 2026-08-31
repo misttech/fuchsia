@@ -7,6 +7,7 @@
 
 // A modified version of gvisor's syscall matchers from test/util/test_util.h.
 
+#include <lib/fit/result.h>
 #include <string.h>
 
 #include <utility>
@@ -142,6 +143,52 @@ inline ::testing::Matcher<int> SpecificErrno(int const expected) {
   return ::testing::MakeMatcher(new SpecificErrnoMatcher(expected));
 }
 
+class SyscallResultFailureMatcher {
+ public:
+  explicit SyscallResultFailureMatcher(::testing::Matcher<int> errno_matcher)
+      : errno_matcher_(std::move(errno_matcher)) {}
+
+  template <typename ResultType>
+  bool MatchAndExplain(const ResultType& result, ::testing::MatchResultListener* listener) const {
+    if (result.is_ok()) {
+      *listener << "which succeeded (is fit::ok)";
+      return false;
+    }
+    int actual_errno = static_cast<int>(result.error_value());
+    *listener << "with errno " << strerror(actual_errno) << " (" << actual_errno << ")";
+    return errno_matcher_.MatchAndExplain(actual_errno, listener);
+  }
+
+  void DescribeTo(::std::ostream* os) const {
+    *os << "is fit::error with errno ";
+    errno_matcher_.DescribeTo(os);
+  }
+
+  void DescribeNegationTo(::std::ostream* os) const {
+    *os << "is not fit::error with errno ";
+    errno_matcher_.DescribeNegationTo(os);
+  }
+
+ private:
+  ::testing::Matcher<int> errno_matcher_;
+};
+
+class SyscallResultSuccessMatcher {
+ public:
+  template <typename ResultType>
+  bool MatchAndExplain(const ResultType& result, ::testing::MatchResultListener* listener) const {
+    if (result.is_error()) {
+      int actual_errno = static_cast<int>(result.error_value());
+      *listener << "failed with errno " << strerror(actual_errno) << " (" << actual_errno << ")";
+      return false;
+    }
+    return true;
+  }
+
+  void DescribeTo(::std::ostream* os) const { *os << "is fit::ok"; }
+  void DescribeNegationTo(::std::ostream* os) const { *os << "is fit::error"; }
+};
+
 }  // namespace internal
 
 template <typename E>
@@ -168,6 +215,21 @@ inline ::testing::PolymorphicMatcher<internal::SyscallFailureMatcher> SyscallFai
 
 inline ::testing::PolymorphicMatcher<internal::SyscallFailureMatcher> SyscallFails() {
   return SyscallFailsWithErrno(::testing::Gt(0));
+}
+
+inline ::testing::PolymorphicMatcher<internal::SyscallResultSuccessMatcher> SyscallResultIsOk() {
+  return ::testing::MakePolymorphicMatcher(internal::SyscallResultSuccessMatcher());
+}
+
+inline ::testing::PolymorphicMatcher<internal::SyscallResultFailureMatcher> SyscallResultIsErrno(
+    ::testing::Matcher<int> expected) {
+  return ::testing::MakePolymorphicMatcher(
+      internal::SyscallResultFailureMatcher(std::move(expected)));
+}
+
+inline ::testing::PolymorphicMatcher<internal::SyscallResultFailureMatcher> SyscallResultIsErrno(
+    int const expected) {
+  return SyscallResultIsErrno(internal::SpecificErrno(expected));
 }
 
 #endif  // SRC_STARNIX_TESTS_SYSCALLS_CPP_SYSCALL_MATCHERS_H_

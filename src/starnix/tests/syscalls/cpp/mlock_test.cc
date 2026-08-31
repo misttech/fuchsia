@@ -5,11 +5,13 @@
 #include <optional>
 #include <string_view>
 
+#include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
 #include "src/lib/files/file.h"
 #include "src/lib/fxl/strings/split_string.h"
 #include "src/starnix/tests/syscalls/cpp/proc_test_base.h"
+#include "src/starnix/tests/syscalls/cpp/syscall_matchers.h"
 #include "src/starnix/tests/syscalls/cpp/test_helper.h"
 
 class MlockProcTest : public ProcTestBase {
@@ -40,7 +42,7 @@ TEST_F(MlockProcTest, UnalignedAddress) {
   const size_t page_size = SAFE_SYSCALL(sysconf(_SC_PAGE_SIZE));
   auto mapping = test_helper::ScopedMMap::MMap(nullptr, page_size, PROT_READ,
                                                MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
-  ASSERT_TRUE(mapping.is_ok()) << mapping.error_value();
+  ASSERT_THAT(mapping, SyscallResultIsOk());
 
   auto mapped_page = reinterpret_cast<uint8_t*>(mapping->mapping());
   ASSERT_EQ(mlock(reinterpret_cast<void*>(mapped_page + 10), page_size - 10), 0) << strerror(errno);
@@ -57,7 +59,7 @@ TEST_F(MlockProcTest, UnlignedLength) {
   const size_t page_size = SAFE_SYSCALL(sysconf(_SC_PAGE_SIZE));
   auto mapping = test_helper::ScopedMMap::MMap(nullptr, page_size, PROT_READ,
                                                MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
-  ASSERT_TRUE(mapping.is_ok()) << mapping.error_value();
+  ASSERT_THAT(mapping, SyscallResultIsOk());
 
   ASSERT_EQ(mlock(mapping->mapping(), page_size - 10), 0) << strerror(errno);
 
@@ -74,7 +76,7 @@ TEST_F(MlockProcTest, RoundingIsCorrect) {
   const size_t page_size = SAFE_SYSCALL(sysconf(_SC_PAGE_SIZE));
   auto mapping = test_helper::ScopedMMap::MMap(nullptr, page_size * 2, PROT_READ,
                                                MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
-  ASSERT_TRUE(mapping.is_ok()) << mapping.error_value();
+  ASSERT_THAT(mapping, SyscallResultIsOk());
 
   // Ask to lock two bytes, starting one byte before the page boundary. This should produce a 2-page
   // lock.
@@ -96,7 +98,7 @@ TEST_F(MlockProcTest, SplitMapping) {
   const size_t page_size = SAFE_SYSCALL(sysconf(_SC_PAGE_SIZE));
   auto mapping = test_helper::ScopedMMap::MMap(nullptr, page_size * 3, PROT_READ,
                                                MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
-  ASSERT_TRUE(mapping.is_ok()) << mapping.error_value();
+  ASSERT_THAT(mapping, SyscallResultIsOk());
 
   auto first_page = reinterpret_cast<uint8_t*>(mapping->mapping());
   auto first_addr = reinterpret_cast<uintptr_t>(first_page);
@@ -136,7 +138,7 @@ TEST_F(MlockProcTest, MlockOnePageIncreasesVmLck) {
   // Map 2 private-anonymous pages.
   auto mapping = test_helper::ScopedMMap::MMap(nullptr, map_size, PROT_READ | PROT_WRITE,
                                                MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
-  ASSERT_TRUE(mapping.is_ok()) << mapping.error_value();
+  ASSERT_THAT(mapping, SyscallResultIsOk());
 
   // Touch them to ensure non-zero number of committed bytes.
   reinterpret_cast<volatile char*>(mapping->mapping())[0] = 'a';

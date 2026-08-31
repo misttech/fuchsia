@@ -783,24 +783,21 @@ TEST_F(BpfMapTest, HashMapEpoll) {
 
 TEST_F(BpfMapTest, MMapRingBufTest) {
   // Can map the first page of the ringbuffer R/W
-  ASSERT_TRUE(test_helper::ScopedMMap::MMap(nullptr, getpagesize(), PROT_READ | PROT_WRITE,
-                                            MAP_SHARED, ringbuf_fd(), 0)
-                  .is_ok());
+  ASSERT_THAT(test_helper::ScopedMMap::MMap(nullptr, getpagesize(), PROT_READ | PROT_WRITE,
+                                            MAP_SHARED, ringbuf_fd(), 0),
+              SyscallResultIsOk());
   // Cannot mmap the second page of the ringbuffer R/W
   auto mmap_2nd_page_rw_result = test_helper::ScopedMMap::MMap(
       nullptr, getpagesize(), PROT_READ | PROT_WRITE, MAP_SHARED, ringbuf_fd(), getpagesize());
-  ASSERT_TRUE(mmap_2nd_page_rw_result.is_error());
-  EXPECT_EQ(mmap_2nd_page_rw_result.error_value(), EPERM);
+  ASSERT_THAT(mmap_2nd_page_rw_result, SyscallResultIsErrno(EPERM));
   // Cannot mmap the 3rd or 4th page of the ringbuffer R/W
   auto mmap_3rd_page_rw_result = test_helper::ScopedMMap::MMap(
       nullptr, getpagesize(), PROT_READ | PROT_WRITE, MAP_SHARED, ringbuf_fd(), 2 * getpagesize());
-  ASSERT_TRUE(mmap_3rd_page_rw_result.is_error());
-  EXPECT_EQ(mmap_3rd_page_rw_result.error_value(), EPERM);
+  ASSERT_THAT(mmap_3rd_page_rw_result, SyscallResultIsErrno(EPERM));
   // Cannot mmap multiple pages starting from 0 R/W
   auto mmap_2_pages_rw_result = test_helper::ScopedMMap::MMap(
       nullptr, 2 * getpagesize(), PROT_READ | PROT_WRITE, MAP_SHARED, ringbuf_fd(), 0);
-  ASSERT_TRUE(mmap_2_pages_rw_result.is_error());
-  EXPECT_EQ(mmap_2_pages_rw_result.error_value(), EPERM);
+  ASSERT_THAT(mmap_2_pages_rw_result, SyscallResultIsErrno(EPERM));
 
   // Can mmap the second page, 3rd and 4th page RO
   for (int i = 0; i < 3; ++i) {
@@ -826,12 +823,10 @@ TEST_F(BpfMapTest, MMapRingBufTest) {
       nullptr, getpagesize(), PROT_READ, MAP_SHARED, ringbuf_fd(), 0));
   EXPECT_EQ(mprotect(mmap_page0_ro.mapping(), getpagesize(), PROT_READ | PROT_WRITE), -1);
   EXPECT_EQ(errno, EACCES);
-
   // Cannot mmap 5 pages.
   auto mmap_5_pages_ro_result = test_helper::ScopedMMap::MMap(nullptr, 5 * getpagesize(), PROT_READ,
                                                               MAP_SHARED, ringbuf_fd(), 0);
-  ASSERT_TRUE(mmap_5_pages_ro_result.is_error());
-  EXPECT_EQ(mmap_5_pages_ro_result.error_value(), EINVAL);
+  ASSERT_THAT(mmap_5_pages_ro_result, SyscallResultIsErrno(EINVAL));
 }
 
 TEST_F(BpfMapTest, WriteRingBufTest) {

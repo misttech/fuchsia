@@ -417,6 +417,7 @@ source_set("test_utils") {
     "test_helper.h",
   ]
   public_deps = [
+    "//sdk/lib/fit",
     "//third_party/googletest:gmock",
     "//third_party/googletest:gtest",
     "//third_party/rapidjson",

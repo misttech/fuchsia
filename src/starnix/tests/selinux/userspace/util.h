@@ -147,7 +147,9 @@ void PrintTo(const fit::result<E, T>& result, std::ostream* os) {
   if (result.is_error()) {
     *os << "fit::failed( " << result.error_value() << " )";
   } else {
-    *os << "fit::ok( " << result.value() << " )";
+    *os << "fit::ok( ";
+    ::testing::internal::UniversalPrinter<T>::Print(result.value(), os);
+    *os << " )";
   }
 }
 
