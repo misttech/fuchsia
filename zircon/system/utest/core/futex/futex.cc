@@ -5,6 +5,8 @@
 #include <inttypes.h>
 #include <lib/fit/defer.h>
 #include <lib/zx/clock.h>
+#include <lib/zx/event.h>
+#include <lib/zx/process.h>
 #include <lib/zx/suspend_token.h>
 #include <lib/zx/thread.h>
 #include <lib/zx/vmar.h>
@@ -888,6 +890,93 @@ TEST(FutexTest, RequeueSingleOwner) {
   }
 
   cleanup.cancel();
+}
+
+void CreateDeadThread(zx::thread* out_thread) {
+  std::thread dead_thread([]() {});
+  ASSERT_OK(zx::unowned_thread(native_thread_get_zx_handle(dead_thread.native_handle()))
+                ->duplicate(ZX_RIGHT_SAME_RIGHTS, out_thread));
+  dead_thread.join();
+  ASSERT_NO_FATAL_FAILURE(WaitForKernelState(*out_thread, ZX_THREAD_STATE_DEAD));
+}
+
+TEST(FutexTest, WaitInvalidOwner) {
+  zx_futex_t futex = 42;
+
+  // 1. Wrong handle type (e.g., event handle).
+  zx::event event;
+  ASSERT_OK(zx::event::create(0, &event));
+  EXPECT_EQ(zx_futex_wait(&futex, 42, event.get(), ZX_TIME_INFINITE), ZX_ERR_WRONG_TYPE);
+
+  // 2. Unstarted thread handle.
+  static constexpr std::string_view kUnstartedWaitName = "unstarted-wait";
+  zx::thread unstarted_thread;
+  ASSERT_OK(zx::thread::create(*zx::process::self(), kUnstartedWaitName.data(),
+                               static_cast<uint32_t>(kUnstartedWaitName.size()), 0,
+                               &unstarted_thread));
+  EXPECT_EQ(zx_futex_wait(&futex, 42, unstarted_thread.get(), ZX_TIME_INFINITE),
+            ZX_ERR_INVALID_ARGS);
+
+  // 3. Current thread as owner.
+  EXPECT_EQ(zx_futex_wait(&futex, 42, zx_thread_self(), ZX_TIME_INFINITE), ZX_ERR_INVALID_ARGS);
+
+  // 4. Proposed owner is already waiting on this futex.
+  TestThread waiter;
+  ASSERT_NO_FATAL_FAILURE(waiter.Start(&futex));
+  EXPECT_EQ(zx_futex_wait(&futex, 42, waiter.thread().get(), ZX_TIME_INFINITE),
+            ZX_ERR_INVALID_ARGS);
+  EXPECT_OK(zx_futex_wake(&futex, 1));
+  ASSERT_NO_FATAL_FAILURE(waiter.WaitUntilWoken());
+  waiter.Shutdown();
+
+  // 5. Dead / terminated thread as owner.
+  zx::thread dead_thread;
+  ASSERT_NO_FATAL_FAILURE(CreateDeadThread(&dead_thread));
+
+  // Waiting with a dead thread owner succeeds (owner is ignored/reset) and times out cleanly.
+  EXPECT_EQ(zx_futex_wait(&futex, 42, dead_thread.get(), zx_deadline_after(ZX_USEC(100))),
+            ZX_ERR_TIMED_OUT);
+}
+
+TEST(FutexTest, RequeueInvalidOwner) {
+  zx_futex_t futex1 = 100;
+  zx_futex_t futex2 = 200;
+
+  // 1. Wrong handle type (e.g., event handle).
+  zx::event event;
+  ASSERT_OK(zx::event::create(0, &event));
+  EXPECT_EQ(zx_futex_requeue(&futex1, 1, 100, &futex2, 1, event.get()), ZX_ERR_WRONG_TYPE);
+
+  // 2. Unstarted thread handle.
+  static constexpr std::string_view kUnstartedReqName = "unstarted-req";
+  zx::thread unstarted_thread;
+  ASSERT_OK(zx::thread::create(*zx::process::self(), kUnstartedReqName.data(),
+                               static_cast<uint32_t>(kUnstartedReqName.size()), 0,
+                               &unstarted_thread));
+  EXPECT_EQ(zx_futex_requeue(&futex1, 1, 100, &futex2, 1, unstarted_thread.get()),
+            ZX_ERR_INVALID_ARGS);
+
+  // 3. Proposed owner is waiting on wake or requeue futex.
+  TestThread waiter_wake;
+  TestThread waiter_requeue;
+  ASSERT_NO_FATAL_FAILURE(waiter_wake.Start(&futex1));
+  ASSERT_NO_FATAL_FAILURE(waiter_requeue.Start(&futex2));
+  EXPECT_EQ(zx_futex_requeue(&futex1, 1, 100, &futex2, 1, waiter_wake.thread().get()),
+            ZX_ERR_INVALID_ARGS);
+  EXPECT_EQ(zx_futex_requeue(&futex1, 1, 100, &futex2, 1, waiter_requeue.thread().get()),
+            ZX_ERR_INVALID_ARGS);
+  EXPECT_OK(zx_futex_wake(&futex1, 1));
+  EXPECT_OK(zx_futex_wake(&futex2, 1));
+  ASSERT_NO_FATAL_FAILURE(waiter_wake.WaitUntilWoken());
+  ASSERT_NO_FATAL_FAILURE(waiter_requeue.WaitUntilWoken());
+  waiter_wake.Shutdown();
+  waiter_requeue.Shutdown();
+
+  // 4. Dead / terminated thread as owner.
+  zx::thread dead_thread;
+  ASSERT_NO_FATAL_FAILURE(CreateDeadThread(&dead_thread));
+
+  EXPECT_OK(zx_futex_requeue(&futex1, 0, 100, &futex2, 0, dead_thread.get()));
 }
 
 #if defined(__aarch64__)
