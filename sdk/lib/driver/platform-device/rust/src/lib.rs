@@ -34,6 +34,18 @@ pub trait PlatformDevice {
     fn get_deserialized_metadata<T: serde::de::DeserializeOwned>(
         &self,
     ) -> impl Future<Output = Result<T, DriverError>>;
+
+    /// Gets persisted metadata bytes associated with this platform device by metadata ID.
+    fn get_persisted_metadata_by_id(
+        &self,
+        metadata_id: &str,
+    ) -> impl Future<Output = Result<Vec<u8>, DriverError>>;
+
+    /// Gets metadata dictionary associated with this platform device by metadata ID.
+    fn get_dictionary_metadata(
+        &self,
+        metadata_id: &str,
+    ) -> impl Future<Output = Result<fidl_fuchsia_driver_metadata::Dictionary, DriverError>>;
 }
 
 impl PlatformDevice for fidl_next::Client<fpdev::Device> {
@@ -74,6 +86,28 @@ impl PlatformDevice for fidl_next::Client<fpdev::Device> {
             })?;
         fdf_metadata::from_dictionary(dict).map_err(|err| {
             error!("Failed to deserialize config from dictionary: {err:?}");
+            DriverError::Status(Status::INVALID_ARGS)
+        })
+    }
+
+    async fn get_persisted_metadata_by_id(
+        &self,
+        metadata_id: &str,
+    ) -> Result<Vec<u8>, DriverError> {
+        let metadata_res = self
+            .get_metadata(metadata_id)
+            .await?
+            .map_err(|s| s.err().unwrap_or(Status::INTERNAL))?;
+        Ok(metadata_res.metadata)
+    }
+
+    async fn get_dictionary_metadata(
+        &self,
+        metadata_id: &str,
+    ) -> Result<fidl_fuchsia_driver_metadata::Dictionary, DriverError> {
+        let bytes = self.get_persisted_metadata_by_id(metadata_id).await?;
+        fidl::unpersist(&bytes).map_err(|err| {
+            error!("Failed to unpersist metadata dictionary for {}: {:?}", metadata_id, err);
             DriverError::Status(Status::INVALID_ARGS)
         })
     }
@@ -325,6 +359,16 @@ mod tests {
             ..Default::default()
         });
 
+        let dict = fidl_fuchsia_driver_metadata::Dictionary {
+            entries: Some(vec![fidl_fuchsia_driver_metadata::DictionaryEntry {
+                key: "test_key".to_string(),
+                value: fidl_fuchsia_driver_metadata::DictionaryValue::Str("test_val".to_string()),
+            }]),
+            ..Default::default()
+        };
+        let dict_bytes = fidl::persist(&dict).unwrap();
+        server.metadata.insert("test_dict_id", dict_bytes.clone());
+
         let (client, server) = server.run();
 
         let mmio = client.map_mmio_by_id(1).await.unwrap();
@@ -356,6 +400,12 @@ mod tests {
             client.get_typed_metadata::<IntMetadata>().await.err().map(|e| e.log_to_status()),
             Some(Status::NOT_FOUND)
         );
+
+        let raw_bytes = client.get_persisted_metadata_by_id("test_dict_id").await.unwrap();
+        assert_eq!(raw_bytes, dict_bytes);
+
+        let retrieved_dict = client.get_dictionary_metadata("test_dict_id").await.unwrap();
+        assert_eq!(retrieved_dict, dict);
 
         let _ = server.abort().await;
     }
