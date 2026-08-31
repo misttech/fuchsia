@@ -9,11 +9,11 @@ using fuchsia.ui.pointer;
 using fuchsia.ui.views;
 using zx;
 
-/// The set of error codes returned in [`OnError`]. Everything except NO_ERROR, causes Flatland
-/// channel to be closed.
+/// The set of error codes returned in [`OnError`]. Any error causes the Flatland channel to be
+/// closed.
 @strict_audit(bug="https://fxbug.dev/467128273", state="PENDING_REVIEW")
 type FlatlandError = strict enum {
-    /// Indicates that the parameters used the function calls are invalid.
+    /// Indicates that the parameters used in the function calls are invalid.
     BAD_OPERATION = 1;
     /// Indicates that `additional_present_credits` field was not properly processed and the client
     /// queued more [`Present`]s than allowed.
@@ -108,11 +108,9 @@ type LayoutInfo = table {
     ///
     /// Clients should re-layout their content when this value changes.
     1: logical_size fuchsia.math.SizeU;
-    /// The ratio from physical display pixels to logical pixels, defined by the sizes and scale
-    /// transforms of the parent: each logical pixel is displayed on-screen by one or more physical
-    /// pixels, as determined by this scale.  Clients should not necessarily re-layout their content
-    /// when this value changes.
-    ///
+
+    // Ordinal 2 was previously used by `pixel_scale` (removed at API level 11).
+
     /// The ratio of display's physical pixels to device independent pixels. Each logical pixel of a
     /// View is displayed on-screen by one or more physical pixels, as determined by this scale.
     /// Clients should not necessarily re-layout their content when this value changes, but
@@ -347,6 +345,17 @@ type PresentArgs = resource table {
     /// If absent, `unsquashable` is false.
     4: unsquashable bool;
 
+    // Ordinals 5 and 6 were previously used by `server_wait_fences` and `server_signal_fences`
+    // (removed at API level 24).
+
+    /// Flatland will signal all `present_fences` when the frame corresponding to this `Present`
+    /// is reported as displayed by the display hardware.  Additionally, each fence will have the
+    /// monotonic timestamp of the corresponding vsync written into it.
+    ///
+    /// The default `present_fences` value is the empty vector.
+    @available(added=HEAD)
+    7: present_fences vector<zx.Handle:COUNTER>:MAX_PRESENT_ARGS_FENCE_COUNT;
+
     /// Flatland will signal all `release_counters` when it is safe to reuse resources which no
     /// longer appear in the local scene graph at the time of the current `Present` (i.e. resources
     /// from the previous present). This is similar to `release_fences` but by using counters
@@ -357,14 +366,6 @@ type PresentArgs = resource table {
     /// The default `release_counters` value is the empty vector.
     @available(added=HEAD)
     8: release_counters vector<zx.Handle:COUNTER>:MAX_PRESENT_ARGS_FENCE_COUNT;
-
-    /// Flatland will signal all `present_fences` when the frame corresponding to this `Present`
-    /// is reported as displayed by the display hardware.  Additionally, each fence will have the
-    /// monotonic timestamp of the corresponding vsync written into it.
-    ///
-    /// The default `present_fences` value is the empty vector.
-    @available(added=HEAD)
-    7: present_fences vector<zx.Handle:COUNTER>:MAX_PRESENT_ARGS_FENCE_COUNT;
 };
 
 /// A user-defined identifier for future presentation info. A maximum of 8
@@ -487,8 +488,8 @@ closed protocol Flatland {
     /// If executing an operation produces an error (e.g., CreateTransform(0)), an [`OnError`] event
     /// is emitted. Operations that produce errors are ignored and the channel is closed.
     ///
-    /// If the execution is completed successfully, [`OnNextFrameBegin`] emits NO_ERROR along
-    /// with other valid fields.
+    /// If execution completes successfully, [`OnNextFrameBegin`] is emitted with valid frame
+    /// production information.
     ///
     /// The client may only call [`Present`] when they have a non-zero number of present credits,
     /// which are tracked by the server. The server may increment the number of credits when it
