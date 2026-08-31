@@ -360,7 +360,6 @@ tools_bazel_root_targets = [
         ninja = "tefmocheck"
       },
     ]
-    install_host_tool = true
   },
   {
     bazel_label = "//tools/testing/testparser:testparser_cmd"
