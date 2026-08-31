@@ -37,6 +37,15 @@ impl Default for BindCondition {
     }
 }
 
+impl std::fmt::Display for BindCondition {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            BindCondition::Accept => write!(f, "Accept"),
+            BindCondition::Reject => write!(f, "Reject"),
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, Default)]
 pub struct NodeProperty {
     pub key: String,

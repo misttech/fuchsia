@@ -11,6 +11,8 @@ rustc_library("parsed_board_dump") {
 
   sources = [
     "src/ast.rs",
+    "src/compare.rs",
+    "src/format.rs",
     "src/lib.rs",
     "src/parse.rs",
   ]
