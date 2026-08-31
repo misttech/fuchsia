@@ -20,10 +20,13 @@
 #include <zircon/errors.h>
 #include <zircon/syscalls.h>
 
+#include <atomic>
 #include <cstdio>
 #include <cstring>
+#include <functional>
 #include <map>
 #include <memory>
+#include <mutex>
 #include <optional>
 #include <vector>
 
@@ -95,6 +98,7 @@ class FakeDevice : public fidl::WireServer<fdci::UsbDci> {
   };
 
   void SetHardwareInfo(std::vector<EndpointCaps> caps, bool supports_dynamic) {
+    std::lock_guard lock(lock_);
     caps_ = std::move(caps);
     supports_dynamic_ = supports_dynamic;
     has_caps_ = true;
@@ -103,11 +107,14 @@ class FakeDevice : public fidl::WireServer<fdci::UsbDci> {
   // fdci::UsbDci protocol.
   void ConnectToEndpoint(ConnectToEndpointRequestView req,
                          ConnectToEndpointCompleter::Sync& completer) override {
-    if (fail_already_bound_) {
+    if (fail_already_bound_.load()) {
       completer.ReplyError(ZX_ERR_ALREADY_BOUND);
       return;
     }
-    endpoints_[req->ep_addr] = std::move(req->ep);
+    {
+      std::lock_guard lock(lock_);
+      endpoints_[req->ep_addr] = std::move(req->ep);
+    }
     completer.ReplySuccess();
   }
 
@@ -119,66 +126,86 @@ class FakeDevice : public fidl::WireServer<fdci::UsbDci> {
   }
 
   void StartController(StartControllerCompleter::Sync& completer) override {
-    if (fail_start_) {
+    if (fail_start_.load()) {
       completer.ReplyError(ZX_ERR_IO_NOT_PRESENT);
       return;
     }
-    controller_started_ = true;
+    {
+      std::lock_guard lock(lock_);
+      controller_started_ = true;
+    }
     completer.ReplySuccess();
   }
 
   void StopController(StopControllerCompleter::Sync& completer) override {
-    if (fail_stop_) {
+    if (fail_stop_.load()) {
       completer.ReplyError(ZX_ERR_IO);
       return;
     }
-    controller_started_ = false;
-    endpoints_.clear();
+    libsync::Completion* stop_completion = nullptr;
+    {
+      std::lock_guard lock(lock_);
+      controller_started_ = false;
+      endpoints_.clear();
+      stop_completion = stop_completion_;
+    }
     completer.ReplySuccess();
-    if (stop_completion_) {
-      stop_completion_->Signal();
+    if (stop_completion) {
+      stop_completion->Signal();
     }
   }
 
   void ConfigureEndpoint(ConfigureEndpointRequestView req,
                          ConfigureEndpointCompleter::Sync& completer) override {
-    if (fail_configure_) {
+    if (fail_configure_.load()) {
       completer.ReplyError(ZX_ERR_IO_NOT_PRESENT);
       return;
     }
-    configured_endpoints_.push_back(req->ep_descriptor);
-    configured_endpoints_ss_companion_.push_back(req->ss_comp_descriptor);
+    {
+      std::lock_guard lock(lock_);
+      configured_endpoints_.push_back(req->ep_descriptor);
+      configured_endpoints_ss_companion_.push_back(req->ss_comp_descriptor);
+    }
     completer.ReplySuccess();
   }
 
   void DisableEndpoint(DisableEndpointRequestView req,
                        DisableEndpointCompleter::Sync& completer) override {
-    if (fail_disable_) {
+    if (fail_disable_.load()) {
       completer.ReplyError(ZX_ERR_IO_NOT_PRESENT);
       return;
     }
-    disabled_endpoints_.push_back(req->ep_address);
+    {
+      std::lock_guard lock(lock_);
+      disabled_endpoints_.push_back(req->ep_address);
+    }
     completer.ReplySuccess();
   }
 
   void EndpointSetStall(EndpointSetStallRequestView req,
                         EndpointSetStallCompleter::Sync& completer) override {
-    if (fail_stall_) {
+    if (fail_stall_.load()) {
       completer.ReplyError(ZX_ERR_IO_NOT_PRESENT);
-    } else {
-      set_stalls_.push_back(req->ep_address);
-      completer.ReplySuccess();
+      return;
     }
+    {
+      std::lock_guard lock(lock_);
+      set_stalls_.push_back(req->ep_address);
+    }
+    completer.ReplySuccess();
   }
 
   void EndpointClearStall(EndpointClearStallRequestView req,
                           EndpointClearStallCompleter::Sync& completer) override {
-    if (fail_stall_) {
+    if (fail_stall_.load()) {
       completer.ReplyError(ZX_ERR_IO_NOT_PRESENT);
-    } else {
-      clear_stalls_.push_back(req->ep_address);
-      completer.ReplySuccess();
+      return;
     }
+    {
+      std::lock_guard lock(lock_);
+      clear_stalls_.push_back(req->ep_address);
+    }
+    completer.ReplySuccess();
   }
 
   void CancelAll(CancelAllRequestView req, CancelAllCompleter::Sync& completer) override {
@@ -186,21 +213,30 @@ class FakeDevice : public fidl::WireServer<fdci::UsbDci> {
   }
 
   void GetHardwareInfo(GetHardwareInfoCompleter::Sync& completer) override {
-    if (!has_caps_) {
+    std::vector<EndpointCaps> caps;
+    bool supports_dynamic = false;
+    bool has_caps = false;
+    {
+      std::lock_guard lock(lock_);
+      caps = caps_;
+      supports_dynamic = supports_dynamic_;
+      has_caps = has_caps_;
+    }
+    if (!has_caps) {
       completer.ReplyError(ZX_ERR_NOT_SUPPORTED);
       return;
     }
 
     fidl::Arena arena;
     auto endpoints =
-        fidl::VectorView<fuchsia_hardware_usb_dci::wire::EndpointInfo>(arena, caps_.size());
-    for (size_t i = 0; i < caps_.size(); i++) {
+        fidl::VectorView<fuchsia_hardware_usb_dci::wire::EndpointInfo>(arena, caps.size());
+    for (size_t i = 0; i < caps.size(); i++) {
       auto types = fidl::VectorView<fuchsia_hardware_usb_dci::wire::SupportedEndpointInfo>(
-          arena, caps_[i].supported_types.size());
-      for (size_t j = 0; j < caps_[i].supported_types.size(); j++) {
+          arena, caps[i].supported_types.size());
+      for (size_t j = 0; j < caps[i].supported_types.size(); j++) {
         fuchsia_hardware_usb_descriptor::wire::EndpointType ep_type =
             fuchsia_hardware_usb_descriptor::wire::EndpointType::kBulk;
-        switch (caps_[i].supported_types[j]) {
+        switch (caps[i].supported_types[j]) {
           case EpType::kBulk:
             ep_type = fuchsia_hardware_usb_descriptor::wire::EndpointType::kBulk;
             break;
@@ -213,19 +249,19 @@ class FakeDevice : public fidl::WireServer<fdci::UsbDci> {
         }
         types[j] = fuchsia_hardware_usb_dci::wire::SupportedEndpointInfo::Builder(arena)
                        .endpoint_type(ep_type)
-                       .max_packet_size_limit(static_cast<uint16_t>(caps_[i].max_packet_size_limit))
+                       .max_packet_size_limit(static_cast<uint16_t>(caps[i].max_packet_size_limit))
                        .Build();
       }
 
       endpoints[i] = fuchsia_hardware_usb_dci::wire::EndpointInfo::Builder(arena)
-                         .ep_address(caps_[i].ep_address)
+                         .ep_address(caps[i].ep_address)
                          .supported_types(types)
                          .Build();
     }
 
     auto info = fuchsia_hardware_usb_dci::wire::DciHardwareInfo::Builder(arena)
                     .endpoints(endpoints)
-                    .supports_dynamic_ep_sizing(supports_dynamic_)
+                    .supports_dynamic_ep_sizing(supports_dynamic)
                     .Build();
 
     completer.ReplySuccess(info);
@@ -233,25 +269,39 @@ class FakeDevice : public fidl::WireServer<fdci::UsbDci> {
 
   void AllocEndpoint(AllocEndpointRequestView req,
                      AllocEndpointCompleter::Sync& completer) override {
-    if (!supports_dynamic_) {
-      completer.ReplyError(ZX_ERR_NOT_SUPPORTED);
-      return;
+    zx_status_t status = ZX_OK;
+    uint8_t allocated_ep = 0;
+    {
+      std::lock_guard lock(lock_);
+      if (!supports_dynamic_) {
+        status = ZX_ERR_NOT_SUPPORTED;
+      } else {
+        alloc_called_ = true;
+        if (max_allocs_.has_value() && alloc_count_ >= *max_allocs_) {
+          status = ZX_ERR_NO_RESOURCES;
+        } else {
+          alloc_count_++;
+          if (req->direction() == fuchsia_hardware_usb_descriptor::wire::EndpointDirection::kIn) {
+            allocated_ep = next_in_ep_++;
+          } else {
+            allocated_ep = next_out_ep_++;
+          }
+        }
+      }
     }
-    alloc_called_ = true;
-    if (max_allocs_.has_value() && alloc_count_ >= *max_allocs_) {
-      completer.ReplyError(ZX_ERR_NO_RESOURCES);
-      return;
-    }
-    alloc_count_++;
-    if (req->direction() == fuchsia_hardware_usb_descriptor::wire::EndpointDirection::kIn) {
-      completer.ReplySuccess(next_in_ep_++);
+
+    if (status != ZX_OK) {
+      completer.ReplyError(status);
     } else {
-      completer.ReplySuccess(next_out_ep_++);
+      completer.ReplySuccess(allocated_ep);
     }
   }
 
   void FreeEndpoint(FreeEndpointRequestView req, FreeEndpointCompleter::Sync& completer) override {
-    freed_endpoints_.push_back(req->ep_address);
+    {
+      std::lock_guard lock(lock_);
+      freed_endpoints_.push_back(req->ep_address);
+    }
     completer.ReplySuccess();
   }
 
@@ -266,14 +316,22 @@ class FakeDevice : public fidl::WireServer<fdci::UsbDci> {
 
   libsync::Completion& set_interface_called() { return set_interface_called_; }
 
-  bool controller_started() const { return controller_started_; }
-  void set_controller_started(bool started) { controller_started_ = started; }
+  bool controller_started() const {
+    std::lock_guard lock(lock_);
+    return controller_started_;
+  }
+  void set_controller_started(bool started) {
+    std::lock_guard lock(lock_);
+    controller_started_ = started;
+  }
 
   void set_stop_completion(libsync::Completion* stop_completion) {
+    std::lock_guard lock(lock_);
     stop_completion_ = stop_completion;
   }
 
   fidl::ServerEnd<fendpoint::Endpoint> TakeEndpoint(uint8_t addr) {
+    std::lock_guard lock(lock_);
     auto it = endpoints_.find(addr);
     if (it == endpoints_.end()) {
       return {};
@@ -283,34 +341,75 @@ class FakeDevice : public fidl::WireServer<fdci::UsbDci> {
     return ep;
   }
 
-  void set_max_allocs(size_t max) { max_allocs_ = max; }
-  const std::vector<uint8_t>& freed_endpoints() const { return freed_endpoints_; }
-  void clear_freed_endpoints() { freed_endpoints_.clear(); }
+  void set_max_allocs(size_t max) {
+    std::lock_guard lock(lock_);
+    max_allocs_ = max;
+  }
+  std::vector<uint8_t> freed_endpoints() const {
+    std::lock_guard lock(lock_);
+    return freed_endpoints_;
+  }
+  void clear_freed_endpoints() {
+    std::lock_guard lock(lock_);
+    freed_endpoints_.clear();
+  }
 
-  bool fail_already_bound_ = false;
-  bool fail_stall_ = false;
-  bool fail_start_ = false;
-  bool fail_stop_ = false;
-  std::vector<uint8_t> set_stalls_;
-  std::vector<uint8_t> clear_stalls_;
+  std::vector<uint8_t> disabled_endpoints() const {
+    std::lock_guard lock(lock_);
+    return disabled_endpoints_;
+  }
+  void clear_disabled_endpoints() {
+    std::lock_guard lock(lock_);
+    disabled_endpoints_.clear();
+  }
 
-  bool fail_configure_ = false;
-  std::vector<fdescriptor::wire::UsbEndpointDescriptor> configured_endpoints_;
-  std::vector<fdescriptor::wire::UsbSsEpCompDescriptor> configured_endpoints_ss_companion_;
+  std::vector<fdescriptor::wire::UsbEndpointDescriptor> configured_endpoints() const {
+    std::lock_guard lock(lock_);
+    return configured_endpoints_;
+  }
+  std::vector<fdescriptor::wire::UsbSsEpCompDescriptor> configured_endpoints_ss_companion() const {
+    std::lock_guard lock(lock_);
+    return configured_endpoints_ss_companion_;
+  }
 
-  bool fail_disable_ = false;
-  std::vector<uint8_t> disabled_endpoints_;
+  std::vector<uint8_t> set_stalls() const {
+    std::lock_guard lock(lock_);
+    return set_stalls_;
+  }
+  std::vector<uint8_t> clear_stalls() const {
+    std::lock_guard lock(lock_);
+    return clear_stalls_;
+  }
 
-  bool alloc_called() const { return alloc_called_; }
-  void reset_alloc_called() { alloc_called_ = false; }
+  std::atomic<bool> fail_already_bound_{false};
+  std::atomic<bool> fail_stall_{false};
+  std::atomic<bool> fail_start_{false};
+  std::atomic<bool> fail_stop_{false};
+  std::atomic<bool> fail_configure_{false};
+  std::atomic<bool> fail_disable_{false};
+
+  bool alloc_called() const {
+    std::lock_guard lock(lock_);
+    return alloc_called_;
+  }
+  void reset_alloc_called() {
+    std::lock_guard lock(lock_);
+    alloc_called_ = false;
+  }
 
  private:
+  mutable std::mutex lock_;
   bool controller_started_ = false;
   libsync::Completion set_interface_called_;
   libsync::Completion* stop_completion_ = nullptr;
   fidl::ServerBindingGroup<fdci::UsbDci> bindings_;
   std::optional<fidl::ClientEnd<fdci::UsbDciInterface>> client_;
   std::map<uint8_t, fidl::ServerEnd<fendpoint::Endpoint>> endpoints_;
+  std::vector<uint8_t> set_stalls_;
+  std::vector<uint8_t> clear_stalls_;
+  std::vector<fdescriptor::wire::UsbEndpointDescriptor> configured_endpoints_;
+  std::vector<fdescriptor::wire::UsbSsEpCompDescriptor> configured_endpoints_ss_companion_;
+  std::vector<uint8_t> disabled_endpoints_;
 
   std::vector<EndpointCaps> caps_;
   bool supports_dynamic_ = false;
@@ -326,11 +425,18 @@ class FakeDevice : public fidl::WireServer<fdci::UsbDci> {
 class FakeUsbFunction : public fidl::testing::WireTestBase<ffunction::UsbFunctionInterface>,
                         public std::enable_shared_from_this<FakeUsbFunction> {
  public:
+  using SetConfiguredCompleterAsync = SetConfiguredCompleter::Async;
+
   void Control(ControlRequestView req, ControlCompleter::Sync& completer) override {
-    control_called_ = true;
-    control_req_ = req->setup.b_request;
-    if (control_status_ != ZX_OK) {
-      completer.ReplyError(control_status_);
+    zx_status_t status;
+    {
+      std::lock_guard lock(lock_);
+      control_called_ = true;
+      control_req_ = req->setup.b_request;
+      status = control_status_;
+    }
+    if (status != ZX_OK) {
+      completer.ReplyError(status);
     } else {
       fidl::Arena arena;
       std::vector<uint8_t> read_data = {1, 2, 3};
@@ -341,14 +447,30 @@ class FakeUsbFunction : public fidl::testing::WireTestBase<ffunction::UsbFunctio
 
   void SetConfigured(SetConfiguredRequestView req,
                      SetConfiguredCompleter::Sync& completer) override {
-    set_configured_called_ = true;
-    configured_ = req->configured;
-    configured_history_.push_back(req->configured);
-    if (on_set_configured_) {
-      on_set_configured_();
+    std::function<void(bool, SetConfiguredCompleterAsync)> on_async;
+    std::function<void()> on_sync;
+    zx_status_t status = ZX_OK;
+    {
+      std::lock_guard lock(lock_);
+      set_configured_called_ = true;
+      configured_ = req->configured;
+      configured_history_.push_back(req->configured);
+      on_async = on_set_configured_async_;
+      on_sync = on_set_configured_;
+      status = set_configured_status_;
     }
-    if (set_configured_status_ != ZX_OK) {
-      completer.ReplyError(set_configured_status_);
+
+    if (on_async) {
+      auto async_completer = completer.ToAsync();
+      on_async(req->configured, std::move(async_completer));
+      call_completed_.Signal();
+      return;
+    }
+    if (on_sync) {
+      on_sync();
+    }
+    if (status != ZX_OK) {
+      completer.ReplyError(status);
     } else {
       completer.ReplySuccess();
     }
@@ -356,11 +478,16 @@ class FakeUsbFunction : public fidl::testing::WireTestBase<ffunction::UsbFunctio
   }
 
   void SetInterface(SetInterfaceRequestView req, SetInterfaceCompleter::Sync& completer) override {
-    set_interface_called_ = true;
-    interface_ = req->interface;
-    alt_setting_ = req->alt_setting;
-    if (set_interface_status_ != ZX_OK) {
-      completer.ReplyError(set_interface_status_);
+    zx_status_t status;
+    {
+      std::lock_guard lock(lock_);
+      set_interface_called_ = true;
+      interface_ = req->interface;
+      alt_setting_ = req->alt_setting;
+      status = set_interface_status_;
+    }
+    if (status != ZX_OK) {
+      completer.ReplyError(status);
     } else {
       completer.ReplySuccess();
     }
@@ -372,14 +499,20 @@ class FakeUsbFunction : public fidl::testing::WireTestBase<ffunction::UsbFunctio
     completer.Close(ZX_ERR_NOT_SUPPORTED);
   }
 
-  void WaitUntilCalled() {
-    call_completed_.Wait();
+  zx_status_t WaitUntilCalled(zx::duration timeout = zx::sec(5)) {
+    zx_status_t status = call_completed_.Wait(timeout);
+    EXPECT_EQ(status, ZX_OK);
     call_completed_.Reset();
+    return status;
   }
 
-  void WaitUntilUnbound() {
-    unbound_completion_.Wait();
+  void ResetCalled() { call_completed_.Reset(); }
+
+  zx_status_t WaitUntilUnbound(zx::duration timeout = zx::sec(5)) {
+    zx_status_t status = unbound_completion_.Wait(timeout);
+    EXPECT_EQ(status, ZX_OK);
     unbound_completion_.Reset();
+    return status;
   }
 
   void handle_unknown_method(fidl::UnknownMethodMetadata<ffunction::UsbFunctionInterface> metadata,
@@ -398,20 +531,63 @@ class FakeUsbFunction : public fidl::testing::WireTestBase<ffunction::UsbFunctio
 
   void Unbind() { binding_->Unbind(); }
 
-  bool control_called() const { return control_called_; }
-  uint8_t control_req() const { return control_req_; }
-  bool set_configured_called() const { return set_configured_called_; }
-  void clear_set_configured_called() { set_configured_called_ = false; }
-  bool configured() const { return configured_; }
-  const std::vector<bool>& configured_history() const { return configured_history_; }
-  bool set_interface_called() const { return set_interface_called_; }
+  bool control_called() const {
+    std::lock_guard lock(lock_);
+    return control_called_;
+  }
+  uint8_t control_req() const {
+    std::lock_guard lock(lock_);
+    return control_req_;
+  }
+  bool set_configured_called() const {
+    std::lock_guard lock(lock_);
+    return set_configured_called_;
+  }
+  void clear_set_configured_called() {
+    std::lock_guard lock(lock_);
+    set_configured_called_ = false;
+  }
+  bool configured() const {
+    std::lock_guard lock(lock_);
+    return configured_;
+  }
+  std::vector<bool> configured_history() const {
+    std::lock_guard lock(lock_);
+    return configured_history_;
+  }
+  bool set_interface_called() const {
+    std::lock_guard lock(lock_);
+    return set_interface_called_;
+  }
 
-  void set_on_set_configured(fit::function<void()> cb) { on_set_configured_ = std::move(cb); }
-  void set_control_status(zx_status_t status) { control_status_ = status; }
-  void set_set_configured_status(zx_status_t status) { set_configured_status_ = status; }
-  void set_set_interface_status(zx_status_t status) { set_interface_status_ = status; }
-  uint8_t interface() const { return interface_; }
-  uint8_t alt_setting() const { return alt_setting_; }
+  void set_on_set_configured(std::function<void()> cb) {
+    std::lock_guard lock(lock_);
+    on_set_configured_ = std::move(cb);
+  }
+  void set_control_status(zx_status_t status) {
+    std::lock_guard lock(lock_);
+    control_status_ = status;
+  }
+  void set_set_configured_status(zx_status_t status) {
+    std::lock_guard lock(lock_);
+    set_configured_status_ = status;
+  }
+  void set_set_interface_status(zx_status_t status) {
+    std::lock_guard lock(lock_);
+    set_interface_status_ = status;
+  }
+  void set_on_set_configured_async(std::function<void(bool, SetConfiguredCompleterAsync)> cb) {
+    std::lock_guard lock(lock_);
+    on_set_configured_async_ = std::move(cb);
+  }
+  uint8_t interface() const {
+    std::lock_guard lock(lock_);
+    return interface_;
+  }
+  uint8_t alt_setting() const {
+    std::lock_guard lock(lock_);
+    return alt_setting_;
+  }
 
   fdf::UnownedSynchronizedDispatcher& dispatcher() {
     ZX_ASSERT(dispatcher_.has_value());
@@ -419,6 +595,8 @@ class FakeUsbFunction : public fidl::testing::WireTestBase<ffunction::UsbFunctio
   }
 
  private:
+  mutable std::mutex lock_;
+
   libsync::Completion call_completed_;
   libsync::Completion unbound_completion_;
 
@@ -431,7 +609,8 @@ class FakeUsbFunction : public fidl::testing::WireTestBase<ffunction::UsbFunctio
   zx_status_t set_configured_status_ = ZX_OK;
   zx_status_t set_interface_status_ = ZX_OK;
   std::vector<bool> configured_history_;
-  fit::function<void()> on_set_configured_;
+  std::function<void()> on_set_configured_;
+  std::function<void(bool, SetConfiguredCompleterAsync)> on_set_configured_async_;
 
   bool set_interface_called_ = false;
   uint8_t interface_ = 0;
@@ -576,12 +755,18 @@ class UsbPeripheralHarness : public ::testing::Test {
 
     this->dut().RunInNodeContext([&](fdf_testing::TestNode& root) {
       auto it = root.children().find(std::string(UsbPeripheral::kChildNodeName));
-      ASSERT_NE(it, root.children().end());
+      if (it == root.children().end()) {
+        ADD_FAILURE() << "Peripheral child node not found: " << UsbPeripheral::kChildNodeName;
+        return;
+      }
       auto& peripheral_node = it->second;
 
       for (const auto& name : function_names) {
         auto it_func = peripheral_node.children().find(name);
-        ASSERT_NE(it_func, peripheral_node.children().end());
+        if (it_func == peripheral_node.children().end()) {
+          ADD_FAILURE() << "Function child node not found: " << name;
+          return;
+        }
         // Dropping the returned Node channel triggers an unbind.
         (void)it_func->second.CreateNodeChannel();
       }
@@ -591,7 +776,10 @@ class UsbPeripheralHarness : public ::testing::Test {
   void ExpectChildNodeCount(size_t expected_count) {
     this->dut().RunInNodeContext([&](fdf_testing::TestNode& root) {
       auto it = root.children().find(std::string(UsbPeripheral::kChildNodeName));
-      ASSERT_NE(it, root.children().end());
+      if (it == root.children().end()) {
+        ADD_FAILURE() << "Peripheral child node not found: " << UsbPeripheral::kChildNodeName;
+        return;
+      }
       auto& peripheral_node = it->second;
       EXPECT_EQ(peripheral_node.children().size(), expected_count);
     });
@@ -648,7 +836,10 @@ class UsbPeripheralHarness : public ::testing::Test {
 
       auto hierarchy = usb_inspect::ReadHierarchyFromInspector(peripheral.inspector());
       auto* node = hierarchy.GetByPath({"usb-peripheral", "dci_metrics"});
-      ASSERT_NE(node, nullptr);
+      if (node == nullptr) {
+        ADD_FAILURE() << "dci_metrics inspect node not found";
+        return;
+      }
       EXPECT_THAT(*node,
                   NodeMatches(PropertyList(Contains(StringIs("state", std::format("{}", state))))));
     });
@@ -856,6 +1047,9 @@ class PeripheralReadyTestBase : public UsbPeripheralHarness<manage_lifetime> {
     }
     this->ExpectState(UsbPeripheral::DeviceState::kPeripheralReady);
     this->ExpectControllerStarted(true);
+    for (auto& fake : result.fakes) {
+      fake->ResetCalled();
+    }
     return zx::ok(std::move(result));
   }
 };

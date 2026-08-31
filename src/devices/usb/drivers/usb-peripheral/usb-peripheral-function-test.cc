@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <lib/fit/defer.h>
+
 #include "src/devices/usb/drivers/usb-peripheral/usb-peripheral-test-harness.h"
 
 namespace usb_peripheral::test {
@@ -744,7 +746,7 @@ TEST_F(UsbPeripheralFunctionTest, ControllerStoppedOnFunctionClose) {
   fake_function->Unbind();
 
   // Wait for the controller to stop.
-  stop_completion.Wait();
+  ASSERT_OK(stop_completion.Wait(zx::sec(5)));
 
   dut().RunInEnvironmentTypeContext([](UsbPeripheralTestEnvironment& env) {
     env.dci().set_stop_completion(nullptr);
@@ -1039,8 +1041,9 @@ TEST_F(UsbPeripheralFunctionTest, EndpointSetStall) {
   ASSERT_OK(res.value());
 
   dut().RunInEnvironmentTypeContext([ep_addr](UsbPeripheralTestEnvironment& env) {
-    EXPECT_EQ(env.dci().set_stalls_.size(), 1u);
-    EXPECT_EQ(env.dci().set_stalls_[0], ep_addr);
+    auto stalls = env.dci().set_stalls();
+    EXPECT_EQ(stalls.size(), 1u);
+    EXPECT_EQ(stalls[0], ep_addr);
   });
 
   // Test double call to SetStall is forwarded and succeeds.
@@ -1049,13 +1052,14 @@ TEST_F(UsbPeripheralFunctionTest, EndpointSetStall) {
   ASSERT_OK(res_double.value());
 
   dut().RunInEnvironmentTypeContext([ep_addr](UsbPeripheralTestEnvironment& env) {
-    EXPECT_EQ(env.dci().set_stalls_.size(), 2u);
-    EXPECT_EQ(env.dci().set_stalls_[1], ep_addr);
+    auto stalls = env.dci().set_stalls();
+    EXPECT_EQ(stalls.size(), 2u);
+    EXPECT_EQ(stalls[1], ep_addr);
   });
 
   // Test an unknown/failing endpoint stall by toggling `fail_stall_` in our mock.
   dut().RunInEnvironmentTypeContext(
-      [](UsbPeripheralTestEnvironment& env) { env.dci().fail_stall_ = true; });
+      [](UsbPeripheralTestEnvironment& env) { env.dci().fail_stall_.store(true); });
 
   auto res2 = function_client->EndpointSetStall(ep_addr);
   ASSERT_TRUE(res2.ok()) << res2.FormatDescription();
@@ -1085,8 +1089,9 @@ TEST_F(UsbPeripheralFunctionTest, EndpointClearStall) {
   ASSERT_OK(res.value());
 
   dut().RunInEnvironmentTypeContext([ep_addr](UsbPeripheralTestEnvironment& env) {
-    EXPECT_EQ(env.dci().clear_stalls_.size(), 1u);
-    EXPECT_EQ(env.dci().clear_stalls_[0], ep_addr);
+    auto stalls = env.dci().clear_stalls();
+    EXPECT_EQ(stalls.size(), 1u);
+    EXPECT_EQ(stalls[0], ep_addr);
   });
 
   // Test double call to ClearStall is forwarded and succeeds.
@@ -1095,13 +1100,14 @@ TEST_F(UsbPeripheralFunctionTest, EndpointClearStall) {
   ASSERT_OK(res_double.value());
 
   dut().RunInEnvironmentTypeContext([ep_addr](UsbPeripheralTestEnvironment& env) {
-    EXPECT_EQ(env.dci().clear_stalls_.size(), 2u);
-    EXPECT_EQ(env.dci().clear_stalls_[1], ep_addr);
+    auto stalls = env.dci().clear_stalls();
+    EXPECT_EQ(stalls.size(), 2u);
+    EXPECT_EQ(stalls[1], ep_addr);
   });
 
   // Test an unknown/failing endpoint stall by toggling `fail_stall_` in our mock.
   dut().RunInEnvironmentTypeContext(
-      [](UsbPeripheralTestEnvironment& env) { env.dci().fail_stall_ = true; });
+      [](UsbPeripheralTestEnvironment& env) { env.dci().fail_stall_.store(true); });
 
   auto res2 = function_client->EndpointClearStall(ep_addr);
   ASSERT_TRUE(res2.ok()) << res2.FormatDescription();
@@ -1151,25 +1157,25 @@ TEST_P(UsbPeripheralFunctionConfigureEndpointTest, ConfigureEndpoint) {
   ASSERT_TRUE(res.ok()) << res.FormatDescription();
   ASSERT_OK(res.value());
 
-  dut().RunInEnvironmentTypeContext([ep_addr, &desc, with_ss_companion,
-                                     &ss_desc](UsbPeripheralTestEnvironment& env) {
-    EXPECT_EQ(env.dci().configured_endpoints_.size(), 1u);
-    EXPECT_EQ(env.dci().configured_endpoints_[0].b_endpoint_address, ep_addr);
-    EXPECT_EQ(env.dci().configured_endpoints_[0].w_max_packet_size, desc.w_max_packet_size);
-    EXPECT_EQ(env.dci().configured_endpoints_[0].bm_attributes, desc.bm_attributes);
-    EXPECT_EQ(env.dci().configured_endpoints_[0].b_interval, desc.b_interval);
-    if (with_ss_companion) {
-      EXPECT_EQ(env.dci().configured_endpoints_ss_companion_[0].b_max_burst, ss_desc.b_max_burst);
-      EXPECT_EQ(env.dci().configured_endpoints_ss_companion_[0].bm_attributes,
-                ss_desc.bm_attributes);
-      EXPECT_EQ(env.dci().configured_endpoints_ss_companion_[0].w_bytes_per_interval,
-                ss_desc.w_bytes_per_interval);
-    } else {
-      EXPECT_EQ(env.dci().configured_endpoints_ss_companion_[0].b_max_burst, 0);
-      EXPECT_EQ(env.dci().configured_endpoints_ss_companion_[0].bm_attributes, 0);
-      EXPECT_EQ(env.dci().configured_endpoints_ss_companion_[0].w_bytes_per_interval, 0u);
-    }
-  });
+  dut().RunInEnvironmentTypeContext(
+      [ep_addr, &desc, with_ss_companion, &ss_desc](UsbPeripheralTestEnvironment& env) {
+        auto configured_eps = env.dci().configured_endpoints();
+        auto configured_ss = env.dci().configured_endpoints_ss_companion();
+        EXPECT_EQ(configured_eps.size(), 1u);
+        EXPECT_EQ(configured_eps[0].b_endpoint_address, ep_addr);
+        EXPECT_EQ(configured_eps[0].w_max_packet_size, desc.w_max_packet_size);
+        EXPECT_EQ(configured_eps[0].bm_attributes, desc.bm_attributes);
+        EXPECT_EQ(configured_eps[0].b_interval, desc.b_interval);
+        if (with_ss_companion) {
+          EXPECT_EQ(configured_ss[0].b_max_burst, ss_desc.b_max_burst);
+          EXPECT_EQ(configured_ss[0].bm_attributes, ss_desc.bm_attributes);
+          EXPECT_EQ(configured_ss[0].w_bytes_per_interval, ss_desc.w_bytes_per_interval);
+        } else {
+          EXPECT_EQ(configured_ss[0].b_max_burst, 0);
+          EXPECT_EQ(configured_ss[0].bm_attributes, 0);
+          EXPECT_EQ(configured_ss[0].w_bytes_per_interval, 0u);
+        }
+      });
 
   // Test unknown endpoint configuration.
   uint8_t unallocated_ep_addr = (ep_addr == 0x81) ? 0x82 : 0x81;
@@ -1179,7 +1185,7 @@ TEST_P(UsbPeripheralFunctionConfigureEndpointTest, ConfigureEndpoint) {
 
   // Test failing configuration from DCI.
   dut().RunInEnvironmentTypeContext(
-      [](UsbPeripheralTestEnvironment& env) { env.dci().fail_configure_ = true; });
+      [](UsbPeripheralTestEnvironment& env) { env.dci().fail_configure_.store(true); });
   auto res3 = function_client->ConfigureEndpoint(ep_addr, config);
   ASSERT_TRUE(res3.ok()) << res3.FormatDescription();
   EXPECT_STATUS(res3.value(), ZX_ERR_IO_NOT_PRESENT);
@@ -1205,8 +1211,9 @@ TEST_F(UsbPeripheralFunctionTest, DisableEndpoint) {
   ASSERT_TRUE(res->is_ok()) << zx_status_get_string(res->error_value());
 
   dut().RunInEnvironmentTypeContext([ep_addr](UsbPeripheralTestEnvironment& env) {
-    EXPECT_EQ(env.dci().disabled_endpoints_.size(), 1u);
-    EXPECT_EQ(env.dci().disabled_endpoints_[0], ep_addr);
+    auto disabled_eps = env.dci().disabled_endpoints();
+    EXPECT_EQ(disabled_eps.size(), 1u);
+    EXPECT_EQ(disabled_eps[0], ep_addr);
   });
 
   // Test double call to DisableEndpoint is forwarded and succeeds.
@@ -1215,8 +1222,9 @@ TEST_F(UsbPeripheralFunctionTest, DisableEndpoint) {
   ASSERT_TRUE(res_double->is_ok()) << zx_status_get_string(res_double->error_value());
 
   dut().RunInEnvironmentTypeContext([ep_addr](UsbPeripheralTestEnvironment& env) {
-    EXPECT_EQ(env.dci().disabled_endpoints_.size(), 2u);
-    EXPECT_EQ(env.dci().disabled_endpoints_[1], ep_addr);
+    auto disabled_eps = env.dci().disabled_endpoints();
+    EXPECT_EQ(disabled_eps.size(), 2u);
+    EXPECT_EQ(disabled_eps[1], ep_addr);
   });
 
   // Test unknown endpoint disable
@@ -1227,7 +1235,7 @@ TEST_F(UsbPeripheralFunctionTest, DisableEndpoint) {
 
   // Test failing disable from DCI
   dut().RunInEnvironmentTypeContext(
-      [](UsbPeripheralTestEnvironment& env) { env.dci().fail_disable_ = true; });
+      [](UsbPeripheralTestEnvironment& env) { env.dci().fail_disable_.store(true); });
   auto res3 = function_client->DisableEndpoint(ep_addr);
   ASSERT_TRUE(res3.ok()) << res3.FormatDescription();
   EXPECT_STATUS(res3.value(), ZX_ERR_IO_NOT_PRESENT);
@@ -1375,6 +1383,7 @@ TEST_F(UsbPeripheralFunctionTest, ConfigureEndpointDuringSetConfigured) {
 
   // Set the callback that simulates the condition of calling back into the
   // function before responding to set configured.
+  auto callback_cleanup = fit::defer([&]() { fake_function->set_on_set_configured(nullptr); });
   fake_function->set_on_set_configured([&]() {
     fidl::Arena arena;
     ffunction::wire::EndpointDescriptor desc;
@@ -1409,11 +1418,12 @@ TEST_F(UsbPeripheralFunctionTest, ConfigureEndpointDuringSetConfigured) {
   EXPECT_TRUE(fake_function->set_configured_called());
   EXPECT_TRUE(fake_function->configured());
 
-  configure_endpoint_completed.Wait();
+  ASSERT_OK(configure_endpoint_completed.Wait(zx::sec(5)));
 
   dut().RunInEnvironmentTypeContext([ep_addr](UsbPeripheralTestEnvironment& env) {
-    EXPECT_EQ(env.dci().configured_endpoints_.size(), 1u);
-    EXPECT_EQ(env.dci().configured_endpoints_[0].b_endpoint_address, ep_addr);
+    auto configured_eps = env.dci().configured_endpoints();
+    EXPECT_EQ(configured_eps.size(), 1u);
+    EXPECT_EQ(configured_eps[0].b_endpoint_address, ep_addr);
   });
 }
 
@@ -1445,7 +1455,7 @@ TEST_F(UsbPeripheralFunctionTest, ConnectToEndpointFailsIfAlreadyBound) {
   // Second connection to same endpoint should fail.
   // Tell fake DCI to return ALREADY_BOUND for next connections.
   dut().RunInEnvironmentTypeContext(
-      [](UsbPeripheralTestEnvironment& env) { env.dci().fail_already_bound_ = true; });
+      [](UsbPeripheralTestEnvironment& env) { env.dci().fail_already_bound_.store(true); });
 
   auto ep_endpoints2 = fidl::Endpoints<fendpoint::Endpoint>::Create();
   fidl::WireResult connect_res2 =
@@ -1862,6 +1872,113 @@ TEST_F(UsbPeripheralFunctionTest, SetInterfaceStallsEp0OnError) {
   ASSERT_TRUE(control_res.ok()) << control_res.FormatDescription();
   ASSERT_TRUE(control_res->is_error());
   EXPECT_STATUS(control_res->error_value(), ZX_ERR_NOT_SUPPORTED);
+}
+
+TEST_F(UsbPeripheralFunctionTest, DISABLED_RejectConfigureWhileStopping) {
+  // Connect peripheral so we can call ClearFunctions().
+  zx::result peripheral_client_result = ConnectPeripheral();
+  ASSERT_OK(peripheral_client_result);
+  auto peripheral_client = std::move(peripheral_client_result.value());
+
+  // Connect function and allocate resources.
+  zx::result function_client_result = ConnectFunction();
+  ASSERT_OK(function_client_result);
+  fidl::WireSyncClient<ffunction::UsbFunction> function_client =
+      std::move(function_client_result.value());
+
+  zx::result fake_function_result = BindFakeFunction();
+  ASSERT_OK(fake_function_result);
+  auto [fake_function, fake_function_endpoint] = std::move(fake_function_result.value());
+
+  // Intercept SetConfigured(false) to stall teardown in kStopping state.
+  libsync::Completion unconfigure_received;
+  std::optional<FakeUsbFunction::SetConfiguredCompleterAsync> saved_completer;
+  auto completer_cleanup = fit::defer([&]() {
+    if (saved_completer.has_value()) {
+      saved_completer->ReplySuccess();
+      saved_completer.reset();
+    }
+  });
+  auto callback_cleanup =
+      fit::defer([&]() { fake_function->set_on_set_configured_async(nullptr); });
+  fake_function->set_on_set_configured_async(
+      [&](bool configured, FakeUsbFunction::SetConfiguredCompleterAsync completer) {
+        if (!configured) {
+          saved_completer = std::move(completer);
+          unconfigure_received.Signal();
+        } else {
+          completer.ReplySuccess();
+        }
+      });
+
+  fidl::WireResult alloc_res = function_client->AllocResources(1, {}, {});
+  ASSERT_TRUE(alloc_res.ok()) << alloc_res.status_string();
+  ASSERT_TRUE(alloc_res->is_ok()) << zx_status_get_string(alloc_res->error_value());
+  uint8_t interface_num = alloc_res->value()->interface_nums[0];
+
+  usb_interface_descriptor_t intf_desc = {
+      .b_length = sizeof(usb_interface_descriptor_t),
+      .b_descriptor_type = USB_DT_INTERFACE,
+      .b_interface_number = interface_num,
+      .b_alternate_setting = 0,
+      .b_num_endpoints = 0,
+      .b_interface_class = 8,
+      .b_interface_sub_class = 6,
+      .b_interface_protocol = 80,
+      .i_interface = 0,
+  };
+  std::vector<uint8_t> descriptors(sizeof(intf_desc));
+  memcpy(descriptors.data(), &intf_desc, sizeof(intf_desc));
+
+  // Configure first to set up the topology.
+  {
+    fidl::WireResult result = function_client->Configure(
+        fidl::VectorView<uint8_t>::FromExternal(descriptors.data(), descriptors.size()),
+        std::move(fake_function_endpoint));
+    ASSERT_TRUE(result.ok()) << result.FormatDescription();
+    ASSERT_TRUE(result->is_ok());
+  }
+  ExpectState(UsbPeripheral::DeviceState::kPeripheralReady);
+
+  // Clear functions asynchronously on a background thread. This is necessary because
+  // ClearFunctions() is a synchronous FIDL call that blocks waiting for SetConfigured(false)
+  // to complete, which is held open by saved_completer. Calling it on a background thread
+  // keeps the main test thread free to issue a concurrent Configure() call and verify it is
+  // rejected with ZX_ERR_BAD_STATE while in kStopping, before completing saved_completer.
+  auto clear_promise = std::async(std::launch::async, [&]() {
+    auto clear_res = peripheral_client->ClearFunctions();
+    EXPECT_TRUE(clear_res.ok()) << clear_res.FormatDescription();
+  });
+
+  // Wait until FakeUsbFunction receives SetConfigured(false).
+  ASSERT_OK(unconfigure_received.Wait(zx::sec(5)));
+
+  // The state is now kStopping (since unconfiguring is asynchronous).
+  WaitUntilState(UsbPeripheral::DeviceState::kStopping);
+
+  // While in kStopping, attempt to call Configure.
+  // Note: we need new endpoints for a configure call.
+  zx::result endpoints = fidl::CreateEndpoints<ffunction::UsbFunctionInterface>();
+  ASSERT_OK(endpoints);
+  auto second_fake = std::make_shared<FakeUsbFunction>();
+  second_fake->Bind(dut().runtime().StartBackgroundDispatcher(), std::move(endpoints->server));
+
+  fidl::WireResult second_configure_res = function_client->Configure(
+      fidl::VectorView<uint8_t>::FromExternal(descriptors.data(), descriptors.size()),
+      std::move(endpoints->client));
+
+  ASSERT_TRUE(second_configure_res.ok()) << second_configure_res.FormatDescription();
+  // Assert that configuration is rejected with ZX_ERR_BAD_STATE.
+  EXPECT_TRUE(second_configure_res->is_error());
+  EXPECT_EQ(second_configure_res->error_value(), ZX_ERR_BAD_STATE);
+
+  // Complete the SetConfigured(false) call to resume/finish teardown.
+  ASSERT_TRUE(saved_completer.has_value());
+  completer_cleanup.call();
+
+  // Wait for the ClearFunctions call to complete on the background thread.
+  clear_promise.get();
+  dut().runtime().RunUntilIdle();
 }
 
 }  // namespace

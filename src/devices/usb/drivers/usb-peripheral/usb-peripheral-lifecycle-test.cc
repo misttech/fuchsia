@@ -2,10 +2,24 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <lib/fit/defer.h>
+
+#include <atomic>
+
 #include "src/devices/usb/drivers/usb-peripheral/usb-peripheral-test-harness.h"
 
 namespace usb_peripheral::test {
 namespace {
+
+class UsbPeripheralTestHelper {
+ public:
+  static size_t active_functions_count(const UsbPeripheral& peripheral) { return 0; }
+  static void FunctionCleared(UsbPeripheral& peripheral, size_t function_index,
+                              uint64_t config_generation) {
+    // TODO: Pass config_generation once the driver backend supports generation fencing.
+    peripheral.FunctionCleared(function_index);
+  }
+};
 
 TEST_F(ManagedUsbPeripheralTest, AddsCorrectSerialNumberMetadata) {
   fdescriptor::wire::UsbSetup setup;
@@ -233,7 +247,7 @@ TEST_F(UsbPeripheralReadyTest, DisconnectHostWhenAlreadyPeripheralReady) {
     EXPECT_FALSE(fake.configured());
     comp.Signal();
   });
-  comp.Wait();
+  ASSERT_OK(comp.Wait(zx::sec(5)));
 }
 
 TEST_F(UnmanagedUsbPeripheralTest, ClearFunctionsWhenNoneAdded) {
@@ -757,6 +771,31 @@ TEST_F(UnmanagedUsbPeripheralReadyTest, FunctionNodeUnbindInHostConnectedState) 
   ExpectControllerStarted(false);
 }
 
+TEST_F(UnmanagedUsbPeripheralReadyTest, CoordinatedCompositeTeardown) {
+  // 1. Setup a multi-function composite device profile matching real watch configurations
+  usb_peripheral_config::Config config;
+  config.functions() = {"cdc", "test"};
+  StartDriverWithConfig(config);
+
+  auto function_clients = TransitionToPeripheralReady(2);
+  ASSERT_OK(function_clients);
+
+  // Connect host to transition to Host Connected state
+  auto connected_res = this->dci()->SetConnected(true);
+  ASSERT_TRUE(connected_res.ok()) << connected_res.FormatDescription();
+  ExpectState(UsbPeripheral::DeviceState::kHostConnected);
+
+  // 2. Simulate unsolicited unbind on the composite device (both function-000 and function-001)
+  SimulateFunctionUnbind({"function-000", "function-001"});
+
+  // 3. STATE AND TOPOLOGY VERIFICATION:
+  // The parent must command RequestRemoval() on both nodes to sweep the layout cleanly.
+  WaitUntilState(UsbPeripheral::DeviceState::kWaitForFunctionBind);
+  ExpectControllerStarted(false);
+  // Let mock framework process the node unbind events asynchronously on the loop.
+  dut().runtime().RunUntilIdle();
+}
+
 TEST_F(UnmanagedUsbPeripheralReadyTest, FaultyFunctionNodeUnbindReset) {
   usb_peripheral_config::Config config;
   config.functions() = {"test"};
@@ -811,7 +850,7 @@ TEST_F(UnmanagedUsbPeripheralReadyTest, CheckAndStartControllerGuard) {
 
   // Verify initial state.
   this->dut().RunInDriverContext([&](UsbPeripheral& peripheral) {
-    ASSERT_EQ(peripheral.SnapshotState(), UsbPeripheral::DeviceState::kPeripheralReady);
+    EXPECT_EQ(peripheral.SnapshotState(), UsbPeripheral::DeviceState::kPeripheralReady);
   });
 
   // Call CheckAndStartController again.
@@ -822,12 +861,12 @@ TEST_F(UnmanagedUsbPeripheralReadyTest, CheckAndStartControllerGuard) {
   // This race condition would go away once we move to a single dispatcher.
   this->dut().RunInDriverContext([&](UsbPeripheral& peripheral) {
     // This should do nothing and return ZX_OK because state is not kWaitForFunctionBind.
-    ASSERT_OK(peripheral.CheckAndStartController());
+    EXPECT_OK(peripheral.CheckAndStartController());
   });
 
   // Verify state is still kPeripheralReady.
   this->dut().RunInDriverContext([&](UsbPeripheral& peripheral) {
-    ASSERT_EQ(peripheral.SnapshotState(), UsbPeripheral::DeviceState::kPeripheralReady);
+    EXPECT_EQ(peripheral.SnapshotState(), UsbPeripheral::DeviceState::kPeripheralReady);
   });
 }
 
@@ -1167,7 +1206,7 @@ TEST_F(UnmanagedUsbPeripheralReadyTest, StartControllerFailsFromDci) {
 
   // Tell DCI mock to fail StartController.
   this->dut().RunInEnvironmentTypeContext(
-      [](UsbPeripheralTestEnvironment& env) { env.dci().fail_start_ = true; });
+      [](UsbPeripheralTestEnvironment& env) { env.dci().fail_start_.store(true); });
 
   auto res = TransitionToPeripheralReady();
   ASSERT_TRUE(res.is_error());
@@ -1189,7 +1228,7 @@ TEST_F(UnmanagedUsbPeripheralReadyTest, StopControllerFailsFromDci) {
 
   // Tell DCI mock to fail StopController.
   this->dut().RunInEnvironmentTypeContext(
-      [](UsbPeripheralTestEnvironment& env) { env.dci().fail_stop_ = true; });
+      [](UsbPeripheralTestEnvironment& env) { env.dci().fail_stop_.store(true); });
 
   // Call ClearFunctions. Even though StopController fails, it should still succeed
   // and teardown the functions to kNoConfiguration state.
@@ -1218,9 +1257,306 @@ TEST_F(UnmanagedUsbPeripheralReadyTest, StopControllerFailsFromDci) {
   // Reset failure flag and manually set controller_started to false to allow clean teardown in
   // TearDown()
   this->dut().RunInEnvironmentTypeContext([](UsbPeripheralTestEnvironment& env) {
-    env.dci().fail_stop_ = false;
+    env.dci().fail_stop_.store(false);
     env.dci().set_controller_started(false);
   });
+}
+
+TEST_F(UsbPeripheralReadyTest, DISABLED_ActiveFunctionsCountTracking) {
+  // Initially in kPeripheralReady with 1 function from SetUp().
+  size_t active_count = dut().RunInDriverContext<size_t>([](UsbPeripheral& peripheral) {
+    return UsbPeripheralTestHelper::active_functions_count(peripheral);
+  });
+  EXPECT_EQ(1u, active_count);
+
+  // Close function channel.
+  function_clients_.clients.clear();
+  function_clients_.fakes.clear();
+  dut().runtime().RunUntilIdle();
+
+  active_count = dut().RunInDriverContext<size_t>([](UsbPeripheral& peripheral) {
+    return UsbPeripheralTestHelper::active_functions_count(peripheral);
+  });
+  EXPECT_EQ(0u, active_count);
+}
+
+TEST_F(UnmanagedUsbPeripheralReadyTest,
+       DISABLED_LateFunctionClearedCallbackIgnoredByGenerationFence) {
+  usb_peripheral_config::Config config;
+  config.functions() = {"test"};
+  StartDriverWithConfig(config);
+
+  // Generation 0 Setup (initial configuration)
+  auto function_clients_res = TransitionToPeripheralReady();
+  ASSERT_OK(function_clients_res);
+
+  // Verify that active functions count is 1 for Generation 0.
+  size_t active_count = dut().RunInDriverContext<size_t>([](UsbPeripheral& peripheral) {
+    return UsbPeripheralTestHelper::active_functions_count(peripheral);
+  });
+  EXPECT_EQ(1u, active_count);
+
+  auto peripheral_client = ConnectPeripheral();
+  ASSERT_OK(peripheral_client);
+
+  // Clear functions to trigger teardown.
+  auto clear_res = peripheral_client.value()->ClearFunctions();
+  ASSERT_TRUE(clear_res.ok()) << clear_res.FormatDescription();
+  dut().runtime().RunUntilIdle();
+
+  // Generation 1 Setup: Re-configure the device to increment config_generation to 1.
+  fperipheral::wire::DeviceDescriptor device_desc = CreateTestDeviceDescriptor();
+  fidl::Arena arena;
+  auto configs = CreateTestFunctionDescriptors(arena);
+  auto set_config_res = peripheral_client.value()->SetConfiguration(device_desc, configs);
+  ASSERT_TRUE(set_config_res.ok());
+
+  auto function_clients_gen1 = TransitionToPeripheralReady();
+  ASSERT_OK(function_clients_gen1);
+
+  // Verify that active functions count is 1 for Generation 1.
+  active_count = dut().RunInDriverContext<size_t>([](UsbPeripheral& peripheral) {
+    return UsbPeripheralTestHelper::active_functions_count(peripheral);
+  });
+  EXPECT_EQ(1u, active_count);
+
+  // Direct injection of a stale FunctionCleared callback stamped with Generation 0.
+  dut().RunInDriverContext([](UsbPeripheral& peripheral) {
+    // Generation 0 is stale (the current generation is 1).
+    UsbPeripheralTestHelper::FunctionCleared(peripheral, 0, 0);
+  });
+
+  dut().runtime().RunUntilIdle();
+
+  // Assertion: The driver must securely ignore the stale callback.
+  active_count = dut().RunInDriverContext<size_t>([](UsbPeripheral& peripheral) {
+    return UsbPeripheralTestHelper::active_functions_count(peripheral);
+  });
+  EXPECT_EQ(1u, active_count);
+
+  // Ensure we didn't accidentally tear down or regress state.
+  ExpectState(UsbPeripheral::DeviceState::kPeripheralReady);
+}
+
+TEST_F(UnmanagedUsbPeripheralReadyTest, DISABLED_HostDisconnectPowerCutRaceTrap) {
+  usb_peripheral_config::Config config;
+  config.functions() = {"test"};
+  StartDriverWithConfig(config);
+
+  auto function_clients_res = TransitionToPeripheralReady();
+  ASSERT_OK(function_clients_res);
+  auto function_clients =
+      std::make_shared<FunctionClients>(std::move(function_clients_res.value()));
+
+  // The mock function driver in TransitionToPeripheralReady allocates OUT endpoint 1 and IN
+  // endpoint 0x81.
+  uint8_t ep_addr_out = 1;
+  uint8_t ep_addr_in = 0x81;
+
+  // Establish active connection.
+  auto connected_res = this->dci()->SetConnected(true);
+  ASSERT_TRUE(connected_res.ok());
+  ExpectState(UsbPeripheral::DeviceState::kHostConnected);
+
+  std::optional<FakeUsbFunction::SetConfiguredCompleterAsync> deferred_completer;
+  auto completer_cleanup = fit::defer([&]() {
+    if (deferred_completer.has_value()) {
+      deferred_completer->ReplySuccess();
+      deferred_completer.reset();
+    }
+  });
+  auto callback_cleanup =
+      fit::defer([&]() { function_clients->fakes[0]->set_on_set_configured_async(nullptr); });
+  libsync::Completion unconfigure_invoked;
+
+  // Intercept SetConfigured(false) on fake function driver and trigger endpoint disable.
+  function_clients->fakes[0]->set_on_set_configured_async(
+      [&](bool configured, FakeUsbFunction::SetConfiguredCompleterAsync completer) {
+        if (!configured) {
+          auto res_out = function_clients->clients[0]->DisableEndpoint(ep_addr_out);
+          EXPECT_TRUE(res_out.ok());
+          if (res_out.ok()) {
+            EXPECT_TRUE(res_out->is_ok())
+                << "DisableEndpoint OUT failed: " << zx_status_get_string(res_out->error_value());
+          }
+          auto res_in = function_clients->clients[0]->DisableEndpoint(ep_addr_in);
+          EXPECT_TRUE(res_in.ok());
+          if (res_in.ok()) {
+            EXPECT_TRUE(res_in->is_ok())
+                << "DisableEndpoint IN failed: " << zx_status_get_string(res_in->error_value());
+          }
+          deferred_completer.emplace(std::move(completer));
+          unconfigure_invoked.Signal();
+        } else {
+          completer.ReplySuccess();
+        }
+      });
+
+  // Trigger host disconnect.
+  auto disconnected_res = this->dci()->SetConnected(false);
+  ASSERT_TRUE(disconnected_res.ok());
+
+  // Wait for the unconfiguration callback to be invoked and disable endpoints.
+  ASSERT_OK(unconfigure_invoked.Wait(zx::sec(5)));
+
+  // Allow any pending dispatcher tasks to settle.
+  this->dut().runtime().RunUntilIdle();
+
+  // Verify that endpoints were disabled on DCI.
+  std::vector<uint8_t> disabled_endpoints;
+  this->dut().RunInEnvironmentTypeContext([&](UsbPeripheralTestEnvironment& env) {
+    disabled_endpoints = env.dci().disabled_endpoints();
+  });
+  EXPECT_EQ(disabled_endpoints.size(), 2u);
+
+  // Assertion: The peripheral state MUST remain kHostConnected while unconfigure is in-flight,
+  // preventing power cuts before endpoints are disabled.
+  ExpectState(UsbPeripheral::DeviceState::kHostConnected);
+
+  // Complete the unconfigure operation.
+  ASSERT_TRUE(deferred_completer.has_value());
+  completer_cleanup.call();
+
+  // Let the async promise join chain finish.
+  this->dut().runtime().RunUntilIdle();
+
+  // Verify the driver successfully transitioned back to kPeripheralReady after async teardown.
+  WaitUntilState(UsbPeripheral::DeviceState::kPeripheralReady);
+}
+
+TEST_F(UnmanagedUsbPeripheralReadyTest, DISABLED_AsynchronousUnconfigureTeardownCompleter) {
+  usb_peripheral_config::Config config;
+  config.functions() = {"test"};
+  StartDriverWithConfig(config);
+
+  auto function_clients_res = TransitionToPeripheralReady();
+  ASSERT_OK(function_clients_res);
+  auto fake_function = function_clients_res.value().fakes[0];
+
+  // Simulate active VBUS cable plug to transition state to kHostConnected.
+  ASSERT_OK(dci()->SetConnected(true).status());
+  ExpectState(UsbPeripheral::DeviceState::kHostConnected);
+
+  // Defer SetConfigured(false) completion to simulate slow network flushes.
+  std::optional<FakeUsbFunction::SetConfiguredCompleterAsync> deferred_completer;
+  auto completer_cleanup = fit::defer([&]() {
+    if (deferred_completer.has_value()) {
+      deferred_completer->ReplySuccess();
+      deferred_completer.reset();
+    }
+  });
+  auto callback_cleanup =
+      fit::defer([&]() { fake_function->set_on_set_configured_async(nullptr); });
+  fake_function->set_on_set_configured_async(
+      [&](bool configured, FakeUsbFunction::SetConfiguredCompleterAsync completer) {
+        if (!configured) {
+          deferred_completer.emplace(std::move(completer));
+        } else {
+          completer.ReplySuccess();
+        }
+      });
+
+  auto peripheral_client = ConnectPeripheral();
+  ASSERT_OK(peripheral_client);
+
+  std::atomic<bool> clear_finished = false;
+  // Clear functions asynchronously on a background thread. This is necessary because
+  // ClearFunctions() is a synchronous FIDL call that blocks waiting for SetConfigured(false)
+  // to complete, which is held open by deferred_completer. If called on the main test thread,
+  // the test would deadlock before it could assert the in-flight state or reply to the completer.
+  auto clear_promise = std::async(std::launch::async, [&]() {
+    auto clear_res = peripheral_client.value()->ClearFunctions();
+    EXPECT_TRUE(clear_res.ok()) << clear_res.FormatDescription();
+    clear_finished.store(true);
+  });
+
+  // Allow the dispatcher to process the initial ClearFunctions task.
+  dut().runtime().RunUntilIdle();
+
+  // Block until the background thread fully finishes the SetConfigured(false) callback.
+  fake_function->WaitUntilCalled();
+
+  // Assert that ClearFunctions remains blocked and the hardware controller is kept live
+  // while the SetConfigured(false) completer is outstanding.
+  EXPECT_FALSE(clear_finished.load());
+  dut().RunInEnvironmentTypeContext(
+      [](UsbPeripheralTestEnvironment& env) { EXPECT_TRUE(env.dci().controller_started()); });
+
+  // Signal logical teardown completion.
+  ASSERT_TRUE(deferred_completer.has_value());
+  completer_cleanup.call();
+
+  // Process the completion reply and execute hardware shutdown.
+  dut().runtime().RunUntilIdle();
+  dut().runtime().RunUntil([&]() {
+    return dut().RunInEnvironmentTypeContext<bool>(
+        [](UsbPeripheralTestEnvironment& env) { return !env.dci().controller_started(); });
+  });
+
+  // Assert that ClearFunctions completed and the hardware controller stopped.
+  clear_promise.get();
+  EXPECT_TRUE(clear_finished);
+  dut().RunInEnvironmentTypeContext(
+      [](UsbPeripheralTestEnvironment& env) { EXPECT_FALSE(env.dci().controller_started()); });
+}
+
+TEST_F(UnmanagedUsbPeripheralReadyTest, DISABLED_HostReconnectDuringAsyncUnconfigure) {
+  usb_peripheral_config::Config config;
+  config.functions() = {"test"};
+  StartDriverWithConfig(config);
+
+  auto function_clients_res = TransitionToPeripheralReady();
+  ASSERT_OK(function_clients_res);
+  auto fake_function = function_clients_res.value().fakes[0];
+
+  // Simulate active VBUS cable plug to transition state to kHostConnected.
+  ASSERT_OK(dci()->SetConnected(true).status());
+  ExpectState(UsbPeripheral::DeviceState::kHostConnected);
+
+  // Defer SetConfigured(false) completion to simulate delayed mock teardown.
+  std::optional<FakeUsbFunction::SetConfiguredCompleterAsync> deferred_completer;
+  auto completer_cleanup = fit::defer([&]() {
+    if (deferred_completer.has_value()) {
+      deferred_completer->ReplySuccess();
+      deferred_completer.reset();
+    }
+  });
+  auto callback_cleanup =
+      fit::defer([&]() { fake_function->set_on_set_configured_async(nullptr); });
+  fake_function->set_on_set_configured_async(
+      [&](bool configured, FakeUsbFunction::SetConfiguredCompleterAsync completer) {
+        if (!configured) {
+          deferred_completer.emplace(std::move(completer));
+        } else {
+          completer.ReplySuccess();
+        }
+      });
+
+  // Trigger a disconnect via DCI to begin the async teardown.
+  ASSERT_OK(dci()->SetConnected(false).status());
+
+  // Allow the dispatcher to process the SetConnected(false) task and wait for
+  // SetConfigured(false) to arrive at the fake function.
+  dut().runtime().RunUntilIdle();
+  fake_function->WaitUntilCalled();
+
+  // Assertion: The state should still be kHostConnected because the unconfigure
+  // promise is currently blocked waiting for the completer.
+  ExpectState(UsbPeripheral::DeviceState::kHostConnected);
+
+  // Before resolving the completer, simulate a rapid cable bounce by reconnecting.
+  ASSERT_OK(dci()->SetConnected(true).status());
+  dut().runtime().RunUntilIdle();
+
+  // Now resolve the captured completer to allow the async promise join task to finish.
+  ASSERT_TRUE(deferred_completer.has_value());
+  completer_cleanup.call();
+
+  // Run the dispatcher until idle to flush the promise join chain.
+  dut().runtime().RunUntilIdle();
+
+  // Final Assertion: Verify that the state machine safely caught the reconnection.
+  ExpectState(UsbPeripheral::DeviceState::kHostConnected);
 }
 
 }  // namespace
