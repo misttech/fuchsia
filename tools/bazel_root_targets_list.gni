@@ -12,7 +12,6 @@ tools_bazel_root_targets = [
         ninja = "buildstats"
       },
     ]
-    install_host_tool = true
   },
   {
     bazel_label = "//tools/build/ninjago/ninjatrace:ninjatrace"
@@ -22,7 +21,6 @@ tools_bazel_root_targets = [
         ninja = "ninjatrace"
       },
     ]
-    install_host_tool = true
   },
   {
     bazel_label = "//tools/dart_test_parser:dart_test_parser"
