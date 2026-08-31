@@ -15,7 +15,7 @@ if (is_host) {
       "//build/bazel/host:bazel_root_host_tools.mdlint.host_tool",
       "//build/bazel/host:bazel_root_host_tools.orchestrate",
       "//build/bazel/host:bazel_root_host_tools.pretty_serial.host_tool",
-      "//build/bazel/host:bazel_root_host_tools.rust_extract.host_tool",
+      "//build/bazel/host:bazel_root_host_tools.rust_extract",
       "//tools/auto_owners",
       "//tools/bindc:host",
       "//tools/build",

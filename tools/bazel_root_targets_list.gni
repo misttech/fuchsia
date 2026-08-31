@@ -271,7 +271,6 @@ tools_bazel_root_targets = [
   },
   {
     bazel_label = "//tools/rust_extract"
-    install_host_tool = true
   },
   {
     bazel_label = "//tools/create:create_bin"
