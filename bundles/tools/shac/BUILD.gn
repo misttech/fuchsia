@@ -6,7 +6,7 @@
 group("shac_tools") {
   testonly = true
   deps = [
-    "//build/bazel/host:bazel_root_host_tools.clippy-reporter.host_tool($host_toolchain)",
+    "//build/bazel/host:bazel_root_host_tools.clippy-reporter($host_toolchain)",
     "//build/bazel/host:bazel_root_host_tools.formatjson5($host_toolchain)",
     "//build/bazel/host:bazel_root_host_tools.gidl-format.host_tool($host_toolchain)",
     "//build/bazel/host:bazel_root_host_tools.mdlint($host_toolchain)",

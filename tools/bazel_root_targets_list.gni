@@ -167,7 +167,6 @@ tools_bazel_root_targets = [
         ninja = "clippy-reporter"
       },
     ]
-    install_host_tool = true
   },
   {
     bazel_label = "//tools/staticanalysis/rfcmeta:rfcmeta"

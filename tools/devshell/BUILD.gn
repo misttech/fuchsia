@@ -32,7 +32,7 @@ if (!is_host) {
       "//tools/loglistener:host",
 
       # For `fx lint`.
-      "//build/bazel/host:bazel_root_host_tools.clippy-reporter.host_tool",
+      "//build/bazel/host:bazel_root_host_tools.clippy-reporter",
       "//tools/fidl/fidlc:fidl-lint",
 
       # For `fx pretty_serial`.
