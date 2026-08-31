@@ -17,6 +17,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/ioctl.h>
 #include <sys/mman.h>
 #include <sys/mount.h>
 #include <sys/prctl.h>
@@ -35,6 +36,7 @@
 
 #include <gtest/gtest.h>
 #include <linux/capability.h>
+#include <linux/fs.h>
 #include <linux/loop.h>
 
 #include "src/lib/files/file.h"
@@ -818,6 +820,26 @@ void ScopedMount::Unmount() {
     umount(target_path_.c_str());
     is_mounted_ = false;
   }
+}
+
+fit::result<int> SetCasefold(const std::string &path, bool enable) {
+  fbl::unique_fd dir_fd(open(path.c_str(), O_RDONLY | O_DIRECTORY));
+  if (!dir_fd.is_valid()) {
+    return fit::error(errno);
+  }
+  int flags = 0;
+  if (ioctl(dir_fd.get(), FS_IOC_GETFLAGS, &flags) < 0) {
+    return fit::error(errno);
+  }
+  if (enable) {
+    flags |= FS_CASEFOLD_FL;
+  } else {
+    flags &= ~FS_CASEFOLD_FL;
+  }
+  if (ioctl(dir_fd.get(), FS_IOC_SETFLAGS, &flags) < 0) {
+    return fit::error(errno);
+  }
+  return fit::ok();
 }
 
 ScopedPipe::ScopedPipe() {

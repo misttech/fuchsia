@@ -25,7 +25,10 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, Ordering};
 
-pub struct TmpFs(&'static FsStr);
+pub struct TmpFs {
+    name: &'static FsStr,
+    casefold: bool,
+}
 
 impl FileSystemOps for Arc<TmpFs> {
     fn statfs(&self, _fs: &FileSystem, _current_task: &CurrentTask) -> Result<statfs, Errno> {
@@ -38,7 +41,11 @@ impl FileSystemOps for Arc<TmpFs> {
         })
     }
     fn name(&self) -> &'static FsStr {
-        self.0
+        self.name
+    }
+
+    fn has_casefold_support(&self) -> bool {
+        self.casefold
     }
 
     fn rename(
@@ -158,8 +165,7 @@ impl TmpFs {
         options: FileSystemOptions,
         name: &'static FsStr,
     ) -> Result<FileSystemHandle, Errno> {
-        let fs = FileSystem::new(kernel, CacheMode::Permanent, Arc::new(TmpFs(name)), options)?;
-        let mut mount_options = fs.options.params.clone();
+        let mut mount_options = options.params.clone();
         let mode = if let Some(mode) = mount_options.remove(b"mode") {
             FileMode::from_string(mode.as_ref())?
         } else {
@@ -175,6 +181,13 @@ impl TmpFs {
         } else {
             0
         };
+        let casefold = mount_options.remove(b"casefold").is_some();
+        let fs = FileSystem::new(
+            kernel,
+            CacheMode::Permanent,
+            Arc::new(TmpFs { name, casefold }),
+            options,
+        )?;
         let root_ino = fs.allocate_ino();
         let mut info = FsNodeInfo::new(mode!(IFDIR, 0o1777), FsCred { uid, gid });
         info.chmod(mode);
@@ -318,9 +331,9 @@ impl FsNodeOps for TmpFsDirectory {
             info.link_count += 1;
         });
         self.child_count.fetch_add(1, Ordering::Release);
-        Ok(node
-            .fs()
-            .create_node_and_allocate_node_id(TmpFsDirectory::new(), FsNodeInfo::new(mode, owner)))
+        let mut info = FsNodeInfo::new(mode, owner);
+        info.casefold = node.info().casefold;
+        Ok(node.fs().create_node_and_allocate_node_id(TmpFsDirectory::new(), info))
     }
 
     fn mknod(
