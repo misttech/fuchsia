@@ -7,6 +7,7 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -821,5 +822,114 @@ func TestProbeXattrError(t *testing.T) {
 
 	if got.DisableXattrForRbe {
 		t.Errorf("expected DisableXattrForRbe to be false when xattr probe errored, but got true")
+	}
+}
+
+func TestCanAccessRbe(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git binary not found in PATH")
+	}
+
+	testCases := []struct {
+		name       string
+		remoteURLs []string
+		want       bool
+		expectErr  bool
+		noRepo     bool
+	}{
+		{
+			name:       "sso remote returns true",
+			remoteURLs: []string{"sso://fuchsia/integration"},
+			want:       true,
+		},
+		{
+			name:       "rpc remote returns true",
+			remoteURLs: []string{"rpc://internal-host/integration"},
+			want:       true,
+		},
+		{
+			name:       "https remote returns false",
+			remoteURLs: []string{"https://fuchsia.googlesource.com/integration"},
+			want:       false,
+		},
+		{
+			name: "multiple remotes with rpc returns true",
+			remoteURLs: []string{
+				"https://fuchsia.googlesource.com/integration",
+				"rpc://internal-host/integration",
+			},
+			want: true,
+		},
+		{
+			name: "multiple remotes with sso returns true",
+			remoteURLs: []string{
+				"https://fuchsia.googlesource.com/integration",
+				"sso://internal-host/integration",
+			},
+			want: true,
+		},
+		{
+			name: "multiple remotes without sso or rpc returns false",
+			remoteURLs: []string{
+				"https://fuchsia.googlesource.com/integration",
+				"https://backup.example.com/integration",
+			},
+			want: false,
+		},
+		{
+			name:       "empty repository with zero remotes returns false",
+			remoteURLs: []string{},
+			want:       false,
+		},
+		{
+			name:       "url with rpc scheme not at prefix returns false",
+			remoteURLs: []string{"https://example.com/rpc://repo"},
+			want:       false,
+		},
+		{
+			name:      "missing integration directory errors",
+			noRepo:    true,
+			expectErr: true,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv("GIT_CONFIG_GLOBAL", "/dev/null")
+			t.Setenv("GIT_CONFIG_SYSTEM", "/dev/null")
+			t.Setenv("GIT_CONFIG_NOSYSTEM", "1")
+
+			ctx := context.Background()
+			checkoutDir := t.TempDir()
+			if !tc.noRepo {
+				integrationDir := filepath.Join(checkoutDir, "integration")
+				if err := os.MkdirAll(integrationDir, 0o755); err != nil {
+					t.Fatal(err)
+				}
+				// Initialize a test git repo and add remotes.
+				cmd := exec.Command("git", "init")
+				cmd.Dir = integrationDir
+				if out, err := cmd.CombinedOutput(); err != nil {
+					t.Fatalf("git init failed: %v, output: %s", err, string(out))
+				}
+
+				for i, url := range tc.remoteURLs {
+					name := fmt.Sprintf("remote_%d", i)
+					cmd := exec.Command("git", "remote", "add", name, url)
+					cmd.Dir = integrationDir
+					if out, err := cmd.CombinedOutput(); err != nil {
+						t.Fatalf("git remote add failed: %v, output: %s", err, string(out))
+					}
+				}
+			}
+
+			got, err := canAccessRbe(ctx, checkoutDir)
+			if (err != nil) != tc.expectErr {
+				t.Fatalf("canAccessRbe() error = %v, expectErr = %v", err, tc.expectErr)
+			}
+			if got != tc.want {
+				t.Errorf("canAccessRbe() = %v, want %v", got, tc.want)
+			}
+		})
 	}
 }

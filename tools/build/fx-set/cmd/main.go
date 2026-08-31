@@ -128,9 +128,9 @@ func mainImpl(ctx context.Context) error {
 	}
 
 	var staticSpec *fintpb.Static
-	canUseRbe, err := canAccessRbe(args.checkoutDir)
+	canUseRbe, err := canAccessRbe(ctx, args.checkoutDir)
 	if err != nil {
-		fmt.Printf("Unable to determine RBE access, assuming False.")
+		fmt.Println("Unable to determine RBE access, assuming False.")
 		canUseRbe = false
 	}
 
@@ -582,7 +582,7 @@ func applyRbeSettings(static *fintpb.Static, args *setArgs, canUseRbe bool) (*fi
 			return nil, fmt.Errorf("Sorry, RBE is only supported on linux-x64 at this time.")
 		}
 		if !canUseRbe {
-			fmt.Printf("Note: RBE is not publicly accessible at this time.")
+			fmt.Println("Note: RBE is not publicly accessible at this time.")
 		}
 	}
 
@@ -692,26 +692,25 @@ func allEnvVars() map[string]string {
 // configuring use of RBE.
 // TODO(b/356896318): distinguish between cache-reading and remote execution
 // privileges.
-func canAccessRbe(checkoutDir string) (bool, error) {
-	cmd := exec.Command("git", "remote", "-v")
-	cmd.Dir = checkoutDir + "/integration"
+func canAccessRbe(ctx context.Context, checkoutDir string) (bool, error) {
+	cmd := exec.CommandContext(ctx, "git", "remote", "-v")
+	cmd.Dir = filepath.Join(checkoutDir, "integration")
 	out, err := cmd.Output()
 	if err != nil {
 		return false, err
 	}
 	lines := strings.Split(string(out), "\n")
-	if len(lines) < 1 {
-		return false, fmt.Errorf("Failed to read 'git remote -v'")
-	}
-	// Check all remotes.  If any have SSO access, then assume user
+	// Check all remotes.  If any have SSO or RPC access, then assume user
 	// can access RBE.
 	for _, line := range lines {
 		fields := strings.Fields(line)
 		// Expect lines like:
 		//   "origin	sso://.../integration (fetch)"
 		// or
+		//   "origin	rpc://.../integration (fetch)"
+		// or
 		//   "origin	https://.../integration (fetch)"
-		if len(fields) >= 2 && strings.HasPrefix(fields[1], "sso://") {
+		if len(fields) >= 2 && (strings.HasPrefix(fields[1], "sso://") || strings.HasPrefix(fields[1], "rpc://")) {
 			return true, nil
 		}
 	}
