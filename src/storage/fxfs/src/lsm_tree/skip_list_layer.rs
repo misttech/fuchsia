@@ -362,6 +362,11 @@ impl<K, V> Drop for SkipListLayerIter<'_, K, V> {
 
 impl<K: Key, V: LayerValue> LayerIterator<K, V> for SkipListLayerIter<'_, K, V> {
     async fn advance(&mut self) -> Result<(), Error> {
+        let _ = self.advance_dyn()?;
+        Ok(())
+    }
+
+    fn advance_dyn<'a>(&'a mut self) -> Result<Option<BoxFuture<'a, Result<(), Error>>>, Error> {
         match self.node {
             None => {}
             Some(node) => {
@@ -371,11 +376,7 @@ impl<K: Key, V: LayerValue> LayerIterator<K, V> for SkipListLayerIter<'_, K, V> 
                 }
             }
         }
-        Ok(())
-    }
-
-    fn advance_dyn<'a>(&'a mut self) -> BoxFuture<'a, Result<(), Error>> {
-        Box::pin(self.advance())
+        Ok(None)
     }
 
     fn get(&self) -> Option<ItemRef<'_, K, V>> {

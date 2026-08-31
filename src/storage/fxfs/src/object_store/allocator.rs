@@ -2015,8 +2015,8 @@ impl<I: LayerIterator<AllocatorKey, AllocatorValue>> LayerIterator<AllocatorKey,
         }
     }
 
-    fn advance_dyn<'a>(&'a mut self) -> BoxFuture<'a, Result<(), Error>> {
-        Box::pin(self.advance())
+    fn advance_dyn<'a>(&'a mut self) -> Result<Option<BoxFuture<'a, Result<(), Error>>>, Error> {
+        Ok(Some(Box::pin(self.advance())))
     }
 
     fn get(&self) -> Option<ItemRef<'_, AllocatorKey, AllocatorValue>> {

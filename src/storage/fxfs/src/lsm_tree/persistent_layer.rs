@@ -304,8 +304,65 @@ impl<K: Key, V: LayerValue> KeyOnlyIterator<'_, K, V> {
         Ok(())
     }
 
+    fn try_advance(&mut self) -> Result<bool, Error> {
+        if self.item_index >= self.item_count {
+            if self.pos >= self.layer.data_offset() + self.layer.data_size {
+                self.key = None;
+                return Ok(true);
+            }
+            if self.buffer.chunk.is_none() || self.pos as usize % CHUNK_SIZE == 0 {
+                self.buffer.chunk = self.layer.caching_object_handle.try_read(self.pos as usize);
+                if self.buffer.chunk.is_none() {
+                    return Ok(false);
+                }
+            }
+            self.buffer.pos = self.pos as usize % CHUNK_SIZE;
+            self.item_count = self.buffer.read_u16::<LittleEndian>()?;
+            if self.item_count == 0 {
+                bail!(
+                    "Read block with zero item count (object: {}, offset: {})",
+                    self.layer.object_handle.object_id(),
+                    self.pos
+                );
+            }
+            debug!(
+                pos = self.pos,
+                buf:? = self.buffer,
+                object_size = self.layer.data_offset() + self.layer.data_size,
+                oid = self.layer.object_handle.object_id();
+                ""
+            );
+            self.pos += self.layer.block_size;
+            self.item_index = 0;
+            self.value_deserialized = true;
+        }
+        self.seek_to_block_item(self.item_index)?;
+        self.key = Some(
+            K::deserialize_from_version(self.buffer.by_ref(), self.layer.version)
+                .context("Corrupt layer (key)")?,
+        );
+        self.item_index += 1;
+        self.value_deserialized = false;
+        Ok(true)
+    }
+
     fn get(&self) -> Option<&K> {
         self.key.as_ref()
+    }
+
+    fn take_item(&mut self) -> Result<Option<Item<K, V>>, Error> {
+        let key = std::mem::take(&mut self.key);
+        if let Some(key) = key {
+            self.value_deserialized = true;
+            let value = V::deserialize_from_version(self.buffer.by_ref(), self.layer.version)
+                .context("Corrupt layer (value)")?;
+            if self.layer.version.major < REMOVE_ITEM_SEQUENCE_VERSION {
+                self.buffer.read_u64::<LittleEndian>().context("Corrupt layer (seq)")?;
+            }
+            Ok(Some(Item { key, value }))
+        } else {
+            Ok(None)
+        }
     }
 }
 
@@ -317,21 +374,7 @@ struct Iterator<'iter, K: Key, V: LayerValue> {
 
 impl<'iter, K: Key, V: LayerValue> Iterator<'iter, K, V> {
     fn new(mut seek_iterator: KeyOnlyIterator<'iter, K, V>) -> Result<Self, Error> {
-        let key = std::mem::take(&mut seek_iterator.key);
-        let item = if let Some(key) = key {
-            seek_iterator.value_deserialized = true;
-            let value = V::deserialize_from_version(
-                seek_iterator.buffer.by_ref(),
-                seek_iterator.layer.version,
-            )
-            .context("Corrupt layer (value)")?;
-            if seek_iterator.layer.version.major < REMOVE_ITEM_SEQUENCE_VERSION {
-                seek_iterator.buffer.read_u64::<LittleEndian>().context("Corrupt layer (seq)")?;
-            }
-            Some(Item { key, value })
-        } else {
-            None
-        };
+        let item = seek_iterator.take_item()?;
         Ok(Self { inner: seek_iterator, item })
     }
 }
@@ -339,24 +382,17 @@ impl<'iter, K: Key, V: LayerValue> Iterator<'iter, K, V> {
 impl<'iter, K: Key, V: LayerValue> LayerIterator<K, V> for Iterator<'iter, K, V> {
     async fn advance(&mut self) -> Result<(), Error> {
         self.inner.advance().await?;
-        let key = std::mem::take(&mut self.inner.key);
-        self.item = if let Some(key) = key {
-            self.inner.value_deserialized = true;
-            let value =
-                V::deserialize_from_version(self.inner.buffer.by_ref(), self.inner.layer.version)
-                    .context("Corrupt layer (value)")?;
-            if self.inner.layer.version.major < REMOVE_ITEM_SEQUENCE_VERSION {
-                self.inner.buffer.read_u64::<LittleEndian>().context("Corrupt layer (seq)")?;
-            }
-            Some(Item { key, value })
-        } else {
-            None
-        };
+        self.item = self.inner.take_item()?;
         Ok(())
     }
 
-    fn advance_dyn<'a>(&'a mut self) -> BoxFuture<'a, Result<(), Error>> {
-        Box::pin(self.advance())
+    fn advance_dyn<'a>(&'a mut self) -> Result<Option<BoxFuture<'a, Result<(), Error>>>, Error> {
+        if self.inner.try_advance()? {
+            self.item = self.inner.take_item()?;
+            Ok(None)
+        } else {
+            Ok(Some(Box::pin(self.advance())))
+        }
     }
 
     fn get(&self) -> Option<ItemRef<'_, K, V>> {

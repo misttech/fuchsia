@@ -197,8 +197,8 @@ impl<I: LayerIterator<ObjectKey, ObjectValue>> LayerIterator<ObjectKey, ObjectVa
         }
     }
 
-    fn advance_dyn<'a>(&'a mut self) -> BoxFuture<'a, Result<(), Error>> {
-        Box::pin(self.advance())
+    fn advance_dyn<'a>(&'a mut self) -> Result<Option<BoxFuture<'a, Result<(), Error>>>, Error> {
+        Ok(Some(Box::pin(self.advance())))
     }
 
     fn get(&self) -> Option<ItemRef<'_, ObjectKey, ObjectValue>> {
@@ -278,12 +278,15 @@ mod tests {
 
     impl<'a> LayerIterator<ObjectKey, ObjectValue> for TestIterator<'a> {
         async fn advance(&mut self) -> Result<(), Error> {
-            self.index = std::cmp::min(self.index + 1, self.objects.len());
+            let _ = self.advance_dyn()?;
             Ok(())
         }
 
-        fn advance_dyn<'b>(&'b mut self) -> BoxFuture<'b, Result<(), Error>> {
-            Box::pin(self.advance())
+        fn advance_dyn<'b>(
+            &'b mut self,
+        ) -> Result<Option<BoxFuture<'b, Result<(), Error>>>, Error> {
+            self.index = std::cmp::min(self.index + 1, self.objects.len());
+            Ok(None)
         }
 
         fn get(&self) -> Option<ItemRef<'_, ObjectKey, ObjectValue>> {

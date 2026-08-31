@@ -627,8 +627,8 @@ impl<'a, K: Key + LayerKey + OrdLowerBound, V: Value> LayerIterator<K, V>
         self.advance_impl(search_key).await
     }
 
-    fn advance_dyn<'b>(&'b mut self) -> BoxFuture<'b, Result<(), Error>> {
-        Box::pin(self.advance())
+    fn advance_dyn<'b>(&'b mut self) -> Result<Option<BoxFuture<'b, Result<(), Error>>>, Error> {
+        Ok(Some(Box::pin(self.advance())))
     }
 
     fn get(&self) -> Option<ItemRef<'_, K, V>> {

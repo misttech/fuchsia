@@ -151,6 +151,26 @@ impl<S: ReadObjectHandle> CachingObjectHandle<S> {
         }
     }
 
+    pub fn try_read(&self, offset: usize) -> Option<CachedChunk> {
+        if offset >= self.source.get_size() as usize {
+            return None;
+        }
+        let chunk_num = offset / CHUNK_SIZE;
+        let mut chunks = self.chunks.lock();
+        match &chunks[chunk_num] {
+            Chunk::Present(cached_chunk) => Some(cached_chunk.clone()),
+            Chunk::Expired(_) => {
+                let Chunk::Expired(data) = std::mem::take(&mut chunks[chunk_num]) else {
+                    unreachable!()
+                };
+                let cached_chunk = CachedChunk(Arc::new(data));
+                chunks[chunk_num] = Chunk::Present(cached_chunk.clone());
+                Some(cached_chunk)
+            }
+            _ => None,
+        }
+    }
+
     #[trace]
     async fn load(&self, chunk_num: usize) -> Result<CachedChunk, Error> {
         // If this future is dropped or reading fails then put the chunk back into the

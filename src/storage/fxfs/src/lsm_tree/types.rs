@@ -397,7 +397,8 @@ pub trait LayerIterator<K, V>: Send + Sync {
         Self: Sized;
 
     /// Advances the iterator for dynamic dispatch (trait objects).
-    fn advance_dyn<'a>(&'a mut self) -> BoxFuture<'a, Result<(), Error>>;
+    /// If the iterator advances synchronously, returns `Ok(None)`.
+    fn advance_dyn<'a>(&'a mut self) -> Result<Option<BoxFuture<'a, Result<(), Error>>>, Error>;
 
     /// Returns the current item. This will be None if called when the iterator is first crated i.e.
     /// before either seek or advance has been called, and None if the iterator has reached the end
@@ -423,11 +424,14 @@ pub trait LayerIterator<K, V>: Send + Sync {
 pub type BoxedLayerIterator<'iter, K, V> = Box<dyn LayerIterator<K, V> + 'iter>;
 
 impl<'iter, K, V> LayerIterator<K, V> for BoxedLayerIterator<'iter, K, V> {
-    fn advance(&mut self) -> impl Future<Output = Result<(), Error>> + Send {
-        self.as_mut().advance_dyn()
+    async fn advance(&mut self) -> Result<(), Error> {
+        if let Some(fut) = self.as_mut().advance_dyn()? {
+            fut.await?;
+        }
+        Ok(())
     }
 
-    fn advance_dyn<'a>(&'a mut self) -> BoxFuture<'a, Result<(), Error>> {
+    fn advance_dyn<'a>(&'a mut self) -> Result<Option<BoxFuture<'a, Result<(), Error>>>, Error> {
         self.as_mut().advance_dyn()
     }
 
@@ -514,8 +518,8 @@ where
         self.skip_filtered().await
     }
 
-    fn advance_dyn<'a>(&'a mut self) -> BoxFuture<'a, Result<(), Error>> {
-        Box::pin(self.advance())
+    fn advance_dyn<'a>(&'a mut self) -> Result<Option<BoxFuture<'a, Result<(), Error>>>, Error> {
+        Ok(Some(Box::pin(self.advance())))
     }
 
     fn get(&self) -> Option<ItemRef<'_, K, V>> {
