@@ -35,7 +35,9 @@ async def handle(
             success=False, message="Not connected to zxdb DAP server"
         )
     try:
-        threads_resp = await daemon.dap_client.threads()
+        # TODO(https://fxbug.dev/552813275): Wrap zxdb requests with
+        # capability.enable(zxdb) before calling zxdb_threads.
+        threads_resp = await daemon.dap_client.zxdb_threads()
         threads = []
         # Defensive check to ensure zxdb DAP server successfully returned a
         # valid threads list.

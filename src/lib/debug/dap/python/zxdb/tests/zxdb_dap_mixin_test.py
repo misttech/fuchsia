@@ -273,7 +273,7 @@ class TestZxdbDapMixin(unittest.IsolatedAsyncioTestCase):
     async def test_threads_response_process_id(self) -> None:
         client = ZxdbDapClient()
         reader, writer = self._start_client(client)
-        send_task = asyncio.create_task(client.threads())
+        send_task = asyncio.create_task(client.zxdb_threads())
 
         await asyncio.wait_for(writer.drained.wait(), timeout=2.0)
 
@@ -308,7 +308,7 @@ class TestZxdbDapMixin(unittest.IsolatedAsyncioTestCase):
     async def test_threads_response_process_id_optional(self) -> None:
         client = ZxdbDapClient()
         reader, writer = self._start_client(client)
-        send_task = asyncio.create_task(client.threads())
+        send_task = asyncio.create_task(client.zxdb_threads())
 
         await asyncio.wait_for(writer.drained.wait(), timeout=2.0)
 

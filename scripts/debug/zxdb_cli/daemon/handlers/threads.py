@@ -25,7 +25,9 @@ async def handle(daemon: Daemon, _req: ThreadsRequest) -> Response[Any]:
         )
 
     try:
-        resp = await daemon.dap_client.threads()
+        # TODO(https://fxbug.dev/552813275): Wrap zxdb requests with
+        # capability.enable(zxdb) before calling zxdb_threads.
+        resp = await daemon.dap_client.zxdb_threads()
         if resp.body and resp.body.threads is not None:
             daemon.update_thread_cache(resp.body.threads)
         body = resp.body.model_dump() if resp.body else None

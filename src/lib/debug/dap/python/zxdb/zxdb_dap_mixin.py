@@ -119,7 +119,7 @@ class ZxdbDapMixin:
         resp = await self._send_request("stackTrace", args)
         return StackTraceResponse.model_validate(resp)
 
-    async def threads(
+    async def zxdb_threads(
         self: SupportsSendRequest,
     ) -> ZxdbThreadsResponse:
         """Sends a threads request.

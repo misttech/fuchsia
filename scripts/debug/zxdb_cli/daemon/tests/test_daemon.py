@@ -694,7 +694,7 @@ class TestCommandHandlerRegistry(unittest.IsolatedAsyncioTestCase):
             ]
         }
         mock_threads_resp.body = mock_body
-        mock_dap_client.threads = AsyncMock(return_value=mock_threads_resp)
+        mock_dap_client.zxdb_threads = AsyncMock(return_value=mock_threads_resp)
 
         daemon = Daemon(port=15678)
         daemon.zxdb_writer = Mock()
@@ -766,7 +766,7 @@ class TestCommandHandlerRegistry(unittest.IsolatedAsyncioTestCase):
         mock_thread1.process_id = 1234
         mock_body.threads = [mock_thread1]
         mock_threads_resp.body = mock_body
-        mock_dap_client.threads = AsyncMock(return_value=mock_threads_resp)
+        mock_dap_client.zxdb_threads = AsyncMock(return_value=mock_threads_resp)
 
         daemon = Daemon(port=15678)
         daemon.zxdb_writer = Mock()
@@ -797,7 +797,7 @@ class TestCommandHandlerRegistry(unittest.IsolatedAsyncioTestCase):
         mock_dap_client = mock_dap_client_class.return_value
         mock_threads_resp = Mock()
         mock_threads_resp.body = None  # Simulate missing DAP body
-        mock_dap_client.threads = AsyncMock(return_value=mock_threads_resp)
+        mock_dap_client.zxdb_threads = AsyncMock(return_value=mock_threads_resp)
 
         daemon = Daemon(port=15678)
         daemon.zxdb_writer = Mock()
@@ -823,7 +823,7 @@ class TestCommandHandlerRegistry(unittest.IsolatedAsyncioTestCase):
         mock_body = Mock()
         mock_body.threads = []
         mock_threads_resp.body = mock_body
-        mock_dap_client.threads = AsyncMock(return_value=mock_threads_resp)
+        mock_dap_client.zxdb_threads = AsyncMock(return_value=mock_threads_resp)
 
         daemon = Daemon(port=15678)
         daemon.zxdb_writer = Mock()
@@ -849,7 +849,7 @@ class TestCommandHandlerRegistry(unittest.IsolatedAsyncioTestCase):
         mock_body.threads = []
         mock_body.model_dump.return_value = {"threads": []}
         mock_threads_resp.body = mock_body
-        mock_dap_client.threads = AsyncMock(return_value=mock_threads_resp)
+        mock_dap_client.zxdb_threads = AsyncMock(return_value=mock_threads_resp)
 
         daemon = Daemon(port=15678)
         daemon.zxdb_writer = Mock()
