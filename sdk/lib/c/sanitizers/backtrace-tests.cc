@@ -37,7 +37,7 @@ using namespace std::literals;
 //  * shadow call stack (accessible via __sanitizer_fast_backtrace)
 //  * metadata-based (DWARF CFI) unwinding (accessible via _Unwind_Backtrace)
 
-using Backtrace = cpp20::span<uintptr_t>;
+using Backtrace = std::span<uintptr_t>;
 using Getter = size_t(Backtrace);
 
 auto StringWriter(std::string& result) {

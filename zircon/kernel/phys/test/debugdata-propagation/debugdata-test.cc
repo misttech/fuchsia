@@ -11,7 +11,7 @@
 #include <lib/zbitl/vmo.h>
 
 #include <array>
-#include <optional>
+#include <span>
 #include <vector>
 
 #include <zxtest/zxtest.h>
@@ -30,7 +30,7 @@ bool IsDebugDataItemAt(ZbiIter it, size_t index) {
     return false;
   }
   std::vector<std::byte> buffer(header->length, static_cast<std::byte>(0));
-  auto copy_res = it.view().CopyRawItem(cpp20::span(buffer), it);
+  auto copy_res = it.view().CopyRawItem(std::span(buffer), it);
   EXPECT_TRUE(copy_res.is_ok(), "Copy Error: %*s\n",
               static_cast<int>(copy_res.error_value().zbi_error.size()),
               copy_res.error_value().zbi_error.data());

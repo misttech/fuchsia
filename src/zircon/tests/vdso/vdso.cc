@@ -17,18 +17,20 @@
 #include <zircon/processargs.h>
 #include <zircon/syscalls.h>
 
-#include <new>
 #include <vector>
 
 #include <fbl/array.h>
 #include <zxtest/zxtest.h>
 
-static const zx::vmo vdso_vmo{zx_take_startup_handle(PA_HND(PA_VMO_VDSO, 0))};
+namespace {
+
+const zx::vmo vdso_vmo{zx_take_startup_handle(PA_HND(PA_VMO_VDSO, 0))};
 
 class ScratchPad {
  public:
   ScratchPad() = delete;
-  ScratchPad(const char* name) {
+
+  explicit ScratchPad(const char* name) {
     EXPECT_EQ(
         zx_process_create(zx_job_default(), name, static_cast<uint32_t>(strlen(name)), 0,
                           process_.reset_and_get_address(), root_vmar_.reset_and_get_address()),
@@ -67,7 +69,7 @@ class ScratchPad {
                                                                                    "impossible"));
     ZX_ASSERT(headers);
     auto& [ehdr, phdrs_result] = *headers;
-    cpp20::span<const elfldltl::Elf<>::Phdr> phdrs = phdrs_result;
+    std::span<const elfldltl::Elf<>::Phdr> phdrs = phdrs_result;
     ZX_ASSERT(elfldltl::DecodePhdrs(diag, phdrs, load_info.GetPhdrObserver(loader.page_size())));
     load_info.VisitSegments([this](const auto& segment) {
       if (segment.executable()) {
@@ -174,3 +176,5 @@ TEST(VdsoTests, vdso_map_code_wrong_test) {
               ZX_ERR_ACCESS_DENIED, "executable mapping of subset of vDSO code");
   }
 }
+
+}  // namespace

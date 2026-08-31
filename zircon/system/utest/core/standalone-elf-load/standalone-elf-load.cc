@@ -110,7 +110,7 @@ bool TestOneModule(std::string_view test_module_name, unsigned int id) {
         static_cast<size_type>(load_info.vaddr_start() + loader.load_bias()));
 
     // Read the PT_DYNAMIC, which leads to symbol information.
-    cpp20::span<const Dyn> dyn;
+    std::span<const Dyn> dyn;
     {
       EXPECT_TRUE(dyn_phdr) << test_module_name << " has no PT_DYNAMIC";
       if (!dyn_phdr) {
