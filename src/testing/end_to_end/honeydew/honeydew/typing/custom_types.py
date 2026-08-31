@@ -357,20 +357,24 @@ class DeviceInfo:
 
     Args:
         name: Device name returned by `ffx target list`.
-        serial_socket: Device serial socket path.
+        serial_number: Device serial number.
         ip_port: IP Address and port of the device.
+        serial_socket: Device serial socket path.
+        fastboot_node_id: Fastboot node ID.
     """
 
     name: str
     serial_number: str | None
     ip_port: IpPort | None
     serial_socket: str | None
+    fastboot_node_id: str | None = None
 
     def __str__(self) -> str:
         return (
             f"name={self.name}, "
             f"ip_port={self.ip_port}, "
             f"serial_socket={self.serial_socket}, "
+            f"fastboot_node_id={self.fastboot_node_id}"
         )
 
 

@@ -92,94 +92,97 @@ def new_testbed_config(
 ) -> MoblyConfigComponent:
     """Returns a Mobly testbed config which is required for running Mobly tests.
 
-    This method expects the |controller| object to follow the schema of
-    tools/botanist/targets/target.go's |FuchsiaTestbedConfig| struct or the
-    tools/botanist/targets/auxiliary.go's |Auxiliary| struct.
+        This method expects the |controller| object to follow the schema of
+        tools/botanist/targets/target.go's |FuchsiaTestbedConfig| struct or the
+        tools/botanist/targets/auxiliary.go's |Auxiliary| struct.
 
-    Example |mobly_controllers|:
-       [{
-          "type": "FuchsiaDevice",
-          "nodename":"fuchsia-54b2-030e-eb19",
-          "ipv4":"192.168.42.112",
-          "ipv6":"",
-          "serial_socket":"/tmp/fuchsia-54b2-030e-eb19_mux",
-          "ssh_key":"/etc/botanist/keys/pkey_infra",
-          "shared_data":"/etc/botanist/shared_data"
-       },
-       {
-          "type": "AccessPoint",
-          "ip": "192.168.42.11",
-          "mac": "98:de:d0:81:cf:30",
-          "pdu": {
-              "ip": "192.168.42.23",
-              "mac": "0c:73:eb:b0:86:fa",
-              "port": 1
-          },
-          "nodename": "access-point-1234-5678-9abc",
-          "ssh_key": "/etc/botanist/keys/chrome_os_testing_rsa",
-          "user": "root",
-          "wan_interface": "eth0"
-        }]
+    # LINT.IfChange
+    # Example |mobly_controllers|:
+    #    [{
+    #       "type": "FuchsiaDevice",
+    #       "nodename":"fuchsia-54b2-030e-eb19",
+    #       "ipv4":"192.168.42.112",
+    #       "ipv6":"",
+    #       "fastboot_sernum":"3676a5a3",
+    #       "serial_socket":"/tmp/fuchsia-54b2-030e-eb19_mux",
+    #       "ssh_key":"/etc/botanist/keys/pkey_infra",
+    #       "shared_data":"/etc/botanist/shared_data"
+    #    },
+    # LINT.ThenChange(//tools/botanist/targets/target.go)
+           {
+              "type": "AccessPoint",
+              "ip": "192.168.42.11",
+              "mac": "98:de:d0:81:cf:30",
+              "pdu": {
+                  "ip": "192.168.42.23",
+                  "mac": "0c:73:eb:b0:86:fa",
+                  "port": 1
+              },
+              "nodename": "access-point-1234-5678-9abc",
+              "ssh_key": "/etc/botanist/keys/chrome_os_testing_rsa",
+              "user": "root",
+              "wan_interface": "eth0"
+            }]
 
-    Example output:
-       {
-          "TestBeds": [
-            {
-              "Name": "LocalTestbed",
-              "Controllers": {
-                "FuchsiaDevice": [
-                  {
-                    "name":"fuchsia-54b2-030e-eb19",
-                    "ipv4":"192.168.42.112",
-                    "ipv6":"",
-                    "serial_socket":"/tmp/fuchsia-54b2-030e-eb19_mux",
-                    "config": {
-                      "transports": {
-                        "ffx": {
-                          "path":"/path/to/ffx",
-                          "subtools_search_path":"/path/to/ffx/subtools",
-                          "shared_data":"/etc/botanist/shared_data"
+        Example output:
+           {
+              "TestBeds": [
+                {
+                  "Name": "LocalTestbed",
+                  "Controllers": {
+                    "FuchsiaDevice": [
+                      {
+                        "name":"fuchsia-54b2-030e-eb19",
+                        "ipv4":"192.168.42.112",
+                        "ipv6":"",
+                        "serial_socket":"/tmp/fuchsia-54b2-030e-eb19_mux",
+                        "config": {
+                          "transports": {
+                            "ffx": {
+                              "path":"/path/to/ffx",
+                              "subtools_search_path":"/path/to/ffx/subtools",
+                              "shared_data":"/etc/botanist/shared_data"
+                            }
+                          }
                         }
                       }
-                    }
+                    ],
+                    "AccessPoint": [
+                      {
+                        "nodename": "access-point-1234-5678-9abc",
+                        "wan_interface": "eth0",
+                        "ssh_config": {
+                          "ssh_binary_path": host_x64/test_data/src/testing/end_to_end/antlion/tests/wlan_policy/hidden_networks_test/ssh
+                          "host": "192.168.42.11",
+                          "user": "root",
+                          "identity_file": "/etc/botanist/keys/chrome_os_testing_rsa"
+                        },
+                        "PduDevice" : {
+                          "device": synaccess.np02b,
+                          "host": "192.168.42.33",
+                          "port": 1
+                        },
+                      }
+                    ]
+                  },
+                  "TestParams": {
+                    "test_dir": "/tmp/out"
                   }
-                ],
-                "AccessPoint": [
-                  {
-                    "nodename": "access-point-1234-5678-9abc",
-                    "wan_interface": "eth0",
-                    "ssh_config": {
-                      "ssh_binary_path": host_x64/test_data/src/testing/end_to_end/antlion/tests/wlan_policy/hidden_networks_test/ssh
-                      "host": "192.168.42.11",
-                      "user": "root",
-                      "identity_file": "/etc/botanist/keys/chrome_os_testing_rsa"
-                    },
-                    "PduDevice" : {
-                      "device": synaccess.np02b,
-                      "host": "192.168.42.33",
-                      "port": 1
-                    },
-                  }
-                ]
-              },
-              "TestParams": {
-                "test_dir": "/tmp/out"
-              }
+                }
+              ]
             }
-          ]
-        }
 
-    Args:
-        testbed_name: Mobly testbed name to use.
-        output_path: absolute path to Mobly's top-level output directory.
-        honeydew_config: Honeydew configuration.
-        mobly_controllers: List of Mobly controller objects.
-        test_params_dict: Mobly testbed params dictionary.
-        botanist_honeydew_map: Dictionary that maps Botanist config names to
-                               Honeydew config names.
-        ssh_path: absolute path to the SSH binary or None for local test case.
-    Returns:
-      A Mobly Config that corresponds to the user-specified arguments.
+        Args:
+            testbed_name: Mobly testbed name to use.
+            output_path: absolute path to Mobly's top-level output directory.
+            honeydew_config: Honeydew configuration.
+            mobly_controllers: List of Mobly controller objects.
+            test_params_dict: Mobly testbed params dictionary.
+            botanist_honeydew_map: Dictionary that maps Botanist config names to
+                                   Honeydew config names.
+            ssh_path: absolute path to the SSH binary or None for local test case.
+        Returns:
+          A Mobly Config that corresponds to the user-specified arguments.
     """
     controllers: dict[str, list[dict[str, Any]]] = {}
     for controller in mobly_controllers:

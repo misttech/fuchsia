@@ -820,6 +820,9 @@ type FuchsiaTestbedConfig struct {
 	// Nodename is the Fuchsia nodename of the target.
 	Nodename string `json:"nodename"`
 
+	// FastbootSernum is the fastboot serial number of the target.
+	FastbootSernum string `json:"fastboot_sernum,omitempty"`
+
 	// IPv4 is the IPv4 address of the target.
 	IPv4 string `json:"ipv4"`
 
@@ -876,6 +879,9 @@ func TestbedConfig(t FuchsiaTarget, expectsSSH bool, opts *testbedConfigOptions)
 		Type:         "FuchsiaDevice",
 		Nodename:     t.Nodename(),
 		SerialSocket: t.SerialSocketPath(),
+	}
+	if dev, ok := t.(*Device); ok {
+		cfg.FastbootSernum = dev.config.FastbootSernum
 	}
 	if opts != nil {
 		cfg.PDU = opts.PDU

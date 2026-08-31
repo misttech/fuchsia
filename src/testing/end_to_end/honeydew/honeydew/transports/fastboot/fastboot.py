@@ -161,7 +161,7 @@ class Fastboot(AsyncLazyReady):
         )
         self.ffx: ffx.FFX = ffx_transport
         self._fastboot_binary: str = _get_fastboot_binary()
-        self._fastboot_node_id = fastboot_node_id
+        self._fastboot_node_id: str | None = fastboot_node_id
 
     async def make_ready(self) -> None:
         await super().make_ready()
@@ -290,6 +290,7 @@ class Fastboot(AsyncLazyReady):
             if self._fastboot_node_id.lower() in fastboot_device.lower():
                 _LOGGER.info("'%s' is in fastboot mode", self._device_name)
                 return True
+
         _LOGGER.info("'%s' is not in fastboot mode", self._device_name)
         return False
 

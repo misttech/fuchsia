@@ -116,6 +116,8 @@ async def create(
                     serial_number=device_config.get("device_serial"),
                     ip_port=device_config.get("device_ip_port"),
                     serial_socket=device_config.get("serial_socket"),
+                    fastboot_node_id=device_config.get("fastboot_sernum")
+                    or device_config.get("fastboot_node_id"),
                 ),
                 ffx_config_data=_FFX_CONFIG_OBJ.get_config(),
                 config=device_config["honeydew_config"],

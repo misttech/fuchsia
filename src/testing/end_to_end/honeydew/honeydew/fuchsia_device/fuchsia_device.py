@@ -445,7 +445,8 @@ class FuchsiaDevice(
             device_name=self.device_name,
             reboot_affordance=self,
             ffx_transport=self.ffx,
-            fastboot_node_id=self._device_info.serial_number,
+            fastboot_node_id=self._device_info.fastboot_node_id
+            or self._device_info.serial_number,
         )
         return fastboot_obj
 
