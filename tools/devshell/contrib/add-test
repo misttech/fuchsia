@@ -62,6 +62,7 @@ fi
 # Cache args in case of typos, bad paths, etc.
 args_gn="${FUCHSIA_BUILD_DIR}/args.gn"
 backup_args_gn="$(mktemp --suffix=.args.gn)"
+trap 'rm -f "${backup_args_gn}"' EXIT
 cp "${args_gn}" "${backup_args_gn}"
 
 echo "Adding test labels to ${args_gn}"
@@ -80,6 +81,5 @@ if ! fx-gen; then
     echo "fx gen failed, restoring original args.gn and re-running 'fx gen'"
     cp "${backup_args_gn}" "${args_gn}"
     fx-gen
+    exit 1
 fi
-
-rm -f "${backup_args_gn}"
