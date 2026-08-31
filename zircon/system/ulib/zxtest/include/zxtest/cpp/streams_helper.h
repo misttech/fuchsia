@@ -11,9 +11,6 @@
 #include <zxtest/base/types.h>
 #include <zxtest/cpp/internal.h>
 
-DECLARE_HAS_MEMBER_FN_WITH_SIGNATURE(has_status_value, status_value, zx_status_t (C::*)() const);
-DECLARE_HAS_MEMBER_FN_WITH_SIGNATURE(has_status, status, zx_status_t (C::*)() const);
-
 #define LIB_ZXTEST_RETURN_TAG_true return zxtest::internal::Tag{}&
 
 #define LIB_ZXTEST_RETURN_TAG_false
@@ -21,17 +18,6 @@ DECLARE_HAS_MEMBER_FN_WITH_SIGNATURE(has_status, status, zx_status_t (C::*)() co
 #define LIB_ZXTEST_RETURN_TAG(val) LIB_ZXTEST_RETURN_TAG_##val
 
 namespace zxtest::internal {
-
-template <typename T>
-zx_status_t GetStatus(const T& status) {
-  if constexpr (has_status_value_v<T>) {
-    return status.status_value();
-  } else if constexpr (has_status_v<T>) {
-    return status.status();
-  } else {
-    return status;
-  }
-}
 
 struct Tag {};
 
