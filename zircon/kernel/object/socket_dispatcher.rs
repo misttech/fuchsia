@@ -609,10 +609,11 @@ mod tests {
     use super::{DEFAULT_RIGHTS, Disposition, ReadType, SocketDispatcher};
     use crate::object::dispatcher::DispatcherOps;
     use crate::user_copy::{UserInPtr, UserOutPtr};
+    use crate::user_memory::UserMemory;
     use core::ffi::c_char;
     use core::mem::MaybeUninit;
     use kalloc::Box;
-    use unittest::{UserMemory, expect_eq, expect_ok, expect_true};
+    use unittest::{expect_eq, expect_ok, expect_true};
     use zx_status::Status;
     use zx_types::{
         ZX_SOCKET_DATAGRAM, ZX_SOCKET_DISPOSITION_WRITE_DISABLED,
@@ -627,7 +628,7 @@ mod tests {
     ) -> Option<(UserMemory, UserInPtr<c_char>)> {
         let alloc_size = if size == 0 { 1 } else { size };
         let mem = UserMemory::create(alloc_size)?;
-        mem.commit_and_map(alloc_size).ok()?;
+        mem.commit_and_map(0..alloc_size).ok()?;
         let mut chunk = [0u8; 512];
         let mut offset = 0;
         while offset < size {
@@ -649,7 +650,7 @@ mod tests {
     fn make_user_out(size: usize) -> Option<(UserMemory, UserOutPtr<c_char>)> {
         let alloc_size = if size == 0 { 1 } else { size };
         let mem = UserMemory::create(alloc_size)?;
-        mem.commit_and_map(alloc_size).ok()?;
+        mem.commit_and_map(0..alloc_size).ok()?;
         let ptr = UserOutPtr::new(mem.base() as *mut c_char);
         Some((mem, ptr))
     }

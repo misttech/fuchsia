@@ -7,6 +7,7 @@
 import("//build/cpp/library_headers.gni")
 import("//build/rust/rustc_library.gni")
 import("//build/toolchain/toolchain_environment.gni")
+import("//zircon/kernel/kernel_rust_mod.gni")
 
 library_headers("headers") {
   headers = [
@@ -44,6 +45,7 @@ source_set("unittest") {
       "user_memory_tests.cc",
     ]
     deps += [
+      ":user-memory-rs",
       "//zircon/kernel/lib/console",
       "//zircon/kernel/lib/page",
     ]
@@ -53,6 +55,23 @@ source_set("unittest") {
       "//zircon/kernel/lib/ktl",
       "//zircon/kernel/lib/libc",
     ]
+  }
+}
+
+kernel_rust_mod("user-memory-rs") {
+  output_name = "user_memory"
+  source_root = "user_memory.rs"
+  sources = [ "user_memory.rs" ]
+  deps = [
+    "//sdk/rust/zx-status",
+    "//src/lib/kprint",
+    "//src/lib/zr",
+    "//third_party/rust_crates:zerocopy",
+    "//zircon/kernel/lib/page:page-rs",
+    "//zircon/system/ulib/fbl/rust:fbl",
+  ]
+  if (current_cpu == "arm64") {
+    deps += [ "//zircon/kernel/arch/arm64:arch-arm64-vm-bindings" ]
   }
 }
 
@@ -70,8 +89,6 @@ rustc_library("unittest-rs") {
 
   if (is_kernel) {
     features = [ "kernel" ]
-    sources += [ "src/user_memory.rs" ]
-    deps += [ "//src/lib/zr" ]
 
     # TODO(https://fxbug.dev/548748442): remove when all fixed in the code
     configs += [ "//zircon/kernel/switch:allow-test-attr-in-doctest" ]

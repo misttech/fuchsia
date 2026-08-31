@@ -959,13 +959,14 @@ impl IoBufferDispatcher {
 mod tests {
     use super::{IoBufferDispatcher, IoBufferSharedRegionDispatcher, IobEndpointId};
     use crate::user_copy::UserInPtr;
+    use crate::user_memory::UserMemory;
     use crate::vm::pmm::ALLOC_FLAG_ANY;
     use crate::vm::vm_object_paged::VmObjectPaged;
     use core::{mem, ptr, slice};
     use iob::{BlobIdAllocator, Header, Index, ZeroFill};
     use kalloc::Box;
     use page;
-    use unittest::{UserMemory, expect_eq, expect_nonnull, expect_ok, expect_true};
+    use unittest::{expect_eq, expect_nonnull, expect_ok, expect_true};
     use zx_status::Status;
     use zx_types::{
         ZX_IOB_ACCESS_EP0_CAN_MAP_READ, ZX_IOB_ACCESS_EP0_CAN_MAP_WRITE,
@@ -980,7 +981,7 @@ mod tests {
     fn make_user_in(data: &[u8]) -> Option<(UserMemory, UserInPtr<u8>)> {
         let alloc_size = if data.is_empty() { 1 } else { data.len() };
         let mem = UserMemory::create(alloc_size)?;
-        mem.commit_and_map(alloc_size).ok()?;
+        mem.commit_and_map(0..alloc_size).ok()?;
         if !data.is_empty() {
             mem.vmo_write(data, 0).ok()?;
         }
@@ -992,7 +993,7 @@ mod tests {
         let size = mem::size_of_val(iovecs);
         let alloc_size = if size == 0 { 1 } else { size };
         let mem = UserMemory::create(alloc_size)?;
-        mem.commit_and_map(alloc_size).ok()?;
+        mem.commit_and_map(0..alloc_size).ok()?;
         if !iovecs.is_empty() {
             let bytes = unsafe { slice::from_raw_parts(iovecs.as_ptr().cast(), size) };
             mem.vmo_write(bytes, 0).ok()?;

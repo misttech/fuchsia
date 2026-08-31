@@ -12,8 +12,9 @@ mod tests {
         UserInIovec, UserInOutIovec, UserInOutPtr, UserInPtr, UserOutIovec, UserOutPtr,
         UserStringView,
     };
+    use crate::user_memory::UserMemory;
     use core::mem::MaybeUninit;
-    use unittest::{UserMemory, assert_eq, assert_nonnull, assert_null, assert_true, unwrap_ok};
+    use unittest::{assert_eq, assert_nonnull, assert_null, assert_true, unwrap_ok};
     use zx_status::Status;
     use zx_types::zx_iovec_t;
 
@@ -74,7 +75,7 @@ mod tests {
     #[test]
     fn copy_out() {
         let user = UserMemory::create(4096).unwrap();
-        unwrap_ok!(user.commit_and_map(4096));
+        unwrap_ok!(user.commit_and_map(0..4096));
 
         let out_ptr = UserOutPtr::<u32>::new(user.base() as *mut u32);
         assert_nonnull!(out_ptr);
@@ -90,7 +91,7 @@ mod tests {
     #[test]
     fn copy_in() {
         let user = UserMemory::create(4096).unwrap();
-        unwrap_ok!(user.commit_and_map(4096));
+        unwrap_ok!(user.commit_and_map(0..4096));
         unwrap_ok!(user.vmo_write(&0xDEADBEEF_u32.to_ne_bytes(), 0));
 
         let in_ptr = UserInPtr::<u32>::new(user.base() as *const u32);
@@ -103,7 +104,7 @@ mod tests {
     #[test]
     fn copy_from_user() {
         let user = UserMemory::create(4096).unwrap();
-        unwrap_ok!(user.commit_and_map(4096));
+        unwrap_ok!(user.commit_and_map(0..4096));
         unwrap_ok!(user.vmo_write(&0xDEADBEEF_u32.to_ne_bytes(), 0));
 
         let in_ptr = UserInPtr::<u32>::new(user.base() as *const u32);
@@ -117,7 +118,7 @@ mod tests {
     #[test]
     fn copy_slice_from_user() {
         let user = UserMemory::create(4096).unwrap();
-        unwrap_ok!(user.commit_and_map(4096));
+        unwrap_ok!(user.commit_and_map(0..4096));
         let vals = [10u32, 20u32, 30u32];
         let mut bytes = [0u8; 12];
         for i in 0..3 {
@@ -165,7 +166,7 @@ mod tests {
     #[test]
     fn iovec_capacity() {
         let user = UserMemory::create(4096).unwrap();
-        unwrap_ok!(user.commit_and_map(4096));
+        unwrap_ok!(user.commit_and_map(0..4096));
 
         let vec = [
             zx_iovec_t { buffer: core::ptr::null(), capacity: 348 },
@@ -189,7 +190,7 @@ mod tests {
     #[test]
     fn iovec_foreach() {
         let user = UserMemory::create(4096).unwrap();
-        unwrap_ok!(user.commit_and_map(4096));
+        unwrap_ok!(user.commit_and_map(0..4096));
 
         let vec = [
             zx_iovec_t { buffer: core::ptr::null(), capacity: 7 },
@@ -219,7 +220,7 @@ mod tests {
     #[test]
     fn string_view() {
         let user = UserMemory::create(4096).unwrap();
-        unwrap_ok!(user.commit_and_map(4096));
+        unwrap_ok!(user.commit_and_map(0..4096));
         let k_string = b"Hello, Fuchsia!\0";
         unwrap_ok!(user.vmo_write(k_string, 0));
 
@@ -240,7 +241,7 @@ mod tests {
     #[test]
     fn iovec_copy_to_slice() {
         let user = UserMemory::create(4096).unwrap();
-        unwrap_ok!(user.commit_and_map(4096));
+        unwrap_ok!(user.commit_and_map(0..4096));
 
         let vec = [
             zx_iovec_t { buffer: 0x1234 as *const u8, capacity: 100 },

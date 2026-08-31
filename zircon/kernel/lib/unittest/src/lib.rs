@@ -10,11 +10,6 @@
 #[cfg(test)]
 extern crate self as unittest;
 
-#[cfg(feature = "kernel")]
-mod user_memory;
-#[cfg(feature = "kernel")]
-pub use user_memory::UserMemory;
-
 use core::ffi::c_char;
 
 #[doc(hidden)]
