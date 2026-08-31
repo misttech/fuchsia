@@ -732,10 +732,10 @@ struct Thread : public ChainLockable {
   // memory will be freed by either Join() or Detach(), one of these
   // MUST be called.
   // The thread will not be scheduled until Resume() is called.
-  static Thread* Create(const char* name, thread_start_routine entry, void* arg, int priority);
-  static Thread* Create(const char* name, thread_start_routine entry, void* arg,
+  static Thread* Create(ktl::string_view name, thread_start_routine entry, void* arg, int priority);
+  static Thread* Create(ktl::string_view name, thread_start_routine entry, void* arg,
                         const SchedulerState::BaseProfile& profile);
-  static Thread* CreateEtc(Thread* t, const char* name, thread_start_routine entry, void* arg,
+  static Thread* CreateEtc(Thread* t, ktl::string_view name, thread_start_routine entry, void* arg,
                            const SchedulerState::BaseProfile& profile,
                            thread_trampoline_routine alt_trampoline);
 

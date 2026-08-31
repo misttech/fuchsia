@@ -372,7 +372,7 @@ void Thread::Trampoline() {
  *
  * @return  Pointer to thread object, or nullptr on failure.
  */
-Thread* Thread::CreateEtc(Thread* t, const char* name, thread_start_routine entry, void* arg,
+Thread* Thread::CreateEtc(Thread* t, ktl::string_view name, thread_start_routine entry, void* arg,
                           const SchedulerState::BaseProfile& profile,
                           thread_trampoline_routine alt_trampoline) {
   // Ensure pool capacity for this thread. Do this before allocating
@@ -461,12 +461,12 @@ Thread* Thread::CreateEtc(Thread* t, const char* name, thread_start_routine entr
   return t;
 }
 
-Thread* Thread::Create(const char* name, thread_start_routine entry, void* arg, int priority) {
+Thread* Thread::Create(ktl::string_view name, thread_start_routine entry, void* arg, int priority) {
   return Thread::CreateEtc(nullptr, name, entry, arg, SchedulerState::BaseProfile{priority},
                            nullptr);
 }
 
-Thread* Thread::Create(const char* name, thread_start_routine entry, void* arg,
+Thread* Thread::Create(ktl::string_view name, thread_start_routine entry, void* arg,
                        const SchedulerState::BaseProfile& profile) {
   return Thread::CreateEtc(nullptr, name, entry, arg, profile, nullptr);
 }
