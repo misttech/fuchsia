@@ -4,7 +4,10 @@
 """Unit tests for adb.py."""
 
 import asyncio
+import os
+import sys
 import unittest
+from importlib import resources
 from typing import Any
 from unittest import mock
 
@@ -30,13 +33,18 @@ class AdbTests(unittest.IsolatedAsyncioTestCase):
         )
         self._is_supported_patcher.start()
 
+        self._env_patcher = mock.patch.dict(
+            os.environ, {"HONEYDEW_ADB_OVERRIDE": "/custom/adb"}
+        )
+        self._env_patcher.start()
+
         self.adb_obj = adb.Adb(
             device_name=_DEVICE_NAME,
             serial_number=_SERIAL_NUMBER,
-            adb_path="/custom/adb",
         )
 
     async def asyncTearDown(self) -> None:
+        self._env_patcher.stop()
         self._is_supported_patcher.stop()
         await super().asyncTearDown()
 
@@ -113,51 +121,111 @@ class AdbTests(unittest.IsolatedAsyncioTestCase):
         res = await obj._resolve_serial_number()
         self.assertEqual(res, _SERIAL_NUMBER)
 
-    @mock.patch("shutil.which", return_value="/usr/bin/adb", autospec=True)
-    async def test_make_ready_with_serial(self, mock_which: mock.Mock) -> None:
-        """Test make_ready when serial number is provided."""
-        obj = adb.Adb(
-            device_name=_DEVICE_NAME,
-            serial_number=_SERIAL_NUMBER,
-        )
-        await obj.make_ready()
-        self.assertTrue(obj._ready)
-        self.assertEqual(obj._adb_binary, "/usr/bin/adb")
-        self.assertEqual(obj._serial_number, _SERIAL_NUMBER)
-        mock_which.assert_called_once_with("adb")
+    @mock.patch.object(resources, "files", autospec=True)
+    def test_get_adb_binary_with_env_var_success(
+        self, mock_files: mock.Mock
+    ) -> None:
+        """Test _get_adb_binary when environment variable override is provided."""
+        with mock.patch.dict(
+            os.environ, {"HONEYDEW_ADB_OVERRIDE": "/env/path/adb"}, clear=True
+        ):
+            bin_name = adb._get_adb_binary()
+            self.assertEqual(bin_name, "/env/path/adb")
+            mock_files.assert_not_called()
 
-    async def test_make_ready_with_adb_path(self) -> None:
-        """Test make_ready when adb_path is provided."""
-        obj = adb.Adb(
-            device_name=_DEVICE_NAME,
-            serial_number=_SERIAL_NUMBER,
-            adb_path="/custom/adb",
-        )
-        await obj.make_ready()
-        self.assertTrue(obj._ready)
-        self.assertEqual(obj._adb_binary, "/custom/adb")
+    @mock.patch.object(resources, "files", autospec=True)
+    @mock.patch.object(resources, "as_file", autospec=True)
+    @mock.patch("atexit.register", autospec=True)
+    @mock.patch("shutil.copy2", autospec=True)
+    @mock.patch("tempfile.NamedTemporaryFile", autospec=True)
+    def test_get_adb_binary_with_resource_success(
+        self,
+        mock_tmp_file: mock.Mock,
+        mock_copy: mock.Mock,
+        *unused_args: Any,
+    ) -> None:
+        """Test _get_adb_binary when adb data resource exists."""
+        with (
+            mock.patch.dict(sys.modules, {"honeydew.data": mock.Mock()}),
+            mock.patch.dict(os.environ, {}, clear=True),
+        ):
+            mock_fd = mock.Mock()
+            mock_fd.name = "tmpadb"
+            mock_tmp_file.return_value = mock_fd
+            bin_name = adb._get_adb_binary()
+            self.assertEqual(bin_name, "tmpadb")
+            mock_fd.close.assert_called_once()
+            mock_copy.assert_called_with(mock.ANY, bin_name)
+
+    @mock.patch("shutil.which", return_value="/which/adb", autospec=True)
+    @mock.patch.object(
+        resources, "as_file", side_effect=FileNotFoundError, autospec=True
+    )
+    def test_get_adb_binary_fallback_to_path_success(
+        self, mock_as_file: mock.Mock, mock_which: mock.Mock
+    ) -> None:
+        """Test _get_adb_binary falls back to PATH when resource is not available."""
+        with mock.patch.dict(os.environ, {}, clear=True):
+            bin_name = adb._get_adb_binary()
+            self.assertEqual(bin_name, "/which/adb")
+            mock_which.assert_called_once_with("adb")
+
+    @mock.patch("shutil.which", return_value=None, autospec=True)
+    @mock.patch.object(
+        resources, "as_file", side_effect=FileNotFoundError, autospec=True
+    )
+    def test_get_adb_binary_not_found_fail(
+        self, mock_as_file: mock.Mock, mock_which: mock.Mock
+    ) -> None:
+        """Test _get_adb_binary raises InitializationError when binary is not found anywhere."""
+        with mock.patch.dict(os.environ, {}, clear=True):
+            with self.assertRaises(adb_errors.InitializationError):
+                adb._get_adb_binary()
+            mock_which.assert_called_once_with("adb")
+
+    @mock.patch("shutil.which", return_value="/usr/bin/adb", autospec=True)
+    @mock.patch.object(
+        resources, "as_file", side_effect=FileNotFoundError, autospec=True
+    )
+    async def test_make_ready_with_serial(
+        self, mock_as_file: mock.Mock, mock_which: mock.Mock
+    ) -> None:
+        """Test make_ready when serial number is provided."""
+        with mock.patch.dict(os.environ, {}, clear=True):
+            obj = adb.Adb(
+                device_name=_DEVICE_NAME,
+                serial_number=_SERIAL_NUMBER,
+            )
+            await obj.make_ready()
+            self.assertTrue(obj._ready)
+            self.assertEqual(obj._adb_binary, "/usr/bin/adb")
+            self.assertEqual(obj._serial_number, _SERIAL_NUMBER)
+            mock_which.assert_called_once_with("adb")
 
     async def test_make_ready_without_serial(self) -> None:
         """Test make_ready when serial number is not provided."""
         obj = adb.Adb(
             device_name=_DEVICE_NAME,
             serial_number=None,
-            adb_path="/custom/adb",
         )
         with self.assertRaises(adb_errors.InitializationError):
             await obj.make_ready()
 
-    @mock.patch("shutil.which", return_value=None)
+    @mock.patch("shutil.which", return_value=None, autospec=True)
+    @mock.patch.object(
+        resources, "as_file", side_effect=FileNotFoundError, autospec=True
+    )
     async def test_make_ready_binary_not_found(
-        self, mock_which: mock.Mock
+        self, mock_as_file: mock.Mock, mock_which: mock.Mock
     ) -> None:
-        """Test make_ready when adb binary is not found in PATH or adb_path."""
-        obj = adb.Adb(
-            device_name=_DEVICE_NAME,
-            serial_number=_SERIAL_NUMBER,
-        )
-        with self.assertRaises(adb_errors.InitializationError):
-            await obj.make_ready()
+        """Test make_ready when adb binary is not found anywhere."""
+        with mock.patch.dict(os.environ, {}, clear=True):
+            obj = adb.Adb(
+                device_name=_DEVICE_NAME,
+                serial_number=_SERIAL_NUMBER,
+            )
+            with self.assertRaises(adb_errors.InitializationError):
+                await obj.make_ready()
 
     @mock.patch("asyncio.create_subprocess_exec", autospec=True)
     async def test_run_success(self, mock_create_proc: mock.Mock) -> None:

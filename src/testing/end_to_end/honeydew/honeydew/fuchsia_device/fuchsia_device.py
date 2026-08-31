@@ -411,12 +411,10 @@ class FuchsiaDevice(
         Returns:
             ADB transport interface implementation.
         """
-        adb_path = None
         run_isolated_server = False
         vendor_keys_path = None
         if self._config:
             adb_config = self._config.get("transports", {}).get("adb", {})
-            adb_path = adb_config.get("bin_path")
             run_isolated_server = adb_config.get("run_isolated_server", False)
             vendor_keys_path = adb_config.get("vendor_keys_path")
 
@@ -424,7 +422,6 @@ class FuchsiaDevice(
         adb_obj: adb_transport.Adb = adb_transport.Adb(
             device_name=self.device_name,
             serial_number=serial_number,
-            adb_path=adb_path,
             run_isolated_server=run_isolated_server,
             vendor_keys_path=vendor_keys_path,
         )

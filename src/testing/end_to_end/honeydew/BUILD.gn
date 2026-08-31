@@ -182,7 +182,10 @@ python_library("honeydew_no_testonly") {
   ]
 
   data_package_name = "data"
-  data_sources = [ "${prebuilt_fastboot}" ]
+  data_sources = [
+    "${prebuilt_fastboot}",
+    "//prebuilt/third_party/adb/adb",
+  ]
 
   # Ensure all FIDL dependencies meet the compatibility and stability
   # requirements.

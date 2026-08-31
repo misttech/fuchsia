@@ -236,6 +236,12 @@
              version="G774AwR77J4E0VvwTpD8ZjNhjCwvpwtYjC81Oyp1n18C"
              platforms="linux-amd64,linux-arm64"
              path="prebuilt/test_data/media/third_party/chromium_media_test_data_downstream"/>
+    <!--   ADB -->
+    <package name="fuchsia/third_party/3pp/platform_tools/adb/${platform}"
+             version="version:2@37.0.0"
+             path="prebuilt/third_party/adb"
+             platforms="linux-amd64,linux-arm64"/>
+
     <!--   Fastboot -->
     <package name="fuchsia/third_party/fastboot/${platform}"
              version="git_revision:3aed5fd2f3c004205c3a31b54dfa802148ec563b"

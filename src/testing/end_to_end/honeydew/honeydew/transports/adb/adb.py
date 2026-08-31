@@ -4,11 +4,15 @@
 """Provides methods for Host-(Fuchsia)Target interactions via ADB."""
 
 import asyncio
+import atexit
 import glob
 import logging
 import os
 import shutil
+import stat
+import tempfile
 from collections.abc import Awaitable, Callable
+from importlib import resources
 
 from honeydew import errors
 from honeydew.affordances.affordance import AsyncLazyReady, ensure_ready
@@ -16,7 +20,52 @@ from honeydew.transports.adb import errors as adb_errors
 from honeydew.transports.adb.adb_server import AdbServer
 from honeydew.utils import decorators
 
+_ADB_PATH_ENV_VAR = "HONEYDEW_ADB_OVERRIDE"
+
 _LOGGER: logging.Logger = logging.getLogger(__name__)
+
+
+def _get_adb_binary() -> str:
+    """Returns the path to the `adb` binary.
+
+    Prefers resolving from environment variable `HONEYDEW_ADB_OVERRIDE` if
+    provided; otherwise, extract from Python resource, set permissions to
+    executable, and store on disk. If running outside the build system without
+    data resources, falls back to `PATH`.
+
+    Returns:
+        Absolute path to `adb` binary.
+
+    Raises:
+        adb_errors.InitializationError: If ADB binary is not found.
+    """
+
+    bin_path: str | None = os.getenv(_ADB_PATH_ENV_VAR)
+    if bin_path is not None:
+        return bin_path
+
+    try:
+        from honeydew import data  # type: ignore[attr-defined,unused-ignore]
+
+        bin_fd = tempfile.NamedTemporaryFile(suffix="adb", delete=False)
+        bin_path = bin_fd.name
+        bin_fd.close()
+        with resources.as_file(resources.files(data).joinpath("adb")) as f:
+            f.chmod(f.stat().st_mode | stat.S_IEXEC)
+            shutil.copy2(f, bin_path)
+        atexit.register(os.unlink, bin_path)
+        return bin_path
+    except (ImportError, FileNotFoundError, AttributeError, TypeError):
+        pass
+
+    bin_path = shutil.which("adb")
+    if bin_path is not None:
+        return bin_path
+
+    raise adb_errors.InitializationError(
+        "ADB binary was not found in Python data resources, in PATH, or via "
+        f"`{_ADB_PATH_ENV_VAR}`."
+    )
 
 
 def _find_usb_device_path(target_serial: str | None = None) -> str | None:
@@ -90,7 +139,6 @@ class Adb(AsyncLazyReady):
     Args:
         device_name: Fuchsia device name.
         serial_number: Optional serial number or async provider coroutine callback.
-        adb_path: Optional path to the adb binary.
         run_isolated_server: Whether to run an isolated ADB server.
     """
 
@@ -98,7 +146,6 @@ class Adb(AsyncLazyReady):
         self,
         device_name: str,
         serial_number: str | Callable[[], Awaitable[str]] | None = None,
-        adb_path: str | None = None,
         run_isolated_server: bool = False,
         vendor_keys_path: str | None = None,
     ) -> None:
@@ -106,7 +153,6 @@ class Adb(AsyncLazyReady):
         self._device_name: str = device_name
         self._serial_number_arg = serial_number
         self._serial_number: str | None = None
-        self._adb_path: str | None = adb_path
         self._adb_binary: str | None = None
         self._run_isolated_server: bool = run_isolated_server
         self._vendor_keys_path: str | None = vendor_keys_path
@@ -145,12 +191,7 @@ class Adb(AsyncLazyReady):
                 f"ADB transport is not supported on {self._device_name}"
             )
 
-        adb_binary = self._adb_path or shutil.which("adb")
-        if not adb_binary:
-            raise adb_errors.InitializationError(
-                f"ADB binary was not found in PATH or at configured adb_path '{self._adb_path}'"
-            )
-        self._adb_binary = adb_binary
+        self._adb_binary = _get_adb_binary()
 
         serial = await self._resolve_serial_number()
         if serial is None:
