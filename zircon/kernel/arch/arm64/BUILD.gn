@@ -138,6 +138,7 @@ if (toolchain_environment == "kernel.phys" ||
     deps = [
       "user-copy",
       "//sdk/lib/fit",
+      "//src/lib/lazy_init",
       "//zircon/kernel/dev/coresight",
       "//zircon/kernel/dev/interrupt/gic/common",
       "//zircon/kernel/dev/iommu/arm_smmu",
@@ -164,7 +165,6 @@ if (toolchain_environment == "kernel.phys" ||
       "//zircon/kernel/vm",
       "//zircon/system/ulib/bitmap",
       "//zircon/system/ulib/fbl",
-      "//zircon/system/ulib/lazy_init",
       "//zircon/system/ulib/pretty",
       "//zircon/system/ulib/zx",
     ]

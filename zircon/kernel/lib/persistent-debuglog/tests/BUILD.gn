@@ -7,8 +7,8 @@
 source_set("tests") {
   sources = [ "persistent-debuglog-tests.cc" ]
   deps = [
+    "//src/lib/lazy_init",
     "//zircon/kernel/lib/persistent-debuglog",
     "//zircon/kernel/lib/unittest",
-    "//zircon/system/ulib/lazy_init",
   ]
 }

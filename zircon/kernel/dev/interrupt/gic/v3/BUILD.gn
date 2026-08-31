@@ -15,6 +15,7 @@ source_set("v3") {
   sources = [ "arm_gicv3.cc" ]
   public_deps = [ ":headers" ]
   deps = [
+    "//src/lib/lazy_init",
     "//zircon/kernel/dev/interrupt",
     "//zircon/kernel/dev/interrupt/gic/common",
     "//zircon/kernel/dev/pdev/interrupt",
@@ -22,6 +23,5 @@ source_set("v3") {
     "//zircon/kernel/lib/ktrace",
     "//zircon/kernel/lib/root_resource_filter",
     "//zircon/kernel/vm:headers",
-    "//zircon/system/ulib/lazy_init",
   ]
 }

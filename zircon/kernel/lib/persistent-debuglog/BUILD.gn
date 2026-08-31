@@ -17,10 +17,10 @@ static_library("persistent-debuglog") {
 
   sources = [ "persistent-debuglog.cc" ]
   deps = [
+    "//src/lib/lazy_init",
     "//zircon/kernel/lib/console",
     "//zircon/kernel/lib/ktl",
     "//zircon/system/ulib/fbl",
-    "//zircon/system/ulib/lazy_init",
   ]
 }
 

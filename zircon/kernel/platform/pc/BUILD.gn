@@ -25,6 +25,7 @@ source_set("pc") {
   deps = [
     ":platform_pc",
     "//sdk/lib/zbi-format",
+    "//src/lib/lazy_init",
     "//src/lib/zbitl",
     "//zircon/kernel/arch/x86:headers",
     "//zircon/kernel/dev/hw_rng/intel_rng",
@@ -50,7 +51,6 @@ source_set("pc") {
     "//zircon/kernel/phys/lib/memalloc:range",
     "//zircon/kernel/platform:headers",
     "//zircon/system/ulib/explicit-memory",
-    "//zircon/system/ulib/lazy_init",
     "//zircon/system/ulib/ram-crashlog",
     "//zircon/system/ulib/smbios",
     "//zircon/system/ulib/uart",

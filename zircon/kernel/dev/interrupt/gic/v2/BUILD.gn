@@ -24,6 +24,7 @@ source_set("v2") {
   ]
   public_deps = [ ":headers" ]
   deps = [
+    "//src/lib/lazy_init",
     "//zircon/kernel/dev/interrupt",
     "//zircon/kernel/dev/interrupt/gic/common",
     "//zircon/kernel/dev/pdev/interrupt",
@@ -34,7 +35,6 @@ source_set("v2") {
     "//zircon/kernel/lib/root_resource_filter",
     "//zircon/kernel/lib/topology",
     "//zircon/kernel/vm:headers",
-    "//zircon/system/ulib/lazy_init",
   ]
 }
 

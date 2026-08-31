@@ -28,6 +28,7 @@ source_set("debuglog") {
   deps = [
     ":debuglog-rs",
     "//sdk/lib/fit",
+    "//src/lib/lazy_init",
     "//zircon/kernel/lib/boot-options",
     "//zircon/kernel/lib/crashlog",
     "//zircon/kernel/lib/init",
@@ -37,7 +38,6 @@ source_set("debuglog") {
     "//zircon/kernel/lib/persistent-debuglog",
     "//zircon/kernel/phys:boot-constants",
     "//zircon/kernel/vm:headers",
-    "//zircon/system/ulib/lazy_init",
   ]
 }
 

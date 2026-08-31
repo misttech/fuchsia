@@ -44,7 +44,7 @@ source_set("init") {
   sources = [ "standalone-init.cc" ]
   deps = [
     ":headers",
-    "//zircon/system/ulib/lazy_init",
+    "//src/lib/lazy_init",
     "//zircon/system/ulib/zx",
   ]
 

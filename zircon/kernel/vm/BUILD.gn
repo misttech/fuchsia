@@ -79,6 +79,7 @@ source_set("vm-cpp") {
     "vmm.cc",
   ]
   deps = [
+    "//src/lib/lazy_init",
     "//src/lib/zbitl",
     "//third_party/lz4",
     "//zircon/kernel/lib/arch",
@@ -102,7 +103,6 @@ source_set("vm-cpp") {
     "//zircon/kernel/phys/lib/memalloc:range",
     "//zircon/system/ulib/affine",
     "//zircon/system/ulib/ffl",
-    "//zircon/system/ulib/lazy_init",
     "//zircon/system/ulib/pretty",
   ]
 

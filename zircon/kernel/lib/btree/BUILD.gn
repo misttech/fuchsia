@@ -14,10 +14,10 @@ source_set("btree") {
   if (!is_host) {
     sources = [ "btree.cc" ]
     deps = [
+      "//src/lib/lazy_init",
       "//zircon/kernel/lib/init",
       "//zircon/kernel/lib/page",
       "//zircon/kernel/vm:headers",
-      "//zircon/system/ulib/lazy_init",
     ]
   }
   public_deps = [ ":headers" ]

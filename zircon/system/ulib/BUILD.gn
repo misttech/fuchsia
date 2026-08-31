@@ -29,7 +29,6 @@ group("tests") {
     "image-format:tests",
     "inspect:tests",
     "inspector:tests",
-    "lazy_init:tests",
     "ldmsg:tests",
     "mmio-ptr:tests",
     "mock-function:tests",

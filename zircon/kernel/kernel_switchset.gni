@@ -135,7 +135,7 @@ template("kernel_switchset") {
         "//zircon/kernel/lib/lockup_detector:headers.config",
 
         # <kernel/percpu.h> has #include <lib/lazy_init/lazy_init.h>.
-        "//zircon/system/ulib/lazy_init:headers.config",
+        "//src/lib/lazy_init:headers.config",
 
         # <kernel/spinlock.h> has #include <lockdep/lock_policy.h>.
         "//src/lib/lockdep:headers.config",

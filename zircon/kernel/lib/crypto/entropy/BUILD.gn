@@ -19,9 +19,9 @@ library_headers("headers") {
     # <lib/crypto/entropy/collector.h> has #include <fbl/name.h>
     "//zircon/kernel/lib/fbl:headers",
 
-    # <lib/crypto/entropy/jitterentropy_collector.h> has #include #include
+    # <lib/crypto/entropy/jitterentropy_collector.h> has #include
     # <lib/lazy_init/lazy_init.h>
-    "//zircon/system/ulib/lazy_init:headers",
+    "//src/lib/lazy_init:headers",
 
     # <lib/crypto/entropy/jitterentropy_collector.h> has #include
     # <lib/jitterentropy/jitterentropy.h>
@@ -38,6 +38,7 @@ static_library("entropy") {
     "quality_test.cc",
   ]
   deps = [
+    "//src/lib/lazy_init",
     "//zircon/kernel/dev/hw_rng",
     "//zircon/kernel/lib/boot-options",
     "//zircon/kernel/lib/crypto:headers",
@@ -45,7 +46,6 @@ static_library("entropy") {
     "//zircon/kernel/lib/init",
     "//zircon/kernel/lib/ktl",
     "//zircon/kernel/lib/unittest",
-    "//zircon/system/ulib/lazy_init",
     "//zircon/third_party/lib/jitterentropy",
   ]
 }
