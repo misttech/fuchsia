@@ -13,6 +13,10 @@ use core::mem::{MaybeUninit, size_of};
 use core::ptr::NonNull;
 use core::sync::atomic::{AtomicBool, AtomicPtr, AtomicU32, Ordering};
 use core::{ffi, ptr, slice};
+pub use fxt_layout::{
+    ArgumentHeader, ArgumentType, EventRecordHeader, EventType, KernelObjectRecordHeader,
+    LargeRecordHeader, RecordHeader, RecordType, StringRefHeader,
+};
 use kalloc::Box;
 pub use kstring::declare_interned_category;
 use kstring::declare_interned_string;
@@ -43,18 +47,6 @@ declare_interned_string!(NUM_BYTES_REF, "num_bytes", extern);
 pub enum Context {
     Thread = 0,
     Cpu = 1,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum EventType {
-    Instant = 0,
-    Counter = 1,
-    DurationBegin = 2,
-    DurationEnd = 3,
-    DurationComplete = 4,
-    FlowBegin = 8,
-    FlowStep = 9,
-    FlowEnd = 10,
 }
 
 /// The value of a trace argument.
@@ -141,12 +133,18 @@ impl<'a> From<&'a str> for StringRef<'a> {
 
 impl<'a> StringRef<'a> {
     /// Returns the FXT header entry for this string reference.
-    pub fn header_entry(&self) -> u64 {
+    pub fn header_entry(&self) -> u16 {
         match self {
-            StringRef::Interned(s) => s.id() as u64,
+            StringRef::Interned(s) => {
+                let mut hdr = StringRefHeader::new();
+                hdr.set_id_or_len(s.id());
+                hdr.bits()
+            }
             StringRef::Inline(b) => {
-                let len = b.len().min(0x7fff);
-                0x8000 | (len as u64)
+                let len = b.len().min(0x7fff) as u16;
+                let mut hdr = StringRefHeader::new();
+                hdr.set_is_inline(true).set_id_or_len(len);
+                hdr.bits()
             }
         }
     }
@@ -198,62 +196,69 @@ impl<'a> Argument<'a> {
     }
 
     fn write(&self, res: &mut KTraceReservation<'_>) -> Result<(), Status> {
-        let name_id = self.name.id() as u64;
-        let size_words = self.size_words() as u64;
-        let mut header = (size_words & 0xfff) << 4; // ArgumentSize
-        header |= (name_id & 0xffff) << 16; // NameRef
+        let name_id = self.name.id();
+        let size_words = self.size_words() as u16;
 
         match &self.value {
             ArgValue::Null => {
-                header |= 0u64; // ArgumentType::kNull (0)
-                res.write_word(header)?;
+                let header = ArgumentHeader::for_argument(name_id, size_words, ArgumentType::Null);
+                res.write_word(header.bits())?;
             }
             ArgValue::Int32(v) => {
-                header |= 1u64; // ArgumentType::kInt32 (1)
-                header |= ((*v as u32) as u64) << 32;
-                res.write_word(header)?;
+                let mut header =
+                    ArgumentHeader::for_argument(name_id, size_words, ArgumentType::Int32);
+                header.set_value_bits(*v as u32);
+                res.write_word(header.bits())?;
             }
             ArgValue::Uint32(v) => {
-                header |= 2u64; // ArgumentType::kUint32 (2)
-                header |= (*v as u64) << 32;
-                res.write_word(header)?;
+                let mut header =
+                    ArgumentHeader::for_argument(name_id, size_words, ArgumentType::Uint32);
+                header.set_value_bits(*v);
+                res.write_word(header.bits())?;
             }
             ArgValue::Int64(v) => {
-                header |= 3u64; // ArgumentType::kInt64 (3)
-                res.write_word(header)?;
+                let header = ArgumentHeader::for_argument(name_id, size_words, ArgumentType::Int64);
+                res.write_word(header.bits())?;
                 res.write_word(*v as u64)?;
             }
             ArgValue::Uint64(v) => {
-                header |= 4u64; // ArgumentType::kUint64 (4)
-                res.write_word(header)?;
+                let header =
+                    ArgumentHeader::for_argument(name_id, size_words, ArgumentType::Uint64);
+                res.write_word(header.bits())?;
                 res.write_word(*v)?;
             }
             ArgValue::Double(v) => {
-                header |= 5u64; // ArgumentType::kDouble (5)
-                res.write_word(header)?;
+                let header =
+                    ArgumentHeader::for_argument(name_id, size_words, ArgumentType::Double);
+                res.write_word(header.bits())?;
                 res.write_word(v.to_bits())?;
             }
             ArgValue::String(s) => {
-                header |= 6u64; // ArgumentType::kString (6)
-                let string_len = s.len().min(0x7fff);
-                header |= ((0x8000 | string_len) as u64) << 32; // StringRef: inline flag | length
-                res.write_word(header)?;
-                res.write_bytes(&s.as_bytes()[..string_len])?;
+                let mut header =
+                    ArgumentHeader::for_argument(name_id, size_words, ArgumentType::String);
+                let string_len = s.len().min(0x7fff) as u16;
+                let mut str_ref = StringRefHeader::new();
+                str_ref.set_is_inline(true).set_id_or_len(string_len);
+                header.set_value_bits(str_ref.bits() as u32);
+                res.write_word(header.bits())?;
+                res.write_bytes(&s.as_bytes()[..string_len as usize])?;
             }
             ArgValue::Pointer(v) => {
-                header |= 7u64; // ArgumentType::kPointer (7)
-                res.write_word(header)?;
+                let header =
+                    ArgumentHeader::for_argument(name_id, size_words, ArgumentType::Pointer);
+                res.write_word(header.bits())?;
                 res.write_word(*v as u64)?;
             }
             ArgValue::Koid(v) => {
-                header |= 8u64; // ArgumentType::kKoid (8)
-                res.write_word(header)?;
+                let header = ArgumentHeader::for_argument(name_id, size_words, ArgumentType::Koid);
+                res.write_word(header.bits())?;
                 res.write_word(*v)?;
             }
             ArgValue::Bool(v) => {
-                header |= 9u64; // ArgumentType::kBool (9)
-                header |= ((*v as u64) & 1) << 32;
-                res.write_word(header)?;
+                let mut header =
+                    ArgumentHeader::for_argument(name_id, size_words, ArgumentType::Bool);
+                header.set_value_bits(*v as u32);
+                res.write_word(header.bits())?;
             }
         }
         Ok(())
@@ -434,13 +439,13 @@ impl KTraceBuffer {
     pub fn reserve(&mut self, header: u64) -> Result<KTraceReservation<'_>, Status> {
         debug_assert!(ints_disabled());
         // Compute the number of bytes we need to reserve from the provided fxt header.
-        let record_type = (header & 0xf) as u32;
-        let num_words = if record_type == 15 {
+        let rec_hdr = RecordHeader::from(header);
+        let num_words = if rec_hdr.record_type() == RecordType::LargeBlob {
             // Large record
-            ((header >> 4) & 0xffffffff) as u32
+            LargeRecordHeader::from(header).record_size()
         } else {
             // Normal record
-            ((header >> 4) & 0xfff) as u32
+            rec_hdr.record_size() as u32
         };
         let size = num_words.checked_mul(8).ok_or(Status::INVALID_ARGS)?;
 
@@ -502,39 +507,32 @@ impl KTraceBuffer {
     }
 
     fn serialize_drop_stats(&self) -> DroppedRecordDurationEvent {
-        let mut header = 4u64; // RecordType::kEvent (4)
-        let record_size_words = (size_of::<DroppedRecordDurationEvent>() / 8) as u64;
-        header |= record_size_words << 4; // RecordSize
-        header |= 4u64 << 16; // EventType::kDurationComplete (4)
-        header |= 2u64 << 20; // ArgumentCount = 2
-        header |= (self.cpu_ref_header_entry as u64) << 24;
-        header |= (META_CAT.label().id() as u64) << 32;
-        header |= (DROP_STATS_REF.id() as u64) << 48;
+        let record_size_words = (size_of::<DroppedRecordDurationEvent>() / 8) as u16;
+        let mut header = EventRecordHeader::default();
+        header
+            .set_record_size(record_size_words)
+            .set_event_type(EventType::DurationComplete)
+            .set_arg_count(2)
+            .set_thread_ref(self.cpu_ref_header_entry as u8)
+            .set_category_ref(META_CAT.label().id())
+            .set_name_ref(DROP_STATS_REF.id());
 
-        // Pack the arguments.
-        // In FXT:
-        // ArgumentType::kUint32 is 2
-        // ArgumentSize is 1 word (8 bytes)
-        // NameRef is packed into bits 16..31
-        // Value is packed into bits 32..63
         let drop_stats = self.drop_stats();
-        let mut num_dropped_arg = 2u64;
-        num_dropped_arg |= 1u64 << 4;
-        num_dropped_arg |= (NUM_RECORDS_REF.id() as u64) << 16;
-        num_dropped_arg |= (drop_stats.num_dropped as u64) << 32;
+        let mut num_dropped_arg =
+            ArgumentHeader::for_argument(NUM_RECORDS_REF.id(), 1, ArgumentType::Uint32);
+        num_dropped_arg.set_value_bits(drop_stats.num_dropped);
 
-        let mut bytes_dropped_arg = 2u64;
-        bytes_dropped_arg |= 1u64 << 4;
-        bytes_dropped_arg |= (NUM_BYTES_REF.id() as u64) << 16;
-        bytes_dropped_arg |= (drop_stats.bytes_dropped as u64) << 32;
+        let mut bytes_dropped_arg =
+            ArgumentHeader::for_argument(NUM_BYTES_REF.id(), 1, ArgumentType::Uint32);
+        bytes_dropped_arg.set_value_bits(drop_stats.bytes_dropped);
 
         DroppedRecordDurationEvent {
-            header,
+            header: header.bits(),
             start: drop_stats.first_dropped,
             process_id: self.process_koid,
             thread_id: self.thread_koid,
-            num_dropped_arg,
-            bytes_dropped_arg,
+            num_dropped_arg: num_dropped_arg.bits(),
+            bytes_dropped_arg: bytes_dropped_arg.bits(),
             end: drop_stats.last_dropped,
         }
     }
@@ -692,14 +690,15 @@ impl KTrace {
             return;
         }
 
-        let mut header = 7u64; // RecordType::kKernelObject (7)
-        header |= (total_size_words as u64) << 4; // RecordSize
-        header |= ((obj_type & 0xff) as u64) << 16; // ObjectType
-        header |= (name.header_entry() & 0xffff) << 24; // NameStringRef
-        header |= (args.len() as u64) << 40; // ArgumentCount
+        let mut header = KernelObjectRecordHeader::default();
+        header
+            .set_record_size(total_size_words as u16)
+            .set_obj_type(obj_type as u8)
+            .set_name_ref(name.header_entry())
+            .set_arg_count(args.len() as u8);
 
         // SAFETY: Interrupts are disabled by `_guard`, guaranteeing mutual exclusion during reservation.
-        if let Ok(mut res) = unsafe { self.reserve(header) } {
+        if let Ok(mut res) = unsafe { self.reserve(header.bits()) } {
             let _ = res.write_word(koid);
             let _ = name.write(&mut res);
             for arg in args {
@@ -763,15 +762,16 @@ impl KTrace {
         }
 
         // 3. Construct the header.
-        let mut header = 4u64; // RecordType::kEvent (4)
-        header |= (total_size_words as u64) << 4; // RecordSize
-        header |= (event_type as u32 as u64) << 16; // EventType
-        header |= (args.len() as u64) << 20; // ArgumentCount
-        header |= (category.label().id() as u64) << 32; // CategoryStringRef
-        header |= (name.id() as u64) << 48; // NameStringRef
+        let mut header = EventRecordHeader::default();
+        header
+            .set_record_size(total_size_words as u16)
+            .set_event_type(event_type)
+            .set_arg_count(args.len() as u8)
+            .set_category_ref(category.label().id())
+            .set_name_ref(name.id());
 
         // 4. Reserve space and write the record.
-        if let Ok(mut res) = unsafe { self.reserve(header) } {
+        if let Ok(mut res) = unsafe { self.reserve(header.bits()) } {
             let _ = res.write_word(timestamp.0 as u64);
             let _ = res.write_word(process_koid);
             let _ = res.write_word(thread_koid);
@@ -1381,7 +1381,7 @@ mod tests {
     fn test_string_ref() {
         // Interned string ref
         let interned_ref = StringRef::from(DROP_STATS_REF);
-        expect_eq!(interned_ref.header_entry(), DROP_STATS_REF.id() as u64);
+        expect_eq!(interned_ref.header_entry(), DROP_STATS_REF.id());
         expect_eq!(interned_ref.payload_words(), 0);
 
         // Inline string ref from byte slice
@@ -1438,7 +1438,7 @@ mod tests {
             Argument::new(DROP_STATS_REF, 456u32),
             Argument::new(DROP_STATS_REF, -789i64),
             Argument::new(DROP_STATS_REF, 101112u64),
-            Argument::new(DROP_STATS_REF, core::f64::consts::PI),
+            Argument::new(DROP_STATS_REF, 123.456f64),
             Argument::new(DROP_STATS_REF, "hello_world"),
             Argument::new(DROP_STATS_REF, ArgValue::Pointer(0x12345678)),
             Argument::new(DROP_STATS_REF, Koid(9999)),
@@ -1527,7 +1527,7 @@ mod tests {
         let d_bits = u64::from_ne_bytes(
             read_bytes[(word_idx + 1) * 8..(word_idx + 2) * 8].try_into().unwrap(),
         );
-        expect_eq!(d_bits, core::f64::consts::PI.to_bits());
+        expect_eq!(d_bits, 123.456f64.to_bits());
         word_idx += 2;
 
         // 7: String (1 header + 2 payload words = 3 words)
@@ -1562,6 +1562,82 @@ mod tests {
         word_idx += 2;
 
         expect_eq!(word_idx, total_words);
+    }
+
+    /// Verifies bitfield layout construction and encoding.
+    #[test]
+    fn test_bitfield_layouts() {
+        // RecordHeader
+        let mut rec = RecordHeader::new();
+        rec.set_record_size(12).set_record_type(RecordType::Event);
+        expect_eq!(rec.record_type(), RecordType::Event);
+        expect_eq!(rec.record_size(), 12);
+        let rec_raw = rec.bits();
+        expect_eq!(rec_raw & 0xf, 4);
+        expect_eq!((rec_raw >> 4) & 0xfff, 12);
+
+        // LargeRecordHeader
+        let mut lrec = LargeRecordHeader::default();
+        lrec.set_record_size(0x1000).set_large_type(2);
+        expect_eq!(lrec.record_type(), RecordType::LargeBlob);
+        expect_eq!(lrec.record_size(), 0x1000);
+        expect_eq!(lrec.large_type(), 2);
+        let lrec_raw = lrec.bits();
+        expect_eq!(lrec_raw & 0xf, 15);
+        expect_eq!((lrec_raw >> 4) & 0xffffffff, 0x1000);
+        expect_eq!((lrec_raw >> 36) & 0xf, 2);
+
+        // StringRefHeader
+        let mut interned = StringRefHeader::new();
+        interned.set_id_or_len(42);
+        expect_eq!(interned.id_or_len(), 42);
+        expect_false!(interned.is_inline());
+        expect_eq!(interned.bits(), 42);
+
+        let mut inline = StringRefHeader::new();
+        inline.set_is_inline(true).set_id_or_len(15);
+        expect_true!(inline.is_inline());
+        expect_eq!(inline.id_or_len(), 15);
+        expect_eq!(inline.bits(), 0x800f);
+
+        // KernelObjectRecordHeader
+        let mut ko = KernelObjectRecordHeader::default();
+        ko.set_record_size(6).set_obj_type(1).set_name_ref(0x8009).set_arg_count(1);
+        expect_eq!(ko.record_type(), RecordType::KernelObject);
+        expect_eq!(ko.record_size(), 6);
+        expect_eq!(ko.obj_type(), 1);
+        expect_eq!(ko.name_ref(), 0x8009);
+        expect_eq!(ko.arg_count(), 1);
+        let ko_raw = ko.bits();
+        expect_eq!(ko_raw & 0xf, 7);
+        expect_eq!((ko_raw >> 4) & 0xfff, 6);
+        expect_eq!((ko_raw >> 16) & 0xff, 1);
+        expect_eq!((ko_raw >> 24) & 0xffff, 0x8009);
+        expect_eq!((ko_raw >> 40) & 0xf, 1);
+
+        // EventRecordHeader
+        let mut ev = EventRecordHeader::default();
+        ev.set_record_size(5)
+            .set_event_type(EventType::Instant)
+            .set_arg_count(1)
+            .set_thread_ref(0)
+            .set_category_ref(10)
+            .set_name_ref(20);
+        expect_eq!(ev.record_type(), RecordType::Event);
+        expect_eq!(ev.record_size(), 5);
+        expect_eq!(ev.event_type(), EventType::Instant);
+        expect_eq!(ev.arg_count(), 1);
+        expect_eq!(ev.thread_ref(), 0);
+        expect_eq!(ev.category_ref(), 10);
+        expect_eq!(ev.name_ref(), 20);
+        let ev_raw = ev.bits();
+        expect_eq!(ev_raw & 0xf, 4);
+        expect_eq!((ev_raw >> 4) & 0xfff, 5);
+        expect_eq!((ev_raw >> 16) & 0xf, 0);
+        expect_eq!((ev_raw >> 20) & 0xf, 1);
+        expect_eq!((ev_raw >> 24) & 0xff, 0);
+        expect_eq!((ev_raw >> 32) & 0xffff, 10);
+        expect_eq!((ev_raw >> 48) & 0xffff, 20);
     }
 }
 

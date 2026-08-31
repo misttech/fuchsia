@@ -3,10 +3,10 @@
 // found in the LICENSE file.
 
 use crate::string::parse_padded_string;
-use crate::{trace_header, ParseError, ParseResult, METADATA_RECORD_TYPE};
+use crate::{METADATA_RECORD_TYPE, ParseError, ParseResult, trace_header};
 use flyweights::FlyStr;
-use nom::combinator::all_consuming;
 use nom::Parser;
+use nom::combinator::all_consuming;
 
 const PROVIDER_INFO_METADATA_TYPE: u8 = 1;
 const PROVIDER_SECTION_METADATA_TYPE: u8 = 2;
@@ -199,8 +199,8 @@ metadata_header! {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::fxt_builder::FxtBuilder;
     use crate::RawTraceRecord;
+    use crate::fxt_builder::FxtBuilder;
 
     #[test]
     fn basic_provider_info() {

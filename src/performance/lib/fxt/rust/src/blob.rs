@@ -297,7 +297,7 @@ mod tests {
         ][..];
 
         let mut header = BlobHeader::empty();
-        header.set_name_ref(name.len() as u16 | crate::string::STRING_REF_INLINE_BIT);
+        header.set_name_ref(fxt_layout::StringRefHeader::inline(name.len() as u16).bits());
         header.set_payload_len(payload.len() as u16);
         header.set_blob_format_type(BLOB_TYPE_PERFETTO);
 

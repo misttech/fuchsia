@@ -5,6 +5,18 @@
 import("//build/components.gni")
 import("//build/rust/rustc_library.gni")
 
+rustc_library("fxt-layout") {
+  name = "fxt_layout"
+  edition = "2024"
+  with_unit_tests = true
+  source_root = "src/layout.rs"
+  sources = [ source_root ]
+  deps = [
+    "//src/lib/bitrs",
+    "//third_party/rust_crates:zerocopy",
+  ]
+}
+
 rustc_library("rust") {
   name = "fxt"
   edition = "2024"
@@ -30,6 +42,7 @@ rustc_library("rust") {
   ]
   inputs = [ "//src/performance/trace2json/test_data/simple_trace.fxt" ]
   deps = [
+    ":fxt-layout",
     "//sdk/rust/zx-types",
     "//src/lib/fuchsia-async",
     "//src/lib/fuchsia-sync",
@@ -51,6 +64,7 @@ fuchsia_unittest_package("fxt_unittests") {
 group("tests") {
   testonly = true
   deps = [
+    ":fxt-layout_test($host_toolchain)",
     ":fxt_unittests",
     ":rust_test($host_toolchain)",
     "tests",

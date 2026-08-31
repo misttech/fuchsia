@@ -208,7 +208,6 @@ mod tests {
     use crate::RawTraceRecord;
     use crate::args::RawArgValue;
     use crate::fxt_builder::FxtBuilder;
-    use crate::string::STRING_REF_INLINE_BIT;
     use std::num::{NonZeroU8, NonZeroU16};
 
     #[test]
@@ -244,11 +243,14 @@ mod tests {
         let second_arg_value = "123-456-7890";
         let mut second_arg_header = crate::args::StringHeader::empty();
         second_arg_header.set_name_ref(11);
-        second_arg_header.set_value_ref(second_arg_value.len() as u16 | STRING_REF_INLINE_BIT);
+        second_arg_header.set_value_ref(
+            fxt_layout::StringRefHeader::inline(second_arg_value.len() as u16).bits(),
+        );
 
         let third_arg_name = "hello";
         let mut third_arg_header = crate::args::U32Header::empty();
-        third_arg_header.set_name_ref(third_arg_name.len() as u16 | STRING_REF_INLINE_BIT);
+        third_arg_header
+            .set_name_ref(fxt_layout::StringRefHeader::inline(third_arg_name.len() as u16).bits());
         third_arg_header.set_value(23);
 
         assert_parses_to_record!(
@@ -314,11 +316,14 @@ mod tests {
         let second_arg_value = "123-456-7890";
         let mut second_arg_header = crate::args::StringHeader::empty();
         second_arg_header.set_name_ref(11);
-        second_arg_header.set_value_ref(second_arg_value.len() as u16 | STRING_REF_INLINE_BIT);
+        second_arg_header.set_value_ref(
+            fxt_layout::StringRefHeader::inline(second_arg_value.len() as u16).bits(),
+        );
 
         let third_arg_name = "hello";
         let mut third_arg_header = crate::args::U32Header::empty();
-        third_arg_header.set_name_ref(third_arg_name.len() as u16 | STRING_REF_INLINE_BIT);
+        third_arg_header
+            .set_name_ref(fxt_layout::StringRefHeader::inline(third_arg_name.len() as u16).bits());
         third_arg_header.set_value(23);
 
         assert_parses_to_record!(

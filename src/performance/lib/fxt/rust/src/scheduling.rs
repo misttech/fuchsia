@@ -7,10 +7,10 @@ use crate::error::ParseWarning;
 use crate::init::Ticks;
 use crate::session::ResolveCtx;
 use crate::thread::{ProcessKoid, ProcessRef, ThreadKoid, ThreadRef};
-use crate::{trace_header, ParseError, ParseResult, Provider, SCHEDULING_RECORD_TYPE};
+use crate::{ParseError, ParseResult, Provider, SCHEDULING_RECORD_TYPE, trace_header};
+use nom::Parser;
 use nom::combinator::all_consuming;
 use nom::number::complete::le_u64;
-use nom::Parser;
 use std::num::NonZero;
 
 const LEGACY_CONTEXT_SWITCH_SCHEDULING_TYPE: u8 = 0;
@@ -363,10 +363,10 @@ impl ThreadState {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::RawTraceRecord;
     use crate::args::{I32Header, RawArgValue};
     use crate::fxt_builder::FxtBuilder;
-    use crate::string::{StringRef, STRING_REF_INLINE_BIT};
-    use crate::RawTraceRecord;
+    use crate::string::StringRef;
 
     #[test]
     fn context_switch_event() {
@@ -378,12 +378,14 @@ mod tests {
 
         let first_arg_name = "incoming_weight";
         let mut first_arg_header = I32Header::empty();
-        first_arg_header.set_name_ref(first_arg_name.len() as u16 | STRING_REF_INLINE_BIT);
+        first_arg_header
+            .set_name_ref(fxt_layout::StringRefHeader::inline(first_arg_name.len() as u16).bits());
         first_arg_header.set_value(12);
 
         let second_arg_name = "outgoing_weight";
         let mut second_arg_header = I32Header::empty();
-        second_arg_header.set_name_ref(second_arg_name.len() as u16 | STRING_REF_INLINE_BIT);
+        second_arg_header
+            .set_name_ref(fxt_layout::StringRefHeader::inline(second_arg_name.len() as u16).bits());
         second_arg_header.set_value(14);
 
         assert_parses_to_record!(
@@ -423,7 +425,7 @@ mod tests {
 
         let arg_name = "weight";
         let mut arg_header = I32Header::empty();
-        arg_header.set_name_ref(arg_name.len() as u16 | STRING_REF_INLINE_BIT);
+        arg_header.set_name_ref(fxt_layout::StringRefHeader::inline(arg_name.len() as u16).bits());
         arg_header.set_value(12);
 
         assert_parses_to_record!(

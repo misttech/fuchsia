@@ -6,7 +6,7 @@ use crate::args::{Arg, RawArg, RawArgValue};
 use crate::fxt_builder::{FxtBuilder, SerializeError};
 use crate::init::Ticks;
 use crate::session::ResolveCtx;
-use crate::string::{STRING_REF_INLINE_BIT, StringRef};
+use crate::string::StringRef;
 use crate::thread::{ProcessKoid, ProcessRef, ThreadKoid, ThreadRef};
 use crate::{EVENT_RECORD_TYPE, ParseResult, Provider, trace_header};
 use flyweights::FlyStr;
@@ -123,17 +123,19 @@ impl<'a> RawEventRecord<'a> {
             header.set_thread_ref(id.into());
         }
         let category_ref: u16 = match self.category {
-            StringRef::Index(id) => id.into(),
+            StringRef::Index(id) => fxt_layout::StringRefHeader::indexed(id.into()).bits(),
             StringRef::Inline(category_stream) => {
-                category_stream.len() as u16 | STRING_REF_INLINE_BIT
+                fxt_layout::StringRefHeader::inline(category_stream.len() as u16).bits()
             }
             StringRef::Empty => 0u16,
         };
         header.set_category_ref(category_ref);
 
         let name_ref: u16 = match self.name {
-            StringRef::Index(id) => id.into(),
-            StringRef::Inline(name_stream) => name_stream.len() as u16 | STRING_REF_INLINE_BIT,
+            StringRef::Index(id) => fxt_layout::StringRefHeader::indexed(id.into()).bits(),
+            StringRef::Inline(name_stream) => {
+                fxt_layout::StringRefHeader::inline(name_stream.len() as u16).bits()
+            }
             StringRef::Empty => 0u16,
         };
         header.set_name_ref(name_ref);
@@ -304,20 +306,26 @@ mod tests {
     fn event_with_args() {
         let mut header = EventHeader::empty();
         header.set_event_type(DURATION_COMPLETE_EVENT_TYPE);
-        header.set_category_ref("event_category".len() as u16 | STRING_REF_INLINE_BIT);
-        header.set_name_ref("event_name".len() as u16 | STRING_REF_INLINE_BIT);
+        header.set_category_ref(
+            fxt_layout::StringRefHeader::inline("event_category".len() as u16).bits(),
+        );
+        header.set_name_ref(fxt_layout::StringRefHeader::inline("event_name".len() as u16).bits());
         header.set_num_args(2);
 
         let first_arg_name = "arg1";
         let first_arg_value = "val1";
         let mut first_arg_header = crate::args::StringHeader::empty();
-        first_arg_header.set_name_ref(first_arg_name.len() as u16 | STRING_REF_INLINE_BIT);
-        first_arg_header.set_value_ref(first_arg_value.len() as u16 | STRING_REF_INLINE_BIT);
+        first_arg_header
+            .set_name_ref(fxt_layout::StringRefHeader::inline(first_arg_name.len() as u16).bits());
+        first_arg_header.set_value_ref(
+            fxt_layout::StringRefHeader::inline(first_arg_value.len() as u16).bits(),
+        );
 
         let second_arg_name = "arg2";
         let mut second_arg_header = crate::args::BaseArgHeader::empty();
         second_arg_header.set_raw_type(crate::args::PTR_ARG_TYPE);
-        second_arg_header.set_name_ref(second_arg_name.len() as u16 | STRING_REF_INLINE_BIT);
+        second_arg_header
+            .set_name_ref(fxt_layout::StringRefHeader::inline(second_arg_name.len() as u16).bits());
 
         let event_record_bytes = FxtBuilder::new(header)
             // begin ticks

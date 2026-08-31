@@ -5,11 +5,11 @@
 use crate::error::ParseWarning;
 use crate::fxt_builder::{FxtBuilder, SerializeError};
 use crate::session::ResolveCtx;
-use crate::string::{StringRef, STRING_REF_INLINE_BIT};
-use crate::{trace_header, ParseError, ParseResult};
+use crate::string::StringRef;
+use crate::{ParseError, ParseResult, trace_header};
 use flyweights::FlyStr;
-use nom::number::complete::{le_f64, le_i64, le_u64};
 use nom::Parser;
+use nom::number::complete::{le_f64, le_i64, le_u64};
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Arg {
@@ -92,8 +92,10 @@ impl<'a> RawArg<'a> {
 
     pub(crate) fn serialize(&self) -> Result<Vec<u8>, SerializeError> {
         let arg_name_ref = match self.name {
-            StringRef::Index(id) => id.into(),
-            StringRef::Inline(name) => name.len() as u16 | STRING_REF_INLINE_BIT,
+            StringRef::Index(id) => fxt_layout::StringRefHeader::indexed(id.into()).bits(),
+            StringRef::Inline(name) => {
+                fxt_layout::StringRefHeader::inline(name.len() as u16).bits()
+            }
             StringRef::Empty => {
                 return Err(SerializeError::MissingArgName);
             }
@@ -170,8 +172,12 @@ impl<'a> RawArg<'a> {
                 let mut header = StringHeader::empty();
                 header.set_name_ref(arg_name_ref);
                 header.set_value_ref(match str_val {
-                    StringRef::Index(id) => (*id).into(),
-                    StringRef::Inline(val) => val.len() as u16 | STRING_REF_INLINE_BIT,
+                    StringRef::Index(id) => {
+                        fxt_layout::StringRefHeader::indexed((*id).into()).bits()
+                    }
+                    StringRef::Inline(val) => {
+                        fxt_layout::StringRefHeader::inline(val.len() as u16).bits()
+                    }
                     StringRef::Empty => 0u16,
                 });
                 let mut builder = FxtBuilder::new(header);
@@ -474,7 +480,7 @@ mod tests {
     fn null_arg_name_inline() {
         let name = "hello";
         let mut header = BaseArgHeader::empty();
-        header.set_name_ref(name.len() as u16 | STRING_REF_INLINE_BIT);
+        header.set_name_ref(fxt_layout::StringRefHeader::inline(name.len() as u16).bits());
 
         let arg_record_bytes = FxtBuilder::new(header).atom(name).build();
         let raw_arg_record = RawArg { name: StringRef::Inline("hello"), value: RawArgValue::Null };
@@ -503,7 +509,7 @@ mod tests {
     fn i32_arg_name_inline() {
         let name = "hello";
         let mut header = I32Header::empty();
-        header.set_name_ref(name.len() as u16 | STRING_REF_INLINE_BIT);
+        header.set_name_ref(fxt_layout::StringRefHeader::inline(name.len() as u16).bits());
         header.set_value(-19);
 
         let arg_record_bytes = FxtBuilder::new(header).atom(name).build();
@@ -534,7 +540,7 @@ mod tests {
     fn u32_arg_name_inline() {
         let name = "hello";
         let mut header = U32Header::empty();
-        header.set_name_ref(name.len() as u16 | STRING_REF_INLINE_BIT);
+        header.set_name_ref(fxt_layout::StringRefHeader::inline(name.len() as u16).bits());
         header.set_value(23);
 
         let arg_record_bytes = FxtBuilder::new(header).atom(name).build();
@@ -565,7 +571,7 @@ mod tests {
     fn i64_arg_name_inline() {
         let name = "hello";
         let mut header = BaseArgHeader::empty();
-        header.set_name_ref(name.len() as u16 | STRING_REF_INLINE_BIT);
+        header.set_name_ref(fxt_layout::StringRefHeader::inline(name.len() as u16).bits());
         header.set_raw_type(I64_ARG_TYPE);
 
         let arg_record_bytes =
@@ -597,7 +603,7 @@ mod tests {
     fn u64_arg_name_inline() {
         let name = "hello";
         let mut header = BaseArgHeader::empty();
-        header.set_name_ref(name.len() as u16 | STRING_REF_INLINE_BIT);
+        header.set_name_ref(fxt_layout::StringRefHeader::inline(name.len() as u16).bits());
         header.set_raw_type(U64_ARG_TYPE);
 
         let arg_record_bytes =
@@ -629,7 +635,7 @@ mod tests {
     fn f64_arg_name_inline() {
         let name = "hello";
         let mut header = BaseArgHeader::empty();
-        header.set_name_ref(name.len() as u16 | STRING_REF_INLINE_BIT);
+        header.set_name_ref(fxt_layout::StringRefHeader::inline(name.len() as u16).bits());
         header.set_raw_type(F64_ARG_TYPE);
 
         let arg_record_bytes =
@@ -662,7 +668,7 @@ mod tests {
         let value = "123-456-7890";
         let mut header = StringHeader::empty();
         header.set_name_ref(10);
-        header.set_value_ref(value.len() as u16 | STRING_REF_INLINE_BIT);
+        header.set_value_ref(fxt_layout::StringRefHeader::inline(value.len() as u16).bits());
 
         let arg_record_bytes = FxtBuilder::new(header).atom(value).build();
         let raw_arg_record = RawArg {
@@ -678,7 +684,7 @@ mod tests {
     fn string_arg_name_inline_value_index() {
         let name = "hello";
         let mut header = StringHeader::empty();
-        header.set_name_ref(name.len() as u16 | STRING_REF_INLINE_BIT);
+        header.set_name_ref(fxt_layout::StringRefHeader::inline(name.len() as u16).bits());
         header.set_value_ref(13);
 
         let arg_record_bytes = FxtBuilder::new(header).atom(name).build();
@@ -696,8 +702,8 @@ mod tests {
         let name = "hello";
         let value = "123-456-7890";
         let mut header = StringHeader::empty();
-        header.set_name_ref(name.len() as u16 | STRING_REF_INLINE_BIT);
-        header.set_value_ref(value.len() as u16 | STRING_REF_INLINE_BIT);
+        header.set_name_ref(fxt_layout::StringRefHeader::inline(name.len() as u16).bits());
+        header.set_value_ref(fxt_layout::StringRefHeader::inline(value.len() as u16).bits());
 
         let arg_record_bytes = FxtBuilder::new(header).atom(name).atom(value).build();
         let raw_arg_record = RawArg {
@@ -729,7 +735,7 @@ mod tests {
     fn pointer_arg_name_inline() {
         let name = "hello";
         let mut header = BaseArgHeader::empty();
-        header.set_name_ref(name.len() as u16 | STRING_REF_INLINE_BIT);
+        header.set_name_ref(fxt_layout::StringRefHeader::inline(name.len() as u16).bits());
         header.set_raw_type(PTR_ARG_TYPE);
 
         let arg_record_bytes =
@@ -761,7 +767,7 @@ mod tests {
     fn koid_arg_name_inline() {
         let name = "hello";
         let mut header = BaseArgHeader::empty();
-        header.set_name_ref(name.len() as u16 | STRING_REF_INLINE_BIT);
+        header.set_name_ref(fxt_layout::StringRefHeader::inline(name.len() as u16).bits());
         header.set_raw_type(KOBJ_ARG_TYPE);
 
         let arg_record_bytes = FxtBuilder::new(header).atom(name).atom(21u64.to_le_bytes()).build();
@@ -792,7 +798,7 @@ mod tests {
     fn bool_arg_name_inline() {
         let name = "hello";
         let mut header = BoolHeader::empty();
-        header.set_name_ref(name.len() as u16 | STRING_REF_INLINE_BIT);
+        header.set_name_ref(fxt_layout::StringRefHeader::inline(name.len() as u16).bits());
         header.set_value(true as u8);
 
         let arg_record_bytes = FxtBuilder::new(header).atom(name).build();
@@ -825,7 +831,7 @@ mod tests {
         let name: &str = "hello";
         let blob = b"the rain in spain falls mainly on the plain";
         let mut header = BlobHeader::empty();
-        header.set_name_ref(name.len() as u16 | STRING_REF_INLINE_BIT);
+        header.set_name_ref(fxt_layout::StringRefHeader::inline(name.len() as u16).bits());
         header.set_blob_size(blob.len() as u32);
 
         let arg_record_bytes = FxtBuilder::new(header).atom(name).atom(blob).build();

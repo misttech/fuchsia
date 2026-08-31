@@ -7,6 +7,9 @@
 mod testing;
 
 pub mod args;
+pub mod bitfields {
+    pub use fxt_layout::*;
+}
 pub mod blob;
 pub mod error;
 pub mod event;

@@ -468,7 +468,7 @@ mod tests {
         let mut header = crate::objects::KernelObjHeader::empty();
         header.set_kernel_obj_type(zx_types::ZX_OBJ_TYPE_PROCESS);
         let name_bytes = b"binder:936_D\xff\xff\xff";
-        header.set_name_ref(name_bytes.len() as u16 | crate::string::STRING_REF_INLINE_BIT);
+        header.set_name_ref(fxt_layout::StringRefHeader::inline(name_bytes.len() as u16).bits());
         header.set_num_args(0);
 
         let kobj_record =
@@ -519,16 +519,14 @@ mod tests {
 
     #[fuchsia::test]
     fn session_with_incomplete_trailing_record() {
-        use crate::string::STRING_REF_INLINE_BIT;
-
         let mut session = SIMPLE_TRACE_FXT.to_vec();
 
         // Make a 2 word header with some arbitrary values.
         let category = "test_category";
         let name = "test_instant";
         let mut header = crate::event::EventHeader::empty();
-        header.set_category_ref(category.len() as u16 | STRING_REF_INLINE_BIT);
-        header.set_name_ref(name.len() as u16 | STRING_REF_INLINE_BIT);
+        header.set_category_ref(fxt_layout::StringRefHeader::inline(category.len() as u16).bits());
+        header.set_name_ref(fxt_layout::StringRefHeader::inline(name.len() as u16).bits());
         header.set_event_type(crate::event::INSTANT_EVENT_TYPE);
 
         let mut final_record = FxtBuilder::new(header)

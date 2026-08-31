@@ -7,8 +7,6 @@ use nom::Parser;
 use nom::combinator::all_consuming;
 use std::num::NonZeroU16;
 
-pub(crate) const STRING_REF_INLINE_BIT: u16 = 1 << 15;
-
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum StringRef<'a> {
     Empty,
@@ -18,13 +16,13 @@ pub enum StringRef<'a> {
 
 impl<'a> StringRef<'a> {
     pub(crate) fn parse(str_ref: u16, buf: &'a [u8]) -> ParseResult<'a, Self> {
-        if let Some(nonzero) = NonZeroU16::new(str_ref) {
-            if (nonzero.get() >> 15) & 1 == 0 {
+        let hdr = fxt_layout::StringRefHeader::from(str_ref);
+        if let Some(nonzero) = NonZeroU16::new(hdr.id_or_len()) {
+            if !hdr.is_inline() {
                 // MSB is zero, so this is a string index.
                 Ok((buf, StringRef::Index(nonzero)))
             } else {
-                // Remove the MSB from the length.
-                let length = str_ref ^ STRING_REF_INLINE_BIT;
+                let length = hdr.id_or_len();
                 let (buf, inline) = parse_padded_string(length as usize, buf)?;
                 Ok((buf, StringRef::Inline(inline)))
             }
@@ -90,11 +88,12 @@ pub(crate) enum RawByteStringRef<'a> {
 
 impl<'a> RawByteStringRef<'a> {
     pub(crate) fn parse(str_ref: u16, buf: &'a [u8]) -> ParseResult<'a, Self> {
-        if let Some(nonzero) = NonZeroU16::new(str_ref) {
-            if (nonzero.get() >> 15) & 1 == 0 {
+        let hdr = fxt_layout::StringRefHeader::from(str_ref);
+        if let Some(nonzero) = NonZeroU16::new(hdr.id_or_len()) {
+            if !hdr.is_inline() {
                 Ok((buf, RawByteStringRef::Index(nonzero)))
             } else {
-                let length = str_ref ^ STRING_REF_INLINE_BIT;
+                let length = hdr.id_or_len();
                 let (buf, inline) = parse_padded_bstr(length as usize, buf)?;
                 Ok((buf, RawByteStringRef::Inline(inline)))
             }
@@ -162,8 +161,9 @@ mod tests {
         buf.extend(&[0, 0, 0]); // padding
         buf.extend([1, 1, 1, 1]); // trailing
 
-        let (trailing, parsed) = StringRef::parse(5 | STRING_REF_INLINE_BIT, &buf).unwrap();
-        assert_eq!(parsed, StringRef::Inline("hello"));
+        let (trailing, parsed) =
+            StringRef::parse(fxt_layout::StringRefHeader::inline(5).bits(), &buf).unwrap();
+        assert_eq!(parsed, StringRef::Inline("hello"),);
         assert_eq!(trailing, [1, 1, 1, 1]);
     }
 
