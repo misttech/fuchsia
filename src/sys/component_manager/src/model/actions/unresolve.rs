@@ -63,7 +63,7 @@ async fn do_unresolve(component: &Arc<ComponentInstance>) -> Result<(), ActionEr
         }
         state.replace(|instance_state| match instance_state {
             InstanceState::Shutdown(_, unresolved_state) => {
-                InstanceState::Unresolved(unresolved_state)
+                InstanceState::Unresolved(*unresolved_state)
             }
             instance_state => panic!(
                 "component {} was shutdown, but then moved to unexpected state {:?}",
@@ -96,13 +96,12 @@ pub mod tests {
     use assert_matches::assert_matches;
     use cm_rust_testing::*;
     use errors::{ActionErrorKind, UnresolveActionError};
+    use fidl_fuchsia_component as fcomponent;
+    use fidl_fuchsia_component_decl as fdecl;
+    use fuchsia_async as fasync;
     use hooks::EventType;
     use moniker::Moniker;
     use std::sync::Arc;
-    use {
-        fidl_fuchsia_component as fcomponent, fidl_fuchsia_component_decl as fdecl,
-        fuchsia_async as fasync,
-    };
 
     /// Check unresolve for _recursive_ case. The system has a root with the child `a` and `a` has
     /// descendants as shown in the diagram below.

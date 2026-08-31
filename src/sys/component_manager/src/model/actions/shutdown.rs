@@ -117,9 +117,9 @@ impl ShutdownJob {
         let dependencies = state.resolved_component.dependencies.clone();
         let static_child_names = state
             .children
-            .keys()
-            .filter(|k| k.collection().is_none())
-            .filter_map(|v| {
+            .iter()
+            .filter(|k| k.0.collection().is_none())
+            .filter_map(|(v, _)| {
                 LongName::new(&v)
                     .inspect_err(|e| log::warn!("child name not convertible to long name: {e}"))
                     .ok()
@@ -2162,7 +2162,7 @@ mod tests {
             let state = component_a.lock_state().await;
             match *state {
                 InstanceState::Shutdown(ref state, _) => {
-                    state.children.get("b").expect("child b not found").clone()
+                    state.children.get_by_name("b").expect("child b not found").clone()
                 }
                 _ => panic!("not shutdown"),
             }

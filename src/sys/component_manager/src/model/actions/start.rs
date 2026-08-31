@@ -1178,7 +1178,7 @@ mod tests {
         )
         .await
         .unwrap();
-        assert!(should_return_early(&InstanceState::Resolved(ris), &m).is_none());
+        assert!(should_return_early(&InstanceState::Resolved(Box::new(ris)), &m).is_none());
 
         // Check for already_started:
         {
@@ -1198,7 +1198,7 @@ mod tests {
                 None,
             );
             assert_matches!(
-                should_return_early(&InstanceState::Started(ris, started_state), &m),
+                should_return_early(&InstanceState::Started(Box::new(ris), started_state), &m),
                 Some(Ok(()))
             );
         }

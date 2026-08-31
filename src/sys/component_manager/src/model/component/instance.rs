@@ -102,11 +102,11 @@ pub enum InstanceState {
     /// The instance has not been resolved yet. This is the initial state.
     Unresolved(UnresolvedInstanceState),
     /// The instance has been resolved.
-    Resolved(ResolvedInstanceState),
+    Resolved(Box<ResolvedInstanceState>),
     /// The instance has started running.
-    Started(ResolvedInstanceState, StartedInstanceState),
+    Started(Box<ResolvedInstanceState>, StartedInstanceState),
     /// The instance has been shutdown, and may not run anymore.
-    Shutdown(ShutdownInstanceState, UnresolvedInstanceState),
+    Shutdown(ShutdownInstanceState, Box<UnresolvedInstanceState>),
     /// The instance has been destroyed. It has no content and no further actions may be registered
     /// on it.
     Destroyed,
@@ -189,9 +189,11 @@ impl InstanceState {
         context: &Arc<ModelContext>,
     ) -> Option<InstanceToken> {
         match self {
-            InstanceState::Unresolved(unresolved_state)
-            | InstanceState::Shutdown(_, unresolved_state) => {
+            InstanceState::Unresolved(unresolved_state) => {
                 Some(unresolved_state.instance_token(moniker, context))
+            }
+            InstanceState::Shutdown(_, boxed_unresolved) => {
+                Some((**boxed_unresolved).instance_token(moniker, context))
             }
             InstanceState::Resolved(resolved) | InstanceState::Started(resolved, _) => {
                 Some(resolved.instance_token(moniker, context))
@@ -226,7 +228,7 @@ impl fmt::Debug for InstanceState {
 pub struct ShutdownInstanceState {
     /// The children of this component, which is retained in case a destroy action is performed, as
     /// in that case the children will need to be destroyed as well.
-    pub children: HashMap<ChildName, Arc<ComponentInstance>>,
+    pub children: Box<CompactChildren>,
 
     /// Information about used storage capabilities the component had in its manifest. This is
     /// retained because the storage contents will be deleted if this component is destroyed.
@@ -266,6 +268,109 @@ impl UnresolvedInstanceState {
     }
 }
 
+// Thin wrapper for Children.
+#[derive(Clone, Default)]
+pub enum CompactChildren {
+    #[default]
+    None,
+    Single(ChildName, Arc<ComponentInstance>),
+    Multiple(HashMap<ChildName, Arc<ComponentInstance>>),
+}
+
+impl CompactChildren {
+    pub fn insert(&mut self, name: ChildName, instance: Arc<ComponentInstance>) {
+        match self {
+            Self::None => *self = Self::Single(name, instance),
+            Self::Single(old_name, old_instance) => {
+                let mut map = HashMap::new();
+                map.insert(old_name.clone(), old_instance.clone());
+                map.insert(name, instance);
+                *self = Self::Multiple(map);
+            }
+            Self::Multiple(map) => {
+                map.insert(name, instance);
+            }
+        }
+    }
+
+    pub fn get(&self, m: &BorrowedChildName) -> Option<&Arc<ComponentInstance>> {
+        match self {
+            Self::None => None,
+            Self::Single(k, v) => {
+                if k == m {
+                    Some(v)
+                } else {
+                    None
+                }
+            }
+            Self::Multiple(map) => map.get(m),
+        }
+    }
+
+    #[cfg(test)]
+    pub fn get_by_name(&self, name: &str) -> Option<&Arc<ComponentInstance>> {
+        match self {
+            Self::None => None,
+            Self::Single(k, v) => {
+                if k.name() == &name {
+                    Some(v)
+                } else {
+                    None
+                }
+            }
+            Self::Multiple(map) => {
+                map.values().find(|child| child.moniker.leaf().unwrap().name() == &name)
+            }
+        }
+    }
+
+    pub fn remove(&mut self, m: &BorrowedChildName) -> Option<Arc<ComponentInstance>> {
+        match self {
+            Self::None => None,
+            Self::Single(k, _v) => {
+                if k == m {
+                    let old = std::mem::replace(self, Self::None);
+                    match old {
+                        Self::Single(_, v) => Some(v),
+                        _ => unreachable!(),
+                    }
+                } else {
+                    None
+                }
+            }
+            Self::Multiple(map) => map.remove(m),
+        }
+    }
+
+    pub fn iter(
+        &self,
+    ) -> Box<dyn Iterator<Item = (&ChildName, &Arc<ComponentInstance>)> + Send + '_> {
+        match self {
+            Self::None => Box::new(std::iter::empty()),
+            Self::Single(k, v) => Box::new(std::iter::once((k, v))),
+            Self::Multiple(map) => Box::new(map.iter()),
+        }
+    }
+}
+
+// impl<'a> IntoIterator for &'a CompactChildren {
+//     type Item = (&'a ChildName, &'a Arc<ComponentInstance>);
+//     type IntoIter = Box<dyn Iterator<Item = Self::Item> + Send + 'a>;
+
+//     fn into_iter(self) -> Self::IntoIter {
+//         self.iter()
+//     }
+// }
+
+impl<'a> IntoIterator for &'a Box<CompactChildren> {
+    type Item = (&'a ChildName, &'a Arc<ComponentInstance>);
+    type IntoIter = Box<dyn Iterator<Item = Self::Item> + Send + 'a>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        (**self).iter()
+    }
+}
+
 /// The mutable state of a resolved component instance.
 pub struct ResolvedInstanceState {
     /// Weak reference to the component that owns this state.
@@ -281,7 +386,7 @@ pub struct ResolvedInstanceState {
     pub resolved_component: Component,
 
     /// All child instances, indexed by child moniker.
-    pub children: HashMap<ChildName, Arc<ComponentInstance>>,
+    pub children: Box<CompactChildren>,
 
     /// The next unique identifier for a dynamic children created in this realm.
     /// (Static instances receive identifier 0.)
@@ -485,7 +590,7 @@ impl ResolvedInstanceState {
             execution_scope: component.execution_scope.clone(),
             instance_token_state,
             resolved_component,
-            children: HashMap::new(),
+            children: Box::new(CompactChildren::None),
             next_dynamic_instance_id: 1,
             namespace_dir: Once::default(),
             exposed_dict: Once::default(),
@@ -807,13 +912,27 @@ impl ResolvedInstanceState {
     }
 
     /// Returns an iterator over all children.
-    pub fn children(&self) -> impl Iterator<Item = (&ChildName, &Arc<ComponentInstance>)> {
-        self.children.iter().map(|(k, v)| (k, v))
+    pub fn children(&self) -> Box<dyn Iterator<Item = (&ChildName, &Arc<ComponentInstance>)> + '_> {
+        match &*self.children {
+            CompactChildren::None => Box::new(std::iter::empty()),
+            CompactChildren::Single(k, v) => Box::new(std::iter::once((k, v))),
+            CompactChildren::Multiple(map) => Box::new(map.iter()),
+        }
     }
 
     /// Returns a reference to a child.
     pub fn get_child(&self, m: &BorrowedChildName) -> Option<&Arc<ComponentInstance>> {
-        self.children.get(m)
+        match &*self.children {
+            CompactChildren::None => None,
+            CompactChildren::Single(k, v) => {
+                if k == m {
+                    Some(v)
+                } else {
+                    None
+                }
+            }
+            CompactChildren::Multiple(map) => map.get(m),
+        }
     }
 
     /// Returns a vector of the children in `collection`.
@@ -1016,6 +1135,26 @@ impl ResolvedInstanceState {
         Ok(child)
     }
 
+    pub fn insert_child(&mut self, name: ChildName, instance: Arc<ComponentInstance>) {
+        let current_children = std::mem::replace(&mut *self.children, CompactChildren::None);
+
+        let new_children = match current_children {
+            CompactChildren::None => CompactChildren::Single(name, instance),
+            CompactChildren::Single(old_name, old_instance) => {
+                let mut map = HashMap::new();
+                map.insert(old_name, old_instance);
+                map.insert(name, instance);
+                CompactChildren::Multiple(map)
+            }
+            CompactChildren::Multiple(mut map) => {
+                map.insert(name, instance);
+                CompactChildren::Multiple(map)
+            }
+        };
+
+        *self.children = new_children;
+    }
+
     async fn add_child_internal(
         &mut self,
         component: &Arc<ComponentInstance>,
@@ -1073,7 +1212,7 @@ impl ResolvedInstanceState {
             component.persistent_storage_for_child(collection),
         )
         .await;
-        self.children.insert(child_name.clone(), child.clone());
+        self.insert_child(child_name.clone(), child.clone());
         self.sandbox.child_outputs.lock().insert(child_name, child.component_output());
 
         Arc::make_mut(&mut self.resolved_component.dependencies).extend(

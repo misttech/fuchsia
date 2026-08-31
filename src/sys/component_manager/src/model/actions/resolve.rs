@@ -129,7 +129,7 @@ async fn do_resolve(
             component_input_dict,
         )
         .await?;
-        state.set(InstanceState::Resolved(resolved_state));
+        state.set(InstanceState::Resolved(Box::new(resolved_state)));
     }
 
     let weak = WeakComponentInstance::new(component).into();

@@ -58,7 +58,8 @@ use futures::future::{BoxFuture, join_all};
 use futures::lock::{MappedMutexGuard, Mutex, MutexGuard};
 use hooks::{Event, EventPayload, Hooks};
 use instance::{
-    InstanceState, ResolvedInstanceState, ShutdownInstanceState, UnresolvedInstanceState,
+    CompactChildren, InstanceState, ResolvedInstanceState, ShutdownInstanceState,
+    UnresolvedInstanceState,
 };
 use log::{debug, error, warn};
 use manager::ComponentManagerInstance;
@@ -69,7 +70,7 @@ use runtime_capabilities::{
     Capability, Connector, Data, Dictionary, DirConnector, Routable, Router, WeakInstanceToken,
 };
 use std::clone::Clone;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 use std::fmt;
 use std::ops::DerefMut;
 use std::sync::{Arc, Weak};
@@ -845,8 +846,11 @@ impl ComponentInstance {
             let mut state = self.lock_state().await;
             let new_state = match state.deref_mut() {
                 InstanceState::Unresolved(unresolved_state) => Some(InstanceState::Shutdown(
-                    ShutdownInstanceState { children: HashMap::new(), routed_storage: vec![] },
-                    unresolved_state.take(),
+                    ShutdownInstanceState {
+                        children: Box::new(CompactChildren::default()),
+                        routed_storage: vec![],
+                    },
+                    Box::new(unresolved_state.take()),
                 )),
                 InstanceState::Resolved(resolved_state) => {
                     let children = resolved_state.children.clone();
@@ -859,7 +863,7 @@ impl ComponentInstance {
 
                     Some(InstanceState::Shutdown(
                         ShutdownInstanceState { children, routed_storage },
-                        resolved_state.to_unresolved(),
+                        Box::new(resolved_state.to_unresolved()),
                     ))
                 }
                 InstanceState::Started(_, _) => {
@@ -994,7 +998,7 @@ impl ComponentInstance {
             let state = self.lock_state().await;
             match *state {
                 InstanceState::Resolved(ref s) | InstanceState::Started(ref s, _) => {
-                    let child = s.get_child(&moniker).map(|r| r.clone());
+                    let child = s.get_child(&moniker);
                     child
                 }
                 InstanceState::Shutdown(ref state, _) => {
@@ -2345,7 +2349,7 @@ pub mod tests {
         )
         .await
         .unwrap();
-        InstanceState::Resolved(ris)
+        InstanceState::Resolved(Box::new(ris))
     }
 
     async fn new_unresolved() -> InstanceState {
