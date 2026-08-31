@@ -437,7 +437,6 @@ tools_bazel_root_targets = [
         ninja = "artifactory"
       },
     ]
-    install_host_tool = true
   },
   {
     bazel_label = "//tools/bundle_fetcher:bundle_fetcher"
