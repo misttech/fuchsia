@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{Context as _, Error, anyhow};
+use anyhow::{Context as _, Error, anyhow, ensure};
 use block_client::{BlockClient, BufferSlice, MutableBufferSlice, RemoteBlockClient};
 use fuchsia_sync::Mutex;
 use std::collections::BTreeMap;
@@ -57,17 +57,30 @@ pub struct PartitionInfo {
 impl PartitionInfo {
     pub fn from_entry(entry: &format::PartitionTableEntry) -> Result<Self, Error> {
         let label = String::from_utf16(entry.name.split(|v| *v == 0u16).next().unwrap())?;
+        ensure!(
+            entry.last_lba >= entry.first_lba,
+            "Partition last_lba < first_lba (first_lba: {}, last_lba: {})",
+            entry.first_lba,
+            entry.last_lba
+        );
+        let num_blocks = entry
+            .last_lba
+            .checked_add(1)
+            .ok_or_else(|| anyhow!("Partition last_lba overflow (last_lba: {})", entry.last_lba))?
+            .checked_sub(entry.first_lba)
+            .ok_or_else(|| {
+                anyhow!(
+                    "Partition last_lba < first_lba (first_lba: {}, last_lba: {})",
+                    entry.first_lba,
+                    entry.last_lba
+                )
+            })?;
         Ok(Self {
             label,
             type_guid: Guid::from_bytes(entry.type_guid),
             instance_guid: Guid::from_bytes(entry.instance_guid),
             start_block: entry.first_lba,
-            num_blocks: entry
-                .last_lba
-                .checked_add(1)
-                .unwrap()
-                .checked_sub(entry.first_lba)
-                .unwrap(),
+            num_blocks,
             flags: entry.flags,
         })
     }
@@ -81,7 +94,7 @@ impl PartitionInfo {
             type_guid: self.type_guid.to_bytes(),
             instance_guid: self.instance_guid.to_bytes(),
             first_lba: self.start_block,
-            last_lba: self.start_block + self.num_blocks.saturating_sub(1),
+            last_lba: self.start_block.saturating_add(self.num_blocks.saturating_sub(1)),
             flags: self.flags,
             name,
         }
@@ -160,9 +173,13 @@ async fn load_metadata(
     header.ensure_integrity(client.block_count(), client.block_size() as u64)?;
     let partition_table_offset = header.part_start * bs as u64;
     let partition_table_size = (header.num_parts * header.part_size) as usize;
-    let partition_table_size_rounded = partition_table_size
-        .checked_next_multiple_of(bs)
-        .ok_or_else(|| anyhow!("Overflow when rounding up partition table size "))?;
+    let partition_table_size_rounded =
+        partition_table_size.checked_next_multiple_of(bs).ok_or_else(|| {
+            anyhow!(
+                "Overflow when rounding up partition table size \
+                 (partition_table_size: {partition_table_size}, block_size: {bs})"
+            )
+        })?;
     let mut partition_table = BTreeMap::new();
     if header.num_parts > 0 {
         let mut partition_table_blocks = vec![0u8; partition_table_size_rounded];
@@ -180,7 +197,7 @@ async fn load_metadata(
             })?;
         let crc = crc::Crc::<u32>::new(&crc::CRC_32_ISO_HDLC)
             .checksum(&partition_table_blocks[..partition_table_size]);
-        anyhow::ensure!(header.crc32_parts == crc, "Invalid partition table checksum");
+        ensure!(header.crc32_parts == crc, "Invalid partition table checksum");
 
         let mut used_ranges = Vec::new();
         for i in 0..header.num_parts as usize {
@@ -194,13 +211,20 @@ async fn load_metadata(
             entry
                 .ensure_integrity(header.first_usable, header.last_usable)
                 .context("GPT partition table entry invalid!")?;
-            used_ranges.push(entry.first_lba..entry.last_lba.checked_add(1).unwrap());
+            let end = entry.last_lba.checked_add(1).ok_or_else(|| {
+                anyhow!(
+                    "Partition {i} last_lba overflow (first_lba: {}, last_lba: {})",
+                    entry.first_lba,
+                    entry.last_lba
+                )
+            })?;
+            used_ranges.push(entry.first_lba..end);
 
             partition_table.insert(i as u32, PartitionInfo::from_entry(entry)?);
         }
         used_ranges.sort_by_key(|r| r.start);
         for pairs in used_ranges.windows(2) {
-            anyhow::ensure!(pairs[0].end <= pairs[1].start, "Overlapping partitions");
+            ensure!(pairs[0].end <= pairs[1].start, "Overlapping partitions");
         }
     }
     Ok((header.clone(), partition_table))
@@ -461,10 +485,10 @@ impl Gpt {
             return Err(AddPartitionError::InvalidArguments);
         }
 
-        let mut allocated_ranges = vec![
-            0..self.header.first_usable,
-            self.header.last_usable + 1..self.client.block_count(),
-        ];
+        let last_usable_end =
+            self.header.last_usable.checked_add(1).ok_or(AddPartitionError::InvalidArguments)?;
+        let mut allocated_ranges =
+            vec![0..self.header.first_usable, last_usable_end..self.client.block_count()];
         let mut slot_idx = None;
         for i in 0..transaction.partitions.len() {
             let partition = &transaction.partitions[i];
@@ -472,8 +496,11 @@ impl Gpt {
                 slot_idx = Some(i);
             }
             if !partition.is_nil() {
-                allocated_ranges
-                    .push(partition.start_block..partition.start_block + partition.num_blocks);
+                let end = partition
+                    .start_block
+                    .checked_add(partition.num_blocks)
+                    .ok_or(AddPartitionError::InvalidArguments)?;
+                allocated_ranges.push(partition.start_block..end);
             }
         }
         let slot_idx = slot_idx.ok_or(AddPartitionError::NoSpace)?;
@@ -1690,7 +1717,7 @@ mod tests {
         let mut backup_header = header.clone();
         backup_header.current_lba = block_count - 1;
         backup_header.backup_lba = 1;
-        backup_header.part_start = backup_header.last_usable + 1;
+        backup_header.part_start = backup_header.last_usable.saturating_add(1);
         backup_header.crc32 = backup_header.compute_checksum();
 
         vmo.write(backup_header.as_bytes(), (block_count - 1) * block_size as u64).unwrap();
@@ -1700,8 +1727,12 @@ mod tests {
             partition_table_len.checked_next_multiple_of(block_size as u64).unwrap()
                 / block_size as u64;
 
-        if backup_header.part_start + partition_table_blocks <= backup_header.current_lba {
-            vmo.write(&part_table_bytes, backup_header.part_start * block_size as u64).unwrap();
+        if let Some(end) = backup_header.part_start.checked_add(partition_table_blocks) {
+            if end <= backup_header.current_lba {
+                if let Some(offset) = backup_header.part_start.checked_mul(block_size as u64) {
+                    vmo.write(&part_table_bytes, offset).unwrap();
+                }
+            }
         }
 
         let vmo_clone = vmo.duplicate_handle(zx::Rights::SAME_RIGHTS).unwrap();
@@ -1816,5 +1847,42 @@ mod tests {
         assert!(res.is_err());
         let err_msg = format!("{:?}", res.err().unwrap());
         assert!(err_msg.contains("Invalid last_usable"), "Unexpected error: {}", err_msg);
+    }
+
+    #[fuchsia::test]
+    fn test_from_entry_last_lba_overflow() {
+        let entry = format::PartitionTableEntry {
+            type_guid: [1; 16],
+            instance_guid: [1; 16],
+            first_lba: 34,
+            last_lba: u64::MAX,
+            flags: 0,
+            name: [0; 36],
+        };
+        assert!(PartitionInfo::from_entry(&entry).is_err());
+    }
+
+    #[fuchsia::test]
+    fn test_from_entry_last_lba_less_than_first_lba() {
+        let entry = format::PartitionTableEntry {
+            type_guid: [1; 16],
+            instance_guid: [1; 16],
+            first_lba: 34,
+            last_lba: 33,
+            flags: 0,
+            name: [0; 36],
+        };
+        assert!(PartitionInfo::from_entry(&entry).is_err());
+    }
+
+    #[fuchsia::test]
+    async fn test_header_last_usable_overflow() {
+        let block_count = 128;
+        let block_size = 512;
+        let mut header = format::Header::new(block_count, block_size, 128).unwrap();
+        header.last_usable = u64::MAX;
+        let entries = vec![format::PartitionTableEntry::empty(); 128];
+        let res = try_load_invalid_gpt(block_count, block_size, header, entries).await;
+        assert!(res.is_err());
     }
 }

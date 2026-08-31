@@ -121,10 +121,20 @@ impl Header {
             .num_parts
             .checked_mul(self.part_size)
             .and_then(|v| v.checked_next_multiple_of(block_size as u32))
-            .ok_or_else(|| anyhow!("Partition table size overflow"))?
-            as u64)
+            .ok_or_else(|| {
+                anyhow!(
+                    "Partition table size overflow \
+                     (num_parts: {}, part_size: {}, block_size: {block_size})",
+                    self.num_parts,
+                    self.part_size
+                )
+            })? as u64)
             / block_size;
-        ensure!(partition_table_blocks < block_count, "Invalid partition table size");
+        ensure!(
+            partition_table_blocks < block_count,
+            "Invalid partition table size: \
+             {partition_table_blocks} blocks >= {block_count} block_count"
+        );
 
         // NB: The current LBA points to *this* header, so it's either at the start or the end.
         // The last LBA points to the *other* header.  Since we want to check the absolute offsets,
@@ -153,25 +163,52 @@ impl Header {
             (self.backup_lba, self.current_lba)
         };
 
+        let min_first_usable = first_lba
+            .checked_add(1)
+            .and_then(|v| v.checked_add(partition_table_blocks))
+            .ok_or_else(|| {
+                anyhow!(
+                    "Overflow calculating min_first_usable \
+                     (first_lba: {first_lba}, partition_table_blocks: {partition_table_blocks})"
+                )
+            })?;
         ensure!(
-            self.first_usable >= first_lba + 1 + partition_table_blocks,
-            "Invalid first_usable {}",
-            self.first_usable
+            self.first_usable >= min_first_usable,
+            "Invalid first_usable {} (minimum: {})",
+            self.first_usable,
+            min_first_usable
         );
+        let last_usable_end =
+            self.last_usable.checked_add(partition_table_blocks).ok_or_else(|| {
+                anyhow!(
+                    "Overflow calculating last_usable_end \
+                     (last_usable: {}, partition_table_blocks: {partition_table_blocks})",
+                    self.last_usable
+                )
+            })?;
         ensure!(
-            self.first_usable <= self.last_usable
-                && self.last_usable + partition_table_blocks < second_lba,
-            "Invalid last_usable {}",
-            self.last_usable
+            self.first_usable <= self.last_usable && last_usable_end < second_lba,
+            "Invalid last_usable {} (first_usable: {}, last_usable_end: {}, second_lba: {})",
+            self.last_usable,
+            self.first_usable,
+            last_usable_end,
+            second_lba
         );
 
         if first_lba == self.current_lba {
             ensure!(self.part_start == first_lba + 1, "Invalid part_start {}", self.part_start);
         } else {
+            let expected_part_start = self.last_usable.checked_add(1).ok_or_else(|| {
+                anyhow!(
+                    "Overflow calculating expected part_start (last_usable: {})",
+                    self.last_usable
+                )
+            })?;
             ensure!(
-                self.part_start == self.last_usable + 1,
-                "Invalid part_start {}",
-                self.part_start
+                self.part_start == expected_part_start,
+                "Invalid part_start {} (expected: {})",
+                self.part_start,
+                expected_part_start
             );
         }
 
@@ -209,10 +246,19 @@ impl PartitionTableEntry {
     pub fn ensure_integrity(&self, first_usable: u64, last_usable: u64) -> Result<(), Error> {
         ensure!(self.type_guid != [0u8; 16], "Empty type GUID");
         ensure!(self.instance_guid != [0u8; 16], "Empty instance GUID");
-        ensure!(self.first_lba >= first_usable, "Invalid first LBA");
+        ensure!(
+            self.first_lba >= first_usable,
+            "Invalid first LBA {} (first_usable: {})",
+            self.first_lba,
+            first_usable
+        );
         ensure!(
             self.last_lba <= last_usable && self.last_lba >= self.first_lba,
-            "Invalid last LBA"
+            "Invalid last LBA {} (first_usable: {}, last_usable: {}, first_lba: {})",
+            self.last_lba,
+            first_usable,
+            last_usable,
+            self.first_lba
         );
         Ok(())
     }
@@ -252,7 +298,8 @@ pub fn serialize_partition_table(
     if first_usable > last_usable {
         return Err(FormatError::NoSpace);
     }
-    let mut used_ranges = vec![0..first_usable, last_usable + 1..num_blocks];
+    let last_usable_end = last_usable.checked_add(1).ok_or(FormatError::InvalidArguments)?;
+    let mut used_ranges = vec![0..first_usable, last_usable_end..num_blocks];
     let part_size = header.part_size as usize;
     for entry in entries {
         let part_raw = entry.as_bytes();
@@ -261,7 +308,8 @@ pub fn serialize_partition_table(
             entry
                 .ensure_integrity(first_usable, last_usable)
                 .map_err(|_| FormatError::InvalidArguments)?;
-            used_ranges.push(entry.first_lba..entry.last_lba + 1);
+            let end = entry.last_lba.checked_add(1).ok_or(FormatError::InvalidArguments)?;
+            used_ranges.push(entry.first_lba..end);
             partition_table_view[..part_raw.len()].copy_from_slice(part_raw);
         }
         digest.update(part_raw);
@@ -283,7 +331,9 @@ pub fn serialize_partition_table(
 
 #[cfg(test)]
 mod tests {
-    use super::{GPT_HEADER_SIZE, Header};
+    use super::{
+        FormatError, GPT_HEADER_SIZE, Header, PartitionTableEntry, serialize_partition_table,
+    };
 
     #[fuchsia::test]
     fn header_crc() {
@@ -371,5 +421,51 @@ mod tests {
         header
             .ensure_integrity(nblocks, 512)
             .expect_err("Backup header should be invalid with backup_lba != 1");
+    }
+
+    #[fuchsia::test]
+    fn test_header_ensure_integrity_last_usable_overflow() {
+        let nblocks = 10;
+        let partition_table_nblocks = 1;
+        let mut header = Header {
+            signature: [0x45, 0x46, 0x49, 0x20, 0x50, 0x41, 0x52, 0x54],
+            revision: 0x10000,
+            header_size: GPT_HEADER_SIZE as u32,
+            crc32: 0,
+            reserved: 0,
+            current_lba: 1,
+            backup_lba: nblocks - 1,
+            first_usable: 2 + partition_table_nblocks,
+            last_usable: u64::MAX,
+            disk_guid: [0u8; 16],
+            part_start: 2,
+            num_parts: 1,
+            part_size: 128,
+            crc32_parts: 0,
+            zerocopy_padding: 0,
+        };
+        header.crc32 = header.compute_checksum();
+        header
+            .ensure_integrity(nblocks, 512)
+            .expect_err("last_usable = u64::MAX should fail ensure_integrity");
+    }
+
+    #[fuchsia::test]
+    fn test_serialize_partition_table_overflow_entry() {
+        let block_count = 1024;
+        let block_size = 512;
+        let mut header = Header::new(block_count, block_size, 128).unwrap();
+        let mut entries = vec![PartitionTableEntry::empty(); 128];
+        entries[0] = PartitionTableEntry {
+            type_guid: [1; 16],
+            instance_guid: [1; 16],
+            first_lba: u64::MAX,
+            last_lba: u64::MAX,
+            flags: 0,
+            name: [0; 36],
+        };
+        let result =
+            serialize_partition_table(&mut header, block_size as usize, block_count, &entries[..]);
+        assert_eq!(result, Err(FormatError::InvalidArguments));
     }
 }
