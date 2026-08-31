@@ -8,6 +8,7 @@ use diagnostics_hierarchy::SelectResult;
 use fidl::endpoints::Proxy;
 use fidl_fuchsia_diagnostics as fdiagnostics;
 use fidl_fuchsia_diagnostics_persistence as fdiagnostics_persistence;
+use fidl_fuchsia_io as fio;
 use fidl_fuchsia_logger as flogger;
 use fidl_fuchsia_power_battery as fbattery;
 use fidl_fuchsia_sys2 as fsys2;
@@ -15,12 +16,13 @@ use fidl_fuchsia_update as fupdate;
 use fuchsia_component_test::{Capability, ChildOptions, RealmBuilder, RealmInstance, Ref, Route};
 use futures::channel::mpsc;
 use futures::{FutureExt, SinkExt, StreamExt, TryStreamExt};
+use std::path::Path;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicU64, Ordering};
 
-fn extract_counter(content: &str) -> Option<u64> {
+fn extract_token(content: &str) -> Option<u64> {
     let data_vec: Vec<InspectData> = serde_json::from_str(content).ok()?;
-    let selector = selectors::parse_verbose("*:root:counter").ok()?;
+    let selector = selectors::parse_verbose("*:root:token").ok()?;
 
     for data in data_vec {
         if data.moniker.to_string().contains("publisher") {
@@ -39,14 +41,66 @@ fn extract_counter(content: &str) -> Option<u64> {
     None
 }
 
+struct TestRealm {
+    instance: RealmInstance,
+    current_token: Arc<AtomicU64>,
+    temp_dir: tempfile::TempDir,
+}
+
 async fn make_realm(
     interval: i64,
     mock_battery_tx: Option<mpsc::Sender<fbattery::BatteryInfoWatcherProxy>>,
     mock_update_tx: Option<mpsc::Sender<fupdate::NotifierProxy>>,
-) -> Result<RealmInstance, Error> {
+) -> Result<TestRealm, Error> {
     let skip_update_check = mock_update_tx.is_none();
     let builder = RealmBuilder::new().await?;
 
+    let temp_dir = tempfile::TempDir::new_in("/tmp")?;
+    let temp_path = temp_dir.path().to_path_buf();
+
+    // Create a local child component that serves a temporary directory (`temp_dir`)
+    // containing a `"cache"` subdirectory. This directory will act as the backing
+    // storage for the Persistence component under test, allowing the test to directly
+    // inspect persisted Inspect snapshot files on the host filesystem.
+    let storage_provider = builder
+        .add_local_child(
+            "storage-provider",
+            move |handles| {
+                let temp_path = temp_path.clone();
+                Box::pin(async move {
+                    let dir_proxy = fuchsia_fs::directory::open_in_namespace(
+                        temp_path.to_str().unwrap(),
+                        fio::PERM_READABLE | fio::PERM_WRITABLE,
+                    )?;
+                    let _ = fuchsia_fs::directory::create_directory_recursive(
+                        &dir_proxy,
+                        "cache",
+                        fio::PERM_READABLE | fio::PERM_WRITABLE,
+                    )
+                    .await?;
+                    // Serve temp_path (which contains the "cache" subdir) as the component's outgoing directory.
+                    fuchsia_fs::directory::clone_onto(&dir_proxy, handles.outgoing_dir)?;
+                    // Stay pending so the component continues serving the directory for the duration of the test realm.
+                    futures::future::pending::<()>().await;
+                    Ok(())
+                })
+            },
+            ChildOptions::new().eager(),
+        )
+        .await?;
+
+    builder
+        .add_route(
+            Route::new()
+                .capability(Capability::directory("cache").rights(fio::RW_STAR_DIR).path("/cache"))
+                .from(&storage_provider)
+                .to(Ref::parent()),
+        )
+        .await?;
+
+    let current_token = Arc::new(AtomicU64::new(0));
+
+    let publisher_token = current_token.clone();
     let archivist = builder
         .add_child("archivist", "#meta/archivist-for-embedding.cm", ChildOptions::new().eager())
         .await?;
@@ -55,14 +109,13 @@ async fn make_realm(
         .add_local_child(
             "publisher",
             move |handles| {
+                let token = publisher_token.clone();
                 Box::pin(async move {
-                    let counter = Arc::new(AtomicUsize::new(0));
                     let inspector = fuchsia_inspect::Inspector::default();
                     inspector.root().record_lazy_values("", move || {
+                        let token_val = token.load(Ordering::SeqCst);
                         let inspector = fuchsia_inspect::Inspector::default();
-                        inspector
-                            .root()
-                            .record_uint("counter", counter.fetch_add(1, Ordering::SeqCst) as u64);
+                        inspector.root().record_uint("token", token_val);
                         async move { Ok(inspector) }.boxed()
                     });
                     let mut options = inspect_runtime::PublishOptions::default();
@@ -275,16 +328,6 @@ async fn make_realm(
         )
         .await?;
 
-    // Route storage cache from parent to persistence
-    builder
-        .add_route(
-            Route::new()
-                .capability(Capability::storage("cache"))
-                .from(Ref::parent())
-                .to(&persistence),
-        )
-        .await?;
-
     // Route PreviousBootDataProvider from persistence to parent
     builder
         .add_route(
@@ -307,7 +350,90 @@ async fn make_realm(
         )
         .await?;
 
-    Ok(builder.build().await?)
+    // Diagnostics Persistence consumes a `storage: "cache"` capability.
+    // Because RealmBuilder's route API does not support defining a new Storage capability
+    // backed by a child directory capability, we manually update the root realm's decl:
+    //   1. Declare a Storage capability "cache" backed by child `storage-provider`'s "cache" directory.
+    //   2. Offer the "cache" Storage capability from `self` to the `persistence` child.
+    let mut realm_decl = builder.get_realm_decl().await?;
+    let mut capabilities = Vec::from(realm_decl.capabilities);
+    capabilities.push(cm_rust::CapabilityDecl::Storage(cm_rust::StorageDecl {
+        name: "cache".parse().unwrap(),
+        source: cm_rust::StorageDirectorySource::Child("storage-provider".to_string()),
+        backing_dir: "cache".parse().unwrap(),
+        subdir: Default::default(),
+        storage_id: fidl_fuchsia_component_decl::StorageId::StaticInstanceIdOrMoniker,
+    }));
+    realm_decl.capabilities = capabilities.into_boxed_slice();
+
+    let mut offers = Vec::from(realm_decl.offers);
+    offers.push(cm_rust::OfferDecl::Storage(cm_rust::OfferStorageDecl {
+        source: cm_rust::OfferSource::Self_,
+        source_name: "cache".parse().unwrap(),
+        target: cm_rust::OfferTarget::Child(cm_rust::ChildRef {
+            name: "persistence".parse().unwrap(),
+            collection: None,
+        }),
+        target_name: "cache".parse().unwrap(),
+        availability: cm_rust::Availability::Required,
+    }));
+    realm_decl.offers = offers.into_boxed_slice();
+    builder.replace_realm_decl(realm_decl).await?;
+
+    Ok(TestRealm { instance: builder.build().await?, current_token, temp_dir })
+}
+
+fn find_active_dir(dir: &Path) -> Option<std::path::PathBuf> {
+    if let Ok(entries) = std::fs::read_dir(dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                if entry.file_name() == "active" {
+                    return Some(path);
+                }
+                if let Some(found) = find_active_dir(&path) {
+                    return Some(found);
+                }
+            }
+        }
+    }
+    None
+}
+
+async fn wait_for_active_token(temp_dir: &tempfile::TempDir, expected: u64) -> Result<(), Error> {
+    loop {
+        if let Some(active_dir) = find_active_dir(temp_dir.path()) {
+            if let Ok(entries) = std::fs::read_dir(&active_dir) {
+                let file_names: Vec<String> =
+                    entries.flatten().filter_map(|e| e.file_name().into_string().ok()).collect();
+
+                if file_names.len() == 2
+                    && file_names.iter().any(|f| f == "active.json")
+                    && file_names.iter().any(|f| f == "metadata.json")
+                {
+                    let active_path = active_dir.join("active.json");
+                    let meta_path = active_dir.join("metadata.json");
+                    if let (Ok(content), Ok(meta_content)) =
+                        (std::fs::read_to_string(&active_path), std::fs::read_to_string(&meta_path))
+                    {
+                        if !meta_content.is_empty()
+                            && serde_json::from_str::<serde_json::Value>(&meta_content).is_ok()
+                        {
+                            if let Some(token) = extract_token(&content) {
+                                if token == expected {
+                                    return Ok(());
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        fuchsia_async::Timer::new(zx::MonotonicInstant::after(zx::MonotonicDuration::from_millis(
+            5,
+        )))
+        .await;
+    }
 }
 
 async fn restart_persistence(lifecycle: &fsys2::LifecycleControllerProxy) -> Result<(), Error> {
@@ -339,62 +465,64 @@ async fn wait_for_snapshot(
             return Ok(data);
         }
         fuchsia_async::Timer::new(zx::MonotonicInstant::after(zx::MonotonicDuration::from_millis(
-            50,
+            10,
         )))
         .await;
     }
 }
 
+impl TestRealm {
+    async fn destroy(self) -> Result<(), Error> {
+        let res = self.instance.destroy().await;
+        drop(self.temp_dir);
+        Ok(res?)
+    }
+}
+
+async fn read_snapshot_token(instance: &RealmInstance) -> Result<u64, Error> {
+    let data = wait_for_snapshot(instance).await?;
+    let inspect_file = data.inspect.expect("Expected inspect file in PreviousBootData");
+    let file_proxy = inspect_file.into_proxy();
+    let content = fuchsia_fs::file::read_to_string(&file_proxy).await?;
+    extract_token(&content)
+        .ok_or_else(|| anyhow::anyhow!("Failed to extract token from JSON:\n{content}"))
+}
+
 #[fuchsia::test]
 async fn test_persistence_rotation() -> Result<(), Error> {
     const INTERVAL: i64 = 1;
-    let instance = make_realm(INTERVAL, None, None).await?;
+    let realm = make_realm(INTERVAL, None, None).await?;
 
     // Boot 1 Check: Connect to PreviousBootDataProvider, verify data.inspect is None
     let provider: fdiagnostics_persistence::PreviousBootDataProviderProxy =
-        instance.root.connect_to_protocol_at_exposed_dir()?;
+        realm.instance.root.connect_to_protocol_at_exposed_dir()?;
     let data = provider.watch_previous_boot_data(&Default::default()).await?;
     assert!(data.inspect.is_none(), "Expected no previous boot data on initial boot");
 
-    // Wait for active snapshot on Boot 1 to be written before restarting persistence
-    fuchsia_async::Timer::new(zx::MonotonicInstant::after(zx::MonotonicDuration::from_seconds(
-        2 * INTERVAL,
-    )))
-    .await;
+    // Set Token 1 and wait until Persistence captures it in active snapshot on disk
+    const TOKEN_1: u64 = 0xAAAA_1111_2222;
+    realm.current_token.store(TOKEN_1, Ordering::SeqCst);
+    wait_for_active_token(&realm.temp_dir, TOKEN_1).await?;
 
     let lifecycle: fsys2::LifecycleControllerProxy =
-        instance.root.connect_to_protocol_at_exposed_dir()?;
+        realm.instance.root.connect_to_protocol_at_exposed_dir()?;
 
-    // Boot 2 (First Rotation): Wait until inspect data is present after restart
+    // Boot 2 (First Rotation): Restart persistence and verify previous boot data contains Token 1
     restart_persistence(&lifecycle).await?;
-    let data = wait_for_snapshot(&instance).await?;
+    let token = read_snapshot_token(&realm.instance).await?;
+    assert_eq!(token, TOKEN_1, "Expected previous boot data to contain Token 1");
 
-    let inspect_file = data.inspect.expect("Expected inspect file on Boot 2");
-    let file_proxy = inspect_file.into_proxy();
-    let content = fuchsia_fs::file::read_to_string(&file_proxy).await?;
-    let t1 = extract_counter(&content).unwrap_or_else(|| {
-        panic!("Failed to extract counter T1 from JSON:\n{content}");
-    });
-    assert!(t1 > 0, "Expected T1 > 0, got {t1}");
+    // Set Token 2 and wait until Persistence captures it
+    const TOKEN_2: u64 = 0xBBBB_3333_4444;
+    realm.current_token.store(TOKEN_2, Ordering::SeqCst);
+    wait_for_active_token(&realm.temp_dir, TOKEN_2).await?;
 
-    fuchsia_async::Timer::new(zx::MonotonicInstant::after(zx::MonotonicDuration::from_seconds(
-        2 * INTERVAL,
-    )))
-    .await;
-
-    // Boot 3 (Second Rotation): Wait until inspect data is present after next restart
+    // Boot 3 (Second Rotation): Restart persistence and verify previous boot data contains Token 2
     restart_persistence(&lifecycle).await?;
-    let data = wait_for_snapshot(&instance).await?;
+    let token = read_snapshot_token(&realm.instance).await?;
+    assert_eq!(token, TOKEN_2, "Expected previous boot data to contain Token 2");
 
-    let inspect_file = data.inspect.expect("Expected inspect file on Boot 3");
-    let file_proxy = inspect_file.into_proxy();
-    let content2 = fuchsia_fs::file::read_to_string(&file_proxy).await?;
-    let t2 = extract_counter(&content2).unwrap_or_else(|| {
-        panic!("Failed to extract counter T2 from JSON:\n{content2}");
-    });
-
-    assert!(t2 > t1, "Expected T2 ({t2}) > T1 ({t1})");
-
+    realm.destroy().await?;
     Ok(())
 }
 
@@ -402,13 +530,17 @@ async fn test_persistence_rotation() -> Result<(), Error> {
 async fn test_low_battery_trigger() -> Result<(), Error> {
     const INTERVAL: i64 = 300;
     let (tx, mut rx) = mpsc::channel(1);
-    let instance = make_realm(INTERVAL, Some(tx), None).await?;
+    let realm = make_realm(INTERVAL, Some(tx), None).await?;
 
     // Boot 1 Check: Connect to PreviousBootDataProvider, verify data.inspect is None
     let provider: fdiagnostics_persistence::PreviousBootDataProviderProxy =
-        instance.root.connect_to_protocol_at_exposed_dir()?;
+        realm.instance.root.connect_to_protocol_at_exposed_dir()?;
     let data = provider.watch_previous_boot_data(&Default::default()).await?;
     assert!(data.inspect.is_none(), "Expected no previous boot data on initial boot");
+
+    // Set distinctive low-battery token
+    const LOW_BATTERY_TOKEN: u64 = 0xCAFE_BABE_BEEF;
+    realm.current_token.store(LOW_BATTERY_TOKEN, Ordering::SeqCst);
 
     // Wait for persistence to connect to mock BatteryManager and send watcher proxy
     let watcher_proxy = rx
@@ -424,23 +556,20 @@ async fn test_low_battery_trigger() -> Result<(), Error> {
     };
     watcher_proxy.on_change_battery_info(&low_battery_info, None).await?;
 
+    // Wait until Persistence captures LOW_BATTERY_TOKEN on disk
+    wait_for_active_token(&realm.temp_dir, LOW_BATTERY_TOKEN).await?;
+
     let lifecycle: fsys2::LifecycleControllerProxy =
-        instance.root.connect_to_protocol_at_exposed_dir()?;
+        realm.instance.root.connect_to_protocol_at_exposed_dir()?;
 
     // Restart persistence to rotate active snapshot to previous_boot
     restart_persistence(&lifecycle).await?;
 
-    // Verify inspect snapshot generated by low-battery trigger is present
-    let data = wait_for_snapshot(&instance).await?;
-    let inspect_file =
-        data.inspect.expect("Expected inspect snapshot generated by low battery event");
-    let file_proxy = inspect_file.into_proxy();
-    let content = fuchsia_fs::file::read_to_string(&file_proxy).await?;
-    let counter = extract_counter(&content).unwrap_or_else(|| {
-        panic!("Failed to extract counter from JSON:\n{content}");
-    });
-    assert!(counter > 0, "Expected valid inspect counter > 0, got {counter}");
+    // Verify inspect snapshot generated by low-battery trigger is present with LOW_BATTERY_TOKEN
+    let token = read_snapshot_token(&realm.instance).await?;
+    assert_eq!(token, LOW_BATTERY_TOKEN, "Expected low battery snapshot to contain token");
 
+    realm.destroy().await?;
     Ok(())
 }
 
@@ -448,14 +577,17 @@ async fn test_low_battery_trigger() -> Result<(), Error> {
 async fn test_update_check_gating() -> Result<(), Error> {
     const INTERVAL: i64 = 5;
     let (tx, mut rx) = mpsc::channel(1);
-    let instance = make_realm(INTERVAL, None, Some(tx)).await?;
+    let realm = make_realm(INTERVAL, None, Some(tx)).await?;
 
     let provider: fdiagnostics_persistence::PreviousBootDataProviderProxy =
-        instance.root.connect_to_protocol_at_exposed_dir()?;
+        realm.instance.root.connect_to_protocol_at_exposed_dir()?;
 
     // Wait for persistence to connect to mock update Listener and send notifier proxy
     let notifier_proxy =
         rx.next().await.ok_or_else(|| anyhow::anyhow!("Failed to receive NotifierProxy"))?;
+
+    const UPDATE_TOKEN: u64 = 0x1234_5678_9ABC;
+    realm.current_token.store(UPDATE_TOKEN, Ordering::SeqCst);
 
     // Signal that the post-boot update check is complete
     notifier_proxy.notify()?;
@@ -463,14 +595,11 @@ async fn test_update_check_gating() -> Result<(), Error> {
     let data = provider.watch_previous_boot_data(&Default::default()).await?;
     assert!(data.inspect.is_none(), "Expected no previous boot data on initial boot");
 
-    // Sleep so persistence collects an active snapshot
-    fuchsia_async::Timer::new(zx::MonotonicInstant::after(zx::MonotonicDuration::from_seconds(
-        INTERVAL,
-    )))
-    .await;
+    // Wait deterministically for persistence to collect an active snapshot with UPDATE_TOKEN on disk
+    wait_for_active_token(&realm.temp_dir, UPDATE_TOKEN).await?;
 
     let lifecycle: fsys2::LifecycleControllerProxy =
-        instance.root.connect_to_protocol_at_exposed_dir()?;
+        realm.instance.root.connect_to_protocol_at_exposed_dir()?;
     restart_persistence(&lifecycle).await?;
 
     // On Boot 2 restart, persistence connects to update Listener again
@@ -480,9 +609,10 @@ async fn test_update_check_gating() -> Result<(), Error> {
         .ok_or_else(|| anyhow::anyhow!("Failed to receive NotifierProxy on Boot 2"))?;
     notifier_proxy_2.notify()?;
 
-    // Verify inspect snapshot is served by PreviousBootDataProvider
-    let data = wait_for_snapshot(&instance).await?;
-    assert!(data.inspect.is_some(), "Expected previous boot data after update check complete");
+    // Verify inspect snapshot is served by PreviousBootDataProvider with UPDATE_TOKEN
+    let token = read_snapshot_token(&realm.instance).await?;
+    assert_eq!(token, UPDATE_TOKEN, "Expected previous boot data to contain UPDATE_TOKEN");
 
+    realm.destroy().await?;
     Ok(())
 }

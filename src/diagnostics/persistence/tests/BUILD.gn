@@ -11,9 +11,11 @@ rustc_test("diagnostics_persistence_integration_test") {
   sources = [ "integration_test.rs" ]
 
   deps = [
+    "//sdk/fidl/fuchsia.component.decl:fuchsia.component.decl_rust",
     "//sdk/fidl/fuchsia.diagnostics:fuchsia.diagnostics_rust",
     "//sdk/fidl/fuchsia.diagnostics.persistence:fuchsia.diagnostics.persistence_rust",
     "//sdk/fidl/fuchsia.inspect:fuchsia.inspect_rust",
+    "//sdk/fidl/fuchsia.io:fuchsia.io_rust",
     "//sdk/fidl/fuchsia.logger:fuchsia.logger_rust",
     "//sdk/fidl/fuchsia.power.battery:fuchsia.power.battery_rust",
     "//sdk/fidl/fuchsia.sys2:fuchsia.sys2_rust",
@@ -34,6 +36,7 @@ rustc_test("diagnostics_persistence_integration_test") {
     "//third_party/rust_crates:anyhow",
     "//third_party/rust_crates:futures",
     "//third_party/rust_crates:serde_json",
+    "//third_party/rust_crates:tempfile",
   ]
 }
 
