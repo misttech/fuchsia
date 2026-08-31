@@ -95,16 +95,16 @@ class JsonGet:
             j.match([{"t": "b", "n": Any}], lambda m: print(m[0].n)) # prints {"x": 5}
         """
         m = self._match_toplevel(pattern, self.j)
-        if m and callback:
+        if m is not None and callback:
             callback(m)
-        if not m and no_match:
+        if m is None and no_match:
             no_match()
         return m
 
     def _match_toplevel(self, pattern: Any, data: Any) -> Any:
         if isinstance(pattern, dict) and isinstance(data, dict):
             return self._match_dict(pattern, data)
-        elif isinstance(pattern, list) and isinstance(data, Iterable):
+        elif isinstance(pattern, list) and isinstance(data, (list, tuple)):
             assert len(pattern) == 1
             return self._match_list(pattern[0], data)
         elif pattern is Any or pattern is Maybe or pattern == data:
@@ -113,10 +113,12 @@ class JsonGet:
             return None
 
     # Returns a list of items of data that match pattern.
-    def _match_list(self, pattern: Any, data: Iterable[Any]) -> Iterable[Any]:
-        return list(
-            filter(bool, [self._match_toplevel(pattern, i) for i in data])
-        )
+    def _match_list(self, pattern: Any, data: Iterable[Any]) -> list[Any]:
+        return [
+            matched
+            for i in data
+            if (matched := self._match_toplevel(pattern, i)) is not None
+        ]
 
     # `pattern` is a dict, whose keys are matched to the root dict of `tree`.
     # Values of `pattern`:
