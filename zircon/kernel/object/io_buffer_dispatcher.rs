@@ -503,7 +503,7 @@ impl IoBufferDispatcher {
     /// Performs the C++ multiple-inheritance upcast from `IoBufferDispatcher*` to
     /// `VmObjectChildObserver*`.
     pub fn as_child_observer(&self) -> *mut VmObjectChildObserver {
-        unsafe { cpp_io_buffer_dispatcher_as_child_observer((self as *const Self).cast_mut()) }
+        unsafe { cpp_io_buffer_dispatcher_as_child_observer(self) }
     }
 
     /// Creates an endpoint pair of `IoBufferDispatcher` objects.

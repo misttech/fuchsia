@@ -22,7 +22,7 @@ unsafe extern "C" {
     ) -> zx_status_t;
 
     pub(super) fn cpp_io_buffer_dispatcher_as_child_observer(
-        disp: *mut IoBufferDispatcher,
+        disp: &IoBufferDispatcher,
     ) -> *mut VmObjectChildObserver;
 }
 
@@ -34,28 +34,25 @@ crate::object::dispatcher::impl_peered_dispatcher_state_init!(
 );
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn rust_io_buffer_dispatcher_on_zero_child(disp: *mut IoBufferDispatcher) {
-    let disp = unsafe { &*disp };
+pub unsafe extern "C" fn rust_io_buffer_dispatcher_on_zero_child(disp: &IoBufferDispatcher) {
     disp.on_zero_child();
 }
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn rust_io_buffer_dispatcher_get_name(
-    disp: *const IoBufferDispatcher,
+    disp: &IoBufferDispatcher,
     out_name: *mut [u8; ZX_MAX_NAME_LEN],
 ) -> zx_status_t {
-    let disp = unsafe { &*disp };
     let out = unsafe { &mut *out_name };
     Status::result_into_raw(disp.get_name(out))
 }
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn rust_io_buffer_dispatcher_set_name(
-    disp: *mut IoBufferDispatcher,
+    disp: &IoBufferDispatcher,
     name: *const c_char,
     len: usize,
 ) -> zx_status_t {
-    let disp = unsafe { &*disp };
     let name_bytes =
         if len == 0 { &[] } else { unsafe { core::slice::from_raw_parts(name.cast(), len) } };
     Status::result_into_raw(disp.set_name(name_bytes))
@@ -63,28 +60,25 @@ pub unsafe extern "C" fn rust_io_buffer_dispatcher_set_name(
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn rust_io_buffer_dispatcher_region_count(
-    disp: *const IoBufferDispatcher,
+    disp: &IoBufferDispatcher,
 ) -> usize {
-    let disp = unsafe { &*disp };
     disp.region_count()
 }
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn rust_io_buffer_dispatcher_get_map_rights(
-    disp: *const IoBufferDispatcher,
+    disp: &IoBufferDispatcher,
     iob_rights: zx_rights_t,
     region_index: usize,
 ) -> zx_rights_t {
-    let disp = unsafe { &*disp };
     disp.get_map_rights(iob_rights, region_index)
 }
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn rust_io_buffer_dispatcher_get_vmo(
-    disp: *const IoBufferDispatcher,
+    disp: &IoBufferDispatcher,
     region_index: usize,
 ) -> *mut VmObject {
-    let disp = unsafe { &*disp };
     match disp.get_vmo(region_index) {
         Ok(vmo) => RefPtr::into_raw(vmo).cast_mut(),
         Err(_) => core::ptr::null_mut(),
@@ -93,17 +87,15 @@ pub unsafe extern "C" fn rust_io_buffer_dispatcher_get_vmo(
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn rust_io_buffer_dispatcher_get_info(
-    disp: *const IoBufferDispatcher,
+    disp: &IoBufferDispatcher,
 ) -> zx_info_iob_t {
-    let disp = unsafe { &*disp };
     disp.get_info()
 }
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn rust_io_buffer_dispatcher_get_region_info(
-    disp: *const IoBufferDispatcher,
+    disp: &IoBufferDispatcher,
     index: usize,
 ) -> zx_iob_region_info_t {
-    let disp = unsafe { &*disp };
     disp.get_region_info(index)
 }
