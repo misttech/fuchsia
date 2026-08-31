@@ -36,6 +36,13 @@ by using the command `ffx trace status`.
 When the trace is completed and the system is running, the trace is downloaded using
 `ffx trace stop`.
 
+To automatically upload the trace data to Google Cloud Storage (GCS) and generate a
+direct link to the Perfetto Trace Viewer, pass the `--upload` flag:
+
+```posix-terminal
+ffx trace stop --upload
+```
+
 
 ## Recording Zircon boot trace events
 

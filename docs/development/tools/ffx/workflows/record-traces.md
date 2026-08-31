@@ -22,8 +22,9 @@ a trace provider, see [Register a trace provider][register-a-trace-provider].)
 
 The `ffx trace start` command stores the output of tracing as a  [`.fxt`][fxt]
 file on the host machine. You can open this file on the
-[Perfetto viewer][perfetto-viewer]{:.external} to visualize the trace results
-for performance analysis. (For more information on Perfetto, see this
+[Perfetto viewer][perfetto-viewer]{:.external} or
+[upload it to Google Cloud Storage (GCS)](#upload-traces-to-google-cloud-storage)
+to view and share with a direct URL. (For more information on Perfetto, see this
 [Perfetto documentation][perfetto-docs]{:.external} site.)
 
 By default, the `ffx trace start` command attempts to collect trace data from
@@ -208,8 +209,10 @@ ffx trace stop [--output <FILE>]
 
 By default, the command stops a trace that matches the default target
 device. However, you can also select which trace to stop by using the
-`–output` flag, which then stops the trace that is associated with the
+`--output` flag, which then stops the trace that is associated with the
 output file.
+
+Pass `--upload` to automatically upload the trace data to GCS upon stopping.
 
 This command prints output similar to the following:
 
@@ -221,19 +224,123 @@ Upload to https://ui.perfetto.dev/#!/ to view.
 ```
 
 To analyze the results collected from this run, see
-[Visualize trace results](#visualize-trace-results).
+[Visualize trace results](#visualize-trace-results) or
+[Upload traces to Google Cloud Storage](#upload-traces-to-google-cloud-storage).
+
+## Upload traces to Google Cloud Storage {:#upload-traces-to-google-cloud-storage}
+
+You can upload recorded trace files to Google Cloud Storage (GCS) to generate
+a direct link for viewing and sharing traces in the Perfetto viewer.
+
+### Upload during trace capture {:#upload-during-trace-capture}
+
+To upload a trace automatically upon stopping an interactive trace session, pass the
+`--upload` flag to `ffx trace start`:
+
+```posix-terminal
+ffx trace start --upload
+```
+
+When you stop the trace (by pressing `Enter` or reaching `--duration`), the
+trace is finalized and uploaded to GCS:
+
+```none {:.devsite-disable-click-to-copy}
+$ ffx trace start --upload
+Tracing started successfully on "fuchsia-5254-0063-5e7a".
+Writing to /Users/alice/trace.fxt
+Press <enter> to stop trace.
+
+Shutting down recording and writing to file.
+Tracing stopped successfully on "fuchsia-5254-0063-5e7a".
+Results written to /Users/alice/trace.fxt
+Uploading trace to gs://fuchsia-trace-viewer-traces...
+Trace uploaded successfully!
+
+View in Perfetto Trace Viewer:
+  https://fuchsia-trace-viewer.corp.goog/trace/b94d27b9
+```
+
+Note: The `--upload` flag cannot be used with `ffx trace start --background` or
+`ffx trace start --on-boot`. To upload a background or on-boot trace, pass
+`--upload` to `ffx trace stop` instead:
+
+```posix-terminal
+ffx trace stop --upload
+```
+
+### Upload an existing trace file {:#upload-an-existing-trace-file}
+
+If you have already recorded a `.fxt` trace file on your host machine, you can
+upload it using the `--reupload` option on `ffx trace stop`:
+
+```posix-terminal
+ffx trace stop --reupload <FILE_PATH>
+```
+
+For example:
+
+```none {:.devsite-disable-click-to-copy}
+$ ffx trace stop --reupload /Users/alice/trace.fxt
+Uploading trace to gs://fuchsia-trace-viewer-traces...
+Trace uploaded successfully!
+
+View in Perfetto Trace Viewer:
+  https://fuchsia-trace-viewer.corp.goog/trace/b94d27b9
+```
+
+### Specify a custom GCS bucket {:#specify-a-custom-gcs-bucket}
+
+By default, traces are uploaded to the `fuchsia-trace-viewer-traces` GCS bucket.
+You can specify a different bucket using the `--bucket` option:
+
+```posix-terminal
+ffx trace start --upload --bucket <BUCKET_NAME>
+```
+
+Or when reuploading:
+
+```posix-terminal
+ffx trace stop --reupload <FILE_PATH> --bucket <BUCKET_NAME>
+```
+
+### GCS authentication and configuration {:#gcs-authentication-and-configuration}
+
+#### Authentication {:#gcs-authentication}
+
+Uploading traces to GCS requires Google Cloud authentication. Make sure you
+are authenticated with Application Default Credentials (ADC) or the `gcloud`
+CLI:
+
+```posix-terminal
+gcloud auth application-default login
+```
+
+#### Default configuration {:#gcs-configuration}
+
+You can customize the default GCS bucket and trace viewer URL using `ffx config`:
+
+* **`trace.gcs_bucket`**: The default GCS bucket to upload traces to.
+  ```posix-terminal
+  ffx config set trace.gcs_bucket <BUCKET_NAME>
+  ```
+* **`trace.viewer_url`**: The base URL of the Perfetto Trace Viewer instance
+  (defaults to `https://fuchsia-trace-viewer.corp.goog`).
+  ```posix-terminal
+  ffx config set trace.viewer_url <VIEWER_URL>
+  ```
 
 ## Visualize trace results {:#visualize-trace-results}
 
-Once a trace is finished and a `.fxt` file is created, open the file
-on the Perfetto viewer to visualize the trace results.
+Once a trace is finished and a `.fxt` file is created, you can visualize the
+trace in one of two ways:
 
-Do the following:
-
-1. Visit the [Perfetto viewer][perfetto-viewer]{:.external} site on
-   a web browser.
-2. Click **Open trace file** on the navigation bar.
-3. Select your `trace.fxt` file from the host machine.
+* **Open via URL**: If the trace was uploaded to GCS (using `--upload` or
+  `--reupload`), navigate to the generated Perfetto Trace Viewer URL printed in
+  the command output.
+* **Open local file**:
+  1. Visit the [Perfetto viewer][perfetto-viewer]{:.external} site in a web browser.
+  2. Click **Open trace file** on the navigation bar.
+  3. Select your `trace.fxt` file from the host machine.
 
 ## Symbolize FIDL traces {:#symbolize-fidl-traces}
 

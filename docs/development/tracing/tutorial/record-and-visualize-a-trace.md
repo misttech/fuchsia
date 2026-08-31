@@ -51,12 +51,17 @@ binary format that directly encodes the original trace data. To
 visualize an `.fxt` trace file, you can use the
 [Perfetto viewer][perfetto-viewer]{:.external}.
 
-Do the following:
+You can visualize trace results using either of the following methods:
 
-1. Visit the [Perfetto viewer][perfetto-viewer]{:.external}
-   site on a web browser.
-2. Click **Open trace file** on the navigation bar.
-3. Select your `.fxt` file from the host machine.
+* **Upload to GCS:** Pass the `--upload` flag when recording (for example,
+  `ffx trace start --upload`). Upon trace completion, the trace is uploaded to
+  Google Cloud Storage (GCS) and a direct link to the Perfetto Trace Viewer
+  is displayed in the output.
+* **Open a local file manually:**
+  1. Visit the [Perfetto viewer][perfetto-viewer]{:.external}
+     site on a web browser.
+  2. Click **Open trace file** on the navigation bar.
+  3. Select your `.fxt` file from the host machine.
 
 This viewer also allows you to query the trace data using SQL. For practical
 query recipes and automated triage tools, see
