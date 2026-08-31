@@ -1119,11 +1119,14 @@ mod tests {
 
         let elf_runner = RemoteRunner::new(component_runner);
         let (diagnostics_sender, _) = oneshot::channel();
+        let inspector = fuchsia_inspect::Inspector::default();
         let program = Program::start(
             &elf_runner,
             start_info,
             EscrowedState::outgoing_dir_closed(),
             diagnostics_sender,
+            Moniker::root(),
+            inspector.root().clone_weak(),
         )
         .unwrap();
 

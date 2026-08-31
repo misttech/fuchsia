@@ -5,7 +5,8 @@
 use diagnostics_assertions::{AnyProperty, assert_data_tree};
 use diagnostics_reader::{ArchiveReader, DiagnosticsHierarchy};
 use fidl::endpoints::create_proxy;
-use {fidl_fuchsia_io as fio, fidl_fuchsia_sys2 as fsys};
+use fidl_fuchsia_io as fio;
+use fidl_fuchsia_sys2 as fsys;
 
 async fn get_job_koid(moniker: &str, realm_query: &fsys::RealmQueryProxy) -> u64 {
     let (runtime_dir, server_end) = create_proxy();
@@ -125,6 +126,7 @@ async fn main() {
                 histogram: {},
             },
         },
+        memory_saved_by_escrow: {},
         stats: contains {
             measurements: {
                 component_count: 3u64,

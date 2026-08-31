@@ -33,6 +33,7 @@ pub struct ModelContext {
     /// Inspect routing errors.
     pub routing_errors: Arc<RoutingErrors>,
     inspector: Inspector,
+    escrow_stats_node: fuchsia_inspect::Node,
 }
 
 impl ModelContext {
@@ -55,6 +56,7 @@ impl ModelContext {
         let policy_checker = GlobalPolicyChecker::new(runtime_config.security_policy.clone());
         let routing_errors =
             Arc::new(RoutingErrors::new(inspector.root().create_child("routing_errors")));
+        let escrow_stats_node = inspector.root().create_child("memory_saved_by_escrow");
 
         Ok(Self {
             component_id_index,
@@ -68,6 +70,7 @@ impl ModelContext {
             #[cfg(test)]
             extra_framework_capabilities: Mutex::new(HashMap::new()),
             inspector,
+            escrow_stats_node,
         })
     }
 
@@ -113,6 +116,10 @@ impl ModelContext {
 
     pub fn inspector(&self) -> &Inspector {
         &self.inspector
+    }
+
+    pub fn escrow_stats_node(&self) -> fuchsia_inspect::Node {
+        self.escrow_stats_node.clone_weak()
     }
 
     #[cfg(all(test, feature = "src_model_tests"))]

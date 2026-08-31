@@ -453,10 +453,17 @@ async fn start_component(
             };
 
             let escrowed_state = escrowed_state_opt.unwrap();
+            let program = Program::start(
+                &runner,
+                start_info,
+                escrowed_state,
+                diagnostics_sender,
+                component.moniker.clone(),
+                component.context.escrow_stats_node(),
+            )
+            .map_err(|err| StartActionError::StartProgramError { moniker: moniker.clone(), err })?;
 
-            Some(Program::start(&runner, start_info, escrowed_state, diagnostics_sender).map_err(
-                |err| StartActionError::StartProgramError { moniker: moniker.clone(), err },
-            )?)
+            Some(program)
         } else {
             None
         };

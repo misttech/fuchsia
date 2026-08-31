@@ -38,6 +38,11 @@ pub struct EscrowedState {
     pub outgoing_dir: ServerEnd<fio::DirectoryMarker>,
     pub escrowed_dictionary: Option<fsandbox::DictionaryRef>,
     pub escrowed_dictionary_handle: Option<zx::EventPair>,
+
+    /// The inspect property of the number of bytes of memory which are reclaimed when this
+    /// component stops running. This field is never read. It is on this struct because when the
+    /// EscrowRequest is dropped then the number of savings should be removed from inspect.
+    pub _recoverable_bytes: Option<fuchsia_inspect::UintProperty>,
 }
 
 impl EscrowedState {
@@ -51,7 +56,12 @@ impl EscrowedState {
     #[cfg(all(test, not(feature = "src_model_tests")))]
     pub fn outgoing_dir_closed() -> Self {
         let (_, outgoing_dir) = fidl::endpoints::create_endpoints::<fio::DirectoryMarker>();
-        Self { outgoing_dir, escrowed_dictionary: None, escrowed_dictionary_handle: None }
+        Self {
+            outgoing_dir,
+            escrowed_dictionary: None,
+            escrowed_dictionary_handle: None,
+            _recoverable_bytes: None,
+        }
     }
 }
 
@@ -112,6 +122,7 @@ impl Actor {
             outgoing_dir: server,
             escrowed_dictionary: None,
             escrowed_dictionary_handle: None,
+            _recoverable_bytes: None,
         };
         let outgoing_dir = Arc::new(Mutex::new((0, client)));
         let actor = ActorImpl {
@@ -339,6 +350,7 @@ impl ActorImpl {
             outgoing_dir,
             escrowed_dictionary: request.escrowed_dictionary,
             escrowed_dictionary_handle: request.escrowed_dictionary_handle,
+            _recoverable_bytes: request.recoverable_bytes,
         };
         State::Stopped { escrow }
     }

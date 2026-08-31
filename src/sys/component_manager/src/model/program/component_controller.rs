@@ -9,6 +9,7 @@ use fuchsia_sync::Mutex;
 use futures::channel::oneshot;
 use futures::future::{BoxFuture, Shared};
 use futures::{FutureExt, StreamExt};
+use moniker::Moniker;
 use std::ops::Deref;
 use std::sync::Arc;
 
@@ -47,6 +48,8 @@ impl<'a> ComponentController {
     pub fn new(
         proxy: fcrunner::ComponentControllerProxy,
         diagnostics_sender: Option<oneshot::Sender<fcrunner::ComponentDiagnostics>>,
+        moniker: Moniker,
+        escrow_stats_node: fuchsia_inspect::Node,
     ) -> Self {
         let (epitaph_sender, termination_value_recv) = oneshot::channel();
 
@@ -57,6 +60,8 @@ impl<'a> ComponentController {
             epitaph_sender,
             state.clone(),
             diagnostics_sender,
+            moniker,
+            escrow_stats_node,
         );
         let event_listener_task = fasync::Task::spawn(events_fut);
 
@@ -97,6 +102,8 @@ impl<'a> ComponentController {
         termination_sender: oneshot::Sender<StopInfo>,
         state: Arc<Mutex<State>>,
         mut diagnostics_sender: Option<oneshot::Sender<fcrunner::ComponentDiagnostics>>,
+        moniker: Moniker,
+        escrow_stats_node: fuchsia_inspect::Node,
     ) {
         let mut termination_sender = Some(termination_sender);
         while let Some(value) = event_stream.next().await {
@@ -125,7 +132,8 @@ impl<'a> ComponentController {
                         diagnostics_sender.take().and_then(|sender| sender.send(payload).ok());
                     }
                     fcrunner::ComponentControllerEvent::OnEscrow { payload } => {
-                        state.lock().escrow = Some(payload.into());
+                        state.lock().escrow =
+                            Some(EscrowRequest::from_fidl(payload, &moniker, &escrow_stats_node));
                     }
                     fcrunner::ComponentControllerEvent::OnStop { payload } => {
                         termination_sender.take().map(|sender| sender.send(payload.into()));
@@ -171,7 +179,12 @@ mod tests {
         let (proxy, stream) =
             fidl::endpoints::create_proxy_and_stream::<fcrunner::ComponentControllerMarker>();
         let (sender, receiver) = oneshot::channel();
-        let _controller = ComponentController::new(proxy, Some(sender));
+        let _controller = ComponentController::new(
+            proxy,
+            Some(sender),
+            Moniker::root(),
+            fuchsia_inspect::Inspector::default().root().clone_weak(),
+        );
         stream
             .control_handle()
             .send_on_publish_diagnostics(fcrunner::ComponentDiagnostics {
@@ -186,7 +199,12 @@ mod tests {
     async fn handles_connection_epitaph() {
         let (proxy, stream) =
             fidl::endpoints::create_proxy_and_stream::<fcrunner::ComponentControllerMarker>();
-        let controller = ComponentController::new(proxy, None);
+        let controller = ComponentController::new(
+            proxy,
+            None,
+            Moniker::root(),
+            fuchsia_inspect::Inspector::default().root().clone_weak(),
+        );
         let epitaph_fut = controller.wait_for_termination();
         stream.control_handle().shutdown_with_epitaph(Err(zx::Status::UNAVAILABLE));
         assert_eq!(epitaph_fut.await.termination_status, Err(zx::Status::UNAVAILABLE));
@@ -196,7 +214,12 @@ mod tests {
     async fn handles_epitaph_for_closed_connection() {
         let (proxy, stream) =
             fidl::endpoints::create_proxy_and_stream::<fcrunner::ComponentControllerMarker>();
-        let controller = ComponentController::new(proxy, None);
+        let controller = ComponentController::new(
+            proxy,
+            None,
+            Moniker::root(),
+            fuchsia_inspect::Inspector::default().root().clone_weak(),
+        );
         let epitaph_fut = controller.wait_for_termination();
         drop(stream);
         assert_eq!(epitaph_fut.await.termination_status, Err(zx::Status::PEER_CLOSED));
@@ -205,7 +228,12 @@ mod tests {
     #[fuchsia::test]
     async fn handles_epitaph_for_dropped_controller() {
         let (proxy, _) = fidl::endpoints::create_proxy::<fcrunner::ComponentControllerMarker>();
-        let controller = ComponentController::new(proxy, None);
+        let controller = ComponentController::new(
+            proxy,
+            None,
+            Moniker::root(),
+            fuchsia_inspect::Inspector::default().root().clone_weak(),
+        );
         let epitaph_fut = controller.wait_for_termination();
         drop(controller);
         assert_eq!(epitaph_fut.await.termination_status, Err(zx::Status::PEER_CLOSED));

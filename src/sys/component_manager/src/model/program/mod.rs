@@ -18,6 +18,7 @@ use fidl_fuchsia_process as fprocess;
 use futures::FutureExt;
 use futures::channel::oneshot;
 use futures::future::{BoxFuture, Either};
+use moniker::Moniker;
 use serve_processargs::NamespaceBuilder;
 
 mod component_controller;
@@ -101,6 +102,8 @@ impl Program {
         start_info: StartInfo,
         escrowed_state: EscrowedState,
         diagnostics_sender: oneshot::Sender<fcrunner::ComponentDiagnostics>,
+        moniker: Moniker,
+        escrow_stats_node: fuchsia_inspect::Node,
     ) -> Result<Program, StartError> {
         let (controller, server_end) =
             endpoints::create_proxy::<fcrunner::ComponentControllerMarker>();
@@ -109,7 +112,12 @@ impl Program {
         let start_info = start_info.into_fidl(escrowed_state, runtime_server)?;
 
         runner.start(start_info, server_end);
-        let controller = ComponentController::new(controller, Some(diagnostics_sender));
+        let controller = ComponentController::new(
+            controller,
+            Some(diagnostics_sender),
+            moniker,
+            escrow_stats_node,
+        );
         Ok(Program { controller, runtime_dir })
     }
 
@@ -226,7 +234,12 @@ impl Program {
     pub fn mock_from_controller(
         controller: endpoints::ClientEnd<fcrunner::ComponentControllerMarker>,
     ) -> Program {
-        let controller = ComponentController::new(controller.into_proxy(), None);
+        let controller = ComponentController::new(
+            controller.into_proxy(),
+            None,
+            Moniker::root(),
+            fuchsia_inspect::Inspector::default().root().clone_weak(),
+        );
         let (runtime_dir, _runtime_server) =
             fidl::endpoints::create_proxy::<fio::DirectoryMarker>();
         Program { controller, runtime_dir }
@@ -312,8 +325,12 @@ impl StartInfo {
         escrowed_state: EscrowedState,
         runtime_server_end: ServerEnd<fio::DirectoryMarker>,
     ) -> Result<fcrunner::ComponentStartInfo, StartError> {
-        let EscrowedState { outgoing_dir, escrowed_dictionary, escrowed_dictionary_handle } =
-            escrowed_state;
+        let EscrowedState {
+            outgoing_dir,
+            escrowed_dictionary,
+            escrowed_dictionary_handle,
+            _recoverable_bytes,
+        } = escrowed_state;
         let ns = self.namespace.serve().map_err(StartError::ServeNamespace)?;
         Ok(fcrunner::ComponentStartInfo {
             resolved_url: Some(self.url),
@@ -351,18 +368,25 @@ pub struct EscrowRequest {
     /// `ComponentStartInfo.escrowed_dictionary`.
     pub escrowed_dictionary_handle: Option<zx::EventPair>,
 
-    /// The number of bytes of memory which are reclaimed when this component stops running.
-    #[allow(unused)]
-    pub recoverable_bytes: Option<u64>,
+    /// The inspect property of the number of bytes of memory which are reclaimed when this
+    /// component stops running.
+    pub recoverable_bytes: Option<fuchsia_inspect::UintProperty>,
 }
 
-impl From<fcrunner::ComponentControllerOnEscrowRequest> for EscrowRequest {
-    fn from(value: fcrunner::ComponentControllerOnEscrowRequest) -> Self {
+impl EscrowRequest {
+    pub fn from_fidl(
+        value: fcrunner::ComponentControllerOnEscrowRequest,
+        moniker: &Moniker,
+        escrow_stats_node: &fuchsia_inspect::Node,
+    ) -> Self {
+        log::warn!("escrowed {moniker}, saved {:?} bytes", value.recoverable_bytes);
         Self {
             outgoing_dir: value.outgoing_dir,
             escrowed_dictionary: value.escrowed_dictionary,
             escrowed_dictionary_handle: value.escrowed_dictionary_handle,
-            recoverable_bytes: value.recoverable_bytes,
+            recoverable_bytes: value
+                .recoverable_bytes
+                .map(|n| escrow_stats_node.create_uint(moniker.to_string(), n)),
         }
     }
 }
