@@ -30,9 +30,9 @@ InputManager::InputManager(async_dispatcher_t* input_dispatcher,
 
                const auto& focus_chain = focus_manager_.GetFocusChain(snapshot);
                if (!focus_chain.empty()) {
-                 const zx_koid_t requestor = focus_chain[0];
-                 const zx_koid_t request = koid != ZX_KOID_INVALID ? koid : requestor;
-                 focus_manager_.RequestFocus(requestor, request, snapshot);
+                 const zx_koid_t requester = focus_chain[0];
+                 const zx_koid_t request = koid != ZX_KOID_INVALID ? koid : requester;
+                 focus_manager_.RequestFocus(requester, request, snapshot);
                }
              }) {
   // Constructed and executed entirely on the dedicated input thread.

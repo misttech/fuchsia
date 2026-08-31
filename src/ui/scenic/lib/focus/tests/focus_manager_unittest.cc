@@ -228,7 +228,7 @@ TEST_F(FocusManagerTest, FocusTransferUpwardDenied) {
 
   // Requesting change to A from B should fail and no change should be observed on the focus chain.
   EXPECT_EQ(focus_manager_.RequestFocusForTest(kNodeB, kNodeA),
-            FocusChangeStatus::kErrorRequestorNotRequestAncestor);
+            FocusChangeStatus::kErrorRequesterNotRequestAncestor);
   EXPECT_THAT(focus_manager_.GetFocusChainForTest(), testing::ElementsAre(kNodeA, kNodeB));
 }
 
@@ -280,7 +280,7 @@ TEST_F(FocusManagerTest, BranchedTree) {
 //     B      C
 //     |
 //     D
-TEST_F(FocusManagerTest, FocusTranser_WithRequestorNotInFocusChain_Denied) {
+TEST_F(FocusManagerTest, FocusTransfer_WithRequesterNotInFocusChain_Denied) {
   snapshot_holder_->SetSnapshot(FourNodeSnapshot());
 
   // Transfer focus from A to C.
@@ -290,7 +290,7 @@ TEST_F(FocusManagerTest, FocusTranser_WithRequestorNotInFocusChain_Denied) {
   // Attempt to transfer focus to D on the authority of B. Should fail since B is not in the focus
   // chain.
   EXPECT_EQ(focus_manager_.RequestFocusForTest(kNodeB, kNodeD),
-            FocusChangeStatus::kErrorRequestorNotAuthorized);
+            FocusChangeStatus::kErrorRequesterNotAuthorized);
   EXPECT_THAT(focus_manager_.GetFocusChainForTest(), testing::ElementsAre(kNodeA, kNodeC));
 }
 
@@ -309,12 +309,12 @@ TEST_F(FocusManagerTest, SiblingTransferRequestsDenied) {
 
   // Transfer request from "B" to "C" denied.
   EXPECT_EQ(focus_manager_.RequestFocusForTest(kNodeB, kNodeC),
-            FocusChangeStatus::kErrorRequestorNotRequestAncestor);
+            FocusChangeStatus::kErrorRequesterNotRequestAncestor);
   EXPECT_THAT(focus_manager_.GetFocusChainForTest(), testing::ElementsAre(kNodeA, kNodeB, kNodeD));
 
   // Transfer request from "D" to "C" denied.
   EXPECT_EQ(focus_manager_.RequestFocusForTest(kNodeD, kNodeC),
-            FocusChangeStatus::kErrorRequestorNotRequestAncestor);
+            FocusChangeStatus::kErrorRequesterNotRequestAncestor);
   EXPECT_THAT(focus_manager_.GetFocusChainForTest(), testing::ElementsAre(kNodeA, kNodeB, kNodeD));
 }
 

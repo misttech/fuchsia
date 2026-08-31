@@ -14,8 +14,8 @@
 
 namespace focus {
 
-using RequestFocusFunc = fit::function<bool(/*requestor*/ zx_koid_t, /*request*/ zx_koid_t)>;
-using SetAutoFocusFunc = fit::function<void(/*requestor*/ zx_koid_t, /*request*/ zx_koid_t)>;
+using RequestFocusFunc = fit::function<bool(/*requester*/ zx_koid_t, /*request*/ zx_koid_t)>;
+using SetAutoFocusFunc = fit::function<void(/*requester*/ zx_koid_t, /*request*/ zx_koid_t)>;
 
 // An object for managing fuchsia.ui.views.Focuser lifecycle, starting with FIDL requests and
 // ending with cleanup when the client-side channel closes.

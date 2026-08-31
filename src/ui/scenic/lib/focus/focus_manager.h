@@ -25,10 +25,10 @@ namespace focus {
 // Specific error-handling policy is responsibility of caller.
 enum class FocusChangeStatus {
   kAccept = 0,
-  kErrorRequestorInvalid,
+  kErrorRequesterInvalid,
   kErrorRequestInvalid,
-  kErrorRequestorNotAuthorized,
-  kErrorRequestorNotRequestAncestor,
+  kErrorRequesterNotAuthorized,
+  kErrorRequesterNotRequestAncestor,
   kErrorRequestCannotReceiveFocus,
   kErrorUnhandledCase,  // last
 };
@@ -43,12 +43,12 @@ class FocusManager final : public fuchsia::ui::focus::FocusChainListenerRegistry
 
   void Bind(fidl::InterfaceRequest<fuchsia::ui::focus::FocusChainListenerRegistry> request);
 
-  // Request focus transfer to the proposed ViewRef's KOID |request|, on the behalf of |requestor|.
+  // Request focus transfer to the proposed ViewRef's KOID |request|, on the behalf of |requester|.
   // Return kAccept if successful.
-  // - If |requestor| is not authorized to focus |request|, return error.
+  // - If |requester| is not authorized to focus |request|, return error.
   // - If the |request| is not in |snapshot_.view_tree|, return error.
   // - If the |request| is otherwise valid, but violates the focus transfer policy, return error.
-  FocusChangeStatus RequestFocus(zx_koid_t requestor, zx_koid_t request,
+  FocusChangeStatus RequestFocus(zx_koid_t requester, zx_koid_t request,
                                  const view_tree::Snapshot& snapshot);
 
   // Posts an async task to the input thread to eagerly inspect the latest view tree snapshot
@@ -71,14 +71,14 @@ class FocusManager final : public fuchsia::ui::focus::FocusChainListenerRegistry
                            fidl::InterfaceRequest<fuchsia::ui::views::Focuser> focuser);
 
   // Variants that conveniently obtain a snapshot from the snapshot holder.
-  FocusChangeStatus RequestFocusForTest(zx_koid_t requestor, zx_koid_t request);
-  void SetAutoFocusForTest(zx_koid_t requestor, zx_koid_t target);
+  FocusChangeStatus RequestFocusForTest(zx_koid_t requester, zx_koid_t request);
+  void SetAutoFocusForTest(zx_koid_t requester, zx_koid_t target);
   const std::vector<zx_koid_t>& GetFocusChainForTest();
 
  private:
-  // Sets the auto focus target |requestor| to |target|.
-  // If |target| is ZX_KOID_INVALID the |requestor| entry is removed.
-  void SetAutoFocus(zx_koid_t requestor, zx_koid_t target, const view_tree::Snapshot& snapshot);
+  // Sets the auto focus target |requester| to |target|.
+  // If |target| is ZX_KOID_INVALID the |requester| entry is removed.
+  void SetAutoFocus(zx_koid_t requester, zx_koid_t target, const view_tree::Snapshot& snapshot);
 
   // Ensure the focus chain is valid; preserve as much of the existing focus chain as possible.
   // - If the focus chain is still valid, do nothing.

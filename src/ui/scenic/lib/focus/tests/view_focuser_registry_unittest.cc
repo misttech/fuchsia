@@ -33,8 +33,8 @@ TEST(ViewFocuserRegistryTest, SuccessfulRequestFocus_ShouldReturnOK) {
 
   ViewFocuserRegistry registry(
       /*request_focus*/
-      [=](zx_koid_t requestor, zx_koid_t request) {
-        EXPECT_EQ(requestor, kFocuserKoid);
+      [=](zx_koid_t requester, zx_koid_t request) {
+        EXPECT_EQ(requester, kFocuserKoid);
         EXPECT_EQ(request, view_ref_koid);
         return true;
       },
@@ -61,8 +61,8 @@ TEST(ViewFocuserRegistryTest, FailedRequestFocus_ShouldReturnError) {
 
   ViewFocuserRegistry registry(
       /*request_focus*/
-      [=](zx_koid_t requestor, zx_koid_t request) {
-        EXPECT_EQ(requestor, kFocuserKoid);
+      [=](zx_koid_t requester, zx_koid_t request) {
+        EXPECT_EQ(requester, kFocuserKoid);
         EXPECT_EQ(request, view_ref_koid);
         return false;
       },
@@ -86,13 +86,13 @@ TEST(ViewFocuserRegistryTest, SetAutoFocus_ShouldCallClosure) {
   const zx_koid_t view_ref_koid = utils::ExtractKoid(view_ref);
 
   fuchsia::ui::views::FocuserPtr focuser;
-  zx_koid_t last_auto_focus_requestor = kRandomKoid;
+  zx_koid_t last_auto_focus_requester = kRandomKoid;
   zx_koid_t last_auto_focus_target = kRandomKoid;
   ViewFocuserRegistry registry(
       /*request_focus*/ [](auto...) { return false; },
       /*set_auto_focus*/
-      [&](zx_koid_t requestor, zx_koid_t target) {
-        last_auto_focus_requestor = requestor;
+      [&](zx_koid_t requester, zx_koid_t target) {
+        last_auto_focus_requester = requester;
         last_auto_focus_target = target;
       });
   registry.Register(kFocuserKoid, focuser.NewRequest());
@@ -109,7 +109,7 @@ TEST(ViewFocuserRegistryTest, SetAutoFocus_ShouldCallClosure) {
   });
   test_loop.RunUntilIdle();
 
-  EXPECT_EQ(last_auto_focus_requestor, kFocuserKoid);
+  EXPECT_EQ(last_auto_focus_requester, kFocuserKoid);
   EXPECT_EQ(last_auto_focus_target, view_ref_koid);
   EXPECT_TRUE(callback_received);
 
@@ -121,13 +121,13 @@ TEST(ViewFocuserRegistryTest, Empty_SetAutoFocus_ShouldCallClosureWithInvalidKoi
   async::TestLoop test_loop;
 
   fuchsia::ui::views::FocuserPtr focuser;
-  zx_koid_t last_auto_focus_requestor = kRandomKoid;
+  zx_koid_t last_auto_focus_requester = kRandomKoid;
   zx_koid_t last_auto_focus_target = kRandomKoid;
   ViewFocuserRegistry registry(
       /*request_focus*/ [](auto...) { return false; },
       /*set_auto_focus*/
-      [&](zx_koid_t requestor, zx_koid_t target) {
-        last_auto_focus_requestor = requestor;
+      [&](zx_koid_t requester, zx_koid_t target) {
+        last_auto_focus_requester = requester;
         last_auto_focus_target = target;
       });
   registry.Register(kFocuserKoid, focuser.NewRequest());
@@ -142,7 +142,7 @@ TEST(ViewFocuserRegistryTest, Empty_SetAutoFocus_ShouldCallClosureWithInvalidKoi
                         });
   test_loop.RunUntilIdle();
 
-  EXPECT_EQ(last_auto_focus_requestor, kFocuserKoid);
+  EXPECT_EQ(last_auto_focus_requester, kFocuserKoid);
   EXPECT_EQ(last_auto_focus_target, ZX_KOID_INVALID);
   EXPECT_TRUE(callback_received);
 
@@ -154,13 +154,13 @@ TEST(ViewFocuserRegistryTest, OnChannelClosure_EndpointShouldBeCleanedUp) {
   async::TestLoop test_loop;
 
   // Register two focusers.
-  zx_koid_t last_auto_focus_requestor = kRandomKoid;
+  zx_koid_t last_auto_focus_requester = kRandomKoid;
   zx_koid_t last_auto_focus_target = kRandomKoid;
   ViewFocuserRegistry registry(
       /*request_focus*/ [](auto...) { return true; },
       /*set_auto_focus*/
-      [&](zx_koid_t requestor, zx_koid_t target) {
-        last_auto_focus_requestor = requestor;
+      [&](zx_koid_t requester, zx_koid_t target) {
+        last_auto_focus_requester = requester;
         last_auto_focus_target = target;
       });
   EXPECT_TRUE(registry.endpoints().empty());
@@ -171,7 +171,7 @@ TEST(ViewFocuserRegistryTest, OnChannelClosure_EndpointShouldBeCleanedUp) {
   EXPECT_EQ(registry.endpoints().size(), 1u);
   EXPECT_TRUE(registry.endpoints().count(kFocuserKoid) == 1);
 
-  EXPECT_EQ(last_auto_focus_requestor, kRandomKoid);
+  EXPECT_EQ(last_auto_focus_requester, kRandomKoid);
   EXPECT_EQ(last_auto_focus_target, kRandomKoid);
 
   fuchsia::ui::views::FocuserPtr focuser2;
@@ -180,7 +180,7 @@ TEST(ViewFocuserRegistryTest, OnChannelClosure_EndpointShouldBeCleanedUp) {
   EXPECT_EQ(registry.endpoints().size(), 2u);
   EXPECT_TRUE(registry.endpoints().count(kFocuser2Koid) == 1);
 
-  EXPECT_EQ(last_auto_focus_requestor, kRandomKoid);
+  EXPECT_EQ(last_auto_focus_requester, kRandomKoid);
   EXPECT_EQ(last_auto_focus_target, kRandomKoid);
 
   // Close one and watch it clean up.
@@ -188,14 +188,14 @@ TEST(ViewFocuserRegistryTest, OnChannelClosure_EndpointShouldBeCleanedUp) {
   test_loop.RunUntilIdle();
   EXPECT_EQ(registry.endpoints().size(), 1u);
   EXPECT_TRUE(registry.endpoints().count(kFocuserKoid) == 0);
-  EXPECT_EQ(last_auto_focus_requestor, kFocuserKoid);
+  EXPECT_EQ(last_auto_focus_requester, kFocuserKoid);
   EXPECT_EQ(last_auto_focus_target, ZX_KOID_INVALID);
 
   // Close the other one.
   focuser2.Unbind();
   test_loop.RunUntilIdle();
   EXPECT_TRUE(registry.endpoints().empty());
-  EXPECT_EQ(last_auto_focus_requestor, kFocuser2Koid);
+  EXPECT_EQ(last_auto_focus_requester, kFocuser2Koid);
   EXPECT_EQ(last_auto_focus_target, ZX_KOID_INVALID);
 }
 

@@ -36,14 +36,14 @@ FocusManager::FocusManager(async_dispatcher_t* input_dispatcher,
       snapshot_holder_(std::move(snapshot_holder)),
       view_focuser_registry_(
           /*request_focus*/
-          [this](zx_koid_t requestor, zx_koid_t request) {
+          [this](zx_koid_t requester, zx_koid_t request) {
             auto snapshot_ref = snapshot_holder_->GetSnapshot();
-            return RequestFocus(requestor, request, *snapshot_ref) == FocusChangeStatus::kAccept;
+            return RequestFocus(requester, request, *snapshot_ref) == FocusChangeStatus::kAccept;
           },
           /*set_auto_focus*/
-          [this](zx_koid_t requestor, zx_koid_t request) {
+          [this](zx_koid_t requester, zx_koid_t request) {
             auto snapshot_ref = snapshot_holder_->GetSnapshot();
-            SetAutoFocus(requestor, request, *snapshot_ref);
+            SetAutoFocus(requester, request, *snapshot_ref);
           }),
       inspect_node_(std::move(inspect_node)) {
   FX_DCHECK(input_dispatcher_);
@@ -74,14 +74,14 @@ void FocusManager::OnNewViewTreeSnapshot() {
   EnsureValidFocus(*snapshot);
 }
 
-FocusChangeStatus FocusManager::RequestFocus(zx_koid_t requestor, zx_koid_t request,
+FocusChangeStatus FocusManager::RequestFocus(zx_koid_t requester, zx_koid_t request,
                                              const view_tree::Snapshot& snapshot) {
   TRACE_DURATION("input", "FocusManager::RequestFocus");
   EnsureValidFocus(snapshot);
 
-  // Invalid requestor.
-  if (!snapshot.view_tree.contains(requestor)) {
-    return FocusChangeStatus::kErrorRequestorInvalid;
+  // Invalid requester.
+  if (!snapshot.view_tree.contains(requester)) {
+    return FocusChangeStatus::kErrorRequesterInvalid;
   }
 
   // Invalid request.
@@ -89,15 +89,15 @@ FocusChangeStatus FocusManager::RequestFocus(zx_koid_t requestor, zx_koid_t requ
     return FocusChangeStatus::kErrorRequestInvalid;
   }
 
-  // Transfer policy: requestor must be authorized.
-  if (std::find(focus_chain_.begin(), focus_chain_.end(), requestor) == focus_chain_.end()) {
-    return FocusChangeStatus::kErrorRequestorNotAuthorized;
+  // Transfer policy: requester must be authorized.
+  if (std::find(focus_chain_.begin(), focus_chain_.end(), requester) == focus_chain_.end()) {
+    return FocusChangeStatus::kErrorRequesterNotAuthorized;
   }
 
-  // Transfer policy: requestor must be ancestor of request
-  if (!snapshot.IsDescendant(/*descendant_koid*/ request, /*ancestor_koid*/ requestor) &&
-      request != requestor) {
-    return FocusChangeStatus::kErrorRequestorNotRequestAncestor;
+  // Transfer policy: requester must be ancestor of request
+  if (!snapshot.IsDescendant(/*descendant_koid*/ request, /*ancestor_koid*/ requester) &&
+      request != requester) {
+    return FocusChangeStatus::kErrorRequesterNotRequestAncestor;
   }
 
   // Transfer policy: request must be focusable
@@ -111,9 +111,9 @@ FocusChangeStatus FocusManager::RequestFocus(zx_koid_t requestor, zx_koid_t requ
   return FocusChangeStatus::kAccept;
 }
 
-FocusChangeStatus FocusManager::RequestFocusForTest(zx_koid_t requestor, zx_koid_t request) {
+FocusChangeStatus FocusManager::RequestFocusForTest(zx_koid_t requester, zx_koid_t request) {
   auto snapshot_ref = snapshot_holder_->GetSnapshot();
-  return RequestFocus(requestor, request, *snapshot_ref);
+  return RequestFocus(requester, request, *snapshot_ref);
 }
 
 const std::vector<zx_koid_t>& FocusManager::GetFocusChainForTest() {
@@ -195,15 +195,15 @@ void FocusManager::DispatchFocusEvents(zx_koid_t old_focus, zx_koid_t new_focus)
   view_ref_focused_registry_.UpdateFocus(old_focus, new_focus);
 }
 
-void FocusManager::SetAutoFocus(zx_koid_t requestor, zx_koid_t target,
+void FocusManager::SetAutoFocus(zx_koid_t requester, zx_koid_t target,
                                 const view_tree::Snapshot& snapshot) {
   TRACE_DURATION("gfx", "FocusManager::SetAutoFocus");
   EnsureValidFocus(snapshot);
 
   if (target != ZX_KOID_INVALID) {
-    auto_focus_targets_[requestor] = target;
+    auto_focus_targets_[requester] = target;
   } else {
-    auto_focus_targets_.erase(requestor);
+    auto_focus_targets_.erase(requester);
   }
 
   // Move focus to the currently focused View to see if auto focus causes any changes.
@@ -212,9 +212,9 @@ void FocusManager::SetAutoFocus(zx_koid_t requestor, zx_koid_t target,
   }
 }
 
-void FocusManager::SetAutoFocusForTest(zx_koid_t requestor, zx_koid_t target) {
+void FocusManager::SetAutoFocusForTest(zx_koid_t requester, zx_koid_t target) {
   auto snapshot_ref = snapshot_holder_->GetSnapshot();
-  SetAutoFocus(requestor, target, *snapshot_ref);
+  SetAutoFocus(requester, target, *snapshot_ref);
 }
 
 zx_koid_t FocusManager::FindNextAutoFocusTarget(zx_koid_t koid,

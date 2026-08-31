@@ -396,9 +396,9 @@ type ViewBoundProtocols = resource table {
 
     /// Enable a View to request focus transfer to a child (target) View.
     ///
-    /// Server-bound ViewRef. The [`view_focuser`] client does not specify the "requestor" ViewRef
+    /// Server-bound ViewRef. The [`view_focuser`] client does not specify the "requester" ViewRef
     /// explicitly, only the "target" ViewRef. Instead, the server implementation uses the ViewRef
-    /// used in View creation as the "requestor" ViewRef.
+    /// used in View creation as the "requester" ViewRef.
     2: view_focuser server_end:fuchsia.ui.views.Focuser;
 
     /// Receive touch events that are associated with a View.

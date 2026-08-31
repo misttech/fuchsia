@@ -29,8 +29,8 @@ void ViewFocuserRegistry::Register(zx_koid_t view_ref_koid,
         endpoints_.erase(view_ref_koid);
       },
       /*request_focus*/
-      [this, requestor = view_ref_koid](ViewRef view_ref, RequestFocusCallback response) {
-        if (request_focus_(requestor, utils::ExtractKoid(view_ref))) {
+      [this, requester = view_ref_koid](ViewRef view_ref, RequestFocusCallback response) {
+        if (request_focus_(requester, utils::ExtractKoid(view_ref))) {
           response(fpromise::ok());  // Request received, and honored.
           return;
         }
@@ -38,8 +38,8 @@ void ViewFocuserRegistry::Register(zx_koid_t view_ref_koid,
         response(fpromise::error(fuchsia::ui::views::Error::DENIED));  // Report a problem.
       },
       /*set_auto_focus*/
-      [this, requestor = view_ref_koid](zx_koid_t view_ref_koid) {
-        set_auto_focus_(requestor, view_ref_koid);
+      [this, requester = view_ref_koid](zx_koid_t view_ref_koid) {
+        set_auto_focus_(requester, view_ref_koid);
       });
 }
 

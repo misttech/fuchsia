@@ -15,11 +15,11 @@ type AutoFocusError = flexible enum {};
 
 /// A method of programmatically transferring View focus.
 ///
-/// The protocol client has implicit access to a requestor ViewRef, which is
+/// The protocol client has implicit access to a requester ViewRef, which is
 /// used as the basis for request authority.
 closed protocol Focuser {
     /// Asks the server to transfer focus to the View specified by `view_ref`,
-    /// with the authority of the requestor ViewRef. Such a request may be
+    /// with the authority of the requester ViewRef. Such a request may be
     /// honored or denied.
     ///
     /// If the request was honored, and it triggers a focus change, a FocusEvent
@@ -33,8 +33,8 @@ closed protocol Focuser {
     /// The request may be denied for many reasons, for example:
     /// - if `view_ref` is invalid
     /// - if there is no View backed by `view_ref`
-    /// - if there is no requestor ViewRef accessible to Focuser
-    /// - if the requestor ViewRef lacks authority over `view_ref`'s View
+    /// - if there is no requester ViewRef accessible to Focuser
+    /// - if the requester ViewRef lacks authority over `view_ref`'s View
     /// - if `view_ref`'s View is not hittable or may not receive focus
     /// etc. A denied request is indicated with a Error.
     strict RequestFocus(resource struct {
