@@ -243,7 +243,6 @@ def _fidl_library_impl(
         enable_rust,
         enable_rust_next,
         enable_rust_drivers,
-        enable_bindlib,
         enable_banjo,
         enable_zither,
         additional_cpp_configs,
@@ -369,10 +368,6 @@ def _fidl_library_impl(
 
     if enable_rust_next:
         # TODO(https://fxbug.dev/454452299): Implement next-generation Rust bindings and conversions.
-        pass
-
-    if enable_bindlib:
-        # TODO(https://fxbug.dev/442640067): Implement bindlib bindings.
         pass
 
     if enable_banjo:
@@ -602,11 +597,6 @@ If not specified, appropriate values will be determined based on the target API 
         ),
         "enable_rust_drivers": attr.bool(
             doc = "Set to True to enable experimental rust driver transport support",
-            default = False,
-            configurable = False,
-        ),
-        "enable_bindlib": attr.bool(
-            doc = "Set to True to enable bindlib bindings for this library",
             default = False,
             configurable = False,
         ),

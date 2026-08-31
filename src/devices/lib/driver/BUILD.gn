@@ -164,8 +164,6 @@ shared_library("driver") {
     "//src/devices/tests/driver-multiname-test:*",
     "//src/devices/tests/driver-runtime:*",
     "//src/devices/tests/driver-transport:*",
-    "//src/devices/tests/fidl-bindlib-generation/child-driver:*",
-    "//src/devices/tests/fidl-bindlib-generation/parent-driver:*",
     "//src/devices/tests/fidl-service:*",
     "//src/devices/tests/isolateddevmgr:*",
     "//src/devices/tests/mock-device:*",

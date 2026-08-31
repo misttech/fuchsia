@@ -122,24 +122,15 @@ class Device : public fidl::WireServer<fidl_examples_echo::Echo> {
 
 The first important thing to discuss is how the child driver will bind. It can
 bind due to any number of node properties, but if you wish to bind based
-solely on the FIDL protocol the parent exports, you will need the bind library
-that the build automatically generates for you from the FIDL library
-(For more information, see [Generated bind libraries](#generated-bind-libraries)).
-
-You will depend on and use this bind library in your driver's bind rules:
+on the FIDL service the parent offers, you can bind using `fuchsia.Service`:
 
 ```
-using fidl.examples.echo;
-
-fidl.examples.echo.Echo == fidl.examples.echo.Echo.ZirconTransport;
+fuchsia.Service == "fidl.examples.echo.EchoService";
 ```
 
-ZirconTransport is the transport method that the parent driver uses to
-provide the Echo FIDL protocol to the child.
-
-You can addition additional bind constraints if you desire. Note that the
-property which we describe here is only added if the parent driver declares
-their FIDL protocol offers at the time of adding the device.
+You can add additional bind constraints if you desire. Note that the
+`fuchsia.Service` property is automatically added when the parent driver declares
+FIDL service offers at the time of adding the child node.
 
 ### Client Code
 
@@ -182,129 +173,3 @@ zx_status_t CallEcho() {
 }
 ```
 
-## Generated bind libraries {:#generated-bind-libraries}
-
-All FIDL libraries get an auto-generated bind library created from them. This is to help driver
-authors create bind rules based on FIDL protocols and services provided by the parent, and the
-transport method the parent uses to provide each one.
-
-### The bind library
-
-There are three possible transport methods put in these bind libraries: `Banjo`, `ZirconTransport`,
-and `DriverTransport`. Currently it is safe to assume the value is either `ZirconTransport`
-(which is just regular FIDL over Zircon channels), or `DriverTransport`
-(which is an in-process communication stack for co-located drivers).
-The bind library contains constants for protocols and these transport methods.
-
-Each service and discoverable protocol defined in the FIDL library gets an enum in the
-bind library with the values of the enum being the three transport methods.
-
-Here is an example of one where the FIDL library contains a single discoverable protocol:
-
-#### protocol.fidl {:#protocol-fidl}
-
-```fidl {:.devsite-disable-click-to-copy}
-{% includecode gerrit_repo="fuchsia/fuchsia" gerrit_path="examples/drivers/bind/fidl_bindlib_codegen/protocol.fidl" region_tag="fidl" %}
-```
-
-#### Generated lib {:#generated-lib}
-
-```none {:.devsite-disable-click-to-copy}
-{% includecode gerrit_repo="fuchsia/fuchsia" gerrit_path="examples/drivers/bind/fidl_bindlib_codegen/generated_lib.bind.golden" %}
-```
-
-### The build target
-
-These generated bind libraries will be based on the FIDL library's
-`library_name` and `target_name`. The bind library will have a target name of
-`{fidl_target_name}_bindlib`, and its `library_name` will be the same as the FIDL's.
-
-For example, if the FIDL library target is `//sdk/fidl/fidl.examples.echo:myecholibrary`,
-then the auto-generated bind library target is
-`//sdk/fidl/fidl.examples.echo:myecholibrary_bindlib`.
-
-In practice, most FIDL libraries have the same `target_name` as the folder they are in, which
-is usually the library name as well. So for example, if the FIDL library is
-`//sdk/fidl/fidl.examples.echo`, the auto-generated bind library target is
-`//sdk/fidl/fidl.examples.echo:fidl.examples.echo_bindlib`.
-
-### The generated code targets
-
-These generated bind libraries work exactly the same as if they were user-written
-bind libraries. Code generation for user-written bind libraries is described in detail at
-[Bind library code generation tutorial](/docs/development/drivers/tutorials/bind-libraries-codegen.md).
-
-### Example
-
-Lets take the FIDL library shown [above](#protocol-fidl) and use it in an example.
-
-
-#### FIDL (BUILD.gn)
-
-```gn {:.devsite-disable-click-to-copy}
-{% includecode gerrit_repo="fuchsia/fuchsia" gerrit_path="examples/drivers/bind/fidl_bindlib_codegen/BUILD.gn" region_tag="fidl" %}
-```
-
-This now gives us the generated bind library with the target name of `:my_fidl_target_bindlib`
-and library name of `fuchsia.gizmo.protocol`. The generated source for the bind library was shown
-[earlier](#generated-lib). We can use this to create bind rules for the child driver.
-
-#### Child bind rules (BUILD.gn)
-
-```gn {:.devsite-disable-click-to-copy}
-{% includecode gerrit_repo="fuchsia/fuchsia" gerrit_path="examples/drivers/bind/fidl_bindlib_codegen/BUILD.gn" region_tag="child_bind_rules" %}
-```
-
-#### child-driver.bind
-
-```none {:.devsite-disable-click-to-copy}
-{% includecode gerrit_repo="fuchsia/fuchsia" gerrit_path="examples/drivers/bind/fidl_bindlib_codegen/meta/child_driver.bind" exclude_regexp="// Copyright.*|// Use of.*|// found in.*" %}
-```
-
-When a driver is creating children nodes, they are automatically assigned a property for each of
-their `offers` in the `fuchsia_driver_framework::NodeAddArgs` table. Therefore parent drivers
-don't need to manually specify this property.
-
-For example if there is a driver transport based service capability offered to the node
-called `fuchsia_hardware_gizmo::Service`, there will be a property added with the key
-`fuchsia.hardware.gizmo.Service` and value of `fuchsia.hardware.gizmo.Service.DriverTransport`.
-These values will match their corresponding generated bind library variables that the child driver
-would use in its bind rules.
-
-This generated code is still useful when creating a composite node specification,
-which usually happens in the board driver. The specification's properties must be filled out
-manually with the offer information if the specification wants to match with nodes based on those
-offers.
-
-We can use the auto-generated code targets to access constants for this bind library from
-the composite node spec creation code.
-
-#### composite-node-specification creator (BUILD.gn)
-
-* {C++}
-
-  ```gn {:.devsite-disable-click-to-copy}
-  {% includecode gerrit_repo="fuchsia/fuchsia" gerrit_path="examples/drivers/bind/fidl_bindlib_codegen/BUILD.gn" region_tag="example_cpp_target" %}
-  ```
-
-* {Rust}
-
-  ```gn {:.devsite-disable-click-to-copy}
-  {% includecode gerrit_repo="fuchsia/fuchsia" gerrit_path="examples/drivers/bind/fidl_bindlib_codegen/BUILD.gn" region_tag="example_rust_target" %}
-  ```
-
-
-
-#### composite-node-specification creator code
-
-* {C++}
-
-  ```cpp {:.devsite-disable-click-to-copy}
-  {% includecode gerrit_repo="fuchsia/fuchsia" gerrit_path="examples/drivers/bind/fidl_bindlib_codegen/bindlib_usage.cc" region_tag="code" %}
-  ```
-
-* {Rust}
-
-  ```rust {:.devsite-disable-click-to-copy}
-  {% includecode gerrit_repo="fuchsia/fuchsia" gerrit_path="examples/drivers/bind/fidl_bindlib_codegen/bindlib_usage.rs" region_tag="code" %}
-  ```

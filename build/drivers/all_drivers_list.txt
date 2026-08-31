@@ -227,8 +227,6 @@
 //src/devices/tests/eval/probe_gpio_driver:driver
 //src/devices/tests/eval/serve-fidl/cpp:driver
 //src/devices/tests/eval/serve-fidl/rust:driver
-//src/devices/tests/fidl-bindlib-generation/child-driver:driver
-//src/devices/tests/fidl-bindlib-generation/parent-driver:driver
 //src/devices/tests/fidl-service:child-driver
 //src/devices/tests/fidl-service:parent-driver
 //src/devices/tests/hang-on-stop:hang_on_stop_driver

@@ -12,7 +12,6 @@ fidl("test_fidl") {
     "protocol_one.test.fidl",
     "protocol_two.test.fidl",
   ]
-  enable_bindlib = true
 }
 
 # Depend on this target to have the IR generated for the test FIDL library.

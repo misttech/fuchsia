@@ -4,8 +4,6 @@
 
 load(
     "@rules_fuchsia//fuchsia:defs.bzl",
-    "fuchsia_bind_cc_library",
-    "fuchsia_fidl_bind_library",
     "fuchsia_fidl_library",
 )
 
@@ -30,16 +28,4 @@ fuchsia_fidl_library(
         "@fuchsia_sdk//fidl/fuchsia.power.system",
         "@fuchsia_sdk//fidl/zx",
     ],
-)
-
-fuchsia_fidl_bind_library(
-    name = "fuchsia.power.battery_bindlib",
-    library = ":fuchsia.power.battery",
-    target_compatible_with = ["@platforms//os:fuchsia"],
-)
-
-fuchsia_bind_cc_library(
-    name = "fuchsia.power.battery_bindlib_cc",
-    library = ":fuchsia.power.battery_bindlib",
-    target_compatible_with = ["@platforms//os:fuchsia"],
 )

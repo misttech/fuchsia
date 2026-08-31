@@ -108,10 +108,6 @@ load(
     _fuchsia_driver_tool = "fuchsia_driver_tool",
 )
 load(
-    "//fuchsia/private:fuchsia_fidl_bind_library.bzl",
-    _fuchsia_fidl_bind_library = "fuchsia_fidl_bind_library",
-)
-load(
     "//fuchsia/private:fuchsia_fidl_library.bzl",
     _fuchsia_fidl_library = "fuchsia_fidl_library",
 )
@@ -196,7 +192,6 @@ fuchsia_driver_bind_bytecode = _fuchsia_driver_bind_bytecode
 fuchsia_driver_bind_bytecode_test = _fuchsia_driver_bind_bytecode_test
 fuchsia_driver_component = _fuchsia_driver_component
 fuchsia_driver_tool = _fuchsia_driver_tool
-fuchsia_fidl_bind_library = _fuchsia_fidl_bind_library
 fuchsia_fidl_hlcpp_library = _fuchsia_fidl_hlcpp_library
 fuchsia_fidl_library = _fuchsia_fidl_library
 fuchsia_find_all_package_resources = _fuchsia_find_all_package_resources

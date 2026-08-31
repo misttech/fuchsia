@@ -1,7 +1,5 @@
 load(
     "@rules_fuchsia//fuchsia:defs.bzl",
-    "fuchsia_bind_cc_library",
-    "fuchsia_fidl_bind_library",
     "fuchsia_fidl_hlcpp_library",
     "fuchsia_fidl_library",
 )
@@ -23,18 +21,6 @@ fuchsia_fidl_library(
     deps = [
         {{deps}}
     ],
-    target_compatible_with = COMPATIBILITY.FUCHSIA_CONDITION,
-)
-
-fuchsia_fidl_bind_library(
-    name = "{{name}}_bindlib",
-    library = ":{{name}}",
-    target_compatible_with = COMPATIBILITY.FUCHSIA_CONDITION,
-)
-
-fuchsia_bind_cc_library(
-    name = "{{name}}_bindlib_cc",
-    library = ":{{name}}_bindlib",
     target_compatible_with = COMPATIBILITY.FUCHSIA_CONDITION,
 )
 
