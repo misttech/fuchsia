@@ -17,8 +17,14 @@ group("tests") {
   ]
 }
 
+fuchsia_driver_dml("usb_video-dml") {
+  dml = "meta/usb_video.dml"
+  driver_name = "usb_video"
+}
+
 driver_bind_rules("usb_video_bind") {
-  rules = "meta/usb_video.bind"
+  dml_label = ":usb_video-dml"
+  bind_output = "usb_video.bindbc"
   tests = "meta/bind_tests.json"
   deps = [
     "//src/devices/bind/fuchsia.usb",
@@ -69,9 +75,12 @@ fuchsia_cc_driver("fuchsia_driver") {
 
 fuchsia_driver_component("driver") {
   component_name = "usb_video"
-  deps = [ ":fuchsia_driver" ]
+  dml_label = ":usb_video-dml"
+  deps = [
+    ":fuchsia_driver",
+    ":usb_video_bind",
+  ]
   info = "meta/driver-info.json"
-  manifest = "meta/usb_video.cml"
 }
 
 fuchsia_driver_package("usb_video") {

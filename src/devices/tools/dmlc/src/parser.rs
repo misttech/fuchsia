@@ -21,6 +21,13 @@ pub struct BindPrimary {
     pub banjo: Option<String>,
     pub transport: Option<String>,
     pub one_of: Option<Vec<DmlBind>>,
+    pub rules: Option<HashMap<String, Value>>,
+    #[serde(rename = "pci_class")]
+    pub pci_class: Option<String>,
+    #[serde(rename = "pci_subclass")]
+    pub pci_subclass: Option<String>,
+    #[serde(rename = "pci_interface")]
+    pub pci_interface: Option<String>,
 }
 
 #[derive(Deserialize, Debug, Clone, PartialEq, Default)]
@@ -56,6 +63,9 @@ pub struct DmlProgram {
 #[derive(Deserialize, Debug, Default)]
 pub struct DmlInput {
     pub name: Option<String>,
+    #[serde(alias = "composite_name")]
+    #[allow(dead_code)]
+    pub composite_name: Option<String>,
     #[serde(default)]
     pub program: DmlProgram,
     #[serde(default)]
@@ -96,6 +106,8 @@ pub struct DmlOffer {
 #[derive(Deserialize, Debug)]
 pub struct DriverDml {
     pub name: String,
+    #[serde(default, alias = "composite_name")]
+    pub composite_name: Option<String>,
     #[serde(default)]
     pub include: Vec<String>,
     #[serde(default)]

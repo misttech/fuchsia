@@ -22,7 +22,7 @@ fn format_bind_val(val: &Value) -> Result<String, anyhow::Error> {
         Value::String(s) => {
             if s.len() >= 2 && s.starts_with('"') && s.ends_with('"') {
                 Ok(s.clone())
-            } else if s.starts_with("fuchsia.") || s.starts_with("0x") || s.starts_with("0X") {
+            } else if s.contains('.') || s.starts_with("0x") || s.starts_with("0X") {
                 Ok(s.clone())
             } else {
                 Ok(format!("\"{}\"", s))
@@ -182,45 +182,110 @@ fn generate_simple_bind_statements(bind: &DmlBind) -> Result<String, anyhow::Err
     generate_simple_bind_statements_excluding(bind, false, false, false, false, false, false, None)
 }
 
-fn get_trigger(alt: &DmlBind) -> Result<Option<(String, Option<(String, Value)>)>, anyhow::Error> {
-    if let Some(proto) = &alt.protocol {
-        Ok(Some((format!("fuchsia.BIND_PROTOCOL == {}", proto), None)))
-    } else if let Some(banjo) = &alt.banjo {
-        Ok(Some((format!("fuchsia.BIND_PROTOCOL == {}", banjo), None)))
-    } else if let Some(svc) = &alt.service {
-        Ok(Some((format!("fuchsia.Service == \"{}\"", svc), None)))
-    } else if let Some(compat) = &alt.compat
+enum TriggerKind {
+    Protocol(String),
+    Service(String),
+    Compat(String),
+    Vid(String),
+    Pid(String),
+    Did(String),
+    Rule(String, Value, String),
+}
+
+impl TriggerKind {
+    fn condition_str(&self) -> &str {
+        match self {
+            TriggerKind::Protocol(s)
+            | TriggerKind::Service(s)
+            | TriggerKind::Compat(s)
+            | TriggerKind::Vid(s)
+            | TriggerKind::Pid(s)
+            | TriggerKind::Did(s)
+            | TriggerKind::Rule(_, _, s) => s,
+        }
+    }
+}
+
+fn get_trigger(alt: &DmlBind) -> Result<Option<TriggerKind>, anyhow::Error> {
+    if let Some(rules) = &alt.rules {
+        if let Some(autobind_val) = rules.get("fuchsia.BIND_AUTOBIND") {
+            if !autobind_val.is_object() && !autobind_val.is_array() {
+                return Ok(Some(TriggerKind::Rule(
+                    "fuchsia.BIND_AUTOBIND".to_string(),
+                    autobind_val.clone(),
+                    format!("fuchsia.BIND_AUTOBIND == {}", format_bind_val(autobind_val)?),
+                )));
+            }
+        }
+        if let Some(acpi_bus) = rules.get("fuchsia.BIND_ACPI_BUS_TYPE") {
+            if !acpi_bus.is_object() && !acpi_bus.is_array() {
+                return Ok(Some(TriggerKind::Rule(
+                    "fuchsia.BIND_ACPI_BUS_TYPE".to_string(),
+                    acpi_bus.clone(),
+                    format!("fuchsia.BIND_ACPI_BUS_TYPE == {}", format_bind_val(acpi_bus)?),
+                )));
+            }
+        }
+    }
+    if let Some(compat) = &alt.compat
         && !compat.is_array()
     {
         match compat {
-            Value::String(s) => Ok(Some((format!("fuchsia.COMPATIBLE == \"{}\"", s), None))),
-            _ => Ok(None),
+            Value::String(s) => {
+                return Ok(Some(TriggerKind::Compat(format!("fuchsia.COMPATIBLE == \"{}\"", s))));
+            }
+            _ => {}
         }
+    }
+    if let Some(rules) = &alt.rules {
+        if let Some(hid) = rules.get("fuchsia.acpi.HID") {
+            if !hid.is_object() && !hid.is_array() {
+                return Ok(Some(TriggerKind::Rule(
+                    "fuchsia.acpi.HID".to_string(),
+                    hid.clone(),
+                    format!("fuchsia.acpi.HID == {}", format_bind_val(hid)?),
+                )));
+            }
+        }
+    }
+    if let Some(proto) = &alt.protocol {
+        Ok(Some(TriggerKind::Protocol(format!("fuchsia.BIND_PROTOCOL == {}", proto))))
+    } else if let Some(banjo) = &alt.banjo {
+        Ok(Some(TriggerKind::Protocol(format!("fuchsia.BIND_PROTOCOL == {}", banjo))))
+    } else if let Some(svc) = &alt.service {
+        Ok(Some(TriggerKind::Service(format!("fuchsia.Service == \"{}\"", svc))))
     } else if let Some(vid) = &alt.vid
         && !vid.is_array()
     {
-        Ok(Some((format!("fuchsia.BIND_PLATFORM_DEV_VID == {}", format_bind_val(vid)?), None)))
+        Ok(Some(TriggerKind::Vid(format!(
+            "fuchsia.BIND_PLATFORM_DEV_VID == {}",
+            format_bind_val(vid)?
+        ))))
     } else if let Some(pid) = &alt.pid
         && !pid.is_array()
     {
-        Ok(Some((format!("fuchsia.BIND_PLATFORM_DEV_PID == {}", format_bind_val(pid)?), None)))
+        Ok(Some(TriggerKind::Pid(format!(
+            "fuchsia.BIND_PLATFORM_DEV_PID == {}",
+            format_bind_val(pid)?
+        ))))
     } else if let Some(did) = &alt.did
         && !did.is_array()
     {
-        Ok(Some((format!("fuchsia.BIND_PLATFORM_DEV_DID == {}", format_bind_val(did)?), None)))
+        Ok(Some(TriggerKind::Did(format!(
+            "fuchsia.BIND_PLATFORM_DEV_DID == {}",
+            format_bind_val(did)?
+        ))))
     } else if let Some(rules) = &alt.rules {
         if let Some(name_val) = rules.get("fuchsia.NAME") {
-            if name_val.is_object() || name_val.is_array() {
-                Ok(None)
-            } else {
-                Ok(Some((
+            if !name_val.is_object() && !name_val.is_array() {
+                return Ok(Some(TriggerKind::Rule(
+                    "fuchsia.NAME".to_string(),
+                    name_val.clone(),
                     format!("fuchsia.NAME == {}", format_bind_val(name_val)?),
-                    Some(("fuchsia.NAME".to_string(), name_val.clone())),
-                )))
+                )));
             }
-        } else {
-            Ok(None)
         }
+        Ok(None)
     } else {
         Ok(None)
     }
@@ -229,25 +294,48 @@ fn get_trigger(alt: &DmlBind) -> Result<Option<(String, Option<(String, Value)>)
 fn generate_simple_bind_rules(bind: &DmlBind) -> Result<String, anyhow::Error> {
     let mut content = String::new();
     if let Some(alternatives) = &bind.one_of {
+        if let Some(proto) = &bind.protocol {
+            content.push_str(&format!("fuchsia.BIND_PROTOCOL == {};\n", proto));
+        } else if let Some(banjo) = &bind.banjo {
+            content.push_str(&format!("fuchsia.BIND_PROTOCOL == {};\n", banjo));
+        }
+        if let Some(svc) = &bind.service {
+            content.push_str(&format!("fuchsia.Service == \"{}\";\n", svc));
+        }
+        if let Some(vid) = &bind.vid {
+            content.push_str(&format!(
+                "fuchsia.BIND_PLATFORM_DEV_VID == {};\n",
+                format_bind_val(vid)?
+            ));
+        }
+        if let Some(pid) = &bind.pid {
+            content.push_str(&format!(
+                "fuchsia.BIND_PLATFORM_DEV_PID == {};\n",
+                format_bind_val(pid)?
+            ));
+        }
+        if let Some(did) = &bind.did {
+            content.push_str(&format!(
+                "fuchsia.BIND_PLATFORM_DEV_DID == {};\n",
+                format_bind_val(did)?
+            ));
+        }
+
         let mut last_had_trigger = false;
         for (i, alt) in alternatives.iter().enumerate() {
-            let trigger_res = get_trigger(alt)?;
-            let (trigger_str, exclude_rule_opt) = match trigger_res {
-                Some((t_str, ex_opt)) => (Some(t_str), ex_opt),
-                None => (None, None),
-            };
-            let has_trigger = trigger_str.is_some();
+            let trigger_opt = get_trigger(alt)?;
+            let has_trigger = trigger_opt.is_some();
 
             if i == 0 {
-                if has_trigger {
-                    content.push_str(&format!("if {} {{\n", trigger_str.unwrap()));
+                if let Some(trigger) = &trigger_opt {
+                    content.push_str(&format!("if {} {{\n", trigger.condition_str()));
                     last_had_trigger = true;
                 } else {
                     return generate_simple_bind_statements(alt);
                 }
             } else {
-                if has_trigger {
-                    content.push_str(&format!("}} else if {} {{\n", trigger_str.unwrap()));
+                if let Some(trigger) = &trigger_opt {
+                    content.push_str(&format!("}} else if {} {{\n", trigger.condition_str()));
                     last_had_trigger = true;
                 } else {
                     content.push_str("} else {\n");
@@ -255,29 +343,24 @@ fn generate_simple_bind_rules(bind: &DmlBind) -> Result<String, anyhow::Error> {
                 }
             }
 
-            let statements = if has_trigger {
+            let statements = if let Some(trigger) = &trigger_opt {
                 let mut exclude_protocol = false;
                 let mut exclude_service = false;
                 let mut exclude_compat = false;
                 let mut exclude_vid = false;
                 let mut exclude_pid = false;
                 let mut exclude_did = false;
+                let mut ex_rule_ref = None;
 
-                if alt.protocol.is_some() || alt.banjo.is_some() {
-                    exclude_protocol = true;
-                } else if alt.service.is_some() {
-                    exclude_service = true;
-                } else if alt.compat.is_some() && !alt.compat.as_ref().unwrap().is_array() {
-                    exclude_compat = true;
-                } else if alt.vid.is_some() && !alt.vid.as_ref().unwrap().is_array() {
-                    exclude_vid = true;
-                } else if alt.pid.is_some() && !alt.pid.as_ref().unwrap().is_array() {
-                    exclude_pid = true;
-                } else if alt.did.is_some() && !alt.did.as_ref().unwrap().is_array() {
-                    exclude_did = true;
+                match trigger {
+                    TriggerKind::Protocol(_) => exclude_protocol = true,
+                    TriggerKind::Service(_) => exclude_service = true,
+                    TriggerKind::Compat(_) => exclude_compat = true,
+                    TriggerKind::Vid(_) => exclude_vid = true,
+                    TriggerKind::Pid(_) => exclude_pid = true,
+                    TriggerKind::Did(_) => exclude_did = true,
+                    TriggerKind::Rule(k, v, _) => ex_rule_ref = Some((k.as_str(), v)),
                 }
-
-                let ex_rule_ref = exclude_rule_opt.as_ref().map(|(k, v)| (k.as_str(), v));
 
                 generate_simple_bind_statements_excluding(
                     alt,
@@ -336,69 +419,33 @@ pub fn generate_bind_file(
         if let Some(primary) = &bind.primary {
             content.push_str(&format!("primary parent \"{}\" {{\n", primary.node));
 
-            if let Some(alternatives) = &primary.one_of {
-                let bind_rules =
-                    DmlBind { one_of: Some(alternatives.clone()), ..Default::default() };
-                let rules_str = generate_simple_bind_rules(&bind_rules)?;
+            let dml_bind = DmlBind {
+                protocol: primary.protocol.clone(),
+                service: primary.service.clone(),
+                banjo: primary.banjo.clone(),
+                transport: primary.transport.clone(),
+                vid: primary.vid.clone(),
+                pid: primary.pid.clone(),
+                did: primary.did.clone(),
+                compat: primary.compat.clone(),
+                primary: None,
+                one_of: primary.one_of.clone(),
+                rules: primary.rules.clone(),
+                pci_class: primary.pci_class.clone(),
+                pci_subclass: primary.pci_subclass.clone(),
+                pci_interface: primary.pci_interface.clone(),
+                composite_name: None,
+            };
+            let rules_str = generate_simple_bind_rules(&dml_bind)?;
+            if rules_str.trim().is_empty() {
+                content.push_str(
+                    "  fuchsia.BIND_PROTOCOL == fuchsia.platform.BIND_PROTOCOL.DEVICE;\n",
+                );
+            } else {
                 for line in rules_str.lines() {
                     if !line.trim().is_empty() {
                         content.push_str(&format!("  {}\n", line));
                     }
-                }
-            } else {
-                let mut rules = Vec::new();
-                if let Some(vid) = &primary.vid {
-                    rules.push(format!(
-                        "fuchsia.BIND_PLATFORM_DEV_VID == {}",
-                        format_bind_val(vid)?
-                    ));
-                }
-                if let Some(pid) = &primary.pid {
-                    rules.push(format!(
-                        "fuchsia.BIND_PLATFORM_DEV_PID == {}",
-                        format_bind_val(pid)?
-                    ));
-                }
-                if let Some(did) = &primary.did {
-                    rules.push(format!(
-                        "fuchsia.BIND_PLATFORM_DEV_DID == {}",
-                        format_bind_val(did)?
-                    ));
-                }
-                if let Some(compat) = &primary.compat {
-                    match compat {
-                        Value::Array(arr) => {
-                            let mut accept_rule = "accept fuchsia.COMPATIBLE {\n".to_string();
-                            for v in arr {
-                                if let Some(s) = v.as_str() {
-                                    accept_rule.push_str(&format!("    \"{}\",\n", s));
-                                }
-                            }
-                            accept_rule.push_str("  }");
-                            rules.push(accept_rule);
-                        }
-                        Value::String(s) => {
-                            rules.push(format!("fuchsia.COMPATIBLE == \"{}\"", s));
-                        }
-                        _ => {}
-                    }
-                }
-                if let Some(proto) = &primary.protocol {
-                    rules.push(format!("fuchsia.BIND_PROTOCOL == {}", proto));
-                } else if let Some(banjo) = &primary.banjo {
-                    rules.push(format!("fuchsia.BIND_PROTOCOL == {}", banjo));
-                }
-                if let Some(svc) = &primary.service {
-                    rules.push(format!("fuchsia.Service == \"{}\"", svc));
-                }
-                if rules.is_empty() {
-                    rules.push(
-                        "fuchsia.BIND_PROTOCOL == fuchsia.platform.BIND_PROTOCOL.DEVICE"
-                            .to_string(),
-                    );
-                }
-                for r in rules {
-                    content.push_str(&format!("  {};\n", r));
                 }
             }
             content.push_str("}\n\n");

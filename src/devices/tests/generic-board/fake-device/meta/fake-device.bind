@@ -9,8 +9,8 @@ composite fake_device;
 using fuchsia;
 
 primary parent "pdev" {
+  fuchsia.BIND_PROTOCOL == fuchsia.platform.BIND_PROTOCOL.DEVICE;
   fuchsia.COMPATIBLE == "fake,device";
-  fuchsia.Service == "fuchsia.hardware.platform.device.Service";
 }
 
 parent "my-clock" {

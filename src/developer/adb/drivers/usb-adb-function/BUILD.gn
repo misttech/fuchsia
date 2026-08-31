@@ -7,8 +7,13 @@ import("//build/components.gni")
 import("//build/drivers.gni")
 import("//build/test.gni")
 
+fuchsia_driver_dml("usb-adb-function-dml") {
+  dml = "meta/usb-adb-function.dml"
+  driver_name = "usb-adb-function"
+}
+
 driver_bind_rules("usb_adb_bind") {
-  rules = "meta/usb-adb-function.bind"
+  dml_label = ":usb-adb-function-dml"
   bind_output = "usb-adb-function.bindbc"
   tests = "meta/bind-tests.json"
   deps = [
@@ -51,9 +56,13 @@ fuchsia_cc_driver("usb-adb-function-driver") {
 
 fuchsia_driver_component("usb-adb-function") {
   component_name = "usb-adb-function"
-  deps = [ ":usb-adb-function-driver" ]
+  dml_label = ":usb-adb-function-dml"
+  deps = [
+    ":usb-adb-common",
+    ":usb-adb-function-driver",
+    ":usb_adb_bind",
+  ]
   info = "meta/usb-adb-function-info.json"
-  manifest = "meta/usb-adb-function.cml"
 }
 
 fuchsia_driver_package("package") {

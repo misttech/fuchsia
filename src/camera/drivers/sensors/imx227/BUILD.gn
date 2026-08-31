@@ -15,8 +15,14 @@ group("tests") {
   ]
 }
 
+fuchsia_driver_dml("imx227-dml") {
+  dml = "meta/imx227.dml"
+  driver_name = "imx227"
+}
+
 driver_bind_rules("imx227_bind") {
-  rules = "meta/imx227.bind"
+  dml_label = ":imx227-dml"
+  bind_output = "imx227.bindbc"
   tests = "meta/bind_tests.json"
   deps = [
     "//src/devices/bind/fuchsia",
@@ -72,9 +78,12 @@ fuchsia_cc_driver("fuchsia_driver") {
 
 fuchsia_driver_component("driver") {
   component_name = "imx227"
-  deps = [ ":fuchsia_driver" ]
+  dml_label = ":imx227-dml"
+  deps = [
+    ":fuchsia_driver",
+    ":imx227_bind",
+  ]
   info = "meta/driver-info.json"
-  manifest = "meta/imx227.cml"
 }
 
 fuchsia_driver_package("imx227") {

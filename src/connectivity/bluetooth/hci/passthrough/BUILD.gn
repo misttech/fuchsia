@@ -7,8 +7,14 @@ import("//build/components.gni")
 import("//build/drivers.gni")
 import("//build/testing/cc_test_executable.gni")
 
+fuchsia_driver_dml("passthrough-dml") {
+  dml = "meta/passthrough.dml"
+  driver_name = "passthrough"
+}
+
 driver_bind_rules("bt_hci_passthrough_bind") {
-  rules = "meta/passthrough.bind"
+  dml_label = ":passthrough-dml"
+  bind_output = "passthrough.bindbc"
   tests = "meta/bind-tests.json"
   deps = [ "//src/devices/bind/fuchsia.bluetooth" ]
 }
@@ -41,9 +47,12 @@ fuchsia_cc_driver("fuchsia_driver") {
 
 fuchsia_driver_component("driver") {
   component_name = "bt-hci-passthrough"
-  deps = [ ":fuchsia_driver" ]
+  dml_label = ":passthrough-dml"
+  deps = [
+    ":bt_hci_passthrough_bind",
+    ":fuchsia_driver",
+  ]
   info = "meta/driver-info.json"
-  manifest = "meta/passthrough.cml"
 }
 
 fuchsia_driver_package("passthrough") {

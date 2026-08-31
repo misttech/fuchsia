@@ -55,6 +55,9 @@ pub fn compile_driver(args: &CompileDriverArgs, year: &str) -> Result<(), anyhow
     }
 
     let mut bind_config = DmlBind::default();
+    if let Some(comp_name) = &driver_dml.composite_name {
+        bind_config.composite_name = Some(comp_name.clone());
+    }
     let mut has_explicit_bind_block = false;
     if let Some(obj) = driver_dml.program.as_object() {
         if let Some(bind_val) = obj.get("requirements").or_else(|| obj.get("bind")) {
@@ -193,7 +196,15 @@ pub fn compile_driver(args: &CompileDriverArgs, year: &str) -> Result<(), anyhow
         primary_use_entry
     {
         let (service, protocol) = if let Some(sop) = service_or_proto {
-            if is_service { (Some(sop), None) } else { (None, Some(sop)) }
+            if is_service {
+                if sop == "fuchsia.hardware.platform.device.Service" {
+                    (None, None)
+                } else {
+                    (Some(sop), None)
+                }
+            } else {
+                (None, Some(sop))
+            }
         } else {
             (None, None)
         };
@@ -209,6 +220,10 @@ pub fn compile_driver(args: &CompileDriverArgs, year: &str) -> Result<(), anyhow
             banjo: banjo_name,
             transport: Some(transport),
             one_of: None,
+            rules: None,
+            pci_class: None,
+            pci_subclass: None,
+            pci_interface: None,
         };
 
         if let Some(b) = bind {
@@ -220,6 +235,19 @@ pub fn compile_driver(args: &CompileDriverArgs, year: &str) -> Result<(), anyhow
             primary_bind.pid = b.pid;
             primary_bind.did = b.did;
             primary_bind.one_of = b.one_of;
+            primary_bind.rules = b.rules;
+            primary_bind.pci_class = b.pci_class;
+            primary_bind.pci_subclass = b.pci_subclass;
+            primary_bind.pci_interface = b.pci_interface;
+            if primary_bind.protocol.is_none() {
+                primary_bind.protocol = b.protocol;
+            }
+            if primary_bind.service.is_none() {
+                primary_bind.service = b.service;
+            }
+            if primary_bind.banjo.is_none() {
+                primary_bind.banjo = b.banjo;
+            }
         }
 
         bind_config.primary = Some(primary_bind);
@@ -302,7 +330,9 @@ pub fn compile_driver(args: &CompileDriverArgs, year: &str) -> Result<(), anyhow
 
     // Generate Bind if requested
     if let Some(bind_output) = &args.bind_output {
-        let bind_code = generate_bind_file(driver_name, &bind_config, &additional_parents, year)?;
+        let composite_name = driver_dml.composite_name.as_deref().unwrap_or(driver_name);
+        let bind_code =
+            generate_bind_file(composite_name, &bind_config, &additional_parents, year)?;
         std::fs::write(bind_output, bind_code).context("Failed to write bind file")?;
     }
 
@@ -615,6 +645,50 @@ mod tests {
         assert!(
             err_msg.contains("Use 'banjo: \"fuchsia.hardware.gpio.BIND_PROTOCOL.DEVICE\"' instead")
         );
+
+        let _ = std::fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn test_composite_name_override() {
+        let temp_dir = std::env::temp_dir().join("test_temp_composite_name_override");
+        let _ = std::fs::remove_dir_all(&temp_dir);
+        std::fs::create_dir_all(&temp_dir).unwrap();
+
+        let dml_content = r#"{
+            name: "aml_mipicsi",
+            composite_name: "aml_mipi",
+            use: [
+                {
+                    service: "fuchsia.hardware.platform.device.Service",
+                    name: "pdev",
+                    primary: true,
+                    bind: {
+                        compat: "amlogic,mipi-csi2",
+                    },
+                },
+            ],
+        }"#;
+
+        let dml_path = temp_dir.join("sample.dml");
+        std::fs::write(&dml_path, dml_content).unwrap();
+
+        let bind_path = temp_dir.join("sample.bind");
+        let cml_path = temp_dir.join("sample.cml");
+
+        let args = CompileDriverArgs {
+            input_file: dml_path.to_str().unwrap().to_string(),
+            h_output: None,
+            cc_output: None,
+            cml_output: Some(cml_path.to_str().unwrap().to_string()),
+            bind_output: Some(bind_path.to_str().unwrap().to_string()),
+            namespace: None,
+        };
+
+        compile_driver(&args, "2026").unwrap();
+
+        let bind_content = std::fs::read_to_string(&bind_path).unwrap();
+        assert!(bind_content.contains("composite aml_mipi;"));
 
         let _ = std::fs::remove_dir_all(&temp_dir);
     }

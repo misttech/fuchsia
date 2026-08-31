@@ -8,8 +8,15 @@ import("//build/drivers.gni")
 import("//build/test.gni")
 import("//build/testing/cc_test_executable.gni")
 
+fuchsia_driver_dml("bt_transport_usb-dml") {
+  dml = "meta/usb.dml"
+  driver_name = "bt-transport-usb"
+  golden_bind = "meta/usb.bind"
+  golden_cml = "meta/usb.cml"
+}
+
 driver_bind_rules("bt_transport_usb_bind") {
-  rules = "meta/usb.bind"
+  dml_label = ":bt_transport_usb-dml"
   bind_output = "bt-transport-usb.bindbc"
   tests = "meta/bind_tests.json"
   deps = [
@@ -35,9 +42,12 @@ fuchsia_driver_component("bt-transport-usb") {
     "//src/connectivity/bluetooth:drivers",
   ]
   component_name = "bt-transport-usb"
-  deps = [ ":bt-transport-usb-driver" ]
+  dml_label = ":bt_transport_usb-dml"
+  deps = [
+    ":bt-transport-usb-driver",
+    ":bt_transport_usb_bind",
+  ]
   info = "meta/bt-transport-usb-info.json"
-  manifest = "meta/usb.cml"
 }
 
 fuchsia_driver_package("package") {
