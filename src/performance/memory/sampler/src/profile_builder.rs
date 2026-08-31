@@ -13,6 +13,10 @@ use zx::Vmo;
 use crate::crash_reporter::ProfileReport;
 use crate::pprof;
 
+/// The default sampling rate in bytes (128 KiB). This matches the default
+/// client-side sampling rate configured in the instrumentation library.
+const DEFAULT_SAMPLING_RATE_BYTES: f64 = 131072.0;
+
 pub type StackTrace = Vec<u64>;
 
 /// Represents an allocation for which no deallocation has been
@@ -20,6 +24,7 @@ pub type StackTrace = Vec<u64>;
 #[derive(Clone, Debug, PartialEq)]
 pub struct LiveAllocation {
     pub size: u64,
+    pub scale_factor: f64,
     pub stack_trace: Rc<StackTrace>,
 }
 
@@ -27,15 +32,15 @@ pub struct LiveAllocation {
 /// been recorded.
 #[derive(Clone, Default, Debug)]
 pub struct DeadAllocationCounter {
-    pub total_size: u64,
-    pub count: u64,
+    pub total_size: f64,
+    pub count: f64,
 }
 
 /// Aggregated counter of deallocations.
 #[derive(Clone, Default, Debug)]
 pub struct DeallocationCounter {
-    pub total_size: u64,
-    pub count: u64,
+    pub total_size: f64,
+    pub count: f64,
 }
 
 /// Accumulator for profiling information.
@@ -62,6 +67,19 @@ pub struct ProfileBuilder {
     /// store a reference, rather than the entire stack trace that
     /// could be fairly large.
     stack_traces: HashSet<Rc<StackTrace>>,
+}
+
+/// Computes the unsampling scale factor for an allocation of a given `size` using
+/// the Poisson sampling interval `rate`.
+///
+/// Under Poisson sampling, the probability of sampling an allocation of size $S$
+/// with a mean sampling rate $R$ is $P(S) = 1 - e^{-S / R}$.
+///
+/// To reconstruct the original unsampled allocation volume, we scale each sampled
+/// allocation's size and count by the inverse of its sampling probability:
+/// $W = 1 / P(S) = 1 / (1 - e^{-S / R})$.
+fn scale_factor(size: u64, rate: f64) -> f64 {
+    if size == 0 { 1.0 } else { -1.0 / (-(size as f64) / rate).exp_m1() }
 }
 
 impl ProfileBuilder {
@@ -93,8 +111,19 @@ impl ProfileBuilder {
     /// this assumes that allocations and deallocations at a given
     /// address are ordered.
     pub fn allocate(&mut self, address: u64, stack_trace: StackTrace, size: u64) {
+        let scale = scale_factor(size, DEFAULT_SAMPLING_RATE_BYTES);
+        self.allocate_with_scale(address, stack_trace, size, scale);
+    }
+
+    pub fn allocate_with_scale(
+        &mut self,
+        address: u64,
+        stack_trace: StackTrace,
+        size: u64,
+        scale_factor: f64,
+    ) {
         let stack_trace = self.cache_stack_trace(stack_trace);
-        self.live_allocations.insert(address, LiveAllocation { size, stack_trace });
+        self.live_allocations.insert(address, LiveAllocation { size, scale_factor, stack_trace });
     }
     /// Register a deallocation, if the corresponding allocation has
     /// been registered before.
@@ -103,14 +132,14 @@ impl ProfileBuilder {
             {
                 let dead_allocation =
                     self.dead_allocations.entry(allocation.stack_trace).or_default();
-                dead_allocation.count += 1;
-                dead_allocation.total_size += allocation.size;
+                dead_allocation.count += allocation.scale_factor;
+                dead_allocation.total_size += (allocation.size as f64) * allocation.scale_factor;
             }
             {
                 let stack_trace = self.cache_stack_trace(stack_trace);
                 let deallocation = self.deallocations.entry(stack_trace).or_default();
-                deallocation.count += 1;
-                deallocation.total_size += allocation.size;
+                deallocation.count += allocation.scale_factor;
+                deallocation.total_size += (allocation.size as f64) * allocation.scale_factor;
             }
         });
     }
@@ -191,7 +220,8 @@ fn profile_to_vmo(profile: &pprof::pproto::Profile) -> Result<(Vmo, u64), Error>
 #[cfg(test)]
 mod test {
     use crate::profile_builder::{
-        DeadAllocationCounter, DeallocationCounter, ModuleMap, ProfileBuilder,
+        DEFAULT_SAMPLING_RATE_BYTES, DeadAllocationCounter, DeallocationCounter, ModuleMap,
+        ProfileBuilder,
     };
     use fidl_fuchsia_memory_sampler::ExecutableSegment;
 
@@ -207,7 +237,9 @@ mod test {
         let allocation =
             builder.live_allocations.get(&address).expect("Could not retrieve live allocation.");
 
+        let expected_scale_factor = super::scale_factor(size, DEFAULT_SAMPLING_RATE_BYTES);
         assert_eq!(size, allocation.size);
+        assert!((allocation.scale_factor - expected_scale_factor).abs() < 1e-5);
         assert_eq!(stack_trace, *(allocation.stack_trace));
     }
 
@@ -236,14 +268,16 @@ mod test {
         builder.deallocate(address, deallocation_stack_trace.clone());
 
         assert!(builder.live_allocations.is_empty());
+        let expected_count = super::scale_factor(size, DEFAULT_SAMPLING_RATE_BYTES);
+        let expected_size = expected_count * (size as f64);
         {
             let allocations = builder.dead_allocations;
             assert_eq!(1, allocations.values().len());
             {
                 let (stack_trace, DeadAllocationCounter { count, total_size }) =
                     allocations.into_iter().next().unwrap();
-                assert_eq!(size, total_size);
-                assert_eq!(1, count);
+                assert!((total_size - expected_size).abs() < 1e-5);
+                assert!((count - expected_count).abs() < 1e-5);
                 assert_eq!(allocation_stack_trace, *(stack_trace));
             }
         }
@@ -254,8 +288,8 @@ mod test {
             {
                 let (stack_trace, DeallocationCounter { count, total_size }) =
                     deallocations.into_iter().next().unwrap();
-                assert_eq!(size, total_size);
-                assert_eq!(1, count);
+                assert!((total_size - expected_size).abs() < 1e-5);
+                assert!((count - expected_count).abs() < 1e-5);
                 assert_eq!(deallocation_stack_trace, *(stack_trace));
             }
         }

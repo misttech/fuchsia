@@ -134,6 +134,11 @@ pub fn build_profile<'a>(
             pproto::ValueType { r#type: st.intern("deallocated_space"), unit: st.intern("bytes") },
         ],
         default_sample_type: 3, // Clients should default to showing the allocated space.
+        period_type: Some(pproto::ValueType {
+            r#type: st.intern("space"),
+            unit: st.intern("bytes"),
+        }),
+        period: 1,
         ..pproto::Profile::default()
     };
 
@@ -156,10 +161,11 @@ pub fn build_profile<'a>(
 
     // Live allocations
     {
-        let samples = live_allocations.map(|LiveAllocation { size, stack_trace }| {
-            let size = (*size) as i64;
+        let samples = live_allocations.map(|LiveAllocation { size, scale_factor, stack_trace }| {
+            let scaled_size = ((*size as f64) * scale_factor).round() as i64;
+            let scaled_count = scale_factor.round() as i64;
             pproto::Sample {
-                value: vec![1, size, 1, size, 0, 0],
+                value: vec![scaled_count, scaled_size, scaled_count, scaled_size, 0, 0],
                 location_id: stack_trace.to_vec(),
                 ..Default::default()
             }
@@ -170,7 +176,7 @@ pub fn build_profile<'a>(
     {
         let samples = dead_allocations.into_iter().map(
             |(stack_trace, DeadAllocationCounter { count, total_size })| pproto::Sample {
-                value: vec![0, 0, count as i64, total_size as i64, 0, 0],
+                value: vec![0, 0, count.round() as i64, total_size.round() as i64, 0, 0],
                 location_id: stack_trace.to_vec(),
                 ..Default::default()
             },
@@ -182,7 +188,7 @@ pub fn build_profile<'a>(
     {
         let samples = deallocations.into_iter().map(
             |(stack_trace, DeallocationCounter { count, total_size })| pproto::Sample {
-                value: vec![0, 0, 0, 0, count as i64, total_size as i64],
+                value: vec![0, 0, 0, 0, count.round() as i64, total_size.round() as i64],
                 location_id: stack_trace.to_vec(),
                 ..Default::default()
             },
@@ -415,12 +421,14 @@ mod test {
             },
         ];
 
-        let live_allocations = vec![LiveAllocation { size: 10, stack_trace: Default::default() }];
+        let live_allocations =
+            vec![LiveAllocation { size: 10, scale_factor: 2.5, stack_trace: Default::default() }];
         let mut dead_allocations = HashMap::new();
         dead_allocations
-            .insert(Default::default(), DeadAllocationCounter { total_size: 20, count: 5 });
+            .insert(Default::default(), DeadAllocationCounter { total_size: 20.8, count: 5.4 });
         let mut deallocations = HashMap::new();
-        deallocations.insert(Default::default(), DeallocationCounter { total_size: 20, count: 12 });
+        deallocations
+            .insert(Default::default(), DeallocationCounter { total_size: 20.2, count: 12.6 });
 
         let profile = build_profile(
             modules.iter(),
@@ -454,5 +462,10 @@ mod test {
             profile.sample.iter().all(|sample| sample.value.len() == sample_type_count),
             "Unexpected sample value count."
         );
+
+        // Verify the scaled and rounded sample values.
+        assert_eq!(profile.sample[0].value, vec![3, 25, 3, 25, 0, 0]);
+        assert_eq!(profile.sample[1].value, vec![0, 0, 5, 21, 0, 0]);
+        assert_eq!(profile.sample[2].value, vec![0, 0, 0, 0, 13, 20]);
     }
 }
