@@ -1,0 +1,926 @@
+// Copyright 2026 The Fuchsia Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
+
+//! An RCU-protected, lock-free integer ID radix tree (IDR).
+//!
+//! Maps 32-bit integer IDs to objects (`Arc<T>`), optimized for workloads with heavily
+//! contended concurrent reads and serialized mutations (such as PID tables, task registries,
+//! and descriptor tables).
+//!
+//! # Concurrency Model
+//!
+//! - **Readers (`lookup`, `iter`)**: Completely lock-free and wait-free. Traversal operates
+//!   under an [`RcuReadScope`], ensuring memory reclamation safety without blocking or
+//!   interfering with writers.
+//! - **Writers (`alloc`, `alloc_cyclic`, `reserve_id`, `remove`)**: Mutations are serialized
+//!   internally via a mutex, while atomic pointer updates and memory barriers allow concurrent
+//!   readers to proceed in parallel without interruption.
+//!
+//! # Key Operations
+//!
+//! - [`Idr::alloc`]: Allocates the lowest available ID starting from 0.
+//! - [`Idr::alloc_cyclic`]: Allocates IDs sequentially starting from the previous cursor position,
+//!   wrapping around to 0 when hitting upper bounds (matching Linux PID allocation behavior).
+//! - [`Idr::lookup`]: Retrieves the object for a given ID without locking.
+//! - [`Idr::reserve_id`]: Marks a specific ID as occupied without inserting an element.
+//! - [`Idr::remove`]: Removes an item and restores slot availability.
+//! - [`Idr::iter`]: Iterates over all active `(u32, &Arc<T>)` entries under an RCU scope.
+//!
+//! # Structural Architecture
+//!
+//! The tree is a 64-ary radix tree (consuming 6 bits per layer, up to 6 layers for 32-bit IDs):
+//! - Intermediate nodes (`layer > 0`) route down to child nodes.
+//! - Leaf nodes (`layer == 0`) hold concrete `Arc<T>` entries.
+//! - Each node maintains an atomic `free_bitmap` tracking capacity across its 64 sub-slots,
+//!   enabling $O(1)$ child selection and efficient subtree skipping during allocation.
+//! - The tree dynamically grows upwards in layers as ID requirements expand.
+
+use fuchsia_rcu::{RcuDroppable, RcuDroppableArc, RcuOptionBox};
+use smallvec::SmallVec;
+use starnix_rcu::RcuReadScope;
+use starnix_sync::Mutex;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
+
+/// The number of bits consumed per layer of the tree structure.
+/// Chosen as 6 because 2^6 = 64, mapping perfectly to a 64-bit word (`u64`)
+/// used for atomic lock-free bitmaps per node.
+const BITS_PER_LEVEL: u32 = 6;
+/// The maximum number of children per node, directly derived from the bits per level.
+const NODE_CAPACITY: usize = 1 << BITS_PER_LEVEL;
+/// The bitmask used to extract the current layer's routing portion from a target ID.
+const LEVEL_MASK: u32 = (1 << BITS_PER_LEVEL) - 1;
+/// The theoretical maximum depth required to completely map a 32-bit integer space.
+const MAX_DEPTH: u32 = (32 + BITS_PER_LEVEL - 1) / BITS_PER_LEVEL;
+
+/// A concurrent, lock-free radix tree mapped structure primarily employed to map 32-bit
+/// IDs to objects. Optimized for massively contended reads.
+pub struct Idr<T: RcuDroppable + Send + Sync + 'static> {
+    /// Serializes all mutating writes (allocations and removals) modifying the
+    /// tree structure. The protected `u32` value tracks the starting cursor for
+    /// cyclic allocations (`alloc_cyclic`).
+    writer_lock: Mutex<u32>,
+    /// The top-level entry point descending into the tree. Atomically replaced
+    /// whenever the structure grows upwards.
+    root: RcuDroppableArc<IdrNode<T>>,
+}
+
+impl<T: RcuDroppable + Send + Sync + 'static> Default for Idr<T> {
+    fn default() -> Self {
+        Self { writer_lock: Mutex::new(0), root: RcuDroppableArc::new(Arc::new(IdrNode::new(0))) }
+    }
+}
+
+impl<T: RcuDroppable + Send + Sync + 'static> Idr<T> {
+    /// RCU protected lock-free lookup for readers
+    pub fn lookup(&self, id: u32, scope: &RcuReadScope) -> Option<Arc<T>> {
+        let mut current_node = self.root.as_ref(scope);
+
+        let capacity = current_node.capacity();
+        if (id as u64) >= capacity {
+            return None;
+        }
+
+        loop {
+            let index = current_node.index_for_id(id);
+
+            let entry = current_node.children[index].as_ref(scope);
+            match entry {
+                Some(IdrEntry::Leaf(arc)) => return Some(arc.clone()),
+                Some(IdrEntry::Node(next)) => {
+                    current_node = &**next;
+                }
+                None => return None,
+            }
+        }
+    }
+
+    /// Allocates the next available ID by calling a factory providing the newly
+    /// acquired ID
+    pub fn alloc<F>(&self, factory: F) -> Option<(u32, Arc<T>)>
+    where
+        F: FnOnce(u32) -> Arc<T>,
+    {
+        self.alloc_inner(false, factory)
+    }
+
+    /// Allocates the next available ID cyclically, wrapping around when hitting
+    /// the current tree capacity limit.
+    pub fn alloc_cyclic<F>(&self, factory: F) -> Option<(u32, Arc<T>)>
+    where
+        F: FnOnce(u32) -> Arc<T>,
+    {
+        self.alloc_inner(true, factory)
+    }
+
+    /// Marks a specific ID as unavailable so the allocator will never return it.
+    /// Does not populate the tree with an item.
+    pub fn reserve_id(&self, id: u32) {
+        let _guard = self.writer_lock.lock();
+        let mut root_arc = self.root.to_arc();
+
+        loop {
+            let capacity = root_arc.capacity();
+            if (id as u64) < capacity {
+                break;
+            }
+            if let Some(new_root) = self.grow_tree_by_one_layer(&root_arc) {
+                root_arc = new_root;
+            } else {
+                return; // Exceeded max depth
+            }
+        }
+
+        let scope = RcuReadScope::new();
+        let mut current_node = root_arc.as_ref();
+        let mut path = SmallVec::<[(&IdrNode<T>, usize); MAX_DEPTH as usize]>::new();
+
+        loop {
+            let index = current_node.index_for_id(id);
+
+            path.push((current_node, index));
+
+            // Reached a leaf node. Claim the slot.
+            if current_node.layer == 0 {
+                // If it was previously free, and this clears the last free bit, propagate fullness
+                if current_node.mark_allocated(index) {
+                    self.propagate_fullness(&path);
+                }
+                return;
+            }
+
+            // Descend to the next layer.
+            current_node = current_node.get_or_create_child(index, &scope);
+        }
+    }
+
+    /// Removes an item by ID
+    pub fn remove(&self, id: u32) {
+        let _guard = self.writer_lock.lock();
+
+        let scope = RcuReadScope::new();
+
+        let mut current_node = self.root.as_ref(&scope);
+
+        if (id as u64) >= current_node.capacity() {
+            return;
+        }
+
+        let mut path = SmallVec::<[(&IdrNode<T>, usize); MAX_DEPTH as usize]>::new();
+
+        loop {
+            let index = current_node.index_for_id(id);
+
+            path.push((current_node, index));
+
+            let Some(child) = current_node.children[index].as_ref(&scope) else {
+                // Nothing to remove
+                return;
+            };
+
+            if current_node.layer == 0 {
+                current_node.children[index].update(None);
+                current_node.mark_absent(index);
+                if current_node.mark_freed(index) {
+                    self.propagate_availability(&path);
+                }
+                return;
+            } else {
+                current_node = match child {
+                    IdrEntry::Node(n) => &**n,
+                    _ => unreachable!("Tree corruption: expected a Node entry here"),
+                };
+            }
+        }
+    }
+
+    /// Returns a lock-free RCU iterator over all entries
+    pub fn iter<'a>(&'a self, scope: &'a RcuReadScope) -> IdrIterator<'a, T> {
+        let mut stack = SmallVec::new();
+        let root = self.root.as_ref(scope);
+        stack.push((root, 0, 0));
+        IdrIterator { scope, stack }
+    }
+
+    /// Core allocation logic supporting both linear and cyclic allocation modes.
+    ///
+    /// If `is_cyclic` is false, allocation starts at ID 0 and selects the lowest available slot.
+    /// If `is_cyclic` is true, allocation starts at the cursor saved in `writer_lock` from
+    /// the previous cyclic allocation. If no free slot exists at or above the cursor, it wraps
+    /// around to ID 0 to search the remainder of the tree.
+    fn alloc_inner<F>(&self, is_cyclic: bool, factory: F) -> Option<(u32, Arc<T>)>
+    where
+        F: FnOnce(u32) -> Arc<T>,
+    {
+        let mut next_id_guard = self.writer_lock.lock();
+        let mut root_arc = self.root.to_arc();
+
+        let start_id = if is_cyclic { *next_id_guard } else { 0 };
+
+        // Ensure the tree is large enough:
+        // 1. If the root free bitmap is 0, the entire current tree capacity is exhausted,
+        //    requiring a new root layer on top.
+        // 2. If `start_id` exceeds current tree capacity (e.g. after wrapping or initial placement),
+        //    grow the tree until capacity covers `start_id` or until MAX_DEPTH is reached.
+        while root_arc.free_bitmap.load(Ordering::Relaxed) == 0
+            || (start_id as u64) >= root_arc.capacity()
+        {
+            if let Some(new_root) = self.grow_tree_by_one_layer(&root_arc) {
+                root_arc = new_root;
+            } else {
+                // Tree reached maximum allowable depth and free_bitmap is 0,
+                // meaning it is completely full across all possible 32-bit IDs.
+                return None;
+            }
+        }
+
+        let scope = RcuReadScope::new();
+        let mut path = SmallVec::<[(&IdrNode<T>, usize); MAX_DEPTH as usize]>::new();
+        // First attempt: search for a free slot >= `start_id`.
+        let id_opt = self.find_free_slot(start_id, &mut path, &scope).or_else(|| {
+            // If cyclic allocation failed to find a slot between `start_id`
+            // and the tree capacity limit, wrap around to search from ID 0 up
+            // to `start_id - 1`.
+            if is_cyclic && start_id > 0 {
+                path.clear();
+                self.find_free_slot(0, &mut path, &scope)
+            } else {
+                None
+            }
+        });
+
+        let id = id_opt?;
+        let (leaf_node, leaf_index) = path.last().expect("path should not be empty");
+        let leaf_index = *leaf_index;
+        let item = factory(id);
+
+        // Install the newly constructed leaf item at the target slot.
+        leaf_node.children[leaf_index].update(Some(IdrEntry::Leaf(item.clone())));
+        leaf_node.mark_present(leaf_index);
+
+        // Mark the leaf slot as allocated in its free bitmap. If this clears the final free bit
+        // in the leaf node, propagate the full state up the ancestor chain via `propagate_fullness`.
+        if leaf_node.mark_allocated(leaf_index) {
+            self.propagate_fullness(&path);
+        }
+
+        // For cyclic allocations, advance the cursor to `id + 1`, wrapping to 0 on u32 overflow.
+        if is_cyclic {
+            *next_id_guard = id.wrapping_add(1);
+        }
+        Some((id, item))
+    }
+
+    /// Iteratively searches for the lowest available free ID >= `start_id`.
+    /// Populates `path` with the `(node, child_index)` sequence from root to leaf.
+    fn find_free_slot<'a>(
+        &self,
+        start_id: u32,
+        path: &mut SmallVec<[(&'a IdrNode<T>, usize); MAX_DEPTH as usize]>,
+        scope: &'a RcuReadScope,
+    ) -> Option<u32> {
+        // Traversal stack storing the path from root and unexplored sibling candidates per
+        // layer. Enables iterative backtracking without recursion or heap allocations.
+        struct StackEntry<'a, T: RcuDroppable + Send + Sync + 'static> {
+            node: &'a IdrNode<T>,
+            // Unexplored candidate slots at this level with open capacity.
+            free_bits: u64,
+            // True if slot selection at this level is restricted to indices >= start_id.
+            constrained: bool,
+            // The child slot index selected when descending to the next layer.
+            chosen_index: usize,
+        }
+        let root = self.root.as_ref(scope);
+
+        let mut stack = SmallVec::<[StackEntry<'a, T>; MAX_DEPTH as usize]>::new();
+
+        // When constrained by start_id, mask out slots below the cursor index.
+        let mut initial_free_bits = root.free_bitmap.load(Ordering::Relaxed);
+        let constrained = start_id > 0;
+        if constrained {
+            let cursor_index = root.index_for_id(start_id);
+            initial_free_bits &= !((1u64 << cursor_index) - 1);
+        }
+
+        // No candidate slots >= start_id at the root level.
+        if initial_free_bits == 0 {
+            return None;
+        }
+
+        stack.push(StackEntry {
+            node: root,
+            free_bits: initial_free_bits,
+            constrained,
+            chosen_index: 0,
+        });
+
+        while let Some(top) = stack.last_mut() {
+            // Backtrack to the parent layer when all candidate slots in this node are exhausted.
+            if top.free_bits == 0 {
+                stack.pop();
+                continue;
+            }
+
+            let index = top.free_bits.trailing_zeros() as usize;
+            top.free_bits &= !(1u64 << index);
+            top.chosen_index = index;
+
+            let node = top.node;
+
+            if node.layer == 0 {
+                let id = stack
+                    .iter()
+                    .fold(0u32, |acc, entry| acc | entry.node.id_for_index(entry.chosen_index));
+                path.extend(stack.into_iter().map(|entry| (entry.node, entry.chosen_index)));
+                return Some(id);
+            }
+
+            // Deeper layers stay constrained only if descending into the exact start_id slot.
+            let is_constrained = top.constrained && (index == node.index_for_id(start_id));
+
+            let child = node.get_or_create_child(index, scope);
+            let mut child_free_bits = child.free_bitmap.load(Ordering::Relaxed);
+            if is_constrained {
+                let child_cursor = child.index_for_id(start_id);
+                child_free_bits &= !((1u64 << child_cursor) - 1);
+            }
+
+            // Skip child subtree if constraints left no open slots.
+            if child_free_bits == 0 {
+                continue;
+            }
+
+            stack.push(StackEntry {
+                node: child,
+                free_bits: child_free_bits,
+                constrained: is_constrained,
+                chosen_index: 0,
+            });
+        }
+
+        None
+    }
+
+    /// When a node transitions to having 0 free bits, mark it full in its parent
+    /// The caller MUST hold the `writer_lock`.
+    fn propagate_fullness(&self, path: &[(&IdrNode<T>, usize)]) {
+        for i in (0..path.len() - 1).rev() {
+            let (parent, parent_index) = &path[i];
+            if !parent.mark_allocated(*parent_index) {
+                // Parent still has other free slots. Stop propagating.
+                break;
+            }
+        }
+    }
+
+    /// When a node transitions from having 0 free bits to > 0, mark it free in its parent
+    /// The caller MUST hold the `writer_lock`.
+    fn propagate_availability(&self, path: &[(&IdrNode<T>, usize)]) {
+        for i in (0..path.len() - 1).rev() {
+            let (parent, parent_index) = &path[i];
+
+            if !parent.mark_freed(*parent_index) {
+                // Parent already had other free slots. Stop propagating.
+                break;
+            }
+        }
+    }
+
+    /// Grows the tree by adding a new layer on top of the root.
+    /// The caller MUST hold the `writer_lock`.
+    fn grow_tree_by_one_layer(&self, root_arc: &Arc<IdrNode<T>>) -> Option<Arc<IdrNode<T>>> {
+        let next_layer = root_arc.layer + 1;
+        if next_layer >= MAX_DEPTH {
+            return None;
+        }
+
+        let new_root = Arc::new(IdrNode::new(next_layer));
+        if root_arc.free_bitmap.load(Ordering::Relaxed) == 0 {
+            new_root.free_bitmap.fetch_and(!1, Ordering::Relaxed);
+        }
+        new_root.mark_present(0);
+        new_root.children[0].update(Some(IdrEntry::Node(root_arc.clone())));
+        self.root.update(new_root.clone());
+        Some(new_root)
+    }
+}
+
+/// A lock-free iterator traversing the allocated elements inside the radix tree
+/// under an automated RCU read scope, operating without acquiring any thread locks.
+pub struct IdrIterator<'a, T: RcuDroppable + Send + Sync + 'static> {
+    /// The ambient read scope keeping the traversed tree nodes pinned in memory.
+    scope: &'a RcuReadScope,
+    /// The traversal stack keeping track of the current path, the next index, and
+    /// the accumulated ID prefix.
+    stack: SmallVec<[(&'a IdrNode<T>, usize, u32); MAX_DEPTH as usize]>,
+}
+
+impl<'a, T: RcuDroppable + Send + Sync + 'static> Iterator for IdrIterator<'a, T> {
+    type Item = (u32, &'a Arc<T>);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        while let Some((node, index, id_base)) = self.stack.pop() {
+            let presence = node.presence_bitmap.load(Ordering::Relaxed);
+
+            let mask = if index >= NODE_CAPACITY { 0 } else { !((1u64 << index) - 1) };
+            let remaining = presence & mask;
+
+            if remaining == 0 {
+                continue;
+            }
+
+            let next_bit = remaining.trailing_zeros() as usize;
+
+            self.stack.push((node, next_bit + 1, id_base));
+
+            let entry_opt = node.children[next_bit].as_ref(self.scope);
+            if let Some(entry) = entry_opt {
+                let child_id = id_base | node.id_for_index(next_bit);
+
+                match entry {
+                    IdrEntry::Node(child_arc) => {
+                        self.stack.push((child_arc.as_ref(), 0, child_id));
+                    }
+                    IdrEntry::Leaf(arc) => {
+                        return Some((child_id, arc));
+                    }
+                }
+            }
+        }
+        None
+    }
+}
+
+/// Represents a single slot within an `IdrNode`'s capability array.
+#[derive(Debug)]
+enum IdrEntry<T: RcuDroppable + Send + Sync + 'static> {
+    /// An intermediate branch pointing to the next layer down the tree structure.
+    Node(Arc<IdrNode<T>>),
+    /// A concrete element residing at the bottom layer.
+    Leaf(Arc<T>),
+}
+
+// SAFETY: All variants contain only types that are `RcuDroppable` (`Arc<IdrNode<T>>` and `Arc<T>`).
+// A manual implementation is necessary because deriving `RcuDroppable` on both types triggers a
+// recursive evaluation overflow (Rust issue #26925) due to mutual recursion with `IdrNode`.
+unsafe impl<T: RcuDroppable + Send + Sync + 'static> RcuDroppable for IdrEntry<T> {}
+
+#[derive(Debug, RcuDroppable)]
+struct IdrNode<T: RcuDroppable + Send + Sync + 'static> {
+    /// The structural height of this node in the tree. Leaf nodes holding concrete
+    /// elements sit at layer 0. Intermediate branches exist at layers > 0.
+    layer: u32,
+
+    /// Tracks allocation capacity across the 64 sub-slots. A `1` bit indicates the
+    /// corresponding slot (or its sub-branch) still has open IDs available. A `0`
+    /// bit signifies the branch or leaf is at 100% capacity (or reserved).
+    free_bitmap: AtomicU64,
+
+    /// Tracks structural instantiation of the 64 sub-slots. A `1` bit indicates an
+    /// intermediate branch node has physically been allocated into memory. Used strictly
+    /// by the lock-free iterator to gracefully skip over uninstantiated memory gaps.
+    presence_bitmap: AtomicU64,
+
+    /// The contiguous memory array branching off this node, storing inner `IdrNode`
+    /// branches (when layer > 0) or underlying `Arc<T>` leaf items (when layer == 0).
+    children: [RcuOptionBox<IdrEntry<T>>; NODE_CAPACITY],
+}
+
+impl<T: RcuDroppable + Send + Sync + 'static> Default for IdrNode<T> {
+    fn default() -> Self {
+        Self::new(0)
+    }
+}
+
+impl<T: RcuDroppable + Send + Sync + 'static> IdrNode<T> {
+    fn new(layer: u32) -> Self {
+        let children = std::array::from_fn(|_| RcuOptionBox::new(None));
+
+        let free_bitmap = if layer == MAX_DEPTH - 1 {
+            let max_index = (u32::MAX >> (layer * BITS_PER_LEVEL)) as usize;
+            AtomicU64::new((1 << (max_index + 1)) - 1)
+        } else {
+            AtomicU64::new(!0) // all 1s means all free
+        };
+
+        Self { layer, free_bitmap, presence_bitmap: AtomicU64::new(0), children }
+    }
+
+    /// Computes the total capacity underneath this specific node.
+    /// Layer 0 nodes possess a capacity of exactly 64. Each higher layer multiplies it by 64.
+    #[inline]
+    fn capacity(&self) -> u64 {
+        1u64 << (BITS_PER_LEVEL * (self.layer + 1))
+    }
+
+    /// Compute the index of the child of this node that contains `id`.
+    #[inline]
+    fn index_for_id(&self, id: u32) -> usize {
+        ((id >> (self.layer * BITS_PER_LEVEL)) & LEVEL_MASK) as usize
+    }
+
+    /// Compute the contribution to the final value of the `index` child of this node.
+    /// Utilized by the iterator to reconstruct numeric IDs.
+    #[inline]
+    fn id_for_index(&self, index: usize) -> u32 {
+        (index as u32) << (self.layer * BITS_PER_LEVEL)
+    }
+
+    /// Clears the `index` free bit.
+    /// Returns true if this transition caused the node to become completely full (0).
+    #[inline]
+    fn mark_allocated(&self, index: usize) -> bool {
+        let old_free = self.free_bitmap.fetch_and(!(1 << index), Ordering::Relaxed);
+        old_free == (1 << index)
+    }
+
+    /// Adds the `index` free bit.
+    /// Returns true if this transition caused the node to transition from completely
+    /// full (0) to having capacity.
+    #[inline]
+    fn mark_freed(&self, index: usize) -> bool {
+        let old_free = self.free_bitmap.fetch_or(1 << index, Ordering::Relaxed);
+        old_free == 0
+    }
+
+    /// Marks the `index` slot as populated with a branch or leaf.
+    #[inline]
+    fn mark_present(&self, index: usize) {
+        self.presence_bitmap.fetch_or(1 << index, Ordering::Relaxed);
+    }
+
+    /// Marks the `index` slot as physically empty/removed.
+    #[inline]
+    fn mark_absent(&self, index: usize) {
+        self.presence_bitmap.fetch_and(!(1 << index), Ordering::Relaxed);
+    }
+
+    /// Descends into the specific child branch index. If the branch is currently
+    /// entirely empty and uninstantiated, it constructs the next layer.
+    /// Must never be called on layer 0.
+    fn get_or_create_child<'a>(&'a self, index: usize, scope: &'a RcuReadScope) -> &'a IdrNode<T> {
+        debug_assert!(self.layer > 0);
+        if let Some(IdrEntry::Node(n)) = self.children[index].as_ref(scope) {
+            return &**n;
+        }
+
+        let new_node = Arc::new(IdrNode::new(self.layer - 1));
+        self.children[index].update(Some(IdrEntry::Node(new_node)));
+        self.mark_present(index);
+        match self.children[index].as_ref(scope).unwrap() {
+            IdrEntry::Node(n) => &**n,
+            _ => unreachable!("Tree corruption: expected a Node entry here"),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicBool, Ordering};
+
+    #[derive(RcuDroppable)]
+    struct MockItem {
+        value: u32,
+    }
+
+    #[fuchsia::test]
+    fn test_basic_alloc_lookup() {
+        let idr = Idr::default();
+
+        let (id1, _item1) = idr.alloc(|id| Arc::new(MockItem { value: id * 10 })).unwrap();
+        assert_eq!(id1, 0);
+
+        let (id2, _item2) = idr.alloc(|id| Arc::new(MockItem { value: id * 10 })).unwrap();
+        assert_eq!(id2, 1);
+
+        let scope = RcuReadScope::new();
+        let lookup1 = idr.lookup(0, &scope).unwrap();
+        assert_eq!(lookup1.value, 0);
+
+        let lookup2 = idr.lookup(1, &scope).unwrap();
+        assert_eq!(lookup2.value, 10);
+
+        idr.remove(0);
+        assert!(idr.lookup(0, &scope).is_none());
+
+        // Second item remains completely untouched and safely addressable
+        let lookup_still_there = idr.lookup(1, &scope).unwrap();
+        assert_eq!(lookup_still_there.value, 10);
+    }
+
+    #[fuchsia::test]
+    fn test_tree_growth() {
+        let idr = Idr::default();
+        let mut _items = Vec::new();
+
+        // NODE_CAPACITY is natively 64. Allocating 150 structurally guarantees forcing the tree to
+        // grow at least once.
+        for i in 0..150 {
+            let (id, item) = idr.alloc(|id| Arc::new(MockItem { value: id })).unwrap();
+            _items.push(item);
+            assert_eq!(id, i);
+        }
+
+        let scope = RcuReadScope::new();
+        for i in 0..150 {
+            let item = idr.lookup(i, &scope).unwrap();
+            assert_eq!(item.value, i);
+        }
+    }
+
+    #[fuchsia::test]
+    fn test_alloc_cyclic() {
+        let idr = Idr::default();
+        let mut _items = Vec::new();
+
+        for i in 0..30 {
+            let (id, item) = idr.alloc_cyclic(|id| Arc::new(MockItem { value: id })).unwrap();
+            _items.push(item);
+            assert_eq!(id, i);
+        }
+
+        // Manually bump the cursor.
+        {
+            let mut state = idr.writer_lock.lock();
+            *state = 100;
+        }
+
+        // Allocation formally continues from new cursor.
+        let (id, item1) = idr.alloc_cyclic(|id| Arc::new(MockItem { value: id })).unwrap();
+        _items.push(item1);
+        assert_eq!(id, 100);
+
+        let (id, item2) = idr.alloc_cyclic(|id| Arc::new(MockItem { value: id })).unwrap();
+        _items.push(item2);
+        assert_eq!(id, 101);
+
+        let scope = RcuReadScope::new();
+        assert!(idr.lookup(30, &scope).is_none());
+        assert_eq!(idr.lookup(100, &scope).unwrap().value, 100);
+    }
+
+    #[fuchsia::test]
+    fn test_alloc_cyclic_start_exceeds_capacity() {
+        let idr = Idr::default();
+        let mut _items = Vec::new();
+
+        // Immediately bump start_id above the initial layer 0 capacity (64)
+        {
+            let mut state = idr.writer_lock.lock();
+            *state = 256;
+        }
+
+        let (id, item) = idr.alloc_cyclic(|id| Arc::new(MockItem { value: id })).unwrap();
+        _items.push(item);
+
+        // It should have assigned exactly 256, successfully growing the tree.
+        assert_eq!(id, 256);
+    }
+
+    #[fuchsia::test]
+    fn test_reserve_id() {
+        let idr = Idr::default();
+        let mut _items = Vec::new();
+
+        // Reserve an ID within initial layer
+        idr.reserve_id(10);
+
+        let (id1, item1) = idr.alloc(|id| Arc::new(MockItem { value: id })).unwrap();
+        _items.push(item1);
+        assert_eq!(id1, 0);
+
+        // Reserve an ID requiring tree growth
+        idr.reserve_id(200);
+
+        // Fill up to 10
+        let mut allocated_10 = false;
+        for _ in 1..15 {
+            let (id, item) = idr.alloc(|id| Arc::new(MockItem { value: id })).unwrap();
+            _items.push(item);
+            if id == 10 {
+                allocated_10 = true;
+            }
+        }
+        assert!(!allocated_10, "ID 10 was allocated despite being reserved");
+
+        // Verify ID 200 is skipped when allocating near it using alloc_cyclic
+        {
+            let mut state = idr.writer_lock.lock();
+            *state = 199;
+        }
+
+        let mut allocated_200 = false;
+        for _ in 0..5 {
+            let (id, item) = idr.alloc_cyclic(|id| Arc::new(MockItem { value: id })).unwrap();
+            _items.push(item);
+            if id == 200 {
+                allocated_200 = true;
+            }
+        }
+        assert!(!allocated_200, "ID 200 was allocated despite being reserved");
+
+        let scope = RcuReadScope::new();
+        // Lookup of reserved IDs should return None
+        assert!(idr.lookup(10, &scope).is_none());
+        assert!(idr.lookup(200, &scope).is_none());
+
+        // Remove should not panic or corrupt it
+        idr.remove(10);
+        idr.remove(200);
+        assert!(idr.lookup(10, &scope).is_none());
+    }
+
+    #[fuchsia::test]
+    fn test_iter_and_remove() {
+        let idr = Idr::default();
+        let mut _items = Vec::new();
+
+        // Assigned cleanly to 0
+        _items.push(idr.alloc(|_| Arc::new(MockItem { value: 10 })).unwrap().1);
+        // Assigned cleanly to 1
+        _items.push(idr.alloc(|_| Arc::new(MockItem { value: 20 })).unwrap().1);
+        // Assigned cleanly to 2
+        _items.push(idr.alloc(|_| Arc::new(MockItem { value: 30 })).unwrap().1);
+
+        // Eliminate middle ID freeing slot 1.
+        idr.remove(1);
+
+        let scope = RcuReadScope::new();
+        let mut iter = idr.iter(&scope);
+
+        let next_a = iter.next();
+        let (id_a, item_a) = next_a.unwrap();
+        assert_eq!(id_a, 0);
+        assert_eq!(item_a.value, 10);
+
+        let (id_b, item_b) = iter.next().unwrap();
+        assert_eq!(id_b, 2);
+        assert_eq!(item_b.value, 30);
+
+        assert!(iter.next().is_none());
+    }
+
+    #[fuchsia::test]
+    fn test_iter_minimal() {
+        let idr = Idr::default();
+        let mut _items = Vec::new();
+        _items.push(idr.alloc(|value| Arc::new(MockItem { value })).unwrap().1);
+        let scope = RcuReadScope::new();
+        let mut iter = idr.iter(&scope);
+        let next_a = iter.next();
+        assert!(next_a.is_some(), "iter.next() returned None!");
+    }
+
+    #[fuchsia::test]
+    fn test_alloc_cyclic_with_gaps() {
+        let idr = Idr::default();
+        let mut _items = Vec::new();
+
+        // Allocate 100 items (0..99) across layer 0 and layer 1.
+        for i in 0..100 {
+            let (id, item) = idr.alloc(|id| Arc::new(MockItem { value: id })).unwrap();
+            assert_eq!(id, i);
+            _items.push(item);
+        }
+
+        // Create holes in child 0 (0..63) below 50, but keep 50..63 allocated.
+        for id in 40..50 {
+            idr.remove(id);
+        }
+
+        // Advance cursor to 50.
+        {
+            let mut state = idr.writer_lock.lock();
+            *state = 50;
+        }
+
+        // Cyclic allocation should find next free slot >= 50, which is slot 100 in child 1,
+        // rather than prematurely wrapping to 40 in child 0.
+        let (id_100, item_100) = idr.alloc_cyclic(|id| Arc::new(MockItem { value: id })).unwrap();
+        assert_eq!(id_100, 100);
+        _items.push(item_100);
+
+        // Subsequent allocations should continue forward monotonically across child boundaries (101..130).
+        for expected in 101..130 {
+            let (id, item) = idr.alloc_cyclic(|id| Arc::new(MockItem { value: id })).unwrap();
+            assert_eq!(id, expected);
+            _items.push(item);
+        }
+    }
+
+    #[fuchsia::test]
+    fn test_concurrent_readers_and_writers() {
+        let idr = Arc::new(Idr::default());
+        let running = Arc::new(AtomicBool::new(true));
+
+        // Pre-populate some items
+        for _i in 0..50 {
+            idr.alloc(|id| Arc::new(MockItem { value: id })).unwrap();
+        }
+
+        let mut reader_handles = Vec::new();
+        for _ in 0..4 {
+            let idr_clone = Arc::clone(&idr);
+            let running_clone = Arc::clone(&running);
+            reader_handles.push(std::thread::spawn(move || {
+                while running_clone.load(Ordering::Relaxed) {
+                    let scope = RcuReadScope::new();
+                    // Random lookups
+                    for id in 0..100 {
+                        if let Some(item) = idr_clone.lookup(id, &scope) {
+                            assert_eq!(item.value, id);
+                        }
+                    }
+
+                    // Iterator traversal
+                    let iter = idr_clone.iter(&scope);
+                    for (id, item) in iter {
+                        assert_eq!(item.value, id);
+                    }
+                }
+            }));
+        }
+
+        let running_clone = Arc::clone(&running);
+        let rcu_advancer = std::thread::spawn(move || {
+            while running_clone.load(Ordering::Relaxed) {
+                fuchsia_rcu::rcu_synchronize();
+                std::thread::sleep(std::time::Duration::from_millis(1));
+            }
+        });
+
+        // Writer thread performs allocations and deletions
+        let idr_clone = Arc::clone(&idr);
+        let writer_handle = std::thread::spawn(move || {
+            for _ in 0..200 {
+                let (id, _) =
+                    idr_clone.alloc_cyclic(|id| Arc::new(MockItem { value: id })).unwrap();
+                if id > 50 && id % 3 == 0 {
+                    idr_clone.remove(id);
+                }
+            }
+        });
+
+        writer_handle.join().unwrap();
+        running.store(false, Ordering::Relaxed);
+        rcu_advancer.join().unwrap();
+
+        for handle in reader_handles {
+            handle.join().unwrap();
+        }
+    }
+
+    #[fuchsia::test]
+    fn test_u32_max_wrap_around() {
+        let idr = Idr::<MockItem>::default();
+        {
+            let mut state = idr.writer_lock.lock();
+            *state = u32::MAX;
+        }
+
+        // First allocation is at u32::MAX
+        let (id1, _item1) = idr.alloc_cyclic(|id| Arc::new(MockItem { value: id })).unwrap();
+        assert_eq!(id1, u32::MAX);
+
+        // Next allocation correctly wraps around to 0
+        let (id2, _item2) = idr.alloc_cyclic(|id| Arc::new(MockItem { value: id })).unwrap();
+        assert_eq!(id2, 0);
+
+        // Validating they are safely addressable
+        let scope = RcuReadScope::new();
+        assert_eq!(idr.lookup(u32::MAX, &scope).unwrap().value, u32::MAX);
+        assert_eq!(idr.lookup(0, &scope).unwrap().value, 0);
+    }
+
+    #[fuchsia::test]
+    fn test_overflow_bug_at_u32_max() {
+        let idr = Idr::<MockItem>::default();
+
+        // We reserve 0 so that if the allocator does its job and wraps around safely,
+        // it assigns 1 (acting as a dual check).
+        idr.reserve_id(0);
+
+        // We MUST reserve `u32::MAX` to trigger this bug! If `u32::MAX` is free, an
+        // allocation starting at `u32::MAX` simply takes it, and the cursor wraps cleanly to `0`.
+        // By making it occupied, we force `find_free_slot` to descend to the bottom of
+        // subtree 3, discover there is absolutely no space left at or above the cursor,
+        // and backtrack all the way up to layer 5.
+        // If layer 5's free_bitmap is not properly masked, this backtracking causes the
+        // allocator to erroneously spill over into the invalid index 4.
+        idr.reserve_id(u32::MAX);
+
+        {
+            let mut state = idr.writer_lock.lock();
+            *state = u32::MAX;
+        }
+
+        let (id, _) = idr.alloc_cyclic(|id| Arc::new(MockItem { value: id })).unwrap();
+        assert_eq!(id, 1);
+
+        let scope = RcuReadScope::new();
+        assert!(idr.lookup(1, &scope).is_some());
+    }
+}
