@@ -27,9 +27,9 @@ async fn main() -> Result<(), anyhow::Error> {
     component::health().set_ok();
     log::trace!("Initialized.");
     let codec_proxy =
-        fuchsia_fs::directory::open_in_namespace("/dev/class/codec", fuchsia_fs::Flags::empty())?;
+        fuchsia_fs::directory::open_in_namespace("/dev/class/codec", fuchsia_fs::PERM_READABLE)?;
     let dai_proxy =
-        fuchsia_fs::directory::open_in_namespace("/dev/class/dai", fuchsia_fs::Flags::empty())?;
+        fuchsia_fs::directory::open_in_namespace("/dev/class/dai", fuchsia_fs::PERM_READABLE)?;
     let mut config = Config::new()?;
     config.load()?;
     let configurator = Arc::new(Mutex::new(DefaultConfigurator::new(config)?));

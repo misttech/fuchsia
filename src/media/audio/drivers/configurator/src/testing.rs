@@ -8,10 +8,11 @@ pub mod tests {
     use crate::configurator::Configurator;
     use anyhow::Error;
     use async_trait::async_trait;
+    use fidl_fuchsia_io as fio;
+    use fuchsia_async as fasync;
     use fuchsia_component_test::{RealmBuilder, RealmInstance};
     use fuchsia_driver_test::{DriverTestRealmBuilder, DriverTestRealmInstance};
     use futures::stream::TryStreamExt as _;
-    use {fidl_fuchsia_io as fio, fuchsia_async as fasync};
 
     pub struct NullConfigurator {}
 
@@ -45,7 +46,8 @@ pub mod tests {
         let instance = realm.build().await?;
         instance.driver_test_realm_start(fidl_fuchsia_driver_test::RealmArgs::default()).await?;
         let dev = instance.driver_test_realm_connect_to_dev()?;
-        let dir = fuchsia_fs::directory::open_directory(&dev, dev_dir, fio::Flags::empty()).await?;
+        let dir =
+            fuchsia_fs::directory::open_directory(&dev, dev_dir, fuchsia_fs::PERM_READABLE).await?;
         // Wait for the first node.
         let stream = device_watcher::watch_for_files(&dir).await?;
         let path: Option<_> = stream

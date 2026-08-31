@@ -668,7 +668,7 @@ pub async fn list_devfs(
         let subdir = match fuchsia_fs::directory::open_directory(
             dev_class,
             subdir_name,
-            fio::Flags::empty(),
+            fuchsia_fs::PERM_READABLE,
         )
         .await
         {
