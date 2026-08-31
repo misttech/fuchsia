@@ -78,6 +78,7 @@ impl SerializeKey for Extent {
     fn serialize_key_to<B: Buffer>(&self, serializer: &mut KeySerializer<'_, B>) {
         assert_eq!(self.0.end % 512, 0, "Extent end must be 512-byte aligned");
         assert_eq!(self.0.start % 512, 0, "Extent start must be 512-byte aligned");
+        assert!(self.0.start < self.0.end, "Extent length must be non-zero");
         serializer.write_u64(self.0.end / 512);
         serializer.write_u64((self.0.end - self.0.start) / 512);
     }
@@ -88,11 +89,11 @@ impl SerializeKey for Extent {
             .checked_mul(512)
             .ok_or(Status::IO_DATA_INTEGRITY)
             .context("Overflow")?;
-        let len = deserializer
-            .read_u64()?
-            .checked_mul(512)
-            .ok_or(Status::IO_DATA_INTEGRITY)
-            .context("Overflow")?;
+        let len_raw = deserializer.read_u64()?;
+        if len_raw == 0 {
+            return Err(Status::IO_DATA_INTEGRITY).context("Zero-length extent");
+        }
+        let len = len_raw.checked_mul(512).ok_or(Status::IO_DATA_INTEGRITY).context("Overflow")?;
         let start = end.checked_sub(len).ok_or(Status::IO_DATA_INTEGRITY).context("Underflow")?;
         Ok(Self(start..end))
     }
@@ -387,5 +388,31 @@ mod tests {
         assert_eq!(iter.len(), 0);
         assert_eq!(iter.size_hint(), (0, Some(0)));
         assert_eq!(iter.next(), None);
+    }
+
+    #[test]
+    #[should_panic(expected = "Extent length must be non-zero")]
+    fn test_extent_key_serialization_zero_length_panics() {
+        let key = Extent(1024..1024);
+        let mut buf = Vec::new();
+        let mut ser = crate::serialized_types::serialized_key::KeySerializer::new(&mut buf, None);
+        key.serialize_key_to(&mut ser);
+    }
+
+    #[test]
+    fn test_extent_key_deserialization_zero_length_fails() {
+        let mut buf = Vec::new();
+        {
+            let mut ser =
+                crate::serialized_types::serialized_key::KeySerializer::new(&mut buf, None);
+            ser.write_u64(4); // end = 2048 (4 * 512)
+            ser.write_u64(0); // len = 0
+            ser.finalize();
+        }
+        let (mut deser, length) = KeyDeserializer::new(&buf, None).unwrap();
+        assert_eq!(length, buf.len());
+        let result = Extent::deserialize_key_from(&mut deser);
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err().to_string(), "Zero-length extent");
     }
 }

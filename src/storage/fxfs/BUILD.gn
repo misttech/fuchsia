@@ -420,6 +420,8 @@ _fuzzers = [
   "fuzz_lsm_tree_actions",
   "fuzz_journal",
   "fuzz_journal_bytes",
+  "fuzz_object_key_compare",
+  "fuzz_allocator_key_compare",
 ]
 
 foreach(fuzzer, _fuzzers) {

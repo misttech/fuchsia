@@ -73,19 +73,26 @@ pub fn decode_varint(data: &[u8]) -> Result<(u64, usize), Error> {
     } else if b < 0xe0 {
         ensure!(data.len() >= 2, "Data too short");
         let v = u16::from_be_bytes(data[..2].try_into().unwrap());
-        Ok(((v & !0xc000) as u64, 2))
+        let val = (v & !0xc000) as u64;
+        ensure!(val >= 0xc0, "Non-canonical varint");
+        Ok((val, 2))
     } else if b < 0xf0 {
         ensure!(data.len() >= 4, "Data too short");
         let v = u32::from_be_bytes(data[..4].try_into().unwrap());
-        Ok(((v & !0xe000_0000) as u64, 4))
+        let val = (v & !0xe000_0000) as u64;
+        ensure!(val >= 0x2000, "Non-canonical varint");
+        Ok((val, 4))
     } else if b < 0xff {
         ensure!(data.len() >= 8, "Data too short");
         let v = u64::from_be_bytes(data[..8].try_into().unwrap());
-        Ok((v & !0xf000_0000_0000_0000, 8))
+        let val = v & !0xf000_0000_0000_0000;
+        ensure!(val >= 0x1000_0000, "Non-canonical varint");
+        Ok((val, 8))
     } else {
         ensure!(data.len() >= 9, "Data too short");
-        let v = u64::from_be_bytes(data[1..9].try_into().unwrap());
-        Ok((v, 9))
+        let val = u64::from_be_bytes(data[1..9].try_into().unwrap());
+        ensure!(val >= 0x0f00_0000_0000_0000, "Non-canonical varint");
+        Ok((val, 9))
     }
 }
 
@@ -153,5 +160,13 @@ mod tests {
                 assert_eq!(ord_cmp, ser_cmp, "Mismatch for {} and {}", a, b);
             }
         }
+    }
+
+    #[test]
+    fn test_non_canonical() {
+        assert!(decode_varint(&[0xc0, 0x03]).is_err());
+        assert!(decode_varint(&[0xe0, 0x00, 0x1f, 0xff]).is_err());
+        assert!(decode_varint(&[0xf0, 0x00, 0x00, 0x00, 0x0f, 0xff, 0xff, 0xff]).is_err());
+        assert!(decode_varint(&[0xff, 0x0e, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff]).is_err());
     }
 }

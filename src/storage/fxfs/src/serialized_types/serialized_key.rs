@@ -484,3 +484,112 @@ mod tests {
         deser.read_u64().unwrap(); // Tries to read val2 as u64.
     }
 }
+
+#[cfg(fuzz)]
+#[cfg(fuzz_target = "fuzz_object_key_compare")]
+mod fuzz_object_key_compare {
+    use super::*;
+    use crate::lsm_tree::types::OrdUpperBound;
+    use crate::object_store::object_record::{ObjectKey, ObjectKeyData};
+    use ::fuzz::fuzz;
+
+    #[fuzz]
+    fn fuzz_object_key_compare(input: (Vec<u8>, Vec<u8>)) {
+        let Ok((mut deser_a, len_a)) = KeyDeserializer::new(&input.0, None) else {
+            return;
+        };
+        let Ok(key_a) = ObjectKey::deserialize_key_from(&mut deser_a) else {
+            return;
+        };
+        // LegacyCasefoldChild is ignored because it is not order-preserving (uses
+        // case-preserving serialization but case-insensitive comparison) and is not used in
+        // recently written formats.
+        if matches!(key_a.data, ObjectKeyData::LegacyCasefoldChild(_)) {
+            return;
+        }
+        if !deser_a.data.is_empty() {
+            return;
+        }
+
+        let Ok((mut deser_b, len_b)) = KeyDeserializer::new(&input.1, None) else {
+            return;
+        };
+        let Ok(key_b) = ObjectKey::deserialize_key_from(&mut deser_b) else {
+            return;
+        };
+        if matches!(key_b.data, ObjectKeyData::LegacyCasefoldChild(_)) {
+            return;
+        }
+        if !deser_b.data.is_empty() {
+            return;
+        }
+
+        let mut buf_a = Vec::new();
+        let mut ser_a = KeySerializer::new(&mut buf_a, Some(0));
+        key_a.serialize_key_to(&mut ser_a);
+        ser_a.finalize();
+        std::mem::drop(ser_a);
+        assert_eq!(buf_a, input.0[..len_a]);
+
+        let mut buf_b = Vec::new();
+        let mut ser_b = KeySerializer::new(&mut buf_b, Some(0));
+        key_b.serialize_key_to(&mut ser_b);
+        ser_b.finalize();
+        std::mem::drop(ser_b);
+        assert_eq!(buf_b, input.1[..len_b]);
+
+        let cmp = key_a.cmp_upper_bound(&key_b);
+        let ser_cmp = compare_keys(&buf_a, &buf_b).unwrap();
+        assert_eq!(cmp, ser_cmp, "Mismatch for keys {:?} and {:?}", key_a, key_b);
+    }
+}
+
+#[cfg(fuzz)]
+#[cfg(fuzz_target = "fuzz_allocator_key_compare")]
+mod fuzz_allocator_key_compare {
+    use super::*;
+    use crate::lsm_tree::types::OrdUpperBound;
+    use crate::object_store::allocator::AllocatorKey;
+    use ::fuzz::fuzz;
+
+    #[fuzz]
+    fn fuzz_allocator_key_compare(input: (Vec<u8>, Vec<u8>)) {
+        let Ok((mut deser_a, len_a)) = KeyDeserializer::new(&input.0, None) else {
+            return;
+        };
+        let Ok(key_a) = AllocatorKey::deserialize_key_from(&mut deser_a) else {
+            return;
+        };
+        if !deser_a.data.is_empty() {
+            return;
+        }
+
+        let Ok((mut deser_b, len_b)) = KeyDeserializer::new(&input.1, None) else {
+            return;
+        };
+        let Ok(key_b) = AllocatorKey::deserialize_key_from(&mut deser_b) else {
+            return;
+        };
+        if !deser_b.data.is_empty() {
+            return;
+        }
+
+        let mut buf_a = Vec::new();
+        let mut ser_a = KeySerializer::new(&mut buf_a, Some(0));
+        key_a.serialize_key_to(&mut ser_a);
+        ser_a.finalize();
+        std::mem::drop(ser_a);
+        assert_eq!(buf_a, input.0[..len_a]);
+
+        let mut buf_b = Vec::new();
+        let mut ser_b = KeySerializer::new(&mut buf_b, Some(0));
+        key_b.serialize_key_to(&mut ser_b);
+        ser_b.finalize();
+        std::mem::drop(ser_b);
+        assert_eq!(buf_b, input.1[..len_b]);
+
+        let cmp = key_a.cmp_upper_bound(&key_b);
+        let ser_cmp = compare_keys(&buf_a, &buf_b).unwrap();
+        assert_eq!(cmp, ser_cmp, "Mismatch for keys {:?} and {:?}", key_a, key_b);
+    }
+}
