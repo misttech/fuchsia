@@ -185,8 +185,15 @@ formatter produces a return code of 1 when the file is unformatted.
 
 ### Locally running checks
 
+To run static analysis checks locally across modified files in your change, use `fx lint`:
+
+* `fx lint` runs all in-tree linters and analyzers on modified files.
+* `fx lint --fix` automatically applies suggested replacements emitted by checks.
+* `fx lint --only <check_name>` runs only a specific check.
+* `fx lint --all` runs static analysis across all tracked files in the repository.
+
 During local check development it’s recommended to test your check by running
-shac directly via `fx host-tool shac check <file>`. Let’s create a scenario in
+`fx lint` or invoking shac directly via `fx host-tool shac check <file>`. Let’s create a scenario in
 which we can test the `http_links` check described above:
 
 1. Find a file that currently violates the check, or create a new one if one
