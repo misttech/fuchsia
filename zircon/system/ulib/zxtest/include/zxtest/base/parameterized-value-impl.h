@@ -98,8 +98,8 @@ class ParameterizedTestCaseInfoImpl : public ParameterizedTestCaseInfo {
     }
   }
 
-  fbl::Vector<fit::function<void(Runner* runner)>> instantiation_fns_;
-  fbl::Vector<TestInfo> test_entries_;
+  std::vector<fit::function<void(Runner* runner)>> instantiation_fns_;
+  std::vector<TestInfo> test_entries_;
   fbl::String name_;
 };
 

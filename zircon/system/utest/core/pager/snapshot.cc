@@ -10,6 +10,8 @@
 #include <zircon/syscalls.h>
 #include <zircon/syscalls/iommu.h>
 
+#include <thread>
+
 #include <zxtest/zxtest.h>
 
 #include "helpers.h"

@@ -74,7 +74,7 @@ void Options::Usage(char* bin, LogSink* sink) {
   sink->Write(kUsageMsg);
 }
 
-Options Options::FromArgs(int argc, char** argv, fbl::Vector<fbl::String>* errors) {
+Options Options::FromArgs(int argc, char** argv, std::vector<fbl::String>* errors) {
   // Reset index of parsed arguments.
   optind = 0;
   static const struct option opts[] = {

@@ -17,6 +17,7 @@
 
 #include <array>
 #include <memory>
+#include <thread>
 #include <utility>
 
 #include <fbl/algorithm.h>

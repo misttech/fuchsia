@@ -10,11 +10,9 @@
 
 #include <atomic>
 #include <cstdio>
-#include <mutex>
-#include <thread>
+#include <vector>
 
 #include <fbl/string.h>
-#include <fbl/vector.h>
 #include <zxtest/base/assertion.h>
 #include <zxtest/base/environment.h>
 #include <zxtest/base/event-broadcaster.h>
@@ -130,7 +128,7 @@ class Runner {
  public:
   struct Options {
     // Parses the contents of argv into |Options|.
-    static Options FromArgs(int argc, char** argv, fbl::Vector<fbl::String>* errors);
+    static Options FromArgs(int argc, char** argv, std::vector<fbl::String>* errors);
 
     // Prints the usage message into the |stream|.
     static void Usage(char* bin, LogSink* sink);
@@ -326,10 +324,10 @@ class Runner {
   void EnforceOptions(const Runner::Options& options);
 
   // List of registered environments.
-  fbl::Vector<std::unique_ptr<Environment>> environments_;
+  std::vector<std::unique_ptr<Environment>> environments_;
 
   // List of registered test cases.
-  fbl::Vector<TestCase> test_cases_;
+  std::vector<TestCase> test_cases_;
 
   // Serves as a |LifecycleObserver| list where events are sent to all subscribed observers.
   internal::EventBroadcaster event_broadcaster_;
@@ -351,7 +349,7 @@ class Runner {
 
   bool fatal_error_ = false;
 
-  fbl::Vector<std::unique_ptr<zxtest::internal::ParameterizedTestCaseInfo>>
+  std::vector<std::unique_ptr<zxtest::internal::ParameterizedTestCaseInfo>>
       parameterized_test_info_;
 
   bool should_register_parameterized_tests = true;

@@ -5,6 +5,7 @@
 #include <lib/fit/function.h>
 
 #include <cstdlib>
+#include <vector>
 
 #include <zxtest/base/assertion.h>
 #include <zxtest/base/event-broadcaster.h>
@@ -129,7 +130,7 @@ void EventBroadcasterOnProgramStart() {
   RUNNER_EVENT_OBSERVER(ProgramStart);
 
   internal::EventBroadcaster event_broadcaster;
-  fbl::Vector<FakeObserver> observers;
+  std::vector<FakeObserver> observers;
   observers.reserve(kNumObservers);
   Runner runner(MakeSilentReporter());
 
@@ -147,7 +148,7 @@ void EventBroadcasterOnIterationStart() {
   ITERATION_EVENT_OBSERVER(Start);
 
   internal::EventBroadcaster event_broadcaster;
-  fbl::Vector<FakeObserver> observers;
+  std::vector<FakeObserver> observers;
   observers.reserve(kNumObservers);
   Runner runner(MakeSilentReporter());
 
@@ -168,7 +169,7 @@ void EventBroadcasterOnEnvironmentSetUp() {
   RUNNER_EVENT_OBSERVER(EnvironmentSetUp);
 
   internal::EventBroadcaster event_broadcaster;
-  fbl::Vector<FakeObserver> observers;
+  std::vector<FakeObserver> observers;
   observers.reserve(kNumObservers);
   Runner runner(MakeSilentReporter());
 
@@ -187,7 +188,7 @@ void EventBroadcasterOnTestCaseStart() {
 
   TestCase test_case(kTestCaseName, &Stub, &Stub);
   internal::EventBroadcaster event_broadcaster;
-  fbl::Vector<FakeObserver> observers;
+  std::vector<FakeObserver> observers;
   observers.reserve(kNumObservers);
 
   REGISTER_OBSERVERS(observers, event_broadcaster, [&test_case](const TestCase& actual) {
@@ -206,7 +207,7 @@ void EventBroadcasterOnTestStart() {
   TestCase test_case(kTestCaseName, &Stub, &Stub);
   TestInfo test_info(kTestName, kLocation, nullptr);
   internal::EventBroadcaster event_broadcaster;
-  fbl::Vector<FakeObserver> observers;
+  std::vector<FakeObserver> observers;
   observers.reserve(kNumObservers);
 
   REGISTER_OBSERVERS(
@@ -229,7 +230,7 @@ void EventBroadcasterOnAssertion() {
   Assertion assertion("Value should be equal", "kExpectedValue", "5", "actual_value", "10",
                       {.filename = "test.cpp", .line_number = 99999}, /*is_fatal*/ false,
                       zxtest::Runner::GetInstance()->GetScopedTraces());
-  fbl::Vector<FakeObserver> observers;
+  std::vector<FakeObserver> observers;
   observers.reserve(kNumObservers);
 
   REGISTER_OBSERVERS(observers, event_broadcaster, [&](const Assertion& actual) {
@@ -247,7 +248,7 @@ void EventBroadcasterOnMessage() {
 
   internal::EventBroadcaster event_broadcaster;
   Message message("Message", {.filename = "test.cpp", .line_number = 99999});
-  fbl::Vector<FakeObserver> observers;
+  std::vector<FakeObserver> observers;
   observers.reserve(kNumObservers);
 
   REGISTER_OBSERVERS(observers, event_broadcaster, [&](const Message& actual) {
@@ -266,7 +267,7 @@ void EventBroadcasterOnTestSkip() {
   TestCase test_case(kTestCaseName, &Stub, &Stub);
   TestInfo test_info(kTestName, kLocation, nullptr);
   internal::EventBroadcaster event_broadcaster;
-  fbl::Vector<FakeObserver> observers;
+  std::vector<FakeObserver> observers;
   observers.reserve(kNumObservers);
 
   REGISTER_OBSERVERS(
@@ -288,7 +289,7 @@ void EventBroadcasterOnTestSuccess() {
   TestCase test_case(kTestCaseName, &Stub, &Stub);
   TestInfo test_info(kTestName, kLocation, nullptr);
   internal::EventBroadcaster event_broadcaster;
-  fbl::Vector<FakeObserver> observers;
+  std::vector<FakeObserver> observers;
   observers.reserve(kNumObservers);
 
   REGISTER_OBSERVERS(
@@ -310,7 +311,7 @@ void EventBroadcasterOnTestFailure() {
   TestCase test_case(kTestCaseName, &Stub, &Stub);
   TestInfo test_info(kTestName, kLocation, nullptr);
   internal::EventBroadcaster event_broadcaster;
-  fbl::Vector<FakeObserver> observers;
+  std::vector<FakeObserver> observers;
   observers.reserve(kNumObservers);
 
   REGISTER_OBSERVERS(
@@ -331,7 +332,7 @@ void EventBroadcasterOnTestCaseEnd() {
 
   TestCase test_case(kTestCaseName, &Stub, &Stub);
   internal::EventBroadcaster event_broadcaster;
-  fbl::Vector<FakeObserver> observers;
+  std::vector<FakeObserver> observers;
   observers.reserve(kNumObservers);
 
   REGISTER_OBSERVERS(observers, event_broadcaster, [&test_case](const TestCase& actual) {
@@ -348,7 +349,7 @@ void EventBroadcasterOnEnvironmentTearDown() {
   RUNNER_EVENT_OBSERVER(EnvironmentTearDown);
 
   internal::EventBroadcaster event_broadcaster;
-  fbl::Vector<FakeObserver> observers;
+  std::vector<FakeObserver> observers;
   observers.reserve(kNumObservers);
   Runner runner(MakeSilentReporter());
 
@@ -366,7 +367,7 @@ void EventBroadcasterOnIterationEnd() {
   ITERATION_EVENT_OBSERVER(End);
 
   internal::EventBroadcaster event_broadcaster;
-  fbl::Vector<FakeObserver> observers;
+  std::vector<FakeObserver> observers;
   observers.reserve(kNumObservers);
   Runner runner(MakeSilentReporter());
 
@@ -388,7 +389,7 @@ void EventBroadcasterOnProgramEnd() {
   RUNNER_EVENT_OBSERVER(ProgramEnd);
 
   internal::EventBroadcaster event_broadcaster;
-  fbl::Vector<FakeObserver> observers;
+  std::vector<FakeObserver> observers;
   observers.reserve(kNumObservers);
   Runner runner(MakeSilentReporter());
 

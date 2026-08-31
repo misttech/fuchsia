@@ -8,9 +8,9 @@
 #include <lib/fit/function.h>
 
 #include <cstdint>
+#include <vector>
 
 #include <fbl/string.h>
-#include <fbl/vector.h>
 #include <zxtest/base/observer.h>
 #include <zxtest/base/test-info.h>
 #include <zxtest/base/types.h>
@@ -77,10 +77,10 @@ class TestCase {
 
  private:
   // Keeps track of the tests that were selected
-  fbl::Vector<unsigned long> selected_indexes_;
+  std::vector<unsigned long> selected_indexes_;
 
   // Tests in registration order.
-  fbl::Vector<TestInfo> test_infos_;
+  std::vector<TestInfo> test_infos_;
 
   // Test case name.
   fbl::String name_;

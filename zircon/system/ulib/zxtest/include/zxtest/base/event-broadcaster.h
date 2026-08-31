@@ -5,10 +5,12 @@
 #ifndef ZXTEST_BASE_EVENT_BROADCASTER_H_
 #define ZXTEST_BASE_EVENT_BROADCASTER_H_
 
-#include <fbl/vector.h>
+#include <vector>
+
 #include <zxtest/base/observer.h>
 
 namespace zxtest {
+
 // Forward declaration.
 class Assertion;
 class TestCase;
@@ -73,7 +75,7 @@ class EventBroadcaster final : public LifecycleObserver {
   void OnProgramEnd(const Runner& runner) final;
 
  private:
-  fbl::Vector<LifecycleObserver*> lifecycle_observers_;
+  std::vector<LifecycleObserver*> lifecycle_observers_;
 };
 
 }  // namespace internal

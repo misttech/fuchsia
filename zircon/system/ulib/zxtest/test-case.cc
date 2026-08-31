@@ -9,6 +9,7 @@
 #include <cstdlib>
 #include <memory>
 #include <utility>
+#include <vector>
 
 #include <zxtest/base/test-case.h>
 #include <zxtest/base/types.h>
@@ -37,7 +38,7 @@ size_t TestCase::TestCount() const { return test_infos_.size(); }
 size_t TestCase::MatchingTestCount() const { return selected_indexes_.size(); }
 
 void TestCase::Filter(TestCase::FilterFn filter) {
-  fbl::Vector<unsigned long> filtered_indexes;
+  std::vector<unsigned long> filtered_indexes;
   filtered_indexes.reserve(test_infos_.size());
   for (unsigned long i = 0; i < test_infos_.size(); ++i) {
     const auto& test_info = test_infos_[i];

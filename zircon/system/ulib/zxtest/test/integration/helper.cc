@@ -4,14 +4,14 @@
 
 #include "helper.h"
 
-#include <fbl/vector.h>
+#include <cstdio>
+#include <vector>
 
-namespace zxtest {
-namespace test {
+namespace zxtest::test {
 namespace {
 
-fbl::Vector<void (*)()>* GetCheckFns() {
-  static fbl::Vector<void (*)()> check_fns;
+std::vector<void (*)()>* GetCheckFns() {
+  static std::vector<void (*)()> check_fns;
   return &check_fns;
 }
 
@@ -25,8 +25,7 @@ void CheckAll() {
   }
 }
 
-}  // namespace test
-}  // namespace zxtest
+}  // namespace zxtest::test
 
 void zxtest_add_check_function(void (*check)(void)) { zxtest::test::AddCheckFunction(check); }
 

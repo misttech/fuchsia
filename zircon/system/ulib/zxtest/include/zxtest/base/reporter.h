@@ -7,9 +7,9 @@
 
 #include <memory>
 #include <utility>
+#include <vector>
 
 #include <fbl/string.h>
-#include <fbl/vector.h>
 #include <zxtest/base/json-reporter.h>
 #include <zxtest/base/log-sink.h>
 #include <zxtest/base/observer.h>
@@ -34,7 +34,7 @@ struct IterationSummary {
   int64_t skipped = 0;
 
   // List of TestCase.Test that will reported on iteration end.
-  fbl::Vector<fbl::String> failed_tests;
+  std::vector<fbl::String> failed_tests;
 };
 
 }  // namespace internal

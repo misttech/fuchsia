@@ -5,6 +5,7 @@
 #include <lib/fit/defer.h>
 
 #include <string_view>
+#include <vector>
 
 #include <fbl/string_printf.h>
 #include <zxtest/base/json-reporter.h>
@@ -239,11 +240,11 @@ Runner* Runner::GetInstance() {
 }
 
 int RunAllTests(int argc, char** argv) {
-  fbl::Vector<fbl::String> errors;
+  std::vector<fbl::String> errors;
   LogSink* log_sink = Runner::GetInstance()->mutable_reporter()->mutable_log_sink();
   Runner::Options options = Runner::Options::FromArgs(argc, argv, &errors);
 
-  if (!errors.is_empty()) {
+  if (!errors.empty()) {
     for (const auto& error : errors) {
       log_sink->Write("%s\n", error.c_str());
     }
@@ -253,7 +254,7 @@ int RunAllTests(int argc, char** argv) {
   // Errors will always set help to true.
   if (options.help) {
     Runner::Options::Usage(argv[0], log_sink);
-    return errors.is_empty();
+    return errors.empty();
   }
 
   if (options.list) {

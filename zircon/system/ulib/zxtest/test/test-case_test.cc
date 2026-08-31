@@ -7,6 +7,7 @@
 
 #include <cstdint>
 #include <cstring>
+#include <vector>
 
 #include <zxtest/base/observer.h>
 #include <zxtest/base/test-case.h>
@@ -280,7 +281,7 @@ void TestCaseShuffle() {
   TestCase test_case(kTestCaseName, &Stub, &Stub);
   const SourceLocation kLocation = {.filename = "test.cpp", .line_number = 1};
   const fbl::String kTestName = "TestName";
-  fbl::Vector<int> run_order;
+  std::vector<int> run_order;
 
   ZX_ASSERT_MSG(test_case.RegisterTest(kTestName, kLocation,
                                        [&run_order](TestDriver* driver) {
@@ -337,7 +338,7 @@ void TestCaseUnShuffle() {
   TestCase test_case(kTestCaseName, &Stub, &Stub);
   const SourceLocation kLocation = {.filename = "test.cpp", .line_number = 1};
   const fbl::String kTestName = "TestName";
-  fbl::Vector<int> run_order;
+  std::vector<int> run_order;
 
   ZX_ASSERT_MSG(test_case.RegisterTest(kTestName, kLocation,
                                        [&run_order](TestDriver* driver) {
@@ -377,7 +378,7 @@ void TestCaseUnShuffleFiltered() {
   TestDriverStub driver;
   TestCase test_case(kTestCaseName, &Stub, &Stub);
   const SourceLocation kLocation = {.filename = "test.cpp", .line_number = 1};
-  fbl::Vector<int> run_order;
+  std::vector<int> run_order;
 
   ZX_ASSERT_MSG(test_case.RegisterTest("TestName1", kLocation,
                                        [&run_order](TestDriver* driver) {

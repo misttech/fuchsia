@@ -24,13 +24,12 @@ class RunnerTestPeer {
   }
 
   static void DeleteParameterizedTestInfo(Runner* runner, const internal::TypeId& suite_type) {
-    size_t index = 0;
-    for (auto& test_info : runner->parameterized_test_info_) {
-      if (test_info->GetFixtureId() == suite_type) {
-        runner->parameterized_test_info_.erase(index);
-        return;
-      }
-      index++;
+    auto match = [suite_type](const auto& test_info) {
+      return test_info->GetFixtureId() == suite_type;
+    };
+    auto it = std::ranges::find_if(runner->parameterized_test_info_, match);
+    if (it != runner->parameterized_test_info_.end()) {
+      runner->parameterized_test_info_.erase(it);
     }
   }
 

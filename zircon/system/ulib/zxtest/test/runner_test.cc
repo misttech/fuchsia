@@ -11,6 +11,7 @@
 #include <memory>
 #include <set>
 #include <utility>
+#include <vector>
 
 #include <zxtest/base/environment.h>
 #include <zxtest/base/reporter.h>
@@ -621,8 +622,10 @@ void TestDriverImplResetOnTestCompletion() {
     void (TestDriverImpl::*complete)(const TestCase&, const TestInfo&);
   };
 // Helper macro to generate appropiate error for each function.
-#define CFN(fn) \
-  { .name = #fn, .complete = &fn, }
+#define CFN(fn)                   \
+  {                               \
+    .name = #fn, .complete = &fn, \
+  }
   static constexpr CompleteFn complete_fns[] = {CFN(TestDriverImpl::OnTestSuccess),
                                                 CFN(TestDriverImpl::OnTestFailure),
                                                 CFN(TestDriverImpl::OnTestSkip)};
@@ -662,7 +665,7 @@ void RunnerOptionsParseFromCmdLineShort() {
   kArgs[13] = "-h";
   kArgs[14] = "true";
 
-  fbl::Vector<fbl::String> errors;
+  std::vector<fbl::String> errors;
   Runner::Options options =
       Runner::Options::FromArgs(std::size(kArgs), const_cast<char**>(kArgs), &errors);
 
@@ -670,7 +673,7 @@ void RunnerOptionsParseFromCmdLineShort() {
   for (const auto& error : errors) {
     fprintf(stdout, "%s", error.c_str());
   }
-  ZX_ASSERT_MSG(errors.is_empty(), "Runner::Options::FromArgs returned errors.\n");
+  ZX_ASSERT_MSG(errors.empty(), "Runner::Options::FromArgs returned errors.\n");
   ZX_ASSERT_MSG(strcmp(options.filter.c_str(), kArgs[2]) == 0,
                 "Runner::Options::filter not parsed correctly.\n");
   ZX_ASSERT_MSG(options.repeat == 100, "Runner::Options::repeat not parsed correctly.\n");
@@ -701,7 +704,7 @@ void RunnerOptionsParseFromCmdLineLong() {
   kArgs[13] = "--help";
   kArgs[14] = "true";
 
-  fbl::Vector<fbl::String> errors;
+  std::vector<fbl::String> errors;
   Runner::Options options =
       Runner::Options::FromArgs(std::size(kArgs), const_cast<char**>(kArgs), &errors);
 
@@ -709,7 +712,7 @@ void RunnerOptionsParseFromCmdLineLong() {
   for (const auto& error : errors) {
     fprintf(stdout, "%s", error.c_str());
   }
-  ZX_ASSERT_MSG(errors.is_empty(), "Runner::Options::FromArgs returned errors.\n.");
+  ZX_ASSERT_MSG(errors.empty(), "Runner::Options::FromArgs returned errors.\n.");
   ZX_ASSERT_MSG(strcmp(options.filter.c_str(), kArgs[2]) == 0,
                 "Runner::Options::filter not parsed correctly\n.");
   ZX_ASSERT_MSG(options.repeat == 100, "Runner::Options::repeat not parsed correctly\n.");
@@ -728,12 +731,12 @@ void RunnerOptionsParseFromCmdLineErrors() {
   kArgs[1] = "--gtest_repeat";
   kArgs[2] = "-2";
 
-  fbl::Vector<fbl::String> errors;
+  std::vector<fbl::String> errors;
   Runner::Options options =
       Runner::Options::FromArgs(std::size(kArgs), const_cast<char**>(kArgs), &errors);
 
   // Just in case it returns errors, this will give insight into where the problem is.
-  ZX_ASSERT_MSG(!errors.is_empty(), "Runner::Options::FromArgs should return error.\n.");
+  ZX_ASSERT_MSG(!errors.empty(), "Runner::Options::FromArgs should return error.\n.");
 }
 
 void FilterOpFilterEmptyMatchesAll() {

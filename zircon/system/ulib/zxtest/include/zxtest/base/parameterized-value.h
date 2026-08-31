@@ -11,7 +11,6 @@
 #include <optional>
 
 #include <fbl/string.h>
-#include <fbl/vector.h>
 #include <zxtest/base/observer.h>
 #include <zxtest/base/types.h>
 #include <zxtest/base/values.h>

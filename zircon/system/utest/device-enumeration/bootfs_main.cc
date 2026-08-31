@@ -8,9 +8,10 @@
 #include <iostream>
 
 #include <fbl/string.h>
+#include <fbl/vector.h>
 
-#include "zircon/system/utest/device-enumeration/aemu.h"
-#include "zircon/system/utest/device-enumeration/common.h"
+#include "aemu.h"
+#include "common.h"
 
 namespace {
 
@@ -73,11 +74,11 @@ TEST_F(DeviceEnumerationTest, GenericShouldFailTest) {
 }  // namespace
 
 int main(int argc, char** argv) {
-  fbl::Vector<fbl::String> errors;
+  std::vector<fbl::String> errors;
   auto options = zxtest::Runner::Options::FromArgs(argc, argv, &errors);
   zxtest::LogSink* log_sink = zxtest::Runner::GetInstance()->mutable_reporter()->mutable_log_sink();
 
-  if (!errors.is_empty()) {
+  if (!errors.empty()) {
     for (const auto& error : errors) {
       log_sink->Write("%s\n", error.c_str());
     }
@@ -89,7 +90,7 @@ int main(int argc, char** argv) {
   // Errors will always set help to true.
   if (options.help) {
     zxtest::Runner::Options::Usage(argv[0], log_sink);
-    return errors.is_empty();
+    return errors.empty();
   }
 
   if (options.list) {
