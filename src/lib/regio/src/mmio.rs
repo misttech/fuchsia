@@ -200,6 +200,12 @@ impl_mmio_ptr_handle!(u32, read32, write32);
 #[cfg(target_pointer_width = "64")]
 impl_mmio_ptr_handle!(u64, read64, write64);
 
+// Safety: An MMIO address has no thread affinity.
+unsafe impl<T, Access: Accessible> Send for MmioPtr<T, Access> {}
+
+// Safety: All accesses through `MmioPtr` are volatile operations.
+unsafe impl<T, Access: Accessible> Sync for MmioPtr<T, Access> {}
+
 /// Represents a contiguous region of memory containing registers. Contained
 /// registers are accessed via [`MmioBank::at`] and must feature access
 /// permissions narrower than `MaxAccess`.
