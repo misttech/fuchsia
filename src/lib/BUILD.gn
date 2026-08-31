@@ -79,6 +79,7 @@ group("tests") {
     "kprint:tests",
     "kstring:tests",
     "ksync:tests",
+    "lazy_init:tests",
     "libdoc:tests($host_toolchain)",
     "line-editor:tests",
     "line_input:tests",
