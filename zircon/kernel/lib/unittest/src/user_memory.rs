@@ -5,6 +5,7 @@
 // https://opensource.org/licenses/MIT
 
 use core::ffi::c_void;
+use core::mem::MaybeUninit;
 use core::ptr::NonNull;
 use zx_status::Status;
 
@@ -74,7 +75,11 @@ impl UserMemory {
     }
 
     /// Read from the underlying VMO directly, bypassing the mapping.
-    pub fn vmo_read(&self, data: &mut [u8], offset: u64) -> Result<(), Status> {
+    pub fn vmo_read<'a>(
+        &self,
+        data: &'a mut [MaybeUninit<u8>],
+        offset: u64,
+    ) -> Result<&'a mut [u8], Status> {
         let status = unsafe {
             unittest_user_memory_vmo_read(
                 self.raw.as_ptr(),
@@ -83,7 +88,10 @@ impl UserMemory {
                 data.len() as u64,
             )
         };
-        Status::ok(status)
+        Status::ok(status)?;
+        // SAFETY: When `unittest_user_memory_vmo_read` returns ZX_OK, all `data.len()` bytes in
+        // `data` have been initialized by the kernel.
+        Ok(unsafe { data.assume_init_mut() })
     }
 }
 

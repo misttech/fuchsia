@@ -610,6 +610,7 @@ mod tests {
     use crate::object::dispatcher::DispatcherOps;
     use crate::user_copy::{UserInPtr, UserOutPtr};
     use core::ffi::c_char;
+    use core::mem::MaybeUninit;
     use kalloc::Box;
     use unittest::{UserMemory, expect_eq, expect_ok, expect_true};
     use zx_status::Status;
@@ -654,11 +655,10 @@ mod tests {
     }
 
     fn read_user_mem(mem: &UserMemory, size: usize) -> Option<Box<[u8]>> {
-        let buf = Box::try_new_zeroed_slice(size).ok()?;
-        // SAFETY: We initialize the buffer immediately by reading `size` bytes from the VMO.
-        let mut buf = unsafe { buf.assume_init() };
+        let mut buf = Box::try_new_uninit_slice(size).ok()?;
         mem.vmo_read(&mut buf, 0).ok()?;
-        Some(buf)
+        // SAFETY: We initialize the buffer immediately by reading `size` bytes from the VMO.
+        Some(unsafe { buf.assume_init() })
     }
 
     /// Allocate/destroy many sockets. Ad hoc resource leak check.
@@ -705,9 +705,9 @@ mod tests {
         for (i, slot) in read_buffer.iter_mut().enumerate() {
             let bytes_read = d1.read(ReadType::Consume, out_ptr, 1).expect("failed to read");
             expect_eq!(bytes_read, 1);
-            let mut byte_buf = [0u8; 1];
-            out_mem.vmo_read(&mut byte_buf, 0).expect("vmo read");
-            *slot = byte_buf[0];
+            let mut byte_buf = [MaybeUninit::<u8>::uninit(); 1];
+            let read = out_mem.vmo_read(&mut byte_buf, 0).expect("vmo read");
+            *slot = read[0];
             // Expect consuming 1-byte reads to reduce rx_buf_available.
             let info1 = d1.get_info();
             expect_eq!(info1.rx_buf_available, SIZE - (i + 1));

@@ -12,6 +12,7 @@ mod tests {
         UserInIovec, UserInOutIovec, UserInOutPtr, UserInPtr, UserOutIovec, UserOutPtr,
         UserStringView,
     };
+    use core::mem::MaybeUninit;
     use unittest::{UserMemory, assert_eq, assert_nonnull, assert_null, assert_true, unwrap_ok};
     use zx_status::Status;
     use zx_types::zx_iovec_t;
@@ -79,9 +80,9 @@ mod tests {
         assert_nonnull!(out_ptr);
         unwrap_ok!(out_ptr.write(0xDEADBEEF));
 
-        let mut temp = [0u8; 4];
-        unwrap_ok!(user.vmo_read(&mut temp, 0));
-        let val = u32::from_ne_bytes(temp);
+        let mut temp = [MaybeUninit::<u8>::uninit(); 4];
+        let bytes = unwrap_ok!(user.vmo_read(&mut temp, 0));
+        let val = u32::from_ne_bytes(<[u8; 4]>::try_from(bytes).unwrap());
         assert_eq!(val, 0xDEADBEEF);
     }
 
@@ -107,7 +108,7 @@ mod tests {
 
         let in_ptr = UserInPtr::<u32>::new(user.base() as *const u32);
         assert_nonnull!(in_ptr);
-        let mut temp = core::mem::MaybeUninit::uninit();
+        let mut temp = MaybeUninit::uninit();
         let val_ref = unwrap_ok!(in_ptr.copy_from_user(&mut temp));
         assert_eq!(*val_ref, 0xDEADBEEF);
     }
@@ -126,7 +127,7 @@ mod tests {
 
         let in_ptr = UserInPtr::<u32>::new(user.base() as *const u32);
         assert_nonnull!(in_ptr);
-        let mut out = [core::mem::MaybeUninit::uninit(); 3];
+        let mut out = [MaybeUninit::uninit(); 3];
         let out_slice = unwrap_ok!(in_ptr.copy_slice_from_user(&mut out));
         assert_eq!(out_slice[0], 10);
         assert_eq!(out_slice[1], 20);
@@ -144,10 +145,10 @@ mod tests {
         assert_null!(in_ptr);
         assert_true!(in_ptr.read().err() == Some(Status::INVALID_ARGS));
 
-        let mut temp = core::mem::MaybeUninit::uninit();
+        let mut temp = MaybeUninit::uninit();
         assert_true!(in_ptr.copy_from_user(&mut temp).err() == Some(Status::INVALID_ARGS));
 
-        let mut temp_slice = [core::mem::MaybeUninit::uninit(); 1];
+        let mut temp_slice = [MaybeUninit::uninit(); 1];
         assert_true!(
             in_ptr.copy_slice_from_user(&mut temp_slice).err() == Some(Status::INVALID_ARGS)
         );
@@ -226,12 +227,12 @@ mod tests {
         assert_nonnull!(in_ptr);
 
         let sv = UserStringView { data: in_ptr, length: k_string.len() };
-        let mut buf = [core::mem::MaybeUninit::uninit(); 32];
+        let mut buf = [MaybeUninit::uninit(); 32];
         let out_slice = unwrap_ok!(sv.copy_slice_from_user(&mut buf));
         assert_true!(out_slice == k_string);
 
         // Buffer too small should return INVALID_ARGS
-        let mut small_buf = [core::mem::MaybeUninit::uninit(); 5];
+        let mut small_buf = [MaybeUninit::uninit(); 5];
         assert_true!(sv.copy_slice_from_user(&mut small_buf).err() == Some(Status::INVALID_ARGS));
     }
 
@@ -254,7 +255,7 @@ mod tests {
         let in_ptr = UserInPtr::<zx_iovec_t>::new(user.base() as *const zx_iovec_t);
         let iovec = UserInIovec::new(in_ptr, 2);
 
-        let mut out = [core::mem::MaybeUninit::uninit(); 2];
+        let mut out = [MaybeUninit::uninit(); 2];
         let out_slice = unwrap_ok!(iovec.copy_to_slice(&mut out));
         assert_eq!(out_slice.len(), 2);
         assert_eq!(out_slice[0].data.as_ptr(), 0x1234 as *const u8);
@@ -264,7 +265,7 @@ mod tests {
 
         // UserOutIovec copy_to_slice test
         let out_iovec = UserOutIovec::new(in_ptr, 2);
-        let mut out_buf = [core::mem::MaybeUninit::uninit(); 2];
+        let mut out_buf = [MaybeUninit::uninit(); 2];
         let out_vec = unwrap_ok!(out_iovec.copy_to_slice(&mut out_buf));
         assert_eq!(out_vec.len(), 2);
         assert_eq!(out_vec[0].data.as_ptr(), 0x1234 as *mut u8);
@@ -274,7 +275,7 @@ mod tests {
 
         // UserInOutIovec copy_to_slice test
         let inout_iovec = UserInOutIovec::new(in_ptr, 2);
-        let mut inout_buf = [core::mem::MaybeUninit::uninit(); 2];
+        let mut inout_buf = [MaybeUninit::uninit(); 2];
         let inout_vec = unwrap_ok!(inout_iovec.copy_to_slice(&mut inout_buf));
         assert_eq!(inout_vec.len(), 2);
         assert_eq!(inout_vec[0].data.as_ptr(), 0x1234 as *mut u8);
@@ -283,7 +284,7 @@ mod tests {
         assert_eq!(inout_vec[1].len, 200);
 
         // Destination slice too small should return INVALID_ARGS
-        let mut small_out = [core::mem::MaybeUninit::uninit(); 1];
+        let mut small_out = [MaybeUninit::uninit(); 1];
         assert_true!(iovec.copy_to_slice(&mut small_out).err() == Some(Status::INVALID_ARGS));
     }
 }

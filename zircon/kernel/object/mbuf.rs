@@ -546,9 +546,10 @@ mod tests {
     use super::{MBuf, MBufChain, alloc_mbufs, free_mbufs};
     use crate::user_copy::{UserInPtr, UserOutPtr};
     use core::ffi::c_char;
+    use core::mem::MaybeUninit;
     use core::pin::Pin;
     use pin_init::stack_pin_init;
-    use unittest::{UserMemory, expect_eq, expect_false, expect_ok, expect_true};
+    use unittest::{UserMemory, expect_eq, expect_false, expect_ok, expect_true, unwrap_ok};
     use zx_status::Status;
 
     #[derive(Copy, Clone, Debug, PartialEq, Eq)]
@@ -601,14 +602,14 @@ mod tests {
     }
 
     fn verify_user_mem(mem: &UserMemory, size: usize, pattern: impl Fn(usize) -> u8) -> bool {
-        let mut chunk = [0u8; 512];
+        let mut chunk = [MaybeUninit::<u8>::uninit(); 512];
         let mut offset = 0;
         while offset < size {
             let to_read = core::cmp::min(chunk.len(), size - offset);
-            if mem.vmo_read(&mut chunk[..to_read], offset as u64).is_err() {
+            let Ok(read_bytes) = mem.vmo_read(&mut chunk[..to_read], offset as u64) else {
                 return false;
-            }
-            for (i, &b) in chunk[..to_read].iter().enumerate() {
+            };
+            for (i, &b) in read_bytes.iter().enumerate() {
                 if b != pattern(offset + i) {
                     return false;
                 }
@@ -633,14 +634,14 @@ mod tests {
     }
 
     /// Reads or peeks data from `chain`.
-    fn read_helper(
+    fn read_helper<'a>(
         chain: &mut Pin<&mut MBufChain>,
-        buf: &mut [u8],
+        buf: &'a mut [MaybeUninit<u8>],
         len: usize,
         msg_type: MessageType,
         read_type: ReadType,
         actual: &mut usize,
-    ) -> Result<(), Status> {
+    ) -> Result<&'a mut [u8], Status> {
         let (mem, dst) = make_user_out(len).ok_or(Status::NO_MEMORY)?;
         let (res, nread) = match (read_type, msg_type) {
             (ReadType::Read, MessageType::Datagram) => chain.as_mut().read_datagram(dst, len),
@@ -649,11 +650,13 @@ mod tests {
             (ReadType::Peek, MessageType::Stream) => chain.peek_stream(dst, len),
         };
         *actual = nread;
+        res?;
         if nread > 0 {
             let copy_len = core::cmp::min(nread, buf.len());
-            mem.vmo_read(&mut buf[..copy_len], 0)?;
+            mem.vmo_read(&mut buf[..copy_len], 0)
+        } else {
+            Ok(&mut [])
         }
-        res
     }
 
     /// Tests initial state of MBufChain.
@@ -671,12 +674,18 @@ mod tests {
     fn test_stream_read_empty() {
         stack_pin_init!(let chain_pin = MBufChain::new());
         let mut chain = chain_pin.as_mut();
-        let mut buf = [0u8; 1];
+        let mut buf = [MaybeUninit::<u8>::uninit(); 1];
         let mut actual = 0;
-        let res =
-            read_helper(&mut chain, &mut buf, 1, MessageType::Stream, ReadType::Read, &mut actual);
-        expect_ok!(res);
+        let bytes = unwrap_ok!(read_helper(
+            &mut chain,
+            &mut buf,
+            1,
+            MessageType::Stream,
+            ReadType::Read,
+            &mut actual
+        ));
         expect_eq!(actual, 0);
+        expect_true!(bytes.is_empty());
     }
 
     /// Tests reading stream with zero length.
@@ -686,12 +695,18 @@ mod tests {
         let mut chain = chain_pin.as_mut();
         expect_true!(write_helper(chain.as_mut(), "x", MessageType::Stream));
 
-        let mut buf = [0u8; 1];
+        let mut buf = [MaybeUninit::<u8>::uninit(); 1];
         let mut actual = 0;
-        let res =
-            read_helper(&mut chain, &mut buf, 0, MessageType::Stream, ReadType::Read, &mut actual);
-        expect_ok!(res);
+        let bytes = unwrap_ok!(read_helper(
+            &mut chain,
+            &mut buf,
+            0,
+            MessageType::Stream,
+            ReadType::Read,
+            &mut actual
+        ));
         expect_eq!(actual, 0);
+        expect_true!(bytes.is_empty());
     }
 
     /// Tests basic stream writing and reading.
@@ -794,59 +809,59 @@ mod tests {
         expect_true!(write_helper(chain.as_mut(), "abc", MessageType::Stream));
         expect_true!(write_helper(chain.as_mut(), "123", MessageType::Stream));
 
-        let mut read_buf = [0u8; 10];
+        let mut read_buf = [MaybeUninit::<u8>::uninit(); 10];
         let mut actual = 0;
 
-        expect_ok!(read_helper(
+        let bytes = unwrap_ok!(read_helper(
             &mut chain,
             &mut read_buf,
             1,
             MessageType::Stream,
             ReadType::Peek,
-            &mut actual
+            &mut actual,
         ));
-        expect_true!(&read_buf[..actual] == b"a");
+        expect_true!(bytes == b"a");
 
-        expect_ok!(read_helper(
+        let bytes = unwrap_ok!(read_helper(
             &mut chain,
             &mut read_buf,
             3,
             MessageType::Stream,
             ReadType::Peek,
-            &mut actual
+            &mut actual,
         ));
-        expect_true!(&read_buf[..actual] == b"abc");
+        expect_true!(bytes == b"abc");
 
-        expect_ok!(read_helper(
+        let bytes = unwrap_ok!(read_helper(
             &mut chain,
             &mut read_buf,
             4,
             MessageType::Stream,
             ReadType::Peek,
-            &mut actual
+            &mut actual,
         ));
-        expect_true!(&read_buf[..actual] == b"abc1");
+        expect_true!(bytes == b"abc1");
 
-        expect_ok!(read_helper(
+        let bytes = unwrap_ok!(read_helper(
             &mut chain,
             &mut read_buf,
             6,
             MessageType::Stream,
             ReadType::Peek,
-            &mut actual
+            &mut actual,
         ));
-        expect_true!(&read_buf[..actual] == b"abc123");
+        expect_true!(bytes == b"abc123");
 
         expect_eq!(chain.stream_size(), 6);
-        expect_ok!(read_helper(
+        let bytes = unwrap_ok!(read_helper(
             &mut chain,
             &mut read_buf,
             6,
             MessageType::Stream,
             ReadType::Read,
-            &mut actual
+            &mut actual,
         ));
-        expect_true!(&read_buf[..actual] == b"abc123");
+        expect_true!(bytes == b"abc123");
     }
 
     /// Tests stream peeking when empty.
@@ -854,17 +869,18 @@ mod tests {
     fn test_stream_peek_empty() {
         stack_pin_init!(let chain_pin = MBufChain::new());
         let mut chain = chain_pin.as_mut();
-        let mut read_buf = [0u8; 1];
+        let mut read_buf = [MaybeUninit::<u8>::uninit(); 1];
         let mut actual = 0;
-        expect_ok!(read_helper(
+        let bytes = unwrap_ok!(read_helper(
             &mut chain,
             &mut read_buf,
             1,
             MessageType::Stream,
             ReadType::Peek,
-            &mut actual
+            &mut actual,
         ));
         expect_eq!(actual, 0);
+        expect_true!(bytes.is_empty());
     }
 
     /// Tests stream peeking zero length.
@@ -874,17 +890,18 @@ mod tests {
         let mut chain = chain_pin.as_mut();
         expect_true!(write_helper(chain.as_mut(), "a", MessageType::Stream));
 
-        let mut read_buf = [0u8; 1];
+        let mut read_buf = [MaybeUninit::<u8>::uninit(); 1];
         let mut actual = 0;
-        expect_ok!(read_helper(
+        let bytes = unwrap_ok!(read_helper(
             &mut chain,
             &mut read_buf,
             0,
             MessageType::Stream,
             ReadType::Peek,
-            &mut actual
+            &mut actual,
         ));
         expect_eq!(actual, 0);
+        expect_true!(bytes.is_empty());
     }
 
     /// Tests stream peeking with underflow.
@@ -894,28 +911,28 @@ mod tests {
         let mut chain = chain_pin.as_mut();
 
         expect_true!(write_helper(chain.as_mut(), "abc", MessageType::Stream));
-        let mut read_buf = [0u8; 10];
+        let mut read_buf = [MaybeUninit::<u8>::uninit(); 10];
         let mut actual = 0;
-        expect_ok!(read_helper(
+        let bytes = unwrap_ok!(read_helper(
             &mut chain,
             &mut read_buf,
             10,
             MessageType::Stream,
             ReadType::Peek,
-            &mut actual
+            &mut actual,
         ));
-        expect_true!(&read_buf[..actual] == b"abc");
+        expect_true!(bytes == b"abc");
 
         expect_true!(write_helper(chain.as_mut(), "123", MessageType::Stream));
-        expect_ok!(read_helper(
+        let bytes = unwrap_ok!(read_helper(
             &mut chain,
             &mut read_buf,
             10,
             MessageType::Stream,
             ReadType::Peek,
-            &mut actual
+            &mut actual,
         ));
-        expect_true!(&read_buf[..actual] == b"abc123");
+        expect_true!(bytes == b"abc123");
     }
 
     /// Tests datagram reading when empty.
@@ -923,17 +940,18 @@ mod tests {
     fn test_datagram_read_empty() {
         stack_pin_init!(let chain_pin = MBufChain::new());
         let mut chain = chain_pin.as_mut();
-        let mut read_buf = [0u8; 1];
+        let mut read_buf = [MaybeUninit::<u8>::uninit(); 1];
         let mut actual = 0;
-        expect_ok!(read_helper(
+        let bytes = unwrap_ok!(read_helper(
             &mut chain,
             &mut read_buf,
             1,
             MessageType::Datagram,
             ReadType::Read,
-            &mut actual
+            &mut actual,
         ));
         expect_eq!(actual, 0);
+        expect_true!(bytes.is_empty());
         expect_true!(chain.is_empty());
     }
 
@@ -944,17 +962,18 @@ mod tests {
         let mut chain = chain_pin.as_mut();
         expect_true!(write_helper(chain.as_mut(), "x", MessageType::Datagram));
 
-        let mut read_buf = [0u8; 1];
+        let mut read_buf = [MaybeUninit::<u8>::uninit(); 1];
         let mut actual = 0;
-        expect_ok!(read_helper(
+        let bytes = unwrap_ok!(read_helper(
             &mut chain,
             &mut read_buf,
             0,
             MessageType::Datagram,
             ReadType::Read,
-            &mut actual
+            &mut actual,
         ));
         expect_eq!(actual, 0);
+        expect_true!(bytes.is_empty());
         expect_false!(chain.is_empty());
     }
 
@@ -979,33 +998,33 @@ mod tests {
         expect_eq!(chain.stream_size(), 2 * WRITE_LEN);
         expect_false!(chain.is_empty());
 
-        let mut read_buf = [0u8; WRITE_LEN];
+        let mut read_buf = [MaybeUninit::<u8>::uninit(); WRITE_LEN];
         let mut actual = 0;
-        expect_ok!(read_helper(
+        let bytes = unwrap_ok!(read_helper(
             &mut chain,
             &mut read_buf,
             1,
             MessageType::Datagram,
             ReadType::Read,
-            &mut actual
+            &mut actual,
         ));
         expect_eq!(actual, 1);
-        expect_eq!(read_buf[0], b'A');
+        expect_eq!(bytes[0], b'A');
         expect_false!(chain.is_empty());
 
         expect_eq!(chain.stream_size(), WRITE_LEN);
-        expect_ok!(read_helper(
+        let bytes = unwrap_ok!(read_helper(
             &mut chain,
             &mut read_buf,
             WRITE_LEN,
             MessageType::Datagram,
             ReadType::Read,
-            &mut actual
+            &mut actual,
         ));
         expect_eq!(actual, WRITE_LEN);
         expect_true!(chain.is_empty());
         expect_eq!(chain.stream_size(), 0);
-        expect_true!(read_buf.iter().all(|&b| b == b'B'));
+        expect_true!(bytes.iter().all(|&b| b == b'B'));
     }
 
     /// Tests basic datagram writing and reading.
@@ -1036,18 +1055,18 @@ mod tests {
         // Read them back and verify their contents.
         for i in 1..=NUM_DATAGRAMS {
             expect_eq!(chain.datagram_size(), i);
-            let mut read_buf = [0u8; 100];
+            let mut read_buf = [MaybeUninit::<u8>::uninit(); 100];
             let mut actual = 0;
-            expect_ok!(read_helper(
+            let bytes = unwrap_ok!(read_helper(
                 &mut chain,
                 &mut read_buf[..i],
                 i,
                 MessageType::Datagram,
                 ReadType::Read,
-                &mut actual
+                &mut actual,
             ));
             expect_eq!(actual, i);
-            expect_true!(read_buf[..i].iter().all(|&b| b == (i as u8)));
+            expect_true!(bytes.iter().all(|&b| b == (i as u8)));
         }
 
         expect_true!(chain.is_empty());
@@ -1127,26 +1146,26 @@ mod tests {
         expect_eq!(written_b, 1);
 
         // Now read them both out.
-        let mut read_buf = [0u8; 1];
+        let mut read_buf = [MaybeUninit::<u8>::uninit(); 1];
         let mut actual = 0;
-        expect_ok!(read_helper(
+        let bytes = unwrap_ok!(read_helper(
             &mut chain,
             &mut read_buf,
             1,
             MessageType::Datagram,
             ReadType::Read,
-            &mut actual
+            &mut actual,
         ));
-        expect_eq!(read_buf[0], b'a');
-        expect_ok!(read_helper(
+        expect_eq!(bytes[0], b'a');
+        let bytes = unwrap_ok!(read_helper(
             &mut chain,
             &mut read_buf,
             1,
             MessageType::Datagram,
             ReadType::Read,
-            &mut actual
+            &mut actual,
         ));
-        expect_eq!(read_buf[0], b'b');
+        expect_eq!(bytes[0], b'b');
 
         // Now write a large datagram that spans two buffers.
         let (_mem_c, c_src) = make_user_in_byte(large_write, b'c').unwrap();
@@ -1161,27 +1180,27 @@ mod tests {
         expect_eq!(written_d, 1);
 
         // Do a short read to consume the first datagram.
-        expect_ok!(read_helper(
+        let bytes = unwrap_ok!(read_helper(
             &mut chain,
             &mut read_buf,
             1,
             MessageType::Datagram,
             ReadType::Read,
-            &mut actual
+            &mut actual,
         ));
-        expect_eq!(read_buf[0], b'c');
+        expect_eq!(bytes[0], b'c');
 
         // Reading again should give us the second datagram we wrote, as the remaining of the first
         // should have been discarded.
-        expect_ok!(read_helper(
+        let bytes = unwrap_ok!(read_helper(
             &mut chain,
             &mut read_buf,
             1,
             MessageType::Datagram,
             ReadType::Read,
-            &mut actual
+            &mut actual,
         ));
-        expect_eq!(read_buf[0], b'd');
+        expect_eq!(bytes[0], b'd');
 
         // At this point the socket should be empty.
         expect_true!(chain.is_empty());
@@ -1206,39 +1225,39 @@ mod tests {
         let mut chain = chain_pin.as_mut();
         expect_true!(write_helper(chain.as_mut(), "abc", MessageType::Datagram));
 
-        let mut read_buf = [0u8; 10];
+        let mut read_buf = [MaybeUninit::<u8>::uninit(); 10];
         let mut actual = 0;
-        expect_ok!(read_helper(
+        let bytes = unwrap_ok!(read_helper(
             &mut chain,
             &mut read_buf,
             1,
             MessageType::Datagram,
             ReadType::Peek,
-            &mut actual
+            &mut actual,
         ));
-        expect_true!(&read_buf[..actual] == b"a");
+        expect_true!(bytes == b"a");
 
-        expect_ok!(read_helper(
+        let bytes = unwrap_ok!(read_helper(
             &mut chain,
             &mut read_buf,
             3,
             MessageType::Datagram,
             ReadType::Peek,
-            &mut actual
+            &mut actual,
         ));
-        expect_true!(&read_buf[..actual] == b"abc");
+        expect_true!(bytes == b"abc");
 
         // Make sure peeking didn't affect an actual read.
         expect_eq!(chain.stream_size(), 3);
-        expect_ok!(read_helper(
+        let bytes = unwrap_ok!(read_helper(
             &mut chain,
             &mut read_buf,
             3,
             MessageType::Datagram,
             ReadType::Read,
-            &mut actual
+            &mut actual,
         ));
-        expect_true!(&read_buf[..actual] == b"abc");
+        expect_true!(bytes == b"abc");
     }
 
     /// Tests datagram peeking empty.
@@ -1246,17 +1265,18 @@ mod tests {
     fn test_datagram_peek_empty() {
         stack_pin_init!(let chain_pin = MBufChain::new());
         let mut chain = chain_pin.as_mut();
-        let mut read_buf = [0u8; 1];
+        let mut read_buf = [MaybeUninit::<u8>::uninit(); 1];
         let mut actual = 0;
-        expect_ok!(read_helper(
+        let bytes = unwrap_ok!(read_helper(
             &mut chain,
             &mut read_buf,
             1,
             MessageType::Datagram,
             ReadType::Peek,
-            &mut actual
+            &mut actual,
         ));
         expect_eq!(actual, 0);
+        expect_true!(bytes.is_empty());
     }
 
     /// Tests datagram peeking zero length.
@@ -1266,17 +1286,18 @@ mod tests {
         let mut chain = chain_pin.as_mut();
         expect_true!(write_helper(chain.as_mut(), "a", MessageType::Datagram));
 
-        let mut read_buf = [0u8; 1];
+        let mut read_buf = [MaybeUninit::<u8>::uninit(); 1];
         let mut actual = 0;
-        expect_ok!(read_helper(
+        let bytes = unwrap_ok!(read_helper(
             &mut chain,
             &mut read_buf,
             0,
             MessageType::Datagram,
             ReadType::Peek,
-            &mut actual
+            &mut actual,
         ));
         expect_eq!(actual, 0);
+        expect_true!(bytes.is_empty());
     }
 
     /// Tests datagram peeking underflow.
@@ -1287,39 +1308,39 @@ mod tests {
         expect_true!(write_helper(chain.as_mut(), "abc", MessageType::Datagram));
         expect_true!(write_helper(chain.as_mut(), "123", MessageType::Datagram));
 
-        let mut read_buf = [0u8; 10];
+        let mut read_buf = [MaybeUninit::<u8>::uninit(); 10];
         let mut actual = 0;
 
         // Datagram peeks should not return more than a single message.
-        expect_ok!(read_helper(
+        let bytes = unwrap_ok!(read_helper(
             &mut chain,
             &mut read_buf,
             10,
             MessageType::Datagram,
             ReadType::Peek,
-            &mut actual
+            &mut actual,
         ));
-        expect_true!(&read_buf[..actual] == b"abc");
+        expect_true!(bytes == b"abc");
 
-        expect_ok!(read_helper(
+        let bytes = unwrap_ok!(read_helper(
             &mut chain,
             &mut read_buf,
             3,
             MessageType::Datagram,
             ReadType::Read,
-            &mut actual
+            &mut actual,
         ));
-        expect_true!(&read_buf[..actual] == b"abc");
+        expect_true!(bytes == b"abc");
 
-        expect_ok!(read_helper(
+        let bytes = unwrap_ok!(read_helper(
             &mut chain,
             &mut read_buf,
             10,
             MessageType::Datagram,
             ReadType::Peek,
-            &mut actual
+            &mut actual,
         ));
-        expect_true!(&read_buf[..actual] == b"123");
+        expect_true!(bytes == b"123");
     }
 
     /// Tests multi-buffer datagram partial read discarding trailing continuation buffers.
