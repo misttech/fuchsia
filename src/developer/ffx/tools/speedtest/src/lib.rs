@@ -123,7 +123,7 @@ async fn start_speedtest_component(
     remote_control: &RemoteControlProxyHolder,
 ) -> fho::Result<fspeedtest::SpeedtestProxy> {
     let lifecycle_controller =
-        ffx_component::rcs::connect_to_lifecycle_controller_f(&remote_control).await?;
+        ffx_component::rcs::connect_to_lifecycle_controller(&remote_control).await?;
 
     let (parent, child_name, collection) = unpack_moniker(moniker);
     let url = AbsoluteComponentUrl::parse("fuchsia-pkg://fuchsia.com/speedtest#meta/speedtest.cm")
@@ -143,7 +143,7 @@ async fn start_speedtest_component(
         e => Err(ffx_error!(e)),
     })?;
 
-    rcs_fdomain::connect_with_timeout::<fspeedtest::SpeedtestMarker>(
+    rcs::connect_with_timeout::<fspeedtest::SpeedtestMarker>(
         Duration::from_secs(10),
         moniker.as_ref(),
         &remote_control,

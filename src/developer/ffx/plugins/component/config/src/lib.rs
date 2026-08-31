@@ -6,7 +6,7 @@ use async_trait::async_trait;
 use component_debug_fdomain::cli::{config_list_cmd, config_set_cmd, config_unset_cmd};
 use errors::FfxError;
 use ffx_component::rcs::{
-    connect_to_config_override_f, connect_to_lifecycle_controller_f, connect_to_realm_query_f,
+    connect_to_config_override, connect_to_lifecycle_controller, connect_to_realm_query,
 };
 use ffx_component_config_args::{
     ConfigComponentCommand, ListArgs, SetArgs, SubCommandEnum, UnsetArgs,
@@ -31,9 +31,9 @@ impl FfxMain for ConfigTool {
     type Error = ::fho::Error;
 
     async fn main(self, writer: Self::Writer) -> fho::Result<()> {
-        let lifecycle_controller = connect_to_lifecycle_controller_f(&self.rcs).await?;
-        let realm_query = connect_to_realm_query_f(&self.rcs).await?;
-        let config_override = connect_to_config_override_f(&self.rcs).await?;
+        let lifecycle_controller = connect_to_lifecycle_controller(&self.rcs).await?;
+        let realm_query = connect_to_realm_query(&self.rcs).await?;
+        let config_override = connect_to_config_override(&self.rcs).await?;
         let ConfigComponentCommand { subcommand } = self.cmd;
         match subcommand {
             SubCommandEnum::Set(SetArgs { query, key_values, reload }) => config_set_cmd(

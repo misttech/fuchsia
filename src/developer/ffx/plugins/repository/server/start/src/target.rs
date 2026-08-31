@@ -65,14 +65,14 @@ async fn connect_to_target(
     .context("resolving repository host")?;
 
     if should_register_repo {
-        let repo_proxy: RepositoryManagerProxy = rcs_fdomain::toolbox::connect_with_timeout::<
+        let repo_proxy: RepositoryManagerProxy = rcs::toolbox::connect_with_timeout::<
             RepositoryManagerMarker,
         >(&rcs_proxy, connect_timeout)
         .await
         .context("connecting to repository manager")?;
 
         let engine_proxy: EngineProxy =
-            rcs_fdomain::toolbox::connect_with_timeout::<EngineMarker>(&rcs_proxy, connect_timeout)
+            rcs::toolbox::connect_with_timeout::<EngineMarker>(&rcs_proxy, connect_timeout)
                 .await
                 .context("binding engine to stream")?;
 

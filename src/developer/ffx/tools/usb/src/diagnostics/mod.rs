@@ -474,13 +474,11 @@ pub(crate) async fn connect_target_protocol<P: DiscoverableProtocolMarker>(
     rcs: &RemoteControlProxyHolder,
     primary_moniker: &str,
 ) -> anyhow::Result<P::Proxy> {
-    match rcs_fdomain::connect_to_protocol::<P>(TIMEOUT, primary_moniker, rcs).await {
+    match rcs::connect_to_protocol::<P>(TIMEOUT, primary_moniker, rcs).await {
         Ok(proxy) => Ok(proxy),
-        Err(_) => {
-            rcs_fdomain::toolbox::connect_with_timeout::<P>(rcs, TIMEOUT).await.with_context(|| {
-                format!("Connecting to {} at {primary_moniker} or /toolbox", P::PROTOCOL_NAME)
-            })
-        }
+        Err(_) => rcs::toolbox::connect_with_timeout::<P>(rcs, TIMEOUT).await.with_context(|| {
+            format!("Connecting to {} at {primary_moniker} or /toolbox", P::PROTOCOL_NAME)
+        }),
     }
 }
 

@@ -10,7 +10,7 @@ use component_debug::cli::{
 use component_debug_fdomain as component_debug;
 use errors::ffx_error;
 
-use ffx_component::rcs::connect_to_realm_query_f as connect_to_realm_query;
+use ffx_component::rcs::connect_to_realm_query;
 use ffx_component_storage_args::{StorageCommand, SubCommandEnum};
 use ffx_writer::{MachineWriter, ToolIO};
 use fho::{FfxMain, FfxTool};

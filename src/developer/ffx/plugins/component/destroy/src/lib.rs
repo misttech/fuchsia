@@ -8,7 +8,7 @@ use component_debug_fdomain::lifecycle::{DestroyError, destroy_instance_in_colle
 use component_debug_fdomain::query::get_cml_moniker_from_query;
 use fdomain_fuchsia_sys2 as fsys;
 use ffx_command_error::{Error, user_error};
-use ffx_component::rcs::{connect_to_lifecycle_controller_f, connect_to_realm_query_f};
+use ffx_component::rcs::{connect_to_lifecycle_controller, connect_to_realm_query};
 use ffx_component_destroy_args::DestroyComponentCommand;
 use ffx_writer::{ToolIO, VerifiedMachineWriter};
 use fho::{FfxContext, FfxMain, FfxTool};
@@ -42,8 +42,8 @@ impl FfxMain for DestroyTool {
     type Error = ::fho::Error;
 
     async fn main(self, writer: Self::Writer) -> fho::Result<()> {
-        let lifecycle_controller = connect_to_lifecycle_controller_f(&self.rcs).await?;
-        let realm_query = connect_to_realm_query_f(&self.rcs).await?;
+        let lifecycle_controller = connect_to_lifecycle_controller(&self.rcs).await?;
+        let realm_query = connect_to_realm_query(&self.rcs).await?;
 
         destroy_cmd(
             &mut DefaultDestroyCmdImpl,

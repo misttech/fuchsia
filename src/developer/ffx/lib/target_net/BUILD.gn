@@ -17,7 +17,7 @@ rustc_library("lib") {
     "//sdk/fidl/fuchsia.posix:fuchsia.posix_rust_fdomain",
     "//sdk/fidl/fuchsia.posix.socket:fuchsia.posix.socket_rust_fdomain",
     "//src/developer/ffx/lib/netext:lib",
-    "//src/developer/ffx/lib/rcs:lib_fdomain",
+    "//src/developer/ffx/lib/rcs:lib",
     "//src/lib/fdomain/client",
     "//src/lib/fidl/rust/fidl",
     "//third_party/rust_crates:anyhow",

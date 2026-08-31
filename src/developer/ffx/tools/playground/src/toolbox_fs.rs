@@ -14,8 +14,7 @@ pub async fn toolbox_directory(
     query: &sys2::RealmQueryProxy,
 ) -> Result<Arc<impl DirectoryEntry>> {
     let controller =
-        rcs_fdomain::root_lifecycle_controller(remote_proxy, std::time::Duration::from_secs(5))
-            .await?;
+        rcs::root_lifecycle_controller(remote_proxy, std::time::Duration::from_secs(5)).await?;
     // Attempt to resolve both the modern and legacy locations concurrently and use the one that
     // resolves successfully
     let moniker = moniker::Moniker::try_from("toolbox")?;

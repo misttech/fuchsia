@@ -10,7 +10,7 @@ use fdomain_client::fidl::Proxy;
 use fdomain_fuchsia_developer_remotecontrol::RemoteControlProxy;
 use fdomain_fuchsia_io as fio;
 use fdomain_fuchsia_sys2 as fsys;
-use ffx_component::rcs::connect_to_realm_query_f as connect_to_realm_query;
+use ffx_component::rcs::connect_to_realm_query;
 use ffx_writer::SimpleWriter;
 use fho::{FfxContext as _, FfxMain, FfxTool};
 use fuchsia_async::unblock;

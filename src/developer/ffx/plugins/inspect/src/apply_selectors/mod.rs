@@ -41,10 +41,9 @@ pub async fn execute(
         )
         .context(format!("Unable to deserialize {}.", snapshot_file.display()))?
     } else {
-        let realm_query =
-            rcs_fdomain::root_realm_query(&rcs_proxy, std::time::Duration::from_secs(15))
-                .await
-                .map_err(|e| anyhow!(ffx_error!("Failed to connect to realm query: {e}")))?;
+        let realm_query = rcs::root_realm_query(&rcs_proxy, std::time::Duration::from_secs(15))
+            .await
+            .map_err(|e| anyhow!(ffx_error!("Failed to connect to realm query: {e}")))?;
         let provider = HostArchiveReader::new(diagnostics_proxy, realm_query);
         provider
             .snapshot_diagnostics_data::<Inspect>(cmd.accessor_path.as_deref(), std::iter::empty())

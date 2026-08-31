@@ -4,12 +4,12 @@
 
 use async_trait::async_trait;
 use fdomain_client::fidl::{DiscoverableProtocolMarker, Proxy};
-use fdomain_fuchsia_developer_remotecontrol as rc_f;
-use fdomain_fuchsia_pkg as fpkg_f;
+use fdomain_fuchsia_developer_remotecontrol as rc;
+use fdomain_fuchsia_pkg as fpkg;
 use futures::future::FutureExt;
 use futures::select;
 use pkg::{PkgServerInstanceInfo, PkgServerInstances};
-use rcs_fdomain::open_with_timeout_at;
+use rcs::open_with_timeout_at;
 use std::path::PathBuf;
 use std::process::Command;
 use std::time::Duration;
@@ -162,7 +162,7 @@ fn get_server_start_args(build_dir: Option<&str>) -> Vec<String> {
 }
 
 async fn check_iterator(
-    iterator: fpkg_f::PackageIndexIteratorProxy,
+    iterator: fpkg::PackageIndexIteratorProxy,
     package_name: &str,
 ) -> anyhow::Result<bool> {
     loop {
@@ -183,19 +183,19 @@ async fn check_iterator(
 
 /// Checks if a package is already on the device in either the base or cache package index.
 async fn is_package_on_device(
-    cache_proxy: &fpkg_f::PackageCacheProxy,
+    cache_proxy: &fpkg::PackageCacheProxy,
     client: std::sync::Arc<fdomain_client::Client>,
     package_name: &str,
 ) -> anyhow::Result<bool> {
     let (iterator_proxy, iterator_server) =
-        client.create_proxy::<fpkg_f::PackageIndexIteratorMarker>();
+        client.create_proxy::<fpkg::PackageIndexIteratorMarker>();
     cache_proxy.base_package_index(iterator_server)?;
     if check_iterator(iterator_proxy, package_name).await? {
         return Ok(true);
     }
 
     let (iterator_proxy, iterator_server) =
-        client.create_proxy::<fpkg_f::PackageIndexIteratorMarker>();
+        client.create_proxy::<fpkg::PackageIndexIteratorMarker>();
     cache_proxy.cache_package_index(iterator_server)?;
     if check_iterator(iterator_proxy, package_name).await? {
         return Ok(true);
@@ -209,16 +209,16 @@ async fn is_package_on_device(
 pub async fn maybe_start_server<R: PackageServerRunner>(
     runner: &R,
     build_dir: Option<&std::path::Path>,
-    rcs_proxy: Option<&rc_f::RemoteControlProxy>,
+    rcs_proxy: Option<&rc::RemoteControlProxy>,
     package_url: Option<&fuchsia_url::fuchsia_pkg::AbsoluteComponentUrl>,
 ) -> anyhow::Result<Option<ServerGuard>> {
     if let (Some(url), Some(rcs)) = (package_url, rcs_proxy) {
         let pkg_name = url.package_url().name().to_string();
-        let cache_proxy = open_with_timeout_at::<fpkg_f::PackageCacheMarker>(
+        let cache_proxy = open_with_timeout_at::<fpkg::PackageCacheMarker>(
             Duration::from_secs(5),
             "core/pkg-cache",
             fdomain_fuchsia_sys2::OpenDirType::ExposedDir,
-            fpkg_f::PackageCacheMarker::PROTOCOL_NAME,
+            fpkg::PackageCacheMarker::PROTOCOL_NAME,
             rcs,
         )
         .await;
@@ -351,14 +351,14 @@ mod tests {
 
     async fn setup_fake_iterator(
         client: std::sync::Arc<fdomain_client::Client>,
-        entries: Vec<fpkg_f::PackageIndexEntry>,
-    ) -> fpkg_f::PackageIndexIteratorProxy {
-        let (proxy, server) = client.create_proxy::<fpkg_f::PackageIndexIteratorMarker>();
+        entries: Vec<fpkg::PackageIndexEntry>,
+    ) -> fpkg::PackageIndexIteratorProxy {
+        let (proxy, server) = client.create_proxy::<fpkg::PackageIndexIteratorMarker>();
         fuchsia_async::Task::local(async move {
             let mut stream = server.into_stream();
             let mut sent = false;
             while let Ok(Some(req)) = stream.try_next().await {
-                let fpkg_f::PackageIndexIteratorRequest::Next { responder } = req;
+                let fpkg::PackageIndexIteratorRequest::Next { responder } = req;
                 if !sent {
                     sent = true;
                     responder.send(&entries).unwrap();
@@ -375,17 +375,13 @@ mod tests {
     async fn test_check_iterator_found() {
         let client = fdomain_local::local_client_empty();
         let entries = vec![
-            fpkg_f::PackageIndexEntry {
-                package_url: fpkg_f::PackageUrl {
-                    url: "fuchsia-pkg://fuchsia.com/pkg1".to_string(),
-                },
-                meta_far_blob_id: fpkg_f::BlobId { merkle_root: [0; 32] },
+            fpkg::PackageIndexEntry {
+                package_url: fpkg::PackageUrl { url: "fuchsia-pkg://fuchsia.com/pkg1".to_string() },
+                meta_far_blob_id: fpkg::BlobId { merkle_root: [0; 32] },
             },
-            fpkg_f::PackageIndexEntry {
-                package_url: fpkg_f::PackageUrl {
-                    url: "fuchsia-pkg://fuchsia.com/pkg2".to_string(),
-                },
-                meta_far_blob_id: fpkg_f::BlobId { merkle_root: [0; 32] },
+            fpkg::PackageIndexEntry {
+                package_url: fpkg::PackageUrl { url: "fuchsia-pkg://fuchsia.com/pkg2".to_string() },
+                meta_far_blob_id: fpkg::BlobId { merkle_root: [0; 32] },
             },
         ];
         let iterator = setup_fake_iterator(client.clone(), entries).await;
@@ -395,9 +391,9 @@ mod tests {
     #[fuchsia_async::run_singlethreaded(test)]
     async fn test_check_iterator_not_found() {
         let client = fdomain_local::local_client_empty();
-        let entries = vec![fpkg_f::PackageIndexEntry {
-            package_url: fpkg_f::PackageUrl { url: "fuchsia-pkg://fuchsia.com/pkg1".to_string() },
-            meta_far_blob_id: fpkg_f::BlobId { merkle_root: [0; 32] },
+        let entries = vec![fpkg::PackageIndexEntry {
+            package_url: fpkg::PackageUrl { url: "fuchsia-pkg://fuchsia.com/pkg1".to_string() },
+            meta_far_blob_id: fpkg::BlobId { merkle_root: [0; 32] },
         }];
         let iterator = setup_fake_iterator(client.clone(), entries).await;
         assert!(!check_iterator(iterator, "pkg2").await.unwrap());
@@ -405,17 +401,17 @@ mod tests {
 
     async fn setup_fake_cache(
         client: std::sync::Arc<fdomain_client::Client>,
-        base_entries: Vec<fpkg_f::PackageIndexEntry>,
-        cache_entries: Vec<fpkg_f::PackageIndexEntry>,
-    ) -> fpkg_f::PackageCacheProxy {
+        base_entries: Vec<fpkg::PackageIndexEntry>,
+        cache_entries: Vec<fpkg::PackageIndexEntry>,
+    ) -> fpkg::PackageCacheProxy {
         fake_proxy(client.clone(), move |req| match req {
-            fpkg_f::PackageCacheRequest::BasePackageIndex { iterator, .. } => {
+            fpkg::PackageCacheRequest::BasePackageIndex { iterator, .. } => {
                 let entries = base_entries.clone();
                 fuchsia_async::Task::local(async move {
                     let mut stream = iterator.into_stream();
                     let mut sent = false;
                     while let Ok(Some(req)) = stream.try_next().await {
-                        let fpkg_f::PackageIndexIteratorRequest::Next { responder } = req;
+                        let fpkg::PackageIndexIteratorRequest::Next { responder } = req;
                         if !sent {
                             sent = true;
                             responder.send(&entries).unwrap();
@@ -426,13 +422,13 @@ mod tests {
                 })
                 .detach();
             }
-            fpkg_f::PackageCacheRequest::CachePackageIndex { iterator, .. } => {
+            fpkg::PackageCacheRequest::CachePackageIndex { iterator, .. } => {
                 let entries = cache_entries.clone();
                 fuchsia_async::Task::local(async move {
                     let mut stream = iterator.into_stream();
                     let mut sent = false;
                     while let Ok(Some(req)) = stream.try_next().await {
-                        let fpkg_f::PackageIndexIteratorRequest::Next { responder } = req;
+                        let fpkg::PackageIndexIteratorRequest::Next { responder } = req;
                         if !sent {
                             sent = true;
                             responder.send(&entries).unwrap();
@@ -450,9 +446,9 @@ mod tests {
     #[fuchsia_async::run_singlethreaded(test)]
     async fn test_is_package_on_device_in_base() {
         let client = fdomain_local::local_client_empty();
-        let base_entries = vec![fpkg_f::PackageIndexEntry {
-            package_url: fpkg_f::PackageUrl { url: "fuchsia-pkg://fuchsia.com/pkg1".to_string() },
-            meta_far_blob_id: fpkg_f::BlobId { merkle_root: [0; 32] },
+        let base_entries = vec![fpkg::PackageIndexEntry {
+            package_url: fpkg::PackageUrl { url: "fuchsia-pkg://fuchsia.com/pkg1".to_string() },
+            meta_far_blob_id: fpkg::BlobId { merkle_root: [0; 32] },
         }];
         let cache_entries = vec![];
         let cache_proxy = setup_fake_cache(client.clone(), base_entries, cache_entries).await;
@@ -463,9 +459,9 @@ mod tests {
     async fn test_is_package_on_device_in_cache() {
         let client = fdomain_local::local_client_empty();
         let base_entries = vec![];
-        let cache_entries = vec![fpkg_f::PackageIndexEntry {
-            package_url: fpkg_f::PackageUrl { url: "fuchsia-pkg://fuchsia.com/pkg2".to_string() },
-            meta_far_blob_id: fpkg_f::BlobId { merkle_root: [0; 32] },
+        let cache_entries = vec![fpkg::PackageIndexEntry {
+            package_url: fpkg::PackageUrl { url: "fuchsia-pkg://fuchsia.com/pkg2".to_string() },
+            meta_far_blob_id: fpkg::BlobId { merkle_root: [0; 32] },
         }];
         let cache_proxy = setup_fake_cache(client.clone(), base_entries, cache_entries).await;
         assert!(is_package_on_device(&cache_proxy, client.clone(), "pkg2").await.unwrap());

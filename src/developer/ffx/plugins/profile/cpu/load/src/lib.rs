@@ -38,9 +38,7 @@ impl FfxMain for CpuLoadTool {
             },
             (None, Some(duration)) => {
                 let stats_proxy =
-                    match rcs_fdomain::kernel_stats(&rcs_proxy, std::time::Duration::from_secs(5))
-                        .await
-                    {
+                    match rcs::kernel_stats(&rcs_proxy, std::time::Duration::from_secs(5)).await {
                         Ok(s) => s,
                         Err(e) => ffx_bail!("Could not open fuchsia.kernel.Stats: {e}",),
                     };

@@ -3,96 +3,16 @@
 // found in the LICENSE file.
 
 use anyhow::{Context, Result};
+use fdomain_client::fidl::{DiscoverableProtocolMarker, Proxy};
+use fdomain_fuchsia_developer_remotecontrol::RemoteControlProxy;
+use fdomain_fuchsia_io as fio;
+use fdomain_fuchsia_sys2::OpenDirType;
 use std::time::{Duration, Instant};
-
-#[cfg(feature = "fdomain")]
-use {
-    fdomain_client::fidl::{DiscoverableProtocolMarker, Proxy},
-    fdomain_fuchsia_developer_remotecontrol::RemoteControlProxy,
-    fdomain_fuchsia_io as fio,
-    fdomain_fuchsia_sys2::OpenDirType,
-};
-
-#[cfg(not(feature = "fdomain"))]
-use {
-    fidl::endpoints::{DiscoverableProtocolMarker, ProxyHasDomain},
-    fidl_fuchsia_developer_remotecontrol::RemoteControlProxy,
-    fidl_fuchsia_io as fio, fidl_fuchsia_sys2 as sys2,
-    fidl_fuchsia_sys2::OpenDirType,
-};
 
 pub const MONIKER: &str = "toolbox";
 const LEGACY_MONIKER: &str = "core/toolbox";
 
-#[cfg(not(feature = "fdomain"))]
-async fn connect_realm_query(
-    rcs: &RemoteControlProxy,
-    moniker: &str,
-) -> Result<sys2::RealmQueryProxy> {
-    // Try to connect via fuchsia.developer.remotecontrol/RemoteControl.ConnectCapability.
-    let (query, server) = fidl::endpoints::create_proxy::<sys2::RealmQueryMarker>();
-    rcs.connect_capability(
-        moniker,
-        sys2::OpenDirType::NamespaceDir,
-        &format!("svc/{}.root", sys2::RealmQueryMarker::PROTOCOL_NAME),
-        server.into_channel(),
-    )
-    .await?
-    .map_err(|e| anyhow::anyhow!("{e:?}"))?;
-    return Ok(query);
-}
-
-// Note: this function is copied from component_debug, so we don't need to
-// depend on it (and therefore slow down the entire build). The only difference
-// is that it does not map errors into component_debug's OpenError.
-// Not so great that this is duplicating code.. but this is "legacy"
-// (non-FDomain) code, so its lifetime is limited.
-// Note: do not make this function pub: that way the compiler will remind us to
-// remove it once we get rid of the non-FDomain code path.
-// Opens the specified directory type in a component instance identified by `moniker`.
-#[cfg(not(feature = "fdomain"))]
-async fn open_instance_directory(
-    moniker: &moniker::Moniker,
-    dir_type: OpenDirType,
-    realm: &sys2::RealmQueryProxy,
-) -> Result<fio::DirectoryProxy> {
-    let moniker_str = moniker.to_string();
-    let (dir_client, dir_server) = realm.domain().create_proxy::<fio::DirectoryMarker>();
-    realm
-        .open_directory(&moniker_str, dir_type.clone().into(), dir_server)
-        .await
-        .map_err(|e| anyhow::anyhow!("{e:?}"))?
-        .map_err(|e| anyhow::anyhow!("{e:?}"))?;
-    Ok(dir_client)
-}
-
 /// Open the service directory of the toolbox.
-#[cfg(not(feature = "fdomain"))]
-pub async fn open_toolbox(rcs: &RemoteControlProxy) -> Result<fio::DirectoryProxy> {
-    let (query, moniker) = {
-        if let Ok(query) = connect_realm_query(rcs, MONIKER).await {
-            (query, MONIKER)
-        } else {
-            let query = connect_realm_query(rcs, LEGACY_MONIKER).await?;
-            (query, LEGACY_MONIKER)
-        }
-    };
-    let moniker = moniker::Moniker::try_from(moniker)?;
-    let namespace_dir =
-        open_instance_directory(&moniker, sys2::OpenDirType::NamespaceDir.into(), &query).await?;
-    let (ret, server) = fidl::endpoints::create_proxy::<fio::DirectoryMarker>();
-    namespace_dir.open(
-        "svc",
-        fio::Flags::PROTOCOL_DIRECTORY | fio::PERM_READABLE,
-        &fio::Options::default(),
-        server.into(),
-    )?;
-
-    Ok(ret)
-}
-
-/// Open the service directory of the toolbox.
-#[cfg(feature = "fdomain")]
 pub async fn open_toolbox(rcs: &RemoteControlProxy) -> Result<fio::DirectoryProxy> {
     rcs.domain().namespace().await.map_err(Into::into).map(fio::DirectoryProxy::from_channel)
 }

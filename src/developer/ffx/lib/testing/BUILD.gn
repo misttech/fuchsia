@@ -29,14 +29,12 @@ rustc_library("lib") {
     "//sdk/fidl/fuchsia.developer.remotecontrol:fuchsia.developer.remotecontrol_rust_fdomain",
     "//sdk/fidl/fuchsia.developer.remotecontrol:fuchsia.developer.remotecontrol_rust_fdomain_flex",
     "//sdk/fidl/fuchsia.test.manager:fuchsia.test.manager_rust_fdomain_flex",
-    "//src/developer/ffx/lib/rcs:lib_fdomain",
+    "//src/developer/ffx/lib/rcs:lib",
     "//src/developer/ffx/lib/target/holders:lib",
     "//src/diagnostics/iquery/test_support:iquery_test_support",
     "//src/lib/fdomain/client",
     "//src/lib/fuchsia-async",
   ]
-
-  features = [ "fdomain" ]
 }
 
 group("tests") {

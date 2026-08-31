@@ -7,7 +7,7 @@ use component_debug::cli;
 use component_debug_fdomain as component_debug;
 use fdomain_fuchsia_developer_remotecontrol as rc;
 use fdomain_fuchsia_starnix_container::{ControllerMarker, ControllerProxy};
-use rcs_fdomain as rcs;
+use rcs;
 use target_connector::Connector;
 use target_holders::RemoteControlProxyHolder;
 

@@ -35,7 +35,7 @@ ffx_plugin("ffx_repository_server_start") {
     "//src/developer/ffx/lib/errors:lib",
     "//src/developer/ffx/lib/fho:lib",
     "//src/developer/ffx/lib/pkg:pkg_fdomain",
-    "//src/developer/ffx/lib/rcs:lib_fdomain",
+    "//src/developer/ffx/lib/rcs:lib",
     "//src/developer/ffx/lib/ssh:lib",
     "//src/developer/ffx/lib/target:lib",
     "//src/developer/ffx/lib/target/connector:lib",

@@ -78,7 +78,7 @@ async fn resolve_config_capabilities(
     if raw_capabilities.is_empty() {
         return Ok(vec![]);
     }
-    let realm_query = rcs_fdomain::root_realm_query(rcs, std::time::Duration::from_secs(15))
+    let realm_query = rcs::root_realm_query(rcs, std::time::Duration::from_secs(15))
         .await
         .map_err(|err| ffx_error!("Could not open RealmQuery: {err}"))?;
     let resolved_capabilities = component_debug_fdomain::config::resolve_raw_config_capabilities(

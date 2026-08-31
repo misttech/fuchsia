@@ -128,8 +128,7 @@ pub async fn exec_playground(
     }
 
     let remote_proxy = Arc::new(remote_proxy);
-    let query =
-        rcs_fdomain::root_realm_query(&remote_proxy, std::time::Duration::from_secs(5)).await?;
+    let query = rcs::root_realm_query(&remote_proxy, std::time::Duration::from_secs(5)).await?;
     let toolbox = toolbox_directory(&*remote_proxy, &query).await?;
     let cf_root = cf_fs::CFDirectory::new_root(query);
     let fs_root_simple = vfs::directory::immutable::simple();

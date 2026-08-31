@@ -414,11 +414,10 @@ async fn params_from_pilot(
         Into::<fho::Error>::into(ffx_error!("Failed to open file {}: {:?}", &filename, e))
     })?;
 
-    let lifecycle_controller =
-        ffx_component::rcs::connect_to_lifecycle_controller_f(&remote_control).await.map_err(
-            |e| ffx_error!("Parsing realm: Cannot connect to lifecycle controller: {}", e),
-        )?;
-    let realm_query = ffx_component::rcs::connect_to_realm_query_f(&remote_control)
+    let lifecycle_controller = ffx_component::rcs::connect_to_lifecycle_controller(&remote_control)
+        .await
+        .map_err(|e| ffx_error!("Parsing realm: Cannot connect to lifecycle controller: {}", e))?;
+    let realm_query = ffx_component::rcs::connect_to_realm_query(&remote_control)
         .await
         .map_err(|e| ffx_error!("Parsing realm: Cannot connect to realm query: {}", e))?;
 
@@ -467,11 +466,10 @@ async fn params_from_args(
         show_full_moniker: cmd.show_full_moniker_in_logs,
     };
 
-    let lifecycle_controller =
-        ffx_component::rcs::connect_to_lifecycle_controller_f(&remote_control).await.map_err(
-            |e| ffx_error!("Parsing realm: Cannot connect to lifecycle controller: {}", e),
-        )?;
-    let realm_query = ffx_component::rcs::connect_to_realm_query_f(&remote_control)
+    let lifecycle_controller = ffx_component::rcs::connect_to_lifecycle_controller(&remote_control)
+        .await
+        .map_err(|e| ffx_error!("Parsing realm: Cannot connect to lifecycle controller: {}", e))?;
+    let realm_query = ffx_component::rcs::connect_to_realm_query(&remote_control)
         .await
         .map_err(|e| ffx_error!("Parsing realm: Cannot connect to realm query: {}", e))?;
 
@@ -566,11 +564,11 @@ async fn get_tests(
     let mut provided_realm = None;
     if let Some(realm_str) = &cmd.realm {
         let lifecycle_controller =
-            ffx_component::rcs::connect_to_lifecycle_controller_f(&remote_control).await.map_err(
+            ffx_component::rcs::connect_to_lifecycle_controller(&remote_control).await.map_err(
                 |e| ffx_error!("Parsing realm: Cannot connect to lifecycle controller: {}", e),
             )?;
 
-        let realm_query = ffx_component::rcs::connect_to_realm_query_f(&remote_control)
+        let realm_query = ffx_component::rcs::connect_to_realm_query(&remote_control)
             .await
             .map_err(|e| ffx_error!("Parsing realm: Cannot connect to realm query: {}", e))?;
 

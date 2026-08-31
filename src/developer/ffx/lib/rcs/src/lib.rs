@@ -3,166 +3,27 @@
 // found in the LICENSE file.
 
 use anyhow::Result;
+use fdomain_client::fidl::{DiscoverableProtocolMarker, Proxy};
+use fdomain_fuchsia_developer_remotecontrol::{
+    ConnectCapabilityError, RemoteControlMarker, RemoteControlProxy,
+};
+use fdomain_fuchsia_kernel as proto_fuchsia_kernel;
+pub use fdomain_fuchsia_sys2::OpenDirType;
+use fdomain_fuchsia_sys2::{
+    ConfigOverrideMarker, ConfigOverrideProxy, LifecycleControllerMarker, LifecycleControllerProxy,
+    RealmQueryMarker, RealmQueryProxy, RouteValidatorMarker, RouteValidatorProxy,
+};
 use fidl_fuchsia_developer_ffx as ffx;
 use futures::StreamExt;
 use std::convert::Infallible;
 use std::time::{Duration, Instant};
 use timeout::timeout;
 
-#[cfg(feature = "fdomain")]
-use {
-    fdomain_client::fidl::{DiscoverableProtocolMarker, Proxy},
-    fdomain_fuchsia_developer_remotecontrol::{
-        ConnectCapabilityError, RemoteControlMarker, RemoteControlProxy,
-    },
-    fdomain_fuchsia_kernel as proto_fuchsia_kernel,
-    fdomain_fuchsia_sys2::{
-        ConfigOverrideMarker, ConfigOverrideProxy, LifecycleControllerMarker,
-        LifecycleControllerProxy, RealmQueryMarker, RealmQueryProxy, RouteValidatorMarker,
-        RouteValidatorProxy,
-    },
-};
-
-#[cfg(not(feature = "fdomain"))]
-use {
-    fidl::endpoints::{DiscoverableProtocolMarker, ProxyHasDomain},
-    fidl_fuchsia_developer_remotecontrol::{
-        ConnectCapabilityError, IdentifyHostResponse, RemoteControlMarker, RemoteControlProxy,
-    },
-    fidl_fuchsia_kernel as proto_fuchsia_kernel,
-    fidl_fuchsia_overnet_protocol::NodeId,
-    fidl_fuchsia_sys2::{
-        ConfigOverrideMarker, ConfigOverrideProxy, LifecycleControllerMarker,
-        LifecycleControllerProxy, RealmQueryMarker, RealmQueryProxy, RouteValidatorMarker,
-        RouteValidatorProxy,
-    },
-    std::hash::{Hash, Hasher},
-    std::sync::Arc,
-};
-
-#[cfg(feature = "fdomain")]
-pub use fdomain_fuchsia_sys2::OpenDirType;
-
-#[cfg(not(feature = "fdomain"))]
-pub use fidl_fuchsia_sys2::OpenDirType;
-
 pub mod toolbox;
 
 /// Note that this is only used for backwards compatibility. All new usages should prefer using the
 /// toolbox moniker instead.
 const REMOTE_CONTROL_MONIKER: &str = "core/remote-control";
-
-#[cfg(not(feature = "fdomain"))]
-const IDENTIFY_HOST_TIMEOUT_MILLIS: u64 = 10000;
-
-#[cfg(not(feature = "fdomain"))]
-#[derive(Debug, Clone)]
-pub struct RcsConnection {
-    pub node: Arc<overnet_core::Router>,
-    pub proxy: RemoteControlProxy,
-    pub overnet_id: NodeId,
-}
-
-#[cfg(not(feature = "fdomain"))]
-impl Hash for RcsConnection {
-    fn hash<H>(&self, state: &mut H)
-    where
-        H: Hasher,
-    {
-        self.overnet_id.id.hash(state)
-    }
-}
-
-#[cfg(not(feature = "fdomain"))]
-impl PartialEq for RcsConnection {
-    fn eq(&self, other: &Self) -> bool {
-        self.overnet_id == other.overnet_id
-    }
-}
-
-#[cfg(not(feature = "fdomain"))]
-impl Eq for RcsConnection {}
-
-#[cfg(not(feature = "fdomain"))]
-impl RcsConnection {
-    pub fn new(node: Arc<overnet_core::Router>, id: &mut NodeId) -> Self {
-        let (s, p) = fidl::Channel::create();
-        RcsConnection::connect_to_service(Arc::clone(&node), id, s);
-        let proxy = RemoteControlProxy::new(fidl::AsyncChannel::from_channel(p));
-
-        Self { node, proxy, overnet_id: id.clone() }
-    }
-
-    pub fn copy_to_channel(&mut self, channel: fidl::Channel) {
-        RcsConnection::connect_to_service(Arc::clone(&self.node), &mut self.overnet_id, channel)
-    }
-
-    fn connect_to_service(
-        node: Arc<overnet_core::Router>,
-        overnet_id: &mut NodeId,
-        channel: fidl::Channel,
-    ) {
-        let overnet_id = (*overnet_id).into();
-        // TODO(b/302394849): If this method were async we could return the
-        // error instead of just logging it. This task used to be managed by
-        // Hoist where we couldn't get to it, but now we have it right here
-        // where it would be easy to factor out.
-        fuchsia_async::Task::spawn(async move {
-            if let Err(e) = node
-                .connect_to_service(overnet_id, RemoteControlMarker::PROTOCOL_NAME, channel)
-                .await
-            {
-                log::warn!("Error connecting to Rcs: {}", e)
-            }
-        })
-        .detach();
-    }
-
-    // Primarily For testing.
-    pub fn new_with_proxy(
-        node: Arc<overnet_core::Router>,
-        proxy: RemoteControlProxy,
-        id: &NodeId,
-    ) -> Self {
-        Self { node, proxy, overnet_id: id.clone() }
-    }
-
-    pub async fn identify_host(&self) -> Result<IdentifyHostResponse, RcsConnectionError> {
-        log::debug!("Requesting host identity from overnet id {}", self.overnet_id.id);
-        let identify_result = timeout(
-            Duration::from_millis(IDENTIFY_HOST_TIMEOUT_MILLIS),
-            self.proxy.identify_host(),
-        )
-        .await
-        .map_err(|e| RcsConnectionError::ConnectionTimeoutError(e))?;
-
-        let identify = match identify_result {
-            Ok(res) => match res {
-                Ok(target) => target,
-                Err(e) => return Err(RcsConnectionError::RemoteControlError(e)),
-            },
-            Err(e) => return Err(RcsConnectionError::FidlConnectionError(e)),
-        };
-
-        Ok(identify)
-    }
-}
-
-#[cfg(not(feature = "fdomain"))]
-#[derive(thiserror::Error, Debug)]
-pub enum RcsConnectionError {
-    #[error("FIDL connection error: {0}")]
-    FidlConnectionError(#[from] fidl::Error),
-
-    #[error("Connection timeout error")]
-    ConnectionTimeoutError(#[from] timeout::TimeoutError),
-
-    #[error("Internal RemoteControl error: {0:?}")]
-    RemoteControlError(fidl_fuchsia_developer_remotecontrol::IdentifyHostError),
-
-    #[error("General error: {0}")]
-    TargetError(#[source] anyhow::Error),
-}
 
 pub const RCS_KNOCK_TIMEOUT: Duration = Duration::from_secs(1);
 
@@ -194,7 +55,6 @@ pub enum RcsError {
 pub enum KnockRcsError {
     #[error("FIDL error {0:?}")]
     FidlError(#[from] fidl::Error),
-    #[cfg(feature = "fdomain")]
     #[error("FDomain error {0:?}")]
     FDomainError(#[from] fdomain_client::Error),
     #[error("Creating FIDL channel: {0:?}")]
@@ -222,7 +82,6 @@ pub async fn knock_rcs(rcs_proxy: &RemoteControlProxy) -> Result<(), ffx::Target
             log::warn!("FIDL error: {:?}", e);
             ffx::TargetConnectionError::FidlCommunicationError
         }
-        #[cfg(feature = "fdomain")]
         KnockRcsError::FDomainError(e) => {
             log::warn!("FDomain error: {:?}", e);
             ffx::TargetConnectionError::FidlCommunicationError
@@ -239,10 +98,6 @@ pub async fn knock_rcs(rcs_proxy: &RemoteControlProxy) -> Result<(), ffx::Target
     })
 }
 
-#[cfg(not(feature = "fdomain"))]
-type KnockClientType = fidl::client::Client<fidl::encoding::DefaultFuchsiaResourceDialect>;
-
-#[cfg(feature = "fdomain")]
 type KnockClientType = fidl::client::Client<fdomain_client::fidl::FDomainResourceDialect>;
 
 async fn connect_to_rcs(
@@ -254,14 +109,12 @@ async fn connect_to_rcs(
     let rcs_client = rcs_proxy.domain();
     // Try to connect via fuchsia.developer.remotecontrol/RemoteControl.ConnectCapability.
     let (client, server) = rcs_client.create_channel();
-    #[cfg(not(feature = "fdomain"))]
-    let client = fuchsia_async::Channel::from_channel(client);
 
     rcs_proxy
         .connect_capability(moniker, capability_set, capability_name, server)
         .await?
         .map_err(|e| KnockRcsError::RcsConnectCapabilityError(e))?;
-    return Ok(KnockClientType::new(client, "knock_client"));
+    Ok(KnockClientType::new(client, "knock_client"))
 }
 
 async fn knock_rcs_impl(rcs_proxy: &RemoteControlProxy) -> Result<(), KnockRcsError> {
@@ -297,16 +150,8 @@ async fn knock_rcs_impl(rcs_proxy: &RemoteControlProxy) -> Result<(), KnockRcsEr
     }
 }
 
-#[cfg(not(feature = "fdomain"))]
-pub trait ProtocolMarker: fidl::endpoints::ProtocolMarker {}
-
-#[cfg(feature = "fdomain")]
 pub trait ProtocolMarker: fdomain_client::fidl::ProtocolMarker {}
 
-#[cfg(not(feature = "fdomain"))]
-impl<T> ProtocolMarker for T where T: fidl::endpoints::ProtocolMarker {}
-
-#[cfg(feature = "fdomain")]
 impl<T> ProtocolMarker for T where T: fdomain_client::fidl::ProtocolMarker {}
 
 pub async fn open_with_timeout_at<T: ProtocolMarker>(

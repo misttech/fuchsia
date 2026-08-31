@@ -16,7 +16,7 @@ ffx_plugin("ffx_session_launch") {
     "//sdk/fidl/fuchsia.session:fuchsia.session_rust_fdomain",
     "//src/developer/ffx/lib/errors:lib",
     "//src/developer/ffx/lib/fho:lib",
-    "//src/developer/ffx/lib/rcs:lib_fdomain",
+    "//src/developer/ffx/lib/rcs:lib",
     "//src/developer/ffx/lib/target/holders:lib",
     "//src/developer/ffx/lib/writer:lib",
     "//src/sys/lib/component_debug:component_debug_fdomain",

@@ -168,7 +168,7 @@ async fn connect_to_target(
     let boot_timestamp = host_id.boot_timestamp_nanos.ok_or(LogError::NoBootTimestamp)?;
     let boot_id = host_id.boot_id;
     let realm_query =
-        rcs_fdomain::root_realm_query(&rcs_client, TIMEOUT).await.map_err(anyhow::Error::from)?;
+        rcs::root_realm_query(&rcs_client, TIMEOUT).await.map_err(anyhow::Error::from)?;
     // If we detect a reboot we want to SnapshotThenSubscribe so
     // we get all of the logs from the reboot. If not, we use Snapshot
     // to avoid getting duplicate logs.
@@ -187,12 +187,12 @@ async fn connect_to_target(
     };
     // Connect to ArchiveAccessor
     let diagnostics_client =
-        rcs_fdomain::toolbox::connect_with_timeout::<ArchiveAccessorMarker>(&rcs_client, TIMEOUT)
+        rcs::toolbox::connect_with_timeout::<ArchiveAccessorMarker>(&rcs_client, TIMEOUT)
             .await
             .map_err(anyhow::Error::from)?;
     // Connect to LogSettings
     let log_settings_client =
-        rcs_fdomain::toolbox::connect_with_timeout::<LogSettingsMarker>(&rcs_client, TIMEOUT)
+        rcs::toolbox::connect_with_timeout::<LogSettingsMarker>(&rcs_client, TIMEOUT)
             .await
             .map_err(anyhow::Error::from)?;
     // Setup stream

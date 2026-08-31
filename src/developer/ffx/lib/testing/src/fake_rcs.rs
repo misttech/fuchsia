@@ -2,8 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#![cfg(feature = "fdomain")]
-
 use fdomain_fuchsia_developer_remotecontrol::{
     IdentifyHostResponse, RemoteControlProxy, RemoteControlRequest,
 };
@@ -72,7 +70,7 @@ pub fn setup_fake_rcs(
                     responder.send(Ok(())).unwrap();
                 } else if capability_name == "svc/fuchsia.sys2.RealmQuery.root" {
                     assert_eq!(moniker, "toolbox");
-                    assert_eq!(capability_set, rcs_fdomain::OpenDirType::NamespaceDir);
+                    assert_eq!(capability_set, rcs::OpenDirType::NamespaceDir);
                     let querier = Rc::clone(&querier);
                     fuchsia_async::Task::local(
                         querier.serve_f(fdomain_client::fidl::ServerEnd::new(server_channel)),

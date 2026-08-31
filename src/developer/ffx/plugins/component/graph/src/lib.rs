@@ -6,7 +6,7 @@ use async_trait::async_trait;
 use component_debug::cli::{GraphResult, graph_cmd};
 use component_debug_fdomain as component_debug;
 use errors::ffx_error;
-use ffx_component::rcs::connect_to_realm_query_f as connect_to_realm_query;
+use ffx_component::rcs::connect_to_realm_query;
 use ffx_component_graph_args::ComponentGraphCommand;
 use ffx_writer::MachineWriter;
 use fho::{FfxMain, FfxTool};

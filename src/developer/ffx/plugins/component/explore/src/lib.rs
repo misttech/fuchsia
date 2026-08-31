@@ -6,7 +6,7 @@ use async_trait::async_trait;
 use component_debug_fdomain::cli::explore_cmd;
 use errors::ffx_error;
 use fdomain_fuchsia_dash::LauncherProxy;
-use ffx_component::rcs::connect_to_realm_query_f;
+use ffx_component::rcs::connect_to_realm_query;
 use ffx_component_explore_args::ExploreComponentCommand;
 use ffx_writer::MachineWriter;
 use fho::{FfxMain, FfxTool};
@@ -36,7 +36,7 @@ impl FfxMain for ExploreTool {
     type Error = ::fho::Error;
 
     async fn main(self, _writer: Self::Writer) -> fho::Result<()> {
-        let realm_query = connect_to_realm_query_f(&self.rcs).await?;
+        let realm_query = connect_to_realm_query(&self.rcs).await?;
         let stdout = if self.cmd.command.is_some() { Stdout::buffered() } else { Stdout::raw()? };
 
         // All errors from component_debug library are user-visible.

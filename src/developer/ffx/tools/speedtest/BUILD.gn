@@ -21,7 +21,7 @@ if (is_host) {
       "//sdk/fidl/fuchsia.developer.ffx.speedtest:fuchsia.developer.ffx.speedtest_rust_fdomain",
       "//src/developer/ffx/lib/errors:lib",
       "//src/developer/ffx/lib/fho:lib",
-      "//src/developer/ffx/lib/rcs:lib_fdomain",
+      "//src/developer/ffx/lib/rcs:lib",
       "//src/developer/ffx/lib/target/holders:lib",
       "//src/developer/ffx/lib/writer:lib",
       "//src/developer/ffx/plugins/component/common:ffx_component",

@@ -9,7 +9,7 @@ use component_debug::lifecycle::start_instance;
 use component_debug::query::get_cml_moniker_from_query;
 use component_debug_fdomain as component_debug;
 use errors::ffx_error;
-use ffx_component::rcs::{connect_to_lifecycle_controller_f, connect_to_realm_query_f};
+use ffx_component::rcs::{connect_to_lifecycle_controller, connect_to_realm_query};
 use ffx_component_start_args::ComponentStartCommand;
 use ffx_config::EnvironmentContext;
 use ffx_writer::SimpleWriter;
@@ -45,8 +45,8 @@ impl FfxMain for StartTool {
 }
 
 async fn start_tool_impl(tool: StartTool) -> Result<()> {
-    let lifecycle_controller = connect_to_lifecycle_controller_f(&tool.rcs).await?;
-    let realm_query = connect_to_realm_query_f(&tool.rcs).await?;
+    let lifecycle_controller = connect_to_lifecycle_controller(&tool.rcs).await?;
+    let realm_query = connect_to_realm_query(&tool.rcs).await?;
     let moniker = get_cml_moniker_from_query(&tool.cmd.query, &realm_query).await?;
 
     // If the user wants to debug the component, we need to start the debugger with a breakpoint

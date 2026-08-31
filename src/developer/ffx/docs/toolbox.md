@@ -41,9 +41,8 @@ Example pattern from the `ffx log` sub-command implementation core:
 
 ```rust
 // Connect to the ArchiveAccessor protocol exposed by the Archivist component via the toolbox namespace
-let diagnostics_client = rcs_fdomain::toolbox::connect_with_timeout::<ArchiveAccessorMarker>(
+let diagnostics_client = rcs::toolbox::connect_with_timeout::<ArchiveAccessorMarker>(
     &rcs_client,
-    Some("bootstrap/archivist"), // Path relative to the toolbox component's capability offers, not the absolute system moniker
     TIMEOUT,
 )
 .await

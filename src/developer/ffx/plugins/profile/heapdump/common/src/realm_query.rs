@@ -4,14 +4,13 @@
 
 use cm_rust::CapabilityDecl;
 use component_debug::capability::{RouteSegment, get_all_route_segments};
+use component_debug_fdomain as component_debug;
 use errors::{ffx_bail, ffx_error};
 use fdomain_client::fidl::{DiscoverableProtocolMarker, Proxy};
 use fdomain_fuchsia_developer_remotecontrol::RemoteControlProxy;
+use fdomain_fuchsia_memory_heapdump_client as fheapdump_client;
 use fdomain_fuchsia_sys2::{OpenDirType, RealmQueryProxy};
-use {
-    component_debug_fdomain as component_debug,
-    fdomain_fuchsia_memory_heapdump_client as fheapdump_client, rcs_fdomain as rcs,
-};
+use rcs;
 
 const COLLECTOR_CAPABILITY: &str = fheapdump_client::CollectorMarker::PROTOCOL_NAME;
 

@@ -8,7 +8,7 @@ use fdomain_fuchsia_power_manager_debug as fdebug;
 use fdomain_fuchsia_power_topology_test as fpt;
 use ffx_writer::SimpleWriter;
 use fho::{FfxMain, FfxTool};
-use rcs_fdomain as rcs;
+use rcs;
 use target_holders::RemoteControlProxyHolder;
 
 mod args;

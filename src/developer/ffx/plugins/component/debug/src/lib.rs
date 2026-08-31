@@ -8,7 +8,7 @@ use component_debug::query::get_single_instance_from_query;
 use component_debug::realm::{Runtime, get_runtime};
 use component_debug_fdomain as component_debug;
 use errors::ffx_error;
-use ffx_component::rcs::connect_to_realm_query_f as connect_to_realm_query;
+use ffx_component::rcs::connect_to_realm_query;
 use ffx_component_debug_args::ComponentDebugCommand;
 use ffx_config::EnvironmentContext;
 use ffx_writer::{MachineWriter, ToolIO};

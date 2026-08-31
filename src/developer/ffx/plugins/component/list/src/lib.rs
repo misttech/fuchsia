@@ -6,7 +6,7 @@ use async_trait::async_trait;
 use component_debug_fdomain::cli::{list_cmd_print, list_cmd_serialized};
 use component_debug_fdomain::realm::Instance;
 use errors::ffx_error;
-use ffx_component::rcs::connect_to_realm_query_f;
+use ffx_component::rcs::connect_to_realm_query;
 use ffx_component_list_args::ComponentListCommand;
 use ffx_writer::{ToolIO as _, VerifiedMachineWriter};
 use fho::{FfxMain, FfxTool};
@@ -36,7 +36,7 @@ impl FfxMain for ListTool {
     type Error = ::fho::Error;
 
     async fn main(self, mut writer: Self::Writer) -> fho::Result<()> {
-        let realm_query = connect_to_realm_query_f(&self.rcs).await?;
+        let realm_query = connect_to_realm_query(&self.rcs).await?;
         // All errors from component_debug library are user-visible.
         if writer.is_machine() {
             let instances = list_cmd_serialized(self.cmd.filter, realm_query)

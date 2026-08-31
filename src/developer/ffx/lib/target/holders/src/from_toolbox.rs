@@ -27,8 +27,7 @@ where
         // start off by connecting to rcs
         let rcs = connect_to_rcs(env).await?;
         let proxy =
-            rcs_fdomain::toolbox::connect_with_timeout::<P::Protocol>(&rcs, DEFAULT_PROXY_TIMEOUT)
-                .await?;
+            rcs::toolbox::connect_with_timeout::<P::Protocol>(&rcs, DEFAULT_PROXY_TIMEOUT).await?;
         Ok(proxy)
     }
 }

@@ -14,7 +14,7 @@ use fdomain_fuchsia_device::ControllerMarker;
 use ffx_config::EnvironmentContext;
 use ffx_config::environment::ExecutableKind;
 use ffx_target::connection::Connection;
-use rcs_fdomain as rcs;
+use rcs;
 use std::future::Future;
 use std::path::PathBuf;
 use std::sync::{Arc, Weak};

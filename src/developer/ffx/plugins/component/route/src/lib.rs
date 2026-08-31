@@ -29,8 +29,8 @@ impl FfxMain for RouteTool {
     type Error = ::fho::Error;
 
     async fn main(self, mut writer: Self::Writer) -> fho::Result<()> {
-        let realm_query = rcs::connect_to_realm_query_f(&self.rcs).await?;
-        let route_validator = rcs::connect_to_route_validator_f(&self.rcs).await?;
+        let realm_query = rcs::connect_to_realm_query(&self.rcs).await?;
+        let route_validator = rcs::connect_to_route_validator(&self.rcs).await?;
 
         // All errors from component_debug library are user-visible.
         if writer.is_machine() {

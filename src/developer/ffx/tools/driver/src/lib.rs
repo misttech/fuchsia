@@ -13,7 +13,7 @@ use fdomain_fuchsia_test_manager as ftm;
 use ffx_writer::{MachineWriter, ToolIO};
 use fho::{FfxMain, FfxTool};
 use fidl as _;
-use rcs_fdomain as rcs;
+use rcs;
 use target_holders::RemoteControlProxyHolder;
 
 mod args;

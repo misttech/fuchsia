@@ -4,10 +4,8 @@
 
 use anyhow::Result;
 use errors::ffx_error;
-use fdomain_fuchsia_developer_remotecontrol as rc_f;
-use fdomain_fuchsia_sys2 as fsys_f;
-use fidl_fuchsia_developer_remotecontrol as rc;
-use fidl_fuchsia_sys2 as fsys;
+use fdomain_fuchsia_developer_remotecontrol as rc;
+use fdomain_fuchsia_sys2 as fsys;
 
 /// Obtain the root LifecycleController protocol using the RemoteControl protocol.
 pub async fn connect_to_lifecycle_controller(
@@ -15,17 +13,6 @@ pub async fn connect_to_lifecycle_controller(
 ) -> Result<fsys::LifecycleControllerProxy> {
     let lifecycle_controller =
         rcs::root_lifecycle_controller(&rcs_proxy, std::time::Duration::from_secs(15))
-            .await
-            .map_err(|err| ffx_error!("Could not open LifecycleController: {err}"))?;
-    Ok(lifecycle_controller)
-}
-
-/// Obtain the root LifecycleController protocol using the RemoteControl protocol.
-pub async fn connect_to_lifecycle_controller_f(
-    rcs_proxy: &rc_f::RemoteControlProxy,
-) -> Result<fsys_f::LifecycleControllerProxy> {
-    let lifecycle_controller =
-        rcs_fdomain::root_lifecycle_controller(&rcs_proxy, std::time::Duration::from_secs(15))
             .await
             .map_err(|err| ffx_error!("Could not open LifecycleController: {err}"))?;
     Ok(lifecycle_controller)
@@ -41,16 +28,6 @@ pub async fn connect_to_realm_query(
     Ok(realm_query)
 }
 
-/// Obtain the root RealmQuery protocol using the RemoteControl protocol.
-pub async fn connect_to_realm_query_f(
-    rcs_proxy: &rc_f::RemoteControlProxy,
-) -> Result<fsys_f::RealmQueryProxy> {
-    let realm_query = rcs_fdomain::root_realm_query(&rcs_proxy, std::time::Duration::from_secs(15))
-        .await
-        .map_err(|err| ffx_error!("Could not open RealmQuery: {err}"))?;
-    Ok(realm_query)
-}
-
 /// Obtain the root ConfigOverride protocol using the RemoteControl protocol.
 pub async fn connect_to_config_override(
     rcs_proxy: &rc::RemoteControlProxy,
@@ -61,17 +38,6 @@ pub async fn connect_to_config_override(
     Ok(config_override)
 }
 
-/// Obtain the root ConfigOverride protocol using the RemoteControl protocol.
-pub async fn connect_to_config_override_f(
-    rcs_proxy: &rc_f::RemoteControlProxy,
-) -> Result<fsys_f::ConfigOverrideProxy> {
-    let config_override =
-        rcs_fdomain::root_config_override(&rcs_proxy, std::time::Duration::from_secs(15))
-            .await
-            .map_err(|err| ffx_error!("Could not open ConfigOverride: {err}"))?;
-    Ok(config_override)
-}
-
 /// Obtain the root RouteValidator protocol using the RemoteControl protocol.
 pub async fn connect_to_route_validator(
     rcs_proxy: &rc::RemoteControlProxy,
@@ -79,16 +45,5 @@ pub async fn connect_to_route_validator(
     let route_validator = rcs::root_route_validator(&rcs_proxy, std::time::Duration::from_secs(15))
         .await
         .map_err(|err| ffx_error!("Could not open LifecycleController: {err}"))?;
-    Ok(route_validator)
-}
-
-/// Obtain the root RouteValidator protocol using the RemoteControl protocol.
-pub async fn connect_to_route_validator_f(
-    rcs_proxy: &rc_f::RemoteControlProxy,
-) -> Result<fsys_f::RouteValidatorProxy> {
-    let route_validator =
-        rcs_fdomain::root_route_validator(&rcs_proxy, std::time::Duration::from_secs(15))
-            .await
-            .map_err(|err| ffx_error!("Could not open LifecycleController: {err}"))?;
     Ok(route_validator)
 }

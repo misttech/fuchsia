@@ -7,10 +7,7 @@ use component_debug::cli::{doctor_cmd_print, doctor_cmd_serialized};
 use component_debug::doctor::RouteReport;
 use component_debug_fdomain as component_debug;
 use errors::ffx_error;
-use ffx_component::rcs::{
-    connect_to_realm_query_f as connect_to_realm_query,
-    connect_to_route_validator_f as connect_to_route_validator,
-};
+use ffx_component::rcs::{connect_to_realm_query, connect_to_route_validator};
 use ffx_component_doctor_args::DoctorCommand;
 use ffx_writer::{MachineWriter, ToolIO as _};
 use fho::{FfxMain, FfxTool};

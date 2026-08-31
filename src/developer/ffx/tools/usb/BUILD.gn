@@ -16,7 +16,7 @@ rustc_library("lib") {
     "//sdk/fidl/fuchsia.hardware.usb.policy:fuchsia.hardware.usb.policy_rust_fdomain",
     "//sdk/fidl/fuchsia.usb.policy:fuchsia.usb.policy_rust_fdomain",
     "//src/developer/ffx/lib/fho:lib",
-    "//src/developer/ffx/lib/rcs:lib_fdomain",
+    "//src/developer/ffx/lib/rcs:lib",
     "//src/developer/ffx/lib/target/holders:lib",
     "//src/developer/ffx/lib/writer:lib",
     "//src/lib/fdomain/client",

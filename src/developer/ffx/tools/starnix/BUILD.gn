@@ -26,7 +26,7 @@ rustc_library("lib") {
     "//src/developer/ffx/lib/errors:lib",
     "//src/developer/ffx/lib/fho:lib",
     "//src/developer/ffx/lib/netext:lib",
-    "//src/developer/ffx/lib/rcs:lib_fdomain",
+    "//src/developer/ffx/lib/rcs:lib",
     "//src/developer/ffx/lib/safe_string:lib",
     "//src/developer/ffx/lib/target/connector:lib",
     "//src/developer/ffx/lib/target/holders:lib",

@@ -48,7 +48,7 @@ rustc_library("ffx_inspect") {
     "//sdk/fidl/fuchsia.sys2:fuchsia.sys2_rust_fdomain",
     "//src/developer/ffx/lib/errors:lib",
     "//src/developer/ffx/lib/fho:lib",
-    "//src/developer/ffx/lib/rcs:lib_fdomain",
+    "//src/developer/ffx/lib/rcs:lib",
     "//src/developer/ffx/lib/target/holders:lib",
     "//src/developer/ffx/lib/writer:lib",
     "//src/diagnostics/iquery:lib_fdomain",

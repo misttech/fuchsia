@@ -18,7 +18,7 @@ rustc_library("ffx_driver") {
     "//sdk/fidl/fuchsia.sys2:fuchsia.sys2_rust_fdomain",
     "//sdk/fidl/fuchsia.test.manager:fuchsia.test.manager_rust_fdomain",
     "//src/developer/ffx/lib/fho:lib",
-    "//src/developer/ffx/lib/rcs:lib_fdomain",
+    "//src/developer/ffx/lib/rcs:lib",
     "//src/developer/ffx/lib/target/holders:lib",
     "//src/developer/ffx/lib/writer:lib",
     "//src/devices/bin/driver_tools:lib_fdomain",

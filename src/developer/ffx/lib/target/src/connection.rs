@@ -175,7 +175,16 @@ impl Connection {
     /// Get an FDomain client that just forwards to Overnet.
     async fn pass_thru_client(&self) -> Result<Arc<fdomain_client::Client>, ConnectionError> {
         let rcs = self.rcs_proxy().await?;
-        let toolbox = rcs::toolbox::open_toolbox(&rcs).await?;
+        let (toolbox, server_end) = fidl::endpoints::create_proxy::<fio_f::DirectoryMarker>();
+        rcs.connect_capability(
+            "toolbox",
+            fidl_fuchsia_sys2::OpenDirType::NamespaceDir,
+            "svc",
+            server_end.into_channel(),
+        )
+        .await
+        .map_err(|e| anyhow::anyhow!("FIDL error communicating with RCS: {e:?}"))?
+        .map_err(|e| anyhow::anyhow!("Failed to open toolbox capability: {e:?}"))?;
 
         Ok(fdomain_local::local_client(move || {
             let (client, server) = fidl::endpoints::create_endpoints();

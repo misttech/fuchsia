@@ -7,7 +7,7 @@ use component_debug::cli::capability::RouteSegment;
 use component_debug::cli::{capability_cmd_print, capability_cmd_serialized};
 use component_debug_fdomain as component_debug;
 use errors::ffx_error;
-use ffx_component::rcs::connect_to_realm_query_f as connect_to_realm_query;
+use ffx_component::rcs::connect_to_realm_query;
 use ffx_component_capability_args::ComponentCapabilityCommand;
 use ffx_writer::{ToolIO as _, VerifiedMachineWriter};
 use fho::{FfxMain, FfxTool};

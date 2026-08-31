@@ -49,7 +49,7 @@ impl TryFromEnv for RemoteControlProxyHolder {
 
 pub async fn open_moniker<P>(
     rcs: &RemoteControlProxy,
-    capability_set: rcs_fdomain::OpenDirType,
+    capability_set: rcs::OpenDirType,
     moniker: &str,
     timeout: Duration,
 ) -> Result<P>
@@ -57,7 +57,7 @@ where
     P: Proxy + 'static,
     P::Protocol: DiscoverableProtocolMarker,
 {
-    rcs_fdomain::open_with_timeout::<P::Protocol>(
+    rcs::open_with_timeout::<P::Protocol>(
         timeout,
         moniker,
         capability_set,
