@@ -129,6 +129,10 @@ fn convert(pilot_summary: Summary, test_config: TestConfig) -> TestResult {
         } else {
             None
         },
+        // TODO: Populate these lifecycle fields from pilot_summary once supported by test-pilot.
+        setup_succeeded: None,
+        teardown_succeeded: None,
+        exit_code: None,
     }
 }
 
@@ -203,6 +207,15 @@ struct TestResult {
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub failure_reason: Option<FailureReason>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub setup_succeeded: Option<bool>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub teardown_succeeded: Option<bool>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub exit_code: Option<i32>,
 }
 
 #[derive(Serialize, Debug, Clone, PartialEq)]
@@ -342,6 +355,9 @@ mod tests {
             botanist_summary.failure_reason,
             FailureReason::from_message("Overall test failed".to_string())
         );
+        assert_eq!(botanist_summary.setup_succeeded, None);
+        assert_eq!(botanist_summary.teardown_succeeded, None);
+        assert_eq!(botanist_summary.exit_code, None);
 
         // The order of cases from a HashMap is not guaranteed, so we find them.
         let case1 = botanist_summary.cases.iter().find(|c| c.case_name == "case1").unwrap();
