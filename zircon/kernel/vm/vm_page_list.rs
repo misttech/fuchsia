@@ -778,6 +778,7 @@ impl VmPageListNode {
         debug_assert!(end_offset <= Self::end_offset(base));
         let start = ((start_offset - base) / (page::SIZE as u64)) as usize;
         let end = ((end_offset - base) / (page::SIZE as u64)) as usize;
+        #[allow(clippy::needless_range_loop)]
         for i in start..end {
             if !self.pages[i].is_empty() {
                 let status = func(&self.pages[i], base + (i as u64) * (page::SIZE as u64));
@@ -823,6 +824,7 @@ impl VmPageListNode {
         debug_assert!(end_offset <= Self::end_offset(base));
         let start = ((start_offset - base) / (page::SIZE as u64)) as usize;
         let end = ((end_offset - base) / (page::SIZE as u64)) as usize;
+        #[allow(clippy::needless_range_loop)]
         for i in start..end {
             if !self.pages[i].is_empty() {
                 let status = func(&mut self.pages[i], base + (i as u64) * (page::SIZE as u64));
@@ -848,6 +850,7 @@ impl VmPageListNode {
         }
         // Check if there is an interval end to the right, which would cause this to be in an
         // interval. Finding anything else indicates we cannot be in an interval.
+        #[allow(clippy::needless_range_loop)]
         for i in (index + 1)..Self::PAGE_FAN_OUT {
             if !self.pages[i].is_empty() {
                 return if self.pages[i].is_interval_end() { Some(&self.pages[i]) } else { None };
