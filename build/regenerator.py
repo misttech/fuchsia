@@ -33,6 +33,7 @@ sys.path.insert(0, str(_BUILD_PYTHON_DIR))
 sys.path.insert(0, str(_BUILD_SDK_SCRIPTS))
 sys.path.insert(0, str(_BUILD_SDK_SCRIPTS / "generate_prebuild_idk"))
 
+import bazel_repository_utils
 import build_utils
 import compute_content_hash
 import remote_services_utils
@@ -112,7 +113,7 @@ def generate_bazel_content_hash_files(
     return result
 
 
-def bazel_warm_up(fuchsia_dir: Path, build_dir: Path) -> int:
+def bazel_warm_up(bazel_launcher: build_utils.BazelLauncher) -> int:
     """Launch the Bazel daemon to verify workspace configuration.
 
     This performs a minimal query to verify that the top-level MODULE.bazel file
@@ -120,14 +121,11 @@ def bazel_warm_up(fuchsia_dir: Path, build_dir: Path) -> int:
     a severe bug in the Fuchsia build system.
 
     Args:
-        fuchsia_dir: Path to Fuchsia source directory.
-        build_dir: Path to Ninja build directory.
+        bazel_launcher: A BazelLauncher instance.
 
     Returns:
         0 on success, or process status code in case of failure.
     """
-    bazel_paths = build_utils.BazelPaths(fuchsia_dir, build_dir)
-    bazel_launcher = build_utils.BazelLauncher(bazel_paths.launcher)
     ret = bazel_launcher.run_bazel_command(
         ["query", "//build/bazel/warm_up:BUILD.bazel"]
     )
@@ -638,9 +636,28 @@ def main() -> int:
         time_profile.start(
             "bazel_warm_up", "Launching Bazel daemon with minimal query"
         )
-        returncode = bazel_warm_up(fuchsia_dir, build_dir)
+        bazel_paths = build_utils.BazelPaths(fuchsia_dir, build_dir)
+        bazel_launcher = build_utils.BazelLauncher(bazel_paths.launcher)
+        returncode = bazel_warm_up(bazel_launcher)
         if returncode != 0:
             return returncode
+
+        # Dump root repository mapping from Bazel
+        time_profile.start(
+            "root_repo_mapping", "Dumping root repo mapping from Bazel"
+        )
+        try:
+            repo_mapping = (
+                bazel_repository_utils.BazelRootRepoMapping.new_from_bazel(
+                    bazel_launcher
+                )
+            )
+            repo_mapping.save_to_disk(build_dir)
+        except RuntimeError as e:
+            print(
+                f"ERROR: failed to dump root repo mapping: {e}", file=sys.stderr
+            )
+            return 1
 
         time_profile.start("tests.json", "Generating tests.json.")
         try:
