@@ -18,6 +18,7 @@
 
 #include <thread>
 
+#include <fbl/string_printf.h>
 #include <zxtest/zxtest.h>
 
 #include "helpers.h"

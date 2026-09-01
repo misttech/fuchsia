@@ -30,6 +30,7 @@ source_set("lib") {
   deps = [
     "restricted-blob",
     "//src/zircon/tests/restricted-mode-shared/helpers",
+    "//zircon/system/ulib/fbl",
     "//zircon/system/ulib/zxtest",
   ]
 }
