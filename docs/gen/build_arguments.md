@@ -946,7 +946,7 @@ This should never be set as a build argument.
 }
   static = {
   clang_rt = "lib/clang/24/lib/armv7-unknown-linux-gnueabihf/libclang_rt.lsan.a"
-  clang_rt_cxx = ""
+  clang_rt_cxx = "../../../../out/not-default/libclang_rt.lsan_cxx.a"
 }
 }
   tsan = {
@@ -954,7 +954,7 @@ This should never be set as a build argument.
   clang_rt = "../../../../out/not-default/libclang_rt.tsan.so"
 }
   static = {
-  clang_rt = "../../../../out/not-default/libclang_rt.tsan.a"
+  clang_rt = ""
   clang_rt_cxx = "../../../../out/not-default/libclang_rt.tsan_cxx.a"
 }
 }
@@ -2081,14 +2081,12 @@ From //build/config/compiler.gni:88
   bazel = "{{BAZEL_TARGET_OUT_DIR}}/buildstats_/buildstats"
   ninja = "buildstats"
 }]
-  install_host_tool = true
 }, {
   bazel_label = "//tools/build/ninjago/ninjatrace:ninjatrace"
   copy_outputs = [{
   bazel = "{{BAZEL_TARGET_OUT_DIR}}/ninjatrace_/ninjatrace"
   ninja = "ninjatrace"
 }]
-  install_host_tool = true
 }, {
   bazel_label = "//tools/dart_test_parser:dart_test_parser"
   copy_outputs = [{
@@ -2189,7 +2187,6 @@ From //build/config/compiler.gni:88
   bazel = "{{BAZEL_TARGET_OUT_DIR}}/clippy-reporter_/clippy-reporter"
   ninja = "clippy-reporter"
 }]
-  install_host_tool = true
 }, {
   bazel_label = "//tools/staticanalysis/rfcmeta:rfcmeta"
   copy_outputs = [{
@@ -2208,7 +2205,6 @@ From //build/config/compiler.gni:88
   bazel = "{{BAZEL_TARGET_OUT_DIR}}/debugsyms_/debugsyms"
   ninja = "debugsyms"
 }]
-  install_host_tool = true
 }, {
   bazel_label = "//tools/debug/generate_breakpad:generate_breakpad"
   copy_outputs = [{
@@ -2262,7 +2258,6 @@ From //build/config/compiler.gni:88
   install_host_tool = true
 }, {
   bazel_label = "//tools/rust_extract"
-  install_host_tool = true
 }, {
   bazel_label = "//tools/create:create_bin"
   install_host_tool = true
@@ -2309,7 +2304,6 @@ From //build/config/compiler.gni:88
   bazel = "{{BAZEL_TARGET_OUT_DIR}}/testsharder_/testsharder"
   ninja = "testsharder"
 }]
-  install_host_tool = true
 }, {
   bazel_label = "//tools/readme_fuchsia:readme_fuchsia_bin"
   copy_outputs = [{
@@ -2324,7 +2318,6 @@ From //build/config/compiler.gni:88
   bazel = "{{BAZEL_TARGET_OUT_DIR}}/tefmocheck_/tefmocheck"
   ninja = "tefmocheck"
 }]
-  install_host_tool = true
 }, {
   bazel_label = "//tools/testing/testparser:testparser_cmd"
   copy_outputs = [{
@@ -2375,7 +2368,6 @@ From //build/config/compiler.gni:88
   bazel = "{{BAZEL_TARGET_OUT_DIR}}/artifactory_/artifactory"
   ninja = "artifactory"
 }]
-  install_host_tool = true
 }, {
   bazel_label = "//tools/bundle_fetcher:bundle_fetcher"
   copy_outputs = [{
