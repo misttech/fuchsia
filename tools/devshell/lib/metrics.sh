@@ -293,6 +293,7 @@ function _read-other-tools-analytics-uuid {
 
 function _write-other-tools-analytics-uuid {
   local base_dir="$(_get-metrics-config-dir)"
+  mkdir -p "${base_dir}"
   echo "$1" >"${base_dir}/uuid"
 }
 
