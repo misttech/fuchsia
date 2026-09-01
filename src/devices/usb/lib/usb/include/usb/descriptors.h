@@ -11,6 +11,17 @@
 // maximum number of endpoints per device
 #define USB_MAX_EPS 32
 
+/* USB BCD Version encoding (e.g. USB_BCD_VERSION(2, 0, 1) -> 0x0201) */
+#define USB_BCD_VERSION(major, minor, subminor) \
+  (((major) << 8) | (((minor) & 0xf) << 4) | ((subminor) & 0xf))
+
+#define USB_2_0 USB_BCD_VERSION(2, 0, 0)
+#define USB_2_0_1 USB_BCD_VERSION(2, 0, 1)
+#define USB_2_1 USB_BCD_VERSION(2, 1, 0)
+#define USB_3_0 USB_BCD_VERSION(3, 0, 0)
+#define USB_3_1 USB_BCD_VERSION(3, 1, 0)
+#define USB_3_2 USB_BCD_VERSION(3, 2, 0)
+
 /* Request Types */
 #define USB_DIR_OUT (0 << 7)
 #define USB_DIR_IN (1 << 7)

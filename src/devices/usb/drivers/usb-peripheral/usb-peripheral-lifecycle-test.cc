@@ -59,6 +59,89 @@ TEST_F(ManagedUsbPeripheralTest, WorksWithVendorSpecificCommandWhenConfiguration
   ASSERT_EQ(ZX_ERR_BAD_STATE, result->error_value());
 }
 
+TEST_F(ManagedUsbPeripheralTest, BosDescriptorVersionHandling) {
+  fdescriptor::wire::UsbSetup setup;
+  setup.w_length = sizeof(usb_bos_descriptor_t);
+  setup.w_value = USB_DT_BOS << 8;
+  setup.bm_request_type = USB_DIR_IN | USB_RECIP_DEVICE | USB_TYPE_STANDARD;
+  setup.b_request = USB_REQ_GET_DESCRIPTOR;
+
+  // 1. USB 2.0 (0x0200) without BOS capabilities must stall GET_DESCRIPTOR(BOS).
+  this->dut().RunInDriverContext(
+      [](UsbPeripheral& driver) { driver.SetBcdUsbForTesting(USB_2_0); });
+  {
+    fidl::Arena arena;
+    std::vector<uint8_t> unused;
+    auto result =
+        dci().buffer(arena)->Control(setup, fidl::VectorView<uint8_t>::FromExternal(unused));
+    ASSERT_TRUE(result.ok()) << result.FormatDescription();
+    ASSERT_TRUE(result->is_error());
+    EXPECT_EQ(ZX_ERR_NOT_SUPPORTED, result->error_value());
+  }
+
+  // 2. USB 2.0.1 (0x0201) transition point supports BOS descriptors.
+  this->dut().RunInDriverContext(
+      [](UsbPeripheral& driver) { driver.SetBcdUsbForTesting(USB_2_0_1); });
+  {
+    fidl::Arena arena;
+    std::vector<uint8_t> unused;
+    auto result =
+        dci().buffer(arena)->Control(setup, fidl::VectorView<uint8_t>::FromExternal(unused));
+    ASSERT_TRUE(result.ok()) << result.FormatDescription();
+    ASSERT_TRUE(result->is_ok());
+  }
+
+  // 3. USB 2.1 (0x0210) supports BOS descriptors.
+  this->dut().RunInDriverContext(
+      [](UsbPeripheral& driver) { driver.SetBcdUsbForTesting(USB_2_1); });
+  {
+    fidl::Arena arena;
+    std::vector<uint8_t> unused;
+    auto result =
+        dci().buffer(arena)->Control(setup, fidl::VectorView<uint8_t>::FromExternal(unused));
+    ASSERT_TRUE(result.ok()) << result.FormatDescription();
+    ASSERT_TRUE(result->is_ok());
+  }
+
+  // 4. USB 3.1 (0x0310) SuperSpeed supports BOS descriptors.
+  this->dut().RunInDriverContext(
+      [](UsbPeripheral& driver) { driver.SetBcdUsbForTesting(USB_3_1); });
+  {
+    fidl::Arena arena;
+    std::vector<uint8_t> unused;
+    auto result =
+        dci().buffer(arena)->Control(setup, fidl::VectorView<uint8_t>::FromExternal(unused));
+    ASSERT_TRUE(result.ok()) << result.FormatDescription();
+    ASSERT_TRUE(result->is_ok());
+  }
+
+  // 5. Non-zero descriptor index or w_index must stall even on USB 2.1+ devices.
+  this->dut().RunInDriverContext(
+      [](UsbPeripheral& driver) { driver.SetBcdUsbForTesting(USB_2_1); });
+  {
+    fidl::Arena arena;
+    std::vector<uint8_t> unused;
+
+    // Non-zero descriptor index ((wValue & 0xFF) != 0).
+    setup.w_value = (USB_DT_BOS << 8) | 1;
+    setup.w_index = 0;
+    auto res_index =
+        dci().buffer(arena)->Control(setup, fidl::VectorView<uint8_t>::FromExternal(unused));
+    ASSERT_TRUE(res_index.ok()) << res_index.FormatDescription();
+    ASSERT_TRUE(res_index->is_error());
+    EXPECT_EQ(ZX_ERR_NOT_SUPPORTED, res_index->error_value());
+
+    // Non-zero w_index (w_index != 0).
+    setup.w_value = USB_DT_BOS << 8;
+    setup.w_index = 1;
+    auto res_windex =
+        dci().buffer(arena)->Control(setup, fidl::VectorView<uint8_t>::FromExternal(unused));
+    ASSERT_TRUE(res_windex.ok()) << res_windex.FormatDescription();
+    ASSERT_TRUE(res_windex->is_error());
+    EXPECT_EQ(ZX_ERR_NOT_SUPPORTED, res_windex->error_value());
+  }
+}
+
 TEST_F(UsbPeripheralReadyTest, InspectMetrics) {
   // Initial state should be PeripheralReady.
   {
@@ -1018,6 +1101,55 @@ TEST_F(UnmanagedUsbPeripheralTest, UnconfiguredRequestTests) {
     auto res = dci()->Control(setup, fidl::VectorView<uint8_t>());
     ASSERT_TRUE(res.ok()) << res.FormatDescription();
     ASSERT_TRUE(res->is_ok());
+  }
+
+  // 5. Test GET_DESCRIPTOR(USB_DT_BOS) behavior across USB versions on unconfigured device.
+  {
+    fdescriptor::wire::UsbSetup setup = {
+        .bm_request_type = USB_DIR_IN | USB_TYPE_STANDARD | USB_RECIP_DEVICE,
+        .b_request = USB_REQ_GET_DESCRIPTOR,
+        .w_value = USB_DT_BOS << 8,
+        .w_index = 0,
+        .w_length = sizeof(usb_bos_descriptor_t),
+    };
+
+    // Stalls for USB 2.0.
+    this->dut().RunInDriverContext(
+        [](UsbPeripheral& driver) { driver.SetBcdUsbForTesting(USB_2_0); });
+    auto res_2_0 = dci()->Control(setup, fidl::VectorView<uint8_t>());
+    ASSERT_TRUE(res_2_0.ok()) << res_2_0.FormatDescription();
+    ASSERT_TRUE(res_2_0->is_error());
+    EXPECT_EQ(res_2_0->error_value(), ZX_ERR_NOT_SUPPORTED);
+
+    // Succeeds for USB 2.1.
+    this->dut().RunInDriverContext(
+        [](UsbPeripheral& driver) { driver.SetBcdUsbForTesting(USB_2_1); });
+    auto res_2_1 = dci()->Control(setup, fidl::VectorView<uint8_t>());
+    ASSERT_TRUE(res_2_1.ok()) << res_2_1.FormatDescription();
+    ASSERT_TRUE(res_2_1->is_ok());
+
+    // Succeeds for USB 3.1.
+    this->dut().RunInDriverContext(
+        [](UsbPeripheral& driver) { driver.SetBcdUsbForTesting(USB_3_1); });
+    auto res_3_1 = dci()->Control(setup, fidl::VectorView<uint8_t>());
+    ASSERT_TRUE(res_3_1.ok()) << res_3_1.FormatDescription();
+    ASSERT_TRUE(res_3_1->is_ok());
+
+    // Non-zero descriptor index ((wValue & 0xFF) != 0) must stall.
+    setup.w_value = (USB_DT_BOS << 8) | 1;
+    setup.w_index = 0;
+    auto res_inv_idx = dci()->Control(setup, fidl::VectorView<uint8_t>());
+    ASSERT_TRUE(res_inv_idx.ok()) << res_inv_idx.FormatDescription();
+    ASSERT_TRUE(res_inv_idx->is_error());
+    EXPECT_EQ(res_inv_idx->error_value(), ZX_ERR_NOT_SUPPORTED);
+
+    // Non-zero w_index must stall.
+    setup.w_value = USB_DT_BOS << 8;
+    setup.w_index = 1;
+    auto res_inv_widx = dci()->Control(setup, fidl::VectorView<uint8_t>());
+    ASSERT_TRUE(res_inv_widx.ok()) << res_inv_widx.FormatDescription();
+    ASSERT_TRUE(res_inv_widx->is_error());
+    EXPECT_EQ(res_inv_widx->error_value(), ZX_ERR_NOT_SUPPORTED);
   }
 }
 

@@ -257,6 +257,7 @@ class UsbPeripheral : public fdf::DriverBase2,
                                 fidl::ServerEnd<fuchsia_hardware_usb_endpoint::Endpoint> ep);
 
   const usb_device_descriptor_t& device_desc() { return device_desc_; }
+  void SetBcdUsbForTesting(uint16_t bcd_usb) { device_desc_.bcd_usb = htole16(bcd_usb); }
   void OnHostConnectionChanged(bool connected);
   inspect::Node& inspect_node() { return usb_peripheral_node_; }
   const inspect::Inspector& inspector() const { return inspector_->inspector(); }

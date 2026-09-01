@@ -1183,11 +1183,17 @@ zx_status_t UsbPeripheral::GetDescriptor(uint8_t request_type, uint16_t value, u
     qualifier->b_reserved = 0;
     *out_actual = length;
     return ZX_OK;
-  } else if (desc_type == USB_DT_BOS) {
+  } else if (desc_type == USB_DT_BOS && (value & 0xFF) == 0 && index == 0) {
+    // USB 2.0 devices (bcdUSB < USB_2_0_1) without BOS capabilities must stall GET_DESCRIPTOR(BOS).
+    if (le16toh(device_desc_.bcd_usb) < USB_2_0_1) {
+      fdf::debug("BOS descriptor unsupported for bcd_usb < {:#x}: {:#x}", USB_2_0_1,
+                 le16toh(device_desc_.bcd_usb));
+      return ZX_ERR_NOT_SUPPORTED;
+    }
     usb_bos_descriptor_t bos{
         .b_length = sizeof(usb_bos_descriptor_t),
         .b_descriptor_type = USB_DT_BOS,
-        .w_total_length = sizeof(usb_bos_descriptor_t),
+        .w_total_length = htole16(sizeof(usb_bos_descriptor_t)),
         .b_num_device_caps = 0,  // No device capabilities.
     };
     length = std::min(length, sizeof(usb_bos_descriptor_t));
@@ -2046,7 +2052,7 @@ zx_status_t UsbPeripheral::SetDefaultConfig(std::vector<FunctionDescriptor>& fun
   auto& descriptor = configurations_.emplace_back(static_cast<uint8_t>(0));
   device_desc_.b_length = sizeof(usb_device_descriptor_t),
   device_desc_.b_descriptor_type = USB_DT_DEVICE;
-  device_desc_.bcd_usb = htole16(0x0200);
+  device_desc_.bcd_usb = htole16(USB_2_0);
   device_desc_.b_device_class = 0;
   device_desc_.b_device_sub_class = 0;
   device_desc_.b_device_protocol = 0;
