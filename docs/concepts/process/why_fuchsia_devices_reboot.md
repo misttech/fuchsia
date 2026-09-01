@@ -66,6 +66,10 @@ reboot was cold and will consider the reboot a result of a brief power loss. It
 is important to note that there is *not* a quantitative measure of what brief is
 and is hardware dependent.
 
+### User hard reset
+
+The user held the power button to hard reset it.
+
 ### User request
 
 The end user of the device explicitly requested a reboot of the device.
@@ -152,6 +156,7 @@ Brownout                     | `BROWNOUT`                   | `Brownout`        
 Hardware watchdog timeout    | `HARDWARE_WATCHDOG_TIMEOUT`  | `HardwareWatchdogTimeout`  | `fuchsia-hw-watchdog-timeout`
 Software watchdog timeout    | `SOFTWARE_WATCHDOG_TIMEOUT`  | `SoftwareWatchdogTimeout`  | `fuchsia-sw-watchdog-timeout`
 Brief power loss             | `BRIEF POWER LOSS`           | `BriefPowerLoss`           | `fuchsia-brief-power-loss`
+User hard reset              | `USER_HARD_RESET`            | `UserHardReset`            | `fuchsia-hard-reset-user-requested`
 User request                 | `USER_REQUEST`               | `UserRequest`              | N/A\*
 Developer request            | `DEVELOPER_REQUEST`          | `DeveloperRequest`         | N/A\*
 System update                | `SYSTEM_UPDATE`              | `SystemUpdate`             | N/A\*
@@ -162,7 +167,7 @@ Session failure              | `SESSION_FAILURE`            | `SessionFailure`  
 Critical component failure   | `CRITICAL_COMPONENT_FAILURE` | `CriticalComponentFailure` | `fuchsia-critical-component-failure` or `fuchsia-reboot-$CULPRIT-terminated`
 Critical driver failure      | `CRITICAL_DRIVER_FAILURE`    | `CriticalDriverFailure`    | `fuchsia-critical-driver-failure`
 Factory data reset           | `FACTORY_DATA_RESET`         | `FactoryDataReset`         | N/A\*
-Root job termination         | `ROOT_JOB_TERMINATION        | `RootJobTermination`       | `fuchsia-root-job-termination` or `fuchsia-reboot-$CULPRIT-terminated`
+Root job termination         | `ROOT_JOB_TERMINATION`       | `RootJobTermination`       | `fuchsia-root-job-termination` or `fuchsia-reboot-$CULPRIT-terminated`
 Generic graceful             | *graceful* field set to true | `GenericGraceful`          | `fuchsia-undetermined-userspace-reboot`
 Unknown                      | *graceful* field not set     | `Unknown`                  | `fuchsia-reboot-log-not-parseable`
 
