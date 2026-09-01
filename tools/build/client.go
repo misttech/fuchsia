@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 )
 
 // BuildAPIClient is a convenience interface for accessing the build API module
@@ -94,4 +95,29 @@ func (c BuildAPIClient) ExportDebugSymbols(ctx context.Context, outputDir string
 		return fmt.Errorf("export_last_build_debug_symbols failed: %w", err)
 	}
 	return nil
+}
+
+// AffectedTests returns the list of affected test targets by calling the
+// build/api/client affected_tests command with the given files list.
+func (c BuildAPIClient) AffectedTests(ctx context.Context, filesListPath string) ([]string, error) {
+	args := []string{
+		"--build-dir",
+		c.buildDir,
+		"affected_tests",
+		fmt.Sprintf("--files-list=%s", filesListPath),
+	}
+	cmd := exec.CommandContext(ctx, c.toolPath, args...)
+	cmd.Stderr = os.Stderr
+	output, err := cmd.Output()
+	if err != nil {
+		return nil, fmt.Errorf("affected_tests failed: %w", err)
+	}
+	var tests []string
+	for _, line := range strings.Split(string(output), "\n") {
+		line = strings.TrimSpace(line)
+		if line != "" {
+			tests = append(tests, line)
+		}
+	}
+	return tests, nil
 }

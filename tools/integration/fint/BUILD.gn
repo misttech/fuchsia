@@ -43,6 +43,7 @@ if (is_host) {
     embed = [ ":fint_lib" ]
 
     sources = [
+      "affected_test.go",
       "build_test.go",
       "common_test.go",
       "ninja_test.go",

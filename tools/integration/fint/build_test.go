@@ -50,10 +50,16 @@ func (m fakeBuildModules) PrebuiltBinarySets() []build.PrebuiltBinarySet { retur
 func (m fakeBuildModules) TestSpecs() []build.TestSpec                   { return m.testSpecs }
 func (m fakeBuildModules) Tools() build.Tools                            { return m.tools }
 
-type fakeBuildAPIClient struct{}
+type fakeBuildAPIClient struct {
+	affectedTests []string
+}
 
 func (c fakeBuildAPIClient) ExportDebugSymbols(ctx context.Context, dir string, withBreakpad bool) error {
 	return os.WriteFile(filepath.Join(dir, "debug_symbols.json"), []byte(`[]`), 0o600)
+}
+
+func (c fakeBuildAPIClient) AffectedTests(ctx context.Context, filesList string) ([]string, error) {
+	return c.affectedTests, nil
 }
 
 // An enum type describing the presence of a build success stamp file
@@ -158,6 +164,7 @@ func TestBuild(t *testing.T) {
 		expectedTargets   []string
 		expectedArtifacts *fintpb.BuildArtifacts
 		expectErr         bool
+		buildAPIClient    buildAPIClient
 		// A value that indicates whether a build success stamp file is expected.
 		// Default is an empty string, which models that the file should only exist
 		// if expectErr is false. Other values are "yes" or "no"
@@ -216,14 +223,18 @@ func TestBuild(t *testing.T) {
 			},
 			modules: fakeBuildModules{
 				testSpecs: []build.TestSpec{
-					{Test: build.Test{Name: "foo"}},
+					{Test: build.Test{Name: "foo", Label: "//src:foo"}},
 				},
+			},
+			buildAPIClient: fakeBuildAPIClient{
+				affectedTests: []string{"//src:foo,host"},
 			},
 			expectedArtifacts: &fintpb.BuildArtifacts{
 				BuildstatsJsonFiles: []string{filepath.Join(buildDir, buildstatsJSONName)},
 				LogFiles: map[string]string{
-					"debug_symbols.json":   filepath.Join(artifactDir, "debug_symbols.json"),
-					"ninja dry run output": filepath.Join(artifactDir, "ninja_dry_run_output"),
+					"affected_tests_comparison.json": filepath.Join(artifactDir, "affected_tests_comparison.json"),
+					"debug_symbols.json":             filepath.Join(artifactDir, "debug_symbols.json"),
+					"ninja dry run output":           filepath.Join(artifactDir, "ninja_dry_run_output"),
 				},
 				NinjatraceJsonFiles: []string{filepath.Join(buildDir, ninjatraceJSONName)},
 			},
@@ -689,8 +700,12 @@ func TestBuild(t *testing.T) {
 				},
 			)...)
 			ctx := context.Background()
+			client := tc.buildAPIClient
+			if client == nil {
+				client = fakeBuildAPIClient{}
+			}
 			artifacts, err := buildImpl(
-				ctx, runner, subninjaLogIsRecent, fileExists, tc.staticSpec, tc.contextSpec, tc.modules, fakeBuildAPIClient{}, platform)
+				ctx, runner, subninjaLogIsRecent, fileExists, tc.staticSpec, tc.contextSpec, tc.modules, client, platform)
 			if err != nil {
 				if !tc.expectErr {
 					t.Fatalf("Got unexpected error: %s", err)
