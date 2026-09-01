@@ -8,6 +8,7 @@
 #define ZIRCON_KERNEL_PHYS_BOOT_SHIM_INCLUDE_PHYS_BOOT_SHIM_DEVICETREE_H_
 
 #include <lib/boot-options/boot-options.h>
+#include <lib/boot-shim/boot-properties.h>
 #include <lib/boot-shim/devicetree-boot-shim.h>
 #include <lib/boot-shim/devicetree.h>
 #include <lib/boot-shim/pool-mem-config.h>
@@ -229,7 +230,9 @@ class BootShimHelper {
           }
         },
         [this](boot_shim::RebootReasonItem& item) {
-          item.Init(gDevicetreeBoot.cmdline, shim_.shim_name());
+          item.Init(
+              boot_shim::BootProperties(gDevicetreeBoot.cmdline, gDevicetreeBoot.linux_boot_config),
+              shim_.shim_name());
         },
         [](boot_shim::UartItem<>& item) { item.Init(GetUartDriver().config()); });
 

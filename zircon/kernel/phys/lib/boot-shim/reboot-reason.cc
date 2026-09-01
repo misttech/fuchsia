@@ -12,7 +12,7 @@ namespace boot_shim {
 namespace {
 
 // See https://source.android.com/docs/core/architecture/bootloader/boot-reason
-constexpr std::string_view kBootArg = "androidboot.bootreason=";
+constexpr std::string_view kBootArgKey = "androidboot.bootreason";
 
 struct RebootReasonMap {
   std::string_view reason;
@@ -43,38 +43,34 @@ constexpr auto kRebootReasons = std::to_array<RebootReasonMap>({
 
 }  // namespace
 
-void RebootReasonItem::Init(std::string_view cmdline, const char* shim_name, FILE* log) {
-  size_t boot_arg = cmdline.rfind(kBootArg);
+void RebootReasonItem::Init(const BootProperties& properties, const char* shim_name, FILE* log) {
+  auto prop = properties.GetProperty(kBootArgKey);
 
   // No reboot reason.
-  if (boot_arg == std::string_view::npos) {
+  if (prop.is_error()) {
     fprintf(log, "%s: ERROR %.*s was missing, no reboot reason.\n", shim_name,
-            static_cast<int>(kBootArg.size() - 1), kBootArg.data());
+            static_cast<int>(kBootArgKey.size()), kBootArgKey.data());
     return;
   }
 
-  std::string_view reboot_reason = cmdline.substr(boot_arg + kBootArg.size());
-  reboot_reason = reboot_reason.substr(0, reboot_reason.find_first_of(' '));
-
+  std::string_view reboot_reason = prop.value();
   if (reboot_reason.empty()) {
     fprintf(log, "%s: ERROR %.*s was empty, no reboot reason.\n", shim_name,
-            static_cast<int>(kBootArg.size() - 1), kBootArg.data());
+            static_cast<int>(kBootArgKey.size()), kBootArgKey.data());
     return;
   }
 
-  for (auto [reason, value] : kRebootReasons) {
+  for (const auto& [reason, value] : kRebootReasons) {
     if (reboot_reason == reason) {
-      static_assert(kBootArg.size() > 0);
-      fprintf(log, "%s: INFO %.*s was <%.*s>.\n", shim_name, static_cast<int>(kBootArg.size() - 1),
-              kBootArg.data(), static_cast<int>(reboot_reason.size()), reboot_reason.data());
+      fprintf(log, "%s: INFO %.*s was <%.*s>.\n", shim_name, static_cast<int>(kBootArgKey.size()),
+              kBootArgKey.data(), static_cast<int>(reboot_reason.size()), reboot_reason.data());
       set_payload(value);
       return;
     }
   }
 
-  static_assert(kBootArg.size() > 0);
   fprintf(log, "%s: ERROR %.*s was <%.*s>, no known reboot reason.\n", shim_name,
-          static_cast<int>(kBootArg.size() - 1), kBootArg.data(),
+          static_cast<int>(kBootArgKey.size()), kBootArgKey.data(),
           static_cast<int>(reboot_reason.size()), reboot_reason.data());
 }
 

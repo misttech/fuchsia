@@ -18,6 +18,7 @@ library_headers("headers") {
     "lib/boot-shim/efi-boot-shim.h",
     "lib/boot-shim/item-base.h",
     "lib/boot-shim/pool-mem-config.h",
+    "lib/boot-shim/reboot-reason.h",
     "lib/boot-shim/test-serial-number.h",
     "lib/boot-shim/tty.h",
     "lib/boot-shim/uart.h",
