@@ -181,13 +181,13 @@ CreateBufferCollectionPtrWithEmptyConstraints(
 }
 
 std::vector<vk::ImageFormatConstraintsInfoFUCHSIA> GetVulkanImageFormatConstraints(
-    const BufferCollectionUsage usage, const std::optional<fuchsia::math::SizeU> size) {
+    const BufferCollectionUsage usage, const std::optional<fuchsia_math::SizeU> size) {
   std::vector<vk::ImageFormatConstraintsInfoFUCHSIA> constraint_infos;
   for (const auto& format : GetSupportedImageFormatsForBufferCollectionUsage(usage)) {
     vk::ImageCreateInfo create_info =
         escher::RectangleCompositor::GetDefaultImageConstraints(format, GetImageUsageFlags(usage));
-    if (size.has_value() && size.value().width && size.value().height) {
-      create_info.extent = vk::Extent3D{size.value().width, size.value().height, 1};
+    if (size.has_value() && size.value().width() && size.value().height()) {
+      create_info.extent = vk::Extent3D{size.value().width(), size.value().height(), 1};
     }
 
     constraint_infos.push_back(escher::GetDefaultImageFormatConstraintsInfo(create_info));
@@ -265,7 +265,7 @@ VkRenderer::~VkRenderer() {
 std::optional<vk::BufferCollectionFUCHSIA>
 VkRenderer::SetConstraintsAndCreateVulkanBufferCollection(
     fidl::ClientEnd<fuchsia_sysmem2::BufferCollectionToken> token,
-    const BufferCollectionUsage usage, const std::optional<fuchsia::math::SizeU> size) {
+    const BufferCollectionUsage usage, const std::optional<fuchsia_math::SizeU> size) {
   auto vk_device = escher_->vk_device();
   auto vk_loader = escher_->device()->dispatch_loader();
   FX_DCHECK(vk_device);
@@ -388,7 +388,7 @@ fpromise::promise<> VkRenderer::ImportBufferCollection(
     GlobalBufferCollectionId collection_id,
     fidl::WireClient<fuchsia_sysmem2::Allocator>& sysmem_allocator,
     fidl::ClientEnd<fuchsia_sysmem2::BufferCollectionToken> buffer_collection_token,
-    BufferCollectionUsage usage, std::optional<fuchsia::math::SizeU> size) {
+    BufferCollectionUsage usage, std::optional<fuchsia_math::SizeU> size) {
   FX_DCHECK(main_dispatcher_ == async_get_default_dispatcher());
   FX_DCHECK(collection_id != allocation::kInvalidId);
   FX_DCHECK(buffer_collection_token.is_valid());

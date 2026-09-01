@@ -25,14 +25,14 @@ bool SrcToDest::operator==(const SrcToDest& other) const {
 }
 
 HitRegion::HitRegion(const types::RectangleF& region,
-                     const fuchsia::ui::composition::HitTestInteraction& interaction)
+                     fuchsia_ui_composition::HitTestInteraction interaction)
     : region_(std::make_optional(region)), interaction_(interaction) {}
 
 HitRegion::HitRegion(types::RectangleF::ConstructorArgs region,
-                     fuchsia::ui::composition::HitTestInteraction interaction)
+                     fuchsia_ui_composition::HitTestInteraction interaction)
     : HitRegion(types::RectangleF(region), interaction) {}
 
-HitRegion HitRegion::Infinite(fuchsia::ui::composition::HitTestInteraction interaction) {
+HitRegion HitRegion::Infinite(fuchsia_ui_composition::HitTestInteraction interaction) {
   return HitRegion(interaction);
 }
 
@@ -43,9 +43,9 @@ const types::RectangleF& HitRegion::region() const {
   return region_.value();
 }
 
-fuchsia::ui::composition::HitTestInteraction HitRegion::interaction() const { return interaction_; }
+fuchsia_ui_composition::HitTestInteraction HitRegion::interaction() const { return interaction_; }
 
-HitRegion::HitRegion(fuchsia::ui::composition::HitTestInteraction interaction)
+HitRegion::HitRegion(fuchsia_ui_composition::HitTestInteraction interaction)
     : interaction_(interaction) {}
 
 std::ostream& operator<<(std::ostream& out, const LayerHandle& h) {

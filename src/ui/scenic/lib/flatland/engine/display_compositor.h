@@ -8,6 +8,7 @@
 #include <fidl/fuchsia.hardware.display.types/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.display/cpp/fidl.h>
 #include <fidl/fuchsia.sysmem2/cpp/fidl.h>
+#include <fuchsia/sysmem2/cpp/fidl.h>
 #include <lib/async/dispatcher.h>
 #include <lib/zx/time.h>
 
@@ -97,7 +98,7 @@ class DisplayCompositor final : public allocation::BufferCollectionImporter,
       allocation::GlobalBufferCollectionId collection_id,
       fidl::WireClient<fuchsia_sysmem2::Allocator>& sysmem_allocator,
       fidl::ClientEnd<fuchsia_sysmem2::BufferCollectionToken> token, BufferCollectionUsage usage,
-      std::optional<fuchsia::math::SizeU> size) override FXL_LOCKS_EXCLUDED(lock_);
+      std::optional<fuchsia_math::SizeU> size) override FXL_LOCKS_EXCLUDED(lock_);
 
   // |BufferCollectionImporter|
   // Only called from the main thread.
@@ -206,7 +207,7 @@ class DisplayCompositor final : public allocation::BufferCollectionImporter,
   void OnVsync(zx::time_monotonic timestamp, display::WireConfigStamp displayed_config_stamp);
 
   fpromise::promise<std::vector<allocation::ImageMetadata>> AllocateDisplayRenderTargets(
-      bool use_protected_memory, uint32_t num_render_targets, const fuchsia::math::SizeU& size,
+      bool use_protected_memory, uint32_t num_render_targets, const fuchsia_math::SizeU& size,
       fuchsia_images2::PixelFormat pixel_format,
       fuchsia::sysmem2::BufferCollectionInfo* out_collection_info = nullptr)
       FXL_LOCKS_EXCLUDED(lock_);

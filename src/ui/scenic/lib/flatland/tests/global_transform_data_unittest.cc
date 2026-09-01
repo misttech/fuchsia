@@ -24,8 +24,8 @@ namespace test {
 
 namespace {
 
-using fuchsia::ui::composition::Orientation;
 using fuchsia_ui_composition::ImageFlip;
+using fuchsia_ui_composition::Orientation;
 
 constexpr int kImageWidth = 1000;
 constexpr int kImageHeight = 500;
@@ -52,13 +52,13 @@ SrcToDest GetSrcToDestForMatrixAndClip(const glm::mat3& matrix, const TransformC
 // rotation).
 float GetOrientationAngleInViewSpaceCoordinates(Orientation angle) {
   switch (angle) {
-    case Orientation::CCW_90_DEGREES:
+    case Orientation::kCcw90Degrees:
       return -glm::half_pi<float>();
-    case Orientation::CCW_180_DEGREES:
+    case Orientation::kCcw180Degrees:
       return -glm::pi<float>();
-    case Orientation::CCW_270_DEGREES:
+    case Orientation::kCcw270Degrees:
       return -glm::three_over_two_pi<float>();
-    case Orientation::CCW_0_DEGREES:
+    case Orientation::kCcw0Degrees:
       return 0.f;
   }
 }
@@ -222,7 +222,7 @@ TEST(SrcToDestTest, ChildCompletelyBiggerThanParentClipRotatedBy90Test) {
   // same origin after rotation.
   glm::mat3 matrix = glm::translate(glm::mat3(), {0, extent.x});
   matrix =
-      glm::rotate(matrix, GetOrientationAngleInViewSpaceCoordinates(Orientation::CCW_90_DEGREES));
+      glm::rotate(matrix, GetOrientationAngleInViewSpaceCoordinates(Orientation::kCcw90Degrees));
   matrix = glm::scale(matrix, extent);
 
   // Note that this clip region is specified in global space and will not be modified by the matrix.
@@ -247,7 +247,7 @@ TEST(SrcToDestTest, ChildCompletelyBiggerThanParentClipRotatedBy180Test) {
   // same origin after rotation.
   glm::mat3 matrix = glm::translate(glm::mat3(), {extent.x, extent.y});
   matrix =
-      glm::rotate(matrix, GetOrientationAngleInViewSpaceCoordinates(Orientation::CCW_180_DEGREES));
+      glm::rotate(matrix, GetOrientationAngleInViewSpaceCoordinates(Orientation::kCcw180Degrees));
   matrix = glm::scale(matrix, extent);
 
   // Note that this clip region is specified in global space and will not be modified by the matrix.
@@ -271,7 +271,7 @@ TEST(SrcToDestTest, ChildCompletelyBiggerThanParentClipRotatedBy270Test) {
   // same origin after rotation.
   glm::mat3 matrix = glm::translate(glm::mat3(), {extent.y, 0});
   matrix =
-      glm::rotate(matrix, GetOrientationAngleInViewSpaceCoordinates(Orientation::CCW_270_DEGREES));
+      glm::rotate(matrix, GetOrientationAngleInViewSpaceCoordinates(Orientation::kCcw270Degrees));
   matrix = glm::scale(matrix, extent);
 
   // Note that this clip region is specified in global space and will not be modified by the matrix.
@@ -329,7 +329,7 @@ TEST(SrcToDestTest, RectangleAndClipPartialOverlap) {
 TEST(SrcToDestTest, ScaleAndRotate90DegreesTest) {
   const glm::vec2 extent(100.f, 50.f);
   glm::mat3 matrix = glm::rotate(
-      glm::mat3(), GetOrientationAngleInViewSpaceCoordinates(Orientation::CCW_90_DEGREES));
+      glm::mat3(), GetOrientationAngleInViewSpaceCoordinates(Orientation::kCcw90Degrees));
   matrix = glm::scale(matrix, extent);
 
   const SrcToDest expected_rectangle(types::RectangleF({0.f, 0.f, kImageWidth, kImageHeight}),
@@ -343,7 +343,7 @@ TEST(SrcToDestTest, ScaleAndRotate90DegreesTest) {
 TEST(SrcToDestTest, ScaleAndRotate180DegreesTest) {
   const glm::vec2 extent(100.f, 50.f);
   glm::mat3 matrix = glm::rotate(
-      glm::mat3(), GetOrientationAngleInViewSpaceCoordinates(Orientation::CCW_180_DEGREES));
+      glm::mat3(), GetOrientationAngleInViewSpaceCoordinates(Orientation::kCcw180Degrees));
   matrix = glm::scale(matrix, extent);
 
   const SrcToDest expected_rectangle(types::RectangleF({0.f, 0.f, kImageWidth, kImageHeight}),
@@ -357,7 +357,7 @@ TEST(SrcToDestTest, ScaleAndRotate180DegreesTest) {
 TEST(SrcToDestTest, ScaleAndRotate270DegreesTest) {
   const glm::vec2 extent(100.f, 50.f);
   glm::mat3 matrix = glm::rotate(
-      glm::mat3(), GetOrientationAngleInViewSpaceCoordinates(Orientation::CCW_270_DEGREES));
+      glm::mat3(), GetOrientationAngleInViewSpaceCoordinates(Orientation::kCcw270Degrees));
   matrix = glm::scale(matrix, extent);
 
   const SrcToDest expected_rectangle(types::RectangleF({0.f, 0.f, kImageWidth, kImageHeight}),
@@ -383,7 +383,7 @@ TEST(SrcToDestTest, ScaleAndFlipHorizontal) {
 TEST(SrcToDestTest, ScaleRotate90DegreesAndFlipHorizontal) {
   const glm::vec2 extent(100.f, 50.f);
   glm::mat3 matrix = glm::rotate(
-      glm::mat3(), GetOrientationAngleInViewSpaceCoordinates(Orientation::CCW_90_DEGREES));
+      glm::mat3(), GetOrientationAngleInViewSpaceCoordinates(Orientation::kCcw90Degrees));
   matrix = glm::scale(matrix, extent);
 
   const SrcToDest expected_rectangle(types::RectangleF({0.f, 0.f, kImageWidth, kImageHeight}),
@@ -397,7 +397,7 @@ TEST(SrcToDestTest, ScaleRotate90DegreesAndFlipHorizontal) {
 TEST(SrcToDestTest, ScaleRotate180DegreesAndFlipHorizontal) {
   const glm::vec2 extent(100.f, 50.f);
   glm::mat3 matrix = glm::rotate(
-      glm::mat3(), GetOrientationAngleInViewSpaceCoordinates(Orientation::CCW_180_DEGREES));
+      glm::mat3(), GetOrientationAngleInViewSpaceCoordinates(Orientation::kCcw180Degrees));
   matrix = glm::scale(matrix, extent);
 
   const SrcToDest expected_rectangle(types::RectangleF({0.f, 0.f, kImageWidth, kImageHeight}),
@@ -411,7 +411,7 @@ TEST(SrcToDestTest, ScaleRotate180DegreesAndFlipHorizontal) {
 TEST(SrcToDestTest, ScaleRotate270DegreesAndFlipHorizontal) {
   const glm::vec2 extent(100.f, 50.f);
   glm::mat3 matrix = glm::rotate(
-      glm::mat3(), GetOrientationAngleInViewSpaceCoordinates(Orientation::CCW_270_DEGREES));
+      glm::mat3(), GetOrientationAngleInViewSpaceCoordinates(Orientation::kCcw270Degrees));
   matrix = glm::scale(matrix, extent);
 
   const SrcToDest expected_rectangle(types::RectangleF({0.f, 0.f, kImageWidth, kImageHeight}),
@@ -437,7 +437,7 @@ TEST(SrcToDestTest, ScaleAndFlipVertical) {
 TEST(SrcToDestTest, ScaleRotate90DegreesAndFlipVertical) {
   const glm::vec2 extent(100.f, 50.f);
   glm::mat3 matrix = glm::rotate(
-      glm::mat3(), GetOrientationAngleInViewSpaceCoordinates(Orientation::CCW_90_DEGREES));
+      glm::mat3(), GetOrientationAngleInViewSpaceCoordinates(Orientation::kCcw90Degrees));
   matrix = glm::scale(matrix, extent);
 
   const SrcToDest expected_rectangle(types::RectangleF({0.f, 0.f, kImageWidth, kImageHeight}),
@@ -451,7 +451,7 @@ TEST(SrcToDestTest, ScaleRotate90DegreesAndFlipVertical) {
 TEST(SrcToDestTest, ScaleRotate180DegreesAndFlipVertical) {
   const glm::vec2 extent(100.f, 50.f);
   glm::mat3 matrix = glm::rotate(
-      glm::mat3(), GetOrientationAngleInViewSpaceCoordinates(Orientation::CCW_180_DEGREES));
+      glm::mat3(), GetOrientationAngleInViewSpaceCoordinates(Orientation::kCcw180Degrees));
   matrix = glm::scale(matrix, extent);
 
   const SrcToDest expected_rectangle(types::RectangleF({0.f, 0.f, kImageWidth, kImageHeight}),
@@ -465,7 +465,7 @@ TEST(SrcToDestTest, ScaleRotate180DegreesAndFlipVertical) {
 TEST(SrcToDestTest, ScaleRotate270DegreesAndFlipVertical) {
   const glm::vec2 extent(100.f, 50.f);
   glm::mat3 matrix = glm::rotate(
-      glm::mat3(), GetOrientationAngleInViewSpaceCoordinates(Orientation::CCW_270_DEGREES));
+      glm::mat3(), GetOrientationAngleInViewSpaceCoordinates(Orientation::kCcw270Degrees));
   matrix = glm::scale(matrix, extent);
 
   const SrcToDest expected_rectangle(types::RectangleF({0.f, 0.f, kImageWidth, kImageHeight}),
@@ -501,7 +501,7 @@ TEST(SrcToDestTest, ChildCompletelyBiggerThanParentClipFlipLeftRightRotatedBy90T
   // same origin after rotation.
   glm::mat3 matrix = glm::translate(glm::mat3(), {0, extent.x});
   matrix =
-      glm::rotate(matrix, GetOrientationAngleInViewSpaceCoordinates(Orientation::CCW_90_DEGREES));
+      glm::rotate(matrix, GetOrientationAngleInViewSpaceCoordinates(Orientation::kCcw90Degrees));
   matrix = glm::scale(matrix, extent);
 
   // Note that this clip region is specified in global space and will not be modified by the matrix.
@@ -527,7 +527,7 @@ TEST(SrcToDestTest, ChildCompletelyBiggerThanParentClipFlipLeftRightRotatedBy180
   // same origin after rotation.
   glm::mat3 matrix = glm::translate(glm::mat3(), {extent.x, extent.y});
   matrix =
-      glm::rotate(matrix, GetOrientationAngleInViewSpaceCoordinates(Orientation::CCW_180_DEGREES));
+      glm::rotate(matrix, GetOrientationAngleInViewSpaceCoordinates(Orientation::kCcw180Degrees));
   matrix = glm::scale(matrix, extent);
 
   // Note that this clip region is specified in global space and will not be modified by the matrix.
@@ -551,7 +551,7 @@ TEST(SrcToDestTest, ChildCompletelyBiggerThanParentClipFlipLeftRightRotatedBy270
   // same origin after rotation.
   glm::mat3 matrix = glm::translate(glm::mat3(), {extent.y, 0});
   matrix =
-      glm::rotate(matrix, GetOrientationAngleInViewSpaceCoordinates(Orientation::CCW_270_DEGREES));
+      glm::rotate(matrix, GetOrientationAngleInViewSpaceCoordinates(Orientation::kCcw270Degrees));
   matrix = glm::scale(matrix, extent);
 
   // Note that this clip region is specified in global space and will not be modified by the matrix.
@@ -593,7 +593,7 @@ TEST(SrcToDestTest, ChildCompletelyBiggerThanParentClipFlipUpDownRotatedBy90Test
   // same origin after rotation.
   glm::mat3 matrix = glm::translate(glm::mat3(), {0, extent.x});
   matrix =
-      glm::rotate(matrix, GetOrientationAngleInViewSpaceCoordinates(Orientation::CCW_90_DEGREES));
+      glm::rotate(matrix, GetOrientationAngleInViewSpaceCoordinates(Orientation::kCcw90Degrees));
   matrix = glm::scale(matrix, extent);
 
   // Note that this clip region is specified in global space and will not be modified by the matrix.
@@ -619,7 +619,7 @@ TEST(SrcToDestTest, ChildCompletelyBiggerThanParentClipFlipUpDownRotatedBy180Tes
   // same origin after rotation.
   glm::mat3 matrix = glm::translate(glm::mat3(), {extent.x, extent.y});
   matrix =
-      glm::rotate(matrix, GetOrientationAngleInViewSpaceCoordinates(Orientation::CCW_180_DEGREES));
+      glm::rotate(matrix, GetOrientationAngleInViewSpaceCoordinates(Orientation::kCcw180Degrees));
   matrix = glm::scale(matrix, extent);
 
   // Note that this clip region is specified in global space and will not be modified by the matrix.
@@ -643,7 +643,7 @@ TEST(SrcToDestTest, ChildCompletelyBiggerThanParentClipFlipUpDownRotatedBy270Tes
   // same origin after rotation.
   glm::mat3 matrix = glm::translate(glm::mat3(), {extent.y, 0});
   matrix =
-      glm::rotate(matrix, GetOrientationAngleInViewSpaceCoordinates(Orientation::CCW_270_DEGREES));
+      glm::rotate(matrix, GetOrientationAngleInViewSpaceCoordinates(Orientation::kCcw270Degrees));
   matrix = glm::scale(matrix, extent);
 
   // Note that this clip region is specified in global space and will not be modified by the matrix.
@@ -711,7 +711,7 @@ TEST(SrcToDestTest, OrderOfOperationsTest) {
     // origin at (0, -1). We then translate by (10, 5) to wind up at (10, 4).
     const glm::mat3 test_1 =
         glm::rotate(glm::translate(glm::mat3(), glm::vec2(10.f, 5.f)),
-                    GetOrientationAngleInViewSpaceCoordinates(Orientation::CCW_90_DEGREES));
+                    GetOrientationAngleInViewSpaceCoordinates(Orientation::kCcw90Degrees));
 
     const SrcToDest expected_rectangle_1(types::RectangleF({0.f, 0.f, kImageWidth, kImageHeight}),
                                          types::RectangleF({10.f, 4.f, 1.f, 1.f}),
@@ -724,7 +724,7 @@ TEST(SrcToDestTest, OrderOfOperationsTest) {
     // 90 degrees counterclockwise. This places the origin at (5, -11).
     const glm::mat3 test_2 = glm::translate(
         glm::rotate(glm::mat3(),
-                    GetOrientationAngleInViewSpaceCoordinates(Orientation::CCW_90_DEGREES)),
+                    GetOrientationAngleInViewSpaceCoordinates(Orientation::kCcw90Degrees)),
         glm::vec2(10.f, 5.f));
 
     const SrcToDest expected_rectangle_2(types::RectangleF({0.f, 0.f, kImageWidth, kImageHeight}),
@@ -740,7 +740,7 @@ TEST(SrcToDestTest, OrderOfOperationsTest) {
     // We rotate first and then scale, so the scaling isn't affected by the rotation.
     const glm::mat3 test_1 =
         glm::rotate(glm::scale(glm::mat3(), glm::vec2(9.f, 7.f)),
-                    GetOrientationAngleInViewSpaceCoordinates(Orientation::CCW_90_DEGREES));
+                    GetOrientationAngleInViewSpaceCoordinates(Orientation::kCcw90Degrees));
 
     const SrcToDest expected_rectangle_1(types::RectangleF({0.f, 0.f, kImageWidth, kImageHeight}),
                                          types::RectangleF({0.f, -7.f, 9.f, 7.f}),
@@ -752,7 +752,7 @@ TEST(SrcToDestTest, OrderOfOperationsTest) {
     // Here we scale and then rotate so the scale winds up rotated.
     const glm::mat3 test_2 = glm::scale(
         glm::rotate(glm::mat3(),
-                    GetOrientationAngleInViewSpaceCoordinates(Orientation::CCW_90_DEGREES)),
+                    GetOrientationAngleInViewSpaceCoordinates(Orientation::kCcw90Degrees)),
         glm::vec2(9.f, 7.f));
 
     const SrcToDest expected_rectangle_2(types::RectangleF({0.f, 0.f, kImageWidth, kImageHeight}),
@@ -952,7 +952,7 @@ TEST(GlobalTransformClipTest, ScaleAndRotate90DegreesTest) {
 
   const glm::vec2 scale(3.f, 2.f);
   glm::mat3 matrix = glm::rotate(
-      glm::mat3(), GetOrientationAngleInViewSpaceCoordinates(Orientation::CCW_90_DEGREES));
+      glm::mat3(), GetOrientationAngleInViewSpaceCoordinates(Orientation::kCcw90Degrees));
   matrix = glm::scale(matrix, scale);
   GlobalMatrixVector global_matrices = {matrix};
 
@@ -981,7 +981,7 @@ TEST(GlobalTransformClipTest, ScaleAndRotate180DegreesTest) {
 
   const glm::vec2 scale(3.f, 2.f);
   glm::mat3 matrix = glm::rotate(
-      glm::mat3(), GetOrientationAngleInViewSpaceCoordinates(Orientation::CCW_180_DEGREES));
+      glm::mat3(), GetOrientationAngleInViewSpaceCoordinates(Orientation::kCcw180Degrees));
   matrix = glm::scale(matrix, scale);
   GlobalMatrixVector global_matrices = {matrix};
 
@@ -1010,7 +1010,7 @@ TEST(GlobalTransformClipTest, ScaleAndRotate270DegreesTest) {
 
   const glm::vec2 scale(3.f, 2.f);
   glm::mat3 matrix = glm::rotate(
-      glm::mat3(), GetOrientationAngleInViewSpaceCoordinates(Orientation::CCW_270_DEGREES));
+      glm::mat3(), GetOrientationAngleInViewSpaceCoordinates(Orientation::kCcw270Degrees));
   matrix = glm::scale(matrix, scale);
   GlobalMatrixVector global_matrices = {matrix};
 

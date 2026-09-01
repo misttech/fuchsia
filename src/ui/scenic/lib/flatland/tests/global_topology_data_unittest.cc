@@ -494,10 +494,9 @@ TEST(GlobalTopologyDataTest, HitTest_SemanticVisibility) {
     uber_struct->local_clip_regions.try_emplace(view_ref1_root_transform, clip_region);
     uber_struct->local_hit_regions_map[view_ref1_root_transform] = {
         {flatland::HitRegion(semantically_visible_hit_region,
-                             fuchsia::ui::composition::HitTestInteraction::DEFAULT)},
-        {flatland::HitRegion(
-            semantically_invisible_hit_region,
-            fuchsia::ui::composition::HitTestInteraction::SEMANTICALLY_INVISIBLE)}};
+                             fuchsia_ui_composition::HitTestInteraction::kDefault)},
+        {flatland::HitRegion(semantically_invisible_hit_region,
+                             fuchsia_ui_composition::HitTestInteraction::kSemanticallyInvisible)}};
 
     uber_structs[vectors[0][0].handle.GetInstanceId()] = std::move(uber_struct);
   }

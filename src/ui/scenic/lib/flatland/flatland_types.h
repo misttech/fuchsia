@@ -6,8 +6,6 @@
 #define SRC_UI_SCENIC_LIB_FLATLAND_FLATLAND_TYPES_H_
 
 #include <fidl/fuchsia.ui.composition/cpp/fidl.h>
-#include <fuchsia/math/cpp/fidl.h>
-#include <fuchsia/ui/composition/cpp/fidl.h>
 #include <zircon/types.h>
 
 #include <array>
@@ -101,15 +99,15 @@ class HitRegion {
  public:
   // Finite hit region with default interaction.
   explicit HitRegion(const types::RectangleF& region,
-                     const fuchsia::ui::composition::HitTestInteraction& interaction =
-                         fuchsia::ui::composition::HitTestInteraction::DEFAULT);
+                     fuchsia_ui_composition::HitTestInteraction interaction =
+                         fuchsia_ui_composition::HitTestInteraction::kDefault);
   explicit HitRegion(types::RectangleF::ConstructorArgs region,
-                     fuchsia::ui::composition::HitTestInteraction interaction =
-                         fuchsia::ui::composition::HitTestInteraction::DEFAULT);
+                     fuchsia_ui_composition::HitTestInteraction interaction =
+                         fuchsia_ui_composition::HitTestInteraction::kDefault);
 
   // Infinite hit region with default interaction.
-  static HitRegion Infinite(fuchsia::ui::composition::HitTestInteraction interaction =
-                                fuchsia::ui::composition::HitTestInteraction::DEFAULT);
+  static HitRegion Infinite(fuchsia_ui_composition::HitTestInteraction interaction =
+                                fuchsia_ui_composition::HitTestInteraction::kDefault);
 
   // Return true if region has finite extent.
   bool is_finite() const;
@@ -118,18 +116,18 @@ class HitRegion {
   const types::RectangleF& region() const;
 
   // Hit test interaction accessor.
-  fuchsia::ui::composition::HitTestInteraction interaction() const;
+  fuchsia_ui_composition::HitTestInteraction interaction() const;
 
  private:
   // Helper for Infinite().
-  explicit HitRegion(fuchsia::ui::composition::HitTestInteraction interaction);
+  explicit HitRegion(fuchsia_ui_composition::HitTestInteraction interaction);
 
   // Presence indicates a finite hit region.
   // Absence indicates an infinite hit region.
   std::optional<types::RectangleF> region_;
 
-  fuchsia::ui::composition::HitTestInteraction interaction_ =
-      fuchsia::ui::composition::HitTestInteraction::DEFAULT;
+  fuchsia_ui_composition::HitTestInteraction interaction_ =
+      fuchsia_ui_composition::HitTestInteraction::kDefault;
 };
 
 // Layer instance resolved from the global Flatland scene graph.

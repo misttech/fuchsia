@@ -133,7 +133,7 @@ fpromise::promise<> ScreenCaptureBufferCollectionImporter::ImportBufferCollectio
     allocation::GlobalBufferCollectionId collection_id,
     fidl::WireClient<fuchsia_sysmem2::Allocator>& sysmem_allocator,
     fidl::ClientEnd<fuchsia_sysmem2::BufferCollectionToken> token,
-    allocation::BufferCollectionUsage usage, std::optional<fuchsia::math::SizeU> size) {
+    allocation::BufferCollectionUsage usage, std::optional<fuchsia_math::SizeU> size) {
   TRACE_DURATION("gfx", "ScreenCaptureBufferCollectionImporter::ImportBufferCollection");
   // Expect only RenderTarget usage.
   FX_DCHECK(usage == BufferCollectionUsage::kRenderTarget);

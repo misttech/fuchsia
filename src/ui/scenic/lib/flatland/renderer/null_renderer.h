@@ -31,7 +31,7 @@ class NullRenderer final : public Renderer {
       allocation::GlobalBufferCollectionId collection_id,
       fidl::WireClient<fuchsia_sysmem2::Allocator>& sysmem_allocator,
       fidl::ClientEnd<fuchsia_sysmem2::BufferCollectionToken> token, BufferCollectionUsage usage,
-      std::optional<fuchsia::math::SizeU> size) override;
+      std::optional<fuchsia_math::SizeU> size) override;
 
   // |BufferCollectionImporter|
   void ReleaseBufferCollection(allocation::GlobalBufferCollectionId collection_id,

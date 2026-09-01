@@ -299,7 +299,7 @@ TEST_F(DisplayCompositorTest, ImportAndReleaseBufferCollectionTest) {
       .WillOnce([&token_ref](allocation::GlobalBufferCollectionId,
                              fidl::WireClient<fuchsia_sysmem2::Allocator>&,
                              fidl::ClientEnd<fuchsia_sysmem2::BufferCollectionToken> renderer_token,
-                             BufferCollectionUsage, std::optional<fuchsia::math::SizeU>) {
+                             BufferCollectionUsage, std::optional<fuchsia_math::SizeU>) {
         token_ref = std::move(renderer_token);
         return fpromise::make_ok_promise();
       });

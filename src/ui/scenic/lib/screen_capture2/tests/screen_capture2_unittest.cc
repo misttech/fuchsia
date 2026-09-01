@@ -88,7 +88,7 @@ class ScreenCapture2Test : public gtest::TestLoopFixture {
                              fidl::WireClient<fuchsia_sysmem2::Allocator>& sysmem_allocator,
                              fidl::ClientEnd<fuchsia_sysmem2::BufferCollectionToken> token,
                              allocation::BufferCollectionUsage,
-                             std::optional<fuchsia::math::SizeU> size) {
+                             std::optional<fuchsia_math::SizeU> size) {
             auto result = flatland::BufferCollectionInfo::New(sysmem_allocator, std::move(token));
             if (result.is_error()) {
               FX_LOGS(WARNING) << "Unable to register collection.";
@@ -254,7 +254,7 @@ TEST_F(ScreenCapture2Test, Configure_BufferCollectionFailure) {
                          fidl::WireClient<fuchsia_sysmem2::Allocator>& sysmem_allocator,
                          fidl::ClientEnd<fuchsia_sysmem2::BufferCollectionToken> token,
                          allocation::BufferCollectionUsage,
-                         std::optional<fuchsia::math::SizeU> size) {
+                         std::optional<fuchsia_math::SizeU> size) {
         auto result = flatland::BufferCollectionInfo::New(sysmem_allocator, std::move(token));
         if (result.is_error()) {
           FX_LOGS(WARNING) << "Unable to register collection.";

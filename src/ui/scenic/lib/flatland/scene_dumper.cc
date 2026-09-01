@@ -23,11 +23,11 @@ inline void IndentLine(size_t current_indentation_level, std::ostream& output) {
   }
 }
 
-std::ostream& operator<<(std::ostream& str, const fuchsia::ui::composition::HitTestInteraction& h) {
+std::ostream& operator<<(std::ostream& str, const fuchsia_ui_composition::HitTestInteraction& h) {
   switch (h) {
-    case fuchsia::ui::composition::HitTestInteraction::DEFAULT:
+    case fuchsia_ui_composition::HitTestInteraction::kDefault:
       return str << "default";
-    case fuchsia::ui::composition::HitTestInteraction::SEMANTICALLY_INVISIBLE:
+    case fuchsia_ui_composition::HitTestInteraction::kSemanticallyInvisible:
       return str << "semantically_invisible";
     default:
       return str << "unknown";

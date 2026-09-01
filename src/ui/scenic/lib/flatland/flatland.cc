@@ -5,7 +5,6 @@
 #include "src/ui/scenic/lib/flatland/flatland.h"
 
 #include <fidl/fuchsia.math/cpp/fidl.h>
-#include <fidl/fuchsia.ui.composition/cpp/hlcpp_conversion.h>
 #include <fidl/fuchsia.ui.composition/cpp/natural_ostream.h>
 #include <fidl/fuchsia.ui.composition/cpp/natural_types.h>
 #include <lib/async/default.h>
@@ -2046,8 +2045,7 @@ void Flatland::SetHitRegions(TransformId transform_id,
   std::vector<flatland::HitRegion> list;
   list.reserve(regions.size());
   for (const auto& region : regions) {
-    list.emplace_back(types::RectangleF::From(region.region()),
-                      fidl::NaturalToHLCPP(region.hit_test()));
+    list.emplace_back(types::RectangleF::From(region.region()), region.hit_test());
   }
   hit_regions_[transform_kv->second] = std::move(list);
 }
@@ -2073,8 +2071,7 @@ void Flatland::SetInfiniteHitRegion(TransformId transform_id,
     return;
   }
 
-  hit_regions_[transform_kv->second] = {
-      flatland::HitRegion::Infinite(fidl::NaturalToHLCPP(hit_test))};
+  hit_regions_[transform_kv->second] = {flatland::HitRegion::Infinite(hit_test)};
 }
 
 void Flatland::SetContent(SetContentRequest& request, SetContentCompleter::Sync& completer) {

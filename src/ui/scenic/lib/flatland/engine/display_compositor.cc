@@ -297,7 +297,7 @@ fpromise::promise<> DisplayCompositor::ImportBufferCollection(
     allocation::GlobalBufferCollectionId collection_id,
     fidl::WireClient<fuchsia_sysmem2::Allocator>& sysmem_allocator,
     fidl::ClientEnd<fuchsia_sysmem2::BufferCollectionToken> renderer_token,
-    BufferCollectionUsage usage, std::optional<fuchsia::math::SizeU> size) {
+    BufferCollectionUsage usage, std::optional<fuchsia_math::SizeU> size) {
   FX_DCHECK(main_dispatcher_ == async_get_default_dispatcher());
   TRACE_DURATION("gfx", "flatland::DisplayCompositor::ImportBufferCollection");
   FX_DCHECK(usage == BufferCollectionUsage::kClientImage)
@@ -1028,9 +1028,9 @@ fpromise::promise<> DisplayCompositor::AddDisplay(
   FX_DCHECK(!info.formats.empty());
   const auto pixel_format = renderer_->ChoosePreferredRenderTargetFormat(info.formats);
 
-  const fuchsia::math::SizeU size = {.width = info.dimensions.x, .height = info.dimensions.y};
-  FX_DCHECK(size.width > 0 && size.height > 0)
-      << "Invalid display size: " << size.width << "x" << size.height;
+  const fuchsia_math::SizeU size = {{.width = info.dimensions.x, .height = info.dimensions.y}};
+  FX_DCHECK(size.width() > 0 && size.height() > 0)
+      << "Invalid display size: " << size.width() << "x" << size.height();
 
   const display::DisplayId& display_id = display->display_id();
   FX_DCHECK(!display_engine_data_map_.contains(display_id))
@@ -1049,8 +1049,8 @@ fpromise::promise<> DisplayCompositor::AddDisplay(
     display_engine_data.empty_scene_layer = display_coordinator_.CreateLayer();
     const display::Rectangle display_destination({.x = 0,
                                                   .y = 0,
-                                                  .width = static_cast<int32_t>(size.width),
-                                                  .height = static_cast<int32_t>(size.height)});
+                                                  .width = static_cast<int32_t>(size.width()),
+                                                  .height = static_cast<int32_t>(size.height())});
     display_coordinator_.SetLayerColorConfig(
         display_engine_data.empty_scene_layer,
         {.format = fuchsia_images2::PixelFormat::kB8G8R8A8, .bytes = {0, 0, 0, 255, 0, 0, 0, 0}},
@@ -1161,7 +1161,7 @@ bool DisplayCompositor::SetMinimumRgb(const uint8_t minimum_rgb) {
 fpromise::promise<std::vector<allocation::ImageMetadata>>
 DisplayCompositor::AllocateDisplayRenderTargets(
     const bool use_protected_memory, const uint32_t num_render_targets,
-    const fuchsia::math::SizeU& size, const fuchsia_images2::PixelFormat pixel_format,
+    const fuchsia_math::SizeU& size, const fuchsia_images2::PixelFormat pixel_format,
     fuchsia::sysmem2::BufferCollectionInfo* out_collection_info) {
   FX_DCHECK(main_dispatcher_ == async_get_default_dispatcher());
   fidl::Arena arena;
@@ -1228,7 +1228,7 @@ DisplayCompositor::AllocateDisplayRenderTargets(
   return renderer_
       ->ImportBufferCollection(collection_id, sysmem_allocator_, std::move(renderer_token),
                                BufferCollectionUsage::kRenderTarget,
-                               std::optional<fuchsia::math::SizeU>(size))
+                               std::optional<fuchsia_math::SizeU>(size))
       // TODO(https://fxbug.dev/502763366): Scenic assumes immortality of DisplayCompositor.
       .and_then([this, use_protected_memory, num_render_targets, size, pixel_format,
                  compositor_token = std::move(compositor_token),
@@ -1255,8 +1255,8 @@ DisplayCompositor::AllocateDisplayRenderTargets(
         if (make_cpu_accessible && !use_protected_memory) {
           auto [buffer_usage, memory_constraints] = GetUsageAndMemoryConstraintsForCpuWriteOften();
           collection_ptr = CreateBufferCollectionSyncPtrAndSetConstraints(
-              sysmem_allocator_, std::move(compositor_token), num_render_targets, size.width,
-              size.height, std::move(buffer_usage), pixel_format, std::move(memory_constraints));
+              sysmem_allocator_, std::move(compositor_token), num_render_targets, size.width(),
+              size.height(), std::move(buffer_usage), pixel_format, std::move(memory_constraints));
         } else {
           fuchsia::sysmem2::BufferCollectionSetConstraintsRequest set_constraints_request;
           auto& constraints = *set_constraints_request.mutable_constraints();
@@ -1329,8 +1329,8 @@ DisplayCompositor::AllocateDisplayRenderTargets(
               .collection_id = collection_id,
               .identifier = allocation::GenerateUniqueImageId(),
               .vmo_index = i,
-              .width = size.width,
-              .height = size.height,
+              .width = size.width(),
+              .height = size.height(),
           };
           auto promise = ImportBufferImage(target, BufferCollectionUsage::kRenderTarget)
                              .and_then([target]() -> fpromise::result<allocation::ImageMetadata> {

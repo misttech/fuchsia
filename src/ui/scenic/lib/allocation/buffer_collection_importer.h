@@ -5,9 +5,9 @@
 #ifndef SRC_UI_SCENIC_LIB_ALLOCATION_BUFFER_COLLECTION_IMPORTER_H_
 #define SRC_UI_SCENIC_LIB_ALLOCATION_BUFFER_COLLECTION_IMPORTER_H_
 
+#include <fidl/fuchsia.math/cpp/fidl.h>
 #include <fidl/fuchsia.sysmem2/cpp/wire.h>
 #include <fidl/fuchsia.ui.composition/cpp/fidl.h>
-#include <fuchsia/math/cpp/fidl.h>
 #include <lib/fpromise/promise.h>
 
 #include "src/ui/scenic/lib/allocation/id.h"
@@ -44,7 +44,7 @@ class BufferCollectionImporter {
       GlobalBufferCollectionId collection_id,
       fidl::WireClient<fuchsia_sysmem2::Allocator>& sysmem_allocator,
       fidl::ClientEnd<fuchsia_sysmem2::BufferCollectionToken> token, BufferCollectionUsage usage,
-      std::optional<fuchsia::math::SizeU> size) = 0;
+      std::optional<fuchsia_math::SizeU> size) = 0;
 
   // Releases the buffer collection from the service. It may be called while there are associated
   // Images alive.

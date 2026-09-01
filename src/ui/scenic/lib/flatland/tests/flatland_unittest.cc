@@ -1865,7 +1865,7 @@ TEST_F(FlatlandTest, SetHitRegionsOverwritesPreviousOnes) {
     auto hit_region = hit_regions.at(handle1)[0];
 
     EXPECT_FALSE(hit_region.is_finite());
-    EXPECT_EQ(hit_region.interaction(), fuchsia::ui::composition::HitTestInteraction::DEFAULT);
+    EXPECT_EQ(hit_region.interaction(), fuchsia_ui_composition::HitTestInteraction::kDefault);
   }
 
   // Add a hit region to a different transform - this should not overwrite the default one.
@@ -1890,7 +1890,7 @@ TEST_F(FlatlandTest, SetHitRegionsOverwritesPreviousOnes) {
       auto hit_region = hit_regions.at(handle1)[0];
 
       EXPECT_FALSE(hit_region.is_finite());
-      EXPECT_EQ(hit_region.interaction(), fuchsia::ui::composition::HitTestInteraction::DEFAULT);
+      EXPECT_EQ(hit_region.interaction(), fuchsia_ui_composition::HitTestInteraction::kDefault);
     }
 
     {
@@ -1900,7 +1900,7 @@ TEST_F(FlatlandTest, SetHitRegionsOverwritesPreviousOnes) {
       const auto rect = hit_region.region();
       const types::RectangleF expected_rect({.x = 0, .y = 1, .width = 2, .height = 3});
       EXPECT_EQ(rect, expected_rect);
-      EXPECT_EQ(hit_region.interaction(), fuchsia::ui::composition::HitTestInteraction::DEFAULT);
+      EXPECT_EQ(hit_region.interaction(), fuchsia_ui_composition::HitTestInteraction::kDefault);
     }
   }
 
@@ -1924,7 +1924,7 @@ TEST_F(FlatlandTest, SetHitRegionsOverwritesPreviousOnes) {
     const types::RectangleF expected_rect({.x = 1, .y = 2, .width = 3, .height = 4});
     EXPECT_EQ(rect, expected_rect);
     EXPECT_EQ(hit_region.interaction(),
-              fuchsia::ui::composition::HitTestInteraction::SEMANTICALLY_INVISIBLE);
+              fuchsia_ui_composition::HitTestInteraction::kSemanticallyInvisible);
   }
 }
 
@@ -1955,7 +1955,7 @@ TEST_F(FlatlandTest, SetRootTransformAfterSetHitRegions_DoesNotChangeHitRegion) 
   const types::RectangleF expected_rect({.x = 0, .y = 1, .width = 2, .height = 3});
   EXPECT_EQ(rect, expected_rect);
   EXPECT_EQ(hit_region.interaction(),
-            fuchsia::ui::composition::HitTestInteraction::SEMANTICALLY_INVISIBLE);
+            fuchsia_ui_composition::HitTestInteraction::kSemanticallyInvisible);
 }
 
 TEST_F(FlatlandTest, MultipleTransformsWithHitRegions) {
@@ -1998,9 +1998,9 @@ TEST_F(FlatlandTest, MultipleTransformsWithHitRegions) {
     EXPECT_EQ(rect1, expected_rect1);
     EXPECT_EQ(rect2, expected_rect2);
 
-    EXPECT_EQ(hit_region1.interaction(), fuchsia::ui::composition::HitTestInteraction::DEFAULT);
+    EXPECT_EQ(hit_region1.interaction(), fuchsia_ui_composition::HitTestInteraction::kDefault);
     EXPECT_EQ(hit_region2.interaction(),
-              fuchsia::ui::composition::HitTestInteraction::SEMANTICALLY_INVISIBLE);
+              fuchsia_ui_composition::HitTestInteraction::kSemanticallyInvisible);
   }
 }
 

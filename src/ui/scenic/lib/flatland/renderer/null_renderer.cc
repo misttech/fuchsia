@@ -15,7 +15,7 @@ fpromise::promise<> NullRenderer::ImportBufferCollection(
     allocation::GlobalBufferCollectionId collection_id,
     fidl::WireClient<fuchsia_sysmem2::Allocator>& sysmem_allocator,
     fidl::ClientEnd<fuchsia_sysmem2::BufferCollectionToken> token, BufferCollectionUsage usage,
-    std::optional<fuchsia::math::SizeU> size) {
+    std::optional<fuchsia_math::SizeU> size) {
   FX_DCHECK(collection_id != allocation::kInvalidId);
   FX_DCHECK(token.is_valid());
 
@@ -31,9 +31,9 @@ fpromise::promise<> NullRenderer::ImportBufferCollection(
     image_constraints->set_pixel_format(fuchsia::images2::PixelFormat::B8G8R8A8);
     image_constraints->mutable_color_spaces()->emplace_back(fuchsia::images2::ColorSpace::SRGB);
     image_constraints->set_required_min_size(
-        fuchsia::math::SizeU{.width = size->width, .height = size->height});
+        fuchsia::math::SizeU{.width = size->width(), .height = size->height()});
     image_constraints->set_required_max_size(
-        fuchsia::math::SizeU{.width = size->width, .height = size->height});
+        fuchsia::math::SizeU{.width = size->width(), .height = size->height()});
   }
   fuchsia::sysmem2::BufferUsage sysmem_usage;
   sysmem_usage.set_none(fuchsia::sysmem2::NONE_USAGE);

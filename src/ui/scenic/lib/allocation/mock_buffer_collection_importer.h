@@ -17,7 +17,7 @@ class MockBufferCollectionImporter : public BufferCollectionImporter {
   MOCK_METHOD(fpromise::promise<>, ImportBufferCollection,
               (GlobalBufferCollectionId, fidl::WireClient<fuchsia_sysmem2::Allocator>&,
                fidl::ClientEnd<fuchsia_sysmem2::BufferCollectionToken>,
-               allocation::BufferCollectionUsage, std::optional<fuchsia::math::SizeU>),
+               allocation::BufferCollectionUsage, std::optional<fuchsia_math::SizeU>),
               (override));
   MOCK_METHOD(void, ReleaseBufferCollection,
               (GlobalBufferCollectionId, allocation::BufferCollectionUsage), (override));

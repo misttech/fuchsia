@@ -20,7 +20,7 @@ class MockRenderer : public Renderer {
   MOCK_METHOD(fpromise::promise<>, ImportBufferCollection,
               (allocation::GlobalBufferCollectionId, fidl::WireClient<fuchsia_sysmem2::Allocator>&,
                fidl::ClientEnd<fuchsia_sysmem2::BufferCollectionToken>,
-               allocation::BufferCollectionUsage, std::optional<fuchsia::math::SizeU> size));
+               allocation::BufferCollectionUsage, std::optional<fuchsia_math::SizeU> size));
 
   MOCK_METHOD(void, ReleaseBufferCollection,
               (allocation::GlobalBufferCollectionId, allocation::BufferCollectionUsage));

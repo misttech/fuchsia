@@ -6,7 +6,7 @@
 #define SRC_UI_SCENIC_LIB_FLATLAND_RENDERER_RENDERER_H_
 
 #include <fidl/fuchsia.images2/cpp/fidl.h>
-#include <fuchsia/math/cpp/fidl.h>
+#include <fidl/fuchsia.math/cpp/fidl.h>
 #include <lib/zx/event.h>
 
 #include <optional>

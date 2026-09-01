@@ -2991,7 +2991,7 @@ VK_TEST_P(VulkanRendererParameterizedAFBCTest, EnablesAFBC) {
   const allocation::BufferCollectionUsage usage = GetParam();
   auto promise = renderer.ImportBufferCollection(
       render_target_collection_id, sysmem_allocator, std::move(dup_token), usage,
-      std::optional<fuchsia::math::SizeU>({kTargetWidth, kTargetHeight}));
+      std::optional<fuchsia_math::SizeU>({{kTargetWidth, kTargetHeight}}));
   ASSERT_TRUE(RunPromise(loop, std::move(promise)));
 
   // Create a client-side handle to the render target's buffer collection and set the client

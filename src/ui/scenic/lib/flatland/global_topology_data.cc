@@ -187,7 +187,7 @@ view_tree::SubtreeHitTestResult HitTest(const HitTestingData& data, zx_koid_t st
         for (const auto& region : hit_region_vec->second) {
           const bool semantically_invisible =
               region.interaction() ==
-              fuchsia::ui::composition::HitTestInteraction::SEMANTICALLY_INVISIBLE;
+              fuchsia_ui_composition::HitTestInteraction::kSemanticallyInvisible;
 
           // Deliver a hit in all cases except for when it is a semantic hit test and the region
           // is semantically invisible.
