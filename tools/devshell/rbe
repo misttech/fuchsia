@@ -103,6 +103,7 @@ function is_googler() {
 }
 
 gcloud=
+readonly gcloud_help_msg="Follow the instructions at go/gcloud-cli#getting-started"
 
 function ensure_gcloud() {
   # go/gcloud-cli#getting-started
@@ -112,11 +113,16 @@ function ensure_gcloud() {
     if is_googler
     then
       _cmd=(sudo apt install -y google-cloud-cli)
+      if ! [[ -t 0 ]] || is_invoked_by_agent; then
+        echo "To install gcloud, run: ${_cmd[*]}"
+        echo "$gcloud_help_msg"
+        return 1
+      fi
       echo "Install gcloud with the following command?: ${_cmd[*]} [y/N]"
       read -r yn
       case "$yn" in
         [yY] ) "${_cmd[@]}" && gcloud="$(which gcloud)" ; return "$?" ;;
-        * ) echo "Follow the instructions at go/gcloud-cli#getting-started" ;;
+        * ) echo "$gcloud_help_msg" ;;
       esac
     else
       echo "Follow the instructions at https://cloud.google.com/sdk/docs/install"
