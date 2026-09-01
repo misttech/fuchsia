@@ -162,6 +162,13 @@ struct Checkpoint {
   static constexpr uint32_t GetHeaderByteSize() { return sizeof(Checkpoint) - 1; }
 } __attribute__((packed));
 
+constexpr uint32_t kChecksumOffset = kBlockSize - sizeof(uint32_t);
+constexpr size_t kMaxBitmapBytes = kChecksumOffset - Checkpoint::GetHeaderByteSize();
+
+inline uint64_t VersionBitmapByteSize(uint32_t segment_count, uint32_t log_blocks_per_seg) {
+  return (uint64_t{segment_count} / 2 << log_blocks_per_seg) / 8;
+}
+
 // For orphan inode management
 constexpr uint16_t kOrphansPerBlock = 1020;
 
@@ -345,6 +352,8 @@ constexpr uint32_t kMaxSitBitmapSize =
     (safemath::CheckLsh<uint32_t>(1, (32 - kDefaultLogBlocksPerSegment)) / kSitEntryPerBlock /
      kBitsPerByte)
         .ValueOrDie();
+constexpr uint32_t kMaxCpPayload = (kMaxSitBitmapSize + kBlockSize - 1) / kBlockSize;
+static_assert(kMaxCpPayload == 5);
 
 inline uint16_t GetSitVblocks(const SitEntry &raw_sit) {
   return LeToCpu(raw_sit.vblocks) & kSitVblocksMask;

@@ -68,6 +68,26 @@ static zx_status_t CheckBlockSize(const Superblock& sb) {
     return ZX_ERR_INVALID_ARGS;
   }
 
+  const uint32_t cp_payload = LeToCpu(sb.cp_payload);
+  const uint64_t sit_ver_bitmap_bytesize =
+      VersionBitmapByteSize(LeToCpu(sb.segment_count_sit), LeToCpu(sb.log_blocks_per_seg));
+  const uint64_t nat_ver_bitmap_bytesize =
+      VersionBitmapByteSize(LeToCpu(sb.segment_count_nat), LeToCpu(sb.log_blocks_per_seg));
+  if (cp_payload > kMaxCpPayload || sit_ver_bitmap_bytesize > kMaxSitBitmapSize ||
+      nat_ver_bitmap_bytesize > kMaxBitmapBytes) {
+    return ZX_ERR_INVALID_ARGS;
+  }
+
+  if (cp_payload == 0) {
+    if (sit_ver_bitmap_bytesize + nat_ver_bitmap_bytesize > kMaxBitmapBytes) {
+      return ZX_ERR_INVALID_ARGS;
+    }
+  } else {
+    if (sit_ver_bitmap_bytesize > static_cast<uint64_t>(cp_payload) * kBlockSize) {
+      return ZX_ERR_INVALID_ARGS;
+    }
+  }
+
   return ZX_OK;
 }
 

@@ -13,8 +13,6 @@
 
 namespace f2fs {
 
-constexpr uint32_t kChecksumOffset = 4092;
-
 static const char* kMediaExtList[] = {"jpg", "gif", "png",  "avi", "divx", "mp4", "mp3", "3gp",
                                       "wmv", "wma", "mpeg", "mkv", "mov",  "asx", "asf", "wmx",
                                       "svi", "wvx", "wm",   "mpg", "mpe",  "rm",  "ogg"};

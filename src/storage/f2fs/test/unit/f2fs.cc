@@ -21,7 +21,7 @@ static void WriteSuperblock(const Superblock &sb, BcacheMapper &bc) {
   bc.Writeblk(1, &block);
 }
 
-TEST(SuperblockTest, SanityCheckRawSuper) {
+TEST(SuperblockTest, ValidateRawSuper) {
   std::unique_ptr<BcacheMapper> bc;
   FileTester::MkfsOnFakeDevWithOptions(&bc, MkfsOptions{});
   auto superblock = LoadSuperblock(*bc);
@@ -83,6 +83,42 @@ TEST(SuperblockTest, SanityCheckRawSuper) {
   corrupted->log_blocks_per_seg = CpuToLe(kDefaultLogBlocksPerSegment - 1);
   WriteSuperblock(*corrupted, *bc);
   ASSERT_EQ(LoadSuperblock(*bc).status_value(), ZX_ERR_INVALID_ARGS);
+
+  // Check bitmap size exceeding checkpoint capacity when cp_payload == 0
+  std::memcpy(&corrupted, (*superblock).get(), sizeof(Superblock));
+  corrupted->cp_payload = 0;
+  corrupted->segment_count_sit = CpuToLe(2000u);
+  WriteSuperblock(*corrupted, *bc);
+  ASSERT_EQ(LoadSuperblock(*bc).status_value(), ZX_ERR_INVALID_ARGS);
+
+  // Check bitmap size exceeding cp_payload capacity when cp_payload > 0
+  std::memcpy(&corrupted, (*superblock).get(), sizeof(Superblock));
+  corrupted->cp_payload = CpuToLe(1u);
+  corrupted->segment_count_sit = CpuToLe(200u);
+  WriteSuperblock(*corrupted, *bc);
+  ASSERT_EQ(LoadSuperblock(*bc).status_value(), ZX_ERR_INVALID_ARGS);
+
+  // Check bitmap size exceeding kMaxSitBitmapSize when cp_payload > 0
+  std::memcpy(&corrupted, (*superblock).get(), sizeof(Superblock));
+  corrupted->cp_payload = CpuToLe(kMaxCpPayload);
+  corrupted->segment_count_sit = CpuToLe(2000u);
+  WriteSuperblock(*corrupted, *bc);
+  ASSERT_EQ(LoadSuperblock(*bc).status_value(), ZX_ERR_INVALID_ARGS);
+
+  // Check cp_payload exceeding kMaxCpPayload
+  std::memcpy(&corrupted, (*superblock).get(), sizeof(Superblock));
+  corrupted->cp_payload = CpuToLe(kMaxCpPayload + 1);
+  corrupted->segment_count_sit = CpuToLe(2u);
+  WriteSuperblock(*corrupted, *bc);
+  ASSERT_EQ(LoadSuperblock(*bc).status_value(), ZX_ERR_INVALID_ARGS);
+
+  // Check 32-bit shift overflow case for segment_count_sit.
+  // (0x01000000 / 2 << 9 wraps to 0 in 32-bit math).
+  std::memcpy(&corrupted, (*superblock).get(), sizeof(Superblock));
+  corrupted->cp_payload = 0;
+  corrupted->segment_count_sit = CpuToLe(0x01000000u);
+  WriteSuperblock(*corrupted, *bc);
+  ASSERT_EQ(LoadSuperblock(*bc).status_value(), ZX_ERR_INVALID_ARGS);
 }
 
 TEST(SuperblockTest, GetValidCheckpoint) {
@@ -107,7 +143,7 @@ TEST(SuperblockTest, GetValidCheckpoint) {
   fs->Reset();
 }
 
-TEST(SuperblockTest, SanityCheckCkpt) {
+TEST(SuperblockTest, ValidateCkpt) {
   std::unique_ptr<BcacheMapper> bc;
   FileTester::MkfsOnFakeDevWithOptions(&bc, MkfsOptions{});
 
@@ -119,7 +155,7 @@ TEST(SuperblockTest, SanityCheckCkpt) {
   std::unique_ptr<F2fs> fs =
       std::make_unique<F2fs>(loop.dispatcher(), std::move(bc), MountOptions{}, (*vfs_or).get());
 
-  // Check SanityCheckCkpt exception case
+  // Check ValidateCkpt exception case
   auto superblock = LoadSuperblock(fs->GetBc());
   ASSERT_TRUE(superblock.is_ok());
   superblock->segment_count_nat = 0;

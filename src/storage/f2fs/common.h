@@ -16,6 +16,8 @@
 #include <zircon/errors.h>
 #include <zircon/types.h>
 
+#include <limits>
+
 #include <fbl/macros.h>
 #include <fbl/no_destructor.h>
 #include <fbl/ref_ptr.h>

@@ -354,22 +354,17 @@ class SuperblockInfo {
       return ZX_ERR_BAD_STATE;
     }
 
-    // The segment counts come from the superblock, so the shift below must not drop bits.
-    const auto checked_sit_blocks = safemath::CheckLsh<block_t>(LeToCpu(sb_->segment_count_sit) / 2,
-                                                                LeToCpu(sb_->log_blocks_per_seg));
-    const auto checked_nat_blocks = safemath::CheckLsh<block_t>(LeToCpu(sb_->segment_count_nat) / 2,
-                                                                LeToCpu(sb_->log_blocks_per_seg));
-    const auto checked_max_nid = checked_nat_blocks * kNatEntryPerBlock;
-    if (!checked_sit_blocks.IsValid() || !checked_nat_blocks.IsValid() ||
-        !checked_max_nid.IsValid()) {
-      return ZX_ERR_BAD_STATE;
-    }
+    const uint64_t sit_ver_bitmap_bytesize =
+        VersionBitmapByteSize(LeToCpu(sb_->segment_count_sit), LeToCpu(sb_->log_blocks_per_seg));
+    const uint64_t nat_ver_bitmap_bytesize =
+        VersionBitmapByteSize(LeToCpu(sb_->segment_count_nat), LeToCpu(sb_->log_blocks_per_seg));
+    const uint64_t nat_blocks = (uint64_t{LeToCpu(sb_->segment_count_nat)} / 2)
+                                << LeToCpu(sb_->log_blocks_per_seg);
 
-    const block_t sit_blocks = checked_sit_blocks.ValueOrDie();
-    const block_t nat_blocks = checked_nat_blocks.ValueOrDie();
-    if (LeToCpu(ckpt.sit_ver_bitmap_bytesize) != sit_blocks / kBitsPerByte ||
-        LeToCpu(ckpt.nat_ver_bitmap_bytesize) != nat_blocks / kBitsPerByte ||
-        LeToCpu(ckpt.next_free_nid) >= checked_max_nid.ValueOrDie()) {
+    if (LeToCpu(ckpt.sit_ver_bitmap_bytesize) != sit_ver_bitmap_bytesize ||
+        LeToCpu(ckpt.nat_ver_bitmap_bytesize) != nat_ver_bitmap_bytesize ||
+        nat_blocks > std::numeric_limits<block_t>::max() ||
+        LeToCpu(ckpt.next_free_nid) >= kNatEntryPerBlock * nat_blocks) {
       return ZX_ERR_BAD_STATE;
     }
 
