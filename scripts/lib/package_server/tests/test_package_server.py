@@ -154,10 +154,12 @@ class TestPackageServer(unittest.IsolatedAsyncioTestCase):
     @mock.patch("package_server.lib.wait_for_package_server")
     @mock.patch("package_server.lib.get_arguments")
     @mock.patch("package_server.lib.FfxCmd")
+    @mock.patch("package_server.lib.FxCmd")
     @mock.patch("asyncio.create_subprocess_exec")
     async def test_start_success(
         self,
         mock_exec: mock.Mock,
+        mock_fx_cmd: mock.Mock,
         mock_ffx_cmd: mock.Mock,
         mock_get_arguments: mock.Mock,
         mock_wait: mock.Mock,
@@ -169,6 +171,9 @@ class TestPackageServer(unittest.IsolatedAsyncioTestCase):
         mock_ffx_cmd.return_value.command_line.side_effect = (
             lambda *args: ("ffx",) + args
         )
+        mock_fx_cmd.return_value.command_line.side_effect = (
+            lambda *args: ("fx",) + args
+        )
 
         # Mock for package server process
         server_process_mock = mock.Mock()
@@ -178,7 +183,11 @@ class TestPackageServer(unittest.IsolatedAsyncioTestCase):
         mock_ffx_cmd.return_value.command_line.assert_called_with(
             "arg1", "arg2"
         )
+        mock_fx_cmd.return_value.command_line.assert_called_with(
+            "ffx", "arg1", "arg2"
+        )
         mock_exec.assert_called_with(
+            "fx",
             "ffx",
             "arg1",
             "arg2",

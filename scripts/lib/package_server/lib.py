@@ -179,10 +179,11 @@ async def start(
         raise PackageServingException("The package repository is not built!")
 
     repo_name = name or f"tmp-{uuid.uuid4()}"
+    fx = FxCmd()
     ffx = FfxCmd()
     args = await get_arguments(repo_name)
     process = await asyncio.create_subprocess_exec(
-        *ffx.command_line(*args),
+        *fx.command_line(*ffx.command_line(*args)),
         stdout=asyncio.subprocess.DEVNULL,
         stderr=asyncio.subprocess.DEVNULL,
     )
