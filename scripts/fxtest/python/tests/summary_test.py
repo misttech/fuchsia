@@ -196,6 +196,19 @@ fx add-test //src/sys/pkg/bin/system-update-committer:system-update-committer-te
             "fx add-test //src/sys/pkg/bin/system-update-committer:system-update-committer-tests",
         )
 
+    def test_parse_suggestions_with_add_host_test(self) -> None:
+        raw_output = """my_host_test (85.00% similar)
+fx add-host-test //scripts/fxtest:tests
+(2 more matches not shown)"""
+        suggestions = parse_suggestions_from_output(raw_output)
+        self.assertEqual(len(suggestions), 1)
+        self.assertEqual(suggestions[0].name, "my_host_test")
+        self.assertEqual(suggestions[0].similarity, 0.85)
+        self.assertEqual(
+            suggestions[0].add_test_command,
+            "fx add-host-test //scripts/fxtest:tests",
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -69,14 +69,14 @@ def parse_suggestions_from_output(raw_output: str) -> list[Suggestion]:
                 current_suggestion.build_includes = line_str.removeprefix(
                     "Build includes:"
                 ).strip()
-            elif line_str.startswith("fx add-test"):
+            elif line_str.startswith(("fx add-test", "fx add-host-test")):
                 current_suggestion.add_test_command = line_str
             else:
                 suggestions.append(current_suggestion)
                 current_suggestion = Suggestion(name=line_str)
         else:
-            if line_str.startswith("Build includes:") or line_str.startswith(
-                "fx add-test"
+            if line_str.startswith(
+                ("Build includes:", "fx add-test", "fx add-host-test")
             ):
                 continue
             current_suggestion = Suggestion(name=line_str)
