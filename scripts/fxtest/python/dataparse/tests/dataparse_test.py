@@ -242,6 +242,24 @@ class TestDataParseErrors(unittest.TestCase):
 
         self.assertRaises(DataParseError, wrap_a_non_dataclass)
 
+    def test_missing_required_field(self) -> None:
+        """Test that missing a required field raises DataParseError rather than TypeError."""
+        self.assertRaises(
+            DataParseError,
+            lambda: City.from_dict({}),  # type: ignore[attr-defined]
+        )
+
+    def test_reversed_optional_union(self) -> None:
+        """Test that Union[None, int] (or None | int) works correctly."""
+
+        @dataparse
+        @dataclass
+        class ReversedOptional:
+            val: typing.Union[None, int] = None
+
+        obj = ReversedOptional.from_dict({"val": 42})  # type: ignore[attr-defined]
+        self.assertEqual(obj.val, 42)
+
 
 class StatusEnum(enum.Enum):
     OK = "OK"

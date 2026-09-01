@@ -172,12 +172,13 @@ def dataparse(cls: T) -> T:
                     # Load the union type from incoming_type.
                     # Only support Optional unions.
                     args = incoming_type.__args__
-                    if len(args) != 2 or args[1] != type(None):
+                    if len(args) != 2 or type(None) not in args:
                         raise DataParseError(
                             "Invalid Union type for dataparse. We support only Optional unions with a single type: "
                             + str(args)
                         )
-                    return load_real_type(args[0])
+                    inner_type = args[0] if args[1] == type(None) else args[1]
+                    return load_real_type(inner_type)
 
                 if hasattr(incoming_type, "__origin__"):
                     origin = incoming_type.__origin__
@@ -247,7 +248,12 @@ def dataparse(cls: T) -> T:
                     # Handle all other types by assigning directly.
                     build_args[f.name] = input[name]
 
-        return cls(**build_args)  # type: ignore
+        try:
+            return cls(**build_args)  # type: ignore
+        except TypeError as e:
+            raise DataParseError(
+                f"Failed to instantiate {getattr(cls, '__name__', str(cls))} from dict: {e}"
+            ) from e
 
     if not hasattr(cls, "from_dict"):
         setattr(cls, "from_dict", classmethod(from_dict))
