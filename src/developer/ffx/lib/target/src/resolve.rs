@@ -206,10 +206,10 @@ pub trait TargetResolver {
         ctx: &EnvironmentContext,
     ) -> impl Future<Output = Result<Resolution, FfxTargetError>> {
         async move {
-            if let TargetInfoQuery::Addr(a) = target_spec {
+            if let Some(target_addr) = target_spec.get_target_addr() {
                 let query_tag = target_spec.to_analytics_tag();
                 emit_cache_event("explicit_addr", &query_tag).await;
-                return Ok(Resolution::from_addr(*a));
+                return Ok(Resolution::from_target(target_addr.into()));
             }
             let res = self.resolve_single_target(target_spec, use_cache, ctx).await?;
             let target_spec_info: String = target_spec.into();
@@ -1526,5 +1526,84 @@ mod test {
 
         // Cache file should now have been removed
         assert!(!cache_file.exists());
+    }
+
+    #[fuchsia::test]
+    async fn test_resolve_target_address_explicit_usb() {
+        let test_env = ffx_config::test_init().unwrap();
+        let resolver = MockTargetResolver::new();
+        let usb_spec = TargetInfoQuery::Usb(42);
+        // Note: MockTargetResolver has no expectations configured.
+        // If resolution falls back to discovery, this test will panic,
+        // verifying that explicit USB resolution returns immediately.
+        let res =
+            resolver.resolve_target_address(&usb_spec, false, &test_env.context).await.unwrap();
+        assert_eq!(res.usb_cid(), Some(42));
+        assert_eq!(res.vsock_cid(), None);
+        assert_eq!(res.target_spec(), "usb:cid:42");
+        assert!(matches!(
+            res.addr().unwrap_err(),
+            crate::FfxTargetCrateError::Resolution(
+                crate::error::TargetResolutionError::NonNetworkTarget
+            )
+        ));
+    }
+
+    #[fuchsia::test]
+    async fn test_resolve_target_address_explicit_vsock() {
+        let test_env = ffx_config::test_init().unwrap();
+        let resolver = MockTargetResolver::new();
+        let vsock_spec = TargetInfoQuery::VSock(12345);
+        // Note: MockTargetResolver has no expectations configured.
+        // If resolution falls back to discovery, this test will panic,
+        // verifying that explicit VSOCK resolution returns immediately.
+        let res =
+            resolver.resolve_target_address(&vsock_spec, false, &test_env.context).await.unwrap();
+        assert_eq!(res.vsock_cid(), Some(12345));
+        assert_eq!(res.usb_cid(), None);
+        assert_eq!(res.target_spec(), "vsock:cid:12345");
+        assert!(matches!(
+            res.addr().unwrap_err(),
+            crate::FfxTargetCrateError::Resolution(
+                crate::error::TargetResolutionError::NonNetworkTarget
+            )
+        ));
+    }
+
+    #[fuchsia::test]
+    async fn test_resolve_target_address_explicit_addr() {
+        let test_env = ffx_config::test_init().unwrap();
+        let resolver = MockTargetResolver::new();
+        let (sa, addr_spec) = get_addr_and_spec();
+        // Note: MockTargetResolver has no expectations configured.
+        let res =
+            resolver.resolve_target_address(&addr_spec, false, &test_env.context).await.unwrap();
+        assert_eq!(res.addr().unwrap(), sa);
+        assert_eq!(res.usb_cid(), None);
+        assert_eq!(res.vsock_cid(), None);
+        assert_eq!(res.target_spec(), format!("{sa}"));
+    }
+
+    #[fuchsia::test]
+    async fn test_resolution_try_from_env_context_usb_and_vsock() {
+        let env = ffx_config::test_init().unwrap();
+        let resolver = MockTargetResolver::new();
+
+        let mut usb_ctx = env.context.clone();
+        usb_ctx.override_target_specifier(&Some("usb:cid:42".to_string()));
+        let res_usb = Resolution::try_from_env_context_with_resolver(&resolver, &usb_ctx, false)
+            .await
+            .unwrap();
+        assert_eq!(res_usb.usb_cid(), Some(42));
+        assert_eq!(res_usb.vsock_cid(), None);
+
+        let mut vsock_ctx = env.context.clone();
+        vsock_ctx.override_target_specifier(&Some("vsock:cid:12345".to_string()));
+        let res_vsock =
+            Resolution::try_from_env_context_with_resolver(&resolver, &vsock_ctx, false)
+                .await
+                .unwrap();
+        assert_eq!(res_vsock.vsock_cid(), Some(12345));
+        assert_eq!(res_vsock.usb_cid(), None);
     }
 }
