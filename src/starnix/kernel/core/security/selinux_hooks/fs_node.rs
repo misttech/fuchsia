@@ -30,7 +30,6 @@ use starnix_uapi::device_id::DeviceId;
 use starnix_uapi::errors::{ENODATA, EOPNOTSUPP, Errno};
 use starnix_uapi::file_mode::FileMode;
 use starnix_uapi::{XATTR_NAME_SELINUX, errno, error};
-use std::ops::Deref;
 use syncio::zxio_node_attr_has_t;
 
 /// Maximum supported size for the extended attribute value used to store SELinux security
@@ -42,8 +41,8 @@ fn get_fs_relative_path(dir_entry: &DirEntryHandle) -> FsString {
     let mut path_builder = PathBuilder::new();
 
     let scope = RcuReadScope::new();
-    let mut current_dir = dir_entry.deref();
-    while let Some(parent) = current_dir.parent_ref(&scope) {
+    let mut current_dir = dir_entry.clone();
+    while let Some(parent) = current_dir.parent() {
         path_builder.prepend_element(current_dir.local_name(&scope));
         current_dir = parent;
     }

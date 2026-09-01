@@ -1003,8 +1003,8 @@ impl DynamicFileSource for ProcMountinfoFile {
                 path.prepend_element("/deleted".into());
             }
             let scope = RcuReadScope::new();
-            let mut current = dir.deref();
-            while let Some(parent) = current.parent_ref(&scope) {
+            let mut current = dir.clone();
+            while let Some(parent) = current.parent() {
                 path.prepend_element(current.local_name(&scope));
                 current = parent;
             }

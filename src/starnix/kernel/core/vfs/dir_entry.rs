@@ -11,7 +11,7 @@ use crate::vfs::{
 use atomic_bitflags::atomic_bitflags;
 use bitflags::bitflags;
 use bstr::ByteSlice;
-use fuchsia_rcu::{RcuDroppable, RcuOptionArc, RcuReadScope};
+use fuchsia_rcu::{RcuArc, RcuReadScope};
 use fuchsia_sync::ResetDependencies;
 use fxfs_unicode::{CasefoldStr, utf8_bytes};
 use smallvec::SmallVec;
@@ -120,7 +120,7 @@ pub struct DirEntry {
     /// references from parent-to-child. This design ensures that the parent
     /// chain is always populated in the cache, but some children might be
     /// missing from the cache.
-    parent: RcuOptionArc<DirEntry>,
+    parent: RcuArc<DirEntry>,
 
     /// The [`DirEntryFlags`] for this `DirEntry`.
     flags: AtomicDirEntryFlags,
@@ -147,11 +147,6 @@ pub struct DirEntry {
     children: DynamicLockDepRwLock<DirEntryChildren>,
 }
 
-// TODO(b/525158773): Temporary impl to allow incremental RCU safety refactoring.
-// SAFETY: We wait for an RCU grace period before returning from syscalls so side effects are
-// guaranteed to be visible.
-unsafe impl RcuDroppable for DirEntry {}
-
 pub type DirEntryHandle = Arc<DirEntry>;
 
 impl DirEntry {
@@ -168,7 +163,7 @@ impl DirEntry {
         let result = Arc::new(DirEntry {
             node,
             ops,
-            parent: RcuOptionArc::new(parent),
+            parent: RcuArc::new(parent),
             flags: Default::default(),
             local_name: local_name.into(),
             children: match fs_lockdep_type {
@@ -284,14 +279,7 @@ impl DirEntry {
 
     /// The parent DirEntry.
     pub fn parent(&self) -> Option<DirEntryHandle> {
-        self.parent.to_option_arc()
-    }
-
-    /// Returns a reference to the parent DirEntry.
-    ///
-    /// The reference is only valid for the duration of the RCU read scope.
-    pub fn parent_ref<'a>(&'a self, scope: &'a RcuReadScope) -> Option<&'a DirEntry> {
-        self.parent.as_ref(scope)
+        self.parent.upgrade()
     }
 
     /// Set the parent of this DirEntry.
@@ -603,14 +591,13 @@ impl DirEntry {
 
     /// Returns whether this entry is a descendant of |other|.
     pub fn is_descendant_of(self: &DirEntryHandle, other: &DirEntryHandle) -> bool {
-        let scope = RcuReadScope::new();
-        let mut current = self.deref();
+        let mut current = self.clone();
         loop {
-            if std::ptr::eq(current, other.deref()) {
+            if Arc::ptr_eq(&current, other) {
                 // We found |other|.
                 return true;
             }
-            if let Some(parent) = current.parent_ref(&scope) {
+            if let Some(parent) = current.parent() {
                 current = parent;
             } else {
                 // We reached the root of the file system.
@@ -1058,7 +1045,7 @@ impl DirEntry {
         let mode = self.node.info().mode;
         {
             let scope = RcuReadScope::new();
-            if let Some(parent) = self.parent_ref(&scope) {
+            if let Some(parent) = self.parent() {
                 let local_name = self.local_name.read(&scope);
                 parent.node.notify(event_mask, 0, local_name, mode, is_dead);
             }
@@ -1074,7 +1061,7 @@ impl DirEntry {
             self.node.notify(InotifyMask::ATTRIB, 0, Default::default(), mode, false);
         }
         let scope = RcuReadScope::new();
-        if let Some(parent) = self.parent_ref(&scope) {
+        if let Some(parent) = self.parent() {
             let local_name = self.local_name.read(&scope);
             parent.node.notify(InotifyMask::CREATE, 0, local_name, mode, false);
         }
@@ -1097,7 +1084,7 @@ impl DirEntry {
         }
 
         let scope = RcuReadScope::new();
-        if let Some(parent) = self.parent_ref(&scope) {
+        if let Some(parent) = self.parent() {
             let local_name = self.local_name.read(&scope);
             parent.node.notify(InotifyMask::DELETE, 0, local_name, mode, false);
         }
@@ -1331,10 +1318,10 @@ impl fmt::Debug for DirEntry {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let scope = RcuReadScope::new();
         let mut parents = vec![];
-        let mut maybe_parent = self.parent_ref(&scope);
+        let mut maybe_parent = self.parent();
         while let Some(parent) = maybe_parent {
             parents.push(parent.local_name.read(&scope));
-            maybe_parent = parent.parent_ref(&scope);
+            maybe_parent = parent.parent();
         }
         let mut builder = f.debug_struct("DirEntry");
         builder.field("id", &(self as *const DirEntry));
