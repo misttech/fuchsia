@@ -4,8 +4,15 @@
 
 import("//build/drivers.gni")
 
+fuchsia_driver_dml("driver_dml") {
+  dml = "meta/driver.dml"
+  driver_name = "dispatcher-power-test-driver"
+  golden_bind = "meta/driver.bind"
+  golden_cml = "meta/driver.cml"
+}
+
 driver_bind_rules("bind") {
-  rules = "meta/driver.bind"
+  dml_label = ":driver_dml"
   deps = [ "//src/devices/bind/fuchsia.test" ]
   bind_output = "dispatcher-power-test-driver.bindbc"
 }
@@ -23,7 +30,7 @@ fuchsia_cc_driver("driver") {
 }
 
 fuchsia_driver_component("component") {
-  manifest = "meta/driver.cml"
+  cm_label = ":driver_dml_manifest"
   component_name = "dispatcher-power-test-driver"
   deps = [
     ":bind",

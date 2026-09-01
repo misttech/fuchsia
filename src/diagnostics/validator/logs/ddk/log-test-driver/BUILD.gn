@@ -8,10 +8,17 @@ import("//build/drivers.gni")
 import("//build/fidl/fidl.gni")
 import("//build/test.gni")
 
+fuchsia_driver_dml("log-test-driver_dml") {
+  dml = "meta/log-test-driver.dml"
+  driver_name = "log-test-driver"
+}
+
 driver_bind_rules("log-test-driver-bind") {
+  bind_output = "log-test-driver.bindbc"
   testonly = true
-  rules = "meta/log-test-driver.bind"
+  dml_label = ":log-test-driver_dml"
   deps = [
+    "//src/devices/bind/fuchsia",
     "//src/devices/bind/fuchsia.test",
     "//src/devices/bind/fuchsia.test.platform",
   ]
@@ -45,5 +52,5 @@ fuchsia_driver_component("log-test-driver") {
   info = "meta/log-test-driver-info.json"
   component_name = "log-test-driver"
   deps = [ ":log-test-driver-driver" ]
-  manifest = "meta/log-test-driver.cml"
+  cm_label = ":log-test-driver_dml_manifest"
 }

@@ -6,11 +6,19 @@ import("//build/bind/bind.gni")
 import("//build/components.gni")
 import("//build/drivers.gni")
 
+fuchsia_driver_dml("tas5707_dml") {
+  dml = "meta/tas5707.dml"
+  driver_name = "tas5707"
+}
+
 driver_bind_rules("ti_tas5707-bind") {
-  rules = "meta/tas5707.bind"
+  dml_label = ":tas5707_dml"
   bind_output = "tas5707.bindbc"
   tests = "meta/tests.json"
-  deps = [ "//src/devices/bind/fuchsia.ti.platform" ]
+  deps = [
+    "//src/devices/bind/fuchsia",
+    "//src/devices/bind/fuchsia.ti.platform",
+  ]
 }
 
 fuchsia_cc_driver("tas5707-driver") {
@@ -36,5 +44,5 @@ fuchsia_driver_component("tas5707") {
   component_name = "tas5707"
   deps = [ ":tas5707-driver" ]
   info = "meta/tas5707-info.json"
-  manifest = "meta/tas5707.cml"
+  cm_label = ":tas5707_dml_manifest"
 }

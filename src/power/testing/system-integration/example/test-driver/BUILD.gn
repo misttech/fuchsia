@@ -4,8 +4,15 @@
 
 import("//build/drivers.gni")
 
+fuchsia_driver_dml("test-driver_dml") {
+  dml = "meta/test-driver.dml"
+  driver_name = "power-system-integration-example-test-driver"
+  golden_bind = "meta/test-driver.bind"
+  golden_cml = "meta/test-driver.cml"
+}
+
 driver_bind_rules("bind") {
-  rules = "meta/test-driver.bind"
+  dml_label = ":test-driver_dml"
   deps = [ "//src/devices/bind/fuchsia.test" ]
   bind_output = "power-system-integration-example-test-driver.bindbc"
 }
@@ -22,7 +29,7 @@ fuchsia_cc_driver("driver") {
 }
 
 fuchsia_driver_component("component") {
-  manifest = "meta/test-driver.cml"
+  cm_label = ":test-driver_dml_manifest"
   component_name = "power-system-integration-example-test-driver"
   deps = [
     ":bind",

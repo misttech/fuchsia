@@ -13,10 +13,20 @@ fidl("test.trippoint") {
   public_deps = [ "//zircon/vdso/zx" ]
 }
 
+fuchsia_driver_dml("fake_trippoint_dml") {
+  dml = "meta/fake-trippoint.dml"
+  driver_name = "fake-trippoint"
+  golden_bind = "meta/fake-trippoint.bind"
+  golden_cml = "meta/fake-trippoint.cml"
+}
+
 driver_bind_rules("bind") {
-  rules = "meta/fake-trippoint.bind"
+  dml_label = ":fake_trippoint_dml"
   bind_output = "fake-trippoint.bindbc"
-  deps = [ "//src/devices/bind/fuchsia.test" ]
+  deps = [
+    "//src/devices/bind/fuchsia",
+    "//src/devices/bind/fuchsia.test",
+  ]
 }
 
 fuchsia_cc_driver("driver") {
@@ -36,7 +46,7 @@ fuchsia_cc_driver("driver") {
 
 fuchsia_driver_component("fake_trippoint_component") {
   component_name = "fake_trippoint"
+  dml_label = ":fake_trippoint_dml"
   deps = [ ":driver" ]
   info = "meta/fake_trippoint_info.json"
-  manifest = "meta/fake-trippoint.cml"
 }
