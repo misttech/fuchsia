@@ -18,11 +18,12 @@ namespace mock_spmi {
 
 class MockSpmi : public fidl::testing::TestBase<fuchsia_hardware_spmi::Device> {
  public:
-  void ExpectGetProperties(uint16_t sid, std::string name) {
+  void ExpectGetProperties(uint16_t sid, std::string name, uint32_t register_width_bytes = 1) {
     expectations_.push({
         .type = CallType::kGetProperties,
         .sid = sid,
         .name = name,
+        .register_width_bytes = register_width_bytes,
     });
   }
 
@@ -133,6 +134,7 @@ class MockSpmi : public fidl::testing::TestBase<fuchsia_hardware_spmi::Device> {
 
     uint16_t sid;
     std::string name;
+    uint32_t register_width_bytes;
   };
 
   void GetProperties(GetPropertiesCompleter::Sync& completer) override {
@@ -144,6 +146,7 @@ class MockSpmi : public fidl::testing::TestBase<fuchsia_hardware_spmi::Device> {
     completer.Reply({{
         .sid = expectation.sid,
         .name = expectation.name,
+        .register_width_bytes = expectation.register_width_bytes,
     }});
   }
 

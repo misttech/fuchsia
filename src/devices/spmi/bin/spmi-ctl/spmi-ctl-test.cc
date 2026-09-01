@@ -22,19 +22,27 @@ class FakeSpmi : public fidl::testing::TestBase<fuchsia_hardware_spmi::Device>,
   void GetProperties(GetPropertiesCompleter::Sync& completer) override {
     fuchsia_hardware_spmi::DeviceGetPropertiesResponse response;
     response.sid(123);
+    response.register_width_bytes(register_width_bytes_);
     completer.Reply(std::move(response));
   }
   void RegisterRead(RegisterReadRequest& request, RegisterReadCompleter::Sync& completer) override {
-    // Only allow reads on address written to.
-    if (!address_ || *address_ != request.address()) {
-      completer.Reply(zx::error(fuchsia_hardware_spmi::DriverError::kBadState));
-      return;
-    }
     read_size_ = request.size_bytes();
-    // Return data resized to match the requested read size.
-    std::vector<uint8_t> data = data_;
-    data.resize(request.size_bytes());
-    return completer.Reply(zx::ok(data));
+    read_addresses_.push_back(request.address());
+    // Allow multi-register reads when requested addresses fall within the written range.
+    const size_t reg_count = (data_.size() + register_width_bytes_ - 1) / register_width_bytes_;
+    if (address_ && request.address() >= *address_ && request.address() < *address_ + reg_count) {
+      const size_t offset = (request.address() - *address_) * register_width_bytes_;
+      std::vector<uint8_t> data;
+      for (size_t i = 0; i < request.size_bytes(); ++i) {
+        if (offset + i < data_.size()) {
+          data.push_back(data_[offset + i]);
+        } else {
+          data.push_back(0);
+        }
+      }
+      return completer.Reply(zx::ok(data));
+    }
+    completer.Reply(zx::error(fuchsia_hardware_spmi::DriverError::kBadState));
   }
   void RegisterWrite(RegisterWriteRequest& request,
                      RegisterWriteCompleter::Sync& completer) override {
@@ -69,13 +77,19 @@ class FakeSpmi : public fidl::testing::TestBase<fuchsia_hardware_spmi::Device>,
   std::vector<uint8_t>& data() { return data_; }
   uint16_t address() { return *address_; }
   size_t read_size() { return read_size_; }
+  void set_register_width_bytes(uint32_t width) { register_width_bytes_ = width; }
+  const std::vector<uint16_t>& read_addresses() const { return read_addresses_; }
+  void clear_read_addresses() { read_addresses_.clear(); }
 
  private:
   async_dispatcher_t* const dispatcher_;
   uint8_t target_id_{fuchsia_hardware_spmi::kMaxTargets};
   std::optional<uint16_t> address_;
   std::vector<uint8_t> data_;
-  size_t read_size_;
+  size_t read_size_{0};
+  // Default register width in bytes.
+  uint32_t register_width_bytes_{1};
+  std::vector<uint16_t> read_addresses_;
   fidl::ServerBindingGroup<fuchsia_hardware_spmi::Device> device_bindings_;
 };
 
@@ -259,4 +273,117 @@ TEST_F(SpmiCtlTest, ReadLargeSize) {
   EXPECT_EQ(spmi_->read_size(), kLargeReadSize);
   ASSERT_EQ(CallSpmiCtl({"spmi-ctl", "-t", "0", "-a", "0x1234", "-r", "0x100"}), 0);
   EXPECT_EQ(spmi_->read_size(), kLargeReadSize);
+}
+
+// Verifies that spmi-ctl retrieves and displays device properties including register width.
+TEST_F(SpmiCtlTest, GetProperties) {
+  // Test with default 1-byte register width.
+  ASSERT_EQ(CallSpmiCtl({"spmi-ctl", "-t", "0", "-p"}), 0);
+  EXPECT_EQ(spmi_->target_id(), 0);
+
+  // Test with 2-byte register width.
+  constexpr uint32_t kWidth2Bytes = 2;
+  spmi_->set_register_width_bytes(kWidth2Bytes);
+  ASSERT_EQ(CallSpmiCtl({"spmi-ctl", "-t", "0", "-p"}), 0);
+  EXPECT_EQ(spmi_->target_id(), 0);
+}
+
+// Verifies reading registers with different register widths (1-byte and 2-byte).
+TEST_F(SpmiCtlTest, ReadWithRegisterWidth) {
+  constexpr uint32_t kRead4Bytes = 4;
+  constexpr uint32_t kWidth2Bytes = 2;
+
+  // Read 4 registers with default 1-byte register width (4 bytes total).
+  ASSERT_EQ(
+      CallSpmiCtl({"spmi-ctl", "-t", "0", "-a", "0x1234", "-w", "0x11", "0x22", "0x33", "0x44"}),
+      0);
+  ASSERT_EQ(CallSpmiCtl({"spmi-ctl", "-t", "0", "-a", "0x1234", "-r", "4"}), 0);
+  EXPECT_EQ(spmi_->read_size(), kRead4Bytes);
+
+  // Read 2 registers with 2-byte register width (4 bytes total).
+  spmi_->set_register_width_bytes(kWidth2Bytes);
+  ASSERT_EQ(CallSpmiCtl({"spmi-ctl", "-t", "0", "-a", "0x1234", "-r", "2"}), 0);
+  EXPECT_EQ(spmi_->read_size(), kRead4Bytes);
+}
+
+// Verifies dumping registers increments addresses and reads in chunks matching register width.
+TEST_F(SpmiCtlTest, DumpWithRegisterWidth) {
+  constexpr uint32_t kWidth1Byte = 1;
+  constexpr uint32_t kWidth2Bytes = 2;
+
+  // Dump 4 bytes with 1-byte register width reads 1 byte at addresses 0x1000, 0x1001, 0x1002,
+  // 0x1003.
+  spmi_->set_register_width_bytes(kWidth1Byte);
+  ASSERT_EQ(
+      CallSpmiCtl({"spmi-ctl", "-t", "0", "-a", "0x1000", "-w", "0x11", "0x22", "0x33", "0x44"}),
+      0);
+  spmi_->clear_read_addresses();
+  ASSERT_EQ(CallSpmiCtl({"spmi-ctl", "-t", "0", "-a", "0x1000", "-d", "4"}), 0);
+  const std::vector<uint16_t> expected_1byte_addrs = {0x1000, 0x1001, 0x1002, 0x1003};
+  EXPECT_EQ(spmi_->read_addresses(), expected_1byte_addrs);
+
+  // Dump 4 bytes with 2-byte register width reads 2 bytes at addresses 0x1000 and 0x1001.
+  spmi_->set_register_width_bytes(kWidth2Bytes);
+  spmi_->clear_read_addresses();
+  ASSERT_EQ(CallSpmiCtl({"spmi-ctl", "-t", "0", "-a", "0x1000", "-d", "4"}), 0);
+  const std::vector<uint16_t> expected_2byte_addrs = {0x1000, 0x1001};
+  EXPECT_EQ(spmi_->read_addresses(), expected_2byte_addrs);
+}
+
+// Verifies reading registers with explicit register width argument (-i and --width).
+TEST_F(SpmiCtlTest, ReadWithRegisterWidthArg) {
+  constexpr uint32_t kRead4Bytes = 4;
+
+  ASSERT_EQ(
+      CallSpmiCtl({"spmi-ctl", "-t", "0", "-a", "0x1234", "-w", "0x11", "0x22", "0x33", "0x44"}),
+      0);
+
+  // Read 2 registers specifying -i 2 (4 bytes total).
+  ASSERT_EQ(CallSpmiCtl({"spmi-ctl", "-t", "0", "-a", "0x1234", "-i", "2", "-r", "2"}), 0);
+  EXPECT_EQ(spmi_->read_size(), kRead4Bytes);
+
+  // Read 1 register specifying --width 4 (4 bytes total).
+  ASSERT_EQ(CallSpmiCtl({"spmi-ctl", "-t", "0", "-a", "0x1234", "--width", "4", "-r", "1"}), 0);
+  EXPECT_EQ(spmi_->read_size(), kRead4Bytes);
+}
+
+// Verifies dumping registers with explicit register width argument (-i and --width).
+TEST_F(SpmiCtlTest, DumpWithRegisterWidthArg) {
+  ASSERT_EQ(
+      CallSpmiCtl({"spmi-ctl", "-t", "0", "-a", "0x1000", "-w", "0x11", "0x22", "0x33", "0x44"}),
+      0);
+
+  // Dump 4 bytes with -i 2 reads 2 bytes at addresses 0x1000 and 0x1001.
+  spmi_->clear_read_addresses();
+  ASSERT_EQ(CallSpmiCtl({"spmi-ctl", "-t", "0", "-a", "0x1000", "-i", "2", "-d", "4"}), 0);
+  const std::vector<uint16_t> expected_2byte_addrs = {0x1000, 0x1001};
+  EXPECT_EQ(spmi_->read_addresses(), expected_2byte_addrs);
+
+  // Dump 4 bytes with --width 4 reads 4 bytes at address 0x1000.
+  spmi_->clear_read_addresses();
+  ASSERT_EQ(CallSpmiCtl({"spmi-ctl", "-t", "0", "-a", "0x1000", "--width", "4", "-d", "4"}), 0);
+  const std::vector<uint16_t> expected_4byte_addrs = {0x1000};
+  EXPECT_EQ(spmi_->read_addresses(), expected_4byte_addrs);
+}
+
+// Verifies errors when dump size is not a multiple of the register width,
+// total read bytes overflow, or register width argument is invalid.
+TEST_F(SpmiCtlTest, RegisterWidthValidationErrors) {
+  constexpr uint32_t kWidth2Bytes = 2;
+  spmi_->set_register_width_bytes(kWidth2Bytes);
+
+  // Dump 3 bytes on 2-byte width fails.
+  EXPECT_EQ(CallSpmiCtl({"spmi-ctl", "-t", "0", "-a", "0x1234", "-d", "3"}), -1);
+
+  // Dump 5 bytes with -i 4 fails.
+  EXPECT_EQ(CallSpmiCtl({"spmi-ctl", "-t", "0", "-a", "0x1234", "-i", "4", "-d", "5"}), -1);
+
+  // Read with total bytes overflow fails.
+  EXPECT_EQ(CallSpmiCtl({"spmi-ctl", "-t", "0", "-a", "0x1234", "-i", "2", "-r", "0x80000000"}),
+            -1);
+
+  // Invalid width arguments.
+  EXPECT_EQ(CallSpmiCtl({"spmi-ctl", "-t", "0", "-a", "0x1234", "-i", "0", "-r", "4"}), -1);
+  EXPECT_EQ(CallSpmiCtl({"spmi-ctl", "-t", "0", "-a", "0x1234", "-i", "-1", "-r", "4"}), -1);
+  EXPECT_EQ(CallSpmiCtl({"spmi-ctl", "-t", "0", "-a", "0x1234", "-i", "abc", "-r", "4"}), -1);
 }

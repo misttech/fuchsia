@@ -82,6 +82,12 @@ open protocol Device {
         ///
         /// Optional.
         2: name string:MAX_SPMI_NAME_LEN;
+
+        /// Width in bytes of each register in the device. If not set, the register width
+        /// defaults to 1 byte.
+        ///
+        /// Optional.
+        3: register_width_bytes uint32;
     });
 
     /// Hanging-get method to receive controller write commands from the device. `address` and

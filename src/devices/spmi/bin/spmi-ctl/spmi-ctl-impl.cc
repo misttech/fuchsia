@@ -13,10 +13,12 @@
 #include <lib/fdio/fdio.h>
 #include <zircon/status.h>
 
+#include <algorithm>
 #include <cerrno>
-#include <cstdio>
 #include <cstdlib>
 #include <filesystem>
+#include <format>
+#include <iostream>
 #include <limits>
 #include <optional>
 #include <sstream>
@@ -52,9 +54,12 @@ constexpr char kUsageSummary[] = R"""(
 SPMI driver control.
 
 Usage:
-  spmi-ctl [-c|--controller <controller>] -t|--target <id> -a|--address <address> -r|--read <bytes_to_read>
-  spmi-ctl [-c|--controller <controller>] -t|--target <id> -a|--address <address> -w|--write <byte_0> <byte_1>...
-  spmi-ctl [-c|--controller <controller>] -t|--target <id> -a|--address <address> -d|--dump <bytes_to_dump>
+  spmi-ctl [-c|--controller <controller>] [-i|--width <width>]
+           -t|--target <id> -a|--address <address> -r|--read <registers_to_read>
+  spmi-ctl [-c|--controller <controller>]
+           -t|--target <id> -a|--address <address> -w|--write <byte_0> <byte_1>...
+  spmi-ctl [-c|--controller <controller>] [-i|--width <width>]
+           -t|--target <id> -a|--address <address> -d|--dump <bytes_to_dump>
   spmi-ctl [-c|--controller <controller>] -t|--target <id> -p|--properties
   spmi-ctl -l|--list
   spmi-ctl -h|--help
@@ -67,10 +72,14 @@ Options:
                     /svc/fuchsia.hardware.spmi.DebugService is used.
   -t, --target      Target ID in [0, 15]. Must be listed before the following options.
   -a, --address     Address to read or write. Must be listed before --read or --write.
-  -r, --read        Reads <read_bytes> from the device.
-  -w, --write       Writes <byte0>, <byte1>, etc to the device.
-  -d, --dump        Dumps <dump_bytes> from the device, reading one byte at the time.
-                    If there is an error, continue with the next register.
+  -i, --width       Register width in bytes (e.g. 1, 2, 4). If left unspecified,
+                    queries device properties (defaulting to 1 if unspecified by device).
+  -r, --read        Reads <registers_to_read> registers from the device.
+  -w, --write       Writes <byte0>, <byte1>, etc to the device. Width is not required as
+                    data is provided directly as individual bytes.
+  -d, --dump        Dumps <dump_bytes> from the device, reading one register at a time.
+                    Must be a multiple of register width. If there is an error, continue
+                    with the next register.
   -p, --properties  Retrieves device properties.
   -l, --list        Lists all devices available.
   -h, --help        Show list of command-line options.
@@ -81,7 +90,7 @@ Write 0x12 (one byte) to address 0x1234 using a Write SPMI command:
 $ spmi-ctl -t 0 -a 0x1234 -w 0x12 0x34 0x56 0x78
 Executing on device: /svc/fuchsia.hardware.spmi.DebugService/c3d9294786beb5a906e4dbd5fd3b596e/device
 
-Read one byte from address 0x1234 using a Read SPMI command:
+Read one register from address 0x1234 using a Read SPMI command:
 $ spmi-ctl -t 0 -a 0x5678 -r 1
 Executing on device: /svc/fuchsia.hardware.spmi.DebugService/c3d9294786beb5a906e4dbd5fd3b596e/device
 fuchsia_hardware_spmi::DeviceRegisterReadResponse{ data = [ 219, ], }
@@ -107,6 +116,31 @@ std::string ToString(const T& value) {
 template <typename T>
 std::string FidlString(const T& value) {
   return ToString(fidl::ostream::Formatted<T>(value));
+}
+
+// Prints formatted register values according to the device's register width.
+void PrintRegisters(uint16_t base_address, const std::vector<uint8_t>& data,
+                    uint32_t register_width) {
+  if (register_width == 0) {
+    register_width = 1;
+  }
+  size_t offset = 0;
+  // Current register address being formatted, incremented per register.
+  uint16_t reg_addr = base_address;
+  while (offset < data.size()) {
+    const size_t bytes = std::min<size_t>(register_width, data.size() - offset);
+    uint64_t val = 0;
+    std::string hex_str;
+    // Assemble hexadecimal string (MSB to LSB) and integer value for the register.
+    for (size_t i = 0; i < bytes; ++i) {
+      const uint8_t byte = data[offset + bytes - 1 - i];
+      hex_str += std::format("{:02x}", byte);
+      val = (val << 8) | byte;
+    }
+    std::cout << std::format("Register: 0x{:04x}  value: 0x{} ({})\n", reg_addr, hex_str, val);
+    offset += bytes;
+    reg_addr++;
+  }
 }
 
 void ShowUsage(bool show_details) {
@@ -161,6 +195,18 @@ void PrintControllerProperties(
     std::cout << "- no name";
   }
   std::cout << std::endl;
+}
+
+// Queries device properties to determine the register width in bytes, defaulting
+// to 1 byte if unavailable or invalid.
+uint32_t GetRegisterWidthBytes(const fidl::SyncClient<fuchsia_hardware_spmi::Device>& client) {
+  constexpr uint32_t kDefaultRegisterWidthBytes = 1;
+  auto props = client->GetProperties();
+  if (props.is_ok() && props->register_width_bytes().has_value() &&
+      *props->register_width_bytes() > 0) {
+    return *props->register_width_bytes();
+  }
+  return kDefaultRegisterWidthBytes;
 }
 
 }  // namespace
@@ -238,18 +284,25 @@ int SpmiCtl::Execute(int argc, char** argv) {
   std::string controller = {};
   std::optional<uint8_t> target;
   std::optional<uint16_t> address;
+  std::optional<uint32_t> register_width_arg;
   optind = 0;
 
   while (true) {
     static struct option long_options[] = {
-        {"help", no_argument, 0, 'h'},         {"controller", required_argument, 0, 'c'},
-        {"target", required_argument, 0, 't'}, {"address", required_argument, 0, 'a'},
-        {"read", required_argument, 0, 'r'},   {"write", required_argument, 0, 'w'},
-        {"dump", required_argument, 0, 'd'},   {"properties", no_argument, 0, 'p'},
-        {"list", no_argument, 0, 'l'},         {0, 0, 0, 0},
+        {"help", no_argument, 0, 'h'},
+        {"controller", required_argument, 0, 'c'},
+        {"target", required_argument, 0, 't'},
+        {"address", required_argument, 0, 'a'},
+        {"read", required_argument, 0, 'r'},
+        {"write", required_argument, 0, 'w'},
+        {"dump", required_argument, 0, 'd'},
+        {"properties", no_argument, 0, 'p'},
+        {"list", no_argument, 0, 'l'},
+        {"width", required_argument, 0, 'i'},
+        {0, 0, 0, 0},
     };
 
-    int c = getopt_long(argc, argv, "hc:t:a:r:w:d:pl", long_options, 0);
+    int c = getopt_long(argc, argv, "hc:t:a:r:w:d:pli:", long_options, 0);
     if (c == -1)
       break;
 
@@ -261,6 +314,23 @@ int SpmiCtl::Execute(int argc, char** argv) {
       case 'c':
         controller = optarg;
         break;
+
+      case 'i': {
+        // Register width in bytes; must be greater than 0.
+        int64_t width = 0;
+        const auto res = ParseInteger(optarg, &width);
+        if (res == ParseResult::kInvalid) {
+          ShowUsage(false);
+          return -1;
+        }
+        if (res == ParseResult::kOutOfRange || width < 1 ||
+            width > std::numeric_limits<uint32_t>::max()) {
+          std::cerr << "Width failed: must be between 1 and 0xffffffff inclusive" << std::endl;
+          return -1;
+        }
+        register_width_arg = static_cast<uint32_t>(width);
+        break;
+      }
 
       case 't': {
         // Target ID must be within [0, 15].
@@ -299,51 +369,46 @@ int SpmiCtl::Execute(int argc, char** argv) {
           break;
         }
 
-        // Parse number of bytes to read; must be within [1, 0xffffffff].
-        int64_t read_bytes = 0;
-        const auto res = ParseInteger(optarg, &read_bytes);
+        // Parse number of registers to read; must be within [1, 0xffffffff].
+        int64_t read_registers = 0;
+        const auto res = ParseInteger(optarg, &read_registers);
         if (res == ParseResult::kInvalid) {
           ShowUsage(false);
           return -1;
         }
-        if (res == ParseResult::kOutOfRange || read_bytes < 1 ||
-            read_bytes > std::numeric_limits<uint32_t>::max()) {
+        if (res == ParseResult::kOutOfRange || read_registers < 1 ||
+            read_registers > std::numeric_limits<uint32_t>::max()) {
           std::cerr << "Read failed: must be between 1 and 0xffffffff inclusive" << std::endl;
           return -1;
         }
 
-        // Read size is represented as an unsigned 32-bit integer in the FIDL request.
-        fuchsia_hardware_spmi::DeviceRegisterReadRequest request;
-        request.address(std::move(*address));
-        request.size_bytes(static_cast<uint32_t>(read_bytes));
         auto client = GetSpmiClient(controller, *target);
         if (!client.is_valid()) {
           return -1;
         }
+
+        // Determine register width from command-line argument or device properties.
+        const uint32_t reg_width = register_width_arg.value_or(GetRegisterWidthBytes(client));
+
+        // Ensure total bytes to read does not overflow 32-bit integer.
+        if (static_cast<uint64_t>(read_registers) >
+            std::numeric_limits<uint32_t>::max() / reg_width) {
+          std::cerr << "Read failed: total read bytes exceeds 0xffffffff" << std::endl;
+          return -1;
+        }
+        const uint32_t total_bytes = static_cast<uint32_t>(read_registers) * reg_width;
+
+        // Read size is represented as an unsigned 32-bit integer in the FIDL request.
+        fuchsia_hardware_spmi::DeviceRegisterReadRequest request;
+        request.address(std::move(*address));
+        request.size_bytes(total_bytes);
+
         auto result = client->RegisterRead(std::move(request));
         if (result.is_error()) {
           std::cerr << "Read failed: " << result.error_value().FormatDescription() << std::endl;
           return -1;
         }
-        // Print the read result based on the requested size.
-        if (read_bytes == 2 && result->data().size() >= 2) {
-          printf("Register: 0x%04x  value: 0x%02x%02x (%u)\n", *address, result->data()[1],
-                 result->data()[0],
-                 static_cast<uint32_t>(result->data()[0]) |
-                     (static_cast<uint32_t>(result->data()[1]) << 8));
-        } else if (read_bytes == 4 && result->data().size() >= 4) {
-          printf("Register: 0x%04x  value: 0x%02x%02x%02x%02x (%u)\n", *address, result->data()[3],
-                 result->data()[2], result->data()[1], result->data()[0],
-                 static_cast<uint32_t>(result->data()[0]) |
-                     (static_cast<uint32_t>(result->data()[1]) << 8) |
-                     (static_cast<uint32_t>(result->data()[2]) << 16) |
-                     (static_cast<uint32_t>(result->data()[3]) << 24));
-        } else {
-          for (size_t i = 0; i < result->data().size(); ++i) {
-            printf("Register: 0x%04x  value: 0x%02x (%u)\n", static_cast<uint16_t>(*address + i),
-                   result->data()[i], result->data()[i]);
-          }
-        }
+        PrintRegisters(*address, result->data(), reg_width);
         return 0;
       } break;
 
@@ -368,24 +433,35 @@ int SpmiCtl::Execute(int argc, char** argv) {
         if (!client.is_valid()) {
           return -1;
         }
+
+        // Determine register width from command-line argument or device properties.
+        const uint32_t reg_width = register_width_arg.value_or(GetRegisterWidthBytes(client));
+
+        // Dump size must be a multiple of the register width.
+        if (dump_bytes % reg_width != 0) {
+          std::cerr << "Dump failed: bytes to dump (" << dump_bytes
+                    << ") must be a multiple of register width (" << reg_width << ")\n";
+          return -1;
+        }
+
         fuchsia_hardware_spmi::DeviceRegisterReadRequest request;
-        // Read 1 byte at the time. If there is an error, continue with the next register.
-        for (size_t j = 0; j < static_cast<size_t>(dump_bytes); ++j) {
-          if (static_cast<size_t>(*address) + j > std::numeric_limits<uint16_t>::max()) {
+        // Read reg_width bytes at a time. If there is an error, continue with next register.
+        for (size_t j = 0, reg_idx = 0; j < static_cast<size_t>(dump_bytes);
+             j += reg_width, reg_idx++) {
+          if (static_cast<size_t>(*address) + reg_idx > std::numeric_limits<uint16_t>::max()) {
             std::cerr << "Dump terminated: address out of 16 bits range" << std::endl;
             return 0;
           }
-          const uint16_t local_address = *address + static_cast<uint16_t>(j);
+          const uint16_t local_address = static_cast<uint16_t>(*address + reg_idx);
           request.address(local_address);
-          request.size_bytes(1);
+          request.size_bytes(reg_width);
           auto result = client->RegisterRead(request);
           if (result.is_error()) {
-            printf("Register: 0x%04x  %s\n", local_address,
-                   result.error_value().FormatDescription().c_str());
+            std::cout << std::format("Register: 0x{:04x}  {}\n", local_address,
+                                     result.error_value().FormatDescription());
             continue;
           }
-          printf("Register: 0x%04x  value: 0x%02x (%u)\n", local_address, result->data()[0],
-                 result->data()[0]);
+          PrintRegisters(local_address, result->data(), reg_width);
         }
         return 0;
       }
@@ -395,6 +471,7 @@ int SpmiCtl::Execute(int argc, char** argv) {
           break;
         }
 
+        // Writes accept explicit raw bytes, so register width is not needed.
         std::vector<uint8_t> write_bytes;
         int64_t write_byte = 0;
         // Parse first byte; must be a valid 8-bit integer in [0, 0xff].

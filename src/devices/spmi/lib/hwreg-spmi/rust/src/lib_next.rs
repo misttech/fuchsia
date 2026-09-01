@@ -101,6 +101,7 @@ mod tests {
 
     struct FakeSpmiServer {
         read_data: Vec<u8>,
+        register_width_bytes: Option<u32>,
     }
 
     impl fspmi::DeviceServerHandler for FakeSpmiServer {
@@ -129,8 +130,14 @@ mod tests {
 
         async fn get_properties(
             &mut self,
-            _responder: fidl_next::Responder<fspmi::device::GetProperties>,
+            responder: fidl_next::Responder<fspmi::device::GetProperties>,
         ) {
+            // Returns the configured register width in bytes for this test device.
+            let response = fspmi::DeviceGetPropertiesResponse {
+                register_width_bytes: self.register_width_bytes,
+                ..Default::default()
+            };
+            let _ = responder.respond(response).await;
         }
 
         async fn watch_controller_write_commands(
@@ -153,7 +160,12 @@ mod tests {
         let scope = fasync::Scope::new();
         let (client_end, server_end) = fidl_next::fuchsia::create_channel::<fspmi::Device>();
 
-        let server = FakeSpmiServer { read_data: vec![0xAA, 0x55] };
+        // Register width in bytes for default SPMI test devices.
+        const REGISTER_WIDTH_BYTES: u32 = 1;
+        let server = FakeSpmiServer {
+            read_data: vec![0xAA, 0x55],
+            register_width_bytes: Some(REGISTER_WIDTH_BYTES),
+        };
         server_end.spawn_on(server, &scope);
 
         let client = client_end.spawn();
