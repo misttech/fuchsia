@@ -10,6 +10,7 @@ pub mod elf;
 pub mod errors;
 pub mod file_lease;
 pub mod file_mode;
+pub mod fs_type;
 pub mod inotify_mask;
 pub mod iptables_flags;
 pub mod kcmp;

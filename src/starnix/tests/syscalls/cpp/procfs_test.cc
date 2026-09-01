@@ -15,6 +15,7 @@
 #include <unistd.h>
 
 #include <format>
+#include <sstream>
 
 #include <fbl/unique_fd.h>
 #include <gtest/gtest.h>
@@ -1324,5 +1325,36 @@ INSTANTIATE_TEST_SUITE_P(
                       ProcfsAccessParam{"pagemap", true}, ProcfsAccessParam{"smaps", true},
                       ProcfsAccessParam{"fdinfo", true}, ProcfsAccessParam{"fd", false}),
     [](const auto& info) { return info.param.path; });
+
+TEST(ProcFilesystemsTest, Format) {
+  std::string contents;
+  ASSERT_TRUE(files::ReadFileToString("/proc/filesystems", &contents));
+  std::istringstream stream(contents);
+  std::string line;
+  bool saw_tmpfs = false;
+  bool saw_proc = false;
+  bool saw_sysfs = false;
+  bool saw_ext4 = false;
+  while (std::getline(stream, line)) {
+    if (line.empty()) {
+      continue;
+    }
+    if (line == "nodev\ttmpfs") {
+      saw_tmpfs = true;
+    } else if (line == "nodev\tproc") {
+      saw_proc = true;
+    } else if (line == "nodev\tsysfs") {
+      saw_sysfs = true;
+    } else if (line == "\text4") {
+      saw_ext4 = true;
+    }
+    EXPECT_TRUE(line.starts_with("nodev\t") || line.starts_with("\t"))
+        << "Unexpected line format: " << line;
+  }
+  EXPECT_TRUE(saw_tmpfs);
+  EXPECT_TRUE(saw_proc);
+  EXPECT_TRUE(saw_sysfs);
+  EXPECT_TRUE(saw_ext4);
+}
 
 }  // namespace

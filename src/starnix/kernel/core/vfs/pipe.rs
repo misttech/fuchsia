@@ -25,6 +25,7 @@ use starnix_types::vfs::default_statfs;
 use starnix_uapi::auth::CAP_SYS_RESOURCE;
 use starnix_uapi::errors::Errno;
 use starnix_uapi::file_mode::mode;
+use starnix_uapi::fs_type::FileSystemTypeFlags;
 use starnix_uapi::open_flags::OpenFlags;
 use starnix_uapi::signals::SIGPIPE;
 use starnix_uapi::user_address::{UserAddress, UserRef};
@@ -454,7 +455,7 @@ fn pipe_fs(
 }
 
 pub fn register_pipe_fs(fs_registry: &FsRegistry) {
-    fs_registry.register("pipefs".into(), pipe_fs);
+    fs_registry.register("pipefs".into(), FileSystemTypeFlags::empty(), pipe_fs);
 }
 
 pub struct PipeFileObject {

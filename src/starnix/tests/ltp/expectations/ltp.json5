@@ -282,8 +282,8 @@
                 "hackbench02",
                 "mtest06",
 
-                // TODO(https://fxbug.dev/441966997): /proc/filesystems misses nodev for tmpfs,
-                // causing LTP to run fs_fill on it. Tmpfs lacks size limits, causing OOM crash.
+                // TODO(https://fxbug.dev/547878640): Attempts to fill up the filesystem lead to OOM
+                // when run on tmpfs.
                 "fs_fill",
 
                 // TODO(https://fxbug.dev/536929400): Test runs a shell script that calls rm in a

@@ -35,6 +35,7 @@ use starnix_modules_tun::DevTun;
 use starnix_modules_zram::zram_device_init;
 use starnix_uapi::device_id::DeviceId;
 use starnix_uapi::errors::Errno;
+use starnix_uapi::fs_type::FileSystemTypeFlags;
 
 fn misc_device_init(kernel: &Kernel) -> Result<(), Errno> {
     let registry = &kernel.device_registry;
@@ -95,32 +96,32 @@ pub fn init_common_devices(kernel: &Kernel) -> Result<(), Errno> {
 
 pub fn register_common_file_systems(kernel: &Kernel) {
     let registry = kernel.expando.get::<FsRegistry>();
-    registry.register(b"binder".into(), BinderFs::new_fs);
-    registry.register(b"bpf".into(), BpfFs::new_fs);
-    registry.register(b"cgroup".into(), CgroupV1Fs::new_fs);
-    registry.register(b"cgroup2".into(), cgroup2_fs);
+    registry.register(b"binder".into(), FileSystemTypeFlags::empty(), BinderFs::new_fs);
+    registry.register(b"bpf".into(), FileSystemTypeFlags::empty(), BpfFs::new_fs);
+    registry.register(b"cgroup".into(), FileSystemTypeFlags::empty(), CgroupV1Fs::new_fs);
+    registry.register(b"cgroup2".into(), FileSystemTypeFlags::empty(), cgroup2_fs);
     // Cpusets use the generic cgroup (v1) subsystem.
     // From https://docs.kernel.org/admin-guide/cgroup-v1/cpusets.html
-    registry.register(b"cpuset".into(), CgroupV1Fs::new_fs_cpuset);
-    registry.register(b"debugfs".into(), debug_fs);
-    registry.register(b"devpts".into(), dev_pts_fs);
-    registry.register(b"devtmpfs".into(), dev_tmp_fs);
-    registry.register(b"erofs".into(), starnix_modules_erofs::new_fs);
-    registry.register(b"ext4".into(), ExtFilesystem::new_fs);
-    registry.register(b"functionfs".into(), FunctionFs::new_fs);
-    registry.register(b"fuse".into(), new_fuse_fs);
-    registry.register(b"fusectl".into(), new_fusectl_fs);
-    registry.register(b"overlay".into(), new_overlay_fs);
+    registry.register(b"cpuset".into(), FileSystemTypeFlags::empty(), CgroupV1Fs::new_fs_cpuset);
+    registry.register(b"debugfs".into(), FileSystemTypeFlags::empty(), debug_fs);
+    registry.register(b"devpts".into(), FileSystemTypeFlags::empty(), dev_pts_fs);
+    registry.register(b"devtmpfs".into(), FileSystemTypeFlags::empty(), dev_tmp_fs);
+    registry.register(b"erofs".into(), FileSystemTypeFlags::empty(), starnix_modules_erofs::new_fs);
+    registry.register(b"ext4".into(), FileSystemTypeFlags::REQUIRES_DEV, ExtFilesystem::new_fs);
+    registry.register(b"functionfs".into(), FileSystemTypeFlags::empty(), FunctionFs::new_fs);
+    registry.register(b"fuse".into(), FileSystemTypeFlags::empty(), new_fuse_fs);
+    registry.register(b"fusectl".into(), FileSystemTypeFlags::empty(), new_fusectl_fs);
+    registry.register(b"overlay".into(), FileSystemTypeFlags::empty(), new_overlay_fs);
     register_pipe_fs(registry.as_ref());
-    registry.register(b"proc".into(), proc_fs);
-    registry.register(b"pstore".into(), pstore_fs);
-    registry.register(b"remotefs".into(), new_remote_fs);
-    registry.register(b"remotevol".into(), new_remote_vol);
-    registry.register(b"remote_bundle".into(), RemoteBundle::new_fs);
-    registry.register(b"selinuxfs".into(), selinux_fs);
-    registry.register(b"sysfs".into(), sys_fs);
-    registry.register(b"tmpfs".into(), tmp_fs);
-    registry.register(b"tracefs".into(), trace_fs);
+    registry.register(b"proc".into(), FileSystemTypeFlags::empty(), proc_fs);
+    registry.register(b"pstore".into(), FileSystemTypeFlags::empty(), pstore_fs);
+    registry.register(b"remotefs".into(), FileSystemTypeFlags::empty(), new_remote_fs);
+    registry.register(b"remotevol".into(), FileSystemTypeFlags::empty(), new_remote_vol);
+    registry.register(b"remote_bundle".into(), FileSystemTypeFlags::empty(), RemoteBundle::new_fs);
+    registry.register(b"selinuxfs".into(), FileSystemTypeFlags::empty(), selinux_fs);
+    registry.register(b"sysfs".into(), FileSystemTypeFlags::empty(), sys_fs);
+    registry.register(b"tmpfs".into(), FileSystemTypeFlags::empty(), tmp_fs);
+    registry.register(b"tracefs".into(), FileSystemTypeFlags::empty(), trace_fs);
 }
 
 pub fn register_common_syscalls(kernel: &Kernel) {

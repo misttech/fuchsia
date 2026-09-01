@@ -7,6 +7,7 @@ use starnix_core::vfs::FsNodeOps;
 use starnix_core::vfs::fs_registry::FsRegistry;
 use starnix_core::vfs::pseudo::dynamic_file::{DynamicFile, DynamicFileBuf, DynamicFileSource};
 use starnix_uapi::errors::Errno;
+use starnix_uapi::fs_type::FileSystemTypeFlags;
 use std::sync::Arc;
 
 #[derive(Clone)]
@@ -26,10 +27,10 @@ impl DynamicFileSource for FilesystemsFile {
         _current_task: &CurrentTask,
         sink: &mut DynamicFileBuf,
     ) -> Result<(), Errno> {
-        // TODO(https://fxbug.dev/441966997): Report nodev for filesystems that don't need a block
-        // device.
-        for entry in self.fs_registry.list_all() {
-            writeln!(sink, "{:5}\t{}", "", entry)?;
+        for (name, flags) in self.fs_registry.list_all() {
+            let prefix =
+                if flags.contains(FileSystemTypeFlags::REQUIRES_DEV) { "" } else { "nodev" };
+            writeln!(sink, "{}\t{}", prefix, name)?;
         }
 
         Ok(())

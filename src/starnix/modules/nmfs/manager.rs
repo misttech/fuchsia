@@ -12,6 +12,7 @@ use starnix_logging::{log_error, log_info};
 use starnix_sync::{LockDepGuard, LockDepMutex, NmfsNetworkManagerLock};
 use starnix_uapi::error;
 use starnix_uapi::errors::Errno;
+use starnix_uapi::fs_type::FileSystemTypeFlags;
 use std::collections::HashMap;
 use std::collections::hash_map::Entry;
 use thiserror::Error;
@@ -54,7 +55,11 @@ struct SeenSentData {
 pub fn nmfs_init(kernel: &Kernel) -> Result<(), anyhow::Error> {
     // Register the fuchsia_network_monitor_fs in the FsRegistry.
     let registry = kernel.expando.get::<FsRegistry>();
-    registry.register(b"fuchsia_network_monitor_fs".into(), fuchsia_network_monitor_fs);
+    registry.register(
+        b"fuchsia_network_monitor_fs".into(),
+        FileSystemTypeFlags::empty(),
+        fuchsia_network_monitor_fs,
+    );
 
     // Register the NetworkManager.
     let starnix_networks = connect_to_protocol_sync::<fnp_socketproxy::StarnixNetworksMarker>()?;

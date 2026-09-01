@@ -294,13 +294,14 @@ mod test {
     use starnix_core::vfs::fs_args::MountParams;
     use starnix_core::vfs::fs_registry::FsRegistry;
     use starnix_uapi::file_mode::FileMode;
+    use starnix_uapi::fs_type::FileSystemTypeFlags;
 
     #[::fuchsia::test]
     async fn test_filesystem_creates_nodes() {
         spawn_kernel_and_run(async move |current_task| {
             let kernel = current_task.kernel();
             let registry = kernel.expando.get::<FsRegistry>();
-            registry.register(b"cgroup2".into(), cgroup2_fs);
+            registry.register(b"cgroup2".into(), FileSystemTypeFlags::empty(), cgroup2_fs);
 
             let fs = current_task
                 .create_filesystem(b"cgroup2".into(), Default::default())
@@ -320,7 +321,7 @@ mod test {
         spawn_kernel_and_run(async move |current_task| {
             let kernel = current_task.kernel();
             let registry = kernel.expando.get::<FsRegistry>();
-            registry.register(b"cgroup".into(), CgroupV1Fs::new_fs);
+            registry.register(b"cgroup".into(), FileSystemTypeFlags::empty(), CgroupV1Fs::new_fs);
 
             let options = FileSystemOptions {
                 params: MountParams::parse(b"memory".into()).unwrap(),

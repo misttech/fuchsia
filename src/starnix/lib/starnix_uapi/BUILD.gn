@@ -22,6 +22,7 @@ rustc_library("starnix_uapi") {
     "src/errors.rs",
     "src/file_lease.rs",
     "src/file_mode.rs",
+    "src/fs_type.rs",
     "src/inotify_mask.rs",
     "src/iptables_flags.rs",
     "src/kcmp.rs",
