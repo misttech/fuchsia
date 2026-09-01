@@ -632,13 +632,13 @@ TEST_F(FidlEvaluateObjectTest, TestEncodeMmioResource) {
   });
   acpi_.SetResource(MakeResources(resources));
 
-  zx_handle_t fake_root_resource;
-  ASSERT_OK(fake_root_resource_create(&fake_root_resource));
+  zx_handle_t fake_mmio_root;
+  ASSERT_OK(fake_resource_create(ZX_RSRC_KIND_MMIO, &fake_mmio_root));
 
   // Make a resource that exactly encompasses the MMIO range we expect, so that we ensure the test
   // requests the right range.
   zx_handle_t child_resource;
-  ASSERT_OK(zx_resource_create(fake_root_resource, ZX_RSRC_KIND_MMIO, 0,
+  ASSERT_OK(zx_resource_create(fake_mmio_root, ZX_RSRC_KIND_MMIO, 0,
                                2lu * zx_system_get_page_size(), nullptr, 0, &child_resource));
   helper.SetMmioResource(child_resource);
 

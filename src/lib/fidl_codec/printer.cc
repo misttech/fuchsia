@@ -681,7 +681,6 @@ void PrettyPrinter::DisplayRsrcKind(zx_rsrc_kind_t kind) {
     RsrcKindCase(ZX_RSRC_KIND_MMIO);
     RsrcKindCase(ZX_RSRC_KIND_IRQ);
     RsrcKindCase(ZX_RSRC_KIND_IOPORT);
-    RsrcKindCase(ZX_RSRC_KIND_ROOT);
     RsrcKindCase(ZX_RSRC_KIND_SMC);
     RsrcKindCase(ZX_RSRC_KIND_SYSTEM);
     RsrcKindCase(ZX_RSRC_KIND_COUNT);

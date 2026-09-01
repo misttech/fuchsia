@@ -18,7 +18,7 @@
 namespace fake_object {
 
 class FakeHandleTable& FakeHandleTable() {
-  static class FakeHandleTable gFakeHandleTable;
+  [[clang::no_destroy]] static class FakeHandleTable gFakeHandleTable;
   return gFakeHandleTable;
 }
 

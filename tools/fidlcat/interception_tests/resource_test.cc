@@ -29,7 +29,7 @@ std::unique_ptr<SystemCallTest> ZxResourceCreate(int64_t result, std::string_vie
   std::string name = "My resource";                                                            \
   zx_handle_t resource_out = kHandleOut;                                                       \
   PerformDisplayTest("$plt(zx_resource_create)",                                               \
-                     ZxResourceCreate(result, #result, kHandle, ZX_RSRC_KIND_ROOT, 1000, 1024, \
+                     ZxResourceCreate(result, #result, kHandle, ZX_RSRC_KIND_MMIO, 1000, 1024, \
                                       name.c_str(), name.size(), &resource_out),               \
                      expected)
 
@@ -48,7 +48,7 @@ RESOURCE_CREATE_DISPLAY_TEST(
     "test_3141 \x1B[31m3141\x1B[0m:\x1B[31m8764\x1B[0m "
     "zx_resource_create("
     "parent_rsrc: \x1B[32mhandle\x1B[0m = \x1B[31mcefa1db0\x1B[0m, "
-    "options: \x1B[32mzx.rsrc_kind\x1B[0m = \x1B[34mZX_RSRC_KIND_ROOT\x1B[0m, "
+    "options: \x1B[32mzx.rsrc_kind\x1B[0m = \x1B[34mZX_RSRC_KIND_MMIO\x1B[0m, "
     "base: \x1B[32muint64\x1B[0m = \x1B[34m1000\x1B[0m, "
     "size: \x1B[32msize\x1B[0m = \x1B[34m1024\x1B[0m, "
     "name: \x1B[32mstring\x1B[0m = \x1B[31m\"My resource\"\x1B[0m)\n"

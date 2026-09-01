@@ -22,20 +22,25 @@
 class PciRootHostTests : public testing::Test {
  protected:
   void SetUp() final {
-    ASSERT_OK(fake_root_resource_create(fake_root_resource_.reset_and_get_address()));
+    ASSERT_OK(
+        fake_resource_create(ZX_RSRC_KIND_SYSTEM, fake_msi_resource_.reset_and_get_address()));
+    ASSERT_OK(fake_resource_create(ZX_RSRC_KIND_MMIO, fake_mmio_resource_.reset_and_get_address()));
+    ASSERT_OK(
+        fake_resource_create(ZX_RSRC_KIND_IOPORT, fake_ioport_resource_.reset_and_get_address()));
     page_size_ = zx_system_get_page_size();
     root_host_ =
-        std::make_unique<PciRootHost>(fake_root_resource_.borrow(), fake_root_resource_.borrow(),
-                                      fake_root_resource_.borrow(), PCI_ADDRESS_SPACE_IO);
+        std::make_unique<PciRootHost>(fake_msi_resource_.borrow(), fake_mmio_resource_.borrow(),
+                                      fake_ioport_resource_.borrow(), PCI_ADDRESS_SPACE_IO);
   }
 
-  zx::resource& fake_root_resource() { return fake_root_resource_; }
   PciRootHost& root_host() { return *root_host_; }
   size_t page_size() const { return page_size_; }
 
  private:
   size_t page_size_;
-  zx::resource fake_root_resource_;
+  zx::resource fake_msi_resource_;
+  zx::resource fake_mmio_resource_;
+  zx::resource fake_ioport_resource_;
   std::unique_ptr<PciRootHost> root_host_;
 };
 

@@ -64,9 +64,16 @@ namespace intel_display {
 
 namespace {
 
-zx::resource CreateFakeRootResource() {
+zx::resource CreateFakeMmioRootResource() {
   zx::resource root;
-  zx_status_t status = fake_root_resource_create(root.reset_and_get_address());
+  zx_status_t status = fake_resource_create(ZX_RSRC_KIND_MMIO, root.reset_and_get_address());
+  ZX_ASSERT(status == ZX_OK);
+  return root;
+}
+
+zx::resource CreateFakeIoportRootResource() {
+  zx::resource root;
+  zx_status_t status = fake_resource_create(ZX_RSRC_KIND_IOPORT, root.reset_and_get_address());
   ZX_ASSERT(status == ZX_OK);
   return root;
 }
@@ -98,7 +105,6 @@ class FakeSystemStateTransition
 
 class FakeMmioResource : public fidl::testing::TestBase<fuchsia_kernel::MmioResource> {
  public:
-  // `root_resource` must outlive `FakeFramebufferResource`.
   explicit FakeMmioResource(zx::unowned_resource root_resource)
       : root_resource_(root_resource->borrow()) {}
   ~FakeMmioResource() override = default;
@@ -108,7 +114,6 @@ class FakeMmioResource : public fidl::testing::TestBase<fuchsia_kernel::MmioReso
     ZX_PANIC("Not implemented: %s", name.c_str());
   }
 
-  // fuchsia_kernel::FramebufferResource:
   void Get(GetCompleter::Sync& completer) override {
     zx::resource mmio_child;
     std::array<char, ZX_MAX_NAME_LEN> child_name = {"child"};
@@ -125,7 +130,6 @@ class FakeMmioResource : public fidl::testing::TestBase<fuchsia_kernel::MmioReso
 
 class FakeIoportResource : public fidl::testing::TestBase<fuchsia_kernel::IoportResource> {
  public:
-  // `root_resource` must outlive `FakeFramebufferResource`.
   explicit FakeIoportResource(zx::unowned_resource root_resource)
       : root_resource_(root_resource->borrow()) {}
   ~FakeIoportResource() override = default;
@@ -135,7 +139,6 @@ class FakeIoportResource : public fidl::testing::TestBase<fuchsia_kernel::Ioport
     ZX_PANIC("Not implemented: %s", name.c_str());
   }
 
-  // fuchsia_kernel::FramebufferResource:
   void Get(GetCompleter::Sync& completer) override {
     zx::resource ioport_child;
     std::array<char, ZX_MAX_NAME_LEN> child_name = {"child"};
@@ -153,9 +156,10 @@ class FakeIoportResource : public fidl::testing::TestBase<fuchsia_kernel::Ioport
 class IntelDisplayTestEnvironment : public fdf_testing::Environment {
  public:
   IntelDisplayTestEnvironment()
-      : fake_root_resource_(CreateFakeRootResource()),
-        fake_mmio_resource_(fake_root_resource_.borrow()),
-        fake_ioport_resource_(fake_root_resource_.borrow()),
+      : fake_mmio_root_resource_(CreateFakeMmioRootResource()),
+        fake_ioport_root_resource_(CreateFakeIoportRootResource()),
+        fake_mmio_resource_(fake_mmio_root_resource_.borrow()),
+        fake_ioport_resource_(fake_ioport_root_resource_.borrow()),
         sysmem_(fdf::Dispatcher::GetCurrent()->async_dispatcher()) {
     sysmem_.SetNewBufferCollectionConfig({
         .cpu_domain_supported = false,
@@ -235,7 +239,8 @@ class IntelDisplayTestEnvironment : public fdf_testing::Environment {
   pci::FakePciProtocol& pci() { return pci_; }
 
  private:
-  zx::resource fake_root_resource_;
+  zx::resource fake_mmio_root_resource_;
+  zx::resource fake_ioport_root_resource_;
   FakeMmioResource fake_mmio_resource_;
   FakeIoportResource fake_ioport_resource_;
   FakeSystemStateTransition fake_system_state_transition_;

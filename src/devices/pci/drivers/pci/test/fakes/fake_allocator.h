@@ -43,7 +43,9 @@ class FakeAllocation : public PciAllocation {
 
   zx::result<zx::resource> CreateResource() const final {
     zx_handle_t handle = ZX_HANDLE_INVALID;
-    ZX_DEBUG_ASSERT(fake_root_resource_create(&handle) == ZX_OK);
+    zx_rsrc_kind_t kind =
+        (type() == PCI_ADDRESS_SPACE_MEMORY) ? ZX_RSRC_KIND_MMIO : ZX_RSRC_KIND_IOPORT;
+    ZX_DEBUG_ASSERT(fake_resource_create(kind, &handle) == ZX_OK);
     auto resource = zx::resource(handle);
     return zx::ok(std::move(resource));
   }

@@ -40,7 +40,10 @@ class FakePciroot : public ddk::PcirootProtocol<FakePciroot> {
             .end_bus_num = static_cast<uint8_t>(bus_start + bus_cnt),
             .cam = {.vmo = ecam_.mmio().get_vmo()->get(), .is_extended = is_extended},
         } {
-    ZX_ASSERT(fake_root_resource_create(resource_.reset_and_get_address()) == ZX_OK);
+    ZX_ASSERT(fake_resource_create(ZX_RSRC_KIND_MMIO, mmio_resource_.reset_and_get_address()) ==
+              ZX_OK);
+    ZX_ASSERT(fake_resource_create(ZX_RSRC_KIND_IOPORT, ioport_resource_.reset_and_get_address()) ==
+              ZX_OK);
     ZX_ASSERT(fake_bti_create(bti_.reset_and_get_address()) == ZX_OK);
   }
   FakePciroot() : FakePciroot(/*bus_start=*/0, /*bus_cnt=*/1, /*is_extended=*/false) {}
@@ -70,7 +73,8 @@ class FakePciroot : public ddk::PcirootProtocol<FakePciroot> {
   uint8_t bus_end() const { return info_.end_bus_num; }
   bool is_extended() const { return info_.cam.is_extended; }
   zx::bti& bti() { return bti_; }
-  zx::resource& resource() { return resource_; }
+  zx::resource& mmio_resource() { return mmio_resource_; }
+  zx::resource& ioport_resource() { return ioport_resource_; }
   auto& legacy_irqs() { return legacy_irqs_; }
   auto& routing_entries() { return routing_entries_; }
   auto& allocation_eps() { return allocation_eps_; }
@@ -224,7 +228,8 @@ class FakePciroot : public ddk::PcirootProtocol<FakePciroot> {
       }
     }
 
-    ZX_ASSERT(zx::resource::create(resource_, kind, *out_base, size, "fake", 5, resource) == ZX_OK);
+    const zx::resource& parent = (kind == ZX_RSRC_KIND_MMIO) ? mmio_resource_ : ioport_resource_;
+    ZX_ASSERT(zx::resource::create(parent, kind, *out_base, size, "fake", 5, resource) == ZX_OK);
     zx::eventpair local_ep;
     zx::eventpair::create(0, &local_ep, eventpair);
     allocation_eps_.push_back(std::move(local_ep));
@@ -249,7 +254,8 @@ class FakePciroot : public ddk::PcirootProtocol<FakePciroot> {
   const pci_platform_info_t info_;
   std::vector<zx::eventpair> allocation_eps_;
   zx::bti bti_;
-  zx::resource resource_;
+  zx::resource mmio_resource_;
+  zx::resource ioport_resource_;
   std::vector<pci_legacy_irq_t> legacy_irqs_;
   std::vector<pci_irq_routing_entry_t> routing_entries_;
   std::vector<pci_bdf_t> acpi_devices_;

@@ -21,27 +21,25 @@ namespace {
 // Implement a basic fake Resource object to use with accompanying syscalls.
 // This object will only be to spec in regards to having a |kind| and inclusive
 // range. Only shared resources are permitted at this time to reduce complexity
-// as exclusive resources are not needed for most test purposes. It is not permitted
-// to create a |root| resource through this interface.
+// as exclusive resources are not needed for most test purposes.
 class Resource final : public fake_object::Object {
  public:
   Resource(zx_paddr_t base, size_t size, zx_rsrc_kind_t kind, zx_rsrc_flags_t flags,
-           const char* name, size_t name_len)
+           const char* name, size_t name_len, bool is_root)
       : fake_object::Object(ZX_OBJ_TYPE_RESOURCE),
         base_(base),
         size_(size),
         kind_(kind),
-        is_exclusive_(flags & ZX_RSRC_FLAG_EXCLUSIVE) {
-    ZX_ASSERT_MSG(kind_ != ZX_RSRC_KIND_IRQ && kind_ != ZX_RSRC_KIND_SMC,
-                  "fake-resource: unsupported kind: %u\n", kind);
+        is_exclusive_(flags & ZX_RSRC_FLAG_EXCLUSIVE),
+        is_root_(is_root) {
     memcpy(name_.data(), name, name_len);
   }
   ~Resource() final = default;
 
   static zx_status_t Create(zx_paddr_t base, size_t size, zx_rsrc_kind_t kind,
-                            zx_rsrc_flags_t flags, const char* name, size_t name_len,
+                            zx_rsrc_flags_t flags, const char* name, size_t name_len, bool is_root,
                             std::shared_ptr<Object>* out) {
-    *out = std::make_shared<Resource>(base, size, kind, flags, name, name_len);
+    *out = std::make_shared<Resource>(base, size, kind, flags, name, name_len, is_root);
     return ZX_OK;
   }
 
@@ -52,12 +50,14 @@ class Resource final : public fake_object::Object {
   size_t size() const { return size_; }
   zx_rsrc_kind_t kind() const { return kind_; }
   bool is_exclusive() const { return is_exclusive_; }
+  bool is_root() const { return is_root_; }
 
  private:
   zx_paddr_t base_;
   size_t size_;
   zx_rsrc_kind_t kind_;
   const bool is_exclusive_;
+  const bool is_root_;
   std::array<char, ZX_MAX_NAME_LEN> name_;
 };
 
@@ -132,16 +132,13 @@ zx_status_t zx_resource_create(zx_handle_t parent_rsrc, uint32_t options, uint64
   }
   auto* parent = static_cast<Resource*>(get_res.value().get());
 
-  // Fake root resources have no range or kind verification necessary.
   zx_rsrc_kind_t kind = ZX_RSRC_EXTRACT_KIND(options);
-  if (parent->kind() != ZX_RSRC_KIND_ROOT) {
-    if (kind != parent->kind()) {
-      return ZX_ERR_WRONG_TYPE;
-    }
-    // Ensure the child range fits within the parent.
-    if (!is_valid_range(parent->base(), parent->size(), base, size)) {
-      return ZX_ERR_ACCESS_DENIED;
-    }
+  if (kind != parent->kind()) {
+    return ZX_ERR_WRONG_TYPE;
+  }
+  // Ensure the child range fits within the parent.
+  if (!parent->is_root() && !is_valid_range(parent->base(), parent->size(), base, size)) {
+    return ZX_ERR_ACCESS_DENIED;
   }
 
   // Ensure that if this region is exclusive it does not overlap with an exclusive region.
@@ -151,7 +148,8 @@ zx_status_t zx_resource_create(zx_handle_t parent_rsrc, uint32_t options, uint64
   }
 
   std::shared_ptr<fake_object::Object> new_res;
-  ZX_ASSERT(Resource::Create(base, size, kind, flags, name, name_size, &new_res) == ZX_OK);
+  ZX_ASSERT(Resource::Create(base, size, kind, flags, name, name_size, /*is_root=*/false,
+                             &new_res) == ZX_OK);
   zx::result add_res = fake_object::FakeHandleTable().Add(std::move(new_res));
   if (add_res.is_ok()) {
     *resource_out = add_res.value();
@@ -171,7 +169,10 @@ zx_status_t zx_vmo_create_physical(zx_handle_t handle, zx_paddr_t paddr, size_t 
   }
 
   auto* resource = static_cast<Resource*>(get_res.value().get());
-  if (!is_valid_range(resource->base(), resource->size(), paddr, size)) {
+  if (resource->kind() != ZX_RSRC_KIND_MMIO) {
+    return ZX_ERR_WRONG_TYPE;
+  }
+  if (!resource->is_root() && !is_valid_range(resource->base(), resource->size(), paddr, size)) {
     return ZX_ERR_ACCESS_DENIED;
   }
 
@@ -191,7 +192,7 @@ zx_status_t ioport_syscall_common(zx_handle_t handle, uint16_t io_addr, uint32_t
     return ZX_ERR_WRONG_TYPE;
   }
 
-  if (!is_valid_range(resource->base(), resource->size(), io_addr, len)) {
+  if (!resource->is_root() && !is_valid_range(resource->base(), resource->size(), io_addr, len)) {
     return ZX_ERR_ACCESS_DENIED;
   }
 
@@ -209,14 +210,14 @@ zx_status_t zx_ioports_release(zx_handle_t resource, uint16_t io_addr, uint32_t 
   return ioport_syscall_common(resource, io_addr, len);
 }
 
-// The root resource is handed off to userboot by the kernel and is not something that can be
+// Resources are handed off to userboot by the kernel and cannot be
 // created in userspace normally. This allows a test to bootstrap a resource chain by creating
-// a fake root resoure.
+// a fake resource.
 __EXPORT
-zx_status_t fake_root_resource_create(zx_handle_t* out) {
-  std::array<char, ZX_MAX_NAME_LEN> name = {"FAKE ROOT"};
+zx_status_t fake_resource_create(zx_rsrc_kind_t kind, zx_handle_t* out) {
+  std::array<char, ZX_MAX_NAME_LEN> name = {"FAKE RESOURCE"};
   std::shared_ptr<fake_object::Object> new_res;
-  ZX_ASSERT(Resource::Create(0, 0, ZX_RSRC_KIND_ROOT, 0, name.data(), name.size(), &new_res) ==
+  ZX_ASSERT(Resource::Create(0, 0, kind, 0, name.data(), name.size(), /*is_root=*/true, &new_res) ==
             ZX_OK);
   zx::result add_res = fake_object::FakeHandleTable().Add(std::move(new_res));
   if (add_res.is_ok()) {

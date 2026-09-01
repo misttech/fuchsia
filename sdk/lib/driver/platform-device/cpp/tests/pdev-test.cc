@@ -245,7 +245,7 @@ TEST(PDevTest, GetSmc) {
   std::map<uint32_t, zx::resource> smcs;
   {
     zx::resource smc;
-    ASSERT_OK(fake_root_resource_create(smc.reset_and_get_address()));
+    ASSERT_OK(fake_resource_create(ZX_RSRC_KIND_SMC, smc.reset_and_get_address()));
     smcs[kSmcId] = std::move(smc);
   }
 

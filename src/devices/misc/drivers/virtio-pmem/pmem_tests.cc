@@ -61,13 +61,14 @@ class FakeBackendForPmem final : public virtio::FakeBackend {
 };
 
 zx::result<zx::resource> CreateFakeMmioResource() {
-  zx::resource fake_root_resource;
-  zx_status_t status = fake_root_resource_create(fake_root_resource.reset_and_get_address());
+  zx::resource fake_mmio_root;
+  zx_status_t status =
+      fake_resource_create(ZX_RSRC_KIND_MMIO, fake_mmio_root.reset_and_get_address());
   if (status != ZX_OK) {
     return zx::error(status);
   }
   zx::resource fake_mmio_resource;
-  status = zx::resource::create(fake_root_resource, 0 /* options */, FakeBackendForPmem::kFakeStart,
+  status = zx::resource::create(fake_mmio_root, ZX_RSRC_KIND_MMIO, FakeBackendForPmem::kFakeStart,
                                 FakeBackendForPmem::kFakeSize, "", 0, &fake_mmio_resource);
   if (status != ZX_OK) {
     return zx::error(status);

@@ -19,8 +19,8 @@ A resource object consists of a single resource *kind*, with *base* address and
 *len* parameters that define a range of address space the holder of the resource
 is granted access to. The range covers *base* up to but not including *base* +
 *len*.  These objects are immutable after creation. Valid *kind* values are
-**ZX_RSRC_KIND_ROOT**, **ZX_RSRC_KIND_MMIO**, **ZX_RSRC_KIND_IOPORT**,
-**ZX_RSRC_KIND_IRQ**, **ZX_RSRC_KIND_SMC**, and **ZX_RSRC_KIND_SYSTEM**.
+**ZX_RSRC_KIND_MMIO**, **ZX_RSRC_KIND_IOPORT**, **ZX_RSRC_KIND_IRQ**,
+**ZX_RSRC_KIND_SMC**, and **ZX_RSRC_KIND_SYSTEM**.
 
 The system resource is a special case that contains other resources, all of which have *len*
 one. These resources each have their own base within the system resource. Valid *base*
@@ -35,12 +35,12 @@ New resources may be created with an appropriate parent resource by calling
 [`zx_resource_create()`]. An initial resource of each *kind* is created by the kernel
 during boot and handed off to the first userspace process started by userboot.
 
-Appropriate parent resources are the root resource, or a resource whose own range
-from *base* to *base+len* contains the range requested for the new resource. The
-*kind* of a parent resource must match the *kind* of the resource being created.
-At this time, *exclusive* resources cannot be used to create new resources. After
-creation there is no relation between the resource parent used and the new resource
-created.
+Appropriate parent resources are a resource whose own range from *base* to
+*base+len* contains the range requested for the new resource. The *kind* of a
+parent resource must match the *kind* of the resource being created. At this
+time, *exclusive* resources cannot be used to create new resources. After
+creation there is no relation between the resource parent used and the new
+resource created.
 
 Resource allocations can be either *shared* or *exclusive*. A shared resource
 grants the permission to access the given address space, but does not reserve

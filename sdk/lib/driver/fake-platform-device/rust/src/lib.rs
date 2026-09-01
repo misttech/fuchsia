@@ -493,11 +493,14 @@ mod tests {
     #[fuchsia::test]
     async fn test_get_smc() {
         unsafe extern "C" {
-            fn fake_root_resource_create(out: *mut zx::sys::zx_handle_t) -> zx::sys::zx_status_t;
+            fn fake_resource_create(
+                kind: zx::sys::zx_rsrc_kind_t,
+                out: *mut zx::sys::zx_handle_t,
+            ) -> zx::sys::zx_status_t;
         }
         let mut raw = zx::sys::ZX_HANDLE_INVALID;
         unsafe {
-            assert_eq!(fake_root_resource_create(&mut raw), zx::sys::ZX_OK);
+            assert_eq!(fake_resource_create(zx::sys::ZX_RSRC_KIND_SMC, &mut raw), zx::sys::ZX_OK);
         }
         let smc = unsafe { zx::Resource::from(zx::Handle::from_raw(raw).unwrap()) };
 

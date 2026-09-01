@@ -1740,7 +1740,7 @@ OBJECT_GET_INFO_KMEM_STATS_DISPLAY_TEST(
   constexpr uint64_t kBase = 1000;                                                            \
   constexpr uint64_t kSize = 100;                                                             \
   zx_info_resource_t buffer{                                                                  \
-      .kind = ZX_RSRC_KIND_ROOT, .flags = 0, .base = kBase, .size = kSize, .name = "my_res"}; \
+      .kind = ZX_RSRC_KIND_MMIO, .flags = 0, .base = kBase, .size = kSize, .name = "my_res"}; \
   auto value =                                                                                \
       ZxObjectGetInfo(result, #result, kHandle, ZX_INFO_RESOURCE,                             \
                       reinterpret_cast<void*>(&buffer), sizeof(buffer), nullptr, nullptr);    \
@@ -1766,7 +1766,7 @@ OBJECT_GET_INFO_RESOURCE_DISPLAY_TEST(
     "\x1B[32m0.000000\x1B[0m "
     "  -> \x1B[32mZX_OK\x1B[0m\n"
     "    info: \x1B[32mzx_info_resource_t\x1B[0m = {\n"
-    "      kind: \x1B[32mzx.rsrc_kind\x1B[0m = \x1B[34mZX_RSRC_KIND_ROOT\x1B[0m\n"
+    "      kind: \x1B[32mzx.rsrc_kind\x1B[0m = \x1B[34mZX_RSRC_KIND_MMIO\x1B[0m\n"
     "      flags: \x1B[32muint32\x1B[0m = \x1B[34m0\x1B[0m\n"
     "      base: \x1B[32muint64\x1B[0m = \x1B[34m1000\x1B[0m\n"
     "      size: \x1B[32msize\x1B[0m = \x1B[34m100\x1B[0m\n"

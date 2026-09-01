@@ -149,9 +149,8 @@ void FakePDev::GetSmcById(GetSmcByIdRequestView request, GetSmcByIdCompleter::Sy
       completer.ReplyError(ZX_ERR_NOT_FOUND);
       return;
     }
-    zx_status_t status = fake_root_resource_create(smc.reset_and_get_address());
+    zx_status_t status = fake_resource_create(ZX_RSRC_KIND_SMC, smc.reset_and_get_address());
     if (status != ZX_OK) {
-      completer.ReplyError(status);
       return;
     }
   } else {

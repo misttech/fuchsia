@@ -18,18 +18,20 @@ namespace {
 
 const size_t kPageSize = zx_system_get_page_size();
 
-zx::resource root_resource;
+zx::resource mmio_root;
+zx::resource ioport_root;
 
 class FakeResource : public zxtest::Test {
  public:
   static void SetUpTestSuite() {
-    ASSERT_OK(fake_root_resource_create(root_resource.reset_and_get_address()));
+    ASSERT_OK(fake_resource_create(ZX_RSRC_KIND_MMIO, mmio_root.reset_and_get_address()));
+    ASSERT_OK(fake_resource_create(ZX_RSRC_KIND_IOPORT, ioport_root.reset_and_get_address()));
   }
 
-  static void TearDownTestSuite() { root_resource.reset(); }
-
- private:
-  zx::resource root_;
+  static void TearDownTestSuite() {
+    mmio_root.reset();
+    ioport_root.reset();
+  }
 };
 
 bool validate_resource_info(zx::resource& res, zx_paddr_t base, size_t size, zx_rsrc_kind_t kind,
@@ -51,7 +53,7 @@ TEST_F(FakeResource, ChildBoundsTest) {
   const uintptr_t parent_base = kPageSize;
   const size_t parent_size = kPageSize;
   zx::resource parent;
-  ASSERT_OK(zx::resource::create(root_resource, ZX_RSRC_KIND_MMIO, parent_base, parent_size,
+  ASSERT_OK(zx::resource::create(mmio_root, ZX_RSRC_KIND_MMIO, parent_base, parent_size,
                                  parent_name.data(), parent_name.size(), &parent));
   ASSERT_TRUE(validate_resource_info(parent, parent_base, parent_size, ZX_RSRC_KIND_MMIO,
                                      parent_name.data()));
@@ -82,31 +84,31 @@ TEST_F(FakeResource, ExclusiveBoundsTest) {
   const uint64_t first_size = static_cast<const uint64_t>(zx_system_get_page_size()) * 4;
   uint32_t flags = ZX_RSRC_KIND_MMIO | ZX_RSRC_FLAG_EXCLUSIVE;
   zx::resource first, second;
-  ASSERT_OK(zx::resource::create(root_resource, flags, first_base, first_size, first_name.data(),
+  ASSERT_OK(zx::resource::create(mmio_root, flags, first_base, first_size, first_name.data(),
                                  first_name.size(), &first));
   ASSERT_TRUE(validate_resource_info(first, first_base, first_size, ZX_RSRC_EXTRACT_KIND(flags),
                                      first_name.data()));
   // Same span.
   {
-    ASSERT_NOT_OK(zx::resource::create(root_resource, flags, first_base, first_size,
-                                       second_name.data(), second_name.size(), &second));
+    ASSERT_NOT_OK(zx::resource::create(mmio_root, flags, first_base, first_size, second_name.data(),
+                                       second_name.size(), &second));
   }
   // Subset of first
-  ASSERT_NOT_OK(zx::resource::create(root_resource, flags, first_base + kPageSize, kPageSize,
+  ASSERT_NOT_OK(zx::resource::create(mmio_root, flags, first_base + kPageSize, kPageSize,
                                      second_name.data(), second_name.size(), &second));
   // Superset of first.
-  ASSERT_NOT_OK(zx::resource::create(root_resource, flags, first_base - kPageSize,
+  ASSERT_NOT_OK(zx::resource::create(mmio_root, flags, first_base - kPageSize,
                                      first_size + kPageSize, second_name.data(), second_name.size(),
                                      &second));
   // Before first base.
-  ASSERT_NOT_OK(zx::resource::create(root_resource, flags, first_base - kPageSize, first_size,
+  ASSERT_NOT_OK(zx::resource::create(mmio_root, flags, first_base - kPageSize, first_size,
                                      second_name.data(), second_name.size(), &second));
   // Past first length.
-  ASSERT_NOT_OK(zx::resource::create(root_resource, flags, first_base + kPageSize, first_size,
+  ASSERT_NOT_OK(zx::resource::create(mmio_root, flags, first_base + kPageSize, first_size,
                                      second_name.data(), second_name.size(), &second));
   // Separate region entirely
-  ASSERT_OK(zx::resource::create(root_resource, flags, first_base + first_size + kPageSize,
-                                 kPageSize, second_name.data(), second_name.size(), &second));
+  ASSERT_OK(zx::resource::create(mmio_root, flags, first_base + first_size + kPageSize, kPageSize,
+                                 second_name.data(), second_name.size(), &second));
 }
 
 TEST_F(FakeResource, ExclusiveNewAfterExisting) {
@@ -116,9 +118,9 @@ TEST_F(FakeResource, ExclusiveNewAfterExisting) {
   uintptr_t size = 0x4000;
   uint32_t flags = ZX_RSRC_KIND_MMIO | ZX_RSRC_FLAG_EXCLUSIVE;
   zx::resource first, second;
-  ASSERT_OK(zx::resource::create(root_resource, flags, first_base, size, first_name.data(),
+  ASSERT_OK(zx::resource::create(mmio_root, flags, first_base, size, first_name.data(),
                                  first_name.size(), &first));
-  ASSERT_OK(zx::resource::create(root_resource, flags, first_base + size, size, second_name.data(),
+  ASSERT_OK(zx::resource::create(mmio_root, flags, first_base + size, size, second_name.data(),
                                  second_name.size(), &second));
 }
 
@@ -127,11 +129,11 @@ TEST_F(FakeResource, IOPortTest) {
   zx::resource null_child;
   zx::resource mmio_child;
   std::array<char, ZX_MAX_NAME_LEN> child_name = {"child"};
-  ASSERT_OK(zx::resource::create(root_resource, ZX_RSRC_KIND_IOPORT, 128, 128, child_name.data(),
+  ASSERT_OK(zx::resource::create(ioport_root, ZX_RSRC_KIND_IOPORT, 128, 128, child_name.data(),
                                  child_name.size(), &io_child));
-  ASSERT_OK(zx::resource::create(root_resource, ZX_RSRC_KIND_IOPORT, 0, 0, child_name.data(),
+  ASSERT_OK(zx::resource::create(ioport_root, ZX_RSRC_KIND_IOPORT, 0, 0, child_name.data(),
                                  child_name.size(), &null_child));
-  ASSERT_OK(zx::resource::create(root_resource, ZX_RSRC_KIND_MMIO, 128, 128, child_name.data(),
+  ASSERT_OK(zx::resource::create(mmio_root, ZX_RSRC_KIND_MMIO, 128, 128, child_name.data(),
                                  child_name.size(), &mmio_child));
   zx_info_resource_t info;
   ASSERT_OK(
@@ -151,7 +153,7 @@ TEST_F(FakeResource, VmoTest) {
   const uint64_t MAP_LEN = 64u;
   zx::resource child;
   std::array<char, ZX_MAX_NAME_LEN> child_name = {"child"};
-  ASSERT_OK(zx::resource::create(root_resource, ZX_RSRC_KIND_MMIO, 0, kPageSize, child_name.data(),
+  ASSERT_OK(zx::resource::create(mmio_root, ZX_RSRC_KIND_MMIO, 0, kPageSize, child_name.data(),
                                  child_name.size(), &child));
   ASSERT_TRUE(validate_resource_info(child, 0, kPageSize, ZX_RSRC_KIND_MMIO, child_name.data()));
   zx::vmo vmo;

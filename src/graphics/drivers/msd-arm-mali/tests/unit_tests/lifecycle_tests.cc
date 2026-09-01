@@ -38,7 +38,7 @@ class FakeInfoResource : public fidl::testing::WireTestBase<fuchsia_kernel::Info
 
   void Get(GetCompleter::Sync& completer) override {
     zx::resource resource;
-    fake_root_resource_create(resource.reset_and_get_address());
+    fake_resource_create(ZX_RSRC_KIND_SYSTEM, resource.reset_and_get_address());
     completer.Reply(std::move(resource));
   }
 

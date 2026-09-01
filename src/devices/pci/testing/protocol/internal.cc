@@ -48,10 +48,10 @@ zx_status_t FakePciProtocolInternal::FakePciProtocolInternal::PciGetBar(uint32_t
     out_res->result.vmo = bar.vmo->get();
   } else {
     out_res->result.io.address = 0;
-    zx_handle_t fake_root_resource;
-    fake_root_resource_create(&fake_root_resource);
+    zx_handle_t fake_ioport_resource;
+    fake_resource_create(ZX_RSRC_KIND_IOPORT, &fake_ioport_resource);
     char name[] = "fake IO";
-    return zx_resource_create(fake_root_resource, ZX_RSRC_KIND_IOPORT, out_res->result.io.address,
+    return zx_resource_create(fake_ioport_resource, ZX_RSRC_KIND_IOPORT, out_res->result.io.address,
                               out_res->size, name, sizeof(name), &out_res->result.io.resource);
   }
   return ZX_OK;

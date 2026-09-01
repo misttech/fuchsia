@@ -19,7 +19,7 @@ namespace fake_object {
 
 __EXPORT
 HandleTable& FakeHandleTable() {
-  static HandleTable gHandleTable;
+  [[clang::no_destroy]] static HandleTable gHandleTable;
   return gHandleTable;
 }
 

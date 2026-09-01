@@ -189,7 +189,7 @@ class FakeDdkOptee : public zxtest::Test {
   void SetUp() override {
     fdf_fake::FakePDev::Config config;
     config.smcs[0] = {};
-    ASSERT_OK(fake_root_resource_create(config.smcs[0].reset_and_get_address()));
+    ASSERT_OK(fake_resource_create(ZX_RSRC_KIND_SMC, config.smcs[0].reset_and_get_address()));
     config.btis[0] = {};
     zx::result bti = fake_bti::CreateFakeBti();
     ASSERT_OK(bti);

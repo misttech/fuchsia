@@ -5,11 +5,12 @@
 #ifndef SRC_DEVICES_TESTING_FAKE_RESOURCE_INCLUDE_LIB_FAKE_RESOURCE_RESOURCE_H_
 #define SRC_DEVICES_TESTING_FAKE_RESOURCE_INCLUDE_LIB_FAKE_RESOURCE_RESOURCE_H_
 
+#include <zircon/syscalls/resource.h>
 #include <zircon/types.h>
 
 __BEGIN_CDECLS
 
-zx_status_t fake_root_resource_create(zx_handle_t *out);
+zx_status_t fake_resource_create(zx_rsrc_kind_t kind, zx_handle_t *out);
 
 __END_CDECLS
 
