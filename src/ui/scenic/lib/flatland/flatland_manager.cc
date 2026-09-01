@@ -212,7 +212,7 @@ std::shared_ptr<Flatland> FlatlandManager::NewFlatland(
 }
 
 void FlatlandManager::CreateFlatlandDisplay(
-    fidl::InterfaceRequest<fuchsia::ui::composition::FlatlandDisplay> request) {
+    fidl::ServerEnd<fuchsia_ui_composition::FlatlandDisplay> request) {
   const scheduling::SessionId id = uber_struct_system_->GetNextInstanceId();
   FX_DCHECK(flatland_instances_.find(id) == flatland_instances_.end());
   FX_DCHECK(flatland_display_instances_.find(id) == flatland_display_instances_.end());

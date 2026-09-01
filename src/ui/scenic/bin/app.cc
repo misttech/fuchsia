@@ -499,10 +499,9 @@ void App::InitializeGraphics(std::shared_ptr<display::Display> display) {
       FX_CHECK(app_context_->outgoing()->AddPublicService(std::move(handler)) == ZX_OK);
     }
     {
-      fit::function<void(fidl::InterfaceRequest<fuchsia::ui::composition::FlatlandDisplay>)>
-          handler = fit::bind_member(flatland_manager_.get(),
-                                     &flatland::FlatlandManager::CreateFlatlandDisplay);
-      FX_CHECK(app_context_->outgoing()->AddPublicService(std::move(handler)) == ZX_OK);
+      FX_CHECK(app_context_->outgoing()->AddProtocol<fuchsia_ui_composition::FlatlandDisplay>(
+                   fit::bind_member(flatland_manager_.get(),
+                                    &flatland::FlatlandManager::CreateFlatlandDisplay)) == ZX_OK);
     }
     {
       flatland_factory_ = std::make_unique<flatland::FlatlandFactoryImpl>(flatland_manager_);

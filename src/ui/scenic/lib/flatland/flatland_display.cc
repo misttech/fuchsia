@@ -4,8 +4,6 @@
 
 #include "src/ui/scenic/lib/flatland/flatland_display.h"
 
-#include <fidl/fuchsia.ui.composition/cpp/hlcpp_conversion.h>
-#include <fidl/fuchsia.ui.views/cpp/hlcpp_conversion.h>
 #include <lib/async/default.h>
 #include <lib/ui/scenic/cpp/view_identity.h>
 
@@ -24,38 +22,37 @@ static void ReportError() {
   FX_CHECK(false) << "Crashing on error.";
 }
 
-using fuchsia::ui::composition::ChildViewWatcher;
-using fuchsia::ui::composition::ViewportProperties;
-using fuchsia::ui::views::ViewportCreationToken;
-
 namespace flatland {
 
 std::shared_ptr<FlatlandDisplay> FlatlandDisplay::New(
     std::shared_ptr<utils::DispatcherHolder> dispatcher_holder,
-    fidl::InterfaceRequest<fuchsia::ui::composition::FlatlandDisplay> request,
+    fidl::ServerEnd<fuchsia_ui_composition::FlatlandDisplay> server_end,
     scheduling::SessionId session_id, std::shared_ptr<display::Display> display,
     std::function<void()> destroy_display_function,
     std::shared_ptr<FlatlandPresenter> flatland_presenter, std::shared_ptr<LinkSystem> link_system,
     std::shared_ptr<UberStructSystem::UberStructQueue> uber_struct_queue) {
-  return std::shared_ptr<FlatlandDisplay>(
-      new FlatlandDisplay(std::move(dispatcher_holder), std::move(request), session_id, display,
-                          std::move(destroy_display_function), std::move(flatland_presenter),
-                          std::move(link_system), std::move(uber_struct_queue)));
+  auto flatland_display = std::shared_ptr<FlatlandDisplay>(new FlatlandDisplay(
+      dispatcher_holder, session_id, std::move(display), std::move(destroy_display_function),
+      std::move(flatland_presenter), std::move(link_system), std::move(uber_struct_queue)));
+
+  // Natural FIDL bindings must be created and deleted on the same thread that it handles messages.
+  async::PostTask(dispatcher_holder->dispatcher(),
+                  [flatland_display, server_end = std::move(server_end)]() mutable {
+                    flatland_display->Bind(std::move(server_end));
+                  });
+
+  return flatland_display;
 }
 
 FlatlandDisplay::FlatlandDisplay(
-    std::shared_ptr<utils::DispatcherHolder> dispatcher_holder,
-    fidl::InterfaceRequest<fuchsia::ui::composition::FlatlandDisplay> request,
-    scheduling::SessionId session_id, std::shared_ptr<display::Display> display,
-    std::function<void()> destroy_display_function,
+    std::shared_ptr<utils::DispatcherHolder> dispatcher_holder, scheduling::SessionId session_id,
+    std::shared_ptr<display::Display> display, std::function<void()> destroy_display_function,
     std::shared_ptr<FlatlandPresenter> flatland_presenter, std::shared_ptr<LinkSystem> link_system,
     std::shared_ptr<UberStructSystem::UberStructQueue> uber_struct_queue)
     : dispatcher_holder_(std::move(dispatcher_holder)),
-      binding_(this, std::move(request), dispatcher_holder_->dispatcher()),
       session_id_(session_id),
       display_(std::move(display)),
       destroy_display_function_(std::move(destroy_display_function)),
-      peer_closed_waiter_(binding_.channel().get(), ZX_CHANNEL_PEER_CLOSED),
       flatland_presenter_(std::move(flatland_presenter)),
       link_system_(std::move(link_system)),
       uber_struct_queue_(std::move(uber_struct_queue)),
@@ -66,13 +63,13 @@ FlatlandDisplay::FlatlandDisplay(
   FX_DCHECK(link_system_);
   FX_DCHECK(uber_struct_queue_);
 
-  zx_status_t status = peer_closed_waiter_.Begin(
-      dispatcher(),
-      [this](async_dispatcher_t* dispatcher, async::WaitOnce* wait, zx_status_t status,
-             const zx_packet_signal_t* signal) { destroy_display_function_(); });
-  FX_DCHECK(status == ZX_OK);
-
   FX_LOGS(INFO) << "FlatlandDisplay NEW session_id=" << session_id_;
+}
+
+void FlatlandDisplay::Bind(fidl::ServerEnd<fuchsia_ui_composition::FlatlandDisplay> server_end) {
+  FX_DCHECK(!binding_.has_value());
+  binding_.emplace(dispatcher(), std::move(server_end), this,
+                   std::mem_fn(&FlatlandDisplay::OnFidlClosed));
 }
 
 FlatlandDisplay::~FlatlandDisplay() {
@@ -83,11 +80,25 @@ FlatlandDisplay::~FlatlandDisplay() {
   FX_LOGS(INFO) << "FlatlandDisplay DESTROYED session_id=" << session_id_;
 }
 
-void FlatlandDisplay::SetContent(ViewportCreationToken token,
-                                 fidl::InterfaceRequest<ChildViewWatcher> child_view_watcher) {
+void FlatlandDisplay::OnFidlClosed(fidl::UnbindInfo unbind_info) {
+  if (!unbind_info.is_user_initiated()) {
+    FX_LOGS(INFO) << "FlatlandDisplay::OnFidlClosed() session_id=" << session_id_
+                  << " because: " << unbind_info.FormatDescription();
+  }
+  binding_.reset();
+  destroy_display_function_();
+}
+
+void FlatlandDisplay::SetContent(SetContentRequest& request, SetContentCompleter::Sync& completer) {
+  SetContent(std::move(request.token()), std::move(request.child_view_watcher()));
+}
+
+void FlatlandDisplay::SetContent(
+    fuchsia_ui_views::ViewportCreationToken token,
+    fidl::ServerEnd<fuchsia_ui_composition::ChildViewWatcher> child_view_watcher) {
   // Attempting to link with an invalid token will never succeed, so its better to fail early and
   // immediately close the link connection.
-  if (!token.value.is_valid()) {
+  if (!token.value().is_valid()) {
     FX_LOGS(ERROR) << "CreateViewport failed, ViewportCreationToken was invalid";
     ReportError();
     return;
@@ -128,8 +139,8 @@ void FlatlandDisplay::SetContent(ViewportCreationToken token,
   // NOTE: clients won't receive CONNECTED_TO_DISPLAY until LinkSystem::UpdateLinkWatchers() is
   // called, typically during rendering.
   link_to_child_ = link_system_->CreateLinkToChild(
-      dispatcher_holder_, fidl::HLCPPToNatural(std::move(token)), std::move(properties),
-      fidl::HLCPPToNatural(std::move(child_view_watcher)), child_transform,
+      dispatcher_holder_, std::move(token), std::move(properties), std::move(child_view_watcher),
+      child_transform,
       [ref = weak_from_this(),
        dispatcher_holder = dispatcher_holder_](const std::string& error_log) {
         FX_CHECK(dispatcher_holder->dispatcher() == async_get_default_dispatcher())
@@ -185,14 +196,19 @@ void FlatlandDisplay::SetContent(ViewportCreationToken token,
                                                 /*present_fences=*/{}, /*schedule_asap=*/false);
 }
 
-void FlatlandDisplay::SetDevicePixelRatio(fuchsia::math::VecF device_pixel_ratio) {
-  if (device_pixel_ratio.x < 1.f || device_pixel_ratio.y < 1.f) {
+void FlatlandDisplay::SetDevicePixelRatio(SetDevicePixelRatioRequest& request,
+                                          SetDevicePixelRatioCompleter::Sync& completer) {
+  SetDevicePixelRatio(request.device_pixel_ratio());
+}
+
+void FlatlandDisplay::SetDevicePixelRatio(fuchsia_math::VecF device_pixel_ratio) {
+  if (device_pixel_ratio.x() < 1.f || device_pixel_ratio.y() < 1.f) {
     FX_LOGS(ERROR) << "SetDevicePixelRatio failed, device_pixel_ratio is invalid";
     ReportError();
     return;
   }
 
-  display_->set_device_pixel_ratio({device_pixel_ratio.x, device_pixel_ratio.y});
+  display_->set_device_pixel_ratio({device_pixel_ratio.x(), device_pixel_ratio.y()});
 }
 
 }  // namespace flatland

@@ -348,10 +348,12 @@ class FlatlandTest : public LoggingEventLoop, public ::testing::Test {
     auto session_id = scheduling::GetNextSessionId();
     auto display = std::make_shared<display::Display>(
         display::WireDisplayId{.value = 1}, width_in_px, height_in_px, kMaxDisplayLayersCount);
-    flatland_displays_.push_back({});
+    auto [client_end, server_end] =
+        fidl::Endpoints<fuchsia_ui_composition::FlatlandDisplay>::Create();
+    flatland_displays_.emplace_back(std::move(client_end), dispatcher());
     return FlatlandDisplay::New(
-        std::make_shared<utils::UnownedDispatcherHolder>(dispatcher()),
-        flatland_displays_.back().NewRequest(), session_id, std::move(display),
+        std::make_shared<utils::UnownedDispatcherHolder>(dispatcher()), std::move(server_end),
+        session_id, std::move(display),
         /*destroy_display_function*/ []() {}, flatland_presenter_, link_system_,
         uber_struct_system_->AllocateQueueForSession(session_id));
   }
@@ -575,16 +577,15 @@ class FlatlandTest : public LoggingEventLoop, public ::testing::Test {
     FX_CHECK(child);
     FX_CHECK(child_view_watcher_server_end);
     FX_CHECK(parent_viewport_watcher_server_end);
-    fuchsia::ui::views::ViewportCreationToken parent_token;
+    fuchsia_ui_views::ViewportCreationToken parent_token;
     fuchsia_ui_views::ViewCreationToken child_token;
-    ASSERT_EQ(ZX_OK, zx::channel::create(0, &parent_token.value, &child_token.value()));
+    ASSERT_EQ(ZX_OK, zx::channel::create(0, &parent_token.value(), &child_token.value()));
     auto present_id = scheduling::PeekNextPresentId();
     EXPECT_CALL(*mock_flatland_presenter_,
                 ScheduleUpdateForSession(
                     zx::time(0), scheduling::SchedulingIdPair{display->session_id(), present_id},
                     true, ::testing::_, ::testing::_, ::testing::_, ::testing::_));
-    display->SetContent(std::move(parent_token),
-                        fidl::NaturalToHLCPP(child_view_watcher_server_end));
+    display->SetContent(std::move(parent_token), std::move(child_view_watcher_server_end));
     child->CreateView2(std::move(child_token),
                        fidl::HLCPPToNatural(scenic::NewViewIdentityOnCreation()), NoViewProtocols(),
                        std::move(parent_viewport_watcher_server_end));
@@ -679,7 +680,7 @@ class FlatlandTest : public LoggingEventLoop, public ::testing::Test {
   std::vector<
       std::pair<fidl::Client<fuchsia_ui_composition::Flatland>, std::unique_ptr<EventHandler>>>
       flatlands_;
-  std::vector<fuchsia::ui::composition::FlatlandDisplayPtr> flatland_displays_;
+  std::vector<fidl::Client<fuchsia_ui_composition::FlatlandDisplay>> flatland_displays_;
   std::unordered_map<scheduling::SessionId, fuchsia_ui_composition::FlatlandError> flatland_errors_;
   glm::vec2 display_pixel_ratio_ = kDefaultDisplayPixelRatio;
 

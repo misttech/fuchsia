@@ -62,8 +62,7 @@ class FlatlandManager {
   // clients to enumerate the displays, and to allow creation of a FlatlandDisplay bound to a
   // specific one of them. For now, attempts to create a second concurrent FlatlandDisplay (or
   // gfx::DisplayCompositor) will fail.
-  void CreateFlatlandDisplay(
-      fidl::InterfaceRequest<fuchsia::ui::composition::FlatlandDisplay> flatland);
+  void CreateFlatlandDisplay(fidl::ServerEnd<fuchsia_ui_composition::FlatlandDisplay> flatland);
 
   // Called at FrameScheduler UpdateSessions time.
   void UpdateInstances(

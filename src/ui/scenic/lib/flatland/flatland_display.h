@@ -5,10 +5,8 @@
 #ifndef SRC_UI_SCENIC_LIB_FLATLAND_FLATLAND_DISPLAY_H_
 #define SRC_UI_SCENIC_LIB_FLATLAND_FLATLAND_DISPLAY_H_
 
-#include <fuchsia/ui/composition/cpp/fidl.h>
-#include <fuchsia/ui/views/cpp/fidl.h>
-#include <lib/async/cpp/wait.h>
-#include <lib/fidl/cpp/binding.h>
+#include <fidl/fuchsia.ui.composition/cpp/fidl.h>
+#include <fidl/fuchsia.ui.views/cpp/fidl.h>
 
 #include <functional>
 #include <memory>
@@ -26,12 +24,14 @@ namespace flatland {
 
 // FlatlandDisplay implements the FIDL API of the same name.  It is the glue between a physical
 // display and a tree of Flatland content attached underneath.
-class FlatlandDisplay : public fuchsia::ui::composition::FlatlandDisplay,
+class FlatlandDisplay : public fidl::Server<fuchsia_ui_composition::FlatlandDisplay>,
                         public std::enable_shared_from_this<FlatlandDisplay> {
  public:
+  // Creates and binds a new `FlatlandDisplay` to the provided `server_end` channel on the
+  // dispatcher thread.
   static std::shared_ptr<FlatlandDisplay> New(
       std::shared_ptr<utils::DispatcherHolder> dispatcher_holder,
-      fidl::InterfaceRequest<fuchsia::ui::composition::FlatlandDisplay> request,
+      fidl::ServerEnd<fuchsia_ui_composition::FlatlandDisplay> server_end,
       scheduling::SessionId session_id, std::shared_ptr<display::Display> display,
       std::function<void()> destroy_display_function,
       std::shared_ptr<FlatlandPresenter> flatland_presenter,
@@ -47,13 +47,19 @@ class FlatlandDisplay : public fuchsia::ui::composition::FlatlandDisplay,
 
   ~FlatlandDisplay() override;
 
-  // |fuchsia::ui::composition::FlatlandDisplay|
-  void SetContent(fuchsia::ui::views::ViewportCreationToken token,
-                  fidl::InterfaceRequest<fuchsia::ui::composition::ChildViewWatcher>
-                      child_view_watcher) override;
+  // `fuchsia_ui_composition::FlatlandDisplay`
+  void SetContent(SetContentRequest& request, SetContentCompleter::Sync& completer) override;
+  void SetContent(fuchsia_ui_views::ViewportCreationToken token,
+                  fidl::ServerEnd<fuchsia_ui_composition::ChildViewWatcher> child_view_watcher);
 
-  // |fuchsia::ui::composition::FlatlandDisplay|
-  void SetDevicePixelRatio(fuchsia::math::VecF device_pixel_ratio) override;
+  // `fuchsia_ui_composition::FlatlandDisplay`
+  void SetDevicePixelRatio(SetDevicePixelRatioRequest& request,
+                           SetDevicePixelRatioCompleter::Sync& completer) override;
+  void SetDevicePixelRatio(fuchsia_math::VecF device_pixel_ratio);
+
+  // Binds the FIDL ServerEnd on the dispatcher thread.
+  // Must not be called while there's an active FIDL connection.
+  void Bind(fidl::ServerEnd<fuchsia_ui_composition::FlatlandDisplay> server_end);
 
   TransformHandle root_transform() const { return root_transform_; }
   display::Display* display() const { return display_.get(); }
@@ -62,20 +68,21 @@ class FlatlandDisplay : public fuchsia::ui::composition::FlatlandDisplay,
 
  private:
   FlatlandDisplay(std::shared_ptr<utils::DispatcherHolder> dispatcher_holder,
-                  fidl::InterfaceRequest<fuchsia::ui::composition::FlatlandDisplay> request,
                   scheduling::SessionId session_id, std::shared_ptr<display::Display> display,
                   std::function<void()> destroy_display_function,
                   std::shared_ptr<FlatlandPresenter> flatland_presenter,
                   std::shared_ptr<LinkSystem> link_system,
                   std::shared_ptr<UberStructSystem::UberStructQueue> uber_struct_queue);
 
+  void OnFidlClosed(fidl::UnbindInfo unbind_info);
+
   // The dispatcher this Flatland display is running on.
   async_dispatcher_t* dispatcher() const { return dispatcher_holder_->dispatcher(); }
   std::shared_ptr<utils::DispatcherHolder> dispatcher_holder_;
 
-  // The FIDL binding for this FlatlandDisplay, which references |this| as the implementation and
-  // run on |dispatcher_|.
-  fidl::Binding<fuchsia::ui::composition::FlatlandDisplay> binding_;
+  // The FIDL binding for this FlatlandDisplay, which references `this` as the implementation and
+  // run on `dispatcher_`.
+  std::optional<fidl::ServerBinding<fuchsia_ui_composition::FlatlandDisplay>> binding_;
 
   // The unique SessionId for this FlatlandDisplay. Used to schedule Presents and register
   // UberStructs with the UberStructSystem.
@@ -84,14 +91,8 @@ class FlatlandDisplay : public fuchsia::ui::composition::FlatlandDisplay,
   // Physical display that this FlatlandDisplay connects to a tree of Flatland content.
   const std::shared_ptr<display::Display> display_;
 
-  // A function that, when called, will destroy this display. Necessary because an async::Wait can
-  // only wait on peer channel destruction, not "this" channel destruction, so the FlatlandManager
-  // cannot detect if this instance closes |binding_|.
+  // A function that, when called, will destroy this display.
   std::function<void()> destroy_display_function_;
-
-  // Waits for the invalidation of the bound channel, then triggers the destruction of this client.
-  // Uses WaitOnce since calling the handler will result in the destruction of this object.
-  async::WaitOnce peer_closed_waiter_;
 
   // A FlatlandPresenter shared between Flatland sessions. Flatland uses this interface to get
   // PresentIds when publishing to the UberStructSystem.
