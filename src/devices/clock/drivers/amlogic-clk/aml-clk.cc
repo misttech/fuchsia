@@ -246,6 +246,16 @@ zx::result<> AmlClock::Start(fdf::DriverContext context) {
           fdf::error("Unsupported PID 0x{:x} for VID 0x{:x}", board_info->pid, board_info->vid);
           return zx::error(ZX_ERR_INVALID_ARGS);
       }
+    } else if (board_info->vid == PDEV_VID_GOOGLE) {
+      switch (board_info->pid) {
+        case PDEV_PID_SHERLOCK:
+          device_info->pid = PDEV_PID_AMLOGIC_T931;
+          device_info->did = PDEV_DID_AMLOGIC_G12B_CLK;
+          break;
+        default:
+          fdf::error("Unsupported PID 0x{:x} for VID 0x{:x}", board_info->pid, board_info->vid);
+          return zx::error(ZX_ERR_INVALID_ARGS);
+      }
     } else {
       fdf::error("Unsupported VID 0x{:x}", board_info->vid);
       return zx::error(ZX_ERR_INVALID_ARGS);
