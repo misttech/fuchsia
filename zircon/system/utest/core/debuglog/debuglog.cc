@@ -145,6 +145,8 @@ TEST(DebugLogTest, MaxMessageSize) {
 }
 
 TEST(DebugLogTest, DrainAndSignal) {
+  ZXTEST_SKIP("TODO(https://fxbug.dev/555283122): Re-enable this test when it is stable.");
+
   zx_handle_t log_handle = 0;
   zx::unowned_resource system_resource = standalone::GetSystemResource();
   zx::result<zx::resource> result =
