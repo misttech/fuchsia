@@ -34,6 +34,7 @@ FocusManager::FocusManager(async_dispatcher_t* input_dispatcher,
                            inspect::Node inspect_node)
     : input_dispatcher_(input_dispatcher),
       snapshot_holder_(std::move(snapshot_holder)),
+      view_ref_focused_registry_(input_dispatcher),
       view_focuser_registry_(
           /*request_focus*/
           [this](zx_koid_t requester, zx_koid_t request) {
@@ -44,7 +45,8 @@ FocusManager::FocusManager(async_dispatcher_t* input_dispatcher,
           [this](zx_koid_t requester, zx_koid_t request) {
             auto snapshot_ref = snapshot_holder_->GetSnapshot();
             SetAutoFocus(requester, request, *snapshot_ref);
-          }),
+          },
+          input_dispatcher),
       inspect_node_(std::move(inspect_node)) {
   FX_DCHECK(input_dispatcher_);
 
@@ -62,10 +64,10 @@ FocusManager::FocusManager(async_dispatcher_t* input_dispatcher,
   });
 }
 
-void FocusManager::Bind(
-    fidl::InterfaceRequest<fuchsia::ui::focus::FocusChainListenerRegistry> request) {
+void FocusManager::Bind(fidl::ServerEnd<fuchsia_ui_focus::FocusChainListenerRegistry> request) {
   utils::CheckIsOnInputThread();
-  focus_chain_listener_registry_.AddBinding(this, std::move(request), input_dispatcher_);
+  focus_chain_listener_registry_.AddBinding(input_dispatcher_, std::move(request), this,
+                                            fidl::kIgnoreBindingClosure);
 }
 
 void FocusManager::OnNewViewTreeSnapshot() {
@@ -139,9 +141,13 @@ void FocusManager::EnsureValidFocus(const view_tree::Snapshot& snapshot) {
   }
 }
 
-void FocusManager::Register(
-    fidl::InterfaceHandle<fuchsia::ui::focus::FocusChainListener> focus_chain_listener) {
-  TRACE_DURATION("input", "FocusManager::Register");
+void FocusManager::Register(RegisterRequest& request, RegisterCompleter::Sync& completer) {
+  RegisterFocusChainListener(std::move(request.listener()));
+}
+
+void FocusManager::RegisterFocusChainListener(
+    fidl::ClientEnd<fuchsia_ui_focus::FocusChainListener> focus_chain_listener) {
+  TRACE_DURATION("input", "FocusManager::RegisterFocusChainListener");
   utils::CheckIsOnInputThread();
 
   // Retrieve snapshot and ensure the focus chain is valid for it *before* we add the new listener,
@@ -149,41 +155,48 @@ void FocusManager::Register(
   auto snapshot_ref = snapshot_holder_->GetSnapshot();
   EnsureValidFocus(*snapshot_ref);
 
-  fuchsia::ui::focus::FocusChainListenerPtr new_listener;
-  new_listener.Bind(std::move(focus_chain_listener), input_dispatcher_);
-
-  // Now emplace the new listener.
   const uint64_t id = next_focus_chain_listener_id_++;
-  new_listener.set_error_handler([this, id](zx_status_t) { focus_chain_listeners_.erase(id); });
-  const auto [it, success] = focus_chain_listeners_.emplace(id, std::move(new_listener));
+  auto entry = std::make_unique<FocusChainListenerEntry>(
+      id, std::move(focus_chain_listener), input_dispatcher_,
+      [weak = weak_factory_.GetWeakPtr()](uint64_t id) {
+        if (weak) {
+          weak->focus_chain_listeners_.erase(id);
+        }
+      });
+  auto* entry_ptr = entry.get();
+  auto [it, success] = focus_chain_listeners_.try_emplace(id, std::move(entry));
   FX_DCHECK(success);
 
   // Dispatch current chain to this new listener.
-  DispatchFocusChainTo(it->second, *snapshot_ref);
+  DispatchFocusChainTo(entry_ptr->client_, *snapshot_ref);
 }
 
-void FocusManager::RegisterViewRefFocused(
-    zx_koid_t koid, fidl::InterfaceRequest<fuchsia::ui::views::ViewRefFocused> vrf) {
+void FocusManager::RegisterViewRefFocused(zx_koid_t koid,
+                                          fidl::ServerEnd<fuchsia_ui_views::ViewRefFocused> vrf) {
   TRACE_DURATION("gfx", "FocusManager::RegisterViewRefFocused");
   utils::CheckIsOnInputThread();
   view_ref_focused_registry_.Register(koid, std::move(vrf));
 }
 
-void FocusManager::RegisterViewFocuser(
-    zx_koid_t koid, fidl::InterfaceRequest<fuchsia::ui::views::Focuser> focuser) {
+void FocusManager::RegisterViewFocuser(zx_koid_t koid,
+                                       fidl::ServerEnd<fuchsia_ui_views::Focuser> focuser) {
   TRACE_DURATION("gfx", "FocusManager::RegisterViewFocuser");
   utils::CheckIsOnInputThread();
   view_focuser_registry_.Register(koid, std::move(focuser));
 }
 
-void FocusManager::DispatchFocusChainTo(const fuchsia::ui::focus::FocusChainListenerPtr& listener,
-                                        const view_tree::Snapshot& snapshot) const {
-  listener->OnFocusChange(CloneFocusChain(snapshot), [] { /* No flow control yet. */ });
+void FocusManager::DispatchFocusChainTo(
+    const fidl::Client<fuchsia_ui_focus::FocusChainListener>& listener,
+    const view_tree::Snapshot& snapshot) const {
+  listener->OnFocusChange({{.focus_chain = CloneFocusChain(snapshot)}})
+      .Then([](fidl::Result<fuchsia_ui_focus::FocusChainListener::OnFocusChange>& /*result*/) {
+        /* No flow control yet. */
+      });
 }
 
 void FocusManager::DispatchFocusChain(const view_tree::Snapshot& snapshot) const {
-  for (auto& [_, listener] : focus_chain_listeners_) {
-    DispatchFocusChainTo(listener, snapshot);
+  for (auto& [_, entry] : focus_chain_listeners_) {
+    DispatchFocusChainTo(entry->client_, snapshot);
   }
 }
 
@@ -241,23 +254,29 @@ zx_koid_t FocusManager::ResolveAutoFocus(zx_koid_t koid,
   return auto_focus_result;
 }
 
-fuchsia::ui::views::ViewRef FocusManager::CloneViewRefOf(zx_koid_t koid,
-                                                         const view_tree::Snapshot& snapshot) {
+fuchsia_ui_views::ViewRef FocusManager::CloneViewRefOf(zx_koid_t koid,
+                                                       const view_tree::Snapshot& snapshot) {
   FX_DCHECK(snapshot.view_tree.contains(koid))
       << "all views in the focus chain must exist in the view tree";
-  fuchsia::ui::views::ViewRef clone;
   const auto& view_node = snapshot.view_tree.at(koid);
-  clone.reference = utils::CopyZxHandle(view_node.view_ref->eventpair());
-
+  FX_DCHECK(view_node.view_ref) << "view_ref must exist for view in focus chain";
+  fuchsia_ui_views::ViewRef clone;
+  clone.reference(utils::CopyZxHandle(view_node.view_ref->eventpair()));
   return clone;
 }
 
-fuchsia::ui::focus::FocusChain FocusManager::CloneFocusChain(
+fuchsia_ui_focus::FocusChain FocusManager::CloneFocusChain(
     const view_tree::Snapshot& snapshot) const {
-  fuchsia::ui::focus::FocusChain full_copy{};
-  for (const zx_koid_t koid : focus_chain_) {
-    full_copy.mutable_focus_chain()->push_back(CloneViewRefOf(koid, snapshot));
+  if (focus_chain_.empty()) {
+    return {};
   }
+  std::vector<fuchsia_ui_views::ViewRef> chain;
+  chain.reserve(focus_chain_.size());
+  for (const zx_koid_t koid : focus_chain_) {
+    chain.push_back(CloneViewRefOf(koid, snapshot));
+  }
+  fuchsia_ui_focus::FocusChain full_copy;
+  full_copy.focus_chain(std::move(chain));
   return full_copy;
 }
 

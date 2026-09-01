@@ -5,10 +5,13 @@
 #ifndef SRC_UI_SCENIC_LIB_FOCUS_VIEW_FOCUSER_REGISTRY_H_
 #define SRC_UI_SCENIC_LIB_FOCUS_VIEW_FOCUSER_REGISTRY_H_
 
-#include <fuchsia/ui/views/cpp/fidl.h>
-#include <lib/fidl/cpp/binding.h>
+#include <fidl/fuchsia.ui.views/cpp/wire.h>
+#include <lib/async/dispatcher.h>
+#include <lib/fit/function.h>
 #include <zircon/types.h>
 
+#include <algorithm>
+#include <memory>
 #include <unordered_map>
 #include <unordered_set>
 
@@ -21,7 +24,8 @@ using SetAutoFocusFunc = fit::function<void(/*requester*/ zx_koid_t, /*request*/
 // ending with cleanup when the client-side channel closes.
 class ViewFocuserRegistry {
  public:
-  explicit ViewFocuserRegistry(RequestFocusFunc request_focus, SetAutoFocusFunc set_auto_focus);
+  explicit ViewFocuserRegistry(RequestFocusFunc request_focus, SetAutoFocusFunc set_auto_focus,
+                               async_dispatcher_t* dispatcher = nullptr);
 
   // Because this object captures its "this" pointer in internal closures, it is unsafe to copy or
   // move it. Disable all copy and move operations.
@@ -31,8 +35,7 @@ class ViewFocuserRegistry {
   ViewFocuserRegistry& operator=(ViewFocuserRegistry&&) = delete;
 
   // Bind a FIDL request for fuchsia.ui.views.Focuser, associated with |view_ref_koid|.
-  void Register(zx_koid_t view_ref_koid,
-                fidl::InterfaceRequest<fuchsia::ui::views::Focuser> view_focuser);
+  void Register(zx_koid_t view_ref_koid, fidl::ServerEnd<fuchsia_ui_views::Focuser> view_focuser);
 
   // For tests.
   std::unordered_set<zx_koid_t> endpoints() const {
@@ -43,31 +46,35 @@ class ViewFocuserRegistry {
   }
 
  private:
-  class ViewFocuserEndpoint : public fuchsia::ui::views::Focuser {
+  class ViewFocuserEndpoint : public fidl::WireServer<fuchsia_ui_views::Focuser> {
    public:
     ViewFocuserEndpoint(
-        fidl::InterfaceRequest<fuchsia::ui::views::Focuser> view_focuser,
-        fit::function<void(zx_status_t)> error_handler,
-        fit::function<void(fuchsia::ui::views::ViewRef, RequestFocusCallback)> request_focus,
+        async_dispatcher_t* dispatcher, fidl::ServerEnd<fuchsia_ui_views::Focuser> view_focuser,
+        fit::function<void(fidl::UnbindInfo)> on_unbound,
+        fit::function<void(const fuchsia_ui_views::wire::ViewRef&, RequestFocusCompleter::Sync&)>
+            request_focus,
         fit::function<void(zx_koid_t)> set_auto_focus);
 
-    // |fuchsia.ui.views.Focuser|
-    void RequestFocus(fuchsia::ui::views::ViewRef view_ref, RequestFocusCallback response) override;
+    // |fidl::WireServer<fuchsia_ui_views::Focuser>|
+    void RequestFocus(RequestFocusRequestView request,
+                      RequestFocusCompleter::Sync& completer) override;
 
-    // |fuchsia.ui.views.Focuser|
-    void SetAutoFocus(fuchsia::ui::views::FocuserSetAutoFocusRequest request,
-                      SetAutoFocusCallback response) override;
+    // |fidl::WireServer<fuchsia_ui_views::Focuser>|
+    void SetAutoFocus(SetAutoFocusRequestView request,
+                      SetAutoFocusCompleter::Sync& completer) override;
 
    private:
-    const fit::function<void(fuchsia::ui::views::ViewRef, RequestFocusCallback)> request_focus_;
+    const fit::function<void(const fuchsia_ui_views::wire::ViewRef&, RequestFocusCompleter::Sync&)>
+        request_focus_;
     const fit::function<void(zx_koid_t)> set_auto_focus_;
-    fidl::Binding<fuchsia::ui::views::Focuser> endpoint_;
+    fidl::ServerBinding<fuchsia_ui_views::Focuser> binding_;
   };
 
-  std::unordered_map<zx_koid_t, ViewFocuserEndpoint> endpoints_;
+  std::unordered_map<zx_koid_t, std::unique_ptr<ViewFocuserEndpoint>> endpoints_;
 
   const RequestFocusFunc request_focus_;
   const SetAutoFocusFunc set_auto_focus_;
+  async_dispatcher_t* dispatcher_;
 };
 
 }  // namespace focus

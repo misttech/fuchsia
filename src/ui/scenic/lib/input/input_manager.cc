@@ -44,12 +44,12 @@ InputManager::InputManager(async_dispatcher_t* input_dispatcher,
 
 void InputManager::RegisterViewFocuser(fidl::ServerEnd<fuchsia_ui_views::Focuser> focuser,
                                        zx_koid_t view_ref_koid) {
-  focus_manager_.RegisterViewFocuser(view_ref_koid, fidl::NaturalToHLCPP(std::move(focuser)));
+  focus_manager_.RegisterViewFocuser(view_ref_koid, std::move(focuser));
 }
 
 void InputManager::RegisterViewRefFocused(fidl::ServerEnd<fuchsia_ui_views::ViewRefFocused> vrf,
                                           zx_koid_t view_ref_koid) {
-  focus_manager_.RegisterViewRefFocused(view_ref_koid, fidl::NaturalToHLCPP(std::move(vrf)));
+  focus_manager_.RegisterViewRefFocused(view_ref_koid, std::move(vrf));
 }
 
 void InputManager::RegisterTouchSource(
@@ -87,8 +87,8 @@ void InputManager::OnNewViewTreeSnapshot() {
 }
 
 void InputManager::BindFocusChainListenerRegistry(
-    fidl::InterfaceRequest<fuchsia::ui::focus::FocusChainListenerRegistry> request) {
-  focus_manager_.Bind(std::move(request));
+    fidl::ServerEnd<fuchsia_ui_focus::FocusChainListenerRegistry> server_end) {
+  focus_manager_.Bind(std::move(server_end));
 }
 
 void InputManager::BindViewRefInstalled(

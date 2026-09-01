@@ -72,7 +72,7 @@ class InputManager {
 
   // Binds FIDL protocol endpoints to the input thread.
   void BindFocusChainListenerRegistry(
-      fidl::InterfaceRequest<fuchsia::ui::focus::FocusChainListenerRegistry> request);
+      fidl::ServerEnd<fuchsia_ui_focus::FocusChainListenerRegistry> server_end);
   void BindViewRefInstalled(fidl::ServerEnd<fuchsia_ui_views::ViewRefInstalled> server_end);
   void BindObserverRegistry(fidl::ServerEnd<fuchsia_ui_observation_test::Registry> server_end);
   void BindScopedObserverRegistry(

@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include <fuchsia/ui/views/cpp/fidl.h>
+#include <fidl/fuchsia.ui.views/cpp/fidl.h>
 #include <lib/syslog/cpp/macros.h>
 #include <lib/zx/time.h>
 
@@ -53,11 +53,16 @@ class ViewRefFocusedTest : public gtest::TestLoopFixture {
     gtest::TestLoopFixture::SetUp();
     dispatcher_setter_ =
         std::make_unique<utils::ScopedThreadDispatcherSetter>(dispatcher(), dispatcher());
-    focus_manager_.RegisterViewRefFocused(kNodeA, node_a_focused_.NewRequest());
-    focus_manager_.RegisterViewRefFocused(kNodeB, node_b_focused_.NewRequest());
+    auto [client_a, server_a] = fidl::Endpoints<fuchsia_ui_views::ViewRefFocused>::Create();
+    node_a_focused_.Bind(std::move(client_a), dispatcher());
+    focus_manager_.RegisterViewRefFocused(kNodeA, std::move(server_a));
 
-    FX_CHECK(node_a_focused_.is_bound());
-    FX_CHECK(node_b_focused_.is_bound());
+    auto [client_b, server_b] = fidl::Endpoints<fuchsia_ui_views::ViewRefFocused>::Create();
+    node_b_focused_.Bind(std::move(client_b), dispatcher());
+    focus_manager_.RegisterViewRefFocused(kNodeB, std::move(server_b));
+
+    FX_CHECK(node_a_focused_.is_valid());
+    FX_CHECK(node_b_focused_.is_valid());
   }
 
   void TearDown() override {
@@ -68,8 +73,8 @@ class ViewRefFocusedTest : public gtest::TestLoopFixture {
   std::unique_ptr<utils::ScopedThreadDispatcherSetter> dispatcher_setter_;
   std::shared_ptr<view_tree::SnapshotHolder> snapshot_holder_;
   focus::FocusManager focus_manager_;
-  fuchsia::ui::views::ViewRefFocusedPtr node_a_focused_;
-  fuchsia::ui::views::ViewRefFocusedPtr node_b_focused_;
+  fidl::Client<fuchsia_ui_views::ViewRefFocused> node_a_focused_;
+  fidl::Client<fuchsia_ui_views::ViewRefFocused> node_b_focused_;
 
  private:
   uint64_t next_sequence_number_ = 1;
@@ -79,10 +84,10 @@ TEST_F(ViewRefFocusedTest, NoFocus_NoResponse) {
   // No snapshots declared yet, "empty scene".
 
   bool called_node_a = false;
-  node_a_focused_->Watch([&called_node_a](auto) { called_node_a = true; });
+  node_a_focused_->Watch().Then([&called_node_a](auto&) { called_node_a = true; });
 
   bool called_node_b = false;
-  node_b_focused_->Watch([&called_node_b](auto) { called_node_b = true; });
+  node_b_focused_->Watch().Then([&called_node_b](auto&) { called_node_b = true; });
 
   RunLoopUntilIdle();
   EXPECT_FALSE(called_node_a);
@@ -94,13 +99,15 @@ TEST_F(ViewRefFocusedTest, BasicTree_ParentGetsFocus) {
   (void)focus_manager_.GetFocusChainForTest();  // Trigger lazy update
 
   std::optional<bool> node_a_focus;
-  node_a_focused_->Watch([&node_a_focus](auto update) {
-    ASSERT_TRUE(update.has_focused());
-    node_a_focus = std::optional<bool>(update.focused());
-  });
+  node_a_focused_->Watch().Then(
+      [&node_a_focus](fidl::Result<fuchsia_ui_views::ViewRefFocused::Watch>& result) {
+        ASSERT_TRUE(result.is_ok());
+        ASSERT_TRUE(result->state().focused().has_value());
+        node_a_focus = result->state().focused().value();
+      });
 
   bool called_node_b = false;
-  node_b_focused_->Watch([&called_node_b](auto) { called_node_b = true; });
+  node_b_focused_->Watch().Then([&called_node_b](auto&) { called_node_b = true; });
 
   RunLoopUntilIdle();
   ASSERT_TRUE(node_a_focus.has_value());  // received a focus event
@@ -113,10 +120,12 @@ TEST_F(ViewRefFocusedTest, ChildFocus_FalseToTrue) {
 
   // Poll after node B gains focus.
   std::optional<bool> node_b_focus;
-  node_b_focused_->Watch([&node_b_focus](auto update) {
-    ASSERT_TRUE(update.has_focused());
-    node_b_focus = std::optional<bool>(update.focused());
-  });
+  node_b_focused_->Watch().Then(
+      [&node_b_focus](fidl::Result<fuchsia_ui_views::ViewRefFocused::Watch>& result) {
+        ASSERT_TRUE(result.is_ok());
+        ASSERT_TRUE(result->state().focused().has_value());
+        node_b_focus = result->state().focused().value();
+      });
 
   RunLoopUntilIdle();
   EXPECT_FALSE(node_b_focus.has_value());
@@ -135,10 +144,12 @@ TEST_F(ViewRefFocusedTest, ChildFocus_FalseToFalse) {
 
   // Poll after node B gains then loses focus.
   std::optional<bool> node_b_focus;
-  node_b_focused_->Watch([&node_b_focus](auto update) {
-    ASSERT_TRUE(update.has_focused());
-    node_b_focus = std::optional<bool>(update.focused());
-  });
+  node_b_focused_->Watch().Then(
+      [&node_b_focus](fidl::Result<fuchsia_ui_views::ViewRefFocused::Watch>& result) {
+        ASSERT_TRUE(result.is_ok());
+        ASSERT_TRUE(result->state().focused().has_value());
+        node_b_focus = result->state().focused().value();
+      });
 
   RunLoopUntilIdle();
   ASSERT_TRUE(node_b_focus.has_value());
@@ -151,10 +162,12 @@ TEST_F(ViewRefFocusedTest, ChildFocus_TrueToFalse) {
 
   // First poll by node B sees focus gained.
   std::optional<bool> node_b_focus;
-  node_b_focused_->Watch([&node_b_focus](auto update) {
-    ASSERT_TRUE(update.has_focused());
-    node_b_focus = std::optional<bool>(update.focused());
-  });
+  node_b_focused_->Watch().Then(
+      [&node_b_focus](fidl::Result<fuchsia_ui_views::ViewRefFocused::Watch>& result) {
+        ASSERT_TRUE(result.is_ok());
+        ASSERT_TRUE(result->state().focused().has_value());
+        node_b_focus = result->state().focused().value();
+      });
 
   RunLoopUntilIdle();
   ASSERT_TRUE(node_b_focus.has_value());
@@ -162,10 +175,12 @@ TEST_F(ViewRefFocusedTest, ChildFocus_TrueToFalse) {
 
   // Second poll by node B sees focus lost.
   node_b_focus.reset();
-  node_b_focused_->Watch([&node_b_focus](auto update) {
-    ASSERT_TRUE(update.has_focused());
-    node_b_focus = std::optional<bool>(update.focused());
-  });
+  node_b_focused_->Watch().Then(
+      [&node_b_focus](fidl::Result<fuchsia_ui_views::ViewRefFocused::Watch>& result) {
+        ASSERT_TRUE(result.is_ok());
+        ASSERT_TRUE(result->state().focused().has_value());
+        node_b_focus = result->state().focused().value();
+      });
 
   focus_manager_.RequestFocusForTest(kNodeA, kNodeA);
 
@@ -180,10 +195,12 @@ TEST_F(ViewRefFocusedTest, ChildFocus_TrueToTrue) {
 
   // First poll by node B sees focus gained.
   std::optional<bool> node_b_focus;
-  node_b_focused_->Watch([&node_b_focus](auto update) {
-    ASSERT_TRUE(update.has_focused());
-    node_b_focus = std::optional<bool>(update.focused());
-  });
+  node_b_focused_->Watch().Then(
+      [&node_b_focus](fidl::Result<fuchsia_ui_views::ViewRefFocused::Watch>& result) {
+        ASSERT_TRUE(result.is_ok());
+        ASSERT_TRUE(result->state().focused().has_value());
+        node_b_focus = result->state().focused().value();
+      });
 
   RunLoopUntilIdle();
   ASSERT_TRUE(node_b_focus.has_value());
@@ -191,10 +208,12 @@ TEST_F(ViewRefFocusedTest, ChildFocus_TrueToTrue) {
 
   // Second poll by node B sees focus lost then gained.
   node_b_focus.reset();
-  node_b_focused_->Watch([&node_b_focus](auto update) {
-    ASSERT_TRUE(update.has_focused());
-    node_b_focus = std::optional<bool>(update.focused());
-  });
+  node_b_focused_->Watch().Then(
+      [&node_b_focus](fidl::Result<fuchsia_ui_views::ViewRefFocused::Watch>& result) {
+        ASSERT_TRUE(result.is_ok());
+        ASSERT_TRUE(result->state().focused().has_value());
+        node_b_focus = result->state().focused().value();
+      });
 
   focus_manager_.RequestFocusForTest(kNodeA, kNodeA);
   focus_manager_.RequestFocusForTest(kNodeA, kNodeB);

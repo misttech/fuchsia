@@ -467,28 +467,27 @@ TEST_F(FocusManagerTest, AutoFocus_LoopShouldLandOnTopMostNode) {
 }
 
 class FocusChainTest : public gtest::TestLoopFixture,
-                       public fuchsia::ui::focus::FocusChainListener {
+                       public fidl::Server<fuchsia_ui_focus::FocusChainListener> {
  public:
-  FocusChainTest() : focus_listener_(this) {}
+  FocusChainTest() = default;
 
-  void OnFocusChange(
-      fuchsia::ui::focus::FocusChain new_focus_chain,
-      fuchsia::ui::focus::FocusChainListener::OnFocusChangeCallback callback) override {
+  void OnFocusChange(OnFocusChangeRequest& request,
+                     OnFocusChangeCompleter::Sync& completer) override {
     num_focus_chains_received_++;
     last_received_chain_.clear();
-    if (new_focus_chain.has_focus_chain()) {
-      for (const auto& view_ref : new_focus_chain.focus_chain()) {
+    if (request.focus_chain().focus_chain().has_value()) {
+      for (const auto& view_ref : request.focus_chain().focus_chain().value()) {
         last_received_chain_.push_back(utils::ExtractKoid(view_ref));
       }
     }
 
-    callback();
+    completer.Reply();
   }
 
   void RegisterFocusListener(FocusManager& focus_manager) {
-    fidl::InterfaceHandle<FocusChainListener> listener_handle;
-    focus_listener_.Bind(listener_handle.NewRequest());
-    focus_manager.Register(std::move(listener_handle));
+    auto [client_end, server_end] = fidl::Endpoints<fuchsia_ui_focus::FocusChainListener>::Create();
+    binding_ = fidl::BindServer(dispatcher(), std::move(server_end), this);
+    focus_manager.RegisterFocusChainListener(std::move(client_end));
   }
 
   std::vector<zx_koid_t> last_received_chain_;
@@ -508,7 +507,7 @@ class FocusChainTest : public gtest::TestLoopFixture,
 
  private:
   std::unique_ptr<utils::ScopedThreadDispatcherSetter> dispatcher_setter_;
-  fidl::Binding<fuchsia::ui::focus::FocusChainListener> focus_listener_;
+  std::optional<fidl::ServerBindingRef<fuchsia_ui_focus::FocusChainListener>> binding_;
 };
 
 TEST_F(FocusChainTest, RegisterBeforeSceneSetup_ShouldReturnEmptyFocusChain) {
@@ -555,10 +554,14 @@ TEST_F(FocusChainTest, FocusChainChangedButNotFocus) {
   auto snapshot_holder = std::make_shared<view_tree::SnapshotHolder>();
   FocusManager focus_manager(dispatcher(), snapshot_holder);
   RegisterFocusListener(focus_manager);
-  fuchsia::ui::views::ViewRefFocusedPtr vrf;
-  focus_manager.RegisterViewRefFocused(koid_B, vrf.NewRequest());
+  auto [client_vrf, server_vrf] = fidl::Endpoints<fuchsia_ui_views::ViewRefFocused>::Create();
+  fidl::Client<fuchsia_ui_views::ViewRefFocused> vrf(std::move(client_vrf), dispatcher());
+  focus_manager.RegisterViewRefFocused(koid_B, std::move(server_vrf));
   int view_ref_focused_count = 0;
-  vrf->Watch([&view_ref_focused_count](auto) { view_ref_focused_count++; });
+  vrf->Watch().Then([&view_ref_focused_count](auto& result) {
+    ASSERT_TRUE(result.is_ok());
+    view_ref_focused_count++;
+  });
   focus_manager.SetAutoFocusForTest(koid_A, koid_B);
   RunLoopUntilIdle();
   EXPECT_EQ(num_focus_chains_received_, 1u);

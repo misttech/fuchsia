@@ -5,16 +5,17 @@
 #ifndef SRC_UI_SCENIC_LIB_FOCUS_FOCUS_MANAGER_H_
 #define SRC_UI_SCENIC_LIB_FOCUS_FOCUS_MANAGER_H_
 
-#include <fuchsia/ui/focus/cpp/fidl.h>
-#include <fuchsia/ui/views/cpp/fidl.h>
+#include <fidl/fuchsia.ui.focus/cpp/fidl.h>
+#include <fidl/fuchsia.ui.views/cpp/fidl.h>
 #include <lib/async/default.h>
 #include <lib/async/dispatcher.h>
-#include <lib/fidl/cpp/binding_set.h>
 #include <lib/inspect/cpp/inspect.h>
-#include <lib/sys/cpp/component_context.h>
 
+#include <memory>
 #include <unordered_map>
+#include <vector>
 
+#include "src/lib/fxl/memory/weak_ptr.h"
 #include "src/ui/scenic/lib/focus/view_focuser_registry.h"
 #include "src/ui/scenic/lib/focus/view_ref_focused_registry.h"
 #include "src/ui/scenic/lib/view_tree/snapshot_holder.h"
@@ -34,14 +35,14 @@ enum class FocusChangeStatus {
 };
 
 // Class for tracking focus state.
-class FocusManager final : public fuchsia::ui::focus::FocusChainListenerRegistry {
+class FocusManager final : public fidl::Server<fuchsia_ui_focus::FocusChainListenerRegistry> {
  public:
   explicit FocusManager(async_dispatcher_t* input_dispatcher,
                         std::shared_ptr<view_tree::SnapshotHolder> snapshot_holder,
                         inspect::Node inspect_node = inspect::Node());
   FocusManager(FocusManager&& other) = delete;  // Disallow moving.
 
-  void Bind(fidl::InterfaceRequest<fuchsia::ui::focus::FocusChainListenerRegistry> request);
+  void Bind(fidl::ServerEnd<fuchsia_ui_focus::FocusChainListenerRegistry> request);
 
   // Request focus transfer to the proposed ViewRef's KOID |request|, on the behalf of |requester|.
   // Return kAccept if successful.
@@ -55,9 +56,8 @@ class FocusManager final : public fuchsia::ui::focus::FocusChainListenerRegistry
   // in `snapshot_holder_`, repair any broken focus chains, and notify outstanding hanging gets.
   void OnNewViewTreeSnapshot();
 
-  // |fuchsia.ui.focus.FocusChainListenerRegistry|
-  void Register(
-      fidl::InterfaceHandle<fuchsia::ui::focus::FocusChainListener> focus_chain_listener) override;
+  // |fidl::Server<fuchsia_ui_focus::FocusChainListenerRegistry>|
+  void Register(RegisterRequest& request, RegisterCompleter::Sync& completer) override;
 
   const std::vector<zx_koid_t>& GetFocusChain(const view_tree::Snapshot& snapshot) {
     EnsureValidFocus(snapshot);
@@ -65,10 +65,12 @@ class FocusManager final : public fuchsia::ui::focus::FocusChainListenerRegistry
   }
 
   void RegisterViewRefFocused(zx_koid_t koid,
-                              fidl::InterfaceRequest<fuchsia::ui::views::ViewRefFocused> vrf);
+                              fidl::ServerEnd<fuchsia_ui_views::ViewRefFocused> vrf);
 
-  void RegisterViewFocuser(zx_koid_t koid,
-                           fidl::InterfaceRequest<fuchsia::ui::views::Focuser> focuser);
+  void RegisterViewFocuser(zx_koid_t koid, fidl::ServerEnd<fuchsia_ui_views::Focuser> focuser);
+
+  void RegisterFocusChainListener(
+      fidl::ClientEnd<fuchsia_ui_focus::FocusChainListener> focus_chain_listener);
 
   // Variants that conveniently obtain a snapshot from the snapshot holder.
   FocusChangeStatus RequestFocusForTest(zx_koid_t requester, zx_koid_t request);
@@ -76,6 +78,29 @@ class FocusManager final : public fuchsia::ui::focus::FocusChainListenerRegistry
   const std::vector<zx_koid_t>& GetFocusChainForTest();
 
  private:
+  struct FocusChainListenerEntry
+      : public fidl::AsyncEventHandler<fuchsia_ui_focus::FocusChainListener> {
+    FocusChainListenerEntry(uint64_t id,
+                            fidl::ClientEnd<fuchsia_ui_focus::FocusChainListener> client_end,
+                            async_dispatcher_t* dispatcher, fit::function<void(uint64_t)> on_error)
+        : id_(id),
+          on_error_(std::move(on_error)),
+          client_(std::move(client_end), dispatcher, this) {}
+
+    void on_fidl_error(fidl::UnbindInfo error) override {
+      if (error.is_dispatcher_shutdown()) {
+        return;
+      }
+      if (on_error_) {
+        on_error_(id_);
+      }
+    }
+
+    uint64_t id_;
+    fit::function<void(uint64_t)> on_error_;
+    fidl::Client<fuchsia_ui_focus::FocusChainListener> client_;
+  };
+
   // Sets the auto focus target |requester| to |target|.
   // If |target| is ZX_KOID_INVALID the |requester| entry is removed.
   void SetAutoFocus(zx_koid_t requester, zx_koid_t target, const view_tree::Snapshot& snapshot);
@@ -106,7 +131,7 @@ class FocusManager final : public fuchsia::ui::focus::FocusChainListenerRegistry
   // Dispatches the current focus chain to all registered listeners.
   void DispatchFocusChain(const view_tree::Snapshot& snapshot) const;
   // Dispatches the current focus chain to |listener|.
-  void DispatchFocusChainTo(const fuchsia::ui::focus::FocusChainListenerPtr& listener,
+  void DispatchFocusChainTo(const fidl::Client<fuchsia_ui_focus::FocusChainListener>& listener,
                             const view_tree::Snapshot& snapshot) const;
 
   // Dispatches focus events to view clients.
@@ -119,9 +144,9 @@ class FocusManager final : public fuchsia::ui::focus::FocusChainListenerRegistry
   // the auto focus target. If there is no viable auto focus target of |koid| it returns |koid|.
   zx_koid_t FindNextAutoFocusTarget(zx_koid_t koid, const view_tree::Snapshot& snapshot) const;
 
-  static fuchsia::ui::views::ViewRef CloneViewRefOf(zx_koid_t koid,
-                                                    const view_tree::Snapshot& snapshot);
-  fuchsia::ui::focus::FocusChain CloneFocusChain(const view_tree::Snapshot& snapshot) const;
+  static fuchsia_ui_views::ViewRef CloneViewRefOf(zx_koid_t koid,
+                                                  const view_tree::Snapshot& snapshot);
+  fuchsia_ui_focus::FocusChain CloneFocusChain(const view_tree::Snapshot& snapshot) const;
 
   async_dispatcher_t* input_dispatcher_;
   std::vector<zx_koid_t> focus_chain_;
@@ -129,9 +154,10 @@ class FocusManager final : public fuchsia::ui::focus::FocusChainListenerRegistry
   const std::shared_ptr<view_tree::SnapshotHolder> snapshot_holder_;
   uint64_t last_seen_sequence_number_ = 0;
 
-  fidl::BindingSet<fuchsia::ui::focus::FocusChainListenerRegistry> focus_chain_listener_registry_;
+  fidl::ServerBindingGroup<fuchsia_ui_focus::FocusChainListenerRegistry>
+      focus_chain_listener_registry_;
   uint64_t next_focus_chain_listener_id_ = 0;
-  std::unordered_map<uint64_t, fuchsia::ui::focus::FocusChainListenerPtr> focus_chain_listeners_;
+  std::unordered_map<uint64_t, std::unique_ptr<FocusChainListenerEntry>> focus_chain_listeners_;
 
   // Map of ViewRef koid to that View's auto focus target (if it has one).
   std::unordered_map<zx_koid_t, zx_koid_t> auto_focus_targets_;
@@ -143,6 +169,8 @@ class FocusManager final : public fuchsia::ui::focus::FocusChainListenerRegistry
 
   inspect::Node inspect_node_;
   inspect::LazyNode lazy_;
+
+  fxl::WeakPtrFactory<FocusManager> weak_factory_{this};
 };
 
 }  // namespace focus

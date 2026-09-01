@@ -4,6 +4,7 @@
 
 #include "src/ui/scenic/lib/focus/view_ref_focused_registry.h"
 
+#include <lib/async/default.h>
 #include <lib/syslog/cpp/macros.h>
 #include <lib/trace/event.h>
 
@@ -11,8 +12,11 @@
 
 namespace focus {
 
-void ViewRefFocusedRegistry::Register(
-    zx_koid_t view_ref_koid, fidl::InterfaceRequest<fuchsia::ui::views::ViewRefFocused> endpoint) {
+ViewRefFocusedRegistry::ViewRefFocusedRegistry(async_dispatcher_t* dispatcher)
+    : dispatcher_(dispatcher ? dispatcher : async_get_default_dispatcher()) {}
+
+void ViewRefFocusedRegistry::Register(zx_koid_t view_ref_koid,
+                                      fidl::ServerEnd<fuchsia_ui_views::ViewRefFocused> endpoint) {
   utils::CheckIsOnInputThread();
   auto [_, inserted] = pending_requests_.try_emplace(view_ref_koid, std::move(endpoint));
   // This DCHECK does not assert an internally-guaranteed invariant: nothing prevents a client from
@@ -40,7 +44,8 @@ void ViewRefFocusedRegistry::UpdateRegisteredViews(const view_tree::Snapshot& sn
   for (auto it = pending_requests_.begin(); it != pending_requests_.end();) {
     const zx_koid_t koid = it->first;
     if (snapshot.view_tree.contains(koid)) {
-      auto [_, inserted] = endpoints_.emplace(koid, Endpoint(std::move(it->second)));
+      auto [_, inserted] =
+          endpoints_.emplace(koid, std::make_unique<Endpoint>(dispatcher_, std::move(it->second)));
       FX_DCHECK(inserted) << "endpoint emplace should always succeed";
       it = pending_requests_.erase(it);
     } else {
@@ -54,61 +59,58 @@ void ViewRefFocusedRegistry::UpdateFocus(zx_koid_t old_focus, zx_koid_t new_focu
   utils::CheckIsOnInputThread();
 
   FX_DCHECK(old_focus != new_focus) << "invariant";
-  if (endpoints_.contains(old_focus)) {
-    endpoints_.at(old_focus).UpdateFocus(false);
+  if (auto it = endpoints_.find(old_focus); it != endpoints_.end()) {
+    it->second->UpdateFocus(false);
   } else {
     FX_DLOGS(INFO) << "Client lost focus, but cannot be notified. View ref koid: " << old_focus;
   }
 
-  if (endpoints_.contains(new_focus)) {
-    endpoints_.at(new_focus).UpdateFocus(true);
+  if (auto it = endpoints_.find(new_focus); it != endpoints_.end()) {
+    it->second->UpdateFocus(true);
   } else {
     FX_DLOGS(INFO) << "Client gained focus, but cannot be notified. View ref koid:" << new_focus;
   }
 }
 
 ViewRefFocusedRegistry::Endpoint::Endpoint(
-    fidl::InterfaceRequest<fuchsia::ui::views::ViewRefFocused> endpoint)
-    : endpoint_(this, std::move(endpoint)) {}
+    async_dispatcher_t* dispatcher, fidl::ServerEnd<fuchsia_ui_views::ViewRefFocused> endpoint)
+    : binding_(dispatcher, std::move(endpoint), this, fidl::kIgnoreBindingClosure) {}
 
-ViewRefFocusedRegistry::Endpoint::Endpoint(Endpoint&& original) noexcept
-    : focused_state_(std::move(original.focused_state_)),
-      response_(std::move(original.response_)),
-      endpoint_(this, original.endpoint_.Unbind()) {}
-
-void ViewRefFocusedRegistry::Endpoint::Watch(
-    fuchsia::ui::views::ViewRefFocused::WatchCallback callback) {
+void ViewRefFocusedRegistry::Endpoint::Watch(WatchCompleter::Sync& completer) {
   utils::CheckIsOnInputThread();
-  FX_DCHECK(!response_) << "precondition";
+  if (response_.has_value()) {
+    // Client called Watch() while a previous Watch() was still pending. Non-compliance results in
+    // channel closure according to protocol specification.
+    completer.Close(ZX_ERR_BAD_STATE);
+    return;
+  }
 
-  if (focused_state_) {
-    // drain and reset
-    fuchsia::ui::views::FocusState state;
-    state.set_focused(focused_state_.value());
-    callback(std::move(state));
+  if (focused_state_.has_value()) {
+    // Drain and reset.
+    fuchsia_ui_views::FocusState state{{.focused = focused_state_.value()}};
+    completer.Reply({std::move(state)});
     focused_state_.reset();
   } else {
     // Nothing to report yet. Stash the callback for later.
-    response_ = std::move(callback);
+    response_ = completer.ToAsync();
   }
 
-  FX_DCHECK(!focused_state_) << "postcondition";
+  FX_DCHECK(!focused_state_.has_value()) << "postcondition";
 }
 
 void ViewRefFocusedRegistry::Endpoint::UpdateFocus(bool focused) {
-  if (response_) {
-    // drain and reset
-    fuchsia::ui::views::FocusState state;
-    state.set_focused(focused);
-    response_(std::move(state));
-    response_ = nullptr;
+  if (response_.has_value()) {
+    // Drain and reset.
+    fuchsia_ui_views::FocusState state{{.focused = focused}};
+    response_->Reply({std::move(state)});
+    response_.reset();
     focused_state_.reset();
   } else {
-    // accumulate
-    focused_state_ = std::optional<bool>{focused};
+    // Accumulate.
+    focused_state_ = focused;
   }
 
-  FX_DCHECK(!response_) << "postcondition";
+  FX_DCHECK(!response_.has_value()) << "postcondition";
 }
 
 }  // namespace focus

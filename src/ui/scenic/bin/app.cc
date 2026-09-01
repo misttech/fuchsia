@@ -677,11 +677,11 @@ void App::InitializeInput() {
   // `input_manager_.AsyncCall()`.
 
   // Register FocusChainListenerRegistry
-  app_context_->outgoing()->AddPublicService<fuchsia::ui::focus::FocusChainListenerRegistry>(
-      [this](fidl::InterfaceRequest<fuchsia::ui::focus::FocusChainListenerRegistry> request) {
-        input_manager_.AsyncCall(&input::InputManager::BindFocusChainListenerRegistry,
-                                 std::move(request));
-      });
+  FX_CHECK(app_context_->outgoing()->AddProtocol<fuchsia_ui_focus::FocusChainListenerRegistry>(
+               [this](fidl::ServerEnd<fuchsia_ui_focus::FocusChainListenerRegistry> server_end) {
+                 input_manager_.AsyncCall(&input::InputManager::BindFocusChainListenerRegistry,
+                                          std::move(server_end));
+               }) == ZX_OK);
 
   // Register ViewRefInstalled
   FX_CHECK(app_context_->outgoing()->AddProtocol<fuchsia_ui_views::ViewRefInstalled>(
