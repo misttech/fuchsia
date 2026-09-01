@@ -127,6 +127,9 @@ class UsbCdcFunction : public fdf::DriverBase2,
 
   // test helpers.
   bool HasPendingRxCompletions();
+  bool online() const { return online_; }
+  bool IntrEpRequestsFull() { return intr_ep_.RequestsFull(); }
+  const std::array<uint8_t, ETH_MAC_SIZE> &mac_addr() const { return mac_addr_; }
 
   uint8_t BulkInAddress() const { return descriptors_.bulk_in_ep.b_endpoint_address; }
   uint8_t BulkOutAddress() const { return descriptors_.bulk_out_ep.b_endpoint_address; }
