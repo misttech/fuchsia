@@ -222,6 +222,56 @@ func TestDepsConversion(t *testing.T) {
 }`,
 		},
 		{
+			name: "third-party targets",
+			bazel: `cc_library(
+	name = "test",
+	deps = [
+		"@com_google_googletest//:gtest",
+		"@com_googletest_gtest//:gtest",
+		"@com_google_googletest//:gtest_prod",
+		"@com_google_googletest//:gtest_main",
+		"@com_google_googletest//:gmock",
+		"@googletest//:gtest",
+		"@re2//:re2",
+		"@boringssl//:crypto",
+		"@boringssl//:ssl",
+		"@zlib//:zlib",
+		"@rapidjson//:rapidjson",
+		"@com_google_protobuf//:protobuf",
+	],
+)`,
+			wantGN: `static_library("test") {
+	public_deps = [
+		"//third_party/googletest:gtest",
+		"//third_party/googletest:gtest",
+		"//third_party/googletest:gtest_prod",
+		"//third_party/googletest:gtest_main",
+		"//third_party/googletest:gmock",
+		"//third_party/googletest:gtest",
+		"//third_party/re2",
+		"//third_party/boringssl:crypto",
+		"//third_party/boringssl:ssl",
+		"//third_party/zlib",
+		"//third_party/rapidjson",
+		"//third_party/protobuf:protobuf",
+	]
+}`,
+		},
+		{
+			name: "untranslated bazel repo target label",
+			bazel: `cc_library(
+	name = "test",
+	deps = [
+		"@unknown_repo//:some_target",
+	],
+)`,
+			wantGN: `static_library("test") {
+	public_deps = [
+		"@unknown_repo//:some_target" # BAZEL2GN_WARNING: Unknown Bazel repository name,
+	]
+}`,
+		},
+		{
 			name: "overwritten deps",
 			bazel: `go_library(
 	name = "test",

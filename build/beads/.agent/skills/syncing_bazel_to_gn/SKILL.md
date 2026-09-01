@@ -50,3 +50,13 @@ the Bazel targets to GN:
     ```bash
     fx build --host //build:bazel2gn_verifications
     ```
+
+## Third-Party Dependency Translation
+
+`bazel2gn` automatically translates Bazel external repository targets (such as
+`@com_google_googletest//:gtest`, `@re2//:re2`, `@boringssl//:crypto`) to their
+equivalent GN labels according to [`//build/tools/bazel2gn/third_party_target_map.json`](../../../../../tools/bazel2gn/third_party_target_map.json).
+
+If an external repository dependency (starting with `@`) is not in this mapping,
+`bazel2gn` will print a warning to `stderr` and append an inline
+`# BAZEL2GN_WARNING: Unknown Bazel repository name` comment to the generated GN line.

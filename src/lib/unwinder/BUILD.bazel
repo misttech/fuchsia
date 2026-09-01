@@ -96,6 +96,6 @@ cc_library(
     deps = [
         ":headers",
         "//zircon/third_party/ulib/safemath",
-        "@com_google_googletest//:gtest",  # @bazel2gn:path_overwrite://third_party/googletest:gtest_prod
+        "@com_google_googletest//:gtest_prod",
     ],
 )

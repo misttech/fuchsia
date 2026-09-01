@@ -22,7 +22,7 @@ cc_library(
     ],
     deps = [
         ":shared",
-        "@com_google_googletest//:gtest",  # @bazel2gn:path_overwrite://third_party/googletest:gtest
+        "@com_google_googletest//:gtest",
     ],
 )
 
@@ -46,7 +46,7 @@ cc_library(
     }),
     implementation_deps = [
         ":shared",
-        "@com_google_googletest//:gtest",  # @bazel2gn:path_overwrite://third_party/googletest:gtest
+        "@com_google_googletest//:gtest",
     ],
 )
 
@@ -137,7 +137,7 @@ cc_library(
         "//src/developer/debug/shared/logging",
         "//src/lib/containers/cpp",
         "//src/lib/fxl",
-        "@re2",  # @bazel2gn:path_overwrite://third_party/re2
+        "@re2",
     ] + select({
         "@platforms//os:fuchsia": [
             "//sdk/lib/async:async-cpp",

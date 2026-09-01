@@ -21,7 +21,7 @@ cc_library(
     implementation_deps = [
         "//src/developer/debug/shared",
         "//src/developer/debug/shared:test_support",
-        "@com_google_googletest//:gtest",  # @bazel2gn:path_overwrite://third_party/googletest:gtest
+        "@com_google_googletest//:gtest",
     ],
     deps = [":ipc"],
 )

@@ -274,6 +274,25 @@ The currently supported transformers are:
 * `configs`: converts Bazel copt to GN configs.
 * `file_paths`: converts Bazel file paths to GN file paths.
 
+### Third-party dependency translation
+
+`bazel2gn` automatically translates Bazel external repository target labels
+(e.g., `@com_google_googletest//:gtest`, `@com_googletest_gtest//:gtest`,
+`@re2//:re2`, `@boringssl//:crypto`) to their equivalent GN labels
+(e.g., `//third_party/googletest:gtest`, `//third_party/re2`,
+`//third_party/boringssl:crypto`).
+
+The mapping between Bazel target labels and GN labels is defined in
+[`third_party_target_map.json`](third_party_target_map.json).
+
+If `bazel2gn` encounters an external repository dependency (starting with `@`)
+that is not defined in `third_party_target_map.json` and has no manual overwrite
+directive:
+1. It prints a warning to `stderr`:
+   `WARNING: unable to translate Bazel label <label> to GN`
+2. It appends an inline comment in the generated GN file:
+   `# BAZEL2GN_WARNING: Unknown Bazel repository name`
+
 [embedsrcs]: https://github.com/bazel-contrib/rules_go/blob/master/docs/go/core/rules.md#go_library-embedsrcs
 [goembed]: https://pkg.go.dev/embed
 [starlark]: https://bazel.build/rules/language

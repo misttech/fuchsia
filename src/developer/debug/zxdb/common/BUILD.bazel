@@ -47,7 +47,7 @@ cc_library(
         ":test_support",
         "//src/lib/files",
         "//zircon/system/ulib/fbl",
-        "@com_google_googletest//:gtest",  # @bazel2gn:path_overwrite://third_party/googletest:gtest
+        "@com_google_googletest//:gtest",
     ],
     alwayslink = True,
 )
@@ -63,7 +63,7 @@ cc_library(
     ],
     implementation_deps = ["//src/lib/fxl"],
     deps = [
-        "@com_googletest_gtest//:gtest",  # @bazel2gn:path_overwrite://third_party/googletest:gtest
+        "@com_googletest_gtest//:gtest",
     ],
     alwayslink = True,
 )

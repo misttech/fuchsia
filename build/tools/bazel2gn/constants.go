@@ -5,6 +5,8 @@
 package bazel2gn
 
 import (
+	_ "embed"
+	"encoding/json"
 	"fmt"
 	"maps"
 	"regexp"
@@ -394,13 +396,18 @@ var thirdPartyRustCrateVendoredRE = regexp.MustCompile(`^"\/\/third_party\/rust_
 // modified crates. It is used to extract the directory name from the dependency path.
 var thirdPartyRustCrateModifiedRE = regexp.MustCompile(`^"\/\/third_party\/rust_crates\/.+\/([a-zA-Z0-9_\.-]+):?[^"]*`)
 
-// thirdPartyBazelRepos maps from Bazel third-party repository names to their GN equivalent
-// dependency paths. The key is the Bazel repository name, and the value is the GN dependency
-// path.
-var thirdPartyBazelRepos = map[string]string{
-	"@re2":                "//third_party/re2",
-	"@boringssl//:crypto": "//third_party/boringssl:crypto",
-}
+//go:embed third_party_target_map.json
+var thirdPartyTargetMapJSON []byte
+
+// thirdPartyBazelRepos maps from Bazel third-party repository and target labels to their GN equivalent
+// dependency paths. The key is the Bazel label, and the value is the GN dependency path.
+var thirdPartyBazelRepos = func() map[string]string {
+	var m map[string]string
+	if err := json.Unmarshal(thirdPartyTargetMapJSON, &m); err != nil {
+		panic(fmt.Sprintf("Failed to unmarshal third_party_target_map.json: %v", err))
+	}
+	return m
+}()
 
 // coptToConfig maps from Bazel copt values to configs to use in GN.
 var coptToConfig = map[string]string{

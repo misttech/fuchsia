@@ -20,6 +20,9 @@ go_library(
         "tags.go",
         "transformers.go",
     ],
+    embedsrcs = [
+        "third_party_target_map.json",
+    ],
     importpath = "go.fuchsia.dev/fuchsia/build/tools/bazel2gn",
     target_compatible_with = HOST_CONSTRAINTS,
     deps = [

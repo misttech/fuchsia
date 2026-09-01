@@ -6,6 +6,7 @@ package bazel2gn
 
 import (
 	"fmt"
+	"os"
 	"strings"
 
 	"go.starlark.net/syntax"
@@ -90,12 +91,16 @@ func bazelDepToGN(expr syntax.Expr) (syntax.Expr, error) {
 		return lit, nil
 	}
 
-	for bazelRepo, gnRepo := range thirdPartyBazelRepos {
-		quotedBazelRepo := fmt.Sprintf(`"%s"`, bazelRepo)
-		if lit.Raw == quotedBazelRepo {
-			lit.Raw = fmt.Sprintf(`"%s"`, gnRepo)
-			return lit, nil
-		}
+	rawDep := strings.Trim(lit.Raw, `"`)
+	if gnDep, ok := thirdPartyBazelRepos[rawDep]; ok {
+		lit.Raw = fmt.Sprintf(`"%s"`, gnDep)
+		return lit, nil
+	}
+
+	if strings.HasPrefix(rawDep, "@") {
+		fmt.Fprintf(os.Stderr, "WARNING: unable to translate Bazel label %s to GN\n", rawDep)
+		lit.Raw = fmt.Sprintf(`"%s" # BAZEL2GN_WARNING: Unknown Bazel repository name`, rawDep)
+		return lit, nil
 	}
 
 	lit.Raw = thirdPartyRustCrateVendoredRE.ReplaceAllString(

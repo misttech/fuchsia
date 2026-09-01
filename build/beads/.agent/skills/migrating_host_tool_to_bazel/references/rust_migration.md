@@ -20,6 +20,8 @@ When migrating third-party dependencies from GN to Bazel, prefix with the vendor
 
 *Note: Some crates may be located under `ask2patch`, `fork`, or `intree` instead of `vendor` (e.g., `//third_party/rust_crates/ask2patch/walkdir`).*
 
+For other third-party dependencies (e.g. googletest, re2, boringssl), `bazel2gn` translates targets according to [`//build/tools/bazel2gn/third_party_target_map.json`](//build/tools/bazel2gn/third_party_target_map.json).
+
 ## Example
 
 ```gn
