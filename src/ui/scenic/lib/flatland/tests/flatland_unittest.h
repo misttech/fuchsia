@@ -5,6 +5,8 @@
 #ifndef SRC_UI_SCENIC_LIB_FLATLAND_TESTS_FLATLAND_UNITTEST_H_
 #define SRC_UI_SCENIC_LIB_FLATLAND_TESTS_FLATLAND_UNITTEST_H_
 
+#include <fidl/fuchsia.ui.composition/cpp/hlcpp_conversion.h>
+#include <fidl/fuchsia.ui.views/cpp/hlcpp_conversion.h>
 #include <lib/async-loop/cpp/loop.h>
 #include <lib/async-loop/default.h>
 #include <lib/async/cpp/executor.h>

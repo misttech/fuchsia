@@ -5,6 +5,7 @@
 #include "src/ui/scenic/lib/flatland/flatland.h"
 
 #include <fidl/fuchsia.math/cpp/fidl.h>
+#include <fidl/fuchsia.ui.composition/cpp/hlcpp_conversion.h>
 #include <fidl/fuchsia.ui.composition/cpp/natural_ostream.h>
 #include <fidl/fuchsia.ui.composition/cpp/natural_types.h>
 #include <lib/async/default.h>
@@ -735,10 +736,8 @@ void Flatland::CreateViewHelper(
   auto child_transform_handle = transform_graph_.CreateTransform();
 
   LinkSystem::LinkToParent new_link_to_parent = link_system_->CreateLinkToParent(
-      dispatcher_holder_, fidl::NaturalToHLCPP(token),
-      view_identity.has_value() ? std::optional(fidl::NaturalToHLCPP(*view_identity))
-                                : std::nullopt,
-      fidl::NaturalToHLCPP(parent_viewport_watcher), child_transform_handle,
+      dispatcher_holder_, std::move(token), std::move(view_identity),
+      std::move(parent_viewport_watcher), child_transform_handle,
       [ref = weak_from_this(), weak_dispatcher_holder = std::weak_ptr<utils::DispatcherHolder>(
                                    dispatcher_holder_)](const std::string& error_log) {
         if (auto dispatcher_holder = weak_dispatcher_holder.lock()) {
@@ -1376,8 +1375,8 @@ void Flatland::CreateViewport(
   // the feed-forward portion of this method. We also forward the initial ViewportProperties
   // through the LinkSystem immediately, so the child can receive them as soon as possible.
   LinkSystem::LinkToChild link_to_child = link_system_->CreateLinkToChild(
-      dispatcher_holder_, fidl::NaturalToHLCPP(token), fidl::NaturalToHLCPP(properties),
-      fidl::NaturalToHLCPP(child_view_watcher), parent_transform_handle,
+      dispatcher_holder_, std::move(token), properties, std::move(child_view_watcher),
+      parent_transform_handle,
       [ref = weak_from_this(), weak_dispatcher_holder = std::weak_ptr<utils::DispatcherHolder>(
                                    dispatcher_holder_)](const std::string& error_log) {
         if (auto dispatcher_holder = weak_dispatcher_holder.lock()) {
@@ -2260,7 +2259,7 @@ void Flatland::SetViewportProperties(ContentId viewport_id,
                           TransformClipRegion({.x = 0, .y = 0, .width = width, .height = height}));
 
   link_data.properties = properties;
-  link_system_->UpdateViewportPropertiesFor(viewport_handle, fidl::NaturalToHLCPP(properties));
+  link_system_->UpdateViewportPropertiesFor(viewport_handle, properties);
 }
 
 void Flatland::SetViewportProperties2(SetViewportProperties2Request& request,

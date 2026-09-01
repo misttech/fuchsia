@@ -5,12 +5,10 @@
 #ifndef SRC_UI_SCENIC_LIB_FLATLAND_LINK_SYSTEM_H_
 #define SRC_UI_SCENIC_LIB_FLATLAND_LINK_SYSTEM_H_
 
+#include <fidl/fuchsia.math/cpp/fidl.h>
 #include <fidl/fuchsia.ui.composition/cpp/fidl.h>
-#include <fidl/fuchsia.ui.composition/cpp/hlcpp_conversion.h>
-#include <fuchsia/ui/composition/cpp/fidl.h>
+#include <fidl/fuchsia.ui.views/cpp/fidl.h>
 #include <lib/async/default.h>
-#include <lib/fidl/cpp/binding.h>
-#include <lib/fidl/cpp/interface_request.h>
 #include <lib/syslog/cpp/macros.h>
 #include <zircon/errors.h>
 
@@ -46,14 +44,14 @@ class ParentViewportWatcherImpl
  public:
   ParentViewportWatcherImpl(
       std::shared_ptr<utils::DispatcherHolder> dispatcher_holder,
-      fidl::InterfaceRequest<fuchsia::ui::composition::ParentViewportWatcher> request,
+      fidl::ServerEnd<fuchsia_ui_composition::ParentViewportWatcher> server_end,
       LinkProtocolErrorCallback error_callback)
       :
 #ifndef NDEBUG
         dispatcher_holder_(dispatcher_holder),
 #endif
         error_callback_(std::move(error_callback)),
-        binding_(dispatcher_holder->dispatcher(), fidl::HLCPPToNatural(request), this,
+        binding_(dispatcher_holder->dispatcher(), std::move(server_end), this,
                  &ParentViewportWatcherImpl::OnClose) {
   }
 
@@ -69,21 +67,22 @@ class ParentViewportWatcherImpl
 #endif  // NDEBUG
   }
 
-  void UpdateLayoutInfo(fuchsia::ui::composition::LayoutInfo info) {
-    last_layout_info_ = fidl::Clone(info);
+  void UpdateLayoutInfo(fuchsia_ui_composition::LayoutInfo info) {
+    last_layout_info_ = info;
     layout_helper_.Update(std::move(info));
   }
 
-  void UpdateDevicePixelRatio(const fuchsia::math::VecF& device_pixel_ratio) {
-    auto info = fidl::Clone(last_layout_info_);
-    info.set_device_pixel_ratio(device_pixel_ratio);
+  void UpdateDevicePixelRatio(const fuchsia_math::VecF& device_pixel_ratio) {
+    auto info = last_layout_info_;
+    info.device_pixel_ratio(device_pixel_ratio);
     UpdateLayoutInfo(std::move(info));
   }
 
-  void UpdateLinkStatus(fuchsia::ui::composition::ParentViewportStatus status) {
-    status_helper_.Update(std::move(status));
+  void UpdateLinkStatus(fuchsia_ui_composition::ParentViewportStatus status) {
+    status_helper_.Update(status);
   }
-  // |fuchsia::ui::composition::ParentViewportWatcher|
+
+  // |fuchsia_ui_composition::ParentViewportWatcher|
   void GetLayout(GetLayoutCompleter::Sync& sync_completer) override {
     if (layout_helper_.HasPendingCallback()) {
       FX_CHECK(error_callback_);
@@ -95,8 +94,8 @@ class ParentViewportWatcherImpl
     }
 
     layout_helper_.SetCallback([completer = sync_completer.ToAsync()](
-                                   fuchsia::ui::composition::LayoutInfo layout_info) mutable {
-      completer.Reply({fidl::HLCPPToNatural(layout_info)});
+                                   fuchsia_ui_composition::LayoutInfo layout_info) mutable {
+      completer.Reply({std::move(layout_info)});
     });
   }
 
@@ -112,8 +111,8 @@ class ParentViewportWatcherImpl
     }
 
     status_helper_.SetCallback([completer = sync_completer.ToAsync()](
-                                   fuchsia::ui::composition::ParentViewportStatus status) mutable {
-      completer.Reply({fidl::HLCPPToNatural(status)});
+                                   fuchsia_ui_composition::ParentViewportStatus status) mutable {
+      completer.Reply({status});
     });
   }
 
@@ -132,11 +131,11 @@ class ParentViewportWatcherImpl
   std::weak_ptr<utils::DispatcherHolder> dispatcher_holder_;
 #endif
 
-  fuchsia::ui::composition::LayoutInfo last_layout_info_;
+  fuchsia_ui_composition::LayoutInfo last_layout_info_;
 
   LinkProtocolErrorCallback error_callback_;
-  HangingGetHelper<fuchsia::ui::composition::LayoutInfo> layout_helper_;
-  HangingGetHelper<fuchsia::ui::composition::ParentViewportStatus> status_helper_;
+  HangingGetHelper<fuchsia_ui_composition::LayoutInfo> layout_helper_;
+  HangingGetHelper<fuchsia_ui_composition::ParentViewportStatus> status_helper_;
 
   // Safety: destroy binding first, then destroy hanging-get helpers.
   // This confirms that we are shutting down instead of simply forgot to reply
@@ -149,14 +148,14 @@ class ParentViewportWatcherImpl
 class ChildViewWatcherImpl : public fidl::Server<fuchsia_ui_composition::ChildViewWatcher> {
  public:
   ChildViewWatcherImpl(std::shared_ptr<utils::DispatcherHolder> dispatcher_holder,
-                       fidl::InterfaceRequest<fuchsia::ui::composition::ChildViewWatcher> request,
+                       fidl::ServerEnd<fuchsia_ui_composition::ChildViewWatcher> server_end,
                        LinkProtocolErrorCallback error_callback)
       :
 #ifndef NDEBUG
         dispatcher_holder_(dispatcher_holder),
 #endif
         error_callback_(std::move(error_callback)),
-        binding_(dispatcher_holder->dispatcher(), fidl::HLCPPToNatural(request), this,
+        binding_(dispatcher_holder->dispatcher(), std::move(server_end), this,
                  &ChildViewWatcherImpl::OnClose) {
   }
 
@@ -172,12 +171,12 @@ class ChildViewWatcherImpl : public fidl::Server<fuchsia_ui_composition::ChildVi
 #endif  // NDEBUG
   }
 
-  void UpdateLinkStatus(fuchsia::ui::composition::ChildViewStatus status) {
+  void UpdateLinkStatus(fuchsia_ui_composition::ChildViewStatus status) {
     status_helper_.Update(status);
     if (viewref_) {
       // At the time of writing, CONTENT_HAS_PRESENTED is the only possible value.  DCHECK just in
       // case this changes.
-      FX_CHECK(status == fuchsia::ui::composition::ChildViewStatus::CONTENT_HAS_PRESENTED);
+      FX_CHECK(status == fuchsia_ui_composition::ChildViewStatus::kContentHasPresented);
     }
   }
 
@@ -189,8 +188,8 @@ class ChildViewWatcherImpl : public fidl::Server<fuchsia_ui_composition::ChildVi
     }
   }
 
-  void SetViewRef(fuchsia::ui::views::ViewRef viewref) {
-    FX_CHECK(viewref.reference);
+  void SetViewRef(fuchsia_ui_views::ViewRef viewref) {
+    FX_CHECK(viewref.reference().is_valid());
     viewref_ = std::move(viewref);
   }
 
@@ -205,10 +204,9 @@ class ChildViewWatcherImpl : public fidl::Server<fuchsia_ui_composition::ChildVi
       return;
     }
 
-    status_helper_.SetCallback([completer = sync_completer.ToAsync()](
-                                   fuchsia::ui::composition::ChildViewStatus status) mutable {
-      completer.Reply({fidl::HLCPPToNatural(status)});
-    });
+    status_helper_.SetCallback(
+        [completer = sync_completer.ToAsync()](
+            fuchsia_ui_composition::ChildViewStatus status) mutable { completer.Reply({status}); });
   }
 
   // |fuchsia_ui_composition::ChildViewWatcher|
@@ -223,8 +221,8 @@ class ChildViewWatcherImpl : public fidl::Server<fuchsia_ui_composition::ChildVi
     }
 
     viewref_helper_.SetCallback(
-        [completer = sync_completer.ToAsync()](fuchsia::ui::views::ViewRef viewref) mutable {
-          completer.Reply({fidl::HLCPPToNatural(viewref)});
+        [completer = sync_completer.ToAsync()](fuchsia_ui_views::ViewRef viewref) mutable {
+          completer.Reply({std::move(viewref)});
         });
   }
 
@@ -243,8 +241,8 @@ class ChildViewWatcherImpl : public fidl::Server<fuchsia_ui_composition::ChildVi
   std::weak_ptr<utils::DispatcherHolder> dispatcher_holder_;
 #endif
   LinkProtocolErrorCallback error_callback_;
-  HangingGetHelper<fuchsia::ui::composition::ChildViewStatus> status_helper_;
-  HangingGetHelper<fuchsia::ui::views::ViewRef> viewref_helper_;
+  HangingGetHelper<fuchsia_ui_composition::ChildViewStatus> status_helper_;
+  HangingGetHelper<fuchsia_ui_views::ViewRef> viewref_helper_;
 
   // Safety: destroy binding first, then destroy hanging-get helpers.
   // This confirms that we are shutting down instead of simply forgot to reply
@@ -253,7 +251,7 @@ class ChildViewWatcherImpl : public fidl::Server<fuchsia_ui_composition::ChildVi
 
   // Temporarily held when SetViewRef() is called.  Instead of immediately notifying any pending
   // hanging get requests, we wait until the child view first appears in the global topology.
-  std::optional<fuchsia::ui::views::ViewRef> viewref_;
+  std::optional<fuchsia_ui_views::ViewRef> viewref_;
 };
 
 // A system for managing links between Flatland instances. Each Flatland instance creates Links
@@ -288,7 +286,7 @@ class LinkSystem : public std::enable_shared_from_this<LinkSystem> {
 
   struct LinkToParentInfo {
     TransformHandle child_transform_handle;
-    std::shared_ptr<const ViewRef> view_ref;
+    std::shared_ptr<const types::ViewRef> view_ref;
   };
 
   // Linked Flatland instances only implement a small piece of link functionality. For now, directly
@@ -320,11 +318,11 @@ class LinkSystem : public std::enable_shared_from_this<LinkSystem> {
 
     // Tracks the ViewRef for this View and is the reference for the lifetime of the ViewRef by
     // uniquely holding |view_ref_control| until going out of scope.
-    std::shared_ptr<const ViewRef> view_ref;
+    std::shared_ptr<const types::ViewRef> view_ref;
 
     // |view_ref_control| and |view_ref| are set when there is a valid ViewIdentityOnCreation.
     // Otherwise both are kept empty.
-    std::optional<fuchsia::ui::views::ViewRefControl> view_ref_control;
+    std::optional<fuchsia_ui_views::ViewRefControl> view_ref_control;
   };
 
   // Creates the parent end of a link. The LinkToChild's |internal_link_handle| serves as the
@@ -339,9 +337,9 @@ class LinkSystem : public std::enable_shared_from_this<LinkSystem> {
   // Flatland session thread.
   LinkToChild CreateLinkToChild(
       std::shared_ptr<utils::DispatcherHolder> dispatcher_holder,
-      fuchsia::ui::views::ViewportCreationToken token,
-      fuchsia::ui::composition::ViewportProperties initial_properties,
-      fidl::InterfaceRequest<fuchsia::ui::composition::ChildViewWatcher> child_view_watcher,
+      fuchsia_ui_views::ViewportCreationToken token,
+      fuchsia_ui_composition::ViewportProperties initial_properties,
+      fidl::ServerEnd<fuchsia_ui_composition::ChildViewWatcher> child_view_watcher,
       TransformHandle parent_transform_handle, LinkProtocolErrorCallback error_callback);
 
   // Creates the child end of a link. Once both ends of a Link have been created, the LinkSystem
@@ -352,10 +350,9 @@ class LinkSystem : public std::enable_shared_from_this<LinkSystem> {
   // Flatland session thread.
   LinkToParent CreateLinkToParent(
       std::shared_ptr<utils::DispatcherHolder> dispatcher_holder,
-      fuchsia::ui::views::ViewCreationToken token,
-      std::optional<fuchsia::ui::views::ViewIdentityOnCreation> view_identity,
-      fidl::InterfaceRequest<fuchsia::ui::composition::ParentViewportWatcher>
-          parent_viewport_watcher,
+      fuchsia_ui_views::ViewCreationToken token,
+      std::optional<fuchsia_ui_views::ViewIdentityOnCreation> view_identity,
+      fidl::ServerEnd<fuchsia_ui_composition::ParentViewportWatcher> parent_viewport_watcher,
       TransformHandle child_transform_handle, LinkProtocolErrorCallback error_callback);
 
   // Returns a snapshot of the current set of links, represented as a map from LinkSystem-owned
@@ -390,13 +387,13 @@ class LinkSystem : public std::enable_shared_from_this<LinkSystem> {
   // updates to all waiting clients, otherwise it does nothing.
   // |handle| should have been previously used as |parent_transform_handle| in CreateLinkToChild().
   void UpdateViewportPropertiesFor(TransformHandle handle,
-                                   const fuchsia::ui::composition::ViewportProperties& properties);
+                                   const fuchsia_ui_composition::ViewportProperties& properties);
 
   // Updates |device_pixel_ratio_| and, if the value changed, sends updates to all waiting clients.
-  void UpdateDevicePixelRatio(const fuchsia::math::VecF& device_pixel_raito);
+  void UpdateDevicePixelRatio(const fuchsia_math::VecF& device_pixel_ratio);
   void UpdateDevicePixelRatio(const glm::vec2& initial_device_pixel_ratio) {
     UpdateDevicePixelRatio(
-        fuchsia::math::VecF{.x = initial_device_pixel_ratio.x, .y = initial_device_pixel_ratio.y});
+        fuchsia_math::VecF{{.x = initial_device_pixel_ratio.x, .y = initial_device_pixel_ratio.y}});
   }
 
  private:
@@ -444,13 +441,13 @@ class LinkSystem : public std::enable_shared_from_this<LinkSystem> {
   GlobalTopologyData::LinkTopologyMap link_topologies_ FXL_GUARDED_BY(mutex_);
 
   // A map of the most recent LayoutInfo generated for each link that hasn't resolved yet.
-  std::unordered_map<TransformHandle, fuchsia::ui::composition::LayoutInfo> initial_layout_infos_
+  std::unordered_map<TransformHandle, fuchsia_ui_composition::LayoutInfo> initial_layout_infos_
       FXL_GUARDED_BY(mutex_);
 
   // The starting DPR used by the link system. The actual DPR used on subsequent calls to
   // UpdateLinkWatchers() may be different from this value.
   // TODO(https://fxbug.dev/42059985): This will need to be updated once we have multidisplay setup.
-  std::atomic<fuchsia::math::VecF> device_pixel_ratio_;
+  fuchsia_math::VecF device_pixel_ratio_ FXL_GUARDED_BY(mutex_);
 
   // Tracks whether a link between sessions has been established/broken since the last time that
   // `GetLinkChildToParentTransformMap()` was called.  This is used as a signal that indicates that

@@ -5,6 +5,7 @@
 #include "src/ui/scenic/lib/flatland/flatland_manager.h"
 
 #include <fidl/fuchsia.hardware.display.types/cpp/fidl.h>
+#include <fidl/fuchsia.ui.composition/cpp/hlcpp_conversion.h>
 #include <lib/async/cpp/task.h>
 #include <lib/async/default.h>
 #include <lib/fidl/cpp/hlcpp_conversion.h>

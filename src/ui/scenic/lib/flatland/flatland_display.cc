@@ -4,6 +4,8 @@
 
 #include "src/ui/scenic/lib/flatland/flatland_display.h"
 
+#include <fidl/fuchsia.ui.composition/cpp/hlcpp_conversion.h>
+#include <fidl/fuchsia.ui.views/cpp/hlcpp_conversion.h>
 #include <lib/async/default.h>
 #include <lib/ui/scenic/cpp/view_identity.h>
 
@@ -108,16 +110,16 @@ void FlatlandDisplay::SetContent(ViewportCreationToken token,
   const auto device_pixel_ratio = display_->device_pixel_ratio();
   FX_LOGS(INFO) << "Device Pixel Ratio: " << device_pixel_ratio.x << "x" << device_pixel_ratio.y;
 
-  ViewportProperties properties;
+  fuchsia_ui_composition::ViewportProperties properties;
   {
     // To calculate the logical size, we need to divide the physical pixel size by the DPR.
-    properties.set_logical_size({
+    properties.logical_size(fuchsia_math::SizeU{{
         .width = static_cast<uint32_t>(static_cast<float>(display_->width_in_px()) /
                                        device_pixel_ratio.x),
         .height = static_cast<uint32_t>(static_cast<float>(display_->height_in_px()) /
                                         device_pixel_ratio.y),
-    });
-    properties.set_inset({0, 0, 0, 0});
+    }});
+    properties.inset(fuchsia_math::Inset{{.top = 0, .right = 0, .bottom = 0, .left = 0}});
   }
 
   // We can initialize the Link importer immediately, since no state changes actually occur before
@@ -126,8 +128,8 @@ void FlatlandDisplay::SetContent(ViewportCreationToken token,
   // NOTE: clients won't receive CONNECTED_TO_DISPLAY until LinkSystem::UpdateLinkWatchers() is
   // called, typically during rendering.
   link_to_child_ = link_system_->CreateLinkToChild(
-      dispatcher_holder_, std::move(token), std::move(properties), std::move(child_view_watcher),
-      child_transform,
+      dispatcher_holder_, fidl::HLCPPToNatural(std::move(token)), std::move(properties),
+      fidl::HLCPPToNatural(std::move(child_view_watcher)), child_transform,
       [ref = weak_from_this(),
        dispatcher_holder = dispatcher_holder_](const std::string& error_log) {
         FX_CHECK(dispatcher_holder->dispatcher() == async_get_default_dispatcher())
