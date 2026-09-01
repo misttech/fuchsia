@@ -5,6 +5,7 @@
 #ifndef SRC_UI_SCENIC_LIB_SCREEN_CAPTURE2_TESTS_COMMON_H_
 #define SRC_UI_SCENIC_LIB_SCREEN_CAPTURE2_TESTS_COMMON_H_
 
+#include <fidl/fuchsia.ui.composition/cpp/fidl.h>
 #include <fuchsia/sysmem/cpp/fidl.h>
 #include <lib/async/dispatcher.h>
 #include <lib/ui/scenic/cpp/buffer_collection_import_export_tokens.h>
@@ -22,7 +23,7 @@ std::shared_ptr<allocation::Allocator> CreateAllocator(
 
 void CreateBufferCollectionInfoWithConstraints(
     fuchsia::sysmem2::BufferCollectionConstraints constraints,
-    fuchsia::ui::composition::BufferCollectionExportToken export_token,
+    fuchsia_ui_composition::BufferCollectionExportToken export_token,
     std::shared_ptr<allocation::Allocator> flatland_allocator,
     fidl::WireClient<fuchsia_sysmem2::Allocator>& sysmem_allocator,
     fit::function<void(fit::function<bool()>)> run_loop_until);

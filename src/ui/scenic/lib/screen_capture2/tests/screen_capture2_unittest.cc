@@ -4,7 +4,8 @@
 
 #include "src/ui/scenic/lib/screen_capture2/screen_capture2.h"
 
-#include <fuchsia/ui/composition/cpp/fidl.h>
+#include <fidl/fuchsia.ui.composition.internal/cpp/fidl.h>
+#include <fidl/fuchsia.ui.composition/cpp/fidl.h>
 #include <lib/async/cpp/executor.h>
 #include <lib/fpromise/promise.h>
 #include <lib/sys/cpp/testing/component_context_provider.h>
@@ -15,7 +16,6 @@
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
-#include "fuchsia/ui/composition/internal/cpp/fidl.h"
 #include "src/lib/fsl/handles/object_info.h"
 #include "src/lib/testing/loop_fixture/test_loop_fixture.h"
 #include "src/ui/scenic/lib/allocation/allocator.h"
@@ -31,9 +31,9 @@
 using allocation::Allocator;
 using allocation::BufferCollectionImporter;
 using flatland::SrcToDest;
-using fuchsia::ui::composition::internal::FrameInfo;
-using fuchsia::ui::composition::internal::ScreenCaptureConfig;
-using fuchsia::ui::composition::internal::ScreenCaptureError;
+using fuchsia_ui_composition_internal::FrameInfo;
+using fuchsia_ui_composition_internal::ScreenCaptureConfig;
+using fuchsia_ui_composition_internal::ScreenCaptureError;
 using integration_tests::ReturnPromise;
 using screen_capture::ScreenCaptureBufferCollectionImporter;
 using testing::_;
@@ -69,9 +69,19 @@ class ScreenCapture2Test : public gtest::TestLoopFixture {
         mock_renderer_);
   }
 
+  fidl::Client<fuchsia_ui_composition_internal::ScreenCapture> BindScreenCapture(
+      screen_capture2::ScreenCapture& sc_server) {
+    auto [client_end, server_end] =
+        fidl::Endpoints<fuchsia_ui_composition_internal::ScreenCapture>::Create();
+    fidl::BindServer(dispatcher(), std::move(server_end), &sc_server);
+    return fidl::Client<fuchsia_ui_composition_internal::ScreenCapture>(std::move(client_end),
+                                                                        dispatcher());
+  }
+
   // Configures ScreenCapture with given args successfully.
-  void SetUpScreenCapture(screen_capture2::ScreenCapture& sc, BufferCount buffer_count,
-                          uint32_t image_width, uint32_t image_height, bool is_mock) {
+  void SetUpScreenCapture(fidl::Client<fuchsia_ui_composition_internal::ScreenCapture>& sc_client,
+                          BufferCount buffer_count, uint32_t image_width, uint32_t image_height,
+                          bool is_mock) {
     if (is_mock) {
       EXPECT_CALL(*mock_renderer_.get(), ImportBufferCollection(_, _, _, _, _))
           .WillRepeatedly([](allocation::GlobalBufferCollectionId collection_id,
@@ -104,8 +114,8 @@ class ScreenCapture2Test : public gtest::TestLoopFixture {
           .Times(::testing::AtLeast(0));
     }
 
-    allocation::BufferCollectionImportExportTokens ref_pair =
-        allocation::BufferCollectionImportExportTokens::New();
+    allocation::cpp::BufferCollectionImportExportTokens ref_pair =
+        allocation::cpp::BufferCollectionImportExportTokens::New();
 
     std::shared_ptr<Allocator> flatland_allocator =
         CreateAllocator(importer_, context_provider_.context(), dispatcher());
@@ -114,24 +124,23 @@ class ScreenCapture2Test : public gtest::TestLoopFixture {
         std::move(ref_pair.export_token), flatland_allocator, sysmem_allocator_,
         [this](fit::function<bool()> condition) { RunLoopUntil(std::move(condition)); });
 
-    ScreenCaptureConfig args;
-    args.set_import_token(std::move(ref_pair.import_token));
-    args.set_image_size({image_width, image_height});
+    fuchsia_ui_composition_internal::ScreenCaptureConfig args;
+    args.import_token(std::move(ref_pair.import_token));
+    args.image_size(fuchsia_math::SizeU{image_width, image_height});
 
-    fpromise::result<void, ScreenCaptureError> configure_result;
-    sc.Configure(std::move(args),
-                 [&configure_result](fpromise::result<void, ScreenCaptureError> result) {
-                   EXPECT_FALSE(result.is_error());
-                   configure_result = result;
-                 });
+    bool configure_succeeded = false;
+    sc_client->Configure(std::move(args)).Then([&configure_succeeded](auto& result) {
+      ASSERT_TRUE(result.is_ok());
+      configure_succeeded = true;
+    });
     RunLoopUntilIdle();
-    EXPECT_TRUE(configure_result.is_ok());
+    ASSERT_TRUE(configure_succeeded);
   }
 
   std::vector<flatland::ResolvedLayer> GetRenderables() { return renderables_; }
 
-  bool GetReceivedLastFrame(screen_capture2::ScreenCapture& sc) {
-    return sc.get_client_received_last_frame();
+  bool GetReceivedLastFrame(screen_capture2::ScreenCapture& sc_server) {
+    return sc_server.get_client_received_last_frame();
   }
 
  protected:
@@ -147,14 +156,15 @@ class ScreenCapture2Test : public gtest::TestLoopFixture {
 };
 
 TEST_F(ScreenCapture2Test, ConfigureWithMissingArguments) {
-  screen_capture2::ScreenCapture sc(importer_, nullptr,
-                                    [this]() { return this->GetRenderables(); });
+  screen_capture2::ScreenCapture sc_server(importer_, nullptr,
+                                           [this]() { return this->GetRenderables(); });
+  fidl::Client sc_client = BindScreenCapture(sc_server);
 
   const BufferCount buffer_count = 1;
   const uint32_t image_width = 1;
   const uint32_t image_height = 1;
-  allocation::BufferCollectionImportExportTokens ref_pair =
-      allocation::BufferCollectionImportExportTokens::New();
+  allocation::cpp::BufferCollectionImportExportTokens ref_pair =
+      allocation::cpp::BufferCollectionImportExportTokens::New();
 
   std::shared_ptr<Allocator> flatland_allocator =
       CreateAllocator(importer_, context_provider_.context(), dispatcher());
@@ -165,67 +175,73 @@ TEST_F(ScreenCapture2Test, ConfigureWithMissingArguments) {
 
   // Missing image size.
   {
-    ScreenCaptureConfig args;
-    args.set_import_token(std::move(ref_pair.import_token));
+    fuchsia_ui_composition_internal::ScreenCaptureConfig args;
+    args.import_token(std::move(ref_pair.import_token));
 
-    ScreenCaptureError error;
-    sc.Configure(std::move(args), [&error](fpromise::result<void, ScreenCaptureError> result) {
-      EXPECT_TRUE(result.is_error());
-      error = result.error();
+    bool called = false;
+    sc_client->Configure(std::move(args)).Then([&called](auto& result) {
+      ASSERT_TRUE(result.is_error());
+      ASSERT_TRUE(result.error_value().is_domain_error());
+      EXPECT_EQ(result.error_value().domain_error(), ScreenCaptureError::kMissingArgs);
+      called = true;
     });
     RunLoopUntilIdle();
-    EXPECT_EQ(error, ScreenCaptureError::MISSING_ARGS);
+    EXPECT_TRUE(called);
   }
 
   // Missing import token.
   {
-    ScreenCaptureConfig args;
-    args.set_image_size({image_width, image_height});
+    fuchsia_ui_composition_internal::ScreenCaptureConfig args;
+    args.image_size(fuchsia_math::SizeU{image_width, image_height});
 
-    ScreenCaptureError error;
-    sc.Configure(std::move(args), [&error](fpromise::result<void, ScreenCaptureError> result) {
-      EXPECT_TRUE(result.is_error());
-      error = result.error();
+    bool called = false;
+    sc_client->Configure(std::move(args)).Then([&called](auto& result) {
+      ASSERT_TRUE(result.is_error());
+      ASSERT_TRUE(result.error_value().is_domain_error());
+      EXPECT_EQ(result.error_value().domain_error(), ScreenCaptureError::kMissingArgs);
+      called = true;
     });
     RunLoopUntilIdle();
-    EXPECT_EQ(error, ScreenCaptureError::MISSING_ARGS);
+    EXPECT_TRUE(called);
   }
 
   // Unable to get buffer count.
   {
-    allocation::BufferCollectionImportExportTokens ref_pair2 =
-        allocation::BufferCollectionImportExportTokens::New();
+    allocation::cpp::BufferCollectionImportExportTokens ref_pair2 =
+        allocation::cpp::BufferCollectionImportExportTokens::New();
 
-    ScreenCaptureConfig args;
-    args.set_import_token(std::move(ref_pair2.import_token));
-    args.set_image_size({image_width, image_height});
+    fuchsia_ui_composition_internal::ScreenCaptureConfig args;
+    args.import_token(std::move(ref_pair2.import_token));
+    args.image_size(fuchsia_math::SizeU{image_width, image_height});
 
-    ScreenCaptureError error;
-    sc.Configure(std::move(args), [&error](fpromise::result<void, ScreenCaptureError> result) {
-      EXPECT_TRUE(result.is_error());
-      error = result.error();
+    bool called = false;
+    sc_client->Configure(std::move(args)).Then([&called](auto& result) {
+      ASSERT_TRUE(result.is_error());
+      ASSERT_TRUE(result.error_value().is_domain_error());
+      EXPECT_EQ(result.error_value().domain_error(), ScreenCaptureError::kInvalidArgs);
+      called = true;
     });
     RunLoopUntilIdle();
-    EXPECT_EQ(error, ScreenCaptureError::INVALID_ARGS);
+    EXPECT_TRUE(called);
   }
 
   // Has invalid import token.
   {
-    allocation::BufferCollectionImportExportTokens ref_pair2 =
-        allocation::BufferCollectionImportExportTokens::New();
-    ref_pair2.import_token.value.reset();
+    allocation::cpp::BufferCollectionImportExportTokens ref_pair2 =
+        allocation::cpp::BufferCollectionImportExportTokens::New();
+    ref_pair2.import_token.value().reset();
 
-    ScreenCaptureConfig args;
-    args.set_import_token(std::move(ref_pair2.import_token));
-    args.set_image_size({image_width, image_height});
+    fuchsia_ui_composition_internal::ScreenCaptureConfig args;
+    args.import_token(std::move(ref_pair2.import_token));
+    args.image_size(fuchsia_math::SizeU{image_width, image_height});
 
-    ScreenCaptureError error;
-    sc.Configure(std::move(args), [&error](fpromise::result<void, ScreenCaptureError> result) {
-      EXPECT_TRUE(result.is_error());
-      error = result.error();
+    bool called = false;
+    sc_client->Configure(std::move(args)).Then([&called](auto& result) {
+      ASSERT_TRUE(result.is_error());
+      called = true;
     });
     RunLoopUntilIdle();
-    EXPECT_EQ(error, ScreenCaptureError::INVALID_ARGS);
+    EXPECT_TRUE(called);
   }
 }
 
@@ -247,14 +263,15 @@ TEST_F(ScreenCapture2Test, Configure_BufferCollectionFailure) {
         return fpromise::make_ok_promise();
       });
 
-  screen_capture2::ScreenCapture sc(importer_, nullptr,
-                                    [this]() { return this->GetRenderables(); });
+  screen_capture2::ScreenCapture sc_server(importer_, nullptr,
+                                           [this]() { return this->GetRenderables(); });
+  fidl::Client sc_client = BindScreenCapture(sc_server);
 
   const BufferCount buffer_count = 3;
   const uint32_t image_width = 1;
   const uint32_t image_height = 1;
-  allocation::BufferCollectionImportExportTokens ref_pair =
-      allocation::BufferCollectionImportExportTokens::New();
+  allocation::cpp::BufferCollectionImportExportTokens ref_pair =
+      allocation::cpp::BufferCollectionImportExportTokens::New();
 
   std::shared_ptr<Allocator> flatland_allocator =
       CreateAllocator(importer_, context_provider_.context(), dispatcher());
@@ -263,9 +280,9 @@ TEST_F(ScreenCapture2Test, Configure_BufferCollectionFailure) {
       std::move(ref_pair.export_token), flatland_allocator, sysmem_allocator_,
       [this](fit::function<bool()> condition) { RunLoopUntil(std::move(condition)); });
 
-  ScreenCaptureConfig args;
-  args.set_import_token(std::move(ref_pair.import_token));
-  args.set_image_size({image_width, image_height});
+  fuchsia_ui_composition_internal::ScreenCaptureConfig args;
+  args.import_token(std::move(ref_pair.import_token));
+  args.image_size(fuchsia_math::SizeU{image_width, image_height});
 
   EXPECT_CALL(*mock_renderer_.get(), ImportBufferImage(_, _))
       .WillOnce(ReturnPromise(fpromise::ok()))
@@ -274,115 +291,150 @@ TEST_F(ScreenCapture2Test, Configure_BufferCollectionFailure) {
 
   EXPECT_CALL(*mock_renderer_.get(), ReleaseBufferImage(_)).Times(buffer_count - 1);
 
-  ScreenCaptureError error;
-  sc.Configure(std::move(args), [&error](fpromise::result<void, ScreenCaptureError> result) {
-    EXPECT_TRUE(result.is_error());
-    error = result.error();
+  bool called = false;
+  sc_client->Configure(std::move(args)).Then([&called](auto& result) {
+    ASSERT_TRUE(result.is_error());
+    ASSERT_TRUE(result.error_value().is_domain_error());
+    EXPECT_EQ(result.error_value().domain_error(), ScreenCaptureError::kInvalidArgs);
+    called = true;
   });
   RunLoopUntilIdle();
-  EXPECT_EQ(error, ScreenCaptureError::INVALID_ARGS);
+  EXPECT_TRUE(called);
 
   // Expect all BufferImages are released before any tear down of test.
   EXPECT_CALL(*mock_renderer_, ReleaseBufferImage(_)).Times(0);
 }
 
 TEST_F(ScreenCapture2Test, Configure_Success) {
-  screen_capture2::ScreenCapture sc(importer_, renderer_,
-                                    [this]() { return this->GetRenderables(); });
+  screen_capture2::ScreenCapture sc_server(importer_, renderer_,
+                                           [this]() { return this->GetRenderables(); });
+  fidl::Client sc_client = BindScreenCapture(sc_server);
   const BufferCount buffer_count = 1;
   const uint32_t image_width = 1;
   const uint32_t image_height = 1;
 
-  SetUpScreenCapture(sc, buffer_count, image_width, image_height, false);
+  SetUpScreenCapture(sc_client, buffer_count, image_width, image_height, false);
 }
 
 TEST_F(ScreenCapture2Test, GetNextFrame_Success) {
-  screen_capture2::ScreenCapture sc(importer_, renderer_,
-                                    [this]() { return this->GetRenderables(); });
+  screen_capture2::ScreenCapture sc_server(importer_, renderer_,
+                                           [this]() { return this->GetRenderables(); });
+  fidl::Client sc_client = BindScreenCapture(sc_server);
   const BufferCount buffer_count = 1;
   const uint32_t image_width = 1;
   const uint32_t image_height = 1;
 
-  SetUpScreenCapture(sc, buffer_count, image_width, image_height, false);
+  SetUpScreenCapture(sc_client, buffer_count, image_width, image_height, false);
 
-  fpromise::result<FrameInfo, ScreenCaptureError> gnf_result;
-  sc.GetNextFrame([&gnf_result](fpromise::result<FrameInfo, ScreenCaptureError> result) {
-    EXPECT_FALSE(result.is_error());
-    gnf_result = std::move(result);
+  bool get_next_frame_succeeded = false;
+  sc_client->GetNextFrame().Then([&get_next_frame_succeeded](auto& result) {
+    ASSERT_TRUE(result.is_ok());
+    get_next_frame_succeeded = true;
   });
   RunLoopUntilIdle();
-  EXPECT_TRUE(gnf_result.is_ok());
+  EXPECT_TRUE(get_next_frame_succeeded);
 }
 
 // Releasing buffer after first render allows it to be reused during successive call.
 TEST_F(ScreenCapture2Test, GetNextFrame_SuccessiveCallSuccess) {
   SetUpMockImporter();
-  screen_capture2::ScreenCapture sc(importer_, mock_renderer_,
-                                    [this]() { return this->GetRenderables(); });
+  screen_capture2::ScreenCapture sc_server(importer_, mock_renderer_,
+                                           [this]() { return this->GetRenderables(); });
+  fidl::Client sc_client = BindScreenCapture(sc_server);
   const BufferCount buffer_count = 1;
   const uint32_t image_width = 1;
   const uint32_t image_height = 1;
 
-  SetUpScreenCapture(sc, buffer_count, image_width, image_height, true);
+  SetUpScreenCapture(sc_client, buffer_count, image_width, image_height, true);
 
-  fpromise::result<FrameInfo, ScreenCaptureError> gnf_result;
-  sc.GetNextFrame([&gnf_result](fpromise::result<FrameInfo, ScreenCaptureError> result) {
-    EXPECT_FALSE(result.is_error());
-    gnf_result = std::move(result);
+  fuchsia_ui_composition_internal::FrameInfo info;
+  bool first_get_next_frame_succeeded = false;
+  sc_client->GetNextFrame().Then([&first_get_next_frame_succeeded, &info](auto& result) {
+    ASSERT_TRUE(result.is_ok());
+    info = std::move(result.value());
+    first_get_next_frame_succeeded = true;
   });
   RunLoopUntilIdle();
-  EXPECT_TRUE(gnf_result.is_ok());
-  FrameInfo info = std::move(gnf_result.value());
+  EXPECT_TRUE(first_get_next_frame_succeeded);
 
-  EXPECT_TRUE(GetReceivedLastFrame(sc));
+  EXPECT_TRUE(GetReceivedLastFrame(sc_server));
 
-  zx::eventpair token = std::move(*info.mutable_buffer_release_token());
+  zx::eventpair token = std::move(info.buffer_release_token().value());
   EXPECT_EQ(token.signal_peer(0, ZX_EVENTPAIR_SIGNALED), ZX_OK);
   RunLoopUntilIdle();
 
-  fpromise::result<FrameInfo, ScreenCaptureError> gnf_result2;
-  sc.GetNextFrame([&gnf_result2](fpromise::result<FrameInfo, ScreenCaptureError> result) {
-    EXPECT_FALSE(result.is_error());
-    gnf_result2 = std::move(result);
+  fuchsia_ui_composition_internal::FrameInfo info2;
+  bool second_get_next_frame_succeeded = false;
+  sc_client->GetNextFrame().Then([&second_get_next_frame_succeeded, &info2](auto& result) {
+    ASSERT_TRUE(result.is_ok());
+    info2 = std::move(result.value());
+    second_get_next_frame_succeeded = true;
   });
   RunLoopUntilIdle();
 
-  // Since |recieved_last_frame_| is true, GetNextFrame() will be hanging.
-  sc.MaybeRenderFrame();
+  // Since |received_last_frame_| is true, GetNextFrame() will be hanging.
+  sc_server.MaybeRenderFrame();
   RunLoopUntilIdle();
 
-  EXPECT_TRUE(gnf_result2.is_ok());
-  FrameInfo info2 = std::move(gnf_result2.value());
-  EXPECT_EQ(info2.buffer_index(), info.buffer_index());
+  EXPECT_TRUE(second_get_next_frame_succeeded);
+  EXPECT_EQ(info2.buffer_index().value(), info.buffer_index().value());
 
   EXPECT_CALL(*mock_renderer_, ReleaseBufferImage(_)).Times(1);
 }
 
 TEST_F(ScreenCapture2Test, GetNextFrame_Errors) {
   SetUpMockImporter();
-  screen_capture2::ScreenCapture sc(importer_, mock_renderer_,
-                                    [this]() { return this->GetRenderables(); });
+  screen_capture2::ScreenCapture sc_server(importer_, mock_renderer_,
+                                           [this]() { return this->GetRenderables(); });
+  fidl::Client sc_client = BindScreenCapture(sc_server);
   const BufferCount buffer_count = 1;
   const uint32_t image_width = 1;
   const uint32_t image_height = 1;
 
-  SetUpScreenCapture(sc, buffer_count, image_width, image_height, true);
+  SetUpScreenCapture(sc_client, buffer_count, image_width, image_height, true);
 
   // Overwriting hanging get.
   {
-    fpromise::result<FrameInfo, ScreenCaptureError> gnf_result1;
-    sc.GetNextFrame([&gnf_result1](fpromise::result<FrameInfo, ScreenCaptureError> result) {
-      EXPECT_FALSE(result.is_error());
-      gnf_result1 = std::move(result);
+    // Capture the renderer's release fence instead of immediately signaling it (the default mock
+    // behavior in `SetUpScreenCapture()`). This avoids a race by guaranteeing that the first
+    // `GetNextFrame()` is still pending on the server when the second request is dispatched, which
+    // is the condition that triggers a `kBadHangingGet` error. Without this, the reply to the
+    // first call and dispatch of the second would race: `TestLoop` randomizes the dispatch order of
+    // concurrently-ready waits, so on some seeds the second call would become a legal hanging get
+    // and the test would fail.
+    zx::event release_fence;
+    EXPECT_CALL(*mock_renderer_.get(), Render(_, _, _))
+        .WillOnce([&release_fence](const allocation::ImageMetadata& render_target,
+                                   std::span<const flatland::ResolvedLayer> layers,
+                                   const flatland::Renderer::RenderArgs& render_args) {
+          ASSERT_FALSE(render_args.release_fences.empty());
+          render_args.release_fences[0].duplicate(ZX_RIGHT_SAME_RIGHTS, &release_fence);
+        });
+
+    bool first_get_next_frame_succeeded = false;
+    sc_client->GetNextFrame().Then([&first_get_next_frame_succeeded](auto& result) {
+      ASSERT_TRUE(result.is_ok());
+      first_get_next_frame_succeeded = true;
     });
-    ScreenCaptureError error;
-    sc.GetNextFrame([&error](fpromise::result<FrameInfo, ScreenCaptureError> result) {
-      EXPECT_TRUE(result.is_error());
-      error = result.error();
+    bool second_get_next_frame_succeeded = false;
+    sc_client->GetNextFrame().Then([&second_get_next_frame_succeeded](auto& result) {
+      ASSERT_TRUE(result.is_error());
+      ASSERT_TRUE(result.error_value().is_domain_error());
+      EXPECT_EQ(result.error_value().domain_error(), ScreenCaptureError::kBadHangingGet);
+      second_get_next_frame_succeeded = true;
     });
     RunLoopUntilIdle();
-    EXPECT_TRUE(gnf_result1.is_ok());
-    EXPECT_EQ(error, ScreenCaptureError::BAD_HANGING_GET);
+
+    // The second request failed immediately with `kBadHangingGet`, and the first request hasn't
+    // finished because it's waiting for the release fence to be signaled.
+    EXPECT_FALSE(first_get_next_frame_succeeded);
+    EXPECT_TRUE(second_get_next_frame_succeeded);
+
+    // Signal the release fence to allow the first GetNextFrame to complete.
+    ASSERT_TRUE(release_fence.is_valid());
+    release_fence.signal(0, ZX_EVENT_SIGNALED);
+    RunLoopUntilIdle();
+    EXPECT_TRUE(first_get_next_frame_succeeded);
 
     EXPECT_CALL(*mock_renderer_, ReleaseBufferImage(_)).Times(1);
   }
@@ -391,101 +443,103 @@ TEST_F(ScreenCapture2Test, GetNextFrame_Errors) {
 // Releasing buffer while client has been waiting immediately renders the frame.
 TEST_F(ScreenCapture2Test, GetNextFrame_BuffersFull) {
   SetUpMockImporter();
-  screen_capture2::ScreenCapture sc(importer_, mock_renderer_,
-                                    [this]() { return this->GetRenderables(); });
+  screen_capture2::ScreenCapture sc_server(importer_, mock_renderer_,
+                                           [this]() { return this->GetRenderables(); });
+  fidl::Client sc_client = BindScreenCapture(sc_server);
 
   const BufferCount buffer_count = 1;
   const uint32_t image_width = 1;
   const uint32_t image_height = 1;
 
-  SetUpScreenCapture(sc, buffer_count, image_width, image_height, true);
+  SetUpScreenCapture(sc_client, buffer_count, image_width, image_height, true);
 
   // Makes buffer unavailable.
-  fpromise::result<FrameInfo, ScreenCaptureError> gnf_result;
-  sc.GetNextFrame([&gnf_result](fpromise::result<FrameInfo, ScreenCaptureError> result) {
-    EXPECT_FALSE(result.is_error());
-    gnf_result = std::move(result);
+  fuchsia_ui_composition_internal::FrameInfo info;
+  bool first_get_next_frame_succeeded = false;
+  sc_client->GetNextFrame().Then([&first_get_next_frame_succeeded, &info](auto& result) {
+    ASSERT_TRUE(result.is_ok());
+    info = std::move(result.value());
+    first_get_next_frame_succeeded = true;
   });
   RunLoopUntilIdle();
-  EXPECT_TRUE(gnf_result.is_ok());
-  FrameInfo info = std::move(gnf_result.value());
+  EXPECT_TRUE(first_get_next_frame_succeeded);
 
-  zx::eventpair token = std::move(*info.mutable_buffer_release_token());
+  zx::eventpair token = std::move(info.buffer_release_token().value());
 
-  bool callback_called = false;
-  fpromise::result<FrameInfo, ScreenCaptureError> gnf_result2;
-  sc.GetNextFrame(
-      [&gnf_result2, &callback_called](fpromise::result<FrameInfo, ScreenCaptureError> result) {
-        EXPECT_FALSE(result.is_error());
-        gnf_result2 = std::move(result);
-        callback_called = true;
-      });
+  bool second_get_next_frame_succeeded = false;
+  fuchsia_ui_composition_internal::FrameInfo info2;
+  sc_client->GetNextFrame().Then([&second_get_next_frame_succeeded, &info2](auto& result) {
+    ASSERT_TRUE(result.is_ok());
+    info2 = std::move(result.value());
+    second_get_next_frame_succeeded = true;
+  });
   RunLoopUntilIdle();
-  EXPECT_FALSE(callback_called);
+  EXPECT_FALSE(second_get_next_frame_succeeded);
 
   EXPECT_EQ(token.signal_peer(0, ZX_EVENTPAIR_SIGNALED), ZX_OK);
   RunLoopUntilIdle();
 
   // Since |received_last_frame_| is true, GetNextFrame will be hanging.
-  sc.MaybeRenderFrame();
+  sc_server.MaybeRenderFrame();
   RunLoopUntilIdle();
 
-  EXPECT_TRUE(gnf_result2.is_ok());
-  EXPECT_TRUE(callback_called);
-  FrameInfo info2 = std::move(gnf_result2.value());
-  EXPECT_EQ(info2.buffer_index(), info.buffer_index());
+  EXPECT_TRUE(second_get_next_frame_succeeded);
+  EXPECT_EQ(info2.buffer_index().value(), info.buffer_index().value());
 
   EXPECT_CALL(*mock_renderer_, ReleaseBufferImage(_)).Times(1);
 }
 
 TEST_F(ScreenCapture2Test, MaybeRenderFrame_Errors) {
   SetUpMockImporter();
-  screen_capture2::ScreenCapture sc(importer_, mock_renderer_,
-                                    [this]() { return this->GetRenderables(); });
+  screen_capture2::ScreenCapture sc_server(importer_, mock_renderer_,
+                                           [this]() { return this->GetRenderables(); });
+  fidl::Client sc_client = BindScreenCapture(sc_server);
 
   const BufferCount buffer_count = 1;
   const uint32_t image_width = 1;
   const uint32_t image_height = 1;
 
-  SetUpScreenCapture(sc, buffer_count, image_width, image_height, true);
+  SetUpScreenCapture(sc_client, buffer_count, image_width, image_height, true);
 
   // |available_buffers_| is empty.
   {
-    fpromise::result<FrameInfo, ScreenCaptureError> gnf_result;
-    sc.GetNextFrame([&gnf_result](fpromise::result<FrameInfo, ScreenCaptureError> result) {
-      EXPECT_FALSE(result.is_error());
-      gnf_result = std::move(result);
+    fuchsia_ui_composition_internal::FrameInfo info;
+    bool first_get_next_frame_succeeded = false;
+    sc_client->GetNextFrame().Then([&first_get_next_frame_succeeded, &info](auto& result) {
+      ASSERT_TRUE(result.is_ok());
+      info = std::move(result.value());
+      first_get_next_frame_succeeded = true;
     });
     RunLoopUntilIdle();
-    EXPECT_TRUE(gnf_result.is_ok());
-    EXPECT_TRUE(GetReceivedLastFrame(sc));
+    EXPECT_TRUE(first_get_next_frame_succeeded);
+    EXPECT_TRUE(GetReceivedLastFrame(sc_server));
 
-    bool callback_called = false;
-    sc.GetNextFrame([&callback_called](fpromise::result<FrameInfo, ScreenCaptureError> result) {
-      callback_called = true;
+    bool second_get_next_frame_succeeded = false;
+    sc_client->GetNextFrame().Then([&second_get_next_frame_succeeded](auto& result) {
+      ASSERT_TRUE(result.is_ok());
+      second_get_next_frame_succeeded = true;
     });
     RunLoopUntilIdle();
-    sc.MaybeRenderFrame();
+    sc_server.MaybeRenderFrame();
     RunLoopUntilIdle();
-    EXPECT_FALSE(callback_called);
-    EXPECT_FALSE(GetReceivedLastFrame(sc));
+    EXPECT_FALSE(second_get_next_frame_succeeded);
+    EXPECT_FALSE(GetReceivedLastFrame(sc_server));
 
     // Clean up test.
-    FrameInfo info = std::move(gnf_result.value());
-    zx::eventpair token = std::move(*info.mutable_buffer_release_token());
+    zx::eventpair token = std::move(info.buffer_release_token().value());
     EXPECT_EQ(token.signal_peer(0, ZX_EVENTPAIR_SIGNALED), ZX_OK);
     RunLoopUntilIdle();
 
-    EXPECT_TRUE(GetReceivedLastFrame(sc));
+    EXPECT_TRUE(GetReceivedLastFrame(sc_server));
   }
 
-  // |current_callback_| does not exist.
+  // |current_completer_| does not exist.
   {
-    EXPECT_TRUE(GetReceivedLastFrame(sc));
+    EXPECT_TRUE(GetReceivedLastFrame(sc_server));
 
-    sc.MaybeRenderFrame();
+    sc_server.MaybeRenderFrame();
     RunLoopUntilIdle();
-    EXPECT_FALSE(GetReceivedLastFrame(sc));
+    EXPECT_FALSE(GetReceivedLastFrame(sc_server));
   }
 }
 

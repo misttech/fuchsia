@@ -4,8 +4,6 @@
 
 #include "src/ui/scenic/lib/screen_capture/screen_capture.h"
 
-#include <fuchsia/ui/composition/cpp/fidl.h>
-#include <lib/fidl/cpp/hlcpp_conversion.h>
 #include <lib/fit/result.h>
 #include <lib/syslog/cpp/macros.h>
 #include <lib/ui/scenic/cpp/buffer_collection_import_export_tokens.h>
@@ -90,10 +88,10 @@ TEST_F(ScreenCaptureTest, ConfigureSingleImporterSuccess) {
   screen_capture::ScreenCapture sc(screen_capture_importers, nullptr,
                                    [this]() { return this->GetRenderables(); });
 
-  allocation::BufferCollectionImportExportTokens ref_pair =
-      allocation::BufferCollectionImportExportTokens::New();
+  allocation::cpp::BufferCollectionImportExportTokens ref_pair =
+      allocation::cpp::BufferCollectionImportExportTokens::New();
   ScreenCaptureConfig args;
-  args.import_token(fidl::HLCPPToNatural(std::move(ref_pair.import_token)));
+  args.import_token(std::move(ref_pair.import_token));
   args.size(fuchsia_math::SizeU{1, 1});
   args.buffer_count(1);
 
@@ -126,10 +124,10 @@ TEST_F(ScreenCaptureTest, ConfigureSingleImporterFailure) {
   screen_capture::ScreenCapture sc(screen_capture_importers, nullptr,
                                    [this]() { return this->GetRenderables(); });
 
-  allocation::BufferCollectionImportExportTokens ref_pair =
-      allocation::BufferCollectionImportExportTokens::New();
+  allocation::cpp::BufferCollectionImportExportTokens ref_pair =
+      allocation::cpp::BufferCollectionImportExportTokens::New();
   ScreenCaptureConfig args;
-  args.import_token(fidl::HLCPPToNatural(std::move(ref_pair.import_token)));
+  args.import_token(std::move(ref_pair.import_token));
   args.size(fuchsia_math::SizeU{1, 1});
   args.buffer_count(1);
 
@@ -157,10 +155,10 @@ TEST_F(ScreenCaptureTest, ConfigureMultipleImportersSuccess) {
   screen_capture::ScreenCapture sc(screen_capture_importers, nullptr,
                                    [this]() { return this->GetRenderables(); });
 
-  allocation::BufferCollectionImportExportTokens ref_pair =
-      allocation::BufferCollectionImportExportTokens::New();
+  allocation::cpp::BufferCollectionImportExportTokens ref_pair =
+      allocation::cpp::BufferCollectionImportExportTokens::New();
   ScreenCaptureConfig args;
-  args.import_token(fidl::HLCPPToNatural(std::move(ref_pair.import_token)));
+  args.import_token(std::move(ref_pair.import_token));
   args.size(fuchsia_math::SizeU{1, 1});
   args.buffer_count(1);
 
@@ -194,10 +192,10 @@ TEST_F(ScreenCaptureTest, ConfigureMultipleImportersImportFailure) {
   screen_capture::ScreenCapture sc(screen_capture_importers, nullptr,
                                    [this]() { return this->GetRenderables(); });
 
-  allocation::BufferCollectionImportExportTokens ref_pair =
-      allocation::BufferCollectionImportExportTokens::New();
+  allocation::cpp::BufferCollectionImportExportTokens ref_pair =
+      allocation::cpp::BufferCollectionImportExportTokens::New();
   ScreenCaptureConfig args;
-  args.import_token(fidl::HLCPPToNatural(std::move(ref_pair.import_token)));
+  args.import_token(std::move(ref_pair.import_token));
   args.size(fuchsia_math::SizeU{1, 1});
   args.buffer_count(3);
 
@@ -229,7 +227,7 @@ TEST_F(ScreenCaptureTest, ConfigureMultipleImportersImportFailure) {
 
 TEST_F(ScreenCaptureTest, ConfigureWithMissingArguments) {
   screen_capture::ScreenCapture sc({}, nullptr, [this]() { return this->GetRenderables(); });
-  sc.Configure({}, [](auto result) {
+  sc.Configure(ScreenCaptureConfig{}, [](auto result) {
     EXPECT_TRUE(result.is_error());
     EXPECT_EQ(result.error_value(), ScreenCaptureError::kMissingArgs);
   });
@@ -242,10 +240,10 @@ TEST_F(ScreenCaptureTest, ConfigureNoBuffers) {
   screen_capture::ScreenCapture sc(screen_capture_importers, nullptr,
                                    [this]() { return this->GetRenderables(); });
 
-  allocation::BufferCollectionImportExportTokens ref_pair =
-      allocation::BufferCollectionImportExportTokens::New();
+  allocation::cpp::BufferCollectionImportExportTokens ref_pair =
+      allocation::cpp::BufferCollectionImportExportTokens::New();
   ScreenCaptureConfig args;
-  args.import_token(fidl::HLCPPToNatural(std::move(ref_pair.import_token)));
+  args.import_token(std::move(ref_pair.import_token));
   args.size(fuchsia_math::SizeU{1, 1});
   args.buffer_count(0);
 
@@ -266,10 +264,10 @@ TEST_F(ScreenCaptureTest, ConfigureTwice) {
                                    [this]() { return this->GetRenderables(); });
 
   // Configure a buffer collection with two (2) VMOs to render into for GetNextFrame().
-  allocation::BufferCollectionImportExportTokens ref_pair1 =
-      allocation::BufferCollectionImportExportTokens::New();
+  allocation::cpp::BufferCollectionImportExportTokens ref_pair1 =
+      allocation::cpp::BufferCollectionImportExportTokens::New();
   ScreenCaptureConfig args1;
-  args1.import_token(fidl::HLCPPToNatural(std::move(ref_pair1.import_token)));
+  args1.import_token(std::move(ref_pair1.import_token));
   args1.size(fuchsia_math::SizeU{1, 1});
   args1.buffer_count(2);
 
@@ -293,10 +291,10 @@ TEST_F(ScreenCaptureTest, ConfigureTwice) {
 
   // Create another buffer collection to render into for GetNextFrame(). This collection only has
   // one (1) VMO.
-  allocation::BufferCollectionImportExportTokens ref_pair2 =
-      allocation::BufferCollectionImportExportTokens::New();
+  allocation::cpp::BufferCollectionImportExportTokens ref_pair2 =
+      allocation::cpp::BufferCollectionImportExportTokens::New();
   ScreenCaptureConfig args2;
-  args2.import_token(fidl::HLCPPToNatural(std::move(ref_pair2.import_token)));
+  args2.import_token(std::move(ref_pair2.import_token));
   args2.size(fuchsia_math::SizeU{1, 1});
   args2.buffer_count(1);
 
@@ -350,10 +348,10 @@ TEST_F(ScreenCaptureTest, GetNextFrameSuccess) {
   screen_capture::ScreenCapture sc(screen_capture_importers, renderer_,
                                    [this]() { return this->GetRenderables(); });
 
-  allocation::BufferCollectionImportExportTokens ref_pair =
-      allocation::BufferCollectionImportExportTokens::New();
+  allocation::cpp::BufferCollectionImportExportTokens ref_pair =
+      allocation::cpp::BufferCollectionImportExportTokens::New();
   ScreenCaptureConfig args;
-  args.import_token(fidl::HLCPPToNatural(std::move(ref_pair.import_token)));
+  args.import_token(std::move(ref_pair.import_token));
   args.size(fuchsia_math::SizeU{1, 1});
   args.buffer_count(1);
 
@@ -384,10 +382,10 @@ TEST_F(ScreenCaptureTest, GetNextFrameBufferFullError) {
   screen_capture::ScreenCapture sc(screen_capture_importers, renderer_,
                                    [this]() { return this->GetRenderables(); });
 
-  allocation::BufferCollectionImportExportTokens ref_pair =
-      allocation::BufferCollectionImportExportTokens::New();
+  allocation::cpp::BufferCollectionImportExportTokens ref_pair =
+      allocation::cpp::BufferCollectionImportExportTokens::New();
   ScreenCaptureConfig args;
-  args.import_token(fidl::HLCPPToNatural(std::move(ref_pair.import_token)));
+  args.import_token(std::move(ref_pair.import_token));
   args.size(fuchsia_math::SizeU{1, 1});
   args.buffer_count(1);
 
@@ -424,10 +422,10 @@ TEST_F(ScreenCaptureTest, GetNextFrameMultipleBuffers) {
   screen_capture::ScreenCapture sc(screen_capture_importers, renderer_,
                                    [this]() { return this->GetRenderables(); });
 
-  allocation::BufferCollectionImportExportTokens ref_pair =
-      allocation::BufferCollectionImportExportTokens::New();
+  allocation::cpp::BufferCollectionImportExportTokens ref_pair =
+      allocation::cpp::BufferCollectionImportExportTokens::New();
   ScreenCaptureConfig args;
-  args.import_token(fidl::HLCPPToNatural(std::move(ref_pair.import_token)));
+  args.import_token(std::move(ref_pair.import_token));
   args.size(fuchsia_math::SizeU{1, 1});
   args.buffer_count(2);
 
@@ -467,10 +465,10 @@ TEST_F(ScreenCaptureTest, GetNextFrameMissingArgs) {
   screen_capture::ScreenCapture sc(screen_capture_importers, nullptr,
                                    [this]() { return this->GetRenderables(); });
 
-  allocation::BufferCollectionImportExportTokens ref_pair =
-      allocation::BufferCollectionImportExportTokens::New();
+  allocation::cpp::BufferCollectionImportExportTokens ref_pair =
+      allocation::cpp::BufferCollectionImportExportTokens::New();
   ScreenCaptureConfig args;
-  args.import_token(fidl::HLCPPToNatural(std::move(ref_pair.import_token)));
+  args.import_token(std::move(ref_pair.import_token));
   args.size(fuchsia_math::SizeU{1, 1});
   args.buffer_count(1);
 
@@ -507,10 +505,10 @@ TEST_F(ScreenCaptureTest, ReleaseAvailableFrame) {
   screen_capture::ScreenCapture sc(screen_capture_importers, renderer_,
                                    [this]() { return this->GetRenderables(); });
 
-  allocation::BufferCollectionImportExportTokens ref_pair =
-      allocation::BufferCollectionImportExportTokens::New();
+  allocation::cpp::BufferCollectionImportExportTokens ref_pair =
+      allocation::cpp::BufferCollectionImportExportTokens::New();
   ScreenCaptureConfig args;
-  args.import_token(fidl::HLCPPToNatural(std::move(ref_pair.import_token)));
+  args.import_token(std::move(ref_pair.import_token));
   args.size(fuchsia_math::SizeU{1, 1});
   args.buffer_count(1);
 
@@ -545,10 +543,10 @@ TEST_F(ScreenCaptureTest, ReleaseOutOfRangeFrame) {
   screen_capture::ScreenCapture sc(screen_capture_importers, renderer_,
                                    [this]() { return this->GetRenderables(); });
 
-  allocation::BufferCollectionImportExportTokens ref_pair =
-      allocation::BufferCollectionImportExportTokens::New();
+  allocation::cpp::BufferCollectionImportExportTokens ref_pair =
+      allocation::cpp::BufferCollectionImportExportTokens::New();
   ScreenCaptureConfig args;
-  args.import_token(fidl::HLCPPToNatural(std::move(ref_pair.import_token)));
+  args.import_token(std::move(ref_pair.import_token));
   args.size(fuchsia_math::SizeU{1, 1});
   args.buffer_count(1);
 
@@ -586,10 +584,10 @@ TEST_F(ScreenCaptureTest, ReleaseFrameFromFullBuffer) {
   screen_capture::ScreenCapture sc(screen_capture_importers, renderer_,
                                    [this]() { return this->GetRenderables(); });
 
-  allocation::BufferCollectionImportExportTokens ref_pair =
-      allocation::BufferCollectionImportExportTokens::New();
+  allocation::cpp::BufferCollectionImportExportTokens ref_pair =
+      allocation::cpp::BufferCollectionImportExportTokens::New();
   ScreenCaptureConfig args;
-  args.import_token(fidl::HLCPPToNatural(std::move(ref_pair.import_token)));
+  args.import_token(std::move(ref_pair.import_token));
   args.size(fuchsia_math::SizeU{1, 1});
   args.buffer_count(kNumBuffers);
 

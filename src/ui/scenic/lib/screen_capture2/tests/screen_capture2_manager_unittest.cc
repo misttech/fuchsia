@@ -4,7 +4,7 @@
 
 #include "src/ui/scenic/lib/screen_capture2/screen_capture2_manager.h"
 
-#include <fuchsia/ui/composition/cpp/fidl.h>
+#include <fidl/fuchsia.ui.composition.internal/cpp/fidl.h>
 #include <lib/async/cpp/executor.h>
 #include <lib/sys/cpp/testing/component_context_provider.h>
 #include <lib/ui/scenic/cpp/buffer_collection_import_export_tokens.h>
@@ -15,7 +15,6 @@
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
-#include "fuchsia/ui/composition/internal/cpp/fidl.h"
 #include "src/lib/testing/loop_fixture/test_loop_fixture.h"
 #include "src/ui/scenic/lib/allocation/allocator.h"
 #include "src/ui/scenic/lib/flatland/engine/engine.h"
@@ -29,9 +28,9 @@ using testing::_;
 
 using allocation::Allocator;
 using flatland::SrcToDest;
-using fuchsia::ui::composition::internal::FrameInfo;
-using fuchsia::ui::composition::internal::ScreenCaptureConfig;
-using fuchsia::ui::composition::internal::ScreenCaptureError;
+using fuchsia_ui_composition_internal::FrameInfo;
+using fuchsia_ui_composition_internal::ScreenCaptureConfig;
+using fuchsia_ui_composition_internal::ScreenCaptureError;
 using screen_capture::ScreenCaptureBufferCollectionImporter;
 
 namespace screen_capture2 {
@@ -66,19 +65,23 @@ class ScreenCapture2ManagerTest : public gtest::TestLoopFixture {
     RunLoopUntilIdle();
   }
 
-  fidl::InterfacePtr<fuchsia::ui::composition::internal::ScreenCapture> CreateScreenCapture() {
-    fidl::InterfacePtr<fuchsia::ui::composition::internal::ScreenCapture> sc;
-    manager_->CreateClient(sc.NewRequest());
-    return sc;
+  fidl::Client<fuchsia_ui_composition_internal::ScreenCapture> CreateScreenCapture(
+      fidl::AsyncEventHandler<fuchsia_ui_composition_internal::ScreenCapture>* event_handler =
+          nullptr) {
+    auto [client_end, server_end] =
+        fidl::Endpoints<fuchsia_ui_composition_internal::ScreenCapture>::Create();
+    manager_->CreateClient(std::move(server_end));
+    return fidl::Client<fuchsia_ui_composition_internal::ScreenCapture>(
+        std::move(client_end), dispatcher(), event_handler);
   }
 
   flatland::Renderables GetRenderables() { return {}; }
 
-  void ConfigureScreenCapture(
-      fidl::InterfacePtr<fuchsia::ui::composition::internal::ScreenCapture>& sc,
-      BufferCount buffer_count, uint32_t image_width, uint32_t image_height) {
-    allocation::BufferCollectionImportExportTokens ref_pair =
-        allocation::BufferCollectionImportExportTokens::New();
+  void ConfigureScreenCapture(fidl::Client<fuchsia_ui_composition_internal::ScreenCapture>& sc,
+                              BufferCount buffer_count, uint32_t image_width,
+                              uint32_t image_height) {
+    allocation::cpp::BufferCollectionImportExportTokens ref_pair =
+        allocation::cpp::BufferCollectionImportExportTokens::New();
 
     std::shared_ptr<Allocator> flatland_allocator =
         CreateAllocator(importer_, context_provider_.context(), dispatcher());
@@ -87,18 +90,17 @@ class ScreenCapture2ManagerTest : public gtest::TestLoopFixture {
         std::move(ref_pair.export_token), flatland_allocator, sysmem_allocator_,
         [this](fit::function<bool()> condition) { RunLoopUntil(std::move(condition)); });
 
-    ScreenCaptureConfig args;
-    args.set_import_token(std::move(ref_pair.import_token));
-    args.set_image_size({image_width, image_height});
+    fuchsia_ui_composition_internal::ScreenCaptureConfig args;
+    args.import_token(std::move(ref_pair.import_token));
+    args.image_size(fuchsia_math::SizeU{image_width, image_height});
 
-    fpromise::result<void, ScreenCaptureError> configure_result;
-    sc->Configure(std::move(args),
-                  [&configure_result](fpromise::result<void, ScreenCaptureError> result) {
-                    EXPECT_FALSE(result.is_error());
-                    configure_result = result;
-                  });
+    bool configure_succeeded = false;
+    sc->Configure(std::move(args)).Then([&configure_succeeded](auto& result) {
+      ASSERT_TRUE(result.is_ok());
+      configure_succeeded = true;
+    });
     RunLoopUntilIdle();
-    EXPECT_TRUE(configure_result.is_ok());
+    EXPECT_TRUE(configure_succeeded);
   }
 
  protected:
@@ -111,22 +113,21 @@ class ScreenCapture2ManagerTest : public gtest::TestLoopFixture {
 };
 
 TEST_F(ScreenCapture2ManagerTest, CreateClients) {
-  fidl::InterfacePtr<fuchsia::ui::composition::internal::ScreenCapture> sc1 = CreateScreenCapture();
-  fidl::InterfacePtr<fuchsia::ui::composition::internal::ScreenCapture> sc2 = CreateScreenCapture();
+  fidl::Client sc1 = CreateScreenCapture();
+  fidl::Client sc2 = CreateScreenCapture();
 
   RunLoopUntilIdle();
-  EXPECT_TRUE(sc1.is_bound());
-  EXPECT_TRUE(sc2.is_bound());
+  EXPECT_TRUE(sc1.is_valid());
+  EXPECT_TRUE(sc2.is_valid());
 
   EXPECT_EQ(manager_->client_count(), 2ul);
 }
 
 TEST_F(ScreenCapture2ManagerTest, ClientDiesBeforeManager) {
   {
-    fidl::InterfacePtr<fuchsia::ui::composition::internal::ScreenCapture> sc =
-        CreateScreenCapture();
+    fidl::Client sc = CreateScreenCapture();
     RunLoopUntilIdle();
-    EXPECT_TRUE(sc.is_bound());
+    EXPECT_TRUE(sc.is_valid());
     EXPECT_EQ(manager_->client_count(), 1ul);
     // |sc| falls out of scope.
   }
@@ -136,25 +137,34 @@ TEST_F(ScreenCapture2ManagerTest, ClientDiesBeforeManager) {
 }
 
 TEST_F(ScreenCapture2ManagerTest, ManagerDiesBeforeClients) {
-  fidl::InterfacePtr<fuchsia::ui::composition::internal::ScreenCapture> sc1 = CreateScreenCapture();
-  fidl::InterfacePtr<fuchsia::ui::composition::internal::ScreenCapture> sc2 = CreateScreenCapture();
+  class EventHandler
+      : public fidl::AsyncEventHandler<fuchsia_ui_composition_internal::ScreenCapture> {
+   public:
+    void on_fidl_error(fidl::UnbindInfo info) override { error_called_ = true; }
+    bool error_called_ = false;
+  };
+
+  EventHandler handler1;
+  EventHandler handler2;
+  fidl::Client sc1 = CreateScreenCapture(&handler1);
+  fidl::Client sc2 = CreateScreenCapture(&handler2);
 
   RunLoopUntilIdle();
-  EXPECT_TRUE(sc1.is_bound());
-  EXPECT_TRUE(sc2.is_bound());
+  EXPECT_TRUE(sc1.is_valid());
+  EXPECT_TRUE(sc2.is_valid());
 
   EXPECT_EQ(manager_->client_count(), 2ul);
 
   manager_.reset();
   RunLoopUntilIdle();
-  EXPECT_FALSE(sc1.is_bound());
-  EXPECT_FALSE(sc2.is_bound());
+  EXPECT_TRUE(handler1.error_called_);
+  EXPECT_TRUE(handler2.error_called_);
 }
 
 TEST_F(ScreenCapture2ManagerTest, Client_Configure) {
-  fidl::InterfacePtr<fuchsia::ui::composition::internal::ScreenCapture> sc = CreateScreenCapture();
+  fidl::Client sc = CreateScreenCapture();
   RunLoopUntilIdle();
-  EXPECT_TRUE(sc.is_bound());
+  EXPECT_TRUE(sc.is_valid());
   EXPECT_EQ(manager_->client_count(), 1ul);
 
   const BufferCount buffer_count = 1;
@@ -165,9 +175,9 @@ TEST_F(ScreenCapture2ManagerTest, Client_Configure) {
 }
 
 TEST_F(ScreenCapture2ManagerTest, Manager_RenderPendingScreenCaptures) {
-  fidl::InterfacePtr<fuchsia::ui::composition::internal::ScreenCapture> sc = CreateScreenCapture();
+  fidl::Client sc = CreateScreenCapture();
   RunLoopUntilIdle();
-  EXPECT_TRUE(sc.is_bound());
+  EXPECT_TRUE(sc.is_valid());
   EXPECT_EQ(manager_->client_count(), 1ul);
 
   const BufferCount buffer_count = 1;
@@ -176,45 +186,43 @@ TEST_F(ScreenCapture2ManagerTest, Manager_RenderPendingScreenCaptures) {
 
   ConfigureScreenCapture(sc, buffer_count, image_width, image_height);
 
-  fpromise::result<FrameInfo, ScreenCaptureError> gnf_result;
-  sc->GetNextFrame([&gnf_result](fpromise::result<FrameInfo, ScreenCaptureError> result) {
-    EXPECT_FALSE(result.is_error());
-    gnf_result = std::move(result);
+  FrameInfo info;
+  bool first_get_next_frame_succeeded = false;
+  sc->GetNextFrame().Then([&first_get_next_frame_succeeded, &info](auto& result) {
+    ASSERT_TRUE(result.is_ok());
+    info = std::move(result.value());
+    first_get_next_frame_succeeded = true;
   });
   RunLoopUntilIdle();
-  EXPECT_TRUE(gnf_result.is_ok());
-  FrameInfo info = std::move(gnf_result.value());
+  EXPECT_TRUE(first_get_next_frame_succeeded);
 
-  zx::eventpair token = std::move(*info.mutable_buffer_release_token());
+  zx::eventpair token = std::move(info.buffer_release_token().value());
   EXPECT_EQ(token.signal_peer(0, ZX_EVENTPAIR_SIGNALED), ZX_OK);
   RunLoopUntilIdle();
 
-  fpromise::result<FrameInfo, ScreenCaptureError> gnf_result2;
-  bool callback_called = false;
-  sc->GetNextFrame(
-      [&gnf_result2, &callback_called](fpromise::result<FrameInfo, ScreenCaptureError> result) {
-        EXPECT_FALSE(result.is_error());
-        gnf_result2 = std::move(result);
-        callback_called = true;
-      });
+  FrameInfo info2;
+  bool second_get_next_frame_succeeded = false;
+  sc->GetNextFrame().Then([&second_get_next_frame_succeeded, &info2](auto& result) {
+    ASSERT_TRUE(result.is_ok());
+    info2 = std::move(result.value());
+    second_get_next_frame_succeeded = true;
+  });
   RunLoopUntilIdle();
-  EXPECT_FALSE(callback_called);
+  EXPECT_FALSE(second_get_next_frame_succeeded);
 
-  // Since |recieved_last_frame_| is true, GetNextFrame() will be hanging for new frame.
+  // Since |received_last_frame_| is true, GetNextFrame() will be hanging for new frame.
   manager_->RenderPendingScreenCaptures();
   RunLoopUntilIdle();
 
-  EXPECT_TRUE(gnf_result2.is_ok());
-  FrameInfo info2 = std::move(gnf_result2.value());
-  EXPECT_EQ(info2.buffer_index(), info.buffer_index());
-  EXPECT_TRUE(callback_called);
+  EXPECT_TRUE(second_get_next_frame_succeeded);
+  EXPECT_EQ(info2.buffer_index().value(), info.buffer_index().value());
 }
 
-// Expects |render_frame_in_use_| to lock MaybeRenderFrame() and Client to recieve expected frame.
+// Expects |render_frame_in_use_| to lock MaybeRenderFrame() and Client to receive expected frame.
 TEST_F(ScreenCapture2ManagerTest, ManagerClient_BothWantNewFrame) {
-  fidl::InterfacePtr<fuchsia::ui::composition::internal::ScreenCapture> sc = CreateScreenCapture();
+  fidl::Client sc = CreateScreenCapture();
   RunLoopUntilIdle();
-  EXPECT_TRUE(sc.is_bound());
+  EXPECT_TRUE(sc.is_valid());
   EXPECT_EQ(manager_->client_count(), 1ul);
 
   const BufferCount buffer_count = 1;
@@ -223,14 +231,14 @@ TEST_F(ScreenCapture2ManagerTest, ManagerClient_BothWantNewFrame) {
 
   ConfigureScreenCapture(sc, buffer_count, image_width, image_height);
 
-  fpromise::result<FrameInfo, ScreenCaptureError> gnf_result;
-  sc->GetNextFrame([&gnf_result](fpromise::result<FrameInfo, ScreenCaptureError> result) {
-    EXPECT_FALSE(result.is_error());
-    gnf_result = std::move(result);
+  bool get_next_frame_succeeded = false;
+  sc->GetNextFrame().Then([&get_next_frame_succeeded](auto& result) {
+    ASSERT_TRUE(result.is_ok());
+    get_next_frame_succeeded = true;
   });
   manager_->RenderPendingScreenCaptures();
   RunLoopUntilIdle();
-  EXPECT_TRUE(gnf_result.is_ok());
+  EXPECT_TRUE(get_next_frame_succeeded);
 }
 
 }  // namespace test

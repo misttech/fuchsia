@@ -574,10 +574,14 @@ void App::InitializeGraphics(std::shared_ptr<display::Display> display) {
     screen_capture_manager_.emplace(flatland_engine_, flatland_renderer, flatland_manager_,
                                     std::move(screen_capture_importers));
 
-    fit::function<void(fidl::InterfaceRequest<fuchsia::ui::composition::ScreenCapture>)> handler =
-        fit::bind_member(&screen_capture_manager_.value(),
-                         &screen_capture::ScreenCaptureManager::CreateClient);
-    FX_CHECK(app_context_->outgoing()->AddPublicService(std::move(handler)) == ZX_OK);
+    zx::result<> add_screen_capture_protocol_result = zx::make_result(
+        app_context_->outgoing()->AddProtocol<fuchsia_ui_composition::ScreenCapture>(
+            [this](fidl::ServerEnd<fuchsia_ui_composition::ScreenCapture> server_end) {
+              screen_capture_manager_->CreateClient(std::move(server_end));
+            }));
+    FX_CHECK(add_screen_capture_protocol_result.is_ok())
+        << "Add ScreenCapture protocol failed: "
+        << add_screen_capture_protocol_result.status_string();
   }
 
   // Make ScreenCapture2Manager.
@@ -600,10 +604,14 @@ void App::InitializeGraphics(std::shared_ptr<display::Display> display) {
           return flatland_engine_->GetRenderables(*display);
         });
 
-    fit::function<void(fidl::InterfaceRequest<fuchsia::ui::composition::internal::ScreenCapture>)>
-        handler = fit::bind_member(&screen_capture2_manager_.value(),
-                                   &screen_capture2::ScreenCapture2Manager::CreateClient);
-    FX_CHECK(app_context_->outgoing()->AddPublicService(std::move(handler)) == ZX_OK);
+    zx::result<> add_screen_capture2_protocol_result = zx::make_result(
+        app_context_->outgoing()->AddProtocol<fuchsia_ui_composition_internal::ScreenCapture>(
+            [this](fidl::ServerEnd<fuchsia_ui_composition_internal::ScreenCapture> server_end) {
+              screen_capture2_manager_->CreateClient(std::move(server_end));
+            }));
+    FX_CHECK(add_screen_capture2_protocol_result.is_ok())
+        << "Add ScreenCapture2 protocol failed: "
+        << add_screen_capture2_protocol_result.status_string();
   }
 
   // Make ScreenshotManager for the client-friendly screenshot protocol.

@@ -5,7 +5,6 @@
 #include "src/ui/scenic/lib/screen_capture2/tests/common.h"
 
 #include <fidl/fuchsia.ui.composition/cpp/fidl.h>
-#include <fidl/fuchsia.ui.composition/cpp/hlcpp_conversion.h>
 #include <lib/ui/scenic/cpp/buffer_collection_import_export_tokens.h>
 
 #include <gmock/gmock.h>
@@ -37,7 +36,7 @@ std::shared_ptr<Allocator> CreateAllocator(
 
 void CreateBufferCollectionInfoWithConstraints(
     fuchsia::sysmem2::BufferCollectionConstraints constraints,
-    fuchsia::ui::composition::BufferCollectionExportToken export_token,
+    fuchsia_ui_composition::BufferCollectionExportToken export_token,
     std::shared_ptr<Allocator> flatland_allocator,
     fidl::WireClient<fuchsia_sysmem2::Allocator>& sysmem_allocator,
     fit::function<void(fit::function<bool()>)> run_loop_until) {
@@ -45,7 +44,7 @@ void CreateBufferCollectionInfoWithConstraints(
   auto [local_token, dup_token] = flatland::SysmemTokens::Create(sysmem_allocator);
 
   fuchsia_ui_composition::RegisterBufferCollectionArgs rbc_args;
-  rbc_args.export_token(fidl::HLCPPToNatural(std::move(export_token)));
+  rbc_args.export_token(std::move(export_token));
   rbc_args.buffer_collection_token2(std::move(dup_token));
   rbc_args.usages(fuchsia_ui_composition::RegisterBufferCollectionUsages::kScreenshot);
 

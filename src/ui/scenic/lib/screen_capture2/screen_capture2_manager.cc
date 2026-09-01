@@ -4,6 +4,8 @@
 
 #include "screen_capture2_manager.h"
 
+#include <lib/async/default.h>
+#include <lib/syslog/cpp/macros.h>
 #include <lib/trace/event.h>
 
 #include <memory>
@@ -30,22 +32,25 @@ ScreenCapture2Manager::ScreenCapture2Manager(
   FX_DCHECK(get_renderables_callback_);
 }
 
-ScreenCapture2Manager::~ScreenCapture2Manager() { client_bindings_.CloseAll(); }
+ScreenCapture2Manager::~ScreenCapture2Manager() = default;
 
 void ScreenCapture2Manager::CreateClient(
-    fidl::InterfaceRequest<fuchsia::ui::composition::internal::ScreenCapture> request) {
-  std::unique_ptr<ScreenCapture> instance = std::make_unique<ScreenCapture>(
+    fidl::ServerEnd<fuchsia_ui_composition_internal::ScreenCapture> request) {
+  auto instance = std::make_unique<ScreenCapture>(
       screen_capture_buffer_collection_importer_, renderer_,
       /*get_renderables=*/[this]() { return get_renderables_callback_(); });
-  client_bindings_.AddBinding(std::move(instance), std::move(request));
+  ScreenCapture* ptr = instance.get();
+  clients_[ptr] = std::move(instance);
+  client_bindings_.AddBinding(async_get_default_dispatcher(), std::move(request), ptr,
+                              [this, ptr](fidl::UnbindInfo info) { clients_.erase(ptr); });
 }
 
 void ScreenCapture2Manager::RenderPendingScreenCaptures() {
   TRACE_DURATION("gfx", "ScreenCapture2Manager::RenderPendingScreenCaptures");
   // After the newest batch of renderables has been produced, loop through all of the bindings and
   // render into the client's buffer if they have requested one.
-  for (const auto& binding : client_bindings_.bindings()) {
-    binding.get()->impl()->MaybeRenderFrame();
+  for (const auto& [ptr, _] : clients_) {
+    ptr->MaybeRenderFrame();
   }
 }
 

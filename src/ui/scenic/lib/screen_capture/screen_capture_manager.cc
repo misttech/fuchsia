@@ -25,7 +25,7 @@ ScreenCaptureManager::ScreenCaptureManager(
 }
 
 void ScreenCaptureManager::CreateClient(
-    fidl::InterfaceRequest<fuchsia::ui::composition::ScreenCapture> request) {
+    fidl::ServerEnd<fuchsia_ui_composition::ScreenCapture> request) {
   auto impl = std::make_unique<screen_capture::ScreenCapture>(
       buffer_collection_importers_, renderer_, [this]() {
         FX_DCHECK(flatland_manager_);
@@ -43,8 +43,8 @@ void ScreenCaptureManager::CreateClient(
   auto close_handler = [impl = std::move(impl)](fidl::UnbindInfo info) {
     // Let |impl| fall out of scope.
   };
-  bindings_.AddBinding(async_get_default_dispatcher(), fidl::HLCPPToNatural(std::move(request)),
-                       impl_ptr, std::move(close_handler));
+  bindings_.AddBinding(async_get_default_dispatcher(), std::move(request), impl_ptr,
+                       std::move(close_handler));
 }
 
 }  // namespace screen_capture

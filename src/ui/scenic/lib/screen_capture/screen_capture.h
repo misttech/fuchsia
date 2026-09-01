@@ -6,9 +6,11 @@
 #define SRC_UI_SCENIC_LIB_SCREEN_CAPTURE_SCREEN_CAPTURE_H_
 
 #include <fidl/fuchsia.ui.composition/cpp/fidl.h>
+#include <fidl/fuchsia.ui.composition/cpp/wire.h>
 #include <lib/async/cpp/executor.h>
-#include <lib/fidl/cpp/binding.h>
+#include <lib/fidl/cpp/wire/server.h>
 
+#include <deque>
 #include <unordered_map>
 
 #include "src/ui/scenic/lib/allocation/buffer_collection_importer.h"
@@ -21,11 +23,11 @@ using GetRenderables = std::function<flatland::Renderables()>;
 
 namespace screen_capture {
 
-class ScreenCapture : public fidl::Server<fuchsia_ui_composition::ScreenCapture> {
+class ScreenCapture : public fidl::WireServer<fuchsia_ui_composition::ScreenCapture> {
  public:
   static std::vector<flatland::ResolvedLayer> RotateRenderables(
-      const std::vector<flatland::ResolvedLayer>& layers, fuchsia_ui_composition::Rotation rotation,
-      uint32_t image_width, uint32_t image_height);
+      const std::vector<flatland::ResolvedLayer>& layers,
+      fuchsia_ui_composition::wire::Rotation rotation, uint32_t image_width, uint32_t image_height);
 
   ScreenCapture(const std::vector<std::shared_ptr<allocation::BufferCollectionImporter>>&
                     buffer_collection_importers,
@@ -33,19 +35,30 @@ class ScreenCapture : public fidl::Server<fuchsia_ui_composition::ScreenCapture>
 
   ~ScreenCapture() override;
 
-  // |fuchsia_ui_composition::ScreenCapture|
-  void Configure(ConfigureRequest& request, ConfigureCompleter::Sync& completer) override;
+  // |fidl::WireServer<fuchsia_ui_composition::ScreenCapture>|
+  void Configure(ConfigureRequestView request, ConfigureCompleter::Sync& completer) override;
+  void Configure(
+      fuchsia_ui_composition::wire::ScreenCaptureConfig args,
+      fit::function<void(fit::result<fuchsia_ui_composition::wire::ScreenCaptureError>)> callback);
   void Configure(
       fuchsia_ui_composition::ScreenCaptureConfig args,
       fit::function<void(fit::result<fuchsia_ui_composition::ScreenCaptureError>)> callback);
 
-  void GetNextFrame(GetNextFrameRequest& request, GetNextFrameCompleter::Sync& completer) override;
+  // |fidl::WireServer<fuchsia_ui_composition::ScreenCapture>|
+  void GetNextFrame(GetNextFrameRequestView request,
+                    GetNextFrameCompleter::Sync& completer) override;
+  void GetNextFrame(fuchsia_ui_composition::wire::GetNextFrameArgs args,
+                    fit::function<void(fit::result<fuchsia_ui_composition::wire::ScreenCaptureError,
+                                                   fuchsia_ui_composition::wire::FrameInfo>)>
+                        callback);
   void GetNextFrame(fuchsia_ui_composition::GetNextFrameArgs args,
                     fit::function<void(fit::result<fuchsia_ui_composition::ScreenCaptureError,
                                                    fuchsia_ui_composition::FrameInfo>)>
                         callback);
 
-  void ReleaseFrame(ReleaseFrameRequest& request, ReleaseFrameCompleter::Sync& completer) override;
+  // |fidl::WireServer<fuchsia_ui_composition::ScreenCapture>|
+  void ReleaseFrame(ReleaseFrameRequestView request,
+                    ReleaseFrameCompleter::Sync& completer) override;
   void ReleaseFrame(
       uint32_t buffer_id,
       fit::function<void(fit::result<fuchsia_ui_composition::ScreenCaptureError>)> callback);
@@ -70,7 +83,7 @@ class ScreenCapture : public fidl::Server<fuchsia_ui_composition::ScreenCapture>
   // Indices of available buffers.
   std::deque<uint32_t> available_buffers_;
 
-  fuchsia_ui_composition::Rotation stream_rotation_;
+  fuchsia_ui_composition::wire::Rotation stream_rotation_;
 
   std::shared_ptr<flatland::Renderer> renderer_;
   GetRenderables get_renderables_;

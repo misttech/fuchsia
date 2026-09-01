@@ -16,9 +16,9 @@
 #include "src/lib/fsl/handles/object_info.h"
 #include "src/ui/scenic/lib/flatland/global_resolved_layers.h"
 
-using fuchsia::ui::composition::internal::FrameInfo;
-using fuchsia::ui::composition::internal::ScreenCaptureConfig;
-using fuchsia::ui::composition::internal::ScreenCaptureError;
+using fuchsia_ui_composition_internal::wire::FrameInfo;
+using fuchsia_ui_composition_internal::wire::ScreenCaptureConfig;
+using fuchsia_ui_composition_internal::wire::ScreenCaptureError;
 using std::vector;
 
 namespace screen_capture2 {
@@ -35,31 +35,30 @@ ScreenCapture::ScreenCapture(std::shared_ptr<screen_capture::ScreenCaptureBuffer
 
 ScreenCapture::~ScreenCapture() { ClearImages(); }
 
-void ScreenCapture::Configure(ScreenCaptureConfig args, ConfigureCallback callback) {
-  if (!args.has_image_size()) {
+void ScreenCapture::Configure(ConfigureRequestView request, ConfigureCompleter::Sync& completer) {
+  if (!request->has_image_size()) {
     FX_LOGS(WARNING) << "ScreenCapture::Configure: Missing image size";
-    callback(fpromise::error(ScreenCaptureError::MISSING_ARGS));
+    completer.ReplyError(ScreenCaptureError::kMissingArgs);
     return;
   }
 
-  if (!args.has_import_token()) {
+  if (!request->has_import_token()) {
     FX_LOGS(WARNING) << "ScreenCapture::Configure: Missing import token";
-    callback(fpromise::error(ScreenCaptureError::MISSING_ARGS));
+    completer.ReplyError(ScreenCaptureError::kMissingArgs);
     return;
   }
 
-  if (!args.image_size().width || !args.image_size().height) {
+  if (!request->image_size().width || !request->image_size().height) {
     FX_LOGS(WARNING) << "ScreenCapture::Configure: Invalid arguments.";
-    callback(fpromise::error(ScreenCaptureError::INVALID_ARGS));
+    completer.ReplyError(ScreenCaptureError::kInvalidArgs);
     return;
   }
 
-  auto import_token = args.mutable_import_token();
-  const zx_koid_t global_collection_id = fsl::GetRelatedKoid(import_token->value.get());
+  const zx_koid_t global_collection_id = fsl::GetRelatedKoid(request->import_token().value.get());
 
   if (global_collection_id == ZX_KOID_INVALID) {
     FX_LOGS(WARNING) << "ScreenCapture::Configure: Event pair ID must be valid.";
-    callback(fpromise::error(ScreenCaptureError::INVALID_ARGS));
+    completer.ReplyError(ScreenCaptureError::kInvalidArgs);
     return;
   }
 
@@ -68,17 +67,11 @@ void ScreenCapture::Configure(ScreenCaptureConfig args, ConfigureCallback callba
           global_collection_id);
   if (!buffer_count_opt) {
     FX_LOGS(WARNING) << "ScreenCapture::Configure: Failed to get BufferCount.";
-    callback(fpromise::error(ScreenCaptureError::INVALID_ARGS));
+    completer.ReplyError(ScreenCaptureError::kInvalidArgs);
     return;
   }
 
   BufferCount buffer_count = buffer_count_opt.value();
-
-  if (buffer_count < 0) {
-    FX_LOGS(WARNING) << "ScreenCapture::Configure: There must be at least 0 buffers.";
-    callback(fpromise::error(ScreenCaptureError::INVALID_ARGS));
-    return;
-  }
 
   // Release any existing buffers and reset |image_ids_| and |available_buffers_|.
   ClearImages();
@@ -87,8 +80,8 @@ void ScreenCapture::Configure(ScreenCaptureConfig args, ConfigureCallback callba
   // parameters.
   allocation::ImageMetadata metadata;
   metadata.collection_id = global_collection_id;
-  metadata.width = args.image_size().width;
-  metadata.height = args.image_size().height;
+  metadata.width = request->image_size().width;
+  metadata.height = request->image_size().height;
 
   std::vector<fpromise::promise<>> promises;
   promises.reserve(buffer_count);
@@ -111,30 +104,30 @@ void ScreenCapture::Configure(ScreenCaptureConfig args, ConfigureCallback callba
             bool ok = std::ranges::all_of(results, [](auto& result) { return result.is_ok(); });
             return ok ? fpromise::result(fpromise::ok()) : fpromise::result(fpromise::error());
           })
-          .then([this, callback = std::move(callback)](fpromise::result<>& result) {
+          .then([this, completer = completer.ToAsync()](fpromise::result<>& result) mutable {
             if (result.is_error()) {
               ClearImages();
               FX_LOGS(WARNING) << "ScreenCapture::Configure: Failed to import BufferImage.";
-              callback(fpromise::error(ScreenCaptureError::INVALID_ARGS));
+              completer.ReplyError(ScreenCaptureError::kInvalidArgs);
               return;
             }
             client_received_last_frame_ = false;
             render_frame_in_progress_ = false;
-            current_callback_ = std::nullopt;
-            callback(fpromise::ok());
+            current_completer_ = std::nullopt;
+            completer.ReplySuccess();
           });
   executor_.schedule_task(std::move(join_promise));
 }
 
-void ScreenCapture::GetNextFrame(ScreenCapture::GetNextFrameCallback callback) {
+void ScreenCapture::GetNextFrame(GetNextFrameCompleter::Sync& completer) {
   TRACE_DURATION("gfx", "GetNextFrame");
-  if (current_callback_ != std::nullopt) {
+  if (current_completer_.has_value()) {
     FX_LOGS(WARNING) << "ScreenCapture::GetNextFrame: GetNextFrame already in progress. Wait for "
                         "it to return before calling again.";
-    callback(fpromise::error(ScreenCaptureError::BAD_HANGING_GET));
+    completer.ReplyError(ScreenCaptureError::kBadHangingGet);
     return;
   }
-  current_callback_ = std::move(callback);
+  current_completer_ = completer.ToAsync();
   if (!client_received_last_frame_ && !available_buffers_.empty()) {
     MaybeRenderFrame();
   }
@@ -148,7 +141,7 @@ void ScreenCapture::MaybeRenderFrame() {
 
   render_frame_in_progress_ = true;
 
-  if (current_callback_ == std::nullopt) {
+  if (!current_completer_.has_value()) {
     client_received_last_frame_ = false;
     render_frame_in_progress_ = false;
     return;
@@ -219,15 +212,16 @@ void ScreenCapture::HandleRender(uint32_t buffer_index, uint64_t timestamp) {
 
   buffer_server_tokens_[buffer_index] = std::move(buffer_release_server_token);
 
-  FrameInfo frame_info;
-  frame_info.set_buffer_index(buffer_index);
-  frame_info.set_buffer_release_token(std::move(buffer_release_client_token));
-  frame_info.set_capture_timestamp(timestamp);
-  GetNextFrameCallback callback = std::move(current_callback_.value());
-  callback(fpromise::ok(std::move(frame_info)));
+  fidl::Arena arena;
+  auto frame_info = fuchsia_ui_composition_internal::wire::FrameInfo::Builder(arena)
+                        .buffer_index(buffer_index)
+                        .buffer_release_token(std::move(buffer_release_client_token))
+                        .capture_timestamp(static_cast<int64_t>(timestamp))
+                        .Build();
+  current_completer_->ReplySuccess(frame_info);
 
   current_release_fences_.clear();
-  current_callback_ = std::nullopt;
+  current_completer_ = std::nullopt;
   client_received_last_frame_ = true;
   render_frame_in_progress_ = false;
 }
@@ -235,7 +229,7 @@ void ScreenCapture::HandleRender(uint32_t buffer_index, uint64_t timestamp) {
 void ScreenCapture::HandleBufferRelease(uint32_t buffer_index) {
   TRACE_DURATION("gfx", "HandleBufferRelease", "buffer_index", buffer_index);
   buffer_server_tokens_.erase(buffer_index);
-  if (available_buffers_.empty() && (current_callback_ != std::nullopt)) {
+  if (available_buffers_.empty() && current_completer_.has_value()) {
     available_buffers_.push_front(buffer_index);
     MaybeRenderFrame();
     return;

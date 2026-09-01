@@ -5,9 +5,9 @@
 #ifndef SRC_UI_SCENIC_LIB_SCREEN_CAPTURE2_SCREEN_CAPTURE2_H_
 #define SRC_UI_SCENIC_LIB_SCREEN_CAPTURE2_SCREEN_CAPTURE2_H_
 
-#include <fuchsia/ui/composition/internal/cpp/fidl.h>
+#include <fidl/fuchsia.ui.composition.internal/cpp/wire.h>
 #include <lib/async/cpp/executor.h>
-#include <lib/fidl/cpp/binding.h>
+#include <lib/fidl/cpp/wire/server.h>
 #include <lib/zx/eventpair.h>
 
 #include <deque>
@@ -28,7 +28,7 @@ using BufferCount = uint32_t;
 using GetRenderables = std::function<flatland::Renderables()>;
 using Rectangle2D = escher::Rectangle2D;
 
-class ScreenCapture : public fuchsia::ui::composition::internal::ScreenCapture {
+class ScreenCapture : public fidl::WireServer<fuchsia_ui_composition_internal::ScreenCapture> {
  public:
   ScreenCapture(std::shared_ptr<screen_capture::ScreenCaptureBufferCollectionImporter>
                     screen_capture_buffer_collection_importer,
@@ -36,10 +36,9 @@ class ScreenCapture : public fuchsia::ui::composition::internal::ScreenCapture {
 
   ~ScreenCapture() override;
 
-  void Configure(fuchsia::ui::composition::internal::ScreenCaptureConfig args,
-                 ConfigureCallback callback) override;
-
-  void GetNextFrame(GetNextFrameCallback callback) override;
+  // |fidl::WireServer<fuchsia_ui_composition_internal::ScreenCapture>|
+  void Configure(ConfigureRequestView request, ConfigureCompleter::Sync& completer) override;
+  void GetNextFrame(GetNextFrameCompleter::Sync& completer) override;
 
   // Called by GetNextFrame() and ScreenCapture2Manager when a new frame should be rendered. If
   // there are no available buffers or MaybeRenderFrame() is currently processing, it will return
@@ -76,7 +75,7 @@ class ScreenCapture : public fuchsia::ui::composition::internal::ScreenCapture {
   std::vector<zx::event> current_release_fences_;
 
   // Used as state for calls to GetNextFrame() to ensure two calls cannot overlap.
-  std::optional<ScreenCapture::GetNextFrameCallback> current_callback_;
+  std::optional<GetNextFrameCompleter::Async> current_completer_;
 
   // The last frame produced according to the system has been rendered into a client buffer. Used to
   // correctly return a new frame immediately or wait for the next frame to be produced.

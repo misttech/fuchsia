@@ -24,7 +24,7 @@ class ScreenCaptureManager {
                        std::vector<std::shared_ptr<allocation::BufferCollectionImporter>>
                            buffer_collection_importers);
 
-  void CreateClient(fidl::InterfaceRequest<fuchsia::ui::composition::ScreenCapture> screen_capture);
+  void CreateClient(fidl::ServerEnd<fuchsia_ui_composition::ScreenCapture> screen_capture);
 
  private:
   // We need these for rendering the scene into the client supplied buffer.

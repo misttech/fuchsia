@@ -5,10 +5,9 @@
 #ifndef SRC_UI_SCENIC_LIB_SCREEN_CAPTURE2_SCREEN_CAPTURE2_MANAGER_H_
 #define SRC_UI_SCENIC_LIB_SCREEN_CAPTURE2_SCREEN_CAPTURE2_MANAGER_H_
 
-#include <fuchsia/ui/composition/cpp/fidl.h>
-#include <lib/fidl/cpp/binding.h>
-#include <lib/fidl/cpp/binding_set.h>
+#include <fidl/fuchsia.ui.composition.internal/cpp/fidl.h>
 
+#include <memory>
 #include <unordered_map>
 
 #include "screen_capture2.h"
@@ -27,22 +26,20 @@ class ScreenCapture2Manager {
                         std::function<flatland::Renderables()> get_renderables_callback);
   ~ScreenCapture2Manager();
 
-  void CreateClient(
-      fidl::InterfaceRequest<fuchsia::ui::composition::internal::ScreenCapture> screen_capture);
+  void CreateClient(fidl::ServerEnd<fuchsia_ui_composition_internal::ScreenCapture> screen_capture);
 
   // Called at FrameScheduler OnCpuWorkDone time.
   void RenderPendingScreenCaptures();
 
-  size_t client_count() const { return client_bindings_.size(); }
+  size_t client_count() const { return clients_.size(); }
 
  private:
   std::shared_ptr<flatland::Renderer> renderer_;
   std::shared_ptr<screen_capture::ScreenCaptureBufferCollectionImporter>
       screen_capture_buffer_collection_importer_;
 
-  fidl::BindingSet<fuchsia::ui::composition::internal::ScreenCapture,
-                   std::unique_ptr<ScreenCapture>>
-      client_bindings_;
+  std::unordered_map<ScreenCapture*, std::unique_ptr<ScreenCapture>> clients_;
+  fidl::ServerBindingGroup<fuchsia_ui_composition_internal::ScreenCapture> client_bindings_;
 
   // Callback provided to pass to clients.
   std::function<flatland::Renderables()> get_renderables_callback_;
