@@ -1044,11 +1044,12 @@ function metrics-init {
   #   to hide the user notices since ffx will display one.
   # - the subcommand with args is `ffx config analytics ...`. This is to make sure
   #   ffx config analytics <anything> will not show the user notices.
+  # - the command is invoked by an AI agent (to avoid cluttering agent context).
   local hide_init_warning=0
   if [[ "$subcommand" == "metrics" \
         || ( "$subcommand" == "ffx" && ! "$args" =~ "fuchsia.analytics.ffx_invoker=fx" ) \
         || ( "$subcommand" == "ffx" && "$args" =~ "config analytics" ) \
-  ]]; then
+  ]] || is_invoked_by_agent; then
     hide_init_warning=1
   fi
   metrics-read-and-validate "${hide_init_warning}"

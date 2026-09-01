@@ -601,6 +601,13 @@ TEST_metrics_state_01N1() {
   expect_not_send_analytics
 }
 
-
+TEST_metrics_init_agent_hides_notice() {
+  if [[ "${HOST_OS}" == "mac" ]]; then
+    return
+  fi
+  set_up_environment "N" "N" "N" "1"
+  ANTIGRAVITY_AGENT=1 metrics-init "build" "something" 2>"${metrics_notice}"
+  expect_not_show_notice
+}
 
 BT_RUN_TESTS "$@"
