@@ -61,14 +61,6 @@ declare_args() {
         },
       ]
     },
-
-    # First, a target that verifies that the host toolchains work properly,
-    # i.e. can compile and link C++ and Rust binaries properly.
-    {
-      bazel_label = "//build/bazel/toolchains/tests:build"
-      bazel_name = "build.stamp"
-      ninja_name = "bazel_toolchains_tests_build.stamp"
-    },
     {
       bazel_label = "//src/developer/ffx/tools/efi:ffx-efi"
       ninja_name = "ffx-efi_bazel_unversioned"

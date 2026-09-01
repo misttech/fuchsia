@@ -111,6 +111,7 @@ filegroup(
     testonly = True,
     srcs = [
         "//build/bazel/bazel_idk/tests:targets_to_build_in_host_configurations",
+        "//build/bazel/toolchains/tests:build",
 
         # Aspect tests
         "//build/bazel/aspects/tests",
