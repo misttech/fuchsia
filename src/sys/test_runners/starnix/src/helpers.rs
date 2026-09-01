@@ -20,7 +20,7 @@ use log::debug;
 use namespace::Namespace;
 use std::collections::HashMap;
 
-#[derive(Copy, Clone, Eq, PartialEq)]
+#[derive(Copy, Clone, Eq, PartialEq, Debug)]
 pub enum TestType {
     BinderLatency,
     Gbenchmark,
@@ -29,7 +29,8 @@ pub enum TestType {
     Gunit,
     SeLinux,
     SingleTest,
-    Syscall,
+    SyscallGtest,
+    SyscallRust,
     VtsBinary,
 }
 
@@ -406,7 +407,7 @@ pub fn start_top_level_report(
 
 pub fn format_arg(test_type: TestType, test_arg: &str) -> String {
     match test_type {
-        TestType::Gtest | TestType::GtestXmlOutput | TestType::Syscall => {
+        TestType::Gtest | TestType::GtestXmlOutput | TestType::SyscallGtest => {
             format!("--gtest_{}", test_arg)
         }
         TestType::Gunit => format!("--gunit_{}", test_arg),

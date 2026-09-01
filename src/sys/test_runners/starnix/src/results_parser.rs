@@ -13,7 +13,7 @@ use xml::reader::{EventReader, XmlEvent};
 
 pub fn parse_results(test_type: TestType, contents: &str) -> Result<TestOutput, Error> {
     match test_type {
-        TestType::Gtest | TestType::Gunit | TestType::Syscall => {
+        TestType::Gtest | TestType::Gunit | TestType::SyscallGtest => {
             serde_json::from_str(contents).map_err(|e| anyhow!("JSON parsing error: {e}"))
         }
         TestType::GtestXmlOutput => {

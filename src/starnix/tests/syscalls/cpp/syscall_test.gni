@@ -125,7 +125,7 @@ template("syscall_test") {
     contents = {
       include = [
         rebase_path(_container_config_shard, root_build_dir),
-        "//src/starnix/tests/syscalls/cpp/meta/syscalls_cpp_test.cml",
+        "//src/starnix/tests/syscalls/cpp/meta/syscalls_gtest.cml",
       ]
       include += _includes
       program = _program

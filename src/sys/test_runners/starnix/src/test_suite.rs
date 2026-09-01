@@ -7,7 +7,7 @@ use crate::gbenchmark::*;
 use crate::gtest::*;
 use crate::helpers::*;
 use crate::selinux::*;
-use crate::syscalls::*;
+use crate::syscalls_gtest::*;
 use crate::vts_binary::*;
 use anyhow::{Error, anyhow};
 use fidl::endpoints::create_proxy;
@@ -36,7 +36,8 @@ fn remove_test_type(program: &mut fdata::Dictionary) -> Result<TestType, Error> 
         Some("gunit") => Ok(TestType::Gunit),
         Some("vts_binary") => Ok(TestType::VtsBinary),
         Some("selinux") => Ok(TestType::SeLinux),
-        Some("syscall") => Ok(TestType::Syscall),
+        Some("syscall_gtest") => Ok(TestType::SyscallGtest),
+        Some("syscall_rust") => Ok(TestType::SyscallRust),
         Some("ltp") => Ok(TestType::VtsBinary),
         Some(value) => Err(anyhow!("Unrecognized test_type: {}", value)),
 
@@ -89,7 +90,7 @@ pub async fn handle_suite_requests(
                     TestType::Gtest
                     | TestType::Gunit
                     | TestType::GtestXmlOutput
-                    | TestType::Syscall => {
+                    | TestType::SyscallGtest => {
                         get_cases_list_for_gtests(test_start_info, &component_runner, test_type)
                             .await?
                     }
@@ -106,6 +107,9 @@ pub async fn handle_suite_requests(
                     }
                     TestType::VtsBinary | TestType::SeLinux => {
                         get_cases_list_for_vts_binary(test_start_info).await?
+                    }
+                    TestType::SyscallRust => {
+                        unimplemented!("syscall_rust test type is not supported.");
                     }
                 };
 
@@ -195,8 +199,8 @@ pub async fn handle_suite_requests(
                         )
                         .await?
                     }
-                    TestType::Syscall => {
-                        run_syscall_tests(
+                    TestType::SyscallGtest => {
+                        run_syscall_gtests(
                             tests,
                             test_start_info,
                             &run_listener_proxy,
@@ -204,6 +208,9 @@ pub async fn handle_suite_requests(
                             debian_guest.clone(),
                         )
                         .await?;
+                    }
+                    TestType::SyscallRust => {
+                        unimplemented!("syscall_rust test type is not supported.");
                     }
                 }
 

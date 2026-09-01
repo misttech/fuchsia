@@ -9,7 +9,7 @@
     ],
     program: {
         uid: "0",
-        test_type: "syscall",
+        test_type: "syscall_gtest",
         environ: [ "MUTABLE_STORAGE=/data" ],
     },
     use: [

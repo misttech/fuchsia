@@ -2,10 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use core::result::Result::Err;
-
 use anyhow::{Context, Error, anyhow, bail};
-use fidl::endpoints::ClientEnd;
+use cm_types::NamespacePath;
+use fidl::endpoints::{ClientEnd, Proxy};
+use fidl_fuchsia_component_runner as frunner;
 use fidl_fuchsia_io as fio;
 use fidl_fuchsia_virtualization::GuestConfig;
 use fidl_fuchsia_virtualization_guest_interaction::{
@@ -14,11 +14,20 @@ use fidl_fuchsia_virtualization_guest_interaction::{
 };
 use fuchsia_async::{DurationExt, TimeoutExt};
 use fuchsia_component::client::connect_to_protocol;
+use fuchsia_fs::directory;
 use futures::TryStreamExt;
+use namespace::Namespace;
 use std::cell::OnceCell;
+use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
 const EXECUTE_TIMEOUT_SECONDS: i64 = 180;
+
+// TODO(https://fxbug.dev/436831317): Execute within a proper working directory.
+pub const GUEST_TEST_ROOT: &str = "/";
+pub const GUEST_DATA_PATH: &str = "/data/tests/deps/";
+pub const HOST_DATA_PATH: &str = "data/tests/deps/";
+
 pub struct DebianGuest {
     instance_name: String,
     /// The proxy for interacting with the guest. This should be accessed by the `interactive_guest`
@@ -89,13 +98,16 @@ impl DebianGuest {
     pub async fn push_data_to_guest(
         &self,
         source: ClientEnd<fidl_fuchsia_io::FileMarker>,
-        destination: &String,
+        destination: &Path,
     ) -> Result<(), Error> {
-        log::info!(tag = self.instance_name.as_str(); "Pushing data to guest (destination: {})", destination);
+        log::info!(tag = self.instance_name.as_str(); "Pushing data to guest (destination: {})", destination.display());
 
+        let dest_str = destination
+            .to_str()
+            .ok_or_else(|| anyhow!("Destination path is not valid UTF-8: {:?}", destination))?;
         let guest_proxy = self.interactive_guest().await;
         let response = guest_proxy
-            .put_file(source, destination.as_str())
+            .put_file(source, dest_str)
             .await
             .context("FIDL call to InteractiveGuest::PutFile has failed.")?;
 
@@ -105,7 +117,7 @@ impl DebianGuest {
 
         log::info!(tag = self.instance_name.as_str();
             "Successfully pushed data to guest (destination: {})",
-            destination
+            destination.display()
         );
 
         Ok(())
@@ -118,14 +130,17 @@ impl DebianGuest {
     /// * `local_file_proxy` - The local file proxy to write the contents to.
     pub async fn get_file(
         &self,
-        remote_path: &str,
+        remote_path: &Path,
         local_file_proxy: ClientEnd<fio::FileMarker>,
     ) -> Result<(), Error> {
-        log::info!(tag = self.instance_name.as_str(); "Fetching file from guest (remote_path: {})", remote_path);
-        let guest_proxy = self.interactive_guest().await.clone();
+        log::info!(tag = self.instance_name.as_str(); "Fetching file from guest (remote_path: {})", remote_path.display());
+        let remote_path_str = remote_path
+            .to_str()
+            .ok_or_else(|| anyhow!("Remote path is not valid UTF-8: {:?}", remote_path))?;
+        let guest_proxy = self.interactive_guest().await;
 
         let response = guest_proxy
-            .get_file(remote_path, local_file_proxy)
+            .get_file(remote_path_str, local_file_proxy)
             .await
             .context("FIDL call to GetFile failed")?;
 
@@ -135,7 +150,8 @@ impl DebianGuest {
         Ok(())
     }
 
-    /// Executes a command on the guest.
+    /// Executes a command on the guest, returning the command's exit code upon successful execution
+    /// and an Error if the command was unable to be executed on the guest.
     ///
     /// # Arguments
     /// * `command`: The command string to execute (e.g., "/bin/ls -l /tmp").
@@ -150,7 +166,7 @@ impl DebianGuest {
         stdin: Option<zx::Socket>,
         stdout: Option<zx::Socket>,
         stderr: Option<zx::Socket>,
-    ) -> Result<(), Error> {
+    ) -> Result<i32, Error> {
         log::info!(tag = self.instance_name.as_str(); "Executing command on guest: {})", command);
 
         let (command_listener_client, command_listener_server) =
@@ -182,7 +198,10 @@ impl DebianGuest {
                             term_status,
                             return_code
                         );
-                        return Ok(());
+                        if let Err(status) = zx::Status::ok(status) {
+                            bail!("Command '{}' failed with status: {:?}", command, status);
+                        }
+                        return Ok(return_code);
                     }
                 }
             }
@@ -218,11 +237,106 @@ impl DebianGuest {
     }
 
     pub fn are_deps_pushed(&self) -> bool {
-        return self.deps_pushed.get() != None;
+        self.deps_pushed.get().is_some()
     }
 
     /// Expected to be called once and only once.
     pub fn mark_deps_pushed(&self) {
         self.deps_pushed.set(true).expect("Unexpected state management, test dependencies are expected to be pushed once, and only once.");
+    }
+
+    /// Gets the absolute guest filepath for test results given a unique filename.
+    pub fn get_test_output_path(guest_output_filename: &str) -> PathBuf {
+        Path::new(GUEST_TEST_ROOT).join(guest_output_filename)
+    }
+
+    /// Gets the absolute guest filepath for the test binary given the host source location.
+    pub fn get_test_binary_path(source_location: &str) -> Result<PathBuf, Error> {
+        let binary_name = Path::new(source_location)
+            .file_name()
+            .ok_or_else(|| anyhow!("Binary path format was unexpected."))?;
+        Ok(Path::new(GUEST_TEST_ROOT).join(binary_name))
+    }
+
+    /// Pushes the test binary and all data dependencies to the guest if not already pushed.
+    pub async fn push_test_dependencies(
+        &self,
+        mut test_component_ns: Namespace,
+        test_start_info: &frunner::ComponentStartInfo,
+    ) -> Result<PathBuf, Error> {
+        let test_pkg_dir = test_component_ns
+            .remove(&NamespacePath::new("/pkg")?)
+            .ok_or_else(|| anyhow!("Could not find /pkg in namespace!"))?
+            .into_proxy();
+
+        if !self.are_deps_pushed() {
+            self.push_data_deps(&test_pkg_dir).await?;
+        }
+
+        self.push_test_binary(test_start_info, &test_pkg_dir).await
+    }
+
+    /// Pushes data dependencies from `/pkg/data/tests/deps/` to the guest's `/data/tests/deps/`.
+    pub async fn push_data_deps(&self, pkg_dir_proxy: &fio::DirectoryProxy) -> Result<(), Error> {
+        let deps_dir = match directory::open_directory(
+            pkg_dir_proxy,
+            HOST_DATA_PATH,
+            fio::PERM_READABLE,
+        )
+        .await
+        {
+            Ok(dir) => dir,
+            Err(e) => {
+                log::info!("No test deps directory found at {}: {:?}", HOST_DATA_PATH, e);
+                self.mark_deps_pushed();
+                return Ok(());
+            }
+        };
+
+        let entries = directory::readdir(&deps_dir).await?;
+        for entry in entries {
+            match entry.kind {
+                directory::DirentKind::File => {
+                    let file_name = entry.name;
+                    let source_file =
+                        directory::open_file(&deps_dir, &file_name, fio::PERM_READABLE)
+                            .await
+                            .with_context(|| format!("Failed to open dep file: {}", file_name))?;
+
+                    let source = source_file.into_client_end().map_err(|s| {
+                        anyhow!("Failed to convert source file to client end: {:?}", s)
+                    })?;
+
+                    let guest_dest = format!("{}{}", GUEST_DATA_PATH, file_name);
+                    let guest_dest_path = Path::new(&guest_dest);
+                    self.push_data_to_guest(source, &guest_dest_path).await?;
+                }
+                _ => {
+                    bail!("Unexpected file/folder structure in deps folder: {}", entry.name);
+                }
+            }
+        }
+
+        self.mark_deps_pushed();
+        Ok(())
+    }
+
+    /// Pushes the test binary from ComponentStartInfo to the Debian guest.
+    pub async fn push_test_binary(
+        &self,
+        test_start_info: &frunner::ComponentStartInfo,
+        pkg_dir_proxy: &fio::DirectoryProxy,
+    ) -> Result<PathBuf, Error> {
+        let host_binary_location = runner::get_program_binary(test_start_info)?;
+        let guest_dest = Self::get_test_binary_path(&host_binary_location)?;
+
+        let source =
+            directory::open_file(pkg_dir_proxy, host_binary_location.as_str(), fio::PERM_READABLE)
+                .await?
+                .into_client_end()
+                .map_err(|_| anyhow!("Converting test bin file to client end failed"))?;
+
+        self.push_data_to_guest(source, &guest_dest).await?;
+        Ok(guest_dest)
     }
 }

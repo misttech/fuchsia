@@ -6,24 +6,19 @@ use crate::debian_guest::DebianGuest;
 use crate::{gtest, helpers, results_parser};
 
 use anyhow::{self, Context};
-use cm_types::NamespacePath;
-use fidl::endpoints::{self, Proxy};
+use fidl::endpoints;
+use fidl_fuchsia_component_runner as frunner;
 use fidl_fuchsia_test::{self as ftest, CaseListenerProxy, Result_ as TestResult, Status};
-use fuchsia_fs::{self, directory};
 use gtest_runner_lib::parser::TestSuiteOutput;
 use helpers::TestType;
 use namespace::Namespace;
 use std::collections::HashMap;
 use std::fs::OpenOptions;
 use std::io::Read;
+use std::path::Path;
 use std::sync::Arc;
-use {fidl_fuchsia_component_runner as frunner, fidl_fuchsia_io as fio, runner};
 
-// TODO(https://fxbug.dev/436831317): Execute within a proper working directory.
-const GUEST_TEST_ROOT: &str = "/";
-const GUEST_DEPS_PATH: &str = "/data/tests/deps/";
-const HOST_TEST_DEPS_PATH: &str = "data/tests/deps/";
-const HOST_TMP_DIR: &str = "/tmp/";
+const HOST_TMP_DIR: &str = "/tmp";
 const CML_TARGET_KERNEL_FIELD: &str = "test_target_kernel";
 
 /// Shallow helper struct, simply for encapsulating the various ways that tests report.
@@ -34,7 +29,7 @@ struct TestRunnerReport {
     individual_report_proxies: HashMap<String, CaseListenerProxy>,
 }
 
-pub async fn run_syscall_tests(
+pub async fn run_syscall_gtests(
     tests: Vec<ftest::Invocation>,
     mut test_start_info: frunner::ComponentStartInfo,
     run_listener_proxy: &ftest::RunListenerProxy,
@@ -95,13 +90,14 @@ async fn run_on_debian_guest(
 
     // Initialize the environment.
     let test_runner_report =
-        initialize_test_runner_reporting(&tests, run_listener_proxy, &test_start_info)?;
+        initialize_test_runner_reporting(tests, run_listener_proxy, test_start_info)?;
     let guest_binary_location =
-        push_test_dependencies(test_component_ns, debian_guest.clone(), &test_start_info).await?;
-    let (exec_command, guest_output_filename) = format_exec_command(&tests, guest_binary_location);
+        debian_guest.push_test_dependencies(test_component_ns, test_start_info).await?;
+    let (exec_command, guest_output_filename) = format_exec_command(tests, &guest_binary_location);
 
-    // Execute the tests and retrieve the results.
-    debian_guest
+    // Execute the tests and retrieve the results. The command's overall return code is ignored, as
+    // the gTest results are parsed from the stdout in get_test_results.
+    let _ = debian_guest
         .execute(
             &exec_command,
             &[],
@@ -122,25 +118,23 @@ async fn run_on_debian_guest(
     Ok(())
 }
 
-/// Pushes the test binary and dependencies to the virtualized guest, returning the location
-/// of the test binary on the guest.
-async fn push_test_dependencies(
-    mut test_component_ns: Namespace,
-    debian_guest: Arc<DebianGuest>,
-    test_start_info: &frunner::ComponentStartInfo,
-) -> Result<String, anyhow::Error> {
-    let test_pkg_dir = test_component_ns
-        .remove(&NamespacePath::new("/pkg")?)
-        .ok_or_else(|| anyhow::anyhow!("Could not find /pkg in namespace!"))?
-        .into_proxy();
+/// Formats the guest exec command, handling the appropriate gtest filters as well
+/// as the JSON output file for test results. Returns the (exec_command, output_filepath)
+fn format_exec_command(
+    tests: &Vec<ftest::Invocation>,
+    guest_binary_location: &Path,
+) -> (String, String) {
+    let test_filter_arg = gtest::create_tests_filter_arg(tests, TestType::Gtest);
+    let guest_output_filename = helpers::unique_test_result_filename();
+    let guest_output_path = DebianGuest::get_test_output_path(&guest_output_filename);
+    let output_arg = helpers::format_arg(
+        TestType::Gtest,
+        &format!("output={}:{}", "json", guest_output_path.display()),
+    );
+    let exec_command =
+        format!("{} {} {}", guest_binary_location.display(), test_filter_arg, output_arg);
 
-    // The data dependencies are shared across all syscall tests, and therefore only need to be
-    // pushed a single time. Due to state management issues, the DebianGuest stores the push state.
-    if !debian_guest.are_deps_pushed() {
-        push_data_deps_to_guest(&test_pkg_dir, debian_guest.clone()).await?;
-    }
-
-    Ok(push_test_binary_to_guest(test_start_info, &test_pkg_dir, debian_guest.clone()).await?)
+    (exec_command, guest_output_filename)
 }
 
 /// Transfers a test results file from a guest and parses its contents. In the case of transfer or
@@ -151,30 +145,28 @@ async fn get_test_results(
     guest_output_filename: String,
 ) -> Result<Vec<TestSuiteOutput>, anyhow::Error> {
     // Firstly, transfer the results file from the guest back to the host.
-    let host_test_output_path = format!("{}{}", HOST_TMP_DIR, guest_output_filename);
-    let guest_test_output_path = get_guest_test_output_path(&guest_output_filename);
-    let mut host_test_output_file =
+    let host_test_output_path = Path::new(HOST_TMP_DIR).join(&guest_output_filename);
+    let guest_test_output_path = DebianGuest::get_test_output_path(&guest_output_filename);
+    let host_test_output_file =
         OpenOptions::new().write(true).create_new(true).open(&host_test_output_path)?;
     let file_channel: zx::Channel = fdio::transfer_fd(host_test_output_file)?.into();
     let file_client_end = endpoints::ClientEnd::from(file_channel);
-    let transfer_result =
-        debian_guest.get_file(guest_test_output_path.as_str(), file_client_end).await;
+    let transfer_result = debian_guest.get_file(&guest_test_output_path, file_client_end).await;
 
     match transfer_result {
         Ok(_) => {
             // Read and parse the results. Since the backing file handle is consumed by the transfer_fd
             // call, we need to reopen the file to read the contents.
-            host_test_output_file = OpenOptions::new().read(true).open(&host_test_output_path)?;
+            let mut host_test_output_file =
+                OpenOptions::new().read(true).open(&host_test_output_path)?;
             let mut gtest_output_buffer = String::new();
             let test_results = host_test_output_file
                 .read_to_string(&mut gtest_output_buffer)
-                .with_context(|| {
-                    format!("Failed to read {}{}", HOST_TMP_DIR, guest_output_filename)
-                })
+                .with_context(|| format!("Failed to read {}", host_test_output_path.display()))
                 .and_then(|_| {
                     results_parser::parse_results(TestType::Gtest, gtest_output_buffer.trim())
                         .with_context(|| {
-                            format!("Failed to parse {}{}", HOST_TMP_DIR, guest_output_filename)
+                            format!("Failed to parse {}", host_test_output_path.display())
                         })
                 });
 
@@ -204,93 +196,6 @@ async fn get_test_results(
     }
 }
 
-/// Pushes all data dependencies to the running guest.
-async fn push_data_deps_to_guest(
-    pkg_dir_proxy: &fio::DirectoryProxy,
-    debian_guest: Arc<DebianGuest>,
-) -> Result<(), anyhow::Error> {
-    let deps_dir =
-        directory::open_directory(pkg_dir_proxy, HOST_TEST_DEPS_PATH, fio::PERM_READABLE)
-            .await
-            .with_context(|| format!("Failed to open deps directory: {}", HOST_TEST_DEPS_PATH))?;
-
-    let entries = directory::readdir(&deps_dir).await?;
-    for entry in entries {
-        match entry.kind {
-            directory::DirentKind::File => {
-                let file_name = entry.name;
-                let source_file =
-                    fuchsia_fs::directory::open_file(&deps_dir, &file_name, fio::PERM_READABLE)
-                        .await
-                        .with_context(|| format!("Failed to open dep file: {}", file_name))?;
-
-                let source = source_file.into_client_end().map_err(|s| {
-                    anyhow::anyhow!("Failed to convert source file to client end: {:?}", s)
-                })?;
-
-                let guest_dest = format!("{}{}", GUEST_DEPS_PATH, file_name);
-                debian_guest.push_data_to_guest(source, &guest_dest).await?;
-            }
-            _ => {
-                // We don't currently anticipate nested subdirectories in the deps folder, and so
-                // haven't written the code to mirror such a structure in the Machina guest. If this
-                // assumption breaks, tests will begin failing and we should complain loudly.
-                anyhow::bail!("Unexpected file / folder structure in deps folder: {}", entry.name);
-            }
-        }
-    }
-
-    debian_guest.mark_deps_pushed();
-    Ok(())
-}
-
-/// Pushes the test binary from the ComponentStartInfo to the Debian guest.
-async fn push_test_binary_to_guest(
-    test_start_info: &frunner::ComponentStartInfo,
-    pkg_dir_proxy: &fio::DirectoryProxy,
-    debian_guest: Arc<DebianGuest>,
-) -> Result<String, anyhow::Error> {
-    let host_binary_location = runner::get_program_binary(test_start_info)?;
-    let guest_dest = get_guest_test_binary_path(&host_binary_location)?;
-
-    let source =
-        directory::open_file(pkg_dir_proxy, host_binary_location.as_str(), fio::PERM_READABLE)
-            .await?
-            .into_client_end()
-            .map_err(|_| anyhow::anyhow!("Converting test bin file to client end failed"))?;
-
-    debian_guest.push_data_to_guest(source, &guest_dest).await?;
-    Ok(guest_dest)
-}
-
-/// Formats the guest exec command, handling the appropriate gtest filters as well
-/// as the JSON output file for test results. Returns the (exec_command, output_filepath)
-fn format_exec_command(
-    tests: &Vec<ftest::Invocation>,
-    guest_binary_location: String,
-) -> (String, String) {
-    let test_filter_arg = gtest::create_tests_filter_arg(tests, TestType::Gtest);
-    let guest_output_filename = helpers::unique_test_result_filename();
-    let guest_output_path = get_guest_test_output_path(&guest_output_filename);
-    let output_arg =
-        helpers::format_arg(TestType::Gtest, &format!("output={}:{}", "json", guest_output_path));
-    let exec_command = format!("{} {} {}", guest_binary_location, test_filter_arg, output_arg);
-
-    return (exec_command, guest_output_filename);
-}
-
-/// Gets the absolute filepath for the test results, given the unique filename.
-fn get_guest_test_output_path(guest_output_filename: &String) -> String {
-    return format!("{}{}", GUEST_TEST_ROOT, guest_output_filename);
-}
-
-/// Gets an absolute filepath for the test binary, given the source location.
-fn get_guest_test_binary_path(source_location: &String) -> Result<String, anyhow::Error> {
-    let binary_name =
-        source_location.split('/').last().expect("Binary path format was unexpected.").to_string();
-    Ok(format!("{}{}", GUEST_TEST_ROOT, binary_name))
-}
-
 /// Initializes the necessary plumbing for capturing stdout and stderr,
 /// and for reporting test results to the framework's run listener(s).
 fn initialize_test_runner_reporting(
@@ -317,11 +222,11 @@ fn initialize_test_runner_reporting(
         overall_test_listener,
     )?;
 
-    let test_report_proxies = helpers::start_tests(&tests, run_listener_proxy)?;
+    let test_report_proxies = helpers::start_tests(tests, run_listener_proxy)?;
     Ok(TestRunnerReport {
         stdout: test_stdout,
         stderr: test_stderr,
-        top_level_report_proxy: top_level_report_proxy,
+        top_level_report_proxy,
         individual_report_proxies: test_report_proxies,
     })
 }

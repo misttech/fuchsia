@@ -10,7 +10,7 @@ mod helpers;
 mod results_parser;
 mod runner;
 mod selinux;
-mod syscalls;
+mod syscalls_gtest;
 mod test_suite;
 mod vts_binary;
 
