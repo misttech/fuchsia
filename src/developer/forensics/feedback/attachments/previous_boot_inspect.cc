@@ -22,12 +22,14 @@ namespace forensics::feedback {
 PreviousBootInspect::PreviousBootInspect(async_dispatcher_t* dispatcher,
                                          std::shared_ptr<sys::ServiceDirectory> services,
                                          std::unique_ptr<backoff::Backoff> backoff,
-                                         RedactorBase* redactor)
-    : backoff_(std::move(backoff)), redactor_(redactor) {
+                                         RedactorBase* redactor, std::string path)
+    : backoff_(std::move(backoff)), redactor_(redactor), path_(std::move(path)) {
+  // Don't fetch previous boot Inspect if it has already been written to path_.
+  if (files::IsFile(path_)) {
+    return;
+  }
+
   data_provider_.set_error_handler([this, dispatcher, services](const zx_status_t status) {
-    if (cached_value_.has_value()) {
-      return;
-    }
     FX_PLOGS(WARNING, status)
         << "Lost connection to fuchsia.diagnostics.persistence.PreviousBootDataProvider";
 
@@ -46,10 +48,6 @@ PreviousBootInspect::PreviousBootInspect(async_dispatcher_t* dispatcher,
 
 void PreviousBootInspect::WatchPreviousBootData(async_dispatcher_t* dispatcher,
                                                 std::shared_ptr<sys::ServiceDirectory> services) {
-  if (cached_value_.has_value()) {
-    return;
-  }
-
   services->Connect(data_provider_.NewRequest(dispatcher));
 
   fuchsia::diagnostics::persistence::PreviousBootDataProviderOptions options;
@@ -65,44 +63,40 @@ void PreviousBootInspect::WatchPreviousBootData(async_dispatcher_t* dispatcher,
 }
 
 void PreviousBootInspect::OnError() {
-  if (cached_value_.has_value()) {
-    return;
-  }
   FX_LOGS(WARNING) << "Failed to watch previous boot inspect data";
-  cached_value_ = AttachmentData(Error::kMissingValue);
+  error_ = Error::kMissingValue;
   if (data_provider_.is_bound()) {
     data_provider_.Unbind();
   }
   auto completers = std::move(completers_);
   for (auto& [ticket, completer] : completers) {
     if (completer != nullptr) {
-      completer(cached_value_->Clone());
+      completer(AttachmentData(Error::kMissingValue));
     }
   }
 }
 
 void PreviousBootInspect::OnDataReceived(fuchsia::diagnostics::persistence::PreviousBootData data) {
-  if (cached_value_.has_value()) {
-    return;
-  }
-
   if (!data.has_inspect() || !data.inspect().is_valid()) {
     FX_LOGS(WARNING) << "Previous boot inspect data is missing or invalid";
-    cached_value_ = AttachmentData(Error::kMissingValue);
+    error_ = Error::kMissingValue;
   } else {
     zx::channel channel = data.mutable_inspect()->TakeChannel();
     int fd = -1;
     if (const zx_status_t status = fdio_fd_create(channel.release(), &fd); status != ZX_OK) {
       FX_PLOGS(WARNING, status) << "Failed to create fd from previous boot inspect file";
-      cached_value_ = AttachmentData(Error::kFileReadFailure);
+      error_ = Error::kFileReadFailure;
     } else {
       std::string inspect_json;
       if (!files::ReadFileDescriptorToString(fd, &inspect_json) || inspect_json.empty()) {
         FX_LOGS(WARNING) << "Failed to read previous boot inspect file content";
-        cached_value_ = AttachmentData(Error::kMissingValue);
+        error_ = Error::kMissingValue;
       } else {
         redactor_->RedactJson(inspect_json);
-        cached_value_ = AttachmentData(std::move(inspect_json));
+        if (!files::WriteFile(path_, inspect_json)) {
+          FX_LOGS(WARNING) << "Failed to write previous boot inspect to file: " << path_;
+          error_ = Error::kFileWriteFailure;
+        }
       }
       close(fd);
     }
@@ -115,16 +109,35 @@ void PreviousBootInspect::OnDataReceived(fuchsia::diagnostics::persistence::Prev
   auto completers = std::move(completers_);
   for (auto& [ticket, completer] : completers) {
     if (completer != nullptr) {
-      completer(cached_value_->Clone());
+      completer(error_.has_value() ? AttachmentData(*error_) : ReadAttachmentData());
     }
   }
+}
+
+AttachmentData PreviousBootInspect::ReadAttachmentData() const {
+  std::string inspect_json;
+  if (!files::ReadFileToString(path_, &inspect_json)) {
+    FX_LOGS(WARNING) << "Failed to read previous boot inspect file: " << path_;
+    return AttachmentData(Error::kFileReadFailure);
+  }
+
+  if (inspect_json.empty()) {
+    FX_LOGS(WARNING) << "Previous boot inspect file was empty: " << path_;
+    return AttachmentData(Error::kMissingValue);
+  }
+
+  return AttachmentData(std::move(inspect_json));
 }
 
 ::fpromise::promise<AttachmentData> PreviousBootInspect::Get(const uint64_t ticket) {
   FX_CHECK(!completers_.contains(ticket)) << "Ticket used twice: " << ticket;
 
-  if (cached_value_.has_value()) {
-    return ::fpromise::make_ok_promise(cached_value_->Clone());
+  if (files::IsFile(path_)) {
+    return ::fpromise::make_ok_promise(ReadAttachmentData());
+  }
+
+  if (error_.has_value()) {
+    return ::fpromise::make_ok_promise(AttachmentData(*error_));
   }
 
   ::fpromise::bridge<AttachmentData, void> bridge;

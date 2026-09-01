@@ -33,7 +33,8 @@ AttachmentProviders::AttachmentProviders(
                                            &log_buffer_);
       }()),
       inspect_(dispatcher, services, AttachmentProviderBackoff(), inspect_data_budget, redactor),
-      previous_boot_inspect_(dispatcher, services, AttachmentProviderBackoff(), redactor),
+      previous_boot_inspect_(dispatcher, services, AttachmentProviderBackoff(), redactor,
+                             kPreviousBootInspectPath),
       previous_boot_log_(dispatcher, clock, delete_previous_boot_log_at, kPreviousLogsFilePath),
       previous_boot_kernel_log_(forensics::feedback::kPreviousBootKernelLogPath,
                                 /*warn_if_unavailable=*/false),

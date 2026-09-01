@@ -21,6 +21,7 @@
 #include "src/developer/forensics/utils/errors.h"
 #include "src/developer/forensics/utils/redact/redactor.h"
 #include "src/lib/files/file.h"
+#include "src/lib/files/path.h"
 #include "src/lib/files/scoped_temp_dir.h"
 
 namespace forensics::feedback {
@@ -93,6 +94,14 @@ class PreviousBootInspectTest : public UnitTestFixture {
 
   async::Executor& GetExecutor() { return executor_; }
 
+  std::string InspectPath() { return files::JoinPath(dir_.path(), "inspect.previous_boot.json"); }
+
+  std::string NewDirectory() {
+    std::string path;
+    dir_.NewTempDir(&path);
+    return path;
+  }
+
  private:
   async::Executor executor_;
   std::unique_ptr<stubs::PreviousBootDataProviderBase> server_;
@@ -108,10 +117,27 @@ TEST_F(PreviousBootInspectTest, SucceedsReturnsInspectData) {
       std::make_unique<stubs::PreviousBootDataProviderReturnsData>(std::move(data)));
 
   PreviousBootInspect provider(dispatcher(), services(), std::make_unique<MonotonicBackoff>(),
-                               GetRedactor());
+                               GetRedactor(), InspectPath());
   AttachmentData result = Run(provider.Get(1));
 
   EXPECT_THAT(result, AttachmentDataIs(kInspectData));
+}
+
+TEST_F(PreviousBootInspectTest, CachesInspectDataOnDisk) {
+  const std::string kInspectData = "[{\"root\": {\"value\": 123}}]";
+  fuchsia::diagnostics::persistence::PreviousBootData data;
+  data.set_inspect(CreateFileHandle(kInspectData));
+  SetUpDataProviderServer(
+      std::make_unique<stubs::PreviousBootDataProviderReturnsData>(std::move(data)));
+
+  PreviousBootInspect provider(dispatcher(), services(), std::make_unique<MonotonicBackoff>(),
+                               GetRedactor(), InspectPath());
+  Run(provider.Get(1));
+
+  EXPECT_TRUE(files::IsFile(InspectPath()));
+  std::string on_disk;
+  EXPECT_TRUE(files::ReadFileToString(InspectPath(), &on_disk));
+  EXPECT_EQ(on_disk, kInspectData);
 }
 
 TEST_F(PreviousBootInspectTest, FailsMissingInspect) {
@@ -120,10 +146,11 @@ TEST_F(PreviousBootInspectTest, FailsMissingInspect) {
       std::make_unique<stubs::PreviousBootDataProviderReturnsData>(std::move(data)));
 
   PreviousBootInspect provider(dispatcher(), services(), std::make_unique<MonotonicBackoff>(),
-                               GetRedactor());
+                               GetRedactor(), InspectPath());
   AttachmentData result = Run(provider.Get(1));
 
   EXPECT_THAT(result, AttachmentDataIs(Error::kMissingValue));
+  EXPECT_FALSE(files::IsFile(InspectPath()));
 }
 
 TEST_F(PreviousBootInspectTest, ReconnectsOnConnectionClosed) {
@@ -132,7 +159,7 @@ TEST_F(PreviousBootInspectTest, ReconnectsOnConnectionClosed) {
   SetUpDataProviderServer(std::move(server));
 
   PreviousBootInspect provider(dispatcher(), services(), std::make_unique<MonotonicBackoff>(),
-                               GetRedactor());
+                               GetRedactor(), InspectPath());
   RunLoopUntilIdle();
   EXPECT_TRUE(server_ptr->IsBound());
 
@@ -152,7 +179,7 @@ TEST_F(PreviousBootInspectTest, ReconnectsReturnsDataAfterRetry) {
       std::make_unique<PreviousBootDataProviderClosesConnectionThenReturnsData>(std::move(data)));
 
   PreviousBootInspect provider(dispatcher(), services(), std::make_unique<MonotonicBackoff>(),
-                               GetRedactor());
+                               GetRedactor(), InspectPath());
 
   AttachmentData result(Error::kNotSet);
   GetExecutor().schedule_task(
@@ -165,6 +192,7 @@ TEST_F(PreviousBootInspectTest, ReconnectsReturnsDataAfterRetry) {
 
   RunLoopFor(zx::sec(1));
   EXPECT_THAT(result, AttachmentDataIs(kInspectData));
+  EXPECT_TRUE(files::IsFile(InspectPath()));
 }
 
 TEST_F(PreviousBootInspectTest, CachedResultMultipleGets) {
@@ -175,11 +203,11 @@ TEST_F(PreviousBootInspectTest, CachedResultMultipleGets) {
       std::make_unique<stubs::PreviousBootDataProviderReturnsData>(std::move(data)));
 
   PreviousBootInspect provider(dispatcher(), services(), std::make_unique<MonotonicBackoff>(),
-                               GetRedactor());
+                               GetRedactor(), InspectPath());
   AttachmentData result1 = Run(provider.Get(1));
   EXPECT_THAT(result1, AttachmentDataIs(kInspectData));
 
-  // Second call should return cached value immediately without needing the server.
+  // Second call should return cached value from disk immediately without needing the server.
   AttachmentData result2 = Run(provider.Get(2));
   EXPECT_THAT(result2, AttachmentDataIs(kInspectData));
 }
@@ -188,7 +216,7 @@ TEST_F(PreviousBootInspectTest, ForceCompletionTimeout) {
   SetUpDataProviderServer(std::make_unique<stubs::PreviousBootDataProviderNeverReturns>());
 
   PreviousBootInspect provider(dispatcher(), services(), std::make_unique<MonotonicBackoff>(),
-                               GetRedactor());
+                               GetRedactor(), InspectPath());
   AttachmentData result(Error::kNotSet);
   GetExecutor().schedule_task(
       provider.Get(1)
@@ -226,7 +254,7 @@ TEST_F(PreviousBootInspectTest, RedactsWithJsonReplacers) {
   SetRedactor(std::make_unique<Redactor>(0, inspect::UintProperty(), std::move(redaction_enabled)));
 
   PreviousBootInspect provider(dispatcher(), services(), std::make_unique<MonotonicBackoff>(),
-                               GetRedactor());
+                               GetRedactor(), InspectPath());
   AttachmentData result = Run(provider.Get(1));
 
   EXPECT_THAT(result, AttachmentDataIs(R"(["<REDACTED-IPV4: 1>",
@@ -237,6 +265,127 @@ TEST_F(PreviousBootInspectTest, RedactsWithJsonReplacers) {
 "11:22:33:<REDACTED-MAC: 6>",
 1234567890abcdefABCDEF0123456789,
 "106986199446298680449"])"));
+}
+
+TEST_F(PreviousBootInspectTest, CachesRedactedInspectDataOnDisk) {
+  const std::string kInspectData =
+      "[\"1.2.3.4\",\n"  // IPv4 Addresses are redacted
+      "\"5.6.7.8\",\n"
+      "\"2001::1\",\n"  // IPv6 Addresses are redacted
+      "\"2001::2\",\n"
+      "\"AA-BB-CC-DD-EE-FF\",\n"  // MAC Addresses are redacted with manufacturer component
+                                  // unredacted
+      "\"11:22:33:44:55:66\",\n"
+      "1234567890abcdefABCDEF0123456789,\n"  // Long Hex numbers are not redacted
+      "\"106986199446298680449\"]";          // Obfuscated Gaia IDs are not redacted
+  fuchsia::diagnostics::persistence::PreviousBootData data;
+  data.set_inspect(CreateFileHandle(kInspectData));
+  SetUpDataProviderServer(
+      std::make_unique<stubs::PreviousBootDataProviderReturnsData>(std::move(data)));
+
+  inspect::BoolProperty redaction_enabled;
+  redaction_enabled.Set(true);
+  SetRedactor(std::make_unique<Redactor>(0, inspect::UintProperty(), std::move(redaction_enabled)));
+
+  PreviousBootInspect provider(dispatcher(), services(), std::make_unique<MonotonicBackoff>(),
+                               GetRedactor(), InspectPath());
+  Run(provider.Get(1));
+
+  const std::string kExpected =
+      R"(["<REDACTED-IPV4: 1>",
+"<REDACTED-IPV4: 2>",
+"<REDACTED-IPV6: 3>",
+"<REDACTED-IPV6: 4>",
+"AA-BB-CC-<REDACTED-MAC: 5>",
+"11:22:33:<REDACTED-MAC: 6>",
+1234567890abcdefABCDEF0123456789,
+"106986199446298680449"])";
+
+  EXPECT_TRUE(files::IsFile(InspectPath()));
+  std::string on_disk;
+  EXPECT_TRUE(files::ReadFileToString(InspectPath(), &on_disk));
+  EXPECT_EQ(on_disk, kExpected);
+}
+
+TEST_F(PreviousBootInspectTest, FileAlreadyExistsDoesNotFetchFromPersistence) {
+  const std::string kInspectData = "[{\"root\": {\"value\": 789}}]";
+  ASSERT_TRUE(files::WriteFile(InspectPath(), kInspectData));
+
+  // Data provider that would never return if connected.
+  auto server = std::make_unique<stubs::PreviousBootDataProviderNeverReturns>();
+  auto* server_ptr = server.get();
+  SetUpDataProviderServer(std::move(server));
+
+  PreviousBootInspect provider(dispatcher(), services(), std::make_unique<MonotonicBackoff>(),
+                               GetRedactor(), InspectPath());
+  AttachmentData result = Run(provider.Get(1));
+
+  EXPECT_THAT(result, AttachmentDataIs(kInspectData));
+  EXPECT_FALSE(server_ptr->IsBound());
+}
+
+TEST_F(PreviousBootInspectTest, FileWriteFailure) {
+  const std::string kInspectData = "[{\"root\": {\"value\": 123}}]";
+  fuchsia::diagnostics::persistence::PreviousBootData data;
+  data.set_inspect(CreateFileHandle(kInspectData));
+  SetUpDataProviderServer(
+      std::make_unique<stubs::PreviousBootDataProviderReturnsData>(std::move(data)));
+
+  // Use an invalid directory path where file creation will fail.
+  const std::string invalid_path = "/dev/null/cannot/write/here.json";
+
+  PreviousBootInspect provider(dispatcher(), services(), std::make_unique<MonotonicBackoff>(),
+                               GetRedactor(), invalid_path);
+  AttachmentData result = Run(provider.Get(1));
+
+  EXPECT_THAT(result, AttachmentDataIs(Error::kFileWriteFailure));
+}
+
+TEST_F(PreviousBootInspectTest, FileDeletedAfterBeingCached) {
+  const std::string kInspectData = "[{\"root\": {\"value\": 123}}]";
+  fuchsia::diagnostics::persistence::PreviousBootData data;
+  data.set_inspect(CreateFileHandle(kInspectData));
+  SetUpDataProviderServer(
+      std::make_unique<stubs::PreviousBootDataProviderReturnsData>(std::move(data)));
+
+  PreviousBootInspect provider(dispatcher(), services(), std::make_unique<MonotonicBackoff>(),
+                               GetRedactor(), InspectPath());
+  AttachmentData result = Run(provider.Get(1));
+
+  EXPECT_THAT(result, AttachmentDataIs(kInspectData));
+  EXPECT_TRUE(files::IsFile(InspectPath()));
+
+  ASSERT_TRUE(files::DeletePath(InspectPath(), false));
+  EXPECT_FALSE(files::IsFile(InspectPath()));
+
+  AttachmentData result2(Error::kNotSet);
+  GetExecutor().schedule_task(
+      provider.Get(2)
+          .and_then([&result2](AttachmentData& val) { result2 = std::move(val); })
+          .or_else([]() { FX_LOGS(FATAL) << "Unexpected branch"; }));
+
+  RunLoopUntilIdle();
+  EXPECT_FALSE(result2.HasValue());
+  EXPECT_EQ(result2.Error(), Error::kNotSet);
+
+  provider.ForceCompletion(2, Error::kTimeout);
+  RunLoopUntilIdle();
+
+  EXPECT_THAT(result2, AttachmentDataIs(Error::kTimeout));
+}
+
+TEST_F(PreviousBootInspectTest, ProvidedPathIsDirectory) {
+  const std::string kInspectData = "[{\"root\": {\"value\": 123}}]";
+  fuchsia::diagnostics::persistence::PreviousBootData data;
+  data.set_inspect(CreateFileHandle(kInspectData));
+  SetUpDataProviderServer(
+      std::make_unique<stubs::PreviousBootDataProviderReturnsData>(std::move(data)));
+
+  PreviousBootInspect provider(dispatcher(), services(), std::make_unique<MonotonicBackoff>(),
+                               GetRedactor(), NewDirectory());
+  AttachmentData result = Run(provider.Get(1));
+
+  EXPECT_THAT(result, AttachmentDataIs(Error::kFileWriteFailure));
 }
 
 }  // namespace

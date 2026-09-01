@@ -14,9 +14,11 @@
 #include <map>
 #include <memory>
 #include <optional>
+#include <string>
 
 #include "src/developer/forensics/feedback/attachments/provider.h"
 #include "src/developer/forensics/feedback/attachments/types.h"
+#include "src/developer/forensics/utils/errors.h"
 #include "src/developer/forensics/utils/redact/redactor.h"
 #include "src/lib/backoff/backoff.h"
 #include "src/lib/fxl/memory/weak_ptr.h"
@@ -24,12 +26,13 @@
 namespace forensics::feedback {
 
 // Collects the Inspect data from the previous boot via
-// fuchsia.diagnostics.persistence.PreviousBootDataProvider.
+// fuchsia.diagnostics.persistence.PreviousBootDataProvider and caches it in a file on disk.
 class PreviousBootInspect : public AttachmentProvider {
  public:
   PreviousBootInspect(async_dispatcher_t* dispatcher,
                       std::shared_ptr<sys::ServiceDirectory> services,
-                      std::unique_ptr<backoff::Backoff> backoff, RedactorBase* redactor);
+                      std::unique_ptr<backoff::Backoff> backoff, RedactorBase* redactor,
+                      std::string path);
 
   // Returns a promise to the previous boot inspect data and allows collection to be terminated
   // early with |ticket|.
@@ -45,14 +48,15 @@ class PreviousBootInspect : public AttachmentProvider {
   void OnDataReceived(fuchsia::diagnostics::persistence::PreviousBootData data);
   void OnError();
 
+  AttachmentData ReadAttachmentData() const;
+
   std::unique_ptr<backoff::Backoff> backoff_;
   RedactorBase* redactor_;
+  std::string path_;
 
   fuchsia::diagnostics::persistence::PreviousBootDataProviderPtr data_provider_;
 
-  // TODO(https://fxbug.dev/547843423): store the cached value on disk to avoid
-  // putting pressure on memory and requiring a new fetch on component restart.
-  std::optional<AttachmentData> cached_value_;
+  std::optional<Error> error_;
   std::map<uint64_t, ::fit::callback<void(AttachmentData)>> completers_;
 
   fxl::WeakPtrFactory<PreviousBootInspect> ptr_factory_{this};
