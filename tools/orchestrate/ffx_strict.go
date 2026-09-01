@@ -553,6 +553,34 @@ func (c *FFXStrictClient) TargetSnapshot(ctx context.Context, dir string) error 
 	return nil
 }
 
+func (c *FFXStrictClient) TargetRepositoryRegister(ctx context.Context, repoName string, aliases []string) error {
+	c.mu.Lock()
+	port := c.repoPort
+	target := c.ffxInst.GetTarget()
+	c.mu.Unlock()
+
+	if port == 0 {
+		return fmt.Errorf("cannot register repository: package server has not been started")
+	}
+	args := []string{
+		"target", "repository", "register",
+		"--repository", repoName,
+		"--port", strconv.Itoa(port),
+		"--alias-conflict-mode", "replace",
+	}
+	for _, alias := range aliases {
+		args = append(args, "--alias", alias)
+	}
+
+	// FFXWithTarget returns a shallow copy of FFXInstance with the target set.
+	// We use it here to snapshot the target and ensure thread-safety.
+	inst := ffxutil.FFXWithTarget(c.ffxInst, target)
+	if err := inst.RunWithTarget(ctx, args...); err != nil {
+		return fmt.Errorf("target repository register failed: %w", err)
+	}
+	return nil
+}
+
 var xdgEnvVars = []string{"HOME", "XDG_CONFIG_HOME", "XDG_DATA_HOME", "XDG_CACHE_HOME", "XDG_STATE_HOME"}
 
 func (c *FFXStrictClient) ApplyEnv(env []string) ([]string, error) {

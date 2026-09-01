@@ -986,3 +986,60 @@ exit 0
 		t.Errorf("Expected '-c connectivity.direct=true' in args, got: %s", args)
 	}
 }
+
+func TestFFXStrictClient_TargetRepositoryRegister(t *testing.T) {
+	t.Parallel()
+	tmpDir := t.TempDir()
+	argsFile := filepath.Join(tmpDir, "args.txt")
+	script := fmt.Sprintf(`#!/bin/bash
+echo "$@" >> %s
+if [[ "$*" == *"repository server list"* ]]; then
+    echo '{"ok":{"data":[{"name":"test-repo","address":"[::]:8083"}]}}'
+fi
+exit 0
+`, argsFile)
+	fakeFfx := createFakeFfx(t, tmpDir, script)
+
+	ctx := context.Background()
+	client, err := NewFFXStrictClient(ctx, fakeFfx, tmpDir, "test-repo")
+	if err != nil {
+		t.Fatalf("NewFFXStrictClient failed: %v", err)
+	}
+	defer client.Close()
+
+	target := "my-target"
+	client.SetDefaultTarget(&target)
+
+	// Call IsPackageServerRunning to populate the internal c.repoPort
+	running, err := client.IsPackageServerRunning(ctx, "test-repo")
+	if err != nil {
+		t.Fatalf("IsPackageServerRunning failed: %v", err)
+	}
+	if !running {
+		t.Fatalf("Expected package server to be running")
+	}
+
+	err = client.TargetRepositoryRegister(ctx, "test-repo", []string{"fuchsia.com", "chromium.org"})
+	if err != nil {
+		t.Fatalf("TargetRepositoryRegister failed: %v", err)
+	}
+
+	data, err := os.ReadFile(argsFile)
+	if err != nil {
+		t.Fatalf("Failed to read args file: %v", err)
+	}
+	args := string(data)
+
+	if !strings.Contains(args, "--target my-target target repository register --repository test-repo") {
+		t.Errorf("Expected '--target my-target target repository register --repository test-repo' in args, got: %s", args)
+	}
+	if !strings.Contains(args, "--alias fuchsia.com --alias chromium.org") {
+		t.Errorf("Expected '--alias fuchsia.com --alias chromium.org' in args, got: %s", args)
+	}
+	if !strings.Contains(args, "--alias-conflict-mode replace") {
+		t.Errorf("Expected '--alias-conflict-mode replace' in args, got: %s", args)
+	}
+	if !strings.Contains(args, "--port 8083") {
+		t.Errorf("Expected '--port 8083' in args, got: %s", args)
+	}
+}
