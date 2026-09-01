@@ -56,7 +56,6 @@ description: >-
 
 - [Go Migration Guide](references/go_migration.md)
   (See **Common Pitfalls** for `importpath` and dependency gotchas).
-- [Go Examples](examples/go)
 - [Rust](references/rust_migration.md)
   (See **Common Pitfalls and Best Practices** section).
 
