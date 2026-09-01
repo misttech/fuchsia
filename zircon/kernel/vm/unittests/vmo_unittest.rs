@@ -11,6 +11,7 @@ mod vmo_rs {
     use crate::kernel::thread::{self, ThreadPtr};
     use crate::kernel::types::PAddr;
     use crate::platform_rs::timer::InstantMono;
+    use crate::user_memory::UserMemory;
     use crate::vm::arch_vm_aspace::{
         ARCH_MMU_FLAG_CACHE_MASK, ARCH_MMU_FLAG_PERM_READ, ARCH_MMU_FLAG_PERM_WRITE,
         ARCH_MMU_FLAG_UNCACHED, ARCH_MMU_FLAG_UNCACHED_DEVICE,
@@ -1239,6 +1240,46 @@ mod vmo_rs {
                 expect_true!(clone_lookup[i] != 0);
             }
         }
+    }
+
+    /// Tests that cloning a VMO removes write permissions from existing mappings.
+    #[test]
+    fn vmo_clone_removes_write_test() {
+        let _scanner_disable = AutoVmScannerDisable::new();
+
+        // Create and map a VMO.
+        let vmo =
+            unwrap_ok!(VmObjectPaged::create(pmm::ALLOC_FLAG_ANY, 0, PAGE_SIZE), "vmo create");
+        let vmo = VmObjectPaged::into_vm_object(vmo);
+
+        // Use UserMemory to map the VMO, instead of mapping into the kernel aspace, so that we can
+        // freely cause the mappings to modified as a consequence of the clone operation. Causing
+        // kernel mappings to get modified in such a way is preferably avoided.
+        let mapping =
+            unwrap_ok!(UserMemory::create_from_vmo(vmo.clone(), 0, 0).ok_or(Status::NO_MEMORY));
+        expect_ok!(mapping.commit_and_map(0..PAGE_SIZE_USIZE));
+
+        // Query the aspace and validate there is a writable mapping.
+        let aspace = mapping.aspace();
+        let (paddr_writable, mmu_flags) =
+            unwrap_ok!(aspace.arch_aspace().query(mapping.base()), "query aspace");
+
+        expect_true!((mmu_flags & ARCH_MMU_FLAG_PERM_WRITE) != 0, "mapping is writable check");
+
+        // Clone the VMO, which causes the parent to have to downgrade any mappings to read-only so
+        // that copy-on-write can take place. Need to set a fake user id so that the COW creation
+        // code is happy.
+        vmo.set_user_id(42);
+        let _clone = unwrap_ok!(
+            vmo.create_clone(Resizability::NonResizable, SnapshotType::Full, 0, PAGE_SIZE, true),
+            "create clone"
+        );
+
+        // Aspace should now have a read only mapping with the same underlying page.
+        let (paddr_readable, mmu_flags) =
+            unwrap_ok!(aspace.arch_aspace().query(mapping.base()), "query aspace");
+        expect_false!((mmu_flags & ARCH_MMU_FLAG_PERM_WRITE) != 0, "mapping is read only check");
+        expect_eq!(paddr_writable.0, paddr_readable.0, "mapping has same page");
     }
 
     /// Creates a vm object, maps it, precommitted.
