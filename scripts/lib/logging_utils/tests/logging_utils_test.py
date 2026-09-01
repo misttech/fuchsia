@@ -63,8 +63,8 @@ class LoggingUtilsTest(unittest.TestCase):
 
     def test_colored_formatter_without_color(self) -> None:
         formatter = logging_utils.ColoredFormatter(
-            "[MOCK_PREFIX] %(levelname)s %(message)s",
-            prefix="MOCK_PREFIX",
+            "%(levelname)s %(message)s",
+            prefix="[MOCK_PREFIX] ",
             use_color=False,
         )
         record = logging.LogRecord(
@@ -176,6 +176,25 @@ class LoggingUtilsTest(unittest.TestCase):
             self.assertNotIsInstance(
                 file_handler.formatter, logging_utils.ColoredFormatter
             )
+
+    def test_colored_formatter_with_color_and_prefix(self) -> None:
+        formatter = logging_utils.ColoredFormatter(
+            "%(levelname)s %(message)s",
+            prefix="[MY_PREFIX] ",
+            use_color=True,
+        )
+        record = logging.LogRecord(
+            name="test",
+            level=logging.INFO,
+            pathname="test.py",
+            lineno=1,
+            msg="hello",
+            args=(),
+            exc_info=None,
+        )
+        output = formatter.format(record)
+        self.assertTrue(output.startswith("[MY_PREFIX] "))
+        self.assertIn("hello", output)
 
 
 if __name__ == "__main__":

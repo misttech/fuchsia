@@ -99,6 +99,7 @@ class ColoredFormatter(logging.Formatter):
         format_func: Callable[[str], str] | None = lacewing_log_formatter,
     ) -> None:
         super().__init__(fmt=fmt, datefmt=datefmt)
+        self.prefix: str | None = prefix
         self.use_color: bool = (
             use_color if use_color is not None else supports_color(sys.stdout)
         )
@@ -106,21 +107,21 @@ class ColoredFormatter(logging.Formatter):
 
     def format(self, record: logging.LogRecord) -> str:
         if not self.use_color:
-            return super().format(record)
-
-        orig_levelname = record.levelname
-        try:
-            color = _LEVEL_COLORS.get(record.levelno, "")
-            record.levelname = f"{color}{record.levelname}{Style.RESET_ALL}"
-
             formatted = super().format(record)
+        else:
+            orig_levelname = record.levelname
+            try:
+                color = _LEVEL_COLORS.get(record.levelno, "")
+                record.levelname = f"{color}{record.levelname}{Style.RESET_ALL}"
+                formatted = super().format(record)
+                if self.format_func is not None:
+                    formatted = self.format_func(formatted)
+            finally:
+                record.levelname = orig_levelname
 
-            if self.format_func is not None:
-                formatted = self.format_func(formatted)
-
-            return formatted
-        finally:
-            record.levelname = orig_levelname
+        if self.prefix:
+            formatted = f"{self.prefix}{formatted}"
+        return formatted
 
 
 def colorize_logger(
