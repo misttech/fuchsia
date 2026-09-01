@@ -4,7 +4,6 @@
 
 #include "src/ui/scenic/lib/screenshot/screenshot_manager.h"
 
-#include <fidl/fuchsia.ui.composition/cpp/hlcpp_conversion.h>
 #include <lib/component/incoming/cpp/protocol.h>
 #include <lib/syslog/cpp/macros.h>
 
@@ -29,8 +28,7 @@ ScreenshotManager::ScreenshotManager(
   FX_DCHECK(renderer_);
 }
 
-void ScreenshotManager::CreateBinding(
-    fidl::InterfaceRequest<fuchsia::ui::composition::Screenshot> request) {
+void ScreenshotManager::CreateBinding(fidl::ServerEnd<fuchsia_ui_composition::Screenshot> request) {
   std::unique_ptr<ScreenCapture> screen_capture = std::make_unique<ScreenCapture>(
       buffer_collection_importers_, renderer_, [this]() { return get_renderables_(); });
 
@@ -44,8 +42,7 @@ void ScreenshotManager::CreateBinding(
   auto close_handler = [impl = std::move(impl)](fidl::UnbindInfo info) {
     // Let |impl| fall out of scope.
   };
-  bindings_.AddBinding(dispatcher, fidl::HLCPPToNatural(std::move(request)), impl_ptr,
-                       std::move(close_handler));
+  bindings_.AddBinding(dispatcher, std::move(request), impl_ptr, std::move(close_handler));
 }
 
 }  // namespace screenshot

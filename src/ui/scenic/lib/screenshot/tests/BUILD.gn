@@ -22,7 +22,7 @@ cc_test_executable("unittests") {
   ]
 
   deps = [
-    "//sdk/fidl/fuchsia.io:fuchsia.io_hlcpp",
+    "//sdk/fidl/fuchsia.io:fuchsia.io_cpp",
     "//sdk/fidl/fuchsia.sysmem:fuchsia.sysmem_hlcpp",
     "//sdk/fidl/fuchsia.ui.composition:fuchsia.ui.composition_cpp",
     "//sdk/lib/sys/cpp/testing:unit",

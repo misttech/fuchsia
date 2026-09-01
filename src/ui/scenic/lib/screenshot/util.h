@@ -5,7 +5,8 @@
 #ifndef SRC_UI_SCENIC_LIB_SCREENSHOT_UTIL_H_
 #define SRC_UI_SCENIC_LIB_SCREENSHOT_UTIL_H_
 
-#include <fuchsia/ui/composition/cpp/fidl.h>
+#include <fidl/fuchsia.io/cpp/fidl.h>
+#include <fidl/fuchsia.ui.composition/cpp/fidl.h>
 #include <lib/async/cpp/wait.h>
 #include <lib/async/default.h>
 #include <lib/async/dispatcher.h>

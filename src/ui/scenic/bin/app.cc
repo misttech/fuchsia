@@ -640,10 +640,10 @@ void App::InitializeGraphics(std::shared_ptr<display::Display> display) {
         std::move(screen_capture_importers), display_info_delegate_->GetDisplayDimensions(),
         GetDisplayRotation(config_values_));
 
-    fit::function<void(fidl::InterfaceRequest<fuchsia::ui::composition::Screenshot>)> handler =
-        fit::bind_member(&screenshot_manager_.value(),
-                         &screenshot::ScreenshotManager::CreateBinding);
-    FX_CHECK(app_context_->outgoing()->AddPublicService(std::move(handler)) == ZX_OK);
+    FX_CHECK(app_context_->outgoing()->AddProtocol<fuchsia_ui_composition::Screenshot>(
+                 [this](fidl::ServerEnd<fuchsia_ui_composition::Screenshot> server_end) {
+                   screenshot_manager_->CreateBinding(std::move(server_end));
+                 }) == ZX_OK);
   }
 
   {

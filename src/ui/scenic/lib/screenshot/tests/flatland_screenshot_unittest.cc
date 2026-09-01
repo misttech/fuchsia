@@ -8,7 +8,6 @@
 #include <fidl/fuchsia.ui.compression.internal/cpp/fidl.h>
 #include <lib/async/cpp/executor.h>
 #include <lib/fdio/directory.h>
-#include <lib/fidl/cpp/hlcpp_conversion.h>
 #include <lib/sys/cpp/testing/component_context_provider.h>
 #include <lib/vfs/cpp/service.h>
 
@@ -222,30 +221,32 @@ TEST_P(FlatlandScreenshotTest, SimpleTakeFileTest) {
   EXPECT_EQ(NumCurrentServedScreenshots(), 1u);
 
   EXPECT_TRUE(takefile_response.size().has_value());
-
-  auto file = fidl::NaturalToHLCPP(takefile_response.file().value());
-  EXPECT_TRUE(file.is_valid());
+  ASSERT_TRUE(takefile_response.file().has_value());
   {
-    fuchsia::io::FilePtr screenshot = file.Bind();
+    fidl::Client<fuchsia_io::File> screenshot(std::move(takefile_response.file().value()),
+                                              dispatcher());
     // Get screenshot attributes.
     uint64_t screenshot_size{};
-    screenshot->GetAttributes(
-        fuchsia::io::NodeAttributesQuery::CONTENT_SIZE,
-        [&screenshot_size](fuchsia::io::Node_GetAttributes_Result result) {
-          ASSERT_TRUE(result.is_response());
-          ASSERT_TRUE(result.response().immutable_attributes.has_content_size());
-          screenshot_size = result.response().immutable_attributes.content_size();
+    bool got_attributes = false;
+    screenshot->GetAttributes(fuchsia_io::NodeAttributesQuery::kContentSize)
+        .Then([&](fidl::Result<fuchsia_io::File::GetAttributes>& result) {
+          ASSERT_TRUE(result.is_ok());
+          ASSERT_TRUE(result->immutable_attributes().content_size().has_value());
+          screenshot_size = result->immutable_attributes().content_size().value();
+          got_attributes = true;
         });
+    RunLoopUntil([&got_attributes] { return got_attributes; });
 
     uint64_t read_count = 0;
     uint64_t increment = 0;
     do {
-      screenshot->Read(fuchsia::io::MAX_BUF,
-                       [&increment](fuchsia::io::Readable_Read_Result result) {
-                         EXPECT_TRUE(result.is_response()) << zx_status_get_string(result.err());
-                         increment = result.response().data.size();
-                       });
-      RunLoopUntilIdle();
+      bool read_done = false;
+      screenshot->Read(fuchsia_io::kMaxBuf).Then([&](fidl::Result<fuchsia_io::File::Read>& result) {
+        ASSERT_TRUE(result.is_ok());
+        increment = result->data().size();
+        read_done = true;
+      });
+      RunLoopUntil([&read_done] { return read_done; });
       read_count += increment;
     } while (increment);
     EXPECT_EQ(screenshot_size, read_count);

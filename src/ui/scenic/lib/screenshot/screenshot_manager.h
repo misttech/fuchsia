@@ -30,7 +30,7 @@ class ScreenshotManager {
                     fuchsia::math::SizeU display_size, int display_rotation);
   ~ScreenshotManager() = default;
 
-  void CreateBinding(fidl::InterfaceRequest<fuchsia::ui::composition::Screenshot> request);
+  void CreateBinding(fidl::ServerEnd<fuchsia_ui_composition::Screenshot> request);
 
  private:
   sys::ComponentContext* app_context_;

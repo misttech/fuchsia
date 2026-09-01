@@ -5,14 +5,20 @@
 #ifndef SRC_UI_SCENIC_LIB_SCREENSHOT_FLATLAND_SCREENSHOT_H_
 #define SRC_UI_SCENIC_LIB_SCREENSHOT_FLATLAND_SCREENSHOT_H_
 
+#include <fidl/fuchsia.images2/cpp/fidl.h>
+#include <fidl/fuchsia.io/cpp/fidl.h>
+#include <fidl/fuchsia.math/cpp/fidl.h>
 #include <fidl/fuchsia.ui.composition/cpp/fidl.h>
 #include <fidl/fuchsia.ui.compression.internal/cpp/fidl.h>
 #include <fuchsia/images2/cpp/fidl.h>
-#include <fuchsia/io/cpp/fidl.h>
+#include <fuchsia/sysmem2/cpp/fidl.h>
 #include <lib/sys/cpp/component_context.h>
 
+#include <map>
+#include <memory>
 #include <optional>
 #include <string>
+#include <unordered_map>
 
 #include "src/lib/fxl/memory/weak_ptr.h"
 #include "src/ui/scenic/lib/allocation/allocator.h"
@@ -39,12 +45,12 @@ class FlatlandScreenshot : public fidl::Server<fuchsia_ui_composition::Screensho
 
   void AllocateBuffers();
 
-  // |fuchsia_ui_composition::Screenshot|
+  // |fidl::Server<fuchsia_ui_composition::Screenshot>|
   void Take(TakeRequest& request, TakeCompleter::Sync& completer) override;
   void Take(fuchsia_ui_composition::ScreenshotTakeRequest params,
             fit::function<void(fuchsia_ui_composition::ScreenshotTakeResponse)> callback);
 
-  // |fuchsia_ui_composition::Screenshot|
+  // |fidl::Server<fuchsia_ui_composition::Screenshot>|
   void TakeFile(TakeFileRequest& request, TakeFileCompleter::Sync& completer) override;
   void TakeFile(fuchsia_ui_composition::ScreenshotTakeFileRequest params,
                 fit::function<void(fuchsia_ui_composition::ScreenshotTakeFileResponse)> callback);

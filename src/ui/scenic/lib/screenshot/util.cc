@@ -64,9 +64,8 @@ bool ServeScreenshot(
     return false;
   }
 
-  if (const auto status =
-          served_screenshots->at(screenshot_index)
-              .first->Serve(fuchsia_io::wire::kPermReadable, std::move(file_server));
+  if (const auto status = served_screenshots->at(screenshot_index)
+                              .first->Serve(fuchsia_io::kPermReadable, std::move(file_server));
       status != ZX_OK) {
     FX_PLOGS(ERROR, status) << "Cannot serve screenshot";
     return false;

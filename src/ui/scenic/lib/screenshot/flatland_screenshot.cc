@@ -4,7 +4,6 @@
 
 #include "src/ui/scenic/lib/screenshot/flatland_screenshot.h"
 
-#include <fidl/fuchsia.ui.composition/cpp/hlcpp_conversion.h>
 #include <fuchsia/images2/cpp/fidl.h>
 #include <lib/component/incoming/cpp/protocol.h>
 #include <lib/fdio/directory.h>
@@ -85,8 +84,8 @@ FlatlandScreenshot::FlatlandScreenshot(
 
 void FlatlandScreenshot::AllocateBuffers() {
   // Do all sysmem initialization up front.
-  allocation::BufferCollectionImportExportTokens ref_pair =
-      allocation::BufferCollectionImportExportTokens::New();
+  allocation::cpp::BufferCollectionImportExportTokens ref_pair =
+      allocation::cpp::BufferCollectionImportExportTokens::New();
 
   // Create sysmem tokens.
   fuchsia::sysmem2::BufferCollectionTokenSyncPtr local_token;
@@ -135,7 +134,7 @@ void FlatlandScreenshot::AllocateBuffers() {
 
   // Initialize Flatland allocator state.
   fuchsia_ui_composition::RegisterBufferCollectionArgs args;
-  args.export_token(fidl::HLCPPToNatural(std::move(ref_pair.export_token)));
+  args.export_token(std::move(ref_pair.export_token));
   args.buffer_collection_token2(fidl::ClientEnd<fuchsia_sysmem2::BufferCollectionToken>(
       std::move(dup_token).Unbind().TakeChannel()));
   args.usages(fuchsia_ui_composition::RegisterBufferCollectionUsages::kScreenshot);
@@ -144,7 +143,7 @@ void FlatlandScreenshot::AllocateBuffers() {
                                                 [](auto result) { FX_DCHECK(!result.is_error()); });
 
   ScreenCaptureConfig sc_args;
-  sc_args.import_token(fidl::HLCPPToNatural(std::move(ref_pair.import_token)));
+  sc_args.import_token(std::move(ref_pair.import_token));
   sc_args.buffer_count(1);
   sc_args.size(fuchsia_math::SizeU{display_size_.width, display_size_.height});
 
@@ -195,8 +194,8 @@ void FlatlandScreenshot::AllocateBuffers() {
 }
 
 void FlatlandScreenshot::Take(TakeRequest& request, TakeCompleter::Sync& completer) {
-  Take(std::move(request), [completer = completer.ToAsync()](auto result) mutable {
-    completer.Reply(std::move(result));
+  Take(std::move(request), [completer = completer.ToAsync()](auto response) mutable {
+    completer.Reply(std::move(response));
   });
 }
 
@@ -414,8 +413,8 @@ void FlatlandScreenshot::GetNextFrame() {
 }
 
 void FlatlandScreenshot::TakeFile(TakeFileRequest& request, TakeFileCompleter::Sync& completer) {
-  TakeFile(std::move(request), [completer = completer.ToAsync()](auto result) mutable {
-    completer.Reply(std::move(result));
+  TakeFile(std::move(request), [completer = completer.ToAsync()](auto response) mutable {
+    completer.Reply(std::move(response));
   });
 }
 
