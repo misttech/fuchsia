@@ -8,8 +8,9 @@ use diagnostics_assertions::assert_data_tree;
 use fidl::Error as FidlError;
 use fidl::endpoints::RequestStream;
 use fidl_fuchsia_bluetooth_snoop::{
-    PacketFormat, PacketObserverMarker, PacketObserverRequest, PacketObserverRequestStream,
-    SnoopMarker, SnoopProxy, SnoopRequestStream, SnoopStartRequest,
+    DevicePackets, PacketFormat, PacketObserverMarker, PacketObserverRequest,
+    PacketObserverRequestStream, SnoopMarker, SnoopPacket as FidlSnoopPacket, SnoopProxy,
+    SnoopRequestStream, SnoopStartRequest,
 };
 use fuchsia_async::{Channel, TestExecutor};
 use fuchsia_inspect::Inspector;
@@ -23,7 +24,7 @@ use crate::packet_logs::{append_pcap, write_pcap_header};
 use crate::{
     Args, ClientId, ClientRequest, ConcurrentClientRequestFutures, ConcurrentSnooperPacketFutures,
     HCI_DEVICE_CLASS_PATH, IdGenerator, PacketLogs, SnoopConfig, SnoopPacket, SubscriptionManager,
-    handle_client_request, register_new_client,
+    chunk_packets, handle_client_request, register_new_client,
 };
 
 use crate::core_dump::CRASH_REPORT_DEBOUNCE_DURATION;
@@ -47,8 +48,8 @@ fn setup() -> (
         // break too-large FIDL messages in the initial dump.
         PacketLogs::new(
             10,
-            100_000,
-            100_000,
+            300_000,
+            300_000,
             Duration::new(10, 0),
             inspect.root().create_child("packet_log"),
         ),
@@ -329,7 +330,7 @@ fn test_handle_client_request() {
     assert_eq!(subscribers.number_of_subscribers(), 3);
 
     // Add a bunch of logs to the device to test that we don't overflow when
-    // requested logs are dumped: 200 500-byte packets for 100k worth.
+    // requested logs are dumped: 200 1000-byte packets for 200k worth.
     let packetlog = logs.get(&String::new()).expect("device log");
     {
         let mut lock = packetlog.lock();
@@ -338,7 +339,7 @@ fn test_handle_client_request() {
                 true,
                 PacketFormat::AclData,
                 fuchsia_async::MonotonicInstant::now().into(),
-                vec![0; 500],
+                vec![0; 1000],
             ));
         }
     }
@@ -376,12 +377,15 @@ fn test_handle_client_request() {
         &mut subscribers,
         &logs,
     );
-    // We should have got at least two packets and then closed.
-    let items_delivered = exec.run_singlethreaded(&mut payload_recv.count());
-    assert!(
-        items_delivered > 1,
-        "Expected more than one observation when we overflow a FIDL packet"
-    );
+    // We should have got 4 chunks totaling 200 packets and then closed.
+    let delivered_payloads: Vec<DevicePackets> =
+        exec.run_singlethreaded(&mut payload_recv.collect());
+    assert_eq!(delivered_payloads.len(), 4, "Expected 4 chunks when dumping 200 1000-byte packets");
+    let total_packets: usize = delivered_payloads
+        .iter()
+        .map(|payload| payload.packets.as_ref().map_or(0, |p| p.len()))
+        .sum();
+    assert_eq!(total_packets, 200);
     // We didn't add the subscriber.
     assert_eq!(subscribers.number_of_subscribers(), 3);
     drop(observation_task);
@@ -747,4 +751,105 @@ async fn test_handle_packet_normal_packet() {
     let log = logs.get(&device_id).unwrap();
     assert_eq!(log.lock().len(), 1);
     assert_eq!(log.lock().iter_mut().next().unwrap().payload, payload);
+}
+
+#[fuchsia::test]
+fn test_chunk_packets_empty() {
+    let packets: Vec<FidlSnoopPacket> = vec![];
+    let chunks: Vec<_> = chunk_packets(packets).collect();
+    assert!(chunks.is_empty());
+}
+
+#[fuchsia::test]
+fn test_chunk_packets_below_limits() {
+    let packets: Vec<FidlSnoopPacket> = (0..5)
+        .map(|i| FidlSnoopPacket {
+            is_received: Some(true),
+            format: Some(PacketFormat::AclData),
+            timestamp: Some(0),
+            data: Some(vec![i; 10]),
+            ..Default::default()
+        })
+        .collect();
+    let chunks: Vec<Vec<FidlSnoopPacket>> = chunk_packets(packets).collect();
+    assert_eq!(chunks.len(), 1);
+    assert_eq!(chunks[0].len(), 5);
+}
+
+#[fuchsia::test]
+fn test_chunk_packets_max_packet_count_limit() {
+    let packets: Vec<FidlSnoopPacket> = (0..250)
+        .map(|_| FidlSnoopPacket {
+            is_received: Some(true),
+            format: Some(PacketFormat::AclData),
+            timestamp: Some(0),
+            data: Some(vec![0; 10]),
+            ..Default::default()
+        })
+        .collect();
+    let chunks: Vec<Vec<FidlSnoopPacket>> = chunk_packets(packets).collect();
+    assert_eq!(chunks.len(), 3);
+    assert_eq!(chunks[0].len(), crate::MAX_PACKETS_PER_MSG);
+    assert_eq!(chunks[1].len(), crate::MAX_PACKETS_PER_MSG);
+    assert_eq!(chunks[2].len(), 50);
+    let total_packets: usize = chunks.iter().map(|c| c.len()).sum();
+    assert_eq!(total_packets, 250);
+}
+
+#[fuchsia::test]
+fn test_chunk_packets_byte_size_limit() {
+    // 200 packets with 1000 bytes data each.
+    // Each packet is estimated at 150 + 1000 = 1150 bytes.
+    // MAX_BYTES_PER_MSG is 60,000 bytes, so 60,000 / 1150 = 52 packets per chunk.
+    // 200 packets will be chunked into: 52, 52, 52, 44 packets across 4 chunks.
+    let packets: Vec<FidlSnoopPacket> = (0..200)
+        .map(|_| FidlSnoopPacket {
+            is_received: Some(true),
+            format: Some(PacketFormat::AclData),
+            timestamp: Some(0),
+            data: Some(vec![0; 1000]),
+            ..Default::default()
+        })
+        .collect();
+    let chunks: Vec<Vec<FidlSnoopPacket>> = chunk_packets(packets).collect();
+    assert_eq!(chunks.len(), 4);
+    assert_eq!(chunks[0].len(), 52);
+    assert_eq!(chunks[1].len(), 52);
+    assert_eq!(chunks[2].len(), 52);
+    assert_eq!(chunks[3].len(), 44);
+    let total_packets: usize = chunks.iter().map(|c| c.len()).sum();
+    assert_eq!(total_packets, 200);
+}
+
+#[fuchsia::test]
+fn test_chunk_packets_oversized_packet() {
+    // A single packet larger than MAX_BYTES_PER_MSG (60,000) is emitted on its own.
+    let packets: Vec<FidlSnoopPacket> = vec![
+        FidlSnoopPacket {
+            is_received: Some(true),
+            format: Some(PacketFormat::AclData),
+            timestamp: Some(0),
+            data: Some(vec![0; 100]),
+            ..Default::default()
+        },
+        FidlSnoopPacket {
+            is_received: Some(true),
+            format: Some(PacketFormat::AclData),
+            timestamp: Some(0),
+            data: Some(vec![0; 65_000]),
+            ..Default::default()
+        },
+        FidlSnoopPacket {
+            is_received: Some(true),
+            format: Some(PacketFormat::AclData),
+            timestamp: Some(0),
+            data: Some(vec![0; 100]),
+            ..Default::default()
+        },
+    ];
+    let chunks: Vec<Vec<FidlSnoopPacket>> = chunk_packets(packets).collect();
+    assert_eq!(chunks.len(), 3);
+    assert_eq!(chunks[0].len(), 1);
+    assert_eq!(chunks[1].len(), 1);
+    assert_eq!(chunks[2].len(), 1);
 }

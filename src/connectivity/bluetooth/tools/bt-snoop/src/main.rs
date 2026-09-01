@@ -242,6 +242,65 @@ fn register_new_client(
     client_stream.push(join(ready(client_id), stream.into_future()));
 }
 
+/// Maximum serialized size in bytes of a single FIDL message sent to the client.
+/// FIDL channel message limit is 64 KiB (65,536 bytes). We stay comfortably below this limit.
+pub(crate) const MAX_BYTES_PER_MSG: usize = 60_000;
+
+/// Maximum number of packets sent in a single FIDL message to the client.
+pub(crate) const MAX_PACKETS_PER_MSG: usize = 100;
+
+/// Estimated FIDL serialization overhead per packet in bytes (table and envelope headers).
+pub(crate) const ESTIMATED_FIDL_OVERHEAD_BYTES: usize = 150;
+
+/// Helper iterator that chunks snoop packets so that neither the packet count
+/// (at most `MAX_PACKETS_PER_MSG`) nor the estimated FIDL serialized byte size
+/// (at most `MAX_BYTES_PER_MSG`) exceeds message limits.
+struct PacketChunker<I: Iterator<Item = FidlSnoopPacket>> {
+    iter: I,
+    buffered_packet: Option<FidlSnoopPacket>,
+}
+
+impl<I: Iterator<Item = FidlSnoopPacket>> Iterator for PacketChunker<I> {
+    type Item = Vec<FidlSnoopPacket>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let mut current_chunk = Vec::with_capacity(MAX_PACKETS_PER_MSG);
+        let mut current_bytes = 0;
+
+        if let Some(packet) = self.buffered_packet.take() {
+            let packet_bytes =
+                ESTIMATED_FIDL_OVERHEAD_BYTES + packet.data.as_ref().map_or(0, |d| d.len());
+            current_bytes += packet_bytes;
+            current_chunk.push(packet);
+        }
+
+        while current_chunk.len() < MAX_PACKETS_PER_MSG {
+            let Some(packet) = self.iter.next() else {
+                break;
+            };
+
+            let packet_bytes =
+                ESTIMATED_FIDL_OVERHEAD_BYTES + packet.data.as_ref().map_or(0, |d| d.len());
+
+            if !current_chunk.is_empty() && (current_bytes + packet_bytes > MAX_BYTES_PER_MSG) {
+                self.buffered_packet = Some(packet);
+                break;
+            }
+
+            current_bytes += packet_bytes;
+            current_chunk.push(packet);
+        }
+
+        if current_chunk.is_empty() { None } else { Some(current_chunk) }
+    }
+}
+
+pub(crate) fn chunk_packets(
+    packets: impl IntoIterator<Item = FidlSnoopPacket>,
+) -> impl Iterator<Item = Vec<FidlSnoopPacket>> {
+    PacketChunker { iter: packets.into_iter(), buffered_packet: None }
+}
+
 /// Handle a client request to dump the packet log, subscribe to future events or do both.
 /// Returns an error if the client channel does not accept a response that it requested, or a
 /// boolean indicating if the client should receive ongoing packets.
@@ -289,17 +348,11 @@ async fn handle_client_request(
 
             for (device, packets) in dev_packets.into_iter() {
                 info!("Dumping {} packets from {} to new client..", packets.len(), device);
-                // The FIDL protocol can only send 64KiB in a message.
-                // Don't send too much data at once.
-                // Max size of a packet is:
-                // 16 (table header) + (5 * 16) (envelope headers) +
-                //  (1 + 2 + 8 + 4 + (16 + 300)) (data) = 427
-                // So we can put 100 packets in a single message with some overhead.
-                for chunk in packets.chunks(100) {
+                for chunk in chunk_packets(packets) {
                     if let Err(e) = client
                         .observe(&DevicePackets {
                             host_device: Some(device.clone()),
-                            packets: Some(chunk.to_vec()),
+                            packets: Some(chunk),
                             ..Default::default()
                         })
                         .await
