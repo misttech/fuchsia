@@ -231,7 +231,8 @@ class FlatlandTest : public LoggingEventLoop, public ::testing::Test {
         utils::CreateSysmemAllocatorClient(dispatcher(), "FlatlandTest::CreateAllocator"));
   }
 
-  std::shared_ptr<Flatland> CreateFlatland(const FlatlandConfig& config = FlatlandConfig{}) {
+  virtual std::shared_ptr<Flatland> CreateFlatland(
+      const FlatlandConfig& config = FlatlandConfig{}) {
     auto session_id = scheduling::GetNextSessionId();
     std::vector<std::shared_ptr<allocation::BufferCollectionImporter>> importers;
     importers.push_back(buffer_collection_importer_);
@@ -686,6 +687,21 @@ class FlatlandTest : public LoggingEventLoop, public ::testing::Test {
   std::map<scheduling::SchedulingIdPair, zx::time> requested_presentation_times_;
   std::unordered_map<scheduling::SessionId, scheduling::PresentId> pending_instance_updates_;
   fidl::WireClient<fuchsia_sysmem2::Allocator> sysmem_allocator_;
+};
+
+class Flatland2Test : public FlatlandTest {
+ public:
+  std::shared_ptr<Flatland> CreateFlatland(
+      const FlatlandConfig& config = FlatlandConfig{}) override {
+    FX_CHECK(false)
+        << "illegal to call CreateFlatland() in Flatland2Test; use CreateFlatland2() instead";
+    return nullptr;
+  }
+
+  std::shared_ptr<Flatland> CreateFlatland2() {
+    FlatlandConfig config{.use_flatland2 = true};
+    return FlatlandTest::CreateFlatland(config);
+  }
 };
 
 }  // namespace flatland

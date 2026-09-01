@@ -22,8 +22,10 @@
 #include <functional>
 #include <memory>
 #include <ranges>
+#include <span>
 #include <sstream>
 #include <string>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -1559,7 +1561,8 @@ void Flatland::CreateImage(ContentId image_id,
       .height = static_cast<int32_t>(properties.size()->height()),
   }};
 
-  handle = CreateLayerStackData({&layer_handle, 1});
+  handle = CreateLayerStackData();
+  SetLayerStackData(handle, {layer_handle});
   content_handles_[image_id] = handle;
 
   FLATLAND_VERBOSE_LOG << "Flatland::CreateImage() session_id=" << session_id_
@@ -1851,7 +1854,8 @@ void Flatland::CreateFilledRect(ContentId rect_id) {
   layer_object.solid_color_mode = content;
   layer_object.common.display_rect = {{.x = 0, .y = 0, .width = 0, .height = 0}};
 
-  handle = CreateLayerStackData({&layer_handle, 1});
+  handle = CreateLayerStackData();
+  SetLayerStackData(handle, {layer_handle});
   content_handles_[rect_id] = handle;
 
   FLATLAND_VERBOSE_LOG << "Flatland::CreateFilledRect() session_id=" << session_id_
@@ -3086,18 +3090,28 @@ allocation::GlobalImageId Flatland::ReleaseLayerObject(LayerHandle handle) {
   return allocation::kInvalidImageId;
 }
 
-TransformHandle Flatland::CreateLayerStackData(std::span<const LayerHandle> layers) {
+TransformHandle Flatland::CreateLayerStackData() {
   TransformHandle content_handle = transform_graph_.CreateTransform();
+  layer_stacks_.try_emplace(content_handle, LayerStackData{std::pmr::vector<LayerHandle>(&pool_)});
+  return content_handle;
+}
 
-  for (const auto& layer_handle : layers) {
-    auto it = layer_objects_.find(layer_handle);
-    FX_CHECK(it != layer_objects_.end()) << "Layer not found: " << layer_handle;
+void Flatland::SetLayerStackData(TransformHandle stack_handle,
+                                 std::span<const LayerHandle> layers) {
+  auto stack_it = layer_stacks_.find(stack_handle);
+  FX_CHECK(stack_it != layer_stacks_.end()) << "Stack not found: " << stack_handle;
+
+  for (const auto& handle : layers) {
+    auto it = layer_objects_.find(handle);
+    FX_CHECK(it != layer_objects_.end()) << "Layer not found: " << handle;
     it->second.ref_count++;
   }
 
-  layer_stacks_.try_emplace(content_handle, LayerStackData{{layers.begin(), layers.end(), &pool_}});
+  for (const auto& handle : stack_it->second.layers) {
+    ReleaseLayerObject(handle);
+  }
 
-  return content_handle;
+  stack_it->second.layers.assign(layers.begin(), layers.end());
 }
 
 std::vector<allocation::GlobalImageId> Flatland::CleanupFlatland2StateForTest(
@@ -3147,6 +3161,14 @@ void Flatland::SetLayerSolidColorForTest(LayerHandle handle) {
 LayerObject* Flatland::GetLayerObjectForTest(LayerHandle handle) {
   auto it = layer_objects_.find(handle);
   if (it == layer_objects_.end()) {
+    return nullptr;
+  }
+  return &it->second;
+}
+
+const LayerStackData* Flatland::GetLayerStackDataForTest(TransformHandle handle) {
+  auto it = layer_stacks_.find(handle);
+  if (it == layer_stacks_.end()) {
     return nullptr;
   }
   return &it->second;

@@ -63,6 +63,7 @@ using allocation::cpp::BufferCollectionImportExportTokens;
 using flatland::ContentId;
 using flatland::EventHandler;
 using flatland::Flatland;
+using flatland::Flatland2Test;
 using flatland::FlatlandConfig;
 using flatland::FlatlandDisplay;
 using flatland::FlatlandPresenter;
@@ -114,9 +115,9 @@ using ParentViewportWatcher_GetStatusResult =
 
 namespace {
 
-// Adds FlatlandDisplay-specific helpers to FlatlandTest.  We can't easily put them into standalone
-// helper functions because they use the `Present()`, which expects to have access to protected
-// members of FlatlandTest.
+// Adds FlatlandDisplay-specific helpers to FlatlandTest. We can't easily put them into standalone
+// helper functions because they use `Present()`, which expects to have access to protected members
+// of FlatlandTest.
 class FlatlandDisplayTest : public FlatlandTest {
  protected:
   void ConnectChildViewToDisplayThenValidate(const std::shared_ptr<FlatlandDisplay>& display,
@@ -5662,7 +5663,8 @@ TEST_F(FlatlandTest, LayerSurvivesWhileStackReferencesIt) {
   LayerHandle layer = flatland->CreateLayerObject();
 
   // Create stack.
-  auto stack_content_handle = flatland->CreateLayerStackData({&layer, 1});
+  auto stack_content_handle = flatland->CreateLayerStackData();
+  flatland->SetLayerStackData(stack_content_handle, {layer});
 
   // Verify layer object is still present (ref_count is 1 from the stack).
   const auto* obj = flatland->GetLayerObjectForTest(layer);
@@ -5700,7 +5702,8 @@ TEST_F(FlatlandTest, StackKeepAliveViaAttachedTransform) {
   flatland->SetRootTransform(kTransformId);
 
   LayerHandle layer = flatland->CreateLayerObject();
-  auto stack_content_handle = flatland->CreateLayerStackData({&layer, 1});
+  auto stack_content_handle = flatland->CreateLayerStackData();
+  flatland->SetLayerStackData(stack_content_handle, {layer});
 
   // Attach stack to the transform (using the content handle).
   flatland->SetPriorityChildForTest(kTransformId, stack_content_handle);
@@ -5748,7 +5751,8 @@ TEST_F(FlatlandTest, ImageReleaseRidesExistingMachinery) {
   flatland->SetLayerImageForTest(layer, global_image_id);
 
   // Put in a stack.
-  auto stack_content_handle = flatland->CreateLayerStackData({&layer, 1});
+  auto stack_content_handle = flatland->CreateLayerStackData();
+  flatland->SetLayerStackData(stack_content_handle, {layer});
 
   // Release the buffer collection.
   EXPECT_CALL(*mock_buffer_collection_importer_, ReleaseBufferCollection(global_collection_id, _))
@@ -5813,6 +5817,118 @@ TEST_F(FlatlandTest, PresentStampsFlatlandVersion) {
     ASSERT_NE(uber_struct, nullptr);
     EXPECT_EQ(uber_struct->flatland_version, 2u);
   }
+}
+
+TEST_F(Flatland2Test, EmptyStackHasNoRefCountEffect) {
+  std::shared_ptr<Flatland> flatland = CreateFlatland2();
+  LayerHandle layer_a = flatland->CreateLayerObject();
+  LayerHandle layer_b = flatland->CreateLayerObject();
+
+  auto stack_handle = flatland->CreateLayerStackData();
+
+  const auto* obj_a = flatland->GetLayerObjectForTest(layer_a);
+  const auto* obj_b = flatland->GetLayerObjectForTest(layer_b);
+  ASSERT_NE(obj_a, nullptr);
+  ASSERT_NE(obj_b, nullptr);
+  EXPECT_EQ(obj_a->ref_count, 0);
+  EXPECT_EQ(obj_b->ref_count, 0);
+}
+
+TEST_F(Flatland2Test, SetLayersAddRemoveUpdatesRefCounts) {
+  std::shared_ptr<Flatland> flatland = CreateFlatland2();
+  LayerHandle layer_a = flatland->CreateLayerObject();
+  LayerHandle layer_b = flatland->CreateLayerObject();
+  LayerHandle layer_c = flatland->CreateLayerObject();
+
+  auto stack_handle = flatland->CreateLayerStackData();
+  flatland->SetLayerStackData(stack_handle, {layer_a, layer_b});
+
+  EXPECT_EQ(flatland->GetLayerObjectForTest(layer_a)->ref_count, 1);
+  EXPECT_EQ(flatland->GetLayerObjectForTest(layer_b)->ref_count, 1);
+  EXPECT_EQ(flatland->GetLayerObjectForTest(layer_c)->ref_count, 0);
+
+  // Now set stack to {B, C}. A's count decrements (hit 0 -> destroyed),
+  // B unchanged, C incremented.
+  flatland->SetLayerStackData(stack_handle, {layer_b, layer_c});
+
+  EXPECT_EQ(flatland->GetLayerObjectForTest(layer_a), nullptr);
+  EXPECT_EQ(flatland->GetLayerObjectForTest(layer_b)->ref_count, 1);
+  EXPECT_EQ(flatland->GetLayerObjectForTest(layer_c)->ref_count, 1);
+}
+
+TEST_F(Flatland2Test, ReorderIsRefCountNeutral) {
+  std::shared_ptr<Flatland> flatland = CreateFlatland2();
+  LayerHandle layer_a = flatland->CreateLayerObject();
+  LayerHandle layer_b = flatland->CreateLayerObject();
+
+  auto stack_handle = flatland->CreateLayerStackData();
+  flatland->SetLayerStackData(stack_handle, {layer_a, layer_b});
+
+  EXPECT_EQ(flatland->GetLayerObjectForTest(layer_a)->ref_count, 1);
+  EXPECT_EQ(flatland->GetLayerObjectForTest(layer_b)->ref_count, 1);
+
+  flatland->SetLayerStackData(stack_handle, {layer_b, layer_a});
+
+  EXPECT_EQ(flatland->GetLayerObjectForTest(layer_a)->ref_count, 1);
+  EXPECT_EQ(flatland->GetLayerObjectForTest(layer_b)->ref_count, 1);
+
+  const auto* stack_data = flatland->GetLayerStackDataForTest(stack_handle);
+  ASSERT_NE(stack_data, nullptr);
+  EXPECT_THAT(stack_data->layers, ::testing::ElementsAre(layer_b, layer_a));
+}
+
+// TODO(https://fxbug.dev/540952629): Use CreateFlatland2() once CreateImage2/ReleaseImage2 are
+// implemented in later steps. For now, this test requires classic Flatland1
+// CreateImage/ReleaseImage to set up the image.
+TEST_F(Flatland2Test, RemovalReleasesBoundImage) {
+  std::shared_ptr<Allocator> allocator = CreateAllocator();
+  std::shared_ptr<Flatland> flatland = FlatlandTest::CreateFlatland();
+
+  const ContentId kImageId(1);
+  auto ref_pair = BufferCollectionImportExportTokens::New();
+
+  ImageProperties properties;
+  properties.size(SizeU{100, 200});
+
+  auto import_token_dup = ref_pair.DuplicateImportToken();
+  const auto global_id_pair = CreateImage(flatland.get(), allocator.get(), kImageId,
+                                          std::move(ref_pair), std::move(properties));
+  auto& global_collection_id = global_id_pair.collection_id;
+  auto global_image_id = global_id_pair.image_id;
+
+  LayerHandle layer = flatland->CreateLayerObject();
+  flatland->SetLayerImageForTest(layer, global_image_id);
+
+  auto stack_content_handle = flatland->CreateLayerStackData();
+  flatland->SetLayerStackData(stack_content_handle, {layer});
+
+  // Release the buffer collection.
+  EXPECT_CALL(*mock_buffer_collection_importer_, ReleaseBufferCollection(global_collection_id, _))
+      .Times(1);
+  EXPECT_CALL(*mock_buffer_collection_importer_, ReleaseBufferImage(_)).Times(0);
+  import_token_dup.value().reset();
+  RunLoopUntilIdle();
+
+  // Release the classic image. Since it is bound to our live layer, it should NOT be released yet.
+  EXPECT_CALL(*mock_buffer_collection_importer_, ReleaseBufferImage(_)).Times(0);
+  flatland->ReleaseImage(kImageId);
+  Present(flatland, true);
+
+  // Set the stack to {}. Since the layer was only referenced by this stack, it is destroyed.
+  flatland->SetLayerStackData(stack_content_handle, {});
+  EXPECT_EQ(flatland->GetLayerObjectForTest(layer), nullptr);
+
+  // The destructor of Flatland will release the images in images_to_release_.
+  EXPECT_CALL(*mock_buffer_collection_importer_, ReleaseBufferImage(global_image_id)).Times(1);
+  flatland.reset();
+  RunLoopUntilIdle();
+}
+
+TEST_F(Flatland2Test, SetLayersOnDeadStackResultsInError) {
+  std::shared_ptr<Flatland> flatland = CreateFlatland2();
+  LayerHandle layer = flatland->CreateLayerObject();
+  TransformHandle dead_stack_handle = {999, 999};
+  EXPECT_DEATH(flatland->SetLayerStackData(dead_stack_handle, {layer}), "");
 }
 
 // TODO(https://fxbug.dev/42156567): other FlatlandDisplayTests that should be written:

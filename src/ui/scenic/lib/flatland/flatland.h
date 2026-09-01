@@ -15,6 +15,7 @@
 #include <lib/zx/channel.h>
 
 #include <functional>
+#include <initializer_list>
 #include <map>
 #include <memory>
 #include <memory_resource>
@@ -543,7 +544,18 @@ class Flatland : public fidl::Server<fuchsia_ui_composition::Flatland>,
   // The returned ID is primarily used by CleanupFlatland2StateForTest() to
   // verify correct image lifecycle behavior in unit tests.
   allocation::GlobalImageId ReleaseLayerObject(LayerHandle handle);
-  TransformHandle CreateLayerStackData(std::span<const LayerHandle> layers);
+  TransformHandle CreateLayerStackData();
+
+  // Replaces the stack's entire existing layer list with `layers`. This operation
+  // adjusts each affected LayerObject's ref_count: +1 for each handle newly added
+  // (per occurrence) and -1 for each handle removed from the stack (via ReleaseLayerObject).
+  // A pure reorder is ref-count-neutral. Layers destroyed by the decrement follow
+  // the normal ReleaseLayerObject path (bound image into the release machinery).
+  // Every handle in `layers` must exist in layer_objects_.
+  void SetLayerStackData(TransformHandle stack_handle, std::span<const LayerHandle> layers);
+  void SetLayerStackData(TransformHandle stack_handle, std::initializer_list<LayerHandle> layers) {
+    SetLayerStackData(stack_handle, std::span<const LayerHandle>(layers.begin(), layers.end()));
+  }
 
   // Test-only accessor/mutators
   // TODO(https://fxbug.dev/523371761): once everything lands, verify whether these are necessary
@@ -554,6 +566,7 @@ class Flatland : public fidl::Server<fuchsia_ui_composition::Flatland>,
   void SetLayerImageForTest(LayerHandle handle, allocation::GlobalImageId image);
   void SetLayerSolidColorForTest(LayerHandle handle);
   LayerObject* GetLayerObjectForTest(LayerHandle handle);
+  const LayerStackData* GetLayerStackDataForTest(TransformHandle handle);
   void ReleaseTransformForTest(TransformHandle handle);
   void SetPriorityChildForTest(TransformId parent, TransformHandle child);
 
