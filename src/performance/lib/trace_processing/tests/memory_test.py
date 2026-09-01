@@ -7,14 +7,14 @@
 import unittest
 
 from reporting import metrics as reporting_metrics
-from trace_processing import trace_model
+from trace_processing import trace_model, trace_time
 from trace_processing.metrics import memory
 
 
 class MemoryTest(unittest.TestCase):
     @staticmethod
     def construct_trace_model(event_count: int) -> trace_model.Model:
-        events: list[trace_model.Event] = [
+        power_events: list[trace_model.Event] = [
             trace_model.CounterEvent.consume_dict(
                 {
                     "cat": "memory:kernel",
@@ -33,24 +33,77 @@ class MemoryTest(unittest.TestCase):
             for i in range(0, event_count)
         ]
 
-        fake_power_process = trace_model.Process(
+        power_process = trace_model.Process(
             0x8C01_1EC7_EDDA_7A10,
             "MemoryData",
             [
                 trace_model.Thread(
                     0x8C01_1EC7_EDDA_7A20,
                     "Fake",
-                    events,
+                    power_events,
                 ),
             ],
         )
 
+        eviction_thread_tid = 300
+        eviction_thread = trace_model.Thread(
+            eviction_thread_tid, "eviction-thread"
+        )
+        scanner_request_thread_tid = 400
+        scanner_request_thread = trace_model.Thread(
+            scanner_request_thread_tid, "scanner-request-thread"
+        )
+        scheduling_records: dict[int, list[trace_model.SchedulingRecord]] = {
+            0: [
+                trace_model.ContextSwitch(
+                    start=trace_time.TimePoint.from_epoch_delta(
+                        trace_time.TimeDelta.from_microseconds(1000)
+                    ),
+                    incoming_tid=eviction_thread_tid,
+                    outgoing_tid=15,
+                    incoming_prio=None,
+                    outgoing_prio=None,
+                    outgoing_state=trace_model.ThreadState.ZX_THREAD_STATE_BLOCKED,
+                    args={},
+                ),
+                trace_model.ContextSwitch(
+                    start=trace_time.TimePoint.from_epoch_delta(
+                        trace_time.TimeDelta.from_microseconds(1400)
+                    ),
+                    incoming_tid=scanner_request_thread_tid,
+                    outgoing_tid=eviction_thread_tid,
+                    incoming_prio=None,
+                    outgoing_prio=None,
+                    outgoing_state=trace_model.ThreadState.ZX_THREAD_STATE_BLOCKED,
+                    args={},
+                ),
+                trace_model.ContextSwitch(
+                    start=trace_time.TimePoint.from_epoch_delta(
+                        trace_time.TimeDelta.from_microseconds(1500)
+                    ),
+                    incoming_tid=19,
+                    outgoing_tid=scanner_request_thread_tid,
+                    incoming_prio=None,
+                    outgoing_prio=None,
+                    outgoing_state=trace_model.ThreadState.ZX_THREAD_STATE_BLOCKED,
+                    args={},
+                ),
+            ]
+        }
+
         model = trace_model.Model()
-        threads = [trace_model.Thread(1, f"thread-1")]
         model.processes = [
-            trace_model.Process(1000, "load_generator.cm", threads),
-            fake_power_process,
+            power_process,
+            trace_model.Process(
+                1000,
+                "load_generator.cm",
+                [trace_model.Thread(1, "load-generator-thread-1")],
+            ),
+            trace_model.Process(
+                0, "kernel", [eviction_thread, scanner_request_thread]
+            ),
         ]
+        model.scheduling_records = scheduling_records
         return model
 
     def test_process_metrics(self) -> None:
@@ -68,6 +121,12 @@ class MemoryTest(unittest.TestCase):
                     label="Memory/System/PageRefaults",
                     unit=reporting_metrics.Unit.count,
                     values=(99,),
+                ),
+                reporting_metrics.TestCaseResult(
+                    label="Memory/System/ManagementTime",
+                    unit=reporting_metrics.Unit.milliseconds,
+                    values=(0.5,),
+                    direction=reporting_metrics.Direction.smallerIsBetter,
                 ),
             ],
         )

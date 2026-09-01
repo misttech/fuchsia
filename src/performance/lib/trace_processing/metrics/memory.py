@@ -10,8 +10,25 @@ from collections.abc import Collection
 
 from reporting import metrics
 from trace_processing import trace_metrics, trace_model, trace_time, trace_utils
+from trace_processing.metrics import cpu
 
 MEMORY_SYSTEM_CATEGORY = "memory:kernel"
+
+# The names of threads that perform memory management tasks; CPU time spent in
+# these threads gets aggregated into a "management time" cumulative metric.
+_MEMORY_MANAGEMENT_THREAD_NAMES = frozenset(
+    (
+        # TODO(https://fxbug.dev/555184304): Scale computed eviction-thread
+        # management time by core count?
+        "eviction-thread",
+        "kernel-memory-reclaim",
+        "memory-pressure-thread",
+        "page-queue-lru-thread",
+        "page-queue-mru-thread",
+        "scanner-request-thread",
+        "stall-aggregator",
+    )
+)
 
 _KERNEL_EVENT_NAMES = (
     "kmem_stats_a",
@@ -19,7 +36,8 @@ _KERNEL_EVENT_NAMES = (
     "kmem_stats_compression",
     "memory_stall",
 )
-# Name of the metric that are cumulative, monotonic counters, as opposed to gauges.
+# Names of some of the metrics that are cumulative, monotonic counters,
+# as opposed to gauges.
 _CUMULATIVE_METRIC_NAMES = frozenset(
     {
         "compression_time",
@@ -37,7 +55,7 @@ class _StructuredMetricName:
     unit: metrics.Unit
 
 
-# Names and units of the metrics we will export as structured metrics.
+# Names and units of some of the metrics we will export as structured metrics.
 # The key is the name of the metric in the trace, and the value is a StructuredMetricName object.
 _STRUCTURED_METRIC_NAMES = {
     "stall_time_some_ns": _StructuredMetricName(
@@ -59,6 +77,10 @@ _STRUCTURED_METRIC_NAMES = {
         "Memory/System/ZirconHeapBytes", metrics.Unit.bytes
     ),
 }
+
+_MANAGEMENT_STRUCTURED_METRIC_NAME = _StructuredMetricName(
+    "Memory/System/ManagementTime", metrics.Unit.milliseconds
+)
 
 
 def _safe_divide(numerator: float, denominator: float) -> float | None:
@@ -194,4 +216,27 @@ class MemoryMetricsProcessor(trace_metrics.MetricsProcessor):
                     unit=_STRUCTURED_METRIC_NAMES[name].unit,
                 )
             )
+
+        # TODO(https://fxbug.dev/555204260): factor this properly; it's
+        # untoward to be calling one MetricsProcessor from within the
+        # implementation of another.
+        (
+            breakdown,
+            unused_total_time,
+        ) = cpu.CpuMetricsProcessor().process_metrics_and_get_total_time(model)
+        total_management_time = 0.0
+        for metric in breakdown:
+            if metric.get("thread_name") in _MEMORY_MANAGEMENT_THREAD_NAMES:
+                duration = metric.get("duration")
+                assert isinstance(duration, (int, float))
+                total_management_time += float(duration)
+        results.append(
+            metrics.TestCaseResult(
+                label=_MANAGEMENT_STRUCTURED_METRIC_NAME.structured_name,
+                values=(total_management_time,),
+                unit=_MANAGEMENT_STRUCTURED_METRIC_NAME.unit,
+                direction=metrics.Direction.smallerIsBetter,
+            )
+        )
+
         return results
