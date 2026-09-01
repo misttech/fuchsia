@@ -8,6 +8,7 @@ use crate::gtest::*;
 use crate::helpers::*;
 use crate::selinux::*;
 use crate::syscalls_gtest::*;
+use crate::syscalls_libtest::*;
 use crate::vts_binary::*;
 use anyhow::{Error, anyhow};
 use fidl::endpoints::create_proxy;
@@ -37,7 +38,7 @@ fn remove_test_type(program: &mut fdata::Dictionary) -> Result<TestType, Error> 
         Some("vts_binary") => Ok(TestType::VtsBinary),
         Some("selinux") => Ok(TestType::SeLinux),
         Some("syscall_gtest") => Ok(TestType::SyscallGtest),
-        Some("syscall_rust") => Ok(TestType::SyscallRust),
+        Some("syscall_libtest") => Ok(TestType::SyscallLibtest),
         Some("ltp") => Ok(TestType::VtsBinary),
         Some(value) => Err(anyhow!("Unrecognized test_type: {}", value)),
 
@@ -108,8 +109,8 @@ pub async fn handle_suite_requests(
                     TestType::VtsBinary | TestType::SeLinux => {
                         get_cases_list_for_vts_binary(test_start_info).await?
                     }
-                    TestType::SyscallRust => {
-                        unimplemented!("syscall_rust test type is not supported.");
+                    TestType::SyscallLibtest => {
+                        get_cases_list_for_libtests(test_start_info, &component_runner).await?
                     }
                 };
 
@@ -128,8 +129,8 @@ pub async fn handle_suite_requests(
                 // Replace tests with program arguments if they were passed in.
                 let mut program =
                     test_start_info.program.clone().ok_or_else(|| anyhow!("Missing program."))?;
-                if let Some(test_args) = options.arguments {
-                    replace_program_args(test_args, &mut program);
+                if let Some(test_args) = &options.arguments {
+                    replace_program_args(test_args.clone(), &mut program);
                 }
                 test_start_info.program = Some(program);
                 debug!(test_start_info:?; "running tests with info");
@@ -209,8 +210,16 @@ pub async fn handle_suite_requests(
                         )
                         .await?;
                     }
-                    TestType::SyscallRust => {
-                        unimplemented!("syscall_rust test type is not supported.");
+                    TestType::SyscallLibtest => {
+                        run_syscall_libtests(
+                            tests,
+                            test_start_info,
+                            &run_listener_proxy,
+                            &component_runner,
+                            debian_guest.clone(),
+                            options,
+                        )
+                        .await?;
                     }
                 }
 

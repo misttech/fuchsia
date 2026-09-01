@@ -11,6 +11,7 @@ mod results_parser;
 mod runner;
 mod selinux;
 mod syscalls_gtest;
+mod syscalls_libtest;
 mod test_suite;
 mod vts_binary;
 

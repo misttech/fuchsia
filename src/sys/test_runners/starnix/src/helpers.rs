@@ -30,7 +30,7 @@ pub enum TestType {
     SeLinux,
     SingleTest,
     SyscallGtest,
-    SyscallRust,
+    SyscallLibtest,
     VtsBinary,
 }
 

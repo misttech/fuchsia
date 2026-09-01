@@ -58,6 +58,7 @@ rustc_binary("bin") {
     "src/runner.rs",
     "src/selinux.rs",
     "src/syscalls_gtest.rs",
+    "src/syscalls_libtest.rs",
     "src/test_suite.rs",
     "src/vts_binary.rs",
   ]
