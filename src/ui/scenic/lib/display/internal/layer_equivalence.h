@@ -52,7 +52,7 @@ struct ImageLayerEquivalence {
   // Together, `image_dimensions` and `image_tiling_type` are equivalent to a
   // `fuchsia.hardware.display.types/ImageMetadata`.
   Extent2 image_dimensions = Extent2({.width = 0, .height = 0});
-  uint32_t image_tiling_type = fuchsia_hardware_display_types::wire::kImageTilingTypeLinear;
+  uint32_t image_tiling_type = fuchsia_hardware_display_types::kImageTilingTypeLinear;
 
   BlendMode blend_mode = BlendMode::kReplace();
   AlphaRange alpha_range = kAlphaOne;

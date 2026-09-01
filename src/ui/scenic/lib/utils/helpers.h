@@ -140,10 +140,10 @@ fuchsia::sysmem2::BufferCollectionConstraints CreateDefaultConstraints(
 
 void PrettyPrintMat3(std::string, const std::array<float, 9>& mat3);
 
-template <std::size_t Dim>
-std::string GetArrayString(const std::string& name, const std::array<float, Dim>& array) {
+template <typename ArrayT>
+std::string GetArrayString(const std::string& name, const ArrayT& array) {
   std::string result = name + ": [";
-  for (uint32_t i = 0; i < array.size(); i++) {
+  for (size_t i = 0; i < array.size(); i++) {
     result += std::to_string(array[i]);
     if (i < array.size() - 1) {
       result += ", ";

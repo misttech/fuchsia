@@ -5,8 +5,8 @@
 #ifndef SRC_UI_SCENIC_LIB_DISPLAY_COLOR_CONVERTER_H_
 #define SRC_UI_SCENIC_LIB_DISPLAY_COLOR_CONVERTER_H_
 
-#include <fuchsia/ui/display/color/cpp/fidl.h>
-#include <lib/fidl/cpp/binding_set.h>
+#include <fidl/fuchsia.ui.display.color/cpp/wire.h>
+#include <lib/fidl/cpp/wire/server.h>
 #include <lib/sys/cpp/component_context.h>
 
 namespace display {
@@ -17,21 +17,21 @@ using SetColorConversionFunc = fit::function<void(const fidl::Array<float, 9>& c
 using SetMinimumRgbFunc = fit::function<bool(uint8_t minimum_rgb)>;
 
 // Backend for the ColorConverter FIDL interface.
-class ColorConverter : public fuchsia::ui::display::color::Converter {
+class ColorConverter : public fidl::WireServer<fuchsia_ui_display_color::Converter> {
  public:
   ColorConverter(sys::ComponentContext* app_context,
                  SetColorConversionFunc set_color_conversion_values,
                  SetMinimumRgbFunc set_minimum_rgb);
 
-  // |fuchsia.ui.display.color.Converter|
-  void SetValues(fuchsia::ui::display::color::ConversionProperties properties,
-                 SetValuesCallback callback) override;
+  // |fidl::WireServer<fuchsia_ui_display_color::Converter>|
+  void SetValues(SetValuesRequestView request, SetValuesCompleter::Sync& completer) override;
 
-  // |fuchsia.ui.display.color.Converter|
-  void SetMinimumRgb(uint8_t minimum_rgb, SetMinimumRgbCallback callback) override;
+  // |fidl::WireServer<fuchsia_ui_display_color::Converter>|
+  void SetMinimumRgb(SetMinimumRgbRequestView request,
+                     SetMinimumRgbCompleter::Sync& completer) override;
 
  private:
-  fidl::BindingSet<fuchsia::ui::display::color::Converter> bindings_;
+  fidl::ServerBindingGroup<fuchsia_ui_display_color::Converter> bindings_;
 
   const SetColorConversionFunc set_color_conversion_values_;
   const SetMinimumRgbFunc set_minimum_rgb_;

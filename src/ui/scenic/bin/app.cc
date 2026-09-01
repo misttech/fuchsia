@@ -819,16 +819,16 @@ void App::InitializeHeartbeat(display::Display& display) {
 
 void PrefetchBinary(zx_handle_t pkg_dir, const char* binary_path) {
   auto [client_end, server_end] = fidl::Endpoints<fuchsia_io::File>::Create();
-  zx_status_t status = fdio_open3_at(
-      pkg_dir, binary_path,
-      static_cast<uint64_t>(fuchsia_io::wire::kPermReadable | fuchsia_io::wire::kPermExecutable),
-      server_end.TakeChannel().release());
+  zx_status_t status =
+      fdio_open3_at(pkg_dir, binary_path,
+                    static_cast<uint64_t>(fuchsia_io::kPermReadable | fuchsia_io::kPermExecutable),
+                    server_end.TakeChannel().release());
   FX_CHECK(status == ZX_OK) << "Failed to open " << binary_path << ": "
                             << zx_status_get_string(status);
 
   fidl::SyncClient file(std::move(client_end));
-  auto result = file->GetBackingMemory(fuchsia_io::wire::VmoFlags::kRead |
-                                       fuchsia_io::wire::VmoFlags::kExecute);
+  auto result =
+      file->GetBackingMemory(fuchsia_io::VmoFlags::kRead | fuchsia_io::VmoFlags::kExecute);
   FX_CHECK(result.is_ok()) << "Failed to get backing memory for " << binary_path << ": "
                            << result.error_value();
 

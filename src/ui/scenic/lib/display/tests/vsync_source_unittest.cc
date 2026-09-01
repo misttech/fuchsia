@@ -69,9 +69,10 @@ class MockVsyncEventHandler
 
 TEST_F(VsyncSourceTest, EnableAndDisableVsync) {
   MockVsyncEventHandler mock_handler;
-  auto endpoints = fidl::CreateEndpoints<fuchsia_ui_display_singleton::VsyncSource>();
-  vsync_listener_manager()->CreateBinding(std::move(endpoints->server));
-  fidl::WireClient client(std::move(endpoints->client), dispatcher(), &mock_handler);
+  auto [client_end, server_end] =
+      fidl::Endpoints<fuchsia_ui_display_singleton::VsyncSource>::Create();
+  vsync_listener_manager()->CreateBinding(std::move(server_end));
+  fidl::WireClient client(std::move(client_end), dispatcher(), &mock_handler);
 
   // Enable vsync.
   auto result1 = client->SetVsyncEnabled(true);
@@ -101,14 +102,16 @@ TEST_F(VsyncSourceTest, EnableAndDisableVsync) {
 
 TEST_F(VsyncSourceTest, MultipleClients) {
   MockVsyncEventHandler mock_handler1;
-  auto endpoints1 = fidl::CreateEndpoints<fuchsia_ui_display_singleton::VsyncSource>();
-  vsync_listener_manager()->CreateBinding(std::move(endpoints1->server));
-  fidl::WireClient client1(std::move(endpoints1->client), dispatcher(), &mock_handler1);
+  auto [client_end1, server_end1] =
+      fidl::Endpoints<fuchsia_ui_display_singleton::VsyncSource>::Create();
+  vsync_listener_manager()->CreateBinding(std::move(server_end1));
+  fidl::WireClient client1(std::move(client_end1), dispatcher(), &mock_handler1);
 
   MockVsyncEventHandler mock_handler2;
-  auto endpoints2 = fidl::CreateEndpoints<fuchsia_ui_display_singleton::VsyncSource>();
-  vsync_listener_manager()->CreateBinding(std::move(endpoints2->server));
-  fidl::WireClient client2(std::move(endpoints2->client), dispatcher(), &mock_handler2);
+  auto [client_end2, server_end2] =
+      fidl::Endpoints<fuchsia_ui_display_singleton::VsyncSource>::Create();
+  vsync_listener_manager()->CreateBinding(std::move(server_end2));
+  fidl::WireClient client2(std::move(client_end2), dispatcher(), &mock_handler2);
 
   // Client 1 enables vsync.
   auto result1 = client1->SetVsyncEnabled(true);
@@ -156,9 +159,10 @@ TEST_F(VsyncSourceTest, MultipleClients) {
 
 TEST_F(VsyncSourceTest, ClientDisconnects) {
   MockVsyncEventHandler mock_handler;
-  auto endpoints = fidl::CreateEndpoints<fuchsia_ui_display_singleton::VsyncSource>();
-  vsync_listener_manager()->CreateBinding(std::move(endpoints->server));
-  fidl::WireClient client(std::move(endpoints->client), dispatcher(), &mock_handler);
+  auto [client_end, server_end] =
+      fidl::Endpoints<fuchsia_ui_display_singleton::VsyncSource>::Create();
+  vsync_listener_manager()->CreateBinding(std::move(server_end));
+  fidl::WireClient client(std::move(client_end), dispatcher(), &mock_handler);
 
   auto result = client->SetVsyncEnabled(true);
   EXPECT_TRUE(result.ok());

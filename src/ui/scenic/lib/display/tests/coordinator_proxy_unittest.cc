@@ -104,22 +104,6 @@ class CoordinatorProxyTest : public gtest::RealLoopFixture {
     gtest::RealLoopFixture::TearDown();
   }
 
-  fidl::InterfaceHandle<fuchsia::sysmem2::BufferCollectionToken> CreateToken() {
-    fuchsia::sysmem2::BufferCollectionTokenSyncPtr token;
-    fidl::Arena arena;
-    fidl::OneWayStatus result = sysmem_allocator_->AllocateSharedCollection(
-        fuchsia_sysmem2::wire::AllocatorAllocateSharedCollectionRequest::Builder(arena)
-            .token_request(fidl::ServerEnd<fuchsia_sysmem2::BufferCollectionToken>(
-                token.NewRequest().TakeChannel()))
-            .Build());
-    FX_DCHECK(result.ok());
-    fuchsia::sysmem2::Node_Sync_Result sync_result;
-    zx_status_t status = token->Sync(&sync_result);
-    FX_DCHECK(status == ZX_OK);
-    FX_DCHECK(sync_result.is_response());
-    return token;
-  }
-
   // Synchronously calls `GetLatestCommittedConfigStamp()` on the display coordinator.  When we
   // receive the response from this, we know that the coordinator has also received/processed any
   // previously-sent messages.

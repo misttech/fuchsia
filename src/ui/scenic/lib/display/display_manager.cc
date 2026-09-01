@@ -6,7 +6,7 @@
 
 #include <fidl/fuchsia.hardware.display.types/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.display/cpp/fidl.h>
-#include <fuchsia/ui/composition/internal/cpp/fidl.h>
+#include <fidl/fuchsia.ui.composition.internal/cpp/fidl.h>
 #include <lib/async/default.h>
 #include <lib/fit/function.h>
 #include <lib/syslog/cpp/macros.h>
@@ -174,12 +174,12 @@ void DisplayManager::OnClientOwnershipChange(bool has_ownership) {
   if (default_display_) {
     if (has_ownership) {
       default_display_->ownership_event().signal(
-          fuchsia::ui::composition::internal::SIGNAL_DISPLAY_NOT_OWNED,
-          fuchsia::ui::composition::internal::SIGNAL_DISPLAY_OWNED);
+          fuchsia_ui_composition_internal::kSignalDisplayNotOwned,
+          fuchsia_ui_composition_internal::kSignalDisplayOwned);
     } else {
       default_display_->ownership_event().signal(
-          fuchsia::ui::composition::internal::SIGNAL_DISPLAY_OWNED,
-          fuchsia::ui::composition::internal::SIGNAL_DISPLAY_NOT_OWNED);
+          fuchsia_ui_composition_internal::kSignalDisplayOwned,
+          fuchsia_ui_composition_internal::kSignalDisplayNotOwned);
     }
   }
 }
