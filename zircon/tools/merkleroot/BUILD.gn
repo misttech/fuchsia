@@ -9,10 +9,16 @@
 # See https://fxbug.dev/42111634.                   #
 ##########################################
 
+import("//build/bazel/bazel_host_tool.gni")
 import("//build/sdk/sdk_host_tool.gni")
 
 sdk_host_tool("merkleroot_sdk") {
   category = "partner"
   output_name = "merkleroot"
-  deps = [ "//build/bazel/host:bazel_root_host_tools.merkleroot" ]
+  deps = [ ":merkleroot" ]
+}
+
+bazel_host_tool("merkleroot") {
+  bazel_target = ":merkleroot"
+  bazel_output_path = "{{BAZEL_TARGET_OUT_DIR}}/merkleroot"
 }

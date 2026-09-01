@@ -17,9 +17,10 @@ declare_args() {
 
 # Wrap a Bazel command with a GN action.
 #
-# May only be called on the default_toolchain so as to prevent generating Bazel
-# workspace multiple times. Host targets can be built by specifying
-# `host = true`.
+# For Fuchsia targets, this must be called in the `default_toolchain`.
+# For host targets, this may be called from the host toolchain, but it
+# MUST set the `bazel_config` param to just `host`, and then the appropriate
+# architecture will be determined from the toolchain settings.
 #
 # The caller should pass a list of Bazel target patterns for the
 # `bazel build` command, as well as a list Bazel output files relative
@@ -188,17 +189,6 @@ declare_args() {
 #       in-tree Bazel SDK. Targets are not available to the GN graph until the
 #       entire SDK has been built.
 #
-#   bazel_platform: (optional)
-#     Overwrite the `--platforms` flag when building with Bazel.
-#     Must match one of the available platforms defined in
-#     //build/bazel/platforms/BUILD.bazel.
-#     When not set, the configured platform from the .bazelrc will be used.
-#
-#     NOTE: There is no guarantee that your chosen platform will work with the
-#     `--config` applied, so use this parameter with caution.
-#
-#     Type: string
-#
 #   deps:
 #   metadata:
 #   check_for_output_dir_leaks:
@@ -257,42 +247,48 @@ declare_args() {
 #        Expands to {{BAZEL_TARGET_OUT_DIR}}/{{BAZEL_TARGET_NAME}}.
 #
 template("bazel_action") {
+  assert(defined(invoker.bazel_config), "bazel_config must be defined!")
+
   # Bazel actions can only be run in the default toolchain, so no-op the
   # template since trying to enforce this in all the BUILD.gn files themselves
   # is currently infeasible.
-  if (current_toolchain == default_toolchain) {
+  if (current_toolchain == default_toolchain ||
+      (is_host && invoker.bazel_config == "host")) {
     assert(defined(invoker.command), "command must be defined!")
     assert(defined(invoker.bazel_targets), "bazel_targets must be defined!")
     assert(invoker.bazel_targets != [], "bazel_targets cannot be empty!")
-    assert(defined(invoker.bazel_config), "bazel_config must be defined!")
 
     # Calculate the correct Bazel platform to use.
     if (invoker.bazel_config == "host") {
       _bazel_platform_config = "host_config_args"
-      _bazel_platform_label = "//build/bazel/platforms:host"
+      if (is_host && host_cpu != current_cpu) {
+        # Cross-compiling for host binaries, so set the specific correct
+        # platform.
+        _bazel_platform_label =
+            "//build/bazel/platforms:host_${current_os}_${current_cpu}"
+      } else {
+        # Building for the "real" host platform (ie, executables that can
+        # be run on the host running the build).  Using `host` rather than the
+        # architecture-specific label to be consistent with other "host" config
+        # instances and avoid the potential for problems or duplicate work
+        # caused by the use of different strings.
+        _bazel_platform_label = "//build/bazel/platforms:host"
+      }
       _no_sdk = true
-      _build_for_host = true
     } else if (invoker.bazel_config == "fuchsia_platform") {
       _bazel_platform_config = "fuchsia_config_args"
       _bazel_platform_label =
           "//build/bazel/platforms:fuchsia_platform_${current_cpu}"
       _no_sdk = true
-      _build_for_host = false
     } else if (invoker.bazel_config == "fuchsia_sdk") {
       _bazel_platform_config = "fuchsia_config_args"
       _bazel_platform_label =
           "//build/bazel/platforms:fuchsia_sdk_${current_cpu}"
       _no_sdk = false
-      _build_for_host = false
     } else {
       assert(
           false,
           "Unrecognized `bazel_config` value: '${invoker.bazel_config}'. Use: 'host' for host artifacts, 'fuchsia_platform' for platform artifacts, or 'fuchsia_sdk' when using the Bazel SDK.")
-    }
-
-    if (defined(invoker.bazel_platform)) {
-      _bazel_platform_label =
-          "//build/bazel/platforms:${invoker.bazel_platform}"
     }
 
     _update_rust_project =
@@ -679,12 +675,12 @@ template("bazel_action") {
       # bazel_gn_target_action.py always checks the rbe_settings.json file to
       # see if RBE is enabled or not.
       inputs += [ "${root_build_dir}/rbe_settings.json" ]
-      deps += [ "//build/rbe:rbe_settings.json" ]
+      deps += [ "//build/rbe:rbe_settings.json(${default_toolchain})" ]
 
       # bazel_gn_target_action.py always checks global_bazel_args.json for
       # configuration of extra global arguments
       inputs += [ "${root_build_dir}/bazel_args/global_args.json" ]
-      deps += [ "//build/bazel/config:global_args.json" ]
+      deps += [ "//build/bazel/config:global_args.json(${default_toolchain})" ]
 
       # Write stamp files for every Bazel target executed by this bazel_action.
       # Note these stamps are written to paths based on Bazel target labels.
@@ -694,18 +690,13 @@ template("bazel_action") {
       # multiple targets sharing the same output.
       _dedupe_stamp_lookup = []
       foreach(_bazel_target, _bazel_targets) {
-        _out_dir = get_label_info(_bazel_target, "target_out_dir")
+        _out_dir = get_label_info("${_bazel_target}(${default_toolchain})",
+                                  "target_out_dir")
         _bazel_label = get_label_info(_bazel_target, "name")
 
-        if (_build_for_host) {
-          _dedupe_suffix = "${host_os}_${host_cpu}"
-        } else {
-          _dedupe_suffix = "${current_os}_${current_cpu}"
-        }
-        if (defined(invoker.bazel_platform)) {
-          _dedupe_suffix = invoker.bazel_platform
-        }
-
+        # The dedupe suffix is the name of bazel platform used to compile the
+        # target.
+        _dedupe_suffix = get_label_info(_bazel_platform_label, "name")
         _stamp_path = "${_out_dir}/${_bazel_label}.${_dedupe_suffix}.bazel_target_can_only_be_referenced_by_one_bazel_action"
         outputs += [ _stamp_path ]
         _dedupe_stamp_lookup += [
@@ -762,7 +753,6 @@ template("bazel_action") {
             [ rebase_path(outputs[0], root_build_dir) + ",60000" ]
 
         # Used by //:bazel_target_infos target.
-        bazel_target_infos_barrier = []
         bazel_target_infos = []
         foreach(entry, _all_outputs) {
           # LINT.IfChange(bazel_target_infos)

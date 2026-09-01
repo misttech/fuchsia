@@ -1,0 +1,86 @@
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+import("//build/bazel/bazel_build_action.gni")
+
+# bazel_host_tool() is a wrapper around bazel_build_action that provides
+# the tool_paths metadata that BUILDCONFIG.gn provides for GN executable
+# targets.
+
+#
+# Params
+#  bazel_label: (label) the label of the bazel target to build
+#
+#  output_name: (string, optional) name of the output binary.
+#    Defaults to 'target_name'.
+#
+#  bazel_output_path: (path, required) see documentation for
+#     `<bazel_path>` in `bazel_build_action()`.
+#
+#  All other bazel_build_action() inputs *except* 'copy_outputs'
+#     are forwarded to bazel_build_action().  The template creates
+#     the 'copy_outputs' list itself.
+#
+template("bazel_host_tool") {
+  assert(!defined(invoker.copy_outputs),
+         "This template creates copy_outputs, don't provide it.")
+
+  if (defined(invoker.output_name)) {
+    _output_name = invoker.output_name
+  } else {
+    _output_name = target_name
+  }
+
+  # This needs to be called in the host toolchain, but the bazel build action
+  # itself needs to be in the default toolchain, so it can't do the copy itself.
+  # We need to copy the binary from it's location in the default toolchain's
+  # bazel out dir to a temporary place in the ninja build, which will then be
+  # the source for copying it to the correct location in the host toolchain's
+  # output dir.
+  assert(is_host, "bazel_host_tool() can only be called in a host toolchain.")
+
+  bazel_build_action(target_name) {
+    forward_variables_from(invoker,
+                           "*",
+                           [
+                             "output_name",
+                             "bazel_output_path",
+
+                             # standard "deep-forwarded" params
+                             "visibility",
+                             "testonly",
+                           ])
+    forward_variables_from(invoker,
+                           [
+                             "visibility",
+                             "testonly",
+                           ])
+
+    bazel_config = "host"
+
+    # The base of outputs for binaries is the toolchain outdir, not
+    # 'target_out_dir'.
+    ninja_base_dir = root_out_dir
+
+    copy_outputs = [
+      {
+        bazel = invoker.bazel_output_path
+        ninja = _output_name
+      },
+    ]
+
+    metadata = {
+      tool_paths = [
+        {
+          cpu = current_cpu
+          label = get_label_info(":${target_name}", "label_with_toolchain")
+          name = _output_name
+          os = current_os
+          path =
+              rebase_path("${ninja_base_dir}/${_output_name}", root_build_dir)
+        },
+      ]
+    }
+  }
+}

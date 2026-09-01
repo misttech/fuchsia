@@ -2263,7 +2263,6 @@ generated_file("bazel_target_infos") {
          ] + extra_bazel_build_action_labels
 
   data_keys = [ "bazel_target_infos" ]
-  walk_keys = [ "bazel_target_infos_barrier" ]
   outputs = [ "$root_build_dir/$target_name.json" ]
   output_conversion = "json"
 }
@@ -2493,11 +2492,6 @@ group("root_targets") {
     # by ninja_implicit_inputs_root_labels.
     "//build/ninja_implicit_inputs:manifest",
   ]
-
-  if (sdk_cross_compile_host_tools) {
-    # IDK host tools cross-compiled for Linux arm64
-    deps += [ "//build/bazel/host:sdk_host_tools_arm64" ]
-  }
 
   # Required by `fx publish` at runtime. Only included when package serving
   # processes are needed.

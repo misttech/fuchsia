@@ -11,12 +11,12 @@ group("public_host_tools") {
     "//build/bazel/host:bazel_root_host_tools.debugsyms",
     "//build/bazel/host:bazel_root_host_tools.gndoc",
     "//build/bazel/host:bazel_root_host_tools.ninjatrace",
-    "//build/bazel/host:bazel_root_host_tools.orchestrate",
     "//src/developer/ffx:host",
     "//src/diagnostics/triage:install",
     "//src/storage/tools/blobfs-compression",
     "//tools/debug/buildidtool",
     "//tools/funnel:host",
+    "//tools/orchestrate",
     "//tools/vboot_reference",
   ]
 }
