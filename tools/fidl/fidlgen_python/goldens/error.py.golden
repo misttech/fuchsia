@@ -305,13 +305,11 @@ class ExampleClient(FidlClient):
         msg = ExampleFooRequest(
             s,
         )
-        ret = typing.cast(
-            collections.abc.Coroutine[typing.Any, typing.Any, ExampleFooResult],
-            self._send_two_way_fidl_request(
-                1107623248440401476,
-                "test.error",
-                msg,
-            ),
+        ret = self._send_two_way_fidl_request(
+            1107623248440401476,
+            "test.error",
+            msg,
+            ExampleFooResult,
         )
         return ret
 

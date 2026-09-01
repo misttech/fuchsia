@@ -134,7 +134,36 @@ class FidlClientTests(unittest.IsolatedAsyncioTestCase):
         header = struct.pack("<IHBBQ", 1, 0x02, 0x00, 0x01, ordinal)
         msg_bytes = header + payload
 
-        proxy._decode(1, (msg_bytes, handles))
+        proxy._decode(1, (msg_bytes, handles), ffx.EchoEchoStringResponse)
         # Verifies state is cleaned up.
         self.assertEqual(len(proxy.staged_messages), 0)
         self.assertEqual(len(proxy.pending_txids), 0)
+
+    def test_ordinal_mismatch(self) -> None:
+        channel = Mock()
+        channel.__class__ = Channel  # type: ignore[assignment]
+        channel.as_int.return_value = 0
+        proxy = ffx.EchoClient(channel)
+        proxy.pending_txids.add(1)
+
+        # Find ordinal from registry
+        ordinal = get_method_ordinal("EchoEchoStringResponse")
+        self.assertIsNotNone(ordinal)
+
+        response_obj = ffx.EchoEchoStringResponse(response="foo")
+        payload, handles = response_obj.encode()
+
+        # Create header with a different ordinal
+        wrong_ordinal = (ordinal or 0) + 1
+        header = struct.pack("<IHBBQ", 1, 0x02, 0x00, 0x01, wrong_ordinal)
+        msg_bytes = header + payload
+
+        proxy._stage_message(1, (msg_bytes, handles))
+
+        with self.assertRaises(RuntimeError):
+            proxy._decode(
+                1,
+                (msg_bytes, handles),
+                ffx.EchoEchoStringResponse,
+                expected_ordinal=ordinal,
+            )

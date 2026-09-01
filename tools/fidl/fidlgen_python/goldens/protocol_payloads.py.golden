@@ -1196,17 +1196,11 @@ class MainProtocolClient(FidlClient):
         msg = fidl_test_protocolpayloads_imported.ImportStructPayload(
             a,
         )
-        ret = typing.cast(
-            collections.abc.Coroutine[
-                typing.Any,
-                typing.Any,
-                fidl_test_protocolpayloads_imported.ImportStructPayload,
-            ],
-            self._send_two_way_fidl_request(
-                2542459230546612144,
-                "test.protocolpayloads",
-                msg,
-            ),
+        ret = self._send_two_way_fidl_request(
+            2542459230546612144,
+            "test.protocolpayloads",
+            msg,
+            fidl_test_protocolpayloads_imported.ImportStructPayload,
         )
         return ret
 
@@ -1222,17 +1216,11 @@ class MainProtocolClient(FidlClient):
         msg = fidl_test_protocolpayloads_imported.ImportStructPayload(
             a,
         )
-        ret = typing.cast(
-            collections.abc.Coroutine[
-                typing.Any,
-                typing.Any,
-                fidl_test_protocolpayloads_imported.ComposedProtocolTwoWayComposedWithErrorResult,
-            ],
-            self._send_two_way_fidl_request(
-                7681984876526769495,
-                "test.protocolpayloads",
-                msg,
-            ),
+        ret = self._send_two_way_fidl_request(
+            7681984876526769495,
+            "test.protocolpayloads",
+            msg,
+            fidl_test_protocolpayloads_imported.ComposedProtocolTwoWayComposedWithErrorResult,
         )
         return ret
 
@@ -1264,15 +1252,11 @@ class MainProtocolClient(FidlClient):
             a,
             b,
         )
-        ret = typing.cast(
-            collections.abc.Coroutine[
-                typing.Any, typing.Any, LocalStructPayload
-            ],
-            self._send_two_way_fidl_request(
-                8374292137648566031,
-                "test.protocolpayloads",
-                msg,
-            ),
+        ret = self._send_two_way_fidl_request(
+            8374292137648566031,
+            "test.protocolpayloads",
+            msg,
+            LocalStructPayload,
         )
         return ret
 
@@ -1288,15 +1272,11 @@ class MainProtocolClient(FidlClient):
             a,
             b,
         )
-        ret = typing.cast(
-            collections.abc.Coroutine[
-                typing.Any, typing.Any, MainProtocolTwoWayLocalWithErrorResult
-            ],
-            self._send_two_way_fidl_request(
-                2898559119954589948,
-                "test.protocolpayloads",
-                msg,
-            ),
+        ret = self._send_two_way_fidl_request(
+            2898559119954589948,
+            "test.protocolpayloads",
+            msg,
+            MainProtocolTwoWayLocalWithErrorResult,
         )
         return ret
 
@@ -1328,17 +1308,11 @@ class MainProtocolClient(FidlClient):
         msg = fidl_test_protocolpayloads_imported.ImportStructPayload(
             a,
         )
-        ret = typing.cast(
-            collections.abc.Coroutine[
-                typing.Any,
-                typing.Any,
-                fidl_test_protocolpayloads_imported.ImportStructPayload,
-            ],
-            self._send_two_way_fidl_request(
-                2374708679656510579,
-                "test.protocolpayloads",
-                msg,
-            ),
+        ret = self._send_two_way_fidl_request(
+            2374708679656510579,
+            "test.protocolpayloads",
+            msg,
+            fidl_test_protocolpayloads_imported.ImportStructPayload,
         )
         return ret
 
@@ -1352,15 +1326,11 @@ class MainProtocolClient(FidlClient):
         msg = fidl_test_protocolpayloads_imported.ImportStructPayload(
             a,
         )
-        ret = typing.cast(
-            collections.abc.Coroutine[
-                typing.Any, typing.Any, MainProtocolTwoWayImportWithErrorResult
-            ],
-            self._send_two_way_fidl_request(
-                4286143084949642173,
-                "test.protocolpayloads",
-                msg,
-            ),
+        ret = self._send_two_way_fidl_request(
+            4286143084949642173,
+            "test.protocolpayloads",
+            msg,
+            MainProtocolTwoWayImportWithErrorResult,
         )
         return ret
 
@@ -1394,15 +1364,11 @@ class MainProtocolClient(FidlClient):
             a,
             b,
         )
-        ret = typing.cast(
-            collections.abc.Coroutine[
-                typing.Any, typing.Any, MainProtocolTwoWayAnonResponse
-            ],
-            self._send_two_way_fidl_request(
-                629880979996923737,
-                "test.protocolpayloads",
-                msg,
-            ),
+        ret = self._send_two_way_fidl_request(
+            629880979996923737,
+            "test.protocolpayloads",
+            msg,
+            MainProtocolTwoWayAnonResponse,
         )
         return ret
 
@@ -1418,15 +1384,11 @@ class MainProtocolClient(FidlClient):
             a,
             b,
         )
-        ret = typing.cast(
-            collections.abc.Coroutine[
-                typing.Any, typing.Any, MainProtocolTwoWayAnonWithErrorResult
-            ],
-            self._send_two_way_fidl_request(
-                6368863385719175734,
-                "test.protocolpayloads",
-                msg,
-            ),
+        ret = self._send_two_way_fidl_request(
+            6368863385719175734,
+            "test.protocolpayloads",
+            msg,
+            MainProtocolTwoWayAnonWithErrorResult,
         )
         return ret
 

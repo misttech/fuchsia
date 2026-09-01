@@ -4894,13 +4894,11 @@ class ClosedTargetClient(FidlClient):
         self,
     ) -> collections.abc.Coroutine[typing.Any, typing.Any, None]:
         msg = None
-        ret = typing.cast(
-            collections.abc.Coroutine[typing.Any, typing.Any, None],
-            self._send_two_way_fidl_request(
-                8823160117673072416,
-                "fidl.clientsuite",
-                msg,
-            ),
+        ret = self._send_two_way_fidl_request(
+            8823160117673072416,
+            "fidl.clientsuite",
+            msg,
+            None,
         )
         return ret
 
@@ -4908,13 +4906,11 @@ class ClosedTargetClient(FidlClient):
         self,
     ) -> collections.abc.Coroutine[typing.Any, typing.Any, NonEmptyPayload]:
         msg = None
-        ret = typing.cast(
-            collections.abc.Coroutine[typing.Any, typing.Any, NonEmptyPayload],
-            self._send_two_way_fidl_request(
-                4197391242806919613,
-                "fidl.clientsuite",
-                msg,
-            ),
+        ret = self._send_two_way_fidl_request(
+            4197391242806919613,
+            "fidl.clientsuite",
+            msg,
+            NonEmptyPayload,
         )
         return ret
 
@@ -4922,13 +4918,11 @@ class ClosedTargetClient(FidlClient):
         self,
     ) -> collections.abc.Coroutine[typing.Any, typing.Any, TablePayload]:
         msg = None
-        ret = typing.cast(
-            collections.abc.Coroutine[typing.Any, typing.Any, TablePayload],
-            self._send_two_way_fidl_request(
-                6034278263774013116,
-                "fidl.clientsuite",
-                msg,
-            ),
+        ret = self._send_two_way_fidl_request(
+            6034278263774013116,
+            "fidl.clientsuite",
+            msg,
+            TablePayload,
         )
         return ret
 
@@ -4936,13 +4930,11 @@ class ClosedTargetClient(FidlClient):
         self,
     ) -> collections.abc.Coroutine[typing.Any, typing.Any, UnionPayload]:
         msg = None
-        ret = typing.cast(
-            collections.abc.Coroutine[typing.Any, typing.Any, UnionPayload],
-            self._send_two_way_fidl_request(
-                2303581613023334284,
-                "fidl.clientsuite",
-                msg,
-            ),
+        ret = self._send_two_way_fidl_request(
+            2303581613023334284,
+            "fidl.clientsuite",
+            msg,
+            UnionPayload,
         )
         return ret
 
@@ -4952,15 +4944,11 @@ class ClosedTargetClient(FidlClient):
         typing.Any, typing.Any, ClosedTargetTwoWayStructPayloadErrResult
     ]:
         msg = None
-        ret = typing.cast(
-            collections.abc.Coroutine[
-                typing.Any, typing.Any, ClosedTargetTwoWayStructPayloadErrResult
-            ],
-            self._send_two_way_fidl_request(
-                7112457167486827531,
-                "fidl.clientsuite",
-                msg,
-            ),
+        ret = self._send_two_way_fidl_request(
+            7112457167486827531,
+            "fidl.clientsuite",
+            msg,
+            ClosedTargetTwoWayStructPayloadErrResult,
         )
         return ret
 
@@ -4972,13 +4960,11 @@ class ClosedTargetClient(FidlClient):
         msg = NonEmptyPayload(
             some_field,
         )
-        ret = typing.cast(
-            collections.abc.Coroutine[typing.Any, typing.Any, None],
-            self._send_two_way_fidl_request(
-                5762209808438257078,
-                "fidl.clientsuite",
-                msg,
-            ),
+        ret = self._send_two_way_fidl_request(
+            5762209808438257078,
+            "fidl.clientsuite",
+            msg,
+            None,
         )
         return ret
 
@@ -4990,13 +4976,11 @@ class ClosedTargetClient(FidlClient):
         msg = TablePayload(
             some_field,
         )
-        ret = typing.cast(
-            collections.abc.Coroutine[typing.Any, typing.Any, None],
-            self._send_two_way_fidl_request(
-                4411466441619884495,
-                "fidl.clientsuite",
-                msg,
-            ),
+        ret = self._send_two_way_fidl_request(
+            4411466441619884495,
+            "fidl.clientsuite",
+            msg,
+            None,
         )
         return ret
 
@@ -5008,13 +4992,11 @@ class ClosedTargetClient(FidlClient):
         msg = UnionPayload(
             some_variant,
         )
-        ret = typing.cast(
-            collections.abc.Coroutine[typing.Any, typing.Any, None],
-            self._send_two_way_fidl_request(
-                8852700443574767223,
-                "fidl.clientsuite",
-                msg,
-            ),
+        ret = self._send_two_way_fidl_request(
+            8852700443574767223,
+            "fidl.clientsuite",
+            msg,
+            None,
         )
         return ret
 
@@ -5583,13 +5565,11 @@ class OpenTargetClient(FidlClient):
         self,
     ) -> collections.abc.Coroutine[typing.Any, typing.Any, None]:
         msg = None
-        ret = typing.cast(
-            collections.abc.Coroutine[typing.Any, typing.Any, None],
-            self._send_two_way_fidl_request(
-                995098632483095874,
-                "fidl.clientsuite",
-                msg,
-            ),
+        ret = self._send_two_way_fidl_request(
+            995098632483095874,
+            "fidl.clientsuite",
+            msg,
+            None,
         )
         return ret
 
@@ -5597,13 +5577,11 @@ class OpenTargetClient(FidlClient):
         self,
     ) -> collections.abc.Coroutine[typing.Any, typing.Any, NonEmptyPayload]:
         msg = None
-        ret = typing.cast(
-            collections.abc.Coroutine[typing.Any, typing.Any, NonEmptyPayload],
-            self._send_two_way_fidl_request(
-                8775166568163566307,
-                "fidl.clientsuite",
-                msg,
-            ),
+        ret = self._send_two_way_fidl_request(
+            8775166568163566307,
+            "fidl.clientsuite",
+            msg,
+            NonEmptyPayload,
         )
         return ret
 
@@ -5613,15 +5591,11 @@ class OpenTargetClient(FidlClient):
         typing.Any, typing.Any, OpenTargetStrictTwoWayErrResult
     ]:
         msg = None
-        ret = typing.cast(
-            collections.abc.Coroutine[
-                typing.Any, typing.Any, OpenTargetStrictTwoWayErrResult
-            ],
-            self._send_two_way_fidl_request(
-                6063427118545698440,
-                "fidl.clientsuite",
-                msg,
-            ),
+        ret = self._send_two_way_fidl_request(
+            6063427118545698440,
+            "fidl.clientsuite",
+            msg,
+            OpenTargetStrictTwoWayErrResult,
         )
         return ret
 
@@ -5631,15 +5605,11 @@ class OpenTargetClient(FidlClient):
         typing.Any, typing.Any, OpenTargetStrictTwoWayFieldsErrResult
     ]:
         msg = None
-        ret = typing.cast(
-            collections.abc.Coroutine[
-                typing.Any, typing.Any, OpenTargetStrictTwoWayFieldsErrResult
-            ],
-            self._send_two_way_fidl_request(
-                9059738677182539537,
-                "fidl.clientsuite",
-                msg,
-            ),
+        ret = self._send_two_way_fidl_request(
+            9059738677182539537,
+            "fidl.clientsuite",
+            msg,
+            OpenTargetStrictTwoWayFieldsErrResult,
         )
         return ret
 
@@ -5649,15 +5619,11 @@ class OpenTargetClient(FidlClient):
         typing.Any, typing.Any, OpenTargetFlexibleTwoWayResult
     ]:
         msg = None
-        ret = typing.cast(
-            collections.abc.Coroutine[
-                typing.Any, typing.Any, OpenTargetFlexibleTwoWayResult
-            ],
-            self._send_two_way_fidl_request(
-                7373850992214410631,
-                "fidl.clientsuite",
-                msg,
-            ),
+        ret = self._send_two_way_fidl_request(
+            7373850992214410631,
+            "fidl.clientsuite",
+            msg,
+            OpenTargetFlexibleTwoWayResult,
         )
         return ret
 
@@ -5667,15 +5633,11 @@ class OpenTargetClient(FidlClient):
         typing.Any, typing.Any, OpenTargetFlexibleTwoWayFieldsResult
     ]:
         msg = None
-        ret = typing.cast(
-            collections.abc.Coroutine[
-                typing.Any, typing.Any, OpenTargetFlexibleTwoWayFieldsResult
-            ],
-            self._send_two_way_fidl_request(
-                4087393006943873764,
-                "fidl.clientsuite",
-                msg,
-            ),
+        ret = self._send_two_way_fidl_request(
+            4087393006943873764,
+            "fidl.clientsuite",
+            msg,
+            OpenTargetFlexibleTwoWayFieldsResult,
         )
         return ret
 
@@ -5685,15 +5647,11 @@ class OpenTargetClient(FidlClient):
         typing.Any, typing.Any, OpenTargetFlexibleTwoWayErrResult
     ]:
         msg = None
-        ret = typing.cast(
-            collections.abc.Coroutine[
-                typing.Any, typing.Any, OpenTargetFlexibleTwoWayErrResult
-            ],
-            self._send_two_way_fidl_request(
-                7932048879253591162,
-                "fidl.clientsuite",
-                msg,
-            ),
+        ret = self._send_two_way_fidl_request(
+            7932048879253591162,
+            "fidl.clientsuite",
+            msg,
+            OpenTargetFlexibleTwoWayErrResult,
         )
         return ret
 
@@ -5703,15 +5661,11 @@ class OpenTargetClient(FidlClient):
         typing.Any, typing.Any, OpenTargetFlexibleTwoWayFieldsErrResult
     ]:
         msg = None
-        ret = typing.cast(
-            collections.abc.Coroutine[
-                typing.Any, typing.Any, OpenTargetFlexibleTwoWayFieldsErrResult
-            ],
-            self._send_two_way_fidl_request(
-                1029425766479692362,
-                "fidl.clientsuite",
-                msg,
-            ),
+        ret = self._send_two_way_fidl_request(
+            1029425766479692362,
+            "fidl.clientsuite",
+            msg,
+            OpenTargetFlexibleTwoWayFieldsErrResult,
         )
         return ret
 
@@ -6556,15 +6510,11 @@ class RunnerClient(FidlClient):
         typing.Any, typing.Any, RunnerGetVersionResponse
     ]:
         msg = None
-        ret = typing.cast(
-            collections.abc.Coroutine[
-                typing.Any, typing.Any, RunnerGetVersionResponse
-            ],
-            self._send_two_way_fidl_request(
-                6151094865554034132,
-                "fidl.clientsuite",
-                msg,
-            ),
+        ret = self._send_two_way_fidl_request(
+            6151094865554034132,
+            "fidl.clientsuite",
+            msg,
+            RunnerGetVersionResponse,
         )
         return ret
 
@@ -6578,15 +6528,11 @@ class RunnerClient(FidlClient):
         msg = RunnerIsTestEnabledRequest(
             test,
         )
-        ret = typing.cast(
-            collections.abc.Coroutine[
-                typing.Any, typing.Any, RunnerIsTestEnabledResponse
-            ],
-            self._send_two_way_fidl_request(
-                8456568861872716880,
-                "fidl.clientsuite",
-                msg,
-            ),
+        ret = self._send_two_way_fidl_request(
+            8456568861872716880,
+            "fidl.clientsuite",
+            msg,
+            RunnerIsTestEnabledResponse,
         )
         return ret
 
@@ -6594,13 +6540,11 @@ class RunnerClient(FidlClient):
         self,
     ) -> collections.abc.Coroutine[typing.Any, typing.Any, None]:
         msg = None
-        ret = typing.cast(
-            collections.abc.Coroutine[typing.Any, typing.Any, None],
-            self._send_two_way_fidl_request(
-                6518872820703682864,
-                "fidl.clientsuite",
-                msg,
-            ),
+        ret = self._send_two_way_fidl_request(
+            6518872820703682864,
+            "fidl.clientsuite",
+            msg,
+            None,
         )
         return ret
 
@@ -6608,15 +6552,11 @@ class RunnerClient(FidlClient):
         self,
     ) -> collections.abc.Coroutine[typing.Any, typing.Any, BindingsProperties]:
         msg = None
-        ret = typing.cast(
-            collections.abc.Coroutine[
-                typing.Any, typing.Any, BindingsProperties
-            ],
-            self._send_two_way_fidl_request(
-                8553849771382515254,
-                "fidl.clientsuite",
-                msg,
-            ),
+        ret = self._send_two_way_fidl_request(
+            8553849771382515254,
+            "fidl.clientsuite",
+            msg,
+            BindingsProperties,
         )
         return ret
 
@@ -6630,15 +6570,11 @@ class RunnerClient(FidlClient):
         msg = RunnerCallTwoWayNoPayloadRequest(
             target,
         )
-        ret = typing.cast(
-            collections.abc.Coroutine[
-                typing.Any, typing.Any, EmptyResultClassification
-            ],
-            self._send_two_way_fidl_request(
-                6029318298044407969,
-                "fidl.clientsuite",
-                msg,
-            ),
+        ret = self._send_two_way_fidl_request(
+            6029318298044407969,
+            "fidl.clientsuite",
+            msg,
+            EmptyResultClassification,
         )
         return ret
 
@@ -6652,15 +6588,11 @@ class RunnerClient(FidlClient):
         msg = RunnerCallTwoWayStructPayloadRequest(
             target,
         )
-        ret = typing.cast(
-            collections.abc.Coroutine[
-                typing.Any, typing.Any, NonEmptyResultClassification
-            ],
-            self._send_two_way_fidl_request(
-                2659811426878208326,
-                "fidl.clientsuite",
-                msg,
-            ),
+        ret = self._send_two_way_fidl_request(
+            2659811426878208326,
+            "fidl.clientsuite",
+            msg,
+            NonEmptyResultClassification,
         )
         return ret
 
@@ -6674,15 +6606,11 @@ class RunnerClient(FidlClient):
         msg = RunnerCallTwoWayTablePayloadRequest(
             target,
         )
-        ret = typing.cast(
-            collections.abc.Coroutine[
-                typing.Any, typing.Any, TableResultClassification
-            ],
-            self._send_two_way_fidl_request(
-                517424185216448362,
-                "fidl.clientsuite",
-                msg,
-            ),
+        ret = self._send_two_way_fidl_request(
+            517424185216448362,
+            "fidl.clientsuite",
+            msg,
+            TableResultClassification,
         )
         return ret
 
@@ -6696,15 +6624,11 @@ class RunnerClient(FidlClient):
         msg = RunnerCallTwoWayUnionPayloadRequest(
             target,
         )
-        ret = typing.cast(
-            collections.abc.Coroutine[
-                typing.Any, typing.Any, UnionResultClassification
-            ],
-            self._send_two_way_fidl_request(
-                9064011510580525152,
-                "fidl.clientsuite",
-                msg,
-            ),
+        ret = self._send_two_way_fidl_request(
+            9064011510580525152,
+            "fidl.clientsuite",
+            msg,
+            UnionResultClassification,
         )
         return ret
 
@@ -6718,15 +6642,11 @@ class RunnerClient(FidlClient):
         msg = RunnerCallTwoWayStructPayloadErrRequest(
             target,
         )
-        ret = typing.cast(
-            collections.abc.Coroutine[
-                typing.Any, typing.Any, NonEmptyResultWithErrorClassification
-            ],
-            self._send_two_way_fidl_request(
-                3100628808697771749,
-                "fidl.clientsuite",
-                msg,
-            ),
+        ret = self._send_two_way_fidl_request(
+            3100628808697771749,
+            "fidl.clientsuite",
+            msg,
+            NonEmptyResultWithErrorClassification,
         )
         return ret
 
@@ -6742,15 +6662,11 @@ class RunnerClient(FidlClient):
             target,
             request,
         )
-        ret = typing.cast(
-            collections.abc.Coroutine[
-                typing.Any, typing.Any, EmptyResultClassification
-            ],
-            self._send_two_way_fidl_request(
-                8935324979276061509,
-                "fidl.clientsuite",
-                msg,
-            ),
+        ret = self._send_two_way_fidl_request(
+            8935324979276061509,
+            "fidl.clientsuite",
+            msg,
+            EmptyResultClassification,
         )
         return ret
 
@@ -6766,15 +6682,11 @@ class RunnerClient(FidlClient):
             target,
             request,
         )
-        ret = typing.cast(
-            collections.abc.Coroutine[
-                typing.Any, typing.Any, EmptyResultClassification
-            ],
-            self._send_two_way_fidl_request(
-                7212342332333000126,
-                "fidl.clientsuite",
-                msg,
-            ),
+        ret = self._send_two_way_fidl_request(
+            7212342332333000126,
+            "fidl.clientsuite",
+            msg,
+            EmptyResultClassification,
         )
         return ret
 
@@ -6790,15 +6702,11 @@ class RunnerClient(FidlClient):
             target,
             request,
         )
-        ret = typing.cast(
-            collections.abc.Coroutine[
-                typing.Any, typing.Any, EmptyResultClassification
-            ],
-            self._send_two_way_fidl_request(
-                5469041625659498910,
-                "fidl.clientsuite",
-                msg,
-            ),
+        ret = self._send_two_way_fidl_request(
+            5469041625659498910,
+            "fidl.clientsuite",
+            msg,
+            EmptyResultClassification,
         )
         return ret
 
@@ -6812,15 +6720,11 @@ class RunnerClient(FidlClient):
         msg = RunnerCallOneWayNoRequestRequest(
             target,
         )
-        ret = typing.cast(
-            collections.abc.Coroutine[
-                typing.Any, typing.Any, EmptyResultClassification
-            ],
-            self._send_two_way_fidl_request(
-                2645564239868906505,
-                "fidl.clientsuite",
-                msg,
-            ),
+        ret = self._send_two_way_fidl_request(
+            2645564239868906505,
+            "fidl.clientsuite",
+            msg,
+            EmptyResultClassification,
         )
         return ret
 
@@ -6836,15 +6740,11 @@ class RunnerClient(FidlClient):
             target,
             request,
         )
-        ret = typing.cast(
-            collections.abc.Coroutine[
-                typing.Any, typing.Any, EmptyResultClassification
-            ],
-            self._send_two_way_fidl_request(
-                3830919545774453792,
-                "fidl.clientsuite",
-                msg,
-            ),
+        ret = self._send_two_way_fidl_request(
+            3830919545774453792,
+            "fidl.clientsuite",
+            msg,
+            EmptyResultClassification,
         )
         return ret
 
@@ -6860,15 +6760,11 @@ class RunnerClient(FidlClient):
             target,
             request,
         )
-        ret = typing.cast(
-            collections.abc.Coroutine[
-                typing.Any, typing.Any, EmptyResultClassification
-            ],
-            self._send_two_way_fidl_request(
-                8304956294418347759,
-                "fidl.clientsuite",
-                msg,
-            ),
+        ret = self._send_two_way_fidl_request(
+            8304956294418347759,
+            "fidl.clientsuite",
+            msg,
+            EmptyResultClassification,
         )
         return ret
 
@@ -6884,15 +6780,11 @@ class RunnerClient(FidlClient):
             target,
             request,
         )
-        ret = typing.cast(
-            collections.abc.Coroutine[
-                typing.Any, typing.Any, EmptyResultClassification
-            ],
-            self._send_two_way_fidl_request(
-                702155129378639542,
-                "fidl.clientsuite",
-                msg,
-            ),
+        ret = self._send_two_way_fidl_request(
+            702155129378639542,
+            "fidl.clientsuite",
+            msg,
+            EmptyResultClassification,
         )
         return ret
 
@@ -6906,15 +6798,11 @@ class RunnerClient(FidlClient):
         msg = RunnerCallStrictOneWayRequest(
             target,
         )
-        ret = typing.cast(
-            collections.abc.Coroutine[
-                typing.Any, typing.Any, EmptyResultClassification
-            ],
-            self._send_two_way_fidl_request(
-                5682710877569041515,
-                "fidl.clientsuite",
-                msg,
-            ),
+        ret = self._send_two_way_fidl_request(
+            5682710877569041515,
+            "fidl.clientsuite",
+            msg,
+            EmptyResultClassification,
         )
         return ret
 
@@ -6928,15 +6816,11 @@ class RunnerClient(FidlClient):
         msg = RunnerCallFlexibleOneWayRequest(
             target,
         )
-        ret = typing.cast(
-            collections.abc.Coroutine[
-                typing.Any, typing.Any, EmptyResultClassification
-            ],
-            self._send_two_way_fidl_request(
-                8238193170653898775,
-                "fidl.clientsuite",
-                msg,
-            ),
+        ret = self._send_two_way_fidl_request(
+            8238193170653898775,
+            "fidl.clientsuite",
+            msg,
+            EmptyResultClassification,
         )
         return ret
 
@@ -6950,15 +6834,11 @@ class RunnerClient(FidlClient):
         msg = RunnerCallStrictTwoWayRequest(
             target,
         )
-        ret = typing.cast(
-            collections.abc.Coroutine[
-                typing.Any, typing.Any, EmptyResultClassification
-            ],
-            self._send_two_way_fidl_request(
-                2281631162221649191,
-                "fidl.clientsuite",
-                msg,
-            ),
+        ret = self._send_two_way_fidl_request(
+            2281631162221649191,
+            "fidl.clientsuite",
+            msg,
+            EmptyResultClassification,
         )
         return ret
 
@@ -6972,15 +6852,11 @@ class RunnerClient(FidlClient):
         msg = RunnerCallStrictTwoWayFieldsRequest(
             target,
         )
-        ret = typing.cast(
-            collections.abc.Coroutine[
-                typing.Any, typing.Any, NonEmptyResultClassification
-            ],
-            self._send_two_way_fidl_request(
-                8027963207886237987,
-                "fidl.clientsuite",
-                msg,
-            ),
+        ret = self._send_two_way_fidl_request(
+            8027963207886237987,
+            "fidl.clientsuite",
+            msg,
+            NonEmptyResultClassification,
         )
         return ret
 
@@ -6994,15 +6870,11 @@ class RunnerClient(FidlClient):
         msg = RunnerCallStrictTwoWayErrRequest(
             target,
         )
-        ret = typing.cast(
-            collections.abc.Coroutine[
-                typing.Any, typing.Any, EmptyResultWithErrorClassification
-            ],
-            self._send_two_way_fidl_request(
-                5897108006990753562,
-                "fidl.clientsuite",
-                msg,
-            ),
+        ret = self._send_two_way_fidl_request(
+            5897108006990753562,
+            "fidl.clientsuite",
+            msg,
+            EmptyResultWithErrorClassification,
         )
         return ret
 
@@ -7016,15 +6888,11 @@ class RunnerClient(FidlClient):
         msg = RunnerCallStrictTwoWayFieldsErrRequest(
             target,
         )
-        ret = typing.cast(
-            collections.abc.Coroutine[
-                typing.Any, typing.Any, NonEmptyResultWithErrorClassification
-            ],
-            self._send_two_way_fidl_request(
-                8044305163731028997,
-                "fidl.clientsuite",
-                msg,
-            ),
+        ret = self._send_two_way_fidl_request(
+            8044305163731028997,
+            "fidl.clientsuite",
+            msg,
+            NonEmptyResultWithErrorClassification,
         )
         return ret
 
@@ -7038,15 +6906,11 @@ class RunnerClient(FidlClient):
         msg = RunnerCallFlexibleTwoWayRequest(
             target,
         )
-        ret = typing.cast(
-            collections.abc.Coroutine[
-                typing.Any, typing.Any, EmptyResultClassification
-            ],
-            self._send_two_way_fidl_request(
-                293287060805479753,
-                "fidl.clientsuite",
-                msg,
-            ),
+        ret = self._send_two_way_fidl_request(
+            293287060805479753,
+            "fidl.clientsuite",
+            msg,
+            EmptyResultClassification,
         )
         return ret
 
@@ -7060,15 +6924,11 @@ class RunnerClient(FidlClient):
         msg = RunnerCallFlexibleTwoWayFieldsRequest(
             target,
         )
-        ret = typing.cast(
-            collections.abc.Coroutine[
-                typing.Any, typing.Any, NonEmptyResultClassification
-            ],
-            self._send_two_way_fidl_request(
-                3677636279746006765,
-                "fidl.clientsuite",
-                msg,
-            ),
+        ret = self._send_two_way_fidl_request(
+            3677636279746006765,
+            "fidl.clientsuite",
+            msg,
+            NonEmptyResultClassification,
         )
         return ret
 
@@ -7082,15 +6942,11 @@ class RunnerClient(FidlClient):
         msg = RunnerCallFlexibleTwoWayErrRequest(
             target,
         )
-        ret = typing.cast(
-            collections.abc.Coroutine[
-                typing.Any, typing.Any, EmptyResultWithErrorClassification
-            ],
-            self._send_two_way_fidl_request(
-                6763272537909111383,
-                "fidl.clientsuite",
-                msg,
-            ),
+        ret = self._send_two_way_fidl_request(
+            6763272537909111383,
+            "fidl.clientsuite",
+            msg,
+            EmptyResultWithErrorClassification,
         )
         return ret
 
@@ -7104,15 +6960,11 @@ class RunnerClient(FidlClient):
         msg = RunnerCallFlexibleTwoWayFieldsErrRequest(
             target,
         )
-        ret = typing.cast(
-            collections.abc.Coroutine[
-                typing.Any, typing.Any, NonEmptyResultWithErrorClassification
-            ],
-            self._send_two_way_fidl_request(
-                8854931429453661326,
-                "fidl.clientsuite",
-                msg,
-            ),
+        ret = self._send_two_way_fidl_request(
+            8854931429453661326,
+            "fidl.clientsuite",
+            msg,
+            NonEmptyResultWithErrorClassification,
         )
         return ret
 
@@ -7126,13 +6978,11 @@ class RunnerClient(FidlClient):
             target,
             reporter,
         )
-        ret = typing.cast(
-            collections.abc.Coroutine[typing.Any, typing.Any, None],
-            self._send_two_way_fidl_request(
-                5249652665483729643,
-                "fidl.clientsuite",
-                msg,
-            ),
+        ret = self._send_two_way_fidl_request(
+            5249652665483729643,
+            "fidl.clientsuite",
+            msg,
+            None,
         )
         return ret
 
@@ -7146,13 +6996,11 @@ class RunnerClient(FidlClient):
             target,
             reporter,
         )
-        ret = typing.cast(
-            collections.abc.Coroutine[typing.Any, typing.Any, None],
-            self._send_two_way_fidl_request(
-                889006526008657827,
-                "fidl.clientsuite",
-                msg,
-            ),
+        ret = self._send_two_way_fidl_request(
+            889006526008657827,
+            "fidl.clientsuite",
+            msg,
+            None,
         )
         return ret
 
@@ -7166,13 +7014,11 @@ class RunnerClient(FidlClient):
             target,
             reporter,
         )
-        ret = typing.cast(
-            collections.abc.Coroutine[typing.Any, typing.Any, None],
-            self._send_two_way_fidl_request(
-                8765983170380094431,
-                "fidl.clientsuite",
-                msg,
-            ),
+        ret = self._send_two_way_fidl_request(
+            8765983170380094431,
+            "fidl.clientsuite",
+            msg,
+            None,
         )
         return ret
 

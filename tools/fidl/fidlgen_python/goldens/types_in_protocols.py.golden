@@ -4160,13 +4160,11 @@ class ProtocolClient(FidlClient):
             string,
             opt_string,
         )
-        ret = typing.cast(
-            collections.abc.Coroutine[typing.Any, typing.Any, Basic],
-            self._send_two_way_fidl_request(
-                2331618702752598159,
-                "test.typesinprotocols",
-                msg,
-            ),
+        ret = self._send_two_way_fidl_request(
+            2331618702752598159,
+            "test.typesinprotocols",
+            msg,
+            Basic,
         )
         return ret
 
@@ -4176,15 +4174,11 @@ class ProtocolClient(FidlClient):
         typing.Any, typing.Any, ProtocolErrorBasicResult
     ]:
         msg = None
-        ret = typing.cast(
-            collections.abc.Coroutine[
-                typing.Any, typing.Any, ProtocolErrorBasicResult
-            ],
-            self._send_two_way_fidl_request(
-                5016634351643393939,
-                "test.typesinprotocols",
-                msg,
-            ),
+        ret = self._send_two_way_fidl_request(
+            5016634351643393939,
+            "test.typesinprotocols",
+            msg,
+            ProtocolErrorBasicResult,
         )
         return ret
 
@@ -4236,13 +4230,11 @@ class ProtocolClient(FidlClient):
             opt_struct,
             opt_union,
         )
-        ret = typing.cast(
-            collections.abc.Coroutine[typing.Any, typing.Any, Compound],
-            self._send_two_way_fidl_request(
-                8787219719097524529,
-                "test.typesinprotocols",
-                msg,
-            ),
+        ret = self._send_two_way_fidl_request(
+            8787219719097524529,
+            "test.typesinprotocols",
+            msg,
+            Compound,
         )
         return ret
 
@@ -4252,15 +4244,11 @@ class ProtocolClient(FidlClient):
         typing.Any, typing.Any, ProtocolErrorCompoundResult
     ]:
         msg = None
-        ret = typing.cast(
-            collections.abc.Coroutine[
-                typing.Any, typing.Any, ProtocolErrorCompoundResult
-            ],
-            self._send_two_way_fidl_request(
-                2990809657626249085,
-                "test.typesinprotocols",
-                msg,
-            ),
+        ret = self._send_two_way_fidl_request(
+            2990809657626249085,
+            "test.typesinprotocols",
+            msg,
+            ProtocolErrorCompoundResult,
         )
         return ret
 
@@ -4332,13 +4320,11 @@ class ProtocolClient(FidlClient):
             array_string,
             array_opt_string,
         )
-        ret = typing.cast(
-            collections.abc.Coroutine[typing.Any, typing.Any, ArrayBasic],
-            self._send_two_way_fidl_request(
-                5309034178175279380,
-                "test.typesinprotocols",
-                msg,
-            ),
+        ret = self._send_two_way_fidl_request(
+            5309034178175279380,
+            "test.typesinprotocols",
+            msg,
+            ArrayBasic,
         )
         return ret
 
@@ -4348,15 +4334,11 @@ class ProtocolClient(FidlClient):
         typing.Any, typing.Any, ProtocolErrorArrayBasicResult
     ]:
         msg = None
-        ret = typing.cast(
-            collections.abc.Coroutine[
-                typing.Any, typing.Any, ProtocolErrorArrayBasicResult
-            ],
-            self._send_two_way_fidl_request(
-                1084731895342694265,
-                "test.typesinprotocols",
-                msg,
-            ),
+        ret = self._send_two_way_fidl_request(
+            1084731895342694265,
+            "test.typesinprotocols",
+            msg,
+            ProtocolErrorArrayBasicResult,
         )
         return ret
 
@@ -4408,13 +4390,11 @@ class ProtocolClient(FidlClient):
             array_opt_struct,
             array_opt_union,
         )
-        ret = typing.cast(
-            collections.abc.Coroutine[typing.Any, typing.Any, ArrayCompound],
-            self._send_two_way_fidl_request(
-                849744466051983995,
-                "test.typesinprotocols",
-                msg,
-            ),
+        ret = self._send_two_way_fidl_request(
+            849744466051983995,
+            "test.typesinprotocols",
+            msg,
+            ArrayCompound,
         )
         return ret
 
@@ -4424,15 +4404,11 @@ class ProtocolClient(FidlClient):
         typing.Any, typing.Any, ProtocolErrorArrayCompoundResult
     ]:
         msg = None
-        ret = typing.cast(
-            collections.abc.Coroutine[
-                typing.Any, typing.Any, ProtocolErrorArrayCompoundResult
-            ],
-            self._send_two_way_fidl_request(
-                5919277476782807556,
-                "test.typesinprotocols",
-                msg,
-            ),
+        ret = self._send_two_way_fidl_request(
+            5919277476782807556,
+            "test.typesinprotocols",
+            msg,
+            ProtocolErrorArrayCompoundResult,
         )
         return ret
 
@@ -4504,13 +4480,11 @@ class ProtocolClient(FidlClient):
             vector_string,
             vector_opt_string,
         )
-        ret = typing.cast(
-            collections.abc.Coroutine[typing.Any, typing.Any, VectorBasic],
-            self._send_two_way_fidl_request(
-                8674156353091415668,
-                "test.typesinprotocols",
-                msg,
-            ),
+        ret = self._send_two_way_fidl_request(
+            8674156353091415668,
+            "test.typesinprotocols",
+            msg,
+            VectorBasic,
         )
         return ret
 
@@ -4520,15 +4494,11 @@ class ProtocolClient(FidlClient):
         typing.Any, typing.Any, ProtocolErrorVectorBasicResult
     ]:
         msg = None
-        ret = typing.cast(
-            collections.abc.Coroutine[
-                typing.Any, typing.Any, ProtocolErrorVectorBasicResult
-            ],
-            self._send_two_way_fidl_request(
-                875941614196965234,
-                "test.typesinprotocols",
-                msg,
-            ),
+        ret = self._send_two_way_fidl_request(
+            875941614196965234,
+            "test.typesinprotocols",
+            msg,
+            ProtocolErrorVectorBasicResult,
         )
         return ret
 
@@ -4580,13 +4550,11 @@ class ProtocolClient(FidlClient):
             vector_opt_struct,
             vector_opt_union,
         )
-        ret = typing.cast(
-            collections.abc.Coroutine[typing.Any, typing.Any, VectorCompound],
-            self._send_two_way_fidl_request(
-                3968024057912959924,
-                "test.typesinprotocols",
-                msg,
-            ),
+        ret = self._send_two_way_fidl_request(
+            3968024057912959924,
+            "test.typesinprotocols",
+            msg,
+            VectorCompound,
         )
         return ret
 
@@ -4596,15 +4564,11 @@ class ProtocolClient(FidlClient):
         typing.Any, typing.Any, ProtocolErrorVectorCompoundResult
     ]:
         msg = None
-        ret = typing.cast(
-            collections.abc.Coroutine[
-                typing.Any, typing.Any, ProtocolErrorVectorCompoundResult
-            ],
-            self._send_two_way_fidl_request(
-                8506780203315865989,
-                "test.typesinprotocols",
-                msg,
-            ),
+        ret = self._send_two_way_fidl_request(
+            8506780203315865989,
+            "test.typesinprotocols",
+            msg,
+            ProtocolErrorVectorCompoundResult,
         )
         return ret
 
@@ -4648,13 +4612,11 @@ class ProtocolClient(FidlClient):
             opt_vector_struct,
             opt_vector_opt_struct,
         )
-        ret = typing.cast(
-            collections.abc.Coroutine[typing.Any, typing.Any, VectorOptional],
-            self._send_two_way_fidl_request(
-                1030024737742222323,
-                "test.typesinprotocols",
-                msg,
-            ),
+        ret = self._send_two_way_fidl_request(
+            1030024737742222323,
+            "test.typesinprotocols",
+            msg,
+            VectorOptional,
         )
         return ret
 
@@ -4664,15 +4626,11 @@ class ProtocolClient(FidlClient):
         typing.Any, typing.Any, ProtocolErrorVectorOptionalResult
     ]:
         msg = None
-        ret = typing.cast(
-            collections.abc.Coroutine[
-                typing.Any, typing.Any, ProtocolErrorVectorOptionalResult
-            ],
-            self._send_two_way_fidl_request(
-                6406191217027936606,
-                "test.typesinprotocols",
-                msg,
-            ),
+        ret = self._send_two_way_fidl_request(
+            6406191217027936606,
+            "test.typesinprotocols",
+            msg,
+            ProtocolErrorVectorOptionalResult,
         )
         return ret
 
@@ -4712,15 +4670,11 @@ class ProtocolClient(FidlClient):
             vector_array_uint8,
             vector_vector_uint8,
         )
-        ret = typing.cast(
-            collections.abc.Coroutine[
-                typing.Any, typing.Any, ArrayVectorNested
-            ],
-            self._send_two_way_fidl_request(
-                5351275678438791132,
-                "test.typesinprotocols",
-                msg,
-            ),
+        ret = self._send_two_way_fidl_request(
+            5351275678438791132,
+            "test.typesinprotocols",
+            msg,
+            ArrayVectorNested,
         )
         return ret
 
@@ -4730,15 +4684,11 @@ class ProtocolClient(FidlClient):
         typing.Any, typing.Any, ProtocolErrorArrayVectorNestedResult
     ]:
         msg = None
-        ret = typing.cast(
-            collections.abc.Coroutine[
-                typing.Any, typing.Any, ProtocolErrorArrayVectorNestedResult
-            ],
-            self._send_two_way_fidl_request(
-                9085604921605802151,
-                "test.typesinprotocols",
-                msg,
-            ),
+        ret = self._send_two_way_fidl_request(
+            9085604921605802151,
+            "test.typesinprotocols",
+            msg,
+            ProtocolErrorArrayVectorNestedResult,
         )
         return ret
 
@@ -4870,13 +4820,11 @@ class ProtocolClient(FidlClient):
             vector_table,
             vector_union,
         )
-        ret = typing.cast(
-            collections.abc.Coroutine[typing.Any, typing.Any, Resource],
-            self._send_two_way_fidl_request(
-                1802709005492464987,
-                "test.typesinprotocols",
-                msg,
-            ),
+        ret = self._send_two_way_fidl_request(
+            1802709005492464987,
+            "test.typesinprotocols",
+            msg,
+            Resource,
         )
         return ret
 
@@ -4886,15 +4834,11 @@ class ProtocolClient(FidlClient):
         typing.Any, typing.Any, ProtocolErrorResourceResult
     ]:
         msg = None
-        ret = typing.cast(
-            collections.abc.Coroutine[
-                typing.Any, typing.Any, ProtocolErrorResourceResult
-            ],
-            self._send_two_way_fidl_request(
-                6568609240497354166,
-                "test.typesinprotocols",
-                msg,
-            ),
+        ret = self._send_two_way_fidl_request(
+            6568609240497354166,
+            "test.typesinprotocols",
+            msg,
+            ProtocolErrorResourceResult,
         )
         return ret
 

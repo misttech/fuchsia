@@ -2384,15 +2384,11 @@ class ChannelProtocolClient(FidlClient):
             a,
             b,
         )
-        ret = typing.cast(
-            collections.abc.Coroutine[
-                typing.Any, typing.Any, ChannelProtocolMethodBResponse
-            ],
-            self._send_two_way_fidl_request(
-                8903004957800778182,
-                "test.protocols",
-                msg,
-            ),
+        ret = self._send_two_way_fidl_request(
+            8903004957800778182,
+            "test.protocols",
+            msg,
+            ChannelProtocolMethodBResponse,
         )
         return ret
 
@@ -2404,13 +2400,11 @@ class ChannelProtocolClient(FidlClient):
         msg = ChannelProtocolTakeHandleRequest(
             h,
         )
-        ret = typing.cast(
-            collections.abc.Coroutine[typing.Any, typing.Any, None],
-            self._send_two_way_fidl_request(
-                591935489944717925,
-                "test.protocols",
-                msg,
-            ),
+        ret = self._send_two_way_fidl_request(
+            591935489944717925,
+            "test.protocols",
+            msg,
+            None,
         )
         return ret
 
@@ -2424,15 +2418,11 @@ class ChannelProtocolClient(FidlClient):
         msg = ChannelProtocolMutateSocketRequest(
             a,
         )
-        ret = typing.cast(
-            collections.abc.Coroutine[
-                typing.Any, typing.Any, ChannelProtocolMutateSocketResponse
-            ],
-            self._send_two_way_fidl_request(
-                7411742788430590287,
-                "test.protocols",
-                msg,
-            ),
+        ret = self._send_two_way_fidl_request(
+            7411742788430590287,
+            "test.protocols",
+            msg,
+            ChannelProtocolMutateSocketResponse,
         )
         return ret
 
@@ -2645,17 +2635,11 @@ class HandleRightsProtocolClient(FidlClient):
         msg = HandleRightsProtocolResponseMethodRequest(
             h,
         )
-        ret = typing.cast(
-            collections.abc.Coroutine[
-                typing.Any,
-                typing.Any,
-                HandleRightsProtocolResponseMethodResponse,
-            ],
-            self._send_two_way_fidl_request(
-                5956276128041940295,
-                "test.protocols",
-                msg,
-            ),
+        ret = self._send_two_way_fidl_request(
+            5956276128041940295,
+            "test.protocols",
+            msg,
+            HandleRightsProtocolResponseMethodResponse,
         )
         return ret
 
@@ -2839,15 +2823,11 @@ class MethodWithUnionClient(FidlClient):
         msg = MethodWithUnionUnionMethodRequest(
             u,
         )
-        ret = typing.cast(
-            collections.abc.Coroutine[
-                typing.Any, typing.Any, MethodWithUnionUnionMethodResponse
-            ],
-            self._send_two_way_fidl_request(
-                4124874338266649112,
-                "test.protocols",
-                msg,
-            ),
+        ret = self._send_two_way_fidl_request(
+            4124874338266649112,
+            "test.protocols",
+            msg,
+            MethodWithUnionUnionMethodResponse,
         )
         return ret
 
@@ -3066,13 +3046,11 @@ class WithAndWithoutRequestResponseClient(FidlClient):
         self,
     ) -> collections.abc.Coroutine[typing.Any, typing.Any, None]:
         msg = None
-        ret = typing.cast(
-            collections.abc.Coroutine[typing.Any, typing.Any, None],
-            self._send_two_way_fidl_request(
-                1631193469798418024,
-                "test.protocols",
-                msg,
-            ),
+        ret = self._send_two_way_fidl_request(
+            1631193469798418024,
+            "test.protocols",
+            msg,
+            None,
         )
         return ret
 
@@ -3084,17 +3062,11 @@ class WithAndWithoutRequestResponseClient(FidlClient):
         WithAndWithoutRequestResponseNoRequestWithResponseResponse,
     ]:
         msg = None
-        ret = typing.cast(
-            collections.abc.Coroutine[
-                typing.Any,
-                typing.Any,
-                WithAndWithoutRequestResponseNoRequestWithResponseResponse,
-            ],
-            self._send_two_way_fidl_request(
-                9037369643591427517,
-                "test.protocols",
-                msg,
-            ),
+        ret = self._send_two_way_fidl_request(
+            9037369643591427517,
+            "test.protocols",
+            msg,
+            WithAndWithoutRequestResponseNoRequestWithResponseResponse,
         )
         return ret
 
@@ -3122,13 +3094,11 @@ class WithAndWithoutRequestResponseClient(FidlClient):
         msg = WithAndWithoutRequestResponseWithRequestEmptyResponseRequest(
             arg,
         )
-        ret = typing.cast(
-            collections.abc.Coroutine[typing.Any, typing.Any, None],
-            self._send_two_way_fidl_request(
-                2877322062572412767,
-                "test.protocols",
-                msg,
-            ),
+        ret = self._send_two_way_fidl_request(
+            2877322062572412767,
+            "test.protocols",
+            msg,
+            None,
         )
         return ret
 
@@ -3144,17 +3114,11 @@ class WithAndWithoutRequestResponseClient(FidlClient):
         msg = WithAndWithoutRequestResponseWithRequestWithResponseRequest(
             arg,
         )
-        ret = typing.cast(
-            collections.abc.Coroutine[
-                typing.Any,
-                typing.Any,
-                WithAndWithoutRequestResponseWithRequestWithResponseResponse,
-            ],
-            self._send_two_way_fidl_request(
-                6417226585456833969,
-                "test.protocols",
-                msg,
-            ),
+        ret = self._send_two_way_fidl_request(
+            6417226585456833969,
+            "test.protocols",
+            msg,
+            WithAndWithoutRequestResponseWithRequestWithResponseResponse,
         )
         return ret
 
@@ -3353,15 +3317,11 @@ class WithErrorSyntaxClient(FidlClient):
         typing.Any, typing.Any, WithErrorSyntaxResponseAsStructResult
     ]:
         msg = None
-        ret = typing.cast(
-            collections.abc.Coroutine[
-                typing.Any, typing.Any, WithErrorSyntaxResponseAsStructResult
-            ],
-            self._send_two_way_fidl_request(
-                268248568430741139,
-                "test.protocols",
-                msg,
-            ),
+        ret = self._send_two_way_fidl_request(
+            268248568430741139,
+            "test.protocols",
+            msg,
+            WithErrorSyntaxResponseAsStructResult,
         )
         return ret
 
@@ -3371,15 +3331,11 @@ class WithErrorSyntaxClient(FidlClient):
         typing.Any, typing.Any, WithErrorSyntaxErrorAsPrimitiveResult
     ]:
         msg = None
-        ret = typing.cast(
-            collections.abc.Coroutine[
-                typing.Any, typing.Any, WithErrorSyntaxErrorAsPrimitiveResult
-            ],
-            self._send_two_way_fidl_request(
-                6930994461233198567,
-                "test.protocols",
-                msg,
-            ),
+        ret = self._send_two_way_fidl_request(
+            6930994461233198567,
+            "test.protocols",
+            msg,
+            WithErrorSyntaxErrorAsPrimitiveResult,
         )
         return ret
 
@@ -3389,15 +3345,11 @@ class WithErrorSyntaxClient(FidlClient):
         typing.Any, typing.Any, WithErrorSyntaxErrorAsEnumResult
     ]:
         msg = None
-        ret = typing.cast(
-            collections.abc.Coroutine[
-                typing.Any, typing.Any, WithErrorSyntaxErrorAsEnumResult
-            ],
-            self._send_two_way_fidl_request(
-                5491891352371277635,
-                "test.protocols",
-                msg,
-            ),
+        ret = self._send_two_way_fidl_request(
+            5491891352371277635,
+            "test.protocols",
+            msg,
+            WithErrorSyntaxErrorAsEnumResult,
         )
         return ret
 
@@ -3407,15 +3359,11 @@ class WithErrorSyntaxClient(FidlClient):
         typing.Any, typing.Any, WithErrorSyntaxHandleInResultResult
     ]:
         msg = None
-        ret = typing.cast(
-            collections.abc.Coroutine[
-                typing.Any, typing.Any, WithErrorSyntaxHandleInResultResult
-            ],
-            self._send_two_way_fidl_request(
-                1371676333068455103,
-                "test.protocols",
-                msg,
-            ),
+        ret = self._send_two_way_fidl_request(
+            1371676333068455103,
+            "test.protocols",
+            msg,
+            WithErrorSyntaxHandleInResultResult,
         )
         return ret
 
@@ -3538,15 +3486,11 @@ class WithProtocolEndsClient(FidlClient):
         msg = WithProtocolEndsClientEndsRequest(
             in_,
         )
-        ret = typing.cast(
-            collections.abc.Coroutine[
-                typing.Any, typing.Any, WithProtocolEndsClientEndsResponse
-            ],
-            self._send_two_way_fidl_request(
-                5870448041025163330,
-                "test.protocols",
-                msg,
-            ),
+        ret = self._send_two_way_fidl_request(
+            5870448041025163330,
+            "test.protocols",
+            msg,
+            WithProtocolEndsClientEndsResponse,
         )
         return ret
 
@@ -3560,15 +3504,11 @@ class WithProtocolEndsClient(FidlClient):
         msg = WithProtocolEndsServerEndsRequest(
             in_,
         )
-        ret = typing.cast(
-            collections.abc.Coroutine[
-                typing.Any, typing.Any, WithProtocolEndsServerEndsResponse
-            ],
-            self._send_two_way_fidl_request(
-                8115535094437022259,
-                "test.protocols",
-                msg,
-            ),
+        ret = self._send_two_way_fidl_request(
+            8115535094437022259,
+            "test.protocols",
+            msg,
+            WithProtocolEndsServerEndsResponse,
         )
         return ret
 
@@ -3582,17 +3522,11 @@ class WithProtocolEndsClient(FidlClient):
         msg = WithProtocolEndsStructContainingEndsRequest(
             in_,
         )
-        ret = typing.cast(
-            collections.abc.Coroutine[
-                typing.Any,
-                typing.Any,
-                WithProtocolEndsStructContainingEndsResponse,
-            ],
-            self._send_two_way_fidl_request(
-                4076866772260025813,
-                "test.protocols",
-                msg,
-            ),
+        ret = self._send_two_way_fidl_request(
+            4076866772260025813,
+            "test.protocols",
+            msg,
+            WithProtocolEndsStructContainingEndsResponse,
         )
         return ret
 

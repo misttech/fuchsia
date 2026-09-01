@@ -524,17 +524,11 @@ class ProtocolClient(FidlClient):
         msg = ProtocolRequestStrictResponseFlexibleRequest(
             s,
         )
-        ret = typing.cast(
-            collections.abc.Coroutine[
-                typing.Any,
-                typing.Any,
-                ProtocolRequestStrictResponseFlexibleResponse,
-            ],
-            self._send_two_way_fidl_request(
-                700529454616207123,
-                "test.requestflexibleenvelope",
-                msg,
-            ),
+        ret = self._send_two_way_fidl_request(
+            700529454616207123,
+            "test.requestflexibleenvelope",
+            msg,
+            ProtocolRequestStrictResponseFlexibleResponse,
         )
         return ret
 
@@ -548,17 +542,11 @@ class ProtocolClient(FidlClient):
         msg = ProtocolRequestFlexibleResponseStrictRequest(
             s,
         )
-        ret = typing.cast(
-            collections.abc.Coroutine[
-                typing.Any,
-                typing.Any,
-                ProtocolRequestFlexibleResponseStrictResponse,
-            ],
-            self._send_two_way_fidl_request(
-                5191655763393883319,
-                "test.requestflexibleenvelope",
-                msg,
-            ),
+        ret = self._send_two_way_fidl_request(
+            5191655763393883319,
+            "test.requestflexibleenvelope",
+            msg,
+            ProtocolRequestFlexibleResponseStrictResponse,
         )
         return ret
 

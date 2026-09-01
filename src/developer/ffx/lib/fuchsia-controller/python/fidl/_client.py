@@ -8,12 +8,14 @@ import logging
 import struct
 from collections.abc import Coroutine
 from inspect import getframeinfo, stack
-from typing import Any, Dict, Set
+from typing import Any, Dict, Set, Type, TypeVar, overload
 
 import fuchsia_controller_py as fc
 
 from ._fidl_common import (
     FIDL_EPITAPH_ORDINAL,
+    Decodable,
+    Encodable,
     EpitaphError,
     FidlMessage,
     FidlMeta,
@@ -28,6 +30,9 @@ from ._registry import get_registered_method
 
 # The active TXID (mutable).
 TXID: TXID_Type = 0
+
+T = TypeVar("T", bound=Decodable)
+
 
 # The TXID of a FIDL event.
 EVENT_TXID: TXID_Type = 0
@@ -97,13 +102,27 @@ class FidlClient(metaclass=FidlMeta):
         if txid != EVENT_TXID:
             self.pending_txids.remove(txid)
 
-    def _decode(self, txid: TXID_Type, msg: FidlMessage) -> Any:
+    def _decode(
+        self,
+        txid: TXID_Type,
+        msg: FidlMessage,
+        response_cls: Type[T] | None,
+        expected_ordinal: int | None = None,
+    ) -> T | None:
         self._clean_staging(txid)
-        ordinal = parse_ordinal(msg)
-        method = get_registered_method(ordinal)
-        if method is None:
-            raise RuntimeError(f"Unknown ordinal {ordinal}")
-        _, response_cls = method
+        if expected_ordinal is not None:
+            actual_ordinal = parse_ordinal(msg)
+            if actual_ordinal != expected_ordinal:
+                type_name = (
+                    response_cls.__name__
+                    if response_cls is not None
+                    else "None"
+                )
+                raise RuntimeError(
+                    f"Ordinal mismatch when decoding {type_name}: expected {expected_ordinal}, got {actual_ordinal}"
+                )
+        if response_cls is None:
+            return None
 
         handles = msg[1]
         verified_handles: list[int] = [0] * len(handles)
@@ -113,12 +132,9 @@ class FidlClient(metaclass=FidlMeta):
                 verified_handles[i] = hdl[1]
             else:
                 verified_handles[i] = hdl.take()
-
-        if response_cls is not None:
-            return response_cls.decode(
-                msg[0][_FIDL_MESSAGE_HEADER_SIZE:], verified_handles
-            )
-        return None
+        return response_cls.decode(
+            msg[0][_FIDL_MESSAGE_HEADER_SIZE:], verified_handles
+        )
 
     async def next_event(self) -> FidlMessage | None:
         """Attempts to read the next FIDL event from this client.
@@ -162,10 +178,12 @@ class FidlClient(metaclass=FidlMeta):
         if self.epitaph_received is not None:
             raise self.epitaph_received
 
-    # TODO(https://fxbug.dev/493309088): This (and many of the other `-> Any` return
-    # values should be returning a specific type, as we're decoding a nested
-    # dictionary type that is specific to FIDL.
-    async def _read_and_decode(self, txid: int) -> Any:
+    async def _read_and_decode(
+        self,
+        txid: int,
+        response_cls: Type[T] | None = None,
+        expected_ordinal: int | None = None,
+    ) -> T | FidlMessage | None:
         if txid not in self.staged_messages:
             self.staged_messages[txid] = asyncio.Queue(1)
         if self._channel is None:
@@ -183,7 +201,9 @@ class FidlClient(metaclass=FidlMeta):
                     recvd_txid = parse_txid(msg)
                     if recvd_txid == txid:
                         if txid != EVENT_TXID:
-                            return self._decode(txid, msg)
+                            return self._decode(
+                                txid, msg, response_cls, expected_ordinal
+                            )
                         else:
                             self._clean_staging(txid)
                             return msg
@@ -251,7 +271,9 @@ class FidlClient(metaclass=FidlMeta):
                         self._channel_waker.post_ready(self._channel)
 
                     if txid != EVENT_TXID:
-                        return self._decode(txid, msg)
+                        return self._decode(
+                            txid, msg, response_cls, expected_ordinal
+                        )
                     else:
                         self._clean_staging(txid)
                         return msg
@@ -264,18 +286,48 @@ class FidlClient(metaclass=FidlMeta):
 
                 # If only read_ready_task reached here, we just loop again and try to read().
 
+    # Overload for two-way FIDL requests with a response payload.
+    # Enables static type checking and IDE autocomplete to infer the exact response
+    # object type (e.g. `Coroutine[Any, Any, EchoResponse]`) without requiring
+    # `typing.cast` or leaving the return type as `Any` or `T | None`.
+    # See: https://mypy.readthedocs.io/en/stable/more_types.html#type-checking-calls-to-overloads
+    @overload
     def _send_two_way_fidl_request(
         self,
         ordinal: int,
         library: str,
-        msg_obj: Any,
-    ) -> Coroutine[Any, Any, Any]:
+        msg_obj: Encodable | None,
+        response_cls: Type[T],
+    ) -> Coroutine[Any, Any, T]:
+        ...
+
+    # Overload for two-way FIDL requests with an empty response payload (-> ()).
+    # Returns `Coroutine[..., None]` statically rather than `Coroutine[..., T | None]`,
+    # allowing IDEs and type checkers to know the call resolves to `None`.
+    @overload
+    def _send_two_way_fidl_request(
+        self,
+        ordinal: int,
+        library: str,
+        msg_obj: Encodable | None,
+        response_cls: None = None,
+    ) -> Coroutine[Any, Any, None]:
+        ...
+
+    def _send_two_way_fidl_request(
+        self,
+        ordinal: int,
+        library: str,
+        msg_obj: Encodable | None,
+        response_cls: Type[T] | None = None,
+    ) -> Coroutine[Any, Any, T | None]:
         """Sends a two-way asynchronous FIDL request.
 
         Args:
             ordinal: The method ordinal (for encoding).
             library: The FIDL library from which this method ordinal exists.
             msg_obj: The object being sent.
+            response_cls: The class of the response object.
 
         Returns:
             The object from the two-way function.
@@ -286,12 +338,18 @@ class FidlClient(metaclass=FidlMeta):
         self._send_one_way_fidl_request(TXID, ordinal, library, msg_obj)
 
         async def result(txid: int) -> Any:
-            return await self._read_and_decode(txid)
+            return await self._read_and_decode(
+                txid, response_cls, expected_ordinal=ordinal
+            )
 
         return result(TXID)
 
     def _send_one_way_fidl_request(
-        self, txid: int, ordinal: int, library: str, msg_obj: Any
+        self,
+        txid: int,
+        ordinal: int,
+        library: str,
+        msg_obj: Encodable | None,
     ) -> None:
         """Sends a synchronous one-way FIDL request.
 

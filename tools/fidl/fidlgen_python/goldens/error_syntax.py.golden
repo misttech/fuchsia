@@ -348,17 +348,11 @@ class ExampleUseOfErrorSyntaxClient(FidlClient):
         msg = fidl_test_errorsyntax_parent.ParentUsesErrorSyntaxComposedCallWhichMayFailRequest(
             s,
         )
-        ret = typing.cast(
-            collections.abc.Coroutine[
-                typing.Any,
-                typing.Any,
-                fidl_test_errorsyntax_parent.ParentUsesErrorSyntaxComposedCallWhichMayFailResult,
-            ],
-            self._send_two_way_fidl_request(
-                3565108794310607393,
-                "test.errorsyntax",
-                msg,
-            ),
+        ret = self._send_two_way_fidl_request(
+            3565108794310607393,
+            "test.errorsyntax",
+            msg,
+            fidl_test_errorsyntax_parent.ParentUsesErrorSyntaxComposedCallWhichMayFailResult,
         )
         return ret
 
@@ -372,17 +366,11 @@ class ExampleUseOfErrorSyntaxClient(FidlClient):
         msg = ExampleUseOfErrorSyntaxCallWhichMayFailRequest(
             s,
         )
-        ret = typing.cast(
-            collections.abc.Coroutine[
-                typing.Any,
-                typing.Any,
-                ExampleUseOfErrorSyntaxCallWhichMayFailResult,
-            ],
-            self._send_two_way_fidl_request(
-                3757408930698888354,
-                "test.errorsyntax",
-                msg,
-            ),
+        ret = self._send_two_way_fidl_request(
+            3757408930698888354,
+            "test.errorsyntax",
+            msg,
+            ExampleUseOfErrorSyntaxCallWhichMayFailResult,
         )
         return ret
 

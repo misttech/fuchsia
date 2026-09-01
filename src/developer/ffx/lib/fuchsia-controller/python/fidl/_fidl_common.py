@@ -183,3 +183,14 @@ class Unsupported:
 
     def __init__(self, _unsupported: typing.Self) -> None:
         raise NotImplementedError
+
+
+class Encodable(typing.Protocol):
+    def encode(self) -> tuple[bytes, list[typing.Any]]:
+        ...
+
+
+class Decodable(typing.Protocol):
+    @classmethod
+    def decode(cls, data: bytes, handles: list[int]) -> typing.Self:
+        ...

@@ -146,13 +146,11 @@ class SubClient(FidlClient):
         msg = SuperFooRequest(
             s,
         )
-        ret = typing.cast(
-            collections.abc.Coroutine[typing.Any, typing.Any, SuperFooResponse],
-            self._send_two_way_fidl_request(
-                7540745593380780216,
-                "test.inheritance",
-                msg,
-            ),
+        ret = self._send_two_way_fidl_request(
+            7540745593380780216,
+            "test.inheritance",
+            msg,
+            SuperFooResponse,
         )
         return ret
 
@@ -212,13 +210,11 @@ class SuperClient(FidlClient):
         msg = SuperFooRequest(
             s,
         )
-        ret = typing.cast(
-            collections.abc.Coroutine[typing.Any, typing.Any, SuperFooResponse],
-            self._send_two_way_fidl_request(
-                7540745593380780216,
-                "test.inheritance",
-                msg,
-            ),
+        ret = self._send_two_way_fidl_request(
+            7540745593380780216,
+            "test.inheritance",
+            msg,
+            SuperFooResponse,
         )
         return ret
 

@@ -414,15 +414,11 @@ class CalculatorClient(FidlClient):
             a,
             b,
         )
-        ret = typing.cast(
-            collections.abc.Coroutine[
-                typing.Any, typing.Any, CalculatorAddResponse
-            ],
-            self._send_two_way_fidl_request(
-                7893336915889044876,
-                "test.newtype",
-                msg,
-            ),
+        ret = self._send_two_way_fidl_request(
+            7893336915889044876,
+            "test.newtype",
+            msg,
+            CalculatorAddResponse,
         )
         return ret
 

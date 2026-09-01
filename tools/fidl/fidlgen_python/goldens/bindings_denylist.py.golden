@@ -1590,15 +1590,11 @@ class DenyEachBindingClient(FidlClient):
         msg = DenyEachBindingOnlyDenyCppRequest(
             a,
         )
-        ret = typing.cast(
-            collections.abc.Coroutine[
-                typing.Any, typing.Any, DenyEachBindingOnlyDenyCppResult
-            ],
-            self._send_two_way_fidl_request(
-                2957648440141224850,
-                "test.bindingsdenylist",
-                msg,
-            ),
+        ret = self._send_two_way_fidl_request(
+            2957648440141224850,
+            "test.bindingsdenylist",
+            msg,
+            DenyEachBindingOnlyDenyCppResult,
         )
         return ret
 
@@ -1612,15 +1608,11 @@ class DenyEachBindingClient(FidlClient):
         msg = DenyEachBindingOnlyDenyDartRequest(
             a,
         )
-        ret = typing.cast(
-            collections.abc.Coroutine[
-                typing.Any, typing.Any, DenyEachBindingOnlyDenyDartResult
-            ],
-            self._send_two_way_fidl_request(
-                8446571910689294295,
-                "test.bindingsdenylist",
-                msg,
-            ),
+        ret = self._send_two_way_fidl_request(
+            8446571910689294295,
+            "test.bindingsdenylist",
+            msg,
+            DenyEachBindingOnlyDenyDartResult,
         )
         return ret
 
@@ -1634,15 +1626,11 @@ class DenyEachBindingClient(FidlClient):
         msg = DenyEachBindingOnlyDenyGoRequest(
             a,
         )
-        ret = typing.cast(
-            collections.abc.Coroutine[
-                typing.Any, typing.Any, DenyEachBindingOnlyDenyGoResult
-            ],
-            self._send_two_way_fidl_request(
-                7311125300308839833,
-                "test.bindingsdenylist",
-                msg,
-            ),
+        ret = self._send_two_way_fidl_request(
+            7311125300308839833,
+            "test.bindingsdenylist",
+            msg,
+            DenyEachBindingOnlyDenyGoResult,
         )
         return ret
 
@@ -1656,15 +1644,11 @@ class DenyEachBindingClient(FidlClient):
         msg = DenyEachBindingOnlyDenyRustRequest(
             a,
         )
-        ret = typing.cast(
-            collections.abc.Coroutine[
-                typing.Any, typing.Any, DenyEachBindingOnlyDenyRustResult
-            ],
-            self._send_two_way_fidl_request(
-                3719805222870932662,
-                "test.bindingsdenylist",
-                msg,
-            ),
+        ret = self._send_two_way_fidl_request(
+            3719805222870932662,
+            "test.bindingsdenylist",
+            msg,
+            DenyEachBindingOnlyDenyRustResult,
         )
         return ret
 
@@ -1678,15 +1662,11 @@ class DenyEachBindingClient(FidlClient):
         msg = DenyEachBindingOnlyDenySyzkallerRequest(
             a,
         )
-        ret = typing.cast(
-            collections.abc.Coroutine[
-                typing.Any, typing.Any, DenyEachBindingOnlyDenySyzkallerResult
-            ],
-            self._send_two_way_fidl_request(
-                2319043834522757514,
-                "test.bindingsdenylist",
-                msg,
-            ),
+        ret = self._send_two_way_fidl_request(
+            2319043834522757514,
+            "test.bindingsdenylist",
+            msg,
+            DenyEachBindingOnlyDenySyzkallerResult,
         )
         return ret
 

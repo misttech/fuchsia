@@ -60,15 +60,11 @@ class TopClient(FidlClient):
         typing.Any, typing.Any, fidl_test_middle.MiddleGetFooResponse
     ]:
         msg = None
-        ret = typing.cast(
-            collections.abc.Coroutine[
-                typing.Any, typing.Any, fidl_test_middle.MiddleGetFooResponse
-            ],
-            self._send_two_way_fidl_request(
-                4619180266423108403,
-                "test.foreigntypeinresponseusedthroughcompose",
-                msg,
-            ),
+        ret = self._send_two_way_fidl_request(
+            4619180266423108403,
+            "test.foreigntypeinresponseusedthroughcompose",
+            msg,
+            fidl_test_middle.MiddleGetFooResponse,
         )
         return ret
 

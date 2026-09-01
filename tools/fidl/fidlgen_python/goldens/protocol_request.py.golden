@@ -312,15 +312,11 @@ class ParentClient(FidlClient):
         typing.Any, typing.Any, ParentGetChildResponse
     ]:
         msg = None
-        ret = typing.cast(
-            collections.abc.Coroutine[
-                typing.Any, typing.Any, ParentGetChildResponse
-            ],
-            self._send_two_way_fidl_request(
-                881818649151440699,
-                "test.protocolrequest",
-                msg,
-            ),
+        ret = self._send_two_way_fidl_request(
+            881818649151440699,
+            "test.protocolrequest",
+            msg,
+            ParentGetChildResponse,
         )
         return ret
 
@@ -330,15 +326,11 @@ class ParentClient(FidlClient):
         typing.Any, typing.Any, ParentGetChildRequestResponse
     ]:
         msg = None
-        ret = typing.cast(
-            collections.abc.Coroutine[
-                typing.Any, typing.Any, ParentGetChildRequestResponse
-            ],
-            self._send_two_way_fidl_request(
-                1096855814967598201,
-                "test.protocolrequest",
-                msg,
-            ),
+        ret = self._send_two_way_fidl_request(
+            1096855814967598201,
+            "test.protocolrequest",
+            msg,
+            ParentGetChildRequestResponse,
         )
         return ret
 

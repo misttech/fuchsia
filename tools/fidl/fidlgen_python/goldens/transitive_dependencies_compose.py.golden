@@ -59,15 +59,11 @@ class TopClient(FidlClient):
         typing.Any, typing.Any, fidl_test_bottom.BottomGetFooResponse
     ]:
         msg = None
-        ret = typing.cast(
-            collections.abc.Coroutine[
-                typing.Any, typing.Any, fidl_test_bottom.BottomGetFooResponse
-            ],
-            self._send_two_way_fidl_request(
-                2618685789258237543,
-                "test.transitivedependenciescompose",
-                msg,
-            ),
+        ret = self._send_two_way_fidl_request(
+            2618685789258237543,
+            "test.transitivedependenciescompose",
+            msg,
+            fidl_test_bottom.BottomGetFooResponse,
         )
         return ret
 

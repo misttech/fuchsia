@@ -648,15 +648,11 @@ class SimpleProtocolClient(FidlClient):
             a,
             b,
         )
-        ret = typing.cast(
-            collections.abc.Coroutine[
-                typing.Any, typing.Any, SimpleProtocolAddResponse
-            ],
-            self._send_two_way_fidl_request(
-                9142761280038437494,
-                "test.nullable",
-                msg,
-            ),
+        ret = self._send_two_way_fidl_request(
+            9142761280038437494,
+            "test.nullable",
+            msg,
+            SimpleProtocolAddResponse,
         )
         return ret
 

@@ -1484,15 +1484,11 @@ class StatusProtocolClient(FidlClient):
         msg = StatusProtocolARequest(
             arg,
         )
-        ret = typing.cast(
-            collections.abc.Coroutine[
-                typing.Any, typing.Any, StatusProtocolAResult
-            ],
-            self._send_two_way_fidl_request(
-                910477041687900864,
-                "test.zxtypes",
-                msg,
-            ),
+        ret = self._send_two_way_fidl_request(
+            910477041687900864,
+            "test.zxtypes",
+            msg,
+            StatusProtocolAResult,
         )
         return ret
 
@@ -1506,15 +1502,11 @@ class StatusProtocolClient(FidlClient):
         msg = StatusProtocolBRequest(
             arg,
         )
-        ret = typing.cast(
-            collections.abc.Coroutine[
-                typing.Any, typing.Any, StatusProtocolBResult
-            ],
-            self._send_two_way_fidl_request(
-                1940401666492920560,
-                "test.zxtypes",
-                msg,
-            ),
+        ret = self._send_two_way_fidl_request(
+            1940401666492920560,
+            "test.zxtypes",
+            msg,
+            StatusProtocolBResult,
         )
         return ret
 

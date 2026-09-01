@@ -3375,17 +3375,11 @@ class TestProtocolClient(FidlClient):
         TestProtocolStrictUnionHenceResponseMayBeStackAllocatedResponse,
     ]:
         msg = None
-        ret = typing.cast(
-            collections.abc.Coroutine[
-                typing.Any,
-                typing.Any,
-                TestProtocolStrictUnionHenceResponseMayBeStackAllocatedResponse,
-            ],
-            self._send_two_way_fidl_request(
-                6628358876445129155,
-                "test.union",
-                msg,
-            ),
+        ret = self._send_two_way_fidl_request(
+            6628358876445129155,
+            "test.union",
+            msg,
+            TestProtocolStrictUnionHenceResponseMayBeStackAllocatedResponse,
         )
         return ret
 
@@ -3397,17 +3391,11 @@ class TestProtocolClient(FidlClient):
         TestProtocolFlexibleUnionHenceResponseMustBeHeapAllocatedResponse,
     ]:
         msg = None
-        ret = typing.cast(
-            collections.abc.Coroutine[
-                typing.Any,
-                typing.Any,
-                TestProtocolFlexibleUnionHenceResponseMustBeHeapAllocatedResponse,
-            ],
-            self._send_two_way_fidl_request(
-                7588545459451501794,
-                "test.union",
-                msg,
-            ),
+        ret = self._send_two_way_fidl_request(
+            7588545459451501794,
+            "test.union",
+            msg,
+            TestProtocolFlexibleUnionHenceResponseMustBeHeapAllocatedResponse,
         )
         return ret
 
