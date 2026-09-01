@@ -4,8 +4,9 @@
 
 #include "src/ui/scenic/lib/view_tree/geometry_provider.h"
 
-#include <fuchsia/ui/composition/cpp/fidl.h>
-#include <fuchsia/ui/views/cpp/fidl.h>
+#include <fidl/fuchsia.ui.composition/cpp/fidl.h>
+#include <fidl/fuchsia.ui.observation.geometry/cpp/fidl.h>
+#include <fidl/fuchsia.ui.views/cpp/fidl.h>
 #include <lib/syslog/cpp/macros.h>
 #include <lib/zx/time.h>
 
@@ -19,11 +20,13 @@
 
 namespace view_tree {
 namespace geometry_provider::test {
-using fuog_ProviderPtr = fuchsia::ui::observation::geometry::ViewTreeWatcherPtr;
-using fuog_WatchResponse = fuchsia::ui::observation::geometry::WatchResponse;
-using fuc_ViewportProperties = fuchsia::ui::composition::ViewportProperties;
-const auto fuog_BUFFER_SIZE = fuchsia::ui::observation::geometry::BUFFER_SIZE;
-const auto fuog_MAX_VIEW_COUNT = fuchsia::ui::observation::geometry::MAX_VIEW_COUNT;
+
+class TestEventHandler
+    : public fidl::AsyncEventHandler<fuchsia_ui_observation_geometry::ViewTreeWatcher> {
+ public:
+  void on_fidl_error(fidl::UnbindInfo info) override { unbind_info = info; }
+  std::optional<fidl::UnbindInfo> unbind_info;
+};
 
 // Unit tests for testing the fuchsia.ui.observation.geometry.ViewTreeWatcher
 // protocol.
@@ -34,9 +37,12 @@ class GeometryProviderTest : public gtest::TestLoopFixture {
       : dispatcher_setter_(dispatcher(), dispatcher()),
         snapshot_holder_(std::make_shared<SnapshotHolder>()),
         geometry_provider_(snapshot_holder_) {
-    geometry_provider_.Register(client_.NewRequest(), kNodeA);
+    auto [client_end, server_end] =
+        fidl::Endpoints<fuchsia_ui_observation_geometry::ViewTreeWatcher>::Create();
+    geometry_provider_.Register(std::move(server_end), kNodeA);
+    client_.Bind(std::move(client_end), dispatcher(), &event_handler_);
 
-    FX_CHECK(client_.is_bound());
+    FX_CHECK(client_.is_valid());
   }
 
   // Generates |num_snapshots| snapshots with |total_nodes| view nodes and triggers the geometry
@@ -52,21 +58,28 @@ class GeometryProviderTest : public gtest::TestLoopFixture {
   utils::ScopedThreadDispatcherSetter dispatcher_setter_;
   std::shared_ptr<SnapshotHolder> snapshot_holder_;
   GeometryProvider geometry_provider_;
-  fuog_ProviderPtr client_;
+  TestEventHandler event_handler_;
+  fidl::Client<fuchsia_ui_observation_geometry::ViewTreeWatcher> client_;
   uint64_t sequence_number_ = 0;
 };
 
 // Clients waiting for a snapshot get a response as soon as a new snapshot is generated.
 TEST_F(GeometryProviderTest, SingleWatchBeforeUpdate) {
-  std::optional<fuog_WatchResponse> client_result;
+  std::optional<fuchsia_ui_observation_geometry::WatchResponse> client_result;
   const uint32_t num_snapshots = 1;
   const uint64_t num_nodes = 1;
 
-  client_->Watch([&client_result](auto response) { client_result = std::move(response); });
+  client_->Watch().ThenExactlyOnce(
+      [&client_result](
+          fidl::Result<fuchsia_ui_observation_geometry::ViewTreeWatcher::Watch>& result) {
+        if (result.is_ok()) {
+          client_result = std::move(result.value());
+        }
+      });
 
   RunLoopUntilIdle();
 
-  EXPECT_TRUE(client_.is_bound());
+  EXPECT_TRUE(client_.is_valid());
 
   // Clients should not receive any snapshots when no snapshots have been generated.
   EXPECT_FALSE(client_result.has_value());
@@ -76,70 +89,89 @@ TEST_F(GeometryProviderTest, SingleWatchBeforeUpdate) {
 
   // Clients are sent the new snapshot as soon as a new snapshot is generated.
   ASSERT_TRUE(client_result.has_value());
-  EXPECT_EQ(client_result->updates().size(), 1UL);
+  ASSERT_TRUE(client_result->updates().has_value());
+  EXPECT_EQ(client_result->updates()->size(), 1UL);
 }
 
 // A Watch call should fail when there is another hanging Watch call by the same client.
 TEST_F(GeometryProviderTest, WatchDuringHangingWatch_ShouldFail) {
-  fuog_WatchResponse client_result;
-  fuog_WatchResponse client_result_1;
-
-  client_->Watch([&client_result](auto response) { client_result = std::move(response); });
-  client_->Watch([&client_result_1](auto response) { client_result_1 = std::move(response); });
+  client_->Watch().ThenExactlyOnce([](auto& result) {});
+  client_->Watch().ThenExactlyOnce([](auto& result) {});
 
   RunLoopUntilIdle();
 
   // Client connection is closed since it tried to make another Watch() call when a
   // Watch() call was already in progress.
-  EXPECT_FALSE(client_.is_bound());
+  EXPECT_TRUE(event_handler_.unbind_info.has_value());
+  EXPECT_EQ(event_handler_.unbind_info->status(), ZX_ERR_BAD_STATE);
 }
 
 // Clients receive snapshots when there are snapshots queued up from the time the client had
 // registered.
 TEST_F(GeometryProviderTest, ClientReceivesPendingSnapshots) {
-  std::optional<fuog_WatchResponse> client_result;
-  const uint32_t num_snapshots = fuog_BUFFER_SIZE;
+  std::optional<fuchsia_ui_observation_geometry::WatchResponse> client_result;
+  const uint32_t num_snapshots = fuchsia_ui_observation_geometry::kBufferSize;
   const uint64_t num_nodes = 1;
 
   PopulateEndpointsWithSnapshots(num_snapshots, num_nodes);
 
-  client_->Watch([&client_result](auto response) { client_result = std::move(response); });
+  client_->Watch().ThenExactlyOnce(
+      [&client_result](
+          fidl::Result<fuchsia_ui_observation_geometry::ViewTreeWatcher::Watch>& result) {
+        if (result.is_ok()) {
+          client_result = std::move(result.value());
+        }
+      });
 
   RunLoopUntilIdle();
 
-  EXPECT_TRUE(client_.is_bound());
+  EXPECT_TRUE(client_.is_valid());
 
   // Client should receive all queued up snapshots.
   ASSERT_TRUE(client_result.has_value());
-  EXPECT_EQ(client_result->updates().size(), fuog_BUFFER_SIZE);
+  ASSERT_TRUE(client_result->updates().has_value());
+  EXPECT_EQ(client_result->updates()->size(), fuchsia_ui_observation_geometry::kBufferSize);
 }
 
 // Client is able to make a successful Watch() call after the previous Watch() call
 // finished processing.
 TEST_F(GeometryProviderTest, WatchAfterProcessedWatch) {
   {
-    std::optional<fuog_WatchResponse> client_result;
-    const uint32_t num_snapshots = fuog_BUFFER_SIZE;
+    std::optional<fuchsia_ui_observation_geometry::WatchResponse> client_result;
+    const uint32_t num_snapshots = fuchsia_ui_observation_geometry::kBufferSize;
     const uint64_t num_nodes = 1;
 
     PopulateEndpointsWithSnapshots(num_snapshots, num_nodes);
 
-    client_->Watch([&client_result](auto response) { client_result = std::move(response); });
+    client_->Watch().ThenExactlyOnce(
+        [&client_result](
+            fidl::Result<fuchsia_ui_observation_geometry::ViewTreeWatcher::Watch>& result) {
+          if (result.is_ok()) {
+            client_result = std::move(result.value());
+          }
+        });
     RunLoopUntilIdle();
 
-    EXPECT_TRUE(client_.is_bound());
+    EXPECT_TRUE(client_.is_valid());
     ASSERT_TRUE(client_result.has_value());
-    EXPECT_EQ(client_result->updates().size(), fuog_BUFFER_SIZE);
+    ASSERT_TRUE(client_result->updates().has_value());
+    EXPECT_EQ(client_result->updates()->size(), fuchsia_ui_observation_geometry::kBufferSize);
   }
   {
-    std::optional<fuog_WatchResponse> client_result;
+    std::optional<fuchsia_ui_observation_geometry::WatchResponse> client_result;
     const uint32_t num_snapshots = 1;
     const uint64_t num_nodes = 1;
 
-    client_->Watch([&client_result](auto response) { client_result = std::move(response); });
+    client_->Watch().ThenExactlyOnce(
+        [&client_result](
+            fidl::Result<fuchsia_ui_observation_geometry::ViewTreeWatcher::Watch>& result) {
+          if (result.is_ok()) {
+            client_result = std::move(result.value());
+          }
+        });
     RunLoopUntilIdle();
 
-    EXPECT_TRUE(client_.is_bound());
+    EXPECT_TRUE(client_.is_valid());
     // Client waits for new snapshots to consume since there are no new snapshots generated after
     // the previous Watch() call.
     ASSERT_FALSE(client_result.has_value());
@@ -149,191 +181,278 @@ TEST_F(GeometryProviderTest, WatchAfterProcessedWatch) {
 
     // Client receives the latest generated snapshot.
     ASSERT_TRUE(client_result.has_value());
-    EXPECT_EQ(client_result->updates().size(), 1UL);
+    ASSERT_TRUE(client_result->updates().has_value());
+    EXPECT_EQ(client_result->updates()->size(), 1UL);
   }
 }
 
 // In case the number of snapshots queued up before the next Watch() call is greater than
-// fuchsia::ui::observation::geometry:BUFFER_SIZE, only the latest f.u.o.g.BUFFER_SIZE snapshots are
-// returned and the old snapshots are discarded.
+// BUFFER_SIZE, only the latest BUFFER_SIZE snapshots are returned and the old snapshots are
+// discarded.
 TEST_F(GeometryProviderTest, BufferOverflowTest) {
-  std::optional<fuog_WatchResponse> client_result;
-  const uint32_t num_snapshots = fuog_BUFFER_SIZE;
+  std::optional<fuchsia_ui_observation_geometry::WatchResponse> client_result;
+  const uint32_t num_snapshots = fuchsia_ui_observation_geometry::kBufferSize;
   const uint64_t num_nodes = 1;
 
   PopulateEndpointsWithSnapshots(num_snapshots, num_nodes);
   PopulateEndpointsWithSnapshots(num_snapshots, num_nodes + 1);
 
-  client_->Watch([&client_result](auto response) { client_result = std::move(response); });
+  client_->Watch().ThenExactlyOnce(
+      [&client_result](
+          fidl::Result<fuchsia_ui_observation_geometry::ViewTreeWatcher::Watch>& result) {
+        if (result.is_ok()) {
+          client_result = std::move(result.value());
+        }
+      });
 
   RunLoopUntilIdle();
 
-  EXPECT_TRUE(client_.is_bound());
+  EXPECT_TRUE(client_.is_valid());
   ASSERT_TRUE(client_result.has_value());
 
   // Client should receive the latest BUFFER_SIZE snapshot updates. The latest snapshots have
   // |num_nodes|+1 view nodes.
-  ASSERT_TRUE(client_result->has_error());
-  EXPECT_TRUE(client_result->error() | fuchsia::ui::observation::geometry::Error::BUFFER_OVERFLOW);
-  for (auto& snapshot : client_result->updates()) {
-    EXPECT_EQ(snapshot.views().size(), num_nodes + 1);
+  ASSERT_TRUE(client_result->error().has_value());
+  EXPECT_TRUE(static_cast<uint32_t>(*client_result->error() &
+                                    fuchsia_ui_observation_geometry::Error::kBufferOverflow));
+  ASSERT_TRUE(client_result->updates().has_value());
+  for (auto& snapshot : *client_result->updates()) {
+    ASSERT_TRUE(snapshot.views().has_value());
+    EXPECT_EQ(snapshot.views()->size(), num_nodes + 1);
   }
 }
 
 // Clients registered with the protocol should be receiving updates even if one of the clients is
 // killed for making an illegal Watch() call.
 TEST_F(GeometryProviderTest, MisbehavingClientsShouldNotAffectOtherClients) {
-  fuog_ProviderPtr client1;
-  fuog_ProviderPtr client2;
-  std::optional<fuog_WatchResponse> client_result;
-  std::optional<fuog_WatchResponse> client1_result;
-  std::optional<fuog_WatchResponse> client2_result;
-  const uint32_t num_snapshots = fuog_BUFFER_SIZE;
+  fidl::Client<fuchsia_ui_observation_geometry::ViewTreeWatcher> client1;
+  fidl::Client<fuchsia_ui_observation_geometry::ViewTreeWatcher> client2;
+  auto [c1_client, c1_server] =
+      fidl::Endpoints<fuchsia_ui_observation_geometry::ViewTreeWatcher>::Create();
+  auto [c2_client, c2_server] =
+      fidl::Endpoints<fuchsia_ui_observation_geometry::ViewTreeWatcher>::Create();
+  geometry_provider_.Register(std::move(c1_server), kNodeA);
+  geometry_provider_.Register(std::move(c2_server), kNodeA);
+  TestEventHandler client1_event_handler;
+  client1.Bind(std::move(c1_client), dispatcher(), &client1_event_handler);
+  client2.Bind(std::move(c2_client), dispatcher());
+
+  std::optional<fuchsia_ui_observation_geometry::WatchResponse> client_result;
+  std::optional<fuchsia_ui_observation_geometry::WatchResponse> client1_result;
+  std::optional<fuchsia_ui_observation_geometry::WatchResponse> client2_result;
+  const uint32_t num_snapshots = fuchsia_ui_observation_geometry::kBufferSize;
   const uint64_t num_nodes = 1;
 
-  geometry_provider_.Register(client1.NewRequest(), kNodeA);
-  geometry_provider_.Register(client2.NewRequest(), kNodeA);
-
   // Client makes an illegal Watch() call resulting in it being killed.
-  client1->Watch([&client1_result](auto response) { client1_result = std::move(response); });
-  client1->Watch([&client1_result](auto response) { client1_result = std::move(response); });
+  client1->Watch().ThenExactlyOnce(
+      [&client1_result](
+          fidl::Result<fuchsia_ui_observation_geometry::ViewTreeWatcher::Watch>& result) {
+        if (result.is_ok()) {
+          client1_result = std::move(result.value());
+        }
+      });
+  client1->Watch().ThenExactlyOnce(
+      [&client1_result](
+          fidl::Result<fuchsia_ui_observation_geometry::ViewTreeWatcher::Watch>& result) {
+        if (result.is_ok()) {
+          client1_result = std::move(result.value());
+        }
+      });
   RunLoopUntilIdle();
 
-  EXPECT_FALSE(client1.is_bound());
+  EXPECT_TRUE(client1_event_handler.unbind_info.has_value());
+  EXPECT_EQ(client1_event_handler.unbind_info->status(), ZX_ERR_BAD_STATE);
 
   PopulateEndpointsWithSnapshots(num_snapshots, num_nodes);
 
-  client_->Watch([&client_result](auto response) { client_result = std::move(response); });
-  client2->Watch([&client2_result](auto response) { client2_result = std::move(response); });
+  client_->Watch().ThenExactlyOnce(
+      [&client_result](
+          fidl::Result<fuchsia_ui_observation_geometry::ViewTreeWatcher::Watch>& result) {
+        if (result.is_ok()) {
+          client_result = std::move(result.value());
+        }
+      });
+  client2->Watch().ThenExactlyOnce(
+      [&client2_result](
+          fidl::Result<fuchsia_ui_observation_geometry::ViewTreeWatcher::Watch>& result) {
+        if (result.is_ok()) {
+          client2_result = std::move(result.value());
+        }
+      });
   RunLoopUntilIdle();
 
-  EXPECT_TRUE(client_.is_bound());
-  EXPECT_TRUE(client2.is_bound());
+  EXPECT_TRUE(client_.is_valid());
+  EXPECT_TRUE(client2.is_valid());
 
-  // Other clients should still receive pending snapshot updates despite client2 getting killed.
+  // Other clients should still receive pending snapshot updates despite client1 getting killed.
   ASSERT_TRUE(client_result.has_value());
   ASSERT_TRUE(client2_result.has_value());
-  EXPECT_EQ(client_result->updates().size(), fuog_BUFFER_SIZE);
-  EXPECT_EQ(client2_result->updates().size(), fuog_BUFFER_SIZE);
+  ASSERT_TRUE(client_result->updates().has_value());
+  ASSERT_TRUE(client2_result->updates().has_value());
+  EXPECT_EQ(client_result->updates()->size(), fuchsia_ui_observation_geometry::kBufferSize);
+  EXPECT_EQ(client2_result->updates()->size(), fuchsia_ui_observation_geometry::kBufferSize);
 }
 
 // Other clients should still receive pending snapshot updates even if any other client dies.
 TEST_F(GeometryProviderTest, ClientFailuresShouldNotAffectOtherClients) {
-  fuog_ProviderPtr client1;
-  fuog_ProviderPtr client2;
-  std::optional<fuog_WatchResponse> client_result;
-  std::optional<fuog_WatchResponse> client1_result;
-  const uint32_t num_snapshots = fuog_BUFFER_SIZE;
+  fidl::Client<fuchsia_ui_observation_geometry::ViewTreeWatcher> client1;
+  fidl::Client<fuchsia_ui_observation_geometry::ViewTreeWatcher> client2;
+  auto [c1_client, c1_server] =
+      fidl::Endpoints<fuchsia_ui_observation_geometry::ViewTreeWatcher>::Create();
+  auto [c2_client, c2_server] =
+      fidl::Endpoints<fuchsia_ui_observation_geometry::ViewTreeWatcher>::Create();
+  geometry_provider_.Register(std::move(c1_server), kNodeA);
+  geometry_provider_.Register(std::move(c2_server), kNodeA);
+  client1.Bind(std::move(c1_client), dispatcher());
+  client2.Bind(std::move(c2_client), dispatcher());
+
+  std::optional<fuchsia_ui_observation_geometry::WatchResponse> client_result;
+  std::optional<fuchsia_ui_observation_geometry::WatchResponse> client1_result;
+  const uint32_t num_snapshots = fuchsia_ui_observation_geometry::kBufferSize;
   const uint64_t num_nodes = 1;
 
-  geometry_provider_.Register(client1.NewRequest(), kNodeA);
-  geometry_provider_.Register(client2.NewRequest(), kNodeA);
-
   // client2 closes the channel to mock client death.
-  client2.Unbind();
+  client2 = {};
 
   PopulateEndpointsWithSnapshots(num_snapshots, num_nodes);
 
-  client_->Watch([&client_result](auto response) { client_result = std::move(response); });
-  client1->Watch([&client1_result](auto response) { client1_result = std::move(response); });
+  client_->Watch().ThenExactlyOnce(
+      [&client_result](
+          fidl::Result<fuchsia_ui_observation_geometry::ViewTreeWatcher::Watch>& result) {
+        if (result.is_ok()) {
+          client_result = std::move(result.value());
+        }
+      });
+  client1->Watch().ThenExactlyOnce(
+      [&client1_result](
+          fidl::Result<fuchsia_ui_observation_geometry::ViewTreeWatcher::Watch>& result) {
+        if (result.is_ok()) {
+          client1_result = std::move(result.value());
+        }
+      });
   RunLoopUntilIdle();
 
-  EXPECT_TRUE(client_.is_bound());
-  EXPECT_TRUE(client1.is_bound());
-  EXPECT_FALSE(client2.is_bound());
+  EXPECT_TRUE(client_.is_valid());
+  EXPECT_TRUE(client1.is_valid());
+  EXPECT_FALSE(client2.is_valid());
 
   // Other clients should still receive pending snapshot updates despite client2 dying.
   ASSERT_TRUE(client_result.has_value());
   ASSERT_TRUE(client1_result.has_value());
-  EXPECT_EQ(client_result->updates().size(), fuog_BUFFER_SIZE);
-  EXPECT_EQ(client1_result->updates().size(), fuog_BUFFER_SIZE);
+  ASSERT_TRUE(client_result->updates().has_value());
+  ASSERT_TRUE(client1_result->updates().has_value());
+  EXPECT_EQ(client_result->updates()->size(), fuchsia_ui_observation_geometry::kBufferSize);
+  EXPECT_EQ(client1_result->updates()->size(), fuchsia_ui_observation_geometry::kBufferSize);
 }
 
 TEST_F(GeometryProviderTest, ClientDoesNotReceiveViews_WhenViewsCountExceedMaxViewAllowed) {
-  std::optional<fuog_WatchResponse> client_result;
+  std::optional<fuchsia_ui_observation_geometry::WatchResponse> client_result;
   const uint32_t num_snapshots = 1;
-  const uint64_t num_nodes = fuog_MAX_VIEW_COUNT * 2;
+  const uint64_t num_nodes = fuchsia_ui_observation_geometry::kMaxViewCount * 2;
 
   PopulateEndpointsWithSnapshots(num_snapshots, num_nodes);
 
-  client_->Watch([&client_result](auto response) { client_result = std::move(response); });
+  client_->Watch().ThenExactlyOnce(
+      [&client_result](
+          fidl::Result<fuchsia_ui_observation_geometry::ViewTreeWatcher::Watch>& result) {
+        if (result.is_ok()) {
+          client_result = std::move(result.value());
+        }
+      });
   RunLoopUntilIdle();
 
-  EXPECT_TRUE(client_.is_bound());
+  EXPECT_TRUE(client_.is_valid());
 
   ASSERT_TRUE(client_result.has_value());
-  ASSERT_EQ(client_result->updates().size(), 1UL);
+  ASSERT_TRUE(client_result->updates().has_value());
+  ASSERT_EQ(client_result->updates()->size(), 1UL);
 
   // The client will not receive a views vector in the response as the size of the views vector
-  // would have exceeded fuog_MAX_VIEWS.
-  EXPECT_FALSE(client_result->updates()[0].has_views());
+  // would have exceeded kMaxViewCount.
+  EXPECT_FALSE((*client_result->updates())[0].views().has_value());
 }
 
 // A Watch() call should succeed when size of the response exceeds the maximum size of a
 // message that can be sent over the FIDL channel.
 TEST_F(GeometryProviderTest, WatchShouldSucceed_WhenResponseSizeExceedsFIDLChannelMaxSize) {
-  // The total number of f.u.o.g.ViewTreeSnapshots will always be less than fuog_BUFFER_SIZE when
+  // The total number of ViewTreeSnapshots will always be less than BUFFER_SIZE when
   // the response size exceeds FIDL channel's limit.
   {
-    std::optional<fuog_WatchResponse> client_result;
-    const uint32_t num_snapshots = fuog_BUFFER_SIZE;
+    std::optional<fuchsia_ui_observation_geometry::WatchResponse> client_result;
+    const uint32_t num_snapshots = fuchsia_ui_observation_geometry::kBufferSize;
     const uint64_t num_nodes = 10;
 
     PopulateEndpointsWithSnapshots(num_snapshots, num_nodes);
 
-    client_->Watch([&client_result](auto response) { client_result = std::move(response); });
+    client_->Watch().ThenExactlyOnce(
+        [&client_result](
+            fidl::Result<fuchsia_ui_observation_geometry::ViewTreeWatcher::Watch>& result) {
+          if (result.is_ok()) {
+            client_result = std::move(result.value());
+          }
+        });
     RunLoopUntilIdle();
 
-    EXPECT_TRUE(client_.is_bound());
+    EXPECT_TRUE(client_.is_valid());
 
     ASSERT_TRUE(client_result.has_value());
 
-    ASSERT_TRUE(client_result->has_error());
-    EXPECT_TRUE(client_result->error() |
-                fuchsia::ui::observation::geometry::Error::CHANNEL_OVERFLOW);
-    EXPECT_LT(client_result->updates().size(), fuog_BUFFER_SIZE);
+    ASSERT_TRUE(client_result->error().has_value());
+    EXPECT_TRUE(static_cast<uint32_t>(*client_result->error() &
+                                      fuchsia_ui_observation_geometry::Error::kChannelOverflow));
+    ASSERT_TRUE(client_result->updates().has_value());
+    EXPECT_LT(client_result->updates()->size(), fuchsia_ui_observation_geometry::kBufferSize);
   }
-  // The response should contain f.u.o.g.ViewTreeSnapshot generated from the most recent snapshot
+  // The response should contain ViewTreeSnapshot generated from the most recent snapshot
   // when the response size exceeds the FIDL channel's limit.
   {
-    std::optional<fuog_WatchResponse> client_result;
+    std::optional<fuchsia_ui_observation_geometry::WatchResponse> client_result;
 
     {
       const uint32_t num_snapshots = 1;
-      const uint64_t num_nodes = fuog_MAX_VIEW_COUNT;
+      const uint64_t num_nodes = fuchsia_ui_observation_geometry::kMaxViewCount;
       PopulateEndpointsWithSnapshots(num_snapshots, num_nodes);
     }
     {
       const uint32_t num_snapshots = 1;
-      const uint64_t num_nodes = fuog_MAX_VIEW_COUNT - 10;
+      const uint64_t num_nodes = fuchsia_ui_observation_geometry::kMaxViewCount - 10;
       PopulateEndpointsWithSnapshots(num_snapshots, num_nodes);
     }
     {
       const uint32_t num_snapshots = 1;
-      const uint64_t num_nodes = fuog_MAX_VIEW_COUNT - 100;
+      const uint64_t num_nodes = fuchsia_ui_observation_geometry::kMaxViewCount - 100;
       PopulateEndpointsWithSnapshots(num_snapshots, num_nodes);
     }
 
-    client_->Watch([&client_result](auto response) { client_result = std::move(response); });
+    client_->Watch().ThenExactlyOnce(
+        [&client_result](
+            fidl::Result<fuchsia_ui_observation_geometry::ViewTreeWatcher::Watch>& result) {
+          if (result.is_ok()) {
+            client_result = std::move(result.value());
+          }
+        });
     RunLoopUntilIdle();
 
-    EXPECT_TRUE(client_.is_bound());
+    EXPECT_TRUE(client_.is_valid());
 
     // As the number of view nodes in the view tree of the 3 snapshots are large, including
-    // f.u.o.g.ViewTreeSnapshots generated from more than 1 snapshot in the response will exceed
-    // FIDL channel's limit. Therefore, the server only sends the f.u.o.g.ViewTreeSnapshot generated
+    // ViewTreeSnapshots generated from more than 1 snapshot in the response will exceed
+    // FIDL channel's limit. Therefore, the server only sends the ViewTreeSnapshot generated
     // from the latest snapshot to the client.
     ASSERT_TRUE(client_result.has_value());
 
-    ASSERT_TRUE(client_result->has_error());
-    EXPECT_TRUE(client_result->error() |
-                fuchsia::ui::observation::geometry::Error::CHANNEL_OVERFLOW);
-    EXPECT_EQ(client_result->updates().size(), 1UL);
-    EXPECT_EQ(client_result->updates()[0].views().size(), fuog_MAX_VIEW_COUNT - 100);
+    ASSERT_TRUE(client_result->error().has_value());
+    EXPECT_TRUE(static_cast<uint32_t>(*client_result->error() &
+                                      fuchsia_ui_observation_geometry::Error::kChannelOverflow));
+    ASSERT_TRUE(client_result->updates().has_value());
+    EXPECT_EQ(client_result->updates()->size(), 1UL);
+    ASSERT_TRUE((*client_result->updates())[0].views().has_value());
+    EXPECT_EQ((*client_result->updates())[0].views()->size(),
+              fuchsia_ui_observation_geometry::kMaxViewCount - 100);
   }
 }
 
-// fuog_ViewDescriptor should accurately capture data from a view_tree::ViewNode. The test uses
+// ViewDescriptor should accurately capture data from a view_tree::ViewNode. The test uses
 // the following three node topology:
 // node_a (root)
 //  |
@@ -350,7 +469,6 @@ TEST_F(GeometryProviderTest, ExtractObservationSnapshotTest) {
   // Set up node_a.
   {
     const uint32_t width = 10, height = 10;
-    const fuchsia::math::InsetF inset = {.top = 1.f, .right = 1.f, .bottom = 1.f, .left = 1.f};
     view_tree::BoundingBox bounding_box = {.min = {0, 0}, .max = {width, height}};
     node_a.bounding_box = std::move(bounding_box);
   }
@@ -358,7 +476,6 @@ TEST_F(GeometryProviderTest, ExtractObservationSnapshotTest) {
   // Set up node_b.
   {
     const uint32_t width = 5, height = 5;
-    const fuchsia::math::InsetF inset = {.top = 2.f, .right = 2.f, .bottom = 2.f, .left = 2.f};
     view_tree::BoundingBox bounding_box = {.min = {0, 0}, .max = {width, height}};
     node_b.bounding_box = std::move(bounding_box);
   }
@@ -366,7 +483,6 @@ TEST_F(GeometryProviderTest, ExtractObservationSnapshotTest) {
   // Set up node_c.
   {
     const uint32_t width = 1, height = 1;
-    const fuchsia::math::InsetF inset = {.top = 3.f, .right = 3.f, .bottom = 3.f, .left = 3.f};
     view_tree::BoundingBox bounding_box = {.min = {0, 0}, .max = {width, height}};
     node_c.bounding_box = std::move(bounding_box);
   }
@@ -376,9 +492,9 @@ TEST_F(GeometryProviderTest, ExtractObservationSnapshotTest) {
   {
     auto view_tree_snapshot = view_tree::GeometryProvider::ExtractObservationSnapshot(
         /*context_view*/ std::nullopt, *snapshot);
-    ASSERT_TRUE(view_tree_snapshot);
-    ASSERT_TRUE(view_tree_snapshot->has_views());
-    EXPECT_TRUE(view_tree_snapshot->views().empty());
+    ASSERT_TRUE(view_tree_snapshot.has_value());
+    ASSERT_TRUE(view_tree_snapshot->views().has_value());
+    EXPECT_TRUE(view_tree_snapshot->views()->empty());
   }
 
   snapshot->root = node_a_koid;
@@ -386,25 +502,25 @@ TEST_F(GeometryProviderTest, ExtractObservationSnapshotTest) {
   snapshot->view_tree.try_emplace(node_b_koid, std::move(node_b));
   snapshot->view_tree.try_emplace(node_c_koid, std::move(node_c));
 
-  // Client should receive fuog_ViewDescriptor for every node in the view tree since the root node
+  // Client should receive ViewDescriptor for every node in the view tree since the root node
   // is the context view.
   {
     auto view_tree_snapshot = view_tree::GeometryProvider::ExtractObservationSnapshot(
         /*context_view*/ node_a_koid, *snapshot);
 
-    ASSERT_TRUE(view_tree_snapshot);
-    ASSERT_TRUE(view_tree_snapshot->has_views());
-    ASSERT_EQ(view_tree_snapshot->views().size(), 3UL);
+    ASSERT_TRUE(view_tree_snapshot.has_value());
+    ASSERT_TRUE(view_tree_snapshot->views().has_value());
+    ASSERT_EQ(view_tree_snapshot->views()->size(), 3UL);
 
-    // fuog_ViewDescriptor for node_a.
+    // ViewDescriptor for node_a.
     {
-      auto& vd = view_tree_snapshot->views()[0];
+      auto& vd = (*view_tree_snapshot->views())[0];
 
-      ASSERT_TRUE(vd.has_view_ref_koid());
-      EXPECT_EQ(vd.view_ref_koid(), node_a_koid);
+      ASSERT_TRUE(vd.view_ref_koid().has_value());
+      EXPECT_EQ(*vd.view_ref_koid(), node_a_koid);
 
-      ASSERT_TRUE(vd.has_layout());
-      auto& layout = vd.layout();
+      ASSERT_TRUE(vd.layout().has_value());
+      auto& layout = *vd.layout();
       auto node_logical_width =
           static_cast<float>(snapshot->view_tree[node_a_koid].bounding_box.max[0]);
       auto node_logical_height =
@@ -412,161 +528,172 @@ TEST_F(GeometryProviderTest, ExtractObservationSnapshotTest) {
 
       // Minimum coordinates for a layout should be its origin and maximum coordinates should be
       // equal to the node's logical size.
-      EXPECT_FLOAT_EQ(layout.extent.min.x, 0.);
-      EXPECT_FLOAT_EQ(layout.extent.min.y, 0.);
-      EXPECT_FLOAT_EQ(layout.extent.max.x, node_logical_width);
-      EXPECT_FLOAT_EQ(layout.extent.max.y, node_logical_height);
+      EXPECT_FLOAT_EQ(layout.extent().min().x(), 0.);
+      EXPECT_FLOAT_EQ(layout.extent().min().y(), 0.);
+      EXPECT_FLOAT_EQ(layout.extent().max().x(), node_logical_width);
+      EXPECT_FLOAT_EQ(layout.extent().max().y(), node_logical_height);
 
-      ASSERT_TRUE(vd.has_extent_in_context());
-      auto& extent_in_context = vd.extent_in_context();
+      ASSERT_TRUE(vd.extent_in_context().has_value());
+      auto& extent_in_context = *vd.extent_in_context();
 
       // For the context view, |extent_in_context| should be the same as its |layout|.
-      EXPECT_FLOAT_EQ(extent_in_context.origin.x, 0.);
-      EXPECT_FLOAT_EQ(extent_in_context.origin.y, 0.);
-      EXPECT_FLOAT_EQ(extent_in_context.width, node_logical_width);
-      EXPECT_FLOAT_EQ(extent_in_context.height, node_logical_height);
-      EXPECT_FLOAT_EQ(extent_in_context.angle_degrees, 0.);
+      EXPECT_FLOAT_EQ(extent_in_context.origin().x(), 0.);
+      EXPECT_FLOAT_EQ(extent_in_context.origin().y(), 0.);
+      EXPECT_FLOAT_EQ(extent_in_context.width(), node_logical_width);
+      EXPECT_FLOAT_EQ(extent_in_context.height(), node_logical_height);
+      EXPECT_FLOAT_EQ(extent_in_context.angle_degrees(), 0.);
 
-      ASSERT_TRUE(vd.has_extent_in_parent());
-      auto& extent_in_parent = vd.extent_in_parent();
+      ASSERT_TRUE(vd.extent_in_parent().has_value());
+      auto& extent_in_parent = *vd.extent_in_parent();
 
       // For the context view, |extent_in_parent| should be the same as its |layout|.
-      EXPECT_FLOAT_EQ(extent_in_parent.origin.x, 0.);
-      EXPECT_FLOAT_EQ(extent_in_parent.origin.y, 0.);
-      EXPECT_FLOAT_EQ(extent_in_parent.width, node_logical_width);
-      EXPECT_FLOAT_EQ(extent_in_parent.height, node_logical_height);
-      EXPECT_FLOAT_EQ(extent_in_parent.angle_degrees, 0.);
+      EXPECT_FLOAT_EQ(extent_in_parent.origin().x(), 0.);
+      EXPECT_FLOAT_EQ(extent_in_parent.origin().y(), 0.);
+      EXPECT_FLOAT_EQ(extent_in_parent.width(), node_logical_width);
+      EXPECT_FLOAT_EQ(extent_in_parent.height(), node_logical_height);
+      EXPECT_FLOAT_EQ(extent_in_parent.angle_degrees(), 0.);
 
-      ASSERT_TRUE(vd.has_children());
-      EXPECT_THAT(vd.children(), testing::UnorderedElementsAre(static_cast<uint32_t>(node_b_koid)));
+      ASSERT_TRUE(vd.children().has_value());
+      EXPECT_THAT(*vd.children(),
+                  testing::UnorderedElementsAre(static_cast<uint32_t>(node_b_koid)));
     }
 
-    // fuog_ViewDescriptor for node_b.
+    // ViewDescriptor for node_b.
     {
-      auto& vd = view_tree_snapshot->views()[1];
+      auto& vd = (*view_tree_snapshot->views())[1];
 
-      ASSERT_TRUE(vd.has_view_ref_koid());
-      EXPECT_EQ(vd.view_ref_koid(), node_b_koid);
+      ASSERT_TRUE(vd.view_ref_koid().has_value());
+      EXPECT_EQ(*vd.view_ref_koid(), node_b_koid);
 
-      ASSERT_TRUE(vd.has_layout());
-      auto& layout = vd.layout();
+      ASSERT_TRUE(vd.layout().has_value());
+      auto& layout = *vd.layout();
       auto node_logical_width =
           static_cast<float>(snapshot->view_tree[node_b_koid].bounding_box.max[0]);
       auto node_logical_height =
           static_cast<float>(snapshot->view_tree[node_b_koid].bounding_box.max[1]);
 
-      EXPECT_FLOAT_EQ(layout.extent.min.x, 0.);
-      EXPECT_FLOAT_EQ(layout.extent.min.y, 0.);
-      EXPECT_FLOAT_EQ(layout.extent.max.x, node_logical_width);
-      EXPECT_FLOAT_EQ(layout.extent.max.y, node_logical_height);
+      EXPECT_FLOAT_EQ(layout.extent().min().x(), 0.);
+      EXPECT_FLOAT_EQ(layout.extent().min().y(), 0.);
+      EXPECT_FLOAT_EQ(layout.extent().max().x(), node_logical_width);
+      EXPECT_FLOAT_EQ(layout.extent().max().y(), node_logical_height);
 
-      ASSERT_TRUE(vd.has_extent_in_context());
-      auto& extent_in_context = vd.extent_in_context();
+      ASSERT_TRUE(vd.extent_in_context().has_value());
+      auto& extent_in_context = *vd.extent_in_context();
 
       // As all the nodes in the view_tree have |local_from_world_transform| as identity matrix,
       // |extent_in_context| and |extent_in_parent| will be the same as layout.
-      EXPECT_FLOAT_EQ(extent_in_context.origin.x, 0.);
-      EXPECT_FLOAT_EQ(extent_in_context.origin.y, 0.);
-      EXPECT_FLOAT_EQ(extent_in_context.width, node_logical_width);
-      EXPECT_FLOAT_EQ(extent_in_context.height, node_logical_height);
-      EXPECT_FLOAT_EQ(extent_in_context.angle_degrees, 0.);
+      EXPECT_FLOAT_EQ(extent_in_context.origin().x(), 0.);
+      EXPECT_FLOAT_EQ(extent_in_context.origin().y(), 0.);
+      EXPECT_FLOAT_EQ(extent_in_context.width(), node_logical_width);
+      EXPECT_FLOAT_EQ(extent_in_context.height(), node_logical_height);
+      EXPECT_FLOAT_EQ(extent_in_context.angle_degrees(), 0.);
 
-      ASSERT_TRUE(vd.has_extent_in_parent());
-      auto& extent_in_parent = vd.extent_in_parent();
+      ASSERT_TRUE(vd.extent_in_parent().has_value());
+      auto& extent_in_parent = *vd.extent_in_parent();
 
-      EXPECT_FLOAT_EQ(extent_in_parent.origin.x, 0.);
-      EXPECT_FLOAT_EQ(extent_in_parent.origin.y, 0.);
-      EXPECT_FLOAT_EQ(extent_in_parent.width, node_logical_width);
-      EXPECT_FLOAT_EQ(extent_in_parent.height, node_logical_height);
-      EXPECT_FLOAT_EQ(extent_in_parent.angle_degrees, 0.);
+      EXPECT_FLOAT_EQ(extent_in_parent.origin().x(), 0.);
+      EXPECT_FLOAT_EQ(extent_in_parent.origin().y(), 0.);
+      EXPECT_FLOAT_EQ(extent_in_parent.width(), node_logical_width);
+      EXPECT_FLOAT_EQ(extent_in_parent.height(), node_logical_height);
+      EXPECT_FLOAT_EQ(extent_in_parent.angle_degrees(), 0.);
 
-      ASSERT_TRUE(vd.has_children());
-      EXPECT_THAT(vd.children(), testing::UnorderedElementsAre(static_cast<uint32_t>(node_c_koid)));
+      ASSERT_TRUE(vd.children().has_value());
+      EXPECT_THAT(*vd.children(),
+                  testing::UnorderedElementsAre(static_cast<uint32_t>(node_c_koid)));
     }
 
-    // fuog_ViewDescriptor for node_c.
+    // ViewDescriptor for node_c.
     {
-      auto& vd = view_tree_snapshot->views()[2];
+      auto& vd = (*view_tree_snapshot->views())[2];
 
-      ASSERT_TRUE(vd.has_view_ref_koid());
-      EXPECT_EQ(vd.view_ref_koid(), node_c_koid);
+      ASSERT_TRUE(vd.view_ref_koid().has_value());
+      EXPECT_EQ(*vd.view_ref_koid(), node_c_koid);
 
-      ASSERT_TRUE(vd.has_layout());
-      auto& layout = vd.layout();
+      ASSERT_TRUE(vd.layout().has_value());
+      auto& layout = *vd.layout();
       auto node_logical_width =
           static_cast<float>(snapshot->view_tree[node_c_koid].bounding_box.max[0]);
       auto node_logical_height =
           static_cast<float>(snapshot->view_tree[node_c_koid].bounding_box.max[1]);
 
-      EXPECT_FLOAT_EQ(layout.extent.min.x, 0.);
-      EXPECT_FLOAT_EQ(layout.extent.min.y, 0.);
-      EXPECT_FLOAT_EQ(layout.extent.max.x, node_logical_width);
-      EXPECT_FLOAT_EQ(layout.extent.max.y, node_logical_height);
+      EXPECT_FLOAT_EQ(layout.extent().min().x(), 0.);
+      EXPECT_FLOAT_EQ(layout.extent().min().y(), 0.);
+      EXPECT_FLOAT_EQ(layout.extent().max().x(), node_logical_width);
+      EXPECT_FLOAT_EQ(layout.extent().max().y(), node_logical_height);
 
-      ASSERT_TRUE(vd.has_extent_in_context());
-      auto& extent_in_context = vd.extent_in_context();
+      ASSERT_TRUE(vd.extent_in_context().has_value());
+      auto& extent_in_context = *vd.extent_in_context();
 
-      EXPECT_FLOAT_EQ(extent_in_context.origin.x, 0.);
-      EXPECT_FLOAT_EQ(extent_in_context.origin.y, 0.);
-      EXPECT_FLOAT_EQ(extent_in_context.width, node_logical_width);
-      EXPECT_FLOAT_EQ(extent_in_context.height, node_logical_height);
-      EXPECT_FLOAT_EQ(extent_in_context.angle_degrees, 0.);
+      EXPECT_FLOAT_EQ(extent_in_context.origin().x(), 0.);
+      EXPECT_FLOAT_EQ(extent_in_context.origin().y(), 0.);
+      EXPECT_FLOAT_EQ(extent_in_context.width(), node_logical_width);
+      EXPECT_FLOAT_EQ(extent_in_context.height(), node_logical_height);
+      EXPECT_FLOAT_EQ(extent_in_context.angle_degrees(), 0.);
 
-      ASSERT_TRUE(vd.has_extent_in_parent());
-      auto& extent_in_parent = vd.extent_in_parent();
+      ASSERT_TRUE(vd.extent_in_parent().has_value());
+      auto& extent_in_parent = *vd.extent_in_parent();
 
-      EXPECT_FLOAT_EQ(extent_in_parent.origin.x, 0.);
-      EXPECT_FLOAT_EQ(extent_in_parent.origin.y, 0.);
-      EXPECT_FLOAT_EQ(extent_in_parent.width, node_logical_width);
-      EXPECT_FLOAT_EQ(extent_in_parent.height, node_logical_height);
-      EXPECT_FLOAT_EQ(extent_in_parent.angle_degrees, 0.);
+      EXPECT_FLOAT_EQ(extent_in_parent.origin().x(), 0.);
+      EXPECT_FLOAT_EQ(extent_in_parent.origin().y(), 0.);
+      EXPECT_FLOAT_EQ(extent_in_parent.width(), node_logical_width);
+      EXPECT_FLOAT_EQ(extent_in_parent.height(), node_logical_height);
+      EXPECT_FLOAT_EQ(extent_in_parent.angle_degrees(), 0.);
 
-      ASSERT_TRUE(vd.has_children());
-      EXPECT_TRUE(vd.children().empty());
+      ASSERT_TRUE(vd.children().has_value());
+      EXPECT_TRUE(vd.children()->empty());
     }
   }
 
-  // Client should receive fuog_ViewDescriptor for the context_view only as the context_view is a
+  // Client should receive ViewDescriptor for the context_view only as the context_view is a
   // leaf node.
   {
     auto view_tree_snapshot = view_tree::GeometryProvider::ExtractObservationSnapshot(
         /*context_view*/ node_c_koid, *snapshot);
 
-    ASSERT_TRUE(view_tree_snapshot);
-    ASSERT_TRUE(view_tree_snapshot->has_views());
-    ASSERT_EQ(view_tree_snapshot->views().size(), 1UL);
+    ASSERT_TRUE(view_tree_snapshot.has_value());
+    ASSERT_TRUE(view_tree_snapshot->views().has_value());
+    ASSERT_EQ(view_tree_snapshot->views()->size(), 1UL);
 
-    auto& vd = view_tree_snapshot->views()[0];
-    ASSERT_TRUE(vd.has_view_ref_koid());
-    EXPECT_EQ(vd.view_ref_koid(), node_c_koid);
+    auto& vd = (*view_tree_snapshot->views())[0];
+    ASSERT_TRUE(vd.view_ref_koid().has_value());
+    EXPECT_EQ(*vd.view_ref_koid(), node_c_koid);
   }
 }
 
 // Clients registered through |RegisterGlobalViewTreeWatcher| should receive information about all
 // the nodes in a view tree.
 TEST_F(GeometryProviderTest, RegisterGlobalViewTreeWatcherTest) {
-  fuog_ProviderPtr client;
-  std::optional<fuog_WatchResponse> client_result;
+  fidl::Client<fuchsia_ui_observation_geometry::ViewTreeWatcher> client;
+  auto [client_end, server_end] =
+      fidl::Endpoints<fuchsia_ui_observation_geometry::ViewTreeWatcher>::Create();
+  geometry_provider_.RegisterGlobalViewTreeWatcher(std::move(server_end));
+  client.Bind(std::move(client_end), dispatcher());
+
+  std::optional<fuchsia_ui_observation_geometry::WatchResponse> client_result;
   const uint32_t num_snapshots = 1;
   const uint64_t num_nodes = 5;
 
-  geometry_provider_.RegisterGlobalViewTreeWatcher(client.NewRequest());
-
   PopulateEndpointsWithSnapshots(num_snapshots, num_nodes);
 
-  client->Watch([&client_result](auto response) { client_result = std::move(response); });
+  client->Watch().ThenExactlyOnce(
+      [&client_result](
+          fidl::Result<fuchsia_ui_observation_geometry::ViewTreeWatcher::Watch>& result) {
+        if (result.is_ok()) {
+          client_result = std::move(result.value());
+        }
+      });
 
   RunLoopUntilIdle();
 
   ASSERT_TRUE(client_result.has_value());
-  ASSERT_TRUE(client_result->has_updates());
-  EXPECT_FALSE(client_result->has_error());
-  ASSERT_EQ(client_result->updates().size(), num_snapshots);
+  ASSERT_TRUE(client_result->updates().has_value());
+  EXPECT_FALSE(client_result->error().has_value());
+  ASSERT_EQ(client_result->updates()->size(), num_snapshots);
 
-  // Client should receive fuog_ViewDescriptors for |num_nodes| since it has a unlimited access to
+  // Client should receive ViewDescriptors for |num_nodes| since it has a unlimited access to
   // the global view tree.
-  ASSERT_TRUE(client_result->updates()[0].has_views());
-  EXPECT_EQ(client_result->updates()[0].views().size(), num_nodes);
+  ASSERT_TRUE((*client_result->updates())[0].views().has_value());
+  EXPECT_EQ((*client_result->updates())[0].views()->size(), num_nodes);
 }
 
 // Clients registered using |fuchsia.ui.observation.scope.Registry| get updates about its
@@ -575,9 +702,13 @@ TEST_F(GeometryProviderTest, ScopedRegistryTest) {
   const zx_koid_t node_a_koid = 1, node_b_koid = 2;
   const float width = 1, height = 1;
 
-  fuog_ProviderPtr client;
-  std::optional<fuog_WatchResponse> client_result;
-  geometry_provider_.Register(client.NewRequest(), node_b_koid);
+  fidl::Client<fuchsia_ui_observation_geometry::ViewTreeWatcher> client;
+  auto [client_end, server_end] =
+      fidl::Endpoints<fuchsia_ui_observation_geometry::ViewTreeWatcher>::Create();
+  geometry_provider_.Register(std::move(server_end), node_b_koid);
+  client.Bind(std::move(client_end), dispatcher());
+
+  std::optional<fuchsia_ui_observation_geometry::WatchResponse> client_result;
 
   // Generate an empty view tree snapshot.
   {
@@ -587,16 +718,24 @@ TEST_F(GeometryProviderTest, ScopedRegistryTest) {
     geometry_provider_.OnNewViewTreeSnapshot();
   }
 
-  client->Watch([&client_result](auto response) { client_result = std::move(response); });
+  client->Watch().ThenExactlyOnce(
+      [&client_result](
+          fidl::Result<fuchsia_ui_observation_geometry::ViewTreeWatcher::Watch>& result) {
+        if (result.is_ok()) {
+          client_result = std::move(result.value());
+        }
+      });
   RunLoopUntilIdle();
 
-  EXPECT_TRUE(client.is_bound());
+  EXPECT_TRUE(client.is_valid());
 
   ASSERT_TRUE(client_result.has_value());
 
   // Client receives an empty views vector in the response when the view tree is empty.
-  EXPECT_EQ(client_result->updates().size(), 1UL);
-  EXPECT_TRUE(client_result->updates()[0].views().empty());
+  ASSERT_TRUE(client_result->updates().has_value());
+  EXPECT_EQ(client_result->updates()->size(), 1UL);
+  ASSERT_TRUE((*client_result->updates())[0].views().has_value());
+  EXPECT_TRUE((*client_result->updates())[0].views()->empty());
 
   // Generate a snapshot containing only |node_a|.
   {
@@ -609,17 +748,26 @@ TEST_F(GeometryProviderTest, ScopedRegistryTest) {
     geometry_provider_.OnNewViewTreeSnapshot();
   }
 
-  client->Watch([&client_result](auto response) { client_result = std::move(response); });
+  client_result.reset();
+  client->Watch().ThenExactlyOnce(
+      [&client_result](
+          fidl::Result<fuchsia_ui_observation_geometry::ViewTreeWatcher::Watch>& result) {
+        if (result.is_ok()) {
+          client_result = std::move(result.value());
+        }
+      });
   RunLoopUntilIdle();
 
-  EXPECT_TRUE(client.is_bound());
+  EXPECT_TRUE(client.is_valid());
 
   ASSERT_TRUE(client_result.has_value());
 
   // Client receives an empty views vector in the response as its |context_view| is not present in
   // the view tree.
-  EXPECT_EQ(client_result->updates().size(), 1UL);
-  EXPECT_TRUE(client_result->updates()[0].views().empty());
+  ASSERT_TRUE(client_result->updates().has_value());
+  EXPECT_EQ(client_result->updates()->size(), 1UL);
+  ASSERT_TRUE((*client_result->updates())[0].views().has_value());
+  EXPECT_TRUE((*client_result->updates())[0].views()->empty());
 
   // Generate a snapshot with |node_a| as the root and |node_b| as the child of |node_a|.
   {
@@ -636,25 +784,38 @@ TEST_F(GeometryProviderTest, ScopedRegistryTest) {
     geometry_provider_.OnNewViewTreeSnapshot();
   }
 
-  client->Watch([&client_result](auto response) { client_result = std::move(response); });
+  client_result.reset();
+  client->Watch().ThenExactlyOnce(
+      [&client_result](
+          fidl::Result<fuchsia_ui_observation_geometry::ViewTreeWatcher::Watch>& result) {
+        if (result.is_ok()) {
+          client_result = std::move(result.value());
+        }
+      });
   RunLoopUntilIdle();
 
-  EXPECT_TRUE(client.is_bound());
+  EXPECT_TRUE(client.is_valid());
 
   ASSERT_TRUE(client_result.has_value());
 
   // Client receives updates about its |context_view| in the response as it is now present in the
   // view tree.
-  EXPECT_EQ(client_result->updates().size(), 1UL);
-  EXPECT_EQ(client_result->updates()[0].views().size(), 1UL);
+  ASSERT_TRUE(client_result->updates().has_value());
+  EXPECT_EQ(client_result->updates()->size(), 1UL);
+  ASSERT_TRUE((*client_result->updates())[0].views().has_value());
+  EXPECT_EQ((*client_result->updates())[0].views()->size(), 1UL);
 }
 
 TEST_F(GeometryProviderTest, ZeroSizedWindows_AreOmitted) {
   const zx_koid_t node_a_koid = 1, node_b_koid = 2;
 
-  fuog_ProviderPtr client;
-  std::optional<fuog_WatchResponse> client_result;
-  geometry_provider_.Register(client.NewRequest(), node_b_koid);
+  fidl::Client<fuchsia_ui_observation_geometry::ViewTreeWatcher> client;
+  auto [client_end, server_end] =
+      fidl::Endpoints<fuchsia_ui_observation_geometry::ViewTreeWatcher>::Create();
+  geometry_provider_.Register(std::move(server_end), node_b_koid);
+  client.Bind(std::move(client_end), dispatcher());
+
+  std::optional<fuchsia_ui_observation_geometry::WatchResponse> client_result;
 
   // Generate a snapshot with |node_a| as the root and |node_b| as the child of |node_a|.
   // This time, however, the views are zero-sized.
@@ -671,38 +832,56 @@ TEST_F(GeometryProviderTest, ZeroSizedWindows_AreOmitted) {
     geometry_provider_.OnNewViewTreeSnapshot();
   }
 
-  client->Watch([&client_result](auto response) { client_result = std::move(response); });
+  client->Watch().ThenExactlyOnce(
+      [&client_result](
+          fidl::Result<fuchsia_ui_observation_geometry::ViewTreeWatcher::Watch>& result) {
+        if (result.is_ok()) {
+          client_result = std::move(result.value());
+        }
+      });
   RunLoopUntilIdle();
 
-  EXPECT_TRUE(client.is_bound());
+  EXPECT_TRUE(client.is_valid());
 
   ASSERT_TRUE(client_result.has_value());
 
   // Client receives updates about its |context_view|.
   // However, the zero-sized views are not listed.
-  ASSERT_EQ(client_result->updates().size(), 1UL);
-  EXPECT_EQ(client_result->updates()[0].views().size(), 0UL);
+  ASSERT_TRUE(client_result->updates().has_value());
+  EXPECT_EQ(client_result->updates()->size(), 1UL);
+  ASSERT_TRUE((*client_result->updates())[0].views().has_value());
+  EXPECT_EQ((*client_result->updates())[0].views()->size(), 0UL);
 }
 
 // If there was a previous update before a client is registered, then the first watch should succeed
 // even if there isn't a subsequent update.
 TEST_F(GeometryProviderTest, UpdateBeforeWatch) {
-  const uint32_t num_snapshots = fuog_BUFFER_SIZE;
+  const uint32_t num_snapshots = fuchsia_ui_observation_geometry::kBufferSize;
   const uint64_t num_nodes = 1;
 
   PopulateEndpointsWithSnapshots(num_snapshots, num_nodes);
 
-  fuog_ProviderPtr new_client;
-  geometry_provider_.Register(new_client.NewRequest(), kNodeA);
+  fidl::Client<fuchsia_ui_observation_geometry::ViewTreeWatcher> new_client;
+  auto [client_end, server_end] =
+      fidl::Endpoints<fuchsia_ui_observation_geometry::ViewTreeWatcher>::Create();
+  geometry_provider_.Register(std::move(server_end), kNodeA);
+  new_client.Bind(std::move(client_end), dispatcher());
 
-  std::optional<fuog_WatchResponse> client_result;
-  new_client->Watch([&client_result](auto response) { client_result = std::move(response); });
+  std::optional<fuchsia_ui_observation_geometry::WatchResponse> client_result;
+  new_client->Watch().ThenExactlyOnce(
+      [&client_result](
+          fidl::Result<fuchsia_ui_observation_geometry::ViewTreeWatcher::Watch>& result) {
+        if (result.is_ok()) {
+          client_result = std::move(result.value());
+        }
+      });
 
   RunLoopUntilIdle();
 
-  EXPECT_TRUE(client_.is_bound());
+  EXPECT_TRUE(client_.is_valid());
   ASSERT_TRUE(client_result.has_value());
-  EXPECT_EQ(client_result->updates().size(), 1UL);
+  ASSERT_TRUE(client_result->updates().has_value());
+  EXPECT_EQ(client_result->updates()->size(), 1UL);
 }
 
 }  // namespace geometry_provider::test

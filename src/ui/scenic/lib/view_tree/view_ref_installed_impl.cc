@@ -13,12 +13,10 @@
 
 namespace view_tree {
 
-using fuchsia::ui::views::ViewRefInstalled;
-
 namespace {
 
 // Check if a ViewRef is valid and has the correct rights.
-bool IsValidViewRef(fuchsia::ui::views::ViewRef& view_ref) {
+bool IsValidViewRef(const fuchsia_ui_views::wire::ViewRef& view_ref) {
   if (zx_handle_check_valid(view_ref.reference.get()) != ZX_OK) {
     FX_LOGS(INFO) << "Bad handle";
     return false;  // bad handle
@@ -39,47 +37,43 @@ bool IsValidViewRef(fuchsia::ui::views::ViewRef& view_ref) {
   return true;
 }
 
-fuchsia::ui::views::ViewRefInstalled_Watch_Result InvalidMessage() {
-  return fuchsia::ui::views::ViewRefInstalled_Watch_Result::WithErr(
-      fuchsia::ui::views::ViewRefInstalledError::INVALID_VIEW_REF);
-}
-
-fuchsia::ui::views::ViewRefInstalled_Watch_Result InstalledMessage() {
-  return fuchsia::ui::views::ViewRefInstalled_Watch_Result::WithResponse({});
-}
-
 }  // namespace
 
 ViewRefInstalledImpl::ViewRefInstalledImpl(
     std::shared_ptr<view_tree::SnapshotHolder> snapshot_holder)
     : snapshot_holder_(std::move(snapshot_holder)) {}
 
-void ViewRefInstalledImpl::Bind(
-    fidl::InterfaceRequest<fuchsia::ui::views::ViewRefInstalled> request) {
+void ViewRefInstalledImpl::Bind(fidl::ServerEnd<fuchsia_ui_views::ViewRefInstalled> server_end) {
   utils::CheckIsOnInputThread();
-  bindings_.AddBinding(this, std::move(request));
+  bindings_.AddBinding(async_get_default_dispatcher(), std::move(server_end), this,
+                       fidl::kIgnoreBindingClosure);
 }
 
-// |ViewRefInstalled|
-void ViewRefInstalledImpl::Watch(fuchsia::ui::views::ViewRef view_ref,
-                                 ViewRefInstalled::WatchCallback callback) {
+// |fidl::WireServer<fuchsia_ui_views::ViewRefInstalled>|
+void ViewRefInstalledImpl::Watch(WatchRequestView request, WatchCompleter::Sync& completer) {
   utils::CheckIsOnInputThread();
-  if (!IsValidViewRef(view_ref)) {
-    callback(InvalidMessage());
+  if (!IsValidViewRef(request->view_ref)) {
+    completer.ReplyError(fuchsia_ui_views::wire::ViewRefInstalledError::kInvalidViewRef);
     return;
   }
 
   // Check if already installed.
-  const zx_koid_t view_ref_koid = utils::ExtractKoid(view_ref);
+  const zx_koid_t view_ref_koid = utils::ExtractKoid(request->view_ref);
   if (installed_views_.contains(view_ref_koid)) {
-    callback(InstalledMessage());
+    completer.ReplySuccess();
+    return;
+  }
+
+  zx::eventpair eventpair;
+  if (request->view_ref.reference.duplicate(ZX_RIGHT_SAME_RIGHTS, &eventpair) != ZX_OK) {
+    completer.ReplyError(fuchsia_ui_views::wire::ViewRefInstalledError::kInvalidViewRef);
     return;
   }
 
   // Not invalid, not installed.
   if (!watched_views_.contains(view_ref_koid)) {
     // If it doesn't exist: add a new entry and setup the invalidation waiter.
-    auto [it, success] = watched_views_.emplace(view_ref_koid, std::move(view_ref));
+    auto [it, success] = watched_views_.try_emplace(view_ref_koid, std::move(eventpair));
     FX_DCHECK(success);
 
     // When the event is invalidated, send error message and clean up.
@@ -91,8 +85,8 @@ void ViewRefInstalledImpl::Watch(fuchsia::ui::views::ViewRef view_ref,
                           std::placeholders::_3, std::placeholders::_4));
     FX_DCHECK(status == ZX_OK);
   }
-  // Save callback until installation or invalidation
-  watched_views_.at(view_ref_koid).callbacks.emplace_back(std::move(callback));
+  // Save completer until installation or invalidation
+  watched_views_.at(view_ref_koid).completers.emplace_back(completer.ToAsync());
 }
 
 void ViewRefInstalledImpl::OnNewViewTreeSnapshot() {
@@ -131,8 +125,8 @@ void ViewRefInstalledImpl::OnViewRefInstalled(zx_koid_t view_ref_koid) {
     return;
   }
 
-  for (auto& callback : it->second.callbacks) {
-    callback(InstalledMessage());
+  for (auto& completer : it->second.completers) {
+    completer.ReplySuccess();
   }
   watched_views_.erase(view_ref_koid);
 }
@@ -145,8 +139,8 @@ void ViewRefInstalledImpl::OnViewRefInvalidated(zx_koid_t view_ref_koid, zx_stat
   }
 
   // No need to check for existence. OnViewRefInvalidated is only called from invalidation_waiter.
-  for (auto& callback : watched_views_.at(view_ref_koid).callbacks) {
-    callback(InvalidMessage());
+  for (auto& completer : watched_views_.at(view_ref_koid).completers) {
+    completer.ReplyError(fuchsia_ui_views::wire::ViewRefInstalledError::kInvalidViewRef);
   }
   watched_views_.erase(view_ref_koid);
 }

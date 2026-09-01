@@ -5,14 +5,13 @@
 #ifndef SRC_UI_SCENIC_LIB_VIEW_TREE_VIEW_REF_INSTALLED_IMPL_H_
 #define SRC_UI_SCENIC_LIB_VIEW_TREE_VIEW_REF_INSTALLED_IMPL_H_
 
-#include <fuchsia/ui/views/cpp/fidl.h>
+#include <fidl/fuchsia.ui.views/cpp/fidl.h>
 #include <lib/async/cpp/wait.h>
-#include <lib/fidl/cpp/binding_set.h>
-#include <lib/sys/cpp/component_context.h>
+#include <lib/fidl/cpp/wire/server.h>
 #include <zircon/types.h>
 
-#include <set>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 #include "src/ui/scenic/lib/view_tree/snapshot_holder.h"
@@ -21,16 +20,15 @@
 namespace view_tree {
 
 // Class that implements the ViewRefInstalled service.
-class ViewRefInstalledImpl : public fuchsia::ui::views::ViewRefInstalled {
+class ViewRefInstalledImpl : public fidl::WireServer<fuchsia_ui_views::ViewRefInstalled> {
  public:
   explicit ViewRefInstalledImpl(
       std::shared_ptr<view_tree::SnapshotHolder> snapshot_holder = nullptr);
 
-  void Bind(fidl::InterfaceRequest<fuchsia::ui::views::ViewRefInstalled> request);
+  void Bind(fidl::ServerEnd<fuchsia_ui_views::ViewRefInstalled> server_end);
 
-  // |fuchsia::ui::views::ViewRefInstalled|
-  void Watch(fuchsia::ui::views::ViewRef view_ref,
-             fuchsia::ui::views::ViewRefInstalled::WatchCallback callback) override;
+  // |fidl::WireServer<fuchsia_ui_views::ViewRefInstalled>|
+  void Watch(WatchRequestView request, WatchCompleter::Sync& completer) override;
 
   // Called whenever a new snapshot of the ViewTree is generated.
   // When this happens we look through it to check if any of the waited on views have been installed
@@ -40,26 +38,24 @@ class ViewRefInstalledImpl : public fuchsia::ui::views::ViewRefInstalled {
  private:
   // Struct to track for when a view ref gets invalidated.
   struct ViewRefInvalidationWaiter {
-    explicit ViewRefInvalidationWaiter(fuchsia::ui::views::ViewRef&& view_ref)
-        : waiter(view_ref.reference.get(), ZX_EVENTPAIR_PEER_CLOSED),
-          view_ref(std::move(view_ref)) {}
+    explicit ViewRefInvalidationWaiter(zx::eventpair eventpair)
+        : waiter(eventpair.get(), ZX_EVENTPAIR_PEER_CLOSED), eventpair(std::move(eventpair)) {}
     ~ViewRefInvalidationWaiter() { waiter.Cancel(); }
 
     async::WaitOnce waiter;
-    fuchsia::ui::views::ViewRef view_ref;  // Keep a reference in case this is the last ViewRef.
+    zx::eventpair eventpair;  // Keep a reference in case this is the last ViewRef.
   };
 
   // Tracks uninstalled views with Watch() calls waiting on them.
   struct WatchedView {
-    explicit WatchedView(fuchsia::ui::views::ViewRef&& view_ref)
-        : invalidation_waiter(std::move(view_ref)) {}
+    explicit WatchedView(zx::eventpair eventpair) : invalidation_waiter(std::move(eventpair)) {}
 
     // Waiters that tracks when ViewRefs gets invalidated.
     // We keep a single waiter per watched ViewRef.
     ViewRefInvalidationWaiter invalidation_waiter;
 
-    // All pending callbacks from Watch() calls for this ViewRef.
-    std::vector<fuchsia::ui::views::ViewRefInstalled::WatchCallback> callbacks;
+    // All pending completers from Watch() calls for this ViewRef.
+    std::vector<WatchCompleter::Async> completers;
   };
 
   // Called when |view_ref_koid| is observed in the ViewTree for the first time.
@@ -69,7 +65,7 @@ class ViewRefInstalledImpl : public fuchsia::ui::views::ViewRefInstalled {
   void OnViewRefInvalidated(zx_koid_t view_ref_koid, zx_status_t status,
                             const zx_packet_signal* signal);
 
-  fidl::BindingSet<fuchsia::ui::views::ViewRefInstalled> bindings_;
+  fidl::ServerBindingGroup<fuchsia_ui_views::ViewRefInstalled> bindings_;
 
   // All views currently being Watch()ed.
   std::unordered_map<zx_koid_t, WatchedView> watched_views_;

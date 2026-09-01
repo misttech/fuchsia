@@ -73,11 +73,10 @@ class InputManager {
   // Binds FIDL protocol endpoints to the input thread.
   void BindFocusChainListenerRegistry(
       fidl::InterfaceRequest<fuchsia::ui::focus::FocusChainListenerRegistry> request);
-  void BindViewRefInstalled(fidl::InterfaceRequest<fuchsia::ui::views::ViewRefInstalled> request);
-  void BindObserverRegistry(
-      fidl::InterfaceRequest<fuchsia::ui::observation::test::Registry> request);
+  void BindViewRefInstalled(fidl::ServerEnd<fuchsia_ui_views::ViewRefInstalled> server_end);
+  void BindObserverRegistry(fidl::ServerEnd<fuchsia_ui_observation_test::Registry> server_end);
   void BindScopedObserverRegistry(
-      fidl::InterfaceRequest<fuchsia::ui::observation::scope::Registry> request);
+      fidl::ServerEnd<fuchsia_ui_observation_scope::Registry> server_end);
 #if !defined(FUCHSIA_DSO)
   void BindPointerinjectorRegistry(
       fidl::InterfaceRequest<fuchsia::ui::pointerinjector::Registry> request);

@@ -92,18 +92,18 @@ void InputManager::BindFocusChainListenerRegistry(
 }
 
 void InputManager::BindViewRefInstalled(
-    fidl::InterfaceRequest<fuchsia::ui::views::ViewRefInstalled> request) {
-  view_ref_installed_impl_.Bind(std::move(request));
+    fidl::ServerEnd<fuchsia_ui_views::ViewRefInstalled> server_end) {
+  view_ref_installed_impl_.Bind(std::move(server_end));
 }
 
 void InputManager::BindObserverRegistry(
-    fidl::InterfaceRequest<fuchsia::ui::observation::test::Registry> request) {
-  observer_registry_.Bind(std::move(request));
+    fidl::ServerEnd<fuchsia_ui_observation_test::Registry> server_end) {
+  observer_registry_.Bind(std::move(server_end));
 }
 
 void InputManager::BindScopedObserverRegistry(
-    fidl::InterfaceRequest<fuchsia::ui::observation::scope::Registry> request) {
-  scoped_observer_registry_.Bind(std::move(request));
+    fidl::ServerEnd<fuchsia_ui_observation_scope::Registry> server_end) {
+  scoped_observer_registry_.Bind(std::move(server_end));
 }
 
 #if !defined(FUCHSIA_DSO)

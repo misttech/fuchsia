@@ -684,23 +684,25 @@ void App::InitializeInput() {
       });
 
   // Register ViewRefInstalled
-  app_context_->outgoing()->AddPublicService<fuchsia::ui::views::ViewRefInstalled>(
-      [this](fidl::InterfaceRequest<fuchsia::ui::views::ViewRefInstalled> request) {
-        input_manager_.AsyncCall(&input::InputManager::BindViewRefInstalled, std::move(request));
-      });
+  FX_CHECK(app_context_->outgoing()->AddProtocol<fuchsia_ui_views::ViewRefInstalled>(
+               [this](fidl::ServerEnd<fuchsia_ui_views::ViewRefInstalled> server_end) {
+                 input_manager_.AsyncCall(&input::InputManager::BindViewRefInstalled,
+                                          std::move(server_end));
+               }) == ZX_OK);
 
   // Register test Observer Registry
-  app_context_->outgoing()->AddPublicService<fuchsia::ui::observation::test::Registry>(
-      [this](fidl::InterfaceRequest<fuchsia::ui::observation::test::Registry> request) {
-        input_manager_.AsyncCall(&input::InputManager::BindObserverRegistry, std::move(request));
-      });
+  FX_CHECK(app_context_->outgoing()->AddProtocol<fuchsia_ui_observation_test::Registry>(
+               [this](fidl::ServerEnd<fuchsia_ui_observation_test::Registry> server_end) {
+                 input_manager_.AsyncCall(&input::InputManager::BindObserverRegistry,
+                                          std::move(server_end));
+               }) == ZX_OK);
 
   // Register scoped Observer Registry
-  app_context_->outgoing()->AddPublicService<fuchsia::ui::observation::scope::Registry>(
-      [this](fidl::InterfaceRequest<fuchsia::ui::observation::scope::Registry> request) {
-        input_manager_.AsyncCall(&input::InputManager::BindScopedObserverRegistry,
-                                 std::move(request));
-      });
+  FX_CHECK(app_context_->outgoing()->AddProtocol<fuchsia_ui_observation_scope::Registry>(
+               [this](fidl::ServerEnd<fuchsia_ui_observation_scope::Registry> server_end) {
+                 input_manager_.AsyncCall(&input::InputManager::BindScopedObserverRegistry,
+                                          std::move(server_end));
+               }) == ZX_OK);
 
   // Register Pointerinjector Registry
 #if !defined(FUCHSIA_DSO)

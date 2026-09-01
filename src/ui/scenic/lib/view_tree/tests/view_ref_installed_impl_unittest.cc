@@ -4,6 +4,7 @@
 
 #include "src/ui/scenic/lib/view_tree/view_ref_installed_impl.h"
 
+#include <fidl/fuchsia.ui.views/cpp/fidl.h>
 #include <lib/async-testing/test_loop.h>
 #include <lib/async/cpp/task.h>
 #include <lib/async/default.h>
@@ -18,9 +19,6 @@
 
 namespace view_tree::test {
 
-using fuchsia::ui::views::ViewRef;
-using fuchsia::ui::views::ViewRefInstalled_Watch_Result;
-
 TEST(ViewRefInstalledImplTest, AlreadyInstalled_ShouldReturnImmediately) {
   async::TestLoop test_loop;
   utils::ScopedThreadDispatcherSetter dispatcher_setter(test_loop.dispatcher(),
@@ -29,7 +27,12 @@ TEST(ViewRefInstalledImplTest, AlreadyInstalled_ShouldReturnImmediately) {
   auto snapshot_holder = std::make_shared<SnapshotHolder>();
   ViewRefInstalledImpl view_ref_installed_impl(snapshot_holder);
 
-  auto [control_ref, view_ref] = scenic::ViewRefPair::New();
+  auto [client_end, server_end] = fidl::Endpoints<fuchsia_ui_views::ViewRefInstalled>::Create();
+  view_ref_installed_impl.Bind(std::move(server_end));
+  fidl::Client<fuchsia_ui_views::ViewRefInstalled> client(std::move(client_end),
+                                                          test_loop.dispatcher());
+
+  auto [control_ref, view_ref] = scenic::cpp::ViewRefPair::New();
   const zx_koid_t koid = utils::ExtractKoid(view_ref);
 
   // Koid is in the ViewTree.
@@ -40,9 +43,11 @@ TEST(ViewRefInstalledImplTest, AlreadyInstalled_ShouldReturnImmediately) {
   view_ref_installed_impl.OnNewViewTreeSnapshot();
 
   bool was_installed = false;
-  view_ref_installed_impl.Watch(
-      std::move(view_ref),
-      [&was_installed](ViewRefInstalled_Watch_Result result) { was_installed = !result.is_err(); });
+  client->Watch({{.view_ref = std::move(view_ref)}})
+      .ThenExactlyOnce(
+          [&was_installed](fidl::Result<fuchsia_ui_views::ViewRefInstalled::Watch>& result) {
+            was_installed = result.is_ok();
+          });
 
   test_loop.RunUntilIdle();
   EXPECT_TRUE(was_installed);
@@ -56,7 +61,12 @@ TEST(ViewRefInstalledImplTest, AlreadyInstalledButDisconnected_ShouldReturnImmed
   auto snapshot_holder = std::make_shared<SnapshotHolder>();
   ViewRefInstalledImpl view_ref_installed_impl(snapshot_holder);
 
-  auto [control_ref, view_ref] = scenic::ViewRefPair::New();
+  auto [client_end, server_end] = fidl::Endpoints<fuchsia_ui_views::ViewRefInstalled>::Create();
+  view_ref_installed_impl.Bind(std::move(server_end));
+  fidl::Client<fuchsia_ui_views::ViewRefInstalled> client(std::move(client_end),
+                                                          test_loop.dispatcher());
+
+  auto [control_ref, view_ref] = scenic::cpp::ViewRefPair::New();
   const zx_koid_t koid = utils::ExtractKoid(view_ref);
 
   {  // Koid is in the ViewTree.
@@ -76,9 +86,11 @@ TEST(ViewRefInstalledImplTest, AlreadyInstalledButDisconnected_ShouldReturnImmed
   }
 
   bool was_installed = false;
-  view_ref_installed_impl.Watch(
-      std::move(view_ref),
-      [&was_installed](ViewRefInstalled_Watch_Result result) { was_installed = !result.is_err(); });
+  client->Watch({{.view_ref = std::move(view_ref)}})
+      .ThenExactlyOnce(
+          [&was_installed](fidl::Result<fuchsia_ui_views::ViewRefInstalled::Watch>& result) {
+            was_installed = result.is_ok();
+          });
 
   test_loop.RunUntilIdle();
   EXPECT_TRUE(was_installed);
@@ -90,14 +102,20 @@ TEST(ViewRefInstalledImplTest, ViewRefWithBadHandle_ShouldReturnErrorImmediately
                                                         test_loop.dispatcher());
 
   ViewRefInstalledImpl view_ref_installed_impl;
+  auto [client_end, server_end] = fidl::Endpoints<fuchsia_ui_views::ViewRefInstalled>::Create();
+  view_ref_installed_impl.Bind(std::move(server_end));
+  fidl::Client<fuchsia_ui_views::ViewRefInstalled> client(std::move(client_end),
+                                                          test_loop.dispatcher());
 
-  // Create a not properly initialized ViewRefPair.
-  scenic::ViewRefPair view_pair;
+  // Create an uninitialized ViewRef.
+  fuchsia_ui_views::ViewRef view_ref;
 
   bool was_error = false;
-  view_ref_installed_impl.Watch(
-      std::move(view_pair.view_ref),
-      [&was_error](ViewRefInstalled_Watch_Result result) { was_error = result.is_err(); });
+  client->Watch({{.view_ref = std::move(view_ref)}})
+      .ThenExactlyOnce(
+          [&was_error](fidl::Result<fuchsia_ui_views::ViewRefInstalled::Watch>& result) {
+            was_error = result.is_error();
+          });
   test_loop.RunUntilIdle();
   EXPECT_TRUE(was_error);
 }
@@ -108,17 +126,24 @@ TEST(ViewRefInstalledImplTest, ViewRefWithBadRights_ShouldReturnErrorImmediately
                                                         test_loop.dispatcher());
 
   ViewRefInstalledImpl view_ref_installed_impl;
+  auto [client_end, server_end] = fidl::Endpoints<fuchsia_ui_views::ViewRefInstalled>::Create();
+  view_ref_installed_impl.Bind(std::move(server_end));
+  fidl::Client<fuchsia_ui_views::ViewRefInstalled> client(std::move(client_end),
+                                                          test_loop.dispatcher());
 
   // Create a ViewRefPair where the ViewRef has faulty rights.
-  scenic::ViewRefPair view_pair = scenic::ViewRefPair::New();
-  auto status =
-      view_pair.view_ref.reference.replace(ZX_RIGHT_INSPECT, &view_pair.view_ref.reference);
+  auto view_pair = scenic::cpp::ViewRefPair::New();
+  zx::eventpair replaced_eventpair;
+  auto status = view_pair.view_ref.reference().replace(ZX_RIGHT_INSPECT, &replaced_eventpair);
   ASSERT_EQ(status, ZX_OK);
+  fuchsia_ui_views::ViewRef faulty_view_ref(std::move(replaced_eventpair));
 
   bool was_error = false;
-  view_ref_installed_impl.Watch(
-      std::move(view_pair.view_ref),
-      [&was_error](ViewRefInstalled_Watch_Result result) { was_error = result.is_err(); });
+  client->Watch({{.view_ref = std::move(faulty_view_ref)}})
+      .ThenExactlyOnce(
+          [&was_error](fidl::Result<fuchsia_ui_views::ViewRefInstalled::Watch>& result) {
+            was_error = result.is_error();
+          });
   test_loop.RunUntilIdle();
   EXPECT_TRUE(was_error);
 }
@@ -129,15 +154,21 @@ TEST(ViewRefInstalledImplTest, ViewRefWithClosedControlRef_ShouldReturnErrorImme
                                                         test_loop.dispatcher());
 
   ViewRefInstalledImpl view_ref_installed_impl;
+  auto [client_end, server_end] = fidl::Endpoints<fuchsia_ui_views::ViewRefInstalled>::Create();
+  view_ref_installed_impl.Bind(std::move(server_end));
+  fidl::Client<fuchsia_ui_views::ViewRefInstalled> client(std::move(client_end),
+                                                          test_loop.dispatcher());
 
   // Create a ViewRefPair and close the ViewRefControl before passing in the ViewRef.
-  scenic::ViewRefPair view_pair = scenic::ViewRefPair::New();
-  zx_handle_close(view_pair.control_ref.reference.get());
+  auto view_pair = scenic::cpp::ViewRefPair::New();
+  view_pair.control_ref.reference().reset();
 
   bool was_error = false;
-  view_ref_installed_impl.Watch(
-      std::move(view_pair.view_ref),
-      [&was_error](ViewRefInstalled_Watch_Result result) { was_error = result.is_err(); });
+  client->Watch({{.view_ref = std::move(view_pair.view_ref)}})
+      .ThenExactlyOnce(
+          [&was_error](fidl::Result<fuchsia_ui_views::ViewRefInstalled::Watch>& result) {
+            was_error = result.is_error();
+          });
   test_loop.RunUntilIdle();
   EXPECT_TRUE(was_error);
 }
@@ -149,16 +180,22 @@ TEST(ViewRefInstalledImplTest, OnViewRefInstalled_ShouldFireWaitingCallbacks) {
 
   auto snapshot_holder = std::make_shared<SnapshotHolder>();
   ViewRefInstalledImpl view_ref_installed_impl(snapshot_holder);
-  auto [control_ref, view_ref] = scenic::ViewRefPair::New();
+  auto [client_end, server_end] = fidl::Endpoints<fuchsia_ui_views::ViewRefInstalled>::Create();
+  view_ref_installed_impl.Bind(std::move(server_end));
+  fidl::Client<fuchsia_ui_views::ViewRefInstalled> client(std::move(client_end),
+                                                          test_loop.dispatcher());
+
+  auto [control_ref, view_ref] = scenic::cpp::ViewRefPair::New();
   const zx_koid_t koid = utils::ExtractKoid(view_ref);
 
   bool has_fired = false;
   bool was_error = false;
-  view_ref_installed_impl.Watch(std::move(view_ref),
-                                [&has_fired, &was_error](ViewRefInstalled_Watch_Result result) {
-                                  has_fired = true;
-                                  was_error = result.is_err();
-                                });
+  client->Watch({{.view_ref = std::move(view_ref)}})
+      .ThenExactlyOnce([&has_fired, &was_error](
+                           fidl::Result<fuchsia_ui_views::ViewRefInstalled::Watch>& result) {
+        has_fired = true;
+        was_error = result.is_error();
+      });
   test_loop.RunUntilIdle();
   EXPECT_FALSE(has_fired);
 
@@ -181,16 +218,21 @@ TEST(ViewRefInstalledImplTest, OnViewRefInvalidated_ShouldFireCallbackWithError)
 
   auto snapshot_holder = std::make_shared<SnapshotHolder>();
   ViewRefInstalledImpl view_ref_installed_impl(snapshot_holder);
+  auto [client_end, server_end] = fidl::Endpoints<fuchsia_ui_views::ViewRefInstalled>::Create();
+  view_ref_installed_impl.Bind(std::move(server_end));
+  fidl::Client<fuchsia_ui_views::ViewRefInstalled> client(std::move(client_end),
+                                                          test_loop.dispatcher());
 
   bool has_fired = false;
   bool was_error = false;
   {
-    scenic::ViewRefPair view_pair = scenic::ViewRefPair::New();
-    view_ref_installed_impl.Watch(std::move(view_pair.view_ref),
-                                  [&has_fired, &was_error](ViewRefInstalled_Watch_Result result) {
-                                    has_fired = true;
-                                    was_error = result.is_err();
-                                  });
+    auto view_pair = scenic::cpp::ViewRefPair::New();
+    client->Watch({{.view_ref = std::move(view_pair.view_ref)}})
+        .ThenExactlyOnce([&has_fired, &was_error](
+                             fidl::Result<fuchsia_ui_views::ViewRefInstalled::Watch>& result) {
+          has_fired = true;
+          was_error = result.is_error();
+        });
     test_loop.RunUntilIdle();
     EXPECT_FALSE(has_fired);
   }  // ViewRefControl goes out of scope, invalidating the passed in ViewRef.
@@ -206,18 +248,24 @@ TEST(ViewRefInstalledImplTest, InstalledThenInvalidated) {
 
   auto snapshot_holder = std::make_shared<SnapshotHolder>();
   ViewRefInstalledImpl view_ref_installed_impl(snapshot_holder);
+  auto [client_end, server_end] = fidl::Endpoints<fuchsia_ui_views::ViewRefInstalled>::Create();
+  view_ref_installed_impl.Bind(std::move(server_end));
+  fidl::Client<fuchsia_ui_views::ViewRefInstalled> client(std::move(client_end),
+                                                          test_loop.dispatcher());
+
   bool has_fired = false;
   bool was_error = false;
 
   {
-    auto [control_ref, view_ref] = scenic::ViewRefPair::New();
+    auto [control_ref, view_ref] = scenic::cpp::ViewRefPair::New();
     const zx_koid_t koid = utils::ExtractKoid(view_ref);
 
-    view_ref_installed_impl.Watch(std::move(view_ref),
-                                  [&has_fired, &was_error](ViewRefInstalled_Watch_Result result) {
-                                    has_fired = true;
-                                    was_error = result.is_err();
-                                  });
+    client->Watch({{.view_ref = std::move(view_ref)}})
+        .ThenExactlyOnce([&has_fired, &was_error](
+                             fidl::Result<fuchsia_ui_views::ViewRefInstalled::Watch>& result) {
+          has_fired = true;
+          was_error = result.is_error();
+        });
     test_loop.RunUntilIdle();
     EXPECT_FALSE(has_fired);
 

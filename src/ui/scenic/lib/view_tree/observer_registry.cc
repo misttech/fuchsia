@@ -2,10 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "observer_registry.h"
+#include "src/ui/scenic/lib/view_tree/observer_registry.h"
 
-#include <lib/syslog/cpp/log_level.h>
-#include <lib/syslog/cpp/log_settings.h>
+#include <lib/async/default.h>
 #include <lib/syslog/cpp/macros.h>
 
 #include "src/ui/scenic/lib/utils/check_is_on_thread.h"
@@ -16,16 +15,17 @@ Registry::Registry(view_tree::GeometryProvider& geometry_provider)
     : geometry_provider_(geometry_provider) {}
 
 void Registry::RegisterGlobalViewTreeWatcher(
-    fidl::InterfaceRequest<fuchsia::ui::observation::geometry::ViewTreeWatcher> request,
-    Registry::RegisterGlobalViewTreeWatcherCallback callback) {
+    RegisterGlobalViewTreeWatcherRequestView request,
+    RegisterGlobalViewTreeWatcherCompleter::Sync& completer) {
   utils::CheckIsOnInputThread();
-  geometry_provider_.RegisterGlobalViewTreeWatcher(std::move(request));
-
-  callback();
+  geometry_provider_.RegisterGlobalViewTreeWatcher(std::move(request->watcher));
+  completer.Reply();
 }
 
-void Registry::Bind(fidl::InterfaceRequest<fuchsia::ui::observation::test::Registry> request) {
+void Registry::Bind(fidl::ServerEnd<fuchsia_ui_observation_test::Registry> server_end) {
   utils::CheckIsOnInputThread();
-  bindings_.AddBinding(this, std::move(request));
+  bindings_.AddBinding(async_get_default_dispatcher(), std::move(server_end), this,
+                       fidl::kIgnoreBindingClosure);
 }
+
 }  // namespace view_tree

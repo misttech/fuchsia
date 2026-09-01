@@ -5,14 +5,16 @@
 #ifndef SRC_UI_SCENIC_LIB_VIEW_TREE_GEOMETRY_PROVIDER_H_
 #define SRC_UI_SCENIC_LIB_VIEW_TREE_GEOMETRY_PROVIDER_H_
 
-#include <fuchsia/ui/observation/geometry/cpp/fidl.h>
-#include <lib/fidl/cpp/binding_set.h>
-#include <lib/sys/cpp/component_context.h>
+#include <fidl/fuchsia.ui.observation.geometry/cpp/fidl.h>
+#include <lib/fidl/cpp/wire/server.h>
 
 #include <deque>
+#include <memory>
+#include <optional>
 #include <unordered_map>
 
 #include "src/lib/fxl/macros.h"
+#include "src/lib/fxl/memory/weak_ptr.h"
 #include "src/ui/scenic/lib/view_tree/snapshot_holder.h"
 #include "src/ui/scenic/lib/view_tree/snapshot_types.h"
 
@@ -25,23 +27,23 @@ class GeometryProvider {
  public:
   explicit GeometryProvider(std::shared_ptr<view_tree::SnapshotHolder> snapshot_holder);
   // Adds a server side endpoint to |endpoints_| for lifecycle management.
-  void Register(
-      fidl::InterfaceRequest<fuchsia::ui::observation::geometry::ViewTreeWatcher> endpoint,
-      zx_koid_t context_view);
+  void Register(fidl::ServerEnd<fuchsia_ui_observation_geometry::ViewTreeWatcher> endpoint,
+                zx_koid_t context_view);
 
   // Adds a server side endpoint provided by
   // fuchsia.ui.observation.test.Registry.RegisterGlobalViewTreeWatcher to |endpoints_|. Endpoints
   // registered by this method get a global access to the view tree.
   void RegisterGlobalViewTreeWatcher(
-      fidl::InterfaceRequest<fuchsia::ui::observation::geometry::ViewTreeWatcher> endpoint);
+      fidl::ServerEnd<fuchsia_ui_observation_geometry::ViewTreeWatcher> endpoint);
 
   void OnNewViewTreeSnapshot();
 
-  // Generates a fuchsia.ui.observation.geometry.ViewTreeSnapshot from the |snapshot| by
+  // Generates a fuchsia_ui_observation_geometry::ViewTreeSnapshot from the |snapshot| by
   // extracting information about the |context_view| and its descendant views from
   // |snapshot|.
-  static fuchsia::ui::observation::geometry::ViewTreeSnapshotPtr ExtractObservationSnapshot(
-      std::optional<zx_koid_t> endpoint_context_view, const view_tree::Snapshot& snapshot);
+  static std::optional<fuchsia_ui_observation_geometry::ViewTreeSnapshot>
+  ExtractObservationSnapshot(std::optional<zx_koid_t> endpoint_context_view,
+                             const view_tree::Snapshot& snapshot);
 
  private:
   using ProviderEndpointId = int64_t;
@@ -49,29 +51,28 @@ class GeometryProvider {
   // This class implements the server side endpoint for
   // fuchsia.ui.observation.geometry.ViewTreeWatcher clients and manages a deque of snapshot updates
   // to be sent to the client on receiving a Watch() call.
-  class ProviderEndpoint : public fuchsia::ui::observation::geometry::ViewTreeWatcher {
+  class ProviderEndpoint
+      : public fidl::WireServer<fuchsia_ui_observation_geometry::ViewTreeWatcher> {
    public:
     explicit ProviderEndpoint(
-        fidl::InterfaceRequest<fuchsia::ui::observation::geometry::ViewTreeWatcher> provider,
-        std::optional<zx_koid_t> context_view, ProviderEndpointId id,
-        fit::function<void()> destroy_instance_function);
+        fidl::ServerEnd<fuchsia_ui_observation_geometry::ViewTreeWatcher> endpoint,
+        std::optional<zx_koid_t> context_view, fit::function<void()> destroy_instance_function);
 
-    ProviderEndpoint(ProviderEndpoint&& original) noexcept;
+    ~ProviderEndpoint() override;
 
-    // |fuchsia.ui.observation.geometry.ViewTreeWatcher.Watch|.
-    void Watch(
-        fuchsia::ui::observation::geometry::ViewTreeWatcher::WatchCallback callback) override;
+    // |fidl::WireServer<fuchsia_ui_observation_geometry::ViewTreeWatcher>|
+    void Watch(WatchCompleter::Sync& completer) override;
 
     // Adds the latest snapshot to |view_tree_snapshots_|.
     //
-    // If the size of |view_tree_snapshots_| exceeds |fuchsia.ui.observation.geometry.BUFFER_SIZE|,
-    // it replaces the oldest snapshot with the new one. If there were any pending callback because
+    // If the size of |view_tree_snapshots_| exceeds |fuchsia_ui_observation_geometry::kBufferSize|,
+    // it replaces the oldest snapshot with the new one. If there was any pending callback because
     // of a client calling Watch() when there were no pending snapshots, it gets triggered with the
     // latest |view_tree_snapshots_|.
     void AddViewTreeSnapshot(
-        fuchsia::ui::observation::geometry::ViewTreeSnapshotPtr view_tree_snapshot);
+        std::optional<fuchsia_ui_observation_geometry::ViewTreeSnapshot> view_tree_snapshot);
 
-    bool IsAlive() const { return endpoint_.is_bound(); }
+    bool IsAlive() const { return binding_.has_value(); }
 
     std::optional<zx_koid_t> context_view() const { return context_view_; }
 
@@ -80,56 +81,47 @@ class GeometryProvider {
     // then sends the response.
     void SendResponseMaybe();
 
-    // Trigger the |pending_callback_| to send the response to the client. If the size of the
+    // Trigger the |pending_completer_| to send the response to the client. If the size of the
     // response exceeds ZX_CHANNEL_MAX_MSG_BYTES, older
-    // `fuchsia.ui.observation.geometry.ViewTreeSnapshot`s in the response are dropped.
+    // `fuchsia_ui_observation_geometry::ViewTreeSnapshot`s in the response are dropped.
     void SendResponse();
 
-    // Closes the fidl channel. This triggers the destruction of the ProviderEndpoint object through
-    // the |destroy_instance_function_|. NOTE: No further method calls or member accesses should be
-    // made after CloseChannel(), since they might be made on a destroyed object.
+    // Closes the fidl channel.
     void CloseChannel();
 
     // Resets the state of an |endpoint_| for subsequent |Watch| calls.
     void Reset();
 
-    // Server-side endpoint.
-    fidl::Binding<fuchsia::ui::observation::geometry::ViewTreeWatcher> endpoint_;
+    // Server-side endpoint binding.
+    std::optional<fidl::ServerBinding<fuchsia_ui_observation_geometry::ViewTreeWatcher>> binding_;
 
     // A deque containing pending snapshot updates for a client. The size of the deque cannot exceed
-    // |fuchsia::ui::observation::geometry::BUFFER_SIZE|.
-    std::deque<fuchsia::ui::observation::geometry::ViewTreeSnapshotPtr> view_tree_snapshots_;
+    // |fuchsia_ui_observation_geometry::kBufferSize|.
+    std::deque<fuchsia_ui_observation_geometry::ViewTreeSnapshot> view_tree_snapshots_;
 
     // If the last |Watch| call did not immediately trigger a callback, it gets stored here and is
     // triggered whenever a new snapshot gets generated.
-    fuchsia::ui::observation::geometry::ViewTreeWatcher::WatchCallback pending_callback_;
+    std::optional<WatchCompleter::Async> pending_completer_;
 
     std::optional<const zx_koid_t> context_view_;
 
-    // Key for storing the associated server endpoint in |endpoints_|.
-    const ProviderEndpointId id_;
-
-    // A closure which gets triggered whenever the server endpoint closes. The closure is
-    // responsible for removing the ProviderEndpoint from |endpoints_|.
-    fit::function<void()> destroy_instance_function_;
-
-    // Errors faced while executing the |pending_callback_|. |error_| must be reset after
-    // |pending_callback_| is executed for subsequent |Watch| calls.
-    fuchsia::ui::observation::geometry::Error error_;
+    // Errors faced while executing the |pending_completer_|. |error_| must be reset after
+    // |pending_completer_| is executed for subsequent |Watch| calls.
+    fuchsia_ui_observation_geometry::Error error_{};
   };
 
   // Common impl for `Register()` and `RegisterGlobalViewTreeWatcher()`.
   void RegisterViewTreeWatcherImpl(
-      fidl::InterfaceRequest<fuchsia::ui::observation::geometry::ViewTreeWatcher> endpoint,
+      fidl::ServerEnd<fuchsia_ui_observation_geometry::ViewTreeWatcher> endpoint,
       std::optional<zx_koid_t> context_view);
 
-  // Generates a fuchsia.ui.observation.geometry.ViewDescriptor from the |snapshot|'s view node by
+  // Generates a fuchsia_ui_observation_geometry::ViewDescriptor from the |snapshot|'s view node by
   // extracting information about the |view_ref_koid| from the view node.
   // The view nodes corresponding to views with 0x0 size are *not* reported.
-  static fuchsia::ui::observation::geometry::ViewDescriptor ExtractViewDescriptor(
+  static fuchsia_ui_observation_geometry::ViewDescriptor ExtractViewDescriptor(
       zx_koid_t view_ref_koid, zx_koid_t context_view, const view_tree::Snapshot& snapshot);
 
-  std::unordered_map<ProviderEndpointId, ProviderEndpoint> endpoints_;
+  std::unordered_map<ProviderEndpointId, std::unique_ptr<ProviderEndpoint>> endpoints_;
 
   // Incremented when Register() is called.
   ProviderEndpointId endpoint_counter_ = 0;
@@ -137,6 +129,8 @@ class GeometryProvider {
   std::shared_ptr<view_tree::SnapshotHolder> snapshot_holder_;
 
   uint64_t latest_sequence_number_ = 0;
+
+  fxl::WeakPtrFactory<GeometryProvider> weak_factory_{this};
 
   FXL_DISALLOW_COPY_ASSIGN_AND_MOVE(GeometryProvider);
 };

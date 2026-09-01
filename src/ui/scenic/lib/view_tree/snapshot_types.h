@@ -5,9 +5,6 @@
 #ifndef SRC_UI_SCENIC_LIB_VIEW_TREE_SNAPSHOT_TYPES_H_
 #define SRC_UI_SCENIC_LIB_VIEW_TREE_SNAPSHOT_TYPES_H_
 
-// TODO(https://fxbug.dev/404958102): delete mentions of GFX in `ViewNode`, then delete this.
-#include <fuchsia/math/cpp/fidl.h>
-#include <fuchsia/ui/views/cpp/fidl.h>
 #include <lib/fit/function.h>
 #include <zircon/types.h>
 
