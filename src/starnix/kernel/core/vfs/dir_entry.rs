@@ -854,11 +854,13 @@ impl DirEntry {
                 )?;
             }
 
-            // We've found all the errors that we know how to find. Ask the
-            // file system to actually execute the rename operation. Once the
-            // file system has executed the rename, we are no longer allowed to
-            // fail because we will not be able to return the system to a
-            // consistent state.
+            // In a casefolded directory, renaming an entry to a case variant of itself resolves
+            // `lookup_replaced` to the same DirEntry (`renamed`). At the filesystem level, no
+            // distinct directory entry is being overwritten or replaced, so clear `state.replaced`
+            // to `None` before invoking the filesystem operation.
+            if state.replaced.is_some_and(|r| Arc::ptr_eq(&renamed, r)) {
+                state.replaced = None;
+            }
 
             if flags.contains(RenameFlags::EXCHANGE) {
                 fs.exchange(current_task, &mut state, old_basename, new_basename)?;
