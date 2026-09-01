@@ -487,7 +487,7 @@ pub fn sys_kill(
                     Some(ProcessEntryRef::Process(process)) => process,
 
                     // Zombies cannot receive signals. Just ignore it.
-                    Some(ProcessEntryRef::Zombie(_zombie)) => return Ok(()),
+                    Some(ProcessEntryRef::Zombie) => return Ok(()),
 
                     // If we don't have process with `pid` then check if there is a task with
                     // the `pid`.
@@ -552,7 +552,7 @@ fn verify_tgid_for_task(
 ) -> Result<(), Errno> {
     let thread_group = match pids.get_process(tgid) {
         Some(ProcessEntryRef::Process(proc)) => proc,
-        Some(ProcessEntryRef::Zombie(_)) => return error!(EINVAL),
+        Some(ProcessEntryRef::Zombie) => return error!(EINVAL),
         None => return error!(ESRCH),
     };
     if *task.thread_group() != thread_group {

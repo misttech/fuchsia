@@ -3,11 +3,10 @@
 // found in the LICENSE file.
 
 use crate::task::memory_attribution::MemoryAttributionLifecycleEvent;
-use crate::task::{ProcessGroup, Task, ThreadGroup, ZombieProcess};
+use crate::task::{ProcessGroup, Task, ThreadGroup};
 use fuchsia_rcu::RcuOptionBox;
 use starnix_logging::track_stub;
 use starnix_rcu::{RcuHashMap, RcuReadScope};
-use starnix_types::ownership::{TempRef, WeakRef};
 use starnix_uapi::errors::Errno;
 use starnix_uapi::{errno, pid_t, tid_t};
 use std::collections::HashMap;
@@ -21,7 +20,7 @@ enum ProcessEntry {
     #[default]
     None,
     ThreadGroup(Weak<ThreadGroup>),
-    Zombie(WeakRef<ZombieProcess>),
+    Zombie,
 }
 
 impl ProcessEntry {
@@ -50,9 +49,9 @@ impl PidEntry {
     }
 }
 
-pub enum ProcessEntryRef<'a> {
+pub enum ProcessEntryRef {
     Process(Arc<ThreadGroup>),
-    Zombie(TempRef<'a, ZombieProcess>),
+    Zombie,
 }
 
 #[derive(Default, Debug)]
@@ -147,7 +146,7 @@ impl PidTable {
         });
     }
 
-    pub fn get_process(&self, pid: pid_t) -> Option<ProcessEntryRef<'_>> {
+    pub fn get_process(&self, pid: pid_t) -> Option<ProcessEntryRef> {
         match self.get_entry(pid) {
             None => None,
             Some(PidEntry { process: ProcessEntry::None, .. }) => None,
@@ -157,12 +156,7 @@ impl PidTable {
                     .expect("ThreadGroup was released, but not removed from PidTable");
                 Some(ProcessEntryRef::Process(thread_group))
             }
-            Some(PidEntry { process: ProcessEntry::Zombie(zombie), .. }) => {
-                let zombie = zombie
-                    .upgrade()
-                    .expect("ZombieProcess was released, but not removed from PidTable");
-                Some(ProcessEntryRef::Zombie(zombie))
-            }
+            Some(PidEntry { process: ProcessEntry::Zombie, .. }) => Some(ProcessEntryRef::Zombie),
         }
     }
 
@@ -181,8 +175,8 @@ impl PidTable {
             .collect()
     }
 
-    /// Replace process with the specified `pid` with the `zombie`.
-    pub fn kill_process(&mut self, pid: pid_t, zombie: WeakRef<ZombieProcess>) {
+    /// Replace process with the specified `pid` with a zombie.
+    pub fn kill_process(&mut self, pid: pid_t) {
         let entry = self.get_entry_mut(pid);
         assert!(matches!(entry.process, ProcessEntry::ThreadGroup(_)));
 
@@ -190,12 +184,12 @@ impl PidTable {
         // becomes a zombie. We can't verify this for all tasks here, check it just for the leader.
         assert!(entry.task.is_none());
 
-        entry.process = ProcessEntry::Zombie(zombie);
+        entry.process = ProcessEntry::Zombie;
     }
 
     pub fn remove_zombie(&mut self, pid: pid_t) {
         self.remove_item(pid, |entry| {
-            assert!(matches!(entry.process, ProcessEntry::Zombie(_)));
+            assert!(matches!(entry.process, ProcessEntry::Zombie));
             entry.process = ProcessEntry::None;
         });
 

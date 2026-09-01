@@ -1953,7 +1953,7 @@ pub fn sys_pidfd_open(
             (Some(ProcessEntryRef::Process(proc)), Some(task)) => {
                 new_pidfd(current_task, &proc, &*task.mm()?, open_flags)
             }
-            (Some(ProcessEntryRef::Zombie(_)), _) => new_zombie_pidfd(current_task, open_flags),
+            (Some(ProcessEntryRef::Zombie), _) => new_zombie_pidfd(current_task, open_flags),
             (None, Some(_)) => return error!(EINVAL),
             _ => return error!(ESRCH),
         };

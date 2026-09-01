@@ -929,7 +929,7 @@ impl ThreadGroup {
                 ProcessExitInfo { status: exit_status, exit_signal: state.exit_signal.clone() };
             let zombie =
                 ZombieProcess::new(state.as_ref(), &persistent_info.real_creds(), exit_info);
-            pids.kill_process(self.leader, OwnedRef::downgrade(&zombie));
+            pids.kill_process(self.leader);
 
             let session = state.leave_process_group(&pids);
 
