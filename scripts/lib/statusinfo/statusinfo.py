@@ -3,8 +3,8 @@
 # found in the LICENSE file.
 
 import datetime
-import os
 import re
+import shutil
 import typing
 from dataclasses import dataclass
 
@@ -438,7 +438,7 @@ def duration_progress(
     >>> duration_progress('Testing a really really long string that will be truncated', datetime.timedelta(microseconds=3201123), width=70, style=False)
     'Testing a really really long string that will be tr…   [3.2s]        '
     """
-    width = width or os.get_terminal_size().columns
+    width = width or shutil.get_terminal_size().columns
     shape = _split_by_weights([75, 5, 20], width)
     label_width, padding_width, duration_width = shape
 
@@ -480,7 +480,7 @@ def status_progress(
     >>> strip_ansi(status_progress("Downloading foo", .3, 80))
     'Downloading foo     [===============>                                  ]   30.0%'
     """
-    width = width or os.get_terminal_size().columns
+    width = width or shutil.get_terminal_size().columns
     shape = _split_by_weights([25, 65, 10], width)
     label_width, bar_width, info_width = shape
 

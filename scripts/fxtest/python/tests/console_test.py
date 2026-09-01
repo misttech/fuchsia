@@ -72,7 +72,7 @@ class TestConsole(unittest.IsolatedAsyncioTestCase):
     )
     @mock.patch("console.termout.is_valid", return_value=True)
     @mock.patch(
-        "console.statusinfo.os.get_terminal_size",
+        "console.statusinfo.shutil.get_terminal_size",
         return_value=mock.MagicMock(columns=80),
     )
     async def test_console(
