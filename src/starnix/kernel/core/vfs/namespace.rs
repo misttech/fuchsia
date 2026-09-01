@@ -19,7 +19,7 @@ use crate::vfs::{
     fileops_impl_dataless, fileops_impl_delegate_read_write_and_seek, fileops_impl_nonseekable,
     fileops_impl_noop_sync, fs_node_impl_not_dir,
 };
-use fuchsia_rcu::{RcuBox, RcuDroppable, RcuReadScope};
+use fuchsia_rcu::{RcuArc, RcuBox, RcuReadScope};
 use fuchsia_rcu_collections::rcu_raw_hash_map::RcuRawHashMap;
 use fuchsia_sync::Mutex;
 use starnix_logging::log_warn;
@@ -257,7 +257,7 @@ struct MountRelations {
     /// A lock-free RCU friendly view of [submounts].
     submount_lookup: RcuRawHashMap<WeakKey<DirEntry>, Weak<Mount>>,
     /// The membership of this mount in its peer group.
-    peer_group: RcuBox<Option<(Arc<PeerGroup>, PtrKey<Mount>)>>,
+    peer_group: RcuArc<PeerGroup>,
     /// The membership of this mount in a PeerGroup's downstream.
     upstream: RcuBox<Option<(Weak<PeerGroup>, PtrKey<Mount>)>>,
 }
@@ -331,11 +331,8 @@ impl MountRelations {
         self.mountpoint.as_ref(scope).as_ref()
     }
 
-    fn take_peer_group(
-        &self,
-        _guard: &MountsWriteToken,
-    ) -> Option<(Arc<PeerGroup>, PtrKey<Mount>)> {
-        let peer_group = self.peer_group.cloned();
+    fn take_peer_group(&self, _guard: &MountsWriteToken) -> Option<Arc<PeerGroup>> {
+        let peer_group = self.peer_group.upgrade();
         self.peer_group.update(None);
         peer_group
     }
@@ -350,7 +347,7 @@ impl MountRelations {
 /// A group of mounts. Setting MS_SHARED on a mount puts it in its own peer group. Any bind mounts
 /// of a mount in the group are also added to the group. A mount created in any mount in a peer
 /// group will be automatically propagated (recreated) in every other mount in the group.
-#[derive(Default, RcuDroppable)]
+#[derive(Default)]
 struct PeerGroup {
     id: u64,
     mounts: RcuRawHashMap<WeakKey<Mount>, ()>,
@@ -710,16 +707,16 @@ impl Mount {
 
     /// Return this mount's current peer group.
     fn peer_group(&self) -> Option<Arc<PeerGroup>> {
-        let scope = RcuReadScope::new();
-        self.relations.peer_group.as_ref(&scope).as_ref().map(|(g, _)| g.clone())
+        self.relations.peer_group.upgrade()
     }
 
     /// Handles unregistering from both peer group and upstream simultaneously.
     /// This resolves forwarding the upstream to the next mount in the peer group if necessary.
     fn unregister_from_peer_group_and_upstream(
         guard: &MountsWriteToken,
-        peer_group: Option<(Arc<PeerGroup>, PtrKey<Mount>)>,
+        peer_group: Option<Arc<PeerGroup>>,
         upstream: Option<(Weak<PeerGroup>, PtrKey<Mount>)>,
+        mount_ptr: PtrKey<Mount>,
     ) {
         let upstream_group = match upstream {
             Some((weak_group, mount)) => {
@@ -733,13 +730,13 @@ impl Mount {
             None => None,
         };
 
-        if let Some((group, mount)) = peer_group {
-            group.remove(guard, mount);
+        if let Some(group) = peer_group {
+            group.remove(guard, mount_ptr);
 
             if let Some(upstream_group) = upstream_group {
                 let next_mount = {
                     let scope = RcuReadScope::new();
-                    group.mounts.keys(&scope).next().map(|w| w.0.upgrade().unwrap())
+                    group.mounts.keys(&scope).next().and_then(|w| w.0.upgrade())
                 };
                 if let Some(next_mount) = next_mount {
                     next_mount.set_upstream(guard, upstream_group);
@@ -755,8 +752,13 @@ impl Mount {
             return None;
         }
         let upstream = self.relations.take_upstream(guard);
-        let return_group = peer_group.as_ref().map(|(g, _)| g.clone());
-        Mount::unregister_from_peer_group_and_upstream(guard, peer_group, upstream);
+        let return_group = peer_group.clone();
+        Mount::unregister_from_peer_group_and_upstream(
+            guard,
+            peer_group,
+            upstream,
+            PtrKey::from(self),
+        );
         return_group
     }
 
@@ -779,7 +781,7 @@ impl Mount {
     fn set_peer_group(self: &Arc<Mount>, guard: &MountsWriteToken, group: Arc<PeerGroup>) {
         self.take_from_peer_group(guard);
         group.add(guard, self);
-        self.relations.peer_group.update(Some((group, Arc::as_ptr(self).into())));
+        self.relations.peer_group.update(Some(group));
     }
 
     fn set_upstream(self: &Arc<Mount>, guard: &MountsWriteToken, group: Arc<PeerGroup>) {
@@ -790,7 +792,7 @@ impl Mount {
 
     /// Is the mount in a peer group? Corresponds to MS_SHARED.
     pub fn is_shared(&self) -> bool {
-        self.peer_group().is_some()
+        self.relations.peer_group.is_some()
     }
 
     /// Put the mount in a peer group. Implements MS_SHARED.
@@ -806,7 +808,12 @@ impl Mount {
     fn make_private(&self, guard: &MountsWriteToken) {
         let peer_group = self.relations.take_peer_group(guard);
         let upstream = self.relations.take_upstream(guard);
-        Mount::unregister_from_peer_group_and_upstream(guard, peer_group, upstream);
+        Mount::unregister_from_peer_group_and_upstream(
+            guard,
+            peer_group,
+            upstream,
+            PtrKey::from(self),
+        );
     }
 
     /// Take the mount out of its peer group and make it downstream instead. Implements
@@ -2081,14 +2088,17 @@ impl Drop for Mount {
         // Updating the RCU object without lock is acceptable because this Mount is not available
         // anymore by anything.
         let kernel = self.kernel();
-        let peer_group = self.relations.peer_group.cloned();
+        let peer_group = self.relations.peer_group.upgrade();
         let upstream = self.relations.upstream.cloned();
         self.relations.peer_group.update(None);
         self.relations.upstream.update(None);
         if peer_group.is_some() || upstream.is_some() {
+            let mount_ptr = PtrKey::from(self as &Mount);
             register_delayed_call(move |_current_task| {
                 let guard = kernel.mounts_lock();
-                Mount::unregister_from_peer_group_and_upstream(&guard, peer_group, upstream);
+                Mount::unregister_from_peer_group_and_upstream(
+                    &guard, peer_group, upstream, mount_ptr,
+                );
             });
         }
     }
