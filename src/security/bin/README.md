@@ -12,9 +12,11 @@ of Fuchsia.
   Root Store CA certificates. Serves as the general-purpose TLS trust store for
   outbound web traffic and third-party services.
 * [google\_root\_ssl\_certificates](//src/security/bin/google_root_ssl_certificates):
-  Restricted Google-only TLS root CA certificates. Excludes commercial third-party CAs to
-  enforce least-privilege transport security for first-party Google services
-  (SWD, Feedback, Cobalt, Timekeeper).
+  Google Trust Services (GTS) root CA certificates. Restricts trust to the
+  publicly operated Google Trust Services authorities used by services connecting
+  to Google backends (Feedback, Cobalt, Timekeeper, and SWD in restricted mode).
+
+
 * [kms](//src/security/bin/kms): Key Management Service for hardware-backed key
   storage and cryptographic operations.
 * [tee\_manager](//src/security/bin/tee_manager): Fuchsia - TEE communication
