@@ -5,6 +5,7 @@
 #ifndef SRC_UI_SCENIC_LIB_FLATLAND_HANGING_GET_HELPER_H_
 #define SRC_UI_SCENIC_LIB_FLATLAND_HANGING_GET_HELPER_H_
 
+#include <fidl/fuchsia.ui.views/cpp/fidl.h>
 #include <lib/async/cpp/task.h>
 #include <lib/async/dispatcher.h>
 #include <lib/fidl/cpp/clone.h>
@@ -13,14 +14,85 @@
 #include <lib/syslog/cpp/macros.h>
 
 #include <mutex>
-
-// TODO(https://fxbug.dev/351845529): This is very strange.  Without this, there is a compilation
-// error in `hanging_get_helper_unittest.cc` even though:
-//   - the same file is included in `hanging_get_helper_unittest.cc`
-//   - none of these types are used in this file
-#include <fuchsia/ui/composition/cpp/fidl.h>
+#include <optional>
+#include <type_traits>
+#include <utility>
 
 namespace flatland {
+
+namespace internal {
+
+template <typename T, typename = void>
+struct HasEqualityOperator : std::false_type {};
+
+template <typename T>
+struct HasEqualityOperator<
+    T, std::void_t<decltype(std::declval<const T&>() == std::declval<const T&>())>>
+    : std::true_type {};
+
+template <typename T, typename = void>
+struct HasFidlEqualityOperator : std::false_type {};
+
+template <typename T>
+struct HasFidlEqualityOperator<T, std::void_t<decltype(std::declval<::fidl::Equality<T>>()(
+                                      std::declval<const T&>(), std::declval<const T&>()))>>
+    : std::true_type {};
+
+template <typename T>
+bool DataEquals(const T& a, const T& b) {
+  if constexpr (HasEqualityOperator<T>::value) {
+    return a == b;
+  } else if constexpr (std::is_same_v<T, fuchsia_ui_views::ViewRef>) {
+    if (!a.reference().is_valid() && !b.reference().is_valid()) {
+      return true;
+    }
+    if (!a.reference().is_valid() || !b.reference().is_valid()) {
+      return false;
+    }
+    zx_info_handle_basic_t a_info{}, b_info{};
+    a.reference().get_info(ZX_INFO_HANDLE_BASIC, &a_info, sizeof(a_info), nullptr, nullptr);
+    b.reference().get_info(ZX_INFO_HANDLE_BASIC, &b_info, sizeof(b_info), nullptr, nullptr);
+    return a_info.koid != ZX_KOID_INVALID && a_info.koid == b_info.koid;
+  } else if constexpr (HasFidlEqualityOperator<T>::value) {
+    return fidl::Equals(a, b);
+  } else {
+    static_assert(sizeof(T) == 0, "Type must support either operator== or fidl::Equals");
+    return false;
+  }
+}
+
+template <typename T, typename = void>
+struct HasCloneMethod : std::false_type {};
+
+template <typename T>
+struct HasCloneMethod<T, std::void_t<decltype(std::declval<const T&>().Clone(std::declval<T*>()))>>
+    : std::true_type {};
+
+template <typename T>
+T DataClone(const T& val) {
+  if constexpr (std::is_copy_constructible_v<T>) {
+    return val;
+  } else if constexpr (std::is_same_v<T, fuchsia_ui_views::ViewRef>) {
+    fuchsia_ui_views::ViewRef out;
+    if (val.reference().is_valid()) {
+      zx::eventpair handle;
+      zx_status_t status = val.reference().duplicate(ZX_RIGHT_SAME_RIGHTS, &handle);
+      FX_DCHECK(status == ZX_OK);
+      out.reference(std::move(handle));
+    }
+    return out;
+  } else if constexpr (HasCloneMethod<T>::value) {
+    T out = T();
+    fidl::Clone(val, &out);
+    return out;
+  } else {
+    static_assert(sizeof(T) == 0,
+                  "Type must be copy-constructible, ViewRef, or support fidl::Clone");
+    return {};
+  }
+}
+
+}  // namespace internal
 
 /// A helper class for managing [hanging get
 /// semantics](https://fuchsia.dev/fuchsia-src/development/api/fidl.md#delay-responses-using-hanging-gets).
@@ -34,12 +106,6 @@ namespace flatland {
 /// Each callback will only be triggered once. Each Update will only trigger, at most, a single
 /// callback. Update(Data x) is idempotent. Calling it with the same value will not trigger a new
 /// execution of a registered callback, nor will it remove the registered callback.
-///
-/// The templated Data parameter must be a FIDL type, one that supports both fidl::Clone and
-/// fidl::Equals.
-// TODO(https://fxbug.dev/351845529): the reliance on fidl::Clone and fidl::Equals is a roadblock
-// for completing the migration from HLCPP->Natural bindings; there are no analogous operations for
-// natural types.
 template <class Data>
 class HangingGetHelper {
  public:
@@ -50,7 +116,7 @@ class HangingGetHelper {
   void Update(Data data) {
     std::lock_guard<std::mutex> guard(mutex_);
 
-    if (last_data_ && fidl::Equals(last_data_.value(), data)) {
+    if (last_data_ && internal::DataEquals(last_data_.value(), data)) {
       return;
     }
 
@@ -73,8 +139,7 @@ class HangingGetHelper {
  private:
   void SendIfReady() {
     if (data_ && callback_) {
-      last_data_ = Data();
-      fidl::Clone(data_.value(), &last_data_.value());
+      last_data_ = internal::DataClone(data_.value());
 
       callback_(std::move(data_.value()));
 
