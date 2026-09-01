@@ -66,7 +66,7 @@ Runner::Runner(Reporter&& reporter) : reporter_(std::move(reporter)) {
 }
 Runner::~Runner() = default;
 
-TestRef Runner::RegisterTest(const fbl::String& test_case_name, const fbl::String& test_name,
+TestRef Runner::RegisterTest(std::string_view test_case_name, std::string_view test_name,
                              const SourceLocation& location, internal::TestFactory factory,
                              internal::SetUpTestCaseFn set_up,
                              internal::TearDownTestCaseFn tear_down) {
@@ -195,7 +195,7 @@ void Runner::List(const Runner::Options& options) {
 void Runner::EnforceOptions(const Runner::Options& options) {
   summary_.active_test_count = 0;
   summary_.active_test_case_count = 0;
-  fbl::String filter_pattern = options.filter;
+  std::string filter_pattern = options.filter;
   const FilterOp filter_op = {.pattern = filter_pattern, .run_disabled = options.run_disabled};
   for (auto& test_case : test_cases_) {
     // TODO(gevalentino): replace with filter function.
@@ -240,7 +240,7 @@ Runner* Runner::GetInstance() {
 }
 
 int RunAllTests(int argc, char** argv) {
-  std::vector<fbl::String> errors;
+  std::vector<std::string> errors;
   LogSink* log_sink = Runner::GetInstance()->mutable_reporter()->mutable_log_sink();
   Runner::Options options = Runner::Options::FromArgs(argc, argv, &errors);
 
@@ -311,15 +311,16 @@ bool MatchPatterns(std::string_view pattern, std::string_view str) {
 
 }  // namespace
 
-bool FilterOp::operator()(const fbl::String& test_case, const fbl::String& test) const {
-  fbl::String full_test_name = fbl::StringPrintf("%s.%s", test_case.c_str(), test.c_str());
+bool FilterOp::operator()(std::string_view test_case, std::string_view test) const {
   if (!run_disabled) {
-    std::string_view test_case_view(test_case.c_str(), test_case.size());
-    std::string_view test_view(test.c_str(), test.size());
-    if (test_case_view.find(kDisabledTestPrefix) == 0 || test_view.find(kDisabledTestPrefix) == 0) {
+    if (test_case.starts_with(kDisabledTestPrefix) || test.starts_with(kDisabledTestPrefix)) {
       return false;
     }
   }
+
+  std::string full_test_name{test_case};
+  full_test_name += '.';
+  full_test_name += test;
 
   const char* p = pattern.c_str();
   const char* d = strchr(p, '-');

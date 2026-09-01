@@ -5,12 +5,13 @@
 #ifndef ZXTEST_BASE_PARAMETERIZED_VALUE_H_
 #define ZXTEST_BASE_PARAMETERIZED_VALUE_H_
 
-#include <lib/stdcompat/string_view.h>
+#include <lib/fit/function.h>
 #include <zircon/assert.h>
 
+#include <functional>
 #include <optional>
+#include <string>
 
-#include <fbl/string.h>
 #include <zxtest/base/observer.h>
 #include <zxtest/base/types.h>
 #include <zxtest/base/values.h>
@@ -93,7 +94,7 @@ bool TypeIdProvider<T>::unique_addr_ = false;
 class ParameterizedTestCaseInfo {
  public:
   ParameterizedTestCaseInfo() = default;
-  explicit ParameterizedTestCaseInfo(const fbl::String& test_case_name) : name_(test_case_name) {}
+  explicit ParameterizedTestCaseInfo(std::string_view test_case_name) : name_(test_case_name) {}
   ParameterizedTestCaseInfo(const ParameterizedTestCaseInfo&) = delete;
   ParameterizedTestCaseInfo(ParameterizedTestCaseInfo&&) = delete;
   ParameterizedTestCaseInfo& operator=(const ParameterizedTestCaseInfo&) = delete;
@@ -101,7 +102,7 @@ class ParameterizedTestCaseInfo {
   virtual ~ParameterizedTestCaseInfo() = default;
 
   // Returns the name of the test case.
-  const fbl::String& name() const { return name_; }
+  const std::string& name() const { return name_; }
 
   // Registers all parametrized tests of this test case with |runner|.
   virtual void RegisterTest(Runner* runner) = 0;
@@ -111,14 +112,13 @@ class ParameterizedTestCaseInfo {
   virtual TypeId GetFixtureId() const = 0;
 
  private:
-  fbl::String name_;
+  std::string name_;
 };
 
 class AddTestDelegate {
  public:
   virtual ~AddTestDelegate() = default;
-  virtual std::unique_ptr<ParameterizedTestCaseInfo> CreateSuite(
-      const std::string_view& suite_name) = 0;
+  virtual std::unique_ptr<ParameterizedTestCaseInfo> CreateSuite(std::string_view suite_name) = 0;
   virtual bool AddTest(ParameterizedTestCaseInfo* base, const std::string_view& test_name,
                        const SourceLocation& location) = 0;
 };
@@ -128,7 +128,7 @@ class AddInstantiationDelegate {
  public:
   virtual ~AddInstantiationDelegate<ParamType>() = default;
   virtual bool AddInstantiation(
-      ParameterizedTestCaseInfo* base, const fbl::String& instantiation_name,
+      ParameterizedTestCaseInfo* base, std::string_view instantiation_name,
       const SourceLocation& location, zxtest::internal::ValueProvider<ParamType>& provider,
       std::function<std::string(zxtest::TestParamInfo<ParamType>)> name_fn) = 0;
 };

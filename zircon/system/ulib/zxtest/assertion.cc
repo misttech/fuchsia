@@ -2,15 +2,14 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include <fbl/string.h>
 #include <zxtest/base/assertion.h>
 
 namespace zxtest {
 
-Assertion::Assertion(const fbl::String& desc, const fbl::String& expected,
-                     const fbl::String& expected_eval, const fbl::String& actual,
-                     const fbl::String& actual_eval, const SourceLocation& location, bool is_fatal,
-                     cpp20::span<zxtest::Message*> traces)
+Assertion::Assertion(std::string_view desc, std::string_view expected,
+                     std::string_view expected_eval, std::string_view actual,
+                     std::string_view actual_eval, const SourceLocation& location, bool is_fatal,
+                     std::span<zxtest::Message*> traces)
     : message_(desc, location),
       expected_(expected),
       expected_eval_(expected_eval),
@@ -20,8 +19,8 @@ Assertion::Assertion(const fbl::String& desc, const fbl::String& expected,
       has_values_(true),
       traces_(traces) {}
 
-Assertion::Assertion(const fbl::String& desc, const SourceLocation& location, bool is_fatal,
-                     cpp20::span<zxtest::Message*> traces)
+Assertion::Assertion(std::string_view desc, const SourceLocation& location, bool is_fatal,
+                     std::span<zxtest::Message*> traces)
     : message_(desc, location), is_fatal_(is_fatal), has_values_(false), traces_(traces) {}
 
 Assertion::Assertion(Assertion&& other) noexcept = default;

@@ -8,9 +8,9 @@
 #include <lib/fit/function.h>
 
 #include <cstdint>
+#include <string>
 #include <vector>
 
-#include <fbl/string.h>
 #include <zxtest/base/observer.h>
 #include <zxtest/base/test-info.h>
 #include <zxtest/base/types.h>
@@ -24,10 +24,10 @@ class TestCase {
  public:
   // Alias for a Filter function. Parameter names are provided for clarity.
   // This function returns true if |test| in |test_case| should be selected.
-  using FilterFn = fit::function<bool(const fbl::String& test_case, const fbl::String test)>;
+  using FilterFn = fit::function<bool(std::string_view test_case, std::string_view test)>;
 
   TestCase() = delete;
-  TestCase(const fbl::String& name, internal::SetUpTestCaseFn set_up,
+  TestCase(std::string_view name, internal::SetUpTestCaseFn set_up,
            internal::TearDownTestCaseFn tear_down);
   TestCase(const TestCase&) = delete;
   TestCase(TestCase&&);
@@ -53,14 +53,14 @@ class TestCase {
   void UnShuffle();
 
   // Returns true if registration of |test_info| into this testcase was successful.
-  bool RegisterTest(const fbl::String& name, const SourceLocation& location,
+  bool RegisterTest(std::string_view name, const SourceLocation& location,
                     internal::TestFactory factory);
 
   // Executes all registered tests with the provided |driver|.
   void Run(LifecycleObserver* lifecycle_observer, internal::TestDriver* driver);
 
   // Returns the name of test case.
-  const fbl::String& name() const { return name_; }
+  const std::string& name() const { return name_; }
 
   const TestInfo& GetTestInfo(size_t index) const { return test_infos_[index]; }
 
@@ -77,13 +77,13 @@ class TestCase {
 
  private:
   // Keeps track of the tests that were selected
-  std::vector<unsigned long> selected_indexes_;
+  std::vector<size_t> selected_indexes_;
 
   // Tests in registration order.
   std::vector<TestInfo> test_infos_;
 
   // Test case name.
-  fbl::String name_;
+  std::string name_;
 
   // Called before any test in |test_infos_| is executed.
   internal::SetUpTestCaseFn set_up_;

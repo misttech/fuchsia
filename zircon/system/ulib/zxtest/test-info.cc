@@ -11,7 +11,7 @@
 
 namespace zxtest {
 
-TestInfo::TestInfo(const fbl::String& name, const SourceLocation& location,
+TestInfo::TestInfo(std::string_view name, const SourceLocation& location,
                    internal::TestFactory factory)
     : factory_(std::move(factory)), name_(name), location_(location) {}
 TestInfo::TestInfo(TestInfo&& rhs) = default;

@@ -7,20 +7,20 @@
 
 #include <cinttypes>
 
-#include <fbl/string_buffer.h>
 #include <fbl/string_printf.h>
 #include <zxtest/base/message.h>
 
 namespace zxtest {
 
-Message::Message(const fbl::String& text, const SourceLocation& location)
-    : text_(text), location_(location) {}
+Message::Message(std::string_view desc, const SourceLocation& location)
+    : text_(desc), location_(location) {}
 
 Message::Message(Message&& other) noexcept = default;
 Message::~Message() = default;
 
 namespace internal {
-fbl::String ToHex(const void* ptr, size_t size) {
+
+std::string ToHex(const void* ptr, size_t size) {
   if (size == 0) {
     return "<empty>";
   }
@@ -47,10 +47,10 @@ fbl::String ToHex(const void* ptr, size_t size) {
     ++cur;
   }
 
-  return fbl::String(buffer, index);
+  return std::string(buffer, index);
 }
 
-fbl::String PrintVolatile(volatile const void* ptr, size_t size) {
+std::string_view PrintVolatile(volatile const void* ptr, size_t size) {
   if (size == 0) {
     return "<empty>";
   }
@@ -64,59 +64,30 @@ fbl::String PrintVolatile(volatile const void* ptr, size_t size) {
 
 }  // namespace internal
 
-template <>
-fbl::String PrintValue(const uint32_t& value) {
-  return fbl::StringPrintf("%" PRIu32, value);
-}
+std::string PrintValue(uint32_t value) { return std::string{fbl::StringPrintf("%" PRIu32, value)}; }
 
-template <>
-fbl::String PrintValue(const int32_t& value) {
-  return fbl::StringPrintf("%" PRIi32, value);
-}
+std::string PrintValue(int32_t value) { return std::string{fbl::StringPrintf("%" PRIi32, value)}; }
 
-template <>
-fbl::String PrintValue(const int64_t& value) {
-  return fbl::StringPrintf("%" PRIi64, value);
-}
+std::string PrintValue(int64_t value) { return std::string{fbl::StringPrintf("%" PRIi64, value)}; }
 
-template <>
-fbl::String PrintValue(const uint64_t& value) {
-  return fbl::StringPrintf("%" PRIu64, value);
-}
+std::string PrintValue(uint64_t value) { return std::string{fbl::StringPrintf("%" PRIu64, value)}; }
 
-template <>
-fbl::String PrintValue(const float& value) {
-  return fbl::StringPrintf("%f", value);
-}
+std::string PrintValue(float value) { return std::string{fbl::StringPrintf("%f", value)}; }
 
-template <>
-fbl::String PrintValue(const double& value) {
-  return fbl::StringPrintf("%f", value);
-}
+std::string PrintValue(double value) { return std::string{fbl::StringPrintf("%f", value)}; }
 
-template <>
-fbl::String PrintValue(const char* value) {
+std::string PrintValue(const char* value) {
   if (value == nullptr) {
     return "<nullptr>";
   }
-  return fbl::StringPrintf("%s", value);
+  return std::string{value};
 }
 
-template <>
-fbl::String PrintValue(const std::string& value) {
-  return fbl::String(value.data(), value.size());
-}
-
-template <>
-fbl::String PrintValue(const fbl::String& value) {
-  return value;
-}
-
-fbl::String PrintStatus(zx_status_t status) {
+std::string PrintStatus(zx_status_t status) {
 #ifdef __Fuchsia__
-  return fbl::StringPrintf("%s(%d)", zx_status_get_string(status), status);
+  return std::string{fbl::StringPrintf("%s(%d)", zx_status_get_string(status), status)};
 #else
-  return fbl::StringPrintf("%d", status);
+  return std::to_string(status);
 #endif
 }
 

@@ -2,10 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include <lib/fit/function.h>
-
+#include <array>
 #include <cstdlib>
-#include <iostream>
 
 #include <zxtest/base/assertion.h>
 #include <zxtest/base/observer.h>
@@ -29,7 +27,7 @@ void TestValuesIn() {
   }
 
   // Test std::array
-  auto c2 = cpp20::to_array<int>({4, 5, 6, 7});
+  auto c2 = std::to_array<int>({4, 5, 6, 7});
   auto p2 = ::zxtest::ValuesIn(c2);
   ZX_ASSERT_MSG(p2.size() == c2.size(), "Resulting provider size does not match input size.");
   i = 0;
@@ -47,7 +45,7 @@ void TestValuesIn() {
   //  ZX_ASSERT_MSG(p3[i] == val, "Expected %d, got %d", p3[i], val);
   //}
 
-  auto c4 = cpp20::to_array<bool>({false, true});
+  auto c4 = std::to_array<bool>({false, true});
   auto p4 = ::zxtest::ValuesIn(c4);
   ZX_ASSERT_MSG(p4.size() == c4.size(), "Resulting provider size does not match input size.");
   i = 0;
@@ -358,4 +356,5 @@ void TestTuplesCombine() {
     ZX_ASSERT(std::get<3>(e5[i]) == std::get<3>(c5[i]));
   }
 }
+
 }  // namespace zxtest::test

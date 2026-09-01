@@ -5,14 +5,12 @@
 #ifndef ZXTEST_BASE_RUNNER_H_
 #define ZXTEST_BASE_RUNNER_H_
 
-#include <lib/stdcompat/span.h>
-#include <lib/stdcompat/string_view.h>
-
 #include <atomic>
 #include <cstdio>
+#include <span>
+#include <string>
 #include <vector>
 
-#include <fbl/string.h>
 #include <zxtest/base/assertion.h>
 #include <zxtest/base/environment.h>
 #include <zxtest/base/event-broadcaster.h>
@@ -42,7 +40,7 @@ class TestDriverImpl final : public TestDriver, public LifecycleObserver {
   void Skip() final;
 
   // Return true if the test has been skipped.
-  bool IsSkipped() const { return status_ == TestStatus::kSkipped; }
+  bool IsSkipped() const override { return status_ == TestStatus::kSkipped; }
 
   // Return true if the is allowed to continue execution.
   bool Continue() const final;
@@ -117,9 +115,9 @@ struct RunnerSummary {
 // Holds the pattern used for filtering.
 struct FilterOp {
   // Returns true if the test_case and test matches |pattern|.
-  bool operator()(const fbl::String& test_case, const fbl::String& test) const;
+  bool operator()(std::string_view test_case, std::string_view test) const;
 
-  fbl::String pattern;
+  std::string pattern;
   bool run_disabled = false;
 };
 
@@ -128,13 +126,13 @@ class Runner {
  public:
   struct Options {
     // Parses the contents of argv into |Options|.
-    static Options FromArgs(int argc, char** argv, std::vector<fbl::String>* errors);
+    static Options FromArgs(int argc, char** argv, std::vector<std::string>* errors);
 
     // Prints the usage message into the |stream|.
     static void Usage(char* bin, LogSink* sink);
 
     // Pattern for filtering tests. Empty pattern matches all.
-    fbl::String filter;
+    std::string filter;
 
     // Seed used for random decisions.
     int seed = 0;
@@ -160,7 +158,7 @@ class Runner {
     // If set, output results to this file.
     // Currently only the format `json:PATH` is supported, where PATH is the location of the file to
     // be created.
-    fbl::String output_path = "";
+    std::string output_path;
   };
 
   // Default Runner options.
@@ -180,7 +178,7 @@ class Runner {
 
   // Register a test for execution with the default factory.
   template <typename TestBase, typename TestImpl>
-  TestRef RegisterTest(const fbl::String& test_case_name, const fbl::String& test_name,
+  TestRef RegisterTest(std::string_view test_case_name, std::string_view test_name,
                        const char* filename, int line) {
     return RegisterTest<TestBase, TestImpl>(test_case_name, test_name, filename, line,
                                             &Test::Create<TestImpl>);
@@ -188,9 +186,9 @@ class Runner {
 
   // Register a test for execution with a customized factory.
   template <typename TestBase, typename TestImpl>
-  TestRef RegisterTest(const fbl::String& test_case_name, const fbl::String& test_name,
+  TestRef RegisterTest(std::string_view test_case_name, std::string_view test_name,
                        const char* filename, int line, internal::TestFactory factory) {
-    static_assert(std::is_base_of<Test, TestImpl>::value, "Must inherit from Test");
+    static_assert(std::is_base_of_v<Test, TestImpl>, "Must inherit from Test");
     SourceLocation location = {.filename = filename, .line_number = line};
     return RegisterTest(test_case_name, test_name, location, std::move(factory),
                         internal::Accessor<TestBase>::SetUpTestSuite(),
@@ -199,7 +197,7 @@ class Runner {
 
   template <typename SuiteClass>
   bool AddParameterizedTest(std::unique_ptr<internal::AddTestDelegate> delegate,
-                            const fbl::String& suite_name, const fbl::String& test_name,
+                            std::string_view suite_name, std::string_view test_name,
                             const SourceLocation& location) {
     std::unique_ptr<internal::ParameterizedTestCaseInfo> new_suite =
         delegate->CreateSuite(suite_name);
@@ -221,7 +219,7 @@ class Runner {
 
   template <typename SuiteClass, typename ParamType>
   bool AddInstantiation(std::unique_ptr<internal::AddInstantiationDelegate<ParamType>> delegate,
-                        const fbl::String& instantiation_name, const SourceLocation& location,
+                        std::string_view instantiation_name, const SourceLocation& location,
                         zxtest::internal::ValueProvider<ParamType>& provider,
                         std::function<std::string(zxtest::TestParamInfo<ParamType>)> name_fn) {
     auto fixture_id = internal::TypeIdProvider<SuiteClass>::Get();
@@ -295,20 +293,20 @@ class Runner {
   // Returns true if the runner is currently executing tests.
   bool IsRunning() const { return is_running_; }
 
-  void EnableAsserts() { return test_driver_.EnableAsserts(); }
-  void DisableAsserts() { return test_driver_.DisableAsserts(); }
+  void EnableAsserts() { test_driver_.EnableAsserts(); }
+  void DisableAsserts() { test_driver_.DisableAsserts(); }
 
   void PushTrace(zxtest::Message* trace) { scoped_traces_.push_back(trace); }
   void PopTrace() { scoped_traces_.pop_back(); }
 
-  cpp20::span<zxtest::Message*> GetScopedTraces() { return scoped_traces_; }
+  std::span<zxtest::Message*> GetScopedTraces() { return scoped_traces_; }
 
  private:
   friend class RunnerTestPeer;
 
   static thread_local std::vector<zxtest::Message*> scoped_traces_;
 
-  TestRef RegisterTest(const fbl::String& test_case_name, const fbl::String& test_name,
+  TestRef RegisterTest(std::string_view test_case_name, std::string_view test_name,
                        const SourceLocation& location, internal::TestFactory factory,
                        internal::SetUpTestCaseFn set_up, internal::TearDownTestCaseFn tear_down);
 

@@ -5,7 +5,10 @@
 #ifndef ZXTEST_BASE_PARAMETERIZED_VALUE_IMPL_H_
 #define ZXTEST_BASE_PARAMETERIZED_VALUE_IMPL_H_
 
-#include <lib/stdcompat/string_view.h>
+#include <lib/fit/function.h>
+
+#include <functional>
+#include <string_view>
 
 #include <zxtest/base/parameterized-value.h>
 #include <zxtest/base/runner.h>
@@ -25,7 +28,7 @@ class ParameterizedTestCaseInfoImpl : public ParameterizedTestCaseInfo {
       fit::function<internal::TestFactory(fit::function<const ParamType&()>)>;
 
   ParameterizedTestCaseInfoImpl() = default;
-  explicit ParameterizedTestCaseInfoImpl(const fbl::String& test_case_name)
+  explicit ParameterizedTestCaseInfoImpl(std::string_view test_case_name)
       : ParameterizedTestCaseInfo(test_case_name) {}
   ParameterizedTestCaseInfoImpl(const ParameterizedTestCaseInfoImpl&) = delete;
   ParameterizedTestCaseInfoImpl(ParameterizedTestCaseInfoImpl&&) = delete;
@@ -37,7 +40,7 @@ class ParameterizedTestCaseInfoImpl : public ParameterizedTestCaseInfo {
   // case.
   TypeId GetFixtureId() const final { return TypeIdProvider<FixtureType>::Get(); }
 
-  void AddInstantiation(const fbl::String& instantiation_name,
+  void AddInstantiation(std::string_view instantiation_name,
                         zxtest::internal::ValueProvider<ParamType>& provider,
                         const SourceLocation& location,
                         std::function<std::string(zxtest::TestParamInfo<ParamType>)> name_fn) {
@@ -49,8 +52,8 @@ class ParameterizedTestCaseInfoImpl : public ParameterizedTestCaseInfo {
 
   // Adds a test to the test case.
   template <typename TestImpl>
-  void AddTest(const fbl::String& name, const SourceLocation& location) {
-    static_assert(std::is_base_of<FixtureType, TestImpl>::value,
+  void AddTest(std::string_view name, const SourceLocation& location) {
+    static_assert(std::is_base_of_v<FixtureType, TestImpl>,
                   "Must inherit from the same fixture to be part of the same test case.");
     TestInfo info;
     info.name = name;
@@ -70,28 +73,26 @@ class ParameterizedTestCaseInfoImpl : public ParameterizedTestCaseInfo {
   friend class ParameterizedTestCaseInfoImplTestPeer;
 
   struct TestInfo {
-    fbl::String name;
+    std::string name;
     SourceLocation location;
     ParameterizedTestFactory factory;
   };
 
   template <typename TestImpl, typename ValueType>
-  void Instantiate(const fbl::String& instantiation_name, const SourceLocation& location,
+  void Instantiate(std::string_view instantiation_name, const SourceLocation& location,
                    zxtest::internal::ValueProvider<ValueType>& provider,
-                   std::function<std::string(zxtest::TestParamInfo<ValueType>)> name_fn,
+                   fit::function<std::string(zxtest::TestParamInfo<ValueType>)> name_fn,
                    Runner* runner) {
     for (size_t i = 0; i < provider.size(); ++i) {
       zxtest::TestParamInfo<ValueType> info(provider[i], i);
-      for (auto& test_entry : test_entries_) {
-        // Add method for instantiation name as a param, and let the reporter decide how to
-        // print this.
-        std::initializer_list<fbl::String> prefix_name = {instantiation_name, fbl::String("/"),
-                                                          name()};
-        std::initializer_list<fbl::String> test_name = {test_entry.name, fbl::String("/"),
-                                                        name_fn(info)};
+      for (const auto& test_entry : test_entries_) {
+        // Add method for instantiation name as a param, and let the reporter
+        // decide how to print this.
         runner->RegisterTest<FixtureType, TestImpl>(
-            fbl::String::Concat(prefix_name), fbl::String::Concat(test_name),
-            test_entry.location.filename, static_cast<int>(test_entry.location.line_number),
+            std::string{instantiation_name} + '/' + name(),  //
+            test_entry.name + '/' + name_fn(info),           //
+            test_entry.location.filename,                    //
+            static_cast<int>(test_entry.location.line_number),
             test_entry.factory(
                 [&provider, i]() mutable -> const ValueType& { return provider[i]; }));
       }
@@ -100,13 +101,13 @@ class ParameterizedTestCaseInfoImpl : public ParameterizedTestCaseInfo {
 
   std::vector<fit::function<void(Runner* runner)>> instantiation_fns_;
   std::vector<TestInfo> test_entries_;
-  fbl::String name_;
+  std::string name_;
 };
 
 template <typename SuiteClass, typename Type, typename TestClass>
 class AddTestDelegateImpl : public AddTestDelegate {
  public:
-  std::unique_ptr<ParameterizedTestCaseInfo> CreateSuite(const std::string_view& suite_name) final {
+  std::unique_ptr<ParameterizedTestCaseInfo> CreateSuite(std::string_view suite_name) final {
     return std::make_unique<ParameterizedTestCaseInfoImpl<SuiteClass, Type>>(suite_name);
   }
 
@@ -124,10 +125,10 @@ class AddTestDelegateImpl : public AddTestDelegate {
 template <typename SuiteClass, typename Type>
 class AddInstantiationDelegateImpl : public AddInstantiationDelegate<Type> {
  public:
-  bool AddInstantiation(ParameterizedTestCaseInfo* base, const fbl::String& instantiation_name,
+  bool AddInstantiation(ParameterizedTestCaseInfo* base, std::string_view instantiation_name,
                         const SourceLocation& location,
                         zxtest::internal::ValueProvider<Type>& provider,
-                        std::function<std::string(zxtest::TestParamInfo<Type>)> name_fn) final {
+                        std::function<std::string(zxtest::TestParamInfo<Type>)> name_fn) override {
     ParameterizedTestCaseInfoImpl<SuiteClass, Type>* suite_impl =
         reinterpret_cast<ParameterizedTestCaseInfoImpl<SuiteClass, Type>*>(base);
     suite_impl->AddInstantiation(instantiation_name, provider, location, name_fn);

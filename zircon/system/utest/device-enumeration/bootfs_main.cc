@@ -74,7 +74,7 @@ TEST_F(DeviceEnumerationTest, GenericShouldFailTest) {
 }  // namespace
 
 int main(int argc, char** argv) {
-  std::vector<fbl::String> errors;
+  std::vector<std::string> errors;
   auto options = zxtest::Runner::Options::FromArgs(argc, argv, &errors);
   zxtest::LogSink* log_sink = zxtest::Runner::GetInstance()->mutable_reporter()->mutable_log_sink();
 

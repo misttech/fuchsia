@@ -74,7 +74,7 @@ void Options::Usage(char* bin, LogSink* sink) {
   sink->Write(kUsageMsg);
 }
 
-Options Options::FromArgs(int argc, char** argv, std::vector<fbl::String>* errors) {
+Options Options::FromArgs(int argc, char** argv, std::vector<std::string>* errors) {
   // Reset index of parsed arguments.
   optind = 0;
   static const struct option opts[] = {
@@ -128,8 +128,8 @@ Options Options::FromArgs(int argc, char** argv, std::vector<fbl::String>* error
         int iters = atoi(val);
         if (iters < -1 || iters == 0) {
           options.help = true;
-          errors->push_back(fbl::StringPrintf(
-              "--gtest_repeat(-i) must take a positive value or -1. (value was %d)", iters));
+          errors->push_back("--gtest_repeat(-i) must take a positive value or -1. (value was " +
+                            std::to_string(iters) + ")");
           return options;
         }
         options.repeat = iters;
@@ -149,8 +149,8 @@ Options Options::FromArgs(int argc, char** argv, std::vector<fbl::String>* error
         constexpr std::string_view kPrefix = "json:";
         if (!v.starts_with(kPrefix)) {
           options.help = true;
-          errors->push_back(fbl::StringPrintf(
-              "--gtest_output only supports format \"json:PATH\". Value was (%s)", val));
+          errors->push_back("--gtest_output only supports format \"json:PATH\". Value was (" +
+                            std::string{v} + ")");
           return options;
         }
         options.output_path = v;

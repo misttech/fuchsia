@@ -5,10 +5,8 @@
 #include <zircon/errors.h>
 #include <zircon/types.h>
 
-#include <limits>
 #include <string>
 
-#include <fbl/string.h>
 #include <zxtest/zxtest.h>
 
 // Tests the formatted output value returned by the various PrintValue<> specializations.
@@ -30,7 +28,7 @@ TEST(PrintValueTest, StringTypes) {
   EXPECT_EQ("<nullptr>", zxtest::PrintValue(foo));
   EXPECT_EQ("bar", zxtest::PrintValue("bar"));
   EXPECT_EQ("baz", zxtest::PrintValue(std::string("baz")));
-  EXPECT_EQ("qux", zxtest::PrintValue(fbl::String("qux")));
+  EXPECT_EQ("qux", zxtest::PrintValue(std::string("qux")));
 }
 
 #if !defined(__Fuchsia__)

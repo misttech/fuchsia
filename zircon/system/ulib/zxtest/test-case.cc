@@ -25,7 +25,7 @@ using internal::TestStatus;
 
 }  // namespace
 
-TestCase::TestCase(const fbl::String& name, SetUpTestCaseFn set_up, TearDownTestCaseFn tear_down)
+TestCase::TestCase(std::string_view name, SetUpTestCaseFn set_up, TearDownTestCaseFn tear_down)
     : name_(name), set_up_(std::move(set_up)), tear_down_(std::move(tear_down)) {
   ZX_ASSERT_MSG(set_up_, "Invalid SetUpTestCaseFn");
   ZX_ASSERT_MSG(tear_down_, "Invalid TearDownTestCaseFn");
@@ -38,9 +38,9 @@ size_t TestCase::TestCount() const { return test_infos_.size(); }
 size_t TestCase::MatchingTestCount() const { return selected_indexes_.size(); }
 
 void TestCase::Filter(TestCase::FilterFn filter) {
-  std::vector<unsigned long> filtered_indexes;
+  std::vector<size_t> filtered_indexes;
   filtered_indexes.reserve(test_infos_.size());
-  for (unsigned long i = 0; i < test_infos_.size(); ++i) {
+  for (size_t i = 0; i < test_infos_.size(); ++i) {
     const auto& test_info = test_infos_[i];
     if (!filter || filter(name_, test_info.name())) {
       filtered_indexes.push_back(i);
@@ -50,8 +50,8 @@ void TestCase::Filter(TestCase::FilterFn filter) {
 }
 
 void TestCase::Shuffle(uint32_t random_seed) {
-  for (unsigned long i = 1; i < selected_indexes_.size(); ++i) {
-    unsigned long j = rand_r(&random_seed) % (i + 1);
+  for (size_t i = 1; i < selected_indexes_.size(); ++i) {
+    size_t j = rand_r(&random_seed) % (i + 1);
     if (j != i) {
       std::swap(selected_indexes_[i], selected_indexes_[j]);
     }
@@ -60,13 +60,13 @@ void TestCase::Shuffle(uint32_t random_seed) {
 
 void TestCase::UnShuffle() {
   // Put the, possibly filtered, list back in order.
-  std::sort(selected_indexes_.begin(), selected_indexes_.end());
+  std::ranges::sort(selected_indexes_);
 }
 
-bool TestCase::RegisterTest(const fbl::String& name, const SourceLocation& location,
+bool TestCase::RegisterTest(std::string_view name, const SourceLocation& location,
                             internal::TestFactory factory) {
-  auto it = std::find_if(test_infos_.begin(), test_infos_.end(),
-                         [&name](const TestInfo& info) { return info.name() == name; });
+  auto it = std::ranges::find_if(test_infos_,
+                                 [&name](const TestInfo& info) { return info.name() == name; });
 
   // Test already registered.
   if (it != test_infos_.end()) {
@@ -74,46 +74,46 @@ bool TestCase::RegisterTest(const fbl::String& name, const SourceLocation& locat
   }
 
   selected_indexes_.push_back(selected_indexes_.size());
-  test_infos_.push_back(TestInfo(name, location, std::move(factory)));
+  test_infos_.emplace_back(name, location, std::move(factory));
   return true;
 }
 
-void TestCase::Run(LifecycleObserver* event_broadcaster, TestDriver* driver) {
-  if (selected_indexes_.size() == 0) {
+void TestCase::Run(LifecycleObserver* lifecycle_observer, TestDriver* driver) {
+  if (selected_indexes_.empty()) {
     return;
   }
 
-  auto tear_down = fit::defer([this, event_broadcaster] {
+  auto tear_down = fit::defer([this, lifecycle_observer] {
     tear_down_();
-    event_broadcaster->OnTestCaseEnd(*this);
+    lifecycle_observer->OnTestCaseEnd(*this);
   });
-  event_broadcaster->OnTestCaseStart(*this);
+  lifecycle_observer->OnTestCaseStart(*this);
   set_up_();
 
   if (!driver->Continue()) {
     return;
   }
 
-  for (unsigned long i = 0; i < selected_indexes_.size(); ++i) {
-    const auto& test_info = test_infos_[selected_indexes_[i]];
+  for (size_t i : selected_indexes_) {
+    const auto& test_info = test_infos_[i];
     {
       // This block enforces that the destructor is called before
       // completing the test, for accurate error reporting.
       // This prevents buggy destructors from crashing after a test completed,
       // marking it as a success.
-      event_broadcaster->OnTestStart(*this, test_info);
+      lifecycle_observer->OnTestStart(*this, test_info);
       std::unique_ptr<Test> test = test_info.Instantiate(driver);
       test->Run();
     }
     switch (driver->Status()) {
       case TestStatus::kPassed:
-        event_broadcaster->OnTestSuccess(*this, test_info);
+        lifecycle_observer->OnTestSuccess(*this, test_info);
         break;
       case TestStatus::kSkipped:
-        event_broadcaster->OnTestSkip(*this, test_info);
+        lifecycle_observer->OnTestSkip(*this, test_info);
         break;
       case TestStatus::kFailed:
-        event_broadcaster->OnTestFailure(*this, test_info);
+        lifecycle_observer->OnTestFailure(*this, test_info);
         if (return_on_failure_) {
           return;
         }

@@ -6,11 +6,10 @@
 #define ZXTEST_BASE_VALUES_H_
 
 #include <lib/fit/function.h>
-#include <lib/stdcompat/array.h>
-#include <lib/stdcompat/span.h>
-#include <math.h>
 #include <zircon/assert.h>
 
+#include <array>
+#include <cmath>
 #include <optional>
 #include <tuple>
 #include <type_traits>
@@ -27,7 +26,7 @@ class ValueProvider {
  public:
   using ValueType = std::remove_cv_t<T>;
   using ConstRef = const ValueType&;
-  using Callback = typename fit::function<ConstRef(size_t)>;
+  using Callback = fit::function<ConstRef(size_t)>;
 
   ValueProvider() = delete;
   ValueProvider(Callback accessor, size_t size) : accessor_(std::move(accessor)), size_(size) {}
@@ -39,12 +38,12 @@ class ValueProvider {
 
   ValueProvider(const ValueProvider&) = delete;
   ValueProvider(ValueProvider&&) noexcept = default;
-  template <typename U, typename std::enable_if_t<(std::is_convertible_v<U, T> ||
-                                                   std::is_constructible_v<T, U>) &&
-                                                  !std::is_same_v<U, T>>* = nullptr>
+  template <typename U,
+            std::enable_if_t<(std::is_convertible_v<U, T> || std::is_constructible_v<T, U>) &&
+                             !std::is_same_v<U, T>>* = nullptr>
   ValueProvider(ValueProvider<U>&& other)
       : accessor_([cb = std::move(other.accessor_)](size_t index) -> const T& {
-          static std::optional<cpp20::remove_cvref_t<T>> tmp;
+          static std::optional<std::remove_cvref_t<T>> tmp;
           tmp.emplace(cb(index));
           return tmp.value();
         }),
@@ -130,7 +129,7 @@ auto Combine(::zxtest::internal::ValueProvider<A> a, ::zxtest::internal::ValuePr
 // Combines two ValueProviders producing a ValueProvider with a cartesian product of both.
 template <typename A, typename B>
 auto Combine(::zxtest::internal::ValueProvider<A> a, ::zxtest::internal::ValueProvider<B> b) {
-  using ParamType = typename std::tuple<A, B>;
+  using ParamType = std::tuple<A, B>;
   size_t total_elements = a.size() * b.size();
   auto values = [a = std::move(a), b = std::move(b)](size_t index) -> ParamType& {
     size_t a_index = index / b.size();
@@ -157,7 +156,7 @@ auto Combine(::zxtest::internal::ValueProvider<A> a, ::zxtest::internal::ValuePr
 // Supports containers that support ::value_type and random-access iterators.
 template <typename C>
 auto ValuesIn(C&& values) {
-  using ParamType = typename std::remove_reference_t<C>::value_type;
+  using ParamType = std::remove_reference_t<C>::value_type;
   size_t size = values.size();
   return ::zxtest::internal::ValueProvider<ParamType>(
       [values = std::forward<C>(values)](size_t index) -> const ParamType& {
@@ -170,7 +169,7 @@ auto ValuesIn(C&& values) {
 template <typename... Args>
 auto Values(Args&&... args) {
   using ParamType = std::common_type_t<Args...>;
-  return ValuesIn(cpp20::to_array<ParamType>({std::forward<Args>(args)...}));
+  return ValuesIn(std::to_array<ParamType>({std::forward<Args>(args)...}));
 }
 
 // Generates a series of values according to the parameters given.

@@ -37,7 +37,7 @@ class FakeTest : public zxtest::Test {
 // zxtest::TestCase.
 class FakeLifecycleObserver final : public LifecycleObserver {
  public:
-  ~FakeLifecycleObserver() final {}
+  ~FakeLifecycleObserver() final = default;
 
   // Reports before every TestCase is set up.
   void OnTestCaseStart(const TestCase& test_case) final {
@@ -94,7 +94,7 @@ void TestCaseDefault() {
 void TestCaseRegisterTest() {
   TestCase test_case(kTestCaseName, &Stub, &Stub);
   const SourceLocation kLocation = {.filename = "test.cpp", .line_number = 1};
-  const fbl::String kTestName = "TestName";
+  constexpr std::string_view kTestName = "TestName";
 
   ZX_ASSERT_MSG(test_case.RegisterTest(kTestName, kLocation, &Test::Create<FakeTest>),
                 "TestCase failed to register a test.");
@@ -143,7 +143,7 @@ void TestCaseRun() {
       kTestCaseName, []() { operations.set_up_test_case = ++order; },
       []() { operations.tear_down_test_case = ++order; });
   const SourceLocation kLocation = {.filename = "test.cpp", .line_number = 1};
-  const fbl::String kTestName = "TestName";
+  constexpr std::string_view kTestName = "TestName";
 
   ZX_ASSERT_MSG(test_case.RegisterTest(
                     kTestName, kLocation,
@@ -174,7 +174,7 @@ void TestCaseRun() {
 void TestCaseRegisterDuplicatedTestFails() {
   TestCase test_case(kTestCaseName, &Stub, &Stub);
   const SourceLocation kLocation = {.filename = "test.cpp", .line_number = 1};
-  const fbl::String kTestName = "TestName";
+  constexpr std::string_view kTestName = "TestName";
 
   ZX_ASSERT_MSG(test_case.RegisterTest(kTestName, kLocation, &Test::Create<FakeTest>),
                 "TestCase failed to register a test.");
@@ -190,7 +190,7 @@ void TestCaseRegisterDuplicatedTestFails() {
 void TestCaseFilter() {
   TestCase test_case(kTestCaseName, &Stub, &Stub);
   const SourceLocation kLocation = {.filename = "test.cpp", .line_number = 1};
-  const fbl::String kTestName = "TestName";
+  constexpr std::string_view kTestName = "TestName";
 
   ZX_ASSERT_MSG(test_case.RegisterTest(kTestName, kLocation, &Test::Create<FakeTest>),
                 "TestCase failed to register a test.");
@@ -198,7 +198,7 @@ void TestCaseFilter() {
   ZX_ASSERT_MSG(test_case.RegisterTest("TestName2", kLocation, &Test::Create<FakeTest>),
                 "TestCase failed to register second test.");
 
-  test_case.Filter([&kTestName](const fbl::String& test_case, const fbl::String& test) {
+  test_case.Filter([&kTestName](std::string_view test_case, std::string_view test) {
     return test == kTestName;
   });
 
@@ -210,14 +210,14 @@ void TestCaseFilter() {
 void TestCaseFilterNoMatches() {
   TestCase test_case(kTestCaseName, &Stub, &Stub);
   const SourceLocation kLocation = {.filename = "test.cpp", .line_number = 1};
-  const fbl::String kTestName = "TestName";
+  constexpr std::string_view kTestName = "TestName";
 
   ZX_ASSERT_MSG(
       test_case.RegisterTest(kTestName, kLocation,
                              [](TestDriver* driver) { return std::make_unique<FakeTest>(); }),
       "TestCase failed to register a test.");
 
-  test_case.Filter([](const fbl::String& test_case, const fbl::String& test) { return false; });
+  test_case.Filter([](std::string_view test_case, std::string_view test) { return false; });
 
   ZX_ASSERT_MSG(test_case.TestCount() == 1, "TestCase::TestCount does not match expected value.");
   ZX_ASSERT_MSG(test_case.MatchingTestCount() == 0,
@@ -227,7 +227,7 @@ void TestCaseFilterNoMatches() {
 void TestCaseFilterAllMatching() {
   TestCase test_case(kTestCaseName, &Stub, &Stub);
   const SourceLocation kLocation = {.filename = "test.cpp", .line_number = 1};
-  const fbl::String kTestName = "TestName";
+  constexpr std::string_view kTestName = "TestName";
 
   ZX_ASSERT_MSG(test_case.RegisterTest(kTestName, kLocation, &Test::Create<FakeTest>),
                 "TestCase failed to register a test.");
@@ -235,7 +235,7 @@ void TestCaseFilterAllMatching() {
   ZX_ASSERT_MSG(test_case.RegisterTest("TestName2", kLocation, &Test::Create<FakeTest>),
                 "TestCase failed to register a test.");
 
-  test_case.Filter([](const fbl::String& test_case, const fbl::String& test) { return true; });
+  test_case.Filter([](std::string_view test_case, std::string_view test) { return true; });
 
   ZX_ASSERT_MSG(test_case.TestCount() == 2, "TestCase::TestCount does not match expected value.");
   ZX_ASSERT_MSG(test_case.MatchingTestCount() == 2,
@@ -245,7 +245,7 @@ void TestCaseFilterAllMatching() {
 void TestCaseFilterNullMatchesAll() {
   TestCase test_case(kTestCaseName, &Stub, &Stub);
   const SourceLocation kLocation = {.filename = "test.cpp", .line_number = 1};
-  const fbl::String kTestName = "TestName";
+  constexpr std::string_view kTestName = "TestName";
 
   ZX_ASSERT_MSG(test_case.RegisterTest(kTestName, kLocation, &Test::Create<FakeTest>),
                 "TestCase failed to register a test.");
@@ -263,13 +263,13 @@ void TestCaseFilterNullMatchesAll() {
 void TestCaseFilterDoNotAccumulate() {
   TestCase test_case(kTestCaseName, &Stub, &Stub);
   const SourceLocation kLocation = {.filename = "test.cpp", .line_number = 1};
-  const fbl::String kTestName = "TestName";
+  constexpr std::string_view kTestName = "TestName";
 
   ZX_ASSERT_MSG(test_case.RegisterTest(kTestName, kLocation, &Test::Create<FakeTest>),
                 "TestCase failed to register a test.");
 
-  test_case.Filter([](const fbl::String& test_case, const fbl::String& test) { return false; });
-  test_case.Filter([](const fbl::String& test_case, const fbl::String& test) { return true; });
+  test_case.Filter([](std::string_view test_case, std::string_view test) { return false; });
+  test_case.Filter([](std::string_view test_case, std::string_view test) { return true; });
 
   ZX_ASSERT_MSG(test_case.TestCount() == 1, "TestCase::TestCount does not match expected value.");
   ZX_ASSERT_MSG(test_case.MatchingTestCount() == 1,
@@ -280,7 +280,7 @@ void TestCaseShuffle() {
   TestDriverStub driver;
   TestCase test_case(kTestCaseName, &Stub, &Stub);
   const SourceLocation kLocation = {.filename = "test.cpp", .line_number = 1};
-  const fbl::String kTestName = "TestName";
+  constexpr std::string_view kTestName = "TestName";
   std::vector<int> run_order;
 
   ZX_ASSERT_MSG(test_case.RegisterTest(kTestName, kLocation,
@@ -337,7 +337,7 @@ void TestCaseUnShuffle() {
   TestDriverStub driver;
   TestCase test_case(kTestCaseName, &Stub, &Stub);
   const SourceLocation kLocation = {.filename = "test.cpp", .line_number = 1};
-  const fbl::String kTestName = "TestName";
+  constexpr std::string_view kTestName = "TestName";
   std::vector<int> run_order;
 
   ZX_ASSERT_MSG(test_case.RegisterTest(kTestName, kLocation,
@@ -405,7 +405,7 @@ void TestCaseUnShuffleFiltered() {
                 "TestCase failed to register a test.");
 
   test_case.Filter(
-      [](const fbl::String& test_case, const fbl::String& test) { return test != "TestName2"; });
+      [](std::string_view test_case, std::string_view test) { return test != "TestName2"; });
 
   LifecycleObserver observer;
   test_case.Shuffle(0);
@@ -420,7 +420,7 @@ void TestCaseRunUntilFailure() {
   TestDriverStub stub_driver;
   TestCase test_case(kTestCaseName, &Stub, &Stub);
   const SourceLocation kLocation = {.filename = "test.cpp", .line_number = 1};
-  const fbl::String kTestName = "TestName";
+  constexpr std::string_view kTestName = "TestName";
   bool third_test_executed = false;
 
   ZX_ASSERT_MSG(test_case.RegisterTest(kTestName, kLocation,

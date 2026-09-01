@@ -10,9 +10,9 @@
 #endif
 
 #include <cstdlib>
+#include <string>
 #include <type_traits>
 
-#include <fbl/string.h>
 #include <fbl/string_printf.h>
 #include <zxtest/base/assertion.h>
 #include <zxtest/base/parameterized-value-impl.h>
@@ -180,13 +180,8 @@
 #define LIB_ZXTEST_BYTENE(actual, expected, size) !(LIB_ZXTEST_BYTEEQ(actual, expected, size))
 
 // Functions used as arguments for EvaluateCondition.
-#define LIB_ZXTEST_DESC_PROVIDER(desc, ...)                          \
-  [&]() -> fbl::String {                                             \
-    fbl::String out_desc;                                            \
-    auto format_msg = fbl::StringPrintf(" " __VA_ARGS__);            \
-    out_desc = fbl::String::Concat({fbl::String(desc), format_msg}); \
-    return out_desc;                                                 \
-  }
+#define LIB_ZXTEST_DESC_PROVIDER(desc, ...) \
+  [&] -> std::string { return std::string(desc) + std::string{fbl::StringPrintf(" " __VA_ARGS__)}; }
 
 #define LIB_ZXTEST_COMPARE_FN(op) \
   [](const auto& expected_, const auto& actual_) { return op(expected_, actual_); }

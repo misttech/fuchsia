@@ -6,10 +6,10 @@
 #define ZXTEST_BASE_REPORTER_H_
 
 #include <memory>
+#include <string>
 #include <utility>
 #include <vector>
 
-#include <fbl/string.h>
 #include <zxtest/base/json-reporter.h>
 #include <zxtest/base/log-sink.h>
 #include <zxtest/base/observer.h>
@@ -34,7 +34,7 @@ struct IterationSummary {
   int64_t skipped = 0;
 
   // List of TestCase.Test that will reported on iteration end.
-  std::vector<fbl::String> failed_tests;
+  std::vector<std::string> failed_tests;
 };
 
 }  // namespace internal

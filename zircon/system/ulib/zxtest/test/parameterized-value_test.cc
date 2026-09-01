@@ -101,8 +101,7 @@ void TestAddParameterizedSuites() {
   runner->AddParameterizedTest<ParameterizedTestSuite1>(
       std::make_unique<::zxtest::internal::AddTestDelegateImpl<
           ParameterizedTestSuite1, ParameterizedTestSuite1::ParamType, ParameterizedSuite1Test1>>(),
-      fbl::String("suite_name"), fbl::String("test_name"),
-      {.filename = __FILE__, .line_number = __LINE__});
+      "suite_name", "test_name", {.filename = __FILE__, .line_number = __LINE__});
 
   ZX_ASSERT_MSG(::zxtest::RunnerTestPeer::GetParameterizedTestInfo(runner, type1).has_value(),
                 "There should be a matching test suite.");
@@ -112,8 +111,7 @@ void TestAddParameterizedSuites() {
   runner->AddParameterizedTest<ParameterizedTestSuite2>(
       std::make_unique<::zxtest::internal::AddTestDelegateImpl<
           ParameterizedTestSuite2, ParameterizedTestSuite2::ParamType, ParameterizedSuite2Test1>>(),
-      fbl::String("suite_name"), fbl::String("test_name"),
-      {.filename = __FILE__, .line_number = __LINE__});
+      "suite_name", "test_name", {.filename = __FILE__, .line_number = __LINE__});
 
   ZX_ASSERT_MSG(::zxtest::RunnerTestPeer::GetParameterizedTestInfo(runner, type2).has_value(),
                 "There should be a matching test suite.");
@@ -134,8 +132,7 @@ void TestAddParameterizedTests() {
   runner->AddParameterizedTest<ParameterizedTestSuite1>(
       std::make_unique<::zxtest::internal::AddTestDelegateImpl<
           ParameterizedTestSuite1, ParameterizedTestSuite1::ParamType, ParameterizedSuite1Test1>>(),
-      fbl::String("suite_name"), fbl::String("test_name"),
-      {.filename = __FILE__, .line_number = __LINE__});
+      "suite_name", "test_name", {.filename = __FILE__, .line_number = __LINE__});
 
   std::optional<internal::ParameterizedTestCaseInfo*> suite =
       ::zxtest::RunnerTestPeer::GetParameterizedTestInfo(runner, type);
@@ -154,8 +151,7 @@ void TestAddParameterizedTests() {
   runner->AddParameterizedTest<ParameterizedTestSuite1>(
       std::make_unique<::zxtest::internal::AddTestDelegateImpl<
           ParameterizedTestSuite1, ParameterizedTestSuite1::ParamType, ParameterizedSuite1Test2>>(),
-      fbl::String("suite_name"), fbl::String("test_name"),
-      {.filename = __FILE__, .line_number = __LINE__});
+      "suite_name", "test_name", {.filename = __FILE__, .line_number = __LINE__});
   ZX_ASSERT_MSG(::zxtest::RunnerTestPeer::GetParameterizedTestInfoSize(runner) == orig_size + 1,
                 "The number of suites should not have changed.");
   ZX_ASSERT_MSG(internal::ParameterizedTestCaseInfoImplTestPeer::GetEntriesSize(suite_impl) == 2,
@@ -173,8 +169,7 @@ void TestAddParameterizedInstaniations() {
   runner->AddParameterizedTest<ParameterizedTestSuite1>(
       std::make_unique<::zxtest::internal::AddTestDelegateImpl<
           ParameterizedTestSuite1, ParameterizedTestSuite1::ParamType, ParameterizedSuite1Test1>>(),
-      fbl::String("suite_name"), fbl::String("test_name"),
-      {.filename = __FILE__, .line_number = __LINE__});
+      "suite_name", "test_name", {.filename = __FILE__, .line_number = __LINE__});
 
   std::optional<internal::ParameterizedTestCaseInfo*> suite =
       ::zxtest::RunnerTestPeer::GetParameterizedTestInfo(runner, type);
@@ -195,7 +190,7 @@ void TestAddParameterizedInstaniations() {
   runner->AddInstantiation<ParameterizedTestSuite1, ParameterizedTestSuite1::ParamType>(
       std::make_unique<zxtest::internal::AddInstantiationDelegateImpl<
           ParameterizedTestSuite1, ParameterizedTestSuite1::ParamType>>(),
-      fbl::String("prefix_name"), {.filename = __FILE__, .line_number = __LINE__}, provider1,
+      "prefix_name", {.filename = __FILE__, .line_number = __LINE__}, provider1,
       default_name_generator);
   ZX_ASSERT_MSG(
       internal::ParameterizedTestCaseInfoImplTestPeer::GetInstantiationsSize(suite_impl) == 1,
@@ -205,7 +200,7 @@ void TestAddParameterizedInstaniations() {
   runner->AddInstantiation<ParameterizedTestSuite1, ParameterizedTestSuite1::ParamType>(
       std::make_unique<zxtest::internal::AddInstantiationDelegateImpl<
           ParameterizedTestSuite1, ParameterizedTestSuite1::ParamType>>(),
-      fbl::String("prefix_name"), {.filename = __FILE__, .line_number = __LINE__}, provider2,
+      "prefix_name", {.filename = __FILE__, .line_number = __LINE__}, provider2,
       default_name_generator);
   ZX_ASSERT_MSG(
       internal::ParameterizedTestCaseInfoImplTestPeer::GetInstantiationsSize(suite_impl) == 2,

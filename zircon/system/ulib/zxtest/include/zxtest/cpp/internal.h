@@ -6,9 +6,9 @@
 #define ZXTEST_CPP_INTERNAL_H_
 
 #include <concepts>
+#include <string>
 #include <type_traits>
 
-#include <fbl/string.h>
 #include <zxtest/base/assertion.h>
 #include <zxtest/base/runner.h>
 #include <zxtest/base/types.h>
@@ -73,8 +73,8 @@ bool EvaluateStatusCondition(const Actual& actual, const Expected& expected,
   }
 
   // Report the assertion error.
-  fbl::String actual_value = print_actual(actual_status);
-  fbl::String expected_value = print_expected(expected);
+  std::string actual_value = print_actual(actual_status);
+  std::string expected_value = print_expected(expected);
   Assertion assertion(description(), expected_symbol, expected_value, actual_symbol, actual_value,
                       location, is_fatal, zxtest::Runner::GetInstance()->GetScopedTraces());
   zxtest::Runner::GetInstance()->NotifyAssertion(assertion);
@@ -94,8 +94,8 @@ bool EvaluateCondition(const Actual& actual, const Expected& expected, const cha
   }
 
   // Report the assertion error.
-  fbl::String actual_value = print_actual(actual);
-  fbl::String expected_value = print_expected(expected);
+  std::string actual_value = print_actual(actual);
+  std::string expected_value = print_expected(expected);
   Assertion assertion(description(), expected_symbol, expected_value, actual_symbol, actual_value,
                       location, is_fatal, zxtest::Runner::GetInstance()->GetScopedTraces());
   zxtest::Runner::GetInstance()->NotifyAssertion(assertion);

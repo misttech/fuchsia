@@ -5,6 +5,7 @@
 #ifndef ZIRCON_SYSTEM_ULIB_ZXTEST_INCLUDE_ZXTEST_CPP_STREAMS_HELPER_H_
 #define ZIRCON_SYSTEM_ULIB_ZXTEST_INCLUDE_ZXTEST_CPP_STREAMS_HELPER_H_
 
+#include <span>
 #include <sstream>
 
 #include <zxtest/base/assertion.h>
@@ -23,7 +24,7 @@ struct Tag {};
 
 class StreamableBase {
  public:
-  StreamableBase(const zxtest::SourceLocation location)
+  explicit StreamableBase(const zxtest::SourceLocation location)
       : stream_(std::stringstream("")), location_(location) {
     LIB_ZXTEST_CHECK_RUNNING();
   }
@@ -50,7 +51,7 @@ class StreamableBase {
 class StreamableFail : public StreamableBase {
  public:
   StreamableFail(const zxtest::SourceLocation location, bool is_fatal,
-                 const cpp20::span<zxtest::Message*> traces)
+                 const std::span<zxtest::Message*> traces)
       : StreamableBase(location), is_fatal_(is_fatal), traces_(traces) {}
 
   ~StreamableFail() {
@@ -60,15 +61,15 @@ class StreamableFail : public StreamableBase {
 
  private:
   bool is_fatal_ = false;
-  cpp20::span<zxtest::Message*> traces_;
+  std::span<zxtest::Message*> traces_;
 };
 
 class StreamableAssertion : public StreamableBase {
  public:
-  StreamableAssertion(const fbl::String& actual_val, const fbl::String& expected_val,
+  StreamableAssertion(std::string_view actual_val, std::string_view expected_val,
                       const char* actual_symbol, const char* expected_symbol,
                       const zxtest::SourceLocation location, bool is_fatal,
-                      const cpp20::span<zxtest::Message*> traces)
+                      const std::span<zxtest::Message*> traces)
       : StreamableBase(location),
         actual_value_(actual_val),
         expected_value_(expected_val),
@@ -84,17 +85,17 @@ class StreamableAssertion : public StreamableBase {
   }
 
  private:
-  const fbl::String actual_value_;
-  const fbl::String expected_value_;
+  const std::string actual_value_;
+  const std::string expected_value_;
   const char* actual_symbol_;
   const char* expected_symbol_;
   bool is_fatal_ = false;
-  cpp20::span<zxtest::Message*> traces_;
+  std::span<zxtest::Message*> traces_;
 };
 
 class StreamableSkip : public StreamableBase {
  public:
-  StreamableSkip(const zxtest::SourceLocation location) : StreamableBase(location) {}
+  explicit StreamableSkip(const zxtest::SourceLocation location) : StreamableBase(location) {}
 
   ~StreamableSkip() {
     zxtest::Message message(stream_.str(), location_);
@@ -116,8 +117,8 @@ std::unique_ptr<StreamableAssertion> EvaluateConditionForStream(
   }
 
   // Report the assertion error.
-  fbl::String actual_value = print_actual(actual);
-  fbl::String expected_value = print_expected(expected);
+  std::string actual_value = print_actual(actual);
+  std::string expected_value = print_expected(expected);
   return std::make_unique<StreamableAssertion>(actual_value, expected_value, actual_symbol,
                                                expected_symbol, location, is_fatal,
                                                zxtest::Runner::GetInstance()->GetScopedTraces());

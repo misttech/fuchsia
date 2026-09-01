@@ -8,13 +8,11 @@
 #include <zircon/status.h>
 
 #include <array>
-#include <functional>
 #include <iterator>
 #include <string>
 #include <string_view>
 #include <tuple>
 
-#include <fbl/string.h>
 #include <fbl/string_printf.h>
 #include <zxtest/base/types.h>
 
@@ -60,7 +58,7 @@ ToStringView(const Stringlike& str) {
 class Message {
  public:
   Message() = delete;
-  Message(const fbl::String& desc, const SourceLocation& location);
+  Message(std::string_view desc, const SourceLocation& location);
   Message(const Message&) = delete;
   Message(Message&&) noexcept;
   ~Message();
@@ -72,10 +70,10 @@ class Message {
   const SourceLocation& location() const { return location_; }
 
   // Returns the text of the message.
-  const fbl::String& text() const { return text_; }
+  const std::string& text() const { return text_; }
 
  private:
-  fbl::String text_;
+  std::string text_;
 
   SourceLocation location_;
 };
@@ -84,65 +82,56 @@ class Message {
 namespace internal {
 // Returns a string with the Hex representation of the contents of the buffer pointed by ptr. If
 // |ptr| is nullptr, returns "<nullptr>". If |size| is 0 returns <empty>.
-fbl::String ToHex(const void* ptr, size_t size);
+std::string ToHex(const void* ptr, size_t size);
 
 // It's not necessarily safe to do pointer arithmetic on volatiles because of alignment issues, so
 // just print whether the pointer is nullptr/empty/normal.
-fbl::String PrintVolatile(volatile const void* ptr, size_t size);
+std::string_view PrintVolatile(volatile const void* ptr, size_t size);
 
 }  // namespace internal
 
-// Specializations exist for primitive types, pointers and |fbl::String|.
+// Specializations exist for primitive types, pointers and |std::string|.
 template <typename T>
-fbl::String PrintValue(const T& value) {
+std::string PrintValue(const T& value) {
   // TODO(gevalentino): By default generate a hex representation of the memory contents of value.
   return internal::ToHex(&value, sizeof(value));
 }
 
 template <typename T>
-fbl::String PrintValue(volatile const T& value) {
-  return internal::PrintVolatile(&value, sizeof(value));
+std::string PrintValue(volatile const T& value) {
+  return std::string{internal::PrintVolatile(&value, sizeof(value))};
 }
 
 // For pointers just print the address.
 template <typename T>
-fbl::String PrintValue(const T* value) {
+std::string PrintValue(const T* value) {
   if (value == nullptr) {
     return "<nullptr>";
   }
-  return fbl::StringPrintf("%p", static_cast<const void*>(value));
+  return std::string{fbl::StringPrintf("%p", static_cast<const void*>(value))};
 }
 
-// Template Specialization for integers, floating point, char pointers, and strings.
-template <>
-fbl::String PrintValue(const int32_t& value);
-template <>
-fbl::String PrintValue(const uint32_t& value);
-template <>
-fbl::String PrintValue(const int64_t& value);
-template <>
-fbl::String PrintValue(const uint64_t& value);
-template <>
-fbl::String PrintValue(const float& value);
-template <>
-fbl::String PrintValue(const double& value);
-template <>
-fbl::String PrintValue(const char* value);
-template <>
-fbl::String PrintValue(const std::string& value);
-template <>
-fbl::String PrintValue(const fbl::String& value);
+// Explicit overloads for integers, floating point, char pointers, and strings.
+std::string PrintValue(int32_t value);
+std::string PrintValue(uint32_t value);
+std::string PrintValue(int64_t value);
+std::string PrintValue(uint64_t& value);
+std::string PrintValue(float value);
+std::string PrintValue(double value);
+std::string PrintValue(const char* value);
+inline std::string PrintValue(std::string str) { return str; }
+inline std::string PrintValue(std::string_view str) { return std::string{str}; }
 
 // Print a string form of the status, can't be a specialization of PrintValue because zx_status_t is
 // a uint32_t.
-fbl::String PrintStatus(zx_status_t status);
+std::string PrintStatus(zx_status_t status);
 
 // For tuples, recursively print the individual components.
 template <typename... Ts>
-fbl::String PrintValue(const std::tuple<Ts...>& value) {
+std::string PrintValue(const std::tuple<Ts...>& value) {
   const auto strings = std::apply(
       [&](auto&&... elems) {
-        return std::array<fbl::String, sizeof...(Ts)>{
+        return std::array<std::string, sizeof...(Ts)>{
             PrintValue(std::forward<decltype(elems)>(elems))...};
       },
       value);
@@ -155,7 +144,7 @@ fbl::String PrintValue(const std::tuple<Ts...>& value) {
   for (const auto& s : strings) {
     total_size += s.size();
   }
-  total_size += 1 + (2 * strings.size() - 1) + 2;
+  total_size += 1 + ((2 * strings.size()) - 1) + 2;
 
   char buffer[total_size];
   size_t current = 0;
@@ -170,7 +159,7 @@ fbl::String PrintValue(const std::tuple<Ts...>& value) {
   }
   buffer[current++] = ' ';
   buffer[current++] = '}';
-  return fbl::String(buffer, current);
+  return std::string(buffer, current);
 }
 
 template <typename StringTypeA, typename StringTypeB>
@@ -184,7 +173,7 @@ template <typename StringTypeA, typename StringTypeB>
 inline bool StrContain(StringTypeA&& str, StringTypeB&& substr) {
   std::string_view str_view = internal::ToStringView(str);
   std::string_view substr_view = internal::ToStringView(substr);
-  return str_view.find(substr_view) != std::string_view::npos;
+  return str_view.contains(substr_view);
 }
 
 }  // namespace zxtest

@@ -665,7 +665,7 @@ void RunnerOptionsParseFromCmdLineShort() {
   kArgs[13] = "-h";
   kArgs[14] = "true";
 
-  std::vector<fbl::String> errors;
+  std::vector<std::string> errors;
   Runner::Options options =
       Runner::Options::FromArgs(std::size(kArgs), const_cast<char**>(kArgs), &errors);
 
@@ -704,7 +704,7 @@ void RunnerOptionsParseFromCmdLineLong() {
   kArgs[13] = "--help";
   kArgs[14] = "true";
 
-  std::vector<fbl::String> errors;
+  std::vector<std::string> errors;
   Runner::Options options =
       Runner::Options::FromArgs(std::size(kArgs), const_cast<char**>(kArgs), &errors);
 
@@ -731,7 +731,7 @@ void RunnerOptionsParseFromCmdLineErrors() {
   kArgs[1] = "--gtest_repeat";
   kArgs[2] = "-2";
 
-  std::vector<fbl::String> errors;
+  std::vector<std::string> errors;
   Runner::Options options =
       Runner::Options::FromArgs(std::size(kArgs), const_cast<char**>(kArgs), &errors);
 

@@ -5,12 +5,9 @@
 #ifndef ZXTEST_BASE_JSON_REPORTER_H_
 #define ZXTEST_BASE_JSON_REPORTER_H_
 
-#include <ctime>
 #include <memory>
-#include <optional>
 #include <vector>
 
-#include <fbl/string.h>
 #include <rapidjson/prettywriter.h>
 #include <zxtest/base/log-sink.h>
 #include <zxtest/base/observer.h>

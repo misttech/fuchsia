@@ -6,8 +6,8 @@
 #define ZXTEST_BASE_TEST_INFO_H_
 
 #include <memory>
+#include <string>
 
-#include <fbl/string.h>
 #include <zxtest/base/test-driver.h>
 #include <zxtest/base/test.h>
 #include <zxtest/base/types.h>
@@ -17,7 +17,7 @@ namespace zxtest {
 class TestInfo {
  public:
   TestInfo() = delete;
-  TestInfo(const fbl::String& name, const SourceLocation& location, internal::TestFactory factory);
+  TestInfo(std::string_view name, const SourceLocation& location, internal::TestFactory factory);
   TestInfo(const TestInfo&) = delete;
   TestInfo(TestInfo&& rhs);
   TestInfo& operator=(const TestInfo&) = delete;
@@ -28,7 +28,7 @@ class TestInfo {
   std::unique_ptr<Test> Instantiate(internal::TestDriver* driver) const;
 
   // Returns the name used to register the test.
-  const fbl::String& name() const { return name_; }
+  const std::string& name() const { return name_; }
 
   // Returns the code location where the test was registered.
   const SourceLocation& location() const { return location_; }
@@ -36,7 +36,7 @@ class TestInfo {
  private:
   internal::TestFactory factory_ = nullptr;
 
-  fbl::String name_;
+  std::string name_;
 
   SourceLocation location_;
 };
