@@ -76,21 +76,23 @@
     {{- IfdefFuchsiaIf .IsResourceType }}
     std::ostream& fidl::ostream::Formatter<{{ . }}>::Format(std::ostream& os, const {{ . }}& value) {
       {{- if .HasAttribute "sensitive" }}
-      return os << "<REDACTED>";
-      {{- else }}
+      os << "SENSITIVE{";
+      {{- end }}
       os << "{{ .NoLeading }}";
       os << "{ ";
       {{- range .Members }}
         os << "{{ .Name }}";
         {{- if .HasAttribute "sensitive" }}
-        os << " = <REDACTED>, ";
+        os << " = SENSITIVE{" << fidl::ostream::Formatted<{{ .Type }}>(value.{{ .Name }}()) << "}, ";
         {{- else }}
         os << " = " << fidl::ostream::Formatted<{{ .Type }}>(value.{{ .Name }}()) << ", ";
         {{- end }}
       {{- end }}
       os << "}";
-      return os;
+      {{- if .HasAttribute "sensitive" }}
+      os << "}";
       {{- end }}
+      return os;
     }
     {{- EndifFuchsiaIf .IsResourceType -}}
   {{- end }}
@@ -99,23 +101,25 @@
     {{- IfdefFuchsiaIf .IsResourceType }}
     std::ostream& fidl::ostream::Formatter<{{ . }}>::Format(std::ostream& os, const {{ . }}& value) {
       {{- if .HasAttribute "sensitive" }}
-      return os << "<REDACTED>";
-      {{- else }}
+      os << "SENSITIVE{";
+      {{- end }}
       os << "{{ .NoLeading }}";
       os << "{ ";
       {{- range .Members }}
         if (value.{{ .Name }}().has_value()) {
           os << "{{ .Name }}";
           {{- if .HasAttribute "sensitive" }}
-          os << " = <REDACTED>, ";
+          os << " = SENSITIVE{" << fidl::ostream::Formatted<{{ .Type }}>(value.{{ .Name }}().value()) << "}, ";
           {{- else }}
           os << " = " << fidl::ostream::Formatted<{{ .Type }}>(value.{{ .Name }}().value()) << ", ";
           {{- end }}
         }
       {{- end }}
       os << "}";
-      return os;
+      {{- if .HasAttribute "sensitive" }}
+      os << "}";
       {{- end }}
+      return os;
     }
     {{- EndifFuchsiaIf .IsResourceType -}}
   {{- end }}
@@ -124,14 +128,14 @@
     {{- IfdefFuchsiaIf .IsResourceType }}
     std::ostream& fidl::ostream::Formatter<{{ . }}>::Format(std::ostream& os, const {{ . }}& value) {
       {{- if .HasAttribute "sensitive" }}
-      return os << "<REDACTED>";
-      {{- else }}
+      os << "SENSITIVE{";
+      {{- end }}
       os << "{{ .NoLeading }}::";
       switch (value.Which()) {
         {{- range .Members }}
           case {{ .TagName }}:
             {{- if .HasAttribute "sensitive" }}
-            os << "{{ .Name }}(<REDACTED>)";
+            os << "{{ .Name }}(SENSITIVE{" << fidl::ostream::Formatted<{{ .Type }}>(value.{{ .Name }}().value()) << "})";
             {{- else }}
             os << "{{ .Name }}(" << fidl::ostream::Formatted<{{ .Type }}>(value.{{ .Name }}().value()) << ")";
             {{- end }}
@@ -140,8 +144,10 @@
         default:
           os << "Unknown";
       }
-      return os;
+      {{- if .HasAttribute "sensitive" }}
+      os << "}";
       {{- end }}
+      return os;
     }
     {{- EndifFuchsiaIf .IsResourceType -}}
   {{- end }}
