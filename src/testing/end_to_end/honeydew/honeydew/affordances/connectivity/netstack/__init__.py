@@ -12,6 +12,7 @@ import re
 import subprocess
 import time
 from datetime import timedelta
+from ipaddress import IPv4Address, IPv6Address
 
 import fidl_fuchsia_net_interfaces as f_net_interfaces
 import fidl_fuchsia_net_root as f_net_root
@@ -48,12 +49,6 @@ _STATE_PROXY = FidlEndpoint(
 _INTERFACES_PROXY = FidlEndpoint(
     "core/network/netstack", "fuchsia.net.root.Interfaces"
 )
-
-
-@enum.unique
-class _AddressFamily(enum.Enum):
-    IPV4 = "IPv4"
-    IPV6 = "IPv6"
 
 
 class Netstack:
@@ -316,67 +311,62 @@ class Netstack:
             rtt_mdev_ms=None,
         )
 
-    async def _wait_for_addr(
-        self,
-        address_family: _AddressFamily,
-        interface_id: int,
-        timeout: int = 30,
-    ) -> None:
-        end_time = time.time() + timeout
-        while time.time() < end_time:
-            interfaces = await self.list_interfaces()
-            for iface in interfaces:
-                has_addr = (
-                    iface.ipv4_addresses
-                    if address_family == _AddressFamily.IPV4
-                    else iface.ipv6_addresses
-                )
-                if iface.id_ == interface_id and has_addr:
-                    return
-            await asyncio.sleep(1)
-        raise HoneydewNetstackError(
-            f"Timed out after {timeout} seconds waiting for an {address_family.value} address"
-            f" on interface ID {interface_id}"
-        )
-
     async def wait_for_ipv4_addr(
         self,
         interface_id: int,
         timeout: int = 30,
-    ) -> None:
+    ) -> IPv4Address:
         """Waits for an interface with the specified ID to have an IPv4 address.
 
         Args:
             interface_id: Interface ID to wait for.
             timeout: Max time in seconds to wait.
 
+        Returns:
+            The first assigned IPv4Address on the interface.
+
         Raises:
             HoneydewNetstackError: If timeout occurs before an address is assigned.
         """
-        await self._wait_for_addr(
-            address_family=_AddressFamily.IPV4,
-            interface_id=interface_id,
-            timeout=timeout,
+        end_time = time.time() + timeout
+        while time.time() < end_time:
+            interfaces = await self.list_interfaces()
+            for iface in interfaces:
+                if iface.id_ == interface_id and iface.ipv4_addresses:
+                    return iface.ipv4_addresses[0]
+            await asyncio.sleep(1)
+        raise HoneydewNetstackError(
+            f"Timed out after {timeout} seconds waiting for an IPv4 address"
+            f" on interface ID {interface_id}"
         )
 
     async def wait_for_ipv6_addr(
         self,
         interface_id: int,
         timeout: int = 30,
-    ) -> None:
+    ) -> IPv6Address:
         """Waits for an interface with the specified ID to have an IPv6 address.
 
         Args:
             interface_id: Interface ID to wait for.
             timeout: Max time in seconds to wait.
 
+        Returns:
+            The first assigned IPv6Address on the interface.
+
         Raises:
             HoneydewNetstackError: If timeout occurs before an address is assigned.
         """
-        await self._wait_for_addr(
-            address_family=_AddressFamily.IPV6,
-            interface_id=interface_id,
-            timeout=timeout,
+        end_time = time.time() + timeout
+        while time.time() < end_time:
+            interfaces = await self.list_interfaces()
+            for iface in interfaces:
+                if iface.id_ == interface_id and iface.ipv6_addresses:
+                    return iface.ipv6_addresses[0]
+            await asyncio.sleep(1)
+        raise HoneydewNetstackError(
+            f"Timed out after {timeout} seconds waiting for an IPv6 address"
+            f" on interface ID {interface_id}"
         )
 
     async def wait_for_interface(

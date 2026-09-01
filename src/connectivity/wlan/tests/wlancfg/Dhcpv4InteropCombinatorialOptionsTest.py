@@ -8,6 +8,7 @@ import random
 from dataclasses import dataclass
 
 import dhcp_testing
+import fuchsia_wlan_base_test
 from mobly import asserts, test_runner
 
 OPT_NUM_DOMAIN_SEARCH = 119
@@ -21,12 +22,29 @@ class Test:
     dhcp_parameters: dict[str, str]
 
 
-class Dhcpv4InteropCombinatorialOptionsTest(dhcp_testing.Dhcpv4InteropFixture):
+class Dhcpv4InteropCombinatorialOptionsTest(
+    fuchsia_wlan_base_test.FuchsiaWlanBaseTest
+):
     """DhcpV4 tests which validate combinations of DHCP options."""
 
-    def pre_run(self) -> None:
-        def test_logic(t: Test) -> None:
-            self.run_test_case_expect_dhcp_success(
+    async def setup_class(self) -> None:
+        await super().setup_class()
+        self.dhcp = dhcp_testing.DhcpHelper(
+            dut=self.dut,
+            openwrt_ap=self.openwrt_ap,
+            access_point=self.access_point,
+            log_path=self.log_path,
+        )
+
+    async def teardown_test(self) -> None:
+        await self.dut.wlan_policy.ensure_clean_state()
+        if self.access_point:
+            self.access_point.stop_all_aps()
+        await super().teardown_test()
+
+    async def pre_run(self) -> None:
+        async def test_logic(t: Test) -> None:
+            await self.dhcp.run_test_case_expect_dhcp_success(
                 t.dhcp_parameters, t.dhcp_options
             )
 

@@ -4,12 +4,14 @@
 
 import logging
 import re
-import time
 from dataclasses import dataclass
 from ipaddress import IPv4Address, IPv4Network
 from pathlib import Path
 
-from antlion.controllers.access_point import AccessPoint, setup_ap
+from antlion.controllers.access_point import (
+    AccessPoint,
+    setup_ap,
+)
 from antlion.controllers.ap_lib import dhcp_config, hostapd_constants
 from antlion.controllers.ap_lib.hostapd_security import (
     Security as DeprecatedSecurity,
@@ -17,74 +19,58 @@ from antlion.controllers.ap_lib.hostapd_security import (
 from antlion.controllers.ap_lib.hostapd_security import (
     SecurityMode as DeprecatedSecurityMode,
 )
-from antlion.controllers.fuchsia_device import FuchsiaDevice
-from fuchsia_wlan_base_test.deprecated.wifi import base_test
+from honeydew.affordances.connectivity.netstack.errors import (
+    HoneydewNetstackError,
+)
+from honeydew.affordances.connectivity.netstack.types import PortClass
+from honeydew.fuchsia_device import fuchsia_device
 from mobly import asserts, signals
-from mobly.config_parser import TestRunConfig
 from openwrt_access_point import AddrType as OpenWrtAddrType
 from openwrt_access_point import InterfaceName as OpenWrtInterfaceName
 from openwrt_access_point import OpenWrtAP
 from openwrt_access_point.lib.access_point_config import (
-    DEFAULT_5G_CHANNEL,
+    DEFAULT_2G_CHANNEL,
     AccessPointConfig,
     BssSettings,
     RadioConfig,
+    Security,
     SecurityWpa2,
 )
+
+_LOGGER = logging.getLogger(__name__)
 
 
 @dataclass
 class APParams:
     id: str
     ssid: str
-    security: DeprecatedSecurity
+    security: Security
+    password: str
     ip: IPv4Address
     network: IPv4Network
 
 
-class Dhcpv4InteropFixture(base_test.WifiBaseTest):
-    """Test helpers for validating DHCPv4 Interop
+class DhcpHelper:
+    """Helper for DHCPv4 testing that encapsulates DUT and AP controllers."""
 
-    Test Bed Requirement:
-    * One Fuchsia device
-    * One Access Point
-    """
-
-    def __init__(self, configs: TestRunConfig) -> None:
-        super().__init__(configs)
-        self.log = logging.getLogger()
-        self.fuchsia_device: FuchsiaDevice | None = None
-        if self.openwrt_aps:
-            self.openwrt_ap: OpenWrtAP = self.openwrt_aps[0]
-        elif self.access_points:
-            self.access_point: AccessPoint = self.access_points[0]
-        else:
+    def __init__(
+        self,
+        dut: fuchsia_device.FuchsiaDevice,
+        openwrt_ap: OpenWrtAP | None = None,
+        access_point: AccessPoint | None = None,
+        log_path: str = "",
+    ) -> None:
+        self.dut = dut
+        self.openwrt_ap = openwrt_ap
+        self.access_point = access_point
+        self.log_path = log_path
+        if not self.openwrt_ap and not self.access_point:
             raise signals.TestAbortClass("Requires at least one access point")
 
-        self.fuchsia_device, self.dut = self.get_dut_type(FuchsiaDevice)
-
-    def setup_class(self) -> None:
-        super().setup_class()
-        if self.access_point:
-            self.access_point.stop_all_aps()
-
-    def teardown_test(self) -> None:
-        self.dut.disconnect()
-        if self.access_point:
-            self.access_point.stop_all_aps()
-
-    def connect(self, ap_params: APParams) -> None:
-        asserts.assert_true(
-            self.dut.associate(
-                ap_params.ssid,
-                target_pwd=ap_params.security.password,
-                target_security=ap_params.security.security_mode,
-            ),
-            "Failed to connect.",
-        )
-
-    def setup_ap(self) -> APParams:
-        """Generates a hostapd config and sets up the AP with that config.
+    def setup_ap(
+        self,
+    ) -> APParams:
+        """Generates an AP config and sets up the AP with that config.
 
         Does not run a DHCP server.
 
@@ -98,7 +84,7 @@ class Dhcpv4InteropFixture(base_test.WifiBaseTest):
             config = AccessPointConfig(
                 radios=[
                     RadioConfig.generate(
-                        channel=DEFAULT_5G_CHANNEL,
+                        channel=DEFAULT_2G_CHANNEL,
                         bss_settings=[
                             BssSettings(
                                 ssid=ssid,
@@ -122,11 +108,10 @@ class Dhcpv4InteropFixture(base_test.WifiBaseTest):
             self.openwrt_ap.dhcp.stop_dhcp()
 
             return APParams(
-                id="radio1",
+                id="radio0",
                 ssid=ssid,
-                security=DeprecatedSecurity(
-                    DeprecatedSecurityMode.WPA2, password
-                ),
+                security=SecurityWpa2(),
+                password=password,
                 ip=router_ip,
                 network=network,
             )
@@ -142,7 +127,7 @@ class Dhcpv4InteropFixture(base_test.WifiBaseTest):
                 access_point=self.access_point,
                 profile_name="whirlwind",
                 mode=hostapd_constants.Mode.MODE_11N_MIXED,
-                channel=hostapd_constants.AP_DEFAULT_CHANNEL_5G,
+                channel=hostapd_constants.AP_DEFAULT_CHANNEL_2G,
                 n_capabilities=[],
                 ac_capabilities=[],
                 force_wmm=True,
@@ -164,63 +149,46 @@ class Dhcpv4InteropFixture(base_test.WifiBaseTest):
             return APParams(
                 id=ap_ids[0],
                 ssid=ssid,
-                security=security,
+                security=SecurityWpa2(),
+                password=password,
                 ip=router_ip,
                 network=network,
             )
         else:
             raise signals.TestAbortClass("Requires at least one access point")
 
-    def get_device_ipv4_addr(
-        self, interface: str | None = None, timeout_sec: float = 20.0
+    async def get_device_ipv4_addr(
+        self,
+        timeout_sec: float = 30.0,
     ) -> IPv4Address:
-        """Checks if device has an ipv4 private address.
-
-        Only supported on Fuchsia.
-
-        Args:
-            interface: name of interface from which to get ipv4 address.
-            timeout: seconds to wait until raising ConnectionError
+        """Checks if device has an ipv4 address on the WLAN client interface.
 
         Raises:
-            ConnectionError, if DUT does not have an ipv4 address after all
-            timeout.
+            ConnectionError: if DUT does not have an ipv4 address after timeout.
 
         Returns:
-            The device's IP address
+            The device's IP address.
         """
-        if self.fuchsia_device is None:
-            # TODO(http://b/292289291): Add get_(ipv4|ipv6)_addr to SupportsIP.
-            raise TypeError(
-                "TODO(http://b/292289291): get_device_ipv4_addr only supports "
-                "FuchsiaDevice"
+        try:
+            wlan_iface = await self.dut.netstack.wait_for_interface(
+                port_class=PortClass.WLAN_CLIENT,
+                timeout=int(timeout_sec),
             )
-
-        self.log.debug("Fetching updated WLAN interface list")
-        if interface is None:
-            interface = self.dut.get_default_wlan_test_interface()
-        self.log.info(
-            "Checking if DUT has received an ipv4 addr on iface %s. Will retry for %s "
-            "seconds." % (interface, timeout_sec)
-        )
-        timeout_sec = time.time() + timeout_sec
-        while time.time() < timeout_sec:
-            ip_addrs = self.fuchsia_device.get_interface_ip_addresses(interface)
-
-            if len(ip_addrs["ipv4_private"]) > 0:
-                ip = ip_addrs["ipv4_private"][0]
-                self.log.info(f"DUT has an ipv4 address: {ip}")
-                return IPv4Address(ip)
-            else:
-                self.log.debug(
-                    "DUT does not yet have an ipv4 address...retrying in 1 "
-                    "second."
-                )
-                time.sleep(1)
-        else:
-            raise ConnectionError("DUT failed to get an ipv4 address.")
+            _LOGGER.info(
+                "Acquired WLAN client interface ID %s. Waiting for IPv4 address...",
+                wlan_iface.id_,
+            )
+            ip = await self.dut.netstack.wait_for_ipv4_addr(
+                interface_id=wlan_iface.id_,
+                timeout=int(timeout_sec),
+            )
+            _LOGGER.info("DUT has an ipv4 address: %s", ip)
+            return ip
+        except HoneydewNetstackError as e:
+            raise ConnectionError("DUT failed to get an ipv4 address.") from e
 
     def get_dhcp_logs(self) -> str:
+        """Fetches DHCP server logs from the access point."""
         if self.openwrt_ap:
             val = self.openwrt_ap.dhcp.get_dhcp_logs_since_last_dhcp_start()
             assert isinstance(val, str)
@@ -234,18 +202,23 @@ class Dhcpv4InteropFixture(base_test.WifiBaseTest):
         else:
             raise signals.TestFailure("No access point found")
 
-    def run_test_case_expect_dhcp_success(
+    async def run_test_case_expect_dhcp_success(
         self,
-        dhcp_parameters: dict[str, str],
-        dhcp_options: dict[str, int | str],
+        dhcp_parameters: dict[str, str] | None = None,
+        dhcp_options: dict[str, int | str] | None = None,
     ) -> None:
         """Starts the AP and DHCP server, and validates that the client
         connects and obtains an address.
 
         Args:
-            dhcp_parameters: a dictionary of DHCP parameters
-            dhcp_options: a dictionary of DHCP options
+            dhcp_parameters: a dictionary of DHCP parameters.
+            dhcp_options: a dictionary of DHCP options.
         """
+        if dhcp_parameters is None:
+            dhcp_parameters = {}
+        if dhcp_options is None:
+            dhcp_options = {}
+
         ap_params = self.setup_ap()
         subnet_conf = dhcp_config.Subnet(
             subnet=ap_params.network,
@@ -255,18 +228,22 @@ class Dhcpv4InteropFixture(base_test.WifiBaseTest):
         )
         dhcp_conf = dhcp_config.DhcpConfig(subnets=[subnet_conf])
 
-        self.log.debug(
+        _LOGGER.debug(
             "DHCP Configuration:\n%s\n", dhcp_conf.render_config_file()
         )
 
+        security = ap_params.security.to_fidl_wlan_policy()
         if self.openwrt_ap:
             self.openwrt_ap.dhcp.start_dhcp()
-            self.connect(ap_params=ap_params)
+            await self.dut.wlan_policy.save_network(
+                ap_params.ssid, security, ap_params.password
+            )
+            await self.dut.wlan_policy.connect(ap_params.ssid, security)
 
             try:
-                ip = self.get_device_ipv4_addr()
+                ip = await self.get_device_ipv4_addr()
             except ConnectionError:
-                self.log.warning(
+                _LOGGER.warning(
                     "DHCP logs: %s",
                     self.openwrt_ap.dhcp.get_dhcp_logs_since_last_dhcp_start(),
                 )
@@ -274,15 +251,18 @@ class Dhcpv4InteropFixture(base_test.WifiBaseTest):
 
         elif self.access_point:
             with self.access_point.tcpdump.start(
-                self.access_point.wlan_5g, Path(self.log_path)
+                self.access_point.wlan_2g, Path(self.log_path)
             ):
                 self.access_point.start_dhcp(dhcp_conf=dhcp_conf)
-                self.connect(ap_params=ap_params)
+                await self.dut.wlan_policy.save_network(
+                    ap_params.ssid, security, ap_params.password
+                )
+                await self.dut.wlan_policy.connect(ap_params.ssid, security)
 
                 try:
-                    ip = self.get_device_ipv4_addr()
+                    ip = await self.get_device_ipv4_addr()
                 except ConnectionError:
-                    self.log.warning(
+                    _LOGGER.warning(
                         "DHCP logs: %s", self.access_point.get_dhcp_logs()
                     )
                     raise signals.TestFailure("DUT failed to get an IP address")
@@ -322,9 +302,9 @@ class Dhcpv4InteropFixture(base_test.WifiBaseTest):
             f"Incorrect count of DHCP Acks in logs:\n{dhcp_logs}\n",
         )
 
-        self.log.info(f"Attempting to ping {ap_params.ip}...")
-        ping_result = self.dut.ping(str(ap_params.ip), count=2)
+        _LOGGER.info("Attempting to ping %s...", ap_params.ip)
+        ping_result = await self.dut.netstack.ping(str(ap_params.ip), count=2)
         asserts.assert_true(
-            ping_result.success,
-            f"DUT failed to ping router at {ap_params.ip}: {ping_result}",
+            ping_result.any_pings_received,
+            f"DUT failed to ping router at {ap_params.ip}: {ping_result.raw_output}",
         )

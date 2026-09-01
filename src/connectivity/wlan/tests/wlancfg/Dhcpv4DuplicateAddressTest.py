@@ -9,6 +9,7 @@ import re
 from ipaddress import IPv4Address
 
 import dhcp_testing
+import fuchsia_wlan_base_test
 from antlion.controllers.ap_lib import dhcp_config
 from antlion.controllers.utils_lib.commands import ip
 from mobly import asserts, signals, test_runner
@@ -17,18 +18,30 @@ from openwrt_access_point import InterfaceName as OpenWrtInterfaceName
 from openwrt_access_point import Lan
 
 
-class Dhcpv4DuplicateAddressTest(dhcp_testing.Dhcpv4InteropFixture):
-    def setup_test(self) -> None:
-        super().setup_test()
+class Dhcpv4DuplicateAddressTest(fuchsia_wlan_base_test.FuchsiaWlanBaseTest):
+    async def setup_class(self) -> None:
+        await super().setup_class()
+        self.dhcp = dhcp_testing.DhcpHelper(
+            dut=self.dut,
+            openwrt_ap=self.openwrt_ap,
+            access_point=self.access_point,
+            log_path=self.log_path,
+        )
+
+    async def setup_test(self) -> None:
+        await super().setup_test()
         self.extra_addresses: list[IPv4Address] = []
-        self.ap_params = self.setup_ap()
+        self.ap_params = self.dhcp.setup_ap()
         if self.access_point:
             self.ap_ip_cmd = ip.LinuxIpCommand(self.access_point.ssh)
 
-    def teardown_test(self) -> None:
-        super().teardown_test()
+    async def teardown_test(self) -> None:
         for ip in self.extra_addresses:
             self._remove_ap_ipv4_address(ip)
+        await self.dut.wlan_policy.ensure_clean_state()
+        if self.access_point:
+            self.access_point.stop_all_aps()
+        await super().teardown_test()
 
     def _add_ap_ipv4_address(self, ip: IPv4Address) -> None:
         """Adds an IPv4 address to the AP's LAN interface."""
@@ -54,7 +67,7 @@ class Dhcpv4DuplicateAddressTest(dhcp_testing.Dhcpv4InteropFixture):
         elif self.access_point:
             self.ap_ip_cmd.remove_ipv4_address(self.ap_params.id, ip)
 
-    def test_duplicate_address_assignment(self) -> None:
+    async def test_duplicate_address_assignment(self) -> None:
         """It's possible for a DHCP server to assign an address that already exists on the network.
         DHCP clients are expected to perform a "gratuitous ARP" of the to-be-assigned address, and
         refuse to assign that address. Clients should also recover by asking for a different
@@ -112,11 +125,15 @@ class Dhcpv4DuplicateAddressTest(dhcp_testing.Dhcpv4InteropFixture):
                 # Ensure we remove the address in self.teardown_test() even if the test fails
                 self.extra_addresses.append(ip)
 
-        self.connect(ap_params=self.ap_params)
+        security = self.ap_params.security.to_fidl_wlan_policy()
+        await self.dut.wlan_policy.save_network(
+            self.ap_params.ssid, security, self.ap_params.password
+        )
+        await self.dut.wlan_policy.connect(self.ap_params.ssid, security)
         with asserts.assert_raises(ConnectionError):
-            self.get_device_ipv4_addr()
+            await self.dhcp.get_device_ipv4_addr()
 
-        dhcp_logs = self.get_dhcp_logs()
+        dhcp_logs = self.dhcp.get_dhcp_logs()
         if dhcp_logs is None:
             raise signals.TestError(
                 "DHCP logs not found; was the DHCP server started?"
@@ -162,8 +179,7 @@ class Dhcpv4DuplicateAddressTest(dhcp_testing.Dhcpv4InteropFixture):
             for expected_message in expected_patterns:
                 asserts.assert_true(
                     re.search(expected_message, dhcp_logs),
-                    f"Did not find expected message ({expected_message}) in dhcp logs: {dhcp_logs}"
-                    + "\n",
+                    f"Did not find expected message ({expected_message}) in dhcp logs: {dhcp_logs}\n",
                 )
 
         # Remove each of the IP aliases.
@@ -172,8 +188,8 @@ class Dhcpv4DuplicateAddressTest(dhcp_testing.Dhcpv4InteropFixture):
             self._remove_ap_ipv4_address(ip)
 
         # Now, we should get an address successfully
-        ip = self.get_device_ipv4_addr()
-        dhcp_logs = self.get_dhcp_logs()
+        ip = await self.dhcp.get_device_ipv4_addr()
+        dhcp_logs = self.dhcp.get_dhcp_logs()
         if dhcp_logs is None:
             raise signals.TestError(
                 "DHCP logs not found; was the DHCP server started?"
@@ -192,7 +208,7 @@ class Dhcpv4DuplicateAddressTest(dhcp_testing.Dhcpv4InteropFixture):
         )
         asserts.assert_true(
             ack_matches >= 1,
-            f"Incorrect count of DHCP Acks in logs: " + dhcp_logs + "\n",
+            f"Incorrect count of DHCP Acks in logs: {dhcp_logs}\n",
         )
 
 

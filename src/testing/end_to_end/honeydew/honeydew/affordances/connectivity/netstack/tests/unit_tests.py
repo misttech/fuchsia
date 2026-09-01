@@ -264,9 +264,10 @@ class NetstackFCTests(unittest.IsolatedAsyncioTestCase):
             lambda *args, **kwargs: _async_response(mac_result)
         )
 
-        await self.netstack_obj.wait_for_ipv4_addr(
+        addr_v4 = await self.netstack_obj.wait_for_ipv4_addr(
             interface_id=_TEST_INTERFACE_ID, timeout=5
         )
+        self.assertEqual(addr_v4, IPv4Address("192.168.1.1"))
 
     @mock.patch("asyncio.sleep", return_value=None)
     async def test_wait_for_ipv6_addr_success(
@@ -328,9 +329,10 @@ class NetstackFCTests(unittest.IsolatedAsyncioTestCase):
             lambda *args, **kwargs: _async_response(mac_result)
         )
 
-        await self.netstack_obj.wait_for_ipv6_addr(
+        addr_v6 = await self.netstack_obj.wait_for_ipv6_addr(
             interface_id=_TEST_INTERFACE_ID, timeout=5
         )
+        self.assertEqual(addr_v6, IPv6Address("fe80::2"))
 
     @mock.patch("asyncio.sleep", return_value=None)
     @mock.patch("time.time")
