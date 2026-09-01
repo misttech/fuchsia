@@ -15,9 +15,8 @@ class CpuBreakdownTest(unittest.TestCase):
     """CPU breakdown tests."""
 
     def construct_trace_model(self) -> trace_model.Model:
-        model = trace_model.Model()
         threads = [trace_model.Thread(i, f"thread-{i}") for i in range(1, 5)]
-        model.processes = [
+        processes = [
             # Process with PID 1000 and threads with TIDs 1, 2, 3, 4.
             trace_model.Process(1000, "big_process", threads),
             # Process with PID 2000 and thread with TID 100.
@@ -175,7 +174,7 @@ class CpuBreakdownTest(unittest.TestCase):
                 )
             )
 
-        model.scheduling_records = {2: records_2, 3: records_3, 5: records_5}
+        scheduling_records = {2: records_2, 3: records_3, 5: records_5}
 
         # Simulate processing rate shifts on CPU 2
         power_configs = [
@@ -222,13 +221,12 @@ class CpuBreakdownTest(unittest.TestCase):
                 )
             ],
         )
-        model.processes.append(dvfs_process)
+        processes.append(dvfs_process)
 
-        return model
+        return trace_model.Model(processes, scheduling_records)
 
     def construct_trace_model_with_skips(self) -> trace_model.Model:
-        model = trace_model.Model()
-        model.processes = [
+        processes = [
             trace_model.Process(
                 1000,
                 "process",
@@ -239,7 +237,7 @@ class CpuBreakdownTest(unittest.TestCase):
                 ],
             )
         ]
-        model.scheduling_records = {
+        scheduling_records = {
             2: [
                 # "thread-1" is active from 0 - 1500 ms, 1500 total duration.
                 trace_model.ContextSwitch(
@@ -298,7 +296,7 @@ class CpuBreakdownTest(unittest.TestCase):
                 ),
             ]
         }
-        return model
+        return trace_model.Model(processes, scheduling_records)
 
     def test_process_metrics(self) -> None:
         model = self.construct_trace_model()

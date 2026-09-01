@@ -988,15 +988,14 @@ def construct_model(
         get_thread(get_process(pid), tid)
 
     # Construct the final Model.
-    model = trace_model.Model()
-    model.scheduling_records = scheduling_records
+    processes_sorted_by_pid = []
     for pid, process in sorted(processes.items()):
         process.threads.sort(key=lambda thread: thread.tid)
         if process.pid in pid_to_name:
             process.name = pid_to_name[process.pid]
-        model.processes.append(process)
+        processes_sorted_by_pid.append(process)
 
-    return model
+    return trace_model.Model(processes_sorted_by_pid, scheduling_records)
 
 
 def _ingest_process_record(system_trace_event: dict[str, Any]) -> PidMapping:

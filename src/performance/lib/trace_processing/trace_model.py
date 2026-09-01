@@ -5,6 +5,7 @@
 
 import copy
 import enum
+from collections.abc import Mapping, Sequence
 from functools import total_ordering
 from typing import Any, Iterator, Self, TypeVar
 
@@ -431,9 +432,15 @@ class Process:
 class Model:
     """The root of the trace model."""
 
-    def __init__(self) -> None:
-        self.processes: list[Process] = []
-        self.scheduling_records: dict[int, list[SchedulingRecord]] = {}
+    def __init__(
+        self,
+        processes: Sequence[Process],
+        scheduling_records: Mapping[int, Sequence[SchedulingRecord]],
+    ):
+        self.processes: Sequence[Process] = processes
+        self.scheduling_records: Mapping[
+            int, Sequence[SchedulingRecord]
+        ] = scheduling_records
 
     def all_events(self) -> Iterator[Event]:
         for process in self.processes:
@@ -456,8 +463,6 @@ class Model:
                 Model is used.  Only trace events that end at or before `end`
                 will be included in the sub-model.
         """
-        result = self.__class__()
-
         # The various event types have references to other events, which we will
         # need to update so that all the relations in the new model stay within
         # the new model. This dict tracks for each event of the old model, which
@@ -475,9 +480,10 @@ class Model:
 
         # Step 1: Populate the model with new event objects. These events will
         # have references into the old model.
+        new_processes = []
         for process in self.processes:
             new_process = Process(process.pid, process.name)
-            result.processes.append(new_process)
+            new_processes.append(new_process)
             for thread in process.threads:
                 new_thread = Thread(thread.tid, thread.name)
                 new_process.threads.append(new_thread)
@@ -505,7 +511,7 @@ class Model:
 
         # Step 2: Replace all referenced events by their corresponding ones in
         # the new model.
-        for process in result.processes:
+        for process in new_processes:
             for thread in process.threads:
                 for event in thread.events:
                     if isinstance(event, DurationEvent):
@@ -538,8 +544,8 @@ class Model:
                 end is None or record.start <= end
             )
 
-        result.scheduling_records = {
+        new_scheduling_records = {
             cpu: list(filter(slice_scheduling_records, records))
             for cpu, records in self.scheduling_records.items()
         }
-        return result
+        return self.__class__(new_processes, new_scheduling_records)

@@ -16,7 +16,7 @@ class AggCpuBreakdownTest(unittest.TestCase):
     """Aggregated CPU breakdown tests."""
 
     def construct_trace_model(self) -> trace_model.Model:
-        model = trace_model.Model()
+        model = trace_model.Model((), {})
         threads: List[trace_model.Thread] = []
         for i in range(1, 5):
             threads.append(trace_model.Thread(i, "thread-%d" % i))

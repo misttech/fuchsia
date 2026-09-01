@@ -9,6 +9,7 @@ import dataclasses
 import itertools
 import logging
 import sys
+from collections.abc import Mapping, Sequence
 from typing import (
     Iterable,
     Iterator,
@@ -592,8 +593,8 @@ class DurationsBreakdown:
     @classmethod
     def calculate(
         cls,
-        per_cpu_scheduling_records: dict[
-            int, list[trace_model.SchedulingRecord]
+        per_cpu_scheduling_records: Mapping[
+            int, Sequence[trace_model.SchedulingRecord]
         ],
         tid_to_thread_name: dict[int, str],
         cpu_timelines: dict[int, CpuProcessingRateTimeline],

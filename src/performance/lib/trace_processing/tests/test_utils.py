@@ -414,10 +414,11 @@ def get_test_model(is_fxt: bool = False) -> trace_model.Model:
         pid=7011, name="process-with-no-trace-events", threads=[thread5555]
     )
 
-    model = trace_model.Model()
-    model.processes = [process7009, process7010, process7011]
+    processes = [process7009, process7010, process7011]
 
-    model.scheduling_records[0] = [
+    scheduling_records = {}
+
+    scheduling_records[0] = [
         trace_model.ContextSwitch(
             start=us_tp(697503118.9531089),
             incoming_tid=7021,
@@ -472,7 +473,7 @@ def get_test_model(is_fxt: bool = False) -> trace_model.Model:
         else []
     )
 
-    model.scheduling_records[1] = [  # type: ignore[assignment]
+    scheduling_records[1] = [  # type: ignore[assignment]
         trace_model.ContextSwitch(
             start=us_tp(697868165.358 if is_fxt else 697868165.3588456),
             incoming_tid=7023,
@@ -501,7 +502,7 @@ def get_test_model(is_fxt: bool = False) -> trace_model.Model:
         else []
     )
 
-    return model
+    return trace_model.Model(processes, scheduling_records)
 
 
 def assertEventsEqual(

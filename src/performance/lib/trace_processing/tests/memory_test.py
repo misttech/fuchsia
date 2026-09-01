@@ -91,8 +91,7 @@ class MemoryTest(unittest.TestCase):
             ]
         }
 
-        model = trace_model.Model()
-        model.processes = [
+        processes = [
             power_process,
             trace_model.Process(
                 1000,
@@ -103,8 +102,8 @@ class MemoryTest(unittest.TestCase):
                 0, "kernel", [eviction_thread, scanner_request_thread]
             ),
         ]
-        model.scheduling_records = scheduling_records
-        return model
+
+        return trace_model.Model(processes, scheduling_records)
 
     def test_process_metrics(self) -> None:
         model = self.construct_trace_model(100)

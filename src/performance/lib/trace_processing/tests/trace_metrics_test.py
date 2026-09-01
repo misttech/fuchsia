@@ -31,8 +31,6 @@ from trace_processing import (
 U = metrics.Unit
 TCR = metrics.TestCaseResult
 
-_EMPTY_MODEL = trace_model.Model()
-
 
 class TestCaseResultTest(unittest.TestCase):
     """Tests TestCaseResult"""
@@ -336,8 +334,6 @@ class MetricProcessorsTest(unittest.TestCase):
         self.assertEqual(docs["code_path"], py_inspect.getfile(self.__class__))
 
     def test_get_thread_running_durations(self) -> None:
-        model = trace_model.Model()
-
         def make_switch(
             start_us: int, incoming_tid: int, outgoing_tid: int
         ) -> trace_model.ContextSwitch:
@@ -353,12 +349,14 @@ class MetricProcessorsTest(unittest.TestCase):
                 args={},
             )
 
-        model.scheduling_records[0] = [
-            make_switch(1000, 10, 0),
-            make_switch(3000, 20, 10),
-            make_switch(5000, 10, 20),
-            make_switch(6000, 0, 10),
-        ]
+        scheduling_records = {
+            0: [
+                make_switch(1000, 10, 0),
+                make_switch(3000, 20, 10),
+                make_switch(5000, 10, 20),
+                make_switch(6000, 0, 10),
+            ]
+        }
 
         windows = [
             (
@@ -388,7 +386,7 @@ class MetricProcessorsTest(unittest.TestCase):
         ]
 
         durations = scenic_metrics._get_thread_running_durations(
-            model, tid=10, windows=windows
+            trace_model.Model([], scheduling_records), tid=10, windows=windows
         )
 
         self.assertEqual(len(durations), 3)

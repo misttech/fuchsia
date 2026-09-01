@@ -6,7 +6,8 @@
 
 import collections.abc
 import unittest
-from typing import Any, Iterable, Sequence
+from collections.abc import Sequence
+from typing import Any, Iterable
 
 from reporting import metrics
 from trace_processing import trace_model, trace_time
@@ -25,11 +26,11 @@ class PowerMetricsTest(unittest.TestCase):
     ) -> None:
         self.assertFalse(c, msg)
 
-    def construct_trace_model(
+    def construct_trace_processes(
         self,
         loadgen_tids: Iterable[int],
         power_events_stop_at: trace_time.TimePoint | None = None,
-    ) -> trace_model.Model:
+    ) -> Sequence[trace_model.Process]:
         """Builds a fake trace model.
 
         Args:
@@ -103,19 +104,17 @@ class PowerMetricsTest(unittest.TestCase):
             ],
         )
 
-        model = trace_model.Model()
         threads = [trace_model.Thread(i, f"thread-{i}") for i in loadgen_tids]
-        model.processes = [
+        return [
             # load_generator process with PID 1000 and threads with TIDs 1, 2.
             trace_model.Process(1000, "load_generator.cm", threads),
             fake_power_process,
         ]
-        return model
 
     def test_process_metrics(self) -> None:
         """Correctly exclude power readings occurring during synchronization."""
         threads = (1,)
-        model = self.construct_trace_model(threads)
+        processes = self.construct_trace_processes(threads)
 
         records_0: list[trace_model.SchedulingRecord] = [
             # "thread-1" is active from 0 - 1000, then exits.
@@ -151,7 +150,8 @@ class PowerMetricsTest(unittest.TestCase):
                 {},
             ),
         ]
-        model.scheduling_records = {0: records_0, 1: records_1}
+
+        model = trace_model.Model(processes, {0: records_0, 1: records_1})
 
         results = power.PowerMetricsProcessor().process_metrics(model)
         # Power samples should start to count the instant load generation stops, so expect
@@ -167,7 +167,7 @@ class PowerMetricsTest(unittest.TestCase):
     def test_sync_multithread(self) -> None:
         """Detect sync happening across multiple CPUs."""
         (t_1, t_2, t_3) = (1, 2, 3)
-        model = self.construct_trace_model((t_1, t_2, t_3))
+        processes = self.construct_trace_processes((t_1, t_2, t_3))
 
         records_0: list[trace_model.SchedulingRecord] = [
             # "thread-1" is active from 0 - 500, then exits.
@@ -234,7 +234,8 @@ class PowerMetricsTest(unittest.TestCase):
                 {},
             ),
         ]
-        model.scheduling_records = {0: records_0, 1: records_1}
+
+        model = trace_model.Model(processes, {0: records_0, 1: records_1})
 
         results = power.PowerMetricsProcessor().process_metrics(model)
         desc_base = power._AggregateMetrics.DESCRIPTION_BASE
@@ -248,7 +249,7 @@ class PowerMetricsTest(unittest.TestCase):
     def test_sync_gets_descheduled(self) -> None:
         """Detect sync getting descheduled in the middle and then coming back."""
         t_1 = 1
-        model = self.construct_trace_model([t_1])
+        processes = self.construct_trace_processes([t_1])
 
         records_0: list[trace_model.SchedulingRecord] = [
             # "thread-1" is active from 0 - 500, 750-1000, then exits.
@@ -303,7 +304,8 @@ class PowerMetricsTest(unittest.TestCase):
                 {},
             ),
         ]
-        model.scheduling_records = {0: records_0, 1: records_1}
+
+        model = trace_model.Model(processes, {0: records_0, 1: records_1})
 
         results = power.PowerMetricsProcessor().process_metrics(model)
         # Power samples should start to count the instant load generation stops, so expect
@@ -318,7 +320,7 @@ class PowerMetricsTest(unittest.TestCase):
 
     def test_no_sync_signal(self) -> None:
         """Detect sync not being present."""
-        model = self.construct_trace_model([])
+        processes = self.construct_trace_processes([])
 
         records_0: list[trace_model.SchedulingRecord] = [
             trace_model.ContextSwitch(
@@ -352,7 +354,8 @@ class PowerMetricsTest(unittest.TestCase):
                 {},
             ),
         ]
-        model.scheduling_records = {0: records_0, 1: records_1}
+
+        model = trace_model.Model(processes, {0: records_0, 1: records_1})
         self.assertEqual(
             [], power.PowerMetricsProcessor().process_metrics(model)
         )
@@ -361,7 +364,7 @@ class PowerMetricsTest(unittest.TestCase):
         """Handle a lack of aggregated power metrics."""
         end_of_load = trace_time.TimePoint(1000000000)
         threads = (1, 2)
-        model = self.construct_trace_model(threads, end_of_load)
+        processes = self.construct_trace_processes(threads, end_of_load)
 
         records_0: list[trace_model.SchedulingRecord] = [
             # "thread-1" is active from 0 - 1000, then exits.
@@ -397,13 +400,14 @@ class PowerMetricsTest(unittest.TestCase):
                 {},
             ),
         ]
-        model.scheduling_records = {0: records_0, 1: records_1}
+
+        model = trace_model.Model(processes, {0: records_0, 1: records_1})
         self.assertEmpty(power.PowerMetricsProcessor().process_metrics(model))
 
     def test_find_suspend_windows(self) -> None:
         """Find periods during which device was suspended."""
         threads = (1, 2)
-        model = self.construct_trace_model(threads)
+        initial_processes = self.construct_trace_processes(threads)
         windows = [
             trace_time.Window(
                 trace_time.TimePoint(900_000_000),
@@ -415,13 +419,14 @@ class PowerMetricsTest(unittest.TestCase):
             ),
         ]
         suspender = _build_suspender(windows)
-        model.processes.append(suspender)
+        processes = tuple(initial_processes) + (suspender,)
+        model = trace_model.Model(processes, {})
         self.assertCountEqual(power._find_suspend_windows(model), windows)
 
     def test_suspended_power_metrics(self) -> None:
         """Power measurements during a suspend are captured, aggregated."""
         threads = (1,)
-        model = self.construct_trace_model(threads)
+        initial_processes = self.construct_trace_processes(threads)
 
         records_0: list[trace_model.SchedulingRecord] = [
             # "thread-1" is active from 0 - 1000, then exits.
@@ -452,8 +457,9 @@ class PowerMetricsTest(unittest.TestCase):
                 ),
             ]
         )
-        model.scheduling_records = {0: records_0}
-        model.processes.append(suspender)
+        model = trace_model.Model(
+            tuple(initial_processes) + (suspender,), {0: records_0}
+        )
         results = power.PowerMetricsProcessor().process_metrics(model)
         desc_base = power._AggregateMetrics.DESCRIPTION_BASE
         suspend_condition = "while device is suspended"
