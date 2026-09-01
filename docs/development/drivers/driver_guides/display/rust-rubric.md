@@ -269,26 +269,17 @@ all aliases. Use the alias to qualify access to both structs and functions.
 **Explanation:** Same reasoning as above. FIDL and Rust driver type names are
 likely to overlap.
 
-**Guideline:** Bring the logging macros into scope directly.
-
-**Explanation:**
-[The Rust Programming Book section on idiomatic use paths][rust-book-idiomatic-paths]
-recommends module qualifiers on function calls, with an exception for common
-functions that are close to language-level features. Logging falls under the
-exception.
-
 Examples:
 
 ```rust
 use fidl_next_fuchsia_sysmem2 as fidl_sysmem2;
 use fidl_next;
-use log::warn;
 
 pub async fn use_buffer_collection(
     sysmem_buffer_collection: &mut fidl_next::Client<fidl_sysmem2::BufferCollection>,
 ) {
   /* ... */
-  warn!("Failed to retrieve hardware pixel formats, falling back to safe set");
+  log::warn!("Failed to get hardware pixel formats, falling back to safe set");
   /* ... */
 }
 ```
@@ -326,7 +317,7 @@ async fn map_mmio_range(
     range_name: &str,
 ) -> Result<MmioRegion<VmoMemory, Arc<VmoMemory>>, zx::Status> {
     let region = platform_device.map_mmio_by_name(range_name).await.map_err(|err| {
-        error!("Failed to map MMIO range {range_name}: {err:?}");
+        log::error!("Failed to map MMIO range {range_name}: {err:?}");
         err.log_to_status()
     })?;
     Ok(region.into_split_send())
@@ -443,7 +434,6 @@ Use [Inspect][inspect-readme] for data that changes often.
 Examples:
 
 ```rust
-use log::{debug, info, warn};
 use zx;
 
 /// Errors if the hardware returns an invalid version.
@@ -460,7 +450,7 @@ pub fn read_version() -> Result<u32, zx::Status> {
     info!("Component version: {}", version_value);
 
     if version_value == 0 {
-        warn!("Invalid version, device probably powered off: {}", version_value);
+        log::warn!("Invalid version, device may be off: {}", version_value);
         // ...
     }
     // ...
