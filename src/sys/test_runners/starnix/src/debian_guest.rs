@@ -15,7 +15,7 @@ use fidl_fuchsia_virtualization_guest_interaction::{
 use fuchsia_async::{DurationExt, TimeoutExt};
 use fuchsia_component::client::connect_to_protocol;
 use fuchsia_fs::directory;
-use futures::TryStreamExt;
+use futures::{StreamExt, TryStreamExt};
 use namespace::Namespace;
 use std::cell::OnceCell;
 use std::path::{Path, PathBuf};
@@ -25,8 +25,8 @@ const EXECUTE_TIMEOUT_SECONDS: i64 = 180;
 
 // TODO(https://fxbug.dev/436831317): Execute within a proper working directory.
 pub const GUEST_TEST_ROOT: &str = "/";
-pub const GUEST_DATA_PATH: &str = "/data/tests/deps/";
-pub const HOST_DATA_PATH: &str = "data/tests/deps/";
+pub const GUEST_DATA_PATH: &str = "/data/";
+pub const HOST_DATA_PATH: &str = "data";
 
 pub struct DebianGuest {
     instance_name: String,
@@ -276,9 +276,9 @@ impl DebianGuest {
         self.push_test_binary(test_start_info, &test_pkg_dir).await
     }
 
-    /// Pushes data dependencies from `/pkg/data/tests/deps/` to the guest's `/data/tests/deps/`.
+    /// Pushes data dependencies from `/pkg/data` to the guest's `/data/`.
     pub async fn push_data_deps(&self, pkg_dir_proxy: &fio::DirectoryProxy) -> Result<(), Error> {
-        let deps_dir = match directory::open_directory(
+        let data_dir = match directory::open_directory(
             pkg_dir_proxy,
             HOST_DATA_PATH,
             fio::PERM_READABLE,
@@ -287,33 +287,32 @@ impl DebianGuest {
         {
             Ok(dir) => dir,
             Err(e) => {
-                log::info!("No test deps directory found at {}: {:?}", HOST_DATA_PATH, e);
+                log::info!("No data directory found at {}: {:?}", HOST_DATA_PATH, e);
                 self.mark_deps_pushed();
                 return Ok(());
             }
         };
 
-        let entries = directory::readdir(&deps_dir).await?;
-        for entry in entries {
-            match entry.kind {
-                directory::DirentKind::File => {
-                    let file_name = entry.name;
-                    let source_file =
-                        directory::open_file(&deps_dir, &file_name, fio::PERM_READABLE)
-                            .await
-                            .with_context(|| format!("Failed to open dep file: {}", file_name))?;
-
-                    let source = source_file.into_client_end().map_err(|s| {
-                        anyhow!("Failed to convert source file to client end: {:?}", s)
-                    })?;
-
-                    let guest_dest = format!("{}{}", GUEST_DATA_PATH, file_name);
-                    let guest_dest_path = Path::new(&guest_dest);
-                    self.push_data_to_guest(source, &guest_dest_path).await?;
+        let mut entries = directory::readdir_recursive(&data_dir, None);
+        while let Some(entry) = entries.next().await {
+            let entry = entry.context("Failed to read dir entry")?;
+            if entry.kind == directory::DirentKind::File {
+                let file_name = entry.name;
+                // Skip test binaries in data/tests/ (which are pushed separately by push_test_binary).
+                if file_name.starts_with("tests/") && !file_name.starts_with("tests/deps/") {
+                    continue;
                 }
-                _ => {
-                    bail!("Unexpected file/folder structure in deps folder: {}", entry.name);
-                }
+
+                let source_file = directory::open_file(&data_dir, &file_name, fio::PERM_READABLE)
+                    .await
+                    .with_context(|| format!("Failed to open dep file: {}", file_name))?;
+
+                let source = source_file
+                    .into_client_end()
+                    .map_err(|s| anyhow!("Failed to convert source file to client end: {:?}", s))?;
+
+                let guest_dest = format!("{}{}", GUEST_DATA_PATH, file_name);
+                self.push_data_to_guest(source, Path::new(&guest_dest)).await?;
             }
         }
 
