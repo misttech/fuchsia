@@ -22,14 +22,24 @@ struct MonikerFilters {
     matched_monikers: Vec<String>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FuzzyMatchWarning {
+    pub query: String,
+    pub resolved: String,
+}
+
 impl MonikerFilters {
     fn new(queries: Vec<String>) -> Self {
         Self { queries, matched_monikers: vec![] }
     }
 
-    async fn expand_monikers(&mut self, getter: &impl InstanceGetter) -> Result<(), LogError> {
+    async fn expand_monikers(
+        &mut self,
+        getter: &impl InstanceGetter,
+    ) -> Result<Vec<FuzzyMatchWarning>, LogError> {
         self.matched_monikers = vec![];
         self.matched_monikers.reserve(self.queries.len());
+        let mut warnings = vec![];
         for query in &self.queries {
             if query == KLOG {
                 self.matched_monikers.push(query.clone());
@@ -40,15 +50,28 @@ impl MonikerFilters {
             if instances.len() > 1 {
                 return Err(LogError::too_many_fuzzy_matches(
                     instances.into_iter().map(|i| i.to_string()),
+                    query,
                 ));
             }
             match instances.pop() {
-                Some(instance) => self.matched_monikers.push(instance.to_string()),
+                Some(instance) => {
+                    let instance_str = instance.to_string();
+                    let is_exact_match = query == &instance_str
+                        || query.strip_prefix('/') == Some(instance_str.as_str())
+                        || instance_str.strip_prefix('/') == Some(query.as_str());
+
+                    if !is_exact_match {
+                        warnings.push(FuzzyMatchWarning {
+                            query: query.clone(),
+                            resolved: instance_str.clone(),
+                        });
+                    }
+                    self.matched_monikers.push(instance_str);
+                }
                 None => return Err(LogError::SearchParameterNotFound(query.to_string())),
             }
         }
-
-        Ok(())
+        Ok(warnings)
     }
 }
 
@@ -170,7 +193,10 @@ impl LogFilterCriteria {
         self.min_severity = severity;
     }
 
-    pub async fn expand_monikers(&mut self, getter: &impl InstanceGetter) -> Result<(), LogError> {
+    pub async fn expand_monikers(
+        &mut self,
+        getter: &impl InstanceGetter,
+    ) -> Result<Vec<FuzzyMatchWarning>, LogError> {
         self.moniker_filters.expand_monikers(getter).await
     }
 

@@ -59,7 +59,7 @@ impl From<log_command_fdomain::LogError> for LogError {
         use log_command_fdomain::LogError::*;
         let err: fho::Error = match value {
             UnknownError(err) => err.into(),
-            FuzzyMatchTooManyMatches(_)
+            FuzzyMatchTooManyMatches { .. }
             | SearchParameterNotFound(_)
             | DumpWithSinceNow
             | NoBootTimestamp

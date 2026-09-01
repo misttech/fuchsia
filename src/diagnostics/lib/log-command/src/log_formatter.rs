@@ -388,7 +388,16 @@ where
     }
 
     pub async fn expand_monikers(&mut self, getter: &impl InstanceGetter) -> Result<(), LogError> {
-        self.filters.expand_monikers(getter).await
+        let warnings = self.filters.expand_monikers(getter).await?;
+        for warning in warnings {
+            writeln!(
+                self.writer.stderr(),
+                "WARN: Provided moniker '{}' was not an exact match. Using fuzzy match '{}' instead. Please check your component topology variations.",
+                warning.query,
+                warning.resolved
+            )?;
+        }
+        Ok(())
     }
 
     pub async fn push_unfiltered_log(

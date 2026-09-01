@@ -701,8 +701,10 @@ pub enum LogError {
     FormatterError(#[from] FormatterError),
     #[error("Deprecated flag: `{flag}`, use: `{new_flag}`")]
     DeprecatedFlag { flag: &'static str, new_flag: &'static str },
-    #[error("Fuzzy matching failed due to too many matches, please re-try with one of these:\n{0}")]
-    FuzzyMatchTooManyMatches(String),
+    #[error(
+        "Fuzzy matching for '{query}' failed due to too many matches, please re-try with one of these:\n{matches}"
+    )]
+    FuzzyMatchTooManyMatches { query: String, matches: String },
     #[error(
         "No running components were found matching {0}. Please ensure the component is running and the moniker is correct. Run 'ffx component list' to see running components."
     )]
@@ -710,14 +712,14 @@ pub enum LogError {
 }
 
 impl LogError {
-    fn too_many_fuzzy_matches(matches: impl Iterator<Item = String>) -> Self {
+    fn too_many_fuzzy_matches(matches: impl Iterator<Item = String>, query: &str) -> Self {
         let mut result = String::new();
         for component in matches {
             result.push_str(&component);
             result.push('\n');
         }
 
-        Self::FuzzyMatchTooManyMatches(result)
+        Self::FuzzyMatchTooManyMatches { matches: result, query: query.to_string() }
     }
 
     pub fn is_broken_pipe(&self) -> bool {
@@ -742,7 +744,7 @@ impl LogError {
             | LogError::Utf8Error(_)
             | LogError::FidlError(_)
             | LogError::DeprecatedFlag { .. }
-            | LogError::FuzzyMatchTooManyMatches(_)
+            | LogError::FuzzyMatchTooManyMatches { .. }
             | LogError::SearchParameterNotFound(_) => false,
         }
     }
