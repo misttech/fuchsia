@@ -395,8 +395,9 @@ zx_status_t Server::SubmitSplitRequest(BlockFifoRequest* request,
       }
       if (do_postflush && transaction_group->StatusOkPendingLastOp() && status == ZX_OK) {
         // Issue (Post)Flush command when last sub transaction completed.
-        auto postflush_completer = [transaction_group](zx_status_t postflush_status,
-                                                       BlockFifoRequest& request) {
+        // Take a copy of |oneshot_group| to keep it alive until the post-flush completes.
+        auto postflush_completer = [transaction_group, oneshot_group](zx_status_t postflush_status,
+                                                                      BlockFifoRequest& request) {
           transaction_group->Complete(postflush_status);
         };
         if (zx_status_t status =

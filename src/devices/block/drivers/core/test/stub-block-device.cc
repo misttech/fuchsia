@@ -9,7 +9,9 @@ void StubBlockDevice::BlockQueue(block_op_t* operation, block_queue_callback com
   command_sequence_.push_back(operation->command);
   operation_sequence_.push_back(*operation);
 
-  if (callback_) {
+  if (async_callback_) {
+    async_callback_(operation, completion_cb, cookie);
+  } else if (callback_) {
     completion_cb(cookie, callback_(*operation), operation);
   } else {
     completion_cb(cookie, ZX_OK, operation);

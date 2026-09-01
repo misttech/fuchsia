@@ -9,6 +9,10 @@
 #include <string.h>
 #include <unistd.h>
 
+#include <condition_variable>
+#include <mutex>
+#include <optional>
+
 #include <zxtest/zxtest.h>
 
 #include "block-device.h"
@@ -25,6 +29,8 @@ class ServerTest : public zxtest::Test {
   void TearDown() override {
     server_->Close();
     server_thread_.join();
+    blkdev_.set_async_callback({});
+    blkdev_.set_callback({});
   }
 
   void CreateServer() {
@@ -550,6 +556,141 @@ TEST_F(ServerTest, PostflushMustBeIssuedOnlyAfterGroupLast) {
   ASSERT_EQ(commands[4].flags, 0);  // BLOCK_IO_FLAG_GROUP_LAST, FUA flag is removed
   ASSERT_EQ(commands[5].opcode, BLOCK_OPCODE_FLUSH);  // Post flush
   ASSERT_EQ(commands[5].flags, 0);
+}
+
+struct AsyncFlushState {
+  struct PendingFlush {
+    block_queue_callback completion_cb = nullptr;
+    void* cookie = nullptr;
+    block_op_t* operation = nullptr;
+  };
+  std::optional<PendingFlush> pending_flush;
+  std::mutex mutex;
+  std::condition_variable cv;
+};
+
+TEST_F(ServerTest, PostflushAsyncUngroupedSplitTransaction) {
+  // Restrict max_transfer_size so that the server has to split up our request.
+  block_info_t block_info = {
+      .block_count = kBlockCount, .block_size = kBlockSize, .max_transfer_size = kBlockSize};
+  CreateServer(block_info);
+  AttachVmo(/*do_fill=*/true);
+
+  auto state = std::make_shared<AsyncFlushState>();
+
+  blkdev_.set_async_callback([state](block_op_t* op, block_queue_callback cb, void* cookie) {
+    if (op->command.opcode == BLOCK_OPCODE_FLUSH) {
+      std::lock_guard<std::mutex> lock(state->mutex);
+      state->pending_flush = AsyncFlushState::PendingFlush{
+          .completion_cb = cb,
+          .cookie = cookie,
+          .operation = op,
+      };
+      state->cv.notify_one();
+      return;
+    }
+    // Complete write sub-transactions immediately.
+    cb(cookie, ZX_OK, op);
+  });
+
+  // Note: flags do not include BLOCK_IO_FLAG_GROUP_ITEM, so group will be kNoGroup.
+  BlockFifoRequest req = {
+      .command = {.opcode = BLOCK_OPCODE_WRITE, .flags = BLOCK_IO_FLAG_FORCE_ACCESS},
+      .reqid = 0x200,
+      .group = 0,  // Ignored by Serve() because BLOCK_IO_FLAG_GROUP_ITEM is not set
+      .vmoid = vmoid_,
+      .length = 3,
+      .vmo_offset = 0,
+      .dev_offset = 0,
+  };
+
+  RequestOne(req);
+
+  // Wait until the flush command is queued.
+  {
+    std::unique_lock<std::mutex> lock(state->mutex);
+    state->cv.wait(lock, [&] { return state->pending_flush.has_value(); });
+  }
+
+  // At this point, all write sub-transactions have completed and their Messages have been
+  // destroyed. Now complete the deferred flush. Without capturing oneshot_group, this would trigger
+  // a heap UAF.
+  AsyncFlushState::PendingFlush flush;
+  {
+    std::lock_guard<std::mutex> lock(state->mutex);
+    flush = *state->pending_flush;
+  }
+  flush.completion_cb(flush.cookie, ZX_OK, flush.operation);
+
+  // Verify response is received successfully.
+  size_t actual_count = 0;
+  zx_signals_t observed;
+  ASSERT_OK(fifo_.wait_one(ZX_FIFO_READABLE, zx::time::infinite(), &observed));
+  BlockFifoResponse response;
+  ASSERT_OK(fifo_.read(sizeof(response), &response, 1, &actual_count));
+  ASSERT_EQ(actual_count, 1);
+  EXPECT_OK(response.status);
+  EXPECT_EQ(response.reqid, 0x200);
+
+  auto commands = blkdev_.GetCommandSequence();
+  ASSERT_EQ(commands.size(), 4);  // 3 writes + 1 flush
+}
+
+TEST_F(ServerTest, PostflushAsyncUngroupedSplitTransactionFlushError) {
+  block_info_t block_info = {
+      .block_count = kBlockCount, .block_size = kBlockSize, .max_transfer_size = kBlockSize};
+  CreateServer(block_info);
+  AttachVmo(/*do_fill=*/true);
+
+  auto state = std::make_shared<AsyncFlushState>();
+
+  blkdev_.set_async_callback([state](block_op_t* op, block_queue_callback cb, void* cookie) {
+    if (op->command.opcode == BLOCK_OPCODE_FLUSH) {
+      std::lock_guard<std::mutex> lock(state->mutex);
+      state->pending_flush = AsyncFlushState::PendingFlush{
+          .completion_cb = cb,
+          .cookie = cookie,
+          .operation = op,
+      };
+      state->cv.notify_one();
+      return;
+    }
+    cb(cookie, ZX_OK, op);
+  });
+
+  BlockFifoRequest req = {
+      .command = {.opcode = BLOCK_OPCODE_WRITE, .flags = BLOCK_IO_FLAG_FORCE_ACCESS},
+      .reqid = 0x201,
+      .group = 0,
+      .vmoid = vmoid_,
+      .length = 3,
+      .vmo_offset = 0,
+      .dev_offset = 0,
+  };
+
+  RequestOne(req);
+
+  {
+    std::unique_lock<std::mutex> lock(state->mutex);
+    state->cv.wait(lock, [&] { return state->pending_flush.has_value(); });
+  }
+
+  AsyncFlushState::PendingFlush flush;
+  {
+    std::lock_guard<std::mutex> lock(state->mutex);
+    flush = *state->pending_flush;
+  }
+  // Complete flush with an error.
+  flush.completion_cb(flush.cookie, ZX_ERR_IO, flush.operation);
+
+  size_t actual_count = 0;
+  zx_signals_t observed;
+  ASSERT_OK(fifo_.wait_one(ZX_FIFO_READABLE, zx::time::infinite(), &observed));
+  BlockFifoResponse response;
+  ASSERT_OK(fifo_.read(sizeof(response), &response, 1, &actual_count));
+  ASSERT_EQ(actual_count, 1);
+  EXPECT_EQ(response.status, ZX_ERR_IO);
+  EXPECT_EQ(response.reqid, 0x201);
 }
 
 TEST_F(ServerTest, ReadSingleTestWithInlineCrypto) {
