@@ -241,6 +241,35 @@ TEST_F(RedactorTest, RedactsMacInFidl) {
             "mac fidl debug: MacAddress { <REDACTED-MAC: 1> }");
 }
 
+TEST_F(RedactorTest, RedactsSensitive) {
+  EXPECT_EQ(Redact("SENSITIVE{12345}"), "<REDACTED-SENSITIVE>");
+  EXPECT_EQ(Redact("addr: SENSITIVE{[1, 2, 3, 4]}"), "addr: <REDACTED-SENSITIVE>");
+  EXPECT_EQ(Redact("SENSITIVE{SensitiveStruct { field: \"secret\" }}"), "<REDACTED-SENSITIVE>");
+  EXPECT_EQ(Redact("Combined: SENSITIVE{foo}, IPv4 8.8.8.8"),
+            "Combined: <REDACTED-SENSITIVE>, IPv4 <REDACTED-IPV4: 1>");
+}
+
+TEST_F(RedactorTest, RedactsSensitiveWithUnmatchedOrNestedBraces) {
+  // Unclosed curly brace at the end of a log fails closed by redacting to the end.
+  EXPECT_EQ(Redact("unclosed: SENSITIVE{something"), "unclosed: <REDACTED-SENSITIVE>");
+
+  // Unmatched closing brace outside the sensitive block is preserved.
+  EXPECT_EQ(Redact("extra closing: SENSITIVE{foo}}"), "extra closing: <REDACTED-SENSITIVE>}");
+
+  // Unmatched curly braces inside quoted strings (e.g., in error descriptions) do not affect
+  // matching.
+  EXPECT_EQ(Redact("error: SENSITIVE{RustError(\"unmatched { brace\")}"),
+            "error: <REDACTED-SENSITIVE>");
+  EXPECT_EQ(Redact("error: SENSITIVE{RustError(\"unmatched } brace\")}"),
+            "error: <REDACTED-SENSITIVE>");
+}
+
+TEST_F(RedactorTest, JsonRedactsSensitive) {
+  EXPECT_EQ(RedactJson("SENSITIVE{12345}"), "<REDACTED-SENSITIVE>");
+  EXPECT_EQ(RedactJson("addr: SENSITIVE{[1, 2, 3, 4]}"), "addr: <REDACTED-SENSITIVE>");
+  EXPECT_EQ(RedactJson("SENSITIVE{SensitiveStruct { field: \"secret\" }}"), "<REDACTED-SENSITIVE>");
+}
+
 TEST_F(RedactorTest, Canary) {
   EXPECT_EQ(Redact(redactor().UnredactedCanary()), redactor().RedactedCanary());
 }

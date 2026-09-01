@@ -489,5 +489,52 @@ TEST(SsidReplacerTest, ReplaceSsid) {
 <REDACTED-SSID: 4>
 )");
 }
+
+TEST(SensitiveReplacerTest, ReplaceSensitive) {
+  RedactionIdCache cache(inspect::UintProperty{});
+  Replacer replacer = ReplaceSensitive();
+  ASSERT_NE(replacer, nullptr);
+
+  std::string text = R"(
+plain: normal text
+SENSITIVE{12345}
+addr: SENSITIVE{[1, 2, 3, 4]}
+SENSITIVE{SensitiveStruct { field: "secret" }}
+SENSITIVE{SensitiveStruct { field: "escaped \" { } \" string" }}
+SENSITIVE{unquoted_trailing_backslash: foo \} after_backslash
+SENSITIVE{windows_path: C:\path\to\file}
+nested: SENSITIVE{Outer { inner: SENSITIVE{Inner { x: 1 }} }}
+unclosed: SENSITIVE{something)";
+  EXPECT_EQ(replacer(cache, text), R"(
+plain: normal text
+<REDACTED-SENSITIVE>
+addr: <REDACTED-SENSITIVE>
+<REDACTED-SENSITIVE>
+<REDACTED-SENSITIVE>
+<REDACTED-SENSITIVE> after_backslash
+<REDACTED-SENSITIVE>
+nested: <REDACTED-SENSITIVE>
+unclosed: <REDACTED-SENSITIVE>)");
+}
+
+TEST(SensitiveReplacerTest, ReplaceSensitiveUnmatchedBraces) {
+  RedactionIdCache cache(inspect::UintProperty{});
+  Replacer replacer = ReplaceSensitive();
+  ASSERT_NE(replacer, nullptr);
+
+  // Unclosed sensitive block fails closed by redacting to the end of text.
+  std::string unclosed = "error: SENSITIVE{RustError(something occurred";
+  EXPECT_EQ(replacer(cache, unclosed), "error: <REDACTED-SENSITIVE>");
+
+  // Unmatched curly braces within string literals do not close the block.
+  std::string unmatched_in_str =
+      "error: SENSITIVE{RustError(\"encountered unmatched { in expression\")}";
+  EXPECT_EQ(replacer(cache, unmatched_in_str), "error: <REDACTED-SENSITIVE>");
+
+  // Unmatched closing brace outside of a SENSITIVE block is preserved.
+  std::string extra_closing = "struct: SENSITIVE{MyStruct { x: 1 }}}";
+  EXPECT_EQ(replacer(cache, extra_closing), "struct: <REDACTED-SENSITIVE>}");
+}
+
 }  // namespace
 }  // namespace forensics

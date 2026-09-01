@@ -71,7 +71,8 @@ v6TrailingZeroes: f:e:d:c:abcd:dcba:bcde::,
 v6LinkLocal: feB2:111:222:333:444:555:666:777,
 v6LocalMulticast: ff72:111:222:333:444:555:666:777,
 v6Multicast: ff77:111:222:333:444:555:666:777,
-obfuscatedGaiaId: 106986199446298680449)";
+obfuscatedGaiaId: 106986199446298680449,
+Sensitive: SENSITIVE{sensitive_data})";
 
 constexpr std::string_view kRedactedCanary =
     R"(Email: <REDACTED-EMAIL>,
@@ -111,7 +112,8 @@ v6TrailingZeroes: <REDACTED-IPV6: 11>,
 v6LinkLocal: feB2:<REDACTED-IPV6-LL: 12>,
 v6LocalMulticast: ff72:111:222:333:444:555:666:777,
 v6Multicast: ff77:<REDACTED-IPV6-MULTI: 13>,
-obfuscatedGaiaId: <REDACTED-OBFUSCATED-GAIA-ID: 20>)";
+obfuscatedGaiaId: <REDACTED-OBFUSCATED-GAIA-ID: 20>,
+Sensitive: <REDACTED-SENSITIVE>)";
 
 }  // namespace
 
@@ -127,6 +129,7 @@ Redactor::Redactor(const int starting_id, inspect::UintProperty cache_size,
   // a URL with an IP-literal host, the URL regex terminates early and the
   // path/query (which may contain secrets) survives redaction.
   AddTextReplacer(kUrlPattern, "<REDACTED-URL>")
+      .Add(ReplaceSensitive())
       .Add(ReplaceIPv4())
       .Add(ReplaceFidlIPv4())
       .Add(ReplaceIPv6())
@@ -134,6 +137,7 @@ Redactor::Redactor(const int starting_id, inspect::UintProperty cache_size,
       .Add(ReplaceMac())
       .Add(ReplaceFidlMac())
       .Add(ReplaceSsid())
+      .AddJsonReplacer(ReplaceSensitive())
       .AddJsonReplacer(ReplaceIPv4())
       .AddJsonReplacer(ReplaceIPv6())
       .AddJsonReplacer(ReplaceMac())

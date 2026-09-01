@@ -160,6 +160,72 @@ Replacer ReplaceWithIdFormatString(const std::string_view pattern,
 
 namespace {
 
+// Finds and redacts all instances of `SENSITIVE{...}`, ignoring braces inside string literals.
+std::string RedactSensitive(const std::string_view text) {
+  static constexpr std::string_view kPrefix = "SENSITIVE{";
+  static constexpr std::string_view kReplacement = "<REDACTED-SENSITIVE>";
+
+  std::string result;
+  result.reserve(text.size());
+
+  size_t curr_begin = 0;
+  while (curr_begin < text.size()) {
+    size_t pos = text.find(kPrefix, curr_begin);
+    if (pos == std::string_view::npos) {
+      result.append(text.substr(curr_begin));
+      break;
+    }
+
+    result.append(text.substr(curr_begin, pos - curr_begin));
+
+    size_t depth = 1;
+    size_t curr_end = pos + kPrefix.size();
+    bool in_string = false;
+    bool escape_next = false;
+
+    while (curr_end < text.size() && depth > 0) {
+      char c = text[curr_end];
+      if (in_string) {
+        if (escape_next) {
+          escape_next = false;
+        } else if (c == '\\') {
+          escape_next = true;
+        } else if (c == '"') {
+          in_string = false;
+        }
+      } else {
+        if (c == '"') {
+          in_string = true;
+        } else if (c == '{') {
+          depth++;
+        } else if (c == '}') {
+          depth--;
+        }
+      }
+      curr_end++;
+    }
+
+    result.append(kReplacement);
+    curr_begin = curr_end;
+  }
+
+  return result;
+}
+
+}  // namespace
+
+Replacer ReplaceSensitive() {
+  return [](RedactionIdCache& /*cache*/, std::string& text) -> std::string& {
+    if (text.find("SENSITIVE{") == std::string::npos) {
+      return text;
+    }
+    text = RedactSensitive(text);
+    return text;
+  };
+}
+
+namespace {
+
 constexpr std::string_view kIPv4Pattern{R"(\b()"
                                         R"((?:(?:25[0-5]|(?:2[0-4]|1{0,1}[0-9]){0,1}[0-9])\.){3,3})"
                                         R"((?:25[0-5]|(?:2[0-4]|1{0,1}[0-9]){0,1}[0-9]|[a-zA-Z]+))"

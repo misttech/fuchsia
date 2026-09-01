@@ -65,6 +65,10 @@ Replacer ReplaceWithText(std::string_view pattern, std::string_view replacement)
 Replacer ReplaceWithIdFormatString(std::string_view pattern, std::string_view format,
                                    const std::vector<std::string>& ignore_prefixes);
 
+// Constructs a Replacer that substitutes all instances of SENSITIVE{...} decorators with
+// "<REDACTED-SENSITIVE>".
+Replacer ReplaceSensitive();
+
 // Constructs a Replacer that substitutes all instances IPv4 address with "<REDACTED-IPV4: %d>"
 Replacer ReplaceIPv4();
 
