@@ -94,11 +94,11 @@ if (current_toolchain == host_toolchain) {
           get_label_info(":${_root_target.gn_subtarget_label}",
                          "target_out_dir") + "/${_root_target.ninja_name}"
 
-      copy(_gn_target_name) {
-        _output_name = _root_target.ninja_name
-        _output_path = "${host_out_dir}/${_output_name}"
+      _gn_output_name = _root_target.ninja_name
+      _gn_target_output_path = "${host_out_dir}/${_gn_output_name}"
 
-        outputs = [ _output_path ]
+      copy(_gn_target_name) {
+        outputs = [ _gn_target_output_path ]
         sources = [ _ninja_output ]
         deps = [ _root_target.gn_subtarget_label ]
 
@@ -114,9 +114,9 @@ if (current_toolchain == host_toolchain) {
                 cpu = current_cpu
                 label = get_label_info(":${_gn_target_name}",
                                        "label_with_toolchain")
-                name = _output_name
+                name = _gn_output_name
                 os = current_os
-                path = rebase_path(_output_path, root_build_dir)
+                path = rebase_path(_gn_target_output_path, root_build_dir)
               },
             ]
           }
@@ -133,15 +133,14 @@ if (current_toolchain == host_toolchain) {
           # to do this copy in the base host toolchain to avoid multiple targets
           # generating the same output.
           copy(_host_tool_target) {
-            outputs = [ "${host_tools_dir}/${_root_target.ninja_name}" ]
-            sources = [ _ninja_output ]
+            outputs = [ "${host_tools_dir}/${_gn_output_name}" ]
+            sources = [ _gn_target_output_path ]
             deps = [
-              # TODO(https://fxbug.dev/553620187): Consider instead depending
-              # on and copying from `_gn_target_name`. This better matches the
-              # common pattern of `install_host_tools()` for GN-built tools and
-              # would ensure metadata and anything else that `_gn_target_name`
-              # might do is also done when depending on this target.
-              _root_target.gn_subtarget_label,
+              # Depend on `_gn_target_name` for consistency with the
+              # `install_host_tools()` template for GN-built tools and to ensure
+              # that the target, which is referenced in `tool_paths.json`, is
+              # built when depending on this target.
+              ":${_gn_target_name}",
             ]
           }
         } else {
