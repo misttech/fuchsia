@@ -8,7 +8,7 @@
 
 use bitfield::bitfield;
 use fidl_next_fuchsia_images2 as fidl_images2;
-use std::num::NonZeroU32;
+use std::num::NonZero;
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
 
 // These definitions map the specification types "le32" and "le64"
@@ -549,7 +549,7 @@ pub struct GetDisplayInfoCommand {
 /// [`SetScanoutCommand`], zero is effectively an invalid resource ID. For
 /// simplicity, we never use zero as a valid resource ID.
 // @cite(virtio): sec="5.7.6.8" title="Device Operation: controlq"
-pub type ResourceId = Option<NonZeroU32>;
+pub type ResourceId = Option<NonZero<u32>>;
 
 /// Creates a 2D resource on the host.
 ///

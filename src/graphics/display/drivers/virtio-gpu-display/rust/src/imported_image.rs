@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 use crate::virtio_gpu_abi::{ResourceFormat, ResourceId};
-use std::num::{NonZeroU32, NonZeroU64};
+use std::num::NonZero;
 use zx_sys::zx_paddr_t;
 
 /// State associated with an image in an imported sysmem buffer.
@@ -15,7 +15,7 @@ pub struct ImportedImage {
     resource_format: ResourceFormat,
 
     #[expect(dead_code)]
-    stride: NonZeroU32,
+    stride: NonZero<u32>,
 
     virtio_resource_id: ResourceId,
 
@@ -34,9 +34,9 @@ impl ImportedImage {
         bti: &zx::Bti,
         image_vmo: &zx::Vmo,
         image_vmo_offset: u64,
-        image_size: NonZeroU64,
+        image_size: NonZero<u64>,
         resource_format: ResourceFormat,
-        stride: NonZeroU32,
+        stride: NonZero<u32>,
     ) -> Result<Self, zx::Status> {
         debug_assert!(!bti.is_invalid());
         debug_assert!(resource_format.is_known());
@@ -82,7 +82,7 @@ impl ImportedImage {
     }
 
     #[expect(dead_code)]
-    pub fn stride(&self) -> NonZeroU32 {
+    pub fn stride(&self) -> NonZero<u32> {
         self.stride
     }
 

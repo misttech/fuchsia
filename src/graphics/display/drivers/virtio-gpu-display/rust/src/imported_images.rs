@@ -14,6 +14,7 @@ use fidl_next_fuchsia_sysmem2 as fidl_sysmem2;
 use fuchsia_runtime;
 use log;
 use std::collections::HashMap;
+use std::num::NonZero;
 
 fn zx_status_from_sysmem_error(_error: fidl_sysmem2::Error) -> zx::Status {
     // TODO(https://fxbug.dev/518838992): Switch to an intentionally designed mapping.
@@ -32,7 +33,7 @@ pub struct SysmemBufferInfo {
     pub minimum_size: fidl_math::SizeU,
 
     pub minimum_bytes_per_row: u32,
-    pub bytes_per_row_divisor: std::num::NonZeroU32,
+    pub bytes_per_row_divisor: NonZero<u32>,
 
     #[expect(dead_code)]
     pub coherency_domain: fidl_sysmem2::CoherencyDomain,
@@ -91,8 +92,8 @@ impl SysmemBufferInfo {
         let minimum_bytes_per_row =
             image_format_constraints.min_bytes_per_row.expect("Sysmem deviated from its contract");
         let bytes_per_row_divisor = image_format_constraints.bytes_per_row_divisor.unwrap_or(1);
-        let bytes_per_row_divisor = std::num::NonZeroU32::new(bytes_per_row_divisor)
-            .expect("Sysmem deviated from its contract");
+        let bytes_per_row_divisor =
+            NonZero::<u32>::new(bytes_per_row_divisor).expect("Sysmem deviated from its contract");
 
         let buffer = &mut buffer_collection_info
             .buffers
