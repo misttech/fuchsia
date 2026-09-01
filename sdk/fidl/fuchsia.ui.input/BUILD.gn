@@ -36,6 +36,8 @@ if (is_host) {
 fidl("fuchsia.ui.input") {
   sources = [
     "commands.fidl",
+    "device_descriptor.fidl",
+    "device_listener.fidl",
     "ime_service.fidl",
     "input_device_registry.fidl",
     "input_event_constants.fidl",
@@ -50,6 +52,7 @@ fidl("fuchsia.ui.input") {
   sdk_area = "UI"
   sdk_category = "partner"
   enable_hlcpp = true
+  enable_rust_next = true
   excluded_checks = [
     "invalid-case-for-constant",
     "protocol-name-includes-service",
@@ -59,6 +62,7 @@ fidl("fuchsia.ui.input") {
   stable = true
   visibility = [ "*" ]
   public_deps = [
+    "//sdk/fidl/fuchsia.input",
     "//sdk/fidl/fuchsia.ui.input3",
     "//zircon/vdso/zx",
   ]

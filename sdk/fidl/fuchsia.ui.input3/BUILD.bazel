@@ -17,6 +17,7 @@ fidl_library(
     api_area = "UI",
     category = "partner",
     enable_hlcpp = True,
+    enable_rust_next = True,
     stable = True,
     visibility = ["//visibility:public"],
     deps = [

@@ -63,7 +63,7 @@ type MediaButtonsDescriptor = struct {
 // Keyboards
 
 // `KeyboardDescriptor` describes the capabilities of a keyboard.
-@available(deprecated=13)
+@available(deprecated=13, replaced=HEAD)
 type KeyboardDescriptor = struct {
     // The list of HID keyboard usages that this keyboard can generate.
     keys vector<uint32>;
@@ -80,7 +80,7 @@ type KeyboardReport = struct {
 // Mouse
 
 // `MouseDescriptor` describes the capabilities of a mouse.
-@available(deprecated=13)
+@available(deprecated=13, replaced=HEAD)
 type MouseDescriptor = struct {
     // The range of relative X and Y movement which can be described by a mouse
     // report.
@@ -196,7 +196,7 @@ type TouchscreenReport = struct {
 
 // Descriptive categories for sensor devices.
 // We assume that each (SensorType,SensorLocation) pair is unique to the system.
-@available(deprecated=13)
+@available(deprecated=13, replaced=HEAD)
 type SensorType = flexible enum {
     ACCELEROMETER = 0;
     GYROSCOPE = 1;
@@ -214,7 +214,7 @@ type SensorLocation = flexible enum {
 // `SensorDescriptor` describes the capabilities of a sensor device.  It does
 // not capture properties that can be changed after initialization, such as the
 // current sampling frequency.
-@available(deprecated=13)
+@available(deprecated=13, replaced=HEAD)
 type SensorDescriptor = struct {
     type SensorType;
     loc SensorLocation;
@@ -264,7 +264,7 @@ type DeviceInfo = struct {
 };
 
 // `DeviceDescriptor` describes one input device.
-@available(deprecated=13)
+@available(deprecated=13, replaced=HEAD)
 type DeviceDescriptor = struct {
     device_info box<DeviceInfo>;
     keyboard box<KeyboardDescriptor>;
