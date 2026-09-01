@@ -11,7 +11,7 @@ use log::{info, warn};
 use mmio::region::MmioRegion;
 use mmio::vmo::VmoMemory;
 use std::num::NonZero;
-use zx::{Bti, Status};
+use zx::Bti;
 
 use super::capabilities::VirtioPciCapabilities;
 use super::common_configuration::{VirtioPciCommonConfiguration, *};
@@ -63,9 +63,9 @@ impl VirtioPciDevice {
         &mut self,
         queue_index: u16,
         buffer: &[VirtioMemoryRange],
-    ) -> Result<u32, Status> {
+    ) -> Result<u32, zx::Status> {
         if queue_index as usize >= self.queues.len() {
-            return Err(Status::INVALID_ARGS);
+            return Err(zx::Status::INVALID_ARGS);
         }
         let queue = &mut self.queues[queue_index as usize];
 
@@ -125,7 +125,7 @@ impl VirtioPciDeviceBuilder {
     /// See [`offered_features()`] for the next initialization step.
     pub async fn new(
         pci: fidl_next::ClientEnd<fidl_pci::Device>,
-    ) -> Result<VirtioPciDeviceBuilder, Status> {
+    ) -> Result<VirtioPciDeviceBuilder, zx::Status> {
         // Our implementation follows steps 1-3 and the part of step 4 that
         // covers reading offered feature bits.
         // @cite(virtio): sec="3.1" title="Device Initialization"
@@ -179,7 +179,7 @@ impl VirtioPciDeviceBuilder {
     pub async fn accept_features(
         &mut self,
         mut accepted_features: VirtioFeatureBits,
-    ) -> Result<(), Status> {
+    ) -> Result<(), zx::Status> {
         // Our implementation follows steps 5-6, the part of step 4 that covers
         // writing accepted feature bits, and the part of step 7 that does
         // per-bus setup and virtqueue discovery and configuration.
@@ -192,7 +192,7 @@ impl VirtioPciDeviceBuilder {
         if !offered_features.uses_virtio1_standard() {
             warn!("Refusing to operate device without virtio 1.0+ standard support");
             self.set_driver_terminated();
-            return Err(Status::NOT_SUPPORTED);
+            return Err(zx::Status::NOT_SUPPORTED);
         }
         accepted_features.set_uses_virtio1_standard(true);
 
@@ -230,7 +230,7 @@ impl VirtioPciDeviceBuilder {
     ///
     /// On failure, sets [`DeviceStatus::driver_terminated`] to true, signaling
     /// that the driver will abandon this device.
-    pub fn build(mut self) -> Result<VirtioPciDevice, Status> {
+    pub fn build(mut self) -> Result<VirtioPciDevice, zx::Status> {
         // Step 8 in the specification.
         // @cite(virtio): sec="3.1" title="Device Initialization"
         self.finish_virtio_initialization()?;
@@ -251,7 +251,7 @@ impl VirtioPciDeviceBuilder {
     ///
     /// The returned BTI is suitable for pinning pages in physical memory
     /// addressable by the PCI device.
-    async fn get_pci_bti(pci: &fidl_next::Client<fidl_pci::Device>) -> Result<Bti, Status> {
+    async fn get_pci_bti(pci: &fidl_next::Client<fidl_pci::Device>) -> Result<Bti, zx::Status> {
         /// [`fuchsia.hardware.pci/Device.GetBti()`] argument referencing a BTI
         /// that produces physical addresses in the PCI device's addressable
         /// space.
@@ -260,8 +260,8 @@ impl VirtioPciDeviceBuilder {
         let get_bti_response = pci
             .get_bti(PCI_DEVICE_ADDRESSABLE_BTI_ID)
             .await
-            .map_err(|_| Status::INTERNAL)?
-            .map_err(|_| Status::INTERNAL)?;
+            .map_err(|_| zx::Status::INTERNAL)?
+            .map_err(|_| zx::Status::INTERNAL)?;
         let bti = get_bti_response.bti;
         debug_assert!(!bti.is_invalid(), "GetBti() returned invalid BTI");
         Ok(bti)
@@ -336,7 +336,10 @@ impl VirtioPciDeviceBuilder {
     ///
     /// On failure, sets [`DeviceStatus::driver_terminated`] to true, signaling
     /// that the driver will abandon this device.
-    fn write_accepted_features(&mut self, feature_bits: VirtioFeatureBits) -> Result<(), Status> {
+    fn write_accepted_features(
+        &mut self,
+        feature_bits: VirtioFeatureBits,
+    ) -> Result<(), zx::Status> {
         debug_assert!(
             !self.offered_features.is_none(),
             "Accepted features are not based on offered features"
@@ -361,7 +364,7 @@ impl VirtioPciDeviceBuilder {
 
             device_status.set_driver_terminated(true);
             self.configuration.device_status_mut().write(DeviceStatusReg(device_status.0));
-            return Err(Status::IO);
+            return Err(zx::Status::IO);
         }
 
         // The write part of step 4 in the specification.
@@ -403,7 +406,7 @@ impl VirtioPciDeviceBuilder {
 
             device_status.set_driver_terminated(true);
             self.configuration.device_status_mut().write(DeviceStatusReg(device_status.0));
-            return Err(Status::IO);
+            return Err(zx::Status::IO);
         }
 
         self.accepted_features = Some(feature_bits);
@@ -416,7 +419,7 @@ impl VirtioPciDeviceBuilder {
     ///
     /// On failure, sets [`DeviceStatus::driver_terminated`] to true, signaling
     /// that the driver will abandon this device.
-    fn initialize_virtqueues(&mut self) -> Result<(), Status> {
+    fn initialize_virtqueues(&mut self) -> Result<(), zx::Status> {
         debug_assert!(self.queues.is_empty(), "The device's virtqueues are already set up");
 
         let queue_count = self.configuration.queue_count().read().value();
@@ -431,7 +434,7 @@ impl VirtioPciDeviceBuilder {
             let Some(queue_capacity) = NonZero::<u16>::new(queue_capacity_raw) else {
                 warn!("virtqueue {} is disabled (capacity set to 0)", queue_index);
                 self.set_driver_terminated();
-                return Err(Status::IO_DATA_LOSS);
+                return Err(zx::Status::IO_DATA_LOSS);
             };
 
             let notification_offset =
@@ -477,7 +480,7 @@ impl VirtioPciDeviceBuilder {
     ///
     /// On failure, sets [`DeviceStatus::driver_terminated`] to true, signaling
     /// that the driver will abandon this device.
-    fn finish_virtio_initialization(&mut self) -> Result<(), Status> {
+    fn finish_virtio_initialization(&mut self) -> Result<(), zx::Status> {
         let mut device_status = DeviceStatus(self.configuration.device_status().read().value());
 
         let mut expected_device_status = DeviceStatus::default();
@@ -493,7 +496,7 @@ impl VirtioPciDeviceBuilder {
 
             device_status.set_driver_terminated(true);
             self.configuration.device_status_mut().write(DeviceStatusReg(device_status.0));
-            return Err(Status::IO);
+            return Err(zx::Status::IO);
         }
 
         // Step 8 in the specification.

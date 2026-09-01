@@ -20,7 +20,7 @@ use crate::virtio::common::queue::layout::{
 use crate::virtio::common::queue::rings::{VirtioQueueReturnedRing, VirtioQueueSubmittedRing};
 
 use std::num::NonZero;
-use zx::{Status, Vmo};
+use zx::Vmo;
 use zx_sys::zx_paddr_t;
 
 /// Represents a single split virtqueue.
@@ -64,7 +64,7 @@ impl VirtioQueue {
     pub fn new(
         bti: &zx::Bti,
         capacity: NonZero<u16>,
-    ) -> Result<(Self, VirtioQueuePhysicalMemoryLayout), Status> {
+    ) -> Result<(Self, VirtioQueuePhysicalMemoryLayout), zx::Status> {
         debug_assert!(!bti.is_invalid());
 
         let page_size = zx::system_get_page_size() as usize;
@@ -80,7 +80,7 @@ impl VirtioQueue {
 
         // Zircon returns zeroed memory. We don't need to initialize it ourselves.
         let queue_data_vmo = Vmo::create_contiguous(bti, queue_layout.total_size().get(), 0)
-            .map_err(|_| Status::NO_MEMORY)?;
+            .map_err(|_| zx::Status::NO_MEMORY)?;
 
         // Pinning one contiguous VMO returns a single address.
         let mut pinned_physical_addresses: [zx_paddr_t; 1] = [0];
@@ -92,7 +92,7 @@ impl VirtioQueue {
                 queue_layout.total_size().get() as u64,
                 &mut pinned_physical_addresses,
             )
-            .map_err(|_| Status::INTERNAL)?;
+            .map_err(|_| zx::Status::INTERNAL)?;
 
         let queue_data_physical_address = pinned_physical_addresses[0] as u64;
         let physical_memory_layout =
@@ -134,7 +134,7 @@ impl VirtioQueue {
     pub unsafe fn submit_buffer(
         &mut self,
         buffer: VirtioBufferRef<'_>,
-    ) -> Result<VirtioSubmittedBufferId, Status> {
+    ) -> Result<VirtioSubmittedBufferId, zx::Status> {
         // @cite(virtio): sec="2.7.13" title="Supplying Buffers to The Device"
 
         let descriptor_list_head = self

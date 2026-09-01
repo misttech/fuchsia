@@ -5,7 +5,6 @@
 //! PCI concepts that are not specific to virtio.
 
 use fidl_next_fuchsia_hardware_pci as fidl_pci;
-use zx::Status;
 
 /// Maps a subset of a PCI device's BARs to VMOs covering the regions.
 ///
@@ -79,12 +78,12 @@ impl<'a> PciDeviceBarMapBuilder<'a> {
     ///
     /// `bar_index` must be less than [`PciDeviceBarMap::BAR_COUNT`].
     ///
-    /// Errors out with [`Status::INTERNAL`] if the underlying PCI bus driver
+    /// Errors out with [`zx::Status::INTERNAL`] if the underlying PCI bus driver
     /// call fails.
     pub async fn ensure_bar_memory_region_is_mapped(
         &mut self,
         bar_index: u8,
-    ) -> Result<(), Status> {
+    ) -> Result<(), zx::Status> {
         if self.bar_memory_region_is_mapped(bar_index) {
             return Ok(());
         }
@@ -107,9 +106,9 @@ impl<'a> PciDeviceBarMapBuilder<'a> {
     /// `bar_index` must be less than [`PciDeviceBarMap::BAR_COUNT`],
     /// and must not have an existing mapping.
     ///
-    /// Errors out with [`Status::INTERNAL`] if the underlying PCI bus driver
+    /// Errors out with [`zx::Status::INTERNAL`] if the underlying PCI bus driver
     /// call fails.
-    async fn map_bar_memory_region(&mut self, bar_index: u8) -> Result<(), Status> {
+    async fn map_bar_memory_region(&mut self, bar_index: u8) -> Result<(), zx::Status> {
         debug_assert!(
             !self.bar_memory_region_is_mapped(bar_index),
             "BAR {}'s memory region was already mapped to a VMO",
@@ -122,12 +121,12 @@ impl<'a> PciDeviceBarMapBuilder<'a> {
             .pci
             .get_bar(bar_index as u32)
             .await
-            .map_err(|_| Status::INTERNAL)?
-            .map_err(|_| Status::INTERNAL)?;
+            .map_err(|_| zx::Status::INTERNAL)?
+            .map_err(|_| zx::Status::INTERNAL)?;
 
         self.bar_vmos[bar_index as usize] = match bar_info.result.result {
             fidl_pci::BarResult::Vmo(vmo) => vmo,
-            _ => return Err(Status::INTERNAL),
+            _ => return Err(zx::Status::INTERNAL),
         };
         debug_assert!(
             self.bar_memory_region_is_mapped(bar_index),

@@ -21,7 +21,7 @@ use fuchsia_runtime;
 use std::mem::align_of;
 use std::num::NonZero;
 use std::ptr::NonNull;
-use zx::{Status, VmarFlags, Vmo};
+use zx::{VmarFlags, Vmo};
 
 /// The computed memory layout of a split virtqueue.
 pub struct VirtioQueueMemoryLayout {
@@ -215,7 +215,7 @@ impl VirtioQueuePartsBuilder {
     pub fn new(
         queue_layout: &VirtioQueueMemoryLayout,
         queue_data_vmo: &Vmo,
-    ) -> Result<VirtioQueuePartsBuilder, Status> {
+    ) -> Result<VirtioQueuePartsBuilder, zx::Status> {
         // When debug assertions are disabled, [`zx::vmar::map()`] will fail
         // with an error if the VMO is too small.
         debug_assert!(
@@ -233,7 +233,7 @@ impl VirtioQueuePartsBuilder {
                 queue_layout.total_size.get(),
                 VmarFlags::PERM_READ | VmarFlags::PERM_WRITE | VmarFlags::REQUIRE_NON_RESIZABLE,
             )
-            .map_err(|_| Status::INTERNAL)?;
+            .map_err(|_| zx::Status::INTERNAL)?;
         let queue_data_address = NonZero::<usize>::new(queue_data_address)
             .expect("zx_vmar_map() returned null pointer on success");
         let queue_data = NonNull::<u8>::with_exposed_provenance(queue_data_address);

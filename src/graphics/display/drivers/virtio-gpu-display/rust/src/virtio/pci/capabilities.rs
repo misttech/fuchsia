@@ -14,8 +14,6 @@ use mmio::region::MmioRegion;
 use mmio::vmo::{VmoMapping, VmoMemory};
 use std::mem::{offset_of, size_of};
 
-use zx::Status;
-
 /// Data region information stored by virtio in a PCI capability.
 ///
 /// Defines PCI capabilities omitting the header and containing additional data.
@@ -141,14 +139,14 @@ impl PciCapabilityData {
     pub async fn new(
         pci: &fidl_next::Client<fidl_pci::Device>,
         offset: u8,
-    ) -> Result<Option<PciCapabilityData>, Status> {
+    ) -> Result<Option<PciCapabilityData>, zx::Status> {
         // TODO(https://fxbug.dev/523333960): Refine error handling for PCI FIDL calls.
 
         let pci_capability_type_id = pci
             .read_config8(offset as u16 + offset_of!(VirtioPciCapability32, cap_vndr) as u16)
             .await
-            .map_err(|_| Status::INTERNAL)?
-            .map_err(|_| Status::INTERNAL)?
+            .map_err(|_| zx::Status::INTERNAL)?
+            .map_err(|_| zx::Status::INTERNAL)?
             .value;
         assert!(
             fidl_pci::CapabilityId::from(pci_capability_type_id) == fidl_pci::CapabilityId::Vendor,
@@ -159,8 +157,8 @@ impl PciCapabilityData {
         let capability_length = pci
             .read_config8(offset as u16 + offset_of!(VirtioPciCapability32, cap_len) as u16)
             .await
-            .map_err(|_| Status::INTERNAL)?
-            .map_err(|_| Status::INTERNAL)?
+            .map_err(|_| zx::Status::INTERNAL)?
+            .map_err(|_| zx::Status::INTERNAL)?
             .value;
 
         if usize::from(capability_length) <= offset_of!(VirtioPciCapability32, cfg_type) {
@@ -171,8 +169,8 @@ impl PciCapabilityData {
         let virtio_capability_type = PciCapabilityType(
             pci.read_config8(offset as u16 + offset_of!(VirtioPciCapability32, cfg_type) as u16)
                 .await
-                .map_err(|_| Status::INTERNAL)?
-                .map_err(|_| Status::INTERNAL)?
+                .map_err(|_| zx::Status::INTERNAL)?
+                .map_err(|_| zx::Status::INTERNAL)?
                 .value,
         );
 
@@ -188,14 +186,14 @@ impl PciCapabilityData {
                 "virtio PCI capability {:?} has length {:?}, too small to encode a BAR pointer",
                 virtio_capability_type, capability_length
             );
-            return Err(Status::IO_DATA_INTEGRITY);
+            return Err(zx::Status::IO_DATA_INTEGRITY);
         }
 
         let bar_index = pci
             .read_config8(offset as u16 + offset_of!(VirtioPciCapability32, bar) as u16)
             .await
-            .map_err(|_| Status::INTERNAL)?
-            .map_err(|_| Status::INTERNAL)?
+            .map_err(|_| zx::Status::INTERNAL)?
+            .map_err(|_| zx::Status::INTERNAL)?
             .value;
 
         // Invalid BAR indices are designated as "reserved", and drivers must ignore PCI capabilities that use reserved values.
@@ -208,21 +206,21 @@ impl PciCapabilityData {
         let capability_index = pci
             .read_config8(offset as u16 + offset_of!(VirtioPciCapability32, id) as u16)
             .await
-            .map_err(|_| Status::INTERNAL)?
-            .map_err(|_| Status::INTERNAL)?
+            .map_err(|_| zx::Status::INTERNAL)?
+            .map_err(|_| zx::Status::INTERNAL)?
             .value;
 
         let mut data_offset = pci
             .read_config32(offset as u16 + offset_of!(VirtioPciCapability32, offset) as u16)
             .await
-            .map_err(|_| Status::INTERNAL)?
-            .map_err(|_| Status::INTERNAL)?
+            .map_err(|_| zx::Status::INTERNAL)?
+            .map_err(|_| zx::Status::INTERNAL)?
             .value as u64;
         let mut data_length = pci
             .read_config32(offset as u16 + offset_of!(VirtioPciCapability32, length) as u16)
             .await
-            .map_err(|_| Status::INTERNAL)?
-            .map_err(|_| Status::INTERNAL)?
+            .map_err(|_| zx::Status::INTERNAL)?
+            .map_err(|_| zx::Status::INTERNAL)?
             .value as u64;
 
         let notification_stride;
@@ -235,7 +233,7 @@ impl PciCapabilityData {
                     "virtio PCI capability {:?} has length {:?}, too small to encode a BAR pointer",
                     virtio_capability_type, capability_length
                 );
-                return Err(Status::IO_DATA_INTEGRITY);
+                return Err(zx::Status::IO_DATA_INTEGRITY);
             }
             notification_stride = Some(
                 pci.read_config32(
@@ -243,8 +241,8 @@ impl PciCapabilityData {
                         + offset_of!(VirtioPciNotifyCapability, notify_off_multiplier) as u16,
                 )
                 .await
-                .map_err(|_| Status::INTERNAL)?
-                .map_err(|_| Status::INTERNAL)?
+                .map_err(|_| zx::Status::INTERNAL)?
+                .map_err(|_| zx::Status::INTERNAL)?
                 .value,
             );
 
@@ -268,16 +266,16 @@ impl PciCapabilityData {
                         offset as u16 + offset_of!(VirtioPciCapability64, offset_hi) as u16,
                     )
                     .await
-                    .map_err(|_| Status::INTERNAL)?
-                    .map_err(|_| Status::INTERNAL)?
+                    .map_err(|_| zx::Status::INTERNAL)?
+                    .map_err(|_| zx::Status::INTERNAL)?
                     .value as u64;
                 let length_bits63_32 = pci
                     .read_config32(
                         offset as u16 + offset_of!(VirtioPciCapability64, length_hi) as u16,
                     )
                     .await
-                    .map_err(|_| Status::INTERNAL)?
-                    .map_err(|_| Status::INTERNAL)?
+                    .map_err(|_| zx::Status::INTERNAL)?
+                    .map_err(|_| zx::Status::INTERNAL)?
                     .value as u64;
                 data_offset |= offset_bits63_32 << 32;
                 data_length |= length_bits63_32 << 32;
@@ -298,7 +296,7 @@ impl PciCapabilityData {
     pub fn map_memory_region(
         self,
         bar_map: &PciDeviceBarMap,
-    ) -> Result<MmioRegion<VmoMemory>, Status> {
+    ) -> Result<MmioRegion<VmoMemory>, zx::Status> {
         let vmo = bar_map.get_vmo(self.bar_index);
 
         // [`VmoMapping::map()`] wants to own the VMO handle.
@@ -324,7 +322,7 @@ pub struct VirtioPciCapabilities {
 }
 
 impl VirtioPciCapabilities {
-    pub async fn new(pci: &fidl_next::Client<fidl_pci::Device>) -> Result<Self, Status> {
+    pub async fn new(pci: &fidl_next::Client<fidl_pci::Device>) -> Result<Self, zx::Status> {
         let mut common_configuration: Option<PciCapabilityData> = None;
         let mut notifications: Option<PciCapabilityData> = None;
         let mut device_configuration: Option<PciCapabilityData> = None;
@@ -332,7 +330,7 @@ impl VirtioPciCapabilities {
         let capabilities = pci
             .get_capabilities(fidl_pci::CapabilityId::Vendor)
             .await
-            .map_err(|_| Status::INTERNAL)?;
+            .map_err(|_| zx::Status::INTERNAL)?;
 
         let mut bar_map_builder = PciDeviceBarMapBuilder::new(pci);
         for offset in capabilities.offsets {
@@ -363,14 +361,14 @@ impl VirtioPciCapabilities {
         // @cite(virtio): sec="4.1.4.3.1" title="Device Requirements: Common configuration structure layout"
         let common_configuration = common_configuration.ok_or_else(|| {
             warn!("virtio device missing required PCI capability: common configuration");
-            Status::IO_DATA_LOSS
+            zx::Status::IO_DATA_LOSS
         })?;
 
         // The device must present at least one notification capability.
         // @cite(virtio): sec="4.1.4.4.1" title="Device Requirements: Notification capability"
         let notifications = notifications.ok_or_else(|| {
             warn!("virtio device missing required PCI capability: notification");
-            Status::IO_DATA_LOSS
+            zx::Status::IO_DATA_LOSS
         })?;
 
         // `unwrap()` will not panic because [`PciCapabilitiesData`] of type

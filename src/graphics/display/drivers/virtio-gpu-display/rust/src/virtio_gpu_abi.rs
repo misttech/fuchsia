@@ -10,7 +10,6 @@ use bitfield::bitfield;
 use fidl_next_fuchsia_images2 as fidl_images2;
 use std::num::NonZeroU32;
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
-use zx::Status;
 
 // These definitions map the specification types "le32" and "le64"
 // (little-endian 32/64-bit integers) to u32 and u64, because Fuchsia only
@@ -517,13 +516,13 @@ impl std::fmt::Debug for ResourceFormat {
 }
 
 impl TryFrom<fidl_images2::PixelFormat> for ResourceFormat {
-    type Error = Status;
+    type Error = zx::Status;
 
     fn try_from(value: fidl_images2::PixelFormat) -> Result<Self, Self::Error> {
         match value {
             fidl_images2::PixelFormat::B8G8R8A8 => Ok(Self::B8G8R8A8),
             fidl_images2::PixelFormat::R8G8B8A8 => Ok(Self::R8G8B8A8),
-            _ => Err(Status::NOT_SUPPORTED),
+            _ => Err(zx::Status::NOT_SUPPORTED),
         }
     }
 }

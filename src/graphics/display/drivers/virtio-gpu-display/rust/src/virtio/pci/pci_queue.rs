@@ -10,7 +10,6 @@ use crate::virtio::common::queue::buffer::{
 use crate::virtio::common::queue::layout::VirtioQueuePhysicalMemoryLayout;
 
 use std::num::NonZero;
-use zx::Status;
 
 pub struct VirtioPciQueue {
     common_queue: VirtioQueue,
@@ -29,7 +28,7 @@ impl VirtioPciQueue {
         bti: &zx::Bti,
         capacity: NonZero<u16>,
         notification_data: VirtioPciNotificationData,
-    ) -> Result<(Self, VirtioQueuePhysicalMemoryLayout), Status> {
+    ) -> Result<(Self, VirtioQueuePhysicalMemoryLayout), zx::Status> {
         let (common_queue, memory_layout) = VirtioQueue::new(bti, capacity)?;
         let queue = Self { common_queue, notification_data };
 
@@ -53,7 +52,7 @@ impl VirtioPciQueue {
     pub unsafe fn submit_buffer(
         &mut self,
         buffer: VirtioBufferRef<'_>,
-    ) -> Result<VirtioSubmittedBufferId, Status> {
+    ) -> Result<VirtioSubmittedBufferId, zx::Status> {
         // SAFETY: The called method has the same preconditions as this method.
         unsafe { self.common_queue.submit_buffer(buffer) }
     }
