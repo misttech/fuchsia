@@ -179,6 +179,19 @@ LogMessageStore::ConsumeResult LogMessageStore::Consume() {
   return result;
 }
 
+void LogMessageStore::Reset() {
+  buffer_.clear();
+  buffer_stats_.Reset();
+  block_stats_.Reset();
+  encoder_->Reset();
+  ResetLastPushedMessage();
+  repeat_buffer_count_ = 0;
+  num_messages_dropped_ = 0;
+  incremental_stats_ = LogStats(/*message_count=*/0, /*deduplicated_message_count=*/0,
+                                /*first_timestamp=*/std::nullopt, /*last_timestamp=*/std::nullopt);
+  to_append_ = std::nullopt;
+}
+
 void LogMessageStore::AppendToEnd(const std::string& str) { to_append_ = str; }
 
 }  // namespace system_log_recorder

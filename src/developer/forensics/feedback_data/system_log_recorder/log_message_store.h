@@ -70,6 +70,10 @@ class LogMessageStore : public LogSink {
   // returned string). Calling Consume will empty the store.
   ConsumeResult Consume();
 
+  // Clears the buffer, resets block and buffer stats, resets the encoder, and resets repeat
+  // tracking.
+  void Reset();
+
   void TurnOnRateLimiting() { buffer_rate_limit_ = true; }
 
  private:

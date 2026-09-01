@@ -14,6 +14,7 @@
 #include <lib/zx/time.h>
 
 #include <queue>
+#include <string>
 
 #include "src/developer/forensics/feedback_data/log_source.h"
 #include "src/developer/forensics/feedback_data/system_log_recorder/encoding/decoder.h"
@@ -35,6 +36,7 @@ class SystemLogRecorder : public fidl::Server<fuchsia_feedback_internal::SystemL
     std::string logs_dir;
     size_t max_num_files;
     StorageSize total_log_size;
+    std::string metadata_path;
   };
 
   SystemLogRecorder(async_dispatcher_t* archive_dispatcher, async_dispatcher_t* write_dispatcher,
@@ -57,10 +59,9 @@ class SystemLogRecorder : public fidl::Server<fuchsia_feedback_internal::SystemL
 
  private:
   void PeriodicWriteTask();
-  void OnWriteComplete(bool success);
+  void OnWriteComplete(SystemLogWriter::WriteResult result);
   void OnFlushComplete(bool success);
-  void OnFlushAndReadLogsComplete(
-      fit::result<SystemLogWriter::WriterError, SystemLogWriter::Logs> result);
+  void OnFlushAndReadLogsComplete(SystemLogWriter::FlushAndReadLogsResult result);
 
   async_dispatcher_t* archive_dispatcher_;
   std::unique_ptr<RedactorBase> redactor_;

@@ -29,7 +29,8 @@ SystemLogWriter::SystemLogWriter(const std::string& logs_dir, size_t max_num_fil
       max_num_files_(max_num_files),
       decoder_(std::move(decoder)),
       metadata_({}, kFirstFileNumber),
-      metadata_path_(metadata_path) {
+      metadata_path_(metadata_path),
+      recovering_from_purge_(false) {
   FX_CHECK(max_num_files_ > 0);
   if (!files::CreateDirectory(logs_dir)) {
     FX_LOGS(WARNING) << "Failed to create logs directory, will re-try on the next block, no logs "
@@ -60,9 +61,15 @@ SystemLogWriter::SystemLogWriter(const std::string& logs_dir, size_t max_num_fil
   metadata_.ToFile(metadata_path_);
 }
 
-void SystemLogWriter::StartNewFile() {
+bool SystemLogWriter::RecreateDirectoryIfCachePurged() {
   if (!files::IsDirectory(logs_dir_)) {
+    recovering_from_purge_ = true;
     metadata_.Clear();
+
+    // Invalidate the current file descriptor. The current in-flight write will be discarded because
+    // it was encoded against a pre-purge dictionary. A new file will be started at the end of
+    // Write() and the recorder will reset the store.
+    current_file_descriptor_.reset();
 
     if (files::CreateDirectory(logs_dir_)) {
       FX_LOGS(INFO)
@@ -71,6 +78,23 @@ void SystemLogWriter::StartNewFile() {
       FX_LOGS_FIRST_N(WARNING, 10)
           << "Still cannot re-create logs directory. Disk still most likely full";
     }
+
+    return true;
+  }
+
+  return false;
+}
+
+bool SystemLogWriter::HasSufficientCoverage() const {
+  // If the writer is not recovering from a purge, then there's no reason for the system log
+  // recorder to fallback to a snapshot from Archivist.
+  return !recovering_from_purge_;
+}
+
+void SystemLogWriter::StartNewFile() {
+  if (!files::IsDirectory(logs_dir_)) {
+    FX_LOGS_FIRST_N(WARNING, 10) << "Cannot start new file: logs directory does not exist";
+    return;
   }
 
   const size_t next_file_num = metadata_.NextFileNumber();
@@ -83,13 +107,20 @@ void SystemLogWriter::StartNewFile() {
 
   metadata_.NewStats(next_file_num);
 
+  if (recovering_from_purge_ &&
+      metadata_.NumFiles() >= std::min(max_num_files_, kMinFilesForSufficientCoverage)) {
+    recovering_from_purge_ = false;
+  }
+
   TRACE_DURATION("feedback:io", "SystemLogWriter::OpenFile");
   current_file_descriptor_.reset(
       open(Path(next_file_num).c_str(), O_WRONLY | O_CREAT | O_TRUNC, S_IRUSR | S_IWUSR));
 }
 
-bool SystemLogWriter::Write(const LogMessageStore::ConsumeResult& result) {
+SystemLogWriter::WriteResult SystemLogWriter::Write(const LogMessageStore::ConsumeResult& result) {
   TRACE_DURATION("feedback:io", "SystemLogWriter::Write");
+
+  const bool cache_purged = RecreateDirectoryIfCachePurged();
 
   // The file descriptor could be negative if the file failed to open.
   if (current_file_descriptor_.is_valid()) {
@@ -100,11 +131,12 @@ bool SystemLogWriter::Write(const LogMessageStore::ConsumeResult& result) {
     write(current_file_descriptor_.get(), result.log.c_str(), result.log.size());
   }
 
-  if (result.end_of_block) {
+  if (result.end_of_block || cache_purged) {
     StartNewFile();
   }
 
-  return metadata_.ToFile(metadata_path_);
+  metadata_.ToFile(metadata_path_);
+  return cache_purged ? WriteResult::kCachePurge : WriteResult::kOk;
 }
 
 bool SystemLogWriter::Fsync() {
@@ -115,9 +147,16 @@ bool SystemLogWriter::Fsync() {
   return fsync(current_file_descriptor_.get()) == 0;
 }
 
-fit::result<SystemLogWriter::WriterError, SystemLogWriter::Logs> SystemLogWriter::FlushAndReadLogs(
+SystemLogWriter::FlushAndReadLogsResult SystemLogWriter::FlushAndReadLogs(
     const LogMessageStore::ConsumeResult& result) {
-  Write(result);
+  const bool cache_purged = (Write(result) == WriteResult::kCachePurge);
+
+  if (!HasSufficientCoverage()) {
+    return {
+        .logs = fit::error(WriterError::kInsufficientCoverage),
+        .cache_purged = cache_purged,
+    };
+  }
 
   float compression_ratio;
   const fit::result<ReaderError, std::string> uncompressed_log =
@@ -126,9 +165,15 @@ fit::result<SystemLogWriter::WriterError, SystemLogWriter::Logs> SystemLogWriter
   if (uncompressed_log.is_error()) {
     switch (uncompressed_log.error_value()) {
       case ReaderError::kIoError:
-        return fit::error(WriterError::kIoError);
+        return {
+            .logs = fit::error(WriterError::kIoError),
+            .cache_purged = cache_purged,
+        };
       case ReaderError::kDecompressionError:
-        return fit::error(WriterError::kDecompressionError);
+        return {
+            .logs = fit::error(WriterError::kDecompressionError),
+            .cache_purged = cache_purged,
+        };
     }
   }
 
@@ -136,14 +181,20 @@ fit::result<SystemLogWriter::WriterError, SystemLogWriter::Logs> SystemLogWriter
 
   zx::result<zx::vmo> vmo = VmoFromString(log_str);
   if (vmo.is_error()) {
-    return fit::error(WriterError::kVmoError);
+    return {
+        .logs = fit::error(WriterError::kVmoError),
+        .cache_purged = cache_purged,
+    };
   }
 
-  return fit::ok(Logs{
-      .vmo = std::move(*vmo),
-      .first_timestamp = metadata_.FirstTimestamp(),
-      .last_timestamp = metadata_.LastTimestamp(),
-  });
+  return {
+      .logs = fit::ok(Logs{
+          .vmo = std::move(*vmo),
+          .first_timestamp = metadata_.FirstTimestamp(),
+          .last_timestamp = metadata_.LastTimestamp(),
+      }),
+      .cache_purged = cache_purged,
+  };
 }
 
 std::string SystemLogWriter::Path(const size_t file_num) const {

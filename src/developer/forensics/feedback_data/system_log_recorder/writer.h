@@ -9,6 +9,7 @@
 #include <lib/zx/time.h>
 #include <lib/zx/vmo.h>
 
+#include <cstdint>
 #include <memory>
 #include <optional>
 #include <string>
@@ -29,10 +30,16 @@ namespace system_log_recorder {
 // This class is thread-unsafe. All functions must be called on the same dispatcher.
 class SystemLogWriter {
  public:
+  enum class WriteResult : std::uint8_t {
+    kOk,
+    kCachePurge,
+  };
+
   enum class WriterError : std::uint8_t {
     kIoError,
     kDecompressionError,
     kVmoError,
+    kInsufficientCoverage,
   };
 
   struct Logs {
@@ -41,22 +48,28 @@ class SystemLogWriter {
     std::optional<zx::time_boot> last_timestamp;
   };
 
+  struct FlushAndReadLogsResult {
+    ::fit::result<WriterError, Logs> logs;
+    bool cache_purged;
+  };
+
   static constexpr size_t kFirstFileNumber = 0u;
+  static constexpr size_t kMinFilesForSufficientCoverage = 5u;
 
   SystemLogWriter(const std::string& logs_dir, size_t max_num_files,
                   std::unique_ptr<Decoder> decoder,
                   const std::string& metadata_path = feedback::kCurrentDiskBackedLogsMetadataPath);
 
-  // Returns true if metadata was successfully written to disk.
-  bool Write(const LogMessageStore::ConsumeResult& result);
+  // Writes the consumed result to disk and returns whether a cache purge was detected.
+  WriteResult Write(const LogMessageStore::ConsumeResult& result);
 
   // Instructs the class to call `fsync` on the currently open file to ensure data makes it disk.
   // Returns true if successful.
   bool Fsync();
 
   // Flushes the given consume result to disk, reads all persisted logs and metadata, and returns
-  // the result.
-  ::fit::result<WriterError, Logs> FlushAndReadLogs(const LogMessageStore::ConsumeResult& result);
+  // the logs (or error) along with whether a cache purge was detected.
+  FlushAndReadLogsResult FlushAndReadLogs(const LogMessageStore::ConsumeResult& result);
 
  private:
   // Truncates the first file to start anew.
@@ -65,6 +78,11 @@ class SystemLogWriter {
   // Returns the path the |file_num|'th file created.
   std::string Path(size_t file_num) const;
 
+  // Returns true if a cache purge was detected.
+  bool RecreateDirectoryIfCachePurged();
+
+  bool HasSufficientCoverage() const;
+
   const std::string logs_dir_;
   const size_t max_num_files_;
   std::unique_ptr<Decoder> decoder_;
@@ -72,6 +90,7 @@ class SystemLogWriter {
   DiskBackedLogsMetadata metadata_;
   const std::string metadata_path_;
 
+  bool recovering_from_purge_;
   fbl::unique_fd current_file_descriptor_;
 };
 

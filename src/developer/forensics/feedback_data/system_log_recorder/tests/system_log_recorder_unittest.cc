@@ -23,6 +23,8 @@
 #include "src/developer/forensics/testing/stubs/diagnostics_batch_iterator.h"
 #include "src/developer/forensics/testing/unit_test_fixture.h"
 #include "src/developer/forensics/utils/vmo.h"
+#include "src/lib/files/directory.h"
+#include "src/lib/files/file.h"
 #include "src/lib/files/path.h"
 #include "src/lib/files/scoped_temp_dir.h"
 #include "src/lib/fxl/strings/string_printf.h"
@@ -34,6 +36,8 @@ namespace {
 
 using ::testing::ElementsAre;
 using ::testing::HasSubstr;
+
+namespace ffi = fuchsia_feedback_internal;
 
 constexpr zx::duration kTimeWaitForLimitedLogs = zx::sec(60);
 
@@ -76,9 +80,10 @@ std::string BuildLogMessage(const std::string& message) {
   return fxl::StringPrintf(fmt, message.c_str());
 }
 
-using SystemLogRecorderTest = UnitTestFixture;
+using SystemLogRecorderSingleDispatcherTest = UnitTestFixture;
+using SystemLogRecorderMultiDispatcherTest = UnitTestFixture;
 
-TEST_F(SystemLogRecorderTest, SingleThreaded_SmokeTest) {
+TEST_F(SystemLogRecorderSingleDispatcherTest, SmokeTest) {
   // To simulate a real load, we set up the test with the following conditions:
   //  * The listener will get messages every 750 milliseconds.
   //  * The writer writes messages every 1 second. Each write will contain at most 2 log
@@ -130,6 +135,8 @@ TEST_F(SystemLogRecorderTest, SingleThreaded_SmokeTest) {
   InjectServiceProvider(&archive, kArchiveAccessorName);
 
   files::ScopedTempDir temp_dir;
+  files::ScopedTempDir metadata_dir;
+  const std::string metadata_path = files::JoinPath(metadata_dir.path(), "metadata.json");
 
   const StorageSize kWriteSize = kMaxLogLineSize * 2 + kDroppedFormatStrSize;
 
@@ -140,6 +147,7 @@ TEST_F(SystemLogRecorderTest, SingleThreaded_SmokeTest) {
                                  .logs_dir = temp_dir.path(),
                                  .max_num_files = 2u,
                                  .total_log_size = 2u * kWriteSize,
+                                 .metadata_path = metadata_path,
                              },
                              std::make_unique<IdentityRedactor>(inspect::BoolProperty()),
                              std::make_unique<IdentityEncoder>(),
@@ -244,7 +252,7 @@ TEST_F(SystemLogRecorderTest, SingleThreaded_SmokeTest) {
   }
 }
 
-TEST_F(SystemLogRecorderTest, SingleThreaded_Flush) {
+TEST_F(SystemLogRecorderSingleDispatcherTest, SingleThreaded_Flush) {
   // To simulate a real load, we set up the test with the following conditions:
   //  * The listener will get messages every 750 milliseconds.
   //  * The writer writes messages every 1 second. Each write will contain at most 2 log
@@ -288,6 +296,8 @@ TEST_F(SystemLogRecorderTest, SingleThreaded_Flush) {
   InjectServiceProvider(&archive, kArchiveAccessorName);
 
   files::ScopedTempDir temp_dir;
+  files::ScopedTempDir metadata_dir;
+  const std::string metadata_path = files::JoinPath(metadata_dir.path(), "metadata.json");
 
   const std::string kFlushStr = "FLUSH\n";
 
@@ -301,6 +311,7 @@ TEST_F(SystemLogRecorderTest, SingleThreaded_Flush) {
                                  .logs_dir = temp_dir.path(),
                                  .max_num_files = 2u,
                                  .total_log_size = 2u * kWriteSize,
+                                 .metadata_path = metadata_path,
                              },
                              std::make_unique<IdentityRedactor>(inspect::BoolProperty()),
                              std::make_unique<IdentityEncoder>(),
@@ -355,7 +366,7 @@ FLUSH
   }
 }
 
-TEST_F(SystemLogRecorderTest, SingleThreadedMultipleFlushes) {
+TEST_F(SystemLogRecorderSingleDispatcherTest, MultipleFlushes) {
   const zx::duration kArchivePeriod = zx::msec(750);
   const zx::duration kWriterPeriod = zx::sec(1);
 
@@ -375,6 +386,8 @@ TEST_F(SystemLogRecorderTest, SingleThreadedMultipleFlushes) {
   InjectServiceProvider(&archive, kArchiveAccessorName);
 
   files::ScopedTempDir temp_dir;
+  files::ScopedTempDir metadata_dir;
+  const std::string metadata_path = files::JoinPath(metadata_dir.path(), "metadata.json");
 
   const std::string kFlushStr1 = "FLUSH 1\n";
   const std::string kFlushStr2 = "FLUSH 2\n";
@@ -389,6 +402,7 @@ TEST_F(SystemLogRecorderTest, SingleThreadedMultipleFlushes) {
                                  .logs_dir = temp_dir.path(),
                                  .max_num_files = 2u,
                                  .total_log_size = 2u * kWriteSize,
+                                 .metadata_path = metadata_path,
                              },
                              std::make_unique<IdentityRedactor>(inspect::BoolProperty()),
                              std::make_unique<IdentityEncoder>(),
@@ -420,7 +434,7 @@ FLUSH 2
 )");
 }
 
-TEST_F(SystemLogRecorderTest, MultipleDispatchersRecordsLogs) {
+TEST_F(SystemLogRecorderMultiDispatcherTest, RecordsLogs) {
   std::unique_ptr<async::LoopInterface> write_loop = test_loop().StartNewLoop();
 
   const zx::duration kArchivePeriod = zx::msec(750);
@@ -446,6 +460,8 @@ TEST_F(SystemLogRecorderTest, MultipleDispatchersRecordsLogs) {
   InjectServiceProvider(&archive, kArchiveAccessorName);
 
   files::ScopedTempDir temp_dir;
+  files::ScopedTempDir metadata_dir;
+  const std::string metadata_path = files::JoinPath(metadata_dir.path(), "metadata.json");
 
   const StorageSize kWriteSize = kMaxLogLineSize * 2;
 
@@ -456,6 +472,7 @@ TEST_F(SystemLogRecorderTest, MultipleDispatchersRecordsLogs) {
                                  .logs_dir = temp_dir.path(),
                                  .max_num_files = 2u,
                                  .total_log_size = 2u * kWriteSize,
+                                 .metadata_path = metadata_path,
                              },
                              std::make_unique<IdentityRedactor>(inspect::BoolProperty()),
                              std::make_unique<IdentityEncoder>(),
@@ -477,7 +494,7 @@ TEST_F(SystemLogRecorderTest, MultipleDispatchersRecordsLogs) {
 )");
 }
 
-TEST_F(SystemLogRecorderTest, MultipleDispatchersGetCurrentBootLogs) {
+TEST_F(SystemLogRecorderMultiDispatcherTest, GetCurrentBootLogs) {
   std::unique_ptr<async::LoopInterface> write_loop = test_loop().StartNewLoop();
 
   const zx::duration kArchivePeriod = zx::msec(750);
@@ -498,6 +515,8 @@ TEST_F(SystemLogRecorderTest, MultipleDispatchersGetCurrentBootLogs) {
   InjectServiceProvider(&archive, kArchiveAccessorName);
 
   files::ScopedTempDir temp_dir;
+  const std::string logs_dir = files::JoinPath(temp_dir.path(), "logs");
+  const std::string metadata_path = files::JoinPath(temp_dir.path(), "metadata.json");
 
   const StorageSize kWriteSize = kMaxLogLineSize * 2 + kDroppedFormatStrSize;
 
@@ -505,9 +524,10 @@ TEST_F(SystemLogRecorderTest, MultipleDispatchersGetCurrentBootLogs) {
                              SystemLogRecorder::WriteParameters{
                                  .period = kWriterPeriod,
                                  .max_write_size = kWriteSize,
-                                 .logs_dir = temp_dir.path(),
+                                 .logs_dir = logs_dir,
                                  .max_num_files = 2u,
                                  .total_log_size = 2u * kWriteSize,
+                                 .metadata_path = metadata_path,
                              },
                              std::make_unique<IdentityRedactor>(inspect::BoolProperty()),
                              std::make_unique<ProductionEncoder>(),
@@ -518,22 +538,20 @@ TEST_F(SystemLogRecorderTest, MultipleDispatchersGetCurrentBootLogs) {
   RunLoopFor(kArchivePeriod);
   RunLoopFor(kWriterPeriod);
 
-  auto endpoints = fidl::CreateEndpoints<fuchsia_feedback_internal::SystemLogRecorder>();
+  auto endpoints = fidl::CreateEndpoints<ffi::SystemLogRecorder>();
   ASSERT_TRUE(endpoints.is_ok());
 
   fidl::BindServer(dispatcher(), std::move(endpoints->server), &recorder);
   fidl::Client client(std::move(endpoints->client), dispatcher());
 
-  std::optional<fidl::Result<fuchsia_feedback_internal::SystemLogRecorder::GetCurrentBootLogs>>
-      result;
+  std::optional<fidl::Result<ffi::SystemLogRecorder::GetCurrentBootLogs>> result;
   client->GetCurrentBootLogs().Then([&result](auto& res) { result = std::move(res); });
 
   RunLoopUntilIdle();
 
   ASSERT_TRUE(result.has_value());
   ASSERT_TRUE(result->is_ok());
-  fuchsia_feedback_internal::SystemLogRecorderGetCurrentBootLogsResponse response =
-      std::move(result->value());
+  ffi::SystemLogRecorderGetCurrentBootLogsResponse response = std::move(result->value());
   ASSERT_TRUE(response.logs().has_value());
   zx::vmo vmo = std::move(*response.logs());
 
@@ -549,12 +567,14 @@ TEST_F(SystemLogRecorderTest, MultipleDispatchersGetCurrentBootLogs) {
   EXPECT_EQ(*response.metadata()->last_timestamp(), zx::time_boot(zx::sec(15604).get()));
 }
 
-TEST_F(SystemLogRecorderTest, MultipleDispatchersGetCurrentBootLogsEmptyLogs) {
+TEST_F(SystemLogRecorderMultiDispatcherTest, GetCurrentBootLogsEmptyLogs) {
   std::unique_ptr<async::LoopInterface> write_loop = test_loop().StartNewLoop();
 
   const zx::duration kWriterPeriod = zx::sec(1);
 
   files::ScopedTempDir temp_dir;
+  const std::string logs_dir = files::JoinPath(temp_dir.path(), "logs");
+  const std::string metadata_path = files::JoinPath(temp_dir.path(), "metadata.json");
 
   const StorageSize kWriteSize = kMaxLogLineSize * 2 + kDroppedFormatStrSize;
 
@@ -562,22 +582,22 @@ TEST_F(SystemLogRecorderTest, MultipleDispatchersGetCurrentBootLogsEmptyLogs) {
                              SystemLogRecorder::WriteParameters{
                                  .period = kWriterPeriod,
                                  .max_write_size = kWriteSize,
-                                 .logs_dir = temp_dir.path(),
+                                 .logs_dir = logs_dir,
                                  .max_num_files = 2u,
                                  .total_log_size = 2u * kWriteSize,
+                                 .metadata_path = metadata_path,
                              },
                              std::make_unique<IdentityRedactor>(inspect::BoolProperty()),
                              std::make_unique<ProductionEncoder>(),
                              std::make_unique<ProductionDecoder>());
 
-  auto endpoints = fidl::CreateEndpoints<fuchsia_feedback_internal::SystemLogRecorder>();
+  auto endpoints = fidl::CreateEndpoints<ffi::SystemLogRecorder>();
   ASSERT_TRUE(endpoints.is_ok());
 
   fidl::BindServer(dispatcher(), std::move(endpoints->server), &recorder);
   fidl::Client client(std::move(endpoints->client), dispatcher());
 
-  std::optional<fidl::Result<fuchsia_feedback_internal::SystemLogRecorder::GetCurrentBootLogs>>
-      result;
+  std::optional<fidl::Result<ffi::SystemLogRecorder::GetCurrentBootLogs>> result;
   client->GetCurrentBootLogs().Then([&result](auto& res) { result = std::move(res); });
 
   RunLoopUntilIdle();
@@ -585,8 +605,80 @@ TEST_F(SystemLogRecorderTest, MultipleDispatchersGetCurrentBootLogsEmptyLogs) {
   ASSERT_TRUE(result.has_value());
   ASSERT_TRUE(result->is_error());
   ASSERT_TRUE(result->error_value().is_domain_error());
-  EXPECT_EQ(result->error_value().domain_error(),
-            fuchsia_feedback_internal::RecorderError::kIoError);
+  EXPECT_EQ(result->error_value().domain_error(), ffi::RecorderError::kIoError);
+}
+
+TEST_F(SystemLogRecorderMultiDispatcherTest, ResumesPersistingAfterCachePurge) {
+  std::unique_ptr<async::LoopInterface> write_loop = test_loop().StartNewLoop();
+
+  const zx::duration kArchivePeriod = zx::msec(750);
+  const zx::duration kWriterPeriod = zx::sec(1);
+
+  const std::vector<std::vector<std::string>> json_batches({
+      {BuildLogMessage("line 0")},
+      {BuildLogMessage("line 1")},
+      {BuildLogMessage("line 2")},
+      {BuildLogMessage("line 3")},
+      {BuildLogMessage("line 4")},
+      {BuildLogMessage("line 5")},
+      {},
+  });
+
+  stubs::DiagnosticsArchive archive(
+      dispatcher(), std::make_unique<stubs::DiagnosticsBatchIteratorDelayedBatches>(
+                        dispatcher(), json_batches, zx::sec(0), kArchivePeriod, /*strict=*/false));
+  InjectServiceProvider(&archive, kArchiveAccessorName);
+
+  files::ScopedTempDir temp_dir;
+  const std::string logs_dir = files::JoinPath(temp_dir.path(), "logs");
+  const std::string metadata_path = files::JoinPath(temp_dir.path(), "metadata.json");
+  const StorageSize kWriteSize = kMaxLogLineSize * 2 + kDroppedFormatStrSize;
+  SystemLogRecorder recorder(dispatcher(), write_loop->dispatcher(), services(),
+                             SystemLogRecorder::WriteParameters{
+                                 .period = kWriterPeriod,
+                                 .max_write_size = kWriteSize,
+                                 .logs_dir = logs_dir,
+                                 .max_num_files = 2u,
+                                 .total_log_size = 2u * kWriteSize,
+                                 .metadata_path = metadata_path,
+                             },
+                             std::make_unique<IdentityRedactor>(inspect::BoolProperty()),
+                             std::make_unique<ProductionEncoder>(),
+                             std::make_unique<ProductionDecoder>());
+  recorder.Start();
+
+  RunLoopFor(kArchivePeriod);
+  RunLoopFor(kWriterPeriod);
+
+  // File 0 should exist with initial logs.
+  ASSERT_TRUE(files::IsFile(files::JoinPath(logs_dir, "0")));
+
+  // Simulate a cache purge.
+  ASSERT_TRUE(files::DeletePath(temp_dir.path(), /*recursive=*/true));
+
+  // Allow periodic write to detect purge, reset store, and open file 0.
+  RunLoopFor(kWriterPeriod);
+
+  // Allow new logs to arrive and be written to the newly opened file 0.
+  RunLoopFor(kArchivePeriod);
+  RunLoopFor(kWriterPeriod);
+
+  // Persistence should have resumed into file 0.
+  EXPECT_TRUE(files::IsDirectory(logs_dir));
+  EXPECT_TRUE(files::IsFile(files::JoinPath(logs_dir, "0")));
+  EXPECT_TRUE(files::IsFile(metadata_path));
+
+  ProductionDecoder decoder;
+  float compression_ratio;
+  const fit::result<ReaderError, std::string> result =
+      Concatenate(logs_dir, kMaxDecompressedSize, &decoder, &compression_ratio);
+  ASSERT_TRUE(result.is_ok());
+  EXPECT_THAT(*result, ::testing::Not(HasSubstr("line 0")));
+  EXPECT_THAT(*result, ::testing::Not(HasSubstr("line 1")));
+  EXPECT_THAT(*result, ::testing::Not(HasSubstr("line 2")));
+  EXPECT_THAT(*result, HasSubstr("line 3"));
+  EXPECT_THAT(*result, HasSubstr("line 4"));
+  EXPECT_THAT(*result, HasSubstr("line 5"));
 }
 
 }  // namespace

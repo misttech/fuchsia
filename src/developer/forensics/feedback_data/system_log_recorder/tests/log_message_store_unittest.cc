@@ -699,6 +699,28 @@ TEST_F(LogMessageStoreTest, BlockStatsResetOnConsume) {
   EXPECT_EQ(result.stats.deduplicated_message_count, 1u);
 }
 
+TEST_F(LogMessageStoreTest, ResetClearsBufferAndStats) {
+  LogMessageStore store(kVeryLargeBlockSize, kMaxLogLineSize * 10, GetIdentityRedactor(),
+                        MakeIdentityEncoder());
+
+  EXPECT_TRUE(store.Add(BuildLogMessage(FUCHSIA_LOG_INFO, "line 1")));
+  EXPECT_TRUE(store.Add(BuildLogMessage(FUCHSIA_LOG_INFO, "line 2")));
+
+  store.Reset();
+
+  const ConsumeResult result = store.Consume();
+  EXPECT_TRUE(result.log.empty());
+  EXPECT_EQ(result.stats.message_count, 0u);
+  EXPECT_EQ(result.stats.deduplicated_message_count, 0u);
+  EXPECT_FALSE(result.end_of_block);
+
+  // After reset, new messages can be added and consumed normally.
+  EXPECT_TRUE(store.Add(BuildLogMessage(FUCHSIA_LOG_INFO, "line 3")));
+  const ConsumeResult next_result = store.Consume();
+  EXPECT_FALSE(next_result.log.empty());
+  EXPECT_EQ(next_result.stats.message_count, 1u);
+}
+
 }  // namespace
 }  // namespace system_log_recorder
 }  // namespace feedback_data

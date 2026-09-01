@@ -38,7 +38,7 @@ SystemLogRecorder::SystemLogRecorder(async_dispatcher_t* archive_dispatcher,
              write_parameters.max_write_size, redactor_.get(), std::move(encoder)),
       log_source_(archive_dispatcher, std::move(services), &store_),
       writer_(write_dispatcher, std::in_place, write_parameters.logs_dir,
-              write_parameters.max_num_files, std::move(decoder)),
+              write_parameters.max_num_files, std::move(decoder), write_parameters.metadata_path),
       receiver_(this, archive_dispatcher) {}
 
 void SystemLogRecorder::Start() {
@@ -89,7 +89,11 @@ void SystemLogRecorder::PeriodicWriteTask() {
       .Then(receiver_.Once(&SystemLogRecorder::OnWriteComplete));
 }
 
-void SystemLogRecorder::OnWriteComplete(bool success) {
+void SystemLogRecorder::OnWriteComplete(const SystemLogWriter::WriteResult result) {
+  if (result == SystemLogWriter::WriteResult::kCachePurge) {
+    store_.Reset();
+  }
+
   periodic_write_task_.PostDelayed(archive_dispatcher_, write_period_);
 }
 
@@ -100,8 +104,11 @@ void SystemLogRecorder::GetCurrentBootLogs(GetCurrentBootLogsCompleter::Sync& co
       .Then(receiver_.Once(&SystemLogRecorder::OnFlushAndReadLogsComplete));
 }
 
-void SystemLogRecorder::OnFlushAndReadLogsComplete(
-    fit::result<SystemLogWriter::WriterError, SystemLogWriter::Logs> result) {
+void SystemLogRecorder::OnFlushAndReadLogsComplete(SystemLogWriter::FlushAndReadLogsResult result) {
+  if (result.cache_purged) {
+    store_.Reset();
+  }
+
   if (current_boot_logs_completers_.empty()) {
     FX_LOGS(ERROR) << "current_boot_logs_completers_ empty";
     return;
@@ -110,8 +117,8 @@ void SystemLogRecorder::OnFlushAndReadLogsComplete(
   GetCurrentBootLogsCompleter::Async completer = std::move(current_boot_logs_completers_.front());
   current_boot_logs_completers_.pop();
 
-  if (result.is_error()) {
-    switch (result.error_value()) {
+  if (result.logs.is_error()) {
+    switch (result.logs.error_value()) {
       case SystemLogWriter::WriterError::kIoError:
         completer.Reply(fit::error(fuchsia_feedback_internal::RecorderError::kIoError));
         return;
@@ -121,15 +128,19 @@ void SystemLogRecorder::OnFlushAndReadLogsComplete(
       case SystemLogWriter::WriterError::kVmoError:
         completer.Reply(fit::error(fuchsia_feedback_internal::RecorderError::kVmoError));
         return;
+      case SystemLogWriter::WriterError::kInsufficientCoverage:
+        // TODO(https://fxbug.dev/495946460): fallback to snapshot from Archivist.
+        completer.Reply(fit::error(fuchsia_feedback_internal::RecorderError::kIoError));
+        return;
     }
   }
 
   fuchsia_feedback_internal::SystemLogMetadata metadata;
-  metadata.first_timestamp(result->first_timestamp);
-  metadata.last_timestamp(result->last_timestamp);
+  metadata.first_timestamp(result.logs->first_timestamp);
+  metadata.last_timestamp(result.logs->last_timestamp);
 
   fuchsia_feedback_internal::SystemLogRecorderGetCurrentBootLogsResponse response;
-  response.logs(std::move(result->vmo));
+  response.logs(std::move(result.logs->vmo));
   response.metadata(std::move(metadata));
 
   completer.Reply(fit::ok(std::move(response)));

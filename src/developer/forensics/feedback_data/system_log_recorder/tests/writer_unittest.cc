@@ -666,11 +666,11 @@ TEST_F(WriterTest, FlushAndReadLogs) {
   EXPECT_TRUE(store.Add(BuildLogMessage(FUCHSIA_LOG_INFO, "line 0", zx::msec(100))));
   EXPECT_TRUE(store.Add(BuildLogMessage(FUCHSIA_LOG_INFO, "line 1", zx::msec(200))));
 
-  fit::result<SystemLogWriter::WriterError, SystemLogWriter::Logs> result =
-      writer.FlushAndReadLogs(store.Consume());
+  SystemLogWriter::FlushAndReadLogsResult result = writer.FlushAndReadLogs(store.Consume());
 
-  ASSERT_TRUE(result.is_ok());
-  SystemLogWriter::Logs logs = std::move(result.value());
+  ASSERT_TRUE(result.logs.is_ok());
+  EXPECT_FALSE(result.cache_purged);
+  SystemLogWriter::Logs logs = std::move(result.logs.value());
   ASSERT_TRUE(logs.vmo.is_valid());
 
   const zx::result<std::string> contents = StringFromVmo(logs.vmo);
@@ -699,11 +699,127 @@ TEST_F(WriterTest, FlushAndReadLogsEmptyLogs) {
   SystemLogWriter writer(kWriteDirectory, /*max_num_files=*/2u, std::make_unique<IdentityDecoder>(),
                          metadata_path);
 
-  const fit::result<SystemLogWriter::WriterError, SystemLogWriter::Logs> result =
-      writer.FlushAndReadLogs(store.Consume());
+  const SystemLogWriter::FlushAndReadLogsResult result = writer.FlushAndReadLogs(store.Consume());
 
-  ASSERT_TRUE(result.is_error());
-  EXPECT_EQ(result.error_value(), SystemLogWriter::WriterError::kIoError);
+  ASSERT_TRUE(result.logs.is_error());
+  EXPECT_FALSE(result.cache_purged);
+  EXPECT_EQ(result.logs.error_value(), SystemLogWriter::WriterError::kIoError);
+}
+
+TEST_F(WriterTest, FlushAndReadLogsDetectsCachePurgeOnLogsDirectoryDeletion) {
+  testing::ScopedMemFsManager memfs_manager;
+  memfs_manager.Create(kRootDirectory);
+
+  const std::string metadata_path = files::JoinPath(kRootDirectory, "metadata.json");
+
+  const StorageSize kBlockSize = kMaxLogLineSize * 5;
+  const StorageSize kBufferSize = kMaxLogLineSize * 5;
+
+  LogMessageStore store(kBlockSize, kBufferSize, GetIdentityRedactor(),
+                        std::make_unique<IdentityEncoder>());
+  SystemLogWriter writer(kWriteDirectory, /*max_num_files=*/2u, std::make_unique<IdentityDecoder>(),
+                         metadata_path);
+
+  EXPECT_TRUE(store.Add(BuildLogMessage(FUCHSIA_LOG_INFO, "line 0", zx::msec(100))));
+  writer.Write(store.Consume());
+
+  ASSERT_TRUE(files::DeletePath(kWriteDirectory, /*recursive=*/true));
+
+  SystemLogWriter::FlushAndReadLogsResult result = writer.FlushAndReadLogs(store.Consume());
+
+  ASSERT_TRUE(result.logs.is_error());
+  EXPECT_TRUE(result.cache_purged);
+  EXPECT_EQ(result.logs.error_value(), SystemLogWriter::WriterError::kInsufficientCoverage);
+}
+
+TEST_F(WriterTest, FlushAndReadLogsSufficientCoverageAfterMinFilesWritten) {
+  testing::ScopedMemFsManager memfs_manager;
+  memfs_manager.Create(kRootDirectory);
+
+  const std::string metadata_path = files::JoinPath(kRootDirectory, "metadata.json");
+
+  const StorageSize kBlockSize = kMaxLogLineSize;
+  const StorageSize kBufferSize = kMaxLogLineSize;
+
+  LogMessageStore store(kBlockSize, kBufferSize, GetIdentityRedactor(),
+                        std::make_unique<IdentityEncoder>());
+  SystemLogWriter writer(kWriteDirectory, /*max_num_files=*/8u, std::make_unique<IdentityDecoder>(),
+                         metadata_path);
+
+  EXPECT_TRUE(store.Add(BuildLogMessage(FUCHSIA_LOG_INFO, "line 0", zx::msec(100))));
+  writer.Write(store.Consume());
+
+  EXPECT_TRUE(files::DeletePath(kWriteDirectory, /*recursive=*/true));
+  EXPECT_TRUE(files::DeletePath(metadata_path, /*recursive=*/false));
+
+  // Write blocks 1 to 4 post-purge (end_of_block = true).
+  for (size_t i = 1; i <= 4; ++i) {
+    EXPECT_TRUE(store.Add(BuildLogMessage(FUCHSIA_LOG_INFO, "line " + std::to_string(i))));
+    LogMessageStore::ConsumeResult consume_result = store.Consume();
+    EXPECT_TRUE(consume_result.end_of_block);
+    writer.Write(consume_result);
+
+    SystemLogWriter::FlushAndReadLogsResult result = writer.FlushAndReadLogs(store.Consume());
+    ASSERT_TRUE(result.logs.is_error());
+    EXPECT_FALSE(result.cache_purged);
+    EXPECT_EQ(result.logs.error_value(), SystemLogWriter::WriterError::kInsufficientCoverage);
+  }
+
+  // Write block 5 post-purge (end_of_block = true) -> reaches kMinFilesForSufficientCoverage (5).
+  EXPECT_TRUE(store.Add(BuildLogMessage(FUCHSIA_LOG_INFO, "line 5")));
+  LogMessageStore::ConsumeResult consume_result = store.Consume();
+  EXPECT_TRUE(consume_result.end_of_block);
+  writer.Write(consume_result);
+
+  SystemLogWriter::FlushAndReadLogsResult result = writer.FlushAndReadLogs(store.Consume());
+  ASSERT_TRUE(result.logs.is_ok());
+  EXPECT_FALSE(result.cache_purged);
+}
+
+TEST_F(WriterTest, WriteReturnsCachePurgedWhenLogsDirectoryDeleted) {
+  testing::ScopedMemFsManager memfs_manager;
+  memfs_manager.Create(kRootDirectory);
+
+  const std::string metadata_path = files::JoinPath(kRootDirectory, "metadata.json");
+
+  LogMessageStore store(kMaxLogLineSize * 10, kMaxLogLineSize * 10, GetIdentityRedactor(),
+                        std::make_unique<IdentityEncoder>());
+  SystemLogWriter writer(kWriteDirectory, /*max_num_files=*/2u, std::make_unique<IdentityDecoder>(),
+                         metadata_path);
+
+  EXPECT_TRUE(store.Add(BuildLogMessage(FUCHSIA_LOG_INFO, "line 0")));
+  EXPECT_EQ(writer.Write(store.Consume()), SystemLogWriter::WriteResult::kOk);
+
+  ASSERT_TRUE(files::DeletePath(kWriteDirectory, /*recursive=*/true));
+
+  EXPECT_TRUE(store.Add(BuildLogMessage(FUCHSIA_LOG_INFO, "line 1")));
+  EXPECT_EQ(writer.Write(store.Consume()), SystemLogWriter::WriteResult::kCachePurge);
+}
+
+TEST_F(WriterTest, WriteReopensFileAfterPurge) {
+  testing::ScopedMemFsManager memfs_manager;
+  memfs_manager.Create(kRootDirectory);
+
+  const std::string metadata_path = files::JoinPath(kRootDirectory, "metadata.json");
+
+  LogMessageStore store(kMaxLogLineSize * 10, kMaxLogLineSize * 10, GetIdentityRedactor(),
+                        std::make_unique<IdentityEncoder>());
+  SystemLogWriter writer(kWriteDirectory, /*max_num_files=*/2u, std::make_unique<IdentityDecoder>(),
+                         metadata_path);
+
+  EXPECT_TRUE(store.Add(BuildLogMessage(FUCHSIA_LOG_INFO, "line 0")));
+  EXPECT_EQ(writer.Write(store.Consume()), SystemLogWriter::WriteResult::kOk);
+
+  ASSERT_TRUE(files::DeletePath(kWriteDirectory, /*recursive=*/true));
+
+  EXPECT_TRUE(store.Add(BuildLogMessage(FUCHSIA_LOG_INFO, "line 1")));
+  EXPECT_EQ(writer.Write(store.Consume()), SystemLogWriter::WriteResult::kCachePurge);
+
+  EXPECT_TRUE(files::IsDirectory(kWriteDirectory));
+  EXPECT_TRUE(files::IsFile(MakeLogFilePath(0)));
+
+  EXPECT_TRUE(store.Add(BuildLogMessage(FUCHSIA_LOG_INFO, "line 2")));
+  EXPECT_EQ(writer.Write(store.Consume()), SystemLogWriter::WriteResult::kOk);
 }
 
 }  // namespace
