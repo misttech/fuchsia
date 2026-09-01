@@ -979,6 +979,25 @@ TEST(FutexTest, RequeueInvalidOwner) {
   EXPECT_OK(zx_futex_requeue(&futex1, 0, 100, &futex2, 0, dead_thread.get()));
 }
 
+TEST(FutexTest, UnmappedAddress) {
+  const size_t size = zx_system_get_page_size();
+  zx::vmo vmo;
+  ASSERT_OK(zx::vmo::create(size, 0, &vmo));
+  zx_vaddr_t addr;
+  ASSERT_OK(zx::vmar::root_self()->map(ZX_VM_PERM_READ | ZX_VM_PERM_WRITE, 0 /* vmar_offset */, vmo,
+                                       0 /* vmo_offset */, size, &addr));
+  ASSERT_OK(zx::vmar::root_self()->unmap(addr, size));
+  auto* unmapped_futex = reinterpret_cast<zx_futex_t*>(addr);
+
+  // futex wait on an unmapped address returns ZX_ERR_NOT_FOUND.
+  EXPECT_EQ(zx_futex_wait(unmapped_futex, 0, ZX_HANDLE_INVALID, 0), ZX_ERR_NOT_FOUND);
+
+  // futex requeue on an unmapped address returns ZX_ERR_NOT_FOUND.
+  zx_futex_t valid_futex = 0;
+  EXPECT_EQ(zx_futex_requeue(unmapped_futex, 1, 0, &valid_futex, 1, ZX_HANDLE_INVALID),
+            ZX_ERR_NOT_FOUND);
+}
+
 #if defined(__aarch64__)
 // Regression tests for b/505923588
 #define NULL_FUTEX_PTR ((zx_futex_t*)0xff00000000000000ULL)
