@@ -74,10 +74,10 @@
                 "FsCasefold/FsCasefoldTest.DirectoryChildInheritsCasefoldFlag/fxfs",
                 "FsCasefold/FsCasefoldTest.RenameExchangeSwapsEntriesAcrossCaseVariants/fxfs",
 
-                // TODO(https://fxbug.dev/544902575): Non-UTF-8 and Unicode normalization support.
+                // TODO(https://fxbug.dev/544902575): Non-UTF-8 and Unicode normalization support in remotefs/fxfs.
                 "FsCasefold/FsCasefoldTest.NonUtf8NameMatchesExactOpaqueBytes/fxfs",
                 "FsCasefold/FsCasefoldTest.NonUtf8BytesSuppressCasefoldingForName/fxfs",
-                "FsCasefold/FsCasefoldTest.UnicodeLookupGivenNameExceedingNameMaxMatchesNormalizedName/*",
+                "FsCasefold/FsCasefoldTest.UnicodeLookupGivenNameExceedingNameMaxMatchesNormalizedName/fxfs",
 
                 // TODO(https://fxbug.dev/507966123): Check fd access mode in BPF_MAP_* subcommands.
                 "BpfMapTest.CannotUpdatePinnedMapWithReadOnlyFd",

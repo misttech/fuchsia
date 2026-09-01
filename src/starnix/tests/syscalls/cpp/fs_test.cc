@@ -1645,9 +1645,17 @@ fit::result<int, std::string> CreateCasefoldDir(const std::string &path) {
   if (mkdir(path.c_str(), 0777) != 0) {
     return fit::error(errno);
   }
-  auto result = test_helper::SetCasefold(path, true);
-  if (result.is_error()) {
-    return result.take_error();
+  fbl::unique_fd dir_fd(open(path.c_str(), O_RDONLY | O_DIRECTORY));
+  if (!dir_fd.is_valid()) {
+    return fit::error(errno);
+  }
+  int flags = 0;
+  if (ioctl(dir_fd.get(), FS_IOC_GETFLAGS, &flags) < 0) {
+    return fit::error(errno);
+  }
+  flags |= FS_CASEFOLD_FL;
+  if (ioctl(dir_fd.get(), FS_IOC_SETFLAGS, &flags) < 0) {
+    return fit::error(errno);
   }
   return fit::ok(path);
 }
@@ -1686,16 +1694,9 @@ class FsCasefoldTest : public ::testing::TestWithParam<std::string_view> {
         source = loop_device_->path();
       }
 
-      const char *data = (fs_type == "tmpfs") ? "casefold" : nullptr;
-      auto mount = test_helper::ScopedMount::CreateDirAndMount(source, base_dir,
-                                                               std::string(fs_type), 0, data);
-      if (mount.is_error()) {
-        int err = mount.error_value();
-        if (err == EINVAL || err == ENODEV || err == EOPNOTSUPP) {
-          GTEST_SKIP() << "Mount " << fs_type << " failed: " << strerror(err);
-        }
-        FAIL() << "Mount " << fs_type << " failed: " << strerror(err);
-      }
+      auto mount =
+          test_helper::ScopedMount::CreateDirAndMount(source, base_dir, std::string(fs_type));
+      ASSERT_THAT(mount, SyscallResultIsOk()) << "Mount " << fs_type << " failed";
       scoped_mount_ = std::move(mount.value());
     }
 
@@ -1797,38 +1798,6 @@ TEST_P(FsCasefoldTest, RenameCaseOnlyUpdatesOnDiskName) {
   ASSERT_TRUE(files::ReadDirContents(casefold_dir(), &entries));
   // Linux ext4 casefold does not guarantee case-only rename updates directory entries.
   EXPECT_THAT(entries, testing::UnorderedElementsAre(".", "..", testing::AnyOf("apple", "APPLE")));
-}
-
-TEST_P(FsCasefoldTest, RenameCaseOnlyNonEmptyDirectory) {
-  std::string sub_dir = path("SubDir");
-  std::string sub_dir_lower = path("subdir");
-  std::string sub_dir_upper = path("SUBDIR");
-
-  ASSERT_THAT(mkdir(sub_dir.c_str(), 0777), SyscallSucceeds());
-
-  std::string nested_file = sub_dir + "/file.txt";
-  ASSERT_TRUE(files::WriteFile(nested_file, "content"));
-
-  struct stat stat_parent_before = {};
-  ASSERT_THAT(stat(casefold_dir().c_str(), &stat_parent_before), SyscallSucceeds());
-
-  // Renaming a non-empty directory to a case variant of itself succeeds.
-  EXPECT_THAT(rename(sub_dir_lower.c_str(), sub_dir_upper.c_str()), SyscallSucceeds());
-
-  EXPECT_THAT(access(path("SUBDIR/file.txt").c_str(), F_OK), SyscallSucceeds());
-  EXPECT_THAT(access(path("subdir/file.txt").c_str(), F_OK), SyscallSucceeds());
-
-  struct stat stat_parent_after = {};
-  ASSERT_THAT(stat(casefold_dir().c_str(), &stat_parent_after), SyscallSucceeds());
-  EXPECT_EQ(stat_parent_before.st_nlink, stat_parent_after.st_nlink);
-
-  // Both the child directory and parent directory are non-empty and cannot be removed.
-  EXPECT_THAT(rmdir(sub_dir_upper.c_str()), SyscallFailsWithErrno(ENOTEMPTY));
-  EXPECT_THAT(rmdir(casefold_dir().c_str()), SyscallFailsWithErrno(ENOTEMPTY));
-
-  // Once the nested file is unlinked, the directory can be removed.
-  ASSERT_THAT(unlink(nested_file.c_str()), SyscallSucceeds());
-  EXPECT_THAT(rmdir(sub_dir_upper.c_str()), SyscallSucceeds());
 }
 
 TEST_P(FsCasefoldTest, NonUtf8NameMatchesExactOpaqueBytes) {

@@ -39,20 +39,4 @@ TEST(TmpfsTest, DefaultStickyBit) {
   EXPECT_EQ(stat_buf.st_mode & 07777, 01777u) << "Sticky bit should be set on tmpfs root";
 }
 
-TEST(TmpfsTest, CasefoldDisabledByDefault) {
-  if (!test_helper::HasSysAdmin()) {
-    GTEST_SKIP() << "need CAP_SYS_ADMIN to mount tmpfs";
-  }
-
-  test_helper::ScopedTempDir temp_dir;
-
-  ASSERT_THAT(test_helper::ScopedMount::Mount("none", temp_dir.path(), "tmpfs", 0, nullptr),
-              SyscallResultIsOk());
-
-  std::string dir_path = temp_dir.path() + "/dir";
-  ASSERT_THAT(mkdir(dir_path.c_str(), 0777), SyscallSucceeds());
-
-  EXPECT_THAT(test_helper::SetCasefold(dir_path, true), SyscallResultIsErrno(EOPNOTSUPP));
-}
-
 }  // namespace

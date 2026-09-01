@@ -453,8 +453,6 @@ class ScopedMount {
 
 std::optional<size_t> parse_field_in_kb(std::string_view value);
 
-fit::result<int> SetCasefold(const std::string &path, bool enable = true);
-
 // A semaphore implemented with EventFd. Works across Threads and Forks.
 class EventFdSem {
  public:
