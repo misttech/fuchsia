@@ -73,11 +73,6 @@ uint BIND_I2C_ADDRESS;
 // GPIO bind properties.
 uint BIND_GPIO_PIN;
 uint BIND_GPIO_CONTROLLER;
-
-// SPI bind properties.
-uint BIND_SPI_BUS_ID;
-uint BIND_SPI_CHIP_SELECT;
-
 // Init Step bind properties.
 uint BIND_INIT_STEP;
 

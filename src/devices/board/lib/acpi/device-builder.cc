@@ -92,9 +92,8 @@ acpi::status<> DeviceBuilder::GatherResources(acpi::Acpi* acpi, acpi::Manager* m
             return result.take_error();
           }
           entry = result.value();
-          bus_id_prop = bind_fuchsia::SPI_BUS_ID;
-          str_props_.emplace_back(
-              OwnedStringProp(bind_fuchsia::SPI_CHIP_SELECT, result.value().cs().value()));
+          bus_id_prop = bind_fuchsia::ID;
+          str_props_.emplace_back(OwnedStringProp(bind_fuchsia::NAME, "spi"));
         } else if (resource_is_i2c(res)) {
           type = BusType::kI2c;
           auto result = resource_parse_i2c(acpi, handle_, res, &bus_parent);
@@ -402,13 +401,9 @@ DeviceBuilder::GetFragmentBindRulesAndPropertiesForChild(size_t child_index) {
         if constexpr (std::is_same_v<T, std::monostate>) {
           ZX_PANIC("Bus should have children");
         } else if constexpr (std::is_same_v<T, std::vector<SpiChannel>>) {
-          SpiChannel& chan = arg[child_index];
-          bind_rules.emplace_back(ddk::MakeAcceptBindRule(bind_fuchsia::SPI_BUS_ID, bus_id));
-          bind_rules.emplace_back(
-              ddk::MakeAcceptBindRule(bind_fuchsia::SPI_CHIP_SELECT, chan.cs().value()));
-          properties.emplace_back(ddk::MakeProperty(bind_fuchsia::SPI_BUS_ID, bus_id));
-          properties.emplace_back(
-              ddk::MakeProperty(bind_fuchsia::SPI_CHIP_SELECT, chan.cs().value()));
+          bind_rules.emplace_back(ddk::MakeAcceptBindRule(bind_fuchsia::ID, bus_id));
+          properties.emplace_back(ddk::MakeProperty(bind_fuchsia::ID, bus_id));
+          properties.emplace_back(ddk::MakeProperty(bind_fuchsia::NAME, "spi"));
         } else if constexpr (std::is_same_v<T, std::vector<I2CChannel>>) {
           I2CChannel& chan = arg[child_index];
           auto chan_addr = static_cast<uint32_t>(chan.address().value());

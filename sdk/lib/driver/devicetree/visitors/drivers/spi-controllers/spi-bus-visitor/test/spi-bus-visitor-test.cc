@@ -64,17 +64,25 @@ TEST(SpiBusVisitorTest, TestSpiChannels) {
     EXPECT_EQ(channels[0].cs(), 0);
     ASSERT_TRUE(channels[0].max_frequency_hz().has_value());
     EXPECT_EQ(*channels[0].max_frequency_hz(), 1'000'000u);
+    ASSERT_TRUE(channels[0].global_id().has_value());
+    EXPECT_EQ(*channels[0].global_id(), 0u);
 
     EXPECT_EQ(channels[1].cs(), 1);
     EXPECT_FALSE(channels[1].max_frequency_hz().has_value());
+    ASSERT_TRUE(channels[1].global_id().has_value());
+    EXPECT_EQ(*channels[1].global_id(), 1u);
 
     EXPECT_EQ(channels[2].cs(), 2);
     ASSERT_TRUE(channels[2].max_frequency_hz().has_value());
     EXPECT_EQ(*channels[2].max_frequency_hz(), 5'000'000u);
+    ASSERT_TRUE(channels[2].global_id().has_value());
+    EXPECT_EQ(*channels[2].global_id(), 2u);
 
     EXPECT_EQ(channels[3].cs(), 3);
     ASSERT_TRUE(channels[3].max_frequency_hz().has_value());
     EXPECT_EQ(*channels[3].max_frequency_hz(), 5'000'000u);
+    ASSERT_TRUE(channels[3].global_id().has_value());
+    EXPECT_EQ(*channels[3].global_id(), 3u);
   }
 
   auto child0_specs = spi_tester->GetCompositeNodeSpecs("child-0");
@@ -88,14 +96,13 @@ TEST(SpiBusVisitorTest, TestSpiChannels) {
   EXPECT_TRUE(fdf_devicetree::testing::CheckHasProperties(
       {{
           fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.spi.Service"),
-          fdf::MakeProperty2(bind_fuchsia::SPI_CHIP_SELECT, 0u),
+          fdf::MakeProperty2(bind_fuchsia::NAME, "spi"),
       }},
       (*child0_spec.parents2())[1].properties(), false));
   EXPECT_TRUE(fdf_devicetree::testing::CheckHasBindRules(
       {{
           fdf::MakeAcceptBindRule(bind_fuchsia::SERVICE, "fuchsia.hardware.spi.Service"),
-          fdf::MakeAcceptBindRule(bind_fuchsia::SPI_BUS_ID, 0u),
-          fdf::MakeAcceptBindRule(bind_fuchsia::SPI_CHIP_SELECT, 0u),
+          fdf::MakeAcceptBindRule(bind_fuchsia::ID, 0u),
       }},
       (*child0_spec.parents2())[1].bind_rules(), false));
 
@@ -109,14 +116,13 @@ TEST(SpiBusVisitorTest, TestSpiChannels) {
   EXPECT_TRUE(fdf_devicetree::testing::CheckHasProperties(
       {{
           fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.spi.Service"),
-          fdf::MakeProperty2(bind_fuchsia::SPI_CHIP_SELECT, 0u),
+          fdf::MakeProperty2(bind_fuchsia::NAME, "spi"),
       }},
       (*child1_spec.parents2())[1].properties(), false));
   EXPECT_TRUE(fdf_devicetree::testing::CheckHasBindRules(
       {{
           fdf::MakeAcceptBindRule(bind_fuchsia::SERVICE, "fuchsia.hardware.spi.Service"),
-          fdf::MakeAcceptBindRule(bind_fuchsia::SPI_BUS_ID, 0u),
-          fdf::MakeAcceptBindRule(bind_fuchsia::SPI_CHIP_SELECT, 1u),
+          fdf::MakeAcceptBindRule(bind_fuchsia::ID, 1u),
       }},
       (*child1_spec.parents2())[1].bind_rules(), false));
 
@@ -130,28 +136,26 @@ TEST(SpiBusVisitorTest, TestSpiChannels) {
   EXPECT_TRUE(fdf_devicetree::testing::CheckHasProperties(
       {{
           fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.spi.Service"),
-          fdf::MakeProperty2(bind_fuchsia::SPI_CHIP_SELECT, 0u),
+          fdf::MakeProperty2(bind_fuchsia::NAME, "spi"),
       }},
       (*child2_spec.parents2())[1].properties(), false));
   EXPECT_TRUE(fdf_devicetree::testing::CheckHasBindRules(
       {{
           fdf::MakeAcceptBindRule(bind_fuchsia::SERVICE, "fuchsia.hardware.spi.Service"),
-          fdf::MakeAcceptBindRule(bind_fuchsia::SPI_BUS_ID, 0u),
-          fdf::MakeAcceptBindRule(bind_fuchsia::SPI_CHIP_SELECT, 2u),
+          fdf::MakeAcceptBindRule(bind_fuchsia::ID, 2u),
       }},
       (*child2_spec.parents2())[1].bind_rules(), false));
 
   EXPECT_TRUE(fdf_devicetree::testing::CheckHasProperties(
       {{
           fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.spi.Service"),
-          fdf::MakeProperty2(bind_fuchsia::SPI_CHIP_SELECT, 1u),
+          fdf::MakeProperty2(bind_fuchsia::NAME, "spi"),
       }},
       (*child2_spec.parents2())[2].properties(), false));
   EXPECT_TRUE(fdf_devicetree::testing::CheckHasBindRules(
       {{
           fdf::MakeAcceptBindRule(bind_fuchsia::SERVICE, "fuchsia.hardware.spi.Service"),
-          fdf::MakeAcceptBindRule(bind_fuchsia::SPI_BUS_ID, 0u),
-          fdf::MakeAcceptBindRule(bind_fuchsia::SPI_CHIP_SELECT, 3u),
+          fdf::MakeAcceptBindRule(bind_fuchsia::ID, 3u),
       }},
       (*child2_spec.parents2())[2].bind_rules(), false));
 }

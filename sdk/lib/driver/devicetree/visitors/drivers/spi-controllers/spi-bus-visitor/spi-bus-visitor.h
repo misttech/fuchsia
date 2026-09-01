@@ -29,17 +29,17 @@ class SpiBusVisitor : public fdf_devicetree::Visitor {
   // Create new instance of SpiController, returns error if one already exists for the node_name.
   zx::result<> CreateController(const std::string& node_name);
 
-  static void AddChildNodeSpec(fdf_devicetree::ChildNode& child, uint32_t bus_id,
-                               uint32_t chip_select, uint32_t child_chip_select_index);
+  void AddChildNodeSpec(fdf_devicetree::ChildNode& child, uint32_t global_id);
 
-  static zx::result<> ParseChild(SpiController& controller, fdf_devicetree::Node& parent,
-                                 fdf_devicetree::ChildNode& child);
+  zx::result<> ParseChild(SpiController& controller, fdf_devicetree::Node& parent,
+                          fdf_devicetree::ChildNode& child);
 
   static bool is_match(fdf_devicetree::Node& node);
 
   // Mapping of devicetree node name to SPI controller struct.
   std::map<std::string, SpiController> spi_controllers_;
   uint32_t bus_id_counter_ = 0;
+  uint32_t channel_id_counter_ = 0;
 };
 
 }  // namespace spi_bus_dt

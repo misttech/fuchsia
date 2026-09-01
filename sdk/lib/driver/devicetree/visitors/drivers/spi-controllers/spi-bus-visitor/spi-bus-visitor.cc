@@ -78,21 +78,17 @@ zx::result<> SpiBusVisitor::CreateController(const std::string& node_name) {
   return zx::ok();
 }
 
-void SpiBusVisitor::AddChildNodeSpec(fdf_devicetree::ChildNode& child, uint32_t bus_id,
-                                     uint32_t chip_select, uint32_t child_chip_select_index) {
+void SpiBusVisitor::AddChildNodeSpec(fdf_devicetree::ChildNode& child, uint32_t global_id) {
   child.AddNodeSpec(fuchsia_driver_framework::ParentSpec2{{
       .bind_rules =
           {
               fdf::MakeAcceptBindRule(bind_fuchsia::SERVICE, "fuchsia.hardware.spi.Service"),
-              fdf::MakeAcceptBindRule(bind_fuchsia::SPI_BUS_ID, bus_id),
-              fdf::MakeAcceptBindRule(bind_fuchsia::SPI_CHIP_SELECT, chip_select),
+              fdf::MakeAcceptBindRule(bind_fuchsia::ID, global_id),
           },
       .properties =
           {
               fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.spi.Service"),
-              // Add a chip select property, but zero-based for this child instead of dependent on
-              // the number of children previously processed for this SPI controller.
-              fdf::MakeProperty2(bind_fuchsia::SPI_CHIP_SELECT, child_chip_select_index),
+              fdf::MakeProperty2(bind_fuchsia::NAME, "spi"),
           },
   }});
 }
@@ -129,12 +125,16 @@ zx::result<> SpiBusVisitor::ParseChild(SpiController& controller, fdf_devicetree
 
     fdf::debug("SPI channel {} to controller '{}'", chip_select, parent.name());
 
-    fuchsia_hardware_spi_businfo::SpiChannel channel{{.cs = chip_select}};
+    uint32_t global_id = channel_id_counter_++;
+    fuchsia_hardware_spi_businfo::SpiChannel channel{{
+        .cs = chip_select,
+        .global_id = global_id,
+    }};
     if (max_frequency.is_ok()) {
       channel.max_frequency_hz(*max_frequency);
     }
     controller.channels.emplace_back(std::move(channel));
-    AddChildNodeSpec(child, controller.bus_id, chip_select, i);
+    AddChildNodeSpec(child, global_id);
   }
 
   return zx::ok();

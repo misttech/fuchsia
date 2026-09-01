@@ -88,10 +88,6 @@ static const char GPIO_PIN[] = "fuchsia.BIND_GPIO_PIN";
 
 static const char GPIO_CONTROLLER[] = "fuchsia.BIND_GPIO_CONTROLLER";
 
-static const char SPI_BUS_ID[] = "fuchsia.BIND_SPI_BUS_ID";
-
-static const char SPI_CHIP_SELECT[] = "fuchsia.BIND_SPI_CHIP_SELECT";
-
 static const char INIT_STEP[] = "fuchsia.BIND_INIT_STEP";
 
 static const char SERVICE[] = "fuchsia.Service";

@@ -261,13 +261,13 @@ TEST_F(AcpiManagerTest, TestSpiDevice) {
 
   Device* test = acpi_.GetDeviceRoot()->FindByPath("\\_SB_.SPI0.S002");
   acpi::DeviceBuilder* builder = manager_.LookupDevice(test);
-  ASSERT_NO_FATAL_FAILURE(ExpectProps(
-      builder, {
-                   ddk::MakeStrProperty("fuchsia.BIND_SPI_BUS_ID", static_cast<uint32_t>(0)),
-                   ddk::MakeStrProperty("fuchsia.BIND_SPI_CHIP_SELECT", static_cast<uint32_t>(2)),
-                   ddk::MakeStrProperty("fuchsia.BIND_ACPI_BUS_TYPE",
-                                        static_cast<uint32_t>(acpi::BusType::kSpi)),
-               }));
+  ASSERT_NO_FATAL_FAILURE(
+      ExpectProps(builder, {
+                               ddk::MakeStrProperty("fuchsia.ID", static_cast<uint32_t>(0)),
+                               ddk::MakeStrProperty("fuchsia.NAME", "spi"),
+                               ddk::MakeStrProperty("fuchsia.BIND_ACPI_BUS_TYPE",
+                                                    static_cast<uint32_t>(acpi::BusType::kSpi)),
+                           }));
 }
 
 TEST_F(AcpiManagerTest, TestI2cDevice) {

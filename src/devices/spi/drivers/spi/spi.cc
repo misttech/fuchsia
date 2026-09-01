@@ -192,9 +192,11 @@ zx::result<> SpiDriver::AddChildren(const fuchsia_hardware_spi_businfo::SpiBusMe
     }
 
     std::vector<fuchsia_driver_framework::wire::NodeProperty2> props{
-        fdf::MakeProperty2(arena, bind_fuchsia::SPI_BUS_ID, bus_id_),
-        fdf::MakeProperty2(arena, bind_fuchsia::SPI_CHIP_SELECT, cs),
+        fdf::MakeProperty2(arena, bind_fuchsia::SERVICE, "fuchsia.hardware.spi.Service"),
     };
+    if (channel.global_id().has_value()) {
+      props.push_back(fdf::MakeProperty2(arena, bind_fuchsia::ID, *channel.global_id()));
+    }
     if (vid || pid || did) {
       props.push_back(fdf::MakeProperty2(arena, bind_fuchsia::PLATFORM_DEV_VID, vid));
       props.push_back(fdf::MakeProperty2(arena, bind_fuchsia::PLATFORM_DEV_PID, pid));
