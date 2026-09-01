@@ -341,7 +341,8 @@ template("fuchsia_test_package") {
         final_output_config_path_rebased =
             rebase_path(final_output_config_path, root_build_dir)
 
-        compiled_action("${test_target}_script_gen") {
+        test_script_generator_target_name = "${test_target}_script_gen"
+        compiled_action(test_script_generator_target_name) {
           testonly = true
           tool = "//build/components:test_component_host_helper"
           outputs = [
@@ -372,28 +373,41 @@ template("fuchsia_test_package") {
           ]
         }
 
-        runtime_deps = []
-        runtime_deps = get_target_outputs(":${test_target}_script_gen")
-        runtime_deps += [ "//build/testing/test_config_schema.json5" ]
+        test_script_generator_target = ":${test_script_generator_target_name}"
+        test_script_generator_target_outputs =
+            get_target_outputs(test_script_generator_target)
 
-        group("${test_target}_runtime_deps_group") {
+        runtime_deps_group_target_name = "${test_target}_runtime_deps_group"
+        group(runtime_deps_group_target_name) {
           testonly = true
           data_deps = [
-            ":${test_target}_script_gen",
             ffx_test_tool_target,
             host_test_component_target,
             resummarize_target,
             test_pilot_target,
+            test_script_generator_target,
           ]
           metadata = {
-            test_runtime_deps = runtime_deps
+            test_runtime_deps = test_script_generator_target_outputs +
+                                [ "//build/testing/test_config_schema.json5" ]
 
             # avoid adding unintended entries to the test package due to
             # dependency on ffx.
             distribution_entries_barrier = []
           }
         }
-      }
+
+        # Get the test script file, which is used below inside an `if` statement
+        # with the same condition as this block.
+        assert(
+            len(test_script_generator_target_outputs) == 2,
+            "Expected 2 outputs but got `${test_script_generator_target_outputs}`.")
+        test_script = test_script_generator_target_outputs[0]
+
+        # To avoid a "This overwrites a previously-defined nonempty list..."
+        # error during the next iteration of the loop, clear the list here.
+        test_script_generator_target_outputs = []
+      }  # end if (!defined(invoker.is_bootfs) || !invoker.is_bootfs)
 
       test_spec(test_target) {
         forward_variables_from(test_specs, "*")
@@ -407,15 +421,17 @@ template("fuchsia_test_package") {
         package_manifests = [ package_manifest ]
         package_url = test_url
 
-        if (!defined(data_deps)) {
-          data_deps = []
-        }
-
         if (!defined(invoker.is_bootfs) || !invoker.is_bootfs) {
+          # The variables used below were set in an identical condition above.
+
           # Adding new_path for transition period. We will later replace this
           # with path.
-          new_path = runtime_deps[0]
-          data_deps += [ ":${test_target}_runtime_deps_group" ]
+          new_path = test_script
+
+          if (!defined(data_deps)) {
+            data_deps = []
+          }
+          data_deps += [ ":${runtime_deps_group_target_name}" ]
         }
       }
 
