@@ -153,7 +153,7 @@ impl ObjectStore {
             Mutation::BeginFlush,
             AssocObj::Borrowed(&store_info_snapshot),
         );
-        transaction.commit().await?;
+        transaction.commit().await.context("Failed to commit BeginFlush transaction")?;
 
         let mut new_store_info = store_info_snapshot.store_info.into_inner().unwrap();
 
@@ -204,7 +204,7 @@ impl ObjectStore {
         let new_object_tree_layer_object_id = new_object_tree_layer.object_id();
         parent_store.add_to_graveyard(&mut transaction, new_object_tree_layer_object_id);
 
-        transaction.commit().await?;
+        transaction.commit().await.context("Failed to commit create layer transaction")?;
 
         // *Do* the actual compaction.
         let (layers_to_keep, old_layers) = tree::flush(
@@ -325,19 +325,26 @@ impl ObjectStore {
                 info.mutations_cipher_offset = new_store_info.mutations_cipher_offset;
                 self.tree.set_layers(new_layers);
             })
-            .await?;
+            .await
+            .context("Failed to commit EndFlush transaction")?;
 
         // Now close the layers and purge them.
         for layer in old_layers {
             let object_id = layer.handle().map(|h| h.object_id());
             layer.close_layer().await;
             if let Some(object_id) = object_id {
-                parent_store.tombstone_object(object_id, txn_options).await?;
+                parent_store
+                    .tombstone_object(object_id, txn_options)
+                    .await
+                    .context("Failed to tombstone old layer")?;
             }
         }
 
         if old_encrypted_mutations_object_id != INVALID_OBJECT_ID {
-            parent_store.tombstone_object(old_encrypted_mutations_object_id, txn_options).await?;
+            parent_store
+                .tombstone_object(old_encrypted_mutations_object_id, txn_options)
+                .await
+                .context("Failed to tombstone old encrypted mutations")?;
         }
 
         Ok(layer_file_sizes)
@@ -358,7 +365,7 @@ impl ObjectStore {
 
         let mut transaction = self.new_transaction(lock_keys![], txn_options).await?;
         transaction.add(self.store_object_id(), Mutation::BeginFlush);
-        transaction.commit().await?;
+        transaction.commit().await.context("Failed to commit BeginFlush transaction")?;
 
         let mut new_store_info = self.load_store_info().await?;
 
@@ -424,7 +431,10 @@ impl ObjectStore {
             )
             .await?
         };
-        transaction.commit().await?;
+        transaction
+            .commit()
+            .await
+            .context("Failed to commit create encrypted mutations transaction")?;
 
         // Append the encrypted mutations, which need to be read from the journal.
         // This assumes that the journal has no buffered mutations for this store (see Self::lock).
@@ -438,9 +448,14 @@ impl ObjectStore {
         EncryptedMutations::from_replayed_mutations(self.store_object_id, journaled)
             .serialize_with_version(&mut writer)?;
         let len = writer.position();
-        handle.txn_write(&mut end_transaction, handle.get_size(), buffer.subslice(..len)).await?;
+        handle
+            .txn_write(&mut end_transaction, handle.get_size(), buffer.subslice(..len))
+            .await
+            .context("Failed to write encrypted mutations")?;
 
-        self.write_store_info(&mut end_transaction, &new_store_info).await?;
+        self.write_store_info(&mut end_transaction, &new_store_info)
+            .await
+            .context("Failed to write store info")?;
 
         let mut total_layer_size = 0;
         for &oid in &new_store_info.layers {
@@ -458,7 +473,7 @@ impl ObjectStore {
             AssocObj::Borrowed(&reservation_update),
         );
 
-        end_transaction.commit().await?;
+        end_transaction.commit().await.context("Failed to commit EndFlush transaction")?;
 
         Ok(())
     }

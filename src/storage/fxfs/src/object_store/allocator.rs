@@ -1329,6 +1329,31 @@ impl Allocator {
         self.inner.lock().info.clone()
     }
 
+    fn reservation_description(&self, reservation: &Reservation) -> String {
+        let metadata_info = self.filesystem.upgrade().and_then(|fs| {
+            let om = fs.object_manager();
+            if om.is_metadata_reservation(reservation) {
+                Some((om.borrowed_metadata_space(), om.max_store_reservation()))
+            } else {
+                None
+            }
+        });
+        match metadata_info {
+            Some((borrowed, max_store_reservation)) => {
+                format!(
+                    "reservation with {} bytes available (borrowed metadata space: {}, max store \
+                    reservation: {})",
+                    reservation.amount(),
+                    borrowed,
+                    max_store_reservation
+                )
+            }
+            None => {
+                format!("reservation with {} bytes available", reservation.amount())
+            }
+        }
+    }
+
     /// Tries to allocate enough space for |object_range| in the specified object and returns the
     /// device range allocated.
     /// The allocated range may be short (e.g. due to fragmentation), in which case the caller can
@@ -1347,6 +1372,8 @@ impl Allocator {
         assert_eq!(len % self.block_size, 0);
         len = std::cmp::min(len, self.max_extent_size_bytes);
         debug_assert_ne!(owner_object_id, INVALID_OBJECT_ID);
+
+        let requested_len = len;
 
         // Make sure we have space reserved before we try and find the space.
         let reservation = if let Some(reservation) = transaction.allocator_reservation {
@@ -1376,7 +1403,27 @@ impl Allocator {
             Right(ReservationImpl::<_, Self>::new(&**self, Some(owner_object_id), len))
         };
 
-        ensure!(len > 0, FxfsError::NoSpace);
+        if len == 0 {
+            if let Some(reservation) = transaction.allocator_reservation {
+                bail!(anyhow!(FxfsError::NoSpace).context(format!(
+                    "Failed to allocate {} bytes for owner {} from {}",
+                    requested_len,
+                    owner_object_id,
+                    self.reservation_description(reservation),
+                )));
+            } else {
+                let inner = self.inner.lock();
+                bail!(anyhow!(FxfsError::NoSpace).context(format!(
+                    "Failed to allocate {} bytes for owner {} (owner_bytes_left: {}, device_used: \
+                    {}, device_size: {})",
+                    requested_len,
+                    owner_object_id,
+                    inner.owner_id_bytes_left(owner_object_id),
+                    inner.used_bytes(),
+                    self.device_size
+                )));
+            }
+        }
 
         // If volumes have been deleted, flush the device so that we can use any of the freed space.
         let volumes_deleted = {
@@ -1562,11 +1609,30 @@ impl Allocator {
                 device_range.end <= self.device_size
                     && (Saturating(self.device_size) - device_used).0 >= len
                     && owner_id_bytes_left >= len,
-                FxfsError::NoSpace
+                anyhow!(FxfsError::NoSpace).context(format!(
+                    "Failed to allocate {} bytes at {:?} for owner {} (owner_bytes_left: {}, \
+                    device_used: {}, device_size: {})",
+                    len,
+                    device_range,
+                    owner_object_id,
+                    owner_id_bytes_left,
+                    device_used,
+                    self.device_size
+                ))
             );
             if let Some(reservation) = &mut transaction.allocator_reservation {
                 // The transaction takes ownership of this hold.
-                reservation.reserve(len).ok_or(FxfsError::NoSpace)?.forget();
+                reservation
+                    .reserve(len)
+                    .ok_or_else(|| {
+                        anyhow!(FxfsError::NoSpace).context(format!(
+                            "Failed to reserve {} bytes at {:?} from {}",
+                            len,
+                            device_range,
+                            self.reservation_description(reservation),
+                        ))
+                    })?
+                    .forget();
             }
             owner_entry.uncommitted_allocated_bytes += len;
             inner.strategy.remove(device_range.clone());

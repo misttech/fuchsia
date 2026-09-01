@@ -669,12 +669,21 @@ impl ObjectManager {
         self.metadata_reservation.get().unwrap()
     }
 
+    pub fn is_metadata_reservation(&self, reservation: &Reservation) -> bool {
+        self.metadata_reservation.get().is_some_and(|r| std::ptr::eq(r, reservation))
+    }
+
     pub fn update_reservation(&self, object_id: u64, amount: u64) {
         self.inner.write().reservations.insert(object_id, amount);
     }
 
     pub fn reservation(&self, object_id: u64) -> Option<u64> {
         self.inner.read().reservations.get(&object_id).cloned()
+    }
+
+    /// Returns the maximum reservation held by any object (the amount budgeted for compaction).
+    pub fn max_store_reservation(&self) -> u64 {
+        self.inner.read().reservations.values().max().cloned().unwrap_or(0)
     }
 
     pub fn set_reserved_space(&self, amount: u64) {
