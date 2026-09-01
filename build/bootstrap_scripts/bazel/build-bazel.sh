@@ -7,8 +7,8 @@
 
 set -euo pipefail
 
-SCRIPT_NAME="$(basename "${BASH_SOURCE[0]}")"
-SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null && pwd )"
+readonly SCRIPT_NAME="$(basename "${BASH_SOURCE[0]}")"
+readonly SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null && pwd )"
 
 # Detect the 'pv' program in the environment. This will be useful to
 # print a timer in non-verbose mode during the different build steps.
@@ -28,14 +28,14 @@ if [[ -z "$IS_TERMINAL" ]]; then
   VERBOSE=1
 fi
 
-function run_internal {
+function run_internal() {
   if [[ "$VERBOSE" -ge 1 ]]; then
     echo "CMD: $*"
   fi
   "$@" 2>&1
 }
 
-function run_log_internal {
+function run_log_internal() {
   if [[ -n "${LOG_FILE}" ]]; then
     run_internal "$@" | tee --append "${LOG_FILE}"
   else
@@ -50,7 +50,7 @@ LOG_FILE=
 # If the 'pv' program is installed, use it to print progress.
 # $1: Command description for 'pv' timer.
 # $2+: The command to run.
-function run_step {
+function run_step() {
   local description="$1"
   shift
 
@@ -62,7 +62,7 @@ function run_step {
 }
 
 # Print error message then exit script with error status.
-function die {
+function die() {
   echo >&2 "ERROR: $*"
   exit 1
 }
@@ -70,7 +70,7 @@ function die {
 # Make a file path absolute
 # $1: file path
 # Output: absolute file path.
-function make_absolute {
+function make_absolute() {
   case "$1" in
     /*)
       echo "$1"
@@ -85,7 +85,7 @@ function make_absolute {
 # $1: wrapper_dir path
 # $2: clang_bindir value, or empty string.
 # $3: sysroot_dir value, or empty string.
-function generate_toolchain_wrappers {
+function generate_toolchain_wrappers() {
   local wrapper_dir="$1"
   local clang_bindir="$2"
   local sysroot_dir="$3"
@@ -113,7 +113,7 @@ EOF
 
 # Extract the Bazel version from a source or distribution directory.
 # $1: Bazel source or distribution directory.
-function extract_bazel_version_from_dir {
+function extract_bazel_version_from_dir() {
   # Parse the top-level MODULE.bazel file, which must starts with something like:
   #
   # module(
@@ -128,7 +128,7 @@ function extract_bazel_version_from_dir {
 
 # Parse command-line
 
-function help_requirements {
+function help_requirements() {
   cat <<EOF
 Building Bazel from sources is a very long process that
 requires:
@@ -162,7 +162,7 @@ EOF
   exit 0
 }
 
-function usage {
+function usage() {
   cat <<EOF
 Usage: ${SCRIPT_NAME} [options]
 
@@ -251,7 +251,7 @@ EOF
   exit 0
 }
 
-function help_steps {
+function help_steps() {
   cat <<EOF
 Building Bazel from sources is a very long process which consists in
 several steps:

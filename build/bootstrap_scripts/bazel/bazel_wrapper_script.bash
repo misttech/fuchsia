@@ -1,5 +1,5 @@
 #!/bin/bash
-# Copyright 2022 The Fuchsia Authors. All rights reserved.
+# Copyright 2026 The Fuchsia Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
@@ -69,7 +69,7 @@ readonly BAZEL_INSTALL_BASE="${BAZEL_INSTALL_DIR}"/install_base
 # just reset them directly (this takes < 0.06s on Linux), and trying
 # to do that conditionally leads to incremental build breakages on
 # infra bots (see https://fxbug.dev/129051).
-case $OSTYPE in
+case "$OSTYPE" in
   linux*)
     # A future timestamp in a format supported by GNU touch, which does
     # not support the same format as BSD touch.
