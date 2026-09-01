@@ -1244,12 +1244,14 @@ kernel_rust_mod("vm-rs-unittests") {
   visibility = [ ":*" ]
   source_root = "unittests/mod.rs"
   sources = [
+    "unittests/aspace_unittest.rs",
     "unittests/test_helper.rs",
     "unittests/vmo_unittest.rs",
   ]
   deps = [
     ":test-helper-bindings",
     "//sdk/rust/zx-types",
+    "//src/lib/kprint",
     "//zircon/kernel/lib/debug",
     "//zircon/system/ulib/fbl/rust:fbl",
   ]

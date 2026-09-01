@@ -2,5 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+pub mod aspace_unittest;
 pub mod test_helper;
 pub mod vmo_unittest;
