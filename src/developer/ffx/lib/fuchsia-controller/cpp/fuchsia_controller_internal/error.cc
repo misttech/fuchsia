@@ -247,14 +247,14 @@ PyObject *FcTransportStatus_str(PyObject *self) {
 
 PyMethodDef FcTransportStatus_repr_def = {
     "__repr__",
-    reinterpret_cast<PyCFunction>(FcTransportStatus_repr),
+    _PyCFunction_CAST(FcTransportStatus_repr),
     METH_METHOD | METH_FASTCALL | METH_KEYWORDS,
     nullptr,
 };
 
 PyMethodDef FcTransportStatus_str_def = {
     "__str__",
-    reinterpret_cast<PyCFunction>(FcTransportStatus_str),
+    _PyCFunction_CAST(FcTransportStatus_str),
     METH_METHOD | METH_FASTCALL | METH_KEYWORDS,
     nullptr,
 };
@@ -307,14 +307,14 @@ PyObject *FcTransportStatus_desc(PyObject *self) {
 
 PyMethodDef FcTransportStatus_desc_def = {
     "desc",
-    reinterpret_cast<PyCFunction>(FcTransportStatus_desc),
+    _PyCFunction_CAST(FcTransportStatus_desc),
     METH_METHOD | METH_FASTCALL | METH_KEYWORDS,
     nullptr,
 };
 
 PyMethodDef FcTransportStatus_code_def = {
     "code",
-    reinterpret_cast<PyCFunction>(ZxStatus_raw),
+    _PyCFunction_CAST(ZxStatus_raw),
     METH_METHOD | METH_FASTCALL | METH_KEYWORDS,
     nullptr,
 };
@@ -349,21 +349,21 @@ PyObject *ZxStatus_str(PyObject *self) {
 
 PyMethodDef ZxStatus_repr_def = {
     "__repr__",
-    reinterpret_cast<PyCFunction>(ZxStatus_repr),
+    _PyCFunction_CAST(ZxStatus_repr),
     METH_METHOD | METH_FASTCALL | METH_KEYWORDS,
     nullptr,
 };
 
 PyMethodDef ZxStatus_str_def = {
     "__str__",
-    reinterpret_cast<PyCFunction>(ZxStatus_str),
+    _PyCFunction_CAST(ZxStatus_str),
     METH_METHOD | METH_FASTCALL | METH_KEYWORDS,
     nullptr,
 };
 
 PyMethodDef ZxStatus_raw_def = {
     "raw",
-    reinterpret_cast<PyCFunction>(ZxStatus_raw),
+    _PyCFunction_CAST(ZxStatus_raw),
     METH_METHOD | METH_FASTCALL | METH_KEYWORDS,
     nullptr,
 };

@@ -10,23 +10,21 @@
 namespace fuchsia_controller::fidl_codec::ir {
 
 PyMethodDef add_ir_path_py_def = {
-    "add_ir_path", reinterpret_cast<PyCFunction>(add_ir_path), METH_O,
+    "add_ir_path", _PyCFunction_CAST(add_ir_path), METH_O,
     "Adds the FIDL IR path to the module for use in encoding/decoding. Throws an exception if the "
     "file cannot be parsed, or if the file does not exist."};
 
-PyMethodDef add_ir_paths_py_def = {"add_ir_paths", reinterpret_cast<PyCFunction>(add_ir_paths),
-                                   METH_O,
+PyMethodDef add_ir_paths_py_def = {"add_ir_paths", _PyCFunction_CAST(add_ir_paths), METH_O,
                                    "Adds the FIDL IR files to the module's IR library in a batch"};
 PyMethodDef get_method_ordinal_py_def = {
-    "method_ordinal", reinterpret_cast<PyCFunction>(get_method_ordinal),
-    METH_VARARGS | METH_KEYWORDS,
+    "method_ordinal", _PyCFunction_CAST(get_method_ordinal), METH_VARARGS | METH_KEYWORDS,
     "Gets the method ordinal number for the specified method. Method is intended to be a string "
     "formatted as a FIDL fully qualified name, e.g. '<library>/<declaration>.<member>'. For "
     "example: 'fuchsia.developer.ffx/EchoString'. More details can be found at "
     "https://fuchsia.dev/fuchsia-src/contribute/governance/rfcs/0043_documentation_comment_format#fully-qualified-names"};
 
 PyMethodDef get_ir_path_py_def = {
-    "get_ir_path", reinterpret_cast<PyCFunction>(get_ir_path), METH_O,
+    "get_ir_path", _PyCFunction_CAST(get_ir_path), METH_O,
     "Attempts to get the path to the IR based on the library name. Raises an exception if it cannot be found"};
 
 namespace {

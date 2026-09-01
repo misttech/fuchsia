@@ -21,8 +21,7 @@ namespace fuchsia_controller::fidl_codec::encode {
 namespace fc = fuchsia_controller;
 
 PyMethodDef encode_fidl_message_py_def = {
-    "encode_fidl_message", reinterpret_cast<PyCFunction>(encode_fidl_message),
-    METH_VARARGS | METH_KEYWORDS,
+    "encode_fidl_message", _PyCFunction_CAST(encode_fidl_message), METH_VARARGS | METH_KEYWORDS,
     "Encodes the FIDL wire format representation of the object. "
     "The only necessary fields are txid and ordinal. Everything else can be set to None. "
     "If the object field is not None, then all parameters are required. "
@@ -31,8 +30,7 @@ PyMethodDef encode_fidl_message_py_def = {
     " the operation, handle, type, rights, and result all as integers"};
 
 PyMethodDef encode_fidl_object_py_def = {
-    "encode_fidl_object", reinterpret_cast<PyCFunction>(encode_fidl_object),
-    METH_VARARGS | METH_KEYWORDS,
+    "encode_fidl_object", _PyCFunction_CAST(encode_fidl_object), METH_VARARGS | METH_KEYWORDS,
     "Encodes the FIDL wire format representation of the object. "
     "Returns a tuple. The first item in the tuple is a bytearray, the second "
     "is a an array representing the handle dispositions, each of which "

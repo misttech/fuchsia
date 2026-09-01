@@ -171,16 +171,15 @@ PyObject *decode_fidl_request(PyObject *self, PyObject *args, PyObject *kwds) { 
 }
 
 PyMethodDef decode_standalone_py_def = {
-    "decode_standalone", reinterpret_cast<PyCFunction>(decode_standalone),
-    METH_VARARGS | METH_KEYWORDS,
+    "decode_standalone", _PyCFunction_CAST(decode_standalone), METH_VARARGS | METH_KEYWORDS,
     "Decodes a standalone fidl response based on its type, bytes, and handles."};
 
 PyMethodDef decode_fidl_response_py_def = {
-    "decode_fidl_response", reinterpret_cast<PyCFunction>(decode_fidl_response),
-    METH_VARARGS | METH_KEYWORDS, "Decodes a FIDL response message from bytes and handles."};
+    "decode_fidl_response", _PyCFunction_CAST(decode_fidl_response), METH_VARARGS | METH_KEYWORDS,
+    "Decodes a FIDL response message from bytes and handles."};
 
 PyMethodDef decode_fidl_request_py_def = {
-    "decode_fidl_request", reinterpret_cast<PyCFunction>(decode_fidl_request),
-    METH_VARARGS | METH_KEYWORDS, "Decodes a FIDL request message from bytes and handles."};
+    "decode_fidl_request", _PyCFunction_CAST(decode_fidl_request), METH_VARARGS | METH_KEYWORDS,
+    "Decodes a FIDL request message from bytes and handles."};
 
 }  // namespace fuchsia_controller::fidl_codec::decode
