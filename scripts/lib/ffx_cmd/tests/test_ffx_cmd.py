@@ -32,3 +32,16 @@ class TestFfxCmd(unittest.IsolatedAsyncioTestCase):
             inner=ffx_cmd.FfxCmd.create_test_inner("host-tools/ffx")
         ).sync()
         self.assertGreater(version.api_level, 0)
+
+    async def test_test_executor_args_without_ffx(self) -> None:
+        """TestExecutor preserves all args when 'ffx' is not in the argument list."""
+        import tempfile
+        import unittest.mock as mock
+
+        with tempfile.NamedTemporaryFile() as tf:
+            test_inner = ffx_cmd.FfxCmd.create_test_inner(tf.name)
+            with mock.patch(
+                "async_utils.command.AsyncCommand.create"
+            ) as mock_create:
+                await test_inner.start("target", "list")
+                mock_create.assert_called_once_with(tf.name, "target", "list")

@@ -73,17 +73,18 @@ class FfxCmd(fx_cmd.ExecutableCommand):
         class TestExecutor(fx_cmd.ExecutableCommand):
             async def start(self, *args: str) -> AsyncCommand:
                 logger.debug("Processing command line...")
-                index_of_ffx = 0
+                index_of_ffx = None
                 for i, val in enumerate(args):
                     if val == "ffx":
                         index_of_ffx = i
                         break
                 logger.debug(f"Old command line was {args}")
-                command_line = (
-                    [path_to_ffx]
-                    + list(extra_args)
-                    + list(args[index_of_ffx + 1 :])
+                remaining_args = (
+                    args[index_of_ffx + 1 :]
+                    if index_of_ffx is not None
+                    else args
                 )
+                command_line = [path_to_ffx, *extra_args, *remaining_args]
                 logger.info(f"Executing ffx for test\n  {command_line}")
                 return await AsyncCommand.create(*command_line)
 
