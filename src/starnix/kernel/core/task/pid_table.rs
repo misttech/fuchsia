@@ -63,7 +63,7 @@ pub struct PidTable {
     table: HashMap<pid_t, PidEntry>,
 
     /// The process groups in this table, organized by pid_t.
-    process_groups: RcuHashMap<pid_t, Arc<ProcessGroup>>,
+    process_groups: RcuHashMap<pid_t, Weak<ProcessGroup>>,
 
     /// Used to notify thread group changes.
     thread_group_notifier: RcuOptionBox<std::sync::mpsc::Sender<MemoryAttributionLifecycleEvent>>,
@@ -202,11 +202,12 @@ impl PidTable {
 
     pub fn get_process_group(&self, pid: pid_t) -> Option<Arc<ProcessGroup>> {
         let scope = RcuReadScope::new();
-        self.process_groups.get(&scope, &pid).cloned()
+        self.process_groups.get(&scope, &pid).and_then(Weak::upgrade)
     }
 
-    pub fn add_process_group(&self, process_group: Arc<ProcessGroup>) {
-        let removed = self.process_groups.insert(process_group.leader, process_group);
+    pub fn add_process_group(&self, process_group: &Arc<ProcessGroup>) {
+        let removed =
+            self.process_groups.insert(process_group.leader, Arc::downgrade(process_group));
         assert!(removed.is_none());
     }
 

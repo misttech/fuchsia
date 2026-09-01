@@ -1206,7 +1206,7 @@ impl ThreadGroup {
             return error!(EPERM);
         }
         let process_group = ProcessGroup::new(self.leader, None);
-        pids.add_process_group(process_group.clone());
+        pids.add_process_group(&process_group);
         let session = self.write().set_process_group(process_group, &pids);
         session.disassociate_controlling_terminal();
         self.check_orphans(&pids);
@@ -1274,7 +1274,7 @@ impl ThreadGroup {
                     // Create a new process group
                     new_process_group =
                         ProcessGroup::new(target_pgid, Some(target_process_group.session.clone()));
-                    pids.add_process_group(new_process_group.clone());
+                    pids.add_process_group(&new_process_group);
                 }
             }
 
