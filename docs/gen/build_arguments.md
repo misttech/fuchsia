@@ -339,7 +339,7 @@ in args.gn.
 
 **Current value (from the default):** `[]`
 
-From //build/bazel/bazel_root_targets_list.gni:137
+From //build/bazel/bazel_root_targets_list.gni:90
 
 ### bazel_upload_build_events
 
@@ -890,7 +890,7 @@ This should never be set as a build argument.
 }
   lsan = {
   shared = {
-  clang_rt = "../../../../out/not-default/libclang_rt.lsan.so"
+  clang_rt = ""
 }
   static = {
   clang_rt = "lib/clang/24/lib/aarch64-unknown-linux-gnu/libclang_rt.lsan.a"
@@ -954,7 +954,7 @@ This should never be set as a build argument.
   clang_rt = "../../../../out/not-default/libclang_rt.tsan.so"
 }
   static = {
-  clang_rt = ""
+  clang_rt = "../../../../out/not-default/libclang_rt.tsan.a"
   clang_rt_cxx = "../../../../out/not-default/libclang_rt.tsan_cxx.a"
 }
 }
@@ -2061,21 +2061,6 @@ From //build/config/compiler.gni:88
 
 ```none
 [{
-  bazel_label = "//zircon/tools/merkleroot"
-}, {
-  bazel_label = "//tools/orchestrate:orchestrate"
-  copy_outputs = [{
-  bazel = "{{BAZEL_TARGET_OUT_DIR}}/orchestrate_/orchestrate"
-  ninja = "orchestrate"
-}]
-}, {
-  bazel_label = "//build/beads/.agent/skills/migrating_host_tool_to_bazel/examples/go/after:go_example_bin_migrated"
-  copy_outputs = [{
-  bazel = "{{BAZEL_TARGET_OUT_DIR}}/go_example_bin_migrated_/go_example_bin_migrated"
-  ninja = "go_example_bin_migrated"
-}]
-  install_host_tool = true
-}, {
   bazel_label = "//tools/build/ninjago/buildstats:buildstats"
   copy_outputs = [{
   bazel = "{{BAZEL_TARGET_OUT_DIR}}/buildstats_/buildstats"
@@ -2389,10 +2374,6 @@ From //build/config/compiler.gni:88
   ninja = "generate_python_api_symbols"
 }]
 }, {
-  bazel_label = "//build/bazel/toolchains/tests:build"
-  bazel_name = "build.stamp"
-  ninja_name = "bazel_toolchains_tests_build.stamp"
-}, {
   bazel_label = "//src/developer/ffx/tools/efi:ffx-efi"
   copy_outputs = [{
   bazel = "{{BAZEL_TARGET_OUT_DIR}}/ffx-efi"
@@ -2423,7 +2404,7 @@ From //build/config/compiler.gni:88
 }]
 ```
 
-From //build/bazel/bazel_root_targets_list.gni:65
+From //build/bazel/bazel_root_targets_list.gni:26
 
 ### default_configs
 
@@ -7480,101 +7461,95 @@ From //third_party/pigweed/src/modules.gni:51
 
 From //third_party/pigweed/src/modules.gni:52
 
-### pw_external_fuzztest
-
-**Current value (from the default):** `"//third_party/pigweed/src/third_party/fuzztest"`
-
-From //third_party/pigweed/src/modules.gni:54
-
 ### pw_external_googletest
 
 **Current value (from the default):** `"//third_party/pigweed/src/third_party/googletest"`
 
-From //third_party/pigweed/src/modules.gni:56
+From //third_party/pigweed/src/modules.gni:54
 
 ### pw_external_llvm_builtins
 
 **Current value (from the default):** `"//third_party/pigweed/src/third_party/llvm_builtins"`
 
-From //third_party/pigweed/src/modules.gni:58
+From //third_party/pigweed/src/modules.gni:56
 
 ### pw_external_llvm_libc
 
 **Current value (from the default):** `"//third_party/pigweed/src/third_party/llvm_libc"`
 
-From //third_party/pigweed/src/modules.gni:60
+From //third_party/pigweed/src/modules.gni:58
 
 ### pw_external_llvm_libcxx
 
 **Current value (from the default):** `"//third_party/pigweed/src/third_party/llvm_libcxx"`
 
-From //third_party/pigweed/src/modules.gni:62
+From //third_party/pigweed/src/modules.gni:60
 
 ### pw_external_mbedtls
 
 **Current value (from the default):** `"//third_party/pigweed/src/third_party/mbedtls"`
 
-From //third_party/pigweed/src/modules.gni:63
+From //third_party/pigweed/src/modules.gni:61
 
 ### pw_external_mcuxpresso
 
 **Current value (from the default):** `"//third_party/pigweed/src/third_party/mcuxpresso"`
 
-From //third_party/pigweed/src/modules.gni:65
+From //third_party/pigweed/src/modules.gni:63
 
 ### pw_external_nanopb
 
 **Current value (from the default):** `"//third_party/pigweed/src/third_party/nanopb"`
 
-From //third_party/pigweed/src/modules.gni:66
+From //third_party/pigweed/src/modules.gni:64
 
 ### pw_external_perfetto
 
 **Current value (from the default):** `"//third_party/pigweed/src/third_party/perfetto"`
 
-From //third_party/pigweed/src/modules.gni:68
+From //third_party/pigweed/src/modules.gni:66
 
 ### pw_external_pico_sdk
 
 **Current value (from the default):** `"//third_party/pigweed/src/third_party/pico_sdk"`
 
-From //third_party/pigweed/src/modules.gni:70
+From //third_party/pigweed/src/modules.gni:68
 
 ### pw_external_protobuf
 
 **Current value (from the default):** `"//third_party/pigweed/src/third_party/protobuf"`
 
-From //third_party/pigweed/src/modules.gni:72
+From //third_party/pigweed/src/modules.gni:70
 
 ### pw_external_repo
 
 **Current value (from the default):** `"//third_party/pigweed/src/third_party/repo"`
 
-From //third_party/pigweed/src/modules.gni:73
+From //third_party/pigweed/src/modules.gni:71
 
 ### pw_external_smartfusion_mss
 
 **Current value (from the default):** `"//third_party/pigweed/src/third_party/smartfusion_mss"`
 
-From //third_party/pigweed/src/modules.gni:75
+From //third_party/pigweed/src/modules.gni:73
 
 ### pw_external_stm32cube
 
 **Current value (from the default):** `"//third_party/pigweed/src/third_party/stm32cube"`
 
-From //third_party/pigweed/src/modules.gni:77
+From //third_party/pigweed/src/modules.gni:75
 
 ### pw_external_threadx
 
 **Current value (from the default):** `"//third_party/pigweed/src/third_party/threadx"`
 
-From //third_party/pigweed/src/modules.gni:78
+From //third_party/pigweed/src/modules.gni:76
 
 ### pw_external_tinyusb
 
 **Current value (from the default):** `"//third_party/pigweed/src/third_party/tinyusb"`
 
-From //third_party/pigweed/src/modules.gni:79
+From //third_party/pigweed/src/modules.gni:77
 
 ### pw_log_BACKEND
 
@@ -8315,25 +8290,6 @@ This is typically set by individual toolchains and not by GN args.
 **Current value (from the default):** `false`
 
 From //third_party/pigweed/src/pw_toolchain/host_clang/toolchains.gni:32
-
-### pw_toolchain_FUZZING_ENABLED
-
-Indicates if this toolchain supports building fuzzers. This is typically
-set by individual toolchains and not by GN args.
-
-**Current value (from the default):** `false`
-
-From //third_party/pigweed/src/pw_toolchain/host_clang/toolchains.gni:39
-
-### pw_toolchain_OSS_FUZZ_ENABLED
-
-Indicates if this build is a part of OSS-Fuzz, which needs to be able to
-provide its own compiler and flags. This violates the build hermeticisim and
-should only be used for OSS-Fuzz.
-
-**Current value (from the default):** `false`
-
-From //third_party/pigweed/src/pw_toolchain/host_clang/toolchains.gni:44
 
 ### pw_toolchain_PROFILE_SOURCE_FILES
 
@@ -9096,28 +9052,6 @@ you'll also build SDK host tools for linux arm64.
 **Current value (from the default):** `false`
 
 From //sdk/config.gni:16
-
-### sdk_host_tool_bazel_targets
-
-A list of scopes describing Bazel host targets that are included in the SDK.
-
-This is a separate because they can be cross-compiled on SDK builders.
-
-**Current value (from the default):**
-
-```none
-[{
-  bazel_label = "//zircon/tools/merkleroot"
-}, {
-  bazel_label = "//tools/orchestrate:orchestrate"
-  copy_outputs = [{
-  bazel = "{{BAZEL_TARGET_OUT_DIR}}/orchestrate_/orchestrate"
-  ninja = "orchestrate"
-}]
-}]
-```
-
-From //build/bazel/bazel_root_targets_list.gni:28
 
 ### sdk_id
 
