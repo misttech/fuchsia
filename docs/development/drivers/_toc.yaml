@@ -89,8 +89,6 @@ toc:
       path: /docs/development/sdk/write-bind-rules-for-driver.md
     - title: "Create a new bind library for a driver"
       path: /docs/development/sdk/create-new-bind-library-for-driver.md
-    - title: "FIDL-based bind libraries tutorial"
-      path: /docs/development/sdk/fidl-bind-libraries-bazel.md
     - title: "Debug a driver when it fails to load"
       path: /docs/development/sdk/debug-driver-when-it-fails-to-load.md
   - title: "Driver testing"

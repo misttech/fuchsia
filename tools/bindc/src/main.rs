@@ -14,7 +14,6 @@ use bind::compiler::{self, CompiledBindRules};
 use bind::debugger::offline_debugger;
 use bind::test;
 use clap::{Args, Parser, Subcommand};
-use fidl_ir::*;
 use std::fs::File;
 use std::io::prelude::*;
 use std::io::{self, Write as IoWrite};
@@ -87,17 +86,6 @@ enum Command {
         /// A file containing the test specification.
         #[arg(short = 't', long = "test-spec")]
         test_spec: PathBuf,
-    },
-    /// Generate a Bind Library based on the input FIDL IR file.
-    #[command(name = "generate-bind")]
-    GenerateBind {
-        /// The FIDL IR input file. This should be generated from a FIDL library
-        /// by the FIDL compiler at //tools/fidl/fidlc using the $fidl_toolchain suffix.
-        input: PathBuf,
-
-        /// Output Bind Library file.
-        #[arg(short = 'o', long = "output")]
-        output: Option<PathBuf>,
     },
     /// Generate a C++ header file based on the input Bind Library file.
     #[command(name = "generate-cpp")]
@@ -240,7 +228,6 @@ fn handle_command(command: Command) -> Result<(), Error> {
             let includes = handle_includes(options.include, options.include_file)?;
             handle_compile(options.input, includes, disable_autobind, options.lint, output, depfile)
         }
-        Command::GenerateBind { input, output } => handle_generate_bind(input, output),
         Command::GenerateCpp { input, lint, output } => {
             handle_code_generate(GeneratedBindingType::Cpp, input, lint, output)
         }
@@ -308,64 +295,6 @@ fn handle_compile(
 
     let bytecode = compiled_bind_rules.encode_to_bytecode()?;
     output_writer.write_all(bytecode.as_slice()).context("Failed to write to output file")
-}
-
-/// Converts the name of a protocol to a bind library enum for its transport method.
-fn convert_to_bind_library_enum(compound_ident: &CompoundIdent) -> Result<String, Error> {
-    let enum_name = compound_ident.decl_name();
-    let result = format!(
-        include_str!("templates/bind_lib_enum.template"),
-        enum_name = enum_name.non_canonical(),
-    );
-    Ok(result)
-}
-
-fn generate_bind_library(input: &str) -> Result<String, Error> {
-    let in_fidl_library: Library = serde_json::from_str(input)?;
-
-    let bind_lib_content = in_fidl_library
-        .declaration_order
-        .iter()
-        .filter(|comp_id| {
-            matches!(in_fidl_library.declarations[*comp_id], DeclType::Protocol | DeclType::Service)
-        })
-        .map(|comp_id| convert_to_bind_library_enum(comp_id))
-        .collect::<Result<Vec<String>, _>>()?
-        .join("\n");
-
-    // Output result into template.
-    let mut output = String::new();
-    output
-        .write_fmt(format_args!(
-            include_str!("templates/bind_lib.template"),
-            library_name = in_fidl_library.name,
-            bind_lib_content = bind_lib_content,
-        ))
-        .context("Failed to format output")?;
-
-    Ok(output.to_string())
-}
-
-fn handle_generate_bind(input: PathBuf, output: Option<PathBuf>) -> Result<(), Error> {
-    let input_content = read_file(&input)?;
-
-    // Generate the bind library.
-    let generated_content = generate_bind_library(&input_content)?;
-
-    // Create and open output file.
-    let mut output_writer: Box<dyn io::Write> = if let Some(output) = output {
-        Box::new(File::create(output).context("Failed to create output file.")?)
-    } else {
-        // Output file name was not given. Print result to stdout.
-        Box::new(io::stdout())
-    };
-
-    // Write bind library to output.
-    output_writer
-        .write_all(generated_content.as_bytes())
-        .context("Failed to write to output file")?;
-
-    Ok(())
 }
 
 #[cfg(test)]
@@ -441,13 +370,5 @@ mod tests {
         assert!(result.contains("/a/input"));
         assert!(result.contains("/a/include"));
         assert!(result.contains("/b/include"));
-    }
-
-    #[test]
-    fn test_bind_lib_generation() {
-        assert_eq!(
-            include_str!("tests/expected_bind_lib_gen"),
-            generate_bind_library(ir_importer::bindc_test::IR).unwrap()
-        );
     }
 }
