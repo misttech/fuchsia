@@ -7,6 +7,7 @@
 #include <lib/fdio/directory.h>
 #include <zircon/syscalls.h>
 
+#include <fbl/string_printf.h>
 #include <zxtest/zxtest.h>
 
 using driver_integration_test::IsolatedDevmgr;
