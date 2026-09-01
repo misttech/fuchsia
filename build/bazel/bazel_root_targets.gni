@@ -136,13 +136,6 @@ if (current_toolchain == host_toolchain) {
             outputs = [ "${host_tools_dir}/${_root_target.ninja_name}" ]
             sources = [ _ninja_output ]
             deps = [
-              # Temporarily depend on the metadata-generating target since some
-              # targets and bots currently depend on this ".host_tool" target.
-              # TODO(https://fxbug.dev/553620187): Replace such dependencies
-              # with the suffixless target, and remove this entry once all such
-              # dependent targets have been replaced.
-              ":${_gn_target_name}",
-
               # TODO(https://fxbug.dev/553620187): Consider instead depending
               # on and copying from `_gn_target_name`. This better matches the
               # common pattern of `install_host_tools()` for GN-built tools and
