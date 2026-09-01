@@ -216,8 +216,18 @@ class Test:
         expects_ssh = (
             self.build.expects_ssh is not None and self.build.expects_ssh
         )
+        # End-to-end tests are treated as linux host tests, because they are
+        # largely self-contained linux executables, hence `is_linux` below.
+        # A device is required to run them, so we look for a device type or
+        # the expectation that ssh will be used. Vanilla device tests and boot
+        # tests, which are not e2e tests, may pass the first two checks, so we
+        # explicitly check for the packet URL indicative of a vanilla device test
+        # and for qualification as a boot test to rule those out.
         return (
-            is_linux and (has_device or expects_ssh) and not self.is_boot_test()
+            is_linux
+            and (has_device or expects_ssh)
+            and self.build.test.package_url is None
+            and not self.is_boot_test()
         )
 
     def is_pure_device_test(self) -> bool:

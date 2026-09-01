@@ -9,6 +9,13 @@ import("fuchsia_package.gni")
 import("fuchsia_test_component.gni")
 import("fuchsia_test_component_manifest.gni")
 
+declare_args() {
+  # When enabled, changes tests.json entries for fuchsia_test_package tests so
+  # that botanist will use test-pilot to execute them. The tests.json changes
+  # include adding a "path" entry for the test and setting "os" to "linux".
+  use_test_pilot = false
+}
+
 _log_severity_allowed_val = [
   "FATAL",
   "ERROR",
@@ -422,16 +429,33 @@ template("fuchsia_test_package") {
         package_url = test_url
 
         if (!defined(invoker.is_bootfs) || !invoker.is_bootfs) {
-          # The variables used below were set in an identical condition above.
-
-          # Adding new_path for transition period. We will later replace this
-          # with path.
+          # Use `new_path` for the transition period. `botanist` ignores this,
+          # and `fx test` will use it if `--use-test_pilot` is passed.
+          # `new_path` is rebased in `test_specs.gni`. `new_path` is not used
+          # for bootfs tests.
+          #
+          # Like `path`, `new_path` points to an executable (a shell script, in
+          # the case of `new_path`) that executes the test. It was added to
+          # allow experimental use of `test-pilot` in fx test for tests using
+          # this template. `botanist` and, by default, `fx test` currently
+          # create and execute an `ffx test run` command line to run
+          # fuchsia_test_package tests.
+          #
+          # TODO(https://fxbug.dev/555387345): Remove new_path once the transition
+          # to `test-pilot` is complete.
           new_path = test_script
 
           if (!defined(data_deps)) {
             data_deps = []
           }
           data_deps += [ ":${runtime_deps_group_target_name}" ]
+          if (use_test_pilot) {
+            # To test `botanist` with `test-pilot`, we set `path` to point to
+            # the same script as `new_path`. `os` is set to `linux`, because
+            # `botanist` treats the test like a host test.
+            path = rebase_path(new_path, root_build_dir)
+            os = "linux"
+          }
         }
       }
 

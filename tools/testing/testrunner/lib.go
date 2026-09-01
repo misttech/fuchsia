@@ -435,9 +435,7 @@ func validateTest(test testsharder.Test) error {
 		return fmt.Errorf("one or more fuchsia tests missing the `path` and `package_url` fields")
 	}
 	if test.OS != "fuchsia" {
-		if test.PackageURL != "" {
-			return fmt.Errorf("one or more host tests have a `package_url` field present")
-		} else if test.Path == "" {
+		if test.Path == "" {
 			return fmt.Errorf("one or more host tests missing the `path` field")
 		}
 	}
