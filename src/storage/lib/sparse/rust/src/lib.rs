@@ -381,25 +381,64 @@ impl fmt::Display for Chunk {
 /// in place of None to avoid having to specify a type for the source.
 pub const NO_SOURCE: Option<&mut Cursor<&[u8]>> = None;
 
+/// An in-memory description of an Android sparse image file.
+///
+/// Holds a sequence of [`Chunk`] definitions that describe how unsparsed image data
+/// should be formatted or partitioned. Can be serialized to a destination writer or
+/// lazily read via a [`SparseSliceReader`].
 #[derive(Clone, Debug, PartialEq)]
-struct SparseFileWriter {
-    chunks: Vec<Chunk>,
+pub struct SparseFileWriter {
+    /// The sequence of chunks that make up the sparse image.
+    pub chunks: Vec<Chunk>,
 }
 
 impl SparseFileWriter {
-    fn new(chunks: Vec<Chunk>) -> SparseFileWriter {
+    /// Creates a new `SparseFileWriter` from a sequence of [`Chunk`]s.
+    pub fn new(chunks: Vec<Chunk>) -> SparseFileWriter {
         SparseFileWriter { chunks }
     }
 
-    fn total_blocks(&self) -> u32 {
+    /// Returns the total number of blocks represented by all chunks in this sparse image.
+    pub fn total_blocks(&self) -> u32 {
         self.chunks.iter().map(|c| c.output_blocks(BLK_SIZE)).sum()
     }
 
-    fn total_bytes(&self) -> u64 {
+    /// Returns the total unsparsed size in bytes represented by this sparse image.
+    pub fn total_bytes(&self) -> u64 {
         self.chunks.iter().map(|c| c.output_size() as u64).sum()
     }
 
-    fn write<W: Write + Seek, R: Read + Seek>(
+    /// Returns the total serialized size (in bytes) of the sparse image file,
+    /// including the file header, all chunk headers, and chunk payloads.
+    pub fn file_size(&self) -> u64 {
+        let mut size = format::SPARSE_HEADER_SIZE as u64;
+        for chunk in &self.chunks {
+            size += chunk.chunk_data_len() as u64;
+        }
+        size
+    }
+
+    /// Creates an `io::Read` stream that lazily reads the serialized sparse image bytes
+    /// directly from `source` without creating an intermediate file on disk.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`SparseError::UnalignedChunk`] if any chunk is not aligned to the block size,
+    /// or [`SparseError::Serialize`] if header serialization fails.
+    pub fn slice_reader<'a, R: Read + Seek>(
+        &'a self,
+        source: &'a mut R,
+    ) -> Result<SparseSliceReader<'a, R>, SparseError> {
+        SparseSliceReader::new(self, source)
+    }
+
+    /// Writes the serialized sparse image to `writer`, reading raw payload data from `reader`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if writing to `writer` or seeking/reading from `reader` fails,
+    /// or if any chunk is invalid or cannot be serialized.
+    pub fn write<W: Write + Seek, R: Read + Seek>(
         &self,
         reader: &mut R,
         writer: &mut W,
@@ -426,6 +465,210 @@ impl SparseFileWriter {
         }
 
         Ok(())
+    }
+}
+
+/// `SparseSliceReader` is an `io::Read` stream that lazily emits the binary
+/// Android Sparse Image serialization (headers and payload) for a single
+/// `SparseFileWriter` slice directly from the underlying source reader without
+/// intermediate disk files.
+pub struct SparseSliceReader<'a, R> {
+    source: &'a mut R,
+    header_bytes: Vec<u8>,
+    header_pos: usize,
+    chunks: &'a [Chunk],
+    chunk_idx: usize,
+    chunk_header_bytes: Vec<u8>,
+    chunk_header_pos: usize,
+    payload_pos: u64,
+}
+
+impl<'a, R: Read + Seek> SparseSliceReader<'a, R> {
+    /// Creates a new `SparseSliceReader` that lazily streams the serialized representation
+    /// of `writer` using payload bytes from `source`.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`SparseError::UnalignedChunk`] if any chunk is not block-aligned,
+    /// or [`SparseError::Serialize`] if header serialization fails.
+    pub fn new(writer: &'a SparseFileWriter, source: &'a mut R) -> Result<Self, SparseError> {
+        let header = SparseHeader::new(
+            BLK_SIZE.try_into().unwrap(),
+            writer.total_blocks(),
+            writer.chunks.len().try_into().unwrap(),
+        );
+        let header_bytes = bincode::serialize(&header)
+            .map_err(|e| SparseError::Serialize { ty: SparseDataType::Header, source: e })?;
+        let mut reader = Self {
+            source,
+            header_bytes,
+            header_pos: 0,
+            chunks: &writer.chunks,
+            chunk_idx: 0,
+            chunk_header_bytes: Vec::new(),
+            chunk_header_pos: 0,
+            payload_pos: 0,
+        };
+        reader.prepare_next_chunk_header()?;
+        Ok(reader)
+    }
+
+    fn prepare_next_chunk_header(&mut self) -> Result<(), SparseError> {
+        if self.chunk_idx < self.chunks.len() {
+            let chunk = &self.chunks[self.chunk_idx];
+            if !chunk.valid(BLK_SIZE) {
+                return Err(SparseError::UnalignedChunk);
+            }
+            let header = ChunkHeader::new(
+                chunk.chunk_type(),
+                0x0,
+                chunk.output_blocks(BLK_SIZE),
+                chunk.chunk_data_len(),
+            );
+            self.chunk_header_bytes = bincode::serialize(&header).map_err(|e| {
+                SparseError::Serialize { ty: SparseDataType::ChunkHeader, source: e }
+            })?;
+            self.chunk_header_pos = 0;
+            self.payload_pos = 0;
+        }
+        Ok(())
+    }
+}
+
+impl<'a, R: Read + Seek> Read for SparseSliceReader<'a, R> {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        if buf.is_empty() {
+            return Ok(0);
+        }
+
+        let mut total_written = 0;
+
+        while total_written < buf.len() {
+            // 1. Emit SparseHeader bytes if remaining
+            if self.header_pos < self.header_bytes.len() {
+                let to_copy = std::cmp::min(
+                    buf.len() - total_written,
+                    self.header_bytes.len() - self.header_pos,
+                );
+                buf[total_written..total_written + to_copy].copy_from_slice(
+                    &self.header_bytes[self.header_pos..self.header_pos + to_copy],
+                );
+                self.header_pos += to_copy;
+                total_written += to_copy;
+                continue;
+            }
+
+            if self.chunk_idx >= self.chunks.len() {
+                break;
+            }
+
+            // 2a. Emit ChunkHeader bytes if remaining
+            if self.chunk_header_pos < self.chunk_header_bytes.len() {
+                let to_copy = std::cmp::min(
+                    buf.len() - total_written,
+                    self.chunk_header_bytes.len() - self.chunk_header_pos,
+                );
+                buf[total_written..total_written + to_copy].copy_from_slice(
+                    &self.chunk_header_bytes
+                        [self.chunk_header_pos..self.chunk_header_pos + to_copy],
+                );
+                self.chunk_header_pos += to_copy;
+                total_written += to_copy;
+                continue;
+            }
+
+            // 2b. Emit Chunk payload
+            let chunk = &self.chunks[self.chunk_idx];
+            match chunk {
+                Chunk::Raw { start, size } => {
+                    let remaining_payload = *size - self.payload_pos;
+                    if remaining_payload > 0 {
+                        if self.payload_pos == 0 {
+                            if self.source.stream_position()? != *start {
+                                self.source.seek(SeekFrom::Start(*start))?;
+                            }
+                        }
+                        let to_read =
+                            std::cmp::min(buf.len() - total_written, remaining_payload as usize);
+                        let n =
+                            self.source.read(&mut buf[total_written..total_written + to_read])?;
+                        if n == 0 {
+                            // If EOF reached on source earlier than expected, fill remainder with zeroes
+                            let zeroes = std::cmp::min(
+                                buf.len() - total_written,
+                                remaining_payload as usize,
+                            );
+                            buf[total_written..total_written + zeroes].fill(0);
+                            self.payload_pos += zeroes as u64;
+                            total_written += zeroes;
+                            if self.payload_pos >= *size {
+                                self.chunk_idx += 1;
+                                self.prepare_next_chunk_header().map_err(|e| {
+                                    std::io::Error::new(std::io::ErrorKind::Other, e)
+                                })?;
+                            }
+                            continue;
+                        }
+                        self.payload_pos += n as u64;
+                        total_written += n;
+                        if self.payload_pos >= *size {
+                            self.chunk_idx += 1;
+                            self.prepare_next_chunk_header()
+                                .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+                        }
+                        return Ok(total_written);
+                    }
+                }
+                Chunk::Fill { value, .. } => {
+                    if self.payload_pos < 4 {
+                        let val_bytes = value.to_le_bytes();
+                        let remaining = 4 - self.payload_pos as usize;
+                        let to_copy = std::cmp::min(buf.len() - total_written, remaining);
+                        let start = self.payload_pos as usize;
+                        buf[total_written..total_written + to_copy]
+                            .copy_from_slice(&val_bytes[start..start + to_copy]);
+                        self.payload_pos += to_copy as u64;
+                        total_written += to_copy;
+                        if self.payload_pos >= 4 {
+                            self.chunk_idx += 1;
+                            self.prepare_next_chunk_header()
+                                .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+                        }
+                        continue;
+                    }
+                }
+                Chunk::Crc32 { checksum } => {
+                    if self.payload_pos < 4 {
+                        let val_bytes = checksum.to_le_bytes();
+                        let remaining = 4 - self.payload_pos as usize;
+                        let to_copy = std::cmp::min(buf.len() - total_written, remaining);
+                        let start = self.payload_pos as usize;
+                        buf[total_written..total_written + to_copy]
+                            .copy_from_slice(&val_bytes[start..start + to_copy]);
+                        self.payload_pos += to_copy as u64;
+                        total_written += to_copy;
+                        if self.payload_pos >= 4 {
+                            self.chunk_idx += 1;
+                            self.prepare_next_chunk_header()
+                                .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+                        }
+                        continue;
+                    }
+                }
+                Chunk::DontCare { .. } => {
+                    self.chunk_idx += 1;
+                    self.prepare_next_chunk_header()
+                        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+                    continue;
+                }
+            }
+
+            self.chunk_idx += 1;
+            self.prepare_next_chunk_header()
+                .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+        }
+
+        Ok(total_written)
     }
 }
 
@@ -541,12 +784,19 @@ fn expand_chunk<R: Read + Seek, W: Write + Seek>(
     Ok(())
 }
 
-/// `resparse` takes a SparseFile and a maximum size and will
-/// break the single SparseFile into multiple SparseFiles whose
-/// size will not exceed the maximum_download_size.
+/// Takes a `sparse_file` and breaks it into multiple `SparseFileWriter` slices whose
+/// serialized file size will not exceed `max_download_size`.
 ///
-/// This will return an error if max_download_size is <= BLK_SIZE
-fn resparse(
+/// # Arguments
+///
+/// * `sparse_file` - The sparse file writer containing chunk definitions to resparse.
+/// * `max_download_size` - Maximum size in bytes for each resparsed slice.
+///
+/// # Errors
+///
+/// Returns [`SparseError::MaxDownloadSizeTooSmall`] if `max_download_size` is less than or
+/// equal to the block size ([`BLK_SIZE`]).
+pub fn resparse(
     sparse_file: SparseFileWriter,
     max_download_size: u64,
 ) -> Result<Vec<SparseFileWriter>, SparseError> {
@@ -671,6 +921,31 @@ fn resparse(
     Ok(ret)
 }
 
+/// Takes a provided `reader` and generates a set of `SparseFileWriter`s representing
+/// the resparsed slices with the provided `max_download_size` constraining slice size.
+///
+/// # Arguments
+///
+/// * `reader` - The sparse reader of an existing sparse file.
+/// * `max_download_size` - Maximum size in bytes that can be downloaded by the device for each slice.
+///
+/// # Errors
+///
+/// Returns [`SparseError::MaxDownloadSizeTooSmall`] if `max_download_size` is less than or
+/// equal to the block size ([`BLK_SIZE`]).
+pub fn resparse_sparse_img_writers<R: Read + std::io::Seek>(
+    reader: &mut SparseReader<R>,
+    max_download_size: u64,
+) -> Result<Vec<SparseFileWriter>, SparseError> {
+    log::debug!("Building writers from Reader");
+    let mut chunks = vec![];
+    for (chunk, _offset) in reader.chunks() {
+        chunks.push(chunk.clone());
+    }
+    let sparse_file = SparseFileWriter::new(chunks);
+    resparse(sparse_file, max_download_size)
+}
+
 /// Takes a provided `reader` and generates a set of temporary files in `dir`
 /// in the Sparse image format. With the provided `max_download_size`
 /// constraining file size.
@@ -685,16 +960,9 @@ pub fn resparse_sparse_img<R: Read + std::io::Seek>(
     dir: &Path,
     max_download_size: u64,
 ) -> Result<Vec<TempPath>, SparseError> {
-    log::debug!("Building writer from Reader");
-    let mut chunks = vec![];
-    for (chunk, _offset) in reader.chunks() {
-        chunks.push(chunk.clone());
-    }
-    let sparse_file = SparseFileWriter::new(chunks);
-
     let mut ret = Vec::<TempPath>::new();
     log::debug!("Resparsing sparse file");
-    for re_sparsed_file in resparse(sparse_file, max_download_size)? {
+    for re_sparsed_file in resparse_sparse_img_writers(reader, max_download_size)? {
         let (file, temp_path) = NamedTempFile::new_in(dir)?.into_parts();
         let mut file_create = File::from(file);
 
@@ -726,25 +994,29 @@ pub(crate) fn find_fill_value(buf: &[u8]) -> Option<u32> {
 }
 
 /// Takes the given `file_to_upload` for the `named` partition and creates a
-/// set of temporary files in the given `dir` in Sparse Image Format. With the
-/// provided `max_download_size` constraining file size.
+/// set of `SparseFileWriter` slices in memory with the provided `max_download_size`
+/// constraining slice size.
 ///
 /// # Arguments
 ///
 /// * `name` - Name of the partition the image. Used for logs only.
 /// * `file_to_upload` - Path to the file to translate to sparse image format.
-/// * `dir` - Path to write the Sparse file(s).
-/// * `max_download_size` - Maximum size that can be downloaded by the device.
-pub fn build_sparse_files(
+/// * `max_download_size` - Maximum size that can be downloaded by the device for each slice.
+///
+/// # Errors
+///
+/// Returns [`SparseError::MaxDownloadSizeTooSmall`] if `max_download_size` is less than or
+/// equal to the block size ([`BLK_SIZE`]), or an I/O error if `file_to_upload` fails to open
+/// or read.
+pub fn build_sparse_writers(
     name: &str,
     file_to_upload: &str,
-    dir: &Path,
     max_download_size: u64,
-) -> Result<Vec<TempPath>, SparseError> {
+) -> Result<Vec<SparseFileWriter>, SparseError> {
     if max_download_size <= BLK_SIZE as u64 {
         return Err(SparseError::MaxDownloadSizeTooSmall(max_download_size, BLK_SIZE));
     }
-    log::debug!("Building sparse files for: {}. File: {}", name, file_to_upload);
+    log::debug!("Building sparse writers for: {}. File: {}", name, file_to_upload);
     let mut in_file = File::open(file_to_upload)?;
 
     let mut total_read: usize = 0;
@@ -785,10 +1057,29 @@ pub fn build_sparse_files(
 
     let sparse_file = SparseFileWriter::new(chunks);
     log::trace!("Created sparse file: {}", sparse_file);
+    resparse(sparse_file, max_download_size)
+}
 
+/// Takes the given `file_to_upload` for the `named` partition and creates a
+/// set of temporary files in the given `dir` in Sparse Image Format. With the
+/// provided `max_download_size` constraining file size.
+///
+/// # Arguments
+///
+/// * `name` - Name of the partition the image. Used for logs only.
+/// * `file_to_upload` - Path to the file to translate to sparse image format.
+/// * `dir` - Path to write the Sparse file(s).
+/// * `max_download_size` - Maximum size that can be downloaded by the device.
+pub fn build_sparse_files(
+    name: &str,
+    file_to_upload: &str,
+    dir: &Path,
+    max_download_size: u64,
+) -> Result<Vec<TempPath>, SparseError> {
+    let mut in_file = File::open(file_to_upload)?;
     let mut ret = Vec::<TempPath>::new();
     log::trace!("Resparsing sparse file");
-    for re_sparsed_file in resparse(sparse_file, max_download_size)? {
+    for re_sparsed_file in build_sparse_writers(name, file_to_upload, max_download_size)? {
         let (file, temp_path) = NamedTempFile::new_in(dir)?.into_parts();
         let mut file_create = File::from(file);
 
@@ -1368,5 +1659,36 @@ mod test {
         buf[2048] = 0x78;
         buf[4095] = 0x00;
         assert_eq!(super::find_fill_value(&buf), None);
+    }
+
+    #[test]
+    fn test_sparse_slice_reader_matches_write() {
+        let mut source_data = Vec::<u8>::new();
+        source_data.resize(4096 * 4, 0);
+        let mut rng = SmallRng::from_os_rng();
+        rng.fill_bytes(&mut source_data);
+
+        let mut chunks = Vec::<Chunk>::new();
+        chunks.push(Chunk::Raw { start: 0, size: 4096 * 2 });
+        chunks.push(Chunk::Fill { start: 4096 * 2, size: 4096, value: 0x1234_5678 });
+        chunks.push(Chunk::DontCare { start: 4096 * 3, size: 4096 });
+        chunks.push(Chunk::Raw { start: 4096 * 3, size: 4096 });
+
+        let writer = SparseFileWriter::new(chunks);
+
+        // 1. Write via SparseFileWriter::write
+        let mut written_bytes = Cursor::new(Vec::<u8>::new());
+        let mut source_cursor = Cursor::new(source_data.clone());
+        writer.write(&mut source_cursor, &mut written_bytes).unwrap();
+        let expected = written_bytes.into_inner();
+
+        // 2. Read via SparseSliceReader
+        let mut slice_source = Cursor::new(source_data.clone());
+        let mut slice_reader = writer.slice_reader(&mut slice_source).unwrap();
+        let mut read_bytes = Vec::<u8>::new();
+        slice_reader.read_to_end(&mut read_bytes).unwrap();
+
+        assert_eq!(expected, read_bytes);
+        assert_eq!(read_bytes.len() as u64, writer.file_size());
     }
 }
