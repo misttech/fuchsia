@@ -27,7 +27,7 @@ use futures::try_join;
 use pbms::is_local_product_bundle;
 use sdk::SdkVersion;
 use sparse::reader::SparseReader;
-use sparse::{build_sparse_writers, resparse_sparse_img_writers};
+use sparse::{build_sparse_writers_streaming, resparse_sparse_img_writers};
 use std::fs::File;
 use std::io::Read;
 use std::num::{NonZeroU64, ParseIntError};
@@ -166,21 +166,43 @@ async fn flash_partition_sparse<F: FastbootInterface>(
 ) -> Result<()> {
     log::debug!("Preparing to flash {} in sparse mode", file_to_upload);
 
-    let sparse_writers = build_sparse_writers(name, file_to_upload, max_download_size)?;
-
-    messenger
-        .send(Event::Upload(UploadProgress::OnReady {
-            partition: name.to_owned(),
-            files: sparse_writers.len().try_into()?,
-        }))
-        .await?;
-
     let mut in_file = File::open(file_to_upload).map_err(|e| FfxFastbootError::FileOpen {
         path: PathBuf::from(file_to_upload),
         source: e,
     })?;
+    let file_size = in_file
+        .metadata()
+        .map_err(|e| FfxFastbootError::FileMetadata {
+            path: PathBuf::from(file_to_upload),
+            source: e,
+        })?
+        .len();
 
-    for writer in sparse_writers {
+    let estimated_files = (file_size / max_download_size) + 1;
+    messenger
+        .send(Event::Upload(UploadProgress::OnReady {
+            partition: name.to_owned(),
+            files: estimated_files,
+        }))
+        .await?;
+
+    let (sender, mut receiver) = mpsc::channel::<sparse::SparseFileWriter>(2);
+    let name_clone = name.to_string();
+    let file_to_upload_clone = file_to_upload.to_string();
+
+    let producer = tokio::task::spawn_blocking(move || {
+        build_sparse_writers_streaming(
+            &name_clone,
+            &file_to_upload_clone,
+            max_download_size,
+            |writer| {
+                sender.blocking_send(writer).map_err(|_| sparse::SparseError::UnalignedChunk)?;
+                Ok(())
+            },
+        )
+    });
+
+    while let Some(writer) = receiver.recv().await {
         let size = u32::try_from(writer.file_size())?;
         let mut slice_reader = writer.slice_reader(&mut in_file)?;
         do_flash_dynamic_sparse(
@@ -193,6 +215,8 @@ async fn flash_partition_sparse<F: FastbootInterface>(
         )
         .await?;
     }
+
+    producer.await.map_err(FfxFastbootError::JoinError)??;
 
     Ok(())
 }

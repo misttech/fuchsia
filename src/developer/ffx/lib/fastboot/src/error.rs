@@ -28,6 +28,9 @@ pub enum FfxFastbootError {
     #[error("Sparse image error: {0}")]
     Sparse(#[from] sparse::SparseError),
 
+    #[error("Async task join error: {0}")]
+    JoinError(#[from] tokio::task::JoinError),
+
     #[error(
         "Hardware mismatch! Trying to flash images built for '{}' but found '{}'",
         match attempted_products.is_empty() {

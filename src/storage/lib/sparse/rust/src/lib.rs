@@ -9,7 +9,7 @@ pub mod builder;
 mod format;
 pub mod reader;
 
-use crate::format::{ChunkHeader, SparseHeader};
+use crate::format::{CHUNK_HEADER_SIZE, ChunkHeader, SparseHeader};
 use crate::reader::SparseReader;
 
 use core::fmt;
@@ -686,7 +686,7 @@ impl fmt::Display for SparseFileWriter {
 /// Example: A `FillChunk` with value 0 and size 1 is the last chunk
 /// in `v`, and `chunk` is a FillChunk with value 0 and size 1, after this,
 /// `v`'s last element will be a FillChunk with value 0 and size 2.
-fn add_sparse_chunk(r: &mut Vec<Chunk>, chunk: Chunk) -> Result<(), SparseError> {
+fn add_sparse_chunk(r: &mut Vec<Chunk>, chunk: Chunk) {
     match r.last_mut() {
         // We've got something in the Vec... if they are both the same type,
         // merge them, otherwise, just push the new one
@@ -695,20 +695,20 @@ fn add_sparse_chunk(r: &mut Vec<Chunk>, chunk: Chunk) -> Result<(), SparseError>
                 if size.checked_add(*new_length).is_some() =>
             {
                 *last = Chunk::Raw { start: *start, size: size + new_length };
-                return Ok(());
+                return;
             }
             (
                 Chunk::Fill { start, size, value },
                 Chunk::Fill { size: new_size, value: new_value, .. },
             ) if value == new_value && size.checked_add(*new_size).is_some() => {
                 *last = Chunk::Fill { start: *start, size: size + new_size, value: *value };
-                return Ok(());
+                return;
             }
             (Chunk::DontCare { start, size }, Chunk::DontCare { size: new_size, .. })
                 if size.checked_add(*new_size).is_some() =>
             {
                 *last = Chunk::DontCare { start: *start, size: size + new_size };
-                return Ok(());
+                return;
             }
             _ => {}
         },
@@ -720,7 +720,6 @@ fn add_sparse_chunk(r: &mut Vec<Chunk>, chunk: Chunk) -> Result<(), SparseError>
     // Crc32 cannot be merged.
     // If we don't have any chunks then we add it
     r.push(chunk);
-    Ok(())
 }
 
 /// Reads a sparse image from `source` and expands it to its unsparsed representation in `dest`.
@@ -874,7 +873,7 @@ pub fn resparse(
                     }
 
                     let sub_chunk = Chunk::Raw { start: *start + offset_in_raw, size: to_take };
-                    add_sparse_chunk(&mut chunks, sub_chunk)?;
+                    add_sparse_chunk(&mut chunks, sub_chunk);
                     file_len += chunk_header_len + to_take;
                     output_offset += to_take;
                     offset_in_raw += to_take;
@@ -905,7 +904,7 @@ pub fn resparse(
                         break;
                     }
 
-                    add_sparse_chunk(&mut chunks, other.clone())?;
+                    add_sparse_chunk(&mut chunks, other.clone());
                     file_len += curr_chunk_data_len;
                     output_offset += other.output_size() as u64;
                     chunk_pos += 1;
@@ -993,13 +992,111 @@ pub(crate) fn find_fill_value(buf: &[u8]) -> Option<u32> {
     Some(first)
 }
 
+/// Takes the given `file_to_upload` for the `named` partition and generates `SparseFileWriter`
+/// slices on the fly, emitting each slice as soon as it reaches `max_download_size`.
+///
+/// # Arguments
+///
+/// * `name` - Name of the partition for the image. Used for logs only.
+/// * `file_to_upload` - Path to the file to translate to sparse image format.
+/// * `max_download_size` - Maximum size that can be downloaded by the device for each slice.
+/// * `on_slice` - Callback invoked with each `SparseFileWriter` slice as it is completed.
+///
+/// # Errors
+///
+/// Returns [`SparseError::MaxDownloadSizeTooSmall`] if `max_download_size` is less than or
+/// equal to the block size ([`BLK_SIZE`]), or an I/O error if `file_to_upload` fails to open
+/// or read.
+pub fn build_sparse_writers_streaming<F>(
+    name: &str,
+    file_to_upload: &str,
+    max_download_size: u64,
+    mut on_slice: F,
+) -> Result<(), SparseError>
+where
+    F: FnMut(SparseFileWriter) -> Result<(), SparseError>,
+{
+    if max_download_size <= BLK_SIZE.into() {
+        return Err(SparseError::MaxDownloadSizeTooSmall(max_download_size, BLK_SIZE));
+    }
+    if BLK_SIZE as usize % std::mem::size_of::<u32>() != 0 {
+        return Err(SparseError::UnalignedDataSource(UnalignedSource::Buffer(BLK_SIZE as usize)));
+    }
+    log::debug!("Building sparse writers (streaming) for: {}. File: {}", name, file_to_upload);
+    let mut in_file = File::open(file_to_upload)?;
+    let total_image_bytes = in_file.metadata()?.len().next_multiple_of(BLK_SIZE.into());
+
+    let sunk_file_length = u64::from(
+        format::SPARSE_HEADER_SIZE
+            + CHUNK_HEADER_SIZE
+            + Chunk::Crc32 { checksum: 2345 }.chunk_data_len(),
+    );
+
+    let mut current_slice_chunks = Vec::<Chunk>::new();
+    let mut current_slice_file_len = sunk_file_length;
+    let mut output_offset = 0u64;
+    let mut total_read = 0usize;
+
+    let mut buf = [0u8; BLK_SIZE as usize];
+    loop {
+        let read = in_file.read(&mut buf)?;
+        if read == 0 {
+            break;
+        }
+        // Zero-fill remainder
+        buf[read..].fill(0);
+
+        let start = total_read as u64;
+        let size = buf.len().try_into().unwrap();
+        let candidate_chunk = if let Some(value) = find_fill_value(&buf) {
+            Chunk::Fill { start, size, value }
+        } else {
+            Chunk::Raw { start, size }
+        };
+
+        let candidate_data_len = u64::from(candidate_chunk.chunk_data_len());
+
+        if current_slice_file_len + candidate_data_len > max_download_size {
+            let remainder_size = total_image_bytes.saturating_sub(output_offset);
+            if remainder_size > 0 {
+                let dont_care = Chunk::DontCare { start: output_offset, size: remainder_size };
+                current_slice_chunks.push(dont_care);
+            }
+
+            let slice_writer = SparseFileWriter::new(current_slice_chunks);
+            log::trace!("Emitting completed sparse slice: {}", slice_writer);
+            on_slice(slice_writer)?;
+
+            current_slice_chunks = if output_offset > 0 {
+                vec![Chunk::DontCare { start: 0, size: output_offset }]
+            } else {
+                Vec::new()
+            };
+            current_slice_file_len = sunk_file_length + u64::from(CHUNK_HEADER_SIZE);
+        }
+
+        add_sparse_chunk(&mut current_slice_chunks, candidate_chunk);
+        current_slice_file_len += candidate_data_len;
+        output_offset += buf.len() as u64;
+        total_read += read;
+    }
+
+    if !current_slice_chunks.is_empty() {
+        let slice_writer = SparseFileWriter::new(current_slice_chunks);
+        log::trace!("Emitting final sparse slice: {}", slice_writer);
+        on_slice(slice_writer)?;
+    }
+
+    Ok(())
+}
+
 /// Takes the given `file_to_upload` for the `named` partition and creates a
 /// set of `SparseFileWriter` slices in memory with the provided `max_download_size`
 /// constraining slice size.
 ///
 /// # Arguments
 ///
-/// * `name` - Name of the partition the image. Used for logs only.
+/// * `name` - Name of the partition for the image. Used for logs only.
 /// * `file_to_upload` - Path to the file to translate to sparse image format.
 /// * `max_download_size` - Maximum size that can be downloaded by the device for each slice.
 ///
@@ -1013,51 +1110,12 @@ pub fn build_sparse_writers(
     file_to_upload: &str,
     max_download_size: u64,
 ) -> Result<Vec<SparseFileWriter>, SparseError> {
-    if max_download_size <= BLK_SIZE as u64 {
-        return Err(SparseError::MaxDownloadSizeTooSmall(max_download_size, BLK_SIZE));
-    }
-    log::debug!("Building sparse writers for: {}. File: {}", name, file_to_upload);
-    let mut in_file = File::open(file_to_upload)?;
-
-    let mut total_read: usize = 0;
-    let mut chunks = Vec::<Chunk>::new();
-
-    let mut buf = [0u8; BLK_SIZE as usize];
-    loop {
-        let read = in_file.read(&mut buf)?;
-        if read == 0 {
-            break;
-        }
-        if read < buf.len() {
-            buf[read..].fill(0);
-        }
-
-        if let Some(value) = find_fill_value(&buf) {
-            let fill = Chunk::Fill {
-                start: total_read as u64,
-                size: buf.len().try_into().unwrap(),
-                value,
-            };
-            log::trace!("Sparsing file: {}. Created: {}", file_to_upload, fill);
-            add_sparse_chunk(&mut chunks, fill)?;
-        } else {
-            let raw = Chunk::Raw { start: total_read as u64, size: buf.len().try_into().unwrap() };
-            log::trace!("Sparsing file: {}. Created: {}", file_to_upload, raw);
-            add_sparse_chunk(&mut chunks, raw)?;
-            if read < buf.len() {
-                let skip_end =
-                    Chunk::DontCare { start: (total_read + read) as u64, size: BLK_SIZE.into() };
-                add_sparse_chunk(&mut chunks, skip_end)?;
-            }
-        }
-        total_read += read;
-    }
-
-    log::trace!("Creating sparse file from: {} chunks", chunks.len());
-
-    let sparse_file = SparseFileWriter::new(chunks);
-    log::trace!("Created sparse file: {}", sparse_file);
-    resparse(sparse_file, max_download_size)
+    let mut writers = Vec::new();
+    build_sparse_writers_streaming(name, file_to_upload, max_download_size, |writer| {
+        writers.push(writer);
+        Ok(())
+    })?;
+    Ok(writers)
 }
 
 /// Takes the given `file_to_upload` for the `named` partition and creates a
@@ -1249,7 +1307,7 @@ mod test {
     fn test_add_sparse_chunk_adds_empty() {
         let init_vec = Vec::<Chunk>::new();
         let mut res = init_vec.clone();
-        add_sparse_chunk(&mut res, Chunk::Fill { start: 0, size: 4096, value: 1 }).unwrap();
+        add_sparse_chunk(&mut res, Chunk::Fill { start: 0, size: 4096, value: 1 });
         assert_eq!(0, init_vec.len());
         assert_ne!(init_vec, res);
         assert_eq!(Chunk::Fill { start: 0, size: 4096, value: 1 }, res[0]);
@@ -1262,7 +1320,7 @@ mod test {
             let mut init_vec = Vec::<Chunk>::new();
             init_vec.push(Chunk::Fill { start: 0, size: 8192, value: 1 });
             let mut res = init_vec.clone();
-            add_sparse_chunk(&mut res, Chunk::Fill { start: 0, size: 8192, value: 1 }).unwrap();
+            add_sparse_chunk(&mut res, Chunk::Fill { start: 0, size: 8192, value: 1 });
             assert_eq!(1, res.len());
             assert_eq!(Chunk::Fill { start: 0, size: 16384, value: 1 }, res[0]);
         }
@@ -1272,7 +1330,7 @@ mod test {
             let mut init_vec = Vec::<Chunk>::new();
             init_vec.push(Chunk::Fill { start: 0, size: 4096, value: 1 });
             let mut res = init_vec.clone();
-            add_sparse_chunk(&mut res, Chunk::Fill { start: 0, size: 4096, value: 2 }).unwrap();
+            add_sparse_chunk(&mut res, Chunk::Fill { start: 0, size: 4096, value: 2 });
             assert_ne!(res, init_vec);
             assert_eq!(2, res.len());
             assert_eq!(
@@ -1289,7 +1347,7 @@ mod test {
             let mut init_vec = Vec::<Chunk>::new();
             init_vec.push(Chunk::Fill { start: 0, size: 4096, value: 2 });
             let mut res = init_vec.clone();
-            add_sparse_chunk(&mut res, Chunk::DontCare { start: 0, size: 4096 }).unwrap();
+            add_sparse_chunk(&mut res, Chunk::DontCare { start: 0, size: 4096 });
             assert_ne!(res, init_vec);
             assert_eq!(2, res.len());
             assert_eq!(
@@ -1306,8 +1364,7 @@ mod test {
             let mut init_vec = Vec::<Chunk>::new();
             init_vec.push(Chunk::Fill { start: 0, size: 4096, value: 1 });
             let mut res = init_vec.clone();
-            add_sparse_chunk(&mut res, Chunk::Fill { start: 0, size: u64::MAX - 4095, value: 1 })
-                .unwrap();
+            add_sparse_chunk(&mut res, Chunk::Fill { start: 0, size: u64::MAX - 4095, value: 1 });
             assert_ne!(res, init_vec);
             assert_eq!(2, res.len());
             assert_eq!(
@@ -1327,7 +1384,7 @@ mod test {
             let mut init_vec = Vec::<Chunk>::new();
             init_vec.push(Chunk::DontCare { start: 0, size: 4096 });
             let mut res = init_vec.clone();
-            add_sparse_chunk(&mut res, Chunk::DontCare { start: 0, size: 4096 }).unwrap();
+            add_sparse_chunk(&mut res, Chunk::DontCare { start: 0, size: 4096 });
             assert_eq!(1, res.len());
             assert_eq!(Chunk::DontCare { start: 0, size: 8192 }, res[0]);
         }
@@ -1337,7 +1394,7 @@ mod test {
             let mut init_vec = Vec::<Chunk>::new();
             init_vec.push(Chunk::DontCare { start: 0, size: 4096 });
             let mut res = init_vec.clone();
-            add_sparse_chunk(&mut res, Chunk::Fill { start: 0, size: 4096, value: 1 }).unwrap();
+            add_sparse_chunk(&mut res, Chunk::Fill { start: 0, size: 4096, value: 1 });
             assert_eq!(2, res.len());
             assert_eq!(
                 res,
@@ -1353,8 +1410,7 @@ mod test {
             let mut init_vec = Vec::<Chunk>::new();
             init_vec.push(Chunk::DontCare { start: 0, size: 4096 });
             let mut res = init_vec.clone();
-            add_sparse_chunk(&mut res, Chunk::DontCare { start: 0, size: u64::MAX - 4095 })
-                .unwrap();
+            add_sparse_chunk(&mut res, Chunk::DontCare { start: 0, size: u64::MAX - 4095 });
             assert_eq!(2, res.len());
             assert_eq!(
                 res,
@@ -1373,7 +1429,7 @@ mod test {
             let mut init_vec = Vec::<Chunk>::new();
             init_vec.push(Chunk::Raw { start: 0, size: 12288 });
             let mut res = init_vec.clone();
-            add_sparse_chunk(&mut res, Chunk::Raw { start: 0, size: 16384 }).unwrap();
+            add_sparse_chunk(&mut res, Chunk::Raw { start: 0, size: 16384 });
             assert_eq!(1, res.len());
             assert_eq!(Chunk::Raw { start: 0, size: 28672 }, res[0]);
         }
@@ -1383,7 +1439,7 @@ mod test {
             let mut init_vec = Vec::<Chunk>::new();
             init_vec.push(Chunk::Raw { start: 0, size: 12288 });
             let mut res = init_vec.clone();
-            add_sparse_chunk(&mut res, Chunk::Fill { start: 3, size: 8192, value: 1 }).unwrap();
+            add_sparse_chunk(&mut res, Chunk::Fill { start: 3, size: 8192, value: 1 });
             assert_eq!(2, res.len());
             assert_eq!(
                 res,
@@ -1399,7 +1455,7 @@ mod test {
             let mut init_vec = Vec::<Chunk>::new();
             init_vec.push(Chunk::Raw { start: 0, size: 4096 });
             let mut res = init_vec.clone();
-            add_sparse_chunk(&mut res, Chunk::Raw { start: 0, size: u64::MAX - 4095 }).unwrap();
+            add_sparse_chunk(&mut res, Chunk::Raw { start: 0, size: u64::MAX - 4095 });
             assert_eq!(2, res.len());
             assert_eq!(
                 res,
@@ -1418,7 +1474,7 @@ mod test {
             let mut init_vec = Vec::<Chunk>::new();
             init_vec.push(Chunk::Crc32 { checksum: 1234 });
             let mut res = init_vec.clone();
-            add_sparse_chunk(&mut res, Chunk::Crc32 { checksum: 2345 }).unwrap();
+            add_sparse_chunk(&mut res, Chunk::Crc32 { checksum: 2345 });
             assert_eq!(2, res.len());
             assert_eq!(res, [Chunk::Crc32 { checksum: 1234 }, Chunk::Crc32 { checksum: 2345 }]);
         }
@@ -1428,7 +1484,7 @@ mod test {
             let mut init_vec = Vec::<Chunk>::new();
             init_vec.push(Chunk::Crc32 { checksum: 1234 });
             let mut res = init_vec.clone();
-            add_sparse_chunk(&mut res, Chunk::Fill { start: 0, size: 4096, value: 1 }).unwrap();
+            add_sparse_chunk(&mut res, Chunk::Fill { start: 0, size: 4096, value: 1 });
             assert_eq!(2, res.len());
             assert_eq!(
                 res,
