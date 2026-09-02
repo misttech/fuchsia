@@ -319,6 +319,7 @@ class BazelRepositoryMap(object):
         self,
         fuchsia_source_dir: Path,
         rules_fuchsia_dir: Path,
+        bazel_vendor_dir: Path,
         explicit_fuchsia_sdk: T.Optional[Path],
         explicit_fuchsia_in_tree_idk: T.Optional[Path],
         workspace_dir: Path,
@@ -342,8 +343,6 @@ class BazelRepositoryMap(object):
 
         self._overrides[_CANONICAL_RULES_FUCHSIA_REPO_NAME] = rules_fuchsia_dir
 
-        _bazel_vendor_dir = fuchsia_source_dir / _DEFAULT_BAZEL_VENDOR_DIR
-
         # These repository overrides are used when converting Bazel labels to actual paths.
         # NOTE: Mapping labels to repository inputs is considerably simpler than
         # //build/bazel/scripts/bazel_gn_target_action.py because there are way less edge
@@ -352,14 +351,14 @@ class BazelRepositoryMap(object):
         # by the GN build_fuchsia_sdk_repository target which is an input
         # dependency for running this script.
         self._internal_overrides = self._overrides | {
-            "rules_cc": _bazel_vendor_dir / "rules_cc+",
-            "rules_license": _bazel_vendor_dir / "rules_license+",
-            "bazel_tools+remote_coverage_tools_extension+remote_coverage_tools": _bazel_vendor_dir
+            "rules_cc": bazel_vendor_dir / "rules_cc+",
+            "rules_license": bazel_vendor_dir / "rules_license+",
+            "bazel_tools+remote_coverage_tools_extension+remote_coverage_tools": bazel_vendor_dir
             / "bazel_tools+remote_coverage_tools_extension+remote_coverage_tools",
-            "bazel_skylib": _bazel_vendor_dir / "bazel_skylib+",
-            "bazel_features+": _bazel_vendor_dir / "bazel_features+",
-            "rules_python": _bazel_vendor_dir / "rules_python+",
-            "platforms": _bazel_vendor_dir / "platforms",
+            "bazel_skylib": bazel_vendor_dir / "bazel_skylib+",
+            "bazel_features+": bazel_vendor_dir / "bazel_features+",
+            "rules_python": bazel_vendor_dir / "rules_python+",
+            "platforms": bazel_vendor_dir / "platforms",
             "com_google_googletest": fuchsia_source_dir
             / "third_party/googletest/src",
             "com_google_protobuf": fuchsia_source_dir / "third_party/protobuf",
@@ -559,6 +558,16 @@ def main() -> int:
         "--command",
         default="test",
         help="Override bazel command, default is 'test'. Use -- to pass extra arguments.",
+    )
+    parser.add_argument(
+        "--bazel-vendor-dir",
+        type=Path,
+        help=f"Specify Bazel vendor directory to use or write to. Defaults to $FUCHSIA/{_DEFAULT_BAZEL_VENDOR_DIR}.",
+    )
+    parser.add_argument(
+        "--bazel-registry-dir",
+        type=Path,
+        help=f"Specify Bazel registry directory to use. Ignored in vendor mode. Defaults to $FUCHSIA/{_DEFAULT_BAZEL_REGISTRY_DIR}.",
     )
     parser.add_argument(
         "--test_target",
@@ -775,8 +784,14 @@ def main() -> int:
     downloader_config_file = (
         fuchsia_source_dir / "build/bazel/config/no_downloads_allowed.config"
     )
-    bazel_vendor_dir = fuchsia_source_dir / "third_party/bazel_vendor"
-    bazel_registry = fuchsia_source_dir / _DEFAULT_BAZEL_REGISTRY_DIR
+    bazel_vendor_dir = (
+        args.bazel_vendor_dir or fuchsia_source_dir / _DEFAULT_BAZEL_VENDOR_DIR
+    ).resolve()
+
+    bazel_registry_dir = (
+        args.bazel_registry_dir
+        or fuchsia_source_dir / _DEFAULT_BAZEL_REGISTRY_DIR
+    ).resolve()
 
     # If there's a //vendor dir in the fuchsia source dir, we need to symlink to it
     # from the tests directory, so that any hlcpp visibility rules referencing
@@ -917,26 +932,29 @@ def main() -> int:
     bazel_repo_map = BazelRepositoryMap(
         fuchsia_source_dir=fuchsia_source_dir,
         rules_fuchsia_dir=rules_fuchsia_dir,
+        bazel_vendor_dir=bazel_vendor_dir,
         explicit_fuchsia_sdk=explicit_fuchsia_sdk,
         explicit_fuchsia_in_tree_idk=explicit_fuchsia_in_tree_idk,
         workspace_dir=workspace_dir,
         output_base=output_base,
     )
 
+    is_vendor_mode = args.command == "vendor"
+
+    if is_vendor_mode:
+        downloader_config_arg = "--downloader_config=/dev/null"
+        registry_url = args.registry or "https://bcr.bazel.build/"
+    else:
+        downloader_config_arg = f"--downloader_config={downloader_config_file}"
+        registry_url = f"file://{bazel_registry_dir}"
+
     bazel_common_args += [
-        # Prevent all downloads through a downloader configuration file.
-        # Note that --experimental_repository_disable_download does not
-        # seem to work at all.
-        #
-        # Fun fact: the path must be relative to the workspace, or an absolute
-        # path, and if the file does not exist, the Bazel server will crash
-        # *silently* with a Java exception, leaving no traces on the client
-        # terminal :-(
-        f"--downloader_config={downloader_config_file}",
+        # Prevent all downloads through a downloader configuration file unless vendoring.
+        downloader_config_arg,
         "--enable_bzlmod=true",
         "--incompatible_use_plus_in_repo_names",
         f"--vendor_dir={bazel_vendor_dir}",
-        f"--registry=file://{bazel_registry}",
+        f"--registry={registry_url}",
     ]
 
     # Override repositories since all downloads are forbidden.
@@ -1133,6 +1151,14 @@ def main() -> int:
     elif args.command == "query":
         command_args = (
             bazel_startup_args + ["query"] + bazel_common_args + extra_args
+        )
+    elif args.command == "vendor":
+        command_args = (
+            bazel_startup_args
+            + ["vendor"]
+            + bazel_common_args
+            + bazel_config_args
+            + extra_args
         )
     else:
         command_args = (

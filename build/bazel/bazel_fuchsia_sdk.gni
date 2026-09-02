@@ -134,6 +134,14 @@ template("generate_fuchsia_bazel_sdk") {
 #       the directory created by that target. Default is its
 #       $target_out_dir/$target_name otherwise.
 #
+#    bazel_vendor_dir: (optional)
+#       Path to the Bazel vendor directory to use. Defaults to
+#       //third_party/bazel_vendor
+#
+#    bazel_registry_dir: (optional)
+#       Path to the Bazel registry directory to use. Defaults to
+#       //third_party/bazel_vendor/_registries/bcr.bazel.build
+#
 #    output_base: (optional)
 #       GN path to a Bazel output_base directory to use to run the
 #       test suite. Its content will be shared by all CPU architectures.
@@ -207,6 +215,22 @@ template("run_fuchsia_bazel_sdk_tests") {
 
   _main_target_name = target_name
 
+  if (defined(invoker.bazel_vendor_dir)) {
+    _bazel_vendor_dir = invoker.bazel_vendor_dir
+  } else {
+    # LINT.IfChange(bazel_vendor_dir)
+    _bazel_vendor_dir = "//third_party/bazel_vendor"
+    # LINT.ThenChange(//build/bazel/enable_vendor_mode.bazelrc:bazel_vendor_dir)
+  }
+  if (defined(invoker.bazel_registry_dir)) {
+    _bazel_registry_dir = invoker.bazel_registry_dir
+  } else {
+    # LINT.IfChange(bazel_registry_dir)
+    _bazel_registry_dir =
+        "//third_party/bazel_vendor/_registries/bcr.bazel.build"
+    # LINT.ThenChange(//build/bazel/enable_vendor_mode.bazelrc:bazel_registry_dir)
+  }
+
   _all_targets = []
   foreach(_target_cpu, _target_cpus) {
     _cpu_target_name = "${target_name}_${_target_cpu}"
@@ -237,6 +261,9 @@ template("run_fuchsia_bazel_sdk_tests") {
         "--bazel=" + rebase_path(inputs[0], root_build_dir),
         "--stamp-file=" + rebase_path(outputs[0], root_build_dir),
         "--depfile=" + rebase_path(depfile, root_build_dir),
+        "--bazel-vendor-dir=" + rebase_path(_bazel_vendor_dir, root_build_dir),
+        "--bazel-registry-dir=" +
+            rebase_path(_bazel_registry_dir, root_build_dir),
         "--quiet",
       ]
 
