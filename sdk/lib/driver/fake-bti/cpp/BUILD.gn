@@ -38,6 +38,7 @@ test("fake_bti_test") {
 
   deps = [
     ":cpp",
+    "//zircon/system/ulib/fbl",
     "//zircon/system/ulib/zxtest",
   ]
 }
