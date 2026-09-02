@@ -23,13 +23,14 @@ class FakeBus : public BusDeviceInterface {
 
   zx_status_t LinkDevice(fbl::RefPtr<pci::Device> device) final {
     fbl::AutoLock devices_lock(&devices_lock_);
-    devices_.insert(device);
-    return ZX_OK;
+    return devices_.try_emplace(device->config()->bdf(), std::move(device)).second
+               ? ZX_OK
+               : ZX_ERR_ALREADY_EXISTS;
   }
 
   zx_status_t UnlinkDevice(pci::Device* device) final {
-    devices_.erase(*device);
-    return ZX_OK;
+    fbl::AutoLock devices_lock(&devices_lock_);
+    return devices_.erase(device->config()->bdf()) > 0 ? ZX_OK : ZX_ERR_NOT_FOUND;
   }
 
   zx_status_t AllocateMsi(uint32_t count, zx::msi* msi, msi_allocation_info_t* out_info) final {
@@ -64,7 +65,7 @@ class FakeBus : public BusDeviceInterface {
   zx_status_t AddToSharedIrqList(pci::Device* device, uint32_t vector) final { return ZX_OK; }
   zx_status_t RemoveFromSharedIrqList(pci::Device* device, uint32_t vector) final { return ZX_OK; }
 
-  pci::Device& get_device(pci_bdf_t bdf) { return *devices_.find(bdf); }
+  pci::Device& get_device(pci_bdf_t bdf) { return *devices_.at(bdf); }
 
   // For use with Devices that need to link to a Bus.
   BusDeviceInterface* bdi() { return static_cast<BusDeviceInterface*>(this); }

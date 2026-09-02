@@ -18,13 +18,10 @@
 #include <zircon/errors.h>
 
 #include <limits>
+#include <tuple>
 
 #include <ddktl/device.h>
 #include <ddktl/unbind-txn.h>
-#include <fbl/algorithm.h>
-#include <fbl/intrusive_container_utils.h>
-#include <fbl/intrusive_double_list.h>
-#include <fbl/intrusive_wavl_tree.h>
 #include <fbl/macros.h>
 #include <fbl/mutex.h>
 #include <fbl/ref_ptr.h>
@@ -47,9 +44,6 @@ namespace pci {
 class UpstreamNode;
 class BusDeviceInterface;
 
-struct DownstreamListTag {};
-struct SharedIrqListTag {};
-
 // A pci::Device represents a given PCI(e) device on a bus. It can be used
 // standalone for a regular PCI(e) device on the bus, or as the base class for a
 // Bridge. Most work a pci::Device does is limited to its own registers in
@@ -59,12 +53,7 @@ struct SharedIrqListTag {};
 // device this corresponds to.
 class Device;
 using DeviceType = ddk::Device<pci::Device, ddk::Unbindable>;
-class Device : public DeviceType,
-               public fidl::WireServer<fuchsia_hardware_pci::Device>,
-               public fbl::WAVLTreeContainable<fbl::RefPtr<pci::Device>>,
-               public fbl::ContainableBaseClasses<
-                   fbl::TaggedDoublyLinkedListable<Device*, DownstreamListTag>,
-                   fbl::TaggedDoublyLinkedListable<Device*, SharedIrqListTag>> {
+class Device : public DeviceType, public fidl::WireServer<fuchsia_hardware_pci::Device> {
  public:
   // This structure contains all bookkeeping and state for a device's
   // configured IRQ mode. It is initialized to fpci::InterruptMode::kDisabled.
@@ -91,21 +80,12 @@ class Device : public DeviceType,
     PciExpressCapability* pcie;
   };
 
-  // These traits are used for the WAVL tree implementation. They allow device objects
-  // to be sorted and found in trees by composite bdf address in the Bus.
-  struct KeyTraitsSortByBdf {
-    static const pci_bdf_t& GetKey(pci::Device& dev) { return dev.cfg_->bdf(); }
-
-    static bool LessThan(const pci_bdf_t& bdf1, const pci_bdf_t& bdf2) {
-      return (bdf1.bus_id < bdf2.bus_id) ||
-             ((bdf1.bus_id == bdf2.bus_id) && (bdf1.device_id < bdf2.device_id)) ||
-             ((bdf1.bus_id == bdf2.bus_id) && (bdf1.device_id == bdf2.device_id) &&
-              (bdf1.function_id < bdf2.function_id));
-    }
-
-    static bool EqualTo(const pci_bdf_t& bdf1, const pci_bdf_t& bdf2) {
-      return (bdf1.bus_id == bdf2.bus_id) && (bdf1.device_id == bdf2.device_id) &&
-             (bdf1.function_id == bdf2.function_id);
+  // Comparator for sorting and looking up devices by BDF address in associative containers.
+  struct BdfCompare {
+    using is_transparent = void;
+    constexpr bool operator()(const pci_bdf_t& a, const pci_bdf_t& b) const {
+      return std::tie(a.bus_id, a.device_id, a.function_id) <
+             std::tie(b.bus_id, b.device_id, b.function_id);
     }
   };
 

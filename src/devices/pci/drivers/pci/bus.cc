@@ -354,8 +354,8 @@ zx_status_t Bus::ConfigureLegacyIrqs() {
   // routing table provided by the platform. While we hold the devices_lock no
   // changes can be made to the Bus topology, ensuring the lifetimes of the
   // upstream paths and config accesses.
-  for (auto& device : devices_) {
-    uint8_t pin = device.config()->Read(Config::kInterruptPin);
+  for (const auto& [bdf, device] : devices_) {
+    uint8_t pin = device->config()->Read(Config::kInterruptPin);
     // If a device has no pin configured in the InterruptPin register then it
     // has no legacy interrupt. PCI Local Bus Spec v3 Section 2.2.6.
     if (pin == 0 && board_config_.use_intx_workaround().has_value()) {
@@ -373,10 +373,10 @@ zx_status_t Bus::ConfigureLegacyIrqs() {
     //
     // Pci Bridge to Bridge spec r1.2 Table 9-1
     // PCI Express Base Specification r4.0 Table 2-19
-    UpstreamNode* upstream = device.upstream();
+    UpstreamNode* upstream = device->upstream();
     std::optional<pci_bdf_t> port;
     while (upstream && upstream->type() == UpstreamNode::Type::BRIDGE) {
-      pin = (pin + device.dev_id()) % kMaxLegacyIrqPins;
+      pin = (pin + device->dev_id()) % kMaxLegacyIrqPins;
       auto bridge = static_cast<pci::Bridge*>(upstream);
       port = bridge->config()->bdf();
       upstream = bridge->upstream();
@@ -394,16 +394,16 @@ zx_status_t Bus::ConfigureLegacyIrqs() {
     // the newly swizzled pin value to find the hardware vector.
     auto find_fn = [&device, port](auto& entry) -> bool {
       return entry.port_device_id == port->device_id &&
-             entry.port_function_id == port->function_id && entry.device_id == device.dev_id();
+             entry.port_function_id == port->function_id && entry.device_id == device->dev_id();
     };
 
     auto found = std::find_if(irq_routing_entries_.begin(), irq_routing_entries_.end(), find_fn);
     if (found != std::end(irq_routing_entries_)) {
       uint8_t vector = found->pins[pin - 1];
-      device.config()->Write(Config::kInterruptLine, vector);
-      zxlogf(DEBUG, "[%s] pin %u mapped to %#x", device.config()->addr(), pin, vector);
+      device->config()->Write(Config::kInterruptLine, vector);
+      zxlogf(DEBUG, "[%s] pin %u mapped to %#x", device->config()->addr(), pin, vector);
     } else {
-      zxlogf(DEBUG, "[%s] no legacy routing entry found for device", device.config()->addr());
+      zxlogf(DEBUG, "[%s] no legacy routing entry found for device", device->config()->addr());
     }
   }
 
@@ -460,17 +460,19 @@ void Bus::LegacyIrqWorker(const zx::port& port, fbl::Mutex* lock, SharedIrqMap* 
       fbl::AutoLock devices_lock(lock);
       auto& vector = packet.key;
       auto result = shared_irq_map->find(vector);
+      if (result == shared_irq_map->end()) {
+        continue;
+      }
       auto& [interrupt, list] = *result->second;
-      ZX_DEBUG_ASSERT(result != shared_irq_map->end());
-      for (auto& device : list) {
-        fbl::AutoLock device_lock(device.dev_lock());
-        config::Status status = {.value = device.config()->Read(Config::kStatus)};
+      for (auto* device : list) {
+        fbl::AutoLock device_lock(device->dev_lock());
+        config::Status status = {.value = device->config()->Read(Config::kStatus)};
         if (status.interrupt_status() || board_config->use_intx_workaround()) {
           // Trigger the virtual interrupt the device driver is using by proxy.
-          zx_status_t signal_status = device.SignalLegacyIrq(packet.interrupt.timestamp);
+          zx_status_t signal_status = device->SignalLegacyIrq(packet.interrupt.timestamp);
           if (signal_status != ZX_OK) {
             zxlogf(ERROR, "failed to signal vector %#lx for device %s: %s", vector,
-                   device.config()->addr(), zx_status_get_string(signal_status));
+                   device->config()->addr(), zx_status_get_string(signal_status));
           }
 
           // Legacy (INTx) interrupts are level-triggered: the device holds its
@@ -481,7 +483,7 @@ void Bus::LegacyIrqWorker(const zx::port& port, fbl::Mutex* lock, SharedIrqMap* 
           // once it has serviced the device. Without this the line stays
           // asserted, the kernel immediately re-delivers, and the worker spins
           // in an interrupt storm until the driver wins the race to clear it.
-          device.DisableLegacyIrq();
+          device->DisableLegacyIrq();
         }
       }
 

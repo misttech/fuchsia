@@ -8,7 +8,8 @@
 #include <sys/types.h>
 #include <zircon/types.h>
 
-#include <fbl/intrusive_double_list.h>
+#include <vector>
+
 #include <fbl/macros.h>
 
 #include "src/devices/pci/drivers/pci/allocation.h"
@@ -28,7 +29,7 @@ class FakeBusDriver;
 class PciAllocator;
 class UpstreamNode {
  public:
-  using DownstreamList = fbl::TaggedDoublyLinkedList<Device*, DownstreamListTag>;
+  using DownstreamList = std::vector<pci::Device*>;
   enum class Type { ROOT, BRIDGE };
   // UpstreamNode must have refcounting implemented by its derived classes Root or Bridge
   PCI_REQUIRE_REFCOUNTED;
@@ -47,7 +48,7 @@ class UpstreamNode {
   virtual PciAllocator& pio_regions() = 0;
 
   void LinkDevice(pci::Device* device) { downstream_.push_back(device); }
-  void UnlinkDevice(pci::Device* device) { downstream_.erase(*device); }
+  void UnlinkDevice(pci::Device* device) { std::erase(downstream_, device); }
   virtual zx_status_t SetBusMasteringUpstream(bool enabled) = 0;
 
  protected:

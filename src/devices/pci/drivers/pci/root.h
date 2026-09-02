@@ -7,7 +7,6 @@
 
 #include <zircon/compiler.h>
 
-#include <fbl/intrusive_wavl_tree.h>
 #include <fbl/macros.h>
 #include <fbl/ref_ptr.h>
 

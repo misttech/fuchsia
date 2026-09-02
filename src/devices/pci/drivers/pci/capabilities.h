@@ -5,8 +5,8 @@
 #define SRC_DEVICES_PCI_DRIVERS_PCI_CAPABILITIES_H_
 
 #include <memory>
+#include <vector>
 
-#include <fbl/intrusive_double_list.h>
 #include <hwreg/bitfields.h>
 
 #include "src/devices/pci/drivers/pci/config.h"
@@ -16,7 +16,7 @@ namespace pci {
 // General PCI/PCIe capability classes. Final calculated address
 // for config corresponds to cfg's base plus cap's base along with
 // the specific register's offset.
-class Capability : public fbl::DoublyLinkedListable<std::unique_ptr<Capability>> {
+class Capability {
  public:
   using BaseClass = Capability;
   using RegType = uint8_t;
@@ -52,20 +52,20 @@ class Capability : public fbl::DoublyLinkedListable<std::unique_ptr<Capability>>
   virtual ~Capability() = default;
   [[nodiscard]] uint8_t id() const { return id_; }
   [[nodiscard]] uint8_t base() const { return base_; }
-  const char* addr() { return addr_; }
+  const char* addr() const { return addr_; }
 
  private:
   uint8_t id_;
   uint8_t base_;
   const char* addr_;
 };
-using CapabilityList = fbl::DoublyLinkedList<std::unique_ptr<Capability>>;
+using CapabilityList = std::vector<std::unique_ptr<Capability>>;
 static_assert(static_cast<uint8_t>(Capability::Id::kFlatteningPortalBridge) == 0x15);
 
 // General PCIe Extended capability classes. Final calculated address
 // for capability register corresponds to cfg's base plus cap's base along with
 // the specific register's offset.
-class ExtCapability : public fbl::DoublyLinkedListable<std::unique_ptr<ExtCapability>> {
+class ExtCapability {
  public:
   using BaseClass = ExtCapability;
   using RegType = uint16_t;
@@ -121,6 +121,7 @@ class ExtCapability : public fbl::DoublyLinkedListable<std::unique_ptr<ExtCapabi
 
   ExtCapability(uint16_t id, uint8_t version, uint16_t base)
       : id_(id), base_(base), version_(version) {}
+  virtual ~ExtCapability() = default;
   [[nodiscard]] uint16_t id() const { return id_; }
   [[nodiscard]] uint16_t base() const { return base_; }
   [[nodiscard]] uint8_t version() const { return version_; }
@@ -130,7 +131,7 @@ class ExtCapability : public fbl::DoublyLinkedListable<std::unique_ptr<ExtCapabi
   uint16_t base_;
   uint8_t version_;
 };
-using ExtCapabilityList = fbl::DoublyLinkedList<std::unique_ptr<ExtCapability>>;
+using ExtCapabilityList = std::vector<std::unique_ptr<ExtCapability>>;
 static_assert(static_cast<uint16_t>(ExtCapability::Id::kSystemFirmwareIntermediary) == 0x2c);
 
 }  // namespace pci

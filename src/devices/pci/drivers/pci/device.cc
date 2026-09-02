@@ -858,9 +858,9 @@ void Device::GetCapabilities(GetCapabilitiesRequestView request,
   std::vector<uint8_t> capabilities;
   {
     fbl::AutoLock dev_lock(&dev_lock_);
-    for (auto& capability : caps_.list) {
-      if (capability.id() == static_cast<uint8_t>(request->id)) {
-        capabilities.push_back(capability.base());
+    for (const auto& capability : caps_.list) {
+      if (capability->id() == static_cast<uint8_t>(request->id)) {
+        capabilities.push_back(capability->base());
       }
     }
   }
@@ -874,9 +874,9 @@ void Device::GetExtendedCapabilities(GetExtendedCapabilitiesRequestView request,
   std::vector<uint16_t> ext_capabilities;
   {
     fbl::AutoLock dev_lock(&dev_lock_);
-    for (auto& ext_capability : caps_.ext_list) {
-      if (ext_capability.id() == static_cast<uint16_t>(request->id)) {
-        ext_capabilities.push_back(ext_capability.base());
+    for (const auto& ext_capability : caps_.ext_list) {
+      if (ext_capability->id() == static_cast<uint16_t>(request->id)) {
+        ext_capabilities.push_back(ext_capability->base());
       }
     }
   }

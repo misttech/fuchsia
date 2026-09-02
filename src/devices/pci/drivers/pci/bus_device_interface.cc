@@ -4,6 +4,8 @@
 #include <zircon/errors.h>
 #include <zircon/status.h>
 
+#include <algorithm>
+
 #include "fbl/auto_lock.h"
 #include "lib/zx/vmo.h"
 #include "src/devices/pci/drivers/pci/bus.h"
@@ -12,21 +14,15 @@ namespace pci {
 
 zx_status_t Bus::LinkDevice(fbl::RefPtr<pci::Device> device) {
   fbl::AutoLock _(&devices_lock_);
-  if (devices_.find(device->config()->bdf())) {
-    return ZX_ERR_ALREADY_EXISTS;
-  }
-  devices_.insert(device);
-  return ZX_OK;
+  return devices_.try_emplace(device->config()->bdf(), std::move(device)).second
+             ? ZX_OK
+             : ZX_ERR_ALREADY_EXISTS;
 }
 
 zx_status_t Bus::UnlinkDevice(pci::Device* device) {
   fbl::AutoLock _(&devices_lock_);
   ZX_DEBUG_ASSERT(device);
-  if (devices_.find(device->config()->bdf())) {
-    devices_.erase(*device);
-    return ZX_OK;
-  }
-  return ZX_ERR_NOT_FOUND;
+  return devices_.erase(device->config()->bdf()) > 0 ? ZX_OK : ZX_ERR_NOT_FOUND;
 }
 
 zx_status_t Bus::AllocateMsi(uint32_t count, zx::msi* msi, msi_allocation_info_t* out_info) {
@@ -71,7 +67,7 @@ zx_status_t Bus::AddToSharedIrqList(pci::Device* device, uint32_t vector) {
 
   if (auto result = shared_irqs_.find(vector); result != shared_irqs_.end()) {
     auto& list = result->second->list;
-    if (list.find_if([device](auto& iter) -> bool { return device == &iter; }) != list.end()) {
+    if (std::ranges::contains(list, device)) {
       return ZX_ERR_ALREADY_EXISTS;
     }
     list.push_back(device);
@@ -87,7 +83,7 @@ zx_status_t Bus::RemoveFromSharedIrqList(pci::Device* device, uint32_t vector) {
 
   if (auto result = shared_irqs_.find(vector); result != shared_irqs_.end()) {
     auto& list = result->second->list;
-    if (list.erase(*device) != nullptr) {
+    if (std::erase(list, device) > 0) {
       zxlogf(TRACE, "[%s] removed from vector %#x list", device->config()->addr(), vector);
       return ZX_OK;
     }

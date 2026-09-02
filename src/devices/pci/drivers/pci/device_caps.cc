@@ -79,20 +79,21 @@ namespace {
 // |CapabilityBaseType| one of Capability, or ExtendedCapability
 template <class CapabilityBaseType>
 bool CapabilityCycleExists(const Config& cfg,
-                           fbl::DoublyLinkedList<std::unique_ptr<CapabilityBaseType>>* list,
+                           const std::vector<std::unique_ptr<CapabilityBaseType>>& list,
                            typename CapabilityBaseType::RegType offset) {
-  auto found = list->find_if([&offset](const auto& c) { return c.base() == offset; });
-  if (found != list->end()) {
+  auto found = std::find_if(list.begin(), list.end(),
+                            [offset](const auto& c) { return c->base() == offset; });
+  if (found != list.end()) {
     fbl::StringBuffer<256> log;
     log.AppendPrintf("%s found cycle in capabilities, disabling device: ", cfg.addr());
     bool first = true;
-    for (auto& cap = found; cap != list->end(); cap++) {
+    for (auto cap = found; cap != list.end(); ++cap) {
       if (!first) {
         log.AppendPrintf(" -> ");
       } else {
         first = false;
       }
-      log.AppendPrintf("%#x", cap->base());
+      log.AppendPrintf("%#x", (*cap)->base());
     }
     log.AppendPrintf(" -> %#x", offset);
     zxlogf(ERROR, "%s", log.c_str());
@@ -106,7 +107,7 @@ bool CapabilityCycleExists(const Config& cfg,
 template <class CapabilityType>
 zx_status_t AllocateCapability(
     uint16_t offset, const Config& cfg, CapabilityType** out,
-    fbl::DoublyLinkedList<std::unique_ptr<typename CapabilityType::BaseClass>>* list) {
+    std::vector<std::unique_ptr<typename CapabilityType::BaseClass>>* list) {
   // If we find a duplicate of a singleton capability then either we've parsed incorrectly,
   // or the device configuration space is suspect.
   if (*out != nullptr) {
@@ -151,7 +152,7 @@ zx_status_t Device::ParseCapabilities() {
   // Walk the pointer list for the standard capabilities table. Check for
   // cycles and invalid pointers.
   while (ReadCapability(*cfg_, cap_offset, &hdr)) {
-    if (CapabilityCycleExists<Capability>(*cfg_, &caps_.list, cap_offset)) {
+    if (CapabilityCycleExists<Capability>(*cfg_, caps_.list, cap_offset)) {
       zxlogf(ERROR, "%s capability cycle detected", cfg_->addr());
       return ZX_ERR_BAD_STATE;
     }
@@ -237,7 +238,7 @@ zx_status_t Device::ParseExtendedCapabilities() {
   // Walk the pointer list for the standard capabilities table. Check for
   // cycles and invalid pointers.
   while (ReadExtCapability(*cfg_, cap_offset, &hdr)) {
-    if (CapabilityCycleExists<ExtCapability>(*cfg_, &caps_.ext_list, cap_offset)) {
+    if (CapabilityCycleExists<ExtCapability>(*cfg_, caps_.ext_list, cap_offset)) {
       zxlogf(TRACE, "%s ext_capability cycle detected", cfg_->addr());
       return ZX_ERR_BAD_STATE;
     }

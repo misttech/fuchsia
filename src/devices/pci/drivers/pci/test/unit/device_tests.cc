@@ -165,19 +165,14 @@ TEST_F(PciDeviceTestsCam, StdCapabilityTest) {
 
   // Since this is a dump of an emulated device we know it has a single MSI-X
   // capability followed by five Vendor capabilities.
-  auto cap_iter = dev.capabilities().list.begin();
-  EXPECT_EQ(static_cast<Capability::Id>(cap_iter->id()), Capability::Id::kMsiX);
-  ASSERT_TRUE(cap_iter != dev.capabilities().list.end());
-  EXPECT_EQ(static_cast<Capability::Id>((++cap_iter)->id()), Capability::Id::kVendor);
-  ASSERT_TRUE(cap_iter != dev.capabilities().list.end());
-  EXPECT_EQ(static_cast<Capability::Id>((++cap_iter)->id()), Capability::Id::kVendor);
-  ASSERT_TRUE(cap_iter != dev.capabilities().list.end());
-  EXPECT_EQ(static_cast<Capability::Id>((++cap_iter)->id()), Capability::Id::kVendor);
-  ASSERT_TRUE(cap_iter != dev.capabilities().list.end());
-  EXPECT_EQ(static_cast<Capability::Id>((++cap_iter)->id()), Capability::Id::kVendor);
-  ASSERT_TRUE(cap_iter != dev.capabilities().list.end());
-  EXPECT_EQ(static_cast<Capability::Id>((++cap_iter)->id()), Capability::Id::kVendor);
-  EXPECT_TRUE(++cap_iter == dev.capabilities().list.end());
+  const auto& list = dev.capabilities().list;
+  ASSERT_EQ(list.size(), 6u);
+  EXPECT_EQ(static_cast<Capability::Id>(list[0]->id()), Capability::Id::kMsiX);
+  EXPECT_EQ(static_cast<Capability::Id>(list[1]->id()), Capability::Id::kVendor);
+  EXPECT_EQ(static_cast<Capability::Id>(list[2]->id()), Capability::Id::kVendor);
+  EXPECT_EQ(static_cast<Capability::Id>(list[3]->id()), Capability::Id::kVendor);
+  EXPECT_EQ(static_cast<Capability::Id>(list[4]->id()), Capability::Id::kVendor);
+  EXPECT_EQ(static_cast<Capability::Id>(list[5]->id()), Capability::Id::kVendor);
 }
 
 // A device that is described by the devicetree publishes its fragment but not a
@@ -221,20 +216,15 @@ TEST_F(PciDeviceTestsExtendedCam, ExtendedCapabilityTest) {
   //      Capabilities: [258] L1 PM Substates
   //      Capabilities: [128] Power Budgeting
   //      Capabilities: [600] Vendor Specific Information
-  auto cap_iter = dev.capabilities().ext_list.begin();
-  ASSERT_TRUE(cap_iter.IsValid());
-  EXPECT_EQ(static_cast<ExtCapability::Id>(cap_iter->id()),
+  const auto& ext_list = dev.capabilities().ext_list;
+  ASSERT_EQ(ext_list.size(), 5u);
+  EXPECT_EQ(static_cast<ExtCapability::Id>(ext_list[0]->id()),
             ExtCapability::Id::kVirtualChannelNoMFVC);
-  ASSERT_TRUE(cap_iter != dev.capabilities().ext_list.end());
-  EXPECT_EQ(static_cast<ExtCapability::Id>((++cap_iter)->id()),
+  EXPECT_EQ(static_cast<ExtCapability::Id>(ext_list[1]->id()),
             ExtCapability::Id::kLatencyToleranceReporting);
-  ASSERT_TRUE(cap_iter != dev.capabilities().ext_list.end());
-  EXPECT_EQ(static_cast<ExtCapability::Id>((++cap_iter)->id()), ExtCapability::Id::kL1PMSubstates);
-  ASSERT_TRUE(cap_iter != dev.capabilities().ext_list.end());
-  EXPECT_EQ(static_cast<ExtCapability::Id>((++cap_iter)->id()), ExtCapability::Id::kPowerBudgeting);
-  ASSERT_TRUE(cap_iter != dev.capabilities().ext_list.end());
-  EXPECT_EQ(static_cast<ExtCapability::Id>((++cap_iter)->id()), ExtCapability::Id::kVendor);
-  EXPECT_TRUE(++cap_iter == dev.capabilities().ext_list.end());
+  EXPECT_EQ(static_cast<ExtCapability::Id>(ext_list[2]->id()), ExtCapability::Id::kL1PMSubstates);
+  EXPECT_EQ(static_cast<ExtCapability::Id>(ext_list[3]->id()), ExtCapability::Id::kPowerBudgeting);
+  EXPECT_EQ(static_cast<ExtCapability::Id>(ext_list[4]->id()), ExtCapability::Id::kVendor);
 }
 
 // This test checks for proper handling of capability pointers that are
@@ -267,7 +257,7 @@ TEST_F(PciDeviceTestsCam, InvalidPtrCapabilityTest) {
                            &bus, /*has_acpi=*/false, /*has_devicetree=*/false));
 
   // Ensure no device was added.
-  EXPECT_TRUE(bus.devices().is_empty());
+  EXPECT_TRUE(bus.devices().empty());
 }
 
 // This test checks for proper handling (ZX_ERR_BAD_STATE) upon
@@ -301,7 +291,7 @@ TEST_F(PciDeviceTestsCam, PtrCycleCapabilityTest) {
                            /*has_acpi=*/false, /*has_devicetree=*/false));
 
   // Ensure no device was added.
-  EXPECT_TRUE(bus().devices().is_empty());
+  EXPECT_TRUE(bus().devices().empty());
 }
 
 // Test that we properly bail out if we see multiple of a capability
@@ -336,7 +326,7 @@ TEST_F(PciDeviceTestsCam, DuplicateFixedCapabilityTest) {
                            /*has_acpi=*/false, /*has_devicetree=*/false));
 
   // Ensure no device was added.
-  EXPECT_TRUE(bus().devices().is_empty());
+  EXPECT_TRUE(bus().devices().empty());
 }
 
 // Ensure we parse MSI capabilities properly in the Quadro device.

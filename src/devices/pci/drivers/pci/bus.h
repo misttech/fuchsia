@@ -20,17 +20,16 @@
 #include <zircon/syscalls/port.h>
 
 #include <list>
+#include <map>
 #include <memory>
 #include <thread>
 #include <unordered_map>
+#include <vector>
 
 #include <ddktl/device.h>
 #include <ddktl/fidl.h>
 #include <ddktl/metadata_server.h>
 #include <ddktl/protocol/empty-protocol.h>
-#include <fbl/intrusive_double_list.h>
-#include <fbl/intrusive_wavl_tree.h>
-#include <fbl/vector.h>
 
 #include "src/devices/pci/drivers/pci/bus_device_interface.h"
 #include "src/devices/pci/drivers/pci/config.h"
@@ -48,7 +47,7 @@ struct BusScanEntry {
 };
 
 // A list of pci::Device which share the same legacy IRQ and are configured to use legacy irqs.
-using SharedIrqList = fbl::TaggedDoublyLinkedList<pci::Device*, SharedIrqListTag>;
+using SharedIrqList = std::vector<pci::Device*>;
 struct SharedVector {
   zx::interrupt interrupt;
   SharedIrqList list;
@@ -59,9 +58,8 @@ using LegacyIrqs = std::unordered_map<uint32_t, pci_legacy_irq>;
 using SharedIrqMap = std::unordered_map<uint32_t, std::unique_ptr<SharedVector>>;
 namespace PciFidl = fuchsia_hardware_pci;
 
-// A tree of all pci Device objects in the bus topology.
-using DeviceTree =
-    fbl::WAVLTree<pci_bdf_t, fbl::RefPtr<pci::Device>, pci::Device::KeyTraitsSortByBdf>;
+// A tree of all pci Device objects in the bus topology, keyed by BDF.
+using DeviceTree = std::map<pci_bdf_t, fbl::RefPtr<pci::Device>, Device::BdfCompare>;
 
 class Bus;
 using PciBusType = ddk::Device<Bus, ddk::Messageable<PciFidl::Bus>::Mixin>;

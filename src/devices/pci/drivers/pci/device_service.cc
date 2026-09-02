@@ -33,9 +33,9 @@ void Bus::GetDevices(GetDevicesCompleter::Sync& completer) {
 
   size_t dev_idx = 0;
   fidl::VectorView<PciFidl::wire::PciDevice> devices(allocator, dev_cnt);
-  for (auto& device : devices_) {
-    fbl::AutoLock device_lock(device.dev_lock());
-    auto& cfg = device.config();
+  for (const auto& [bdf, device] : devices_) {
+    fbl::AutoLock device_lock(device->dev_lock());
+    auto& cfg = device->config();
     if (dev_idx >= PciFidl::wire::kMaxDevices) {
       zxlogf(DEBUG, "device %s exceeds fuchsia.hardware.pci Device limit of %u Devices.",
              cfg->addr(), PciFidl::wire::kMaxDevices);
@@ -50,10 +50,10 @@ void Bus::GetDevices(GetDevicesCompleter::Sync& completer) {
       config[cfg_idx] = cfg->Read(PciReg8(static_cast<uint8_t>(cfg_idx)));
     }
 
-    size_t bar_cnt = device.bar_count();
+    size_t bar_cnt = device->bar_count();
     fidl::VectorView<PciFidl::wire::BaseAddress> bars(allocator, bar_cnt);
     for (size_t i = 0; i < bar_cnt; i++) {
-      auto& bar = device.bars()[i];
+      auto& bar = device->bars()[i];
       if (bar) {
         bars[i].is_memory = bar->is_mmio;
         bars[i].is_prefetchable = bar->is_prefetchable;
@@ -69,33 +69,33 @@ void Bus::GetDevices(GetDevicesCompleter::Sync& completer) {
       }
     }
 
-    size_t cap_cnt = device.capabilities().list.size_slow();
+    size_t cap_cnt = device->capabilities().list.size();
     fidl::VectorView<PciFidl::wire::Capability> capabilities(allocator, cap_cnt);
     size_t cap_idx = 0;
-    for (auto& cap : device.capabilities().list) {
+    for (const auto& cap : device->capabilities().list) {
       if (cap_idx >= PciFidl::wire::kMaxCapabilities) {
         zxlogf(DEBUG, "device %s exceeds fuchsia.hardware.pci Capability limit of %u Capabilities.",
                cfg->addr(), PciFidl::wire::kMaxCapabilities);
         break;
       }
-      capabilities[cap_idx].id = cap.id();
-      capabilities[cap_idx].offset = cap.base();
+      capabilities[cap_idx].id = cap->id();
+      capabilities[cap_idx].offset = cap->base();
       cap_idx++;
     }
 
-    size_t ext_cap_cnt = device.capabilities().ext_list.size_slow();
+    size_t ext_cap_cnt = device->capabilities().ext_list.size();
     fidl::VectorView<PciFidl::wire::ExtendedCapability> ext_capabilities(allocator, ext_cap_cnt);
     size_t ext_cap_idx = 0;
-    for (auto& cap : device.capabilities().ext_list) {
+    for (const auto& cap : device->capabilities().ext_list) {
       if (ext_cap_idx >= PciFidl::wire::kMaxExtCapabilities) {
         zxlogf(DEBUG,
                "device %s exceeds fuchsia.hardware.pci Extended Capability limit of %u Extended "
                "Capabilities.",
-               cfg->addr(), PciFidl::wire::kMaxCapabilities);
+               cfg->addr(), PciFidl::wire::kMaxExtCapabilities);
         break;
       }
-      ext_capabilities[ext_cap_idx].id = cap.id();
-      ext_capabilities[ext_cap_idx].offset = cap.base();
+      ext_capabilities[ext_cap_idx].id = cap->id();
+      ext_capabilities[ext_cap_idx].offset = cap->base();
       ext_cap_idx++;
     }
 
@@ -121,19 +121,16 @@ void Bus::GetHostBridgeInfo(GetHostBridgeInfoCompleter::Sync& completer) {
 void Bus::ReadBar(ReadBarRequestView request, ReadBarCompleter::Sync& completer) {
   pci_bdf_t bdf = {request->device.bus, request->device.device, request->device.function};
   uint8_t bar_id = request->bar_id;
-  auto find_fn = [&bdf](pci::Device& device) -> bool {
-    return bdf.bus_id == device.bus_id() && bdf.device_id == device.dev_id() &&
-           bdf.function_id == device.func_id();
-  };
 
   fbl::AutoLock devices_lock(&devices_lock_);
-  auto device = std::find_if(devices_.begin(), devices_.end(), find_fn);
-  if (device == std::end(devices_)) {
+  auto it = devices_.find(bdf);
+  if (it == devices_.end()) {
     zxlogf(DEBUG, "could not find device %02x:%02x.%1x", bdf.bus_id, bdf.device_id,
            bdf.function_id);
     completer.ReplyError(ZX_ERR_NOT_FOUND);
     return;
   }
+  auto& device = it->second;
 
   if (device->bar_count() <= bar_id) {
     zxlogf(DEBUG, "invalid BAR id %d", bar_id);

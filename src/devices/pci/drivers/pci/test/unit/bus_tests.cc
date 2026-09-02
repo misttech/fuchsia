@@ -182,8 +182,8 @@ class TestBus : public pci::Bus {
 
   pci::Device* GetDevice(pci_bdf_t bdf) {
     fbl::AutoLock _(devices_lock());
-    auto iter = devices().find(bdf);
-    return &*iter;
+    auto it = devices().find(bdf);
+    return it != devices().end() ? it->second.get() : nullptr;
   }
 
   size_t GetSharedIrqCount() {

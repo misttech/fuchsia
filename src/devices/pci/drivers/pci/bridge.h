@@ -76,7 +76,7 @@ class Bridge : public pci::Device, public UpstreamNode {
   uint32_t io_base_ = 0;
   uint32_t io_limit_ = 0;
   uint32_t downstream_bus_mastering_cnt_ = 0;
-  bool supports_32bit_pio_ = 0;
+  bool supports_32bit_pio_ = false;
 };
 
 }  // namespace pci
