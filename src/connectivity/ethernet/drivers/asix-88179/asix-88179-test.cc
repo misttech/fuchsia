@@ -15,6 +15,7 @@
 #include <lib/usb-virtual-bus-launcher/usb-virtual-bus-launcher.h>
 #include <lib/zx/clock.h>
 
+#include <fbl/string.h>
 #include <usb/cdc.h>
 #include <usb/usb.h>
 #include <zxtest/zxtest.h>
