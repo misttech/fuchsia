@@ -3,9 +3,9 @@
 // found in the LICENSE file.
 
 use argh::{ArgsInfo, FromArgs};
+use camino::Utf8PathBuf;
 use ffx_config::FfxConfigBacked;
 use ffx_core::ffx_command;
-use std::path::PathBuf;
 
 /// Manage updates: query/set update channel, kick off a check for update, force
 /// an update (to any point, i.e. a downgrade can be requested).
@@ -177,7 +177,7 @@ pub struct CheckNow {
     /// when `--product-bundle` is set. The default is to use the product bundle
     /// configured with `product.path`.
     #[argh(positional)]
-    pub product_bundle_path: Option<PathBuf>,
+    pub product_bundle_path: Option<Utf8PathBuf>,
 }
 
 /// Directly invoke the system updater to install the provided update, bypassing
@@ -231,7 +231,7 @@ pub struct ForceInstall {
     /// `--product-bundle`. The default is to use the product bundle configured with
     /// `product.path`.
     #[argh(option)]
-    pub product_bundle_path: Option<PathBuf>,
+    pub product_bundle_path: Option<Utf8PathBuf>,
 
     /// use a default packageless update url if no update_url is provided
     #[argh(switch)]
@@ -358,6 +358,23 @@ mod tests {
     }
 
     #[test]
+    fn test_check_now_product_bundle_path() {
+        let update = Update::from_args(&["update"], &["check-now", "/path/to/pb"]).unwrap();
+        assert_eq!(
+            update,
+            Update {
+                cmd: Command::CheckNow(CheckNow {
+                    service_initiated: false,
+                    monitor: false,
+                    product_bundle: false,
+                    product_bundle_path: Some("/path/to/pb".into()),
+                    product_bundle_port: None
+                })
+            }
+        );
+    }
+
+    #[test]
     fn test_force_install_without_positional_arg() {
         let update = Update::from_args(&["update"], &["force-install"]).unwrap();
         assert_eq!(
@@ -427,6 +444,28 @@ mod tests {
                     product_bundle: true,
                     product_bundle_port: Some(1234),
                     product_bundle_path: None,
+                    packageless: false,
+                })
+            }
+        );
+    }
+
+    #[test]
+    fn test_force_install_product_bundle_path() {
+        let update = Update::from_args(
+            &["update"],
+            &["force-install", "--product-bundle-path", "/path/to/pb"],
+        )
+        .unwrap();
+        assert_eq!(
+            update,
+            Update {
+                cmd: Command::ForceInstall(ForceInstall {
+                    update_url: None,
+                    reboot: true,
+                    product_bundle: false,
+                    product_bundle_port: None,
+                    product_bundle_path: Some("/path/to/pb".into()),
                     packageless: false,
                 })
             }

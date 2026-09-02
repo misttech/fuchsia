@@ -8,12 +8,11 @@ use fdomain_fuchsia_pkg_rewrite::{EngineMarker, EngineProxy};
 use fdomain_fuchsia_sys2::OpenDirType;
 use ffx_config::EnvironmentContext;
 use ffx_writer::VerifiedMachineWriter;
-use fho::{Deferred, Result, bug, return_bug, return_user_error, user_error};
+use fho::{Deferred, Result, bug, return_bug, return_user_error};
 use fidl_fuchsia_pkg_ext::RepositoryRegistrationAliasConflictMode;
 use fuchsia_async::{Task, Timer};
 use std::io::{Error, ErrorKind};
 use std::net::Ipv6Addr;
-use std::path::PathBuf;
 use std::process;
 use std::time::Duration;
 use target_connector::Connector;
@@ -60,7 +59,7 @@ pub(crate) async fn package_server_task(
     rcs_proxy_connector: Connector<RemoteControlProxyHolder>,
     host_address: Deferred<HostAddrHolder>,
     context: EnvironmentContext,
-    product_bundle: PathBuf,
+    product_bundle: camino::Utf8PathBuf,
     repo_port: u16,
     should_register_repo: bool,
 ) -> Result<PackageServerTask> {
@@ -77,10 +76,7 @@ pub(crate) async fn package_server_task(
         // Give it a name. This is actually a prefix of the name when running a product bundle.
         repository: Some(repo_name.clone()),
 
-        product_bundle: Some(
-            camino::Utf8PathBuf::from_path_buf(product_bundle)
-                .map_err(|e| user_error!("Could not encode {e:?} as UTF-8"))?,
-        ),
+        product_bundle: Some(product_bundle),
 
         // Replace all other alias rules so the update uses this server.
         alias_conflict_mode: RepositoryRegistrationAliasConflictMode::Replace,
@@ -710,14 +706,12 @@ pub(crate) mod tests {
         let test_env = ffx_config::test_init().expect("test env");
         let fake_env = FakeTestEnv::new(&test_env).await;
 
-        let product_bundle = PathBuf::from("/path/to/product_bundle");
-
         Box::pin(package_server_task(
             fake_env.target_spec,
             fake_env.rcs_proxy_connector,
             fake_env.host_address,
             fake_env.context,
-            product_bundle,
+            "/path/to/product_bundle".into(),
             0,
             true,
         ))
@@ -730,14 +724,12 @@ pub(crate) mod tests {
         let test_env = ffx_config::test_init().expect("test env");
         let fake_env = FakeTestEnv::new(&test_env).await;
 
-        let product_bundle = PathBuf::from("/path/to/product_bundle");
-
         Box::pin(package_server_task(
             fake_env.target_spec,
             fake_env.rcs_proxy_connector,
             fake_env.host_address,
             fake_env.context,
-            product_bundle,
+            "/path/to/product_bundle".into(),
             0,
             false,
         ))

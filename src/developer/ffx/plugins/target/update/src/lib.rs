@@ -29,7 +29,6 @@ use fuchsia_repo::repository::RepoProvider as _;
 use futures::future::{FusedFuture as _, FutureExt as _};
 use futures::{StreamExt as _, TryStreamExt as _, pin_mut, select};
 use pkg::PkgServerInstanceInfo as _;
-use std::path::PathBuf;
 use std::time::Duration;
 use target_connector::Connector;
 use target_holders::{HostAddrHolder, RemoteControlProxyHolder, TargetInfoQueryHolder, moniker};
@@ -203,15 +202,11 @@ impl FfxMain for UpdateTool {
 
 impl UpdateTool {
     async fn validate_board_compatibility<W: std::io::Write>(
-        product_path: &PathBuf,
+        product_path: &camino::Utf8Path,
         build_info_proxy: &BuildInfoProviderProxy,
         writer: &mut W,
     ) {
-        let utf8_path = match camino::Utf8Path::from_path(product_path) {
-            Some(p) => p,
-            None => return,
-        };
-        let pb = match product_bundle::ProductBundle::try_load_from(utf8_path) {
+        let pb = match product_bundle::ProductBundle::try_load_from(product_path) {
             Ok(pb) => pb,
             Err(_) => return,
         };
@@ -418,7 +413,7 @@ impl UpdateTool {
                 let first_alias = (|| -> Result<String, anyhow::Error> {
                     let product_path =
                         Self::get_product_bundle_path(&cmd.product_bundle_path, &self.context)?;
-                    let repos = product_bundle::get_repositories(product_path.try_into()?)?;
+                    let repos = product_bundle::get_repositories(product_path)?;
                     let repo =
                         repos.first().ok_or_else(|| anyhow::anyhow!("No repositories found"))?;
                     let alias = repo
@@ -621,21 +616,16 @@ for more detail on the progress of update-related downloads.\n"
     }
 
     fn get_product_bundle_path(
-        product_bundle_path: &Option<PathBuf>,
+        product_bundle_path: &Option<camino::Utf8PathBuf>,
         context: &EnvironmentContext,
-    ) -> Result<PathBuf, UpdateError> {
+    ) -> Result<camino::Utf8PathBuf, UpdateError> {
         let pb_path = match product_bundle_path {
             Some(product_path) => product_path.clone(),
-            None => {
-                if let Some(product_path) = context
-                    .get::<Option<PathBuf>, _>("product.path")
-                    .map_err(UpdateError::Config)?
-                {
-                    product_path
-                } else {
-                    return Err(UpdateError::NoProductBundlePath);
-                }
-            }
+            None => context
+                .get::<Option<String>, _>("product.path")
+                .map_err(UpdateError::Config)?
+                .ok_or(UpdateError::NoProductBundlePath)?
+                .into(),
         };
         Ok(pb_path)
     }
@@ -1023,9 +1013,8 @@ mod tests {
         let pb_dir = camino::Utf8PathBuf::from_path_buf(pb_dir_temp.path().to_path_buf()).unwrap();
         write_product_bundle(&pb_dir, Some("sherlock")).await;
 
-        let pb_path_buf = pb_dir_temp.path().to_path_buf();
         let mut output = Vec::new();
-        UpdateTool::validate_board_compatibility(&pb_path_buf, &fake_build_info_proxy, &mut output)
+        UpdateTool::validate_board_compatibility(&pb_dir, &fake_build_info_proxy, &mut output)
             .await;
         assert!(output.is_empty());
     }
@@ -1038,9 +1027,8 @@ mod tests {
         let pb_dir = camino::Utf8PathBuf::from_path_buf(pb_dir_temp.path().to_path_buf()).unwrap();
         write_product_bundle(&pb_dir, Some("iris")).await;
 
-        let pb_path_buf = pb_dir_temp.path().to_path_buf();
         let mut output = Vec::new();
-        UpdateTool::validate_board_compatibility(&pb_path_buf, &fake_build_info_proxy, &mut output)
+        UpdateTool::validate_board_compatibility(&pb_dir, &fake_build_info_proxy, &mut output)
             .await;
         let output_str = String::from_utf8(output).unwrap();
         assert!(output_str.contains(
@@ -1355,7 +1343,7 @@ mod tests {
             update_url: None,
             product_bundle: false,
             product_bundle_port: None,
-            product_bundle_path: Some(pb_dir_temp.path().to_path_buf()),
+            product_bundle_path: Some(pb_dir),
             packageless: true,
         };
 
