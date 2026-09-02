@@ -132,7 +132,6 @@ mod ebpf_test {
     ) -> Result<OwnedFd, std::io::Error> {
         let mut attr = zero_bpf_attr();
 
-        let mut log = vec![0; 4096];
         let license = b"N/A\0";
 
         // SAFETY: `attr` is zeroed, so it's safe to access any union variant.
@@ -141,9 +140,9 @@ mod ebpf_test {
         load_prog_attr.insns = code.as_ptr() as u64;
         load_prog_attr.insn_cnt = code.len() as u32;
         load_prog_attr.expected_attach_type = expected_attach_type;
-        load_prog_attr.log_level = 1;
-        load_prog_attr.log_size = 4096;
-        load_prog_attr.log_buf = log.as_mut_ptr() as u64;
+        load_prog_attr.log_level = 0;
+        load_prog_attr.log_size = 0;
+        load_prog_attr.log_buf = 0;
         load_prog_attr.license = license.as_ptr() as u64;
 
         // SAFETY: `bpf()` syscall with valid arguments.

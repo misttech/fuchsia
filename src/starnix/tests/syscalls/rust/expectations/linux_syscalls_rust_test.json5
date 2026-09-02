@@ -42,18 +42,8 @@
                 "device_mapper_test::test_dm_table_load_invalid_root_hash::create_verity_target_two_loop_devices_sha512_expects",
 
                 // TODO(https://fxbug.dev/553922248): eBPF Failures during Machina bringup.
-                "ebpf_test::ebpf_egress::dual_stack_ipv4",
-                "ebpf_test::ebpf_egress::dual_stack_ipv6",
-                "ebpf_test::ebpf_egress::ipv4",
-                "ebpf_test::ebpf_getsockopt",
-                "ebpf_test::ebpf_ingress::dual_stack_ipv4",
-                "ebpf_test::ebpf_ingress::dual_stack_ipv6",
-                "ebpf_test::ebpf_ingress::ipv4",
-                "ebpf_test::ebpf_setsockopt",
                 "ebpf_test::ebpf_sk_storage",
                 "ebpf_test::ebpf_udp_recv",
-                "ebpf_test::ebpf_udp_send",
-                "ebpf_test::ebpf_udp_send_connected",
             ],
         },
     ],
