@@ -186,15 +186,14 @@ TEST(SpmiVisitorTest, TwoControllers) {
           fdf::MakeAcceptBindRule(bind_fuchsia::SERVICE, "fuchsia.hardware.spmi.SubTargetService"),
           fdf::MakeAcceptBindRule(bind_fuchsia_spmi::CONTROLLER_ID, controller_0_id),
           fdf::MakeAcceptBindRule(bind_fuchsia_spmi::TARGET_ID, 0u),
-          fdf::MakeAcceptBindRule(bind_fuchsia_spmi::SUB_TARGET_ADDRESS, 0x1000u),
+          fdf::MakeAcceptBindRule(bind_fuchsia::ID, 0x1000u),
       },
       (*vreg_1000.parents2())[1].bind_rules(), false));
   EXPECT_TRUE(fdf_devicetree::testing::CheckHasProperties(
       {
           fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.spmi.SubTargetService"),
           fdf::MakeProperty2(bind_fuchsia_spmi::TARGET_ID, 0u),
-          fdf::MakeProperty2(bind_fuchsia_spmi::TARGET_NAME, "target-a"),
-          fdf::MakeProperty2(bind_fuchsia_spmi::SUB_TARGET_ADDRESS, 0x1000u),
+          fdf::MakeProperty2(bind_fuchsia::ID, 0x1000u),
       },
       (*vreg_1000.parents2())[1].properties(), false));
 
@@ -248,13 +247,13 @@ TEST(SpmiVisitorTest, TwoControllers) {
       {
           fdf::MakeAcceptBindRule(bind_fuchsia::SERVICE, "fuchsia.hardware.spmi.TargetService"),
           fdf::MakeAcceptBindRule(bind_fuchsia_spmi::CONTROLLER_ID, controller_1_id),
-          fdf::MakeAcceptBindRule(bind_fuchsia_spmi::TARGET_ID, 0u),
+          fdf::MakeAcceptBindRule(bind_fuchsia::ID, 0u),
       },
       (*target_c_0.parents2())[1].bind_rules(), false));
   EXPECT_TRUE(fdf_devicetree::testing::CheckHasProperties(
       {
           fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.spmi.TargetService"),
-          fdf::MakeProperty2(bind_fuchsia_spmi::TARGET_ID, 0u),
+          fdf::MakeProperty2(bind_fuchsia::ID, 0u),
       },
       (*target_c_0.parents2())[1].properties(), false));
 
@@ -279,15 +278,14 @@ TEST(SpmiVisitorTest, TwoControllers) {
           fdf::MakeAcceptBindRule(bind_fuchsia::SERVICE, "fuchsia.hardware.spmi.SubTargetService"),
           fdf::MakeAcceptBindRule(bind_fuchsia_spmi::CONTROLLER_ID, controller_0_id),
           fdf::MakeAcceptBindRule(bind_fuchsia_spmi::TARGET_ID, 0u),
-          fdf::MakeAcceptBindRule(bind_fuchsia_spmi::SUB_TARGET_ADDRESS, 0x2000u),
+          fdf::MakeAcceptBindRule(bind_fuchsia::ID, 0x2000u),
       },
       (*not_spmi.parents2())[1].bind_rules(), false));
   EXPECT_TRUE(fdf_devicetree::testing::CheckHasProperties(
       {
           fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.spmi.SubTargetService"),
           fdf::MakeProperty2(bind_fuchsia_spmi::TARGET_ID, 0u),
-          fdf::MakeProperty2(bind_fuchsia_spmi::TARGET_NAME, "target-a"),
-          fdf::MakeProperty2(bind_fuchsia_spmi::SUB_TARGET_ADDRESS, 0x2000u),
+          fdf::MakeProperty2(bind_fuchsia::ID, 0x2000u),
       },
       (*not_spmi.parents2())[1].properties(), false));
 
@@ -296,16 +294,15 @@ TEST(SpmiVisitorTest, TwoControllers) {
           fdf::MakeAcceptBindRule(bind_fuchsia::SERVICE, "fuchsia.hardware.spmi.SubTargetService"),
           fdf::MakeAcceptBindRule(bind_fuchsia_spmi::CONTROLLER_ID, controller_0_id),
           fdf::MakeAcceptBindRule(bind_fuchsia_spmi::TARGET_ID, 0u),
-          fdf::MakeAcceptBindRule(bind_fuchsia_spmi::SUB_TARGET_ADDRESS, 0x3000u),
+          fdf::MakeAcceptBindRule(bind_fuchsia::ID, 0x3000u),
       },
       (*not_spmi.parents2())[2].bind_rules(), false));
   EXPECT_TRUE(fdf_devicetree::testing::CheckHasProperties(
       {
           fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.spmi.SubTargetService"),
           fdf::MakeProperty2(bind_fuchsia_spmi::TARGET_ID, 0u),
-          fdf::MakeProperty2(bind_fuchsia_spmi::TARGET_NAME, "target-a"),
-          fdf::MakeProperty2(bind_fuchsia_spmi::SUB_TARGET_ADDRESS, 0x3000u),
-          fdf::MakeProperty2(bind_fuchsia_spmi::SUB_TARGET_NAME, "i2c-core"),
+          fdf::MakeProperty2(bind_fuchsia::ID, 0x3000u),
+          fdf::MakeProperty2(bind_fuchsia::NAME, "i2c-core"),
       },
       (*not_spmi.parents2())[2].properties(), false));
 
@@ -314,16 +311,15 @@ TEST(SpmiVisitorTest, TwoControllers) {
           fdf::MakeAcceptBindRule(bind_fuchsia::SERVICE, "fuchsia.hardware.spmi.SubTargetService"),
           fdf::MakeAcceptBindRule(bind_fuchsia_spmi::CONTROLLER_ID, controller_0_id),
           fdf::MakeAcceptBindRule(bind_fuchsia_spmi::TARGET_ID, 0u),
-          fdf::MakeAcceptBindRule(bind_fuchsia_spmi::SUB_TARGET_ADDRESS, 0xffffu),
+          fdf::MakeAcceptBindRule(bind_fuchsia::ID, 0xffffu),
       },
       (*not_spmi.parents2())[3].bind_rules(), false));
   EXPECT_TRUE(fdf_devicetree::testing::CheckHasProperties(
       {
           fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.spmi.SubTargetService"),
           fdf::MakeProperty2(bind_fuchsia_spmi::TARGET_ID, 0u),
-          fdf::MakeProperty2(bind_fuchsia_spmi::TARGET_NAME, "target-a"),
-          fdf::MakeProperty2(bind_fuchsia_spmi::SUB_TARGET_ADDRESS, 0xffffu),
-          fdf::MakeProperty2(bind_fuchsia_spmi::SUB_TARGET_NAME, "i2c-config"),
+          fdf::MakeProperty2(bind_fuchsia::ID, 0xffffu),
+          fdf::MakeProperty2(bind_fuchsia::NAME, "i2c-config"),
       },
       (*not_spmi.parents2())[3].properties(), false));
 }
@@ -416,14 +412,14 @@ TEST(SpmiVisitorTest, PropertyReferencesTarget) {
       {
           fdf::MakeAcceptBindRule(bind_fuchsia::SERVICE, "fuchsia.hardware.spmi.TargetService"),
           fdf::MakeAcceptBindRule(bind_fuchsia_spmi::CONTROLLER_ID, controller_id),
-          fdf::MakeAcceptBindRule(bind_fuchsia_spmi::TARGET_ID, 0u),
+          fdf::MakeAcceptBindRule(bind_fuchsia::ID, 0u),
       },
       (*not_spmi.parents2())[1].bind_rules(), false));
   EXPECT_TRUE(fdf_devicetree::testing::CheckHasProperties(
       {
           fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.spmi.TargetService"),
-          fdf::MakeProperty2(bind_fuchsia_spmi::TARGET_ID, 0u),
-          fdf::MakeProperty2(bind_fuchsia_spmi::TARGET_NAME, "target-a"),
+          fdf::MakeProperty2(bind_fuchsia::ID, 0u),
+          fdf::MakeProperty2(bind_fuchsia::NAME, "target-a"),
       },
       (*not_spmi.parents2())[1].properties(), false));
 }
@@ -534,13 +530,13 @@ TEST(SpmiVisitorTest, TargetWithNonSpmiChild) {
       {
           fdf::MakeAcceptBindRule(bind_fuchsia::SERVICE, "fuchsia.hardware.spmi.TargetService"),
           fdf::MakeAcceptBindRule(bind_fuchsia_spmi::CONTROLLER_ID, controller_id),
-          fdf::MakeAcceptBindRule(bind_fuchsia_spmi::TARGET_ID, 2u),
+          fdf::MakeAcceptBindRule(bind_fuchsia::ID, 2u),
       },
       (*target_node.parents2())[1].bind_rules(), false));
   EXPECT_TRUE(fdf_devicetree::testing::CheckHasProperties(
       {
           fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.spmi.TargetService"),
-          fdf::MakeProperty2(bind_fuchsia_spmi::TARGET_ID, 2u),
+          fdf::MakeProperty2(bind_fuchsia::ID, 2u),
       },
       (*target_node.parents2())[1].properties(), false));
 
@@ -617,14 +613,14 @@ TEST(SpmiVisitorTest, MultiRegTarget) {
       {
           fdf::MakeAcceptBindRule(bind_fuchsia::SERVICE, "fuchsia.hardware.spmi.TargetService"),
           fdf::MakeAcceptBindRule(bind_fuchsia_spmi::CONTROLLER_ID, controller_id),
-          fdf::MakeAcceptBindRule(bind_fuchsia_spmi::TARGET_ID, 3u),
+          fdf::MakeAcceptBindRule(bind_fuchsia::ID, 3u),
       },
       (*target_b.parents2())[1].bind_rules(), false));
   EXPECT_TRUE(fdf_devicetree::testing::CheckHasProperties(
       {
           fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.spmi.TargetService"),
-          fdf::MakeProperty2(bind_fuchsia_spmi::TARGET_ID, 3u),
-          fdf::MakeProperty2(bind_fuchsia_spmi::TARGET_NAME, "vreg-1"),
+          fdf::MakeProperty2(bind_fuchsia::ID, 3u),
+          fdf::MakeProperty2(bind_fuchsia::NAME, "vreg-1"),
       },
       (*target_b.parents2())[1].properties(), false));
 
@@ -632,14 +628,14 @@ TEST(SpmiVisitorTest, MultiRegTarget) {
       {
           fdf::MakeAcceptBindRule(bind_fuchsia::SERVICE, "fuchsia.hardware.spmi.TargetService"),
           fdf::MakeAcceptBindRule(bind_fuchsia_spmi::CONTROLLER_ID, controller_id),
-          fdf::MakeAcceptBindRule(bind_fuchsia_spmi::TARGET_ID, 4u),
+          fdf::MakeAcceptBindRule(bind_fuchsia::ID, 4u),
       },
       (*target_b.parents2())[2].bind_rules(), false));
   EXPECT_TRUE(fdf_devicetree::testing::CheckHasProperties(
       {
           fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.spmi.TargetService"),
-          fdf::MakeProperty2(bind_fuchsia_spmi::TARGET_ID, 4u),
-          fdf::MakeProperty2(bind_fuchsia_spmi::TARGET_NAME, "vreg-2"),
+          fdf::MakeProperty2(bind_fuchsia::ID, 4u),
+          fdf::MakeProperty2(bind_fuchsia::NAME, "vreg-2"),
       },
       (*target_b.parents2())[2].properties(), false));
 
@@ -658,14 +654,14 @@ TEST(SpmiVisitorTest, MultiRegTarget) {
       {
           fdf::MakeAcceptBindRule(bind_fuchsia::SERVICE, "fuchsia.hardware.spmi.TargetService"),
           fdf::MakeAcceptBindRule(bind_fuchsia_spmi::CONTROLLER_ID, controller_id),
-          fdf::MakeAcceptBindRule(bind_fuchsia_spmi::TARGET_ID, 0u),
+          fdf::MakeAcceptBindRule(bind_fuchsia::ID, 0u),
       },
       (*target_a.parents2())[1].bind_rules(), false));
   EXPECT_TRUE(fdf_devicetree::testing::CheckHasProperties(
       {
           fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.spmi.TargetService"),
-          fdf::MakeProperty2(bind_fuchsia_spmi::TARGET_ID, 0u),
-          fdf::MakeProperty2(bind_fuchsia_spmi::TARGET_NAME, "pmic-a"),
+          fdf::MakeProperty2(bind_fuchsia::ID, 0u),
+          fdf::MakeProperty2(bind_fuchsia::NAME, "pmic-a"),
       },
       (*target_a.parents2())[1].properties(), false));
 
@@ -673,14 +669,14 @@ TEST(SpmiVisitorTest, MultiRegTarget) {
       {
           fdf::MakeAcceptBindRule(bind_fuchsia::SERVICE, "fuchsia.hardware.spmi.TargetService"),
           fdf::MakeAcceptBindRule(bind_fuchsia_spmi::CONTROLLER_ID, controller_id),
-          fdf::MakeAcceptBindRule(bind_fuchsia_spmi::TARGET_ID, 1u),
+          fdf::MakeAcceptBindRule(bind_fuchsia::ID, 1u),
       },
       (*target_a.parents2())[2].bind_rules(), false));
   EXPECT_TRUE(fdf_devicetree::testing::CheckHasProperties(
       {
           fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.spmi.TargetService"),
-          fdf::MakeProperty2(bind_fuchsia_spmi::TARGET_ID, 1u),
-          fdf::MakeProperty2(bind_fuchsia_spmi::TARGET_NAME, "pmic-b"),
+          fdf::MakeProperty2(bind_fuchsia::ID, 1u),
+          fdf::MakeProperty2(bind_fuchsia::NAME, "pmic-b"),
       },
       (*target_a.parents2())[2].properties(), false));
 }

@@ -7,7 +7,3 @@ library fuchsia.spmi;
 uint CONTROLLER_ID;
 
 uint TARGET_ID;
-string TARGET_NAME;
-
-uint SUB_TARGET_ADDRESS;
-string SUB_TARGET_NAME;

@@ -269,18 +269,17 @@ zx::result<fuchsia_hardware_spmi::TargetInfo> SpmiVisitor::ParseTarget(
                 fdf::MakeAcceptBindRule(bind_fuchsia::SERVICE,
                                         "fuchsia.hardware.spmi.TargetService"),
                 fdf::MakeAcceptBindRule(bind_fuchsia_spmi::CONTROLLER_ID, controller_id),
-                fdf::MakeAcceptBindRule(bind_fuchsia_spmi::TARGET_ID, target_id),
+                fdf::MakeAcceptBindRule(bind_fuchsia::ID, target_id),
             },
         .properties =
             {
                 fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.spmi.TargetService"),
-                fdf::MakeProperty2(bind_fuchsia_spmi::TARGET_ID, target_id),
+                fdf::MakeProperty2(bind_fuchsia::ID, target_id),
             },
     }};
 
     if (target_name) {
-      target_spec.properties().push_back(
-          fdf::MakeProperty2(bind_fuchsia_spmi::TARGET_NAME, *target_name));
+      target_spec.properties().push_back(fdf::MakeProperty2(bind_fuchsia::NAME, *target_name));
     }
 
     spmi_nodes_[node.id()].parent_specs.push_back(std::move(target_spec));
@@ -360,27 +359,22 @@ zx::result<std::vector<fuchsia_hardware_spmi::SubTargetInfo>> SpmiVisitor::Parse
                 fdf::MakeAcceptBindRule(bind_fuchsia_spmi::CONTROLLER_ID, controller_id),
                 fdf::MakeAcceptBindRule(bind_fuchsia_spmi::TARGET_ID,
                                         static_cast<uint32_t>(*parent.id())),
-                fdf::MakeAcceptBindRule(bind_fuchsia_spmi::SUB_TARGET_ADDRESS, address),
+                fdf::MakeAcceptBindRule(bind_fuchsia::ID, address),
             },
         .properties =
             {
                 fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.spmi.SubTargetService"),
                 fdf::MakeProperty2(bind_fuchsia_spmi::TARGET_ID,
                                    static_cast<uint32_t>(*parent.id())),
-                fdf::MakeProperty2(bind_fuchsia_spmi::SUB_TARGET_ADDRESS, address),
+                fdf::MakeProperty2(bind_fuchsia::ID, address),
             },
     }};
-
-    if (parent.name()) {
-      sub_target_spec.properties().push_back(
-          fdf::MakeProperty2(bind_fuchsia_spmi::TARGET_NAME, *parent.name()));
-    }
 
     if (!reg_names.empty()) {
       const std::string_view sub_target_name = reg_names[i / 2];
       sub_target.name() = sub_target_name;
       sub_target_spec.properties().push_back(
-          fdf::MakeProperty2(bind_fuchsia_spmi::SUB_TARGET_NAME, sub_target_name));
+          fdf::MakeProperty2(bind_fuchsia::NAME, sub_target_name));
     }
 
     sub_targets.push_back(std::move(sub_target));
