@@ -8,7 +8,6 @@ assert(is_host, "Python targets only build in a host toolchain")
 group("examples") {
   testonly = true
   public_deps = [
-    "async_test_cases_example",
     "data_resource_access_test",
     "exoneration_failing_test",
     "fidl_hello_world_test",
@@ -33,7 +32,6 @@ group("examples") {
 group("emulator_tests") {
   testonly = true
   public_deps = [
-    "async_test_cases_example",
     "data_resource_access_test",
     "fidl_hello_world_test",
     "hello_world_test",
