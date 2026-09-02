@@ -1184,3 +1184,66 @@ class TestExecutionUtils(unittest.IsolatedAsyncioTestCase):
         )
 
         self.assertEqual(test._calculate_timeout(), result)
+
+    async def test_get_device_ssh_address_ipv6_brackets_and_multiline(
+        self,
+    ) -> None:
+        """Test that get_device_environment_from_exec_env parses IPv6 bracketed addresses and ignores earlier lines."""
+        exec_env = _make_exec_env("/fuchsia", "/out/fuchsia")
+        recorder = mock.MagicMock()
+
+        with tempfile.NamedTemporaryFile() as tf:
+
+            async def fake_run_command(
+                *args_list: str, **kwargs: typing.Any
+            ) -> command.CommandOutput:
+                cmd = " ".join(args_list)
+                if "wait" in cmd:
+                    return command.CommandOutput(
+                        stdout="",
+                        stderr="",
+                        return_code=0,
+                        runtime=0.1,
+                        wrapper_return_code=0,
+                    )
+                elif "default get" in cmd:
+                    return command.CommandOutput(
+                        stdout="my-target\n",
+                        stderr="",
+                        return_code=0,
+                        runtime=0.1,
+                        wrapper_return_code=0,
+                    )
+                elif "target list" in cmd:
+                    return command.CommandOutput(
+                        stdout="Some warning notice\n[fe80::1%eth0]:8022\n",
+                        stderr="",
+                        return_code=0,
+                        runtime=0.1,
+                        wrapper_return_code=0,
+                    )
+                elif "ssh.priv" in cmd:
+                    return command.CommandOutput(
+                        stdout=f"{tf.name}\n",
+                        stderr="",
+                        return_code=0,
+                        runtime=0.1,
+                        wrapper_return_code=0,
+                    )
+                return command.CommandOutput(
+                    stdout="",
+                    stderr="",
+                    return_code=1,
+                    runtime=0.1,
+                    wrapper_return_code=1,
+                )
+
+            with mock.patch(
+                "execution.run_command", side_effect=fake_run_command
+            ):
+                dev_env = await execution.get_device_environment_from_exec_env(
+                    exec_env, recorder
+                )
+                self.assertEqual(dev_env.address, "[fe80::1%eth0]")
+                self.assertEqual(dev_env.port, "8022")
+                self.assertEqual(dev_env.private_key_path, tf.name)

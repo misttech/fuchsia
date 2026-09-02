@@ -621,37 +621,38 @@ class TestExecution:
         if timeout is not None:
             timeout += self._flags.timeout_grace_period
 
-        output = await run_command(
-            *command,
-            recorder=recorder,
-            parent=parent,
-            print_verbatim=flags.output,
-            symbolizer_args=symbolizer_args,
-            env=env,
-            timeout=timeout,
-            abort_signal=abort_signal,
-        )
-
-        if maybe_temp_dir is not None:
-            files: list[str] = []
-            for prefix, _, names in os.walk(maybe_temp_dir.name):
-                files.extend(
-                    [
-                        os.path.relpath(
-                            os.path.join(prefix, n), maybe_temp_dir.name
-                        )
-                        for n in names
-                    ]
-                )
-            if files:
-                name_list = statusinfo.ellipsize(", ".join(files), 100)
-                recorder.emit_instruction_message(
-                    f"Deleting {len(files)} files at {maybe_temp_dir.name}: {name_list}"
-                )
-                recorder.emit_instruction_message(
-                    "To keep these files, set --ffx-output-directory."
-                )
-            maybe_temp_dir.cleanup()
+        try:
+            output = await run_command(
+                *command,
+                recorder=recorder,
+                parent=parent,
+                print_verbatim=flags.output,
+                symbolizer_args=symbolizer_args,
+                env=env,
+                timeout=timeout,
+                abort_signal=abort_signal,
+            )
+        finally:
+            if maybe_temp_dir is not None:
+                files: list[str] = []
+                for prefix, _, names in os.walk(maybe_temp_dir.name):
+                    files.extend(
+                        [
+                            os.path.relpath(
+                                os.path.join(prefix, n), maybe_temp_dir.name
+                            )
+                            for n in names
+                        ]
+                    )
+                if files:
+                    name_list = statusinfo.ellipsize(", ".join(files), 100)
+                    recorder.emit_instruction_message(
+                        f"Deleting {len(files)} files at {maybe_temp_dir.name}: {name_list}"
+                    )
+                    recorder.emit_instruction_message(
+                        "To keep these files, set --ffx-output-directory."
+                    )
+                maybe_temp_dir.cleanup()
 
         if not output:
             raise TestFailed("Failed to run the test command")
@@ -840,7 +841,8 @@ async def get_device_environment_from_exec_env(
     ):
         raise DeviceConfigError("Failed to get the ssh address of the target")
 
-    last_colon_index = ssh_output.stdout.rfind(":")
+    target_line = ssh_output.stdout.strip().splitlines()[-1].strip()
+    last_colon_index = target_line.rfind(":")
     if last_colon_index == -1:
         raise DeviceConfigError(
             f"Could not parse target address: {ssh_output.stdout!r}.\n"
@@ -848,8 +850,8 @@ async def get_device_environment_from_exec_env(
             f"Return code: {ssh_output.return_code},\n"
             f"Stderr: {ssh_output.stderr!r}"
         )
-    ip = ssh_output.stdout[0:last_colon_index].strip()
-    port = ssh_output.stdout[last_colon_index + 1 :].strip()
+    ip = target_line[0:last_colon_index].strip()
+    port = target_line[last_colon_index + 1 :].strip()
 
     # get the configured private key. Ideally, the private key usage
     # should be an implementation detail internal to ffx commands.
