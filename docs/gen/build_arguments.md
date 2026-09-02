@@ -890,7 +890,7 @@ This should never be set as a build argument.
 }
   lsan = {
   shared = {
-  clang_rt = ""
+  clang_rt = "../../../../out/not-default/libclang_rt.lsan.so"
 }
   static = {
   clang_rt = "lib/clang/24/lib/aarch64-unknown-linux-gnu/libclang_rt.lsan.a"
@@ -942,7 +942,7 @@ This should never be set as a build argument.
 }
   lsan = {
   shared = {
-  clang_rt = "../../../../out/not-default/libclang_rt.lsan.so"
+  clang_rt = ""
 }
   static = {
   clang_rt = "lib/clang/24/lib/armv7-unknown-linux-gnueabihf/libclang_rt.lsan.a"
@@ -9829,6 +9829,16 @@ it only works when use_null_vulkan_on_host is set to false.
 **Current value (from the default):** `true`
 
 From //src/lib/vulkan/build/config.gni:38
+
+### use_test_pilot
+
+When enabled, changes tests.json entries for fuchsia_test_package tests so
+that botanist will use test-pilot to execute them. The tests.json changes
+include adding a "path" entry for the test and setting "os" to "linux".
+
+**Current value (from the default):** `false`
+
+From //build/components/fuchsia_test_package.gni:16
 
 ### use_udev
 
