@@ -228,6 +228,11 @@ pub(crate) async fn upload_trace(
     bucket: &str,
     viewer_base: &str,
 ) -> Result<String> {
+    let metadata = std::fs::metadata(file_path)
+        .with_context(|| format!("Failed to read metadata for trace file: {:?}", file_path))?;
+    if metadata.len() == 0 {
+        anyhow::bail!("cannot upload zero length traces");
+    }
     let full_hash = compute_sha256_file(file_path).await?;
     let prefix_8 = &full_hash[..8.min(full_hash.len())];
     let query_prefix = format!("sha256/{}", prefix_8);
@@ -268,6 +273,15 @@ mod tests {
         temp_file.write_all(known_input).unwrap();
         let file_hash = compute_sha256_file(temp_file.path()).await.unwrap();
         assert_eq!(file_hash, expected_hash);
+    }
+
+    #[fuchsia::test]
+    async fn test_upload_trace_zero_length() {
+        let temp_file = NamedTempFile::new().unwrap();
+        let res = upload_trace(temp_file.path(), "test-bucket", "https://example.com").await;
+        assert!(res.is_err());
+        let err_msg = res.unwrap_err().to_string();
+        assert_eq!(err_msg, "cannot upload zero length traces");
     }
 
     #[fuchsia::test]

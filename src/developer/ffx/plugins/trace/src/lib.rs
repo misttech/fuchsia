@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use anyhow::{Result, anyhow};
+use anyhow::{Context as _, Result, anyhow};
 use errors::ffx_bail;
 use fdomain_fuchsia_tracing::{BufferingMode, KnownCategory};
 use fdomain_fuchsia_tracing_controller::{
@@ -809,6 +809,11 @@ where
     let path = Path::new(fxt_path);
     if !path.exists() {
         ffx_bail!("Trace file does not exist: {}", fxt_path);
+    }
+    let metadata = std::fs::metadata(path)
+        .with_context(|| format!("Failed to read metadata for trace file: {:?}", path))?;
+    if metadata.len() == 0 {
+        ffx_bail!("cannot upload zero length traces");
     }
     let bucket = upload::resolve_bucket(cli_bucket, context);
     let viewer_base = upload::resolve_viewer_url(context);
@@ -1932,6 +1937,31 @@ Triggers:
             err_msg.contains("Trace file does not exist: non_existent_trace.fxt"),
             "unexpected error message: {err_msg}"
         );
+    }
+
+    #[fuchsia::test]
+    async fn test_upload_trace_zero_length_error() {
+        let env = ffx_config::test_init().unwrap();
+        let test_buffers = TestBuffers::default();
+        let writer = Writer::new_test(None, &test_buffers);
+
+        let temp_dir = tempfile::tempdir().unwrap();
+        let trace_path = temp_dir.path().join("empty_trace.fxt");
+        std::fs::write(&trace_path, b"").unwrap();
+
+        let trace_path_str = trace_path.to_str().unwrap().to_string();
+        let res = trace_upload_impl(
+            &env.context,
+            &trace_path_str,
+            None,
+            writer,
+            |_path, _bucket, _viewer| async { Ok("https://example.com".to_string()) },
+        )
+        .await;
+
+        assert!(res.is_err());
+        let err_msg = res.unwrap_err().to_string();
+        assert_eq!(err_msg, "cannot upload zero length traces");
     }
 
     #[fuchsia::test]
