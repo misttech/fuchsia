@@ -27,6 +27,15 @@ template("fuchsia_driver_dml") {
   _namespace = string_replace(_namespace, "-", "_")
   _namespace = string_replace(_namespace, ".", "_")
 
+  _disable_autobind = false
+  if (defined(invoker.disable_autobind)) {
+    _disable_autobind = invoker.disable_autobind
+  }
+
+  assert(
+      !_disable_autobind || !defined(invoker.golden_bind),
+      "Cannot specify golden_bind for '${_driver_name}' when disable_autobind = true")
+
   compiled_action(_action_target) {
     forward_variables_from(invoker,
                            [
@@ -42,7 +51,6 @@ template("fuchsia_driver_dml") {
     outputs = [
       "$target_gen_dir/${_driver_name}_parser.h",
       "$target_gen_dir/${_driver_name}_parser.cc",
-      "$target_gen_dir/${_driver_name}.bind",
       "$target_gen_dir/${_driver_name}.cml.raw",
     ]
 
@@ -54,12 +62,18 @@ template("fuchsia_driver_dml") {
       "--cc-output",
       rebase_path(outputs[1], root_build_dir),
       "--cml-output",
-      rebase_path(outputs[3], root_build_dir),
-      "--bind-output",
       rebase_path(outputs[2], root_build_dir),
       "--namespace",
       _namespace,
     ]
+
+    if (!_disable_autobind) {
+      outputs += [ "$target_gen_dir/${_driver_name}.bind" ]
+      args += [
+        "--bind-output",
+        rebase_path("$target_gen_dir/${_driver_name}.bind", root_build_dir),
+      ]
+    }
   }
 
   compiled_action("${_action_target}_format_cml") {
@@ -77,13 +91,29 @@ template("fuchsia_driver_dml") {
     public_deps = [ ":${_action_target}" ]
   }
 
-  _golden_bind = "meta/${_driver_name}.bind"
-  if (defined(invoker.golden_bind)) {
-    _golden_bind = invoker.golden_bind
-  }
   _golden_cml = "meta/${_driver_name}.cml"
   if (defined(invoker.golden_cml)) {
     _golden_cml = invoker.golden_cml
+  }
+
+  _comparisons = [
+    {
+      golden = _golden_cml
+      candidate = "$target_gen_dir/${_driver_name}.cml"
+    },
+  ]
+
+  if (!_disable_autobind) {
+    _golden_bind = "meta/${_driver_name}.bind"
+    if (defined(invoker.golden_bind)) {
+      _golden_bind = invoker.golden_bind
+    }
+    _comparisons += [
+      {
+        golden = _golden_bind
+        candidate = "$target_gen_dir/${_driver_name}.bind"
+      },
+    ]
   }
 
   golden_files("${_action_target}_golden") {
@@ -92,16 +122,7 @@ template("fuchsia_driver_dml") {
       ":${_action_target}_manifest",
       ":${_action_target}_manifest_merge",
     ]
-    comparisons = [
-      {
-        golden = _golden_bind
-        candidate = "$target_gen_dir/${_driver_name}.bind"
-      },
-      {
-        golden = _golden_cml
-        candidate = "$target_gen_dir/${_driver_name}.cml"
-      },
-    ]
+    comparisons = _comparisons
     public_deps = [
       ":${_action_target}",
       ":${_action_target}_format_cml",

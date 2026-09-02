@@ -402,9 +402,10 @@ template("bindc") {
 #
 template("driver_bind_rules") {
   _has_dml_label = defined(invoker.dml_label)
-  assert(defined(invoker.rules) || _has_dml_label ||
-             (defined(invoker.disable_autobind) && invoker.disable_autobind),
-         "Need a bind rules source or dml_label")
+  _disable_autobind = false
+  if (defined(invoker.disable_autobind)) {
+    _disable_autobind = invoker.disable_autobind
+  }
 
   _invoker_rules = ""
   if (defined(invoker.rules)) {
@@ -419,10 +420,16 @@ template("driver_bind_rules") {
   if (_has_dml_label) {
     _dml_outputs = get_target_outputs(invoker.dml_label)
     _bind_files = filter_include(_dml_outputs, [ "*.bind" ])
-    assert(_bind_files != [], "dml_label must output a .bind file")
-    _invoker_rules = _bind_files[0]
-    _invoker_deps += [ invoker.dml_label ]
+    if (_bind_files == []) {
+      _disable_autobind = true
+    } else {
+      _invoker_rules = _bind_files[0]
+      _invoker_deps += [ invoker.dml_label ]
+    }
   }
+
+  assert(defined(invoker.rules) || _has_dml_label || _disable_autobind,
+         "Need a bind rules source or dml_label")
 
   bind_output = "$target_name.bindbc"
   if (defined(invoker.bind_output)) {
@@ -435,10 +442,10 @@ template("driver_bind_rules") {
                            [
                              "applicable_licenses",
                              "testonly",
-                             "disable_autobind",
                              "disable_new_bytecode",
                              "visibility",
                            ])
+    disable_autobind = _disable_autobind
     if (_invoker_rules != "") {
       rules = _invoker_rules
     }
