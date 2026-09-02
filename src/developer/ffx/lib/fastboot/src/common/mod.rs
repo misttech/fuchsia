@@ -27,7 +27,7 @@ use futures::try_join;
 use pbms::is_local_product_bundle;
 use sdk::SdkVersion;
 use sparse::reader::SparseReader;
-use sparse::{build_sparse_files, resparse_sparse_img};
+use sparse::{build_sparse_writers, resparse_sparse_img_writers};
 use std::fs::File;
 use std::io::Read;
 use std::num::{NonZeroU64, ParseIntError};
@@ -123,18 +123,19 @@ pub async fn stage_file<F: FileResolver + Sync, T: FastbootInterface>(
     Ok(())
 }
 
-async fn do_flash<F: FastbootInterface>(
+async fn do_flash_dynamic_sparse<F: FastbootInterface>(
     name: &str,
     messenger: &Sender<Event>,
     fastboot_interface: &mut F,
-    file_to_upload: &str,
+    size: u32,
+    reader: &mut (dyn Read + Send),
     timeout: Duration,
 ) -> Result<()> {
     let (prog_client, mut prog_server): (Sender<UploadProgress>, Receiver<UploadProgress>) =
         mpsc::channel(1);
     try_join!(
         fastboot_interface
-            .flash(name, file_to_upload, prog_client, timeout)
+            .flash_from_reader(name, size, reader, prog_client, timeout)
             .map_err(FfxFastbootError::Interface),
         async {
             loop {
@@ -165,23 +166,32 @@ async fn flash_partition_sparse<F: FastbootInterface>(
 ) -> Result<()> {
     log::debug!("Preparing to flash {} in sparse mode", file_to_upload);
 
-    let sparse_files = build_sparse_files(
-        name,
-        file_to_upload,
-        std::env::temp_dir().as_path(),
-        max_download_size,
-    )?;
+    let sparse_writers = build_sparse_writers(name, file_to_upload, max_download_size)?;
 
     messenger
         .send(Event::Upload(UploadProgress::OnReady {
             partition: name.to_owned(),
-            files: sparse_files.len().try_into()?,
+            files: sparse_writers.len().try_into()?,
         }))
         .await?;
 
-    for tmp_file_path in sparse_files {
-        let tmp_file_name = tmp_file_path.to_str().unwrap();
-        do_flash(name, messenger, fastboot_interface, tmp_file_name, timeout).await?;
+    let mut in_file = File::open(file_to_upload).map_err(|e| FfxFastbootError::FileOpen {
+        path: PathBuf::from(file_to_upload),
+        source: e,
+    })?;
+
+    for writer in sparse_writers {
+        let size = u32::try_from(writer.file_size())?;
+        let mut slice_reader = writer.slice_reader(&mut in_file)?;
+        do_flash_dynamic_sparse(
+            name,
+            messenger,
+            fastboot_interface,
+            size,
+            &mut slice_reader,
+            timeout,
+        )
+        .await?;
     }
 
     Ok(())
@@ -267,22 +277,27 @@ async fn flash_basic_impl<T: FastbootInterface>(
                 log::debug!("Is already a sparse file. Building Reader");
                 let mut reader = SparseReader::new(file_handle)?;
                 log::debug!("Building sparse image");
-                let sparse_files = resparse_sparse_img(
-                    &mut reader,
-                    std::env::temp_dir().as_path(),
-                    max_download_size,
-                )?;
+                let sparse_writers = resparse_sparse_img_writers(&mut reader, max_download_size)?;
 
                 messenger
                     .send(Event::Upload(UploadProgress::OnReady {
                         partition: name.to_owned(),
-                        files: sparse_files.len().try_into()?,
+                        files: sparse_writers.len().try_into()?,
                     }))
                     .await?;
 
-                for tmp_file_path in sparse_files {
-                    let tmp_file_name = tmp_file_path.to_str().unwrap();
-                    do_flash(name, &messenger, fastboot_interface, tmp_file_name, timeout).await?;
+                for writer in sparse_writers {
+                    let size = u32::try_from(writer.file_size())?;
+                    let mut slice_reader = writer.slice_reader(&mut reader)?;
+                    do_flash_dynamic_sparse(
+                        name,
+                        messenger,
+                        fastboot_interface,
+                        size,
+                        &mut slice_reader,
+                        timeout,
+                    )
+                    .await?;
                 }
             }
             Err(_) | Ok(false) => {
@@ -302,7 +317,16 @@ async fn flash_basic_impl<T: FastbootInterface>(
         messenger
             .send(Event::Upload(UploadProgress::OnReady { partition: name.to_owned(), files: 1 }))
             .await?;
-        do_flash(name, messenger, fastboot_interface, &file_to_upload, timeout).await?;
+        let size = u32::try_from(file_size)?;
+        do_flash_dynamic_sparse(
+            name,
+            messenger,
+            fastboot_interface,
+            size,
+            &mut file_handle,
+            timeout,
+        )
+        .await?;
     }
     messenger
         .send(Event::FlashPartitionFinished {
@@ -1208,23 +1232,23 @@ mod test {
         let expected = vec![
             Event::FlashProduct { product_name: "nostream".to_string(), partition_count: 4 },
             Event::Upload(UploadProgress::OnReady { partition: "zircon_a".to_string(), files: 1 }),
-            Event::Upload(UploadProgress::OnStarted { size: 1 }),
-            Event::Upload(UploadProgress::OnProgress { bytes_written: 1 }),
+            Event::Upload(UploadProgress::OnStarted { size: 0 }),
+            Event::Upload(UploadProgress::OnProgress { bytes_written: 0 }),
             Event::Upload(UploadProgress::OnFinished),
             Event::FlashPartition { partition_name: "zircon_a".to_string() },
             Event::Upload(UploadProgress::OnReady { partition: "zircon_b".to_string(), files: 1 }),
-            Event::Upload(UploadProgress::OnStarted { size: 1 }),
-            Event::Upload(UploadProgress::OnProgress { bytes_written: 1 }),
+            Event::Upload(UploadProgress::OnStarted { size: 0 }),
+            Event::Upload(UploadProgress::OnProgress { bytes_written: 0 }),
             Event::Upload(UploadProgress::OnFinished),
             Event::FlashPartition { partition_name: "zircon_b".to_string() },
             Event::Upload(UploadProgress::OnReady { partition: "vbmeta_a".to_string(), files: 1 }),
-            Event::Upload(UploadProgress::OnStarted { size: 1 }),
-            Event::Upload(UploadProgress::OnProgress { bytes_written: 1 }),
+            Event::Upload(UploadProgress::OnStarted { size: 0 }),
+            Event::Upload(UploadProgress::OnProgress { bytes_written: 0 }),
             Event::Upload(UploadProgress::OnFinished),
             Event::FlashPartition { partition_name: "vbmeta_a".to_string() },
             Event::Upload(UploadProgress::OnReady { partition: "vbmeta_b".to_string(), files: 1 }),
-            Event::Upload(UploadProgress::OnStarted { size: 1 }),
-            Event::Upload(UploadProgress::OnProgress { bytes_written: 1 }),
+            Event::Upload(UploadProgress::OnStarted { size: 0 }),
+            Event::Upload(UploadProgress::OnProgress { bytes_written: 0 }),
             Event::Upload(UploadProgress::OnFinished),
             Event::FlashPartition { partition_name: "vbmeta_b".to_string() },
         ];

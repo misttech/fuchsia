@@ -292,19 +292,26 @@ impl<T: AsyncRead + AsyncWrite + Unpin + Debug + Send> Fastboot for FastbootProx
         listener: Sender<UploadProgress>,
         timeout: Duration,
     ) -> Result<(), FastbootError> {
-        // TODO(colnnelson): This file size could be done better.
-        // The stage function could return back how many bytes were uploaded
-        //
-
-        // Upload file
         let mut file_to_flash = File::open(path).map_err(FlashError::from)?;
         let size = file_to_flash.metadata().map_err(FlashError::from)?.len();
         let size = u32::try_from(size).map_err(|e| FlashError::InvalidFileSize(e))?;
+        self.flash_from_reader(partition_name, size, &mut file_to_flash, listener, timeout).await
+    }
+
+    async fn flash_from_reader(
+        &mut self,
+        partition_name: &str,
+        size: u32,
+        reader: &mut (dyn std::io::Read + Send),
+        listener: Sender<UploadProgress>,
+        timeout: Duration,
+    ) -> Result<(), FastbootError> {
         let progress_listener = ProgressListener::new(&listener);
+        let mut reader: &mut (dyn std::io::Read + Send) = reader;
         let upload_reply = upload_with_read_timeout(
             self.ctx.clone(),
             size,
-            &mut file_to_flash,
+            &mut reader,
             self.interface().await?,
             &progress_listener,
             timeout,
@@ -314,7 +321,7 @@ impl<T: AsyncRead + AsyncWrite + Unpin + Debug + Send> Fastboot for FastbootProx
             Reply::Okay(s) => log::debug!("Received response from download command: {}", s),
             Reply::Fail(s) => {
                 return Err(FastbootError::StageError(StageError::UploadFailed {
-                    path: path.to_string(),
+                    path: partition_name.to_string(),
                     message: s,
                 }));
             }

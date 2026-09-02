@@ -130,6 +130,29 @@ pub mod test {
             Ok(())
         }
 
+        async fn flash_from_reader(
+            &mut self,
+            _partition_name: &str,
+            size: u32,
+            _reader: &mut (dyn std::io::Read + Send),
+            listener: Sender<UploadProgress>,
+            _timeout: Duration,
+        ) -> Result<(), FastbootError> {
+            listener
+                .send(UploadProgress::OnStarted { size: size as u64 })
+                .await
+                .map_err(|_| FastbootError::ProgressSendError)?;
+            listener
+                .send(UploadProgress::OnProgress { bytes_written: size as u64 })
+                .await
+                .map_err(|_| FastbootError::ProgressSendError)?;
+            listener
+                .send(UploadProgress::OnFinished)
+                .await
+                .map_err(|_| FastbootError::ProgressSendError)?;
+            Ok(())
+        }
+
         async fn erase(&mut self, _partition_name: &str) -> Result<(), FastbootError> {
             Ok(())
         }

@@ -26,6 +26,15 @@ pub trait Fastboot: Send {
         timeout: Duration,
     ) -> Result<(), FastbootError>;
 
+    async fn flash_from_reader(
+        &mut self,
+        partition_name: &str,
+        size: u32,
+        reader: &mut (dyn std::io::Read + Send),
+        listener: Sender<UploadProgress>,
+        timeout: Duration,
+    ) -> Result<(), FastbootError>;
+
     async fn erase(&mut self, partition_name: &str) -> Result<(), FastbootError>;
 
     async fn boot(&mut self) -> Result<(), FastbootError>;
@@ -80,6 +89,17 @@ impl<F: Fastboot + ?Sized> Fastboot for Box<F> {
         timeout: Duration,
     ) -> Result<(), FastbootError> {
         (**self).flash(partition_name, path, listener, timeout).await
+    }
+
+    async fn flash_from_reader(
+        &mut self,
+        partition_name: &str,
+        size: u32,
+        reader: &mut (dyn std::io::Read + Send),
+        listener: Sender<UploadProgress>,
+        timeout: Duration,
+    ) -> Result<(), FastbootError> {
+        (**self).flash_from_reader(partition_name, size, reader, listener, timeout).await
     }
 
     async fn erase(&mut self, partition_name: &str) -> Result<(), FastbootError> {

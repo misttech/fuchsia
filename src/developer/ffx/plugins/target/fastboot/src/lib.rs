@@ -353,6 +353,16 @@ mod test {
         ) -> Result<(), FastbootError> {
             unimplemented!()
         }
+        async fn flash_from_reader(
+            &mut self,
+            _partition_name: &str,
+            _size: u32,
+            _reader: &mut (dyn std::io::Read + Send),
+            _listener: Sender<UploadProgress>,
+            _timeout: Duration,
+        ) -> Result<(), FastbootError> {
+            unimplemented!()
+        }
         async fn erase(&mut self, _partition_name: &str) -> Result<(), FastbootError> {
             unimplemented!()
         }
