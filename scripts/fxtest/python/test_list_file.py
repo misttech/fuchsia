@@ -155,7 +155,9 @@ class Test:
         return self.build.test.name.__hash__()
 
     def __eq__(self, other: object) -> bool:
-        return self.build.__eq__(other)
+        if isinstance(other, Test):
+            return self.build == other.build
+        return False
 
     def needs_device(self) -> bool:
         """Determine if this test requires a device.
@@ -286,7 +288,7 @@ class Test:
                 entry.join_info(test_list_entries)
         except KeyError as e:
             raise ValueError(
-                f"Test '{e.args[0]} was found in "
+                f"Test '{e.args[0]}' was found in "
                 + "tests.json, but not test-list.json.\nYou may need to run "
                 + "`fx build //:test-list` or a full `fx build`."
             )

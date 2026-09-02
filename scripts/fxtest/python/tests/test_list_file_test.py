@@ -100,10 +100,30 @@ class TestListFileJoiningTest(unittest.TestCase):
         ]
         test_list_file: dict[str, TestListEntry] = {}
 
-        self.assertRaises(
-            ValueError,
-            lambda: Test.augment_tests_with_info(test_list, test_list_file),
+        with self.assertRaises(ValueError) as ctx:
+            Test.augment_tests_with_info(test_list, test_list_file)
+        self.assertIn(
+            "Test 'my_test' was found in tests.json", str(ctx.exception)
         )
+
+    def test_equality_distinct_instances(self) -> None:
+        """Two distinct Test instances wrapping equal TestEntries must compare equal."""
+        t1 = Test(
+            TestEntry(
+                test=TestSection(
+                    name="my_test", label="//src/my_test", os="linux"
+                )
+            )
+        )
+        t2 = Test(
+            TestEntry(
+                test=TestSection(
+                    name="my_test", label="//src/my_test", os="linux"
+                )
+            )
+        )
+        self.assertEqual(t1, t2)
+        self.assertFalse(t1 == "not_a_test")
 
 
 class TestListEntryMethodTest(unittest.TestCase):
