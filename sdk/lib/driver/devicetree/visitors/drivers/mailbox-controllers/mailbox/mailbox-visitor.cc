@@ -94,9 +94,6 @@ zx::result<> MailboxVisitor::Visit(fdf_devicetree::Node& node,
 
   auto channel_name_it = channel_names.cbegin();
 
-  std::map<uint32_t, uint32_t> controller_ids;
-  uint32_t current_controller_id = 0;
-
   for (auto& reference : *channels) {
     zx::result<MailboxSpec> spec = ParseMailbox(reference);
     if (spec.is_error()) {
@@ -104,13 +101,6 @@ zx::result<> MailboxVisitor::Visit(fdf_devicetree::Node& node,
 
       return spec.take_error();
     }
-
-    // Map the node ID to a controller index to be used only in the node properties. This way
-    // clients with multiple mailbox parents don't need to know the actual controller ID.
-    if (!controller_ids.contains(reference.reference_node().id())) {
-      controller_ids[reference.reference_node().id()] = current_controller_id++;
-    }
-    const uint32_t local_controller_id = controller_ids[reference.reference_node().id()];
 
     fuchsia_hardware_mailbox::ChannelInfo channel_info;
     channel_info.channel(spec->channel);
@@ -125,26 +115,24 @@ zx::result<> MailboxVisitor::Visit(fdf_devicetree::Node& node,
                 fdf::MakeAcceptBindRule(bind_fuchsia::SERVICE, "fuchsia.hardware.mailbox.Service"),
                 fdf::MakeAcceptBindRule(bind_fuchsia_mailbox::CONTROLLER_ID,
                                         reference.reference_node().id()),
-                fdf::MakeAcceptBindRule(bind_fuchsia_mailbox::CHANNEL, spec->channel),
+                fdf::MakeAcceptBindRule(bind_fuchsia::ID, spec->channel),
             },
         .properties =
             {
                 fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.mailbox.Service"),
-                fdf::MakeProperty2(bind_fuchsia_mailbox::CONTROLLER_ID, local_controller_id),
-                fdf::MakeProperty2(bind_fuchsia_mailbox::CHANNEL, spec->channel),
+                fdf::MakeProperty2(bind_fuchsia::ID, spec->channel),
+                fdf::MakeProperty2(bind_fuchsia::NAME, channel_name_it != channel_names.cend()
+                                                           ? *channel_name_it
+                                                           : "mailbox"),
             },
     }};
 
     if (spec->client) {
       parent_spec.bind_rules().push_back(
           fdf::MakeAcceptBindRule(bind_fuchsia_mailbox::CLIENT, *spec->client));
-      parent_spec.properties().push_back(
-          fdf::MakeProperty2(bind_fuchsia_mailbox::CLIENT, *spec->client));
     }
 
     if (channel_name_it != channel_names.cend()) {
-      parent_spec.properties().push_back(
-          fdf::MakeProperty2(bind_fuchsia_mailbox::CHANNEL_NAME, *channel_name_it));
       ++channel_name_it;
     }
 
