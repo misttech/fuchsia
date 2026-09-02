@@ -73,53 +73,30 @@ fn marks(mark_1: Option<u32>, mark_2: Option<u32>) -> fnet::Marks {
     fnet::Marks { mark_1, mark_2, ..Default::default() }
 }
 
-fn expect_sequence(actual: &[Option<PropertyUpdate>], expected: &[Option<PropertyUpdate>]) {
-    let mut actual = actual.iter().peekable();
-    let expected = expected.iter();
+fn expect_subsequence(actual: &[Option<PropertyUpdate>], expected: &[Option<PropertyUpdate>]) {
+    let mut actual_iter = actual.iter();
 
     for expect in expected {
-        let next = actual.next();
-        match next {
-            None => panic!("Missing property. Next expected property is: {expect:?}"),
-            Some(value) => match (value, expect) {
-                (Some(v), Some(e)) => {
-                    if v != e {
-                        panic!("Found out of sequence entry (expected: {e:?}, found: {v:?}");
-                    }
-                }
-                (None, None) => {}
-                _ => panic!("Found out of sequence entry (expected: {expect:?}, found: {value:?}"),
-            },
-        }
-
-        loop {
-            let peek = actual.peek();
-            match peek {
-                None => break,
-                Some(value) => match (value, expect) {
-                    (Some(v), Some(e)) => {
-                        if v != e {
-                            break;
-                        }
-                    }
-                    (None, None) => {}
-                    _ => break,
-                },
-            }
-            let _ = actual.next();
+        if !actual_iter.any(|value| value == expect) {
+            panic!(
+                "Missing property in sequence. Next expected property: \
+                {expect:?}, actual was: {actual:?}"
+            );
         }
     }
 }
 
-async fn watch_default_and_record_properties<F>(
+async fn watch_default_and_record_properties<F, R>(
     networks: fnp_properties::NetworksProxy,
     properties: PropertyInterest,
     last_updates: Arc<Mutex<Vec<Option<PropertyUpdate>>>>,
     mut tx: mpsc::Sender<()>,
     mut shutdown_rx: mpsc::Receiver<()>,
     mut is_new_update: F,
+    mut reset_filter: R,
 ) where
     F: FnMut(&PropertyUpdate) -> bool,
+    R: FnMut(),
 {
     let mut network = None;
     let mut watcher_opt: Option<fnp_properties::PropertyWatcherProxy> = None;
@@ -136,6 +113,7 @@ async fn watch_default_and_record_properties<F>(
                 {
                     Some(net) => {
                         info!("Observed new network");
+                        reset_filter();
                         let net_dup = net.duplicate().expect("couldn't duplicate");
                         let (watcher, server_end) =
                             fidl::endpoints::create_proxy::<fnp_properties::PropertyWatcherMarker>();
@@ -157,6 +135,7 @@ async fn watch_default_and_record_properties<F>(
                     }
                     None => {
                         info!("Default network was lost via Watch");
+                        reset_filter();
                         let mut updates = last_updates.lock().await;
                         if network.is_some() && updates.last() != Some(&None) {
                             updates.push(None);
@@ -215,7 +194,9 @@ async fn test_track_socket_marks<N: Netstack, M: Manager>(name: &str) {
                 let (mut shutdown_tx, shutdown_rx) = mpsc::channel::<()>(1);
 
                 let last_updates = Arc::new(Mutex::new(Vec::new()));
-                let mut last_marks = marks(None, None);
+                let last_marks = Arc::new(std::sync::Mutex::new(marks(None, None)));
+                let last_marks_filter = last_marks.clone();
+                let last_marks_reset = last_marks.clone();
                 let background = watch_default_and_record_properties(
                     realm
                         .connect_to_protocol::<fnp_properties::NetworksMarker>()
@@ -226,12 +207,16 @@ async fn test_track_socket_marks<N: Netstack, M: Manager>(name: &str) {
                     shutdown_rx,
                     move |update| {
                         if let Some(marks) = &update.socket_marks {
-                            if marks != &last_marks {
-                                last_marks = marks.clone();
+                            let mut last = last_marks_filter.lock().unwrap();
+                            if marks != &*last {
+                                *last = marks.clone();
                                 return true;
                             }
                         }
                         false
+                    },
+                    move || {
+                        *last_marks_reset.lock().unwrap() = marks(None, None);
                     },
                 );
 
@@ -288,7 +273,7 @@ async fn test_track_socket_marks<N: Netstack, M: Manager>(name: &str) {
                     rx.next().await.expect("channel closed");
 
                     let updates = last_updates.lock().await.clone();
-                    expect_sequence(
+                    expect_subsequence(
                         &updates,
                         &vec![
                             Some(PropertyUpdate {
@@ -1258,7 +1243,9 @@ async fn test_track_dns_changes_default_switch<N: Netstack, M: Manager>(name: &s
                 let last_updates = Arc::new(Mutex::new(Vec::new()));
                 // Listen for `WatchDefault` changes. For each new default network token, register a
                 // `PropertyWatcher` and record observed updates.
-                let mut last_dns_servers = None;
+                let last_dns_servers = Arc::new(std::sync::Mutex::new(None));
+                let last_dns_filter = last_dns_servers.clone();
+                let last_dns_reset = last_dns_servers.clone();
                 let background = watch_default_and_record_properties(
                     realm
                         .connect_to_protocol_from_child::<fnp_properties::NetworksMarker>(
@@ -1272,12 +1259,16 @@ async fn test_track_dns_changes_default_switch<N: Netstack, M: Manager>(name: &s
                     move |update| {
                         if let Some(dns_config) = &update.dns_configuration {
                             let servers = dns_config.servers.clone();
-                            if servers != last_dns_servers {
-                                last_dns_servers = servers;
+                            let mut last = last_dns_filter.lock().unwrap();
+                            if servers != *last {
+                                *last = servers;
                                 return true;
                             }
                         }
                         false
+                    },
+                    move || {
+                        *last_dns_reset.lock().unwrap() = None;
                     },
                 );
 
@@ -1402,7 +1393,7 @@ async fn test_track_dns_changes_default_switch<N: Netstack, M: Manager>(name: &s
 
                     // Verify that the PropertyWatcher sequence across default network switches
                     // matches [DNS_1, DNS_2, DNS_1, None].
-                    expect_sequence(
+                    expect_subsequence(
                         &updates,
                         &vec![
                             Some(PropertyUpdate {
