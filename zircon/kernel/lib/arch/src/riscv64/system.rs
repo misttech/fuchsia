@@ -131,9 +131,40 @@ impl SupervisorCause {
 /// [riscv/priv]: 3.1.16  Supervisor Trap Value Register (stval)
 pub const STVAL: Csr<encoding::stval, u64> = Csr::new();
 
+/// [riscv/unpriv/v]: 3.4.1  Vector type register (vtype)
+pub const VTYPE: Csr<encoding::vtype, VectorType> = Csr::new();
+
+layout!({
+    /// The layout of [`VTYPE`].
+    ///
+    /// `vsew` and `vlmul` are left as raw values: most of their encodings are
+    /// reserved, so a `bitfield_repr` enum could not represent what the hardware
+    /// may actually report.
+    pub struct VectorType(u64);
+    {
+        let vill @ 63; // Illegal value
+        let __ @ 62..8;
+        let vma @ 7; // Vector mask agnostic
+        let vta @ 6; // Vector tail agnostic
+        let vsew @ 5..3; // Selected element width
+        let vlmul @ 2..0; // Vector register group multiplier
+    }
+});
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn vtype() {
+        // SEW = 32, LMUL = 1/2, tail and mask agnostic.
+        let vtype = VectorType::from((1 << 7) | (1 << 6) | (0b010 << 3) | 0b111);
+        assert!(!vtype.vill());
+        assert!(vtype.vma());
+        assert!(vtype.vta());
+        assert_eq!(vtype.vsew(), 0b010);
+        assert_eq!(vtype.vlmul(), 0b111);
+    }
 
     #[test]
     fn scause() {

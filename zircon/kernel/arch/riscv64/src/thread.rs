@@ -109,10 +109,6 @@ unsafe extern "C" {
     pub fn cpp_arch_set_current_thread(thread: *mut core::ffi::c_void);
     pub fn cpp_arch_set_restricted_flag(in_restricted: bool);
     pub fn cpp_with_frame_pointers() -> bool;
-    pub fn cpp_riscv64_thread_fpu_save(thread: *mut core::ffi::c_void, fpu_status: u32);
-    pub fn cpp_riscv64_thread_fpu_restore(thread: *const core::ffi::c_void, fpu_status: u32);
-    pub fn cpp_riscv64_thread_vector_save(thread: *mut core::ffi::c_void, vector_status: u32);
-    pub fn cpp_riscv64_thread_vector_restore(thread: *const core::ffi::c_void, vector_status: u32);
 }
 
 /// Returns a pointer to the RISC-V 64 architectural state embedded in `thread`.
@@ -127,22 +123,6 @@ unsafe extern "C" {
 pub unsafe fn thread_arch(thread: *mut core::ffi::c_void) -> *mut ArchThread {
     // SAFETY: The caller guarantees `thread`; the facade only offsets the pointer.
     unsafe { crate::kernel::thread::get_arch(thread.cast()).cast() }
-}
-
-/// Reads the current FPU (`sstatus.fs`) hardware status on this CPU.
-#[inline(always)]
-fn riscv64_fpu_status() -> u32 {
-    // SAFETY: Reads the SSTATUS CSR on the current CPU, which has no side effects.
-    let status = unsafe { riscv64_csr_read::<RISCV64_CSR_SSTATUS>() };
-    ((status & RISCV64_CSR_SSTATUS_FS_MASK) >> RISCV64_CSR_SSTATUS_FS_SHIFT) as u32
-}
-
-/// Reads the current vector unit (`sstatus.vs`) hardware status on this CPU.
-#[inline(always)]
-fn riscv64_vector_status() -> u32 {
-    // SAFETY: Reads the SSTATUS CSR on the current CPU, which has no side effects.
-    let status = unsafe { riscv64_csr_read::<RISCV64_CSR_SSTATUS>() };
-    ((status & RISCV64_CSR_SSTATUS_VS_MASK) >> RISCV64_CSR_SSTATUS_VS_SHIFT) as u32
 }
 
 /// Initialize the architecture state of a thread.
@@ -339,11 +319,13 @@ pub unsafe extern "C" fn arch_context_switch(
 ) {
     debug_assert!(!old_thread.is_null());
     debug_assert!(!new_thread.is_null());
-    // SAFETY: Switches thread hardware context, FPU/vector registers, and integer registers.
-    unsafe {
-        debug_assert!(super::arch::arch_ints_disabled());
+    debug_assert!(super::arch::arch_ints_disabled());
 
-        if LOCAL_TRACE != 0 {
+    if LOCAL_TRACE != 0 {
+        // SAFETY: both threads are valid per this function's contract, so
+        // `kernel::thread::name()` returns a NUL-terminated string that outlives
+        // the borrow -- a thread's name is owned by the thread.
+        unsafe {
             let old_name = crate::kernel::thread::name(old_thread.cast());
             let new_name = crate::kernel::thread::name(new_thread.cast());
             let old_name_str = core::ffi::CStr::from_ptr(old_name).to_str().unwrap_or("");
@@ -356,19 +338,29 @@ pub unsafe extern "C" fn arch_context_switch(
                 new_name_str,
             );
         }
+    }
 
-        // Wipe out any LR/SC reservations this cpu may have.
+    // Wipe out any LR/SC reservations this cpu may have.
+    // SAFETY: a store-conditional to a dedicated scratch word. It clobbers nothing
+    // but that word and `zero`, and its only effect is to break any outstanding
+    // reservation on this hart.
+    unsafe {
         core::arch::asm!(
             "sc.w zero, zero, ({scratch})",
             scratch = in(reg) core::ptr::addr_of_mut!(MEMORY_RESERVATION_SCRATCH),
             options(nostack),
         );
+    }
 
-        // FPU and vector context switch
-        // Based on a combination of the current hardware state and whether or not the
-        // threads have the dirty flags set, conditionally save and/or restore
-        // hardware state.
-        if LOCAL_TRACE != 0 {
+    // FPU and vector context switch
+    // Based on a combination of the current hardware state and whether or not the
+    // threads have the dirty flags set, conditionally save and/or restore
+    // hardware state.
+    if LOCAL_TRACE != 0 {
+        // SAFETY: `sstatus` is always readable in supervisor mode, and both threads
+        // are valid per this function's contract, so `thread_arch()` -- which is
+        // offset arithmetic only -- yields a live `ArchThread`.
+        unsafe {
             let status = riscv64_csr_read::<RISCV64_CSR_SSTATUS>();
             let fpu_status = status & RISCV64_CSR_SSTATUS_FS_MASK;
             let vector_status = status & RISCV64_CSR_SSTATUS_VS_MASK;
@@ -383,34 +375,53 @@ pub unsafe extern "C" fn arch_context_switch(
                 (*new_arch).fpu_dirty as u32,
             );
         }
+    }
 
-        let current_fpu_status = riscv64_fpu_status();
-        let current_vector_status = riscv64_vector_status();
-        if !crate::kernel::thread::is_user_state_saved(old_thread.cast()) {
-            // Save the fpu and vector state for the old (current) thread, depending on
-            // whether the fpu or vector hardware is currently in the initial state.
-            debug_assert_eq!(old_thread, crate::kernel::thread::current_get().cast());
-            cpp_riscv64_thread_fpu_save(old_thread, current_fpu_status);
+    let current_fpu_status = super::fpu::riscv64_fpu_status();
+    let current_vector_status = super::vector::riscv64_vector_status();
+    // SAFETY: `old_thread` is valid per this function's contract.
+    if !unsafe { crate::kernel::thread::is_user_state_saved(old_thread.cast()) } {
+        // Save the fpu and vector state for the old (current) thread, depending on
+        // whether the fpu or vector hardware is currently in the initial state.
+        debug_assert_eq!(old_thread, crate::kernel::thread::current_get().cast());
+        // SAFETY: `old_thread` is valid, and it is the running thread -- asserted
+        // just above -- so its hardware state is the state being saved.
+        unsafe {
+            super::fpu::riscv64_thread_fpu_save(old_thread, current_fpu_status);
             if super::feature::has_vector() {
-                cpp_riscv64_thread_vector_save(old_thread, current_vector_status);
+                super::vector::riscv64_thread_vector_save(old_thread, current_vector_status);
             }
         }
+    }
 
-        // Always restore the new thread's fpu and vector state even if it is
-        // probably going to be restored by a higher layer later with a call to
-        // arch_restore_user_state. Though it may be extra work in this case, it
-        // avoids potential issues with state getting out of sync if the kernel
-        // panicked or the higher layer forgot to restore.
-        cpp_riscv64_thread_fpu_restore(new_thread, current_fpu_status);
+    // Always restore the new thread's fpu and vector state even if it is
+    // probably going to be restored by a higher layer later with a call to
+    // arch_restore_user_state. Though it may be extra work in this case, it
+    // avoids potential issues with state getting out of sync if the kernel
+    // panicked or the higher layer forgot to restore.
+    // SAFETY: `new_thread` is valid per this function's contract, and it is the
+    // thread about to run, so its saved state is what the hardware should hold.
+    unsafe {
+        super::fpu::riscv64_thread_fpu_restore(new_thread, current_fpu_status);
         if super::feature::has_vector() {
-            cpp_riscv64_thread_vector_restore(new_thread, current_vector_status);
+            super::vector::riscv64_thread_vector_restore(new_thread, current_vector_status);
         }
+    }
 
-        // Set the percpu in_restricted_mode field.
+    // Set the percpu in_restricted_mode field.
+    // SAFETY: `new_thread` is valid per this function's contract, and
+    // `cpp_arch_set_restricted_flag` only writes the per-CPU flag word.
+    unsafe {
         let in_restricted = crate::kernel::thread::is_in_restricted_mode(new_thread.cast());
         cpp_arch_set_restricted_flag(in_restricted);
+    }
 
-        // Regular integer context switch.
+    // Regular integer context switch.
+    // SAFETY: both threads are valid per this function's contract, so `thread_arch()`
+    // yields live `ArchThread`s; `riscv64_context_switch` saves the callee-saved
+    // registers to `old_arch.sp` and resumes from `new_arch.sp`, which is what every
+    // `ArchThread` is initialized to hold.
+    unsafe {
         let old_arch = thread_arch(old_thread);
         let new_arch = thread_arch(new_thread);
         riscv64_context_switch(
@@ -464,14 +475,18 @@ pub unsafe extern "C" fn arch_thread_get_blocked_fp(thread: *mut core::ffi::c_vo
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn arch_save_user_state(thread: *mut core::ffi::c_void) {
     debug_assert!(!thread.is_null());
-    // SAFETY: Saves FPU and vector state for the thread.
-    unsafe {
-        cpp_riscv64_thread_fpu_save(thread, riscv64_fpu_status());
-        if super::feature::has_vector() {
-            cpp_riscv64_thread_vector_save(thread, riscv64_vector_status());
-        }
-        // Not saving debug state because there isn't any.
+    // SAFETY: The caller guarantees `thread`; this saves the live FPU registers into it.
+    unsafe { super::fpu::riscv64_thread_fpu_save(thread, super::fpu::riscv64_fpu_status()) };
+    if super::feature::has_vector() {
+        // SAFETY: As above, and only reached when the vector extension is present.
+        unsafe {
+            super::vector::riscv64_thread_vector_save(
+                thread,
+                super::vector::riscv64_vector_status(),
+            )
+        };
     }
+    // Not saving debug state because there isn't any.
 }
 
 /// Restore user register state (FPU/vector) for a thread.
@@ -480,12 +495,16 @@ pub unsafe extern "C" fn arch_save_user_state(thread: *mut core::ffi::c_void) {
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn arch_restore_user_state(thread: *mut core::ffi::c_void) {
     debug_assert!(!thread.is_null());
-    // SAFETY: Restores FPU and vector state for the thread.
-    unsafe {
-        cpp_riscv64_thread_fpu_restore(thread, riscv64_fpu_status());
-        if super::feature::has_vector() {
-            cpp_riscv64_thread_vector_restore(thread, riscv64_vector_status());
-        }
+    // SAFETY: The caller guarantees `thread`; this restores the FPU registers from it.
+    unsafe { super::fpu::riscv64_thread_fpu_restore(thread, super::fpu::riscv64_fpu_status()) };
+    if super::feature::has_vector() {
+        // SAFETY: As above, and only reached when the vector extension is present.
+        unsafe {
+            super::vector::riscv64_thread_vector_restore(
+                thread,
+                super::vector::riscv64_vector_status(),
+            )
+        };
     }
 }
 

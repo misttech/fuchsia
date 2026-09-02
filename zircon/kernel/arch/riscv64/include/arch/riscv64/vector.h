@@ -41,13 +41,6 @@ static_assert(offsetof(riscv64_vector_state, vl) == RISCV64_VECTOR_STATE_VL);
 static_assert(offsetof(riscv64_vector_state, vtype) == RISCV64_VECTOR_STATE_VTYPE);
 static_assert(sizeof(riscv64_vector_state) == 0x220);
 
-ktl::optional<uint64_t> riscv64_vlmax(uint64_t vtype);
-
-// Low-level vector context zero/save/restore routines, implemented in assembly.
-extern "C" void riscv64_vector_zero();
-extern "C" void riscv64_vector_save(riscv64_vector_state* state);
-extern "C" void riscv64_vector_restore(const riscv64_vector_state* state);
-
 // Read the floating point status registers.
 enum class Riscv64VectorStatus { OFF, INITIAL, CLEAN, DIRTY };
 inline Riscv64VectorStatus riscv64_vector_status() {
@@ -69,12 +62,25 @@ inline Riscv64VectorStatus riscv64_vector_status() {
   }
 }
 
-// Save and restore the vector register state into/out of the thread. Optionally
-// pass in a cached copy of the current vector status field from sstatus;
-// otherwise, the current state is used.
 struct Thread;
-void riscv64_thread_vector_save(Thread* thread, Riscv64VectorStatus status);
-void riscv64_thread_vector_restore(const Thread* thread, Riscv64VectorStatus status);
+
+extern "C" {
+uint64_t rust_riscv64_vlmax(uint64_t vtype, bool* has_value);
+}
+
+inline ktl::optional<uint64_t> riscv64_vlmax(uint64_t vtype) {
+  bool has_value = false;
+  uint64_t val = rust_riscv64_vlmax(vtype, &has_value);
+  if (!has_value) {
+    return ktl::nullopt;
+  }
+  return val;
+}
+
+// Low-level vector context zero/save/restore routines, implemented in assembly.
+extern "C" void riscv64_vector_zero();
+extern "C" void riscv64_vector_save(riscv64_vector_state* state);
+extern "C" void riscv64_vector_restore(const riscv64_vector_state* state);
 
 #endif  // __ASSEMBLER__
 

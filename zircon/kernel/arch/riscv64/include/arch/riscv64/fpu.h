@@ -43,10 +43,4 @@ inline Riscv64FpuStatus riscv64_fpu_status() {
   }
 }
 
-// Save and restore the fpu state into/out of the thread. Optionally pass in a cached
-// copy of the current fpu status field from sstatus, otherwise the current state is used.
-struct Thread;
-void riscv64_thread_fpu_save(Thread* thread, Riscv64FpuStatus fpu_status);
-void riscv64_thread_fpu_restore(const Thread* thread, Riscv64FpuStatus fpu_status);
-
 #endif  // ZIRCON_KERNEL_ARCH_RISCV64_INCLUDE_ARCH_RISCV64_FPU_H_

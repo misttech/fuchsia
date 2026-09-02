@@ -42,8 +42,6 @@ bool cpp_boot_options_riscv64_enable_asid() { return BootOptions::Get()->riscv64
 uint32_t cpp_riscv64_curr_hart_id() { return riscv64_curr_hart_id(); }
 uint32_t cpp_riscv64_boot_hart_id() { return riscv64_boot_hart_id(); }
 
-void cpp_riscv64_fpu_zero() { riscv64_fpu_zero(); }
-void cpp_riscv64_vector_zero() { riscv64_vector_zero(); }
 void cpp_riscv64_mp_early_init_percpu(uint32_t hart_id, uint32_t cpu_num) {
   riscv64_mp_early_init_percpu(hart_id, cpu_num);
 }
@@ -52,22 +50,6 @@ void cpp_riscv64_mmu_early_init() { riscv64_mmu_early_init(); }
 void cpp_riscv64_mmu_prevm_init() { riscv64_mmu_prevm_init(); }
 void cpp_riscv64_sbi_init() { riscv64_sbi_init(); }
 void cpp_riscv64_mmu_init() { riscv64_mmu_init(); }
-
-void cpp_riscv64_thread_fpu_save(void* thread, uint32_t status) {
-  riscv64_thread_fpu_save(static_cast<Thread*>(thread), static_cast<Riscv64FpuStatus>(status));
-}
-void cpp_riscv64_thread_fpu_restore(const void* thread, uint32_t status) {
-  riscv64_thread_fpu_restore(static_cast<const Thread*>(thread),
-                             static_cast<Riscv64FpuStatus>(status));
-}
-void cpp_riscv64_thread_vector_save(void* thread, uint32_t status) {
-  riscv64_thread_vector_save(static_cast<Thread*>(thread),
-                             static_cast<Riscv64VectorStatus>(status));
-}
-void cpp_riscv64_thread_vector_restore(const void* thread, uint32_t status) {
-  riscv64_thread_vector_restore(static_cast<const Thread*>(thread),
-                                static_cast<Riscv64VectorStatus>(status));
-}
 
 // TODO(https://fxbug.dev/537458631): Remove when FFI inlining is resolved.
 FFI_ALWAYS_INLINE zx_status_t cpp_riscv64_get_general_regs(zx_thread_state_general_regs_t* regs) {
@@ -79,7 +61,6 @@ FFI_ALWAYS_INLINE zx_status_t
 cpp_riscv64_set_general_regs(const zx_thread_state_general_regs_t* regs) {
   return arch_set_general_regs(Thread::Current::Get(), regs);
 }
-
 zx_status_t cpp_interrupt_send_ipi(cpu_mask_t cpu_mask, uint8_t ipi);
 void cpp_interrupt_init_percpu();
 void cpp_int_handler_start(uint64_t* state);

@@ -6,7 +6,9 @@
 
 pub mod arch;
 pub mod feature;
+pub mod fpu;
 pub mod thread;
+pub mod vector;
 
 /// Architecture-specific saved normal mode state for riscv64.
 ///

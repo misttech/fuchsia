@@ -92,8 +92,6 @@ pub struct ArchPhysHandoff {
 
 unsafe extern "C" {
     pub fn cpp_riscv64_handoff_boot_hart_id(handoff: *const ArchPhysHandoff) -> u64;
-    fn cpp_riscv64_fpu_zero();
-    fn cpp_riscv64_vector_zero();
     fn cpp_riscv64_mp_early_init_percpu(hart_id: u32, cpu_num: u32);
     fn cpp_riscv64_sbi_early_init();
     fn cpp_riscv64_mmu_early_init();
@@ -232,7 +230,7 @@ pub extern "C" fn riscv64_init_percpu() {
         );
 
         // Zero out the fpu state, and set to initial
-        cpp_riscv64_fpu_zero();
+        super::fpu::riscv64_fpu_zero();
     }
 }
 
@@ -303,30 +301,33 @@ pub extern "C" fn arch_init() {
 /// Architecture late per-CPU initialization.
 #[unsafe(no_mangle)]
 pub extern "C" fn arch_late_init_percpu() {
-    // SAFETY: Checks features and configures SENVCFG CSR for cache-block operations, zeros vector state,
-    // and marks the current CPU online.
-    unsafe {
-        // While it would be nicer to zero out vector state - and set it to initial -
-        // earlier and next to the call to do so for FPU state, that is too early for
-        // vector feature bit to have been set.
-        if super::feature::has_vector() {
-            cpp_riscv64_vector_zero();
-        }
+    // While it would be nicer to zero out vector state - and set it to initial -
+    // earlier and next to the call to do so for FPU state, that is too early for
+    // vector feature bit to have been set.
+    if super::feature::has_vector() {
+        // SAFETY: Zeroes the vector registers on the current CPU; only reached once the
+        // vector extension is known to be present.
+        unsafe { super::vector::riscv64_vector_zero() };
+    }
 
-        if super::feature::has_zicbom() {
-            // allow userspace to perform FLUSH and CLEAN operations, but forbid INVAL
+    if super::feature::has_zicbom() {
+        // allow userspace to perform FLUSH and CLEAN operations, but forbid INVAL
+        // SAFETY: Configures the SENVCFG cache-block bits on the current CPU.
+        unsafe {
             riscv64_csr_set::<RISCV64_CSR_SENVCFG>(RISCV64_CSR_SENVCFG_CBCFE);
             riscv64_csr_clear::<RISCV64_CSR_SENVCFG>(RISCV64_CSR_SENVCFG_CBIE_MASK);
             riscv64_csr_set::<RISCV64_CSR_SENVCFG>(RISCV64_CSR_SENVCFG_CBIE_ILLEGAL);
         }
-        if super::feature::has_zicboz() {
-            // Allow user space to perform zeroing
-            riscv64_csr_set::<RISCV64_CSR_SENVCFG>(RISCV64_CSR_SENVCFG_CBZE);
-        }
-
-        // per cpu on each secondary (and the boot cpu a second time)
-        cpp_mp_set_curr_cpu_online(true);
     }
+    if super::feature::has_zicboz() {
+        // Allow user space to perform zeroing
+        // SAFETY: Configures the SENVCFG cache-block-zero enable on the current CPU.
+        unsafe { riscv64_csr_set::<RISCV64_CSR_SENVCFG>(RISCV64_CSR_SENVCFG_CBZE) };
+    }
+
+    // per cpu on each secondary (and the boot cpu a second time)
+    // SAFETY: Marks the current CPU online in the C++ MP layer.
+    unsafe { cpp_mp_set_curr_cpu_online(true) };
 }
 
 /// Places the CPU in a low-power idle state waiting for an interrupt.

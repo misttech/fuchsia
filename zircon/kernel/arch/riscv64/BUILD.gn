@@ -100,7 +100,6 @@ if (toolchain_base_environment == "kernel") {
       "debugger.cc",
       "exceptions.S",
       "exceptions_c.cc",
-      "fpu.cc",
       "fpu_asm.S",
       "handoff.cc",
       "mmu.cc",
@@ -112,7 +111,6 @@ if (toolchain_base_environment == "kernel") {
       "stvec.S",
       "timer.cc",
       "user_copy_c.cc",
-      "vector.cc",
       "vector_asm.S",
     ]
     deps = [
@@ -211,8 +209,10 @@ if (toolchain_base_environment == "kernel") {
     sources = [
       "src/arch.rs",
       "src/feature.rs",
+      "src/fpu.rs",
       "src/mod.rs",
       "src/thread.rs",
+      "src/vector.rs",
     ]
     deps = [
       ":riscv64-regs-bindings",
