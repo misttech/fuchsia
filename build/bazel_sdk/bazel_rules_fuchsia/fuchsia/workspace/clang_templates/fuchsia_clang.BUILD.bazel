@@ -2,7 +2,6 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-load("@bazel_skylib//lib:selects.bzl", "selects")
 load("@fuchsia_sdk//:generated_constants.bzl", sdk_constants = "constants")
 load("@rules_cc//cc:defs.bzl", "cc_library", "cc_toolchain_suite")
 load(
@@ -10,10 +9,6 @@ load(
     "fuchsia_cpu_filter_dict",
 )
 load("//:generated_constants.bzl", clang_constants = "constants")
-load(
-    "//common:toolchains/clang/feature_flag.bzl",
-    "feature_flag",
-)
 load(
     "//common:toolchains/clang/repository_utils.bzl",
     "setup_clang_repository",
@@ -100,162 +95,4 @@ cc_library(
     name = "sources",
     srcs = glob(["src/**"], allow_empty = True),
     visibility = ["//visibility:public"],
-)
-
-config_setting(
-    name = "aarch64_cpu_build",
-    values = {"cpu": "aarch64"},
-)
-
-selects.config_setting_group(
-    name = "arm64_build",
-    match_any = [
-        "@platforms//cpu:arm64",
-        ":aarch64_cpu_build",
-    ],
-)
-
-config_setting(
-    name = "x86_64_cpu_build",
-    values = {"cpu": "x86_64"},
-)
-
-config_setting(
-    name = "k8_cpu_build",
-    values = {"cpu": "k8"},
-)
-
-selects.config_setting_group(
-    name = "x64_build",
-    match_any = [
-        "@platforms//cpu:x86_64",
-        ":x86_64_cpu_build",
-        ":k8_cpu_build",
-    ],
-)
-
-config_setting(
-    name = "riscv64_cpu_build",
-    values = {"cpu": "riscv64"},
-)
-
-selects.config_setting_group(
-    name = "riscv64_build",
-    match_any = [
-        "@platforms//cpu:riscv64",
-        ":riscv64_cpu_build",
-    ],
-)
-
-feature_flag(
-    name = "asan_flag",
-    feature_name = "asan",
-    visibility = ["//visibility:private"],
-)
-
-feature_flag(
-    name = "hwasan_flag",
-    feature_name = "hwasan",
-    visibility = ["//visibility:private"],
-)
-
-config_setting(
-    name = "novariant",
-    flag_values = {
-        ":asan_flag": "False",
-        ":hwasan_flag": "False",
-    },
-    visibility = ["//visibility:public"],
-)
-
-# IMPORTANT: The hwasan feature takes precedence over the asan one.
-# Keep this in sync with the definition of sanitizer_features in
-# //common:toolchains/clang/sanitizer.bzl
-config_setting(
-    name = "asan_variant",
-    flag_values = {
-        ":asan_flag": "True",
-        ":hwasan_flag": "False",
-    },
-    visibility = ["//visibility:public"],
-)
-
-config_setting(
-    name = "hwasan_variant",
-    flag_values = {
-        ":hwasan_flag": "True",
-    },
-    visibility = ["//visibility:public"],
-)
-
-selects.config_setting_group(
-    name = "arm64_novariant",
-    match_all = [
-        ":arm64_build",
-        ":novariant",
-    ],
-)
-
-selects.config_setting_group(
-    name = "arm64_asan_variant",
-    match_all = [
-        ":arm64_build",
-        ":asan_variant",
-    ],
-)
-
-selects.config_setting_group(
-    name = "arm64_hwasan_variant",
-    match_all = [
-        ":arm64_build",
-        ":hwasan_variant",
-    ],
-)
-
-selects.config_setting_group(
-    name = "x64_novariant",
-    match_all = [
-        ":x64_build",
-        ":novariant",
-    ],
-)
-
-selects.config_setting_group(
-    name = "x64_asan_variant",
-    match_all = [
-        ":x64_build",
-        ":asan_variant",
-    ],
-)
-
-selects.config_setting_group(
-    name = "x64_hwasan_variant",
-    match_all = [
-        ":x64_build",
-        ":hwasan_variant",
-    ],
-)
-
-selects.config_setting_group(
-    name = "riscv64_novariant",
-    match_all = [
-        ":riscv64_build",
-        ":novariant",
-    ],
-)
-
-selects.config_setting_group(
-    name = "riscv64_asan_variant",
-    match_all = [
-        ":riscv64_build",
-        ":asan_variant",
-    ],
-)
-
-selects.config_setting_group(
-    name = "riscv64_hwasan_variant",
-    match_all = [
-        ":riscv64_build",
-        ":hwasan_variant",
-    ],
 )

@@ -33,6 +33,9 @@ details and an example.
 #  - {clang_lib_dir}: The Clang internal library directory (e.g.
 #    lib/clang/<version>/lib) relative to the clang installation directory.
 #
+# IMPORTANT: The keys in these maps depend on the config_setting() targets
+# defined through the define_clang_sanitizer_config_settings() function!
+#
 _LIBCXX_SRCS_MAP = {
     "arm64": {
         "{clang_repo}:arm64_novariant": [

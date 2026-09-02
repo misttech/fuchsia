@@ -8,6 +8,7 @@ load("@bazel_skylib//lib:paths.bzl", "paths")
 load("//common:repository_utils.bzl", "get_fuchsia_host_arch", "get_fuchsia_host_os")
 load("//common:toolchains/clang/clang_utils.bzl", "process_clang_builtins_output")
 load("//common:toolchains/clang/providers.bzl", "ClangInfo")
+load("//common:toolchains/clang/sanitizer.bzl", "define_clang_sanitizer_config_settings")
 load("//common:toolchains/clang/toolchain_utils.bzl", "define_clang_runtime_filegroups")
 
 def prepare_clang_repository(repo_ctx, clang_install_dir, needs_symlinks = True):
@@ -291,6 +292,8 @@ def setup_clang_repository(constants):
             "include/unwind_itanium.h",
         ],
     )
+
+    define_clang_sanitizer_config_settings()
 
 def _empty_host_cpp_toolchain_repository_impl(repo_ctx):
     _BUILD_BAZEL_CONTENT = """

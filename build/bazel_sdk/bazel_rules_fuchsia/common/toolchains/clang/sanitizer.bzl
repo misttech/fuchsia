@@ -6,6 +6,7 @@
 Sanitizers definitions for Clang.
 """
 
+load("@bazel_skylib//lib:selects.bzl", "selects")
 load("@rules_cc//cc:action_names.bzl", "ALL_CC_COMPILE_ACTION_NAMES", "ALL_CC_LINK_ACTION_NAMES")
 load(
     "@rules_cc//cc:cc_toolchain_config_lib.bzl",
@@ -13,6 +14,10 @@ load(
     "flag_group",
     "flag_set",
     "with_feature_set",
+)
+load(
+    "//common:toolchains/clang/feature_flag.bzl",
+    "feature_flag",
 )
 
 # This feature should only be enabled by one of the features below
@@ -135,3 +140,159 @@ sanitizer_features = [
     _lsan_feature,
     _ubsan_feature,
 ]
+
+def define_clang_sanitizer_config_settings():
+    """Create sanitizer-related feature_flag() and config_setting() targets.
+
+    This function must be called from the BUILD.bazel of a given
+    Clang external repository, it defines multiple config_setting()
+    targets that other rules or functions depend on (e.g. package_resources.bzl)
+    """
+
+    # Holds True if --features=asan is used in the current build configuration
+    # or through a target-specific `features = [...]` definition.
+    feature_flag(
+        name = "asan_feature_flag",
+        feature_name = "asan",
+        visibility = ["//visibility:private"],
+    )
+
+    # Holds True if --features=hwasan is used in the current build configuration
+    # or through a target-specific `features = [...]` definition.
+    feature_flag(
+        name = "hwasan_feature_flag",
+        feature_name = "hwasan",
+        visibility = ["//visibility:private"],
+    )
+
+    # The following config_setting() determine which sanitizer mode
+    # is enabled.
+    #
+    # IMPORTANT: The hwasan feature takes precedence over the asan one.
+    # Keep this in sync with the definition of sanitizer_features in
+    # //common:toolchains/clang/sanitizer.bzl
+
+    # Holds True if no Asan features are enabled.
+    native.config_setting(
+        name = "novariant",
+        flag_values = {
+            ":asan_feature_flag": "False",
+            ":hwasan_feature_flag": "False",
+        },
+        visibility = ["//visibility:public"],
+    )
+
+    # Holds True if 'asan' feature is enabled, but 'hwasan' is not.
+    native.config_setting(
+        name = "asan_variant",
+        flag_values = {
+            ":asan_feature_flag": "True",
+            ":hwasan_feature_flag": "False",
+        },
+        visibility = ["//visibility:public"],
+    )
+
+    # Holds True if 'hwasan' feature is enabled.
+    native.config_setting(
+        name = "hwasan_variant",
+        flag_values = {
+            ":hwasan_feature_flag": "True",
+            # ignore asan_feature_flag intentionally.
+        },
+        visibility = ["//visibility:public"],
+    )
+
+    # Cpu specific config_filters for novariant/asan/hwasan.
+    native.config_setting(
+        name = "arm64_build",
+        constraint_values = ["@platforms//cpu:aarch64"],
+    )
+    native.config_setting(
+        name = "x64_build",
+        constraint_values = ["@platforms//cpu:x86_64"],
+    )
+    native.config_setting(
+        name = "riscv64_build",
+        constraint_values = ["@platforms//cpu:riscv64"],
+    )
+    #
+    # Note that since that the SDK's fuchsia_transition() function
+    # always changes --platforms, checking against @platforms//cpu:<name>
+    # is enough here.
+    #
+    # The SDK Bazel rules used to also check against the command-line
+    # --cpu value (also changed by the transition function), which
+    # is not needed anymore since the introduction of --platforms
+    # in Bazel 7.
+
+    selects.config_setting_group(
+        name = "arm64_novariant",
+        match_all = [
+            ":arm64_build",
+            ":novariant",
+        ],
+    )
+
+    selects.config_setting_group(
+        name = "arm64_asan_variant",
+        match_all = [
+            ":arm64_build",
+            ":asan_variant",
+        ],
+    )
+
+    selects.config_setting_group(
+        name = "arm64_hwasan_variant",
+        match_all = [
+            ":arm64_build",
+            ":hwasan_variant",
+        ],
+    )
+
+    selects.config_setting_group(
+        name = "x64_novariant",
+        match_all = [
+            ":x64_build",
+            ":novariant",
+        ],
+    )
+
+    selects.config_setting_group(
+        name = "x64_asan_variant",
+        match_all = [
+            ":x64_build",
+            ":asan_variant",
+        ],
+    )
+
+    selects.config_setting_group(
+        name = "x64_hwasan_variant",
+        match_all = [
+            ":x64_build",
+            ":hwasan_variant",
+        ],
+    )
+
+    selects.config_setting_group(
+        name = "riscv64_novariant",
+        match_all = [
+            ":riscv64_build",
+            ":novariant",
+        ],
+    )
+
+    selects.config_setting_group(
+        name = "riscv64_asan_variant",
+        match_all = [
+            ":riscv64_build",
+            ":asan_variant",
+        ],
+    )
+
+    selects.config_setting_group(
+        name = "riscv64_hwasan_variant",
+        match_all = [
+            ":riscv64_build",
+            ":hwasan_variant",
+        ],
+    )
