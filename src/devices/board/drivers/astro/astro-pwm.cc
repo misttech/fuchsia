@@ -76,7 +76,7 @@ const device_bind_prop_t kGpioInitProperties[] = {
 
 const ddk::BindRule kGpioBtRules[] = {
     ddk::MakeAcceptBindRule(bind_fuchsia::SERVICE, "fuchsia.hardware.gpio.Service"),
-    ddk::MakeAcceptBindRule(bind_fuchsia::GPIO_PIN, static_cast<uint32_t>(GPIO_SOC_BT_REG_ON)),
+    ddk::MakeAcceptBindRule(bind_fuchsia::ID, static_cast<uint32_t>(GPIO_SOC_BT_REG_ON)),
 };
 
 const device_bind_prop_t kGpioBtProperties[] = {

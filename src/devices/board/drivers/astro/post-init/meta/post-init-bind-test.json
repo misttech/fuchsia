@@ -21,7 +21,7 @@
                 "name": "Match touch interrupt",
                 "device": {
                     "fuchsia.Service": "\"fuchsia.hardware.gpio.Service\"",
-                    "fuchsia.BIND_GPIO_PIN": "fuchsia.amlogic.platform.s905d2.GPIOZ_PIN_ID.PIN_4"
+                    "fuchsia.ID": "fuchsia.amlogic.platform.s905d2.GPIOZ_PIN_ID.PIN_4"
                 }
             }
         ]
@@ -34,7 +34,7 @@
                 "name": "Match touch reset",
                 "device": {
                     "fuchsia.Service": "\"fuchsia.hardware.gpio.Service\"",
-                    "fuchsia.BIND_GPIO_PIN": "fuchsia.amlogic.platform.s905d2.GPIOZ_PIN_ID.PIN_9"
+                    "fuchsia.ID": "fuchsia.amlogic.platform.s905d2.GPIOZ_PIN_ID.PIN_9"
                 }
             }
         ]

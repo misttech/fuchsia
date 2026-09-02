@@ -70,9 +70,6 @@ uint BIND_I2C_CLASS;
 uint BIND_I2C_BUS_ID;
 uint BIND_I2C_ADDRESS;
 
-// GPIO bind properties.
-uint BIND_GPIO_PIN;
-uint BIND_GPIO_CONTROLLER;
 // Init Step bind properties.
 uint BIND_INIT_STEP;
 

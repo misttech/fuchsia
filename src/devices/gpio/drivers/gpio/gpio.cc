@@ -22,7 +22,6 @@
 
 #include <bind/fuchsia/cpp/bind.h>
 #include <bind/fuchsia/gpio/cpp/bind.h>
-#include <bind/fuchsia/pin/cpp/bind.h>
 #include <fbl/alloc_checker.h>
 
 #include "src/devices/gpio/drivers/gpio/gpio_parser.h"
@@ -329,14 +328,14 @@ zx::result<> GpioDevice::AddDevice(fidl::UnownedClientEnd<fuchsia_driver_framewo
   }
 
   std::vector<fuchsia_driver_framework::NodeProperty2> gpio_props{
-      fdf::MakeProperty2(bind_fuchsia::GPIO_PIN, pin_),
-      fdf::MakeProperty2(bind_fuchsia::GPIO_CONTROLLER, controller_id_),
+      fdf::MakeProperty2(bind_fuchsia::ID, pin_),
+      fdf::MakeProperty2(bind_fuchsia::NAME, pin_name()),
       fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.gpio.Service"),
   };
 
   std::vector<fuchsia_driver_framework::NodeProperty2> pin_props{
-      fdf::MakeProperty2(bind_fuchsia::GPIO_PIN, pin_),
-      fdf::MakeProperty2(bind_fuchsia::GPIO_CONTROLLER, controller_id_),
+      fdf::MakeProperty2(bind_fuchsia::ID, pin_),
+      fdf::MakeProperty2(bind_fuchsia::NAME, pin_name()),
       fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.pin.Service"),
   };
 
@@ -420,7 +419,7 @@ zx::result<> PinStatesDevice::AddDevice(
   };
 
   std::vector<fuchsia_driver_framework::NodeProperty2> props{
-      fdf::MakeProperty2(bind_fuchsia_pin::CONTROLLER, controller_id_),
+      fdf::MakeProperty2(bind_fuchsia::ID, controller_id_),
       fdf::MakeProperty2(bind_fuchsia::NAME, pin_states_.name()),
       fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.pin.PinStatesService"),
   };
@@ -884,7 +883,7 @@ void GpioRootDevice::CreatePinDevices(
     gpio_config::Config config, fdf::StartCompleter completer) {
   for (const auto& pin : pins) {
     fbl::AllocChecker ac;
-    children_.emplace_back(new (&ac) GpioDevice(pinimpl_.Clone(), pin.pin().value(), controller_id,
+    children_.emplace_back(new (&ac) GpioDevice(pinimpl_.Clone(), pin.pin().value(),
                                                 pin.name().value(), pin.id(), logger()));
     if (!ac.check()) {
       logger().log(fdf::ERROR, "Failed to allocate memory for pin");
@@ -987,7 +986,7 @@ std::unique_ptr<GpioInitDevice> GpioInitDevice::Create(
 
   std::vector<fuchsia_driver_framework::NodeProperty2> props{
       fdf::MakeProperty2(bind_fuchsia::INIT_STEP, bind_fuchsia_gpio::BIND_INIT_STEP_GPIO),
-      fdf::MakeProperty2(bind_fuchsia::GPIO_CONTROLLER, controller_id),
+      fdf::MakeProperty2(bind_fuchsia::ID, controller_id),
   };
 
   zx::result<fidl::ClientEnd<fuchsia_driver_framework::NodeController>> result =

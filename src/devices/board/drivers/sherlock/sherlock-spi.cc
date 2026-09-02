@@ -65,7 +65,7 @@ static const spi_channel_t spi_channels[] = {
 
 const std::vector kGpioSpiRules = {
     fdf::MakeAcceptBindRule(bind_fuchsia::SERVICE, "fuchsia.hardware.gpio.Service"),
-    fdf::MakeAcceptBindRule(bind_fuchsia::GPIO_PIN, static_cast<uint32_t>(GPIO_SPICC0_SS0)),
+    fdf::MakeAcceptBindRule(bind_fuchsia::ID, static_cast<uint32_t>(GPIO_SPICC0_SS0)),
 };
 
 const std::vector kGpioSpiProperties = {

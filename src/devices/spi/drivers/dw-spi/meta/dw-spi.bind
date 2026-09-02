@@ -36,17 +36,19 @@ optional parent "cs-0" {
 
 optional parent "gpio-init-0" {
   fuchsia.BIND_INIT_STEP == fuchsia.gpio.BIND_INIT_STEP.GPIO;
-  fuchsia.BIND_GPIO_CONTROLLER == 0;
+  fuchsia.ID == 0;
 }
 
 optional parent "gpio-init-1" {
   fuchsia.BIND_INIT_STEP == fuchsia.gpio.BIND_INIT_STEP.GPIO;
-  fuchsia.BIND_GPIO_CONTROLLER == 1;
+  fuchsia.ID == 1;
 }
 
 optional parent "pin-states-0" {
   fuchsia.Service == "fuchsia.hardware.pin.PinStatesService";
+  fuchsia.ID == 0;
 }
 optional parent "pin-states-1" {
   fuchsia.Service == "fuchsia.hardware.pin.PinStatesService";
+  fuchsia.ID == 1;
 }

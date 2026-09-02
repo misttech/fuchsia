@@ -15,32 +15,32 @@ primary parent "pbus" {
 
 parent "hw-id-0" {
   fuchsia.Service == "fuchsia.hardware.gpio.Service";
-  fuchsia.BIND_GPIO_PIN == fuchsia.amlogic.platform.s905d2.GPIOZ_PIN_ID.PIN_7;
+  fuchsia.ID == fuchsia.amlogic.platform.s905d2.GPIOZ_PIN_ID.PIN_7;
 }
 
 parent "hw-id-1" {
   fuchsia.Service == "fuchsia.hardware.gpio.Service";
-  fuchsia.BIND_GPIO_PIN == fuchsia.amlogic.platform.s905d2.GPIOZ_PIN_ID.PIN_8;
+  fuchsia.ID == fuchsia.amlogic.platform.s905d2.GPIOZ_PIN_ID.PIN_8;
 }
 
 parent "hw-id-2" {
   fuchsia.Service == "fuchsia.hardware.gpio.Service";
-  fuchsia.BIND_GPIO_PIN == fuchsia.amlogic.platform.s905d2.GPIOZ_PIN_ID.PIN_3;
+  fuchsia.ID == fuchsia.amlogic.platform.s905d2.GPIOZ_PIN_ID.PIN_3;
 }
 
 parent "disp-soc-vid" {
   fuchsia.Service == "fuchsia.hardware.gpio.Service";
-  fuchsia.BIND_GPIO_PIN == fuchsia.amlogic.platform.s905d2.GPIOH_PIN_ID.PIN_5;
+  fuchsia.ID == fuchsia.amlogic.platform.s905d2.GPIOH_PIN_ID.PIN_5;
 }
 
 parent "touch-interrupt" {
   fuchsia.Service == "fuchsia.hardware.gpio.Service";
-  fuchsia.BIND_GPIO_PIN == fuchsia.amlogic.platform.s905d2.GPIOZ_PIN_ID.PIN_4;
+  fuchsia.ID == fuchsia.amlogic.platform.s905d2.GPIOZ_PIN_ID.PIN_4;
 }
 
 parent "touch-reset" {
   fuchsia.Service == "fuchsia.hardware.gpio.Service";
-  fuchsia.BIND_GPIO_PIN == fuchsia.amlogic.platform.s905d2.GPIOZ_PIN_ID.PIN_9;
+  fuchsia.ID == fuchsia.amlogic.platform.s905d2.GPIOZ_PIN_ID.PIN_9;
 }
 
 optional parent "gpio-init" {

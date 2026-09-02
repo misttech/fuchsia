@@ -80,7 +80,7 @@ zx_status_t Sherlock::LightInit() {
 
   const auto kGpioLightInterruptRules = std::vector{
       fdf::MakeAcceptBindRule(bind_fuchsia::SERVICE, "fuchsia.hardware.gpio.Service"),
-      fdf::MakeAcceptBindRule(bind_fuchsia::GPIO_PIN,
+      fdf::MakeAcceptBindRule(bind_fuchsia::ID,
                               bind_fuchsia_amlogic_platform_t931::GPIOAO_PIN_ID_PIN_5),
   };
   const auto kGpioLightInterruptProperties = std::vector{
@@ -170,7 +170,7 @@ zx_status_t Sherlock::LightInit() {
 
   auto amber_led_gpio_bind_rules = std::vector{
       fdf::MakeAcceptBindRule(bind_fuchsia::SERVICE, "fuchsia.hardware.gpio.Service"),
-      fdf::MakeAcceptBindRule(bind_fuchsia::GPIO_PIN,
+      fdf::MakeAcceptBindRule(bind_fuchsia::ID,
                               bind_fuchsia_amlogic_platform_t931::GPIOAO_PIN_ID_PIN_11),
   };
 
@@ -191,7 +191,7 @@ zx_status_t Sherlock::LightInit() {
 
   auto green_led_gpio_bind_rules = std::vector{
       fdf::MakeAcceptBindRule(bind_fuchsia::SERVICE, "fuchsia.hardware.gpio.Service"),
-      fdf::MakeAcceptBindRule(bind_fuchsia::GPIO_PIN,
+      fdf::MakeAcceptBindRule(bind_fuchsia::ID,
                               bind_fuchsia_amlogic_platform_t931::GPIOH_PIN_ID_PIN_5),
   };
 

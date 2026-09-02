@@ -31,9 +31,10 @@ parent "power-domain" {
 
 optional parent "gpio-init-0" {
   fuchsia.BIND_INIT_STEP == fuchsia.gpio.BIND_INIT_STEP.GPIO;
-  fuchsia.BIND_GPIO_CONTROLLER == 0;
+  fuchsia.ID == 0;
 }
 
 optional parent "pin-states-0" {
   fuchsia.Service == "fuchsia.hardware.pin.PinStatesService";
+  fuchsia.ID == 0;
 }
