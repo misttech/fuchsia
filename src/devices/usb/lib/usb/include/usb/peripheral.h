@@ -7,6 +7,7 @@
 
 #include <stdint.h>
 
+// LINT.IfChange
 // Google's USB Vendor ID.
 #define GOOGLE_USB_VID 0x18D1
 
@@ -51,5 +52,6 @@
 
 // USB Product ID for Fastboot function
 #define GOOGLE_USB_FASTBOOT_PID 0x4ee0
+// LINT.ThenChange(//src/devices/usb/bin/usb-cli/src/config.rs)
 
 #endif  // SRC_DEVICES_USB_LIB_USB_INCLUDE_USB_PERIPHERAL_H_

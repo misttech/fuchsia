@@ -66,10 +66,21 @@ struct DiagArgs {
 struct GetConfigArgs {}
 
 #[derive(FromArgs, PartialEq, Debug)]
-/// Sets the USB peripheral configuration from JSON string, JSON file path, or comma-separated functions (e.g. "cdc,test").
+/// Sets the USB peripheral configuration.
+///
+/// Supported input formats:
+///   - Comma-separated functions:
+///       usb-cli set-config "cdc"
+///       usb-cli set-config "sourcesink"
+///       usb-cli set-config "loopback"
+///       usb-cli set-config "cdc,vsock"
+///   - JSON configuration string:
+///       usb-cli set-config '{"configurations": [["sourcesink"]]}'
+///   - JSON configuration file path:
+///       usb-cli set-config /path/to/usb_config.json
 #[argh(subcommand, name = "set-config")]
 struct SetConfigArgs {
-    /// JSON configuration string, JSON file path, or comma-separated functions.
+    /// configuration string (e.g. "sourcesink", "loopback", "cdc,vsock"), inline JSON, or JSON file path
     #[argh(positional)]
     config: String,
 }
@@ -97,20 +108,24 @@ async fn get_configuration_client() -> Result<usb_policy::ConfigurationProxy, Er
 
 async fn run_get_config(_args: GetConfigArgs) -> Result<(), Error> {
     let config_client = get_configuration_client().await?;
-    let (_device_desc, config_descriptors) = config_client
+    let (device_desc, config_descriptors) = config_client
         .get_configuration()
         .await
         .context("Failed FIDL call get_configuration")?
         .map_err(zx::Status::err_from_raw)
         .context("GetConfiguration returned an error status")?;
 
-    let functions: Vec<String> = config_descriptors
+    let configurations: Vec<Vec<String>> = config_descriptors
         .into_iter()
-        .flatten()
-        .map(|func| config::descriptor_to_function_name(&func))
+        .map(|cfg| cfg.into_iter().map(|func| config::descriptor_to_function_name(&func)).collect())
         .collect();
 
-    let json_output = config::UsbConfigJson { functions };
+    let json_output = config::UsbConfigJson {
+        configurations,
+        id_vendor: (device_desc.id_vendor != 0).then_some(device_desc.id_vendor),
+        id_product: Some(device_desc.id_product),
+        product: (!device_desc.product.is_empty()).then_some(device_desc.product),
+    };
 
     let serialized = serde_json::to_string_pretty(&json_output).context("Failed to format JSON")?;
     println!("{}", serialized);
@@ -121,24 +136,31 @@ async fn run_set_config(args: SetConfigArgs) -> Result<(), Error> {
     let parsed_config = config::load_config_input(&args.config)?;
     let config_client = get_configuration_client().await?;
 
-    let func_descriptors = parsed_config
-        .functions
-        .iter()
-        .map(|name| config::function_name_to_descriptor(name))
-        .collect::<Result<Vec<_>, _>>()?;
+    let config_descriptors = config::resolve_config_descriptors(&parsed_config)?;
 
-    let (mut device_desc, _) = config_client
+    let (device_desc, _) = config_client
         .get_configuration()
         .await
         .context("Failed FIDL call get_configuration")?
         .map_err(zx::Status::err_from_raw)
         .context("GetConfiguration returned an error status")?;
 
-    device_desc.b_num_configurations = 1;
+    let num_configs = config_descriptors.len() as u8;
+    let (device_desc, standard_derived) =
+        config::update_device_descriptor(&parsed_config, device_desc, num_configs);
 
-    println!("Applying new configuration via Policy (functions: {:?})...", parsed_config.functions);
+    println!(
+        "Applying new configuration via Policy (configurations: {:?})...",
+        parsed_config.configurations
+    );
+    if standard_derived {
+        println!(
+            "Using standard USB identifiers: VID 0x{:04x}, PID 0x{:04x} ('{}')",
+            device_desc.id_vendor, device_desc.id_product, device_desc.product
+        );
+    }
     config_client
-        .set_configuration(&device_desc, &[func_descriptors])
+        .set_configuration(&device_desc, &config_descriptors)
         .await
         .context("Failed set_configuration FIDL call")?
         .map_err(zx::Status::err_from_raw)
@@ -178,6 +200,9 @@ async fn run_health(args: HealthArgs) -> Result<(), Error> {
             println!(
                 "USB Policy Health service not available: fuchsia.usb.policy.Health not found."
             );
+            if args.verbose {
+                println!("Error details: {e:?}");
+            }
             Err(e)
         }
     }
@@ -206,7 +231,6 @@ async fn run_diagnostics(verbose: bool) -> Result<(), Error> {
 
 async fn run_cli() -> Result<(), Error> {
     let args: UsbCliArgs = argh::from_env();
-
     match args.subcommand {
         SubCommand::Health(sc_args) => run_health(sc_args).await,
         SubCommand::Inspect(_) => inspect::print_usb_inspect_diagnostics().await,
@@ -285,11 +309,22 @@ mod tests {
 
     #[test]
     fn test_parse_set_config() {
-        let args = UsbCliArgs::from_args(&["usb-cli"], &["set-config", "cdc,test"]).unwrap();
+        let args = UsbCliArgs::from_args(&["usb-cli"], &["set-config", "cdc,sourcesink"]).unwrap();
         assert_eq!(
             args,
             UsbCliArgs {
-                subcommand: SubCommand::SetConfig(SetConfigArgs { config: "cdc,test".to_string() }),
+                subcommand: SubCommand::SetConfig(SetConfigArgs {
+                    config: "cdc,sourcesink".to_string(),
+                }),
+            }
+        );
+
+        let json_input = r#"{"configurations": [["sourcesink"]]}"#;
+        let json_args = UsbCliArgs::from_args(&["usb-cli"], &["set-config", json_input]).unwrap();
+        assert_eq!(
+            json_args,
+            UsbCliArgs {
+                subcommand: SubCommand::SetConfig(SetConfigArgs { config: json_input.to_string() }),
             }
         );
     }
