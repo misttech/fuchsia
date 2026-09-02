@@ -38,7 +38,7 @@ impl<T: Send + Sync + 'static> RcuWeak<T> {
 
     /// Create a new [`Weak`] pointer to the object referenced by the wrapped Weak pointer.
     pub fn to_weak(&self) -> Weak<T> {
-        self.with_weak(|w| w.clone())
+        self.with_weak(&RcuReadScope::new(), |w| w.clone())
     }
 
     /// Check if the wrapped weak pointer points to the same allocation as `other`.
@@ -59,8 +59,8 @@ impl<T: Send + Sync + 'static> RcuWeak<T> {
     }
 
     /// Gets the number of strong (Arc) pointers pointing to the allocation.
-    pub fn strong_count(&self) -> usize {
-        self.with_weak(|w| w.strong_count())
+    pub fn strong_count(&self, scope: &RcuReadScope) -> usize {
+        self.with_weak(scope, |w| w.strong_count())
     }
 
     /// Extract the raw pointer from a `Weak` pointer.
@@ -90,15 +90,14 @@ impl<T: Send + Sync + 'static> RcuWeak<T> {
     /// The weak pointer is temporarily reconstructed within an RCU read scope
     /// using [`ManuallyDrop`] to avoid taking ownership of the pointer. If the
     /// internal pointer is null, a reference to an empty [`Weak`] is provided.
-    fn with_weak<A>(&self, f: impl FnOnce(&Weak<T>) -> A) -> A {
-        let scope = RcuReadScope::new();
-        let ptr = self.ptr.read(&scope).as_ptr();
+    fn with_weak<A>(&self, scope: &RcuReadScope, f: impl FnOnce(&Weak<T>) -> A) -> A {
+        let ptr = self.ptr.read(scope).as_ptr();
         if ptr.is_null() {
             f(&Weak::new())
         } else {
-            // SAFETY: The RCU state machine ensures that the pointer is valid for reads until we
-            // drop the `RcuReadScope`. We temporarily reconstruct the `Weak` pointer using
-            // `ManuallyDrop` and run `f` on it. This prevents the `Weak` from taking ownership of
+            // SAFETY: The RCU state machine ensures that the pointer is valid for reads until the
+            // `RcuReadScope` is dropped. Temporarily reconstructs the `Weak` pointer using
+            // `ManuallyDrop` and runs `f` on it. This prevents the `Weak` from taking ownership of
             // the wrapped pointer.
             unsafe {
                 let weak = ManuallyDrop::new(Weak::from_raw(ptr));
@@ -213,14 +212,15 @@ mod tests {
 
     #[test]
     fn test_rcu_weak_strong_count() {
+        let scope = RcuReadScope::new();
         let rcu_weak = RcuWeak::<DropCounter>::default();
-        assert_eq!(rcu_weak.strong_count(), 0);
+        assert_eq!(rcu_weak.strong_count(&scope), 0);
 
         let object = DropCounter::new();
         rcu_weak.update(Arc::downgrade(&object));
-        assert_eq!(rcu_weak.strong_count(), 1);
+        assert_eq!(rcu_weak.strong_count(&scope), 1);
 
         drop(object);
-        assert_eq!(rcu_weak.strong_count(), 0);
+        assert_eq!(rcu_weak.strong_count(&scope), 0);
     }
 }
