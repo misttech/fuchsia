@@ -144,18 +144,18 @@ pub struct UpdateTool {
     #[command]
     cmd: args::Update,
     context: EnvironmentContext,
-    #[with(moniker("/core/system-update"))]
-    update_manager_proxy: ManagerProxy,
-    #[with(moniker("/core/system-update"))]
-    channel_provider_proxy: fupdate_channel::ProviderProxy,
-    #[with(moniker("/core/system-update"))]
-    channel_control_proxy: ChannelControlProxy,
+    #[with(deferred(moniker("/core/system-update")))]
+    update_manager_proxy: Deferred<ManagerProxy>,
+    #[with(deferred(moniker("/core/system-update")))]
+    channel_provider_proxy: Deferred<fupdate_channel::ProviderProxy>,
+    #[with(deferred(moniker("/core/system-update")))]
+    channel_control_proxy: Deferred<ChannelControlProxy>,
     #[with(deferred(moniker("/core/system-update/system-updater")))]
     installer_proxy: Deferred<InstallerProxy>,
-    #[with(moniker("/core/system-update"))]
-    commit_status_provider_proxy: CommitStatusProviderProxy,
-    #[with(moniker("/core/build-info"))]
-    build_info_proxy: BuildInfoProviderProxy,
+    #[with(deferred(moniker("/core/system-update")))]
+    commit_status_provider_proxy: Deferred<CommitStatusProviderProxy>,
+    #[with(deferred(moniker("/core/build-info")))]
+    build_info_proxy: Deferred<BuildInfoProviderProxy>,
     target_spec: Deferred<TargetInfoQueryHolder>,
     rcs_proxy_connector: Connector<RemoteControlProxyHolder>,
     host_address: Deferred<HostAddrHolder>,
@@ -190,7 +190,7 @@ impl FfxMain for UpdateTool {
             }
             args::Command::WaitForCommit(_args) => {
                 handle_wait_for_commit(
-                    &self.commit_status_provider_proxy,
+                    &self.commit_status_provider_proxy.await?,
                     &mut Printer { writer, warning_duration: WARNING_DURATION },
                     WARNING_DURATION,
                 )
@@ -249,7 +249,8 @@ impl UpdateTool {
         let package_server_task = if cmd.product_bundle {
             let product_path =
                 Self::get_product_bundle_path(&cmd.product_bundle_path, &self.context)?;
-            Self::validate_board_compatibility(&product_path, &self.build_info_proxy, writer).await;
+            let build_info_proxy = self.build_info_proxy.await?;
+            Self::validate_board_compatibility(&product_path, &build_info_proxy, writer).await;
             let repo_port: u16 = cmd
                 .product_bundle_port(&self.context)
                 .map_err(UpdateError::ProductBundlePortResolution)?
@@ -273,6 +274,8 @@ impl UpdateTool {
             None
         };
 
+        let update_manager_proxy = self.update_manager_proxy.await?;
+
         if let Some(server_task) = package_server_task {
             // Use select! to run the package server at the same time as the others. This is preferable
             // to using detach(), since we can get error result from the package server.
@@ -284,7 +287,7 @@ impl UpdateTool {
                     self.rcs_proxy_connector.clone(),
                 ))
                 .await?;
-                Self::check_for_update(self.update_manager_proxy.clone(), &cmd, writer).await
+                Self::check_for_update(update_manager_proxy.clone(), &cmd, writer).await
             };
 
             let fused_server_task = server_task.task.fuse();
@@ -307,7 +310,7 @@ impl UpdateTool {
                    return update_task_result}
             );
         } else {
-            Self::check_for_update(self.update_manager_proxy.clone(), &cmd, writer).await?;
+            Self::check_for_update(update_manager_proxy, &cmd, writer).await?;
         }
 
         Ok(())
@@ -362,36 +365,36 @@ impl UpdateTool {
         cmd: &ForceInstall,
         writer: &mut W,
     ) -> Result<(), UpdateError> {
-        let (mut package_server_task, host_address) = if cmd.product_bundle
-            || cmd.product_bundle_path.is_some()
-        {
-            let product_path =
-                Self::get_product_bundle_path(&cmd.product_bundle_path, &self.context)?;
-            Self::validate_board_compatibility(&product_path, &self.build_info_proxy, writer).await;
+        let (mut package_server_task, host_address) =
+            if cmd.product_bundle || cmd.product_bundle_path.is_some() {
+                let product_path =
+                    Self::get_product_bundle_path(&cmd.product_bundle_path, &self.context)?;
+                let build_info_proxy = self.build_info_proxy.await?;
+                Self::validate_board_compatibility(&product_path, &build_info_proxy, writer).await;
 
-            let repo_port: u16 = cmd
-                .product_bundle_port(&self.context)
-                .map_err(UpdateError::ProductBundlePortResolution)?
-                .try_into()
-                .unwrap();
-            (
-                Some(
-                    Box::pin(server::package_server_task(
-                        self.target_spec,
-                        self.rcs_proxy_connector.clone(),
-                        self.host_address,
-                        self.context.clone(),
-                        product_path,
-                        repo_port,
-                        !cmd.packageless,
-                    ))
-                    .await?,
-                ),
-                None,
-            )
-        } else {
-            (None, Some(self.host_address))
-        };
+                let repo_port: u16 = cmd
+                    .product_bundle_port(&self.context)
+                    .map_err(UpdateError::ProductBundlePortResolution)?
+                    .try_into()
+                    .unwrap();
+                (
+                    Some(
+                        Box::pin(server::package_server_task(
+                            self.target_spec,
+                            self.rcs_proxy_connector.clone(),
+                            self.host_address,
+                            self.context.clone(),
+                            product_path,
+                            repo_port,
+                            !cmd.packageless,
+                        ))
+                        .await?,
+                    ),
+                    None,
+                )
+            } else {
+                (None, Some(self.host_address))
+            };
 
         let installer_proxy = self.installer_proxy.await?;
 
@@ -416,12 +419,18 @@ impl UpdateTool {
                     let product_path =
                         Self::get_product_bundle_path(&cmd.product_bundle_path, &self.context)?;
                     let repos = product_bundle::get_repositories(product_path.try_into()?)?;
-                    let repo = repos.first().ok_or_else(|| anyhow::anyhow!("No repositories found"))?;
-                    let alias = repo.aliases().first().ok_or_else(|| anyhow::anyhow!("No aliases found"))?;
+                    let repo =
+                        repos.first().ok_or_else(|| anyhow::anyhow!("No repositories found"))?;
+                    let alias = repo
+                        .aliases()
+                        .first()
+                        .ok_or_else(|| anyhow::anyhow!("No aliases found"))?;
                     Ok(alias.to_owned())
                 })()
                 .unwrap_or_else(|e| {
-                    log::warn!("Could not determine the first alias for the product bundle: {e}, defaulting to 'fuchsia.com'");
+                    log::warn!(
+                        "Could not determine the first alias for the product bundle: {e}, defaulting to 'fuchsia.com'"
+                    );
                     "fuchsia.com".to_string()
                 });
                 let url = format!(
@@ -677,24 +686,24 @@ fn write_progress_kb<W: std::io::Write>(
 /// Handle subcommands for `update channel`.
 async fn handle_channel_control_cmd<W: std::io::Write>(
     cmd: &args::channel::Command,
-    channel_provider: fupdate_channel::ProviderProxy,
-    channel_control: fdomain_fuchsia_update_channelcontrol::ChannelControlProxy,
+    channel_provider: Deferred<fupdate_channel::ProviderProxy>,
+    channel_control: Deferred<fdomain_fuchsia_update_channelcontrol::ChannelControlProxy>,
     writer: &mut W,
 ) -> Result<(), UpdateError> {
     match cmd {
         args::channel::Command::Get(_) => {
-            let channel = channel_provider.get_current().await?;
+            let channel = channel_provider.await?.get_current().await?;
             writeln!(writer, "current channel: {}", channel)?;
         }
         args::channel::Command::Target(_) => {
-            let channel = channel_control.get_target().await?;
+            let channel = channel_control.await?.get_target().await?;
             writeln!(writer, "target channel: {}", channel)?;
         }
         args::channel::Command::Set(args::channel::Set { channel }) => {
-            channel_control.set_target(&channel).await?;
+            channel_control.await?.set_target(&channel).await?;
         }
         args::channel::Command::List(_) => {
-            let channels = channel_control.get_target_list().await?;
+            let channels = channel_control.await?.get_target_list().await?;
             if channels.is_empty() {
                 writeln!(writer, "known channels list is empty.")?;
             } else {
@@ -855,6 +864,10 @@ mod tests {
     use std::sync::Arc;
     use target_holders::{fake_async_proxy, fake_proxy};
 
+    fn unused_proxy<T: 'static>() -> Deferred<T> {
+        Deferred::from_output(Err(bug!("unused proxy")))
+    }
+
     async fn perform_channel_provider_test<V, O>(
         argument: args::channel::Command,
         verifier: V,
@@ -871,11 +884,8 @@ mod tests {
             assert_matches!(
                 handle_channel_control_cmd(
                     &argument,
-                    proxy,
-                    client.create_proxy::<
-                        fdomain_fuchsia_update_channelcontrol::ChannelControlMarker,
-                    >()
-                    .0,
+                    Deferred::from_output(Ok(proxy)),
+                    unused_proxy(),
                     &mut buf
                 )
                 .await,
@@ -911,8 +921,8 @@ mod tests {
             assert_matches!(
                 handle_channel_control_cmd(
                     &argument,
-                    client.create_proxy::<fupdate_channel::ProviderMarker>().0,
-                    proxy,
+                    unused_proxy(),
+                    Deferred::from_output(Ok(proxy)),
                     &mut buf
                 )
                 .await,
@@ -1120,16 +1130,6 @@ mod tests {
         let client = fdomain_local::local_client_empty();
         let test_env = ffx_config::test_init().expect("test env");
 
-        let fake_installer_proxy =
-            Deferred::from_output(Ok(fake_proxy(Arc::clone(&client), move |req| {
-                panic!("Unexpected request: {:?}", req)
-            })));
-        let fake_channel_provider_proxy =
-            fake_proxy(Arc::clone(&client), move |req| panic!("Unexpected request: {:?}", req));
-        let fake_channel_control_proxy =
-            fake_proxy(Arc::clone(&client), move |req| panic!("Unexpected request: {:?}", req));
-        let fake_commit_status_provider_proxy =
-            fake_proxy(Arc::clone(&client), move |req| panic!("Unexpected request: {:?}", req));
         let fake_update_manager_proxy = fake_proxy(Arc::clone(&client), move |req| {
             match req {
                 ManagerRequest::CheckNow { responder, .. } => {
@@ -1152,12 +1152,12 @@ mod tests {
                 }),
             },
             context: test_env.context.clone(),
-            update_manager_proxy: fake_update_manager_proxy,
-            channel_provider_proxy: fake_channel_provider_proxy,
-            channel_control_proxy: fake_channel_control_proxy,
-            installer_proxy: fake_installer_proxy,
-            commit_status_provider_proxy: fake_commit_status_provider_proxy,
-            build_info_proxy: fake_build_info_proxy(Arc::clone(&client), Some("test")),
+            update_manager_proxy: Deferred::from_output(Ok(fake_update_manager_proxy)),
+            channel_provider_proxy: unused_proxy(),
+            channel_control_proxy: unused_proxy(),
+            installer_proxy: unused_proxy(),
+            commit_status_provider_proxy: unused_proxy(),
+            build_info_proxy: unused_proxy(),
             target_spec: fake_env.target_spec,
             rcs_proxy_connector: fake_env.rcs_proxy_connector,
             host_address: fake_env.host_address,
@@ -1208,25 +1208,17 @@ mod tests {
             packageless: false,
         };
 
-        let fake_update_manager_proxy =
-            fake_proxy(Arc::clone(&client), move |req| panic!("Unexpected request: {:?}", req));
-        let fake_channel_provider_proxy =
-            fake_proxy(Arc::clone(&client), move |req| panic!("Unexpected request: {:?}", req));
-        let fake_channel_control_proxy =
-            fake_proxy(Arc::clone(&client), move |req| panic!("Unexpected request: {:?}", req));
-        let fake_commit_status_provider_proxy =
-            fake_proxy(Arc::clone(&client), move |req| panic!("Unexpected request: {:?}", req));
         let fake_env = crate::server::tests::FakeTestEnv::new(&test_env).await;
 
         let tool = UpdateTool {
             cmd: Update { cmd: args::Command::ForceInstall(args) },
             context: test_env.context.clone(),
-            update_manager_proxy: fake_update_manager_proxy,
-            channel_provider_proxy: fake_channel_provider_proxy,
-            channel_control_proxy: fake_channel_control_proxy,
+            update_manager_proxy: unused_proxy(),
+            channel_provider_proxy: unused_proxy(),
+            channel_control_proxy: unused_proxy(),
             installer_proxy: Deferred::from_output(Ok(fake_installer_proxy)),
-            commit_status_provider_proxy: fake_commit_status_provider_proxy,
-            build_info_proxy: fake_build_info_proxy(Arc::clone(&client), Some("test")),
+            commit_status_provider_proxy: unused_proxy(),
+            build_info_proxy: unused_proxy(),
             target_spec: fake_env.target_spec,
             rcs_proxy_connector: fake_env.rcs_proxy_connector,
             host_address: fake_env.host_address,
@@ -1296,15 +1288,6 @@ mod tests {
             packageless: true,
         };
 
-        let fake_update_manager_proxy =
-            fake_proxy(Arc::clone(&client), move |req| panic!("Unexpected request: {:?}", req));
-        let fake_channel_provider_proxy =
-            fake_proxy(Arc::clone(&client), move |req| panic!("Unexpected request: {:?}", req));
-        let fake_channel_control_proxy =
-            fake_proxy(Arc::clone(&client), move |req| panic!("Unexpected request: {:?}", req));
-        let fake_commit_status_provider_proxy =
-            fake_proxy(Arc::clone(&client), move |req| panic!("Unexpected request: {:?}", req));
-
         let repo_url = fuchsia_url::RepositoryUrl::parse_host("fuchsia.com".into()).unwrap();
         let repo_config = fidl_fuchsia_pkg_ext::RepositoryConfigBuilder::new(repo_url).build();
 
@@ -1329,12 +1312,12 @@ mod tests {
         let tool = UpdateTool {
             cmd: Update { cmd: args::Command::ForceInstall(args) },
             context: test_env.context.clone(),
-            update_manager_proxy: fake_update_manager_proxy,
-            channel_provider_proxy: fake_channel_provider_proxy,
-            channel_control_proxy: fake_channel_control_proxy,
+            update_manager_proxy: unused_proxy(),
+            channel_provider_proxy: unused_proxy(),
+            channel_control_proxy: unused_proxy(),
             installer_proxy: Deferred::from_output(Ok(fake_installer_proxy)),
-            commit_status_provider_proxy: fake_commit_status_provider_proxy,
-            build_info_proxy: fake_build_info_proxy(Arc::clone(&client), Some("test")),
+            commit_status_provider_proxy: unused_proxy(),
+            build_info_proxy: unused_proxy(),
             target_spec: fake_env.target_spec,
             rcs_proxy_connector: fake_env.rcs_proxy_connector,
             host_address: fake_env.host_address,
@@ -1383,26 +1366,20 @@ mod tests {
         let fake_installer_proxy =
             Arc::clone(&mock_installer).spawn_installer_service(Arc::clone(&client));
 
-        let fake_update_manager_proxy =
-            fake_proxy(Arc::clone(&client), move |req| panic!("Unexpected request: {req:?}"));
-        let fake_channel_provider_proxy =
-            fake_proxy(Arc::clone(&client), move |req| panic!("Unexpected request: {req:?}"));
-        let fake_channel_control_proxy =
-            fake_proxy(Arc::clone(&client), move |req| panic!("Unexpected request: {req:?}"));
-        let fake_commit_status_provider_proxy =
-            fake_proxy(Arc::clone(&client), move |req| panic!("Unexpected request: {req:?}"));
-
         let fake_env = crate::server::tests::FakeTestEnv::new(&test_env).await;
 
         let tool = UpdateTool {
             cmd: Update { cmd: args::Command::ForceInstall(args) },
             context: test_env.context.clone(),
-            update_manager_proxy: fake_update_manager_proxy,
-            channel_provider_proxy: fake_channel_provider_proxy,
-            channel_control_proxy: fake_channel_control_proxy,
+            update_manager_proxy: unused_proxy(),
+            channel_provider_proxy: unused_proxy(),
+            channel_control_proxy: unused_proxy(),
             installer_proxy: Deferred::from_output(Ok(fake_installer_proxy)),
-            commit_status_provider_proxy: fake_commit_status_provider_proxy,
-            build_info_proxy: fake_build_info_proxy(Arc::clone(&client), Some("test")),
+            commit_status_provider_proxy: unused_proxy(),
+            build_info_proxy: Deferred::from_output(Ok(fake_build_info_proxy(
+                Arc::clone(&client),
+                Some("test"),
+            ))),
             target_spec: fake_env.target_spec,
             rcs_proxy_connector: fake_env.rcs_proxy_connector,
             host_address: fake_env.host_address,
@@ -1553,25 +1530,17 @@ mod tests {
             packageless: false,
         };
 
-        let fake_update_manager_proxy =
-            fake_proxy(Arc::clone(&client), move |req| panic!("Unexpected request: {:?}", req));
-        let fake_channel_provider_proxy =
-            fake_proxy(Arc::clone(&client), move |req| panic!("Unexpected request: {:?}", req));
-        let fake_channel_control_proxy =
-            fake_proxy(Arc::clone(&client), move |req| panic!("Unexpected request: {:?}", req));
-        let fake_commit_status_provider_proxy =
-            fake_proxy(Arc::clone(&client), move |req| panic!("Unexpected request: {:?}", req));
         let fake_env = crate::server::tests::FakeTestEnv::new(&test_env).await;
 
         let tool = UpdateTool {
             cmd: Update { cmd: args::Command::ForceInstall(args) },
             context: test_env.context.clone(),
-            update_manager_proxy: fake_update_manager_proxy,
-            channel_provider_proxy: fake_channel_provider_proxy,
-            channel_control_proxy: fake_channel_control_proxy,
+            update_manager_proxy: unused_proxy(),
+            channel_provider_proxy: unused_proxy(),
+            channel_control_proxy: unused_proxy(),
             installer_proxy: Deferred::from_output(Ok(fake_installer_proxy)),
-            commit_status_provider_proxy: fake_commit_status_provider_proxy,
-            build_info_proxy: fake_build_info_proxy(Arc::clone(&client), Some("test")),
+            commit_status_provider_proxy: unused_proxy(),
+            build_info_proxy: unused_proxy(),
             target_spec: fake_env.target_spec,
             rcs_proxy_connector: fake_env.rcs_proxy_connector,
             host_address: fake_env.host_address,
@@ -1593,17 +1562,6 @@ mod tests {
         use fdomain_fuchsia_update::ManagerRequest;
         let client = fdomain_local::local_client_empty();
         let test_env = ffx_config::test_init().expect("test env");
-
-        let fake_installer_proxy =
-            Deferred::from_output(Ok(fake_proxy(Arc::clone(&client), move |req| {
-                panic!("Unexpected request: {:?}", req)
-            })));
-        let fake_channel_provider_proxy =
-            fake_proxy(Arc::clone(&client), move |req| panic!("Unexpected request: {:?}", req));
-        let fake_channel_control_proxy =
-            fake_proxy(Arc::clone(&client), move |req| panic!("Unexpected request: {:?}", req));
-        let fake_commit_status_provider_proxy =
-            fake_proxy(Arc::clone(&client), move |req| panic!("Unexpected request: {:?}", req));
 
         let fake_update_manager_proxy = fake_proxy(Arc::clone(&client), move |req| {
             match req {
@@ -1636,12 +1594,12 @@ mod tests {
                 }),
             },
             context: test_env.context.clone(),
-            update_manager_proxy: fake_update_manager_proxy,
-            channel_provider_proxy: fake_channel_provider_proxy,
-            channel_control_proxy: fake_channel_control_proxy,
-            installer_proxy: fake_installer_proxy,
-            commit_status_provider_proxy: fake_commit_status_provider_proxy,
-            build_info_proxy: fake_build_info_proxy(Arc::clone(&client), Some("test")),
+            update_manager_proxy: Deferred::from_output(Ok(fake_update_manager_proxy)),
+            channel_provider_proxy: unused_proxy(),
+            channel_control_proxy: unused_proxy(),
+            installer_proxy: unused_proxy(),
+            commit_status_provider_proxy: unused_proxy(),
+            build_info_proxy: unused_proxy(),
             target_spec: fake_env.target_spec,
             rcs_proxy_connector: fake_env.rcs_proxy_connector,
             host_address: fake_env.host_address,
@@ -1660,17 +1618,6 @@ mod tests {
         use fdomain_fuchsia_update::ManagerRequest;
         let client = fdomain_local::local_client_empty();
         let test_env = ffx_config::test_init().expect("test env");
-
-        let fake_installer_proxy =
-            Deferred::from_output(Ok(fake_proxy(Arc::clone(&client), move |req| {
-                panic!("Unexpected request: {:?}", req)
-            })));
-        let fake_channel_provider_proxy =
-            fake_proxy(Arc::clone(&client), move |req| panic!("Unexpected request: {:?}", req));
-        let fake_channel_control_proxy =
-            fake_proxy(Arc::clone(&client), move |req| panic!("Unexpected request: {:?}", req));
-        let fake_commit_status_provider_proxy =
-            fake_proxy(Arc::clone(&client), move |req| panic!("Unexpected request: {:?}", req));
 
         let fake_update_manager_proxy = fake_proxy(Arc::clone(&client), move |req| {
             match req {
@@ -1703,12 +1650,12 @@ mod tests {
                 }),
             },
             context: test_env.context.clone(),
-            update_manager_proxy: fake_update_manager_proxy,
-            channel_provider_proxy: fake_channel_provider_proxy,
-            channel_control_proxy: fake_channel_control_proxy,
-            installer_proxy: fake_installer_proxy,
-            commit_status_provider_proxy: fake_commit_status_provider_proxy,
-            build_info_proxy: fake_build_info_proxy(Arc::clone(&client), Some("test")),
+            update_manager_proxy: Deferred::from_output(Ok(fake_update_manager_proxy)),
+            channel_provider_proxy: unused_proxy(),
+            channel_control_proxy: unused_proxy(),
+            installer_proxy: unused_proxy(),
+            commit_status_provider_proxy: unused_proxy(),
+            build_info_proxy: unused_proxy(),
             target_spec: fake_env.target_spec,
             rcs_proxy_connector: fake_env.rcs_proxy_connector,
             host_address: fake_env.host_address,
