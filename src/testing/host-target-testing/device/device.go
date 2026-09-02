@@ -901,7 +901,7 @@ func (c *Client) Flash(
 	if err != nil {
 		return fmt.Errorf("error getting resolver: %w", err)
 	}
-	fastbootTarget, err := resolver.WaitToFindDeviceInFastboot(ctx)
+	fastbootTarget, err := resolver.WaitToFindDeviceInFastboot(ctx, serialNumber)
 	if err != nil {
 		return fmt.Errorf("device failed to enter fastboot mode: %w", err)
 	}

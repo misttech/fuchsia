@@ -25,7 +25,7 @@ type DeviceResolver interface {
 	ResolveSshAddress(ctx context.Context) (string, error)
 
 	// Block until the device appears to be in fastboot.
-	WaitToFindDeviceInFastboot(ctx context.Context) (string, error)
+	WaitToFindDeviceInFastboot(ctx context.Context, serialNumber string) (string, error)
 
 	// Block until the device appears to be in netboot.
 	WaitToFindDeviceInNetboot(ctx context.Context) (string, error)
@@ -64,7 +64,7 @@ func (r ConstantHostResolver) ResolveSshAddress(ctx context.Context) (string, er
 	return net.JoinHostPort(host, strconv.Itoa(r.sshPort)), nil
 }
 
-func (r ConstantHostResolver) WaitToFindDeviceInFastboot(ctx context.Context) (string, error) {
+func (r ConstantHostResolver) WaitToFindDeviceInFastboot(ctx context.Context, serialNumber string) (string, error) {
 	// We have no way to tell if the device is in fastboot, so just exit.
 	logger.Warningf(ctx, "ConstantHostResolver cannot tell if device is in fastboot, assuming nodename is %s", r.nodeName)
 	return r.nodeName, nil
@@ -116,7 +116,7 @@ func (r *MdnsResolver) ResolveSshAddress(ctx context.Context) (string, error) {
 	return net.JoinHostPort(ip, strconv.Itoa(r.sshPort)), nil
 }
 
-func (r *MdnsResolver) WaitToFindDeviceInFastboot(ctx context.Context) (string, error) {
+func (r *MdnsResolver) WaitToFindDeviceInFastboot(ctx context.Context, serialNumber string) (string, error) {
 	// We have no way to tell if the device is in fastboot, so just exit.
 	logger.Warningf(ctx, "MdnsResolver cannot tell if device is in fastboot, assuming nodename is %s", r.nodeName)
 	return r.nodeName, nil
@@ -240,11 +240,11 @@ func (r *FfxResolver) ResolveSshAddress(ctx context.Context) (string, error) {
 	return "", fmt.Errorf("no IP address found for nodename %v", nodeName)
 }
 
-func (r *FfxResolver) WaitToFindDeviceInFastboot(ctx context.Context) (string, error) {
+func (r *FfxResolver) WaitToFindDeviceInFastboot(ctx context.Context, serialNumber string) (string, error) {
 	nodeName := r.NodeName()
 
 	// Wait for the device to be listening in netboot.
-	logger.Infof(ctx, "waiting for the device to be listening on the nodename: %v", nodeName)
+	logger.Infof(ctx, "waiting for the device to be listening on the node name:%v serial number:%v", nodeName, serialNumber)
 
 	attempt := 0
 	for {
@@ -253,26 +253,33 @@ func (r *FfxResolver) WaitToFindDeviceInFastboot(ctx context.Context) (string, e
 		entries, err := r.ffx.TargetList(ctx, "", 12*time.Second)
 		if err == nil {
 			for _, entry := range entries {
-				logger.Infof(ctx, "device %s is in %v", entry.NodeName, entry.TargetState)
-				if entry.NodeName == nodeName && entry.TargetState == "Fastboot" {
-					logger.Infof(ctx, "device %v is listening on %v", entry.NodeName, entry)
-					if entry.Serial != "" {
+				logger.Infof(ctx, "device node name:%v serial number:%v is in %v", entry.NodeName, entry.Serial, entry.TargetState)
+				if entry.TargetState == "Fastboot" {
+					if entry.Serial == serialNumber {
+						logger.Infof(ctx, "device node name:%v serial number:%v is listening on %v", entry.NodeName, entry.Serial, entry)
 						return entry.Serial, nil
 					}
-					if len(entry.Addresses) > 0 {
-						addr := entry.Addresses[0].IP
-						if strings.Contains(addr, ":") && !strings.HasPrefix(addr, "[") {
-							addr = fmt.Sprintf("[%s]", addr)
+
+					if entry.NodeName == nodeName {
+						logger.Infof(ctx, "device node name:%v serial number:%v is listening on %v", entry.NodeName, entry.Serial, entry)
+						if entry.Serial != "" {
+							return entry.Serial, nil
 						}
-						return addr, nil
+						if len(entry.Addresses) > 0 {
+							addr := entry.Addresses[0].IP
+							if strings.Contains(addr, ":") && !strings.HasPrefix(addr, "[") {
+								addr = fmt.Sprintf("[%s]", addr)
+							}
+							return addr, nil
+						}
+						return entry.NodeName, nil
 					}
-					return entry.NodeName, nil
 				}
 			}
-			logger.Infof(ctx, "attempt %d waiting for device to boot into fastboot", attempt)
+			logger.Infof(ctx, "attempt %d waiting for device node name:%v serial number:%v to boot into fastboot", attempt, nodeName, serialNumber)
 			time.Sleep(5 * time.Second)
 		} else {
-			logger.Infof(ctx, "attempt %d failed to resolve nodename %v: %v", attempt, nodeName, err)
+			logger.Infof(ctx, "attempt %d failed to resolve device node name:%v serial number:%v: %v", attempt, nodeName, serialNumber, err)
 			time.Sleep(5 * time.Second)
 		}
 	}
@@ -306,7 +313,7 @@ func (r *FfxResolver) WaitToFindDeviceInNetboot(ctx context.Context) (string, er
 					return entry.NodeName, nil
 				}
 			}
-			logger.Infof(ctx, "attempt %d waiting for device to boot into zedboot", attempt)
+			logger.Infof(ctx, "attempt %d waiting for device %v to boot into zedboot", attempt, nodeName)
 			time.Sleep(5 * time.Second)
 		} else {
 			logger.Infof(ctx, "attempt %d failed to resolve nodename %v: %v", attempt, nodeName, err)
