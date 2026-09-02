@@ -349,6 +349,12 @@ impl<'a, K: Eq + Hash + IterShadows, V: Tagged<K>> VacantEntry<'a, K, V> {
         socketmap
     }
 
+    /// Gets a reference to the backing map.
+    pub fn get_map(&self) -> &SocketMap<K, V> {
+        let Self(socketmap, _) = self;
+        socketmap
+    }
+
     /// Gets the descendant counts for this entry.
     pub fn descendant_counts(&self) -> impl ExactSizeIterator<Item = &'_ (V::Tag, NonZeroUsize)> {
         let Self(socket_map, key) = self;

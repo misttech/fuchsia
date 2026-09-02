@@ -763,6 +763,10 @@ impl<I: IpExt, D: WeakDeviceIdentifier, BT: IcmpEchoBindingsTypes> SocketMapAddr
     fn remove_by_id(&mut self, _id: Self::Id) -> socket::RemoveResult {
         socket::RemoveResult::IsLast
     }
+
+    fn sharing_state(&self) -> Self::SharingState {
+        ()
+    }
 }
 
 impl<I: IpExt, D: WeakDeviceIdentifier, BT: IcmpEchoBindingsTypes>

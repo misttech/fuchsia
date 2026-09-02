@@ -805,6 +805,10 @@ impl<I: Debug + Eq> SocketMapAddrStateSpec for AddrState<I> {
             }
         }
     }
+
+    fn sharing_state(&self) -> Self::SharingState {
+        self.to_sharing_options()
+    }
 }
 
 impl<T> AddrState<T> {

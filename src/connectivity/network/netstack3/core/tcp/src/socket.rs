@@ -1182,6 +1182,15 @@ impl<S: SpecSocketId> SocketMapAddrStateSpec for ListenerAddrState<S> {
             }
         }
     }
+
+    fn sharing_state(&self) -> Self::SharingState {
+        let (sharing, listening) = match self {
+            Self::ExclusiveBound(_) => (SharingState::Exclusive, false),
+            Self::ExclusiveListener(_) => (SharingState::Exclusive, true),
+            Self::Shared { listener, bound: _ } => (SharingState::ReuseAddress, listener.is_some()),
+        };
+        ListenerSharingState { sharing, listening }
+    }
 }
 
 /// Verifies that there are no conflicts with a socket at the specified address.
@@ -1487,6 +1496,10 @@ impl<S: SpecSocketId> SocketMapAddrStateSpec for ConnAddrState<S> {
         _new_sharing_state: &'a Self::SharingState,
     ) -> Result<Self::Inserter<'b>, IncompatibleError> {
         Err(IncompatibleError)
+    }
+
+    fn sharing_state(&self) -> Self::SharingState {
+        self.sharing
     }
 }
 

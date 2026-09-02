@@ -5505,6 +5505,9 @@ mod test {
         fn remove_by_id(&mut self, _id: Self::Id) -> RemoveResult {
             RemoveResult::IsLast
         }
+        fn sharing_state(&self) -> Self::SharingState {
+            Sharing::NoConflicts
+        }
     }
 
     #[derive(Derivative, GenericOverIp)]

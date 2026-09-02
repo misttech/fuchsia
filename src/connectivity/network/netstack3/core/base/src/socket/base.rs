@@ -607,6 +607,9 @@ pub trait SocketMapAddrStateSpec {
     ///
     /// Implementations should assume that `id` is contained in `self`.
     fn remove_by_id(&mut self, id: Self::Id) -> RemoveResult;
+
+    /// Returns the sharing state for the address.
+    fn sharing_state(&self) -> Self::SharingState;
 }
 
 /// Provides behavior on updating the sharing state of a [`SocketMap`] entry.
@@ -818,10 +821,8 @@ impl<
     D: DeviceIdentifier,
     SocketType: ConvertSocketMapState<I, D, A, S>,
     A: SocketMapAddrSpec,
-    S: SocketMapStateSpec,
-> Sockets<&'a SocketMap<AddrVec<I, D, A>, Bound<S>>, SocketType>
-where
     S: SocketMapConflictPolicy<SocketType::Addr, SocketType::SharingState, I, D, A>,
+> Sockets<&'a SocketMap<AddrVec<I, D, A>, Bound<S>>, SocketType>
 {
     /// Returns the state at an address, if there is any.
     pub fn get_by_addr(self, addr: &SocketType::Addr) -> Option<&'a SocketType::AddrState> {
@@ -874,8 +875,7 @@ impl<
     D: DeviceIdentifier,
     SocketType: ConvertSocketMapState<I, D, A, S>,
     A: SocketMapAddrSpec,
-    S: SocketMapStateSpec
-        + SocketMapConflictPolicy<SocketType::Addr, SocketType::SharingState, I, D, A>,
+    S: SocketMapConflictPolicy<SocketType::Addr, SocketType::SharingState, I, D, A>,
 > Sockets<&'a mut SocketMap<AddrVec<I, D, A>, Bound<S>>, SocketType>
 where
     SocketType::SharingState: Clone,
@@ -981,7 +981,7 @@ impl<
     D: DeviceIdentifier,
     SocketType: ConvertSocketMapState<I, D, A, S>,
     A: SocketMapAddrSpec,
-    S: SocketMapStateSpec,
+    S: SocketMapConflictPolicy<SocketType::Addr, SocketType::SharingState, I, D, A>,
 > SocketStateEntry<'a, I, D, A, S, SocketType>
 where
     SocketType::Id: Clone,
@@ -1008,11 +1008,17 @@ where
         let addr_to_state = match addr_to_state.entry(new_addrvec) {
             Entry::Occupied(o) => o.into_map(),
             Entry::Vacant(v) => {
-                if v.descendant_counts().len() != 0 {
-                    v.into_map()
-                } else {
-                    let new_addr_entry = v.insert(addr_state);
-                    return Ok(SocketStateEntry { id, addr_entry: new_addr_entry, _marker });
+                let sharing_state = SocketType::from_bound_ref(&addr_state)
+                    .unwrap_or_else(|| {
+                        unreachable!("found {:?} for address {:?}", addr_state, old_addr)
+                    })
+                    .sharing_state();
+                match S::check_insert_conflicts(&sharing_state, &new_addr, v.get_map()) {
+                    Ok(_) => {
+                        let new_addr_entry = v.insert(addr_state);
+                        return Ok(SocketStateEntry { id, addr_entry: new_addr_entry, _marker });
+                    }
+                    Err(_) => v.into_map(),
                 }
             }
         };
@@ -1473,7 +1479,7 @@ mod tests {
     use netstack3_hashmap::HashSet;
     use test_case::test_case;
 
-    use crate::device::testutil::{FakeDeviceId, FakeWeakDeviceId};
+    use crate::device::testutil::{FakeDeviceId, FakeWeakDeviceId, MultipleDevicesId};
     use crate::testutil::set_logger_for_test;
 
     use super::*;
@@ -1635,19 +1641,19 @@ mod tests {
             let _: I = self.entries.swap_remove(index);
             if self.entries.is_empty() { RemoveResult::IsLast } else { RemoveResult::Success }
         }
+
+        fn sharing_state(&self) -> Self::SharingState {
+            self.sharing_state
+        }
     }
 
-    impl<A: Into<AddrVec<Ipv4, FakeWeakDeviceId<FakeDeviceId>, FakeAddrSpec>> + Clone>
-        SocketMapConflictPolicy<A, SharingState, Ipv4, FakeWeakDeviceId<FakeDeviceId>, FakeAddrSpec>
-        for FakeSpec
+    impl<D: DeviceIdentifier, A: Into<AddrVec<Ipv4, D, FakeAddrSpec>> + Clone>
+        SocketMapConflictPolicy<A, SharingState, Ipv4, D, FakeAddrSpec> for FakeSpec
     {
         fn check_insert_conflicts(
             new_sharing_state: &SharingState,
             addr: &A,
-            socketmap: &SocketMap<
-                AddrVec<Ipv4, FakeWeakDeviceId<FakeDeviceId>, FakeAddrSpec>,
-                Bound<FakeSpec>,
-            >,
+            socketmap: &SocketMap<AddrVec<Ipv4, D, FakeAddrSpec>, Bound<FakeSpec>>,
         ) -> Result<(), InsertError> {
             let dest: AddrVec<_, _, _> = addr.clone().into();
             if dest.iter_shadows().any(|a| {
@@ -1709,20 +1715,11 @@ mod tests {
         }
     }
 
-    impl<A: Into<AddrVec<Ipv4, FakeWeakDeviceId<FakeDeviceId>, FakeAddrSpec>> + Clone>
-        SocketMapUpdateSharingPolicy<
-            A,
-            SharingState,
-            Ipv4,
-            FakeWeakDeviceId<FakeDeviceId>,
-            FakeAddrSpec,
-        > for FakeSpec
+    impl<D: DeviceIdentifier, A: Into<AddrVec<Ipv4, D, FakeAddrSpec>> + Clone>
+        SocketMapUpdateSharingPolicy<A, SharingState, Ipv4, D, FakeAddrSpec> for FakeSpec
     {
         fn allows_sharing_update(
-            _socketmap: &SocketMap<
-                AddrVec<Ipv4, FakeWeakDeviceId<FakeDeviceId>, FakeAddrSpec>,
-                Bound<Self>,
-            >,
+            _socketmap: &SocketMap<AddrVec<Ipv4, D, FakeAddrSpec>, Bound<Self>>,
             _addr: &A,
             _old_sharing: &SharingState,
             _new_sharing_state: &SharingState,
@@ -2095,6 +2092,67 @@ mod tests {
             .try_update_addr(both_shadow)
             .expect_err("update should fail");
         assert_eq!(entry.get_addr(), &first_addr);
+    }
+
+    #[test]
+    fn update_listener_to_conflicting_addr_fails() {
+        let mut bound = BoundSocketMap::<
+            Ipv4,
+            FakeWeakDeviceId<MultipleDevicesId>,
+            FakeAddrSpec,
+            FakeSpec,
+        >::default();
+        let mut fake_id_gen = FakeSocketIdGen::default();
+        let device_a_wildcard_addr = ListenerAddr {
+            ip: ListenerIpAddr { addr: None, identifier: NonZeroU16::new(80).unwrap() },
+            device: Some(FakeWeakDeviceId(MultipleDevicesId::A)),
+        };
+        let device_b_specific_addr = ListenerAddr {
+            ip: ListenerIpAddr {
+                addr: Some(SocketIpAddr::new(net_ip_v4!("192.168.1.1")).unwrap()),
+                identifier: NonZeroU16::new(80).unwrap(),
+            },
+            device: Some(FakeWeakDeviceId(MultipleDevicesId::B)),
+        };
+        let device_a_specific_addr = ListenerAddr {
+            ip: ListenerIpAddr {
+                addr: Some(SocketIpAddr::new(net_ip_v4!("192.168.1.1")).unwrap()),
+                identifier: NonZeroU16::new(80).unwrap(),
+            },
+            device: Some(FakeWeakDeviceId(MultipleDevicesId::A)),
+        };
+
+        let _ = bound
+            .listeners_mut()
+            .try_insert(
+                device_a_wildcard_addr,
+                SharingState::exclusive('a'),
+                Listener(fake_id_gen.next()),
+            )
+            .expect("binding wildcard listener should succeed");
+
+        // Binding to a specific listener on device A should fail.
+        assert_matches!(
+            bound.listeners_mut().try_insert(
+                device_a_specific_addr,
+                SharingState::exclusive('b'),
+                Listener(fake_id_gen.next()),
+            ),
+            Err(_)
+        );
+
+        // Binding to a specific listener on device B and then moving it to
+        // device A should also fail.
+        let specific_entry = bound
+            .listeners_mut()
+            .try_insert(
+                device_b_specific_addr,
+                SharingState::exclusive('b'),
+                Listener(fake_id_gen.next()),
+            )
+            .expect("binding dev A specific listener should succeed");
+
+        assert_matches!(specific_entry.try_update_addr(device_a_specific_addr), Err(_));
     }
 
     #[test]
