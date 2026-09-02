@@ -31,6 +31,7 @@ class FramebufferDisplayDriver : public fdf::DriverBase2 {
 
   // fdf::DriverBase:
   zx::result<> Start(fdf::DriverContext context) override;
+  void Stop(fdf::StopCompleter completer) override;
 
   // Called exactly once before the driver acquires any resource.
   virtual zx::result<> ConfigureHardware() = 0;

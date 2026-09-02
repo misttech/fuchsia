@@ -53,10 +53,18 @@ class FramebufferDisplay final : public display::DisplayEngineInterface {
                      fidl::WireSyncClient<fuchsia_sysmem2::Allocator> sysmem_client,
                      fdf::MmioBuffer framebuffer_mmio, const DisplayProperties& properties,
                      async_dispatcher_t* dispatcher);
-  ~FramebufferDisplay() = default;
+  ~FramebufferDisplay();
 
   // Initialization logic not suitable in the constructor.
+  //
+  // Must be called at most once before any other method.
   zx::result<> Initialize();
+
+  // Tears down resources initialized in `Initialize()`.
+  //
+  // Safe to call multiple times or when `Initialize()` has not been called (in
+  // which case this is a no-op).
+  void Deinitialize();
 
   // DisplayEngineInterface:
   display::EngineInfo CompleteCoordinatorConnection() override;
@@ -113,6 +121,7 @@ class FramebufferDisplay final : public display::DisplayEngineInterface {
 
   static_assert(std::atomic<bool>::is_always_lock_free);
   std::atomic<bool> has_image_;
+  std::atomic<bool> initialized_{false};
 
   // A lock is required to ensure the atomicity when setting |config_stamp| in
   // |SubmitConfiguration()| and passing |&config_stamp_| to |OnDisplayVsync()|.

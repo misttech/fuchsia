@@ -369,6 +369,8 @@ zx::result<> FramebufferDisplay::SetMinimumRgb(uint8_t minimum_rgb) {
 // implement driver object:
 
 zx::result<> FramebufferDisplay::Initialize() {
+  ZX_DEBUG_ASSERT(!initialized_);
+
   // Start vsync loop.
   vsync_task_.Post(&dispatcher_);
 
@@ -376,8 +378,20 @@ zx::result<> FramebufferDisplay::Initialize() {
             properties_.height_px, properties_.row_stride_px,
             properties_.pixel_format.ValueForLogging());
 
+  initialized_.store(true, std::memory_order_relaxed);
   return zx::ok();
 }
+
+void FramebufferDisplay::Deinitialize() {
+  if (!initialized_.exchange(false)) {
+    return;
+  }
+
+  // Cancel recurring VSync task to avoid callbacks after destruction.
+  vsync_task_.Cancel();
+}
+
+FramebufferDisplay::~FramebufferDisplay() { Deinitialize(); }
 
 FramebufferDisplay::FramebufferDisplay(
     display::DisplayEngineEventsInterface* engine_events,
@@ -387,6 +401,7 @@ FramebufferDisplay::FramebufferDisplay(
     : sysmem_client_(std::move(sysmem_client)),
       dispatcher_(*dispatcher),
       has_image_(false),
+      initialized_(false),
       framebuffer_mmio_(std::move(framebuffer_mmio)),
       properties_(properties),
       next_vsync_time_(zx::clock::get_monotonic()),

@@ -422,6 +422,48 @@ TEST_F(FramebufferDisplayTest, ImportImage) {
   display_loop.Shutdown();
 }
 
+TEST_F(FramebufferDisplayTest, DestructionCancelsVsyncTask) {
+  FakeMmio fake_mmio;
+  async::Loop display_loop(&kAsyncLoopConfigNeverAttachToThread);
+
+  {
+    FramebufferDisplay display(&engine_events_, /*sysmem_client=*/{}, fake_mmio.MmioBuffer(),
+                               kDisplayProperties, display_loop.dispatcher());
+    EXPECT_OK(display.Initialize());
+  }
+
+  // Running the loop after display is destroyed should not invoke callbacks
+  // on the destroyed object or crash.
+  display_loop.RunUntilIdle();
+  display_loop.Shutdown();
+}
+
+TEST_F(FramebufferDisplayTest, DeinitializeWithoutInitializeIsNoOp) {
+  FakeMmio fake_mmio;
+  async::Loop display_loop(&kAsyncLoopConfigNeverAttachToThread);
+
+  FramebufferDisplay display(&engine_events_, /*sysmem_client=*/{}, fake_mmio.MmioBuffer(),
+                             kDisplayProperties, display_loop.dispatcher());
+  // Calling Deinitialize() on an uninitialized display is safe and is a no-op.
+  display.Deinitialize();
+}
+
+TEST_F(FramebufferDisplayTest, DeinitializeMultipleTimesIsSafe) {
+  FakeMmio fake_mmio;
+  async::Loop display_loop(&kAsyncLoopConfigNeverAttachToThread);
+
+  FramebufferDisplay display(&engine_events_, /*sysmem_client=*/{}, fake_mmio.MmioBuffer(),
+                             kDisplayProperties, display_loop.dispatcher());
+  EXPECT_OK(display.Initialize());
+
+  // Calling Deinitialize() multiple times is safe and subsequent calls are no-ops.
+  display.Deinitialize();
+  display.Deinitialize();
+
+  display_loop.RunUntilIdle();
+  display_loop.Shutdown();
+}
+
 }  // namespace
 
 }  // namespace framebuffer_display

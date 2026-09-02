@@ -26,6 +26,13 @@ FramebufferDisplayDriver::FramebufferDisplayDriver(std::string_view device_name)
 
 FramebufferDisplayDriver::~FramebufferDisplayDriver() = default;
 
+void FramebufferDisplayDriver::Stop(fdf::StopCompleter completer) {
+  if (framebuffer_display_ != nullptr) {
+    framebuffer_display_->Deinitialize();
+  }
+  completer(zx::ok());
+}
+
 zx::result<> FramebufferDisplayDriver::Start(fdf::DriverContext context) {
   incoming_ = context.take_incoming();
   zx::result<> configure_hardware_result = ConfigureHardware();
