@@ -55,7 +55,7 @@ pub async fn get_search_space<T: MOSClientTrait, PrintFn>(
     pb_name: &str,
     from_success: &str,
     to_failure: &str,
-    fuchsia_dir: &Utf8Path,
+    fuchsia_dir: Option<&Utf8Path>,
     slot: Slot,
     mut print_fn: PrintFn,
 ) -> Result<SearchSpace>
@@ -101,28 +101,34 @@ where
                 // TODO(https://fxbug.dev/495619145): Investigate ways to
                 // gracefully handle failure conditions without having to
                 // hardcode script paths into the tool like this.
-                let script_path = fuchsia_dir.join(
-                    "vendor/google/scripts/ffx/plugins/product_bundle/bisect/find_broken_links/find_broken_link.py",
-                );
+                let script_path = fuchsia_dir.map(|d| {
+                    d.join(
+                        "vendor/google/scripts/ffx/plugins/product_bundle/bisect/find_broken_links/find_broken_link.py",
+                    )
+                });
 
-                if script_path.exists() {
-                    let mut child = Command::new(&script_path)
+                if let Some(script_path) = script_path.filter(|p| p.exists()) {
+                    match Command::new(&script_path)
                         .arg(pb_name)
                         .arg(from_success)
                         .arg(to_failure)
                         .stdout(Stdio::piped())
                         .stderr(Stdio::inherit())
                         .spawn()
-                        .expect("Failed to spawn find_broken_link.py");
-
-                    let stdout = child.stdout.take().unwrap();
-                    let reader = BufReader::new(stdout);
-                    for line in reader.lines() {
-                        if let Ok(line) = line {
-                            print_fn(&line);
+                    {
+                        Ok(mut child) => {
+                            if let Some(stdout) = child.stdout.take() {
+                                let reader = BufReader::new(stdout);
+                                for line in reader.lines().map_while(Result::ok) {
+                                    print_fn(&line);
+                                }
+                            }
+                            let _ = child.wait();
+                        }
+                        Err(err) => {
+                            print_fn(&format!("Failed to spawn find_broken_link.py: {}", err));
                         }
                     }
-                    let _ = child.wait();
                 } else {
                     print_fn("Could not find find_broken_link.py script.");
                 }
@@ -253,6 +259,203 @@ fn extract_mos_error_message(e: &anyhow::Error) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use assembly_artifact_cache::ArtifactType;
+    use std::fs::{self, File};
+    use std::io::Write;
+    #[cfg(unix)]
+    use std::os::unix::fs::PermissionsExt;
+    use tempfile::tempdir;
+
+    struct MockMOSClient {
+        pb_release_info: Vec<MOSIdentifier>,
+        interpolate_result: Result<Vec<MOSIdentifier>>,
+    }
+
+    #[async_trait(?Send)]
+    impl MOSClientTrait for MockMOSClient {
+        async fn get_pb_release_info(
+            &mut self,
+            _name: String,
+            _version: String,
+        ) -> Result<Vec<MOSIdentifier>> {
+            Ok(self.pb_release_info.clone())
+        }
+
+        async fn interpolate(
+            &self,
+            _start: &MOSIdentifier,
+            _end: &MOSIdentifier,
+        ) -> Result<Vec<MOSIdentifier>> {
+            match &self.interpolate_result {
+                Ok(res) => Ok(res.clone()),
+                Err(_) => anyhow::bail!("*** No Common Ancestor ***\nno common ancestor exists"),
+            }
+        }
+    }
+
+    #[test]
+    fn test_get_search_space_success() {
+        futures_lite::future::block_on(async move {
+            let artifact = MOSIdentifier {
+                name: "Platform".to_string(),
+                artifact_type: ArtifactType::Platform,
+                version: "1.0".to_string(),
+                repository: "fuchsia".to_string(),
+                cipd: None,
+                slot: Slot::A,
+            };
+            let mut client = MockMOSClient {
+                pb_release_info: vec![artifact.clone()],
+                interpolate_result: Ok(vec![artifact.clone()]),
+            };
+
+            let mut output = Vec::new();
+            let result =
+                get_search_space(&mut client, "core.x64", "1.0", "2.0", None, Slot::A, |msg| {
+                    output.push(msg.to_string())
+                })
+                .await;
+
+            assert!(result.is_ok());
+        });
+    }
+
+    #[test]
+    fn test_get_search_space_no_common_ancestor_no_fuchsia_dir() {
+        futures_lite::future::block_on(async move {
+            let artifact = MOSIdentifier {
+                name: "Platform".to_string(),
+                artifact_type: ArtifactType::Platform,
+                version: "1.0".to_string(),
+                repository: "fuchsia".to_string(),
+                cipd: None,
+                slot: Slot::A,
+            };
+            let mut client = MockMOSClient {
+                pb_release_info: vec![artifact.clone()],
+                interpolate_result: Err(anyhow::anyhow!("fail")),
+            };
+
+            let mut output = Vec::new();
+            let result =
+                get_search_space(&mut client, "core.x64", "1.0", "2.0", None, Slot::A, |msg| {
+                    output.push(msg.to_string())
+                })
+                .await;
+
+            assert!(result.is_err());
+            assert!(
+                output
+                    .iter()
+                    .any(|line| line.contains("Could not find find_broken_link.py script."))
+            );
+        });
+    }
+
+    #[test]
+    fn test_get_search_space_no_common_ancestor_with_script() {
+        futures_lite::future::block_on(async move {
+            let temp_dir = tempdir().expect("tempdir");
+            let script_dir = temp_dir
+                .path()
+                .join("vendor/google/scripts/ffx/plugins/product_bundle/bisect/find_broken_links");
+            fs::create_dir_all(&script_dir).expect("create_dir_all");
+            let script_path = script_dir.join("find_broken_link.py");
+            {
+                let mut file = File::create(&script_path).expect("create file");
+                file.write_all(b"#!/bin/sh\necho \"Broken link found: commit abc1234\"\n")
+                    .expect("write file");
+            }
+            #[cfg(unix)]
+            {
+                let mut perms = fs::metadata(&script_path).expect("metadata").permissions();
+                perms.set_mode(0o755);
+                fs::set_permissions(&script_path, perms).expect("set_permissions");
+            }
+
+            let temp_utf8_path = Utf8Path::from_path(temp_dir.path()).expect("utf8 path");
+
+            let artifact = MOSIdentifier {
+                name: "Platform".to_string(),
+                artifact_type: ArtifactType::Platform,
+                version: "1.0".to_string(),
+                repository: "fuchsia".to_string(),
+                cipd: None,
+                slot: Slot::A,
+            };
+            let mut client = MockMOSClient {
+                pb_release_info: vec![artifact.clone()],
+                interpolate_result: Err(anyhow::anyhow!("fail")),
+            };
+
+            let mut output = Vec::new();
+            let result = get_search_space(
+                &mut client,
+                "core.x64",
+                "1.0",
+                "2.0",
+                Some(temp_utf8_path),
+                Slot::A,
+                |msg| output.push(msg.to_string()),
+            )
+            .await;
+
+            assert!(result.is_err());
+            assert!(
+                !output
+                    .iter()
+                    .any(|line| line.contains("Could not find find_broken_link.py script."))
+            );
+            assert!(
+                output.iter().any(|line| {
+                    line.contains("Broken link found: commit abc1234")
+                        || line.contains("Failed to spawn find_broken_link.py")
+                }),
+                "Expected script execution or spawn attempt, got: {:?}",
+                output
+            );
+        });
+    }
+
+    #[test]
+    fn test_get_search_space_no_common_ancestor_script_not_found() {
+        futures_lite::future::block_on(async move {
+            let temp_dir = tempdir().expect("tempdir");
+            let temp_utf8_path = Utf8Path::from_path(temp_dir.path()).expect("utf8 path");
+
+            let artifact = MOSIdentifier {
+                name: "Platform".to_string(),
+                artifact_type: ArtifactType::Platform,
+                version: "1.0".to_string(),
+                repository: "fuchsia".to_string(),
+                cipd: None,
+                slot: Slot::A,
+            };
+            let mut client = MockMOSClient {
+                pb_release_info: vec![artifact.clone()],
+                interpolate_result: Err(anyhow::anyhow!("fail")),
+            };
+
+            let mut output = Vec::new();
+            let result = get_search_space(
+                &mut client,
+                "core.x64",
+                "1.0",
+                "2.0",
+                Some(temp_utf8_path),
+                Slot::A,
+                |msg| output.push(msg.to_string()),
+            )
+            .await;
+
+            assert!(result.is_err());
+            assert!(
+                output
+                    .iter()
+                    .any(|line| line.contains("Could not find find_broken_link.py script."))
+            );
+        });
+    }
 
     #[test]
     fn test_extract_mos_error_message_valid_json() {

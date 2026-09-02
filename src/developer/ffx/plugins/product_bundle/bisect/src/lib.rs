@@ -13,7 +13,7 @@ use assembly_container as _;
 use assembly_platform_artifacts as _;
 use assembly_util::{sanitize_for_mos_apis, shorten_path};
 use async_trait::async_trait;
-use camino::Utf8PathBuf;
+use camino::{Utf8Path, Utf8PathBuf};
 use ffx_config::EnvironmentContext;
 use ffx_product_bundle_bisect_args::BisectCommand;
 use ffx_writer::{SimpleWriter, ToolIO};
@@ -181,11 +181,7 @@ async fn run_bisection<'a>(
     }
 
     if fetch_from_mos {
-        let fuchsia_dir = env_context
-            .build_dir()
-            .and_then(|p| Utf8PathBuf::from_path_buf(p.to_path_buf()).ok())
-            .and_then(|p| p.parent().and_then(|p| p.parent()).map(|p| p.to_path_buf()))
-            .unwrap_or_else(|| Utf8PathBuf::from("."));
+        let fuchsia_dir = find_fuchsia_dir(env_context);
 
         let writer_clone = shared_writer.clone();
         let mut print_mos = move |msg: &str| {
@@ -197,7 +193,7 @@ async fn run_bisection<'a>(
             &cmd.name,
             &cmd.from_success,
             &cmd.to_failure,
-            &fuchsia_dir,
+            fuchsia_dir.as_deref(),
             cmd.slot,
             &mut print_mos,
         )
@@ -280,5 +276,59 @@ fn confirm_action(writer: &mut SimpleWriter) -> anyhow::Result<bool> {
                 writer.line("Invalid input. Please enter 'y', 'yes', 'n', or 'no'.")?;
             }
         }
+    }
+}
+
+/// Resolve the Fuchsia source directory if in an in-tree or configured environment.
+fn find_fuchsia_dir(env_context: &EnvironmentContext) -> Option<Utf8PathBuf> {
+    env_context.project_root().and_then(Utf8Path::from_path).map(|p| p.to_path_buf()).or_else(
+        || {
+            env_context
+                .build_dir()
+                .and_then(Utf8Path::from_path)
+                .and_then(|p| p.parent().and_then(|p| p.parent()).map(|p| p.to_path_buf()))
+        },
+    )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ffx_config::ConfigMap;
+    use ffx_config::environment::ExecutableKind;
+    use std::path::PathBuf;
+
+    #[test]
+    fn test_find_fuchsia_dir_no_context() {
+        let ctx = EnvironmentContext::default();
+        assert_eq!(find_fuchsia_dir(&ctx), None);
+    }
+
+    #[test]
+    fn test_find_fuchsia_dir_in_tree_with_build_dir() {
+        let ctx = EnvironmentContext::in_tree(
+            ExecutableKind::Test,
+            PathBuf::from("/fake/fuchsia"),
+            Some(PathBuf::from("/fake/fuchsia/out/default")),
+            ConfigMap::new(),
+            None,
+            false,
+        )
+        .expect("in tree context");
+        assert_eq!(find_fuchsia_dir(&ctx), Some(Utf8PathBuf::from("/fake/fuchsia")));
+    }
+
+    #[test]
+    fn test_find_fuchsia_dir_in_tree_without_build_dir() {
+        let ctx = EnvironmentContext::in_tree(
+            ExecutableKind::Test,
+            PathBuf::from("/fake/fuchsia"),
+            None,
+            ConfigMap::new(),
+            None,
+            false,
+        )
+        .expect("in tree context");
+        assert_eq!(find_fuchsia_dir(&ctx), Some(Utf8PathBuf::from("/fake/fuchsia")));
     }
 }
