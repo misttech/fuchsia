@@ -26,7 +26,7 @@ use net_types::ip::{Ip, IpAddress as _, IpVersion, Ipv4, Ipv6};
 use netemul::{RealmTcpListener as _, RealmTcpStream as _};
 use netstack_testing_common::ASYNC_EVENT_POSITIVE_CHECK_TIMEOUT;
 use netstack_testing_common::interfaces::TestInterfaceExt as _;
-use netstack_testing_common::realms::{Netstack, NetstackVersion, TestSandboxExt as _};
+use netstack_testing_common::realms::{Netstack, Netstack3, NetstackVersion, TestSandboxExt as _};
 use netstack_testing_macros::netstack_test;
 use packet::{
     NestableSerializer as _, NoOpSerializationContext, ParsablePacket as _, Serializer as _,
@@ -1695,4 +1695,94 @@ async fn tcp_accept_with_removed_device_scope<N: Netstack>(name: &str) {
     assert_eq!(v6_addr.ip(), &client_addr);
     assert_eq!(v6_addr.port(), client_port);
     assert_eq!(v6_addr.scope_id(), server_scope);
+}
+
+struct PeerNetwork<'a> {
+    client_iface: netemul::TestInterface<'a>,
+    peer_realm: netemul::TestRealm<'a>,
+    _peer_iface: netemul::TestInterface<'a>,
+    _net: netemul::TestNetwork<'a>,
+    peer_addr: std::net::SocketAddr,
+}
+
+async fn setup_peer_network<'a>(
+    sandbox: &'a netemul::TestSandbox,
+    client: &netemul::TestRealm<'a>,
+    name: &str,
+    net_num: u8,
+) -> PeerNetwork<'a> {
+    let net = sandbox.create_network(format!("net{net_num}")).await.expect("create net");
+    let client_iface =
+        client.join_network(&net, format!("client-ep-{net_num}")).await.expect("join client");
+    client_iface
+        .add_address_and_subnet_route(fnet::Subnet {
+            addr: fnet::IpAddress::Ipv4(fnet::Ipv4Address { addr: [192, 168, net_num, 1] }),
+            prefix_len: 24,
+        })
+        .await
+        .expect("configure client addr");
+    client_iface.apply_nud_flake_workaround().await.expect("nud workaround");
+
+    let peer_realm = sandbox
+        .create_netstack_realm::<Netstack3, _>(format!("{name}_peer{net_num}"))
+        .expect("create peer realm");
+    let peer_iface =
+        peer_realm.join_network(&net, format!("peer-ep-{net_num}")).await.expect("join peer");
+    peer_iface
+        .add_address_and_subnet_route(fnet::Subnet {
+            addr: fnet::IpAddress::Ipv4(fnet::Ipv4Address { addr: [192, 168, net_num, 2] }),
+            prefix_len: 24,
+        })
+        .await
+        .expect("configure peer addr");
+    peer_iface.apply_nud_flake_workaround().await.expect("nud workaround");
+
+    let peer_addr = std::net::SocketAddr::from(([192, 168, net_num, 2], 8080));
+    PeerNetwork { client_iface, peer_realm, _peer_iface: peer_iface, _net: net, peer_addr }
+}
+
+#[netstack_test]
+async fn tcp_connect_with_bound_device(name: &str) {
+    let sandbox = netemul::TestSandbox::new().expect("create sandbox");
+    let client = sandbox
+        .create_netstack_realm::<Netstack3, _>(format!("{name}_client"))
+        .expect("create client realm");
+
+    let peer1 = setup_peer_network(&sandbox, &client, name, 1).await;
+    let peer2 = setup_peer_network(&sandbox, &client, name, 2).await;
+
+    let iface1_name = peer1.client_iface.get_interface_name().await.expect("get iface1 name");
+
+    let listener1 = fasync::net::TcpListener::listen_in_realm(&peer1.peer_realm, peer1.peer_addr)
+        .await
+        .expect("listen on peer1");
+
+    // Connecting to a peer reachable via the bound interface succeeds.
+    let _stream =
+        fasync::net::TcpStream::connect_in_realm_with_sock(&client, peer1.peer_addr, |socket| {
+            socket.bind_device(Some(iface1_name.as_bytes())).expect("bind_device to iface1");
+            Ok(())
+        })
+        .await
+        .expect("connect to peer1 on bound iface1 should succeed");
+
+    let (_server_sock1, _conn1, _from1) = listener1.accept().await.expect("accept on peer1");
+
+    // Connecting to a destination on a different subnet reachable only through
+    // an unbound interface fails because route resolution is constrained to iface1.
+    let err =
+        fasync::net::TcpStream::connect_in_realm_with_sock(&client, peer2.peer_addr, |socket| {
+            socket.bind_device(Some(iface1_name.as_bytes())).expect("bind_device to iface1");
+            Ok(())
+        })
+        .await
+        .expect_err("connect to peer2 with socket bound to iface1 must fail")
+        .downcast::<std::io::Error>()
+        .expect("downcast to std::io::Error");
+
+    assert_eq!(
+        err.raw_os_error(),
+        Some(libc::ENETUNREACH),
+        "expected ENETUNREACH when connecting to disjoint subnet with bound device"
+    );
 }

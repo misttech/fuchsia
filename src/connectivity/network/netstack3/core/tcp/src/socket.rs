@@ -2675,7 +2675,7 @@ where
                     socket_state;
                 debug!("connect on {id:?} to {remote_ip:?}:{remote_port}");
                 let remote_ip = DualStackRemoteIp::<I, _>::new(remote_ip);
-                let (local_addr, buffer_sizes, socket_extra) = match socket_state {
+                let (bound_device, local_addr, buffer_sizes, socket_extra) = match socket_state {
                     TcpSocketStateInner::Connected { conn, timer: _ } => {
                         let (handshake_status, error_reporter) = match core_ctx {
                             MaybeDualStack::NotDualStack((_core_ctx, converter)) => {
@@ -2717,10 +2717,11 @@ where
                         }
                     }
                     TcpSocketStateInner::Unbound(Unbound {
-                        bound_device: _,
+                        bound_device,
                         socket_extra,
                         buffer_sizes,
                     }) => (
+                        bound_device.clone(),
                         DualStackTuple::<I, _>::new(None, None),
                         *buffer_sizes,
                         socket_extra.to_ref(),
@@ -2763,7 +2764,7 @@ where
                                 DualStackTuple::new(Some(converter.convert(addr.clone())), None)
                             }
                         };
-                        (local_addr, *buffer_sizes, socket_extra.to_ref())
+                        (None, local_addr, *buffer_sizes, socket_extra.to_ref())
                     }
                 };
                 // Local addr is a tuple of (this_stack, other_stack) bound
@@ -2784,7 +2785,10 @@ where
                             id,
                             isn,
                             timestamp_offset,
-                            local_addr_this_stack.clone(),
+                            LocalAddrForConnect::from_local_addr(
+                                local_addr_this_stack.clone(),
+                                bound_device,
+                            ),
                             remote_ip,
                             remote_port,
                             socket_extra,
@@ -2815,7 +2819,10 @@ where
                             id,
                             isn,
                             timestamp_offset,
-                            local_addr_this_stack.clone(),
+                            LocalAddrForConnect::from_local_addr(
+                                local_addr_this_stack.clone(),
+                                bound_device,
+                            ),
                             remote_ip,
                             remote_port,
                             socket_extra,
@@ -2851,7 +2858,10 @@ where
                             id,
                             isn,
                             timestamp_offset,
-                            local_addr_other_stack.clone(),
+                            LocalAddrForConnect::from_local_addr(
+                                local_addr_other_stack.clone(),
+                                bound_device,
+                            ),
                             remote_ip,
                             remote_port,
                             socket_extra,
@@ -2879,7 +2889,7 @@ where
                     // Can't connect from one stack to the other.
                     (
                         MaybeDualStack::DualStack(_),
-                        (_, Some(_other_stack_local_addr)),
+                        (None, Some(_other_stack_local_addr)),
                         DualStackRemoteIp::ThisStack(_),
                     ) => Err(ConnectError::NoRoute),
                     // Can't connect from one stack to the other.
@@ -5390,13 +5400,31 @@ where
     }
 }
 
+#[derive(Debug)]
+enum LocalAddrForConnect<D, A: IpAddress> {
+    Unbound { device: Option<D> },
+    Listener { addr: ListenerAddr<ListenerIpAddr<A, NonZeroU16>, D> },
+}
+
+impl<D, A: IpAddress> LocalAddrForConnect<D, A> {
+    fn from_local_addr(
+        listener_addr: Option<ListenerAddr<ListenerIpAddr<A, NonZeroU16>, D>>,
+        device: Option<D>,
+    ) -> Self {
+        match listener_addr {
+            Some(addr) => Self::Listener { addr },
+            None => Self::Unbound { device },
+        }
+    }
+}
+
 fn connect_inner<CC, BC, SockI, WireI, Demux>(
     core_ctx: &mut CC,
     bindings_ctx: &mut BC,
     sock_id: &TcpSocketId<SockI, CC::WeakDeviceId, BC>,
     isn: &IsnGenerator<BC::Instant>,
     timestamp_offset: &TimestampOffsetGenerator<BC::Instant>,
-    listener_addr: Option<ListenerAddr<ListenerIpAddr<WireI::Addr, NonZeroU16>, CC::WeakDeviceId>>,
+    local_addr: LocalAddrForConnect<CC::WeakDeviceId, WireI::Addr>,
     remote_ip: ZonedAddr<SocketIpAddr<WireI::Addr>, CC::DeviceId>,
     remote_port: NonZeroU16,
     active_open: TakeableRef<'_, BC::ListenerNotifierOrProvidedBuffers>,
@@ -5419,11 +5447,11 @@ where
         + TcpSocketContext<SockI, CC::WeakDeviceId, BC>,
     Demux: DemuxStateAccessor<WireI, CC, BC>,
 {
-    let (local_ip, bound_device, local_port) = match listener_addr {
-        Some(ListenerAddr { ip: ListenerIpAddr { addr, identifier }, device }) => {
-            (addr.and_then(IpDeviceAddr::new_from_socket_ip_addr), device, Some(identifier))
-        }
-        None => (None, None, None),
+    let (local_ip, bound_device, local_port) = match local_addr {
+        LocalAddrForConnect::Listener {
+            addr: ListenerAddr { ip: ListenerIpAddr { addr, identifier }, device },
+        } => (addr.and_then(IpDeviceAddr::new_from_socket_ip_addr), device, Some(identifier)),
+        LocalAddrForConnect::Unbound { device } => (None, device, None),
     };
     let (remote_ip, device) = remote_ip.resolve_addr_with_device(bound_device)?;
 
@@ -6610,7 +6638,7 @@ mod tests {
                         MultipleDevicesId::A | MultipleDevicesId::B => ips.clone(),
                         MultipleDevicesId::C => Vec::new(),
                     };
-                    FakeDeviceConfig { device, local_ips, remote_ips: Vec::new() }
+                    FakeDeviceConfig { device, remote_ips: local_ips.clone(), local_ips }
                 }),
             ))
         }
@@ -7943,6 +7971,64 @@ mod tests {
         let info = api.get_info(&socket);
         let device = assert_matches!(info, SocketInfo::Bound(BoundInfo { device, .. }) => device);
         assert_eq!(device, Some(MultipleDevicesId::A.downgrade()));
+    }
+
+    #[ip_test(I)]
+    fn set_device_unbound_connect<I: TcpTestIpExt>()
+    where
+        TcpCoreCtx<MultipleDevicesId, TcpBindingsCtx<MultipleDevicesId>>:
+            TcpContext<I, TcpBindingsCtx<MultipleDevicesId>>,
+    {
+        set_logger_for_test();
+        let mut ctx = TcpCtx::with_core_ctx(TcpCoreCtx::new_multiple_devices());
+        let mut api = ctx.tcp_api::<I>();
+        let socket = api.create(Default::default());
+        assert_matches!(api.set_device(&socket, Some(MultipleDevicesId::A)), Ok(()));
+        api.connect(&socket, Some(ZonedAddr::Unzoned(I::TEST_ADDRS.remote_ip)), PORT_1)
+            .expect("connect should succeed");
+        let info = api.get_info(&socket);
+        let device =
+            assert_matches!(info, SocketInfo::Connection(ConnectionInfo { device, .. }) => device);
+        assert_eq!(device, Some(MultipleDevicesId::A.downgrade()));
+
+        // Connecting with device C (which has no IP addresses or routes) should fail.
+        let socket_c = api.create(Default::default());
+        assert_matches!(api.set_device(&socket_c, Some(MultipleDevicesId::C)), Ok(()));
+        assert_matches!(
+            api.connect(&socket_c, Some(ZonedAddr::Unzoned(I::TEST_ADDRS.remote_ip)), PORT_1),
+            Err(ConnectError::NoRoute)
+        );
+    }
+
+    #[test]
+    fn set_device_unbound_dual_stack_connect() {
+        set_logger_for_test();
+        let mut ctx = TcpCtx::with_core_ctx(TcpCoreCtx::new_multiple_devices());
+        let mut api = ctx.tcp_api::<Ipv6>();
+        let socket = api.create(Default::default());
+        assert_matches!(api.set_device(&socket, Some(MultipleDevicesId::A)), Ok(()));
+        api.connect(
+            &socket,
+            Some(ZonedAddr::Unzoned((*Ipv4::TEST_ADDRS.remote_ip).to_ipv6_mapped())),
+            PORT_1,
+        )
+        .expect("connect should succeed");
+        let info = api.get_info(&socket);
+        let device =
+            assert_matches!(info, SocketInfo::Connection(ConnectionInfo { device, .. }) => device);
+        assert_eq!(device, Some(MultipleDevicesId::A.downgrade()));
+
+        // Connecting with device C (which has no IP addresses or routes) should fail.
+        let socket_c = api.create(Default::default());
+        assert_matches!(api.set_device(&socket_c, Some(MultipleDevicesId::C)), Ok(()));
+        assert_matches!(
+            api.connect(
+                &socket_c,
+                Some(ZonedAddr::Unzoned((*Ipv4::TEST_ADDRS.remote_ip).to_ipv6_mapped())),
+                PORT_1,
+            ),
+            Err(ConnectError::NoRoute)
+        );
     }
 
     #[ip_test(I)]
