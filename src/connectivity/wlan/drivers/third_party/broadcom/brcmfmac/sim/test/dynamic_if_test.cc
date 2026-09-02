@@ -606,7 +606,7 @@ TEST_F(DynamicIfTest, CreateClientWithLongName) {
     wlan_common::WlanMacRole client_role = wlan_common::WlanMacRole::kClient;
     EXPECT_EQ(ZX_OK, client_ifc_.Init(env_.get(), client_role));
 
-    size_t really_long_name_len = NET_DEVICE_NAME_MAX_LEN + 1;
+    constexpr size_t really_long_name_len = NET_DEVICE_NAME_MAX_LEN + 1;
     ASSERT_GT(really_long_name_len,
               (size_t)NET_DEVICE_NAME_MAX_LEN);  // assert + 1 did not cause an overflow
     char really_long_name[really_long_name_len];
