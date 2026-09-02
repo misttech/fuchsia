@@ -87,10 +87,10 @@ tables_generator_tests_*.txt
 /.jiri_root/
 /integration/
 # For storing local scripts and data files in a source tree.
-/local/
+/local
 /mise.local.toml
 /out/
-/prebuilt/
+/prebuilt
 /test_data/
 
 # Third party repos.
