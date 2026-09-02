@@ -103,21 +103,31 @@ fuchsia_rust_driver("driver-rust") {
     "rust/src/data_types/hardware_limits.rs",
     "rust/src/data_types/reports.rs",
     "rust/src/data_types/traits.rs",
+    "rust/src/hardware_units.rs",
+    "rust/src/hardware_units/i2c.rs",
     "rust/src/lib.rs",
     "rust/src/registers.rs",
     "rust/src/registers/commands.rs",
     "rust/src/registers/control.rs",
     "rust/src/registers/product_info.rs",
     "rust/src/registers/status.rs",
+    "rust/src/testing.rs",
+    "rust/src/testing/mock_i2c.rs",
   ]
   deps = [
     ":goodix-gt6853-bind",
     "//sdk/fidl/fuchsia.driver.framework:fuchsia.driver.framework_rust",
+    "//sdk/fidl/fuchsia.hardware.i2c:fuchsia.hardware.i2c_rust_next",
     "//sdk/lib/driver/component/rust",
     "//sdk/rust/zx",
+    "//src/lib/fidl/rust_next/fidl_next",
     "//third_party/rust_crates:bitfield",
     "//third_party/rust_crates:log",
     "//third_party/rust_crates:zerocopy",
+  ]
+  test_deps = [
+    "//src/lib/fuchsia",
+    "//src/lib/fuchsia-async",
   ]
 }
 
@@ -202,6 +212,11 @@ fuchsia_unittest_package("goodix-gt6853-test-package") {
 fuchsia_unittest_package("goodix-gt6853-rust-test-package") {
   package_name = "goodix-gt6853-rust-test"
   deps = [ ":driver-rust_test" ]
+  test_specs = {
+    log_settings = {
+      max_severity = "ERROR"
+    }
+  }
 }
 
 group("tests") {

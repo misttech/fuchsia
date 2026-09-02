@@ -5,7 +5,11 @@
 //! Goodix GT6853 Touchscreen Driver for Fuchsia.
 
 pub mod data_types;
+pub mod hardware_units;
 pub mod registers;
+
+#[cfg(test)]
+pub mod testing;
 
 use fdf_component::{Driver, DriverContext, DriverError, Node, driver_register};
 use log::info;
