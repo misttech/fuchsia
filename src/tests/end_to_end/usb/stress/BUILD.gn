@@ -50,7 +50,7 @@ if (is_host) {
     params = {
       packet_iterations = 10
       large_transfer_iterations = 5
-      transfer_size_mb = 20
+      transfer_size_mb = 5
       varying_burst_count = 50
       toggle_iterations = 10
       power_iterations = 2

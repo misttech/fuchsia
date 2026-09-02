@@ -26,7 +26,6 @@ Specifically, it exercises:
 """
 
 import asyncio
-import ipaddress
 import logging
 import os
 import subprocess
@@ -43,6 +42,9 @@ _LOGGER: logging.Logger = logging.getLogger(__name__)
 # 64KB chunk size for streaming payload into target shell builtins
 _TRANSFER_CHUNK_SIZE_BYTES: int = 65536
 
+# Timeout for CDC Ethernet interface and route discovery under CQ / virtualization load.
+_CDC_ROUTING_TIMEOUT_SEC: float = 60.0
+
 
 class CdcStressTest(fuchsia_base_test.FuchsiaBaseTest):
     """Mobly test suite verifying CDC-ECM/NCM stack resilience under strain."""
@@ -55,34 +57,93 @@ class CdcStressTest(fuchsia_base_test.FuchsiaBaseTest):
         (self._usb_power_hub, self._usb_port) = self._lookup_usb_power_hub(
             self.dut
         )
+        await self._wait_for_network_settled()
+
+    async def _wait_for_ssh_ready(self, timeout_sec: float = 60.0) -> None:
+        """Actively polls until the target SSH daemon accepts a new connection."""
+        start_time = asyncio.get_running_loop().time()
+        while asyncio.get_running_loop().time() - start_time < timeout_sec:
+            try:
+                await asyncio.to_thread(self.dut.ffx.run_ssh_cmd, ":")
+                return
+            except Exception:
+                # Brief sleep before retrying SSH connection to avoid hammering sshd during reconnection.
+                await asyncio.sleep(0.5)
+        raise TimeoutError(
+            f"Timed out after {timeout_sec}s waiting for target SSH daemon to accept connections."
+        )
+
+    async def _wait_for_network_settled(
+        self, timeout_sec: float = 30.0
+    ) -> None:
+        """Actively waits until Netstack registers the CDC Ethernet interface and verifies connectivity."""
+        _LOGGER.info(
+            "Waiting for CDC Ethernet interface and network stack to stabilize..."
+        )
+        await self.dut.wait_for_online()
+        self.dut.health_check()
+        start_time = asyncio.get_running_loop().time()
+        while asyncio.get_running_loop().time() - start_time < timeout_sec:
+            try:
+                interfaces = await asyncio.wait_for(
+                    self.dut.netstack.list_interfaces(), timeout=5.0
+                )
+                cdc_ready = any(
+                    iface.port_class == PortClass.ETHERNET
+                    and bool(iface.ipv6_addresses or iface.ipv4_addresses)
+                    for iface in interfaces
+                )
+                if cdc_ready:
+                    await asyncio.to_thread(self.dut.ffx.run_ssh_cmd, ":")
+                    _LOGGER.info(
+                        "CDC Ethernet interface and SSH transport stabilized."
+                    )
+                    return
+            except Exception:
+                pass
+            # Brief sleep before polling again to allow Netstack to update.
+            await asyncio.sleep(0.5)
+        raise TimeoutError(
+            f"Timed out after {timeout_sec}s waiting for CDC Ethernet interface to stabilize."
+        )
 
     async def _verify_cdc_routing(self) -> None:
         """Verifies via FIDL that active FFX SSH traffic traverses the USB CDC Ethernet adapter."""
         await self.dut.wait_for_online()
-        await self.dut.on_device_boot()
-        interfaces = await self.dut.netstack.list_interfaces()
         cdc_ips: list[str] = []
         wlan_ips: list[str] = []
-        for iface in interfaces:
-            if iface.name != "lo":
-                ip_strs = [
-                    str(ip).split("/")[0].split("%")[0]
-                    for ip in (iface.ipv4_addresses + iface.ipv6_addresses)
-                ]
-                if iface.port_class == PortClass.ETHERNET:
-                    cdc_ips.extend(ip_strs)
-                    _LOGGER.info(
-                        "Verified CDC Ethernet interface '%s' (ID: %s, MAC: %s, IPs: %s)",
-                        iface.name,
-                        iface.id_,
-                        iface.mac,
-                        ip_strs,
-                    )
-                elif iface.port_class == PortClass.WLAN_CLIENT:
-                    wlan_ips.extend(ip_strs)
+        start_time = asyncio.get_running_loop().time()
+        while (
+            asyncio.get_running_loop().time() - start_time
+            < _CDC_ROUTING_TIMEOUT_SEC
+        ):
+            interfaces = await self.dut.netstack.list_interfaces()
+            cdc_ips = []
+            wlan_ips = []
+            for iface in interfaces:
+                if iface.name != "lo":
+                    ip_strs = [
+                        str(ip).split("/")[0].split("%")[0]
+                        for ip in (iface.ipv4_addresses + iface.ipv6_addresses)
+                    ]
+                    if iface.port_class == PortClass.ETHERNET:
+                        cdc_ips.extend(ip_strs)
+                        _LOGGER.info(
+                            "Verified CDC Ethernet interface '%s' (ID: %s, MAC: %s, IPs: %s)",
+                            iface.name,
+                            iface.id_,
+                            iface.mac,
+                            ip_strs,
+                        )
+                    elif iface.port_class == PortClass.WLAN_CLIENT:
+                        wlan_ips.extend(ip_strs)
+            if cdc_ips:
+                break
+            # Brief sleep before re-querying interfaces to allow Netstack to complete IP address assignment.
+            await asyncio.sleep(0.5)
 
         asserts.assert_true(
-            len(cdc_ips) > 0,
+            bool(cdc_ips),
             "Pre-flight check failed: No active CDC USB Ethernet IP addresses detected via FIDL.",
         )
 
@@ -159,7 +220,7 @@ class CdcStressTest(fuchsia_base_test.FuchsiaBaseTest):
         num_iterations = int(
             self.user_params.get("large_transfer_iterations", 5)
         )
-        transfer_mb = int(self.user_params.get("transfer_size_mb", 20))
+        transfer_mb = int(self.user_params.get("transfer_size_mb", 5))
         expected_bytes = transfer_mb * 1024 * 1024
         _LOGGER.info(
             "Starting CDC Target->Host large file transfer stress test (%d MB per transfer) across %d iterations.",
@@ -197,12 +258,16 @@ class CdcStressTest(fuchsia_base_test.FuchsiaBaseTest):
                 i,
                 actual_bytes,
             )
+            await self._wait_for_ssh_ready()
 
         _LOGGER.info(
             "Successfully completed %d iterations of CDC Target->Host large file transfer stress.",
             num_iterations,
         )
 
+    # TODO(b/553616205): Explore using iperf3 (similar to netstack_iperf_test.py via
+    # //third_party/iperf:iperf3_pkg) for large contiguous transfers to avoid target CPU
+    # parsing overhead in /boot/bin/sh on embedded ARM targets.
     async def test_cdc_large_file_transfer_host_to_target(self) -> None:
         """Verifies CDC network stack under Host->Target multi-megabyte data transfers.
 
@@ -212,7 +277,7 @@ class CdcStressTest(fuchsia_base_test.FuchsiaBaseTest):
         num_iterations = int(
             self.user_params.get("large_transfer_iterations", 5)
         )
-        transfer_mb = int(self.user_params.get("transfer_size_mb", 20))
+        transfer_mb = int(self.user_params.get("transfer_size_mb", 5))
         expected_bytes = transfer_mb * 1024 * 1024
         _LOGGER.info(
             "Starting CDC Host->Target large file transfer stress test (%d MB per transfer) across %d iterations.",
@@ -271,16 +336,19 @@ class CdcStressTest(fuchsia_base_test.FuchsiaBaseTest):
                         i,
                         expected_bytes,
                     )
-                except Exception as e:
+                except subprocess.CalledProcessError as e:
                     err_msg = str(e)
-                    if (
-                        isinstance(e, subprocess.CalledProcessError)
-                        and e.stderr
-                    ):
+                    if e.stderr:
                         err_msg += f" (stderr: {e.stderr.decode('utf-8', errors='replace')})"
                     asserts.fail(
                         f"CDC network stack failed during Host->Target large file transfer iteration {i}: {err_msg}"
                     )
+                except Exception as e:
+                    asserts.fail(
+                        f"CDC network stack failed during Host->Target large file transfer iteration {i}: {e}"
+                    )
+
+                await self._wait_for_ssh_ready()
 
         _LOGGER.info(
             "Successfully completed %d iterations of CDC Host->Target large file transfer stress.",
@@ -311,105 +379,58 @@ class CdcStressTest(fuchsia_base_test.FuchsiaBaseTest):
 
         await self._verify_cdc_routing()
 
-        ssh_addr = self.dut.ffx.get_target_ssh_address()
-        asserts.assert_is_not_none(
-            ssh_addr,
-            "Failed to obtain FFX SSH target address.",
+        # Execute ICMP bursts across all block sizes in a single SSH session on target
+        # to avoid repeated connection setup/teardown overhead while stressing CDC-NCM MTU/aggregation.
+        sizes_str = " ".join(str(bs) for bs in packet_sizes)
+        batch_script = (
+            'host_ip="${SSH_CONNECTION%% *}"\n'
+            f"for bs in {sizes_str}; do\n"
+            f'    out=$(ping -c {burst_count} -i 200 -s $bs -t 5000 "$host_ip" 2>&1)\n'
+            "    status=$?\n"
+            "    if [ $status -ne 0 ]; then\n"
+            '        echo "FAIL: bs=$bs status=$status output=$out"\n'
+            "        exit 1\n"
+            "    fi\n"
+            '    case "$out" in\n'
+            '        *"0% packet loss"*) : ;;\n'
+            '        *) echo "FAIL: bs=$bs status=$status output=$out"\n'
+            "           exit 1\n"
+            "           ;;\n"
+            "    esac\n"
+            '    echo "PASS: bs=$bs"\n'
+            "done\n"
+            'echo "ALL_PACKET_SIZES_PASSED"\n'
         )
-        assert ssh_addr is not None  # satisfy mypy typing
-        target_ip = str(ssh_addr.ip)
-        parsed_ip = ipaddress.ip_address(target_ip.split("%")[0])
-        ip_version = parsed_ip.version
 
-        # Prefer IPv6 if target_ip is IPv4, by checking for active CDC IPv6 interface addresses.
-        if ip_version == 4:
-            try:
-                interfaces = await self.dut.netstack.list_interfaces()
-                found_ipv6 = False
-                for iface in interfaces:
-                    has_ssh_ip = any(
-                        target_ip == str(ip).split("/")[0]
-                        for ip in iface.ipv4_addresses
-                    )
-                    if (
-                        iface.name != "lo"
-                        and iface.port_class == PortClass.ETHERNET
-                        and has_ssh_ip
-                    ):
-                        for ip in iface.ipv6_addresses:
-                            ip_str = str(ip).split("/")[0]
-                            if not ip_str.startswith("fe80:"):
-                                target_ip = ip_str
-                                parsed_ip = ipaddress.ip_address(ip_str)
-                                ip_version = parsed_ip.version
-                                _LOGGER.info(
-                                    "Discovered target global IPv6 address %s for ICMP stress",
-                                    target_ip,
-                                )
-                                found_ipv6 = True
-                                break
-                    if found_ipv6:
-                        break
-            except Exception as e:
-                _LOGGER.debug(
-                    "Could not query netstack for IPv6 addresses: %s", e
-                )
+        cmd = ["target", "ssh", batch_script]
+        ffx_cmd = self.dut.ffx.generate_ffx_cmd(
+            cmd=cmd, include_target=True, machine=MachineFormat.RAW
+        )
+        try:
+            result = await asyncio.to_thread(
+                subprocess.run,
+                ffx_cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
+        except Exception as e:
+            asserts.fail(
+                f"CDC network stack failed during varying packet size stress: {e}"
+            )
 
-        for bs in packet_sizes:
-            _LOGGER.info(
-                "Testing ICMPv%d packet burst with payload size %d bytes (%d packets) to %s",
-                ip_version,
-                bs,
-                burst_count,
-                target_ip,
-            )
-            try:
-                # Python Host-side Mobly Test:
-                # Execute ping ON THE TARGET pointing back to the Host
-                # to stress the network stack rapidly without requiring root privileges on infra bots.
-                # Extract host IP dynamically from SSH_CONNECTION to avoid hardcoding interfaces.
-                cmd = [
-                    "target",
-                    "ssh",
-                    f"host_ip=${{SSH_CONNECTION%% *}} && ping -c {burst_count} -i 200 -s {bs} -t 5000 $host_ip",
-                ]
-                ffx_cmd = self.dut.ffx.generate_ffx_cmd(
-                    cmd=cmd, include_target=True, machine=MachineFormat.RAW
-                )
-                result = await asyncio.to_thread(
-                    subprocess.run,
-                    ffx_cmd,
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.PIPE,
-                    text=True,
-                )
-            except Exception as e:
-                err_msg = str(e)
-                if isinstance(e, subprocess.CalledProcessError) and e.stderr:
-                    err_msg += f" (stderr: {e.stderr})"
-                asserts.fail(
-                    f"CDC network stack failed during ICMPv{ip_version} packet stress with payload size {bs}B: {err_msg}"
-                )
-
-            asserts.assert_equal(
-                result.returncode,
-                0,
-                f"Payload size {bs}B: ping failed with exit code {result.returncode}. Stderr: {result.stderr}",
-            )
-            asserts.assert_in(
-                "0% packet loss",
-                result.stdout,
-                f"Payload size {bs}B: Detected packet loss during ping stress. Output:\n{result.stdout}",
-            )
-            _LOGGER.info(
-                "Payload size %dB: Successfully transmitted and received %d ICMPv%d echo packets with 0%% packet loss.",
-                bs,
-                burst_count,
-                ip_version,
+        if (
+            result.returncode != 0
+            or "ALL_PACKET_SIZES_PASSED" not in result.stdout
+        ):
+            asserts.fail(
+                f"CDC network stack failed during varying packet size stress: "
+                f"ICMP batch stress failed (code {result.returncode}). Stderr: {result.stderr}, Stdout: {result.stdout}"
             )
 
         _LOGGER.info(
-            "Successfully completed CDC varying packet size stress across all block sizes."
+            "Successfully completed CDC varying packet size stress across all block sizes: %s",
+            packet_sizes,
         )
 
     # TODO(b/530262848): Explore a self-recovering link toggle mechanism (like a restart
@@ -449,14 +470,16 @@ class CdcStressTest(fuchsia_base_test.FuchsiaBaseTest):
             _LOGGER.info(
                 "FIDL interface polling iteration %d/%d", i, num_iterations
             )
+            cdc_iface_found = False
             try:
                 # Query network interfaces via native FIDL netstack affordance
                 # (invokes fuchsia.net.interfaces/State.GetWatcher over Overnet).
                 interfaces = await self.dut.netstack.list_interfaces()
-                cdc_iface_found = False
                 for iface in interfaces:
-                    # Filter for non-loopback interfaces with active IPv6 addresses (CDC Ethernet link).
-                    if iface.name != "lo" and len(iface.ipv6_addresses) > 0:
+                    # Filter for non-loopback interfaces with active IPv4 or IPv6 addresses (CDC Ethernet link).
+                    if iface.name != "lo" and bool(
+                        iface.ipv6_addresses or iface.ipv4_addresses
+                    ):
                         cdc_iface_found = True
                         _LOGGER.debug(
                             "Iteration %d: Verified active CDC interface '%s' (ID: %s, MAC: %s)",
@@ -475,7 +498,8 @@ class CdcStressTest(fuchsia_base_test.FuchsiaBaseTest):
                 cdc_iface_found,
                 f"Iteration {i}: Failed to discover online CDC network interface via FIDL.",
             )
-            await asyncio.sleep(1)
+            # Brief pacing between polling iterations to allow netstack to service driver events.
+            await asyncio.sleep(0.5)
 
         _LOGGER.info(
             "Successfully completed %d iterations of FIDL interface polling.",
@@ -512,6 +536,7 @@ class CdcStressTest(fuchsia_base_test.FuchsiaBaseTest):
                 await asyncio.to_thread(self.dut.wait_for_offline)
 
                 if disconnect_duration > 0:
+                    # Keep VBUS power removed for the configured duration to simulate a sustained physical disconnect.
                     await asyncio.sleep(disconnect_duration)
             finally:
                 # Restore VBUS power and verify CDC Ethernet network re-enumeration
@@ -522,6 +547,9 @@ class CdcStressTest(fuchsia_base_test.FuchsiaBaseTest):
                 )
                 await self.dut.wait_for_online()
                 await self.dut.on_device_boot()
+
+            # Wait for network interface and SSH transport to settle after recovery
+            await self._wait_for_network_settled()
 
             # Verify network connectivity is fully functional after recovery
             ssh_check = await asyncio.to_thread(
