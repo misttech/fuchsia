@@ -4,47 +4,81 @@
 
 #include "vsock_usb.h"
 
-#include <lib/ddk/metadata.h>
+#include <fidl/fuchsia.hardware.usb.function/cpp/fidl.h>
+#include <fidl/fuchsia.hardware.vsockbridge/cpp/wire.h>
+#include <lib/driver/compat/cpp/device_server.h>
 #include <lib/driver/testing/cpp/driver_test.h>
+#include <lib/fidl/cpp/wire/channel.h>
+#include <lib/fit/function.h>
 #include <lib/inspect/testing/cpp/inspect.h>
-#include <lib/sync/completion.h>
+#include <lib/zx/result.h>
+#include <lib/zx/socket.h>
+#include <lib/zx/time.h>
+#include <lib/zx/vmo.h>
+#include <zircon/assert.h>
 #include <zircon/compiler.h>
+#include <zircon/status.h>
 
 #include <algorithm>
+#include <atomic>
 #include <cstdint>
+#include <deque>
+#include <iterator>
 #include <memory>
 #include <optional>
+#include <queue>
 #include <string_view>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
+#include <fbl/auto_lock.h>
+#include <fbl/mutex.h>
 #include <gtest/gtest.h>
 #include <usb-inspect/usb-inspect-test-helper.h>
 
-#include "fbl/auto_lock.h"
-#include "fbl/mutex.h"
-#include "fidl/fuchsia.hardware.usb.function/cpp/fidl.h"
-#include "fidl/fuchsia.hardware.vsockbridge/cpp/markers.h"
-#include "lib/driver/compat/cpp/device_server.h"
-#include "lib/fidl/cpp/wire/channel.h"
-#include "lib/fidl/cpp/wire/internal/transport_channel.h"
 #include "src/devices/usb/lib/usb-endpoint/testing/fake-usb-endpoint-server.h"
 
 // NOLINTBEGIN(misc-use-anonymous-namespace)
 // NOLINTBEGIN(readability-convert-member-functions-to-static)
 // NOLINTBEGIN(readability-container-data-pointer)
 
+class VsockUsbTestHelper {
+ public:
+  static zx_status_t UnconfigureEndpoints(VsockUsb& driver) {
+    return driver.UnconfigureEndpoints();
+  }
+
+  static void Shutdown(VsockUsb& driver, fit::function<void()> callback) {
+    driver.Shutdown(std::move(callback));
+  }
+
+  static bool Online(VsockUsb& driver) { return driver.Online(); }
+};
+
 static constexpr uint8_t kBulkOutEndpoint = 1;
 static constexpr uint8_t kBulkInEndpoint = 2;
 static constexpr uint8_t kInterfaceNum = 1;
+static constexpr size_t kMtu = 1024;
 
 // A fake endpoint that allows for more complex behaviour in responding to completion requests
 // by requiring that there be outstanding requests when you attempt to fulfill them.
 class FakeEndpoint : public fake_usb_endpoint::FakeEndpoint {
  public:
+  ~FakeEndpoint() override {
+    fbl::AutoLock _(&lock_);
+    EXPECT_TRUE(requests_.empty());
+  }
+
   void Connect(async_dispatcher_t* dispatcher,
                fidl::ServerEnd<fuchsia_hardware_usb_endpoint::Endpoint> server) override {
+    fbl::AutoLock _(&lock_);
     binding_ref_.emplace(fidl::BindServer(dispatcher, std::move(server), this));
+  }
+
+  void SetEnabled(bool enabled) {
+    fbl::AutoLock _(&lock_);
+    enabled_ = enabled;
   }
 
   // QueueRequests: adds requests to a queue, which will be replied to when RequestComplete() is
@@ -52,43 +86,103 @@ class FakeEndpoint : public fake_usb_endpoint::FakeEndpoint {
   void QueueRequests(QueueRequestsRequest& request,
                      QueueRequestsCompleter::Sync& completer) override {
     FDF_LOG(DEBUG, "QueueRequests");
-    fbl::AutoLock _(&lock_);
-    // Add request to queue.
-    requests_.insert(requests_.end(), std::make_move_iterator(request.req().begin()),
-                     std::make_move_iterator(request.req().end()));
+    std::optional<fidl::ServerBindingRef<fuchsia_hardware_usb_endpoint::Endpoint>> binding;
+    std::vector<fuchsia_hardware_usb_request::Request> reqs_to_cancel;
+    {
+      fbl::AutoLock _(&lock_);
+      if (!enabled_) {
+        FDF_LOG(WARNING, "QueueRequests: endpoint is disabled, immediately canceling %zu requests",
+                request.req().size());
+        reqs_to_cancel.swap(request.req());
+        binding = binding_ref_;
+      } else {
+        // Add request to queue.
+        requests_.insert(requests_.end(), std::make_move_iterator(request.req().begin()),
+                         std::make_move_iterator(request.req().end()));
+      }
+    }
+    if (!reqs_to_cancel.empty()) {
+      if (!binding.has_value()) {
+        ADD_FAILURE()
+            << "QueueRequests: endpoint disabled with requests to cancel but no active binding";
+        return;
+      }
+      std::vector<fuchsia_hardware_usb_endpoint::Completion> completions;
+      completions.reserve(reqs_to_cancel.size());
+      for (auto& req : reqs_to_cancel) {
+        fuchsia_hardware_usb_endpoint::Completion completion;
+        completion.request(std::move(req));
+        completion.status(ZX_ERR_CANCELED);
+        completion.transfer_size(0);
+        completions.push_back(std::move(completion));
+      }
+      auto event_result = fidl::SendEvent(*binding)->OnCompletion(std::move(completions));
+      EXPECT_TRUE(event_result.is_ok() || event_result.error_value().status() == ZX_ERR_PEER_CLOSED)
+          << "SendEvent failed: " << zx_status_get_string(event_result.error_value().status());
+    }
   }
 
   void CancelAll(CancelAllCompleter::Sync& completer) override {
-    fbl::AutoLock _(&lock_);
-    for (auto& request : requests_) {
-      SendRequestComplete(fuchsia_hardware_usb_request::Request(std::move(request)),
-                          ZX_ERR_IO_NOT_PRESENT, 0);
+    std::deque<fuchsia_hardware_usb_request::Request> reqs_to_cancel;
+    std::optional<fidl::ServerBindingRef<fuchsia_hardware_usb_endpoint::Endpoint>> binding;
+    {
+      fbl::AutoLock _(&lock_);
+      reqs_to_cancel.swap(requests_);
+      binding = binding_ref_;
     }
-    requests_.erase(requests_.begin(), requests_.end());
+    if (!reqs_to_cancel.empty()) {
+      if (!binding.has_value()) {
+        ADD_FAILURE() << "CancelAll: endpoint has requests to cancel but no active binding";
+        completer.Reply(fit::ok());
+        return;
+      }
+      std::vector<fuchsia_hardware_usb_endpoint::Completion> completions;
+      completions.reserve(reqs_to_cancel.size());
+      for (auto& req : reqs_to_cancel) {
+        fuchsia_hardware_usb_endpoint::Completion completion;
+        completion.request(std::move(req));
+        completion.status(ZX_ERR_IO_NOT_PRESENT);
+        completion.transfer_size(0);
+        completions.push_back(std::move(completion));
+      }
+      auto event_result = fidl::SendEvent(*binding)->OnCompletion(std::move(completions));
+      EXPECT_TRUE(event_result.is_ok() || event_result.error_value().status() == ZX_ERR_PEER_CLOSED)
+          << "SendEvent failed: " << zx_status_get_string(event_result.error_value().status());
+    }
     completer.Reply(fit::ok());
   }
 
-  // Returns the next waiting request. The caller is responsible for ensuring that
-  // a request is waiting in the queue.
-  fuchsia_hardware_usb_request::Request GetNextRequest() {
+  // Non-blocking atomic request poll for assertions.
+  std::optional<fuchsia_hardware_usb_request::Request> PopNextRequest() {
     fbl::AutoLock _(&lock_);
-    EXPECT_GT(requests_.size(), 0u);
-    auto next_request = fuchsia_hardware_usb_request::Request(std::move(requests_.front()));
-    requests_.erase(requests_.begin());
+    if (requests_.empty()) {
+      return std::nullopt;
+    }
+    auto next_request = std::move(requests_.front());
+    requests_.pop_front();
     return next_request;
   }
 
   void SendRequestComplete(fuchsia_hardware_usb_request::Request request, zx_status_t status,
                            size_t actual) {
-    auto completion = std::move(fuchsia_hardware_usb_endpoint::Completion()
-                                    .request(std::move(request))
-                                    .status(status)
-                                    .transfer_size(actual));
-
-    ASSERT_TRUE(binding_ref_);
+    std::optional<fidl::ServerBindingRef<fuchsia_hardware_usb_endpoint::Endpoint>> binding;
+    {
+      fbl::AutoLock _(&lock_);
+      binding = binding_ref_;
+    }
+    if (!binding.has_value()) {
+      ADD_FAILURE() << "SendRequestComplete called without active binding";
+      return;
+    }
+    fuchsia_hardware_usb_endpoint::Completion completion;
+    completion.request(std::move(request));
+    completion.status(status);
+    completion.transfer_size(actual);
     std::vector<fuchsia_hardware_usb_endpoint::Completion> completions;
-    completions.emplace_back(std::move(completion));
-    EXPECT_TRUE(fidl::SendEvent(*binding_ref_)->OnCompletion(std::move(completions)).is_ok());
+    completions.push_back(std::move(completion));
+    auto event_result = fidl::SendEvent(*binding)->OnCompletion(std::move(completions));
+    EXPECT_TRUE(event_result.is_ok() || event_result.error_value().status() == ZX_ERR_PEER_CLOSED)
+        << "SendEvent failed: " << zx_status_get_string(event_result.error_value().status());
   }
 
   // RegisterVmos: stores the vmo mapping
@@ -96,13 +190,25 @@ class FakeEndpoint : public fake_usb_endpoint::FakeEndpoint {
     fbl::AutoLock lock(&lock_);
     std::vector<fuchsia_hardware_usb_endpoint::VmoHandle> ret;
     for (const auto& vmo_id : request.vmo_ids()) {
+      if (!vmo_id.id().has_value() || !vmo_id.size().has_value()) {
+        ADD_FAILURE() << "RegisterVmos received VmoId without id or size";
+        continue;
+      }
       zx::vmo vmo;
       auto status = zx::vmo::create(*vmo_id.size(), 0, &vmo);
       if (status != ZX_OK) {
+        ADD_FAILURE() << "RegisterVmos failed to create VMO for id " << *vmo_id.id() << ": "
+                      << zx_status_get_string(status);
         continue;
       }
       zx::vmo dup_vmo;
-      EXPECT_EQ(ZX_OK, vmo.duplicate(ZX_RIGHT_SAME_RIGHTS, &dup_vmo));
+      zx_status_t dup_status = vmo.duplicate(ZX_RIGHT_SAME_RIGHTS, &dup_vmo);
+      EXPECT_EQ(dup_status, ZX_OK);
+      if (dup_status != ZX_OK) {
+        ADD_FAILURE() << "RegisterVmos failed to duplicate VMO: "
+                      << zx_status_get_string(dup_status);
+        continue;
+      }
       vmos_.emplace(*vmo_id.id(), std::move(dup_vmo));
       ret.emplace_back(std::move(
           fuchsia_hardware_usb_endpoint::VmoHandle().id(*vmo_id.id()).vmo(std::move(vmo))));
@@ -119,48 +225,93 @@ class FakeEndpoint : public fake_usb_endpoint::FakeEndpoint {
     completer.Reply({{}, {}});
   }
 
-  void WithVmo(uint64_t vmo_id, std::function<void(zx::vmo&)> cb) {
+  [[nodiscard]] bool WithVmo(uint64_t vmo_id, fit::function<void(zx::vmo&)> cb) {
+    ZX_ASSERT(cb != nullptr);
     fbl::AutoLock lock(&lock_);
     auto vmo = vmos_.find(vmo_id);
-    EXPECT_NE(vmo, vmos_.end());
+    if (vmo == vmos_.end()) {
+      ADD_FAILURE() << "VMO ID " << vmo_id << " not found in registered VMOs";
+      return false;
+    }
     cb(vmo->second);
-  }
-
-  size_t pending_request_count() {
-    fbl::AutoLock _(&lock_);
-    return requests_.size();
+    return true;
   }
 
  private:
-  std::optional<fidl::ServerBindingRef<fuchsia_hardware_usb_endpoint::Endpoint>> binding_ref_;
-
   fbl::Mutex lock_;
-  std::vector<fuchsia_hardware_usb_request::Request> requests_ __TA_GUARDED(lock_);
+  std::optional<fidl::ServerBindingRef<fuchsia_hardware_usb_endpoint::Endpoint>> binding_ref_
+      __TA_GUARDED(lock_);
+  bool enabled_ __TA_GUARDED(lock_) = true;
+  std::deque<fuchsia_hardware_usb_request::Request> requests_ __TA_GUARDED(lock_);
   std::unordered_map<uint64_t, zx::vmo> vmos_ __TA_GUARDED(lock_);
 };
 
 class TestCallback : public fidl::WireServer<fuchsia_hardware_vsockbridge::Callback> {
  public:
-  TestCallback(size_t expected_calls, std::function<void(zx::socket)> callback)
-      : expected_calls_(expected_calls), callback_(std::move(callback)) {}
-  ~TestCallback() {
-    FDF_LOG(DEBUG, "Destroying TestCallback %zu==%zu", expected_calls_, actual_calls_);
-    EXPECT_EQ(expected_calls_, actual_calls_);
+  TestCallback(async_dispatcher_t* dispatcher,
+               fidl::ServerEnd<fuchsia_hardware_vsockbridge::Callback> server_end,
+               size_t expected_calls)
+      : expected_calls_(expected_calls) {
+    binding_.emplace(dispatcher, std::move(server_end), this, fidl::kIgnoreBindingClosure);
   }
+
+  ~TestCallback() override {
+    // Unbind and destroy the FIDL server binding first so no further messages
+    // can arrive or be dispatched while checking test expectations.
+    binding_.reset();
+
+    size_t actual_calls;
+    {
+      fbl::AutoLock _(&lock_);
+      actual_calls = actual_calls_;
+    }
+    FDF_LOG(DEBUG, "Destroying TestCallback %zu==%zu", expected_calls_, actual_calls);
+    EXPECT_EQ(actual_calls, expected_calls_);
+  }
+
   void NewLink(::fuchsia_hardware_vsockbridge::wire::CallbackNewLinkRequest* request,
                NewLinkCompleter::Sync& completer) override {
-    actual_calls_++;
-    FDF_LOG(DEBUG, "calling callback %zu", actual_calls_);
-    callback_(std::move(request->socket));
+    size_t calls;
+    {
+      fbl::AutoLock _(&lock_);
+      actual_calls_++;
+      calls = actual_calls_;
+      sockets_.push_back(std::move(request->socket));
+    }
+    FDF_LOG(DEBUG, "calling callback %zu", calls);
     completer.Reply();
   }
 
- private:
-  size_t expected_calls_;
-  size_t actual_calls_ = 0;
-  std::function<void(zx::socket)> callback_;
+  // Non-blocking atomic socket poll.
+  std::optional<zx::socket> PopSocket() {
+    fbl::AutoLock _(&lock_);
+    if (sockets_.empty()) {
+      return std::nullopt;
+    }
+    auto sock = std::move(sockets_.front());
+    sockets_.pop_front();
+    return sock;
+  }
 
-  DISALLOW_COPY_AND_ASSIGN_ALLOW_MOVE(TestCallback);
+  // Waits until a socket is received by driving the runtime dispatcher.
+  zx::socket WaitForSocket(fdf_testing::DriverRuntime& runtime) {
+    std::optional<zx::socket> sock;
+    runtime.RunUntil([&]() {
+      sock = PopSocket();
+      return sock.has_value();
+    });
+    return std::move(*sock);
+  }
+
+ private:
+  fbl::Mutex lock_;
+  size_t expected_calls_;
+  size_t actual_calls_ __TA_GUARDED(lock_) = 0;
+  std::deque<zx::socket> sockets_ __TA_GUARDED(lock_);
+  std::optional<fidl::ServerBinding<fuchsia_hardware_vsockbridge::Callback>> binding_;
+
+  TestCallback(const TestCallback&) = delete;
+  TestCallback& operator=(const TestCallback&) = delete;
 };
 
 class FakeUsb
@@ -171,16 +322,20 @@ class FakeUsb
                                                       FakeEndpoint>;
   using Base::Base;
 
-  ~FakeUsb() {
-    EXPECT_EQ(expect_configure_ep_.size(), 0u);
-    EXPECT_EQ(expect_disable_ep_.size(), 0u);
+  ~FakeUsb() override {
+    fbl::AutoLock _(&lock_);
+    EXPECT_TRUE(expect_configure_ep_.empty());
+    EXPECT_TRUE(expect_disable_ep_.empty());
   }
 
   void Configure(
       fidl::Request<fuchsia_hardware_usb_function::UsbFunction::Configure>& request,
       fidl::internal::NaturalCompleter<fuchsia_hardware_usb_function::UsbFunction::Configure>::Sync&
           completer) override {
-    interface_ = std::move(request.iface());
+    {
+      fbl::AutoLock _(&lock_);
+      interface_ = std::move(request.iface());
+    }
     completer.Reply(fit::ok());
   }
 
@@ -188,10 +343,15 @@ class FakeUsb
       fidl::Request<fuchsia_hardware_usb_function::UsbFunction::AllocResources>& request,
       fidl::internal::NaturalCompleter<
           fuchsia_hardware_usb_function::UsbFunction::AllocResources>::Sync& completer) override {
+    if (request.endpoints().size() != 2u || request.interface_count() != 1u ||
+        request.strings().size() != 1u) {
+      ADD_FAILURE() << "AllocResources received unexpected parameters: endpoints="
+                    << request.endpoints().size() << ", interfaces=" << request.interface_count()
+                    << ", strings=" << request.strings().size();
+      completer.Reply(fit::error(ZX_ERR_INVALID_ARGS));
+      return;
+    }
     fuchsia_hardware_usb_function::UsbFunctionAllocResourcesResponse response;
-    ASSERT_EQ(request.endpoints().size(), 2u);
-    ASSERT_EQ(request.interface_count(), 1u);
-    ASSERT_EQ(request.strings().size(), 1u);
     response.interface_nums() = {kInterfaceNum};
     response.endpoint_addrs() = {kBulkOutEndpoint, kBulkInEndpoint};
     response.string_indices() = {1};
@@ -207,13 +367,15 @@ class FakeUsb
       fidl::internal::NaturalCompleter<
           fuchsia_hardware_usb_function::UsbFunction::ConfigureEndpoint>::Sync& completer)
       override {
+    fake_endpoint(request.endpoint_address()).SetEnabled(true);
     completer.Reply(fit::ok());
+    fbl::AutoLock _(&lock_);
     if (expect_configure_ep_.empty()) {
       ADD_FAILURE() << "received ConfigureEndpoint "
                     << static_cast<uint32_t>(request.endpoint_address()) << " without expectation";
       return;
     }
-    EXPECT_EQ(expect_configure_ep_.front(), request.endpoint_address());
+    EXPECT_EQ(request.endpoint_address(), expect_configure_ep_.front());
     expect_configure_ep_.pop();
   }
 
@@ -221,32 +383,64 @@ class FakeUsb
       fidl::Request<fuchsia_hardware_usb_function::UsbFunction::DisableEndpoint>& request,
       fidl::internal::NaturalCompleter<
           fuchsia_hardware_usb_function::UsbFunction::DisableEndpoint>::Sync& completer) override {
-    completer.Reply(fit::ok());
-    if (expect_disable_ep_.empty()) {
-      ADD_FAILURE() << "received DisableEndpoint "
-                    << static_cast<uint32_t>(request.endpoint_address()) << " without expectation";
+    bool has_expectation = false;
+    std::optional<zx_status_t> status;
+    {
+      fbl::AutoLock _(&lock_);
+      status = disable_ep_status_;
+      if (expect_disable_ep_.empty()) {
+        ADD_FAILURE() << "received DisableEndpoint "
+                      << static_cast<uint32_t>(request.endpoint_address())
+                      << " without expectation";
+      } else {
+        has_expectation = true;
+        EXPECT_EQ(request.endpoint_address(), expect_disable_ep_.front());
+        expect_disable_ep_.pop();
+      }
+    }
+    if (!has_expectation) {
+      completer.Reply(fit::error(ZX_ERR_BAD_STATE));
       return;
     }
-    EXPECT_EQ(expect_disable_ep_.front(), request.endpoint_address());
-    expect_disable_ep_.pop();
+    if (status.has_value() && *status != ZX_OK) {
+      completer.Reply(fit::error(*status));
+      return;
+    }
+
+    auto& ep = fake_endpoint(request.endpoint_address());
+    ep.SetEnabled(false);
+    completer.Reply(fit::ok());
   }
 
   void ExpectConfigureEndpoint(uint8_t endpoint_address) {
+    fbl::AutoLock _(&lock_);
     expect_configure_ep_.push(endpoint_address);
   }
 
   void ExpectDisableEndpoint(uint8_t endpoint_address) {
+    fbl::AutoLock _(&lock_);
     expect_disable_ep_.push(endpoint_address);
   }
 
+  void set_disable_ep_status(std::optional<zx_status_t> status) {
+    fbl::AutoLock _(&lock_);
+    ZX_ASSERT_MSG(!status.has_value() || *status != ZX_OK,
+                  "disable_ep_status cannot be set to ZX_OK");
+    disable_ep_status_ = status;
+  }
+
   fidl::ClientEnd<fuchsia_hardware_usb_function::UsbFunctionInterface> TakeInterface() {
+    fbl::AutoLock _(&lock_);
     return std::move(interface_);
   }
 
  private:
-  std::queue<uint8_t> expect_configure_ep_;
-  std::queue<uint8_t> expect_disable_ep_;
-  fidl::ClientEnd<fuchsia_hardware_usb_function::UsbFunctionInterface> interface_;
+  fbl::Mutex lock_;
+  std::optional<zx_status_t> disable_ep_status_ __TA_GUARDED(lock_);
+  std::queue<uint8_t> expect_configure_ep_ __TA_GUARDED(lock_);
+  std::queue<uint8_t> expect_disable_ep_ __TA_GUARDED(lock_);
+  fidl::ClientEnd<fuchsia_hardware_usb_function::UsbFunctionInterface> interface_
+      __TA_GUARDED(lock_);
 };
 
 class VsockUsbEnvironment : public fdf_testing::Environment {
@@ -269,8 +463,6 @@ class VsockUsbEnvironment : public fdf_testing::Environment {
       return result.take_error();
     }
 
-    auto endpoints = fidl::Endpoints<fuchsia_hardware_vsockbridge::Usb>::Create();
-
     return zx::ok();
   }
 
@@ -288,78 +480,172 @@ class VsockUsbTestConfig final {
 
 class VsockUsbTest : public ::testing::Test {
  public:
-  fuchsia_hardware_usb_request::Request WaitForRequestOn(uint8_t endpoint) {
-    auto& runtime = driver_test().runtime();
-    size_t request_count;
-    fuchsia_hardware_usb_request::Request request;
-    FDF_LOG(DEBUG, "Waiting for request on endpoint %d", endpoint);
-    do {
-      runtime.RunUntilIdle();
-      driver_test().RunInEnvironmentTypeContext(
-          [&request, &request_count, endpoint](VsockUsbEnvironment& env) mutable {
-            auto& ep = env.fake_usb_->fake_endpoint(endpoint);
-            request_count = ep.pending_request_count();
-            if (request_count > 0) {
-              request = ep.GetNextRequest();
-            }
-          });
-    } while (request_count == 0);
+  [[nodiscard]] zx::socket WaitForSocket(TestCallback& callback) {
+    return callback.WaitForSocket(driver_test().runtime());
+  }
 
+  [[nodiscard]] std::optional<fuchsia_hardware_usb_request::Request> WaitForRequestOn(
+      uint8_t endpoint) {
+    FDF_LOG(DEBUG, "Waiting for request on endpoint %d", endpoint);
+    std::optional<fuchsia_hardware_usb_request::Request> request;
+    driver_test().runtime().RunUntil([&]() {
+      driver_test().RunInEnvironmentTypeContext([&](VsockUsbEnvironment& env) {
+        auto& ep = env.fake_usb_->fake_endpoint(endpoint);
+        request = ep.PopNextRequest();
+      });
+      return request.has_value();
+    });
     return request;
   }
-  // seems to be getting stuck waiting for the second buffer on the out endpoint, which really
-  // shouldn't happen?
-  bool SendTx(const uint8_t* tx, size_t size) {
+
+  [[nodiscard]] bool CompleteMockUsbOutRequest(fuchsia_hardware_usb_request::Request request,
+                                               uint8_t endpoint, const uint8_t* tx, size_t size,
+                                               zx_status_t status) {
+    ZX_ASSERT_MSG(tx != nullptr || size == 0, "tx must be non-null when size > 0");
+    bool ok = true;
+    driver_test().RunInEnvironmentTypeContext([&](VsockUsbEnvironment& env) {
+      auto& out_ep = env.fake_usb_->fake_endpoint(endpoint);
+      auto& data = request.data();
+      if (!data.has_value() || data->size() != 1u) {
+        ADD_FAILURE() << "Request data buffer missing or invalid";
+        out_ep.SendRequestComplete(std::move(request), ZX_ERR_INTERNAL, 0);
+        ok = false;
+        return;
+      }
+      auto& buffer = data->front().buffer();
+      if (!buffer.has_value() ||
+          buffer->Which() != fuchsia_hardware_usb_request::Buffer::Tag::kVmoId) {
+        ADD_FAILURE() << "Buffer is not kVmoId";
+        out_ep.SendRequestComplete(std::move(request), ZX_ERR_INTERNAL, 0);
+        ok = false;
+        return;
+      }
+      if (!buffer->vmo_id().has_value()) {
+        ADD_FAILURE() << "Buffer vmo_id is missing";
+        out_ep.SendRequestComplete(std::move(request), ZX_ERR_INTERNAL, 0);
+        ok = false;
+        return;
+      }
+      auto vmo_id = buffer->vmo_id().value();
+      if (tx != nullptr && size > 0) {
+        size_t offset = data->front().offset().value_or(0);
+        if (!out_ep.WithVmo(vmo_id, [&](zx::vmo& vmo) {
+              zx_status_t write_status = vmo.write(tx, offset, size);
+              if (write_status != ZX_OK) {
+                ADD_FAILURE() << "VMO write failed: " << zx_status_get_string(write_status);
+                ok = false;
+              }
+            })) {
+          out_ep.SendRequestComplete(std::move(request), ZX_ERR_INTERNAL, 0);
+          ok = false;
+          return;
+        }
+      }
+      if (!ok) {
+        out_ep.SendRequestComplete(std::move(request), ZX_ERR_INTERNAL, 0);
+        return;
+      }
+      data->front().size(size);
+      out_ep.SendRequestComplete(std::move(request), status, size);
+    });
+    return ok;
+  }
+
+  [[nodiscard]] bool ExecuteMockUsbOutTransaction(uint8_t endpoint, const uint8_t* tx,
+                                                  size_t size) {
+    ZX_ASSERT_MSG(tx != nullptr || size == 0, "tx must be non-null when size > 0");
+    auto request = WaitForRequestOn(endpoint);
+    if (!request.has_value()) {
+      return false;
+    }
+    return CompleteMockUsbOutRequest(std::move(*request), endpoint, tx, size, ZX_OK);
+  }
+
+  [[nodiscard]] bool ExecuteMockUsbInTransaction(uint8_t endpoint, std::vector<uint8_t>* out_data) {
+    ZX_ASSERT(out_data != nullptr);
+    auto request = WaitForRequestOn(endpoint);
+    if (!request.has_value()) {
+      return false;
+    }
+    bool ok = true;
+    driver_test().RunInEnvironmentTypeContext([&](VsockUsbEnvironment& env) {
+      auto& in_ep = env.fake_usb_->fake_endpoint(endpoint);
+      auto& data = request->data();
+      if (!data.has_value() || data->size() != 1u) {
+        ADD_FAILURE() << "Request data buffer missing or invalid";
+        in_ep.SendRequestComplete(std::move(*request), ZX_ERR_INTERNAL, 0);
+        ok = false;
+        return;
+      }
+      auto& buffer = data->front().buffer();
+      if (!buffer.has_value() ||
+          buffer->Which() != fuchsia_hardware_usb_request::Buffer::Tag::kVmoId) {
+        ADD_FAILURE() << "Buffer is not kVmoId";
+        in_ep.SendRequestComplete(std::move(*request), ZX_ERR_INTERNAL, 0);
+        ok = false;
+        return;
+      }
+      if (!buffer->vmo_id().has_value()) {
+        ADD_FAILURE() << "Buffer vmo_id is missing";
+        in_ep.SendRequestComplete(std::move(*request), ZX_ERR_INTERNAL, 0);
+        ok = false;
+        return;
+      }
+      if (!data->front().size().has_value()) {
+        ADD_FAILURE() << "Buffer region size is missing";
+        in_ep.SendRequestComplete(std::move(*request), ZX_ERR_INTERNAL, 0);
+        ok = false;
+        return;
+      }
+      uint64_t vmo_id = buffer->vmo_id().value();
+      out_data->resize(data->front().size().value());
+      EXPECT_EQ(request->short_().value_or(false), out_data->size() < kMtu);
+      size_t offset = data->front().offset().value_or(0);
+      if (!in_ep.WithVmo(vmo_id, [&](zx::vmo& vmo) {
+            zx_status_t read_status = vmo.read(out_data->data(), offset, out_data->size());
+            if (read_status != ZX_OK) {
+              ADD_FAILURE() << "VMO read failed: " << zx_status_get_string(read_status);
+              ok = false;
+            }
+          })) {
+        in_ep.SendRequestComplete(std::move(*request), ZX_ERR_INTERNAL, 0);
+        ok = false;
+        return;
+      }
+      if (!ok) {
+        in_ep.SendRequestComplete(std::move(*request), ZX_ERR_INTERNAL, 0);
+        return;
+      }
+      in_ep.SendRequestComplete(std::move(*request), ZX_OK, out_data->size());
+    });
+    return ok;
+  }
+
+  [[nodiscard]] bool SendTx(const uint8_t* tx, size_t size) {
+    ZX_ASSERT_MSG(tx != nullptr || size == 0, "tx must be non-null when size > 0");
     FDF_LOG(DEBUG, "SendTx(%zu)", size);
-
-    auto request = WaitForRequestOn(kBulkOutEndpoint);
-    FDF_LOG(DEBUG, "got request on out endpoint");
-    driver_test().RunInEnvironmentTypeContext(
-        [request = std::move(request), tx, size](VsockUsbEnvironment& env) mutable {
-          auto& out_ep = env.fake_usb_->fake_endpoint(kBulkOutEndpoint);
-          auto& data = request.data();
-          ASSERT_EQ(data->size(), 1u);
-          auto& buffer = data->front().buffer();
-          ASSERT_EQ(buffer->Which(), fuchsia_hardware_usb_request::Buffer::Tag::kVmoId);
-          auto vmo_id = buffer->vmo_id().value();
-          out_ep.WithVmo(vmo_id,
-                         [tx, size](zx::vmo& vmo) { ASSERT_EQ(ZX_OK, vmo.write(tx, 0, size)); });
-          data->at(0).size(size);
-          out_ep.SendRequestComplete(std::move(request), ZX_OK, size);
-        });
-    return true;
+    return ExecuteMockUsbOutTransaction(kBulkOutEndpoint, tx, size);
   }
 
-  std::optional<std::vector<uint8_t>> GetRx() {
+  [[nodiscard]] std::optional<std::vector<uint8_t>> GetRx() {
     std::vector<uint8_t> ret;
-    auto request = WaitForRequestOn(kBulkInEndpoint);
-    driver_test().RunInEnvironmentTypeContext(
-        [&ret, request = std::move(request)](VsockUsbEnvironment& env) mutable {
-          auto& in_ep = env.fake_usb_->fake_endpoint(kBulkInEndpoint);
-          FDF_LOG(DEBUG, "Got request on in endpoint");
-          auto& data = request.data();
-          ASSERT_EQ(data->size(), 1u);
-          auto& buffer = data->front().buffer();
-          ASSERT_EQ(buffer->Which(), fuchsia_hardware_usb_request::Buffer::Tag::kVmoId);
-          uint64_t vmo_id = buffer->vmo_id().value();
-          ret.resize(data->front().size().value());
-          EXPECT_EQ(request.short_().value_or(false), ret.size() < 1024);
-          size_t offset = data->front().offset().value_or(0);
-          FDF_LOG(DEBUG, "reading %zu bytes from incoming vmo at offset %zu", ret.size(), offset);
-          in_ep.WithVmo(vmo_id, [&ret, offset](zx::vmo& vmo) {
-            ASSERT_EQ(ZX_OK, vmo.read(&*ret.begin(), offset, ret.size()));
-          });
-          in_ep.SendRequestComplete(std::move(request), ZX_OK, ret.size());
-        });
-    return std::optional(ret);
+    if (!ExecuteMockUsbInTransaction(kBulkInEndpoint, &ret)) {
+      return std::nullopt;
+    }
+    return ret;
   }
 
-  bool GetRxConcatExpect(const uint8_t* data, size_t len) {
+  [[nodiscard]] bool GetRxConcatExpect(const uint8_t* data, size_t len) {
+    ZX_ASSERT_MSG(data != nullptr || len == 0, "data must be non-null when len > 0");
     FDF_LOG(DEBUG, "GetRxConcatExpect(%zu)", len);
     while (len != 0) {
       auto got = GetRx();
       if (!got.has_value()) {
         FDF_LOG(ERROR, "No value returned from GetRx");
+        return false;
+      }
+      if (got->empty()) {
+        FDF_LOG(ERROR, "Received empty packet while expecting %zu bytes", len);
         return false;
       }
       if (got->size() > len) {
@@ -376,7 +662,9 @@ class VsockUsbTest : public ::testing::Test {
     return true;
   }
 
-  bool SocketReadExpect(zx::socket* socket, const uint8_t* data, size_t len) {
+  [[nodiscard]] bool SocketReadExpect(zx::socket* socket, const uint8_t* data, size_t len) {
+    ZX_ASSERT(socket != nullptr);
+    ZX_ASSERT_MSG(data != nullptr || len == 0, "data must be non-null when len > 0");
     FDF_LOG(DEBUG, "SocketReadExpect(%zu)", len);
     std::vector<uint8_t> buf(len, 0);
 
@@ -384,13 +672,18 @@ class VsockUsbTest : public ::testing::Test {
       FDF_LOG(DEBUG, "reading loop iteration, need %zu bytes still", len);
       zx_signals_t pending;
       size_t actual;
-      if (socket->wait_one(ZX_SOCKET_READABLE, zx::time::infinite(), &pending) != ZX_OK) {
+      if (socket->wait_one(ZX_SOCKET_READABLE | ZX_SOCKET_PEER_CLOSED, zx::time::infinite(),
+                           &pending) != ZX_OK) {
         return false;
       }
       if ((pending & ZX_SOCKET_READABLE) == 0) {
         return false;
       }
       if (socket->read(0, buf.data(), len, &actual) != ZX_OK) {
+        return false;
+      }
+      if (actual == 0) {
+        FDF_LOG(ERROR, "Socket read 0 bytes while %zu bytes expected", len);
         return false;
       }
       if (!std::equal(buf.begin(), buf.begin() + static_cast<ssize_t>(actual), data)) {
@@ -402,12 +695,15 @@ class VsockUsbTest : public ::testing::Test {
     return true;
   }
 
-  bool SocketWriteAll(zx::socket* socket, const uint8_t* data, size_t len) {
+  [[nodiscard]] bool SocketWriteAll(zx::socket* socket, const uint8_t* data, size_t len) {
+    ZX_ASSERT(socket != nullptr);
+    ZX_ASSERT_MSG(data != nullptr || len == 0, "data must be non-null when len > 0");
     FDF_LOG(DEBUG, "SocketWriteAll(%zu)", len);
     while (len > 0) {
       zx_signals_t pending;
       size_t actual;
-      zx_status_t res = socket->wait_one(ZX_SOCKET_WRITABLE, zx::time::infinite(), &pending);
+      zx_status_t res = socket->wait_one(ZX_SOCKET_WRITABLE | ZX_SOCKET_PEER_CLOSED,
+                                         zx::time::infinite(), &pending);
       if (res != ZX_OK) {
         FDF_LOG(ERROR, "error while waiting on socket: %d", res);
         return false;
@@ -419,6 +715,10 @@ class VsockUsbTest : public ::testing::Test {
       res = socket->write(0, data, len, &actual);
       if (res != ZX_OK) {
         FDF_LOG(ERROR, "error while writing to socket: %d", res);
+        return false;
+      }
+      if (actual == 0) {
+        FDF_LOG(ERROR, "Socket wrote 0 bytes while %zu bytes remaining", len);
         return false;
       }
       FDF_LOG(DEBUG, "wrote %zu bytes to socket", actual);
@@ -447,6 +747,7 @@ class VsockUsbTest : public ::testing::Test {
 
     zx::result<> result = driver_test().StopDriver();
     ASSERT_TRUE(result.is_ok());
+    driver_test().runtime().RunUntilIdle();
     FDF_LOG(DEBUG, "TearDown finished");
   }
 
@@ -492,23 +793,21 @@ class VsockUsbTest : public ::testing::Test {
     });
   }
 
-  std::unique_ptr<TestCallback> SetupCallback(size_t expected_calls,
-                                              std::function<void(zx::socket)> callback) {
-    auto callback_obj = SetTestCallback(expected_calls, std::move(callback));
+  std::unique_ptr<TestCallback> SetupCallback(size_t expected_calls) {
+    auto callback_obj = SetTestCallback(expected_calls);
     EXPECT_TRUE(callback_obj);
     driver_test().runtime().RunUntilIdle();
     return callback_obj;
   }
 
-  std::unique_ptr<TestCallback> SetTestCallback(size_t expected_calls,
-                                                std::function<void(zx::socket)> callback) const {
+  std::unique_ptr<TestCallback> SetTestCallback(size_t expected_calls) const {
     auto dispatcher = fdf::Dispatcher::GetCurrent()->async_dispatcher();
-    auto ret = std::make_unique<TestCallback>(expected_calls, callback);
     auto endpoints = fidl::CreateEndpoints<fuchsia_hardware_vsockbridge::Callback>();
     if (!endpoints.is_ok()) {
       return nullptr;
     }
-    fidl::BindServer(dispatcher, std::move(endpoints->server), ret.get());
+    auto ret =
+        std::make_unique<TestCallback>(dispatcher, std::move(endpoints->server), expected_calls);
     if (!client_->SetCallback(std::move(endpoints->client)).ok()) {
       return nullptr;
     }
@@ -521,6 +820,7 @@ class VsockUsbTest : public ::testing::Test {
   fidl::WireSyncClient<fuchsia_hardware_vsockbridge::Usb> client_;
 };
 
+// Tests that the driver initializes and starts up cleanly in the driver test realm.
 TEST_F(VsockUsbTest, Startup) { FDF_LOG(DEBUG, "startup"); }
 
 TEST_F(VsockUsbTest, ConfigureAndUnconfigure) {
@@ -530,37 +830,29 @@ TEST_F(VsockUsbTest, ConfigureAndUnconfigure) {
 
 TEST_F(VsockUsbTest, SocketGet) {
   ConfigureDevice();
-  std::atomic_bool callback_called = false;
-  auto callback = SetupCallback(1, [&callback_called](zx::socket sock) {
-    FDF_LOG(DEBUG, "got socket");
-    callback_called = true;
-  });
-  while (!callback_called) {
-    driver_test().runtime().RunUntilIdle();
-  }
+  auto callback = SetupCallback(1);
+  zx::socket sock = WaitForSocket(*callback);
+  ASSERT_TRUE(sock.is_valid());
   FDF_LOG(DEBUG, "Callback setup");
   UnconfigureDevice();
 }
 
 TEST_F(VsockUsbTest, DataFromTarget) {
   ConfigureDevice();
-  std::vector<zx::socket> sockets;
-  auto callback =
-      SetupCallback(1, [&sockets](zx::socket socket) { sockets.emplace_back(std::move(socket)); });
-  while (sockets.size() < 1u) {
-    driver_test().runtime().RunUntilIdle();
-  }
+  auto callback = SetupCallback(1);
+  zx::socket socket = WaitForSocket(*callback);
+  ASSERT_TRUE(socket.is_valid());
 
   std::string_view test_data =
       "A basket of biscuits, a basket of mixed biscuits and a biscuit mixer.";
-  ASSERT_TRUE(SocketWriteAll(&sockets[0], reinterpret_cast<const uint8_t*>(test_data.data()),
+  ASSERT_TRUE(SocketWriteAll(&socket, reinterpret_cast<const uint8_t*>(test_data.data()),
                              test_data.size()));
 
   ASSERT_TRUE(
       GetRxConcatExpect(reinterpret_cast<const uint8_t*>(test_data.data()), test_data.size()));
 
   std::string_view test_data_b = "Aluminum, linoleum, magnesium, petroleum.";
-  ASSERT_TRUE(SocketWriteAll(&sockets[0], reinterpret_cast<const uint8_t*>(test_data_b.data()),
+  ASSERT_TRUE(SocketWriteAll(&socket, reinterpret_cast<const uint8_t*>(test_data_b.data()),
                              test_data_b.size()));
   ASSERT_TRUE(
       GetRxConcatExpect(reinterpret_cast<const uint8_t*>(test_data_b.data()), test_data_b.size()));
@@ -569,63 +861,56 @@ TEST_F(VsockUsbTest, DataFromTarget) {
 
 TEST_F(VsockUsbTest, DataFromHost) {
   ConfigureDevice();
-  std::vector<zx::socket> sockets;
-  auto callback =
-      SetupCallback(1, [&sockets](zx::socket socket) { sockets.emplace_back(std::move(socket)); });
-  while (sockets.size() < 1u) {
-    driver_test().runtime().RunUntilIdle();
-  }
+  auto callback = SetupCallback(1);
+  zx::socket socket = WaitForSocket(*callback);
+  ASSERT_TRUE(socket.is_valid());
 
   std::string_view test_data =
       "A basket of biscuits, a basket of mixed biscuits and a biscuit mixer.";
   ASSERT_TRUE(SendTx(reinterpret_cast<const uint8_t*>(test_data.data()), test_data.size()));
-  ASSERT_TRUE(SocketReadExpect(&sockets[0], reinterpret_cast<const uint8_t*>(test_data.data()),
+  ASSERT_TRUE(SocketReadExpect(&socket, reinterpret_cast<const uint8_t*>(test_data.data()),
                                test_data.size()));
 
   std::string_view test_data_b = "Aluminum, linoleum, magnesium, petroleum.";
   ASSERT_TRUE(SendTx(reinterpret_cast<const uint8_t*>(test_data_b.data()), test_data_b.size()));
-  ASSERT_TRUE(SocketReadExpect(&sockets[0], reinterpret_cast<const uint8_t*>(test_data_b.data()),
+  ASSERT_TRUE(SocketReadExpect(&socket, reinterpret_cast<const uint8_t*>(test_data_b.data()),
                                test_data_b.size()));
   UnconfigureDevice();
 }
 
 TEST_F(VsockUsbTest, Reset) {
   ConfigureDevice();
-  std::vector<zx::socket> sockets;
-  auto callback =
-      SetupCallback(2, [&sockets](zx::socket socket) { sockets.emplace_back(std::move(socket)); });
-  while (sockets.size() < 1u) {
-    driver_test().runtime().RunUntilIdle();
-  }
+  auto callback = SetupCallback(2);
+  zx::socket socket0 = WaitForSocket(*callback);
+  ASSERT_TRUE(socket0.is_valid());
 
   std::string_view test_data =
       "A basket of biscuits, a basket of mixed biscuits and a biscuit mixer.";
   ASSERT_TRUE(SendTx(reinterpret_cast<const uint8_t*>(test_data.data()), test_data.size()));
-  ASSERT_TRUE(SocketReadExpect(&sockets[0], reinterpret_cast<const uint8_t*>(test_data.data()),
+  ASSERT_TRUE(SocketReadExpect(&socket0, reinterpret_cast<const uint8_t*>(test_data.data()),
                                test_data.size()));
 
   std::string_view test_data_b = "Aluminum, linoleum, magnesium, petroleum.";
-  ASSERT_TRUE(SocketWriteAll(&sockets[0], reinterpret_cast<const uint8_t*>(test_data_b.data()),
+  ASSERT_TRUE(SocketWriteAll(&socket0, reinterpret_cast<const uint8_t*>(test_data_b.data()),
                              test_data_b.size()));
   ASSERT_TRUE(
       GetRxConcatExpect(reinterpret_cast<const uint8_t*>(test_data_b.data()), test_data_b.size()));
   ResetWithSetInterface();
-  // wait for the socket reset to work its way through and produce a new socket
-  while (sockets.size() < 2u) {
-    driver_test().runtime().RunUntilIdle();
-  }
+
+  zx::socket socket1 = WaitForSocket(*callback);
+  ASSERT_TRUE(socket1.is_valid());
 
   zx_signals_t pending;
-  sockets[0].wait_one(ZX_SOCKET_PEER_CLOSED, zx::time::infinite(), &pending);
+  ASSERT_EQ(socket0.wait_one(ZX_SOCKET_PEER_CLOSED, zx::time::infinite(), &pending), ZX_OK);
   ASSERT_NE(pending & ZX_SOCKET_PEER_CLOSED, 0u);
 
   std::string_view test_data_c = "Around the rugged rocks the ragged rascals ran.";
   ASSERT_TRUE(SendTx(reinterpret_cast<const uint8_t*>(test_data_c.data()), test_data_c.size()));
-  ASSERT_TRUE(SocketReadExpect(&sockets[1], reinterpret_cast<const uint8_t*>(test_data_c.data()),
+  ASSERT_TRUE(SocketReadExpect(&socket1, reinterpret_cast<const uint8_t*>(test_data_c.data()),
                                test_data_c.size()));
 
   std::string_view test_data_d = "A proper copper coffee pot.";
-  ASSERT_TRUE(SocketWriteAll(&sockets[1], reinterpret_cast<const uint8_t*>(test_data_d.data()),
+  ASSERT_TRUE(SocketWriteAll(&socket1, reinterpret_cast<const uint8_t*>(test_data_d.data()),
                              test_data_d.size()));
   ASSERT_TRUE(
       GetRxConcatExpect(reinterpret_cast<const uint8_t*>(test_data_d.data()), test_data_d.size()));
@@ -634,12 +919,9 @@ TEST_F(VsockUsbTest, Reset) {
 
 TEST_F(VsockUsbTest, ResetMoreData) {
   ConfigureDevice();
-  std::vector<zx::socket> sockets;
-  auto callback =
-      SetupCallback(2, [&sockets](zx::socket socket) { sockets.emplace_back(std::move(socket)); });
-  while (sockets.size() < 1) {
-    driver_test().runtime().RunUntilIdle();
-  }
+  auto callback = SetupCallback(2);
+  zx::socket socket0 = WaitForSocket(*callback);
+  ASSERT_TRUE(socket0.is_valid());
 
   std::string_view test_data_a =
       "A basket of biscuits, a basket of mixed biscuits and a biscuit mixer.";
@@ -649,89 +931,80 @@ TEST_F(VsockUsbTest, ResetMoreData) {
 
   for (int i = 0; i < 50; i++) {
     ASSERT_TRUE(SendTx(reinterpret_cast<const uint8_t*>(test_data_a.data()), test_data_a.size()));
-    ASSERT_TRUE(SocketReadExpect(&sockets[0], reinterpret_cast<const uint8_t*>(test_data_a.data()),
+    ASSERT_TRUE(SocketReadExpect(&socket0, reinterpret_cast<const uint8_t*>(test_data_a.data()),
                                  test_data_a.size()));
 
-    ASSERT_TRUE(SocketWriteAll(&sockets[0], reinterpret_cast<const uint8_t*>(test_data_b.data()),
+    ASSERT_TRUE(SocketWriteAll(&socket0, reinterpret_cast<const uint8_t*>(test_data_b.data()),
                                test_data_b.size()));
     ASSERT_TRUE(GetRxConcatExpect(reinterpret_cast<const uint8_t*>(test_data_b.data()),
                                   test_data_b.size()));
 
     ASSERT_TRUE(SendTx(reinterpret_cast<const uint8_t*>(test_data_c.data()), test_data_c.size()));
-    ASSERT_TRUE(SocketReadExpect(&sockets[0], reinterpret_cast<const uint8_t*>(test_data_c.data()),
+    ASSERT_TRUE(SocketReadExpect(&socket0, reinterpret_cast<const uint8_t*>(test_data_c.data()),
                                  test_data_c.size()));
 
-    ASSERT_TRUE(SocketWriteAll(&sockets[0], reinterpret_cast<const uint8_t*>(test_data_d.data()),
+    ASSERT_TRUE(SocketWriteAll(&socket0, reinterpret_cast<const uint8_t*>(test_data_d.data()),
                                test_data_d.size()));
     ASSERT_TRUE(GetRxConcatExpect(reinterpret_cast<const uint8_t*>(test_data_d.data()),
                                   test_data_d.size()));
   }
   ResetWithSetInterface();
-  // wait for the socket reset to work its way through and produce a new socket
-  while (sockets.size() < 2) {
-    driver_test().runtime().RunUntilIdle();
-  }
+
+  zx::socket socket1 = WaitForSocket(*callback);
+  ASSERT_TRUE(socket1.is_valid());
 
   zx_signals_t pending;
-  sockets[0].wait_one(ZX_SOCKET_PEER_CLOSED, zx::time::infinite(), &pending);
+  ASSERT_EQ(socket0.wait_one(ZX_SOCKET_PEER_CLOSED, zx::time::infinite(), &pending), ZX_OK);
   ASSERT_NE(pending & ZX_SOCKET_PEER_CLOSED, 0u);
 
   for (int i = 0; i < 50; i++) {
     ASSERT_TRUE(SendTx(reinterpret_cast<const uint8_t*>(test_data_a.data()), test_data_a.size()));
-    ASSERT_TRUE(SocketReadExpect(&sockets[1], reinterpret_cast<const uint8_t*>(test_data_a.data()),
+    ASSERT_TRUE(SocketReadExpect(&socket1, reinterpret_cast<const uint8_t*>(test_data_a.data()),
                                  test_data_a.size()));
 
-    ASSERT_TRUE(SocketWriteAll(&sockets[1], reinterpret_cast<const uint8_t*>(test_data_b.data()),
+    ASSERT_TRUE(SocketWriteAll(&socket1, reinterpret_cast<const uint8_t*>(test_data_b.data()),
                                test_data_b.size()));
     ASSERT_TRUE(GetRxConcatExpect(reinterpret_cast<const uint8_t*>(test_data_b.data()),
                                   test_data_b.size()));
 
     ASSERT_TRUE(SendTx(reinterpret_cast<const uint8_t*>(test_data_c.data()), test_data_c.size()));
-    ASSERT_TRUE(SocketReadExpect(&sockets[1], reinterpret_cast<const uint8_t*>(test_data_c.data()),
+    ASSERT_TRUE(SocketReadExpect(&socket1, reinterpret_cast<const uint8_t*>(test_data_c.data()),
                                  test_data_c.size()));
 
-    ASSERT_TRUE(SocketWriteAll(&sockets[1], reinterpret_cast<const uint8_t*>(test_data_d.data()),
+    ASSERT_TRUE(SocketWriteAll(&socket1, reinterpret_cast<const uint8_t*>(test_data_d.data()),
                                test_data_d.size()));
     ASSERT_TRUE(GetRxConcatExpect(reinterpret_cast<const uint8_t*>(test_data_d.data()),
                                   test_data_d.size()));
   }
   UnconfigureDevice();
 }
+
 TEST_F(VsockUsbTest, Inspect) {
   ConfigureDevice();
-  std::vector<zx::socket> sockets;
-  auto callback =
-      SetupCallback(1, [&sockets](zx::socket socket) { sockets.emplace_back(std::move(socket)); });
-  while (sockets.size() < 1u) {
-    driver_test().runtime().RunUntilIdle();
-  }
+  auto callback = SetupCallback(1);
+  zx::socket socket = WaitForSocket(*callback);
+  ASSERT_TRUE(socket.is_valid());
 
   std::string_view host_to_device_data = "Host to Device (RX for driver)";
   std::string_view device_to_host_data = "Device to Host (TX for driver)";
 
-  // 1. Host to Device (RX)
   ASSERT_TRUE(SendTx(reinterpret_cast<const uint8_t*>(host_to_device_data.data()),
                      host_to_device_data.size()));
-  ASSERT_TRUE(SocketReadExpect(&sockets[0],
+  ASSERT_TRUE(SocketReadExpect(&socket,
                                reinterpret_cast<const uint8_t*>(host_to_device_data.data()),
                                host_to_device_data.size()));
 
-  // 2. Device to Host (TX)
-  ASSERT_TRUE(SocketWriteAll(&sockets[0],
-                             reinterpret_cast<const uint8_t*>(device_to_host_data.data()),
+  ASSERT_TRUE(SocketWriteAll(&socket, reinterpret_cast<const uint8_t*>(device_to_host_data.data()),
                              device_to_host_data.size()));
   ASSERT_TRUE(GetRxConcatExpect(reinterpret_cast<const uint8_t*>(device_to_host_data.data()),
                                 device_to_host_data.size()));
 
-  // 3. Wait for all in-flight USB TX requests to complete cleanly (eliminates async FIDL races!)
-  bool has_pending_tx = true;
-  while (has_pending_tx) {
+  driver_test().runtime().RunUntil([&]() {
+    bool has_pending = true;
     driver_test().RunInDriverContext(
-        [&has_pending_tx](VsockUsb& driver) { has_pending_tx = driver.HasPendingTxRequests(); });
-    if (has_pending_tx) {
-      zx::nanosleep(zx::deadline_after(zx::msec(1)));
-    }
-  }
+        [&has_pending](VsockUsb& driver) { has_pending = driver.HasPendingTxRequests(); });
+    return !has_pending;
+  });
 
   driver_test().RunInDriverContext([tx_size = device_to_host_data.size(),
                                     rx_size = host_to_device_data.size()](VsockUsb& driver) {
@@ -769,29 +1042,149 @@ TEST_F(VsockUsbTest, Inspect) {
 
 TEST_F(VsockUsbTest, ShortFlagOnTxRequest) {
   ConfigureDevice();
-  std::vector<zx::socket> sockets;
-  auto callback =
-      SetupCallback(1, [&sockets](zx::socket socket) { sockets.emplace_back(std::move(socket)); });
-  while (sockets.size() < 1u) {
-    driver_test().runtime().RunUntilIdle();
-  }
+  auto callback = SetupCallback(1);
+  zx::socket socket = WaitForSocket(*callback);
+  ASSERT_TRUE(socket.is_valid());
 
-  // 1. Send data with size < MTU (1024) -> short should be true.
   std::vector<uint8_t> short_data(500, 0xAB);
-  ASSERT_TRUE(SocketWriteAll(&sockets[0], short_data.data(), short_data.size()));
+  ASSERT_TRUE(SocketWriteAll(&socket, short_data.data(), short_data.size()));
   ASSERT_TRUE(GetRxConcatExpect(short_data.data(), short_data.size()));
 
-  // 2. Send data with size == MTU (1024) -> short should be false.
   std::vector<uint8_t> mtu_data(1024, 0xCD);
-  ASSERT_TRUE(SocketWriteAll(&sockets[0], mtu_data.data(), mtu_data.size()));
+  ASSERT_TRUE(SocketWriteAll(&socket, mtu_data.data(), mtu_data.size()));
   ASSERT_TRUE(GetRxConcatExpect(mtu_data.data(), mtu_data.size()));
 
-  // 3. Send data with size < MTU again to verify transitions.
   std::vector<uint8_t> another_short(1, 0xEF);
-  ASSERT_TRUE(SocketWriteAll(&sockets[0], another_short.data(), another_short.size()));
+  ASSERT_TRUE(SocketWriteAll(&socket, another_short.data(), another_short.size()));
   ASSERT_TRUE(GetRxConcatExpect(another_short.data(), another_short.size()));
 
   UnconfigureDevice();
+}
+
+TEST_F(VsockUsbTest, DISABLED_TeardownRaceTDD) {
+  ConfigureDevice();
+
+  auto shutdown_done = std::make_shared<std::atomic<bool>>(false);
+  auto completer = [shutdown_done]() { shutdown_done->store(true); };
+
+  driver_test().RunInDriverContext([&](VsockUsb& driver) {
+    VsockUsbTestHelper::Shutdown(driver, std::move(completer));
+
+    zx_status_t status = VsockUsbTestHelper::UnconfigureEndpoints(driver);
+    EXPECT_EQ(status, ZX_OK);
+  });
+
+  driver_test().runtime().RunUntil([&]() { return shutdown_done->load(); });
+}
+
+// Tests that multiple concurrent or post-shutdown callbacks registered with Shutdown() are all
+// invoked reliably without dropping completers.
+//
+// Disabled until the driver's ShuttingDown state supports multi-callback teardown synchronization
+// and retains concurrent shutdown callbacks instead of overwriting them.
+TEST_F(VsockUsbTest, DISABLED_MultipleShutdownCallbacks) {
+  ConfigureDevice();
+
+  auto shutdown_done_1 = std::make_shared<std::atomic<bool>>(false);
+  auto shutdown_done_2 = std::make_shared<std::atomic<bool>>(false);
+  auto shutdown_done_post = std::make_shared<std::atomic<bool>>(false);
+
+  driver_test().RunInDriverContext([&](VsockUsb& driver) {
+    VsockUsbTestHelper::Shutdown(driver, [shutdown_done_1]() { shutdown_done_1->store(true); });
+    VsockUsbTestHelper::Shutdown(driver, [shutdown_done_2]() { shutdown_done_2->store(true); });
+  });
+
+  driver_test().runtime().RunUntil(
+      [&]() { return shutdown_done_1->load() && shutdown_done_2->load(); });
+
+  driver_test().RunInDriverContext([&](VsockUsb& driver) {
+    VsockUsbTestHelper::Shutdown(driver,
+                                 [shutdown_done_post]() { shutdown_done_post->store(true); });
+  });
+
+  EXPECT_TRUE(shutdown_done_post->load());
+}
+
+TEST_F(VsockUsbTest, UnconfigureAlreadyUnconfigured) {
+  driver_test().RunInDriverContext([](VsockUsb& driver) {
+    zx_status_t status = VsockUsbTestHelper::UnconfigureEndpoints(driver);
+    EXPECT_EQ(status, ZX_OK);
+  });
+}
+
+TEST_F(VsockUsbTest, DISABLED_UnconfigureEndpointsDisableBadStateError) {
+  ConfigureDevice();
+
+  driver_test().RunInEnvironmentTypeContext(
+      [](VsockUsbEnvironment& env) { env.fake_usb_->set_disable_ep_status(ZX_ERR_BAD_STATE); });
+
+  driver_test().RunInEnvironmentTypeContext(
+      [](VsockUsbEnvironment& env) { env.fake_usb_->ExpectDisableEndpoint(kBulkInEndpoint); });
+  driver_test().RunInDriverContext([](VsockUsb& driver) {
+    zx_status_t status = VsockUsbTestHelper::UnconfigureEndpoints(driver);
+    EXPECT_EQ(status, ZX_ERR_BAD_STATE);
+  });
+
+  driver_test().RunInEnvironmentTypeContext(
+      [](VsockUsbEnvironment& env) { env.fake_usb_->set_disable_ep_status(std::nullopt); });
+}
+
+TEST_F(VsockUsbTest, DISABLED_UnconfigureEndpointsDisableOtherError) {
+  ConfigureDevice();
+
+  driver_test().RunInEnvironmentTypeContext(
+      [](VsockUsbEnvironment& env) { env.fake_usb_->set_disable_ep_status(ZX_ERR_INTERNAL); });
+
+  driver_test().RunInEnvironmentTypeContext(
+      [](VsockUsbEnvironment& env) { env.fake_usb_->ExpectDisableEndpoint(kBulkInEndpoint); });
+  driver_test().RunInDriverContext([](VsockUsb& driver) {
+    zx_status_t status = VsockUsbTestHelper::UnconfigureEndpoints(driver);
+    EXPECT_EQ(status, ZX_ERR_INTERNAL);
+  });
+
+  driver_test().RunInEnvironmentTypeContext(
+      [](VsockUsbEnvironment& env) { env.fake_usb_->set_disable_ep_status(std::nullopt); });
+}
+
+TEST_F(VsockUsbTest, DISABLED_ReadErrorUnconfiguresEndpoints) {
+  ConfigureDevice();
+  auto callback = SetupCallback(1);
+  zx::socket socket = WaitForSocket(*callback);
+  ASSERT_TRUE(socket.is_valid());
+
+  auto request = WaitForRequestOn(kBulkOutEndpoint);
+  ASSERT_TRUE(request.has_value());
+
+  ExpectDisableEndpoints();
+  ASSERT_TRUE(CompleteMockUsbOutRequest(std::move(*request), kBulkOutEndpoint, nullptr, 0,
+                                        ZX_ERR_INTERNAL));
+
+  driver_test().runtime().RunUntil([&]() {
+    bool offline = false;
+    driver_test().RunInDriverContext(
+        [&](VsockUsb& driver) { offline = !VsockUsbTestHelper::Online(driver); });
+    return offline;
+  });
+}
+
+TEST_F(VsockUsbTest, DISABLED_ReadErrorDisconnectLoopRegression) {
+  ConfigureDevice();
+  auto callback = SetupCallback(1);
+  zx::socket socket = WaitForSocket(*callback);
+  ASSERT_TRUE(socket.is_valid());
+
+  auto request = WaitForRequestOn(kBulkOutEndpoint);
+  ASSERT_TRUE(request.has_value());
+
+  ASSERT_TRUE(CompleteMockUsbOutRequest(std::move(*request), kBulkOutEndpoint, nullptr, 0,
+                                        ZX_ERR_IO_NOT_PRESENT));
+
+  driver_test().runtime().RunUntil([&]() {
+    bool offline = false;
+    driver_test().RunInDriverContext(
+        [&](VsockUsb& driver) { offline = !VsockUsbTestHelper::Online(driver); });
+    return offline;
+  });
 }
 
 // NOLINTEND(readability-container-data-pointer)

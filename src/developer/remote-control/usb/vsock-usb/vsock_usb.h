@@ -78,6 +78,7 @@ class VsockUsb : public fdf::DriverBase2,
   bool HasPendingRxRequests() { return !bulk_out_ep_.RequestsFull(); }
 
  private:
+  friend class VsockUsbTestHelper;
   // Configures the device's endpoints and sets the device state to Running, if it's in the
   // Unconfigured state.
   zx_status_t ConfigureEndpoints();
