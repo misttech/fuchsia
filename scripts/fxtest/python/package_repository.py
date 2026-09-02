@@ -59,7 +59,7 @@ class PackageRepository:
                 value: dict[str, typing.Any]
                 for key, value in entries["signed"]["targets"].items():
                     if "custom" in value:
-                        name, _ = key.split("/")
+                        name = key.split("/")[0]
                         name_to_merkle[name] = value["custom"]["merkle"]
 
             return cls(name_to_merkle)
@@ -113,7 +113,7 @@ class PackageRepository:
 
 MERKLE_ERROR_HELP_SUFFIX = "\nTry running fx build."
 
-_PACKAGE_NAME_REGEX = re.compile(r"fuchsia-pkg://fuchsia\.com/([^/#]+)#")
+_PACKAGE_NAME_REGEX = re.compile(r"fuchsia-pkg://[^/#]+/([^/#]+)#")
 
 
 def extract_package_name_from_url(url: str) -> str | None:
