@@ -24,6 +24,7 @@ class Iommu;
 }  // namespace iommu
 
 extern "C" void cpp_iommu_recycle(iommu::Iommu* iommu);
+extern "C" void* cpp_iommu_get_ref_counted(const iommu::Iommu* iommu);
 
 namespace iommu {
 

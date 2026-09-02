@@ -53,11 +53,11 @@ the port and **Reviewer agents** evaluating the port.
     declarative, with no business logic. C++ helper functions exposed to Rust
     must be prefixed with `cpp_` and declared in C++ header files. Rust
     functions exposed to C++ must be prefixed with `rust_`.
-10. **Allocation Tier & Stack Parity**: Respect the original C++ memory placement
-    (heap, static, intrusive, or stack). Because kernel thread stacks are
-    constrained, do not shift heap or static storage onto the stack.
-    Intermediate working buffers must maintain the C++ allocation tier, with
-    stack allocation reserved only for small scalar or primitive helpers.
+10.  **Allocation Tier & Stack Parity**: Respect the original C++ memory
+     placement (heap, static, intrusive, or stack). Because kernel thread stacks
+     are constrained, do not shift heap or static storage onto the stack.
+     Intermediate working buffers must maintain the C++ allocation tier, with
+     stack allocation reserved only for small scalar or primitive helpers.
 
 ---
 
@@ -83,7 +83,7 @@ graph TD
 ```
 
 * **`zr`**: Fundamental zero-dependency building blocks (`zr::static_assert!`,
-  `Opaque<T>`, `OpaqueBytes<N>`, `pin_init_ffi!`).
+  `zr::defer`, `zr::Deferred`, `Opaque<T>`, `OpaqueBytes<N>`, `pin_init_ffi!`).
 * **`kalloc`**: Fallible memory allocation (`kalloc::Box`, `Allocator` trait).
 * **`ksync`**: Token-based "Ghost Token" synchronization (`KMutex`, `BrwLockPi`,
   `KCell`, `LockToken`, `#[guarded]`).
@@ -343,6 +343,35 @@ pin_init!(Self {
   `ffi::Uninitialized<T>*` instead of raw `T*`. Initialize the object in C++ via
   `handle_out->Initialize(...)`.
 
+### 3.14. RAII Deferred Cleanup (`zr::defer`)
+- **Translating `fit::defer`**: Translate C++ `fit::defer` /
+  `fit::deferred_action` cleanup patterns into `zr::defer` / `zr::Deferred`.
+- **Automatic Error Cleanup**: `zr::defer` executes a closure upon being
+  dropped, guaranteeing cleanup routines execute reliably on all exit paths
+  (especially early error returns via `?`).
+- **Cancellation on Success**: When an operation completes successfully, call
+  `cleanup.cancel()` on the deferred guard to disarm the cleanup action.
+- **Do Not Manually Duplicate Cleanup**: Never manually duplicate cleanup calls
+  before every `return Err(...)` return path; always use `zr::defer` to maintain
+  RAII safety and parity with C++ `fit::defer`.
+
+```rust
+let disp = new_pmt_handle.dispatcher().clone();
+let mut cleanup = zr::defer(move || {
+    disp.unpin();
+});
+
+// All early error returns (?) automatically trigger cleanup upon drop.
+fill_user_buffer()?;
+flush_user_buffer()?;
+
+let handle = new_pmt_handle.make_and_add_handle(rights)?;
+// Success: disarm the cleanup guard.
+cleanup.cancel();
+*out_handle = handle;
+Ok(())
+```
+
 ---
 
 ## 4. Common Pitfalls & Anti-Patterns Checklist
@@ -415,8 +444,12 @@ Reviewers and Coders must audit code against this checklist:
 27.  [ ] **Copyright Preservation**: Original copyright authors and dates are
      maintained if the ported file is not meaningfully divergent.
 28.  [ ] **Allocation Tier & Stack Parity**: Data and working buffers that were
-     heap-allocated or static in C++ are not shifted onto the kernel stack in Rust,
-     with stack allocation reserved only for small scalar or primitive helpers.
+     heap-allocated or static in C++ are not shifted onto the kernel stack in
+     Rust, with stack allocation reserved only for small scalar or primitive
+     helpers.
+29.  [ ] **Manual Deferred Cleanup**: C++ `fit::defer` cleanup guards are
+     translated to `zr::defer` rather than manually duplicating cleanup logic
+     before every early return.
 
 ---
 

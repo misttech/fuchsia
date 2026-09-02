@@ -34,6 +34,9 @@ mod msi_dispatcher;
 mod msi_dispatcher_ffi;
 mod msi_interrupt_dispatcher;
 mod msi_interrupt_dispatcher_ffi;
+mod pinned_memory_token_dispatcher;
+mod pinned_memory_token_dispatcher_ffi;
+mod pmt;
 mod process_dispatcher;
 pub(crate) mod process_dispatcher_ffi;
 mod profile_dispatcher;
@@ -57,6 +60,7 @@ mod vm_object_dispatcher;
 mod vm_object_dispatcher_ffi;
 mod wait_signal_observer;
 
+pub use bti::{IOMMU_FLAG_PERM_EXECUTE, IOMMU_FLAG_PERM_READ, IOMMU_FLAG_PERM_WRITE};
 pub use bus_transaction_initiator_dispatcher::BusTransactionInitiatorDispatcher;
 pub use counter_dispatcher::CounterDispatcher;
 pub use dispatcher::{Dispatcher, DispatcherOps};
@@ -72,6 +76,7 @@ pub use log_dispatcher::*;
 pub use msi_allocation::MsiAllocation;
 pub use msi_dispatcher::MsiDispatcher;
 pub use msi_interrupt_dispatcher::MsiInterruptDispatcher;
+pub use pinned_memory_token_dispatcher::{PinnedMemoryTokenDispatcher, dev_vaddr_t};
 pub use process_dispatcher::{HandleTableReadGuard, ProcessDispatcher};
 pub use profile_dispatcher::ProfileDispatcher;
 pub use resource_ffi::{

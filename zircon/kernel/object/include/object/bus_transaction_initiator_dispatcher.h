@@ -36,8 +36,6 @@ iommu::Bti* rust_bus_transaction_initiator_dispatcher_get_bti(
     const BusTransactionInitiatorDispatcher* disp);
 void rust_bus_transaction_initiator_dispatcher_on_zero_handles(
     const BusTransactionInitiatorDispatcher* disp);
-bool rust_bus_transaction_initiator_dispatcher_zero_handles_locked(
-    const BusTransactionInitiatorDispatcher* disp);
 }
 
 class BusTransactionInitiatorDispatcher final : public Dispatcher {
@@ -59,23 +57,6 @@ class BusTransactionInitiatorDispatcher final : public Dispatcher {
 
   using Dispatcher::UpdateState;
   using Dispatcher::UpdateStateLocked;
-
-  // Pins the given VMO range and returns an PinnedMemoryTokenDispatcher
-  // representing the pinned range.
-  //
-  // |mapped_addrs_count| must be either
-  // 1) If |compress_results|, |size|/|minimum_contiguity()|, rounded up, in which
-  // case each returned address represents a run of |minimum_contiguity()| bytes (with
-  // the exception of the last which may be short)
-  // 2) Otherwise, |size|/|kPageSize|, in which case each returned address represents a
-  // single page.
-  //
-  // Returns ZX_ERR_INVALID_ARGS if |offset| or |size| are not kPageSize aligned.
-  // Returns ZX_ERR_INVALID_ARGS if |perms| is not suitable to pass to the Iommu::Map() interface.
-  // Returns ZX_ERR_INVALID_ARGS if |mapped_addrs_count| is not exactly the
-  //   value described above.
-  zx_status_t Pin(fbl::RefPtr<VmObject> vmo, uint64_t offset, uint64_t size, uint32_t perms,
-                  KernelHandle<PinnedMemoryTokenDispatcher>* handle, zx_rights_t* rights);
 
   // Releases all quarantined PMTs. The memory pins are released and the VMO
   // references are dropped, so the underlying VMOs may be immediately destroyed, and the

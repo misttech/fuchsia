@@ -37,3 +37,9 @@ iommu::Iommu& IommuDispatcher::iommu() const { return *rust_iommu_dispatcher_get
 
 // TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
 extern "C" FFI_ALWAYS_INLINE void cpp_iommu_recycle(iommu::Iommu* iommu) { delete iommu; }
+
+// TODO(https://fxbug.dev/537458631): Remove the annotations once cross-language inlining works.
+extern "C" FFI_ALWAYS_INLINE void* cpp_iommu_get_ref_counted(const iommu::Iommu* iommu) {
+  return const_cast<fbl::RefCounted<iommu::Iommu>*>(
+      static_cast<const fbl::RefCounted<iommu::Iommu>*>(iommu));
+}

@@ -16,6 +16,7 @@ use zx_types::zx_status_t;
 // C++ FFI declarations
 unsafe extern "C" {
     pub(crate) fn cpp_bti_recycle(bti: *mut Bti);
+    pub(crate) fn cpp_bti_get_ref_counted(bti: *mut Bti) -> *mut ();
     pub(crate) fn cpp_bti_release_quarantine(bti: *mut Bti);
     pub(crate) fn cpp_bti_on_dispatcher_zero_handles(bti: *mut Bti);
     pub(crate) fn cpp_bti_minimum_contiguity(bti: *const Bti) -> u64;
@@ -39,6 +40,17 @@ unsafe extern "C" {
         bti_id: u64,
         handle_out: *mut core::mem::MaybeUninit<KernelHandle<BusTransactionInitiatorDispatcher>>,
     ) -> zx_status_t;
+
+    // PinnedVmObject contains Option<RefPtr<VmObject>>, which rustc warns about
+    // for FFI despite matching C++ PinnedVmObject layout (verified by static assertions).
+    #[allow(improper_ctypes)]
+    pub(crate) fn cpp_bti_map(
+        bti: *mut Bti,
+        pinned_vmo: *mut crate::vm::pinned_vm_object::PinnedVmObject,
+        perms: u32,
+        require_contiguous: bool,
+        pmt_out: *mut core::mem::MaybeUninit<RefPtr<super::pmt::Pmt>>,
+    ) -> zx_status_t;
 }
 
 // Rust FFI trampolines for C++ calling into Rust BusTransactionInitiatorDispatcher
@@ -58,7 +70,8 @@ pub unsafe extern "C" fn rust_bus_transaction_initiator_dispatcher_state_init(
     // SAFETY: `bti_raw` is a valid raw pointer exported from `fbl::RefPtr<Bti>`.
     let bti = unsafe { RefPtr::from_raw(bti_raw) };
     let init = BusTransactionInitiatorDispatcherState::init(dispatcher, bti);
-    // SAFETY: `state` points to uninitialized memory allocated for `BusTransactionInitiatorDispatcherState`.
+    // SAFETY: `state` points to uninitialized memory allocated for
+    // `BusTransactionInitiatorDispatcherState`.
     unsafe {
         let _ = pin_init::PinInit::__pinned_init(init, state);
     }
@@ -78,18 +91,4 @@ pub extern "C" fn rust_bus_transaction_initiator_dispatcher_on_zero_handles(
     disp: &BusTransactionInitiatorDispatcher,
 ) {
     disp.on_zero_handles();
-}
-
-/// Returns whether the dispatcher has hit zero handles.
-///
-/// # Safety
-///
-/// The caller must hold the dispatcher lock (`get_lock()`).
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn rust_bus_transaction_initiator_dispatcher_zero_handles_locked(
-    disp: &BusTransactionInitiatorDispatcher,
-) -> bool {
-    // SAFETY: The caller guarantees `disp.get_lock()` is held.
-    let token = unsafe { ksync::LockToken::new() };
-    disp.zero_handles_locked(&token)
 }

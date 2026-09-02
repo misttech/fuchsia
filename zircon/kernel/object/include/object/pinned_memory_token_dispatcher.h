@@ -7,76 +7,63 @@
 #ifndef ZIRCON_KERNEL_OBJECT_INCLUDE_OBJECT_PINNED_MEMORY_TOKEN_DISPATCHER_H_
 #define ZIRCON_KERNEL_OBJECT_INCLUDE_OBJECT_PINNED_MEMORY_TOKEN_DISPATCHER_H_
 
+#include <lib/object-constants.h>
 #include <sys/types.h>
 #include <zircon/rights.h>
 #include <zircon/types.h>
 
-#include <dev/iommu/iommu.h>
-#include <dev/iommu/pmt.h>
-#include <fbl/array.h>
-#include <fbl/intrusive_double_list.h>
-#include <fbl/ref_ptr.h>
+#include <kernel/ffi.h>
+#include <kernel/lockdep.h>
 #include <object/dispatcher.h>
 #include <object/handle.h>
-#include <vm/pinned_vm_object.h>
+#include <object/opaque_storage.h>
 
 class BusTransactionInitiatorDispatcher;
-class VmObject;
+class PinnedMemoryTokenDispatcher;
 
-// The tag for the list type used by the containing BTI to hold a list of all
-// its PMTs, including those which are quarantined.
-struct PmtListTag {};
+extern "C" {
+zx_status_t cpp_pinned_memory_token_dispatcher_create(
+    BusTransactionInitiatorDispatcher* bti,
+    ffi::Uninitialized<KernelHandle<PinnedMemoryTokenDispatcher>>* handle_out);
 
-// The tag for the list type used by the containing BTI to hold a list of all
-// its quarantined PMTs.
-struct PmtQuarantineListTag {};
+void rust_pinned_memory_token_dispatcher_state_init(void* state, void* disp,
+                                                    BusTransactionInitiatorDispatcher* bti);
+void rust_pinned_memory_token_dispatcher_state_destroy(void* state);
+Lock<CriticalMutex>* rust_pinned_memory_token_dispatcher_state_get_lock(const void* state);
+void rust_pinned_memory_token_dispatcher_on_zero_handles(const PinnedMemoryTokenDispatcher* disp);
+}
 
-class PinnedMemoryTokenDispatcher final
-    : public SoloDispatcher<PinnedMemoryTokenDispatcher, ZX_DEFAULT_PMT_RIGHTS>,
-      public fbl::ContainableBaseClasses<
-          fbl::TaggedDoublyLinkedListable<PinnedMemoryTokenDispatcher*, PmtListTag>,
-          fbl::TaggedDoublyLinkedListable<fbl::RefPtr<PinnedMemoryTokenDispatcher>,
-                                          PmtQuarantineListTag>> {
+class PinnedMemoryTokenDispatcher final : public Dispatcher {
  public:
-  ~PinnedMemoryTokenDispatcher();
+  ~PinnedMemoryTokenDispatcher() final;
 
   zx_obj_type_t get_type() const final { return ZX_OBJ_TYPE_PMT; }
-  void on_zero_handles() final TA_EXCL(get_lock());
+  zx_koid_t get_related_koid() const final { return ZX_KOID_INVALID; }
+  bool is_waitable() const final { return false; }
 
-  // Unpin and unmap the memory which was managed by this PMT
-  void Unpin() TA_EXCL(get_lock()) {
-    Guard<CriticalMutex> guard{get_lock()};
-    pmt_->ReleasePinnedMemory();
+  zx_status_t user_signal_self(uint32_t clear_mask, uint32_t set_mask) final {
+    return UserSignalSelfSolo(this, clear_mask, set_mask, 0);
+  }
+  zx_status_t user_signal_peer(uint32_t clear_mask, uint32_t set_mask) final {
+    return ZX_ERR_NOT_SUPPORTED;
   }
 
-  // Query the pinned and mapped VMO for a region specified by offset/size.
-  zx::result<iommu::QueryAddressResult> QueryAddress(uint64_t offset, uint64_t size)
-      TA_EXCL(get_lock()) {
-    Guard<CriticalMutex> guard{get_lock()};
-    return pmt_->QueryAddress(offset, size);
-  }
-
-  // Returns the number of bytes pinned by the PMT.
-  uint64_t size() const TA_EXCL(get_lock()) {
-    Guard<CriticalMutex> guard{get_lock()};
-    return pmt_->pinned_vmo().size();
-  }
+  void on_zero_handles() final;
 
  protected:
   friend BusTransactionInitiatorDispatcher;
-  // Set the permissions of |pinned_vmo|'s pinned range to |perms| on
-  // behalf of |bti|. |perms| should be flags suitable for the Iommu::Map()
-  // interface.  Must be created under the BTI dispatcher's lock.
-  static zx_status_t Create(fbl::RefPtr<BusTransactionInitiatorDispatcher> bti,
-                            PinnedVmObject pinned_vmo, uint32_t perms,
-                            KernelHandle<PinnedMemoryTokenDispatcher>* handle, zx_rights_t* rights);
+  Lock<CriticalMutex>* get_lock() const final;
 
  private:
-  PinnedMemoryTokenDispatcher(fbl::RefPtr<BusTransactionInitiatorDispatcher> bti);
+  friend zx_status_t cpp_pinned_memory_token_dispatcher_create(
+      BusTransactionInitiatorDispatcher* bti,
+      ffi::Uninitialized<KernelHandle<PinnedMemoryTokenDispatcher>>* handle_out);
+
+  explicit PinnedMemoryTokenDispatcher(fbl::RefPtr<BusTransactionInitiatorDispatcher> bti);
   DISALLOW_COPY_ASSIGN_AND_MOVE(PinnedMemoryTokenDispatcher);
 
-  TA_GUARDED(get_lock()) fbl::RefPtr<iommu::Pmt> pmt_;
-  const fbl::RefPtr<BusTransactionInitiatorDispatcher> bti_;
+  OpaqueStorage<kPinnedMemoryTokenDispatcherStateSize, kPinnedMemoryTokenDispatcherStateAlign>
+      opaque_storage_;
 };
 
 #endif  // ZIRCON_KERNEL_OBJECT_INCLUDE_OBJECT_PINNED_MEMORY_TOKEN_DISPATCHER_H_

@@ -68,6 +68,11 @@ constexpr size_t kLogDispatcherStateOffset = 48;
 constexpr size_t kDlogReaderStorageSize = 48;
 constexpr size_t kDlogReaderStorageAlign = 8;
 
+// Size, alignment, and offset for PinnedMemoryTokenDispatcherState.
+constexpr size_t kPinnedMemoryTokenDispatcherStateSize = 56;
+constexpr size_t kPinnedMemoryTokenDispatcherStateAlign = 8;
+constexpr size_t kPinnedMemoryTokenDispatcherStateOffset = 48;
+
 // Size, alignment, and offset for ProfileDispatcherState.
 constexpr size_t kProfileDispatcherStateSize = 96;
 constexpr size_t kProfileDispatcherStateAlign = 8;

@@ -7,6 +7,7 @@ import("//build/rust/rustc_library.gni")
 rustc_library("zr") {
   edition = "2024"
   sources = [
+    "src/defer.rs",
     "src/lib.rs",
     "src/lossy_utf8.rs",
     "src/opaque.rs",

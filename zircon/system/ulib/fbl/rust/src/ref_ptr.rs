@@ -177,6 +177,12 @@ impl<T: HasRefCount + Recyclable> RefPtr<T> {
     pub fn add_ref(target: &T) {
         target.ref_count().add_ref();
     }
+
+    /// Constructs a `RefPtr` from a reference by incrementing its ref count.
+    pub fn from_ref(target: &T) -> Self {
+        target.ref_count().add_ref();
+        RefPtr { ptr: NonNull::from(target) }
+    }
 }
 
 impl<T: HasRefCount + Recyclable> Deref for RefPtr<T> {
@@ -402,6 +408,22 @@ mod tests {
             assert!(!destroyed.load(Ordering::Relaxed));
             RefPtr::add_ref(&*ref_ptr);
             let ref_ptr2 = unsafe { RefPtr::from_raw(RefPtr::as_ptr(&ref_ptr)) };
+            drop(ref_ptr);
+            assert!(!destroyed.load(Ordering::Relaxed));
+            drop(ref_ptr2);
+            assert!(destroyed.load(Ordering::Relaxed));
+        }
+    }
+
+    #[test]
+    fn test_from_ref() {
+        let destroyed = Arc::new(AtomicBool::new(false));
+        {
+            let ref_ptr =
+                make_ref_counted!(TestRustRefCounted { destroyed: destroyed.clone() }).unwrap();
+            assert!(!destroyed.load(Ordering::Relaxed));
+            let ref_ptr2 = RefPtr::from_ref(&*ref_ptr);
+            assert!(ref_ptr == ref_ptr2);
             drop(ref_ptr);
             assert!(!destroyed.load(Ordering::Relaxed));
             drop(ref_ptr2);

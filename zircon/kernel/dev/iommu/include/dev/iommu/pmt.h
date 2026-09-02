@@ -14,7 +14,22 @@
 #include <dev/iommu/common.h>
 #include <fbl/ref_counted.h>
 #include <fbl/ref_ptr.h>
+#include <kernel/ffi.h>
 #include <vm/pinned_vm_object.h>
+
+namespace iommu {
+class Pmt;
+}  // namespace iommu
+
+extern "C" {
+void cpp_pmt_recycle(iommu::Pmt* pmt);
+void* cpp_pmt_get_ref_counted(const iommu::Pmt* pmt);
+void cpp_pmt_release_pinned_memory(iommu::Pmt* pmt);
+void cpp_pmt_on_dispatcher_zero_handles(iommu::Pmt* pmt);
+uint64_t cpp_pmt_size(const iommu::Pmt* pmt);
+zx_status_t cpp_pmt_query_address(iommu::Pmt* pmt, uint64_t query_offset, size_t query_size,
+                                  ffi::Uninitialized<iommu::QueryAddressResult>* out_result);
+}
 
 namespace iommu {
 
@@ -59,6 +74,7 @@ class Pmt : public fbl::RefCounted<Pmt> {
 
  protected:
   friend class fbl::RefPtr<Pmt>;  // Our RefPtr type is allowed to destroy us.
+  friend void ::cpp_pmt_recycle(iommu::Pmt*);
 
   Pmt(PinnedVmObject pinned_vmo) : pinned_vmo_{ktl::move(pinned_vmo)} {}
   virtual ~Pmt() {

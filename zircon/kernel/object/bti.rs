@@ -5,13 +5,20 @@
 // https://opensource.org/licenses/MIT
 
 use super::bus_transaction_initiator_dispatcher_ffi::*;
+use super::pmt::Pmt;
+use fbl::RefPtr;
 use zx_status::Status;
 use zx_types::ZX_MAX_NAME_LEN;
+
+pub const IOMMU_FLAG_PERM_READ: u32 = 1 << 0;
+pub const IOMMU_FLAG_PERM_WRITE: u32 = 1 << 1;
+pub const IOMMU_FLAG_PERM_EXECUTE: u32 = 1 << 2;
 
 fbl::impl_opaque_ref_counted_facade!(
     /// Facade type representing the C++ `iommu::Bti` object.
     pub struct Bti,
     cpp_bti_recycle,
+    cpp_bti_get_ref_counted,
 );
 
 impl Bti {
@@ -95,5 +102,22 @@ impl Bti {
             cpp_bti_get_name(self.as_ffi(), out_name.as_mut_ptr().cast::<core::ffi::c_char>())
         };
         Status::ok(status)
+    }
+
+    /// Grant the device access to the range of pages represented by `pinned_vmo`.
+    pub fn map(
+        &self,
+        pinned_vmo: &mut crate::vm::pinned_vm_object::PinnedVmObject,
+        perms: u32,
+        require_contiguous: bool,
+    ) -> Result<RefPtr<Pmt>, Status> {
+        let mut pmt = core::mem::MaybeUninit::<RefPtr<Pmt>>::uninit();
+        // SAFETY: `self` is a valid `Bti` facade and `pinned_vmo` is a valid `PinnedVmObject`.
+        let status = unsafe {
+            cpp_bti_map(self.as_ffi_mut(), pinned_vmo, perms, require_contiguous, &raw mut pmt)
+        };
+        Status::ok(status)?;
+        // SAFETY: `cpp_bti_map` initialized `pmt` with an `fbl::RefPtr<Pmt>`.
+        unsafe { Ok(pmt.assume_init()) }
     }
 }

@@ -140,6 +140,7 @@ kernel_rust_mod("syscalls-rs") {
     "object_info.rs",
     "object_property.rs",
     "object_wait.rs",
+    "pmt.rs",
     "process.rs",
     "profile.rs",
     "restricted.rs",

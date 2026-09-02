@@ -29,6 +29,7 @@ void rust_iommu_dispatcher_state_destroy(void* state);
 Lock<CriticalMutex>* rust_iommu_dispatcher_state_get_lock(const void* state);
 iommu::Iommu* rust_iommu_dispatcher_get_iommu(const IommuDispatcher* disp);
 void cpp_iommu_recycle(iommu::Iommu* iommu);
+void* cpp_iommu_get_ref_counted(const iommu::Iommu* iommu);
 }
 
 class IommuDispatcher final : public Dispatcher {

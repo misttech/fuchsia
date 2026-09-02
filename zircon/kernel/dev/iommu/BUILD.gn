@@ -12,6 +12,7 @@ static_library("iommu") {
   sources = [
     "bti.cc",
     "bti_ffi.cc",
+    "pmt_ffi.cc",
   ]
 
   deps = [

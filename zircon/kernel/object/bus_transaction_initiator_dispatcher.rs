@@ -16,10 +16,13 @@ use zx_types::{
     zx_info_bti_t, zx_rights_t,
 };
 
-use super::KernelHandle;
 use super::bti::Bti;
 use super::bus_transaction_initiator_dispatcher_ffi::cpp_bus_transaction_initiator_dispatcher_create;
 use super::iommu::Iommu;
+use super::pinned_memory_token_dispatcher::PinnedMemoryTokenDispatcher;
+use super::{IOMMU_FLAG_PERM_WRITE, KernelHandle};
+use crate::vm::pinned_vm_object::PinnedVmObject;
+use crate::vm::vm_object::VmObject;
 
 use object_constants_rs as object_constants;
 
@@ -136,6 +139,47 @@ impl BusTransactionInitiatorDispatcher {
         Status::ok(status)?;
         // SAFETY: cpp_bus_transaction_initiator_dispatcher_create initialized handle_out.
         unsafe { Ok((handle_out.assume_init(), DEFAULT_RIGHTS)) }
+    }
+
+    /// Pins the given VMO range and returns a `PinnedMemoryTokenDispatcher` representing the
+    /// pinned range.
+    ///
+    /// Returns `ZX_ERR_INVALID_ARGS` if `offset` or `size` are not page-aligned or `size == 0`.
+    /// Returns `ZX_ERR_INVALID_ARGS` if `perms` is not suitable to pass to the `Iommu::map()`
+    /// interface.
+    /// Returns `ZX_ERR_BAD_STATE` if this BTI has hit zero handles or if the underlying driver is
+    /// in a fault state.
+    pub fn pin(
+        &self,
+        vmo: RefPtr<VmObject>,
+        offset: u64,
+        size: u64,
+        perms: u32,
+    ) -> Result<(KernelHandle<PinnedMemoryTokenDispatcher>, zx_rights_t), Status> {
+        debug_assert!(page::is_aligned(offset as usize));
+        debug_assert!(page::is_aligned(size as usize));
+
+        if size == 0 {
+            return Err(Status::INVALID_ARGS);
+        }
+
+        let pinned_vmo =
+            PinnedVmObject::create(vmo, offset, size, (perms & IOMMU_FLAG_PERM_WRITE) != 0)?;
+
+        ksync::lock!(let guard = self.state().lock_lock());
+
+        // User may not pin new memory if either our BTI has hit zero handles, or if
+        // the underlying driver is in a fault state (usually because the BTI has
+        // quarantined pages). In the case that the driver-level BTI is in a fault
+        // state, user-mode driver code is expected to take the steps to stop their
+        // DMA, and then call `zx_bti_release_quarantine` before proceeding to pin new
+        // memory.
+        if self.zero_handles_locked(guard.token()) || self.bti().in_fault_state() {
+            return Err(Status::BAD_STATE);
+        }
+
+        let bti_ref = RefPtr::from_ref(self);
+        PinnedMemoryTokenDispatcher::create(bti_ref, pinned_vmo, perms)
     }
 
     /// Returns a reference to the underlying `Bti` facade object.
