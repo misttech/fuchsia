@@ -86,6 +86,9 @@ class UsbDisconnectTest(fuchsia_base_test.FuchsiaBaseTest):
         )
 
         await self.dut.wait_for_online()
+        pre_disconnect_boot_id = await self.dut.boot_id()
+        _LOGGER.info("Pre-disconnect Boot ID: %s", pre_disconnect_boot_id)
+        self.dut.fuchsia_controller.before_usb_disconnect()
         try:
             self._usb_power_hub.power_off(port=self._usb_port)
             _LOGGER.info("Waiting for the device to go offline...")
@@ -99,6 +102,14 @@ class UsbDisconnectTest(fuchsia_base_test.FuchsiaBaseTest):
             self._usb_power_hub.power_on(port=self._usb_port)
             _LOGGER.info("Waiting for the device to go online...")
             await self.dut.wait_for_online()
+            self.dut.fuchsia_controller.after_usb_reconnect()
+            post_reconnect_boot_id = await self.dut.boot_id()
+            _LOGGER.info("Post-reconnect Boot ID: %s", post_reconnect_boot_id)
+            if pre_disconnect_boot_id != post_reconnect_boot_id:
+                raise errors.FuchsiaDeviceError(
+                    f"Unexpected reboot detected during USB disconnect for {self.dut.device_name}. "
+                    f"Boot ID before: {pre_disconnect_boot_id} != after: {post_reconnect_boot_id}"
+                )
             _LOGGER.info("Device is successfully back online.")
             self.dut.health_check()
 
