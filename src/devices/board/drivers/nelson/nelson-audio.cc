@@ -90,7 +90,8 @@ const std::vector<fuchsia_driver_framework::ParentSpec2> kParentSpecInit = std::
 // Codec composite node specifications.
 const std::vector<fuchsia_driver_framework::BindRule2> kOutI2cRules = std::vector{
     fdf::MakeAcceptBindRule(bind_fuchsia::SERVICE, "fuchsia.hardware.i2c.Service"),
-    fdf::MakeAcceptBindRule(bind_fuchsia::NAME, "codec_p2"),
+    fdf::MakeAcceptBindRule(bind_fuchsia::I2C_BUS_ID, static_cast<uint32_t>(NELSON_I2C_3)),
+    fdf::MakeAcceptBindRule(bind_fuchsia::I2C_ADDRESS, static_cast<uint32_t>(I2C_AUDIO_CODEC_ADDR)),
 };
 const std::vector<fuchsia_driver_framework::NodeProperty2> kOutI2cProps = std::vector{
     fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.i2c.Service"),

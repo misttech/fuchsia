@@ -5,12 +5,13 @@
 composite ti_ina231;
 
 using fuchsia;
-using fuchsia.platform;
-using fuchsia.ti.platform;
 
 primary parent "i2c" {
   fuchsia.Service == "fuchsia.hardware.i2c.Service";
-  fuchsia.NAME == "i2c";
+  accept fuchsia.BIND_I2C_ADDRESS {
+    fuchsia.ti.platform.BIND_I2C_ADDRESS.INA231_MLB,
+    fuchsia.ti.platform.BIND_I2C_ADDRESS.INA231_SPEAKERS
+  }
 }
 
 parent "pdev" {

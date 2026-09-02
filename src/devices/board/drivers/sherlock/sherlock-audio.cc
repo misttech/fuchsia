@@ -63,11 +63,11 @@ zx_status_t AddTas5720Device(fdf::WireSyncClient<fuchsia_hardware_platform_bus::
 
   const auto i2c_rules = std::vector{
       fdf::MakeAcceptBindRule(bind_fuchsia::SERVICE, "fuchsia.hardware.i2c.Service"),
-      fdf::MakeAcceptBindRule(bind_fuchsia::NAME, device_name),
+      fdf::MakeAcceptBindRule(bind_fuchsia::I2C_BUS_ID, static_cast<uint32_t>(SHERLOCK_I2C_A0_0)),
+      fdf::MakeAcceptBindRule(bind_fuchsia::I2C_ADDRESS, i2c_address),
   };
   const auto i2c_props = std::vector{
       fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.i2c.Service"),
-      fdf::MakeProperty2(bind_fuchsia::NAME, "i2c"),
   };
 
   std::vector<fuchsia_driver_framework::ParentSpec2> parents = {

@@ -14,7 +14,9 @@
 
 #include <bind/fuchsia/amlogic/platform/s905d3/cpp/bind.h>
 #include <bind/fuchsia/cpp/bind.h>
+#include <bind/fuchsia/goodix/platform/cpp/bind.h>
 #include <bind/fuchsia/gpio/cpp/bind.h>
+#include <bind/fuchsia/i2c/cpp/bind.h>
 
 #include "post-init.h"
 
@@ -47,12 +49,15 @@ zx::result<> SetPull(const fdf::Namespace& incoming, std::string_view node_name,
 
 const std::vector kI2cRules = {
     fdf::MakeAcceptBindRule(bind_fuchsia::SERVICE, "fuchsia.hardware.i2c.Service"),
-    fdf::MakeAcceptBindRule(bind_fuchsia::NAME, "goodix"),
+    fdf::MakeAcceptBindRule(bind_fuchsia::I2C_BUS_ID, bind_fuchsia_i2c::BIND_I2C_BUS_ID_I2C_2),
+    fdf::MakeAcceptBindRule(bind_fuchsia::I2C_ADDRESS,
+                            bind_fuchsia_goodix_platform::BIND_I2C_ADDRESS_TOUCH),
 };
 
 const std::vector kI2cProperties = {
     fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.i2c.Service"),
-    fdf::MakeProperty2(bind_fuchsia::NAME, "i2c"),
+    fdf::MakeProperty2(bind_fuchsia::I2C_ADDRESS,
+                       bind_fuchsia_goodix_platform::BIND_I2C_ADDRESS_TOUCH),
 };
 
 const std::vector kInterruptRules = {

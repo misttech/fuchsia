@@ -13,7 +13,6 @@
 #include <optional>
 
 #include <bind/fuchsia/acpi/cpp/bind.h>
-#include <bind/fuchsia/cpp/bind.h>
 #include <ddktl/device.h>
 #include <zxtest/zxtest.h>
 
@@ -300,13 +299,13 @@ TEST_F(AcpiManagerTest, TestI2cDevice) {
 
   Device* test = acpi_.GetDeviceRoot()->FindByPath("\\_SB_.I2C0.H084");
   acpi::DeviceBuilder* builder = manager_.LookupDevice(test);
-  ASSERT_NO_FATAL_FAILURE(
-      ExpectProps(builder, {
-                               ddk::MakeStrProperty("fuchsia.ID", static_cast<uint32_t>(0)),
-                               ddk::MakeStrProperty("fuchsia.NAME", "i2c"),
-                               ddk::MakeStrProperty("fuchsia.BIND_ACPI_BUS_TYPE",
-                                                    static_cast<uint32_t>(acpi::BusType::kI2c)),
-                           }));
+  ASSERT_NO_FATAL_FAILURE(ExpectProps(
+      builder, {
+                   ddk::MakeStrProperty("fuchsia.BIND_I2C_BUS_ID", static_cast<uint32_t>(0)),
+                   ddk::MakeStrProperty("fuchsia.BIND_I2C_ADDRESS", static_cast<uint32_t>(0x84)),
+                   ddk::MakeStrProperty("fuchsia.BIND_ACPI_BUS_TYPE",
+                                        static_cast<uint32_t>(acpi::BusType::kI2c)),
+               }));
 }
 
 TEST_F(AcpiManagerTest, TestMultipleI2cDevice) {
@@ -346,117 +345,23 @@ TEST_F(AcpiManagerTest, TestMultipleI2cDevice) {
 
   Device* test = acpi_.GetDeviceRoot()->FindByPath("\\_SB_.I2C0.H084");
   acpi::DeviceBuilder* builder = manager_.LookupDevice(test);
-  ASSERT_NO_FATAL_FAILURE(
-      ExpectProps(builder, {
-                               ddk::MakeStrProperty("fuchsia.ID", static_cast<uint32_t>(0)),
-                               ddk::MakeStrProperty("fuchsia.NAME", "i2c"),
-                               ddk::MakeStrProperty("fuchsia.BIND_ACPI_BUS_TYPE",
-                                                    static_cast<uint32_t>(acpi::BusType::kI2c)),
-                           }));
+  ASSERT_NO_FATAL_FAILURE(ExpectProps(
+      builder, {
+                   ddk::MakeStrProperty("fuchsia.BIND_I2C_BUS_ID", static_cast<uint32_t>(0)),
+                   ddk::MakeStrProperty("fuchsia.BIND_I2C_ADDRESS", static_cast<uint32_t>(0x84)),
+                   ddk::MakeStrProperty("fuchsia.BIND_ACPI_BUS_TYPE",
+                                        static_cast<uint32_t>(acpi::BusType::kI2c)),
+               }));
 
   test = acpi_.GetDeviceRoot()->FindByPath("\\_SB_.I2C1.H072");
   builder = manager_.LookupDevice(test);
-  ASSERT_NO_FATAL_FAILURE(
-      ExpectProps(builder, {
-                               ddk::MakeStrProperty("fuchsia.ID", static_cast<uint32_t>(1)),
-                               ddk::MakeStrProperty("fuchsia.NAME", "i2c"),
-                               ddk::MakeStrProperty("fuchsia.BIND_ACPI_BUS_TYPE",
-                                                    static_cast<uint32_t>(acpi::BusType::kI2c)),
-                           }));
-}
-
-TEST_F(AcpiManagerTest, TestMultipleI2cDevicesOnSameBus) {
-  ASSERT_NO_FATAL_FAILURE(InsertDeviceBelow("\\", std::make_unique<Device>("_SB_")));
-  ASSERT_NO_FATAL_FAILURE(InsertDeviceBelow("\\_SB_", std::make_unique<Device>("I2C0")));
-  auto device0 = std::make_unique<Device>("H084");
-  ACPI_RESOURCE i2c_resource0 = {
-      .Type = ACPI_RESOURCE_TYPE_SERIAL_BUS,
-      .Data =
-          {
-              .I2cSerialBus =
-                  {
-                      .Type = ACPI_RESOURCE_SERIAL_TYPE_I2C,
-                      .SlaveMode = ACPI_CONTROLLER_INITIATED,
-                      .ResourceSource =
-                          {
-                              .Index = 0,
-                              .StringLength = sizeof("\\_SB_.I2C0") - 1,
-                              .StringPtr = const_cast<char*>("\\_SB_.I2C0"),
-                          },
-                      .AccessMode = ACPI_I2C_7BIT_MODE,
-                      .SlaveAddress = 0x84,
-                  },
-          },
-  };
-  device0->AddResource(i2c_resource0);
-  ASSERT_NO_FATAL_FAILURE(InsertDeviceBelow("\\_SB_.I2C0", std::move(device0)));
-
-  auto device1 = std::make_unique<Device>("H072");
-  ACPI_RESOURCE i2c_resource1 = {
-      .Type = ACPI_RESOURCE_TYPE_SERIAL_BUS,
-      .Data =
-          {
-              .I2cSerialBus =
-                  {
-                      .Type = ACPI_RESOURCE_SERIAL_TYPE_I2C,
-                      .SlaveMode = ACPI_CONTROLLER_INITIATED,
-                      .ResourceSource =
-                          {
-                              .Index = 0,
-                              .StringLength = sizeof("\\_SB_.I2C0") - 1,
-                              .StringPtr = const_cast<char*>("\\_SB_.I2C0"),
-                          },
-                      .AccessMode = ACPI_I2C_7BIT_MODE,
-                      .SlaveAddress = 0x72,
-                  },
-          },
-  };
-  device1->AddResource(i2c_resource1);
-  ASSERT_NO_FATAL_FAILURE(InsertDeviceBelow("\\_SB_.I2C0", std::move(device1)));
-  ASSERT_NO_FATAL_FAILURE(DiscoverConfigurePublish());
-
-  Device* i2c0 = acpi_.GetDeviceRoot()->FindByPath("\\_SB_.I2C0");
-  ASSERT_NOT_NULL(i2c0);
-  acpi::DeviceBuilder* bus_builder = manager_.LookupDevice(i2c0);
-  ASSERT_NOT_NULL(bus_builder);
-
-  auto [rules0, props0] = bus_builder->GetFragmentBindRulesAndPropertiesForChild(0);
-  auto [rules1, props1] = bus_builder->GetFragmentBindRulesAndPropertiesForChild(1);
-
-  auto find_id_prop = [](const std::vector<device_bind_prop_t>& props) -> std::optional<uint32_t> {
-    for (const auto& prop : props) {
-      if (prop.key.key_type == DEVICE_BIND_PROPERTY_KEY_STRING &&
-          strcmp(prop.key.data.str_key, bind_fuchsia::ID) == 0 &&
-          prop.value.data_type == ZX_DEVICE_PROPERTY_VALUE_INT) {
-        return prop.value.data.int_value;
-      }
-    }
-    return std::nullopt;
-  };
-
-  auto id0 = find_id_prop(props0);
-  ASSERT_TRUE(id0.has_value());
-  EXPECT_EQ(*id0, 0);
-
-  auto id1 = find_id_prop(props1);
-  ASSERT_TRUE(id1.has_value());
-  EXPECT_EQ(*id1, 1);
-
-  EXPECT_NE(*id0, *id1);
-
-  zx::result<acpi::BusMetadata> metadata = bus_builder->GetMetadata();
-  ASSERT_OK(metadata.status_value());
-  ASSERT_TRUE(
-      std::holds_alternative<fuchsia_hardware_i2c_businfo::I2CBusMetadata>(metadata.value()));
-  const auto& i2c_metadata =
-      std::get<fuchsia_hardware_i2c_businfo::I2CBusMetadata>(metadata.value());
-  ASSERT_TRUE(i2c_metadata.channels().has_value());
-  ASSERT_EQ(i2c_metadata.channels()->size(), 2);
-  ASSERT_TRUE((*i2c_metadata.channels())[0].global_id().has_value());
-  ASSERT_TRUE((*i2c_metadata.channels())[1].global_id().has_value());
-  EXPECT_EQ(*(*i2c_metadata.channels())[0].global_id(), 0);
-  EXPECT_EQ(*(*i2c_metadata.channels())[1].global_id(), 1);
-  EXPECT_NE(*(*i2c_metadata.channels())[0].global_id(), *(*i2c_metadata.channels())[1].global_id());
+  ASSERT_NO_FATAL_FAILURE(ExpectProps(
+      builder, {
+                   ddk::MakeStrProperty("fuchsia.BIND_I2C_BUS_ID", static_cast<uint32_t>(1)),
+                   ddk::MakeStrProperty("fuchsia.BIND_I2C_ADDRESS", static_cast<uint32_t>(0x72)),
+                   ddk::MakeStrProperty("fuchsia.BIND_ACPI_BUS_TYPE",
+                                        static_cast<uint32_t>(acpi::BusType::kI2c)),
+               }));
 }
 
 TEST_F(AcpiManagerTest, TestDeviceNotPresentIsIgnored) {

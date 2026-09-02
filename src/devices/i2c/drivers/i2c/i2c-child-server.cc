@@ -9,6 +9,7 @@
 #include <lib/driver/node/cpp/add_child.h>
 
 #include <bind/fuchsia/cpp/bind.h>
+#include <bind/fuchsia/i2c/cpp/bind.h>
 
 namespace i2c {
 
@@ -18,6 +19,7 @@ zx::result<std::unique_ptr<I2cChildServer>> I2cChildServer::CreateAndAddChild(
     const std::shared_ptr<fdf::Namespace>& incoming,
     const std::shared_ptr<fdf::OutgoingDirectory>& outgoing,
     const std::optional<std::string>& parent_node_name, const i2c_config::Config& config) {
+  const uint32_t i2c_class = channel.i2c_class().value_or(0);
   const uint32_t vid = channel.vid().value_or(0);
   const uint32_t pid = channel.pid().value_or(0);
   const uint32_t did = channel.did().value_or(0);
@@ -52,14 +54,12 @@ zx::result<std::unique_ptr<I2cChildServer>> I2cChildServer::CreateAndAddChild(
 
   // Add the child node.
   std::vector<fuchsia_driver_framework::NodeProperty2> properties{
+      fdf::MakeProperty2(bind_fuchsia::I2C_BUS_ID, bus_id),
+      fdf::MakeProperty2(bind_fuchsia::I2C_ADDRESS, static_cast<uint32_t>(address)),
+      fdf::MakeProperty2(bind_fuchsia::I2C_CLASS, i2c_class),
       fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.i2c.Service"),
   };
-  if (channel.global_id().has_value()) {
-    properties.push_back(fdf::MakeProperty2(bind_fuchsia::ID, *channel.global_id()));
-  }
-  if (!friendly_name.empty()) {
-    properties.push_back(fdf::MakeProperty2(bind_fuchsia::NAME, friendly_name));
-  }
+
   if (vid || pid || did) {
     properties.push_back(fdf::MakeProperty2(bind_fuchsia::PLATFORM_DEV_VID, vid));
     properties.push_back(fdf::MakeProperty2(bind_fuchsia::PLATFORM_DEV_PID, pid));

@@ -30,3 +30,9 @@ extend uint fuchsia.BIND_PLATFORM_DEV_DID {
   INA231_MLB = 0x0B,
   INA231_SPEAKERS = 0x0C,
 };
+
+extend uint fuchsia.BIND_I2C_ADDRESS {
+  INA231_MLB = 0x49,
+  INA231_SPEAKERS = 0x40,
+  INA231_MLB_PROTO = 0x46,
+};

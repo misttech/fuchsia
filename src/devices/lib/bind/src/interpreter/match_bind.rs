@@ -708,7 +708,7 @@ mod test {
             Symbol::NumberValue(10),
         );
         device_properties.insert(
-            PropertyKey::StringKey("fuchsia.BIND_AUTOBIND".to_string()),
+            PropertyKey::StringKey("fuchsia.BIND_I2C_BUS_ID".to_string()),
             Symbol::NumberValue(5),
         );
 
@@ -725,7 +725,7 @@ mod test {
             &mut instructions,
             EncodedValue {
                 value_type: RawValueType::NumberValue,
-                value: 0x02, /* BIND_AUTOBIND */
+                value: 0x0A01, /* BIND_I2C_BUS_ID */
             },
             EncodedValue { value_type: RawValueType::NumberValue, value: 5 },
         );

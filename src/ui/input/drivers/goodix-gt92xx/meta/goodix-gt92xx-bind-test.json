@@ -7,7 +7,7 @@
                 "expected": "match",
                 "device": {
                     "fuchsia.Service": "\"fuchsia.hardware.i2c.Service\"",
-                    "fuchsia.NAME": "\"i2c\""
+                    "fuchsia.BIND_I2C_ADDRESS": "fuchsia.goodix.platform.BIND_I2C_ADDRESS.TOUCH"
                 }
             }
         ]

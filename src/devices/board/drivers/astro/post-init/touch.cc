@@ -15,7 +15,10 @@
 
 #include <bind/fuchsia/amlogic/platform/s905d2/cpp/bind.h>
 #include <bind/fuchsia/cpp/bind.h>
+#include <bind/fuchsia/focaltech/platform/cpp/bind.h>
+#include <bind/fuchsia/goodix/platform/cpp/bind.h>
 #include <bind/fuchsia/gpio/cpp/bind.h>
+#include <bind/fuchsia/i2c/cpp/bind.h>
 #include <bind/fuchsia/platform/cpp/bind.h>
 
 #include "src/devices/board/drivers/astro/post-init/post-init.h"
@@ -50,22 +53,28 @@ namespace fpbus = fuchsia_hardware_platform_bus;
 
 const std::vector kFocaltechI2cRules = std::vector{
     fdf::MakeAcceptBindRule(bind_fuchsia::SERVICE, "fuchsia.hardware.i2c.Service"),
-    fdf::MakeAcceptBindRule(bind_fuchsia::NAME, "focaltech"),
+    fdf::MakeAcceptBindRule(bind_fuchsia::I2C_BUS_ID, bind_fuchsia_i2c::BIND_I2C_BUS_ID_I2C_2),
+    fdf::MakeAcceptBindRule(bind_fuchsia::I2C_ADDRESS,
+                            bind_fuchsia_focaltech_platform::BIND_I2C_ADDRESS_TOUCH),
 };
 
 const std::vector kFocaltechI2cProperties = std::vector{
     fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.i2c.Service"),
-    fdf::MakeProperty2(bind_fuchsia::NAME, "i2c"),
+    fdf::MakeProperty2(bind_fuchsia::I2C_ADDRESS,
+                       bind_fuchsia_focaltech_platform::BIND_I2C_ADDRESS_TOUCH),
 };
 
 const std::vector kGoodixI2cRules = std::vector{
     fdf::MakeAcceptBindRule(bind_fuchsia::SERVICE, "fuchsia.hardware.i2c.Service"),
-    fdf::MakeAcceptBindRule(bind_fuchsia::NAME, "goodix"),
+    fdf::MakeAcceptBindRule(bind_fuchsia::I2C_BUS_ID, bind_fuchsia_i2c::BIND_I2C_BUS_ID_I2C_2),
+    fdf::MakeAcceptBindRule(bind_fuchsia::I2C_ADDRESS,
+                            bind_fuchsia_goodix_platform::BIND_I2C_ADDRESS_TOUCH),
 };
 
 const std::vector kGoodixI2cProperties = std::vector{
     fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.i2c.Service"),
-    fdf::MakeProperty2(bind_fuchsia::NAME, "i2c"),
+    fdf::MakeProperty2(bind_fuchsia::I2C_ADDRESS,
+                       bind_fuchsia_goodix_platform::BIND_I2C_ADDRESS_TOUCH),
 };
 
 const std::vector kInterruptRules = std::vector{

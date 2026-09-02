@@ -8,3 +8,22 @@ extend uint fuchsia.BIND_PROTOCOL {
   DEVICE = 0x18,
   IMPL = 0x19,
 };
+
+extend uint fuchsia.BIND_I2C_CLASS {
+  HID = 0x01,
+};
+
+extend uint fuchsia.BIND_I2C_BUS_ID {
+  I2C_A0_0 = 0,
+  I2C_2 = 1,
+  I2C_3 = 2,
+};
+
+extend uint fuchsia.BIND_I2C_ADDRESS {
+  BACKLIGHT = 0x2C,
+  MCU = 0x18,
+  AMBIENTLIGHT = 0x39,
+  AUDIO_CODEC = 0x48,
+  SHERLOCK = 0x36,
+  VIM3 = 0x20,
+};

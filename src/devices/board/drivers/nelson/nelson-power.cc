@@ -16,6 +16,7 @@
 #include <bind/fuchsia/cpp/bind.h>
 #include <bind/fuchsia/google/platform/cpp/bind.h>
 #include <bind/fuchsia/gpio/cpp/bind.h>
+#include <bind/fuchsia/i2c/cpp/bind.h>
 #include <bind/fuchsia/platform/cpp/bind.h>
 #include <bind/fuchsia/power/cpp/bind.h>
 #include <bind/fuchsia/ti/platform/cpp/bind.h>
@@ -75,11 +76,14 @@ zx_status_t AddMlbComposite(fdf::WireSyncClient<fpbus::PlatformBus>& pbus,
 
   const auto kI2cRules = std::vector{
       fdf::MakeAcceptBindRule(bind_fuchsia::SERVICE, "fuchsia.hardware.i2c.Service"),
-      fdf::MakeAcceptBindRule(bind_fuchsia::NAME, "mlb_power"),
+      fdf::MakeAcceptBindRule(bind_fuchsia::I2C_BUS_ID, bind_fuchsia_i2c::BIND_I2C_BUS_ID_I2C_3),
+      fdf::MakeAcceptBindRule(bind_fuchsia::I2C_ADDRESS,
+                              bind_fuchsia_ti_platform::BIND_I2C_ADDRESS_INA231_MLB),
   };
   const auto kI2cProperties = std::vector{
       fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.i2c.Service"),
-      fdf::MakeProperty2(bind_fuchsia::NAME, "i2c"),
+      fdf::MakeProperty2(bind_fuchsia::I2C_ADDRESS,
+                         bind_fuchsia_ti_platform::BIND_I2C_ADDRESS_INA231_MLB),
   };
 
   const std::vector<fuchsia_driver_framework::ParentSpec2> kParents{{kI2cRules, kI2cProperties}};
@@ -138,11 +142,14 @@ zx_status_t AddSpeakerComposite(fdf::WireSyncClient<fpbus::PlatformBus>& pbus,
 
   const auto kI2cRules = std::vector{
       fdf::MakeAcceptBindRule(bind_fuchsia::SERVICE, "fuchsia.hardware.i2c.Service"),
-      fdf::MakeAcceptBindRule(bind_fuchsia::NAME, "audio_power"),
+      fdf::MakeAcceptBindRule(bind_fuchsia::I2C_BUS_ID, bind_fuchsia_i2c::BIND_I2C_BUS_ID_I2C_3),
+      fdf::MakeAcceptBindRule(bind_fuchsia::I2C_ADDRESS,
+                              bind_fuchsia_ti_platform::BIND_I2C_ADDRESS_INA231_SPEAKERS),
   };
   const auto kI2cProperties = std::vector{
       fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.i2c.Service"),
-      fdf::MakeProperty2(bind_fuchsia::NAME, "i2c"),
+      fdf::MakeProperty2(bind_fuchsia::I2C_ADDRESS,
+                         bind_fuchsia_ti_platform::BIND_I2C_ADDRESS_INA231_SPEAKERS),
   };
 
   const std::vector<fuchsia_driver_framework::ParentSpec2> kParents{{kI2cRules, kI2cProperties}};

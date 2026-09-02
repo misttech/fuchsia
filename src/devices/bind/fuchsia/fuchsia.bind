@@ -65,6 +65,11 @@ uint BIND_SDIO_VID;
 uint BIND_SDIO_PID;
 uint BIND_SDIO_FUNCTION;
 
+// I2C bind properties.
+uint BIND_I2C_CLASS;
+uint BIND_I2C_BUS_ID;
+uint BIND_I2C_ADDRESS;
+
 // Init Step bind properties.
 uint BIND_INIT_STEP;
 

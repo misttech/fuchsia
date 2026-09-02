@@ -3,10 +3,18 @@
         "parent": "i2c",
         "tests": [
             {
-                "name": "Match",
+                "name": "Match mlb",
                 "expected": "match",
                 "device": {
-                    "fuchsia.NAME": "\"i2c\"",
+                    "fuchsia.BIND_I2C_ADDRESS": "fuchsia.ti.platform.BIND_I2C_ADDRESS.INA231_MLB",
+                    "fuchsia.Service": "\"fuchsia.hardware.i2c.Service\""
+                }
+            },
+            {
+                "name": "Match speakers",
+                "expected": "match",
+                "device": {
+                    "fuchsia.BIND_I2C_ADDRESS": "fuchsia.ti.platform.BIND_I2C_ADDRESS.INA231_SPEAKERS",
                     "fuchsia.Service": "\"fuchsia.hardware.i2c.Service\""
                 }
             }

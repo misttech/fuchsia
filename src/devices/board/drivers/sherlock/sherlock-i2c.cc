@@ -47,7 +47,6 @@ constexpr i2c_channel_t i2c_ao_channels[]{
         .vid = 0,
         .pid = 0,
         .did = 0,
-        .name = "audio-codec-6c",
     },
     // Tweeter right
     {
@@ -55,7 +54,6 @@ constexpr i2c_channel_t i2c_ao_channels[]{
         .vid = 0,
         .pid = 0,
         .did = 0,
-        .name = "audio-codec-6d",
     },
     // Woofer
     {
@@ -63,7 +61,6 @@ constexpr i2c_channel_t i2c_ao_channels[]{
         .vid = 0,
         .pid = 0,
         .did = 0,
-        .name = "audio-codec-6f",
     },
     // Light Sensor
     {
@@ -71,7 +68,6 @@ constexpr i2c_channel_t i2c_ao_channels[]{
         .vid = 0,
         .pid = 0,
         .did = 0,
-        .name = "als",
     },
 };
 
@@ -82,7 +78,6 @@ constexpr i2c_channel_t i2c_2_channels[]{
         .vid = 0,
         .pid = 0,
         .did = 0,
-        .name = "touch",
     },
 };
 
@@ -93,7 +88,6 @@ constexpr i2c_channel_t i2c_3_channels[]{
         .vid = 0,
         .pid = 0,
         .did = 0,
-        .name = "backlight",
     },
     // IMX227 Camera Sensor
     {
@@ -101,7 +95,6 @@ constexpr i2c_channel_t i2c_3_channels[]{
         .vid = 0,
         .pid = 0,
         .did = 0,
-        .name = "camera_sensor",
     },
     // LCD Bias
     {
@@ -109,7 +102,6 @@ constexpr i2c_channel_t i2c_3_channels[]{
         .vid = 0,
         .pid = 0,
         .did = 0,
-        .name = "lcd_bias",
     },
 };
 

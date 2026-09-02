@@ -362,6 +362,11 @@ fn deprecated_keys() -> Vec<(String, u32)> {
     keys.push(("BIND_SDIO_PID".to_string(), 0x0901));
     keys.push(("BIND_SDIO_FUNCTION".to_string(), 0x0902));
 
+    // I2C binding variables at 0x0A0X
+    keys.push(("BIND_I2C_CLASS".to_string(), 0x0A00));
+    keys.push(("BIND_I2C_BUS_ID".to_string(), 0x0A01));
+    keys.push(("BIND_I2C_ADDRESS".to_string(), 0x0A02));
+
     // Init step binding variables at 0x0A6X.
     keys.push(("BIND_INIT_STEP".to_string(), 0x0A60));
 
@@ -433,6 +438,11 @@ pub fn get_deprecated_key_identifier(key: u32) -> Option<String> {
         0x0901 => Some("fuchsia.BIND_SDIO_PID".to_string()),
         0x0902 => Some("fuchsia.BIND_SDIO_FUNCTION".to_string()),
 
+        // I2C binding variables at 0x0A0X.
+        0x0A00 => Some("fuchsia.BIND_I2C_CLASS".to_string()),
+        0x0A01 => Some("fuchsia.BIND_I2C_BUS_ID".to_string()),
+        0x0A02 => Some("fuchsia.BIND_I2C_ADDRESS".to_string()),
+
         // Init step binding variables at 0x0A6X.
         0x0A60 => Some("fuchsia.BIND_INIT_STEP".to_string()),
 
@@ -488,6 +498,11 @@ pub fn get_deprecated_key_value(key: &str) -> Option<u32> {
         "fuchsia.BIND_SDIO_VID" => Some(0x0900),
         "fuchsia.BIND_SDIO_PID" => Some(0x0901),
         "fuchsia.BIND_SDIO_FUNCTION" => Some(0x0902),
+
+        // I2C binding variables at 0x0A0X
+        "fuchsia.BIND_I2C_CLASS" => Some(0x0A00),
+        "fuchsia.BIND_I2C_BUS_ID" => Some(0x0A01),
+        "fuchsia.BIND_I2C_ADDRESS" => Some(0x0A02),
 
         // Init step binding variables at 0x0A6X.
         "fuchsia.BIND_INIT_STEP" => Some(0x0A60),
