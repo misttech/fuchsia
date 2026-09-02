@@ -813,6 +813,11 @@ pub async fn flash_partitions<F: FileResolver + Sync, P: Partition, T: FastbootI
     Ok(())
 }
 
+/// Flashes both bootloader and product partitions.
+///
+/// # Returns
+///
+/// `Ok(true)` if slot A was marked active during bootloader flashing, or `Ok(false)` otherwise.
 pub async fn flash<F, Part, P, T>(
     messenger: &Sender<Event>,
     file_resolver: &mut F,
@@ -820,7 +825,7 @@ pub async fn flash<F, Part, P, T>(
     fastboot_interface: &mut T,
     cmd: ManifestParams,
     ssh_key_upload_method: Option<&UploadMethod>,
-) -> Result<()>
+) -> Result<bool>
 where
     F: FileResolver + Sync,
     Part: Partition,
@@ -834,7 +839,8 @@ where
         })
         .await?;
     let mut cached_fastboot = CachingFastboot::new(fastboot_interface);
-    flash_bootloader(messenger, file_resolver, product, &mut cached_fastboot, &cmd).await?;
+    let set_active_performed =
+        flash_bootloader(messenger, file_resolver, product, &mut cached_fastboot, &cmd).await?;
     flash_product(
         messenger,
         file_resolver,
@@ -843,7 +849,8 @@ where
         &cmd,
         ssh_key_upload_method,
     )
-    .await
+    .await?;
+    Ok(set_active_performed)
 }
 
 pub async fn is_userspace_fastboot(
@@ -855,13 +862,19 @@ pub async fn is_userspace_fastboot(
     }
 }
 
+/// Flashes bootloader partitions from `product`.
+///
+/// # Returns
+///
+/// `Ok(true)` if slot A was marked active as part of bootloader flashing (which occurs when
+/// bootloader partitions were present and the bootloader was rebooted), or `Ok(false)` otherwise.
 pub async fn flash_bootloader<F, Part, P, T>(
     messenger: &Sender<Event>,
     file_resolver: &mut F,
     product: &P,
     fastboot_interface: &mut T,
     cmd: &ManifestParams,
-) -> Result<()>
+) -> Result<bool>
 where
     F: FileResolver + Sync,
     Part: Partition,
@@ -883,8 +896,10 @@ where
     {
         set_slot_a_active(fastboot_interface).await?;
         reboot_bootloader(messenger, fastboot_interface).await?;
+        Ok(true)
+    } else {
+        Ok(false)
     }
-    Ok(())
 }
 
 pub async fn flash_product<F, Part, P, T>(
@@ -943,13 +958,21 @@ where
     P: Product<Part>,
     T: FastbootInterface,
 {
-    flash(messenger, file_resolver, product, fastboot_interface, cmd, ssh_key_upload_method)
-        .await?;
-    finish(fastboot_interface).await
+    let set_active_performed =
+        flash(messenger, file_resolver, product, fastboot_interface, cmd, ssh_key_upload_method)
+            .await?;
+    finish(fastboot_interface, set_active_performed).await
 }
 
-pub async fn finish<F: FastbootInterface>(fastboot_interface: &mut F) -> Result<()> {
-    set_slot_a_active(fastboot_interface).await?;
+/// Finalizes flashing by ensuring slot A is active (if not already set during bootloader
+/// flashing) and continuing boot.
+pub async fn finish<F: FastbootInterface>(
+    fastboot_interface: &mut F,
+    set_active_performed: bool,
+) -> Result<()> {
+    if !set_active_performed {
+        set_slot_a_active(fastboot_interface).await?;
+    }
     // LINT.IfChange
     fastboot_interface.continue_boot().await.map_err(FfxFastbootError::ContinueBootFailed)?;
     // LINT.ThenChange(//tools/lib/ffxutil/flash.go)

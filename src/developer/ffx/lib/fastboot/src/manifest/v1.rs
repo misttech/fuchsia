@@ -538,4 +538,56 @@ mod test {
         assert_eq!(true, res.is_err());
         Ok(())
     }
+
+    #[fuchsia::test]
+    async fn test_flash_with_bootloader_partitions_sets_active_only_once() -> Result<()> {
+        let tmp_file = NamedTempFile::new().expect("tmp access failed");
+        let tmp_file_name = tmp_file.path().to_string_lossy().to_string();
+
+        let bootloader_file = NamedTempFile::new().expect("tmp access failed");
+        let bootloader_path = bootloader_file.path().to_str().expect("non-unicode tmp path");
+        let partition_file = NamedTempFile::new().expect("tmp access failed");
+        let partition_path = partition_file.path().to_str().expect("non-unicode tmp path");
+
+        let manifest = json!([
+            {
+                "name": "zedboot",
+                "bootloader_partitions": [
+                    ["bootloader", bootloader_path]
+                ],
+                "partitions": [
+                    ["zircon", partition_path]
+                ],
+                "oem_files": []
+            }
+        ]);
+
+        let v: FlashManifest = from_str(&manifest.to_string())?;
+        let (state, mut proxy) = setup();
+        {
+            let mut state = state.lock().unwrap();
+            state.set_var(IS_USERSPACE_VAR.to_string(), "no".to_string());
+            state.set_var(MAX_DOWNLOAD_SIZE_VAR.to_string(), "8192".to_string());
+        }
+
+        let (client, _server) = mpsc::channel(100);
+        v.flash(
+            &client,
+            &mut TestResolver::new(),
+            &mut proxy,
+            ManifestParams {
+                manifest: Some(PathBuf::from(tmp_file_name)),
+                product: "zedboot".to_string(),
+                ..Default::default()
+            },
+            None,
+        )
+        .await?;
+
+        let state = state.lock().unwrap();
+        assert_eq!(state.bootloader_reboots, 1);
+        assert_eq!(state.set_actives, vec!["a".to_string()]);
+        assert_eq!(state.continue_boots, 1);
+        Ok(())
+    }
 }

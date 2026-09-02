@@ -28,6 +28,8 @@ pub mod test {
         pub oem_commands: Vec<String>,
         pub bootloader_reboots: usize,
         pub boots: usize,
+        pub continue_boots: usize,
+        pub set_actives: Vec<String>,
         /// Variable => (Option(Value), Call Count)
         variables: HashMap<String, (Option<String>, u32)>,
     }
@@ -178,6 +180,8 @@ pub mod test {
         }
 
         async fn continue_boot(&mut self) -> Result<(), FastbootError> {
+            let mut state = self.state.lock().unwrap();
+            state.continue_boots += 1;
             Ok(())
         }
 
@@ -195,7 +199,9 @@ pub mod test {
             Ok(())
         }
 
-        async fn set_active(&mut self, _slot: &str) -> Result<(), FastbootError> {
+        async fn set_active(&mut self, slot: &str) -> Result<(), FastbootError> {
+            let mut state = self.state.lock().unwrap();
+            state.set_actives.push(slot.to_string());
             Ok(())
         }
 

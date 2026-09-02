@@ -55,7 +55,8 @@ impl Flash for FlashManifest {
                 partition_count: product.bootloader_partitions.len() + product.partitions.len(),
             })
             .await?;
-        flash_bootloader(&messenger, file_resolver, product, fastboot_interface, &cmd).await?;
+        let set_active_performed =
+            flash_bootloader(&messenger, file_resolver, product, fastboot_interface, &cmd).await?;
         if product.requires_unlock && !is_locked(fastboot_interface).await? {
             lock_device(fastboot_interface).await?;
         }
@@ -68,7 +69,7 @@ impl Flash for FlashManifest {
             ssh_key_upload_method,
         )
         .await?;
-        finish(fastboot_interface).await
+        finish(fastboot_interface, set_active_performed).await
     }
 }
 
@@ -325,6 +326,68 @@ mod test {
             None,
         )
         .await?;
+
+        let state = state.lock().unwrap();
+        assert_eq!(state.bootloader_reboots, 1);
+        assert_eq!(state.set_actives, vec!["a".to_string()]);
+        assert_eq!(state.continue_boots, 1);
+        Ok(())
+    }
+
+    #[fuchsia::test]
+    async fn test_flash_with_bootloader_partitions_sets_active_only_once() -> Result<()> {
+        let tmp_file = NamedTempFile::new().expect("tmp access failed");
+        let tmp_file_name = tmp_file.path().to_string_lossy().to_string();
+
+        let bootloader_file = NamedTempFile::new().expect("tmp access failed");
+        let bootloader_path = bootloader_file.path().to_str().expect("non-unicode tmp path");
+        let partition_file = NamedTempFile::new().expect("tmp access failed");
+        let partition_path = partition_file.path().to_str().expect("non-unicode tmp path");
+
+        let manifest = json!({
+            "hw_revision": "zedboot",
+            "products": [
+                {
+                    "name": "zedboot",
+                    "requires_unlock": false,
+                    "bootloader_partitions": [
+                        ["bootloader", bootloader_path]
+                    ],
+                    "partitions": [
+                        ["zircon", partition_path]
+                    ],
+                    "oem_files": []
+                }
+            ]
+        });
+
+        let v: FlashManifest = from_str(&manifest.to_string())?;
+        let (state, mut proxy) = setup();
+        {
+            let mut state = state.lock().unwrap();
+            state.set_var(IS_USERSPACE_VAR.to_string(), "no".to_string());
+            state.set_var(REVISION_VAR.to_string(), "zedboot".to_string());
+            state.set_var(MAX_DOWNLOAD_SIZE_VAR.to_string(), "8192".to_string());
+        }
+
+        let (client, _server) = mpsc::channel(100);
+        v.flash(
+            &client,
+            &mut TestResolver::new(),
+            &mut proxy,
+            ManifestParams {
+                manifest: Some(PathBuf::from(tmp_file_name)),
+                product: "zedboot".to_string(),
+                ..Default::default()
+            },
+            None,
+        )
+        .await?;
+
+        let state = state.lock().unwrap();
+        assert_eq!(state.bootloader_reboots, 1);
+        assert_eq!(state.set_actives, vec!["a".to_string()]);
+        assert_eq!(state.continue_boots, 1);
         Ok(())
     }
 }
