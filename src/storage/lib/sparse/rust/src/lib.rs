@@ -9,7 +9,7 @@ pub mod builder;
 mod format;
 pub mod reader;
 
-use crate::format::{CHUNK_HEADER_SIZE, ChunkHeader, SPARSE_HEADER_SIZE, SparseHeader};
+use crate::format::{ChunkHeader, SparseHeader};
 use crate::reader::SparseReader;
 
 use core::fmt;
@@ -415,7 +415,9 @@ impl SparseFileWriter {
 
         for chunk in &self.chunks {
             let mut reader = if let &Chunk::Raw { start, size } = chunk {
-                reader.seek(SeekFrom::Start(start))?;
+                if reader.stream_position()? != start {
+                    reader.seek(SeekFrom::Start(start))?;
+                }
                 Some(LimitedReader(reader, start as usize + size as usize))
             } else {
                 None
@@ -559,67 +561,108 @@ fn resparse(
         + Chunk::DontCare { start: 0, size: BLK_SIZE.into() }.chunk_data_len() as u64
         + Chunk::Crc32 { checksum: 2345 }.chunk_data_len() as u64;
 
+    let total_image_bytes = sparse_file.total_bytes();
     let mut chunk_pos = 0;
-    let mut output_offset = 0;
+    let mut offset_in_raw = 0u64;
+    let mut output_offset = 0u64;
+
     while chunk_pos < sparse_file.chunks.len() {
-        log::trace!("Starting a new file at chunk position: {}", chunk_pos);
+        log::trace!(
+            "Starting a new file at chunk position: {}, offset_in_raw: {}",
+            chunk_pos,
+            offset_in_raw
+        );
 
-        let mut file_len = 0;
-        file_len += sunk_file_length;
-
+        let mut file_len = sunk_file_length;
         let mut chunks = Vec::<Chunk>::new();
-        if chunk_pos > 0 {
-            // If we already have some chunks... add a DontCare block to
+
+        if output_offset > 0 {
+            // If we already have written bytes... add a DontCare block to
             // move the pointer
-            log::trace!("Adding a DontCare chunk offset: {}", chunk_pos);
+            log::trace!("Adding a DontCare chunk offset: {}", output_offset);
             let dont_care = Chunk::DontCare { start: 0, size: output_offset };
             chunks.push(dont_care);
         }
 
         loop {
-            match sparse_file.chunks.get(chunk_pos) {
-                Some(chunk) => {
-                    let curr_chunk_data_len = chunk.chunk_data_len() as u64;
-                    if (file_len + curr_chunk_data_len) > max_download_size {
-                        log::trace!(
-                            "Current file size is: {} and adding another chunk of len: {} would \
-                              put us over our max: {}",
-                            file_len,
-                            curr_chunk_data_len,
-                            max_download_size
-                        );
+            if chunk_pos >= sparse_file.chunks.len() {
+                log::trace!("Finished iterating chunks");
+                break;
+            }
 
-                        // Add a don't care chunk to cover everything to the end of the image. While
-                        // this is not strictly speaking needed, other tools (simg2simg) produce
-                        // this chunk, and the Sparse image inspection tool simg_dump will produce a
-                        // warning if a sparse file does not have the same number of output blocks
-                        // as declared in the header.
-                        let remainder_size = sparse_file.total_bytes() - output_offset;
-                        let dont_care =
-                            Chunk::DontCare { start: output_offset, size: remainder_size };
-                        chunks.push(dont_care);
+            let chunk = &sparse_file.chunks[chunk_pos];
+            match chunk {
+                Chunk::Raw { start, size } => {
+                    let remaining_raw = *size - offset_in_raw;
+                    let chunk_header_len = format::CHUNK_HEADER_SIZE as u64;
+                    let available_in_file = max_download_size.saturating_sub(file_len);
+
+                    if available_in_file < chunk_header_len + BLK_SIZE as u64 {
+                        // Cannot fit even one block in current file.
+                        let remainder_size = total_image_bytes.saturating_sub(output_offset);
+                        if remainder_size > 0 {
+                            let dont_care =
+                                Chunk::DontCare { start: output_offset, size: remainder_size };
+                            chunks.push(dont_care);
+                        }
                         break;
                     }
-                    log::trace!(
-                        "chunk: {} curr_chunk_data_len: {} current file size: {} \
-                          max_download_size: {} diff: {}",
-                        chunk_pos,
-                        curr_chunk_data_len,
-                        file_len,
-                        max_download_size,
-                        (max_download_size - file_len - curr_chunk_data_len)
-                    );
-                    add_sparse_chunk(&mut chunks, chunk.clone())?;
-                    file_len += curr_chunk_data_len;
-                    chunk_pos = chunk_pos + 1;
-                    output_offset += chunk.output_size() as u64;
+
+                    let max_raw_payload = ((available_in_file - chunk_header_len)
+                        / BLK_SIZE as u64)
+                        * BLK_SIZE as u64;
+                    let to_take = std::cmp::min(remaining_raw, max_raw_payload);
+
+                    if to_take == 0 {
+                        let remainder_size = total_image_bytes.saturating_sub(output_offset);
+                        if remainder_size > 0 {
+                            let dont_care =
+                                Chunk::DontCare { start: output_offset, size: remainder_size };
+                            chunks.push(dont_care);
+                        }
+                        break;
+                    }
+
+                    let sub_chunk = Chunk::Raw { start: *start + offset_in_raw, size: to_take };
+                    add_sparse_chunk(&mut chunks, sub_chunk)?;
+                    file_len += chunk_header_len + to_take;
+                    output_offset += to_take;
+                    offset_in_raw += to_take;
+
+                    if offset_in_raw == *size {
+                        chunk_pos += 1;
+                        offset_in_raw = 0;
+                    } else {
+                        // Current file is full.
+                        let remainder_size = total_image_bytes.saturating_sub(output_offset);
+                        if remainder_size > 0 {
+                            let dont_care =
+                                Chunk::DontCare { start: output_offset, size: remainder_size };
+                            chunks.push(dont_care);
+                        }
+                        break;
+                    }
                 }
-                None => {
-                    log::trace!("Finished iterating chunks");
-                    break;
+                other => {
+                    let curr_chunk_data_len = other.chunk_data_len() as u64;
+                    if (file_len + curr_chunk_data_len) > max_download_size {
+                        let remainder_size = total_image_bytes.saturating_sub(output_offset);
+                        if remainder_size > 0 {
+                            let dont_care =
+                                Chunk::DontCare { start: output_offset, size: remainder_size };
+                            chunks.push(dont_care);
+                        }
+                        break;
+                    }
+
+                    add_sparse_chunk(&mut chunks, other.clone())?;
+                    file_len += curr_chunk_data_len;
+                    output_offset += other.output_size() as u64;
+                    chunk_pos += 1;
                 }
             }
         }
+
         let resparsed = SparseFileWriter::new(chunks);
         log::trace!("resparse: Adding new SparseFile: {}", resparsed);
         ret.push(resparsed);
@@ -644,26 +687,8 @@ pub fn resparse_sparse_img<R: Read + std::io::Seek>(
 ) -> Result<Vec<TempPath>, SparseError> {
     log::debug!("Building writer from Reader");
     let mut chunks = vec![];
-    // The sparse image we are reading from has a header and a chunk
-    // in it already. we need to have the offset reflect that.
-    let header_sunk = SPARSE_HEADER_SIZE as u64;
-    let mut raw_chunks_encountered = 0;
-    for (chunk, offset) in reader.chunks() {
-        log::info!("resparse_sparse_img. Processing chunk: {} with offset: {:#?}", chunk, offset);
-        if chunk.chunk_type() == format::CHUNK_TYPE_RAW {
-            raw_chunks_encountered += 1;
-            // This is a raw chunk. We'll split it up into blocks
-            let blks = chunk.output_blocks(BLK_SIZE);
-            log::trace!("resparse_sparse_image: splitting RAW chunk into {} chunks", blks);
-            let sunk: u64 = header_sunk + (raw_chunks_encountered * CHUNK_HEADER_SIZE) as u64;
-            for i in 0..blks {
-                let start: u64 = offset.unwrap_or(0) + (BLK_SIZE * i) as u64 - sunk;
-                log::debug!("resparse_sparse_img: adding RAW chunk at start: {}", start);
-                chunks.push(Chunk::Raw { start, size: BLK_SIZE.into() })
-            }
-        } else {
-            chunks.push(chunk.clone());
-        }
+    for (chunk, _offset) in reader.chunks() {
+        chunks.push(chunk.clone());
     }
     let sparse_file = SparseFileWriter::new(chunks);
 
@@ -723,9 +748,7 @@ pub fn build_sparse_files(
     let mut in_file = File::open(file_to_upload)?;
 
     let mut total_read: usize = 0;
-    // Preallocate vector to avoid reallocations as it grows.
-    let mut chunks =
-        Vec::<Chunk>::with_capacity((in_file.metadata()?.len() as usize / BLK_SIZE as usize) + 1);
+    let mut chunks = Vec::<Chunk>::new();
 
     let mut buf = [0u8; BLK_SIZE as usize];
     loop {
@@ -738,27 +761,21 @@ pub fn build_sparse_files(
         }
 
         if let Some(value) = find_fill_value(&buf) {
-            // The Android Sparse Image Format specifies that a fill block
-            // is a four-byte u32 repeated to fill BLK_SIZE.
             let fill = Chunk::Fill {
                 start: total_read as u64,
                 size: buf.len().try_into().unwrap(),
                 value,
             };
             log::trace!("Sparsing file: {}. Created: {}", file_to_upload, fill);
-            chunks.push(fill);
+            add_sparse_chunk(&mut chunks, fill)?;
         } else {
-            // Add a raw chunk
             let raw = Chunk::Raw { start: total_read as u64, size: buf.len().try_into().unwrap() };
             log::trace!("Sparsing file: {}. Created: {}", file_to_upload, raw);
-            chunks.push(raw);
+            add_sparse_chunk(&mut chunks, raw)?;
             if read < buf.len() {
-                // We've reached the end of the file add a DontCare chunk to
-                // skip the last bit of the file which is zeroed out from the previous
-                // raw buffer
                 let skip_end =
                     Chunk::DontCare { start: (total_read + read) as u64, size: BLK_SIZE.into() };
-                chunks.push(skip_end);
+                add_sparse_chunk(&mut chunks, skip_end)?;
             }
         }
         total_read += read;
@@ -766,15 +783,6 @@ pub fn build_sparse_files(
 
     log::trace!("Creating sparse file from: {} chunks", chunks.len());
 
-    // At this point we are making a new sparse file fom an unoptimized set of
-    // Chunks. This primarily means that adjacent Fill chunks of same value are
-    // not collapsed into a single Fill chunk (with a larger size). The advantage
-    // to this two pass approach is that (with some future work), we can create
-    // the "unoptimized" sparse file from a given image, and then "resparse" it
-    // as many times as desired with different `max_download_size` parameters.
-    // This would simplify the scenario where we want to flash the same image
-    // to multiple physical devices which may have slight differences in their
-    // hardware (and therefore different `max_download_size`es)
     let sparse_file = SparseFileWriter::new(chunks);
     log::trace!("Created sparse file: {}", sparse_file);
 
@@ -916,6 +924,31 @@ mod test {
         assert_eq!(2, resparsed_files[1].chunks.len());
         assert_eq!(Chunk::DontCare { start: 0, size: 8192 }, resparsed_files[1].chunks[0]);
         assert_eq!(Chunk::Raw { start: 8192, size: 4096 }, resparsed_files[1].chunks[1]);
+    }
+
+    #[test]
+    fn test_resparse_splits_large_raw_chunk() {
+        // A single 16KB raw chunk resparsed with max download size 8KB
+        let max_download_size = 4096 * 2;
+        let mut chunks = Vec::<Chunk>::new();
+        chunks.push(Chunk::Raw { start: 0, size: 16384 });
+
+        let input_sparse_file = SparseFileWriter::new(chunks);
+        let resparsed_files = resparse(input_sparse_file, max_download_size).unwrap();
+
+        // Should split into 3 files:
+        // File 0: Raw [0..4096], DontCare [4096..16384] (or Raw 8192 if budget allows)
+        // Check total blocks and logical expansion
+        let mut total_output = 0;
+        for file in &resparsed_files {
+            assert!(file.total_blocks() * 4096 <= 16384 + 4096);
+            for chunk in &file.chunks {
+                if let Chunk::Raw { size, .. } = chunk {
+                    total_output += size;
+                }
+            }
+        }
+        assert_eq!(total_output, 16384);
     }
 
     ////////////////////////////////////////////////////////////////////////////
