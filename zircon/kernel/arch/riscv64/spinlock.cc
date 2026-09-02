@@ -6,69 +6,56 @@
 
 #include <arch/ops.h>
 #include <arch/spinlock.h>
+#include <kernel/ffi.h>
 #include <kernel/spin_tracing.h>
 #include <ktl/atomic.h>
 
-// Simple spinning lock, using LR/SC CAS instructions. Stores the current cpu
-// number + 1 for debugging purposes.
+extern "C" {
 
-namespace {
-void on_lock_acquired(arch_spin_lock_t* lock) TA_ASSERT(lock) {
+void rust_arch_spin_lock_non_instrumented(uint32_t* lock);
+bool rust_arch_spin_trylock(uint32_t* lock);
+void rust_arch_spin_unlock(uint32_t* lock);
+
+FFI_ALWAYS_INLINE void cpp_percpu_inc_num_spinlocks() {
   WRITE_PERCPU_FIELD(num_spinlocks, READ_PERCPU_FIELD(num_spinlocks) + 1);
 }
+
+FFI_ALWAYS_INLINE void cpp_percpu_dec_num_spinlocks() {
+  WRITE_PERCPU_FIELD(num_spinlocks, READ_PERCPU_FIELD(num_spinlocks) - 1);
+}
+
+}  // extern "C"
+
+namespace {
+void on_lock_acquired(arch_spin_lock_t* lock) TA_ASSERT(lock) {}
 }  // namespace
 
-void arch_spin_lock_non_instrumented(arch_spin_lock_t* lock) {
-  const cpu_num_t new_value = arch_curr_cpu_num() + 1;
-  for (;;) {
-    cpu_num_t expected = 0;
-    if (lock->value.compare_exchange_weak(expected, new_value, ktl::memory_order_acquire,
-                                          ktl::memory_order_relaxed)) {
-      break;
-    }
-    arch::Yield();
-  }
-
+FFI_ALWAYS_INLINE void arch_spin_lock_non_instrumented(arch_spin_lock_t* lock) {
+  rust_arch_spin_lock_non_instrumented(reinterpret_cast<uint32_t*>(&lock->value));
   on_lock_acquired(lock);
 }
 
-void arch_spin_lock_trace_instrumented(arch_spin_lock_t* lock,
-                                       spin_tracing::EncodedLockId encoded_lock_id) {
-  const cpu_num_t new_value = arch_curr_cpu_num() + 1;
-  cpu_num_t expected = 0;
-
-  if (lock->value.compare_exchange_strong(expected, new_value, ktl::memory_order_acquire,
-                                          ktl::memory_order_relaxed)) {
+FFI_ALWAYS_INLINE void arch_spin_lock_trace_instrumented(
+    arch_spin_lock_t* lock, spin_tracing::EncodedLockId encoded_lock_id) {
+  if (rust_arch_spin_trylock(reinterpret_cast<uint32_t*>(&lock->value))) {
     on_lock_acquired(lock);
     return;
   }
 
   spin_tracing::Tracer<true> spin_tracer;
-  for (;;) {
-    expected = 0;
-    if (lock->value.compare_exchange_weak(expected, new_value, ktl::memory_order_acquire,
-                                          ktl::memory_order_relaxed)) {
-      break;
-    }
-    arch::Yield();
-  }
+  rust_arch_spin_lock_non_instrumented(reinterpret_cast<uint32_t*>(&lock->value));
   spin_tracer.Finish(spin_tracing::FinishType::kLockAcquired, encoded_lock_id);
-
   on_lock_acquired(lock);
 }
 
-bool arch_spin_trylock(arch_spin_lock_t* lock) TA_NO_THREAD_SAFETY_ANALYSIS {
-  const cpu_num_t new_value = arch_curr_cpu_num() + 1;
-  cpu_num_t expected = 0;
-  if (lock->value.compare_exchange_strong(expected, new_value, ktl::memory_order_acquire,
-                                          ktl::memory_order_relaxed)) {
-    // success
-    WRITE_PERCPU_FIELD(num_spinlocks, READ_PERCPU_FIELD(num_spinlocks) + 1);
-  }
-  return expected;  // actual old value
+static_assert(sizeof(arch_spin_lock_t) == 4);
+static_assert(alignof(arch_spin_lock_t) == 4);
+
+FFI_ALWAYS_INLINE bool arch_spin_trylock(arch_spin_lock_t* lock) TA_NO_THREAD_SAFETY_ANALYSIS {
+  // Returns false if the lock was acquired, true if it was not (matching TA_TRY_ACQ(false)).
+  return !rust_arch_spin_trylock(reinterpret_cast<uint32_t*>(&lock->value));
 }
 
-void arch_spin_unlock(arch_spin_lock_t* lock) TA_NO_THREAD_SAFETY_ANALYSIS {
-  WRITE_PERCPU_FIELD(num_spinlocks, READ_PERCPU_FIELD(num_spinlocks) - 1);
-  lock->value.store(0, ktl::memory_order_release);
+FFI_ALWAYS_INLINE void arch_spin_unlock(arch_spin_lock_t* lock) TA_NO_THREAD_SAFETY_ANALYSIS {
+  rust_arch_spin_unlock(reinterpret_cast<uint32_t*>(&lock->value));
 }

@@ -211,6 +211,7 @@ if (toolchain_base_environment == "kernel") {
       "src/feature.rs",
       "src/fpu.rs",
       "src/mod.rs",
+      "src/spinlock.rs",
       "src/thread.rs",
       "src/vector.rs",
     ]
