@@ -3956,6 +3956,81 @@ async fn temporary_address_generation<N: Netstack>(name: &str) {
 }
 
 #[netstack_test]
+async fn router_solicitation_configuration(name: &str) {
+    let sandbox = netemul::TestSandbox::new().expect("create sandbox");
+    let realm = sandbox.create_netstack_realm::<Netstack3, _>(name).expect("create realm");
+    let network = sandbox.create_network(name).await.expect("create network");
+    let iface = realm.join_network(&network, "client").await.expect("join network");
+    let fake_ep = network.create_fake_endpoint().expect("create fake endpoint");
+
+    // Verify that by default, when enabled, the interface sends a router solicitation.
+    wait_for_router_solicitation(&fake_ep).await;
+
+    let set_max_router_solicitations = |max| {
+        let iface_ref = &iface;
+        async move {
+            let config = finterfaces_admin::Configuration {
+                ipv6: Some(finterfaces_admin::Ipv6Configuration {
+                    ndp: Some(finterfaces_admin::NdpConfiguration {
+                        router_solicitations: Some(
+                            finterfaces_admin::RouterSolicitationConfiguration {
+                                max: Some(max),
+                                ..Default::default()
+                            },
+                        ),
+                        ..Default::default()
+                    }),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            };
+            let _prev: finterfaces_admin::Configuration = iface_ref
+                .control()
+                .set_configuration(&config)
+                .await
+                .expect("set configuration FIDL")
+                .expect("error setting configuration");
+        }
+    };
+
+    let disable_and_enable_interface = || {
+        let iface_ref = &iface;
+        async move {
+            let did_disable = iface_ref
+                .control()
+                .disable()
+                .await
+                .expect("disable interface FIDL")
+                .expect("error disabling interface");
+            assert!(did_disable);
+
+            let did_enable = iface_ref
+                .control()
+                .enable()
+                .await
+                .expect("enable interface FIDL")
+                .expect("error enabling interface");
+            assert!(did_enable);
+        }
+    };
+
+    // Disable solicitations by setting max router solicitations to 0.
+    set_max_router_solicitations(0).await;
+    disable_and_enable_interface().await;
+    let router_solicitation_fut = wait_for_router_solicitation(&fake_ep).fuse();
+    futures::pin_mut!(router_solicitation_fut);
+    futures::select!(
+        () = router_solicitation_fut => panic!("shouldn't receive a router solicitation"),
+        () = fasync::Timer::new(crate::ASYNC_EVENT_NEGATIVE_CHECK_TIMEOUT) => {},
+    );
+
+    // Re-enable solicitations by setting max router solicitations to 3.
+    set_max_router_solicitations(3).await;
+    disable_and_enable_interface().await;
+    router_solicitation_fut.await;
+}
+
+#[netstack_test]
 #[variant(N, Netstack)]
 async fn interface_authorization<N: Netstack>(name: &str) {
     let sandbox = netemul::TestSandbox::new().expect("create sandbox");

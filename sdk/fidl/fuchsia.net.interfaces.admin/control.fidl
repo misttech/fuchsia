@@ -160,6 +160,21 @@ type Configuration = table {
                 /// [RFC 4861]: https://datatracker.ietf.org/doc/html/rfc4861
                 1: allow_default_route bool;
             };
+            /// Controls Router Solicitation configuration.
+            5: router_solicitations @generated_name("RouterSolicitationConfiguration") table {
+                /// Controls the maximum number of Router Solicitations that
+                /// will be sent, as described in [RFC 4861 Section 6.3.7].
+                ///
+                /// Setting this value to zero disables Router Solicitations.
+                ///
+                /// Note that setting this takes effect immediately. An
+                /// interface that has already started sending router
+                /// solicitations will see the limit change, and will stop or
+                /// continue router solicitations, as appropriate.
+                ///
+                /// [RFC 4861 Section 6.3.7]: https://datatracker.ietf.org/doc/html/rfc4861#section-6.3.7
+                1: max uint8;
+            };
         };
         /// Controls whether or not IPv6 is enabled on the interface.
         ///

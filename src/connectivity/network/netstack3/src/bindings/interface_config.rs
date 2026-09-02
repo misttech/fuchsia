@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-use std::num::NonZeroU16;
+use std::num::{NonZeroU8, NonZeroU16};
 
 use fidl_fuchsia_net_interfaces_admin as fnet_interfaces_admin;
 use fidl_fuchsia_net_settings as fnet_settings;
@@ -501,7 +501,7 @@ impl FidlInterfaceConfig {
         });
 
         let Ipv6DeviceConfiguration {
-            max_router_solicitations: _,
+            max_router_solicitations,
             slaac_config,
             route_discovery_config,
             ip_config:
@@ -522,6 +522,10 @@ impl FidlInterfaceConfig {
             }),
             slaac: Some(slaac_config.into_fidl()),
             route_discovery: Some(route_discovery_config.into_fidl()),
+            router_solicitations: Some(fnet_interfaces_admin::RouterSolicitationConfiguration {
+                max: Some(max_router_solicitations.map_or(0, NonZeroU8::get)),
+                __source_breaking: fidl::marker::SourceBreaking,
+            }),
             __source_breaking: fidl::marker::SourceBreaking,
         });
 
@@ -593,7 +597,7 @@ impl FidlInterfaceConfig {
                 ip_config,
                 slaac_config,
                 route_discovery_config,
-                max_router_solicitations: _,
+                max_router_solicitations,
                 mld_mode,
             } = ipv6;
             let IpDeviceConfigurationUpdate {
@@ -611,6 +615,13 @@ impl FidlInterfaceConfig {
                 __source_breaking: fidl::marker::SourceBreaking,
             });
 
+            let router_solicitations = max_router_solicitations.map(|max| {
+                fnet_interfaces_admin::RouterSolicitationConfiguration {
+                    max: Some(max.map_or(0, NonZeroU8::get)),
+                    __source_breaking: fidl::marker::SourceBreaking,
+                }
+            });
+
             let slaac = util::some_if_not_default(slaac_config.into_fidl());
             let route_discovery = util::some_if_not_default(route_discovery_config.into_fidl());
             let ndp = util::some_if_not_default(fnet_interfaces_admin::NdpConfiguration {
@@ -618,6 +629,7 @@ impl FidlInterfaceConfig {
                 dad,
                 slaac,
                 route_discovery,
+                router_solicitations,
                 __source_breaking: fidl::marker::SourceBreaking,
             });
 
@@ -726,6 +738,7 @@ impl FidlInterfaceConfig {
                     dad,
                     slaac,
                     route_discovery,
+                    router_solicitations,
                     __source_breaking,
                 } = ndp.unwrap_or_default();
 
@@ -733,6 +746,11 @@ impl FidlInterfaceConfig {
                     transmits: dad_transmits,
                     __source_breaking,
                 } = dad.unwrap_or_default();
+
+                let fnet_interfaces_admin::RouterSolicitationConfiguration {
+                    max: max_router_solicitations,
+                    __source_breaking,
+                } = router_solicitations.unwrap_or_default();
 
                 let fnet_interfaces_admin::SlaacConfiguration {
                     temporary_address,
@@ -765,7 +783,7 @@ impl FidlInterfaceConfig {
                             allow_default_route: route_discovery
                                 .and_then(|config| config.allow_default_route),
                         },
-                        max_router_solicitations: None,
+                        max_router_solicitations: max_router_solicitations.map(NonZeroU8::new),
                         mld_mode,
                     }),
                     nud.map(|nud| {

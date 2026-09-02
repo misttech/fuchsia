@@ -983,6 +983,19 @@ async fn do_if_config_set(
                         .get_or_insert_default()
                         .transmits = Some(transmits);
                 }
+                "ipv6.ndp.router_solicitations.max" => {
+                    let max_router_solicitations = value.parse::<u8>().map_err(|e| {
+                        user_facing_error(format!("failed to parse {value} as u8: {e}"))
+                    })?;
+                    config
+                        .ipv6
+                        .get_or_insert_default()
+                        .ndp
+                        .get_or_insert_default()
+                        .router_solicitations
+                        .get_or_insert_default()
+                        .max = Some(max_router_solicitations);
+                }
                 unknown_property => {
                     return Err(user_facing_error(format!(
                         "unknown configuration parameter: {unknown_property}"

@@ -68,6 +68,16 @@ async fn interface_defaults(name: &str) {
         }
     };
 
+    let modify_router_solicitations =
+        |rs: fnet_interfaces_admin::RouterSolicitationConfiguration| {
+            let fnet_interfaces_admin::RouterSolicitationConfiguration { max, __source_breaking } =
+                rs;
+            fnet_interfaces_admin::RouterSolicitationConfiguration {
+                max: Some(max.expect("missing max router solicitations") + 1),
+                __source_breaking,
+            }
+        };
+
     // Modify defaults.
     let fnet_interfaces_admin::Configuration { ipv4, ipv6, __source_breaking } = defaults.clone();
     let fnet_interfaces_admin::Ipv4Configuration {
@@ -126,6 +136,7 @@ async fn interface_defaults(name: &str) {
         dad,
         slaac,
         route_discovery,
+        router_solicitations,
         __source_breaking,
     } = ndp.expect("missing ndp");
     let fnet_interfaces_admin::SlaacConfiguration { temporary_address, __source_breaking } =
@@ -147,6 +158,9 @@ async fn interface_defaults(name: &str) {
         dad: Some(modify_dad(dad.expect("missing dad"))),
         slaac: Some(slaac),
         route_discovery: Some(route_discovery),
+        router_solicitations: Some(modify_router_solicitations(
+            router_solicitations.expect("missing router solicitations"),
+        )),
         __source_breaking: fidl::marker::SourceBreaking,
     };
     let ipv6 = fnet_interfaces_admin::Ipv6Configuration {

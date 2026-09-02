@@ -522,6 +522,9 @@ The list of supported parameters are:
   ipv6.ndp.dad.transmits
     u16
     Number of DAD transmissions before an address is considered available for use.
+  ipv6.ndp.router_solicitations.max
+    u8
+    Maximum number of Router Solicitations to send.
 */
 pub struct IfConfigSet {
     /// the config parameter names and the

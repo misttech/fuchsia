@@ -70,7 +70,7 @@ impl<D: WeakDeviceIdentifier> RsTimerId<D> {
 #[derive(Derivative)]
 #[derivative(Default(bound = ""))]
 pub struct RsState<BT: RsBindingsTypes> {
-    remaining: Option<NonZeroU8>,
+    solicitations_sent: u8,
     timer: Option<BT::Timer>,
 }
 
@@ -143,14 +143,14 @@ pub trait RsHandler<BC: RsBindingsTypes>:
 impl<BC: RsBindingsContext, CC: RsContext<BC>> RsHandler<BC> for CC {
     fn start_router_solicitation(&mut self, bindings_ctx: &mut BC, device_id: &Self::DeviceId) {
         self.with_rs_state_mut_and_max(device_id, |state, max| {
-            let RsState { remaining, timer } = state;
-            *remaining = max;
+            let RsState { solicitations_sent, timer } = state;
+            *solicitations_sent = 0;
 
             // The caller *must call* `stop_router_solicitation` before starting
             // a new one.
             assert_matches!(timer, None);
 
-            match remaining {
+            match max {
                 None => {}
                 Some(_) => {
                     // As per RFC 4861 section 6.3.7, delay the first transmission for a
@@ -198,33 +198,34 @@ fn do_router_solicitation<BC: RsBindingsContext, CC: RsContext<BC>>(
     device_id: &CC::DeviceId,
     timer_id: BC::UniqueTimerId,
 ) {
-    let send_rs = core_ctx.with_rs_state_mut(device_id, |RsState { remaining, timer }| {
-        let Some(timer) = timer.as_mut() else {
-            // If we don't have a timer then RS has been stopped.
-            return false;
-        };
-        if bindings_ctx.unique_timer_id(timer) != timer_id {
-            // This is an errant request from a previous round of RS enablement,
-            // just ignore it and don't send a solicitation.
-            return false;
-        }
-        *remaining = NonZeroU8::new(
-            remaining
-                .expect("should only send a router solicitations when at least one is remaining")
-                .get()
-                - 1,
-        );
+    let send_rs = core_ctx.with_rs_state_mut_and_max(
+        device_id,
+        |RsState { solicitations_sent, timer }, max| {
+            let Some(timer) = timer.as_mut() else {
+                // If we don't have a timer then RS has been stopped.
+                return false;
+            };
+            if bindings_ctx.unique_timer_id(timer) != timer_id {
+                // This is an errant request from a previous round of RS enablement,
+                // just ignore it and don't send a solicitation.
+                return false;
+            }
 
-        // Schedule the next timer.
-        match *remaining {
-            None => {}
-            Some(NonZeroU8 { .. }) => {
+            let max_solicitations = max.map_or(0, NonZeroU8::get);
+            if *solicitations_sent >= max_solicitations {
+                return false;
+            }
+
+            *solicitations_sent = solicitations_sent.saturating_add(1);
+
+            // Schedule the next timer if more solicitations are needed.
+            if *solicitations_sent < max_solicitations {
                 assert_eq!(bindings_ctx.schedule_timer(RTR_SOLICITATION_INTERVAL, timer), None);
             }
-        }
 
-        true
-    });
+            true
+        },
+    );
 
     if !send_rs {
         return;
@@ -425,10 +426,7 @@ mod tests {
 
         let mut duration = MAX_RTR_SOLICITATION_DELAY;
         for i in 0..max_router_solicitations {
-            assert_eq!(
-                core_ctx.state.rs_state.remaining,
-                NonZeroU8::new(max_router_solicitations - i)
-            );
+            assert_eq!(core_ctx.state.rs_state.solicitations_sent, i);
             let now = bindings_ctx.now();
             bindings_ctx
                 .timers
@@ -451,9 +449,33 @@ mod tests {
         }
 
         bindings_ctx.timers.assert_no_timers_installed();
-        assert_eq!(core_ctx.state.rs_state.remaining, None);
+        assert_eq!(core_ctx.state.rs_state.solicitations_sent, max_router_solicitations);
         let frames = core_ctx.frames();
         assert_eq!(frames.len(), usize::from(max_router_solicitations), "frames = {:?}", frames);
+    }
+
+    #[test]
+    fn max_router_solicitations_updated_after_start() {
+        let CtxPair { mut core_ctx, mut bindings_ctx } =
+            CtxPair::with_core_ctx(FakeCoreCtxImpl::with_state(FakeRsContext {
+                max_router_solicitations: NonZeroU8::new(3),
+                rs_state: Default::default(),
+                source_address: None,
+                link_layer_bytes: None,
+            }));
+        RsHandler::start_router_solicitation(&mut core_ctx, &mut bindings_ctx, &FakeDeviceId);
+
+        // Trigger first timer: 1 RS sent.
+        assert_eq!(bindings_ctx.trigger_next_timer(&mut core_ctx), Some(RS_TIMER_ID));
+        assert_eq!(core_ctx.frames().len(), 1);
+
+        // Reduce max_router_solicitations to 1 while solicitation is ongoing.
+        core_ctx.state.max_router_solicitations = NonZeroU8::new(1);
+
+        // Trigger second timer: 0 RS sent because of the new limit.
+        assert_eq!(bindings_ctx.trigger_next_timer(&mut core_ctx), Some(RS_TIMER_ID));
+        assert_eq!(core_ctx.frames().len(), 1);
+        bindings_ctx.timers.assert_no_timers_installed();
     }
 
     // Regression guard for when router solicitations would consider timers for
