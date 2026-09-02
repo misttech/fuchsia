@@ -3,6 +3,8 @@
 // found in the LICENSE file.
 
 mod driver;
+mod imported_image;
+mod imported_images;
 mod resources;
 mod virtio;
 mod virtio_gpu_abi;

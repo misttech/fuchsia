@@ -342,15 +342,25 @@ impl VirtioPciCapabilities {
 
             bar_map_builder.ensure_bar_memory_region_is_mapped(capability_data.bar_index).await?;
 
+            // Keep the first instance of each structure type. The instances are
+            // ordered from optimal (first) to least-optimal (last).
+            // @cite(virtio): sec="4.1.4.1" title="Driver Requirements: Virtio Structure PCI Capabilities" q="The driver SHOULD use the first instance of each virtio structure type they can support."
+            // @cite(virtio): sec="4.1.4.2" title="Virtio Structure PCI Capabilities"
             match capability_data.type_ {
                 PciCapabilityType::COMMON_CONFIGURATION => {
-                    common_configuration = Some(capability_data);
+                    if common_configuration.is_none() {
+                        common_configuration = Some(capability_data);
+                    }
                 }
                 PciCapabilityType::NOTIFICATIONS => {
-                    notifications = Some(capability_data);
+                    if notifications.is_none() {
+                        notifications = Some(capability_data);
+                    }
                 }
                 PciCapabilityType::DEVICE_CONFIGURATION => {
-                    device_configuration = Some(capability_data);
+                    if device_configuration.is_none() {
+                        device_configuration = Some(capability_data);
+                    }
                 }
                 _ => {}
             }

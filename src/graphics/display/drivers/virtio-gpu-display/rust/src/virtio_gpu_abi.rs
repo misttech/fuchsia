@@ -28,38 +28,38 @@ use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
 bitfield! {
     /// Documented feature bits for virtio-gpu devices.
     // @cite(virtio): sec="5.7.3" title="Feature bits"
-    #[derive(Copy, Clone, FromBytes, IntoBytes, Immutable, KnownLayout)]
     #[repr(transparent)]
+    #[derive(Copy, Clone, PartialEq, Eq, FromBytes, IntoBytes, Immutable, KnownLayout)]
     pub struct FeatureBits(u32);
     impl Debug;
 
     /// True iff the device supports the virgl 3D mode.
-    // @cite(virtio): sec="5.7.6.8" title="Device Operation: controlq"
+    // @cite(virtio): sec="5.7.3" title="Feature bits"
     // @alias(virtio): theirs="VIRTIO_GPU_F_VIRGL"
     pub bool, supports_virgl_3d, set_supports_virgl_3d: 0;
 
     /// True iff the device supports EDID.
-    // @cite(virtio): sec="5.7.6.8" title="Device Operation: controlq"
+    // @cite(virtio): sec="5.7.3" title="Feature bits"
     // @alias(virtio): theirs="VIRTIO_GPU_F_EDID"
     pub bool, supports_edid, set_supports_edid: 1;
 
     /// True iff the device supports assigning resources UUIDs for export to other virtio devices.
-    // @cite(virtio): sec="5.7.6.8" title="Device Operation: controlq"
+    // @cite(virtio): sec="5.7.3" title="Feature bits"
     // @alias(virtio): theirs="VIRTIO_GPU_F_RESOURCE_UUID"
     pub bool, supports_resource_uuids, set_supports_resource_uuids: 2;
 
     /// True iff the device supports creating and using size-based blob resources.
-    // @cite(virtio): sec="5.7.6.8" title="Device Operation: controlq"
+    // @cite(virtio): sec="5.7.3" title="Feature bits"
     // @alias(virtio): theirs="VIRTIO_GPU_F_RESOURCE_BLOB"
     pub bool, supports_resource_blobs, set_supports_resource_blobs: 3;
 
     /// True iff the device supports multiple context types and synchronization timelines.
-    // @cite(virtio): sec="5.7.6.8" title="Device Operation: controlq"
+    // @cite(virtio): sec="5.7.3" title="Feature bits"
     // @alias(virtio): theirs="VIRTIO_GPU_F_CONTEXT_INIT"
     pub bool, supports_contexts_and_timelines, set_supports_contexts_and_timelines: 4;
 
     /// True iff [`DeviceConfiguration::blob_alignment`] is valid.
-    // @cite(virtio): sec="5.7.6.8" title="Device Operation: controlq"
+    // @cite(virtio): sec="5.7.3" title="Feature bits"
     // @alias(virtio): theirs="VIRTIO_GPU_F_BLOB_ALIGNMENT"
     pub bool, blob_alignment_is_valid, set_blob_alignment_is_valid: 5;
 }
@@ -67,13 +67,13 @@ bitfield! {
 bitfield! {
     /// Events signaled by the virtio-gpu device.
     // @cite(virtio): sec="5.7.4.2" title="Events"
-    #[derive(Copy, Clone, PartialEq, Eq, FromBytes, IntoBytes, Immutable, KnownLayout)]
     #[repr(transparent)]
+    #[derive(Copy, Clone, PartialEq, Eq, FromBytes, IntoBytes, Immutable, KnownLayout)]
     pub struct Events(u32);
     impl Debug;
 
     /// The display configuration has changed.
-    // @cite(virtio): sec="5.7.6.8" title="Device Operation: controlq"
+    // @cite(virtio): sec="5.7.4.2" title="Events"
     // @alias(virtio): theirs="VIRTIO_GPU_EVENT_DISPLAY"
     pub bool, display_changed, set_display_changed: 0;
 }
@@ -81,8 +81,8 @@ bitfield! {
 /// The virtio-gpu device-specific configuration structure.
 // @cite(virtio): sec="5.7.4" title="Device configuration layout"
 // @alias(virtio): theirs="virtio_gpu_config"
-#[derive(Clone, Copy, PartialEq, Eq, FromBytes, IntoBytes, Immutable, KnownLayout)]
 #[repr(C)]
+#[derive(Clone, Copy, PartialEq, Eq, FromBytes, IntoBytes, Immutable, KnownLayout)]
 pub struct DeviceConfiguration {
     /// Signals pending events to the driver.
     ///
@@ -131,7 +131,7 @@ pub struct DeviceConfiguration {
     /// 0 for 4294967296?)
     ///
     /// Read-only for the driver. Valid if
-    /// [`GpuFeatureBits::blob_alignment_is_valid`] was negotiated.
+    /// [`FeatureBits::blob_alignment_is_valid`] was negotiated.
     // @cite(virtio): sec="5.7.4.1" title="Device configuration fields"
     // @alias(virtio): theirs="blob_alignment"
     pub blob_alignment: u32,
@@ -355,8 +355,8 @@ impl std::fmt::Debug for BufferType {
 bitfield! {
     /// Documented header flags for all buffers in a virtio-gpu queue.
     // @cite(virtio): sec="5.7.6.7" title="Device Operation: Request header"
-    #[derive(Copy, Clone, FromBytes, IntoBytes, Immutable, KnownLayout)]
     #[repr(transparent)]
+    #[derive(Copy, Clone, PartialEq, Eq, FromBytes, IntoBytes, Immutable, KnownLayout)]
     pub struct BufferHeaderFlags(u32);
     impl Debug;
 
@@ -530,7 +530,7 @@ impl TryFrom<fidl_images2::PixelFormat> for ResourceFormat {
 /// Populates a [`DisplayInfoResponse`] with the current output configuration.
 // @cite(virtio): sec="5.7.6.8" title="Device Operation: controlq"
 #[repr(C)]
-#[derive(Debug, Copy, Clone, IntoBytes, Immutable, KnownLayout)]
+#[derive(Debug, Copy, Clone, FromBytes, IntoBytes, Immutable, KnownLayout)]
 pub struct GetDisplayInfoCommand {
     /// `header.type_` must be [`BufferType::GET_DISPLAY_INFO_COMMAND`].
     // @cite(virtio): sec="5.7.6.8" title="Device Operation: controlq"
@@ -558,7 +558,7 @@ pub type ResourceId = Option<NonZero<u32>>;
 // @cite(virtio): sec="5.7.6.8" title="Device Operation: controlq"
 // @alias(virtio): theirs="virtio_gpu_resource_create_2d"
 #[repr(C)]
-#[derive(Debug, Copy, Clone, IntoBytes, Immutable, KnownLayout)]
+#[derive(Debug, Copy, Clone, FromBytes, IntoBytes, Immutable, KnownLayout)]
 pub struct Create2DResourceCommand {
     /// `header.type_` must be [`BufferType::CREATE_2D_RESOURCE_COMMAND`].
     // @cite(virtio): sec="5.7.6.8" title="Device Operation: controlq"
@@ -603,7 +603,7 @@ macro_rules! define_attach_resource_backing_command {
         // @cite(virtio): sec="5.7.6.8" title="Device Operation: controlq"
         // @alias(virtio): theirs="virtio_gpu_resource_attach_backing"
         #[repr(C)]
-        #[derive(Debug, Copy, Clone, IntoBytes, Immutable, KnownLayout)]
+        #[derive(Debug, Copy, Clone, FromBytes, IntoBytes, Immutable, KnownLayout)]
         pub struct $name {
             /// `header.type_` must be [`BufferType::ATTACH_RESOURCE_BACKING_COMMAND`].
             // @cite(virtio): sec="5.7.6.8" title="Device Operation: controlq"
@@ -636,7 +636,7 @@ define_attach_resource_backing_command!(AttachResourceBackingCommand2, 2);
 /// [`DisplayInfoResponse::scanouts`]. So, valid IDs are between 0 and
 /// [`MAX_SCANOUT_COUNT`].
 #[repr(transparent)]
-#[derive(Debug, Copy, Clone, FromBytes, IntoBytes, Immutable, KnownLayout)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, FromBytes, IntoBytes, Immutable, KnownLayout)]
 pub struct ScanoutId(pub(crate) u32);
 
 impl ScanoutId {
@@ -652,7 +652,7 @@ impl ScanoutId {
 // @cite(virtio): sec="5.7.6.8" title="Device Operation: controlq"
 // @alias(virtio): theirs="virtio_gpu_set_scanout"
 #[repr(C)]
-#[derive(Debug, Copy, Clone, IntoBytes, Immutable, KnownLayout)]
+#[derive(Debug, Copy, Clone, FromBytes, IntoBytes, Immutable, KnownLayout)]
 pub struct SetScanoutCommand {
     /// `header.type_` must be [`BufferType::SET_SCANOUT_COMMAND`].
     // @cite(virtio): sec="5.7.6.8" title="Device Operation: controlq"
@@ -679,7 +679,7 @@ pub struct SetScanoutCommand {
 // @cite(virtio): sec="5.7.6.8" title="Device Operation: controlq"
 // @alias(virtio): theirs="virtio_gpu_resource_flush"
 #[repr(C)]
-#[derive(Debug, Copy, Clone, IntoBytes, Immutable, KnownLayout)]
+#[derive(Debug, Copy, Clone, FromBytes, IntoBytes, Immutable, KnownLayout)]
 pub struct FlushResourceCommand {
     /// `header.type_` must be [`BufferType::FLUSH_RESOURCE_COMMAND`].
     // @cite(virtio): sec="5.7.6.8" title="Device Operation: controlq"
@@ -707,7 +707,7 @@ pub struct FlushResourceCommand {
 // @cite(virtio): sec="5.7.6.8" title="Device Operation: controlq"
 // @alias(virtio): theirs="virtio_gpu_transfer_to_host_2d"
 #[repr(C)]
-#[derive(Debug, Copy, Clone, IntoBytes, Immutable, KnownLayout)]
+#[derive(Debug, Copy, Clone, FromBytes, IntoBytes, Immutable, KnownLayout)]
 pub struct Transfer2DResourceToHostCommand {
     /// `header.type_` must be [`BufferType::TRANSFER_2D_RESOURCE_TO_HOST_COMMAND`].
     // @cite(virtio): sec="5.7.6.8" title="Device Operation: controlq"
@@ -817,8 +817,8 @@ impl std::fmt::Debug for BlobMemoryPool {
 bitfield! {
     /// Information about a blob's planned usage.
     // @cite(virtio): sec="5.7.6.8" title="Device Operation: controlq"
-    #[derive(Copy, Clone, FromBytes, IntoBytes, Immutable, KnownLayout)]
     #[repr(transparent)]
+    #[derive(Copy, Clone, PartialEq, Eq, FromBytes, IntoBytes, Immutable, KnownLayout)]
     pub struct BlobUsageFlags(u32);
     impl Debug;
 
@@ -881,7 +881,7 @@ pub struct DisplayInfoResponse {
 
     /// Identifies the device's (virtual) scanouts (heads / displays).
     ///
-    /// [`DeviceCapabilities::scanout_count`] identifies the number of populated
+    /// [`DeviceConfiguration::scanout_count`] identifies the number of populated
     /// entries.
     // @cite(virtio): sec="5.7.6.8" title="Device Operation: controlq"
     // @alias(virtio): theirs="pmodes"
@@ -892,7 +892,7 @@ pub struct DisplayInfoResponse {
 // @cite(virtio): sec="5.7.6.8" title="Device Operation: controlq"
 // @alias(virtio): theirs="virtio_gpu_get_edid"
 #[repr(C)]
-#[derive(Debug, Copy, Clone, IntoBytes, Immutable, KnownLayout)]
+#[derive(Debug, Copy, Clone, FromBytes, IntoBytes, Immutable, KnownLayout)]
 pub struct GetExtendedDisplayIdCommand {
     /// `header.type_` must be [`BufferType::GET_EXTENDED_DISPLAY_ID_COMMAND`].
     // @cite(virtio): sec="5.7.6.8" title="Device Operation: controlq"
@@ -962,7 +962,7 @@ pub struct CursorPosition {
 // @cite(virtio): sec="5.7.6.10" title="Device Operation: cursorq"
 // @alias(virtio): theirs="virtio_gpu_update_cursor"
 #[repr(C)]
-#[derive(Debug, Copy, Clone, IntoBytes, Immutable, KnownLayout)]
+#[derive(Debug, Copy, Clone, FromBytes, IntoBytes, Immutable, KnownLayout)]
 pub struct UpdateCursorCommand {
     /// `header.type_` must be [`BufferType::UPDATE_CURSOR_COMMAND`] or
     /// [`BufferType::MOVE_CURSOR_COMMAND`].
@@ -997,7 +997,7 @@ pub struct UpdateCursorCommand {
 // @cite(virtio): sec="5.7.6.8" title="Device Operation: controlq"
 // @alias(virtio): theirs="virtio_gpu_set_scanout_blob"
 #[repr(C)]
-#[derive(Debug, Copy, Clone, IntoBytes, Immutable, KnownLayout)]
+#[derive(Debug, Copy, Clone, FromBytes, IntoBytes, Immutable, KnownLayout)]
 pub struct SetScanoutBlobCommand {
     /// `header.type_` must be [`BufferType::SET_SCANOUT_BLOB_COMMAND`].
     // @cite(virtio): sec="5.7.6.8" title="Device Operation: controlq"
@@ -1012,7 +1012,7 @@ pub struct SetScanoutBlobCommand {
     pub resource_id: ResourceId,
     pub width: u32,
     pub height: u32,
-    pub format: u32,
+    pub format: ResourceFormat,
 
     // @cite(virtio): sec="5.7.6.8" title="Device Operation: controlq"
     // @alias(virtio): theirs="padding"
@@ -1034,7 +1034,7 @@ pub struct SetScanoutBlobCommand {
 // @cite(virtio): sec="5.7.6.8" title="Device Operation: controlq"
 // @alias(virtio): theirs="virtio_gpu_resource_create_blob"
 #[repr(C)]
-#[derive(Debug, Copy, Clone, IntoBytes, Immutable, KnownLayout)]
+#[derive(Debug, Copy, Clone, FromBytes, IntoBytes, Immutable, KnownLayout)]
 pub struct CreateBlobResourceCommandHeader {
     /// `header.type_` must be [`BufferType::CREATE_BLOB_COMMAND`].
     // @cite(virtio): sec="5.7.6.8" title="Device Operation: controlq"
@@ -1068,7 +1068,7 @@ pub struct CreateBlobResourceCommandHeader {
 // @cite(virtio): sec="5.7.6.8" title="Device Operation: controlq"
 // @alias(virtio): theirs="virtio_gpu_get_capset_info"
 #[repr(C)]
-#[derive(Debug, Copy, Clone, IntoBytes, Immutable, KnownLayout)]
+#[derive(Debug, Copy, Clone, FromBytes, IntoBytes, Immutable, KnownLayout)]
 pub struct GetCapabilitySetInfoCommand {
     /// `header.type_` must be [`BufferType::GET_CAPABILITY_SET_INFO_COMMAND`].
     // @cite(virtio): sec="5.7.6.8" title="Device Operation: controlq"
@@ -1120,7 +1120,7 @@ pub struct GetCapabilitySetInfoResponse {
 // @cite(virtio): sec="5.7.6.8" title="Device Operation: controlq"
 // @alias(virtio): theirs="virtio_gpu_get_capset"
 #[repr(C)]
-#[derive(Debug, Copy, Clone, IntoBytes, Immutable, KnownLayout)]
+#[derive(Debug, Copy, Clone, FromBytes, IntoBytes, Immutable, KnownLayout)]
 pub struct GetCapabilitySetCommand {
     /// `header.type_` must be [`BufferType::GET_CAPABILITY_SET_COMMAND`].
     // @cite(virtio): sec="5.7.6.8" title="Device Operation: controlq"

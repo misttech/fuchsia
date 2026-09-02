@@ -165,28 +165,52 @@ register! {
     pub struct ConfiguredQueueNotificationOffset(u16);
 
     #[register(offset = 32, mode = RW)]
-    /// Physical address of the first byte in the virtqueue's Descriptor Area.
+    /// Physical address (bits 0-31) of the first byte in the virtqueue's Descriptor Area.
     ///
     /// The configured virtqueue depends on [`ConfiguredQueueIndex`].
     // @cite(virtio): sec="4.1.4.3" title="Common configuration structure layout"
     // @alias(virtio): theirs="queue_desc"
-    pub struct ConfiguredQueueDescriptorTableAddress(u64);
+    pub struct ConfiguredQueueDescriptorTableAddressLow(u32);
+
+    #[register(offset = 36, mode = RW)]
+    /// Physical address (bits 32-63) of the first byte in the virtqueue's Descriptor Area.
+    ///
+    /// The configured virtqueue depends on [`ConfiguredQueueIndex`].
+    // @cite(virtio): sec="4.1.4.3" title="Common configuration structure layout"
+    // @alias(virtio): theirs="queue_desc"
+    pub struct ConfiguredQueueDescriptorTableAddressHigh(u32);
 
     #[register(offset = 40, mode = RW)]
-    /// Physical address of the first byte in the virtqueue's Driver Area.
+    /// Physical address (bits 0-31) of the first byte in the virtqueue's Driver Area.
     ///
     /// The configured virtqueue depends on [`ConfiguredQueueIndex`].
     // @cite(virtio): sec="4.1.4.3" title="Common configuration structure layout"
     // @alias(virtio): theirs="queue_driver"
-    pub struct ConfiguredQueueDriverAreaAddress(u64);
+    pub struct ConfiguredQueueDriverAreaAddressLow(u32);
+
+    #[register(offset = 44, mode = RW)]
+    /// Physical address (bits 32-63) of the first byte in the virtqueue's Driver Area.
+    ///
+    /// The configured virtqueue depends on [`ConfiguredQueueIndex`].
+    // @cite(virtio): sec="4.1.4.3" title="Common configuration structure layout"
+    // @alias(virtio): theirs="queue_driver"
+    pub struct ConfiguredQueueDriverAreaAddressHigh(u32);
 
     #[register(offset = 48, mode = RW)]
-    /// Physical address of the first byte in the virtqueue's Device Area.
+    /// Physical address (bits 0-31) of the first byte in the virtqueue's Device Area.
     ///
     /// The configured virtqueue depends on [`ConfiguredQueueIndex`].
     // @cite(virtio): sec="4.1.4.3" title="Common configuration structure layout"
     // @alias(virtio): theirs="queue_device"
-    pub struct ConfiguredQueueDeviceAreaAddress(u64);
+    pub struct ConfiguredQueueDeviceAreaAddressLow(u32);
+
+    #[register(offset = 52, mode = RW)]
+    /// Physical address (bits 32-63) of the first byte in the virtqueue's Device Area.
+    ///
+    /// The configured virtqueue depends on [`ConfiguredQueueIndex`].
+    // @cite(virtio): sec="4.1.4.3" title="Common configuration structure layout"
+    // @alias(virtio): theirs="queue_device"
+    pub struct ConfiguredQueueDeviceAreaAddressHigh(u32);
 
     #[register(offset = 56, mode = RO)]
 
@@ -266,9 +290,12 @@ register_block! {
         pub configured_queue_msix_vector: ConfiguredQueueMsixVector,
         pub configured_queue_enabled: ConfiguredQueueEnabled,
         pub configured_queue_notification_offset: ConfiguredQueueNotificationOffset,
-        pub configured_queue_descriptor_table_address: ConfiguredQueueDescriptorTableAddress,
-        pub configured_queue_driver_area_address: ConfiguredQueueDriverAreaAddress,
-        pub configured_queue_device_area_address: ConfiguredQueueDeviceAreaAddress,
+        pub configured_queue_descriptor_table_address_low: ConfiguredQueueDescriptorTableAddressLow,
+        pub configured_queue_descriptor_table_address_high: ConfiguredQueueDescriptorTableAddressHigh,
+        pub configured_queue_driver_area_address_low: ConfiguredQueueDriverAreaAddressLow,
+        pub configured_queue_driver_area_address_high: ConfiguredQueueDriverAreaAddressHigh,
+        pub configured_queue_device_area_address_low: ConfiguredQueueDeviceAreaAddressLow,
+        pub configured_queue_device_area_address_high: ConfiguredQueueDeviceAreaAddressHigh,
         pub configured_queue_notification_config_data: ConfiguredQueueNotificationConfigData,
         pub configured_queue_reset: ConfiguredQueueReset,
         pub first_admin_queue_index: FirstAdminQueueIndex,
@@ -297,9 +324,12 @@ mod tests {
         queue_msix_vector: u16,
         queue_enable: u16,
         queue_notify_off: u16,
-        queue_desc: u64,
-        queue_driver: u64,
-        queue_device: u64,
+        queue_desc_low: u32,
+        queue_desc_high: u32,
+        queue_driver_low: u32,
+        queue_driver_high: u32,
+        queue_device_low: u32,
+        queue_device_high: u32,
         queue_notif_config_data: u16,
         queue_reset: u16,
 
@@ -377,18 +407,33 @@ mod tests {
         );
 
         assert_eq!(
-            <ConfiguredQueueDescriptorTableAddress as Register>::OFFSET,
-            offset_of!(VirtioPciCommonConfigurationAbi, queue_desc)
+            <ConfiguredQueueDescriptorTableAddressLow as Register>::OFFSET,
+            offset_of!(VirtioPciCommonConfigurationAbi, queue_desc_low)
         );
 
         assert_eq!(
-            <ConfiguredQueueDriverAreaAddress as Register>::OFFSET,
-            offset_of!(VirtioPciCommonConfigurationAbi, queue_driver)
+            <ConfiguredQueueDescriptorTableAddressHigh as Register>::OFFSET,
+            offset_of!(VirtioPciCommonConfigurationAbi, queue_desc_high)
         );
 
         assert_eq!(
-            <ConfiguredQueueDeviceAreaAddress as Register>::OFFSET,
-            offset_of!(VirtioPciCommonConfigurationAbi, queue_device)
+            <ConfiguredQueueDriverAreaAddressLow as Register>::OFFSET,
+            offset_of!(VirtioPciCommonConfigurationAbi, queue_driver_low)
+        );
+
+        assert_eq!(
+            <ConfiguredQueueDriverAreaAddressHigh as Register>::OFFSET,
+            offset_of!(VirtioPciCommonConfigurationAbi, queue_driver_high)
+        );
+
+        assert_eq!(
+            <ConfiguredQueueDeviceAreaAddressLow as Register>::OFFSET,
+            offset_of!(VirtioPciCommonConfigurationAbi, queue_device_low)
+        );
+
+        assert_eq!(
+            <ConfiguredQueueDeviceAreaAddressHigh as Register>::OFFSET,
+            offset_of!(VirtioPciCommonConfigurationAbi, queue_device_high)
         );
 
         assert_eq!(

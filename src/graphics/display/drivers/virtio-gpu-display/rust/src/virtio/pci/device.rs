@@ -450,22 +450,33 @@ impl VirtioPciDeviceBuilder {
             let (pci_queue, queue_memory_layout) =
                 VirtioPciQueue::new(&self.bti, queue_capacity, notification_data)?;
 
+            // 64-bit fields must be treated and accessed as two 32-bit fields,
+            // with the low 32-bit part followed by the high 32-bit part.
+            // @cite(virtio): sec="4.1.3.1" title="Driver Requirements: PCI Device Layout"
             // @cite(virtio): sec="4.1.4.3" title="Common configuration structure layout"
-            self.configuration.configured_queue_descriptor_table_address_mut().write(
-                ConfiguredQueueDescriptorTableAddress(
-                    queue_memory_layout.descriptor_table_physical_address,
-                ),
-            );
-            self.configuration.configured_queue_driver_area_address_mut().write(
-                ConfiguredQueueDriverAreaAddress(
-                    queue_memory_layout.submitted_ring_physical_address,
-                ),
-            );
-            self.configuration.configured_queue_device_area_address_mut().write(
-                ConfiguredQueueDeviceAreaAddress(
-                    queue_memory_layout.returned_ring_physical_address,
-                ),
-            );
+            let desc_addr = queue_memory_layout.descriptor_table_physical_address;
+            self.configuration
+                .configured_queue_descriptor_table_address_low_mut()
+                .write(ConfiguredQueueDescriptorTableAddressLow(desc_addr as u32));
+            self.configuration
+                .configured_queue_descriptor_table_address_high_mut()
+                .write(ConfiguredQueueDescriptorTableAddressHigh((desc_addr >> 32) as u32));
+
+            let driver_addr = queue_memory_layout.submitted_ring_physical_address;
+            self.configuration
+                .configured_queue_driver_area_address_low_mut()
+                .write(ConfiguredQueueDriverAreaAddressLow(driver_addr as u32));
+            self.configuration
+                .configured_queue_driver_area_address_high_mut()
+                .write(ConfiguredQueueDriverAreaAddressHigh((driver_addr >> 32) as u32));
+
+            let device_addr = queue_memory_layout.returned_ring_physical_address;
+            self.configuration
+                .configured_queue_device_area_address_low_mut()
+                .write(ConfiguredQueueDeviceAreaAddressLow(device_addr as u32));
+            self.configuration
+                .configured_queue_device_area_address_high_mut()
+                .write(ConfiguredQueueDeviceAreaAddressHigh((device_addr >> 32) as u32));
 
             self.configuration.configured_queue_enabled_mut().write(ConfiguredQueueEnabled(1));
             self.queues.push(pci_queue);
@@ -510,9 +521,11 @@ impl VirtioPciDeviceBuilder {
     /// Signals that the driver will abandon this device.
     ///
     /// Sets [`DeviceStatus::driver_terminated`] to true (1).
+    // @cite(virtio): sec="2.1" title="Device Status Field"
+    // @cite(virtio): sec="3.1.1" title="Driver Requirements: Device Initialization"
     fn set_driver_terminated(&mut self) {
         let mut device_status = DeviceStatus(self.configuration.device_status().read().value());
-        device_status.set_driver_initialized(true);
+        device_status.set_driver_terminated(true);
         self.configuration.device_status_mut().write(DeviceStatusReg(device_status.0));
     }
 }

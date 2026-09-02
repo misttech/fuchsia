@@ -163,8 +163,10 @@ fuchsia_rust_driver("driver-rust") {
     "//sdk/rust/zx",
     "//sdk/rust/zx-sys",
     "//src/lib/fidl/rust_next/fidl_next",
+    "//src/lib/fuchsia-async",
     "//src/lib/fuchsia-runtime",
     "//third_party/rust_crates:bitfield",
+    "//third_party/rust_crates:futures",
     "//third_party/rust_crates:log",
     "//third_party/rust_crates:zerocopy",
   ]

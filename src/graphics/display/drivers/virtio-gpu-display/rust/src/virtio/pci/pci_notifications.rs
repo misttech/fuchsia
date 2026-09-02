@@ -73,7 +73,7 @@ impl VirtioPciNotifications {
         let mmio_offset = (self.stride as usize) * (notification_offset.value() as usize);
 
         debug_assert!(
-            mmio_offset <= self.mmio_region.len(),
+            mmio_offset + std::mem::size_of::<u16>() <= self.mmio_region.len(),
             "Notification offset too large: {:?}",
             notification_offset
         );
@@ -82,12 +82,16 @@ impl VirtioPciNotifications {
     }
 
     /// Issues a driver notification.
+    // @cite(virtio): sec="4.1.5.2" title="Available Buffer Notifications"
     pub fn trigger(&mut self, queue_data: &VirtioPciNotificationData) {
         // [`VirtoFeatureBits::uses_extended_notification_data`] is currently
         // unsupported. If we need to add support, a straightforward path is to
         // add a `next_submitted_ring_index` argument here and plumb the data
         // from the virtqueue implementation.
 
+        // Ensure available ring and descriptor table updates are committed
+        // before writing to the MMIO doorbell register.
+        self.mmio_region.write_barrier();
         self.mmio_region.store16(queue_data.mmio_offset, queue_data.virtio_queue_id);
     }
 }

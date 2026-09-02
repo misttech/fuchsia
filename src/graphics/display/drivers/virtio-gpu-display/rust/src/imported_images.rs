@@ -29,13 +29,11 @@ pub struct SysmemBufferInfo {
     pub pixel_format: fidl_images2::PixelFormat,
     pub pixel_format_modifier: fidl_images2::PixelFormatModifier,
 
-    #[expect(dead_code)]
     pub minimum_size: fidl_math::SizeU,
 
     pub minimum_bytes_per_row: u32,
     pub bytes_per_row_divisor: NonZero<u32>,
 
-    #[expect(dead_code)]
     pub coherency_domain: fidl_sysmem2::CoherencyDomain,
 }
 
@@ -80,7 +78,10 @@ impl SysmemBufferInfo {
             .expect("Sysmem deviated from its contract")
             .image_format_constraints
             .as_ref()
-            .expect("Sysmem deviated from its contract");
+            .ok_or_else(|| {
+                log::warn!("Rejecting BufferCollection without ImageFormatConstraints");
+                zx::Status::INVALID_ARGS
+            })?;
 
         let pixel_format =
             image_format_constraints.pixel_format.expect("Sysmem deviated from its contract");
@@ -92,13 +93,19 @@ impl SysmemBufferInfo {
         let minimum_bytes_per_row =
             image_format_constraints.min_bytes_per_row.expect("Sysmem deviated from its contract");
         let bytes_per_row_divisor = image_format_constraints.bytes_per_row_divisor.unwrap_or(1);
-        let bytes_per_row_divisor =
-            NonZero::<u32>::new(bytes_per_row_divisor).expect("Sysmem deviated from its contract");
+        let bytes_per_row_divisor = NonZero::<u32>::new(bytes_per_row_divisor)
+            .expect("Sysmem deviated from its contract and explicitly set the divisor to 0");
 
-        let buffer = &mut buffer_collection_info
-            .buffers
-            .as_mut()
-            .expect("Sysmem deviated from its contract")[buffer_index as usize];
+        let buffers =
+            buffer_collection_info.buffers.as_mut().expect("Sysmem deviated from its contract");
+        let buffer_index_usize = buffer_index as usize;
+        debug_assert!(
+            buffer_index_usize < buffers.len(),
+            "buffer_index {} out of range (buffers count {})",
+            buffer_index,
+            buffers.len()
+        );
+        let buffer = &mut buffers[buffer_index_usize];
         let image_vmo = buffer.vmo.take().expect("Sysmem deviated from its contract");
         let image_vmo_offset = buffer.vmo_usable_start.expect("Sysmem deviated from its contract");
 
@@ -189,6 +196,12 @@ impl ImportedImages {
         buffer_collection_id: fidl_display_engine::BufferCollectionId,
         token: fidl_next::ClientEnd<fidl_sysmem2::BufferCollectionToken>,
     ) -> Result<(), zx::Status> {
+        debug_assert!(
+            !self.buffer_collections.contains_key(&buffer_collection_id),
+            "Duplicate BufferCollection ID: {:?}",
+            buffer_collection_id,
+        );
+
         let (collection_client_end, collection_server_end) =
             fidl_next::fuchsia::create_channel::<fidl_sysmem2::BufferCollection>();
 
@@ -252,8 +265,26 @@ impl ImportedImages {
     }
 
     /// Similar contract to [`fuchsia.hardware.display.engine/Engine.ReleaseImage`].
-    pub fn release_image(&mut self, id: fidl_display_engine::ImageId) -> Result<(), zx::Status> {
-        if self.images_data.remove(&id).is_some() { Ok(()) } else { Err(zx::Status::NOT_FOUND) }
+    ///
+    /// SAFETY: The display engine hardware must no longer access the image.
+    /// This can happen for two reasons:
+    ///
+    /// 1. The image is not in the display engine's latched configuration.
+    /// 2. The display engine hardware is stopped.
+    // TODO(https://fxbug.dev/547974944): Make sure we release all images on driver shutdown,
+    // after we successfully turn off the virtio device.
+    pub unsafe fn release_image(
+        &mut self,
+        id: fidl_display_engine::ImageId,
+    ) -> Result<(), zx::Status> {
+        let mut image_data = self.images_data.remove(&id).ok_or(zx::Status::NOT_FOUND)?;
+        if let Some(mut image) = image_data.image.take() {
+            // SAFETY: The called method has the same invariant as this method.
+            unsafe {
+                image.release();
+            }
+        }
+        Ok(())
     }
 
     /// Returns [`None`] if no collection with the given ID exists.

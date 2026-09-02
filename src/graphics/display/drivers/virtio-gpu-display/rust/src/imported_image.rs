@@ -2,6 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+// TODO(https://fxbug.dev/504722357): Remove this in favor of more granular
+// attributes when the Rust port is completed.
+#![expect(dead_code)]
+
 use crate::virtio_gpu_abi::{ResourceFormat, ResourceId};
 use std::num::NonZero;
 use zx_sys::zx_paddr_t;
@@ -10,17 +14,11 @@ use zx_sys::zx_paddr_t;
 #[derive(Debug)]
 pub struct ImportedImage {
     physical_address: u64,
-
-    #[expect(dead_code)]
     resource_format: ResourceFormat,
-
-    #[expect(dead_code)]
     stride: NonZero<u32>,
-
     virtio_resource_id: ResourceId,
 
     /// Keeps the image's memory pinned.
-    #[expect(dead_code)]
     pmt: zx::Pmt,
 }
 
@@ -95,5 +93,23 @@ impl ImportedImage {
         // `VirtioImageResource` seems like a good name.
 
         self.virtio_resource_id = id;
+    }
+
+    /// Releases the pinned memory token, unpinning the image's memory.
+    ///
+    /// Dropping the [`Image`] instance does not unpin the image memory. This is
+    /// intentional, because it's unsafe to unpin memory that may still be
+    /// accessed by the display engine.
+    ///
+    /// SAFETY: The display engine hardware must no longer access the image.
+    pub unsafe fn release(&mut self) {
+        if !self.pmt.is_invalid() {
+            let pmt = std::mem::replace(&mut self.pmt, zx::Pmt::invalid());
+
+            // SAFETY: Precondition guarantees hardware is no longer accessing the memory.
+            if let Err(status) = unsafe { pmt.unpin() } {
+                log::warn!("Failed to unpin image memory: {:?}", status);
+            }
+        }
     }
 }

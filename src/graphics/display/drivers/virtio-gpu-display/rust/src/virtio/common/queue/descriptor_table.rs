@@ -323,7 +323,9 @@ impl VirtioQueueDescriptorTable {
         &mut self,
         count: NonZero<u16>,
     ) -> Option<VirtioQueueDescriptorListHead> {
-        debug_assert!(count < self.capacity);
+        // The maximum possible descriptor chain length is the queue size.
+        // @cite(virtio): sec="2.7.5" title="The Virtqueue Descriptor Table"
+        debug_assert!(count.get() <= self.capacity.get());
 
         // To facilitate simpler internal interfaces, we deviate from the
         // reference code for placing buffers into the descriptor table.
@@ -340,32 +342,31 @@ impl VirtioQueueDescriptorTable {
         // The head of the allocated list of descriptors will be returned.
         let first_allocated_index = self.next_free_index;
 
-        // We must invalidate the last descriptor's `next_descriptor_index` to
-        // separate the returned list from the free list. The returned list's
-        // sentinel will allow us to join the returned list back into the free
-        // list later.
+        // Traverse candidate descriptors to verify that `count` descriptors are
+        // available before modifying `self.next_free_index`.
+        // @cite(virtio): sec="2.7.13.1" title="Placing Buffers Into The Descriptor Table"
+        let mut current = self.next_free_index;
         let mut last_allocated_index = Self::SENTINEL;
 
         for _ in 0..count.get() {
-            last_allocated_index = self.next_free_index;
-
-            // Ran out of free list entries while popping.
-            if last_allocated_index == Self::SENTINEL {
+            if current == Self::SENTINEL {
                 return None;
             }
-
-            // SAFETY: `last_allocated_index` is assigned from
-            // `next_free_index`, which is guaranteed to be a valid descriptor
-            // index or [`SENTINEL`]. The conditional above eliminates the
-            // [`SENTINEL`] case.
-            self.next_free_index =
-                unsafe { self.read_descriptor_next_index_unchecked(last_allocated_index) };
+            last_allocated_index = current;
+            // SAFETY: `current` is guaranteed to be a valid descriptor index (< capacity).
+            current = unsafe { self.read_descriptor_next_index_unchecked(current) };
         }
+
+        self.next_free_index = current;
 
         debug_assert!(
             last_allocated_index != Self::SENTINEL,
             "Incorrect list traversal logic above"
         );
+        // We must invalidate the last descriptor's `next_descriptor_index` to
+        // separate the returned list from the free list. The returned list's
+        // sentinel will allow us to join the returned list back into the free
+        // list later.
         // SAFETY: `last_allocated_index` is read from the descriptor table.
         // It is guaranteed not to be [`SENTINEL`], so it must be a valid index.
         unsafe {
