@@ -11,21 +11,52 @@ driver must be validated using this manual test.
 
 Start with a [supported Intel device][fuchsia-hardware-support].
 
-1. Remove the device list from
-   `src/graphics/display/drivers/intel-display/meta/intel-display.bind` so the
-   display binds to this driver instead of `intel-display`.
+1. Replace the PCI device IDs from
+   `src/graphics/display/drivers/intel-display/meta/intel-display.bind` with
+   `0xFFFF` so the display device won't bind to `intel-display`:
 
-2. Launch the `squares` demo in the `display-tool` test utility.
+   ```
+   primary parent "pci" {
+     fuchsia.Service == "fuchsia.hardware.pci.Service";
+     fuchsia.BIND_PCI_VID == fuchsia.pci.BIND_PCI_VID.INTEL;
 
-   ```posix-terminal
-   ffx target ssh display-tool squares
+     accept fuchsia.BIND_PCI_DID {
+       0xFFFF, // Only keep a placeholder. No Intel display device will bind to this driver.
+     }
+   }
    ```
 
-3. Add the following footer to your CL description, to document having
+2. Remove the rejected PCI device IDs from the framebuffer driver bind rules in
+   `src/graphics/display/drivers/framebuffer-intel-display/meta/framebuffer-intel-display.bind`:
+
+   ```
+   primary parent "pci" {
+     fuchsia.Service == "fuchsia.hardware.pci.Service";
+     fuchsia.BIND_PCI_VID == fuchsia.pci.BIND_PCI_VID.INTEL;
+     fuchsia.BIND_PCI_CLASS == fuchsia.pci.BIND_PCI_CLASS.DISPLAY;
+
+     // The rejected PCI device list is removed.
+   }
+   ```
+
+3. Build Fuchsia, and flash or OTA the target.
+
+   ```posix-terminal
+   fx build
+   ffx target flash # or `fx ota`
+   ```
+
+4. Launch the `squares` demo in the `display-tool` test utility.
+
+   ```posix-terminal
+   ffx target ssh -- display-tool squares
+   ```
+
+5. Add the following footer to your CL description, to document having
    performed the test.
 
    ```
-   Test: ffx target ssh display-tool squares
+   Test: ffx target ssh -- display-tool squares
    ```
 
 These instructions will work with a `workbench_eng.x64` build that includes the
