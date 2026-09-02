@@ -31,13 +31,14 @@ class FakePciroot : public ddk::PcirootProtocol<FakePciroot> {
   static constexpr uint32_t kDefaultLowMemoryAddress = (1u << 10);
   static constexpr uint16_t kDefaultIoAddress = 0x10;
   // By default, pciroot won't populate an ecam unless it's called with Create().
-  FakePciroot(uint8_t bus_start, uint8_t bus_cnt, bool is_extended)
+  FakePciroot(uint8_t bus_start, uint8_t bus_cnt, bool is_extended, uint16_t segment_group = 0)
       : proto_({&pciroot_protocol_ops_, this}),
         ecam_(bus_start, bus_cnt, is_extended),
         info_{
             .name = "fakroot",
             .start_bus_num = bus_start,
             .end_bus_num = static_cast<uint8_t>(bus_start + bus_cnt),
+            .segment_group = segment_group,
             .cam = {.vmo = ecam_.mmio().get_vmo()->get(), .is_extended = is_extended},
         } {
     ZX_ASSERT(fake_resource_create(ZX_RSRC_KIND_MMIO, mmio_resource_.reset_and_get_address()) ==
@@ -55,6 +56,7 @@ class FakePciroot : public ddk::PcirootProtocol<FakePciroot> {
     pci_platform_info_t info{
         .start_bus_num = info_.start_bus_num,
         .end_bus_num = info_.end_bus_num,
+        .segment_group = info_.segment_group,
         .cam = info_.cam,
         .legacy_irqs_list = legacy_irqs_.data(),
         .legacy_irqs_count = legacy_irqs_.size(),
@@ -71,6 +73,7 @@ class FakePciroot : public ddk::PcirootProtocol<FakePciroot> {
   FakeEcam& ecam() { return ecam_; }
   uint8_t bus_start() const { return info_.start_bus_num; }
   uint8_t bus_end() const { return info_.end_bus_num; }
+  uint16_t segment_group() const { return info_.segment_group; }
   bool is_extended() const { return info_.cam.is_extended; }
   zx::bti& bti() { return bti_; }
   zx::resource& mmio_resource() { return mmio_resource_; }

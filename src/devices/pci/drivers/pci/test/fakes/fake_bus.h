@@ -18,8 +18,8 @@ namespace pci {
 
 class FakeBus : public BusDeviceInterface {
  public:
-  explicit FakeBus(uint8_t bus_start, uint8_t bus_end, bool is_extended)
-      : pciroot_(bus_start, bus_end, is_extended) {}
+  explicit FakeBus(uint8_t bus_start, uint8_t bus_end, bool is_extended, uint16_t segment_group = 0)
+      : pciroot_(bus_start, bus_end, is_extended, segment_group) {}
 
   zx_status_t LinkDevice(fbl::RefPtr<pci::Device> device) final {
     fbl::AutoLock devices_lock(&devices_lock_);
@@ -61,6 +61,8 @@ class FakeBus : public BusDeviceInterface {
     fbl::AutoLock devices_lock(&devices_lock_);
     return ZX_ERR_NOT_SUPPORTED;
   }
+
+  uint16_t GetSegmentGroup() final { return pciroot_.info().segment_group; }
 
   zx_status_t AddToSharedIrqList(pci::Device* device, uint32_t vector) final { return ZX_OK; }
   zx_status_t RemoveFromSharedIrqList(pci::Device* device, uint32_t vector) final { return ZX_OK; }

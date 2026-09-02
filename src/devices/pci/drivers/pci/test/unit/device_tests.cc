@@ -124,6 +124,7 @@ TEST_F(PciDeviceTestsExtendedCam, CreationTest) {
   ASSERT_EQ(bdf().bus_id, dev.bus_id());
   ASSERT_EQ(bdf().device_id, dev.dev_id());
   ASSERT_EQ(bdf().function_id, dev.func_id());
+  ASSERT_EQ(0u, dev.segment_group());
 }
 
 // Verify BARs are allocated in size-descending order so that a large BAR

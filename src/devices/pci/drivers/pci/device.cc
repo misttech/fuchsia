@@ -28,6 +28,7 @@
 #include <vector>
 
 #include <bind/fuchsia/cpp/bind.h>
+#include <bind/fuchsia/pci/cpp/bind.h>
 #include <fbl/algorithm.h>
 #include <fbl/alloc_checker.h>
 #include <fbl/auto_lock.h>
@@ -35,8 +36,6 @@
 #include <fbl/string_buffer.h>
 
 #include "src/devices/pci/drivers/pci/bus_device_interface.h"
-#include "src/devices/pci/drivers/pci/capabilities/msi.h"
-#include "src/devices/pci/drivers/pci/capabilities/msix.h"
 #include "src/devices/pci/drivers/pci/capabilities/power_management.h"
 #include "src/devices/pci/drivers/pci/composite.h"
 #include "src/devices/pci/drivers/pci/ref_counted.h"
@@ -199,6 +198,7 @@ zx_status_t Device::InitLocked() {
   subclass_ = cfg_->Read(Config::kSubClass);
   prog_if_ = cfg_->Read(Config::kProgramInterface);
   rev_id_ = cfg_->Read(Config::kRevisionId);
+  segment_group_ = bdi()->GetSegmentGroup();
 
   // Disable the device in event of a failure initializing. TA is disabled
   // because it cannot track the scope of AutoCalls and their associated
@@ -247,6 +247,7 @@ zx_status_t Device::InitLocked() {
       ddk::MakeStrProperty(bind_fuchsia::PCI_INTERFACE, static_cast<uint32_t>(prog_if())),
       ddk::MakeStrProperty(bind_fuchsia::PCI_REVISION, static_cast<uint32_t>(rev_id())),
       ddk::MakeStrProperty(bind_fuchsia::PCI_TOPO, pci_bind_topo),
+      ddk::MakeStrProperty(bind_fuchsia_pci::SEGMENT, static_cast<uint32_t>(segment_group())),
   };
   std::array offers = {
       fpci::Service::Name,

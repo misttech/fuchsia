@@ -36,10 +36,12 @@ TEST_F(FakePcirootTests, Constructor) {
   constexpr uint8_t bus_start = 0;
   constexpr uint8_t bus_end = 1;
   constexpr bool is_extended = true;
-  FakePciroot pciroot(bus_start, bus_end, /*is_extended=*/is_extended);
+  constexpr uint16_t segment_group = 5;
+  FakePciroot pciroot(bus_start, bus_end, /*is_extended=*/is_extended, segment_group);
   ASSERT_EQ(bus_start, pciroot.bus_start());
   ASSERT_EQ(bus_end, pciroot.bus_end());
   ASSERT_EQ(is_extended, pciroot.is_extended());
+  ASSERT_EQ(segment_group, pciroot.segment_group());
 }
 
 TEST_F(FakePcirootTests, GetBti) {
@@ -56,6 +58,7 @@ TEST_F(FakePcirootTests, GetPciPlatformInfo) {
   ASSERT_OK(pciroot()->PcirootGetPciPlatformInfo(&info));
   ASSERT_EQ(pciroot()->bus_start(), info.start_bus_num);
   ASSERT_EQ(pciroot()->bus_end(), info.end_bus_num);
+  ASSERT_EQ(pciroot()->segment_group(), info.segment_group);
   ASSERT_STREQ("fakroot", info.name);
   pciroot()->enable_get_pci_platform_info(false);
   ASSERT_STATUS(ZX_ERR_NOT_SUPPORTED, pciroot()->PcirootGetPciPlatformInfo(&info));

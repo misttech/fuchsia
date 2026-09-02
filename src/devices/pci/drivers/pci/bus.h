@@ -89,6 +89,7 @@ class Bus : public PciBusType,
                            zx::interrupt* out_interrupt) __TA_EXCLUDES(devices_lock_) final;
   zx_status_t GetBti(const pci::Device* device, uint32_t index, zx::bti* bti)
       __TA_EXCLUDES(devices_lock_) final;
+  uint16_t GetSegmentGroup() final;
   zx_status_t AddToSharedIrqList(pci::Device* device, uint32_t vector)
       __TA_EXCLUDES(devices_lock_) final;
   zx_status_t RemoveFromSharedIrqList(pci::Device* device, uint32_t vector)

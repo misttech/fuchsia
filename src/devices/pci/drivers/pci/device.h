@@ -188,6 +188,7 @@ class Device : public DeviceType, public fidl::WireServer<fuchsia_hardware_pci::
   uint8_t bus_id() const { return cfg_->bdf().bus_id; }
   uint8_t dev_id() const { return cfg_->bdf().device_id; }
   uint8_t func_id() const { return cfg_->bdf().function_id; }
+  uint16_t segment_group() const { return segment_group_; }
   uint32_t bar_count() const { return bar_count_; }
   const Capabilities& capabilities() const { return caps_; }
 
@@ -351,12 +352,13 @@ class Device : public DeviceType, public fidl::WireServer<fuchsia_hardware_pci::
   // publishes only this device's fragment and leaves composite creation to the
   // devicetree (pci-child-visitor).
   const bool has_devicetree_;
-  uint16_t vendor_id_;  // The device's vendor ID, as read from config
-  uint16_t device_id_;  // The device's device ID, as read from config
-  uint8_t class_id_;    // The device's class ID, as read from config.
-  uint8_t subclass_;    // The device's subclass, as read from config.
-  uint8_t prog_if_;     // The device's programming interface (from cfg)
-  uint8_t rev_id_;      // The device's revision ID (from cfg)
+  uint16_t vendor_id_;      // The device's vendor ID, as read from config.
+  uint16_t device_id_;      // The device's device ID, as read from config.
+  uint16_t segment_group_;  // The segment group of the bus the device is a part of.
+  uint8_t class_id_;        // The device's class ID, as read from config.
+  uint8_t subclass_;        // The device's subclass, as read from config.
+  uint8_t prog_if_;         // The device's programming interface (from cfg).
+  uint8_t rev_id_;          // The device's revision ID (from cfg).
 
   // State related to lifetime management.
   bool plugged_in_ __TA_GUARDED(dev_lock_) = false;

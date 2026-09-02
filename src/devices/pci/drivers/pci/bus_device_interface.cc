@@ -77,6 +77,8 @@ zx_status_t Bus::AddToSharedIrqList(pci::Device* device, uint32_t vector) {
   return ZX_ERR_BAD_STATE;
 }
 
+uint16_t Bus::GetSegmentGroup() { return info_.segment_group; }
+
 zx_status_t Bus::RemoveFromSharedIrqList(pci::Device* device, uint32_t vector) {
   ZX_DEBUG_ASSERT(vector);
   fbl::AutoLock _(&devices_lock_);

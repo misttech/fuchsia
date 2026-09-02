@@ -26,6 +26,7 @@ class BusDeviceInterface {
   virtual ~BusDeviceInterface() = default;
   // Get the BTI at |index| for a device.
   virtual zx_status_t GetBti(const pci::Device* device, uint32_t index, zx::bti* bti) = 0;
+  virtual uint16_t GetSegmentGroup() = 0;
   // Allocate |count| messagge signaled interrupts for a device.
   virtual zx_status_t AllocateMsi(uint32_t count, zx::msi* msi,
                                   msi_allocation_info_t* out_info) = 0;
