@@ -21,7 +21,9 @@ template("audio_device_registry_enumeration_test") {
     sources = [ "//src/media/audio/services/device_registry/testing/enumeration/src/main.rs" ]
     deps = [
       "//sdk/fidl/fuchsia.audio.device:fuchsia.audio.device_rust",
+      "//sdk/rust/zx",
       "//src/lib/fuchsia",
+      "//src/lib/fuchsia-async",
       "//src/lib/fuchsia-component",
       "//src/media/audio/lib/rust",
       "//third_party/rust_crates:anyhow",
