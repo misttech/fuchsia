@@ -11,7 +11,6 @@ from collections import defaultdict
 from dataclasses import dataclass
 from dataclasses import field
 import enum
-import functools
 import gzip
 import json
 import os
@@ -760,7 +759,7 @@ class AsyncMain:
             return 1
         except RuntimeError as e:
             recorder.emit_end(
-                "There was an internal error calling the selection matcher program: {e}"
+                f"There was an internal error calling the selection matcher program: {e}"
             )
             return 1
 
@@ -1744,7 +1743,7 @@ class AsyncMain:
                     if not output or output.return_code != 0:
                         recorder.emit_warning_message("OTA failed")
                         return False
-            except IOError as e:
+            except (IOError, json.JSONDecodeError, KeyError):
                 return False
 
         return True
@@ -2704,7 +2703,6 @@ class AsyncMain:
             _set_target_nodename(None)
 
 
-@functools.lru_cache
 async def has_package_server_connected_to_device(
     exec_env: environment.ExecutionEnvironment,
     recorder: event.EventRecorder,

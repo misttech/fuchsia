@@ -3743,3 +3743,42 @@ class TestMainIntegration(unittest.IsolatedAsyncioTestCase):
             "- To debug with fx debug cli: fx test --agent-debugging-mode my_device_test",
             md,
         )
+
+    async def test_has_package_server_connected_to_device_called_multiple_times(
+        self,
+    ) -> None:
+        """Calling has_package_server_connected_to_device multiple times does not reuse awaited coroutine."""
+        exec_env = mock.MagicMock()
+        exec_env.fx_cmd_line.return_value = ["fx", "is-package-server-running"]
+        recorder = mock.MagicMock()
+
+        with mock.patch("execution.run_command") as mock_run:
+            mock_run.return_value = mock.MagicMock(return_code=0)
+            res1 = await main.has_package_server_connected_to_device(
+                exec_env, recorder
+            )
+            res2 = await main.has_package_server_connected_to_device(
+                exec_env, recorder
+            )
+            self.assertTrue(res1)
+            self.assertTrue(res2)
+            self.assertEqual(mock_run.call_count, 2)
+
+    async def test_post_build_checklist_corrupt_base_packages(self) -> None:
+        """Corrupted base_packages.list does not crash _post_build_checklist."""
+        app = main.AsyncMain.__new__(main.AsyncMain)
+        recorder = mock.MagicMock()
+        app._recorder = recorder
+        exec_env = mock.MagicMock()
+        with tempfile.TemporaryDirectory() as td:
+            base_file = os.path.join(td, "base_packages.list")
+            with open(base_file, "w") as f:
+                f.write("NOT VALID JSON")
+            exec_env.out_dir = td
+            app._exec_env = exec_env
+
+            tests = mock.MagicMock()
+            tests.has_device_test.return_value = True
+            # Should return False safely without raising JSONDecodeError
+            res = await app._post_build_checklist(tests, event.Id(1))
+            self.assertFalse(res)
