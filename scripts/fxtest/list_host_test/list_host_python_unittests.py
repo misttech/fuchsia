@@ -62,28 +62,30 @@ def load_tests_from_file(file_path: str) -> list[str]:
             return []
     else:
         # For the GN case, assume the test binary is a PYZ archive.
+        sys.path.insert(0, file_path)
+
+        # Try to load the module with the same name as the file
+        module_name = os.path.splitext(os.path.basename(file_path))[0]
         try:
-            # Add the PYZ to sys.path so that imports within the module work.
-            sys.path.insert(0, file_path)
-
-            importer = zipimport.zipimporter(file_path)
-
-            # Try to load the module with the same name as the file
-            module_name = os.path.splitext(os.path.basename(file_path))[0]
-            modules.append(importer.load_module(module_name))
-        except ImportError:
+            modules.append(importlib.import_module(module_name))
+        except (ImportError, zipimport.ZipImportError):
             # Fallback: list .py files in the PYZ
             import zipfile
 
-            with zipfile.ZipFile(file_path, "r") as zf:
-                for name in zf.namelist():
-                    if name.endswith(".py") and not name.startswith("__"):
-                        # Convert path to module name
-                        mod_name = name.replace("/", ".")[:-3]
-                        try:
-                            modules.append(importer.load_module(mod_name))
-                        except Exception:
-                            pass
+            try:
+                with zipfile.ZipFile(file_path, "r") as zf:
+                    for name in zf.namelist():
+                        if name.endswith(".py") and not name.startswith("__"):
+                            # Convert path to module name
+                            mod_name = name.replace("/", ".")[:-3]
+                            try:
+                                modules.append(
+                                    importlib.import_module(mod_name)
+                                )
+                            except Exception:
+                                pass
+            except (zipfile.BadZipFile, OSError):
+                return []
 
     loader = unittest.TestLoader()
     suite = unittest.TestSuite()
