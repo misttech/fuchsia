@@ -26,3 +26,15 @@ group("examples") {
     "test_soft_reboot:test_soft_reboot_sl4f",
   ]
 }
+
+# Tests in this directory that can safely run on a standard Fuchsia emulator
+# without requiring specialized hardware, multiple devices, or power cycling.
+group("emulator_tests") {
+  testonly = true
+  public_deps = [
+    "async_test_cases_example",
+    "data_resource_access_test",
+    "hello_world_test",
+    "test_cases_example",
+  ]
+}
