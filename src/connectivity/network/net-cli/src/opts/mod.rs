@@ -519,6 +519,9 @@ The list of supported parameters are:
   ipv6.ndp.slaac.temporary_address_enabled
     bool
     Whether temporary addresses should be generated.
+  ipv6.ndp.dad.transmits
+    u16
+    Number of DAD transmissions before an address is considered available for use.
 */
 pub struct IfConfigSet {
     /// the config parameter names and the
