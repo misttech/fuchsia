@@ -24,7 +24,7 @@ import("//src/sys/pkg/bin/package-tool/package-tool.gni")
 #  bazel_product_image_target (required)
 #    The Bazel product image target for this product bundle.
 #
-#    When set, two extra subtargets are provided to access outputs from Bazel
+#    When set, two extra targets are provided to access outputs from Bazel
 #    product image build steps:
 #
 #      * ${target_name}_product_assembly: for image_assembly.json
@@ -38,7 +38,7 @@ import("//src/sys/pkg/bin/package-tool/package-tool.gni")
 #  bazel_product_config_target (optional)
 #    The Bazel product config target for the product image.
 #
-#    When set, one extra subtarget is provided to access product config from
+#    When set, one extra target is provided to access product config from
 #    Bazel assembly build steps:
 #
 #      * ${target_name}_product_config: for product_assembly_config.json
@@ -49,7 +49,7 @@ import("//src/sys/pkg/bin/package-tool/package-tool.gni")
 #  bazel_recovery_image_target (optional)
 #    The Bazel recovery image target for this product bundle.
 #
-#    When set, one extra subtarget is provided to access outputs from Bazel
+#    When set, one extra target is provided to access outputs from Bazel
 #    recovery image build steps:
 #
 #      * ${target_name}_create_recovery_system: for assembled_system.json
@@ -70,7 +70,7 @@ import("//src/sys/pkg/bin/package-tool/package-tool.gni")
 #  bazel_elf_sizes_target (optional)
 #    The Bazel fuchsia_elf_sizes target for this product bundle's product image.
 #
-#    When set, one extra subtarget is provided to access elf_sizes.json
+#    When set, one extra target is provided to access elf_sizes.json
 #    produced by Bazel.
 #
 #      * ${target_name}_elf_sizes
@@ -83,7 +83,7 @@ import("//src/sys/pkg/bin/package-tool/package-tool.gni")
 #  bazel_license_review_target (optional)
 #    The fuchsia_licenses_review target for this product bundle.
 #
-#    When set, one extra subtarget is included in the final group to output
+#    When set, one extra target is included in the final group to output
 #    license_review.zip from Bazel.
 #
 #        * ${target_name}_license_review
@@ -134,7 +134,6 @@ import("//src/sys/pkg/bin/package-tool/package-tool.gni")
 #    Whether the image should contain a vbmeta.
 #
 #  deps
-#  metadata
 #  testonly
 #  visibility
 #
@@ -167,6 +166,7 @@ template("bazel_product_bundle") {
   files = {
     out_dir = target_name
 
+    create_system_out_dir = "${out_dir}_create_system_out"
     product_bundle_out_dir = "${out_dir}/product_bundle"
     package_manifests_out_dir = "${out_dir}/manifests"
 
@@ -236,32 +236,33 @@ template("bazel_product_bundle") {
     _generate_image_metadata = invoker.generate_image_metadata
   }
 
-  _subtargets = []
   _common_deps = _bazel_inputs + invoker.bazel_inputs_from_gn
   if (defined(invoker.deps)) {
     _common_deps += invoker.deps
   }
 
-  # NOTE: Only depend on product image targets if your outputs are not included
-  # in product bundles.
   _product_assembly_target = "${target_name}_product_assembly"
-  _subtargets += [
-    {
-      bazel_target = invoker.bazel_product_image_target + "_product_assembly"
-      gn_target_name = _product_assembly_target
-      copy_outputs = [
-        {
-          bazel = "{{BAZEL_TARGET_OUT_DIR}}/{{BAZEL_TARGET_NAME}}_out/image_assembly.json"
-          ninja = "${_product_assembly_target}/image_assembly.json"
-        },
-        {
-          bazel = "{{BAZEL_TARGET_OUT_DIR}}/{{BAZEL_TARGET_NAME}}_out/assembly_builder_forensics.json"
-          ninja = "${_product_assembly_target}/assembly_builder_forensics.json"
-        },
-      ]
-      deps = _common_deps
-    },
-  ]
+  bazel_build_action(_product_assembly_target) {
+    forward_variables_from(invoker,
+                           [
+                             "testonly",
+                             "visibility",
+                           ])
+    bazel_target = invoker.bazel_product_image_target + "_product_assembly"
+    bazel_config = "fuchsia_sdk"
+
+    copy_outputs = [
+      {
+        bazel = "{{BAZEL_TARGET_OUT_DIR}}/{{BAZEL_TARGET_NAME}}_out/image_assembly.json"
+        ninja = "${_product_assembly_target}/image_assembly.json"
+      },
+      {
+        bazel = "{{BAZEL_TARGET_OUT_DIR}}/{{BAZEL_TARGET_NAME}}_out/assembly_builder_forensics.json"
+        ninja = "${_product_assembly_target}/assembly_builder_forensics.json"
+      },
+    ]
+    deps = _common_deps
+  }
 
   # Declare a product config action that is not built by default.
   # To build this build ${target_name}_product_config.
@@ -290,44 +291,47 @@ template("bazel_product_bundle") {
     _size_report_target = "${target_name}_size_report"
     _size_targets += [ ":${_size_report_target}" ]
 
-    _subtargets += [
-      {
-        gn_target_name = _size_report_target
-        bazel_target = invoker.bazel_size_report_aggregator_target
+    bazel_build_action(_size_report_target) {
+      forward_variables_from(invoker,
+                             [
+                               "testonly",
+                               "visibility",
+                             ])
+      bazel_target = invoker.bazel_size_report_aggregator_target
+      bazel_config = "fuchsia_sdk"
 
-        _size_budgets_path = "${_size_report_target}/size_budgets.json"
-        _size_report_path = "${_size_report_target}/size_report.json"
-        copy_outputs = [
+      _size_budgets_path = "${_size_report_target}/size_budgets.json"
+      _size_report_path = "${_size_report_target}/size_report.json"
+      copy_outputs = [
+        {
+          bazel = "{{BAZEL_TARGET_OUT_PATH}}_size_budgets.json"
+          ninja = _size_budgets_path
+        },
+        {
+          bazel = "{{BAZEL_TARGET_OUT_PATH}}_size_report.json"
+          ninja = _size_report_path
+        },
+        {
+          bazel = "{{BAZEL_TARGET_OUT_PATH}}_verbose_output.json"
+          ninja = "${_size_report_target}/verbose_output.json"
+        },
+      ]
+
+      deps = _common_deps
+
+      metadata = {
+        gerrit_size_reports =
+            [ rebase_path("${target_out_dir}/${_size_report_path}",
+                          root_build_dir) ]
+        detailed_size_checker_data = [
           {
-            bazel = "{{BAZEL_TARGET_OUT_PATH}}_size_budgets.json"
-            ninja = _size_budgets_path
-          },
-          {
-            bazel = "{{BAZEL_TARGET_OUT_PATH}}_size_report.json"
-            ninja = _size_report_path
-          },
-          {
-            bazel = "{{BAZEL_TARGET_OUT_PATH}}_verbose_output.json"
-            ninja = "${_size_report_target}/verbose_output.json"
+            name = "size_budgets"
+            path = rebase_path("${target_out_dir}/${_size_budgets_path}",
+                               root_build_dir)
           },
         ]
-
-        deps = _common_deps
-
-        metadata = {
-          gerrit_size_reports =
-              [ rebase_path("${target_out_dir}/${_size_report_path}",
-                            root_build_dir) ]
-          detailed_size_checker_data = [
-            {
-              name = "size_budgets"
-              path = rebase_path("${target_out_dir}/${_size_budgets_path}",
-                                 root_build_dir)
-            },
-          ]
-        }
-      },
-    ]
+      }
+    }
   }
 
   if (defined(invoker.bazel_product_size_check_target)) {
@@ -336,42 +340,45 @@ template("bazel_product_bundle") {
     _visualization_path = "${_product_size_checker_target}/visualization"
     _size_breakdown_path = "${_product_size_checker_target}/size_breakdown.txt"
 
-    _subtargets += [
-      {
-        gn_target_name = _product_size_checker_target
-        bazel_target = invoker.bazel_product_size_check_target
+    bazel_build_action(_product_size_checker_target) {
+      forward_variables_from(invoker,
+                             [
+                               "testonly",
+                               "visibility",
+                             ])
+      bazel_target = invoker.bazel_product_size_check_target
+      bazel_config = "fuchsia_sdk"
 
-        directory_outputs = [
+      directory_outputs = [
+        {
+          bazel_dir = "{{BAZEL_TARGET_OUT_PATH}}_visualization"
+          ninja_dir = _visualization_path
+          tracked_files = [ "index.html" ]
+        },
+      ]
+
+      copy_outputs = [
+        {
+          bazel = "{{BAZEL_TARGET_OUT_PATH}}_size_breakdown.txt"
+          ninja = _size_breakdown_path
+        },
+      ]
+
+      deps = _common_deps
+
+      metadata = {
+        product_size_checker_output = [
           {
-            bazel_dir = "{{BAZEL_TARGET_OUT_PATH}}_visualization"
-            ninja_dir = _visualization_path
-            tracked_files = [ "index.html" ]
+            visualization =
+                rebase_path("${target_out_dir}/${_visualization_path}",
+                            root_build_dir)
+            size_breakdown =
+                rebase_path("${target_out_dir}/${_size_breakdown_path}",
+                            root_build_dir)
           },
         ]
-
-        copy_outputs = [
-          {
-            bazel = "{{BAZEL_TARGET_OUT_PATH}}_size_breakdown.txt"
-            ninja = _size_breakdown_path
-          },
-        ]
-
-        deps = _common_deps
-
-        metadata = {
-          product_size_checker_output = [
-            {
-              visualization =
-                  rebase_path("${target_out_dir}/${_visualization_path}",
-                              root_build_dir)
-              size_breakdown =
-                  rebase_path("${target_out_dir}/${_size_breakdown_path}",
-                              root_build_dir)
-            },
-          ]
-        }
-      },
-    ]
+      }
+    }
   }
 
   group("${target_name}_size_targets") {
@@ -388,67 +395,73 @@ template("bazel_product_bundle") {
     _elf_sizes_ninja_out_path =
         "${_elf_sizes_bazel_action_target}/elf_sizes.json"
 
-    _subtargets += [
-      {
-        gn_target_name = _elf_sizes_bazel_action_target
-        bazel_target = invoker.bazel_elf_sizes_target
+    bazel_build_action(_elf_sizes_bazel_action_target) {
+      forward_variables_from(invoker,
+                             [
+                               "testonly",
+                               "visibility",
+                             ])
+      bazel_target = invoker.bazel_elf_sizes_target
+      bazel_config = "fuchsia_sdk"
 
-        copy_outputs = [
+      copy_outputs = [
+        {
+          bazel = "{{BAZEL_TARGET_OUT_PATH}}_elf_sizes.json"
+          ninja = _elf_sizes_ninja_out_path
+        },
+      ]
+
+      deps = _common_deps
+
+      metadata = {
+        images = [
           {
-            bazel = "{{BAZEL_TARGET_OUT_PATH}}_elf_sizes.json"
-            ninja = _elf_sizes_ninja_out_path
+            name = "elf_sizes.json"
+            label = get_label_info(":${_elf_sizes_bazel_action_target}",
+                                   "label_with_toolchain")
+            type = "manifest"
+            path = rebase_path("${target_out_dir}/${_elf_sizes_ninja_out_path}",
+                               root_build_dir)
           },
         ]
-
-        deps = _common_deps
-
-        metadata = {
-          images = [
-            {
-              name = "elf_sizes.json"
-              label = get_label_info(":${_elf_sizes_bazel_action_target}",
-                                     "label_with_toolchain")
-              type = "manifest"
-              path =
-                  rebase_path("${target_out_dir}/${_elf_sizes_ninja_out_path}",
-                              root_build_dir)
-            },
-          ]
-        }
-      },
-    ]
+      }
+    }
   } else {
     group(_elf_sizes_bazel_action_target) {
     }
   }
 
   if (defined(invoker.bazel_license_review_target)) {
-    _subtargets += [
-      {
-        gn_target_name = targets.license_review_bazel_action_target
-        bazel_target = invoker.bazel_license_review_target
+    _license_review_bazel_action_target = "${target_name}_license_review"
+    bazel_build_action(_license_review_bazel_action_target) {
+      forward_variables_from(invoker,
+                             [
+                               "testonly",
+                               "visibility",
+                             ])
+      bazel_target = invoker.bazel_license_review_target
+      bazel_config = "fuchsia_sdk"
 
-        copy_outputs = [
+      copy_outputs = [
+        {
+          bazel = "{{BAZEL_TARGET_OUT_DIR}}/license_review.zip"
+          ninja = "license_review.zip"
+        },
+      ]
+
+      deps = _common_deps
+
+      # This metadata is added to infra's build output
+      metadata = {
+        licenses = [
           {
-            bazel = "{{BAZEL_TARGET_OUT_DIR}}/license_review.zip"
-            ninja = "license_review.zip"
+            license_review_archive =
+                rebase_path("${target_out_dir}/license_review.zip",
+                            root_build_dir)
           },
         ]
-
-        deps = _common_deps
-
-        # This metadata is added to infra's build output
-        metadata = {
-          licenses = [
-            {
-              license_review_archive =
-                  rebase_path("${target_out_dir}/license_review.zip",
-                              root_build_dir)
-            },
-          ]
-        }
-      },
-    ]
+      }
+    }
   }
 
   # NOTE: The "if (true)" below is only used to keep the indentation
@@ -696,49 +709,35 @@ template("bazel_product_bundle") {
     }
   }
 
-  _subtargets += [
-    {
-      gn_target_name = targets.bazel_product_bundle
-      bazel_target = invoker.bazel_product_bundle_target
-
-      # Directory outputs are OK because `product_bundle.json` correctly
-      # represents the freshness of all outputs.
-      directory_outputs = [
-        {
-          bazel_dir = "{{BAZEL_TARGET_OUT_DIR}}/{{BAZEL_TARGET_NAME}}_out"
-          ninja_dir = files.product_bundle_out_dir
-          tracked_files = _product_bundle_tracked_files
-          copy_debug_symbols = true
-        },
-      ]
-      copy_outputs = [
-        {
-          bazel = "{{BAZEL_TARGET_OUT_PATH}}_create_system_out/assembled_system.json"
-          ninja = "${target_name}_create_system_out/assembled_system.json"
-        },
-      ]
-      deps = _common_deps
-
-      metadata = _metadata
-    },
-  ]
-
-  bazel_build_group(targets.bazel_build_group) {
-    subtargets = _subtargets
-
-    deps = _common_deps
-
-    # Required by targets.bazel_product_bundle sub-target
-    check_for_output_dir_leaks = false
-
+  bazel_build_action(targets.bazel_product_bundle) {
     forward_variables_from(invoker,
                            [
-                             "metadata",
                              "testonly",
                              "visibility",
                            ])
-
+    bazel_target = invoker.bazel_product_bundle_target
     bazel_config = "fuchsia_sdk"
+
+    # Directory outputs are OK because `product_bundle.json` correctly
+    # represents the freshness of all outputs.
+    directory_outputs = [
+      {
+        bazel_dir = "{{BAZEL_TARGET_OUT_DIR}}/{{BAZEL_TARGET_NAME}}_out"
+        ninja_dir = files.product_bundle_out_dir
+        tracked_files = _product_bundle_tracked_files
+        copy_debug_symbols = true
+      },
+    ]
+    copy_outputs = [
+      {
+        bazel =
+            "{{BAZEL_TARGET_OUT_PATH}}_create_system_out/assembled_system.json"
+        ninja = "${files.create_system_out_dir}/assembled_system.json"
+      },
+    ]
+    deps = _common_deps
+
+    metadata = _metadata
   }
 
   if (_generate_product_bundle_metadata) {
@@ -772,7 +771,16 @@ template("bazel_product_bundle") {
                              "testonly",
                              "visibility",
                            ])
-    deps = []
+
+    # Some dependents want to claim outputs from these targets as inputs.
+    public_deps = [ ":${targets.bazel_product_bundle}" ]
+
+    deps = [
+      ":${_elf_sizes_bazel_action_target}",
+      ":${_product_assembly_target}",
+      ":${target_name}_size_targets",
+    ]
+
     if (_generate_product_bundle_metadata) {
       deps += [
         ":${targets.package_manifest_list}",
@@ -783,9 +791,6 @@ template("bazel_product_bundle") {
     if (defined(invoker.bazel_license_review_target)) {
       deps += [ ":${targets.license_review_bazel_action_target}" ]
     }
-
-    # Some dependents want to claim outputs from these targets as inputs.
-    public_deps = [ ":${targets.bazel_product_bundle}" ]
 
     metadata = {
       # Assembly does not emit information about the packages that it includes

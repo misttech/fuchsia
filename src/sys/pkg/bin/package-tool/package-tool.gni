@@ -388,7 +388,7 @@ template("package_tool_package_manifest_list_create") {
       _manifests_dir,
       invoker.product_bundle,
     ]
-    inputs = [ invoker.product_bundle ]
+    inputs = [ "${invoker.product_bundle}/product_bundle.json" ]
     outputs = [ "${_manifests_dir}/package_manifests.list" ]
     args = [
       "repository",
