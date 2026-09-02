@@ -16,7 +16,8 @@ standards and consistency.
 fx doc-checker
 ```
 
-The external link check can be skipped by adding `--local-links-only`.
+The external link check is skipped by default.
+To check external links, add `--check-external-links`.
 
 For more options, see the [full command line reference](https://fuchsia.dev/reference/tools/fx/cmd/doc-checker.md).
 
@@ -87,17 +88,46 @@ Images must have meaningful `alt` text.
 ![Diagram of the state transitions](/docs/state-machine.png "State machine")
 ```
 
+### Direct links to hidden files
+
+Hidden markdown files (prefixed with `_`) are intended for inclusion inside
+other markdown files, not for direct navigation. Linking directly to a hidden
+file generates a warning:
+
+#### Incorrect
+
+```markdown
+[link](/docs/path/to/_hidden_file.md)
+```
+
 ### Including markdown fragment files
 
-Markdown file fragments are included in another markdown file by using
+Markdown file fragments can be included in another markdown file using either
+block include syntax:
 
-<pre>
-&lt;&lt;relative-path-to/_file.md&gt;&gt;
-</pre>
+```text
+<<relative-path-to/_file.md>>
+```
 
-The path must be relative to the current .md source file—absolute paths
-cannot be used. The `<< >>` directive is a block directive and so must appear
-on a line by itself.
+Or using the Jekyll/Jinja-style include syntax:
+
+```jinja
+{% include "relative-path-to/_file.md" %}
+```
+
+The path must be relative to the current `.md` source file, or relative to the
+workspace root if prefixed with `docs/` (the prefix `fuchsia-src/` is also
+supported for compatibility with legacy documents but new includes should
+avoid it). Absolute paths cannot be used.
+
+**Limitations**:
+The tool uses a simple regular expression to extract paths from Jinja includes.
+It only matches static string literals ending in `.md`
+(e.g. `{% include "path/to/_file.md" %}`).
+
+It does not support variables, dynamic path concatenation, or standard Jinja
+syntax modifiers like `ignore missing`. If these features are used,
+`doc-checker` will fail to recognize the target as reachable.
 
 ## YAML data file checks
 
@@ -160,6 +190,18 @@ These checks enforce the table of contents structure described in
 Markdown pages in //docs must appear in a `_toc.yaml` that is included in the
  graph of table of contents created from the root _toc.yaml in
  `//docs/_toc.yaml`.
+
+#### Hidden Files (Files starting with `_`)
+
+By default, hidden markdown files (files whose filename begins with `_` such as
+`_my_partial.md`) are allowed to be unreferenced in the `_toc.yaml` files.
+However, they are checked to ensure they are actually used (included in other
+files or referenced). If a hidden file is completely unused in the workspace
+(and is only referenced by external repositories), you can exempt it by
+appending the comment `&lt;!-- doc-checker: ignore-unused --&gt;` to the file.
+
+To allow unreferenced hidden files, run `doc-checker` with the
+`--allow-unreferenced-hidden` switch.
 
 ### Structure of _areas.yaml
 
@@ -230,7 +272,7 @@ See: [Adding a glossary term](/docs/contribute/docs/glossary-entries.md#add_a_gl
 ## External link checks
 
 Note: External links are not checked during presubmits. These checks can be
-skipped by adding the `--local-links-only` flag.
+enabled by adding the `--check-external-links` flag.
 
 ### Broken external links (resulting in 404)
 
