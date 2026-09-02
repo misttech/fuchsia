@@ -61,6 +61,7 @@ rustc_library("lib") {
 
   sources = [
     "src/boot/mod.rs",
+    "src/common/caching.rs",
     "src/common/crypto.rs",
     "src/common/mod.rs",
     "src/common/vars.rs",

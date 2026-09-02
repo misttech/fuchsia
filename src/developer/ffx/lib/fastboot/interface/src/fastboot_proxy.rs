@@ -250,8 +250,7 @@ impl<T: AsyncRead + AsyncWrite + Unpin + Debug + Send> Fastboot for FastbootProx
             Ok(r) => match r {
                 Reply::Okay(v) => {
                     log::trace!("Got var {}. Content: '{:?}", name, v);
-                    let retval = v.trim_end_matches('\0');
-                    Ok(retval.to_string())
+                    Ok(v.trim_end_matches('\0').to_string())
                 }
                 Reply::Fail(message) => {
                     Err(FastbootError::GetVariableError { variable: name.to_string(), message })
@@ -799,6 +798,7 @@ mod test {
     #[fuchsia::test]
     async fn test_oem_ok() -> Result<()> {
         let mut test_transport = TestTransport::new();
+        test_transport.push(Reply::Info("info line 1".to_string()));
         test_transport.push(Reply::Okay("done".to_string()));
         let mut fastboot_client = FastbootProxy::<TestTransport> {
             target_id: "foo".to_string(),
@@ -808,7 +808,7 @@ mod test {
         };
 
         assert_eq!(fastboot_client.target_id, "foo");
-        fastboot_client.oem("version").await?;
+        assert!(fastboot_client.oem("version").await.is_ok());
         Ok(())
     }
     #[fuchsia::test]

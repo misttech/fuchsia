@@ -39,8 +39,11 @@ use zerocopy::IntoBytes;
 pub const MISSING_CREDENTIALS: &str = "The flash manifest is missing the credential files to unlock this device.\n\
      Please unlock the target and try again.";
 
+pub mod caching;
 pub mod crypto;
 pub mod vars;
+
+pub use caching::CachingFastboot;
 
 pub trait Partition {
     fn name(&self) -> &str;
@@ -830,12 +833,13 @@ where
             partition_count: product.bootloader_partitions().len() + product.partitions().len(),
         })
         .await?;
-    flash_bootloader(messenger, file_resolver, product, fastboot_interface, &cmd).await?;
+    let mut cached_fastboot = CachingFastboot::new(fastboot_interface);
+    flash_bootloader(messenger, file_resolver, product, &mut cached_fastboot, &cmd).await?;
     flash_product(
         messenger,
         file_resolver,
         product,
-        fastboot_interface,
+        &mut cached_fastboot,
         &cmd,
         ssh_key_upload_method,
     )

@@ -58,6 +58,9 @@ pub trait Fastboot: Send {
 
     async fn set_active(&mut self, slot: &str) -> Result<(), FastbootError>;
 
+    /// Sends OEM commands.
+    ///
+    /// On success returns the OKAY response, and all INFO responses.
     async fn oem(&mut self, command: &str) -> Result<(), FastbootError>;
 
     async fn stream<'a>(
@@ -157,6 +160,93 @@ impl<F: Fastboot + ?Sized> Fastboot for Box<F> {
 }
 
 impl<F: FastbootInterface + ?Sized> FastbootInterface for Box<F> {}
+
+#[async_trait]
+impl<F: Fastboot + ?Sized> Fastboot for &mut F {
+    async fn get_var(&mut self, name: &str) -> Result<String, FastbootError> {
+        (**self).get_var(name).await
+    }
+
+    async fn get_all_vars(&mut self, listener: Sender<Variable>) -> Result<(), FastbootError> {
+        (**self).get_all_vars(listener).await
+    }
+
+    async fn flash(
+        &mut self,
+        partition_name: &str,
+        path: &str,
+        listener: Sender<UploadProgress>,
+        timeout: Duration,
+    ) -> Result<(), FastbootError> {
+        (**self).flash(partition_name, path, listener, timeout).await
+    }
+
+    async fn flash_from_reader(
+        &mut self,
+        partition_name: &str,
+        size: u32,
+        reader: &mut (dyn std::io::Read + Send),
+        listener: Sender<UploadProgress>,
+        timeout: Duration,
+    ) -> Result<(), FastbootError> {
+        (**self).flash_from_reader(partition_name, size, reader, listener, timeout).await
+    }
+
+    async fn erase(&mut self, partition_name: &str) -> Result<(), FastbootError> {
+        (**self).erase(partition_name).await
+    }
+
+    async fn boot(&mut self) -> Result<(), FastbootError> {
+        (**self).boot().await
+    }
+
+    async fn reboot(&mut self) -> Result<(), FastbootError> {
+        (**self).reboot().await
+    }
+
+    async fn reboot_bootloader(
+        &mut self,
+        listener: Sender<RebootEvent>,
+    ) -> Result<(), FastbootError> {
+        (**self).reboot_bootloader(listener).await
+    }
+
+    async fn continue_boot(&mut self) -> Result<(), FastbootError> {
+        (**self).continue_boot().await
+    }
+
+    async fn get_staged(&mut self, path: &str) -> Result<(), FastbootError> {
+        (**self).get_staged(path).await
+    }
+
+    async fn stage(
+        &mut self,
+        path: &str,
+        listener: Sender<UploadProgress>,
+    ) -> Result<(), FastbootError> {
+        (**self).stage(path, listener).await
+    }
+
+    async fn set_active(&mut self, slot: &str) -> Result<(), FastbootError> {
+        (**self).set_active(slot).await
+    }
+
+    async fn oem(&mut self, command: &str) -> Result<(), FastbootError> {
+        (**self).oem(command).await
+    }
+
+    async fn stream<'a>(
+        &mut self,
+        partition_name: &str,
+        stream_command: StreamCommand,
+        listener: &Sender<UploadProgress>,
+        timeout: Duration,
+    ) -> Result<(), FastbootError> {
+        (**self).stream(partition_name, stream_command, listener, timeout).await
+    }
+}
+
+impl<F: FastbootInterface + ?Sized> FastbootInterface for &mut F {}
 
 #[derive(Debug, PartialEq)]
 pub enum RebootEvent {
