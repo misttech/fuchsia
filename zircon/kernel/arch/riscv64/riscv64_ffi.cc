@@ -61,6 +61,13 @@ FFI_ALWAYS_INLINE zx_status_t
 cpp_riscv64_set_general_regs(const zx_thread_state_general_regs_t* regs) {
   return arch_set_general_regs(Thread::Current::Get(), regs);
 }
+
+bool cpp_is_kernel_address(vaddr_t addr) { return is_kernel_address(addr); }
+
+void cpp_arch_sync_cache_shootdown() {
+  auto fencei = [](void*) { __asm__ volatile("fence.i" ::: "memory"); };
+  mp_sync_exec(mp_ipi_target::ALL, /* cpu_mask */ 0, fencei, nullptr);
+}
 zx_status_t cpp_interrupt_send_ipi(cpu_mask_t cpu_mask, uint8_t ipi);
 void cpp_interrupt_init_percpu();
 void cpp_int_handler_start(uint64_t* state);
