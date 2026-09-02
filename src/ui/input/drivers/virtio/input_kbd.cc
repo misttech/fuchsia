@@ -107,8 +107,8 @@ constexpr std::optional<fuchsia_input::wire::Key> kEventCodeMap[] = {
     /* 0x54 */ std::nullopt,
     /* 0x55 */ std::nullopt,
     /* 0x56 */ std::nullopt,
-    /* 0x57 */ std::nullopt,
-    /* 0x58 */ std::nullopt,
+    /* 0x57 */ fuchsia_input::wire::Key::kF11,
+    /* 0x58 */ fuchsia_input::wire::Key::kF12,
     /* 0x59 */ std::nullopt,
     /* 0x5a */ std::nullopt,
     /* 0x5b */ std::nullopt,
@@ -122,21 +122,21 @@ constexpr std::optional<fuchsia_input::wire::Key> kEventCodeMap[] = {
     /* 0x63 */ std::nullopt,
     /* 0x64 */ fuchsia_input::wire::Key::kRightAlt,
     /* 0x65 */ std::nullopt,
-    /* 0x66 */ std::nullopt,
+    /* 0x66 */ fuchsia_input::wire::Key::kHome,
     /* 0x67 */ fuchsia_input::wire::Key::kUp,
-    /* 0x68 */ std::nullopt,
+    /* 0x68 */ fuchsia_input::wire::Key::kPageUp,
     /* 0x69 */ fuchsia_input::wire::Key::kLeft,
     /* 0x6a */ fuchsia_input::wire::Key::kRight,
-    /* 0x6b */ std::nullopt,
+    /* 0x6b */ fuchsia_input::wire::Key::kEnd,
     /* 0x6c */ fuchsia_input::wire::Key::kDown,
     /* 0x6d */ fuchsia_input::wire::Key::kPageDown,
     /* 0x6e */ fuchsia_input::wire::Key::kInsert,
     /* 0x6f */ fuchsia_input::wire::Key::kDelete,
     /* 0x70 */ std::nullopt,
-    /* 0x71 */ std::nullopt,
-    /* 0x72 */ std::nullopt,
-    /* 0x73 */ std::nullopt,
-    /* 0x74 */ std::nullopt,
+    /* 0x71 */ fuchsia_input::wire::Key::kMute,
+    /* 0x72 */ fuchsia_input::wire::Key::kVolumeDown,
+    /* 0x73 */ fuchsia_input::wire::Key::kVolumeUp,
+    /* 0x74 */ fuchsia_input::wire::Key::kPower,
     /* 0x75 */ std::nullopt,
     /* 0x76 */ std::nullopt,
     /* 0x77 */ fuchsia_input::wire::Key::kPause,
@@ -206,9 +206,8 @@ fuchsia_input_report::wire::DeviceDescriptor HidKeyboard::GetDescriptor(fidl::An
   const auto input =
       fuchsia_input_report::wire::KeyboardInputDescriptor::Builder(allocator).keys3(kKeys).Build();
 
-  const auto keyboard = fuchsia_input_report::wire::KeyboardDescriptor::Builder(allocator)
-                            .input(input)
-                            .Build();
+  const auto keyboard =
+      fuchsia_input_report::wire::KeyboardDescriptor::Builder(allocator).input(input).Build();
 
   return fuchsia_input_report::wire::DeviceDescriptor::Builder(allocator)
       .device_information(device_info.Build())

@@ -542,18 +542,17 @@ TEST_F(VirtioInputTest, KeyboardReportDescriptor) {
     kExpectedKeys.insert(k);
   }
   kExpectedKeys.erase(fuchsia_input::Key::kNonUsHash);
-  kExpectedKeys.erase(fuchsia_input::Key::kF11);
-  kExpectedKeys.erase(fuchsia_input::Key::kF12);
   kExpectedKeys.erase(fuchsia_input::Key::kPrintScreen);
-  kExpectedKeys.erase(fuchsia_input::Key::kHome);
-  kExpectedKeys.erase(fuchsia_input::Key::kPageUp);
-  kExpectedKeys.erase(fuchsia_input::Key::kEnd);
   kExpectedKeys.erase(fuchsia_input::Key::kKeypadSlash);
   kExpectedKeys.erase(fuchsia_input::Key::kKeypadEnter);
   for (auto k = fuchsia_input::Key::kLeftCtrl; k <= fuchsia_input::Key::kRightMeta;
        k = static_cast<fuchsia_input::Key>(static_cast<uint32_t>(k) + 1)) {
     kExpectedKeys.insert(k);
   }
+  kExpectedKeys.insert(fuchsia_input::Key::kMute);
+  kExpectedKeys.insert(fuchsia_input::Key::kVolumeDown);
+  kExpectedKeys.insert(fuchsia_input::Key::kVolumeUp);
+  kExpectedKeys.insert(fuchsia_input::Key::kPower);
   EXPECT_TRUE(std::set(descriptor.keyboard().input().keys3().begin(),
                        descriptor.keyboard().input().keys3().end()) == kExpectedKeys);
 }
