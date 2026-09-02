@@ -74,12 +74,6 @@ zx_status_t ResourceDispatcher::Create(KernelHandle<ResourceDispatcher>* handle,
   // class instance. Otherwise, the resource is shared and we'll release it
   // back to the allocator since we only used it to verify it existed in the
   // allocator.
-  //
-  // TODO: Hypervisor resources should be represented in some other capability
-  // object because they represent a binary permission rather than anything
-  // more finely grained. It will work properly here because the base/size of a
-  // hypervisor resource is never checked, but it's a workaround until a
-  // proper capability exists for it.
 
   // Use the local static bookkeeping for system resources unless mocks are passed in.
   if (storage == nullptr) {
