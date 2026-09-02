@@ -247,21 +247,32 @@ static void verify_round_trip(const fuchsia_wlan_ieee80211::wire::ChannelNumber&
                                 << static_cast<int>(in_channel.number);
 }
 
-TEST(ChannelConversion, RoundTrip40MHz) {
+TEST(ChannelConversion, Override2G40MHz) {
   using fuchsia_wlan_ieee80211::wire::ChannelBandwidth;
   using fuchsia_wlan_ieee80211::wire::WlanBand;
 
-  // 2.4 GHz 40+ MHz (Cbw40)
+  // 2.4 GHz 40+ MHz (Cbw40) is overridden to 20 MHz
   // IEEE Std 802.11-2024 Table E-4 Operating Class 83
   for (uint8_t ch = 1; ch <= 9; ++ch) {
-    verify_round_trip({.band = WlanBand::kTwoGhz, .number = ch}, ChannelBandwidth::kCbw40);
+    brcmu_chan expected = {
+        .chnum = ch, .band = BRCMU_CHAN_BAND_2G, .bw = BRCMU_CHAN_BW_20, .sb = BRCMU_CHAN_SB_NONE};
+    verify_channel_to_chanspec({.band = WlanBand::kTwoGhz, .number = ch}, ChannelBandwidth::kCbw40,
+                               expected);
   }
 
-  // 2.4 GHz 40- MHz (Cbw40Below)
+  // 2.4 GHz 40- MHz (Cbw40Below) is overridden to 20 MHz
   // IEEE Std 802.11-2024 Table E-4 Operating Class 84
   for (uint8_t ch = 5; ch <= 13; ++ch) {
-    verify_round_trip({.band = WlanBand::kTwoGhz, .number = ch}, ChannelBandwidth::kCbw40Below);
+    brcmu_chan expected = {
+        .chnum = ch, .band = BRCMU_CHAN_BAND_2G, .bw = BRCMU_CHAN_BW_20, .sb = BRCMU_CHAN_SB_NONE};
+    verify_channel_to_chanspec({.band = WlanBand::kTwoGhz, .number = ch},
+                               ChannelBandwidth::kCbw40Below, expected);
   }
+}
+
+TEST(ChannelConversion, RoundTrip40MHz) {
+  using fuchsia_wlan_ieee80211::wire::ChannelBandwidth;
+  using fuchsia_wlan_ieee80211::wire::WlanBand;
 
   // 5 GHz 40+ MHz (Cbw40)
   // IEEE Std 802.11-2024 Table E-4 Operating Class 116, 119, 122, 126
