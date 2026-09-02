@@ -11,8 +11,6 @@ use linux_uapi::{
 use std::os::fd::AsRawFd;
 use zerocopy::{FromBytes, IntoBytes};
 
-mod fscrypt_shared;
-
 const FSCRYPT_MODE_AES_256_XTS: u8 = 1;
 const FSCRYPT_MODE_AES_256_CTS: u8 = 4;
 

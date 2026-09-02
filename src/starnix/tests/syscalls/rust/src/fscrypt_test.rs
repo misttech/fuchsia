@@ -4,7 +4,7 @@
 
 #[cfg(test)]
 mod tests {
-    use crate::fscrypt_shared::{
+    use fscrypt_shared::{
         FscryptOutput, fscrypt_add_key_arg, fscrypt_key_specifier, fscrypt_remove_key_arg,
     };
     use linux_uapi::{
