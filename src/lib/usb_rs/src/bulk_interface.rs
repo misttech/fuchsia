@@ -10,7 +10,20 @@ use std::sync::Arc;
 use std::task::Poll;
 use tokio::sync::RwLock;
 
+/// Maximum size of a single bulk URB submitted to Linux usbfs (256 KiB).
+///
+/// This is an engineering heuristic matching upstream fastboot/adb conventions:
+/// it maximizes xHCI DMA burst throughput while avoiding kernel scatter-gather
+/// memory allocation failures or fragmentation issues on host systems.
 const MAX_USBFS_BULK_WRITE_SIZE: usize = 256 * 1024;
+
+/// Maximum number of bulk URBs queued in flight concurrently (16 URBs = 4 MiB).
+///
+/// This heuristic keeps the host controller's DMA hardware ring continuously saturated
+/// without stalling between chunks, while remaining well within the Linux usbfs memory
+/// budget (`usbfs_memory_mb`, default 16 MiB) and the interface URB pool limit.
+const MAX_IN_FLIGHT_URBS: usize = 16;
+const MAX_WRITE_BUFFER_SIZE: usize = MAX_USBFS_BULK_WRITE_SIZE * MAX_IN_FLIGHT_URBS;
 
 /// Wraps an `Interface` and impls AsyncRead and AsyncWrite and reads and
 /// writes to the appropriate In/Out endpoints of the interface
@@ -97,33 +110,66 @@ impl AsyncWrite for BulkInterface {
         cx: &mut std::task::Context<'_>,
         buf: &[u8],
     ) -> Poll<std::io::Result<usize>> {
+        if buf.is_empty() {
+            return Poll::Ready(Ok(0));
+        }
+
         if self.write_future.is_none() {
-            let buffer = buf[..].to_vec();
+            let to_write = std::cmp::min(buf.len(), MAX_WRITE_BUFFER_SIZE);
+            let buffer = buf[..to_write].to_vec();
             let inner_ref = self.inner.clone();
             let guard_ref = self.guard.clone();
             let write_future = async move {
-                // Get the bulk in interface
+                // Get the bulk out interface
                 for endpoint in inner_ref.endpoints() {
                     if let Endpoint::BulkOut(boe) = endpoint {
                         log::debug!(
-                            "Need to break write operation into {} chunks",
-                            buffer.len() / MAX_USBFS_BULK_WRITE_SIZE
+                            "Breaking write of {} bytes into pipelined URB chunks of up to {}",
+                            buffer.len(),
+                            MAX_USBFS_BULK_WRITE_SIZE
                         );
-                        let guard = guard_ref.write();
+                        let _guard = guard_ref.write().await;
+                        let mut in_flight = std::collections::VecDeque::new();
                         for chunk in buffer.chunks(MAX_USBFS_BULK_WRITE_SIZE) {
-                            boe.write(&chunk, ZeroPacket::DoNotSend).await.map_err(|e| {
-                                log::warn!("Got error: {}", e);
+                            let wait_fut = boe
+                                .write_defer_wait(chunk, ZeroPacket::DoNotSend)
+                                .await
+                                .map_err(|e| {
+                                    log::warn!("Error submitting bulk URB: {}", e);
+                                    std::io::Error::new(
+                                        std::io::ErrorKind::Other,
+                                        format!("Error submitting to bulk endpoint: {}", e),
+                                    )
+                                })?;
+                            in_flight.push_back(wait_fut);
+
+                            if in_flight.len() >= MAX_IN_FLIGHT_URBS {
+                                if let Some(fut) = in_flight.pop_front() {
+                                    fut.await.map_err(|e| {
+                                        log::warn!("Error awaiting bulk URB completion: {}", e);
+                                        std::io::Error::new(
+                                            std::io::ErrorKind::Other,
+                                            format!("Error writing to bulk endpoint: {}", e),
+                                        )
+                                    })?;
+                                }
+                            }
+                        }
+
+                        while let Some(fut) = in_flight.pop_front() {
+                            fut.await.map_err(|e| {
+                                log::warn!("Error draining bulk URB: {}", e);
                                 std::io::Error::new(
                                     std::io::ErrorKind::Other,
                                     format!("Error writing to bulk endpoint: {}", e),
                                 )
                             })?;
                         }
-                        drop(guard);
+
                         return Ok(buffer.len());
                     }
                 }
-                Err(std::io::Error::new(std::io::ErrorKind::NotFound, "No bulk in endpoint found"))
+                Err(std::io::Error::new(std::io::ErrorKind::NotFound, "No bulk out endpoint found"))
             };
             self.write_future = Some(Box::pin(write_future));
         }
@@ -135,7 +181,7 @@ impl AsyncWrite for BulkInterface {
                 Poll::Ready(Ok(size))
             }
             Poll::Ready(Err(e)) => {
-                log::debug!("Poll write: error");
+                log::debug!("Poll write: error: {:?}", e);
                 self.write_future = None;
                 Poll::Ready(Err(e))
             }
