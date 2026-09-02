@@ -1081,10 +1081,13 @@ def main() -> int:
         "tmp",
         ".tmp",
     }
-    # It's ok to access */.git/* if your action is sensitive to .git contents.
+    # It's ok to access */.git/* and .jiri_cache if your action is sensitive to .git contents.
+    # On shared cache builders, Jiri stores its git cache inside the checkout
+    # (.jiri_cache), which Git accesses via alternates for pack files and objects.
     for args_input in args.inputs:
         if ".git" in args_input.split(os.sep):
             ignored_path_parts.add(".git")
+            ignored_path_parts.add(".jiri_cache")
             break
     # TODO(fangism): for suffixes that we always ignore for writing, such as
     # safe or intended side-effect byproducts, make sure no declared inputs ever

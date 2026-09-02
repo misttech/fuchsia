@@ -635,7 +635,7 @@ class AccessShouldCheckTests(unittest.TestCase):
 
     def test_ignored_path_components_matches(self):
         ignore_conditions = action_tracer.MatchConditions(
-            components={"__auto__", ".generated"}
+            components={"__auto__", ".generated", ".jiri_cache"}
         )
         self.assertFalse(
             action_tracer.Read("library/__auto__/book").should_check(
@@ -646,6 +646,11 @@ class AccessShouldCheckTests(unittest.TestCase):
             action_tracer.Write(".generated/out/log").should_check(
                 ignore_conditions=ignore_conditions
             )
+        )
+        self.assertFalse(
+            action_tracer.Read(
+                ".jiri_cache/repo/objects/pack/pack-123.idx"
+            ).should_check(ignore_conditions=ignore_conditions)
         )
 
 
