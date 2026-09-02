@@ -508,6 +508,8 @@ async fn reboot_target_to_bootloader_and_rediscover(
 }
 
 impl FlashTool {
+    const EVENT_CHANNEL_SIZE: usize = 128;
+
     async fn flash_plugin_impl(
         self,
         cmd: FlashCommand,
@@ -579,17 +581,22 @@ Reboot the Target to the bootloader and re-run this command."
                     .await
                     .map_err(|e| anyhow::Error::from(e))?;
 
-                    let (client, server) = mpsc::channel(1);
+                    let (event_tx, event_rx) = mpsc::channel(Self::EVENT_CHANNEL_SIZE);
                     let handler_fut = if writer.is_machine() {
-                        futures::future::Either::Left(handle_event_machine(writer, server))
+                        futures::future::Either::Left(handle_event_machine(writer, event_rx))
                     } else {
-                        futures::future::Either::Right(handle_event_text(writer, server))
+                        futures::future::Either::Right(handle_event_text(writer, event_rx))
                     };
                     try_join!(
                         async {
-                            from_manifest(&self.ctx, client, cmd.to_manifest(&self.ctx), &mut proxy)
-                                .await
-                                .map_err(anyhow::Error::from)
+                            from_manifest(
+                                &self.ctx,
+                                event_tx,
+                                cmd.to_manifest(&self.ctx),
+                                &mut proxy,
+                            )
+                            .await
+                            .map_err(anyhow::Error::from)
                         },
                         handler_fut
                     )
