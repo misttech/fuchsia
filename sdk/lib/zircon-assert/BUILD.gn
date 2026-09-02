@@ -153,3 +153,8 @@ source_set("headers") {
 config("zircon-assert.config") {
   include_dirs = [ "." ]
 }
+
+group("tests") {
+  testonly = true
+  deps = [ "test:tests" ]
+}
