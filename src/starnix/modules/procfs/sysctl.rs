@@ -36,15 +36,6 @@ pub fn sysctl_directory(fs: &FileSystemHandle) -> FsNodeHandle {
             mode,
         );
     });
-    dir.subdir("conf", 0o555, |dir| {
-        dir.subdir("security", 0o555, |dir| {
-            dir.entry(
-                "lsm_policy",
-                StubBytesFile::new_node(bug_ref!("https://fxbug.dev/452096300")),
-                mode,
-            );
-        });
-    });
     dir.subdir("crypto", 0o555, |dir| {
         dir.entry("fips_enabled", BytesFile::new_node(b"0\n".to_vec()), mode!(IFREG, 0o444));
         dir.entry(
@@ -80,11 +71,6 @@ pub fn sysctl_directory(fs: &FileSystemHandle) -> FsNodeHandle {
         dir.entry(
             "core_pipe_limit",
             StubBytesFile::new_node(bug_ref!("https://fxbug.dev/322873721")),
-            mode,
-        );
-        dir.entry(
-            "dmsg_restrict",
-            StubBytesFile::new_node(bug_ref!("https://fxbug.dev/322874424")),
             mode,
         );
         dir.entry(
